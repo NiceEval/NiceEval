@@ -1,0 +1,5 @@
+node_modules/
+.fastevals/
+*.log
+.DS_Store
+dist/

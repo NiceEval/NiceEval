@@ -1,0 +1,35 @@
+{
+  "name": "fastevals",
+  "version": "0.0.1",
+  "description": "写得快、跑得快、看得快的 TypeScript evals 库",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "fastevals": "bin/fastevals.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./expect": "./src/expect/index.ts",
+    "./reporters": "./src/runner/reporters/index.ts",
+    "./loaders": "./src/loaders/index.ts"
+  },
+  "files": [
+    "src",
+    "bin"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "fastevals": "node bin/fastevals.mjs"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "tar-stream": "^3.1.7",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^22.0.0",
+    "@types/tar-stream": "^3.1.3",
+    "typescript": "^5.6.0"
+  }
+}
