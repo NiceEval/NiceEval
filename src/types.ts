@@ -314,6 +314,7 @@ export interface PriceEntry {
 
 export interface EvalResult {
   id: string;
+  experimentId?: string;
   agent: string;
   model?: string;
   verdict: Verdict;

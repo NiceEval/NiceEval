@@ -182,6 +182,7 @@ async function runAttempt(
 
   const base: EvalResult = {
     id: evalDef.id,
+    experimentId: run.experimentId,
     agent: run.agent.name,
     model: run.model,
     verdict: "failed",
@@ -322,6 +323,7 @@ async function runAttempt(
 
     return {
       id: evalDef.id,
+      experimentId: run.experimentId,
       agent: run.agent.name,
       model: run.model,
       verdict,

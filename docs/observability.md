@@ -188,16 +188,17 @@ Run totals:  3 evals · 142k tok · $1.12   (agent: claude-code)
 控制台和 `summary.json` 是「当下」的;但你常常想**事后看图**:这次比上次贵了多少?哪个 agent 性价比高?所以 fastevals 提供一个本地查看器(对标 agent-eval 的 playground:一个读结果目录的 web UI)。
 
 ```sh
-fastevals view                 # 起本地 web,读 .fastevals/ 下所有历史运行
-fastevals view --watch         # 边跑边刷新
+fastevals view                         # 起本地 web,读 .fastevals/ 下所有历史运行
+fastevals view .fastevals/<run>/summary.json
+fastevals view --out .fastevals/report.html  # 导出静态 HTML
 ```
 
 它不连任何服务,只读 `.fastevals/<时间戳>/` 这些**结构化工件**(每 eval 已带 `usage` + `estimatedCostUSD`),因此能渲染:
 
 - **运行总览** —— pass / fail / scored 计数、总 token、总 $。
-- **每 eval 柱状** —— 通过与否、耗时、token、$ 并排。
+- **agent 对比榜单** —— 同一批 eval 下 claude-code / codex / bub 的通过率 + 平均耗时 + token + 成本并列(对应 playground 的 compare 视图)。这是评 coding agent 最想要的一张图。
+- **eval attempt 钻取** —— 点开单行看具体 eval 的断言、错误、耗时、用量与样例 JSON。
 - **质量 × 成本散点** —— 每个 eval(或每个 agent)一个点,一眼看出「贵且不准」的角落。
-- **agent 对比** —— 同一批 eval 下 claude-code / codex / bub 的通过率 + 成本并列(对应 playground 的 compare 视图)。这是评 coding agent 最想要的一张图。
 - **跨运行趋势** —— 每次运行是带时间戳的目录,于是成本 / 通过率能画成随提交变化的折线,抓性能或成本回归。
 - **transcript 钻取** —— 点开单个 eval 看归一化事件流、工具调用、改了哪些文件。
 
@@ -220,6 +221,7 @@ interface Reporter {
 报告器在**独立串行队列**上被回调,不阻塞执行池(见 [Runner](runner.md#调度有界并发))。内置:
 
 - **`Console()`** —— 默认,流式逐行输出,失败断言内联展开。
+- **`Artifacts()`** —— 默认写 `.fastevals/<timestamp>/summary.json` 与 `results.jsonl`,供 `fastevals view` 读取。
 - **`JUnit(path)`** —— JUnit XML,接 CI 测试报告 UI。
 - **`Json(path)`** —— 机器可读全量。
 - **第三方实验跟踪** —— 接 Braintrust 这类平台,把每次运行作为一个实验上报,跨提交比较。

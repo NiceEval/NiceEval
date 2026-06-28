@@ -12,6 +12,8 @@ import { buildRegistry, resolveAgent } from "./agents/registry.ts";
 import { discoverEvals, discoverExperiments, makeFilter } from "./runner/discover.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
+import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
+import { buildView, startViewServer } from "./view/index.ts";
 import type { Config, DiscoveredExperiment, Reporter } from "./types.ts";
 
 interface Flags {
@@ -25,6 +27,8 @@ interface Flags {
   dry: boolean;
   strict: boolean;
   quiet: boolean;
+  out?: string;
+  port?: number;
 }
 
 const BOOL_FLAGS = new Set(["dry", "strict", "quiet", "early-exit", "no-early-exit", "force", "watch", "json"]);
@@ -68,6 +72,8 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
         case "runs": flags.runs = Number(value); break;
         case "max-concurrency": flags.maxConcurrency = Number(value); break;
         case "timeout": flags.timeout = Number(value); break;
+        case "out": flags.out = value; break;
+        case "port": flags.port = Number(value); break;
         default: break; // 未知 flag 忽略
       }
     } else {
@@ -122,7 +128,19 @@ async function main(): Promise<void> {
   await loadDotenv(cwd);
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
 
-  if (command === "view" || command === "init" || command === "watch") {
+  if (command === "view") {
+    if (flags.out) {
+      const out = await buildView({ input: positionals[0], out: flags.out });
+      process.stdout.write(`已导出实验查看页:${out}\n`);
+      process.exit(0);
+    }
+    const server = await startViewServer({ input: positionals[0], port: flags.port });
+    process.stdout.write(`fastevals view: ${server.url}\n`);
+    process.stdout.write("按 Ctrl+C 退出。\n");
+    await new Promise(() => {});
+  }
+
+  if (command === "init" || command === "watch") {
     process.stdout.write(`命令 "${command}" 暂未实现(MVP)。\n`);
     process.exit(0);
   }
@@ -200,6 +218,7 @@ async function main(): Promise<void> {
 
   const reporters: Reporter[] = [];
   if (!flags.quiet) reporters.push(ConsoleReporter());
+  reporters.push(ArtifactsReporter());
   reporters.push(...(config.reporters ?? []));
 
   const summary = await runEvals({
