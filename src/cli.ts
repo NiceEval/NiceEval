@@ -228,24 +228,21 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     for (const exp of selected) {
-      const agents = Array.isArray(exp.agent) ? exp.agent : [exp.agent];
       const models = exp.model === undefined ? [undefined] : Array.isArray(exp.model) ? exp.model : [exp.model];
-      for (const an of agents) {
-        for (const m of models) {
-          agentRuns.push({
-            agent: resolveAgent(registry, an),
-            model: m,
-            flags: exp.flags ?? {},
-            runs: flags.runs ?? exp.runs ?? 1,
-            earlyExit: flags.earlyExit ?? exp.earlyExit ?? true,
-            sandbox: flags.sandbox ?? exp.sandbox ?? config.sandbox,
-            timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
-            budget: exp.budget,
-            evalFilter: evalsFilterFromExperiment(exp.evals, extraPatterns),
-            experimentId: exp.id,
-            hooks: exp.hooks,
-          });
-        }
+      for (const m of models) {
+        agentRuns.push({
+          agent: exp.agent,
+          model: m,
+          flags: exp.flags ?? {},
+          runs: flags.runs ?? exp.runs ?? 1,
+          earlyExit: flags.earlyExit ?? exp.earlyExit ?? true,
+          sandbox: flags.sandbox ?? exp.sandbox ?? config.sandbox,
+          timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
+          budget: exp.budget,
+          evalFilter: evalsFilterFromExperiment(exp.evals, extraPatterns),
+          experimentId: exp.id,
+          hooks: exp.hooks,
+        });
       }
     }
   } else {

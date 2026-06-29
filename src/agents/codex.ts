@@ -1,80 +1,88 @@
-// OpenAI Codex CLI 内置 sandbox adapter。
-//
-// 5 个 agent-specific 差异点:
-//   装 CLI   : npm i -g @openai/codex
-//   鉴权     : OPENAI_API_KEY env
-//   拼调用   : codex exec --profile default --json [--resume tid] <prompt>
-//   模型     : setup 阶段写 ~/.codex/default.config.toml(含 model = "..."
-//              省略 ctx.model 时不写 model,让 CLI 用它自己的默认值)
-//   读 transcript: codex exec --json 的 stdout 即 JSONL 事件流
-//
-// OTLP tracing(codex 发 http/json):
-//   configure 追加 [otel.trace_exporter.otlp-http] 块到 ~/.codex/config.toml
-//   —— 子表放在所有上层表之后,天然合法(TOML 规范)。
-
 import { defineSandboxAgent } from "../define.ts";
-import { requireEnv } from "../util.ts";
+import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
-import type { Sandbox, AgentContext } from "../types.ts";
+import type { Agent } from "../types.ts";
 
-async function writeCodexProfile(sandbox: Sandbox, model: string | undefined): Promise<void> {
-  const lines: string[] = [];
-  if (model) lines.push(`model = "${model}"`);
-  // 空文件合法 —— codex 读不到 model 时用它自己的默认值。
-  await shared.writeFile(sandbox, "~/.codex/default.config.toml", lines.join("\n") + "\n");
+// ───────────────────────────────────────────────────────────────────────────
+// OpenAI Codex CLI 的 agent adapter(沙箱型)。
+//
+// 连接方式:在沙箱里 spawn `codex exec --json`,stdout JSONL → parseCodex → 标准事件流。
+// 配置:鉴权本地(config / env),模型交给实验(ctx.model),feature flags 经 ctx.flags。
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface CodexConfig {
+  /** 代理 / OpenAI API key。省略时读 CODEX_API_KEY env。 */
+  apiKey?: string;
+  /** OpenAI 兼容代理 base URL(如 https://s2a.example.com/v1)。省略时读 CODEX_BASE_URL env。 */
+  baseUrl?: string;
 }
 
-async function writeOtlpConfig(sandbox: Sandbox, endpoint: string): Promise<void> {
-  // 独立文件:只含 OTLP 块,不与 profile 合并,避免 TOML 子表顺序问题。
-  const toml =
-    `[otel.trace_exporter.otlp-http]\n` +
-    `endpoint = "${endpoint}"\n`;
-  await shared.writeFile(sandbox, "~/.codex/config.toml", toml);
-}
+export function codexAgent(config?: CodexConfig): Agent {
+  const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
+  const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
 
-export default defineSandboxAgent({
-  name: "codex",
-  capabilities: {
-    conversation: true,
-    toolObservability: true,
-    workspace: true,
-    compactionObservability: true,
-    tracing: true,
-  },
+  return defineSandboxAgent({
+    name: "codex",
+    capabilities: { conversation: true, toolObservability: true, workspace: true, compactionObservability: true, tracing: true },
 
-  tracing: {
-    protocol: "http/json",
-    async configure(sandbox: Sandbox, ctx: AgentContext): Promise<void> {
-      if (ctx.telemetry?.endpoint) {
-        await writeOtlpConfig(sandbox, ctx.telemetry.endpoint);
+    async setup(sb, ctx) {
+      await sb.runCommand("npm", ["install", "-g", "@openai/codex"]);
+
+      const model = ctx.model ?? "gpt-5.4";
+      const effort = (ctx.flags.effort as string | undefined) ?? "medium";
+      const base = getBaseUrl();
+
+      if (base) {
+        await shared.writeFile(
+          sb,
+          "~/.codex/config.toml",
+          `model = "${model}"\n` +
+            `model_provider = "s2a"\n` +
+            `model_reasoning_effort = "${effort}"\n\n` +
+            `[model_providers.s2a]\n` +
+            `name = "s2a"\n` +
+            `base_url = "${base}"\n` +
+            `env_key = "CODEX_API_KEY"\n` +
+            `wire_api = "responses"\n`,
+        );
+      } else {
+        await shared.writeFile(sb, "~/.codex/config.toml", `model = "${model}"\nmodel_reasoning_effort = "${effort}"\n`);
       }
     },
-  },
 
-  async setup(sandbox, ctx) {
-    await shared.ensureInstalled(sandbox, "npm", ["install", "-g", "@openai/codex"]);
-    await writeCodexProfile(sandbox, ctx.model);
-  },
+    tracing: {
+      protocol: "http/json",
+      async configure(sb, ctx) {
+        const endpoint = ctx.telemetry!.endpoint;
+        const otel =
+          `\n[otel]\n` +
+          `environment = "fasteval"\n` +
+          `exporter = "none"\n` +
+          `metrics_exporter = "none"\n\n` +
+          `[otel.trace_exporter.otlp-http]\n` +
+          `endpoint = "${endpoint}"\n` +
+          `protocol = "json"\n`;
+        await sb.runShell(`cat >> ~/.codex/config.toml <<'EOF'\n${otel}EOF\n`);
+      },
+    },
 
-  async send(input, ctx) {
-    const sb = ctx.sandbox;
-    const args = ["exec", "--profile", "default", "--json"];
-    if (!ctx.session.isNew && ctx.session.id) args.push("--resume", ctx.session.id);
-    args.push(input.text);
+    async send(input, ctx) {
+      const sb = ctx.sandbox;
+      const flags = "--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check";
+      const escaped = input.text.replace(/'/g, "'\\''");
+      const resuming = !ctx.session.isNew && ctx.session.id;
+      const cmd = resuming
+        ? `codex exec resume ${ctx.session.id} ${flags} '${escaped}'`
+        : `codex exec ${flags} '${escaped}'`;
 
-    const res = await sb.runCommand("codex", args, {
-      env: { OPENAI_API_KEY: requireEnv("OPENAI_API_KEY") },
-      stream: true,
-    });
+      const res = await sb.runShell(cmd, { env: { CODEX_API_KEY: getApiKey() }, stream: true });
 
-    const raw = shared.extractJsonlFromStdout(res.stdout);
-    ctx.session.id = shared.codexThreadId(res.stdout);
+      const raw = shared.extractJsonlFromStdout(res.stdout);
+      ctx.session.id = shared.codexThreadId(res.stdout) ?? ctx.session.id;
+      const parsed = shared.parseCodex(raw);
+      return { events: parsed.events, usage: parsed.usage, status: res.exitCode === 0 ? "completed" : "failed" };
+    },
+  });
+}
 
-    const parsed = shared.parseCodex(raw);
-    return {
-      events: parsed.events,
-      usage: parsed.usage,
-      status: res.exitCode === 0 ? "completed" : "failed",
-    };
-  },
-});
+export default codexAgent();

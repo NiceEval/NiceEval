@@ -599,7 +599,7 @@ export interface DiscoveredEval extends EvalDef {
 export interface ExperimentDef {
   id?: string;
   description?: string;
-  agent: string | string[];
+  agent: Agent;
   model?: string | string[];
   flags?: Record<string, unknown>;
   runs?: number;
