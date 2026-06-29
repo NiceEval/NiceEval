@@ -59,6 +59,84 @@ expect(o11y.totalToolCalls).toBeLessThan(50);
 
 这把"过程正确性"也纳入了评分,而不只是"结果正确性"。
 
+## OTLP traces → 统一瀑布图
+
+`StreamEvent` 回答「做了什么」;**trace 回答「各花了多久、谁套谁」**。带 `tracing` 能力的 agent 经 OpenTelemetry 把 OTLP traces 导出到运行器(每个沙箱起一个本机 OTLP/HTTP 接收器,端点经 `ctx.telemetry.endpoint` 交给 agent),跑完归一成 `TraceSpan[]` 挂到 `EvalResult.trace`,`fasteval view` 画成瀑布图。
+
+这条线分两层,两层都得归一,但**含义层(语义约定)才是接新 agent 的真功夫**:
+
+| 层 | 干什么 | 谁做 |
+|---|---|---|
+| **线格式层** | OTLP/JSON(codex)、OTLP/protobuf(bub)→ 统一的 `TraceSpan[]` | core `o11y/otlp/parse.ts`,通用,接新 agent 不用碰 |
+| **语义层** | span 名 / 属性的**含义**(「这是模型调用」「这是工具执行」) | **每个 agent 一个薄 mapper**(见下) |
+
+### canonical 目标 = OpenTelemetry GenAI 语义约定(不发明私有 schema)
+
+不同 agent 的 span 命名 / 属性约定天差地别(codex 的 `codex.exec`、bub 插件的 `agent.step` / `execute_tool`)。直接把原生 span 喂给 view 就是**苹果对橘子**:名字、属性键都不一样,跨 agent 没法叠加对比 —— 而横向对比是本套件的全部意义(同一任务、不同 memory 条件 / 不同 agent 比通过率 × 时间 × 成本)。
+
+**定下来的规矩:canonical 目标就是 OpenTelemetry 官方的 [GenAI 语义约定](https://opentelemetry.io/docs/specs/semconv/gen-ai/),不另造 fasteval 私有 schema。** 理由:
+
+1. **它是行业标准**,codex 的 OTLP 已部分遵循、bub 的 otel 插件可配置直接发 `gen_ai.*`。
+2. **我们不控制 agent 的 instrumentation** —— codex(Rust)、claude 发什么是什么。造私有 schema 也强迫不了它们原生发,最终只能在我们这侧归一;那不如归一到一个公认标准,而不是又一套只有 fasteval 认得的键。
+
+canonical 的核心是用 `gen_ai.operation.name` 把 span 分成几类语义角色(view 据此着色 / 分组 / 对比):
+
+| `gen_ai.operation.name` | fasteval `kind` | 含义 |
+|---|---|---|
+| `chat` / `text_completion` | `model` | 一次模型调用 |
+| `execute_tool` | `tool` | 一次工具执行 |
+| `invoke_agent` / `create_agent` | `agent` / `turn` | 一次 agent / 回合调用 |
+| (其余 / 未识别) | `other` | plumbing,view 默认折叠 |
+
+配套属性一律走 GenAI 键:`gen_ai.request.model`、`gen_ai.usage.input_tokens` / `output_tokens`(`derive.ts` 的 `extractUsageFromSpans` 已经在认这套)、`gen_ai.tool.name`、`gen_ai.tool.call.id`、`gen_ai.agent.name`。
+
+### 每个 agent 一个薄 mapper
+
+和 transcript 解析器(`o11y/parsers/<agent>.ts`)**完全对称**:每个 agent 再加一个 span mapper,把它的原生 span 归一到 canonical GenAI semconv。mapper 只做一件事 —— 认出「这条 span 是模型调用 / 工具执行 / 回合」,补上 `gen_ai.operation.name` 与相关 `gen_ai.*` 属性,**保留 raw `name` / `attributes` 供下钻**。
+
+> **mapper 越薄越好:能在源头对齐就别在 mapper 里补。** codex 的 `config.toml`、bub 插件的配置尽量让它们直接发 `gen_ai.*`;源头发对了的 agent,mapper 近乎透传。mapper 是「上游不肯按标准发」时的兜底,不是主力。
+
+这把 `o11y/otlp/select.ts` 里那串「猜各 agent 命名约定」的正则全删掉 —— agent 特定知识回到 agent 自己手里(和 parser 同一个归属原则),`select` 退化成纯通用逻辑:按 `kind != "other"` 留、按 firehose 频率丢。
+
+### view 只认 canonical
+
+**view 不读任何原生 span 名 / 原生属性。** 它只消费归一后的字段:`gen_ai.operation.name` → `kind` 着色分组,`gen_ai.*` 取模型 / 工具 / 用量。后果:
+
+- 接新 agent **不用动 view** —— 只要 mapper 把它归一到 canonical。
+- 两个 agent 的瀑布图**天然对齐、可叠加对比**(同一种颜色 = 同一种语义)。
+- 没写 mapper(或 mapper 没认出)的 span 落进 `other`,view 折叠不渲染细节 —— **降级但不崩**,也不污染对比。
+
+### agent 定义里 otel 怎么放(两块责任分开)
+
+otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别都塞进 `setup` / `send`:
+
+1. **导出配置(adapter 侧的 `tracing` 块)** —— 「怎么让这个 CLI 把 OTLP 发到 endpoint」。从 `setup`/`send` 抽出来,做成 agent 定义里一个声明式 `tracing` 块(见 `AgentTracing`),和 `capabilities.tracing` 开关放一起。两种投递方式(按 CLI 而定,互不排斥):
+
+   ```typescript
+   defineSandboxAgent({
+     capabilities: { tracing: true },
+     tracing: {
+       protocol: "http/protobuf",
+       // env-based(标准 OTEL_* env,如 bub/Python OTel SDK):给 endpoint → 返回 env。
+       // 运行器把它算进 ctx.telemetry.env,send 直接 `{ ...ctx.telemetry?.env }` 注入。
+       env: (endpoint) => ({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: endpoint, /* … */ }),
+       // file-based(CLI 自有配置文件,如 codex 的 config.toml [otel] 块):给 sandbox + ctx,
+       // 自己写/追加配置。运行器在 setup 之后、首次 send 之前调一次(子表天然落在主配置之后)。
+       configure: async (sandbox, ctx) => { /* 把 [otel] 块追加进 config.toml */ },
+     },
+     async setup(sb) { /* 只装 CLI / 写主配置,不碰 otel */ },
+     async send(input, ctx) { /* env: { ...auth(), ...ctx.telemetry?.env } */ },
+   });
+   ```
+
+   为什么要 env / configure 两条路:bub(Python OTel SDK)读标准 `OTEL_*` env,codex(Rust)**不读** env、只认自己 `config.toml` 的 `[otel]` 块 —— 这是上游差异,抹不平,所以两种投递都得支持。
+
+2. **span mapper(core o11y 侧)** —— 「原生 span → canonical」。**纯数据变换,不碰沙箱**,和 transcript parser 一样住 core 的 o11y(`o11y/otlp/mappers/<agent>.ts`,按 agent 名键),可独立单测。
+
+**为什么要分:** 导出配置是「沙箱里怎么发」,mapper 是「发回来怎么读」—— 一个需要沙箱、一个是纯函数,生命周期和测试方式都不同。混在 `setup`/`send` 里,既难单测 mapper、又让 adapter 把 otel 拼装逻辑揉进主流程。`ctx.telemetry` 则统一带上 `{ endpoint, env? }`:env-based agent 拿 `env` 直接 spread,file-based agent 在 `configure` 里用 `endpoint`。
+
+> **claude-code 缺口:** 它根本不发 OTLP(`capabilities` 里没有 `tracing`)。但它的 transcript JSONL 带时间戳,可从 `StreamEvent` + 时间戳**合成 span**(synthetic spans),再走同一个 canonical schema —— 让三个 agent 都有瀑布图、对比表不缺一角。合成器同样住 core o11y,与 mapper 并列。
+
 ## 工件落盘
 
 每次运行落一份结构化工件到 `.fasteval/<时间戳>/`:
@@ -73,6 +151,7 @@ expect(o11y.totalToolCalls).toBeLessThan(50);
    └─ fixtures-button/
       ├─ result.json             # status / durationMs / usage / cost / observedModel / o11y / parseSuccess
       ├─ events.ndjson           # 标准事件流(StreamEvent[],归一化后)
+      ├─ trace.json              # OTLP traces 归一成的 TraceSpan[](canonical = GenAI semconv,有 tracing 能力时)
       ├─ transcript-raw.jsonl    # agent 原始 JSONL(debug 用,仅沙箱型有)
       ├─ outputs/
       │  ├─ eval.txt             # EVAL.ts 输出
@@ -201,6 +280,7 @@ fasteval view --out .fasteval/report.html  # 导出静态 HTML
 - **质量 × 成本散点** —— 每个 eval(或每个 agent)一个点,一眼看出「贵且不准」的角落。
 - **跨运行趋势** —— 每次运行是带时间戳的目录,于是成本 / 通过率能画成随提交变化的折线,抓性能或成本回归。
 - **transcript 钻取** —— 点开单个 eval 看归一化事件流、工具调用、改了哪些文件。
+- **trace 瀑布图** —— 把 `trace.json` 画成时间轴瀑布。只读 canonical(`gen_ai.operation.name` → `kind`、`gen_ai.*`),**不认任何原生 span 名** —— 所以不同 agent 的图天然对齐、可叠加对比;没归一的 span 落 `other`、折叠不渲染。
 
 可视化能力完全建立在「工件结构化 + 带 usage/cost」之上 —— 换句话说,**只要数据采全了,图是免费的**;不想用内置查看器,同一份工件也能喂给下游 dashboard。
 

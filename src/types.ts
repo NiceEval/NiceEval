@@ -93,9 +93,19 @@ export interface DerivedFacts {
 }
 
 /**
+ * span 的【语义角色】,从 OTel GenAI 语义约定的 gen_ai.operation.name 归一而来
+ * (见 o11y/otlp/canonical.ts)。view 据此着色 / 分组 / 跨 agent 对比,**只认这个,
+ * 不读原生 span 名**。未识别的 span 落 "other",view 折叠。
+ */
+export type SpanKind = "turn" | "model" | "tool" | "agent" | "other";
+
+/**
  * 一条分布式追踪的 span(从 agent 经 OpenTelemetry 导出的 OTLP traces 归一而来)。
  * 与 StreamEvent 不同:它带【时间】(起止 epoch 毫秒)与【父子】(parentSpanId),
  * 所以 view 能画成瀑布图。事件流回答「做了什么」,trace 回答「各花了多久、谁套谁」。
+ *
+ * 两层归一:线格式层(OTLP/JSON|protobuf → 本结构,见 otlp/parse.ts,通用);
+ * 语义层(原生 span 名/属性 → canonical GenAI semconv,见 otlp/mappers/<agent>.ts,每 agent 一个薄 mapper)。
  */
 export interface TraceSpan {
   traceId: string;
@@ -106,7 +116,12 @@ export interface TraceSpan {
   startMs: number;
   endMs: number;
   status?: "ok" | "error" | "unset";
-  /** OTLP span 属性(gen_ai.* / tool 名 / token 等),按 key 摊平。 */
+  /**
+   * 归一后的语义角色(每-agent mapper 据 canonical GenAI semconv 定;view/select 只认它)。
+   * 未经 mapper 或未识别时为 undefined / "other"。
+   */
+  kind?: SpanKind;
+  /** OTLP span 属性(gen_ai.* / tool 名 / token 等),按 key 摊平。raw 属性始终保留供下钻。 */
   attributes?: Record<string, JsonValue>;
 }
 
@@ -148,10 +163,53 @@ export interface AgentCapabilities {
   compactionObservability?: boolean;
   /**
    * agent 能经 OpenTelemetry 导出 OTLP traces。声明它,运行器就在每个沙箱起一个
-   * 本机 OTLP 接收器,并经 ctx.telemetry.endpoint 把端点交给 agent(setup 写进
-   * config / send 注入 env);跑完把收到的 span 挂到 EvalResult.trace,view 画成瀑布图。
+   * 本机 OTLP 接收器,把端点经 ctx.telemetry 交给 agent;跑完把收到的 span 归一到
+   * canonical GenAI semconv、挂到 EvalResult.trace,view 画成瀑布图。
+   * **怎么把端点交给 CLI**(env / config 文件)由 agent 的 `tracing` 块声明(见 AgentTracing),
+   * 与「装 CLI / 写主配置」的 setup 分开。
    */
   tracing?: boolean;
+}
+
+/**
+ * 本次运行的 OTLP traces 接收信息(仅当 agent 声明 capabilities.tracing 时有)。
+ * 经 ctx.telemetry 交给 agent。
+ */
+export interface Telemetry {
+  /** 接收端点(完整路径,形如 http://host.docker.internal:PORT/v1/traces)。 */
+  readonly endpoint: string;
+  /**
+   * env-based 导出的 env(= AgentTracing.env(endpoint) 的结果),ready-to-spread。
+   * adapter 的 send 直接 `{ ...ctx.telemetry?.env }` 注入,不必手搓 OTEL_* 拼装。
+   */
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+/**
+ * agent 的 OTLP 导出配置 —— 「沙箱里怎么让这个 CLI 把 trace 发到 endpoint」。
+ * 刻意从 setup 里拆出来:setup 管装 CLI / 写主配置,这里只管 otel 导出。两种投递方式
+ * (互不排斥,按 CLI 而定):
+ *   · env-based(标准 OTEL_* 环境变量,如 bub/Python OTel SDK)—— 用 `env`;
+ *   · file-based(CLI 自有配置文件,如 codex 的 config.toml [otel] 块)—— 用 `configure`。
+ */
+export interface AgentTracing {
+  /**
+   * 线协议(codex 发 OTLP/JSON、bub 发 OTLP/protobuf)。接收器按 content-type 自动解码,
+   * 此字段仅作声明/日志用,也为将来按协议分流留口。
+   */
+  protocol?: "http/json" | "http/protobuf";
+  /**
+   * env-based 导出:给 endpoint → 返回要注入每轮 send 的 env(纯函数)。运行器把结果
+   * 放进 ctx.telemetry.env,send 直接 spread。
+   */
+  env?(endpoint: string): Record<string, string>;
+  /**
+   * file-based 导出:给 sandbox + ctx(ctx.telemetry.endpoint 必有),自己写 / 追加配置文件。
+   * 运行器在 agent.setup 之后、首次 send 之前调一次(仅当 tracing 开 + 有 endpoint)。
+   * 注:codex 的 [otel.trace_exporter.otlp-http] 是子表,configure 在 setup 写完主配置后
+   * 追加到 config.toml 末尾,天然满足「子表在所有上层表之后」。
+   */
+  configure?(sandbox: Sandbox, ctx: AgentContext): Promise<void> | void;
 }
 
 /** 多轮 resume / newSession 用。id 可写(adapter 回传供下轮续接)。 */
@@ -170,11 +228,11 @@ export interface AgentContext {
   /** hooks.run.setup 经 run.share 放进来的只读共享物。 */
   readonly shared: Readonly<Record<string, unknown>>;
   /**
-   * 仅当 agent 声明 capabilities.tracing 时有:本次运行的 OTLP traces 接收端点
-   *(完整路径,形如 http://host.docker.internal:PORT/v1/traces)。codex 写进
-   * config.toml 的 [otel.trace_exporter.otlp-http];bub 注入 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT。
+   * 仅当 agent 声明 capabilities.tracing 时有:本次运行的 OTLP traces 接收信息
+   *(endpoint + env-based 导出 env)。怎么把它交给 CLI 由 agent 的 `tracing` 块声明:
+   * env-based 的把 ctx.telemetry.env spread 进 send;file-based 的在 tracing.configure 里写配置。
    */
-  readonly telemetry?: { readonly endpoint: string };
+  readonly telemetry?: Telemetry;
   log(msg: string): void;
 }
 
@@ -194,6 +252,8 @@ export interface Agent {
   readonly kind: "sandbox" | "remote";
   readonly capabilities: AgentCapabilities;
   setup?: AgentSetup;
+  /** OTLP 导出配置(仅 capabilities.tracing 时有意义);与 setup 分开,见 AgentTracing。 */
+  tracing?: AgentTracing;
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   teardown?: AgentTeardown;
 }
@@ -203,6 +263,8 @@ export interface SandboxAgentDef {
   capabilities?: AgentCapabilities;
   /** 每个沙箱一次:装 CLI、写 config.toml / 鉴权配置。 */
   setup?: AgentSetup;
+  /** OTLP 导出配置:沙箱里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 setup 拆出。 */
+  tracing?: AgentTracing;
   /** 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。 */
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   teardown?: AgentTeardown;
@@ -212,6 +274,7 @@ export interface RemoteAgentDef {
   name: string;
   capabilities?: AgentCapabilities;
   setup?: AgentSetup;
+  tracing?: AgentTracing;
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   teardown?: AgentTeardown;
 }

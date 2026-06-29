@@ -1,7 +1,7 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
-import type { Agent, AgentContext, Sandbox, StreamEvent, Turn, Usage } from "../types.ts";
+import type { Agent, AgentContext, Sandbox, StreamEvent, Telemetry, Turn, Usage } from "../types.ts";
 
 /** 一条会话线的可变状态。adapter 读 isNew 决定是否 --resume,写 id 供下轮续接。 */
 export class RunSession {
@@ -21,7 +21,7 @@ export interface SessionDeps {
   signal: AbortSignal;
   log(msg: string): void;
   /** tracing agent 的 OTLP 端点(经 send ctx 透给 adapter,用于注入导出 env)。 */
-  telemetry?: { endpoint: string };
+  telemetry?: Telemetry;
 }
 
 export class SessionManager {

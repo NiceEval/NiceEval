@@ -20,7 +20,7 @@ fasteval 是一个 TypeScript evals 库。CLI 入口在 `bin/fasteval.mjs`，运
 - `docs/runner.md`：发现、调度、并发、缓存、attempt 编排。
 - `docs/experiments.md`：实验矩阵、可对比组、`fasteval exp`。
 - `docs/lifecycle.md`：运行级和沙箱级环境起停钩子。
-- `docs/observability.md`：标准事件流、trace、usage、cost、工件和 `fasteval view`。
+- `docs/observability.md`：标准事件流、OTLP trace(canonical = OTel GenAI 语义约定,每 agent 一个薄 mapper,view 只认 canonical)、usage、cost、工件和 `fasteval view`。
 - `docs/cli.md`：CLI 参数模型和命令参考。
 - `docs/getting-started.md`：目标 DX 示例。
 - `docs/roadmap.md`：MVP 范围和后续计划。

@@ -179,11 +179,14 @@
       const rows = ordered.map((s) => {
         const left = ((s.startMs - t0) / total) * 100;
         const width = Math.max(0.6, ((s.endMs - s.startMs) / total) * 100);
-        const tone = s.status === "error" ? "bad" : "";
+        // 着色按 canonical kind(跨 agent 同义同色),error 压过 kind。raw 名只进 label/tooltip。
+        const kind = s.kind || "other";
+        const tone = s.status === "error" ? "bad" : ("k-" + kind);
         const dur = formatDuration(s.endMs - s.startMs);
         const indent = depthOf(s) * 12;
         const detail = renderSpanAttrs(s.attributes);
-        const row = `<summary class="trace-row"><div class="trace-label" style="padding-left:${indent}px" title="${escapeAttr(s.name)}">${escapeHtml(s.name)}</div><div class="trace-track"><div class="trace-bar ${tone}" style="left:${left}%;width:${width}%"></div></div><div class="trace-dur num">${dur}</div></summary>`;
+        const chip = kind !== "other" ? `<span class="kind-chip k-${kind}">${kind}</span>` : "";
+        const row = `<summary class="trace-row"><div class="trace-label" style="padding-left:${indent}px" title="${escapeAttr(s.name)}">${chip}${escapeHtml(s.name)}</div><div class="trace-track"><div class="trace-bar ${tone}" style="left:${left}%;width:${width}%"></div></div><div class="trace-dur num">${dur}</div></summary>`;
         // 有属性才做成可展开的 <details>;没有就一行(summary 单独也能渲染)。
         return detail
           ? `<details class="span-d">${row}${detail}</details>`

@@ -16,6 +16,7 @@ import type {
   Sandbox,
   ScoringContext,
   ScriptResult,
+  Telemetry,
   TestContext,
   Turn,
   TurnHandle,
@@ -51,7 +52,7 @@ export interface ContextDeps {
   log(msg: string): void;
   judge: JudgeConfig | undefined;
   /** tracing agent 的 OTLP 端点(运行器起接收器后注入);经 send ctx 透给 adapter。 */
-  telemetry?: { endpoint: string };
+  telemetry?: Telemetry;
 }
 
 export function createEvalContext(deps: ContextDeps): { context: TestContext; state: ContextState } {

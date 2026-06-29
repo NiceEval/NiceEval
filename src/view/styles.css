@@ -448,7 +448,30 @@ details.span-d > summary.trace-row:hover { background: color-mix(in oklch, var(-
   background: var(--good);
 }
 .trace-bar.bad { background: var(--bad); }
+/* canonical SpanKind 配色:跨 agent 同义同色(model/tool/agent/turn);raw 名不参与着色。 */
+.trace-bar.k-model { background: oklch(0.72 0.13 250); }   /* 模型调用 — 蓝 */
+.trace-bar.k-tool  { background: oklch(0.74 0.14 150); }   /* 工具执行 — 绿 */
+.trace-bar.k-agent { background: oklch(0.74 0.15 300); }   /* 子 agent — 紫 */
+.trace-bar.k-turn  { background: oklch(0.78 0.13 90); }    /* 回合骨架 — 黄 */
+.trace-bar.k-other { background: color-mix(in oklch, var(--soft), var(--panel) 30%); } /* plumbing — 灰 */
 .trace-dur { color: var(--soft); text-align: right; }
+/* kind 小标:span label 前的语义角色徽标,和 bar 同色系。 */
+.kind-chip {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--panel);
+  vertical-align: middle;
+}
+.kind-chip.k-model { background: oklch(0.72 0.13 250); }
+.kind-chip.k-tool  { background: oklch(0.74 0.14 150); }
+.kind-chip.k-agent { background: oklch(0.74 0.15 300); }
+.kind-chip.k-turn  { background: oklch(0.78 0.13 90); }
 
 /* ── Claude-Code 风格 transcript:按事件顺序读「LLM 说了什么 / 调了什么工具」,不强调时间 ── */
 .transcript { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; }

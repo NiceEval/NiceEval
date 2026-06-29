@@ -7,6 +7,7 @@ import { Effect, Cause } from "effect";
 import { createSandbox } from "../sandbox/resolve.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
+import { mapSpansToCanonical } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
 import { EvalRequirementFailed, EvalSkipped, TurnFailed } from "../context/control-flow.ts";
 import { computeVerdict } from "../scoring/verdict.ts";
@@ -31,6 +32,7 @@ import type {
   Sandbox,
   ScoringContext,
   ScriptResult,
+  Telemetry,
   TraceSpan,
   Verdict,
 } from "../types.ts";
@@ -241,12 +243,16 @@ function runAttemptEffect(
 
       // ── tracing:本机 OTLP 接收器同样用 Scope 接管(release=close,免端口泄漏)──
       let receiver: TraceReceiver | undefined;
-      let telemetry: { endpoint: string } | undefined;
+      let telemetry: Telemetry | undefined;
       if (run.agent.capabilities.tracing) {
         receiver = yield* createTraceReceiver();
         const host = process.env.FASTEVAL_OTLP_HOST ?? "host.docker.internal";
-        telemetry = { endpoint: receiver.endpoint(host) };
-        log(`OTLP 接收器 → ${telemetry.endpoint}`);
+        const endpoint = receiver.endpoint(host);
+        // env-based 导出:把 agent 声明的 env(OTEL_* 等)算出来塞进 telemetry,send 直接 spread。
+        const env = run.agent.tracing?.env?.(endpoint);
+        telemetry = env ? { endpoint, env } : { endpoint };
+        const proto = run.agent.tracing?.protocol;
+        log(`OTLP 接收器 → ${endpoint}${proto ? ` (${proto})` : ""}`);
       }
 
       // body 是 Promise(adapter 边界);沙箱 / 接收器的回收交给上面的 Scope,不在 body 里。
@@ -274,7 +280,7 @@ function causeToError(cause: Cause.Cause<never>): string {
 interface AttemptResources {
   sandbox: Sandbox;
   receiver?: TraceReceiver;
-  telemetry?: { endpoint: string };
+  telemetry?: Telemetry;
   signal: AbortSignal;
   log: (m: string) => void;
 }
@@ -323,6 +329,23 @@ async function runAttemptBody(
         log,
       };
       agentCleanup = await run.agent.setup(sandbox, agentSetupCtx);
+    }
+
+    // OTLP 导出配置(file-based,如 codex 的 config.toml [otel] 块):与 setup 分开,
+    // 在主配置写完后追加。仅当 tracing 开 + 有 endpoint 时调一次(env-based 的不实现 configure)。
+    if (telemetry && run.agent.tracing?.configure) {
+      const tracingCtx: AgentContext = agentSetupCtx ?? {
+        signal,
+        model: run.model,
+        flags: run.flags,
+        sandbox,
+        session: { id: undefined, isNew: true },
+        shared: {},
+        telemetry,
+        log,
+      };
+      log("agent tracing(写 otel 导出配置)…");
+      await run.agent.tracing.configure(sandbox, tracingCtx);
     }
 
     // 构造 t,跑 test
@@ -402,18 +425,19 @@ async function runAttemptBody(
     const verdict: Verdict = computeVerdict({ error, assertions, skipReason });
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
-    // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条),
-    // selectTraceSpans 按语义挑出回合/模型调用/工具调用,丢掉每-chunk 噪声(干净小 trace 整段保留)。
+    // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
+    // 先经【每-agent mapper】把原生 span 归一到 canonical GenAI semconv(定 SpanKind),
+    // 再 selectTraceSpans 按 kind 挑出回合/模型/工具,丢掉 "other" 噪声(干净小 trace 整段保留)。
     let trace: TraceSpan[] | undefined;
     if (receiver) {
       await receiver.settle(250, 1500);
       const spans = receiver.collect();
       if (spans.length) {
-        // 选语义 span,再按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
-        trace = enrichTraceWithIO(selectTraceSpans(spans), facts.toolCalls);
+        // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
+        const canonical = mapSpansToCanonical(spans, run.agent.name);
+        trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
         const note = spans.length > trace.length ? ` → 留 ${trace.length}(按语义)` : "";
         log(`trace:${spans.length} span${note}`);
-
       }
     }
 
