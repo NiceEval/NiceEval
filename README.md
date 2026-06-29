@@ -46,34 +46,58 @@ npx fasteval view
 
 ## Architecture
 
+fasteval supports two wiring modes, depending on whether the system under test
+needs an isolated workspace.
+
+**Mode 1: Sandbox (Docker) — run coding agents like Codex and Claude Code that need a sandbox**
+
 ```text
-              evals/*.eval.ts
-                    │
-                    ▼
-   ┌───────────────────────────────────────────┐
-   │                fasteval core               │
-   │   discover → schedule → score → report     │
-   │                → artifacts                 │
-   └───────────────────────────────────────────┘
-          │                            │
-          │ Agent adapter boundary     │ Sandbox backend
-          ▼                            ▼
-   ┌─────────────────────────┐   ┌──────────────┐
-   │ Codex / Claude Code /   │   │    Docker    │
-   │ your own AI agent stack │   │  (isolated   │
-   │ (AI SDK·LangGraph·Pi…)  │   │  workspace)  │
-   └─────────────────────────┘   └──────────────┘
-                    │
-                    ▼
-   verdicts · traces · costs · diffs · transcripts · artifacts
+   evals/*.eval.ts
+        │
+        ▼
+   ┌──────────────────────────┐
+   │       fasteval core       │
+   │ discover·schedule·score·  │
+   │          report           │
+   └──────────────────────────┘
+        │
+        │ Agent adapter
+        ▼
+   ┌──────────────────────────────┐
+   │        Docker Sandbox         │
+   │   ┌────────────────────────┐  │
+   │   │ Codex / Claude Code /  │  │
+   │   │ apps needing isolation │  │
+   │   └────────────────────────┘  │
+   └──────────────────────────────┘
+```
+
+**Mode 2: Direct — connect straight to your own web agent**
+
+```text
+   evals/*.eval.ts
+        │
+        ▼
+   ┌──────────────────────────┐
+   │       fasteval core       │
+   │ discover·schedule·score·  │
+   │          report           │
+   └──────────────────────────┘
+        │
+        │ Agent adapter
+        ▼
+   ┌──────────────────────────────┐
+   │       your own web agent      │
+   │  (HTTP / AI SDK·LangGraph·Pi  │
+   │   stack — no Docker needed)   │
+   └──────────────────────────────┘
 ```
 
 - **fasteval core** owns discovery, scheduling, scoring, reporting, and artifacts.
 - **Agent adapters** are the open boundary: you decide how to call the system
-  under test — Codex, Claude Code, or your own AI agent framework (AI SDK /
-  LangGraph / Pi, etc.).
-- **Sandbox backends** decide where isolated work runs; Docker is the
-  implemented backend, and others can sit behind the same interface.
+  under test.
+- Coding agents that need filesystem isolation run inside the **Docker
+  Sandbox**; your own web agent can connect directly, without Docker.
 
 ## Why fasteval
 

@@ -2,7 +2,7 @@
 
 # Fast Eval
 
-**渐进式、全功能、DX优秀的轻量 agent evals 工具**
+**渐进式、全功能、DX优秀的轻量 ai agent evals 工具**
 
 [![typescript](https://img.shields.io/badge/typescript-5.6-blue?style=flat-square)](tsconfig.json)
 [![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)](package.json)
@@ -18,42 +18,64 @@ fasteval 是一个受[eve](eve.dev)启发的通用型 agent eval 工具。首先
 
 ## 架构
 
+fasteval 支持两种接入方式，取决于被测系统是否需要隔离工作区。
+
+**模式一：Sandbox（Docker）—— 跑 Codex、Claude Code 等需要 sandbox 的 coding agent**
+
 ```text
-              evals/*.eval.ts
-                    │
-                    ▼
-   ┌───────────────────────────────────────────┐
-   │                fasteval 核心                │
-   │     发现 → 调度 → 打分 → 报告 → Artifacts    │
-   └───────────────────────────────────────────┘
-          │                            │
-          │ Agent 适配器边界            │ Sandbox 后端
-          ▼                            ▼
-   ┌─────────────────────────┐   ┌──────────────┐
-   │ Codex / Claude Code /   │   │    Docker    │
-   │ 你自己的 AI Agent 框架   │   │  (隔离工作区) │
-   │ (AI SDK·LangGraph·Pi…)  │   └──────────────┘
-   └─────────────────────────┘
-                    │
-                    ▼
-   verdicts · traces · costs · diffs · transcripts · artifacts
+   evals/*.eval.ts
+        │
+        ▼
+   ┌─────────────────────┐
+   │     fasteval 核心    │
+   │  发现·调度·打分·报告  │
+   └─────────────────────┘
+        │
+        │ Agent 适配器(官方)
+        ▼
+   ┌──────────────────────────────┐
+   │        Docker Sandbox         │
+   │   ┌────────────────────────┐  │
+   │   │ Codex / Claude Code /  │  │
+   │   │ 需要隔离工作区的应用    │  │
+   │   └────────────────────────┘  │
+   └──────────────────────────────┘
+```
+
+**模式二：直连 —— 直接连接你自己的 Web Agent**
+
+```text
+   evals/*.eval.ts
+        │
+        ▼
+   ┌─────────────────────┐
+   │     fasteval 核心    │
+   │  发现·调度·打分·报告  │
+   └─────────────────────┘
+        │
+        │ Agent 适配器(官方，或者自己实现)
+        ▼
+   ┌──────────────────────────────┐
+   │       你自己的 Web Agent       │
+   │   (HTTP / AI SDK·LangGraph·   │
+   │    Pi 等自有框架，无需 Docker) │
+   └──────────────────────────────┘
 ```
 
 - **fasteval 核心** 负责发现 eval、调度运行、打分、生成报告与 artifacts。
-- **Agent 适配器** 是开放的边界：你来决定如何调用被测系统——Codex、Claude Code，或你自己的 AI Agent 框架（AI SDK / LangGraph / Pi 等）都可以轻松接入。
-- **Sandbox 后端** 决定隔离工作在哪里运行；Docker 是当前实现，其它后端可以放在同一接口之后。
+- **Agent 适配器** 是开放的边界：你来决定如何调用被测系统。
+- 需要文件系统隔离的 coding agent 走 **Docker Sandbox**；自有的 Web Agent 可以直连，无需 Docker。
 
 
-## Usage
+## 示例
 
 ```ts
-// evals/button.eval.ts
+// evals/测试是否能正常理解图片.eval.ts
 import { defineEval } from "fasteval";
 import { includes } from "fasteval/expect";
 
 export default defineEval({
   description: "实现一个带 label 和 onClick props 的 Button 组件。",
-  workspace: "fixtures/button",
   async test(t) {
     await t.send("创建 src/components/Button.tsx，支持 label 和 onClick props。");
 
@@ -76,6 +98,30 @@ Copy to your agent
 ```
 READ xxxx and install fasteval for this repo.
 ```
+
+[如果你需要 eval 你的 claude code/codex 插件]()
+[如果你需要 eval 你的 claude code/codex skill]()
+[如果你需要 eval 你的 AI Agent 应用]()
+
+
+## Roadmap
+官方适配器
+- [ ] Agent 软件
+  - [ ] Claude Code
+  - [ ] Codex
+  - [ ] Bub
+  - [ ] OpenClaw
+  - [ ] Hermess Agent
+  - [ ] Alma
+  - [ ] ...
+
+- [ ] Agent 框架
+  - [ ] AI SDK
+  - [ ] LangGraph
+  - [ ] Claude SDK
+  - [ ] Codex SDK
+  - [ ] vm0
+  - [ ] Cursor Agent SDK
 
 ## 文档
 
