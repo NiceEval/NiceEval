@@ -3,7 +3,7 @@
 //
 // 鉴权:E2B_API_KEY(team 级,e2b CLI `e2b auth login` 后也写在 ~/.e2b)。
 // 模板:opts.template 选 e2b 模板名/ID;省略用 e2b 默认 "base"。预制模板(烘焙好
-//       codex/claude-code/bub 的 "fasteval-agents")见 sandbox/templates/。
+//       codex/claude-code/bub 的 "fasteval-agents")见 sandbox/e2b/。
 
 import { Sandbox as E2BSdkSandbox, CommandExitError } from "e2b";
 import type {

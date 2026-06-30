@@ -15,6 +15,7 @@ import { BUILTIN_AGENTS } from "./agents/builtin.ts";
 import { discoverEvals, discoverExperiments, makeFilter } from "./runner/discover.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
+import { sandboxRecommendedConcurrency } from "./sandbox/resolve.ts";
 import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import { buildView, startViewServer } from "./view/index.ts";
@@ -230,22 +231,20 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     for (const exp of selected) {
-      const models = exp.model === undefined ? [undefined] : Array.isArray(exp.model) ? exp.model : [exp.model];
-      for (const m of models) {
-        agentRuns.push({
-          agent: exp.agent,
-          model: m,
-          flags: exp.flags ?? {},
-          runs: flags.runs ?? exp.runs ?? 1,
-          earlyExit: flags.earlyExit ?? exp.earlyExit ?? true,
-          sandbox: flags.sandbox ?? exp.sandbox ?? config.sandbox,
-          timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
-          budget: exp.budget,
-          evalFilter: evalsFilterFromExperiment(exp.evals, extraPatterns),
-          experimentId: exp.id,
-          hooks: exp.hooks,
-        });
-      }
+      // 一个实验 = 一个配置(单 model)。跨模型对比写多个实验文件,各钉一个 model。
+      agentRuns.push({
+        agent: exp.agent,
+        model: exp.model,
+        flags: exp.flags ?? {},
+        runs: flags.runs ?? exp.runs ?? 1,
+        earlyExit: flags.earlyExit ?? exp.earlyExit ?? true,
+        sandbox: flags.sandbox ?? exp.sandbox ?? config.sandbox,
+        timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
+        budget: exp.budget,
+        evalFilter: evalsFilterFromExperiment(exp.evals, extraPatterns),
+        experimentId: exp.id,
+        hooks: exp.hooks,
+      });
     }
     const vals = selected.map((e) => e.maxConcurrency).filter((v): v is number => v !== undefined);
     if (vals.length > 0) expMaxConcurrency = Math.min(...vals);
@@ -335,12 +334,17 @@ async function main(): Promise<void> {
     });
   }
 
+  // 无全局默认:并发上限由 sandbox 后端的推荐值决定。
+  // 多个 agentRun 各有 sandbox 时取最小值(最保守的后端决定上限)。
+  const sandboxRecs = agentRuns.map((r) => sandboxRecommendedConcurrency(r.sandbox));
+  const sandboxDefaultConcurrency = sandboxRecs.length > 0 ? Math.min(...sandboxRecs) : 10;
+
   const summary = await runEvals({
     config,
     evals,
     agentRuns,
     reporters,
-    maxConcurrency: flags.maxConcurrency ?? expMaxConcurrency ?? config.maxConcurrency ?? 4,
+    maxConcurrency: flags.maxConcurrency ?? expMaxConcurrency ?? config.maxConcurrency ?? sandboxDefaultConcurrency,
     sandboxConcurrency: flags.sandboxConcurrency ?? config.sandboxConcurrency,
     signal: ctrl.signal,
   });

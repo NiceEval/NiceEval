@@ -54,6 +54,23 @@ export function resolveSandbox(opt: SandboxOption | undefined, runtimeDefault?: 
   return { backend, runtime: runtimeDefault };
 }
 
+/**
+ * 各后端的推荐默认并发数。反映的是后端侧约束(daemon 容量、API quota、session 池大小),
+ * 不是用户侧的 agent API 限速——后者由用户通过 --max-concurrency 或 config.maxConcurrency 设置。
+ * docker:本地 daemon 创建容器有开销,10 是经验上稳健的上限。
+ * e2b:云服务,20 是默认账户并发配额的保守估计。
+ * vercel:sandbox session 有严格的并发限制,1 避免 429。
+ */
+export function sandboxRecommendedConcurrency(opt: SandboxOption | undefined): number {
+  if (!opt) return 10;
+  const r = resolveSandbox(opt);
+  switch (r.backend) {
+    case "docker":  return 10;
+    case "e2b":     return 20;
+    case "vercel":  return 1;
+  }
+}
+
 /** 报告 / 日志用的简短标签:后端名,带上区分性的参数(镜像 / 快照 / 模板)。 */
 export function sandboxLabel(opt: SandboxOption | undefined): string {
   const r = resolveSandbox(opt);

@@ -1,3 +1,7 @@
+# examples/ 不属于本仓库的 monorepo —— 每个 example 是独立 npm 项目(自带 package.json,
+# 依赖发布版 fasteval),不作为本 workspace 的成员。
+packages: []
+
 allowBuilds:
   cpu-features: false
   esbuild: false

@@ -1,0 +1,23 @@
+# E2B 模板参数备查(烘焙好 codex / claude-code / bub 的 "fasteval-agents" 模板)。
+#
+# 注意:e2b CLI 2.x 用 `e2b template create` + 命令行 flag 构建,不再读本文件;
+# 本文件只作参数记录。实际构建命令(需先 `e2b auth login`):
+#   cd sandbox/docker
+#   e2b template create fasteval-agents --memory-mb 4096 --cpu-count 2 \
+#     -c "tail -f /dev/null" --ready-cmd "command -v codex && command -v claude && command -v bub"
+#
+# 构建完在 eval 里用:
+#   import { e2bSandbox } from "fasteval";
+#   defineExperiment({ sandbox: e2bSandbox({ template: "fasteval-agents" }), ... })
+#
+# 字段说明见 https://e2b.dev/docs/template
+
+template_name = "fasteval-agents"
+dockerfile = "../docker/Dockerfile"
+
+# 不需要常驻服务:fasteval 自己按需 `commands.run`。给个空跑的占位 start 命令即可。
+start_cmd = "tail -f /dev/null"
+
+# 资源:Next.js build / pytest 够用即可;按需调大。
+cpu_count = 2
+memory_mb = 4096

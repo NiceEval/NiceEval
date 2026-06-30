@@ -23,7 +23,7 @@ import { defineExperiment } from "fasteval";
 export default defineExperiment({
   description?: string;                       // 人读
   agent: string | string[];                  // 跑哪个/哪几个 agent(数组=跨 agent 对比)
-  model?: string | string[];                 // 模型在这里给(agent 留空);省略=原生默认;数组=跨模型
+  model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   flags?: Record<string, unknown>;           // feature flags,透传到 ctx.flags / t.flags(见下)
   runs?: number;                             // 每个 (agent × model × eval) 跑几次(默认 1)
   earlyExit?: boolean;                        // 先过一次即停其余(默认 true)
@@ -52,7 +52,7 @@ id 从**路径**推导:`experiments/compare/bub-gpt-5.4.ts` → `compare/bub-gpt
 
 agent 定义里**不写死模型、不写死开关**(那样就锁死了复用)。这两样由实验给,经 `ctx` 透传:
 
-- **`model`** —— agent 的 `send` 从 `ctx.model` 拿;省略则不传 `--model`,用 agent CLI 的原生默认。数组 → 跨模型展开。
+- **`model`** —— 单个模型字符串,agent 的 `send` 从 `ctx.model` 拿;省略则不传 `--model`,用 agent CLI 的原生默认。**跨模型对比写多个实验文件**(各钉一个 model),别在一个实验里塞数组。
 - **`flags`** —— 任意 KV 的 feature flags,**三处可见**:agent 的 `send`(`ctx.flags`)、experiment 的 `hooks.sandbox.setup`(`ctx.flags`)、eval 的 `test`(`t.flags`)。用来开关联网、注入某个 skill、调 effort、或让某条 eval 只在某 flag 下断言。
 
 ```typescript
@@ -89,20 +89,11 @@ experiments/
 - **文件 = 单一配置**(一个 agent × 一个 model 是最干净的情形),文件名按 `<agent>-<model>[-<feature>]` 命名。同组钉住对比轴之外的一切(如同一 model),差异才干净归因到那一个轴(agent / 记忆机制 / flag)。
 - **路径即 id**:`experiments/compare/bub-gpt-5.4.ts` → `compare/bub-gpt-5.4`;目录段 `compare` 即组名。
 
-### 文件夹 vs 文件内数组
+### 一文件一配置
 
-两种都在,但语义不同:
+**一个实验文件 = 一个配置**(一个 agent × 一个 model)。要跨模型 / 跨 agent 对比,就**写多个实验文件**,各钉对照轴之外的一切(如同一 model),差异才干净归因到那一个轴。`model` 是单个字符串,不接受数组 —— 想扫多个模型,复制一份实验文件改 `model` 即可。
 
-| | 文件夹分组(一文件一配置) | 文件内 `agent: [...]` / `model: [...]` 数组 |
-|---|---|---|
-| 表达什么 | "**这几个就是要并排比的**" —— 可比性显式 | 笛卡尔扇出,随手扫一批 |
-| 每个点能差多少 | **任意轴**:agent / model / flags / sandbox / budget 各自不同,各带自己的 `description` | 只能沿数组那一两个轴齐步变 |
-| 可评审性 | 每个配置独立成文件,可命名、可 diff、可单独 review | 一个文件塞一片矩阵 |
-| 适合 | 精心设计的对照(A/B、tape on/off、跨 agent 基准),要写进结论 | 临时把某条 eval 在几个 model 上扫一遍 |
-
-经验法则:**精心设计、要写进结论的对照 → 文件夹;随手扫一批 → 数组。** 数组能扇出但表达不了"可比性",文件夹把"这一组就是对照"这层意思讲清楚了。
-
-单文件内 `agent × model × evals` 仍做笛卡尔展开:`agent: ["claude-code","codex"]` + `runs: 5` + 3 个 eval = 30 次运行;跨文件的同组配置则按文件并列。两条路汇总都按 `(agent, model)` 分组,可在 `fasteval view` 里并排。
+这样每个配置独立成文件:可命名(`<agent>-<model>[-<feature>]`)、可 diff、可单独 review,"这一组就是对照"这层意思在文件结构上就讲清楚了。两条配置汇总都按 `(agent, model)` 分组,可在 `fasteval view` 里并排。
 
 ### 例子
 

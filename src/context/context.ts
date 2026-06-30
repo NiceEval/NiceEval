@@ -2,6 +2,8 @@
 // (AssertionCollector)、作用域断言、judge 命名空间接到一起,并实现 newSession 的
 // 「同沙箱、新会话」语义。t.file 返回一个延迟引用,到 finalize 时才真正读沙箱文件。
 
+import { readFile } from "node:fs/promises";
+import { basename, extname } from "node:path";
 import { SessionManager, RunSession, lastAssistantText } from "./session.ts";
 import { AssertionCollector } from "../scoring/collector.ts";
 import * as Scoped from "../scoring/scoped.ts";
@@ -12,6 +14,7 @@ import type {
   Agent,
   DiffData,
   DiffView,
+  InputFile,
   JudgeConfig,
   Sandbox,
   ScoringContext,
@@ -102,6 +105,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
 
     const ctx: TestContext = {
       send: async (text) => makeTurnHandle(await manager.send(session, text), collector),
+      sendFile: async (path, text) =>
+        makeTurnHandle(await manager.send(session, text ?? "", [await readInputFile(path)]), collector),
       get reply() {
         return session.lastMessage;
       },
@@ -186,6 +191,28 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   }
 
   return { context: makeContext(manager.primary), state };
+}
+
+/** 读本地文件(相对项目根)成 InputFile:推断 MIME + base64 编码,供 t.sendFile。 */
+async function readInputFile(path: string): Promise<InputFile> {
+  const buf = await readFile(path);
+  return { filename: basename(path), mimeType: mimeTypeFor(path), dataBase64: buf.toString("base64") };
+}
+
+function mimeTypeFor(path: string): string {
+  switch (extname(path).toLowerCase()) {
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function makeTurnHandle(turn: Turn, collector: AssertionCollector): TurnHandle {

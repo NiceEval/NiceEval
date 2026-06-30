@@ -1,7 +1,7 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
-import type { Agent, AgentContext, Sandbox, StreamEvent, Telemetry, Turn, Usage } from "../types.ts";
+import type { Agent, AgentContext, InputFile, Sandbox, StreamEvent, Telemetry, Turn, Usage } from "../types.ts";
 
 /** 一条会话线的可变状态。adapter 读 isNew 决定是否 --resume,写 id 供下轮续接。 */
 export class RunSession {
@@ -46,7 +46,7 @@ export class SessionManager {
     return s;
   }
 
-  async send(session: RunSession, text: string): Promise<Turn> {
+  async send(session: RunSession, text: string, files?: readonly InputFile[]): Promise<Turn> {
     const ctx: AgentContext = {
       signal: this.deps.signal,
       model: this.deps.model,
@@ -59,11 +59,12 @@ export class SessionManager {
     };
 
     const n = ++this.turnCount;
-    const preview = text.replace(/\s+/g, " ").slice(0, 36);
+    const attach = files?.length ? ` 📎${files.length}` : "";
+    const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? "[file]")) + attach;
     this.deps.log(`s${session.index}·t${n} → "${preview}…"`);
     const t0 = Date.now();
 
-    const turn = await this.deps.agent.send({ text }, ctx);
+    const turn = await this.deps.agent.send({ text, files }, ctx);
 
     this.allEvents.push(...turn.events);
     if (turn.usage) accumulateUsage(this.usage, turn.usage);

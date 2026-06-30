@@ -8,22 +8,33 @@ Experiment 用于比较多组运行配置。典型问题包括：Claude Code 和
 
 ## 基本形状
 
-Experiment 文件通常放在 `experiments/` 目录中，定义一组运行矩阵：
+**一个实验文件 = 一个配置**（一个 agent × 一个 model）。`model` 是单个字符串，不接受数组。要跨模型 / 跨 agent 对比，就在一个**实验组文件夹**里写多个文件，各钉对照轴之外的一切：
+
+```text
+experiments/
+  compare-models/          # 实验组
+    gpt-4o-mini.ts         #   一格:钉 model = gpt-4o-mini
+    gpt-4o.ts              #   一格:钉 model = gpt-4o
+```
 
 ```ts
-export default {
-  name: "compare-models",
-  matrix: [
-    { agent: "claude-code", model: "claude-sonnet-4-5" },
-    { agent: "codex", model: "gpt-5.1-codex" },
-  ],
-  evals: ["fixtures/button"],
-};
+// experiments/compare-models/gpt-4o.ts
+import { defineExperiment } from "fasteval";
+import { webAgent } from "../../agents/web-agent.ts";
+
+export default defineExperiment({
+  description: "AI 助手:gpt-4o",
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+  model: "gpt-4o",   // 单个字符串;另一个模型就复制一份文件改这一行
+  runs: 3,
+});
 ```
 
 ```bash
-npx fasteval exp compare-models
+npx fasteval exp compare-models   # 把同组各 model 并排出报告
 ```
+
+这样每个配置独立成文件：可命名、可 diff、可单独 review，"这一组就是对照"在文件结构上就讲清楚了。
 
 ## 适合比较什么
 

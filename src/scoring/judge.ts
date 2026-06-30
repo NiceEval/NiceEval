@@ -6,7 +6,7 @@
 // 这样在只有 s2a 代理(无 Anthropic key)的环境里,judge 自动复用代理。
 
 import type { AssertionCollector } from "./collector.ts";
-import type { JudgeConfig, JudgeNamespace, ScoringContext } from "../types.ts";
+import type { AssertionHandle, JudgeConfig, JudgeNamespace, ScoringContext } from "../types.ts";
 import { getEnv } from "../util.ts";
 
 interface ResolvedJudge {
@@ -117,9 +117,22 @@ export interface JudgeDeps {
   signal?: AbortSignal;
 }
 
+/** 没解析到 judge key 时返回的 no-op 命名空间:judge 断言静默跳过(不记录)。 */
+function noOpJudge(): JudgeNamespace {
+  const handle: AssertionHandle = {
+    atLeast: () => handle,
+    gate: () => handle,
+    soft: () => handle,
+  };
+  const skip = () => handle;
+  return { agent: skip, score: skip, closedQA: skip, factuality: skip, summarizes: skip };
+}
+
 /** 构造 t.judge 命名空间。每个方法 record 一条延迟 soft 断言。 */
 export function buildJudge(deps: JudgeDeps): JudgeNamespace {
   const resolved = resolveJudge(deps.judge);
+  // 没 key 就静默跳过 judge —— eval 不必再手动 gate「环境里有没有 judge key」。
+  if (!resolved.apiKey) return noOpJudge();
 
   const record = (
     label: string,

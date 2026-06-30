@@ -161,8 +161,20 @@ export interface McpServer {
 
 // ───────────────────────── Agent 契约 ─────────────────────────
 
+/** 随一轮消息附带的文件(图片等多模态输入)。 */
+export interface InputFile {
+  /** 文件名(可选,供 adapter / 模型参考)。 */
+  readonly filename?: string;
+  /** MIME 类型,如 `image/png`、`image/jpeg`。 */
+  readonly mimeType: string;
+  /** base64 编码的文件内容(JSON 友好,remote adapter 可直接放进请求体)。 */
+  readonly dataBase64: string;
+}
+
 export interface TurnInput {
   readonly text: string;
+  /** 本轮附带的文件(图片等)。adapter 自行决定怎么投递;不支持多模态的 adapter 忽略它。 */
+  readonly files?: readonly InputFile[];
 }
 
 /** adapter 的 send 返回值(事件流为核心)。 */
@@ -650,7 +662,8 @@ export interface ExperimentDef {
   id?: string;
   description?: string;
   agent: Agent;
-  model?: string | string[];
+  /** 单个模型(agent 留空时实验决定);省略=用 agent 原生默认。跨模型对比写多个实验文件,别用数组。 */
+  model?: string;
   flags?: Record<string, unknown>;
   runs?: number;
   earlyExit?: boolean;
@@ -732,6 +745,8 @@ export interface ToolMatch {
 export interface TestContext {
   // 会话
   send(text: string): Promise<TurnHandle>;
+  /** 发一条带文件(图片等多模态输入)的消息。`path` 相对项目根;读出后 base64 随 TurnInput.files 交给 adapter。 */
+  sendFile(path: string, text?: string): Promise<TurnHandle>;
   readonly reply: string;
   newSession(): TestContext;
 

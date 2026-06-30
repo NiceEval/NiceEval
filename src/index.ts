@@ -34,6 +34,7 @@ export type {
   Usage,
   Turn,
   TurnInput,
+  InputFile,
   TurnHandle,
   Agent,
   AgentContext,

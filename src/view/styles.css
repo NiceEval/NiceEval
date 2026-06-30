@@ -219,6 +219,11 @@ tbody tr.main-row { cursor: pointer; }
 tbody tr.main-row:hover { background: color-mix(in oklch, var(--panel-2), var(--panel) 34%); }
 tbody tr.is-open { background: var(--panel-2); }
 tbody tr:last-child td { border-bottom: 0; }
+tbody tr.group-row { cursor: pointer; background: color-mix(in oklch, var(--panel-2), var(--panel) 20%); border-top: 1px solid var(--line); }
+tbody tr.group-row:hover { background: color-mix(in oklch, var(--panel-2), var(--line) 12%); }
+tbody tr.group-row .name { font-weight: 680; letter-spacing: -0.01em; }
+tbody tr.group-row:first-child { border-top: 0; }
+tbody tr.child-row td:first-child { padding-left: 32px; }
 .chev {
   display: inline-block;
   width: 9px;

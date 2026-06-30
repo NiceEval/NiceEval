@@ -118,11 +118,20 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // reporter 的 onEvalComplete 要「每个 attempt 完成即时触发」(保流式输出),又不能让
   // 并发 worker 交错写 → 用一个 permit=1 的信号量串起来(替代原先手搓的 reportQueue 链)。
   const reportMutex = Effect.runSync(Effect.makeSemaphore(1));
-  // 沙箱启动(Docker create / 镜像拉取)单独限流:与 agent 并发(maxConcurrency)解耦,
-  // 防高并发下 Docker daemon 过载。默认 min(max, 4)——4 个容器同时起对本地 Docker 友好。
+  // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
+  // 未显式指定时跟 maxConcurrency 走——各 backend 的推荐值已在 cli 层写进 maxConcurrency 默认值。
   const sandboxSem = Effect.runSync(
-    Effect.makeSemaphore(opts.sandboxConcurrency ?? Math.min(opts.maxConcurrency, 4)),
+    Effect.makeSemaphore(opts.sandboxConcurrency ?? opts.maxConcurrency),
   );
+
+  // earlyExit:为每个 key 各建一个 AbortController。某 attempt 通过时 abort 它,
+  // 让并发进行中的同 key attempt 通过 signal 尽早退出,而不只是等排队的才能被跳过。
+  const evalAbortControllers = new Map<string, AbortController>();
+  for (const a of attempts) {
+    if (a.run.earlyExit && !evalAbortControllers.has(a.key)) {
+      evalAbortControllers.set(a.key, new AbortController());
+    }
+  }
 
   // 有界并发调度:Effect.forEach({ concurrency }) 取代手写 queue / inFlight / Promise.race。
   // 每个 attempt 跑在自己的 fiber;runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
@@ -143,11 +152,27 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
         attempts,
         (a) =>
           Effect.gen(function* () {
-            // 早停:同 key 已通过且开了 earlyExit → 跳过(语义同原 launch 时的检查)。
+            // 早停:同 key 已通过且开了 earlyExit → 跳过未启动的 attempt。
             if (a.run.earlyExit && passedKeys.has(a.key)) return;
-            const result = yield* runAttemptEffect(a, opts.config, sandboxSem, runShared, opts.signal);
+
+            // 合并全局信号与本 eval 的早停信号:任一 abort → 本 attempt 的信号 abort。
+            const evalAc = evalAbortControllers.get(a.key);
+            const attemptSignal =
+              evalAc && opts.signal
+                ? AbortSignal.any([opts.signal, evalAc.signal])
+                : (evalAc?.signal ?? opts.signal);
+
+            const result = yield* runAttemptEffect(a, opts.config, sandboxSem, runShared, attemptSignal);
+
+            if (result.verdict === "passed") {
+              passedKeys.add(a.key);
+              evalAc?.abort(); // 让同 key 并发 attempt 尽早退出
+            } else if (a.run.earlyExit && passedKeys.has(a.key)) {
+              // 并发情况:另一个 attempt 已通过后本 attempt 才完成(被 abort 后产出 errored),不计入结果。
+              return;
+            }
+
             results.push(result);
-            if (result.verdict === "passed") passedKeys.add(a.key);
             yield* reportMutex.withPermits(1)(
               // 每个 reporter 单独兜错:一个写文件失败 / 自定义 reporter 抛错只记 diagnostic,
               // 不让 Promise.all 整体 reject —— 否则 Effect.promise 把它当 defect,fail 掉 forEach、

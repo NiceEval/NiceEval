@@ -35,7 +35,7 @@ const SANDBOX_WORKSPACE = "/home/sandbox/workspace";
 
 const UV = "$HOME/.local/bin/uv";
 // bub 二进制:优先用镜像里(预制模板)烘焙在 PATH 上的 bub,否则用 uv 装到 $HOME/.local/bin 的那个。
-// 预制模板把 bub 装到 /usr/local/bin(见 sandbox/templates/Dockerfile),command -v 命中即用 → 跳过安装。
+// 预制模板把 bub 装到 /usr/local/bin(见 sandbox/docker/Dockerfile),command -v 命中即用 → 跳过安装。
 const BUB = "$(command -v bub || echo $HOME/.local/bin/bub)";
 
 const BUB_OVERRIDE = "bub @ git+https://github.com/CorrectRoadH/bub.git@fix/streaming-usage-include-usage";

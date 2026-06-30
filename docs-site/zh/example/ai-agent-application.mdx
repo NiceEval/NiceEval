@@ -1,21 +1,145 @@
 ---
 title: "评估你的 AI Agent 应用"
 sidebarTitle: "AI Agent 应用"
-description: "用 fasteval 评估你自己的 AI Agent 应用：包装 HTTP 服务或进程内函数，断言回复、工具调用、结构化输出、成本和延迟。"
+description: "用 fasteval 评估你自己的 AI Agent 应用：包装 HTTP 服务或进程内函数，断言回复、工具调用、图片理解、成本和延迟。"
 ---
 
-如果构建自己的 AI Agent 应用的评估。
+这个例子演示如何用 fasteval 评估你自己的 AI Agent 应用。
 
-demo的地址
+查看示例代码：https://github.com/CorrectRoadH/fasteval/tree/main/examples/zh/ai-sdk
+
+被测对象是一个用 AI SDK tool loop 实现的【普通 AI 助手】HTTP 服务：会发消息、调用工具（查天气 / 算数 / 搜索）、理解图片，并用 langfuse 做自己的可观测。该应用在测试时不需要 sandbox —— fasteval 通过 adapter 直接调它的 HTTP 协议。
+
+# 目录结构
+
+```text
+examples/zh/ai-sdk/
+  ai-sdk-agent/            # 被测 web agent(POST /api/turn,内含 3 个工具 + 图片理解)
+  agents/web-agent.ts      # fasteval adapter:工厂 webAgent({ baseUrl })
+  evals/                   # 会话型 eval
+    weather-tool.eval.ts        # 问天气 → 调 get_weather
+    image-understanding.eval.ts # 图片理解
+  experiments/
+    compare-models/        # 实验组:每文件钉一个 model
+      gpt-4o-mini.ts
+      gpt-4o.ts
+  fasteval.config.ts       # 注册 adapter、judge、并发
+```
 
 # 定义适配器
-给你的定义一下发现
+
+adapter 告诉 fasteval 怎么给 AI Agent 发请求、怎么把响应读成标准事件流。它是个工厂函数：`baseUrl`（被测服务跑在哪）由外面传进来，adapter 自己不写死、不读 env。
+
+```ts
+// agents/web-agent.ts
+import { defineAgent } from "fasteval";
+import type { Agent, StreamEvent } from "fasteval";
+import type { AgentEvent, AgentResponse } from "../ai-sdk-agent/src/protocol.ts";
+
+export function webAgent(opts: { baseUrl: string }): Agent {
+  const baseUrl = opts.baseUrl.replace(/\/$/, "");
+  return defineAgent({
+    name: "web-agent",
+    capabilities: { conversation: true, toolObservability: true, tracing: true },
+    async send(input, ctx) {
+      const response = await fetch(`${baseUrl}/api/turn`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId: ctx.session.id,
+          message: input.text,
+          model: ctx.model,
+          otelEndpoint: ctx.telemetry?.endpoint, // 双可观测:让 app 把本轮 span 也发回 fasteval
+        }),
+        signal: ctx.signal,
+      });
+      // 同一 workspace 的共享契约,直接按 AgentResponse 读,不必当 unknown 再校验一遍。
+      const body = (await response.json()) as AgentResponse;
+      ctx.session.id = body.sessionId;
+      return {
+        events: body.events.map(toStreamEvent),
+        data: body.data,
+        status: "completed" as const,
+      };
+    },
+  });
+}
+
+function toStreamEvent(event: AgentEvent): StreamEvent {
+  if (event.type === "action.called") return { ...event, tool: "unknown" };
+  return event;
+}
+```
+
+## 多轮消息
+
+`t.send()` 会自动带上 `ctx.session.id` 续接同一会话；adapter 把服务回传的 `sessionId` 写回 `ctx.session.id` 即可。需要在实验里按 feature flag 分流，见 [Experiments](/zh/guides/experiments)。
 
 # 定义评估
 
+每个 eval 发消息、断言回复 / 工具调用 / 图片理解。确定性断言（`calledTool`、`messageIncludes`）免 API key 就能跑；设了 judge key 再加开放式打分。
+
+```ts
+// evals/weather-tool.eval.ts
+import { defineEval } from "fasteval";
+
+export default defineEval({
+  description: "AI 助手:问天气调用 get_weather",
+  async test(t) {
+    const turn = await t.send("北京今天天气怎么样？");
+    turn.expectOk();
+    await t.group("调用 get_weather 且城市正确", () => {
+      t.calledTool("get_weather", { input: { city: "北京" } });
+      t.messageIncludes(/°C|气温|天气/);
+    });
+    t.judge.agent("助手是否基于工具返回的天气数据作答，而不是凭空编造？").atLeast(0.7);
+  },
+});
+```
+
+图片理解的 eval 把图片 URL 放进消息文本里（fasteval 的 `send` 只发文本），助手走多模态视觉模型描述图片：
+
+```ts
+// evals/image-understanding.eval.ts
+import { SAMPLE_IMAGE_URL } from "../ai-sdk-agent/src/assistant.ts";
+
+const turn = await t.send(`这张图片里是什么？${SAMPLE_IMAGE_URL}`);
+t.messageIncludes(/猫|cat/i); // 示例图是一只猫
+```
+
 # 定义实验
 
+**一个实验文件 = 一个配置**（单 model）。跨模型对比写多个文件放进同一个实验组文件夹：
+
+```ts
+// experiments/compare-models/gpt-4o.ts
+import { defineExperiment } from "fasteval";
+import { webAgent } from "../../agents/web-agent.ts";
+
+export default defineExperiment({
+  description: "AI 助手:gpt-4o",
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+  model: "gpt-4o", // 单个字符串;另一个模型复制一份文件改这一行
+  runs: 3,
+});
+```
+
 # 开始评估
+
+先启动被测服务（默认 mock 模式，免 API key）。这个例子是独立 npm 项目，`fasteval` 是它的依赖：
+
+```bash
+cd examples/zh/ai-sdk && pnpm install && pnpm dev
+```
+
+另开一个终端跑 eval：
+
+```bash
+cd examples/zh/ai-sdk
+pnpm exec fasteval                  # 全跑
+pnpm exec fasteval weather-tool     # 只跑某个
+pnpm exec fasteval exp compare-models   # 跨模型对比(需 OPENAI_API_KEY)
+```
 
 ## 下一步
 

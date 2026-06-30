@@ -1,0 +1,70 @@
+name: Release
+
+# 发版到 npm。打一个 v* 标签即触发(标签号要和 package.json 的 version 一致):
+#   pnpm version 0.1.0-alpha.1   # 改 version 并打 tag
+#   git push --follow-tags
+# 也可在 Actions 页手动 workflow_dispatch 触发。
+#
+# 前置:在仓库 Settings → Secrets → Actions 配好 NPM_TOKEN(npm automation token)。
+# 包直接发 TypeScript 源码(package.json files: src + bin,消费侧用 tsx 加载),无 build 步骤。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance 需要
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json version $PKG_VERSION 不一致"
+            exit 1
+          fi
+
+      - name: Publish
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          # 预发布版(含 - )发到对应 dist-tag(如 alpha/beta/rc),正式版发 latest。
+          if [[ "$VERSION" == *-* ]]; then
+            DIST_TAG="${VERSION#*-}"
+            DIST_TAG="${DIST_TAG%%.*}"
+          else
+            DIST_TAG="latest"
+          fi
+          echo "Publishing fasteval@$VERSION with dist-tag $DIST_TAG"
+          pnpm publish --no-git-checks --provenance --access public --tag "$DIST_TAG"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

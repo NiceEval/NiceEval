@@ -22,30 +22,7 @@
 
 ## 调度:有界并发
 
-核心循环维持至多 `maxConcurrency` 个 attempt 在飞,池满则等任一完成再补位(`Promise.race`)。报告回调走**独立的串行队列**,不阻塞执行池:
-
-```typescript
-const pending = [...attempts];
-const inFlight = new Set<Promise<void>>();
-let reportQueue = Promise.resolve();
-
-while (pending.length || inFlight.size) {
-  while (pending.length && inFlight.size < maxConcurrency) {
-    const attempt = pending.shift()!;
-    const p = runOne(attempt).then((result) => {
-      results.push(result);
-      // 报告在串行队列上,不占执行槽
-      reportQueue = reportQueue.then(() => emitEvalComplete(result));
-    });
-    inFlight.add(p);
-    p.finally(() => inFlight.delete(p));
-  }
-  if (inFlight.size) await Promise.race(inFlight);
-}
-await reportQueue;
-```
-
-结果最后按**发现顺序**排序(而非完成顺序),让输出稳定可 diff。
+核心调度用 `Effect.forEach({ concurrency: maxConcurrency })` 实现:每个 attempt 跑在自己的 fiber,至多 `maxConcurrency` 个并发。报告回调走 **permit=1 的信号量串行化**,不阻塞执行 fiber。结果最后按**发现顺序**排序(而非完成顺序),让输出稳定可 diff。
 
 并发上限来源:`--max-concurrency` → 配置 `maxConcurrency` → 默认。沙箱型受沙箱后端容量约束(本地 Docker 别开太高;云后端可大)。
 

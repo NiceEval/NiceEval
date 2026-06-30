@@ -1,0 +1,25 @@
+{
+  "name": "fasteval-ai-sdk-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "fasteval ai-sdk example: evaluate an AI SDK tool-loop assistant web agent",
+  "scripts": {
+    "dev": "tsx watch ai-sdk-agent/server.ts",
+    "start": "tsx ai-sdk-agent/server.ts",
+    "eval": "fasteval",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fasteval": "^0.1.0-alpha.0",
+    "@ai-sdk/openai": "^3.0.26",
+    "@langfuse/tracing": "^5.4.1",
+    "ai": "^6.0.78",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
