@@ -99,14 +99,14 @@ npx fasteval view
 ## Quick Start
 
 ```text
-READ dohttps://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
+READ https://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
 ```
 
 Start from the scenario that matches what you need to evaluate:
 
-- [Claude Code / Codex plugin eval](docs-site/zh/example/claude-code-codex-plugin.mdx)
-- [Claude Code / Codex skill eval](docs-site/zh/example/claude-code-codex-skill.mdx)
-- [AI Agent application eval](docs-site/zh/example/ai-agent-application.mdx)
+- [Claude Code / Codex plugin eval](https://fasteval.mintlify.site/zh/example/claude-code-codex-plugin)
+- [Claude Code / Codex skill eval](https://fasteval.mintlify.site/zh/example/claude-code-codex-skill)
+- [AI Agent application eval](https://fasteval.mintlify.site/zh/example/ai-agent-application)
 
 
 ## Roadmap
@@ -143,3 +143,13 @@ Official Adapters
 - [Observability](docs/observability.md)
 - [CLI](docs/cli.md)
 - [Source Map](docs/source-map.md)
+
+## Acknowledgements
+
+This project was inspired by — or had its code learned by AI from — the projects below:
+
+- [eve](https://eve.dev)
+- [agent eval](https://github.com/vercel-labs/agent-eval)
+- [ponytail](https://github.com/DietrichGebert/ponytail)
+
+Thanks to the communities behind them.

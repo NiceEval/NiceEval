@@ -93,14 +93,14 @@ npx fasteval view
 ## 快速开始
 
 ```text
-READ dohttps://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
+READ https://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
 ```
 
 从你的场景开始：
 
-- [如果你需要 eval 你的 Claude Code / Codex 插件](docs-site/zh/example/claude-code-codex-plugin.mdx)
-- [如果你需要 eval 你的 Claude Code / Codex Skill](docs-site/zh/example/claude-code-codex-skill.mdx)
-- [如果你需要 eval 你的 AI Agent 应用](docs-site/zh/example/ai-agent-application.mdx)
+- [如果你需要 eval 你的 Claude Code / Codex 插件](https://fasteval.mintlify.site/zh/example/claude-code-codex-plugin)
+- [如果你需要 eval 你的 Claude Code / Codex Skill](https://fasteval.mintlify.site/zh/example/claude-code-codex-skill)
+- [如果你需要 eval 你的 AI Agent 应用](https://fasteval.mintlify.site/zh/example/ai-agent-application)
 
 
 ## Roadmap
