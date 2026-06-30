@@ -11,6 +11,7 @@ import {
   parseBubTranscript,
 } from "../o11y/parsers/index.ts";
 import type { Sandbox } from "../types.ts";
+import { t } from "../i18n/index.ts";
 
 /** 每个沙箱里「已经装过的全局包」去重,避免每轮 send 重复 npm i -g。 */
 const installedBySandbox = new WeakMap<Sandbox, Set<string>>();
@@ -30,7 +31,7 @@ async function ensureInstalled(sandbox: Sandbox, cmd: string, args: string[]): P
   const res = await sandbox.runCommand(cmd, args);
   if (res.exitCode !== 0) {
     const tail = (res.stdout + res.stderr).trim().split("\n").slice(-12).join("\n");
-    throw new Error(`安装失败:${key}\n${tail}`);
+    throw new Error(t("agent.installFailed", { key, tail }));
   }
   set.add(key);
 }

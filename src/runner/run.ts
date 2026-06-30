@@ -14,6 +14,7 @@ import { EvalRequirementFailed, EvalSkipped, TurnFailed } from "../context/contr
 import { computeOutcome, computeVerdict } from "../scoring/verdict.ts";
 import { probeJudge } from "../scoring/judge.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
+import { t } from "../i18n/index.ts";
 import {
   captureGeneratedFiles,
   collectWorkspaceFiles,
@@ -66,6 +67,8 @@ export interface RunOptions {
   reporters: Reporter[];
   maxConcurrency: number;
   signal?: AbortSignal;
+  /** TTY live display 的进度回调;设置后 attempt 的 log 消息路由到它而不是 stderr。 */
+  onProgress?: (evalId: string, who: string, msg: string) => void;
 }
 
 interface Attempt {
@@ -91,7 +94,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
       toProbe.push(jc);
     }
     if (toProbe.length > 0) {
-      process.stderr.write("  · 预检 judge 配置…\n");
+      process.stderr.write(t("runner.judgePrecheck"));
       for (const jc of toProbe) {
         const err = await probeJudge(jc, opts.signal);
         if (err) throw new Error(err);
@@ -100,12 +103,16 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   }
 
   // 展开 attempts
+  // 外层按「round」(run index)迭代,内层按 eval 迭代,目的是让同一 key 的第 i+1 次
+  // attempt 排在所有 eval 的第 i 次之后 —— 这样当 earlyExit 开启时,第 0 轮某 eval 通过后、
+  // 第 1 轮该 eval 才进入队列,earlyExit 检查能生效。若内外层相反(先 eval 后 round),
+  // 则同一 eval 的所有 runs 连续入队,高并发下会全部同时启动,earlyExit 永远来不及跳过。
   const attempts: Attempt[] = [];
   for (const run of opts.agentRuns) {
     const evals = opts.evals.filter((e) => run.evalFilter(e.id));
-    for (const evalDef of evals) {
-      const key = `${run.agent.name}|${run.model ?? ""}|${evalDef.id}`;
-      for (let i = 0; i < run.runs; i++) {
+    for (let i = 0; i < run.runs; i++) {
+      for (const evalDef of evals) {
+        const key = `${run.agent.name}|${run.model ?? ""}|${evalDef.id}`;
         attempts.push({ evalDef, run, attempt: i, key });
       }
     }
@@ -178,7 +185,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
                 ? AbortSignal.any([opts.signal, evalAc.signal])
                 : (evalAc?.signal ?? opts.signal);
 
-            const result = yield* runAttemptEffect(a, opts.config, sandboxSem, runShared, attemptSignal);
+            const result = yield* runAttemptEffect(a, opts, sandboxSem, runShared, attemptSignal);
 
             if (result.verdict === "passed") {
               passedKeys.add(a.key);
@@ -224,7 +231,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
         throw Cause.squash(exit.cause);
       }
     }
-    if (interrupted) process.stderr.write("  · 已中断:沙箱容器已清理,输出本次已完成的部分结果。\n");
+    if (interrupted) process.stderr.write(t("runner.interrupted"));
   } finally {
     // run 作用域 teardown / cleanup 必跑(成功 / 失败 / 中断都跑),LIFO,各自兜错。
     for (const td of runTeardowns.reverse()) await runReporter("run.teardown", td);
@@ -253,7 +260,7 @@ async function runReporter(stage: string, fn: () => unknown): Promise<void> {
     await fn();
   } catch (e) {
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-    process.stderr.write(`  · [diagnostic] ${stage} 失败(已忽略):${msg}\n`);
+    process.stderr.write(t("runner.reporterDiagnostic", { stage, message: msg }));
   }
 }
 
@@ -273,7 +280,7 @@ async function setupRunHooks(
     agents: [...new Set(runs.map((r) => r.agent.name))],
     flags: runs[0]?.flags ?? {},
     signal,
-    log: (m) => process.stderr.write(`  · [hooks] ${m}\n`),
+    log: (m) => process.stderr.write(t("runner.hooksLog", { message: m })),
     share: (k, v) => {
       shared[k] = v;
     },
@@ -345,11 +352,12 @@ function summarize(
 // remote agent 没有沙箱资源,但仍走同一条 Promise 边界 / 超时 / 评分路径。
 function runAttemptEffect(
   a: Attempt,
-  config: Config,
+  opts: RunOptions,
   sandboxSem: Effect.Semaphore,
   runShared: Record<string, unknown>,
   parentSignal?: AbortSignal,
 ): Effect.Effect<EvalResult> {
+  const config = opts.config;
   const { evalDef, run, attempt } = a;
   const t0 = Date.now();
 
@@ -382,7 +390,11 @@ function runAttemptEffect(
   const log = (m: string) => {
     recentLogs.push(m);
     if (recentLogs.length > 20) recentLogs.shift();
-    process.stderr.write(`  · ${evalDef.id} [${who}] ${m}\n`);
+    if (opts.onProgress) {
+      opts.onProgress(evalDef.id, who, m);
+    } else {
+      process.stderr.write(`  · ${evalDef.id} [${who}] ${m}\n`);
+    }
   };
 
   return Effect.scoped(
@@ -393,7 +405,7 @@ function runAttemptEffect(
               Effect.gen(function* () {
                 // ── 沙箱:acquire=起,release=stop(成功 / 失败 / 中断都跑)──
                 // sandboxSem 只覆盖「容器创建」阶段;容器起好后立即释放,后续 npm install / agent 不占位。
-                log("起沙箱…");
+                log(t("runner.startSandbox"));
                 return yield* createSandbox({
                   sandbox: run.sandbox ?? config.sandbox,
                   timeout: timeoutMs,
@@ -402,7 +414,7 @@ function runAttemptEffect(
               }),
             )
           : createRemoteSandbox();
-      if (run.agent.kind === "remote") log("使用 remote agent(不创建沙箱)…");
+      if (run.agent.kind === "remote") log(t("runner.useRemoteAgent"));
 
       // ── tracing ──────────────────────────────────────────────────────────────────
       // sandbox.otlpHost:
@@ -419,7 +431,7 @@ function runAttemptEffect(
           const endpoint = receiver.endpoint(forcedHost);
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
-          log(`OTLP 接收器(覆盖 host) → ${endpoint}`);
+          log(t("runner.otlpOverride", { endpoint }));
         } else if (sandbox.otlpHost !== null) {
           // 本地/docker 沙箱:宿主开接收器
           receiver = yield* createTraceReceiver();
@@ -427,7 +439,7 @@ function runAttemptEffect(
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
           const proto = run.agent.tracing?.protocol;
-          log(`OTLP 接收器 → ${endpoint}${proto ? ` (${proto})` : ""}`);
+          log(t("runner.otlpReceiver", { endpoint, proto: proto ? ` (${proto})` : "" }));
         } else {
           // 远程沙箱(e2b / vercel):在沙箱内起 collector,agent 往 localhost:4318 发
           receiver = yield* createInSandboxTraceReceiver(sandbox);
@@ -435,7 +447,7 @@ function runAttemptEffect(
           const env = run.agent.tracing?.env?.(endpoint);
           telemetry = env ? { endpoint, env } : { endpoint };
           const proto = run.agent.tracing?.protocol;
-          log(`OTLP in-sandbox collector → ${endpoint}${proto ? ` (${proto})` : ""}`);
+          log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
         }
       }
 
@@ -464,7 +476,10 @@ function runAttemptEffect(
       onTimeout: (): EvalResult => ({
         ...base,
         durationMs: Date.now() - t0,
-        error: `attempt 超时(${timeoutMs}ms)\n最近进度:\n${recentLogs.map((l) => `  · ${l}`).join("\n")}`,
+        error: t("runner.timeout", {
+          timeoutMs,
+          recentLogs: recentLogs.map((l) => `  · ${l}`).join("\n"),
+        }),
       }),
     }),
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Scope 层的意外(起沙箱失败等)。
@@ -527,7 +542,7 @@ async function runAttemptBody(
       if (wsDir) {
         const files = await collectWorkspaceFiles(wsDir);
         await sandbox.uploadFiles(files);
-        log(`上传 workspace(${files.length} 文件)`);
+        log(t("runner.uploadWorkspace", { count: files.length }));
       }
       await initGitAndCommit(sandbox);
 
@@ -536,7 +551,7 @@ async function runAttemptBody(
       for (const h of [config.hooks?.sandbox, run.hooks?.sandbox]) {
         if (!h) continue;
         let cleanup: Cleanup | void = undefined;
-        log("sandbox setup(钩子)…");
+        log(t("runner.sandboxSetup"));
         cleanup = await h.setup?.(sandbox, attemptCtx);
         sandboxTeardowns.push(async () => {
           if (typeof cleanup === "function") await cleanup();
@@ -547,14 +562,14 @@ async function runAttemptBody(
       // eval 级 setup(starter prep:npm install / 装系统依赖等)。命令默认非 root;
       // setup 里需要 root 的(apt/pip)自己传 { root: true }。
       if (evalDef.setup) {
-        log("eval setup(装依赖)…");
+        log(t("runner.evalSetup"));
         await evalDef.setup(sandbox);
       }
     }
 
     // agent 自己的 lifecycle:装 CLI、写 config(每个沙箱一次,不在每轮 send 里)。
     if (run.agent.setup) {
-      log("agent setup(装 CLI / 写配置)…");
+      log(t("runner.startAgentSetup"));
       agentDidSetup = true;
       agentCleanup = await run.agent.setup(sandbox, attemptCtx);
     }
@@ -562,12 +577,12 @@ async function runAttemptBody(
     // OTLP 导出配置(file-based,如 codex 的 config.toml [otel] 块):与 setup 分开,
     // 在主配置写完后追加。仅当 tracing 开 + 有 endpoint 时调一次(env-based 的不实现 configure)。
     if (telemetry && run.agent.tracing?.configure) {
-      log("agent tracing(写 otel 导出配置)…");
+      log(t("runner.startAgentTracing"));
       await run.agent.tracing.configure(sandbox, attemptCtx);
     }
 
     // 构造 t,跑 test
-    log("驱动 agent…");
+    log(t("runner.driveAgent"));
     const judge = resolveJudge(evalDef.judge, config.judge);
     const { context, state } = createEvalContext({
       agent: run.agent,
@@ -596,7 +611,7 @@ async function runAttemptBody(
       }
     }
 
-    if (skipReason) log(`skip:${skipReason}`);
+    if (skipReason) log(t("runner.skip", { reason: skipReason }));
 
     // 采 diff(脚本如 next build 在采集后才跑,避免 .next 污染 diff)。remote agent 没有 workspace。
     const diff =
@@ -605,7 +620,10 @@ async function runAttemptBody(
         : await captureGeneratedFiles(sandbox);
     state.late.diff = diff;
     if (!skipReason && usesSandbox) {
-      log(`采 diff:${Object.keys(diff.generatedFiles).length} 改 / ${diff.deletedFiles.length} 删`);
+      log(t("runner.diffProgress", {
+        changed: Object.keys(diff.generatedFiles).length,
+        deleted: diff.deletedFiles.length,
+      }));
     }
 
     // 跑 test 请求过的脚本
@@ -623,7 +641,7 @@ async function runAttemptBody(
       }
     } else if (!skipReason && (state.requestedScripts.size > 0 || state.needsVitest)) {
       error =
-        "remote agent 没有沙箱 workspace,不能运行 t.scriptPassed()/t.testsPassed();请改用 sandbox agent。";
+        t("runner.noRemoteWorkspace");
     }
     state.late.scripts = scripts;
 
@@ -646,7 +664,7 @@ async function runAttemptBody(
         }
       },
     };
-    if (!skipReason) log("评分 / judge…");
+    if (!skipReason) log(t("runner.scoreJudge"));
     const assertions = skipReason ? [] : await state.collector.finalize(scoringContext);
     const verdict: Verdict = computeVerdict({ error, assertions, skipReason });
     const outcome = computeOutcome({ error, verdict });
@@ -663,7 +681,7 @@ async function runAttemptBody(
         // 归一 → 选语义 span → 按 call_id 把 transcript 的工具入参/出参 join 上去(span 自身不带命令文本)。
         const canonical = mapSpansToCanonical(spans, run.agent.name);
         trace = enrichTraceWithIO(selectTraceSpans(canonical), facts.toolCalls);
-        const note = spans.length > trace.length ? ` → 留 ${trace.length}(按语义)` : "";
+        const note = spans.length > trace.length ? t("runner.traceSelected", { count: trace.length }) : "";
         log(`trace:${spans.length} span${note}`);
       }
     }
@@ -716,7 +734,7 @@ async function runAttemptBody(
 
 function createRemoteSandbox(): Sandbox {
   const unavailable = (method: string): never => {
-    throw new Error(`remote agent 没有 sandbox.${method};请改用 sandbox agent 或移除 workspace 断言。`);
+    throw new Error(t("runner.remoteSandboxUnavailable", { method }));
   };
 
   return {

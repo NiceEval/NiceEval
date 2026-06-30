@@ -107,12 +107,15 @@ export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSigna
     attrs: { "gen_ai.operation.name": "chat", "gen_ai.request.model": modelId },
   });
 
+  const rawMessages = [...sessionMessages(session), userMessage(request.message, request.files)];
+  const messages = modelSupportsVision(modelId) ? rawMessages : stripImageParts(rawMessages);
+
   let result: Awaited<ReturnType<typeof generateText>>;
   try {
     result = await generateText({
       model,
       system: SYSTEM_PROMPT,
-      messages: [...sessionMessages(session), userMessage(request.message, request.files)],
+      messages,
       tools: buildTools(makeRecorder(events)),
       stopWhen: stepCountIs(5),
       abortSignal: signal,

@@ -2,6 +2,7 @@
 // 结果(ScoringContext)统一 finalize 成 AssertionResult[],再交判决。
 
 import type { AssertionResult, ScoringContext, Severity } from "../types.ts";
+import { t } from "../i18n/index.ts";
 
 /** 一条尚未评估的断言。evaluate 在 finalize 时拿到完整运行结果再算分 [0,1]。 */
 export interface Spec {
@@ -73,7 +74,9 @@ export class AssertionCollector {
         score = await spec.evaluate(ctx);
       } catch (e) {
         score = 0;
-        detail = `${detail ? detail + "; " : ""}评估出错: ${e instanceof Error ? e.message : String(e)}`;
+        detail = `${detail ? detail + "; " : ""}${t("scoring.evalError", {
+          error: e instanceof Error ? e.message : String(e),
+        })}`;
       }
       out.push({
         name: spec.name,

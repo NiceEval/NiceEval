@@ -11,6 +11,7 @@
 // 这段代码对任意 backend 的 Sandbox 实现无改动即可使用。
 
 import type { Sandbox } from "../types.ts";
+import { t } from "../i18n/index.ts";
 
 const CP_TMP = "/tmp/__fe_cp__.tar.gz";
 const RS_TMP = "/tmp/__fe_rs__.tar.gz";
@@ -22,7 +23,7 @@ export async function createCheckpoint(sb: Sandbox, paths: string[]): Promise<Bu
   await sb.runShell(`tar czf ${CP_TMP} --ignore-failed-read ${quoted} 2>/dev/null; true`);
   const buf = await sb.downloadFile(CP_TMP);
   await sb.runShell(`rm -f ${CP_TMP}`);
-  if (!buf || buf.length === 0) throw new Error(`checkpoint: tar 为空(paths: ${paths.join(", ")})`);
+  if (!buf || buf.length === 0) throw new Error(t("checkpoint.emptyTar", { paths: paths.join(", ") }));
   return buf;
 }
 

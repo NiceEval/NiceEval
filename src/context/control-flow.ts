@@ -1,5 +1,7 @@
 // test(t) 里的非错误控制流信号。运行器据类型分流:跳过不是失败,断言失败不是异常。
 
+import { t } from "../i18n/index.ts";
+
 /** t.skip(reason):该 eval 不构成有效测试,记 skipped(不计入,不算 agent 挂)。 */
 export class EvalSkipped extends Error {
   constructor(public readonly reason: string) {
@@ -18,7 +20,7 @@ export class EvalRequirementFailed extends Error {
 
 /** 本轮 send 返回 failed,作者调了 expectOk():视为执行错误(eval failed)。 */
 export class TurnFailed extends Error {
-  constructor(message = "本轮 send 返回 failed(turn status = failed)") {
+  constructor(message = t("context.turnFailedDefault")) {
     super(message);
     this.name = "TurnFailed";
   }

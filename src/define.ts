@@ -12,6 +12,7 @@ import type {
   SandboxAgentDef,
   VercelSandboxSpec,
 } from "./types.ts";
+import { t } from "./i18n/index.ts";
 
 const SANDBOX_DEFAULT_CAPS = {
   conversation: true,
@@ -26,7 +27,7 @@ const REMOTE_DEFAULT_CAPS = {
 
 /** 沙箱型 agent:在沙箱里 spawn 一个 coding agent 的 CLI,跑完读回 transcript。 */
 export function defineSandboxAgent(def: SandboxAgentDef): Agent {
-  if (!def.name) throw new Error("defineSandboxAgent 需要 name。");
+  if (!def.name) throw new Error(t("define.sandboxAgentNameRequired"));
   return {
     name: def.name,
     kind: "sandbox",
@@ -40,7 +41,7 @@ export function defineSandboxAgent(def: SandboxAgentDef): Agent {
 
 /** 远程 / 进程内 agent:在 send 里直接驱动你的函数 / 服务。 */
 export function defineAgent(def: RemoteAgentDef): Agent {
-  if (!def.name) throw new Error("defineAgent 需要 name。");
+  if (!def.name) throw new Error(t("define.agentNameRequired"));
   return {
     name: def.name,
     kind: "remote",
@@ -55,10 +56,10 @@ export function defineAgent(def: RemoteAgentDef): Agent {
 /** 会话型 eval。禁止提供 id —— 从路径推导。 */
 export function defineEval(def: EvalDef): EvalDef {
   if ((def as { id?: unknown }).id !== undefined) {
-    throw new Error("defineEval 不接受 id —— id 由文件路径推导。");
+    throw new Error(t("define.evalIdRejected"));
   }
   if (typeof def.test !== "function") {
-    throw new Error("defineEval 需要一个 async test(t) 函数。");
+    throw new Error(t("define.evalTestRequired"));
   }
   return def;
 }
@@ -66,9 +67,9 @@ export function defineEval(def: EvalDef): EvalDef {
 /** 实验:可签入的运行配置(怎么跑这批 eval)。 */
 export function defineExperiment(def: ExperimentDef): ExperimentDef {
   if ((def as { id?: unknown }).id !== undefined) {
-    throw new Error("defineExperiment 不接受 id —— id 由文件路径推导。");
+    throw new Error(t("define.experimentIdRejected"));
   }
-  if (!def.agent) throw new Error("defineExperiment 需要 agent。");
+  if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
   return def;
 }
 

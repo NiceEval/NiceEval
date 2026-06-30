@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { t } from "../i18n/index.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // bub 的 agent adapter(沙箱型)。
@@ -92,7 +93,12 @@ async function ensureBub(sb: Sandbox, home: string): Promise<void> {
       );
       if (install.exitCode === 0) break;
       last = install;
-      if (attempt === 3) throw new Error(`bub 安装失败(重试 3 次):\n${(last.stdout + last.stderr).split("\n").slice(-15).join("\n")}`);
+      if (attempt === 3) {
+        throw new Error(t("bub.installFailed", {
+          attempts: 3,
+          tail: (last.stdout + last.stderr).split("\n").slice(-15).join("\n"),
+        }));
+      }
     }
     const cp = await createCheckpoint(sb, checkpointPaths);
     memCheckpoints.set(home, cp);
@@ -117,13 +123,13 @@ function diagnose(
   events: StreamEvent[],
   rawTape: string | undefined,
 ): string {
-  const parts: string[] = [`bub run 退出码 ${res.exitCode}`];
-  if (rawTape === undefined) parts.push("tape 未生成");
-  else if (events.length === 0) parts.push("tape 存在但 0 事件");
+  const parts: string[] = [t("bub.diagnose.exitCode", { code: res.exitCode })];
+  if (rawTape === undefined) parts.push(t("bub.diagnose.noTape"));
+  else if (events.length === 0) parts.push(t("bub.diagnose.zeroEvents"));
   const lastErr = [...events].reverse().find((e) => e.type === "error") as { type: "error"; message: string } | undefined;
-  if (lastErr) parts.push(`最后错误:${lastErr.message}`);
+  if (lastErr) parts.push(t("bub.diagnose.lastError", { message: lastErr.message }));
   const errTail = tail(res.stderr) || tail(res.stdout);
-  if (errTail) parts.push(`输出末尾:${errTail}`);
+  if (errTail) parts.push(t("bub.diagnose.outputTail", { tail: errTail }));
   return parts.join(" · ");
 }
 

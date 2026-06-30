@@ -17,8 +17,10 @@ import { runEvals, type AgentRun } from "./runner/run.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { sandboxRecommendedConcurrency } from "./sandbox/resolve.ts";
 import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
+import { Live as LiveReporter, type LiveRow } from "./runner/reporters/live.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import { buildView, startViewServer } from "./view/index.ts";
+import { t } from "./i18n/index.ts";
 import type { Config, DiscoveredExperiment, Reporter } from "./types.ts";
 
 interface Flags {
@@ -131,10 +133,10 @@ async function loadDotenv(cwd: string): Promise<void> {
 async function loadConfig(cwd: string): Promise<Config> {
   const path = join(cwd, "fasteval.config.ts");
   if (!existsSync(path)) {
-    throw new Error("找不到 fasteval.config.ts(请在项目根运行)。");
+    throw new Error(t("cli.config.missing"));
   }
   const mod = (await import(pathToFileURL(path).href)) as { default?: Config };
-  if (!mod.default) throw new Error("fasteval.config.ts 需要 default export(defineConfig(...))。");
+  if (!mod.default) throw new Error(t("cli.config.noDefault"));
   return mod.default;
 }
 
@@ -179,27 +181,27 @@ async function main(): Promise<void> {
   if (command === "view") {
     if (flags.out) {
       const out = await buildView({ input: positionals[0], out: flags.out });
-      process.stdout.write(`已导出实验查看页:${out}\n`);
+      process.stdout.write(t("cli.view.exported", { out }));
       process.exit(0);
     }
     const server = await startViewServer({ input: positionals[0], port: flags.port });
-    process.stdout.write(`fasteval view: ${server.url}\n`);
+    process.stdout.write(t("cli.view.url", { url: server.url }));
     if (flags.open !== false) {
       const opened = await openBrowser(server.url);
-      if (!opened) process.stderr.write(`无法自动打开浏览器,请手动访问:${server.url}\n`);
+      if (!opened) process.stderr.write(t("cli.browserOpenFailed", { url: server.url }));
     }
-    process.stdout.write("按 Ctrl+C 退出。\n");
+    process.stdout.write(t("cli.pressCtrlC"));
     await new Promise(() => {});
   }
 
   if (command === "clean") {
     await rm(join(cwd, ".fasteval"), { recursive: true, force: true });
-    process.stdout.write("已删除 .fasteval/ 历史运行工件。\n");
+    process.stdout.write(t("cli.clean.done"));
     process.exit(0);
   }
 
   if (command === "init" || command === "watch") {
-    process.stdout.write(`命令 "${command}" 暂未实现(MVP)。\n`);
+    process.stdout.write(t("cli.unimplemented", { command }));
     process.exit(0);
   }
 
@@ -208,7 +210,7 @@ async function main(): Promise<void> {
   const evals = await discoverEvals(cwd);
 
   if (command === "list") {
-    process.stdout.write(`发现 ${evals.length} 个 eval:\n`);
+    process.stdout.write(t("cli.list.header", { count: evals.length }));
     for (const e of evals) process.stdout.write(`  ${e.id}${e.description ? `  — ${e.description}` : ""}\n`);
     process.exit(0);
   }
@@ -224,7 +226,10 @@ async function main(): Promise<void> {
       ? experiments.filter((e) => e.group === expArg || e.id === expArg || e.id.startsWith(expArg + "/"))
       : experiments;
     if (selected.length === 0) {
-      process.stderr.write(`没有匹配的实验:${expArg ?? "(全部)"}。已发现:${experiments.map((e) => e.id).join(", ") || "(无)"}\n`);
+      process.stderr.write(t("cli.experiment.noMatch", {
+        arg: expArg ?? t("cli.all"),
+        experiments: experiments.map((e) => e.id).join(", ") || t("cli.none"),
+      }));
       process.exit(1);
     }
     for (const exp of selected) {
@@ -253,17 +258,23 @@ async function main(): Promise<void> {
       const asExp = experiments.filter((e) =>
         positionals.some((p) => e.group === p || e.id === p || e.id.startsWith(p + "/")),
       );
-      process.stderr.write(`没有匹配的 eval:${positionals.join(" ")}。\n`);
+      process.stderr.write(t("cli.eval.noMatch", { patterns: positionals.join(" ") }));
       if (asExp.length > 0) {
-        process.stderr.write(`提示:"${positionals[0]}" 是实验${asExp.length > 1 ? "组" : ""},你大概想跑:fasteval exp ${positionals[0]}\n`);
+        process.stderr.write(t("cli.eval.noMatchHintExperiment", {
+          pattern: positionals[0],
+          kind: asExp.length > 1 ? t("cli.experimentGroup") : "",
+        }));
       } else {
-        process.stderr.write(`已发现 ${evals.length} 个 eval:${evals.map((e) => e.id).join(", ") || "(无)"}\n`);
+        process.stderr.write(t("cli.eval.noMatchKnown", {
+          count: evals.length,
+          evals: evals.map((e) => e.id).join(", ") || t("cli.none"),
+        }));
       }
       process.exit(1);
     }
     const agentName = flags.agent;
     if (!agentName) {
-      process.stderr.write("未指定 agent(用 --agent <name>)。\n");
+      process.stderr.write(t("cli.noAgent"));
       process.exit(1);
     }
     agentRuns.push({
@@ -279,17 +290,44 @@ async function main(): Promise<void> {
   }
 
   if (flags.dry) {
-    process.stdout.write(`\n[dry] ${evals.length} 个 eval × ${agentRuns.length} 个运行配置:\n`);
+    process.stdout.write(t("cli.dry.header", { evals: evals.length, configs: agentRuns.length }));
     for (const run of agentRuns) {
       const matched = evals.filter((e) => run.evalFilter(e.id));
       const who = run.model ? `${run.agent.name}/${run.model}` : run.agent.name;
-      process.stdout.write(`  ${who}${run.experimentId ? ` (exp ${run.experimentId})` : ""}: ${matched.map((e) => e.id).join(", ") || "(无匹配)"}  ×${run.runs}\n`);
+      process.stdout.write(t("cli.dry.row", {
+        who,
+        experiment: run.experimentId ? ` (exp ${run.experimentId})` : "",
+        evals: matched.map((e) => e.id).join(", ") || t("cli.dry.noMatches"),
+        runs: run.runs,
+      }));
     }
     process.exit(0);
   }
 
   const reporters: Reporter[] = [];
-  if (!flags.quiet) reporters.push(ConsoleReporter());
+  let onProgress: ((evalId: string, who: string, msg: string) => void) | undefined;
+
+  if (!flags.quiet) {
+    if (process.stderr.isTTY) {
+      // TTY 模式:用 live display 替换 Console reporter,把 attempt log 路由到状态表行尾
+      const liveRows: LiveRow[] = [];
+      for (const agentRun of agentRuns) {
+        const who = agentRun.model
+          ? `${agentRun.agent.name}/${agentRun.model}`
+          : agentRun.agent.name;
+        const matched = evals.filter((e) => agentRun.evalFilter(e.id));
+        for (const evalDef of matched) {
+          liveRows.push({ evalId: evalDef.id, who, total: agentRun.runs });
+        }
+      }
+      const totalAttempts = liveRows.reduce((s, r) => s + r.total, 0);
+      const live = LiveReporter(liveRows, totalAttempts);
+      reporters.push(live);
+      onProgress = (evalId, who, msg) => live.progress(evalId, who, msg);
+    } else {
+      reporters.push(ConsoleReporter());
+    }
+  }
   reporters.push(ArtifactsReporter());
   reporters.push(...(config.reporters ?? []));
 
@@ -313,17 +351,17 @@ async function main(): Promise<void> {
     process.on(sig, () => {
       signalCount += 1;
       if (signalCount === 1) {
-        process.stderr.write("\n收到中断,正在清理沙箱容器…(再按一次强制清理并退出)\n");
+        process.stderr.write(t("cli.interruptCleanup"));
         ctrl.abort();
         // 看门狗:graceful 清理 12s 还没让进程自己收口,就强清兜底。
         setTimeout(() => {
           if (liveSandboxCount() > 0) {
-            process.stderr.write("\ngraceful 清理超时,强制清理沙箱…\n");
+            process.stderr.write(t("cli.fallbackCleanupTimeout"));
             forceCleanupAndExit(130);
           }
         }, 12_000).unref();
       } else if (signalCount === 2) {
-        process.stderr.write("\n强制清理沙箱并退出…\n");
+        process.stderr.write(t("cli.forceCleanupExit"));
         forceCleanupAndExit(130);
       } else {
         process.exit(130); // 第三次:硬退
@@ -343,6 +381,7 @@ async function main(): Promise<void> {
     reporters,
     maxConcurrency: flags.maxConcurrency ?? expMaxConcurrency ?? config.maxConcurrency ?? sandboxDefaultConcurrency,
     signal: ctrl.signal,
+    onProgress,
   });
 
   // 正常返回(含被中断后走部分汇总)后再兜一刀:Scope finalizer 没停掉的残留沙箱在这里强清。
@@ -354,7 +393,7 @@ async function main(): Promise<void> {
 }
 
 main().catch(async (e) => {
-  process.stderr.write(`fasteval 出错:${e instanceof Error ? e.stack ?? e.message : String(e)}\n`);
+  process.stderr.write(t("cli.error", { error: e instanceof Error ? e.stack ?? e.message : String(e) }));
   // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时),再退。
   await stopAllSandboxes();
   process.exit(2);

@@ -11,6 +11,7 @@ import { ClosedQA, Factuality, Summary } from "autoevals";
 import type { AssertionCollector } from "./collector.ts";
 import type { AssertionHandle, AutoevalsNamespace, JudgeConfig, JudgeNamespace, ScoringContext } from "../types.ts";
 import { getEnv } from "../util.ts";
+import { t } from "../i18n/index.ts";
 
 interface ResolvedJudge {
   model: string;
@@ -41,7 +42,7 @@ async function callJudge(
   user: string,
   signal?: AbortSignal,
 ): Promise<number> {
-  if (!judge.apiKey) throw new Error("judge 缺少 API key(CODEX_API_KEY / OPENAI_API_KEY)。");
+  if (!judge.apiKey) throw new Error(t("judge.apiKeyMissing"));
   const url = `${judge.baseUrl.replace(/\/$/, "")}/chat/completions`;
   const res = await fetch(url, {
     method: "POST",
@@ -61,7 +62,7 @@ async function callJudge(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`judge HTTP ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(t("judge.httpError", { status: res.status, body: body.slice(0, 300) }));
   }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
@@ -140,12 +141,12 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
   const resolved = resolveJudge(judge);
   if (!resolved.apiKey) {
     const envHint = judge.apiKeyEnv ?? "FASTEVAL_JUDGE_KEY / OPENAI_API_KEY";
-    return `judge 模型 ${resolved.model} 缺少 API key —— 请配置 ${envHint}`;
+    return t("judge.probeMissingKey", { model: resolved.model, envHint });
   }
   try {
     await callJudge(resolved, "Reply with the number 1 only.", "1", signal);
   } catch (e) {
-    return `judge 预检失败(${resolved.model}): ${e instanceof Error ? e.message : String(e)}`;
+    return t("judge.probeFailed", { model: resolved.model, error: e instanceof Error ? e.message : String(e) });
   }
   return undefined;
 }

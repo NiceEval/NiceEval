@@ -16,6 +16,7 @@ import type {
   ReadSourceFilesOptions,
 } from "../types.ts";
 import { makeSourceFiles } from "./source-files.ts";
+import { t } from "../i18n/index.ts";
 
 const DEFAULT_SOURCE_EXTENSIONS = ["ts", "tsx", "js", "jsx"];
 const DEFAULT_IGNORE_DIRS = [".git", ".next", "node_modules", "dist", "build", "coverage"];
@@ -141,7 +142,7 @@ export class DockerSandbox implements Sandbox {
     // 显式 image(预制模板)优先;否则按 runtime 选默认 node:*-slim。
     const imageName = this.image ?? DOCKER_IMAGES[this.runtime];
     if (!imageName) {
-      throw new Error(`Unsupported runtime: ${this.runtime}`);
+      throw new Error(t("docker.unsupportedRuntime", { runtime: this.runtime }));
     }
 
     // 确保镜像在本地。
@@ -200,9 +201,9 @@ export class DockerSandbox implements Sandbox {
       await image.inspect();
     } catch {
       // 镜像不存在,拉取。
-      console.log(`Pulling Docker image: ${imageName}...`);
+      console.log(t("docker.imagePullStart", { image: imageName }));
       await this.pullImage(imageName);
-      console.log(`Docker image ready: ${imageName}`);
+      console.log(t("docker.imagePullDone", { image: imageName }));
     }
   }
 
@@ -298,7 +299,7 @@ export class DockerSandbox implements Sandbox {
     opts: { env?: Record<string, string>; cwd?: string; user?: string } = {},
   ): Promise<CommandResult> {
     if (!this.container) {
-      throw new Error("Container not initialized");
+      throw new Error(t("docker.containerNotInitialized"));
     }
 
     const fullCmd = [cmd, ...args];
@@ -345,7 +346,7 @@ export class DockerSandbox implements Sandbox {
       // 超时:杀流并 reject。
       const timeoutId = setTimeout(() => {
         stream.destroy();
-        reject(new Error(`Command timed out after ${this.timeout}ms`));
+        reject(new Error(t("docker.commandTimeout", { timeoutMs: this.timeout })));
       }, this.timeout);
 
       stream.on("end", async () => {
@@ -392,7 +393,7 @@ export class DockerSandbox implements Sandbox {
   async readFile(path: string): Promise<string> {
     const result = await this.runCommand("cat", [path]);
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to read file ${path}: ${result.stderr}`);
+      throw new Error(t("docker.readFileFailed", { path, stderr: result.stderr }));
     }
     return result.stdout;
   }
@@ -446,7 +447,7 @@ export class DockerSandbox implements Sandbox {
   /** 用 tar 归档把文件灌进容器。 */
   async uploadFiles(files: SandboxFile[]): Promise<void> {
     if (!this.container) {
-      throw new Error("Container not initialized");
+      throw new Error(t("docker.containerNotInitialized"));
     }
 
     if (files.length === 0) {
@@ -487,7 +488,7 @@ export class DockerSandbox implements Sandbox {
    * 用 Docker getArchive API(原生二进制,无 base64 开销);tar 只有一个 entry,直接解包取内容。
    */
   async downloadFile(path: string): Promise<Buffer> {
-    if (!this.container) throw new Error("Container not initialized");
+    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const stream = await (this.container as Docker.Container).getArchive({ path });
     const tarBuf = await readableToBuffer(stream as NodeJS.ReadableStream);
     return extractFileFromTar(tarBuf);
@@ -498,7 +499,7 @@ export class DockerSandbox implements Sandbox {
    * 打成单文件 tar → putArchive 到目标目录,与 uploadFiles 同一机制但目标路径自由。
    */
   async uploadFile(destPath: string, content: Buffer): Promise<void> {
-    if (!this.container) throw new Error("Container not initialized");
+    if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const pack = tar.pack();
     pack.entry({ name: basename(destPath) }, content);
     pack.finalize();

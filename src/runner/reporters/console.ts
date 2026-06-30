@@ -1,6 +1,7 @@
 // 控制台报告器:流式逐行输出,失败断言内联展开,末尾出效率三件套(时间 / token / $)。
 
 import type { EvalResult, Reporter, RunSummary } from "../../types.ts";
+import { t } from "../../i18n/index.ts";
 
 const SYMBOL: Record<string, string> = {
   passed: "✓",
@@ -28,9 +29,9 @@ export function Console(): Reporter {
       const n = shape?.evals ?? evals.length;
       const extra =
         shape && shape.totalRuns > n
-          ? ` × ${shape.configs} 配置 = ${shape.totalRuns} 次运行`
+          ? t("report.runStartExtra", { configs: shape.configs, totalRuns: shape.totalRuns })
           : "";
-      process.stdout.write(`\n本次运行 ${n} 个 eval${extra}\n\n`);
+      process.stdout.write(t("report.runStart", { count: n, extra }));
     },
     onEvalComplete(result: EvalResult) {
       const sym = SYMBOL[result.outcome] ?? SYMBOL[result.verdict] ?? "?";
@@ -40,14 +41,14 @@ export function Console(): Reporter {
       const cost = result.estimatedCostUSD !== undefined ? `  $${result.estimatedCostUSD.toFixed(3)}` : "";
       const who = result.model ? `${result.agent}/${result.model}` : result.agent;
       const meta = `(${fmtDuration(result.durationMs)}  ${tokStr}${cost})`;
-      const label = result.outcome === result.verdict ? "" : ` ${result.outcome}`;
+      const label = result.outcome === result.verdict ? "" : ` ${formatOutcome(result.outcome)}`;
       process.stdout.write(`  ${sym} ${result.id}${label}  [${who}]  ${meta}\n`);
 
       if (result.skipReason) {
-        process.stdout.write(`      ○ skipped: ${result.skipReason}\n`);
+        process.stdout.write(`      ○ ${t("report.skipped")}: ${result.skipReason}\n`);
       }
       if (result.error) {
-        process.stdout.write(`      ! error: ${truncate(result.error, 400)}\n`);
+        process.stdout.write(`      ! ${t("report.error")}: ${truncate(result.error, 400)}\n`);
       }
       let lastGroup: string | undefined;
       for (const a of result.assertions) {
@@ -56,8 +57,10 @@ export function Console(): Reporter {
           process.stdout.write(`      ▸ ${a.group}\n`);
         }
         lastGroup = a.group;
-        const sev = a.severity === "gate" ? "gate" : "soft";
-        const thr = a.threshold !== undefined ? ` (got ${a.score.toFixed(2)} < ${a.threshold})` : "";
+        const sev = a.severity === "gate" ? t("report.gate") : t("report.soft");
+        const thr = a.threshold !== undefined
+          ? t("report.assertionThreshold", { score: a.score.toFixed(2), threshold: a.threshold })
+          : "";
         const indent = a.group !== undefined ? "        " : "      ";
         process.stdout.write(`${indent}- ${sev}: ${a.name}${thr}${a.detail ? ` — ${truncate(a.detail, 300)}` : ""}\n`);
       }
@@ -67,17 +70,31 @@ export function Console(): Reporter {
       const tokStr = tok > 0 ? `${fmtTokens(tok)} tok` : "— tok";
       const cost = summary.estimatedCostUSD !== undefined ? ` · $${summary.estimatedCostUSD.toFixed(2)}` : "";
       const parts = [
-        `${summary.passed} passed`,
-        `${summary.failed} failed`,
-        ...(summary.errored > 0 ? [`${summary.errored} errored`] : []),
-        `${summary.scored} scored`,
-        `${summary.skipped} skipped`,
+        t("report.summary.passed", { count: summary.passed }),
+        t("report.summary.failed", { count: summary.failed }),
+        ...(summary.errored > 0 ? [t("report.summary.errored", { count: summary.errored })] : []),
+        t("report.summary.scored", { count: summary.scored }),
+        t("report.summary.skipped", { count: summary.skipped }),
       ];
-      process.stdout.write(
-        `\n结果:${parts.join(", ")}  (${fmtDuration(summary.durationMs)} · ${tokStr}${cost})\n\n`,
-      );
+      process.stdout.write(t("report.result", {
+        parts: parts.join(", "),
+        duration: fmtDuration(summary.durationMs),
+        tokens: tokStr,
+        cost,
+      }));
     },
   };
+}
+
+function formatOutcome(outcome: string): string {
+  switch (outcome) {
+    case "passed": return t("report.passed");
+    case "failed": return t("report.failed");
+    case "errored": return t("report.errored");
+    case "scored": return t("report.scored");
+    case "skipped": return t("report.skipped");
+    default: return outcome;
+  }
 }
 
 function truncate(s: string, n: number): string {

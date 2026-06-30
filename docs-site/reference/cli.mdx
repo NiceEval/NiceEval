@@ -28,6 +28,24 @@ The fasteval CLI is your single entry point for discovering, running, and inspec
 
 ---
 
+## Output language
+
+fasteval localizes CLI and runtime messages without adding a config key. Set an
+environment variable when you want deterministic output:
+
+```bash
+FASTEVAL_LANG=en npx fasteval list
+FASTEVAL_LANG=zh-CN npx fasteval list
+```
+
+Locale detection order is `FASTEVAL_LANG`, `FASTEVAL_LOCALE`, `LC_ALL`,
+`LC_MESSAGES`, then `LANG`. Values starting with `zh` use `zh-CN`; other
+languages use `en`. If none are set, fasteval defaults to `zh-CN`. This affects
+terminal/runtime text only; machine result fields and LLM judge prompts are not
+translated.
+
+---
+
 ## `npx fasteval [id-prefix]`
 
 The default command discovers all `*.eval.ts` files and fixture directories under `evals/`, then runs the matching evals. Pass an ID prefix as the first positional argument to narrow the run to only evals whose ID starts with that prefix.

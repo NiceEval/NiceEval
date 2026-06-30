@@ -10,6 +10,7 @@ import * as Scoped from "../scoring/scoped.ts";
 import { buildJudge } from "../scoring/judge.ts";
 import { EvalSkipped, EvalRequirementFailed, TurnFailed } from "./control-flow.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
+import { t } from "../i18n/index.ts";
 import type {
   Agent,
   DiffData,
@@ -119,7 +120,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       shared: deps.shared,
       log: deps.log,
       skip: (reason) => {
-        if (reason.trim().length === 0) throw new Error("skip() 需要一个非空理由。");
+        if (reason.trim().length === 0) throw new Error(t("context.skipEmpty"));
         state.skipReason = reason;
         throw new EvalSkipped(reason);
       },
@@ -232,7 +233,7 @@ function makeTurnHandle(turn: Turn, collector: AssertionCollector): TurnHandle {
           .reverse()
           .find((e): e is Extract<StreamEvent, { type: "error" }> => e.type === "error");
         throw new TurnFailed(
-          lastError ? `本轮 send 返回 failed(turn status = failed):${lastError.message}` : undefined,
+          lastError ? t("context.turnFailed", { message: lastError.message }) : undefined,
         );
       }
       return handle;

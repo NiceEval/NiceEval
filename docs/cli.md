@@ -126,7 +126,13 @@ VERCEL_OIDC_TOKEN=...               # CI/CD OIDC
 
 # 评判模型(LLM-as-judge)
 # 复用上面对应 vendor 的 key,或在 config 里单独指定
+
+# CLI 输出语言
+FASTEVAL_LANG=en                    # en / zh-CN;覆盖系统 locale
+FASTEVAL_LOCALE=zh-CN               # FASTEVAL_LANG 未设置时生效
 ```
+
+CLI 文案默认跟随 `FASTEVAL_LANG` / `FASTEVAL_LOCALE`、`LC_ALL` / `LC_MESSAGES` / `LANG`。检测到 `zh` 使用 `zh-CN`,检测到其它语言使用 `en`;都没有时默认 `zh-CN`。这只影响 CLI / runtime 输出,不改变 eval 结果里的机器字段,也不翻译 LLM judge prompt。
 
 ## 配置优先级
 

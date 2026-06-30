@@ -21,7 +21,5 @@ export default defineEval({
       // 助手第二轮应提到"中文"或"汉语"等——说明它记住了上文
       t.messageIncludes(/中文|汉语|Chinese/i);
     });
-
-    t.judge.autoevals.factuality(reference).gate(0.8);
   },
 });

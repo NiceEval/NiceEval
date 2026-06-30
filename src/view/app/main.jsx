@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { Check, ChevronRight, Copy } from "lucide-react";
 import "../styles.css";
 
@@ -335,6 +336,7 @@ function Kpi({ label, value, className = "", title }) {
 }
 
 function Attempt({ result, totalRuns }) {
+  const [modalOpen, setModalOpen] = useState(false);
   const outcome = outcomeOf(result);
   const gates = failingAssertions(result);
   const reason = reasonFor(result, gates);
@@ -349,7 +351,7 @@ function Attempt({ result, totalRuns }) {
   const cells = (
     <>
       <span className="attempt-status">
-        <ChevronRight className={`attempt-chev${hasBody ? "" : " attempt-chev-hidden"}`} aria-hidden="true" />
+        {hasBody ? <ChevronRight className="attempt-chev" aria-hidden="true" /> : null}
         <span className={outcomeClass(outcome)}>{outcomeLabel(outcome)}</span>
       </span>
       <span className="eval-id">{result.id}</span>
@@ -376,18 +378,51 @@ function Attempt({ result, totalRuns }) {
   }
 
   return (
-    <details className="attempt-wrap">
-      <summary className="eval-item">{cells}</summary>
-      <div className="attempt-body">
-        {hasScores ? <AssertionScores assertions={allAssertions} /> : null}
-        {result.hasEvents && result.artifactBase ? (
-          <LazyArtifact type="transcript" src={`${result.artifactBase}/events.json`} />
-        ) : null}
-        {result.hasTrace && result.artifactBase ? (
-          <LazyArtifact type="trace" src={`${result.artifactBase}/trace.json`} />
-        ) : null}
+    <>
+      <div
+        className="eval-item eval-item-clickable"
+        role="button"
+        tabIndex={0}
+        onClick={() => setModalOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setModalOpen(true); }
+        }}
+      >
+        {cells}
       </div>
-    </details>
+      {modalOpen && (
+        <AttemptModal result={result} allAssertions={allAssertions} hasScores={hasScores} onClose={() => setModalOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function AttemptModal({ result, allAssertions, hasScores, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">{result.id}</span>
+          <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="modal-body">
+          {hasScores ? <AssertionScores assertions={allAssertions} /> : null}
+          {result.hasEvents && result.artifactBase ? (
+            <LazyArtifact type="transcript" src={`${result.artifactBase}/events.json`} />
+          ) : null}
+          {result.hasTrace && result.artifactBase ? (
+            <LazyArtifact type="trace" src={`${result.artifactBase}/trace.json`} />
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

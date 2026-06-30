@@ -11,6 +11,7 @@ import type {
   ReadSourceFilesOptions,
 } from "../types.ts";
 import { makeSourceFiles } from "./source-files.ts";
+import { t } from "../i18n/index.ts";
 
 const DEFAULT_SOURCE_EXTENSIONS = ["ts", "tsx", "js", "jsx"];
 const DEFAULT_IGNORE_DIRS = [".git", ".next", "node_modules", "dist", "build", "coverage"];
@@ -89,9 +90,15 @@ export class VercelSandbox implements Sandbox {
       } as Parameters<typeof VSandbox.create>[0]);
       this.vsb = newVsb;
       this.sessionCreatedAt = Date.now();
-      console.error(`[VercelSandbox] session rotated after ${Math.round(elapsed / 1000)}s → ${newVsb.currentSession().sessionId}`);
+      console.error(t("vercel.rotated", {
+        seconds: Math.round(elapsed / 1000),
+        sessionId: newVsb.currentSession().sessionId,
+      }));
     } catch (err) {
-      console.error(`[VercelSandbox] session rotate failed (${Math.round(elapsed / 1000)}s): ${err}`);
+      console.error(t("vercel.rotateFailed", {
+        seconds: Math.round(elapsed / 1000),
+        error: String(err),
+      }));
     }
   }
 
@@ -120,7 +127,7 @@ export class VercelSandbox implements Sandbox {
   async readFile(path: string): Promise<string> {
     const absPath = path.startsWith("/") ? path : `${this.workDir}/${path}`;
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
-    if (!buf) throw new Error(`File not found: ${absPath}`);
+    if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
     return buf.toString("utf8");
   }
 
@@ -199,7 +206,7 @@ export class VercelSandbox implements Sandbox {
   async downloadFile(path: string): Promise<Buffer> {
     const absPath = path.startsWith("/") ? path : `${this.workDir}/${path}`;
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
-    if (!buf) throw new Error(`File not found: ${absPath}`);
+    if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
     return buf;
   }
 

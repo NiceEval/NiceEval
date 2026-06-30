@@ -9,6 +9,7 @@
 // stderr,这样孤儿至少留下痕迹可查。
 
 import type { Sandbox } from "../types.ts";
+import { t } from "../i18n/index.ts";
 
 const live = new Set<Sandbox>();
 
@@ -34,12 +35,12 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
     await Promise.race([
       sb.stop(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`stop 超时(${timeoutMs}ms)`)), timeoutMs);
+        timer = setTimeout(() => reject(new Error(t("sandbox.stopTimeout", { timeoutMs }))), timeoutMs);
       }),
     ]);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    process.stderr.write(`  · [sandbox] 停沙箱 ${sb.sandboxId} 失败(已忽略,靠后端过期兜底):${msg}\n`);
+    process.stderr.write(t("sandbox.stopFailed", { id: sb.sandboxId, message: msg }));
   } finally {
     if (timer) clearTimeout(timer);
     live.delete(sb);
@@ -53,7 +54,7 @@ export async function stopSandbox(sb: Sandbox, timeoutMs = DEFAULT_STOP_TIMEOUT_
 export async function stopAllSandboxes(timeoutMs = DEFAULT_STOP_TIMEOUT_MS): Promise<number> {
   const all = [...live];
   if (all.length === 0) return 0;
-  process.stderr.write(`  · [sandbox] 强制清理 ${all.length} 个沙箱…\n`);
+  process.stderr.write(t("sandbox.forceCleanup", { count: all.length }));
   await Promise.allSettled(all.map((sb) => stopSandbox(sb, timeoutMs)));
   return all.length;
 }

@@ -2,6 +2,7 @@
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
 import type { Agent, AgentContext, InputFile, Sandbox, StreamEvent, Telemetry, Turn, Usage } from "../types.ts";
+import { t } from "../i18n/index.ts";
 
 /** 一条会话线的可变状态。adapter 读 isNew 决定是否 --resume,写 id 供下轮续接。 */
 export class RunSession {
@@ -61,13 +62,17 @@ export class SessionManager {
 
     const n = ++this.turnCount;
     const attach = files?.length ? ` 📎${files.length}` : "";
-    const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? "[file]")) + attach;
-    this.deps.log(`s${session.index}·t${n} → "${preview}…"`);
+    const preview = (text.replace(/\s+/g, " ").slice(0, 36) || (files?.[0]?.filename ?? t("session.fileFallback"))) + attach;
+    const turnLabel = session.index === 1
+      ? t("session.turn.primary", { turn: n })
+      : t("session.turn.secondary", { session: session.index, turn: n });
+    this.deps.log(`${turnLabel} → "${preview}…"`);
     const t0 = Date.now();
 
     session.lastInput = text;
     const turn = await this.deps.agent.send({ text, files }, ctx);
 
+    this.allEvents.push({ type: "message", role: "user", text });
     this.allEvents.push(...turn.events);
     if (turn.usage) accumulateUsage(this.usage, turn.usage);
     session.isNew = false;
@@ -79,7 +84,7 @@ export class SessionManager {
     const tok = (turn.usage?.inputTokens ?? 0) + (turn.usage?.outputTokens ?? 0);
     const tools = turn.events.filter((e) => e.type === "action.called").length;
     this.deps.log(
-      `s${session.index}·t${n} ← ${turn.status} · ${tools} 工具 · ${tok} tok · ${Math.round((Date.now() - t0) / 1000)}s`,
+      `${turnLabel} ← ${turn.status} · ${t("session.tools", { count: tools })} · ${tok} tok · ${Math.round((Date.now() - t0) / 1000)}s`,
     );
     return turn;
   }
