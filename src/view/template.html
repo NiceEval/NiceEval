@@ -32,7 +32,11 @@
 
     <section id="tab-experiments">
       <div class="section-head">
-        <h2>Experiment Performance Results</h2>
+        <h2>Experiments</h2>
+      </div>
+      <div id="group-selector" class="group-selector"></div>
+      <div class="section-sub-head">
+        <span id="group-detail-label" class="group-detail-label"></span>
         <div class="controls">
           <input id="search" class="search" type="search" placeholder="Filter experiment, agent, model, or eval..." autocomplete="off">
         </div>
@@ -59,75 +63,68 @@
   </main>
   <script>
     const rows = __FASTEVAL_ROWS_JSON__;
-    const state = { sort: "passRate", dir: -1, query: "", open: new Set(), openGroups: new Set(rows.map(r => r.group).filter(Boolean)) };
+    const state = {
+      sort: "passRate", dir: -1, query: "", open: new Set(),
+      selectedGroup: [...new Set(rows.map(r => r.group).filter(Boolean))].sort()[0] ?? null,
+    };
     const tbody = document.querySelector("#results-body");
     const search = document.querySelector("#search");
+
+    function buildGroupMap() {
+      const m = new Map();
+      for (const row of rows) {
+        if (row.group) {
+          if (!m.has(row.group)) m.set(row.group, []);
+          m.get(row.group).push(row);
+        }
+      }
+      return m;
+    }
 
     function render() {
       if (!tbody) return;
       const q = state.query.trim().toLowerCase();
-      const filtered = rows.filter((row) => {
+      const groupMap = buildGroupMap();
+
+      // Group selector cards
+      const selectorEl = document.getElementById("group-selector");
+      if (selectorEl) selectorEl.innerHTML = renderGroupSelector(groupMap);
+
+      // Detail label
+      const labelEl = document.getElementById("group-detail-label");
+      if (labelEl) labelEl.textContent = state.selectedGroup ?? "";
+
+      // Rows for detail table
+      const pool = state.selectedGroup ? (groupMap.get(state.selectedGroup) ?? []) : rows;
+      const filtered = pool.filter((row) => {
         if (!q) return true;
         return [row.label, row.group || "", row.experimentId || "", row.agent, row.model || "", ...row.results.map((r) => r.id)]
           .join(" ")
           .toLowerCase()
           .includes(q);
       });
+      filtered.sort((a, b) => compareRows(a, b, state.sort) * state.dir);
+      tbody.innerHTML = filtered.map((row) => renderRow(row)).join("");
+    }
 
-      if (q) {
-        filtered.sort((a, b) => compareRows(a, b, state.sort) * state.dir);
-        tbody.innerHTML = filtered.map((row) => renderRow(row, false)).join("");
-        return;
-      }
-
-      const groupMap = new Map();
-      const ungrouped = [];
-      for (const row of filtered) {
-        if (row.group) {
-          if (!groupMap.has(row.group)) groupMap.set(row.group, []);
-          groupMap.get(row.group).push(row);
-        } else {
-          ungrouped.push(row);
-        }
-      }
-
-      const sortedGroups = [...groupMap.keys()].sort();
-      let html = "";
-      for (const group of sortedGroups) {
+    function renderGroupSelector(groupMap) {
+      return [...groupMap.keys()].sort().map(group => {
         const groupRows = groupMap.get(group);
-        const isGroupOpen = state.openGroups.has(group);
         const allResults = groupRows.flatMap(r => r.results);
         const passed = allResults.filter(r => r.verdict === "passed").length;
         const failed = allResults.filter(r => r.verdict === "failed").length;
         const passRate = allResults.length ? passed / allResults.length : 0;
         const tone = passRate >= 0.8 ? "good" : passRate >= 0.5 ? "warn" : "bad";
         const totalCost = groupRows.reduce((s, r) => s + (r.estimatedCostUSD || 0), 0);
-        const tokens = groupRows.reduce((s, r) => s + totalTokens(r.usage), 0);
-        const avgDur = groupRows.reduce((s, r) => s + r.avgDurationMs, 0) / groupRows.length;
         const lastRun = groupRows.map(r => r.lastRunAt).filter(Boolean).sort().at(-1);
-        html += `
-          <tr class="group-row ${isGroupOpen ? "is-open" : ""}" data-group="${escapeAttr(group)}" tabindex="0">
-            <td><span class="chev"></span><span class="name">${escapeHtml(group)}</span><div class="sub">${groupRows.length} experiment${groupRows.length === 1 ? "" : "s"}${lastRun ? " · " + escapeHtml(formatDateTime(lastRun)) : ""}</div></td>
-            <td>—</td>
-            <td>—</td>
-            <td class="num">${formatDuration(avgDur)}</td>
-            <td class="num ${tone}">${formatPercent(passRate)}</td>
-            <td class="num">${formatTokens(tokens)}</td>
-            <td class="num">${formatCost(totalCost)}</td>
-            <td><span class="pill">${passed} passed / ${failed} failed</span></td>
-          </tr>
-        `;
-        if (isGroupOpen) {
-          groupRows.sort((a, b) => compareRows(a, b, state.sort) * state.dir);
-          for (const row of groupRows) {
-            html += renderRow(row, true);
-          }
-        }
-      }
-
-      ungrouped.sort((a, b) => compareRows(a, b, state.sort) * state.dir);
-      html += ungrouped.map(row => renderRow(row, false)).join("");
-      tbody.innerHTML = html;
+        const sel = state.selectedGroup === group;
+        return `<div class="group-card${sel ? " is-selected" : ""}" data-group="${escapeAttr(group)}" tabindex="0" role="button">
+          <div class="group-card-name">${escapeHtml(group)}</div>
+          <div class="group-card-rate ${tone}">${formatPercent(passRate)}</div>
+          <div class="group-card-meta">${groupRows.length} experiment${groupRows.length === 1 ? "" : "s"} · ${formatCost(totalCost)}</div>
+          ${lastRun ? `<div class="group-card-time">${escapeHtml(formatDateTime(lastRun))}</div>` : ""}
+        </div>`;
+      }).join("");
     }
 
     function compareRows(a, b, key) {
@@ -145,12 +142,12 @@
       return row[key] || 0;
     }
 
-    function renderRow(row, isChild = false) {
+    function renderRow(row) {
       const open = state.open.has(row.key);
       const tone = row.passRate >= 0.8 ? "good" : row.passRate >= 0.5 ? "warn" : "bad";
       return `
-        <tr class="main-row${isChild ? " child-row" : ""} ${open ? "is-open" : ""}" data-key="${escapeAttr(row.key)}" tabindex="0">
-          <td><span class="chev"></span><span class="name">${escapeHtml(row.label)}</span><div class="sub">${isChild ? "" : escapeHtml(row.group ? row.group + " · " : "")}${row.runs} eval result${row.runs === 1 ? "" : "s"}${row.lastRunAt ? " · " + escapeHtml(formatDateTime(row.lastRunAt)) : ""}</div></td>
+        <tr class="main-row ${open ? "is-open" : ""}" data-key="${escapeAttr(row.key)}" tabindex="0">
+          <td><span class="chev"></span><span class="name">${escapeHtml(row.label)}</span><div class="sub">${row.runs} eval result${row.runs === 1 ? "" : "s"}${row.lastRunAt ? " · " + escapeHtml(formatDateTime(row.lastRunAt)) : ""}</div></td>
           <td>${escapeHtml(row.model || "default")}</td>
           <td>${escapeHtml(row.agent)}</td>
           <td class="num">${formatDuration(row.avgDurationMs)}</td>
@@ -456,11 +453,9 @@
         updateSortIcons();
         return;
       }
-      const groupRow = event.target.closest(".group-row");
-      if (groupRow) {
-        const g = groupRow.dataset.group;
-        if (state.openGroups.has(g)) state.openGroups.delete(g);
-        else state.openGroups.add(g);
+      const groupCard = event.target.closest(".group-card");
+      if (groupCard) {
+        state.selectedGroup = groupCard.dataset.group;
         render();
         return;
       }
@@ -473,7 +468,7 @@
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
-      const row = event.target.closest(".main-row, .group-row");
+      const row = event.target.closest(".main-row, .group-card");
       if (!row) return;
       event.preventDefault();
       row.click();

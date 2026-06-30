@@ -219,11 +219,42 @@ tbody tr.main-row { cursor: pointer; }
 tbody tr.main-row:hover { background: color-mix(in oklch, var(--panel-2), var(--panel) 34%); }
 tbody tr.is-open { background: var(--panel-2); }
 tbody tr:last-child td { border-bottom: 0; }
-tbody tr.group-row { cursor: pointer; background: color-mix(in oklch, var(--panel-2), var(--panel) 20%); border-top: 1px solid var(--line); }
-tbody tr.group-row:hover { background: color-mix(in oklch, var(--panel-2), var(--line) 12%); }
-tbody tr.group-row .name { font-weight: 680; letter-spacing: -0.01em; }
-tbody tr.group-row:first-child { border-top: 0; }
-tbody tr.child-row td:first-child { padding-left: 32px; }
+.group-selector {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.group-card {
+  flex: 1;
+  min-width: 140px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px;
+  cursor: pointer;
+  background: var(--panel);
+  outline: none;
+  transition: border-color 120ms, background 120ms;
+}
+.group-card:hover { border-color: var(--line-strong); background: var(--panel-2); }
+.group-card.is-selected { border-color: var(--text); background: var(--panel-2); }
+.group-card-name { font-size: 13px; font-weight: 680; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.group-card-rate { font-size: 30px; font-weight: 760; font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 6px; }
+.group-card-meta { font-size: 12px; color: var(--muted); }
+.group-card-time { font-size: 11px; color: var(--soft); margin-top: 2px; }
+.section-sub-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  min-height: 36px;
+}
+.group-detail-label {
+  font-size: 15px;
+  font-weight: 680;
+  color: var(--text);
+}
 .chev {
   display: inline-block;
   width: 9px;
