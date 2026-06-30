@@ -58,3 +58,47 @@ CLI 只有两类输入：位置参数选择“跑哪些 eval”（eval id 前缀
 直接在 `main` 上开发，不要为改动新建 feature 分支；若已有分支则合回 `main`。
 
 不要用 `git reset --hard`、`git clean`、`git checkout -- <path>` 或 `git restore` 去丢弃工作树改动，除非用户明确要求。工作树里出现你没写的改动时，把它当成用户或其他 agent 的工作，不要覆盖。提交前用 `git status` 和 `git diff` 确认只包含本次任务相关文件。
+
+## 已知问题与 Know-How
+
+### Sandbox $HOME 不能 hardcode
+
+**现象**：bub agent 在 Vercel sandbox 上出现 `$HOME/.local/bin/bub: No such file or directory`。
+
+**根因**：`BUB_HOME` 和 `BUB_CHECKPOINT_PATHS` 硬编码了 `/home/node`（Docker sandbox 的用户 home），但不同 sandbox backend 的 Linux 用户不同（Vercel 是 `/home/vercel-sandbox`）。checkpoint tar 里嵌入的是绝对路径，解压后文件在 `/home/node/...`，而 `$HOME` 展开成 `/home/vercel-sandbox/...`，路径错位。
+
+**修法**：在 agent `setup()` 里用 `printf '%s' $HOME` 检测实际 home，存入 `Map<sandboxId, home>` 闭包变量供 `send()` 使用；checkpoint 路径和磁盘缓存 key 都带上 home，避免不同 sandbox 共用同一份缓存。不应有 `if (backend === 'vercel')` 之类的分支，对所有 backend 一视同仁。
+
+### Vercel 免费计划 session 寿命约 360-390s
+
+**现象**：eval 跑到 360-390s 时出现 `StreamError: Stream ended before command finished` 或 `TypeError: terminated`。
+
+**根因**：Vercel 免费计划有 session 硬上限。`extendTimeout` 返回 HTTP 400，`snapshot()` 返回 HTTP 402，均不支持续期。并发跑多个 eval 时，多路 LLM API 同时竞争，每个 agent 耗时被拉长到 280-400s，逼近上限。
+
+**修法**（两者都需要）：
+1. 实验配置里加 `maxConcurrency: 1` 串行跑，把每个 agent 耗时压到 50-200s
+2. `VercelSandbox.readSourceFiles` 改两阶段：`find`-only shell（约 1s）+ 并行 `readFileToBuffer` HTTP GET（约 2s），避免 30s 的 NDJSON 流在 session 快到期时 StreamError
+
+**附**：`SESSION_TIMEOUT_MS` 必须是固定常量（1_200_000），不能从 `commandTimeoutMs` 推导——透传给 Vercel API 的 `timeout` 越大，实际拿到的 session 反而更短。
+
+### ExperimentDef 的 maxConcurrency 字段曾无效
+
+**现象**：实验文件里写 `maxConcurrency: 1` 不起作用，仍以默认并发 4 跑。
+
+**根因**：`ExperimentDef` 类型里没有 `maxConcurrency` 字段，CLI 只读全局 `config.maxConcurrency`，实验级别的值被 TypeScript 静默忽略。
+
+**修法**：已在 `src/types.ts` 的 `ExperimentDef` 里加 `maxConcurrency?: number`，并在 `src/cli.ts` 的 `exp` 命令里取所有选中实验的 `Math.min(...maxConcurrency)` 作为实际并发上限。
+
+## 记录问题的规范
+
+发现基础设施 bug、API 限制或行为反直觉的地方时，在本文件的「已知问题与 Know-How」小节追加一条，格式为：
+
+```
+### 问题标题（一句话描述）
+
+**现象**：复现路径或错误信息
+**根因**：为什么会这样
+**修法**：怎么改，以及哪些场景适用
+```
+
+不要只改代码不留文档——下一个遇到同类问题的人（或未来的自己）需要这些上下文。
