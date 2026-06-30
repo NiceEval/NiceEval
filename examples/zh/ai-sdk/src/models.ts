@@ -27,14 +27,19 @@ export interface ModelDef {
   label: string;
   provider: ProviderName;
   contextTokens: number;
+  supportsVision?: boolean;
 }
 
 export const MODELS: ModelDef[] = [
-  { id: "gpt-5.4",           label: "GPT-5.4",            provider: "openai",   contextTokens: 400_000 },
-  { id: "gpt-4o-mini",       label: "GPT-4o Mini",        provider: "openai",   contextTokens: 128_000 },
-  { id: "deepseek-v4-flash", label: "DeepSeek v4 Flash",  provider: "deepseek", contextTokens: 128_000 },
-  { id: "deepseek-v4-pro",   label: "DeepSeek v4 Pro",    provider: "deepseek", contextTokens: 200_000 },
+  { id: "deepseek-v4-flash", label: "DeepSeek v4 Flash",  provider: "deepseek", contextTokens: 128_000, supportsVision: false },
+  { id: "deepseek-v4-pro",   label: "DeepSeek v4 Pro",    provider: "deepseek", contextTokens: 200_000, supportsVision: false },
+  { id: "gpt-4o-mini",       label: "GPT-4o Mini",        provider: "openai",   contextTokens: 128_000, supportsVision: true  },
+  { id: "gpt-5.4",           label: "GPT-5.4",            provider: "openai",   contextTokens: 400_000, supportsVision: true  },
 ];
+
+export function modelSupportsVision(modelId: string): boolean {
+  return MODELS.find((m) => m.id === modelId)?.supportsVision ?? true;
+}
 
 type ModelFactory = (modelId: string) => LanguageModel;
 

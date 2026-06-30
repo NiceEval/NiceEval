@@ -99,7 +99,7 @@ npx fasteval view
 ## Quick Start
 
 ```text
-READ docs-site/quickstart.mdx and install fasteval for this repo.
+READ dohttps://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
 ```
 
 Start from the scenario that matches what you need to evaluate:

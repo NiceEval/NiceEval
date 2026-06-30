@@ -1,20 +1,12 @@
 ---
 title: "Eval 你的 Claude Code / Codex 插件"
-sidebarTitle: "插件 Eval"
-description: "用 fasteval 评估 Claude Code / Codex 插件、Hook 或 MCP 集成：创建 sandbox fixture，运行 coding agent，并用测试、diff 和工具调用验证行为。"
+sidebarTitle: "评估 Codex 插件"
+description: ""
 ---
 
-如果你在给 Claude Code 或 Codex 写插件、Hook、MCP server 或项目级扩展，最可靠的 eval 方式是把它放进真实 workspace，让 coding agent 执行一组任务，再用测试验证结果。
+如果你在给 Claude Code 或 Codex 写插件，你应该使用 eval 方式是把它放进真实 workspace，让 coding agent 执行一组任务。获取你的插件的真实效果、pass rate、耗时和成本。你可以这样展示你的插件提升了多少效果。
 
-这类 eval 使用 **Sandbox 模式**：agent 在 Docker 或云端 sandbox 中运行，能读写文件、执行命令、调用你的插件；`EVAL.ts` 在验证阶段才出现，避免 agent 提前看到答案。
-
-## 适合评什么
-
-- 插件是否能正确暴露工具或命令。
-- Hook 是否在正确时机生效。
-- MCP server 是否能被 agent 调用，并返回可用结果。
-- 插件是否让 agent 更稳定地完成真实编码任务。
-- 不同 agent、model 或插件版本的 pass rate 差异。
+这类 eval 适合使用 **Sandbox 模式**：agent 在 Docker 或云端 sandbox 中运行，能读写文件、执行命令、调用你的插件；
 
 ## 推荐目录结构
 

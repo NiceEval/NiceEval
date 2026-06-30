@@ -8,6 +8,7 @@ import { includes, excludes } from "fasteval/expect";
 // 一次性验证所有变量，并通过 z.infer<> 获得正确类型。
 export default defineEval({
   description: "用 Zod 定义 EnvSchema 解析环境变量，类型安全地导出 env 对象",
+  workspace: "./workspaces/ts-starter",
 
   async test(t) {
     await t

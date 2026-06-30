@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
+    "dev": "lsof -ti tcp:5188 | xargs kill -9 2>/dev/null; concurrently -k -n server,web -c blue,green \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "node --env-file .env --import tsx/esm --watch src/server.ts",
     "dev:web": "wait-on -t 30000 tcp:127.0.0.1:5188 && vite",
     "build": "vite build",

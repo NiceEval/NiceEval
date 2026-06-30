@@ -109,6 +109,7 @@ function App({ data }) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
+                <CopyAllErrors rows={filtered} />
               </div>
             </div>
             {rows.length ? (
@@ -381,6 +382,56 @@ function CopyReason({ text }) {
   return (
     <button className={`copy-reason${copied ? " is-copied" : ""}`} onClick={copy} aria-label="Copy reason" title="Copy reason">
       {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+    </button>
+  );
+}
+
+function CopyAllErrors({ rows }) {
+  const [copied, setCopied] = useState(false);
+
+  const errorEntries = rows.flatMap((row) =>
+    (row.results ?? [])
+      .filter((r) => {
+        const outcome = outcomeOf(r);
+        return outcome === "failed" || outcome === "errored";
+      })
+      .map((r) => {
+        const failedAssertions = failingAssertions(r);
+        const reason = reasonFor(r, failedAssertions);
+        const traceBase = r.artifactAbsBase || r.artifactBase;
+        const tracePath = r.hasTrace && traceBase ? `${traceBase}/trace.json` : null;
+        return { experimentName: row.label, evalId: r.id, reason, tracePath };
+      })
+  );
+
+  if (!errorEntries.length) return null;
+
+  const copy = async (event) => {
+    event.stopPropagation();
+    const text = errorEntries
+      .map(({ experimentName, evalId, reason, tracePath }) =>
+        [
+          `实验: ${experimentName}  Eval: ${evalId}`,
+          reason ? `错误: ${reason}` : null,
+          tracePath ? `Trace: ${tracePath}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      )
+      .join("\n\n");
+    try {
+      await copyText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <button className={`copy-all-errors${copied ? " is-copied" : ""}`} onClick={copy} title="复制所有失败/报错的 eval 信息">
+      {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+      <span>{copied ? "已复制" : `复制错误 (${errorEntries.length})`}</span>
     </button>
   );
 }

@@ -1,12 +1,6 @@
 import { defineConfig } from "fasteval";
 
 export default defineConfig({
-  // Claude Code 需要隔离工作区，走 Docker 沙箱。
-  sandbox: "docker",
-
-  // 被测工作区：已装好 zod 和 express 的 TypeScript 项目。
-  workspace: "./workspaces/ts-starter",
-
   // 评判模型：用轻量模型做 judge，与被测 agent 解耦。
   judge: { model: "claude-haiku-4-5-20251001" },
 

@@ -93,7 +93,7 @@ npx fasteval view
 ## 快速开始
 
 ```text
-READ docs-site/zh/quickstart.mdx and install fasteval for this repo.
+READ dohttps://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
 ```
 
 从你的场景开始：

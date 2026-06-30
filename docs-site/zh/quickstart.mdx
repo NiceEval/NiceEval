@@ -1,7 +1,7 @@
 ---
-title: "fasteval 快速开始: 10 分钟跑起第一个 eval"
+title: "为你的 Agent 项目设置评估"
 sidebarTitle: "快速开始"
-description: "安装 fasteval、初始化项目，并运行函数、对话 agent 和 coding-agent 三类 eval。"
+description: ""
 ---
 
 这个教程会从零开始创建一个最小 fasteval 项目，并展示三种常见 eval：进程内函数、对话 agent、沙箱里的 coding agent。
@@ -23,9 +23,7 @@ description: "安装 fasteval、初始化项目，并运行函数、对话 agent
 也可以把下面的指令直接交给你的 coding agent：
 
 ```text
-READ docs-site/zh/example/claude-code-codex-plugin.mdx and install fasteval for this repo.
-READ docs-site/zh/example/claude-code-codex-skill.mdx and install fasteval for this repo.
-READ docs-site/zh/example/ai-agent-application.mdx and install fasteval for this repo.
+READ dohttps://raw.githubusercontent.com/CorrectRoadH/fasteval/refs/heads/main/INIT.md and install fasteval for this repo.
 ```
 
 <Steps>
@@ -55,13 +53,9 @@ READ docs-site/zh/example/ai-agent-application.mdx and install fasteval for this
 import { defineConfig } from "fasteval";
 
 export default defineConfig({
-  maxConcurrency: 4,
-  timeoutMs: 300_000,
-  sandbox: "auto",
+  timeoutMs: 300_000
 });
 ```
-
-如果你的 eval 没有在文件里指定 `agent`，可以在配置里设置 `defaultAgent`，也可以运行时传 `--agent`。
 
 ## Eval 1: 进程内函数
 
@@ -85,7 +79,7 @@ export default defineEval({
 ```
 
 ```bash
-npx fasteval classify
+npx fasteval eval 
 ```
 
 ## Eval 2: 对话 agent

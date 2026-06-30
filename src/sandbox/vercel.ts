@@ -26,6 +26,7 @@ const ROTATE_THRESHOLD_MS = 270_000;
 const SESSION_TIMEOUT_MS = 1_200_000;
 
 export class VercelSandbox implements Sandbox {
+  readonly otlpHost = null;
   private vsb: InstanceType<typeof VSandbox>;
   private workDir: string = VERCEL_WORKDIR;
   private commandTimeoutMs: number;

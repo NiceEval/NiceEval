@@ -226,7 +226,9 @@ function attachArtifactBase(summary: RunSummary, summaryPath: string, root: stri
   const runDir = dirname(summaryPath);
   for (const r of summary.results) {
     if (!r.artifactsDir) continue;
-    r.artifactBase = relative(root, join(runDir, r.artifactsDir)).split(/[\\/]/).join("/");
+    const abs = join(runDir, r.artifactsDir);
+    r.artifactBase = relative(root, abs).split(/[\\/]/).join("/");
+    r.artifactAbsBase = abs;
   }
 }
 

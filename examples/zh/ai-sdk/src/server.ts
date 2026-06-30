@@ -18,6 +18,12 @@ server.listen(port, "127.0.0.1", () => {
   process.stdout.write(`Assistant server listening on http://127.0.0.1:${port}\n`);
 });
 
+function shutdown() {
+  server.close(() => process.exit(0));
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === "OPTIONS") {
     res.writeHead(204, corsHeaders());
@@ -38,14 +44,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   // 流式聊天端点 — React useChat 用，AI SDK data stream 格式。
   if (req.method === "POST" && req.url === "/api/chat") {
-    const body = await readJson(req) as {
-      messages?: unknown[];
-      model?: string;
-      images?: Array<{ mimeType: string; dataBase64: string }>;
-    };
+    const body = await readJson(req) as { messages?: unknown[]; model?: string };
     const signal = abortSignalFor(req);
-    const result = streamChat(body.messages ?? [], body.model, body.images, signal);
-    result.pipeUIMessageStreamToResponse(res);
+    const result = await streamChat(body.messages ?? [], body.model, signal);
+    result.pipeUIMessageStreamToResponse(res, { headers: corsHeaders() });
     return;
   }
 

@@ -428,6 +428,14 @@ export interface Sandbox {
   stop(): Promise<void>;
   readonly sandboxId: string;
   /**
+   * 本地 OTLP 接收器的目标 host。
+   * - `string`:沙箱内可通过该 hostname 回连宿主 OTLP 端口(如 docker 的 `host.docker.internal`)。
+   * - `null`:沙箱运行在远程云端(如 e2b/vercel),无法访问宿主本地端口 → 跳过 tracing。
+   *   可通过环境变量 `FASTEVAL_OTLP_HOST` 强制覆盖(如配置 tunnel 时)。
+   */
+  readonly otlpHost: string | null;
+
+  /**
    * 可选:把一行写进容器的「主日志」(PID1 在 tail 它)——于是 `docker logs` /
    * Docker UI 的 Logs 标签页能实时看到 agent 逐轮活动。docker 后端实现,其它可省略。
    */
@@ -574,6 +582,8 @@ export interface EvalResult {
   artifactsDir?: string;
   /** view 拼好的工件目录(相对 view 输入根,供前端 fetch);loadSummaries 注入。 */
   artifactBase?: string;
+  /** 工件目录的绝对路径;loadSummaries 注入,供复制/展示用。 */
+  artifactAbsBase?: string;
   hasTrace?: boolean;
   hasEvents?: boolean;
 }

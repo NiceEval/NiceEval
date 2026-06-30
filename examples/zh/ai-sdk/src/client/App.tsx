@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, getToolName, isToolUIPart, type UIMessage } from "ai";
+import { DefaultChatTransport, getToolName, isFileUIPart, isToolUIPart, type FileUIPart, type UIMessage } from "ai";
 import "./App.css";
 
 type ModelDef = { id: string; label: string; contextTokens: number };
-type ImageData = { mimeType: string; dataBase64: string };
 
 function App() {
   const [models, setModels] = useState<ModelDef[]>([]);
-  const [model, setModel] = useState("gpt-4o-mini");
+  const [model, setModel] = useState("deepseek-v4-flash");
   const [modelOpen, setModelOpen] = useState(false);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -17,17 +16,16 @@ function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Refs so the transport closure always reads the latest values.
+  // Ref so the transport closure always reads the latest model value.
   const modelRef = useRef(model);
   modelRef.current = model;
-  const imagesRef = useRef<ImageData[]>([]);
 
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
         prepareSendMessagesRequest: ({ messages }) => ({
-          body: { messages, model: modelRef.current, images: imagesRef.current },
+          body: { messages, model: modelRef.current },
         }),
       }),
     [],
@@ -57,17 +55,15 @@ function App() {
     if (!text && attachments.length === 0) return;
     if (running) return;
 
-    // Convert files to base64 and stash in ref BEFORE sendMessage.
-    imagesRef.current = await Promise.all(attachments.map(toImageData));
+    // Convert to FileUIPart (data URL) so the SDK tracks them in UIMessage.
+    const fileParts = await Promise.all(attachments.map(toFileUIPart));
 
     setInput("");
     setAttachments([]);
     previews.forEach((p) => URL.revokeObjectURL(p));
     setPreviews([]);
 
-    sendMessage({ text: text || "请描述这张图片。" });
-
-    imagesRef.current = [];
+    sendMessage({ text: text || "请描述这张图片。", files: fileParts });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -200,6 +196,13 @@ function MessageBubble({ message }: { message: UIMessage }) {
   return (
     <div className={`msg-group ${isUser ? "user-group" : "assistant-group"}`}>
       {message.parts.map((part, i) => {
+        if (isFileUIPart(part) && part.mediaType.startsWith("image/")) {
+          return (
+            <div key={i} className={`msg ${isUser ? "user" : "assistant"} msg-image-wrap`}>
+              <img src={part.url} alt={part.filename ?? "image"} className="msg-image" />
+            </div>
+          );
+        }
         if (part.type === "text" && part.text) {
           return (
             <div key={i} className={`msg ${isUser ? "user" : "assistant"}`}>
@@ -231,12 +234,11 @@ function MessageBubble({ message }: { message: UIMessage }) {
   );
 }
 
-async function toImageData(file: File): Promise<ImageData> {
+async function toFileUIPart(file: File): Promise<FileUIPart> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = reader.result as string;
-      resolve({ mimeType: file.type, dataBase64: dataUrl.split(",")[1] });
+      resolve({ type: "file", mediaType: file.type, filename: file.name, url: reader.result as string });
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);

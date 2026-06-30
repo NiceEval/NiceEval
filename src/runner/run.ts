@@ -6,6 +6,7 @@ import { resolve as resolvePath } from "node:path";
 import { Effect, Cause, Duration, Exit } from "effect";
 import { createSandbox, sandboxLabel } from "../sandbox/resolve.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
+import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapSpansToCanonical } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
@@ -382,19 +383,39 @@ function runAttemptEffect(
           : createRemoteSandbox();
       if (run.agent.kind === "remote") log("使用 remote agent(不创建沙箱)…");
 
-      // ── tracing:本机 OTLP 接收器同样用 Scope 接管(release=close,免端口泄漏)──
+      // ── tracing ──────────────────────────────────────────────────────────────────
+      // sandbox.otlpHost:
+      //   string → docker 类沙箱,宿主开本地接收器,container 经 host.docker.internal 回连
+      //   null   → 远程云端沙箱(e2b / vercel),宿主端口不可达 → 改在沙箱内起 collector
+      // FASTEVAL_OTLP_HOST 可强制覆盖(如配好 tunnel 时)。
       let receiver: TraceReceiver | undefined;
       let telemetry: Telemetry | undefined;
       if (run.agent.capabilities.tracing) {
-        receiver = yield* createTraceReceiver();
-        const defaultHost = run.agent.kind === "sandbox" ? "host.docker.internal" : "127.0.0.1";
-        const host = process.env.FASTEVAL_OTLP_HOST ?? defaultHost;
-        const endpoint = receiver.endpoint(host);
-        // env-based 导出:把 agent 声明的 env(OTEL_* 等)算出来塞进 telemetry,send 直接 spread。
-        const env = run.agent.tracing?.env?.(endpoint);
-        telemetry = env ? { endpoint, env } : { endpoint };
-        const proto = run.agent.tracing?.protocol;
-        log(`OTLP 接收器 → ${endpoint}${proto ? ` (${proto})` : ""}`);
+        const forcedHost = process.env.FASTEVAL_OTLP_HOST;
+        if (forcedHost) {
+          // 显式覆盖:走本地接收器,把指定 host 交给 agent
+          receiver = yield* createTraceReceiver();
+          const endpoint = receiver.endpoint(forcedHost);
+          const env = run.agent.tracing?.env?.(endpoint);
+          telemetry = env ? { endpoint, env } : { endpoint };
+          log(`OTLP 接收器(覆盖 host) → ${endpoint}`);
+        } else if (sandbox.otlpHost !== null) {
+          // 本地/docker 沙箱:宿主开接收器
+          receiver = yield* createTraceReceiver();
+          const endpoint = receiver.endpoint(sandbox.otlpHost);
+          const env = run.agent.tracing?.env?.(endpoint);
+          telemetry = env ? { endpoint, env } : { endpoint };
+          const proto = run.agent.tracing?.protocol;
+          log(`OTLP 接收器 → ${endpoint}${proto ? ` (${proto})` : ""}`);
+        } else {
+          // 远程沙箱(e2b / vercel):在沙箱内起 collector,agent 往 localhost:4318 发
+          receiver = yield* createInSandboxTraceReceiver(sandbox);
+          const endpoint = receiver.endpoint("");
+          const env = run.agent.tracing?.env?.(endpoint);
+          telemetry = env ? { endpoint, env } : { endpoint };
+          const proto = run.agent.tracing?.protocol;
+          log(`OTLP in-sandbox collector → ${endpoint}${proto ? ` (${proto})` : ""}`);
+        }
       }
 
       // body 是 Promise(adapter 边界)。Effect.promise 给的 AbortSignal 在本 fiber 被中断
@@ -679,6 +700,7 @@ function createRemoteSandbox(): Sandbox {
 
   return {
     sandboxId: "remote",
+    otlpHost: "127.0.0.1",
     async runCommand() {
       return unavailable("runCommand");
     },

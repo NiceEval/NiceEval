@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { generateText, streamText, stepCountIs, tool, type ModelMessage, type ToolSet } from "ai";
+import { generateText, streamText, stepCountIs, tool, convertToModelMessages, type ModelMessage, type UIMessage, type ToolSet } from "ai";
 import { z } from "zod/v4";
 import type { AgentEvent, AgentRequest, AgentResponse, AgentUsage, JsonValue, RequestFile } from "./protocol.ts";
 import { createFastevalTrace } from "./fasteval-observability.ts";
 import { calculate, getSession, getWeather, rememberAiTurn, sessionMessages, webSearch } from "./assistant.ts";
-import { resolveModel } from "./models.ts";
+import { modelSupportsVision, resolveModel } from "./models.ts";
 
 const SYSTEM_PROMPT = `
 你是一个乐于助人的中文 AI 助手。
@@ -67,41 +67,21 @@ function makeRecorder(events: AgentEvent[]) {
 }
 
 /**
- * UI 流式端点：接受 useChat 发来的完整 messages 数组，直接 pipe 到客户端。
- * 调用方负责 pipeDataStreamToResponse。
+ * UI 流式端点：接受 useChat 发来的 UIMessage[] 数组，转换后直接 pipe 到客户端。
+ * 图片由客户端以 FileUIPart（data URL）形式嵌入消息，convertToModelMessages 负责转换。
  */
-export function streamChat(
+export async function streamChat(
   rawMessages: unknown[],
   modelId?: string,
-  images?: Array<{ mimeType: string; dataBase64: string }>,
   signal?: AbortSignal,
 ) {
-  const resolvedModel = resolveModel(modelId ?? process.env.AGENT_MODEL ?? "gpt-4o-mini");
+  const resolvedModel = resolveModel(modelId ?? process.env.AGENT_MODEL ?? "deepseek-v4-flash");
 
-  // 把前端传来的 messages 当做 ModelMessage[]，如有图片则追加到最后一条 user 消息。
-  let messages = rawMessages as ModelMessage[];
-  if (images?.length) {
-    const last = messages[messages.length - 1];
-    if (last?.role === "user") {
-      const textContent = typeof last.content === "string" ? last.content : "";
-      const textParts = typeof last.content === "string"
-        ? [{ type: "text" as const, text: last.content }]
-        : (Array.isArray(last.content) ? last.content : [{ type: "text" as const, text: textContent }]);
-      messages = [
-        ...messages.slice(0, -1),
-        {
-          role: "user",
-          content: [
-            ...textParts,
-            ...images.map((img) => ({
-              type: "image" as const,
-              image: `data:${img.mimeType};base64,${img.dataBase64}`,
-            })),
-          ],
-        },
-      ];
-    }
-  }
+  // useChat 发来的是 UIMessage[]（有 parts/id），需转成 ModelMessage[]。
+  const rawConverted = await convertToModelMessages(rawMessages as UIMessage[]);
+  const messages = modelSupportsVision(modelId ?? "")
+    ? rawConverted
+    : stripImageParts(rawConverted);
 
   return streamText({
     model: resolvedModel,
@@ -117,7 +97,7 @@ export function streamChat(
 export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSignal): Promise<AgentResponse> {
   const session = getSession(request.sessionId);
   const events: AgentEvent[] = [];
-  const modelId = request.model ?? process.env.AGENT_MODEL ?? "gpt-4o-mini";
+  const modelId = request.model ?? process.env.AGENT_MODEL ?? "deepseek-v4-flash";
   const model = resolveModel(modelId);
 
   const trace = createFastevalTrace(request.otelEndpoint);
@@ -176,6 +156,20 @@ function usageAttrs(usage: AgentUsage | undefined): Record<string, number> {
     "gen_ai.usage.input_tokens": usage.inputTokens,
     "gen_ai.usage.output_tokens": usage.outputTokens,
   };
+}
+
+function stripImageParts(messages: ModelMessage[]): ModelMessage[] {
+  return messages.map((msg) => {
+    if (msg.role !== "user" || !Array.isArray(msg.content)) return msg;
+    type Part = { type?: string };
+    const before = msg.content as Part[];
+    const filtered = before.filter((p) => p.type !== "image" && p.type !== "file");
+    if (filtered.length === before.length) return msg;
+    // Always append the note — if we only keep user text without it, the model
+    // sees "图片里面是什么" with no image and hallucinates a description.
+    (filtered as unknown[]).push({ type: "text", text: "[注意：用户发送了图片，但当前模型不支持图像输入，请告知用户换用支持视觉的模型]" });
+    return { ...msg, content: filtered } as ModelMessage;
+  });
 }
 
 function normalizeUsage(result: unknown): AgentUsage | undefined {

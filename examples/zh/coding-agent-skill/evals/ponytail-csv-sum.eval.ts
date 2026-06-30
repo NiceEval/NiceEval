@@ -8,6 +8,7 @@ import { includes } from "fasteval/expect";
 // 有 skill 的 agent 会先问"标准库能解决吗？"然后用 csv.DictReader 一次性搞定。
 export default defineEval({
   description: "读取 sales.csv 并求 amount 列的和（应用标准库，不引入 pandas）",
+  workspace: "./workspaces/ts-starter",
 
   async test(t) {
     await t.sandbox.writeFiles({

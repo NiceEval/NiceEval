@@ -113,6 +113,7 @@ export interface DockerSandboxOptions {
  * 实现 ../types.ts 的 Sandbox 接口。
  */
 export class DockerSandbox implements Sandbox {
+  readonly otlpHost = "host.docker.internal";
   private docker: Docker;
   private container: Docker.Container | null = null;
   private _containerId = "";

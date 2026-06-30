@@ -8,6 +8,7 @@ import { includes } from "fasteval/expect";
 // 有 skill 的 agent 会主动思考"平台是否提供了现成方案？"并自发补充路径安全校验。
 export default defineEval({
   description: "实现文件上传路径解析函数（不提示要防路径穿越）",
+  workspace: "./workspaces/ts-starter",
 
   async test(t) {
     // 给工作区预置一个带 TODO 的 Python 文件

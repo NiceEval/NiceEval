@@ -8,6 +8,7 @@ import { includes, excludes } from "fasteval/expect";
 // 并在校验失败时返回 422 + ZodError.issues。
 export default defineEval({
   description: "用 Zod 校验 POST /users 的请求体，失败时返回结构化错误",
+  workspace: "./workspaces/ts-starter",
 
   async test(t) {
     await t

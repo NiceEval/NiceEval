@@ -34,6 +34,7 @@ function shellQuote(s: string): string {
 }
 
 export class E2BSandbox implements Sandbox {
+  readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
   private workDir: string = E2B_WORKDIR;
   private commandTimeoutMs: number;

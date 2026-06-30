@@ -8,6 +8,7 @@ import { includes, excludes } from "fasteval/expect";
 // 有 skill 的 agent 先检查现有工具（"已在 codebase 里？"），发现 textutils.slugify，直接调用。
 export default defineEval({
   description: "生成文章 URL slug——应复用现有 textutils.slugify 而非重写",
+  workspace: "./workspaces/ts-starter",
 
   async test(t) {
     await t.sandbox.writeFiles({

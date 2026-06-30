@@ -441,6 +441,41 @@ tbody tr:last-child td { border-bottom: 0; }
   border-color: color-mix(in oklch, var(--good), var(--line) 40%);
   background: color-mix(in oklch, var(--good), transparent 88%);
 }
+.copy-all-errors {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.copy-all-errors svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.copy-all-errors:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.copy-all-errors.is-copied {
+  color: var(--good);
+  border-color: color-mix(in oklch, var(--good), var(--line) 40%);
+  background: color-mix(in oklch, var(--good), transparent 88%);
+}
 .raw-details {
   margin-top: 16px;
   border-top: 1px solid color-mix(in oklch, var(--line), transparent 15%);
