@@ -1,0 +1,8 @@
+packages: []
+allowBuilds:
+  cpu-features: true
+  esbuild: true
+  protobufjs: true
+  ssh2: true
+minimumReleaseAgeExclude:
+  - fasteval@0.1.0-alpha.0

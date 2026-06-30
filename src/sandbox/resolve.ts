@@ -4,9 +4,6 @@
 
 import { Effect } from "effect";
 import type { Sandbox, SandboxBackend, SandboxOption, SandboxRuntime } from "../types.ts";
-import { DockerSandbox } from "./docker.ts";
-import { VercelSandbox } from "./vercel.ts";
-import { E2BSandbox } from "./e2b.ts";
 import { registerSandbox, stopSandbox } from "./registry.ts";
 
 /** 归一化后的沙箱描述:确定的后端 + 各后端参数(只有对应后端用得上的会有值)。 */
@@ -101,13 +98,25 @@ export function createSandbox(opts: {
   );
 }
 
-function createBackend(r: ResolvedSandbox, timeout?: number): Promise<Sandbox> {
+async function createBackend(r: ResolvedSandbox, timeout?: number): Promise<Sandbox> {
   switch (r.backend) {
-    case "docker":
+    case "docker": {
+      const { DockerSandbox } = await import("./docker.ts").catch(() => {
+        throw new Error("Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode");
+      });
       return DockerSandbox.create({ timeout, runtime: r.runtime, image: r.image });
-    case "vercel":
+    }
+    case "vercel": {
+      const { VercelSandbox } = await import("./vercel.ts").catch(() => {
+        throw new Error("Vercel sandbox requires '@vercel/sandbox'. Install it with: pnpm add @vercel/sandbox");
+      });
       return VercelSandbox.create({ timeout, runtime: r.runtime, snapshotId: r.snapshotId });
-    case "e2b":
+    }
+    case "e2b": {
+      const { E2BSandbox } = await import("./e2b.ts").catch(() => {
+        throw new Error("E2B sandbox requires 'e2b'. Install it with: pnpm add e2b");
+      });
       return E2BSandbox.create({ timeout, runtime: r.runtime, template: r.template });
+    }
   }
 }

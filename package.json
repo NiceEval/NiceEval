@@ -43,12 +43,14 @@
     "docs:links": "cd docs-site && npx --yes mint@latest broken-links --check-anchors --check-redirects"
   },
   "dependencies": {
-    "@vercel/sandbox": "^2.2.1",
-    "dockerode": "^4.0.2",
-    "e2b": "^2.31.0",
     "effect": "^3.21.4",
     "tar-stream": "^3.1.7",
     "tsx": "^4.19.2"
+  },
+  "optionalDependencies": {
+    "@vercel/sandbox": "^2.2.1",
+    "dockerode": "^4.0.2",
+    "e2b": "^2.31.0"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.31",
