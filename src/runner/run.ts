@@ -3,8 +3,8 @@
 // 采 diff→跑脚本→评分→判决→停沙箱),adapter 只填「把 agent 跑起来」一段。
 
 import { resolve as resolvePath } from "node:path";
-import { Effect, Cause, Duration } from "effect";
-import { createSandbox } from "../sandbox/resolve.ts";
+import { Effect, Cause, Duration, Exit } from "effect";
+import { createSandbox, sandboxLabel } from "../sandbox/resolve.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapSpansToCanonical } from "../o11y/otlp/mappers/index.ts";
@@ -33,6 +33,7 @@ import type {
   RunContext,
   RunSummary,
   Sandbox,
+  SandboxOption,
   ScoringContext,
   ScriptResult,
   Telemetry,
@@ -47,7 +48,7 @@ export interface AgentRun {
   flags: Record<string, unknown>;
   runs: number;
   earlyExit: boolean;
-  sandbox?: string;
+  sandbox?: SandboxOption;
   timeoutMs?: number;
   budget?: number;
   evalFilter: (id: string) => boolean;
@@ -127,12 +128,17 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // 每个 attempt 跑在自己的 fiber;runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
   // 但中断(Ctrl+C / kill)照常向上传播 —— 所以一条挂掉不会中断其它 attempt,而中断能停掉全部。
   //
-  // signal:把 opts.signal 喂给 runPromise → abort 触发根 fiber 中断 → forEach 中断所有子 fiber
+  // signal:把 opts.signal 喂给 run → abort 触发根 fiber 中断 → forEach 中断所有子 fiber
   //         → 每个 attempt 的 Scope 跑 release(sb.stop)→ 容器全部停掉(治孤儿)。Effect 保证
-  //         所有 finalizer 跑完后 runPromise 才结算,所以下面 summarize 时容器已清理干净。
+  //         所有 finalizer 跑完后才结算,所以下面 summarize 时容器已清理干净。
+  //
+  // 用 runPromiseExit 而非 runPromise:{ signal } 触发的中断会让整个 Exit 标记为 interrupted,
+  // 即便内层 catchAllCause 已把中断咽下 —— runPromise 这种情况下会直接 reject,把 Ctrl+C 变成
+  // 一条「fasteval 出错」崩溃栈、并跳过下面的部分汇总。runPromiseExit 返回 Exit 不抛,我们据此
+  // 把「中断/signal 已 abort」当正常的部分结果收尾,只有真·非中断缺陷才上抛。
   let interrupted = false;
   try {
-    await Effect.runPromise(
+    const exit = await Effect.runPromiseExit(
       Effect.forEach(
         attempts,
         (a) =>
@@ -169,6 +175,14 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
       ),
       { signal: opts.signal },
     );
+    if (Exit.isFailure(exit)) {
+      // signal abort 或 cause 含中断 → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出。
+      if (opts.signal?.aborted || Cause.isInterrupted(exit.cause)) {
+        interrupted = true;
+      } else {
+        throw Cause.squash(exit.cause);
+      }
+    }
     if (interrupted) process.stderr.write("  · 已中断:沙箱容器已清理,输出本次已完成的部分结果。\n");
   } finally {
     // run 作用域 teardown / cleanup 必跑(成功 / 失败 / 中断都跑),LIFO,各自兜错。
@@ -335,7 +349,7 @@ function runAttemptEffect(
       // sandboxSem 只覆盖「容器创建」阶段;容器起好后立即释放,后续 npm install / agent 不占位。
       log("起沙箱…");
       const sandbox = yield* sandboxSem.withPermits(1)(
-        createSandbox({ backend: run.sandbox ?? config.sandbox, timeout: timeoutMs, runtime: "node24" }),
+        createSandbox({ sandbox: run.sandbox ?? config.sandbox, timeout: timeoutMs, runtime: "node24" }),
       );
 
       // ── tracing:本机 OTLP 接收器同样用 Scope 接管(release=close,免端口泄漏)──
@@ -620,7 +634,7 @@ function experimentRunInfo(run: AgentRun): EvalResult["experiment"] {
     flags: run.flags,
     runs: run.runs,
     earlyExit: run.earlyExit,
-    sandbox: run.sandbox,
+    sandbox: run.sandbox === undefined ? undefined : sandboxLabel(run.sandbox),
     timeoutMs: run.timeoutMs,
     budget: run.budget,
   };

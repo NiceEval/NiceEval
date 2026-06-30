@@ -14,6 +14,7 @@ import { buildRegistry, resolveAgent } from "./agents/registry.ts";
 import { BUILTIN_AGENTS } from "./agents/builtin.ts";
 import { discoverEvals, discoverExperiments, makeFilter } from "./runner/discover.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
+import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import { buildView, startViewServer } from "./view/index.ts";
@@ -296,17 +297,41 @@ async function main(): Promise<void> {
   reporters.push(ArtifactsReporter());
   reporters.push(...(config.reporters ?? []));
 
-  // Ctrl+C / kill:abort 这个 controller → runEvals 把它喂给 Effect.runPromise 的 signal,
-  // 触发根 fiber 中断 → 每个 attempt 的 Scope 跑 release → 所有容器 stop()(治孤儿容器)。
-  // 第二次信号则直接硬退出,不再等 graceful 清理。
+  // Ctrl+C / kill 的三级响应,核心目标:任何情况下都不留下孤儿沙箱。
+  //   1 次:abort controller → runEvals 把它喂给 Effect signal → 各 attempt 的 Scope 跑 release
+  //         停容器(graceful)。同时起一个看门狗:graceful 若迟迟不收口(如 vsb.stop() 挂),
+  //         到点直接走兜底强清,不干等。
+  //   2 次:用户等不及 —— 立刻兜底强清(带超时)再退,而不是裸 process.exit 把进程连同
+  //         在飞的 stop 一起杀掉(那正是之前漏掉孤儿的根因)。
+  //   3 次:真不耐烦了,硬退(此时多半已无可清理的)。
   const ctrl = new AbortController();
-  let aborting = false;
+  let signalCount = 0;
+  // 兜底强清 + 退出:只跑一次,带超时(stopAllSandboxes 内每个 stop 各自有超时)。
+  let forcing = false;
+  const forceCleanupAndExit = (code: number) => {
+    if (forcing) return;
+    forcing = true;
+    void stopAllSandboxes().finally(() => process.exit(code));
+  };
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {
-      if (aborting) process.exit(130); // 第二次:不耐烦了,硬退
-      aborting = true;
-      process.stderr.write("\n收到中断,正在清理沙箱容器…(再按一次强制退出)\n");
-      ctrl.abort();
+      signalCount += 1;
+      if (signalCount === 1) {
+        process.stderr.write("\n收到中断,正在清理沙箱容器…(再按一次强制清理并退出)\n");
+        ctrl.abort();
+        // 看门狗:graceful 清理 12s 还没让进程自己收口,就强清兜底。
+        setTimeout(() => {
+          if (liveSandboxCount() > 0) {
+            process.stderr.write("\ngraceful 清理超时,强制清理沙箱…\n");
+            forceCleanupAndExit(130);
+          }
+        }, 12_000).unref();
+      } else if (signalCount === 2) {
+        process.stderr.write("\n强制清理沙箱并退出…\n");
+        forceCleanupAndExit(130);
+      } else {
+        process.exit(130); // 第三次:硬退
+      }
     });
   }
 
@@ -320,11 +345,17 @@ async function main(): Promise<void> {
     signal: ctrl.signal,
   });
 
+  // 正常返回(含被中断后走部分汇总)后再兜一刀:Scope finalizer 没停掉的残留沙箱在这里强清。
+  // 跑顺利时登记表已空,是 no-op。
+  await stopAllSandboxes();
+
   const failedExit = summary.failed > 0 || (flags.strict && summary.scored > 0);
   process.exit(failedExit ? 1 : 0);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   process.stderr.write(`fasteval 出错:${e instanceof Error ? e.stack ?? e.message : String(e)}\n`);
+  // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时),再退。
+  await stopAllSandboxes();
   process.exit(2);
 });
