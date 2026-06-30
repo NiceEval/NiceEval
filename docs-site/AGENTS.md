@@ -10,11 +10,16 @@ This directory is the public Mintlify documentation site for `fasteval`.
 - `concepts/` explains the core mental model.
 - `guides/` contains task-oriented documentation.
 - `reference/` contains API and CLI reference pages.
+- `zh/` contains the Chinese docs. Treat Chinese positioning and scenario
+  examples as the source of truth when English pages or indexes drift.
 
 ## Writing Rules
 
 - Keep the product positioning consistent with the root `AGENTS.md`: `fasteval`
   is a lightweight, general-purpose TypeScript agent eval tool.
+- When updating English pages, README links, or navigation based on Chinese
+  content, sync from `zh/` and the current code instead of inventing new
+  capabilities or paths.
 - Check current source or `docs/` before claiming that a command, adapter,
   sandbox backend, reporter, or CLI flag is supported.
 - Use MDX frontmatter with `title`, `sidebarTitle` when useful, and

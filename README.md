@@ -98,14 +98,15 @@ npx fasteval view
 
 ## Quick Start
 
-Copy to your agent
-```
-READ xxxx and install fasteval for this repo.
+```text
+READ docs-site/quickstart.mdx and install fasteval for this repo.
 ```
 
-[If you need to eval your claude code/codex plugin]()
-[If you need to eval your claude code/codex skill]()
-[If you need to eval your AI Agent application]()
+Start from the scenario that matches what you need to evaluate:
+
+- [Claude Code / Codex plugin eval](docs-site/zh/example/claude-code-codex-plugin.mdx)
+- [Claude Code / Codex skill eval](docs-site/zh/example/claude-code-codex-skill.mdx)
+- [AI Agent application eval](docs-site/zh/example/ai-agent-application.mdx)
 
 
 ## Roadmap
@@ -129,7 +130,8 @@ Official Adapters
 
 ## Documentation
 
-- [Mintlify docs site](docs-site/README.md)
+- [Mintlify docs site](https://fasteval.mintlify.site/)
+- [Mintlify docs source](docs-site/index.mdx)
 - [Documentation home](docs/README.md)
 - [Getting Started](docs/getting-started.md)
 - [Authoring](docs/authoring.md)

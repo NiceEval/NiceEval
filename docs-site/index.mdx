@@ -1,55 +1,88 @@
 ---
-title: "fasteval: lightweight AI agent evals for TypeScript"
+title: "fasteval: lightweight TypeScript evals for AI agents"
 sidebarTitle: "Home"
-description: "fasteval is a TypeScript eval framework for AI agents. Write evals in minutes, run them with bounded concurrency, and view structured artifacts."
+description: "fasteval is a lightweight, general-purpose TypeScript eval tool for agents, services, functions, and coding-agent fixtures."
 ---
 
-fasteval is a lightweight TypeScript library for evaluating AI agents. Whether you're testing a conversational assistant, a coding agent like Claude Code or Codex, or an in-process function, fasteval gives you a single `defineEval` API — with built-in scoring, concurrency scheduling, and structured result artifacts.
+fasteval is a lightweight eval tool for AI agents. It gives you one TypeScript surface for checking conversational agents, Claude Code or Codex-style coding agents, HTTP services, and in-process functions.
+
+The goal is low-friction evals that are still inspectable: `defineEval`, built-in scoring, bounded concurrency, run matrices, traces, cost, diffs, artifacts, and sandbox support when a task needs a real workspace.
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Install fasteval, scaffold a project, and run your first eval in minutes.
+  </Card>
+  <Card title="Sandbox agents" icon="box" href="/guides/sandbox-agent">
+    Evaluate coding agents inside isolated workspaces with hidden validation.
+  </Card>
+  <Card title="Remote agents" icon="server" href="/guides/remote-agent">
+    Wrap your HTTP agent, web service, or custom protocol with an adapter.
+  </Card>
+</CardGroup>
+
+## What you can evaluate
+
+<CardGroup cols={3}>
+  <Card title="Coding-agent extensions" icon="plug" href="/guides/fixtures">
+    Test Claude Code or Codex plugins, hooks, MCP servers, and project-level extensions against real coding tasks.
+  </Card>
+  <Card title="Agent applications" icon="globe" href="/guides/remote-agent">
+    Assert replies, tool calls, structured output, latency, and cost for your own agent service.
+  </Card>
+  <Card title="Functions and workflows" icon="function" href="/guides/authoring">
+    Run semantic regression tests against TypeScript functions, chains, and deterministic workflows.
+  </Card>
+</CardGroup>
+
+## Two integration modes
+
+Choose the boundary that matches the system under test. The eval and scoring model stays the same.
 
 <CardGroup cols={2}>
-  <Card title="Quickstart" icon="bolt" href="/quickstart">
-    Install fasteval and run your first eval in under 10 minutes.
+  <Card title="Sandbox mode" icon="box" href="/guides/sandbox-agent">
+    Use Docker or a cloud sandbox when the agent must read files, edit code, run commands, and produce a diff.
   </Card>
-  <Card title="Writing Evals" icon="pen-to-square" href="/guides/authoring">
-    Learn single-turn, multi-turn, and dataset eval patterns.
-  </Card>
-  <Card title="Connecting Agents" icon="plug" href="/guides/remote-agent">
-    Wire up your own agent or use built-in adapters for Claude Code and Codex.
-  </Card>
-  <Card title="CLI Reference" icon="terminal" href="/reference/cli">
-    Full reference for all fasteval CLI commands and flags.
+  <Card title="Direct mode" icon="cable" href="/guides/remote-agent">
+    Connect directly to an in-process function, HTTP service, AI SDK app, LangGraph flow, or custom agent protocol.
   </Card>
 </CardGroup>
 
-## What fasteval evaluates
-
-fasteval covers three categories of subjects under test — all using the same `defineEval` API:
+## What a run gives you
 
 <CardGroup cols={3}>
-  <Card title="Coding Agents" icon="code" href="/guides/sandbox-agent">
-    Run Claude Code, Codex, or bub inside an isolated sandbox and validate the resulting code with tests.
+  <Card title="Pass/fail you can defend" icon="check">
+    Combine gates, soft expectations, matchers, judges, and real project tests in one verdict.
   </Card>
-  <Card title="HTTP Services" icon="server" href="/guides/remote-agent">
-    Send requests to a deployed agent endpoint or web service and assert replies, tool calls, and structured output.
+  <Card title="Artifacts for debugging" icon="folder-open">
+    Inspect transcripts, event streams, traces, diffs, logs, usage, cost, and per-eval result JSON.
   </Card>
-  <Card title="In-Process Functions" icon="function" href="/guides/authoring">
-    Call your own functions directly and run evals as semantic unit tests in CI.
+  <Card title="Experiment matrices" icon="table-cells">
+    Compare agents, models, prompts, plugins, or sandbox backends with repeatable run configuration.
   </Card>
 </CardGroup>
 
-## Why "fast"
+## Example
 
-<CardGroup cols={3}>
-  <Card title="Fast to write" icon="feather">
-    One file = one eval. ID auto-derived from path. No boilerplate, no callback hell.
-  </Card>
-  <Card title="Fast to run" icon="gauge-high">
-    Bounded concurrency, fingerprint-based result cache, sandbox reuse, and early-exit.
-  </Card>
-  <Card title="Fast to read" icon="eye">
-    Streaming console output, structured artifacts (event stream, transcript, diff), and a built-in result viewer.
-  </Card>
-</CardGroup>
+```ts evals/weather/brooklyn.eval.ts
+import { defineEval } from "fasteval";
+import { includes } from "fasteval/expect";
+
+export default defineEval({
+  description: "Brooklyn weather query",
+  async test(t) {
+    await t.send("What's the weather in Brooklyn today?");
+
+    t.succeeded();
+    t.calledTool("get_weather", { input: { city: "Brooklyn" } });
+    t.check(t.reply, includes("sunny"));
+  },
+});
+```
+
+```bash
+npx fasteval weather
+npx fasteval view
+```
 
 ## Get started
 
@@ -59,35 +92,26 @@ fasteval covers three categories of subjects under test — all using the same `
     npm install -D fasteval
     ```
   </Step>
-  <Step title="Scaffold your project">
+  <Step title="Initialize your eval suite">
     ```bash
     npx fasteval init
     ```
-    This generates `evals/`, `fasteval.config.ts`, and an example eval file.
+    This generates `evals/`, `fasteval.config.ts`, and starter examples.
   </Step>
-  <Step title="Write your first eval">
-    ```typescript evals/weather/brooklyn.eval.ts
-    import { defineEval } from "fasteval";
-    import { includes } from "fasteval/expect";
-
-    export default defineEval({
-      description: "Brooklyn weather query",
-      async test(t) {
-        await t.send("What's the weather in Brooklyn today?");
-        t.succeeded();
-        t.calledTool("get_weather", { input: { city: "Brooklyn" } });
-        t.check(t.reply, includes("sunny"));
-      },
-    });
-    ```
-  </Step>
-  <Step title="Run it">
+  <Step title="Run an eval">
     ```bash
-    npx fasteval weather
+    npx fasteval
     ```
   </Step>
 </Steps>
 
+## Give this to your coding agent
+
+```text
+READ docs-site/quickstart.mdx and install fasteval for this repo.
+Create one eval for a real regression-prone workflow, run it locally, and show the generated artifacts.
+```
+
 <Tip>
-  See the [Quickstart guide](/quickstart) for a full walkthrough covering function evals, conversational agents, and coding-agent fixtures.
+  See the [Quickstart guide](/quickstart) for a full walkthrough covering function evals, conversational agents, and sandbox coding-agent fixtures.
 </Tip>
