@@ -77,10 +77,36 @@
 
       /* composer */
       form {
-        display: grid; grid-template-columns: minmax(0,1fr) auto;
+        display: grid; grid-template-columns: auto minmax(0,1fr) auto;
         gap: 10px; padding: 14px 20px;
         background: #fffaf1; border-top: 1px solid #d8d0c3;
       }
+      #image-previews {
+        display: flex; gap: 8px; flex-wrap: wrap;
+        padding: 0 20px 8px; background: #fffaf1;
+      }
+      #image-previews:empty { display: none; }
+      .preview-wrap {
+        position: relative; width: 64px; height: 64px;
+        border-radius: 7px; overflow: hidden; border: 1px solid #d8d0c3;
+        flex-shrink: 0;
+      }
+      .preview-wrap img { width: 100%; height: 100%; object-fit: cover; }
+      .preview-remove {
+        position: absolute; top: 2px; right: 2px;
+        width: 18px; height: 18px; border-radius: 50%;
+        background: rgba(0,0,0,.55); color: white; border: none;
+        font-size: 11px; line-height: 18px; text-align: center;
+        cursor: pointer; padding: 0;
+      }
+      #upload-btn {
+        min-height: 42px; width: 42px; border-radius: 7px;
+        border: 1px solid #c9bda9; background: white;
+        font-size: 18px; cursor: pointer; display: flex;
+        align-items: center; justify-content: center;
+        color: #756d60; flex-shrink: 0;
+      }
+      #upload-btn:hover { border-color: #356f67; color: #356f67; }
       input[type=text] {
         padding: 0 12px; min-height: 42px; border-radius: 7px;
         border: 1px solid #c9bda9; font: inherit; font-size: 14px;
@@ -91,8 +117,12 @@
         min-height: 42px; padding: 0 18px; border-radius: 7px;
         border: none; background: #25211b; color: white;
         font: inherit; font-weight: 700; font-size: 14px; cursor: pointer;
+        flex-shrink: 0;
       }
       button[type=submit]:disabled { opacity: .45; cursor: default; }
+      .msg-img {
+        max-width: 240px; border-radius: 8px; display: block; margin-top: 6px;
+      }
     </style>
   </head>
   <body>
@@ -110,10 +140,13 @@
 
       <section id="messages"></section>
 
+      <div id="image-previews"></div>
       <form id="composer">
+        <button id="upload-btn" type="button" title="上传图片">🖼</button>
         <input id="input" type="text" autocomplete="off" placeholder="发送消息…" />
         <button type="submit" id="send-btn">发送</button>
       </form>
+      <input id="file-input" type="file" accept="image/*" multiple style="display:none" />
     </main>
 
     <script type="module">
@@ -124,10 +157,65 @@
       const modelBtn = document.querySelector("#model-btn");
       const modelLabel = document.querySelector("#model-label");
       const modelDropdown = document.querySelector("#model-dropdown");
+      const uploadBtn = document.querySelector("#upload-btn");
+      const fileInput = document.querySelector("#file-input");
+      const previewsEl = document.querySelector("#image-previews");
 
       let sessionId;
       let currentModel = "";
       let streaming = false;
+      /** @type {{ file: File, dataBase64: string, mimeType: string, objectUrl: string }[]} */
+      let pendingFiles = [];
+
+      // ── 图片上传 ────────────────────────────────────────────────────────────
+      uploadBtn.addEventListener("click", () => fileInput.click());
+
+      fileInput.addEventListener("change", async () => {
+        for (const file of fileInput.files) {
+          const dataBase64 = await toBase64(file);
+          const objectUrl = URL.createObjectURL(file);
+          pendingFiles.push({ file, dataBase64, mimeType: file.type, objectUrl });
+          addPreview(objectUrl, pendingFiles.length - 1);
+        }
+        fileInput.value = "";
+      });
+
+      function toBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function addPreview(objectUrl, index) {
+        const wrap = document.createElement("div");
+        wrap.className = "preview-wrap";
+        wrap.dataset.index = index;
+        const img = document.createElement("img");
+        img.src = objectUrl;
+        const rm = document.createElement("button");
+        rm.className = "preview-remove";
+        rm.textContent = "×";
+        rm.addEventListener("click", () => removePreview(index));
+        wrap.append(img, rm);
+        previewsEl.appendChild(wrap);
+      }
+
+      function removePreview(index) {
+        URL.revokeObjectURL(pendingFiles[index].objectUrl);
+        pendingFiles.splice(index, 1);
+        // 重建预览（index 变了）
+        previewsEl.innerHTML = "";
+        pendingFiles.forEach((f, i) => addPreview(f.objectUrl, i));
+      }
+
+      function clearPendingFiles() {
+        pendingFiles.forEach(f => URL.revokeObjectURL(f.objectUrl));
+        pendingFiles = [];
+        previewsEl.innerHTML = "";
+      }
 
       // ── 模型选择器 ──────────────────────────────────────────────────────────
       async function loadModels() {
@@ -176,10 +264,17 @@
       document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDropdown(); });
 
       // ── 消息渲染 ────────────────────────────────────────────────────────────
-      function appendMsg(text, role) {
+      function appendMsg(text, role, imageUrls) {
         const div = document.createElement("div");
         div.className = `msg ${role}`;
         div.textContent = text;
+        if (imageUrls?.length) {
+          for (const url of imageUrls) {
+            const img = document.createElement("img");
+            img.src = url; img.className = "msg-img";
+            div.appendChild(img);
+          }
+        }
         messagesEl.appendChild(div);
         messagesEl.scrollTop = messagesEl.scrollHeight;
         return div;
@@ -198,13 +293,17 @@
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const message = input.value.trim();
-        if (!message || streaming) return;
+        if ((!message && pendingFiles.length === 0) || streaming) return;
 
         input.value = "";
         streaming = true;
         sendBtn.disabled = true;
 
-        appendMsg(message, "user");
+        const files = pendingFiles.map(f => ({ mimeType: f.mimeType, dataBase64: f.dataBase64 }));
+        const previewUrls = pendingFiles.map(f => f.objectUrl);
+        clearPendingFiles();
+
+        appendMsg(message || "（图片）", "user", previewUrls);
         const bubble = appendMsg("", "assistant typing");
         const toolBubbles = new Map();
 
@@ -212,7 +311,7 @@
           const res = await fetch("/api/chat", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ sessionId, message, model: currentModel }),
+            body: JSON.stringify({ sessionId, message, model: currentModel, files: files.length ? files : undefined }),
           });
 
           const reader = res.body.getReader();
