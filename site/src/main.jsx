@@ -14,6 +14,12 @@ import "./styles.css";
 
 const githubUrl = "https://github.com/CorrectRoadH/fasteval";
 
+// 文档站按语言分入口：en 是默认语言走根路径，zh 走 /zh 前缀。
+const docsUrl = {
+  en: "https://fasteval.mintlify.site/quickstart",
+  zh: "https://fasteval.mintlify.site/zh/quickstart",
+};
+
 const files = {
   humans: ["evals/weather.eval.ts", "fasteval.config.ts", ".fasteval/latest"],
   agents: ["PROMPT.md", "EVAL.ts", "__fasteval__/results.json"],
@@ -23,6 +29,7 @@ const copy = {
   en: {
     meta: "fasteval is a lightweight TypeScript agent eval tool for agents, services, functions, and coding-agent fixtures.",
     navStart: "Start",
+    docs: "Docs",
     languageLabel: "Switch language",
     modes: {
       humans: {
@@ -56,6 +63,7 @@ const copy = {
   zh: {
     meta: "fasteval 是轻量、通用、DX 体验好的 TypeScript agent eval 工具，适合评 agents、services、functions 和 coding-agent fixtures。",
     navStart: "开始",
+    docs: "文档",
     languageLabel: "切换语言",
     modes: {
       humans: {
@@ -136,6 +144,7 @@ function Header({ locale, setLocale, t }) {
       </a>
       <nav className="nav" aria-label="Primary">
         <a href="#setup">{t.navStart}</a>
+        <a href={docsUrl[locale]}>{t.docs}</a>
         <a href={githubUrl}>{t.github}</a>
         <button type="button" className="lang-toggle" aria-label={t.languageLabel} onClick={() => setLocale(nextLocale)}>
           {nextLocale === "zh" ? "中文" : "EN"}
