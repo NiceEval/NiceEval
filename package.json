@@ -1,6 +1,6 @@
 {
   "name": "fasteval",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Lightweight TypeScript agent eval tool — eval agents, services, functions, and coding-agent fixtures",
   "type": "module",
   "license": "MIT",
@@ -81,6 +81,7 @@
     "lucide-react": "^1.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-grab": "^0.1.47",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.1",
     "typescript": "^5.6.0",

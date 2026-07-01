@@ -24,6 +24,15 @@
 | `shared` 工具袋(ensureInstalled / captureLatestJsonl / writeFile / extractJsonlFromStdout / codexThreadId / firstJsonField / parseCodex·parseClaudeCode·parseBub) | `src/agents/shared.ts` |
 | 内置 adapter(claude-code / codex / bub) | **由被测项目自带**(`agents/*.ts`),fasteval 提供 `shared` + 解析器 |
 
+## Coding Agent Skills / Plugins DX([adapters/coding-agent-skills-plugins.md](adapters/coding-agent-skills-plugins.md))
+
+| 行为 | 文件 |
+|---|---|
+| Claude Code skill / MCP setup | `src/agents/claude-code.ts`(`ClaudeCodeConfig.skills` / `mcpServers`) |
+| Codex skill / MCP setup | `src/agents/codex.ts`(`CodexConfig.skills` / `mcpServers`) |
+| bub Python plugin setup | `src/agents/bub.ts`(`BubConfig.pythonPlugins`) |
+| 本地 skill A/B 示例 | `examples/zh/coding-agent-skill/experiments/*.ts` |
+
 ## 标准事件流与可观测性([observability.md](observability.md))
 
 | 行为 | 文件 |

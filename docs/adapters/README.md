@@ -340,5 +340,6 @@ T0/T1 是"接得上"的门槛——不做 T1,`toolObservability` 相关断言在
 - [Observability](../observability.md) —— transcript → 标准事件流的归一化、o11y、用量。
 - [Scoring](../scoring.md) —— 这套事件流之上的全部断言。
 - [Sandbox](../sandbox.md) —— 沙箱接口与后端。
+- [Coding Agent Skills / Plugins DX](coding-agent-skills-plugins.md) —— Claude Code / Codex / bub 如何安装本地 skill、repo skill 与 plugin,并组织 A/B 实验。
 - [Vision](../vision.md) —— 为什么名字只能用于路由、为什么没有通用协议。
 - [agent-eval 参考:它是怎么做适配的](ref/agent-eval.md) —— 学习记录,不是 fasteval 的实现。

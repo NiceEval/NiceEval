@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="fasteval is a lightweight TypeScript agent eval tool for agents, services, functions, and coding-agent fixtures.">
     <title>fasteval</title>
+    <script type="module">
+      if (import.meta.env.DEV) {
+        import("react-grab");
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
