@@ -1,6 +1,6 @@
 {
   "name": "niceeval",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.1",
   "description": "Lightweight TypeScript agent eval tool — eval agents, services, functions, and coding-agent fixtures",
   "type": "module",
   "license": "MIT",
