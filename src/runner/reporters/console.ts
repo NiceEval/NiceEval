@@ -2,6 +2,7 @@
 
 import type { EvalResult, Reporter, RunSummary } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
+import { formatDuration, formatTokens, renderRunReport } from "./table.ts";
 
 const SYMBOL: Record<string, string> = {
   passed: "✓",
@@ -9,16 +10,6 @@ const SYMBOL: Record<string, string> = {
   errored: "!",
   skipped: "○",
 };
-
-function fmtTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
-
-function fmtDuration(ms: number): string {
-  if (ms >= 1000) return `${(ms / 1000).toFixed(0)}s`;
-  return `${ms}ms`;
-}
 
 export function Console(): Reporter {
   return {
@@ -36,10 +27,10 @@ export function Console(): Reporter {
       const sym = SYMBOL[result.outcome] ?? "?";
       const tok = (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0);
       // requests > 0 但 tokens = 0 → agent 跑了但不上报用量(如 bub);显示 — 而非误导性的 0
-      const tokStr = tok > 0 ? `${fmtTokens(tok)} tok` : (result.usage?.requests ?? 0) > 0 ? `— tok` : `0 tok`;
+      const tokStr = tok > 0 ? `${formatTokens(tok)} tok` : (result.usage?.requests ?? 0) > 0 ? `— tok` : `0 tok`;
       const cost = result.estimatedCostUSD !== undefined ? `  $${result.estimatedCostUSD.toFixed(3)}` : "";
       const who = result.model ? `${result.agent}/${result.model}` : result.agent;
-      const meta = `(${fmtDuration(result.durationMs)}  ${tokStr}${cost})`;
+      const meta = `(${formatDuration(result.durationMs)}  ${tokStr}${cost})`;
       const label = result.outcome === "passed" ? "" : ` ${formatOutcome(result.outcome)}`;
       process.stdout.write(`  ${sym} ${result.id}${label}  [${who}]  ${meta}\n`);
 
@@ -65,21 +56,7 @@ export function Console(): Reporter {
       }
     },
     onRunComplete(summary: RunSummary) {
-      const tok = (summary.usage?.inputTokens ?? 0) + (summary.usage?.outputTokens ?? 0);
-      const tokStr = tok > 0 ? `${fmtTokens(tok)} tok` : "— tok";
-      const cost = summary.estimatedCostUSD !== undefined ? ` · $${summary.estimatedCostUSD.toFixed(2)}` : "";
-      const parts = [
-        t("report.summary.passed", { count: summary.passed }),
-        t("report.summary.failed", { count: summary.failed }),
-        ...(summary.errored > 0 ? [t("report.summary.errored", { count: summary.errored })] : []),
-        t("report.summary.skipped", { count: summary.skipped }),
-      ];
-      process.stdout.write(t("report.result", {
-        parts: parts.join(", "),
-        duration: fmtDuration(summary.durationMs),
-        tokens: tokStr,
-        cost,
-      }));
+      process.stdout.write(renderRunReport(summary));
     },
   };
 }

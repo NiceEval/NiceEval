@@ -1,9 +1,10 @@
 // Live terminal reporter:在 TTY 终端里渲染实时状态表,每个 (eval, who) 对占一行。
 // spinner 每 80ms 刷新;attempt 完成后行内显示 ✓/✗/~ 符号。
-// onRunComplete 时清除状态表,按 eval → config → attempt 分组打印完整结果 + 汇总。
+// onRunComplete 时清除状态表,打印和网页榜单同口径的表格报告。
 
-import type { EvalResult, Reporter, RunShape, RunSummary } from "../../types.ts";
+import type { Reporter, RunShape, RunSummary } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
+import { renderRunReport } from "./table.ts";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -29,18 +30,6 @@ const NOISE_PATTERNS = [
 
 function isNoise(msg: string): boolean {
   return NOISE_PATTERNS.some((p) => p.test(msg));
-}
-
-function fmtTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}
-
-function fmtDuration(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(0)}s` : `${ms}ms`;
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
 export interface LiveRow {
@@ -80,7 +69,6 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
   let totalCompleted = 0;
   let drawnLines = 0; // 上次 draw() 写了多少行,用于 \x1B[nA 回跳
   let intervalId: ReturnType<typeof setInterval> | undefined;
-  const pendingResults: EvalResult[] = [];
   let shape: RunShape | undefined;
 
   const cols = () => process.stderr.columns || 100;
@@ -173,7 +161,6 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
       } else {
         totalCompleted += 1;
       }
-      pendingResults.push(result);
     },
 
     onRunComplete(summary) {
@@ -185,84 +172,7 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
       draw(spinFrame);
       clearDisplay();
 
-      // 按 eval → config(agent/model) → attempt 分组打印(而非完成顺序平铺),方便在大批量
-      // compare 结果里按行读:同一 eval 下各 config 相邻,同一 config 下各次重试相邻。
-      const byEval = new Map<string, Map<string, EvalResult[]>>();
-      for (const result of pendingResults) {
-        if (!byEval.has(result.id)) byEval.set(result.id, new Map());
-        const who = result.model ? `${result.agent}/${result.model}` : result.agent;
-        const byWho = byEval.get(result.id)!;
-        if (!byWho.has(who)) byWho.set(who, []);
-        byWho.get(who)!.push(result);
-      }
-
-      for (const evalId of [...byEval.keys()].sort()) {
-        process.stdout.write(`${evalId}\n`);
-        const byWho = byEval.get(evalId)!;
-        for (const who of [...byWho.keys()].sort()) {
-          process.stdout.write(`  [${who}]\n`);
-          const attempts = byWho.get(who)!.sort((a, b) => a.attempt - b.attempt);
-          const multiAttempt = attempts.length > 1;
-          for (const result of attempts) {
-            const sym = OUTCOME_SYM[result.outcome] ?? "?";
-            const tok = (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0);
-            const tokStr =
-              tok > 0 ? `${fmtTokens(tok)} tok` : (result.usage?.requests ?? 0) > 0 ? `— tok` : `0 tok`;
-            const cost = result.estimatedCostUSD !== undefined ? `  $${result.estimatedCostUSD.toFixed(3)}` : "";
-            const meta = `(${fmtDuration(result.durationMs)}  ${tokStr}${cost})`;
-            const attemptLabel = multiAttempt ? `#${result.attempt + 1} ` : "";
-            const outcomeLabel = result.outcome === "passed" ? "" : `${formatOutcome(result.outcome)}  `;
-            process.stdout.write(`    ${sym} ${attemptLabel}${outcomeLabel}${meta}\n`);
-
-            if (result.skipReason) process.stdout.write(`      ○ ${t("report.skipped")}: ${result.skipReason}\n`);
-            if (result.error) process.stdout.write(`      ! ${t("report.error")}: ${truncate(result.error, 400)}\n`);
-
-            let lastGroup: string | undefined;
-            for (const a of result.assertions) {
-              if (a.passed) continue;
-              if (a.group !== undefined && a.group !== lastGroup) {
-                process.stdout.write(`      ▸ ${a.group}\n`);
-              }
-              lastGroup = a.group;
-              const sev = a.severity === "gate" ? t("report.gate") : t("report.soft");
-              const thr = a.threshold !== undefined
-                ? t("report.assertionThreshold", { score: a.score.toFixed(2), threshold: a.threshold })
-                : "";
-              const indent = a.group !== undefined ? "        " : "      ";
-              process.stdout.write(
-                `${indent}- ${sev}: ${a.name}${thr}${a.detail ? ` — ${truncate(a.detail, 300)}` : ""}\n`,
-              );
-            }
-          }
-        }
-      }
-
-      // 汇总行
-      const tok = (summary.usage?.inputTokens ?? 0) + (summary.usage?.outputTokens ?? 0);
-      const tokStr = tok > 0 ? `${fmtTokens(tok)} tok` : "— tok";
-      const cost = summary.estimatedCostUSD !== undefined ? ` · $${summary.estimatedCostUSD.toFixed(2)}` : "";
-      const parts = [
-        t("report.summary.passed", { count: summary.passed }),
-        t("report.summary.failed", { count: summary.failed }),
-        ...(summary.errored > 0 ? [t("report.summary.errored", { count: summary.errored })] : []),
-        t("report.summary.skipped", { count: summary.skipped }),
-      ];
-      process.stdout.write(t("report.result", {
-        parts: parts.join(", "),
-        duration: fmtDuration(summary.durationMs),
-        tokens: tokStr,
-        cost,
-      }));
+      process.stdout.write(renderRunReport(summary));
     },
   };
-}
-
-function formatOutcome(outcome: string): string {
-  switch (outcome) {
-    case "passed": return t("report.passed");
-    case "failed": return t("report.failed");
-    case "errored": return t("report.errored");
-    case "skipped": return t("report.skipped");
-    default: return outcome;
-  }
 }
