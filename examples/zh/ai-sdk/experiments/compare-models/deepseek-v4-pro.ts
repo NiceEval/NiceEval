@@ -11,7 +11,7 @@ export default defineExperiment({
   description: "deepseek-v4-pro: 对比模型",
   agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
   model: "deepseek-v4-pro",
-  runs: 3,          // 最多跑 3 次
-  earlyExit: true,  // 3 次里通过一次就停,省 token
+  runs: 2,          // 最多跑 2 次
+  earlyExit: true,  // 2 次里通过一次就停,省 token
   budget: 5,        // $5 上限
 });
