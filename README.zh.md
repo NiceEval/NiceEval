@@ -100,9 +100,9 @@ READ https://raw.githubusercontent.com/CorrectRoadH/niceeval/refs/heads/main/INI
 
 从你的场景开始：
 
-- [如果你需要 eval 你的 Claude Code / Codex 插件](https://niceeval.mintlify.site/zh/example/claude-code-codex-plugin)
-- [如果你需要 eval 你的 Claude Code / Codex Skill](https://niceeval.mintlify.site/zh/example/claude-code-codex-skill)
-- [如果你需要 eval 你的 AI Agent 应用](https://niceeval.mintlify.site/zh/example/ai-agent-application)
+- [如果你需要 eval 你的 Claude Code / Codex 插件](https://niceeval.com/docs/zh/example/claude-code-codex-plugin)
+- [如果你需要 eval 你的 Claude Code / Codex Skill](https://niceeval.com/docs/zh/example/claude-code-codex-skill)
+- [如果你需要 eval 你的 AI Agent 应用](https://niceeval.com/docs/zh/example/ai-agent-application)
 
 
 ## Roadmap
@@ -126,7 +126,7 @@ READ https://raw.githubusercontent.com/CorrectRoadH/niceeval/refs/heads/main/INI
 
 ## 文档
 
-- [Mintlify 文档站](https://niceeval.mintlify.site/)
+- [Mintlify 文档站](https://niceeval.com/docs/)
 - [Mintlify 文档源码](docs-site/zh/index.mdx)
 - [文档首页](docs/README.md)
 - [Getting Started](docs/getting-started.md)

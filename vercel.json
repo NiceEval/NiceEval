@@ -1,5 +1,15 @@
 {
   "buildCommand": "pnpm run site:build",
   "outputDirectory": "site/dist",
-  "installCommand": "pnpm install"
+  "installCommand": "pnpm install",
+  "rewrites": [
+    {
+      "source": "/docs",
+      "destination": "https://fasteval.mintlify.site/docs"
+    },
+    {
+      "source": "/docs/:match*",
+      "destination": "https://fasteval.mintlify.site/docs/:match*"
+    }
+  ]
 }

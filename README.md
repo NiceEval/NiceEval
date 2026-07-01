@@ -101,9 +101,9 @@ READ https://raw.githubusercontent.com/CorrectRoadH/niceeval/refs/heads/main/INI
 
 Start from the scenario that matches what you need to evaluate:
 
-- [Claude Code / Codex plugin eval](https://niceeval.mintlify.site/zh/example/claude-code-codex-plugin)
-- [Claude Code / Codex skill eval](https://niceeval.mintlify.site/zh/example/claude-code-codex-skill)
-- [AI Agent application eval](https://niceeval.mintlify.site/zh/example/ai-agent-application)
+- [Claude Code / Codex plugin eval](https://niceeval.com/docs/zh/example/claude-code-codex-plugin)
+- [Claude Code / Codex skill eval](https://niceeval.com/docs/zh/example/claude-code-codex-skill)
+- [AI Agent application eval](https://niceeval.com/docs/zh/example/ai-agent-application)
 
 
 ## Roadmap
@@ -127,7 +127,7 @@ Official Adapters
 
 ## Documentation
 
-- [Mintlify docs site](https://niceeval.mintlify.site/)
+- [Mintlify docs site](https://niceeval.com/docs/)
 - [Mintlify docs source](docs-site/index.mdx)
 - [Documentation home](docs/README.md)
 - [Getting Started](docs/getting-started.md)

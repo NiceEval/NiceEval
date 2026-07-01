@@ -20,8 +20,8 @@ const githubUrl = "https://github.com/CorrectRoadH/niceeval";
 
 // 文档站按语言分入口：en 是默认语言走根路径，zh 走 /zh 前缀。
 const docsUrl = {
-  en: "https://niceeval.mintlify.site/quickstart",
-  zh: "https://niceeval.mintlify.site/zh/quickstart",
+  en: "https://niceeval.com/docs/quickstart",
+  zh: "https://niceeval.com/docs/zh/quickstart",
 };
 
 const initPrompt =
