@@ -50,7 +50,7 @@
 - `Adapter` 接口 + **`claude-code` adapter**(先做直连 API 一个变体)。
 - `adapters/shared.ts`:git 基线 / `collectGeneratedFiles` / transcript 注入。起始文件与验证测试都是 `test(t)` 里手工 `t.sandbox.writeFiles`/`uploadFiles`,没有目录约定自动发现。
 - transcript 归一化框架 + `o11y/parsers/claude-code.ts` + o11y 派生 + 注入 `__fasteval__/results.json`。
-- 沙箱型作用域断言:`fileChanged` / `scriptPassed` / `diff`。
+- 沙箱型结果视图:`t.sandbox.fileChanged` / `t.sandbox.diff` / `t.sandbox.file`;验证命令用 `t.sandbox.runCommand` + `t.check(result, commandSucceeded())`。
 - 工件:`events.ndjson`(标准事件流)/ `transcript-raw.jsonl` / `outputs/` / `project/`。
 
 这是把第二种范式接进同一套下游 —— 复用 M0/M1 的 Scorer/Outcome/Runner/Reporter,只新增"如何产生结果"。

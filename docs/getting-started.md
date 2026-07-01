@@ -19,7 +19,7 @@ your-project/
 └─ evals/
    ├─ hello.eval.ts            # 示例:会话型
    └─ fixtures/
-      └─ button.eval.ts        # 示例:沙箱型,起始文件在 test() 里手工 seed
+      └─ button.eval.ts        # 示例:沙箱型,起始文件在 test() 里手工写入
 ```
 
 ## 配置
@@ -126,6 +126,7 @@ AGENT_URL=https://my-agent.example.com npx fasteval exp local weather
 ```typescript
 // evals/fixtures/button.eval.ts
 import { defineEval } from "fasteval";
+import { commandSucceeded } from "fasteval/expect";
 
 const PACKAGE_JSON = JSON.stringify({
   name: "button-fixture",
@@ -167,7 +168,8 @@ export default defineEval({
 
     // agent 那一轮已经结束,现在才放测试文件、才跑测试
     await t.sandbox.writeFiles({ "button.test.ts": BUTTON_TEST });
-    t.sandbox.scriptPassed("test");
+    const test = await t.sandbox.runCommand("npm", ["test"]);
+    t.check(test, commandSucceeded());
   },
 });
 ```
@@ -193,7 +195,7 @@ Discovered 3 evals
   ✓ classify (12ms)
   ✓ weather/brooklyn (456ms)
   ✗ fixtures/button (38s)
-    - gate: sandbox.scriptPassed(test) [FAILED]
+    - gate: commandSucceeded [FAILED]
       button.test.ts › 接受 label / onClick
       Expected src to contain "onClick"
 

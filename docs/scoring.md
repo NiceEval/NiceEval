@@ -5,9 +5,9 @@
 五类(详情见 Assertions 对应小节):
 
 1. **值级断言** —— `t.check` / `t.require` 配 `expect` 里的匹配器,就地评估。见 [Assertions · 值级断言](assertions.md#值级断言tcheck--trequire--匹配器)。
-2. **作用域断言** —— `t.succeeded()` / `t.calledTool()` 等,在 `test` 结束后对整个 attempt 评估;同一套断言挂在 `t.send()` 返回的 turn 上则只看这一轮。见 [Assertions · 作用域断言](assertions.md#作用域断言t-上attempt-全程评估) / [工作区断言](assertions.md#工作区断言tsandbox仅-workspace-能力)。
+2. **作用域断言** —— `t.succeeded()` / `t.calledTool()` 等,在 `test` 结束后对整个 attempt 评估;同一套断言挂在 `t.send()` 返回的 turn 上则只看这一轮。见 [Assertions · API 分组速查](assertions.md#api-分组速查)。
 3. **LLM-as-judge** —— 用一个评判模型给开放式回答打分,细节见下文。
-4. **测试即评分**(沙箱型) —— 手工在沙箱里跑测试与 npm scripts,通过/失败即分数。
+4. **测试即评分**(沙箱型) —— 手工在沙箱里跑测试与命令,把命令结果交给 `t.check`。
 5. **效率 / 成本断言** —— `t.maxTokens()` / `t.maxCost()`,把 token 花费也变成可判的维度。见 [Assertions · 作用域断言](assertions.md#作用域断言t-上attempt-全程评估)。
 
 ## 严重级:gate vs soft
@@ -42,7 +42,7 @@ t.judge.autoevals.summarizes(source);                      // 是否忠实摘要
 
 `{ on }` 指定被评的值(默认 `t.reply`),`{ model }` 可单次覆盖评判模型。
 
-> **judge 默认只看最后一轮。** `t.reply` 是最后一条 assistant 消息,所以多轮里直接 `t.judge.autoevals.closedQA("整段对话是否…")` 只会拿到最后一轮、证据不足。要评跨轮一致性,自己把每轮的 `turn.message` 收集拼起来再传进去:`t.judge.autoevals.closedQA("…", { on: turns.map(t => t.message).join("\n") }).atLeast(0.7)`。(评工作区产物/diff 用同一个 `closedQA`,材料换成 `t.sandbox.diff.get(path)`。)每条断言看哪一轮、各自来源,见 [Assertions](assertions.md)(尤其[作用域:两层](assertions.md#作用域两层同一套词汇))。
+> **judge 默认只看最后一轮。** `t.reply` 是最后一条 assistant 消息,所以多轮里直接 `t.judge.autoevals.closedQA("整段对话是否…")` 只会拿到最后一轮、证据不足。要评跨轮一致性,自己把每轮的 `turn.message` 收集拼起来再传进去:`t.judge.autoevals.closedQA("…", { on: turns.map(t => t.message).join("\n") }).atLeast(0.7)`。(评 sandbox 产物/diff 用同一个 `closedQA`,材料换成 `t.sandbox.diff.get(path)`。)每条断言看哪一轮、各自来源,见 [Assertions](assertions.md)。
 
 **模型解析优先级**(高 → 低):单次调用的 `{ model }` → 这个 eval 的 `judge.model` → 配置的 `judge.model`。
 
@@ -56,7 +56,16 @@ defineEval({ judge: { model: "anthropic/claude-opus-4-8" }, async test(t) { ... 
 
 ## 4. 测试即评分(沙箱型)
 
-沙箱型里,你在 `test(t)` 里手工跑的验证测试本身就是评分:调 `t.sandbox.runCommand(...)` 跑测试(vitest 或别的什么都行),再用 `t.sandbox.scriptPassed(script)` 断言退出码 0,就是一条 gate 断言。这让你用熟悉的测试语法表达"什么算对",并能断言文件内容、构建结果、甚至 agent 行为(经 `__fasteval__/results.json`)。没有另一层"validation 模式"开关——跑不跑测试、跑什么测试,都是 `test(t)` 里的普通代码决定的。详见 [Authoring](eval-authoring.md#沙箱型手工把文件放进沙箱)。
+沙箱型里,你在 `test(t)` 里手工跑的验证命令本身就是评分材料:调 `t.sandbox.runCommand(...)` 跑测试(vitest 或别的什么都行),再用 `t.check(result, commandSucceeded())` 断言退出码 0。命令执行和评分分开,不会再有 `scriptPassed()` / `testsPassed()` 这种既像执行又像断言的 API。
+
+```typescript
+import { commandSucceeded } from "fasteval/expect";
+
+const test = await t.sandbox.runCommand("npm", ["test"]);
+t.check(test, commandSucceeded());
+```
+
+这让你用熟悉的测试语法表达"什么算对",并能断言文件内容、构建结果、甚至 agent 行为(经 `__fasteval__/results.json`)。没有另一层"validation 模式"开关——跑不跑测试、跑什么测试,都是 `test(t)` 里的普通代码决定的。详见 [Authoring](eval-authoring.md#沙箱型手工把文件放进沙箱)。
 
 ## 5. 效率 / 成本断言
 
@@ -101,7 +110,7 @@ t.check(t.reply, jsonValid());
 
 ## 相关阅读
 
-- [Assertions](assertions.md) —— 每条断言做什么、看哪一轮、来源哪里(值级 / 作用域 / 工作区 / 轮级的完整速查表)。
+- [Assertions](assertions.md) —— 每条断言做什么、看哪一轮、来源哪里(值级 / 作用域 / sandbox 结果 / 轮级的完整速查表)。
 - [Authoring](eval-authoring.md) —— 断言出现在哪种 eval 里。
 - [Observability](observability.md) —— transcript / o11y,作用域断言的数据来源。
 - [Concepts](concepts.md) —— Severity / Outcome 的术语定义。

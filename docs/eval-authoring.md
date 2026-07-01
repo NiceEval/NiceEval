@@ -193,14 +193,14 @@ export default defineExperiment({
 
 ## 沙箱型:手工把文件放进沙箱
 
-评一个 coding agent 时,eval 仍然是普通的 `defineEval`,只是多了沙箱能力:`test(t)` 里的 `t` 多出 `t.sandbox`(工作区断言 + 沙箱原始句柄,前提是 agent/sandbox 声明了 workspace capability;见 [Sandbox](sandbox.md))。
+评一个 coding agent 时,eval 仍然是普通的 `defineEval`,只是多了沙箱能力:`test(t)` 里的 `t` 多出 `t.sandbox`(前提是 agent 声明了 sandbox capability;见 [Sandbox](sandbox.md))。
 
-**没有自动发现,也没有隐式拷贝**——seed 起始文件只有一种方式:在 `test(t)` 里显式调用 `t.sandbox.writeFiles` / `t.sandbox.uploadFiles`。`t.sandbox` 是沙箱的原始句柄(`runCommand` / `runShell` / `readFile` / `writeFiles` / `uploadFiles` / `getWorkingDirectory` / `setWorkingDirectory` / `stop`,完整列表见 [Sandbox · 统一接口](sandbox.md#统一接口)),不是一层包装。文件从哪读、写到沙箱里哪个路径,全部是你写在 `test(t)` 里的普通代码——不存在"运行器悄悄拷贝一个目录"这种黑箱,你想放哪就写哪,不想放的就不写:
+**没有自动发现,也没有隐式拷贝**——起始文件只有一种方式:在 `test(t)` 里显式调用 `t.sandbox.writeFiles` / `t.sandbox.uploadFiles` 写进沙箱。`t.sandbox` 是 eval 作者使用的沙箱 API,分三类:文件 IO(`writeFiles` / `readFile`)、命令执行(`runCommand` / `runShell`)和结果断言 / diff(`fileChanged` / `diff` / `file`)。文件从哪读、写到沙箱里哪个路径,全部是你写在 `test(t)` 里的普通代码——不存在"运行器悄悄拷贝一个目录"这种黑箱,你想放哪就写哪,不想放的就不写:
 
 ```typescript
 // evals/refactor.eval.ts
 import { defineEval } from "fasteval";
-import { includes } from "fasteval/expect";
+import { commandSucceeded, includes } from "fasteval/expect";
 import { readFileSync } from "node:fs";
 
 export default defineEval({
@@ -211,10 +211,11 @@ export default defineEval({
     });
 
     await t.send("把 src/legacy.js 里的回调全部改写成 async/await,保持行为不变。");
+    const test = await t.sandbox.runCommand("npm", ["test"]);
+
     t.sandbox.fileChanged("src/legacy.js");
     t.check(t.sandbox.diff.get("src/legacy.js"), includes("await"));
-
-    t.sandbox.scriptPassed("test");             // 跑 npm run test,断言退出 0
+    t.check(test, commandSucceeded());
   },
 });
 ```
@@ -246,24 +247,25 @@ export default defineEval({
 
 `readDirAsFiles` 是普通函数,项目里写一次、到处复用;不是 fasteval 的 API——fasteval 不需要为"传文件夹"单独开方法,`writeFiles` 的文件清单形状已经够表达。二进制文件(图片等)改用 `uploadFiles`(接受 `SandboxFile[]`,可带 `Buffer`),不能用只收文本的 `writeFiles`。
 
-数据集扇出时,seed 内容跟着数据行算是同一套写法,不需要另一种"动态 seed"概念:
+数据集扇出时,要写入沙箱的内容跟着数据行走,仍然是同一套写法,不需要另一种"动态 fixture"概念:
 
 ```typescript
 const rows = [{ file: "a.ts", content: "..." }, { file: "b.ts", content: "..." }];
 
 export default rows.map((row) =>
   defineEval({
-    description: `seed ${row.file}`,
+    description: `写入 ${row.file}`,
     async test(t) {
       await t.sandbox.writeFiles({ [row.file]: row.content });
       await t.send(`审查 ${row.file}`);
-      t.sandbox.scriptPassed("test");
+      const test = await t.sandbox.runCommand("npm", ["test"]);
+      t.check(test, commandSucceeded());
     },
   }),
 );
 ```
 
-**防作弊靠调用顺序,不靠框架黑箱**:验证用的测试文件(比如 `button.test.ts`)在 `t.send(...)` **之后**才写进沙箱、才运行——agent 那一轮已经结束,天然看不到,不需要"workspace files vs test files"这种运行器自动拆分/隐藏的机制:
+**防作弊靠调用顺序,不靠框架黑箱**:验证用的测试文件(比如 `button.test.ts`)在 `t.send(...)` **之后**才写进沙箱、才运行——agent 那一轮已经结束,天然看不到,不需要"source files vs test files"这种运行器自动拆分/隐藏的机制:
 
 ```typescript
 export default defineEval({
@@ -274,18 +276,19 @@ export default defineEval({
 
     // agent 跑完之后才放测试文件、才跑测试——全程手工可见,没有隐藏逻辑
     await t.sandbox.writeFiles({ "button.test.ts": BUTTON_TEST_SOURCE });
-    t.sandbox.scriptPassed("test");
+    const test = await t.sandbox.runCommand("npm", ["test"]);
+    t.check(test, commandSucceeded());
   },
 });
 ```
 
-工作区断言(`t.sandbox.fileChanged` / `t.sandbox.fileDeleted` / `t.sandbox.notInDiff` / `t.sandbox.scriptPassed` / `t.sandbox.noFailedShellCommands` / `t.sandbox.diff`)和沙箱原始句柄(`writeFiles`/`uploadFiles`/`runCommand`/…)住在同一个 `t.sandbox` 命名空间——来源 Vercel agent-eval。要用 judge 评工作区产物,直接 `t.judge.autoevals.closedQA(criteria, { on: t.sandbox.diff.get(path) })`。完整列表见 [Assertions · 工作区断言](assertions.md#工作区断言tsandbox仅-workspace-能力)。沙箱创建时运行器已经打好一次空 git 基线,所以 `t.sandbox.diff` / `t.sandbox.fileChanged` 不依赖你怎么 seed、seed 了没有,随时可读。
+`t.sandbox` 这一个命名空间下按语义分组:`writeFiles` / `uploadFiles` / `runCommand` 是立即 IO / 命令;`fileChanged` / `fileDeleted` / `notInDiff` / `diff` / `file` 是结果视图和延迟断言。`stop()` 这类生命周期动作不暴露给 eval 作者,由 runner 管。要用 judge 评 sandbox 产物,直接 `t.judge.autoevals.closedQA(criteria, { on: t.sandbox.diff.get(path) })`。完整列表见 [Assertions · API 分组速查](assertions.md#api-分组速查)。沙箱创建时运行器已经打好一次空 git 基线,所以 `t.sandbox.diff` / `t.sandbox.fileChanged` 不依赖你怎么写入起始文件、写了没有,随时可读。
 
 ## 命名与组织约定
 
 - 文件名以 `.eval.ts` 结尾才会被发现。
 - 用目录表达分组:`evals/billing/refund.eval.ts` → `billing/refund`。
-- 数据集放 `evals/data/`,沙箱型 eval 要 seed 的起始文件素材放 `evals/fixtures/`(纯目录命名约定,运行器不会扫描或自动加载它——仍要在 `test()` 里手工 `t.sandbox.writeFiles`/`uploadFiles` 读取写入)。
+- 数据集放 `evals/data/`,沙箱型 eval 要写入的起始文件素材可以放 `evals/fixtures/`(纯目录命名约定,运行器不会扫描或自动加载它——仍要在 `test()` 里手工 `t.sandbox.writeFiles`/`uploadFiles` 读取写入)。
 - `description` 写给人看,id 给机器引用。
 
 ## 相关阅读

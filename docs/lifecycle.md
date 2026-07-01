@@ -24,7 +24,7 @@ interface LifecycleHooks {
 }
 ```
 
-`defineConfig` 与 `defineExperiment` 都接受 `hooks?: LifecycleHooks`。把作用域做成 key(而非词缀)的好处:**加第三个作用域**(`hooks.eval`,seed 一次 DB 给该 eval 的全部 attempt 用)时,动词不变、结构不破 —— 而 `globalSetup` / `setup` 那种扁平命名加到第三个就只能叫 `evalSetup`,三个名字三种风格。
+`defineConfig` 与 `defineExperiment` 都接受 `hooks?: LifecycleHooks`。把作用域做成 key(而非词缀)的好处:**加第三个作用域**(`hooks.eval`,为该 eval 的全部 attempt 初始化一次 DB)时,动词不变、结构不破 —— 而 `globalSetup` / `setup` 那种扁平命名加到第三个就只能叫 `evalSetup`,三个名字三种风格。
 
 ## 三个嵌套作用域
 
@@ -34,9 +34,9 @@ RUN(一次 fasteval 调用 = 一个实验矩阵)
 │
 ├── ATTEMPT(eval × model × run 的一次运行)—— 沙箱作用域
 │   │  Sandbox.create / 从池中领取
-│   │  git init && git commit(打一次空基线,不管后面 seed 了什么)
+│   │  git init && git commit(打一次空基线,不管后面写入了什么)
 │   │  hooks.sandbox.setup(sandbox, ctx) → 可选 cleanup 闭包   ← 单次预置(写 .env、起服务、装依赖)
-│   │  test(t) 全程 —— 手工 t.sandbox.writeFiles/uploadFiles seed、t.send() 驱动 agent、
+│   │  test(t) 全程 —— 手工 t.sandbox.writeFiles/uploadFiles 写入起始文件、t.send() 驱动 agent、
 │   │             手工跑校验命令,顺序由 eval 作者的 test() 决定,不是核心的固定编排
 │   │  captureGeneratedFiles(git diff HEAD)
 │   │  hooks.sandbox.teardown(sandbox, ctx) / cleanup()       ← 单次清理(finally,必跑)

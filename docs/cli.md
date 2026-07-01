@@ -69,7 +69,7 @@ fasteval exp compare --strict     # soft 低于阈值也判红(CI 用)
 fasteval exp compare --budget <usd>           # 整轮估算成本上限,累计超了就停止派发新 attempt
 ```
 
-沙箱型里跑什么校验命令、跑不跑,是 `test(t)` 里的普通代码:`t.sandbox.runCommand` 跑命令,`t.sandbox.scriptPassed` 断言退出码。
+沙箱型里跑什么校验命令、跑不跑,是 `test(t)` 里的普通代码:`t.sandbox.runCommand` 跑命令,`t.check(result, commandSucceeded())` 断言退出码。
 
 退出码:有 `outcome=failed`(含 `--strict` 下 soft 未达标而改判的)→ 非零;否则 `0`。
 

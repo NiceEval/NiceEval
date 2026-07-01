@@ -41,7 +41,7 @@ interface Agent {
 interface AgentCapabilities {
   conversation?: boolean;        // 支持多轮 send → t.send 多次
   toolObservability?: boolean;   // 能产出 action.* 事件 → t.calledTool
-  workspace?: boolean;           // 在文件系统上工作 → t.sandbox(原始句柄 + 工作区断言/diff)
+  sandbox?: boolean;             // 在沙箱文件系统上工作 → t.sandbox(文件 IO / 命令 / 结果断言)
 }
 
 interface AgentContext {
@@ -177,7 +177,7 @@ claude-code 和 codex 用**同一套**模型,绝大部分**共享**,只有 5 个
 
 | 步骤 | 共享? | claude-code | codex |
 |---|---|---|---|
-| 起沙箱 + 上传 workspace + `git` 基线 | ✅ 共享 | — | — |
+| 起沙箱 + 写入起始文件 + `git` 基线 | ✅ 共享 | — | — |
 | 装 CLI | ✗ | `npm i -g @anthropic-ai/claude-code` | `npm i -g @openai/codex` |
 | 鉴权 | ✗ | env `ANTHROPIC_API_KEY` | `codex login --with-api-key` + profile |
 | 拼调用 + 丢 prompt | ✗ | `claude --print [--model <m>] --dangerously-skip-permissions <prompt>` | `codex exec --profile default --json <prompt>` |
@@ -239,7 +239,7 @@ export default defineSandboxAgent({
 - 任意 agent → `t.send` / `t.check` / `t.require` / `t.judge` / `t.log` / `t.skip`。
 - `conversation` → `t.send` 可多次、`t.reply`、`t.newSession`。
 - `toolObservability` → `t.calledTool` / `t.toolOrder` / `t.usedNoTools` / `t.calledSubagent` / `t.event`…。
-- `workspace`(沙箱型)→ `t.sandbox`(沙箱原始句柄 + 工作区断言 `t.sandbox.fileChanged`/`t.sandbox.diff`/…)/ 手工在沙箱里跑测试。评工作区产物用 `t.judge.autoevals.closedQA` 配 `{ on: t.sandbox.diff.get(path) }`。
+- `sandbox`(沙箱型)→ `t.sandbox`(文件 IO / 命令执行 / 结果断言和 diff)/ 手工在沙箱里跑验证命令。评 sandbox 产物用 `t.judge.autoevals.closedQA` 配 `{ on: t.sandbox.diff.get(path) }`。
 
 作者写 `t.calledTool` 时若 agent 没声明 `toolObservability`,在类型层面就拿不到这个方法,不会跑起来才报错。
 
@@ -255,7 +255,7 @@ export default defineSandboxAgent({
 | 日志 | `ctx.log()` | `t.log()` | 同一个 |
 | 共享数据 | `ctx.shared`(只读) | `t.shared`(只读) | **同一份**(`hooks.run.setup` 经 `run.share()` 放入,run 作用域,见 [Lifecycle](lifecycle.md)) |
 | 会话 | `ctx.session`(`id`/`isNew`,用来 resume) | `t.newSession()`(发起新会话) | `t` 发起 → 运行器置 `isNew` → `ctx` 执行 |
-| 沙箱 | `ctx.sandbox`(底层 `Sandbox` 句柄) | `t.sandbox`(同一个原始句柄 + 工作区断言 `t.sandbox.fileChanged`/`t.sandbox.diff`/…) | `t.sandbox` 就是 `ctx.sandbox` 加了一层工作区断言 |
+| 沙箱 | `ctx.sandbox`(底层 `Sandbox` 句柄) | `t.sandbox`(文件 IO / 命令执行 / 结果断言) | eval 作者看不到 `stop`;生命周期由 runner 管 |
 | 一轮结果 | `send` 返回的 `Turn`(`events` 为核心) | `t.send()` 的返回 / `t.reply` / `turn.outputEquals` | core 把 `Turn` 转交给 eval |
 | 鉴权 / CLI 细节 | agent 本地(**不在 ctx**) | — | 谁都不暴露给对方 |
 | 断言 / judge 派生 | — | `t.check`/`t.calledTool`/`t.judge.autoevals.*`/`t.maxTokens`… | 只在 eval 侧 |
@@ -275,12 +275,12 @@ experiment.agent    选「连哪个被测对象」(自实现的 adapter)
 
 跨所有沙箱 adapter 复用、不属于任何单个 agent 的逻辑,由 fasteval 提供(对应 agent-eval 的 `shared.ts`),保证所有 coding agent 的"打基线 / 采 diff / 抓 transcript"严格一致:
 
-- **`initGitBaseline(sandbox)`** —— `git init && commit` 打一次空基线,供之后 `t.sandbox.diff` / `t.sandbox.fileChanged` 对比。跟"放了什么文件"无关——不管你在 `test()` 里 seed 了什么、seed 了没有,基线随沙箱创建自动打好。
+- **`initGitBaseline(sandbox)`** —— `git init && commit` 打一次空基线,供之后 `t.sandbox.diff` / `t.sandbox.fileChanged` 对比。跟"放了什么文件"无关——不管你在 `test()` 里写入了什么、写了没有,基线随沙箱创建自动打好。
 - **`captureGeneratedFiles(sandbox)`** —— `git diff HEAD` 得到 `{ generated, deleted }`。
 - **`injectO11yContext(sandbox, events)`** —— 由标准事件流派生 o11y,写 `__fasteval__/results.json`,供你在沙箱里手工跑的验证测试断言 agent 的行为。
 - **`captureLatestJsonl(sandbox, dir)`** / transcript 定位辅助。
 
-这些都是**给 adapter 作者复用的工具函数**,不是运行器包在 `agent.send()` 外面的固定编排——除了"沙箱创建时打一次 git 基线、销毁前采一次 diff"这两头是核心自动做的,中间"什么时候 seed 文件、什么时候调 `t.send()`、什么时候手工跑校验命令"全部是 eval 的 `test(t)` 自己决定,见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)。
+这些都是**给 adapter 作者复用的工具函数**,不是运行器包在 `agent.send()` 外面的固定编排——除了"沙箱创建时打一次 git 基线、销毁前采一次 diff"这两头是核心自动做的,中间"什么时候写入文件、什么时候调 `t.send()`、什么时候手工跑校验命令"全部是 eval 的 `test(t)` 自己决定,见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)。
 
 ## 注册与选择
 

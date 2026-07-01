@@ -1,156 +1,242 @@
 # Assertions —— 断言参考(作用域 + 来源)
 
-这一篇是断言的速查参考:每条**做什么**、**看哪一轮**、**来源哪里**(以及哪些是 fasteval 自创)。怎么把它们组织进一个 eval,见 [Eval Authoring](eval-authoring.md);判决规则与 judge 细节见 [Scoring](scoring.md)。
+这一篇是断言的速查参考:每条 API 做什么、看哪一轮、属于哪一类。怎么把它们组织进 eval,见 [Eval Authoring](eval-authoring.md);判决规则与 judge 细节见 [Scoring](scoring.md)。
 
-> **来源一句话:** 整套断言 DX(声明式、路径即身份、gate/soft 分层、LLM-as-judge)借自 **eve.dev evals**;沙箱 / diff 这类借自 **Vercel agent-eval**;`--budget` 等护栏借鉴 **crabbox**;`closedQA`/`factuality`/`summarizes` 直接用 **autoevals(Braintrust)**。逐条见下方各表的「来源」列与文末[来源一览](#来源一览--哪些是-fasteval-自创)。
+> **来源一句话:** 会话 / 作用域断言 DX 借自 **eve.dev evals**;sandbox / diff 的工程形状借自 **Vercel agent-eval**;`--budget` 等护栏借鉴 **crabbox**;`closedQA` / `factuality` / `summarizes` 直接用 **autoevals(Braintrust)**。
 
-断言是 eval 给 `test(t)` 的产出打分的方式。每条记录一个结果、返回可链式的 handle;runner 收齐**所有**记录再算判决,所以一次运行会报告**每一条**失败断言,而不是遇到第一个就停。
+断言是 eval 给 `test(t)` 的产出打分的方式。每条记录一个结果、返回可链式 handle;runner 收齐**所有**记录再算判决,所以一次运行会报告每一条失败断言,而不是遇到第一个就停。
 
-## 作用域:两层,同一套词汇
+## Attempt 和 Turn
 
-多轮里最容易错的是「这条到底看哪一轮?」。规则很简单:**作用域由你调用在哪个对象上决定,不由断言叫什么名字决定**——`t.X` 和 `turn.X` 是同一套名字,分别绑在两个位置。
+`Attempt` 和 `Turn` 不是同一个东西。
 
-| 层 | 谁 | 作用域 |
+| 概念 | 含义 | 断言作用域 |
 |---|---|---|
-| **值级** | `t.check(value, …)`、judge 的 `{ on }` | 评你传进去的值;**默认值 = `t.reply` = 最后一轮** assistant 消息。`t.judge.autoevals.*` 一律默认 `on: t.reply`;要评工作区产物(diff),显式传 `{ on: t.sandbox.diff.get(path) }`;judge 默认 soft |
-| **`t.*`(attempt 级)** | `t.succeeded` / `t.messageIncludes` / `t.calledTool` / `t.event` … | `test` 跑完后对**这次 attempt 全程**评估:含全部轮次,以及 `t.newSession()` 开的额外会话。对齐 eve 的 `assertions/scoped.ts`(`createScopedAssertions` 绑 `timing: "final"`,读 `sessions.flatMap(session => session.events)`);详见 [Eval Authoring · 补充](eval-authoring.md#补充作用域只有两层一套词汇对齐-eve) |
-| **`turn.*`(轮级)** | `t.send()` 返回的 turn 上:`turn.succeeded` / `turn.messageIncludes` / `turn.calledTool` / `turn.event` … ,加 turn 独有的 `turn.expectOk` / `turn.outputEquals` / `turn.outputMatches` | 只看**这一轮自己的事件**,不含之前轮次。跟 `t.*` 是**同一套断言名字**,只是绑的数据范围从"全程"换成"这一轮"——对齐 eve 的 turn handle(`timing: "snapshot"`) |
+| **Attempt** | 一个 eval 在一个 agent / model / run index 下的一次完整执行 | `t.succeeded()` / `t.calledTool()` 等看这个 attempt 的全部轮次和全部 `newSession()` |
+| **Turn** | 一次 `t.send()` 返回的一轮交互结果 | `turn.succeeded()` / `turn.calledTool()` 等只看这一轮自己的事件 |
 
-值级(judge / `t.check`)默认只看最后一轮,和 `t.*` 默认看全程,是两条独立的规则,不矛盾。要评整段多轮对话(judge 跨轮一致性),自己把每轮的 `turn.message` 收集拼起来再传给 judge,写法见 [Eval Authoring · 多轮里评整段对话](eval-authoring.md#多轮里评整段对话);要断言"这一轮"有没有调某个工具、有没有成功,直接调 `turn.calledTool(...)` / `turn.succeeded()`,不必退回全程聚合。
+它们共享一套断言词汇,但绑定的数据不同。规则是:**作用域由你调用在哪个对象上决定,不由断言名字决定。**
 
-`t.sandbox.*` 工作区断言(`fileChanged`/`diff`/…)不参与这套 t/turn 二元性——它们只在 attempt 级出现,没有 turn 级镜像,因为沙箱的 git diff 是整个 attempt 一份,不按轮次切分。详见[工作区断言](#工作区断言tsandbox仅-workspace-能力)。
+## API 分组速查
 
-## 作用域断言(`t` 上,attempt 全程评估)
+### 对话与轮次
 
-读自[标准事件流](agents-and-adapters.md)与其派生事实——只要 adapter 产出标准 `events`,对任何 agent 都成立。全部默认 **gate**。作用域是这次 eval 执行的**整个 attempt**:全部轮次,加上 `t.newSession()` 开的额外会话;对齐 eve 的 `assertions/scoped.ts`(见 [Eval Authoring · 补充](eval-authoring.md#补充作用域只有两层一套词汇对齐-eve))。同一套名字在 `t.send()` 返回的 turn 上重复出现,作用域收窄成"这一轮",见下方[轮级断言](#轮级断言tsend-返回的-turn-上)。
+| API | 作用 | 备注 |
+|---|---|---|
+| `await t.send(text)` | 给 agent 发一轮输入 | 返回 `turn`,用于单轮断言 |
+| `await t.sendFile(path, text?)` | 给 agent 发带文件的一轮输入 | 文件从宿主项目读取 |
+| `t.reply` | 最后一条 assistant 消息 | 值级 judge / matcher 的默认材料 |
+| `t.newSession()` | 开一条独立会话线 | `t.*` attempt 级断言会聚合全部 session |
+| `turn.message` | 这一轮 assistant 消息 | 多轮 judge 时建议自己收集这些值 |
+| `turn.data` | 这一轮结构化输出 | 配 `turn.outputEquals` / `turn.outputMatches` |
+| `turn.status` | 这一轮状态 | `completed` / `failed` / `waiting` |
+| `turn.events` | 这一轮标准事件流 | 只含这一轮,不含之前轮次 |
+| `turn.usage` | 这一轮 token 用量 | 可选,取决于 adapter 能否带回 |
 
-| 断言 | 作用 | 来源 |
+### Attempt 级作用域断言
+
+| API | 作用 | 来源 |
 |---|---|---|
 | `t.succeeded()` | 运行没失败、且没卡在未回答的 HITL | eve.dev |
 | `t.parked()` | 干净停在 HITL 输入上 | eve.dev |
-| `t.messageIncludes(token)` | attempt 全程的 assistant 文本拼接后含 token(串 / 正则) | eve.dev |
-| `t.calledTool(name, match?)` | 有匹配 name + input + status 的工具调用(可精确计数) | eve.dev |
+| `t.messageIncludes(token)` | attempt 全程 assistant 文本拼接后含 token | eve.dev |
+| `t.calledTool(name, match?)` | 有匹配 name / input / status 的工具调用 | eve.dev |
 | `t.notCalledTool(name, match?)` | 没有匹配的工具调用 | eve.dev |
-| `t.toolOrder([...names])` | 工具调用按给定子序出现 | eve.dev |
+| `t.toolOrder(names)` | 工具调用按给定子序出现 | eve.dev |
 | `t.usedNoTools()` | 完全没调工具 | eve.dev |
-| `t.maxToolCalls(n)` | 工具调用数 ≤ n | eve.dev |
-| `t.loadedSkill(skill)` | = `calledTool("load_skill", { input: { skill } })` 的糖 | eve.dev |
-| `t.calledSubagent(name, match?)` | 子 agent 委派匹配(同 `ToolMatch` 小语言) | eve.dev(`assertions/scoped.ts`) |
+| `t.maxToolCalls(max)` | 工具调用数不超过 max | eve.dev |
+| `t.loadedSkill(skill)` | `calledTool("load_skill", { input: { skill } })` 的糖 | eve.dev |
+| `t.calledSubagent(name, match?)` | 子 agent 委派匹配 | eve.dev |
 | `t.noFailedActions()` | 没有 failed 的工具 / 子 agent 动作 | eve.dev |
-| `t.event(type, { count? })` | 出现(或恰好 count 个)某类型事件 | eve.dev |
+| `t.event(type, opts?)` | 出现某类型事件,可指定 count | eve.dev |
 | `t.notEvent(type)` | 没出现某类型事件 | eve.dev |
-| `t.eventOrder([...types])` | 事件分组按给定顺序出现 | eve.dev(`assertions/scoped.ts`) |
-| `t.eventsSatisfy(label, predicate)` | 自定义谓词直接查 `events` | eve.dev(`assertions/scoped.ts`) |
-| `t.maxTokens(n)` | 整次 input + output token ≤ n | fasteval(用量聚合,补 agent-eval 的 TODO) |
-| `t.maxCost(usd)` | 估算成本 ≤ usd(需价格表) | **fasteval 自创**(预算护栏思路借鉴 crabbox) |
+| `t.eventOrder(types)` | 事件类型按给定子序出现 | eve.dev |
+| `t.eventsSatisfy(label, predicate)` | 自定义谓词直接查事件流 | eve.dev |
+| `t.maxTokens(max)` | input + output token 不超过 max | fasteval |
+| `t.maxCost(usd)` | 估算成本不超过 usd | fasteval |
 
-## 工作区断言(`t.sandbox.*`,仅 workspace 能力)
+### Turn 级作用域断言
 
-凡是检查「沙箱文件系统」状态的断言——文件变化、diff、测试通过——都挂在 **`t.sandbox` 下**,跟沙箱的原始句柄(`runCommand`/`writeFiles`/…)住在同一个命名空间,因为它们都是"读/改沙箱这个东西"。评工作区产物(diff)用 `t.judge.autoevals.closedQA(criteria, { on: t.sandbox.diff.get(path) })`,显式传材料。
+| API | 作用 | 备注 |
+|---|---|---|
+| `turn.succeeded()` | 这一轮没失败、且没卡在 HITL | 与 `t.succeeded` 同名,作用域收窄 |
+| `turn.parked()` | 这一轮干净停在 HITL 输入上 | 与 `t.parked` 同名 |
+| `turn.messageIncludes(token)` | 这一轮 assistant 文本含 token | 不看其它轮 |
+| `turn.calledTool(name, match?)` | 这一轮有匹配工具调用 | 不看其它轮 |
+| `turn.notCalledTool(name, match?)` | 这一轮没有匹配工具调用 | 不看其它轮 |
+| `turn.toolOrder(names)` | 这一轮工具调用按给定子序出现 | 不看其它轮 |
+| `turn.usedNoTools()` | 这一轮完全没调工具 | 不看其它轮 |
+| `turn.maxToolCalls(max)` | 这一轮工具调用数不超过 max | 不看其它轮 |
+| `turn.loadedSkill(skill)` | 这一轮加载了指定 skill | 不看其它轮 |
+| `turn.calledSubagent(name, match?)` | 这一轮有匹配子 agent 委派 | 不看其它轮 |
+| `turn.noFailedActions()` | 这一轮没有 failed 动作 | 不看其它轮 |
+| `turn.event(type, opts?)` | 这一轮出现某类型事件 | 不看其它轮 |
+| `turn.notEvent(type)` | 这一轮没出现某类型事件 | 不看其它轮 |
+| `turn.eventOrder(types)` | 这一轮事件类型按给定子序出现 | 不看其它轮 |
+| `turn.eventsSatisfy(label, predicate)` | 自定义谓词查这一轮事件 | 不看其它轮 |
+| `turn.expectOk()` | 这一轮 failed 时抛错中止后续 | turn 独有 |
+| `turn.outputEquals(value)` | `turn.data` 深度相等 | turn 独有 |
+| `turn.outputMatches(schema)` | `turn.data` 通过 schema | turn 独有 |
 
-| `t.sandbox.*` | 作用 |
-|---|---|
-| `fileChanged(path)` | 该文件出现在生成 diff 里 |
-| `fileDeleted(path)` | 该文件被删 |
-| `notInDiff(re)` | 改动里不含某模式(密钥、内联 style…) |
-| `scriptPassed(script)` | 指定 npm 脚本退出 0(手工跑测试后用它断言,见下) |
-| `noFailedShellCommands()` | 没有 failed 的 shell 工具调用 |
+### 值级断言
 
-非断言的访问器:`t.sandbox.diff`(`.get(path)` / `.isEmpty()` / `.matches(re)`)、`t.sandbox.file(path)`(延迟文件引用)。`t.sandbox` 同时也是沙箱的**原始句柄**——`runCommand` / `runShell` / `readFile` / `fileExists` / `readSourceFiles` / `writeFiles` / `uploadFiles` / `getWorkingDirectory` / `setWorkingDirectory` / `stop`——用来在 `test()` 里手工 seed 文件或跑命令。没有另一条"静态 seed"路径:所有起始文件都靠显式调用 `t.sandbox.writeFiles` / `uploadFiles` 放进去,放到哪个路径由你的代码决定。用法见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)。
+| API | 作用 | 备注 |
+|---|---|---|
+| `t.check(value, matcher)` | 记录一条值级断言 | 可延迟读取 `t.sandbox.file()` |
+| `t.require(value, matcher)` | 立即评估前置条件 | 不过就抛,中止后续 |
+| `includes(needle, opts?)` | 含子串 / 命中正则 | 默认 gate |
+| `excludes(needle, opts?)` | 不含子串 / 不命中正则 | 默认 gate |
+| `equals(expected)` | 深度相等 | 默认 gate |
+| `matches(schema)` | Standard Schema / zod 校验 | 默认 gate |
+| `similarity(expected)` | 归一化相似度 `[0,1]` | 默认 soft |
+| `satisfies(predicate, label?)` | 自定义谓词 | 默认 gate |
+| `isDefined(label?)` | `value != null` | 默认 gate |
+| `isTrue(label?)` | 严格等于 `true` | 默认 gate |
+| `isFalse(label?)` | 严格等于 `false` | 默认 gate |
+| `commandSucceeded()` | 命令退出码为 0 | 用来替代 `scriptPassed` |
+| `makeAssertion(spec)` | 自定义 matcher | 复杂评分逃生舱 |
 
-**来源**:这些断言本身来自 **Vercel agent-eval**,组织上归进 `t.sandbox` 命名空间,和沙箱的原始句柄放在一起。
+### Sandbox:文件 IO
 
-## 轮级断言(`t.send()` 返回的 turn 上)
+| API | 作用 | 备注 |
+|---|---|---|
+| `t.sandbox.writeFiles(files)` | 写入文本文件清单 | 立即写入 sandbox |
+| `t.sandbox.uploadFiles(files)` | 写入文本 / 二进制文件清单 | 立即写入 sandbox |
+| `t.sandbox.readFile(path)` | 读取 sandbox 文件 | 立即读取 |
+| `t.sandbox.fileExists(path)` | 判断 sandbox 文件是否存在 | 立即读取 |
+| `t.sandbox.readSourceFiles(root?)` | 批量读取源码文件 | 立即读取 |
 
-跟上面[作用域断言](#作用域断言t-上attempt-全程评估)是**同一套名字、同一套语义**,只是绑的数据换成"这一轮自己的事件",不含之前轮次:`turn.succeeded` / `turn.parked` / `turn.messageIncludes` / `turn.calledTool` / `turn.notCalledTool` / `turn.toolOrder` / `turn.usedNoTools` / `turn.maxToolCalls` / `turn.loadedSkill` / `turn.calledSubagent` / `turn.noFailedActions` / `turn.event` / `turn.notEvent` / `turn.eventOrder` / `turn.eventsSatisfy`。来源 **eve.dev**(`assertions/scoped.ts` 绑到 turn handle 的 `timing: "snapshot"`)。
+### Sandbox:命令执行
 
-turn 独有、不在 attempt 级出现的几个(只对单轮有意义):
+| API | 作用 | 备注 |
+|---|---|---|
+| `t.sandbox.runCommand(cmd, args?, opts?)` | 执行命令并返回结果 | 不自动评分 |
+| `t.sandbox.runShell(script, opts?)` | 执行 shell 脚本并返回结果 | 不自动评分 |
+| `t.sandbox.getWorkingDirectory()` | 读取当前工作目录 | author-facing sandbox 句柄 |
+| `t.sandbox.setWorkingDirectory(path)` | 设置当前工作目录 | author-facing sandbox 句柄 |
 
-| 断言 | 作用 |
-|---|---|
-| `turn.expectOk()` | 本轮 failed 就抛(带最后一条 error 诊断),否则可链 |
-| `turn.outputEquals(value)` | `turn.data` 深度相等 |
-| `turn.outputMatches(schema)` | `turn.data` 过 Standard Schema / zod 校验 |
+`Sandbox.stop()` 是运行器生命周期职责,不暴露给 eval 作者。eval 只描述“测什么、怎么判分”,不负责销毁沙箱。
 
-(`turn.message` / `turn.data` / `turn.usage` / `turn.status` / `turn.events` 是只读字段,不是断言。)
+### Sandbox:结果断言与 diff
 
-## 值级断言:`t.check` / `t.require` + 匹配器
+| API | 作用 | 备注 |
+|---|---|---|
+| `t.sandbox.fileChanged(path)` | 文件出现在生成 diff 里 | 延迟断言 |
+| `t.sandbox.fileDeleted(path)` | 文件被删除 | 延迟断言 |
+| `t.sandbox.notInDiff(re)` | diff 不含某模式 | 延迟断言 |
+| `t.sandbox.diff.get(path)` | 读取某文件 diff 内容 | 值级断言材料 |
+| `t.sandbox.diff.isEmpty()` | diff 是否为空 | 值级断言材料 |
+| `t.sandbox.diff.matches(re)` | diff 是否命中正则 | 值级断言材料 |
+| `t.sandbox.file(path)` | 延迟读取 sandbox 文件 | 配 `t.check` 使用 |
 
-- `t.check(value, matcher)` —— 记录一条**延迟**断言(`t.sandbox.file()` 的 `FileRef` 到 finalize 才读)。
-- `t.require(value, matcher)` —— **立即**评估、记成 gate,不过就抛 `EvalRequirementFailed` 中止后续(前置条件)。
+同一个 `t.sandbox` 下同时有“放文件”和“断言文件变化”,但文档按类别区分:
 
-来源 **eve.dev**。匹配器从 `fasteval/expect` 导入,都返回可链式 `.gate()` / `.atLeast(x)` 的 `ValueAssertion`(只有这两个链式方法,`.atLeast(x)` 本身就是 soft):
+- 文件 IO 和命令执行是**立即动作**;
+- diff / fileChanged / file 是**结果视图和延迟断言**;
+- 沙箱创建、清理、停止是**runner 生命周期**,不暴露给 eval 作者。
 
-| 匹配器 | 打分 | 默认严重级 | 来源 |
-|---|---|---|---|
-| `includes(needle, opts?)` | 含子串 / 命中正则 | gate | eve.dev |
-| `equals(expected)` | 深度相等(NaN / Date / 数组 / 对象) | gate | eve.dev |
-| `matches(schema)` | Standard Schema / zod 校验 | gate | eve.dev |
-| `similarity(expected)` | 归一化 Levenshtein `[0,1]` | **soft, 0.6** | eve.dev |
-| `satisfies(pred, label?)` | 自定义谓词 | gate | eve.dev |
-| `makeAssertion({ … })` | 自定义断言工厂 | 可配(默认 gate) | eve.dev |
-| `excludes(needle, opts?)` | `includes` 取反 | gate | **fasteval 扩展** |
-| `isDefined(label?)` | `value != null` | gate | **fasteval 扩展** |
-| `isTrue(label?)` / `isFalse(label?)` | 严格等于 `true` / `false` | gate | **fasteval 扩展** |
+### Judge
 
-## 匹配小语言(`ToolMatch`)
+| API | 作用 | 备注 |
+|---|---|---|
+| `t.judge.autoevals.closedQA(criteria, opts?)` | 闭合式判断 | autoevals |
+| `t.judge.autoevals.factuality(expected, opts?)` | 事实一致性 | autoevals |
+| `t.judge.autoevals.summarizes(source, opts?)` | 是否忠实摘要 | autoevals |
 
-`calledTool` / `notCalledTool` 的第二参用同一套部分深度匹配,来源 eve.dev:
+judge 默认材料是 `t.reply`。评多轮对话时,自己收集每轮 `turn.message` 再传 `{ on }`;评 sandbox 产物时,显式传 `t.sandbox.diff.get(path)` 或 `await t.sandbox.readFile(path)`。
 
-- `input` —— 字面量(深度部分匹配)/ 正则(对序列化串)/ 谓词函数;
-- `count` —— 精确计数;
-- `status` —— 按 `completed` / `failed` / `rejected` 过滤。
+## 作用域规则
 
-## 用量:`t.usage`
+作用域由你调用在哪个对象上决定,不由断言名字决定。
 
-`t.usage`(`{ inputTokens, outputTokens, cacheReadTokens?, … }`)—— 累计用量(平铺,agent 中立),`test` 里随时可读,不止 `maxTokens`/`maxCost` 两条断言用得上,也能自己拿字段配 `t.check` 写别的效率断言(如 `t.check(t.usage.outputTokens, satisfies((n) => n < 10_000, "输出不啰嗦"))`)。工作区相关的访问器(`t.sandbox.diff` / `t.sandbox.file` / 沙箱原始句柄 `t.sandbox`)见[工作区断言](#工作区断言tsandbox仅-workspace-能力)。
+| 层 | 谁 | 作用域 |
+|---|---|---|
+| **值级** | `t.check(value, matcher)`、judge 的 `{ on }` | 只评你传进去的值;默认值通常是 `t.reply` |
+| **attempt 级** | `t.succeeded()`、`t.calledTool()`、`t.event()` 等 | `test` 跑完后,看这个 attempt 的全部轮次和全部 `newSession()` |
+| **turn 级** | `turn.succeeded()`、`turn.calledTool()`、`turn.event()` 等 | 只看这一轮自己的事件 |
+| **sandbox 结果级** | `t.sandbox.fileChanged()`、`t.sandbox.diff` 等 | 只看这个 attempt 最终 sandbox diff,不按轮次切分 |
 
-`t.event(type, { count? })` / `t.notEvent(type)` / `t.eventOrder([...types])` / `t.eventsSatisfy(label, predicate)` 覆盖了"规则覆盖不到、直接查事件"的需求。要评整段多轮对话,自己把每轮 `turn.message` 收集拼起来传给 judge,见 [Eval Authoring · 多轮里评整段对话](eval-authoring.md#多轮里评整段对话)。
+值级 judge / matcher 默认看最后一轮,和 `t.*` 默认看全程不是一套规则。要评整段多轮对话,显式收集材料:
+
+```typescript
+const turns = [
+  await t.send("这张图里有什么?"),
+  await t.send("背景是什么颜色?"),
+  await t.send("中间那个形状是什么颜色的?"),
+];
+
+const conversation = turns.map((turn) => turn.message).join("\n");
+t.judge.autoevals.closedQA("助手是否始终基于第一轮的图片作答?", { on: conversation }).atLeast(0.7);
+```
+
+## 命令结果怎么评分
+
+命令执行和评分分开。`runCommand` / `runShell` 只负责执行并返回结果;是否通过,用普通 matcher 表达。
+
+```typescript
+import { commandSucceeded, excludes } from "fasteval/expect";
+
+const test = await t.sandbox.runCommand("npm", ["test"]);
+
+t.check(test, commandSucceeded());
+t.check(test.stderr, excludes("TypeError"));
+```
+
+不保留 `scriptPassed()` / `testsPassed()` 作为目标 DX。它们来自 Vercel agent-eval 的固定 fixture 流程:`PROMPT.md` + `EVAL.ts` + `scripts[]` 由 runner 自动调度。fasteval 的目标形状是“用户在 `test(t)` 里手工写入文件、手工运行验证命令、手工断言命令结果”,所以不再需要一个同时暗示“执行脚本”和“注册断言”的 API。
+
+## 沙箱能力错误
+
+eval 不需要额外声明 `requires`。如果在不支持 sandbox 的 agent 上调用 `t.sandbox`,运行时直接抛出清晰错误:
+
+```text
+This eval used t.sandbox.fileChanged(), but agent "web-agent" does not provide a sandbox.
+Use a sandbox agent, or remove sandbox calls from this eval.
+```
+
+这样 `defineEval` 保持轻;错误出现在实际用错的 API 上,比额外维护一份 capability 声明更直接。
 
 ## 严重级:gate vs soft
 
-- **gate** —— 硬要求,不过 → 整个 eval failed,任何时候都生效。`includes` / `equals` 等默认 gate。
-- **soft** —— 质量分,不会单独让 eval 立即 fail。`.atLeast(x)` 本身就是 soft 带阈值的写法:非 `--strict` 下低于 x 仍 `passed`,`--strict` 下才判 `failed`。不调 `.atLeast()` 也不调 `.gate()` 时,走匹配器自己的默认档:`similarity` 默认 soft、阈值 0.6;judge 默认 soft、没有阈值,纯记分,任何时候都不会 fail。
+- **gate** —— 硬要求,不过即 `failed`,任何时候都生效。`includes` / `equals` 等默认 gate。
+- **soft** —— 质量分,非 `--strict` 下不让 eval failed;`--strict` 下低于阈值才 failed。`similarity` 和 judge 默认 soft。
 
-链式改写:`.gate()` / `.atLeast(x)`——只有这两个。判决规则(Outcome)见 [Scoring · 判决规则](scoring.md#判决规则)。来源 **eve.dev**。
+链式改写:
 
-## LLM-as-judge
+| API | 作用 |
+|---|---|
+| `.atLeast(x)` | soft 阈值;非 `--strict` 只记分,`--strict` 下低于 x 才 failed |
+| `.gate()` | 转成硬要求;低于默认通过线即 failed |
+| `.gate(x)` | 转成硬阈值;低于 x 任何时候都 failed |
 
-judge 在 [Scoring · LLM-as-judge](scoring.md#3-llm-as-judge) 详述,这里只记**作用域**与**来源**:
+示例:
 
-| judge | 作用 | 来源 |
-|---|---|---|
-| `t.judge.autoevals.closedQA(criteria, { on?, model? })` | 闭合式判断 | autoevals(Braintrust) |
-| `t.judge.autoevals.factuality(expected, …)` | 事实一致性 | autoevals(Braintrust) |
-| `t.judge.autoevals.summarizes(source, …)` | 是否忠实摘要 | autoevals(Braintrust) |
-
-judge 就是这三个固定形状;需要打分的场景要么落进这三个形状,要么用 `t.check` 配 `makeAssertion` 自己写评分函数。
-
-> 评工作区产物(diff)用 `t.judge.autoevals.closedQA(criteria, { on: t.sandbox.diff.get(path) })`(仅 workspace 能力时 `t.sandbox` 才存在),材料显式传,跟其它 judge 调用同一套写法。
-
-- **`{ on }`** = 被评的值(默认 `t.reply` = 最后一轮);可传沙箱文件路径或一段字面文本。judge 接口(`{ on }` / 默认 soft)来源 eve.dev。
-- **默认材料**:一律默认 `t.reply`(最后一轮)。要评**工作区产物(diff)**,显式传 `{ on: t.sandbox.diff.get(path) }`;要评**整段多轮对话**,自己把每轮 `turn.message` 收集拼起来再传进去,见 [Eval Authoring · 多轮里评整段对话](eval-authoring.md#多轮里评整段对话)。
-
-**`closedQA`/`factuality`/`summarizes` 只挂在 `t.judge.autoevals` 这一层**,不留平铺别名——跟 eve 源码(`packages/eve/src/evals/judge.ts:67-86` 的 `buildJudgeContext`)一致。
+```typescript
+t.check(t.reply, includes("晴"));                         // 默认 gate
+t.check(t.reply, similarity(expected).atLeast(0.8));      // soft 阈值
+t.check(t.reply, similarity(expected).gate(0.8));         // 硬阈值
+t.judge.autoevals.closedQA("语气是否礼貌");                // soft 纯记分
+t.judge.autoevals.closedQA("语气是否礼貌").atLeast(0.7);   // soft 阈值
+```
 
 ## 来源一览 & 哪些是 fasteval 自创
 
 | 来源 | 给了 fasteval 什么 | 出处 |
 |---|---|---|
-| **eve.dev evals** | 声明式 DX、路径即身份、gate/soft 分层、scoped / value / turn 断言形态、`t.check`/`require`、匹配器、LLM-judge 接口 | `docs/architecture.md:95`、`docs/README.md:15` |
-| **Vercel agent-eval** | Adapter / Sandbox 工程形状、沙箱断言(`fileChanged` / `scriptPassed`/…)、transcript 归一化与可观测、experiment 层、本地 `fasteval view` | `docs/vision.md:79`、`docs/experiments.md:10` |
-| **crabbox** | capability 分发纪律、`--budget` / `maxCost` 的 spend cap、source-map 文档观 | `docs/vision.md:9,80`、`docs/runner.md:50` |
-| **autoevals(Braintrust)** | `closedQA` / `factuality` / `summarizes` 评判器 | `src/scoring/judge.ts:7-10` |
+| **eve.dev evals** | 声明式 DX、路径即身份、gate/soft 分层、scoped / value / turn 断言形态、`t.check` / `t.require`、匹配器、LLM-judge 接口 | `docs/architecture.md`、`docs/README.md` |
+| **Vercel agent-eval** | Adapter / Sandbox 工程形状、sandbox diff、transcript 归一化与可观测、experiment 层、本地 `fasteval view` | `docs/vision.md`、`docs/experiments.md` |
+| **crabbox** | capability 分发纪律、`--budget` / `maxCost` 的 spend cap、source-map 文档观 | `docs/vision.md`、`docs/runner.md` |
+| **autoevals(Braintrust)** | `closedQA` / `factuality` / `summarizes` 评判器 | `src/scoring/judge.ts` |
 
 **fasteval 自创(不在以上任何来源里):**
 
-- **成本聚合** —— 用量 → 成本价格表估算 + `t.maxCost()`(eve 不聚合成本、agent-eval 只留了 TODO,fasteval 补齐;预算护栏的 spend-cap 思路借鉴 crabbox)。
-- **匹配器扩展** —— `excludes` / `isDefined` / `isTrue` / `isFalse`。
-- **可本地化的项目 `name`、读结果目录出图的 `fasteval view`。**
+- **成本聚合** —— 用量 → 成本价格表估算 + `t.maxCost()`。
+- **匹配器扩展** —— `excludes` / `isDefined` / `isTrue` / `isFalse` / `commandSucceeded`。
+- **sandbox author API 分层** —— 文件 IO / 命令执行 / 结果断言都在 `t.sandbox`,但生命周期动作如 `stop()` 不暴露给 eval 作者。
+- **本地结果查看器** —— 读 `.fasteval/<run>/` 结构化工件出图。
 
 ## 接下来读什么
 
-- [Eval Authoring](eval-authoring.md) —— 怎么把这些断言组织进单轮 / 多轮 / 数据集 eval。
+- [Eval Authoring](eval-authoring.md) —— 怎么把这些 API 组织进单轮 / 多轮 / 数据集 / 沙箱型 eval。
 - [Scoring](scoring.md) —— 判决规则、judge 细节、效率 / 成本断言。
 - [Agents 与 Adapters](agents-and-adapters.md) —— 断言读的标准事件流从哪来。
 - [Observability](observability.md) —— transcript / usage / cost 的数据来源。

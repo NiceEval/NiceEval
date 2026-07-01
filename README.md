@@ -19,7 +19,7 @@ After the eval completes, it generates readable reports and lets you view agent 
 
 ## Architecture
 
-fasteval supports two integration modes, depending on whether the system under test needs an isolated workspace.
+fasteval supports two integration modes, depending on whether the system under test needs an isolated sandbox filesystem.
 
 **Mode 1: Sandbox (Docker) — run coding agents like Codex and Claude Code that need a sandbox**
 
@@ -76,7 +76,7 @@ fasteval supports two integration modes, depending on whether the system under t
 ```ts
 // evals/test-image-understanding.eval.ts
 import { defineEval } from "fasteval";
-import { includes } from "fasteval/expect";
+import { commandSucceeded, includes } from "fasteval/expect";
 
 export default defineEval({
   description: "Build a Button component with label and onClick props.",
@@ -84,9 +84,11 @@ export default defineEval({
     await t.send("Create src/components/Button.tsx with label and onClick props.");
 
     t.succeeded();
-    t.fileChanged("src/components/Button.tsx");
-    t.check(t.file("src/components/Button.tsx"), includes("onClick"));
-    t.testsPassed();
+    t.sandbox.fileChanged("src/components/Button.tsx");
+    t.check(t.sandbox.file("src/components/Button.tsx"), includes("onClick"));
+
+    const test = await t.sandbox.runCommand("npm", ["test"]);
+    t.check(test, commandSucceeded());
   },
 });
 ```

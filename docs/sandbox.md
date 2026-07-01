@@ -11,7 +11,7 @@
 - **可并发** —— 几十个 case 同时跑,各自独立。
 - **可采集** —— 跑完用 `git diff` 取改动、读 transcript,环境随后销毁。
 
-## 统一接口
+## 后端统一接口
 
 ```typescript
 interface Sandbox {
@@ -34,7 +34,7 @@ interface Sandbox {
 }
 ```
 
-接口刻意只暴露"跑命令 + 读写文件 + 工作目录 + 起停"这几样 —— 所有后端都能实现,且足够支撑 agent 评测的全流程。
+这是后端实现和 runner 使用的底层接口,所以包含 `stop()`。eval 作者在 `test(t)` 里拿到的是 author-facing 的 `t.sandbox`:只暴露文件 IO、命令执行和结果断言 / diff,不暴露 `stop()`。沙箱生命周期由 runner 统一管理。
 
 ## 用户与 root
 
@@ -142,19 +142,19 @@ await sandbox.runCommand("npm", ["install"]);
 
 ```text
 createSandbox(backend, timeout)
-  → git init && git commit               # 打一次空基线,供之后 diff——不管 test() 里 seed 了什么
+  → git init && git commit               # 打一次空基线,供之后 diff——不管 test() 里写了什么
   → hooks.sandbox.setup?.(sandbox, ctx)  # 用户预置钩子,可返回 cleanup 闭包
   → test(t)                              # ← 交给 eval 作者,顺序由它自己决定:
-  │    t.sandbox.writeFiles/uploadFiles    #   手工 seed 起始文件,放哪个路径你说了算
+  │    t.sandbox.writeFiles/uploadFiles    #   手工写入起始文件,放哪个路径你说了算
   │    t.send()                            #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events)
   │    t.sandbox.runCommand()              #   手工跑校验命令(可以晚于 t.send(),agent 天然看不到)
-  │    断言…                               #   t.sandbox.fileChanged / t.sandbox.diff / t.sandbox.scriptPassed / t.judge.autoevals.closedQA
+  │    断言…                               #   t.sandbox.fileChanged / t.sandbox.diff / t.check(commandSucceeded)
   → collectGeneratedFiles()              # git diff HEAD
   → hooks.sandbox.teardown?.() / cleanup()  # 用户清理钩子(finally,失败也跑)
   → sandbox.stop()                       # 销毁
 ```
 
-核心只固定两件事:**沙箱创建时打一次空 git 基线**,和**销毁前采一次 diff**——这两件事跟"里面放了什么文件"无关,核心不需要知道也不需要预设目录约定。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。`hooks.sandbox.setup` / `teardown` 是留给用户在"创建"和"销毁"这两头插自己环境逻辑的缝,成对出现、`teardown` 必在 `finally` 跑,完整模型见 [Lifecycle](lifecycle.md)。
+核心只固定两件事:**沙箱创建时打一次空 git 基线**,和**销毁前采一次 diff**——这两件事跟"里面放了什么文件"无关,核心不需要知道也不需要预设目录约定。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。`hooks.sandbox.setup` / `teardown` 是留给用户在"创建"和"销毁"这两头插自己环境逻辑的缝,成对出现、`teardown` 必在 `finally` 跑,完整模型见 [Lifecycle](lifecycle.md)。
 
 ## 性能:复用与预热
 

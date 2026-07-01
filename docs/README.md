@@ -32,7 +32,7 @@ DX 的灵感来自 [eve.dev 的 evals](https://eve.dev/docs/evals/overview)(声�
    weather.eval.ts   --discover-->  Runner  --send-->  Agent   ┬─ 进程内 adapter (你的 agent)
    sql.eval.ts                        │                        ├─ 远程 adapter   (你的服务)
    fixtures/button.eval.ts            │                        └─ 沙箱 adapter ── Sandbox
-     (test() 里手工 seed 文件)         │                           (claude-code     (docker /
+     (test() 里手工写入文件)           │                           (claude-code     (docker /
                                        ▼                            codex / bub …)    三方)
                                   Scorers ── Reporters ── .fasteval/<run>/
                                   (expect / scoped /     (summary.json / 事件流 /
