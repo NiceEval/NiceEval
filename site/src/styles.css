@@ -11,6 +11,7 @@
   --green: #b9ff3d;
   --violet: #4d2a67;
   --rust: #da6d39;
+  --blue: #6ea8fe;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
 }
 
@@ -596,6 +597,20 @@ h1 {
   box-shadow: inset 2px 0 0 var(--green);
 }
 
+.code-line.reply {
+  background: rgba(110, 168, 254, 0.08);
+  box-shadow: inset 2px 0 0 var(--blue);
+}
+
+/* 整行都是点击区域，跟 view 里 transcript 行(summary.ts-row)一致——不是只有右边那颗按钮。 */
+.code-line.interactive {
+  cursor: pointer;
+}
+
+.code-line.interactive:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .code-line-no {
   flex-shrink: 0;
   width: 16px;
@@ -607,6 +622,11 @@ h1 {
 
 .code-line.assertion .code-line-no {
   color: var(--green);
+  text-align: left;
+}
+
+.code-line.reply .code-line-no {
+  color: var(--blue);
   text-align: left;
 }
 
@@ -634,20 +654,13 @@ h1 {
   white-space: nowrap;
 }
 
-.code-expand {
-  display: grid;
-  place-items: center;
+.code-line-actions .chev {
   flex-shrink: 0;
-  padding: 2px;
-  background: transparent;
   color: var(--soft);
-}
-
-.code-expand .chev {
   transition: transform 140ms ease;
 }
 
-.code-expand .chev.open {
+.code-line-actions .chev.open {
   color: var(--text);
   transform: rotate(90deg);
 }
@@ -662,12 +675,27 @@ h1 {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.55;
+  /* 整块代码在 <pre> 里，默认继承 white-space:pre；这里要按正文换行，不是保留代码空白。 */
+  white-space: normal;
 }
 
 .code-note svg {
   flex-shrink: 0;
   margin-top: 2px;
   color: var(--green);
+}
+
+/* 助手回复气泡，呼应 view 里 transcript 的 ts-role + ts-text 样式 */
+.code-note-reply {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.code-note-role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--blue);
 }
 
 .eval-more {

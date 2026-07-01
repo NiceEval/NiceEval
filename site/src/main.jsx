@@ -10,6 +10,7 @@ import {
   Folder,
   GitCompare,
   GitFork,
+  MessageCircle,
   Play,
   Terminal,
   Wrench,
@@ -104,12 +105,17 @@ const evalSourceLines = [
 const evalFile = {
   gateBadge: "1/0.7",
   gateLine: 34,
+  // 三种可点开的行：turn* 是发送的消息(点开看模拟回复)，其余是断言(点开看解释)。
   highlights: {
+    12: "turn1",
+    13: "turn2",
+    14: "turn3",
     19: "succeeded",
     23: "recognize",
     29: "followup",
     34: "gate",
   },
+  replyLines: new Set(["turn1", "turn2", "turn3"]),
   source: evalSourceLines.join("\n"),
 };
 
@@ -155,9 +161,12 @@ const copy = {
       ["Inspect", "Read verdicts, traces, costs, and workspace evidence."],
     ],
     setupEyebrow: "Eval example",
-    setupTitle: "Evals can have elegant DX too.",
+    setupTitle: "Effortlessly eval multi-turn conversations.",
     evalCard: {
       notes: {
+        turn1: 'Turn 1 · sendFile(evals/sample.png) — assistant reply: "The image shows a blue background with a white square in the middle."',
+        turn2: 'Turn 2 · send(follow-up) — assistant reply: "The background is blue."',
+        turn3: 'Turn 3 · send(follow-up) — assistant reply: "The shape in the middle is white."',
         succeeded: "succeeded() confirms all three turns went through cleanly — no failures and no stalls waiting on a human-in-the-loop prompt.",
         recognize: "The regex matches Chinese and English keywords together, so this only passes if the assistant actually named the blue background and white square.",
         followup: "This assertion runs at the run level — it scans every assistant message across all three turns, not just the last reply.",
@@ -209,9 +218,12 @@ const copy = {
       ["检查", "查看判决、trace、成本和工作区证据。"],
     ],
     setupEyebrow: "Eval 示例",
-    setupTitle: "eval 也能有优雅的 DX。",
+    setupTitle: "轻松 Eval 多轮对话。",
     evalCard: {
       notes: {
+        turn1: "第 1 轮 · sendFile(evals/sample.png) — 助手回复：「图片是一个蓝色背景，中间有一个白色方块。」",
+        turn2: "第 2 轮 · send(追问) — 助手回复：「背景是蓝色。」",
+        turn3: "第 3 轮 · send(追问) — 助手回复：「中间的形状是白色。」",
         succeeded: "succeeded() 确认这三轮对话都正常收发，没有失败，也没有卡在人工介入(HITL)。",
         recognize: "正则同时匹配中英文关键词，只有助手真的说出蓝色背景和白色方块才算通过。",
         followup: "这是 run 级断言——会扫描整次运行里所有 assistant 消息，而不只是最后一轮回复。",
@@ -468,11 +480,31 @@ function EvalCard({ t, card }) {
               {tokens.map((line, i) => {
                 const lineNo = i + 1;
                 const noteKey = evalFile.highlights[lineNo];
+                const isReply = noteKey ? evalFile.replyLines.has(noteKey) : false;
                 const open = openLines.has(lineNo);
+                const lineClassName = noteKey ? `code-line interactive ${isReply ? "reply" : "assertion"}` : "code-line";
                 return (
                   <React.Fragment key={lineNo}>
-                    <div {...getLineProps({ line, className: noteKey ? "code-line assertion" : "code-line" })}>
-                      <span className="code-line-no">{noteKey ? <CheckCircle2 size={12} /> : lineNo}</span>
+                    <div
+                      {...getLineProps({ line, className: lineClassName })}
+                      role={noteKey ? "button" : undefined}
+                      tabIndex={noteKey ? 0 : undefined}
+                      aria-expanded={noteKey ? open : undefined}
+                      onClick={noteKey ? () => toggleLine(lineNo) : undefined}
+                      onKeyDown={
+                        noteKey
+                          ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                toggleLine(lineNo);
+                              }
+                            }
+                          : undefined
+                      }
+                    >
+                      <span className="code-line-no">
+                        {noteKey ? isReply ? <MessageCircle size={12} /> : <CheckCircle2 size={12} /> : lineNo}
+                      </span>
                       <span className="code-line-content">
                         {line.map((token, tokenIndex) => (
                           <span key={tokenIndex} {...getTokenProps({ token })} />
@@ -481,20 +513,13 @@ function EvalCard({ t, card }) {
                       {noteKey ? (
                         <span className="code-line-actions">
                           {lineNo === evalFile.gateLine ? <span className="gate-badge">{evalFile.gateBadge}</span> : null}
-                          <button
-                            type="button"
-                            className="code-expand"
-                            aria-expanded={open}
-                            onClick={() => toggleLine(lineNo)}
-                          >
-                            <ChevronRight size={12} className={open ? "chev open" : "chev"} />
-                          </button>
+                          <ChevronRight size={12} className={open ? "chev open" : "chev"} aria-hidden="true" />
                         </span>
                       ) : null}
                     </div>
                     {noteKey && open ? (
-                      <div className="code-note">
-                        <CheckCircle2 size={13} />
+                      <div className={`code-note ${isReply ? "code-note-reply" : ""}`}>
+                        {isReply ? <span className="code-note-role">assistant</span> : <CheckCircle2 size={13} />}
                         <span>{card.notes[noteKey]}</span>
                       </div>
                     ) : null}
