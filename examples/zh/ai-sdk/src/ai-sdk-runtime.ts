@@ -120,6 +120,9 @@ export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSigna
       stopWhen: stepCountIs(5),
       abortSignal: signal,
     });
+    // 上游偶尔会退化返回空文本(无工具调用、无 usage);当成正常回复会把真实故障
+    // 悄悄伪装成一句兜底话术,掩盖排查信号,所以按失败处理,交给上面的 catch 收口。
+    if (!result.text.trim()) throw new Error("模型未返回任何文本内容(上游响应为空)");
   } catch (error) {
     modelSpan.end(undefined, { error: true });
     turn.end(undefined, { error: true });
@@ -130,7 +133,7 @@ export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSigna
   const usage = normalizeUsage(result);
   modelSpan.end(usageAttrs(usage));
 
-  const reply = result.text.trim() || "我已经处理了这一步。";
+  const reply = result.text.trim();
   rememberAiTurn(session, request.message, reply);
   events.push({ type: "message", role: "assistant", text: reply });
 
