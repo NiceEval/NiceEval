@@ -6,4 +6,6 @@
 
 **修法**：写 assertion 时留意——如果某个信号是"这个 eval 存在的意义"本身(不是锦上添花的质量分),就不要只用 soft/`.atLeast()`,要 `.gate(threshold)`。同时避免在 `messageIncludes` 的 OR 正则里塞太泛的词(尤其是题目/任务描述里本来就会出现的词,如"图片"、"颜色")——改成要求同时命中多个更具体的特征词(如同时要求 `/蓝|blue/` 和 `/白|方块|square/`),而不是任一宽泛关键词命中就算数,这样"答非所问但提到了同一批泛词"的假阳性就过不了 gate。
 
-已修复：`examples/zh/ai-sdk/evals/image-understanding.eval.ts`、`test/view-harness/evals/image-understanding.eval.ts`(2026-07-01)。回归用例见 `test/e2e-image-refusal.test.ts` + `test/fixtures/image-refusal/`(mock agent 永远回复"拒绝识图",e2e 跑真实 CLI 断言 outcome 必须是 failed)。
+已修复：`examples/zh/ai-sdk/evals/image-understanding.eval.ts`(2026-07-01)。回归用例见 `test/e2e-image-refusal.test.ts` + `test/fixtures/image-refusal/`(mock agent 永远回复"拒绝识图",e2e 跑真实 CLI 断言 outcome 必须是 failed)。
+
+注意：编辑 eval 源码不会重新给已经落盘的旧 `.fasteval/<run>/summary.json` 打分——`fasteval view` 打开的是历史工件快照,改完源码要重新真跑一遍(对着真实 agent 或至少 `--fresh`/`--force` 重跑)才能在 view 里看到修复生效,单看旧截图会误以为没修好。
