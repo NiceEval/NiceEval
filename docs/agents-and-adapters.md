@@ -113,7 +113,7 @@ interface DerivedFacts {
 | 断言 | 数据来源 |
 |---|---|
 | `succeeded` / `parked` | 派生:无失败动作且未 park / `parked` |
-| `messageIncludes(token)` | run 级:所有 assistant `message` 事件文本拼接(跨全部轮) |
+| `messageIncludes(token)` | 作用域断言:所有 assistant `message` 事件文本拼接(跨全部轮) |
 | `outputEquals` / `outputMatches` | `turn.data`(结构化输出) |
 | `calledTool` / `notCalledTool` / `toolOrder` / `usedNoTools` / `maxToolCalls` / `loadedSkill` | 派生 `toolCalls` |
 | `noFailedActions` | 派生:`toolCalls` + `subagentCalls`(+技能)均无 `failed` |

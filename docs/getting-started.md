@@ -113,7 +113,7 @@ export default defineEval({
     t.succeeded();
     t.calledTool("get_weather", { input: { city: "Brooklyn" } });
     t.check(t.reply, includes("晴"));
-    t.judge.closedQA("回答是否礼貌且切题").atLeast(0.7);
+    t.judge.autoevals.closedQA("回答是否礼貌且切题").atLeast(0.7);
   },
 });
 ```

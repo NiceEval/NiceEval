@@ -5,10 +5,10 @@
 五类(详情见 Assertions 对应小节):
 
 1. **值级断言** —— `t.check` / `t.require` 配 `expect` 里的匹配器,就地评估。见 [Assertions · 值级断言](assertions.md#值级断言tcheck--trequire--匹配器)。
-2. **作用域断言** —— `t.succeeded()` / `t.calledTool()` 等,在 `test` 结束后对整次运行评估。见 [Assertions · run 级断言](assertions.md#run-级断言t-上跑完后评估) / [工作区断言](assertions.md#工作区断言tsandbox仅-workspace-能力)。
+2. **作用域断言** —— `t.succeeded()` / `t.calledTool()` 等,在 `test` 结束后对整次运行评估。见 [Assertions · 作用域断言](assertions.md#作用域断言t-上跑完后评估) / [工作区断言](assertions.md#工作区断言tsandbox仅-workspace-能力)。
 3. **LLM-as-judge** —— 用一个评判模型给开放式回答打分,细节见下文。
 4. **测试即评分**(沙箱型) —— 跑 `EVAL.ts` 与 npm scripts,通过/失败即分数。
-5. **效率 / 成本断言** —— `t.maxTokens()` / `t.maxCost()`,把 token 花费也变成可判的维度。见 [Assertions · run 级断言](assertions.md#run-级断言t-上跑完后评估)。
+5. **效率 / 成本断言** —— `t.maxTokens()` / `t.maxCost()`,把 token 花费也变成可判的维度。见 [Assertions · 作用域断言](assertions.md#作用域断言t-上跑完后评估)。
 
 ## 严重级:gate vs soft
 
@@ -25,8 +25,8 @@
 t.check(t.reply, includes("晴"));                     // 默认 gate
 t.check(t.reply, similarity(expected).atLeast(0.8));  // 阈值即硬 gate:< 0.8 就 fail
 t.check(t.reply, similarity(expected).soft(0.8));     // 只记分,不挂
-t.judge.closedQA("礼貌");                             // 无阈值 = soft 纯分数(永不挂)
-t.judge.closedQA("礼貌").atLeast(0.7);                // 阈值 = 硬 gate:< 0.7 就 fail
+t.judge.autoevals.closedQA("礼貌");                   // 无阈值 = soft 纯分数(永不挂)
+t.judge.autoevals.closedQA("礼貌").atLeast(0.7);      // 阈值 = 硬 gate:< 0.7 就 fail
 ```
 
 ## 3. LLM-as-judge
@@ -34,11 +34,13 @@ t.judge.closedQA("礼貌").atLeast(0.7);                // 阈值 = 硬 gate:< 0
 用于"对不对靠规则说不清"的开放式回答。评判模型与被测 agent **完全分离**,避免自评。
 
 ```typescript
-t.judge.factuality(expected).atLeast(0.8);      // 事实一致性
-t.judge.closedQA("是否适合 10 岁小孩理解");        // 闭合式判断
-t.judge.summarizes(source);                      // 是否忠实摘要
+t.judge.autoevals.factuality(expected).atLeast(0.8);      // 事实一致性
+t.judge.autoevals.closedQA("是否适合 10 岁小孩理解");        // 闭合式判断
+t.judge.autoevals.summarizes(source);                      // 是否忠实摘要
 t.judge.score("自定义评分标准的一段话", { on: t.reply });
 ```
+
+`closedQA`/`factuality`/`summarizes` 只挂在 `t.judge.autoevals.*` 下,不留平铺别名(跟 eve 一致,见 [Assertions · LLM-as-judge](assertions.md#llm-as-judge));`t.judge.score` 是 fasteval 自己加的开放式评分,不属于 autoevals,不用套这层命名空间。
 
 `{ on }` 指定被评的值(默认 `t.reply`),`{ model }` 可单次覆盖评判模型。
 
@@ -62,7 +64,7 @@ defineEval({ judge: { model: "anthropic/claude-opus-4-8" }, async test(t) { ... 
 
 ## 5. 效率 / 成本断言
 
-token 用量是评分的一等维度 —— agent 答对了但烧掉十倍 token,不该和省着用的拿一样的分。这把「质量」和「效率」拆成两组断言,跨 agent 对比时就能同时看通过率和花费。用量自动随结果带回(沙箱型从 transcript 抠,见 [Observability](observability.md#用量与成本token--计费));`t.maxTokens()` / `t.maxCost()` 具体用法、默认严重级见 [Assertions · run 级断言](assertions.md#run-级断言t-上跑完后评估),`t.usage` 字段见 [Assertions · 逃生舱](assertions.md#逃生舱原始事件流--派生数据)。
+token 用量是评分的一等维度 —— agent 答对了但烧掉十倍 token,不该和省着用的拿一样的分。这把「质量」和「效率」拆成两组断言,跨 agent 对比时就能同时看通过率和花费。用量自动随结果带回(沙箱型从 transcript 抠,见 [Observability](observability.md#用量与成本token--计费));`t.maxTokens()` / `t.maxCost()` 具体用法、默认严重级见 [Assertions · 作用域断言](assertions.md#作用域断言t-上跑完后评估),`t.usage` 字段见 [Assertions · 逃生舱](assertions.md#逃生舱原始事件流--派生数据)。
 
 ## 判决规则
 
@@ -122,7 +124,7 @@ t.check(t.reply, jsonValid());
 
 ## 相关阅读
 
-- [Assertions](assertions.md) —— 每条断言做什么、看哪一轮、来源哪里(值级 / run 级 / 工作区 / 轮级的完整速查表)。
+- [Assertions](assertions.md) —— 每条断言做什么、看哪一轮、来源哪里(值级 / 作用域 / 工作区 / 轮级的完整速查表)。
 - [Authoring](eval-authoring.md) —— 断言出现在哪种 eval 里。
 - [Observability](observability.md) —— transcript / o11y,作用域断言的数据来源。
 - [Concepts](concepts.md) —— Severity / Verdict 的术语定义。
