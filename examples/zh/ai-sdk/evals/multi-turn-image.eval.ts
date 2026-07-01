@@ -43,6 +43,6 @@ export default defineEval({
       .closedQA("助手是否在三轮对话中始终基于第一轮发送的图片内容作答，而不是凭空发挥？", {
         on: conversationText(t.events),
       })
-      .atLeast(0.7);
+      .gate(0.7);
   },
 });

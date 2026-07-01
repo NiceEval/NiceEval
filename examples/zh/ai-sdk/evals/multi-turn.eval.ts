@@ -17,6 +17,6 @@ export default defineEval({
     t.calledTool("get_weather", { input: { city: "北京" } });
     second.messageIncludes("北京");
 
-    t.judge.autoevals.closedQA("有回答对算数是，并且回答了北京天气的问题").atLeast(0.8);
+    t.judge.autoevals.closedQA("有回答对算数是，并且回答了北京天气的问题").gate(0.8);
   },
 });
