@@ -148,7 +148,7 @@ createSandbox(backend, timeout)
   │    t.sandbox.writeFiles/uploadFiles    #   手工 seed 起始文件,放哪个路径你说了算
   │    t.send()                            #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events)
   │    t.sandbox.runCommand()              #   手工跑校验命令(可以晚于 t.send(),agent 天然看不到)
-  │    断言…                               #   t.fileChanged / t.diff / t.scriptPassed / t.judge.agent
+  │    断言…                               #   t.sandbox.fileChanged / t.sandbox.diff / t.sandbox.scriptPassed / t.judge.autoevals.closedQA
   → collectGeneratedFiles()              # git diff HEAD
   → hooks.sandbox.teardown?.() / cleanup()  # 用户清理钩子(finally,失败也跑)
   → sandbox.stop()                       # 销毁

@@ -36,14 +36,13 @@ t.judge.autoevals.closedQA("礼貌").atLeast(0.7);      // soft + 阈值:--stric
 t.judge.autoevals.factuality(expected).atLeast(0.8);      // 事实一致性
 t.judge.autoevals.closedQA("是否适合 10 岁小孩理解");        // 闭合式判断
 t.judge.autoevals.summarizes(source);                      // 是否忠实摘要
-t.judge.score("自定义评分标准的一段话", { on: t.reply });
 ```
 
-`closedQA`/`factuality`/`summarizes` 只挂在 `t.judge.autoevals.*` 下,不留平铺别名(跟 eve 一致,见 [Assertions · LLM-as-judge](assertions.md#llm-as-judge));`t.judge.score` 是 fasteval 自己加的开放式评分,不属于 autoevals,不用套这层命名空间。
+`closedQA`/`factuality`/`summarizes` 只挂在 `t.judge.autoevals.*` 下,不留平铺别名(跟 eve 一致,见 [Assertions · LLM-as-judge](assertions.md#llm-as-judge))。**没有另一个开放式的 `t.judge.score` 或 `t.judge.agent`**——judge 就是这三个固定形状,评什么都落进 `closedQA`/`factuality`/`summarizes` 之一,材料通过 `{ on }` 显式传。
 
 `{ on }` 指定被评的值(默认 `t.reply`),`{ model }` 可单次覆盖评判模型。
 
-> **judge 默认只看最后一轮。** `t.reply` 是最后一条 assistant 消息,所以多轮里直接 `t.judge.score("整段对话是否…")` 只会拿到最后一轮、证据不足。要评跨轮一致性,把整段对话拼出来传进去:`t.judge.score("…", { on: t.transcript.text() }).atLeast(0.7)`。(评工作区产物/diff 用 `t.judge.agent`,不是单独的 `t.sandbox.judge`。)每条断言看哪一轮、各自来源,见 [Assertions](assertions.md)(尤其[作用域:两层](assertions.md#作用域两层同一套词汇))。
+> **judge 默认只看最后一轮。** `t.reply` 是最后一条 assistant 消息,所以多轮里直接 `t.judge.autoevals.closedQA("整段对话是否…")` 只会拿到最后一轮、证据不足。要评跨轮一致性,自己把每轮的 `turn.message` 收集拼起来再传进去:`t.judge.autoevals.closedQA("…", { on: turns.map(t => t.message).join("\n") }).atLeast(0.7)`——没有 `t.transcript.text()` 这种拼接便利,手工拼是唯一写法。(评工作区产物/diff 用同一个 `closedQA`,材料换成 `t.sandbox.diff.get(path)`。)每条断言看哪一轮、各自来源,见 [Assertions](assertions.md)(尤其[作用域:两层](assertions.md#作用域两层同一套词汇))。
 
 **模型解析优先级**(高 → 低):单次调用的 `{ model }` → 这个 eval 的 `judge.model` → 配置的 `judge.model`。
 
@@ -57,11 +56,11 @@ defineEval({ judge: { model: "anthropic/claude-opus-4-8" }, async test(t) { ... 
 
 ## 4. 测试即评分(沙箱型)
 
-沙箱型里,你在 `test(t)` 里手工跑的验证测试本身就是评分:调 `t.sandbox.runCommand(...)` 跑测试(vitest 或别的什么都行),再用 `t.scriptPassed(script)` 断言退出码 0,就是一条 gate 断言。这让你用熟悉的测试语法表达"什么算对",并能断言文件内容、构建结果、甚至 agent 行为(经 `__fasteval__/results.json`)。没有另一层"validation 模式"开关——跑不跑测试、跑什么测试,都是 `test(t)` 里的普通代码决定的。详见 [Authoring](eval-authoring.md#沙箱型手工把文件放进沙箱)。
+沙箱型里,你在 `test(t)` 里手工跑的验证测试本身就是评分:调 `t.sandbox.runCommand(...)` 跑测试(vitest 或别的什么都行),再用 `t.sandbox.scriptPassed(script)` 断言退出码 0,就是一条 gate 断言。这让你用熟悉的测试语法表达"什么算对",并能断言文件内容、构建结果、甚至 agent 行为(经 `__fasteval__/results.json`)。没有另一层"validation 模式"开关——跑不跑测试、跑什么测试,都是 `test(t)` 里的普通代码决定的。详见 [Authoring](eval-authoring.md#沙箱型手工把文件放进沙箱)。
 
 ## 5. 效率 / 成本断言
 
-token 用量是评分的一等维度 —— agent 答对了但烧掉十倍 token,不该和省着用的拿一样的分。这把「质量」和「效率」拆成两组断言,跨 agent 对比时就能同时看通过率和花费。用量自动随结果带回(沙箱型从 transcript 抠,见 [Observability](observability.md#用量与成本token--计费));`t.maxTokens()` / `t.maxCost()` 具体用法、默认严重级见 [Assertions · 作用域断言](assertions.md#作用域断言t-上attempt-全程评估),`t.usage` 字段见 [Assertions · 逃生舱](assertions.md#逃生舱原始事件流--派生数据)。
+token 用量是评分的一等维度 —— agent 答对了但烧掉十倍 token,不该和省着用的拿一样的分。这把「质量」和「效率」拆成两组断言,跨 agent 对比时就能同时看通过率和花费。用量自动随结果带回(沙箱型从 transcript 抠,见 [Observability](observability.md#用量与成本token--计费));`t.maxTokens()` / `t.maxCost()` 具体用法、默认严重级见 [Assertions · 作用域断言](assertions.md#作用域断言t-上attempt-全程评估),`t.usage` 字段见 [Assertions · 用量](assertions.md#用量tusage)。
 
 ## 判决规则
 
@@ -76,7 +75,7 @@ token 用量是评分的一等维度 —— agent 答对了但烧掉十倍 token
 
 `failed` 只表示断言 / 评分不通过,`errored` 是环境、超时、adapter、agent runtime 等执行问题——两者互斥,`summary.failed` 与 `summary.errored` 分开计数。看报告、JUnit 或 CI 判红时按这个口径区分"agent 做错了"和"环境出问题了",不要混着看。
 
-soft 断言(`.atLeast(x)` 或 `.soft()`)不会单独造成 `failed`——除非开了 `--strict` 且它是带阈值的 `.atLeast(x)`。分数以 chip / 行尾徽章展示在每条 eval 详情里,供横向对比质量用。要让"分数不够"任何时候都 fail,用默认就是 gate 的匹配器,或显式 `.gate()`。
+soft 断言(`.atLeast(x)`,或匹配器自己默认走 soft 档)不会单独造成 `failed`——除非开了 `--strict` 且它是带阈值的 `.atLeast(x)`。分数以 chip / 行尾徽章展示在每条 eval 详情里,供横向对比质量用。要让"分数不够"任何时候都 fail,用默认就是 gate 的匹配器,或显式 `.gate()`。
 
 多次运行(`runs > 1`)时,eval 的汇总是**通过率**(pass 占比)与平均耗时,而非单一 Outcome。
 

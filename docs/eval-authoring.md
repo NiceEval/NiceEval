@@ -126,17 +126,18 @@ export default defineEval({
 要让 judge 评「整段多轮对话」(典型:跨轮一致性),别用默认材料,把全程对话拼出来显式喂进去:
 
 ```typescript
-await t.send("这张图里有什么?");          // 第一轮:看图
-await t.send("背景是什么颜色?");          // 第二、三轮:纯文字追问,考跨轮记忆
-await t.send("中间那个形状是什么颜色的?");
+const turn1 = await t.send("这张图里有什么?");          // 第一轮:看图
+const turn2 = await t.send("背景是什么颜色?");          // 第二、三轮:纯文字追问,考跨轮记忆
+const turn3 = await t.send("中间那个形状是什么颜色的?");
 
-// judge 默认 on: t.reply(最后一轮)。要评"整段三轮",传整段对话:
-t.judge
-  .score("助手是否始终基于第一轮的图片作答?", { on: t.transcript.text() })
+// judge 默认 on: t.reply(最后一轮)。要评"整段三轮",自己把每轮的回复拼起来:
+const wholeConversation = [turn1, turn2, turn3].map((turn) => turn.message).join("\n");
+t.judge.autoevals
+  .closedQA("助手是否始终基于第一轮的图片作答?", { on: wholeConversation })
   .atLeast(0.7);
 ```
 
-`t.transcript.text()` 把这个 attempt 的对话拼成 `role: text` 多行文本;需要更原始的控制就用 `t.transcript.events()` 自己过滤拼接。
+没有 `t.transcript.text()` 这类拼接便利——手工收集每轮的 `turn.message` 再 `join` 是唯一写法,跟核心原因 1.1 说的"想评整个消息,自己拼接、保存每轮的回复"是同一件事。
 
 ## 数据集扇出
 
@@ -192,7 +193,7 @@ export default defineExperiment({
 
 ## 沙箱型:手工把文件放进沙箱
 
-评一个 coding agent 时,eval 仍然是普通的 `defineEval`,只是多了沙箱能力:`test(t)` 里的 `t` 多出工作区断言和 `t.sandbox`(前提是 agent/sandbox 声明了 workspace capability;见 [Sandbox](sandbox.md))。
+评一个 coding agent 时,eval 仍然是普通的 `defineEval`,只是多了沙箱能力:`test(t)` 里的 `t` 多出 `t.sandbox`(工作区断言 + 沙箱原始句柄,前提是 agent/sandbox 声明了 workspace capability;见 [Sandbox](sandbox.md))。
 
 **没有自动发现,也没有隐式拷贝**——seed 起始文件只有一种方式:在 `test(t)` 里显式调用 `t.sandbox.writeFiles` / `t.sandbox.uploadFiles`。`t.sandbox` 是沙箱的原始句柄(`runCommand` / `runShell` / `readFile` / `writeFiles` / `uploadFiles` / `getWorkingDirectory` / `setWorkingDirectory` / `stop`,完整列表见 [Sandbox · 统一接口](sandbox.md#统一接口)),不是一层包装。文件从哪读、写到沙箱里哪个路径,全部是你写在 `test(t)` 里的普通代码——不存在"运行器悄悄拷贝一个目录"这种黑箱,你想放哪就写哪,不想放的就不写:
 
@@ -210,10 +211,10 @@ export default defineEval({
     });
 
     await t.send("把 src/legacy.js 里的回调全部改写成 async/await,保持行为不变。");
-    t.fileChanged("src/legacy.js");
-    t.check(t.diff.get("src/legacy.js"), includes("await"));
+    t.sandbox.fileChanged("src/legacy.js");
+    t.check(t.sandbox.diff.get("src/legacy.js"), includes("await"));
 
-    t.scriptPassed("test");                    // 跑 npm run test,断言退出 0
+    t.sandbox.scriptPassed("test");             // 跑 npm run test,断言退出 0
   },
 });
 ```
@@ -256,7 +257,7 @@ export default rows.map((row) =>
     async test(t) {
       await t.sandbox.writeFiles({ [row.file]: row.content });
       await t.send(`审查 ${row.file}`);
-      t.scriptPassed("test");
+      t.sandbox.scriptPassed("test");
     },
   }),
 );
@@ -273,12 +274,12 @@ export default defineEval({
 
     // agent 跑完之后才放测试文件、才跑测试——全程手工可见,没有隐藏逻辑
     await t.sandbox.writeFiles({ "button.test.ts": BUTTON_TEST_SOURCE });
-    t.scriptPassed("test");
+    t.sandbox.scriptPassed("test");
   },
 });
 ```
 
-工作区断言(`t.fileChanged` / `t.fileDeleted` / `t.notInDiff` / `t.scriptPassed` / `t.noFailedShellCommands` / `t.diff`)和 agent-as-judge(`t.judge.agent`)都挂在 `t` 顶层,不在 `t.sandbox` 下 —— `t.sandbox` 专指沙箱原始句柄。完整列表见 [Assertions · 工作区断言](assertions.md#工作区断言t-顶层仅-workspace-能力)。沙箱创建时运行器已经打好一次空 git 基线,所以 `t.diff` / `t.fileChanged` 不依赖你怎么 seed、seed 了没有,随时可读。
+工作区断言(`t.sandbox.fileChanged` / `t.sandbox.fileDeleted` / `t.sandbox.notInDiff` / `t.sandbox.scriptPassed` / `t.sandbox.noFailedShellCommands` / `t.sandbox.diff`)和沙箱原始句柄(`writeFiles`/`uploadFiles`/`runCommand`/…)住在同一个 `t.sandbox` 命名空间——来源 Vercel agent-eval。要用 judge 评工作区产物,没有单独的 agent-as-judge 方法,直接 `t.judge.autoevals.closedQA(criteria, { on: t.sandbox.diff.get(path) })`。完整列表见 [Assertions · 工作区断言](assertions.md#工作区断言tsandbox仅-workspace-能力)。沙箱创建时运行器已经打好一次空 git 基线,所以 `t.sandbox.diff` / `t.sandbox.fileChanged` 不依赖你怎么 seed、seed 了没有,随时可读。
 
 ## 命名与组织约定
 

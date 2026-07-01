@@ -53,7 +53,7 @@ eve 能用一个 url 当 target,是因为它定义了一套协议、被测 agent
 - **Agent** 是抽象(fasteval 眼里"一条连到 AI 的连接"),带能力位。
 - **Adapter** 是它的实现,由用户编写;按 transport 分三类:进程内(调你的函数)、远程(按你服务的协议)、沙箱(在 `Sandbox` 里 spawn coding agent 的 CLI)。
 
-核心通过 agent 的能力位决定 `t` 暴露哪些动作:会话型暴露 `t.send` / `t.calledTool`;沙箱型额外暴露工作区断言(`t.fileChanged` / `t.diff` / `t.judge.agent`,平铺在 `t` 上)、`t.sandbox`(沙箱原始句柄)、`t.transcript`。接一个新 agent(无论是你的 agent 还是 bub)= 实现一个 Adapter,**不动核心一行**。详见 [Agents 与 Adapters](agents-and-adapters.md)。
+核心通过 agent 的能力位决定 `t` 暴露哪些动作:会话型暴露 `t.send` / `t.calledTool`;沙箱型额外暴露 `t.sandbox`(工作区断言 `fileChanged`/`diff`/… + 沙箱原始句柄,来源 Vercel agent-eval)。接一个新 agent(无论是你的 agent 还是 bub)= 实现一个 Adapter,**不动核心一行**。详见 [Agents 与 Adapters](agents-and-adapters.md)。
 
 ### `Sandbox` —— 沙箱型 agent 在哪里跑
 

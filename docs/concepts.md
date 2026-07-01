@@ -16,7 +16,7 @@
 
 **Agent** —— "一条连到 AI 的连接"的抽象,由 experiment 引用。按 transport 分三类:进程内(调你的函数)、远程(按你自己服务的协议)、沙箱(在 [Sandbox](#sandbox) 里 spawn coding agent 的 CLI)。运行器只认统一动词 `send`,核心按 Agent 的[能力](#capability)决定 `t` 上下文暴露哪些动作。fasteval 不定义任何 agent 协议,所以没有 `--url`、没有通用 http target —— 连你自己的服务也是写一个 agent,URL 是它的内部配置。详见 [Agents 与 Adapters](agents-and-adapters.md)。
 
-**Scorer** / **评分器** —— 把"结果"映射成分数的东西。三类:**值级断言**(`expect` 里的 `includes`/`equals`/`matches`…,就地评估)、**作用域断言**(`t.succeeded()`/`t.calledTool()`…,在 `test` 结束后对整个 [Attempt](#运行与结果) 评估,同一套断言挂在 [Turn](#运行与结果) 上则收窄成只看这一轮)、**LLM-as-judge**(用一个评判模型给开放式回答打分)。沙箱型里,手工在沙箱内跑的验证测试(经 `t.scriptPassed` 等断言判定)本身也是一种 Scorer。
+**Scorer** / **评分器** —— 把"结果"映射成分数的东西。三类:**值级断言**(`expect` 里的 `includes`/`equals`/`matches`…,就地评估)、**作用域断言**(`t.succeeded()`/`t.calledTool()`…,在 `test` 结束后对整个 [Attempt](#运行与结果) 评估,同一套断言挂在 [Turn](#运行与结果) 上则收窄成只看这一轮)、**LLM-as-judge**(用一个评判模型给开放式回答打分)。沙箱型里,手工在沙箱内跑的验证测试(经 `t.sandbox.scriptPassed` 等断言判定)本身也是一种 Scorer。
 
 **Assertion** / **断言** —— Scorer 的一次具体应用,带名字、严重级([gate / soft](#severity))、可选阈值,产出一个 0–1 的分数和过/挂。
 

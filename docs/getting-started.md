@@ -167,7 +167,7 @@ export default defineEval({
 
     // agent 那一轮已经结束,现在才放测试文件、才跑测试
     await t.sandbox.writeFiles({ "button.test.ts": BUTTON_TEST });
-    t.scriptPassed("test");
+    t.sandbox.scriptPassed("test");
   },
 });
 ```
@@ -193,7 +193,7 @@ Discovered 3 evals
   ✓ classify (12ms)
   ✓ weather/brooklyn (456ms)
   ✗ fixtures/button (38s)
-    - gate: scriptPassed(test) [FAILED]
+    - gate: sandbox.scriptPassed(test) [FAILED]
       button.test.ts › 接受 label / onClick
       Expected src to contain "onClick"
 

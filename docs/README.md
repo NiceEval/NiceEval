@@ -88,8 +88,8 @@ export default defineEval({
     await t.sandbox.writeFiles({ "package.json": BUTTON_PACKAGE_JSON });
     await t.send("用项目现有的样式系统,在 src/components/Button.tsx 导出一个 Button 组件,接受 label 和 onClick 两个 prop,并实现 hover 态。");
 
-    t.fileChanged("src/components/Button.tsx");
-    const src = t.diff.get("src/components/Button.tsx");
+    t.sandbox.fileChanged("src/components/Button.tsx");
+    const src = t.sandbox.diff.get("src/components/Button.tsx");
     t.check(src, includes("label"));
     t.check(src, includes("onClick"));
   },
