@@ -12,6 +12,11 @@
     "light": "#11161e",
     "dark": "#cfd0d2"
   },
+  "seo": {
+    "metatags": {
+      "canonical": "https://niceeval.com/docs"
+    }
+  },
   "navbar": {
     "primary": {
       "type": "github",

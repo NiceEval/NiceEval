@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://niceeval.com/sitemap.xml
+Sitemap: https://niceeval.com/docs/sitemap.xml
