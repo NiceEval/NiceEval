@@ -17,6 +17,7 @@ import type {
   ReadSourceFilesOptions,
 } from "../types.ts";
 import { makeSourceFiles } from "./source-files.ts";
+import { resolveSandboxPath } from "./paths.ts";
 import { t } from "../i18n/index.ts";
 
 const DEFAULT_SOURCE_EXTENSIONS = ["ts", "tsx", "js", "jsx"];
@@ -115,6 +116,7 @@ export interface DockerSandboxOptions {
  * 实现 ../types.ts 的 Sandbox 接口。
  */
 export class DockerSandbox implements Sandbox {
+  readonly workdir = CONTAINER_WORKDIR;
   readonly otlpHost = "host.docker.internal";
   private docker: Docker;
   private container: Docker.Container | null = null;
@@ -269,7 +271,7 @@ export class DockerSandbox implements Sandbox {
 
     return this.execCommand(cmd, args, {
       env,
-      cwd: opts.cwd,
+      cwd: resolveSandboxPath(this.workdir, opts.cwd),
       user: isRoot ? ROOT_USER : SANDBOX_USER,
     });
   }
@@ -282,7 +284,7 @@ export class DockerSandbox implements Sandbox {
   ): Promise<CommandResult> {
     return this.execCommand(cmd, args, {
       env: opts.env,
-      cwd: opts.cwd,
+      cwd: resolveSandboxPath(this.workdir, opts.cwd),
       user: ROOT_USER,
     });
   }
@@ -311,7 +313,7 @@ export class DockerSandbox implements Sandbox {
       Cmd: fullCmd,
       AttachStdout: true,
       AttachStderr: true,
-      WorkingDir: opts.cwd ?? CONTAINER_WORKDIR,
+      WorkingDir: resolveSandboxPath(this.workdir, opts.cwd),
       Env: env,
       User: opts.user,
     });
@@ -391,16 +393,17 @@ export class DockerSandbox implements Sandbox {
 
   /** 读容器里的文件。 */
   async readFile(path: string): Promise<string> {
-    const result = await this.runCommand("cat", [path]);
+    const absPath = resolveSandboxPath(this.workdir, path);
+    const result = await this.runCommand("cat", [absPath]);
     if (result.exitCode !== 0) {
-      throw new Error(t("docker.readFileFailed", { path, stderr: result.stderr }));
+      throw new Error(t("docker.readFileFailed", { path: absPath, stderr: result.stderr }));
     }
     return result.stdout;
   }
 
   /** 判断容器里某文件是否存在。 */
   async fileExists(path: string): Promise<boolean> {
-    const result = await this.runCommand("test", ["-f", path]);
+    const result = await this.runCommand("test", ["-f", resolveSandboxPath(this.workdir, path)]);
     return result.exitCode === 0;
   }
 
@@ -445,7 +448,7 @@ export class DockerSandbox implements Sandbox {
   }
 
   /** 用 tar 归档把文件灌进容器。 */
-  async uploadFiles(files: SandboxFile[], targetDir = CONTAINER_WORKDIR): Promise<void> {
+  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
     if (!this.container) {
       throw new Error(t("docker.containerNotInitialized"));
     }
@@ -466,16 +469,18 @@ export class DockerSandbox implements Sandbox {
 
     pack.finalize();
 
-    await this.runCommandAsRoot("mkdir", ["-p", targetDir]);
+    const targetPath = resolveSandboxPath(this.workdir, targetDir);
+
+    await this.runCommandAsRoot("mkdir", ["-p", targetPath]);
 
     // putArchive 以 root 身份解包到目标目录。
-    await this.container.putArchive(pack, { path: targetDir });
+    await this.container.putArchive(pack, { path: targetPath });
 
     // 修正属主:putArchive 上传成 root,改回 node 用户,agent 才能编辑。
-    await this.chownToSandboxUser(targetDir);
+    await this.chownToSandboxUser(targetPath);
   }
 
-  async uploadDirectory(localDir: string, targetDir: string, opts: { ignore?: string[] } = {}): Promise<void> {
+  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
     const files = await collectLocalFiles(localDir, opts.ignore);
     await this.uploadFiles(files, targetDir);
   }
@@ -486,7 +491,7 @@ export class DockerSandbox implements Sandbox {
    */
   async downloadFile(path: string): Promise<Buffer> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
-    const stream = await (this.container as Docker.Container).getArchive({ path });
+    const stream = await (this.container as Docker.Container).getArchive({ path: resolveSandboxPath(this.workdir, path) });
     const tarBuf = await readableToBuffer(stream as NodeJS.ReadableStream);
     return extractFileFromTar(tarBuf);
   }
@@ -497,10 +502,11 @@ export class DockerSandbox implements Sandbox {
    */
   async uploadFile(destPath: string, content: Buffer): Promise<void> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
+    const absPath = resolveSandboxPath(this.workdir, destPath);
     const pack = tar.pack();
-    pack.entry({ name: basename(destPath) }, content);
+    pack.entry({ name: basename(absPath) }, content);
     pack.finalize();
-    await (this.container as Docker.Container).putArchive(pack, { path: dirname(destPath) });
+    await (this.container as Docker.Container).putArchive(pack, { path: dirname(absPath) });
   }
 
   /** 停止并清理容器(AutoRemove 负责销毁)。 */

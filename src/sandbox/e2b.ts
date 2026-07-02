@@ -17,6 +17,7 @@ import type {
   ReadSourceFilesOptions,
 } from "../types.ts";
 import { makeSourceFiles } from "./source-files.ts";
+import { resolveSandboxPath } from "./paths.ts";
 
 const DEFAULT_SOURCE_EXTENSIONS = ["ts", "tsx", "js", "jsx"];
 const DEFAULT_IGNORE_DIRS = [".git", ".next", "node_modules", "dist", "build", "coverage"];
@@ -36,6 +37,7 @@ function shellQuote(s: string): string {
 }
 
 export class E2BSandbox implements Sandbox {
+  readonly workdir = E2B_WORKDIR;
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
   private commandTimeoutMs: number;
@@ -73,7 +75,7 @@ export class E2BSandbox implements Sandbox {
     // 否则用模板默认(非 root)用户 —— 跨后端语义一致(见 types.ts 的 CommandOptions.root)。
     try {
       const res = await this.sbx.commands.run(script, {
-        cwd: opts.cwd ?? E2B_WORKDIR,
+        cwd: resolveSandboxPath(this.workdir, opts.cwd),
         envs: opts.env,
         user: opts.root ? "root" : undefined,
         timeoutMs: this.commandTimeoutMs,
@@ -90,11 +92,11 @@ export class E2BSandbox implements Sandbox {
   }
 
   private abs(path: string): string {
-    return path.startsWith("/") ? path : `${E2B_WORKDIR}/${path}`;
+    return resolveSandboxPath(this.workdir, path);
   }
 
-  private targetPath(path: string, targetDir: string): string {
-    return path.startsWith("/") ? path : `${targetDir.replace(/\/$/, "")}/${path}`;
+  private targetPath(path: string, targetDir?: string): string {
+    return resolveSandboxPath(resolveSandboxPath(this.workdir, targetDir), path);
   }
 
   async readFile(path: string): Promise<string> {
@@ -141,13 +143,13 @@ export class E2BSandbox implements Sandbox {
     return makeSourceFiles(files);
   }
 
-  async writeFiles(files: Record<string, string>, targetDir = E2B_WORKDIR): Promise<void> {
+  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
     const entries = Object.entries(files).map(([p, data]) => ({ path: this.targetPath(p, targetDir), data }));
     if (entries.length === 0) return;
     await this.sbx.files.write(entries);
   }
 
-  async uploadFiles(files: SandboxFile[], targetDir = E2B_WORKDIR): Promise<void> {
+  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
     if (files.length === 0) return;
     await this.sbx.files.write(
       files.map((f) => ({
@@ -157,7 +159,7 @@ export class E2BSandbox implements Sandbox {
     );
   }
 
-  async uploadDirectory(localDir: string, targetDir: string, opts: { ignore?: string[] } = {}): Promise<void> {
+  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
     await this.uploadFiles(await collectLocalFiles(localDir, opts.ignore), targetDir);
   }
 

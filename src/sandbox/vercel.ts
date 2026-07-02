@@ -13,6 +13,7 @@ import type {
   ReadSourceFilesOptions,
 } from "../types.ts";
 import { makeSourceFiles } from "./source-files.ts";
+import { resolveSandboxPath } from "./paths.ts";
 import { t } from "../i18n/index.ts";
 
 const DEFAULT_SOURCE_EXTENSIONS = ["ts", "tsx", "js", "jsx"];
@@ -29,6 +30,7 @@ const ROTATE_THRESHOLD_MS = 270_000;
 const SESSION_TIMEOUT_MS = 1_200_000;
 
 export class VercelSandbox implements Sandbox {
+  readonly workdir = VERCEL_WORKDIR;
   readonly otlpHost = null;
   private vsb: InstanceType<typeof VSandbox>;
   private commandTimeoutMs: number;
@@ -108,7 +110,7 @@ export class VercelSandbox implements Sandbox {
     const finished = await this.vsb.runCommand({
       cmd,
       args,
-      cwd: opts.cwd ?? VERCEL_WORKDIR,
+      cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: opts.env,
       sudo: opts.root ?? false,
       // 显式设 per-command timeout 防止长跑命令(npm build/install)被流截断。
@@ -126,14 +128,14 @@ export class VercelSandbox implements Sandbox {
   }
 
   async readFile(path: string): Promise<string> {
-    const absPath = path.startsWith("/") ? path : `${VERCEL_WORKDIR}/${path}`;
+    const absPath = resolveSandboxPath(this.workdir, path);
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
     if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
     return buf.toString("utf8");
   }
 
   async fileExists(path: string): Promise<boolean> {
-    const absPath = path.startsWith("/") ? path : `${VERCEL_WORKDIR}/${path}`;
+    const absPath = resolveSandboxPath(this.workdir, path);
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
     return buf !== null;
   }
@@ -172,27 +174,26 @@ export class VercelSandbox implements Sandbox {
     return makeSourceFiles(files);
   }
 
-  async writeFiles(files: Record<string, string>, targetDir = VERCEL_WORKDIR): Promise<void> {
+  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
     const entries = Object.entries(files).map(([p, content]) => ({
-      // 相对路径 → Vercel SDK 自动 prepend /vercel/sandbox;绝对路径原样传。
-      path: p.startsWith("/") ? p : `${targetDir.replace(/\/$/, "")}/${p}`,
+      path: resolveSandboxPath(resolveSandboxPath(this.workdir, targetDir), p),
       content,
     }));
     if (entries.length === 0) return;
     await this.vsb.writeFiles(entries);
   }
 
-  async uploadFiles(files: SandboxFile[], targetDir = VERCEL_WORKDIR): Promise<void> {
+  async uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void> {
     if (files.length === 0) return;
     await this.vsb.writeFiles(
       files.map((f) => ({
-        path: f.path.startsWith("/") ? f.path : `${targetDir.replace(/\/$/, "")}/${f.path}`,
+        path: resolveSandboxPath(resolveSandboxPath(this.workdir, targetDir), f.path),
         content: f.content,
       })),
     );
   }
 
-  async uploadDirectory(localDir: string, targetDir: string, opts: { ignore?: string[] } = {}): Promise<void> {
+  async uploadDirectory(localDir: string, targetDir?: string, opts: { ignore?: string[] } = {}): Promise<void> {
     await this.uploadFiles(await collectLocalFiles(localDir, opts.ignore), targetDir);
   }
 
@@ -201,14 +202,14 @@ export class VercelSandbox implements Sandbox {
   }
 
   async downloadFile(path: string): Promise<Buffer> {
-    const absPath = path.startsWith("/") ? path : `${VERCEL_WORKDIR}/${path}`;
+    const absPath = resolveSandboxPath(this.workdir, path);
     const buf = await this.vsb.readFileToBuffer({ path: absPath });
     if (!buf) throw new Error(t("vercel.fileNotFound", { path: absPath }));
     return buf;
   }
 
   async uploadFile(path: string, content: Buffer): Promise<void> {
-    const absPath = path.startsWith("/") ? path : `${VERCEL_WORKDIR}/${path}`;
+    const absPath = resolveSandboxPath(this.workdir, path);
     await this.vsb.writeFiles([{ path: absPath, content }]);
   }
 }

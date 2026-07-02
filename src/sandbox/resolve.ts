@@ -5,6 +5,7 @@
 import { Effect } from "effect";
 import type { CustomSandboxSpec, Sandbox, SandboxBackend, SandboxOption, SandboxRuntime } from "../types.ts";
 import { registerSandbox, stopSandbox } from "./registry.ts";
+import { normalizeSandboxPaths } from "./paths.ts";
 import { t } from "../i18n/index.ts";
 
 /** 归一化后的沙箱描述:确定的后端 + 各后端参数(只有对应后端用得上的会有值)。 */
@@ -94,7 +95,7 @@ export function createSandbox(opts: {
     Effect.promise<Sandbox>(async () => {
       // 起好就登记:让 cli 的兜底强清(二次 Ctrl+C / 看门狗超时)能直接停到它,不只靠下面的
       // release。即便本 fiber 创建后立刻被中断、release 还没来得及跑,登记表也已认得这个沙箱。
-      const sb = await createBackend(r, opts.timeout);
+      const sb = normalizeSandboxPaths(await createBackend(r, opts.timeout));
       registerSandbox(sb);
       return sb;
     }),

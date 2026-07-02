@@ -15,18 +15,21 @@
 
 ```typescript
 interface Sandbox {
+  /** agent 的默认工作目录;所有沙箱侧相对路径的解析基准。见下「路径与 workdir」。 */
+  readonly workdir: string;
+
   runCommand(cmd: string, args?: string[], opts?: {
     env?: Record<string, string>;
-    cwd?: string;
+    cwd?: string;     // 省略 → workdir;相对路径 → 解析到 workdir 下
     root?: boolean;   // 以 root 跑(默认 false → 非 root);见下「用户与 root」
   }): Promise<{ stdout: string; stderr: string; exitCode: number }>;
 
   runShell(script: string, opts?): Promise<CommandResult>;   // 整段 shell
 
-  readFile(path: string): Promise<string>;
-  writeFiles(files: Record<string, string>, targetDir: string): Promise<void>;
-  uploadFiles(files: SandboxFile[], targetDir: string): Promise<void>; // 批量(可含二进制)
-  uploadDirectory(localDir: string, targetDir: string, opts?): Promise<void>;
+  readFile(path: string): Promise<string>;                 // 相对路径 → workdir 下
+  writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;  // targetDir 省略 → workdir
+  uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>; // 批量(可含二进制);同上
+  uploadDirectory(localDir: string, targetDir?: string, opts?): Promise<void>;   // 同上
 
   stop(): Promise<void>;
 }
@@ -42,6 +45,78 @@ interface Sandbox {
 
 参考过 eve.dev 的 `sandbox.run({ command })`(它下面所有后端都固定走 `bash -lc`,靠调用者自己用 `shellQuote()` 转义)——那套设计合理,是因为 eve 的调用方几乎都是 AI agent 自己的 bash 工具或内部工具核心,生成一整段 shell 命令本来就是它们的原生表达方式,shell 语义是刚需。niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["test"])`)根本不需要 shell 语义,不该为了少数需要管道/`&&`的场景让所有调用都背上手动转义的心智负担。
 
+## 路径与 workdir:一个坐标系
+
+每个后端的 agent 默认工作目录不同——这是**后端的知识,不是 eval 作者的负担**:
+
+| 后端 | workdir |
+| --- | --- |
+| docker | `/home/sandbox/workspace` |
+| E2B | `/home/user/workspace` |
+| Vercel Sandbox | `/vercel/sandbox` |
+
+契约一句话:**API 里任何沙箱侧相对路径,一律解析到 `workdir`;省略的 `targetDir` / `cwd` 默认就是 `workdir`;绝对路径原样使用。** 本地侧(宿主机)的相对路径则解析到 eval 定义文件所在目录。两侧各只有一个锚点,学一次就够。
+
+为什么 workdir 是唯一正确的默认值:整条流水线都锚定在它上面——git 基线打在那里、agent 的 cwd 在那里、跑完 `git diff HEAD` 采改动在那里、`t.fileChanged(...)` 的路径也是对着那里解析的。把起始文件传到任何**别的**目录,agent 看不见它,diff 也采不到它,整条 eval 静默失效。所以对上传起始 workspace 这个最高频调用来说,workdir 不是"常见选择",是唯一能让系统其余部分正常工作的选择——一个参数如果 99% 的调用只有一个正确值,而调用者又不掌握这个值(它随后端变),强制填写就不是"显式更安全",是逼人抄错答案。
+
+### 用户会怎么写:before / after
+
+没有这个坐标系时,用户被迫自己拼两侧的绝对路径:
+
+```typescript
+// ❌ before:用户要背下 docker 的路径,还要用 import.meta.url 拼本地绝对路径
+const WORKSPACE = new URL("../workspaces/ts-starter/", import.meta.url).pathname;
+
+export default defineEval({
+  description: "实现 Button 组件",
+  async test(t) {
+    await t.sandbox.uploadDirectory(WORKSPACE, "/home/sandbox/workspace"); // ← docker 专属,切 e2b 即坏
+    await t.send("在 src/components/Button.tsx 实现 Button,接受 label 和 onClick。");
+    const test = await t.sandbox.runCommand("npm", ["test"], { cwd: "/home/sandbox/workspace" });
+    t.check(test, commandSucceeded());
+    t.sandbox.fileChanged("src/components/Button.tsx");
+  },
+});
+```
+
+有坐标系后,同一条 eval:
+
+```typescript
+// ✅ after:全程零绝对路径,--sandbox docker / e2b / vercel 零改动切换
+export default defineEval({
+  description: "实现 Button 组件",
+  async test(t) {
+    await t.sandbox.uploadDirectory("../workspaces/ts-starter"); // 本地相对 eval 文件;远端默认 workdir
+    await t.send("在 src/components/Button.tsx 实现 Button,接受 label 和 onClick。");
+    const test = await t.sandbox.runCommand("npm", ["test"]);    // cwd 默认 workdir
+    t.check(test, commandSucceeded());
+    t.sandbox.fileChanged("src/components/Button.tsx");          // diff 路径本来就是 workdir 相对
+  },
+});
+```
+
+消掉的东西:`import.meta.url` 拼路径的咒语、两处 hardcode 的后端专属绝对路径,以及"切换后端文件落到 agent 视野之外"这个静默 bug 的整个物种。用户对"文件在哪"的心智模型收敛成一句话:**一切相对路径都在 workspace 里**——和 git 的 repo 相对路径同构,不需要关心物理位置。
+
+### 逃生舱:`sandbox.workdir`
+
+绝对路径不会彻底消失,三种场景会穿透坐标系:往 prompt 里告诉 agent 一个路径、对照 agent 日志/工具输出里出现的绝对路径、`docker exec` 进容器手动调试。这时用 `workdir` 属性,不要背表:
+
+```typescript
+await t.send(`参考 ${t.sandbox.workdir}/docs/CONVENTIONS.md 里的约定实现组件。`);
+```
+
+注意 `$HOME` 这类环境变量不是替代品:`targetDir` 是宿主侧 JS 里拼的字符串,shell 变量根本不展开——`uploadDirectory(dir, "$HOME/workspace")` 会真的创建一个叫 `$HOME` 的目录。运行时 `runShell("pwd")` 探测也不必要:workdir 是后端构造时就确定的静态字符串,声明就能解决的问题不用运行时手段。
+
+### 为什么不伪造一个统一的 `/workspace`
+
+另一条路是让所有后端都真的提供 `/workspace`(mkdir + symlink 到真实 workdir)。不走这条:`/workspace` 不是 agent 实际的 cwd,agent 的日志、工具输出、报错里出现的全是真实路径,伪造的统一路径会让用户在对照时更糊涂;云后端(vercel/e2b)对用户目录之外的文件系统权限也未必允许。这与「用户与 root」一节是同一处理哲学:**语义跨后端一致(相对路径→workdir),物理值诚实暴露差异(`workdir` 属性)**,不假装统一。
+
+### 实现纪律
+
+路径解析规则只允许一份实现:收敛在 `src/sandbox/paths.ts`(如 `resolveSandboxPath(workdir, path)`),三个内置后端共用;不允许每个后端各自复制一遍 `startsWith("/")` 判断——规则有多份实现,就会有后端悄悄不一致。`defineSandbox` 自定义后端只需声明自己的 `workdir` 字符串即可获得同一套行为。
+
+旧文档曾推荐显式传 `"/workspace"`——它与任何后端的真实 workdir 都不一致,按它写的文件会落在 agent cwd 和 git 基线之外(agent 看不见、diff 采不到)。新代码和新示例都应写成"省略 `targetDir` / `cwd`",必要时通过 `sandbox.workdir` 取真实绝对路径。
+
 ## 用户与 root
 
 **默认非 root,按需提 root** —— 命令默认以沙箱的标准**非 root** 用户跑(agent 的自然环境:安全,且 Claude Code 等在 root 下会拒绝 `--dangerously-skip-permissions`)。需要 root 的命令(setup 装系统依赖:`apt-get install …`、`pip install --break-system-packages …`)给 `runCommand` 传 `{ root: true }`。
@@ -49,7 +124,7 @@ interface Sandbox {
 ```typescript
 // eval setup:只有装系统依赖这步提 root;其余(含 agent、验证)默认非 root。
 await sandbox.runCommand("apt-get", ["install", "-y", "openjdk-17-jdk"], { root: true });
-await sandbox.runCommand("npm", ["install"], { cwd: "/workspace" });   // 默认非 root
+await sandbox.runCommand("npm", ["install"]);   // 默认非 root,cwd 默认 workdir
 ```
 
 **这套语义跨后端一致**,且与主流沙箱服务同构 —— 各后端把 `{ root: true }` 映射到自己的原生机制:
@@ -104,7 +179,7 @@ e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 
 最常用、最便宜:无需任何云 token,本地有 Docker 即可。要点:
 
-- **保活容器** —— 用 `node:24-slim` 起一个 `sleep infinity` 容器,后续命令用 `docker exec` 进去跑(`AutoRemove` 在 stop 时清理)。
+- **保活容器** —— 用 `node:24-slim` 起一个 tail 日志文件的长生命周期容器,后续命令用 `docker exec` 进去跑(`AutoRemove` 在 stop 时清理)。
 - **非 root 用户(默认)** —— 默认以 `1000:1000`(node)跑命令;全局 npm 装到用户目录并入 `PATH`,避免权限问题。命令传 `{ root: true }` 时改以 root 跑(见「用户与 root」)。
 - **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
 - **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 修正属主(putArchive 以 root 写入)。
@@ -113,16 +188,16 @@ e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 
 ```typescript
 const sandbox = await createSandbox({ backend: "docker", runtime: "node24", timeout });
-await sandbox.uploadFiles(workspaceFiles, "/workspace");
-await sandbox.runCommand("npm", ["install"], { cwd: "/workspace" });
+await sandbox.uploadFiles(workspaceFiles);        // targetDir 省略 → workdir
+await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 ```
 
 ## Vercel Sandbox 后端(云,可弹性扩并发)
 
-需要 `VERCEL_TOKEN` / `VERCEL_OIDC_TOKEN`。适合 CI 里大并发、不想本地起 Docker 的场景。要点:
+需要 Vercel Sandbox 凭据;显式环境变量路径是 `VERCEL_API_TOKEN` + `VERCEL_TEAM_ID` + `VERCEL_PROJECT_ID`。适合 CI 里大并发、不想本地起 Docker 的场景。要点:
 
 - `VercelSandbox.create({ runtime, timeout })` 起一台微 VM。
-- 处理云沙箱的流式命令超时(detached + 重连),长命令不被中途掐断。
+- 处理云沙箱的 session 生命周期,必要时 snapshot + rotate,避免长命令被 session 上限截断。
 - 批量 `writeFiles` 上传。
 
 接口与 Docker 完全一致,所以 Adapter 代码一字不改就能在两种后端间切换。
@@ -140,7 +215,7 @@ await sandbox.runCommand("npm", ["install"], { cwd: "/workspace" });
 
 两条路,取决于新后端是不是打算贡献回 niceeval:
 
-- **贡献进 niceeval**(像 docker/vercel/e2b 那样内置):实现 `Sandbox` 接口的一个类(`create()` + run/read/write/stop/up-down-load),在 `sandbox/resolve.ts` 的 `resolveSandbox` / `createBackend` 加一个 `case`,需要带参数就在 `types.ts` 加一个 `XxxSandboxSpec` 并在 `define.ts` 加工厂。
+- **贡献进 niceeval**(像 docker/vercel/e2b 那样内置):实现 `Sandbox` 接口的一个类(`create()` + `workdir` + run/read/write/stop/up-down-load;路径解析直接用 `src/sandbox/paths.ts`,不要自己再写一份),在 `sandbox/resolve.ts` 的 `resolveSandbox` / `createBackend` 加一个 `case`,需要带参数就在 `types.ts` 加一个 `XxxSandboxSpec` 并在 `define.ts` 加工厂。
 - **只在自己项目里用,不改 niceeval**:用 [`defineSandbox`](adapters/README.md)(`niceeval/sandbox` 导出)——传 `create()` 直接产出一个实现 `Sandbox` 接口的实例,`resolve.ts` 认到 `create` 就直接调用,跳过内置 backend switch,不需要 niceeval 认识这个后端的名字:
 
 ```typescript
@@ -167,15 +242,15 @@ export default defineSandbox({
   → git init && git commit               # 打一次空基线,供之后 diff——不管 test() 里写了什么
   → SandboxAgent.setup?.(sandbox, ctx)   # agent 自己的一次性预置(装 CLI / 写主配置)
   → test(t)                              # ← 交给 eval 作者,顺序由它自己决定:
-  │    t.sandbox.writeFiles(..., "/workspace") / uploadFiles(..., "/workspace") / uploadDirectory(..., "/workspace")
+  │    t.sandbox.writeFiles(...) / uploadFiles(...) / uploadDirectory(...)  # 默认落到 workdir
   │    t.send()                            #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events)
-  │    t.sandbox.runCommand(..., { cwd: "/workspace" }) # 手工跑校验命令(可以晚于 t.send(),agent 天然看不到)
+  │    t.sandbox.runCommand(...)           #   手工跑校验命令,cwd 默认 workdir(可以晚于 t.send(),agent 天然看不到)
   │    断言…                               #   t.sandbox.fileChanged / t.sandbox.diff / t.check(commandSucceeded)
   → collectGeneratedFiles()              # git diff HEAD
   → sandbox.stop()                       # 销毁
 ```
 
-核心只固定两件事:**沙箱创建时打一次空 git 基线**,和**销毁前采一次 diff**——这两件事跟"里面放了什么文件"无关,核心不需要知道也不需要预设目录约定。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。后端应保证 `/workspace` 可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `/workspace`,不提供可变的 `setWorkingDirectory`。预置放哪见下节。
+核心只固定两件事:**沙箱创建时打一次空 git 基线**,和**销毁前采一次 diff**——这两件事跟"里面放了什么文件"无关,核心不需要知道也不需要预设目录约定。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval Authoring · 沙箱型](eval-authoring.md#沙箱型手工把文件放进沙箱)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。后端保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。预置放哪见下节。
 
 ## 环境预置放哪
 
@@ -183,7 +258,7 @@ export default defineSandbox({
 
 | 要准备的东西 | 放哪 | 怎么清理 |
 |---|---|---|
-| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](adapters/README.md#sandboxagent-契约) | 随沙箱销毁,无需手工清 |
+| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](adapters/contract.md#agent-契约) | 随沙箱销毁,无需手工清 |
 | **这条 eval** 的沙箱预置(写 `.env`、装依赖、按 `t.flags` 注入 skill) | `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁;要清沙箱外的东西用 `try/finally` |
 | **整轮共享**的外部服务(mock API、共享 DB、license) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
@@ -200,6 +275,6 @@ export default defineSandbox({
 
 ## 相关阅读
 
-- [Agents 与 Adapters](adapters/README.md) —— Adapter 如何通过 `Sandbox` 接口驱动 agent,以及 `SandboxAgent.setup`。
+- [Adapter 契约](adapters/contract.md) —— Adapter 如何通过 `Sandbox` 接口驱动 agent,以及 `setup` 的义务。
 - [Runner](runner.md) —— 并发、预热、复用的调度。
 - [Vision](vision.md) —— 后端名只用于路由,不进核心行为。

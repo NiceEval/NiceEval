@@ -441,6 +441,7 @@ export interface CommandOptions {
 }
 
 export interface Sandbox {
+  readonly workdir: string;
   runCommand(cmd: string, args?: string[], opts?: CommandOptions): Promise<CommandResult>;
   runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
   readFile(path: string): Promise<string>;
@@ -452,7 +453,7 @@ export interface Sandbox {
   readSourceFiles(opts?: ReadSourceFilesOptions): Promise<SourceFiles>;
   writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;
   uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
-  uploadDirectory(localDir: string, targetDir: string, opts?: { ignore?: string[] }): Promise<void>;
+  uploadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
   stop(): Promise<void>;
   readonly sandboxId: string;
   /**
@@ -484,6 +485,7 @@ export interface Sandbox {
 
 /** eval 作者可见的受限沙箱视图:能执行命令 / 文件 IO / 读最终 diff,但不能 stop。 */
 export interface SandboxHandle {
+  readonly workdir: string;
   runCommand(cmd: string, args?: string[], opts?: CommandOptions): Promise<CommandResult>;
   runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
   readFile(path: string): Promise<string>;
@@ -491,7 +493,7 @@ export interface SandboxHandle {
   readSourceFiles(opts?: ReadSourceFilesOptions): Promise<SourceFiles>;
   writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;
   uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
-  uploadDirectory(localDir: string, targetDir: string, opts?: { ignore?: string[] }): Promise<void>;
+  uploadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
   downloadFile(path: string): Promise<Buffer>;
   uploadFile(path: string, content: Buffer): Promise<void>;
   readonly sandboxId: string;

@@ -21,8 +21,12 @@ function calculatorAgent(): Agent {
   };
 }
 
-function fakeSandbox(): Sandbox {
+type FakeSandbox = Sandbox & { calls: { uploadDirectory: [string, string | undefined][] } };
+
+function fakeSandbox(): FakeSandbox {
+  const calls: { uploadDirectory: [string, string | undefined][] } = { uploadDirectory: [] };
   return {
+    workdir: "/sandbox/work",
     runCommand: async () => { throw new Error("not implemented"); },
     runShell: async () => { throw new Error("not implemented"); },
     readFile: async () => "",
@@ -36,23 +40,27 @@ function fakeSandbox(): Sandbox {
     }),
     writeFiles: async () => {},
     uploadFiles: async () => {},
-    uploadDirectory: async () => {},
+    uploadDirectory: async (localDir, targetDir) => {
+      calls.uploadDirectory.push([localDir, targetDir]);
+    },
     stop: async () => {},
     sandboxId: "fake",
     otlpHost: null,
     downloadFile: async () => Buffer.from(""),
     uploadFile: async () => {},
+    calls,
   };
 }
 
-function makeContext(agent: Agent) {
+function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string) {
   return createEvalContext({
     agent,
-    sandbox: fakeSandbox(),
+    sandbox,
     flags: {},
     signal: new AbortController().signal,
     log: () => {},
     judge: undefined,
+    evalBaseDir,
   });
 }
 
@@ -92,5 +100,21 @@ describe("createEvalContext / TestContext live state", () => {
     const { context } = makeContext(calculatorAgent());
     await context.send("1+1=?");
     expect(context.sessionId).toBe("sess-1");
+  });
+
+  it("exposes sandbox workdir to eval authors", () => {
+    const { context } = makeContext(calculatorAgent());
+    expect(context.sandbox.workdir).toBe("/sandbox/work");
+  });
+
+  it("resolves uploadDirectory local paths relative to the eval file directory", async () => {
+    const sandbox = fakeSandbox();
+    const { context } = makeContext(calculatorAgent(), sandbox, "/repo/evals/nested");
+
+    await context.sandbox.uploadDirectory("../fixtures/app", "src");
+
+    expect(sandbox.calls.uploadDirectory).toEqual([
+      ["/repo/evals/fixtures/app", "src"],
+    ]);
   });
 });

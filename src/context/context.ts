@@ -11,6 +11,7 @@ import { buildJudge } from "../scoring/judge.ts";
 import { EvalSkipped, EvalRequirementFailed, TurnFailed } from "./control-flow.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
 import { t } from "../i18n/index.ts";
+import { resolveLocalPath } from "../sandbox/paths.ts";
 import type {
   Agent,
   DiffData,
@@ -61,6 +62,8 @@ export interface ContextDeps {
   judge: JudgeConfig | undefined;
   /** tracing agent 的 OTLP 端点(运行器起接收器后注入);经 send ctx 透给 adapter。 */
   telemetry?: Telemetry;
+  /** Eval definition directory; used to resolve host-side relative fixture paths. */
+  evalBaseDir?: string;
 }
 
 export function createEvalContext(deps: ContextDeps): { context: TestContext; state: ContextState } {
@@ -95,6 +98,9 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   };
 
   const sandboxHandle: SandboxHandle = {
+    get workdir() {
+      return deps.sandbox.workdir;
+    },
     get sandboxId() {
       return deps.sandbox.sandboxId;
     },
@@ -108,7 +114,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     readSourceFiles: (opts) => deps.sandbox.readSourceFiles(opts),
     writeFiles: (files, targetDir) => deps.sandbox.writeFiles(files, targetDir),
     uploadFiles: (files, targetDir) => deps.sandbox.uploadFiles(files, targetDir),
-    uploadDirectory: (localDir, targetDir, opts) => deps.sandbox.uploadDirectory(localDir, targetDir, opts),
+    uploadDirectory: (localDir, targetDir, opts) =>
+      deps.sandbox.uploadDirectory(resolveLocalPath(deps.evalBaseDir, localDir), targetDir, opts),
     downloadFile: (path) => deps.sandbox.downloadFile(path),
     uploadFile: (path, content) => deps.sandbox.uploadFile(path, content),
   };

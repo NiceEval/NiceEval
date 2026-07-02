@@ -23,6 +23,7 @@ import {
   captureGeneratedFiles,
   initGitAndCommit,
 } from "./sandbox-prep.ts";
+import { resolveLocalPath } from "../sandbox/paths.ts";
 import type {
   Agent,
   AgentContext,
@@ -575,7 +576,7 @@ async function runAttemptBody(
       // setup 里需要 root 的(apt/pip)自己传 { root: true }。
       if (evalDef.setup) {
         log(t("runner.evalSetup"));
-        await evalDef.setup(sandbox);
+        await evalDef.setup(withEvalLocalPaths(sandbox, evalDef.baseDir));
       }
     }
 
@@ -605,6 +606,7 @@ async function runAttemptBody(
       log,
       judge,
       telemetry,
+      evalBaseDir: evalDef.baseDir,
     });
 
     let error: string | undefined;
@@ -739,6 +741,7 @@ function createRemoteSandbox(): Sandbox {
   };
 
   return {
+    workdir: "",
     sandboxId: "remote",
     otlpHost: "127.0.0.1",
     async runCommand() {
@@ -774,6 +777,33 @@ function createRemoteSandbox(): Sandbox {
     async uploadFile() {
       unavailable("uploadFile");
     },
+  };
+}
+
+function withEvalLocalPaths(sandbox: Sandbox, baseDir: string): Sandbox {
+  return {
+    get workdir() {
+      return sandbox.workdir;
+    },
+    get sandboxId() {
+      return sandbox.sandboxId;
+    },
+    get otlpHost() {
+      return sandbox.otlpHost;
+    },
+    runCommand: (cmd, args, opts) => sandbox.runCommand(cmd, args, opts),
+    runShell: (script, opts) => sandbox.runShell(script, opts),
+    readFile: (path) => sandbox.readFile(path),
+    fileExists: (path) => sandbox.fileExists(path),
+    readSourceFiles: (opts) => sandbox.readSourceFiles(opts),
+    writeFiles: (files, targetDir) => sandbox.writeFiles(files, targetDir),
+    uploadFiles: (files, targetDir) => sandbox.uploadFiles(files, targetDir),
+    uploadDirectory: (localDir, targetDir, opts) =>
+      sandbox.uploadDirectory(resolveLocalPath(baseDir, localDir), targetDir, opts),
+    stop: () => sandbox.stop(),
+    appendLog: sandbox.appendLog ? (line) => sandbox.appendLog!(line) : undefined,
+    downloadFile: (path) => sandbox.downloadFile(path),
+    uploadFile: (path, content) => sandbox.uploadFile(path, content),
   };
 }
 
