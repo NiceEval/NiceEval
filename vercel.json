@@ -10,14 +10,6 @@
     {
       "source": "/docs/:match*",
       "destination": "https://fasteval.mintlify.site/docs/:match*"
-    },
-    {
-      "source": "/blog",
-      "destination": "/"
-    },
-    {
-      "source": "/blog/:match*",
-      "destination": "/"
     }
   ]
 }
