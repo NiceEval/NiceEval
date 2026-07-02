@@ -63,7 +63,7 @@ export const copy = {
       humans: {
         label: "For humans",
         cta: "Docs",
-        caption: "Read the quickstart guide, then write a TypeScript eval and run it across targets without building a bespoke harness.",
+        caption: "Read the quickstart guide, then write an eval and run it across targets without building a bespoke harness.",
       },
       agents: {
         label: "For agents",
@@ -115,7 +115,7 @@ export const copy = {
       humans: {
         label: "给人类",
         cta: "文档",
-        caption: "阅读快速开始文档,再写一个 TypeScript eval,在不同目标上运行,不用自建评测脚手架。",
+        caption: "阅读快速开始文档，写一个 eval，直接在不同目标上运行，不用自己搭评测脚手架。",
       },
       agents: {
         label: "给 Agent",

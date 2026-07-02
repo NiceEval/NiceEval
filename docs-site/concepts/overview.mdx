@@ -1,7 +1,7 @@
 ---
 title: "niceeval architecture: evals, agents, and sandboxes"
 sidebarTitle: "Overview"
-description: "Understand how niceeval's core, agent adapters, and sandbox backends fit together to evaluate any AI agent with a unified TypeScript API."
+description: "Understand how niceeval's core, agent adapters, and sandbox backends fit together to evaluate any AI agent with a unified API."
 ---
 
 niceeval is organized around three concerns that stay permanently separated: **what to test** (your `evals/` directory), **how to run and score it** (the niceeval core), and **how to reach the thing being tested** (the agent adapter and sandbox). Understanding where each boundary falls makes it much easier to write evals, build adapters, and interpret results — so this page walks the full architecture before you write a single line of eval code.
@@ -127,7 +127,7 @@ The experiment's (or config's) `sandbox` field selects where sandbox agents run 
     The core evaluates all registered assertions against the `Turn`. Gate assertions that fail mark the eval `failed`. Soft assertions below their threshold mark it `passed`.
   </Step>
   <Step title="Outcome">
-    One outcome per eval: `passed`, `failed`, `passed`, or `skipped`. When `runs > 1`, the summary is a pass-rate and average latency.
+    One outcome per eval: `passed`, `failed`, `errored`, or `skipped`. When `runs > 1`, the summary is a pass-rate and average latency.
   </Step>
   <Step title="Reporting & artifacts">
     Results stream to the console in real time. Once complete, reporters write structured output and `.niceeval/<run>/` is populated with the full artifact set.

@@ -112,7 +112,7 @@ When you run an eval more than once (`runs > 1`), the summary for that eval beco
 Every assertion carries a **severity** that determines how it affects the outcome:
 
 - **Gate** assertions are hard requirements. If a gate assertion fails, the entire eval is `failed`. Use gate for facts that must be true: "the agent called the right tool", "the output parsed as valid JSON", "no shell commands failed."
-- **Soft** assertions are quality scores with a numeric threshold. If a soft assertion's score falls below its threshold, the eval becomes `passed` rather than `passed`. Use soft for continuous judgments: similarity scoring, LLM-as-judge factuality, efficiency budgets you want to track without blocking CI.
+- **Soft** assertions are quality scores with a numeric threshold. If a soft assertion's score falls below its threshold, the eval becomes `passed` rather than `failed`. Use soft for continuous judgments: similarity scoring, LLM-as-judge factuality, efficiency budgets you want to track without blocking CI.
 
 Matchers from `niceeval/expect` carry sensible defaults (`includes` and `equals` default to gate; `similarity` and judge calls default to soft), and you can override the severity with a chain method:
 
