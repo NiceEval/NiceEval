@@ -5,6 +5,7 @@ node_modules/
 *.log
 .DS_Store
 dist/
+.next/
 # vite 构建产物:由 `prepare` 在 install / publish 前自动构建(npm files:['src'] 仍会打进包)
 src/view/client-dist/
 # 临时探针 / 冒烟脚本

@@ -1,5 +1,7 @@
+"use client";
+
 import React, { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
+import { useRouter } from "next/navigation";
 import { Highlight, themes } from "prism-react-renderer";
 import {
   ArrowLeft,
@@ -18,11 +20,8 @@ import {
   Terminal,
   Wrench,
 } from "lucide-react";
-import "./styles.css";
-import { initAnalytics, track } from "./analytics";
-import { evalExamples } from "./eval-examples";
-import whyWeNeedEvalsEn from "./blog/posts/why-we-need-evals/en.mdx?raw";
-import whyWeNeedEvalsZh from "./blog/posts/why-we-need-evals/zh.mdx?raw";
+import { initAnalytics, track } from "../src/analytics";
+import { evalExamples } from "../src/eval-examples";
 
 const githubUrl = "https://github.com/CorrectRoadH/niceeval";
 const blogPath = "/blog";
@@ -69,46 +68,8 @@ const compareCard = {
   ],
 };
 
-const blogSources = {
-  "why-we-need-evals": {
-    en: whyWeNeedEvalsEn,
-    zh: whyWeNeedEvalsZh,
-  },
-};
-
-function parseMdxDocument(source) {
-  const frontmatterMatch = source.match(/^---\n([\s\S]*?)\n---\n?/);
-  const frontmatter = {};
-  let body = source;
-
-  if (frontmatterMatch) {
-    body = source.slice(frontmatterMatch[0].length);
-    for (const line of frontmatterMatch[1].split("\n")) {
-      const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-      if (!match) continue;
-      const [, key, rawValue] = match;
-      frontmatter[key] = rawValue.replace(/^["']|["']$/g, "");
-    }
-  }
-
-  return { ...frontmatter, body };
-}
-
-const blogPosts = Object.entries(blogSources).map(([slug, source]) => ({
-  slug,
-  en: parseMdxDocument(source.en),
-  zh: parseMdxDocument(source.zh),
-}));
-
-function getBlogPost(slug) {
+function getBlogPost(blogPosts, slug) {
   return blogPosts.find((post) => post.slug === slug);
-}
-
-function getRoute() {
-  const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (path === blogPath) return { name: "blog" };
-  if (path.startsWith(`${blogPath}/`)) return { name: "post", slug: path.slice(`${blogPath}/`.length) };
-  return { name: "home" };
 }
 
 const codeTheme = {
@@ -224,6 +185,7 @@ const copy = {
 };
 
 function detectLocale() {
+  if (typeof window === "undefined") return "en";
   let saved;
   try {
     saved = window.localStorage.getItem("niceeval-locale");
@@ -234,16 +196,19 @@ function detectLocale() {
   return window.navigator.language?.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-function App() {
-  const [locale, setLocale] = useState(detectLocale);
-  const [route, setRoute] = useState(getRoute);
+export default function SiteAppClient({ initialRoute, blogPosts }) {
+  const router = useRouter();
+  const [locale, setLocale] = useState("en");
+  const route = initialRoute;
   const t = copy[locale];
 
   useEffect(() => {
     initAnalytics();
-    const onPopState = () => setRoute(getRoute());
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    const resolvedLocale = detectLocale();
+    setLocale((current) => (current === resolvedLocale ? current : resolvedLocale));
   }, []);
 
   useEffect(() => {
@@ -260,11 +225,7 @@ function App() {
   }, [locale, route.name, t.blogPage.meta, t.meta]);
 
   const navigate = (href) => {
-    if (window.location.pathname !== href) {
-      window.history.pushState({}, "", href);
-    }
-    setRoute(getRoute());
-    window.scrollTo({ top: 0, behavior: "auto" });
+    router.push(href);
   };
 
   return (
@@ -278,9 +239,9 @@ function App() {
             <Setup t={t} locale={locale} />
           </>
         ) : route.name === "blog" ? (
-          <BlogIndex t={t} locale={locale} navigate={navigate} />
+          <BlogIndex t={t} locale={locale} navigate={navigate} blogPosts={blogPosts} />
         ) : (
-          <BlogArticle t={t} locale={locale} route={route} navigate={navigate} />
+          <BlogArticle t={t} locale={locale} route={route} navigate={navigate} blogPosts={blogPosts} />
         )}
       </main>
     </>
@@ -312,8 +273,7 @@ function Header({ locale, setLocale, t, route, navigate }) {
             track("Click Nav Start");
             if (route.name !== "home") {
               event.preventDefault();
-              navigate("/");
-              window.setTimeout(() => document.getElementById("setup")?.scrollIntoView({ behavior: "smooth" }), 0);
+              navigate("/#setup");
             }
           }}
         >
@@ -436,7 +396,7 @@ function Hero({ t, locale, navigate }) {
   );
 }
 
-function BlogIndex({ t, locale, navigate }) {
+function BlogIndex({ t, locale, navigate, blogPosts }) {
   const post = blogPosts[0];
   const postCopy = post[locale];
 
@@ -479,8 +439,8 @@ function BlogIndex({ t, locale, navigate }) {
   );
 }
 
-function BlogArticle({ t, locale, route, navigate }) {
-  const post = getBlogPost(route.slug);
+function BlogArticle({ t, locale, route, navigate, blogPosts }) {
+  const post = getBlogPost(blogPosts, route.slug);
 
   if (!post) {
     return (
@@ -935,5 +895,3 @@ function EvalCard({ t, example, locale, active, offset, onActivate }) {
     </div>
   );
 }
-
-createRoot(document.getElementById("root")).render(<App />);

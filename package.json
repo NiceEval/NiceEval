@@ -52,8 +52,8 @@
     "niceeval": "node bin/niceeval.js",
     "view:build": "vite build --config src/view/app/vite.config.ts",
     "prepare": "pnpm run view:build",
-    "site:dev": "vite site --host 127.0.0.1 --port 5174",
-    "site:build": "vite build site",
+    "site:dev": "cd site && next dev --hostname 127.0.0.1 --port 5174",
+    "site:build": "cd site && next build",
     "docs:dev": "cd docs-site && npx --yes mint@latest dev",
     "docs:validate": "cd docs-site && npx --yes mint@latest validate",
     "docs:links": "cd docs-site && npx --yes mint@latest broken-links --check-anchors --check-redirects"
@@ -84,6 +84,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.21.0",
     "mixpanel-browser": "^2.80.0",
+    "next": "16.2.10",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
