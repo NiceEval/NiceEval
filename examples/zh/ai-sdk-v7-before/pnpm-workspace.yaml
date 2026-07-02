@@ -2,11 +2,9 @@ packages: []
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
-  - niceeval@0.1.0-alpha.0
   - '@ai-sdk/gateway@4.0.8'
   - '@ai-sdk/openai@4.0.5'
   - '@ai-sdk/provider-utils@5.0.3'
   - ai@7.0.11
 overrides:
-  niceeval: link:../../..
   ai: 7.0.11

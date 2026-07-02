@@ -1,18 +1,11 @@
-// 被测助手:系统提示 + 四个工具 + 一个 generate。这里只有【应用自己的事】——
-// 会话、事件流、HITL 握手、失败兜底全部由 niceeval 内建的 aiSdkAgent 工厂承担,
-// 实验里 `aiSdkAgent(assistant)` 一行接线(见 experiments/)。
-//
-// 工具本体不掺任何记录逻辑 —— 事件流由 fromAiSdk 从 generateText 结果里直接取
-// (AI SDK 原生带 toolCallId,不必包 recorder)。
+// 被测助手:系统提示 + 四个工具 + 一个 chat 函数。纯 AI SDK v7 工具循环,不接任何
+// 观测或 eval 框架。
 //
 // send_email 带 `needsApproval: true`(AI SDK v7 的 tool approval):模型决定调它时
-// SDK 会停下来等人批准 —— 这正是 niceeval HITL(t.requireInputRequest / t.respond)
-// 要测的那类交互。
+// SDK 会停下来等人批准,调用方需要把 approval response 塞回 messages 再召一次。
 import { generateText, isStepCount, tool, type ModelMessage, type ToolSet } from "ai";
 import { z } from "zod";
-import type { AiSdkAgentOptions } from "niceeval/adapter";
 import { DEFAULT_MODEL, resolveModel } from "./models.ts";
-import { telemetryFor } from "./instrumentation.ts";
 
 export const SYSTEM_PROMPT = `
 你是一个乐于助人的中文 AI 助手。
@@ -82,40 +75,13 @@ export function buildTools(): ToolSet {
   };
 }
 
-/**
- * 内建 aiSdkAgent 工厂的配置:应用只写「怎么召模型」(generate)和「结构化输出取什么」(data)。
- * messages 历史由工厂管理(含 HITL 的 tool-approval-response),这里原样透传给 generateText。
- */
-export const assistant: AiSdkAgentOptions<ModelMessage> = {
-  name: "ai-sdk-v7",
-  // tracing:声明后 niceeval 起本机 OTLP 接收器,端点经 generate 的 telemetry 进来。
-  capabilities: { tracing: true },
-
-  async generate({ messages, model, signal, telemetry }) {
-    const modelId = model ?? process.env.AGENT_MODEL ?? DEFAULT_MODEL;
-    // 双 OTel:AI SDK 官方埋点(@ai-sdk/otel,产 GenAI semconv,invoke_agent/chat/execute_tool
-    // 全 span 树自动生成)经 telemetryFor 同时发 niceeval 与可选的自有后端,见 instrumentation.ts。
-    const otel = telemetryFor(telemetry?.endpoint);
-    try {
-      return await generateText({
-        model: resolveModel(modelId),
-        system: SYSTEM_PROMPT,
-        messages,
-        tools: buildTools(),
-        stopWhen: isStepCount(5),
-        abortSignal: signal,
-        telemetry: otel ? { integrations: otel.integration } : { isEnabled: false },
-      });
-      // generate 抛错由工厂兜成 status:"failed" 的 Turn
-    } finally {
-      await otel?.flush(); // 本轮 span 立刻送到,niceeval 的轮次归属窗口才接得住
-    }
-  },
-
-  // T0 结构化输出(Turn.data):最终回复 + 本轮最后一个动作(evals 里 outputMatches 用)。
-  data: (result, turn) => ({
-    reply: result.text ?? "",
-    lastAction:
-      [...turn.events].reverse().find((e) => e.type === "action.called")?.name ?? "chat",
-  }),
-};
+/** 应用怎么召模型:一个普通的 generateText 工具循环。 */
+export async function chat(messages: ModelMessage[], modelId?: string) {
+  return await generateText({
+    model: resolveModel(modelId ?? process.env.AGENT_MODEL ?? DEFAULT_MODEL),
+    system: SYSTEM_PROMPT,
+    messages,
+    tools: buildTools(),
+    stopWhen: isStepCount(5),
+  });
+}

@@ -34,9 +34,9 @@ tool approval 的停轮与裁决翻译、空结果兜底,全部在 niceeval 的 
 
 | eval | 能力档 | 用到的断言 |
 |---|---|---|
-| `structured-output` | T0 结构化输出 | `turn.outputMatches`(zod schema)、`t.check` + `equals` / `includes` |
-| `weather-tool` | T1 事件流 | `calledTool`(含 input 匹配)、`toolOrder`、`notCalledTool`、`maxToolCalls`、`noFailedActions`、`eventOrder`、`maxTokens` / `maxCost` |
-| `multi-turn` | T2 多轮会话 | 跨轮记忆 + `t.newSession()` 隔离(`eventsSatisfy` 验证新会话不共享上下文) |
+| `structured-output` | 结构化输出(基础) | `turn.outputMatches`(zod schema)、`t.check` + `equals` / `includes` |
+| `weather-tool` | 事件流 | `calledTool`(含 input 匹配)、`toolOrder`、`notCalledTool`、`maxToolCalls`、`noFailedActions`、`eventOrder`、`maxTokens` / `maxCost` |
+| `multi-turn` | 多轮会话 | 跨轮记忆 + `t.newSession()` 隔离(`eventsSatisfy` 验证新会话不共享上下文) |
 | `hitl-approve` | HITL 批准 | `status === "waiting"`、`event("input.requested")`、`t.requireInputRequest`、`t.respond("approve")`、跨轮 `callId` 配对(`calledTool(..., { status: "completed" })`) |
 | `hitl-deny` | HITL 拒绝 | `t.respondAll("deny")`、`calledTool(..., { status: "rejected" })`(人否决 ≠ 工具故障,`noFailedActions` 仍通过) |
 | `image-understanding` | 多模态 | `t.sendFile` + 按模型 `t.skip` |
@@ -47,9 +47,27 @@ HITL 靠的是 AI SDK v7 的 tool approval:`send_email` 工具带 `needsApproval
 `tool-approval-response` 塞回 messages 再召一次 —— 拒绝的调用以 `rejected`(而非 `failed`)
 落进事件流。
 
-T3 tracing 也开着:`assistant.ts` 声明 `capabilities: { tracing: true }`,每轮把 turn / model
-span 按 OTLP/JSON 发到 `ctx.telemetry.endpoint`(见 `agent/otlp.ts`),`npx niceeval view`
-里直接看瀑布图。
+tracing 也开着:`assistant.ts` 声明 `capabilities: { tracing: true }`,埋点用的是 **AI SDK
+官方 OTel 集成**(`@ai-sdk/otel`,产 OTel GenAI semconv):`invoke_agent` / `chat` /
+`execute_tool` 全 span 树自动生成、直接命中 niceeval 的 canonical 层,零 mapper。
+`npx niceeval view` 里直接看瀑布图。
+
+## 双 OTel:AI SDK 自带一个,niceeval 另一个
+
+被测应用自带的 OTel(`@ai-sdk/otel` 埋点)和 niceeval 的接收器是两回事:前者产 span,
+后者收 span——中间的接线在 `agent/instrumentation.ts`,两个出口:
+
+- **出口 1(可选)**:你自己的观测后端。设了环境变量 `OTLP_BACKEND_URL`(Langfuse /
+  SigNoz / 生产 collector)就一直双发;
+- **出口 2**:niceeval 本次运行的接收端点,经 `ctx.telemetry` 逐 attempt 进来。
+
+并发安全的关键是**不用全局 provider**:按 endpoint 缓存 provider,每次 `generateText` 经
+`telemetry.integrations` 传入绑定了该 endpoint tracer 的集成(per-call 覆盖全局注册),
+并行 attempt 各用各的出口,span 不串流。每轮结束 `forceFlush`——eval 的轮次归属靠
+时间窗口,span 必须立刻送到。
+
+这是「进程内直调」场景的接法;长驻服务、子进程等其它形态见 docs-site
+「通过 OTel 接入」。
 
 ## 跑起来
 
