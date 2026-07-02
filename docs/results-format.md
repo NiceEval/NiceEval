@@ -24,7 +24,7 @@
 
 ## 版本与升级设计
 
-当前已落盘的结果没有显式版本号,读取器只能把「有 `results[]` 且有 `startedAt`」的 JSON 当作 niceeval summary。为了让结果格式可扩展、可升级,下一版应把 `summary.json` 升级成整个 run 的 manifest,在顶层增加版本元数据:
+`summary.json` 顶层带最小的版本元数据(writer 在 `src/runner/reporters/artifacts.ts`,常量在 `src/types.ts` 的 `RESULTS_FORMAT` / `RESULTS_SCHEMA_VERSION`):
 
 ```json
 {
@@ -34,40 +34,44 @@
     "name": "niceeval",
     "version": "0.12.0"
   },
-  "artifacts": {
-    "events": { "schemaVersion": 1, "encoding": "json-array" },
-    "sources": { "schemaVersion": 1, "encoding": "json-array" },
-    "trace": { "schemaVersion": 1, "encoding": "json-array" },
-    "o11y": { "schemaVersion": 1, "encoding": "json-object" },
-    "diff": { "schemaVersion": 1, "encoding": "json-object" }
-  },
   "startedAt": "2026-07-02T03:10:24.123Z",
   "results": []
 }
 ```
 
-这里的取舍:
+设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个 run(summary + 全部 attempt 工件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份报告的 niceeval 版本查看:
 
-- **run 级 summary 是唯一入口。** 版本号放在 `summary.json` 顶层,因为所有 attempt 工件都通过 summary 引用。读取方先读 summary,再决定怎么读子文件。
-- **attempt 文件保持裸 JSON array/object。** `events.json` 继续是 `StreamEvent[]`,不要为了塞版本号改成 `{ schemaVersion, data }`。这样脚本、view、调试时 `jq`/`node` 直接读数组的体验不被打破。
-- **每类 artifact 有自己的 schemaVersion。** summary 的 `schemaVersion` 管 run manifest;`artifacts.events.schemaVersion` 管 `StreamEvent[]`;`artifacts.trace.schemaVersion` 管 `TraceSpan[]`。以后只改 trace 结构时,不必暗示 summary 也破坏兼容。
-- **当前无版本结果按 legacy v0 读。** 缺少 `format` / `schemaVersion` 时,读取器按现在的格式解释:run manifest v0,artifact kinds v0。view 可以显示一个弱提示,但不应该拒绝读取。
+```bash
+npx niceeval@0.3.0 view .niceeval/2026-09-10T08-00-00-000Z
+```
 
-版本号语义:
+字段规则:
 
-- `format` 必须等于 `"niceeval.results"`。这避免把其它工具的 `summary.json` 误读成 niceeval。
-- `schemaVersion` 用整数,只在**破坏兼容读取**时递增。新增可选字段、增加新的 artifact kind、增加新的 `StreamEvent` variant,原则上不递增 summary major;读取器必须忽略未知字段和未知 artifact kind。
-- `producer.version` 是 npm package 版本,用于排查「哪个 niceeval 写的这份报告」。它不是 schema 判断依据,不能用 `producer.version` 推断格式。
-- 子 artifact 的 `schemaVersion` 同样用整数。比如未来 `events.json` 从裸 `StreamEvent[]` 改为 chunked 或 envelope,才需要把 `artifacts.events.schemaVersion` 从 1 升到 2。
+- `format` 必须等于 `"niceeval.results"`。它既避免把其它工具的 `summary.json` 误读成 niceeval,也是版本不匹配时识别「这是一份 niceeval 报告」的依据。
+- `schemaVersion` 用整数,只在**破坏兼容读取**时递增。新增可选字段、新增 artifact 文件、新增 `StreamEvent` variant 不递增;读取器必须忽略未知字段和未知 artifact 文件。
+- `producer.version` 是写这份报告的 npm package 版本,唯一用途是拼 npx 提示;它不是 schema 判断依据。
+- `format` / `schemaVersion` / `producer` 三个字段永久稳定:任何未来版本都不能移动、重命名或改变类型,否则版本不匹配时连 npx 提示都给不出来。
+- 缺版本字段的存量文件等价于 `schemaVersion: 1`(引入版本号不改变其余格式)。这批文件没有 `producer.version`,将来不兼容时提示只能是模糊的「用 0.1.x 旧版查看」——所以 writer 越早开始写版本元数据越好。
+- attempt 文件保持裸 JSON array/object。`events.json` 继续是 `StreamEvent[]`,不为塞版本号改成 `{ schemaVersion, data }` envelope;`jq`/`node` 直接读数组的体验不被打破。
+- 不要用目录名表达 schema。`.niceeval/<timestamp>/` 和 attempt 目录只表达身份与定位;版本全部在 `summary.json` 里,复制、重命名、归档目录不影响解析。
 
-升级规则:
+### 版本不匹配时的读取行为
 
-1. **写新读旧。** writer 只写当前最新版;reader 至少支持当前版和 legacy v0。不要继续写多套格式。
-2. **先 normalize 再渲染。** `readSummary` 应把 legacy v0 和未来 v1 都转成 view 内部统一模型,再进入 `aggregateRows` / `attachArtifactBase`。兼容逻辑集中在一个 loader 里,不要散在 React 组件里。
-3. **未知字段保留容忍。** 读取器不应该因为多了 `environment`、`git`、`tags`、`agentSetup` 等字段失败;第三方 reporter 或未来版本可以安全扩展。
-4. **未知 artifact kind 忽略。** 例如将来新增 `agent-setup.json`、`screenshots.json`、`classification.json`,旧 view 只是不展示,不能让整个 run 读取失败。
-5. **破坏性升级要有迁移函数。** 如果 `schemaVersion` 递增到 2,实现上加 `normalizeSummaryV1` / `normalizeSummaryV2` 这类小函数;必要时提供 `niceeval migrate-results <path>` 把旧目录改写成新格式。
-6. **不要用目录名表达 schema。** `.niceeval/<timestamp>/` 和 attempt 目录只表达身份与定位;版本全部在 JSON 内。这样复制、重命名、归档目录不会影响解析。
+读取器不解析、不迁移、不降级渲染任何版本不同的 run,行为只分三档:
+
+- **`schemaVersion` 相同**(或缺失,按 1 处理):正常读取渲染。
+- **`format === "niceeval.results"` 但 `schemaVersion` 不同**(不论新旧):整个 run 视为不兼容。目录扫描时在列表里留一个占位条目,标出 run 目录和 `producer.version`,并提示:
+
+  ```text
+  ⚠ .niceeval/2026-09-10T08-00-00-000Z: written by niceeval 0.3.0 (schemaVersion 2);
+    this CLI reads schemaVersion 1.
+    Run `npx niceeval@0.3.0 view .niceeval/2026-09-10T08-00-00-000Z` to view it.
+  ```
+
+  单文件模式 `niceeval view <run>/summary.json` 输出同样的提示后退出,而不是报「不是 niceeval summary」。
+- **不能识别**(没有 `format`,也不满足 legacy 的 `results[]` + `startedAt` 启发式):当作无关 JSON 忽略。
+
+实现入口:版本判定在 `src/view/index.ts` 的 `readSummary`(抛 `IncompatibleResultsError`);目录扫描的占位数据经 `viewData.incompatibleRuns` 进前端,由 `src/view/app/App.tsx` 的 incompatible-banner 渲染;单文件模式的提示与退出在 `src/cli.ts` 的 `exitOnIncompatibleResults`;提示文案是 i18n key `cli.view.incompatible`。
 
 报告里最小应新增的字段是:
 
@@ -80,10 +84,6 @@ interface ResultFormatMeta {
     version?: string;
     commit?: string;
   };
-  artifacts?: Partial<Record<"events" | "sources" | "trace" | "o11y" | "diff" | string, {
-    schemaVersion: number;
-    encoding: "json-array" | "json-object";
-  }>>;
 }
 ```
 
@@ -91,14 +91,13 @@ interface ResultFormatMeta {
 
 ## `summary.json`
 
-`summary.json` 是瘦身后的 `RunSummary`,负责让控制台、`--resume` 和 `niceeval view` 先拿到榜单级信息:
+`summary.json` 是瘦身后的 `RunSummary`,负责让控制台、`--resume` 和 `niceeval view` 先拿到榜单级信息。前三个字段(`format` / `schemaVersion` / `producer`)是上文的版本元数据:
 
 ```typescript
 interface RunSummary {
   format?: "niceeval.results";
   schemaVersion?: number;
   producer?: { name: "niceeval"; version?: string; commit?: string };
-  artifacts?: Record<string, { schemaVersion: number; encoding: "json-array" | "json-object" }>;
   name?: LocalizedText;
   agent: string;
   model?: string;

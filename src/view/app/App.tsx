@@ -140,6 +140,23 @@ export function App({ data }: { data: ViewData }) {
           <Metric label={t("metric.cost")} value={data.cost} />
         </section>
 
+        {(data.incompatibleRuns?.length ?? 0) > 0 && (
+          <section className="incompatible-banner" role="alert">
+            <b>{t("banner.incompatibleTitle")}</b>
+            <ul>
+              {data.incompatibleRuns!.map((run) => (
+                <li key={run.dir}>
+                  <span className="ib-dir">{run.dir}</span>
+                  <span className="ib-meta">
+                    niceeval {run.producerVersion ?? "?"} · schemaVersion {run.schemaVersion}
+                  </span>
+                  <code>{run.command}</code>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <TabsContent value="experiments" id="tab-experiments">
           <div className="section-head">
             <h2>{t("section.experiments")}</h2>

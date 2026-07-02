@@ -65,6 +65,17 @@ export interface ViewData {
   resultCount: string;
   duration: string;
   cost: string;
+  /** schemaVersion 与当前 view 不同的 run;不解析内容,只渲染占位提示。 */
+  incompatibleRuns?: IncompatibleRunNotice[];
+}
+
+export interface IncompatibleRunNotice {
+  /** run 目录,相对 cwd。 */
+  dir: string;
+  schemaVersion: number;
+  producerVersion?: string;
+  /** 服务端拼好的查看命令:npx niceeval@<producerVersion> view <dir>。 */
+  command: string;
 }
 
 export type Outcome = "passed" | "failed" | "errored" | "skipped" | string;

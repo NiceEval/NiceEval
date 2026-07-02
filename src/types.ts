@@ -633,7 +633,18 @@ export interface EvalResult {
  */
 export type LocalizedText = string | Record<string, string>;
 
+/** `summary.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
+export const RESULTS_FORMAT = "niceeval.results";
+/** 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本,缺失按 1。见 docs/results-format.md。 */
+export const RESULTS_SCHEMA_VERSION = 1;
+
 export interface RunSummary {
+  /** 恒为 "niceeval.results";和 schemaVersion、producer 一起构成持久化契约,永不移动或改名。 */
+  format?: typeof RESULTS_FORMAT;
+  /** 结果格式版本;与读取器不同即视为不兼容,提示用 producer.version 对应的 niceeval 查看。 */
+  schemaVersion?: number;
+  /** 写这份报告的 niceeval;version 唯一用途是拼 `npx niceeval@<version> view` 提示。 */
+  producer?: { name: "niceeval"; version?: string; commit?: string };
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
   agent: string;

@@ -37,6 +37,7 @@ export const zhCN = {
   "cli.sandboxFlagRemoved": "`--sandbox` 不是 CLI flag。请在 experiment(或 niceeval.config.ts 做全项目兜底)里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n",
   "cli.unimplemented": "命令 \"{{command}}\" 暂未实现(MVP)。\n",
   "cli.view.exported": "已导出实验查看页:{{out}}\n",
+  "cli.view.incompatible": "{{dir}}: 由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n运行 `{{command}}` 查看这份报告。\n",
   "cli.view.url": "niceeval view: {{url}}\n",
   "context.skipEmpty": "skip() 需要一个非空理由。",
   "context.turnFailed": "本轮 send 返回 failed(turn status = failed):{{message}}",

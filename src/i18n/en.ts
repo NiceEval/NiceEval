@@ -39,6 +39,7 @@ export const en = {
   "cli.sandboxFlagRemoved": "`--sandbox` is not a CLI flag. Set `sandbox` in the experiment (or `niceeval.config.ts` as a project-wide fallback) to dockerSandbox() / vercelSandbox() / e2bSandbox() (import from \"niceeval/sandbox\").\n",
   "cli.unimplemented": "Command \"{{command}}\" is not implemented yet (MVP).\n",
   "cli.view.exported": "Exported eval report page: {{out}}\n",
+  "cli.view.incompatible": "{{dir}}: written by niceeval {{producer}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nRun `{{command}}` to view it.\n",
   "cli.view.url": "niceeval view: {{url}}\n",
   "context.skipEmpty": "skip() requires a non-empty reason.",
   "context.turnFailed": "This send returned failed (turn status = failed): {{message}}",

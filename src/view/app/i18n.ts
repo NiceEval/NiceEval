@@ -98,7 +98,8 @@ export type MessageKey =
   | "outcome.passed"
   | "outcome.failed"
   | "outcome.errored"
-  | "outcome.skipped";
+  | "outcome.skipped"
+  | "banner.incompatibleTitle";
 
 type Dictionary = Record<MessageKey, string>;
 
@@ -202,6 +203,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "outcome.failed": "failed",
     "outcome.errored": "errors",
     "outcome.skipped": "skipped",
+    "banner.incompatibleTitle": "Runs written by a different niceeval version (not shown here) — view each with the command on the right:",
   },
   "zh-CN": {
     "app.title": "niceeval 实验查看器",
@@ -302,6 +304,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "outcome.failed": "失败",
     "outcome.errored": "错误",
     "outcome.skipped": "跳过",
+    "banner.incompatibleTitle": "以下 run 由其它版本的 niceeval 写入,此处不展示;用右侧命令查看:",
   },
 };
 

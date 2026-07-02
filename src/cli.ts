@@ -16,9 +16,18 @@ import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
 import { JUnit } from "./runner/reporters/json.ts";
 import { Live as LiveReporter, type LiveRow } from "./runner/reporters/live.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
-import { buildView, startViewServer, loadMostRecentResults } from "./view/index.ts";
+import { buildView, startViewServer, loadMostRecentResults, IncompatibleResultsError } from "./view/index.ts";
 import { t } from "./i18n/index.ts";
 import type { Config, DiscoveredExperiment, Reporter } from "./types.ts";
+
+/** `niceeval view <summary.json>` 指向版本不同的报告时:打印 npx 提示后退出,不抛堆栈。 */
+function exitOnIncompatibleResults(e: unknown): never {
+  if (e instanceof IncompatibleResultsError) {
+    process.stderr.write(e.message);
+    process.exit(1);
+  }
+  throw e;
+}
 
 interface Flags {
   agent?: string;
@@ -207,11 +216,11 @@ async function main(): Promise<void> {
 
   if (command === "view") {
     if (flags.out) {
-      const out = await buildView({ input: positionals[0], out: flags.out });
+      const out = await buildView({ input: positionals[0], out: flags.out }).catch(exitOnIncompatibleResults);
       process.stdout.write(t("cli.view.exported", { out }));
       process.exit(0);
     }
-    const server = await startViewServer({ input: positionals[0], port: flags.port });
+    const server = await startViewServer({ input: positionals[0], port: flags.port }).catch(exitOnIncompatibleResults);
     process.stdout.write(t("cli.view.url", { url: server.url }));
     if (flags.open !== false) {
       const opened = await openBrowser(server.url);

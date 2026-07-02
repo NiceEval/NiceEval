@@ -7,9 +7,18 @@
 //       events.json  sources.json  trace.json  o11y.json  diff.json
 // view 读 summary.json 渲染榜单,展开某条 trace 时再按需 fetch 它的 trace.json。
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { EvalResult, Reporter, RunSummary } from "../../types.ts";
+import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Reporter, type RunSummary } from "../../types.ts";
+
+/** niceeval 自身的 npm 版本,写进 producer.version;版本不匹配时读取器靠它拼 npx 提示。 */
+let producerVersionPromise: Promise<string | undefined> | undefined;
+function producerVersion(): Promise<string | undefined> {
+  producerVersionPromise ??= readFile(new URL("../../../package.json", import.meta.url), "utf-8")
+    .then((raw) => (JSON.parse(raw) as { version?: string }).version)
+    .catch(() => undefined);
+  return producerVersionPromise;
+}
 
 /** 一个 attempt 的工件子目录(相对 run 根):<evalId>/<agent>/<model>/a<attempt>。 */
 function attemptDir(r: EvalResult): string {
@@ -67,10 +76,17 @@ export function Artifacts(root = ".niceeval"): Reporter {
       await Promise.all(writes);
     },
 
-    // run 结束写瘦身 summary.json(只含榜单要的字段 + 工件引用)。
+    // run 结束写瘦身 summary.json(版本元数据 + 榜单要的字段 + 工件引用)。
     async onRunComplete(summary) {
       await ensureDir();
-      const slim: RunSummary = { ...summary, outputDir, results: summary.results.map(slimResult) };
+      const slim: RunSummary = {
+        format: RESULTS_FORMAT,
+        schemaVersion: RESULTS_SCHEMA_VERSION,
+        producer: { name: "niceeval", version: await producerVersion() },
+        ...summary,
+        outputDir,
+        results: summary.results.map(slimResult),
+      };
       await writeFile(join(outputDir, "summary.json"), JSON.stringify(slim, null, 2), "utf-8");
     },
   };

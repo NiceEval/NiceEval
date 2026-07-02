@@ -4,7 +4,8 @@ import { existsSync, statSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import type { EvalResult, RunSummary, Usage } from "../types.ts";
+import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type RunSummary, type Usage } from "../types.ts";
+import { t } from "../i18n/index.ts";
 
 export interface ViewOptions {
   input?: string;
@@ -20,6 +21,43 @@ export interface ViewServer {
 interface LoadedSummary {
   path: string;
   summary: RunSummary;
+}
+
+/** schemaVersion 与当前 CLI 不同、按设计直接不兼容的 run;只占位提示,不解析内容。 */
+export interface IncompatibleRun {
+  /** run 目录(summary.json 所在目录),相对 cwd;直接可拼进 npx 命令。 */
+  dir: string;
+  schemaVersion: number;
+  producerVersion?: string;
+}
+
+/** 用能读这份报告的 niceeval 版本查看的命令。 */
+export function incompatibleViewCommand(run: IncompatibleRun): string {
+  return `npx niceeval@${run.producerVersion ?? "<version>"} view ${run.dir}`;
+}
+
+/** 版本不匹配的完整提示文案;CLI 单文件模式和目录扫描占位共用。 */
+export function incompatibleHint(run: IncompatibleRun): string {
+  return t("cli.view.incompatible", {
+    dir: run.dir,
+    producer: run.producerVersion ?? "?",
+    schemaVersion: run.schemaVersion,
+    supported: RESULTS_SCHEMA_VERSION,
+    command: incompatibleViewCommand(run),
+  });
+}
+
+/** 单文件模式读到版本不同的 summary 时抛出;CLI 捕获后打印提示退出,不当成普通错误堆栈。 */
+export class IncompatibleResultsError extends Error {
+  constructor(readonly run: IncompatibleRun) {
+    super(incompatibleHint(run));
+    this.name = "IncompatibleResultsError";
+  }
+}
+
+interface ScanResult {
+  loaded: LoadedSummary[];
+  incompatible: IncompatibleRun[];
 }
 
 interface LeaderboardRow {
@@ -60,16 +98,16 @@ const TEMPLATE_PLACEHOLDERS = {
 
 /** 读最近一次运行的所有 EvalResult，供 --resume 跳过已通过的 eval。 */
 export async function loadMostRecentResults(root = ".niceeval"): Promise<EvalResult[]> {
-  const summaries = await loadSummaries(root);
+  const { loaded } = await loadSummaries(root);
   // loadSummaries 已按 startedAt 降序，第一个是最新的
-  return summaries[0]?.summary.results ?? [];
+  return loaded[0]?.summary.results ?? [];
 }
 
 export async function buildView(opts: ViewOptions = {}): Promise<string> {
-  const summaries = await loadSummaries(opts.input);
+  const scan = await loadSummaries(opts.input);
   const out = resolve(opts.out ?? ".niceeval/report.html");
   await mkdir(dirname(out), { recursive: true });
-  await writeFile(out, await renderHtml(summaries), "utf-8");
+  await writeFile(out, await renderHtml(scan), "utf-8");
   return out;
 }
 
@@ -138,7 +176,8 @@ async function serveArtifact(
   }
 }
 
-async function renderHtml(loaded: LoadedSummary[]): Promise<string> {
+async function renderHtml(scan: ScanResult): Promise<string> {
+  const { loaded, incompatible } = scan;
   const latest = loaded[0]?.summary;
   const rows = aggregateRows(loaded);
   const totals = summarizeAll(loaded);
@@ -153,6 +192,12 @@ async function renderHtml(loaded: LoadedSummary[]): Promise<string> {
     resultCount: String(totals.results),
     duration: formatDuration(totals.durationMs),
     cost: formatCost(totals.cost),
+    incompatibleRuns: incompatible.map((run) => ({
+      dir: run.dir,
+      schemaVersion: run.schemaVersion,
+      producerVersion: run.producerVersion,
+      command: incompatibleViewCommand(run),
+    })),
   };
 
   return template
@@ -203,30 +248,35 @@ function viewRoot(input?: string): string {
   }
 }
 
-async function loadSummaries(input?: string): Promise<LoadedSummary[]> {
+async function loadSummaries(input?: string): Promise<ScanResult> {
   const target = resolve(input ?? ".niceeval");
-  if (!existsSync(target)) return [];
+  if (!existsSync(target)) return { loaded: [], incompatible: [] };
   const root = viewRoot(input);
   const s = await stat(target);
   if (s.isFile()) {
+    // 单文件模式:版本不同直接抛 IncompatibleResultsError,由 CLI 打印提示退出。
     const summary = await readSummary(target);
     attachArtifactBase(summary, target, root);
-    return [{ path: target, summary }];
+    return { loaded: [{ path: target, summary }], incompatible: [] };
   }
 
   const candidates = await findSummaryFiles(target);
   const loaded: LoadedSummary[] = [];
+  const incompatible: IncompatibleRun[] = [];
   for (const path of candidates) {
     try {
       const summary = await readSummary(path);
       attachArtifactBase(summary, path, root);
       loaded.push({ path, summary });
-    } catch {
-      // Ignore unrelated JSON files under .niceeval.
+    } catch (e) {
+      // 版本不同的 run 不能无声消失:收集起来在 view 里占位提示;其余当无关 JSON 忽略。
+      if (e instanceof IncompatibleResultsError) incompatible.push(e.run);
     }
   }
   loaded.sort((a, b) => b.summary.startedAt.localeCompare(a.summary.startedAt));
-  return loaded;
+  // run 目录名是时间戳,降序 ≈ 最新在前。
+  incompatible.sort((a, b) => b.dir.localeCompare(a.dir));
+  return { loaded, incompatible };
 }
 
 /** 给每条 result 拼出相对 view 根的工件目录(前端据此 fetch trace.json 等)。 */
@@ -249,6 +299,15 @@ async function findSummaryFiles(dir: string): Promise<string[]> {
 
 async function readSummary(path: string): Promise<RunSummary> {
   const data = JSON.parse(await readFile(path, "utf-8")) as RunSummary;
+  // 版本判定:确定是 niceeval 报告但 schemaVersion 不同 → 不兼容,不解析、不迁移、不降级渲染。
+  // 缺版本字段的存量文件按 schemaVersion 1 处理(引入版本号不改其余格式)。
+  if (data.format === RESULTS_FORMAT && (data.schemaVersion ?? 1) !== RESULTS_SCHEMA_VERSION) {
+    throw new IncompatibleResultsError({
+      dir: relative(process.cwd(), dirname(path)) || ".",
+      schemaVersion: data.schemaVersion ?? 1,
+      producerVersion: data.producer?.version,
+    });
+  }
   if (!Array.isArray(data.results) || typeof data.startedAt !== "string") {
     throw new Error(`${path} is not a niceeval summary`);
   }
