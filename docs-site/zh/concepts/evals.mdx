@@ -100,7 +100,7 @@ evals/
    └─ refund.eval.ts  # id: billing/refund
 ```
 
-## 数组导出与 Dataset Fanout
+## 数组导出与数据驱动测试（dataset fan-out）
 
 一个文件也可以默认导出 `defineEval(...)` 数组，用同一套逻辑生成多个 case：
 
@@ -116,4 +116,4 @@ export default rows.map((row) =>
 );
 ```
 
-生成 ID 类似 `sql/0000`、`sql/0001`。详见 [Dataset Fanout](/zh/guides/dataset-fanout)。
+生成 ID 类似 `sql/0000`、`sql/0001`。详见 [数据驱动测试](/zh/guides/dataset-fanout)。

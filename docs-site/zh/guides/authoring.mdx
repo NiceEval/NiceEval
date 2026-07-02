@@ -1,7 +1,7 @@
 ---
 title: "编写 eval: 单轮、多轮和数据集模式"
 sidebarTitle: "编写 eval"
-description: "学习如何用 defineEval 编写 NiceEval eval，包括单轮断言、多轮对话、数据集扇出和 sandbox workspace。"
+description: "学习如何用 defineEval 编写 NiceEval eval，包括单轮断言、多轮对话、数据驱动测试和 sandbox workspace。"
 ---
 
 每个 NiceEval eval 都是一个 TypeScript 文件，默认导出 `defineEval(...)`。核心原则是：**路径即身份**、**一个文件一个 eval**、**线性书写并就地断言**。
@@ -75,7 +75,7 @@ export default defineEval({
 
 需要并行独立会话时，用 `t.newSession()`。
 
-## Dataset Fanout
+## 数据驱动测试（dataset fan-out）
 
 一个文件可以导出 eval 数组：
 
@@ -91,7 +91,7 @@ export default rows.map((row) =>
 );
 ```
 
-生成 ID 为 `sql/0000`、`sql/0001` 等。详见 [Dataset Fanout](/zh/guides/dataset-fanout)。
+生成 ID 为 `sql/0000`、`sql/0001` 等。详见 [数据驱动测试](/zh/guides/dataset-fanout)。
 
 ## Sandbox workspace
 
