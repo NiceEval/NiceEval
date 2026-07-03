@@ -27,5 +27,5 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // 跳过 _next 资源和任何带扩展名的静态文件(robots.txt、sitemap*.xml 等),避免它们被重定向到 /en/robots.txt。
-  matcher: ["/((?!_next|.*\\..*).*)"],
+  matcher: ["/((?!_next|docs|.*\\..*).*)"],
 };
