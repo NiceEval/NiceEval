@@ -1,6 +1,0 @@
-# 独立 npm 项目,不是父仓库(examples/ 之外)workspace 的成员——
-# 空 packages 列表让 pnpm 把这里当自己的 workspace 根,别顺着目录树网上找到
-# 仓库根的 pnpm-workspace.yaml。
-packages: []
-allowBuilds:
-  esbuild: true # tsx 依赖它拉平台原生二进制,不放行 dev/start 脚本跑不起来

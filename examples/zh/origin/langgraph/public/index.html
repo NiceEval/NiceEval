@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LangGraph example</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f5f5;
+    color: #1a1a1a;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 16px 96px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 20px; }
+  #log { display: flex; flex-direction: column; gap: 10px; }
+  .msg {
+    padding: 10px 14px;
+    border-radius: 10px;
+    max-width: 90%;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user { align-self: flex-end; background: #2563eb; color: white; }
+  .msg.assistant { align-self: flex-start; background: white; border: 1px solid #ddd; }
+  .msg.error { align-self: flex-start; background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+  .tool-call {
+    align-self: flex-start;
+    max-width: 90%;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+  .tool-call.pending { border-style: dashed; opacity: 0.8; }
+  .tool-call summary { cursor: pointer; font-weight: 600; }
+  .tool-call pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow-y: auto; }
+  form {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: white;
+    border-top: 1px solid #ddd;
+  }
+  form > div { max-width: 720px; margin: 0 auto; display: flex; gap: 8px; width: 100%; }
+  input[type="text"] {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #2563eb;
+    color: white;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { background: #93b4f0; cursor: not-allowed; }
+  #sessionInfo { font-size: 12px; color: #999; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LangGraph example</h1>
+  <p class="subtitle">
+    后端是手搭的 LangGraph <code>StateGraph</code>(agent -&gt; tools -&gt; agent 的
+    ReAct 循环),两个工具 <code>get_weather</code> / <code>calculate</code>。回复按
+    token 流式显示,工具调用展开可看参数和结果。
+  </p>
+  <div id="log"></div>
+  <div id="sessionInfo"></div>
+</main>
+<form id="composer">
+  <div>
+    <input id="input" type="text" placeholder="例如:北京天气怎么样?" autocomplete="off" />
+    <button id="send" type="submit">发送</button>
+  </div>
+</form>
+<script>
+  const log = document.getElementById("log");
+  const form = document.getElementById("composer");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("send");
+  const sessionInfo = document.getElementById("sessionInfo");
+
+  // 会话 = LangGraph 的 thread_id。第一次请求不带 sessionId,服务器生成一个新的
+  // 通过 "session" 帧发回来,之后每一轮都带上它,同一个 thread 里的对话就有记忆了。
+  let sessionId = null;
+
+  function addMessage(role, text) {
+    const div = document.createElement("div");
+    div.className = "msg " + role;
+    div.textContent = text;
+    log.appendChild(div);
+    div.scrollIntoView({ behavior: "smooth", block: "end" });
+    return div;
+  }
+
+  // 工具调用气泡按 toolCallId 索引,tool-output 到达时原地补上输出。
+  const toolEls = new Map();
+
+  function renderToolInput(ev) {
+    const details = document.createElement("details");
+    details.className = "tool-call pending";
+    const summary = document.createElement("summary");
+    summary.textContent = "⚙ " + ev.name;
+    const pre = document.createElement("pre");
+    pre.textContent = "input:  " + JSON.stringify(ev.input, null, 2);
+    details.appendChild(summary);
+    details.appendChild(pre);
+    log.appendChild(details);
+    toolEls.set(ev.toolCallId, details);
+    details.scrollIntoView({ block: "end" });
+  }
+
+  function renderToolOutput(ev) {
+    const details = toolEls.get(ev.toolCallId);
+    if (!details) return;
+    details.classList.remove("pending");
+    details.querySelector("pre").textContent += "\noutput: " + JSON.stringify(ev.output, null, 2);
+  }
+
+  // 当前这条 assistant 消息的文本容器——"text-delta" 事件按到达顺序追加进去,
+  // 下一个非文本事件(工具调用)或用户发新消息时清空引用,开启下一条气泡。
+  let currentAssistantEl = null;
+
+  function handleEvent(ev) {
+    switch (ev.type) {
+      case "session":
+        sessionId = ev.sessionId;
+        sessionInfo.textContent = "session: " + sessionId;
+        break;
+      case "text-delta":
+        if (!currentAssistantEl) currentAssistantEl = addMessage("assistant", "");
+        currentAssistantEl.textContent += ev.delta;
+        currentAssistantEl.scrollIntoView({ block: "end" });
+        break;
+      case "tool-input":
+        currentAssistantEl = null;
+        renderToolInput(ev);
+        break;
+      case "tool-output":
+        renderToolOutput(ev);
+        break;
+      case "error":
+        currentAssistantEl = null;
+        addMessage("error", "错误: " + ev.message);
+        break;
+      case "finish":
+        currentAssistantEl = null;
+        break;
+      default:
+        break;
+    }
+  }
+
+  // POST + SSE:EventSource 只支持 GET,所以用 fetch 读 text/event-stream,
+  // 按空行切帧、抠 "data: " 前缀。
+  async function streamChat(message) {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, sessionId }),
+    });
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || ("HTTP " + res.status));
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (;;) {
+        const frameEnd = buffer.indexOf("\n\n");
+        if (frameEnd === -1) break;
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("data: ")) handleEvent(JSON.parse(line.slice(6)));
+        }
+      }
+    }
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const message = input.value.trim();
+    if (!message) return;
+
+    addMessage("user", message);
+    currentAssistantEl = null;
+    input.value = "";
+    sendBtn.disabled = true;
+
+    try {
+      await streamChat(message);
+    } catch (err) {
+      addMessage("error", "错误: " + (err && err.message ? err.message : String(err)));
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  });
+</script>
+</body>
+</html>

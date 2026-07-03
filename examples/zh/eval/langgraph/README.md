@@ -4,8 +4,8 @@
 `get_weather` / `calculate` + `MemorySaver` checkpointer)的基础上接入 niceeval。应用代码
 (`server.ts` / `agent/` / `observability.ts` / `public/`)复制自
 [`examples/zh/origin/langgraph`](../../origin/langgraph/) 的一个早期快照——origin 那份后来
-已按 LangGraph 官方形态重写(`createAgent` + Agent Server + `useStream`,不再有自写的
-`/api/chat`),这里保留旧的 `node:http` + JSON 接口不动,因为下面的 adapter 依赖它;
+重写成了纯 Python 项目(手搭 `StateGraph` + 标准库 `http.server`),和这里的 TS 实现在
+语言层面就分道扬镳了,这里保留旧的 `node:http` + JSON 接口不动,因为下面的 adapter 依赖它;
 niceeval 相关的东西全部是新增文件:
 
 - `agents/langgraph.ts`——deployed agent 风格的 adapter(见

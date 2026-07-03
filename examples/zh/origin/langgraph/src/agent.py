@@ -1,24 +1,30 @@
-"""LangChain 1.x 的推荐写法:create_agent(内部就是一个编译好的 LangGraph 图)。
+"""正经的 LangGraph 用法:手搭一个两节点的 `StateGraph`(agent -> tools -> agent 的
+ReAct 循环),不走 `langchain.agents.create_agent` 这类高层封装——这样 `langgraph`
+才是这个项目里真正被 import、被调用的库,而不是隐藏在 LangChain 的 agent 工厂背后。
 
-从这里 export `agent`,langgraph.json 的 graphs.agent 指到 "./src/agent.py:agent",
-由 Agent Server(`langgraph dev`)加载并对外提供线程管理 + 流式 API——服务器我们
-一行都不用写。
+节点、条件边、`ToolNode`、`tools_condition`、checkpointer 全部来自 `langgraph`
+本身(`langgraph.graph` / `langgraph.prebuilt` / `langgraph.checkpoint.memory`)。
+`InMemorySaver` 让同一个 thread_id 内的多轮对话有记忆——进程重启就丢,演示用足够。
 
-可观测性:Python 版 langsmith SDK 是真·零代码——设好 LANGSMITH_TRACING /
+可观测性:Python 版 langsmith SDK 是零代码——设好 LANGSMITH_TRACING /
 LANGSMITH_OTEL_ENABLED / LANGSMITH_OTEL_ONLY / OTEL_EXPORTER_OTLP_ENDPOINT 四个
-环境变量(见 .env.example),import langchain 时自动挂 OTel hook,不像 JS 版还要
-显式调一次 initializeOTEL()。所以这个项目没有 observability 模块。
+环境变量(见 .env.example),`langchain_core` 的默认 tracing callback 第一次真的
+调模型时就会按这些变量自动接好 OTel exporter,不需要显式初始化代码。
 """
 
 from __future__ import annotations
 
 import os
 
-from langchain.agents import create_agent
+from langchain_core.messages import SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph, MessagesState, START
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
 
-_SYSTEM_PROMPT = """你是一个乐于助人的中文 AI 助手。
+SYSTEM_PROMPT = """你是一个乐于助人的中文 AI 助手。
 需要天气信息时调用 get_weather,并用工具返回的数据作答,不要凭空编造天气。
 需要精确计算时调用 calculate,把表达式交给它算,不要心算。
 普通闲聊不要调用任何工具。回复保持中文、友好、简洁。"""
@@ -134,19 +140,37 @@ def calculate(expression: str) -> dict:
     return {"expression": expression, "result": _calculate(expression)}
 
 
+_TOOLS = [get_weather, calculate]
+
 # ---------------------------------------------------------------------------
-# agent 本体。不配 checkpointer:Agent Server 自己管线程持久化(thread = 会话),
-# 本地 dev 模式存内存,重启服务器就丢——演示用足够了。
+# 图本体:START -> agent -> (有 tool_calls ? tools : END),tools -> agent 循环。
 # ---------------------------------------------------------------------------
 
-_llm = ChatOpenAI(
-    model=os.getenv("AGENT_MODEL", "gpt-4o-mini"),
-    base_url=os.getenv("OPENAI_BASE_URL") or None,
-    api_key=os.getenv("OPENAI_API_KEY"),
-)
 
-agent = create_agent(
-    model=_llm,
-    tools=[get_weather, calculate],
-    system_prompt=_SYSTEM_PROMPT,
-)
+def build_agent() -> CompiledStateGraph:
+    llm = ChatOpenAI(
+        model=os.getenv("AGENT_MODEL", "gpt-4o-mini"),
+        base_url=os.getenv("OPENAI_BASE_URL") or None,
+        api_key=os.getenv("OPENAI_API_KEY"),
+    )
+    llm_with_tools = llm.bind_tools(_TOOLS)
+
+    def call_model(state: MessagesState) -> dict:
+        messages = state["messages"]
+        if not messages or not isinstance(messages[0], SystemMessage):
+            messages = [SystemMessage(SYSTEM_PROMPT), *messages]
+        response = llm_with_tools.invoke(messages)
+        return {"messages": [response]}
+
+    graph = StateGraph(MessagesState)
+    graph.add_node("agent", call_model)
+    graph.add_node("tools", ToolNode(_TOOLS))
+    graph.add_edge(START, "agent")
+    # tools_condition 读最后一条 AIMessage:有 tool_calls 就路由到 "tools" 节点,
+    # 否则路由到 "__end__"(langgraph 内部识别这个字面量,不用手动映射到 END)。
+    graph.add_conditional_edges("agent", tools_condition)
+    graph.add_edge("tools", "agent")
+
+    # 不配持久化 checkpointer——InMemorySaver 让同一个 thread_id 在进程存活期间
+    # 有多轮记忆,重启即丢,演示用足够;生产场景换 PostgresSaver 之类的持久实现。
+    return graph.compile(checkpointer=InMemorySaver())

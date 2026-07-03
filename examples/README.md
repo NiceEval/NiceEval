@@ -22,7 +22,7 @@
 | 目录 | 应用形态 | 前后端接口 |
 |---|---|---|
 | [`zh/origin/ai-sdk-v7/`](zh/origin/ai-sdk-v7/) | AI SDK v7 聊天应用（HTTP 服务器 + React UI） | AI SDK UI message stream + `useChat` |
-| [`zh/origin/langgraph/`](zh/origin/langgraph/) | **Python** LangChain 1.x `create_agent` + **LangSmith** OTel 导出（Python 版真·零代码，纯 env 驱动） | Agent Server（`langgraph dev`）+ React `@langchain/react` 的 `useStream()`（Python 后端 + TS 前端跨语言） |
+| [`zh/origin/langgraph/`](zh/origin/langgraph/) | **纯 Python**：`langgraph.graph.StateGraph` 手搭的 ReAct 循环（不走 `create_react_agent`/`create_agent` 高层封装）+ **LangSmith** OTel 导出（Python 版真·零代码，纯 env 驱动） | 标准库 `http.server` 手写 SSE（`POST /api/chat`）+ 单文件 `public/index.html`（无前端构建、无跨语言） |
 | [`zh/origin/claude-agent-sdk/`](zh/origin/claude-agent-sdk/) | **Claude Agent SDK**（`@anthropic-ai/claude-agent-sdk`，MCP 工具 + resume 续会话） | SSE 透传 `SDKMessage` 流（官方 hosting 形态，`includePartialMessages` 逐 token 出字） |
 | [`zh/origin/codex-sdk/`](zh/origin/codex-sdk/) | **Codex SDK**（`@openai/codex-sdk`，coding-agent-in-a-directory 的任务形状） | SSE 透传 `runStreamed()` 的 `ThreadEvent` 流 |
 | [`zh/origin/vm0/`](zh/origin/vm0/) | **vm0**（托管 agent 运行时，`vm0.yaml` agent compose + 平台沙箱跑 claude-code） | 后端打 vm0 公开 REST 契约（创建 run + 轮询 events），SSE 转发 claude-code stream-JSON 事件 |
