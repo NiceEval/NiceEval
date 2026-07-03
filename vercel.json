@@ -1,6 +1,7 @@
 {
   "buildCommand": "pnpm run site:build",
   "installCommand": "pnpm install",
+  "outputDirectory": "site/.next",
   "rewrites": [
     {
       "source": "/docs",
