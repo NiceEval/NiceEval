@@ -44,6 +44,8 @@ interface AgentContext {
 
 `send` 是**统一动词**,`Turn.events` 是**统一产物**。区别只在 `send` 内部怎么把原始返回变成 `events`——这就是 adapter 的核心难点。
 
+![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 调用你的应用并返回标准事件流 Turn。](../../docs-site/images/agent-turn-roundtrip-zh.svg)
+
 `defineSandboxAgent` / `defineAgent`(见 `src/define.ts`)产出的都是这个 `Agent`,差别只在默认能力位(下一节)和语义:沙箱型的 `send` 在沙箱里 spawn CLI,remote 的 `send` 进程内调函数或发 HTTP。`setup` 装 CLI 这类"每个沙箱一次就够"的动作不要放 `send`——多轮时 `send` 会被调多次,放里面等于每轮重装。
 
 ## 能力位:每个位是一条承诺

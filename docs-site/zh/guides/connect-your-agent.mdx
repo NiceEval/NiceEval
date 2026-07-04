@@ -35,7 +35,7 @@ import { defineAgent } from "niceeval/adapter";
 export default defineAgent({
   name: "my-bot",
   async send(input, ctx) {
-    const r = await fetch(`${process.env.MY_BOT_URL}/chat`, {
+    const r = await fetch("http://localhost:3000/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: input.text }),
@@ -50,7 +50,16 @@ export default defineAgent({
 });
 ```
 
-agent runtime 就在当前代码库里的话，`fetch` 换成直接调用即可。`send` 的完整契约（`TurnInput` / `AgentContext` / `Turn` 各字段）见 [Adapter](/zh/concepts/adapter)。
+URL 先写死没关系——怎么把它从 experiment 传进来，见下文[「参数怎么进」](#参数怎么进：experiment-声明，adapter-消费)。`send` 的完整契约（`TurnInput` / `AgentContext` / `Turn` 各字段）见 [Adapter](/zh/concepts/adapter)。
+
+就算 agent runtime 和 eval 在同一个代码库里，也照样走 HTTP，不要把 `fetch` 换成进程内的函数直调：
+
+- **直调评的不是用户走的那条链路。**HTTP 层、序列化、中间件、流式传输全被绕过，eval 通过不代表线上行为正确。
+- **进程不隔离，结果不可复现。**被测代码的崩溃、全局状态、内存泄漏会连累运行器；并发跑多条 eval 时共享状态互相污染。
+- **超时与取消会失效。**`ctx.signal` 挂在请求上才能真正掐掉一轮跑飞的 agent；进程内的函数调用停不下来。
+- **adapter 会被焊死在这个代码库里。**走 HTTP 的 adapter 换个 `baseUrl` 就能对着本地 / 预发 / 生产跑（见下文两个 experiment 文件的写法）；直调做不到。
+
+起一个本地 dev server 的成本只是一条命令，上面这些换不来。
 
 **2. 注册进一个 experiment：**
 
@@ -99,23 +108,20 @@ npx niceeval view              # 本地查看器里看结果
 1. **静态配置走 Adapter 工厂。**URL、鉴权、协议细节这类"这个环境长什么样"的配置，作为工厂参数写在 experiment 文件里——`defineExperiment` 的 `agent` 字段放的是**已经配置好的实例**。
 2. **每轮动态值走 `ctx`。**experiment 声明的 `model`、`flags`，运行器每轮经 `ctx` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发给应用。
 
-两条通道拼在一起就是完整的传参链路：
+两条通道拼在一起，就是把第一步的 my-bot 从「写死 URL 的实例」改成「收配置的工厂」：default export 换成一个返回 `defineAgent(...)` 的函数，`send` 里写死的地方换成读工厂参数；experiment 声明的 `model`、`flags` 每轮从 `ctx` 到达，`send` 里随请求转发：
 
 ```ts
-// agents/web-agent.ts —— 工厂：静态配置进闭包
+// agents/my-bot.ts —— 工厂：静态配置进闭包
 import { defineAgent } from "niceeval/adapter";
 import type { Agent } from "niceeval/adapter";
 
-export function webAgent(options: { baseUrl: string; apiKey?: string }): Agent {
+export function myBot(options: { baseUrl: string }): Agent {
   return defineAgent({
-    name: "web-agent",
+    name: "my-bot",
     async send(input, ctx) {
-      const res = await fetch(`${options.baseUrl}/api/turn`, {   // ← 工厂配置：连哪
+      const r = await fetch(`${options.baseUrl}/chat`, {   // ← 工厂配置：连哪
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(options.apiKey ? { authorization: `Bearer ${options.apiKey}` } : {}),
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           message: input.text,
           model: ctx.model,     // ← experiment.model：应用接口收模型选择就转发
@@ -123,25 +129,28 @@ export function webAgent(options: { baseUrl: string; apiKey?: string }): Agent {
         }),
         signal: ctx.signal,     // ← 运行器的超时与取消：挂到每个请求上
       });
-      const body = await res.json();
-      return { status: res.ok ? "completed" : "failed", events: body.events };
+      const body = await r.json();
+      return {
+        status: r.ok ? "completed" : "failed",
+        events: [{ type: "message", role: "assistant", text: body.reply }],
+      };
     },
   });
 }
 ```
 
+鉴权 header、协议开关这类同属静态配置，一样加进 `options`。experiment 侧对应两处小改：具名导入工厂，`agent` 字段从「引用实例」变成「调用工厂」：
+
 ```ts
-// experiments/staging.ts —— 参数的声明处
+// experiments/my-bot.ts —— 参数的声明处
 import { defineExperiment } from "niceeval";
-import { webAgent } from "../agents/web-agent.ts";
+import { myBot } from "../agents/my-bot.ts";
 
 export default defineExperiment({
-  agent: webAgent({                                  // ← 静态配置：实例化时传
-    baseUrl: "https://staging.example.com",
-    apiKey: process.env.STAGING_AGENT_API_KEY,
-  }),
-  model: "gpt-5.4",                                  // ← 动态值：经 ctx.model 到 send
-  flags: { promptVariant: "concise" },               // ← 动态值：经 ctx.flags 到 send
+  description: "my-bot 基线",
+  agent: myBot({ baseUrl: "http://localhost:3000" }),  // ← 静态配置：实例化时传
+  model: "gpt-5.4",                                    // ← 动态值：经 ctx.model 到 send
+  flags: { promptVariant: "concise" },                 // ← 动态值：经 ctx.flags 到 send
 });
 ```
 
@@ -151,16 +160,28 @@ export default defineExperiment({
 |---|---|---|
 | `signal` | 运行器（超时与取消） | 挂到发出的每个请求上 |
 | `model` | experiment 的 `model` | 应用接口收模型选择就随请求转发；不收就忽略 |
-| `flags` | experiment 的 `flags` | 原样转发（请求体、header、环境变量都行），应用按 flag 切换变体 |
+| `flags` | experiment 的 `flags` | 原样转发（请求体、header 都行），应用按 flag 切换变体 |
 | `telemetry` | 配置了 OTel 接入时出现 | `endpoint` / `headers` / `env` 交给应用或注入子进程，见 [OTel 接入](/zh/guides/connect-otel) |
 | `session` | 运行器（每条会话线一份状态槽） | 一般不直接碰——官方会话件替你存取，见[写 send](/zh/guides/write-send) |
 | `log(msg)` | 运行器 | 写进本轮日志，`niceeval view` 里可见 |
 
-同一个 agent 对着本地和生产分别跑，就是两个 experiment 文件、两份工厂参数（或走环境变量）：
+同一个 agent 对着本地和生产分别跑，就是两个 experiment 文件、两份工厂参数：
+
+```ts
+// experiments/local.ts
+export default defineExperiment({
+  agent: myBot({ baseUrl: "http://localhost:3000" }),
+});
+
+// experiments/prod.ts
+export default defineExperiment({
+  agent: myBot({ baseUrl: "https://api.example.com" }),
+});
+```
 
 ```bash
-MY_BOT_URL=http://localhost:3000/chat npx niceeval exp local
-MY_BOT_URL=https://api.example.com/chat npx niceeval exp prod
+npx niceeval exp local
+npx niceeval exp prod
 ```
 
 不要把 URL 放进 CLI 位置参数——experiment 名之后的位置参数只用于过滤 eval ID。experiment 的完整字段（`runs`、`budget`、并发、`sandbox`）见[写实验](/zh/guides/write-experiment)。
