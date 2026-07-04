@@ -60,6 +60,7 @@ interface TurnInput {
   readonly text: string;                   // 发送的文本；respond 轮 = 回答文本
   readonly files?: readonly InputFile[];   // t.sendFile 附带的文件（base64）
   readonly responses?: readonly InputResponse[];  // 仅 respond / respondAll 轮：逐请求的结构化回答
+  readonly outputSchema?: JsonSchema;      // 仅当 eval 在 send 上声明了 output：结构化输出要求，已降为 JSON Schema
 }
 
 interface InputResponse {
@@ -69,7 +70,7 @@ interface InputResponse {
 }
 ```
 
-eval 侧不管调的是 `t.send()`、`t.sendFile()` 还是 `t.respond()`，到 Adapter 时都是一次普通的 `send`，差别全在这三个字段里：`text` 每轮都有；`files` 只在 `t.sendFile` 时出现，接口不收文件就忽略；`responses` 只在 HITL 回答轮出现，逐条带着 `{ requestId, optionId }`——你不需要解析文本去猜哪句回答对应哪个请求。
+eval 侧不管调的是 `t.send()`、`t.sendFile()` 还是 `t.respond()`，到 Adapter 时都是一次普通的 `send`，差别全在这几个字段里：`text` 每轮都有；`files` 只在 `t.sendFile` 时出现，接口不收文件就忽略；`responses` 只在 HITL 回答轮出现，逐条带着 `{ requestId, optionId }`——你不需要解析文本去猜哪句回答对应哪个请求；`outputSchema` 只在 eval 对这一轮声明了结构化输出要求时出现（见下面 `Turn.data` 的规则），应用接口收 schema 就转发（Chat Completions 的 `response_format`、Responses 的 `text.format`），不收也没关系——校验反正发生在运行器。
 
 ### 上下文：`AgentContext`
 
@@ -92,7 +93,7 @@ interface AgentSession {
 ```ts
 interface Turn {
   readonly events: StreamEvent[];          // ★ 标准事件流——每个 Adapter 的核心产物
-  readonly data?: unknown;                 // 仅当回答本身是结构化对象时填（喂 outputEquals / outputMatches）
+  readonly data?: JsonValue;               // 本轮结构化产物；仅当 input.outputSchema 出现时填，运行器按声明校验
   readonly status: "completed" | "failed" | "waiting";  // waiting = 停轮等人（HITL）
   readonly usage?: Usage;
 }
@@ -110,6 +111,18 @@ interface Turn {
 
 对象统共九种类型（`message`、`action.*`、`input.requested`……完整清单见[事件流参考](/zh/reference/events)）。断言读的就是这个数组：`t.calledTool("get_weather")` 数 `action.called`，`t.reply` 取最后一条 assistant `message`。注意 `send` 每次只返回**本轮**的数组——跨轮拼成整条会话线是运行器的事，见下一节。多数情况下你也不手写这些对象：官方转换器的返回值就是一个填好 `events`、`usage`、`status` 的完整 `Turn`，怎么选转换器见[写 send](/zh/concepts/write-send)。
 
+`data` 不是"随便放点什么"的口袋，它只有一条规则：**要什么，由 eval 在 send 上用 schema 声明；声明了才有 data，拿到手就是声明的类型。**
+
+```ts
+// eval 侧：output 声明既是给应用的要求，也是 turn.data 的类型来源
+const turn = await t.send("这张发票总额多少?", {
+  output: z.object({ amount: z.number(), currency: z.string() }),
+});
+turn.data.amount;   // 类型是 number——不是 unknown，不用手动收窄
+```
+
+声明降为 JSON Schema 后经 `input.outputSchema` 到达 Adapter；Adapter 拿到应用的返回后把结构化产物放进 `data`（比如 `JSON.parse(reply.content)`）。**校验是运行器强制的**：`data` 不匹配声明，本轮直接 `failed` 并报出差异——不存在"塞了个错的对象、断言静默通过"这条路。反过来，没声明 `output` 的轮次没有 `data`：只回文本的应用永远不碰这个字段，不要把原始响应 body 复制进去凑数。
+
 ### send 返回之后：Turn 的四个字段各去哪
 
 `send` 一 return，Adapter 的工作就结束了——剩下全是运行器的事。四个字段各有明确去向：
@@ -119,7 +132,7 @@ interface Turn {
 | `events` | 追加进本会话线的事件流，`deriveRunFacts` 折叠成事实（`toolCalls`、`parked`、`messageCount`…）；最后一条 assistant `message` 同时更新 `t.reply` | 全部作用域断言：`t.calledTool()`、`t.messageIncludes()`…；`t.events` 可直接查 |
 | `status` | 记录本轮终态；`"waiting"` 时把本轮的 `input.requested` 收进待答列表 | `t.succeeded()` / `t.parked()`；`"waiting"` 之后用 `t.respond()` 接 |
 | `usage` | 逐轮累加到会话线与整次运行 | `maxTokens` / `maxCost` 评分器、报告里的用量 |
-| `data` | 原样保存为本轮的结构化输出 | `outputEquals` / `outputMatches` |
+| `data` | 按 send 上声明的 `output` schema 校验——不匹配本轮直接 `failed`；通过才保存 | `turn.data`（按声明强类型）、`outputEquals` |
 
 `await t.send()` 拿到的句柄就是对这一轮 Turn 的视角：turn 级断言（`draft.parked()` 这类）只看这一轮的 `events`，`t` 级断言看整条会话线累计的。所以 Adapter 不需要"配合"任何断言——把这四个字段填对，断言、评分、报告全部在下游自动发生。
 
