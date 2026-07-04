@@ -17,7 +17,7 @@ export default uiMessageStreamAgent({
   body: (ctx) => ({ model: ctx.model }),
   // usage 协议帧里没有,从应用官方 @ai-sdk/otel 集成产的 GenAI spans 派生补上;
   // 工具/消息事件工厂已从协议直构,同 callId / 同文本的 span 派生结果自动去重。
-  // 这一行本身就是 OTel 接入的全部触发条件——不需要再声明能力位:
+  // OTel 接入由这一行 events 声明自身触发,不需要其它声明:
   events: otelEvents({ dialects: [otel.genAi] }),
   // 应用用 BatchSpanProcessor,流结束后留一段宽限让最后一批 span 落进本轮收集窗口
   // (配合启动应用时的 OTEL_BSP_SCHEDULE_DELAY=200,见 README;只影响瀑布图/usage)。
