@@ -75,7 +75,13 @@ npx niceeval exp my-bot   # 跑起来
 npx niceeval view         # 本地查看器里看结果
 ```
 
-到这里第一条 eval 已经跑通。接下来的每一步都是给 adapter 加可选增量：工具调用事件（解锁 `t.calledTool()`）、多轮会话、HITL、tracing——顺着[接入你的 Agent](/zh/guides/connect-your-agent) 逐层往下走即可，已写的 eval 不用改。
+到这里第一条 eval 已经跑通。
+
+<Warning>
+这个最小 adapter 是**单轮**的：`t.send()` 可以连调多次，但每一轮都是独立的——第二轮不会记得第一轮说了什么，因为 adapter 还没告诉应用"历史怎么接上"。这不是 bug，是最短路径故意留白的第一个增量。你的应用接口收会话 id 的，透传 id 即可；服务端无状态的，由 adapter 拼接完整历史发过去——两种写法见[接入你的 Agent](/zh/guides/connect-your-agent)第三步。
+</Warning>
+
+接下来的每一步都是给 adapter 加可选增量：工具调用事件（解锁 `t.calledTool()`）、多轮会话（解锁跨轮记忆与 `t.newSession()` 隔离断言）、HITL、tracing——顺着[接入你的 Agent](/zh/guides/connect-your-agent) 逐层往下走即可，已写的 eval 不用改。
 
 ## 按场景走
 
