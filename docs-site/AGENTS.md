@@ -23,7 +23,7 @@
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。
 - **HITL**：human-in-the-loop，人工介入。第一次出现时写全称或中文解释。
 - **OTel 接入**：Tier 2 的接入方式。只在讲 `send + OTel` 时使用，不要把 OTel 写进 Tier 1。
-- **flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
+- **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 
 ## 写作规则
@@ -31,11 +31,10 @@
 - 只在 @docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译
 - 新增或重命名页面时同时更新 `docs.json`，必要时加 redirect，避免旧链接断掉。
 - 链接示例必须指向真实存在的 `examples/` 目录；当前完整示例主要在 `examples/zh/`。
-- MDX frontmatter 至少包含 `title` 和 `description`；`sidebarTitle` 用于缩短侧边栏显示。
 - 工作流写成 guide，字段全集写成 reference，概念边界写成 concepts。不要把一个页面同时写成教程、设计文档和 API 字典。
 - 命令、路径、flag、文件名、包名、代码标识用反引号。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。
-
+- 写作指南: docs-site/docs-ref/00-index.md
 
 ## 校验
 
@@ -45,5 +44,3 @@
 PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm run docs:validate
 PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm run docs:links
 ```
-
-Mintlify CLI 目前需要 LTS Node，例如 Node 22。两个命令要串行跑，避免 `npx` 缓存冲突。

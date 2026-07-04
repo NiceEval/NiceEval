@@ -1,7 +1,7 @@
 ---
-title: "写 send：从一条消息到完整接入"
-sidebarTitle: "写 send"
-description: "手写 Adapter 的 send 函数，一条主线六步走：发消息拿回复、接上之前的消息、把工具解析成事件、HITL 停轮续跑、接上 OTel trace、透传 experiment 的 flags。每一步只在上一步的代码上多几行，每一步解锁一组断言。"
+title: "如何写好 Send"
+sidebarTitle: "如何写好 Send"
+description: "手写 Adapter 的 send 函数，一条主线七步走：发消息拿回复、接上之前的消息、记录消费、把工具解析成事件、HITL 停轮续跑、接上 OTel trace、透传 experiment 的 flags。每一步只在上一步的代码上多几行，每一步解锁一组断言。"
 ---
 
 [Adapter](/zh/concepts/adapter) 讲了契约：`send` 传入 `TurnInput` 和 `AgentContext`，返回 `Turn`。这一页讲怎么写它——从"发一条消息拿到回复"的最小形态起步，一步一步加到完整接入。每一步只在上一步的代码上多几行，前面已有的部分在代码里用 `// ……省略` 标出；每一步末尾说明这几行解锁了哪些断言。
@@ -115,7 +115,27 @@ const session = serverSession();               // 替换 clientHistory；defineA
 
 **这一步解锁**：多轮对话，以及 `t.newSession()` 的会话隔离。
 
-## 第三步：把工具解析成事件
+## 第三步：记录消费
+
+答对了但烧掉十倍 token 的 agent，不该跟省着用的拿一样的分。消费是 `Turn` 上和 `events`、`status` 并列的第四个字段 `usage`：应用接口回了用量就如实填上，运行器逐轮累加到会话线与整次运行。Chat Completions 形返回自带 `usage`，照抄进来——`send` 的其余部分和第二步完全一样：
+
+```ts
+    // ……transport 与会话同第二步，省略
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: reply.content }],
+      usage: {                                        // ← 变化：把接口回的用量如实报上
+        inputTokens: res.usage.prompt_tokens,
+        outputTokens: res.usage.completion_tokens,
+      },
+    };
+```
+
+`Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheWriteTokens`、请求次数 `requests`，以及 `costUSD`——网关回了实测成本就填它，优先于价格表估算。接口不回用量就整个不填 `usage`，其它断言不受影响。这段照抄也是过渡：下一步的官方转换器会连 `usage` 一起填好。
+
+**这一步解锁**：`t.maxTokens()` / `t.maxCost()` 评分器（`maxCost` 用 `costUSD` 或配置里的价格表估算），以及报告和 `niceeval view` 里的用量。
+
+## 第四步：把工具解析成事件
 
 应用的返回里不只有回复文本——Chat Completions 形返回的 `tool_calls` 记录了这轮调过什么工具。Adapter 最重要的工作就是**把接口的返回归一成标准事件流**：本轮发生的每件事一个对象，按真实发生顺序排进 `Turn.events`，对象是下面九种类型之一（各字段的实际值，[契约页有一轮的完整示例](/zh/concepts/adapter)）：
 
@@ -137,7 +157,7 @@ type StreamEvent =
 解析就是一张"返回字段 → 事件"的映射。手写出来长这样——`send` 的其余部分和第二步完全一样：
 
 ```ts
-    // ……transport 与会话同第二步，省略
+    // ……transport 与会话同第二步，usage 同第三步，省略
     const reply = res.choices[0].message;
 
     const events: StreamEvent[] = [];
@@ -147,14 +167,14 @@ type StreamEvent =
     }
     if (reply.content) events.push({ type: "message", role: "assistant", text: reply.content });
 
-    return { events, status: "completed" };
+    return { events, status: "completed", usage };
 ```
 
-但这段循环通常**不用你写**。返回是标准形状时，官方转换器一行顶替上面全部——`events`、`usage`、`status` 都在返回值里，拿来直接 `return`：
+但这段循环通常**不用你写**。返回是标准形状时，官方转换器一行顶替上面全部——`events`、`status`、连第三步手抄的 `usage` 都在返回值里，拿来直接 `return`：
 
 ```ts
     // ……transport 与会话同第二步，省略
-    return fromChatCompletion(res);            // ← 上面那段映射的官方版
+    return fromChatCompletion(res);            // ← 上面那段映射加第三步的 usage，官方版
 ```
 
 接口不是这个形状，就换对应的件：
@@ -177,14 +197,14 @@ type StreamEvent =
 |---|---|
 | `message` | `t.reply`、`t.messageIncludes()`、judge 的对话材料 |
 | `action.called` / `action.result`（靠 `callId` 配对） | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
-| `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第四步） |
+| `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第五步） |
 | `thinking` / `compaction` / `error` | 对应断言与 o11y 计数 |
 
 一个如实交代：Chat Completions 这个形状**不承诺**"返回 = 全量过程记录"（应用完全可能在服务端跑完工具循环、只把最终答案吐给你），所以 `fromChatCompletion` 的返回不带完整性证明——`calledTool` 这类正断言照常可用，`notCalledTool` 这类负断言会提示不可信。Responses 形正相反：协议契约承诺 `output` 数组记录全过程，`fromResponses` 的返回自带完整性证明，负断言可信。同样零映射，可信度的差别完全来自接口形状本身。
 
 **这一步解锁**：`t.calledTool()`、`t.toolOrder()`、`t.maxToolCalls()`、`t.noFailedActions()` 等整族工具断言。
 
-## 第四步：HITL 停轮与续跑
+## 第五步：HITL 停轮与续跑
 
 应用中途停下来等人（工具审批、等补充信息）时，`send` 两侧各有义务：
 
@@ -193,7 +213,7 @@ type StreamEvent =
 
 "停轮时读了一半的现场"（比如一条读到一半的 SSE 流）存在会话线状态里，官方件 `pausable<TState>()` 替你存取：停轮时 `hold(ctx, state)`，回答轮开头 `take(ctx)`。
 
-HITL 几乎总是发生在流式接口上（停在流中间），所以这一步的示例换成一个以 SSE 透传原生事件的应用——它同时用上前三步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）：
+HITL 几乎总是发生在流式接口上（停在流中间），所以这一步的示例换成一个以 SSE 透传原生事件的应用——它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）：
 
 ```ts
 // agents/my-app.ts
