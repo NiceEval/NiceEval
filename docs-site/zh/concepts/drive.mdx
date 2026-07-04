@@ -98,7 +98,7 @@ await t.respond({ request, optionId: "approve" });
 t.calledTool("send_email");
 ```
 
-`t.requireInputRequest(filter)` 把一个待处理的 HITL 请求变成可检查、可回应的具体值——如果匹配到 0 个或超过 1 个待处理请求就会抛出,所以尽量把能填的 filter 字段都填上(`id` / `prompt` / `display` / `action` / `optionIds` / `input`)来消歧。`t.respond(...)` 回答它并发出下一轮;在底层它只是又一次普通的 `send`:回答文本进 `input.text`,同时以 `{ requestId, optionId }` 的结构化形式逐条进 `input.responses`——adapter 不用解析文本,按 `requestId` 就能对上"哪个回答给哪个请求"。
+`t.requireInputRequest(filter)` 把一个待处理的 HITL 请求变成可检查、可回应的具体值——如果匹配到 0 个或超过 1 个待处理请求就会抛出,所以尽量把能填的 filter 字段都填上(`id` / `prompt` / `display` / `action` / `optionIds` / `input`)来消歧。`t.respond(...)` 回答它并发出下一轮;每个参数是一条回答:字符串按待处理请求的顺序对位,`{ request, optionId }` 对象形式显式指名(多个请求并停时用它)。在底层它只是又一次普通的 `send`:回答文本进 `input.text`,同时以结构化形式逐条进 `input.responses`——命中请求选项的回答带 `{ requestId, optionId }`,自由文本回答带 `{ requestId, text }`,adapter 不用解析文本,按 `requestId` 就能对上"哪个回答给哪个请求"。每种回答到 adapter 长什么样,见[不同回答的入参](/zh/concepts/agents-adapters#不同回答的入参)。
 
 如果当前轮有多个同类待处理请求、都该给同一个答案(比如逐个批准一批文件改动),用 `t.respondAll(optionId)` 一次性处理,不用挨个解。`optionId` 会先对每条待处理请求校验——不在请求的 `options` 里就直接抛错,打错的字不会被静默当成别的答案发出去：
 

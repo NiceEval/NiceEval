@@ -1,7 +1,7 @@
 ---
 title: "NiceEval agents 与 adapters：连接任意 AI 系统"
 sidebarTitle: "Agent 与 Adapter"
-description: "Agent 是 NiceEval 调用的抽象，Adapter 是你写的实现。本文讲清楚两者的边界、send 函数传入什么返回什么、Tier 1 无侵入接入，以及 t 上的能力从哪来。"
+description: "Agent 是 NiceEval 调用的抽象，Adapter 是你写的实现。本文讲清楚两者的边界、send 函数传入什么返回什么、三个接入 Tier，以及 t 上的能力从哪来。"
 ---
 
 在 NiceEval 里，`Agent` 是 NiceEval 调用的抽象，`Adapter` 是具体实现。这一页讲清楚三件事：**两者的边界在哪、Adapter 唯一要实现的 `send` 函数传入什么返回什么、`t` 上的能力从哪来。**看完这页再去[写 send](/zh/concepts/write-send)——那里从三个问题出发，一路推导到两个完整的 Adapter 示例。
@@ -31,9 +31,15 @@ npx niceeval exp local support
 npx niceeval exp prod support
 ```
 
-## Tier 1：无侵入是什么意思
+## 接入分三个 Tier
 
-**应用代码一行不改。**应用由你按它自己的方式启动（`pnpm start`、部署在哪都行），eval 侧不 spawn 应用进程、不另开端口——Adapter 只对着**用户前端本来就在用的那个接口**（HTTP 端点、SSE 流）收发，连不上时报"先起应用"的明确错误。观测数据走应用已有的返回信息或 OTel（见[通过 OTel 接入](/zh/guides/connect-otel)）。
+按「要不要动应用代码、动到什么程度」，接入分三档（每档买到什么、怎么升级，见[接入分三个 Tier](/zh/guides/connect-your-agent#接入分三个-tier)）：
+
+- **Tier 1（只接 send）**：应用代码一行不改，接入只有一个 Adapter 文件。文本断言、judge、多轮、HITL、手写映射的工具断言都在这档；应用接口暴露模型选择的话，模型对比 experiment 也在（`experiment.model` 经 `ctx.model` 透传）。
+- **Tier 2（send + OTel）**：同一个 send，加上应用把 OTel span 发给 NiceEval——事件免手写映射、负断言带完整性证明、trace 瀑布图（见[通过 OTel 接入](/zh/guides/connect-otel)）。已埋点的应用零改动。
+- **Tier 3（侵入改造 + experiment flags）**：改应用内部代码，把 prompt / 工具集 / feature 变体暴露成 experiment 可传的 `flags`（经 `ctx.flags` 到 Adapter、随请求交给应用），做 feature A/B test。
+
+前两档都是**无侵入**的：应用由你按它自己的方式启动（`pnpm start`、部署在哪都行），eval 侧不 spawn 应用进程、不另开端口——Adapter 只对着**用户前端本来就在用的那个接口**（HTTP 端点、SSE 流）收发，连不上时报"先起应用"的明确错误。观测数据走应用已有的返回信息或 OTel。Tier 3 虽然改了应用内部，Adapter 依然只经对外接口调用应用——侵入的是应用（把变体暴露成配置），不是接入面。
 
 这意味着 Adapter 是 eval 与被测应用之间**唯一的接触面**。eval 侧的驱动 API——`t.send()`、`t.sendFile()`、`t.newSession()`、HITL 的 `t.respond()` / `t.respondAll()`——不管看起来多不一样，穿过运行器到达 Adapter 时**全部收敛成"再调一次 `send`"**。怎么收敛、send 里怎么接，见[写 send](/zh/concepts/write-send)。
 
@@ -57,27 +63,78 @@ interface Agent {
 
 ```ts
 interface TurnInput {
-  readonly text: string;                   // 发送的文本；respond 轮 = 回答文本
-  readonly files?: readonly InputFile[];   // t.sendFile 附带的文件（base64）
-  readonly responses?: readonly InputResponse[];  // 仅 respond / respondAll 轮：逐请求的结构化回答
-  readonly outputSchema?: JsonSchema;      // 仅当 eval 在 send 上声明了 output：结构化输出要求，已降为 JSON Schema
+  readonly text: string;                          // 每轮必有：发送的文本；回答轮 = 回答文本（多条以换行连接）
+  readonly files?: readonly InputFile[];          // 仅 t.sendFile 轮：附带的文件（base64）
+  readonly responses?: readonly InputResponse[];  // 仅回答轮（t.respond / t.respondAll）：逐请求的结构化回答
+  readonly outputSchema?: JsonSchema;             // 仅本轮声明了 output 时：结构化输出要求，已降为 JSON Schema
+}
+
+interface InputFile {
+  readonly filename?: string;     // 可选，供 adapter / 模型参考
+  readonly mimeType: string;      // 如 image/png
+  readonly dataBase64: string;    // base64 内容，JSON 友好，可直接放进请求体
 }
 
 interface InputResponse {
-  readonly requestId?: string;   // 对应 input.requested 请求的 id，多个请求并停时靠它对位
-  readonly optionId?: string;    // 回答命中请求的某个选项
-  readonly text?: string;        // 自由文本回答
+  readonly requestId: string;    // 必有：对应哪条 input.requested 请求，多个请求并停时靠它对位
+  readonly optionId?: string;    // 与 text 二选一：回答命中了请求 options 里的某个 id（approve / deny…）
+  readonly text?: string;        // 与 optionId 二选一：自由文本回答（请求没有选项，或回答不是任何选项）
 }
 ```
 
-eval 侧不管调的是 `t.send()`、`t.sendFile()` 还是 `t.respond()`，到 Adapter 时都是一次普通的 `send`，差别全在这几个字段里：`text` 每轮都有；`files` 只在 `t.sendFile` 时出现，接口不收文件就忽略；`responses` 只在 HITL 回答轮出现，逐条带着 `{ requestId, optionId }`——你不需要解析文本去猜哪句回答对应哪个请求；`outputSchema` 只在 eval 对这一轮声明了结构化输出要求时出现（见下面 `Turn.data` 的规则），应用接口收 schema 就转发（Chat Completions 的 `response_format`、Responses 的 `text.format`），不收也没关系——校验反正发生在运行器。
+eval 侧不管调的是 `t.send()`、`t.sendFile()` 还是 `t.respond()`，到 Adapter 时都是一次普通的 `send`，差别全在字段上：
+
+| eval 侧 | `text` | `files` | `responses` | `outputSchema` |
+|---|---|---|---|---|
+| `t.send(text)` | 发送文本 | — | — | 声明了 `output` 才有 |
+| `t.sendFile(path, text?)` | 附言（可为空串） | 有 | — | 同上 |
+| `t.respond(...)` / `t.respondAll(...)` | 回答文本 | — | 逐请求一条 | 同上 |
+
+`files` 接口不收文件就忽略；`outputSchema` 应用接口收 schema 就转发（Chat Completions 的 `response_format`、Responses 的 `text.format`），不收也没关系——校验反正发生在运行器（见下面 `Turn.data` 的规则）。
+
+#### 不同回答的入参
+
+HITL 回答轮里，人的裁决以结构化形式随 `input.responses` 到达——Adapter 不需要解析 `text` 去猜哪句回答对应哪个请求、算不算批准。每条回答必带 `requestId`；`optionId` 和 `text` 二选一：回答命中请求 `options` 里的某个 id 就是 `optionId`（eval 侧已校验过存在，不会有打错的字静默传进来），否则整句作为自由文本落在 `text`。四种典型形态：
+
+```ts
+// ① 单个待处理请求，回答命中选项（approve / deny 同理，只是 optionId 不同）
+await t.respond("approve");
+// → { text: "approve",
+//     responses: [{ requestId: "req_1", optionId: "approve" }] }
+
+// ② 多个请求并停，用对象形式显式对位
+await t.respond({ request, optionId: "deny" });
+// → { text: "deny",
+//     responses: [{ requestId: request.id, optionId: "deny" }] }
+
+// ③ 回答不是任何选项 → 自由文本（等补充信息的请求就是这种）
+await t.respond("收件人改成 ceo@corp.com");
+// → { text: "收件人改成 ceo@corp.com",
+//     responses: [{ requestId: "req_1", text: "收件人改成 ceo@corp.com" }] }
+
+// ④ respondAll：每条待处理请求一条回答，同一个 optionId
+await t.respondAll("approve");
+// → { text: "approve\napprove",
+//     responses: [{ requestId: "req_1", optionId: "approve" },
+//                 { requestId: "req_2", optionId: "approve" }] }
+```
+
+Adapter 侧的对应义务：按 `requestId` 把裁决交回应用（不要按顺序猜）；被人拒绝的调用把 `action.result` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，这样 `noFailedActions()` 不误伤，`calledTool(..., { status: "rejected" })` 可精确断言。
 
 ### 上下文：`AgentContext`
 
 ```ts
 interface AgentContext {
+  // 每轮都在的三个
   readonly signal: AbortSignal;    // 运行器的超时与取消：透传给你发出的每个请求
-  readonly session: AgentSession;  // 本条会话线
+  readonly session: AgentSession;  // 本条会话线的状态槽
+  log(msg: string): void;          // 写进本轮日志，niceeval view 里可见
+
+  // 按接入档位出现的三个（见「接入分三个 Tier」）
+  readonly model?: string;         // Tier 1 的模型对比：experiment.model 透传；应用接口收模型选择就转发
+  readonly telemetry?: Telemetry;  // Tier 2：本次运行的 OTLP 接收信息（endpoint / env / headers）
+  readonly flags: Readonly<Record<string, unknown>>;  // Tier 3 的 feature A/B：experiment.flags 透传；没配时是 {}
+
   readonly sandbox?: Sandbox;      // 仅 defineSandboxAgent 构造的 Agent 会拿到
 }
 
@@ -86,7 +143,9 @@ interface AgentSession {
 }
 ```
 
-`ctx` 里没有要你检查的标志位。`session.state` 是本条会话线的自有状态槽，NiceEval 对它只承诺一件事：**同一条会话线的每次 `send` 拿到同一份 `state`，新会话线（eval 的第一轮，或 `t.newSession()` 之后）拿到一份空的。**它从 `{}` 起步，框架从不往里写数据——里面只会有你（或你用的官方会话件）存过的东西。用官方件时这份状态你连碰都不用碰，件会替你存取。
+`ctx` 里没有要你检查的标志位。三个档位字段都是"透传"语义：`model`、`flags` 由 experiment 声明、运行器原样递过来，Adapter 只负责随请求转发给应用，不解释它们的含义；`telemetry` 仅在声明了 tracing / OTel 接入时出现，用法见[通过 OTel 接入](/zh/guides/connect-otel)。
+
+`session.state` 是本条会话线的自有状态槽，NiceEval 对它只承诺一件事：**同一条会话线的每次 `send` 拿到同一份 `state`，新会话线（eval 的第一轮，或 `t.newSession()` 之后）拿到一份空的。**它从 `{}` 起步，框架从不往里写数据——里面只会有你（或你用的官方会话件）存过的东西。用官方件时这份状态你连碰都不用碰，件会替你存取。
 
 ### 返回：`Turn`
 
