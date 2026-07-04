@@ -101,7 +101,7 @@ export interface AgentTracing {
    *   · "run" —— 整个 run 共享一个接收器(每 agent 一个)。**长驻服务必选**:应用的 OTEL_*
    *     env 进程启动时读一次,per-attempt 端口会在第一个 attempt 结束时失效。span 逐轮归属
    *     (traceparent / 时间窗口 + 串行守卫),见 ctx.telemetry.headers。
-   * 声明了 `events: otelEvents()` 的 agent 自动按 "run" 处理(黑盒服务场景)。
+   * 声明了 `events: otelEvents()` 的 agent 自动按 "run" 处理(无侵入接入的长驻服务场景)。
    */
   scope?: "attempt" | "run";
   /**

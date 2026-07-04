@@ -1,4 +1,4 @@
-// langgraph 的 adapter:黑盒对接 ../src/backend/server.py —— 自定义 JSON 帧 over SSE
+// langgraph 的 adapter:无侵入对接 ../src/backend/server.py —— 自定义 JSON 帧 over SSE
 // (server.py 不透传 LangGraph 原生 stream 事件,自己翻译成一套小协议,见其头注释)。
 //
 // 事件来源:`events: otelEvents({ dialects: [otel.langsmith] })`——LangSmith OTel 导出的
@@ -21,7 +21,7 @@
 // `tool-output-denied` → action.result(status:"rejected",span 里没有"人拒绝"这个语义,
 // 这条要 adapter 自己补)。approve 端点字段是 toolCallId(不是 pi-sdk/claude-sdk 那个
 // toolUseId)。
-import { defineAgent, otelEvents, otel, sseJsonFrames } from "niceeval/adapter";
+import { defineAgent, otelEvents, otel, serverSession, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -71,6 +71,8 @@ interface PendingApproval {
   readonly gatedCall: { readonly toolCallId: string; readonly name: string; readonly input: unknown };
 }
 const pendingApprovals = new Map<string, PendingApproval>();
+// 会话续接走「服务端记历史」范式:请求带 session.id(ctx),session 帧回传的 id 用 capture 写回。
+const session = serverSession();
 
 // LangSmith 的 OtelSpanProcessor 是标准 BatchSpanProcessor(读 OTEL_BSP_SCHEDULE_DELAY,
 // tracing.env 已经调到 200ms),但它的调度定时器和"这一轮 HTTP 请求什么时候返回"是两条独立
@@ -122,7 +124,7 @@ async function drainStream(cursor: SseCursor, ctx: AgentContext, resumeGatedCall
 
     switch (frame.type) {
       case "session": {
-        if (ctx.session.isNew) ctx.session.id = frame.sessionId;
+        session.capture(ctx, frame.sessionId);
         break;
       }
       case "text-delta": {
@@ -210,7 +212,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   // 面向未来:应用哪天接了 context 传播就免费生效。
   const res = await appFetch(
     "/api/chat",
-    { message: input.text, sessionId: ctx.session.isNew ? undefined : ctx.session.id },
+    { message: input.text, sessionId: session.id(ctx) },
     ctx.signal,
     ctx.telemetry?.headers,
   );

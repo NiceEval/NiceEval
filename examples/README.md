@@ -9,15 +9,15 @@
 
 ## 接入后（`zh/tier1/`）
 
-五个应用黑盒接入(不改被测应用一行代码;应用由你自己按它的方式启动,eval 不代管进程、不另开端口,SDK 协议映射在 niceeval 官方包里,adapter 只剩传输粘合),对应 `docs/origin-integration.md` 的工单,全部实测跑通:
+五个应用无侵入接入(不改被测应用一行代码;应用由你自己按它的方式启动,eval 不代管进程、不另开端口,SDK 协议映射在 niceeval 官方包里,adapter 只剩传输粘合),对应 `docs/origin-integration.md` 的工单,全部实测跑通:
 
 | 目录 | 用途 | before/after |
 |---|---|---|
-| [`zh/tier1/pi-sdk/`](zh/tier1/pi-sdk/) | 黑盒接 `@earendil-works/pi-agent-core`,手写 `AgentEvent` SSE 映射,`calculate` 工具 HITL 审批 | [文档](../docs-site/zh/example/tier1-pi-sdk.mdx) |
-| [`zh/tier1/claude-sdk/`](zh/tier1/claude-sdk/) | 黑盒接 `@anthropic-ai/claude-agent-sdk`,手写 `SDKMessage` SSE 映射,`canUseTool` HITL 审批 | [文档](../docs-site/zh/example/tier1-claude-sdk.mdx) |
-| [`zh/tier1/codex-sdk/`](zh/tier1/codex-sdk/) | 黑盒接 `@openai/codex-sdk`,`events: otelEvents({dialects:[otel.codex]})` 官方方言派生工具/usage,`spanMapper: mapCodexSpans` 归一瀑布图,消息文本从 SSE 补,真实编码任务 eval(建文件/跑命令) | [文档](../docs-site/zh/example/tier1-codex-sdk.mdx) |
-| [`zh/tier1/langgraph/`](zh/tier1/langgraph/) | 黑盒接纯 Python LangGraph(`create_agent`),`events: otelEvents({dialects:[otel.langsmith]})`,方言解析不了的消息文本 + gated 工具由 adapter 手动补 | [文档](../docs-site/zh/example/tier1-langgraph.mdx) |
-| [`zh/tier1/ai-sdk-v7/`](zh/tier1/ai-sdk-v7/) | 内置 `uiMessageStreamAgent` 黑盒接 AI SDK v7 的 UI Message Stream HTTP 端点,adapter 只剩配置(端点/model 透传);usage 从 `otel.genAi` span 派生 | [文档](../docs-site/zh/example/tier1-ai-sdk-v7.mdx) |
+| [`zh/tier1/pi-sdk/`](zh/tier1/pi-sdk/) | 无侵入接 `@earendil-works/pi-agent-core`,手写 `AgentEvent` SSE 映射,`calculate` 工具 HITL 审批 | [文档](../docs-site/zh/example/tier1-pi-sdk.mdx) |
+| [`zh/tier1/claude-sdk/`](zh/tier1/claude-sdk/) | 无侵入接 `@anthropic-ai/claude-agent-sdk`,手写 `SDKMessage` SSE 映射,`canUseTool` HITL 审批 | [文档](../docs-site/zh/example/tier1-claude-sdk.mdx) |
+| [`zh/tier1/codex-sdk/`](zh/tier1/codex-sdk/) | 无侵入接 `@openai/codex-sdk`,`events: otelEvents({dialects:[otel.codex]})` 官方方言派生工具/usage,`spanMapper: mapCodexSpans` 归一瀑布图,消息文本从 SSE 补,真实编码任务 eval(建文件/跑命令) | [文档](../docs-site/zh/example/tier1-codex-sdk.mdx) |
+| [`zh/tier1/langgraph/`](zh/tier1/langgraph/) | 无侵入接纯 Python LangGraph(`create_agent`),`events: otelEvents({dialects:[otel.langsmith]})`,方言解析不了的消息文本 + gated 工具由 adapter 手动补 | [文档](../docs-site/zh/example/tier1-langgraph.mdx) |
+| [`zh/tier1/ai-sdk-v7/`](zh/tier1/ai-sdk-v7/) | 内置 `uiMessageStreamAgent` 无侵入接 AI SDK v7 的 UI Message Stream HTTP 端点,adapter 只剩配置(端点/model 透传);usage 从 `otel.genAi` span 派生 | [文档](../docs-site/zh/example/tier1-ai-sdk-v7.mdx) |
 
 另外两个不属于这批工单的目录：
 

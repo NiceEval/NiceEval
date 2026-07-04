@@ -1,4 +1,4 @@
-// ai-sdk-v7 的 adapter:内置 uiMessageStreamAgent 黑盒对接一个**已经在跑**的 AI SDK 应用
+// ai-sdk-v7 的 adapter:内置 uiMessageStreamAgent 无侵入对接一个**已经在跑**的 AI SDK 应用
 // (UI Message Stream 协议,https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)。
 //
 // 应用怎么跑是应用自己的事(pnpm dev / 部署在哪都行),eval 侧不代管进程、不另开端口:

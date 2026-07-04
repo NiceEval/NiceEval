@@ -1,4 +1,4 @@
-// pi-sdk 的 adapter:黑盒对接一个**已经在跑**的应用(../src/backend/server.ts,pi 的原生
+// pi-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,pi 的原生
 // `AgentEvent` 原样透传成 SSE,外加三种自定义传输帧:session / approval_request /
 // server_error,见 server.ts 头注释)。
 //
@@ -11,7 +11,7 @@
 // 服务端把执行卡在一个 Promise 上等 POST /api/chat/approve。所以 `driveFrameStream` 在这一帧
 // 返回 `{ pause }`,`pausable()` 记住"读了一半的 SSE 流"(连同转换器状态);下一次 send
 // (即 t.respond)先打 approve 端点、再继续读同一条流到结束——不重新发 /api/chat。
-import { defineAgent, sseJsonFrames, fromPiAgentEvents, driveFrameStream, pausable } from "niceeval/adapter";
+import { defineAgent, sseJsonFrames, fromPiAgentEvents, driveFrameStream, pausable, serverSession } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { JsonValue, Turn, TurnInput } from "niceeval";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
@@ -48,11 +48,13 @@ interface Pending {
   readonly toolCallId: string;
 }
 const pendingApprovals = pausable<Pending>();
+// 会话续接走「服务端记历史」范式:请求带 session.id(ctx),回传的 sessionId 用 capture 写回。
+const session = serverSession();
 
 function readStream(cursor: SseFrameCursor<PiFrame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
   return driveFrameStream(cursor, stream, ctx, (frame) => {
     if (frame.type === "session") {
-      if (ctx.session.isNew) ctx.session.id = frame.sessionId;
+      session.capture(ctx, frame.sessionId);
       return;
     }
     if (frame.type === "approval_request") {
@@ -79,7 +81,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 
   const res = await appFetch(
     "/api/chat",
-    { message: input.text, sessionId: ctx.session.isNew ? undefined : ctx.session.id },
+    { message: input.text, sessionId: session.id(ctx) },
     ctx.signal,
   );
   if (!res.ok || !res.body) {

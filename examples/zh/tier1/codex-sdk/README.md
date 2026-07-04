@@ -12,7 +12,7 @@ codex-sdk 应用本身（`src/backend/`）**一行没改**——真实 agent 是
 
 ## 这是 Tier 1（无侵入）
 
-adapter 只是把这个已有的 HTTP + SSE 服务当黑盒接进 niceeval，不改被测应用一行代码。Tier 2（把
+adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不改被测应用一行代码。Tier 2（把
 `threadOptions`——sandbox mode 等——提升为环境变量，解锁完整 feature A/B test）不在本次范围内。
 
 ## 目录

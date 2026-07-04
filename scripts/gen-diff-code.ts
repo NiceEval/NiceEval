@@ -184,7 +184,7 @@ const PAIRS: DiffPair[] = [
       title: "AI SDK v7 如何非侵入式接入 NiceEval",
       sidebarTitle: "AI SDK v7 如何接入",
       description:
-        "一个 AI SDK v7 聊天应用，对着它的 HTTP 接口黑盒接入 NiceEval 前后的完整代码 diff：应用侧一行没改。",
+        "一个 AI SDK v7 聊天应用，对着它的 HTTP 接口无侵入接入 NiceEval 前后的完整代码 diff：应用侧一行没改。",
     },
     intro: [
       "对比对象：",
@@ -193,7 +193,7 @@ const PAIRS: DiffPair[] = [
       "- **after**：[https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1/ai-sdk-v7) —— 同一个应用接入 NiceEval 之后的样子。",
       "",
       "**接入方式**：内置 **`uiMessageStreamAgent`**——AI SDK UI Message Stream 协议（`useChat`",
-      "后端的标准 SSE）的官方黑盒 adapter，adapter 文件只剩配置：端点在哪、请求体怎么带",
+      "后端的标准 SSE）的官方无侵入 adapter，adapter 文件只剩配置：端点在哪、请求体怎么带",
       "`model`。会话重放、HITL 审批（`needsApproval` 工具的 part 改写重发）、事件直构全是",
       "工厂内置行为；usage 从应用本来就有的官方 `@ai-sdk/otel` 集成产的 GenAI spans 派生",
       "（`events: otelEvents({ dialects: [otel.genAi] })`），瀑布图同一批 span。应用侧",

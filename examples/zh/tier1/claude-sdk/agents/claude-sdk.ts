@@ -1,4 +1,4 @@
-// claude-sdk 的 adapter:黑盒对接一个**已经在跑**的应用(../src/backend/server.ts,原生
+// claude-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `SDKMessage` 流原样透传成 SSE,外加自定义 { type: "server_error" } 传输帧)。
 //
 // `SDKMessage` → 标准事件的映射是官方转换器 `fromClaudeSdkMessages`(`"niceeval/adapter"`
@@ -11,7 +11,7 @@
 // mcp__demo-tools__calculate 一个(应用 agent.ts 里的 GATED_TOOL_NAME,这里必须写死同一个
 // 字符串),`driveFrameStream` 的 onFrame 钩子扫 derived 事件认出它就返回 `{ pause }`;
 // 下一轮先打 /api/chat/approve 再继续读同一条流。
-import { defineAgent, sseJsonFrames, fromClaudeSdkMessages, driveFrameStream, pausable } from "niceeval/adapter";
+import { defineAgent, sseJsonFrames, fromClaudeSdkMessages, driveFrameStream, pausable, serverSession } from "niceeval/adapter";
 import type { AgentContext, ClaudeSdkStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -47,10 +47,12 @@ interface Pending {
   readonly toolUseId: string;
 }
 const pendingApprovals = pausable<Pending>();
+// 会话续接走「服务端记历史」范式:请求带 session.id(ctx),init 帧回传的 session_id 用 capture 写回。
+const session = serverSession();
 
 function readStream(cursor: SseFrameCursor<ClaudeFrame>, ctx: AgentContext, stream: ClaudeSdkStream): Promise<Turn> {
   return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
-    if (ctx.session.isNew && !ctx.session.id && stream.sessionId) ctx.session.id = stream.sessionId;
+    session.capture(ctx, stream.sessionId);
 
     if (frame.type === "server_error") return { fail: (frame as TransportFrame).message };
 
@@ -92,7 +94,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 
   const res = await appFetch(
     "/api/chat",
-    { message: input.text, sessionId: ctx.session.isNew ? undefined : ctx.session.id },
+    { message: input.text, sessionId: session.id(ctx) },
     ctx.signal,
   );
   if (!res.ok || !res.body) {

@@ -1,7 +1,7 @@
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  name: { "zh-CN": "AI SDK v7 HTTP 黑盒示例", en: "AI SDK v7 HTTP black-box example" },
+  name: { "zh-CN": "AI SDK v7 HTTP 无侵入示例", en: "AI SDK v7 HTTP non-invasive example" },
   judge: { model: "gpt-5.4" },
   timeoutMs: 60_000,
   // 被测应用是用户自己起的长驻服务(eval 不代管进程),接收 span 用固定端口:

@@ -1,118 +1,221 @@
 ---
 title: "NiceEval agents 与 adapters：连接任意 AI 系统"
 sidebarTitle: "Agent 与 Adapter"
-description: "了解 NiceEval 如何通过命名 agent adapters 连接任意 AI。direct agent 连接你的 runtime，sandbox agent 在隔离环境中运行 CLI。"
+description: "Agent 是 core 调用的抽象，Adapter 是你写的实现。本文讲清楚：在 Tier 1 无侵入接入下，一个 send 函数如何支撑起 t.send、t.sendFile、t.newSession 和 HITL 的 t.respond / t.respondAll。"
 ---
 
-在 NiceEval 里，`Agent` 是 core 调用的抽象，`Adapter` 是具体实现。你通过名字选择 agent，adapter 决定怎么调用被测系统、怎么把输出转成标准事件流。
+在 NiceEval 里，`Agent` 是 core 调用的抽象，`Adapter` 是具体实现。这一页回答一个核心问题：**在 Tier 1（无侵入）接入下，为什么 Adapter 只需要写一个 `send` 函数，就能支撑起 eval 侧的全部驱动 API——`t.send()`、`t.sendFile()`、`t.newSession()`，以及 HITL 的 `t.respond()` / `t.respondAll()`。**
 
 ## 两个词，一个边界
 
-- **Agent**：由 experiment 引用的 adapter，用来驱动被测系统。
-- **Adapter**：实现 `send(input, ctx)` 的代码，负责调用你的 agent runtime 或 CLI。
+- **Agent**：core 眼里的被测对象。一个有名字、有能力位、只有一个 `send` 方法的对象。运行器只跟这个接口打交道，从不写 `if (agent === "claude-code")` 这样的分支。
+- **Adapter**：实现这个接口的代码，由你写（或用内置的）。它知道怎么鉴权、怎么调你的应用、怎么把返回翻译成标准事件流。
 
-## 为什么是 experiment 选 agent,不是 `--url`
-
-experiment 选择 agent；experiment 名之后的位置参数只选择“跑哪些 eval”。被测系统的 URL、鉴权、模型和协议都属于 adapter 的私有配置。
+被测系统的 URL、鉴权、协议细节都是 Adapter 的私有配置（读环境变量或闭包），core 永远看不到。experiment 按名字引用 Agent；experiment 名之后的位置参数只选择"跑哪些 eval"。
 
 ```bash
-# 同一份 eval，切换不同 adapter
+# 同一份 eval，切换不同 Adapter；URL 是 Adapter 的私事
 npx niceeval exp local support
 npx niceeval exp prod support
 ```
 
-## Agent contract
+## Agent 契约：一个动词，一个产物
 
-所有 adapter 最终都返回一个 `Turn`：
-
-```ts
-type Turn = {
-  events: StreamEvent[];
-  data?: unknown;
-  status: "completed" | "failed" | "waiting";
-  usage?: Usage;
-};
-```
-
-`events` 是主要事实来源。`message`、`toolCalls` 等便捷字段会从事件流推导。
-
-## capabilities 决定 `t` 上有哪些方法
-
-Adapter 声明能力：
+不管 Adapter 连的是 HTTP 服务还是沙箱里的 CLI，暴露给运行器的接口完全一致：
 
 ```ts
-capabilities: {
-  conversation: true,
-  toolObservability: true,
-  sandbox: false,
+interface Agent {
+  readonly name: string;
+  readonly capabilities: AgentCapabilities;
+  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+  // 可选：setup / teardown（每沙箱一次的生命周期）、tracing（OTLP 导出配置）、
+  // spanMapper（原生 span → canonical 归一）、events（otelEvents() 声明事件从 span 派生）
+}
+
+interface TurnInput {
+  readonly text: string;
+  readonly files?: readonly InputFile[];   // t.sendFile 附带的文件（base64）
+}
+
+interface Turn {
+  readonly events: StreamEvent[];          // ★ 标准事件流——每个 Adapter 的核心产物
+  readonly data?: unknown;                 // 结构化输出（喂 outputEquals / outputMatches）
+  readonly status: "completed" | "failed" | "waiting";  // waiting = 停轮等人（HITL）
+  readonly usage?: Usage;
 }
 ```
 
-这些 flags 控制 TypeScript 层面可见的 `t` 方法。例如没有 `toolObservability` 时，不应该使用 `t.calledTool()`。
+`send` 是**唯一的动词**，`Turn.events` 是**唯一的产物**。Adapter 之间的全部差异，都在 `send` 内部怎么把原始返回翻译成 `events`。
+
+## Tier 1：无侵入是什么意思
+
+**应用代码一行不改。**应用由你按它自己的方式启动（`pnpm start`、部署在哪都行），eval 侧不 spawn 应用进程、不另开端口——Adapter 只对着应用**已有的对外接口**（HTTP 端点、SSE 流）收发，连不上时报"先起应用"的明确错误。观测数据走应用已有的返回信息或 OTel（见[通过 OTel 接入](/zh/guides/connect-otel)）。
+
+这意味着 Adapter 是 eval 与被测应用之间**唯一的接触面**。下面所有机制都建立在这个前提上：eval 侧那五个驱动 API，不管看起来多不一样，穿过运行器到达 Adapter 时**全部收敛成"再调一次 `send`"**——差别只在 `TurnInput` 和 `ctx.session` 的状态。
+
+## 五个 t API，到 send 只是三种情况
+
+| eval 侧 | 到 Adapter 时 | `send` 收到什么 |
+|---|---|---|
+| `t.send(text)` | 一次 `send` | `input.text`；本会话线第一轮 `ctx.session.isNew === true` |
+| `t.sendFile(path, text?)` | 一次 `send` | 同上，外加 `input.files`（base64 的 `InputFile[]`）；不支持多模态就忽略 |
+| `t.newSession()` | 不直接触发 `send` | 开第二条会话线；该线随后第一次 `send` 的 `ctx.session = { isNew: true, id: undefined }` |
+| `t.respond(...answers)` | 一次**普通的** `send` | `input.text` = 各回答按 `\n` 拼接；`ctx.session` 还是同一条线 |
+| `t.respondAll(optionId)` | 一次**普通的** `send` | 同上，每条待处理请求一行 `optionId` |
+
+所以 Adapter 作者不需要实现五个方法。真正的义务是让**一个** `send` 认出三种情况：
+
+1. **全新一轮**：`ctx.session.isNew === true` 且无挂起状态 → 对应用发起新会话。
+2. **续接一轮**：`isNew === false` → 接着同一条历史（怎么"接"取决于应用的接口形状，见下面问题二）。
+3. **恢复挂起的一轮**：上一轮以 `status: "waiting"` 停下 → 这次的 `input.text` 是人的裁决，先把裁决交回应用，再接着读上次没读完的流。
+
+第 3 种情况还要求"上一轮"先尽到 HITL 的两条义务：agent 停下等人时，`send` 返回 `status: "waiting"`，并且每个待回答的问题吐一条 `input.requested` 事件（`t.parked()`、`t.requireInputRequest()` 读的就是它们）。
+
+## 写 send 之前，先回答三个问题
+
+一个手写 send 里其实只有三件互不相干的事：**transport**（怎么发——真做不掉也不需要抽象，每家的 URL、鉴权、请求体本来就不一样，这是你唯一手写的一段）、**reduce**（原始返回 → `StreamEvent[]`）、**编排**（会话续接 + HITL 暂停恢复）。后两件都有官方件（从 `niceeval/adapter` 导出），所以写 send 不是"从零实现"，而是先回答三个问题，再把答案对应的件拼起来。
+
+### 问题一：应用的返回怎么到达？——决定 parser 怎么选
+
+| 返回的形状 | 用什么 | 你写什么 |
+|---|---|---|
+| 透传 SDK 原生事件流（一帧一个完整单元） | `fromClaudeSdkMessages()` / `fromPiAgentEvents()` / `fromCodexThreadEvents()` | 零映射 |
+| AI SDK `generateText` / `streamText` 的完整结果 | `fromAiSdk(result)` | 零映射 |
+| 逐 token / 逐参数增量流 | 协议方官方 reducer；没有才用 `deltaStream({ toOps })` | 一张"帧类型 → 操作"映射表 |
+| 接口只回最终答案，但应用已埋 OTel | `events: otelEvents()`，事件从 span 派生 | 零映射（send 只剩 transport） |
+| 接口只回最终答案，无任何过程数据 | 手写几条 events | 一条 `message` 起步；做不到的能力位别声明 |
+
+预设的 parser 只到"**形状**"为止，不到"协议"为止：NiceEval 不定协议，所以不存在万能 parser；但返回的到达形状统共就这几种，每种一个官方件。只有"增量流且协议方没有官方 reducer"这一种情况需要你写映射——而且写的是声明（这一帧对应哪个操作），拼接、配对、落地时机由 `deltaStream` 统一管，不是手写状态机。
+
+### 问题二：第二轮怎么接上第一轮？——决定 send 里的会话分支
+
+先想清楚你的应用接口属于哪种。业界统共两种模式，各对应一个形状对称的官方件（一个策略对象、一对方法）：
+
+- **服务端记历史**（接口收一个会话 id：各 SDK 的原生 session / thread、OpenAI Responses API 都是）→ `serverSession()`。发请求带 `session.id(ctx)`；从返回里抓到 id 就 `session.capture(ctx, id)` 写回。
+- **客户端带全量历史**（服务端无状态，每轮发完整消息列表：Chat Completions 形接口是典型）→ `clientHistory<TMsg>()`。`get(ctx)` 取出本线历史、追加本轮消息发出去、`commit(ctx, messages)` 写回最新列表。
+
+回答了这个问题，"第一次发 / 第二次发 / `t.newSession()`"就**不需要单独处理**：`isNew` 时 `session.id(ctx)` 返回 `undefined`、`clientHistory.get` 返回空数组——新会话线自动回到"第一次发"的形态，同一条线的下一轮自动带上 id 或历史。`capture` 还替你挡掉一个容易踩的坑：只在新线第一轮落地，resume 轮不会被后端（可能因 fork 而变化的）新 id 意外覆盖。
+
+### 问题三：中途会停下来等人吗？——决定要不要 HITL 分支
+
+- **会**（工具审批、等补充信息）：`pausable<TState>()` + `driveFrameStream` 的 `{ pause }` 返回值。停轮时 `hold(ctx, state)` 记下读了一半的流；下一轮 send 先 `take(ctx)`，把裁决交给应用，再续读同一条流。`driveFrameStream` 会自动补 `input.requested` 事件、把 status 置 `"waiting"`。
+- **不会**：跳过这一分支。send 永不返回 `"waiting"`，eval 里也不会出现 `t.respond`。
+
+<Tip>
+**OTel 只回答问题一，回答不了问题二和问题三**：span 没有"等人输入"的语义，也不知道"这轮该不该带历史"。不管事件从帧流解析还是从 span 派生，会话续接和 HITL 都要你按上面两问单独回答。
+</Tip>
+
+## 拼起来：一个支撑全部五个 API 的无侵入 Adapter
+
+下面是 Tier 1 Adapter 的完整骨架（对着一个已在跑、以 SSE 透传原生事件流的应用；完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）。它对三个问题的回答是：**透传 pi 原生事件流（问题一）→ `fromPiAgentEvents`；服务端记历史（问题二）→ 带会话 id；有审批停轮（问题三）→ `pausable`**。注意每一段分别在支撑哪个 t API：
+
+```ts
+// agents/my-app.ts
+import { defineAgent, sseJsonFrames, fromPiAgentEvents, driveFrameStream, pausable, serverSession } from "niceeval/adapter";
+import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
+import type { Turn, TurnInput } from "niceeval";
+
+const BASE_URL = process.env.MY_APP_URL ?? "http://127.0.0.1:5299";  // 应用自己的端口，eval 不代管进程
+
+interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId: string }
+const pending = pausable<Pending>();                    // ← 问题三；支撑 t.respond / t.respondAll
+const session = serverSession();                        // ← 问题二；支撑 t.newSession / 多轮续接
+
+function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
+  return driveFrameStream(cursor, stream, ctx, (frame) => {
+    if (frame.type === "session") {
+      session.capture(ctx, frame.sessionId);            // ← 问题二：回传的 id 写回，下一轮靠它续接
+      return;
+    }
+    if (frame.type === "approval_request") {            // ← 问题三：应用停下等审批
+      pending.hold(ctx, { cursor, stream, callId: frame.toolCallId });
+      return { pause: { id: frame.toolCallId, action: frame.toolName,
+                        options: [{ id: "approve" }, { id: "deny" }] } };
+      // driveFrameStream 收到 pause：补一条 input.requested、status 置 "waiting"、停止读流
+    }
+    if (frame.type === "server_error") return { fail: frame.message };
+  });
+}
+
+async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+  const held = pending.take(ctx);
+  if (held) {                                           // ← t.respond("approve")：普通 send，先交裁决
+    const approved = input.text.trim().toLowerCase() === "approve";
+    if (!approved) held.stream.markRejected(held.callId);
+    await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
+      body: JSON.stringify({ toolUseId: held.callId, approved }) });
+    return readStream(held.cursor, ctx, held.stream);   //    再接着读同一条流，不重发请求
+  }
+
+  const res = await fetch(`${BASE_URL}/api/chat`, {     // ← transport：唯一真正手写的一段
+    method: "POST",
+    body: JSON.stringify({
+      message: input.text,                              // ← t.send
+      sessionId: session.id(ctx),                       // ← 问题二：第一次发自动不带，之后自动带
+    }),
+    signal: ctx.signal,
+  });
+  return readStream(sseJsonFrames<Frame>(res.body!), ctx, fromPiAgentEvents());  // ← 问题一：官方转换器
+}
+
+export default defineAgent({
+  name: "my-app",
+  capabilities: { conversation: true, toolObservability: true },
+  send,
+});
+```
+
+换一组答案，换的只是对应的件：接口是 Chat Completions 形（问题二选"客户端带全量历史"）就把 `serverSession` 换成 `clientHistory` 的 `get`/`commit`；没有 HITL（问题三选"不会"）就删掉 `pending` 相关的全部三处。transport 那几行和 `onFrame` 里"这一帧要不要额外处理"的判断，是作者仅有的手写部分。
+
+`t.sendFile` 在这个骨架里就是多读一个 `input.files`：把 base64 的文件按你应用接口的方式放进请求体即可；应用接口不收文件就忽略它。
+
+## capabilities 决定 `t` 上有哪些方法
+
+能力位是 Adapter 对 eval 作者的承诺，控制 TypeScript 层面可见的 `t` 方法（运行时也有守卫）：
+
+| 能力位 | 解锁的 `t` 方法 / 断言 |
+|---|---|
+| *(任何 Agent)* | `t.send`、`t.sendFile`、`t.check`、`t.require`、`t.judge`、`t.log`、`t.skip` |
+| `conversation` | 多次 `t.send()`、`t.reply`、`t.newSession()`，以及 HITL 的 `t.respond()` / `t.respondAll()` / `t.requireInputRequest()` |
+| `toolObservability` | `t.calledTool()` / `t.notCalledTool()` / `t.toolOrder()` / `t.usedNoTools()` / `t.maxToolCalls()` / `t.noFailedActions()` / `t.event()` 等整套作用域断言 |
+| `workspace` / `sandbox` | `t.sandbox`、`t.sandbox.diff`、`t.fileChanged()` 等（沙箱型 Agent） |
+| `compactionObservability` | 上下文压缩相关断言 |
+| `tracing` | `EvalResult.trace`、`niceeval view` 瀑布图（声明后运行器提供 `ctx.telemetry` 接收端点） |
+
+规则是**拿不准就不声明**：没做到的位声明了，负断言（`notCalledTool` 这类）会静默失真。用官方转换器产出事件流的，完整性自带证明；手工映射的自己负责。逐能力位的精确义务见[能力参考](/zh/reference/capabilities)。
 
 ## 标准事件流
 
-NiceEval 用标准 `StreamEvent[]` 表示 agent 行为，包括文本输出、工具调用、子 agent、命令和错误。每个 adapter 可以从自己的原始 transcript 转换到这个 canonical stream。
-
-<Tip>
-  如果你接的是已有 agent 应用，优先在 adapter 里写一个小 mapper，把响应转换成标准 events。不要让 eval 文件直接理解私有格式。
-</Tip>
-
-## 两种 transport
-
-### `defineAgent`
-
-适合 direct agent 接入：
+Adapter 最重要的工作不是"连上 AI"，而是**把 AI 的输出归一成标准事件流**。归一完成后，整套断言词汇对任何 AI 免费可用：
 
 ```ts
-import { defineAgent } from "niceeval/adapter";
-
-export default defineAgent({
-  name: "support-bot",
-  capabilities: { conversation: true },
-  async send(input, ctx) {
-    const res = await fetch(process.env.SUPPORT_BOT_URL!, {
-      method: "POST",
-      body: JSON.stringify({ message: input.text }),
-      signal: ctx.signal,
-    });
-    const body = await res.json();
-    return {
-      status: "completed",
-      events: [{ type: "message", role: "assistant", content: body.reply }],
-      data: body,
-    };
-  },
-});
+type StreamEvent =
+  | { type: "message"; role: "assistant" | "user"; text: string }
+  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
+  | { type: "action.result"; callId: string; output?: JsonValue;
+      status: "completed" | "failed" | "rejected" }
+  | { type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
+  | { type: "subagent.completed"; callId: string; output?: JsonValue;
+      status: "completed" | "failed" }
+  | { type: "input.requested"; request: InputRequest }
+  | { type: "thinking"; text: string }
+  | { type: "compaction"; reason?: string }
+  | { type: "error"; message: string };
 ```
 
-### `defineSandboxAgent`
+core 的 `deriveRunFacts(events)` 把这条扁平流折叠成结构化事实（`toolCalls`、`subagentCalls`、`parked`、`messageCount`…），所有作用域断言都从派生事实上读。Adapter 只需要产出正确的事件；评分完全由 core 负责。
 
-适合需要文件系统的 coding agent。adapter 拿到 `ctx.sandbox`，在里面安装 CLI、运行命令、读取 transcript。
+## 另一种 transport：sandbox Agent
 
-```ts
-import { defineSandboxAgent } from "niceeval/adapter";
-
-export default defineSandboxAgent({
-  name: "my-cli-agent",
-  async send(input, ctx) {
-    await ctx.sandbox.runCommand("my-agent", ["run", input.text]);
-    return { status: "completed", events: [] };
-  },
-});
-```
-
-## 内置 agents
-
-NiceEval 内置 `claude-code`、`codex` 和 `bub` 的 sandbox adapters。自定义 adapter 用 `defineAgent` / `defineSandboxAgent` 创建，再从 experiment 文件引用。三者具体做到哪些能力（事件流、会话续接、tracing…）见 [内置 Agent 能力参考](/zh/reference/builtin-agents)。
+评 claude-code / codex / bub 这类要改文件的 coding agent CLI 时，用 `defineSandboxAgent`：契约完全相同（同一个 `send`、同一个 `Turn`），差别只在"连接"不是 HTTP 而是"在沙箱里 spawn CLI、读回 transcript"，运行器经 `ctx.sandbox` 把沙箱句柄传进来。三个内置 Agent 开箱即用，各自做到哪些能力见[内置 Agent 能力参考](/zh/reference/builtin-agents)；自己接新 CLI 见[沙箱 Agent 指南](/zh/guides/sandbox-agent)。
 
 ## Agent × Sandbox 正交
 
-`experiment.agent` 选择谁来执行任务，`experiment.sandbox`（用 `niceeval/sandbox` 的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 构造）选择在哪里执行任务；`niceeval.config.ts` 里的 `sandbox` 是项目级兜底（`exp.sandbox ?? config.sandbox`）。一个 sandbox agent 可以运行在 Docker，也可以运行在云端 sandbox。没有对应的 CLI flag，也没有自动探测——sandbox agent 的 experiment（或作为兜底的 config）必须显式设置 `sandbox`，否则 NiceEval 在创建 sandbox 时会直接报错。
+`experiment.agent` 选择谁来执行任务，`experiment.sandbox`（`dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`）选择在哪里执行；`niceeval.config.ts` 里的 `sandbox` 是项目级兜底（`exp.sandbox ?? config.sandbox`）。任何 sandbox Agent 配任何沙箱后端；Tier 1 的无侵入 Adapter 完全用不到 sandbox。没有对应的 CLI flag，也没有自动探测——sandbox Agent 的 experiment（或兜底的 config）必须显式设置 `sandbox`，否则创建时直接报错。
 
 ## 相关阅读
 
-- [Drive](/zh/concepts/drive) — `t.send()`、`t.newSession()` 与 HITL：能力位如何决定你能对 `Turn` 做什么。
-- [Assert](/zh/concepts/assert) — 标准事件流如何驱动作用域断言。
+- [接入你的 Agent](/zh/guides/connect-your-agent) — 手把手教程：从最小接入到事件流、多轮、HITL、tracing 的分步增量。
+- [Drive](/zh/concepts/drive) — eval 侧视角：`t.send()`、`t.newSession()` 与 HITL 怎么用。
+- [Assert](/zh/concepts/assert) — 标准事件流驱动的完整断言词汇。
 - [架构概览](/zh/concepts/overview) — 四层架构和边界。
-- [接入你的 Agent](/zh/guides/connect-your-agent) — 编写 direct agent adapter 的教程。

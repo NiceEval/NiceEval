@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clientHistory, deltaStream, driveFrameStream, pausable, captureResumeId, resumeId } from "./streaming.ts";
+import { clientHistory, deltaStream, driveFrameStream, pausable, serverSession } from "./streaming.ts";
 import type { DeltaOp } from "./streaming.ts";
 import type { AgentContext } from "../types.ts";
 
@@ -116,20 +116,25 @@ describe("pausable", () => {
   });
 });
 
-describe("resumeId / captureResumeId", () => {
+describe("serverSession", () => {
   it("isNew 时不带 resume id,续接轮带上已有 id", () => {
-    expect(resumeId(ctxOf({ isNew: true }))).toBeUndefined();
-    expect(resumeId(ctxOf({ id: "sess-1", isNew: false }))).toBe("sess-1");
+    const session = serverSession();
+    expect(session.id(ctxOf({ isNew: true }))).toBeUndefined();
+    expect(session.id(ctxOf({ id: "sess-1", isNew: false }))).toBe("sess-1");
   });
 
-  it("只在新会话第一轮落地;resume 轮不会被后端回传的 id 覆盖", () => {
+  it("capture 只在新会话第一轮落地;resume 轮不会被后端回传的 id 覆盖", () => {
+    const session = serverSession();
     const fresh = ctxOf({ isNew: true });
-    captureResumeId(fresh, "sess-new");
+    session.capture(fresh, "sess-new");
     expect(fresh.session.id).toBe("sess-new");
 
     const resuming = ctxOf({ id: "sess-old", isNew: false });
-    captureResumeId(resuming, "sess-forked"); // 后端可能因 fork 换了新 id,续接轮不该被它覆盖
+    session.capture(resuming, "sess-forked"); // 后端可能因 fork 换了新 id,续接轮不该被它覆盖
     expect(resuming.session.id).toBe("sess-old");
+
+    session.capture(fresh, "sess-other"); // 同一轮内第二次回传,不覆盖已写的 id
+    expect(fresh.session.id).toBe("sess-new");
   });
 });
 

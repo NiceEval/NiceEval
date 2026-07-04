@@ -115,7 +115,7 @@ export function runAttemptEffect(
       let receiver: TraceReceiver | undefined;
       let telemetry: Telemetry | undefined;
       let otelChannel: AgentOtelChannel | undefined;
-      // 共享池仅限:声明 events: otelEvents()(黑盒服务)或显式 tracing.scope === "run"。
+      // 共享池仅限:声明 events: otelEvents()(无侵入接入的长驻服务)或显式 tracing.scope === "run"。
       // 只声明 tracing 的进程内 adapter(如 aiSdkAgent)保持 per-attempt receiver,attempt 全并发。
       const wantsSharedOtel =
         run.agent.events !== undefined || run.agent.tracing?.scope === "run";

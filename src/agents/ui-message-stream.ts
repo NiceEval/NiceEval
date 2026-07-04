@@ -1,8 +1,8 @@
-// uiMessageStreamAgent():AI SDK UI Message Stream Protocol 的黑盒 HTTP adapter 工厂。
+// uiMessageStreamAgent():AI SDK UI Message Stream Protocol 的无侵入 HTTP adapter 工厂。
 //
 // 协议:https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol —— `useChat` 后端的标准 SSE
 // (`data: {UIMessageChunk}\n\n`,以 `data: [DONE]\n\n` 收尾)。这是「对着一个已部署的
-// AI SDK 应用的 HTTP 接口黑盒接入」:adapter 只 fetch,不 import 被测应用的任何代码。
+// AI SDK 应用的 HTTP 接口无侵入接入」:adapter 只 fetch,不 import 被测应用的任何代码。
 //
 //   · 会话:协议是服务端零状态、「客户端带全量历史」——工厂按 sessionId 存整份
 //     UIMessage[],每轮原样重放;isNew 开新会话线并回写 id。
@@ -218,7 +218,7 @@ export interface UiMessageStreamAgentOptions {
 const DEFAULT_DENY_REASON = "用户拒绝了这次调用,不要重试,直接告知用户操作未执行。";
 
 /**
- * UI Message Stream Protocol(AI SDK `useChat` 后端的标准 SSE 协议)的内置黑盒 adapter。
+ * UI Message Stream Protocol(AI SDK `useChat` 后端的标准 SSE 协议)的内置无侵入 adapter。
  * 对着已部署应用的 HTTP 端点收发,不 import 应用代码:
  *
  * ```typescript

@@ -7,14 +7,14 @@ export type { Shared } from "./shared.ts";
 export { otelEvents, otel } from "./otel-events.ts";
 export type { OtelDialect, DialectDerivation, OtelEventsOptions, OtelEventsSource } from "./otel-events.ts";
 
-// codex 原生 span → canonical GenAI 归一(瀑布图用)。黑盒接 codex 后端的 adapter 声明
+// codex 原生 span → canonical GenAI 归一(瀑布图用)。无侵入接 codex 后端的 adapter 声明
 // `spanMapper: mapCodexSpans`,就能拿到和内置 codexAgent 一样的瀑布图归一。
 export { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
 
 export { uiMessageStreamAgent } from "./ui-message-stream.ts";
 export type { UiMessageStreamAgentOptions, UIMessageLike, UIMessagePartLike } from "./ui-message-stream.ts";
 
-// SDK 原生事件流 → 标准事件的官方转换器(黑盒 adapter 只剩传输粘合)+ 通用 SSE 读帧器。
+// SDK 原生事件流 → 标准事件的官方转换器(无侵入 adapter 只剩传输粘合)+ 通用 SSE 读帧器。
 export { sseJsonFrames, fromClaudeSdkMessages, fromPiAgentEvents, fromCodexThreadEvents } from "./sdk-streams.ts";
 export type {
   SseFrameCursor,
@@ -29,8 +29,8 @@ export type {
 // 通用「拼装方式」件:逐帧驱动循环、HITL 挂起、两种会话续接策略、逐 token/参数增量累加器。
 // 见 docs/adapters/authoring.md「三段式」一节——这些和任何具体协议无关,自己写 adapter
 // 时优先拿这些拼,只有 transport(怎么发)与「帧类型 → 操作」这张映射表才是真正要手写的。
-export { driveFrameStream, pausable, resumeId, captureResumeId, clientHistory, deltaStream } from "./streaming.ts";
-export type { FrameReducer, FrameHook, Pausable, ClientHistory, DeltaOp, DeltaStreamSpec } from "./streaming.ts";
+export { driveFrameStream, pausable, serverSession, clientHistory, deltaStream } from "./streaming.ts";
+export type { FrameReducer, FrameHook, Pausable, ServerSession, ClientHistory, DeltaOp, DeltaStreamSpec } from "./streaming.ts";
 
 export { fromAiSdk, aiSdkAgent } from "./ai-sdk.ts";
 export type {

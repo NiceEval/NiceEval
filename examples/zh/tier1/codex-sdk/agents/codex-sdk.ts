@@ -1,4 +1,4 @@
-// codex-sdk 的 adapter:黑盒对接一个**已经在跑**的应用(../src/backend/server.ts,原生
+// codex-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `ThreadEvent` 流原样透传成 SSE,外加一个和 `ThreadErrorEvent` 同形状的 `{type:"error"}`
 // 传输帧)。没有 HITL(Codex SDK 不支持),永不返回 "waiting"。
 //
@@ -9,7 +9,7 @@
 //     直接读磁盘验证,不需要)。
 //   · 消息文本 / 终局错误 —— 官方转换器 `fromCodexThreadEvents` 从 `ThreadEvent` 帧翻译,
 //     逐帧驱动是官方件 `driveFrameStream`(没有 HITL,onFrame 只用来处理传输帧 + 抓 threadId)。
-import { defineAgent, otelEvents, otel, mapCodexSpans, sseJsonFrames, fromCodexThreadEvents, driveFrameStream } from "niceeval/adapter";
+import { defineAgent, otelEvents, otel, mapCodexSpans, sseJsonFrames, fromCodexThreadEvents, driveFrameStream, serverSession } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { ThreadEvent } from "@openai/codex-sdk";
@@ -20,6 +20,9 @@ const BASE_URL = process.env.CODEX_SDK_URL ?? "http://127.0.0.1:5199";
 type TransportFrame = { type: "error"; message: string };
 type CodexFrame = ThreadEvent | TransportFrame;
 
+// 会话续接走「服务端记历史」范式:请求带 session.id(ctx),thread.started 回传的 id 用 capture 写回。
+const session = serverSession();
+
 async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   let res: Response;
   try {
@@ -28,7 +31,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         message: input.text,
-        threadId: ctx.session.isNew ? undefined : ctx.session.id,
+        threadId: session.id(ctx),
       }),
       signal: ctx.signal,
     });
@@ -46,7 +49,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   return driveFrameStream(sseJsonFrames<CodexFrame>(res.body), stream, ctx, (frame) => {
     // 应用自定义传输帧(query() 之外的失败,比如 spawn 失败),不属于 ThreadEvent。
     if (frame.type === "error") return { fail: (frame as TransportFrame).message };
-    if (ctx.session.isNew && !ctx.session.id && stream.threadId) ctx.session.id = stream.threadId;
+    session.capture(ctx, stream.threadId);
   });
 }
 
