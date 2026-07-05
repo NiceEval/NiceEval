@@ -4,11 +4,11 @@ sidebarTitle: "驱动"
 description: "t.send() 和它返回的 Turn、t.sendFile()、多轮对话、t.newSession()，以及 respond() 处理的人工介入(HITL)。"
 ---
 
-在断言或 judge 之前，先要让 agent 动起来。**Drive** 是 `test(t)` 里发送输入、拿到结果的那部分——`t.send()`、`t.sendFile()`、`t.newSession()`，以及 HITL 的 `t.respond()` / `t.respondAll()`。驱动产出的都是一个 **Turn**，NiceEval 里所有断言和 judge 都从 Turn 的数据上读，具体看 [Assert](/zh/concepts/assert) 和 [Judge](/zh/concepts/judge)。
+在断言或 judge 之前，先要让 agent 动起来。**Drive** 是 `test(t)` 里发送输入、拿到结果的那部分——`t.send()`、`t.sendFile()`、`t.newSession()`，以及 HITL 的 `t.respond()` / `t.respondAll()`。驱动产出的都是一个 **Turn**，[NiceEval](https://niceeval.com/) 里的所有断言和 judge 都从 Turn 的数据上读，具体看 [Assert](/zh/concepts/assert) 和 [Judge](/zh/concepts/judge)。
 
 ## `t.send()` 和它返回的 `Turn`
 
-`t.send(input)` 是唯一的动词。它底层调用 agent adapter 的 `send(input, ctx)`，把返回值归一成一个 `Turn`：
+`t.send(input)` 是唯一的动词。它底层调用 Adapter 的 `send(input, ctx)`，把返回值归一成一个 `Turn`：
 
 ```ts
 const turn = await t.send("布鲁克林今天天气怎么样?");

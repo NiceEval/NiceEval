@@ -46,7 +46,7 @@ export default defineExperiment({
 
 `model` 会作为 `ctx.model` 传给 adapter；应用接口支持模型选择时，adapter 把它放进请求体、header 或 CLI 参数即可。
 
-`flags` 会作为 `ctx.flags` 传给 adapter，也会作为 `t.flags` 出现在 eval 里。它适合表达 experiment 维度的 feature 开关，例如 prompt 版本、工具集、检索开关。真正按 flag 切换行为的是你的应用或 adapter，NiceEval 只负责原样透传。
+`flags` 会作为 `ctx.flags` 传给 adapter，也会作为 `t.flags` 出现在 eval 里。它适合表达 experiment 维度的 feature 开关，例如 prompt 版本、工具集、检索开关。真正按 flag 切换行为的是你的应用或 adapter，[NiceEval](https://niceeval.com/) 只负责原样透传。
 
 ```ts
 // agents/web-agent.ts

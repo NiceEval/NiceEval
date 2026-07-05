@@ -22,7 +22,7 @@ export default defineExperiment({
 ```
 
 - `agent`：评谁。放的是已经配置好的实例——被测系统的 URL、鉴权传给 Adapter 工厂，不进 experiment 的其它字段。
-- `model` / `flags`：透传语义。NiceEval 不解释它们的含义，原样经 `ctx` 递给 Adapter，由 Adapter 随请求转发、应用按需切换——这正是 [Tier](/zh/concepts/tier) 里模型对比（Tier 1）和 feature A/B（Tier 3）的通道。
+- `model` / `flags`：透传语义。[NiceEval](https://niceeval.com/) 不解释它们的含义，原样经 `ctx` 递给 Adapter，由 Adapter 随请求转发、应用按需切换——这正是 [Tier](/zh/concepts/tier) 里模型对比（Tier 1）和 feature A/B（Tier 3）的通道。
 - `runs`、`budget`、并发、`sandbox` 等运行参数：怎么跑、跑多少。完整字段见[写实验](/zh/guides/write-experiment)。
 
 ## 矩阵对比

@@ -28,11 +28,11 @@ export default defineEval({
 | 字段 | 说明 |
 |---|---|
 | `description` | 给人看的描述，出现在报告里 |
-| `agent` | 使用哪个 agent adapter，可由配置或 CLI 覆盖 |
+| `agent` | 使用哪个 Adapter，可由配置或 CLI 覆盖 |
 | `test(t)` | 交互和断言逻辑 |
 
 <Note>
-  不要手写 `id` 或 `name`。NiceEval 从文件路径推导 ID。
+  不要手写 `id` 或 `name`。[NiceEval](https://niceeval.com/) 从文件路径推导 ID。
 </Note>
 
 ## 路径即身份
@@ -56,10 +56,10 @@ npx niceeval exp local weather/brooklyn
     结合并发、缓存、runs、attempt 和 early-exit 生成执行计划。
   </Step>
   <Step title="agent.send">
-    `t.send()` 调用被选中的 agent adapter，并得到标准 `Turn`。
+    `t.send()` 调用被选中的 Adapter，并得到标准 `Turn`。
   </Step>
   <Step title="Scoring">
-    NiceEval 收集值断言、作用域断言、judge 分数和测试结果。
+    [NiceEval](https://niceeval.com/) 收集值断言、作用域断言、judge 分数和测试结果。
   </Step>
   <Step title="Outcome">
     所有断言结果折叠成一个最终 outcome。

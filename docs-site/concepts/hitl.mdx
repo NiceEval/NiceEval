@@ -12,7 +12,7 @@ You probably already use it every day:
 - **Codex** approval modes such as suggest and auto-edit decide which actions need confirmation first.
 - **AI SDK apps** often surface tool calls in the UI when the tool does not have `execute`, let the human confirm, then return the result with `addToolResult`.
 
-That branch needs regression coverage like any other behavior: does the action happen after approval, stay blocked after rejection, and stop at the right point? But evals run automatically, without a human. **NiceEval compresses the human into three programmable actions: notice that the agent parked (`t.parked()`), inspect what it is waiting for (`t.requireInputRequest()`), and answer in place of the human (`t.respond()`).**
+That branch needs regression coverage like any other behavior: does the action happen after approval, stay blocked after rejection, and stop at the right point? But evals run automatically, without a human. NiceEval compresses the human into three programmable actions: notice that the agent parked (`t.parked()`), inspect what it is waiting for (`t.requireInputRequest()`), and answer in place of the human (`t.respond()`).
 
 ## How a pause is represented: `waiting` + `input.requested`
 

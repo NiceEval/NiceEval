@@ -38,4 +38,4 @@ export default defineConfig({
   Default sandbox backend for sandbox agents, built with `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` from `niceeval/sandbox` — bare strings like `"docker"` are no longer accepted here. Required for sandbox agents (directly on the experiment, or via this project-wide fallback: `exp.sandbox ?? config.sandbox`) — niceeval no longer auto-detects a backend from env vars, and there is no CLI flag for choosing one.
 </ParamField>
 
-niceeval keeps environment preparation in ordinary code. Prepare files inside `test(t)` with `t.sandbox.writeFiles`, `uploadFiles`, or `uploadDirectory`; put adapter setup in the agent adapter.
+niceeval keeps environment preparation in ordinary code. Prepare files inside `test(t)` with `t.sandbox.writeFiles`, `uploadFiles`, or `uploadDirectory`; put adapter setup in the Adapter.

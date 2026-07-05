@@ -40,7 +40,7 @@ See [Write Experiments](/guides/write-experiment) for the full `defineExperiment
 
 ## What this is good for
 
-- Comparing different agent adapters
+- Comparing different Adapters
 - Comparing different models. Tier 1 is enough as long as the application exposes model choice and the value is forwarded through `ctx.model`
 - Comparing prompts or feature flags. This usually needs Tier 3, because the application has to expose the variant as an experiment-selectable config and forward it through `flags` -> `ctx.flags`
 - Comparing different sandbox backends

@@ -8,7 +8,7 @@ Before assertions or judge scoring, you need to make the agent do something. **D
 
 ## `t.send()` and the `Turn` it returns
 
-`t.send(input)` is the core verb. Under the hood it calls the agent adapter's `send(input, ctx)` and normalizes the return value into a `Turn`:
+`t.send(input)` is the core verb. Under the hood it calls the Adapter's `send(input, ctx)` and normalizes the return value into a `Turn`:
 
 ```ts
 const turn = await t.send("What's the weather like in Brooklyn today?");

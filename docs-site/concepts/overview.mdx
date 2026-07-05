@@ -1,10 +1,10 @@
 ---
 title: "NiceEval architecture: evals, agents, and sandboxes"
 sidebarTitle: "Overview"
-description: "Understand how NiceEval, agent adapters, and sandbox backends work together to evaluate any AI agent through one API."
+description: "Understand how NiceEval, Adapters, and sandbox backends work together to evaluate any AI agent through one API."
 ---
 
-NiceEval separates **what you evaluate** from **how the subject under test is connected**. NiceEval discovers evals, schedules runs, scores assertions, and writes reports. Agent adapters call the system under test. Sandbox backends isolate filesystems for coding-agent tasks.
+NiceEval separates **what you evaluate** from **how the subject under test is connected**. NiceEval discovers evals, schedules runs, scores assertions, and writes reports. Adapters call the system under test. Sandbox backends isolate filesystems for coding-agent tasks.
 
 ## Four layers
 
@@ -15,7 +15,7 @@ Eval files / fixtures
 NiceEval
         |
         v
-Agent adapter
+Adapter
         |
         v
 Subject under test / Sandbox backend

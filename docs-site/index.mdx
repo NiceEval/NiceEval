@@ -46,7 +46,7 @@ Run coding agents such as Codex and Claude Code that need a sandbox:
    │      niceeval       │
    └─────────────────────┘
         |
-        | Agent adapter (official)
+        | Adapter (official)
         v
    ┌──────────────────────────────┐
    │        Docker Sandbox        │
@@ -70,7 +70,7 @@ Connect directly to your own AI agent:
    │      niceeval       │
    └─────────────────────┘
         |
-        | Agent adapter (official / custom)
+        | Adapter (official / custom)
         v
    ┌──────────────────────────────┐
    │     Your own AI agent app    │
@@ -80,7 +80,7 @@ Connect directly to your own AI agent:
 ```
 
 - **NiceEval core** handles eval discovery, scheduling, scoring, reporting, and artifacts.
-- **Agent adapters** are the open boundary: you decide how to call the subject under test and how to map its output into the standard event stream.
+- **Adapters** are the open boundary: you decide how to call the subject under test and how to map its output into the standard event stream.
 - **Sandbox** handles file-system isolation: coding agents that need a real workspace use Docker or a cloud sandbox; direct web agents do not.
 
 ## Examples

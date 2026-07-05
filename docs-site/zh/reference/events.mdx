@@ -43,7 +43,7 @@ interface Turn {
 { type: "message", role: "assistant" | "user", text: string }
 ```
 
-每段助手文本吐一条 `role: "assistant"` 的 `message`。**工具结果不是助手消息**——不要把工具输出包成 `message`，否则 `t.reply` 会读到错误内容。用户输入的 `message` 由 NiceEval 自动记录，adapter 不用吐。
+每段助手文本吐一条 `role: "assistant"` 的 `message`。**工具结果不是助手消息**——不要把工具输出包成 `message`，否则 `t.reply` 会读到错误内容。用户输入的 `message` 由 [NiceEval](https://niceeval.com/) 自动记录，adapter 不用吐。
 
 ### `action.called` / `action.result` —— 调了什么工具、结果如何
 

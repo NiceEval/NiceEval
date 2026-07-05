@@ -4,7 +4,7 @@ sidebarTitle: "沙箱后端"
 description: "NiceEval 在 Docker 或 Vercel sandbox 中运行 coding agents。了解如何选择后端、配置权限，并通过 warm pools 改善性能。"
 ---
 
-Sandbox backend 是创建和管理隔离运行环境的基础设施。NiceEval 把它们包装成同一个 `Sandbox` 接口，所以 adapter 不需要知道当前用的是本地 Docker、Vercel micro-VM 还是第三方云服务。
+Sandbox backend 是创建和管理隔离运行环境的基础设施。[NiceEval](https://niceeval.com/) 把它们包装成同一个 `Sandbox` 接口，所以 adapter 不需要知道当前用的是本地 Docker、Vercel micro-VM 还是第三方云服务。
 
 ## `Sandbox` 接口
 
@@ -23,7 +23,7 @@ Adapter 常用操作包括：
 
 ## 选择后端
 
-选择后端只能写在代码里——没有对应的 CLI flag，NiceEval 也不会自动探测后端。在 experiment 里设置 `sandbox` 字段（或者在 `niceeval.config.ts` 里设置作为项目级兜底），三选一：
+选择后端只能写在代码里——没有对应的 CLI flag，[NiceEval](https://niceeval.com/) 也不会自动探测后端。在 experiment 里设置 `sandbox` 字段（或者在 `niceeval.config.ts` 里设置作为项目级兜底），三选一：
 
 ```ts
 // experiments/local.ts
@@ -37,7 +37,7 @@ export default defineExperiment({
 });
 ```
 
-如果 experiment 和 `niceeval.config.ts` 都没有设置 `sandbox`，NiceEval 在创建 sandbox 时会直接报错，而不会猜一个后端。
+如果 experiment 和 `niceeval.config.ts` 都没有设置 `sandbox`，[NiceEval](https://niceeval.com/) 在创建 sandbox 时会直接报错，而不会猜一个后端。
 
 ## Docker
 

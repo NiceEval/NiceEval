@@ -4,7 +4,7 @@ sidebarTitle: "断言"
 description: "NiceEval 的断言词汇——值断言、作用域断言、test-as-scoring 和效率断言——以及 gate / soft 严重级和判决 outcome 的规则。"
 ---
 
-断言把 agent 在一次 eval 里做的一切——每条消息、每次工具调用、每处文件改动、每一分 token——折叠成一个可解释的结果。NiceEval 提供四种互补的断言机制：有的立即检查一个值，有的在整轮跑完后评估整次运行，有的在沙箱里跑测试，有的衡量效率。四种都产出同一种 `Assertion` 类型，都进同一套判决规则。第五种机制——让语言模型评判开放式质量——见 [Judge](/zh/concepts/judge)。
+断言把 agent 在一次 eval 里做的一切——每条消息、每次工具调用、每处文件改动、每一分 token——折叠成一个可解释的结果。[NiceEval](https://niceeval.com/) 提供四种互补的断言机制：有的立即检查一个值，有的在整轮跑完后评估整次运行，有的在沙箱里跑测试，有的衡量效率。四种都产出同一种 `Assertion` 类型，都进同一套判决规则。第五种机制——让语言模型评判开放式质量——见 [Judge](/zh/concepts/judge)。
 
 ## 四种断言机制
 

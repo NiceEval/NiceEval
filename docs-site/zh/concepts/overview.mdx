@@ -1,10 +1,10 @@
 ---
 title: "NiceEval 架构：evals、agents 与 sandboxes"
 sidebarTitle: "概览"
-description: "理解 NiceEval、agent adapters 和 sandbox backends 如何配合，用统一 API 评估任意 AI agent。"
+description: "理解 NiceEval、Adapter 和 Sandbox backend 如何配合，用统一 API 评估任意 AI agent。"
 ---
 
-NiceEval 的核心设计是把“评测逻辑”与“如何连接被测对象”分开。NiceEval 负责发现、调度、评分和报告；agent adapter 负责调用被测系统；sandbox backend 负责隔离文件系统。
+[NiceEval](https://niceeval.com/) 的核心设计是把“评测逻辑”与“如何连接被测对象”分开。[NiceEval](https://niceeval.com/) 负责发现、调度、评分和报告；Adapter 负责调用被测系统；Sandbox backend 负责隔离文件系统。
 
 ## 四层架构
 
@@ -13,7 +13,7 @@ Eval files / fixtures
         ↓
 NiceEval
         ↓
-Agent adapter
+Adapter
         ↓
 Subject under test / Sandbox backend
 ```
@@ -44,10 +44,10 @@ Subject under test / Sandbox backend
 ## Adapter
 
 <Note>
-  `Agent` 是 NiceEval 看到的抽象；`Adapter` 是你写的具体实现。NiceEval 不知道你的 agent 私有协议、CLI 参数或鉴权方式。
+  `Agent` 是 [NiceEval](https://niceeval.com/) 看到的抽象；`Adapter` 是你写的具体实现。[NiceEval](https://niceeval.com/) 不知道你的 agent 私有协议、CLI 参数或鉴权方式。
 </Note>
 
-这条边界让 NiceEval 保持通用。评估你自己的 AI agent、Claude Code、Codex 或自定义 agent 时，runner 和 scorers 的逻辑不需要改变。
+这条边界让 [NiceEval](https://niceeval.com/) 保持通用。评估你自己的 AI agent、Claude Code、Codex 或自定义 agent 时，runner 和 scorers 的逻辑不需要改变。
 
 ## Sandbox
 
@@ -70,10 +70,10 @@ Subject under test / Sandbox backend
     一个测试用例：描述、agent 引用和 `test(t)` 函数。
   </Accordion>
   <Accordion title="Agent">
-    NiceEval 通过名字调用的一条连接，负责返回标准 `Turn`。
+    [NiceEval](https://niceeval.com/) 通过名字调用的一条连接，负责返回标准 `Turn`。
   </Accordion>
   <Accordion title="Adapter">
-    agent 的具体实现，知道如何调用你的 runtime 或 CLI。
+    `Agent` 的具体实现，知道如何调用你的 runtime 或 CLI。
   </Accordion>
   <Accordion title="Sandbox">
     给 coding agent 使用的隔离运行环境。

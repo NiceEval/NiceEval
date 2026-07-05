@@ -4,7 +4,7 @@ sidebarTitle: "defineAgent"
 description: "defineAgent 和 defineSandboxAgent 参考：AgentContext、AgentSession、Sandbox 接口和共享 sandbox helpers。"
 ---
 
-每个 NiceEval agent 都是一个 adapter：一段知道如何驱动特定 backend，并把输出转成标准事件流的代码。runner 只调用 `agent.send(input, ctx)`。
+每个 [NiceEval](https://niceeval.com/) agent 都是一个 adapter：一段知道如何驱动特定 backend，并把输出转成标准事件流的代码。runner 只调用 `agent.send(input, ctx)`。
 
 ![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 返回标准事件流 Turn。](/images/agent-turn-roundtrip-zh.svg)
 

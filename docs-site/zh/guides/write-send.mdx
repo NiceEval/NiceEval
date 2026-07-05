@@ -8,14 +8,14 @@ description: "手写 Adapter 的 send 函数，一条主线七步走：发消息
 
 两个贯穿全文的原则：
 
-- **接的位置永远是用户前端本来就在用的那个接口。**页面调哪个端点、收什么格式，Adapter 就调哪个端点、收什么格式——不为 eval 开新接口，也不 import 应用内部代码直调函数（为什么，见[接入你的 Agent](/zh/guides/connect-your-agent)）。
+- **接的位置永远是用户前端本来就在用的那个接口。** 页面调哪个端点、收什么格式，Adapter 就调哪个端点、收什么格式——不为 eval 开新接口，也不 import 应用内部代码直调函数（为什么，见[接入你的 Agent](/zh/guides/connect-your-agent)）。
 - **你唯一真正手写的是 transport**——URL、鉴权、请求体每家本来就不一样。解析（原始返回 → 标准事件流）有官方转换器，从 `niceeval/adapter` 导出；编排（会话续接、HITL 暂停恢复）的状态槽就挂在 `ctx.session` 上，取用即可，不需要额外声明什么。
 
 ![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 调用你的应用并返回标准事件流 Turn。](/images/agent-turn-roundtrip-zh.svg)
 
 ## 起点：你的应用接口是什么形状
 
-NiceEval 不发明协议。你的应用大概率建在下面某种业界协议（或其变体）之上，官方件按这几种形状备齐：
+[NiceEval](https://niceeval.com/) 不发明协议。你的应用大概率建在下面某种业界协议（或其变体）之上，官方件按这几种形状备齐：
 
 | 协议 | 谁在定义 | 一句话介绍 | 参考 |
 |---|---|---|---|
@@ -275,7 +275,7 @@ export default defineAgent({
 
 应用已经埋了点（标准 OTel HTTP 服务端埋点即可）的话，接入分两半——一半是启动期配置，一半在 `send` 里。分清它们就是分清「不变的」和「每轮变的」。
 
-**端点是启动期配置，不从 send 传。**NiceEval 的 OTLP 接收地址每次运行都一样，所以它不走 `ctx`：在 `niceeval.config.ts` 里把接收端口钉住，应用启动时把自己的 OTel exporter 指向这个固定 URL，之后跑多少次 eval 都不用再改：
+**端点是启动期配置，不从 send 传。** [NiceEval](https://niceeval.com/) 的 OTLP 接收地址每次运行都一样，所以它不走 `ctx`：在 `niceeval.config.ts` 里把接收端口钉住，应用启动时把自己的 OTel exporter 指向这个固定 URL，之后跑多少次 eval 都不用再改：
 
 ```ts
 // niceeval.config.ts
@@ -290,7 +290,7 @@ export default defineConfig({
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces node server.js
 ```
 
-**send 里传的是本轮的 trace context，不是端点。**`ctx.telemetry.headers` 是运行器每轮新生成的 W3C `traceparent` 头——把它 spread 进请求，应用这一轮产生的 span 就精确挂到本轮的 trace 下，并发跑多条 eval 时归属不混。回到主线的 chat-app，`send` 里只多一行：
+**send 里传的是本轮的 trace context，不是端点。** `ctx.telemetry.headers` 是运行器每轮新生成的 W3C `traceparent` 头——把它 spread 进请求，应用这一轮产生的 span 就精确挂到本轮的 trace 下，并发跑多条 eval 时归属不混。回到主线的 chat-app，`send` 里只多一行：
 
 ```ts
     const res = await fetch(`${BASE_URL}/v1/chat/completions`, {

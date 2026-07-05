@@ -4,7 +4,7 @@ sidebarTitle: "接入 Agent"
 description: "接入的全景：写一个 adapter、配一个 experiment、跑通第一条 eval；配置和参数怎么在 experiment 里声明、在 Adapter 里消费。事件流、多轮、HITL、tracing 是增量，各有专章。"
 ---
 
-把一个被测对象接进 NiceEval，就是给它写一个 **adapter**：`defineAgent` 包住一个 `send` 函数——接一次输入，驱动你的 agent，返回这一轮结果。接入的全部工作就这一个文件。
+把一个被测对象接进 [NiceEval](https://niceeval.com/)，就是给它写一个 **adapter**：`defineAgent` 包住一个 `send` 函数——接一次输入，驱动你的 agent，返回这一轮结果。接入的全部工作就这一个文件。
 
 本文只回答两个问题：**这个文件和它的两样配套（experiment、eval）怎么跑通**，以及**参数怎么从 experiment 流到 Adapter、再流到你的应用**。事件流、多轮、HITL、tracing 都是之后的可选增量，各有专章，文末给了一张地图。
 
@@ -54,10 +54,10 @@ URL 先写死没关系——怎么把它从 experiment 传进来，见下文[「
 
 就算 agent runtime 和 eval 在同一个代码库里，也照样走 HTTP，不要把 `fetch` 换成进程内的函数直调：
 
-- **直调评的不是用户走的那条链路。**HTTP 层、序列化、中间件、流式传输全被绕过，eval 通过不代表线上行为正确。
-- **进程不隔离，结果不可复现。**被测代码的崩溃、全局状态、内存泄漏会连累运行器；并发跑多条 eval 时共享状态互相污染。
-- **超时与取消会失效。**`ctx.signal` 挂在请求上才能真正掐掉一轮跑飞的 agent；进程内的函数调用停不下来。
-- **adapter 会被焊死在这个代码库里。**走 HTTP 的 adapter 换个 `baseUrl` 就能对着本地 / 预发 / 生产跑（见下文两个 experiment 文件的写法）；直调做不到。
+- **直调评的不是用户走的那条链路。** HTTP 层、序列化、中间件、流式传输全被绕过，eval 通过不代表线上行为正确。
+- **进程不隔离，结果不可复现。** 被测代码的崩溃、全局状态、内存泄漏会连累运行器；并发跑多条 eval 时共享状态互相污染。
+- **超时与取消会失效。** `ctx.signal` 挂在请求上才能真正掐掉一轮跑飞的 agent；进程内的函数调用停不下来。
+- **adapter 会被焊死在这个代码库里。** 走 HTTP 的 adapter 换个 `baseUrl` 就能对着本地 / 预发 / 生产跑（见下文两个 experiment 文件的写法）；直调做不到。
 
 起一个本地 dev server 的成本只是一条命令，上面这些换不来。
 
@@ -114,8 +114,8 @@ npx niceeval view              # 本地查看器里看结果
 
 配置归属只有两条通道，分清它们，接入就不会乱：
 
-1. **静态配置走 Adapter 工厂。**URL、鉴权、协议细节这类"这个环境长什么样"的配置，作为工厂参数写在 experiment 文件里——`defineExperiment` 的 `agent` 字段放的是**已经配置好的实例**。
-2. **每轮动态值走 `ctx`。**experiment 声明的 `model`、`flags`，运行器每轮经 `ctx` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发给应用。
+1. **静态配置走 Adapter 工厂。** URL、鉴权、协议细节这类"这个环境长什么样"的配置，作为工厂参数写在 experiment 文件里——`defineExperiment` 的 `agent` 字段放的是**已经配置好的实例**。
+2. **每轮动态值走 `ctx`。** experiment 声明的 `model`、`flags`，运行器每轮经 `ctx` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发给应用。
 
 两条通道拼在一起，就是把第一步的 my-bot 从「写死 URL 的实例」改成「收配置的工厂」：default export 换成一个返回 `defineAgent(...)` 的函数，`send` 里写死的地方换成读工厂参数；experiment 声明的 `model`、`flags` 每轮从 `ctx` 到达，`send` 里随请求转发：
 
@@ -219,6 +219,6 @@ npx niceeval exp prod
 
 - [写 send](/zh/guides/write-send) —— 手写 Adapter 的完整教程：七步递进，从发一条消息到 HITL、OTel、flags。
 - [Adapter](/zh/concepts/adapter) —— `send` 的契约：`TurnInput` / `AgentContext` / `Turn` 逐字段。
-- [OTel 接入](/zh/guides/connect-otel) —— 把应用的 span 也发给 NiceEval，换 `niceeval view` 的调用瀑布图。
+- [OTel 接入](/zh/guides/connect-otel) —— 把应用的 span 也发给 [NiceEval](https://niceeval.com/)，换 `niceeval view` 的调用瀑布图。
 - [Tier](/zh/concepts/tier) —— 三档接入各投入什么、买到什么。
 - [写实验](/zh/guides/write-experiment) —— `defineExperiment` 的完整字段。

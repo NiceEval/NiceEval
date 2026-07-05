@@ -33,7 +33,7 @@ export default defineConfig({
 </ParamField>
 
 <ParamField body="sandbox" type="SandboxSpec">
-  默认 sandbox 后端，用 `niceeval/sandbox` 里的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 构造，不再接受 `"docker"` 这类裸字符串。对 sandbox agent 是必填项（可以直接写在 experiment 上，也可以只写在这里作为项目级兜底：`exp.sandbox ?? config.sandbox`）——NiceEval 不再从环境变量自动探测后端，也没有对应的 CLI flag。起始文件不会自动上传；sandbox eval 在 `test(t)` 里调用 `t.sandbox.uploadDirectory(...)`、`uploadFiles(...)` 或 `writeFiles(...)`。
+  默认 sandbox 后端，用 `niceeval/sandbox` 里的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 构造，不再接受 `"docker"` 这类裸字符串。对 sandbox agent 是必填项（可以直接写在 experiment 上，也可以只写在这里作为项目级兜底：`exp.sandbox ?? config.sandbox`）——[NiceEval](https://niceeval.com/) 不再从环境变量自动探测后端，也没有对应的 CLI flag。起始文件不会自动上传；sandbox eval 在 `test(t)` 里调用 `t.sandbox.uploadDirectory(...)`、`uploadFiles(...)` 或 `writeFiles(...)`。
 </ParamField>
 
-NiceEval 把环境准备放在普通代码里：eval 自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 `setup`。
+[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：eval 自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 `setup`。
