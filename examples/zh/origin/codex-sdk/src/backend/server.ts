@@ -8,8 +8,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { runTurnStreamed } from "./agent.ts";
 
-// 5189 被 examples/zh/origin/claude-sdk 占了(两个示例默认端口曾撞车),这里改用 5199。
-const PORT = Number(process.env.PORT ?? 5199);
+// 端口分配见 examples/zh/origin/README.md;每个示例一段独立的高位端口,同时起多个不撞车。
+const PORT = Number(process.env.PORT ?? 31001);
 
 const server = createServer(async (req, res) => {
   try {

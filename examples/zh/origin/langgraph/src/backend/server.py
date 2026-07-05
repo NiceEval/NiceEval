@@ -31,7 +31,7 @@ from agent import GATED_TOOLS, build_agent  # noqa: E402  (需要先 load_dotenv
 from langgraph.types import Command  # noqa: E402
 
 _PUBLIC_DIR = Path(__file__).resolve().parent.parent / "frontend"
-_PORT = int(os.getenv("PORT", "5488"))
+_PORT = int(os.getenv("PORT", "35000"))
 
 _agent = build_agent()
 

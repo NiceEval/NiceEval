@@ -6,7 +6,7 @@ import { setupOtel } from "./otel.ts";
 
 setupOtel("ai-sdk-v7-example");
 
-const port = Number(process.env.PORT ?? 5188);
+const port = Number(process.env.PORT ?? 34001);
 
 const server = createServer(async (req, res) => {
   try {

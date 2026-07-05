@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { createAgent } from "./agent.ts";
 
-const port = Number(process.env.PORT ?? 5299);
+const port = Number(process.env.PORT ?? 33001);
 
 const server = createServer(async (req, res) => {
   try {

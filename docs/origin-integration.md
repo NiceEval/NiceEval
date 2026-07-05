@@ -104,11 +104,11 @@ adapter 要这样做:
 
 | | 端口 | 请求体 | 帧格式 | session 字段 | HITL | 模型选择 | OTel(仅瀑布图) |
 |---|---|---|---|---|---|---|---|
-| ai-sdk-v7 | 5188 | `{messages[], model}` | AI SDK UI Message Stream | 无(整份 messages 重放) | 流内(SDK 机制) | 请求体 `model` | ✅ 官方 `@ai-sdk/otel`,标准 GenAI 语义 |
-| claude-sdk | 5189 | `{message, sessionId}` | SDKMessage 原样透传 | `sessionId`(SDK 落盘) | `/api/chat/approve` `toolUseId` | env `AGENT_MODEL` | ❌ 只有 metrics+logs |
-| codex-sdk | 5199 | `{message, threadId}` | ThreadEvent 原样透传 | `threadId`(SDK 落盘) | 无 | env `AGENT_MODEL` | ✅ codex 自家 span,`spanMapper: mapCodexSpans` 归一 |
-| pi-sdk | 5299 | `{message, sessionId}` | AgentEvent 透传 + 3 种自定义帧 | `sessionId`(服务端内存) | `/api/chat/approve` `toolUseId` | env `AGENT_MODEL` | ❌ 无 |
-| langgraph | 5488 | `{message, sessionId}` | 自定义 JSON 帧 | `sessionId` = thread_id(进程内存) | `/api/chat/approve` `toolCallId` | env `AGENT_MODEL` | ✅ LangSmith OTel 导出 |
+| ai-sdk-v7 | 34001 | `{messages[], model}` | AI SDK UI Message Stream | 无(整份 messages 重放) | 流内(SDK 机制) | 请求体 `model` | ✅ 官方 `@ai-sdk/otel`,标准 GenAI 语义 |
+| claude-sdk | 32001 | `{message, sessionId}` | SDKMessage 原样透传 | `sessionId`(SDK 落盘) | `/api/chat/approve` `toolUseId` | env `AGENT_MODEL` | ❌ 只有 metrics+logs |
+| codex-sdk | 31001 | `{message, threadId}` | ThreadEvent 原样透传 | `threadId`(SDK 落盘) | 无 | env `AGENT_MODEL` | ✅ codex 自家 span,`spanMapper: mapCodexSpans` 归一 |
+| pi-sdk | 33001 | `{message, sessionId}` | AgentEvent 透传 + 3 种自定义帧 | `sessionId`(服务端内存) | `/api/chat/approve` `toolUseId` | env `AGENT_MODEL` | ❌ 无 |
+| langgraph | 35000 | `{message, sessionId}` | 自定义 JSON 帧 | `sessionId` = thread_id(进程内存) | `/api/chat/approve` `toolCallId` | env `AGENT_MODEL` | ✅ LangSmith OTel 导出 |
 
 启动命令、必需的 key 见各 `examples/zh/tier1/<name>/README.md` 和 `.env.example`。下面只写映射和陷阱,详细实现以 `agents/<name>.ts` 源码为准。
 

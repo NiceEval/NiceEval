@@ -15,7 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { runTurn } from "./agent.ts";
 import { pendingApprovals } from "./pending-approvals.ts";
 
-const PORT = Number(process.env.PORT ?? 5189);
+const PORT = Number(process.env.PORT ?? 32001);
 
 const server = createServer(async (req, res) => {
   try {

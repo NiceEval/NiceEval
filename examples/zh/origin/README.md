@@ -16,7 +16,7 @@
 | **HITL 审批的 tool** | `calculate`（AI SDK `needsApproval`） | `calculate`（`canUseTool`） | 无（Codex SDK 不支持） | `calculate`（`beforeToolCall`） | `calculate`（LangGraph 原生 `interrupt()` + `HumanInTheLoopMiddleware`） |
 | **OTel** | 官方 `@ai-sdk/otel` 集成 + `registerTelemetry()`，GenAI 语义 spans（见 `src/backend/otel.ts`） | claude-code CLI 原生遥测：`CLAUDE_CODE_ENABLE_TELEMETRY=1` 那组环境变量，导出 metrics + logs（无 trace spans） | Codex CLI 原生 `otel` 配置段（`trace_exporter` → otlp-http，见 `src/backend/agent.ts`），导出 CLI 内部 trace spans | SDK 无官方 OTel 支持，未接 | LangSmith 零代码 OTel：设 4 个环境变量自动接 OTLP exporter |
 | **模型(默认)** | deepseek-v4-flash（可切 deepseek-v4-pro / gpt-4o-mini / gpt-5.4） | deepseek-v4-flash（可切 claude-sonnet-5 等） | gpt-5.4 | deepseek-v4-flash（可切 deepseek-v4-pro） | gpt-4o-mini |
-| **跑起来** | `pnpm install && pnpm dev` → http://localhost:5173 | `pnpm install && pnpm dev` → http://localhost:5173 | `pnpm install && pnpm dev` → http://localhost:5173 | `pnpm install && pnpm dev` → http://localhost:5300 | `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python src/backend/server.py` → http://localhost:5488 |
+| **跑起来** | `pnpm install && pnpm dev` → http://localhost:34000 | `pnpm install && pnpm dev` → http://localhost:32000 | `pnpm install && pnpm dev` → http://localhost:31000 | `pnpm install && pnpm dev` → http://localhost:33000 | `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python src/backend/server.py` → http://localhost:35000 |
 
 所有项目跑之前都要 `cp .env.example .env` 并填好对应的 key。OTel 默认开启，不做「设了才导出」的判断——各示例 `.env.example` 里的 OTel 相关变量已经给了本地默认值（通常指向 `localhost:4318`），照抄照跑就有数据；没起收集器时导出只是在后台失败重试，不影响主流程。
 
