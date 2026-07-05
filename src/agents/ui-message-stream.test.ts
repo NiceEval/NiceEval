@@ -149,7 +149,7 @@ describe("uiMessageStreamAgent", () => {
     fetchMock.mockResolvedValueOnce(
       sse([{ type: "tool-output-available", toolCallId: "c1", output: 2 }, { type: "text-delta", delta: "= 2" }]),
     );
-    const turn2 = await agent.send({ text: "approve" }, c);
+    const turn2 = await agent.send({ text: "approve", responses: [{ requestId: "ap1", optionId: "approve" }] }, c);
     expect(turn2.status).toBe("completed");
     expect(turn2.events).toEqual([
       { type: "action.called", callId: "c1", name: "calculate", input: { expr: "1+1" } },
@@ -177,7 +177,7 @@ describe("uiMessageStreamAgent", () => {
     await agent.send({ text: "算" }, c);
 
     fetchMock.mockResolvedValueOnce(sse([{ type: "text-delta", delta: "好的,不算了" }]));
-    const turn2 = await agent.send({ text: "deny" }, c);
+    const turn2 = await agent.send({ text: "deny", responses: [{ requestId: "ap1", optionId: "deny" }] }, c);
     expect(turn2.status).toBe("completed");
     expect(turn2.events).toEqual([
       { type: "action.called", callId: "c1", name: "calculate", input: { expr: "1+1" } },
@@ -211,7 +211,7 @@ describe("uiMessageStreamAgent", () => {
     expect(mutated.approval).toMatchObject({ approved: false });
   });
 
-  it("HITL:没有 input.responses 时(旧 adapter 用法)退回从 input.text 猜裁决", async () => {
+  it("HITL:approval 停轮期间的 send 没带对位 responses → 直接报错(不从文本猜)", async () => {
     const agent = uiMessageStreamAgent({ name: "t", url: "http://x/api/chat" });
     fetchMock.mockResolvedValueOnce(
       sse([
@@ -222,15 +222,7 @@ describe("uiMessageStreamAgent", () => {
     const c = ctx();
     await agent.send({ text: "算 1+1" }, c);
 
-    fetchMock.mockResolvedValueOnce(
-      sse([{ type: "tool-output-available", toolCallId: "c1", output: 2 }, { type: "text-delta", delta: "= 2" }]),
-    );
-    const turn2 = await agent.send({ text: "approve" }, c); // 没有 responses 字段
-    expect(turn2.events).toEqual([
-      { type: "action.called", callId: "c1", name: "calculate", input: { expr: "1+1" } },
-      { type: "action.result", callId: "c1", output: 2, status: "completed" },
-      { type: "message", role: "assistant", text: "= 2" },
-    ]);
+    await expect(agent.send({ text: "approve" }, c)).rejects.toThrow(/t\.respond/);
   });
 
   it("error 帧 → failed + error 事件", async () => {

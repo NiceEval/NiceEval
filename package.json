@@ -1,6 +1,6 @@
 {
   "name": "niceeval",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Agent-native eval tool — eval agents, services, functions, and coding-agent fixtures",
   "type": "module",
   "license": "MIT",
@@ -27,6 +27,10 @@
     "./adapter": {
       "types": "./src/agents/index.ts",
       "import": "./src/agents/index.ts"
+    },
+    "./adapter/otel": {
+      "types": "./src/agents/ai-sdk-otel.ts",
+      "import": "./src/agents/ai-sdk-otel.ts"
     },
     "./expect": {
       "types": "./src/expect/index.ts",

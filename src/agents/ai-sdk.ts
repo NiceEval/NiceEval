@@ -367,8 +367,9 @@ export interface AiSdkGenerateContext<M = unknown> {
   readonly signal: AbortSignal;
   readonly flags: Readonly<Record<string, unknown>>;
   /**
-   * 开了 `tracing: true` 才有:直接放进 generateText / streamText 的 `telemetry`
-   * 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,应用侧原样透传即可。
+   * 配了 `tracing`(如 `aiSdkOtel()`)才有:直接放进 generateText / streamText 的
+   * `telemetry` 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,
+   * 应用侧原样透传即可。
    */
   readonly telemetry?: AiSdkTelemetrySettings;
 }
@@ -381,7 +382,7 @@ export interface AiSdkTelemetrySettings {
   readonly integrations: any[];
 }
 
-/** ai-sdk-otel.ts 的 `telemetryForEndpoint` 返回值形状(定义挪到这里,见下面 loadOtel 的注释)。 */
+/** tracing 管线为某一轮建好的遥测件(`AiSdkTracing.telemetryForEndpoint` 的返回值)。 */
 export interface AiSdkTurnTelemetry {
   /** 直接放进 generateText / streamText 的 `telemetry` 选项。 */
   settings: AiSdkTelemetrySettings;
@@ -389,17 +390,32 @@ export interface AiSdkTurnTelemetry {
   flush(): Promise<void>;
 }
 
+/**
+ * `aiSdkAgent` 的 tracing 管线契约。内置实现是 `niceeval/adapter/otel` 的 `aiSdkOtel()`——
+ * 独立子路径导出,OTel 三件套是可选 peer 依赖,只有 import 那个入口的项目才需要安装;
+ * 这里只放形状,`niceeval/adapter` 本身零 OTel 依赖。
+ */
+export interface AiSdkTracing {
+  /** 为本轮的 OTLP 接收端点建(或复用)一条导出管线。每个 attempt 端点不同,按端点缓存。 */
+  telemetryForEndpoint(endpoint: string): AiSdkTurnTelemetry;
+}
+
 export interface AiSdkAgentOptions<M = unknown> {
   /** agent 名(报告 / 结果聚合的身份)。默认 "ai-sdk"。 */
   name?: string;
   /**
-   * 开 OTel 管线(拿 `niceeval view` 的瀑布图)。true 时运行器为这个 agent 开一个
-   * per-attempt OTLP 接收器,`ctx.telemetry` 才会出现;工厂据此建好绑定接收端点的
-   * `@ai-sdk/otel` 集成(经 `generate` 的 ctx.telemetry 交给应用,原样透传给
-   * generateText / streamText 的 `telemetry` 选项即可)。省略或 false 则整个 OTel
-   * 管线不开,`generate` 拿到的 `telemetry` 恒为 undefined,应用侧零开销。
+   * 开 OTel 管线(拿 `niceeval view` 的瀑布图):传 `niceeval/adapter/otel` 的
+   * `aiSdkOtel()`。设了运行器就为这个 agent 开 per-attempt OTLP 接收器,工厂每轮用
+   * 管线建好绑定接收端点的集成,经 `generate` 的 ctx.telemetry 交给应用,原样透传给
+   * generateText / streamText 的 `telemetry` 选项即可。省略则整个 OTel 管线不开,
+   * `generate` 拿到的 `telemetry` 恒为 undefined,应用侧零开销。
+   *
+   * ```typescript
+   * import { aiSdkOtel } from "niceeval/adapter/otel";
+   * aiSdkAgent({ tracing: aiSdkOtel(), generate });
+   * ```
    */
-  tracing?: boolean;
+  tracing?: AiSdkTracing;
   /**
    * 每轮一召:拿会话历史跑一次 generateText / streamText(await 完整结果)并原样返回。
    * model / tools / system prompt / stopWhen 都在这里配 —— 那是应用的事,工厂不掺和。
@@ -407,11 +423,6 @@ export interface AiSdkAgentOptions<M = unknown> {
   generate(ctx: AiSdkGenerateContext<M>): Promise<AiSdkResultLike>;
   /** 本轮的结构化输出(Turn.data,喂 outputEquals / outputMatches)。省略则 data 为 undefined。 */
   data?(result: AiSdkResultLike, turn: AiSdkTurn): unknown;
-  /**
-   * 可选双发:tracing 的 span 除发给 niceeval 的接收器外,同一批也发到你自己的 OTLP
-   * 后端(Langfuse / SigNoz / 生产 collector)。只在 `tracing: true` 时生效。
-   */
-  otlpBackendUrl?: string;
 }
 
 /**
@@ -425,10 +436,10 @@ export interface AiSdkAgentOptions<M = unknown> {
  *     tool-approval-response(以 approve / yes / 同意 / 批准 开头 = 批准,其余一律拒绝)塞回
  *     messages 再召 `generate`,SDK 才会执行(或跳过)被拦的工具;
  *   · 失败兜底:`generate` 抛错或结果完全为空 → `status: "failed"` + error 事件;
- *   · tracing:开 `tracing: true` 后,工厂替应用做完 OTel 管线——为每轮建好绑定 niceeval
- *     接收端点的 `@ai-sdk/otel` 集成(经 ctx.telemetry 交给 generate,原样透传给
- *     generateText 的 `telemetry` 即可)并在轮末 flush;`otlpBackendUrl` 可选
- *     双发到你自己的观测后端。应用侧零埋点代码。
+ *   · tracing:传 `tracing: aiSdkOtel()`(来自 `niceeval/adapter/otel`)后,工厂替应用
+ *     做完 OTel 管线——为每轮建好绑定 niceeval 接收端点的 `@ai-sdk/otel` 集成(经
+ *     ctx.telemetry 交给 generate,原样透传给 generateText 的 `telemetry` 即可)并在轮末
+ *     flush;`aiSdkOtel({ backendUrl })` 可选双发到你自己的观测后端。应用侧零埋点代码。
  *
  * ```typescript
  * import { aiSdkAgent } from "niceeval/adapter";
@@ -443,37 +454,6 @@ export interface AiSdkAgentOptions<M = unknown> {
  * });
  * ```
  */
-/**
- * ai-sdk-otel.ts 导出的形状,手写(不用 `typeof import("./ai-sdk-otel.ts")`)。
- * 那个写法即便只用在类型位置,tsc 也要静态解析 ai-sdk-otel.ts 才能算出类型,连带逼着
- * 它顶部 import 的三个可选 OTel 包必须已装——只用 bub/claude-code/codex 等其他 adapter、
- * 没碰 aiSdkAgent 的下游消费者也会被拖累 typecheck 失败。
- */
-interface OtelModule {
-  telemetryForEndpoint(endpoint: string, backendUrl?: string): AiSdkTurnTelemetry;
-}
-
-/**
- * import 目标放进变量而非字面量:tsc 只对字面量参数的动态 import 做静态模块解析,
- * 变量形式让它退回 `any`,ai-sdk-otel.ts 就不会被拖进消费者的 typecheck 范围。
- * (niceeval 自己仓库的 typecheck 不受影响——tsconfig 的 include 本就直接扫到这个文件。)
- */
-const OTEL_MODULE_SPECIFIER = "./ai-sdk-otel.ts";
-
-let otelModule: Promise<OtelModule> | undefined;
-
-/** OTel 管线按需加载:三个 OTel 包是可选 peer,只有开了 tracing 的用户需要装。 */
-function loadOtel(): Promise<OtelModule> {
-  otelModule ??= (import(OTEL_MODULE_SPECIFIER) as Promise<OtelModule>).catch((error: unknown) => {
-    otelModule = undefined;
-    throw new Error(
-      "tracing: true 需要 OTel 依赖:请在被测项目里安装 @ai-sdk/otel、@opentelemetry/sdk-trace-node、@opentelemetry/exporter-trace-otlp-http(niceeval 的可选 peer 依赖)。",
-      { cause: error },
-    );
-  });
-  return otelModule;
-}
-
 export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
   interface SessionState {
     messages: M[];
@@ -499,15 +479,12 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
       }
 
       if (state.pendingApprovals.length > 0) {
-        // HITL:t.respond 的回答到 adapter 就是一次普通的带 resume 的 send。
-        // 优先按 requestId(= approvalId)从 input.responses 里对位取裁决;没有匹配的
-        // responses(旧 adapter 用法 / 手写 send 未接结构化回答)才退回逐行文本猜
-        // (行数不够沿用最后一行)——内置件要防御式兼容,回退路径保留。
-        const lines = input.text.split("\n").map((l) => l.trim()).filter(Boolean);
-        const content = state.pendingApprovals.map((approvalId, i) => ({
+        // HITL:t.respond 的回答到 adapter 就是一次普通的带 responses 的 send,按
+        // requestId(= approvalId)对位取裁决;没答到的请求直接报错,不从文本猜。
+        const content = state.pendingApprovals.map((approvalId) => ({
           type: "tool-approval-response" as const,
           approvalId,
-          approved: approvedFromResponse(input.responses, approvalId, lines[Math.min(i, lines.length - 1)] ?? ""),
+          approved: approvalDecision(input.responses, approvalId),
         }));
         state.pendingApprovals = [];
         state.messages.push({ role: "tool", content } as M);
@@ -515,8 +492,9 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
         state.messages.push(userMessage(input.text, input.files) as M);
       }
 
-      // tracing 开了才建管线;OTel peer 依赖缺失在这里就报清楚,不伪装成失败的 Turn。
-      const otel = ctx.telemetry ? (await loadOtel()).telemetryForEndpoint(ctx.telemetry.endpoint, options.otlpBackendUrl) : undefined;
+      // tracing 管线由调用方显式传入(niceeval/adapter/otel 的 aiSdkOtel()),工厂只管
+      // 每轮把 per-attempt 端点交给它、轮末 flush。
+      const otel = ctx.telemetry && options.tracing ? options.tracing.telemetryForEndpoint(ctx.telemetry.endpoint) : undefined;
 
       let result: AiSdkResultLike;
       try {
@@ -542,31 +520,26 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
       const turn = fromAiSdk(result);
       // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
       if (turn.events.length === 0) {
-        return { status: "failed", events: [{ type: "error", message: "AI SDK 返回了空结果(无文本、无工具调用)" }] };
+        return { status: "failed", events: [{ type: "error", message: "AI SDK returned an empty result (no text, no tool calls)" }] };
       }
       return { ...turn, data: options.data?.(result, turn) };
     },
   });
 }
 
+/** 裁决词法(t.respond 的自由文本回答):approve / yes / 同意 / 批准 开头 = 批准,其余一律拒绝。 */
 function isApproved(line: string): boolean {
   return /^(approve|yes|同意|批准)/i.test(line);
 }
 
-/**
- * 优先按 requestId(= approvalId)从 input.responses 里取结构化裁决(optionId === "approve");
- * 拿不到匹配的 responses 才退回从整行文本猜(见 isApproved)——防御式兼容旧 adapter 用法,
- * 不删旧分支。
- */
-function approvedFromResponse(
-  responses: readonly InputResponse[] | undefined,
-  requestId: string,
-  fallbackText: string,
-): boolean {
+/** 按 requestId(= approvalId)从 input.responses 对位取裁决;optionId 优先,自由文本走 isApproved。 */
+function approvalDecision(responses: readonly InputResponse[] | undefined, requestId: string): boolean {
   const matched = responses?.find((r) => r.requestId === requestId);
-  if (matched?.optionId !== undefined) return matched.optionId === "approve";
-  if (matched?.text !== undefined) return isApproved(matched.text);
-  return isApproved(fallbackText);
+  if (!matched) {
+    throw new Error(`No response for pending approval "${requestId}". Answer approval requests with t.respond(...).`);
+  }
+  if (matched.optionId !== undefined) return matched.optionId === "approve";
+  return isApproved(matched.text?.trim() ?? "");
 }
 
 /** 待人批准的 approval 请求 id(非 automatic)。steps 优先,退回 v7 顶层聚合 content。 */

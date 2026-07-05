@@ -34,15 +34,20 @@ export type {
 export { driveFrameStream, deltaStream } from "./streaming.ts";
 export type { FrameReducer, FrameHook, DeltaOp, DeltaStreamSpec } from "./streaming.ts";
 
+// tracing 管线的内置实现 aiSdkOtel() 在 `niceeval/adapter/otel`(独立子路径,不从这里
+// re-export):OTel 三件套是可选 peer 依赖,只有 import 那个入口的项目才需要安装。
 export { fromAiSdk, aiSdkAgent } from "./ai-sdk.ts";
 export type {
   AiSdkAgentOptions,
   AiSdkGenerateContext,
   AiSdkResultLike,
   AiSdkStepLike,
+  AiSdkTelemetrySettings,
   AiSdkToolCallLike,
   AiSdkToolResultLike,
+  AiSdkTracing,
   AiSdkTurn,
+  AiSdkTurnTelemetry,
   AiSdkUsageLike,
 } from "./ai-sdk.ts";
 

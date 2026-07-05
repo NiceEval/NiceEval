@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { aiSdkAgent, fromAiSdk } from "./ai-sdk.ts";
-import type { AiSdkGenerateContext, AiSdkResultLike } from "./ai-sdk.ts";
+import type { AiSdkGenerateContext, AiSdkResultLike, AiSdkTracing } from "./ai-sdk.ts";
 import type { AgentContext } from "../types.ts";
 import { createAgentSession } from "../context/session.ts";
 
@@ -250,7 +250,7 @@ describe("fromAiSdk", () => {
     expect(seen[2]).toEqual([{ role: "user", content: "新会话" }]);
   });
 
-  it("aiSdkAgent:approval 停轮 → waiting;下一轮输入翻译成 tool-approval-response", async () => {
+  it("aiSdkAgent:approval 停轮 → waiting;下一轮 responses 翻译成 tool-approval-response", async () => {
     const seen: unknown[][] = [];
     let call = 0;
     const agent = aiSdkAgent({
@@ -282,7 +282,10 @@ describe("fromAiSdk", () => {
     expect(first.status).toBe("waiting");
     expect(first.events.some((e) => e.type === "input.requested")).toBe(true);
 
-    const second = await agent.send({ text: "approve" }, fakeCtx({ id: ctx.session.id }));
+    const second = await agent.send(
+      { text: "approve", responses: [{ requestId: "appr_1", optionId: "approve" }] },
+      fakeCtx({ id: ctx.session.id }),
+    );
     expect(second.status).toBe("completed");
     // 第二轮历史的最后一条是翻译好的裁决(tool 消息),不是用户文本
     const last = (seen[1] as { role: string; content: unknown }[]).at(-1);
@@ -333,6 +336,88 @@ describe("fromAiSdk", () => {
       role: "tool",
       content: [{ type: "tool-approval-response", approvalId: "appr_1", approved: false }],
     });
+  });
+
+  it("aiSdkAgent:approval 停轮期间的 send 没带对位 responses → 直接报错(不从文本猜)", async () => {
+    const agent = aiSdkAgent({
+      generate: async () => ({
+        steps: [
+          {
+            content: [
+              { type: "tool-call", toolCallId: "c1", toolName: "send_email", input: {} },
+              { type: "tool-approval-request", approvalId: "appr_1", toolCall: { toolCallId: "c1", toolName: "send_email", input: {} } },
+            ],
+          },
+        ],
+        responseMessages: [{ role: "assistant", content: [] }],
+      } satisfies AiSdkResultLike),
+    });
+
+    const ctx = fakeCtx();
+    const first = await agent.send({ text: "发邮件" }, ctx);
+    expect(first.status).toBe("waiting");
+    await expect(agent.send({ text: "approve" }, fakeCtx({ id: ctx.session.id }))).rejects.toThrow(/t\.respond/);
+  });
+
+  it("aiSdkAgent:tracing 管线——每轮拿 per-attempt 端点建集成经 ctx.telemetry 交给 generate,轮末 flush", async () => {
+    const endpoints: string[] = [];
+    const flushed: string[] = [];
+    const tracing: AiSdkTracing = {
+      telemetryForEndpoint(endpoint) {
+        endpoints.push(endpoint);
+        return {
+          settings: { integrations: ["fake-integration"] },
+          flush: async () => { flushed.push(endpoint); },
+        };
+      },
+    };
+    let seenTelemetry: unknown;
+    const agent = aiSdkAgent({
+      tracing,
+      generate: async ({ telemetry }) => {
+        seenTelemetry = telemetry;
+        return { text: "ok" };
+      },
+    });
+
+    const turn = await agent.send(
+      { text: "hi" },
+      { ...fakeCtx(), telemetry: { endpoint: "http://127.0.0.1:4318/v1/traces" } },
+    );
+    expect(turn.status).toBe("completed");
+    expect(seenTelemetry).toEqual({ integrations: ["fake-integration"] });
+    expect(endpoints).toEqual(["http://127.0.0.1:4318/v1/traces"]);
+    expect(flushed).toEqual(["http://127.0.0.1:4318/v1/traces"]);
+  });
+
+  it("aiSdkAgent:generate 抛错也要 flush(本轮已产生的 span 不能丢)", async () => {
+    let flushes = 0;
+    const tracing: AiSdkTracing = {
+      telemetryForEndpoint: () => ({
+        settings: { integrations: [] },
+        flush: async () => { flushes++; },
+      }),
+    };
+    const agent = aiSdkAgent({
+      tracing,
+      generate: async () => { throw new Error("upstream timeout"); },
+    });
+
+    const turn = await agent.send({ text: "hi" }, { ...fakeCtx(), telemetry: { endpoint: "http://e/v1/traces" } });
+    expect(turn.status).toBe("failed");
+    expect(flushes).toBe(1);
+  });
+
+  it("aiSdkAgent:没配 tracing 时 generate 的 telemetry 恒为 undefined", async () => {
+    let seenTelemetry: unknown = "sentinel";
+    const agent = aiSdkAgent({
+      generate: async ({ telemetry }) => {
+        seenTelemetry = telemetry;
+        return { text: "ok" };
+      },
+    });
+    await agent.send({ text: "hi" }, fakeCtx());
+    expect(seenTelemetry).toBeUndefined();
   });
 
   it("aiSdkAgent:generate 抛错 / 空结果 → failed + error 事件", async () => {

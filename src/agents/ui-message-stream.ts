@@ -135,25 +135,19 @@ function isApprovalRequested(part: UIMessagePartLike): boolean {
   return isToolPart(part) && part.state === "approval-requested";
 }
 
-/** 和 aiSdkAgent 同一词法:approve / yes / 同意 / 批准 开头 = 批准,其余一律拒绝。 */
+/** 和 aiSdkAgent 同一词法(t.respond 的自由文本回答):approve / yes / 同意 / 批准 开头 = 批准。 */
 function isApproved(text: string): boolean {
   return /^(approve|yes|同意|批准)/i.test(text.trim());
 }
 
-/**
- * 优先按 requestId 从 input.responses 里取结构化裁决(`optionId === "approve"`);
- * 拿不到 responses(旧 adapter / 手写 send 未接结构化回答)才退回从 input.text 猜的路径,
- * 防御式保留,不删旧分支。
- */
-function approvedFromResponse(
-  responses: readonly InputResponse[] | undefined,
-  requestId: string | undefined,
-  fallbackText: string,
-): boolean {
+/** 按 requestId 从 input.responses 对位取裁决;optionId 优先,自由文本走 isApproved,没答到直接报错。 */
+function approvalDecision(responses: readonly InputResponse[] | undefined, requestId: string | undefined): boolean {
   const matched = responses?.find((r) => r.requestId === requestId);
-  if (matched?.optionId !== undefined) return matched.optionId === "approve";
-  if (matched?.text !== undefined) return isApproved(matched.text);
-  return isApproved(fallbackText);
+  if (!matched) {
+    throw new Error(`No response for pending approval "${requestId ?? "unknown"}". Answer approval requests with t.respond(...).`);
+  }
+  if (matched.optionId !== undefined) return matched.optionId === "approve";
+  return isApproved(matched.text ?? "");
 }
 
 /** 已报告的进度:resume 续跑的是同一条 assistant 消息,跨轮去重靠它。 */
@@ -273,9 +267,9 @@ export function uiMessageStreamAgent(options: UiMessageStreamAgentOptions): Agen
       if (pendingPart && lastMessage) {
         // HITL 续跑:不追加新 user 消息 —— 把停在 approval-requested 的 part 原地改成
         // approval-responded,原样重发,服务端续跑同一条被打断的 assistant 消息。
-        // 裁决优先按 requestId 从 input.responses 读 optionId;没有 responses 才退回猜文本。
+        // 裁决按 requestId 从 input.responses 对位读取(t.respond 的结构化回答)。
         const requestId = pendingPart.approval?.id ?? pendingPart.toolCallId;
-        const approved = approvedFromResponse(input.responses, requestId, input.text);
+        const approved = approvalDecision(input.responses, requestId);
         const mutatedParts = lastMessage.parts.map((part) =>
           isApprovalRequested(part) && part.approval?.id === pendingPart.approval?.id
             ? {
