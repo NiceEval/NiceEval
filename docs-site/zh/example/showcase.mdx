@@ -1,0 +1,39 @@
+---
+title: "Showcase"
+sidebarTitle: "Showcase"
+description: "用 NiceEval 搭建评测的真实项目和线上网站，持续收录。"
+---
+
+这里收录用 [NiceEval](https://niceeval.com/) 搭建评测的真实项目和线上网站。每个案例都是可运行、可复现的完整仓库——不是摘录片段，点进源码仓库能看到完整的 eval、experiment 和 sandbox 配置。
+
+## coding-agent-memory-evals
+
+Tape、Nowledge Mem、mem9、db9.ai、OpenClaw……coding agent 的记忆实现开始分化，但缺一个可复现的评测面来说清楚它们到底有没有用。[coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) 用 NiceEval 搭了这个 benchmark：同一批 coding 任务、同一个模型（`gpt-5.4`），只换 agent 的记忆机制——[bub](https://github.com/CorrectRoadH/coding-agent-memory-evals)（内置 [Tape](https://tape.systems/)）对比无对应持久记忆的 codex。
+
+- 在线报告：[coding-agent-memory-evals.vercel.app](https://coding-agent-memory-evals.vercel.app/)
+- 源码仓库：[github.com/CorrectRoadH/coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals)
+
+主评分只看开发任务本身是否完成（build / tests / upstream verifier），不额外考“agent 是否记得某条事实”——记忆机制的价值体现在 duration、token、成本和 `pass^k` 这些副指标上。
+
+### 案例
+
+每条 eval 都把某个公开 benchmark 的原始任务和验证脚本原样接进来，不是重写的断言。
+
+| Eval | 来源 | 验证什么 |
+|---|---|---|
+| [`agent-029-use-cache-directive`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/agent-029-use-cache-directive.eval.ts) | next-evals | Server Action 是否用 `use cache` + `revalidateTag` 做目录数据的最终一致刷新 |
+| [`agent-030-app-router-migration-hard`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/agent-030-app-router-migration-hard.eval.ts) | next-evals | 复杂 Pages Router 应用整体迁移到 App Router，legacy 文件是否被删、legacy API 是否残留 |
+| [`agent-037-updatetag-cache`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/agent-037-updatetag-cache.eval.ts) | next-evals | read-your-own-writes 场景下是否用 `updateTag` 而不是只用 `revalidateTag` |
+| [`terminal-cancel-async-tasks`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/terminal-cancel-async-tasks.eval.ts) | [Terminal-Bench](https://www.tbench.ai/) | 实现可取消的并发受限异步任务运行器，跑原始 `pytest` 验证 |
+| [`repomod-hello-world-api`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/repomod-hello-world-api.eval.ts) | RepoMod-Bench | 把 Flask API 迁移成 Java Spring Boot，起服务后跑上游隐藏 HTTP 测试 |
+| [`tool-call-observability`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/tool-call-observability.eval.ts) | 自编写 smoke | agent 的 shell 工具调用是否被正确记录为标准事件 |
+
+### 对比实验
+
+[`experiments/compare/`](https://github.com/CorrectRoadH/coding-agent-memory-evals/tree/main/experiments/compare) 是唯一一组可对比实验：钉死同一个模型（`gpt-5.4`）和同一个 sandbox（docker），只换 agent——[`bub-gpt-5.4.ts`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/experiments/compare/bub-gpt-5.4.ts) vs. [`codex-gpt-5.4.ts`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/experiments/compare/codex-gpt-5.4.ts)，差异才能归因到记忆机制本身，而不是模型或运行环境。`niceeval exp compare` 跑整组，结果快照发布到线上报告。
+
+## 下一步
+
+- [接入你的 Agent](/zh/guides/connect-your-agent) — 从零接入一个 coding agent adapter。
+- [Experiments](/zh/guides/experiments) — 组织可对比的实验矩阵。
+- [评估 Skill 效果](/zh/example/claude-code-codex-skill) — 同一套「有/无 X 对比」思路，换成对比 Skill。

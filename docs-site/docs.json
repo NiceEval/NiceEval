@@ -212,7 +212,8 @@
                 "pages": [
                   "zh/example/claude-code-codex-plugin",
                   "zh/example/claude-code-codex-skill",
-                  "zh/example/ai-agent-application"
+                  "zh/example/ai-agent-application",
+                  "zh/example/showcase"
                 ]
               },
               {
