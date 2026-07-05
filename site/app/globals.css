@@ -108,6 +108,9 @@ pre {
 }
 
 .lang-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line);
