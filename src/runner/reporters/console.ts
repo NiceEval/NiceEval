@@ -2,7 +2,7 @@
 
 import type { EvalResult, Reporter, RunSummary } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
-import { formatDuration, formatTokens, renderRunReport } from "./table.ts";
+import { formatCost, formatDuration, formatTokens, renderRunReport } from "./table.ts";
 import { outcomeSymbol } from "./shared.ts";
 
 export function Console(): Reporter {
@@ -22,7 +22,7 @@ export function Console(): Reporter {
       const tok = (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0);
       // requests > 0 但 tokens = 0 → agent 跑了但不上报用量(如 bub);显示 — 而非误导性的 0
       const tokStr = tok > 0 ? `${formatTokens(tok)} tok` : (result.usage?.requests ?? 0) > 0 ? `— tok` : `0 tok`;
-      const cost = result.estimatedCostUSD !== undefined ? `  $${result.estimatedCostUSD.toFixed(3)}` : "";
+      const cost = result.estimatedCostUSD !== undefined ? `  ${formatCost(result.estimatedCostUSD)}` : "";
       const who = result.model ? `${result.agent}/${result.model}` : result.agent;
       const meta = `(${formatDuration(result.durationMs)}  ${tokStr}${cost})`;
       const label = result.outcome === "passed" ? "" : ` ${formatOutcome(result.outcome)}`;
