@@ -29,37 +29,37 @@ Tools like Langfuse and Braintrust lean more toward tracing and observability. F
    evals/*.eval.ts
         |
         v
-   ┌─────────────────────┐
-   │      niceeval       │
-   └─────────────────────┘
+   ┌────────────┐
+   │  niceeval  │
+   └────────────┘
         |
         | Adapter (official)
         v
-   ┌──────────────────────────────┐
-   │        Docker Sandbox        │
-   │   ┌────────────────────────┐ │
-   │   │ Codex / Claude Code /  │ │
-   │   │ apps that need an      │ │
-   │   │ isolated workspace     │ │
-   │   └────────────────────────┘ │
-   └──────────────────────────────┘
+   ┌───────────────────────────────┐
+   │        Docker Sandbox         │
+   │    ┌───────────────────────┐  │
+   │    │ Codex / Claude Code / │  │
+   │    │   apps that need an   │  │
+   │    │  isolated workspace   │  │
+   │    └───────────────────────┘  │
+   └───────────────────────────────┘
 ```
 
 ```text
    evals/*.eval.ts
         |
         v
-   ┌─────────────────────┐
-   │      niceeval       │
-   └─────────────────────┘
+   ┌────────────┐
+   │  niceeval  │
+   └────────────┘
         |
         | Adapter (official or custom)
         v
-   ┌──────────────────────────────┐
-   │   Your own AI agent app      │
-   │ (AI SDK · LangGraph · Pi ·   │
-   │    custom agent loop, etc.)  │
-   └──────────────────────────────┘
+   ┌────────────────────────────┐
+   │   Your own AI agent app    │
+   │ (AI SDK · LangGraph · Pi · │
+   │  custom agent loop, etc.)  │
+   └────────────────────────────┘
 ```
 
 ## Two integration modes

@@ -32,20 +32,20 @@ NiceEval unterstützt zwei Anbindungsarten, je nachdem, ob das getestete System 
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Agent-Adapter (offiziell)
         ▼
-   ┌──────────────────────────────┐
-   │        Docker Sandbox        │
-   │   ┌────────────────────────┐ │
-   │   │ Codex / Claude Code |  │ │
-   │   │ Apps, die ein isoliertes│ │
-   │   │ Dateisystem brauchen    │ │
-   │   └────────────────────────┘ │
-   └──────────────────────────────┘
+   ┌──────────────────────────────────┐
+   │          Docker Sandbox          │
+   │    ┌──────────────────────────┐  │
+   │    │  Codex / Claude Code |   │  │
+   │    │ Apps, die ein isoliertes │  │
+   │    │   Dateisystem brauchen   │  │
+   │    └──────────────────────────┘  │
+   └──────────────────────────────────┘
 ```
 
 **Modus 2: Direktverbindung – direkte Anbindung an deinen eigenen AI Agent**
@@ -54,18 +54,18 @@ NiceEval unterstützt zwei Anbindungsarten, je nachdem, ob das getestete System 
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Agent-Adapter (offiziell oder selbst implementiert)
         ▼
-   ┌──────────────────────────────┐
-   │      Dein eigener Web Agent   │
-   │   (HTTP / AI SDK · LangGraph  │
-   │    Pi o.ä. eigenes Framework, │
-   │    kein Docker nötig)         │
-   └──────────────────────────────┘
+   ┌────────────────────────────┐
+   │   Dein eigener Web Agent   │
+   │ (HTTP / AI SDK · LangGraph │
+   │ Pi o.ä. eigenes Framework, │
+   │     kein Docker nötig)     │
+   └────────────────────────────┘
 ```
 
 - **Der NiceEval-Kern** kümmert sich um das Auffinden von Evals, das Scheduling der Läufe, die Bewertung sowie die Erstellung von Reports und Artefakten.

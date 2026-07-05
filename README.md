@@ -32,19 +32,19 @@ NiceEval supports two integration modes, depending on whether the agent under te
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Agent adapter (official)
         ▼
-   ┌──────────────────────────────┐
-   │        Docker Sandbox         │
-   │   ┌────────────────────────┐  │
-   │   │ Codex / Claude Code /  │  │
-   │   │ apps needing isolation │  │
-   │   └────────────────────────┘  │
-   └──────────────────────────────┘
+   ┌────────────────────────────────┐
+   │         Docker Sandbox         │
+   │    ┌────────────────────────┐  │
+   │    │ Codex / Claude Code /  │  │
+   │    │ apps needing isolation │  │
+   │    └────────────────────────┘  │
+   └────────────────────────────────┘
 ```
 
 **Mode 2: Direct — connect straight to your own AI Agent**
@@ -53,18 +53,18 @@ NiceEval supports two integration modes, depending on whether the agent under te
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Agent adapter (official, or your own implementation)
         ▼
-   ┌──────────────────────────────┐
-   │       your own AI Agent       │
-   │   (AI SDK·LangGraph·Pi and    │
-   │    other agent frameworks —   │
-   │         no Docker needed)     │
-   └──────────────────────────────┘
+   ┌──────────────────────────┐
+   │    your own AI Agent     │
+   │ (AI SDK·LangGraph·Pi and │
+   │ other agent frameworks — │
+   │    no Docker needed)     │
+   └──────────────────────────┘
 ```
 
 - **NiceEval core** owns discovery, scheduling, scoring, reporting, and artifacts.
@@ -135,19 +135,20 @@ Start from the scenario that matches what you need to evaluate:
 ## Roadmap
 Official Adapters
 - [ ] Agent Software
-  - [ ] Claude Code
-  - [ ] Codex
-  - [ ] Bub
+  - [x] Claude Code
+  - [x] Codex
+  - [x] Bub
   - [ ] OpenClaw
   - [ ] Hermess Agent
   - [ ] Alma
   - [ ] ...
 
 - [ ] Agent Frameworks
-  - [ ] AI SDK
+  - [x] AI SDK
+  - [x] Claude SDK
+  - [x] Codex SDK
+  - [x] Pi Agent SDK
   - [ ] LangGraph
-  - [ ] Claude SDK
-  - [ ] Codex SDK
   - [ ] vm0
   - [ ] Cursor Agent SDK
 

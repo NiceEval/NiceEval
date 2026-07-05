@@ -42,20 +42,20 @@ Run coding agents such as Codex and Claude Code that need a sandbox:
    evals/*.eval.ts
         |
         v
-   ┌─────────────────────┐
-   │      niceeval       │
-   └─────────────────────┘
+   ┌────────────┐
+   │  niceeval  │
+   └────────────┘
         |
         | Adapter (official)
         v
-   ┌──────────────────────────────┐
-   │        Docker Sandbox        │
-   │   ┌────────────────────────┐ │
-   │   │ Codex / Claude Code /  │ │
-   │   │ apps that need an      │ │
-   │   │ isolated workspace     │ │
-   │   └────────────────────────┘ │
-   └──────────────────────────────┘
+   ┌───────────────────────────────┐
+   │        Docker Sandbox         │
+   │    ┌───────────────────────┐  │
+   │    │ Codex / Claude Code / │  │
+   │    │   apps that need an   │  │
+   │    │  isolated workspace   │  │
+   │    └───────────────────────┘  │
+   └───────────────────────────────┘
 ```
 
 ### Mode 2: Direct
@@ -66,17 +66,17 @@ Connect directly to your own AI agent:
    evals/*.eval.ts
         |
         v
-   ┌─────────────────────┐
-   │      niceeval       │
-   └─────────────────────┘
+   ┌────────────┐
+   │  niceeval  │
+   └────────────┘
         |
         | Adapter (official / custom)
         v
-   ┌──────────────────────────────┐
-   │     Your own AI agent app    │
-   │ (AI SDK · LangGraph · Pi ·   │
-   │   custom agent loop, etc.)   │
-   └──────────────────────────────┘
+   ┌────────────────────────────┐
+   │   Your own AI agent app    │
+   │ (AI SDK · LangGraph · Pi · │
+   │  custom agent loop, etc.)  │
+   └────────────────────────────┘
 ```
 
 - **NiceEval core** handles eval discovery, scheduling, scoring, reporting, and artifacts.

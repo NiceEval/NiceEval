@@ -32,21 +32,21 @@ NiceEval propose deux modes de connexion, selon que le système testé a besoin 
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Adaptateur Agent (officiel)
         ▼
-   ┌──────────────────────────────┐
-   │        Docker Sandbox        │
-   │   ┌────────────────────────┐ │
-   │   │ Codex / Claude Code |  │ │
-   │   │ Application nécessitant│ │
-   │   │ un système de fichiers │ │
-   │   │ isolé                  │ │
-   │   └────────────────────────┘ │
-   └──────────────────────────────┘
+   ┌─────────────────────────────────┐
+   │         Docker Sandbox          │
+   │    ┌─────────────────────────┐  │
+   │    │  Codex / Claude Code |  │  │
+   │    │ Application nécessitant │  │
+   │    │ un système de fichiers  │  │
+   │    │          isolé          │  │
+   │    └─────────────────────────┘  │
+   └─────────────────────────────────┘
 ```
 
 **Mode 2 : Connexion directe — connectez-vous directement à votre propre agent IA**
@@ -55,18 +55,18 @@ NiceEval propose deux modes de connexion, selon que le système testé a besoin 
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Adaptateur Agent (officiel, ou implémenté par vous-même)
         ▼
-   ┌──────────────────────────────┐
-   │   Votre propre Web Agent      │
-   │   (HTTP / AI SDK · LangGraph  │
-   │   Pi ou tout autre framework  │
-   │   maison, sans Docker)        │
-   └──────────────────────────────┘
+   ┌────────────────────────────┐
+   │   Votre propre Web Agent   │
+   │ (HTTP / AI SDK · LangGraph │
+   │ Pi ou tout autre framework │
+   │    maison, sans Docker)    │
+   └────────────────────────────┘
 ```
 
 - Le **cœur de NiceEval** se charge de découvrir les evals, d'orchestrer leur exécution, de les noter, et de générer rapports et artifacts.

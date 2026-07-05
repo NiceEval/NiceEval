@@ -32,20 +32,20 @@ NiceEval admite dos formas de integración, según si el sistema bajo prueba nec
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Adaptador de Agent (oficial)
         ▼
-   ┌──────────────────────────────┐
-   │        Docker Sandbox        │
-   │   ┌────────────────────────┐ │
-   │   │ Codex / Claude Code    │ │
-   │   │ App que necesita FS    │ │
-   │   │ aislado                │ │
-   │   └────────────────────────┘ │
-   └──────────────────────────────┘
+   ┌─────────────────────────────┐
+   │       Docker Sandbox        │
+   │    ┌─────────────────────┐  │
+   │    │ Codex / Claude Code │  │
+   │    │ App que necesita FS │  │
+   │    │       aislado       │  │
+   │    └─────────────────────┘  │
+   └─────────────────────────────┘
 ```
 
 **Modo 2: Conexión directa — conecta directamente tu propio AI Agent**
@@ -54,18 +54,18 @@ NiceEval admite dos formas de integración, según si el sistema bajo prueba nec
    evals/*.eval.ts
         │
         ▼
-   ┌─────────────────────┐
-   │     NiceEval        │
-   └─────────────────────┘
+   ┌────────────┐
+   │  NiceEval  │
+   └────────────┘
         │
         │ Adaptador de Agent (oficial o propio)
         ▼
-   ┌──────────────────────────────┐
-   │      Tu propio Web Agent     │
-   │   (HTTP / AI SDK · LangGraph │
-   │    Pi u otro framework       │
-   │    propio, sin Docker)       │
-   └──────────────────────────────┘
+   ┌────────────────────────────┐
+   │    Tu propio Web Agent     │
+   │ (HTTP / AI SDK · LangGraph │
+   │    Pi u otro framework     │
+   │    propio, sin Docker)     │
+   └────────────────────────────┘
 ```
 
 - **El núcleo de NiceEval** se encarga de descubrir evals, orquestar la ejecución, calificar, y generar informes y artifacts.
