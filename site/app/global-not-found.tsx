@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function GlobalNotFound() {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body>
         <main className="shell" style={{ paddingTop: "6rem", paddingBottom: "6rem" }}>
           <h1>Page not found</h1>

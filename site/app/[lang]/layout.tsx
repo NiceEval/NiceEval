@@ -27,7 +27,7 @@ export default async function LangLayout({ children, params }: { children: React
   if (!hasLocale(lang)) notFound();
 
   return (
-    <html lang={lang === "zh" ? "zh-CN" : "en"} suppressHydrationWarning>
+    <html lang={lang === "zh" ? "zh-CN" : "en"} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );
