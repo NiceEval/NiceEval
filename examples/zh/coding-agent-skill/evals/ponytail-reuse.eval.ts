@@ -61,7 +61,7 @@ export default defineEval({
       t.check(result.stdout.trim(), includes(/ok/));
     });
 
-    t.fileChanged("articles.py");
+    t.sandbox.fileChanged("articles.py");
 
     t.judge.autoevals
       .closedQA(

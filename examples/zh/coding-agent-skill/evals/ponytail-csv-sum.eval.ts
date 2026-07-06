@@ -37,7 +37,7 @@ export default defineEval({
       t.check(result.stdout.trim(), includes(/^351(\.0)?$/));
     });
 
-    t.fileChanged("sum_sales.py");
+    t.sandbox.fileChanged("sum_sales.py");
 
     t.judge.autoevals
       .closedQA(

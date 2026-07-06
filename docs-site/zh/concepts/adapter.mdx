@@ -270,7 +270,7 @@ turn.data.amount;   // 类型是 number——不是 unknown，不用手动收窄
 | `t.respond()` / `t.parked()` 等 HITL | send 返回过 `"waiting"` + `input.requested` 事件 | 无——做到了就是有 |
 | `t.calledTool()` / `t.toolOrder()` 等正断言 | events 里有 `action.*` | 无——有事件就能断 |
 | `t.notCalledTool()` / `t.usedNoTools()` 等负断言**可信** | 事件来自带完整性证明的官方转换器 | 无——证明随转换器返回值走 |
-| `t.sandbox`、`t.fileChanged()` 等 | `defineSandboxAgent` 构造 | 无 |
+| `t.sandbox`、`t.sandbox.fileChanged()` 等 | `defineSandboxAgent` 构造 | 无 |
 | `EvalResult.trace`、`niceeval view` 瀑布图 | `tracing` 块存在（span 只进瀑布图，不喂断言） | 无——块本来就要写 |
 
 负断言那行是唯一分档次的：`notCalledTool` 断的是"没发生"，前提是"事件全量"——这只有来源本身有完整性契约时才成立（SDK 原生事件流透传、AI SDK 的 `result.steps`、Responses 的 `output`）。手写映射没有证明，负断言会在运行时提示不可信，而不是静默假通过。所以也不存在"声明了做不到"的失真：可信度跟着事件的来源走，不跟作者的自觉走。逐能力的精确义务见[能力参考](/zh/reference/capabilities)。

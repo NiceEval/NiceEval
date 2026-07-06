@@ -184,7 +184,7 @@ export interface Agent {
   /**
    * 内部判别字段(用户不声明):`defineSandboxAgent` 恒设 "sandbox",`defineAgent` 恒设
    * "remote"。t 上的能力不再是问卷式声明,而是构造证据——sandbox 型才解锁
-   * `t.sandbox`/`t.fileChanged()` 等文件系统断言,见 docs-site「能力从哪来」一节。
+   * `t.sandbox`/`t.sandbox.fileChanged()` 等文件系统断言,见 docs-site「能力从哪来」一节。
    */
   readonly kind: "sandbox" | "remote";
   setup?: AgentSetup;

@@ -125,7 +125,7 @@ npx niceeval exp local weather-tool
 npx niceeval view
 ```
 
-如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），evals 里改用 `t.sandbox.uploadDirectory()` 铺工作区、`t.fileChanged()` / `t.file()` 检查改了什么文件、`t.sandbox.runCommand()` 跑测试——参考仓库 `examples/zh/coding-agent-skill/`。
+如果被测对象是需要隔离工作区的 coding agent（Codex、Claude Code 插件/Skill），evals 里改用 `t.sandbox.uploadDirectory()` 铺工作区、`t.sandbox.fileChanged()` / `t.sandbox.file()` 检查改了什么文件、`t.sandbox.runCommand()` 跑测试——参考仓库 `examples/zh/coding-agent-skill/`。
 
 ## 快速开始
 

@@ -101,7 +101,7 @@ export default defineAgent({
 
 ## `defineSandboxAgent`
 
-Use this for coding agent CLIs. The produced `Agent.kind` is always `"sandbox"` — filesystem assertions like `t.sandbox` and `t.fileChanged()` unlock only on this kind of agent. `ctx.sandbox` is the handle to the current isolated environment:
+Use this for coding agent CLIs. The produced `Agent.kind` is always `"sandbox"` — filesystem assertions like `t.sandbox` and `t.sandbox.fileChanged()` unlock only on this kind of agent. `ctx.sandbox` is the handle to the current isolated environment:
 
 <ResponseField name="runCommand(cmd, args?, opts?)" type="(cmd: string, args?: string[], opts?: CommandOptions) => Promise<CommandResult>">
   Run a command.

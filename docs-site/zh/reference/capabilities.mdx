@@ -12,7 +12,7 @@ description: "NiceEval 怎么知道你的 adapter 做到了什么：没有声明
 
 | 能力 | 怎么获得 | 你要写什么 |
 |---|---|---|
-| `t.sandbox` / `t.fileChanged()` 等文件系统断言 | 用 `defineSandboxAgent` 构造(`Agent.kind` 恒为 `"sandbox"`) | 无 |
+| `t.sandbox` / `t.sandbox.fileChanged()` 等文件系统断言 | 用 `defineSandboxAgent` 构造(`Agent.kind` 恒为 `"sandbox"`) | 无 |
 | `tracing`（OTLP 接收 → `niceeval view` 瀑布图） | CLI 型写了 `tracing` 字段；长驻应用在 config 配了 `telemetry` 固定端口 | 无（配置本来就要写）|
 | 工具/动作断言（`t.calledTool()` 等，含负断言） | 用官方转换器（`fromClaudeSdkMessages`、`fromAiSdk` 等）——返回值里有多少 `action.*` 事件就是多少 | 无；手工映射时事件完整与否由你的映射代码决定 |
 | 跨轮记忆、`t.newSession()` 隔离 | 用了 `ctx.session`（`id`/`capture`、`history`）续接上下文 | 无——接了就续得上，没接每轮都是新对话，不会报错 |

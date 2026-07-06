@@ -80,10 +80,12 @@ Observation summaries such as tool calls, commands, usage, and cost.
 
 <Tabs>
   <Tab title="passed">All gates passed.</Tab>
-  <Tab title="failed">At least one gate failed, or the run failed.</Tab>
-  <Tab title="soft-only">The main result is soft scoring.</Tab>
+  <Tab title="failed">At least one gate failed, or a soft assertion missed its threshold under `--strict`.</Tab>
+  <Tab title="errored">The environment, timeout, adapter, or agent runtime failed.</Tab>
   <Tab title="skipped">The eval was intentionally skipped.</Tab>
 </Tabs>
+
+Soft assertion scores are recorded in `assertions[].score`; outside `--strict`, they do not create another outcome.
 
 ## Debugging advice
 

@@ -122,7 +122,7 @@ export default defineEval({
 
     const result = await t.sandbox.runCommand("python3", ["_test_traversal.py"]);
     t.check(result.stdout.trim(), includes(/ok/));
-    t.fileChanged("uploads.py");
+    t.sandbox.fileChanged("uploads.py");
   },
 });
 ```

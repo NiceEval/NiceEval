@@ -68,7 +68,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 
 ## 环境预置不进运行器
 
-niceeval **没有框架级生命周期钩子**——运行器只固定"发现 → 调度 → 沙箱起停 / git 基线 / 采 diff → 评分 → 报告"这条主轴,不替用户跑任何环境 `setup` / `teardown`。要在跑 agent 前准备环境,分摊到三处已有职责:连 agent / 装 CLI 走 [`SandboxAgent.setup`](adapters/contract.md#agent-契约),这条 eval 的沙箱预置写在 `test(t)` 里,整轮共享的外部服务(mock API、DB)用外部编排(`docker compose` / CI 脚本)起停、经 env 传入。完整说明见 [环境预置放哪](sandbox.md#环境预置放哪)。
+niceeval **没有 run / experiment 级生命周期钩子**——运行器只固定"发现 → 调度 → 沙箱起停 / git 基线 / 采 diff → 评分 → 报告"这条主轴,不替用户在整轮实验前后跑任意 `setup` / `teardown`。要在跑 agent 前准备环境,分摊到三处已有职责:这条 eval 的沙箱预置走 `EvalDef.setup` 或 `test(t)`,连 agent / 装 CLI 走 [`SandboxAgent.setup`](adapters/contract.md#agent-契约),整轮共享的外部服务(mock API、DB)用外部编排(`docker compose` / CI 脚本)起停、经 env 传入。完整说明见 [环境预置放哪](sandbox.md#环境预置放哪)。
 
 **下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行钩子——这是从 agent-eval 的 `onRunComplete` 收敛过来的(见 [Experiments 砍字段](experiments.md#从-agent-eval-砍掉了什么以及为什么))。
 

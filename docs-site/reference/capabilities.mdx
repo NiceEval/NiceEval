@@ -12,7 +12,7 @@ There is no `capabilities` field on `defineAgent` / `defineSandboxAgent` — **n
 
 | Capability | How it is obtained | What you write |
 |---|---|---|
-| `t.sandbox` / `t.fileChanged()` and other filesystem assertions | Constructed with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Nothing |
+| `t.sandbox` / `t.sandbox.fileChanged()` and other filesystem assertions | Constructed with `defineSandboxAgent` (`Agent.kind` is always `"sandbox"`) | Nothing |
 | `tracing` (OTLP receiver → `niceeval view` waterfall) | CLI-style agents write the `tracing` field; long-running apps configure a fixed `telemetry` port in the config | Nothing (the configuration is what you would write anyway) |
 | Tool/action assertions (`t.calledTool()` etc., including negative assertions) | Use an official converter (`fromClaudeSdkMessages`, `fromAiSdk`, etc.) — the `action.*` events in the return value are exactly what you get | Nothing; with manual mapping, event completeness is decided by your mapping code |
 | Cross-turn memory, `t.newSession()` isolation | Used `ctx.session` (`id`/`capture`, `history`) to continue context | Nothing — wire it up and continuation works; skip it and every turn is a fresh conversation, with no error either way |

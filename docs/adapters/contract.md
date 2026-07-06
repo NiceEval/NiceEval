@@ -72,10 +72,10 @@ interface AgentSession {
 | `t.respond()` / `t.parked()` 等 HITL | send 返回过 `"waiting"` + `input.requested` 事件——做到了就是有 |
 | `t.calledTool()` / `t.toolOrder()` 等正断言 | events 里有 `action.*` |
 | `t.notCalledTool()` / `t.usedNoTools()` 等负断言**可信** | 事件来自带完整性证明的官方转换器(SDK 原生事件流透传、`fromAiSdk` 的 `result.steps`、Responses 的 `output`);手写映射没有这份证明,负断言可信度按来源判断,不按作者的自觉 |
-| `t.sandbox`、`t.fileChanged()` 等 | `defineSandboxAgent` 构造(`kind: "sandbox"`) |
+| `t.sandbox`、`t.sandbox.fileChanged()` 等 | `defineSandboxAgent` 构造(`kind: "sandbox"`) |
 | `EvalResult.trace`、`niceeval view` 瀑布图 | 配置了 OTel 接入(agent 的 `tracing` 块,或 remote agent + `defineConfig({ telemetry })`)——只画瀑布图,不影响任何断言,详见[观测性](../observability.md#otlp-traces--统一瀑布图) |
 
-唯一仍然存在的运行时守卫是**沙箱能力**:`t.sandbox` / `t.file` / `t.fileChanged()` 等直接读沙箱文件系统,非沙箱型 agent(`kind !== "sandbox"`)调用这些方法会立即得到清晰报错(`src/context/context.ts` 的 `capabilityGuard`)——没有沙箱就没有东西可读,不报错会静默返回空结果。其余能力(多轮对话、工具观测……)不设运行时守卫:没接会话存取器的 agent 每轮各是新对话(不报错,只是断言看不到历史);没吐 `action.*` 事件的 agent 上正断言自然不命中;负断言的可信度靠事件来源判断,不靠拦截调用。
+唯一仍然存在的运行时守卫是**沙箱能力**:`t.sandbox` / `t.sandbox.file()` / `t.sandbox.fileChanged()` 等直接读沙箱文件系统,非沙箱型 agent(`kind !== "sandbox"`)调用这些方法会立即得到清晰报错(`src/context/context.ts` 的 `capabilityGuard`)——没有沙箱就没有东西可读,不报错会静默返回空结果。其余能力(多轮对话、工具观测……)不设运行时守卫:没接会话存取器的 agent 每轮各是新对话(不报错,只是断言看不到历史);没吐 `action.*` 事件的 agent 上正断言自然不命中;负断言的可信度靠事件来源判断,不靠拦截调用。
 
 ## 标准事件流
 

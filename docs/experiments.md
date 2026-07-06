@@ -35,7 +35,7 @@ export default defineExperiment({
 });
 ```
 
-> experiment 只有"运行矩阵"字段,**没有环境起停钩子**。要在跑 agent 前准备环境,放 `test(t)`(沙箱预置)、`SandboxAgent.setup`(连 agent / 装 CLI)或外部编排(整轮共享服务),见 [环境预置放哪](sandbox.md#环境预置放哪)。
+> experiment 只有"运行矩阵"字段,**没有 run / experiment 级环境起停钩子**。要在跑 agent 前准备环境,放 `EvalDef.setup` / `test(t)`(单个 eval 的沙箱预置)、`SandboxAgent.setup`(连 agent / 装 CLI)或外部编排(整轮共享服务),见 [环境预置放哪](sandbox.md#环境预置放哪)。
 
 id 从**路径**推导:`experiments/compare/bub-gpt-5.4.ts` → `compare/bub-gpt-5.4`(路径即身份,和 eval 一致,禁止手写 id);其中目录段 `compare/` 就是"可对比组",见 [下节](#实验怎么组织文件夹--一组可对比的实验)。
 

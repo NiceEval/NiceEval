@@ -227,7 +227,7 @@ for (const c of PROJECTS) {
 verify.mjs 还负责两个专项:
 
 - **缓存行为**:同一 experiment 连跑两次,第二次**不带** `--force` → 断言 summary 里携入的 cached 结果仍计为 passed 且没有真跑(比较 `durationMs` 或 attempt 工件时间戳);第二次**带** `--force` → 断言全部真跑。这把"CI 忘了 --force 会静默跳过"的坑变成被测行为。
-- **工件形状**:抽查一个 attempt 目录,断言 `events.json` 是 JSON array、`summary.json` 顶层有 `passed/failed/errored/results[]`、`results[].artifactsDir` 指向存在的目录。防止 results-format 无声漂移(当前 writer 没有 schemaVersion,只能靠这层守)。
+- **工件形状**:抽查一个 attempt 目录,断言 `events.json` 是 JSON array、`summary.json` 顶层有 `format/schemaVersion/producer/passed/failed/errored/results[]`、`results[].artifactsDir` 指向存在的目录。防止 results-format 无声漂移。
 
 ## 6. L1:示例冒烟层
 
@@ -292,4 +292,4 @@ jobs:
 - 不测"OTel 派生事件"这类断言——OTel 只喂瀑布图,e2e 要测的是它产出了 `trace.json`,不是它替代了事件映射。
 - 不在 PR 门禁里跑任何真模型——随机性 + 费用 + secret 暴露面都不适合。
 - 不用 `--tag` 做 CI 内的用例切分(当前实现只收单值,与文档不一致;分层用 experiment 的 `evals` 过滤器表达,更明确)。
-- 不依赖 `summary.json` 里的版本字段(writer 尚未写 `schemaVersion`),形状校验只断言当前实际字段。
+- 版本字段只做格式契约校验,不把具体 `producer.version` 写死到测试里;版本不兼容的读取行为由 view loader 自己测。

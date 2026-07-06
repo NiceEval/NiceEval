@@ -58,7 +58,7 @@ niceeval exp compare --no-early-exit          # 关掉,要完整通过率分布
 niceeval exp compare --max-concurrency <n>    # 并发上限
 niceeval exp compare --timeout <ms>           # 单 eval 超时
 niceeval exp compare --force                  # 忽略指纹缓存,全量重跑
-niceeval exp compare --tag <tag>              # 按标签过滤(可重复)
+niceeval exp compare --tag <tag>              # 按单个标签过滤
 ```
 
 ## 评分与退出

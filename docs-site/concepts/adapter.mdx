@@ -271,7 +271,7 @@ The handle you get from `await t.send()` is a view onto this one Turn: turn-leve
 | `t.respond()` / `t.parked()` and other HITL | send has returned `"waiting"` + an `input.requested` event | Nothing — doing it is having it |
 | `t.calledTool()` / `t.toolOrder()` and other positive assertions | `action.*` present in events | Nothing — having events means you can assert |
 | `t.notCalledTool()` / `t.usedNoTools()` and other negative assertions being **trustworthy** | Events come from an official converter with a completeness proof | Nothing — the proof travels with the converter's return value |
-| `t.sandbox`, `t.fileChanged()`, etc. | Constructed by `defineSandboxAgent` | Nothing |
+| `t.sandbox`, `t.sandbox.fileChanged()`, etc. | Constructed by `defineSandboxAgent` | Nothing |
 | `EvalResult.trace`, the `niceeval view` waterfall | A `tracing` block exists (spans only feed the waterfall, never assertions) | Nothing — you were writing the block anyway |
 
 The negative-assertion row is the only tiered one: `notCalledTool` asserts "it did not happen", which presupposes "the events are complete" — and that only holds when the source itself carries a completeness contract (SDK-native event stream pass-through, AI SDK's `result.steps`, Responses' `output`). Hand-written mappings carry no proof, so negative assertions warn at runtime that they are untrustworthy instead of silently passing. This also means there is no "declared but can't deliver" drift: trustworthiness follows where the events came from, not the author's self-assessment. The precise per-capability obligations are in the [Capabilities Reference](/reference/capabilities).

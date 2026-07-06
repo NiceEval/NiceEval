@@ -96,14 +96,16 @@ OTLP trace 或标准化后的 span 数据。
 
 <Tabs>
   <Tab title="passed">所有 gate 通过。</Tab>
-  <Tab title="failed">至少一个 gate 失败，或运行失败。</Tab>
-  <Tab title="passed">主要结果是 soft 分数。</Tab>
+  <Tab title="failed">至少一个 gate 失败，或 `--strict` 下 soft 断言低于阈值。</Tab>
+  <Tab title="errored">环境、超时、adapter 或 agent runtime 出错。</Tab>
   <Tab title="skipped">eval 被主动跳过。</Tab>
 </Tabs>
 
+Soft 断言的分数记录在 `assertions[].score` 里；非 `--strict` 模式下，它们不会产生额外的 outcome。
+
 ## 调试建议
 
-- 先看 `result.json` 找到失败断言。
+- 先看 `summary.json` 找到失败断言。
 - 再看 transcript 视图，了解 agent 的决策过程。
 - coding-agent 失败时看 `diff.json` 和命令事件输出。
 - 工具调用问题看 `events.json`。

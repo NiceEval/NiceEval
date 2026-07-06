@@ -110,6 +110,11 @@ export interface SandboxHandle {
   uploadFile(path: string, content: Buffer): Promise<void>;
   readonly sandboxId: string;
   readonly diff: DiffView;
+  file(path: string): string;
+  fileChanged(path: string): AssertionHandle;
+  fileDeleted(path: string): AssertionHandle;
+  notInDiff(re: RegExp): AssertionHandle;
+  noFailedShellCommands(): AssertionHandle;
 }
 
 export interface SessionHandle {
@@ -194,11 +199,6 @@ export interface TestContext {
 
   // 工作区 / 沙箱
   readonly sandbox: SandboxHandle;
-  file(path: string): string;
-  fileChanged(path: string): AssertionHandle;
-  fileDeleted(path: string): AssertionHandle;
-  notInDiff(re: RegExp): AssertionHandle;
-  noFailedShellCommands(): AssertionHandle;
 
   // 效率 / 成本
   readonly usage: Usage;

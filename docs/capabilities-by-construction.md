@@ -8,7 +8,7 @@
 
 | 能力 | 证据 | 用户要写什么 |
 |---|---|---|
-| `t.sandbox`、`t.fileChanged()` 等文件系统断言 | `defineSandboxAgent` 构造(`kind: "sandbox"`) | 无——`defineAgent` 构造的 agent(`kind: "remote"`)调用这些方法会立即得到清晰报错,这是唯一仍需要运行时守卫的能力(`src/context/context.ts` 的 `capabilityGuard`) |
+| `t.sandbox`、`t.sandbox.fileChanged()` 等文件系统断言 | `defineSandboxAgent` 构造(`kind: "sandbox"`) | 无——`defineAgent` 构造的 agent(`kind: "remote"`)调用这些方法会立即得到清晰报错,这是唯一仍需要运行时守卫的能力(`src/context/context.ts` 的 `capabilityGuard`) |
 | 多次 `t.send()`、`t.reply`、`t.newSession()` | `send` 里接了 `ctx.session` 的续接存取器(`history<TMsg>()` 或 `id` + `capture(id)`) | 无——没接就每轮各是新对话,不报错,只是断言看不到跨轮历史 |
 | `t.calledTool()` 等正断言 | `send` 返回的 events 里有 `action.*` | 无——有事件就能断,没有就是断言 fail(响,不静默) |
 | `t.notCalledTool()` / `usedNoTools()` 等负断言的**可信度** | 事件来源是否有完整性契约(SDK 原生事件流透传、`fromAiSdk` 的 `result.steps`、Responses 的 `output`) | 无——但手写映射时如果知道自己漏了工具层,应在 eval README 里如实说明这条 eval 的负断言不可信,而不是假装它和正断言一样可靠 |
@@ -38,7 +38,7 @@ export default defineAgent({
 ## 边界
 
 - **默认值问题已经不存在。** 提案担心的"`defineAgent` 默认给 `conversation: true, toolObservability: true`,教程第一步要写一行反悔"——这个问题连同整个 `capabilities` 字段一起消失了,不需要保留"opt-out 默认值"这个概念。
-- **`workspace` 对远程 agent 依然不放开。** 文件系统断言(`t.sandbox`、`t.fileChanged()`)只在 `kind: "sandbox"` 上解锁,远程 agent 即便自己改了文件,也没有 sandbox 提供的 diff 基线,这条边界和提案设想的一致。
+- **`workspace` 对远程 agent 依然不放开。** 文件系统断言(`t.sandbox`、`t.sandbox.fileChanged()`)只在 `kind: "sandbox"` 上解锁,远程 agent 即便自己改了文件,也没有 sandbox 提供的 diff 基线,这条边界和提案设想的一致。
 - **`t.newSession()` 在没有接会话续接存取器时依然可以调用。** 新会话线的第一轮就是存取器的自然空态,不需要判断"这个 agent 支不支持多轮"。
 
 ## 相关阅读

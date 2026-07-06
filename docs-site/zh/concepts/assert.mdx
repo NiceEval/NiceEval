@@ -169,16 +169,16 @@ turn.outputMatches(z.object({ status: z.string() }));        // Standard Schema 
 ### 工作区维度（仅 sandbox agent）
 
 ```ts
-t.fileChanged("src/Button.tsx");
-t.fileDeleted("src/old.ts");
+t.sandbox.fileChanged("src/Button.tsx");
+t.sandbox.fileDeleted("src/old.ts");
 t.sandbox.diff.isEmpty();                      // 这一轮没有仓库文件被改动
-t.notInDiff(/sk-[A-Za-z0-9]/);        // diff 里不含密钥 / 内联样式
+t.sandbox.notInDiff(/sk-[A-Za-z0-9]/);        // diff 里不含密钥 / 内联样式
 t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());         // npm test 退出码 0
 t.check(await t.sandbox.runCommand("npm", ["run", "build"]), commandSucceeded()); // npm run build 退出码 0
-t.noFailedShellCommands();
+t.sandbox.noFailedShellCommands();
 ```
 
-`t.sandbox.diff` 是可查询对象：`t.sandbox.diff.get("src/Button.tsx")` 返回文件改动后的内容；`t.sandbox.diff.isEmpty()` 检查有没有文件变化；`t.sandbox.diff.matches(re)` 和 `t.notInDiff(re)` 对完整 diff 文本跑正则。
+`t.sandbox.diff` 是可查询对象：`t.sandbox.diff.get("src/Button.tsx")` 返回文件改动后的内容；`t.sandbox.diff.isEmpty()` 检查有没有文件变化；`t.sandbox.diff.matches(re)` 和 `t.sandbox.notInDiff(re)` 对完整 diff 文本跑正则。
 
 作用域断言到处遵守同一条规则：**接收者决定作用域，不是断言名字决定作用域。** `t.*` 聚合这次 eval run 的全部轮次（含 `t.newSession()` 开的额外 session）；`session.*`（`t.newSession()` 的返回值）只看这一条 session；`turn.*`（`t.send()` 的返回值）只看这一轮自己。同一套词汇，不同接收者——各接收者是什么见 [Drive](/zh/concepts/drive)。
 
@@ -196,7 +196,7 @@ const src = await t.sandbox.readSourceFiles({ extensions: ["ts"] });
 t.check(src.text(), includes(/z\.object\s*\(/));
 ```
 
-也可以通过标准事件流断言行为：`t.calledTool(...)`、`t.noFailedShellCommands()`、`t.eventsSatisfy(...)`，以及 `t.fileChanged(...)` 这类 diff 断言。
+也可以通过标准事件流断言行为：`t.calledTool(...)`、`t.sandbox.noFailedShellCommands()`、`t.eventsSatisfy(...)`，以及 `t.sandbox.fileChanged(...)` 这类 diff 断言。
 
 ## 4. 效率 / 成本断言
 

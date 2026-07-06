@@ -49,7 +49,7 @@ export default defineEval({
       t.check(route?.content ?? "", excludes(/typeof\s+req\.body/));
     });
 
-    t.fileChanged("src/routes/users.ts");
+    t.sandbox.fileChanged("src/routes/users.ts");
 
     t.judge.autoevals
       .closedQA(

@@ -101,7 +101,7 @@ export default defineAgent({
 
 ## `defineSandboxAgent`
 
-用于 coding agent CLI。产出的 `Agent.kind` 恒为 `"sandbox"`——`t.sandbox`、`t.fileChanged()` 等文件系统断言只在这类 agent 上解锁。`ctx.sandbox` 是当前隔离环境的句柄：
+用于 coding agent CLI。产出的 `Agent.kind` 恒为 `"sandbox"`——`t.sandbox`、`t.sandbox.fileChanged()` 等文件系统断言只在这类 agent 上解锁。`ctx.sandbox` 是当前隔离环境的句柄：
 
 <ResponseField name="runCommand(cmd, args?, opts?)" type="(cmd: string, args?: string[], opts?: CommandOptions) => Promise<CommandResult>">
   运行命令。

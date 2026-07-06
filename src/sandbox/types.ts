@@ -54,8 +54,8 @@ export type SandboxRuntime = "node20" | "node24";
 /**
  * Sandbox 的「数据结构」定义 —— 与 agent 一样可带参数(见 docs/sandbox.md)。
  * 必须用工厂函数构造(`dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` / `defineSandbox()`),
- * 放进 config / experiment 的 `sandbox` 字段 —— 字段类型只接受这个数据结构,不接受裸字符串,
- * 省略字段 = 按环境自动探测后端。各后端的参数互不相同 —— 这是个按 `backend` 区分的可辨识联合(discriminated union)。
+ * 放进 config / experiment 的 `sandbox` 字段 —— 字段类型只接受这个数据结构,不接受裸字符串。
+ * 各后端的参数互不相同 —— 这是个按 `backend` 区分的可辨识联合(discriminated union)。
  */
 export interface DockerSandboxSpec {
   readonly backend: "docker";
@@ -89,7 +89,7 @@ export interface CustomSandboxSpec {
 
 export type SandboxSpec = DockerSandboxSpec | VercelSandboxSpec | E2BSandboxSpec | CustomSandboxSpec;
 
-/** config / experiment 的 `sandbox` 字段:必须是工厂函数产出的 spec 数据结构,省略 = 自动探测后端。 */
+/** config / experiment 的 `sandbox` 字段:必须是工厂函数产出的 spec 数据结构;沙箱型 agent 不能省略。 */
 export type SandboxOption = SandboxSpec;
 
 export interface CommandOptions {

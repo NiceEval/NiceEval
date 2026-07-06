@@ -169,16 +169,16 @@ turn.outputMatches(z.object({ status: z.string() }));        // Standard Schema 
 ### Workspace dimension (sandbox agents only)
 
 ```ts
-t.fileChanged("src/Button.tsx");
-t.fileDeleted("src/old.ts");
+t.sandbox.fileChanged("src/Button.tsx");
+t.sandbox.fileDeleted("src/old.ts");
 t.sandbox.diff.isEmpty();                      // no repository files were modified this turn
-t.notInDiff(/sk-[A-Za-z0-9]/);         // diff contains no secrets / inline styles
+t.sandbox.notInDiff(/sk-[A-Za-z0-9]/);         // diff contains no secrets / inline styles
 t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());         // npm test exited 0
 t.check(await t.sandbox.runCommand("npm", ["run", "build"]), commandSucceeded()); // npm run build exited 0
-t.noFailedShellCommands();
+t.sandbox.noFailedShellCommands();
 ```
 
-`t.sandbox.diff` is a queryable object. `t.sandbox.diff.get("src/Button.tsx")` returns the file's post-change content; `t.sandbox.diff.isEmpty()` checks whether any files changed; `t.sandbox.diff.matches(re)` and `t.notInDiff(re)` run a regex over the full diff text.
+`t.sandbox.diff` is a queryable object. `t.sandbox.diff.get("src/Button.tsx")` returns the file's post-change content; `t.sandbox.diff.isEmpty()` checks whether any files changed; `t.sandbox.diff.matches(re)` and `t.sandbox.notInDiff(re)` run a regex over the full diff text.
 
 Scoped assertions follow one rule everywhere: **the receiver decides the scope, not the assertion name.** `t.*` aggregates every turn of the whole eval run (including any `t.newSession()` sessions); `session.*` (from `t.newSession()`) scopes to that one session; `turn.*` (from `t.send()`'s return value) scopes to that single turn only. Same vocabulary, different receiver — see [Drive](/concepts/drive) for what each receiver is.
 
@@ -196,7 +196,7 @@ const src = await t.sandbox.readSourceFiles({ extensions: ["ts"] });
 t.check(src.text(), includes(/z\.object\s*\(/));
 ```
 
-You can also assert behavior through the standard event stream: `t.calledTool(...)`, `t.noFailedShellCommands()`, `t.eventsSatisfy(...)`, and diff assertions such as `t.fileChanged(...)`.
+You can also assert behavior through the standard event stream: `t.calledTool(...)`, `t.sandbox.noFailedShellCommands()`, `t.eventsSatisfy(...)`, and diff assertions such as `t.sandbox.fileChanged(...)`.
 
 ## 4. Efficiency / cost assertions
 

@@ -35,7 +35,7 @@ t.check(t.reply, matches(/order #\d+/));
 t.succeeded();
 t.calledTool("search");
 t.usedNoTools();
-t.fileChanged("src/app.ts");
+t.sandbox.fileChanged("src/app.ts");
 t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());
 ```
 

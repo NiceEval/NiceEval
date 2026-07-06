@@ -106,7 +106,7 @@ Requirements:
     t.check(code, includes(/\.safeParse\s*\(/));
     t.check(code, includes(/422|UNPROCESSABLE/));
     t.check(code, excludes(/JSON\.parse/));
-    t.fileChanged("src/routes/users.ts");
+    t.sandbox.fileChanged("src/routes/users.ts");
 
     t.judge.autoevals
       .closedQA("Does the code use the idiomatic Zod validation pattern?", { on: code })

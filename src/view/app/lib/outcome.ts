@@ -75,7 +75,7 @@ export function scoresSummary(assertions: Assertion[]): string {
 }
 
 export function outcomeSummary(row: ViewRow, t: T): string {
-  // fold "scored" (soft-only) into passed count
+  // Fold legacy "scored" rows into the passed count.
   const passed = (row.passed || 0) + (row.scored || 0);
   const parts = [`${passed} ${t("outcome.passed")}`, `${row.failed} ${t("outcome.failed")}`];
   if (row.errored) parts.push(`${row.errored} ${t("outcome.errored")}`);

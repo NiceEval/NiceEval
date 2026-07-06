@@ -46,7 +46,7 @@ export default defineEval({
 
     await t.send("Implement POST /users in src/routes/users.ts.").then((turn) => turn.expectOk());
 
-    t.fileChanged("src/routes/users.ts");
+    t.sandbox.fileChanged("src/routes/users.ts");
   },
 });
 ```
@@ -85,10 +85,10 @@ const code = config?.content ?? "";
 t.check(code, includes(/z\.object\s*\(/));
 t.check(code, includes(/EnvSchema\.parse\s*\(\s*process\.env/));
 t.check(code, excludes(/process\.env\.\w+\s*\?\?/));
-t.fileChanged("src/config/env.ts");
+t.sandbox.fileChanged("src/config/env.ts");
 ```
 
-`t.fileChanged()` is a scoped assertion. It is evaluated from the sandbox diff after the run.
+`t.sandbox.fileChanged()` is a scoped assertion. It is evaluated from the sandbox diff after the run.
 
 ## Run project tests or probes
 

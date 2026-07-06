@@ -38,7 +38,7 @@ import type {
   ValueAssertion,
 } from "../types.ts";
 
-/** t.file(path) 返回它,延迟到 finalize 再读沙箱文件;t.check 识别并解析它。 */
+/** t.sandbox.file(path) 返回它,延迟到 finalize 再读沙箱文件;t.check 识别并解析它。 */
 export class FileRef {
   constructor(public readonly path: string) {}
 }
@@ -74,7 +74,7 @@ export interface ContextDeps {
 
 /**
  * 沙箱能力守卫:非沙箱型 agent(kind !== "sandbox")调文件系统类断言就报清晰错误。
- * 这是唯一仍需要构造证据之外强制检查的能力——`t.file`/`t.fileChanged()` 等直接读沙箱
+ * 这是唯一仍需要构造证据之外强制检查的能力——`t.sandbox.file`/`t.sandbox.fileChanged()` 等直接读沙箱
  * 文件系统,没有沙箱就没有东西可读,不报错会静默返回空结果。其余能力(多轮对话、
  * 工具断言……)都不再问卷式声明,由「做没做到」的构造证据决定,见
  * docs-site/zh/concepts/adapter.mdx「能力从哪来」一节。
@@ -126,6 +126,14 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       Object.entries(state.late.diff.generatedFiles).some(([p, c]) => re.test(p) || re.test(c)),
   };
 
+  const sandboxAssertions = {
+    file: (path: string) => new FileRef(path) as unknown as string,
+    fileChanged: (path: string) => collector.record(Scoped.fileChanged(path)),
+    fileDeleted: (path: string) => collector.record(Scoped.fileDeleted(path)),
+    notInDiff: (re: RegExp) => collector.record(Scoped.notInDiff(re)),
+    noFailedShellCommands: () => collector.record(Scoped.noFailedShellCommands()),
+  };
+
   const sandboxHandle: SandboxHandle = {
     get workdir() {
       return deps.sandbox.workdir;
@@ -147,6 +155,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       deps.sandbox.uploadDirectory(resolveLocalPath(deps.evalBaseDir, localDir), targetDir, opts),
     downloadFile: (path) => deps.sandbox.downloadFile(path),
     uploadFile: (path, content) => deps.sandbox.uploadFile(path, content),
+    ...sandboxAssertions,
   };
 
   function recordScoped(
@@ -258,9 +267,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   // 提示可信度,都不需要在这里拦。
   const guards: Record<string, unknown> = {};
   if (deps.agent.kind !== "sandbox") {
-    for (const m of ["file", "fileChanged", "fileDeleted", "notInDiff", "noFailedShellCommands"]) {
-      guards[m] = capabilityGuard(deps.agent.name, "sandbox", m);
-    }
     Object.defineProperty(guards, "sandbox", {
       get: capabilityGuard(deps.agent.name, "sandbox", "sandbox"),
       enumerable: true,
@@ -316,11 +322,6 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     },
 
     sandbox: sandboxHandle,
-    file: (path: string) => new FileRef(path) as unknown as string,
-    fileChanged: (path: string) => collector.record(Scoped.fileChanged(path)),
-    fileDeleted: (path: string) => collector.record(Scoped.fileDeleted(path)),
-    notInDiff: (re: RegExp) => collector.record(Scoped.notInDiff(re)),
-    noFailedShellCommands: () => collector.record(Scoped.noFailedShellCommands()),
   };
   const context = Object.defineProperties(
     {},
@@ -538,4 +539,3 @@ function partialObjectMatches(actual: unknown, expected: Record<string, unknown>
   }
   return true;
 }
-

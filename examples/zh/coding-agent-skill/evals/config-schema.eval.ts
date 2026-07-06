@@ -59,7 +59,7 @@ export default defineEval({
       t.check(config?.content ?? "", excludes(/process\.env\.\w+\s*\?\?/));
     });
 
-    t.fileChanged("src/config/env.ts");
+    t.sandbox.fileChanged("src/config/env.ts");
 
     t.judge.autoevals
       .closedQA(
