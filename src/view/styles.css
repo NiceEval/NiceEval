@@ -34,6 +34,13 @@
   /* send/回复行的强调色,对齐 landing page setup-card 的 --blue(#6ea8fe)。 */
   --blue: light-dark(#1d63d8, #6ea8fe);
   --focus: light-dark(#111113, #ededed);
+  /* 分类色板(cost/score 散点图按实验区分系列),六色顺序按 CVD 校验过,不要重排。 */
+  --series-1: light-dark(#2a78d6, #3987e5);
+  --series-2: light-dark(#1baf7a, #199e70);
+  --series-3: light-dark(#eda100, #c98500);
+  --series-4: light-dark(#008300, #008300);
+  --series-5: light-dark(#e34948, #e66767);
+  --series-6: light-dark(#eb6834, #d95926);
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
 
@@ -308,6 +315,42 @@ tbody tr:last-child td { border-bottom: 0; }
 .group-card-rate { font-size: 30px; font-weight: 760; font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 6px; }
 .group-card-meta { font-size: 12px; color: var(--muted); }
 .group-card-time { font-size: 11px; color: var(--soft); margin-top: 2px; }
+.cost-score-chart {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 20px 10px;
+  margin-bottom: 20px;
+  background: var(--panel);
+}
+.csc-head { font-size: 13px; font-weight: 680; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.csc-svg-wrap { position: relative; width: 100%; }
+.csc-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.csc-grid line { stroke: var(--line); stroke-width: 1; }
+.csc-axis text { fill: var(--muted); font-size: 10px; }
+.csc-point { cursor: pointer; }
+.csc-point .csc-hit { fill: transparent; }
+.csc-point .csc-dot { stroke: var(--panel); stroke-width: 2; }
+.csc-point text { fill: var(--text); font-size: 11px; }
+.csc-leader { stroke: var(--line-strong); stroke-width: 1; }
+.csc-point:hover .csc-dot,
+.csc-point:focus-visible .csc-dot { r: 6.5; }
+.csc-point:focus-visible { outline: none; }
+.csc-tooltip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  margin-top: -12px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 16px color-mix(in oklch, var(--text), transparent 88%);
+  z-index: 5;
+}
+.csc-tooltip b { font-size: 13px; }
+.csc-tooltip .csc-tooltip-meta { color: var(--muted); margin-top: 2px; }
 .section-sub-head {
   display: flex;
   align-items: center;

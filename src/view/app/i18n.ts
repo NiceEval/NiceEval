@@ -109,7 +109,10 @@ export type MessageKey =
   | "outcome.skipped"
   | "banner.skippedTitle"
   | "banner.skipped.incompatible"
-  | "banner.skipped.malformed";
+  | "banner.skipped.malformed"
+  | "chart.costVsScore"
+  | "chart.axisCost"
+  | "chart.axisScore";
 
 type Dictionary = Record<MessageKey, string>;
 
@@ -221,6 +224,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "banner.skippedTitle": "Some runs could not be loaded and are not shown here:",
     "banner.skipped.incompatible": "written by niceeval {{producer}} (schemaVersion {{schemaVersion}}) — view it with the command on the right",
     "banner.skipped.malformed": "unreadable report ({{detail}}) — it may be corrupted; re-run the eval or delete this run directory",
+    "chart.costVsScore": "Cost vs. Score",
+    "chart.axisCost": "Avg cost per eval",
+    "chart.axisScore": "Pass rate",
   },
   "zh-CN": {
     "app.title": "niceeval 实验查看器",
@@ -329,6 +335,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "banner.skippedTitle": "以下 run 读取失败,此处不展示:",
     "banner.skipped.incompatible": "由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}})—— 用右侧命令查看",
     "banner.skipped.malformed": "报告读不了({{detail}})—— 可能已损坏;重跑该 eval 或删除这个 run 目录",
+    "chart.costVsScore": "成本 × 通过率",
+    "chart.axisCost": "平均每个 eval 成本",
+    "chart.axisScore": "通过率",
   },
 };
 

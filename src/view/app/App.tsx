@@ -6,6 +6,7 @@ import { buildGroupMap, compareRows, resultFromUrl } from "./lib/rows.ts";
 import { formatCost, formatDateTime, formatDuration, formatPercent } from "./lib/format.ts";
 import { Metric } from "./components/primitives.tsx";
 import { GroupSelector } from "./components/GroupSelector.tsx";
+import { CostScoreChart } from "./components/CostScoreChart.tsx";
 import { ExperimentTable } from "./components/ExperimentTable.tsx";
 import { CopyAllErrors } from "./components/CopyControls.tsx";
 import { AttemptModal } from "./components/AttemptModal.tsx";
@@ -181,15 +182,18 @@ export function App({ data }: { data: ViewData }) {
             </div>
           </div>
           {rows.length ? (
-            <ExperimentTable
-              rows={filtered}
-              sort={sort}
-              setSortKey={setSortKey}
-              openRows={openRows}
-              toggleRow={toggleRow}
-              openModal={openModal}
-              t={t}
-            />
+            <>
+              <CostScoreChart rows={filtered} t={t} />
+              <ExperimentTable
+                rows={filtered}
+                sort={sort}
+                setSortKey={setSortKey}
+                openRows={openRows}
+                toggleRow={toggleRow}
+                openModal={openModal}
+                t={t}
+              />
+            </>
           ) : (
             <div className="empty">
               {t("empty.summary")}
