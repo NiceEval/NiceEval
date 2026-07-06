@@ -44,7 +44,7 @@ export default defineEval({
   async test(t) {
     await t.sandbox.uploadDirectory("../workspaces/ts-starter");
 
-    await t.send("Implement POST /users in src/routes/users.ts.").then((turn) => turn.expectOk());
+    await t.send("Implement POST /users in src/routes/users.ts.").then((turn) => turn.succeeded());
 
     t.sandbox.fileChanged("src/routes/users.ts");
   },
@@ -68,7 +68,7 @@ Requirements:
 - JWT_SECRET must be at least 32 characters
 - Export the env object and Env type`,
   )
-  .then((turn) => turn.expectOk());
+  .then((turn) => turn.succeeded());
 ```
 
 Leave implicit requirements, such as path traversal defense or reuse of existing helpers, for the verification phase. That is how you measure whether a Skill or plugin helped the agent infer missing context.

@@ -44,7 +44,7 @@ export default defineEval({
   async test(t) {
     await t.sandbox.uploadDirectory("../workspaces/ts-starter");
 
-    await t.send("在 src/routes/users.ts 里实现 POST /users 路由。").then((turn) => turn.expectOk());
+    await t.send("在 src/routes/users.ts 里实现 POST /users 路由。").then((turn) => turn.succeeded());
 
     t.sandbox.fileChanged("src/routes/users.ts");
   },
@@ -68,7 +68,7 @@ await t
 - JWT_SECRET 最少 32 个字符
 - 导出 env 对象和 Env 类型`,
   )
-  .then((turn) => turn.expectOk());
+  .then((turn) => turn.succeeded());
 ```
 
 把“是否防路径穿越”“是否复用现有工具”这类隐式质量要求留给验证阶段，才能测出 Skill 或插件是否真的帮助 agent 主动补齐上下文。

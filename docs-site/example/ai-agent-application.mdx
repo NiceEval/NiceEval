@@ -88,7 +88,7 @@ export default defineEval({
   description: "AI assistant: asking about weather calls get_weather",
   async test(t) {
     const turn = await t.send("What's the weather like in Brooklyn today?");
-    turn.expectOk();
+    turn.succeeded();
     await t.group("calls get_weather with correct city", () => {
       t.calledTool("get_weather", { input: { city: "Brooklyn" } });
       t.messageIncludes(/°[CF]|temperature|weather/i);

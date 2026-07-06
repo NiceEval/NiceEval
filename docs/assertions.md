@@ -158,7 +158,6 @@ export default defineEval({
 | `t` | `check` / `require` / `skip` / `log` | 记录 eval run 级断言或控制流,不属于某个 session / turn |
 | `t` | `newSession()` | 只有 run 主上下文负责创建额外 session |
 | `t` | `sandbox.*` | 沙箱是 attempt / run 资源,不是某条会话或某一轮的资源 |
-| `turn` | `expectOk()` | 只对一次 `send` 的返回状态有意义 |
 | `turn` | `outputEquals(value)` / `outputMatches(schema)` | 只对这一轮的 `turn.data` 有意义 |
 
 ### 值级断言

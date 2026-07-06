@@ -64,7 +64,7 @@ export default defineEval({
   description: "Draft an email, then send it on confirmation",
   async test(t) {
     const draft = await t.send("Draft a follow-up email.");
-    draft.expectOk();
+    draft.succeeded();
     t.check(draft.message, includes("Best"));
 
     await t.send("Looks good, send it.");
@@ -104,7 +104,7 @@ export default defineEval({
   description: "Create a Button component",
   async test(t) {
     await t.sandbox.uploadDirectory("../workspaces/ts-starter");
-    await t.send("Create src/components/Button.tsx with label and onClick props.").then((turn) => turn.expectOk());
+    await t.send("Create src/components/Button.tsx with label and onClick props.").then((turn) => turn.succeeded());
     t.sandbox.fileChanged("src/components/Button.tsx");
   },
 });

@@ -182,7 +182,7 @@ interface InputRequest {
 
 | 断言族 | 读什么 | adapter 义务 | 数据缺失时 |
 |---|---|---|---|
-| `succeeded()` / `parked()` / `turn.expectOk()` | `Turn.status` + 事件流(`parked` 看最后有意义事件是否 `input.requested`) | `status` 如实;HITL 停留吐 `input.requested` | `status` 恒 completed → `succeeded` **假通过(静默)** |
+| `succeeded()` / `parked()` | `Turn.status` + 事件流(`parked` 看最后有意义事件是否 `input.requested`) | `status` 如实;HITL 停留吐 `input.requested` | `status` 恒 completed → `succeeded` **假通过(静默)** |
 | `messageIncludes()` / `t.reply` / `turn.message` | `message` 且 `role: "assistant"` 的事件文本 | 每段助手文本吐一条 `message`(工具结果**不是**助手消息,别混,见[参考笔记的踩坑记录](reference/agent-eval.md#claude-code-怎么转换)) | 断言 fail(响) |
 | `outputEquals()` / `outputMatches()` | `turn.data` | 结构化输出放 `data`,不要序列化塞进 `events` | fail(响) |
 | `calledTool()` / `toolOrder()` / `loadedSkill()` / `calledSubagent()` | 派生 `toolCalls` / `subagentCalls` | 每次调用吐 `called` + `result`(callId 配对);`name` 原始名 + `tool` 规范名;result `status` 如实 | fail(响) |

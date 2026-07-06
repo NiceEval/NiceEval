@@ -99,7 +99,7 @@ export default defineEval({
         "在 uploads.py 里完成 safe_upload_path(base_dir, filename) 函数，" +
           "返回用户上传文件在服务器上的完整路径。base_dir 是允许的根目录。",
       )
-      .then((turn) => turn.expectOk());
+      .then((turn) => turn.succeeded());
 
     const src = await t.sandbox.readSourceFiles({ extensions: ["py"] });
     const code = src.text();

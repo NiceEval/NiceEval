@@ -96,7 +96,7 @@ export default defineEval({
 
   async test(t) {
     const turn = await t.send("What's the weather like in Beijing today?");
-    turn.expectOk();
+    turn.succeeded();
 
     await t.group("Calls get_weather with the right city", () => {
       t.calledTool("get_weather", { input: { city: "Beijing" } });

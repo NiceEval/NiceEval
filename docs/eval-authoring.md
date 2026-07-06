@@ -51,7 +51,7 @@ export default rows.map((row) =>
 
 - `t.*` 保留"聚合整个 eval run"的语义——这次 eval 执行的全部轮次、含 `t.newSession()` 开的额外 session,直接对应 eve 的 `timing: "final"` 层。这一层聚合是有意为之,不是要移除的"黑箱"。
 - `session.*`(`t.newSession()` 的返回值)复用 `t.*` 的同一套**作用域断言词汇**,但只看这个 session 在断言记录时已有的事件。
-- `turn.*`(`t.send()` 的返回值)也复用同一套**作用域断言词汇**,但只看这一轮自己的事件和用量,不再是旧版文档里的 4 个手写方法。`turn.expectOk` / `turn.outputEquals` / `turn.outputMatches` 是 turn 独有的(只对单轮结果有意义,聚合层不需要),继续保留。
+- `turn.*`(`t.send()` 的返回值)也复用同一套**作用域断言词汇**,但只看这一轮自己的事件和用量,不再是旧版文档里的 4 个手写方法。`turn.outputEquals` / `turn.outputMatches` 是 turn 独有的(只对单轮结果有意义,聚合层不需要),继续保留。
 
 也就是:**接收者决定作用域,不是断言名字决定作用域。** author-facing 接收者是 `t` / `session` / `turn`;`Attempt` 只作为 runner/result 里的执行单位存在,不是写 eval 时要操作的一层。完整清单见 [Assertions · 作用域规则](assertions.md#作用域规则)。
 
@@ -96,7 +96,7 @@ export default defineEval({
 });
 ```
 
-`t.reply` 是最后一条 assistant 消息;`t.sessionId` 是当前主会话 id;`t.events` 是主 session 目前捕获到的强类型事件流。`t.send(input)` 接受字符串或结构化消息,返回一个不可变的 **Turn**,带 `message` / `data`(结构化输出)/ `toolCalls` / `status` / `events` / `expectOk()`。带本地文件的一轮用 `t.sendFile(path, text?)`,文件会作为 data URL 附加到这一轮输入里,MIME 类型按 `path` 扩展名推断。
+`t.reply` 是最后一条 assistant 消息;`t.sessionId` 是当前主会话 id;`t.events` 是主 session 目前捕获到的强类型事件流。`t.send(input)` 接受字符串或结构化消息,返回一个不可变的 **Turn**,带 `message` / `data`(结构化输出)/ `toolCalls` / `status` / `events`。带本地文件的一轮用 `t.sendFile(path, text?)`,文件会作为 data URL 附加到这一轮输入里,MIME 类型按 `path` 扩展名推断。
 
 ## 多轮
 
@@ -111,7 +111,7 @@ export default defineEval({
   description: "先拟稿,确认后再发送",
   async test(t) {
     const draft = await t.send("帮我拟一封跟进邮件。");
-    draft.expectOk();                          // 上一轮若失败,这里抛
+    draft.succeeded();                         // 只看这一轮:失败就记一条断言
     t.check(draft.message, includes("此致"));
     draft.judge.autoevals.closedQA("语气是否专业").atLeast(0.6);
 

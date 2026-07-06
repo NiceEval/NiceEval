@@ -18,7 +18,7 @@ turn.data;       // structured output, only when this send declared output
 turn.status;     // "completed" | "failed" | "waiting"
 turn.events;     // StreamEvent[] for this turn
 turn.usage;      // { inputTokens, outputTokens, ... } when the adapter reports it
-turn.expectOk(); // throws when status === "failed"; otherwise returns the turn
+turn.succeeded(); // scored assertion: this turn didn't fail and isn't parked on HITL
 ```
 
 `t.reply` is shorthand for the last assistant message in the main session, equivalent to `turn.message` from the most recent `t.send()`. `t.events` is the full accumulated event stream for the main session.
@@ -35,7 +35,7 @@ t.check(turn.data.amount, equals(3200));
 The runner validates `data` against that schema immediately after the adapter returns. If the shape does not match, the turn fails and the diff is reported. If you did not declare `output`, there is no `turn.data`.
 
 <Tip>
-`turn.expectOk()` is a precondition check, not a scoring assertion. It throws immediately and stops the rest of `test(t)`. Use it when later turns depend on the earlier one having succeeded.
+`turn.succeeded()` scopes to this turn only: it checks this turn's `status` and whether it's parked on an unanswered HITL request. Call it right after a `t.send()` that later turns depend on, so a failure surfaces here instead of a pile of confusing follow-on failures.
 </Tip>
 
 ## One turn with a file: `t.sendFile()`
@@ -53,7 +53,7 @@ Every `await t.send(...)` is a new turn on the same conversation. Keep each retu
 
 ```ts
 const draft = await t.send("Draft a follow-up email.");
-draft.expectOk();
+draft.succeeded();
 t.check(draft.message, includes("Best"));
 draft.judge.autoevals.closedQA("Is the tone professional?").atLeast(0.6);
 

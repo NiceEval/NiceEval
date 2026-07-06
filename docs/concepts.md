@@ -62,7 +62,7 @@
 
 **Session** —— 一条会话线。`t` 驱动主 session;`t.newSession()` 返回独立 session,用于并行或隔离的多会话测试。`session.*` 作用域断言只看这条 session 已经发生的事件;这些事件仍会汇入 `t.*` run 级断言。
 
-**Turn** —— `t.send()` 的一次返回值,对应这一轮的标准事件流片段。带 `message` / `data` / `toolCalls` / `status` / `usage` / `events` 等只读字段,以及 `expectOk()` 和一套与 `t` 同名的作用域断言(`turn.calledTool`/`turn.succeeded`/…),作用域收窄成只看这一轮,详见 [Assertions](assertions.md#作用域规则)。
+**Turn** —— `t.send()` 的一次返回值,对应这一轮的标准事件流片段。带 `message` / `data` / `toolCalls` / `status` / `usage` / `events` 等只读字段,以及一套与 `t` 同名的作用域断言(`turn.calledTool`/`turn.succeeded`/…),作用域收窄成只看这一轮,详见 [Assertions](assertions.md#作用域规则)。
 
 **EarlyExit** / **早停** —— 一个 eval 取通过率时,先过一次即中止其余 attempt 的策略(可关)。
 

@@ -96,7 +96,7 @@ Requirements:
 - On validation failure, return HTTP 422 with { errors: result.error.issues }
 - On success, return HTTP 201`,
       )
-      .then((turn) => turn.expectOk());
+      .then((turn) => turn.succeeded());
 
     const src = await t.sandbox.readSourceFiles({ extensions: ["ts"] });
     const route = src.fileMatching(/users/);

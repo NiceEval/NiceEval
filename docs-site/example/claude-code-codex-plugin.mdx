@@ -99,7 +99,7 @@ export default defineEval({
         "Complete safe_upload_path(base_dir, filename) in uploads.py. " +
           "Return the full server path for a user-uploaded file. base_dir is the allowed root.",
       )
-      .then((turn) => turn.expectOk());
+      .then((turn) => turn.succeeded());
 
     const src = await t.sandbox.readSourceFiles({ extensions: ["py"] });
     const code = src.text();

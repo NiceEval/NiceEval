@@ -96,7 +96,7 @@ export default defineEval({
 - 校验失败返回 HTTP 422，body 为 { errors: result.error.issues }
 - 校验成功返回 HTTP 201`,
       )
-      .then((turn) => turn.expectOk());
+      .then((turn) => turn.succeeded());
 
     const src = await t.sandbox.readSourceFiles({ extensions: ["ts"] });
     const route = src.fileMatching(/users/);

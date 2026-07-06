@@ -18,7 +18,7 @@ turn.data;      // 结构化产物:仅当这次 send 声明了 output 时存在,
 turn.status;    // "completed" | "failed" | "waiting"
 turn.events;    // 这一轮的 StreamEvent[]
 turn.usage;     // { inputTokens, outputTokens, ... },adapter 报了才有
-turn.expectOk(); // status === "failed" 时抛出;否则原样返回 turn
+turn.succeeded(); // 作用域断言:这一轮没失败、也没卡在未回答的 HITL 上
 ```
 
 `t.reply` 是主 session 最后一条 assistant 消息的简写，等价于最近一次 `t.send()` 返回的 `turn.message`；`t.events` 是主 session 目前累积的完整事件流。
@@ -35,7 +35,7 @@ t.check(turn.data.amount, equals(3200));   // turn.data 是 { amount: number; cu
 adapter 返回后运行器立刻按声明校验：`data` 不匹配，本轮直接 `failed` 并报出差异。没声明 `output` 的轮次没有 `turn.data`——它不是"agent 顺手返回点什么"的口袋，而是你声明了才存在、存在就强类型的字段。
 
 <Tip>
-`turn.expectOk()` 是前置条件检查,不是评分断言:它立即抛出(中止 `test(t)` 剩余部分),而不是记一条失败断言。后面几轮依赖前一轮成功时用它——在一个已经失败的轮次上继续挂断言,通常只会产出一堆混乱的连带失败。
+`turn.succeeded()` 只看这一轮:检查这一轮的 `status`,以及是否卡在未回答的 HITL 请求上。后面几轮依赖前一轮成功时,紧跟着这一轮调它——在一个已经失败的轮次上继续挂断言,通常只会产出一堆混乱的连带失败。
 </Tip>
 
 ## 带文件的一轮 —— `t.sendFile()`
@@ -53,7 +53,7 @@ t.check(turn.message, includes("$"));
 
 ```ts
 const draft = await t.send("帮我拟一封跟进邮件。");
-draft.expectOk();
+draft.succeeded();
 t.check(draft.message, includes("此致"));
 draft.judge.autoevals.closedQA("语气是否专业").atLeast(0.6);
 

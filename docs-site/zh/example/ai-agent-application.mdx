@@ -92,7 +92,7 @@ export default defineEval({
   description: "AI 助手:问天气调用 get_weather",
   async test(t) {
     const turn = await t.send("北京今天天气怎么样？");
-    turn.expectOk();
+    turn.succeeded();
     await t.group("调用 get_weather 且城市正确", () => {
       t.calledTool("get_weather", { input: { city: "北京" } });
       t.messageIncludes(/°C|气温|天气/);
