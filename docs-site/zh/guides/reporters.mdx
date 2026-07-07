@@ -1,0 +1,113 @@
+---
+title: "把结果上报到 Braintrust 与其它目的地"
+sidebarTitle: "Reporter 上报"
+description: "用内置 reporters 把 eval 结果送到 Braintrust 实验、JUnit XML 或自定义目的地。"
+---
+
+[NiceEval](https://niceeval.com/) 自己跑、自己判分；reporter 负责把结果送出去。控制台输出和 `.niceeval/` artifacts 本身就是内置 reporter，始终开启。其余 reporter 从 `niceeval/reporters` 导入，按需挂载。
+
+挂载位置有两个：
+
+- `niceeval.config.ts` 的 `reporters`：观测整次运行的每个 eval。共享目的地（比如一个 Braintrust 实验）通常写在这里。
+- 单个 eval 的 `reporters`：实例只观测引用它的 eval。多个 eval 引用同一个实例时合并观测，结果落进同一个目的地；已经写在 config 里的实例在 eval 上再列一遍也不会重复上报。
+
+## Braintrust
+
+`Braintrust(...)` 把一次运行作为一个 Braintrust experiment 上传，每个 attempt 一行。放在 config 里覆盖整次运行：
+
+```ts niceeval.config.ts
+import { defineConfig } from "niceeval";
+import { Braintrust } from "niceeval/reporters";
+
+export default defineConfig({
+  reporters: [Braintrust({ project: "weather-agent" })],
+});
+```
+
+只想上报部分 eval 时，挂在 eval 上：
+
+```ts evals/forecast.eval.ts
+import { defineEval } from "niceeval";
+import { Braintrust } from "niceeval/reporters";
+
+export default defineEval({
+  reporters: [Braintrust({ project: "weather-agent" })],
+  async test(t) {
+    await t.send("北京今天适合骑车吗?");
+    t.succeeded();
+  },
+});
+```
+
+前置条件：安装 `braintrust` 包（`npm install braintrust`，它是可选依赖，不装不影响其它功能），并设置 `BRAINTRUST_API_KEY`；需要在代码里显式传 key 时用 `apiKey` 参数。运行结束后终端会打印 experiment URL。
+
+### 上报口径
+
+- 每个 attempt 是 Braintrust 里的一行；`runs: 3` 会产生三行，靠 metadata 里的 `attempt` 区分。
+- soft 断言按名字记为 score；gate 断言记在 `gate:` 前缀下。这样在 Braintrust 的实验对比里，gate 回归和 soft 分数回归用同一套 diff 看。
+- metrics 带开始/结束时间、token 用量和估算成本；缺的数据不写，不补零。
+- metadata 带 `agent`、`model`、`experiment`、`flags`、`outcome` 和失败断言明细，方便在 Braintrust 里按维度过滤。
+
+### 配置项
+
+<ParamField body="project" type="string">
+  Braintrust 项目名。省略时用 `niceeval`。
+</ParamField>
+
+<ParamField body="projectId" type="string">
+  Braintrust 项目 id。与 `project` 给一个即可。
+</ParamField>
+
+<ParamField body="experiment" type="string">
+  实验名。省略时由 Braintrust 自动命名。
+</ParamField>
+
+<ParamField body="baseExperiment" type="string">
+  作为对比基线（diff base）的既有实验名。
+</ParamField>
+
+<ParamField body="baseExperimentId" type="string">
+  作为对比基线的既有实验 id。
+</ParamField>
+
+<ParamField body="update" type="boolean">
+  为 `true` 时更新同名既有实验，而不是新建一个。
+</ParamField>
+
+<ParamField body="metadata" type="Record<string, unknown>">
+  实验级附加 metadata，与 NiceEval 自动写入的字段合并，同名以这里为准。
+</ParamField>
+
+<ParamField body="apiKey" type="string">
+  Braintrust API key。省略时 SDK 读 `BRAINTRUST_API_KEY`。
+</ParamField>
+
+## JUnit 与 Json
+
+`JUnit(path)` 输出 JUnit XML，让失败出现在 CI 的测试报告 UI 里；临时生成可以直接用 CLI 的 `--junit <path>`，不用改配置。`Json(path)` 把完整 `RunSummary` 落成一个 JSON 文件，喂下游脚本或 dashboard。CI 场景的完整接法见[CI 集成](./ci-integration)。
+
+## 自定义 reporter
+
+reporter 是实现若干可选回调的对象，拿到的是和内置 reporter 相同的结构化结果：
+
+```ts
+import type { Reporter } from "niceeval";
+
+const notify: Reporter = {
+  async onEvalComplete(result) {
+    if (result.outcome === "failed") {
+      await fetch("http://localhost:3000/notify", {
+        method: "POST",
+        body: JSON.stringify({ eval: result.id, agent: result.agent }),
+      });
+    }
+  },
+};
+```
+
+- `onRunStart(evals, agent, shape)`：运行开始，收到本次实际要跑的 eval 列表和运行规模。
+- `onEvalComplete(result)`：每个 attempt 完成即时触发，回调串行化，不会交错。
+- `onRunComplete(summary)`：运行结束，收到聚合汇总。
+- `onEvent(event)`：更细粒度的事件流（`eval:start`、`run:budgetExceeded` 等）。
+
+reporter 抛错只会打一条诊断信息，不会让运行中断。只有目的地没被内置覆盖时才需要自定义——`.niceeval/` 的 artifacts 已经记录了全部结果，事后分析直接读它（见[查看结果](./viewing-results)）。

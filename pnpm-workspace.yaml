@@ -3,6 +3,7 @@
 packages: []
 
 allowBuilds:
+  braintrust: false
   cpu-features: false
   esbuild: false
   protobufjs: false

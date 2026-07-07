@@ -8,8 +8,8 @@ import { t } from "../i18n/index.ts";
 import { cacheKey, computeFingerprint } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import { runAttemptEffect } from "./attempt.ts";
-import { runReporter, emitReporterEvent, summarize } from "./report.ts";
-import type { Agent, EvalResult, JudgeConfig, RunShape, RunSummary } from "../types.ts";
+import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
+import type { Agent, EvalResult, JudgeConfig, Reporter, RunShape, RunSummary } from "../types.ts";
 import type { Attempt, RunOptions } from "./types.ts";
 
 export type { AgentRun, RunOptions } from "./types.ts";
@@ -115,11 +115,37 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     totalRuns: attempts.length,
     maxConcurrency: opts.maxConcurrency,
   };
-  for (const r of opts.reporters) {
+  // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
+  // 已经挂在全局 reporters 里的同一实例不重复挂;同一实例被多个 eval 引用时合并观测集
+  // (共享一个目的地,如同一个 Braintrust 实验)。本次没有任何被观测 eval 要跑时整个跳过。
+  const scopedSets = new Map<Reporter, Set<string>>();
+  for (const e of opts.evals) {
+    for (const r of e.reporters ?? []) {
+      if (opts.reporters.includes(r)) continue;
+      let ids = scopedSets.get(r);
+      if (!ids) scopedSets.set(r, (ids = new Set()));
+      ids.add(e.id);
+    }
+  }
+  const reporters: Reporter[] = [...opts.reporters];
+  for (const [r, ids] of scopedSets) {
+    const scopedRuns = attempts.filter((a) => ids.has(a.evalDef.id)).length;
+    if (scopedRuns === 0) continue;
+    reporters.push(
+      scopeReporter(r, ids, {
+        evals: [...ids].filter((id) => runningIds.has(id)).length,
+        configs: opts.agentRuns.length,
+        totalRuns: scopedRuns,
+        maxConcurrency: opts.maxConcurrency,
+      }),
+    );
+  }
+
+  for (const r of reporters) {
     // reporter 只是结果消费方:单个 reporter 抛错记 diagnostic,不能让整次调度崩(P2)。
     await runReporter("onRunStart", () => r.onRunStart?.(runningEvals, firstAgent as Agent, shape));
   }
-  await emitReporterEvent(opts.reporters, {
+  await emitReporterEvent(reporters, {
     type: "run:start",
     evals: runningEvals,
     agent: firstAgent as Agent,
@@ -203,7 +229,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
             if (a.run.earlyExit && (passedKeys.has(a.key) || erroredKeys.has(a.key))) {
               yield* reportMutex.withPermits(1)(
                 Effect.promise(() =>
-                  emitReporterEvent(opts.reporters, {
+                  emitReporterEvent(reporters, {
                     type: "run:earlyExit",
                     evalId: a.evalDef.id,
                     experimentId: a.run.experimentId,
@@ -226,7 +252,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
                     budgetReported.add(budgetKey);
                     yield* reportMutex.withPermits(1)(
                       Effect.promise(() =>
-                        emitReporterEvent(opts.reporters, { type: "run:budgetExceeded", budget, spent: s.spent }),
+                        emitReporterEvent(reporters, { type: "run:budgetExceeded", budget, spent: s.spent }),
                       ),
                     );
                   }
@@ -261,7 +287,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
 
             yield* reportMutex.withPermits(1)(
               Effect.promise(() =>
-                emitReporterEvent(opts.reporters, {
+                emitReporterEvent(reporters, {
                   type: "eval:start",
                   eval: { id: a.evalDef.id },
                   agent: a.run.agent,
@@ -310,7 +336,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               // 停掉后续 attempt(P2)。
               Effect.promise(() =>
                 Promise.all(
-                  opts.reporters.map((r) =>
+                  reporters.map((r) =>
                     runReporter("onEvalComplete", () => r.onEvalComplete?.(result)),
                   ),
                 ),
@@ -320,7 +346,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
             // attempt 各自触发的 eval:complete 会绕开 permit=1 直接并发跑,和文档承诺的
             // 「报告回调串行化」不一致。
             yield* reportMutex.withPermits(1)(
-              Effect.promise(() => emitReporterEvent(opts.reporters, { type: "eval:complete", result })),
+              Effect.promise(() => emitReporterEvent(reporters, { type: "eval:complete", result })),
             );
           }),
       { concurrency: opts.maxConcurrency, discard: true },
@@ -359,10 +385,10 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   );
 
   const summary = summarize(allResults, firstAgent?.name ?? "", startedAt, Date.now() - t0, opts.config.name);
-  await emitReporterEvent(opts.reporters, { type: "run:summary", summary });
-  for (const r of opts.reporters) {
+  await emitReporterEvent(reporters, { type: "run:summary", summary });
+  for (const r of reporters) {
     await runReporter("onRunComplete", () => r.onRunComplete?.(summary));
   }
-  await emitReporterEvent(opts.reporters, { type: "run:saved", summary });
+  await emitReporterEvent(reporters, { type: "run:saved", summary });
   return summary;
 }

@@ -216,6 +216,7 @@
                 "pages": [
                   "zh/guides/runner",
                   "zh/guides/ci-integration",
+                  "zh/guides/reporters",
                   "zh/guides/viewing-results"
                 ]
               }

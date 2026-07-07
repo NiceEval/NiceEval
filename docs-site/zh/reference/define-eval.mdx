@@ -41,7 +41,7 @@ export default defineEval({
 </ParamField>
 
 <ParamField body="reporters" type="Reporter[]">
-  当前 eval 专用 reporters。
+  当前 eval 专用 reporters：实例只观测引用它的 eval；多个 eval 共享同一实例时结果落进同一目的地（见 [Reporter 上报](../guides/reporters)）。
 </ParamField>
 
 <ParamField body="timeoutMs" type="number">

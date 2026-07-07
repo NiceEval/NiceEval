@@ -90,9 +90,10 @@
 | 有界并发调度 + 早停 + budget 在飞预扣 | `src/runner/run.ts` |
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段) | `src/runner/attempt.ts` |
 | 指纹缓存((eval 源码 + 运行配置) 哈希,跨 run 结果携入) | `src/runner/fingerprint.ts` |
-| reporter 编排 + 运行级汇总 | `src/runner/report.ts` |
+| reporter 编排 + 运行级汇总 + eval 级 reporter 作用域(scopeReporter / filterSummary) | `src/runner/report.ts` |
 | remote 占位 Sandbox / eval 级本地路径视图(Proxy) | `src/runner/remote-sandbox.ts` |
 | 报告器(Console / Json / JUnit / Live / 符号表) | `src/runner/reporters/{console,json,live,table,shared,index}.ts` |
+| Braintrust 上报(运行 → experiment,attempt → 一行) | `src/runner/reporters/braintrust.ts` |
 | eval 级折叠 / 计票口径(CLI 表格与 view 共用) | `src/shared/outcome.ts` |
 | 本地结果保存格式(`.niceeval/<run>/summary.json` + attempt 级 JSON 工件) | `src/runner/reporters/artifacts.ts`、`src/runner/types.ts`(`RunSummary` / `EvalResult`) |
 | CLI(exp / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,NICEEVAL_* 环境变量层) | `src/cli.ts` |
