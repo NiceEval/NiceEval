@@ -12,8 +12,17 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: LangParams }) {
   const { lang } = await params;
   if (!hasLocale(lang)) return {};
+  const t = getDictionary(lang);
   return {
     alternates: { canonical: `/${lang}` },
+    openGraph: {
+      title: "NiceEval",
+      description: t.meta,
+      type: "website",
+      url: `/${lang}`,
+      siteName: "NiceEval",
+      locale: lang === "zh" ? "zh_CN" : "en_US",
+    },
   };
 }
 

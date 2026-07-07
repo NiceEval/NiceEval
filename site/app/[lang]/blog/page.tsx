@@ -18,6 +18,14 @@ export async function generateMetadata({ params }: { params: LangParams }) {
     title: "Blog",
     description: t.blogPage.meta,
     alternates: { canonical: `/${lang}/blog` },
+    openGraph: {
+      title: `${t.blogPage.title} | NiceEval`,
+      description: t.blogPage.meta,
+      type: "website",
+      url: `/${lang}/blog`,
+      siteName: "NiceEval",
+      locale: lang === "zh" ? "zh_CN" : "en_US",
+    },
   };
 }
 

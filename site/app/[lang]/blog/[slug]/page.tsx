@@ -24,6 +24,15 @@ export async function generateMetadata({ params }: { params: BlogPostParams }) {
     title: postCopy.title,
     description: postCopy.description,
     alternates: { canonical: `/${lang}/blog/${slug}` },
+    openGraph: {
+      title: `${postCopy.title} | NiceEval`,
+      description: postCopy.description,
+      type: "article",
+      url: `/${lang}/blog/${slug}`,
+      siteName: "NiceEval",
+      locale: lang === "zh" ? "zh_CN" : "en_US",
+      publishedTime: postCopy.date,
+    },
   };
 }
 
