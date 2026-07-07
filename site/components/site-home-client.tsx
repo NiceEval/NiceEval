@@ -1,15 +1,11 @@
 "use client";
 
-import React, { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import React, { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Highlight, themes } from "prism-react-renderer";
 import {
-  ArrowLeft,
   BookOpen,
-  CalendarDays,
   CheckCircle2,
   ChevronRight,
-  Clock3,
   Clipboard,
   FileCode2,
   Folder,
@@ -22,29 +18,11 @@ import {
 } from "lucide-react";
 import { initAnalytics, track } from "../src/analytics";
 import { evalExamples, type EvalExample } from "../src/eval-examples";
-import type { BlogPost, BlogPostCopy } from "../lib/blog";
-import {
-  compareCard,
-  docsUrl,
-  fileTree,
-  githubUrl,
-  otherLocale,
-  withLocale,
-  type Dictionary,
-  type FileTreeItem,
-  type Locale,
-} from "../lib/content";
+import { compareCard, fileTree, githubUrl, docsUrl, withLocale, type Dictionary, type FileTreeItem, type Locale } from "../lib/content";
+import { Header } from "./site-header";
+import Link from "next/link";
 
-const LOCALE_COOKIE = "niceeval-locale";
-
-type Route = { name: "home" } | { name: "blog" } | { name: "post"; slug: string };
 type AudienceMode = "humans" | "agents";
-type MarkdownBlock =
-  | { type: "paragraph"; text: string }
-  | { type: "heading"; level: 2 | 3; text: string }
-  | { type: "quote"; text: string }
-  | { type: "list"; items: string[] }
-  | { type: "code"; text: string };
 
 function fileIcon(item: FileTreeItem) {
   if (item.kind === "folder") return <Folder size={14} />;
@@ -53,44 +31,12 @@ function fileIcon(item: FileTreeItem) {
   return <FileCode2 size={14} />;
 }
 
-function getBlogPost(blogPosts: BlogPost[], slug: string) {
-  return blogPosts.find((post) => post.slug === slug);
-}
-
 const codeTheme = {
   ...themes.vsDark,
   plain: { ...themes.vsDark.plain, backgroundColor: "transparent" },
 };
 
-// route 里的相对路径,用来拼当前页在另一种语言下的对应 URL。
-function routeHref(locale: Locale, route: Route) {
-  if (route.name === "blog") return withLocale(locale, "blog");
-  if (route.name === "post") return withLocale(locale, `blog/${route.slug}`);
-  return withLocale(locale);
-}
-
-function rememberLocale(locale: Locale) {
-  try {
-    document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=31536000`;
-  } catch {
-    // Language switching still works for this navigation even if the cookie can't be set.
-  }
-}
-
-export default function SiteAppClient({
-  lang,
-  t,
-  initialRoute,
-  blogPosts,
-}: {
-  lang: Locale;
-  t: Dictionary;
-  initialRoute: Route;
-  blogPosts: BlogPost[];
-}) {
-  const locale = lang;
-  const route = initialRoute;
-
+export default function HomeClient({ t, locale }: { t: Dictionary; locale: Locale }) {
   useEffect(() => {
     initAnalytics();
     if (process.env.NODE_ENV === "development") {
@@ -100,64 +46,13 @@ export default function SiteAppClient({
 
   return (
     <>
-      <Header locale={locale} t={t} route={route} />
+      <Header locale={locale} t={t} route={{ name: "home" }} />
       <main>
-        {route.name === "home" ? (
-          <>
-            <Hero t={t} locale={locale} />
-            <Strip t={t} />
-            <Setup t={t} locale={locale} />
-          </>
-        ) : route.name === "blog" ? (
-          <BlogIndex t={t} locale={locale} blogPosts={blogPosts} />
-        ) : (
-          <BlogArticle t={t} locale={locale} route={route} blogPosts={blogPosts} />
-        )}
+        <Hero t={t} locale={locale} />
+        <Strip t={t} />
+        <Setup t={t} locale={locale} />
       </main>
     </>
-  );
-}
-
-function Header({ locale, t, route }: { locale: Locale; t: Dictionary; route: Route }) {
-  const nextLocale = otherLocale(locale);
-  const startHref = route.name === "home" ? "#setup" : `${withLocale(locale)}#setup`;
-
-  return (
-    <header className="topbar shell">
-      <Link
-        className="brand"
-        href={withLocale(locale)}
-        aria-label="NiceEval home"
-        onClick={() => track("Click Home Link", { location: "header" })}
-      >
-        <span className="mark" />
-        <span>NiceEval</span>
-      </Link>
-      <nav className="nav" aria-label="Primary">
-        <Link href={startHref} onClick={() => track("Click Nav Start")}>
-          {t.navStart}
-        </Link>
-        <Link
-          href={withLocale(locale, "blog")}
-          onClick={() => track("Click Blog Link", { location: "header", locale })}
-        >
-          {t.blog}
-        </Link>
-        <a href={docsUrl[locale]} onClick={() => track("Click Docs Link", { location: "header", locale })}>{t.docs}</a>
-        <a href={githubUrl} onClick={() => track("Click GitHub Link", { location: "header" })}>{t.github}</a>
-        <Link
-          className="lang-toggle"
-          aria-label={t.languageLabel}
-          href={routeHref(nextLocale, route)}
-          onClick={() => {
-            track("Switch Language", { from: locale, to: nextLocale });
-            rememberLocale(nextLocale);
-          }}
-        >
-          {nextLocale === "zh" ? "中文" : "EN"}
-        </Link>
-      </nav>
-    </header>
   );
 }
 
@@ -246,228 +141,6 @@ function Hero({ t, locale }: { t: Dictionary; locale: Locale }) {
       <ProductVisual mode={mode} t={t} />
     </section>
   );
-}
-
-function BlogIndex({ t, locale, blogPosts }: { t: Dictionary; locale: Locale; blogPosts: BlogPost[] }) {
-  const post = blogPosts[0];
-
-  return (
-    <section className="blog-page shell">
-      <div className="blog-hero">
-        <p className="eyebrow">{t.blogPage.eyebrow}</p>
-        <h1>{t.blogPage.title}</h1>
-        <p>{t.blogPage.intro}</p>
-      </div>
-      <div className="blog-section-head">
-        <h2>{t.blogPage.latest}</h2>
-      </div>
-      {post ? (
-        <article className="blog-card">
-          <div className="blog-card-art" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="blog-card-copy">
-            <span className="post-kicker">{post[locale].category}</span>
-            <h2>{post[locale].title}</h2>
-            <p>{post[locale].description}</p>
-            <PostMeta post={post} postCopy={post[locale]} t={t} />
-            <Link
-              className="button primary"
-              href={withLocale(locale, `blog/${post.slug}`)}
-              onClick={() => track("Open Blog Post", { slug: post.slug, locale })}
-            >
-              {t.blogPage.read}
-              <ChevronRight size={15} />
-            </Link>
-          </div>
-        </article>
-      ) : (
-        <p className="blog-empty">{t.blogPage.empty}</p>
-      )}
-    </section>
-  );
-}
-
-function BlogArticle({
-  t,
-  locale,
-  route,
-  blogPosts,
-}: {
-  t: Dictionary;
-  locale: Locale;
-  route: Extract<Route, { name: "post" }>;
-  blogPosts: BlogPost[];
-}) {
-  const post = getBlogPost(blogPosts, route.slug);
-
-  if (!post) {
-    return (
-      <section className="blog-page shell">
-        <BlogBackLink t={t} locale={locale} />
-        <div className="blog-hero">
-          <h1>{t.blogPage.notFound}</h1>
-        </div>
-      </section>
-    );
-  }
-
-  const postCopy = post[locale];
-
-  return (
-    <article className="article-page shell">
-      <BlogBackLink t={t} locale={locale} />
-      <header className="article-header">
-        <div>
-          <span className="post-kicker">{postCopy.category}</span>
-          <h1>{postCopy.title}</h1>
-          <p>{postCopy.description}</p>
-          <PostMeta post={post} postCopy={postCopy} t={t} />
-        </div>
-        <div className="article-mark" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
-      </header>
-      <MdxBody source={postCopy.body} />
-    </article>
-  );
-}
-
-function BlogBackLink({ t, locale }: { t: Dictionary; locale: Locale }) {
-  return (
-    <Link className="back-link" href={withLocale(locale, "blog")} onClick={() => track("Back To Blog")}>
-      <ArrowLeft size={15} />
-      {t.blogPage.back}
-    </Link>
-  );
-}
-
-function PostMeta({ post: _post, postCopy, t }: { post: BlogPost; postCopy: BlogPostCopy; t: Dictionary }) {
-  return (
-    <div className="post-meta">
-      <span>
-        <CalendarDays size={14} />
-        {postCopy.date}
-      </span>
-      <span>
-        <Clock3 size={14} />
-        {postCopy.readMinutes} {t.blogPage.minutes}
-      </span>
-      <span>{postCopy.category}</span>
-    </div>
-  );
-}
-
-function MdxBody({ source }: { source: string }) {
-  const blocks = parseMarkdownBlocks(source);
-
-  return (
-    <div className="article-body">
-      {blocks.map((block, index) => {
-        if (block.type === "heading") {
-          const HeadingTag = `h${block.level}` as "h2" | "h3";
-          return <HeadingTag key={index}>{formatInline(block.text)}</HeadingTag>;
-        }
-        if (block.type === "quote") {
-          return <blockquote key={index}>{formatInline(block.text)}</blockquote>;
-        }
-        if (block.type === "list") {
-          return (
-            <ul key={index}>
-              {block.items.map((item) => (
-                <li key={item}>{formatInline(item)}</li>
-              ))}
-            </ul>
-          );
-        }
-        if (block.type === "code") {
-          return <pre key={index}><code>{block.text}</code></pre>;
-        }
-        return <p key={index}>{formatInline(block.text)}</p>;
-      })}
-    </div>
-  );
-}
-
-function parseMarkdownBlocks(source: string): MarkdownBlock[] {
-  const lines = source.trim().split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let paragraph: string[] = [];
-  let list: string[] = [];
-  let code: string[] = [];
-  let inCode = false;
-
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    blocks.push({ type: "paragraph", text: paragraph.join(" ") });
-    paragraph = [];
-  };
-  const flushList = () => {
-    if (!list.length) return;
-    blocks.push({ type: "list", items: list });
-    list = [];
-  };
-
-  for (const line of lines) {
-    if (line.startsWith("```")) {
-      if (inCode) {
-        blocks.push({ type: "code", text: code.join("\n") });
-        code = [];
-        inCode = false;
-      } else {
-        flushParagraph();
-        flushList();
-        inCode = true;
-      }
-      continue;
-    }
-    if (inCode) {
-      code.push(line);
-      continue;
-    }
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-    const heading = line.match(/^(#{2,3})\s+(.+)$/);
-    if (heading) {
-      flushParagraph();
-      flushList();
-      blocks.push({ type: "heading", level: heading[1].length as 2 | 3, text: heading[2] });
-      continue;
-    }
-    if (line.startsWith("> ")) {
-      flushParagraph();
-      flushList();
-      blocks.push({ type: "quote", text: line.slice(2) });
-      continue;
-    }
-    if (line.startsWith("- ")) {
-      flushParagraph();
-      list.push(line.slice(2));
-      continue;
-    }
-    paragraph.push(line.trim());
-  }
-
-  flushParagraph();
-  flushList();
-  return blocks;
-}
-
-function formatInline(text: string): ReactNode[] {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
-  return parts.map((part, index) => {
-    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    return part;
-  });
 }
 
 function ProductVisual({ mode, t }: { mode: AudienceMode; t: Dictionary }) {

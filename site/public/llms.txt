@@ -1,0 +1,19 @@
+# NiceEval
+
+> NiceEval is an agent-native eval library for AI agents and coding-agent workflows: declare what a good result looks like with adapters, experiments, and evals, then run it against any agent, model, or sandboxed coding-agent session.
+
+- [Overview](https://niceeval.com/en): Product overview, audience modes (human / agent setup), and runnable eval examples.
+- [Blog](https://niceeval.com/en/blog): Product and engineering posts about building evals with NiceEval.
+- [GitHub](https://github.com/CorrectRoadH/niceeval): Source code, issues, and releases.
+- [INIT.md](https://niceeval.com/INIT.md): Step-by-step instructions for an AI coding agent to integrate NiceEval into a host repository.
+
+## Docs
+
+- [Full documentation index](https://niceeval.com/docs/llms.txt): Concepts, guides, and reference pages for adapters, experiments, evals, scoring, sandboxes, and the CLI.
+- [Quickstart](https://niceeval.com/docs/quickstart): 5-minute path to a first running eval.
+
+## 中文
+
+- [产品首页](https://niceeval.com/zh)
+- [博客](https://niceeval.com/zh/blog)
+- [中文文档](https://niceeval.com/docs/zh/quickstart)

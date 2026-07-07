@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import SiteAppClient from "../../components/site-app-client";
-import { getAllBlogPosts } from "../../lib/blog";
-import { getDictionary, hasLocale, locales } from "../../lib/content";
+import HomeClient from "../../components/site-home-client";
+import { getDictionary, githubUrl, hasLocale, locales } from "../../lib/content";
+import { JsonLd } from "../../lib/json-ld";
 
 type LangParams = Promise<{ lang: string }>;
 
@@ -20,13 +20,24 @@ export async function generateMetadata({ params }: { params: LangParams }) {
 export default async function HomePage({ params }: { params: LangParams }) {
   const { lang } = await params;
   if (!hasLocale(lang)) notFound();
+  const t = getDictionary(lang);
 
   return (
-    <SiteAppClient
-      lang={lang}
-      t={getDictionary(lang)}
-      initialRoute={{ name: "home" }}
-      blogPosts={getAllBlogPosts()}
-    />
+    <>
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: "NiceEval",
+          description: t.meta,
+          url: `https://niceeval.com/${lang}`,
+          applicationCategory: "DeveloperApplication",
+          operatingSystem: "Node.js",
+          offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+          sameAs: [githubUrl],
+        }}
+      />
+      <HomeClient t={t} locale={lang} />
+    </>
   );
 }

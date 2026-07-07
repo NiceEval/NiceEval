@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import SiteAppClient from "../../../../components/site-app-client";
+import BlogArticleClient from "../../../../components/site-blog-article-client";
 import { getAllBlogPosts, getBlogPostBySlug } from "../../../../lib/blog";
 import { getDictionary, hasLocale, locales } from "../../../../lib/content";
+import { JsonLd } from "../../../../lib/json-ld";
 
 type BlogPostParams = Promise<{ lang: string; slug: string }>;
 
@@ -32,13 +33,24 @@ export default async function BlogPostPage({ params }: { params: BlogPostParams 
 
   const post = getBlogPostBySlug(slug);
   if (!post) notFound();
+  const postCopy = post[lang];
 
   return (
-    <SiteAppClient
-      lang={lang}
-      t={getDictionary(lang)}
-      initialRoute={{ name: "post", slug }}
-      blogPosts={getAllBlogPosts()}
-    />
+    <>
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "BlogPosting",
+          headline: postCopy.title,
+          description: postCopy.description,
+          datePublished: postCopy.date,
+          articleSection: postCopy.category,
+          url: `https://niceeval.com/${lang}/blog/${slug}`,
+          author: { "@type": "Organization", name: "NiceEval" },
+          publisher: { "@type": "Organization", name: "NiceEval" },
+        }}
+      />
+      <BlogArticleClient t={getDictionary(lang)} locale={lang} slug={slug} blogPosts={getAllBlogPosts()} />
+    </>
   );
 }

@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import SiteAppClient from "../../../components/site-app-client";
+import BlogIndexClient from "../../../components/site-blog-index-client";
 import { getAllBlogPosts } from "../../../lib/blog";
 import { getDictionary, hasLocale, locales } from "../../../lib/content";
+import { JsonLd } from "../../../lib/json-ld";
 
 type LangParams = Promise<{ lang: string }>;
 
@@ -23,13 +24,28 @@ export async function generateMetadata({ params }: { params: LangParams }) {
 export default async function BlogIndexPage({ params }: { params: LangParams }) {
   const { lang } = await params;
   if (!hasLocale(lang)) notFound();
+  const t = getDictionary(lang);
+  const blogPosts = getAllBlogPosts();
 
   return (
-    <SiteAppClient
-      lang={lang}
-      t={getDictionary(lang)}
-      initialRoute={{ name: "blog" }}
-      blogPosts={getAllBlogPosts()}
-    />
+    <>
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "Blog",
+          name: t.blogPage.title,
+          description: t.blogPage.meta,
+          url: `https://niceeval.com/${lang}/blog`,
+          blogPost: blogPosts.map((post) => ({
+            "@type": "BlogPosting",
+            headline: post[lang].title,
+            description: post[lang].description,
+            datePublished: post[lang].date,
+            url: `https://niceeval.com/${lang}/blog/${post.slug}`,
+          })),
+        }}
+      />
+      <BlogIndexClient t={t} locale={lang} blogPosts={blogPosts} />
+    </>
   );
 }
