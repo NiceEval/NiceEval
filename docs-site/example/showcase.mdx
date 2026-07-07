@@ -1,0 +1,39 @@
+---
+title: "Showcase"
+sidebarTitle: "Showcase"
+description: "Real projects and live sites that build evals with NiceEval, collected over time."
+---
+
+This page collects real projects and live sites that use [NiceEval](https://niceeval.com/) to build evals. Each case is a runnable, reproducible repository, not an excerpt. Open the source repository to inspect the full eval, experiment, and sandbox configuration.
+
+## coding-agent-memory-evals
+
+Tape, Nowledge Mem, mem9, db9.ai, OpenClaw... memory implementations for coding agents are diverging, but the ecosystem needs a reproducible eval surface to answer whether those mechanisms help in practice. [coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) builds that benchmark with NiceEval: the same coding tasks, the same model (`gpt-5.4`), and only the agent memory mechanism changes. It compares [bub](https://github.com/CorrectRoadH/coding-agent-memory-evals), which includes [Tape](https://tape.systems/), against codex without the corresponding persistent memory.
+
+- Online report: [coding-agent-memory-evals.vercel.app](https://coding-agent-memory-evals.vercel.app/)
+- Source repository: [github.com/CorrectRoadH/coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals)
+
+The primary score only checks whether the development task itself was completed, such as build, tests, or the upstream verifier. It does not add a separate question like "did the agent remember this fact?" The value of memory shows up in secondary metrics such as duration, tokens, cost, and `pass^k`.
+
+### Cases
+
+Each eval connects the original task and verification script from a public benchmark. These are not rewritten assertions.
+
+| Eval | Source | What It Verifies |
+|---|---|---|
+| [`agent-029-use-cache-directive`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/agent-029-use-cache-directive.eval.ts) | next-evals | Whether a Server Action uses `use cache` + `revalidateTag` for eventually consistent directory-data refreshes. |
+| [`agent-030-app-router-migration-hard`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/agent-030-app-router-migration-hard.eval.ts) | next-evals | Whether a complex Pages Router app is fully migrated to App Router, legacy files are deleted, and legacy APIs do not remain. |
+| [`agent-037-updatetag-cache`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/agent-037-updatetag-cache.eval.ts) | next-evals | Whether read-your-own-writes scenarios use `updateTag` instead of only `revalidateTag`. |
+| [`terminal-cancel-async-tasks`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/terminal-cancel-async-tasks.eval.ts) | [Terminal-Bench](https://www.tbench.ai/) | Implements a cancellable concurrency-limited async task runner and runs the original `pytest` verifier. |
+| [`repomod-hello-world-api`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/repomod-hello-world-api.eval.ts) | RepoMod-Bench | Migrates a Flask API to Java Spring Boot, starts the service, and runs upstream hidden HTTP tests. |
+| [`tool-call-observability`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/evals/memory/tool-call-observability.eval.ts) | Custom smoke | Whether the agent's shell tool calls are correctly recorded as standard events. |
+
+### Comparison Experiments
+
+[`experiments/compare/`](https://github.com/CorrectRoadH/coding-agent-memory-evals/tree/main/experiments/compare) is the only comparable experiment set. It pins the same model (`gpt-5.4`) and the same sandbox (`docker`), and changes only the agent: [`bub-gpt-5.4.ts`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/experiments/compare/bub-gpt-5.4.ts) vs. [`codex-gpt-5.4.ts`](https://github.com/CorrectRoadH/coding-agent-memory-evals/blob/main/experiments/compare/codex-gpt-5.4.ts). That makes the difference attributable to the memory mechanism rather than the model or runtime environment. `niceeval exp compare` runs the whole set, and the result snapshot is published to the online report.
+
+## Next Steps
+
+- [Connect Your Agent](/guides/connect-your-agent) — integrate a coding-agent adapter from scratch.
+- [Experiments](/guides/experiments) — organize comparable experiment matrices.
+- [Evaluate Skill Impact](/example/claude-code-codex-skill) — use the same "with / without X" comparison pattern for Skills.

@@ -1,0 +1,113 @@
+---
+title: "Report Results to Braintrust and Other Destinations"
+sidebarTitle: "Reporters"
+description: "Use built-in reporters to send eval results to Braintrust experiments, JUnit XML, JSON files, or custom destinations."
+---
+
+[NiceEval](https://niceeval.com/) runs and scores evals itself. Reporters send the results elsewhere. Console output and `.niceeval/` artifacts are built-in reporters and are always enabled. Other reporters are imported from `niceeval/reporters` and mounted as needed.
+
+There are two mount points:
+
+- `reporters` in `niceeval.config.ts`: observes every eval in the run. Shared destinations, such as one Braintrust experiment, usually belong here.
+- `reporters` on a single eval: the instance only observes that eval. If multiple evals reference the same instance, their results are merged into the same destination. Listing an instance on an eval again after it was already configured globally does not report it twice.
+
+## Braintrust
+
+`Braintrust(...)` uploads one NiceEval run as a Braintrust experiment, with one row per attempt. Put it in config to cover the whole run:
+
+```ts niceeval.config.ts
+import { defineConfig } from "niceeval";
+import { Braintrust } from "niceeval/reporters";
+
+export default defineConfig({
+  reporters: [Braintrust({ project: "weather-agent" })],
+});
+```
+
+Mount it on an eval when only some evals should report:
+
+```ts evals/forecast.eval.ts
+import { defineEval } from "niceeval";
+import { Braintrust } from "niceeval/reporters";
+
+export default defineEval({
+  reporters: [Braintrust({ project: "weather-agent" })],
+  async test(t) {
+    await t.send("Is Beijing good for cycling today?");
+    t.succeeded();
+  },
+});
+```
+
+Prerequisites: install the optional `braintrust` package (`npm install braintrust`; other features work without it) and set `BRAINTRUST_API_KEY`. Pass `apiKey` when the key must be provided explicitly in code. After the run, the terminal prints the experiment URL.
+
+### Reporting Shape
+
+- Each attempt becomes one Braintrust row. `runs: 3` creates three rows, distinguished by `attempt` in metadata.
+- Soft assertions are recorded as scores by name. Gate assertions are recorded under a `gate:` prefix, so gate regressions and soft score regressions appear in the same Braintrust experiment diff surface.
+- Metrics include start/end time, token usage, and estimated cost. Missing data is omitted rather than filled with zero.
+- Metadata includes `agent`, `model`, `experiment`, `flags`, `outcome`, and failed assertion details, so Braintrust filters can slice by those dimensions.
+
+### Options
+
+<ParamField body="project" type="string">
+  Braintrust project name. Defaults to `niceeval`.
+</ParamField>
+
+<ParamField body="projectId" type="string">
+  Braintrust project ID. Provide either `project` or `projectId`.
+</ParamField>
+
+<ParamField body="experiment" type="string">
+  Experiment name. If omitted, Braintrust names it automatically.
+</ParamField>
+
+<ParamField body="baseExperiment" type="string">
+  Existing experiment name to use as the diff base.
+</ParamField>
+
+<ParamField body="baseExperimentId" type="string">
+  Existing experiment ID to use as the diff base.
+</ParamField>
+
+<ParamField body="update" type="boolean">
+  When `true`, updates an existing experiment with the same name instead of creating a new one.
+</ParamField>
+
+<ParamField body="metadata" type="Record<string, unknown>">
+  Experiment-level metadata. Merged with NiceEval's automatic fields; this value wins on name conflicts.
+</ParamField>
+
+<ParamField body="apiKey" type="string">
+  Braintrust API key. Defaults to the SDK reading `BRAINTRUST_API_KEY`.
+</ParamField>
+
+## JUnit and JSON
+
+`JUnit(path)` writes JUnit XML so failures appear in CI test report UIs. For temporary output, use the CLI flag `--junit <path>` without changing config. `Json(path)` writes the full `RunSummary` as JSON for downstream scripts or dashboards. See [CI Integration](./ci-integration) for a complete CI setup.
+
+## Custom Reporters
+
+A reporter is an object that implements optional callbacks and receives the same structured results as built-in reporters:
+
+```ts
+import type { Reporter } from "niceeval";
+
+const notify: Reporter = {
+  async onEvalComplete(result) {
+    if (result.outcome === "failed") {
+      await fetch("http://localhost:3000/notify", {
+        method: "POST",
+        body: JSON.stringify({ eval: result.id, agent: result.agent }),
+      });
+    }
+  },
+};
+```
+
+- `onRunStart(evals, agent, shape)`: run start, with the eval list that will actually run and the run shape.
+- `onEvalComplete(result)`: fires as soon as each attempt completes. Callbacks are serialized and do not interleave.
+- `onRunComplete(summary)`: run complete, with the aggregate summary.
+- `onEvent(event)`: lower-level event stream, such as `eval:start` and `run:budgetExceeded`.
+
+Reporter errors only print diagnostics; they do not stop the run. Custom reporters are only needed for destinations not covered by built-ins. `.niceeval/` artifacts already record all results, so post-run analysis can read them directly. See [Viewing Results](./viewing-results).

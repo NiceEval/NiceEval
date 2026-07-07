@@ -116,7 +116,8 @@
                 "pages": [
                   "example/claude-code-codex-plugin",
                   "example/claude-code-codex-skill",
-                  "example/ai-agent-application"
+                  "example/ai-agent-application",
+                  "example/showcase"
                 ]
               },
               {
@@ -124,6 +125,7 @@
                 "pages": [
                   "guides/runner",
                   "guides/ci-integration",
+                  "guides/reporters",
                   "guides/viewing-results"
                 ]
               }

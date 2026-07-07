@@ -41,7 +41,7 @@ export default defineEval({
 </ParamField>
 
 <ParamField body="reporters" type="Reporter[]">
-  Eval-specific reporters.
+  Eval-specific reporters. The instance only observes evals that reference it. If multiple evals share the same instance, their results land in the same destination. See [Reporters](../guides/reporters).
 </ParamField>
 
 <ParamField body="timeoutMs" type="number">

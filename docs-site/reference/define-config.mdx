@@ -1,7 +1,7 @@
 ---
 title: "defineConfig: project defaults"
 sidebarTitle: "defineConfig"
-description: "Set project-level defaults in niceeval.config.ts, such as reporters, sandbox fallback, discovery roots, and runner settings."
+description: "defineConfig reference: judge, reporters, concurrency, timeout, and sandbox defaults."
 ---
 
 Use `defineConfig` in `niceeval.config.ts` for project-wide defaults. Agent, model, flags, runs, and per-experiment budget belong in `experiments/` files via `defineExperiment`.
@@ -23,7 +23,7 @@ export default defineConfig({
 </ParamField>
 
 <ParamField body="reporters" type="Reporter[]">
-  Additional reporters. Built-ins include `JUnit(path)`. The CLI always writes structured `.niceeval/` artifacts.
+  Additional reporters that observe the whole run, such as `Braintrust(...)` for uploading to an experiment platform. See [Reporters](../guides/reporters). For temporary JUnit output, use the CLI flag `--junit <path>`.
 </ParamField>
 
 <ParamField body="maxConcurrency" type="number">

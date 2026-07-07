@@ -4,7 +4,7 @@ sidebarTitle: "Viewing Results"
 description: "After every run, NiceEval writes structured artifacts into .niceeval/. Use npx niceeval view to inspect transcripts, diffs, event streams, and pass rates."
 ---
 
-After every run, NiceEval writes structured results into `.niceeval/<timestamp>/`. The console gives immediate feedback. The viewer is for deeper failure analysis.
+After every run, [NiceEval](https://niceeval.com/) writes structured results into `.niceeval/<timestamp>/`. The console gives immediate feedback. The viewer is for deeper failure analysis.
 
 ## Console output
 
@@ -50,7 +50,107 @@ This opens the local viewer and, by default, shows the most recent run. You can 
   Run `npx niceeval view` right after a failure to open the artifacts from the run you just made.
 </Tip>
 
-## Artifact reference
+## Exporting and Static Hosting
+
+There is one export mode for publishing results: `--out <dir>` exports the whole viewer site with everything the viewer can inspect. If you want a custom report shape, build one with the report primitives.
+
+### Built-in Viewer Site: Static Hosting
+
+```bash
+npx niceeval view --out site
+```
+
+NiceEval writes `<dir>/index.html` and copies the artifacts the viewer reads (`sources.json`, `events.json`, `trace.json`) into `<dir>/artifact/`. Deploy the whole directory to any static host, such as Vercel, GitHub Pages, or `python3 -m http.server`; code views, transcripts, and trace waterfalls behave the same as local `niceeval view`.
+
+`--out` only accepts a directory. There is no single-file export: code views, transcripts, and traces depend on artifact files, and a single HTML file cannot carry the full evidence. To share results, host the whole site and send the link.
+
+Two limits:
+
+- `diff.json` and `o11y.json` are not copied. The viewer does not read them, and diffs can reach hundreds of MB.
+- Opening `index.html` directly with `file://` prevents the browser from fetching artifacts, so the code view will say source is unavailable. Use an HTTP server for local preview.
+
+The simplest flow is to export on the machine that ran the eval and deploy the output directory directly. `.niceeval/` usually does not go into version control. If the build happens on another machine, such as CI or a hosting platform, use `copyRun` first to copy a slim snapshot into the repo, then export from that snapshot directory:
+
+```typescript
+// scripts/snapshot.ts -- run after evals finish, then commit the output.
+import { openResults, latestPerExperiment, copyRun } from "niceeval/results";
+
+const results = await openResults(".niceeval");
+const { snapshots } = latestPerExperiment(results.snapshots);
+await copyRun(snapshots, "site-data/run", {
+  artifacts: ["sources", "events", "trace"],
+});
+```
+
+```bash
+npx niceeval view --out site site-data/run   # Build from the snapshot in CI.
+```
+
+`latestPerExperiment` chooses the latest snapshot per experiment, not the latest run overall. If one run only covered part of the experiment set, the other experiments still keep their previous results.
+
+### Custom Report Page: Your Own View
+
+The built-in viewer has a fixed leaderboard shape. For your own view, such as a scorecard, benchmark board, or quality x cost scatter plot, build it into your app with report primitives: `niceeval/results` reads results, `niceeval/report` computes data, and `niceeval/report/react` renders components.
+
+There is a serializable boundary between compute and render. Compute functions such as `table()`, `scatter()`, and `overview()` read the file system and only run in Node, such as a build script, server, or CI. Components only accept computed JSON data, perform zero IO, and can render anywhere. That gives static publishing two shapes.
+
+**Option 1: compute at build time and export a fully static page.** Build the page on a machine that can read the result data, such as Next.js RSC or any SSG. The output is ordinary static files:
+
+```tsx
+// app/evals/page.tsx
+import { openResults, latestPerExperiment } from "niceeval/results";
+import { table, passRate, costUSD } from "niceeval/report";
+import { MetricTable } from "niceeval/report/react";
+import "niceeval/report/react/styles.css";
+
+export default async function EvalsPage() {
+  const results = await openResults(".niceeval");
+  const { snapshots } = latestPerExperiment(results.snapshots);
+  const data = await table(snapshots, {
+    rows: "agent",
+    columns: [passRate, costUSD],
+    sort: passRate,
+  });
+  return <MetricTable data={data} />;
+}
+```
+
+**Option 2: write JSON in CI and render it from any frontend.** Compute where the results exist, then render wherever your page lives, such as a Vite SPA or an existing internal dashboard:
+
+```typescript
+// scripts/build-report-data.ts -- run in CI after evals finish.
+import { writeFile } from "node:fs/promises";
+import { openResults, latestPerExperiment } from "niceeval/results";
+import { table, passRate, costUSD } from "niceeval/report";
+
+const results = await openResults(".niceeval");
+const { snapshots } = latestPerExperiment(results.snapshots);
+await writeFile("public/report.json", JSON.stringify({
+  board: await table(snapshots, { rows: "agent", columns: [passRate, costUSD] }),
+}));
+```
+
+```tsx
+// Frontend: any React app.
+import { MetricTable } from "niceeval/report/react";
+
+const doc = await fetch("/report.json").then((r) => r.json());
+
+<MetricTable data={doc.board} />;
+```
+
+The components are complete without hydration: sorting is precomputed on the data side, drill-downs are normal links, and expand/collapse uses `<details>`. Static exports do not need client-side JavaScript. Styles ship with the package (`niceeval/report/react/styles.css`); load your own CSS after it to override.
+
+Your custom page owns the conclusion. You do not need to redraw every attempt transcript and trace yourself. Export the built-in viewer to a subpath, such as `npx niceeval view --out <site-dir>/evidence`, then generate deep links with the component `attemptHref`:
+
+```tsx
+<MetricTable
+  data={data}
+  attemptHref={(ref) => `/evidence/#/attempt/${encodeURIComponent(ref.run)}/${ref.result}`}
+/>
+```
+
+## Artifact Reference
 
 ### `summary.json`
 
@@ -76,7 +176,7 @@ OTLP traces or normalized span data.
 
 Observation summaries such as tool calls, commands, usage, and cost.
 
-## Outcome meanings
+## Outcome Meanings
 
 <Tabs>
   <Tab title="passed">All gates passed.</Tab>
@@ -87,7 +187,7 @@ Observation summaries such as tool calls, commands, usage, and cost.
 
 Soft assertion scores are recorded in `assertions[].score`; outside `--strict`, they do not create another outcome.
 
-## Debugging advice
+## Debugging Advice
 
 - Start with `summary.json` to find the failing assertion.
 - Then inspect the transcript view to understand the agent's decisions.
