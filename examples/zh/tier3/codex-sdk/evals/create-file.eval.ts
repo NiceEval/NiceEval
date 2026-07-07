@@ -1,6 +1,6 @@
 import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 // Codex 是"目录里的编码 agent",这条 eval 测它最本分的事:在工作目录里写一个真实文件。
@@ -26,7 +26,9 @@ export default defineEval({
       t.noFailedActions();
     });
 
-    const content = readFileSync(WORKSPACE_FILE, "utf8");
+    // 文件不存在按空内容断言,而不是让 readFileSync 抛 ENOENT——"agent 没写出文件"是
+    // 这条 eval 真正要测的失败(failed),不是框架执行错误(errored)。
+    const content = existsSync(WORKSPACE_FILE) ? readFileSync(WORKSPACE_FILE, "utf8") : "";
     t.check(content, includes(MARKER));
   },
 });

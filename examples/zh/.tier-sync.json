@@ -40,7 +40,7 @@
       "from": "examples/zh/tier1/codex-sdk",
       "to": "examples/zh/tier2/codex-sdk",
       "contract": "overlay",
-      "baseTree": "e721ad23670a9ed51a0be74245a9f3540c52e6a5"
+      "baseTree": "000daad94e95d56a41aa926e9eda5d3732da85eb"
     },
     {
       "from": "examples/zh/tier1/langgraph",
@@ -58,7 +58,7 @@
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "2ee63fe717d7dd53d91e18c5bb5340e78724e670"
+      "baseTree": "8c409e11f74e391bb22af2821f314993d427bb6b"
     },
     {
       "from": "examples/zh/tier2/langgraph",
