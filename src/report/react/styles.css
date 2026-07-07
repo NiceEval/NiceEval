@@ -1,0 +1,302 @@
+/*
+ * niceeval/report/react/styles.css —— 随包发布的默认样式。
+ * 契约(docs/reports.md「四条跨组件契约」):
+ *   - 所有节点都有稳定的 nre-* 类名;这份 CSS + 类名 = 静态页零依赖成立;
+ *   - 要定制,在本文件之后加载自己的覆盖即可,不需要构建工具;
+ *   - 调色板 --nre-c0..c7 的值与 src/report/react/colors.ts 的 NRE_PALETTE
+ *     逐个对应(SVG 内联 hex 用那份),改色时两边一起改。
+ * 视觉刻意极简:结构与诚实细节优先,品牌化交给使用者的覆盖样式。
+ */
+
+.nre {
+  /* 调色板:键 → 稳定散列下标 → 同键同色(colors.ts) */
+  --nre-c0: #2563eb;
+  --nre-c1: #db2777;
+  --nre-c2: #059669;
+  --nre-c3: #d97706;
+  --nre-c4: #7c3aed;
+  --nre-c5: #0891b2;
+  --nre-c6: #dc2626;
+  --nre-c7: #65a30d;
+
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #171717;
+  margin: 1rem 0;
+}
+
+/* ---- 维度键上色:同一个 key 在任何块里同色 ---- */
+.nre .nre-c0 { color: var(--nre-c0); }
+.nre .nre-c1 { color: var(--nre-c1); }
+.nre .nre-c2 { color: var(--nre-c2); }
+.nre .nre-c3 { color: var(--nre-c3); }
+.nre .nre-c4 { color: var(--nre-c4); }
+.nre .nre-c5 { color: var(--nre-c5); }
+.nre .nre-c6 { color: var(--nre-c6); }
+.nre .nre-c7 { color: var(--nre-c7); }
+.nre .nre-key { font-weight: 600; }
+
+/* ---- 表格通用 ---- */
+table.nre,
+.nre table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.nre th,
+.nre td {
+  border: 1px solid #e5e5e5;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+.nre thead th {
+  background: #fafafa;
+  font-weight: 600;
+}
+.nre .nre-dimension {
+  color: #737373;
+  font-weight: 500;
+}
+.nre .nre-unit {
+  color: #a3a3a3;
+  font-weight: 400;
+  margin-left: 0.25em;
+}
+.nre .nre-better {
+  color: #a3a3a3;
+  margin-left: 0.25em;
+}
+
+/* ---- MetricCell:缺数据 / 覆盖率角标 / 证据链接 ---- */
+.nre .nre-missing {
+  color: #a3a3a3;
+  font-style: italic;
+}
+.nre .nre-coverage {
+  color: #b45309;
+  font-size: 0.72em;
+  margin-left: 0.3em;
+}
+.nre .nre-refs {
+  margin-left: 0.4em;
+}
+.nre .nre-ref {
+  color: #2563eb;
+  font-size: 0.85em;
+  text-decoration: none;
+  margin-right: 0.25em;
+}
+.nre .nre-ref:hover {
+  text-decoration: underline;
+}
+.nre .nre-td-empty {
+  background: #fafafa;
+}
+
+/* ---- RunOverview ---- */
+.nre-overview .nre-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 0 0 0.5rem;
+}
+.nre-overview .nre-kpi dt {
+  color: #737373;
+  font-size: 0.85em;
+}
+.nre-overview .nre-kpi dd {
+  margin: 0;
+  font-size: 1.4em;
+  font-weight: 600;
+}
+.nre-overview .nre-outcomes {
+  margin: 0.25rem 0;
+  color: #525252;
+}
+.nre-overview .nre-outcome {
+  margin-right: 1em;
+}
+.nre .nre-outcome-passed { color: #059669; }
+.nre .nre-outcome-failed { color: #dc2626; }
+.nre .nre-outcome-errored { color: #b45309; }
+.nre .nre-outcome-skipped { color: #a3a3a3; }
+.nre-overview .nre-source {
+  color: #737373;
+  font-size: 0.85em;
+  margin: 0.25rem 0;
+}
+.nre-overview .nre-source-snapshot {
+  margin-left: 0.75em;
+}
+.nre .nre-warnings {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+/* ---- MetricMatrix ---- */
+.nre-metric-matrix .nre-matrix-caption {
+  caption-side: top;
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.4rem;
+}
+.nre-metric-matrix .nre-matrix-axes {
+  color: #a3a3a3;
+  font-weight: 400;
+  margin-left: 0.75em;
+}
+
+/* ---- Scoreboard ---- */
+.nre-scoreboard .nre-total {
+  font-weight: 700;
+}
+.nre-scoreboard .nre-full-marks {
+  color: #a3a3a3;
+  font-weight: 400;
+  margin-left: 0.25em;
+}
+.nre-scoreboard .nre-subject-missing {
+  display: block;
+  color: #b45309;
+  font-size: 0.8em;
+}
+.nre-scoreboard .nre-weights {
+  color: #737373;
+  font-size: 0.85em;
+  margin: 0.4rem 0 0;
+}
+.nre-scoreboard .nre-weight,
+.nre-scoreboard .nre-weight-rest {
+  margin-left: 0.5em;
+}
+
+/* ---- MetricScatter ---- */
+.nre-metric-scatter {
+  margin: 1rem 0;
+}
+.nre-metric-scatter .nre-scatter-svg {
+  max-width: 640px;
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.nre-metric-scatter .nre-scatter-missing {
+  color: #b45309;
+  font-size: 0.85em;
+  margin: 0.25rem 0 0;
+}
+.nre-metric-scatter .nre-scatter-point-link circle:hover {
+  stroke: #171717;
+  stroke-width: 1.5;
+}
+
+/* ---- DeltaTable ---- */
+.nre-delta-table .nre-pair-ids {
+  display: block;
+  color: #a3a3a3;
+  font-size: 0.8em;
+  font-weight: 400;
+}
+.nre-delta-table .nre-delta-side {
+  display: block;
+  white-space: nowrap;
+}
+.nre-delta-table .nre-delta-tag {
+  display: inline-block;
+  width: 1.2em;
+  color: #a3a3a3;
+  font-size: 0.8em;
+}
+.nre .nre-delta-good { color: #059669; }
+.nre .nre-delta-bad { color: #dc2626; }
+.nre .nre-delta-flat { color: #737373; }
+.nre .nre-delta-neutral { color: #171717; }
+.nre .nre-delta-missing { color: #a3a3a3; }
+
+/* ---- CaseList ---- */
+.nre-case-list .nre-cases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nre-case-list .nre-case {
+  border: 1px solid #e5e5e5;
+  border-left-width: 3px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.nre-case-list .nre-case-failed { border-left-color: #dc2626; }
+.nre-case-list .nre-case-errored { border-left-color: #b45309; }
+.nre-case-list .nre-case-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75em;
+  align-items: baseline;
+}
+.nre-case-list .nre-case-outcome {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.8em;
+}
+.nre-case-list .nre-case-eval {
+  font-weight: 600;
+}
+.nre-case-list .nre-case-experiment,
+.nre-case-list .nre-case-duration,
+.nre-case-list .nre-case-cost {
+  color: #737373;
+  font-size: 0.9em;
+}
+.nre-case-list .nre-case-link {
+  margin-left: auto;
+  color: #2563eb;
+}
+.nre-case-list .nre-case-error {
+  margin: 0.4rem 0 0;
+  padding: 0.3rem 0.5rem;
+  background: #fef2f2;
+  color: #991b1b;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+.nre-case-list .nre-assertions {
+  margin: 0.4rem 0 0;
+  padding-left: 1.25rem;
+}
+.nre-case-list .nre-assertion-name {
+  font-family: ui-monospace, monospace;
+}
+.nre-case-list .nre-assertion-score {
+  color: #737373;
+  margin-left: 0.75em;
+  font-size: 0.9em;
+}
+.nre-case-list .nre-assertion-more summary {
+  cursor: pointer;
+  color: #737373;
+  font-size: 0.85em;
+}
+.nre-case-list .nre-assertion-detail {
+  margin: 0.25rem 0;
+  white-space: pre-wrap;
+}
+.nre-case-list .nre-assertion-evidence {
+  margin: 0.25rem 0 0.25rem 0.75rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid #d4d4d4;
+  color: #525252;
+  white-space: pre-wrap;
+}
+.nre-case-list .nre-truncated {
+  color: #b45309;
+  font-size: 0.9em;
+}
+.nre-case-list .nre-case-empty {
+  color: #737373;
+}
