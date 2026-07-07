@@ -123,3 +123,5 @@ jobs:
             ${{ runner.temp }}/e2e-logs
           retention-days: 14
           if-no-files-found: ignore
+          # .niceeval 是隐藏目录,v4 默认排除隐藏文件,不开这个只会传出 app 日志
+          include-hidden-files: true
