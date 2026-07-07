@@ -1,6 +1,6 @@
 {
   "name": "niceeval",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Agent-native eval tool — eval agents, services, functions, and coding-agent fixtures",
   "type": "module",
   "license": "MIT",
