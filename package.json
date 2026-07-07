@@ -43,6 +43,10 @@
     "./loaders": {
       "types": "./src/loaders/index.ts",
       "import": "./src/loaders/index.ts"
+    },
+    "./results": {
+      "types": "./src/results/index.ts",
+      "import": "./src/results/index.ts"
     }
   },
   "files": [
