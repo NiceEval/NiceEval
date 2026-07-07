@@ -1,6 +1,7 @@
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
+import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
 import type { Agent, McpServer } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -43,6 +44,22 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
   return defineSandboxAgent({
     name: "claude-code",
+    spanMapper: mapClaudeCodeSpans,
+
+    // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,
+    // 需要 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA 开关。
+    tracing: {
+      protocol: "http/protobuf",
+      env: (endpoint) => ({
+        CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+        CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1",
+        OTEL_TRACES_EXPORTER: "otlp",
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: endpoint,
+        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf",
+        // CLI 是短命进程:压短导出间隔,别让 span 死在退出前的批处理队列里。
+        OTEL_TRACES_EXPORT_INTERVAL: "1000",
+      }),
+    },
 
     async setup(sb) {
       // 预制模板已把 claude 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
@@ -78,7 +95,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (ctx.session.id) args.push("--resume", ctx.session.id);
       args.push(input.text);
 
-      const env: Record<string, string> = { ANTHROPIC_API_KEY: getApiKey() };
+      const env: Record<string, string> = { ANTHROPIC_API_KEY: getApiKey(), ...ctx.telemetry?.env };
       const baseUrl = getBaseUrl();
       if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
 

@@ -148,7 +148,7 @@ export default defineAgent({
 
 - 被测对象是 AI SDK 应用（`useChat` 后端）：内置 `uiMessageStreamAgent` 无侵入接入，零映射（含 HITL）。
 - 被测对象是其它 agent 系统（HTTP / gRPC 服务）：无侵入接入，手写事件映射（官方转换器能覆盖大半）——[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下五个示例全是这条路；应用已埋 OTel 的话顺手接上，多一张瀑布图。
-- 需要调用瀑布图（`niceeval view` 的 trace）：`codex` / `bub` 自发 OTLP；自己写的 adapter 声明 `tracing` 即可（见 OTel 指南）。`claude-code` 目前拿不到 trace。
+- 需要调用瀑布图（`niceeval view` 的 trace）：`claude-code` / `codex` / `bub` 三个都自发 OTLP（claude-code 走 CLI 的 beta 遥测，span 只有结构与计时）；自己写的 adapter 声明 `tracing` 即可（见 OTel 指南）。
 - 需要人工审批 / 多步确认（HITL）：`uiMessageStreamAgent` 原生支持（AI SDK v7 tool approval）；沙箱型三个都不支持，其它被测对象自己写 adapter，拿 `driveFrameStream` + `ctx.session.hold`/`take` 拼（Tier 1 示例里 pi-sdk / claude-sdk 有现成写法）。
 - 想跑一个 coding agent 改代码、看 diff、判断工具调用：`claude-code` / `codex` / `bub`（收发 + 事件流 + 会话续接 + workspace + sandbox）。
 - 后端协议是自己发明的、没有官方 SDK 转换器可用：别从零手写 send——挑一种 reduce 形状（整段落地写小映射，逐 token 增量用 `deltaStream`），会话续接直接取用 `ctx.session.id`/`capture` 或 `ctx.session.history`，有 HITL 再加 `ctx.session.hold`/`take`，拼起来就是 send。

@@ -79,7 +79,7 @@ OTEL_TRACES_EXPORT_INTERVAL=1000                      # 拉到近实时,eval 场
 
 ## 跟现有采集矩阵的关系
 
-[采集设计](../collection.md#采集矩阵现状与-src-对齐)那张表里"时间轨"一行,claude-code 当前写的是"无原生 OTel → transcript 时间戳合成 span"——**这句话需要更新**:Claude Code 现在有原生 OTel trace 导出,只是处于 beta、默认关、内容默认脱敏。准确说法应该是"有 beta 版原生 OTLP trace 导出(需要一串 env 才能打开、且默认无内容),目前 niceeval 仍选择更省事、内容更全的 transcript 时间戳合成方案"。
+**已落地(2026-07)**:下文"升级档"描述的接线已经实现——`claudeCodeAgent` 的 `tracing.env` 注入本页这组 env,与 bub/codex 一样默认开启(见 `src/agents/claude-code.ts`),[采集矩阵](../collection.md#采集矩阵现状与-src-对齐)的时间轨一行已同步。span 只有结构与计时(未开内容 flag),行为轨与断言仍走 transcript 旁读,与下文结论一致。
 
 ## 结论:这条路径值不值得接
 

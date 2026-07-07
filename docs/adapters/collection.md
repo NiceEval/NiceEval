@@ -46,7 +46,7 @@
 | **usage** | assistant 行 `message.usage`(含 cache read) | 防御式多路径:`data/payload/item/turn/response.usage`,兼容 `input/output_tokens` 与 `prompt/completion_tokens` 两套命名 | `event(name=="run")` 的 `data.usage`(`prompt/completion_tokens`,**`cost` 直接有**) |
 | **session id(resume 用)** | transcript 首个 `sessionId` 字段(`shared.sessionIdFromClaudeTranscript`) | `thread.started.thread_id`(`shared.codexThreadId`) | tape 文件名含 session hash;adapter 自管 |
 | **实际模型** | transcript 行内有 | 网关场景要第二通道读 `~/.codex/sessions` 的 `turn_context.payload.model`(agent-eval 的做法;niceeval 未接,记为已知缺口) | tape 内 run 事件 |
-| **时间轨** | 稳定态无 OTel;有 beta 版原生 OTLP trace 导出(`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` 等一串 env,内容默认脱敏,详见 [reference/claude-code-otel-telemetry.md](reference/claude-code-otel-telemetry.md))→ 目前仍用 transcript 时间戳合成 span | 原生 OTLP/JSON(`config.toml [otel]`,走 `tracing.configure`) | 原生 OTLP/protobuf(env-based `OTEL_*`,走 `tracing.env`) |
+| **时间轨** | beta 版原生 OTLP trace 导出,已接进 adapter 的 `tracing.env`(`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` 等一串 env;span 只有结构与计时、内容默认脱敏,内容仍由 transcript 旁读补全,详见 [reference/claude-code-otel-telemetry.md](reference/claude-code-otel-telemetry.md)) | 原生 OTLP/JSON(`config.toml [otel]`,走 `tracing.configure`) | 原生 OTLP/protobuf(env-based `OTEL_*`,走 `tracing.env`) |
 
 remote agent(通道 0)不在表里——它没有"采集",字段来源就是你自己代码里的返回值,见下节示例。
 
