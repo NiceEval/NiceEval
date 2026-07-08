@@ -7,6 +7,12 @@ import { LogoMark } from "./logo";
 
 const LOCALE_COOKIE = "niceeval-locale";
 
+// 仅 header 导航把 zh 指向 introduction;其余 docsUrl 引用(如首页)保持 quickstart。
+const headerDocsUrl: Record<Locale, string> = {
+  en: docsUrl.en,
+  zh: "https://niceeval.com/docs/zh/introduction",
+};
+
 export type Route = { name: "home" } | { name: "blog" } | { name: "post"; slug: string };
 
 // route 里的相对路径,用来拼当前页在另一种语言下的对应 URL。
@@ -61,7 +67,7 @@ export function Header({ locale, t, route }: { locale: Locale; t: Dictionary; ro
             {t.blog}
           </Link>
         )}
-        <a href={docsUrl[locale]} onClick={() => track("Click Docs Link", { location: "header", locale })}>{t.docs}</a>
+        <a href={headerDocsUrl[locale]} onClick={() => track("Click Docs Link", { location: "header", locale })}>{t.docs}</a>
         <a href={githubUrl} onClick={() => track("Click GitHub Link", { location: "header" })}>{t.github}</a>
         <Link
           className="lang-toggle"
