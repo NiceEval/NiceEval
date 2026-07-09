@@ -13,7 +13,12 @@ export const zhCN = {
   "cli.all": "(全部)",
   "cli.browserOpenFailed": "无法自动打开浏览器,请手动访问:{{url}}\n",
   "cli.clean.done": "已删除 .niceeval/ 历史运行工件。\n",
-  "cli.config.missing": "找不到 niceeval.config.ts(请在项目根运行)。",
+  "cli.config.missing":
+    "找不到 niceeval.config.ts。\n" +
+    "修法:\n" +
+    "  - [init] 运行 `npx niceeval init` 生成 niceeval.config.ts 和 evals/\n" +
+    "  - [cd] 切到包含 niceeval.config.ts 的项目根再运行\n" +
+    "  文档:node_modules/niceeval/docs-site/zh/quickstart.mdx",
   "cli.config.noDefault": "niceeval.config.ts 需要 default export(defineConfig(...))。",
   "cli.dry.header": "\n[dry] {{evals}} 个 eval × {{configs}} 个运行配置:\n",
   "cli.dry.noMatches": "(无匹配)",
@@ -23,7 +28,8 @@ export const zhCN = {
   "runner.budgetUnenforceable":
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
   "judge.modelMissing":
-    "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } })、eval 的 judge 配置或环境变量 NICEEVAL_JUDGE_MODEL 里指定评判模型(没有内置默认模型)。",
+    "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } })、eval 的 judge 配置或环境变量 NICEEVAL_JUDGE_MODEL 里指定评判模型(没有内置默认模型)。\n" +
+    "  文档:node_modules/niceeval/docs-site/zh/guides/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
   "cli.flag.parseError": "{{message}}\n运行 `niceeval --help` 查看用法。\n",
@@ -52,13 +58,16 @@ export const zhCN = {
   "cli.experimentGroup": "组",
   "cli.fallbackCleanupTimeout": "\ngraceful 清理超时,强制清理沙箱…\n",
   "cli.forceCleanupExit": "\n强制清理沙箱并退出…\n",
-  "cli.init.done": "已创建 evals/ 和 niceeval.config.ts 起始文件。\n",
+  "cli.init.done": "已就绪:evals/、niceeval.config.ts,以及 AGENTS.md 里的 niceeval agent 指引区块(指向 node_modules/niceeval/docs-site)。\n",
   "cli.interruptCleanup": "\n收到中断,正在清理沙箱容器…(再按一次强制清理并退出)\n",
   "cli.list.header": "发现 {{count}} 个 eval:\n",
   "cli.noAgent": "未指定 agent(用 --agent <name>)。\n",
   "cli.none": "(无)",
   "cli.pressCtrlC": "按 Ctrl+C 退出。\n",
-  "cli.run.experimentRequired": "运行 eval 必须通过 experiment:用 `niceeval exp [实验组|配置] [eval id 前缀]`。\n",
+  "cli.resultsPath": "结构化结果:{{path}}(每条结果的 artifactsDir 下是该次 attempt 的 events.json / trace.json / diff.json)\n",
+  "cli.run.experimentRequired":
+    "运行 eval 必须通过 experiment:用 `niceeval exp [实验组|配置] [eval id 前缀]`。\n" +
+    "  文档:node_modules/niceeval/docs-site/zh/guides/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "提示:\"{{pattern}}\" 是实验{{kind}},你大概想跑:niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "已发现实验:{{experiments}}\n",
   "cli.sandboxFlagRemoved": "`--sandbox` 不是 CLI flag。请在 experiment(或 niceeval.config.ts 做全项目兜底)里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n",
@@ -67,7 +76,8 @@ export const zhCN = {
   "cli.view.incompatible": "{{dir}}: 由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n运行 `{{command}}` 查看这份报告。\n",
   "cli.view.url": "niceeval view: {{url}}\n",
   "context.capabilityMissing":
-    "agent \"{{agent}}\" 不是沙箱型(defineSandboxAgent 构造),t.{{method}} 这类断言只有沙箱型 agent 可用。换用 defineSandboxAgent 构造的 agent,或去掉这条断言。",
+    "agent \"{{agent}}\" 不是沙箱型(defineSandboxAgent 构造),t.{{method}} 这类断言只有沙箱型 agent 可用。换用 defineSandboxAgent 构造的 agent,或去掉这条断言。\n" +
+    "  文档:node_modules/niceeval/docs-site/zh/guides/sandbox-agent.mdx",
   "context.skipEmpty": "skip() 需要一个非空理由。",
   "context.turnFailed": "本轮 send 返回 failed(turn status = failed):{{message}}",
   "context.turnFailedDefault": "本轮 send 返回 failed(turn status = failed)",
@@ -157,7 +167,9 @@ export const zhCN = {
   "runner.resumeCarryDetail": "      复用 [{{experiment}}] {{evals}}\n",
   "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
   "sandbox.backendNotImplemented": "{{backend}} sandbox backend not implemented; use docker, vercel, or e2b",
-  "sandbox.missingSpec": "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认后端——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。",
+  "sandbox.missingSpec":
+    "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认后端——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +
+    "  文档:node_modules/niceeval/docs-site/zh/guides/sandbox-backends.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
   "sandbox.dependencyMissing.vercel": "Vercel sandbox requires '@vercel/sandbox'. Install it with: pnpm add @vercel/sandbox",

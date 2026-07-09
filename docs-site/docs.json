@@ -220,7 +220,8 @@
                   "zh/guides/runner",
                   "zh/guides/ci-integration",
                   "zh/guides/reporters",
-                  "zh/guides/viewing-results"
+                  "zh/guides/viewing-results",
+                  "zh/guides/agent-feedback-loop"
                 ]
               }
             ]

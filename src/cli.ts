@@ -21,7 +21,7 @@ import { Live as LiveReporter, type LiveRow } from "./runner/reporters/live.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import { buildView, startViewServer, loadLatestResultsPerEval, IncompatibleResultsError } from "./view/index.ts";
 import { t } from "./i18n/index.ts";
-import { formatThrown } from "./util.ts";
+import { formatThrown, upsertManagedBlock } from "./util.ts";
 import type { Config, DiscoveredExperiment, Reporter } from "./types.ts";
 
 /** `niceeval view <summary.json>` 指向版本不同的报告时:打印 npx 提示后退出,不抛堆栈。 */
@@ -184,6 +184,19 @@ async function loadConfig(cwd: string): Promise<Config> {
   return mod.default;
 }
 
+// AGENTS.md 托管区块:告诉在这个项目里干活的 coding agent「niceeval 不在你的训练数据里,
+// 先读随包文档,跑完读结构化结果」。init 时写入/刷新;标记之外的用户内容永不触碰。
+const AGENT_RULES_BEGIN = "<!-- BEGIN:niceeval-agent-rules -->";
+const AGENT_RULES_END = "<!-- END:niceeval-agent-rules -->";
+const AGENT_RULES_CONTENT = [
+  "# niceeval is NOT in your training data",
+  "",
+  "Its APIs and conventions may differ from anything you have seen. Read the relevant",
+  "guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under",
+  "`zh/`) before writing any eval, experiment, adapter, or niceeval config. After a run,",
+  "read the `summary.json` path the CLI prints for structured results.",
+].join("\n");
+
 async function initProject(cwd: string): Promise<void> {
   await mkdir(join(cwd, "evals"), { recursive: true });
   const configPath = join(cwd, "niceeval.config.ts");
@@ -201,6 +214,10 @@ async function initProject(cwd: string): Promise<void> {
       "utf-8",
     );
   }
+  const agentsPath = join(cwd, "AGENTS.md");
+  const existing = existsSync(agentsPath) ? await readFile(agentsPath, "utf-8") : "";
+  const next = upsertManagedBlock(existing, AGENT_RULES_BEGIN, AGENT_RULES_END, AGENT_RULES_CONTENT);
+  if (next !== existing) await writeFile(agentsPath, next, "utf-8");
 }
 
 async function openBrowser(url: string): Promise<boolean> {
@@ -390,7 +407,8 @@ async function main(): Promise<void> {
       reporters.push(ConsoleReporter());
     }
   }
-  reporters.push(ArtifactsReporter());
+  const artifacts = ArtifactsReporter();
+  reporters.push(artifacts);
   if (flags.junit) reporters.push(JUnit(flags.junit));
   reporters.push(...(config.reporters ?? []));
 
@@ -458,6 +476,12 @@ async function main(): Promise<void> {
   // 正常返回(含被中断后走部分汇总)后再兜一刀:Scope finalizer 没停掉的残留沙箱在这里强清。
   // 跑顺利时登记表已空,是 no-op。
   await stopAllSandboxes();
+
+  // agent 反馈闭环的入口:跑完直接给出结构化结果路径,agent 读 summary.json 与各
+  // attempt 的工件(events/trace/diff),不必解析人类向的流式输出。--quiet 下也输出。
+  if (artifacts.outputDir()) {
+    process.stdout.write(t("cli.resultsPath", { path: join(artifacts.outputDir(), "summary.json") }));
+  }
 
   // 退出码按 eval 级判决,不按 attempt:summary.failed/errored 统计的是每次 attempt,
   // 被 runs+earlyExit 重试吸收的失败(先挂一次、后来过了)不该把进程判红——否则

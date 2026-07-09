@@ -51,7 +51,10 @@ function slimResult(r: EvalResult): EvalResult {
   };
 }
 
-export function Artifacts(root = ".niceeval"): Reporter {
+/** Artifacts 报告器额外暴露输出目录:CLI 在 run 结束时打出 summary.json 路径给 agent 直读。 */
+export type ArtifactsReporter = Reporter & { outputDir(): string };
+
+export function Artifacts(root = ".niceeval"): ArtifactsReporter {
   let outputDir = "";
   const ensureDir = async (): Promise<void> => {
     if (!outputDir) outputDir = join(root, safeTimestamp(new Date()));
@@ -59,6 +62,8 @@ export function Artifacts(root = ".niceeval"): Reporter {
   };
 
   return {
+    outputDir: () => outputDir,
+
     async onRunStart() {
       outputDir = join(root, safeTimestamp(new Date()));
       await mkdir(outputDir, { recursive: true });

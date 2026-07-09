@@ -67,7 +67,7 @@ export type MessageKey =
   | "status.skipped"
   | "action.close"
   | "action.copyReason"
-  | "action.copyErrors"
+  | "action.copyPrompt"
   | "action.copied"
   | "trace.loading"
   | "trace.loadFailed"
@@ -181,7 +181,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "status.skipped": "skipped",
     "action.close": "Close",
     "action.copyReason": "Copy reason",
-    "action.copyErrors": "Copy errors",
+    "action.copyPrompt": "Copy fix prompt",
     "action.copied": "Copied",
     "trace.loading": "loading...",
     "trace.loadFailed": "load failed (static report has no server - use niceeval view):",
@@ -292,7 +292,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "status.skipped": "跳过",
     "action.close": "关闭",
     "action.copyReason": "复制原因",
-    "action.copyErrors": "复制错误",
+    "action.copyPrompt": "复制修复 Prompt",
     "action.copied": "已复制",
     "trace.loading": "加载中...",
     "trace.loadFailed": "加载失败(静态报告没有服务端 - 请用 niceeval view):",

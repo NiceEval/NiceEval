@@ -9,7 +9,7 @@ import { Metric } from "./components/primitives.tsx";
 import { GroupSelector } from "./components/GroupSelector.tsx";
 import { CostScoreChart } from "./components/CostScoreChart.tsx";
 import { ExperimentTable } from "./components/ExperimentTable.tsx";
-import { CopyAllErrors } from "./components/CopyControls.tsx";
+import { CopyFixPrompt } from "./components/CopyControls.tsx";
 import { AttemptModal } from "./components/AttemptModal.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { RunsView } from "./pages/RunsPage.tsx";
@@ -239,7 +239,7 @@ export function App({ data }: { data: ViewData }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
-              <CopyAllErrors rows={filtered} t={t} />
+              <CopyFixPrompt rows={filtered} t={t} />
             </div>
           </div>
           {rows.length ? (

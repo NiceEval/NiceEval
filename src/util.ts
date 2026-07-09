@@ -37,6 +37,22 @@ export function pad4(n: number): string {
   return String(n).padStart(4, "0");
 }
 
+/**
+ * 在文本里维护一个带 BEGIN/END 标记的托管区块(AGENTS.md 的 niceeval 区块用)。
+ * 标记已存在 → 只替换两个标记之间的内容(升级时刷新指引,区块外的用户内容不动);
+ * 不存在 → 追加到末尾(与已有内容之间空一行)。
+ */
+export function upsertManagedBlock(source: string, begin: string, end: string, content: string): string {
+  const block = `${begin}\n${content}\n${end}`;
+  const beginIdx = source.indexOf(begin);
+  const endIdx = source.indexOf(end);
+  if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
+    return source.slice(0, beginIdx) + block + source.slice(endIdx + end.length);
+  }
+  if (source.trim() === "") return `${block}\n`;
+  return `${source.replace(/\n*$/, "")}\n\n${block}\n`;
+}
+
 /** 把任意值安全地转成简短字符串(报告 / 日志用)。 */
 export function brief(value: unknown, max = 200): string {
   let s: string;

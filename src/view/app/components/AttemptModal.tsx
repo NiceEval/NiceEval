@@ -5,6 +5,7 @@ import { artifactUrl } from "../lib/artifact-url.ts";
 import { asEvents, asSources } from "../lib/guards.ts";
 import { outcomeClass, outcomeLabel } from "../lib/outcome.ts";
 import { CodeView, NoSourceBody } from "./CodeView.tsx";
+import { CopyAttemptPrompt } from "./CopyControls.tsx";
 import { LazyArtifact } from "./LazyArtifact.tsx";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "./ui/dialog.tsx";
 import { Badge } from "./ui/badge.tsx";
@@ -44,6 +45,7 @@ export function AttemptModal({ result, onClose, t }: { result: ViewResult; onClo
             </DialogTitle>
             {result.description ? <span className="truncate text-xs text-muted">{result.description}</span> : null}
           </div>
+          <CopyAttemptPrompt result={result} t={t} />
           <DialogClose
             aria-label={t("action.close")}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-transparent text-sm text-muted transition-colors hover:border-line hover:bg-panel-2 hover:text-text"

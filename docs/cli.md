@@ -23,12 +23,14 @@ niceeval exp <实验组|配置> <选哪些 eval> <flag:调度覆盖>
 
 ```sh
 niceeval exp [组|配置] [pattern...]  # 跑实验:全部 / 一组 / 单个配置;可再用 eval id 前缀过滤
-niceeval init                # 生成 evals/ 与 niceeval.config.ts
+niceeval init                # 生成 evals/ 与 niceeval.config.ts;在 AGENTS.md 写入/刷新 niceeval-agent-rules 托管区块(指向随包 docs-site,区块外内容不动)
 niceeval list                # 只列出发现到的 eval,不运行
 niceeval clean               # 删除 .niceeval/ 历史运行工件
 niceeval watch               # 监听文件变化,改即重跑(规划中)
 niceeval view [结果目录|summary.json]  # 起本地 web 查看器并打开浏览器,读 .niceeval/ 历史运行出图
 ```
+
+`exp` 运行结束后(含 `--quiet`)在 stdout 打出本次 `summary.json` 的路径(`Structured results: .niceeval/<run>/summary.json`),这是 agent 反馈闭环的入口:coding agent 直接读结构化结果与各 attempt 的工件,不解析人类向的流式输出。
 
 实验 = 可签入的运行配置(哪个 agent/几次/预算)。**一文件一配置,一文件夹一组可对比实验**(`niceeval exp <组>` 跑整组)。详见 [Experiments](experiments.md)。
 

@@ -1,0 +1,79 @@
+---
+title: "让 coding agent 读结果并自主迭代"
+sidebarTitle: "Agent 反馈闭环"
+description: "NiceEval 的运行输出为 coding agent 设计:跑完直接给出 summary.json 路径,agent 读结构化结果和 artifacts,修完再跑,直到全绿。"
+---
+
+Eval 的价值在闭环:不只是人看报告,而是让 coding agent(Claude Code、Codex 等)自己跑 eval、自己读失败原因、自己改被测程序、再跑验证。NiceEval 的输出为这个循环设计——每次运行结束,CLI 直接打出结构化结果的路径,agent 不需要解析人类向的流式输出。
+
+## 一次完整的循环
+
+<Steps>
+  <Step title="跑">
+    ```bash
+    npx niceeval exp local
+    ```
+  </Step>
+  <Step title="读">
+    运行结束时 CLI 输出结构化结果入口:
+
+    ```text
+    Structured results: .niceeval/2026-07-09T10-00-00-000Z/summary.json
+    ```
+
+    `summary.json` 里每条结果带 `outcome`、失败断言明细和 `artifactsDir`。`artifactsDir` 指向该次 attempt 的 artifacts 目录:`events.json` 是完整的 agent transcript(含工具调用),`trace.json` 是执行 trace,`diff.json` 是 sandbox 里的文件改动。字段说明见[查看结果](/zh/guides/viewing-results)。
+  </Step>
+  <Step title="修">
+    先判断缺陷在哪一侧:被测程序,还是 eval 本身(断言过紧、fixture 错误、setup 缺失)。修对应的一侧,不要为了变绿而放宽断言。
+  </Step>
+  <Step title="再跑">
+    ```bash
+    npx niceeval exp local weather
+    ```
+
+    位置参数按 eval id 前缀只重跑失败的部分。已通过的 eval 会被指纹缓存跳过;`--force` 全量重跑。
+  </Step>
+</Steps>
+
+给 agent 的提示词可以直接这样写:
+
+```text
+跑 npx niceeval exp local,读输出末尾的 summary.json 和失败结果的 artifacts,
+修掉失败的 eval,再跑,直到全部通过。
+```
+
+## AGENTS.md 指引区块
+
+模型的训练数据里没有 NiceEval。`npx niceeval init` 会在项目的 `AGENTS.md` 里写入一个托管区块,告诉 agent 先读随包文档再动手:
+
+```md
+<!-- BEGIN:niceeval-agent-rules -->
+# niceeval is NOT in your training data
+
+Its APIs and conventions may differ from anything you have seen. Read the relevant
+guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under
+`zh/`) before writing any eval, experiment, adapter, or niceeval config. After a run,
+read the `summary.json` path the CLI prints for structured results.
+<!-- END:niceeval-agent-rules -->
+```
+
+标记之外的内容不会被改动;升级 NiceEval 后重跑 `npx niceeval init` 会刷新标记之内的指引。文档随 npm 包发布在 `node_modules/niceeval/docs-site/`,agent 读到的永远是和安装版本一致的行为,而不是训练数据里的旧记忆。
+
+## 报错自带修法
+
+配置和运行期错误直接给出修法与随包文档路径,agent 读到报错就能自修,不必先搜索:
+
+```text
+Could not find niceeval.config.ts.
+Ways to fix:
+  - [init] Run `npx niceeval init` to scaffold niceeval.config.ts and evals/
+  - [cd] Run from the project root that contains niceeval.config.ts
+  Docs: node_modules/niceeval/docs-site/quickstart.mdx
+```
+
+## 从查看器转交给 agent
+
+人在 `npx niceeval view` 里看到失败时,不必手工整理上下文:
+
+- 榜单右上角的 **Copy fix prompt** 把全部失败打包成一段可直接粘给 agent 的修复 prompt——失败清单、artifacts 路径、判断与重跑步骤都在里面。
+- 打开单个 attempt 的弹窗,同名按钮只打包这一条失败,适合逐条转交。

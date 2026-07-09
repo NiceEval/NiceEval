@@ -1,5 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { formatThrown } from "./util.ts";
+import { formatThrown, upsertManagedBlock } from "./util.ts";
+
+describe("upsertManagedBlock", () => {
+  const begin = "<!-- BEGIN:x -->";
+  const end = "<!-- END:x -->";
+
+  it("appends the block to existing content, separated by a blank line", () => {
+    const out = upsertManagedBlock("# My project\n", begin, end, "rules");
+    expect(out).toBe(`# My project\n\n${begin}\nrules\n${end}\n`);
+  });
+
+  it("creates just the block when the file is empty", () => {
+    expect(upsertManagedBlock("", begin, end, "rules")).toBe(`${begin}\nrules\n${end}\n`);
+  });
+
+  it("replaces only the content between existing markers, preserving what surrounds them", () => {
+    const before = `above\n\n${begin}\nold rules\n${end}\n\nbelow\n`;
+    const out = upsertManagedBlock(before, begin, end, "new rules");
+    expect(out).toBe(`above\n\n${begin}\nnew rules\n${end}\n\nbelow\n`);
+  });
+
+  it("is idempotent for the same content", () => {
+    const once = upsertManagedBlock("# hi\n", begin, end, "rules");
+    expect(upsertManagedBlock(once, begin, end, "rules")).toBe(once);
+  });
+});
 
 describe("formatThrown", () => {
   it("uses the stack trace when available, so the report can locate the throw site", () => {

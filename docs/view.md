@@ -92,6 +92,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 - **运行总览指标** —— pass / fail / error / skip 计数、总 token、总 $。
 - **eval attempt 钻取** —— `AttemptModal` 点开单个 attempt 看断言、错误、耗时、用量、transcript、trace。
 - **trace 瀑布图** —— 把 `trace.json` 画成时间轴瀑布,只读 canonical(`gen_ai.operation.name` → `kind`、`gen_ai.*`),不认任何原生 span 名,所以不同 agent 的图天然对齐、可叠加对比。
+- **Copy fix prompt(学 Next.js 16.3 的 Copy prompt)** —— 榜单右上角把全部失败(含工件路径与修复步骤)打包成可直接粘给 coding agent 的英文修复 prompt;`AttemptModal` 头部有单条版。实现在 `src/view/app/components/CopyControls.tsx` 的 `buildFixPrompt`。
 
 ## 已知的文档 vs 实现差异
 
