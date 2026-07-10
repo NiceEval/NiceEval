@@ -97,7 +97,8 @@ export interface RunShape {
   configs: number;
   /** 总 attempt 数(evals × configs × runs);逐行输出与汇总计数都按它。 */
   totalRuns: number;
-  /** 本次运行实际生效的并发数(flag/env/experiment/config/sandbox 默认值解析后的结果)。 */
+  /** 本次运行实际生效的全局并发数(flag/env/config/sandbox 默认值解析后的结果);
+   *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
   maxConcurrency: number;
 }
 
@@ -185,7 +186,12 @@ export interface ExperimentDef {
    * (已在飞的 attempt 仍会跑完)。
    */
   budget?: number;
-  /** 覆盖项目级 / CLI 的并发上限,只对这个实验生效;多个实验一起跑时取各自设置的最小值。 */
+  /**
+   * 本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
+   * 仍按全局并发(CLI / env / config / 沙箱默认)跑。用于串行化有共享状态的实验
+   * (如跨 eval 累积记忆:`maxConcurrency: 1` 保证 attempt 按 eval 顺序一个个跑),
+   * 或给撞后端限额的实验单独降速。
+   */
   maxConcurrency?: number;
 }
 
@@ -269,6 +275,9 @@ export interface AgentRun {
   evalFilter: (id: string) => boolean;
   experimentId?: string;
   strict?: boolean;
+  /** 本配置自己的并发上限(来自 ExperimentDef.maxConcurrency):调度器为它单建信号量,
+   *  attempt 先过这道闸再占全局并发位;省略则只受全局并发约束。 */
+  maxConcurrency?: number;
 }
 
 export interface RunOptions {

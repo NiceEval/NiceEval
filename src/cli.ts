@@ -308,7 +308,6 @@ async function main(): Promise<void> {
   }
 
   const agentRuns: AgentRun[] = [];
-  let expMaxConcurrency: number | undefined;
 
   if (command === "exp") {
     if (flags.agent || flags.model) {
@@ -343,10 +342,11 @@ async function main(): Promise<void> {
         evalFilter: evalsFilterFromExperiment(exp.evals, extraPatterns),
         experimentId: exp.id,
         strict: flags.strict,
+        // 实验级并发上限:随 AgentRun 进调度器按实验单独限流(runner 两级信号量),
+        // 不再取所有选中实验的最小值钳全局——那会让一个串行实验拖慢整批基线。
+        maxConcurrency: exp.maxConcurrency,
       });
     }
-    const vals = selected.map((e) => e.maxConcurrency).filter((v): v is number => v !== undefined);
-    if (vals.length > 0) expMaxConcurrency = Math.min(...vals);
   } else {
     // 裸 run / `niceeval <eval>` 不再执行。运行配置必须来自 experiments/,
     // 这样 agent/model/flags/runs/budget 与结果聚合都有可签入的身份。
@@ -465,7 +465,6 @@ async function main(): Promise<void> {
     maxConcurrency:
       flags.maxConcurrency ??
       envNumber("NICEEVAL_MAX_CONCURRENCY") ??
-      expMaxConcurrency ??
       config.maxConcurrency ??
       sandboxDefaultConcurrency,
     signal: ctrl.signal,

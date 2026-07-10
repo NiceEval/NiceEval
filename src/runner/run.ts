@@ -11,7 +11,7 @@ import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import { runAttemptEffect } from "./attempt.ts";
 import { runReporter, emitReporterEvent, summarize } from "./report.ts";
 import type { Agent, EvalResult, JudgeConfig, RunShape, RunSummary } from "../types.ts";
-import type { Attempt, RunOptions } from "./types.ts";
+import type { AgentRun, Attempt, RunOptions } from "./types.ts";
 
 export type { AgentRun, RunOptions } from "./types.ts";
 
@@ -209,6 +209,18 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // 未显式指定时跟 maxConcurrency 走——各 backend 的推荐值已在 cli 层写进 maxConcurrency 默认值。
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
 
+  // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。
+  // 实验级信号量让「有共享状态、必须串行」的实验(如跨 eval 累积记忆,maxConcurrency: 1)
+  // 只在自己内部排队,同批其它实验照常并发——旧行为是 CLI 取所有选中实验的最小值钳全局,
+  // 一个串行实验会把整批基线拖成串行。等于全局上限的实验级值不建闸(与全局闸重复)。
+  const globalSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
+  const runSems = new Map<AgentRun, Effect.Semaphore>();
+  for (const run of opts.agentRuns) {
+    if (run.maxConcurrency !== undefined && run.maxConcurrency < opts.maxConcurrency) {
+      runSems.set(run, Effect.runSync(Effect.makeSemaphore(Math.max(1, run.maxConcurrency))));
+    }
+  }
+
   // 非沙箱 tracing agent 的共享 OTLP 接收池:被测应用是长驻进程,端点不能随
   // attempt 换 —— receiver 粒度跟被测进程走(每 agent 一个,整个 run 复用),run 结束回收。
   if (!opts.otelPool) {
@@ -224,8 +236,11 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     }
   }
 
-  // 有界并发调度:Effect.forEach({ concurrency }) 取代手写 queue / inFlight / Promise.race。
-  // 每个 attempt 跑在自己的 fiber;runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
+  // 有界并发调度:forEach 本身 unbounded(每个 attempt 立刻有自己的 fiber),真正的
+  // 并发上限由上面两级信号量把守——执行体先过实验级闸(若有)再占全局 permit 才开跑。
+  // 获取定序恒为 runSem → globalSem,无环等待;实验级闸的持有者在等全局 permit 时
+  // 不占别的实验的并发位(并发位就是 globalSem 的 permit,不再是 forEach 的 fiber 槽)。
+  // runAttemptEffect 只把「执行错误」收进 EvalResult.error(不 fail),
   // 但中断(Ctrl+C / kill)照常向上传播 —— 所以一条挂掉不会中断其它 attempt,而中断能停掉全部。
   //
   // signal:把 opts.signal 喂给 run → abort 触发根 fiber 中断 → forEach 中断所有子 fiber
@@ -240,10 +255,11 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   const exit = await Effect.runPromiseExit(
     Effect.forEach(
       attempts,
-      (a) =>
-        Effect.gen(function* () {
+      (a) => {
+        const body = Effect.gen(function* () {
             // 早停:同 key 已通过,或已 errored(重跑只会重复同一个框架错误)且开了 earlyExit
-            // → 跳过未启动的 attempt。
+            // → 跳过未启动的 attempt。检查必须在拿到 permit 之后(fiber 是 unbounded 一次性
+            // 全建的,建时结果还没出来);跳过路径短暂占一个 permit,可忽略。
             if (a.run.earlyExit && (passedKeys.has(a.key) || erroredKeys.has(a.key))) {
               yield* reportMutex.withPermits(1)(
                 Effect.promise(() =>
@@ -366,8 +382,12 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
             yield* reportMutex.withPermits(1)(
               Effect.promise(() => emitReporterEvent(opts.reporters, { type: "eval:complete", result })),
             );
-          }),
-      { concurrency: opts.maxConcurrency, discard: true },
+          });
+        const gated = globalSem.withPermits(1)(body);
+        const runSem = runSems.get(a.run);
+        return runSem ? runSem.withPermits(1)(gated) : gated;
+      },
+      { concurrency: "unbounded", discard: true },
     ).pipe(
       // 中断(用户 Ctrl+C):finalizer 已在中断过程中跑完(容器已停),这里只是把它咽下,
       // 好让流程走到 summarize / onRunComplete,用已完成的 results 出一份部分汇总,而不是抛栈。
