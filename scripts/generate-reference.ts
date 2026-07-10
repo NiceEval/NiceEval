@@ -7,6 +7,8 @@
 // 做漂移检测。CLI 入口(main())只负责读写文件。
 //
 // 不新增依赖:只用仓库已有的 devDependencies 里的 `typescript` 包的 compiler API。
+// 注意 `typescript` 是 npm alias → @typescript/typescript6(TS7 原生版不提供编程 API,
+// API 消费者按官方配方留在 6.x;`tsc` 二进制来自 @typescript/native → typescript@7)。
 
 import ts from "typescript";
 import { readFileSync, writeFileSync } from "node:fs";
