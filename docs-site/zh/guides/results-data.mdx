@@ -1,0 +1,222 @@
+---
+title: "用 niceeval/results 直接读写结果数据"
+sidebarTitle: "结果数据 API"
+description: "报告积木脚下的数据层：openResults 把 .niceeval/ 的落盘工件 parse 成「实验 → 快照 → eval → attempt」的类型化层次，createRunWriter 把别家结果写成 NiceEval 格式，copySnapshots 负责发布瘦身。"
+---
+
+[自定义报告](/zh/guides/custom-reports)的积木——指标、计算函数、双面组件——脚下还有一层：`niceeval/results`，落盘工件的 parser。官方两扇门和全部报告积木读的都是这一层，没有私有数据通道；报告表达不了的口径，下到这层直接拿数据算。
+
+什么时候下到这层：
+
+- **口径连计算函数都折不出。** 表格、矩阵、成绩单、散点都是「折叠」；分布类的看法（直方图、逐事件分析）不是折叠，要自己遍历 attempt。
+- **把结果喂进自己的系统。** 数据仓库、告警、内部平台——吃类型化数据，不吃磁盘布局。
+- **把别家平台的结果转成 NiceEval 格式。** 写入面保证「写出去的就是读得回的」，转完 `niceeval show` / `view` / 报告积木全套直接能用。
+
+这一层只管数据的读与写，不预设任何看法：不合并、不聚合、不去重，忠实反映磁盘。「怎么看」归上层的报告积木。
+
+## 读：`openResults`
+
+输入是 `.niceeval/` 目录（或单个 run 目录），输出是四层数据：**实验 → 快照（单次跑的实验）→ eval → attempt**。你从此不碰路径、不判断文件存在性、不解析 JSON：
+
+```typescript
+import { openResults } from "niceeval/results";
+
+const results = await openResults(".niceeval");
+
+results.experiments;           // Experiment[]:每个实验一项,挂着自己的全部历史
+results.skipped;               // 读不了的落盘:{ dir, reason, schemaVersion?, producer? }[]
+```
+
+**第一层，实验**——同一个 experiment id 的历次运行归在一起：
+
+```typescript
+const exp = results.experiments.find((e) => e.id === "compare/bub-gpt-5.4")!;
+
+exp.snapshots;                 // Snapshot[]:历次快照,最新在前
+exp.latest;                    // 最新一次(= snapshots[0])
+exp.evalIds;                   // 历史覆盖过的 eval 并集,残缺检测的依据
+```
+
+**第二层，快照**——单次跑的实验。它是谁、什么时候跑的、**用什么写的**，都在这一层：
+
+```typescript
+const snap = exp.latest;
+
+snap.agent;                    // 本快照自己的 agent
+snap.model;
+snap.startedAt;                // 这次实验什么时候跑的
+snap.producer;                 // { name: "niceeval", version: "0.4.6" } —— 谁写的这份结果
+snap.schemaVersion;            // 结果格式版本
+```
+
+**第三层，eval**——这次实验里的每道题，attempt（重试历史）挂在题下面：
+
+```typescript
+for (const ev of snap.evals) {
+  ev.id;                       // "algebra/quadratic"
+  ev.attempts;                 // AttemptHandle[]:该题的全部 attempt
+}
+snap.attempts;                 // 不关心题目边界时,全部 attempt 平铺
+```
+
+**第四层，attempt**——瘦身条目直接在手上，重工件全部懒加载。唯一带 `Handle` 后缀的类型就是它：上面三层是纯数据，这一层的方法会碰磁盘：
+
+```typescript
+const attempt = snap.evals[0].attempts[0];
+
+attempt.evalId;                // "algebra/quadratic" —— 属于哪道题,不用绕 result
+attempt.experimentId;          // 属于哪个实验
+attempt.result;                // EvalResult:判决、断言、用量、成本、experiment 元数据
+attempt.ref;                   // { run, result }:证据引用,与 view 深链、报告格子的 refs 同一身份
+await attempt.events();        // StreamEvent[] | null
+await attempt.trace();         // TraceSpan[] | null
+await attempt.o11y();          // O11ySummary | null
+await attempt.diff();          // DiffData | null(可达上百 MB,所以必须懒)
+await attempt.sources();       // SourceArtifact[] | null
+```
+
+三条要点：
+
+- **懒加载即存在性判断。** 工件缺失返回 `null`，不抛错——remote agent 没有 `diff.json` 时，`await attempt.diff()` 就是 `null`，你据此决定跳过还是报缺。
+- **读不了的落盘不静默。** 版本不兼容、目录损坏的 run 进 `skipped` 并带原因；要不要展示由你定，但缺口永远被算出来。
+- **同进程内按句柄记忆化。** 两处都读同一个 `diff()` 不会把上百 MB 读两遍。
+
+## 版本：谁写的、读不读得了
+
+每个快照都带自己的出身：`producer` 是写这份结果的工具与版本（niceeval 自己，或经写入面转换的第三方 harness），`schemaVersion` 是磁盘格式版本。格式只在破坏兼容时递增版本，读取器只认相同版本——**版本不兼容的落盘不解析、不迁移、不猜**，整个 run 进 `skipped`：
+
+```typescript
+for (const s of results.skipped) {
+  s.reason;                    // "incompatible-version" | "malformed"
+  s.schemaVersion;             // 那份结果声明的格式版本
+  s.producer;                  // { name, version }:谁写的它
+}
+```
+
+旧版本的结果不会丢：磁盘上原样还在，用写它的那个工具就能看——`producer.name` 是 `"niceeval"` 时，提示用户 `npx niceeval@<producer.version> view`；是第三方 harness 时如实报出它的名字和版本，别拼一句错误的 npx 命令。`skipped` 给你的信息刚好够做对这个分支。
+
+## 为什么快照不是 run 目录
+
+一次 CLI 调用写一个 run 目录，但一个 run 目录里可以装多个 experiment（`niceeval exp compare` 整组对照进同一份汇总）。「每个 experiment 最新一次」因此没法用目录粒度表达：周一跑了整组，周二只重跑 `compare/bub-gpt-5.4`，bub 的最新在周二的目录里，codex 的还在周一的目录里。
+
+快照把「单次跑的实验」这层身份显式化——**一个 experiment 在一次落盘里的那部分结果**。物理目录仍可通过 `results.runDirs` 与 `snap.runDir` 触达（发布、排查工件路径时用），多数消费方不需要碰。
+
+## 选快照：`results.latest()`
+
+多数场景先回答「现在什么水位」，选择器替你挑「每个实验最新一次」——这也是官方榜单的口径。返回的是一个**选集（Selection）**，快照和警告绑在一起走：
+
+```typescript
+const latest = results.latest({
+  experiments: "compare/",     // 可选:experiment id 前缀过滤,同 CLI 前缀语义
+});
+
+latest.snapshots;              // Snapshot[]:每个实验最新一次
+latest.warnings;               // 结构化警告,不是渲染好的文本
+```
+
+「最新」可能残缺：只重跑一道题是正常的 debug 姿势，它产出的最新快照就只有一道题。选择器把每个选中快照的覆盖与该实验的历史并集（`exp.evalIds`）对比，缩水就写进 `warnings`：
+
+```typescript
+latest.warnings[0];
+// {
+//   kind: "partial-coverage",
+//   experimentId: "midterm/bub-gpt-5.4",
+//   covered: 1,
+//   total: 50,
+//   message: "snapshot covers 1 of 50 evals seen in history; re-run `niceeval exp midterm/bub-gpt-5.4` for a full snapshot",
+// }
+```
+
+字段供程序判断——CI 里「覆盖缩水就 fail」直接判 `covered < total`，不解析文本；`message` 是渲染好的英文句子，要展示就原样打。渲染与否在你，缺口永远被算出来。
+
+选集是[报告积木](/zh/guides/custom-reports)和下文 `copySnapshots` 的通用输入：收 `Selection` 时 warnings 随行（`RunOverview` 之类的组件会如实展示），手工挑的 `Snapshot[]` 数组照收。要别的口径不用等新选择器：`exp.snapshots` 是普通数组，`.filter()` 就是自定义选择。
+
+## 一个真实脚本：分布不是折叠
+
+「每个 agent 的 shell 命令数分布」画不成表格——那是分布，不是折叠。直接遍历：
+
+```typescript
+import { openResults } from "niceeval/results";
+
+const results = await openResults(".niceeval");
+const points = [];
+for (const exp of results.experiments) {
+  for (const attempt of exp.latest.attempts) {
+    const o11y = await attempt.o11y();
+    points.push({
+      agent: exp.latest.agent,
+      eval: attempt.evalId,
+      passed: attempt.result.outcome === "passed",
+      shellCommands: o11y?.shellCommands.length ?? 0,
+    });
+  }
+}
+```
+
+即使在这条最深的路径上也不碰磁盘布局：路径拼接、存在性、版本过滤、快照切分全被库消化。要把这份分布摆进报告页，用 [`defineComponent`](/zh/guides/custom-reports) 包一个双面组件即可。
+
+一条跨快照累计时的义务：`--resume` 会把上一轮已通过的结果原样合入新 run，同一个 attempt 因此可能存在于多份落盘。reader 忠实反映这份重复；跨快照聚合前用 `dedupeAttempts` 按身份键 `(experimentId, evalId, attempt, startedAt)` 去重，重复保留最新——报告积木的计算函数内置这条，自己写脚本时记得过一遍：
+
+```typescript
+import { dedupeAttempts } from "niceeval/results";
+
+const all = exp.snapshots.flatMap((s) => s.attempts);   // 跨快照累计:历史全量
+const { attempts, warnings } = dedupeAttempts(all);      // resume 合入的重复被折掉
+```
+
+## 写：`createRunWriter`
+
+写入面和读取面是同一组类型的两半，签名就是 roundtrip 的证明：`writeAttempt` 的第一个参数是 reader 的 `attempt.result` 的类型，第二个参数是 reader 懒加载能拿到的那几样工件的类型——「写出去的就是读得回的」由编译器背书。用它把别家平台、自研 harness 的结果转成 NiceEval 格式：
+
+```typescript
+import { createRunWriter } from "niceeval/results";
+
+const writer = await createRunWriter(".niceeval", {
+  producer: { name: "my-harness", version: "1.0.0" },
+});
+
+const snap = writer.snapshot({         // 快照级元数据的家:一个 experiment 开一个
+  experiment: "compare/my-agent",
+  agent: "my-agent",
+  model: "gpt-5.4",
+  startedAt: sourceRun.startedAt,
+});
+
+for (const r of convertedResults) {
+  await snap.writeAttempt(r.result, {  // 第一参 = reader 的 attempt.result,原形状
+    events: r.events,                  // 第二参 = 工件,都可选;缺哪样读取面就懒加载出 null
+    diff: r.diff,
+  });                                  // 拆工件文件、算目录、回填引用,全在库内发生
+}
+
+await writer.finish();                 // summary 从已写入的 attempt 推导,计数永远和条目对得上
+```
+
+`writer.snapshot()` 就是读取面「一个 run 装多份快照」的镜像：转多个 experiment 就开多个快照，agent / model / startedAt 这些快照级元数据在这里声明，不用塞进每条 attempt。转完的目录就是标准结果目录：`niceeval show` / `niceeval view` 直接能看，报告积木直接能算，不用抄格式文档；`producer` 会原样出现在读取面的 `snap.producer` 上。attempt 按完成增量落盘，长任务中途失败时已完成的部分仍在。
+
+## 发布：`copySnapshots`
+
+把选中的快照按格式感知地复制到发布目录——只带指定工件、只带选中的 attempt：
+
+```typescript
+import { openResults, copySnapshots } from "niceeval/results";
+
+const results = await openResults(".niceeval");
+await copySnapshots(results.latest(), "site-data/run", {
+  artifacts: ["sources", "events", "trace"],   // diff 可达百 MB,发布时常见地不带
+});
+```
+
+第一个参数收 `Selection` 或手工挑的 `Snapshot[]`——和报告积木同一个输入约定。
+
+复制忠实于源，不改内容、不消毒；发布前给自由文本消毒用报告积木 `CaseList.data` 的 `redact` 钩子。CI 静态托管的完整流程见[查看结果 · 导出与静态托管](/zh/guides/viewing-results#导出与静态托管)。
+
+## 分层速览
+
+| 层 | 入口 | 回答 |
+| --- | --- | --- |
+| 官方两扇门 | `niceeval show` / `niceeval view` | 零代码看官方摆法 |
+| 报告积木 | [自定义报告](/zh/guides/custom-reports)、[报告组件](/zh/guides/report-components) | 自己的口径与摆法 |
+| 结果数据 API（本页） | `niceeval/results` | 折叠表达不了的算法、接自己的系统、读写格式本身 |
+
+每层都建立在下一层之上，同一份落盘工件是唯一事实来源——上层的派生物删了随时可重算。

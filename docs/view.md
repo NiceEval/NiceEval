@@ -167,7 +167,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 | view 今天 | 合流后 | 顺带兑现 |
 |---|---|---|
 | `loadSummaries` / `readSummary`,版本判定散在 loader | [`openResults`](results-lib.md#读openresults) | 「结果版本提示与跳过列表」= 渲染 `results.skipped`,不再专门做;计划中的 normalize 层就是 results lib |
-| `aggregateRows` 把全部历史揉成一行 | 选择器 + 计算函数(`overview` / `table(rows: "experiment")`) | 跨快照去重白捡——`--resume` 合入结果被重复计数的问题顺带修掉;「累计 vs 最新」从 loader 的既成事实变成 UI 上可切换的两次显式调用 |
+| `aggregateRows` 把全部历史揉成一行 | 选择器 + 计算函数(`RunOverview.data` / `MetricTable.data(rows: "experiment")`) | 跨快照去重白捡——`--resume` 合入结果被重复计数的问题顺带修掉;「累计 vs 最新」从 loader 的既成事实变成 UI 上可切换的两次显式调用 |
 | `ExperimentTable` / Runs 表 / 总览指标(自绘) | `MetricTable` / `RunOverview` | 覆盖率角标、缺数据渲染、better 排序这些诚实细节自动继承 |
 | 质量 × 成本散点图(计划中,没做) | `MetricScatter` | 见上节 |
 | Compare(计划中,没做) | 两个下拉选快照 + 时间轴 `DeltaTable` 变体 | Reports 待定的「时间轴 delta」在 view 首发,两边永远同一套「对比」语义 |
@@ -175,7 +175,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 
 导出机制同样合流:
 
-- `view --out <目录>` 的工件复制换成 [`copyRun`](results-lib.md#复制与瘦身copyrun)(sources/events/trace,diff/o11y 照旧不带);单文件导出已整个移除(见上文「静态导出」的移除记录),合流时不必再背这个形态。
+- `view --out <目录>` 的工件复制换成 [`copySnapshots`](results-lib.md#复制与瘦身copysnapshots)(sources/events/trace,diff/o11y 照旧不带);单文件导出已整个移除(见上文「静态导出」的移除记录),合流时不必再背这个形态。
 - 烘进 HTML 的 `__NICEEVAL_VIEW_DATA__` 从私有 rows 换成**官方数据契约**(OverviewData / TableData / ScatterData + 快照元信息)。外部脚本从此没有理由扒 HTML——coding-agent-memory-evals 曾用字符串标记从 index.html 里抠内嵌 JSON、再正则消毒构建机路径,那类 hack 的存在本身就是数据契约缺位的证据;但内嵌数据仍不是承诺的持久化格式,要数据走 [Reports 场景三](reports.md#dx-模拟)自己算。
 - 补 `#/attempt/<run>/<result>` 路由,路由参数就是 `AttemptRef`——报告页(前门)与 view(证据室)靠同一个身份契约打通,`attemptHref` 从此有确定的去处(对应 Reports 待定问题 5)。**已实现**:`src/view/app/lib/attempt-route.ts` + `App.tsx` 接线,loader 的 `withViewRefs` 给每条 result 注入 `attemptRef`;旧 `?modal=` 参数保留为只读回退。
 
@@ -185,7 +185,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 2. **换统计层。** 计算函数落地,`aggregateRows` 删掉;榜单数字会因去重而变(变得更对),在 changelog 里明说。
 3. **换渲染层 + 补两个 tab。** 榜单换 `MetricTable`,新增 scatter,Compare 以时间轴 delta 首发;AttemptModal / Traces 原样保留。
 
-界线不变:view 是**一份固定摆法的默认报告页**,不长配置、不长插件——想换摆法,去写自己的页面([Reports](reports.md)),零件是同一批。
+界线(2026-07 更新,原表述「固定摆法、想换摆法去写自己的页面」被宿主化提案精确化):**view = 报告槽 + 证据室**。报告槽默认装内置默认报告——它没有特权,就是 `Report` 契约的出厂预设,作为值(`defaultReport`)公开导出;`niceeval view --report <文件>` 整槽替换,用户在自己的报告里 spread `defaultReport` 即可「官方水位 + 自己口径」,不做 tab 管理、不做注册表,详见 [Reports · 宿主化报告](reports.md)。证据室(AttemptModal / Traces / 导航壳)是 view 本体,报告块经 `attemptRef` 深链进来。view 仍不长配置、不长插件——报告文件是显式路径递进来的宿主语言模块,不是插件;要自己的 React 组件,宿主仍是你自己的页面([Reports](reports.md)),零件是同一批。
 
 ## 相关阅读
 

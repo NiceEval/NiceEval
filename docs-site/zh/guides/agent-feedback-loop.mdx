@@ -1,10 +1,10 @@
 ---
 title: "让 coding agent 读结果并自主迭代"
 sidebarTitle: "Agent 反馈闭环"
-description: "NiceEval 的运行输出为 coding agent 设计:跑完直接给出 summary.json 路径,agent 读结构化结果和 artifacts,修完再跑,直到全绿。"
+description: "niceeval exp 跑完直接给出失败清单和下钻命令，agent 用 niceeval show 在终端读断言、transcript、trace 与 diff，修完按前缀重跑——跑→读→修→再跑全程不出终端。"
 ---
 
-Eval 的价值在闭环:不只是人看报告,而是让 coding agent(Claude Code、Codex 等)自己跑 eval、自己读失败原因、自己改被测程序、再跑验证。NiceEval 的输出为这个循环设计——每次运行结束,CLI 直接打出结构化结果的路径,agent 不需要解析人类向的流式输出。
+Eval 的价值在闭环：不只是人看报告，而是让 coding agent（Claude Code、Codex 等）自己跑 eval、自己读失败原因、自己改被测程序、再跑验证。这个循环成立的前提是信息对等：**人在 `niceeval view` 里能看到的证据，agent 都能用 `niceeval show` 在终端看到**（两扇门的完整用法见[查看结果](/zh/guides/viewing-results)）。agent 不需要浏览器，不需要解析人类向的流式输出，也不需要一口气吞下可能上百 MB 的原始 JSON——CLI 输出是浓缩过的读法，原始工件永远在盘上，要多细读多细。
 
 ## 一次完整的循环
 
@@ -15,36 +15,76 @@ Eval 的价值在闭环:不只是人看报告,而是让 coding agent(Claude Code
     ```
   </Step>
   <Step title="读">
-    运行结束时 CLI 输出结构化结果入口:
+    运行中每个 eval 一条流式行即时反馈；运行结束时 CLI 打出收尾块——失败清单逐条带 eval id、失败断言和下钻命令，末尾是结构化结果入口。完整输出长这样：
 
     ```text
+    $ npx niceeval exp local
+    Discovered 15 evals · experiment local
+
+      ✓ classify           (12ms)
+      ✓ weather/tokyo      (31s · $0.02)
+      ✗ weather/brooklyn   (41s · $0.04 · 3 attempts)
+      ✓ fixtures/button    (2m 10s · $0.11)
+      …
+
+    Failing:
+      ✗ weather/brooklyn
+          gate calledTool("get_weather"): tool was never called
+          soft judge("回答基于实时数据"): 0.2/1
+          → niceeval show weather/brooklyn
+
+    Results: 14 passed, 1 failed, 0 errored, 0 skipped · $0.31 · 6m 02s
     Structured results: .niceeval/2026-07-09T10-00-00-000Z/summary.json
     ```
 
-    `summary.json` 里每条结果带 `outcome`、失败断言明细和 `artifactsDir`。`artifactsDir` 指向该次 attempt 的 artifacts 目录:`events.json` 是完整的 agent transcript(含工具调用),`trace.json` 是执行 trace,`diff.json` 是 sandbox 里的文件改动。字段说明见[查看结果](/zh/guides/viewing-results)。
+    流式行是给盯着终端的人看的，长运行会把它们刷出屏幕；收尾块专为「只看最后一屏」设计——失败集中重放一遍，每条自带 `niceeval show <eval id>`，agent 不用回滚历史输出就能开始下钻。跑多 experiment 的组（如 `exp compare`）时，收尾块还会多一张 per-experiment 汇总表，与 `niceeval show` 榜单是同一份渲染。
+
+    退出码是给循环用的判决，不用解析任何文本：全绿退 `0`；有失败或错误退 `1`（按 eval 级折叠——`runs` 重试吸收掉的单次抖动不算红）；框架自身崩溃退 `2`。agent 或脚本判断「还要不要再来一轮」，看退出码就够。
+
+    `summary.json` 与 attempt 级工件是结构化事实源，字段说明见[查看结果](/zh/guides/viewing-results)；`niceeval show` 是对同一份工件的终端读法，逐级下钻见下一节。
   </Step>
   <Step title="修">
-    先判断缺陷在哪一侧:被测程序,还是 eval 本身(断言过紧、fixture 错误、setup 缺失)。修对应的一侧,不要为了变绿而放宽断言。
+    先判断缺陷在哪一侧：被测程序，还是 eval 本身（断言过紧、fixture 错误、setup 缺失）。修对应的一侧，不要为了变绿而放宽断言。
   </Step>
   <Step title="再跑">
     ```bash
     npx niceeval exp local weather
     ```
 
-    位置参数按 eval id 前缀只重跑失败的部分。已通过的 eval 会被指纹缓存跳过;`--force` 全量重跑。
+    位置参数按 eval id 前缀只重跑失败的部分，已通过的 eval 会被指纹缓存跳过。注意缓存的边界：指纹只看 eval 源码和运行配置，**看不到被测程序**——修完被测程序后，旧的「通过」仍是对旧代码的判定，这次修复若引入回归，缓存不会替你发现。所以迭代中按前缀快速重跑，等失败清零后再用 `--force` 全量跑一遍，确认没把别的 eval 修坏，才算真正收工。
   </Step>
 </Steps>
 
-给 agent 的提示词可以直接这样写:
+给 agent 的提示词可以直接这样写：
 
 ```text
-跑 npx niceeval exp local,读输出末尾的 summary.json 和失败结果的 artifacts,
-修掉失败的 eval,再跑,直到全部通过。
+跑 npx niceeval exp local。对每个失败的 eval 用 niceeval show <eval id> 看失败断言，
+需要证据时加 --transcript / --trace / --diff。判断缺陷在被测程序还是 eval 本身，
+修掉后重跑对应前缀。失败清零后用 --force 全量重跑一次确认没有回归，退出码 0 才算完成。
+连续三轮同一个 eval 没有进展就停下来汇报，不要为了变绿放宽断言。
 ```
+
+跑真实 agent 的 eval 每轮都花钱；不放心 agent 的循环成本时，给 `exp` 加 `--budget <美元>`——累计花费到顶后剩余 attempt 直接跳过，agent 循环再失控也有硬上限。
+
+## 在终端下钻
+
+`niceeval show` 的位置参数与 `exp` 同一语义——eval id 前缀选「看哪些 eval」；flag 选「看哪个切面」：
+
+```bash
+niceeval show                       # 榜单：每个 experiment 的通过率、成本、耗时与失败清单
+niceeval show weather/brooklyn      # 单个 eval：attempt、断言明细、错误与用量
+niceeval show weather/brooklyn --transcript   # agent 的完整对话与工具调用
+niceeval show weather/brooklyn --trace        # trace 瀑布的文本版
+niceeval show fixtures/button --diff          # sandbox 里的文件改动
+```
+
+默认永远对准闭环要的东西：判决取每个 eval 跨 run 合成的最新一份，证据切面挑最新一次失败的 attempt。三个切面对长内容都会截断，但截断永远如实标注剩余数量和原始工件路径——输出对上下文窗口友好，事实源一字不少地留在盘上。
+
+榜单、单个 eval 与各证据切面的输出长什么样、历史与抖动怎么看（`--history`）、多次 run 的合成口径，都在[查看结果](/zh/guides/viewing-results)；要项目自己的口径（考试成绩单、代码行数榜），写一个打到 stdout 的报告脚本，见[自定义报告](/zh/guides/custom-reports)——给 agent 的指引只多一行：跑 `npx tsx scripts/report.ts`，读 stdout。
 
 ## AGENTS.md 指引区块
 
-模型的训练数据里没有 NiceEval。`npx niceeval init` 会在项目的 `AGENTS.md` 里写入一个托管区块,告诉 agent 先读随包文档再动手:
+模型的训练数据里没有 NiceEval。`npx niceeval init` 会在项目的 `AGENTS.md` 里写入一个托管区块，告诉 agent 先读随包文档再动手：
 
 ```md
 <!-- BEGIN:niceeval-agent-rules -->
@@ -53,15 +93,17 @@ Eval 的价值在闭环:不只是人看报告,而是让 coding agent(Claude Code
 Its APIs and conventions may differ from anything you have seen. Read the relevant
 guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under
 `zh/`) before writing any eval, experiment, adapter, or niceeval config. After a run,
-read the `summary.json` path the CLI prints for structured results.
+drill into failures with `niceeval show <eval id>` (add `--transcript` / `--trace` /
+`--diff` for evidence); the `summary.json` path the CLI prints and the artifact files
+it references are the structured source of truth.
 <!-- END:niceeval-agent-rules -->
 ```
 
-标记之外的内容不会被改动;升级 NiceEval 后重跑 `npx niceeval init` 会刷新标记之内的指引。文档随 npm 包发布在 `node_modules/niceeval/docs-site/`,agent 读到的永远是和安装版本一致的行为,而不是训练数据里的旧记忆。
+标记之外的内容不会被改动；升级 NiceEval 后重跑 `npx niceeval init` 会刷新标记之内的指引。文档随 npm 包发布在 `node_modules/niceeval/docs-site/`，agent 读到的永远是和安装版本一致的行为，而不是训练数据里的旧记忆。
 
 ## 报错自带修法
 
-配置和运行期错误直接给出修法与随包文档路径,agent 读到报错就能自修,不必先搜索:
+配置和运行期错误直接给出修法与随包文档路径，agent 读到报错就能自修，不必先搜索：
 
 ```text
 Could not find niceeval.config.ts.
@@ -71,9 +113,9 @@ Ways to fix:
   Docs: node_modules/niceeval/docs-site/quickstart.mdx
 ```
 
-## 从查看器转交给 agent
+## 人与 agent 看同一份工件
 
-人在 `npx niceeval view` 里看到失败时,不必手工整理上下文:
+`niceeval show` 和 `niceeval view` 读的是同一批落盘工件，人和 agent 随时可以互相接手：
 
-- 榜单右上角的 **Copy fix prompt** 把全部失败打包成一段可直接粘给 agent 的修复 prompt——失败清单、artifacts 路径、判断与重跑步骤都在里面。
-- 打开单个 attempt 的弹窗,同名按钮只打包这一条失败,适合逐条转交。
+- 人在 `npx niceeval view` 里看到失败时，榜单右上角的 **Copy fix prompt** 把全部失败打包成一段可直接粘给 agent 的修复 prompt——失败清单、artifacts 路径、判断与重跑步骤都在里面，教的读法与本页同一套：`niceeval show` 下钻、判断缺陷在哪一侧、重跑前缀、`--force` 收尾。打开单个 attempt 的弹窗，同名按钮只打包这一条失败，适合逐条转交。
+- 反过来，agent 修完之后人想核对现场，`npx niceeval view` 打开的就是 agent 刚刚在终端里读过的那份结果。

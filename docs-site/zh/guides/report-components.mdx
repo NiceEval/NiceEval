@@ -1,0 +1,252 @@
+---
+title: "报告组件一览"
+sidebarTitle: "报告组件"
+description: "报告文件里能摆的全部官方双面组件：每个组件回答什么问题、怎么调用、网页面长什么样、终端字符输出长什么样。"
+---
+
+报告文件里的每个组件都是双面的：网页面是 React 渲染，终端面是字符渲染，两面吃同一份算好的数据，走哪扇门由宿主决定（见[自定义报告](/zh/guides/custom-reports)）。每个组件的数据算法挂在它自己身上——`<MetricTable data={await MetricTable.data(selection, …)} />`，组件名后打个点就找到，算和画永远配对。本页逐个列出官方组件：它回答什么问题、在报告里怎么调用、终端输出长什么样。
+
+所有组件共守同一套契约，下面不再逐个重复：
+
+- **诚实渲染。** 缺数据渲染 `—` 不补 0；覆盖不全的格子带 `12/15` 角标；截断如实标注剩余数量与原始工件路径。
+- **排序与方向随指标的 `better`。** higher 的指标降序、lower 的升序，「好」的一头恒在上、在右上。
+- **证据室深链。** 网页面的格子、点和条目深链到 attempt 弹窗；终端面在条目下印 `niceeval show <eval id>` 下钻命令。
+- **两面同口径，网页面不 hydrate 也完整。** 排序在计算时由 `sort` 定死，两面预排一致；下钻是普通链接、展开折叠用 `<details>`；网页面不提供终端面没有的口径操作，静态导出零客户端 JS。
+
+## 排版原语
+
+`Row` / `Col` / `Section` / `Text` 负责摆版面，一次摆放两个面各自成立：`Col` 纵向堆叠；`Row` 网页横排、终端字符分栏（宽度不够自动降级纵向）；`Section` 是带标题的块；`Text` 是说明文字。
+
+```tsx
+<Col>
+  <Section title="考试成绩单">
+    <Row>
+      <Scoreboard data={board} />
+      <Text>algebra 权重 ×2，满分 100。</Text>
+    </Row>
+  </Section>
+</Col>
+```
+
+```text
+考试成绩单
+  agent  总分       algebra  geometry │ algebra 权重 ×2，
+  bub    86.5/100   45/50    41.5/50  │ 满分 100。
+  codex  78.0/100   40/50    38/50    │
+```
+
+## `DefaultReport` —— 官方水位整块
+
+官方两扇门裸跑时渲染的就是它：跨 run 合成的现刻榜单加失败清单，表头如实标注合成来源。零 props、纯声明——官方水位只读瘦身条目，宿主总是替你备好，经上下文注入。把官方水位铺进自己的报告时摆上它，不要就不摆：
+
+```tsx
+<DefaultReport />
+```
+
+```text
+Current verdicts · 2 experiments · composed from 3 runs · latest 2026-07-09T10-00-00-000Z
+
+experiment              evals    pass   cost    duration
+compare/bub-gpt-5.4     13/15    87%    $0.42   4m 12s
+compare/codex-gpt-5.4   12/15    80%    $0.51   5m 03s
+
+Failing:
+  ✗ weather/brooklyn   compare/codex-gpt-5.4   gate calledTool("get_weather")   41s ago
+```
+
+## `RunOverview` —— 页头 KPI 条
+
+每张报告开头「这批数据是什么」：几个配置、几道题、通过分布、总成本、何时跑的；选集里的挑选警告随数据一起进来、直接显示在条内，诚实不靠你记得接线。
+
+```tsx
+<RunOverview data={await RunOverview.data(selection)} />
+```
+
+```text
+2 experiments · 15 evals · 42 attempts · composed from 3 runs · latest 2026-07-09T10-00
+passed 26 · failed 12 · errored 4 · skipped 0 · $0.93 · 9m 15s
+! snapshot compare/codex-gpt-5.4 predates latest run by 2 days
+```
+
+## `MetricTable` —— 榜单
+
+一行一个维度值、一列一个指标的对比表，回答「谁整体更好」。行维度、指标列、排序全部可换，自定义指标（`defineMetric`）与内置指标同列。
+
+```tsx
+<MetricTable data={await MetricTable.data(selection, {
+  rows: "agent",
+  columns: [passRate, codeLines, costUSD],
+  sort: passRate,
+})} />
+```
+
+```text
+agent   pass rate   code lines   cost
+bub     87%         312 lines    $0.42
+codex   80% 12/15   355 lines    $0.51
+```
+
+两面都按 `sort` 预排，看到同一份顺序——要换排序改一行重跑，不做单面才有的交互口径。`12/15` 角标表示该格 15 个 attempt 里只有 12 个测得了这个指标。
+
+## `MetricMatrix` —— 逐题格子
+
+行 × 列两个维度、格子里一个指标，回答「哪道题谁挂了」。稀疏渲染：没有样本的格子空着，不编数。
+
+```tsx
+<MetricMatrix data={await MetricMatrix.data(selection, { rows: "eval", columns: "agent", cell: passRate })} />
+```
+
+```text
+eval                bub    codex
+algebra/quadratic   100%   100%
+algebra/matrix      100%   67%
+geometry/area       50%    —
+
+next: niceeval show geometry/area
+```
+
+网页面点格子深链到该格的 attempt；终端面在表下印下钻命令。
+
+## `MetricBars` —— 分组条形
+
+同一份矩阵数据的另一种摆法（`MetricBars.data` 就是 `MetricMatrix.data` 的别名）：按组并排比大小，回答「每个科目上谁领先、差多少」。组维度一组条、系列维度一根条、条长是指标值——benchmark 发布图（Terminal-Bench、BrowseComp 各一组，每个 agent 一根柱）就是这个形状。
+
+```tsx
+<MetricBars data={await MetricBars.data(selection, {
+  rows: "evalGroup",        // 一组条 = 一个科目/benchmark
+  columns: "agent",         // 一根条 = 一个 agent
+  cell: passRate,
+})} />
+```
+
+```text
+algebra
+  bub     ██████████████████░░  91.9%
+  codex   █████████████████░░░  88.0%
+geometry
+  bub     ██████████░░░░░░░░░░  50.0%
+  codex   —
+```
+
+网页面是竖向分组柱：柱顶标数值，系列颜色与其它组件的稳定配色一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。
+
+## `Scoreboard` —— 考试成绩单
+
+总分 + 分科小计，回答「这套题它能得几分」。逐题分值制：权重按 eval id 前缀配置，分母对所有被打分者恒定，没跑到的题挣 0 分并如实报 `missing`。
+
+```tsx
+<Scoreboard data={await Scoreboard.data(selection, {
+  rows: "agent",
+  subjects: "evalGroup",
+  weights: { "algebra/": 2 },
+  fullMarks: 100,
+})} />
+```
+
+```text
+agent   total      algebra        geometry
+bub     86.5/100   45/50          41.5/50
+codex   71.0/100   40/50          31/50 (1 missing)
+```
+
+## `MetricScatter` —— 质量 × 成本 frontier
+
+每个点一个配置、两个指标各占一轴，回答「又好又便宜的是谁」。`series` 把同 agent 不同档位的点连成线；`better` 驱动轴向——`lower` 的轴反向画，「好」的角落恒在右上。
+
+```tsx
+<MetricScatter data={await MetricScatter.data(selection, {
+  points: "experiment",     // 每个点 = 一个配置的聚合
+  series: "agent",          // 同 agent 的档位连成线
+  x: costUSD,
+  y: passRate,
+})} />
+```
+
+```text
+pass ↑                                    （好 → 右上）
+ 90%│                                  A
+    │                     B
+ 75%│                          C
+ 60%│      D
+    └──────────────────────────────────────→ cost（轴反向：越右越省）
+     $0.60       $0.45       $0.30      $0.15
+
+A bub-high   B bub-medium   C codex-high   D codex-low
+```
+
+网页面点带 hover（值与 `samples/total`）、同系列连线、点击深链下钻。终端面用字母标点、图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。维度槽也收 `param()`——用 experiment 声明的变量分组，见[自定义报告](/zh/guides/custom-reports)的「变量来自配置」一节。
+
+## `MetricLine` —— 趋势线
+
+x 是有序变量、每个系列一条线，回答「变量拧大，分数怎么走」——并行 agent 数 × 模拟延迟 × 得分这类 scaling 图就是它。与 `MetricScatter` 的分工：scatter 的两轴都是测出来的指标（找 frontier），line 的 x 是你配置的变量（看趋势）。变量在 experiment 的 `params` 里声明，报告用 `param()` 直接引用，不从 experiment 命名里解析。
+
+```tsx
+<MetricLine data={await MetricLine.data(selection, {
+  x: param("latencyMs", { label: "Simulated latency", unit: "ms" }),
+  series: param("agents", { label: (v) => `${v} agents` }),
+  y: passRate,
+})} />
+```
+
+```text
+pass ↑
+ 80%│                   C···C
+    │            C···C            B
+ 60%│       C         B···B
+    │         B···B                        A
+ 40%│       A···A
+    │    A
+ 20%│
+    └───────────────────────────────────────────→ Simulated latency
+      1 min       5 min       10 min      20 min
+
+A 1 agents   B 4 agents   C 16 agents
+```
+
+每个点是一个 experiment 的聚合，与其它组件同一台两级聚合引擎，`samples` / `total` / `refs` 一应俱全；同系列的点按 x 排序连线。网页面每个点可 hover、可深链下钻。终端面同系列共用一个字母、沿 x 排布，趋势肉眼可读；y 缺数据的点不画、注脚报数，点太密降级为坐标表。
+
+## `DeltaTable` —— 成对对比
+
+每行一对配置、每列一个指标，格子里 A、B、Δ 三个值，回答「这个开关值不值」「这次修复翻转了什么」。涨跌好坏由 `better` 判定，任一侧缺数据 Δ 显示为缺，不硬算。
+
+```tsx
+<DeltaTable data={await DeltaTable.data(selection, {
+  pairs: [
+    { a: "compare/bub", b: "compare/bub--agents-md", label: "bub" },
+    { a: "compare/codex", b: "compare/codex--agents-md", label: "codex" },
+  ],
+  metrics: [passRate, costUSD],
+})} />
+```
+
+```text
+pair    pass rate              cost
+bub     87% → 93%   +6%        $0.42 → $0.45   +$0.03
+codex   80% → 80%   ±0         $0.51 → —       —
+```
+
+## `CaseList` —— 失败案例清单
+
+失败与出错的 attempt 逐条列出：失败断言、error 摘要、judge 评语。榜单回答「多少」，它回答「为什么」。
+
+```tsx
+<CaseList data={await CaseList.data(selection, { outcomes: ["failed", "errored"], limit: 20 })} />
+```
+
+```text
+✗ weather/brooklyn · compare/codex-gpt-5.4 · failed · 41s · $0.04
+    gate calledTool("get_weather") — tool was never called
+    soft judge("回答基于实时数据") — 0.2/1: reply invents a temperature
+    → niceeval show weather/brooklyn
+✗ fixtures/button · compare/bub-gpt-5.4 · failed · 2m 10s · $0.09
+    gate fileChanged("src/components/Button.tsx")
+    → niceeval show fixtures/button
+
+(3 more not shown · limit 20)
+```
+
+自由文本（error、断言 detail、judge 评语）发布前要消毒时，用 `CaseList.data` 的 `redact` 钩子。
+
+## 官方组件之外
+
+以上摆法都表达不了时，用 `defineComponent` 写自己的双面组件——网页怎么渲染、终端字符怎么排，两个面你都说了算，写法见[自定义报告](/zh/guides/custom-reports)的「换形态」一节。
