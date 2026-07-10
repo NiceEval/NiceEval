@@ -1,7 +1,7 @@
 // niceeval/report 计算层的单元测试:全部用内存 fake(Snapshot / AttemptHandle 按
 // niceeval/results 的读取契约手工构造),专门覆盖 docs/reports.md 点名的坑 ——
 // 两级聚合 vs 平铺、pass@k、examScore 空真、skipped 稀释、scoreboard 固定分母与
-// 最长前缀、scatter/delta 的 null 语义、快照键对比、param 维度与轴、
+// 最长前缀、scatter/delta 的 null 语义、快照键对比、flag 维度与轴、
 // cases 的 redact/truncated、身份键去重、Selection warnings 随行。
 
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import type { AssertionResult, EvalResult, ResultOutcome, RunSummary } from "../
 import type { AttemptHandle, RunDir, Selection, SelectionWarning, Snapshot } from "../results/index.ts";
 import type { Dimension, MetricCell } from "./types.ts";
 import { costUSD, defineMetric, durationMs, examScore, passRate, tokens } from "./metrics.ts";
-import { param } from "./param.ts";
+import { flag } from "./flag.ts";
 import { formatMetricValue } from "./format.ts";
 import {
   CaseList,
@@ -465,22 +465,22 @@ describe("MetricScatter.data", () => {
   });
 });
 
-// ───────────────────────── param():维度与轴 ─────────────────────────
+// ───────────────────────── flag():维度与轴 ─────────────────────────
 
-describe("param()", () => {
-  const withParams = (id: string, params: Record<string, unknown> | undefined, outcome: ResultOutcome) =>
+describe("flag()", () => {
+  const withFlags = (id: string, flags: Record<string, unknown> | undefined, outcome: ResultOutcome) =>
     snap({
       experimentId: id,
-      results: [res("A", outcome, { experimentId: id, experiment: { id, params } })],
+      results: [res("A", outcome, { experimentId: id, experiment: { id, flags } })],
     });
 
-  it("MetricLine.data:x 收 param、按 experiment 聚合;未声明的作轴 x=null 报数", async () => {
-    const s1 = withParams("ultra/lat-100", { latencyMs: 100, agents: 1 }, "passed");
-    const s2 = withParams("ultra/lat-300", { latencyMs: 300, agents: 1 }, "failed");
-    const legacy = withParams("ultra/legacy", undefined, "passed");
+  it("MetricLine.data:x 收 flag、按 experiment 聚合;未声明的作轴 x=null 报数", async () => {
+    const s1 = withFlags("ultra/lat-100", { latencyMs: 100, agents: 1 }, "passed");
+    const s2 = withFlags("ultra/lat-300", { latencyMs: 300, agents: 1 }, "failed");
+    const legacy = withFlags("ultra/legacy", undefined, "passed");
     const data = await MetricLine.data([s1, s2, legacy], {
-      x: param("latencyMs", { label: "Simulated latency", unit: "ms" }),
-      series: param("agents", { label: (v) => `${v} agents` }),
+      x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
+      series: flag("agents", { label: (v) => `${v} agents` }),
       y: passRate,
     });
     expect(data.x).toEqual({ key: "latencyMs", label: "Simulated latency", unit: "ms" });
@@ -493,18 +493,18 @@ describe("param()", () => {
     expect(p100.series).toBe("1 agents");
     expect(p100.y.value).toBe(1);
 
-    // 未声明 param 的 experiment 不猜:作轴 x=null(组件不画、注脚报数),分组归 (unset)
+    // 未声明 flag 的 experiment 不猜:作轴 x=null(组件不画、注脚报数),分组归 (unset)
     const legacyRow = data.rows.find((r) => r.key === "ultra/legacy")!;
     expect(legacyRow.x).toBeNull();
     expect(legacyRow.xDisplay).toBe("");
     expect(legacyRow.series).toBe("(unset)");
   });
 
-  it("param 当维度用:按声明值分组,label 函数折组名", async () => {
-    const s1 = withParams("exp/a", { agents: 1 }, "passed");
-    const s2 = withParams("exp/b", { agents: 16 }, "failed");
+  it("flag 当维度用:按声明值分组,label 函数折组名", async () => {
+    const s1 = withFlags("exp/a", { agents: 1 }, "passed");
+    const s2 = withFlags("exp/b", { agents: 16 }, "failed");
     const data = await MetricTable.data([s1, s2], {
-      rows: param("agents", { label: (v) => `${v} agents` }),
+      rows: flag("agents", { label: (v) => `${v} agents` }),
       columns: [passRate],
     });
     expect(data.dimension).toBe("agents");

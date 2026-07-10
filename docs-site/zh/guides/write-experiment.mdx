@@ -1,10 +1,10 @@
 ---
 title: "写实验：用 defineExperiment 固定运行配置"
 sidebarTitle: "写实验"
-description: "学习如何在 experiments/ 里用 defineExperiment 选择 agent、传 model 和 params、设置 runs、预算、并发与 sandbox。"
+description: "学习如何在 experiments/ 里用 defineExperiment 选择 agent、传 model 和 flags、设置 runs、预算、并发与 sandbox。"
 ---
 
-Experiment 是可签入的运行配置：同一批 eval 对着哪个 adapter、哪个模型、哪些参数、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛 eval，不负责临时改 agent 或运行配置。
+Experiment 是可签入的运行配置：同一批 eval 对着哪个 adapter、哪个模型、开哪些 flags、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛 eval，不负责临时改 agent 或运行配置。
 
 ## 最小实验
 
@@ -20,7 +20,7 @@ export default defineExperiment({
 
 `agent` 放的是已经配置好的 agent 实例。被测系统的 URL、鉴权、协议细节通常传给 adapter 工厂；运行器不会单独保存一个 `agentConfig` 字段。
 
-## 传 model 和 params
+## 传 model 和 flags
 
 ```ts
 // experiments/concise.ts
@@ -34,7 +34,7 @@ export default defineExperiment({
     apiKey: process.env.STAGING_AGENT_API_KEY,
   }),
   model: "gpt-5.4",
-  params: {
+  flags: {
     promptVariant: "concise",
     webResearch: false,
   },
@@ -46,7 +46,7 @@ export default defineExperiment({
 
 `model` 会作为 `ctx.model` 传给 adapter；应用接口支持模型选择时，adapter 把它放进请求体、header 或 CLI 参数即可。
 
-`params` 会作为 `ctx.params` 传给 adapter，也会作为 `t.params` 出现在 eval 里。它适合表达 experiment 维度的 feature 开关，例如 prompt 版本、工具集、检索开关。真正按参数切换行为的是你的应用或 adapter，[NiceEval](https://niceeval.com/) 只负责原样透传。
+`flags` 会作为 `ctx.flags` 传给 adapter，也会作为 `t.flags` 出现在 eval 里。语义就是产品 A/B 测试里的 feature flag：一个 experiment 就是一组 flag 取值，例如 prompt 版本、工具集、检索开关；值可以是任意 JSON（变体名、数字、配置对象），不限于布尔。真正按 flag 切换行为的是你的应用或 adapter，[NiceEval](https://niceeval.com/) 只负责原样透传。它与命令行开关是两回事——后者在文档里一律写作 CLI flag 或字面的 `--xxx`。
 
 ```ts
 // agents/web-agent.ts
@@ -57,7 +57,7 @@ async send(input, ctx) {
     body: JSON.stringify({
       message: input.text,
       model: ctx.model,
-      params: ctx.params,
+      flags: ctx.flags,
     }),
     signal: ctx.signal,
   });
@@ -66,7 +66,7 @@ async send(input, ctx) {
 
 ## 一组实验怎么写
 
-一个实验文件是一格配置。要比较多个模型、agent 或 params，就把多个文件放进同一个文件夹：
+一个实验文件是一格配置。要比较多个模型、agent 或 flag 取值，就把多个文件放进同一个文件夹：
 
 ```text
 experiments/
@@ -89,7 +89,7 @@ npx niceeval exp prompt-variants
 | `agent` | 选择并配置 adapter；必填 |
 | `model` | 单个模型名，经 `ctx.model` 透传 |
 | `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
-| `params` | 任意 JSON 对象，经 `ctx.params` / `t.params` 透传 |
+| `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
 | `runs` | 每个 eval × 配置最多跑几次 |
 | `earlyExit` | 多次运行里通过一次就提前停止 |
 | `evals` | 限定这一格配置跑哪些 eval |
@@ -98,4 +98,4 @@ npx niceeval exp prompt-variants
 | `maxConcurrency` | 这一格配置的并发上限 |
 | `sandbox` | sandbox agent 使用的后端，如 `dockerSandbox()` / `e2bSandbox()` |
 
-跨配置比较的设计建议见[实验矩阵](/zh/guides/experiments)。adapter 如何消费 `ctx.model` 和 `ctx.params` 见[Adapter](/zh/concepts/adapter)。
+跨配置比较的设计建议见[实验矩阵](/zh/guides/experiments)。adapter 如何消费 `ctx.model` 和 `ctx.flags` 见[Adapter](/zh/concepts/adapter)。

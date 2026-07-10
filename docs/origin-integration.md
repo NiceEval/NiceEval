@@ -10,9 +10,9 @@
 
 ## Tier 是什么,产出长什么样
 
-接入分三档(定义见 [docs-site · Tier](../docs-site/zh/concepts/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment params)**。
+接入分三档(定义见 [docs-site · Tier](../docs-site/zh/concepts/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
 
-三档现在各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment params)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](tier-sync.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
+三档现在各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](tier-sync.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 
 ## 统一的接入配方
 
@@ -177,7 +177,7 @@ feature A/B test 已落地:每个应用挑一个最小侵入点做成**请求体
 - pi-sdk:system prompt → `tier3/pi-sdk`;
 - langgraph:system prompt(变体各自编译图、共享 checkpointer)→ `tier3/langgraph`。
 
-experiment 侧用 `params` → `ctx.params` 透传,写法见 [Experiments](experiments.md);每个 tier3 目录的 README 有完整的 params 流动链路。
+experiment 侧用 `flags` → `ctx.flags` 透传,写法见 [Experiments](experiments.md);每个 tier3 目录的 README 有完整的 flags 流动链路。
 
 ## 现状(五个应用已全部接完,三档分层落位)
 

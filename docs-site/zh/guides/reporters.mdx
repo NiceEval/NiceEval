@@ -46,7 +46,7 @@ export default defineEval({
 - 每个 attempt 是 Braintrust 里的一行；`runs: 3` 会产生三行，靠 metadata 里的 `attempt` 区分。
 - soft 断言按名字记为 score；gate 断言记在 `gate:` 前缀下。这样在 Braintrust 的实验对比里，gate 回归和 soft 分数回归用同一套 diff 看。
 - metrics 带开始/结束时间、token 用量和估算成本；缺的数据不写，不补零。
-- metadata 带 `agent`、`model`、`experiment`、`params`、`outcome` 和失败断言明细，方便在 Braintrust 里按维度过滤。
+- metadata 带 `agent`、`model`、`experiment`、`flags`、`outcome` 和失败断言明细，方便在 Braintrust 里按维度过滤。
 
 ### 配置项
 

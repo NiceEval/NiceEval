@@ -207,7 +207,7 @@ export const lineData: LineData = {
       y: { value: 0.7, display: "70%", samples: 6, total: 6, refs: [] },
     },
     {
-      // 未声明 param 的 experiment:作轴不画点,注脚报数
+      // 未声明 flag 的 experiment:作轴不画点,注脚报数
       key: "ultra/legacy",
       series: "1 agents",
       x: null,

@@ -64,6 +64,7 @@ interface Flags {
   open?: boolean;
   out?: string;
   port?: number;
+  latest?: boolean;
   help: boolean;
   version: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀;这些 flag 选「怎么看」)──
@@ -81,39 +82,71 @@ interface Flags {
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明,不依赖 allowNegative(需 Node 20.14+,
 // engines 是 >=18)。未知 flag 由 strict 模式报清晰错误,不再静默吞掉后面的位置参数。
+//
+// 每个 flag 的 JSDoc 就是它在 docs-site/zh/reference/cli.mdx flag 表里的说明,由
+// scripts/generate-reference.ts 提取渲染——改 flag 语义时改这里的注释即可,不用碰生成脚本。
+// 负向 flag(no-x)与正向 flag 合并成一行展示,不需要单独写 JSDoc。
 const FLAG_OPTIONS = {
+  /** experiment 运行不支持该 flag。要换 agent,请在 `experiments/` 下新增或复制一个配置文件。 */
   agent: { type: "string" },
+  /** experiment 运行不支持该 flag。要换模型,请新增或复制一个 experiment 文件并修改 `model`。 */
   model: { type: "string" },
+  /** 每个 eval 运行多少次,常用于 pass@N。 */
   runs: { type: "string" },
+  /** 设置同时运行的 eval 数量。 */
   "max-concurrency": { type: "string" },
+  /** 单个 attempt 的超时时间,单位毫秒。 */
   timeout: { type: "string" },
+  /** 整次运行的预算上限(美元)。 */
   budget: { type: "string" },
+  /** 只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。 */
   tag: { type: "string" },
+  /** 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 */
   junit: { type: "string" },
-  // --json <path>:把 RunSummary 原样落成 JSON,与 --junit 同属「额外写一份机器可读报告」。
+  /** 额外写一份 JSON 结果(`RunSummary` 原样序列化)到指定路径,供 CI 或下游脚本消费。 */
   json: { type: "string" },
+  /** `view` 命令专用:把结果查看器静态导出到指定目录。 */
   out: { type: "string" },
+  /** `view` 命令专用:指定本地服务器监听端口。 */
   port: { type: "string" },
+  /** `view` 命令专用:证据室只带每个实验最新一份快照(发布口径,静态导出体积不随结果历史增长);缺省带全量历史,深链可达一切。 */
+  latest: { type: "boolean" },
   // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/guides/viewing-results.mdx)。
+  /** `show` 命令专用:渲染单个 eval 的完整对话与工具调用(证据切面)。 */
   transcript: { type: "boolean" },
+  /** `show` 命令专用:渲染单个 eval 的 trace 瀑布文本版(证据切面)。 */
   trace: { type: "boolean" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
+  /** `show` 命令专用:sandbox 里的文件改动摘要;`--diff=<文件路径>` 看单个文件的完整改动(路径必须 `=` 连写)。 */
   diff: { type: "boolean" },
+  /** `show` 命令专用:跨 run 时间轴,只列真实执行;与 `--report` 互斥。 */
   history: { type: "boolean" },
+  /** `show` / `view` 命令专用:选集只留该实验。 */
   experiment: { type: "string" },
+  /** `show` 命令专用:指定详情 / 证据切面看第几次 attempt(与展示一致的 1 计序号)。 */
   attempt: { type: "string" },
+  /** `show` / `view` 命令专用:钉死看某一个结果目录(历史 run 或 `copySnapshots` 产物)。 */
   run: { type: "string" },
+  /** `show` / `view` 命令专用:把默认榜单整槽换成你的报告文件(默认导出 `defineReport(...)`)。 */
   report: { type: "string" },
+  /** 只打印本次会匹配到的 eval × 运行配置,不实际执行。 */
   dry: { type: "boolean" },
+  /** 关闭控制台 / live 进度输出(reporter 仍会写 artifacts)。 */
   quiet: { type: "boolean" },
+  /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
   force: { type: "boolean" },
+  /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 outcome。 */
   strict: { type: "boolean" },
+  /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts。 */
   "early-exit": { type: "boolean" },
   "no-early-exit": { type: "boolean" },
+  /** `view` 命令专用:启动后自动打开浏览器(默认行为)。 */
   open: { type: "boolean" },
   "no-open": { type: "boolean" },
+  /** 打印用法说明并退出。 */
   help: { type: "boolean", short: "h" },
+  /** 打印 niceeval 的版本号并退出。 */
   version: { type: "boolean", short: "v" },
 } as const;
 
@@ -173,6 +206,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     json: values.json as string | undefined,
     out: values.out as string | undefined,
     port: numberFlag("port", values.port as string | undefined),
+    latest: values.latest === true,
     dry: values.dry === true,
     quiet: values.quiet === true,
     force: values.force === true,
@@ -353,6 +387,7 @@ async function main(): Promise<void> {
     }
     const scan = {
       patterns: viewInput.patterns,
+      ...(flags.latest ? { latest: true } : {}),
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
     };
@@ -442,7 +477,7 @@ async function main(): Promise<void> {
         agent: exp.agent,
         model: exp.model,
         reasoningEffort: exp.reasoningEffort,
-        params: exp.params ?? {},
+        flags: exp.flags ?? {},
         runs: flags.runs ?? envNumber("NICEEVAL_RUNS") ?? exp.runs ?? 1,
         earlyExit: flags.earlyExit ?? exp.earlyExit ?? true,
         sandbox: exp.sandbox ?? config.sandbox,
@@ -458,7 +493,7 @@ async function main(): Promise<void> {
     }
   } else {
     // 裸 run / `niceeval <eval>` 不再执行。运行配置必须来自 experiments/,
-    // 这样 agent/model/params/runs/budget 与结果聚合都有可签入的身份。
+    // 这样 agent/model/flags/runs/budget 与结果聚合都有可签入的身份。
     const experiments = await discoverExperiments(cwd);
     const asExp = experiments.filter((e) =>
       positionals.some((p) => e.group === p || e.id === p || e.id.startsWith(p + "/")),

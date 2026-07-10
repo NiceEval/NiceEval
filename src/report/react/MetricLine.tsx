@@ -1,4 +1,4 @@
-// MetricLine:趋势线——x 是 experiment 声明的 param(有序变量),每个系列一条线。
+// MetricLine:趋势线——x 是 experiment 声明的 flag(有序变量),每个系列一条线。
 // 与 MetricScatter 的分工:scatter 的两轴都是测出来的指标(找 frontier),
 // line 的 x 是你配置的变量(看趋势)。x 轴正常升序;y 轴向随 better;
 // x 或 y 缺数据的点不画,注脚如实报数;每个点带 <title> hover,可经 pointHref 下钻。

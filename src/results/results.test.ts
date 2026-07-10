@@ -600,7 +600,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
     const fresh: EvalResult = {
       id: "algebra/q1",
       experimentId: "compare/bub",
-      experiment: { id: "compare/bub", params: { style: "concise" } },
+      experiment: { id: "compare/bub", flags: { style: "concise" } },
       agent: "bub",
       model: "gpt-5.4",
       outcome: "passed",
@@ -707,7 +707,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
       "experimentId": "compare/bub",
       "experiment": {
         "id": "compare/bub",
-        "params": {
+        "flags": {
           "style": "concise"
         }
       },

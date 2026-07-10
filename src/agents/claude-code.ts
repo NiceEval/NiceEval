@@ -94,7 +94,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       const args = ["--print", "--dangerously-skip-permissions"];
       if (ctx.model) args.push("--model", ctx.model);
       if (config?.maxTurns != null) args.push("--max-turns", String(config.maxTurns));
-      if (ctx.params.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
+      if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch");
       if (ctx.session.id) args.push("--resume", ctx.session.id);
       args.push(input.text);
 

@@ -113,7 +113,7 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
  * - scores:soft 断言按名字记分,gate 断言记在 `gate:` 前缀下 —— 实验 diff 里
  *   gate 回归和 soft 分数回归用同一套机制看。重名断言追加 `#n` 消歧,不静默覆盖。
  * - metrics:start/end(Braintrust 由此算时长)+ token 用量 + 估算成本;缺就不写,不编 0。
- * - metadata:身份维度(agent / model / experiment / attempt / params)+ 失败断言明细。
+ * - metadata:身份维度(agent / model / experiment / attempt / flags)+ 失败断言明细。
  */
 export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   const scores: Record<string, number> = {};
@@ -150,8 +150,8 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   };
   if (result.model !== undefined) metadata.model = result.model;
   if (result.experimentId !== undefined) metadata.experiment = result.experimentId;
-  if (result.experiment?.params && Object.keys(result.experiment.params).length > 0) {
-    metadata.params = result.experiment.params;
+  if (result.experiment?.flags && Object.keys(result.experiment.flags).length > 0) {
+    metadata.flags = result.experiment.flags;
   }
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
   const failed = result.assertions

@@ -114,7 +114,7 @@
 | `copySnapshots`(发布原语:瘦身复制 + knownEvalIds 补记) | `src/results/copy.ts` |
 | 分层契约(Experiment / Snapshot / Eval / AttemptHandle / AttemptRef / Selection / 警告类型) | `src/results/types.ts` |
 | `defineMetric` 与内置指标(outcome 逐项表态) | `src/report/metrics.ts` |
-| `param()`(experiment params 当维度 / 轴) | `src/report/param.ts` |
+| `flag()`(experiment flags 当维度 / 轴) | `src/report/flag.ts` |
 | 两级聚合引擎 / 维度 / MetricCell 计算 / 聚合前去重接线 | `src/report/aggregate.ts` |
 | 九个计算函数(挂组件上的 `.data`:RunOverview / MetricTable / MetricMatrix(=MetricBars)/ Scoreboard / MetricScatter / MetricLine / DeltaTable / CaseList) | `src/report/compute.ts`(装配在 `src/report/components.tsx`) |
 | 数据契约(Metric 字面量键泛型、TableData\<K\> … CaseListData;`MetricCell.refs` 必填) | `src/report/types.ts` |

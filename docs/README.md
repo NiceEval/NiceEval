@@ -56,7 +56,7 @@ npx niceeval exp local   # 通过 experiment 运行 eval
 npx niceeval exp local weather  # exp 后的位置参数 = eval id 前缀
 ```
 
-> 执行 eval 必须通过 experiment:experiment 选「对着哪个 agent / model / params 怎么跑」,`exp` 后的位置参数只筛「跑哪些 eval」。详见 [CLI](cli.md)。
+> 执行 eval 必须通过 experiment:experiment 选「对着哪个 agent / model / flags 怎么跑」,`exp` 后的位置参数只筛「跑哪些 eval」。详见 [CLI](cli.md)。
 
 最小的一个 eval:
 

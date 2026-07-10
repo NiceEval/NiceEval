@@ -73,7 +73,7 @@ function ctx(overrides: Partial<{ model: string }> = {}): AgentContext {
   return {
     signal: new AbortController().signal,
     model: overrides.model,
-    params: {},
+    flags: {},
     sandbox: undefined as never,
     // 同一个 ctx 重复用 = 同一条会话线(续接,同一个 ctx.session);新造 = 新线。
     session: createAgentSession(),

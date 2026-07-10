@@ -16,7 +16,7 @@
 
 一点提醒:**HITL 不是"事件流 + 多轮会话的交集"。** `input.requested` 是独立事件类型,不需要完整的工具可观测;HITL 真正依赖的是第 3 步的续接(`respond` 本质是拿着回答再发一轮,得靠同一条 session 续上)+ 上表那两条专门行为。三个义务缺一的具体后果,见[契约 · HITL 握手](contract.md#hitl-握手一次完整时序)。
 
-以上五步是"接得上"到"要更细信号"的递进路径,不是要背的固定档位名字——**接入应用整体投入多大(要不要改应用内部代码)是另一个正交的问题,见 [docs-site · Tier](../../docs-site/zh/concepts/tier.mdx)**:那三档(Tier 1 只接 send / Tier 2 + OTel / Tier 3 侵入改造 + experiment params)说的是"改不改被测应用",本篇这五步说的是"adapter 这一个文件里写多少代码"——同一个 Tier 1(应用零改动)的 adapter,也可以只做到第 1 步,或者一路做到第 5 步。两种坐标轴不要混着用同一套名字。
+以上五步是"接得上"到"要更细信号"的递进路径,不是要背的固定档位名字——**接入应用整体投入多大(要不要改应用内部代码)是另一个正交的问题,见 [docs-site · Tier](../../docs-site/zh/concepts/tier.mdx)**:那三档(Tier 1 只接 send / Tier 2 + OTel / Tier 3 侵入改造 + experiment flags)说的是"改不改被测应用",本篇这五步说的是"adapter 这一个文件里写多少代码"——同一个 Tier 1(应用零改动)的 adapter,也可以只做到第 1 步,或者一路做到第 5 步。两种坐标轴不要混着用同一套名字。
 
 remote 和 sandbox 两种 `kind` 都不动核心一行——这是设计承重墙,见 [Vision](../vision.md)。
 
@@ -126,7 +126,7 @@ export default defineSandboxAgent({
 
     const args = ["--print", "--dangerously-skip-permissions"];
     if (ctx.model) args.push("--model", ctx.model);              // 实验给了才传;否则用 CLI 原生默认
-    if (ctx.params.webResearch) args.push("--allowedTools", "WebSearch,WebFetch"); // 读实验参数
+    if (ctx.flags.webResearch) args.push("--allowedTools", "WebSearch,WebFetch"); // 读实验参数
     if (ctx.session.id) args.push("--resume", ctx.session.id);   // 新会话线 id 为 undefined,自然不传
 
     const res = await sb.runCommand("claude", args, { env: auth() });

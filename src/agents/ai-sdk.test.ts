@@ -454,7 +454,7 @@ function fakeCtx(opts: { id?: string } = {}): AgentContext {
   return {
     signal: new AbortController().signal,
     model: undefined,
-    params: {},
+    flags: {},
     sandbox: undefined as unknown as AgentContext["sandbox"],
     session,
     log: () => {},

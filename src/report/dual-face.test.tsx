@@ -228,7 +228,7 @@ describe("MetricLine 双面", () => {
     `);
   });
 
-  it("两面同口径:未声明 param 的点两面都不画、注脚同数", () => {
+  it("两面同口径:未声明 flag 的点两面都不画、注脚同数", () => {
     expect(html).toContain("1 point missing data");
     expect(term).toContain("1 point missing data");
     expect(html).not.toContain('data-key="ultra/legacy"'); // 注脚 title 如实列缺数据的点,但不画

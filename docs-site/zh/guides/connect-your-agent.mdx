@@ -116,9 +116,9 @@ npx niceeval view              # 本地查看器里看结果
 配置归属只有两条通道，分清它们，接入就不会乱：
 
 1. **静态配置走 Adapter 工厂。** URL、鉴权、协议细节这类"这个环境长什么样"的配置，作为工厂参数写在 experiment 文件里——`defineExperiment` 的 `agent` 字段放的是**已经配置好的实例**。
-2. **每轮动态值走 `ctx`。** experiment 声明的 `model`、`params`，运行器每轮经 `ctx` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发给应用。
+2. **每轮动态值走 `ctx`。** experiment 声明的 `model`、`flags`，运行器每轮经 `ctx` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发给应用。
 
-两条通道拼在一起，就是把第一步的 my-bot 从「写死 URL 的实例」改成「收配置的工厂」：default export 换成一个返回 `defineAgent(...)` 的函数，`send` 里写死的地方换成读工厂参数；experiment 声明的 `model`、`params` 每轮从 `ctx` 到达，`send` 里随请求转发：
+两条通道拼在一起，就是把第一步的 my-bot 从「写死 URL 的实例」改成「收配置的工厂」：default export 换成一个返回 `defineAgent(...)` 的函数，`send` 里写死的地方换成读工厂参数；experiment 声明的 `model`、`flags` 每轮从 `ctx` 到达，`send` 里随请求转发：
 
 ```ts
 // agents/my-bot.ts —— 工厂：静态配置进闭包
@@ -135,7 +135,7 @@ export function myBot(options: { baseUrl: string }): Agent {
         body: JSON.stringify({
           message: input.text,
           model: ctx.model,     // ← experiment.model：应用接口收模型选择就转发
-          params: ctx.params,   // ← experiment.params：原样交给应用，应用按参数切换
+          flags: ctx.flags,   // ← experiment.flags：原样交给应用，应用按参数切换
         }),
         signal: ctx.signal,     // ← 运行器的超时与取消：挂到每个请求上
       });
@@ -160,7 +160,7 @@ export default defineExperiment({
   description: "my-bot 基线",
   agent: myBot({ baseUrl: "http://localhost:3000" }),  // ← 静态配置：实例化时传
   model: "gpt-5.4",                                    // ← 动态值：经 ctx.model 到 send
-  params: { promptVariant: "concise" },                // ← 动态值：经 ctx.params 到 send
+  flags: { promptVariant: "concise" },                // ← 动态值：经 ctx.flags 到 send
 });
 ```
 
@@ -170,7 +170,7 @@ export default defineExperiment({
 |---|---|---|
 | `signal` | 运行器（超时与取消） | 挂到发出的每个请求上 |
 | `model` | experiment 的 `model` | 应用接口收模型选择就随请求转发；不收就忽略 |
-| `params` | experiment 的 `params` | 原样转发（请求体、header 都行），应用按参数切换变体 |
+| `flags` | experiment 的 `flags` | 原样转发（请求体、header 都行），应用按参数切换变体 |
 | `telemetry` | 配置了 OTel 接入时出现 | 只碰 `headers`：每轮新的 W3C `traceparent`，spread 进请求头。接收端点每次运行都一样，在 `defineConfig` 里固定、应用启动时指向它，不从 send 传——见 [OTel 接入](/zh/guides/connect-otel) |
 | `session` | 运行器（每条会话线一份） | 会话续接与 HITL 停轮现场的存取器都在它上面：`history()`、`id` / `capture()`、`hold()` / `take()`，见[写 send](/zh/guides/write-send) |
 | `log(msg)` | 运行器 | 写进本轮日志，`niceeval view` 里可见 |
@@ -208,7 +208,7 @@ npx niceeval exp prod
 | 多轮对话、`t.newSession()` 隔离 | 接上 `ctx.session`：`history()` 或 `id` + `capture()` | [写 send](/zh/guides/write-send) |
 | 审批流（HITL，人工介入） | 停轮返回 `waiting` + `input.requested`，回答轮续跑 | [HITL](/zh/concepts/hitl) |
 | `niceeval view` 的调用瀑布图 | 应用把 OTel span 发给 NiceEval（不影响断言） | [OTel 接入](/zh/guides/connect-otel) |
-| feature A/B 对比 | 应用把变体暴露成 `params` 可切换的配置 | [Tier](/zh/concepts/tier)、[写实验](/zh/guides/write-experiment) |
+| feature A/B 对比 | 应用把变体暴露成 `flags` 可切换的配置 | [Tier](/zh/concepts/tier)、[写实验](/zh/guides/write-experiment) |
 
 这些增量落在哪一档、各档买到什么，见 [Tier](/zh/concepts/tier)。
 
@@ -219,7 +219,7 @@ npx niceeval exp prod
 ## 相关阅读
 
 - [官方适配器一览](/zh/guides/official-adapters) —— 被测对象能直接用官方 Adapter 时，Sandbox / 非 Sandbox 各有哪些、配置项怎么写。
-- [写 send](/zh/guides/write-send) —— 手写 Adapter 的完整教程：七步递进，从发一条消息到 HITL、OTel、params。
+- [写 send](/zh/guides/write-send) —— 手写 Adapter 的完整教程：七步递进，从发一条消息到 HITL、OTel、flags。
 - [Adapter](/zh/concepts/adapter) —— `send` 的契约：`TurnInput` / `AgentContext` / `Turn` 逐字段。
 - [OTel 接入](/zh/guides/connect-otel) —— 把应用的 span 也发给 [NiceEval](https://niceeval.com/)，换 `niceeval view` 的调用瀑布图。
 - [Tier](/zh/concepts/tier) —— 三档接入各投入什么、买到什么。

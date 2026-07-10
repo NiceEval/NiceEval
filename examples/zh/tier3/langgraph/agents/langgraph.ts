@@ -9,9 +9,9 @@
 //   · HITL:`tool-approval-request` → input.requested + waiting,停轮现场(还开着的流 +
 //     挂起的 toolCallId)用 ctx.session.hold 存住,回答轮 ctx.session.take 取回接着读。
 //
-// 这是 Tier 3(侵入改造 + experiment params):比 ../../tier2/langgraph 多一层——应用侧把
+// 这是 Tier 3(侵入改造 + experiment flags):比 ../../tier2/langgraph 多一层——应用侧把
 // system prompt 提升为请求体可选字段(src/backend/{agent.py,server.py}),本文件把
-// experiment 的 `params.systemPrompt` 经 ctx.params 随请求体透传,feature A/B 见
+// experiment 的 `flags.systemPrompt` 经 ctx.flags 随请求体透传,feature A/B 见
 // experiments/compare-prompts/。OTel 部分(telemetry + 收尾宽限 + traceparent)与 Tier 2 相同。
 import { defineAgent, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, SseFrameCursor } from "niceeval/adapter";
@@ -176,8 +176,8 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     {
       message: input.text,
       sessionId: ctx.session.id,
-      // Tier 3:experiment 的 params 经 ctx.params 透传给应用(见 experiments/compare-prompts/)。
-      systemPrompt: ctx.params.systemPrompt,
+      // Tier 3:experiment 的 flags 经 ctx.flags 透传给应用(见 experiments/compare-prompts/)。
+      systemPrompt: ctx.flags.systemPrompt,
     },
     ctx.signal,
     ctx.telemetry?.headers,

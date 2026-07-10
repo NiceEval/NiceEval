@@ -367,7 +367,7 @@ export interface AiSdkGenerateContext<M = unknown> {
   /** 实验钉的推理努力程度(ctx.reasoningEffort);省略 → 用应用自己的默认。应用自己决定怎么塞进 providerOptions(如 OpenAI 的 reasoningEffort)。 */
   readonly reasoningEffort?: string;
   readonly signal: AbortSignal;
-  readonly params: Readonly<Record<string, unknown>>;
+  readonly flags: Readonly<Record<string, unknown>>;
   /**
    * 配了 `tracing`(如 `aiSdkOtel()`)才有:直接放进 generateText / streamText 的
    * `telemetry` 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,
@@ -505,7 +505,7 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
           model: ctx.model,
           reasoningEffort: ctx.reasoningEffort,
           signal: ctx.signal,
-          params: ctx.params,
+          flags: ctx.flags,
           telemetry: otel?.settings,
         });
       } catch (error) {

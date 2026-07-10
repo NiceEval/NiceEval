@@ -207,13 +207,13 @@ readonly reasoningEffort?: string;
 
 本次 attempt 的推理努力程度(如 "low"/"medium"/"high",取值由 adapter/模型决定)。
 
-#### `params`
+#### `flags`
 
 ```ts
-readonly params: Readonly<Record<string, unknown>>;
+readonly flags: Readonly<Record<string, unknown>>;
 ```
 
-本次 attempt 生效的 params(experiment.params 与 CLI flag 合并后的只读视图)。
+本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。
 
 #### `log`
 

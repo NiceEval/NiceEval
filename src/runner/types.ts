@@ -12,7 +12,7 @@ import type { TestContext } from "../context/types.ts";
 
 export interface ExperimentRunInfo {
   id?: string;
-  params?: Record<string, unknown>;
+  flags?: Record<string, unknown>;
   runs?: number;
   earlyExit?: boolean;
   sandbox?: string;
@@ -61,7 +61,7 @@ export interface EvalResult {
 /** `summary.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
 export const RESULTS_FORMAT = "niceeval.results";
 /** 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本,缺失按 1。见 docs/results-format.md。 */
-export const RESULTS_SCHEMA_VERSION = 2;
+export const RESULTS_SCHEMA_VERSION = 3;
 
 export interface RunSummary {
   /** 恒为 "niceeval.results";和 schemaVersion、producer 一起构成持久化契约,永不移动或改名。 */
@@ -95,11 +95,11 @@ export interface RunSummary {
   snapshots?: Record<string, { startedAt?: string; knownEvalIds?: string[] }>;
 }
 
-/** onRunStart 的运行规模:去重后 eval 数 × 配置(agent×model×params)数 → 总运行(attempt)数。 */
+/** onRunStart 的运行规模:去重后 eval 数 × 配置(agent×model×flags)数 → 总运行(attempt)数。 */
 export interface RunShape {
   /** 去重后实际要跑的 eval 数(= evals.length)。 */
   evals: number;
-  /** (agent, model, params) 配置组合数;compare 多 agent 时 > 1。 */
+  /** (agent, model, flags) 配置组合数;compare 多 agent 时 > 1。 */
   configs: number;
   /** 总 attempt 数(evals × configs × runs);逐行输出与汇总计数都按它。 */
   totalRuns: number;
@@ -174,8 +174,8 @@ export interface ExperimentDef {
   model?: string;
   /** 模型推理努力程度(如 "low"/"medium"/"high",取值由具体模型/adapter 决定);省略=用 agent 原生默认。经 ctx.reasoningEffort 透给 adapter 与 eval。 */
   reasoningEffort?: string;
-  /** 传给每次 attempt 的 params,经 t.params 暴露给 eval;与 CLI flag 合并(CLI 优先)。 */
-  params?: Record<string, unknown>;
+  /** 实验条件(A/B 里的 feature flag),由实验文件声明;经 ctx.flags 透传给 adapter、t.flags 暴露给 eval。 */
+  flags?: Record<string, unknown>;
   /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--runs` 覆盖时默认 1。 */
   runs?: number;
   /** 一次重复(runs > 1)里某次 attempt 失败后是否跳过剩余重复;省略默认 true(提前退出省钱)。 */
@@ -267,12 +267,12 @@ export function runWho(run: Pick<AgentRun, "agent" | "model" | "experimentId">):
   return run.model ? `${run.agent.name}/${run.model}` : run.agent.name;
 }
 
-/** 一个 (agent, model, params) 的运行配置 —— 由 CLI / 实验展开。 */
+/** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
 export interface AgentRun {
   agent: Agent;
   model?: string;
   reasoningEffort?: string;
-  params: Record<string, unknown>;
+  flags: Record<string, unknown>;
   runs: number;
   earlyExit: boolean;
   sandbox?: SandboxOption;

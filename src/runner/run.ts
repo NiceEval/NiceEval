@@ -104,7 +104,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
         if (run.experimentId && priorRunKeys.has(`${run.experimentId}|${evalDef.id}`)) continue;
         // key 标识「同一个运行配置下的同一条 eval」,earlyExit 的跳过/abort 只应作用于
         // 同 key 的重试轮。experimentId 必须进 key:两个实验可以同 agent 同 model、只差
-        // params(feature A/B 正是这种形状),漏掉它会让先过的实验把其它实验的同名 eval
+        // flags(feature A/B 正是这种形状),漏掉它会让先过的实验把其它实验的同名 eval
         // 整个跳掉——花了钱还丢结果。
         const key = `${run.experimentId ?? ""}|${run.agent.name}|${run.model ?? ""}|${evalDef.id}`;
         attempts.push({

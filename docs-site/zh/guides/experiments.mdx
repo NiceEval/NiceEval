@@ -1,7 +1,7 @@
 ---
 title: "实验矩阵：用运行矩阵比较 agents 和 models"
 sidebarTitle: "实验矩阵"
-description: "使用 NiceEval experiments 让同一批 eval 横跨多个 agents、models 和 params，比较 pass rate、成本和延迟。"
+description: "使用 NiceEval experiments 让同一批 eval 横跨多个 agents、models 和 flags，比较 pass rate、成本和延迟。"
 ---
 
 Experiment 用于比较多组运行配置。典型问题包括：Claude Code 和 Codex 谁在同一批 coding-agent 任务上 pass rate 更高？某个 prompt 改动是否降低成本？不同模型的延迟和质量如何取舍？
@@ -37,13 +37,13 @@ npx niceeval exp compare-models   # 把同组各 model 并排出报告
 
 这样每个配置独立成文件：可命名、可 diff、可单独 review，"这一组就是对照"在文件结构上就讲清楚了。
 
-`defineExperiment` 的字段怎么写、`params` 怎么透传到 adapter，见[写实验](/zh/guides/write-experiment)。
+`defineExperiment` 的字段怎么写、`flags` 怎么透传到 adapter，见[写实验](/zh/guides/write-experiment)。
 
 ## 适合比较什么
 
 - 不同 Adapters。
 - 不同模型（Tier 1 接入即可：应用接口暴露模型选择，`model` 经 `ctx.model` 透传）。
-- 不同 prompts 或 feature 开关（要求 Tier 3 接入：变体在应用内部，需要应用把它暴露成 experiment 可选的配置，经 `params` → `ctx.params` 透传）。
+- 不同 prompts 或 feature flags（要求 Tier 3 接入：变体在应用内部，需要应用把它暴露成 experiment 可选的 flag，经 `flags` → `ctx.flags` 透传）。
 - 不同 sandbox 后端。
 - 同一任务的 pass@N。
 

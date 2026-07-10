@@ -255,7 +255,7 @@ export default defineSandbox({
 | 要准备的东西 | 放哪 | 怎么清理 |
 |---|---|---|
 | 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](adapters/contract.md#agent-契约) | 随沙箱销毁,无需手工清 |
-| **这条 eval** 的沙箱预置(写 `.env`、装依赖、按 `t.params` 注入 skill) | `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁;要清沙箱外的东西用 `try/finally` |
+| **这条 eval** 的沙箱预置(写 `.env`、装依赖、按 `t.flags` 注入 skill) | `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁;要清沙箱外的东西用 `try/finally` |
 | **整轮共享**的外部服务(mock API、共享 DB、license) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
 为什么这样够用:沙箱内的东西随沙箱销毁自动没了,不需要 teardown;整轮共享的外部资源用 `docker compose` / CI 脚本起停是业界通行做法,比一个 niceeval 专属钩子更少要维护、也不把资源起停逻辑锁进框架。这与"没有隐式 fixture 发现、起始文件手工写进 `test()`"是同一条纪律:**能用更基础的机制表达的,就不在框架里再造一层。**

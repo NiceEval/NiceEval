@@ -36,7 +36,7 @@ interface Turn {
 interface AgentContext {
   readonly signal: AbortSignal;
   readonly model?: string;               // experiment 给;省略 → 用 agent 原生默认
-  readonly params: Readonly<Record<string, unknown>>;  // experiment 的 params,透传
+  readonly flags: Readonly<Record<string, unknown>>;  // experiment 的 flags,透传
   readonly sandbox: Sandbox;             // 仅沙箱型 agent 有意义(运行器按 kind: "sandbox" 备好)
   readonly session: AgentSession;        // 本条会话线的状态槽(存取器组,见下)
   readonly telemetry?: Telemetry;        // 仅配置了 OTel 接入时有:OTLP 端点 + ready-to-spread env/headers
@@ -231,10 +231,10 @@ t.succeeded()                        ✓
 | CLI 细节(装什么包、参数形状、transcript 在哪) | **agent 本地** | 写死在 `send` / `setup` 里 |
 | **model** | **实验决定(留空)** | `ctx.model`(省略 → agent 原生默认) |
 | **reasoningEffort** | **实验决定(留空)** | `ctx.reasoningEffort`(省略 → agent 原生默认) |
-| **params**(webResearch、注入哪个 skill…) | **实验决定** | `ctx.params.*` —— agent 的 `send` 与 eval 的 `t.params` 都能读 |
+| **flags**(webResearch、注入哪个 skill…) | **实验决定** | `ctx.flags.*` —— agent 的 `send` 与 eval 的 `t.flags` 都能读 |
 | runs / earlyExit / evals / sandbox / budget | **实验决定** | 运行器据此调度 |
 
-一句话:**agent 只配「怎么连我自己」,不配「跑哪个模型、开哪些开关」**;后者全留给 [experiment](../experiments.md),经 `ctx`(eval 里是 `t`)透传。这样同一个 agent 能被不同实验以不同 model / reasoningEffort / params 复用,不必改 agent。
+一句话:**agent 只配「怎么连我自己」,不配「跑哪个模型、开哪些开关」**;后者全留给 [experiment](../experiments.md),经 `ctx`(eval 里是 `t`)透传。这样同一个 agent 能被不同实验以不同 model / reasoningEffort / flags 复用,不必改 agent。
 
 ## `ctx`(agent 侧)与 `t`(eval 侧):同一份东西,两个名字
 
@@ -242,7 +242,7 @@ t.succeeded()                        ✓
 
 | 概念 | `ctx`(agent:`send` / `setup`) | `t`(eval:`test`) | 关系 |
 |---|---|---|---|
-| 实验 params | `ctx.params` | `t.params` | **同一份**(experiment 给) |
+| 实验 flags | `ctx.flags` | `t.flags` | **同一份**(experiment 给) |
 | 模型 | `ctx.model`(用来拼 `--model`) | `t.model`(只读,知道在测谁) | 同一份 |
 | 取消信号 | `ctx.signal` | `t.signal` | 同一份 |
 | 日志 | `ctx.log()` | `t.log()` | 同一个 |
@@ -260,5 +260,5 @@ t.succeeded()                        ✓
 - [Adapter 写法](authoring.md) —— remote / sandbox 示例、采集层、shared 工具、三段式拆解。
 - [Assertions](../assertions.md) —— 这些断言在 eval 侧的完整参考(作用域 + 来源)。
 - [Observability](../observability.md) —— transcript → 标准事件流的归一化、规范工具名、OTLP trace。
-- [Experiments](../experiments.md) —— model / params 怎么经 experiment 传进 ctx。
+- [Experiments](../experiments.md) —— model / flags 怎么经 experiment 传进 ctx。
 - [docs-site Adapter 概念](../../docs-site/zh/concepts/adapter.mdx) / [Tier](../../docs-site/zh/concepts/tier.mdx) —— 面向用户的同一份契约与三档接入。

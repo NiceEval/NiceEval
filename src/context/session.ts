@@ -88,7 +88,7 @@ export interface SessionDeps {
   sandbox: Sandbox;
   model?: string;
   reasoningEffort?: string;
-  params: Record<string, unknown>;
+  flags: Record<string, unknown>;
   signal: AbortSignal;
   log(msg: string): void;
   /** tracing agent 的 OTLP 端点(经 send ctx 透给 adapter,用于注入导出 env)。 */
@@ -138,7 +138,7 @@ export class SessionManager {
       signal: this.deps.signal,
       model: this.deps.model,
       reasoningEffort: this.deps.reasoningEffort,
-      params: this.deps.params,
+      flags: this.deps.flags,
       sandbox: this.deps.sandbox,
       session,
       telemetry: this.deps.telemetry,

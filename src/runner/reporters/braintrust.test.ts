@@ -85,7 +85,7 @@ describe("toBraintrustEvent", () => {
         model: "gpt-5.2",
         attempt: 1,
         outcome: "failed",
-        experiment: { id: "compare/codex", params: { tape: true } },
+        experiment: { id: "compare/codex", flags: { tape: true } },
         assertions: [{ name: "compiles", severity: "gate", score: 0, passed: false, detail: "tsc failed" }],
       }),
     );
@@ -96,7 +96,7 @@ describe("toBraintrustEvent", () => {
       outcome: "failed",
       model: "gpt-5.2",
       experiment: "compare/codex",
-      params: { tape: true },
+      flags: { tape: true },
       failedAssertions: [{ name: "compiles", detail: "tsc failed" }],
     });
     expect(event.id).toBe("compare/codex|algebra/quadratic|codex|gpt-5.2|a1");

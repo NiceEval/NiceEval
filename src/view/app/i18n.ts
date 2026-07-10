@@ -58,7 +58,7 @@ export type MessageKey =
   | "detail.rawSample"
   | "detail.rawNote"
   | "config.experiment"
-  | "config.paramsNone"
+  | "config.flagsNone"
   | "config.default"
   | "config.none"
   | "config.notApplicable"
@@ -177,7 +177,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "detail.rawSample": "Raw sample result",
     "detail.rawNote": "debug JSON, defaults to first error/failure when available",
     "config.experiment": "experiment",
-    "config.paramsNone": "none",
+    "config.flagsNone": "none",
     "config.default": "default",
     "config.none": "none",
     "config.notApplicable": "n/a",
@@ -293,7 +293,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "detail.rawSample": "原始样例结果",
     "detail.rawNote": "调试 JSON，默认选择第一条错误/失败",
     "config.experiment": "实验",
-    "config.paramsNone": "无",
+    "config.flagsNone": "无",
     "config.default": "默认",
     "config.none": "无",
     "config.notApplicable": "不适用",

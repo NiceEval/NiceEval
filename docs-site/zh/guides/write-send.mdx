@@ -1,7 +1,7 @@
 ---
 title: "如何写好 Send"
 sidebarTitle: "如何写好 Send"
-description: "手写 Adapter 的 send 函数，一条主线七步走：发消息拿回复、接上之前的消息、记录消费、把工具解析成事件、人工介入（HITL）、接上 OTel trace、透传 experiment 的 params。每一步只在上一步的代码上多几行，每一步解锁一组断言。"
+description: "手写 Adapter 的 send 函数，一条主线七步走：发消息拿回复、接上之前的消息、记录消费、把工具解析成事件、人工介入（HITL）、接上 OTel trace、透传 experiment 的 flags。每一步只在上一步的代码上多几行，每一步解锁一组断言。"
 ---
 
 [Adapter](/zh/concepts/adapter) 讲了契约：`send` 传入 `TurnInput` 和 `AgentContext`，返回 `Turn`。这一页讲怎么写它——从"发一条消息拿到回复"的最小形态起步，一步一步加到完整接入。每一步只在上一步的代码上多几行，前面已有的部分在代码里用 `// ……省略` 标出；每一步末尾说明这几行解锁了哪些断言。改完任何一步都能立刻验证：把新解锁的断言写进一条 eval 重跑 `npx niceeval exp`，`niceeval view` 里能看到这一步新增的数据——多轮轨迹、用量、工具事件、待回答请求。
@@ -303,16 +303,16 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces node server.js
 
 **这一步解锁**：`niceeval view` 里的调用瀑布图——应用内部每次模型调用、每次工具执行的耗时与 token，按轮铺成时间线。断言不变：判决依据在前几步的事件映射里已经齐了，span 只进瀑布图、不喂断言。接收器怎么起、span 怎么归属到轮，见 [OTel 接入](/zh/guides/connect-otel)。
 
-## 第七步：透传 experiment 的 params（A/B 对比）
+## 第七步：透传 experiment 的 flags（A/B 对比）
 
-应用把变体暴露成可切换的配置后，experiment 声明 `params`，运行器每轮经 `ctx.params` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发——应用按参数切换变体：
+应用把变体暴露成可切换的配置后，experiment 声明 `flags`，运行器每轮经 `ctx.flags` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发——应用按参数切换变体：
 
 ```ts
       // ……send 其余部分同前，省略
       body: JSON.stringify({
         messages,
         model: ctx.model,        // ← 第一步就转发的 experiment.model；这里一起列出
-        params: ctx.params,      // ← experiment.params 原样透传；没配时是 {}
+        flags: ctx.flags,      // ← experiment.flags 原样透传；没配时是 {}
       }),
 ```
 
@@ -324,11 +324,11 @@ import chatApp from "../agents/chat-app.ts";
 export default defineExperiment({
   agent: chatApp,
   model: "gpt-5.4",                      // ← 经 ctx.model 到 send
-  params: { promptVariant: "concise" },  // ← 每轮经 ctx.params 到 send
+  flags: { promptVariant: "concise" },  // ← 每轮经 ctx.flags 到 send
 });
 ```
 
-两个 experiment 文件各声明一份 `params`，`npx niceeval exp` 分别跑同一批 eval，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/concepts/tier)；`params` 与 `model`、`runs` 等其余 experiment 字段见[写实验](/zh/guides/write-experiment)。
+两个 experiment 文件各声明一份 `flags`，`npx niceeval exp` 分别跑同一批 eval，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/concepts/tier)；`flags` 与 `model`、`runs` 等其余 experiment 字段见[写实验](/zh/guides/write-experiment)。
 
 **这一步解锁**：同一批 eval 跨变体的成绩对比。
 

@@ -18,15 +18,15 @@ import type {
   Metric,
   MetricCell,
   MetricColumn,
-  ParamRef,
+  FlagRef,
 } from "./types.ts";
 import { formatMetricValue } from "./format.ts";
 
 // 复合键分隔符:NUL 不会出现在 eval id / experimentId / ISO 时间里,拼接键不会串味
 const KEY_SEP = "\u0000";
 
-/** param 未声明时的组名:不猜,如实归一组。 */
-export const PARAM_UNSET = "(unset)";
+/** flag 未声明时的组名:不猜,如实归一组。 */
+export const FLAG_UNSET = "(unset)";
 
 /** 计算函数的第一参:选集(warnings 随行)或手工挑的快照数组(没有挑选过程,自然无警告)。 */
 export type SnapshotsInput = Selection | Snapshot[];
@@ -105,33 +105,33 @@ export function evalGroupOf(id: string): string {
   return slash === -1 ? id : id.slice(0, slash);
 }
 
-function isParamRef(dimension: DimensionInput): dimension is ParamRef {
-  return typeof dimension === "object" && "kind" in dimension && dimension.kind === "param";
+function isFlagRef(dimension: DimensionInput): dimension is FlagRef {
+  return typeof dimension === "object" && "kind" in dimension && dimension.kind === "flag";
 }
 
-/** experiment 声明的 params(经 runner 原样透传进持久化字段 ExperimentRunInfo.params)。 */
-function paramsOf(attempt: AttemptHandle): Record<string, unknown> | undefined {
-  return attempt.result.experiment?.params;
+/** experiment 声明的 flags(经 runner 原样透传进持久化字段 ExperimentRunInfo.flags)。 */
+function flagsOf(attempt: AttemptHandle): Record<string, unknown> | undefined {
+  return attempt.result.experiment?.flags;
 }
 
-/** param 声明值 → 组标签:label 函数优先,其余 String();未声明 → PARAM_UNSET。 */
-export function paramGroupKey(ref: ParamRef, item: Item): string {
-  const value = paramsOf(item.attempt)?.[ref.name];
-  if (value === undefined) return PARAM_UNSET;
+/** flag 声明值 → 组标签:label 函数优先,其余 String();未声明 → FLAG_UNSET。 */
+export function flagGroupKey(ref: FlagRef, item: Item): string {
+  const value = flagsOf(item.attempt)?.[ref.name];
+  if (value === undefined) return FLAG_UNSET;
   // 持久化字段是 Record<string, unknown>;声明侧的合法值就是这三种标量
   if (typeof ref.label === "function") return ref.label(value as string | number | boolean);
   return String(value);
 }
 
-/** param 作轴:要求数值;未声明或非数值 → null(点不画,注脚报数)。 */
-export function paramAxisValue(ref: ParamRef, item: Item): number | null {
-  const value = paramsOf(item.attempt)?.[ref.name];
+/** flag 作轴:要求数值;未声明或非数值 → null(点不画,注脚报数)。 */
+export function flagAxisValue(ref: FlagRef, item: Item): number | null {
+  const value = flagsOf(item.attempt)?.[ref.name];
   return typeof value === "number" ? value : null;
 }
 
 export function dimensionKey(dimension: DimensionInput, item: Item): string {
   if (typeof dimension !== "string") {
-    if (isParamRef(dimension)) return paramGroupKey(dimension, item);
+    if (isFlagRef(dimension)) return flagGroupKey(dimension, item);
     return dimension.of(item.attempt);
   }
   const result = item.attempt.result;

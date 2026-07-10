@@ -7,7 +7,7 @@
 - **Skill** 是模型上下文。它告诉 agent "遇到某类任务时怎么想、怎么写、用哪些约定"。典型形态是一个本地 Markdown / `SKILL.md`,或一个可以用 `npx skill add` 安装的 repo skill。
 - **Plugin** 是可执行能力。它给 agent 增加工具、MCP server、Python package、hook 或其它运行时扩展。它可能也带文档,但核心价值是让 agent 能调用新的东西。
 
-不要把两者混在一个 `params.skill = true` 里。skill 影响 prompt / context,plugin 影响工具面 / runtime;这两个维度要能独立打开,否则无法判断收益来自"指导更清楚"还是"多了工具"。
+不要把两者混在一个 `flags.skill = true` 里。skill 影响 prompt / context,plugin 影响工具面 / runtime;这两个维度要能独立打开,否则无法判断收益来自"指导更清楚"还是"多了工具"。
 
 ## 设计目标
 

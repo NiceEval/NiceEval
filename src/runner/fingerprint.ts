@@ -38,7 +38,7 @@ export async function computeFingerprint(
       experimentId: run.experimentId,
       agent: run.agent.name,
       model: run.model,
-      params: run.params,
+      flags: run.flags,
       sandbox: run.sandbox === undefined ? undefined : sandboxLabel(run.sandbox),
       timeoutMs: run.timeoutMs,
       strict: run.strict,

@@ -174,16 +174,16 @@ pass ↑                                    （好 → 右上）
 A bub-high   B bub-medium   C codex-high   D codex-low
 ```
 
-网页面点带 hover（值与 `samples/total`）、同系列连线、点击深链下钻。终端面用字母标点、图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。维度槽也收 `param()`——用 experiment 声明的变量分组，见[自定义报告](/zh/guides/custom-reports)的「变量来自配置」一节。
+网页面点带 hover（值与 `samples/total`）、同系列连线、点击深链下钻。终端面用字母标点、图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。维度槽也收 `flag()`——用 experiment 声明的变量分组，见[自定义报告](/zh/guides/custom-reports)的「变量来自配置」一节。
 
 ## `MetricLine` —— 趋势线
 
-x 是有序变量、每个系列一条线，回答「变量拧大，分数怎么走」——并行 agent 数 × 模拟延迟 × 得分这类 scaling 图就是它。与 `MetricScatter` 的分工：scatter 的两轴都是测出来的指标（找 frontier），line 的 x 是你配置的变量（看趋势）。变量在 experiment 的 `params` 里声明，报告用 `param()` 直接引用，不从 experiment 命名里解析。
+x 是有序变量、每个系列一条线，回答「变量拧大，分数怎么走」——并行 agent 数 × 模拟延迟 × 得分这类 scaling 图就是它。与 `MetricScatter` 的分工：scatter 的两轴都是测出来的指标（找 frontier），line 的 x 是你配置的变量（看趋势）。变量在 experiment 的 `flags` 里声明，报告用 `flag()` 直接引用，不从 experiment 命名里解析。
 
 ```tsx
 <MetricLine data={await MetricLine.data(selection, {
-  x: param("latencyMs", { label: "Simulated latency", unit: "ms" }),
-  series: param("agents", { label: (v) => `${v} agents` }),
+  x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
+  series: flag("agents", { label: (v) => `${v} agents` }),
   y: passRate,
 })} />
 ```

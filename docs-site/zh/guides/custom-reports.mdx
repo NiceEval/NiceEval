@@ -20,7 +20,7 @@ description: "一份报告就是一个报告文件：官方宿主打开结果、
 四个格子是同一个宿主。自定义只有三个层次，逐层深入：
 
 1. **换摆法**：用官方组件和 `Row` / `Col` 重摆版面——大多数「要自己的口径」到这层就够了。
-2. **换口径**：`defineMetric` 定义自己的指标，`param()` 把 experiment 声明的变量当维度和轴。
+2. **换口径**：`defineMetric` 定义自己的指标，`flag()` 把 experiment 声明的变量当维度和轴。
 3. **换形态**：官方组件表达不了的展示，用 `defineComponent` 写自己的组件——网页怎么渲染、终端字符怎么排，两个面你都说了算。
 
 ## 一份报告 = 一个报告文件
@@ -138,7 +138,7 @@ codex   80%         355 lines    $0.51
 
 ## 变量来自配置，不来自命名
 
-画「并行 agent 数 × 模拟延迟 × 得分」这类 scaling 趋势时，图上的变量不该编码进 experiment id（`ultra-16agents-300ms`），再在报告里解析字符串抠出来——那是约定不是配置，改个命名整张图就散。变量的家是 experiment 文件的 `params`：一文件一个档位，把变量声明成数据：
+画「并行 agent 数 × 模拟延迟 × 得分」这类 scaling 趋势时，图上的变量不该编码进 experiment id（`ultra-16agents-300ms`），再在报告里解析字符串抠出来——那是约定不是配置，改个命名整张图就散。变量的家是 experiment 文件的 `flags`：一文件一个档位，把变量声明成数据：
 
 ```ts
 // experiments/ultra/agents-16.ts
@@ -147,21 +147,21 @@ import { bub } from "../../agents/bub.ts";
 
 export default defineExperiment({
   agent: bub({ mode: "ultra" }),
-  params: { agents: 16, latencyMs: 300 },
+  flags: { agents: 16, latencyMs: 300 },
 });
 ```
 
-报告侧用 `param()` 把声明的值直接当维度或轴用，不解析任何名字：
+报告侧用 `flag()` 把声明的值直接当维度或轴用，不解析任何名字：
 
 ```tsx
 <MetricLine data={await MetricLine.data(selection, {
-  x: param("latencyMs", { label: "Simulated latency", unit: "ms" }),
-  series: param("agents", { label: (v) => `${v} agents` }),
+  x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
+  series: flag("agents", { label: (v) => `${v} agents` }),
   y: passRate,
 })} />
 ```
 
-`param()` 用在维度槽（`series` / `rows` / `columns` / `points`）就按声明值分组，用在轴槽（`x`）就要求数值并驱动刻度；内置维度（`agent`、`model`、`experiment`、`evalGroup`……）覆盖不了的变量都走它。没有声明该 param 的 experiment 不猜：分组时如实归入「未配置」一组，作轴时该点不画、注脚报数。params 随快照落盘，所以历史 run 也能按当时声明的变量重摆——报告读的是配置的事实，不是命名的巧合。
+`flag()` 用在维度槽（`series` / `rows` / `columns` / `points`）就按声明值分组，用在轴槽（`x`）就要求数值并驱动刻度；内置维度（`agent`、`model`、`experiment`、`evalGroup`……）覆盖不了的变量都走它。没有声明该 flag 的 experiment 不猜：分组时如实归入「未配置」一组，作轴时该点不画、注脚报数。flags 随快照落盘，所以历史 run 也能按当时声明的变量重摆——报告读的是配置的事实，不是命名的巧合。
 
 ## 换形态：自定义组件，一个定义两个面
 

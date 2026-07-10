@@ -274,8 +274,8 @@ export interface TestContext {
   readonly model?: string;
   /** 本次 attempt 的推理努力程度(如 "low"/"medium"/"high",取值由 adapter/模型决定)。 */
   readonly reasoningEffort?: string;
-  /** 本次 attempt 生效的 params(experiment.params 与 CLI flag 合并后的只读视图)。 */
-  readonly params: Readonly<Record<string, unknown>>;
+  /** 本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。 */
+  readonly flags: Readonly<Record<string, unknown>>;
   /** 打一行调试日志;有 live 进度回调时走该回调,否则落到 stderr,不出现在最终结果里。 */
   log(msg: string): void;
   /** 立即中止本 eval 并标记为 skipped(outcome / EvalResult.skipReason),reason 不能为空。 */

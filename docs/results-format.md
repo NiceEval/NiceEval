@@ -18,7 +18,7 @@
       diff.json
 ```
 
-`<evalId>/<agent>/<model>[/<experiment>]/a<attempt>/` 是单个 eval attempt 的工件目录。`evalId` 里的 `/` 会保留为目录层级,其它不适合路径的字符会替换成 `_`;`agent` 和 `model` 里的非 `[\w.@-]` 字符也会替换成 `_`。没有 model 时目录名是 `default`。带 experimentId 的结果多一段实验目录(`/` 压成 `_`,如 `compare-prompts_concise`)——两个实验可以同 agent 同 model、只差 params,少了这一段工件会互相覆盖。
+`<evalId>/<agent>/<model>[/<experiment>]/a<attempt>/` 是单个 eval attempt 的工件目录。`evalId` 里的 `/` 会保留为目录层级,其它不适合路径的字符会替换成 `_`;`agent` 和 `model` 里的非 `[\w.@-]` 字符也会替换成 `_`。没有 model 时目录名是 `default`。带 experimentId 的结果多一段实验目录(`/` 压成 `_`,如 `compare-prompts_concise`)——两个实验可以同 agent 同 model、只差 flags,少了这一段工件会互相覆盖。
 
 这些文件是按需写入的:某类数据为空就不生成对应 JSON 文件。`summary.json` 在 run 结束时写入;attempt 级重数据在每个 eval 完成时增量写入,所以长 run 中途失败时通常仍能留下已经完成的 attempt 工件。
 
@@ -39,7 +39,7 @@
 }
 ```
 
-版本历史:`1` 初版;`2`(2026-07)= `ExperimentRunInfo.flags` 改名 `params`——持久化字段改名是破坏性变更,按下述规则递增,不做旧名读取别名。
+版本历史:`1` 初版;`2`(2026-07)= `ExperimentRunInfo.flags` 改名 `params`;`3`(2026-07-10)= 改回 `flags`(A/B feature flag 语义定稿,见 docs/reports.md 裁决记录)。持久化字段改名是破坏性变更,按下述规则递增,不做旧名读取别名。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个 run(summary + 全部 attempt 工件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份报告的 niceeval 版本查看:
 

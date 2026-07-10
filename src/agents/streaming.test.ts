@@ -9,7 +9,7 @@ import { createAgentSession } from "../context/session.ts";
 function lineCtx(): AgentContext {
   return {
     signal: new AbortController().signal,
-    params: {},
+    flags: {},
     session: createAgentSession(),
     sandbox: undefined as never,
     log() {},

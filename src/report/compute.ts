@@ -19,7 +19,7 @@ import type {
   Metric,
   MetricCell,
   OverviewData,
-  ParamRef,
+  FlagRef,
   ScatterData,
   ScoreboardData,
   TableData,
@@ -39,7 +39,7 @@ import {
   experimentIdOf,
   filterItems,
   groupItems,
-  paramAxisValue,
+  flagAxisValue,
   resolveInput,
   snapshotKeyOf,
   toColumn,
@@ -52,7 +52,7 @@ import { formatMetricValue, formatPlainNumber } from "./format.ts";
 // ───────────────────────── MetricTable.data ─────────────────────────
 
 export interface TableDataOptions<M extends readonly Metric[]> {
-  /** 行维度(内置 / 自定义 / param())。 */
+  /** 行维度(内置 / 自定义 / flag())。 */
   rows: DimensionInput;
   /** 每列一个指标;列键 = metric.name 的字面量,拼错编译不过。 */
   columns: M;
@@ -289,10 +289,10 @@ export async function scatterData(input: SnapshotsInput, opts: ScatterDataOption
 // ───────────────────────── MetricLine.data ─────────────────────────
 
 export interface LineDataOptions {
-  /** x 轴:experiment 声明的 param(数值),不解析 experiment 命名。 */
-  x: ParamRef;
+  /** x 轴:experiment 声明的 flag(数值),不解析 experiment 命名。 */
+  x: FlagRef;
   y: Metric;
-  /** 可选:每个系列一条线(param 或普通维度);省略 = 单系列。 */
+  /** 可选:每个系列一条线(flag 或普通维度);省略 = 单系列。 */
   series?: DimensionInput;
 }
 
@@ -303,7 +303,7 @@ export async function lineData(input: SnapshotsInput, opts: LineDataOptions): Pr
   const groups = groupItems(items, "experiment");
   const rows: LineData["rows"] = [];
   for (const [key, group] of groups) {
-    const x = paramAxisValue(opts.x, group[0]); // param 是 experiment 级声明,组内一致
+    const x = flagAxisValue(opts.x, group[0]); // flag 是 experiment 级声明,组内一致
     rows.push({
       key,
       series: opts.series ? dimensionKey(opts.series, group[0]) : undefined,

@@ -155,12 +155,12 @@ export interface AgentContext {
   /** 模型推理努力程度;归属同 model——实验决定,省略时不覆盖 agent 原生默认。 */
   readonly reasoningEffort?: string;
   /**
-   * experiment 的 `params` 字段原样透传,内容和结构完全由 experiment 作者自定义
+   * experiment 的 `flags` 字段原样透传,内容和结构完全由 experiment 作者自定义
    * (如 `{ webResearch: true }`、`{ systemPrompt: "..." }`)。adapter 按自己的约定
    * 读取其中的字段;框架本身不解释、不校验它的内容。命名特意避开 CLI 解析出的
    * `flag`(跑法层面的 --timeout/--budget 等),两者是不相关的概念。
    */
-  readonly params: Readonly<Record<string, unknown>>;
+  readonly flags: Readonly<Record<string, unknown>>;
   /** 仅沙箱型 agent 有(运行器按 --sandbox 备好)。 */
   readonly sandbox: Sandbox;
   readonly session: AgentSession;

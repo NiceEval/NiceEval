@@ -121,7 +121,7 @@ export default defineEval({
 
 ### 三条规则
 
-1. **主被测唯一**。CLI 模型不破坏:`--agent` 只换主被测;对手 agent 在 eval 文件里点名,是场景的一部分,地位等同 fixture。要对比不同对手,写两条 eval 或用 `params`,不进 agent 矩阵。
+1. **主被测唯一**。CLI 模型不破坏:`--agent` 只换主被测;对手 agent 在 eval 文件里点名,是场景的一部分,地位等同 fixture。要对比不同对手,写两条 eval 或用 `flags`,不进 agent 矩阵。
 2. **对手事件不入 `t.*` 聚合**。这是对「`newSession` 事件汇入 `t.*`」既有规则的显式例外,按「session 的 agent 是否为主被测」划线——否则 `t.notCalledTool` 会把对手的工具调用算到主被测头上,整类断言失真。对手 session 自己的 `session.*` 断言照常可用。
 3. **成本分列**。对手的 usage 单独累计,报表里与主被测分开(评测成本 ≠ 被测成本)。
 

@@ -8,9 +8,9 @@
 
 执行 eval 时先选 experiment,再可选地用 eval id 前缀缩小范围:
 
-- `niceeval exp [组|配置]` = 跑**哪个运行配置**。agent、model、params、runs、预算等都来自 experiment 文件。
+- `niceeval exp [组|配置]` = 跑**哪个运行配置**。agent、model、flags、runs、预算等都来自 experiment 文件。
 - `niceeval exp [组|配置] [eval id 前缀...]` = 在该 experiment 下只跑部分 eval。这个位置参数只筛 eval,不是 agent 名、URL 或模型。
-- flags 只做调度级临时覆盖,例如 `--runs`、`--max-concurrency`、`--timeout`。`--agent` / `--model` 不覆盖 experiment;要换 agent 或 model,新增或复制一个 experiment 文件。沙箱后端同理不接受 CLI 覆盖——写在 experiment(或 config)的 `sandbox` 字段里。
+- CLI flag 只做调度级临时覆盖,例如 `--runs`、`--max-concurrency`、`--timeout`。`--agent` / `--model` 不覆盖 experiment;要换 agent 或 model,新增或复制一个 experiment 文件。沙箱后端同理不接受 CLI 覆盖——写在 experiment(或 config)的 `sandbox` 字段里。
 
 ```sh
 niceeval exp <实验组|配置> <选哪些 eval> <flag:调度覆盖>
@@ -50,7 +50,7 @@ niceeval exp compare fixtures/ billing/  # 在 compare 组里跑多个前缀,并
 niceeval exp <组|配置>             # agent / model 来自 experiments/<组|配置>.ts
 ```
 
-agent、model、params、sandbox 后端都属于 experiment,不是临时 CLI flag。要连你自己的服务,写一个 agent adapter,再在 experiment 里引用它;URL 和鉴权是 adapter / experiment 的私有配置,不是位置参数。沙箱型 agent 在哪跑(docker / vercel / e2b / 三方)写在 experiment(或 config)的 `sandbox` 字段里,用 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`(从 `niceeval/sandbox` 导入)——没有默认值,没写就在起沙箱时直接报错。
+agent、model、flags、sandbox 后端都属于 experiment,不是临时 CLI flag。要连你自己的服务,写一个 agent adapter,再在 experiment 里引用它;URL 和鉴权是 adapter / experiment 的私有配置,不是位置参数。沙箱型 agent 在哪跑(docker / vercel / e2b / 三方)写在 experiment(或 config)的 `sandbox` 字段里,用 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`(从 `niceeval/sandbox` 导入)——没有默认值,没写就在起沙箱时直接报错。
 
 ## 调度
 
@@ -151,7 +151,7 @@ CLI 文案默认跟随 `NICEEVAL_LANG` / `NICEEVAL_LOCALE`、`LC_ALL` / `LC_MESS
 CLI 标志  →  环境变量  →  niceeval.config.ts  →  内置默认
 ```
 
-例:`--max-concurrency 4` 压过 config 里的 `maxConcurrency: 8`。agent / model / params 不走 CLI 覆盖,复制 experiment 文件修改。
+例:`--max-concurrency 4` 压过 config 里的 `maxConcurrency: 8`。agent / model / flags 不走 CLI 覆盖,复制 experiment 文件修改。
 
 ## 典型用法
 

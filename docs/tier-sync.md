@@ -4,13 +4,13 @@
 
 ## 问题
 
-`examples/zh/` 里同一个应用按接入深度存多份:`origin/<name>` 是接入 niceeval 之前的原始应用,`tier1/<name>` 是它的完整副本加上无侵入接入产物,`tier2/<name>` 在 tier1 之上把 OTel 观测接进来,`tier3/<name>` 再往上做侵入改造暴露 experiment params。存多份是刻意的——`gen:diff-code` diff 相邻两层生成 before/after 文档页,"每一档只加一层 delta"是产品叙事的骨架,所以 tier1 里被复制的文件必须和 origin 逐字节相同(只有 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个脚手架文件加 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量——例外)。以 codex-sdk 为例,tier1 的跟踪文件里大半是 origin 的逐字节副本,其余是 tier 私有新增(`agents/`、`evals/`、`experiments/`、`niceeval.config.ts`、`README.md`)。
+`examples/zh/` 里同一个应用按接入深度存多份:`origin/<name>` 是接入 niceeval 之前的原始应用,`tier1/<name>` 是它的完整副本加上无侵入接入产物,`tier2/<name>` 在 tier1 之上把 OTel 观测接进来,`tier3/<name>` 再往上做侵入改造暴露 experiment flags。存多份是刻意的——`gen:diff-code` diff 相邻两层生成 before/after 文档页,"每一档只加一层 delta"是产品叙事的骨架,所以 tier1 里被复制的文件必须和 origin 逐字节相同(只有 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个脚手架文件加 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量——例外)。以 codex-sdk 为例,tier1 的跟踪文件里大半是 origin 的逐字节副本,其余是 tier 私有新增(`agents/`、`evals/`、`experiments/`、`niceeval.config.ts`、`README.md`)。
 
 麻烦在于 origin 改得很勤(修 bug、调演示场景、升依赖),而副本不会自己跟上。今天给 `origin/codex-sdk/src/backend/server.ts` 修个 bug,就得记得 cp 一份到 tier1 的同名路径——然后 tier2、tier3 还各有一份;要是动的是 `package.json`,连 cp 都不行——tier 那份多着 niceeval 的集成行,只能打开手工重放同一行,再进各层跑一遍 `pnpm install` 让 lockfile 跟上。这套动作对每个受影响的示例各来一遍,层数越多乘数越大,而且全程只靠改动者的记忆串着。
 
 忘了会怎样?什么都不会发生——这正是最糟的部分。没有检查、没有报警,review 时"改了 origin 而 tier1 没动"的 diff 看起来完全正常。漂移安静地躺着,直到某天重新生成 diff 文档页,陈旧差异被当成"接入 niceeval 需要改的代码"展示出来,把"零改动"卖点砸掉;或者用户跑 tier 示例,踩到 origin 早就修掉的 bug。到那时离引入漂移的那次改动已经很远,没人记得该同步什么。
 
-值得说清的一点:这条链上有两种性质不同的目录对。**origin → tier1 是 "副本 + 纯新增"**:tier1 对共享文件的改动只有脚手架那几个文件各 2~4 行,应用源码两边完全一致,其余差异全是 tier 私有的新增文件——它本质上就是"origin + 一小层接入 delta"。**tier1 → tier2、tier2 → tier3 是 "副本 + 修改"**:tier2 会改 tier1 带来的 eval 侧文件(`niceeval.config.ts` 加 telemetry、adapter 加 spanMapper),tier3 更是按定义要改应用的 `src/`(把内部可变点暴露成 params)。两种目录对需要的都是同一个缺失的动词——`下游 rebase 上游`:上游动了,一条命令把本层的 delta 重放到新上游之上。只是原生 `git rebase` 作用于分支,而这里是同一棵树里的目录,原生命令用不上——本方案就是给目录对补上这个动词,顺带给"纯新增"那种目录对加上逐字节铁律的 CI 检查。
+值得说清的一点:这条链上有两种性质不同的目录对。**origin → tier1 是 "副本 + 纯新增"**:tier1 对共享文件的改动只有脚手架那几个文件各 2~4 行,应用源码两边完全一致,其余差异全是 tier 私有的新增文件——它本质上就是"origin + 一小层接入 delta"。**tier1 → tier2、tier2 → tier3 是 "副本 + 修改"**:tier2 会改 tier1 带来的 eval 侧文件(`niceeval.config.ts` 加 telemetry、adapter 加 spanMapper),tier3 更是按定义要改应用的 `src/`(把内部可变点暴露成 flags)。两种目录对需要的都是同一个缺失的动词——`下游 rebase 上游`:上游动了,一条命令把本层的 delta 重放到新上游之上。只是原生 `git rebase` 作用于分支,而这里是同一棵树里的目录,原生命令用不上——本方案就是给目录对补上这个动词,顺带给"纯新增"那种目录对加上逐字节铁律的 CI 检查。
 
 ## 方案一句话
 

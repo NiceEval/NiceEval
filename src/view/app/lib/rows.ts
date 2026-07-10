@@ -127,9 +127,9 @@ export function valueFor(row: ViewRow, key: SortKey): string | number | null {
 
 export function configChips(row: ViewRow, t: T): [string, ReactNode][] {
   const exp = row.experiment || {};
-  const params = exp.params && Object.keys(exp.params).length
-    ? Object.entries(exp.params).map(([k, v]) => k + "=" + formatConfigValue(v)).join(", ")
-    : t("config.paramsNone");
+  const flags = exp.flags && Object.keys(exp.flags).length
+    ? Object.entries(exp.flags).map(([k, v]) => k + "=" + formatConfigValue(v)).join(", ")
+    : t("config.flagsNone");
   return [
     [t("config.experiment"), row.synthetic ? row.label : row.experimentId],
     [t("table.model"), row.model || t("config.default")],
@@ -138,6 +138,6 @@ export function configChips(row: ViewRow, t: T): [string, ReactNode][] {
     ["earlyExit", exp.earlyExit === undefined ? t("config.notApplicable") : String(exp.earlyExit)],
     ["sandbox", exp.sandbox || t("config.default")],
     ["budget", exp.budget === undefined ? t("config.none") : "$" + exp.budget],
-    ["params", params],
+    ["flags", flags],
   ];
 }

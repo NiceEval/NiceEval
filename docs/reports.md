@@ -544,7 +544,7 @@ writeFileSync("site/index.html", `<!doctype html><link rel="stylesheet" href="st
 | `results.latest()` 返回 `Selection`(结构化 warnings) | 返回 `{ snapshots, warnings }` 裸对 | warnings 可程序判断且随选集自动进下游,诚实不靠使用者记得透传 |
 | `RunOverview.data` / `MetricTable.data` /… 挂组件上 | 顶层独立函数 `overview` / `table` /… | 消灭 `Scoreboard`/`scoreboard` 大小写双胞胎与泛化顶层导出;配对打点即发现 |
 | `defineReport` | `definePage` | 与 `--report` 同词,消灭「page/report」双词 |
-| `params` / `param()` | `flags` / `flag()` | 不与 CLI flag 撞词;它本来就是「变量/参数」 |
+| `flags` / `flag()` | `params` / `param()`(2026-07-10 当日早先定稿,同日翻案) | 语义就是 A/B 的 feature flag;撞词靠行文约定:裸词 flags = 实验 flags,命令行开关一律写「CLI flag」或字面 `--xxx`(2026-07-10) |
 | `defineComponent({ web, text })` | `abstract class ReportComponent` | 归队 `define*` 家族;两个纯函数面用字面量正好 |
 | 成绩单维度槽 `rows` | `of` | 与 `MetricTable.data` 的维度槽统一 |
 | 列头不做点击重排,两面同口径 | 网页面可点重排 | 与「静态导出零客户端 JS」只能活一个;人与 agent 读到的顺序不分叉 |
@@ -553,7 +553,7 @@ writeFileSync("site/index.html", `<!doctype html><link rel="stylesheet" href="st
 | `<DefaultReport />` 跟随宿主注入选集 | 跟随报告内自挑口径 | 零 props 的锚点语义:官方口径与你的口径并排对照才是它的意义(2026-07-10) |
 | `skipped("incomplete")`,不做恢复 journal | 重开 writer 补 `finish()` | 判决只活在 summary;恢复要新增判决日志落盘,格式代价大于收益(2026-07-10) |
 | 时间轴对比走 `DeltaTable` 快照键 | 专门的时间轴对比组件 | 键与 `"snapshot"` 维度同格式,view Compare 对齐同一个键,两套「对比」语义不分叉(2026-07-10) |
-| `flags`→`params` 递增 schemaVersion | 读取边界归一旧字段名 | 归一就是小型迁移,「不解析、不迁移、不猜」无例外;旧结果由 producer 提示旧版本工具看(2026-07-10) |
+| 持久化字段改名递增 schemaVersion(flags→params→flags,现为 3) | 读取边界归一旧字段名 | 归一就是小型迁移,「不解析、不迁移、不猜」无例外;旧结果由 producer 提示旧版本工具看(2026-07-10) |
 | 官方组件样式面 = `nre-*` + `className` + `<Style>` | slots / render props | 半自定义走 `defineComponent` 整个换,不在官方组件上开中间层(2026-07-10) |
 
 ### 一份报告 = 一个报告文件
@@ -649,9 +649,11 @@ interface WebContext {
 
 自定义组件的网页样式:静态导出不打包用户代码,className 引用的 CSS 用内置原语 `<Style>{css}</Style>` 随树带走(web 面吐 `<style>` 标签,text 面渲染为空)。交互限普通链接与 `<details>`,与官方组件同一条「不 hydrate 也完整」契约——这维持了砍 `defineReport` 时拒绝「即时构建 / hydration / 样式冲突」重机械的立场:用户模块本来就被 tsx 加载进计算进程,静态渲染 web 面只是多调一个纯函数,没有打包机械。
 
-### params 与新摆法
+### flags 与新摆法
 
-scaling 类报告(并行 agent 数 × 模拟延迟 × 得分)的变量不该编码进 experiment id 再靠解析字符串抠回来。`ExperimentDef` 增加 `params?: Record<string, string | number | boolean>`,runner 原样透传进持久化字段 `ExperimentRunInfo.params`;报告侧 `param(name, opts)` 把声明值当维度(`series` / `rows` / `columns` / `points` 槽,按值分组)或轴(`x` 槽,要求数值并驱动刻度)。未声明该 param 的 experiment 不猜:分组如实归「未配置」,作轴不画点、注脚报数。命名:不叫 `flags` / `flag()`,因为与 CLI flag(`--report`、`--transcript`)撞词——同一个产品里两个「flag」,公开页自己都在用「flag 选怎么跑」指 CLI;它本来就是「变量/参数」,定稿 `params`。**改名的真实波及面**(2026-07-10 复核修正,早先低估):`flags` 不只是持久化字段,`experiment.flags → ctx.flags → t.flags` 是已实现、已发布的运行时链路,`docs-site/zh/guides/write-experiment.mdx`、`connect-your-agent.mdx`、`write-send.mdx` 三篇都公开教过。改名因此是一次成套动作:`ExperimentDef.params` / `ctx.params` / `t.params` / `ExperimentRunInfo.params` 一起翻,一次性收敛、不留兼容层(与 Results Lib 的收敛姿势一致)。持久化字段改名是破坏性变更,**递增 schemaVersion**(2026-07-10 裁决):旧落盘按版本规则进 `skipped("incompatible-version")`,不归一、不迁移——读取边界给旧名做别名就是一次小型迁移,「不解析、不迁移、不猜」无例外;旧结果不丢,`skipped` 携带的 producer 提示 `npx niceeval@<version> view` 正是为这种场景存在。落地时同步 [Results Format](results-format.md)。**阶段性差异**:上述三篇指南目前如实描述已发布的 `flags` API,先不动;实现落到 `params` 时同批翻,报告侧文档(`custom-reports.mdx` / `report-components.mdx`)已按 `params` 定稿。首批随本提案补两个摆法:趋势线 `MetricLine`、分组条形 `MetricBars`(`.data` 为矩阵数据别名),与七个现有产物承担同一套双面义务。
+scaling 类报告(并行 agent 数 × 模拟延迟 × 得分)的变量不该编码进 experiment id 再靠解析字符串抠回来。`ExperimentDef` 的 `flags?: Record<string, string | number | boolean>` 由 runner 原样透传进持久化字段 `ExperimentRunInfo.flags`;报告侧 `flag(name, opts)` 把声明值当维度(`series` / `rows` / `columns` / `points` 槽,按值分组)或轴(`x` 槽,要求数值并驱动刻度)。未声明该 flag 的 experiment 不猜:分组如实归「未配置」,作轴不画点、注脚报数。
+
+**命名裁决记录**(2026-07-10,同日两裁):本节初稿曾以「与 CLI flag(`--report`、`--transcript`)撞词」为由,把已发布的运行时链路 `experiment.flags → ctx.flags → t.flags` 成套改名 `params`(持久化字段随之改名,schemaVersion 2)。同日用户翻案改回 `flags`(schemaVersion 3):这个字段的语义就是产品 A/B 测试里的 feature flag——一个 experiment 是一组 flag 取值,A/B 域的 multivariate flag 本来就装任意 JSON,「flags 暗示布尔」只在 CLI 域成立;撞词靠行文约定解决:裸词 flags 指实验 flags,命令行开关一律写「CLI flag」或字面 `--xxx`。两次改名共同确立的原则不变:持久化字段改名是破坏性变更,递增 schemaVersion,旧落盘按版本规则进 `skipped("incompatible-version")`,不归一、不迁移——读取边界给旧名做别名就是一次小型迁移,「不解析、不迁移、不猜」无例外;旧结果不丢,`skipped` 携带的 producer 提示 `npx niceeval@<version> view` 正是为这种场景存在。版本序列见 [Results Format](results-format.md)。首批随本提案补两个摆法:趋势线 `MetricLine`、分组条形 `MetricBars`(`.data` 为矩阵数据别名),与七个现有产物承担同一套双面义务。
 
 ### 类型义务(本提案的落地前置)
 

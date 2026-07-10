@@ -159,7 +159,7 @@ export const MetricScatter = Object.assign(
 );
 MetricScatter.displayName = "MetricScatter";
 
-/** 趋势线:x 是 experiment 声明的 param(param()),同系列按 x 排序连线。 */
+/** 趋势线:x 是 experiment 声明的 flag(flag()),同系列按 x 排序连线。 */
 export const MetricLine = Object.assign(
   defineComponent<MetricLineProps>({
     web: (props) => <MetricLineWeb {...props} />,

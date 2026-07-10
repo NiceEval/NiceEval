@@ -302,7 +302,7 @@ interface Reporter {
 - **`Artifacts()`** —— 默认写 `.niceeval/<timestamp>/summary.json` 与 attempt 级 JSON 工件(`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`),供 `niceeval view` 读取。具体格式见 [Results Format](results-format.md)。
 - **`JUnit(path)`** —— JUnit XML,接 CI 测试报告 UI。
 - **`Json(path)`** —— 机器可读全量。
-- **`Braintrust(config?)`** —— 把一次运行作为一个 Braintrust experiment 上报,每个 attempt 一行:soft 断言按名字记分,gate 断言记在 `gate:` 前缀下(实验 diff 里 gate 回归和 soft 分数回归用同一套机制看);metrics 带 start/end、token 用量与估算成本,metadata 带 agent / model / experiment / params 身份维度与失败断言明细。`braintrust` 包是可选 peer 依赖(动态 import,没装时 onRunStart 报错并提示安装);鉴权走 `BRAINTRUST_API_KEY` 或工厂参数 `apiKey`。源码 `src/runner/reporters/braintrust.ts`。
+- **`Braintrust(config?)`** —— 把一次运行作为一个 Braintrust experiment 上报,每个 attempt 一行:soft 断言按名字记分,gate 断言记在 `gate:` 前缀下(实验 diff 里 gate 回归和 soft 分数回归用同一套机制看);metrics 带 start/end、token 用量与估算成本,metadata 带 agent / model / experiment / flags 身份维度与失败断言明细。`braintrust` 包是可选 peer 依赖(动态 import,没装时 onRunStart 报错并提示安装);鉴权走 `BRAINTRUST_API_KEY` 或工厂参数 `apiKey`。源码 `src/runner/reporters/braintrust.ts`。
 
 配置全局或单 eval 专用:
 

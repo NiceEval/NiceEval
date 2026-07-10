@@ -8,9 +8,9 @@
 // ./web.ts,只有那一侧 import react-dom。写报告文件的项目要装 react(.tsx 编译产物
 // import react/jsx-runtime)。
 
-// 指标与 param
+// 指标与 flag
 export { defineMetric, passRate, examScore, durationMs, tokens, costUSD } from "./metrics.ts";
-export { param } from "./param.ts";
+export { flag } from "./flag.ts";
 
 // 报告基座与双面组件基座
 export { defineReport, isReportDefinition, renderReportToText } from "./report.ts";
@@ -84,7 +84,7 @@ export type {
   MetricCell,
   MetricColumn,
   OverviewData,
-  ParamRef,
+  FlagRef,
   ScatterData,
   ScoreboardData,
   SelectionWarning,

@@ -1,4 +1,4 @@
-// niceeval/report 的公开类型:指标(Metric)、维度(Dimension / param())与计算函数
+// niceeval/report 的公开类型:指标(Metric)、维度(Dimension / flag())与计算函数
 // 产物(即组件的 data props)。数据契约照 docs/reports.md「计算函数与数据契约」;
 // 这些不是持久化格式,没有 format / schemaVersion 信封,兼容性跟随 npm 版本。
 
@@ -66,20 +66,20 @@ export type Dimension =
   | { name: string; of: (attempt: AttemptHandle) => string };
 
 /**
- * param() 的产物:把 experiment 声明的 params 当维度(series / rows / columns / points
+ * flag() 的产物:把 experiment 声明的 flags 当维度(series / rows / columns / points
  * 槽,按声明值分组)或轴(MetricLine 的 x 槽,要求数值并驱动刻度)。
- * 未声明该 param 的 experiment 不猜:分组如实归「(unset)」,作轴不画点、注脚报数。
+ * 未声明该 flag 的 experiment 不猜:分组如实归「(unset)」,作轴不画点、注脚报数。
  */
-export interface ParamRef {
-  readonly kind: "param";
+export interface FlagRef {
+  readonly kind: "flag";
   readonly name: string;
   /** 组标签 / 轴标签;函数形态把声明值折成组名(如 `(v) => \`${v} agents\``)。 */
   readonly label?: string | ((value: string | number | boolean) => string);
   readonly unit?: string;
 }
 
-/** 维度槽的输入:内置/自定义维度,或 experiment 声明的 param。 */
-export type DimensionInput = Dimension | ParamRef;
+/** 维度槽的输入:内置/自定义维度,或 experiment 声明的 flag。 */
+export type DimensionInput = Dimension | FlagRef;
 
 // ───────────────────────── 计算产物(组件 data props)─────────────────────────
 
@@ -174,9 +174,9 @@ export interface ScatterData {
   }[];
 }
 
-/** MetricLine 的 x 轴:experiment 声明的 param,数值驱动刻度。 */
+/** MetricLine 的 x 轴:experiment 声明的 flag,数值驱动刻度。 */
 export interface LineAxis {
-  /** param 名。 */
+  /** flag 名。 */
   key: string;
   label: string;
   unit?: string;
@@ -184,14 +184,14 @@ export interface LineAxis {
 
 export interface LineData {
   x: LineAxis;
-  /** 系列维度名(param 或普通维度)。 */
+  /** 系列维度名(flag 或普通维度)。 */
   series?: string;
   y: MetricColumn;
   rows: {
     /** 点的键(experiment id):每个点 = 一个 experiment 的聚合。 */
     key: string;
     series?: string;
-    /** param 声明值;未声明或非数值 → null,点不画、注脚报数。 */
+    /** flag 声明值;未声明或非数值 → null,点不画、注脚报数。 */
     x: number | null;
     /** 已格式化的 x("300 ms");x 为 null 时为空串。 */
     xDisplay: string;
