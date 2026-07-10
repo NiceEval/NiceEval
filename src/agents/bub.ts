@@ -34,9 +34,6 @@ export interface BubConfig {
 }
 
 const UV = "$HOME/.local/bin/uv";
-// bub 二进制:优先用镜像里(预制模板)烘焙在 PATH 上的 bub,否则用 uv 装到 $HOME/.local/bin 的那个。
-// 预制模板把 bub 装到 /usr/local/bin(见 sandbox/docker/Dockerfile),command -v 命中即用 → 跳过安装。
-const BUB = "$(command -v bub || echo $HOME/.local/bin/bub)";
 
 // TODO(upstream): 这两个默认值钉在个人 fork 的修复分支上,等上游合并后改回发布版并删掉本注释。
 // 可用 NICEEVAL_BUB_OVERRIDE / NICEEVAL_BUB_OTEL_PLUGIN 覆盖,不必改源码。
@@ -48,6 +45,17 @@ const OTEL_PLUGIN =
   getEnv("NICEEVAL_BUB_OTEL_PLUGIN") ??
   "git+https://github.com/CorrectRoadH/bub-contrib.git@fix/tapestore-otel-tape-entry-validation" +
     "#subdirectory=packages/bub-tapestore-otel";
+
+// override 钉在 git ref 上时,镜像里烘焙的 bub 不可信:模板构建时间早于 ref 当前指向的
+// commit 的话,`command -v bub` 命中的就是修复前的旧构建 —— e2b 模板 fasteval-agents 上
+// 整轮 bub turn failed(send 后无 AI 回复)就是这么来的:override 分支修好了,但捷径
+// 让它从未被安装。所以 pinned 时绕开 PATH 捷径、恒走 uv 安装(有 checkpoint 缓存,
+// 不是每沙箱都全量装),且运行时钉死用 $HOME/.local/bin/bub —— 只改 ensureBub 不改这里
+// 的话,PATH 上的 /usr/local/bin/bub 仍会先于新装的被 command -v 找到,白装。
+const BUB_PINNED = BUB_OVERRIDE.includes("git+");
+// bub 二进制:pinned → 恒用 uv 装到 $HOME/.local/bin 的那个;非 pinned → 优先用镜像里
+// (预制模板)烘焙在 PATH 上的 bub(装到 /usr/local/bin,见 sandbox/docker/Dockerfile)。
+const BUB = BUB_PINNED ? "$HOME/.local/bin/bub" : "$(command -v bub || echo $HOME/.local/bin/bub)";
 
 const INSTALL_SPEC = `bub --override(${BUB_OVERRIDE}) --with ${OTEL_PLUGIN}`;
 const INSTALL_HASH = createHash("md5").update(INSTALL_SPEC).digest("hex").slice(0, 12);
@@ -64,7 +72,9 @@ const installsInProgress = new Map<string, Promise<void>>();
 
 async function ensureBub(sb: Sandbox, home: string): Promise<void> {
   // 预制模板已把 bub 烘焙进镜像(PATH 上)→ 直接用,跳过 uv 安装 + checkpoint 全套。
-  if ((await sb.runShell("command -v bub >/dev/null 2>&1")).exitCode === 0) return;
+  // pinned(git ref override)时不走此捷径:烘焙的 bub 无法验证是不是 ref 当前指向的
+  // 构建,必须按 override 真装(见 BUB_PINNED 注释)。
+  if (!BUB_PINNED && (await sb.runShell("command -v bub >/dev/null 2>&1")).exitCode === 0) return;
 
   const checkpointPaths = [`${home}/.local`, `${home}/.cache/uv`];
   const cachePath = diskCachePath(home);
