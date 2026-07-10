@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { IncompatibleResultsError, loadLatestResultsPerEval, loadViewScan } from "./data.ts";
+import { IncompatibleResultsError, ViewInputError, loadLatestResultsPerEval, loadViewScan } from "./data.ts";
 import { createRunWriter } from "../results/index.ts";
 import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type RunSummary } from "../types.ts";
 
@@ -250,5 +250,29 @@ describe("loadLatestResultsPerEval(续跑携带基线,口径与旧 loader 一致
     // runner 携带条目时依赖 artifactBase(相对结果根)可解析,view 才找得回工件。
     const withArtifacts = results.find((r) => r.artifactsDir)!;
     expect(withArtifacts.artifactBase).toBe("2026-01-02T00-00-00/artifacts/e1/a0");
+  });
+});
+
+describe("loadViewScan · 零可读结果直说,不渲染空页面", () => {
+  it("目录真空:抛 ViewInputError,给「先跑一轮」提示(与 show 同文案)", async () => {
+    const root = await makeRoot();
+    await expect(loadViewScan(root)).rejects.toBeInstanceOf(ViewInputError);
+    await expect(loadViewScan(root)).rejects.toThrow(/niceeval exp/);
+  });
+
+  it("全被跳过:错误逐条列目录与原因,niceeval 落盘的 schemaVersion 场景给出可跑的 npx 命令", async () => {
+    const root = await makeRoot();
+    await writeRun(root, "2026-07-02T08-00-00-000Z", summaryOf([], { schemaVersion: 999, producer: { name: "niceeval", version: "9.9.9" } }));
+    await writeRun(root, "2026-07-04T08-00-00-000Z", "{not json");
+
+    const err = await loadViewScan(root).then(
+      () => { throw new Error("expected ViewInputError"); },
+      (e) => e as Error,
+    );
+    expect(err).toBeInstanceOf(ViewInputError);
+    expect(err.message).toContain("2 run directories were skipped");
+    expect(err.message).toContain("incompatible-version, schemaVersion 999");
+    expect(err.message).toContain("npx niceeval@9.9.9 view ");
+    expect(err.message).toContain("malformed");
   });
 });

@@ -195,30 +195,14 @@ NiceEval 写入 `<dir>/index.html`，并把查看器要读取的工件（`source
 
 `--out` 只接受目录。没有单文件导出：代码视图、transcript 和 trace 依赖工件文件，单个 HTML 装不下完整证据。要把结果发给别人，托管整站发链接即可。
 
+零可读结果时 `view` 直接报错、非零退出——本地服务起不来，`--out` 不导出空页面。错误逐条列出被跳过的 run 目录与原因；落盘 schemaVersion 与当前版本不兼容时，还给出能直接查看旧落盘的 `npx niceeval@<版本> view` 命令。
+
 两点限制：
 
 - `diff.json` 和 `o11y.json` 不会被复制。查看器不读取它们，且 diff 可能达到上百 MB。
 - 用 `file://` 直接打开 `index.html` 时浏览器不允许 fetch 工件，代码视图会提示源码不可用。本地预览用 http 服务打开。
 
-最简单的流程是在跑过 eval 的机器上导出，把产物目录直接部署，不需要额外步骤。`.niceeval/` 通常不进版本库，如果构建发生在别的机器（CI、托管平台），先用 `copySnapshots` 把要发布的快照瘦身复制进仓库，再对着快照目录导出：
-
-```typescript
-// scripts/snapshot.ts —— 跑完 eval 后执行，产物提交进仓库
-import { openResults, copySnapshots } from "niceeval/results";
-
-const results = await openResults(".niceeval");
-await copySnapshots(results.latest(), "site-data/run", {
-  artifacts: ["sources", "events", "trace"],
-});
-```
-
-```bash
-npx niceeval view --run site-data/run --out site   # CI 上对着快照构建
-```
-
-结果目录经 `--run` 递入，与 `show --run` 同一语义——位置参数永远留给 eval id 前缀。
-
-`results.latest()` 按实验挑最新快照，而不是挑最新的 run——某次运行只跑了部分实验时，其它实验仍保留上一轮的结果。
+最简单的流程是在跑过 eval 的机器上导出，把产物目录直接部署，不需要额外步骤。要让站点随 push 自动更新，把 `.niceeval/` 提交进仓库、CI 上一行 `view --out` 导出——workflow 与平台接线见[通过 CI 发布报告](/zh/guides/publish-report)。
 
 ## Artifact 说明
 

@@ -211,7 +211,7 @@ await copySnapshots(results.latest(), "site-data/run", {
 
 第一个参数收 `Selection` 或手工挑的 `Snapshot[]`——和报告积木同一个输入约定。`artifacts` 的合法值是 `"events" | "trace" | "o11y" | "diff" | "sources"`，缺省全带。目标目录已存在且非空时报错，不静默覆盖——发布脚本要幂等就自己先清目标目录。
 
-复制不改工件内容、不消毒；发布前给自由文本消毒用报告积木 `CaseList.data` 的 `redact` 钩子。唯一随行补记的是挑选时的**覆盖事实**：`partial-coverage` 警告的分母是实验的历史并集，而发布目录没有历史——所以每个复制出的快照带上 `knownEvalIds`（复制时刻该实验已知的 eval 并集），reader 端把它并进 `exp.evalIds` 的计算（取本地历史与快照携带值的并集）。发布目录上重新 `openResults().latest()`，残缺警告被同一套机制重新算出来，不靠发布者转述。CI 静态托管的完整流程见[查看结果 · 导出与静态托管](/zh/guides/viewing-results#导出与静态托管)。
+复制不改工件内容、不消毒；发布前给自由文本消毒用报告积木 `CaseList.data` 的 `redact` 钩子。唯一随行补记的是挑选时的**覆盖事实**：`partial-coverage` 警告的分母是实验的历史并集，而发布目录没有历史——所以每个复制出的快照带上 `knownEvalIds`（复制时刻该实验已知的 eval 并集），reader 端把它并进 `exp.evalIds` 的计算（取本地历史与快照携带值的并集）。发布目录上重新 `openResults().latest()`，残缺警告被同一套机制重新算出来，不靠发布者转述。复制出的目录就是标准结果目录，`niceeval view --run <目录>` 直接能看；要让报告站随 push 自动更新，workflow 见[通过 CI 发布报告](/zh/guides/publish-report)。
 
 ## 分层速览
 

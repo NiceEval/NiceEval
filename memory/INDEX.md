@@ -6,6 +6,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - **写完即索引**:新增 memory 文件必须同步在这里加一行,格式 `- [条目名](条目文件名.md) — 一句现象+结论`。`test/memory-index.test.ts` 随 `pnpm test` 校验每个条目都有索引行。
 - **修好标注,不删除**:bug 修好后行首标「已修」,并在条目正文补修法落点(文件/commit)。已修条目是后续复盘"这个修法合理不合理"的材料,不归档不删除。
 - **复盘出口**:修法复盘后被确认为长期约束的,升格为 CLAUDE.md 或 docs/ 里的一句规则(原条目保留作出处);被推翻的,更新原条目记录新判断。
+- **设计裁决也记这里**:翻案、砍掉的方案、反复改的来龙去脉记「设计决定」分区,一条 = 裁决 / 曾选方案 / 否决理由 / 日期。docs 正文只写定稿形态与理由,不留时间线;需要出处时链到这里的条目。
 
 ## 沙箱与内置 agent
 
@@ -53,6 +54,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [model-price-table](model-price-table.md) — Total Cost 显示 $0 的根因与模型价格表(成本估算)的数据来源
 - 已修 [sdk-stream-transformers-missing-canonical-tool](sdk-stream-transformers-missing-canonical-tool.md) — `fromCodexThreadEvents` 曾不发 `tool` 规范名,`calledTool("shell")` 在 SDK 流路径静默失配(修在 `src/agents/sdk-streams.ts`;`fromClaudeSdkMessages` 同类未修)
 - 已修 [report-web-face-loader-gotchas](report-web-face-loader-gotchas.md) — view --report:tsx 的 jsx 配置按 tsconfig 目录为界,包内 .tsx web 面退化 classic JSX 要全局 React shim(修在 `src/report/web.ts`);`.tsx?mtime=` cache-busting query 在 vite-node 下炸,装载入口退化重试(修在 `src/report/load.ts`)
+- 已修 [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view 对零可读结果曾静默导出空报告 exit 0,CI 发布会把空站顶上线;修为 loadViewScan 一律抛错并列 skipped 明细(修在 `src/view/data.ts`)
 
 ## CLI 与运行
 
@@ -104,3 +106,4 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 - [sandbox-field-no-bare-string](sandbox-field-no-bare-string.md) — `sandbox` 字段只接受工厂产出的 SandboxSpec:不接受裸字符串、没有默认值、没有自动探测(用户 review 明确定案)
 - [registermcp-post-hoc-primitive](registermcp-post-hoc-primitive.md) — `shared.registerMcp(agent, servers)` 落地:给已构造的 claude-code/codex agent 后置追加 MCP,按 agent.name 分发、fail-fast 前移到调用时、claude-code 侧读回合并写入避免覆盖构造期配置
+- [experiment-flags-naming-reversal](experiment-flags-naming-reversal.md) — 条件键定名 flags(A/B feature flag 语义,2026-07-10 params 同日翻案);字段改名=递增 schemaVersion,不做读取别名
