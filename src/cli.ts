@@ -17,7 +17,7 @@ import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { evalLevelStats } from "./shared/outcome.ts";
 import { sandboxRecommendedConcurrency } from "./sandbox/resolve.ts";
 import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
-import { JUnit } from "./runner/reporters/json.ts";
+import { Json, JUnit } from "./runner/reporters/json.ts";
 import { Live as LiveReporter, type LiveRow } from "./runner/reporters/live.ts";
 import { Artifacts as ArtifactsReporter } from "./runner/reporters/artifacts.ts";
 import {
@@ -60,6 +60,7 @@ interface Flags {
   budget?: number;
   tag?: string;
   junit?: string;
+  json?: string;
   open?: boolean;
   out?: string;
   port?: number;
@@ -89,14 +90,10 @@ const FLAG_OPTIONS = {
   budget: { type: "string" },
   tag: { type: "string" },
   junit: { type: "string" },
+  // --json <path>:把 RunSummary 原样落成 JSON,与 --junit 同属「额外写一份机器可读报告」。
+  json: { type: "string" },
   out: { type: "string" },
   port: { type: "string" },
-  // --sandbox 已移除(sandbox 归 config/experiment);留着解析是为了给出迁移提示而非「未知 flag」。
-  sandbox: { type: "string" },
-  // --watch / --json:文档曾接受、尚未实现的 flag。容忍(no-op)而不是硬报「未知 flag」,
-  // 免得照旧文档写的脚本直接崩;真正实现前不接任何行为。
-  watch: { type: "boolean" },
-  json: { type: "boolean" },
   // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/guides/viewing-results.mdx)。
   transcript: { type: "boolean" },
   trace: { type: "boolean" },
@@ -155,11 +152,6 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     process.exit(1);
   }
 
-  if (values.sandbox !== undefined) {
-    process.stderr.write(t("cli.sandboxFlagRemoved"));
-    process.exit(1);
-  }
-
   // 第一个位置参数若是已知命令,则为命令;其余是 eval id 前缀 / view 输入。
   const commands = new Set(["exp", "show", "list", "view", "clean", "init", "watch", "run"]);
   let command = "run";
@@ -178,6 +170,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     budget: numberFlag("budget", values.budget as string | undefined),
     tag: values.tag as string | undefined,
     junit: values.junit as string | undefined,
+    json: values.json as string | undefined,
     out: values.out as string | undefined,
     port: numberFlag("port", values.port as string | undefined),
     dry: values.dry === true,
@@ -526,6 +519,7 @@ async function main(): Promise<void> {
   const artifacts = ArtifactsReporter();
   reporters.push(artifacts);
   if (flags.junit) reporters.push(JUnit(flags.junit));
+  if (flags.json) reporters.push(Json(flags.json));
   reporters.push(...(config.reporters ?? []));
 
   // Ctrl+C / kill 的三级响应,核心目标:任何情况下都不留下孤儿沙箱。
