@@ -94,6 +94,7 @@ export const zhCN = {
   "cli.unimplemented": "命令 \"{{command}}\" 暂未实现(MVP)。\n",
   "cli.view.exportedDir": "已导出静态查看站:{{out}}(整个目录可直接静态托管;本地打开 {{out}}/index.html 需经 http 服务,file:// 下工件 fetch 不可用)\n",
   "cli.view.incompatible": "{{dir}}: 由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n运行 `{{command}}` 查看这份报告。\n",
+  "cli.view.noResults": "{{root}} 下没有结果。先 `niceeval exp` 跑一轮,再 `niceeval view`。\n",
   "cli.view.incompatibleForeign": "{{dir}}: 由 {{name}} {{version}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n请用写出它的那个工具查看这份报告。\n",
   "cli.view.url": "niceeval view: {{url}}\n",
   "context.capabilityMissing":

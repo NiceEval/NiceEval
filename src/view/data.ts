@@ -140,6 +140,7 @@ export async function loadLatestResultsPerEval(root = ".niceeval"): Promise<Eval
  * 位置前缀 / --experiment / --report 在场时,报告槽选集经 composeShowSelection 合成
  * (与 `niceeval show` 同一口径,两扇门判决不分叉);全部缺省时维持 results.latest(),
  * 默认行为不变。证据室数据(快照明细 / skipped)恒为全量,深链在任何收窄下都可达。
+ * 零可读结果一律抛 ViewInputError,不渲染/导出空页面(server 起不来,--out 非零退出)。
  */
 export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): Promise<ViewScan> {
   const target = resolve(input ?? ".niceeval");
@@ -150,9 +151,11 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   const patterns = opts.patterns ?? [];
   const narrowed = patterns.length > 0 || opts.experiment !== undefined || opts.report !== undefined;
 
-  // 组合语义的输入校验,与 show 同文案:匹配不到直说,不渲染一张空页面。
-  if (opts.report && results.experiments.length === 0) {
-    throw new ViewInputError(t("cli.show.noResults", { root: target }).trimEnd());
+  // 零可读结果直说,不渲染/导出一张空页面(与 show 的「匹配不到直说」同一原则;
+  // CI 静态发布还靠这个非零退出保住上一次部署,空报告不顶上线)。零可读最常见的
+  // 根因不是目录空,而是落盘整批 schemaVersion 不兼容被跳过,所以带上 skipped 摘要。
+  if (results.experiments.length === 0) {
+    throw new ViewInputError(noReadableResults(target, results.skipped));
   }
   if (
     opts.experiment !== undefined &&
@@ -316,6 +319,27 @@ function annotateResult(
     return { annotated, base: r.artifactBase, abs: join(root, r.artifactBase) };
   }
   return { annotated };
+}
+
+/**
+ * 零可读结果的报错文案。目录真空时给「先跑一轮」的入门提示(与 show 的 noResults 同形态);
+ * 有 skipped 时逐条列目录与原因——schemaVersion 不兼容的 niceeval 落盘给出可跑的
+ * npx 命令,让「全被跳过」和「真没跑过」在错误里就能分清,不用进查看器排查。
+ */
+function noReadableResults(target: string, skipped: SkippedRun[]): string {
+  if (skipped.length === 0) return t("cli.view.noResults", { root: target }).trimEnd();
+  const lines = skipped.map((skip) => {
+    const notice = toSkippedNotice(skip);
+    const version = notice.schemaVersion !== undefined ? `, schemaVersion ${notice.schemaVersion}` : "";
+    const hint = notice.command ? ` — view it with \`${notice.command.trim()}\`` : "";
+    return `  ${notice.dir}: ${notice.reason}${version}${hint}`;
+  });
+  const runs = skipped.length === 1 ? "1 run directory was" : `${skipped.length} run directories were`;
+  return [
+    `No readable results under ${target} — ${runs} skipped:`,
+    ...lines,
+    "Re-run your experiments with this niceeval to produce fresh results.",
+  ].join("\n");
 }
 
 function toSkippedNotice(skip: SkippedRun): SkippedRunNotice {
