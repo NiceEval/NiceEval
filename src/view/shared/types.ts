@@ -72,7 +72,7 @@ export interface ViewData {
   composedRuns: number;
   /** 官方 KPI(RunOverview.data 产物):totals + 选中快照元信息 + 选集 warnings 随行。 */
   overview: OverviewData;
-  /** 官方榜单(MetricTable.data,rows: "experiment"):每个实验最新一次快照的口径。 */
+  /** 默认报告(MetricTable.data,rows: "experiment"):每个实验最新一次快照的口径。 */
   table: TableData;
   /** 整体单行(MetricTable.data,常量维度):hero 的官方通过率,同一台聚合引擎。 */
   overall: TableData;

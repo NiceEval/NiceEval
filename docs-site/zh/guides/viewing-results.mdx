@@ -60,7 +60,7 @@ niceeval show weather/brooklyn --history      # 跨 run 时间轴：抖动与回
 
 同一个实验多次跑会留下多份结果，默认视图只回答一个问题——「现在什么水位」：每个 experiment × eval 取时间上最新的那份判决，跨 run 合成。按前缀只重跑了部分 eval 时，其余 eval 的判决从更早的 run 补齐，榜单永远是全局水位，不会因为一次局部重跑变残缺。合成是有标注的：每行带判决产生的时间，榜单头写明合成自几个 run。合成状态可能混着不同版本的被测代码——所以收工判决以 `--force` 全量重跑为准，迭代途中的 `show` 负责快、收尾的全量跑负责真。
 
-多 experiment、多 attempt 时，证据切面默认挑最新一次失败的 attempt；用 `--experiment` 与 `--attempt` 指定其它，用 `--run <目录>` 钉死看某一次历史 run，用 `--history` 看跨 run 趋势（见下文）。默认榜单只是报告槽的出厂填充：`--report <文件>` 可以把它整槽换成你自己的口径，同一个文件也能喂给 `view`，见[自定义报告](/zh/guides/custom-reports)。位置前缀、`--run`、`--experiment` 对 `--report` 同样生效（收窄报告拿到的选集）；`--history` 与 `--report` 互斥，证据切面 flag 出现时走证据室、不渲染报告槽。
+多 experiment、多 attempt 时，证据切面默认挑最新一次失败的 attempt；用 `--experiment` 与 `--attempt` 指定其它，用 `--run <目录>` 钉死看某一次历史 run，用 `--history` 看跨 run 趋势（见下文）。不带 `--report` 时 `show` 渲染的是默认报告；`--report <文件>` 换成你自己的报告，同一个文件也能喂给 `view`，见[自定义报告](/zh/guides/custom-reports)。位置前缀、`--run`、`--experiment` 对 `--report` 同样生效（收窄报告拿到的选集）；`--history` 与 `--report` 互斥，证据切面 flag 出现时只看证据、不渲染报告。
 
 `niceeval view` 的每个视图都有 CLI 对应物：
 
@@ -179,7 +179,7 @@ npx niceeval view
   失败后立刻运行 `npx niceeval view`，可以直接打开刚刚那次运行的 artifacts。
 </Tip>
 
-view 的结构是「报告槽 + 证据室」：报告槽默认装官方榜单，`--report <文件>` 整槽换成你自己的报告（与 `show --report` 吃同一个文件），见[自定义报告](/zh/guides/custom-reports)；证据室（attempt 弹窗、transcript、trace 瀑布）始终保留，报告里的数字点进去就是证据。
+view 的首页是一份报告：不传 `--report` 时是默认报告，传了就换成你自己的报告（与 `show --report` 吃同一个文件），见[自定义报告](/zh/guides/custom-reports)；证据部分（attempt 弹窗、transcript、trace 瀑布）始终保留，报告里的数字点进去就是证据。
 
 ## 导出与静态托管
 

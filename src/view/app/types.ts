@@ -48,7 +48,7 @@ export interface ViewRow {
   model?: string;
   /** 该快照的 startedAt(ISO)—— 榜单「每行带判决产生的时间」。 */
   lastRunAt: string;
-  /** 官方榜单格子(pass-rate / duration / tokens / cost),display 已格式化。 */
+  /** 默认报告格子(pass-rate / duration / tokens / cost),display 已格式化。 */
   cells: Partial<Record<string, MetricCell>>;
   /** 快照内 attempt 总数。 */
   runs: number;

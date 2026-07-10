@@ -125,7 +125,7 @@ const FLAG_OPTIONS = {
   attempt: { type: "string" },
   /** `show` / `view` 命令专用:钉死看某一个结果目录(历史 run 或 `copySnapshots` 产物)。 */
   run: { type: "string" },
-  /** `show` / `view` 命令专用:把默认榜单整槽换成你的报告文件(默认导出 `defineReport(...)`)。 */
+  /** `show` / `view` 命令专用:用你的报告文件替换默认报告(文件默认导出 `defineReport(...)`)。 */
   report: { type: "string" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行。 */
   dry: { type: "boolean" },

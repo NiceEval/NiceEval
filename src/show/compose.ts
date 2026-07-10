@@ -4,7 +4,7 @@
 // results.latest() 只挑「每实验最新快照」,带 eval 前缀的局部重跑会产出残缺快照;
 // 榜单承诺「不会因为一次局部重跑变残缺」,所以宿主在实验的全部历史快照上逐 eval
 // 向更早的 run 补齐,再把合成好的选集注入报告槽——内置默认报告与 --report 吃同一份,
-// 官方榜单口径 = 宿主注入口径。本文件只消费 niceeval/results 的读取面。
+// 默认报告口径 = 宿主注入口径。本文件只消费 niceeval/results 的读取面。
 
 import { foldEvalOutcome } from "../shared/outcome.ts";
 import { evalPrefixPredicate } from "../report/aggregate.ts";

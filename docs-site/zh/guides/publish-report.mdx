@@ -4,7 +4,7 @@ sidebarTitle: "CI 发布报告"
 description: "把报告站接进 CI:.niceeval/ 提交进仓库,构建命令一行 view --out,push 即发布。发布的站和本地 niceeval view 完全一样;零可读结果时构建失败,保住上一次部署。"
 ---
 
-`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:榜单、快照列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/guides/viewing-results#导出与静态托管))。CI 发布只需要让结果数据到构建机手里——把 `.niceeval/` 提交进仓库,仓库本身就是数据源。本地跑完 eval,提交并 push 就是发布,不需要任何脚本或本地构建命令。
+`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、快照列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/guides/viewing-results#导出与静态托管))。CI 发布只需要让结果数据到构建机手里——把 `.niceeval/` 提交进仓库,仓库本身就是数据源。本地跑完 eval,提交并 push 就是发布,不需要任何脚本或本地构建命令。
 
 ## `.gitignore` 只排除 `diff.json`
 
@@ -24,7 +24,7 @@ npx niceeval view --out site
 
 ## 发布自定义报告
 
-不传 `--report` 时,发布出来的首页是官方榜单。想让首页换成自己的报告,把 [`defineReport` 报告文件](/zh/guides/custom-reports)传给 `--report` 就行——attempt 证据页(transcript、trace、代码视图)仍在同一个站里,报告里的每个数字点进去就是对应证据,和本地 `view --report` 看到的一模一样:
+不传 `--report` 时,发布出来的首页是默认报告。想让首页换成自己的报告,把 [`defineReport` 报告文件](/zh/guides/custom-reports)传给 `--report` 就行——attempt 证据页(transcript、trace、代码视图)仍在同一个站里,报告里的每个数字点进去就是对应证据,和本地 `view --report` 看到的一模一样:
 
 ```bash
 npx niceeval view --report reports/exam.tsx --out site
@@ -84,7 +84,7 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-日常循环从此只有两步:本地跑 eval,提交 `.niceeval/` 并 push。发布出去的站带完整历史——同事打开链接,看到的和你本地 `niceeval view` 一模一样;仓库、本地查看器、线上报告三处同一个真相源。仓库体积随落盘增长(`diff.json` 已排除,增长主要来自 transcript 和 trace 工件),不想保留的旧 run 直接删对应目录即可,查看器和榜单跟着仓库走。
+日常循环从此只有两步:本地跑 eval,提交 `.niceeval/` 并 push。发布出去的站带完整历史——同事打开链接,看到的和你本地 `niceeval view` 一模一样;仓库、本地查看器、线上报告三处同一个真相源。仓库体积随落盘增长(`diff.json` 已排除,增长主要来自 transcript 和 trace 工件),不想保留的旧 run 直接删对应目录即可,查看器和报告跟着仓库走。
 
 ## 发布的是完整证据
 

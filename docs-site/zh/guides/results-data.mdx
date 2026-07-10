@@ -105,7 +105,7 @@ for (const s of results.skipped) {
 
 ## 选快照：`results.latest()`
 
-多数场景先回答「现在什么水位」，选择器替你挑「每个实验最新一次」——这也是官方榜单的口径。返回的是一个**选集（Selection）**，快照和警告绑在一起走：
+多数场景先回答「现在什么水位」，选择器替你挑「每个实验最新一次」——这也是默认报告的口径。返回的是一个**选集（Selection）**，快照和警告绑在一起走：
 
 ```typescript
 const latest = results.latest({

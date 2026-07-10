@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.t
 import { RunsView } from "./pages/RunsPage.tsx";
 import { TracesView } from "./pages/TracesPage.tsx";
 
-// 报告槽只有一个:默认装官方榜单(Experiments tab);--report 整槽替换成用户报告。
+// 首页报告只有一份:不传 --report 时是默认报告(Experiments tab),传了整页替换成用户报告。
 // 证据室(Runs / Traces / AttemptModal)是 view 本体,两种模式下原样保留。
 export const navItems: { id: Tab; label: MessageKey }[] = [
   { id: "experiments", label: "nav.experiments" },

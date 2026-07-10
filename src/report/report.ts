@@ -18,7 +18,7 @@ import {
 import { prepareDefaultReportData, runWithDefaultReportData } from "./default-report.tsx";
 
 export interface ReportContext {
-  /** results.latest() 挑好的选集:现刻水位快照 + 结构化挑选警告,同官方榜单口径。 */
+  /** results.latest() 挑好的选集:现刻水位快照 + 结构化挑选警告,同默认报告口径。 */
   selection: Selection;
   /** 默认挑法不合口径时,全量数据自己挑(见 docs/results-lib.md)。 */
   results: Results;

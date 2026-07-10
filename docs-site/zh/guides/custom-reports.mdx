@@ -1,7 +1,7 @@
 ---
 title: "用报告积木搭自己的口径"
 sidebarTitle: "自定义报告"
-description: "一份报告就是一个报告文件：官方宿主打开结果、注入数据，Row / Col 负责排版，双面组件同时渲染网页与终端——niceeval show 与 niceeval view 渲染的官方榜单，就是出厂预装的那份报告。"
+description: "一份报告就是一个报告文件：官方宿主打开结果、注入数据，Row / Col 负责排版，双面组件同时渲染网页与终端——niceeval show 与 niceeval view 默认渲染的默认报告，就是内置的那份报告文件。"
 ---
 
 [查看结果](/zh/guides/viewing-results)讲「用」：官方两扇门 `niceeval show`（终端）和 `niceeval view`（网页）怎么看。本页讲「写」：官方摆法不够时，怎么写一份自己的报告——考试成绩单、代码行数榜、质量 × 成本 frontier。
@@ -10,7 +10,7 @@ description: "一份报告就是一个报告文件：官方宿主打开结果、
 
 ## 官方默认报告也是一份报告文件
 
-`niceeval view` 和 `niceeval show` 渲染的官方榜单不是私有实现，而是出厂预装的一份报告：`niceeval view` 就等于 `niceeval view --report <内置默认报告>`，`show` 同理。我们自己用的零件和给你的完全一样，没有私有数据通道，官方榜单上的每个数字你都能用同样几行代码原样重算出来。
+`niceeval view` 和 `niceeval show` 不传 `--report` 时渲染的默认报告不是私有实现，而是内置的一份报告文件：`niceeval view` 就等于 `niceeval view --report <内置默认报告>`，`show` 同理。我们自己用的零件和给你的完全一样，没有私有数据通道，默认报告上的每个数字你都能用同样几行代码原样重算出来。
 
 |  | 网页（人看） | 终端（agent 和你看） |
 | --- | --- | --- |
@@ -52,15 +52,15 @@ niceeval show --report reports/exam.tsx    # 终端：同一棵树走文本面
 niceeval view --report reports/exam.tsx    # 网页：同一棵树走网页面，attempt 深链直达证据室
 ```
 
-注入的上下文只有两样，全部是[结果数据 API](/zh/guides/results-data) 的原语，宿主没有私有通道：`results` 就是 `openResults(".niceeval")` 的返回（实验、历次快照、attempt 级 `diff()`、`trace()` 都在上面）；`selection` 就是 `results.latest()` 的返回选集——宿主按「每个实验取最新」挑好的现刻水位，与官方榜单同口径，快照在 `selection.snapshots`，挑选警告在 `selection.warnings`。组件的 `data` 函数直接吃选集，警告随行——`RunOverview` 会把残缺快照的警告如实显示，不用你另外接线；默认挑法不合口径时，拿 `results` 自己挑，手工挑的 `Snapshot[]` 数组同样能喂给每个 `data` 函数。
+注入的上下文只有两样，全部是[结果数据 API](/zh/guides/results-data) 的原语，宿主没有私有通道：`results` 就是 `openResults(".niceeval")` 的返回（实验、历次快照、attempt 级 `diff()`、`trace()` 都在上面）；`selection` 就是 `results.latest()` 的返回选集——宿主按「每个实验取最新」挑好的现刻水位，与默认报告同口径，快照在 `selection.snapshots`，挑选警告在 `selection.warnings`。组件的 `data` 函数直接吃选集，警告随行——`RunOverview` 会把残缺快照的警告如实显示，不用你另外接线；默认挑法不合口径时，拿 `results` 自己挑，手工挑的 `Snapshot[]` 数组同样能喂给每个 `data` 函数。
 
-命令行的范围先作用在挑选上，报告拿到的就是范围内的水位：位置参数的 eval id 前缀收窄选集覆盖的 eval（覆盖警告的分母同样收窄到范围内），`--run` 把结果根换成指定目录，`--experiment` 让选集只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `exp.snapshots` 自己摆；证据切面（`--transcript` / `--trace` / `--diff`）走证据室，不渲染报告槽。
+命令行的范围先作用在挑选上，报告拿到的就是范围内的水位：位置参数的 eval id 前缀收窄选集覆盖的 eval（覆盖警告的分母同样收窄到范围内），`--run` 把结果根换成指定目录，`--experiment` 让选集只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `exp.snapshots` 自己摆；证据切面（`--transcript` / `--trace` / `--diff`）只看证据，不渲染报告。
 
 `<DefaultReport />` 零 props、纯声明：官方水位只读瘦身条目（不碰 diff 这类重工件），宿主总是替你备好，摆不摆在你。它渲染的是**宿主注入的那份选集**的官方水位——跟随命令行范围，但不跟随你在报告里自己另挑的口径；这正是它的意义：当官方锚点，和你的口径并排对照。要「官方摆法 + 自选口径」，用它脚下的同一批组件自己摆——它没有任何私有零件。
 
 页面里的每个组件都是**双面**的：网页面是 React 渲染，终端面是字符渲染，两面吃同一份算好的数据。你在报告文件里只见到组件本身，从不碰某一面——走哪扇门由宿主决定。官方组件覆盖常见摆法——榜单 `MetricTable`、逐题格子 `MetricMatrix`、分组条形 `MetricBars`、成绩单 `Scoreboard`、质量 × 成本 frontier `MetricScatter`、趋势线 `MetricLine`、成对对比 `DeltaTable`、失败清单 `CaseList`——每个组件回答什么问题、怎么调用、终端字符输出长什么样，逐个见[报告组件](/zh/guides/report-components)。它们在宿主里自动接上证据室：网页面的格子深链到 attempt 弹窗，终端面在条目下印出 `niceeval show <eval id>` 下钻命令。
 
-默认榜单没有特权：报告槽只有一个，`<DefaultReport />` 只是出厂填充。「官方水位 + 自己的口径」像上面那样把它摆进自己的树；不要官方水位就不摆——组合发生在你的 tsx 里，没有 tab、没有注册表、没有配置。
+默认报告没有特权：`<DefaultReport />` 只是不传 `--report` 时渲染的那份内置报告，本身也是一个普通组件。「官方水位 + 自己的口径」像上面那样把它摆进自己的树；不要官方水位就不摆——组合发生在你的 tsx 里，没有 tab、没有注册表、没有配置。
 
 ## 排版：Row 与 Col 在两个面都成立
 
@@ -90,7 +90,7 @@ codex  78.0/100   40/50    38/50    │  codex  80%   $0.51
 
 ## 换口径：自定义指标
 
-官方榜单的口径拆开就是 `MetricTable.data(selection, { rows: "experiment", columns: [passRate, costUSD, durationMs] })`——每个组件的数据算法挂在它自己身上，组件名后打个点就找到；换口径只是把 columns 换成自己的指标：
+默认报告里那张逐实验指标表的口径拆开就是 `MetricTable.data(selection, { rows: "experiment", columns: [passRate, costUSD, durationMs] })`——每个组件的数据算法挂在它自己身上，组件名后打个点就找到；换口径只是把 columns 换成自己的指标：
 
 ```tsx
 // reports/golf.tsx —— code-golf：谁写出能用的代码，谁写得短

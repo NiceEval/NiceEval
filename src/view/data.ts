@@ -251,7 +251,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
 
 /**
  * 报告槽渲染:装载报告文件(dev server 语义 —— 文件变更下次请求整页重算,经 mtime
- * cache-busting)→ 注入与官方榜单同口径的选集 → web 面 renderToStaticMarkup 成静态 HTML。
+ * cache-busting)→ 注入与默认报告同口径的选集 → web 面 renderToStaticMarkup 成静态 HTML。
  * react-dom 只在 --report 在场时动态加载,默认 CLI 路径不背 react。
  * attemptHref 缺省即 `#/attempt/<run>/<result>`(view 的 attempt 深链路由)。
  */

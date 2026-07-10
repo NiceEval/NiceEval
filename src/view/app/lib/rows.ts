@@ -10,7 +10,7 @@ import { evalLevelStats } from "../../../shared/outcome.ts";
 import { displayExperimentName, fallbackExperimentLabel, sumMaybe } from "../../../shared/aggregate.ts";
 import { formatConfigValue } from "./format.ts";
 
-/** 官方榜单格子的列键(= 内置指标的 metric.name,见 src/report/metrics.ts)。 */
+/** 默认报告格子的列键(= 内置指标的 metric.name,见 src/report/metrics.ts)。 */
 export const CELL_KEYS = {
   passRate: "pass-rate",
   duration: "duration",

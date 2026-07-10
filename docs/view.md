@@ -166,7 +166,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 
 ## 用 Reports 积木重建 view(设计提案)
 
-> 状态:迁移中。依赖的两个提案已落地(results 读取面、report 计算与组件,见 [Source Map](source-map.md#results-lib-与-reports));三步迁移中**读取层与统计层已完成(2026-07)**——view 的 loader 收编进 `openResults`,`aggregateRows` 删掉,`__NICEEVAL_VIEW_DATA__` 换成官方数据契约(OverviewData / TableData + 快照元信息 + skipped / warnings,声明在 `src/view/shared/types.ts`);**`--report` 报告槽已接线(2026-07)**——报告树在计算侧 `renderReportToStaticHtml` 成静态 HTML,以 `<template id="niceeval-report">` 静态块烘在 `__NICEEVAL_VIEW_DATA__` 旁,前端只摆放不解析;dev server 每次请求现读现渲染,报告文件变更下次请求整页重算(装载走 mtime cache-busting,`src/report/load.ts`);`--out` 时报告页即首页报告槽、证据室同站。渲染层其余部分(默认榜单换 `MetricTable` 组件、scatter、Compare)未动。
+> 状态:迁移中。依赖的两个提案已落地(results 读取面、report 计算与组件,见 [Source Map](source-map.md#results-lib-与-reports));三步迁移中**读取层与统计层已完成(2026-07)**——view 的 loader 收编进 `openResults`,`aggregateRows` 删掉,`__NICEEVAL_VIEW_DATA__` 换成官方数据契约(OverviewData / TableData + 快照元信息 + skipped / warnings,声明在 `src/view/shared/types.ts`);**`--report` 报告槽已接线(2026-07)**——报告树在计算侧 `renderReportToStaticHtml` 成静态 HTML,以 `<template id="niceeval-report">` 静态块烘在 `__NICEEVAL_VIEW_DATA__` 旁,前端只摆放不解析;dev server 每次请求现读现渲染,报告文件变更下次请求整页重算(装载走 mtime cache-busting,`src/report/load.ts`);`--out` 时报告页即首页报告槽、证据室同站。渲染层其余部分(默认报告的逐实验表换 `MetricTable` 组件、scatter、Compare)未动。
 
 [Reports](reports.md) 把「自己搭报告页」拆成组件 + 计算函数 + 结果库三种零件之后,view 的正确定位随之改变:**view 不再是一套并行实现,而是用同一批零件搭出来的「默认报告页 + 证据室」**——用户搭页面用什么零件,view 自己就用什么。view 因此成为这套积木的第一个常驻消费者,组件与计算函数的正确性被它天天验证;反过来,上面「计划中的小功能」里的三件事(跳过列表、Compare、散点图)也全部退化成「拼现成积木」,不再是专项开发。
 

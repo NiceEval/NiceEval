@@ -103,7 +103,7 @@
 
 ## Results Lib 与 Reports
 
-设计文档:[results-lib.md](results-lib.md) / [reports.md](reports.md) / [view.md](view.md) 合流一节。实现落点(view 的读取层/统计层已收编,show 与 view 两个宿主的 `--report` 装载都已接线;view 默认榜单的渲染层仍是自绘,未换官方组件):
+设计文档:[results-lib.md](results-lib.md) / [reports.md](reports.md) / [view.md](view.md) 合流一节。实现落点(view 的读取层/统计层已收编,show 与 view 两个宿主的 `--report` 装载都已接线;view 默认报告的渲染层仍是自绘,未换官方组件):
 
 | 行为 | 文件 |
 |---|---|
@@ -131,7 +131,7 @@
 | view attempt 深链(`#/attempt/<run>/<result>`,路由参数即 AttemptRef) | `src/view/app/lib/attempt-route.ts`、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,ref 直接用 `niceeval/results` 的 `attempt.ref`) |
 | view 数据层(openResults + `results.latest()` 选集 + 官方计算函数烘 `__NICEEVAL_VIEW_DATA__`;skipped 三种原因、warnings 透传) | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`,前端拼接在 `src/view/app/lib/rows.ts`) |
 | `view --report` 报告槽(组合语义经 show 的选集合成、`renderReportSlot` 静态渲染、`<template id="niceeval-report">` 静态块 + 官方样式注入、位置参数判定 `resolveViewInput`) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`) |
-| **未落地** | view 默认榜单的渲染层换官方组件、memory-evals 静态导出流水线(reports.md 场景三) |
+| **未落地** | view 默认报告的渲染层换官方组件、memory-evals 静态导出流水线(reports.md 场景三) |
 
 ## 与设计文档的已知差异(实现取舍)
 
