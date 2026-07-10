@@ -4,7 +4,7 @@ sidebarTitle: "命令行"
 description: "NiceEval CLI 参考：exp、init、list、clean 和 view 命令，以及 experiment、eval 过滤、sandbox、并发、预算和 JUnit CI 输出。"
 ---
 
-[NiceEval](https://niceeval.com/) CLI 是发现、运行和查看 eval 的入口。实际执行 eval 时采用 experiment-first 模型：**`exp` 选择可签入的运行配置**，experiment 后的位置参数才按 eval ID 前缀过滤。agent、model 和 params 写在 `experiments/`，不靠临时 CLI 参数。
+[NiceEval](https://niceeval.com/) CLI 是发现、运行和查看 eval 的入口。实际执行 eval 时采用 experiment-first 模型：**`exp` 选择可签入的运行配置**，experiment 后的位置参数才按 eval ID 前缀过滤。agent、model 和 flags 写在 `experiments/`，不靠临时 CLI 参数。
 
 ## 命令
 
@@ -56,7 +56,7 @@ npx niceeval exp compare-models weather
 
 ## 常用 flags
 
-下表由 CLI 的 flag 解析表生成。**没有**用于选择 sandbox 后端的 CLI flag：sandbox 后端只能写在代码里——在 experiment（`defineExperiment`）里设置 `sandbox`，或者在 `niceeval.config.ts`（`defineConfig`）里设置作为项目级兜底，值来自 `niceeval/sandbox` 的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`；在 CLI 上尝试传入 `--sandbox` 会直接报错并以非零状态退出。`--watch` / `--json` 是文档曾接受、尚未实现的 flag，容忍解析（no-op）但不接任何行为，同样不在下表出现。
+下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 sandbox 后端的 CLI flag：sandbox 后端只能写在代码里——在 experiment（`defineExperiment`）里设置 `sandbox`，或者在 `niceeval.config.ts`（`defineConfig`）里设置作为项目级兜底，值来自 `niceeval/sandbox` 的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`。
 
 {/* GENERATED:BEGIN cli-flags */}
 
@@ -70,6 +70,7 @@ npx niceeval exp compare-models weather
 | `--budget` | number | 整次运行的预算上限(美元)。 |
 | `--tag` | string | 只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。 |
 | `--junit` | string | 额外写一份 JUnit XML 报告到指定路径,供 CI 消费。 |
+| `--json` | string | 额外写一份 JSON 结果(`RunSummary` 原样序列化)到指定路径,供 CI 或下游脚本消费。 |
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
 | `--transcript` | boolean | `show` 命令专用:渲染单个 eval 的完整对话与工具调用(证据切面)。 |
@@ -106,7 +107,7 @@ npx niceeval exp compare-models
 npx niceeval exp compare-models weather-tool
 ```
 
-运行命名 experiment，用矩阵比较 agents、models 或 params。第二个参数开始是 eval ID 前缀过滤。
+运行命名 experiment，用矩阵比较 agents、models 或 flags。第二个参数开始是 eval ID 前缀过滤。
 
 ## `view`
 

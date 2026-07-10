@@ -259,9 +259,6 @@ function extractFlagOptions(sourceText: string, fileName: string): FlagEntry[] {
   return entries;
 }
 
-/** 容忍性 no-op flag(文档曾接受但未实现)和已移除的 flag,不出现在生成的参考页里(叙事部分已说明)。 */
-const CLI_FLAG_EXCLUDE = new Set(["watch", "json", "sandbox"]);
-
 /**
  * 数字型 flag(源码里经 `numberFlag("<name>", ...)` 校验)的 key 集合。
  * FLAG_OPTIONS 表本身只区分 string/boolean(parseArgs 层面),真实语义类型要看 parseArgs() 函数体
@@ -301,6 +298,7 @@ const FLAG_DESCRIPTIONS: Record<string, string> = {
   budget: "整次运行的预算上限(美元)。",
   tag: "只运行带有该 tag 的 eval(见 `defineEval` 的 `tags`)。",
   junit: "额外写一份 JUnit XML 报告到指定路径,供 CI 消费。",
+  json: "额外写一份 JSON 结果(`RunSummary` 原样序列化)到指定路径,供 CI 或下游脚本消费。",
   out: "`view` 命令专用:把结果查看器静态导出到指定目录。",
   port: "`view` 命令专用:指定本地服务器监听端口。",
   dry: "只打印本次会匹配到的 eval × 运行配置,不实际执行。",
@@ -330,7 +328,7 @@ interface CliFlagRow {
 }
 
 function buildCliFlagRows(sourceText: string, fileName: string): CliFlagRow[] {
-  const entries = extractFlagOptions(sourceText, fileName).filter((e) => !CLI_FLAG_EXCLUDE.has(e.key));
+  const entries = extractFlagOptions(sourceText, fileName);
   const numberKeys = extractNumberFlagKeys(sourceText, fileName);
 
   // 负向 flag(no-early-exit / no-open)与正向 flag 合并成一行,不单独成表项。

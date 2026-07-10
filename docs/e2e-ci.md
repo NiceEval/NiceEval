@@ -37,7 +37,7 @@ e2e 从 tier1 拷的是**被测应用和 adapter**(各 SDK 真正不同的部分
 - **退出码**:按 eval 级折叠判定(任一 attempt 通过 → 该 eval 通过,`foldEvalOutcome`;被 runs+earlyExit 重试吸收的失败不计红)——折叠后全过/跳过 → 0;任一 eval failed 或 errored → 1;框架崩溃 → 2(`src/cli.ts` 末尾 + `src/shared/outcome.ts`)。CI 判成败首选退出码,细分读 `summary.json`(注意其顶层 passed/failed 是 attempt 级原始计数,见 `memory/cli-exit-code-attempt-level-not-eval-level.md`)。
 - **指纹缓存会静默跳过上次 passed 的 eval**(`src/runner/run.ts` 的 `run()`,匹配逻辑在文件开头 ~60 行附近,以 `cacheKey`/`computeFingerprint` 为核心)。CI 必须加 `--force`,或保证 `.niceeval/` 不跨 run 复用,否则回归会被缓存掩盖。
 - **judge 无 key 时 no-op**(`src/scoring/judge.ts` 的 `resolveJudge()`/`buildJudge()`,`if (!resolved.apiKey) return noOpJudge()`):不配 judge key,`t.judge.autoevals.*` 断言静默跳过、不判红。e2e 里"judge 真的在判"必须显式配 judge key 验证,不能靠这条 no-op 蒙混过关——这一点和是否用真实模型无关,是两个独立的开关。
-- **可用 flags**:`--runs`、`--no-early-exit`、`--force`、`--junit <path>`、`--strict`、`--max-concurrency`。**不要用** `--json`(死 flag)、`--reporter`(不存在)、`--agent`/`--model`(exp 下报错)、`--sandbox`(已移除)。
+- **可用 flags**:`--runs`、`--no-early-exit`、`--force`、`--junit <path>`、`--json <path>`(RunSummary 落成 JSON)、`--strict`、`--max-concurrency`。**不要用** `--reporter`(不存在)、`--agent`/`--model`(exp 下报错)、`--sandbox`/`--watch`(不存在,按未知 flag 报错)。
 - **`runs` 的语义**:每个 `(agent × model × eval)` 组合跑 `runs` 次;被 earlyExit abort 的 attempt 不计入分母。
 
 ## 3. 核心设计:`e2e/` 里一份共享套件 + 每个 SDK 一个薄项目

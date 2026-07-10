@@ -100,6 +100,7 @@ niceeval clean                        # 清掉这些历史运行结果
 
 ```sh
 niceeval exp compare --junit <path>           # 写 JUnit XML
+niceeval exp compare --json <path>            # 写 RunSummary JSON(供 CI / 下游脚本消费)
 niceeval exp compare --quiet                  # 只出最终汇总
 ```
 

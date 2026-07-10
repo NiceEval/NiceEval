@@ -57,7 +57,7 @@ export const zhCN = {
     "标志:\n" +
     "  --runs n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
     "  --early-exit / --no-early-exit  --strict  --force  --dry  --quiet\n" +
-    "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
+    "  --junit path  --json path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
     "标志。环境变量覆盖(标志 > 环境变量 > config):\n" +
     "  NICEEVAL_RUNS  NICEEVAL_MAX_CONCURRENCY  NICEEVAL_TIMEOUT  NICEEVAL_BUDGET\n",
@@ -93,7 +93,6 @@ export const zhCN = {
     "  文档:node_modules/niceeval/docs-site/zh/guides/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "提示:\"{{pattern}}\" 是实验{{kind}},你大概想跑:niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "已发现实验:{{experiments}}\n",
-  "cli.sandboxFlagRemoved": "`--sandbox` 不是 CLI flag。请在 experiment(或 niceeval.config.ts 做全项目兜底)里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n",
   "cli.unimplemented": "命令 \"{{command}}\" 暂未实现(MVP)。\n",
   "cli.view.exportedDir": "已导出静态查看站:{{out}}(整个目录可直接静态托管;本地打开 {{out}}/index.html 需经 http 服务,file:// 下工件 fetch 不可用)\n",
   "cli.view.incompatible": "{{dir}}: 由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}}),当前 CLI 只读 schemaVersion {{supported}}。\n运行 `{{command}}` 查看这份报告。\n",

@@ -61,7 +61,7 @@ export const en = {
     "Flags:\n" +
     "  --runs n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
     "  --early-exit / --no-early-exit  --strict  --force  --dry  --quiet\n" +
-    "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
+    "  --junit path  --json path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
     "how to run come from experiments/ + flags. Env overrides (flag > env > config):\n" +
     "  NICEEVAL_RUNS  NICEEVAL_MAX_CONCURRENCY  NICEEVAL_TIMEOUT  NICEEVAL_BUDGET\n",
@@ -96,7 +96,6 @@ export const en = {
     "  Docs: node_modules/niceeval/docs-site/zh/guides/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "Discovered experiments: {{experiments}}\n",
-  "cli.sandboxFlagRemoved": "`--sandbox` is not a CLI flag. Set `sandbox` in the experiment (or `niceeval.config.ts` as a project-wide fallback) to dockerSandbox() / vercelSandbox() / e2bSandbox() (import from \"niceeval/sandbox\").\n",
   "cli.unimplemented": "Command \"{{command}}\" is not implemented yet (MVP).\n",
   "cli.view.exportedDir": "Exported static report site: {{out}} (serve the whole directory with any static host; opening index.html via file:// cannot fetch artifacts)\n",
   "cli.view.incompatible": "{{dir}}: written by niceeval {{producer}} (schemaVersion {{schemaVersion}}); this CLI reads schemaVersion {{supported}}.\nRun `{{command}}` to view it.\n",
