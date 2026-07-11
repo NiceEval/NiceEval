@@ -287,10 +287,18 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     Effect.forEach(
       attempts,
       (a) => {
-        const body = Effect.gen(function* () {
+        const budgetKey = a.run.experimentId ?? a.run.agent.name;
+
+        // preflight:「要不要开始跑」的许可判断(首过即停 + budget 探测),故意不持有 globalSem——
+        // 这两类判断都可能要等(budget 探测尤其可能 sleep-loop 好一阵子),而全局并发槽位是所有
+        // 实验共享的稀缺资源,等待中的 fiber 绝不能占着它空转,否则一个实验的 budget 探测能把
+        // 其它实验饿死到连第一个 attempt 都抢不到全局槽位(bug 复盘见
+        // memory: niceeval-budget-probe-starves-global-semaphore)。
+        // runSem(实验自己的 maxConcurrency)例外:它是实验私有资源,preflight 占着不影响别的实验,
+        // 且和 mempal 那类「必须串行」的语义一致,所以仍然把 preflight 包在 runSem 里面(见下方)。
+        const preflight = Effect.gen(function* () {
             // 首过即停:同 key 已通过,或已 errored(重跑只会重复同一个框架错误)且开了 earlyExit
-            // → 跳过未启动的 attempt。检查必须在拿到 permit 之后(fiber 是 unbounded 一次性
-            // 全建的,建时结果还没出来);跳过路径短暂占一个 permit,可忽略。
+            // → 跳过未启动的 attempt。
             if (a.run.earlyExit && (passedKeys.has(a.key) || erroredKeys.has(a.key))) {
               yield* reportMutex.withPermits(1)(
                 Effect.promise(() =>
@@ -301,15 +309,14 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
                   }),
                 ),
               );
-              return;
+              return false;
             }
 
             const budget = a.run.budget;
-            const budgetKey = a.run.experimentId ?? a.run.agent.name;
             if (budget !== undefined) {
               // 预扣循环:预计花费(已花 + 在飞×均值)到顶就等在飞的结算,已花到顶就整段停。
-              // 注意等待的 fiber 仍占一个并发位(简单可靠;混跑「带 budget + 不带 budget」
-              // 的多实验时会牺牲些吞吐 —— budget 本就是拿速度换花费上限的模式)。
+              // 这段刻意不持有 globalSem(见上方注释);runSem 仍然罩着它,同实验内的等待不
+              // 影响别的实验。
               for (;;) {
                 const s = budgetState(budgetKey);
                 if (s.spent >= budget) {
@@ -321,7 +328,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
                       ),
                     );
                   }
-                  return;
+                  return false;
                 }
                 if (s.costSamples === 0 && s.completedNoCost >= 3 && !s.unenforceableWarned) {
                   // 连续几次完成都拿不到成本:budget 对这个 agent 不可执行,说清楚再放行。
@@ -330,19 +337,23 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
                 }
                 if (s.costSamples === 0 && s.unenforceableWarned) {
                   s.inflight += 1;
-                  break;
+                  return true;
                 }
                 const avg = s.costSamples > 0 ? s.spent / s.costSamples : undefined;
                 const projected =
                   avg === undefined ? (s.inflight > 0 ? Number.POSITIVE_INFINITY : 0) : s.spent + s.inflight * avg;
                 if (projected < budget) {
                   s.inflight += 1;
-                  break;
+                  return true;
                 }
                 yield* Effect.sleep(Duration.millis(200));
               }
             }
+            return true;
+          });
 
+        // body:preflight 放行之后才跑,只有这一段真正占用全局并发槽位(globalSem)。
+        const body = Effect.gen(function* () {
             // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
             const attemptSignal =
@@ -414,7 +425,11 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               Effect.promise(() => emitReporterEvent(reporters, { type: "eval:complete", result })),
             );
           });
-        const gated = globalSem.withPermits(1)(body);
+        const gated = Effect.gen(function* () {
+          const proceed = yield* preflight;
+          if (!proceed) return;
+          yield* globalSem.withPermits(1)(body);
+        });
         const runSem = runSems.get(a.run);
         return runSem ? runSem.withPermits(1)(gated) : gated;
       },
