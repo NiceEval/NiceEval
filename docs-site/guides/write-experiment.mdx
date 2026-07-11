@@ -82,6 +82,14 @@ npx niceeval exp prompt-variants
 
 This way, the report groups them together, and the differences are reviewable in Git.
 
+To verify a single configuration in the group, pass that configuration's full id (`group/filename`, no extension) as an exact match:
+
+```bash
+npx niceeval exp prompt-variants/concise
+```
+
+Useful for checking one cell in isolation — confirming a single configuration change without running the whole group or moving other files out of the directory.
+
 ## Common fields
 
 | Field | Purpose |

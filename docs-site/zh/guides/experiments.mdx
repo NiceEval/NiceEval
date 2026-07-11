@@ -37,6 +37,12 @@ npx niceeval exp compare-models   # 把同组各 model 并排出报告
 
 这样每个配置独立成文件：可命名、可 diff、可单独 review，"这一组就是对照"在文件结构上就讲清楚了。
 
+某一格结果反常、需要单独复现时，用该配置的完整 id（`组/文件名`）精确只跑这一格，不用先跑完整组：
+
+```bash
+npx niceeval exp compare-models/gpt-5.4
+```
+
 `defineExperiment` 的字段怎么写、`flags` 怎么透传到 adapter，见[写实验](/zh/guides/write-experiment)。
 
 ## 适合比较什么

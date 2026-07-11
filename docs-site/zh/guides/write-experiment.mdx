@@ -82,6 +82,14 @@ npx niceeval exp prompt-variants
 
 这样报告会按同一组展示，差异也能在 Git 里 review。
 
+只想验证组里某一个配置时，把位置参数写成该配置的完整 id（`组/文件名`，不带扩展名），精确匹配到单个文件：
+
+```bash
+npx niceeval exp prompt-variants/concise
+```
+
+用于逐配置排查——确认某一格改动是否达标，不用先跑完整组，也不用把其它配置文件挪出目录。
+
 ## 常用字段
 
 | 字段 | 用途 |

@@ -35,6 +35,12 @@ export default defineExperiment({
 npx niceeval exp compare-models   # renders a side-by-side report for every model in the group
 ```
 
+When one cell's result looks off and you need to reproduce it in isolation, run just that cell by its full id (`group/filename`) instead of the whole group:
+
+```bash
+npx niceeval exp compare-models/gpt-5.4
+```
+
 Each configuration stays in its own file, which makes naming, diffing, and review straightforward. The directory structure itself explains which files belong to the same comparison.
 
 See [Write Experiments](/guides/write-experiment) for the full `defineExperiment` field list and how `flags` flow into adapters.
