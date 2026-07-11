@@ -1,4 +1,4 @@
-// Docker 沙箱后端:用 dockerode 把容器当隔离工作区跑 eval。
+// Docker 沙箱 provider:用 dockerode 把容器当隔离工作区跑 eval。
 // 改编自 agent-eval 的 docker-sandbox.ts,签名对齐 ../types.ts 的 Sandbox 契约
 //(runShell/runCommand 的 opts 一律是选项对象,不再用位置参数)。
 
@@ -240,7 +240,7 @@ export class DockerSandbox implements Sandbox {
     });
   }
 
-  /** 以 root 跑命令(后端内部用:容器初始化、属主收敛)。 */
+  /** 以 root 跑命令(provider 内部用:容器初始化、属主收敛)。 */
   private async runCommandAsRoot(
     cmd: string,
     args: string[] = [],

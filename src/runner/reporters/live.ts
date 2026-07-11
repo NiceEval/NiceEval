@@ -5,7 +5,8 @@
 import type { Reporter, ReporterEvent, RunShape, RunSummary } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
 import { renderRunReport } from "./table.ts";
-import { outcomeSymbol, WAITING_SYM } from "./shared.ts";
+import { verdictSymbol, WAITING_SYM } from "./shared.ts";
+import { runWho } from "../types.ts";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -41,7 +42,7 @@ export interface LiveReporter extends Reporter {
 interface RowState extends LiveRow {
   completed: number;
   lastMsg: string;
-  dominantOutcome: string | undefined;
+  dominantVerdict: string | undefined;
   /** true 一旦拿到并发名额、attempt effect 真正开始跑;之前是排队等待,不该转圈误导。 */
   started: boolean;
 }
@@ -53,7 +54,7 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
   for (const r of rows) {
     const k = `${r.evalId}|${r.who}`;
     if (!stateMap.has(k)) {
-      stateMap.set(k, { ...r, completed: 0, lastMsg: "", dominantOutcome: undefined, started: false });
+      stateMap.set(k, { ...r, completed: 0, lastMsg: "", dominantVerdict: undefined, started: false });
       keyOrder.push(k);
     } else {
       // 同一 (evalId, who) 可能在多个 agentRun 里出现(不应发生,但做防御)
@@ -72,7 +73,7 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
   function renderRow(state: RowState, frame: number): string {
     const done = state.completed >= state.total;
     const sym = done
-      ? outcomeSymbol(state.dominantOutcome ?? "")
+      ? verdictSymbol(state.dominantVerdict ?? "")
       : state.started
         ? SPINNER[frame % SPINNER.length]
         : WAITING_SYM;
@@ -176,7 +177,7 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
 
     onEvent(event: ReporterEvent) {
       if (event.type !== "eval:start") return;
-      const who = event.model ? `${event.agent.name}/${event.model}` : event.agent.name;
+      const who = runWho({ agentName: event.agent.name, model: event.model, experimentId: event.experimentId });
       const state = stateMap.get(`${event.eval.id}|${who}`);
       if (state) state.started = true;
     },
@@ -192,14 +193,14 @@ export function Live(rows: LiveRow[], totalAttempts: number): LiveReporter {
     },
 
     onEvalComplete(result) {
-      const who = result.model ? `${result.agent}/${result.model}` : result.agent;
+      const who = runWho({ agentName: result.agent, model: result.model, experimentId: result.experimentId });
       const state = stateMap.get(`${result.id}|${who}`);
       if (state) {
         state.completed += 1;
         totalCompleted += 1;
-        const prev = state.dominantOutcome;
-        if (!prev || (prev === "passed" && result.outcome !== "passed")) {
-          state.dominantOutcome = result.outcome;
+        const prev = state.dominantVerdict;
+        if (!prev || (prev === "passed" && result.verdict !== "passed")) {
+          state.dominantVerdict = result.verdict;
         }
       } else {
         totalCompleted += 1;

@@ -280,7 +280,7 @@ skill/plugin 安装失败是 **errored**,不是 agent 做题失败:
 - MCP command 找不到;
 - bub Python plugin 安装失败。
 
-这些都发生在 adapter setup 阶段,应该进入 `EvalResult.outcome = "errored"`。不要让它伪装成 `Turn.status = "failed"` 或一个 gate assertion fail。
+这些都发生在 adapter setup 阶段,应该进入 `EvalResult.verdict = "errored"`。不要让它伪装成 `Turn.status = "failed"` 或一个 gate assertion fail。
 
 ## 当前示例如何演进
 
@@ -300,7 +300,7 @@ const zodAgent = {
   name: "claude-code+zod-skill",
   async setup(sb, ctx) {
     const cleanup = await baseAgent.setup?.(sb, ctx);
-    await sb.writeFiles({ "CLAUDE.md": zodSkill });   // targetDir 省略 → workdir,跨后端可移植
+    await sb.writeFiles({ "CLAUDE.md": zodSkill });   // targetDir 省略 → workdir,跨 provider 可移植
     return cleanup;
   },
 };

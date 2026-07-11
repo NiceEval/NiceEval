@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { T } from "../shared.ts";
 import type { ViewResult, ViewRow } from "../types.ts";
-import { failingAssertions, reasonFor } from "../lib/outcome.ts";
+import { failingAssertions, reasonFor } from "../lib/verdict.ts";
 
 export function CopyReason({ text, t }: { text: string; t: T }) {
   const [copied, setCopied] = useState(false);
@@ -27,7 +27,7 @@ export function CopyReason({ text, t }: { text: string; t: T }) {
 export interface FixPromptEntry {
   experiment: string;
   evalId: string;
-  outcome: string;
+  verdict: string;
   reason: string;
   artifactBase?: string;
   summaryPath?: string;
@@ -37,7 +37,7 @@ export function toFixPromptEntry(r: ViewResult, experimentLabel: string): FixPro
   return {
     experiment: r.experimentId ?? experimentLabel,
     evalId: r.id,
-    outcome: r.outcome,
+    verdict: r.verdict,
     reason: reasonFor(r, failingAssertions(r)),
     artifactBase: r.artifactBase,
     summaryPath: r.attemptRef ? `${r.attemptRef.run}/summary.json` : undefined,
@@ -53,7 +53,7 @@ export function buildFixPrompt(entries: FixPromptEntry[]): string {
   const failures = entries
     .map((e, i) =>
       [
-        `${i + 1}. eval "${e.evalId}" [experiment ${e.experiment}] — ${e.outcome}`,
+        `${i + 1}. eval "${e.evalId}" [experiment ${e.experiment}] — ${e.verdict}`,
         e.reason ? `   reason: ${e.reason}` : null,
         e.artifactBase ? `   artifacts: ${e.artifactBase}/` : null,
         e.summaryPath ? `   summary: ${e.summaryPath}` : null,
@@ -83,7 +83,7 @@ export function CopyFixPrompt({ rows, t }: { rows: ViewRow[]; t: T }) {
 
   const entries = rows.flatMap((row: ViewRow) =>
     (row.results ?? [])
-      .filter((r: ViewResult) => r.outcome === "failed" || r.outcome === "errored")
+      .filter((r: ViewResult) => r.verdict === "failed" || r.verdict === "errored")
       .map((r: ViewResult) => toFixPromptEntry(r, row.label)),
   );
 
@@ -111,7 +111,7 @@ export function CopyFixPrompt({ rows, t }: { rows: ViewRow[]; t: T }) {
 /** attempt 弹窗里的单条版:只打包当前 attempt 的失败,供逐条转交 agent。 */
 export function CopyAttemptPrompt({ result, t }: { result: ViewResult; t: T }) {
   const [copied, setCopied] = useState(false);
-  if (result.outcome !== "failed" && result.outcome !== "errored") return null;
+  if (result.verdict !== "failed" && result.verdict !== "errored") return null;
 
   const copy = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();

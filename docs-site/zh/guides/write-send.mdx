@@ -301,7 +301,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces node server.js
 
 `ctx.telemetry` 只在配置了 OTel 接入时出现，没配时 spread 一个 `undefined` 也安全，这行可以常驻。不带这个头 span 也能收到，但归属退化成时间窗口、该 agent 的轮次会降为串行——带上它是并发下归属准确的来源。
 
-**这一步解锁**：`niceeval view` 里的调用瀑布图——应用内部每次模型调用、每次工具执行的耗时与 token，按轮铺成时间线。断言不变：判决依据在前几步的事件映射里已经齐了，span 只进瀑布图、不喂断言。接收器怎么起、span 怎么归属到轮，见 [OTel 接入](/zh/guides/connect-otel)。
+**这一步解锁**：`niceeval view` 里的调用瀑布图——应用内部每次模型调用、每次工具执行的耗时与 token，按轮铺成时间线。断言不变：判定依据在前几步的事件映射里已经齐了，span 只进瀑布图、不喂断言。接收器怎么起、span 怎么归属到轮，见 [OTel 接入](/zh/guides/connect-otel)。
 
 ## 第七步：透传 experiment 的 flags（A/B 对比）
 
@@ -346,7 +346,7 @@ export default defineExperiment({
 
 ## 相关阅读
 
-- [Adapter](/zh/concepts/adapter) — 契约本身：`send` 传入什么返回什么、三个接入 Tier、能力从哪来。
+- [Adapter](/zh/concepts/adapter) — 契约本身：`send` 传入什么返回什么、三个接入等级、能力从哪来。
 - [接入你的 Agent](/zh/guides/connect-your-agent) — 接入全景：最小接入、参数通道与增量地图。
 - [HITL](/zh/concepts/hitl) — 停轮等人的完整概念：握手时序与两侧义务。
 - [Drive](/zh/concepts/drive) — eval 侧视角：`t.send()`、`t.newSession()` 与 HITL 怎么用。

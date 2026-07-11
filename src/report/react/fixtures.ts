@@ -270,7 +270,7 @@ export const caseListData: CaseListData = {
       eval: "algebra/quadratic",
       experimentId: "compare/bub",
       agent: "bub",
-      outcome: "failed",
+      verdict: "failed",
       failedAssertions: [
         {
           name: "roots-correct",
@@ -287,7 +287,7 @@ export const caseListData: CaseListData = {
       eval: "geometry/angles",
       experimentId: "compare/codex",
       agent: "codex",
-      outcome: "errored",
+      verdict: "errored",
       error: "TypeError: cannot read properties of undefined (reading 'foo')",
       failedAssertions: [],
       durationMs: 4_500,

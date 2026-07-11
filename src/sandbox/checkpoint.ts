@@ -8,7 +8,7 @@
 //   restore: uploadFile → /tmp/__fe_rs_<uuid>.tar.gz  →  tar xzf -C /
 //
 // tar / binary file I/O 在所有 Linux sandbox(Docker、Vercel、e2b、Modal…)里都支持,
-// 这段代码对任意 backend 的 Sandbox 实现无改动即可使用。
+// 这段代码对任意 provider 的 Sandbox 实现无改动即可使用。
 
 import { randomUUID } from "node:crypto";
 import type { Sandbox } from "../types.ts";

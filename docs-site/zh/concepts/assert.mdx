@@ -1,10 +1,10 @@
 ---
 title: "NiceEval 断言：值、作用域事实、测试与成本"
 sidebarTitle: "断言"
-description: "NiceEval 的断言词汇——值断言、作用域断言、test-as-scoring 和效率断言——以及 gate / soft 严重级和判决 outcome 的规则。"
+description: "NiceEval 的断言词汇——值断言、作用域断言、test-as-scoring 和效率断言——以及 gate / soft 严重级和判定 verdict 的规则。"
 ---
 
-断言把 agent 在一次 eval 里做的一切——每条消息、每次工具调用、每处文件改动、每一分 token——折叠成一个可解释的结果。[NiceEval](https://niceeval.com/) 提供四种互补的断言机制：有的立即检查一个值，有的在整轮跑完后评估整次运行，有的在沙箱里跑测试，有的衡量效率。四种都产出同一种 `Assertion` 类型，都进同一套判决规则。第五种机制——让语言模型评判开放式质量——见 [Judge](/zh/concepts/judge)。
+断言把 agent 在一次 eval 里做的一切——每条消息、每次工具调用、每处文件改动、每一分 token——折叠成一个可解释的结果。[NiceEval](https://niceeval.com/) 提供四种互补的断言机制：有的立即检查一个值，有的在整轮跑完后评估整次运行，有的在沙箱里跑测试，有的衡量效率。四种都产出同一种 `Assertion` 类型，都进同一套判定规则。第五种机制——让语言模型评判开放式质量——见 [Judge](/zh/concepts/judge)。
 
 ## 四种断言机制
 
@@ -25,7 +25,7 @@ description: "NiceEval 的断言词汇——值断言、作用域断言、test-a
 
 ## gate 与 soft 严重级
 
-每条断言都带一个**严重级**，决定它如何影响最终判决，只有两档：
+每条断言都带一个**严重级**，决定它如何影响最终判定，只有两档：
 
 <Tabs>
   <Tab title="gate">
@@ -50,7 +50,7 @@ t.check(t.reply, similarity(expected).gate());    // 提升为 gate
 t.maxTokens(80_000).atLeast(0.7);                 // 降为 soft 并带阈值
 ```
 
-## 判决规则
+## 判定规则
 
 所有断言收齐后，运行器按这个顺序折叠成一个结果：
 
@@ -77,7 +77,7 @@ t.maxTokens(80_000).atLeast(0.7);                 // 降为 soft 并带阈值
   </Card>
 </CardGroup>
 
-多次运行（`runs > 1`）时，单个 eval 的汇总变成**通过率**（产出 `passed` 的运行占比）和平均耗时，而不是单一 outcome。
+多次运行（`runs > 1`）时，单个 eval 的汇总变成**通过率**（产出 `passed` 的运行占比）和平均耗时，而不是单一 verdict。
 
 ## 1. 值断言 —— `niceeval/expect` 匹配器
 
@@ -240,4 +240,4 @@ t.check(t.reply, jsonValid());
 - [Drive](/zh/concepts/drive) — `t.send()`、`t.newSession()` 和 HITL：这些断言读的 Turn 数据是怎么产出的。
 - [Judge](/zh/concepts/judge) — 第五种评分机制，评无法写成固定规则的开放式质量。
 - [写 send](/zh/guides/write-send) — 标准事件流如何产出，作用域断言依赖它什么。
-- [Evals](/zh/concepts/evals) — 断言如何折进 eval 生命周期和 outcome 类型。
+- [Evals](/zh/concepts/evals) — 断言如何折进 eval 生命周期和 verdict 类型。

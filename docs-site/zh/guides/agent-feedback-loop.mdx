@@ -39,7 +39,7 @@ Eval 的价值在闭环：不只是人看报告，而是让 coding agent（Claud
 
     流式行是给盯着终端的人看的，长运行会把它们刷出屏幕；收尾块专为「只看最后一屏」设计——失败集中重放一遍，每条自带 `niceeval show <eval id>`，agent 不用回滚历史输出就能开始下钻。跑多 experiment 的组（如 `exp compare`）时，收尾块还会多一张 per-experiment 汇总表，与 `niceeval show` 榜单是同一份渲染。
 
-    退出码是给循环用的判决，不用解析任何文本：全绿退 `0`；有失败或错误退 `1`（按 eval 级折叠——`runs` 重试吸收掉的单次抖动不算红）；框架自身崩溃退 `2`。agent 或脚本判断「还要不要再来一轮」，看退出码就够。
+    退出码是给循环用的结论，不用解析任何文本：全绿退 `0`；有失败或错误退 `1`（按 eval 级折叠——`runs` 重试吸收掉的单次抖动不算红）；框架自身崩溃退 `2`。agent 或脚本判断「还要不要再来一轮」，看退出码就够。
 
     `summary.json` 与 attempt 级工件是结构化事实源，字段说明见[查看结果](/zh/guides/viewing-results)；`niceeval show` 是对同一份工件的终端读法，逐级下钻见下一节。
   </Step>
@@ -78,7 +78,7 @@ niceeval show weather/brooklyn --trace        # trace 瀑布的文本版
 niceeval show fixtures/button --diff          # sandbox 里的文件改动
 ```
 
-默认永远对准闭环要的东西：判决取每个 eval 跨 run 合成的最新一份，证据切面挑最新一次失败的 attempt。三个切面对长内容都会截断，但截断永远如实标注剩余数量和原始工件路径——输出对上下文窗口友好，事实源一字不少地留在盘上。
+默认永远对准闭环要的东西：判定取每个 eval 跨 run 合成的最新一份，证据切面挑最新一次失败的 attempt。三个切面对长内容都会截断，但截断永远如实标注剩余数量和原始工件路径——输出对上下文窗口友好，事实源一字不少地留在盘上。
 
 榜单、单个 eval 与各证据切面的输出长什么样、历史与抖动怎么看（`--history`）、多次 run 的合成口径，都在[查看结果](/zh/guides/viewing-results)；要项目自己的口径（考试成绩单、代码行数榜），写一个打到 stdout 的报告脚本，见[自定义报告](/zh/guides/custom-reports)——给 agent 的指引只多一行：跑 `npx tsx scripts/report.ts`，读 stdout。
 

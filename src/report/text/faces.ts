@@ -329,7 +329,7 @@ export function caseListText(data: CaseListData, ctx: TextContext): string {
     const head = [
       `✗ ${row.eval}`,
       row.experimentId,
-      row.outcome,
+      row.verdict,
       formatDurationMs(row.durationMs),
       ...(row.costUSD !== undefined ? [formatUSD(row.costUSD)] : []),
     ].join(" · ");

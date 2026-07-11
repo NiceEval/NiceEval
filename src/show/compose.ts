@@ -1,16 +1,16 @@
 // show 宿主的选集合成与时间轴口径(docs-site/zh/guides/viewing-results.mdx 是行为规范)。
 //
-// 「现刻水位」= 每个 experiment × eval 取时间上最新的那份判决,跨 run 合成:
+// 「现刻水位」= 每个 experiment × eval 取时间上最新的那份判定,跨 run 合成:
 // results.latest() 只挑「每实验最新快照」,带 eval 前缀的局部重跑会产出残缺快照;
 // 榜单承诺「不会因为一次局部重跑变残缺」,所以宿主在实验的全部历史快照上逐 eval
 // 向更早的 run 补齐,再把合成好的选集注入报告槽——内置默认报告与 --report 吃同一份,
 // 默认报告口径 = 宿主注入口径。本文件只消费 niceeval/results 的读取面。
 
-import { foldEvalOutcome } from "../shared/outcome.ts";
+import { foldEvalVerdict } from "../shared/verdict.ts";
 import { evalPrefixPredicate } from "../report/aggregate.ts";
 import { attemptCostUSD } from "../report/metrics.ts";
 import { makeSelection } from "../results/select.ts";
-import type { ResultOutcome } from "../types.ts";
+import type { Verdict } from "../types.ts";
 import type {
   AttemptHandle,
   Eval,
@@ -36,8 +36,8 @@ export function filterExperiments(experiments: Experiment[], prefix?: string): E
 }
 
 /**
- * 合成「现刻水位」选集:每个实验一份合成快照,快照里每道题的判决取该题最后一次
- * 出现的快照(--resume 携带的复印件身份与原判决相同,取到哪份内容都一致)。
+ * 合成「现刻水位」选集:每个实验一份合成快照,快照里每道题的判定取该题最后一次
+ * 出现的快照(--resume 携带的复印件身份与原判定相同,取到哪份内容都一致)。
  * 警告随选集重算:partial-coverage 的分母 = 已知并集 ∩ 范围;stale / synthetic
  * 与 results.latest() 同口径。
  */
@@ -50,7 +50,7 @@ export function composeShowSelection(results: Results, opts: ComposeOptions = {}
   const warnings: SelectionWarning[] = [];
 
   for (const exp of experiments) {
-    // 逐题取最新:快照按最新在前,首个出现即最新判决
+    // 逐题取最新:快照按最新在前,首个出现即最新判定
     const taken = new Map<string, { ev: Eval; snapshot: Snapshot }>();
     for (const snapshot of exp.snapshots) {
       for (const ev of snapshot.evals) {
@@ -134,7 +134,7 @@ export function composeShowSelection(results: Results, opts: ComposeOptions = {}
 export interface EvalHistoryRow {
   /** 该次真实执行所在 run(快照)的时刻。 */
   startedAt: string;
-  outcome: ResultOutcome;
+  verdict: Verdict;
   attempts: number;
   costUSD: number | null;
   /** 最新一次 attempt 的第一条失败断言("gate calledTool(...)")。 */
@@ -151,7 +151,7 @@ function attemptKey(attempt: AttemptHandle): string | undefined {
 
 /**
  * 单 eval 的跨 run 时间轴:每次真实执行一行,新→旧。--resume 携带的复印件
- * (身份键与原判决相同的条目)不占行 —— 否则趋势会被复印件灌满假数据。
+ * (身份键与原判定相同的条目)不占行 —— 否则趋势会被复印件灌满假数据。
  */
 export function evalHistory(exp: Experiment, evalId: string): EvalHistoryRow[] {
   const rows: EvalHistoryRow[] = [];
@@ -171,7 +171,7 @@ export function evalHistory(exp: Experiment, evalId: string): EvalHistoryRow[] {
       seen.add(key);
       fresh.push(attempt);
     }
-    if (fresh.length === 0) continue; // 纯复印件:判决在更早的行里已经出现过
+    if (fresh.length === 0) continue; // 纯复印件:判定在更早的行里已经出现过
     let cost: number | null = null;
     for (const attempt of fresh) {
       const c = attemptCostUSD(attempt.result);
@@ -181,7 +181,7 @@ export function evalHistory(exp: Experiment, evalId: string): EvalHistoryRow[] {
     const failed = latest.result.assertions.find((a) => !a.passed);
     rows.push({
       startedAt: snapshot.startedAt,
-      outcome: foldEvalOutcome(fresh.map((a) => a.result)),
+      verdict: foldEvalVerdict(fresh.map((a) => a.result)),
       attempts: fresh.length,
       costUSD: cost,
       ...(failed ? { failedAssertion: `${failed.severity} ${failed.name}` } : {}),
@@ -203,7 +203,7 @@ export function experimentHistory(exp: Experiment): ExperimentHistoryRow[] {
   return exp.snapshots.map((snapshot) => {
     let passed = 0;
     for (const ev of snapshot.evals) {
-      if (foldEvalOutcome(ev.attempts.map((a) => a.result)) === "passed") passed += 1;
+      if (foldEvalVerdict(ev.attempts.map((a) => a.result)) === "passed") passed += 1;
     }
     let cost: number | null = null;
     for (const attempt of snapshot.attempts) {

@@ -1,11 +1,11 @@
 import type { EvalResult, RunSummary, Usage } from "../../types.ts";
 import { t } from "../../i18n/index.ts";
-import { outcomeSymbol } from "./shared.ts";
-import { foldEvalOutcome, evalLevelStats as sharedEvalLevelStats } from "../../shared/outcome.ts";
+import { verdictSymbol } from "./shared.ts";
+import { foldEvalVerdict, evalLevelStats as sharedEvalLevelStats } from "../../shared/verdict.ts";
 // 展示口径(耗时/成本/百分比)与聚合小工具(标签/求和/排序)与 view 共用一份实现;
 // console.ts 经这里 re-export formatDuration。
 import { formatCost, formatDuration, formatPercent } from "../../shared/format.ts";
-import { OUTCOME_ORDER, avg, displayExperimentName, fallbackExperimentLabel, sumMaybe, totalTokens } from "../../shared/aggregate.ts";
+import { VERDICT_ORDER, avg, displayExperimentName, fallbackExperimentLabel, sumMaybe, totalTokens } from "../../shared/aggregate.ts";
 
 export { formatCost, formatDuration } from "../../shared/format.ts";
 
@@ -29,7 +29,7 @@ interface ExperimentRow {
 
 interface EvalRow {
   id: string;
-  outcome: EvalResult["outcome"];
+  verdict: EvalResult["verdict"];
   reason: string;
   durationMs: number;
   tokens: number;
@@ -77,7 +77,7 @@ export function renderRunReport(summary: RunSummary): string {
         t("report.table.runs"),
       ],
       aggregateEvalRows(row.results).map((evalRow) => [
-        formatOutcome(evalRow.outcome),
+        formatVerdict(evalRow.verdict),
         evalRow.id,
         evalRow.reason,
         formatDuration(evalRow.durationMs),
@@ -114,14 +114,14 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
-export function formatOutcome(outcome: string): string {
-  const sym = outcomeSymbol(outcome);
-  switch (outcome) {
+export function formatVerdict(verdict: string): string {
+  const sym = verdictSymbol(verdict);
+  switch (verdict) {
     case "passed": return `${sym} ${t("report.passed")}`;
     case "failed": return `${sym} ${t("report.failed")}`;
     case "errored": return `${sym} ${t("report.errored")}`;
     case "skipped": return `${sym} ${t("report.skipped")}`;
-    default: return `${sym} ${outcome}`;
+    default: return `${sym} ${verdict}`;
   }
 }
 
@@ -162,26 +162,26 @@ function aggregateEvalRows(results: EvalResult[]): EvalRow[] {
   for (const result of results) byEval.set(result.id, [...(byEval.get(result.id) ?? []), result]);
   return [...byEval.entries()]
     .map(([id, evalResults]) => {
-      const outcome = foldEvalOutcome(evalResults);
+      const verdict = foldEvalVerdict(evalResults);
       const representative =
-        evalResults.find((r) => r.outcome === outcome) ??
-        evalResults.find((r) => r.outcome !== "passed") ??
+        evalResults.find((r) => r.verdict === verdict) ??
+        evalResults.find((r) => r.verdict !== "passed") ??
         evalResults[0]!;
       return {
         id,
-        outcome,
-        reason: outcome === "passed" ? t("report.passed") : reasonFor(representative),
+        verdict,
+        reason: verdict === "passed" ? t("report.passed") : reasonFor(representative),
         durationMs: avg(evalResults.map((r) => r.durationMs)),
         tokens: totalTokens(evalResults.map((r) => r.usage)),
         cost: sumMaybe(evalResults.map((r) => r.estimatedCostUSD)),
-        passedAttempts: evalResults.filter((r) => r.outcome === "passed").length,
+        passedAttempts: evalResults.filter((r) => r.verdict === "passed").length,
         attempts: evalResults.length,
       };
     })
-    .sort((a, b) => OUTCOME_ORDER[a.outcome] - OUTCOME_ORDER[b.outcome] || a.id.localeCompare(b.id));
+    .sort((a, b) => VERDICT_ORDER[a.verdict] - VERDICT_ORDER[b.verdict] || a.id.localeCompare(b.id));
 }
 
-// 折叠 / 计票口径与 view 同一份实现(src/shared/outcome.ts),CLI 表格和网页榜单永不打架。
+// 折叠 / 计票口径与 view 同一份实现(src/shared/verdict.ts),CLI 表格和网页榜单永不打架。
 function evalLevelStats(results: EvalResult[]) {
   return sharedEvalLevelStats(results, (r) => r.id);
 }

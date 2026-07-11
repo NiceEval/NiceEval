@@ -12,7 +12,7 @@ const noopTeardown: AgentTeardown = () => {};
 describe("sandbox factories: .setup()/.teardown() chain", () => {
   it("dockerSandbox() starts with empty hook arrays", () => {
     const spec = dockerSandbox({ image: "custom:latest" });
-    expect(spec.backend).toBe("docker");
+    expect(spec.provider).toBe("docker");
     expect(spec.image).toBe("custom:latest");
     expect(spec.setupHooks).toEqual([]);
     expect(spec.teardownHooks).toEqual([]);
@@ -40,9 +40,9 @@ describe("sandbox factories: .setup()/.teardown() chain", () => {
     expect(spec.teardownHooks).toEqual([x, y]);
   });
 
-  it("chaining preserves backend-specific fields and stacks across calls", () => {
+  it("chaining preserves provider-specific fields and stacks across calls", () => {
     const spec = dockerSandbox({ image: "img" }).setup(noopSetup).teardown(noopTeardown).setup(noopSetup);
-    expect(spec.backend).toBe("docker");
+    expect(spec.provider).toBe("docker");
     expect(spec.image).toBe("img");
     expect(spec.setupHooks).toHaveLength(2);
     expect(spec.teardownHooks).toHaveLength(1);
@@ -50,22 +50,22 @@ describe("sandbox factories: .setup()/.teardown() chain", () => {
 
   it("vercelSandbox() / e2bSandbox() chain the same way and keep their own fields", () => {
     const vercel = vercelSandbox({ snapshotId: "snap-1" }).setup(noopSetup);
-    expect(vercel.backend).toBe("vercel");
+    expect(vercel.provider).toBe("vercel");
     expect(vercel.snapshotId).toBe("snap-1");
     expect(vercel.setupHooks).toEqual([noopSetup]);
 
     const e2b = e2bSandbox({ template: "niceeval-agents" }).teardown(noopTeardown);
-    expect(e2b.backend).toBe("e2b");
+    expect(e2b.provider).toBe("e2b");
     expect(e2b.template).toBe("niceeval-agents");
     expect(e2b.teardownHooks).toEqual([noopTeardown]);
   });
 
-  it("defineSandbox() (custom backend) chains too and keeps create()/name", async () => {
+  it("defineSandbox() (custom provider) chains too and keeps create()/name", async () => {
     const create = async () => {
       throw new Error("not called in this test");
     };
-    const spec = defineSandbox({ name: "my-backend", create }).setup(noopSetup).setup(noopSetup);
-    expect(spec.backend).toBe("my-backend");
+    const spec = defineSandbox({ name: "my-provider", create }).setup(noopSetup).setup(noopSetup);
+    expect(spec.provider).toBe("my-provider");
     expect(spec.create).toBe(create);
     expect(spec.setupHooks).toHaveLength(2);
   });

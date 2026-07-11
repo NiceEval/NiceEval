@@ -69,7 +69,7 @@ export function scopeReporter(r: Reporter, ids: ReadonlySet<string>, shape?: Run
   return scoped;
 }
 
-/** 全局汇总:outcome 计数 + token / cost 折叠。按 attempt 计(eval 级折叠见 shared/outcome.ts)。 */
+/** 全局汇总:verdict 计数 + token / cost 折叠。按 attempt 计(eval 级折叠见 shared/verdict.ts)。 */
 export function summarize(
   results: EvalResult[],
   agent: string,
@@ -82,7 +82,7 @@ export function summarize(
   let outTok = 0;
   let cost = 0;
   for (const r of results) {
-    counts[r.outcome] += 1;
+    counts[r.verdict] += 1;
     inTok += r.usage?.inputTokens ?? 0;
     outTok += r.usage?.outputTokens ?? 0;
     cost += r.estimatedCostUSD ?? 0;

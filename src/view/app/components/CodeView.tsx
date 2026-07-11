@@ -6,7 +6,7 @@ import { highlightTs, indexAsserts, indexTurns, locKey } from "../lib/transcript
 import { formatScore } from "../lib/format.ts";
 import { InputBlock, ToolBlock, Transcript } from "./Transcript.tsx";
 
-/** soft 断言没过阈值不影响 outcome,颜色上跟 gate 失败(红)区分开,用 warn(黄)。 */
+/** soft 断言没过阈值不影响 verdict,颜色上跟 gate 失败(红)区分开,用 warn(黄)。 */
 function assertTone(a: Assertion): "good" | "warn" | "bad" {
   if (a.passed) return "good";
   return a.severity === "soft" ? "warn" : "bad";
@@ -118,7 +118,7 @@ export function CodeLine({
 }) {
   const hasReply = !!turn;
   const hasAsserts = !!(asserts && asserts.length);
-  // 只有 gate 断言没过才算这一行真的"fail";只剩 soft 断言没过阈值时是"warn"(不影响 outcome)。
+  // 只有 gate 断言没过才算这一行真的"fail";只剩 soft 断言没过阈值时是"warn"(不影响 verdict)。
   const status = hasAsserts
     ? asserts?.every((a: Assertion) => a.passed)
       ? "pass"

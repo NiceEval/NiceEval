@@ -166,7 +166,7 @@ export async function createRunWriter(root: string, opts: RunWriterOptions): Pro
       let cost = 0;
       let duration = 0;
       for (const r of results) {
-        counts[r.outcome] += 1;
+        counts[r.verdict] += 1;
         inTok += r.usage?.inputTokens ?? 0;
         outTok += r.usage?.outputTokens ?? 0;
         cost += r.estimatedCostUSD ?? 0;

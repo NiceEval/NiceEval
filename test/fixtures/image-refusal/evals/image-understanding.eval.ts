@@ -2,7 +2,7 @@ import { defineEval } from "niceeval";
 
 // 回归夹具:与 examples/zh/ai-sdk/evals/image-understanding.eval.ts 同款断言。
 // 配 refusal-agent(永远回复"模型不支持图像输入"),验证「模型没看图」这种明确失败
-// 一定会让 eval outcome = failed,而不是被过松的 gate 断言悄悄放过。
+// 一定会让 eval verdict = failed,而不是被过松的 gate 断言悄悄放过。
 export default defineEval({
   description: "AI 助手：理解图片内容（拒绝识图回归夹具）",
 

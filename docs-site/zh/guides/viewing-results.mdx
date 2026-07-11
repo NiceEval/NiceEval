@@ -4,7 +4,7 @@ sidebarTitle: "查看结果"
 description: "每次运行写入 .niceeval/ 的结构化工件有两扇门：niceeval show 在终端逐级下钻榜单、断言、transcript、trace 与 diff；niceeval view 在网页看同一份证据。"
 ---
 
-每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入 `.niceeval/<timestamp>/`。看结果有两扇门，读的是同一批工件：`niceeval show` 是终端读法，人和 coding agent 都能用；`niceeval view` 是网页读法，适合人浏览证据。show 就是 view 的终端版，两处读到的判决口径不分叉。
+每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入 `.niceeval/<timestamp>/`。看结果有两扇门，读的是同一批工件：`niceeval show` 是终端读法，人和 coding agent 都能用；`niceeval view` 是网页读法，适合人浏览证据。show 就是 view 的终端版，两处读到的判定口径不分叉。
 
 ## 控制台输出
 
@@ -50,7 +50,7 @@ Structured results: .niceeval/2026-07-09T10-00-00-000Z/summary.json
 
 ```bash
 niceeval show                       # 榜单：每个 experiment 的通过率、成本、耗时与失败清单
-niceeval show weather               # 前缀过滤：weather/* 下每个 eval 的判决
+niceeval show weather               # 前缀过滤：weather/* 下每个 eval 的判定
 niceeval show weather/brooklyn      # 单个 eval：各 experiment 的 attempt、断言明细、错误与用量
 niceeval show weather/brooklyn --transcript   # agent 的完整对话与工具调用
 niceeval show weather/brooklyn --trace        # trace 瀑布的文本版
@@ -58,7 +58,7 @@ niceeval show fixtures/button --diff          # sandbox 里的文件改动
 niceeval show weather/brooklyn --history      # 跨 run 时间轴：抖动与回归拐点
 ```
 
-同一个实验多次跑会留下多份结果，默认视图只回答一个问题——「现在什么水位」：每个 experiment × eval 取时间上最新的那份判决，跨 run 合成。按前缀只重跑了部分 eval 时，其余 eval 的判决从更早的 run 补齐，榜单永远是全局水位，不会因为一次局部重跑变残缺。合成是有标注的：每行带判决产生的时间，榜单头写明合成自几个 run。合成状态可能混着不同版本的被测代码——所以收工判决以 `--force` 全量重跑为准，迭代途中的 `show` 负责快、收尾的全量跑负责真。
+同一个实验多次跑会留下多份结果，默认视图只回答一个问题——「现在什么水位」：每个 experiment × eval 取时间上最新的那份判定，跨 run 合成。按前缀只重跑了部分 eval 时，其余 eval 的判定从更早的 run 补齐，榜单永远是全局水位，不会因为一次局部重跑变残缺。合成是有标注的：每行带判定产生的时间，榜单头写明合成自几个 run。合成状态可能混着不同版本的被测代码——所以收工判定以 `--force` 全量重跑为准，迭代途中的 `show` 负责快、收尾的全量跑负责真。
 
 多 experiment、多 attempt 时，证据切面默认挑最新一次失败的 attempt；用 `--experiment` 与 `--attempt` 指定其它，用 `--run <目录>` 钉死看某一次历史 run，用 `--history` 看跨 run 趋势（见下文）。不带 `--report` 时 `show` 渲染的是默认报告；`--report <文件>` 换成你自己的报告，同一个文件也能喂给 `view`，见[自定义报告](/zh/guides/custom-reports)。位置前缀、`--run`、`--experiment` 对 `--report` 同样生效（收窄报告拿到的选集）；`--history` 与 `--report` 互斥，证据切面 flag 出现时只看证据、不渲染报告。
 
@@ -89,7 +89,7 @@ Failing:
   ✗ fixtures/button    compare/bub-gpt-5.4     gate fileChanged("src/components/Button.tsx")   2h ago
 ```
 
-跑多 experiment 的组时，`niceeval exp` 收尾块里的汇总表就是这个形状——同一份表格渲染，判决折叠口径也相同；区别只在数据范围：收尾块只汇总本次 run，`show` 榜单是跨 run 合成的现刻水位，各自在表头如实标注。
+跑多 experiment 的组时，`niceeval exp` 收尾块里的汇总表就是这个形状——同一份表格渲染，判定折叠口径也相同；区别只在数据范围：收尾块只汇总本次 run，`show` 榜单是跨 run 合成的现刻水位，各自在表头如实标注。
 
 ### 单个 eval
 
@@ -163,7 +163,7 @@ compare/codex-gpt-5.4 · 5 runs · passed 2/5
   2026-07-07T16-40   ✗ failed   3 attempts   $0.05   gate calledTool("get_weather")
 ```
 
-✓✗ 交替说明这个 eval 在抖，该修的是稳定性（被测程序或断言），反复重跑碰运气只会烧钱；连续绿转红的拐点就是回归引入的位置，用 `--run <目录>` 钉住拐点前后两次细看。时间轴只列真实执行——缓存携带的旧结果是判决的复印件，不占行，否则趋势会被复印件灌满假数据。不带 eval id 的 `niceeval show --history` 给每个 experiment 的 per-run 通过率序列，同一份趋势的榜单视角。
+✓✗ 交替说明这个 eval 在抖，该修的是稳定性（被测程序或断言），反复重跑碰运气只会烧钱；连续绿转红的拐点就是回归引入的位置，用 `--run <目录>` 钉住拐点前后两次细看。时间轴只列真实执行——缓存携带的旧结果是判定的复印件，不占行，否则趋势会被复印件灌满假数据。不带 eval id 的 `niceeval show --history` 给每个 experiment 的 per-run 通过率序列，同一份趋势的榜单视角。
 
 两次 run 的精确对比（这次修复具体翻转了哪些 eval）不做成 flag：用 `DeltaTable` 积木写一份报告递给 `--report`，几行就是一份自定义对比报告，终端和网页两扇门都认——内置命令只管固定摆法，自定义口径见[自定义报告](/zh/guides/custom-reports)。
 
@@ -230,7 +230,7 @@ OTLP trace 或标准化后的 span 数据。
 
 工具调用、命令、usage 和成本等观测摘要。
 
-## Outcome 含义
+## Verdict 含义
 
 <Tabs>
   <Tab title="passed">所有 gate 通过。</Tab>
@@ -239,7 +239,7 @@ OTLP trace 或标准化后的 span 数据。
   <Tab title="skipped">eval 被主动跳过。</Tab>
 </Tabs>
 
-Soft 断言的分数记录在 `assertions[].score` 里；非 `--strict` 模式下，它们不会产生额外的 outcome。
+Soft 断言的分数记录在 `assertions[].score` 里；非 `--strict` 模式下，它们不会产生额外的 verdict。
 
 ## 调试建议
 

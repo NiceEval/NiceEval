@@ -1,6 +1,6 @@
 // 源码位置回溯:在 `t.send` / 断言落地时(collector.record / SessionManager.send)抓一次
 // 调用栈,挑出**第一帧不属于 niceeval 自身**的位置——也就是用户 eval 里那一行。view 据此把
-// 运行结果(回复 / 分数 / 判决)叠回真实源码行,渲染成 github-diff 式代码视图。
+// 运行结果(回复 / 分数 / 判定)叠回真实源码行,渲染成 github-diff 式代码视图。
 //
 // 为什么靠栈而不是改 API:这样 `t` 的表面一个字不用动,作者照常写 `t.judge.autoevals...`,
 // 位置在底层免费拿到。tsx 直接跑 .ts,栈里就是真实 .ts 路径+行号(ESM 下是 file:// URL)。

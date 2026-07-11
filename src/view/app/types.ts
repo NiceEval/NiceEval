@@ -33,7 +33,7 @@ export type SortDir = 1 | -1;
 /**
  * Experiments 榜单一行 = 一个实验的最新快照(latest 口径)。
  * 统计数字(cells)是官方 MetricTable.data 的产物,前端只渲染;
- * 明细(results / 判决计数)是该快照的证据室数据,由 buildRows 从 viewData 拼接。
+ * 明细(results / 判定计数)是该快照的证据室数据,由 buildRows 从 viewData 拼接。
  */
 export interface ViewRow {
   /** = experimentId(官方 TableData 行键)。 */
@@ -46,13 +46,13 @@ export interface ViewRow {
   label: string;
   agent: string;
   model?: string;
-  /** 该快照的 startedAt(ISO)—— 榜单「每行带判决产生的时间」。 */
+  /** 该快照的 startedAt(ISO)—— 榜单「每行带判定产生的时间」。 */
   lastRunAt: string;
   /** 默认报告格子(pass-rate / duration / tokens / cost),display 已格式化。 */
   cells: Partial<Record<string, MetricCell>>;
   /** 快照内 attempt 总数。 */
   runs: number;
-  /** 折叠后的 eval 判决计数(钻取明细的展示口径,与 CLI 共用同一份折叠实现)。 */
+  /** 折叠后的 eval 判定计数(钻取明细的展示口径,与 CLI 共用同一份折叠实现)。 */
   evals: number;
   passed: number;
   failed: number;
@@ -73,7 +73,7 @@ export type ViewResult = ViewEvalResult;
 
 export type Assertion = AssertionResult;
 
-export type Outcome = "passed" | "failed" | "errored" | "skipped" | string;
+export type Verdict = "passed" | "failed" | "errored" | "skipped" | string;
 
 export interface SourceTurn {
   loc?: SourceLoc;

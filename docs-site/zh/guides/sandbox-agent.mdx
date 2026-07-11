@@ -100,7 +100,7 @@ createSandbox
 
 起始文件和验证命令都写在 `test(t)` 中。agent 执行阶段只能看到你已经写进 sandbox 的文件。
 
-环境钩子（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它排在 git 基线之前，所以写下的文件不会被算进 agent 产出的 diff。写法和规则见 [Sandbox 后端 · 环境钩子](/zh/guides/sandbox-backends#环境钩子)。
+环境钩子（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它排在 git 基线之前，所以写下的文件不会被算进 agent 产出的 diff。写法和规则见 [Sandbox 后端 · 环境钩子](/zh/guides/sandbox-providers#环境钩子)。
 
 ## 自定义 sandbox agent
 

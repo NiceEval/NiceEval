@@ -86,7 +86,7 @@ npx niceeval exp compare-models weather
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行。 |
 | `--quiet` | boolean | 关闭控制台 / live 进度输出(reporter 仍会写 artifacts)。 |
 | `--force` | boolean | 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 |
-| `--strict` | boolean | CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 outcome。 |
+| `--strict` | boolean | CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 |
 | `--early-exit` / `--no-early-exit` | boolean | 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts。 |
 | `--open` / `--no-open` | boolean | `view` 命令专用:启动后自动打开浏览器(默认行为)。 |
 | `--help` | boolean | 打印用法说明并退出。 |
@@ -123,7 +123,7 @@ npx niceeval view
 
 `--early-exit` 默认就是 `true`：某个 eval 的一次 attempt 通过后，会自动停止该 eval 剩余的 attempts（省钱）。所以显式传 `--early-exit` 没有效果，真正有用的是反过来关掉它——`--no-early-exit`，让 `--runs` > 1 时把每次 attempt 都跑完（测真实通过率而非提前收尾）。
 
-`--strict` 不是"更严格地报错"，而是改变软阈值断言的判定：`.atLeast(n)` 这类软阈值（`soft` severity）平时失败不会把整条 eval 判为 `failed`（只是记一条不达标的断言），加了 `--strict` 之后，软阈值没达标也会让整条 eval 的 outcome 计为 `failed`。CI 中推荐加上，避免"断言分数不够但 eval 显示通过"的情况被放过。
+`--strict` 不是"更严格地报错"，而是改变软阈值断言的判定：`.atLeast(n)` 这类软阈值（`soft` severity）平时失败不会把整条 eval 判为 `failed`（只是记一条不达标的断言），加了 `--strict` 之后，软阈值没达标也会让整条 eval 的 verdict 计为 `failed`。CI 中推荐加上，避免"断言分数不够但 eval 显示通过"的情况被放过。
 
 ## 环境变量覆盖
 

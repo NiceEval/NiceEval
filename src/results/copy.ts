@@ -170,7 +170,7 @@ function rebuildSummary(selected: Snapshot[], results: EvalResult[], dest: strin
   for (const run of sourceRuns) if (isNewerRunDir(run, newest)) newest = run;
 
   const counts = { passed: 0, failed: 0, skipped: 0, errored: 0 };
-  for (const r of results) counts[r.outcome] += 1;
+  for (const r of results) counts[r.verdict] += 1;
 
   return {
     format: RESULTS_FORMAT,

@@ -3,7 +3,7 @@ import { cn } from "../../lib/cn.ts";
 
 /**
  * 状态小标签:边框 + 浅底都取自当前文字色,tone(.good/.bad/.warn/.infra-err)决定颜色。
- * 取代旧的 .modal-outcome / 内联状态 chip。
+ * 取代旧的 .modal-verdict / 内联状态 chip。
  */
 export function Badge({ tone, className, children }: { tone?: string; className?: string; children: ReactNode }) {
   return (

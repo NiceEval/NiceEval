@@ -96,7 +96,7 @@ Subject under test / Sandbox backend
   <Step title="Scheduling">根据并发、缓存和 attempt 计划运行。</Step>
   <Step title="Agent send">调用 adapter，让被测对象产出 `Turn`。</Step>
   <Step title="Scoring">执行断言、judge 和测试。</Step>
-  <Step title="Outcome">把所有结果折叠为 `passed`、`failed`、`errored` 或 `skipped`。</Step>
+  <Step title="Verdict">把所有结果折叠为 `passed`、`failed`、`errored` 或 `skipped`。</Step>
   <Step title="Reporting & artifacts">输出报告并保存结构化文件。</Step>
 </Steps>
 
@@ -105,5 +105,5 @@ Subject under test / Sandbox backend
 - [Evals](/zh/concepts/evals) — eval 是什么，以及生命周期细节。
 - [Adapter](/zh/concepts/adapter) — 如何写 adapter，并在 experiment 中引用它。
 - [Drive](/zh/concepts/drive) — `t.send()`、session 与 HITL：如何产出断言要读的 `Turn` 数据。
-- [Assert](/zh/concepts/assert) — 断言词汇和判决规则。
+- [Assert](/zh/concepts/assert) — 断言词汇和判定规则。
 - [Judge](/zh/concepts/judge) — LLM-as-judge，评开放式质量。

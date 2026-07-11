@@ -1,12 +1,12 @@
 // viewData(官方数据契约 + 快照明细)→ 页面模型的纯拼接,零聚合口径:
 // 榜单数字全部来自官方 MetricTable.data 的格子(server 侧算好),这里只把格子和
-// 对应 latest 快照的证据室明细(attempt 列表、判决计数)接在一起;Runs / Traces 的
+// 对应 latest 快照的证据室明细(attempt 列表、判定计数)接在一起;Runs / Traces 的
 // 平铺列表来自全部快照(server 侧已跨快照去重)。
 
 import type { ReactNode } from "react";
 import type { RowRun, T } from "../shared.ts";
 import type { SortKey, ViewData, ViewResult, ViewRow, ViewSnapshot } from "../types.ts";
-import { evalLevelStats } from "../../../shared/outcome.ts";
+import { evalLevelStats } from "../../../shared/verdict.ts";
 import { displayExperimentName, fallbackExperimentLabel, sumMaybe } from "../../../shared/aggregate.ts";
 import { formatConfigValue } from "./format.ts";
 

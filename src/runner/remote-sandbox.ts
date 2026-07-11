@@ -46,7 +46,7 @@ export function withEvalLocalPaths(sandbox: Sandbox, baseDir: string): Sandbox {
           target.uploadDirectory(resolveLocalPath(baseDir, localDir), targetDir, opts);
       }
       const value = Reflect.get(target, prop, receiver);
-      // 方法要 bind 回原对象:后端实现(class 实例)里的 this 不能指向 Proxy。
+      // 方法要 bind 回原对象:provider 实现(class 实例)里的 this 不能指向 Proxy。
       return typeof value === "function" ? value.bind(target) : value;
     },
   });

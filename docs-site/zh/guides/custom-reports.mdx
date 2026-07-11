@@ -105,7 +105,7 @@ const codeLines = defineMetric({
   label: "代码行数",
   better: "lower",
   unit: "lines",
-  where: (a) => a.result.outcome === "passed",
+  where: (a) => a.result.verdict === "passed",
   async value(attempt) {
     const diff = await attempt.diff();
     if (!diff) return null;

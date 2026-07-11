@@ -166,7 +166,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
     diff.json
 ```
 
-`summary.json` 是瘦身后的 `RunSummary`:保留榜单、判决、断言、usage/cost 和 attempt 工件引用,不内联 `events` / `sources` / `trace` / `o11y` / `diff` / `rawTranscript` 这些重数据。每个 attempt 的重数据按需写入自己的目录,文件内容都是 JSON array/object,不是 JSONL / NDJSON。完整 schema、版本号设计、路径转义规则和 view 读取规则见 [Results Format](results-format.md)。
+`summary.json` 是瘦身后的 `RunSummary`:保留榜单、判定、断言、usage/cost 和 attempt 工件引用,不内联 `events` / `sources` / `trace` / `o11y` / `diff` / `rawTranscript` 这些重数据。每个 attempt 的重数据按需写入自己的目录,文件内容都是 JSON array/object,不是 JSONL / NDJSON。完整 schema、版本号设计、路径转义规则和 view 读取规则见 [Results Format](results-format.md)。
 
 `summary.json` 形如:
 
@@ -178,7 +178,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
   "completedAt": "2026-06-28T10:31:23.000Z",
   "passed": 8, "failed": 1, "skipped": 0, "errored": 0,
   "results": [
-    { "id": "weather/brooklyn", "outcome": "passed",
+    { "id": "weather/brooklyn", "verdict": "passed",
       "agent": "codex", "model": "gpt-5", "attempt": 1,
       "durationMs": 2184,
       "artifactsDir": "weather/brooklyn/codex/gpt-5/a1",
@@ -191,7 +191,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 }
 ```
 
-`outcome` 只有 `passed` / `failed` / `errored` / `skipped` 四态,没有 `scored` 中间态(soft 断言的分数就在 `assertions[].score` 里如实记录,不影响这四态)。`summary.failed` 与 `summary.errored` 是互斥计数:前者表示断言/评分不通过,后者表示环境、超时、adapter 或 agent runtime 这类执行错误。JUnit reporter 也按这个口径输出 `<failure>` 与 `<error>`。
+`verdict` 只有 `passed` / `failed` / `errored` / `skipped` 四态,没有 `scored` 中间态(soft 断言的分数就在 `assertions[].score` 里如实记录,不影响这四态)。`summary.failed` 与 `summary.errored` 是互斥计数:前者表示断言/评分不通过,后者表示环境、超时、adapter 或 agent runtime 这类执行错误。JUnit reporter 也按这个口径输出 `<failure>` 与 `<error>`。
 
 工件是机器可读的,可回放、可二次分析、可喂给下游 dashboard。
 
@@ -208,7 +208,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 - **远程 agent** —— 你在 `send` 里把模型返回的 usage(或你服务响应里带的 usage,若它回了)一并返回。
 - **沙箱 coding agent** —— **不必手填**:agent 的 JSONL transcript 里本就逐条带 token 用量,transcript 解析器(`o11y/parsers/<agent>.ts`)抠出来。这正是 agent-eval 留下的 TODO。
 
-每轮的用量来源二选一:remote agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 eval 用量(落进 `O11ySummary.usage`);reporter 再跨 eval 累加 → 整轮用量。
+每轮的用量来源二选一:remote agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 eval 用量(落进 `O11ySummary.usage`);reporter 再跨 eval 累加 → 整个 run 的用量。
 
 ### 换算成本:价格表从哪来
 
@@ -235,7 +235,7 @@ token 数能可靠拿到;难点是 token→$ 的价格表 —— 价格会随时
 
 ### 报告里长什么样
 
-控制台每个 eval 末尾带用量,整轮带合计与按 agent 的对比:
+控制台每个 eval 末尾带用量,整个 run 带合计与按 agent 的对比:
 
 ```text
   ✓ recall-across-sessions   (42s)   38.2k tok   $0.31
@@ -265,7 +265,7 @@ Run totals:  3 evals · 142k tok · $1.12   (agent: claude-code)
 
 | 维度 | 粒度 | 来源 |
 |---|---|---|
-| **时间(wall-clock)** | 每 turn / 每 eval / 整轮(+ 平均) | 运行器计时,adapter 不用做事 |
+| **时间(wall-clock)** | 每 turn / 每 eval / 整个 run(+ 平均) | 运行器计时,adapter 不用做事 |
 | **token 用量** | 同 | 标准事件流 / transcript 抠出 |
 | **估算成本 $** | 同 | usage × 价格表(或网关实测) |
 
@@ -274,7 +274,7 @@ Run totals:  3 evals · 142k tok · $1.12   (agent: claude-code)
 ### 把成本变成可断言 / 可护栏的维度
 
 - **断言效率**(见 [Scoring](scoring.md#5-效率成本断言)):`t.maxTokens(50_000)` / `t.maxCost(0.5)` —— agent 答对了但烧太多,也判失败。
-- **预算护栏**:`--budget <usd>` 给整轮设上限,累计花费超了就停止派发新 attempt(借鉴 crabbox 的 spend cap),避免一次跑爆账单。
+- **预算护栏**:`--budget <usd>` 给整个 run 设上限,累计花费超了就停止派发新 attempt(借鉴 crabbox 的 spend cap),避免一次跑爆账单。
 
 ## 结果可视化:`niceeval view`
 

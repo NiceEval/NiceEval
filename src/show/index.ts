@@ -183,7 +183,7 @@ async function show(
         }),
       );
     }
-    const header = `attempt ${displayAttemptNumber(picked)} · ${picked.experimentId} · ${picked.result.outcome}`;
+    const header = `attempt ${displayAttemptNumber(picked)} · ${picked.experimentId} · ${picked.result.verdict}`;
     const artifactPath = attemptArtifactsPath(picked, cwd);
     const blocks: string[] = [];
     if (flags.transcript) {

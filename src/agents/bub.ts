@@ -35,16 +35,18 @@ export interface BubConfig {
 
 const UV = "$HOME/.local/bin/uv";
 
-// TODO(upstream): 这两个默认值钉在个人 fork 的修复分支上,等上游合并后改回发布版并删掉本注释。
+// TODO(upstream): BUB_OVERRIDE 钉在个人 fork 的修复分支上(tool-call 分支丢助手文本的修复
+// 尚未进上游,见 memory/bub-tapestore-otel…drift.md 台账),等上游包含后改回发布版。
 // 可用 NICEEVAL_BUB_OVERRIDE / NICEEVAL_BUB_OTEL_PLUGIN 覆盖,不必改源码。
 const BUB_OVERRIDE =
   getEnv("NICEEVAL_BUB_OVERRIDE") ??
   "bub @ git+https://github.com/CorrectRoadH/bub.git@fix/tape-assistant-text-with-tool-calls";
 const BUB_OVERRIDE_FILE = "/tmp/bub-override.txt";
+// otel 插件跟上游 main 走(bub-contrib#50 起从 bub.tape 导入,要求 bub ≥ 0.3.10dev,
+// 与上面的 override 分支兼容)。插件不发 PyPI,git 依赖是唯一安装方式。
 const OTEL_PLUGIN =
   getEnv("NICEEVAL_BUB_OTEL_PLUGIN") ??
-  "git+https://github.com/CorrectRoadH/bub-contrib.git@fix/tapestore-otel-tape-entry-validation" +
-    "#subdirectory=packages/bub-tapestore-otel";
+  "git+https://github.com/bubbuild/bub-contrib.git#subdirectory=packages/bub-tapestore-otel";
 
 // override 钉在 git ref 上时,镜像里烘焙的 bub 不可信:模板构建时间早于 ref 当前指向的
 // commit 的话,`command -v bub` 命中的就是修复前的旧构建 —— e2b 模板 fasteval-agents 上
@@ -57,7 +59,15 @@ const BUB_PINNED = BUB_OVERRIDE.includes("git+");
 // (预制模板)烘焙在 PATH 上的 bub(装到 /usr/local/bin,见 sandbox/docker/Dockerfile)。
 const BUB = BUB_PINNED ? "$HOME/.local/bin/bub" : "$(command -v bub || echo $HOME/.local/bin/bub)";
 
-const INSTALL_SPEC = `bub --override(${BUB_OVERRIDE}) --with ${OTEL_PLUGIN}`;
+// checkpoint 只打 $HOME/.local:uv 装的 python 工具链、bub 的 tool venv 和 bin shim 全在
+// 这里,restore 后即可运行。~/.cache/uv 是 wheel/构建缓存,只在「下一次安装」有用,而
+// restore 场景 bub 已经装好、不会再装——打进去只是把单次 HTTP 传输撑到 100MB+,在 e2b
+// 文件 API 上超时/连接重置概率明显偏高。子目录列表参与 INSTALL_HASH:改它会换缓存文件
+// 名,不会继续复用老的大 checkpoint。
+const CHECKPOINT_SUBDIRS = [".local"];
+
+const INSTALL_SPEC =
+  `bub --override(${BUB_OVERRIDE}) --with ${OTEL_PLUGIN} --checkpoint(${CHECKPOINT_SUBDIRS.join(",")})`;
 const INSTALL_HASH = createHash("md5").update(INSTALL_SPEC).digest("hex").slice(0, 12);
 
 function diskCachePath(home: string): string {
@@ -76,11 +86,17 @@ async function ensureBub(sb: Sandbox, home: string): Promise<void> {
   // 构建,必须按 override 真装(见 BUB_PINNED 注释)。
   if (!BUB_PINNED && (await sb.runShell("command -v bub >/dev/null 2>&1")).exitCode === 0) return;
 
-  const checkpointPaths = [`${home}/.local`, `${home}/.cache/uv`];
+  const checkpointPaths = CHECKPOINT_SUBDIRS.map((d) => `${home}/${d}`);
   const cachePath = diskCachePath(home);
 
+  // restore 失败(多为 e2b 文件 API 对大 buffer 的瞬态超时/连接重置)不终结 attempt:
+  // 缓存只是加速手段,落空就往下走全量安装。
   const mem = memCheckpoints.get(home);
-  if (mem) { await restoreCheckpoint(sb, mem); return; }
+  if (mem) {
+    try { await restoreCheckpoint(sb, mem); return; } catch (e) {
+      console.error(t("bub.checkpointRestoreFailed", { error: e instanceof Error ? e.message : String(e) }));
+    }
+  }
 
   const disk = await readFile(cachePath).catch(() => undefined);
   if (disk) {
@@ -120,10 +136,16 @@ async function ensureBub(sb: Sandbox, home: string): Promise<void> {
         }));
       }
     }
-    const cp = await createCheckpoint(sb, checkpointPaths);
-    memCheckpoints.set(home, cp);
-    await mkdir(dirname(cachePath), { recursive: true }).catch(() => {});
-    await writeFile(cachePath, cp).catch(() => {});
+    // 到这里 bub 已装进本沙箱,checkpoint 只是给后续沙箱的缓存回填:capture/下载失败
+    // (大 buffer 在 e2b 文件 API 上的瞬态错误)降级为警告,绝不反过来杀掉已就绪的 attempt。
+    try {
+      const cp = await createCheckpoint(sb, checkpointPaths);
+      memCheckpoints.set(home, cp);
+      await mkdir(dirname(cachePath), { recursive: true }).catch(() => {});
+      await writeFile(cachePath, cp).catch(() => {});
+    } catch (e) {
+      console.error(t("bub.checkpointCaptureFailed", { error: e instanceof Error ? e.message : String(e) }));
+    }
     resolveInstall();
   } catch (e) {
     rejectInstall(e);
@@ -160,8 +182,8 @@ export function bubAgent(config?: BubConfig): Agent {
     },
 
     async setup(sb) {
-      // home 必须来自运行时探测:各 sandbox 后端不同(/home/node、/home/vercel-sandbox…),
-      // 兜一个后端专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
+      // home 必须来自运行时探测:各 sandbox provider 不同(/home/node、/home/vercel-sandbox…),
+      // 兜一个 provider 专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
       const home = (await sb.runShell("printf '%s' $HOME")).stdout.trim();
       if (!home) throw new Error(t("bub.homeDetectFailed"));
       const workspace = sb.workdir;

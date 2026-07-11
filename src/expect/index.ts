@@ -33,7 +33,7 @@ function createAssertion(
     score,
     // 转成硬门槛(失败即整条 eval 不通过)。
     gate: (t?: number) => createAssertion(name, "gate", score, t),
-    // 软阈值:默认不改变 outcome;--strict 下软阈值失败也会使 outcome=failed。
+    // 软阈值:默认不改变 verdict;--strict 下软阈值失败也会使 verdict=failed。
     atLeast: (t: number) => createAssertion(name, "soft", score, t),
   };
   return Object.freeze(self);

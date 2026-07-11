@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { OpenModal, T } from "../shared.ts";
 import type { Assertion, SortKey, SortState, ViewResult, ViewRow } from "../types.ts";
-import { EvalGroup, failingAssertions, groupByEval, outcomeClass, outcomeLabel, outcomeSummary, reasonFor, scoresSummary } from "../lib/outcome.ts";
+import { EvalGroup, failingAssertions, groupByEval, verdictClass, verdictLabel, verdictSummary, reasonFor, scoresSummary } from "../lib/verdict.ts";
 import { CELL_KEYS, configChips } from "../lib/rows.ts";
 import { formatClock, formatCost, formatDateTime, formatDuration, formatTokens, totalTokens } from "../lib/format.ts";
 import { Kpi, SortHeader } from "./primitives.tsx";
@@ -44,7 +44,7 @@ export function ExperimentTable({
             <SortHeader name={t("table.successRate")} sortKey="passRate" sort={sort} onSort={setSortKey} />
             <SortHeader name={t("table.tokens")} sortKey="tokens" sort={sort} onSort={setSortKey} />
             <SortHeader name={t("table.estCost")} sortKey="cost" sort={sort} onSort={setSortKey} />
-            <th>{t("table.outcomes")}</th>
+            <th>{t("table.verdicts")}</th>
           </tr>
         </thead>
         <tbody>
@@ -100,7 +100,7 @@ export function ExperimentRow({ row, open, onToggle, t }: { row: ViewRow; open: 
         <CellValue cell={row.cells[CELL_KEYS.cost]} />
       </td>
       <td>
-        <span className="pill">{outcomeSummary(row, t)}</span>
+        <span className="pill">{verdictSummary(row, t)}</span>
       </td>
     </tr>
   );
@@ -109,8 +109,8 @@ export function ExperimentRow({ row, open, onToggle, t }: { row: ViewRow; open: 
 export function ExperimentDetail({ row, openModal, t }: { row: ViewRow; openModal: OpenModal; t: T }) {
   const totalDuration = (row.results ?? []).reduce((sum: number, r: ViewResult) => sum + (r.durationMs || 0), 0);
   const sampleResult =
-    row.results?.find((r: ViewResult) => r.outcome === "errored") ||
-    row.results?.find((r: ViewResult) => r.outcome === "failed") ||
+    row.results?.find((r: ViewResult) => r.verdict === "errored") ||
+    row.results?.find((r: ViewResult) => r.verdict === "failed") ||
     row.results?.[0] ||
     {};
   const evalGroups = groupByEval(row.results ?? []).sort((a, b) => a.id.localeCompare(b.id));
@@ -175,10 +175,10 @@ export function EvalRow({ group, openModal, t }: { group: EvalGroup; openModal: 
     return <Attempt result={group.attempts[0]!} totalRuns={1} openModal={openModal} t={t} />;
   }
 
-  // 代表轮:取与 eval 判决相同的第一条,用它的原因/分数做折叠行摘要。
-  const rep = group.attempts.find((a) => a.outcome === group.outcome) ?? group.attempts[0]!;
+  // 代表轮:取与 eval 判定相同的第一条,用它的原因/分数做折叠行摘要。
+  const rep = group.attempts.find((a) => a.verdict === group.verdict) ?? group.attempts[0]!;
   const gates = failingAssertions(rep);
-  const reason = reasonFor(rep, gates) || (group.outcome === "passed" ? scoresSummary(rep.assertions || []) : "");
+  const reason = reasonFor(rep, gates) || (group.verdict === "passed" ? scoresSummary(rep.assertions || []) : "");
   const totalDuration = group.attempts.reduce((s, a) => s + (a.durationMs || 0), 0);
   const totalTok = group.attempts.reduce((s, a) => s + totalTokens(a.usage), 0);
   const totalCost = group.attempts.reduce((s, a) => s + (a.estimatedCostUSD || 0), 0);
@@ -195,7 +195,7 @@ export function EvalRow({ group, openModal, t }: { group: EvalGroup; openModal: 
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}
       >
         <span className="attempt-status">
-          <span className={outcomeClass(group.outcome)}>{outcomeLabel(group.outcome, t)}</span>
+          <span className={verdictClass(group.verdict)}>{verdictLabel(group.verdict, t)}</span>
         </span>
         <span className="eval-id">
           <ChevronRight className="chev-icon" aria-hidden="true" />
@@ -225,14 +225,14 @@ export function EvalRow({ group, openModal, t }: { group: EvalGroup; openModal: 
 }
 
 export function Attempt({ result, totalRuns, openModal, t }: { result: ViewResult; totalRuns: number; openModal: OpenModal; t: T }) {
-  const outcome = result.outcome;
+  const verdict = result.verdict;
   const gates = failingAssertions(result);
   const reason = reasonFor(result, gates);
   const allAssertions = result.assertions || [];
   const hasScores = allAssertions.some((a: Assertion) => a.score !== undefined && a.score !== null);
   const hasBody = result.hasEvents || result.hasTrace || hasScores;
 
-  const inlineScores = !reason && outcome === "passed" ? scoresSummary(allAssertions) : "";
+  const inlineScores = !reason && verdict === "passed" ? scoresSummary(allAssertions) : "";
   const displayReason = reason || inlineScores;
 
   const handleOpen = () => openModal(result);
@@ -240,7 +240,7 @@ export function Attempt({ result, totalRuns, openModal, t }: { result: ViewResul
   const cells = (
     <>
       <span className="attempt-status">
-        <span className={outcomeClass(outcome)}>{outcomeLabel(outcome, t)}</span>
+        <span className={verdictClass(verdict)}>{verdictLabel(verdict, t)}</span>
       </span>
       <span className="eval-id">{result.id}</span>
       <div className="assertions-cell">

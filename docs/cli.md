@@ -10,7 +10,7 @@
 
 - `niceeval exp [组|配置]` = 跑**哪个运行配置**。agent、model、flags、runs、预算等都来自 experiment 文件。
 - `niceeval exp [组|配置] [eval id 前缀...]` = 在该 experiment 下只跑部分 eval。这个位置参数只筛 eval,不是 agent 名、URL 或模型。
-- CLI flag 只做调度级临时覆盖,例如 `--runs`、`--max-concurrency`、`--timeout`。`--agent` / `--model` 不覆盖 experiment;要换 agent 或 model,新增或复制一个 experiment 文件。沙箱后端同理不接受 CLI 覆盖——写在 experiment(或 config)的 `sandbox` 字段里。
+- CLI flag 只做调度级临时覆盖,例如 `--runs`、`--max-concurrency`、`--timeout`。`--agent` / `--model` 不覆盖 experiment;要换 agent 或 model,新增或复制一个 experiment 文件。沙箱 provider 同理不接受 CLI 覆盖——写在 experiment(或 config)的 `sandbox` 字段里。
 
 ```sh
 niceeval exp <实验组|配置> <选哪些 eval> <flag:调度覆盖>
@@ -50,7 +50,7 @@ niceeval exp compare fixtures/ billing/  # 在 compare 组里跑多个前缀,并
 niceeval exp <组|配置>             # agent / model 来自 experiments/<组|配置>.ts
 ```
 
-agent、model、flags、sandbox 后端都属于 experiment,不是临时 CLI flag。要连你自己的服务,写一个 agent adapter,再在 experiment 里引用它;URL 和鉴权是 adapter / experiment 的私有配置,不是位置参数。沙箱型 agent 在哪跑(docker / vercel / e2b / 三方)写在 experiment(或 config)的 `sandbox` 字段里,用 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`(从 `niceeval/sandbox` 导入)——没有默认值,没写就在起沙箱时直接报错。
+agent、model、flags、sandbox provider 都属于 experiment,不是临时 CLI flag。要连你自己的服务,写一个 agent adapter,再在 experiment 里引用它;URL 和鉴权是 adapter / experiment 的私有配置,不是位置参数。沙箱型 agent 在哪跑(docker / vercel / e2b / 三方)写在 experiment(或 config)的 `sandbox` 字段里,用 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`(从 `niceeval/sandbox` 导入)——没有默认值,没写就在起沙箱时直接报错。
 
 ## 调度
 
@@ -70,19 +70,19 @@ niceeval exp compare --tag <tag>              # 按单个标签过滤
 
 ```sh
 niceeval exp compare --strict     # soft 低于阈值也判红(CI 用)
-niceeval exp compare --budget <usd>           # 整轮估算成本上限,累计超了就停止派发新 attempt
+niceeval exp compare --budget <usd>           # 整个 run 的估算成本上限,累计超了就停止派发新 attempt
 ```
 
 沙箱型里跑什么校验命令、跑不跑,是 `test(t)` 里的普通代码:`t.sandbox.runCommand` 跑命令,`t.check(result, commandSucceeded())` 断言退出码。
 
-退出码按 **eval 级折叠**判定(与报表/view 同一口径,`foldEvalOutcome`:任一 attempt 通过 → 该 eval 通过,对齐 `runs`+`earlyExit` 吸收抖动的语义):折叠后仍有 `failed`(含 `--strict` 下 soft 未达标而改判的)或 `errored` 的 eval → 非零;全部 eval `passed` / `skipped` 时返回 `0`。注意 `summary.json` 顶层的 `passed/failed/errored` 是 attempt 级原始计数,消费方判"全绿"要自行按 eval 折叠。`failed` 与 `errored` 在报告里分开统计。
+退出码按 **eval 级折叠**判定(与报表/view 同一口径,`foldEvalVerdict`:任一 attempt 通过 → 该 eval 通过,对齐 `runs`+`earlyExit` 吸收抖动的语义):折叠后仍有 `failed`(含 `--strict` 下 soft 未达标而改判的)或 `errored` 的 eval → 非零;全部 eval `passed` / `skipped` 时返回 `0`。注意 `summary.json` 顶层的 `passed/failed/errored` 是 attempt 级原始计数,消费方判"全绿"要自行按 eval 折叠。`failed` 与 `errored` 在报告里分开统计。
 
 每个 eval 的 token 用量与估算成本会出现在控制台和 `summary.json`,跨 agent 对比即得「质量 × 成本」。详见 [Observability](observability.md#用量与成本token--计费)。
 
 ## 查看结果
 
 ```sh
-niceeval show                         # 终端榜单:每个 experiment 的现刻判决,跨 run 合成
+niceeval show                         # 终端榜单:每个 experiment 的现刻判定,跨 run 合成
 niceeval show weather/brooklyn        # 单个 eval:attempt、断言明细;--transcript / --trace / --diff 看证据
 niceeval show weather/brooklyn --history   # 跨 run 时间轴(只列真实执行;与 --report 互斥)
 niceeval show --report reports/exam.tsx    # 报告槽换成自定义报告(与 view --report 同一文件)
@@ -121,12 +121,12 @@ OPENAI_API_KEY=sk-...               # codex / 直连
 BUB_API_KEY=...                     # bub
 AI_GATEWAY_API_KEY=...              # 经网关的变体
 
-# 沙箱后端认证(auto 探测用)
+# 沙箱 provider 认证(auto 探测用)
 VERCEL_API_TOKEN=...                # 用 vercel sandbox
 VERCEL_TEAM_ID=...                  # Vercel team
 # 都没有 → 自动用本地 docker
 
-# 评判模型(LLM-as-judge)
+# 裁判模型(LLM-as-judge)
 # 复用上面对应 vendor 的 key,或在 config 里单独指定
 NICEEVAL_JUDGE_MODEL=...            # config / eval 未指定 judge.model 时的兜底(没有内置默认模型)
 
@@ -161,7 +161,7 @@ CLI 标志  →  环境变量  →  niceeval.config.ts  →  内置默认
 # 本地开发:零云依赖评一个 coding agent
 ANTHROPIC_API_KEY=sk-ant-... niceeval exp local fixtures/
 
-# 衡量稳定性:跑 10 次看通过率,不早停
+# 衡量稳定性:跑 10 次看通过率,不首过即停
 niceeval exp local fixtures/button --runs 10 --no-early-exit
 
 # 评已部署服务的会话质量(URL 是 agent / experiment 私事)

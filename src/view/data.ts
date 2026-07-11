@@ -138,7 +138,7 @@ export async function loadLatestResultsPerEval(root = ".niceeval"): Promise<Eval
 /**
  * `niceeval view` 的数据装载入口:server 每次请求现读现算,`--out` 导出用同一份。
  * 位置前缀 / --experiment / --report 在场时,报告槽选集经 composeShowSelection 合成
- * (与 `niceeval show` 同一口径,两扇门判决不分叉);全部缺省时维持 results.latest(),
+ * (与 `niceeval show` 同一口径,两扇门判定不分叉);全部缺省时维持 results.latest(),
  * 默认行为不变。证据室数据(快照明细 / skipped)恒为全量,深链在任何收窄下都可达。
  * 零可读结果一律抛 ViewInputError,不渲染/导出空页面(server 起不来,--out 非零退出)。
  */

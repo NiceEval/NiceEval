@@ -4,7 +4,7 @@
 // 模块代码统一 `import type { … } from "../types.ts"`,不必记住每个类型的家:
 //   · shared/types.ts   跨域原子(JsonValue / Severity / SourceLoc / Cleanup / LocalizedText)
 //   · o11y/types.ts     标准事件流 / DerivedFacts / TraceSpan / Usage / O11ySummary
-//   · sandbox/types.ts  Sandbox 接口 / 后端 spec / 命令与文件 IO
+//   · sandbox/types.ts  Sandbox 接口 / provider spec / 命令与文件 IO
 //   · agents/types.ts   Agent / Adapter 契约 / 会话 / tracing 导出
 //   · scoring/types.ts  断言(值级 / 记录 / 结果)/ ScoringContext / JudgeConfig
 //   · context/types.ts  TestContext(t)与子句柄(turn / session / sandbox 视图)

@@ -146,7 +146,7 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     eval: result.id,
     agent: result.agent,
     attempt: result.attempt,
-    outcome: result.outcome,
+    verdict: result.verdict,
   };
   if (result.model !== undefined) metadata.model = result.model;
   if (result.experimentId !== undefined) metadata.experiment = result.experimentId;

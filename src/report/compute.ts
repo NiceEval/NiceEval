@@ -340,7 +340,7 @@ export async function overviewData(input: SnapshotsInput): Promise<OverviewData>
   for (const item of items) {
     const result = item.attempt.result;
     evalIds.add(evalIdOf(item));
-    switch (result.outcome) {
+    switch (result.verdict) {
       case "passed":
         passed += 1;
         break;
@@ -427,8 +427,8 @@ function deltaDisplay(metric: Metric, delta: number | null): string {
 // ───────────────────────── CaseList.data ─────────────────────────
 
 export interface CaseListDataOptions {
-  /** 要列出的判决;默认 failed + errored。 */
-  outcomes?: ("failed" | "errored")[];
+  /** 要列出的判定;默认 failed + errored。 */
+  verdicts?: ("failed" | "errored")[];
   /** 超出如实报 truncated,不静默截断。 */
   limit?: number;
   /** 自由文本(error / 断言 detail / judge evidence)的发布消毒钩子;身份字段不经它。 */
@@ -437,11 +437,11 @@ export interface CaseListDataOptions {
 
 export async function caseListData(input: SnapshotsInput, opts?: CaseListDataOptions): Promise<CaseListData> {
   const { snapshots } = resolveInput(input);
-  const wanted = new Set<"failed" | "errored">(opts?.outcomes ?? ["failed", "errored"]);
+  const wanted = new Set<"failed" | "errored">(opts?.verdicts ?? ["failed", "errored"]);
   const redact = opts?.redact ?? ((text: string) => text);
   const selected = collectItems(snapshots).filter((item) => {
-    const outcome = item.attempt.result.outcome;
-    return (outcome === "failed" || outcome === "errored") && wanted.has(outcome);
+    const verdict = item.attempt.result.verdict;
+    return (verdict === "failed" || verdict === "errored") && wanted.has(verdict);
   });
   const shown = opts?.limit === undefined ? selected : selected.slice(0, opts.limit);
   const rows: CaseListData["rows"] = shown.map((item) => {
@@ -451,7 +451,7 @@ export async function caseListData(input: SnapshotsInput, opts?: CaseListDataOpt
       eval: evalIdOf(item),
       experimentId: experimentIdOf(item),
       agent: result.agent,
-      outcome: result.outcome as "failed" | "errored",
+      verdict: result.verdict as "failed" | "errored",
       error: result.error === undefined ? undefined : redact(result.error),
       failedAssertions: result.assertions
         .filter((assertion) => !assertion.passed)

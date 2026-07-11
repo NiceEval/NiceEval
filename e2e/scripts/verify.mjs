@@ -140,13 +140,13 @@ for (const row of PLAN) {
   const byEval = new Map();
   for (const r of summary.results ?? []) {
     const key = r.id;
-    byEval.set(key, [...(byEval.get(key) ?? []), r.outcome]);
+    byEval.set(key, [...(byEval.get(key) ?? []), r.verdict]);
   }
   const evalCounts = { passed: 0, failed: 0, errored: 0, skipped: 0 };
-  for (const outcomes of byEval.values()) {
-    const folded = outcomes.includes("passed") ? "passed"
-      : outcomes.includes("failed") ? "failed"
-      : outcomes.includes("errored") ? "errored" : "skipped";
+  for (const verdicts of byEval.values()) {
+    const folded = verdicts.includes("passed") ? "passed"
+      : verdicts.includes("failed") ? "failed"
+      : verdicts.includes("errored") ? "errored" : "skipped";
     evalCounts[folded] += 1;
   }
 

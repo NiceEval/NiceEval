@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { AssertionResult, EvalResult, ResultOutcome, RunSummary } from "../types.ts";
+import type { AssertionResult, EvalResult, Verdict, RunSummary } from "../types.ts";
 import type { AttemptHandle, RunDir, Selection, SelectionWarning, Snapshot } from "../results/index.ts";
 import type { Dimension, MetricCell } from "./types.ts";
 import { costUSD, defineMetric, durationMs, examScore, passRate, tokens } from "./metrics.ts";
@@ -29,12 +29,12 @@ import {
 let seq = 0;
 
 /** 造一条结果;默认给每条唯一 startedAt —— 身份键含 startedAt,免得普通样本被去重误伤。 */
-function res(id: string, outcome: ResultOutcome, extra: Partial<EvalResult> = {}): EvalResult {
+function res(id: string, verdict: Verdict, extra: Partial<EvalResult> = {}): EvalResult {
   seq += 1;
   return {
     id,
     agent: "agent-x",
-    outcome,
+    verdict,
     attempt: 0,
     startedAt: `2026-07-01T00:00:00.${String(seq).padStart(6, "0")}Z`,
     durationMs: 1000,
@@ -146,7 +146,7 @@ describe("两级聚合引擎", () => {
       name: "pass@k",
       better: "higher",
       unit: "%",
-      value: (a) => (a.result.outcome === "skipped" ? null : a.result.outcome === "passed" ? 1 : 0),
+      value: (a) => (a.result.verdict === "skipped" ? null : a.result.verdict === "passed" ? 1 : 0),
       aggregate: { perEval: "max", across: "mean" },
     });
     const s = snap({
@@ -184,7 +184,7 @@ describe("两级聚合引擎", () => {
   it("where 不满足 → null,不进聚合", async () => {
     const onlyPassed = defineMetric({
       name: "only-passed",
-      where: (a) => a.result.outcome === "passed",
+      where: (a) => a.result.verdict === "passed",
       value: () => 5,
     });
     const s = snap({ experimentId: "exp/x", results: [res("A", "passed"), res("B", "failed")] });
@@ -468,10 +468,10 @@ describe("MetricScatter.data", () => {
 // ───────────────────────── flag():维度与轴 ─────────────────────────
 
 describe("flag()", () => {
-  const withFlags = (id: string, flags: Record<string, unknown> | undefined, outcome: ResultOutcome) =>
+  const withFlags = (id: string, flags: Record<string, unknown> | undefined, verdict: Verdict) =>
     snap({
       experimentId: id,
-      results: [res("A", outcome, { experimentId: id, experiment: { id, flags } })],
+      results: [res("A", verdict, { experimentId: id, experiment: { id, flags } })],
     });
 
   it("MetricLine.data:x 收 flag、按 experiment 聚合;未声明的作轴 x=null 报数", async () => {
@@ -653,25 +653,25 @@ describe("CaseList.data", () => {
       redact: (text) => text.replaceAll("/Users/me/repo", "<repo>"),
     });
     expect(data.rows).toHaveLength(2);
-    expect(data.truncated).toBe(1); // C 被截;D/E 本就不在默认 outcomes 里
+    expect(data.truncated).toBe(1); // C 被截;D/E 本就不在默认 verdicts 里
 
     const [first, second] = data.rows;
     expect(first.eval).toBe("A");
-    expect(first.outcome).toBe("failed");
+    expect(first.verdict).toBe("failed");
     expect(first.failedAssertions).toHaveLength(1);
     expect(first.failedAssertions[0].detail).toBe("missing text under <repo>/src");
     expect(first.failedAssertions[0].evidence).toBe("checked <repo>/src/app.ts");
     expect(first.ref.result).toBe(0);
 
     expect(second.eval).toBe("B");
-    expect(second.outcome).toBe("errored");
+    expect(second.verdict).toBe("errored");
     expect(second.error).toBe("ENOENT <repo>/tool");
     expect(second.ref.result).toBe(1);
   });
 
-  it("outcomes 可收窄;不传 limit 不截断", async () => {
+  it("verdicts 可收窄;不传 limit 不截断", async () => {
     const s = snap({ experimentId: "exp/x", results: [res("A", "failed"), res("B", "errored")] });
-    const onlyErrored = await CaseList.data([s], { outcomes: ["errored"] });
+    const onlyErrored = await CaseList.data([s], { verdicts: ["errored"] });
     expect(onlyErrored.rows.map((r) => r.eval)).toEqual(["B"]);
     expect(onlyErrored.truncated).toBe(0);
   });

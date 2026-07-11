@@ -193,7 +193,7 @@ newSession(): SessionHandle;
 readonly signal: AbortSignal;
 ```
 
-本次 attempt 的中止信号;超时 / 早停 / 用户 Ctrl-C 时触发,传给 adapter 的长耗时调用做取消。
+本次 attempt 的中止信号;超时 / 首过即停 / 用户 Ctrl-C 时触发,传给 adapter 的长耗时调用做取消。
 
 #### `model`
 
@@ -233,7 +233,7 @@ log(msg: string): void;
 skip(reason: string): never;
 ```
 
-立即中止本 eval 并标记为 skipped(outcome / EvalResult.skipReason),reason 不能为空。
+立即中止本 eval 并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。
 
 #### `check`
 

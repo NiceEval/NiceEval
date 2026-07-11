@@ -21,14 +21,14 @@ export function JUnit(path: string): Reporter {
         .map((r) => {
           const name = xmlAttr(`${r.id} [${r.agent}${r.model ? "/" + r.model : ""}]`);
           const time = (r.durationMs / 1000).toFixed(3);
-          if (r.outcome === "errored") {
+          if (r.verdict === "errored") {
             return `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(r.error ?? "execution error")}"/></testcase>`;
           }
-          if (r.outcome === "failed") {
+          if (r.verdict === "failed") {
             const msg = xmlAttr(r.assertions.filter((a) => !a.passed).map((a) => a.name).join("; "));
             return `    <testcase name="${name}" time="${time}"><failure message="${msg}"/></testcase>`;
           }
-          if (r.outcome === "skipped") {
+          if (r.verdict === "skipped") {
             return `    <testcase name="${name}" time="${time}"><skipped message="${xmlAttr(r.skipReason ?? "")}"/></testcase>`;
           }
           return `    <testcase name="${name}" time="${time}"/>`;

@@ -73,7 +73,7 @@ export function defineConfig(config: Config): Config {
 
 // ───────────────────────── Sandbox 工厂 ─────────────────────────
 // Sandbox 与 agent 一样用数据结构带参数(见 docs/sandbox.md)。这些工厂只是把
-// 后端 + 参数包成 spec 对象;真正的行为在 sandbox/<backend>.ts 里,由 resolve.ts 派发。
+// provider + 参数包成 spec 对象;真正的行为在 sandbox/<provider>.ts 里,由 resolve.ts 派发。
 //
 // 四个工厂都要挂上 `.setup()` / `.teardown()` 链式方法(见 sandbox/types.ts 的
 // SandboxHooks<Self>):累积的钩子数组随 `HookState` 传递,每次链式调用都重新调
@@ -100,10 +100,10 @@ const EMPTY_HOOKS: HookState = { setupHooks: [], teardownHooks: [] };
 
 /** Docker 沙箱:本地容器。`image` 可覆盖默认 `node:*-slim`(预制模板:烘焙好 agent CLI 的镜像)。 */
 export function dockerSandbox(
-  opts: Omit<DockerSandboxSpec, "backend" | keyof SandboxHooks<unknown>> = {},
+  opts: Omit<DockerSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
 ): DockerSandboxSpec {
   const build = (state: HookState): DockerSandboxSpec => ({
-    backend: "docker",
+    provider: "docker",
     ...opts,
     setupHooks: state.setupHooks,
     teardownHooks: state.teardownHooks,
@@ -114,10 +114,10 @@ export function dockerSandbox(
 
 /** Vercel Sandbox:microVM。`snapshotId` 从已有快照起(预制模板:烘焙好 agent CLI 的快照)。 */
 export function vercelSandbox(
-  opts: Omit<VercelSandboxSpec, "backend" | keyof SandboxHooks<unknown>> = {},
+  opts: Omit<VercelSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
 ): VercelSandboxSpec {
   const build = (state: HookState): VercelSandboxSpec => ({
-    backend: "vercel",
+    provider: "vercel",
     ...opts,
     setupHooks: state.setupHooks,
     teardownHooks: state.teardownHooks,
@@ -128,10 +128,10 @@ export function vercelSandbox(
 
 /** E2B 沙箱。`template` 选 e2b 模板名/ID(预制模板:如 `"niceeval-agents"`);省略用 e2b 默认 `"base"`。 */
 export function e2bSandbox(
-  opts: Omit<E2BSandboxSpec, "backend" | keyof SandboxHooks<unknown>> = {},
+  opts: Omit<E2BSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
 ): E2BSandboxSpec {
   const build = (state: HookState): E2BSandboxSpec => ({
-    backend: "e2b",
+    provider: "e2b",
     ...opts,
     setupHooks: state.setupHooks,
     teardownHooks: state.teardownHooks,
@@ -141,8 +141,8 @@ export function e2bSandbox(
 }
 
 /**
- * 自定义沙箱后端:`create` 直接返回一个实现 `Sandbox` 接口的实例,不需要 niceeval 内置支持
- * 这个后端名字。用于接入 docker/vercel/e2b 之外的运行环境(自建 VM、Modal、Fly 等)。
+ * 自定义沙箱 provider:`create` 直接返回一个实现 `Sandbox` 接口的实例,不需要 niceeval 内置支持
+ * 这个 provider 名字。用于接入 docker/vercel/e2b 之外的运行环境(自建 VM、Modal、Fly 等)。
  */
 export function defineSandbox(def: {
   name: string;
@@ -152,7 +152,7 @@ export function defineSandbox(def: {
   if (!def.name) throw new Error(t("define.sandboxNameRequired"));
   if (typeof def.create !== "function") throw new Error(t("define.sandboxCreateRequired"));
   const build = (state: HookState): CustomSandboxSpec => ({
-    backend: def.name,
+    provider: def.name,
     create: def.create,
     recommendedConcurrency: def.recommendedConcurrency,
     setupHooks: state.setupHooks,

@@ -7,11 +7,11 @@
 //
 // text 面即 `niceeval show` 的榜单(docs-site/zh/guides/viewing-results.mdx 的示例块是
 // 行为规范):`Current verdicts` 头标注合成自几个 run、experiment 表带 eval 级折叠的
-// evals 列、Failing 清单每条带判决时间与下钻命令。
+// evals 列、Failing 清单每条带判定时间与下钻命令。
 
 import { basename } from "node:path";
 import type { Selection } from "../results/index.ts";
-import { foldEvalOutcome } from "../shared/outcome.ts";
+import { foldEvalVerdict } from "../shared/verdict.ts";
 import { defineComponent } from "./tree.ts";
 import type { CaseListData, OverviewData, TableData } from "./types.ts";
 import { caseListData, overviewData, tableData } from "./compute.ts";
@@ -22,20 +22,20 @@ import { renderAlignedRows } from "./text/layout.ts";
 
 /** 榜单的合成标注与 eval 级折叠(text 面用;与 verdicts/cases 出自同一选集)。 */
 export interface VerdictBoardData {
-  /** 判决合成自几个物理 run。 */
+  /** 判定合成自几个物理 run。 */
   composedFromRuns: number;
   /** 参与合成的最新 run(目录名,即时间戳)。 */
   latestRun?: string;
   /** experiment → eval 级折叠计票(evals 列的 13/15)。 */
   tallies: Record<string, { passedEvals: number; totalEvals: number }>;
-  /** eval 级折叠后失败/出错的题,带判决时间;新失败在前。 */
+  /** eval 级折叠后失败/出错的题,带判定时间;新失败在前。 */
   failing: {
     evalId: string;
     experimentId: string;
-    outcome: "failed" | "errored";
+    verdict: "failed" | "errored";
     /** 最新 attempt 的第一条失败断言("gate calledTool(...)")或错误摘要。 */
     reason?: string;
-    /** 判决产生的时刻(最新 attempt 的 startedAt,缺失退快照时刻)。 */
+    /** 判定产生的时刻(最新 attempt 的 startedAt,缺失退快照时刻)。 */
     verdictAt?: string;
   }[];
   /** limit 之外还有几条,如实报。 */
@@ -66,12 +66,12 @@ function buildBoard(selection: Selection): VerdictBoardData {
         runs.add(attempt.runDir.dir);
         if (attempt.runDir.dir > latestRunDir) latestRunDir = attempt.runDir.dir;
       }
-      const outcome = foldEvalOutcome(ev.attempts.map((a) => a.result));
-      if (outcome === "passed") {
+      const verdict = foldEvalVerdict(ev.attempts.map((a) => a.result));
+      if (verdict === "passed") {
         passedEvals += 1;
         continue;
       }
-      if (outcome !== "failed" && outcome !== "errored") continue;
+      if (verdict !== "failed" && verdict !== "errored") continue;
       const latest = ev.attempts.reduce((a, b) => (b.result.attempt >= a.result.attempt ? b : a));
       const failedAssertion = latest.result.assertions.find((a) => !a.passed);
       const reason = failedAssertion
@@ -82,7 +82,7 @@ function buildBoard(selection: Selection): VerdictBoardData {
       failing.push({
         evalId: ev.id,
         experimentId: snapshot.experimentId,
-        outcome,
+        verdict,
         ...(reason !== undefined ? { reason } : {}),
         ...(latest.result.startedAt !== undefined || snapshot.startedAt
           ? { verdictAt: latest.result.startedAt ?? snapshot.startedAt }
@@ -141,7 +141,7 @@ function requireData(): DefaultReportData {
   return activeData;
 }
 
-/** 判决时间的相对标注(text 面的 "41s ago";渲染面纯同步,Date.now 不算 IO)。 */
+/** 判定时间的相对标注(text 面的 "41s ago";渲染面纯同步,Date.now 不算 IO)。 */
 function agoText(iso: string | undefined, now: number): string {
   if (!iso) return "";
   const ms = now - Date.parse(iso);
@@ -189,7 +189,7 @@ function boardText(data: DefaultReportData): string {
       board.failing.map((f) => [
         `✗ ${f.evalId}`,
         f.experimentId,
-        f.reason ?? f.outcome,
+        f.reason ?? f.verdict,
         agoText(f.verdictAt, now),
       ]),
     ).split("\n");

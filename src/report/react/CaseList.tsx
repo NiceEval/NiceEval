@@ -21,9 +21,9 @@ export function CaseList({
       {data.rows.length === 0 && <p className="nre-case-empty">No failed or errored attempts</p>}
       <ol className="nre-cases">
         {data.rows.map((row) => (
-          <li key={`${row.ref.run}:${row.ref.result}`} className={cx("nre-case", `nre-case-${row.outcome}`)}>
+          <li key={`${row.ref.run}:${row.ref.result}`} className={cx("nre-case", `nre-case-${row.verdict}`)}>
             <div className="nre-case-head">
-              <span className={cx("nre-case-outcome", `nre-outcome-${row.outcome}`)}>{row.outcome}</span>
+              <span className={cx("nre-case-verdict", `nre-verdict-${row.verdict}`)}>{row.verdict}</span>
               <span className="nre-case-eval">{row.eval}</span>
               {/* agent 键:稳定散列上色,与其它块同键同色 */}
               <span className={cx("nre-case-agent", "nre-key", colorClassForKey(row.agent))}>{row.agent}</span>

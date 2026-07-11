@@ -165,7 +165,7 @@ export const shared = {
   extractJsonlFromStdout,
   codexThreadId,
   firstJsonField,
-  /** 把文本包成 shell 单引号字面量(含转义)。与 sandbox 后端同一份实现,别在 adapter 里手写。 */
+  /** 把文本包成 shell 单引号字面量(含转义)。与 sandbox provider 同一份实现,别在 adapter 里手写。 */
   shellQuote,
   diagnoseFailure,
   /** 原始 codex JSONL → 标准事件流 + 用量 + 压缩计数。 */

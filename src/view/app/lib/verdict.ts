@@ -1,16 +1,16 @@
-import type { Assertion, Outcome, ViewResult, ViewRow } from "../types.ts";
+import type { Assertion, Verdict, ViewResult, ViewRow } from "../types.ts";
 import type { T } from "../shared.ts";
 import { formatScore } from "./format.ts";
 
-// 折叠口径与 server 聚合共用一份实现,见 src/shared/outcome.ts。
-import { foldEvalOutcome } from "../../../shared/outcome.ts";
+// 折叠口径与 server 聚合共用一份实现,见 src/shared/verdict.ts。
+import { foldEvalVerdict } from "../../../shared/verdict.ts";
 
-export { foldEvalOutcome };
+export { foldEvalVerdict };
 
 export interface EvalGroup {
   id: string;
   experimentId?: string;
-  outcome: Outcome;
+  verdict: Verdict;
   attempts: ViewResult[];
   passedAttempts: number;
 }
@@ -27,29 +27,29 @@ export function groupByEval(results: ViewResult[]): EvalGroup[] {
     return {
       id: sorted[0]!.id,
       experimentId: sorted[0]!.experimentId,
-      outcome: foldEvalOutcome(sorted),
+      verdict: foldEvalVerdict(sorted),
       attempts: sorted,
-      passedAttempts: sorted.filter((a) => a.outcome === "passed").length,
+      passedAttempts: sorted.filter((a) => a.verdict === "passed").length,
     };
   });
 }
 
 /** 成功率按 eval 计票:折叠后通过的 eval 占已跑(非 skipped)eval 的比例。 */
 export function evalPassRate(results: ViewResult[]): number {
-  const ran = groupByEval(results).filter((g) => g.outcome !== "skipped");
-  return ran.length ? ran.filter((g) => g.outcome === "passed").length / ran.length : 0;
+  const ran = groupByEval(results).filter((g) => g.verdict !== "skipped");
+  return ran.length ? ran.filter((g) => g.verdict === "passed").length / ran.length : 0;
 }
 
-export function outcomeClass(outcome: Outcome): string {
-  return outcome === "passed" ? "good" : outcome === "errored" ? "infra-err" : outcome === "failed" ? "bad" : "warn";
+export function verdictClass(verdict: Verdict): string {
+  return verdict === "passed" ? "good" : verdict === "errored" ? "infra-err" : verdict === "failed" ? "bad" : "warn";
 }
 
-export function outcomeLabel(outcome: Outcome, t: T): string {
-  if (outcome === "passed") return t("status.pass");
-  if (outcome === "failed") return t("status.fail");
-  if (outcome === "errored") return t("status.error");
-  if (outcome === "skipped") return t("status.skipped");
-  return outcome || "—";
+export function verdictLabel(verdict: Verdict, t: T): string {
+  if (verdict === "passed") return t("status.pass");
+  if (verdict === "failed") return t("status.fail");
+  if (verdict === "errored") return t("status.error");
+  if (verdict === "skipped") return t("status.skipped");
+  return verdict || "—";
 }
 
 // Only gate-severity failures are eval "failure reasons"; soft failures show as scores
@@ -74,9 +74,9 @@ export function scoresSummary(assertions: Assertion[]): string {
     .join(" · ");
 }
 
-export function outcomeSummary(row: ViewRow, t: T): string {
-  const parts = [`${row.passed} ${t("outcome.passed")}`, `${row.failed} ${t("outcome.failed")}`];
-  if (row.errored) parts.push(`${row.errored} ${t("outcome.errored")}`);
-  if (row.skipped) parts.push(`${row.skipped} ${t("outcome.skipped")}`);
+export function verdictSummary(row: ViewRow, t: T): string {
+  const parts = [`${row.passed} ${t("verdict.passed")}`, `${row.failed} ${t("verdict.failed")}`];
+  if (row.errored) parts.push(`${row.errored} ${t("verdict.errored")}`);
+  if (row.skipped) parts.push(`${row.skipped} ${t("verdict.skipped")}`);
   return parts.join(" / ");
 }

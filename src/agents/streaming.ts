@@ -63,14 +63,14 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
     const derived = reducer.add(frame as unknown as RFrame);
     events.push(...derived);
 
-    const outcome = onFrame?.(frame, derived, ctx);
-    if (outcome && "pause" in outcome) {
-      events.push({ type: "input.requested", request: outcome.pause });
+    const verdict = onFrame?.(frame, derived, ctx);
+    if (verdict && "pause" in verdict) {
+      events.push({ type: "input.requested", request: verdict.pause });
       return { status: "waiting", events, usage: reducer.usage };
     }
-    if (outcome && "fail" in outcome) {
+    if (verdict && "fail" in verdict) {
       transportFailed = true;
-      events.push({ type: "error", message: outcome.fail });
+      events.push({ type: "error", message: verdict.fail });
     }
   }
 

@@ -115,7 +115,7 @@ snap.runDir;                   // 所属物理落盘(低层)
 const attempt = snap.evals[0].attempts[0];
 attempt.evalId;                // 属于哪道题 —— 直达字段,不绕 result
 attempt.experimentId;          // 属于哪个实验
-attempt.result;                // EvalResult 瘦身条目:判决、断言、用量、成本、experiment 元数据
+attempt.result;                // EvalResult 瘦身条目:判定、断言、用量、成本、experiment 元数据
 attempt.ref;                   // { run, result }:证据引用(run 目录名 + results 下标),
                                // Reports 的 MetricCell.refs 与 view 深链 #/attempt/... 同一身份
 await attempt.events();        // StreamEvent[] | null —— 重工件全部懒加载
@@ -131,7 +131,7 @@ await attempt.sources();       // SourceArtifact[] | null
 
 - **懒加载即存在性判断。** 工件缺失返回 `null`,不抛错。今天 summary 里只有 `hasEvents` / `hasTrace` / `hasSources`,连 `hasO11y` / `hasDiff` 标记都没有——这类不对称全被方法语义吸收,消费方不再碰路径。
 - **版本过滤沿用格式规范。** 按 [Results Format 的版本规则](results-format.md#版本与升级设计)判定,不兼容的落盘进 `skipped` 并带 `schemaVersion` 与**完整的** `producer`(name + version),与 [View 的报错与降级](view.md#报错与降级)同一姿势。带完整 producer 是硬要求:`npx niceeval@<version> view` 的提示只对 `producer.name === "niceeval"` 成立,第三方 harness 写的落盘拿它的版本号拼 npx 命令是一句错误提示——只给 `producerVersion` 一个裸版本号,消费方连做对这个分支的信息都没有。能读进来的每个快照带自己的 `producer` / `schemaVersion`,「这份结果是谁、用什么版本写的」不用下钻 summary。
-- **`skipped` 的第三种原因:`"incomplete"`(2026-07-10 拍板)。** 有 attempt 工件、没有 summary 的目录 = run 中途 crash、writer 没走到 `finish()`。与 `"malformed"` 区分开——诊断动作完全不同(一个是没收尾,一个是坏数据)。reader **不读**无 summary 的目录:summary 是收尾事实,给半份落盘造第二条读取路径会破坏它的地位。「重开 writer 补 finish」的恢复路径也被否:判决只活在 summary 里,恢复成立的前提是 writer 增量落一份判决 journal——那是 Results Format 级的新落盘物,代价大于收益,不做。已完成的工件留在盘上,供手工排查。
+- **`skipped` 的第三种原因:`"incomplete"`(2026-07-10 拍板)。** 有 attempt 工件、没有 summary 的目录 = run 中途 crash、writer 没走到 `finish()`。与 `"malformed"` 区分开——诊断动作完全不同(一个是没收尾,一个是坏数据)。reader **不读**无 summary 的目录:summary 是收尾事实,给半份落盘造第二条读取路径会破坏它的地位。「重开 writer 补 finish」的恢复路径也被否:判定只活在 summary 里,恢复成立的前提是 writer 增量落一份判定 journal——那是 Results Format 级的新落盘物,代价大于收益,不做。已完成的工件留在盘上,供手工排查。
 - **分组是切片,不是看法。** 实验归组、eval 分组都是确定性切片(不合并、不聚合、不去重),与「忠实磁盘」不冲突;有看法的合并聚合仍然全部在消费方。
 - **同一进程内按 handle 记忆化。** 两个都要读 diff 的消费方不会把「可达百 MB」的 `diff.json` 读两遍;扫全部历史仍然可能慢,但要慢得线性、可预期。
 - **只读不写事实。** reader 的一切派生物删了随时可重算;唯一事实来源仍是磁盘上的 Results Format。
@@ -239,7 +239,7 @@ for (const exp of results.experiments) {
     points.push({
       agent: exp.latest.agent,
       eval: attempt.evalId,
-      passed: attempt.result.outcome === "passed",
+      passed: attempt.result.verdict === "passed",
       shellCommands: o11y?.shellCommands.length ?? 0,
     });
   }

@@ -1,5 +1,5 @@
 ---
-title: "NiceEval 中的 eval：生命周期、outcome 与文件"
+title: "NiceEval 中的 eval：生命周期、verdict 与文件"
 sidebarTitle: "评估"
 description: "eval 是一个测试用例：描述、agent 引用和 test 函数。了解 eval 如何被发现、调度、评分和报告。"
 ---
@@ -61,15 +61,15 @@ npx niceeval exp local weather/brooklyn
   <Step title="Scoring">
     [NiceEval](https://niceeval.com/) 收集值断言、作用域断言、judge 分数和测试结果。
   </Step>
-  <Step title="Outcome">
-    所有断言结果折叠成一个最终 outcome。
+  <Step title="Verdict">
+    所有断言结果折叠成一个最终 verdict。
   </Step>
   <Step title="Report">
     控制台和 reporters 输出结果，同时写入 `.niceeval/` artifacts。
   </Step>
 </Steps>
 
-## Outcome 类型
+## Verdict 类型
 
 <CardGroup cols={2}>
   <Card title="passed" icon="circle-check" color="#22c55e">
@@ -121,4 +121,4 @@ export default rows.map((row) =>
 ## 相关阅读
 
 - [实验](/zh/concepts/experiment) — 另一半：评谁、怎么跑；为什么和 eval 分开（晚绑定）。
-- [Assert](/zh/concepts/assert) — gate 与 soft 的完整判决规则。
+- [Assert](/zh/concepts/assert) — gate 与 soft 的完整判定规则。

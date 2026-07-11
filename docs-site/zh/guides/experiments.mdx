@@ -45,7 +45,7 @@ npx niceeval exp compare-models   # 把同组各 model 并排出报告
 - 不同模型（Tier 1 接入即可：应用接口暴露模型选择，`model` 经 `ctx.model` 透传）。
 - 不同 prompts 或 feature flags（要求 Tier 3 接入：变体在应用内部，需要应用把它暴露成 experiment 可选的 flag，经 `flags` → `ctx.flags` 透传）。
 - 不同 sandbox 后端。
-- 不同运行环境条件（比如装不装某个记忆工具的二进制、有没有预置状态）：环境差异写在 `sandbox` spec 的 `.setup()` / `.teardown()` 钩子里，一个变体一个 experiment 文件，见 [Sandbox 后端 · 环境钩子](/zh/guides/sandbox-backends#环境钩子)。
+- 不同运行环境条件（比如装不装某个记忆工具的二进制、有没有预置状态）：环境差异写在 `sandbox` spec 的 `.setup()` / `.teardown()` 钩子里，一个变体一个 experiment 文件，见 [Sandbox 后端 · 环境钩子](/zh/guides/sandbox-providers#环境钩子)。
 - 同一任务的 pass@N。
 
 Tier 1 / Tier 2 / Tier 3 的定义见 [Tier](/zh/concepts/tier)。

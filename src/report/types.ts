@@ -244,7 +244,7 @@ export interface CaseListData {
     eval: string;
     experimentId: string;
     agent: string;
-    outcome: "failed" | "errored";
+    verdict: "failed" | "errored";
     /** errored 的错误摘要(已过 redact)。 */
     error?: string;
     failedAssertions: { name: string; score: number; detail?: string; evidence?: string }[];

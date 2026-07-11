@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { RowRun, T } from "../shared.ts";
-import { outcomeClass, outcomeLabel } from "../lib/outcome.ts";
+import { verdictClass, verdictLabel } from "../lib/verdict.ts";
 import { formatCost, formatDateTime, formatDuration, formatTokens, totalTokens } from "../lib/format.ts";
 
 /** 全部历史 attempt 打平成一张表;列表在 App 里由 flattenAttempts(全部快照,已跨快照去重)算好。 */
@@ -35,7 +35,7 @@ export function RunsView({ attempts, t }: { attempts: RowRun[]; t: T }) {
               <tr>
                 <th>{t("table.evalId")}</th>
                 <th>{t("table.experiment")}</th>
-                <th>{t("table.outcome")}</th>
+                <th>{t("table.verdict")}</th>
                 <th>{t("table.agent")}</th>
                 <th>{t("table.model")}</th>
                 <th>{t("metric.duration")}</th>
@@ -47,14 +47,14 @@ export function RunsView({ attempts, t }: { attempts: RowRun[]; t: T }) {
             <tbody>
               {filtered.length ? (
                 filtered.map((r: RowRun) => {
-                  const outcome = r.outcome;
+                  const verdict = r.verdict;
                   return (
                     <tr key={`${r.id}-${r.rowLabel}-${r.attempt}`}>
                       <td>
                         <span className="name">{r.id}</span>
                       </td>
                       <td>{r.rowLabel}</td>
-                      <td className={outcomeClass(outcome)}>{outcomeLabel(outcome, t)}</td>
+                      <td className={verdictClass(verdict)}>{verdictLabel(verdict, t)}</td>
                       <td>{r.rowAgent}</td>
                       <td>{r.rowModel || t("config.default")}</td>
                       <td className="num">{formatDuration(r.durationMs)}</td>

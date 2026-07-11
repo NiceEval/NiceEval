@@ -33,11 +33,11 @@ afterEach(async () => {
 });
 
 function res(over: Partial<EvalResult> & Pick<EvalResult, "id" | "agent">): EvalResult {
-  return { outcome: "passed", attempt: 1, durationMs: 1000, assertions: [], ...over };
+  return { verdict: "passed", attempt: 1, durationMs: 1000, assertions: [], ...over };
 }
 
 function summaryOf(results: EvalResult[], over: Partial<RunSummary> = {}): RunSummary {
-  const count = (o: EvalResult["outcome"]) => results.filter((r) => r.outcome === o).length;
+  const count = (o: EvalResult["verdict"]) => results.filter((r) => r.verdict === o).length;
   return {
     format: RESULTS_FORMAT,
     schemaVersion: RESULTS_SCHEMA_VERSION,
@@ -86,7 +86,7 @@ describe("openResults · 实验 → 快照 → eval → attempt 分层", () => {
     const root = await makeRoot();
     const monday = await writeRun(root, "2026-07-01T08-00-00-000Z", summaryOf([
       res({ id: "algebra/q1", agent: "bub", model: "gpt-5", experimentId: "compare/bub", startedAt: "2026-07-01T08:01:00.000Z" }),
-      res({ id: "algebra/q1", agent: "bub", model: "gpt-5", experimentId: "compare/bub", attempt: 2, outcome: "failed" }),
+      res({ id: "algebra/q1", agent: "bub", model: "gpt-5", experimentId: "compare/bub", attempt: 2, verdict: "failed" }),
       res({ id: "algebra/q2", agent: "bub", model: "gpt-5", experimentId: "compare/bub" }),
       res({ id: "algebra/q1", agent: "codex", model: "o3", experimentId: "compare/codex" }),
     ], { startedAt: "2026-07-01T08:00:00.000Z" }));
@@ -358,7 +358,7 @@ describe("dedupeAttempts", () => {
     const root = await makeRoot();
     await writeRun(root, "2026-07-01T08-00-00-000Z", summaryOf([
       res({ id: "q1", agent: "bub", experimentId: "e", startedAt: "2026-07-01T08:01:00.000Z" }),
-      res({ id: "q2", agent: "bub", experimentId: "e", outcome: "failed", startedAt: "2026-07-01T08:02:00.000Z" }),
+      res({ id: "q2", agent: "bub", experimentId: "e", verdict: "failed", startedAt: "2026-07-01T08:02:00.000Z" }),
       res({ id: "q3", agent: "bub", experimentId: "e" }),
     ], { startedAt: "2026-07-01T08:00:00.000Z" }));
     const tuesday = await writeRun(root, "2026-07-02T08-00-00-000Z", summaryOf([
@@ -406,7 +406,7 @@ describe("createRunWriter", () => {
     await snapA.writeAttempt(
       {
         id: "q1",
-        outcome: "passed",
+        verdict: "passed",
         attempt: 1,
         durationMs: 100,
         assertions: [],
@@ -415,11 +415,11 @@ describe("createRunWriter", () => {
       },
       { events, o11y },
     );
-    await snapA.writeAttempt({ id: "q2", outcome: "failed", attempt: 1, durationMs: 50, assertions: [] });
+    await snapA.writeAttempt({ id: "q2", verdict: "failed", attempt: 1, durationMs: 50, assertions: [] });
 
     const snapB = writer.snapshot({ experiment: "compare/b", agent: "codex", startedAt: "2026-07-02T09:00:00.000Z" });
     await snapB.writeAttempt(
-      { id: "q1", outcome: "passed", attempt: 1, durationMs: 80, assertions: [] },
+      { id: "q1", verdict: "passed", attempt: 1, durationMs: 80, assertions: [] },
       { diff: { generatedFiles: { "a.txt": "1" }, deletedFiles: [] } },
     );
 
@@ -456,7 +456,7 @@ describe("createRunWriter", () => {
       model: "gpt-5",
       experimentId: "compare/a",
       startedAt: "2026-07-01T08:00:00.000Z",
-      outcome: "passed",
+      verdict: "passed",
       durationMs: 100,
       usage: { inputTokens: 10, outputTokens: 5 },
       estimatedCostUSD: 0.25,
@@ -486,7 +486,7 @@ describe("createRunWriter", () => {
     const writer = await createRunWriter(root, { producer: { name: "my-harness" } });
     const snap = writer.snapshot({ experiment: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
     await snap.writeAttempt(
-      { id: "q1", outcome: "passed", attempt: 1, durationMs: 10, assertions: [] },
+      { id: "q1", verdict: "passed", attempt: 1, durationMs: 10, assertions: [] },
       { events: [{ type: "message" }] as never[] },
     );
     // crash:没有 finish()。
@@ -510,7 +510,7 @@ describe("copySnapshots", () => {
     const monday = await writeRun(root, "2026-07-01T08-00-00-000Z", summaryOf([
       res({ id: "q1", agent: "bub", model: "gpt-5", experimentId: "compare/bub", artifactsDir: "q1/bub/gpt-5/compare_bub/a1", hasEvents: true, hasTrace: true, startedAt: "2026-07-01T08:01:00.000Z" }),
       res({ id: "q2", agent: "bub", model: "gpt-5", experimentId: "compare/bub", startedAt: "2026-07-01T08:02:00.000Z" }),
-      res({ id: "q1", agent: "codex", model: "o3", experimentId: "compare/codex", artifactsDir: "q1/codex/o3/compare_codex/a1", hasEvents: true, outcome: "failed", startedAt: "2026-07-01T08:03:00.000Z" }),
+      res({ id: "q1", agent: "codex", model: "o3", experimentId: "compare/codex", artifactsDir: "q1/codex/o3/compare_codex/a1", hasEvents: true, verdict: "failed", startedAt: "2026-07-01T08:03:00.000Z" }),
     ], { startedAt: "2026-07-01T08:00:00.000Z" }));
     await writeArtifact(monday, "q1/bub/gpt-5/compare_bub/a1", "events.json", [{ n: 1 }]);
     await writeArtifact(monday, "q1/bub/gpt-5/compare_bub/a1", "trace.json", [{ name: "turn" }]);
@@ -603,7 +603,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
       experiment: { id: "compare/bub", flags: { style: "concise" } },
       agent: "bub",
       model: "gpt-5.4",
-      outcome: "passed",
+      verdict: "passed",
       fingerprint: "abc",
       attempt: 1,
       startedAt: "2026-07-01T08:01:00.000Z",
@@ -621,7 +621,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
     const noArtifacts: EvalResult = {
       id: "algebra/q2",
       agent: "bub",
-      outcome: "failed",
+      verdict: "failed",
       attempt: 1,
       durationMs: 10,
       assertions: [],
@@ -633,7 +633,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
       experimentId: "compare/bub",
       agent: "bub",
       model: "gpt-5.4",
-      outcome: "passed",
+      verdict: "passed",
       attempt: 1,
       startedAt: "2026-06-30T08:01:00.000Z",
       durationMs: 99,
@@ -692,7 +692,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
       "experimentId": "compare/bub",
       "agent": "bub",
       "model": "gpt-5.4",
-      "outcome": "passed",
+      "verdict": "passed",
       "attempt": 1,
       "startedAt": "2026-06-30T08:01:00.000Z",
       "durationMs": 99,
@@ -713,7 +713,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
       },
       "agent": "bub",
       "model": "gpt-5.4",
-      "outcome": "passed",
+      "verdict": "passed",
       "fingerprint": "abc",
       "attempt": 1,
       "startedAt": "2026-07-01T08:01:00.000Z",
@@ -737,7 +737,7 @@ describe("Artifacts reporter(writer 薄壳)", () => {
     {
       "id": "algebra/q2",
       "agent": "bub",
-      "outcome": "failed",
+      "verdict": "failed",
       "attempt": 1,
       "durationMs": 10,
       "assertions": [],

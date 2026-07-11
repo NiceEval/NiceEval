@@ -110,17 +110,17 @@ table.nre,
   font-size: 1.4em;
   font-weight: 600;
 }
-.nre-overview .nre-outcomes {
+.nre-overview .nre-verdicts {
   margin: 0.25rem 0;
   color: #525252;
 }
-.nre-overview .nre-outcome {
+.nre-overview .nre-verdict {
   margin-right: 1em;
 }
-.nre .nre-outcome-passed { color: #059669; }
-.nre .nre-outcome-failed { color: #dc2626; }
-.nre .nre-outcome-errored { color: #b45309; }
-.nre .nre-outcome-skipped { color: #a3a3a3; }
+.nre .nre-verdict-passed { color: #059669; }
+.nre .nre-verdict-failed { color: #dc2626; }
+.nre .nre-verdict-errored { color: #b45309; }
+.nre .nre-verdict-skipped { color: #a3a3a3; }
 .nre-overview .nre-source {
   color: #737373;
   font-size: 0.85em;
@@ -238,7 +238,7 @@ table.nre,
   gap: 0.75em;
   align-items: baseline;
 }
-.nre-case-list .nre-case-outcome {
+.nre-case-list .nre-case-verdict {
   font-weight: 700;
   text-transform: uppercase;
   font-size: 0.8em;

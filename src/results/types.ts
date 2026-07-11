@@ -45,7 +45,7 @@ export interface AttemptHandle {
   evalId: string;
   /** 属于哪个实验;落盘缺 experimentId 时是 "<agent>/<model>" 合成键(所属快照 synthetic: true)。 */
   experimentId: string;
-  /** EvalResult 瘦身条目:判决、断言、用量、成本、experiment 元数据。 */
+  /** EvalResult 瘦身条目:判定、断言、用量、成本、experiment 元数据。 */
   result: EvalResult;
   /** 证据引用,指条目所在的落盘(合入后的新 run);工件经候选回退仍可达。 */
   ref: AttemptRef;

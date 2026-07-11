@@ -192,8 +192,8 @@ gate(threshold?: number): ValueAssertion;
 atLeast(threshold: number): ValueAssertion;
 ```
 
-转成软阈值断言:未达 threshold 时该条记为 failed,但默认不拖累整条 eval 的 outcome;
-`--strict` 运行下,软阈值失败也会把整条 eval 的 outcome 计为 failed。返回新实例,不改原对象。
+转成软阈值断言:未达 threshold 时该条记为 failed,但默认不拖累整条 eval 的 verdict;
+`--strict` 运行下,软阈值失败也会把整条 eval 的 verdict 计为 failed。返回新实例,不改原对象。
 
 {/* GENERATED:END value-assertion */}
 

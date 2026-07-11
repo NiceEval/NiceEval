@@ -48,10 +48,10 @@ npx niceeval exp prod weather    # 评线上
 
 ```text
 experiment.agent    选「连哪个被测对象」(自实现的 adapter)
---sandbox <backend> 选「沙箱型 agent 在哪跑」(docker / vercel / 三方)
+experiment.sandbox  选「沙箱型 agent 在哪跑」(docker / vercel / 三方;没有 CLI 覆盖)
 ```
 
-任意沙箱型 agent × 任意 sandbox 后端自由组合:`claude-code` 可跑 docker 也可跑 vercel;同一个 docker 沙箱可跑 `claude-code` 也可跑 `bub`。运行器按 experiment / `--sandbox` 备好 `Sandbox` 交给 `ctx.sandbox`,二者只通过 `Sandbox` 接口交互。remote agent 忽略 sandbox。详见 [Sandbox](../sandbox.md)。
+任意沙箱型 agent × 任意 sandbox provider 自由组合:`claude-code` 可跑 docker 也可跑 vercel;同一个 docker 沙箱可跑 `claude-code` 也可跑 `bub`。运行器按 experiment(或 config 兜底)的 `sandbox` 字段备好 `Sandbox` 交给 `ctx.sandbox`,二者只通过 `Sandbox` 接口交互。remote agent 忽略 sandbox。详见 [Sandbox](../sandbox.md)。
 
 ## 相关阅读
 

@@ -54,11 +54,11 @@ export function RunOverview({
         </div>
       </dl>
 
-      <p className="nre-outcomes">
-        <span className="nre-outcome nre-outcome-passed">passed {totals.passed}</span>
-        <span className="nre-outcome nre-outcome-failed">failed {totals.failed}</span>
-        <span className="nre-outcome nre-outcome-errored">errored {totals.errored}</span>
-        <span className="nre-outcome nre-outcome-skipped">skipped {totals.skipped}</span>
+      <p className="nre-verdicts">
+        <span className="nre-verdict nre-verdict-passed">passed {totals.passed}</span>
+        <span className="nre-verdict nre-verdict-failed">failed {totals.failed}</span>
+        <span className="nre-verdict nre-verdict-errored">errored {totals.errored}</span>
+        <span className="nre-verdict nre-verdict-skipped">skipped {totals.skipped}</span>
       </p>
 
       {/* 数据来源:哪些快照、何时跑的——报告的数字都从这里来 */}

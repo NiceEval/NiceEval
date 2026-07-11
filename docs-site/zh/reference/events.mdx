@@ -206,7 +206,7 @@ token 用量或 OTel span 反推得到)。存在时优先于按价格表(`define
 } }
 ```
 
-agent 停轮等人时，每个待回答的问题吐一条，同时整轮 `status` 返回 `"waiting"`。`t.requireInputRequest(filter)` 的 filter 逐字段匹配这个 `request`——**能填的字段尽量填**，否则 eval 侧筛选不到。接法见[接入教程的 HITL 部分](/zh/guides/connect-your-agent)。
+agent 停轮等人时，每个待回答的问题吐一条，同时该 Turn 的 `status` 返回 `"waiting"`。`t.requireInputRequest(filter)` 的 filter 逐字段匹配这个 `request`——**能填的字段尽量填**，否则 eval 侧筛选不到。接法见[接入教程的 HITL 部分](/zh/guides/connect-your-agent)。
 
 ### `thinking` / `compaction` / `error`
 

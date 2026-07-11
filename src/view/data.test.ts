@@ -22,11 +22,11 @@ afterEach(async () => {
 });
 
 function res(over: Partial<EvalResult> & Pick<EvalResult, "id" | "agent">): EvalResult {
-  return { outcome: "passed", attempt: 0, durationMs: 1000, assertions: [], ...over };
+  return { verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], ...over };
 }
 
 function summaryOf(results: EvalResult[], over: Partial<RunSummary> = {}): RunSummary {
-  const count = (o: EvalResult["outcome"]) => results.filter((r) => r.outcome === o).length;
+  const count = (o: EvalResult["verdict"]) => results.filter((r) => r.verdict === o).length;
   return {
     format: RESULTS_FORMAT,
     schemaVersion: RESULTS_SCHEMA_VERSION,
@@ -101,7 +101,7 @@ describe("loadViewScan · 榜单是 latest 口径,不再跨历史合并", () => 
     const root = await makeRoot();
     // 周一全量:q1 失败、q2 通过。
     await writeRun(root, "2026-07-01T08-00-00-000Z", summaryOf([
-      res({ id: "q1", agent: "bub", experimentId: "exp/a", outcome: "failed", startedAt: "2026-07-01T08:01:00.000Z" }),
+      res({ id: "q1", agent: "bub", experimentId: "exp/a", verdict: "failed", startedAt: "2026-07-01T08:01:00.000Z" }),
       res({ id: "q2", agent: "bub", experimentId: "exp/a", startedAt: "2026-07-01T08:02:00.000Z" }),
     ], { startedAt: "2026-07-01T08:00:00.000Z" }));
     // 周二只补跑 q1(通过):latest 快照只盖 1/2 道题。
@@ -115,7 +115,7 @@ describe("loadViewScan · 榜单是 latest 口径,不再跨历史合并", () => 
     expect(row.cells["pass-rate"]!.value).toBe(1);
     expect(row.cells["pass-rate"]!.refs.length).toBe(1);
 
-    // 快照元信息:latest 标记 + 每行可标注判决时间。
+    // 快照元信息:latest 标记 + 每行可标注判定时间。
     const latest = viewData.snapshots.filter((s) => s.latest);
     expect(latest).toHaveLength(1);
     expect(latest[0]!.startedAt).toBe("2026-07-02T08:00:00.000Z");
@@ -192,10 +192,10 @@ describe("loadViewScan · createRunWriter 写出的落盘直接可读(writer/rea
       startedAt: "2026-07-03T08:00:00.000Z",
     });
     await snap.writeAttempt(
-      { id: "q1", outcome: "passed", attempt: 0, durationMs: 1200, assertions: [], estimatedCostUSD: 0.5 },
+      { id: "q1", verdict: "passed", attempt: 0, durationMs: 1200, assertions: [], estimatedCostUSD: 0.5 },
       { events: [{ type: "run.started", t: 0 } as never] },
     );
-    await snap.writeAttempt({ id: "q2", outcome: "failed", attempt: 0, durationMs: 800, assertions: [] });
+    await snap.writeAttempt({ id: "q2", verdict: "failed", attempt: 0, durationMs: 800, assertions: [] });
     await writer.finish();
 
     const { viewData } = await loadViewScan(root);
@@ -218,7 +218,7 @@ describe("loadLatestResultsPerEval(续跑携带基线,口径与旧 loader 一致
     const root = await makeRoot();
     await writeRun(root, "2026-01-01T00-00-00", summaryOf([
       res({ id: "e1", agent: "a", experimentId: "exp/a" }),
-      res({ id: "e2", agent: "a", experimentId: "exp/a", outcome: "errored" }),
+      res({ id: "e2", agent: "a", experimentId: "exp/a", verdict: "errored" }),
       res({ id: "e1", agent: "a", experimentId: "exp/b" }),
     ], { startedAt: "2026-01-01T00:00:00.000Z" }));
     // 部分补跑:只重跑了 exp/a 的 e2
@@ -227,7 +227,7 @@ describe("loadLatestResultsPerEval(续跑携带基线,口径与旧 loader 一致
     ], { startedAt: "2026-01-02T00:00:00.000Z" }));
 
     const results = await loadLatestResultsPerEval(root);
-    const byKey = new Map(results.map((r) => [`${r.experimentId}|${r.id}`, r.outcome]));
+    const byKey = new Map(results.map((r) => [`${r.experimentId}|${r.id}`, r.verdict]));
     expect(byKey.get("exp/a|e1")).toBe("passed"); // 来自旧全量 run,没被部分 run 冲掉
     expect(byKey.get("exp/a|e2")).toBe("passed"); // 来自补跑 run(最新)
     expect(byKey.get("exp/b|e1")).toBe("passed");
@@ -240,7 +240,7 @@ describe("loadLatestResultsPerEval(续跑携带基线,口径与旧 loader 一致
       res({ id: "e1", agent: "a", experimentId: "exp/a", fingerprint: "old" }),
     ], { startedAt: "2026-01-01T00:00:00.000Z" }));
     await writeRun(root, "2026-01-02T00-00-00", summaryOf([
-      res({ id: "e1", agent: "a", experimentId: "exp/a", outcome: "failed", fingerprint: "new", artifactsDir: "artifacts/e1/a0" }),
+      res({ id: "e1", agent: "a", experimentId: "exp/a", verdict: "failed", fingerprint: "new", artifactsDir: "artifacts/e1/a0" }),
       res({ id: "e1", agent: "a", experimentId: "exp/a", attempt: 1, fingerprint: "new" }),
     ], { startedAt: "2026-01-02T00:00:00.000Z" }));
 

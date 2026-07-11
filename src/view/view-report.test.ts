@@ -31,11 +31,11 @@ afterEach(async () => {
 });
 
 function res(over: Partial<EvalResult> & Pick<EvalResult, "id">): EvalResult {
-  return { agent: "bub", outcome: "passed", attempt: 0, durationMs: 1000, assertions: [], ...over };
+  return { agent: "bub", verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], ...over };
 }
 
 function summaryOf(results: EvalResult[], over: Partial<RunSummary> = {}): RunSummary {
-  const count = (o: EvalResult["outcome"]) => results.filter((r) => r.outcome === o).length;
+  const count = (o: EvalResult["verdict"]) => results.filter((r) => r.verdict === o).length;
   return {
     format: RESULTS_FORMAT,
     schemaVersion: RESULTS_SCHEMA_VERSION,
@@ -72,7 +72,7 @@ async function seedRoot(): Promise<string> {
         res({
           id: "fixtures/button",
           experimentId: "compare/bub",
-          outcome: "failed",
+          verdict: "failed",
           startedAt: "2026-07-08T10:00:02.000Z",
           assertions: [
             { name: 'fileChanged("Button.tsx")', severity: "gate", score: 0, passed: false },
@@ -198,7 +198,7 @@ describe("loadViewScan · --report 报告槽", () => {
     expect(scan.reportHtml).toContain("compare/codex");
   });
 
-  it("show --report 与 view --report 吃同一个报告文件,判决口径一致", async () => {
+  it("show --report 与 view --report 吃同一个报告文件,判定口径一致", async () => {
     const root = await seedRoot();
     let text = "";
     const code = await runShow(root, [], { run: root, report: EXAM_REPORT }, {

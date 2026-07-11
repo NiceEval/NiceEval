@@ -1,10 +1,10 @@
 // e2e 回归:SandboxSpec.setup()/.teardown() 生命周期钩子 + ctx.experimentId(见
 // docs/sandbox.md「沙箱钩子」)。跑一遍真实 CLI(`niceeval exp`)对着一个内存假
-// Sandbox(defineSandbox() 自定义后端,不起真容器/microVM),用一份追加日志断言:
+// Sandbox(defineSandbox() 自定义 provider,不起真容器/microVM),用一份追加日志断言:
 //   1. 全序:sandbox.setup(a,b) → agent.setup → send → agent.teardown →
 //      sandbox.setup 返回的 cleanup(LIFO)→ sandbox.teardown(逆序)。
 //   2. ctx.experimentId 在同一 attempt 内处处一致、非空,且等于路径推导出的实验 id。
-//   3. sandbox.setup 抛错 → outcome errored,但已进入的收尾(cleanup / teardown)仍执行,
+//   3. sandbox.setup 抛错 → verdict errored,但已进入的收尾(cleanup / teardown)仍执行,
 //      agent.setup 从未被调用(它排在 sandbox.setup 之后)。
 //
 // 全程不联网:两个实验都用 `defineSandboxAgent` 的确定性 mock send,sandbox 是内存假实现。
@@ -59,7 +59,7 @@ async function readLog(): Promise<LogLine[]> {
 }
 
 async function readLatestSummary(): Promise<{
-  results: Array<{ id: string; outcome: string; experimentId?: string; error?: string }>;
+  results: Array<{ id: string; verdict: string; experimentId?: string; error?: string }>;
 }> {
   const runDirRoot = join(fixtureDir, ".niceeval");
   const runs = (await readdir(runDirRoot)).sort();
@@ -80,7 +80,7 @@ test("sandbox 钩子:全序 + ctx.experimentId + 失败语义", async () => {
   expect(errorResult, "error/hooks result missing from summary.json").toBeTruthy();
 
   // ── 1. 全序(order 实验)──────────────────────────────────────────────
-  expect(orderResult!.outcome).toBe("passed");
+  expect(orderResult!.verdict).toBe("passed");
   const orderExperimentId = orderResult!.experimentId;
   expect(orderExperimentId).toBe("order/mock");
 
@@ -102,7 +102,7 @@ test("sandbox 钩子:全序 + ctx.experimentId + 失败语义", async () => {
   }
 
   // ── 3. 失败语义(error 实验):sandbox.setup 抛错 → errored,已进入的收尾仍执行 ──
-  expect(errorResult!.outcome).toBe("errored");
+  expect(errorResult!.verdict).toBe("errored");
   expect(errorResult!.error ?? "").toContain("boom");
   const errorExperimentId = errorResult!.experimentId;
   expect(errorExperimentId).toBe("error/mock");

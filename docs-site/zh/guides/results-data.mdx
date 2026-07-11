@@ -66,7 +66,7 @@ const attempt = snap.evals[0].attempts[0];
 
 attempt.evalId;                // "algebra/quadratic" —— 属于哪道题,不用绕 result
 attempt.experimentId;          // 属于哪个实验
-attempt.result;                // EvalResult:判决、断言、用量、成本、experiment 元数据
+attempt.result;                // EvalResult:判定、断言、用量、成本、experiment 元数据
 attempt.ref;                   // { run, result }:证据引用,与 view 深链、报告格子的 refs 同一身份
 await attempt.events();        // StreamEvent[] | null
 await attempt.trace();         // TraceSpan[] | null
@@ -148,7 +148,7 @@ for (const exp of results.experiments) {
     points.push({
       agent: exp.latest.agent,
       eval: attempt.evalId,
-      passed: attempt.result.outcome === "passed",
+      passed: attempt.result.verdict === "passed",
       shellCommands: o11y?.shellCommands.length ?? 0,
     });
   }

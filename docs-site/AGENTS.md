@@ -18,8 +18,14 @@
 - **Experiment**：可签入的运行配置。中文写“实验”或保留 `Experiment`，用于说明 agent、model、flags、runs、budget、sandbox 等运行维度。
 - **Adapter**：适配器，负责连接被测系统、鉴权、调用接口、把返回翻译成标准事件流。页面标题和导航可用 `Adapter`。
 - **Agent**：NiceEval 看到的被测对象连接。不要把 Agent 写成某个固定协议；具体协议属于 Adapter。
-- **Sandbox**：沙箱后端，回答“在哪里隔离运行”。不要和 Adapter 混成一层。
-- **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文可写“一轮”或保留 `Turn`。
+- **Sandbox**：沙箱，回答“在哪里隔离运行”。不要和 Adapter 混成一层。
+- **Provider**：某个 Sandbox 的具体实现选择（docker / vercel / e2b）。不要写「沙箱后端」——「后端」留给用户自己的应用服务。
+- **Verdict**：一个 eval 的四态评分判定（passed / failed / errored / skipped）。中文写“判定”，不写“判决”。
+- **Judge**：LLM-as-judge 的裁判模型。中文直接写 `Judge`，需要解释时写“裁判模型”，不写“评判模型”。
+- **Attempt**：同一个 eval 的第 i 次重复运行。中文直接写 `Attempt`，不写“尝试”。
+- **EarlyExit（`earlyExit`）**：取通过率时先过一次即中止其余 attempt 的策略。中文写“首过即停”，不写“早停”。
+- **接入等级（Integration tier）**：接入方式的三级（Tier 1 / 2 / 3）。中文写“接入等级”，档位照写 Tier 1 / Tier 2 / Tier 3。
+- **Turn**：一次 `t.send()` / `t.respond()` 的结果。中文直接写 `Turn`；“多轮对话”这类形容词性用法不受限。
 - **StreamEvent / events**：标准事件流，是断言和报告读取的事实来源。
 - **HITL**：human-in-the-loop，人工介入。第一次出现时写全称或中文解释。
 - **OTel 接入**：Tier 2 的接入方式。只在讲 `send + OTel` 时使用，不要把 OTel 写进 Tier 1。

@@ -10,7 +10,7 @@ import { parseOtlpTraces } from "./parse.ts";
 import { t } from "../../i18n/index.ts";
 
 export interface TraceReceiver {
-  /** agent 应导出到的完整端点(host 由后端定:docker → host.docker.internal)。 */
+  /** agent 应导出到的完整端点(host 由 provider 定:docker → host.docker.internal)。 */
   endpoint(host: string): string;
   /** 目前为止收到并解析出的全部 span(副本)。 */
   collect(): TraceSpan[];

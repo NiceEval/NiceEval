@@ -6,7 +6,9 @@ export const zhCN = {
   "agent.diagnose.noTranscript": "transcript 未生成",
   "agent.diagnose.outputTail": "输出末尾:{{tail}}",
   "agent.diagnose.zeroEvents": "transcript 存在但 0 事件",
-  "bub.homeDetectFailed": "无法探测沙箱 $HOME(printf $HOME 输出为空)。不兜底到后端专属固定路径,请检查沙箱后端。",
+  "bub.homeDetectFailed": "无法探测沙箱 $HOME(printf $HOME 输出为空)。不兜底到 provider 专属固定路径,请检查沙箱 provider。",
+  "bub.checkpointCaptureFailed": "bub checkpoint 缓存回填失败(本沙箱不受影响,后续沙箱会重新安装):{{error}}",
+  "bub.checkpointRestoreFailed": "bub checkpoint 还原失败,回退到全量安装:{{error}}",
   "bub.installFailed": "bub 安装失败(重试 {{attempts}} 次):\n{{tail}}",
   "bub.setupNotRun": "bub adapter 的 setup() 尚未在该沙箱运行(缺 home/workspace 信息);运行器应先调 setup 再 send。",
   "checkpoint.emptyTar": "checkpoint: tar 为空(paths: {{paths}})",
@@ -39,7 +41,7 @@ export const zhCN = {
     "用法:\n" +
     "  niceeval exp [组|实验] [eval-id 前缀…]   跑实验\n" +
     "  niceeval show [eval-id 前缀…]            终端读结果\n" +
-    "      裸跑:每个 experiment 的现刻判决(跨 run 合成)\n" +
+    "      裸跑:每个 experiment 的现刻判定(跨 run 合成)\n" +
     "      单个 eval id:attempt 与断言明细\n" +
     "      --transcript / --trace / --diff[=文件]   单 eval 的证据切面\n" +
     "      --history   跨 run 时间轴(与 --report 互斥)\n" +
@@ -190,15 +192,15 @@ export const zhCN = {
   "runner.resumeCarry": "  · 复用上次 {{carried}} 个通过的结果,重跑 {{retry}} 个 eval\n",
   "runner.resumeCarryDetail": "      复用 [{{experiment}}] {{evals}}\n",
   "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
-  "sandbox.backendNotImplemented": "{{backend}} sandbox backend not implemented; use docker, vercel, or e2b",
+  "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, or e2b",
   "sandbox.missingSpec":
-    "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认后端——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/guides/sandbox-backends.mdx",
+    "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认 provider——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +
+    "  文档:node_modules/niceeval/docs-site/zh/guides/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
   "sandbox.dependencyMissing.vercel": "Vercel sandbox requires '@vercel/sandbox'. Install it with: pnpm add @vercel/sandbox",
   "sandbox.forceCleanup": "  · [sandbox] 强制清理 {{count}} 个沙箱…\n",
-  "sandbox.stopFailed": "  · [sandbox] 停沙箱 {{id}} 失败(已忽略,靠后端过期兜底):{{message}}\n",
+  "sandbox.stopFailed": "  · [sandbox] 停沙箱 {{id}} 失败(已忽略,靠 provider 过期兜底):{{message}}\n",
   "sandbox.stopTimeout": "stop 超时({{timeoutMs}}ms)",
   "scoring.evalError": "评估出错: {{error}}",
   "session.fileFallback": "[file]",

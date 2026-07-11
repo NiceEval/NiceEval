@@ -1,10 +1,10 @@
 // e2e 回归:image-understanding 这条 eval 配一个「永远拒绝识图」的 mock agent 跑一遍真实 CLI
-// (`niceeval exp`),断言最终 outcome 必须是 "failed"。
+// (`niceeval exp`),断言最终 verdict 必须是 "failed"。
 //
 // 复现的真实 bug(见 examples/zh/ai-sdk 跑 deepseek-v4-pro 的记录):模型完全没看图、
 // 明确说"不支持图像输入",但 `t.messageIncludes(/蓝|blue|白|方块|图片|颜色/i)` 这条 gate
 // 断言里塞了太泛的词("图片"/"颜色"),连拒绝语本身都能命中而误判通过;真正能识别出
-// "答非所问"的 judge 断言只是 soft + `.atLeast(0.7)`,非 --strict 不会让 outcome 变 failed
+// "答非所问"的 judge 断言只是 soft + `.atLeast(0.7)`,非 --strict 不会让 verdict 变 failed
 // (这是 docs/scoring.md 文档化的既定设计,不是要改的地方)。两者叠加,eval 悄悄"passed"。
 //
 // 全程不联网:mock agent 进程内跑,judge 打到本机起的一个假 OpenAI 兼容 server。
@@ -66,7 +66,7 @@ async function runFixtureCli(): Promise<void> {
   }
 }
 
-async function readLatestSummary(): Promise<{ results: Array<{ id: string; outcome: string }> }> {
+async function readLatestSummary(): Promise<{ results: Array<{ id: string; verdict: string }> }> {
   const runDirRoot = join(fixtureDir, ".niceeval");
   const runs = (await readdir(runDirRoot)).sort();
   const latest = runs.at(-1);
@@ -79,5 +79,5 @@ test("image-understanding: 模型明确拒绝识图时,eval 必须 failed,不能
   await runFixtureCli();
   const summary = await readLatestSummary();
   const result = summary.results.find((r) => r.id === "image-understanding");
-  expect(result?.outcome).toBe("failed");
+  expect(result?.verdict).toBe("failed");
 });

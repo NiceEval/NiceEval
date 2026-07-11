@@ -230,7 +230,7 @@ codex   80% → 80%   ±0         $0.51 → —       —
 失败与出错的 attempt 逐条列出：失败断言、error 摘要、judge 评语。榜单回答「多少」，它回答「为什么」。
 
 ```tsx
-<CaseList data={await CaseList.data(selection, { outcomes: ["failed", "errored"], limit: 20 })} />
+<CaseList data={await CaseList.data(selection, { verdicts: ["failed", "errored"], limit: 20 })} />
 ```
 
 ```text

@@ -6,7 +6,7 @@ function result(id: string, overrides: Partial<EvalResult> = {}): EvalResult {
   return {
     id,
     agent: "codex",
-    outcome: "passed",
+    verdict: "passed",
     attempt: 0,
     durationMs: 1000,
     assertions: [],
@@ -19,8 +19,8 @@ function summary(results: EvalResult[]): RunSummary {
     agent: "codex",
     startedAt: "2026-07-07T00:00:00.000Z",
     completedAt: "2026-07-07T00:01:00.000Z",
-    passed: results.filter((r) => r.outcome === "passed").length,
-    failed: results.filter((r) => r.outcome === "failed").length,
+    passed: results.filter((r) => r.verdict === "passed").length,
+    failed: results.filter((r) => r.verdict === "failed").length,
     skipped: 0,
     errored: 0,
     durationMs: 60_000,
@@ -33,7 +33,7 @@ describe("filterSummary", () => {
   it("按 eval id 过滤结果并重新计数,保留原 completedAt / outputDir", () => {
     const s = summary([
       result("a/1", { usage: { inputTokens: 10, outputTokens: 5 }, estimatedCostUSD: 0.1 }),
-      result("a/1", { outcome: "failed", attempt: 1 }),
+      result("a/1", { verdict: "failed", attempt: 1 }),
       result("b/1", { usage: { inputTokens: 100, outputTokens: 50 }, estimatedCostUSD: 1 }),
     ]);
     const sub = filterSummary(s, new Set(["a/1"]));
@@ -81,7 +81,7 @@ describe("scopeReporter", () => {
   it("onRunComplete 收到重新计数的子集汇总", async () => {
     const { calls, reporter } = recordingReporter();
     const scoped = scopeReporter(reporter, new Set(["a/1"]));
-    await scoped.onRunComplete?.(summary([result("a/1"), result("b/1", { outcome: "failed" })]));
+    await scoped.onRunComplete?.(summary([result("a/1"), result("b/1", { verdict: "failed" })]));
     const got = calls[0]?.args[0] as RunSummary;
     expect(got.results.map((r) => r.id)).toEqual(["a/1"]);
     expect(got.passed).toBe(1);

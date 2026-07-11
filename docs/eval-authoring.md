@@ -63,7 +63,7 @@ import { defineEval } from "niceeval";
 export default defineEval({
   description?: string;            // 人读的描述,出现在报告里
   tags?: string[];                 // 供 --tag 过滤
-  judge?: JudgeConfig;             // 覆盖默认评判模型
+  judge?: JudgeConfig;             // 覆盖默认裁判模型
   reporters?: Reporter[];          // 这个 eval 专用的报告器
   timeoutMs?: number;              // 覆盖默认超时
   metadata?: Record<string, unknown>;
@@ -225,7 +225,7 @@ export default defineExperiment({
 
 评一个 coding agent 时,eval 仍然是普通的 `defineEval`,只是多了沙箱能力:`test(t)` 里的 `t` 多出 `t.sandbox`(前提是 agent 声明了 sandbox capability;见 [Sandbox](sandbox.md))。
 
-**没有自动发现,也没有隐式拷贝**——起始文件只有一种方式:在 `test(t)` 里显式调用 `t.sandbox.writeFiles` / `t.sandbox.uploadFiles` / `t.sandbox.uploadDirectory` 写进沙箱。`t.sandbox` 是 eval 作者使用的沙箱 API,分三类:文件 IO(`writeFiles` / `uploadDirectory` / `readFile`)、命令执行(`runCommand` / `runShell`)和结果断言 / diff(`fileChanged` / `diff` / `file`)。文件从哪读、写到沙箱里哪个路径,全部是你写在 `test(t)` 里的普通代码——不存在"运行器悄悄拷贝一个目录"这种黑箱,你想放哪就写哪,不想放的就不写。路径全部用相对路径写:沙箱侧相对路径解析到 workdir(agent 的工作目录,也是 git 基线和 diff 采集的锚点),省略 `targetDir` / `cwd` 就是它;不要 hardcode 某个后端的绝对路径,详见 [Sandbox · 路径与 workdir](sandbox.md#路径与-workdir一个坐标系):
+**没有自动发现,也没有隐式拷贝**——起始文件只有一种方式:在 `test(t)` 里显式调用 `t.sandbox.writeFiles` / `t.sandbox.uploadFiles` / `t.sandbox.uploadDirectory` 写进沙箱。`t.sandbox` 是 eval 作者使用的沙箱 API,分三类:文件 IO(`writeFiles` / `uploadDirectory` / `readFile`)、命令执行(`runCommand` / `runShell`)和结果断言 / diff(`fileChanged` / `diff` / `file`)。文件从哪读、写到沙箱里哪个路径,全部是你写在 `test(t)` 里的普通代码——不存在"运行器悄悄拷贝一个目录"这种黑箱,你想放哪就写哪,不想放的就不写。路径全部用相对路径写:沙箱侧相对路径解析到 workdir(agent 的工作目录,也是 git 基线和 diff 采集的锚点),省略 `targetDir` / `cwd` 就是它;不要 hardcode 某个 provider 的绝对路径,详见 [Sandbox · 路径与 workdir](sandbox.md#路径与-workdir一个坐标系):
 
 ```typescript
 // evals/refactor.eval.ts
@@ -313,6 +313,6 @@ export default defineEval({
 ## 相关阅读
 
 - [Assertions](assertions.md) —— `t.check` / 作用域断言的完整速查表(看哪一轮、来源哪里)。
-- [Scoring](scoring.md) —— judge 细节、测试即评分、判决规则。
+- [Scoring](scoring.md) —— judge 细节、测试即评分、判定规则。
 - [Agents 与 Adapters](adapters/README.md) —— agent 三类 transport 与 agent 适配。
 - [CLI](cli.md) —— 过滤、重试、并发等运行标志。

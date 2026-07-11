@@ -1,10 +1,10 @@
 ---
 title: "NiceEval 里的 LLM-as-judge: 给开放式输出打分"
 sidebarTitle: "评判"
-description: "t.judge / session.judge / turn.judge 如何用独立评判模型评估事实性、闭合式质量和摘要忠实度，以及模型解析优先级和严重级。"
+description: "t.judge / session.judge / turn.judge 如何用独立裁判模型评估事实性、闭合式质量和摘要忠实度，以及模型解析优先级和严重级。"
 ---
 
-judge 断言是第五种评分机制，和 [Assert](/zh/concepts/assert) 里的四种并列。用在“对不对靠规则说不清”的地方——开放式行文、语气、事实一致性、摘要质量。评判模型和被测 agent **完全分离**，避免自评：同一个模型给自己的输出打分，天然会打得偏高。
+judge 断言是第五种评分机制，和 [Assert](/zh/concepts/assert) 里的四种并列。用在“对不对靠规则说不清”的地方——开放式行文、语气、事实一致性、摘要质量。裁判模型和被测 agent **完全分离**，避免自评：同一个模型给自己的输出打分，天然会打得偏高。
 
 ```ts
 t.judge.autoevals.factuality(reference).atLeast(0.8);   // 与参考文本的事实一致性
@@ -21,7 +21,7 @@ t.judge.autoevals.closedQA("自定义评分标准描述", { on: t.reply });
 - **`factuality(reference, opts?)`** —— 输出和你给的参考文本之间的事实一致性。
 - **`summarizes(source, opts?)`** —— 输出是否忠实摘要了某个源文档。
 
-`{ on }` 指定被评的值，默认值按接收者决定（见下文）；`{ model }` 单次覆盖评判模型。
+`{ on }` 指定被评的值，默认值按接收者决定（见下文）；`{ model }` 单次覆盖裁判模型。
 
 ## judge 挂在哪：`t`、`session`、`turn`
 
@@ -57,7 +57,7 @@ t.judge.autoevals.closedQA("生成的代码是否是地道的 TypeScript?", {
 
 ## judge 模型解析优先级
 
-评判模型按从具体到笼统解析：
+裁判模型按从具体到笼统解析：
 
 ```
 单次调用的 { model } 选项
@@ -87,7 +87,7 @@ t.judge.autoevals.closedQA("rubric", { on: t.reply, model: "openai/gpt-4o" });
 
 ## 评判端点与 key：OpenAI 兼容协议
 
-评判模型走 **OpenAI 兼容的 `/chat/completions`** 协议。OpenAI 官方、DeepSeek，以及任何兼容这个协议的网关都能当评判端点，在 `judge` 配置里指定：
+裁判模型走 **OpenAI 兼容的 `/chat/completions`** 协议。OpenAI 官方、DeepSeek，以及任何兼容这个协议的网关都能当评判端点，在 `judge` 配置里指定：
 
 ```ts
 // niceeval.config.ts
@@ -125,6 +125,6 @@ t.judge.autoevals.closedQA("语气是否礼貌?").gate();       // 提升为 gat
 
 ## 相关阅读
 
-- [Assert](/zh/concepts/assert) — gate / soft 严重级的完整规则，以及 judge 分数最终折进的判决规则。
+- [Assert](/zh/concepts/assert) — gate / soft 严重级的完整规则，以及 judge 分数最终折进的判定规则。
 - [Drive](/zh/concepts/drive) — `t.send()`、`t.newSession()`，以及 `t.judge` / `session.judge` / `turn.judge` 各自挂在哪个 handle 上。
-- [Evals](/zh/concepts/evals) — judge 分数如何折进 eval 生命周期和 outcome 类型。
+- [Evals](/zh/concepts/evals) — judge 分数如何折进 eval 生命周期和 verdict 类型。

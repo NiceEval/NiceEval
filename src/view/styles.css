@@ -652,7 +652,7 @@ tbody tr:last-child td { border-bottom: 0; }
   border-bottom: none;
 }
 /* Modal */
-/* modal chrome(backdrop / panel / header / title / close / body / outcome chip)→
+/* modal chrome(backdrop / panel / header / title / close / body / verdict chip)→
    迁到 components/ui/dialog.tsx + components/ui/badge.tsx + AttemptModal 的 Tailwind utilities。 */
 
 /* No-source modal body: same visual language as the code view (checks + transcript). */
@@ -955,7 +955,7 @@ a.brand:hover { opacity: 0.75; }
   .eval-item { grid-template-columns: 72px minmax(180px, 1fr) minmax(220px, 1fr) 76px 78px 72px 50px; }
 }
 
-/* ───────────────────────── Modal: error + code view (outcome chip → components/ui/badge.tsx) ───────────────────────── */
+/* ───────────────────────── Modal: error + code view (verdict chip → components/ui/badge.tsx) ───────────────────────── */
 .modal-error {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
@@ -1028,7 +1028,7 @@ a.brand:hover { opacity: 0.75; }
   background: color-mix(in oklch, var(--bad), var(--panel) 52%);
   color: color-mix(in oklch, var(--bad), var(--text) 45%);
 }
-/* soft 断言没过阈值:不影响 outcome,视觉上跟真正的 gate 失败(红)区分开,用 warn(黄)。 */
+/* soft 断言没过阈值:不影响 verdict,视觉上跟真正的 gate 失败(红)区分开,用 warn(黄)。 */
 .code-line.line-warn {
   background: color-mix(in oklch, var(--warn), var(--panel) 74%);
   border-left-color: var(--warn);

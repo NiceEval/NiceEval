@@ -14,7 +14,7 @@ import { discoverEvals, discoverExperiments, makeFilter } from "./runner/discove
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { runWho } from "./runner/types.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
-import { evalLevelStats } from "./shared/outcome.ts";
+import { evalLevelStats } from "./shared/verdict.ts";
 import { sandboxRecommendedConcurrency } from "./sandbox/resolve.ts";
 import { Console as ConsoleReporter } from "./runner/reporters/console.ts";
 import { Json, JUnit } from "./runner/reporters/json.ts";
@@ -133,7 +133,7 @@ const FLAG_OPTIONS = {
   quiet: { type: "boolean" },
   /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
   force: { type: "boolean" },
-  /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 outcome。 */
+  /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
   strict: { type: "boolean" },
   /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts。 */
   "early-exit": { type: "boolean" },
@@ -532,7 +532,7 @@ async function main(): Promise<void> {
       for (const agentRun of agentRuns) {
         // who 必须与 attempt.ts 的进度上报同源(runWho):曾用 agent/model,同 agent 同 model
         // 的实验变体(xxx 与 xxx--agents-md)会被折叠成一行,0/2 看起来像同一 eval 跑两次。
-        const who = runWho(agentRun);
+        const who = runWho({ agentName: agentRun.agent.name, model: agentRun.model, experimentId: agentRun.experimentId });
         const matched = evals.filter((e) => agentRun.evalFilter(e.id));
         for (const evalDef of matched) {
           liveRows.push({ evalId: evalDef.id, who, total: agentRun.runs });
@@ -590,8 +590,8 @@ async function main(): Promise<void> {
     });
   }
 
-  // 无全局默认:并发上限由 sandbox 后端的推荐值决定。
-  // 多个 agentRun 各有 sandbox 时取最小值(最保守的后端决定上限)。
+  // 无全局默认:并发上限由 sandbox provider 的推荐值决定。
+  // 多个 agentRun 各有 sandbox 时取最小值(最保守的 provider 决定上限)。
   const sandboxRecs = agentRuns.map((r) => sandboxRecommendedConcurrency(r.sandbox));
   const sandboxDefaultConcurrency = sandboxRecs.length > 0 ? Math.min(...sandboxRecs) : 10;
 
@@ -622,10 +622,10 @@ async function main(): Promise<void> {
     process.stdout.write(t("cli.resultsPath", { path: join(artifacts.outputDir(), "summary.json") }));
   }
 
-  // 退出码按 eval 级判决,不按 attempt:summary.failed/errored 统计的是每次 attempt,
+  // 退出码按 eval 级判定,不按 attempt:summary.failed/errored 统计的是每次 attempt,
   // 被 runs+earlyExit 重试吸收的失败(先挂一次、后来过了)不该把进程判红——否则
   // 「runs 吸收单次抖动」在 CI 退出码这层永远不成立。折叠口径与报表/view 共用
-  // foldEvalOutcome(任一轮通过 → 该 eval 通过),粒度 experimentId|eval id。
+  // foldEvalVerdict(任一轮通过 → 该 eval 通过),粒度 experimentId|eval id。
   const stats = evalLevelStats(summary.results, (r) => `${r.experimentId ?? ""}|${r.id}`);
   const failedExit = stats.failed > 0 || stats.errored > 0;
   process.exit(failedExit ? 1 : 0);

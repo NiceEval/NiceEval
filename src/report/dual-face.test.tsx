@@ -51,7 +51,7 @@ describe("RunOverview 双面", () => {
   const html = renderToStaticMarkup(<RunOverview data={overviewData} />);
   const term = text(<RunOverview data={overviewData} />);
 
-  it("text 面形态:头行 + 判决行 + 警告行", () => {
+  it("text 面形态:头行 + 判定行 + 警告行", () => {
     expect(term).toMatchInlineSnapshot(`
       "2 experiments · 12 evals · 48 attempts · composed from 2 runs · latest 2026-07-01T11:30:00Z
       passed 36 · failed 8 · errored 2 · skipped 2 · no data · 4m 21s
@@ -422,13 +422,13 @@ function fakeContext(): { selection: Selection; results: Results } {
       results: [] as never[],
     };
     const runDir = { dir: "/results/run-1", summary, attempts: [] as never[] };
-    const mk = (id: string, outcome: "passed" | "failed", index: number) => ({
+    const mk = (id: string, verdict: "passed" | "failed", index: number) => ({
       evalId: id,
       experimentId: "compare/bub",
       result: {
         id,
         agent: "bub",
-        outcome,
+        verdict,
         attempt: 0,
         startedAt: `2026-07-01T10:0${index}:00Z`,
         durationMs: 1000,

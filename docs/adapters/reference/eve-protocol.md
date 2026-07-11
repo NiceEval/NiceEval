@@ -44,7 +44,7 @@ niceeval 的位置一句话:**契约形状学 eve(强类型事件、callId、`re
 | **动作** | `actions.requested` | `{ actions: RuntimeActionRequest[] }`(见下);文档明确"consumers must correlate action lifecycles by call ID" |
 | | `action.result` | `{ result, status: "completed" \| "failed" \| "rejected", error?: { code, message } }`——**结构化错误**,"keeps UI consumers from having to parse provider- or tool-specific output strings" |
 | | `input.requested` | `{ requests: InputRequest[] }`(见下) |
-| | `authorization.required` / `authorization.completed` | OAuth / 连接授权,**独立于 HITL 问答**;completed 带 `outcome: "authorized" \| "declined" \| "failed" \| "timed-out"` |
+| | `authorization.required` / `authorization.completed` | OAuth / 连接授权,**独立于 HITL 问答**;completed 带 `verdict: "authorized" \| "declined" \| "failed" \| "timed-out"` |
 | **subagent** | `subagent.called` | `{ callId, childSessionId, sessionId, name, toolName, workflowId, remote?: { url } }` |
 | | `subagent.started` / `subagent.completed` | completed 带 `{ callId, output }` |
 | | `subagent.event` | `{ callId, subagentName, event: HandleMessageStreamEvent }`——**子 agent 的事件递归嵌套转发**,保留归属 |
@@ -114,7 +114,7 @@ interface RuntimeIdentity {
    await t.respond({ requestId: req.requestId, optionId: "approve" });  // eve 形状:显式定位
    ```
 
-6. **`authorization.*` 与 `input.requested` 分开。** 授权(OAuth / 连接)和 HITL 问答是两种"停",eve 分成两组事件、各带 outcome;niceeval 目前只有一种。评测带三方连接的 agent 时会需要。
+6. **`authorization.*` 与 `input.requested` 分开。** 授权(OAuth / 连接)和 HITL 问答是两种"停",eve 分成两组事件、各带 verdict;niceeval 目前只有一种。评测带三方连接的 agent 时会需要。
 7. **落盘工件带 schema 版本。** `StreamEvent` 是进程内模型可以不带版本,但 `.niceeval/<run>/` 的事件流 JSON 文件是跨版本读的;eve 的 `x-eve-stream-version` 头是先例。niceeval 的具体取舍见 [Results Format · 版本与升级设计](../../results-format.md#版本与升级设计):版本号放在 run 级 `summary.json` manifest 里,attempt 文件继续保持裸 JSON array/object。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](otel-genai.md#ag-ui--和-niceeval-streamevent-同形态的扁平事件流))。要做"实时看 agent 跑"的 view 时再回头看。

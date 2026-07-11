@@ -1,4 +1,4 @@
-// Vercel Sandbox 后端:用 @vercel/sandbox SDK 把 Vercel microVM 当隔离工作区跑 eval。
+// Vercel Sandbox provider:用 @vercel/sandbox SDK 把 Vercel microVM 当隔离工作区跑 eval。
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox 可互换。
 
 import { Sandbox as VSandbox } from "@vercel/sandbox";
@@ -176,7 +176,7 @@ export class VercelSandbox implements Sandbox {
   }
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
-  // 只是对直接使用后端实例(未包 normalize)的幂等防御,提到 map 外只算一次。
+  // 只是对直接使用 provider 实例(未包 normalize)的幂等防御,提到 map 外只算一次。
   async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
     const base = resolveSandboxPath(this.workdir, targetDir);
     const entries = Object.entries(files).map(([p, content]) => ({

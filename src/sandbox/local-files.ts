@@ -1,5 +1,5 @@
 // 本地目录文件采集(uploadDirectory 用)与 readSourceFiles 的默认过滤常量,
-// docker / vercel / e2b 三后端共用一份。
+// docker / vercel / e2b 三个 provider 共用一份。
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";

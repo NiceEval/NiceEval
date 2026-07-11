@@ -30,11 +30,11 @@ import { defineConfig } from "niceeval";
 import { Console, JUnit } from "niceeval/reporters";
 
 export default defineConfig({
-  judge: { model: "anthropic/claude-haiku-4-5" }, // 默认评判模型
+  judge: { model: "anthropic/claude-haiku-4-5" }, // 默认裁判模型
   reporters: [Console(), JUnit(".niceeval/junit.xml")],
   maxConcurrency: 8,
   timeoutMs: 300_000,
-  // 沙箱后端不在这里配 —— 它由 experiment 的 sandbox 字段决定
+  // 沙箱 provider 不在这里配 —— 它由 experiment 的 sandbox 字段决定
 });
 ```
 
@@ -174,7 +174,7 @@ export default defineEval({
 });
 ```
 
-`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerSandbox()`(从 `niceeval/sandbox` 导入)——沙箱后端没有默认值,也没有 `--sandbox` 这种 CLI 覆盖,必须写进 experiment(或 `niceeval.config.ts` 兜底)。
+`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerSandbox()`(从 `niceeval/sandbox` 导入)——沙箱 provider 没有默认值,也没有 `--sandbox` 这种 CLI 覆盖,必须写进 experiment(或 `niceeval.config.ts` 兜底)。
 
 **跑起来:**
 
@@ -183,7 +183,7 @@ export default defineEval({
 export ANTHROPIC_API_KEY=sk-ant-...
 npx niceeval exp local fixtures/button
 
-# 跑 10 次取通过率,先过一次就早停
+# 跑 10 次取通过率,先过一次就首过即停
 npx niceeval exp local fixtures/button --runs 10 --early-exit
 ```
 

@@ -1,6 +1,6 @@
 // 单个 attempt 的完整生命周期:资源(沙箱 / OTLP 接收器)经 Effect.Scope 的
 // acquireRelease 接管,无论 body 成功 / 抛错 / 被中断,stop() / close() 都保证执行。
-// 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判决→收 trace),
+// 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
 // adapter 只填「把 agent 跑起来」一段。
 
 import { resolve as resolvePath } from "node:path";
@@ -15,7 +15,7 @@ import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
 import { createAgentSession } from "../context/session.ts";
 import { EvalRequirementFailed, EvalSkipped, TurnFailed } from "../context/control-flow.ts";
-import { computeOutcome } from "../scoring/verdict.ts";
+import { computeVerdict } from "../scoring/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
@@ -58,7 +58,7 @@ export function runAttemptEffect(
     experiment: experimentRunInfo(run),
     agent: run.agent.name,
     model: run.model,
-    outcome: "errored",
+    verdict: "errored",
     fingerprint: a.fingerprint,
     attempt,
     startedAt: new Date(t0).toISOString(),
@@ -75,7 +75,7 @@ export function runAttemptEffect(
 
   // 流式进度打到宿主 stderr(结果走 stdout,互不干扰)。容器主日志【不】放这些进度标记 ——
   // 那里留给 agent 的原始输出(adapter 给 agent 命令开 { stream: true })。
-  const who = runWho(run);
+  const who = runWho({ agentName: run.agent.name, model: run.model, experimentId: run.experimentId });
   // 同时保留最近 20 条进度消息,timeout 时嵌入 error 字段方便定位卡在哪一步。
   const recentLogs: string[] = [];
   const log = (m: string) => {
@@ -90,7 +90,7 @@ export function runAttemptEffect(
 
   return Effect.scoped(
     Effect.gen(function* () {
-      // run.sandbox ?? config.sandbox 是同一个 SandboxSpec 对象,既用来起沙箱后端,
+      // run.sandbox ?? config.sandbox 是同一个 SandboxSpec 对象,既用来起沙箱 provider,
       // 也是 sandbox.setup / sandbox.teardown 钩子(SandboxSpec.setup()/.teardown() 链式挂的)的来源。
       const sandboxSpec = run.sandbox ?? config.sandbox;
       const sandbox =
@@ -222,7 +222,7 @@ interface AttemptResources {
   log: (m: string) => void;
 }
 
-// attempt 的固定段(上传→基线→setup→驱动 agent→采 diff→脚本→评分→判决)。
+// attempt 的固定段(上传→基线→setup→驱动 agent→采 diff→脚本→评分→判定)。
 // 资源已由 runAttemptEffect 的 Scope 持有;这里只在 finally 跑 agent 自己的 cleanup/teardown。
 async function runAttemptBody(
   a: Attempt,
@@ -360,7 +360,7 @@ async function runAttemptBody(
     };
     if (!skipReason) log(t("runner.scoreJudge"));
     const assertions = skipReason ? [] : await state.collector.finalize(scoringContext);
-    const outcome = computeOutcome({ error, assertions, skipReason, strict: run.strict });
+    const verdict = computeVerdict({ error, assertions, skipReason, strict: run.strict });
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
     // codex 的 OTLP 把内部 Rust tracing 全导出来(handle_responses / append_items … 上万条);
@@ -407,7 +407,7 @@ async function runAttemptBody(
       experiment: experimentRunInfo(run),
       agent: run.agent.name,
       model: run.model,
-      outcome,
+      verdict,
       fingerprint: a.fingerprint,
       attempt,
       startedAt: new Date(t0).toISOString(),
@@ -430,7 +430,7 @@ async function runAttemptBody(
       error: formatThrown(e),
     };
   } finally {
-    // teardown / cleanup 一律在 finally 跑(失败也跑),不改判决,各自兜错(diagnostic)。
+    // teardown / cleanup 一律在 finally 跑(失败也跑),不改判定,各自兜错(diagnostic)。
     // LIFO:agent 级(setup 最晚 → cleanup / teardown 先跑)在前,sandbox 级(最早就绪)收尾在后
     //(即 sandbox.setup 返回的 cleanup、sandbox.teardown 钩子最后跑,沙箱销毁前)。
     // 沙箱 stop / 接收器 close 不在这里 —— 由 runAttemptEffect 的 Scope 在本函数返回后回收。

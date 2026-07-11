@@ -101,12 +101,12 @@ npx niceeval exp my-bot refund # 只跑 ID 以 refund 开头的
 npx niceeval view              # 本地查看器里看结果
 ```
 
-**跑通的样子**：终端里每条 eval 一行判决，末尾汇总 `N passed, N failed`；`npx niceeval view` 里能看到每条 eval 逐轮的输入、事件和评分明细。
+**跑通的样子**：终端里每条 eval 一行判定，末尾汇总 `N passed, N failed`；`npx niceeval view` 里能看到每条 eval 逐轮的输入、事件和评分明细。
 
 没跑通时，按报错的位置分三类排查：
 
 - **`fetch` 直接抛错**（连接被拒等）：应用没起来，或 `send` 里的 URL 不对——先用 `curl` 对那个接口发一次同样的请求确认。
-- **`t.succeeded()` 没过、本轮判决是 failed**：请求发出去了但应用回了非 2xx。在 `send` 里用 `ctx.log()` 打印响应体，`niceeval view` 的本轮日志里能看到。
+- **`t.succeeded()` 没过、本轮判定是 failed**：请求发出去了但应用回了非 2xx。在 `send` 里用 `ctx.log()` 打印响应体，`niceeval view` 的本轮日志里能看到。
 - **只有内容断言没过**：接入本身已经通了——在 `view` 里对照 `t.reply` 的实际值，调断言或调应用。
 
 到这里接入已经完成：文本断言和 judge 评分都能用了。想要更多断言（工具、多轮、审批流），见文末的增量地图。

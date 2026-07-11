@@ -4,10 +4,10 @@
 // 全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, ResultOutcome, StreamEvent, TraceSpan } from "../types.ts";
+import type { AssertionResult, Verdict, StreamEvent, TraceSpan } from "../types.ts";
 import type { DiffData } from "../types.ts";
 import type { AttemptHandle, Selection, Snapshot } from "../results/index.ts";
-import { foldEvalOutcome } from "../shared/outcome.ts";
+import { foldEvalVerdict } from "../shared/verdict.ts";
 import { attemptCostUSD } from "../report/metrics.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/format.ts";
 import { indentBlock, padDisplay, renderAlignedRows, wrapDisplay } from "../report/text/layout.ts";
@@ -17,7 +17,7 @@ const MISSING = "—";
 
 // ───────────────────────── 时间与小件 ─────────────────────────
 
-/** 判决时间的相对标注("just now" / "41s ago" / "2h ago");未来时刻按 just now 兜底。 */
+/** 判定时间的相对标注("just now" / "41s ago" / "2h ago");未来时刻按 just now 兜底。 */
 export function relativeAgo(iso: string | undefined, now: number): string {
   if (!iso) return "";
   const ms = now - Date.parse(iso);
@@ -36,9 +36,9 @@ export function timelineStamp(iso: string): string {
   return iso.slice(0, 16).replace(/:/g, "-");
 }
 
-function outcomeMark(outcome: ResultOutcome): string {
-  if (outcome === "passed") return "✓";
-  if (outcome === "skipped") return "-";
+function verdictMark(verdict: Verdict): string {
+  if (verdict === "passed") return "✓";
+  if (verdict === "skipped") return "-";
   return "✗";
 }
 
@@ -64,7 +64,7 @@ export function attemptArtifactsPath(attempt: AttemptHandle, cwd: string): strin
 
 // ───────────────────────── attempt 挑选 ─────────────────────────
 
-/** 选集内某道题的全部 attempt(合成选集里每实验只剩最新判决)。 */
+/** 选集内某道题的全部 attempt(合成选集里每实验只剩最新判定)。 */
 export function attemptsOfEval(snapshots: Snapshot[], evalId: string): AttemptHandle[] {
   const out: AttemptHandle[] = [];
   for (const snapshot of snapshots) {
@@ -90,7 +90,7 @@ export function pickDetailAttempt(
     const wanted = byTime.filter((a) => a.result.attempt === attemptNumber - 1);
     return wanted.at(-1);
   }
-  const failing = byTime.filter((a) => a.result.outcome === "failed" || a.result.outcome === "errored");
+  const failing = byTime.filter((a) => a.result.verdict === "failed" || a.result.verdict === "errored");
   return failing.at(-1) ?? byTime.at(-1);
 }
 
@@ -117,7 +117,7 @@ export function attemptHeader(attempt: AttemptHandle): string {
   const parts = [
     `attempt ${displayAttemptNumber(attempt)}`,
     attempt.experimentId,
-    r.outcome,
+    r.verdict,
     formatDurationMs(r.durationMs),
   ];
   if (r.usage) parts.push(`${formatMetricValue(r.usage.inputTokens + r.usage.outputTokens)} tokens`);
@@ -136,7 +136,7 @@ export interface EvalDetailOptions {
   width: number;
 }
 
-/** `niceeval show <eval id>`:各 experiment 的判决行 + 默认 attempt 的断言明细。 */
+/** `niceeval show <eval id>`:各 experiment 的判定行 + 默认 attempt 的断言明细。 */
 export function evalDetailText(opts: EvalDetailOptions): string {
   const { evalId, snapshots, detail, cwd, now, width } = opts;
   const blocks: string[] = [];
@@ -148,12 +148,12 @@ export function evalDetailText(opts: EvalDetailOptions): string {
     .find((d) => d !== undefined);
   blocks.push(description ? `${evalId} — ${description}` : evalId);
 
-  // 每 experiment 一行:折叠判决、attempt 数、最新 attempt 的耗时、总成本、判决时间
+  // 每 experiment 一行:折叠判定、attempt 数、最新 attempt 的耗时、总成本、判定时间
   const rows: string[][] = [];
   for (const snapshot of snapshots) {
     const ev = snapshot.evals.find((e) => e.id === evalId);
     if (!ev || ev.attempts.length === 0) continue;
-    const outcome = foldEvalOutcome(ev.attempts.map((a) => a.result));
+    const verdict = foldEvalVerdict(ev.attempts.map((a) => a.result));
     const latest = ev.attempts.reduce((a, b) => (b.result.attempt >= a.result.attempt ? b : a));
     let cost: number | null = null;
     for (const attempt of ev.attempts) {
@@ -162,7 +162,7 @@ export function evalDetailText(opts: EvalDetailOptions): string {
     }
     rows.push([
       snapshot.experimentId,
-      `${outcomeMark(outcome)} ${outcome}`,
+      `${verdictMark(verdict)} ${verdict}`,
       attemptsLabel(ev.attempts.length),
       formatDurationMs(latest.result.durationMs),
       cost === null ? MISSING : formatUSD(cost),
@@ -204,7 +204,7 @@ export function evalHistoryText(opts: {
   rows: EvalHistoryRow[];
 }): string {
   const { experimentId, evalId, rows } = opts;
-  const passed = rows.filter((r) => r.outcome === "passed").length;
+  const passed = rows.filter((r) => r.verdict === "passed").length;
   const head = [
     ...(evalId ? [evalId] : []),
     experimentId,
@@ -215,7 +215,7 @@ export function evalHistoryText(opts: {
   const table = renderAlignedRows(
     rows.map((r) => [
       timelineStamp(r.startedAt),
-      `${outcomeMark(r.outcome)} ${r.outcome}`,
+      `${verdictMark(r.verdict)} ${r.verdict}`,
       attemptsLabel(r.attempts),
       r.costUSD === null ? MISSING : formatUSD(r.costUSD),
       r.failedAssertion ?? (r.error ? `error: ${r.error}` : ""),

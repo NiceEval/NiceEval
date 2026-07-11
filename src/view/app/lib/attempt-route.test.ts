@@ -7,7 +7,7 @@ import type { ViewResult, ViewSnapshot } from "../types.ts";
 const attempt = (run: string, index: number): ViewResult => ({
   id: `demo/eval-${index}`,
   agent: "demo-agent",
-  outcome: "passed",
+  verdict: "passed",
   attempt: 0,
   durationMs: 1,
   assertions: [],

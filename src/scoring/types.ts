@@ -12,8 +12,8 @@ export interface ValueAssertion {
   /** 转成硬门槛断言:未达阈值(省略 threshold 则按 score > 0 判定)整条 eval 判为 failed。返回新实例,不改原对象。 */
   gate(threshold?: number): ValueAssertion;
   /**
-   * 转成软阈值断言:未达 threshold 时该条记为 failed,但默认不拖累整条 eval 的 outcome;
-   * `--strict` 运行下,软阈值失败也会把整条 eval 的 outcome 计为 failed。返回新实例,不改原对象。
+   * 转成软阈值断言:未达 threshold 时该条记为 failed,但默认不拖累整条 eval 的 verdict;
+   * `--strict` 运行下,软阈值失败也会把整条 eval 的 verdict 计为 failed。返回新实例,不改原对象。
    */
   atLeast(threshold: number): ValueAssertion;
 }
@@ -27,7 +27,7 @@ export interface AssertionSpec {
   evaluate(ctx: ScoringContext): Promise<number> | number;
 }
 
-/** 断言评估完的结果(进判决 / 报告)。 */
+/** 断言评估完的结果(进判定 / 报告)。 */
 export interface AssertionResult {
   name: string;
   severity: Severity;
@@ -39,7 +39,7 @@ export interface AssertionResult {
   evidence?: string;
   /** 所属分组(t.group 标题)。纯报告用,不影响 passed/score。 */
   group?: string;
-  /** 断言在 eval 源码里的调用点(栈回溯抠出);view 把判决叠回这一行。 */
+  /** 断言在 eval 源码里的调用点(栈回溯抠出);view 把判定叠回这一行。 */
   loc?: SourceLoc;
 }
 
@@ -71,7 +71,7 @@ export interface DiffData {
   deletedFiles: string[];
 }
 
-export type ResultOutcome = "passed" | "failed" | "errored" | "skipped";
+export type Verdict = "passed" | "failed" | "errored" | "skipped";
 
 export interface JudgeConfig {
   model: string;

@@ -77,7 +77,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     for (const r of opts.priorResults) {
       if (!r.experimentId) continue;
       const key = `${r.experimentId}|${r.id}`;
-      if (r.outcome === "passed" && r.fingerprint !== undefined && r.fingerprint === plannedFingerprints.get(key)) {
+      if (r.verdict === "passed" && r.fingerprint !== undefined && r.fingerprint === plannedFingerprints.get(key)) {
         priorRunKeys.add(key);
       }
     }
@@ -236,7 +236,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // 并发 worker 交错写 → 用一个 permit=1 的信号量串起来(替代原先手搓的 reportQueue 链)。
   const reportMutex = Effect.runSync(Effect.makeSemaphore(1));
   // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
-  // 未显式指定时跟 maxConcurrency 走——各 backend 的推荐值已在 cli 层写进 maxConcurrency 默认值。
+  // 未显式指定时跟 maxConcurrency 走——各 provider 的推荐值已在 cli 层写进 maxConcurrency 默认值。
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
 
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。
@@ -287,7 +287,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
       attempts,
       (a) => {
         const body = Effect.gen(function* () {
-            // 早停:同 key 已通过,或已 errored(重跑只会重复同一个框架错误)且开了 earlyExit
+            // 首过即停:同 key 已通过,或已 errored(重跑只会重复同一个框架错误)且开了 earlyExit
             // → 跳过未启动的 attempt。检查必须在拿到 permit 之后(fiber 是 unbounded 一次性
             // 全建的,建时结果还没出来);跳过路径短暂占一个 permit,可忽略。
             if (a.run.earlyExit && (passedKeys.has(a.key) || erroredKeys.has(a.key))) {
@@ -342,7 +342,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               }
             }
 
-            // 合并全局信号与本 eval 的早停信号:任一 abort → 本 attempt 的信号 abort。
+            // 合并全局信号与本 eval 的首过即停信号:任一 abort → 本 attempt 的信号 abort。
             const evalAc = evalAbortControllers.get(a.key);
             const attemptSignal =
               evalAc && opts.signal
@@ -381,14 +381,14 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               }
             }
 
-            if (result.outcome === "passed") {
+            if (result.verdict === "passed") {
               passedKeys.add(a.key);
               evalAc?.abort(); // 让同 key 并发 attempt 尽早退出
             } else if (a.run.earlyExit && (passedKeys.has(a.key) || erroredKeys.has(a.key))) {
               // 并发情况:同 key 另一个 attempt 已通过/已 errored 后本 attempt 才完成
               // (被 abort 后产出 errored),不计入结果。
               return;
-            } else if (result.outcome === "errored") {
+            } else if (result.verdict === "errored") {
               erroredKeys.add(a.key);
               evalAc?.abort(); // 框架层面的错误会确定性重复,让同 key 剩余 attempt 尽早退出
             }

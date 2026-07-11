@@ -3,7 +3,7 @@ import type { ArtifactLoadState, T } from "../shared.ts";
 import type { ViewResult } from "../types.ts";
 import { artifactUrl } from "../lib/artifact-url.ts";
 import { asEvents, asSources } from "../lib/guards.ts";
-import { outcomeClass, outcomeLabel } from "../lib/outcome.ts";
+import { verdictClass, verdictLabel } from "../lib/verdict.ts";
 import { CodeView, NoSourceBody } from "./CodeView.tsx";
 import { CopyAttemptPrompt } from "./CopyControls.tsx";
 import { LazyArtifact } from "./LazyArtifact.tsx";
@@ -31,7 +31,7 @@ export function AttemptModal({ result, onClose, t }: { result: ViewResult; onClo
     return () => { alive = false; };
   }, [base, result.hasSources, result.hasEvents]);
 
-  const outcome = result.outcome;
+  const verdict = result.verdict;
   const hasCode = Boolean(data.sources?.length);
 
   return (
@@ -39,7 +39,7 @@ export function AttemptModal({ result, onClose, t }: { result: ViewResult; onClo
       <DialogContent aria-describedby={undefined}>
         <div className="flex min-w-0 shrink-0 items-center justify-between gap-3 border-b border-line px-[18px] pb-[11px] pt-[13px]">
           <div className="flex min-w-0 flex-col gap-[3px]">
-            <Badge tone={outcomeClass(outcome)}>{outcomeLabel(outcome, t)}</Badge>
+            <Badge tone={verdictClass(verdict)}>{verdictLabel(verdict, t)}</Badge>
             <DialogTitle asChild>
               <span className="truncate text-sm font-[640] text-text">{result.id}</span>
             </DialogTitle>

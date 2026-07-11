@@ -22,7 +22,7 @@ export type {
   ToolMatch,
   ValueAssertion,
   Severity,
-  ResultOutcome,
+  Verdict,
   EvalDef,
   ExperimentDef,
   Config,

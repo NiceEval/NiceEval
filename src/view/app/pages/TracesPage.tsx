@@ -1,5 +1,5 @@
 import type { RowRun, T } from "../shared.ts";
-import { outcomeClass, outcomeLabel } from "../lib/outcome.ts";
+import { verdictClass, verdictLabel } from "../lib/verdict.ts";
 import { formatDuration } from "../lib/format.ts";
 import { LazyArtifact } from "../components/LazyArtifact.tsx";
 
@@ -15,11 +15,11 @@ export function TracesView({ attempts, t }: { attempts: RowRun[]; t: T }) {
         <div className="empty">{t("empty.traces")}</div>
       ) : (
         traceable.map((r: RowRun) => {
-          const outcome = r.outcome;
+          const verdict = r.verdict;
           return (
             <div className="traces-entry" key={`${r.id}-${r.rowLabel}-${r.attempt}`}>
               <div className="traces-entry-head">
-                <span className={`${outcomeClass(outcome)} traces-verdict`}>{outcomeLabel(outcome, t)}</span>
+                <span className={`${verdictClass(verdict)} traces-verdict`}>{verdictLabel(verdict, t)}</span>
                 <span className="eval-id">{r.id}</span>
                 <span className="traces-exp">{r.rowLabel}</span>
                 <span className="num traces-dur">{formatDuration(r.durationMs)}</span>

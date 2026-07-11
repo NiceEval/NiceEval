@@ -1,5 +1,5 @@
 // 断言收集器:test 期间记录断言(值级就地、作用域延迟),test 结束后对完整运行
-// 结果(ScoringContext)统一 finalize 成 AssertionResult[],再交判决。
+// 结果(ScoringContext)统一 finalize 成 AssertionResult[],再交判定。
 
 import type { AssertionResult, ScoringContext, Severity, SourceLoc } from "../types.ts";
 import { captureLoc } from "../source-loc.ts";

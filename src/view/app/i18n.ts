@@ -33,9 +33,9 @@ export type MessageKey =
   | "table.successRate"
   | "table.tokens"
   | "table.estCost"
-  | "table.outcomes"
+  | "table.verdicts"
   | "table.evalId"
-  | "table.outcome"
+  | "table.verdict"
   | "table.ranAt"
   | "detail.evalResult"
   | "detail.evalResults"
@@ -104,10 +104,10 @@ export type MessageKey =
   | "assert.fail"
   | "assert.soft"
   | "assert.evidence"
-  | "outcome.passed"
-  | "outcome.failed"
-  | "outcome.errored"
-  | "outcome.skipped"
+  | "verdict.passed"
+  | "verdict.failed"
+  | "verdict.errored"
+  | "verdict.skipped"
   | "banner.skippedTitle"
   | "banner.skipped.incompatible"
   | "banner.skipped.incompatibleForeign"
@@ -152,9 +152,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "table.successRate": "Success Rate",
     "table.tokens": "Tokens",
     "table.estCost": "Est. Cost",
-    "table.outcomes": "Outcomes",
+    "table.verdicts": "Verdicts",
     "table.evalId": "Eval ID",
-    "table.outcome": "Outcome",
+    "table.verdict": "Verdict",
     "table.ranAt": "Ran At",
     "detail.evalResult": "eval",
     "detail.evalResults": "evals",
@@ -223,10 +223,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "assert.fail": "fail",
     "assert.soft": "soft",
     "assert.evidence": "What was checked",
-    "outcome.passed": "passed",
-    "outcome.failed": "failed",
-    "outcome.errored": "errors",
-    "outcome.skipped": "skipped",
+    "verdict.passed": "passed",
+    "verdict.failed": "failed",
+    "verdict.errored": "errors",
+    "verdict.skipped": "skipped",
     "banner.skippedTitle": "Some runs could not be loaded and are not shown here:",
     "banner.skipped.incompatible": "written by niceeval {{producer}} (schemaVersion {{schemaVersion}}) — view it with the command on the right",
     "banner.skipped.incompatibleForeign": "written by {{name}} {{version}} (schemaVersion {{schemaVersion}}) — this viewer cannot read it; open it with the tool that produced it",
@@ -268,9 +268,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "table.successRate": "成功率",
     "table.tokens": "Tokens",
     "table.estCost": "预估成本",
-    "table.outcomes": "结果",
+    "table.verdicts": "结果",
     "table.evalId": "Eval ID",
-    "table.outcome": "状态",
+    "table.verdict": "状态",
     "table.ranAt": "运行时间",
     "detail.evalResult": "个 eval",
     "detail.evalResults": "个 eval",
@@ -339,10 +339,10 @@ const dictionaries: Record<Locale, Dictionary> = {
     "assert.fail": "失败",
     "assert.soft": "soft",
     "assert.evidence": "实际被检查的内容",
-    "outcome.passed": "通过",
-    "outcome.failed": "失败",
-    "outcome.errored": "错误",
-    "outcome.skipped": "跳过",
+    "verdict.passed": "通过",
+    "verdict.failed": "失败",
+    "verdict.errored": "错误",
+    "verdict.skipped": "跳过",
     "banner.skippedTitle": "以下 run 读取失败,此处不展示:",
     "banner.skipped.incompatible": "由 niceeval {{producer}} 写入(schemaVersion {{schemaVersion}})—— 用右侧命令查看",
     "banner.skipped.incompatibleForeign": "由 {{name}} {{version}} 写入(schemaVersion {{schemaVersion}})—— 当前查看器读不了;请用写出它的工具查看",

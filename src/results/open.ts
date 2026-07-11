@@ -76,9 +76,9 @@ export async function openResults(dir: string): Promise<Results> {
   }
 
   for (const path of summaryPaths) {
-    const outcome = await readRun(path);
-    if (outcome.kind === "run") runDirs.push(outcome.run);
-    else if (outcome.kind === "skipped") skipped.push(outcome.entry);
+    const verdict = await readRun(path);
+    if (verdict.kind === "run") runDirs.push(verdict.run);
+    else if (verdict.kind === "skipped") skipped.push(verdict.entry);
     // not-a-report:无关 JSON,静默忽略。
   }
 
@@ -104,14 +104,14 @@ function makeResults(experiments: Experiment[], skipped: SkippedRun[], runDirs: 
 
 // ───────────────────────── 单个 run 的读取 ─────────────────────────
 
-type ReadRunOutcome =
+type ReadRunVerdict =
   | { kind: "run"; run: RunDir }
   | { kind: "skipped"; entry: SkippedRun }
   | { kind: "not-a-report" };
 
-async function readRun(path: string): Promise<ReadRunOutcome> {
+async function readRun(path: string): Promise<ReadRunVerdict> {
   const runDir = dirname(path);
-  const skippedEntry = (entry: Omit<SkippedRun, "dir">): ReadRunOutcome => ({
+  const skippedEntry = (entry: Omit<SkippedRun, "dir">): ReadRunVerdict => ({
     kind: "skipped",
     entry: { dir: runDir, ...entry },
   });

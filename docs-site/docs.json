@@ -25,6 +25,10 @@
   },
   "redirects": [
     {
+      "source": "/zh/guides/sandbox-backends",
+      "destination": "/zh/guides/sandbox-providers"
+    },
+    {
       "source": "/concepts/scoring",
       "destination": "/concepts/assert"
     },
@@ -202,7 +206,7 @@
                   "zh/guides/write-send",
                   "zh/guides/connect-otel",
                   "zh/guides/sandbox-agent",
-                  "zh/guides/sandbox-backends"
+                  "zh/guides/sandbox-providers"
                 ]
               },
               {

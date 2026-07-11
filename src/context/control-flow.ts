@@ -10,7 +10,7 @@ export class EvalSkipped extends Error {
   }
 }
 
-/** t.require / turn.expectOk 不过:正常的断言失败,中止后续,但已记录的断言决定判决。 */
+/** t.require / turn.expectOk 不过:正常的断言失败,中止后续,但已记录的断言决定判定。 */
 export class EvalRequirementFailed extends Error {
   constructor(public readonly assertionName: string) {
     super(`requirement failed: ${assertionName}`);

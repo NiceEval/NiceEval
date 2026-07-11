@@ -1,4 +1,4 @@
-// E2B 沙箱后端:用 e2b SDK 把 E2B microVM 当隔离工作区跑 eval。
+// E2B 沙箱 provider:用 e2b SDK 把 E2B microVM 当隔离工作区跑 eval。
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox / VercelSandbox 可互换。
 //
 // 鉴权:E2B_API_KEY(team 级,e2b CLI `e2b auth login` 后也写在 ~/.e2b)。
@@ -63,7 +63,7 @@ export class E2BSandbox implements Sandbox {
 
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
     // e2b commands.run 经 bash 执行 → 支持 && / 管道 / $()。root 用户映射到 { user: "root" },
-    // 否则用模板默认(非 root)用户 —— 跨后端语义一致(见 types.ts 的 CommandOptions.root)。
+    // 否则用模板默认(非 root)用户 —— 跨 provider 语义一致(见 types.ts 的 CommandOptions.root)。
     try {
       const res = await this.sbx.commands.run(script, {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
@@ -100,7 +100,7 @@ export class E2BSandbox implements Sandbox {
   }
 
   async readSourceFiles(opts: ReadSourceFilesOptions = {}): Promise<SourceFiles> {
-    // find 列路径 + 逐文件 files.read —— 与 vercel 后端共用同一两阶段模板。
+    // find 列路径 + 逐文件 files.read —— 与 vercel provider 共用同一两阶段模板。
     return readSourceFilesByList({
       options: opts,
       runShell: (script) => this.runShell(script),
@@ -109,7 +109,7 @@ export class E2BSandbox implements Sandbox {
   }
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
-  // 只是对直接使用后端实例(未包 normalize)的幂等防御,提到 map 外只算一次。
+  // 只是对直接使用 provider 实例(未包 normalize)的幂等防御,提到 map 外只算一次。
   async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
     const base = resolveSandboxPath(this.workdir, targetDir);
     const entries = Object.entries(files).map(([p, data]) => ({ path: resolveSandboxPath(base, p), data }));

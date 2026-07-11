@@ -1,6 +1,6 @@
 // niceeval show 终端宿主的测试(行为规范:docs-site/zh/guides/viewing-results.mdx;
 // 组合语义:docs/reports.md「宿主输入的组合语义」)。覆盖:
-// - 榜单合成口径:每 experiment × eval 取最新判决,局部重跑从更早 run 补齐,头部标注合成自几个 run;
+// - 榜单合成口径:每 experiment × eval 取最新判定,局部重跑从更早 run 补齐,头部标注合成自几个 run;
 // - 前缀过滤收窄选集,覆盖警告分母 = 已知并集 ∩ 范围;
 // - --history 时间轴只列真实执行,resume 携带的复印件不占行;
 // - --report 装载(合法 / 非法默认导出 / 文件缺失)、位置前缀收窄注入选集、attemptCommand 下钻;
@@ -37,7 +37,7 @@ afterEach(async () => {
 function res(over: Partial<EvalResult> & Pick<EvalResult, "id">): EvalResult {
   return {
     agent: "bub",
-    outcome: "passed",
+    verdict: "passed",
     attempt: 0,
     durationMs: 1000,
     assertions: [],
@@ -46,7 +46,7 @@ function res(over: Partial<EvalResult> & Pick<EvalResult, "id">): EvalResult {
 }
 
 function summaryOf(results: EvalResult[], over: Partial<RunSummary> = {}): RunSummary {
-  const count = (o: EvalResult["outcome"]) => results.filter((r) => r.outcome === o).length;
+  const count = (o: EvalResult["verdict"]) => results.filter((r) => r.verdict === o).length;
   return {
     format: RESULTS_FORMAT,
     schemaVersion: RESULTS_SCHEMA_VERSION,
@@ -110,7 +110,7 @@ async function seedComposedRoot(): Promise<string> {
         res({
           id: "fixtures/button",
           experimentId: "compare/bub",
-          outcome: "failed",
+          verdict: "failed",
           startedAt: "2026-07-09T10:00:01.000Z",
           assertions: [
             {
@@ -142,7 +142,7 @@ describe("榜单:跨 run 合成的现刻水位", () => {
     expect(out).toContain("1/2");
     expect(out).toContain("50%");
     expect(out).not.toContain("verdicts cover");
-    // Failing 清单:新判决的 fixtures/button,带失败断言与下钻命令
+    // Failing 清单:新判定的 fixtures/button,带失败断言与下钻命令
     expect(out).toContain("Failing:");
     expect(out).toContain("✗ fixtures/button");
     expect(out).toContain('gate fileChanged("src/components/Button.tsx")');
@@ -150,7 +150,7 @@ describe("榜单:跨 run 合成的现刻水位", () => {
     expect(out).not.toContain("✗ weather/brooklyn");
   });
 
-  it("合成选集:每 experiment × eval 取最新判决;compose 不产生残缺警告", async () => {
+  it("合成选集:每 experiment × eval 取最新判定;compose 不产生残缺警告", async () => {
     const root = await seedComposedRoot();
     const results = await openResults(root);
     const selection = composeShowSelection(results);
@@ -158,7 +158,7 @@ describe("榜单:跨 run 合成的现刻水位", () => {
     const evals = selection.snapshots[0].evals.map((e) => e.id).sort();
     expect(evals).toEqual(["fixtures/button", "weather/brooklyn"]);
     const button = selection.snapshots[0].evals.find((e) => e.id === "fixtures/button")!;
-    expect(button.attempts[0].result.outcome).toBe("failed"); // 新 run 的判决赢
+    expect(button.attempts[0].result.verdict).toBe("failed"); // 新 run 的判定赢
     expect(selection.warnings).toEqual([]);
     // 对照:results.latest() 的最新快照是残缺的(这正是宿主要合成的原因)
     expect(results.latest().warnings.some((w) => w.kind === "partial-coverage")).toBe(true);
@@ -220,7 +220,7 @@ describe("单 eval 详情", () => {
             id: "weather/brooklyn",
             experimentId: "compare/codex",
             agent: "codex",
-            outcome: "failed",
+            verdict: "failed",
             attempt: 0,
             startedAt: "2026-07-09T10:00:01.000Z",
             durationMs: 40_000,
@@ -229,7 +229,7 @@ describe("单 eval 详情", () => {
             id: "weather/brooklyn",
             experimentId: "compare/codex",
             agent: "codex",
-            outcome: "failed",
+            verdict: "failed",
             attempt: 1,
             startedAt: "2026-07-09T10:00:42.000Z",
             durationMs: 41_000,
@@ -284,13 +284,13 @@ describe("单 eval 详情", () => {
 // ───────────────────────── --history:复印件不占行 ─────────────────────────
 
 describe("--history 时间轴", () => {
-  /** run1 真实执行;run2 resume 携带同一判决(身份键相同的复印件)+ 新题真实执行。 */
+  /** run1 真实执行;run2 resume 携带同一判定(身份键相同的复印件)+ 新题真实执行。 */
   async function seedHistoryRoot(): Promise<string> {
     const root = await makeRoot();
     const original = res({
       id: "weather/brooklyn",
       experimentId: "compare/bub",
-      outcome: "passed",
+      verdict: "passed",
       startedAt: "2026-07-07T09:00:01.000Z",
       estimatedCostUSD: 0.03,
       artifactsDir: "artifacts/compare__bub__weather__brooklyn__0",
@@ -315,7 +315,7 @@ describe("--history 时间轴", () => {
           res({
             id: "weather/brooklyn",
             experimentId: "compare/bub",
-            outcome: "failed",
+            verdict: "failed",
             attempt: 1,
             startedAt: "2026-07-09T10:00:05.000Z",
             estimatedCostUSD: 0.04,
@@ -337,16 +337,16 @@ describe("--history 时间轴", () => {
     const rows = evalHistory(exp, "weather/brooklyn");
     // run2 里复印件被识别,真实执行只有:run1 的 passed + run2 的 failed(新 attempt)
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ outcome: "failed", attempts: 1, costUSD: 0.04 });
+    expect(rows[0]).toMatchObject({ verdict: "failed", attempts: 1, costUSD: 0.04 });
     expect(rows[0].failedAssertion).toBe('gate calledTool("get_weather")');
-    expect(rows[1]).toMatchObject({ outcome: "passed", attempts: 1, costUSD: 0.03 });
+    expect(rows[1]).toMatchObject({ verdict: "passed", attempts: 1, costUSD: 0.03 });
 
     const { out, code } = await show(root, ["weather/brooklyn"], { history: true });
     expect(code).toBe(0);
     expect(out).toContain("compare/bub · 2 runs · passed 1/2");
     expect(out).toContain("2026-07-09T10-00");
     expect(out).toContain("2026-07-07T09-00");
-    // 复印件那份 passed 判决只出现一行(run1),不在 run2 再占一行
+    // 复印件那份 passed 判定只出现一行(run1),不在 run2 再占一行
     expect(out.match(/✓ passed/g)).toHaveLength(1);
   });
 
@@ -472,7 +472,7 @@ describe("--transcript", () => {
     await snap.writeAttempt(
       {
         id: "weather/brooklyn",
-        outcome: "failed",
+        verdict: "failed",
         attempt: 2,
         durationMs: 41_000,
         assertions: [],

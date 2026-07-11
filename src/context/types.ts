@@ -156,7 +156,7 @@ export interface SandboxHandle {
   downloadFile(path: string): Promise<Buffer>;
   /** 把一段内容上传成沙箱里的单个文件。 */
   uploadFile(path: string, content: Buffer): Promise<void>;
-  /** 沙箱后端分配的实例 id,用于排查 / 关联日志。 */
+  /** 沙箱 provider 分配的实例 id,用于排查 / 关联日志。 */
   readonly sandboxId: string;
   /** 相对 git 基线的最终 diff 视图(test() 跑完、finalize 前才落定)。 */
   readonly diff: DiffView;
@@ -268,7 +268,7 @@ export interface TestContext {
   newSession(): SessionHandle;
 
   // 运行上下文
-  /** 本次 attempt 的中止信号;超时 / 早停 / 用户 Ctrl-C 时触发,传给 adapter 的长耗时调用做取消。 */
+  /** 本次 attempt 的中止信号;超时 / 首过即停 / 用户 Ctrl-C 时触发,传给 adapter 的长耗时调用做取消。 */
   readonly signal: AbortSignal;
   /** 本次 attempt 使用的模型名(由 experiment/CLI flag 决定);省略即 agent 原生默认,不代表「无模型」。 */
   readonly model?: string;
@@ -278,7 +278,7 @@ export interface TestContext {
   readonly flags: Readonly<Record<string, unknown>>;
   /** 打一行调试日志;有 live 进度回调时走该回调,否则落到 stderr,不出现在最终结果里。 */
   log(msg: string): void;
-  /** 立即中止本 eval 并标记为 skipped(outcome / EvalResult.skipReason),reason 不能为空。 */
+  /** 立即中止本 eval 并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。 */
   skip(reason: string): never;
 
   // 值级断言

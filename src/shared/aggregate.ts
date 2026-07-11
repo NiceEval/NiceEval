@@ -1,13 +1,13 @@
 // CLI 表格(runner/reporters/table.ts)与 view 榜单(view/aggregate.ts)共用的聚合小工具。
-// 实验标签推导、token/成本求和、outcome 排序各只有一份 —— 否则同一个实验在终端和网页上
+// 实验标签推导、token/成本求和、verdict 排序各只有一份 —— 否则同一个实验在终端和网页上
 // 会显示成两个名字 / 两组数。保持环境无关(纯函数,只 type import)。
 
 import type { Usage } from "../o11y/types.ts";
 import type { EvalResult, ExperimentRunInfo } from "../runner/types.ts";
-import type { ResultOutcome } from "../scoring/types.ts";
+import type { Verdict } from "../scoring/types.ts";
 
 /** 明细行排序:失败最靠前(failed > errored > skipped > passed 的紧急程度)。 */
-export const OUTCOME_ORDER: Record<ResultOutcome, number> = {
+export const VERDICT_ORDER: Record<Verdict, number> = {
   failed: 0,
   errored: 1,
   skipped: 2,

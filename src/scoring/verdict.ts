@@ -1,13 +1,13 @@
-// 判决:把执行结果 + 断言 + 跳过原因折叠成一个 Outcome(见 docs/scoring.md)。
+// 判定:把执行结果 + 断言 + 跳过原因折叠成一个 Verdict(见 docs/scoring.md)。
 
-import type { AssertionResult, ResultOutcome } from "../types.ts";
+import type { AssertionResult, Verdict } from "../types.ts";
 
-export function computeOutcome(input: {
+export function computeVerdict(input: {
   error?: string;
   assertions: readonly AssertionResult[];
   skipReason?: string;
   strict?: boolean;
-}): ResultOutcome {
+}): Verdict {
   if (input.error !== undefined) return "errored";
 
   for (const a of input.assertions) {

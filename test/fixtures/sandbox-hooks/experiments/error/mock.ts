@@ -4,7 +4,7 @@ import { defineSandboxAgent } from "niceeval/adapter";
 import { createFakeSandbox } from "../../lib/fake-sandbox.ts";
 import { logEvent } from "../../lib/log.ts";
 
-// 失败语义回归:第二个 setup 钩子抛错 → 计执行错误(outcome errored),不阻断已进入的
+// 失败语义回归:第二个 setup 钩子抛错 → 计执行错误(verdict errored),不阻断已进入的
 // 收尾——第一个 setup 返回的 cleanup、sandbox.teardown 钩子仍要跑;sandbox.setup 排在
 // agent.setup 之前,所以 agent.setup 从未被调用,agent.teardown 也不该跑
 //(与既有的 agentDidSetup 门槛一致)。

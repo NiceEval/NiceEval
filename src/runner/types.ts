@@ -5,7 +5,7 @@ import type { Cleanup, LocalizedText, SourceArtifact } from "../shared/types.ts"
 import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Agent } from "../agents/types.ts";
 import type { Sandbox, SandboxOption } from "../sandbox/types.ts";
-import type { AssertionResult, DiffData, JudgeConfig, ResultOutcome } from "../scoring/types.ts";
+import type { AssertionResult, DiffData, JudgeConfig, Verdict } from "../scoring/types.ts";
 import type { TestContext } from "../context/types.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
@@ -27,7 +27,7 @@ export interface EvalResult {
   experiment?: ExperimentRunInfo;
   agent: string;
   model?: string;
-  outcome: ResultOutcome;
+  verdict: Verdict;
   fingerprint?: string;
   attempt: number;
   /** 本 attempt 开始的墙钟时刻(ISO);view 按 eval 粒度展示「何时跑的」。 */
@@ -144,7 +144,7 @@ export interface EvalDef {
   /**
    * eval 级预置:拿到沙箱(已上传 workspace + git 基线 + 装好依赖前)。
    * 默认命令以非 root 跑(agent 的自然环境);装系统依赖时给 `runCommand` 传 `{ root: true }`
-   * (如 `runCommand("apt-get", ["install", …], { root: true })`),跨后端语义一致。
+   * (如 `runCommand("apt-get", ["install", …], { root: true })`),跨 provider 语义一致。
    */
   setup?: (sandbox: Sandbox) => Promise<void | Cleanup> | void | Cleanup;
   /** eval 主体:拿到 TestContext,驱动对话 / 沙箱操作并就地断言。 */
@@ -196,7 +196,7 @@ export interface ExperimentDef {
    * 本实验自己的并发上限:调度器只对这个实验的 attempt 限流,同批其它实验不受影响,
    * 仍按全局并发(CLI / env / config / 沙箱默认)跑。用于串行化有共享状态的实验
    * (如跨 eval 累积记忆:`maxConcurrency: 1` 保证 attempt 按 eval 顺序一个个跑),
-   * 或给撞后端限额的实验单独降速。
+   * 或给撞 provider 限额的实验单独降速。
    */
   maxConcurrency?: number;
 }
@@ -212,7 +212,7 @@ export interface Config {
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
    */
   name?: LocalizedText;
-  /** 项目级默认沙箱后端(docker / vercel / e2b / custom);experiment / CLI flag 可覆盖。 */
+  /** 项目级默认沙箱 provider(docker / vercel / e2b / custom);experiment 可覆盖。 */
   sandbox?: SandboxOption;
   /** 上传进沙箱的工作区根目录,省略则用项目根;eval 的 sandbox 视图从这里起步。 */
   workspace?: string;
@@ -262,9 +262,9 @@ export interface PriceOverride {
  * 能区分同 agent 同 model 的实验变体,如 xxx 与 xxx--agents-md;与汇总表口径一致);
  * 无 experiment 时退回 agent/model。live display 以它作行聚合 key,两处必须同源。
  */
-export function runWho(run: Pick<AgentRun, "agent" | "model" | "experimentId">): string {
+export function runWho(run: { agentName: string; model?: string; experimentId?: string }): string {
   if (run.experimentId) return run.experimentId.split("/").pop()!;
-  return run.model ? `${run.agent.name}/${run.model}` : run.agent.name;
+  return run.model ? `${run.agentName}/${run.model}` : run.agentName;
 }
 
 /** 一个 (agent, model, flags) 的运行配置 —— 由 CLI / 实验展开。 */
@@ -295,7 +295,7 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** TTY live display 的进度回调;设置后 attempt 的 log 消息路由到它而不是 stderr。 */
   onProgress?: (evalId: string, who: string, msg: string) => void;
-  /** 上次运行的结果。outcome === "passed" 的 (experimentId, evalId) 组合跳过重跑,结果直接合入本次汇总。 */
+  /** 上次运行的结果。verdict === "passed" 的 (experimentId, evalId) 组合跳过重跑,结果直接合入本次汇总。 */
   priorResults?: EvalResult[];
   /**
    * 非沙箱 tracing agent 的 run 级共享 OTLP 接收池(runEvals 创建并回收;
@@ -309,7 +309,7 @@ export interface Attempt {
   evalDef: DiscoveredEval;
   run: AgentRun;
   attempt: number;
-  /** agent+model+evalId,用于早停。 */
+  /** agent+model+evalId,用于首过即停。 */
   key: string;
   fingerprint: string;
 }
