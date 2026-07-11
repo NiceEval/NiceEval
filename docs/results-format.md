@@ -118,7 +118,7 @@ interface RunSummary {
 }
 ```
 
-两处顶层字段的语义:`producer.name` 是任意字符串——第三方 harness 经 `createRunWriter` 写结果时如实署名,`"niceeval"` 只是官方 writer 的取值;`snapshots` 是可选的快照级元数据(键 = experimentId):`startedAt` 让同一 run 里的多份快照各自保真开始时刻,`knownEvalIds` 是该实验已知的 eval 并集——残缺检测的分母随数据走(`copySnapshots` 发布时自动补记,writer 侧可声明),可选新增字段,不递增 schemaVersion。
+两处顶层字段的语义:`producer.name` 是任意字符串——第三方 harness 经 `createRunWriter` 写结果时如实署名,`"niceeval"` 只是官方 writer 的取值;`snapshots` 是可选的结果快照级元数据(键 = experimentId):`startedAt` 让同一 run 里的多份快照各自保真开始时刻,`knownEvalIds` 是该实验已知的 eval 并集——残缺检测的分母随数据走(`copySnapshots` 发布时自动补记,writer 侧可声明),可选新增字段,不递增 schemaVersion。
 
 `results[]` 里的每条 `EvalResult` 仍包含判定、断言、用量、成本、错误、fingerprint 和 experiment 元数据,但不会内联大字段:
 

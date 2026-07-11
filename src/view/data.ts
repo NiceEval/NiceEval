@@ -43,9 +43,9 @@ export interface ViewScan {
 
 /** view 宿主输入的组合语义(与 show 对齐,docs/reports.md「宿主输入的组合语义」)。 */
 export interface ViewScanOptions {
-  /** eval id 前缀(位置参数):收窄报告槽选集;证据室(快照明细)不收窄,深链恒可达。 */
+  /** eval id 前缀(位置参数):收窄报告槽 Selection;证据室(快照明细)不收窄,深链恒可达。 */
   patterns?: string[];
-  /** experiment id 前缀(--experiment):选集只留该实验。 */
+  /** experiment id 前缀(--experiment):Selection 只留该实验。 */
   experiment?: string;
   /** --report 报告文件:相对 cwd 的路径。装载失败抛 ReportLoadError(CLI 打印后退出)。 */
   report?: { path: string; cwd: string };
@@ -137,7 +137,7 @@ export async function loadLatestResultsPerEval(root = ".niceeval"): Promise<Eval
 
 /**
  * `niceeval view` 的数据装载入口:server 每次请求现读现算,`--out` 导出用同一份。
- * 位置前缀 / --experiment / --report 在场时,报告槽选集经 composeShowSelection 合成
+ * 位置前缀 / --experiment / --report 在场时,报告槽 Selection 经 composeShowSelection 合成
  * (与 `niceeval show` 同一口径,两扇门判定不分叉);全部缺省时维持 results.latest(),
  * 默认行为不变。证据室数据(快照明细 / skipped)恒为全量,深链在任何收窄下都可达。
  * 零可读结果一律抛 ViewInputError,不渲染/导出空页面(server 起不来,--out 非零退出)。
@@ -190,7 +190,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     await tableData(selection, { rows: OVERALL_DIMENSION, columns: [passRate] }),
   ];
 
-  // --report:整槽替换。报告吃同一份注入选集,web 面在计算侧静态渲染成 HTML。
+  // --report:整槽替换。报告吃同一份注入 Selection,web 面在计算侧静态渲染成 HTML。
   const reportHtml = opts.report
     ? await renderReportSlot(opts.report, results, selection)
     : undefined;
@@ -199,7 +199,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   // (与官方计算函数的聚合口径一致,Runs / Traces 的计数因此不被复印件灌票)。
   const artifactDirs = new Map<string, string>();
   // latest 标记恒按 results.latest() 口径打(ViewSnapshot.latest 的声明语义),
-  // 不随收窄后的合成选集漂移 —— 榜单行与快照的关联靠它成立。
+  // 不随收窄后的合成 Selection 漂移 —— 榜单行与快照的关联靠它成立。
   const latestSet = new Set(baseSelection.snapshots);
   const allAttempts: AttemptHandle[] = [];
   for (const exp of results.experiments) {
@@ -235,8 +235,8 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   const viewData: ViewData = {
     ...(latestRun?.summary.name !== undefined ? { name: latestRun.summary.name } : {}),
     ...(latestRun ? { lastRunAt: latestRun.summary.startedAt } : {}),
-    // 合成选集的快照是跨 run 拼出来的,来源 run 数从 attempt 的 runDir 数;
-    // 默认选集(latest 口径)保持原表达式,行为不变。
+    // 合成 Selection 的快照是跨 run 拼出来的,来源 run 数从 attempt 的 runDir 数;
+    // 默认 Selection(latest 口径)保持原表达式,行为不变。
     composedRuns: narrowed
       ? new Set(selection.snapshots.flatMap((s) => s.attempts.map((a) => a.runDir.dir))).size
       : new Set(selection.snapshots.map((s) => s.runDir.dir)).size,
@@ -251,7 +251,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
 
 /**
  * 报告槽渲染:装载报告文件(dev server 语义 —— 文件变更下次请求整页重算,经 mtime
- * cache-busting)→ 注入与默认报告同口径的选集 → web 面 renderToStaticMarkup 成静态 HTML。
+ * cache-busting)→ 注入与默认报告同口径的 Selection → web 面 renderToStaticMarkup 成静态 HTML。
  * react-dom 只在 --report 在场时动态加载,默认 CLI 路径不背 react。
  * attemptHref 缺省即 `#/attempt/<run>/<result>`(view 的 attempt 深链路由)。
  */

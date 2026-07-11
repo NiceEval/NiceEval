@@ -4,7 +4,7 @@ sidebarTitle: "CI 发布报告"
 description: "把报告站接进 CI:.niceeval/ 提交进仓库,构建命令一行 view --out,push 即发布。发布的站和本地 niceeval view 完全一样;零可读结果时构建失败,保住上一次部署。"
 ---
 
-`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、快照列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/guides/viewing-results#导出与静态托管))。CI 发布只需要让结果数据到构建机手里——把 `.niceeval/` 提交进仓库,仓库本身就是数据源。本地跑完 eval,提交并 push 就是发布,不需要任何脚本或本地构建命令。
+`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、结果快照列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/guides/viewing-results#导出与静态托管))。CI 发布只需要让结果数据到构建机手里——把 `.niceeval/` 提交进仓库,仓库本身就是数据源。本地跑完 eval,提交并 push 就是发布,不需要任何脚本或本地构建命令。
 
 ## `.gitignore` 只排除 `diff.json`
 

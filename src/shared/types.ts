@@ -1,4 +1,4 @@
-// 真正跨域的原子类型:序列化 / 严重级 / 源码位置 / 生命周期。
+// 真正跨域的原子类型:序列化 / 严重度 / 源码位置 / 生命周期。
 // 各域的类型住在各自目录的 types.ts(o11y / sandbox / agents / scoring / context / runner),
 // src/types.ts 是聚合 facade —— 模块代码统一从那里 import,不必记住每个类型的家。
 
@@ -11,7 +11,7 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-/** 断言的严重级:"gate" 失败必判整轮 failed;"soft" 默认只记录不拦截,仅在 `--strict` 模式或显式设阈值未达标时才计入失败。 */
+/** 断言的严重度:"gate" 失败必判整轮 failed;"soft" 默认只记录不拦截,仅在 `--strict` 模式或显式设阈值未达标时才计入失败。 */
 export type Severity = "gate" | "soft";
 
 /**

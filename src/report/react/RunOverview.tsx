@@ -72,7 +72,7 @@ export function RunOverview({
         ))}
       </p>
 
-      {/* 选集的警告(残缺快照等)直接渲染在条内,不静默;结构化字段供程序判断,这里打 message */}
+      {/* Selection 的警告(残缺快照等)直接渲染在条内,不静默;结构化字段供程序判断,这里打 message */}
       {data.warnings.length > 0 && (
         <ul className="nre-warnings">
           {data.warnings.map((w, i) => (

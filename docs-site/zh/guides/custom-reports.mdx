@@ -20,14 +20,14 @@ description: "一份报告就是一个报告文件：官方宿主打开结果、
 四个格子是同一个宿主。自定义只有三个层次，逐层深入：
 
 1. **换摆法**：用官方组件和 `Row` / `Col` 重摆版面——大多数「要自己的口径」到这层就够了。
-2. **换口径**：`defineMetric` 定义自己的指标，`flag()` 把 experiment 声明的变量当维度和轴。
+2. **换口径**：`defineMetric` 定义自己的指标，自定义维度和 `flag()` 定义自己的分组。
 3. **换形态**：官方组件表达不了的展示，用 `defineComponent` 写自己的组件——网页怎么渲染、终端字符怎么排，两个面你都说了算。
 
 ## 一份报告 = 一个报告文件
 
 先交代唯一的前置：报告文件是 `.tsx`，写它的项目要装 `react`（写自定义组件的 web 面还要 `@types/react`），tsconfig 里 `compilerOptions.jsx` 设为 `"react-jsx"`。裸跑 `niceeval show` / `niceeval view` 不需要这些——只有自己写报告文件才需要。
 
-报告基座是 `defineReport`：宿主打开结果目录（含 `--run` 指定历史 run）、按官方口径挑好快照，注入给你的函数；你只负责折数据和摆积木：
+报告基座是 `defineReport`：宿主打开结果目录（含 `--run` 指定历史 run）、按官方口径挑好结果快照，注入给你的函数；你只负责折数据和摆积木：
 
 ```tsx
 // reports/exam.tsx —— 一份定义，两扇门共用
@@ -52,11 +52,11 @@ niceeval show --report reports/exam.tsx    # 终端：同一棵树走文本面
 niceeval view --report reports/exam.tsx    # 网页：同一棵树走网页面，attempt 深链直达证据室
 ```
 
-注入的上下文只有两样，全部是[结果数据 API](/zh/guides/results-data) 的原语，宿主没有私有通道：`results` 就是 `openResults(".niceeval")` 的返回（实验、历次快照、attempt 级 `diff()`、`trace()` 都在上面）；`selection` 就是 `results.latest()` 的返回选集——宿主按「每个实验取最新」挑好的现刻水位，与默认报告同口径，快照在 `selection.snapshots`，挑选警告在 `selection.warnings`。组件的 `data` 函数直接吃选集，警告随行——`RunOverview` 会把残缺快照的警告如实显示，不用你另外接线；默认挑法不合口径时，拿 `results` 自己挑，手工挑的 `Snapshot[]` 数组同样能喂给每个 `data` 函数。
+注入的上下文只有两样，全部是[结果数据 API](/zh/guides/results-data) 的原语，宿主没有私有通道：`results` 就是 `openResults(".niceeval")` 的返回（实验、历次快照、attempt 级 `diff()`、`trace()` 都在上面）；`selection` 就是 `results.latest()` 的返回 Selection——宿主按「每个实验取最新」挑好的现刻水位，与默认报告同口径，快照在 `selection.snapshots`，挑选警告在 `selection.warnings`。组件的 `data` 函数直接吃 Selection，警告随行——`RunOverview` 会把残缺快照的警告如实显示，不用你另外接线；默认挑法不合口径时，拿 `results` 自己挑，手工挑的 `Snapshot[]` 数组同样能喂给每个 `data` 函数。
 
-命令行的范围先作用在挑选上，报告拿到的就是范围内的水位：位置参数的 eval id 前缀收窄选集覆盖的 eval（覆盖警告的分母同样收窄到范围内），`--run` 把结果根换成指定目录，`--experiment` 让选集只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `exp.snapshots` 自己摆；证据切面（`--transcript` / `--trace` / `--diff`）只看证据，不渲染报告。
+命令行的范围先作用在挑选上，报告拿到的就是范围内的水位：位置参数的 eval id 前缀收窄 Selection 覆盖的 eval（覆盖警告的分母同样收窄到范围内），`--run` 把结果根换成指定目录，`--experiment` 让 Selection 只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `exp.snapshots` 自己摆；证据切面（`--transcript` / `--trace` / `--diff`）只看证据，不渲染报告。
 
-`<DefaultReport />` 零 props、纯声明：官方水位只读瘦身条目（不碰 diff 这类重 artifact），宿主总是替你备好，摆不摆在你。它渲染的是**宿主注入的那份选集**的官方水位——跟随命令行范围，但不跟随你在报告里自己另挑的口径；这正是它的意义：当官方锚点，和你的口径并排对照。要「官方摆法 + 自选口径」，用它脚下的同一批组件自己摆——它没有任何私有零件。
+`<DefaultReport />` 零 props、纯声明：官方水位只读瘦身条目（不碰 diff 这类重 artifact），宿主总是替你备好，摆不摆在你。它渲染的是**宿主注入的那份 Selection** 的官方水位——跟随命令行范围，但不跟随你在报告里自己另挑的口径；这正是它的意义：当官方锚点，和你的口径并排对照。要「官方摆法 + 自选口径」，用它脚下的同一批组件自己摆——它没有任何私有零件。
 
 页面里的每个组件都是**双面**的：网页面是 React 渲染，终端面是字符渲染，两面吃同一份算好的数据。你在报告文件里只见到组件本身，从不碰某一面——走哪扇门由宿主决定。官方组件覆盖常见摆法——榜单 `MetricTable`、逐题格子 `MetricMatrix`、分组条形 `MetricBars`、成绩单 `Scoreboard`、质量 × 成本 frontier `MetricScatter`、趋势线 `MetricLine`、成对对比 `DeltaTable`、失败清单 `CaseList`——每个组件回答什么问题、怎么调用、终端字符输出长什么样，逐个见[报告组件](/zh/guides/report-components)。它们在宿主里自动接上证据室：网页面的格子深链到 attempt 弹窗，终端面在条目下印出 `niceeval show <eval id>` 下钻命令。
 
@@ -136,7 +136,37 @@ codex   80%         355 lines    $0.51
 
 两个面继承同一套诚实契约：排序方向随指标的 `better`，覆盖不全的格子带 `12/15` 角标（15 个 attempt 里 12 个测得了该指标），缺数据渲染成 `—` 而不是 0。指标只定义一次，两个面共用——人在网页上看到的数字，就是 agent 在 stdout 里读到的数字，判断口径永远一致。给 agent 的指引也只多一行：跑 `niceeval show --report reports/golf.tsx`，读 stdout。
 
-## 变量来自配置，不来自命名
+## 换分组：三种维度
+
+维度决定分组——表的行、矩阵的行列、散点的点。每个维度槽收三种值：
+
+- **内置维度**：`"agent"`、`"model"`、`"experiment"`、`"eval"`、`"evalGroup"`、`"snapshot"`，结果里现成的身份字段。
+- **自定义维度**：`{ name, of }`，一个纯函数吃 attempt、吐组名。定义只住在报告文件里，不用改任何 experiment 文件。
+- **`flag()`**：引用 experiment 用 `flags` 声明的变量。
+
+选哪种看变量住在哪：分组能从结果已有数据**算**出来的，用自定义维度——报告只管「怎么摆」，不反过来要求 experiment 为一种摆法改配置；变量是 experiment 本身的**配置**——scaling 档位、要当数值轴用、要在 experiment 定义处一眼看到的——才声明成 `flags`，报告用 `flag()` 引用。数值轴（`MetricLine` 的 `x`）只收 `flag()`：刻度必须来自声明的数值，函数派生的组名当不了刻度。
+
+### 自定义维度：从已有数据派生分组
+
+比如把不同模型折成厂商，按厂商比通过率——分组从 `result.model` 算出来，experiment 文件一个都不用碰：
+
+```tsx
+import type { Dimension } from "niceeval/report";
+
+const vendor: Dimension = {
+  name: "vendor",
+  of: (a) => (a.result.model?.startsWith("gpt-") ? "OpenAI" : "Anthropic"),
+};
+
+<MetricTable data={await MetricTable.data(selection, {
+  rows: vendor,
+  columns: [passRate, costUSD],
+})} />
+```
+
+`of` 能读 attempt 的全部已有数据：`evalId`、`experimentId`、`result` 里的判定与 experiment 元数据。它只能派生、不能补造：如果两组 experiment 的差别只体现在文件命名里（`bub-baseline.ts` / `bub-mempal.ts`），`of` 就只能去解析这个名字——命名约定一改，分组静默散掉。这种时候变量该搬回配置，往下看。
+
+### `flag()`：变量来自配置，不来自命名
 
 画「并行 agent 数 × 模拟延迟 × 得分」这类 scaling 趋势时，图上的变量不该编码进 experiment id（`ultra-16agents-300ms`），再在报告里解析字符串抠出来——那是约定不是配置，改个命名整张图就散。变量的家是 experiment 文件的 `flags`：一文件一个档位，把变量声明成数据：
 
@@ -161,7 +191,7 @@ export default defineExperiment({
 })} />
 ```
 
-`flag()` 用在维度槽（`series` / `rows` / `columns` / `points`）就按声明值分组，用在轴槽（`x`）就要求数值并驱动刻度；内置维度（`agent`、`model`、`experiment`、`evalGroup`……）覆盖不了的变量都走它。没有声明该 flag 的 experiment 不猜：分组时如实归入「未配置」一组，作轴时该点不画、注脚报数。flags 随快照落盘，所以历史 run 也能按当时声明的变量重摆——报告读的是配置的事实，不是命名的巧合。
+`flag()` 用在维度槽（`series` / `rows` / `columns` / `points`）就按声明值分组，用在轴槽（`x`）就要求数值并驱动刻度。没有声明该 flag 的 experiment 不猜：分组时如实归入「未配置」一组，作轴时该点不画、注脚报数。flags 随快照落盘，所以历史 run 也能按当时声明的变量重摆——报告读的是配置的事实，不是命名的巧合。
 
 ## 换形态：自定义组件，一个定义两个面
 

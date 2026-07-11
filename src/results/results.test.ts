@@ -243,7 +243,7 @@ describe("openResults · skipped", () => {
   });
 });
 
-// ───────────────────────── latest() 选集与警告 ─────────────────────────
+// ───────────────────────── latest() Selection 与警告 ─────────────────────────
 
 describe("results.latest() · Selection", () => {
   it("每个实验取最新快照;experiments 前缀过滤同 CLI 语义(尾斜杠等价)", async () => {
@@ -288,7 +288,7 @@ describe("results.latest() · Selection", () => {
     );
   });
 
-  it("stale-snapshot:早于选集中最新落盘即触发(无阈值),message 带人话时距", async () => {
+  it("stale-snapshot:早于 Selection 中最新落盘即触发(无阈值),message 带人话时距", async () => {
     const root = await makeRoot();
     await writeRun(root, "2026-07-01T08-00-00-000Z", summaryOf([
       res({ id: "q1", agent: "bub", experimentId: "mid/a" }),
@@ -345,7 +345,7 @@ describe("results.latest() · Selection", () => {
     const filtered = latest.filter((s) => s.experimentId !== "mid/b");
     expect(filtered.snapshots.map((s) => s.experimentId)).toEqual(["mid/a"]);
     expect(filtered.warnings.map((w) => w.experimentId)).toEqual(["mid/a"]);
-    // 原选集不被改动。
+    // 原 Selection 不被改动。
     expect(latest.snapshots).toHaveLength(2);
     expect(latest.warnings).toHaveLength(2);
   });

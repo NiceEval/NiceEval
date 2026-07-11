@@ -69,7 +69,7 @@
 
 | 行为 | 文件 |
 |---|---|
-| 值级断言匹配器(includes / equals / matches / similarity / satisfies / makeAssertion) | `src/expect/index.ts` |
+| 值断言匹配器(includes / equals / matches / similarity / satisfies / makeAssertion) | `src/expect/index.ts` |
 | 作用域断言(succeeded / calledTool / event / fileChanged / notInDiff …) | `src/scoring/scoped.ts` |
 | 断言收集器(延迟评估 + 链式 gate/soft/atLeast) | `src/scoring/collector.ts` |
 | LLM-as-judge(OpenAI 兼容 /chat/completions) | `src/scoring/judge.ts` |
@@ -99,7 +99,7 @@
 | eval 级折叠 / 计票口径(CLI 表格与 view 共用) | `src/shared/verdict.ts` |
 | 本地结果保存格式(`.niceeval/<run>/summary.json` + attempt 级 JSON artifact) | `src/runner/reporters/artifacts.ts`、`src/runner/types.ts`(`RunSummary` / `EvalResult`) |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,NICEEVAL_* 环境变量层) | `src/cli.ts` |
-| `niceeval show` 终端宿主(选集合成「现刻水位」、--history 复印件不占行、--report 装载 + 组合语义矩阵、证据切面 transcript/trace/diff) | `src/show/{index,compose,render}.ts` |
+| `niceeval show` 终端宿主(Selection 合成「现刻水位」、--history 复印件不占行、--report 装载 + 组合语义矩阵、证据切面 transcript/trace/diff) | `src/show/{index,compose,render}.ts` |
 | 数据集加载器(loadJson / loadYaml) | `src/loaders/index.ts` |
 
 ## Results Lib 与 Reports
@@ -108,7 +108,7 @@
 
 | 行为 | 文件 |
 |---|---|
-| `openResults`:实验/快照/eval 分层、版本分流(skipped 三种原因)、懒加载( artifactsDir→artifactBase 回退) | `src/results/open.ts` |
+| `openResults`:实验/结果快照/eval 分层、版本分流(skipped 三种原因)、懒加载( artifactsDir→artifactBase 回退) | `src/results/open.ts` |
 | 布局与版本知识(attempt 目录规则、summary 分类、完整 producer) | `src/results/format.ts` |
 | `results.latest()`(Selection + 三种警告)/ `Selection.filter` / `dedupeAttempts`(身份键去重) | `src/results/select.ts` |
 | `createRunWriter`(快照级元数据、增量落盘、finish 推导 summary) | `src/results/writer.ts` |
@@ -124,14 +124,14 @@
 | 官方组件 text 面(终端形态、字符坐标图、分栏排版) | `src/report/text/{faces,layout,plot}.ts` |
 | `defineReport` / `ReportContext` / text 宿主装载入口 `renderReportToText` | `src/report/report.ts` |
 | `--report` 装载(两宿主共用:存在性/默认导出判别、dev server 的 mtime cache-busting) | `src/report/load.ts` |
-| show 宿主接线(组合语义矩阵、attemptCommand 下钻、内置默认报告即出厂报告槽) | `src/show/index.ts`(选集合成与时间轴口径在 `src/show/compose.ts`,详情/证据切面渲染在 `src/show/render.ts`,测试 `src/show/show.test.ts`) |
+| show 宿主接线(组合语义矩阵、attemptCommand 下钻、内置默认报告即出厂报告槽) | `src/show/index.ts`(Selection 合成与时间轴口径在 `src/show/compose.ts`,详情/证据切面渲染在 `src/show/render.ts`,测试 `src/show/show.test.ts`) |
 | web 宿主装载入口 `renderReportToStaticHtml`(唯一 import react-dom 的一侧) | `src/report/web.ts` |
-| `DefaultReport`(官方水位整块,宿主注入选集) | `src/report/default-report.tsx` |
+| `DefaultReport`(官方水位整块,宿主注入 Selection) | `src/report/default-report.tsx` |
 | 九个组件的 web 面 + 稳定散列配色 + styles.css | `src/report/react/`(零件复用入口 `index.tsx`;演示 `scripts/report-react-demo.tsx`) |
-| 双面验收(renderToStaticMarkup + text 快照,两面同口径) | `src/report/dual-face.test.tsx` |
+| 双面验收(renderToStaticMarkup + text 快照,两面同口径) | `src/report/dual-render.test.tsx` |
 | view attempt 深链(`#/attempt/<run>/<result>`,路由参数即 AttemptRef) | `src/view/app/lib/attempt-route.ts`、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,ref 直接用 `niceeval/results` 的 `attempt.ref`) |
-| view 数据层(openResults + `results.latest()` 选集 + 官方计算函数烘 `__NICEEVAL_VIEW_DATA__`;skipped 三种原因、warnings 透传) | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`,前端拼接在 `src/view/app/lib/rows.ts`) |
-| `view --report` 报告槽(组合语义经 show 的选集合成、`renderReportSlot` 静态渲染、`<template id="niceeval-report">` 静态块 + 官方样式注入、位置参数判定 `resolveViewInput`) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`) |
+| view 数据层(openResults + `results.latest()` Selection + 官方计算函数烘 `__NICEEVAL_VIEW_DATA__`;skipped 三种原因、warnings 透传) | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`,前端拼接在 `src/view/app/lib/rows.ts`) |
+| `view --report` 报告槽(组合语义经 show 的 Selection 合成、`renderReportSlot` 静态渲染、`<template id="niceeval-report">` 静态块 + 官方样式注入、位置参数判定 `resolveViewInput`) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`) |
 | **未落地** | view 默认报告的渲染层换官方组件、memory-evals 静态导出流水线(reports.md 场景三) |
 
 ## 与设计文档的已知差异(实现取舍)

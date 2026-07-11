@@ -125,7 +125,7 @@ export function makeAssertion(spec: {
 }): ValueAssertion { ... }
 ```
 
-自定义断言工厂:直接给名字 / 严重级 / 阈值 / score,一次调用即返回可用的 ValueAssertion——
+自定义断言工厂:直接给名字 / 严重度 / 阈值 / score,一次调用即返回可用的 ValueAssertion——
 不像 gate()/atLeast() 那样需要二段链式调用来定级。severity 省略默认 gate。
 
 {/* GENERATED:END expect-matchers */}

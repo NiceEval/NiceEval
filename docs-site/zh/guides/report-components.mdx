@@ -56,7 +56,7 @@ Failing:
 
 ## `RunOverview` —— 页头 KPI 条
 
-每张报告开头「这批数据是什么」：几个配置、几道题、通过分布、总成本、何时跑的；选集里的挑选警告随数据一起进来、直接显示在条内，诚实不靠你记得接线。
+每张报告开头「这批数据是什么」：几个配置、几道题、通过分布、总成本、何时跑的；Selection 里的挑选警告随数据一起进来、直接显示在条内，诚实不靠你记得接线。
 
 ```tsx
 <RunOverview data={await RunOverview.data(selection)} />
@@ -174,7 +174,7 @@ pass ↑                                    （好 → 右上）
 A bub-high   B bub-medium   C codex-high   D codex-low
 ```
 
-网页面点带 hover（值与 `samples/total`）、同系列连线、点击深链下钻。终端面用字母标点、图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。维度槽也收 `flag()`——用 experiment 声明的变量分组，见[自定义报告](/zh/guides/custom-reports)的「变量来自配置」一节。
+网页面点带 hover（值与 `samples/total`）、同系列连线、点击深链下钻。终端面用字母标点、图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。维度槽也收自定义维度（`{ name, of }`，从 attempt 已有数据算组名）和 `flag()`（experiment 声明的变量），怎么选见[自定义报告](/zh/guides/custom-reports)的「换分组」一节。
 
 ## `MetricLine` —— 趋势线
 
@@ -207,7 +207,7 @@ A 1 agents   B 4 agents   C 16 agents
 
 ## `DeltaTable` —— 成对对比
 
-每行一对配置、每列一个指标，格子里 A、B、Δ 三个值，回答「这个开关值不值」「这次修复翻转了什么」。涨跌好坏由 `better` 判定，任一侧缺数据 Δ 显示为缺，不硬算。「这次 vs 上次」（同一配置的两个快照）也是它：`pairs` 的 `a` / `b` 除 experiment id 外也收快照键 `<experimentId> @ <startedAt>`——时间轴对比要用到旧快照，`results.latest()` 里没有，配手挑的快照数组（如 `[exp.latest, exp.snapshots[1]]`）用。
+每行一对配置、每列一个指标，格子里 A、B、Δ 三个值，回答「这个开关值不值」「这次修复翻转了什么」。涨跌好坏由 `better` 判定，任一侧缺数据 Δ 显示为缺，不硬算。「这次 vs 上次」（同一配置的两个结果快照）也是它：`pairs` 的 `a` / `b` 除 experiment id 外也收快照键 `<experimentId> @ <startedAt>`——时间轴对比要用到旧快照，`results.latest()` 里没有，配手挑的快照数组（如 `[exp.latest, exp.snapshots[1]]`）用。
 
 ```tsx
 <DeltaTable data={await DeltaTable.data(selection, {

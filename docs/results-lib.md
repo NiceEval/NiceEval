@@ -1,6 +1,6 @@
 # Results Lib —— 实验结果数据的读写库
 
-> 状态:已按本文实现(`src/results/`,源码入口见 [Source Map](source-map.md#results-lib-与-reports)),与 `docs-site/zh/guides/results-data.mdx` 对齐:读取面(`openResults` 分层、`latest()` 选集、`dedupeAttempts`)、写入面(`createRunWriter`)、发布(`copySnapshots`)与 `Artifacts()` reporter 薄壳全部落地;view 的读取层收编也已完成(2026-07,`src/view/data.ts` 改吃 `openResults`,见 [View](view.md))。一步未实现:「类型的家」迁移(`RunSummary` / `EvalResult` 等仍住 core 的域文件,库经 `../types.ts` 引用,见「库的边界」)。[Results Format](results-format.md) 是磁盘上的格式规范;本库是这份格式的**读与写**的唯一实现 `niceeval/results`,做 runner、view、[Reports](reports.md) 和用户脚本的共同数据层。
+> 状态:已按本文实现(`src/results/`,源码入口见 [Source Map](source-map.md#results-lib-与-reports)),与 `docs-site/zh/guides/results-data.mdx` 对齐:读取面(`openResults` 分层、`latest()` Selection、`dedupeAttempts`)、写入面(`createRunWriter`)、发布(`copySnapshots`)与 `Artifacts()` reporter 薄壳全部落地;view 的读取层收编也已完成(2026-07,`src/view/data.ts` 改吃 `openResults`,见 [View](view.md))。一步未实现:「类型的家」迁移(`RunSummary` / `EvalResult` 等仍住 core 的域文件,库经 `../types.ts` 引用,见「库的边界」)。[Results Format](results-format.md) 是磁盘上的格式规范;本库是这份格式的**读与写**的唯一实现 `niceeval/results`,做 runner、view、[Reports](reports.md) 和用户脚本的共同数据层。
 
 抽库前,同一份磁盘格式的写和读长在两个器官里。写在 `src/runner/reporters/artifacts.ts`:时间戳目录、attempt 路径清洗(evalId 保留 `/` 层级、agent/model 非 `[\w.@-]` 全换 `_`)、大字段拆 artifact、`artifactsDir` / `has*` 回填、空数据不落文件——全是它的私有知识。读长在 `src/view/index.ts`:`readSummary` 的版本判定、`loadSummaries` 的目录扫描、 artifact 路径反拼。两边靠 `src/types.ts` 共享类型,但**布局知识各自实现了一遍**:格式演进要同步改两处,谁漏改谁坏。用户侧则根本没有读取 API,想编程消费只能第三次重写这些知识:
 
@@ -21,7 +21,7 @@ for (const r of summary.results) {
 `niceeval/results` 拥有:
 
 - **类型的家。** `RunSummary` / `EvalResult` / `StreamEvent` / `TraceSpan` / `O11ySummary` / `DiffData` 等结果类型和 `RESULTS_FORMAT` / `RESULTS_SCHEMA_VERSION` 常量搬进库;core 的 `src/types.ts` facade 反向 re-export,模块代码 `import type { … } from "../types.ts"` 的老习惯不破。
-- **writer。** 目录创建、快照级元数据、attempt artifact 增量落盘、summary 推导收尾(见下)。
+- **writer。** 目录创建、结果快照级元数据、attempt artifact 增量落盘、summary 推导收尾(见下)。
 - **reader。** `openResults`:目录扫描、版本过滤、懒加载、实验/快照/eval 分层、选择器(见下)。
 - **身份。** attempt 身份键与去重规则——读写两侧对「同一个 attempt」的理解必须一致,所以住在这。
 
@@ -163,7 +163,7 @@ interface Snapshot {
 
 ## 选择快照:`results.latest()` 返回 Selection
 
-多数消费场景先回答「现在什么水平」,所以选择器只有一个,长在集合上。返回物是一个 **Selection(选集)**:快照与挑选警告绑在一起走:
+多数消费场景先回答「现在什么水平」,所以选择器只有一个,长在集合上。返回物是一个 **Selection(挑选结果)**:快照与挑选警告绑在一起走:
 
 ```typescript
 const latest = results.latest({
@@ -202,7 +202,7 @@ latest.warnings[0];
 | kind | 归属 | 触发 | 结构化字段 |
 |---|---|---|---|
 | `partial-coverage` | `Selection` | 选中快照的覆盖 < 该实验已知 eval 并集(本地历史 ∪ knownEvalIds,再交命令行范围) | `experimentId`, `covered`, `total` |
-| `stale-snapshot` | `Selection` | 该实验选中的快照早于选集中最新的落盘——无阈值,如实触发,要阈值消费方按字段自比;`message` 带人话时距("predates latest run by 2 days") | `experimentId`, `startedAt`, `latestStartedAt` |
+| `stale-snapshot` | `Selection` | 该实验选中的快照早于 Selection 中最新的落盘——无阈值,如实触发,要阈值消费方按字段自比;`message` 带人话时距("predates latest run by 2 days") | `experimentId`, `startedAt`, `latestStartedAt` |
 | `synthetic-experiment-id` | `Selection` | 落盘缺 experimentId,以 `<agent>/<model>` 合成键(快照的 `synthetic: true` 同源) | `experimentId`, `runDir` |
 | `missing-startedAt` | `dedupeAttempts` | 身份键缺 `startedAt`,宁可不去重也不误删 | `experimentId`, `evalId` |
 

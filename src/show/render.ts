@@ -64,7 +64,7 @@ export function attemptArtifactsPath(attempt: AttemptHandle, cwd: string): strin
 
 // ───────────────────────── attempt 挑选 ─────────────────────────
 
-/** 选集内某道题的全部 attempt(合成选集里每实验只剩最新判定)。 */
+/** Selection 内某道题的全部 attempt(合成 Selection 里每实验只剩最新判定)。 */
 export function attemptsOfEval(snapshots: Snapshot[], evalId: string): AttemptHandle[] {
   const out: AttemptHandle[] = [];
   for (const snapshot of snapshots) {
@@ -76,7 +76,7 @@ export function attemptsOfEval(snapshots: Snapshot[], evalId: string): AttemptHa
 
 /**
  * 证据切面与详情块默认挑最新一次失败的 attempt;没有失败挑最新一次。
- * --attempt 收人看的 1 计序号;--experiment 已在选集合成时收窄。
+ * --attempt 收人看的 1 计序号;--experiment 已在 Selection 合成时收窄。
  */
 export function pickDetailAttempt(
   attempts: AttemptHandle[],

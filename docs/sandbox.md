@@ -156,14 +156,14 @@ export default defineExperiment({
 
 ## Sandbox 作为数据结构(带参数)
 
-provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是快照 ID"。和 [agent](adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
+provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱快照 ID"。和 [agent](adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
 
 ```typescript
 import { dockerSandbox, vercelSandbox, e2bSandbox } from "niceeval/sandbox";
 
 dockerSandbox()                                     // docker:用默认镜像
 dockerSandbox({ image: "niceeval-agents:node24" })  // docker:指定镜像
-vercelSandbox({ snapshotId: "snap_xxx" })            // vercel:从快照起
+vercelSandbox({ snapshotId: "snap_xxx" })            // vercel:从沙箱快照起
 e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 ```
 

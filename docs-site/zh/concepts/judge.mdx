@@ -1,7 +1,7 @@
 ---
 title: "NiceEval 里的 LLM-as-judge: 给开放式输出打分"
 sidebarTitle: "评判"
-description: "t.judge / session.judge / turn.judge 如何用独立裁判模型评估事实性、闭合式质量和摘要忠实度，以及模型解析优先级和严重级。"
+description: "t.judge / session.judge / turn.judge 如何用独立裁判模型评估事实性、闭合式质量和摘要忠实度，以及模型解析优先级和严重度。"
 ---
 
 judge 断言是第五种评分机制，和 [Assert](/zh/concepts/assert) 里的四种并列。用在“对不对靠规则说不清”的地方——开放式行文、语气、事实一致性、摘要质量。裁判模型和被测 agent **完全分离**，避免自评：同一个模型给自己的输出打分，天然会打得偏高。
@@ -111,9 +111,9 @@ defineConfig({
   key 一个都解析不到时，judge 断言**静默跳过**——不报错、不记分，eval 照常跑。全绿不代表 judge 真的评过。配完 key 先跑一条带 `t.judge` 的 eval，在 `niceeval view` 里确认出现了 judge 分数。
 </Warning>
 
-## 严重级：judge 默认 soft
+## 严重度：judge 默认 soft
 
-judge 调用和其它断言一样是评分函数，遵守 [Assert · gate 与 soft 严重级](/zh/concepts/assert#gate-与-soft-严重级) 同一套机制——只是**默认值**和大多数值匹配器不同：
+judge 调用和其它断言一样是评分函数，遵守 [Assert · gate 与 soft 严重度](/zh/concepts/assert#gate-与-soft-严重度) 同一套机制——只是**默认值**和大多数值匹配器不同：
 
 ```ts
 t.judge.autoevals.closedQA("语气是否礼貌?");              // 不带阈值 → soft，纯记分，永不让 eval 失败
@@ -125,6 +125,6 @@ t.judge.autoevals.closedQA("语气是否礼貌?").gate();       // 提升为 gat
 
 ## 相关阅读
 
-- [Assert](/zh/concepts/assert) — gate / soft 严重级的完整规则，以及 judge 分数最终折进的判定规则。
+- [Assert](/zh/concepts/assert) — gate / soft 严重度的完整规则，以及 judge 分数最终折进的判定规则。
 - [Drive](/zh/concepts/drive) — `t.send()`、`t.newSession()`，以及 `t.judge` / `session.judge` / `turn.judge` 各自挂在哪个 handle 上。
 - [Evals](/zh/concepts/evals) — judge 分数如何折进 eval 生命周期和 verdict 类型。

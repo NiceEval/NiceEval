@@ -64,7 +64,7 @@ niceeval exp compare --force                  # 忽略指纹缓存,全量重跑
 niceeval exp compare --tag <tag>              # 按单个标签过滤
 ```
 
-不带 `--force` 时,续跑携带的基线是跨全部历史 run、每 `(experimentId, evalId)` 取最新一份(`src/view/data.ts` 的 `loadLatestResultsPerEval`):上次 passed 且 fingerprint 匹配的直接携入新 summary,只真跑失败/errored/缺失的。所以「补齐一组实验」就是重跑 `niceeval exp <组>` 本身。注意带 eval-id 位置参数时,summary 只含本次计划内的 eval——补跑别用位置参数,否则产出部分快照(见 memory 的 rerun-with-eval-filter-partial-snapshot)。
+不带 `--force` 时,续跑携带的基线是跨全部历史 run、每 `(experimentId, evalId)` 取最新一份(`src/view/data.ts` 的 `loadLatestResultsPerEval`):上次 passed 且 fingerprint 匹配的直接携入新 summary,只真跑失败/errored/缺失的。所以「补齐一组实验」就是重跑 `niceeval exp <组>` 本身。注意带 eval-id 位置参数时,summary 只含本次计划内的 eval——补跑别用位置参数,否则产出部分结果快照(见 memory 的 rerun-with-eval-filter-partial-snapshot)。
 
 ## 评分与退出
 

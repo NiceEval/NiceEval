@@ -21,10 +21,10 @@
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 |
 | Agent | Agent | 「一条连到 AI 的连接」的抽象,由 experiment 引用;`kind` 只有 `"remote"` 和 `"sandbox"` 两类 |
 | `send` | `send` | 运行器唯一认得的统一动词;协议、事件映射、会话续接都在 Adapter 的 `send` 里实现 |
-| 评分器 | Scorer | 把"结果"映射成分数的东西,三类:值级断言、作用域断言、LLM-as-judge |
-| 断言 | Assertion | Scorer 的一次具体应用,带名字、严重级、可选阈值,产出 0–1 分数和过/挂 |
+| 评分器 | Scorer | 把"结果"映射成分数的东西,三类:值断言、作用域断言、LLM-as-judge |
+| 断言 | Assertion | Scorer 的一次具体应用,带名字、严重度、可选阈值,产出 0–1 分数和过/挂 |
 | 判定 | Verdict | 一个 Eval 的评分判定,四态:`passed` / `failed` / `errored` / `skipped`,没有中间态 |
-| 严重级 | Severity | 断言的两档:gate 不过即 `failed`;soft 只记分,`--strict` 下低于阈值才降级 `failed` |
+| 严重度 | Severity | 断言的两档:gate 不过即 `failed`;soft 只记分,`--strict` 下低于阈值才降级 `failed` |
 | Judge(裁判模型) | Judge(LLM-as-judge) | 用一个大模型当裁判给开放式回答打分的 Scorer,默认 soft、无阈值,详见 [Scoring](scoring.md#3-llm-as-judge) |
 
 ### 被测对象与适配器
@@ -78,13 +78,13 @@
 
 | 中文 | English | 含义 |
 |---|---|---|
-| 快照 | Snapshot | 结果读取面的单位:一个 experiment 在一次 run 里的结果(experiment × run,不是 run) |
-| 选集 | Selection | `results.latest()` 的返回物:挑好的快照 + 结构化挑选警告;唯一方法 `filter`(只删不换) |
+| 结果快照 | Snapshot | 结果读取面的单位:一个 experiment 在一次 run 里的结果(experiment × run,不是 run);与快照测试无关;沙箱侧的 microVM 快照一律写"沙箱快照(`snapshotId`)" |
+| Selection(挑选结果) | Selection | `results.latest()` 的返回物:挑好的快照 + 结构化挑选警告;唯一方法 `filter`(只删不换) |
 | 指标 | Metric | 「一个 attempt 算出一个值」的计算单元,经「attempt → 题,题 → 组」两级聚合;缺数据算 `null` 不算 0 |
 | 维度 | Dimension | 决定 attempt 分到哪一组的分组键(agent / experiment / evalGroup / snapshot …) |
 | 报告 | Report | `defineReport` 定义的 `.tsx` 报告文件,返回一棵组件树,经 `--report` 交给宿主渲染 |
-| 双面组件 | Dual-face component | `defineComponent({ web, text })` 的产物:一个定义、两个纯函数渲染面,同一棵树两个宿主共用 |
-| 宿主 | Host | 打开结果、挑选集、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
+| 双面组件 | Dual-render component | `defineComponent({ web, text })` 的产物:一个定义、两个纯函数渲染面,同一棵树两个宿主共用 |
+| 宿主 | Host | 打开结果、挑 Selection、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
 | 默认报告 | DefaultReport | 不传 `--report` 时宿主渲染的内置报告(运行总览 + 逐实验指标表 + 失败清单);「榜单」只是其中逐实验指标表的口语叫法 |
 | 报告槽 / 证据室 | —(内部代号) | 宿主结构的两半:报告槽整个归 `--report`,证据室(transcript / trace / diff 下钻)是宿主本体;这两个词不出现在公开站 |
 
@@ -104,13 +104,13 @@
 
 **Agent** —— "一条连到 AI 的连接"的抽象,由 experiment 引用。`Agent.kind` 只有两类:`"remote"`(按你自己服务的协议发请求,`defineAgent` 产出)、`"sandbox"`(在 [Sandbox](#sandbox) 里 spawn coding agent 的 CLI,`defineSandboxAgent` 产出)。进程内直调你的函数不是独立的第三类——它只是 `kind: "remote"` 的 `send` 里选择怎么实现的一种写法,而且不是推荐写法(测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/guides/connect-your-agent.mdx))。运行器只认统一动词 `send`,`t` 上暴露哪些动作由 Agent 的[能力](#capability)决定——能力不是声明出来的,是 `send` 实际做到了什么的构造证据。niceeval 不定义任何 agent 协议,所以没有 `--url`、没有通用 http target —— 连你自己的服务也是写一个 agent,URL 是它的内部配置。详见 [Agents 与 Adapters](adapters/README.md)。
 
-**Scorer** / **评分器** —— 把"结果"映射成分数的东西。三类:**值级断言**(`expect` 里的 `includes`/`equals`/`matches`…;`check` 记录并继续,`require` 作为前置条件立即等待并失败中止)、**作用域断言**(`t.succeeded()`/`t.calledTool()`…,在 `test` 结束后对本次 eval run 聚合评估;同一套断言挂在 [Session](#运行与结果) 上则只看这条 session,挂在 [Turn](#运行与结果) 上则只看这一个 Turn)、**LLM-as-judge**(用一个大模型当裁判给开放式回答打分)。沙箱型里,手工在沙箱内跑验证命令,再用 `t.check(result, commandSucceeded())` 判定,本身也是一种 Scorer。
+**Scorer** / **评分器** —— 把"结果"映射成分数的东西。三类:**值断言**(`expect` 里的 `includes`/`equals`/`matches`…;`check` 记录并继续,`require` 作为前置条件立即等待并失败中止)、**作用域断言**(`t.succeeded()`/`t.calledTool()`…,在 `test` 结束后对本次 eval run 聚合评估;同一套断言挂在 [Session](#运行与结果) 上则只看这条 session,挂在 [Turn](#运行与结果) 上则只看这一个 Turn)、**LLM-as-judge**(用一个大模型当裁判给开放式回答打分)。沙箱型里,手工在沙箱内跑验证命令,再用 `t.check(result, commandSucceeded())` 判定,本身也是一种 Scorer。
 
-**Assertion** / **断言** —— Scorer 的一次具体应用,带名字、严重级([gate / soft](#severity))、可选阈值,产出一个 0–1 的分数和过/挂。
+**Assertion** / **断言** —— Scorer 的一次具体应用,带名字、严重度([gate / soft](#severity))、可选阈值,产出一个 0–1 的分数和过/挂。
 
 **Verdict** / **判定** —— 一个 Eval 的评分判定,只有四态:`passed` / `failed` / `errored` / `skipped`。规则:显式 `t.skip(reason)` → `skipped`;执行出错(超时、异常、作者错误)→ `errored`;任一 gate 断言不过,或 `--strict` 下有 soft 断言低于阈值 → `failed`;否则 → `passed`。**没有 `scored` 这个中间态**——soft 断言没达标,在非 `--strict` 下就是 `passed`,分数照样如实记录、供横向对比,只是不影响这四态判定。`failed` 只表示断言/评分不通过,`errored` 是环境、超时、adapter、agent runtime 等执行问题,两者互斥,报告、JUnit、CI 都按这个口径分开统计,别把 `errored` 当成 agent 任务做错了。
 
-**Severity** / **严重级** —— 断言的两档。**gate**:硬性要求,不过即判 `failed`,任何时候都生效。**soft**:质量分,不会单独让 eval 立即 `failed`——`.atLeast(x)` 本身就是 soft 带阈值的写法:非 `--strict` 下低于阈值仍判 `passed`(分数如实记录),`--strict` 下才降级为 `failed`;不调 `.atLeast()` 时走匹配器自己的默认档(如 judge 默认 soft、无阈值,纯记分永不 fail)。
+**Severity** / **严重度** —— 断言的两档。**gate**:硬性要求,不过即判 `failed`,任何时候都生效。**soft**:质量分,不会单独让 eval 立即 `failed`——`.atLeast(x)` 本身就是 soft 带阈值的写法:非 `--strict` 下低于阈值仍判 `passed`(分数如实记录),`--strict` 下才降级为 `failed`;不调 `.atLeast()` 时走匹配器自己的默认档(如 judge 默认 soft、无阈值,纯记分永不 fail)。
 
 ## 被测对象与适配器
 

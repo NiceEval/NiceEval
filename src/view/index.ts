@@ -26,7 +26,7 @@ export {
  * - 恰好一个位置参数且指向存在的文件 → 单文件模式(`niceeval view <summary.json>`),
  *   不与 --run 或其它位置参数混用;
  * - 指向存在的目录 → 报错直说:目录经 `--run <dir>` 递入,位置参数留给 eval id 前缀;
- * - 其余 → eval id 前缀,收窄报告槽选集(经 show 同一套选集合成)。
+ * - 其余 → eval id 前缀,收窄报告槽 Selection(经 show 同一套 Selection 合成)。
  */
 export function resolveViewInput(
   cwd: string,

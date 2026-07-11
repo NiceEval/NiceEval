@@ -1,5 +1,5 @@
-// 值级断言匹配器(expect)。每个匹配器产出一个 ValueAssertion:纯函数 score +
-// 可链式改严重级 / 阈值。链式方法返回全新的不可变 ValueAssertion,复用同一个 score。
+// 值断言匹配器(expect)。每个匹配器产出一个 ValueAssertion:纯函数 score +
+// 可链式改严重度 / 阈值。链式方法返回全新的不可变 ValueAssertion,复用同一个 score。
 
 import type { Severity, ValueAssertion } from "../types.ts";
 import { stripComments } from "../util.ts";
@@ -174,7 +174,7 @@ export function isFalse(label?: string): ValueAssertion {
 }
 
 /**
- * 自定义断言工厂:直接给名字 / 严重级 / 阈值 / score,一次调用即返回可用的 ValueAssertion——
+ * 自定义断言工厂:直接给名字 / 严重度 / 阈值 / score,一次调用即返回可用的 ValueAssertion——
  * 不像 gate()/atLeast() 那样需要二段链式调用来定级。severity 省略默认 gate。
  */
 export function makeAssertion(spec: {

@@ -63,7 +63,7 @@ export default defineEval({
 
 | API | 作用 | 备注 |
 |---|---|---|
-| `t.reply` | 主 session 最后一条 assistant 消息 | 常用于值级 matcher;不是 `t.judge` 的默认材料 |
+| `t.reply` | 主 session 最后一条 assistant 消息 | 常用于值 matcher;不是 `t.judge` 的默认材料 |
 | `t.sessionId` | 当前主会话 id | adapter 返回时填入;用于 resume / 调试 |
 | `t.events` | 主 session 目前已捕获的强类型事件流 | 即时读取主 session;`t.*` 最终断言会聚合全部 session |
 | `session.reply` | 这个 session 的最后一条 assistant 消息 | 不读主 session |
@@ -160,15 +160,15 @@ export default defineEval({
 | `t` | `sandbox.*` | 沙箱是 attempt / run 资源,不是某条会话或某一轮的资源 |
 | `turn` | `outputEquals(value)` / `outputMatches(schema)` | 只对这一轮的 `turn.data` 有意义 |
 
-### 值级断言
+### 值断言
 
-`check` 和 `require` 都记录值级断言,但它们不是等价 API。`check` 是"记录并继续":同步返回一个断言句柄,不阻塞后续代码,适合尽量收集多条失败信号。`require` 是"前置条件":立即等待 matcher 结果,通过后返回原 value,不通过就抛出 eval 控制流异常并中止依赖它的后续代码。只有后续逻辑确实依赖这个值或条件时才用 `require`。
+`check` 和 `require` 都记录值断言,但它们不是等价 API。`check` 是"记录并继续":同步返回一个断言句柄,不阻塞后续代码,适合尽量收集多条失败信号。`require` 是"前置条件":立即等待 matcher 结果,通过后返回原 value,不通过就抛出 eval 控制流异常并中止依赖它的后续代码。只有后续逻辑确实依赖这个值或条件时才用 `require`。
 
 **记录 API:**
 
 | API | 作用 | 备注 |
 |---|---|---|
-| `t.check(value, matcher)` | 同步记录一条值级断言 | 返回 `AssertionHandle`;不等待结果;失败不阻止后续代码 |
+| `t.check(value, matcher)` | 同步记录一条值断言 | 返回 `AssertionHandle`;不等待结果;失败不阻止后续代码 |
 | `await t.require(value, matcher)` | 立即等待并要求值通过 matcher | 返回原 `value`;不通过就抛,按 gate 中止后续 |
 
 **Matcher 函数:**
@@ -240,8 +240,8 @@ export default defineEval({
 | API | 作用 | 备注 |
 |---|---|---|
 | `t.sandbox.diff.get(path)` | 读取某文件 diff 内容 | `path` 写 workdir 相对的项目路径(git diff 产出的就是它) |
-| `t.sandbox.diff.isEmpty()` | diff 是否为空 | 值级断言材料 |
-| `t.sandbox.diff.matches(re)` | diff 是否命中正则 | 值级断言材料 |
+| `t.sandbox.diff.isEmpty()` | diff 是否为空 | 值断言材料 |
+| `t.sandbox.diff.matches(re)` | diff 是否命中正则 | 值断言材料 |
 | `t.sandbox.file(path)` | 延迟读取 sandbox 文件 | `path` 是 sandbox 内路径;配 `t.check` 使用 |
 
 同一个 `t.sandbox` 下同时有“放文件”和“断言文件变化”,但文档按类别区分:
@@ -295,7 +295,7 @@ export default defineEval({
 
 | 层 | 谁 | 作用域 |
 |---|---|---|
-| **值级** | `t.check(value, matcher)` / `await t.require(value, matcher)`、judge 的 `{ on }` | 只评你传进去的值;`require` 额外承担前置条件控制流 |
+| **值** | `t.check(value, matcher)` / `await t.require(value, matcher)`、judge 的 `{ on }` | 只评你传进去的值;`require` 额外承担前置条件控制流 |
 | **run 级聚合** | `t.succeeded()`、`t.calledTool()`、`t.event()` 等 | `test` 跑完后,看本次运行的全部 session 和全部 turn |
 | **session 级会话** | `session.succeeded()`、`session.calledTool()`、`session.event()` 等 | 只看这个 session 在断言记录时已有的事件 |
 | **turn 级单轮** | `turn.succeeded()`、`turn.calledTool()`、`turn.event()` 等 | 只看这一轮自己的事件 |
@@ -339,7 +339,7 @@ Use a sandbox agent, or remove sandbox calls from this eval.
 
 这样 `defineEval` 保持轻;错误出现在实际用错的 API 上,比额外维护一份 capability 声明更直接。
 
-## 严重级:gate vs soft
+## 严重度:gate vs soft
 
 - **gate** —— 硬要求,不过即 `failed`,任何时候都生效。`includes` / `equals` 等默认 gate。
 - **soft** —— 质量分,非 `--strict` 下不让 eval failed;`--strict` 下低于阈值才 failed。`similarity` 和 judge 默认 soft。

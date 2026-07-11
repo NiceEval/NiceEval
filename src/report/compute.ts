@@ -1,4 +1,4 @@
-// 计算函数:选集 → 一份组件数据。跑在 Node 侧,产物是算好的、可序列化的普通 JSON
+// 计算函数:Selection → 一份组件数据。跑在 Node 侧,产物是算好的、可序列化的普通 JSON
 // (终值 + 渲染提示,不含公式);渲染面(web/text)只做展示。
 //
 // 这些函数不做顶层导出,而是挂在对应组件上(MetricTable.data / Scoreboard.data …,
@@ -326,7 +326,7 @@ export async function lineData(input: SnapshotsInput, opts: LineDataOptions): Pr
 
 // ───────────────────────── RunOverview.data ─────────────────────────
 
-/** 选集的 warnings 随行进 OverviewData,RunOverview 直接渲染 —— 诚实不靠使用者记得接线。 */
+/** Selection 的 warnings 随行进 OverviewData,RunOverview 直接渲染 —— 诚实不靠使用者记得接线。 */
 export async function overviewData(input: SnapshotsInput): Promise<OverviewData> {
   const { snapshots, warnings } = resolveInput(input);
   const items = collectItems(snapshots);

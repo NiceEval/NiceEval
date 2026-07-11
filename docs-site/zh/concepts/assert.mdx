@@ -1,7 +1,7 @@
 ---
 title: "NiceEval 断言：值、作用域事实、测试与成本"
 sidebarTitle: "断言"
-description: "NiceEval 的断言词汇——值断言、作用域断言、test-as-scoring 和效率断言——以及 gate / soft 严重级和判定 verdict 的规则。"
+description: "NiceEval 的断言词汇——值断言、作用域断言、test-as-scoring 和效率断言——以及 gate / soft 严重度和判定 verdict 的规则。"
 ---
 
 断言把 agent 在一次 eval 里做的一切——每条消息、每次工具调用、每处文件改动、每一分 token——折叠成一个可解释的结果。[NiceEval](https://niceeval.com/) 提供四种互补的断言机制：有的立即检查一个值，有的在整轮跑完后评估整次运行，有的在沙箱里跑测试，有的衡量效率。四种都产出同一种 `Assertion` 类型，都进同一套判定规则。第五种机制——让语言模型评判开放式质量——见 [Judge](/zh/concepts/judge)。
@@ -23,9 +23,9 @@ description: "NiceEval 的断言词汇——值断言、作用域断言、test-a
   </Card>
 </CardGroup>
 
-## gate 与 soft 严重级
+## gate 与 soft 严重度
 
-每条断言都带一个**严重级**，决定它如何影响最终判定，只有两档：
+每条断言都带一个**严重度**，决定它如何影响最终判定，只有两档：
 
 <Tabs>
   <Tab title="gate">
@@ -42,7 +42,7 @@ description: "NiceEval 的断言词汇——值断言、作用域断言、test-a
   </Tab>
 </Tabs>
 
-在任意匹配器或断言上用链式方法覆盖默认严重级：
+在任意匹配器或断言上用链式方法覆盖默认严重度：
 
 ```ts
 t.check(t.reply, includes("confirmed"));          // 默认 gate

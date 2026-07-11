@@ -68,9 +68,9 @@ export interface ViewData {
   name?: LocalizedText;
   /** 最近一次 run 的 startedAt(ISO);没有历史 run 时缺省。 */
   lastRunAt?: string;
-  /** 榜单合成自几个物理 run(latest 选集覆盖的 run 数);表头「合成来源」标注。 */
+  /** 榜单合成自几个物理 run(latest Selection 覆盖的 run 数);表头「合成来源」标注。 */
   composedRuns: number;
-  /** 官方 KPI(RunOverview.data 产物):totals + 选中快照元信息 + 选集 warnings 随行。 */
+  /** 官方 KPI(RunOverview.data 产物):totals + 选中快照元信息 + Selection warnings 随行。 */
   overview: OverviewData;
   /** 默认报告(MetricTable.data,rows: "experiment"):每个实验最新一次快照的口径。 */
   table: TableData;

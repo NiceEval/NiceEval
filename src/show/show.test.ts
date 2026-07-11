@@ -1,9 +1,9 @@
 // niceeval show 终端宿主的测试(行为规范:docs-site/zh/guides/viewing-results.mdx;
 // 组合语义:docs/reports.md「宿主输入的组合语义」)。覆盖:
 // - 榜单合成口径:每 experiment × eval 取最新判定,局部重跑从更早 run 补齐,头部标注合成自几个 run;
-// - 前缀过滤收窄选集,覆盖警告分母 = 已知并集 ∩ 范围;
+// - 前缀过滤收窄 Selection,覆盖警告分母 = 已知并集 ∩ 范围;
 // - --history 时间轴只列真实执行,resume 携带的复印件不占行;
-// - --report 装载(合法 / 非法默认导出 / 文件缺失)、位置前缀收窄注入选集、attemptCommand 下钻;
+// - --report 装载(合法 / 非法默认导出 / 文件缺失)、位置前缀收窄注入 Selection、attemptCommand 下钻;
 // - 互斥:--history 与 --report;
 // - 单 eval 详情与 --transcript 证据切面的输出形态。
 
@@ -150,7 +150,7 @@ describe("榜单:跨 run 合成的现刻水位", () => {
     expect(out).not.toContain("✗ weather/brooklyn");
   });
 
-  it("合成选集:每 experiment × eval 取最新判定;compose 不产生残缺警告", async () => {
+  it("合成 Selection:每 experiment × eval 取最新判定;compose 不产生残缺警告", async () => {
     const root = await seedComposedRoot();
     const results = await openResults(root);
     const selection = composeShowSelection(results);
@@ -168,7 +168,7 @@ describe("榜单:跨 run 合成的现刻水位", () => {
 // ───────────────────────── 前缀过滤 ─────────────────────────
 
 describe("位置前缀收窄", () => {
-  it("前缀收窄选集覆盖的 eval;覆盖警告分母 = 已知并集 ∩ 范围", async () => {
+  it("前缀收窄 Selection 覆盖的 eval;覆盖警告分母 = 已知并集 ∩ 范围", async () => {
     const root = await makeRoot();
     await writeRun(
       root,
@@ -392,7 +392,7 @@ describe("--report 装载", () => {
     return path;
   }
 
-  it("装载 + 注入选集 + attemptCommand 下钻命令", async () => {
+  it("装载 + 注入 Selection + attemptCommand 下钻命令", async () => {
     const root = await seedComposedRoot();
     const report = await writeReportFile(root);
     const { out, code } = await show(root, [], { report });
@@ -401,7 +401,7 @@ describe("--report 装载", () => {
     expect(out).toContain("drill niceeval show");
   });
 
-  it("位置前缀对 --report 生效:收窄注入选集覆盖的 eval", async () => {
+  it("位置前缀对 --report 生效:收窄注入 Selection 覆盖的 eval", async () => {
     const root = await seedComposedRoot();
     const report = await writeReportFile(root);
     const { out, code } = await show(root, ["weather"], { report });
@@ -409,7 +409,7 @@ describe("--report 装载", () => {
     expect(out).toContain("CUSTOM weather/brooklyn ·");
   });
 
-  it("--experiment 让选集只留该实验", async () => {
+  it("--experiment 让 Selection 只留该实验", async () => {
     const root = await seedComposedRoot();
     await writeRun(
       root,

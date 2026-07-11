@@ -16,7 +16,7 @@ description: "报告积木脚下的数据层：openResults 把 .niceeval/ 的落
 
 ## 读：`openResults`
 
-输入是 `.niceeval/` 目录（或单个 run 目录），输出是四层数据：**实验 → 快照（单次跑的实验）→ eval → attempt**。你从此不碰路径、不判断文件存在性、不解析 JSON：
+输入是 `.niceeval/` 目录（或单个 run 目录），输出是四层数据：**实验 → 结果快照（单次跑的实验）→ eval → attempt**。你从此不碰路径、不判断文件存在性、不解析 JSON：
 
 ```typescript
 import { openResults } from "niceeval/results";
@@ -105,7 +105,7 @@ for (const s of results.skipped) {
 
 ## 选快照：`results.latest()`
 
-多数场景先回答「现在什么水位」，选择器替你挑「每个实验最新一次」——这也是默认报告的口径。返回的是一个**选集（Selection）**，快照和警告绑在一起走：
+多数场景先回答「现在什么水位」，选择器替你挑「每个实验最新一次」——这也是默认报告的口径。返回的是一个 **Selection**，快照和警告绑在一起走：
 
 ```typescript
 const latest = results.latest({
@@ -129,9 +129,9 @@ latest.warnings[0];
 // }
 ```
 
-字段供程序判断——CI 里「覆盖缩水就 fail」直接判 `covered < total`，不解析文本；`message` 是渲染好的英文句子，要展示就原样打。渲染与否在你，缺口永远被算出来。警告不止这一种：快照落后于选集中最新的落盘、experimentId 缺失被合成键等同样进 `warnings`，每种都带 `kind`、可判断的结构化字段和渲染好的 `message`。
+字段供程序判断——CI 里「覆盖缩水就 fail」直接判 `covered < total`，不解析文本；`message` 是渲染好的英文句子，要展示就原样打。渲染与否在你，缺口永远被算出来。警告不止这一种：快照落后于 Selection 中最新的落盘、experimentId 缺失被合成键等同样进 `warnings`，每种都带 `kind`、可判断的结构化字段和渲染好的 `message`。
 
-选集是[报告积木](/zh/guides/custom-reports)和下文 `copySnapshots` 的通用输入：收 `Selection` 时 warnings 随行（`RunOverview` 之类的组件会如实展示），手工挑的 `Snapshot[]` 数组照收。微调官方口径不用降级成裸数组：`latest.filter((s) => s.experimentId !== "compare/broken")` 返回新选集——快照被删减，warnings 修剪到幸存的实验，provenance 不丢。`filter` 只做删减；「换成该实验上一个完整快照」这类**替换式**重挑不是它的事，回到 `exp.snapshots` 自己拿——手工挑的数组没有挑选过程，自然没有 warnings 可带，也如实。
+Selection 是[报告积木](/zh/guides/custom-reports)和下文 `copySnapshots` 的通用输入：收 `Selection` 时 warnings 随行（`RunOverview` 之类的组件会如实展示），手工挑的 `Snapshot[]` 数组照收。微调官方口径不用降级成裸数组：`latest.filter((s) => s.experimentId !== "compare/broken")` 返回新 Selection——快照被删减，warnings 修剪到幸存的实验，provenance 不丢。`filter` 只做删减；「换成该实验上一个完整快照」这类**替换式**重挑不是它的事，回到 `exp.snapshots` 自己拿——手工挑的数组没有挑选过程，自然没有 warnings 可带，也如实。
 
 ## 一个真实脚本：分布不是折叠
 

@@ -1,9 +1,9 @@
-// show 宿主的选集合成与时间轴口径(docs-site/zh/guides/viewing-results.mdx 是行为规范)。
+// show 宿主的 Selection 合成与时间轴口径(docs-site/zh/guides/viewing-results.mdx 是行为规范)。
 //
 // 「现刻水位」= 每个 experiment × eval 取时间上最新的那份判定,跨 run 合成:
 // results.latest() 只挑「每实验最新快照」,带 eval 前缀的局部重跑会产出残缺快照;
 // 榜单承诺「不会因为一次局部重跑变残缺」,所以宿主在实验的全部历史快照上逐 eval
-// 向更早的 run 补齐,再把合成好的选集注入报告槽——内置默认报告与 --report 吃同一份,
+// 向更早的 run 补齐,再把合成好的 Selection 注入报告槽——内置默认报告与 --report 吃同一份,
 // 默认报告口径 = 宿主注入口径。本文件只消费 niceeval/results 的读取面。
 
 import { foldEvalVerdict } from "../shared/verdict.ts";
@@ -24,7 +24,7 @@ import type {
 export interface ComposeOptions {
   /** experiment id 前缀(--experiment),与 latest({ experiments }) 同一分段匹配语义。 */
   experiment?: string;
-  /** eval id 前缀(位置参数),收窄选集覆盖的 eval;覆盖警告分母 = 已知并集 ∩ 范围。 */
+  /** eval id 前缀(位置参数),收窄 Selection 覆盖的 eval;覆盖警告分母 = 已知并集 ∩ 范围。 */
   patterns?: string[];
 }
 
@@ -36,9 +36,9 @@ export function filterExperiments(experiments: Experiment[], prefix?: string): E
 }
 
 /**
- * 合成「现刻水位」选集:每个实验一份合成快照,快照里每道题的判定取该题最后一次
+ * 合成「现刻水位」Selection:每个实验一份合成快照,快照里每道题的判定取该题最后一次
  * 出现的快照(--resume 携带的复印件身份与原判定相同,取到哪份内容都一致)。
- * 警告随选集重算:partial-coverage 的分母 = 已知并集 ∩ 范围;stale / synthetic
+ * 警告随 Selection 重算:partial-coverage 的分母 = 已知并集 ∩ 范围;stale / synthetic
  * 与 results.latest() 同口径。
  */
 export function composeShowSelection(results: Results, opts: ComposeOptions = {}): Selection {

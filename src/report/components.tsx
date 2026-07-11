@@ -99,7 +99,7 @@ export interface CaseListProps {
 
 // ───────────────────────── 装配 ─────────────────────────
 
-/** 页头 KPI 条:何时跑的、几个配置、几道题、通过率、总成本;选集的警告随行显示在条内。 */
+/** 页头 KPI 条:何时跑的、几个配置、几道题、通过率、总成本;Selection 的警告随行显示在条内。 */
 export const RunOverview = Object.assign(
   defineComponent<RunOverviewProps>({
     web: (props) => <RunOverviewWeb {...props} />,

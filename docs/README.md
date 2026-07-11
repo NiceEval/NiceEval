@@ -71,7 +71,7 @@ export default defineEval({
     await t.send("布鲁克林今天天气怎么样?");
     t.succeeded();                          // 作用域断言:运行没失败
     t.calledTool("get_weather", { input: { city: "Brooklyn" } });
-    t.check(t.reply, includes("晴"));        // 值级断言:就地评估
+    t.check(t.reply, includes("晴"));        // 值断言:就地评估
   },
 });
 ```

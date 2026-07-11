@@ -6,10 +6,10 @@
 //   恰好一个 eval     单 eval 详情(attempt / 断言明细,宿主本体)
 //   --transcript / --trace / --diff[=路径]   证据切面(宿主本体):出现即走证据室,不渲染报告槽
 //   --history        跨 run 时间轴(内置趋势视图),与 --report 互斥
-//   --report <文件>  整槽换成用户报告;位置前缀 / --run / --experiment 先收窄选集再注入
-//   --run <目录>     结果根换成该目录;--experiment 选集只留该实验;--attempt 指定详情/证据的 attempt
+//   --report <文件>  整槽换成用户报告;位置前缀 / --run / --experiment 先收窄 Selection 再注入
+//   --run <目录>     结果根换成该目录;--experiment Selection 只留该实验;--attempt 指定详情/证据的 attempt
 //
-// 数据全部走 niceeval/results 的读取面(openResults + 合成选集),不自己爬目录。
+// 数据全部走 niceeval/results 的读取面(openResults + 合成 Selection),不自己爬目录。
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -219,7 +219,7 @@ async function show(
     return;
   }
 
-  // 单 eval 详情(宿主本体);--report 在场时报告槽优先,前缀只用来收窄选集。
+  // 单 eval 详情(宿主本体);--report 在场时报告槽优先,前缀只用来收窄 Selection。
   if (flags.report === undefined && patterns.length > 0 && matchedEvalIds.length === 1) {
     const evalId = matchedEvalIds[0];
     const attempts = attemptsOfEval(selection.snapshots, evalId);

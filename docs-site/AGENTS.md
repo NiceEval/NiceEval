@@ -33,6 +33,11 @@
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **默认报告（`DefaultReport`）**：不传 `--report` 时 `niceeval show` / `niceeval view` 渲染的那份内置报告（运行总览 + 逐实验指标表 + 失败清单）。不要写「官方榜单」「默认榜单」——没有独立于报告之外的「榜单」实体；「榜单」只用作默认报告里那张逐实验指标表的口语叫法。
+- **Snapshot**：结果读取面的单位（experiment × run）。中文写“结果快照”（同页后续可简写“快照”）；与快照测试无关；沙箱 microVM 快照一律写“沙箱快照（`snapshotId`）”。
+- **Selection**：`results.latest()` 的返回物（挑好的结果快照 + 挑选警告）。中文直接写 `Selection`，不写“选集”。
+- **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
+- **双面组件（dual-render component）**：`defineComponent({ web, text })` 的产物。英文写 dual-render，不写 dual-face。
+- **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则
 - **口语测试**：正文每句话要能原样对着同事说出口、对方第一次听就懂。内部设计代号与比喻（「报告槽」「证据室」「出厂填充」「接线」「水位」「前门」「收编」这类）不出现在公开站；要么把这个词提进上面的术语表并在页面首次出现处解释，要么用日常语言把条件和结果直说——写「不传 `--report` 时首页是默认报告」，不写「报告槽默认装官方榜单」。

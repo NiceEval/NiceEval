@@ -1,4 +1,4 @@
-// 断言收集器:test 期间记录断言(值级就地、作用域延迟),test 结束后对完整运行
+// 断言收集器:test 期间记录断言(值断言就地、作用域断言延迟),test 结束后对完整运行
 // 结果(ScoringContext)统一 finalize 成 AssertionResult[],再交判定。
 
 import type { AssertionResult, ScoringContext, Severity, SourceLoc } from "../types.ts";
@@ -26,7 +26,7 @@ export interface Spec {
   evaluate(ctx: ScoringContext): number | EvalScore | Promise<number | EvalScore>;
 }
 
-/** 作者拿到的可链式句柄,改严重级 / 阈值(回头改 spec)。 */
+/** 作者拿到的可链式句柄,改严重度 / 阈值(回头改 spec)。 */
 export interface RecordHandle {
   atLeast(threshold: number): RecordHandle;
   gate(threshold?: number): RecordHandle;

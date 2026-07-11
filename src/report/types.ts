@@ -212,7 +212,7 @@ export interface OverviewData {
     costUSD: number | null;
     durationMs: number;
   };
-  /** 选集的警告随行(结构化,含渲染好的 message),RunOverview 直接渲染。 */
+  /** Selection 的警告随行(结构化,含渲染好的 message),RunOverview 直接渲染。 */
   warnings: SelectionWarning[];
 }
 

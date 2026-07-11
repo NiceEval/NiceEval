@@ -5,14 +5,14 @@
 ```sh
 niceeval view                         # 起本地 web,自动打开浏览器,读 .niceeval/ 下所有历史运行
 niceeval view .niceeval/<run>/summary.json    # 单文件模式:只看这一份报告
-niceeval view weather                 # 位置参数 = eval id 前缀,收窄报告槽选集(与 show 同语义)
+niceeval view weather                 # 位置参数 = eval id 前缀,收窄报告槽 Selection(与 show 同语义)
 niceeval view --run site-data/run     # 结果目录经 --run 递入;--experiment <id> 只看该实验
 niceeval view --report reports/exam.tsx       # 报告槽整槽换成自定义报告(与 show 同一文件)
 niceeval view --no-open               # 只打印 URL,不打开浏览器
 niceeval view --out site              # 目录式静态导出:index.html + artifact/
 ```
 
-位置参数的判定:指向存在的文件 → 单文件模式(不与 `--run` 或其它位置参数混用);指向存在的目录 → 报错直说走 `--run`;其余按 eval id 前缀。收窄只作用于报告槽(榜单 / overview / 注入报告的选集),证据室数据恒为全量,attempt 深链在任何收窄下都可达。
+位置参数的判定:指向存在的文件 → 单文件模式(不与 `--run` 或其它位置参数混用);指向存在的目录 → 报错直说走 `--run`;其余按 eval id 前缀。收窄只作用于报告槽(榜单 / overview / 注入报告的 Selection),证据室数据恒为全量,attempt 深链在任何收窄下都可达。
 
 架构上是**一次性烘焙进单个 HTML+JSON 的静态产物**(`src/view/index.ts` 的 `renderHtml`),不是常驻的多页面 server——`niceeval view` 起的 web 服务每次请求现读现渲染,`--out` 则直接导出。这是刻意的取舍,详见 [References](references.md#调研过判断不值得抄的及理由)。
 
@@ -20,7 +20,7 @@ niceeval view --out site              # 目录式静态导出:index.html + artif
 
 零可读结果(目录真空,或全部落盘被 skipped)时 `loadViewScan` 抛 `ViewInputError`:本地 server 起不来,`--out` 非零退出、不导出空页面——与 show 的「匹配不到直说」同一原则,同时是 CI 静态发布的守卫(构建失败让托管平台保留上一次部署,空报告不顶上线)。错误逐条列 skipped 目录与原因,niceeval 落盘的 schemaVersion 场景拼出可跑的 `npx niceeval@<版本> view` 命令(`src/view/data.ts` 的 `noReadableResults`)。
 
-> 发布口径裁决(2026-07-10):发布的站与本地 view 完全一致(所见即所发),不设 `--latest` 之类的发布收窄 flag——结果既已提交进仓库,历史体积成本已被接受,导出再收窄只会让线上站 ≠ 本地站、平添第二种导出语义;发布策划过的选集属于 `copySnapshots` 积木(宿主语言挑选,`view --run` 对着产物看)。公开文档的 CI 发布页(`docs-site/zh/guides/publish-report.mdx`)因此只有一种姿势:`.niceeval/` 提交进仓库(gitignore 排除 `diff.json`)+ `view --out` 一行构建命令,可叠 `--report` 发布自定义报告。曾评估过「本地 copySnapshots 固化快照提交、CI 只导出」的第二姿势,已否:平添第二个真相源,发布依赖人记得跑本地脚本,站点会静默过期。
+> 发布口径裁决(2026-07-10):发布的站与本地 view 完全一致(所见即所发),不设 `--latest` 之类的发布收窄 flag——结果既已提交进仓库,历史体积成本已被接受,导出再收窄只会让线上站 ≠ 本地站、平添第二种导出语义;发布策划过的 Selection 属于 `copySnapshots` 积木(宿主语言挑选,`view --run` 对着产物看)。公开文档的 CI 发布页(`docs-site/zh/guides/publish-report.mdx`)因此只有一种姿势:`.niceeval/` 提交进仓库(gitignore 排除 `diff.json`)+ `view --out` 一行构建命令,可叠 `--report` 发布自定义报告。曾评估过「本地 copySnapshots 固化结果快照提交、CI 只导出」的第二姿势,已否:平添第二个真相源,发布依赖人记得跑本地脚本,站点会静默过期。
 
 > 单文件导出(`--out report.html`)曾经存在,已移除:代码/transcript/trace 视图依赖 artifact 文件,单文件注定是残缺体验,而 coding eval 恰恰最依赖这些视图——这个形态的存在本身就在诱导用户导出一份看不了证据的报告。「传一个文件给同事」的需求,答案是把整站导出托管起来发链接,或用 [Reports](reports.md) 积木在 CI 里落判定数据。`--out` 目标以 `.html` 结尾时 CLI 直接报错并给出改法。
 
@@ -107,7 +107,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 
 这两条之前被 [Observability](observability.md) 的能力列表当成已实现的写了,这次审查代码(`src/view/index.ts`、`src/view/app/`)发现对不上,已经从那边挪过来,归到下面「计划中」:
 
-- **"跨运行趋势"实际是合并,不是可对比的历史。** 旧 `aggregateRows` 把 `.niceeval/` 下**所有**历史 `summary.json` 按 `experimentId` 揉进同一行——通过率、平均耗时、成本都是跨全部历史 run 的累计值。**已修(2026-07,统计层收编)**:`aggregateRows` 已删,榜单改为 `results.latest()` 选集 + 官方计算函数(每个实验最新一次快照,跨快照累计处经 `dedupeAttempts` 去重),历史快照身份保留在 `viewData.snapshots` 里供 Runs / Traces 与后续 Compare 使用,见[用 Reports 积木重建 view](#用-reports-积木重建-view设计提案)。
+- **"跨运行趋势"实际是合并,不是可对比的历史。** 旧 `aggregateRows` 把 `.niceeval/` 下**所有**历史 `summary.json` 按 `experimentId` 揉进同一行——通过率、平均耗时、成本都是跨全部历史 run 的累计值。**已修(2026-07,统计层收编)**:`aggregateRows` 已删,榜单改为 `results.latest()` Selection + 官方计算函数(每个实验最新一次快照,跨快照累计处经 `dedupeAttempts` 去重),历史快照身份保留在 `viewData.snapshots` 里供 Runs / Traces 与后续 Compare 使用,见[用 Reports 积木重建 view](#用-reports-积木重建-view设计提案)。
 - **"质量 × 成本散点图"没有实现。** `src/view/app` 下没有任何图表 / scatter / canvas 组件,现有可视化都是表格和文字指标。
 
 ## 外部参考
@@ -190,7 +190,7 @@ npx niceeval@<producer.version> view .niceeval/<run>/summary.json
 迁移顺序即依赖顺序,每步独立可交付:
 
 1. **换读取层。**(已完成,2026-07)results lib 落地,view 的 loader 删掉,skipped 列表 UI 直接上——行为中立的重构,外加诚实增强(三种原因、producer 感知的提示)。
-2. **换统计层。**(已完成,2026-07)计算函数落地,`aggregateRows` 删掉;榜单数字因「latest 口径 + 去重」而变(变得更对),在 changelog 里明说。选集 warnings(partial-coverage / stale-snapshot / synthetic-experiment-id)经 `OverviewData.warnings` 进前端横幅,`data-kind` 标注。
+2. **换统计层。**(已完成,2026-07)计算函数落地,`aggregateRows` 删掉;榜单数字因「latest 口径 + 去重」而变(变得更对),在 changelog 里明说。Selection warnings(partial-coverage / stale-snapshot / synthetic-experiment-id)经 `OverviewData.warnings` 进前端横幅,`data-kind` 标注。
 3. **换渲染层 + 补两个 tab。** 榜单换 `MetricTable`,新增 scatter,Compare 以时间轴 delta 首发;AttemptModal / Traces 原样保留。
 
 界线(2026-07 更新,原表述「固定摆法、想换摆法去写自己的页面」被宿主化提案精确化):**view = 报告槽 + 证据室**。报告槽默认装内置默认报告——它没有特权,就是 `Report` 契约的出厂预设,作为值(`defaultReport`)公开导出;`niceeval view --report <文件>` 整槽替换,用户在自己的报告里 spread `defaultReport` 即可「官方水位 + 自己口径」,不做 tab 管理、不做注册表,详见 [Reports · 宿主化报告](reports.md)。证据室(AttemptModal / Traces / 导航壳)是 view 本体,报告块经 `attemptRef` 深链进来。view 仍不长配置、不长插件——报告文件是显式路径递进来的宿主语言模块,不是插件;要自己的 React 组件,宿主仍是你自己的页面([Reports](reports.md)),零件是同一批。

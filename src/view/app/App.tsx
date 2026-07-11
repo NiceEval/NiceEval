@@ -229,7 +229,7 @@ export function App({ data, reportHtml }: { data: ViewData; reportHtml?: string 
         )}
 
         {!hasReport && warnings.length > 0 && (
-          // 选集警告(partial-coverage / stale-snapshot / synthetic-experiment-id):
+          // Selection 警告(partial-coverage / stale-snapshot / synthetic-experiment-id):
           // message 是挑选器渲染好的英文句子,原样打;data-kind 供样式与测试定位。
           <section className="incompatible-banner selection-warnings" role="alert">
             <b>{t("banner.warningsTitle")}</b>

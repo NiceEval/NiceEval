@@ -24,4 +24,12 @@
 
 **波及与纪律**:「后端」「轮」「结论」都是多义词,替换必须逐语境甄别——应用后端/协议后端/观测后端(`src/agents/*` 注释、connect-otel、tier1 示例文案)不改;「多轮/单轮」形容词不改;「实测结论」等日常语不改。字段改名 = artifact schema 破坏(旧 `.niceeval` 目录里 `outcome` 字段的落盘不再可读),beta 原则下不做读取别名(同 [experiment-flags-naming-reversal](experiment-flags-naming-reversal.md) 的先例)。
 
-**遗留未裁决**(下次迭代候选):快照 Snapshot(与 snapshot testing 撞)、选集 Selection(中文歧义)、值级断言(「值级」不自然)、双面组件 dual-face(英文非标准)、严重级 Severity(小问题)。
+**第二批裁决**(同日 2026-07-11,五项全部零代码破坏,只动 docs / docs-site / src 注释):
+
+| 旧词 | 定名 | 说明 |
+| --- | --- | --- |
+| 快照 \| Snapshot | **不改词,立限定语规矩** | 词条与每页首次出现写「结果快照」,同页后续可简写;沙箱 microVM 侧一律写「沙箱快照(`snapshotId`)」——仓库内 `Snapshot` 类型与 `snapshotId` 字段真撞车,靠限定语消歧;候选 ExperimentRun 因与 Run 纠缠被否 |
+| 选集 \| Selection | **Selection(中文直用)**,解释语「挑选结果」 | 「选集」首读是文集;`Selection` 类型不动 |
+| 值级断言 | **值断言** | 「级」字不承载信息,对面「作用域断言」的对仗保留 |
+| 双面组件 \| Dual-face component | **中文保留「双面组件」,英文改 dual-render component** | 中英病灶不同:中文双面绣意象达意;英文 dual-face 生造、two-faced 有贬义;代码标识 `defineComponent` 不动 |
+| 严重级 \| Severity | **中文改「严重度」,英文不动** | `severity` 字段与 eve 同名同构(对齐原则);写作规则:能直接写 gate / soft 的句子不提「严重度」上位词 |

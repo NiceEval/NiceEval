@@ -214,7 +214,7 @@ interface AgentSession {
 }
 ```
 
-`ctx` 里没有要你检查的标志位。三个档位字段都是"透传"语义：`model`、`flags` 由 experiment 声明、运行器原样递过来，Adapter 只负责随请求转发给应用，不解释它们的含义；`telemetry` 仅在配置了 OTel 接入时出现，`send` 里只需要把 `headers` spread 进请求头——接收端点在 `defineConfig` 里固定、由应用启动时指向，不从这里传，见[OTel 接入](/zh/guides/connect-otel)。`experimentId` 是路径推导出的稳定标识，典型用途是在 Sandbox 的环境钩子里按实验隔离跨 attempt 的状态（缓存目录名、快照 tag 按它分区），见 [Sandbox 后端 · 环境钩子](/zh/guides/sandbox-providers#环境钩子)。
+`ctx` 里没有要你检查的标志位。三个档位字段都是"透传"语义：`model`、`flags` 由 experiment 声明、运行器原样递过来，Adapter 只负责随请求转发给应用，不解释它们的含义；`telemetry` 仅在配置了 OTel 接入时出现，`send` 里只需要把 `headers` spread 进请求头——接收端点在 `defineConfig` 里固定、由应用启动时指向，不从这里传，见[OTel 接入](/zh/guides/connect-otel)。`experimentId` 是路径推导出的稳定标识，典型用途是在 Sandbox 的环境钩子里按实验隔离跨 attempt 的状态（缓存目录名、沙箱快照 tag 按它分区），见 [Sandbox 后端 · 环境钩子](/zh/guides/sandbox-providers#环境钩子)。
 
 `session` 是本条会话线的自有状态，[NiceEval](https://niceeval.com/) 对它只承诺一件事：**同一条会话线的每次 `send` 拿到同一个 `ctx.session`，新会话线（eval 的第一轮，或 `t.newSession()` 之后）拿到一个全新的。** 会话续接（`id`/`capture`、`history`）和 HITL 停轮现场（`hold`/`take`）的存取器都在它上面，"第一轮"就是新会话线的自然形态——`id` 是 `undefined`、`history.get()` 是空数组，没有要判断的分支；`state` 是这些存取器之外的逃生舱，框架从不往里写数据。
 

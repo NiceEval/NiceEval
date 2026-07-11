@@ -89,7 +89,7 @@ export default defineEval({
     t.succeeded();
     t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
 
-    // 值级断言:就地、立即评估
+    // 值断言:就地、立即评估
     t.check(t.reply, includes("晴"));
   },
 });

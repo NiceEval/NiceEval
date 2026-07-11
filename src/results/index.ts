@@ -1,6 +1,6 @@
 // niceeval/results —— 实验结果数据的读写库(定稿见 docs/results-lib.md)。
 //
-// 读:openResults(实验 → 快照 → eval → attempt 分层、skipped、runDirs、latest() 选集);
+// 读:openResults(实验 → 快照 → eval → attempt 分层、skipped、runDirs、latest() Selection);
 // 写:createRunWriter(快照级声明 + attempt 增量落盘 + summary 收尾);
 // 发布:copySnapshots(格式感知复制 + knownEvalIds 补记);
 // 身份:dedupeAttempts(跨快照聚合前按 (experimentId, evalId, attempt, startedAt) 去重)。

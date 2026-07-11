@@ -1,7 +1,7 @@
 // niceeval view 的 --report 报告槽与宿主组合语义(docs/reports.md「宿主输入的组合语义」
 // 与裁决记录 6;公开行为准绳 docs-site/zh/guides/viewing-results.mdx / custom-reports.mdx)。
 // 覆盖:
-// - 组合语义与 show 对齐:位置前缀收窄报告槽选集、--experiment 过滤、匹配不到直说;
+// - 组合语义与 show 对齐:位置前缀收窄报告槽 Selection、--experiment 过滤、匹配不到直说;
 // - 单文件模式共存:存在的文件路径 → 单文件模式,目录报错直说走 --run,其余按 eval 前缀;
 // - 报告槽整槽替换:报告 HTML(含 <Style> 产物与证据室深链)烘进静态块,证据室数据原样保留;
 // - --out 静态导出:index.html 含报告块与官方样式,报告 HTML 零 <script>;
@@ -133,7 +133,7 @@ describe("resolveViewInput · 位置参数语义", () => {
 // ───────────────────────── 组合语义(与 show 对齐) ─────────────────────────
 
 describe("loadViewScan · 组合语义", () => {
-  it("位置前缀收窄报告槽选集(榜单/overview);证据室快照不收窄,深链恒可达", async () => {
+  it("位置前缀收窄报告槽 Selection(榜单/overview);证据室快照不收窄,深链恒可达", async () => {
     const root = await seedRoot();
     const { viewData } = await loadViewScan(root, { patterns: ["weather"] });
     // 报告槽:两实验都只剩 weather/brooklyn 一题,全过。
@@ -147,7 +147,7 @@ describe("loadViewScan · 组合语义", () => {
     expect(allIds).toContain("fixtures/button");
   });
 
-  it("--experiment 过滤:选集只留该实验", async () => {
+  it("--experiment 过滤:Selection 只留该实验", async () => {
     const root = await seedRoot();
     const { viewData } = await loadViewScan(root, { experiment: "compare/codex" });
     expect(viewData.table.rows.map((r) => r.key)).toEqual(["compare/codex"]);
@@ -186,7 +186,7 @@ describe("loadViewScan · --report 报告槽", () => {
     expect(JSON.stringify(scan.viewData)).not.toContain("考试成绩单"); // 报告块不进 viewData
   });
 
-  it("位置前缀对 --report 生效:收窄注入选集,报告只见范围内的 eval", async () => {
+  it("位置前缀对 --report 生效:收窄注入 Selection,报告只见范围内的 eval", async () => {
     const root = await seedRoot();
     const scan = await loadViewScan(root, {
       patterns: ["weather"],

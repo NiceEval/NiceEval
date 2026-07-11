@@ -106,7 +106,7 @@ function snap(spec: SnapSpec): Snapshot {
   };
 }
 
-/** 手工造一个选集(warnings 随行的形状,filter 语义与 results 一致)。 */
+/** 手工造一个 Selection(warnings 随行的形状,filter 语义与 results 一致)。 */
 function selection(snapshots: Snapshot[], warnings: SelectionWarning[]): Selection {
   return {
     snapshots,

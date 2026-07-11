@@ -281,7 +281,7 @@ export interface TestContext {
   /** 立即中止本 eval 并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。 */
   skip(reason: string): never;
 
-  // 值级断言
+  // 值断言
   /**
    * 对任意值跑一个 ValueAssertion,返回可链 `.gate()` / `.atLeast()` 的 AssertionHandle。
    * 打分延迟到 eval 结束后统一 finalize,调用本身同步、不抛错——不通过只是记一条失败断言,

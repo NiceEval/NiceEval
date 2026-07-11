@@ -1,4 +1,4 @@
-// results 域类型:openResults 的分层读取契约与选集(定稿见 docs/results-lib.md)。
+// results 域类型:openResults 的分层读取契约与 Selection(定稿见 docs/results-lib.md)。
 //
 // 结果数据类型(EvalResult / RunSummary / StreamEvent / …)仍住在各自的域文件里,
 // 这里只 import,不搬家 —— 「类型的家」迁移(facade 反向 re-export)是下一波,不在本次范围。
@@ -136,7 +136,7 @@ export interface Results {
 }
 
 /**
- * 选集:选出的快照 + 挑选过程算出的警告。渲染与否在消费方,但缺口永远被算出来。
+ * Selection:选出的快照 + 挑选过程算出的警告。渲染与否在消费方,但缺口永远被算出来。
  * 下游(Reports 计算函数、copySnapshots)收 `Selection | Snapshot[]`;
  * 手工挑的裸数组没有挑选过程,自然没有 warnings 可带,也如实。
  */
@@ -165,7 +165,7 @@ export type SelectionWarning =
       message: string;
     }
   | {
-      /** 该实验选中的快照早于选集中最新的落盘;无阈值,如实触发,要阈值消费方按字段自比。 */
+      /** 该实验选中的快照早于 Selection 中最新的落盘;无阈值,如实触发,要阈值消费方按字段自比。 */
       kind: "stale-snapshot";
       experimentId: string;
       startedAt: string;

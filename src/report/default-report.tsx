@@ -1,8 +1,8 @@
 // DefaultReport:官方水位整块 —— 官方两扇门裸跑时渲染的就是它,零 props、纯声明。
 // 「渲染面纯同步」与它不冲突,靠的是一个数据事实:官方水位(overview、榜单、失败清单)
-// 只读瘦身条目、不碰任何懒加载 artifact,宿主对着已挑好的选集总是把这份数据备好、经上下文
+// 只读瘦身条目、不碰任何懒加载 artifact,宿主对着已挑好的 Selection 总是把这份数据备好、经上下文
 // 注入(renderReportToText / renderReportToStaticHtml 里 prepareDefaultReportData)。
-// 它渲染的口径钉死为宿主注入的那份选集 —— 零 props 意味着没有跟随的通道,这是锚点语义:
+// 它渲染的口径钉死为宿主注入的那份 Selection —— 零 props 意味着没有跟随的通道,这是锚点语义:
 // 官方口径与自定义口径并排对照。默认无特权:数据全部来自公开计算函数。
 //
 // text 面即 `niceeval show` 的榜单(docs-site/zh/guides/viewing-results.mdx 的示例块是
@@ -20,7 +20,7 @@ import { RunOverview, MetricTable, CaseList } from "./components.tsx";
 import { cellText } from "./text/faces.ts";
 import { renderAlignedRows } from "./text/layout.ts";
 
-/** 榜单的合成标注与 eval 级折叠(text 面用;与 verdicts/cases 出自同一选集)。 */
+/** 榜单的合成标注与 eval 级折叠(text 面用;与 verdicts/cases 出自同一 Selection)。 */
 export interface VerdictBoardData {
   /** 判定合成自几个物理 run。 */
   composedFromRuns: number;

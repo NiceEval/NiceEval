@@ -484,7 +484,7 @@ describe("defineReport + 渲染入口", () => {
     expect(() => defineReport(42)).toThrow(/expects a build function/);
   });
 
-  it("renderReportToText:同一棵树走 text 面,DefaultReport 渲染宿主注入的选集", async () => {
+  it("renderReportToText:同一棵树走 text 面,DefaultReport 渲染宿主注入的 Selection", async () => {
     const out = await renderReportToText(report, fakeContext(), { width: 100 });
     // 官方水位 = show 榜单(viewing-results.mdx):Current verdicts 头 + experiment 榜单 + 失败清单
     expect(out).toContain("Current verdicts · 1 experiment · composed from 1 run");

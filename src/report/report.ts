@@ -1,5 +1,5 @@
 // defineReport:一份报告 = 一个报告文件(默认导出),两扇门(show / view)共用。
-// 宿主打开结果目录、按官方口径挑好选集、注入上下文;报告函数折数据、摆积木,
+// 宿主打开结果目录、按官方口径挑好 Selection、注入上下文;报告函数折数据、摆积木,
 // 返回一棵组件树。计算全部发生在报告函数体里(读句柄、await 折数据只在这里合法);
 // 渲染面是纯同步函数 —— 可达百 MB 的 artifact 永远不进渲染路径。
 //
@@ -18,7 +18,7 @@ import {
 import { prepareDefaultReportData, runWithDefaultReportData } from "./default-report.tsx";
 
 export interface ReportContext {
-  /** results.latest() 挑好的选集:现刻水位快照 + 结构化挑选警告,同默认报告口径。 */
+  /** results.latest() 挑好的 Selection:现刻水位快照 + 结构化挑选警告,同默认报告口径。 */
   selection: Selection;
   /** 默认挑法不合口径时,全量数据自己挑(见 docs/results-lib.md)。 */
   results: Results;

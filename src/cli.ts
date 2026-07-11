@@ -119,7 +119,7 @@ const FLAG_OPTIONS = {
   diff: { type: "boolean" },
   /** `show` 命令专用:跨 run 时间轴,只列真实执行;与 `--report` 互斥。 */
   history: { type: "boolean" },
-  /** `show` / `view` 命令专用:选集只留该实验。 */
+  /** `show` / `view` 命令专用:Selection 只留该实验。 */
   experiment: { type: "string" },
   /** `show` 命令专用:指定详情 / 证据切面看第几次 attempt(与展示一致的 1 计序号)。 */
   attempt: { type: "string" },
@@ -373,7 +373,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "view") {
-    // 位置参数 = eval id 前缀(收窄报告槽选集);存在的文件路径 = 单文件模式;
+    // 位置参数 = eval id 前缀(收窄报告槽 Selection);存在的文件路径 = 单文件模式;
     // 结果目录经 --run 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件)。
     let viewInput: { input?: string; patterns: string[] };
     try {

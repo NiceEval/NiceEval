@@ -16,7 +16,7 @@
 
 ### 这次新学到、值得抄的
 
-1. **`/compare`——挑两次运行对比。** playground 靠 `results/<experiment>/<ISO-timestamp>/` 天然分层的目录结构,能选任意两个时间戳的 run,对比整体通过率 / 平均耗时 / per-eval 通过率 delta。niceeval 调研时完全没有这个能力——当时的 `aggregateRows` 把所有历史 run 合并成一行,选不出"这次 vs 上次"(2026-07 统计层收编后快照身份已保留进 viewData,Compare 只差 UI)。这只是 view 里计划新增的一个小 tab,设计方案见 [View · Compare](view.md#compare-挑两次运行对比)。
+1. **`/compare`——挑两次运行对比。** playground 靠 `results/<experiment>/<ISO-timestamp>/` 天然分层的目录结构,能选任意两个时间戳的 run,对比整体通过率 / 平均耗时 / per-eval 通过率 delta。niceeval 调研时完全没有这个能力——当时的 `aggregateRows` 把所有历史 run 合并成一行,选不出"这次 vs 上次"(2026-07 统计层收编后结果快照身份已保留进 viewData,Compare 只差 UI)。这只是 view 里计划新增的一个小 tab,设计方案见 [View · Compare](view.md#compare-挑两次运行对比)。
 2. **eval fixture 目录页(`/evals`)。** 独立于"跑过的结果",单纯浏览 `evals/` 目录下每个 fixture 的 `PROMPT.md` 和文件列表,不用先跑一次才能看"有哪些 eval、prompt 写的什么"。niceeval 的 `view` 目前完全是结果驱动的,没有这种纯浏览eval 定义的入口——值得抄,但优先级低于 compare,先记在这里。
 3. **"每次 run 是独立时间戳快照"这个数据原则。** playground 的 `getExperiment` 保留 `timestamps: string[]` 整个历史列表,`/compare` 就是靠这个地基做的。niceeval 要抄的是这个**原则**(不要在聚合时提前合并掉快照身份),不是照搬它的目录 / API 形状。
 

@@ -1,9 +1,9 @@
-// scoring 域类型:值级断言(expect 匹配器)、断言记录与结果、评分上下文、judge 配置。
+// scoring 域类型:值断言(expect 匹配器)、断言记录与结果、评分上下文、judge 配置。
 
 import type { Severity, SourceLoc } from "../shared/types.ts";
 import type { DerivedFacts, StreamEvent, Usage } from "../o11y/types.ts";
 
-/** 值级断言(expect 匹配器)。纯函数 score + 可链式改严重级 / 阈值。 */
+/** 值断言(expect 匹配器)。纯函数 score + 可链式改严重度 / 阈值。 */
 export interface ValueAssertion {
   readonly name: string;
   readonly severity: Severity;

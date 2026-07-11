@@ -28,7 +28,7 @@ const KEY_SEP = "\u0000";
 /** flag 未声明时的组名:不猜,如实归一组。 */
 export const FLAG_UNSET = "(unset)";
 
-/** 计算函数的第一参:选集(warnings 随行)或手工挑的快照数组(没有挑选过程,自然无警告)。 */
+/** 计算函数的第一参:Selection(warnings 随行)或手工挑的快照数组(没有挑选过程,自然无警告)。 */
 export type SnapshotsInput = Selection | Snapshot[];
 
 export function resolveInput(input: SnapshotsInput): {
