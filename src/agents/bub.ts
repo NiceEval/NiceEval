@@ -3,7 +3,7 @@ import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import { createCheckpoint, restoreCheckpoint } from "../sandbox/checkpoint.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
-import type { Agent, Sandbox } from "../types.ts";
+import type { Agent, AgentContext, Sandbox } from "../types.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -80,7 +80,7 @@ function diskCachePath(home: string): string {
 const memCheckpoints = new Map<string, Buffer>();
 const installsInProgress = new Map<string, Promise<void>>();
 
-async function ensureBub(sb: Sandbox, home: string): Promise<void> {
+async function ensureBub(sb: Sandbox, home: string, log: AgentContext["log"]): Promise<void> {
   // 预制模板已把 bub 烘焙进镜像(PATH 上)→ 直接用,跳过 uv 安装 + checkpoint 全套。
   // pinned(git ref override)时不走此捷径:烘焙的 bub 无法验证是不是 ref 当前指向的
   // 构建,必须按 override 真装(见 BUB_PINNED 注释)。
@@ -94,7 +94,7 @@ async function ensureBub(sb: Sandbox, home: string): Promise<void> {
   const mem = memCheckpoints.get(home);
   if (mem) {
     try { await restoreCheckpoint(sb, mem); return; } catch (e) {
-      console.error(t("bub.checkpointRestoreFailed", { error: e instanceof Error ? e.message : String(e) }));
+      log(t("bub.checkpointRestoreFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
   }
 
@@ -144,7 +144,7 @@ async function ensureBub(sb: Sandbox, home: string): Promise<void> {
       await mkdir(dirname(cachePath), { recursive: true }).catch(() => {});
       await writeFile(cachePath, cp).catch(() => {});
     } catch (e) {
-      console.error(t("bub.checkpointCaptureFailed", { error: e instanceof Error ? e.message : String(e) }));
+      log(t("bub.checkpointCaptureFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
     resolveInstall();
   } catch (e) {
@@ -181,14 +181,17 @@ export function bubAgent(config?: BubConfig): Agent {
       }),
     },
 
-    async setup(sb) {
+    async setup(sb, ctx) {
       // home 必须来自运行时探测:各 sandbox provider 不同(/home/node、/home/vercel-sandbox…),
       // 兜一个 provider 专属常量会静默走错路径(tape 读不到 → 空事件流 → 负断言假通过)。
       const home = (await sb.runShell("printf '%s' $HOME")).stdout.trim();
       if (!home) throw new Error(t("bub.homeDetectFailed"));
       const workspace = sb.workdir;
       sessionInfo.set(sb.sandboxId, { home, workspace });
-      await ensureBub(sb, home);
+      // ensureBub 的 checkpoint 缓存回填在模块级共享锁(installsInProgress)里,天然可能
+      // 跨多个 attempt 复用同一次安装:警告归属到「触发这次安装的那个 attempt」的 log,
+      // 不追求归属到全部受益 attempt(已裁决口径)。
+      await ensureBub(sb, home, ctx.log);
 
       if (config?.pythonPlugins?.length) {
         const extraWith = config.pythonPlugins.map((p) => `--with '${p}'`).join(" ");
