@@ -136,6 +136,8 @@ codex   80%         355 lines    $0.51
 
 两个面继承同一套诚实契约：排序方向随指标的 `better`，覆盖不全的格子带 `12/15` 角标（15 个 attempt 里 12 个测得了该指标），缺数据渲染成 `—` 而不是 0。指标只定义一次，两个面共用——人在网页上看到的数字，就是 agent 在 stdout 里读到的数字，判断口径永远一致。给 agent 的指引也只多一行：跑 `niceeval show --report reports/golf.tsx`，读 stdout。
 
+内置指标里 `passRate` / `costUSD` / `durationMs` / `tokens` 只读 attempt 自带的判定、用量这些字段，任何一份结果目录都算得出。`turns`（agent 的总轮次）不一样，它读 `attempt.o11y()`——这份数据发布时不一定随行，`copySnapshots` 要显式把 `"o11y"` 加进 `artifacts` 才带得上（见[结果数据 API](/zh/guides/results-data)的「发布」一节），漏了就渲染成 `—`，不是 0。自己写的指标只要读了 `o11y()` / `diff()` 这类 artifact（就像上面 `codeLines` 读 `attempt.diff()`），发布前都要过一遍同样的检查。
+
 ## 换分组：三种维度
 
 维度决定分组——表的行、矩阵的行列、散点的点。每个维度槽收三种值：

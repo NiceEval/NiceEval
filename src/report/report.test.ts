@@ -6,10 +6,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { AssertionResult, EvalResult, Verdict, RunSummary } from "../types.ts";
+import type { AssertionResult, EvalResult, O11ySummary, Verdict, RunSummary } from "../types.ts";
 import type { AttemptHandle, RunDir, Selection, SelectionWarning, Snapshot } from "../results/index.ts";
 import type { Dimension, MetricCell } from "./types.ts";
-import { costUSD, defineMetric, durationMs, examScore, passRate, tokens } from "./metrics.ts";
+import { costUSD, defineMetric, durationMs, examScore, passRate, tokens, turns } from "./metrics.ts";
 import { flag } from "./flag.ts";
 import { formatMetricValue } from "./format.ts";
 import {
@@ -47,6 +47,24 @@ function softAssertion(name: string, score: number, extra: Partial<AssertionResu
   return { name, severity: "soft", score, passed: true, ...extra };
 }
 
+/** 最小合规 O11ySummary,只有 totalTurns 会变;供 turns 指标测试内联挂到 EvalResult.o11y。 */
+function o11ySummary(totalTurns: number): O11ySummary {
+  return {
+    totalTurns,
+    toolCalls: {},
+    totalToolCalls: 0,
+    filesRead: [],
+    filesModified: [],
+    shellCommands: [],
+    webFetches: [],
+    errors: [],
+    thinkingBlocks: 0,
+    compactions: 0,
+    durationMs: 0,
+    usage: { inputTokens: 0, outputTokens: 0 },
+  };
+}
+
 interface SnapSpec {
   experimentId: string;
   results: EvalResult[];
@@ -82,7 +100,7 @@ function snap(spec: SnapSpec): Snapshot {
     runDir,
     events: async () => null,
     trace: async () => null,
-    o11y: async () => null,
+    o11y: async () => r.o11y ?? null,
     diff: async () => null,
     sources: async () => null,
   }));
@@ -338,6 +356,22 @@ describe("内置指标", () => {
     expect(cost.rows[0].cells["cost"].value).toBe(0.5);
     const dur = await MetricTable.data([s], { rows: "agent", columns: [durationMs] });
     expect(dur.rows[0].cells["duration"].value).toBe(2000); // (1000 + 3000)/2,errored 实测照算
+  });
+
+  it("turns:读 o11y.totalTurns;o11y 缺失(未随发布带上)→ null,不是 0;skipped 不进聚合", async () => {
+    const s = snap({
+      experimentId: "exp/x",
+      results: [
+        res("A", "passed", { o11y: o11ySummary(12) }),
+        res("B", "failed"), // 没带 o11y(如 copySnapshots 漏选 artifact)→ null,不稀释成 0
+        res("C", "skipped", { o11y: o11ySummary(3) }), // skipped 恒 null,哪怕 o11y 在场
+      ],
+    });
+    const data = await MetricTable.data([s], { rows: "agent", columns: [turns] });
+    const cell = data.rows[0].cells["turns"];
+    expect(cell.value).toBe(12);
+    expect(cell.samples).toBe(1); // 只有 A 测得了(B 缺 o11y、C 是 skipped)
+    expect(cell.total).toBe(3); // total 是组内全部 attempt 数,不是「本该测得」的分母
   });
 });
 

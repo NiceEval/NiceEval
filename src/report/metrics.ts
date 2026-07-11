@@ -9,6 +9,12 @@
 //   durationMs(duration)    null     实测             实测     实测          lower
 //   tokens(tokens)          null     实测;无 usage→null 同左   同左          lower
 //   costUSD(cost)           null     同上             同左     同左          lower
+//   turns(turns)             null     实测;o11y 缺失→null 同左  同左          lower
+//
+// 两档指标(docs/reports.md「两档内置指标」):以上除 turns 外全部只读 attempt.result
+// 的瘦身字段——任何 producer、任何 copySnapshots artifacts 选择都算得出,DefaultReport
+// 只用这一档。turns 读 attempt.o11y()(懒加载 artifact),发布时若 o11y 没随行就诚实
+// 渲染缺数据「—」,不算 0——报告作者自己摆时心里要有这根弦,DefaultReport 不用它。
 
 import type { EvalResult } from "../types.ts";
 import type { Metric } from "./types.ts";
@@ -94,4 +100,22 @@ export const costUSD = defineMetric({
   better: "lower",
   unit: "$",
   value: (a) => (a.result.verdict === "skipped" ? null : attemptCostUSD(a.result)),
+});
+
+/**
+ * 唯一读 artifact(o11y,懒加载)的内置指标——其余五个只读瘦身字段。
+ * 发布时若该 attempt 没带 o11y(如 copySnapshots 的 artifacts 选项漏了它),
+ * value 如实返回 null,渲染成「—」,不冒充 0——见 docs/reports.md「两档内置指标」。
+ */
+export const turns = defineMetric({
+  name: "turns",
+  label: "Turns",
+  description: "Total agent turns (assistant replies) per attempt. Reads o11y — “—” if not published alongside this attempt.",
+  better: "lower",
+  unit: "turns",
+  async value(a) {
+    if (a.result.verdict === "skipped") return null;
+    const o11y = await a.o11y();
+    return o11y?.totalTurns ?? null;
+  },
 });

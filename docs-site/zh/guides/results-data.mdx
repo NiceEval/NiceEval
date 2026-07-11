@@ -205,8 +205,9 @@ import { openResults, copySnapshots } from "niceeval/results";
 
 const results = await openResults(".niceeval");
 await copySnapshots(results.latest(), "site-data/run", {
-  artifacts: ["sources", "events", "trace"],   // diff 可达百 MB,发布时常见地不带
-});
+  artifacts: ["sources", "events", "trace", "o11y"],   // diff 可达百 MB,发布时常见地不带;
+});                                                     // o11y 只有几 KB,报告用到 turns 这类
+                                                        // 读 o11y 的指标就把它带上,不然渲染成「—」
 ```
 
 第一个参数收 `Selection` 或手工挑的 `Snapshot[]`——和报告积木同一个输入约定。`artifacts` 的合法值是 `"events" | "trace" | "o11y" | "diff" | "sources"`，缺省全带。目标目录已存在且非空时报错，不静默覆盖——发布脚本要幂等就自己先清目标目录。

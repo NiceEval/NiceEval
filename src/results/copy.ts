@@ -18,7 +18,7 @@ import type { ArtifactKind, AttemptHandle, RunDir, Selection, Snapshot } from ".
 import { ARTIFACT_KINDS } from "./types.ts";
 
 export interface CopySnapshotsOptions {
-  /** 要带上的 artifact 种类;省略 = 全部五类。diff 可达百 MB、o11y 查看器不读,发布时常见地不带。 */
+  /** 要带上的 artifact 种类;省略 = 全部五类。diff 可达百 MB,发布时常见地不带;o11y 只有几 KB,报告用 turns 这类 artifact 档指标(见 docs/reports.md「两档内置指标」)时记得带上。 */
   artifacts?: ArtifactKind[];
 }
 

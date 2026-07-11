@@ -9,7 +9,7 @@
 // import react/jsx-runtime)。
 
 // 指标与 flag
-export { defineMetric, passRate, examScore, durationMs, tokens, costUSD } from "./metrics.ts";
+export { defineMetric, passRate, examScore, durationMs, tokens, costUSD, turns } from "./metrics.ts";
 export { flag } from "./flag.ts";
 
 // 报告基座与双面组件基座

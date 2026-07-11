@@ -237,11 +237,20 @@ const passAtK = defineMetric({
 | `durationMs`(`duration`) | null | 实测 | 实测 | 实测 | lower |
 | `tokens`(`tokens`) | null | 实测;无 usage 则 null | 同左 | 同左 | lower |
 | `costUSD`(`cost`) | null | 同上 | 同左 | 同左 | lower |
+| `turns`(`turns`) | null | 实测;o11y 缺失则 null | 同左 | 同左 | lower |
 
 (默认聚合全部是 `mean / mean`。)两个容易搞反的点:
 
 - **examScore 先按 verdict 分派,再看断言。** errored 的 attempt 断言是空数组——只按「gate 全过才得分」的字面实现,空数组会让条件空真成立,崩溃反而得满分。交白卷是 0 分:不是缺数据,更不是满分。
 - **报告不重新判卷。** examScore 只认落盘的 `verdict`:`--strict` 下被翻成 failed 的 attempt 得 0,哪怕它的 soft 分不低。判定口径与 run 时一致;想换口径去改 run,不在报告里另起炉灶。
+
+### 两档内置指标:瘦身字段 vs artifact
+
+`turns` 和其余五个不是同一等级。`passRate` / `examScore` / `durationMs` / `tokens` / `costUSD` 只读 `attempt.result` 上的瘦身字段——这些字段随 `summary.json` 必到,任何 producer、任何 `copySnapshots` 的 `artifacts` 选择都算得出,`DefaultReport` 只用这一档([DefaultReport](#defaultreport-官方水位整块)只读瘦身条目的边界因此原样成立)。`turns` 读 `attempt.o11y()`——懒加载的 artifact,`copySnapshots` 不传 `o11y` 就拿不到(参见 [Results Lib「复制与瘦身」](results-lib.md#复制与瘦身)对 `artifacts` 默认值的说明)。这不是 bug:`turns` 的 `value` 在 o11y 缺失时如实返回 `null`,和其余指标缺数据时的行为完全一致——渲染成 `—`,不假装是 `0`。
+
+**报告作者的心智负担**:摆 `turns` 之前,先确认数据管线里 o11y 会不会随行到你要渲染的那份结果——本地 `.niceeval/` 天然齐全;`copySnapshots` 发布场景要显式把 `"o11y"` 加进 `artifacts`(它只有几 KB,不是 `diff` 那种可达百 MB 的重 artifact,默认清单没带纯粹是没人用过,不是刻意排除)。这条心智负担只有摆 artifact 档指标时才背上,`DefaultReport` 和其余五个内置指标不受影响。
+
+新增内置指标的判据,不是「niceeval 已经算出这个数」:`totalToolCalls` / `compactions` / `thinkingBlocks` 同样是 o11y 里现成的字段,没有跟着 `turns`一起进内置——真被验证需要之前,guide 里给一份 `defineMetric` 配方(`where` + `await a.o11y()`)让项目自己包一层,比无差别地把 `O11ySummary` 镜像进内置指标表更克制。
 
 `examScore` 仍是「考试」看法的核心积木:gate 是判卷线,soft 是给分点——这套语义 [Scoring](scoring.md) 里本来就有,指标只是把它折成一个数。`tokens` 只加 `inputTokens + outputTokens`:缓存读写量大但便宜,计进去会把缓存热的 agent 画成 token 大户;花钱多少本来就有 `costUSD` 负责。
 
@@ -490,7 +499,8 @@ import { openResults, copySnapshots } from "niceeval/results";
 
 const local = await openResults(".niceeval");
 const picked = local.latest({ experiments: "compare/" });
-await copySnapshots(picked, "site/data/run", { artifacts: ["sources", "events", "trace"] });
+// o11y 带上:报告里的 turns、repeated-failed-cmds 都读它,漏了这一项发布出去就是整列「—」。
+await copySnapshots(picked, "site/data/run", { artifacts: ["sources", "events", "trace", "o11y"] });
 ```
 
 ```tsx

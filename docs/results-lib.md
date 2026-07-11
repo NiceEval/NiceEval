@@ -76,9 +76,11 @@ import { openResults, copySnapshots } from "niceeval/results";
 
 const results = await openResults(".niceeval");
 await copySnapshots(results.latest(), "site/data/run", {
-  artifacts: ["sources", "events", "trace"],   // diff 可达百 MB、o11y 查看器不读,发布时常见地不带
-});
+  artifacts: ["sources", "events", "trace", "o11y"],   // diff 可达百 MB,发布时常见地不带;
+});                                                     // o11y 只有几 KB,报告读它就带上
 ```
+
+`o11y` 曾经也在「常见地不带」那一档,理由是「查看器不读」——这个理由是循环论证:因为没消费者所以不带,因为不带所以做不了消费它的内置指标。`turns`(见 [Reports「两档内置指标」](reports.md#两档内置指标瘦身字段-vs-artifact))成为消费者后,循环断开:`o11y.json` 实测几 KB 一个(和 `diff` 可达百 MB 完全不是一个量级),没有不带的理由。
 
 动机来自真实消费者:coding-agent-memory-evals 把最新 run 快照进仓库供静态托管,今天是 40 行手写脚本——按 `summary.json` 的 mtime 挑「最新」(口径还错了:该挑快照,不该挑 run),再按白名单拷贝 artifact 文件(布局知识第三次泄漏)。`copySnapshots` 之后这段只剩上面几行,挑选交给 `results.latest()`(见[静态导出场景](reports.md#dx-模拟))。复制不改 artifact 内容、不消毒——发布消毒是自由文本的事,归 [Reports 的 `CaseList.data({ redact })`](reports.md#计算函数与数据契约)。三条契约细节(2026-07-10 拍板):
 
