@@ -118,3 +118,4 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [report-zero-js-to-progressive-enhancement](report-zero-js-to-progressive-enhancement.md) — 翻案裁决:报告 web 面「零客户端 JS」改为渐进增强(enhance.js:表头排序/行过滤/tooltip);口径同源由 sort 预排保证,view 默认首页迁到报告槽后榜单没有排序过滤在浏览上不成立
 - [report-locale-rendering](report-locale-rendering.md) — 裁决:report 渲染面引入 locale(en/zh-CN)与内部字典 src/report/locale.ts,不复用 CLI 专用的 src/i18n;label 扩 LocalizedText 而 display 不本地化(display 是口径的一部分)
 - [results-per-snapshot](results-per-snapshot.md) — 裁决(2026-07-11):落盘单位 run→快照,实验目录在外层、判决落 attempt 级 result.json,run 级 summary.json 废除;翻案 2026-07-10「判定 journal 不做」;schemaVersion 4
+- [bench-direct-invocation-not-niceeval-project](bench-direct-invocation-not-niceeval-project.md) — 裁决(2026-07-11):phase-timings.md 的 bench/ 是直接调 runAttemptBody 的脚本,不是 niceeval 项目+Reports 报告页;曾选 show 对比/compare.mjs 均否决
