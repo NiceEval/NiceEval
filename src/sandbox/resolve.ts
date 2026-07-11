@@ -9,6 +9,7 @@ import type { CustomSandboxSpec, Sandbox, SandboxOption, SandboxRuntime } from "
 import { registerSandbox, stopSandbox } from "./registry.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { t } from "../i18n/index.ts";
+import { withProvisionRetry } from "./retry.ts";
 
 /** 归一化后的沙箱描述:确定的 provider + 各 provider 参数(只有对应 provider 用得上的会有值)。 */
 export interface ResolvedSandbox {
@@ -84,22 +85,31 @@ async function createProvider(r: ResolvedSandbox, timeout?: number): Promise<San
   if (r.create) return r.create({ timeout, runtime: r.runtime });
   switch (r.provider) {
     case "docker": {
-      const { DockerSandbox } = await import("./docker.ts").catch(() => {
+      const { DockerSandbox, classifyProvisionError } = await import("./docker.ts").catch(() => {
         throw new Error(t("sandbox.dependencyMissing.docker"));
       });
-      return DockerSandbox.create({ timeout, runtime: r.runtime, image: r.image });
+      return withProvisionRetry(
+        () => DockerSandbox.create({ timeout, runtime: r.runtime, image: r.image }),
+        classifyProvisionError,
+      );
     }
     case "vercel": {
-      const { VercelSandbox } = await import("./vercel.ts").catch(() => {
+      const { VercelSandbox, classifyProvisionError } = await import("./vercel.ts").catch(() => {
         throw new Error(t("sandbox.dependencyMissing.vercel"));
       });
-      return VercelSandbox.create({ timeout, runtime: r.runtime, snapshotId: r.snapshotId });
+      return withProvisionRetry(
+        () => VercelSandbox.create({ timeout, runtime: r.runtime, snapshotId: r.snapshotId }),
+        classifyProvisionError,
+      );
     }
     case "e2b": {
-      const { E2BSandbox } = await import("./e2b.ts").catch(() => {
+      const { E2BSandbox, classifyProvisionError } = await import("./e2b.ts").catch(() => {
         throw new Error(t("sandbox.dependencyMissing.e2b"));
       });
-      return E2BSandbox.create({ timeout, runtime: r.runtime, template: r.template });
+      return withProvisionRetry(
+        () => E2BSandbox.create({ timeout, runtime: r.runtime, template: r.template }),
+        classifyProvisionError,
+      );
     }
     default:
       throw new Error(t("sandbox.providerNotImplemented", { provider: r.provider }));

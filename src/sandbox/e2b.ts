@@ -5,7 +5,7 @@
 // 模板:opts.template 选 e2b 模板名/ID;省略用 e2b 默认 "base"。预制模板(烘焙好
 //       codex/claude-code/bub 的 "niceeval-agents")见 sandbox/e2b/。
 
-import { Sandbox as E2BSdkSandbox, CommandExitError } from "e2b";
+import { Sandbox as E2BSdkSandbox, CommandExitError, RateLimitError } from "e2b";
 import type {
   Sandbox,
   CommandResult,
@@ -14,6 +14,7 @@ import type {
   SourceFiles,
   ReadSourceFilesOptions,
 } from "../types.ts";
+import type { SandboxProvisionErrorKind } from "./errors.ts";
 import { readSourceFilesByList } from "./source-files.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { shellQuote } from "./shell.ts";
@@ -26,6 +27,11 @@ const E2B_WORKDIR = "/home/user/workspace";
 const DEFAULT_COMMAND_TIMEOUT_MS = 600_000;
 // 沙箱存活上限(到点 e2b 自动回收)。给足空间跑完 setup + agent + 测试脚本。
 const SESSION_TIMEOUT_MS = 1_800_000;
+
+/** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 resolve.ts 的 withProvisionRetry。 */
+export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
+  return e instanceof RateLimitError ? "rate_limit" : "unknown";
+}
 
 export class E2BSandbox implements Sandbox {
   readonly workdir = E2B_WORKDIR;

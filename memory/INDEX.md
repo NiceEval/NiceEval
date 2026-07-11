@@ -28,6 +28,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [run-command-canonical-tool-name-portability](run-command-canonical-tool-name-portability.md) — 断言"跑过 shell"要用规范类目 `"shell"`,不要用某一家的原始工具名字面量(如 `"command_execution"` 只对 codex 恰好成立)
 - [docker-apple-silicon-amd64-emulation-slow](docker-apple-silicon-amd64-emulation-slow.md) — 本机 Apple Silicon 上 dockerSandbox 默认拉 amd64 镜像走模拟,沙箱型 eval 实测比原生慢好几倍,timeoutMs 要留余量
 - [claude-code-persistent-memory-breaks-verbal-isolation](claude-code-persistent-memory-breaks-verbal-isolation.md) — claude-code 会把"帮我记住"写进磁盘 memory,newSession 后合法记得;session-isolation 反证要测 transcript 不回放历史,不测回答不含事实
+- [sandbox-provision-ratelimit-retry](sandbox-provision-ratelimit-retry.md) — 设计裁决:provisioning 限流按 provider 归类成中性 kind,退避重试放在 resolve.ts 而非 runner,不覆盖运行期限流
 
 ## judge
 
@@ -71,6 +72,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [live-who-key-mismatch-freezes-rows](live-who-key-mismatch-freezes-rows.md) — 上一条修复漏改 live.ts 自己两处(eval:start / onEvalComplete)手写的 who,导致有 experimentId 时逐行永远卡"waiting for a slot"、`0/N` 不动,但表头总数正常涨,极像 sandbox/budget 卡死实则纯展示 bug;修为两处都改调 runWho()(`src/runner/reporters/live.ts`)
 - 已修 [quiet-progress-result-stream-asymmetry](quiet-progress-result-stream-asymmetry.md) — `--quiet` 下进度流直写 stderr 但结果流被摘空,errored 全程无声极像"还在跑",下游还把串行交接误读成并发失控;修为新增 Quiet reporter,errored/failed 各补一行 stderr(`src/runner/reporters/quiet.ts` + cli.ts)
 - 已修 [parallel-runs-same-ms-summary-clobber](parallel-runs-same-ms-summary-clobber.md) — 同命令并行 spawn 的 niceeval 进程毫秒同刻共享 run 目录,summary.json 互相盲写覆盖、判决单点丢失(同 spawn 启动耗时强相关,撞名非小概率);修法 = schemaVersion 4 快照制重设(见 results-per-snapshot 裁决)
+- 已修 [budget-probe-starves-global-semaphore](budget-probe-starves-global-semaphore.md) — 有 budget 的实验把「等成本样本」的探测循环包在全局信号量里面,攥着槽位空等,实测并发被压到远低于 maxConcurrency,极像配置错误实则是调度 bug(修在 `src/runner/run.ts`)
 
 ## examples 与 tier-sync
 

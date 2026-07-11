@@ -24,6 +24,16 @@ import { buildFindScript, shellQuote } from "./shell.ts";
 import { createExecDemuxer, extractFileFromTar, packFilesToTar, readableToBuffer } from "./docker-stream.ts";
 import { resolveSandboxPath } from "./paths.ts";
 import { t } from "../i18n/index.ts";
+import type { SandboxProvisionErrorKind } from "./errors.ts";
+
+/**
+ * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
+ * (如 "toomanyrequests: You have reached your pull rate limit")。
+ */
+export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /toomanyrequests|rate limit exceeded|429/i.test(msg) ? "rate_limit" : "unknown";
+}
 
 // 行首哨兵:源码文件几乎不可能出现这一串,用来切分单次 shell 输出里的多份文件。
 const SOURCE_FILE_MARKER = "::FE-SRC-7b3f9c::";

@@ -207,6 +207,18 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 - 文件用 `files.read` / `files.write`(文本 + 二进制)。
 - node 版本由模板决定 —— `runtime` 字段对 e2b 仅作记录。要 node24 / 烘焙好 agent CLI,用[预制模板](../sandbox/README.md) `e2bSandbox({ template: "niceeval-agents" })`。
 
+## Provisioning 失败与重试
+
+`createSandbox()` 创建沙箱时可能撞上 provider 侧的限流(E2B/Vercel 云配额、Docker Hub 镜像拉取限流)——这类失败的本质是"再等等就好",与模板不存在、凭据缺失这类"配置就是错的"失败不同,框架在 provisioning 阶段对两者分别处理:
+
+- 各内置 provider 把自己 SDK 原生的限流错误(e2b 的 `RateLimitError`、vercel 的 `APIError{ response.status: 429 }`、docker 拉镜像时 message 里的 `toomanyrequests`)归类成一个中性的 kind(目前只有 `"rate_limit"`);这层分类留在各 provider 自己的文件里,不外泄到 Adapter / Runner。
+- `resolve.ts` 的 `createProvider()` 对被归为可重试的错误做指数退避重试(封顶次数 + 抖动);其它错误第一次就抛出——重试对着"配置就是错的"没有意义,只会拖慢失败反馈。
+- 重试全部耗尽后仍按原语义走:`verdict: "errored"`(基建问题,不是 agent 表现)。
+
+这套分类 + 重试只覆盖"创建沙箱"这一步,provider 无关——Runner / Adapter 不需要知道具体是哪个 provider 抛的错误。沙箱创建成功后、运行期间被限流终止(如并发过高导致的沙箱被杀)不在这个机制内,应优先靠控制并发(见 [Runner](runner.md))避免,而不是靠重试掩盖。
+
+`defineSandbox` 的自定义 provider 不套用这层重试——它的 `create()` 是用户自己的函数,错误语义由用户自己决定。
+
 ## 再接一个 provider
 
 两条路,取决于新 provider 是不是打算贡献回 niceeval:

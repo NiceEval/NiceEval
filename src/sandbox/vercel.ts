@@ -1,7 +1,7 @@
 // Vercel Sandbox provider:用 @vercel/sandbox SDK 把 Vercel microVM 当隔离工作区跑 eval。
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox 可互换。
 
-import { Sandbox as VSandbox } from "@vercel/sandbox";
+import { Sandbox as VSandbox, APIError } from "@vercel/sandbox";
 import type {
   Sandbox,
   CommandResult,
@@ -14,6 +14,16 @@ import { readSourceFilesByList } from "./source-files.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { resolveSandboxPath } from "./paths.ts";
 import { t } from "../i18n/index.ts";
+import type { SandboxProvisionErrorKind } from "./errors.ts";
+
+/**
+ * vercel SDK 对单次 fetch 的 429 已有内部重试(见 @vercel/sandbox 的 with-retry.js,
+ * 5 次指数退避);这里再分类是为了给 create() 整体重试兜底——耗尽内部重试后仍返回 429
+ * 响应的 APIError,或 create() 轮询 session 状态过程里撞到的限流,都会走到这里。
+ */
+export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
+  return e instanceof APIError && e.response.status === 429 ? "rate_limit" : "unknown";
+}
 
 // Vercel Sandbox 的默认工作区路径(SDK writeFiles 默认落这里)。
 const VERCEL_WORKDIR = "/vercel/sandbox";
