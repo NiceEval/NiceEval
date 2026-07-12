@@ -14,7 +14,7 @@ export type { LocalizedText };
 // Locale 只在 i18n 内核声明一次;页面数据形状与 server 共用 shared/types.ts 的声明。
 export type { Locale } from "../../i18n/core.ts";
 export type {
-  AttemptRef,
+  AttemptLocator,
   ReportSlotHtml,
   SkippedRunNotice,
   ViewData,
@@ -23,7 +23,7 @@ export type {
 
 export type Tab = "report" | "runs" | "traces";
 
-/** 前端拿到的单条 attempt 结果就是瘦身后的 EvalResult(attemptRef / artifactBase 由 loader 注入)。 */
+/** 前端拿到的单条 attempt 结果就是瘦身后的 EvalResult(locator / artifactBase 由 loader 注入)。 */
 export type ViewResult = ViewEvalResult;
 
 export type Assertion = AssertionResult;

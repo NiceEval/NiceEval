@@ -221,9 +221,9 @@ describe("loadViewScan · --report 报告槽", () => {
     expect(html).not.toContain("<script"); // 报告槽产物零客户端 JS,不 hydrate
     // 用户报告同样双语渲染两遍(壳按界面语言摆放)。
     expect(scan.reportHtml["zh-CN"]).toContain("考试成绩单");
-    // 证据室数据契约(__NICEEVAL_VIEW_DATA__)原样保留:快照、attemptRef、skipped 不动。
+    // 证据室数据契约(__NICEEVAL_VIEW_DATA__)原样保留:快照、locator、skipped 不动。
     expect(scan.viewData.snapshots.length).toBeGreaterThan(0);
-    expect(scan.viewData.snapshots.flatMap((s) => s.results).every((r) => r.attemptRef)).toBe(true);
+    expect(scan.viewData.snapshots.flatMap((s) => s.results).every((r) => r.locator)).toBe(true);
     expect(JSON.stringify(scan.viewData)).not.toContain("考试成绩单"); // 报告块不进 viewData
   });
 

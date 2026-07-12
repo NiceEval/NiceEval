@@ -1,12 +1,15 @@
 // server(data.ts)与前端(app/)共用的 view 数据形状。
 // viewData 会被序列化进静态 HTML,两边必须对同一份声明编程;只允许 type import。
 //
-// viewData 只携带证据室与壳需要的东西:快照明细(attemptRef / artifactBase 已注入)、
+// viewData 只携带证据室与壳需要的东西:快照明细(locator / artifactBase 已注入)、
 // skipped、项目名与 run 元信息。统计口径(KPI / 榜单 / 挑选警告)整体住在报告槽的
 // 静态 HTML 里(CostPassRateComparison 或 --report 的报告自己算),壳与报告之间没有第二条数据通道。
 
 import type { EvalResult, LocalizedText } from "../../types.ts";
 import type { ReportLocale } from "../../report/locale.ts";
+import type { AttemptLocator } from "../../results/locator.ts";
+
+export type { AttemptLocator };
 
 /**
  * 报告槽的双语静态 HTML:同一棵报告树按 locale 渲染两遍(en / zh-CN),server 烘成
@@ -14,20 +17,10 @@ import type { ReportLocale } from "../../report/locale.ts";
  */
 export type ReportSlotHtml = Record<ReportLocale, string>;
 
-/**
- * attempt 的深链身份:快照的根相对路径 + attempt 的快照相对路径。
- * `#/attempt/<snapshot>/<attempt>` 路由的参数——与 niceeval/results 的 AttemptRef、Reports 的
- * MetricCell.refs 同一身份契约,报告页(前门)与 view(证据室)靠它指向同一个 attempt。
- */
-export interface AttemptRef {
-  /** 快照的根相对路径,恒两段:`<experiment-dir>/<snapshot-dir>`。 */
-  snapshot: string;
-  /** attempt 的快照相对路径:`<evalId 路径>/a<n>`。 */
-  attempt: string;
-}
-
-/** view 侧的 attempt 结果 = 瘦身后的 EvalResult + loader 注入的深链身份与 artifact 基址。 */
-export type ViewEvalResult = EvalResult & { attemptRef?: AttemptRef };
+/** view 侧的 attempt 结果 = 瘦身后的 EvalResult + loader 注入的深链身份(不透明 AttemptLocator,
+ * `#/attempt/@<locator>` 路由的参数,与 Reports 的 MetricCell.refs / `ctx.attemptHref` 同一身份契约)
+ * 与 artifact 基址。 */
+export type ViewEvalResult = EvalResult & { locator?: AttemptLocator };
 
 /**
  * 快照 = 单次跑的实验(experiment × 一次运行),与 niceeval/results 的 Snapshot 同口径。
@@ -39,12 +32,12 @@ export interface ViewSnapshot {
   agent: string;
   model?: string;
   startedAt: string;
-  /** 快照的根相对路径(= AttemptRef.snapshot,两段:`<experiment-dir>/<snapshot-dir>`)。 */
+  /** 快照的根相对路径(= niceeval/results 的 AttemptRef.snapshot,两段:`<experiment-dir>/<snapshot-dir>`)。 */
   run: string;
   /** 是否为该实验在 results.latest() 口径下的最新一次快照 —— 证据室的 latest 标记,与报告槽 Selection
    (现刻水位,可能合成自更早快照)是两个独立概念,不要混用。 */
   latest: boolean;
-  /** 该快照的 attempt 明细(跨快照去重后的幸存条目;attemptRef / artifactBase 已注入)。 */
+  /** 该快照的 attempt 明细(跨快照去重后的幸存条目;locator / artifactBase 已注入)。 */
   results: ViewEvalResult[];
 }
 

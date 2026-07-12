@@ -3,7 +3,7 @@ import { detectLocale, makeTranslator, persistLocale, setDocumentLocale } from "
 import type { MessageKey } from "./i18n.ts";
 import type { Locale, LocalizedText, ReportSlotHtml, Tab, ViewData, ViewResult } from "./types.ts";
 import { flattenAttempts, resultFromUrl } from "./lib/rows.ts";
-import { parseAttemptHash, resolveAttemptRef, unresolvedAttemptWarning } from "./lib/attempt-route.ts";
+import { parseAttemptHash, resolveAttemptLocator, unresolvedAttemptWarning } from "./lib/attempt-route.ts";
 import { formatDateTime } from "./lib/format.ts";
 import { CopyFixPrompt } from "./components/CopyControls.tsx";
 import { SkippedRunsBanner } from "./components/SkippedRunsBanner.tsx";
@@ -27,13 +27,13 @@ export function localizedText(text: LocalizedText | undefined, locale: Locale): 
   return text[locale] ?? text.en ?? Object.values(text)[0];
 }
 
-/** 初始 URL → 直接打开的 attempt:先认 #/attempt/<run>/<result> 深链,回退旧版 ?modal= 参数。 */
+/** 初始 URL → 直接打开的 attempt:先认 #/attempt/@<locator> 深链,回退旧版 ?modal= 参数。 */
 function modalResultFromLocation(snapshots: ViewData["snapshots"]): ViewResult | null {
-  const ref = parseAttemptHash(location.hash);
-  if (ref) {
-    const found = resolveAttemptRef(snapshots, ref);
+  const locator = parseAttemptHash(location.hash);
+  if (locator) {
+    const found = resolveAttemptLocator(snapshots, locator);
     if (found) return found;
-    // 定位不到(run 不在、下标越界、旧格式数据):不开空 modal,页面照常渲染。
+    // 定位不到(locator 不在、快照未加载、旧格式数据):不开空 modal,页面照常渲染。
     console.warn(unresolvedAttemptWarning(location.hash));
     return null;
   }
@@ -75,13 +75,13 @@ export function App({ data, reportHtml }: { data: ViewData; reportHtml: ReportSl
   // 浏览器前进/后退、手改 hash、页内 attempt 链接(含报告槽里的深链)统一从 hashchange 开合 modal。
   useEffect(() => {
     const onHashChange = () => {
-      const ref = parseAttemptHash(location.hash);
-      if (!ref) {
+      const locator = parseAttemptHash(location.hash);
+      if (!locator) {
         modalOwnsHistory.current = false;
         setModalResult(null);
         return;
       }
-      const found = resolveAttemptRef(snapshots, ref);
+      const found = resolveAttemptLocator(snapshots, locator);
       if (!found) {
         console.warn(unresolvedAttemptWarning(location.hash));
         setModalResult(null);

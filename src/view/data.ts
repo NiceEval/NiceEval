@@ -1,6 +1,6 @@
 // view 的数据层:读取经 niceeval/results 的 openResults(布局/版本知识只住在那)。
 // 这里只做编排:报告槽 Selection 恒经 selectCurrentResults(现刻水位;与 show 调同一个函数,
-// 两扇门判定不分叉)、快照明细注入(attemptRef / artifactBase)、skipped 透传、报告槽渲染
+// 两扇门判定不分叉)、快照明细注入(locator / artifactBase)、skipped 透传、报告槽渲染
 // (renderReportSlot:裸跑填充 CostPassRateComparison,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
 // --report 只换报告定义,注入的 Selection 与裸跑同一份。统计口径整体住在报告槽里
 // (报告组件的官方计算函数),viewData 不再携带 overview / 榜单这类统计产物,
@@ -28,6 +28,13 @@ export interface ViewScan {
    * 绝对路径不进 viewData,避免序列化进可分享的静态 HTML(信息泄漏且浏览器端用不到)。
    */
   artifactDirs: Map<string, string>;
+  /**
+   * artifactBase → AttemptHandle。sources.json 在盘上是去重后的引用(`{path, sha256}[]`),
+   * 不能像其它 artifact 那样直接 copyFile / piping 原字节——必须经 `AttemptHandle.sources()`
+   * 解引用出完整内容(`{path, content}[]`)才能给浏览器用。这份索引专为那一种 artifact 的特判
+   * 准备(`copyFetchedArtifacts`),events.json / trace.json 仍走 `artifactDirs` 的原文件路径。
+   */
+  attemptsByBase: Map<string, AttemptHandle>;
   /**
    * 报告槽:报告树经 renderReportToStaticHtml 渲染出的静态 HTML(en / zh-CN 各一份),
    * 裸跑填充内置默认报告 CostPassRateComparison,--report 整槽替换。作为两个 <template> 静态块
@@ -200,6 +207,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   // 跨快照按身份键去重:--resume 携带的条目在多份落盘里重复,只保留最新快照里的那份
   // (与官方计算函数的聚合口径一致,Runs / Traces 的计数因此不被复印件灌票)。
   const artifactDirs = new Map<string, string>();
+  const attemptsByBase = new Map<string, AttemptHandle>();
   // latest 标记恒按 results.latest() 口径打(ViewSnapshot.latest 的声明语义),
   // 与报告槽 Selection(现刻水位,可能合成自更早快照)是两个独立概念,不混用。
   const latestSet = new Set(latestPerExperiment.snapshots);
@@ -228,6 +236,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
         results: kept.map((a) => {
           const { annotated, base, abs } = annotateResult(a, root);
           artifactDirs.set(base, abs);
+          attemptsByBase.set(base, a);
           return annotated;
         }),
       });
@@ -252,7 +261,29 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     snapshots,
     skippedRuns: results.skipped.map(toSkippedNotice),
   };
-  return { viewData, artifactDirs, reportHtml };
+  return { viewData, artifactDirs, attemptsByBase, reportHtml };
+}
+
+/**
+ * base(withArtifactBase 同一公式)→ AttemptHandle 的轻量索引,供 server.ts 的 artifact 路由
+ * 按 URL 反查 attempt——只有 sources.json 请求需要这份索引(其余 artifact 直接读盘文件更便宜),
+ * 所以特意不跑 loadViewScan 的全套 Selection 合成 + 报告双语渲染,只做一次 openResults() 扫描。
+ * 不做去重收窄:遍历全部落盘 attempt,同一 base 只可能来自同一份物理落盘,历史快照里被去重
+ * 吸走的重复条目 base 天然不同,不会冲突;不会被 UI 引用的 base 混进来也无害(纯查表,
+ * 从不主动枚举 key)。
+ */
+export async function loadAttemptIndex(input?: string): Promise<Map<string, AttemptHandle>> {
+  const target = resolve(input ?? ".niceeval");
+  const results = await openResults(target);
+  const index = new Map<string, AttemptHandle>();
+  for (const exp of results.experiments) {
+    for (const snap of exp.snapshots) {
+      for (const attempt of snap.attempts) {
+        index.set(withArtifactBase(attempt).artifactBase!, attempt);
+      }
+    }
+  }
+  return index;
 }
 
 /**
@@ -260,7 +291,9 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
  * 经 mtime cache-busting),缺省用内置默认报告 CostPassRateComparison → 注入 Selection →
  * web 面 renderToStaticMarkup 成静态 HTML,en / zh-CN 各渲染一遍(chrome 文案按 locale)。
  * react / react-dom 动态加载:data.ts 还被 runner 的续跑携带(loadLatestResultsPerEval)
- * 消费,渲染依赖不进那条路径。attemptHref 缺省即 `#/attempt/<snapshot>/<attempt>` 深链路由。
+ * 消费,渲染依赖不进那条路径。attemptHref 缺省即 `#/attempt/@<locator>` 深链路由(web.ts 的默认值),
+ * 单段、不透明——证据室(`src/view/app/`)的 attempt 路由消费同一个格式(attempt-route.ts),
+ * 报告槽深链与证据室深链是同一条路由的两个来源。
  */
 async function renderReportSlot(
   report: { path: string; cwd: string } | undefined,
@@ -315,7 +348,8 @@ function assertSingleFileReadable(results: Results, target: string): void {
 
 /**
  * 给单条 attempt 注入 view 侧标注:
- * - attemptRef:直接用 niceeval/results 的证据引用(与 Reports 的 MetricCell.refs 同一身份)。
+ * - locator:不透明的 AttemptLocator(与 Reports 的 MetricCell.refs / `ctx.attemptHref` 同一身份),
+ *   `#/attempt/@<locator>` 深链路由的参数——证据室按它在 viewData.snapshots 里定位回同一条 attempt。
  * - artifactBase:相对 view 根的 artifact 目录(前端据此 fetch trace.json 等)。本快照跑出的
  *   条目落盘没有这个字段,按 `${ref.snapshot}/${ref.attempt}` 现算;携带条目(--resume 合入)
  *   落盘自带 artifactBase,指向原快照,原样沿用。
@@ -329,7 +363,7 @@ function annotateResult(
   const r = attempt.result;
   const base = r.artifactBase ?? `${attempt.ref.snapshot}/${attempt.ref.attempt}`;
   const abs = join(root, base);
-  const annotated: ViewEvalResult = { ...r, attemptRef: attempt.ref, artifactBase: base };
+  const annotated: ViewEvalResult = { ...r, locator: attempt.locator, artifactBase: base };
   return { annotated, base, abs };
 }
 

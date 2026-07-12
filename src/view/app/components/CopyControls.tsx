@@ -22,7 +22,10 @@ export function toFixPromptEntry(r: ViewResult, experimentLabel: string): FixPro
     verdict: r.verdict,
     reason: reasonFor(r, failingAssertions(r)),
     artifactBase: r.artifactBase,
-    resultPath: r.attemptRef ? `${r.attemptRef.snapshot}/${r.attemptRef.attempt}/result.json` : undefined,
+    // result.json 与其它 artifact(events.json 等)同目录落盘,resultPath 因此复用同一个
+    // artifactBase(不再靠 attemptRef 的 {snapshot, attempt} 两段拼——locator 是不透明的,
+    // 浏览器端解不出磁盘路径)。
+    resultPath: r.artifactBase ? `${r.artifactBase}/result.json` : undefined,
   };
 }
 

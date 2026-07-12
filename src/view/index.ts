@@ -95,18 +95,30 @@ export async function buildView(opts: ViewOptions = {}): Promise<string> {
   return out;
 }
 
-// 只复制前端会 fetch 的三类 artifact。diff.json / o11y.json 是运行侧产物,查看器从不读取,
-// 且 diff 可达上百 MB,带进静态导出只会拖垮部署体积。
-const FETCHED_ARTIFACTS = ["sources.json", "events.json", "trace.json"];
+// 只导出前端会 fetch 的三类 artifact。diff.json / o11y.json 是运行侧产物,查看器从不读取,
+// 且 diff 可达上百 MB,带进静态导出只会拖垮部署体积。events.json / trace.json 原字节复制;
+// sources.json 是例外——盘上是去重后的引用(`{path, sha256}[]`),必须先经
+// AttemptHandle.sources() 解引用出完整内容(`{path, content}[]`)再写出,否则浏览器端的
+// isCodeSource 守卫因缺 content 字段判空,代码视图会误判「源码未捕获」(即便源码明明捕获了)。
+const RAW_COPY_ARTIFACTS = ["events.json", "trace.json"];
 
 async function copyFetchedArtifacts(scan: ViewScan, artifactRoot: string): Promise<void> {
   for (const [base, srcDir] of scan.artifactDirs) {
-    const destDir = join( artifactRoot, base);
+    const destDir = join(artifactRoot, base);
     // 输入本身已经是导出布局(比如对着上次导出的目录重新生成 index.html)时不自拷。
     if (resolve(srcDir) === resolve(destDir)) continue;
-    const files = FETCHED_ARTIFACTS.filter((name) => existsSync(join(srcDir, name)));
-    if (!files.length) continue;
+
+    const rawFiles = RAW_COPY_ARTIFACTS.filter((name) => existsSync(join(srcDir, name)));
+    const hasSourcesRef = existsSync(join(srcDir, "sources.json"));
+    if (!rawFiles.length && !hasSourcesRef) continue;
+
     await mkdir(destDir, { recursive: true });
-    await Promise.all(files.map((name) => copyFile(join(srcDir, name), join(destDir, name))));
+    await Promise.all(rawFiles.map((name) => copyFile(join(srcDir, name), join(destDir, name))));
+
+    if (hasSourcesRef) {
+      const attempt = scan.attemptsByBase.get(base);
+      const sources = attempt ? await attempt.sources() : null;
+      await writeFile(join(destDir, "sources.json"), JSON.stringify(sources ?? []), "utf-8");
+    }
   }
 }
