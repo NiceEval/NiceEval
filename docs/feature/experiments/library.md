@@ -74,7 +74,7 @@ export default defineExperiment({
 
 ## 与 config 的关系
 
-- **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`。**沙箱 provider 不在 config** —— 由 experiment 的 `sandbox` 决定。
+- **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`、`sandbox`。`Config.sandbox` 必须是工厂函数产出的显式 `SandboxSpec`；experiment 的 `sandbox` 可以覆盖它。两处都没配置时，沙箱型 Agent 直接报错，不探测环境或选择内置 Provider 默认值。
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认;按文件夹聚成可对比组(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
 调度项覆盖优先级(高 → 低):**CLI flag → experiment → config → 内置默认**。agent、model、flags 属于 experiment,不由 CLI 覆盖。
