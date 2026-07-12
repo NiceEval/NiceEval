@@ -752,7 +752,8 @@ a.brand:hover { opacity: 0.75; }
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  background: var(--panel-2);
+  /* review 是独立阅读面；源码区必须完全不透底，不能让报告纹理穿进来。 */
+  background: var(--panel);
 }
 .code-file-head {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -800,31 +801,32 @@ a.brand:hover { opacity: 0.75; }
 .code-line.line-send.line-clickable:hover { background: color-mix(in oklch, var(--blue), var(--panel) 82%); }
 .code-line.is-open { background: color-mix(in oklch, var(--panel), var(--line) 34%); }
 
-/* github-diff 式整行红绿:行底色 + 更深的行号格 + 实色左缘(过=绿/加,不过=红/减)。 */
+/* github-diff 式整行红绿:明确色块 + 更深 gutter + 实色左缘。
+   状态色占比必须足够高，暗色模式不能退化成只有一个很淡的图标。 */
 .code-line.line-pass {
-  background: color-mix(in oklch, var(--good), var(--panel) 74%);
+  background: color-mix(in oklch, var(--good), var(--panel) 58%);
   border-left-color: var(--good);
 }
 .code-line.line-pass .ln {
-  background: color-mix(in oklch, var(--good), var(--panel) 52%);
-  color: color-mix(in oklch, var(--good), var(--text) 45%);
+  background: color-mix(in oklch, var(--good), var(--panel) 34%);
+  color: var(--text);
 }
 .code-line.line-fail {
-  background: color-mix(in oklch, var(--bad), var(--panel) 74%);
+  background: color-mix(in oklch, var(--bad), var(--panel) 58%);
   border-left-color: var(--bad);
 }
 .code-line.line-fail .ln {
-  background: color-mix(in oklch, var(--bad), var(--panel) 52%);
-  color: color-mix(in oklch, var(--bad), var(--text) 45%);
+  background: color-mix(in oklch, var(--bad), var(--panel) 34%);
+  color: var(--text);
 }
 /* soft 断言没过阈值:不影响 verdict,视觉上跟真正的 gate 失败(红)区分开,用 warn(黄)。 */
 .code-line.line-warn {
-  background: color-mix(in oklch, var(--warn), var(--panel) 74%);
+  background: color-mix(in oklch, var(--warn), var(--panel) 58%);
   border-left-color: var(--warn);
 }
 .code-line.line-warn .ln {
-  background: color-mix(in oklch, var(--warn), var(--panel) 52%);
-  color: color-mix(in oklch, var(--warn), var(--text) 45%);
+  background: color-mix(in oklch, var(--warn), var(--panel) 34%);
+  color: var(--text);
 }
 .code-line.line-pass.line-clickable:hover { background: color-mix(in oklch, var(--good), var(--panel) 64%); }
 .code-line.line-fail.line-clickable:hover { background: color-mix(in oklch, var(--bad), var(--panel) 64%); }

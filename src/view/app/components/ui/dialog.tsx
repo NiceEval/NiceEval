@@ -17,7 +17,7 @@ export function DialogContent({
 }: ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-[3px]" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-[200] bg-black/90" />
       <DialogPrimitive.Content
         className={cn(
           "fixed left-1/2 top-1/2 z-[200] flex max-h-[min(86vh,820px)] w-[min(1120px,calc(100vw-48px))]",
