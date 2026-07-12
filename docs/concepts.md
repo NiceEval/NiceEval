@@ -90,21 +90,22 @@
 
 ### 报告组件
 
-中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件按主展示单位分成整体概览、Experiment 诊断、通用指标视图、Eval 成绩、Experiment 比较与 Attempt 证据。这里的中文名描述组件的稳定形态，不用“榜单”“工作台”这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/guides/report-components.mdx)。
+中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用“榜单”“工作台”这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/guides/report-components.mdx)。
 
 | 分类 | 中文 | English | API | 主展示单位 |
 |---|---|---|---|---|
-| 整体概览 | 运行总览 | Run overview | `RunOverview` | 一批 Selection;汇总其中的 experiment、Eval 和 Attempt |
-| 整体概览 | 组摘要 | Group summary | `GroupSummary` | 收窄后的一批 Selection;汇总一组 experiment 和 Eval |
-| Experiment 诊断 | 实验明细表 | Experiment table | `ExperimentTable` | 每行一个 experiment;展开到 Eval 和 Attempt |
-| 通用指标视图 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 |
-| 通用指标视图 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 |
-| 通用指标视图 | 分组条形图 | Grouped bar chart | `MetricBars` | 两个可配置维度形成分组和系列;每根条是一个聚合指标值 |
-| Eval 成绩 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和 Eval 分组计算分数 |
-| Experiment 比较 | 指标散点图 | Metric scatter plot | `MetricScatter` | 每点一个可配置维度值,通常是 experiment;坐标是两个聚合指标值 |
-| Experiment 比较 | 指标趋势图 | Metric line chart | `MetricLine` | 每点一个 experiment;横轴是 experiment flag,纵轴是聚合指标值 |
-| Experiment 比较 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果快照;格内是指标值及差值 |
-| Attempt 证据 | 案例清单 | Case list | `CaseList` | 每条一个失败或出错的 Attempt |
+| 汇总 | 运行总览 | Run overview | `RunOverview` | 一批 Selection;汇总其中的 experiment、Eval 和 Attempt |
+| 汇总 | 组摘要 | Group summary | `GroupSummary` | 收窄后的一批 Selection;汇总一组 experiment 和 Eval |
+| 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval |
+| 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt |
+| 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 |
+| 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 |
+| 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 |
+| 指标图形 | 分组条形图 | Grouped bar chart | `MetricBars` | 两个可配置维度形成分组和系列;每根条是一个聚合指标值 |
+| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和 Eval 分组计算分数 |
+| 指标图形 | 指标散点图 | Metric scatter plot | `MetricScatter` | 每点一个可配置维度值,通常是 experiment;坐标是两个聚合指标值 |
+| 指标图形 | 指标趋势图 | Metric line chart | `MetricLine` | 每点一个 experiment;横轴是 experiment flag,纵轴是聚合指标值 |
+| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果快照;格内是指标值及差值 |
 | 行 / 列 / 分节 / 文本 / 样式 | Row / column / section / text / style | `Row` / `Col` / `Section` / `Text` / `Style` | 如何组织报告版面和补充说明;它们不计算结果 |
 
 ### 配置与 CLI

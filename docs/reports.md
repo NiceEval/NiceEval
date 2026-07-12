@@ -1,6 +1,6 @@
 # Reports —— 自己搭报告页的积木
 
-> 状态:积木层已按本文实现(`src/report/`,源码入口见 [Source Map](source-map.md#results-lib-与-reports)):指标、两级聚合、九个计算函数(挂组件)、双面组件与排版原语、`defineReport` 基座、渲染前解析 selection-form 组件的 resolve 阶段与两个渲染入口。**两个宿主共用同一份现刻水位 Selection**:`niceeval show`(`src/show/`)与 `niceeval view`(`src/view/`)裸跑都无条件调用中性选择器 `selectCurrentResults`(`src/results/select.ts`)——对每个 experiment × eval 取跨该实验历史快照的最新判定,把合成好的 Selection 注入报告槽,`--report` 只替换报告定义、不改注入的 Selection。内置默认报告是 `CostPassRateComparison`(`src/report/built-ins/cost-pass-rate-comparison.tsx`):`show` 渲染它的 text 面,`view` 渲染它的 web 面。show 另有 `--history` 趋势视图与证据切面,view 另有证据室。命名决策见[「命名与形状决策一览」](#命名与形状决策一览);公开叙事的准绳是 `docs-site/zh/guides/` 的自定义报告 / 报告组件两页;数据层拆在 [Results Lib](results-lib.md)。文末迭代问题已全部裁决。
+> 状态:指标、双面渲染与报告宿主已实现。本文的 `ExperimentList` / `EvalList` / `AttemptList` 实体列表重设计尚未实现;它取代当前 `ExperimentTable` / `CaseList` 与 `MetricTable.expand` 的重叠职责。两个宿主继续共用 `selectCurrentResults` 产出的同一份 Selection,`--report` 只替换报告定义。
 
 跑完一轮实验之后,「怎么看结果」不该只有 `niceeval view` 那三个固定 tab。你想把同一批结果摆成一张**考试成绩单**(每个 eval 是一道题,gate 判对错、soft 给分、按科目算总分),摆成一张 **benchmark 榜**(谁写出来的代码能用、谁写得更短、谁更便宜),或者摆成一张**质量 × 成本 frontier**(每个配置一个点,同 agent 不同档位连成线,右上角 = 又好又便宜)——这三种「看法」用的是同一份落盘 artifact,差别只在组合方式。
 
@@ -102,10 +102,11 @@ export default async function EvalsPage() {
 function RunOverview(props: { data: OverviewData; className?: string }): JSX.Element;
         // 页头 KPI 条:何时跑的、几个配置、几道题、通过率、总成本 —— 每张报告页的「这批数据是什么」
 
-function ExperimentTable(props: {
-  data: ExperimentTableData;
-  attemptHref?: (ref: AttemptRef) => string;
-  filter?: boolean;
+function ExperimentList(props: { items: ExperimentListItem[]; className?: string }): JSX.Element;
+function EvalList(props: { items: EvalListItem[]; className?: string }): JSX.Element;
+function AttemptList(props: {
+  items: AttemptListItem[];
+  total?: number;                              // items 被 slice 时如实显示剩余数量
   className?: string;
 }): JSX.Element;
 
@@ -134,24 +135,20 @@ function DeltaTable(props: {
   className?: string;
 }): JSX.Element;
 
-function CaseList(props: {
-  data: CaseListData;                         // 失败案例清单:报告回答完「多少」,这里回答「为什么」
-  attemptHref?: (ref: AttemptRef) => string;
-  className?: string;
-}): JSX.Element;
 ```
 
 组件内置的行为全是纯展示逻辑:
 
 - **RunOverview**:通过率、成本、耗时这排数字下面标注数据来源(几个快照、何时跑的);`RunOverview.data(selection)` 收 Selection,warnings 随行直接显示在条内——诚实不靠使用者记得接线(若把 warnings 做成要手动透传的独立参数,忘了就静默丢失,这正是收 Selection 的动机)。
 - **GroupSummary**:紧凑摘要块,只渲染 `GroupSummaryData` 算好的 `MetricCell` / 计数,不现场重算比例——通过率(eval 级折叠口径)、experiment/eval/attempt 数、failed 计数;`errored` 在组内为 0 时省略这一片段的展示,但数据字段 `verdicts.errored` 本身不受影响,不会因为渲染取舍丢数据;总成本走 null-safe 求和,全缺渲染成缺数据,不画 `$0`;有 `lastRunAt` 就多渲染一行,没有就不渲染。
-- **ExperimentTable**:默认报告的实验诊断工作台,与通用指标表分开。一行一个 experiment,主行用短名、本地化时间、四个官方 `MetricCell` 和单枚判定摘要;整行原生 `<details>` 展开完整 experiment 配置、汇总 KPI、逐 Eval/Attempt 诊断与 raw sample。主行不渲染 `MetricCell.refs`,证据链接只落在具体 Eval/Attempt。数据默认按通过率降序预排,web 面可排序与过滤,text 面输出同一主榜及失败/错误诊断。
-- **MetricTable**:按 `sort` 预排,方向随指标的 `better`(higher 降序、lower 升序,「好」的一头在上);`samples < total` 的格子带覆盖率角标;一组全 `null` 渲染成「缺数据」,绝不画 0;`rows: "experiment"` 时行携带 agent / model 元信息,渲染为普通列;`filter` prop 在 web 面渲染行过滤输入框(浏览态,增强 runtime 接管,见下方契约),text 面无对应物——固定口径的过滤走计算参数。
+- **ExperimentList**:每项一个 experiment,固定展示身份、配置、Eval 判定构成和官方汇总指标;展开到这个 experiment 的 Eval。`ExperimentList.data(selection)` 返回普通数组,过滤由报告作者对数组调用 `.filter()`。
+- **EvalList**:每项一个 `experimentId + evalId`,固定展示判定、Attempt 数、分数、成本、耗时与失败原因;展开到 Attempt。`EvalList.data(selection)` 返回普通数组。
+- **AttemptList**:每项一个 Attempt,固定展示判定、断言、error、Judge 评语和证据引用。它不预设只看失败;报告作者过滤 `AttemptListItem[]`,用 `.slice()` 限量,`total` 让渲染面如实报告剩余数量。
+- **MetricTable**:按 `sort` 预排,方向随指标的 `better`;`samples < total` 的格子带覆盖率角标;一组全 `null` 渲染成缺数据。它只表达任意维度 × 任意指标,不展开 experiment / Eval / Attempt 实体层级。
 - **MetricMatrix**:稀疏渲染(没有样本的格子空着);`cell.refs` + `attemptHref` 让「哪道题谁挂了,一眼看穿」之后的下一步——「给我看那次 attempt」——就在手边。
 - **Scoreboard**:总分 + 分科小计,`missing`(没跑、按 0 计的题数)如实展示在科目行,固定分母的口径不藏。
 - **MetricScatter**:轴向随 `better`——`lower` 的轴反向画,「好」的角落恒在右上(成本轴 $20 → $0 就是这么来的);同系列的点按 x 排序连线,系列名标在线旁;x 或 y 为 `null` 的点不画,底部注脚如实报「n 个点缺数据」;hover tooltip 显示 `display` 与 `samples/total`(增强 runtime 提供,无 JS 退化为 SVG `<title>`)。**可画点不足时组件自己表态,不返回空、也不由调用方省略整块图**:0 个可画点(x 或 y 全 `null`)渲染「无数据」态、点明是哪两个指标没有可用数据;恰好 1 个可画点渲染「至少两个实验才能比较」态(比较类图单点没有可对比对象);2 个及以上正常成图。text 面与 web 面表达同一个事实,不会某一面静默消失。
 - **DeltaTable**:每行一对配置(如「bub:裸 vs +AGENTS.md」),每列一个指标,格子里 A、B、Δ 三个值;Δ 的涨跌好坏由 `better` 判定,任一侧缺数据时 Δ 显示为缺,不硬算。
-- **CaseList**:失败与出错的 attempt 逐条列出——失败断言、error 摘要、judge 评语(`evidence`),每条带 `attemptHref` 下钻;`truncated` 如实报「还有 n 条没列」。
 
 四条跨组件的契约保证:
 
@@ -331,14 +328,21 @@ await DeltaTable.data(selection, {
   metrics: [passRate, costUSD, durationMs],
 });                                   // → DeltaData
 
-await CaseList.data(selection, {
-  verdicts: ["failed", "errored"],    // 默认就是这两类
-  limit: 20,                          // 超出如实报 truncated,不静默截断
-  redact: (s) => s.replaceAll(repoRoot, ""),   // 自由文本(error / 断言 detail / judge evidence)的发布消毒钩子
-});                                   // → CaseListData
+const experiments = await ExperimentList.data(selection); // → ExperimentListItem[]
+const evals = await EvalList.data(selection);              // → EvalListItem[]
+const attempts = await AttemptList.data(selection, {
+  redact: (s) => s.replaceAll(repoRoot, ""),               // 发布消毒发生在数据计算时
+});                                                         // → AttemptListItem[]
+
+<ExperimentList items={experiments.filter((x) => x.agent === "bub")} />
+<EvalList items={evals.filter((x) => x.verdict !== "passed")} />
+<AttemptList
+  items={attempts.filter((x) => x.verdict === "failed").slice(0, 20)}
+  total={attempts.filter((x) => x.verdict === "failed").length}
+/>
 ```
 
-**`MetricTable.data` 的 `expand` 把行钻深一级,不是另一种展示。** 设了 `expand`(如 `expand: "eval"`),父行的 group 按这个维度再分一次组,渲染面把子行摆进这一行下面可展开的明细(web 面是原生 `<details>`,零 JS 也能点开;text 面是父行下方缩进的失败/错误清单)。子行与父行是同一种东西——同一套父表 `columns` 在子群体上重新算一遍格子,`MetricCellView` 原样复用,不是子行专属的展示字段;额外的 `verdict`(子群体折叠判定)/ `reason`(代表 attempt 的失败原因,按优先级取第一个在场的:`error` → `skipReason` → 未通过的 gate 断言——原始声明顺序,`name`,detail 在场则 `"name: detail"`,多条用「, 」连接;soft 断言永不进入)/ `ref`(代表 attempt 深链)/ `runs`+`passedRuns`(子群体 attempt 数与通过数)对任何 `expand` 维度都成立,不是 `"eval"` 专属。这份原因摘要与 `CaseList.data` 的 `failedAssertions`、`ExperimentTable.data` 出自同一个 `reasonFor`,对同一个 attempt 给出同一个原因。`rows` 与 `expand` 是同一种维度输入,`expand` 也不要求 `rows` 必须是 `"experiment"`——`rows: "agent", expand: "eval"` 同样合法。内置默认报告用独立的公开 `ExperimentTable`(带配置、KPI、逐 Attempt 与 raw sample),不把这些异构信息塞进 `MetricTable.expand`。
+**实体列表与指标表不重叠。** `ExperimentList` / `EvalList` / `AttemptList` 展示固定实体事实并负责逐级下钻;`MetricTable` 展示可配置维度 × 指标值,没有 `expand`。过滤实体列表时先调用 `.data(selection)` 得到普通数组,再使用 JavaScript `.filter()` / `.slice()`;组件不复制查询 DSL。`Selection.filter()` 仍只负责删减快照并保留 warnings,不承担 Eval 或 Attempt 过滤。
 
 **MetricScatter 就是「质量 × 成本 frontier」的积木**:[Experiments](experiments.md) 的一文件一配置意味着 `compare/bub-low`、`compare/bub-medium`、`compare/bub-high` 各是一个实验——`points: "experiment"` 让每个档位成为一个点,`series: "agent"` 把同 agent 的档位连成线,`better` 驱动的轴向让右上角恒为「又好又便宜」。点的 x/y 就是两个 `MetricCell`:按点维度分组后走同一台两级聚合引擎,所以 `samples` / `total` / `refs` 一应俱全,hover 与下钻不用另做一套。
 
@@ -465,19 +469,17 @@ interface DeltaData {
   }[];
 }
 
-interface CaseListData {
-  rows: {
-    eval: string;
-    experimentId: string;
-    agent: string;
-    verdict: "failed" | "errored";
-    error?: string;                   // errored 的错误摘要(已过 redact)
-    failedAssertions: { name: string; score: number; detail?: string; evidence?: string }[];  // 只列未通过的 gate 断言,soft 断言不决定判定,不列在这里
-    durationMs: number;
-    costUSD?: number;
-    ref: AttemptRef;                  // 每条案例都能回到证据
-  }[];
-  truncated: number;                  // limit 之外还有几条,如实报
+interface AttemptListItem {
+  evalId: string;
+  experimentId: string;
+  attempt: number;
+  agent: string;
+  verdict: Verdict;
+  error?: string;
+  assertions: AssertionResult[];
+  durationMs: number;
+  costUSD?: number;
+  ref: AttemptRef;
 }
 
 interface MetricColumn {
@@ -568,7 +570,7 @@ import { writeFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { openResults } from "niceeval/results";
 import { passRate, costUSD, durationMs } from "niceeval/report";
-import { RunOverview, DeltaTable, MetricScatter, MetricMatrix, CaseList } from "niceeval/report/react";
+import { RunOverview, DeltaTable, MetricScatter, MetricMatrix, AttemptList } from "niceeval/report/react";
 
 const results = await openResults("site/data/run");
 const selection = results.latest();
@@ -577,6 +579,8 @@ const PAIRS = ["bub-gpt-5.4", "codex-gpt-5.4", "claude-dp-v4"].map((c) => ({
   a: `compare/${c}`, b: `compare/${c}--agents-md`, label: c,
 }));
 const attemptHref = (ref) => `view/#/attempt/${ref.run}/${ref.result}`;   // 证据室:同站托管的 view
+const attempts = await AttemptList.data(selection, { redact: (s) => s.replaceAll(process.cwd(), "") });
+const failures = attempts.filter((x) => x.verdict === "failed" || x.verdict === "errored");
 
 const page = renderToStaticMarkup(
   <main>
@@ -585,7 +589,7 @@ const page = renderToStaticMarkup(
     <DeltaTable data={await DeltaTable.data(selection, { pairs: PAIRS, metrics: [passRate, costUSD, durationMs] })} />
     <MetricScatter data={await MetricScatter.data(selection, { points: "experiment", series: "agent", x: costUSD, y: passRate })} />
     <MetricMatrix data={await MetricMatrix.data(selection, { rows: "eval", columns: "experiment", cell: passRate })} attemptHref={attemptHref} />
-    <CaseList data={await CaseList.data(selection, { limit: 20 })} attemptHref={attemptHref} />
+    <AttemptList items={failures.slice(0, 20)} total={failures.length} />
   </main>,
 );
 writeFileSync("site/index.html", `<!doctype html><link rel="stylesheet" href="styles.css">${page}`);
@@ -594,7 +598,7 @@ writeFileSync("site/index.html", `<!doctype html><link rel="stylesheet" href="st
 // `niceeval view --out site/view site/data/run`(现有 CLI,脚本里 execFile 即可)
 ```
 
-分工:**报告页是前门**(这套件自己的问题、自己的摆法),**view 是证据室**(attempt 级 transcript / 代码 / trace)。`copySnapshots` 是结果库的发布原语([Results Lib](results-lib.md#复制与瘦身copysnapshots)),取代手写的 mtime 挑选 + 白名单拷贝;「最新 run 可能残缺」的坑由 Selection 带着警告随行、`RunOverview` 直接展示;构建机路径消毒收进 `CaseList.data` 的 `redact` 钩子。原来两个脚本里所有「懂格式」的代码,一行都不剩。
+分工:**报告页是前门**(这套件自己的问题、自己的摆法),**view 是证据室**(attempt 级 transcript / 代码 / trace)。构建机路径消毒收进 `AttemptList.data` 的 `redact` 钩子;展示范围由普通数组过滤决定。
 
 ### 场景四:深接入 —— 组件表达不了的,拿句柄自己算
 
@@ -638,19 +642,18 @@ writeFileSync("site/index.html", `<!doctype html><link rel="stylesheet" href="st
 
 ```tsx
 // reports/exam.tsx —— 一份定义,两扇门共用
-import { defineReport, Col, Section, MetricScatter, ExperimentTable, Scoreboard, costUSD, passRate } from "niceeval/report";
+import { defineReport, Col, Section, MetricScatter, ExperimentList, Scoreboard, costUSD, passRate } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => (
-  <Col>
-    {/* 内置默认报告的两块,同构复制过来:selection-form,框架在渲染前的 resolve 阶段替你算 data */}
+export default defineReport(async ({ selection }) => {
+  const experiments = await ExperimentList.data(selection);
+  return <Col>
     <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={passRate} />
-    <ExperimentTable selection={selection} filter />
+    <ExperimentList items={experiments} />
     <Section title="考试成绩单">
-      {/* data-form:自己 await 折数据也一样合法(何时用哪一臂见「数据绑定与 resolve 解析阶段」) */}
       <Scoreboard data={await Scoreboard.data(selection, { rows: "agent", subjects: "evalGroup" })} />
     </Section>
-  </Col>
-));
+  </Col>;
+});
 ```
 
 ```bash
@@ -696,16 +699,16 @@ function defineReport(build: (ctx: ReportContext) => ReportNode | Promise<Report
 文件是 `src/report/built-ins/cost-pass-rate-comparison.tsx`,整份正文只有 `defineReport` 与两个组件:
 
 ```tsx
-export const CostPassRateComparison = defineReport(({ selection }) => (
-  <Col>
+export const CostPassRateComparison = defineReport(async ({ selection }) => {
+  const experiments = await ExperimentList.data(selection);
+  return <Col>
     <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={passRate} />
-    <ExperimentTable selection={selection} filter />
-  </Col>
-));
+    <ExperimentList items={experiments} />
+  </Col>;
+});
 ```
 
-- **一张扁平散点 + 一张扁平明细表,横跨整份 Selection,不按 experiment id 目录前缀分组。** 没有 `RunOverview`、`GroupSummary`、`Section` 或 `CaseList`,没有逐组 `<Section>` 切分,没有「可画点 < 2 就省略图」的报告侧判断。build 里也没有 `await`、`.data(`、`Promise.all` 或局部数据变量:报告只声明「摆什么」,组件负责「如何从 Selection 得到自己的 data」,框架在渲染前的 resolve 阶段完成异步解析(见「数据绑定与 resolve 解析阶段」)。
-- **两个组件都用 selection-form props**:`selection` + 计算选项直接写在 JSX 上,不手动调 `.data()`。`MetricScatter` 的 `points="experiment"` 让每个 experiment 成一个点、`series="agent"` 把同 agent 的点连线、`x={costUSD}` / `y={passRate}` 各占一轴,`better` 驱动的轴向让右上角恒为「又好又便宜」。`ExperimentTable filter` 一行一个 experiment,保留 model / agent / 平均耗时 / pass rate / tokens / estimated cost / 结果摘要,整行原生 `<details>` 下钻 eval/attempt、深链证据;`filter` 是 web 面的渐进增强(无 JS 时完整表格可读)。
+- **一张扁平散点 + 一份实验列表,横跨整份 Selection。** `MetricScatter` 每点一个 experiment;`ExperimentList.data(selection)` 生成完整 experiment 数组,默认报告不额外过滤。实验列表逐项展开到 Eval,再经证据引用进入 Attempt。
 - **散点的空态由组件自己表态,不由报告侧判断**:报告永远摆出一块 `MetricScatter`,由组件决定如何呈现数据不足(0 / 1 / 2+ 可画点规则见上文「第一档」的 MetricScatter 说明),从不静默消失。
 - **警告不靠报告树携带**:内置报告没有 `RunOverview`,但 `ctx.selection.warnings` 由宿主渲染入口在报告输出前统一渲染成横幅(见「宿主级警告横幅」),partial-coverage / stale-snapshot / unfinished-snapshot 不会因为默认报告不含 `RunOverview` 而丢失。
 
@@ -713,12 +716,12 @@ export const CostPassRateComparison = defineReport(({ selection }) => (
 
 ### 数据绑定与 resolve 解析阶段
 
-`MetricScatter` 与 `ExperimentTable` 的 props 是判别联合,两臂互斥:
+`MetricScatter` 的 props 是判别联合,两臂互斥:
 
-- **selection-form**:有 `selection` 字段外加计算选项(`MetricScatter` 的 `points` / `series` / `x` / `y`,`ExperimentTable` 的数据选项),`data` 字段必须缺席。报告作者写它,不碰 `.data()`。
-- **data-form**:有 `data` 字段(算好的 `ScatterData` / `ExperimentTableData`),`selection` 与全部计算选项必须缺席。渲染面只认这一臂。
+- **selection-form**:有 `selection` 字段外加 `points` / `series` / `x` / `y`,`data` 字段必须缺席。
+- **data-form**:有算好的 `ScatterData`,`selection` 与全部计算选项必须缺席。
 
-联合类型让「`data` 与 `selection` 同时传」或「两者都不传」在 typecheck 阶段就失败;计算选项复用现有 `ScatterDataOptions` / `ExperimentTableDataOptions`,不另抄一份会漂移的手写类型。
+三个实体列表不走 selection-form:`.data(selection)` 明确产出普通数组,作者过滤后传 `items`。这让过滤过程留在普通 TypeScript 里,不会藏进 resolve 阶段。
 
 渲染管线因此多一个异步解析阶段,四步定序:
 

@@ -31,7 +31,8 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 
 - **诚实渲染。** 缺数据渲染 `—` 不补 0；覆盖不全的格子带 `12/15` 角标；截断如实标注剩余数量与原始 artifact 路径。
 - **排序与方向随指标的 `better`。** higher 的指标降序、lower 的升序，「好」的一头恒在上、在右上。
-- **证据室深链。** 网页面的格子、点和条目深链到 attempt 弹窗；终端面在条目下印 `niceeval show <eval id>` 下钻命令。
+- **证据室深链。** 网页面的格子、点和条目深链到 Attempt 详情；终端面用同一 Attempt locator 交给 `niceeval show @<id>`。
+- **终端输出形成反馈闭环。** 每个 Attempt 有一个以 `@` 开头的短 locator，例如 `@7K2M9Q`。它唯一指向 experiment、结果快照、Eval 和 Attempt。`✓` / `✗` / `!` / `–` 是 passed / failed / errored / skipped；`[E]` 表示运行时 Eval 源码可用，`[X]` 表示执行步骤可用，`[⏱]` 表示 OTel 时间可用，`[D]` 表示工作区 diff 可用。执行步骤统一包含消息、thinking、tool call/result 和 Skill load；OTel 只给这些步骤补时间，不另开一份输出。
 - **两面同口径，网页面不依赖 JS 也完整。** 排序在计算时由 `sort` 定死，终端和网页看到同一份基准顺序；下钻是普通链接、展开折叠用 `<details>`。网页面另有一层浏览操作：点表头就地重排、榜单行过滤、图表点位悬停看数值——只影响眼前的视图，不改数据口径，刷新即回基准顺序；浏览器禁用 JS 时这些操作消失，内容一样不少（悬停信息退化为图内提示）。
 
 ## 排版原语
@@ -91,19 +92,99 @@ latest 2026-07-09T10:00:00Z
 
 组摘要是普通的公开组件，`GroupSummary.data` 是普通的公开计算函数——想在自己的报告里按目录前缀分组、每组摆一块，按上面的写法收窄 Selection 再调它就行。
 
-## 实验明细表（`ExperimentTable`）
+## 实验列表（`ExperimentList`）
 
-默认报告的主表不是一张通用指标表，而是可展开的实验明细表。一行一个 experiment，关闭时只显示短名称、model、agent、平均耗时、成功率、Tokens、预估成本和一枚判定摘要；点整行展开后，依次看到完整实验配置、汇总 KPI、逐 Eval/Attempt 诊断和原始样例结果。具体证据通过 `AttemptRef` 深链进入查看器的 attempt 详情。
+每项固定代表一个 experiment。主行显示 experiment id、agent、model、flags、Eval 判定构成、通过率、Tokens、成本和耗时；展开后显示这个 experiment 的 Eval 列表。它不接受列配置——这是 experiment 的诊断视图，不是通用指标表。
 
 ```tsx
-<ExperimentTable selection={selection} filter />
+const experiments = await ExperimentList.data(selection);
+
+<ExperimentList
+  items={experiments.filter((exp) => exp.verdicts.errored === 0)}
+/>
 ```
 
-直接把 `selection` 传给它，宿主渲染前替你算好数据——默认报告就是这么写的。要在自己已经跑起来的 React 应用里嵌这块、或数据是预先算好的，改传 `data`：`<ExperimentTable data={await ExperimentTable.data(selection)} filter />`；同时传 `data` 和 `selection`、或两者都不传，类型检查都会报错。
+`niceeval show` 每个 experiment 输出一行汇总，每个 Eval 只占一行。Attempt ID 后的证据位告诉 AI 能读什么，不展开重复命令：
 
-网页面默认按成功率降序，可点击任一表头临时排序；`filter` 加入实验过滤框。无客户端 JavaScript 时仍保留预排后的完整内容，展开使用原生 `<details>`。终端面输出同一份主榜，并在对应 experiment 下列出失败和错误的 Eval。
+```text
+compare/bub-gpt-5.4 · bub · gpt-5.4
+  pass 87% · 13 passed / 1 failed / 1 errored · 42 attempts · 4m 12s · $0.42
+  ✓ algebra/quadratic   @2F9K3A✓[E,X,⏱] @41BM7C✓[E,X,⏱]   18s avg · $0.02 avg
+  ✗ weather/brooklyn    @7K2M9Q✗[E,X,⏱] @8NX4DP✗[E,X] @9VQ2JE✗[E,X]   gate calledTool("get_weather")
+  ! fixtures/button     @C3H6TW![E,D]   command timed out after 120s
 
-它与 `MetricTable` 是两种组件：`ExperimentTable` 的展开内容是配置、诊断总量和证据；`MetricTable` 是任意维度 × 指标的通用比较表，`expand` 只会把同一套指标换一个维度重算。需要复刻默认首页时用前者，需要自由换维度和指标时用后者。
+compare/codex-gpt-5.4 · codex · gpt-5.4
+  pass 80% · 12 passed / 3 failed · 45 attempts · 5m 03s · $0.51
+  ✓ algebra/quadratic   @D8P4KW✓[E,X,⏱]   16s · $0.02
+  ✗ algebra/matrix      @E2J7MX✗[E,X] @F5R9NA✗[E,X,⏱] @G4W8PC✗[E,X,⏱]   gate equals("42")
+  ✗ weather/brooklyn    @H6T3VB✗[E,X,⏱] @J9M2QF✗[E,X,⏱] @K7C5RX✗[E,X,⏱]   gate calledTool("get_weather")
+
+inspect: niceeval show @<id> [--eval|--execution|--diff]
+```
+
+locator 由 `experimentId + snapshot.startedAt + evalId + attempt index` 的不可变身份确定，复制或发布结果后保持不变。宿主在当前结果根解析 locator；不存在或发生冲突时直接报错，不回退到“最新一次”。`@` 前缀让它与 Eval ID 前缀选择器无歧义。
+
+`.data(selection)` 返回普通的 `ExperimentListItem[]`，顺序按 experiment id 稳定排列。要只看某个 agent、目录前缀或运行状态，直接过滤数组。组件不提供另一套 `filter` 查询语法。网页面的文本搜索只是临时浏览操作，不改变传入的 items；终端面始终输出完整的传入数组。
+
+## Eval 列表（`EvalList`）
+
+每项固定代表一个 `experimentId + evalId`，因为同一个 Eval 跑在两个 experiment 上是两条不同结果。主行显示判定、Attempt 数、聚合分数、成本、耗时和失败原因；展开后显示这个 Eval 的 Attempt 列表。
+
+```tsx
+const evals = await EvalList.data(selection);
+
+<EvalList
+  items={evals.filter((item) => item.verdict !== "passed")}
+/>
+```
+
+`niceeval show` 每个 `experiment × Eval` 输出一项，Attempt 仍用同一套紧凑 ID 和证据位。每项只给一条模板：
+
+```text
+weather/brooklyn · compare/codex-gpt-5.4 · failed
+  score 0.20 · 3 attempts · 41s avg · $0.04 avg
+  @7K2M9Q✗[E,X,⏱] · gate calledTool("get_weather") — tool was never called
+  @8NX4DP✗[E,X]   · gate calledTool("get_weather") — tool was never called
+  @9VQ2JE✗[E,X]   · gate calledTool("get_weather") — tool was never called
+
+fixtures/button · compare/bub-gpt-5.4 · errored
+  score — · 1 attempt · 2m 00s · $0.09
+  @C3H6TW![E,D] · command timed out after 120s
+
+inspect: niceeval show @<id> [--eval|--execution|--diff]
+```
+
+`.data(selection)` 返回普通的 `EvalListItem[]`。按 Eval id 前缀、experiment、判定或分数过滤都使用数组 `.filter()`；组件只负责渲染传入的 items。
+
+## Attempt 列表（`AttemptList`）
+
+每项固定代表一个 Attempt，显示 experiment、Eval、Attempt 序号、判定、耗时、成本、失败断言、error、Judge 评语和证据链接。它既能列失败证据，也能列通过样本，不把 verdict 过滤写死在组件名里。
+
+```tsx
+const attempts = await AttemptList.data(selection, { redact });
+
+<AttemptList
+  items={attempts.filter((item) => item.verdict === "failed" || item.verdict === "errored")}
+/>
+```
+
+`niceeval show` 每项完整输出一个 Attempt，不再折叠到 Eval 汇总。这里已经是叶子层，只在末尾给一条与该 Attempt 可用证据对应的模板：
+
+```text
+✗ @7K2M9Q · weather/brooklyn · compare/codex-gpt-5.4 · 41s · $0.04 · [E,X,⏱]
+  gate calledTool("get_weather") · failed
+    tool was never called
+  soft judge("回答基于实时数据") · 0.2/1
+    reply invents a temperature
+
+! @C3H6TW · fixtures/button · compare/bub-gpt-5.4 · 2m 00s · $0.09 · [E,D]
+  command timed out after 120s
+inspect: niceeval show @<id> [--eval|--execution|--diff]
+
+(3 more not shown · showing 20 of 23)
+```
+
+发布前要消毒 error、断言 detail 或 Judge 评语时，把 `redact` 交给 `.data()`；要展示哪些 Attempt，过滤返回的 `AttemptListItem[]`。`limit` 也由报告作者在数组上用 `.slice(0, 20)` 表达，截断时把原始数量交给组件的 `total`，组件据此显示“还有 n 项未展示”，不静默截断。
 
 ## 指标表（`MetricTable`）
 
@@ -125,19 +206,7 @@ codex   80% 12/15   355 lines    $0.51
 
 两面都按 `sort` 预排，基准顺序一致——要固定换一种排序，改一行重跑。`12/15` 角标表示该格 15 个 attempt 里只有 12 个测得了这个指标。
 
-`rows: "experiment"` 时每行自动带 agent 与 model 列——结果里现成的元信息，不用配置。给组件传 `filter`（`<MetricTable data={…} filter />`）时，网页面在表上方渲染一个过滤框，输入即隐藏不匹配的行——纯浏览操作，不改数据，终端面没有对应物；要固定口径的过滤，用 `evals` 前缀参数或换维度重算。
-
-加一个 `expand`（如 `expand: "eval"`），每行就能点开看更细一级：
-
-```tsx
-<MetricTable data={await MetricTable.data(selection, {
-  rows: "experiment",
-  columns: [passRate, costUSD],
-  expand: "eval",
-})} filter />
-```
-
-点开一行，看到的是这个 experiment 下每道题的判定、失败原因、以及同一套指标列在这道题上单独算出来的值——网页面是原生的展开/收起交互，不用等 JS；终端面是这一行下面缩进的失败清单。子行不是另一套东西，就是同一张表在更细的维度上再算一遍。
+`rows: "experiment"` 时每行自动带 agent 与 model 列——结果里现成的元信息，不用配置。`MetricTable` 不展开实体层级：要看 experiment、Eval 或 Attempt 的固定诊断字段，分别使用三个实体列表；要自由换维度和指标列，使用指标表。
 
 ## 指标矩阵（`MetricMatrix`）
 
@@ -278,28 +347,6 @@ pair    pass rate              cost
 bub     87% → 93%   +6%        $0.42 → $0.45   +$0.03
 codex   80% → 80%   ±0         $0.51 → —       —
 ```
-
-## 案例清单（`CaseList`）
-
-失败与出错的 attempt 逐条列出：失败断言、error 摘要、judge 评语。指标表回答「多少」，它回答「为什么」。
-
-```tsx
-<CaseList data={await CaseList.data(selection, { verdicts: ["failed", "errored"], limit: 20 })} />
-```
-
-```text
-✗ weather/brooklyn · compare/codex-gpt-5.4 · failed · 41s · $0.04
-    gate calledTool("get_weather") — tool was never called
-    soft judge("回答基于实时数据") — 0.2/1: reply invents a temperature
-    → niceeval show weather/brooklyn
-✗ fixtures/button · compare/bub-gpt-5.4 · failed · 2m 10s · $0.09
-    gate fileChanged("src/components/Button.tsx")
-    → niceeval show fixtures/button
-
-(3 more not shown · limit 20)
-```
-
-自由文本（error、断言 detail、judge 评语）发布前要消毒时，用 `CaseList.data` 的 `redact` 钩子。
 
 ## 官方组件之外
 

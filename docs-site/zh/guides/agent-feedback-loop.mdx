@@ -46,19 +46,113 @@ AI 通常按任务选择这些入口：
   <Step title="读取失败">
     ```bash
     npx niceeval show
-    npx niceeval show weather/brooklyn
+    npx niceeval show @7K2M9Q
     ```
 
-    第一条命令显示当前各实验的通过率、成本、耗时和失败清单。第二条命令把单个 Eval 展开到 Attempt、gate 断言、soft 断言、错误和用量。
+    第一条命令显示当前各实验的通过率、成本、耗时，以及每个 Eval 的紧凑 Attempt locator。`[E]` / `[X]` / `[⏱]` / `[D]` 分别表示运行时 Eval 源码、执行步骤、OTel 时间和 diff 可用。第二条命令直接打开选中的 Attempt。
   </Step>
   <Step title="按问题读取证据">
     ```bash
-    npx niceeval show weather/brooklyn --transcript
-    npx niceeval show weather/brooklyn --trace
-    npx niceeval show fixtures/button --diff
+    npx niceeval show @7K2M9Q --execution
+    npx niceeval show @C3H6TW --diff
     ```
 
-    `--transcript` 回答“Agent 说了什么、调用了什么工具”；`--trace` 回答“调用链在哪里耗时或报错”；`--diff` 回答“Sandbox 里的文件实际改成了什么”。输出被截断时，命令末尾会给出原始 artifact 路径，AI 可以继续用 `jq`、`sed`、`rg` 等工具读取。
+    `--execution` 合并 AI 输出与 trace：标准事件流提供消息、thinking、tool call/result 和 Skill load；OTel 在能够关联时给同一节点补开始时间、耗时、父子关系和错误状态。没有 OTel 时步骤仍完整，只不显示时间。
+
+    不带证据 flag 时，`show @<id>` 给出一份紧凑的 Attempt 全景：Eval 断言、OTel 执行步骤、耗时瀑布和工作区变化。它展示**运行当时保存的 Eval 源码**，不读取当前工作区的同名文件；长内容只给摘要和展开命令。
+
+    ```text
+    $ niceeval show @7K2M9Q
+    @7K2M9Q · weather/brooklyn · compare/codex-gpt-5.4 · failed
+    snapshot 2026-07-09T10-00-00-000Z-x1f2 · attempt 2 · 41.2s · 12.3k tokens · $0.04
+    eval source: evals/weather/brooklyn.eval.ts · sha256:8d47…
+
+     8  export default defineEval({
+     9    id: "weather/brooklyn",
+    10    async test(t) {
+    11      const turn = await t.send("布鲁克林今天天气怎么样？");
+    12 ✗    turn.calledTool("get_weather");
+           gate · tool was never called
+    13 ✓    turn.succeeded();
+    14 ✗    t.check(turn.message, judge("回答基于实时数据"));
+           soft · 0.2/1 · reply invents a temperature without any tool call
+    15    },
+    16  });
+
+    assertions: 1 passed · 1 gate failed · 1 soft below target
+
+    execution [X,⏱]
+    agent run                     ▕████████████████████▏ 41.2s
+    ├─ inference                  ▕█████░░░░░░░░░░░░░░░▏ 10.1s · "布鲁克林今天大约 24°C，晴。"
+    ├─ inference                  ▕░░░░░█████████░░░░░░▏ 18.3s
+    └─ inference                  ▕░░░░░░░░░░░░░░██████▏ 12.4s
+    no tool calls
+
+    changes · diff unavailable
+    reason: this Attempt did not produce workspace file changes
+
+    evidence: Eval source [E] · execution [X] · OTel timing [⏱]
+    full eval source: …/weather/brooklyn/a2/eval-source.ts
+    next: niceeval show @7K2M9Q [--eval|--execution|--diff]
+    ```
+
+    `--execution` 把 AI 消息、Skill load、工具调用和工具结果排成一棵执行树。下面的 Attempt 有 OTel，所以同一棵树同时带相对时间与耗时：
+
+    ```text
+    $ niceeval show @7K2M9Q --execution
+    @7K2M9Q · weather/brooklyn · compare/codex-gpt-5.4 · failed · OTel timing
+
+      0.0s  user        布鲁克林今天天气怎么样？
+      0.2s  assistant   我先读取天气工具的使用说明。
+      0.3s  skill load  weather-tools                         0.4s
+      0.8s  tool call   get_weather {"location":"Brooklyn"}  1.8s
+      2.6s  tool result {"temperatureC":18,"condition":"rain"}
+      2.8s  assistant   布鲁克林当前约 18°C，有雨。             1.2s
+
+    total 4.0s · 1 skill load · 1 tool call · 2 AI messages
+    full events: …/weather/brooklyn/a2/events.json
+    full OTel trace: …/weather/brooklyn/a2/trace.json
+    ```
+
+    没有 OTel 时仍用标准事件流展示相同的步骤，只去掉时间列和瀑布关系，不把“缺时间”误写成“没有执行”：
+
+    ```text
+    $ niceeval show @8NX4DP --execution
+    @8NX4DP · weather/brooklyn · compare/bub-gpt-5.4 · failed
+
+    user        布鲁克林今天天气怎么样？
+    assistant   我先读取天气工具的使用说明。
+    skill load  weather-tools
+    tool call   get_weather {"location":"Brooklyn"}
+    tool result {"temperatureC":18,"condition":"rain"}
+    assistant   布鲁克林当前约 18°C，有雨。
+
+    timing unavailable · OTel trace was not collected
+    full events: …/weather/brooklyn/a2/events.json
+    ```
+
+    diff 是被测 Agent 在 Sandbox 工作区造成的文件变化，不是 Eval 源码的新旧差异。它只会出现在带 `[D]` 的 locator 上。默认先给文件级摘要，避免把大段补丁塞进 Agent 上下文；`--diff=<文件>` 再展开单个文件，原始 artifact 路径始终保留：
+
+    ```text
+    $ niceeval show @C3H6TW --diff
+    @C3H6TW · fixtures/button · compare/bub-gpt-5.4 · errored
+
+    M src/components/Button.tsx   +42 −3
+    A src/components/Button.css   +18
+
+    2 files changed · +60 −3
+    full diff: …/fixtures/button/a1/diff.json
+    next: niceeval show @C3H6TW --diff=src/components/Button.tsx
+    ```
+
+    用这组输出检查信息是否足够：
+
+    | 要回答的问题 | 入口 | 输出必须包含 |
+    | --- | --- | --- |
+    | 快速判断一次 Attempt 发生了什么 | `niceeval show @<id>` | Eval 断言、执行步骤、可选 OTel 时间、diff 摘要及各块可用性 |
+    | Eval 实际检查了什么，哪条 gate / soft 为什么通过或失败 | `niceeval show @<id> --eval` | 运行时 Eval 源码、源码哈希、断言所在行、严重度、分数与原因 |
+    | AI 做了什么、调用了什么、时间花在哪里 | `niceeval show @<id> --execution` | 消息、thinking、Skill load、工具调用与结果；有 OTel 时在同一节点显示时间、父子关系和错误状态 |
+    | Sandbox 工作区文件变成什么 | `niceeval show @<id> --diff` | 文件摘要、增删行数、具体补丁和原始 diff 路径；无文件工作区时明确 unavailable |
   </Step>
   <Step title="提出假设并修改">
     根据证据只修改最可能出错的一侧：
@@ -97,16 +191,15 @@ AI 通常按任务选择这些入口：
 
 ```text
 Failing:
-  ✗ weather/brooklyn
+  ✗ weather/brooklyn · @7K2M9Q[T,R]
       gate calledTool("get_weather"): tool was never called
-      → niceeval show weather/brooklyn
 
 Results: 14 passed, 1 failed, 0 errored, 0 skipped
 Structured results: .niceeval/local/2026-07-09T10-00-00-000Z-x1f2/
   (snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
 ```
 
-AI 应先执行失败项给出的 `niceeval show <eval id>`，不要从头解析运行期间不断刷新的进度行。需要机器读取时，结果快照是事实来源：
+AI 应先从失败项选中 Attempt locator，再按证据位执行 `niceeval show @<id>` 或对应证据 flag，不要从头解析运行期间不断刷新的进度行。需要机器读取时，结果快照是事实来源：
 
 ```text
 .niceeval/<experiment>/<快照>/
@@ -150,8 +243,8 @@ AI 应先执行失败项给出的 `niceeval show <eval id>`，不要从头解析
 ```text
 读取 node_modules/niceeval/INDEX.md，再按索引读取与任务有关的文档。
 运行 npx niceeval exp local，并根据退出码和失败摘要决定下一步。
-对每个失败的 Eval，先运行 niceeval show <eval-id>；再按问题选择
---transcript、--trace 或 --diff。写出失败原因的假设，并判断应该修改被测程序、
+对每个失败的 Eval，从报告选择一个 Attempt locator；再运行 niceeval show @<id>
+并按问题选择默认 Eval 源码面、--execution 或 --diff。写出失败原因的假设，并判断应该修改被测程序、
 Eval，还是实验环境。修改后用 --force 重跑对应 Eval，比较新的判定和证据。
 同一问题连续三轮没有新证据或改善时停止并汇报，不要靠放宽断言碰绿。
 全部局部失败清零后，用 npx niceeval exp local --force 全量验证；退出码 0 才完成。

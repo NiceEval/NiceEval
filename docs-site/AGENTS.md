@@ -37,7 +37,7 @@
 - **Selection**：`results.latest()` 的返回物（挑好的结果快照 + 挑选警告）。中文直接写 `Selection`，不写“选集”。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **双面组件（dual-render component）**：`defineComponent({ web, text })` 的产物。英文写 dual-render，不写 dual-face。
-- **报告组件**：正文首次出现时写“中文名（`API 名`）”，后续可只写其中一个。固定名称是：运行总览（`RunOverview`）、组摘要（`GroupSummary`）、实验明细表（`ExperimentTable`）、指标表（`MetricTable`）、指标矩阵（`MetricMatrix`）、分组条形图（`MetricBars`）、成绩单（`Scoreboard`）、指标散点图（`MetricScatter`）、指标趋势图（`MetricLine`）、成对差异表（`DeltaTable`）、案例清单（`CaseList`）。可以在解释作用时写“对比”“诊断”等普通词，不把“榜单”“工作台”“frontier”当组件名。
+- **报告组件**：正文首次出现时写“中文名（`API 名`）”，后续可只写其中一个。实体列表固定为实验列表（`ExperimentList`）、Eval 列表（`EvalList`）、Attempt 列表（`AttemptList`）；汇总组件是运行总览（`RunOverview`）、组摘要（`GroupSummary`）；指标图形是指标表（`MetricTable`）、指标矩阵（`MetricMatrix`）、分组条形图（`MetricBars`）、成绩单（`Scoreboard`）、指标散点图（`MetricScatter`）、指标趋势图（`MetricLine`）、成对差异表（`DeltaTable`）。不把“榜单”“工作台”“frontier”当组件名。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则

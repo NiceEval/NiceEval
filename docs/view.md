@@ -71,7 +71,7 @@ niceeval view --out site              # 目录式静态导出:index.html + artif
 
 view = **报告槽 + 证据室**:
 
-- **报告槽(首页)**:恒由 `renderReportToStaticHtml` 渲染成静态 HTML,以 `<template>` 静态块烘在页面数据旁,前端只摆放不解析。宿主在报告树输出之前自动前置一条 Selection warnings 横幅(见下「横幅」)。默认填充公开导出的内置默认报告 `CostPassRateComparison`——一份普通 `ReportDefinition`,正文只摆两个组件:跨整个 Selection 的一张成本 × 通过率 `MetricScatter`(点 = experiment,系列 = agent,x = `costUSD`,y = `passRate`),下面跟一张跨整个 Selection 的 `ExperimentTable`。不分组、无 `RunOverview`、无 `CaseList`。`ExperimentTable` 一行一个 experiment,主行放短名、model/agent、四个聚合指标(平均耗时 / `passRate` / tokens / `costUSD`)与一枚判定摘要;整行原生 `<details>` 展开配置 chips、汇总 KPI、可内部滚动的逐 Eval/Attempt 诊断表和原始样例。散点在可画点数不足时不静默消失,由组件自己表态:0 个可画点渲染「无数据」空态(x/y 指标全 null),恰好 1 个可画点渲染「至少两个实验才能比较」态,2 个及以上正常绘图——text 与 web 两面表达同一事实,报告始终渲染这一块,不由报告文件的 JS 判断要不要省略。`Section` / `GroupSummary` / `RunOverview` / `CaseList` 仍是公开报告组件,自定义 `--report` 文件可用来分组、分节或铺失败清单,只是不在内置默认报告里。形态与列的完整契约见 [Reports · 内置默认报告 CostPassRateComparison](reports.md#内置默认报告-costpassratecomparison);`--report <文件>` 整槽替换。报告槽渲染两遍(en 与 zh-CN),表头排序、实验过滤、散点 hover 来自渐进增强 runtime,无 JS 时页面内容完整。
+- **报告槽(首页)**:由 `renderReportToStaticHtml` 渲染。默认报告 `CostPassRateComparison` 跨整个 Selection 摆一张成本 × 通过率 `MetricScatter`,下面是一份 `ExperimentList`;实验项展开到 Eval,再经证据引用进入 Attempt。默认报告不分组,不含 `RunOverview` / `GroupSummary` / `EvalList` / `AttemptList`。自定义报告可对三个实体列表的 `.data(selection)` 返回数组自行 `.filter()` / `.slice()` 后再传 `items`。`--report <文件>` 整槽替换。
 - **证据室**:Runs(所有 run 打平成一张表)、Traces(trace 瀑布图)两个 tab,加 `AttemptModal` 钻取(断言、错误、耗时、用量、transcript、trace)。报告槽里的数字经 `#/attempt/<snapshot>/<attempt>` 深链进来;证据室数据恒为全量,不随位置参数收窄。
 - **trace 瀑布图** —— 把 `trace.json` 画成时间轴瀑布,只读 canonical(`gen_ai.operation.name` → `kind`、`gen_ai.*`),不认任何原生 span 名,所以不同 agent 的图天然对齐、可叠加对比。
 - **Copy fix prompt(学 Next.js 16.3 的 Copy prompt)** —— 宿主壳里、报告槽上方的批量按钮:把全部失败(含 artifact 路径与修复步骤)打包成可直接粘给 coding agent 的英文修复 prompt,从 `viewData.snapshots` 现算,所以默认报告与 `--report` 两种填充下都在;`AttemptModal` 头部有单条版。实现在 `src/view/app/components/CopyControls.tsx` 的 `buildFixPrompt`。
@@ -136,7 +136,7 @@ view = **报告槽 + 证据室**:
 | 层 | 实现 |
 |---|---|
 | 读取层 | [`openResults`](results-lib.md#读openresults):版本分流与形状校验,读不了的落盘进 `skipped`(三种原因),壳渲染成横幅 |
-| 统计层 | 全部住在报告槽里:内置默认报告 `CostPassRateComparison` 只摆 `MetricScatter` 与 `ExperimentTable`,两者以 selection-form props 声明(报告作者不手动调 `.data()`),框架在渲染前的 resolve 阶段替它们调各自的计算函数(`MetricScatter.data` / `ExperimentTable.data`);口径是宿主注入的现刻水位 Selection —— `show` 与 `view` 都无条件调用同一个中性选择器 `selectCurrentResults`(`src/results/select.ts`),没有 host 专属分支 |
+| 统计层 | 全部住在报告槽里:默认报告摆 `MetricScatter` 与 `ExperimentList`;散点可走 selection-form,实验列表由 `ExperimentList.data(selection)` 生成数组后传 `items`;口径是两个宿主共同注入的现刻水位 Selection |
 | 渲染层 | 报告槽 = `renderReportToStaticHtml` 的静态 HTML(宿主前置的 `Selection.warnings` 横幅 + 官方组件 web 面 + 渐进增强 runtime + styles.css 内联);前端 React app 只承担证据室与壳(导航、界面语言、修复 prompt 按钮、skipped 横幅) |
 | 证据室 | AttemptModal / Traces / Runs / 导航壳——view 的本体,报告积木不重造它们 |
 
@@ -148,11 +148,11 @@ view = **报告槽 + 证据室**:
 
 明确裁决的取舍(是裁决,不是缺口):
 
-- **默认首页的 Experiment 钻取由独立公开组件承接。** `ExperimentTable` 与通用 `MetricTable` 是两种数据形状:前者的父行是 experiment 摘要,展开区是配置、KPI、逐 Eval/Attempt 证据和 raw sample;后者仍负责任意维度 × 指标的通用表格与同构 `expand`。内置默认报告使用前者,自定义报告作者也能摆同一个 `ExperimentTable`(直接给 `selection` 走 selection-form,或传预计算 `data`);单条证据仍经 `AttemptRef` 深链进 `AttemptModal`。
+- **实体钻取由三级列表承接。** `ExperimentList`、`EvalList`、`AttemptList` 分别固定展示 experiment、experiment × Eval、Attempt;`.data(selection)` 返回普通数组,作者过滤后传 `items`。`MetricTable` 只负责任意维度 × 指标,没有实体展开职责。
 - **跨块全局搜索不做。** 过滤是每张表自己的 filter 框(渐进增强的浏览态);要固定口径的收窄,用位置参数前缀或自定义报告的计算参数。
 - **「一次看一组」不迁移。** 内置默认报告是跨整个 Selection 的一张散点加一张实验表,不按实验组分节;只想看一组时用位置参数前缀收窄 Selection,不做组选择器这类界面状态(需要分组分节的报告用自定义 `--report`,`Section` / `GroupSummary` 仍是可用组件)。
 
-界线:**view = 报告槽 + 证据室**。报告槽默认装内置默认报告 `CostPassRateComparison`——它没有特权,就是报告契约的出厂预设,一份普通 `ReportDefinition`,作为值公开导出;`niceeval view --report <文件>` 整槽替换。想要「官方摆法 + 自己口径」,在自己的报告文件里摆同一批公开组件(`MetricScatter` / `ExperimentTable`,给 `selection` 即可),不做 tab 管理、不做注册表,详见 [Reports](reports.md)。证据室(AttemptModal / Traces / 导航壳)是 view 本体,报告块经 `attemptRef` 深链进来。view 仍不长配置、不长插件——报告文件是显式路径递进来的宿主语言模块,不是插件;要自己的 React 组件,宿主仍是你自己的页面([Reports](reports.md)),零件是同一批。
+界线:**view = 报告槽 + 证据室**。报告槽默认装 `CostPassRateComparison`;自定义报告可复用 `MetricScatter` / `ExperimentList` 或另摆 Eval、Attempt 列表。证据室仍由 Attempt 引用深链进入,view 不长列表过滤配置。
 
 ## 相关阅读
 
