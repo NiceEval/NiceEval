@@ -8,14 +8,14 @@ Coding agent 可以独立完成两类工作：根据需求编写 NiceEval 配置
 
 ## 先让 AI 读安装版本的文档
 
-NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录。AI 应该读取 `node_modules/niceeval/docs-site/zh/`，而不是依赖训练数据或网上另一个版本的示例。这样 API、CLI 和安装版本始终一致。
+NiceEval 把中文文档发布在 npm 包的 `docs-site/zh/` 目录，并在包根提供只给 AI 使用的 `INDEX.md`。AI 应该先读取 `node_modules/niceeval/INDEX.md`，再由索引进入当前任务需要的页面，而不是依赖训练数据或网上另一个版本的示例。这样 API、CLI 和安装版本始终一致；文档重组时也只需要更新随包索引。
 
 `npx niceeval init` 会初始化配置，并把一段托管指引写进项目的 `AGENTS.md`。如果项目只有 `CLAUDE.md`，则写入 `CLAUDE.md`；两份文件都不存在时，新建 `AGENTS.md`。升级 NiceEval 后再运行一次 `init`，即可刷新托管区块。
 
 给 AI 的起始任务可以直接写成：
 
 ```text
-先读取 node_modules/niceeval/docs-site/zh/ 下与当前任务有关的文档，
+先读取 node_modules/niceeval/INDEX.md，再按索引读取当前任务需要的文档，
 再根据需求编写 niceeval.config.ts、experiment 和 eval。
 不要根据训练数据猜 NiceEval 的 API。
 ```
@@ -148,7 +148,7 @@ AI 应先执行失败项给出的 `niceeval show <eval id>`，不要从头解析
 可以把下面的协议放进任务描述。它既适合优化被测实现，也适合调试 Eval：
 
 ```text
-读取 node_modules/niceeval/docs-site/zh/ 中与任务有关的文档。
+读取 node_modules/niceeval/INDEX.md，再按索引读取与任务有关的文档。
 运行 npx niceeval exp local，并根据退出码和失败摘要决定下一步。
 对每个失败的 Eval，先运行 niceeval show <eval-id>；再按问题选择
 --transcript、--trace 或 --diff。写出失败原因的假设，并判断应该修改被测程序、

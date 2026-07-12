@@ -121,6 +121,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 设计决定
 
+- [ai-bundled-docs-root-index](ai-bundled-docs-root-index.md) — 裁决：AI 随包文档以 npm 包根 `INDEX.md` 为稳定路由入口，不放进 Mintlify 内容树；INIT 与托管指引只依赖该入口
 - [terminology-overhaul-2026-07](terminology-overhaul-2026-07.md) — 术语大改名裁决(两批):Outcome→Verdict(经 Conclusion 同日翻案,eve/TTCN-3 先例)、Backend→Provider、早停→首过即停(代码名不动)、Judge/Attempt/Turn/artifact/Selection 中文直用、值断言/严重度/dual-render、结果快照限定语;多义词逐语境甄别纪律
 - [sandbox-field-no-bare-string](sandbox-field-no-bare-string.md) — `sandbox` 字段只接受工厂产出的 SandboxSpec:不接受裸字符串、没有默认值、没有自动探测(用户 review 明确定案)
 - [registermcp-post-hoc-primitive](registermcp-post-hoc-primitive.md) — 翻案裁决:不提供后置追加 MCP 原语,`shared.registerMcp` 当日落地当日撤销;MCP 只走 factory 构造期,条件包装器应接收 factory 而不是已构造 Agent

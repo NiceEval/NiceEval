@@ -60,6 +60,7 @@
     "./report/react/enhance.js": "./src/report/react/enhance.js"
   },
   "files": [
+    "INDEX.md",
     "src",
     "bin",
     "docs-site/zh",
