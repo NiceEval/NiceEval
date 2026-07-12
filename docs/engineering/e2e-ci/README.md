@@ -35,7 +35,7 @@ e2e 从 tier1 拷的是**被测应用和 adapter**(各 SDK 真正不同的部分
 ### 框架侧对 CI 重要的事实(源码已确认)
 
 - **退出码**:按 eval 级折叠判定(任一 attempt 通过 → 该 eval 通过,`foldEvalVerdict`;被 runs+earlyExit 重试吸收的失败不计红)——折叠后全过/跳过 → 0;任一 eval failed 或 errored → 1;框架崩溃 → 2(`src/cli.ts` 末尾 + `src/shared/verdict.ts`)。CI 判成败首选退出码,细分读落盘的每个 attempt `result.json`(注意判决只逐条记在 attempt 级,没有 run 级的 passed/failed 聚合字段,见 `memory/cli-exit-code-attempt-level-not-eval-level.md`)。
-- **指纹缓存会静默跳过上次 passed 的 eval**(`src/runner/run.ts` 的 `run()`,匹配逻辑在文件开头 ~60 行附近,以 `cacheKey`/`computeFingerprint` 为核心)。CI 必须加 `--force`,或保证 `.niceeval/` 不跨 run 复用,否则回归会被缓存掩盖。
+- **指纹缓存会静默跳过上次 passed 的 eval**(`src/runner/run.ts` 的 `runEvals()`,以 `cacheKey`/`computeFingerprint` 为核心)。CI 必须加 `--force`,或保证 `.niceeval/` 不跨 run 复用,否则回归会被缓存掩盖。
 - **judge 无 key 时 no-op**(`src/scoring/judge.ts` 的 `resolveJudge()`/`buildJudge()`,`if (!resolved.apiKey) return noOpJudge()`):不配 judge key,`t.judge.autoevals.*` 断言静默跳过、不判红。e2e 里"judge 真的在判"必须显式配 judge key 验证,不能靠这条 no-op 蒙混过关——这一点和是否用真实模型无关,是两个独立的开关。
 - **可用 flags**:`--runs`、`--no-early-exit`、`--force`、`--junit <path>`、`--json <path>`(RunSummary 落成 JSON)、`--strict`、`--max-concurrency`。**不要用** `--reporter`(不存在)、`--agent`/`--model`(exp 下报错)、`--sandbox`/`--watch`(不存在,按未知 flag 报错)。
 - **`runs` 的语义**:每个 `(agent × model × eval)` 组合跑 `runs` 次;被 earlyExit abort 的 attempt 不计入分母。

@@ -23,7 +23,7 @@
 
 核心调度用 `Effect.forEach({ concurrency: "unbounded" })` + **两级信号量**实现:每个 attempt 立刻有自己的 fiber,但执行体要先过实验级闸(`ExperimentDef.maxConcurrency`,可选)、再占全局 permit(全局 `maxConcurrency`)才真正开跑。实验级闸只让该实验自己的 attempt 排队,同批其它实验照常并发——串行化有共享状态的实验(如跨 eval 累积记忆,`maxConcurrency: 1`)不再拖慢整批基线。报告回调走 **permit=1 的信号量串行化**,不阻塞执行 fiber。结果最后按**发现顺序**排序(而非完成顺序),让输出稳定可 diff。
 
-全局并发上限来源:`--max-concurrency` → 配置 `maxConcurrency` → 默认。沙箱型受沙箱 provider 容量约束(本地 Docker 别开太高;云 provider 可大)。实验文件里的 `maxConcurrency` 不参与全局解析,只在该实验内部限流。
+全局并发上限来源:`--max-concurrency` → 配置 `maxConcurrency` → **该沙箱 provider 的推荐默认值**。推荐值反映的是 **provider 侧**约束(daemon 容量、API 配额、session 池大小),不是你的 agent API 限速——后者自己用 `--max-concurrency` 压。「云的就能开大」这个直觉是错的:`docker` 10(本地 daemon 建容器有开销)、`e2b` 20(账户配额的保守估计)、**`vercel` 1**(sandbox session 并发限制严,再高就 429),自定义 provider 取它自己声明的 `recommendedConcurrency`(省略则 5)。实验文件里的 `maxConcurrency` 不参与这条全局解析,只在该实验内部限流。
 
 ## 矩阵展开与通过率
 
