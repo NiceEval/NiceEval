@@ -54,7 +54,7 @@ export interface InputRequest {
 }
 
 /**
- * 标准事件流的词汇(对标 docs/agents-and-adapters.md)。adapter 唯一的硬活就是把
+ * 标准事件流的词汇(对标 docs/feature/adapters/contract.md)。adapter 唯一的硬活就是把
  * 各 agent 五花八门的原始 transcript 映射成 StreamEvent[];映射完,整套断言免费。
  */
 export type StreamEvent =

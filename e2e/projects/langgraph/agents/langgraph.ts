@@ -9,7 +9,7 @@
 //   · HITL:`tool-approval-request` → input.requested + waiting,停轮现场(还开着的流 +
 //     挂起的 toolCallId)用 ctx.session.hold 存住,回答轮 ctx.session.take 取回接着读。
 //
-// 只接 send,不接 OTel——e2e 不测瀑布图(docs/e2e-ci.md 第 9 节);带 OTel 的完整
+// 只接 send,不接 OTel——e2e 不测瀑布图(docs/engineering/e2e-ci/README.md 第 9 节);带 OTel 的完整
 // 接入示例见 examples/zh/tier2/langgraph/。
 import { defineAgent, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, SseFrameCursor } from "niceeval/adapter";

@@ -4,7 +4,7 @@
 // (renderReportSlot:裸跑填充 CostPassRateComparison,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
 // --report 只换报告定义,注入的 Selection 与裸跑同一份。统计口径整体住在报告槽里
 // (报告组件的官方计算函数),viewData 不再携带 overview / 榜单这类统计产物,
-// 见 docs/view.md「用 Reports 积木重建 view」。
+// 见 docs/feature/reports/view.md「打开与收窄」。
 
 import { statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -44,7 +44,7 @@ export interface ViewScan {
   reportHtml: ReportSlotHtml;
 }
 
-/** view 宿主输入的组合语义(与 show 对齐,docs/reports.md「宿主输入的组合语义」)。 */
+/** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Selection 是计算入口」)。 */
 export interface ViewScanOptions {
   /** eval id 前缀(位置参数):收窄报告槽 Selection;证据室(快照明细)不收窄,深链恒可达。 */
   patterns?: string[];
@@ -75,7 +75,7 @@ export function incompatibleViewCommand(run: IncompatibleRun): string | undefine
 export function incompatibleHint(run: IncompatibleRun): string {
   const command = incompatibleViewCommand(run);
   if (command === undefined) {
-    // 第三方 harness:如实报名字和版本,不拼 npx(docs/results-lib.md 的裁决)。
+    // 第三方 harness:如实报名字和版本,不拼 npx(docs/feature/results/library.md 的裁决)。
     return t("cli.view.incompatibleForeign", {
       dir: run.dir,
       name: run.producer?.name ?? "?",
@@ -154,7 +154,7 @@ export async function loadLatestResultsPerEval(root = ".niceeval"): Promise<Eval
  * 报告槽 Selection 恒经 selectCurrentResults 合成(现刻水位;与 `niceeval show` 调同一个
  * 函数,裸跑与局部收窄不分叉),位置前缀 / --experiment 只作为 scope 传入,不切换选择口径。
  * --report 本身不改挑选——它只换报告槽的填充,注入的 Selection 与裸跑同一份,
- * 「裸跑 ≡ --report <CostPassRateComparison>」靠这条成立(docs/reports.md「宿主输入的组合语义」)。
+ * 「裸跑 ≡ --report <CostPassRateComparison>」靠这条成立(docs/feature/reports/architecture.md「Selection 是计算入口」)。
  * 证据室数据(快照明细 / skipped)恒为全量,深链在任何收窄下都可达。
  * 零可读结果一律抛 ViewInputError,不渲染/导出空页面(server 起不来,--out 非零退出)。
  */

@@ -1,4 +1,4 @@
-// flag():把 experiment 声明的 flags 当维度或轴(docs/reports.md「flags 与新摆法」)。
+// flag():把 experiment 声明的 flags 当维度或轴(docs/feature/reports/library.md「维度与 flags」)。
 // 变量来自配置,不来自命名 —— 报告不解析 experiment id 字符串抠变量。
 
 import type { FlagRef } from "./types.ts";

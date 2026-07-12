@@ -1,5 +1,5 @@
 // e2e 回归:SandboxSpec.setup()/.teardown() 生命周期钩子 + ctx.experimentId(见
-// docs/sandbox.md「沙箱钩子」)。跑一遍真实 CLI(`niceeval exp`)对着一个内存假
+// docs/feature/sandbox/library.md「沙箱生命周期钩子」)。跑一遍真实 CLI(`niceeval exp`)对着一个内存假
 // Sandbox(defineSandbox() 自定义 provider,不起真容器/microVM),用一份追加日志断言:
 //   1. 全序:sandbox.setup(a,b) → agent.setup → send → agent.teardown →
 //      sandbox.setup 返回的 cleanup(LIFO)→ sandbox.teardown(逆序)。
@@ -58,7 +58,7 @@ async function readLog(): Promise<LogLine[]> {
     .map((line) => JSON.parse(line) as LogLine);
 }
 
-// 落盘布局(Results Format schemaVersion 4,见 docs/results-format.md)是
+// 落盘布局(Results Format schemaVersion 4,见 docs/feature/results/architecture.md)是
 // .niceeval/<experiment>/<timestamp-rand>/snapshot.json + <evalId>/a<n>/result.json,
 // 每个实验一个快照目录。这条 fixture 一次跑两个实验(order + error),所以要
 // **每个实验取最新快照**再合并 result.json,逐条补回 experimentId(快照级字段,

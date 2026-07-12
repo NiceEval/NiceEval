@@ -72,7 +72,7 @@ export function defineConfig(config: Config): Config {
 }
 
 // ───────────────────────── Sandbox 工厂 ─────────────────────────
-// Sandbox 与 agent 一样用数据结构带参数(见 docs/sandbox.md)。这些工厂只是把
+// Sandbox 与 agent 一样用数据结构带参数(见 docs/feature/sandbox/library.md)。这些工厂只是把
 // provider + 参数包成 spec 对象;真正的行为在 sandbox/<provider>.ts 里,由 resolve.ts 派发。
 //
 // 四个工厂都要挂上 `.setup()` / `.teardown()` 链式方法(见 sandbox/types.ts 的

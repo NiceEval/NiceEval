@@ -1,4 +1,4 @@
-// copySnapshots:把选中快照按格式感知地复制到另一个目录(定稿见 docs/results-lib.md「复制与瘦身」)。
+// copySnapshots:把选中快照按格式感知地复制到另一个目录(定稿见 docs/feature/results/library.md「复制与瘦身」)。
 //
 // 发布场景的原语:只带指定 artifact、只带选中快照的全部 attempt,布局知识不外泄。
 // artifact 复制忠实于源(copyFile 原字节,不重新序列化、不消毒);snapshot.json / result.json
@@ -19,7 +19,7 @@ import type { ArtifactKind, AttemptHandle, Selection, Snapshot, SnapshotMeta } f
 import { ARTIFACT_KINDS } from "./types.ts";
 
 export interface CopySnapshotsOptions {
-  /** 要带上的 artifact 种类;省略 = 全部六类。diff 可达百 MB,发布时常见地不带;o11y 只有几 KB,报告用 turns 这类 artifact 档指标(见 docs/reports.md「两档内置指标」)时记得带上。 */
+  /** 要带上的 artifact 种类;省略 = 全部六类。diff 可达百 MB,发布时常见地不带;o11y 只有几 KB,报告用 turns 这类 artifact 档指标(见 docs/feature/reports/library.md「内置指标」)时记得带上。 */
   artifacts?: ArtifactKind[];
 }
 
@@ -203,7 +203,7 @@ async function findArtifactFiles(
           break;
         }
       } catch {
-        // 缺文件跳过:某类数据为空本来就不生成对应 JSON(docs/results-format.md)。
+        // 缺文件跳过:某类数据为空本来就不生成对应 JSON(docs/feature/results/architecture.md)。
       }
     }
   }

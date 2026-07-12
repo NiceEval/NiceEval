@@ -1,5 +1,5 @@
 // niceeval/report 计算层的单元测试:全部用内存 fake(Snapshot / AttemptHandle 按
-// niceeval/results 的读取契约手工构造),专门覆盖 docs/reports.md 点名的坑 ——
+// niceeval/results 的读取契约手工构造),专门覆盖 docs/feature/reports/architecture.md 点名的坑 ——
 // 两级聚合 vs 平铺、pass@k、examScore 空真、skipped 稀释、scoreboard 固定分母与
 // 最长前缀、scatter/delta 的 null 语义、快照键对比、flag 维度与轴、
 // cases 的 redact/truncated、身份键去重、Selection warnings 随行。
@@ -738,7 +738,7 @@ describe("MetricTable.data", () => {
 });
 
 // ───────────────────────── reasonFor(原因优先级)─────────────────────────
-// docs/reports.md「原因摘要」口径:error → skipReason → 未通过的 gate 断言。
+// docs/feature/reports/show.md 裸 `show` 的 RESULT 列口径:error → skipReason → 未通过的 gate 断言。
 // ExperimentList / EvalList 的 evalRows.reason、AttemptList 的 attemptItemReason 都port这同一份材料,
 // 这里直接测 reasonFor 本身,不必再经 MetricTable 之类的中间组件绕一圈。
 

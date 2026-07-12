@@ -1,4 +1,4 @@
-// 判定:把执行结果 + 断言 + 跳过原因折叠成一个 Verdict(见 docs/scoring.md)。
+// 判定:把执行结果 + 断言 + 跳过原因折叠成一个 Verdict(见 docs/feature/scoring/README.md)。
 
 import type { AssertionResult, Verdict } from "../types.ts";
 

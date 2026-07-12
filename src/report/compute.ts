@@ -4,7 +4,7 @@
 // 这些函数不做顶层导出,而是挂在对应组件上(MetricTable.data / Scoreboard.data …,
 // 见 components.tsx):配对打点即发现,泛化名不占顶层导出。
 //
-// 共同约定(docs/reports.md「边界与不变量」):
+// 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
 // - 第一参收 Selection | Snapshot[];收 Selection 时 warnings 随行进 OverviewData;
 // - 聚合前按身份键去重(dedupeAttempts;missing-startedAt 不去重、如实保留、不透出警告);
 // - null ≠ 0:缺数据不编数,覆盖率经 samples/total 如实暴露;
@@ -245,7 +245,7 @@ export async function tableData<const M extends readonly Metric[]>(
 //
 // 三个实体列表逐级下钻(experiment → experimentId × eval → attempt),固定展示实体事实,
 // 没有列配置;过滤是报告作者对返回数组调用 .filter()/.slice() 的事,不进这里
-// (docs/reports.md「实体列表与指标表不重叠」)。AttemptListItem 是三者共用的叶子形状——
+// (docs/feature/reports/library.md「实体列表」)。AttemptListItem 是三者共用的叶子形状——
 // ExperimentList / EvalList 的下钻数组直接复用它,不各自精简一份。
 
 /**

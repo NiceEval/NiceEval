@@ -1,4 +1,4 @@
-// e2e 共享 eval 套件:全部是参数化 factory,单一事实来源(见 docs/e2e-ci.md 第 3 节)。
+// e2e 共享 eval 套件:全部是参数化 factory,单一事实来源(见 docs/engineering/e2e-ci/README.md 第 3 节)。
 // 断言逻辑改这里、全矩阵生效;各 SDK 的协议差异(工具名、usage、HITL 支持)只从 profile 进来。
 // 提示词纪律沿用 tier1 的教训:不提"审批"二字(有的模型会改用文字反问而不发起工具调用),
 // 对 coding agent 显式说明"不用跑命令"(否则纯问答也可能顺手探索工作目录)。
@@ -332,7 +332,7 @@ export function runCommand(p: AgentProfile) {
 
 /**
  * 沙箱冒烟:让 agent 建一个指定内容的文件,验证"沙箱起得来、agent 装得上、transcript 读得回"——
- * 不考模型能力,提示词简单到几乎不可能失败(docs/e2e-ci.md §4.2 对 sandbox-smoke 的原始要求)。
+ * 不考模型能力,提示词简单到几乎不可能失败(docs/engineering/e2e-ci/README.md §4.2 对 sandbox-smoke 的原始要求)。
  */
 export function sandboxSmoke(p: AgentProfile) {
   if (!p.sandboxTools) throw new Error("sandboxSmoke eval requires profile.sandboxTools");

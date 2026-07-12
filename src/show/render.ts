@@ -213,8 +213,8 @@ export function capabilityLetters(capabilities: AttemptEvidenceCapabilities): st
  * `report/compute.ts::attemptRow` 的 `hasEvidence` 同一个「只认瘦身字段」的口径(它同样只用
  * `hasEvents` / `hasTrace`,同样不读 diff.json)。`diff` 位没有对应的瘦身字段(不像
  * events/trace/sources,写入面从不给 diff 算一个 has* 布尔),而 diff.json 可达上百 MB,
- * 不该为了这一个字母在渲染路径上打开它(见 docs/reports.md「可达百 MB 的 diff 永远不该在
- * 渲染路径上被读」)——因此这里恒报 `false`;只有 `loadAttemptEvidence()` real 出的
+ * 不该为了这一个字母在渲染路径上打开它(见 docs/feature/reports/architecture.md「计算与
+ * 渲染分离」)——因此这里恒报 `false`;只有 `loadAttemptEvidence()` real 出的
  * capabilities(单 attempt 路径,如 `@<locator>` 全景)才知道真实答案。
  */
 export function cheapCapabilities(result: EvalResult): AttemptEvidenceCapabilities {

@@ -1,5 +1,5 @@
 // show / view 宿主等价契约(设计契约:plan/show-view-equivalence.md 完成定义;
-// docs/reports.md「宿主输入的组合语义」;docs/results-lib.md「选择快照」)。
+// docs/feature/reports/architecture.md「Selection 是计算入口」;docs/feature/results/library.md「选择快照」)。
 //
 // 守护的不变量:同一结果根、同一组范围参数下,两扇门(niceeval show 的 text 面、
 // niceeval view 的 web 面)的报告槽收到同一份现刻水位 Selection,并按同一公式算出同一批事实。
@@ -16,7 +16,7 @@
 //     横幅在/不在,防止某一宿主在下游偷换公式或吞掉 warning。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
-// 依据 docs/results-format.md 的稳定磁盘契约(与 show.test.ts / view/data.test.ts 同一写法)。
+// 依据 docs/feature/results/architecture.md 的稳定磁盘契约(与 show.test.ts / view/data.test.ts 同一写法)。
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -59,7 +59,7 @@ function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}):
   return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
 }
 
-/** 实验目录名清洗:与 docs/results-format.md 一致(/ 与非 [\w.@-] 换成 _)。 */
+/** 实验目录名清洗:与 docs/feature/results/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
 function cleanDirName(id: string): string {
   return id.replace(/[^\w.@-]/g, "_");
 }

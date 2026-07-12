@@ -92,7 +92,7 @@ export interface SandboxHooks<Self> {
 }
 
 /**
- * Sandbox 的「数据结构」定义 —— 与 agent 一样可带参数(见 docs/sandbox.md)。
+ * Sandbox 的「数据结构」定义 —— 与 agent 一样可带参数(见 docs/feature/sandbox/library.md)。
  * 必须用工厂函数构造(`dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` / `defineSandbox()`),
  * 放进 config / experiment 的 `sandbox` 字段 —— 字段类型只接受这个数据结构,不接受裸字符串。
  * 各 provider 的参数互不相同 —— 这是个按 `provider` 区分的可辨识联合(discriminated union)。

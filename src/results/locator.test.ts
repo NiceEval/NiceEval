@@ -1,4 +1,4 @@
-// AttemptLocator 单测(定稿见 docs/reports.md「AttemptLocator」、docs/concepts.md「Attempt 定位符」):
+// AttemptLocator 单测(定稿见 docs/feature/results/library.md「按 locator 寻址一个 attempt」、docs/concepts.md「Attempt 定位符」):
 // 确定性编码、字段敏感(任一身份字段变化都换 locator)、@ 前缀与定长 base36 格式、decode 的语法
 // 校验分支、大批量下的实际无撞车、buildLocatorIndex 的撞车检测(用可注入的 encode 强制制造撞车,
 // 不依赖真实哈希小概率碰撞)与「相同身份重复出现不算撞车」(--resume 携带条目跨快照复现同一身份的场景)、

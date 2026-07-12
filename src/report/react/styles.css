@@ -1,6 +1,6 @@
 /*
  * niceeval/report/react/styles.css —— 随包发布的默认样式。
- * 契约(docs/reports.md「四条跨组件契约」):
+ * 契约(docs/feature/reports/architecture.md「静态网页」):
  *   - 所有节点都有稳定的 nre-* 类名;这份 CSS + 类名 = 静态页零依赖成立;
  *   - 要定制,在本文件之后加载自己的覆盖即可,不需要构建工具;
  *   - 令牌体系与 view 同观感:.nre 作用域下自带 light-dark() 令牌(值抄

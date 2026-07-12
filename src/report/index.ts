@@ -1,5 +1,5 @@
 // niceeval/report —— 报告积木:指标 × 计算函数 × 双面组件 × defineReport。
-// 契约见 docs/reports.md;公开叙事的准绳是 docs-site/zh/guides/custom-reports.mdx
+// 契约见 docs/feature/reports/README.md;公开叙事的准绳是 docs-site/zh/guides/custom-reports.mdx
 // 与 report-components.mdx。
 //
 // import 边界即运行时边界:计算函数(挂在组件上的 .data)会经句柄触碰文件系统

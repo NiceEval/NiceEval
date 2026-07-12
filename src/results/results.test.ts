@@ -1,5 +1,5 @@
 // niceeval/results 的单测:临时目录里构造最小 snapshot.json / result.json / artifact fixture,
-// 覆盖定稿契约(docs/results-lib.md、docs/results-format.md):分层读取(含快照级字段注入)、
+// 覆盖定稿契约(docs/feature/results/library.md、docs/feature/results/architecture.md):分层读取(含快照级字段注入)、
 // 懒加载与 artifactBase 回退、skipped 三种原因、unfinished-snapshot、latest() 三种警告、
 // Selection.filter 修剪、dedupeAttempts 身份键、writer(独占目录、并发快照互不干扰、
 // snapshot.json 键形状、writeAttempt/writeAttemptFor、finish 幂等)、copySnapshots(布局、

@@ -1,4 +1,4 @@
-// e2e 共享 experiment factory(docs/e2e-ci.md 第 4 节的 L0 档):
+// e2e 共享 experiment factory(docs/engineering/e2e-ci/README.md 第 4 节的 L0 档):
 // runs: 3 + earlyExit 吸收真实模型的单次抖动;连续 3 次不过的是真回归,矩阵照样红。
 // verdicts 实验只排 deliberate-* fixture,由 verify.mjs 以"期望 exit 1"消费。
 import { defineExperiment } from "niceeval";

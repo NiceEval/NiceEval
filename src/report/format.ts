@@ -1,4 +1,4 @@
-// unit 驱动的内置格式化(docs/reports.md「指标与聚合」):
+// unit 驱动的内置格式化(docs/feature/reports/library.md「指标」):
 //   "%" → 87%    "ms" → 1.2s    "$" → $0.31    其余 → 1.2k 缩写(带 unit 后缀)
 // metric.display 可整体覆盖;这里只负责默认。
 
@@ -52,7 +52,7 @@ export function formatPlainNumber(value: number): string {
 // ── 以下是两个渲染面共用的展示格式化:MetricCell 一律自带 display(格式化发生在
 //    计算侧),渲染面不重算;这里只服务 OverviewData 这类携带裸数字的字段。──
 
-/** 全 null / 无样本的统一文案。绝不画 0(docs/reports.md「null ≠ 0」)。 */
+/** 全 null / 无样本的统一文案。绝不画 0(docs/feature/reports/architecture.md「指标聚合不变量」)。 */
 export const MISSING_TEXT = "no data";
 
 /** 毫秒 → 人读耗时("850ms" / "1.2s" / "4m 20s" / "1h 4m")。 */

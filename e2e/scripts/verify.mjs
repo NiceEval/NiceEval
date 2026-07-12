@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// e2e 的"真正的测试"(docs/e2e-ci.md 第 5 节):把 niceeval CLI 当黑盒子进程跑,
+// e2e 的"真正的测试"(docs/engineering/e2e-ci/README.md 第 5 节):把 niceeval CLI 当黑盒子进程跑,
 // 对照期望表校验退出码 + summary.json。eval 只是 fixture,判红判绿的责任在这里。
 //
 // 前置:e2e/apps 下对应的被测应用已经在跑(CI workflow 或本地开发者自己起,eval 不代管进程)。
-// 沙箱矩阵(claude-code / codex 两行,见 docs/e2e-ci.md §4.2)不需要被测应用,前置换成
+// 沙箱矩阵(claude-code / codex 两行,见 docs/engineering/e2e-ci/README.md §4.2)不需要被测应用,前置换成
 // 本机 docker daemon 可用。
 // 用法:node e2e/scripts/verify.mjs [项目名过滤,如 ai-sdk-v7 或 claude-code]
 import { spawn } from "node:child_process";
@@ -18,7 +18,7 @@ const repoRoot = join(e2eRoot, "..");
 const BIN = join(repoRoot, "bin", "niceeval.js");
 
 // 期望表:每行 = 一次 CLI 调用。evals = 按 profile 算出的期望 eval 数(防"少排用例还全绿",
-// 见 docs/e2e-ci.md 3.1"防静默失配");ci 期望全绿 exit 0,verdicts 期望 exit 1 且一红一炸。
+// 见 docs/engineering/e2e-ci/README.md 3.1"防静默失配");ci 期望全绿 exit 0,verdicts 期望 exit 1 且一红一炸。
 const PLAN = [
   { project: "ai-sdk-v7",  exp: "ci",       port: 34001, expectExit: 0, evals: 8, allPass: true },
   { project: "ai-sdk-v7",  exp: "verdicts", port: 34001, expectExit: 1, evals: 2, failedAtLeast: 1, erroredAtLeast: 1 },
@@ -31,7 +31,7 @@ const PLAN = [
   { project: "codex-sdk",  exp: "ci",       port: 31001, expectExit: 0, evals: 5, allPass: true },
   { project: "codex-sdk",  exp: "verdicts", port: 31001, expectExit: 1, evals: 2, failedAtLeast: 1, erroredAtLeast: 1 },
 
-  // L1 沙箱矩阵(docs/e2e-ci.md §4.2):claude-code / codex 内置 agent × dockerSandbox()。
+  // L1 沙箱矩阵(docs/engineering/e2e-ci/README.md §4.2):claude-code / codex 内置 agent × dockerSandbox()。
   // 没有被测应用进程要等,前置条件换成"docker daemon 可用";ci 组跑基线 agent(不装
   // skills/MCP),features 组跑挂了 skills+MCP 的 agent(只含 "feature-" 前缀的正例)。
   { project: "claude-code", exp: "ci",       docker: true, expectExit: 0, evals: 8, allPass: true },

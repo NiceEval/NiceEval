@@ -2,7 +2,7 @@
   "name": "niceeval-e2e",
   "private": true,
   "type": "module",
-  "description": "e2e CI 套件:共享 eval/experiment factory + 每个 SDK 一个薄项目(见 docs/e2e-ci.md)",
+  "description": "e2e CI 套件:共享 eval/experiment factory + 每个 SDK 一个薄项目(见 docs/engineering/e2e-ci/README.md)",
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.198",
     "@earendil-works/pi-agent-core": "0.80.3",

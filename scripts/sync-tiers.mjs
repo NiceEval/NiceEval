@@ -5,10 +5,10 @@
 //                               name 匹配 to 目录的 basename,会带上该应用整条链
 //   pnpm tiers:check         —— 只读检查：baseTree 是否落后、冲突标记、verbatim 铁律
 //
-// 设计与实现细节见 docs/tier-sync.md。合并机制 100% 由 `git merge-tree --write-tree`
+// 设计与实现细节见 docs/engineering/example-tier-sync/README.md。合并机制 100% 由 `git merge-tree --write-tree`
 // 提供（需要 git ≥ 2.38），本脚本只做状态文件读写、检出、冲突上报和 lockfile 重装的粘合。
 //
-// 三个关键设计（docs/tier-sync.md「如何实现」有完整推导）：
+// 三个关键设计（docs/engineering/example-tier-sync/README.md「如何实现」有完整推导）：
 // · lockfile 不进合并：pnpm-lock.yaml 完全由各 tier 自己的 `pnpm install` 生成,合并它
 //   只会制造假冲突、并让链式 baseTree 永远对不上——所以三棵输入树都先剥掉 lockfile
 //   再合并,baseTree 记的也是剥掉之后的 tree。

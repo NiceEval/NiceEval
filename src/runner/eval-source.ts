@@ -1,5 +1,5 @@
 // Eval 源码捕获:discovery 时读一次 eval 定义文件、归一化、算 SHA-256(定稿见
-// docs/concepts.md「标注 Eval 源码」、docs/reports.md「保存运行时 Eval 源码并标注断言」)。
+// docs/concepts.md「标注 Eval 源码」、docs/feature/results/architecture.md「sources.json」)。
 //
 // 目标形态是"发现时捕获,同一快照内相同内容只存一份"——本函数只做捕获这一步(读 + 归一化 +
 // 哈希),不碰去重存储、不写 result.json、不改 discoverEvals()。它的产物形状是为了让后续

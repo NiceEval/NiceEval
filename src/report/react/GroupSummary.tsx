@@ -1,7 +1,7 @@
 // GroupSummary:一组 experiment(如自定义报告里同一 <Section> 内的全部 experiment)的
 // 紧凑摘要块——恢复旧 GroupSelector 卡片的信息密度(通过率、experiment/eval 数、failed、
 // errored、总成本、最后运行时间),但只渲染 GroupSummaryData 算好的 MetricCell / 计数,
-// 不现场重算比例(docs/reports.md「组摘要」)。errored 为 0 时省略该片段(旧卡片同一姿态),
+// 不现场重算比例(docs/feature/reports/library.md「GroupSummary」)。errored 为 0 时省略该片段(旧卡片同一姿态),
 // 但这只是渲染取舍——数据侧 verdicts.errored 字段本身永不省略。
 
 import type { ReactElement } from "react";

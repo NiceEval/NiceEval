@@ -67,14 +67,14 @@ export interface EvalResult {
 /** `snapshot.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
 export const RESULTS_FORMAT = "niceeval.results";
 /**
- * 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本。见 docs/results-format.md。
+ * 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本。见 docs/feature/results/architecture.md。
  * `5`(见 memory 的 attempt-locator-and-source-dedup 条目)= result.json 新增 `locator` 字段;
  * `sources.json` 从逐 attempt 内联全量内容改为「attempt 级引用 + 快照级 `sources/<sha256>.json`
  * 去重仓库」,`AttemptHandle.sources()` 的公开返回形状不变(仍是 `SourceArtifact[] | null`)。
  */
 export const RESULTS_SCHEMA_VERSION = 5;
 
-/** 一次运行的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 docs/results-format.md。 */
+/** 一次运行的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 docs/feature/results/architecture.md。 */
 export interface RunSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;

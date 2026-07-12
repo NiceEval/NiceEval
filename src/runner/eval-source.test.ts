@@ -1,4 +1,4 @@
-// captureEvalSource 的单测(定稿见 docs/reports.md「保存运行时 Eval 源码并标注断言」)。
+// captureEvalSource 的单测(定稿见 docs/feature/results/architecture.md「sources.json」)。
 // 覆盖:哈希确定性、path 相对 root 计算、CRLF/BOM 归一化行为、与 results/source-hash.ts
 // 算法保持一致(两处哈希必须逐字节相同,见 eval-source.ts 顶部注释)。
 

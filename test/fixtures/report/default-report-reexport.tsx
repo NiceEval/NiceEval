@@ -1,6 +1,6 @@
 // 等价性测试夹具:原样 re-export 内置默认报告 CostPassRateComparison。
 // 用它验证 `niceeval view` ≡ `niceeval view --report <CostPassRateComparison>` ——
-// 内置报告是公开导出的普通 ReportDefinition,没有私有通道(docs/reports.md)。
+// 内置报告是公开导出的普通 ReportDefinition,没有私有通道(docs/feature/reports/architecture.md)。
 //
 // 走包名自引用(niceeval/report,真实用户 --report 文件的路子),不是相对路径进 src/ ——
 // 报告运行时以预编译产物发布(dist/report/**,见 tsconfig.report-build.json),裸跑走的

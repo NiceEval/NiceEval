@@ -1,5 +1,5 @@
 // openResults:扫描结果目录,返回「实验 → 快照 → eval → attempt」的类型化层次
-// (定稿见 docs/results-lib.md「读:openResults」、docs/results-format.md「读取规则」)。
+// (定稿见 docs/feature/results/library.md「读:openResults」、docs/feature/results/architecture.md「读取规则」)。
 //
 // 三条铁律:
 // - 忠实磁盘:快照与实验归组只切片,不合并、不聚合、不去重;合并/聚合永远发生在消费方。

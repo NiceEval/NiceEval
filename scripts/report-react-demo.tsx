@@ -1,4 +1,4 @@
-// docs/reports.md 场景三(零框架静态导出)的最小演示:
+// docs/feature/reports/library.md 场景三(零框架静态导出)的最小演示:
 // 读 → 算 → renderToStaticMarkup,一次成型,零前端框架、零 hydration。
 // 用 src/report/react/fixtures.ts 顶替各组件 .data 计算函数的产物,专看渲染面。
 //
@@ -59,7 +59,7 @@ const page = renderToStaticMarkup(
     <h2>DeltaTable</h2>
     <DeltaTable data={deltaData} />
     {/* AttemptList/EvalList/ExperimentList 没有 attemptHref prop(证据室深链恒经宿主 ctx,
-        docs/reports.md「第一档」的函数签名没有这个参数);裸嵌进自己的 React 应用时退化为
+        docs/feature/reports/library.md「嵌入自己的 React 页面」的函数签名没有这个参数);裸嵌进自己的 React 应用时退化为
         默认 `#/attempt/<locator>`,不在这里自定去处。 */}
     <h2>AttemptList</h2>
     <AttemptList items={attemptListItems} />

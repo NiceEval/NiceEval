@@ -1,6 +1,6 @@
 // RunOverview:页头 KPI 条——「这批数据是什么」。
 // 数字下面标注数据来源(几个快照、何时跑的);warnings 有内容时直接显示在条内,
-// 诚实不靠使用者记得渲染(docs/reports.md「第一档」行为清单)。
+// 诚实不靠使用者记得渲染(docs/feature/reports/library.md「RunOverview」行为清单)。
 
 import type { ReactElement } from "react";
 import type { OverviewData } from "../types.ts";

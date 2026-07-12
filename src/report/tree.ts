@@ -1,4 +1,4 @@
-// 报告的元素树与双面组件基座(docs/reports.md「元素树与两个宿主」「双面组件」)。
+// 报告的元素树与双面组件基座(docs/feature/reports/architecture.md「报告树与两个宿主」)。
 //
 // 报告函数返回的树不是「React 树」,只是 { type, props } 节点 —— 标准 react
 // jsx-runtime 产的元素恰好就是这个形状。本文件是基础实现:零 react 运行时依赖
@@ -89,7 +89,7 @@ export type ReportComponent<P> = ((props: P) => ReactNode) & {
 // 宿主外不传 attemptHref 就是纯展示,不发明断链。
 //
 // URL 格式取 `#/attempt/${locator}`:AttemptLocator 本身已经是 `@` 前缀的不透明短串
-// (如 "@1x7f3q9"),原样嵌进路径段就得到 `#/attempt/@1x7f3q9`——与 docs/view.md「用
+// (如 "@1x7f3q9"),原样嵌进路径段就得到 `#/attempt/@1x7f3q9`——与 docs/feature/reports/view.md「用
 // Reports 积木重建 view」定稿的单段路由逐字一致,不额外拆分或去掉 `@`。
 const DEFAULT_WEB_CONTEXT: WebContext = {
   attemptHref: (locator) => `#/attempt/${locator}`,

@@ -1,4 +1,4 @@
-// "故意红"的 fixture:验证断言真的会挂、退出码真的会变 1(docs/e2e-ci.md 第 3.3 节)。
+// "故意红"的 fixture:验证断言真的会挂、退出码真的会变 1(docs/engineering/e2e-ci/README.md 第 3.3 节)。
 // 设计成对模型输出不敏感——不管模型这次答得好不好,这两条必然一红一炸。
 // 只进 verdicts 实验(不进 ci),由 verify.mjs 以"期望 exit 1"的方式正向消费。
 import { defineEval } from "niceeval";

@@ -1,6 +1,6 @@
 // AgentProfile:每个 e2e 项目声明自己的协议现实(工具名、能力开关)。
 // 共享 eval/experiment 都是 factory,吃 profile 决定断言口径——SDK 间的差异只允许
-// 出现在各项目的 profile.ts 里,不允许出现在共享套件的断言逻辑里(见 docs/e2e-ci.md 第 3 节)。
+// 出现在各项目的 profile.ts 里,不允许出现在共享套件的断言逻辑里(见 docs/engineering/e2e-ci/README.md 第 3 节)。
 export interface AgentProfile {
   /** 天气工具在该 SDK 协议里的真实名字(claude-sdk 是 MCP 命名空间名);coding agent 没有则为 null。 */
   weatherToolName: string | null;

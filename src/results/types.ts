@@ -1,4 +1,4 @@
-// results 域类型:openResults 的分层读取契约与 Selection(定稿见 docs/results-lib.md、docs/results-format.md)。
+// results 域类型:openResults 的分层读取契约与 Selection(定稿见 docs/feature/results/library.md、docs/feature/results/architecture.md)。
 //
 // 结果数据类型(EvalResult / ExperimentRunInfo / StreamEvent / …)仍住在各自的域文件里,
 // 这里只 import,不搬家 —— 「类型的家」迁移(facade 反向 re-export)是下一波,不在本次范围。
@@ -11,7 +11,7 @@ import type { O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptLocator } from "./locator.ts";
 
-/** attempt 级 artifact 的种类;文件名见 format.ts 的 artifactFileOf,布局见 docs/results-format.md。 */
+/** attempt 级 artifact 的种类;文件名见 format.ts 的 artifactFileOf,布局见 docs/feature/results/architecture.md。 */
 export const ARTIFACT_KINDS = ["events", "trace", "o11y", "agentSetup", "diff", "sources"] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
@@ -25,7 +25,7 @@ export interface Producer {
 /**
  * `snapshot.json` 的持久化契约:快照元数据 —— 身份、快照级字段与版本元数据,
  * 不含任何逐 attempt 数据。快照开始时写入;收尾时补写 `completedAt`。
- * 字段规则与版本判定见 docs/results-format.md「snapshot.json」「版本与升级设计」。
+ * 字段规则与版本判定见 docs/feature/results/architecture.md「snapshot.json」「版本与升级设计」。
  */
 export interface SnapshotMeta {
   /** 恒为 "niceeval.results";和 schemaVersion、producer 一起构成持久化契约,永不移动或改名。 */
@@ -188,7 +188,7 @@ export interface Selection {
 
 /**
  * 挑选警告:每种带 kind、可判断的结构化字段和渲染好的英文 message;
- * kind 是契约的一部分,全集与触发条件见 docs/results-lib.md「警告 kind 全集」。
+ * kind 是契约的一部分,全集与触发条件见 docs/feature/results/library.md「警告 kind 全集」。
  */
 export type SelectionWarning =
   | {

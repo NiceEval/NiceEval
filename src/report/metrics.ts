@@ -1,7 +1,7 @@
 // defineMetric 与内置指标。
 //
 // null ≠ 0:null = 此 attempt 测不了这个指标(不进聚合);0 = 测了,结果是零(照常进)。
-// 哪个 verdict 落哪边必须显式表态,内置指标按 docs/reports.md 的表格:
+// 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/library.md「内置指标」的表格:
 //
 //   指标(name)             skipped  errored          failed  passed        better
 //   passRate(pass-rate)     null     0                0       1             higher
@@ -11,7 +11,7 @@
 //   costUSD(cost)           null     同上             同左     同左          lower
 //   turns(turns)             null     实测;o11y 缺失→null 同左  同左          lower
 //
-// 两档指标(docs/reports.md「两档内置指标」):以上除 turns 外全部只读 attempt.result
+// 两档指标(docs/feature/reports/library.md「内置指标」):以上除 turns 外全部只读 attempt.result
 // 的瘦身字段——任何 producer、任何 copySnapshots artifacts 选择都算得出,内置报告
 // CostPassRateComparison 只用这一档。turns 读 attempt.o11y()(懒加载 artifact),发布时若
 // o11y 没随行就诚实渲染缺数据「—」,不算 0——报告作者自己摆时心里要有这根弦,内置报告不用它。
@@ -21,7 +21,7 @@ import type { Metric } from "./types.ts";
 
 /**
  * 定义一个指标。内置指标与自定义指标是同一个类型,没有特权;
- * 校验只管「能进计算」的最低要求,聚合语义见 docs/reports.md。
+ * 校验只管「能进计算」的最低要求,聚合语义见 docs/feature/reports/architecture.md「指标聚合不变量」。
  * name 是 const 泛型:产物的 name 保持字面量,`row.cells[metric.name]` 才有编译期列键。
  */
 export function defineMetric<const Name extends string>(def: Metric<Name>): Metric<Name> {
@@ -105,7 +105,7 @@ export const costUSD = defineMetric({
 /**
  * 唯一读 artifact(o11y,懒加载)的内置指标——其余五个只读瘦身字段。
  * 发布时若该 attempt 没带 o11y(如 copySnapshots 的 artifacts 选项漏了它),
- * value 如实返回 null,渲染成「—」,不冒充 0——见 docs/reports.md「两档内置指标」。
+ * value 如实返回 null,渲染成「—」,不冒充 0——见 docs/feature/reports/library.md「内置指标」。
  */
 export const turns = defineMetric({
   name: "turns",

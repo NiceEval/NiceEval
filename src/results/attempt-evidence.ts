@@ -1,5 +1,5 @@
 // AttemptEvidence:一次装配一个 Attempt 的全部证据(定稿见 plan/attempt-evidence-feedback-loop.md
-// 「中性数据准备」、docs/reports.md 的 AttemptEvidence 草图、docs/concepts.md「Attempt 证据」词条)。
+// 「中性数据准备」、docs/concepts.md「Attempt 证据」词条)。
 //
 // 这是 results/evidence 层的装配终点:locator + identity + EvalResult + AnnotatedEvalSource +
 // ExecutionTree + diff + artifact 路径 + capability 位,一次算好。show、view、静态导出、报告列表

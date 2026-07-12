@@ -1,6 +1,6 @@
 name: e2e
 
-# L0 PR 门禁(docs/e2e-ci.md 第 4、7 节):真实模型、便宜档位、runs: 3 + earlyExit。
+# L0 PR 门禁(docs/engineering/e2e-ci/README.md 第 4、7 节):真实模型、便宜档位、runs: 3 + earlyExit。
 # 成败判据 = e2e/scripts/verify.mjs 的期望表(退出码 + summary.json 对账)。
 # fork PR 拿不到 secrets 是 GitHub 的安全模型,不在本 workflow 解决(提案第 9 节)。
 on:
@@ -9,7 +9,7 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    # L1 沙箱矩阵 nightly(docs/e2e-ci.md §4.2);e2e-matrix 不吃 schedule,见各 job 的 if。
+    # L1 沙箱矩阵 nightly(docs/engineering/e2e-ci/README.md §4.2);e2e-matrix 不吃 schedule,见各 job 的 if。
     - cron: "0 3 * * *"
 
 # concurrency 放 job 级而不是 workflow 级:SDK 矩阵便宜,新 push 顶掉旧的没问题;
@@ -171,7 +171,7 @@ jobs:
           # .niceeval 是隐藏目录,v4 默认排除隐藏文件,不开这个只会传出 app 日志
           include-hidden-files: true
 
-  # L1 沙箱矩阵(docs/e2e-ci.md §4.2):claude-code / codex 内置 agent × dockerSandbox。
+  # L1 沙箱矩阵(docs/engineering/e2e-ci/README.md §4.2):claude-code / codex 内置 agent × dockerSandbox。
   # 每个 attempt 在容器里现装 agent CLI + 真实模型调用,又慢又花钱,所以不做
   # 全量 push 门禁;nightly + 手动 dispatch 之外,只有 push 触及沙箱相关路径
   # (见 detect-sandbox-paths)才跑。失败是健康信号,不阻塞合并。
@@ -248,7 +248,7 @@ jobs:
           if-no-files-found: ignore
           include-hidden-files: true
 
-      # nightly 失败发 issue(docs/e2e-ci.md §4.2 的"失败发通知"),否则标红没人看
+      # nightly 失败发 issue(docs/engineering/e2e-ci/README.md §4.2 的"失败发通知"),否则标红没人看
       # 等于没跑。已有同名 open issue 就追评,避免连败刷屏。push 触发的失败不发:
       # 那种红本身就在 commit 状态里可见。
       - name: File issue on nightly failure

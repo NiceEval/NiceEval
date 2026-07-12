@@ -1,5 +1,5 @@
 // niceeval/report 的公开类型:指标(Metric)、维度(Dimension / flag())与计算函数
-// 产物(即组件的 data props)。数据契约照 docs/reports.md「计算函数与数据契约」;
+// 产物(即组件的 data props)。数据契约照 docs/feature/reports/library.md「数据计算与缓存边界」;
 // 这些不是持久化格式,没有 format / schemaVersion 信封,兼容性跟随 npm 版本。
 
 import type { AttemptHandle, SelectionWarning } from "../results/types.ts";
@@ -331,7 +331,7 @@ export interface DeltaData<K extends string = string> {
 // ───────────────────────── 实体列表(ExperimentList / EvalList / AttemptList)─────────────────────────
 //
 // 三个组件按「experiment → experimentId × eval → attempt」逐级下钻,固定展示实体事实,
-// 没有列配置(docs/reports.md「实体列表与指标表不重叠」)。每一级都以下一级的 `AttemptListItem[]`
+// 没有列配置(docs/feature/reports/library.md「实体列表」)。每一级都以下一级的 `AttemptListItem[]`
 // 收尾——同一个类型既是 `AttemptList` 自己的 items,也是 `ExperimentListEvalRow.attempts` /
 // `EvalListItem.attempts` 的元素,报告作者可以直接把这些嵌套数组喂给 `<AttemptList items={...} />`。
 

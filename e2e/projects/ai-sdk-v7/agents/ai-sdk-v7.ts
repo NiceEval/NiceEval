@@ -5,7 +5,7 @@
 // AI_SDK_V7_URL 指到哪就测哪,默认应用自己的本地默认端口 34001。
 //
 // 断言依据(工具/消息/HITL)全部从协议帧直构,工厂替你做好。只接 send,不接 OTel——
-// e2e 不测瀑布图(docs/e2e-ci.md 第 9 节);带 OTel 的完整接入示例见
+// e2e 不测瀑布图(docs/engineering/e2e-ci/README.md 第 9 节);带 OTel 的完整接入示例见
 // examples/zh/tier2/ai-sdk-v7/。
 import { uiMessageStreamAgent } from "niceeval/adapter";
 

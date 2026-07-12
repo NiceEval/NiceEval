@@ -10,7 +10,7 @@
 
 **数据模型:** `viewData.snapshots` 已经是**不合并**的快照列表,按 `(experimentId, startedAt)` 索引,每个快照携带 attempt 明细——Compare 需要的历史身份现成保留着。这份数据随 `viewData` 一起烘焙进静态 HTML(不像 playground 能按需查 fs)。
 
-**UI:** 在 `src/view/app/App.tsx` 的 `navItems` 加一个 `compare`。两个下拉选"快照"(`experimentId @ startedAt`,与 Reports 的快照键、`"snapshot"` 维度同一格式),不限制两边必须是同一个 `experimentId`;选完出整体通过率 / 平均耗时 / 总成本三个 KPI delta,加一张 per-eval 并排表,表格与 delta 单元直接用 Reports 的 `DeltaTable`(时间轴对比走快照键,见 [Reports · 迭代问题裁决记录](../feature/reports/architecture.md#迭代问题裁决记录)第 1 条)。只跑过一次、没有历史快照时,下拉只有一项,提示"再跑一次才能对比",不报错。
+**UI:** 在 `src/view/app/App.tsx` 的 `navItems` 加一个 `compare`。两个下拉选"快照"(`experimentId @ startedAt`,与 Reports 的快照键、`"snapshot"` 维度同一格式),不限制两边必须是同一个 `experimentId`;选完出整体通过率 / 平均耗时 / 总成本三个 KPI delta,加一张 per-eval 并排表,表格与 delta 单元直接用 Reports 的 `DeltaTable`(时间轴对比走快照键)。只跑过一次、没有历史快照时,下拉只有一项,提示"再跑一次才能对比",不报错。
 
 **明确不做的:** 不做时间序列折线图(历史快照一多不适合塞进单个静态 HTML,而且这次要补的是"挑两点"这个最小能力);不改报告槽「现刻水位」的默认口径。
 

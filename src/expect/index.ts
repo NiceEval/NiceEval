@@ -5,7 +5,7 @@ import type { Severity, ValueAssertion } from "../types.ts";
 import { stripComments } from "../util.ts";
 import { deepEqual, validateSchema } from "../scoring/match.ts";
 
-// 自定义匹配器作者用的公共类型(docs/scoring.md 的 `Assertion` 即它)。
+// 自定义匹配器作者用的公共类型(docs/feature/scoring/README.md 的 `Assertion` 即它)。
 export type { Severity, ValueAssertion } from "../types.ts";
 export type { ValueAssertion as Assertion } from "../types.ts";
 

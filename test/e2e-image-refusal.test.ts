@@ -5,7 +5,7 @@
 // 明确说"不支持图像输入",但 `t.messageIncludes(/蓝|blue|白|方块|图片|颜色/i)` 这条 gate
 // 断言里塞了太泛的词("图片"/"颜色"),连拒绝语本身都能命中而误判通过;真正能识别出
 // "答非所问"的 judge 断言只是 soft + `.atLeast(0.7)`,非 --strict 不会让 verdict 变 failed
-// (这是 docs/scoring.md 文档化的既定设计,不是要改的地方)。两者叠加,eval 悄悄"passed"。
+// (这是 docs/feature/scoring/README.md 文档化的既定设计,不是要改的地方)。两者叠加,eval 悄悄"passed"。
 //
 // 全程不联网:mock agent 进程内跑,judge 打到本机起的一个假 OpenAI 兼容 server。
 
@@ -66,7 +66,7 @@ async function runFixtureCli(): Promise<void> {
   }
 }
 
-// 新落盘布局(Results Format schemaVersion 4,见 docs/results-format.md)是
+// 新落盘布局(Results Format schemaVersion 4,见 docs/feature/results/architecture.md)是
 // .niceeval/<experiment>/<timestamp-rand>/snapshot.json + <evalId>/a<n>/result.json,
 // 不再有 run 级 summary.json。这里递归找出全部快照,取 startedAt 最新的那个,
 // 再收集它下面全部 result.json 拼出与旧 summary.results 等价的输入(逐条补回

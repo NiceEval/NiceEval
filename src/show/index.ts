@@ -1,5 +1,5 @@
 // niceeval show —— 终端宿主(行为规范:docs-site/zh/guides/viewing-results.mdx;
-// 宿主组合语义:docs/reports.md「宿主输入的组合语义」)。
+// 宿主组合语义:docs/feature/reports/architecture.md「Selection 是计算入口」)。
 //
 // 位置参数 = eval id 前缀,或 `@<locator>`(精确指名单个 attempt,见 results/locator.ts):
 //   裸跑 / 前缀       报告槽 —— 内置默认报告的 text 面(show ≡ show --report <内置默认报告>)
@@ -123,7 +123,7 @@ async function show(
 ): Promise<void> {
   const evidence = flags.eval === true || flags.execution === true || flags.diff === true || flags.diffPath !== undefined;
 
-  // 组合语义矩阵(docs/reports.md):--history 与 --report 互斥,先于任何 IO 报出来。
+  // 组合语义矩阵(docs/feature/reports/show.md「选择结果范围」):--history 与 --report 互斥,先于任何 IO 报出来。
   if (flags.history && flags.report !== undefined) {
     throw new ShowError(t("cli.show.historyReportConflict"));
   }
@@ -279,7 +279,7 @@ async function show(
 
   // 报告槽:--report 整槽替换,否则内置默认报告 CostPassRateComparison(同一条渲染路径)。
   // locale = CLI 界面语言(NICEEVAL_LANG / LC_* / LANG 检测):报告 chrome 文案跟随
-  // 终端语言(docs/reports.md「locale:渲染面的语言」);Locale 与 ReportLocale 同为
+  // 终端语言(docs/feature/reports/library.md「locale:渲染面的语言」);Locale 与 ReportLocale 同为
   // "en" | "zh-CN",直接传递。
   const definition =
     flags.report !== undefined ? await loadReportFile(cwd, flags.report) : CostPassRateComparison;

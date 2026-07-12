@@ -12,7 +12,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 - [skill-install-via-git-not-skills-cli](skill-install-via-git-not-skills-cli.md) — 设计裁决:repo skill 改走 git clone(`skills` CLI 没法钉 ref、也枚举不出仓库里有哪些 skill);**沙箱真机安装路径全未验证**,`claude plugin install` 无 tty 可能弹确认框卡死
 - 已修 [agent-setup-workspace-writes-pollute-diff](agent-setup-workspace-writes-pollute-diff.md) — git 基线早于 `agent.setup`,所以 setup 往 workspace 装的 skill / AGENTS.md 会被当成 agent 产出记进 diff;修为写 `.git/info/exclude`(能放 `$HOME` 就别放 workspace)
-- [structural-typing-cannot-reject-spec-swap](structural-typing-cannot-reject-spec-swap.md) — 设计裁决:同形的两个具名 Spec,TS 结构类型拦不住互换;「无效组合在类型层拒绝」只能承诺**形状**,承诺不了**值**
+- **待裁决** [structural-typing-cannot-reject-spec-swap](structural-typing-cannot-reject-spec-swap.md) — 同形的两个具名 Spec,TS 结构类型拦不住互换;文档已止血(只承诺**形状**不承诺**值**),但「要不要加判别字段/品牌化真的拦住」未定,2026-07-13 处理
 - 已修 [sandbox-home-hardcode](sandbox-home-hardcode.md) — sandbox 的 $HOME 因 backend 而异,不能 hardcode `/home/node`;agent `setup()` 动态探测(修在 `src/agents/bub.ts`)
 - 已修 [bub-workspace-path-hardcode](bub-workspace-path-hardcode.md) — 同上但漏了 workspace:bub 的 `--workspace` 曾写死 Docker 路径,要读 `sb.workdir`(修在 `src/agents/bub.ts`)
 - [docker-default-image-no-python3](docker-default-image-no-python3.md) — dockerSandbox 默认镜像没有 python3,依赖 python 的 eval 必失败

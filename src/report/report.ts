@@ -22,7 +22,7 @@ export interface ReportContext {
   /** 宿主按现刻水位规则挑好的 Selection:每个 experiment × eval 取跨快照合成的最新判定,外加结构化挑选
    警告;show 裸跑、view 裸跑与两者的 --report 收到的是同一份。 */
   selection: Selection;
-  /** 默认挑法不合口径时,全量数据自己挑(见 docs/results-lib.md)。 */
+  /** 默认挑法不合口径时,全量数据自己挑(见 docs/feature/results/library.md)。 */
   results: Results;
 }
 

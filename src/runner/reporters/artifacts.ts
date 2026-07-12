@@ -2,7 +2,7 @@
 //
 // 本文件是 niceeval/results 写入面(createResultsWriter)的薄壳:订阅 reporter 事件按
 // experimentId 路由转手调 writer,自己不持有任何布局知识(实验目录、快照目录、attempt
-// 路径清洗、大字段拆分、瘦身、版本元数据全在库内)。落盘格式见 docs/results-format.md:
+// 路径清洗、大字段拆分、瘦身、版本元数据全在库内)。落盘格式见 docs/feature/results/architecture.md:
 // 每个 experiment 一个实验目录,目录下按时间戳开快照,快照内每 eval-attempt 一个文件夹,
 // 重数据分文件,snapshot.json 只留快照元数据,view 展开某条 trace 时再按需 fetch 它的 trace.json。
 

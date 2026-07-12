@@ -79,7 +79,7 @@ export function resolveViewInput(
  * server 的 /artifact/<rel> 路由同一布局,整个目录扔给任何静态托管即是完整体验。
  * 首页即报告槽(裸跑填充 CostPassRateComparison,--report 整槽替换),证据室同站。
  * 单文件(*.html)导出已移除:代码/transcript/trace 视图依赖 artifact 文件,单文件注定残缺,
- * 存在本身就在诱导用户导出一份看不了证据的报告(docs/view.md「静态导出」)。
+ * 存在本身就在诱导用户导出一份看不了证据的报告(docs/feature/reports/view.md「静态导出」)。
  */
 export async function buildView(opts: ViewOptions = {}): Promise<string> {
   const out = resolve(opts.out ?? ".niceeval/site");

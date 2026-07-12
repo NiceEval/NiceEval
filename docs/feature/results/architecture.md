@@ -51,7 +51,7 @@
 }
 ```
 
-版本历史:`1` 初版;`2`(2026-07)= `ExperimentRunInfo.flags` 改名 `params`;`3`(2026-07-10)= 改回 `flags`(A/B feature flag 语义定稿,见 [Reports 裁决记录](../reports/architecture.md#迭代问题裁决记录));`4`(2026-07-11)= 落盘单位从 run 改为快照——实验目录在外层,快照元数据住 `snapshot.json`,判决住 attempt 级 `result.json`(裁决背景见 memory 的 results-per-snapshot 条目);`5` = `result.json` 新增 `locator`(不透明的 Attempt 定位符,见「`result.json`」);`sources.json` 从逐 attempt 内联全量源码改为「attempt 级引用 + 快照级 `sources/<sha256>.json` 去重仓库」(见「`sources.json`」)。
+版本历史:`1` 初版;`2`(2026-07)= `ExperimentRunInfo.flags` 改名 `params`;`3`(2026-07-10)= 改回 `flags`(A/B feature flag 语义定稿,见 memory 的 experiment-flags-naming-reversal 条目);`4`(2026-07-11)= 落盘单位从 run 改为快照——实验目录在外层,快照元数据住 `snapshot.json`,判决住 attempt 级 `result.json`(裁决背景见 memory 的 results-per-snapshot 条目);`5` = `result.json` 新增 `locator`(不透明的 Attempt 定位符,见「`result.json`」);`sources.json` 从逐 attempt 内联全量源码改为「attempt 级引用 + 快照级 `sources/<sha256>.json` 去重仓库」(见「`sources.json`」)。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个快照(snapshot.json + 全部 attempt 文件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份结果的 niceeval 版本查看:
 

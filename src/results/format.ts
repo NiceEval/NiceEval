@@ -1,6 +1,6 @@
-// Results Format 的布局与版本知识,规则见 docs/results-format.md。
+// Results Format 的布局与版本知识,规则见 docs/feature/results/architecture.md。
 //
-// 按 docs/results-lib.md,这份知识只住在本库:写入面(writer.ts / copy.ts)与
+// 按 docs/feature/results/library.md,这份知识只住在本库:写入面(writer.ts / copy.ts)与
 // 读取面(open.ts)共用这里的目录规则与版本判定;src/runner/reporters/artifacts.ts
 // 是 writer 的薄壳,view(src/view/data.ts)经 openResults 消费,不自带布局知识。
 
@@ -49,7 +49,7 @@ export type SnapshotClassification =
   | { kind: "not-a-report" };
 
 /**
- * 版本判定与最小形状校验(docs/results-format.md「版本不匹配时的读取行为」):
+ * 版本判定与最小形状校验(docs/feature/results/architecture.md「版本不匹配时的读取行为」):
  * - 带 format 信封:format 不是 niceeval.results → 无关 JSON;schemaVersion 非数字 → malformed;
  *   schemaVersion 与当前不同 → 不兼容(不解析、不迁移、不降级),带 schemaVersion 与完整 producer;
  *   schemaVersion 相同时校验 experimentId / agent / startedAt 均为 string,不满足 → malformed。

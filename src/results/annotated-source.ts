@@ -1,5 +1,5 @@
 // AnnotatedEvalSource:标注 Eval 源码(定稿见 docs/concepts.md「结果数据与报告」、
-// docs/reports.md 的 AttemptEvidence 草图)。把一份 eval 源码文本与该次运行产出的
+// docs/concepts.md「Attempt 证据」)。把一份 eval 源码文本与该次运行产出的
 // AssertionResult[] 叠在一起 —— 每条断言按 SourceLoc 标回源码行,没有(或够不上)行映射的
 // 断言进 `unmapped` 桶,不静默丢弃。这是共享 model:未来的网页 CodeView 与
 // `show --eval` 文本 renderer 只消费这同一份数据,不各自重新分桶。

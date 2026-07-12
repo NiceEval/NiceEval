@@ -1,4 +1,4 @@
-// niceeval view 的报告槽与宿主组合语义(docs/reports.md「宿主输入的组合语义」
+// niceeval view 的报告槽与宿主组合语义(docs/feature/reports/architecture.md「Selection 是计算入口」
 // 与裁决记录 6;公开行为准绳 docs-site/zh/guides/viewing-results.mdx / custom-reports.mdx)。
 // 覆盖:
 // - 组合语义与 show 对齐:位置前缀收窄报告槽 Selection、--experiment 过滤、匹配不到直说;
@@ -9,7 +9,7 @@
 // - dev server 装载语义:报告文件变更 → 下次装载整页重算(mtime cache-busting)。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
-// 依据是 docs/results-format.md 的稳定磁盘契约,不经 writer 运行时 API。
+// 依据是 docs/feature/results/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
 
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";

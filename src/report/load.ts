@@ -1,7 +1,7 @@
 // --report 的装载:两个宿主(show / view)共用的中性入口。复用跑用户 .ts 配置的
 // 同一 tsx 加载机制(bin 里已 register)。show 一进程一次装载;view 的 dev server
 // 每次请求现读现渲染 —— ESM 模块缓存永不失效,所以按文件 mtime 做 cache-busting
-// (freshImport):报告文件变更 → 下次请求拿到新模块,整页重算(docs/reports.md
+// (freshImport):报告文件变更 → 下次请求拿到新模块,整页重算(docs/feature/reports/view.md
 // 裁决记录 6)。装载环境坑见 memory/tsx-dynamic-import-require-cycle.md。
 
 import { existsSync, statSync } from "node:fs";

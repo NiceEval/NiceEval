@@ -1,4 +1,4 @@
-// 跨块配色一致(docs/reports.md 四条跨组件契约之二):
+// 跨块配色一致(docs/feature/reports/architecture.md「静态网页」):
 // 系列/维度键 → 固定调色板下标,用稳定散列而不是「按出现顺序分配」。
 // 这样同一个 agent 在 scatter 的线、DeltaTable 的行、matrix 的列头永远同色,
 // 不需要 Provider、不需要手工配置,甚至不需要两个组件见过同一份数据。

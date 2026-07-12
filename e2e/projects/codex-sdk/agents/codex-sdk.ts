@@ -7,7 +7,7 @@
 // usage 和终局错误;逐帧驱动是官方件 `driveFrameStream`(没有 HITL,onFrame 只用来处理
 // 传输帧 + 抓 threadId)。
 //
-// 只接 send,不接 OTel——e2e 不测瀑布图(docs/e2e-ci.md 第 9 节);带 OTel 的完整
+// 只接 send,不接 OTel——e2e 不测瀑布图(docs/engineering/e2e-ci/README.md 第 9 节);带 OTel 的完整
 // 接入示例见 examples/zh/tier2/codex-sdk/。
 import { defineAgent, sseJsonFrames, fromCodexThreadEvents, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";

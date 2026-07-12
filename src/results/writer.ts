@@ -1,4 +1,4 @@
-// createResultsWriter:Results Format 的写入面(定稿见 docs/results-lib.md「写:createResultsWriter」)。
+// createResultsWriter:Results Format 的写入面(定稿见 docs/feature/results/library.md「写:createResultsWriter」)。
 //
 // writer 与 reader 是同一组类型的两半,而且是字面的两半:reader 的 attempt.result 由
 // 「snapshot() 声明的快照级字段(experimentId / agent / model / startedAt / experiment)+
@@ -372,7 +372,7 @@ function stripInfoId(info: ExperimentRunInfo): ExperimentRunInfo {
   return rest;
 }
 
-/** 快照目录名的时间戳段:Date#toISOString 把 : 与 . 换成 -(与 docs/results-format.md 一致)。 */
+/** 快照目录名的时间戳段:Date#toISOString 把 : 与 . 换成 -(与 docs/feature/results/architecture.md 一致)。 */
 function safeTimestamp(d: Date): string {
   return d.toISOString().replace(/[:.]/g, "-");
 }

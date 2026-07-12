@@ -1,4 +1,4 @@
-// attempt 级 hash 深链:`#/attempt/@<locator>`(docs/view.md「用 Reports 积木重建 view」)。
+// attempt 级 hash 深链:`#/attempt/@<locator>`(docs/feature/reports/view.md「打开与收窄」)。
 // 路由参数就是不透明的 AttemptLocator(src/results/locator.ts),由 loader 注入到每条
 // result 上;这里只做纯解析 / 格式化 / 匹配,不碰 location / history,方便单测。与报告槽
 // DEFAULT_WEB_CONTEXT.attemptHref(src/report/tree.ts)同一格式,两条深链来源互通。

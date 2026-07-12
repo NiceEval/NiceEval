@@ -5,8 +5,8 @@
 // 官方组件在宿主里自动接上证据室:web 面的 attemptHref 缺省取 ctx.attemptHref
 // (宿主注入的证据室深链);显式传 prop 可覆盖(嵌进自己应用时自定去处)。三个实体列表
 // (ExperimentList / EvalList / AttemptList)没有这个覆盖口子——它们的 locator 徽标恒经
-// ctx.attemptHref / ctx.attemptCommand,不接受 attemptHref/attemptCommand prop(docs/reports.md
-// 「第一档」的函数签名没有这个参数),证据室深链在这三个组件上不是可选行为。
+// ctx.attemptHref / ctx.attemptCommand,不接受 attemptHref/attemptCommand prop(docs/feature/reports/library.md
+// 「嵌入自己的 React 页面」的函数签名没有这个参数),证据室深链在这三个组件上不是可选行为。
 
 import { defineComponent, isHostWebContextActive } from "./tree.ts";
 import type { ReportComponent } from "./tree.ts";
@@ -86,7 +86,7 @@ export interface GroupSummaryProps {
 /**
  * 三个实体列表都只收算好的 `items`(`.data(selection)` 的产物,报告作者先 `.filter()`/
  * `.slice()` 再传入)——没有 selection-form,组件不提供另一套过滤 DSL
- * (docs/reports.md「实体列表与指标表不重叠」)。
+ * (docs/feature/reports/library.md「实体列表」)。
  */
 export interface ExperimentListProps {
   items: ExperimentListItem[];

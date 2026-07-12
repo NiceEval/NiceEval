@@ -4,7 +4,7 @@
 
 ## 写:`createResultsWriter`
 
-writer 与 reader 是同一组类型的两半,而且是**字面的**两半:reader 的 `attempt.result`(瘦身 `EvalResult`)由两部分拼成——快照级字段(experimentId / agent / model / startedAt / 实验运行配置 / producer)来自 `writer.snapshot()` 的一次声明,是快照层注入的装饰;其余全部字段就是 `writeAttempt` 第一参数的类型。第二参数是 reader 懒加载能拿到的那几样 artifact 的类型。**「writeAttempt 参数 + snapshot() 声明 = reader 读回的全部,由类型拼合背书」**:快照级字段不在 attempt 参数类型里,不存在「谁的值为准」的运行时问题。两版落选形状的记录:「大字段内联的完整 EvalResult」是另一个类型,编译器背书当场不成立;「第一参 = 完整的 attempt.result」含 experiment 元数据,与「快照级只声明一次」互相矛盾(2026-07-10 修正)。「大字段拆文件、判决落 attempt 记录」的布局知识全部在库内。这与 [Reports 类型义务](../reports/library.md#类型义务本提案的落地前置)第 3 条的 EvalResult 两拆是同一件事。
+writer 与 reader 是同一组类型的两半,而且是**字面的**两半:reader 的 `attempt.result`(瘦身 `EvalResult`)由两部分拼成——快照级字段(experimentId / agent / model / startedAt / 实验运行配置 / producer)来自 `writer.snapshot()` 的一次声明,是快照层注入的装饰;其余全部字段就是 `writeAttempt` 第一参数的类型。第二参数是 reader 懒加载能拿到的那几样 artifact 的类型。**「writeAttempt 参数 + snapshot() 声明 = reader 读回的全部,由类型拼合背书」**:快照级字段不在 attempt 参数类型里,不存在「谁的值为准」的运行时问题。两版落选形状的记录:「大字段内联的完整 EvalResult」是另一个类型,编译器背书当场不成立;「第一参 = 完整的 attempt.result」含 experiment 元数据,与「快照级只声明一次」互相矛盾(2026-07-10 修正)。「大字段拆文件、判决落 attempt 记录」的布局知识全部在库内。EvalResult 的「瘦身条目 + 拆出的 artifact」两拆,与 Reports 侧读到的形状是同一件事。
 
 ```typescript
 import { createResultsWriter } from "niceeval/results";
@@ -48,9 +48,9 @@ await copySnapshots(results.latest(), "site/data/run", {
 });                                                     // o11y 只有几 KB,报告读它就带上
 ```
 
-`o11y` 曾经也在「常见地不带」那一档,理由是「查看器不读」——这个理由是循环论证:因为没消费者所以不带,因为不带所以做不了消费它的内置指标。`turns`(见 [Reports「两档内置指标」](../reports/library.md#两档内置指标瘦身字段-vs-artifact))成为消费者后,循环断开:`o11y.json` 实测几 KB 一个(和 `diff` 可达百 MB 完全不是一个量级),没有不带的理由。
+`o11y` 曾经也在「常见地不带」那一档,理由是「查看器不读」——这个理由是循环论证:因为没消费者所以不带,因为不带所以做不了消费它的内置指标。`turns`(见 [Reports 的内置指标](../reports/library.md#内置指标))成为消费者后,循环断开:`o11y.json` 实测几 KB 一个(和 `diff` 可达百 MB 完全不是一个量级),没有不带的理由。
 
-动机来自真实消费者:coding-agent-memory-evals 把最新快照进仓库供静态托管,曾是 40 行手写脚本——按落盘 mtime 挑「最新」(口径还错了:该挑快照),再按白名单拷贝 artifact 文件(布局知识第三次泄漏)。`copySnapshots` 之后这段只剩上面几行,挑选交给 `results.latest()`(见[静态导出场景](../reports/library.md#dx-模拟))。复制不改 artifact 内容、不消毒——发布消毒是自由文本的事,归 [Reports 的 `AttemptList.data({ redact })`](../reports/library.md#计算函数与数据契约)。三条契约细节(2026-07-10 拍板):
+动机来自真实消费者:coding-agent-memory-evals 把最新快照进仓库供静态托管,曾是 40 行手写脚本——按落盘 mtime 挑「最新」(口径还错了:该挑快照),再按白名单拷贝 artifact 文件(布局知识第三次泄漏)。`copySnapshots` 之后这段只剩上面几行,挑选交给 `results.latest()`(见[静态导出](../reports/view.md#静态导出))。复制不改 artifact 内容、不消毒——发布消毒是自由文本的事,归 [Reports 的 `AttemptList.data({ redact })`](../reports/library.md#数据计算与缓存边界)。三条契约细节(2026-07-10 拍板):
 
 - **覆盖事实随数据走(`knownEvalIds`)。** `partial-coverage` 的分母是实验的历史并集,而发布目录没有历史——只复制选中快照,发布目录上重新 `openResults().latest()`,警告会静默消失,「缺口永远被算出来」在官方教的发布路径上断掉。修法不是持久化警告(那违反「reader 派生物删了可重算」),而是让警告的**依据**随数据走:`copySnapshots` 给每个复制出的快照补记 `knownEvalIds`(复制时刻该实验的 `exp.evalIds`);reader 端 `exp.evalIds` 的定义是**并集(本地历史, 各快照携带的 knownEvalIds)**——不是「优先字段」:把快照复制进已有历史的目录时,本地并集可能更大,优先字段会让分母缩水。字段是格式的一部分,`writer.snapshot()` 同样可声明(第三方转换器交代已知覆盖);可选新增字段不破坏兼容,按 [Architecture · 版本与升级设计](architecture.md#版本与升级设计)不递增 schemaVersion。「复制忠实于源」的承诺相应精确化:不改 artifact 内容,但随行补记挑选时的覆盖事实(落在复制出的 `snapshot.json` 上)。
 - **目标目录非空即报错**,不静默覆盖、不合并——发布脚本要幂等就自己先清目录;盘上不该出现「我没写的东西被动过」的惊讶。
@@ -194,7 +194,7 @@ reader 忠实反映这份重复,不擅自去重;**跨快照聚合前按身份键
 
 - 身份键:`(experimentId, evalId, attempt, startedAt)`,重复时保留**最新快照**里的那份(内容相同,取新快照的副本让 ref 落在最新落盘上);
 - `startedAt` 缺失时宁可不去重也不误删,并记入 warnings(kind `missing-startedAt`,见警告全集表);
-- [Reports 的计算函数](../reports/library.md#计算函数与数据契约)内置这条;自己写脚本跨快照累计时,要么复用计算函数,要么自己按键去重。
+- [Reports 的计算函数](../reports/library.md#数据计算与缓存边界)内置这条;自己写脚本跨快照累计时,要么复用计算函数,要么自己按键去重。
 
 ## 按 locator 寻址一个 attempt:`resolveLocator`
 

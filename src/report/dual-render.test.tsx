@@ -90,7 +90,7 @@ describe("RunOverview 双面", () => {
 // fixtures.overviewData 是手工摆好的终值,只验证渲染面「原样显示 MetricCell,不重算」;
 // 下面这组用真实 Selection 走一遍 RunOverview.data(= compute.ts 的 overviewData()),
 // 专门验证 totals.passRate 本身的计算口径 —— 三种通过率公式在这个 fixture 上各不相同:
-//   两级聚合(唯一官方口径,docs/reports.md「通过率」):eval a 题内 2/3 通过、eval b 题内 1,
+//   两级聚合(唯一官方口径,docs/feature/reports/architecture.md「指标聚合不变量」):eval a 题内 2/3 通过、eval b 题内 1,
 //     跨题均值 (2/3 + 1) / 2 = 5/6 ≈ 83.3%
 //   attempt 原始占比(旧 bug 公式,曾经的 RunOverview 现场重算):3 passed / (3 passed + 1 failed) = 75%
 //   eval 折叠投票(evalLevelStats,GroupSummary/MetricTable meta 的口径):a、b 都折成 passed → 2/2 = 100%
@@ -454,7 +454,7 @@ describe("AttemptList 双面", () => {
       expect(term).toContain(piece);
     }
     // web 面走证据室路由(#/attempt/@<locator>);text 面只列 locator 本身,不重复整条命令
-    // (docs/reports.md「text 输出只在整份报告末尾给一次命令模板」)。
+    // (docs/feature/reports/architecture.md「text 输出只在整份报告末尾给一次命令模板」)。
     expect(html).toContain('href="#/attempt/@1a4a4a4"');
     // 证据能力标记两面一致:failedAttempt 有 eval/execution/timing,erroredAttempt 只有 execution
     expect(term).toContain("[E,X,⏱]");

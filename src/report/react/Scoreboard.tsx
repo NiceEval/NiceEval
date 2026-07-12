@@ -1,6 +1,6 @@
 // Scoreboard:考试成绩单——总分 + 分科小计。
 // 固定分母的口径不藏:没跑的题挣 0 分但留在分母里,科目行如实报 missing;
-// weights 是「实际生效的权重表」,渲染出来让成绩单可审计(docs/reports.md scoreboard 公式一节)。
+// weights 是「实际生效的权重表」,渲染出来让成绩单可审计(docs/feature/reports/library.md「Scoreboard」)。
 
 import type { ReactElement } from "react";
 import type { ScoreboardData } from "../types.ts";

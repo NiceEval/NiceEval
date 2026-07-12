@@ -1,5 +1,5 @@
 // niceeval show 终端宿主的测试(行为规范:docs-site/zh/guides/viewing-results.mdx;
-// 组合语义:docs/reports.md「宿主输入的组合语义」)。覆盖:
+// 组合语义:docs/feature/reports/architecture.md「Selection 是计算入口」)。覆盖:
 // - 榜单合成口径:每 experiment × eval 取最新判定,局部重跑从更早快照补齐,头部标注合成自几个快照;
 // - 前缀过滤收窄 Selection,覆盖警告分母 = 已知并集 ∩ 范围;
 // - --history 时间轴只列真实执行,resume 携带的复印件不占行;
@@ -8,7 +8,7 @@
 // - 单 eval 详情、`@<locator>` 精确定位与 --eval / --execution / --diff 证据切面的输出形态。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
-// 依据是 docs/results-format.md 的稳定磁盘契约,不经 writer 运行时 API(避免与并行重写的
+// 依据是 docs/feature/results/architecture.md 的稳定磁盘契约,不经 writer 运行时 API(避免与并行重写的
 // niceeval/results 写入面签名耦合)。
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -46,7 +46,7 @@ afterAll(() => {
   else process.env.NICEEVAL_LANG = langBackup;
 });
 
-/** 一条 attempt 的最小 fixture;字段照 docs/results-format.md 的 AttemptRecord。 */
+/** 一条 attempt 的最小 fixture;字段照 docs/feature/results/architecture.md 的 AttemptRecord。 */
 type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
   Partial<
     Pick<
@@ -59,7 +59,7 @@ function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}):
   return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
 }
 
-/** 实验目录名的清洗:与 docs/results-format.md 一致(/ 与非 [\w.@-] 换成 _)。 */
+/** 实验目录名的清洗:与 docs/feature/results/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
 function cleanDirName(id: string): string {
   return id.replace(/[^\w.@-]/g, "_");
 }

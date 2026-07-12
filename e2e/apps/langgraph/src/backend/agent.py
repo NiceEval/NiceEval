@@ -11,7 +11,7 @@ HITL:`langchain.agents.middleware.HumanInTheLoopMiddleware` 是官方对 LangGra
 之后插一个 `HumanInTheLoopMiddleware.after_model` 图节点,那个节点对命中的工具调用
 调 `langgraph.types.interrupt(...)`,整张图在检查点处暂停;`src/server.py` 用
 `Command(resume={"decisions": [...]})` 在同一个 `thread_id` 上恢复。这是 LangGraph
-四家框架里"停轮-恢复"最原生的一种(参见 `docs/adapters/reference/agent-loop-apis.md`
+四家框架里"停轮-恢复"最原生的一种(参见 `docs/feature/adapters/reference/agent-loop-apis.md`
 「LangGraph」一节),对比手写 `beforeToolCall`/`canUseTool` 回调(`pi-sdk`、
 `claude-agent-sdk` 两个示例的做法),这里不需要自己维护一个进程内的
 resolver Map——真正需要维护状态的是"暂停期间还开着的 SSE 连接怎么等审批结果"这件事,

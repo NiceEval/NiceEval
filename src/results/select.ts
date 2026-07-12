@@ -1,4 +1,4 @@
-// 快照 Selection 与 attempt 去重(定稿见 docs/results-lib.md「选择快照」「身份键与去重」)。
+// 快照 Selection 与 attempt 去重(定稿见 docs/feature/results/library.md「选择快照」「身份键与去重」)。
 //
 // 选择器只有一个(latest),长在集合上;它不是 DSL,只是最常用的那次筛选。
 // 选择器必须诚实:残缺、落后、未收尾都被算出来,以结构化 warnings 随 Selection 走 ——
