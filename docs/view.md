@@ -71,7 +71,7 @@ niceeval view --out site              # 目录式静态导出:index.html + artif
 
 ## 现状
 
-> 状态:证据室(Runs / Traces / `AttemptModal` / trace 瀑布图 / Copy fix prompt / 横幅)与报告槽默认组件(`ExperimentList` + `AttemptLocator`,见下文「用 Reports 积木重建 view」)都是当前已实现行为——报告槽渲染出的 `#/attempt/@<locator>` 深链格式已生效。唯一尚未跟进的是证据室自己的 attempt 路由(`src/view/app/lib/attempt-route.ts` 与 `AttemptModal`)仍在解析旧的两段式 `#/attempt/<snapshot>/<attempt>`,还没切到消费单段 `AttemptLocator`——报告槽里的深链因此暂时点不进证据室,这是下一阶段要接上的最后一段。
+> 状态:证据室(Runs / Traces / `AttemptModal` / trace 瀑布图 / Copy fix prompt / 横幅)与报告槽默认组件(`ExperimentList` + `AttemptLocator`,见下文「用 Reports 积木重建 view」)都是当前已实现行为。报告槽渲染出的 `#/attempt/@<locator>` 深链与证据室自己的 attempt 路由(`src/view/app/lib/attempt-route.ts` 与 `AttemptModal`)消费同一套单段、不透明 `AttemptLocator` 路由,报告槽里的数字点开即落地进证据室弹窗。
 
 view = **报告槽 + 证据室**:
 
@@ -131,7 +131,7 @@ view = **报告槽 + 证据室**:
 
 ## 用 Reports 积木重建 view
 
-> 状态:读取层、渲染层与报告槽已实现(`openResults` 版本分流、`renderReportToStaticHtml` 静态渲染、`defineComponent` 的 web/text 双面,源码入口见 [Source Map](source-map.md#results-lib-与-reports));默认报告已换成 `ExperimentList` / `EvalList` / `AttemptList` 三级实体列表,报告槽渲染出的深链已经是本节描述的 `#/attempt/@<locator>` 单段格式。尚未跟进的只有证据室这一侧:`src/view/app/lib/attempt-route.ts` 与 `AttemptModal` 仍在解析旧的两段式路由,还没切到消费不透明 `AttemptLocator`——本节其余关于路由/证据室的描述是已定稿但对这一侧尚未落地的目标形态。仍在计划的还有 Compare(见上节)与 memory-evals 的静态导出流水线([Reports 场景三](reports.md#dx-模拟))。
+> 状态:读取层、渲染层与报告槽已实现(`openResults` 版本分流、`renderReportToStaticHtml` 静态渲染、`defineComponent` 的 web/text 双面,源码入口见 [Source Map](source-map.md#results-lib-与-reports));默认报告已换成 `ExperimentList` / `EvalList` / `AttemptList` 三级实体列表,报告槽渲染出的深链与证据室自己的 attempt 路由(`src/view/app/lib/attempt-route.ts`、`AttemptModal`)都是本节描述的 `#/attempt/@<locator>` 单段格式,两侧消费同一套不透明 `AttemptLocator` 契约。仍在计划的还有 Compare(见上节)与 memory-evals 的静态导出流水线([Reports 场景三](reports.md#dx-模拟))。
 
 [Reports](reports.md) 把「自己搭报告页」拆成组件 + 计算函数 + 结果库三种零件之后,view 的定位是:**不是一套并行实现,而是用同一批零件搭出来的「默认报告页 + 证据室」**——用户搭页面用什么零件,view 自己就用什么。view 因此是这套积木的第一个常驻消费者,组件与计算函数的正确性被它天天验证。
 

@@ -134,7 +134,7 @@
 | 十一个组件的 web 面 + 稳定散列配色 + styles.css(令牌与 view 同源,`.nre` 作用域自带;三个实体列表见 `react/{ExperimentList,EvalList,AttemptList}.tsx`,locator + 证据能力徽标的共用渲染在 `AttemptList.tsx` 的 `AttemptLocatorBadge`/`AttemptRow`) | `src/report/react/`(零件复用入口 `index.tsx`;演示 `scripts/report-react-demo.tsx`) |
 | 渐进增强 runtime(表头排序 / 行过滤 / hover tooltip,只作用于 `.nre` 与 `data-nre-*`;宿主内联) | `src/report/react/enhance.js` |
 | 双面验收(renderToStaticMarkup + text 快照,两面同口径) | `src/report/dual-render.test.tsx` |
-| view attempt 深链(`#/attempt/<snapshot>/<attempt>`,路由参数即 AttemptRef `{ snapshot, attempt }`) | `src/view/app/lib/attempt-route.ts`、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,ref 直接用 `niceeval/results` 的 `attempt.ref`) |
+| view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-route.ts`、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/results` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/results/locator.ts`) |
 | view 数据层(openResults;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:快照明细 + skipped + 壳元信息,统计住报告槽)。`results.latest()` 结果(命名为 `latestPerExperiment`)只用于给证据室快照打「latest」标记,与报告槽 Selection 是两条独立通道,不参与报告计算 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
 | view 报告槽(裸跑填充内置 `CostPassRateComparison`、`--report` 整槽替换;报告槽 Selection 由 view 直接调 `selectCurrentResults` 产出——不再 import `src/show/*`;`renderReportSlot` 静态渲染、en/zh-CN 两遍烘成两个 `<template>` 静态块、增强 runtime 与官方样式内联、位置参数判定 `resolveViewInput`) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`) |
 | **未落地** | memory-evals 静态导出流水线(reports.md 场景三)、view 的 Compare(view.md 计划) |

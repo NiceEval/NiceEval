@@ -93,17 +93,7 @@ Both faces are pre-sorted by `sort`, sharing the same baseline order — to perm
 
 With `rows: "experiment"`, every row automatically carries agent and model columns — metadata already present in the results, no configuration needed. Passing `filter` (`<MetricTable data={…} filter />`) renders a filter box above the table on the web face; typing hides non-matching rows — a browsing operation only, never changing the data, with no terminal counterpart. For filtering that is part of the scoring, use the `evals` prefix parameter or recompute with a different dimension.
 
-Add `expand` (e.g. `expand: "eval"`) and every row becomes expandable to a finer level:
-
-```tsx
-<MetricTable data={await MetricTable.data(selection, {
-  rows: "experiment",
-  columns: [passRate, costUSD],
-  expand: "eval",
-})} filter />
-```
-
-Opening a row shows that experiment's per-eval verdicts, failure reasons, and the same metric columns recomputed for each eval individually. The web face is a native expand/collapse disclosure — no JS required; the terminal face is an indented failure list underneath that row. A sub-row isn't a different kind of thing — it's the same table recomputed one dimension deeper.
+`MetricTable` does not expand into the entity layers below a row: to see the fixed diagnostic fields for an experiment, an eval, or an attempt, use the three entity lists ([Experiment List](#experiment-list-experimentlist), [Eval List](#eval-list-evallist), [Attempt List](#attempt-list-attemptlist)) below; to freely swap dimension and metric columns, use `MetricTable`.
 
 ## `MetricMatrix` — per-question grid
 
@@ -242,27 +232,77 @@ bub     87% → 93%   +6%        $0.42 → $0.45   +$0.03
 codex   80% → 80%   ±0         $0.51 → —       —
 ```
 
-## `CaseList` — failure case list
+The three components below drill down through the same hierarchy — experiment → experiment × eval → attempt — showing fixed entity facts rather than configurable dimension/metric columns. `AttemptListItem` is the shared leaf shape: `ExperimentList`'s expanded eval rows and `EvalList`'s expanded attempt rows both use it directly, and a report can hand either nested array straight to `<AttemptList items={...} />`. None of the three take column configuration or a `filter` prop — filtering is an ordinary array `.filter()`/`.slice()` on the plain array `.data(selection)` returns, done by the report author before the array is passed as `items`.
 
-A line-by-line list of failed and errored attempts: failed assertions, error summaries, judge remarks. A leaderboard answers "how many"; this answers "why".
+## Experiment List (`ExperimentList`)
+
+One item per experiment: identity, declared `flags`, folded eval-verdict composition, and the official two-level-aggregation metrics (pass rate, tokens, cost, duration) — expanding to that experiment's evals.
 
 ```tsx
-<CaseList data={await CaseList.data(selection, { outcomes: ["failed", "errored"], limit: 20 })} />
+const experiments = await ExperimentList.data(selection);
+
+<ExperimentList items={experiments.filter((exp) => exp.verdicts.errored === 0)} />
 ```
 
 ```text
-✗ weather/brooklyn · compare/codex-gpt-5.4 · failed · 41s · $0.04
-    gate calledTool("get_weather") — tool was never called
-    soft judge("the answer is based on real-time data") — 0.2/1: reply invents a temperature
-    → niceeval show weather/brooklyn
-✗ fixtures/button · compare/bub-gpt-5.4 · failed · 2m 10s · $0.09
-    gate fileChanged("src/components/Button.tsx")
-    → niceeval show fixtures/button
+compare/bub-gpt-5.4 · bub · gpt-5.4
+  pass 87% · 13 passed / 1 failed / 1 errored · 42 attempts · 4m 12s · $0.42
+  ✓ algebra/quadratic   @2F9K3A✓[E,X,⏱] @41BM7C✓[E,X,⏱]   18s avg · $0.02 avg
+  ✗ weather/brooklyn    @7K2M9Q✗[E,X,⏱] @8NX4DP✗[E,X] @9VQ2JE✗[E,X]   gate calledTool("get_weather")
+  ! fixtures/button     @C3H6TW![E,D]   command timed out after 120s
 
-(3 more not shown · limit 20)
+inspect: niceeval show @<id> [--eval|--execution|--diff]
 ```
 
-When free text (errors, assertion detail, judge remarks) needs redacting before publishing, use `CaseList.data`'s `redact` hook.
+Each attempt badge is a locator (`@2F9K3A`) plus a verdict mark and capability letters — `[E]` saved eval source, `[X]` execution steps, `[⏱]` OTel timing, `[D]` a workspace diff — so a reader (human or agent) knows what evidence is worth drilling into before running `niceeval show @<id>`. `.data(selection)` returns a plain `ExperimentListItem[]` ordered by experiment id; narrow to one agent, a directory prefix, or a run status with an ordinary `.filter()` — the component has no separate filter query language of its own.
+
+## Eval List (`EvalList`)
+
+One item per `experimentId + evalId` — the same eval run under two experiments is two separate results, never merged. Verdict, attempt count, aggregated score, cost, duration, and a failure-reason summary, expanding to that eval's attempts.
+
+```tsx
+const evals = await EvalList.data(selection);
+
+<EvalList items={evals.filter((item) => item.verdict !== "passed")} />
+```
+
+```text
+weather/brooklyn · compare/codex-gpt-5.4 · failed
+  score 0.20 · 3 attempts · 41s avg · $0.04 avg
+  @7K2M9Q✗[E,X,⏱] · gate calledTool("get_weather") — tool was never called
+  @8NX4DP✗[E,X]   · gate calledTool("get_weather") — tool was never called
+  @9VQ2JE✗[E,X]   · gate calledTool("get_weather") — tool was never called
+
+inspect: niceeval show @<id> [--eval|--execution|--diff]
+```
+
+`.data(selection)` returns a plain `EvalListItem[]`; filter by eval id prefix, experiment, verdict, or score with array `.filter()` — the component only renders whatever `items` it's handed.
+
+## Attempt List (`AttemptList`)
+
+The leaf of the entity lists: one item per attempt, showing experiment, eval, attempt number, verdict, duration, cost, failed assertions, error, judge remarks, and the evidence locator. It doesn't presuppose failures-only — it lists whatever `AttemptListItem[]` you pass it, passed samples included.
+
+```tsx
+const attempts = await AttemptList.data(selection, { redact });
+
+<AttemptList items={attempts.filter((item) => item.verdict === "failed" || item.verdict === "errored")} />
+```
+
+```text
+✗ @7K2M9Q · weather/brooklyn · compare/codex-gpt-5.4 · 41s · $0.04 · [E,X,⏱]
+  gate calledTool("get_weather") · failed
+    tool was never called
+  soft judge("the answer is based on real-time data") · 0.2/1
+    reply invents a temperature
+
+! @C3H6TW · fixtures/button · compare/bub-gpt-5.4 · 2m 00s · $0.09 · [E,D]
+  command timed out after 120s
+inspect: niceeval show @<id> [--eval|--execution|--diff]
+
+(3 more not shown · showing 20 of 23)
+```
+
+Give `.data()` a `redact` hook to sanitize error text, assertion detail, and judge remarks before publishing; decide which attempts to show by filtering the returned `AttemptListItem[]`. `limit` is likewise an ordinary `.slice(0, 20)` on the array — pass the true count as `total` and the component reports "n more not shown" instead of truncating silently.
 
 ## Beyond the official components
 

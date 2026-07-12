@@ -1,6 +1,6 @@
 # Concepts
 
-> 状态:本页词条描述当前已实现行为。`AttemptLocator`、`AttemptEvidence`、`AnnotatedEvalSource`、`ExecutionTree`,以及报告组件里的 `ExperimentList` / `EvalList` / `AttemptList`(完整定义见 [Reports](reports.md))均已实现,取代了旧的 `AttemptRef`(快照/attempt 路径对)、彼此独立的标准事件流与 trace 瀑布图,以及 `ExperimentTable`、`CaseList`、`MetricTable.expand`(均已删除,无兼容层)。唯一尚未跟进的角落是 `niceeval view` 证据室的 attempt 路由(`src/view/app/`)仍在消费旧的两段式深链,还没切到 `#/attempt/@<locator>` 单段格式,见 [View](view.md) 的状态说明。
+> 状态:本页词条描述当前已实现行为。`AttemptLocator`、`AttemptEvidence`、`AnnotatedEvalSource`、`ExecutionTree`,以及报告组件里的 `ExperimentList` / `EvalList` / `AttemptList`(完整定义见 [Reports](reports.md))均已实现,取代了旧的 `AttemptRef`(快照/attempt 路径对)、彼此独立的标准事件流与 trace 瀑布图,以及 `ExperimentTable`、`CaseList`、`MetricTable.expand`(均已删除,无兼容层)。`niceeval view` 证据室的 attempt 路由(`src/view/app/`)同样消费 `#/attempt/@<locator>` 单段格式,报告页与 view 靠同一个 locator 身份契约打通,见 [View](view.md) 的状态说明。
 
 什么时候读这一篇:
 
