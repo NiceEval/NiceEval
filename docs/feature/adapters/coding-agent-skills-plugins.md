@@ -170,7 +170,7 @@ adapter 翻译:
 | Codex | `~/.codex/config.toml` 的 `[mcp_servers.<name>]`(复数——单数 `[mcp_server.x]` 会被 codex 静默忽略) |
 | bub | 不支持——没有 MCP 概念,`kind: "mcp"` 对 bub agent fail fast |
 
-MCP 只有一条进入路径:adapter factory 的构造期配置(现为 `mcpServers`,未来收敛进 `plugins`)。不提供「给已构造 Agent 后置追加 MCP」的原语——那会把两家 CLI 配置文件的格式知识复制出 factory,并在中立模块里引入按 `agent.name` 分发的行为分支。条件包装器(如"只在某个实验变体上多挂一个 MCP server")的正确姿势是接收 factory 而不是已构造的 Agent,在包装内部把 MCP 并进构造入参——这条规则管的是**构造期配置**(MCP / skills / model),不管**环境预置**:按实验变化的环境准备(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)不写进 Agent wrapper,挂在 `experiment.sandbox` 的 `.setup()` / `.teardown()` 链式钩子上,见 [Sandbox · 沙箱生命周期钩子](../sandbox.md#沙箱生命周期钩子setup--teardown)。
+MCP 只有一条进入路径:adapter factory 的构造期配置(现为 `mcpServers`,未来收敛进 `plugins`)。不提供「给已构造 Agent 后置追加 MCP」的原语——那会把两家 CLI 配置文件的格式知识复制出 factory,并在中立模块里引入按 `agent.name` 分发的行为分支。条件包装器(如"只在某个实验变体上多挂一个 MCP server")的正确姿势是接收 factory 而不是已构造的 Agent,在包装内部把 MCP 并进构造入参——这条规则管的是**构造期配置**(MCP / skills / model),不管**环境预置**:按实验变化的环境准备(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)不写进 Agent wrapper,挂在 `experiment.sandbox` 的 `.setup()` / `.teardown()` 链式钩子上,见 [Sandbox · 沙箱生命周期钩子](../../sandbox.md#沙箱生命周期钩子setup--teardown)。
 
 ### bub Python plugin
 
@@ -289,7 +289,7 @@ skill/plugin 安装失败是 **errored**,不是 agent 做题失败:
 - 它已经用 experiment 表达 baseline vs skill 变体;
 - 它把本地 `zod.md` 与迁移来的 `ponytail.md` 分成两组 eval。
 
-这个 wrapper 做的是**往 workspace 里注入一个文件**(把 skill 内容写成 `CLAUDE.md`),不是环境层预置——它不装二进制、不跨 attempt 存状态,只在这一次 `setup` 里写一个内容已知的文件到工作区,所以现阶段继续用手写 wrapper 是合理的过渡写法。真正的环境层动作(装某个实验专属的二进制、预热、按 `ctx.experimentId` 载入/回存记忆状态)不要塞进这类 wrapper,应该挂在 `experiment.sandbox` 的 `.setup()` / `.teardown()` 上,见 [Sandbox · 沙箱生命周期钩子](../sandbox.md#沙箱生命周期钩子setup--teardown)。
+这个 wrapper 做的是**往 workspace 里注入一个文件**(把 skill 内容写成 `CLAUDE.md`),不是环境层预置——它不装二进制、不跨 attempt 存状态,只在这一次 `setup` 里写一个内容已知的文件到工作区,所以现阶段继续用手写 wrapper 是合理的过渡写法。真正的环境层动作(装某个实验专属的二进制、预热、按 `ctx.experimentId` 载入/回存记忆状态)不要塞进这类 wrapper,应该挂在 `experiment.sandbox` 的 `.setup()` / `.teardown()` 上,见 [Sandbox · 沙箱生命周期钩子](../../sandbox.md#沙箱生命周期钩子setup--teardown)。
 
 下一步可以把手写 wrapper:
 

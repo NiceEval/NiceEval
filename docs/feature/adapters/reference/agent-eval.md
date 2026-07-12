@@ -211,5 +211,5 @@ await sandbox.writeFiles({ '__agent_eval__/results.json': JSON.stringify(context
 ## 相关阅读
 
 - [Adapter 契约](../contract.md) / [Adapter 写法](../authoring.md) —— niceeval 自己的 Agent 契约、逐 API 适配义务、能力分档、采集层设计。
-- [Observability](../../observability.md) —— niceeval 的标准事件流(`callId` 配对)、OTLP trace、 artifact 落盘。
-- [References](../../references.md) —— 调研其它外部项目(如 agent-eval 的 playground/view)学到什么。
+- [Observability](../../../observability.md) —— niceeval 的标准事件流(`callId` 配对)、OTLP trace、 artifact 落盘。
+- [References](../../../references.md) —— 调研其它外部项目(如 agent-eval 的 playground/view)学到什么。

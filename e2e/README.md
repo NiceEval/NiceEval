@@ -1,6 +1,6 @@
 # e2e：真实模型全链路 CI 套件
 
-设计见 [`docs/e2e-ci.md`](../docs/e2e-ci.md)。全程真实模型,没有任何 mock——费用靠便宜模型档位、小 `runs`、per-experiment `budget` 控制。
+设计见 [`docs/e2e-ci.md`](../docs/engineering/e2e-ci.md)。全程真实模型,没有任何 mock——费用靠便宜模型档位、小 `runs`、per-experiment `budget` 控制。
 
 - `shared/`：唯一一份 eval / experiment 定义,全部是参数化 factory。断言逻辑改这里、全矩阵生效。
 - `apps/`：被测应用,从 `examples/zh/tier1/<name>` 拷来并裁成只保 backend 的协议夹具(前端 / vite / 开发工作流都不参与被测协议,已删;`src/backend/` 与 tier1 保持一致)。凭据在各自 `.env`(不进 git,变量集见各自 `.env.example`);judge 凭据在 `projects/<name>/.env`(`NICEEVAL_JUDGE_KEY` / `NICEEVAL_JUDGE_BASE`)。

@@ -1,6 +1,6 @@
 # Sandbox —— 在哪里跑
 
-沙箱回答"在哪里、如何隔离地运行 agent 命令"。它把隔离环境的全部特殊性关进一个统一接口,让 [Adapter](adapters/README.md) 和核心都不必知道底下是 Docker 还是某个三方服务。
+沙箱回答"在哪里、如何隔离地运行 agent 命令"。它把隔离环境的全部特殊性关进一个统一接口,让 [Adapter](feature/adapters/README.md) 和核心都不必知道底下是 Docker 还是某个三方服务。
 
 ## 为什么需要沙箱
 
@@ -156,7 +156,7 @@ export default defineExperiment({
 
 ## Sandbox 作为数据结构(带参数)
 
-provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱快照 ID"。和 [agent](adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
+provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱快照 ID"。和 [agent](feature/adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
 
 ```typescript
 import { dockerSandbox, vercelSandbox, e2bSandbox } from "niceeval/sandbox";
@@ -225,7 +225,7 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 两条路,取决于新 provider 是不是打算贡献回 niceeval:
 
 - **贡献进 niceeval**(像 docker/vercel/e2b 那样内置):实现 `Sandbox` 接口的一个类(`create()` + `workdir` + run/read/write/stop/up-down-load;路径解析直接用 `src/sandbox/paths.ts`,不要自己再写一份),在 `sandbox/resolve.ts` 的 `resolveSandbox` / `createBackend` 加一个 `case`,需要带参数就在 `types.ts` 加一个 `XxxSandboxSpec` 并在 `define.ts` 加工厂。
-- **只在自己项目里用,不改 niceeval**:用 [`defineSandbox`](adapters/README.md)(`niceeval/sandbox` 导出)——传 `create()` 直接产出一个实现 `Sandbox` 接口的实例,`resolve.ts` 认到 `create` 就直接调用,跳过内置 provider switch,不需要 niceeval 认识这个 provider 的名字:
+- **只在自己项目里用,不改 niceeval**:用 [`defineSandbox`](feature/adapters/README.md)(`niceeval/sandbox` 导出)——传 `create()` 直接产出一个实现 `Sandbox` 接口的实例,`resolve.ts` 认到 `create` 就直接调用,跳过内置 provider switch,不需要 niceeval 认识这个 provider 的名字:
 
 ```typescript
 import { defineSandbox } from "niceeval/sandbox";
@@ -292,7 +292,7 @@ export default defineExperiment({
 });
 ```
 
-这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,钩子不复制 factory 拥有的配置知识,见 [Adapter 契约 · 三类配置的归属](adapters/contract.md#三类配置的归属本地配--实验传入--ctx-透传)。
+这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,钩子不复制 factory 拥有的配置知识,见 [Adapter 契约 · 三类配置的归属](feature/adapters/contract.md#三类配置的归属本地配--实验传入--ctx-透传)。
 
 跨 attempt 状态本身没有框架原语——没有 `persistentState` 这类东西。载入 / 回存是用户在 `setup` / `teardown` 里自己写的普通代码(读写一个外部 KV、文件、数据库,用什么都行);要用哪个键隔离不同实验的状态,靠 `ctx.experimentId`——`AgentContext` 新增的只读字段,值是路径推导的实验 id(与结果里 `experimentId` 同源),不经 experiment 跑时是 `undefined`。[载入…回存] 这段读写外部状态的代码是临界区,想让同一实验的 attempt 不并发踩踏,在 experiment 上声明 `maxConcurrency: 1` 即可串行,不需要框架另设锁。
 
@@ -307,7 +307,7 @@ remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它
 | 要准备的东西 | 放哪 | 怎么清理 |
 |---|---|---|
 | **这次实验**要按配置变化的环境(装二进制、预热模型、写 hook 文件、跨 attempt 状态) | [沙箱生命周期钩子](#沙箱生命周期钩子setup--teardown):`sandbox.setup()` / `.teardown()` | `teardown` 显式回收(回存状态、清外部资源);沙箱内文件随销毁自动没了 |
-| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](adapters/contract.md#agent-契约) | 随沙箱销毁,无需手工清 |
+| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](feature/adapters/contract.md#agent-契约) | 随沙箱销毁,无需手工清 |
 | **这条 eval** 的任务夹具、对跑到它的所有实验都生效的沙箱预置 | `EvalDef.setup` 或 `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁;要清沙箱外的东西用 `try/finally` |
 | **整个 run 共享**的外部服务(mock API、共享 DB、license) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
@@ -324,6 +324,6 @@ remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它
 
 ## 相关阅读
 
-- [Adapter 契约](adapters/contract.md) —— Adapter 如何通过 `Sandbox` 接口驱动 agent,以及 `setup` 的义务。
+- [Adapter 契约](feature/adapters/contract.md) —— Adapter 如何通过 `Sandbox` 接口驱动 agent,以及 `setup` 的义务。
 - [Runner](runner.md) —— 并发、预热、复用的调度。
 - [Vision](vision.md) —— provider 名只用于路由,不进核心行为。

@@ -2,7 +2,7 @@
 
 **来源:** OpenTelemetry 官方文档 / [semantic-conventions-genai 仓库](https://github.com/open-telemetry/semantic-conventions-genai)、各标准官方 spec(2026-07 抓取)。这是**调研记录**,和 [agent-eval 笔记](agent-eval.md)对照着读:同一个问题——"agent 干了什么,用什么 schema 记下来"——agent-eval 选择**自己定义一套闭集事件类型**,OTel GenAI 是**行业标准的另一套**。本篇记录 OTel GenAI 到底定义了什么、还有哪些标准在解决同一问题、以及这些对 niceeval 的 `StreamEvent` / trace 双轨设计意味着什么。
 
-niceeval 自己的选择已经定了(见 [Observability](../../observability.md#otlp-traces--统一瀑布图)):**断言走自定义 `StreamEvent[]`,trace 归一到 OTel GenAI semconv,不发明私有 trace schema**。本篇是这个决定背后的对照材料。
+niceeval 自己的选择已经定了(见 [Observability](../../../observability.md#otlp-traces--统一瀑布图)):**断言走自定义 `StreamEvent[]`,trace 归一到 OTel GenAI semconv,不发明私有 trace schema**。本篇是这个决定背后的对照材料。
 
 ## 问题的两条路线
 
@@ -27,7 +27,7 @@ niceeval 自己的选择已经定了(见 [Observability](../../observability.md#
 
 工具执行 span:`gen_ai.operation.name = "execute_tool"`,配 `gen_ai.tool.name`、`gen_ai.tool.call.id`、`gen_ai.tool.description`、`gen_ai.tool.type`。
 
-**agent spans**(比 niceeval [observability.md 的 kind 映射表](../../observability.md#canonical-目标--opentelemetry-genai-语义约定不发明私有-schema)收录的更多,mapper 可按需扩展):
+**agent spans**(比 niceeval [observability.md 的 kind 映射表](../../../observability.md#canonical-目标--opentelemetry-genai-语义约定不发明私有-schema)收录的更多,mapper 可按需扩展):
 
 | `gen_ai.operation.name` | span 命名 | 含义 |
 |---|---|---|
@@ -96,12 +96,12 @@ LLM 工程平台的数据模型:`Trace`(一次请求)+ 嵌套 `Observation`(span
 2. **工具名跨 agent 归一是 eval 特有的需求,没有任何标准替你做。** 所有标准都保留原始工具名——它们的用户只看自己一个系统,不需要"Claude 的 `Bash` 和 Codex 的 `shell` 是同一件事"。要写 `calledTool("shell")` 这种跨 agent 断言,canonical `ToolName` 映射表(agent-eval 先做,niceeval 沿用)必须自己维护,这层没法外包给标准。
 3. **"拿 OTel 当唯一数据源"不可行,transcript 侧不可替代。** OTel 把消息内容、工具入参这些 eval 最需要断言的东西做成 opt-in(线上敏感数据顾虑);我们又不控制 agent 的 instrumentation(coding agent CLI 发什么是什么)。所以断言数据源必须走 transcript → `StreamEvent[]`,trace 只补"各花了多久、谁套谁"——双轨不是冗余,是两个 schema 各自只解决一半问题。
 4. **mapper 的归一目标可以逐步加宽。** agent spans 新增了 `invoke_workflow` / `plan`,provider 页和 `mcp.*` 在增长;OTel 自己出了 `gen_ai.evaluation.result` 事件。niceeval 的 `SpanKind` 现在收 `turn | model | tool | agent | other` 够用,将来要区分 plan / handoff / guardrail 时,先看标准里有没有现成词,别自造。
-5. **semconv 仍是 Development,mapper 要按"键名会变"来写。** 归一逻辑集中在每 agent 一个薄 mapper 里(而不是散在 view / select),正是为了键名漂移时只改一处——这个仓库结构决定(见 [Observability](../../observability.md#每个-agent-一个薄-mapper))被"标准还没稳"进一步坐实。
+5. **semconv 仍是 Development,mapper 要按"键名会变"来写。** 归一逻辑集中在每 agent 一个薄 mapper 里(而不是散在 view / select),正是为了键名漂移时只改一处——这个仓库结构决定(见 [Observability](../../../observability.md#每个-agent-一个薄-mapper))被"标准还没稳"进一步坐实。
 
 ## 相关阅读
 
 - [agent-loop-apis.md](agent-loop-apis.md) —— 四个主流 agent loop 的原生 API 面(这些标准的生产者侧)。
 - [otel-instrumentation.md](otel-instrumentation.md) —— 应用侧埋点里内容默认采不采(数据可得性)。
 - [agent-eval 笔记](agent-eval.md) —— 自定义路线的具体实现(采集 / 转换 / 落地、顺序配对的坑)。
-- [Observability](../../observability.md) —— niceeval 的双轨:StreamEvent 断言 + canonical GenAI trace。
+- [Observability](../../../observability.md) —— niceeval 的双轨:StreamEvent 断言 + canonical GenAI trace。
 - [Adapter 契约](../contract.md) —— `StreamEvent` 词汇与逐断言的数据义务。

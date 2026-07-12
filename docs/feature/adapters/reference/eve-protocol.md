@@ -115,7 +115,7 @@ interface RuntimeIdentity {
    ```
 
 6. **`authorization.*` 与 `input.requested` 分开。** 授权(OAuth / 连接)和 HITL 问答是两种"停",eve 分成两组事件、各带 verdict;niceeval 目前只有一种。评测带三方连接的 agent 时会需要。
-7. **落盘 artifact 带 schema 版本。** `StreamEvent` 是进程内模型可以不带版本,但 `.niceeval/<experiment>/<snapshot>/` 的事件流 JSON 文件是跨版本读的;eve 的 `x-eve-stream-version` 头是先例。niceeval 的具体取舍见 [Results Format · 版本与升级设计](../../results-format.md#版本与升级设计):版本号放在快照级 `snapshot.json` 顶层,整个快照(元数据 + 全部 attempt 文件)共用同一个 `schemaVersion`,attempt 文件继续保持裸 JSON array/object。
+7. **落盘 artifact 带 schema 版本。** `StreamEvent` 是进程内模型可以不带版本,但 `.niceeval/<experiment>/<snapshot>/` 的事件流 JSON 文件是跨版本读的;eve 的 `x-eve-stream-version` 头是先例。niceeval 的具体取舍见 [Results Format · 版本与升级设计](../../../results-format.md#版本与升级设计):版本号放在快照级 `snapshot.json` 顶层,整个快照(元数据 + 全部 attempt 文件)共用同一个 `schemaVersion`,attempt 文件继续保持裸 JSON array/object。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](otel-genai.md#ag-ui--和-niceeval-streamevent-同形态的扁平事件流))。要做"实时看 agent 跑"的 view 时再回头看。
 
@@ -124,4 +124,4 @@ interface RuntimeIdentity {
 - [agent-eval 笔记](agent-eval.md) —— 逆向适配路线:采集 / 转换 / 落地三层与顺序配对的坑。
 - [OTel GenAI 等标准](otel-genai.md) —— 标准化遥测路线;三条路线的汇总对照表在那篇。
 - [Adapter 契约](../contract.md) —— niceeval 自己的 `StreamEvent` 词汇与逐 API 义务。
-- [Observability](../../observability.md) —— 双轨设计:StreamEvent 断言 + canonical GenAI trace。
+- [Observability](../../../observability.md) —— 双轨设计:StreamEvent 断言 + canonical GenAI trace。

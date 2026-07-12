@@ -61,7 +61,7 @@ export default defineExperiment({
 
 参数驱动的环境差异(比如按 `flags.skill` 往沙箱注入一个 skill 文件)写在 eval 的 `test(t)` 里:`if (t.flags.skill) await t.sandbox.writeFiles({ ".agent/skill.md": loadSkill(t.flags.skill) })`——普通代码,不需要框架钩子。
 
-详见 [Adapter 契约:三类配置的归属](adapters/contract.md#三类配置的归属本地配--实验传入--ctx-透传)。
+详见 [Adapter 契约:三类配置的归属](feature/adapters/contract.md#三类配置的归属本地配--实验传入--ctx-透传)。
 
 ## 实验怎么组织:文件夹 = 一组可对比的实验
 

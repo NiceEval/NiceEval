@@ -219,7 +219,7 @@ export default defineExperiment({
 });
 ```
 
-常规运行时,agent 由 experiment 提供 —— 这让同一份 eval 能换着被测对象跑(本地 vs 部署、agent A vs agent B),同时运行配置可签入、可复现。怎么写一个 agent,详见 [Adapter 写法](adapters/authoring.md)。
+常规运行时,agent 由 experiment 提供 —— 这让同一份 eval 能换着被测对象跑(本地 vs 部署、agent A vs agent B),同时运行配置可签入、可复现。怎么写一个 agent,详见 [Adapter 写法](feature/adapters/authoring.md)。
 
 ## 沙箱型:手工把文件放进沙箱
 
@@ -314,5 +314,5 @@ export default defineEval({
 
 - [Assertions](assertions.md) —— `t.check` / 作用域断言的完整速查表(看哪一轮、来源哪里)。
 - [Scoring](scoring.md) —— judge 细节、测试即评分、判定规则。
-- [Agents 与 Adapters](adapters/README.md) —— agent 三类 transport 与 agent 适配。
+- [Agents 与 Adapters](feature/adapters/README.md) —— agent 三类 transport 与 agent 适配。
 - [CLI](cli.md) —— 过滤、重试、并发等运行标志。

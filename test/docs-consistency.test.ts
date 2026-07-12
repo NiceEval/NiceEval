@@ -23,6 +23,14 @@ function relativeLinks(content: string): string[] {
     .filter((t) => t && !/^(https?:|mailto:|#)/.test(t));
 }
 
+// docs/README.md 的导航是一张 ASCII 树状图(```text 代码块),条目是 ├── / └── 前缀
+// 后跟裸文件名,不是 markdown 链接——单独识别这类条目的 basename 用于索引覆盖检查
+function treeEntryBasenames(content: string): Set<string> {
+  return new Set(
+    [...content.matchAll(/(?:├──|└──)\s+([\w.-]+\.mdx?)\b/g)].map((m) => m[1]),
+  );
+}
+
 describe("docs 一致性", () => {
   const docsFiles = walk("docs", ".md");
 
@@ -31,9 +39,12 @@ describe("docs 一致性", () => {
     const linked = new Set(
       relativeLinks(index).map((t) => join("docs", t)),
     );
-    const unindexed = docsFiles.filter(
-      (f) => f !== "docs/README.md" && !linked.has(f),
-    );
+    const treeBasenames = treeEntryBasenames(index);
+    const unindexed = docsFiles.filter((f) => {
+      if (f === "docs/README.md" || linked.has(f)) return false;
+      const base = f.slice("docs/".length).split("/").pop() as string;
+      return !treeBasenames.has(base);
+    });
     expect(unindexed, "这些文档没有被 docs/README.md 索引").toEqual([]);
   });
 

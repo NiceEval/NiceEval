@@ -43,6 +43,6 @@ export default defineAgent({
 
 ## 相关阅读
 
-- [adapters/contract.md](adapters/contract.md) —— 逐能力的构造证据、逐 API 的适配义务、负断言完整性规则。
+- [adapters/contract.md](feature/adapters/contract.md) —— 逐能力的构造证据、逐 API 的适配义务、负断言完整性规则。
 - [Observability · OTLP traces](observability.md#otlp-traces--统一瀑布图) —— OTel 现在只喂 trace 瀑布图,和这里讨论的事件类能力完全独立。
 - docs-site [Adapter 概念](../docs-site/zh/concepts/adapter.mdx) —— 面向用户的「能力从哪来」讲法,与本文现状一节一致。

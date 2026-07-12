@@ -15,7 +15,7 @@
 | `defineEval` / `defineConfig` / `defineExperiment` / `defineAgent` / `defineSandboxAgent` / `defineSandbox` | `src/define.ts` |
 | `requireEnv` / 工具 | `src/util.ts` |
 
-## Agents 与 Adapters([adapters/contract.md](adapters/contract.md) / [adapters/authoring.md](adapters/authoring.md))
+## Agents 与 Adapters([adapters/contract.md](feature/adapters/contract.md) / [adapters/authoring.md](feature/adapters/authoring.md))
 
 | 行为 | 文件 |
 |---|---|
@@ -30,7 +30,7 @@
 | 内置 adapter(claude-code / codex / bub) | **由被测项目自带**(`agents/*.ts`),niceeval 提供 `shared` + 解析器 |
 | `uiMessageStreamAgent`(AI SDK UI Message Stream 协议的内置无侵入 adapter) | `src/agents/ui-message-stream.ts` |
 
-## Coding Agent Skills / Plugins DX([adapters/coding-agent-skills-plugins.md](adapters/coding-agent-skills-plugins.md))
+## Coding Agent Skills / Plugins DX([adapters/coding-agent-skills-plugins.md](feature/adapters/coding-agent-skills-plugins.md))
 
 | 行为 | 文件 |
 |---|---|

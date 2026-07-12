@@ -1,6 +1,6 @@
 # Tier Sync:examples 的 origin → tier1 → tier2 → tier3 同步维护方案
 
-> **状态:已实现。** `scripts/sync-tiers.mjs`、`pnpm tiers:sync`、`pnpm tiers:check` 已落地,CI 在 `pnpm run typecheck` 之后跑 `tiers:check`。`examples/zh/.tier-sync.json` 登记全部目录对;链条是 origin → tier1 → tier2 → tier3(哪个应用有哪几层见 [examples/zh/README](../examples/zh/origin/README.md) 与状态文件本身)。
+`scripts/sync-tiers.mjs`、`pnpm tiers:sync`、`pnpm tiers:check` 维护 `examples/zh/.tier-sync.json` 登记的全部目录对;CI 在 `pnpm run typecheck` 之后跑 `tiers:check`。链条是 origin → tier1 → tier2 → tier3(哪个应用有哪几层见 [examples/zh/README](../../examples/zh/origin/README.md) 与状态文件本身)。
 
 ## 问题
 

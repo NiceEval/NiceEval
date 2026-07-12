@@ -6,7 +6,7 @@
 
 同一个应用按接入深度在 `examples/zh/` 下存多层目录,相邻两层的 diff 就是那一档的全部投入
 (分档定义见 [docs-site · Tier](../../../docs-site/zh/concepts/tier.mdx),层间同步机制见
-[docs/tier-sync.md](../../../docs/tier-sync.md),各层细节见各自 README):
+[docs/tier-sync.md](../../../docs/engineering/tier-sync.md),各层细节见各自 README):
 
 | 层 | ai-sdk-v7 | claude-sdk | codex-sdk | pi-sdk | langgraph |
 |---|---|---|---|---|---|

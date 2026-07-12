@@ -4,7 +4,7 @@
 
 先记住三条铁律(接类似应用时依然适用):
 
-1. **不改 origin 的任何文件。** 接入产物放 `examples/zh/tier1/<同名>/`:从 origin 复制整个应用,被复制的文件保持逐字节不变(除 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量),接入代码全部是**新增**文件。`pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页,"应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它;这条铁律由 CI 的 `pnpm tiers:check`(verbatim 校验)看守,见 [tier-sync](tier-sync.md)。
+1. **不改 origin 的任何文件。** 接入产物放 `examples/zh/tier1/<同名>/`:从 origin 复制整个应用,被复制的文件保持逐字节不变(除 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量),接入代码全部是**新增**文件。`pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页,"应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它;这条铁律由 CI 的 `pnpm tiers:check`(verbatim 校验)看守,见 [tier-sync](engineering/tier-sync.md)。
 2. **协议以实际输出为准。** 动手写映射之前,先把应用跑起来,`curl -N` 打一轮 `/api/chat` 把 SSE 帧看一遍。本文的帧格式描述来自当前代码,但代码会演化,别背文档。
 3. **被测应用由你自己按它的方式启动,eval 不代管进程、不另开端口。** adapter 只经环境变量(如 `CODEX_SDK_URL`)指向一个已经在跑的实例——没有 `server-lifecycle.ts` 这类"eval 侧拉起子进程"的机制,这是刻意的取舍,理由见[接入你的 Agent · 为什么不直调](../docs-site/zh/guides/connect-your-agent.mdx)同一条脉络(eval 不代管被测进程)。
 
@@ -12,7 +12,7 @@
 
 接入分三档(定义见 [docs-site · Tier](../docs-site/zh/concepts/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
 
-三档现在各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](tier-sync.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
+三档现在各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/tier-sync.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 
 ## 统一的接入配方
 
@@ -32,7 +32,7 @@ examples/zh/tier1/<name>/
 
 ### adapter 骨架
 
-adapter 的 `send` 每轮做的事,按顺序,不声明任何 `capabilities`——`t` 上解锁什么由 `send` 实际做到了什么决定(见[契约 · 能力从哪来](adapters/contract.md#能力从哪来构造证明不是问卷)):
+adapter 的 `send` 每轮做的事,按顺序,不声明任何 `capabilities`——`t` 上解锁什么由 `send` 实际做到了什么决定(见[契约 · 能力从哪来](feature/adapters/contract.md#能力从哪来构造证明不是问卷)):
 
 ```ts
 // agents/<name>.ts

@@ -1,6 +1,6 @@
 # 接入目标矩阵 —— 12 个被测对象怎么接、代码共享在哪(调研 + 路线图)
 
-> 状态:调研结论 + 接入路线图(2026-07 外部调研,来源见文末),尚未实现的目标都只是提案。通道定义见 [collection.md](collection.md)。事件流的实际接入路线是[官方转换器 / SDK 通道 0 或手写映射](collection.md#接入路线的优先级);OTel 只喂 trace 瀑布图,见 [Observability](../observability.md#otlp-traces--统一瀑布图)。
+> 状态:调研结论 + 接入路线图(2026-07 外部调研,来源见文末),尚未实现的目标都只是提案。通道定义见 [collection.md](collection.md)。事件流的实际接入路线是[官方转换器 / SDK 通道 0 或手写映射](collection.md#接入路线的优先级);OTel 只喂 trace 瀑布图,见 [Observability](../../observability.md#otlp-traces--统一瀑布图)。
 
 回答三个问题:各家 OTel 的 span"标题"统一吗;每个目标好不好接;接的时候哪段代码共享。
 
@@ -18,11 +18,11 @@
 | Claude Code(traces beta) | `claude_code.interaction` → `claude_code.llm_request` / `claude_code.tool` | 私有 `claude_code.*` 掺部分 `gen_ai.*` 属性 | **默认 `<REDACTED>`**(三个 `OTEL_LOG_*` 开关) |
 | codex CLI | 文档只承认 `codex.*` log events;实测 OTLP 里另有内部 tracing spans(`codex.exec` / `run_sampling_request`…),`mappers/codex.ts` 就是对着它写的 | 私有 | `log_user_prompt` 默认 false |
 
-背景事实:GenAI semconv 已迁到独立仓库 `semantic-conventions-genai`,整套仍标 **Development**,规范明文允许各家自定义 span 名格式;`gen_ai.operation.name` 的取值集合里**没有 handoff**(contrib 自造,与 [multi-agent 提案](../multi-agent.md)的 `handoff` 事件互为印证)。内容记录方式已从 events 改为 span 属性(`gen_ai.input/output.messages`),旧的 `gen_ai.prompt/completion` 已弃用但第三方仍在用。
+背景事实:GenAI semconv 已迁到独立仓库 `semantic-conventions-genai`,整套仍标 **Development**,规范明文允许各家自定义 span 名格式;`gen_ai.operation.name` 的取值集合里**没有 handoff**(contrib 自造,与 [multi-agent 提案](../../roadmap/multi-agent/README.md)的 `handoff` 事件互为印证)。内容记录方式已从 events 改为 span 属性(`gen_ai.input/output.messages`),旧的 `gen_ai.prompt/completion` 已弃用但第三方仍在用。
 
 两个结论,都印证既有设计、并给它添料:
 
-1. **收敛点只能放 mapper 层**([observability.md](../observability.md) 的"canonical = GenAI semconv,每家一个薄 mapper,view 只认 canonical"是唯一现实做法)。新料:AI SDK 官方新模式和 OpenClaw(见下)原生就说 semconv——这两家的 mapper 近乎透传;canonical 层要给 `agent_handoff` 这类规范外 operation 留通道。
+1. **收敛点只能放 mapper 层**([observability.md](../../observability.md) 的"canonical = GenAI semconv,每家一个薄 mapper,view 只认 canonical"是唯一现实做法)。新料:AI SDK 官方新模式和 OpenClaw(见下)原生就说 semconv——这两家的 mapper 近乎透传;canonical 层要给 `agent_handoff` 这类规范外 operation 留通道。
 2. **OTel 现在只能当时间轨,不管框架埋点采不采内容都一样。** 曾经设想过用"内容默认矩阵"判断 OTel 能不能当行为轨(框架系埋点默认全采 → 直接派生事件),这条路线已经从实现里移除——不管是框架系埋点(AI SDK / LangSmith / OpenInference / OpenLLMetry)还是 CLI 系(claude-code / codex)默认脱敏,行为轨(事件流)一律走 transcript / 官方转换器 / 手写映射,OTel 只画瀑布图。
 
 ## 二、矩阵 · Agent Software(沙箱型 CLI,`defineSandboxAgent` 路线)
@@ -54,7 +54,7 @@
 | 难度 | — | 中 | **低** | 中(要写精品转换器或手写映射,不再有 mixin 捷径) | 中(beta 风险) | 高且不稳定 |
 
 - **Codex SDK 是复用率最高的一个**:ThreadItem 与 `codex exec --json` 的 item 词汇同源(与 app-server 共享),`o11y/parsers/codex.ts` 的映射逻辑大半直接复用——把"stdout 捕获 + 抠 JSONL"升级成"通道 0 SDK 直构",采集层整段消失。设计判断:作为**现有 codex adapter 的第二形态**(进程内、不需要沙箱时用),不是替代。
-- **Claude SDK 同理**:SDKMessage 的 content 块结构 ≈ transcript 行形状,`parsers/claude-code.ts` 的块翻译逻辑可抽出共享核心;SDK 还有官方 `getSessionMessages()`,连磁盘旁读都省了。`parent_tool_use_id` 直接喂 [multi-agent 提案](../multi-agent.md)的归属字段。
+- **Claude SDK 同理**:SDKMessage 的 content 块结构 ≈ transcript 行形状,`parsers/claude-code.ts` 的块翻译逻辑可抽出共享核心;SDK 还有官方 `getSessionMessages()`,连磁盘旁读都省了。`parent_tool_use_id` 直接喂 [multi-agent 提案](../../roadmap/multi-agent/README.md)的归属字段。
 - **LangGraph 要写精品转换器或手写映射**:事件流需要消费 LangGraph 自己的 messages 结构(手写映射,或将来补一个精品转换器),OTel(`LANGSMITH_OTEL_ENABLED` 三个 env)只用来画瀑布图;HITL/会话按契约补 `send`。
 - **Cursor Agent SDK 值得盯**:事件词汇是六家里最贴 niceeval 契约的(`tool_call` 生命周期事件、`request` ≈ `input.requested`、usage 字段最全),`fromCursorSdk` 会比 `fromAiSdk` 还薄;但 public beta 声明 API 会变、无 OTel、三套 runtime——等 GA 再动。
 - **vm0 记为观察项**:事件 schema / resume / usage 全未公开,定位还在从 runtime 向托管 teammate 漂移;等接入面稳定,不要对着移动目标写 adapter。

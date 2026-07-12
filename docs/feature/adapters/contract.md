@@ -56,11 +56,11 @@ interface AgentSession {
 
 `send` 是**统一动词**,`Turn.events` 是**统一产物**。区别只在 `send` 内部怎么把原始返回变成 `events`——这就是 adapter 的核心难点。
 
-![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 调用你的应用并返回标准事件流 Turn。](../../docs-site/images/agent-turn-roundtrip-zh.svg)
+![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 调用你的应用并返回标准事件流 Turn。](../../../docs-site/images/agent-turn-roundtrip-zh.svg)
 
 `defineSandboxAgent` / `defineAgent`(见 `src/define.ts`)产出的都是这个 `Agent`,差别只在 `kind` 字段和语义:沙箱型的 `send` 在沙箱里 spawn CLI,remote 的 `send` 按你服务的协议发请求。`setup` 装 CLI 这类"每个沙箱一次就够"的动作不要放 `send`——多轮时 `send` 会被调多次,放里面等于每轮重装。
 
-就算 agent runtime 和 eval 在同一个代码库里,也不建议把 `send` 写成进程内直调你的函数——理由和 HTTP 的取舍见[接入你的 Agent · 为什么不直调](../../docs-site/zh/guides/connect-your-agent.mdx)。`Agent.kind` 只有 `"sandbox"` 和 `"remote"` 两种,没有独立的"进程内"分类:进程内调用只是 `defineAgent`(`kind: "remote"`)的 `send` 里发生的事,不是第三种契约。
+就算 agent runtime 和 eval 在同一个代码库里,也不建议把 `send` 写成进程内直调你的函数——理由和 HTTP 的取舍见[接入你的 Agent · 为什么不直调](../../../docs-site/zh/guides/connect-your-agent.mdx)。`Agent.kind` 只有 `"sandbox"` 和 `"remote"` 两种,没有独立的"进程内"分类:进程内调用只是 `defineAgent`(`kind: "remote"`)的 `send` 里发生的事,不是第三种契约。
 
 ## 能力从哪来:构造证明,不是问卷
 
@@ -74,7 +74,7 @@ interface AgentSession {
 | `t.calledTool()` / `t.toolOrder()` 等正断言 | events 里有 `action.*` |
 | `t.notCalledTool()` / `t.usedNoTools()` 等负断言**可信** | 事件来自带完整性证明的官方转换器(SDK 原生事件流透传、`fromAiSdk` 的 `result.steps`、Responses 的 `output`);手写映射没有这份证明,负断言可信度按来源判断,不按作者的自觉 |
 | `t.sandbox`、`t.sandbox.fileChanged()` 等 | `defineSandboxAgent` 构造(`kind: "sandbox"`) |
-| `EvalResult.trace`、`niceeval view` 瀑布图 | 配置了 OTel 接入(agent 的 `tracing` 块,或 remote agent + `defineConfig({ telemetry })`)——只画瀑布图,不影响任何断言,详见[观测性](../observability.md#otlp-traces--统一瀑布图) |
+| `EvalResult.trace`、`niceeval view` 瀑布图 | 配置了 OTel 接入(agent 的 `tracing` 块,或 remote agent + `defineConfig({ telemetry })`)——只画瀑布图,不影响任何断言,详见[观测性](../../observability.md#otlp-traces--统一瀑布图) |
 
 唯一仍然存在的运行时守卫是**沙箱能力**:`t.sandbox` / `t.sandbox.file()` / `t.sandbox.fileChanged()` 等直接读沙箱文件系统,非沙箱型 agent(`kind !== "sandbox"`)调用这些方法会立即得到清晰报错(`src/context/context.ts` 的 `capabilityGuard`)——没有沙箱就没有东西可读,不报错会静默返回空结果。其余能力(多轮对话、工具观测……)不设运行时守卫:没接会话存取器的 agent 每轮各是新对话(不报错,只是断言看不到历史);没吐 `action.*` 事件的 agent 上正断言自然不命中;负断言的可信度靠事件来源判断,不靠拦截调用。
 
@@ -104,7 +104,7 @@ type StreamEvent =
 
 1. **时序即语义。** 事件按真实发生顺序排——`eventOrder` / `toolOrder` 靠子序匹配,解析时不要按类型分桶再拼接(先全部 message 再全部 action 会让顺序断言全错)。
 2. **`callId` 配对。** 每个 `action.called` 都应有配对的 `action.result`。这是 niceeval 相对 agent-eval 的明确取舍(它靠"数组里最后一条未配对记录"的顺序假设,并发调用会错配,见[参考笔记](reference/agent-eval.md#两份-parser-对比暴露的设计事实));显式 id 在乱序 / 并发下也不错配。配对的兜底语义(`deriveRunFacts`):只有 called 没有 result → status 按 `"completed"` 算;只有 result 没有 called → 补一条 `name: "unknown"` 的占位调用。
-3. **双名字都填。** `name` 放 agent 的原始工具名,`tool` 放归一后的[规范名 `ToolName`](../observability.md#transcript--标准事件流)。派生 `ToolCall` 用 `tool` 当 `name`(缺省落 `"unknown"`)、原始名进 `originalName`;`calledTool` / `toolOrder` 两个名字都认,但跨 agent 断言(`calledTool("file_read")`)只有填了 `tool` 才能命中。
+3. **双名字都填。** `name` 放 agent 的原始工具名,`tool` 放归一后的[规范名 `ToolName`](../../observability.md#transcript--标准事件流)。派生 `ToolCall` 用 `tool` 当 `name`(缺省落 `"unknown"`)、原始名进 `originalName`;`calledTool` / `toolOrder` 两个名字都认,但跨 agent 断言(`calledTool("file_read")`)只有填了 `tool` 才能命中。
 
 ### 派生事实(core 算,共享,agent 无关)
 
@@ -177,7 +177,7 @@ interface InputRequest {
 - **运行器做什么:** 备好沙箱(上传 / git 基线 / eval 级 setup)后、首次 `send` 前调一次 `setup`;`setup` 返回的 cleanup 和 `teardown` 都在 finally 跑。
 - **adapter 义务:** `setup` 只做"每个沙箱一次"的事(装 CLI、写主配置、装 skill / plugin);失败应直接抛——那是 **errored**(基建问题),不是 agent 做题失败,见 [Skills / Plugins 的失败语义](coding-agent-skills-plugins.md#失败语义)。
 
-这里的 `setup` / `teardown` 是 **agent 级**的一次性预置,回答"怎么连自己"。按实验变化的**环境层**预置(装二进制、预热、跨 attempt 状态)不属于这个契约,走 `SandboxSpec` 自己的 `.setup()` / `.teardown()` 链式钩子——它在 agent 的 `setup` 之前跑、`teardown` 之后收尾,见 [Sandbox · 沙箱生命周期钩子](../sandbox.md#沙箱生命周期钩子setup--teardown)。
+这里的 `setup` / `teardown` 是 **agent 级**的一次性预置,回答"怎么连自己"。按实验变化的**环境层**预置(装二进制、预热、跨 attempt 状态)不属于这个契约,走 `SandboxSpec` 自己的 `.setup()` / `.teardown()` 链式钩子——它在 agent 的 `setup` 之前跑、`teardown` 之后收尾,见 [Sandbox · 沙箱生命周期钩子](../../sandbox.md#沙箱生命周期钩子setup--teardown)。
 
 ### 断言族的数据义务(adapter 要「说」什么)
 
@@ -237,7 +237,7 @@ t.succeeded()                        ✓
 | **flags**(webResearch、注入哪个 skill…) | **实验决定** | `ctx.flags.*` —— agent 的 `send` 与 eval 的 `t.flags` 都能读 |
 | runs / earlyExit / evals / sandbox / budget | **实验决定** | 运行器据此调度 |
 
-一句话:**agent 只配「怎么连我自己」,不配「跑哪个模型、开哪些开关」**;后者全留给 [experiment](../experiments.md),经 `ctx`(eval 里是 `t`)透传。这样同一个 agent 能被不同实验以不同 model / reasoningEffort / flags 复用,不必改 agent。
+一句话:**agent 只配「怎么连我自己」,不配「跑哪个模型、开哪些开关」**;后者全留给 [experiment](../../experiments.md),经 `ctx`(eval 里是 `t`)透传。这样同一个 agent 能被不同实验以不同 model / reasoningEffort / flags 复用,不必改 agent。
 
 ## `ctx`(agent 侧)与 `t`(eval 侧):同一份东西,两个名字
 
@@ -261,7 +261,7 @@ t.succeeded()                        ✓
 ## 相关阅读
 
 - [Adapter 写法](authoring.md) —— remote / sandbox 示例、采集层、shared 工具、三段式拆解。
-- [Assertions](../assertions.md) —— 这些断言在 eval 侧的完整参考(作用域 + 来源)。
-- [Observability](../observability.md) —— transcript → 标准事件流的归一化、规范工具名、OTLP trace。
-- [Experiments](../experiments.md) —— model / flags 怎么经 experiment 传进 ctx。
-- [docs-site Adapter 概念](../../docs-site/zh/concepts/adapter.mdx) / [Tier](../../docs-site/zh/concepts/tier.mdx) —— 面向用户的同一份契约与三档接入。
+- [Assertions](../../assertions.md) —— 这些断言在 eval 侧的完整参考(作用域 + 来源)。
+- [Observability](../../observability.md) —— transcript → 标准事件流的归一化、规范工具名、OTLP trace。
+- [Experiments](../../experiments.md) —— model / flags 怎么经 experiment 传进 ctx。
+- [docs-site Adapter 概念](../../../docs-site/zh/concepts/adapter.mdx) / [Tier](../../../docs-site/zh/concepts/tier.mdx) —— 面向用户的同一份契约与三档接入。

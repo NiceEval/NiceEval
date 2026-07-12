@@ -1,6 +1,6 @@
 # 应用侧 OTel 埋点生态 —— span 里到底有没有 eval 要的数据(调研记录)
 
-**来源:** 各生态官方文档 / spec / 源码(2026-07 抓取,URL 见各节)。**问题:** 如果被测 agent 已经接了 OTel(应用把 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 niceeval 起的本机接收器),能不能从 spans 里还原出「调了什么工具、入参出参、说了什么、用了多少 token」——这是评估"从 span 派生事件"这条路线是否可行的数据可得性调研(结论:不划算,niceeval 现在事件流一律走 `send`,OTel 只用来画 trace 瀑布图,见 [Observability](../../observability.md#otlp-traces--统一瀑布图))。[otel-genai.md](otel-genai.md) 讲的是这些生态的 **schema 长什么样**;本篇只回答**内容默认采不采、字段在哪**。
+**来源:** 各生态官方文档 / spec / 源码(2026-07 抓取,URL 见各节)。**问题:** 如果被测 agent 已经接了 OTel(应用把 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 niceeval 起的本机接收器),能不能从 spans 里还原出「调了什么工具、入参出参、说了什么、用了多少 token」——这是评估"从 span 派生事件"这条路线是否可行的数据可得性调研(结论:不划算,niceeval 现在事件流一律走 `send`,OTel 只用来画 trace 瀑布图,见 [Observability](../../../observability.md#otlp-traces--统一瀑布图))。[otel-genai.md](otel-genai.md) 讲的是这些生态的 **schema 长什么样**;本篇只回答**内容默认采不采、字段在哪**。
 
 ## 结论先行
 
@@ -56,10 +56,10 @@
 
 1. **mixin 的数据可得性成立,但按生态分层。** 被测应用用的是 AI SDK telemetry / OpenLLMetry / OpenInference 之一(TS/Python AI 应用的大多数)→ 工具入出参和消息文本**默认就在 span 里**,「从 spans 派生 `StreamEvent[]`」有米下锅;用的是 OTel 官方 instrumentation → 默认只有骨架 + token,mixin 要提示用户开 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` 才能解锁内容断言。
 2. **方言表是接收侧的固定成本,Langfuse 已趟过路。** 四套词汇(gen_ai 新版 / OpenLLMetry 旧式索引 / OpenInference / `ai.*`)各自的工具调用字段都不同,但每套内部结构清楚、有显式 call id——一方言一个薄解析器,与 niceeval 既有的「每 agent 一个薄 mapper」是同一个形状。
-3. **接收器不用动。** 现有 receiver 已满足 OTLP/HTTP 双编码 + gzip + 正确响应契约;它现在只服务 trace 瀑布图,见 [Observability](../../observability.md#otlp-traces--统一瀑布图)。
+3. **接收器不用动。** 现有 receiver 已满足 OTLP/HTTP 双编码 + gzip + 正确响应契约;它现在只服务 trace 瀑布图,见 [Observability](../../../observability.md#otlp-traces--统一瀑布图)。
 
 ## 相关阅读
 
 - [agent-loop-apis.md](agent-loop-apis.md) —— 四个 agent loop 的原生 API 面(转换路线的对照组)。
 - [otel-genai.md](otel-genai.md) —— 这些生态的 schema 全景与 niceeval 双轨结论。
-- [Observability · OTLP traces](../../observability.md#otlp-traces--统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。
+- [Observability · OTLP traces](../../../observability.md#otlp-traces--统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。

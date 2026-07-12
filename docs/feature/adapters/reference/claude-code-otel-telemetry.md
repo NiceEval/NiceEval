@@ -97,4 +97,4 @@ OTEL_TRACES_EXPORT_INTERVAL=1000                      # 拉到近实时,eval 场
 - [采集设计](../collection.md) —— 双轨四通道设计、claude-code 现有采集矩阵。
 - [agent-eval 参考](agent-eval.md) —— agent-eval 的 claude-code 适配源码阅读(纯磁盘旁读,不涉及 OTel)。
 - [OTel GenAI 等标准参考](otel-genai.md) —— OTel GenAI semconv 本身讲的是"字段该叫什么",这篇讲的是"Claude Code 到底发不发、多快发"。
-- [Observability](../../observability.md) —— niceeval 的 `TraceReceiver` / OTLP 解析管线现状。
+- [Observability](../../../observability.md) —— niceeval 的 `TraceReceiver` / OTLP 解析管线现状。

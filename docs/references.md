@@ -30,6 +30,6 @@
 
 - [View](view.md) —— 上面几条学到的东西,具体设计在这篇(Compare 是其中一个计划中的小功能)。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
-- [agent-eval 适配笔记](adapters/reference/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读记录。
-- [OTel GenAI 等标准参考](adapters/reference/otel-genai.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。
-- [eve 协议机制](adapters/reference/eve-protocol.md) —— eve 运行时原生事件流的字段与采集机制,StreamEvent 演进的上限参照。
+- [agent-eval 适配笔记](feature/adapters/reference/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读记录。
+- [OTel GenAI 等标准参考](feature/adapters/reference/otel-genai.md) —— "agent 行为怎么记"的行业标准调研,对比 agent-eval 的自定义方案。
+- [eve 协议机制](feature/adapters/reference/eve-protocol.md) —— eve 运行时原生事件流的字段与采集机制,StreamEvent 演进的上限参照。

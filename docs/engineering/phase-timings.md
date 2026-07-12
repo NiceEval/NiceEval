@@ -1,6 +1,6 @@
-# Phase Timings 与安装基准 —— 设计提案(未实现)
+# Phase Timings 与安装基准
 
-> 状态:设计提案,未实现。分期见文末;落地时 [Results Format](results-format.md) 的 `AttemptRecord` 小节按本文重写,本状态行更新。
+落地时 [Results Format](../results-format.md) 的 `AttemptRecord` 小节按本文重写。分期见文末。
 
 ## 要回答的问题
 
@@ -33,7 +33,7 @@ interface PhaseTiming {
 
 ### 阶段名闭集
 
-阶段边界与[沙箱生命周期](sandbox.md#沙箱在生命周期里的位置)的固定调用链一一对应:
+阶段边界与[沙箱生命周期](../sandbox.md#沙箱在生命周期里的位置)的固定调用链一一对应:
 
 | name | 覆盖 | 何时缺席 |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ interface PhaseTiming {
 ### 形状与落点的裁决
 
 - **为什么是有序数组而不是固定字段 record**:顺序天然携带「死在哪一步之前」;缺席语义干净(没跑 = 没条目,不用在 0 / undefined 之间选);新增阶段不改类型形状。聚合侧按 `name` 分组,和 record 一样是一行代码。
-- **为什么住 `result.json` 而不是 OTel trace**:trace 是条件产物(agent 配了 tracing、receiver 起了才有),而阶段计时必须无条件产出;且 [Observability](observability.md) 的契约是 span 只来自被测 agent、只喂瀑布图——runner 自己的阶段 span 混进去会污染跨 agent 对比语义。phases 是判定记录旁的运行事实,家在权威记录里。
+- **为什么住 `result.json` 而不是 OTel trace**:trace 是条件产物(agent 配了 tracing、receiver 起了才有),而阶段计时必须无条件产出;且 [Observability](../observability.md) 的契约是 span 只来自被测 agent、只喂瀑布图——runner 自己的阶段 span 混进去会污染跨 agent 对比语义。phases 是判定记录旁的运行事实,家在权威记录里。
 - **为什么不给进度行加时间戳再挖掘**:进度行是人读的 UI 文案,把它变成机器口径意味着改文案就破坏数据管道;计时和展示各自独立,共享的只是阶段边界这几个代码位置。
 - **兼容性**:纯增量的可选字段,读取面「忠实磁盘、忽略未知字段」的契约不变,`schemaVersion` 不升。携带条目(`--resume`)的 phases 随 `result.json` 原样携带。
 
@@ -72,7 +72,7 @@ interface PhaseTiming {
 
 ## 基准:`bench/` 直接调用的内部脚本
 
-安装基准是仓库常备的**优化工作台**,与单元测试(`pnpm test`)和 CI 门禁都独立:目标读者是「正在优化冷启动 / checkpoint 缓存 / 安装脚本的人」,工作流是改一版实现 → 重跑基准 → 与上一轮快照对比,要的是「跑一次、当场看到数字」,不是「跑完再另开一步生成报告页」的两段式流程。因此 `bench/` **不是**一个 niceeval 项目——没有 `niceeval.config.ts`,没有 `evals/`/`experiments/` 走 CLI discover,也不吃 [Reports](reports.md) 积木出页面。它是几个纯 TS 脚本,直接调用 runner 内部单次 attempt 的执行引擎,一条命令跑完直接把耗时表打印到终端:
+安装基准是仓库常备的**优化工作台**,与单元测试(`pnpm test`)和 CI 门禁都独立:目标读者是「正在优化冷启动 / checkpoint 缓存 / 安装脚本的人」,工作流是改一版实现 → 重跑基准 → 与上一轮快照对比,要的是「跑一次、当场看到数字」,不是「跑完再另开一步生成报告页」的两段式流程。因此 `bench/` **不是**一个 niceeval 项目——没有 `niceeval.config.ts`,没有 `evals/`/`experiments/` 走 CLI discover,也不吃 [Reports](../reports.md) 积木出页面。它是几个纯 TS 脚本,直接调用 runner 内部单次 attempt 的执行引擎,一条命令跑完直接把耗时表打印到终端:
 
 ```text
 bench/
@@ -88,7 +88,7 @@ bench/
 
 ### 复用点:直接调 runner 的单次 attempt 引擎,不重新拼装顺序
 
-单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](sandbox.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](e2e-ci.md) 的 `verify.mjs` 黑盒起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
+单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../sandbox.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](e2e-ci.md) 的 `verify.mjs` 黑盒起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
 
 探测 eval 用 `defineEval`(公开 API)在脚本里就地内联构造,不落 `.eval.ts` 文件、不经过 discover:
 
@@ -161,7 +161,7 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 
 ## 相关阅读
 
-- [Sandbox · 沙箱在生命周期里的位置](sandbox.md#沙箱在生命周期里的位置) —— phases 阶段边界的出处,也是 `runAttemptBody` 执行序的出处。
-- [Results Format](results-format.md) —— `result.json` 的权威记录契约,落地后承载 `phases` 字段定稿。
+- [Sandbox · 沙箱在生命周期里的位置](../sandbox.md#沙箱在生命周期里的位置) —— phases 阶段边界的出处,也是 `runAttemptBody` 执行序的出处。
+- [Results Format](../results-format.md) —— `result.json` 的权威记录契约,落地后承载 `phases` 字段定稿。
 - [E2E CI](e2e-ci.md) —— 回归门禁侧的沙箱矩阵,与 bench 的分工见「运行纪律」;`bench/` 触达 runner 内部函数与 e2e 触达 CLI 子进程是同一类仓库内部特权。
-- [Observability](observability.md) —— 为什么 phases 不走 OTel trace。
+- [Observability](../observability.md) —— 为什么 phases 不走 OTel trace。
