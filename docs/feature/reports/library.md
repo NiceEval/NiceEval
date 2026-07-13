@@ -180,7 +180,7 @@ const items = await EvalList.data(selection);
 
 #### `AttemptList`
 
-每项显示一次 attempt 的判定、断言、错误、Judge 证据和 locator。适合做“最近失败”或“待处理失败”区块。
+每项显示一次 attempt 的判定、断言、结构化错误的一层摘要、Judge 证据和 locator。diagnostics/cause/stack 属于 locator 下钻详情,不塞进比较列表。适合做“最近失败”或“待处理失败”区块。
 
 ```tsx
 const all = await AttemptList.data(selection, {
@@ -191,7 +191,7 @@ const failed = all.filter((x) => x.verdict === "failed" || x.verdict === "errore
 <AttemptList items={failed.slice(0, 20)} total={failed.length} />
 ```
 
-`redact` 只处理 error、断言 detail 和 evidence；experimentId、evalId、locator 等身份字段不会被改写。
+`redact` 处理 error 的 message/cause/stack、diagnostic message/data、断言 detail 和 evidence；experimentId、evalId、locator、error/diagnostic code 与 lifecycle operation 等身份和分类字段不会被改写。
 
 ### 指标组件
 

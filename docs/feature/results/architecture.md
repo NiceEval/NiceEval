@@ -40,7 +40,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -51,7 +51,7 @@
 }
 ```
 
-版本历史:`1` 初版;`2`(2026-07)= `ExperimentRunInfo.flags` 改名 `params`;`3`(2026-07-10)= 改回 `flags`(A/B feature flag 语义定稿,见 memory 的 experiment-flags-naming-reversal 条目);`4`(2026-07-11)= 落盘单位从 run 改为快照——实验目录在外层,快照元数据住 `snapshot.json`,判决住 attempt 级 `result.json`(裁决背景见 memory 的 results-per-snapshot 条目);`5` = `result.json` 新增 `locator`(不透明的 Attempt 定位符,见「`result.json`」);`sources.json` 从逐 attempt 内联全量源码改为「attempt 级引用 + 快照级 `sources/<sha256>.json` 去重仓库」(见「`sources.json`」)。
+版本历史:`1` 初版;`2`(2026-07)= `ExperimentRunInfo.flags` 改名 `params`;`3`(2026-07-10)= 改回 `flags`(A/B feature flag 语义定稿,见 memory 的 experiment-flags-naming-reversal 条目);`4`(2026-07-11)= 落盘单位从 run 改为快照——实验目录在外层,快照元数据住 `snapshot.json`,判决住 attempt 级 `result.json`(裁决背景见 memory 的 results-per-snapshot 条目);`5` = `result.json` 新增 `locator`(不透明的 Attempt 定位符,见「`result.json`」),`sources.json` 从逐 attempt 内联全量源码改为「attempt 级引用 + 快照级 `sources/<sha256>.json` 去重仓库」;`6` = `error` 从自由字符串改为带 lifecycle operation/code/message 的结构化错误,并新增有界 `diagnostics`。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个快照(snapshot.json + 全部 attempt 文件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份结果的 niceeval 版本查看:
 
@@ -117,7 +117,7 @@ interface SnapshotMeta {
 
 ## `result.json`
 
-单个 attempt 的**权威记录**:判决与断言只住在这里。attempt 完成时一次写成,之后没有任何环节会改写它。
+单个 attempt 的**权威记录**:判决、断言、结构化执行错误与 diagnostics 只住在这里。attempt 的 cleanup/teardown/stop 完成后一次写成,之后没有任何环节会改写它。
 
 ```typescript
 interface AttemptRecord {
@@ -133,7 +133,10 @@ interface AttemptRecord {
   assertions: AssertionResult[];
   usage?: Usage;
   estimatedCostUSD?: number;
-  error?: string;
+  /** 使 attempt 无法正常完成的唯一致命执行错误。 */
+  error?: AttemptError;
+  /** 不一定改变 verdict、但运行后仍需回顾的有界诊断。 */
+  diagnostics?: DiagnosticRecord[];
   skipReason?: string;
   /** 本 attempt 开始的墙钟时刻;缺失时读取面回退快照的 startedAt。携带条目保留原条目的值,身份键与去重以它为锚。 */
   startedAt?: string;
@@ -173,9 +176,46 @@ interface PhaseTiming {
   /** 该阶段抛错或被超时中断；至多一条，且总在数组末尾。 */
   failed?: true;
 }
+
+type LifecycleOperationName =
+  | "sandbox.provision" | "sandbox.setup" | "sandbox.teardown" | "sandbox.stop"
+  | "workspace.prepare" | "workspace.diff"
+  | "eval.setup" | "eval.run"
+  | "agent.setup" | "agent.run" | "agent.teardown"
+  | "telemetry.configure" | "telemetry.collect"
+  | "scoring.evaluate";
+
+interface AttemptError {
+  /** 稳定、可供 CI/Agent 分支处理的机器码;未知异常使用 "unexpected-error"。 */
+  code: string;
+  /** 人可读的一层原因,不拼接整份 SDK response。 */
+  message: string;
+  /** runner 在错误发生时已经打开的 lifecycle operation。 */
+  operation: LifecycleOperationName;
+  /** 原异常有 stack 时保留,供 show 展开;终端即时反馈不整段打印。 */
+  stack?: string;
+  /** 下层 SDK/OS 错误的有限摘要。 */
+  cause?: { name?: string; code?: string; message: string };
+}
+
+interface DiagnosticRecord {
+  code: string;
+  level: "warning" | "error";
+  message: string;
+  operation: LifecycleOperationName;
+  data?: Readonly<Record<string, JsonValue>>;
+  /** 相同 dedupeKey 折叠后的出现次数;省略等于 1。 */
+  count?: number;
+}
 ```
 
 `phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。阶段边界、失败封口、与 `durationMs` 的口径以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)。
+
+`error` 与 `diagnostics` 都使用 runner 已绑定的 lifecycle operation,调用方不能自行填写 phase/scope。两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。`diagnostic.level` 表达消息严重度,不是 verdict 的别名。
+
+`progress` 文本不写入任何 artifact。它是运行时可覆盖状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。事后回顾依靠 `phases`、`error`、`diagnostics` 与可选的 `events.json` / `trace.json`。trace 不是必需兜底:provision 发生在 telemetry 之前,teardown 发生在 trace collect 之后,没有 tracing 的 provider 也必须留下同样完整的错误摘要。
+
+attempt 的结果封口发生在 cleanup、teardown 与 sandbox stop 之后;随后 `result.json` 与其它 attempt artifacts 原子写入。这样 teardown diagnostic 不会因为主 test 已经返回而丢失。进程在封口前被强杀时,该 attempt 仍属于未完成,不会留下一个伪装完整的 `result.json`。
 
 快照级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `snapshot.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退快照的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份兜底算一份。
 

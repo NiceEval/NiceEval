@@ -9,11 +9,13 @@ export default defineSandboxAgent({
   name: "my-coding-agent",
 
   async setup(sandbox, ctx) {
+    ctx.progress({ message: "checking my-agent installation" });
     await shared.ensureInstalled(sandbox, "my-agent", ["npm", "install", "-g", "my-agent"]);
     // 写鉴权、CLI 主配置、skills / plugins；每个 attempt 只执行一次。
   },
 
   async send(input, ctx) {
+    ctx.progress({ message: "running my-agent" });
     const result = await ctx.sandbox.runCommand("my-agent", ["--json", input.text]);
     const parsed = parseMyAgent(result.stdout);
 
@@ -29,6 +31,8 @@ export default defineSandboxAgent({
 ## 生命周期
 
 `setup` 安装 CLI、写 Agent 配置和扩展；失败直接抛出并使 attempt errored。`send` 只执行一轮任务，多轮时会重复调用。可选 cleanup 和 `teardown` 始终在 finally 阶段执行。
+
+每个回调的 `ctx.progress(...)` 只更新当前 `agent.setup` / `agent.run` / `agent.teardown` 的短期 activity;需要永久保留的协议降级、transcript 缺失或 cleanup 问题用 `ctx.diagnostic(...)`。不要从 CLI stdout 的每个 frame 转发 progress,也不要直接写宿主进程的 stdout/stderr。完整语义见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 
 环境级二进制、预热和跨 attempt 资源属于 `SandboxSpec.setup()`；eval 的任务 fixture 属于 eval setup 或 `test(t)`。三类 setup 不交换职责。
 

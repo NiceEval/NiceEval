@@ -165,7 +165,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
     <timestamp>-<suffix>/            # 快照目录:时间戳 + 随机后缀,独占创建
       snapshot.json                  # 快照元数据(快照开始时写入,收尾补 completedAt)
       <evalId>/a<attempt>/           # 单个 eval attempt 的目录
-        result.json                  # 判决、断言、用量 —— attempt 完成时一次写成
+        result.json                  # 判决、断言、结构化错误/diagnostics、用量 —— attempt 完成时一次写成
         events.json
         sources.json
         trace.json
@@ -173,7 +173,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
         diff.json
 ```
 
-`snapshot.json` 只放身份与版本元数据(`experimentId`、`agent`、`model`、`startedAt`、收尾补写的 `completedAt`),**不含任何逐 attempt 数据**。判决与断言的权威记录住在每个 attempt 目录的 `result.json`——attempt 完成时一次写成,之后不再改写;通过数、失败数、总用量、总成本这类聚合不落盘,由读取面([Results Lib](feature/results/library.md)的 `openResults`)逐条推导。每个 attempt 的重数据按需写入自己的目录,文件内容都是 JSON array/object,不是 JSONL / NDJSON。完整 schema、版本号设计、路径转义规则和 view 读取规则见 [Results Format](feature/results/architecture.md)。
+`snapshot.json` 只放身份与版本元数据(`experimentId`、`agent`、`model`、`startedAt`、收尾补写的 `completedAt`),**不含任何逐 attempt 数据**。判决、断言、结构化执行错误与 diagnostics 的权威记录住在每个 attempt 目录的 `result.json`——attempt 的 cleanup/teardown/stop 完成后一次写成,之后不再改写;瞬时 progress 不落盘。通过数、失败数、总用量、总成本这类聚合不落盘,由读取面([Results Lib](feature/results/library.md)的 `openResults`)逐条推导。每个 attempt 的重数据按需写入自己的目录,文件内容都是 JSON array/object,不是 JSONL / NDJSON。完整 schema、版本号设计、路径转义规则和 view 读取规则见 [Results Format](feature/results/architecture.md)。
 
 `result.json` 形如:
 
@@ -192,6 +192,8 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 ```
 
 `verdict` 只有 `passed` / `failed` / `errored` / `skipped` 四态,没有 `scored` 中间态(soft 断言的分数就在 `assertions[].score` 里如实记录,不影响这四态)。`failed` 与 `errored` 是互斥判定:前者表示断言/评分不通过,后者表示环境、超时、adapter 或 agent runtime 这类执行错误。JUnit reporter 也按这个口径输出 `<failure>` 与 `<error>`。
+
+OTel trace 不是执行错误的权威存储。Sandbox provisioning 可能早于 telemetry,teardown 可能晚于 trace collect,没有 tracing 的 provider 也必须产生同样可回顾的结构化 error/diagnostic。trace 只在存在时补充调用关系与耗时。
 
 artifact 是机器可读的,可回放、可二次分析、可喂给下游 dashboard。
 

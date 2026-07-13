@@ -16,7 +16,7 @@ Results 指一次或多次实验运行后保存在结果根目录中的结构化
             └── diff.json
 ```
 
-这里的 `results` 指持久化事实，不指终端输出或网页报告。判定与轻量摘要在 JSON 主记录中；体积较大、按需读取的对话、源码、trace 和 diff 拆成 attempt artifact。完整字段、可选文件和版本规则见 [Architecture](architecture.md)。
+这里的 `results` 指持久化事实，不指终端输出或网页报告。判定、结构化执行错误、去重后的 diagnostics 与轻量摘要在 JSON 主记录中；瞬时 progress 不落盘；体积较大、按需读取的对话、源码、trace 和 diff 拆成 attempt artifact。完整字段、可选文件和版本规则见 [Architecture](architecture.md)。
 
 用户通常不需要手工拼路径：用 [`niceeval/results`](library.md) 打开结果根、选择快照、读取 attempt artifact，或把一组快照复制到发布目录。
 

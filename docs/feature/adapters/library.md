@@ -26,6 +26,35 @@ export default defineAgent({
 
 URL、鉴权和请求体是 Adapter 的私有协议。model、reasoning effort 与实验 flags 来自 `ctx`，由 experiment 决定。
 
+## 向运行反馈进度与诊断
+
+`setup`、`send`、`teardown` 中的 `ctx` 都提供 `progress` 与 `diagnostic`,runner 会把它们绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown`:
+
+```ts
+export default defineAgent({
+  name: "support-bot",
+  async send(input, ctx) {
+    ctx.progress({ message: "waiting for upstream model" });
+    const response = await callAgent(input, { signal: ctx.signal });
+
+    if (response.eventsIncomplete) {
+      ctx.diagnostic({
+        code: "incomplete-event-stream",
+        level: "warning",
+        message: "Upstream response omitted tool result events",
+        data: { requestId: response.requestId },
+        dedupeKey: `incomplete-event-stream:${response.requestId}`,
+      });
+    }
+    return toTurn(response);
+  },
+});
+```
+
+`progress` 是可覆盖的短期 activity,适合 turn、tool 或安装进度;不要每个 token/delta 都调用。`diagnostic` 是永久 warning/error,适合协议降级、数据不完整和 cleanup 问题。两者都不能指定 phase、输出流或 ANSI,也不会改变 `Turn.status`/verdict。无法继续时抛异常;被测 agent 正常返回失败时通过 `Turn.status: "failed"` 表达。
+
+不要在 run 期间直接调用 `console.log/error` 或写 `process.stdout/stderr`:这会打散 Human dashboard,也会破坏 CI 的单一有序事件流。终端 profile 如何消费反馈见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
+
 ## Sandbox Agent
 
 被测对象是在隔离环境中运行的 coding-agent CLI 时，使用 `defineSandboxAgent`。安装 CLI、写鉴权和安装扩展放在 `setup`，每轮执行与 transcript 采集放在 `send`：
@@ -35,10 +64,12 @@ import { defineSandboxAgent } from "niceeval/adapter";
 
 export default defineSandboxAgent({
   name: "my-coding-agent",
-  async setup(ctx) {
-    await ctx.sandbox.runCommand("npm", ["install", "-g", "my-agent"]);
+  async setup(sandbox, ctx) {
+    ctx.progress({ message: "installing my-agent" });
+    await sandbox.runCommand("npm", ["install", "-g", "my-agent"]);
   },
   async send(input, ctx) {
+    ctx.progress({ message: "running agent CLI" });
     const result = await ctx.sandbox.runCommand("my-agent", ["--json", input.text]);
     return {
       status: result.exitCode === 0 ? "completed" : "failed",

@@ -97,6 +97,27 @@ available:
 
 这页应当足以判断“为什么失败”。只有实际可用的命令才出现在 `available`；没有捕获某类证据时省略对应命令。只有在需要理解断言上下文、agent 为什么给出这个结果、或具体改了什么时，才继续打开证据切面。
 
+`errored` attempt 的首页不用 trace 也必须能解释基础设施错误。它先显示结构化 error 的 phase/operation、code、message 与有限 cause,再列本 attempt 的 diagnostics;stack 放在后面并保持原始换行:
+
+```text
+$ niceeval show @2h8m4k1
+@2h8m4k1 · memory/agent-029-use-cache · compare/claude-e2b · errored
+
+error:
+  phase: sandbox provision
+  code: sandbox-rate-limit
+  message: E2B sandbox allocation failed after 5 attempts
+  cause: RateLimitError · too many concurrent sandboxes
+
+diagnostics:
+  warning · sandbox.provision · fallback-region
+    Primary region was unavailable; retried in us-west (2 occurrences)
+
+execution: unavailable (attempt failed before telemetry was configured)
+```
+
+diagnostic 的 level 不等于 verdict:一个 passed/failed attempt 也可以带 cleanup warning。榜单只显示致命 error 的一层原因;diagnostics、cause 和 stack 留在 locator 首页,避免几十个并发 sandbox 错误淹没终端。
+
 ## `--eval`：把断言放回源码
 
 `--eval` 显示运行时保存的 eval 源码，而不是工作树中可能已经修改过的文件。通过与失败断言标在对应行；失败行紧跟分组、matcher、期望值和实际值。

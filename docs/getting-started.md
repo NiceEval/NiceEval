@@ -204,7 +204,7 @@ Discovered 3 evals
 Results:  2 passed, 1 failed, 0 skipped
 ```
 
-详细 artifact 落在该实验的快照目录 `.niceeval/<experiment>/<snapshot>/`:快照级 `snapshot.json`,以及每个 attempt 目录下的 `result.json`(判决与断言)与按需生成的 `events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Results Format](feature/results/architecture.md)。
+详细 artifact 落在该实验的快照目录 `.niceeval/<experiment>/<snapshot>/`:快照级 `snapshot.json`,以及每个 attempt 目录下的 `result.json`(判决、断言、结构化错误与 diagnostics)与按需生成的 `events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Results Format](feature/results/architecture.md)。
 
 ## 接进 CI
 

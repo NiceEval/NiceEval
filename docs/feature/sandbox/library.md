@@ -128,12 +128,17 @@ e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 
 ```typescript
 interface SandboxSpec {
-  setup(fn: AgentSetup): SandboxSpec;       // 返回新 spec(不可变),可多次链式追加
-  teardown(fn: AgentTeardown): SandboxSpec; // 同上
+  setup(fn: SandboxHook): SandboxSpec;       // 返回新 spec(不可变),可多次链式追加
+  teardown(fn: SandboxHook): SandboxSpec;    // 同上
 }
+
+type SandboxHook = (
+  sandbox: Sandbox,
+  ctx: SandboxHookContext,
+) => void | Cleanup | Promise<void | Cleanup>;
 ```
 
-`fn` 复用 agent 的 `AgentSetup` / `AgentTeardown` 签名——`(sandbox, ctx) => void | Cleanup | Promise<void | Cleanup>`,`setup` 可以返回一个 cleanup 闭包。多次 `.setup()` 按追加顺序跑,多次 `.teardown()` 按追加的逆序跑(和「先进后出」的 agent/环境层顺序是同一条纪律,只是发生在环境层内部)。
+Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。`setup` 可以返回一个 cleanup 闭包。多次 `.setup()` 按追加顺序跑,多次 `.teardown()` 按追加的逆序跑(和「先进后出」的 agent/环境层顺序是同一条纪律,只是发生在环境层内部)。
 
 这一层解决的是一类特定问题:**你本想把它烘进 Docker image / E2B template,但它要按实验变化。** 装个二进制、预热一次模型、写一份 hook 文件、在多个 attempt 之间载入/回存状态——这些事静态镜像做不到(不同实验要装不同东西),写进 `EvalDef.setup` 又不对(那是每条 eval 的任务夹具,不是"这次实验用什么环境"),写进 `SandboxAgent.setup` 也不对(那是 agent 自己连自己的私事,不该知道某个实验想多装什么)。可以把沙箱生命周期钩子理解成**动态的镜像层**——运行时按 spec 拼出来的那部分 image。
 
@@ -154,6 +159,56 @@ export default defineExperiment({
 失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。
 
 remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它不参与、直接被忽略——钩子天然不会跑,不需要为此写 fail-fast 分支或额外校验。
+
+## 向运行反馈进度与诊断
+
+provider 创建和环境 hook 都可以向当前 `niceeval exp` 报告信息,但 runner 为它们绑定不同的 lifecycle scope:
+
+```typescript
+const sandbox = e2bSandbox({ template: "niceeval-agents" })
+  .setup(async (sandbox, ctx) => {
+    ctx.progress({ message: "installing memory helper", current: 1, total: 2 });
+    await sandbox.runCommand("npm", ["install", "-g", "memory-helper"]);
+
+    ctx.progress({ message: "warming memory index", current: 2, total: 2 });
+    try {
+      await warmIndex(sandbox);
+    } catch (error) {
+      ctx.diagnostic({
+        code: "memory-warmup-degraded",
+        level: "warning",
+        message: "Memory warmup failed; continuing with a cold index",
+        data: { reason: String(error) },
+        dedupeKey: "memory-warmup-degraded",
+      });
+    }
+  });
+```
+
+`progress` 只更新当前 sandbox setup 的短期 activity;`diagnostic` 才进入永久输出。它们不能指定 `sandbox-setup` 等 phase——runner 从当前 hook 自动得出阶段。诊断也不会吞掉或制造失败:上例明确选择降级继续;如果环境不可用,应直接抛出原错误,让 attempt 进入 `errored`。
+
+自定义 provider 在 `create` options 上取得绑定到 `sandbox.provision` 的 `feedback`:
+
+```typescript
+export default defineSandbox({
+  name: "modal",
+  async create({ timeout, runtime, feedback }) {
+    feedback.progress({ message: "allocating Modal sandbox" });
+    const instance = await allocateModal({ timeout, runtime });
+    if (instance.usedFallbackRegion) {
+      feedback.diagnostic({
+        code: "modal-fallback-region",
+        level: "warning",
+        message: `Using fallback region ${instance.region}`,
+        data: { region: instance.region },
+      });
+    }
+    return new MyModalSandbox(instance);
+  },
+});
+```
+
+provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能直接写 `stdout` / `stderr`;这样 Human dashboard 不会被打散,CI 事件也能保持单一顺序。完整 API 与其它入口的对应关系见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
 
 ## 环境预置放哪
 
@@ -178,7 +233,8 @@ import { defineSandbox } from "niceeval/sandbox";
 export default defineSandbox({
   name: "modal",                          // 只用于展示 / 日志,不参与分发
   recommendedConcurrency: 8,               // 可选;省略默认 5
-  create: async ({ timeout, runtime }) => {
+  create: async ({ timeout, runtime, feedback }) => {
+    feedback.progress({ message: "allocating Modal sandbox" });
     // 返回一个实现 Sandbox 接口(run/read/write/stop/...)的实例
     return new MyModalSandbox({ timeout, runtime });
   },

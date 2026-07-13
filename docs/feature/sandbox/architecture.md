@@ -10,7 +10,7 @@
  createSandbox(provider, timeout)
   → sandbox.setup?.(sandbox, ctx)          # 环境层:experiment.sandbox 链上的 .setup() 钩子(可能多个,按追加顺序);没挂就跳过
   → git init && git commit                 # 打一次空基线,供之后 diff——不管 test() 里写了什么
-  → EvalDef.setup?.(sandbox)               # 这条 eval 的任务夹具(如果定义了)
+  → EvalDef.setup?.(sandbox, ctx)          # 这条 eval 的任务夹具(如果定义了);ctx 绑定 eval.setup feedback
   → SandboxAgent.setup?.(sandbox, ctx)     # agent 自己的一次性预置(装 CLI / 写主配置)
   → test(t)                                # ← 交给 eval 作者,顺序由它自己决定:
   │    t.sandbox.writeFiles(...) / uploadFiles(...) / uploadDirectory(...)  # 默认落到 workdir

@@ -24,6 +24,31 @@ const otherTurn = await other.send("查旧金山天气");
 
 session 上的同名 API 只读写该 session，不影响主 session 的 resume 状态。Turn 不继续驱动会话；下一轮仍从 `t` 或对应 session 调用。
 
+## 向运行反馈长步骤
+
+`test(t)` 中由 eval 自己执行的长步骤可以通过 `t.progress` 更新当前 attempt 的短期状态;需要在运行结束后保留的问题用 `t.diagnostic`:
+
+```ts
+async test(t) {
+  t.progress({ message: "uploading fixtures", current: 1, total: 3 });
+  await t.sandbox.uploadDirectory("fixtures/project");
+
+  const check = await inspectFixture();
+  if (check.degraded) {
+    t.diagnostic({
+      code: "fixture-check-degraded",
+      level: "warning",
+      message: "Fixture preflight used the fallback checker",
+      data: { checker: check.name },
+    });
+  }
+
+  await t.send("完成任务");
+}
+```
+
+这两个方法只报告反馈,不用于断言:`progress` 可被 Human active 行覆盖且不会逐条进入 Agent/CI 输出;`diagnostic` 是永久事件,但即使 level 为 `error` 也不会自动改变 verdict。测试结论仍由断言决定,基础设施无法继续时则抛异常。scope 固定为 `eval.run`,eval 不能借此把自己显示成 sandbox 或 agent 阶段。完整反馈契约见 [Experiments · 生命周期代码怎样向这次运行反馈](../../experiments/library.md#生命周期代码怎样向这次运行反馈)。
+
 ## 读取结果
 
 | 对象 | 常用字段 |
