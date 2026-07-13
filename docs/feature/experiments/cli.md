@@ -1,290 +1,374 @@
-# Experiments —— CLI 预期反馈
+# Experiments —— CLI 反馈模型
 
 ```sh
 niceeval exp                            # 跑 experiments/ 下全部实验
-niceeval exp compare                    # 跑某一组(文件夹 compare/ 内全部配置,互为对照)
-niceeval exp compare/bub-gpt-5.4        # 跑组里某一个配置
-niceeval exp compare memory/retention   # 再用 eval id 前缀缩小到部分 eval
+niceeval exp compare                    # 跑一个实验组
+niceeval exp compare/bub-gpt-5.4        # 跑组里一个配置
+niceeval exp compare memory/retention   # 再按 eval id 前缀收窄
 ```
 
-不写实验不能运行 eval。临时验证也写一个小的 `experiments/local.ts`;要换 agent 或 model,复制一个 experiment 文件改配置。
+不写 experiment 不能运行 eval。experiment 决定 agent、model、flags、runs、sandbox 与预算;CLI 只负责选择已签入的运行配置和覆盖通用调度参数。
 
-完整 flag 表见 [docs-site CLI 参考](../../../docs-site/zh/reference/cli.mdx)。本页用“执行命令 → 预期输出”定义 `exp` 的终端反馈;示例里的 `<耗时>`、`<token>`、`<成本>`、时间戳和 spinner 帧是动态值,`…` 表示按同一格式省略的行。
+`exp` 的输出有三类消费者:正在终端前观察的人、调用 niceeval 的 AI agent、无人值守的 CI。三者需要的不是同一份文本换个颜色,而是三种不同的反馈模型。
 
-## 默认:交互终端使用 Live 状态表
+## 三种反馈模型
+
+| 模型 | 主要问题 | 运行中 | 结束时 | 推荐入口 |
+|---|---|---|---|---|
+| `human` | 还活着吗?卡在哪?哪条失败? | 动态 dashboard + 低频永久事件 | 失败优先摘要 + 下一步命令 | 人在 TTY 中直接运行 |
+| `agent` | 还要等多久?失败证据在哪里?下一步调用什么? | 低频、只追加的 checkpoint | 有界 handoff block + 精确 locator | coding agent / 自动修复循环 |
+| `ci` | 是否通过?产物在哪?如何归档和标注? | 安静的阶段与 heartbeat | 单行结论 + JUnit / JSON / 快照 | CI job / 非交互门禁 |
+
+CLI 用一个显式 profile 选择反馈模型:
+
+```sh
+niceeval exp compare --output human
+niceeval exp compare --output agent
+niceeval exp compare --output ci
+```
+
+`--output auto` 是默认值,只做环境选择:
+
+```text
+stderr 是 TTY                    → human
+CI=true 或常见 CI 环境标记存在   → ci
+其它非 TTY                       → agent
+```
+
+显式 `--output` 永远覆盖自动检测。输出 profile 只改变反馈,不改变选择、调度、判定、artifact 或退出码。
+
+`--quiet` 不再承担输出模型。它无法表达“AI 需要低频进度和下一步命令”与“CI 需要稳定日志和报告文件”的差别;对应场景分别使用 `--output agent` 和 `--output ci`。
+
+## 什么动态更新,什么逐条追加
+
+判断标准只有一个:**新值是否使旧值失去意义**。
+
+- 当前计数从 `running=19` 变成 `running=18` 后,旧计数没有保留价值,所以动态覆盖。
+- attempt 从“启动 sandbox”进入“运行测试”后,旧阶段没有保留价值,所以动态覆盖。
+- 一条 eval 失败并得到 locator 后,后续状态不能替代这条证据,所以只追加一次。
+- 一次 retry、spinner 帧或成功完成只是高频过程,既不值得保留历史,也不需要逐条追加。
+
+三种 profile 的具体规则:
+
+| 信息 | `human` | `agent` | `ci` |
+|---|---|---|---|
+| 运行计划、缓存复用摘要 | 开始时永久追加一次 | `start` 一行 | `start` 一行 |
+| elapsed、成本、reused / running / queued / completed | dashboard 内动态覆盖 | 无其它输出满 30 秒才追加 heartbeat | 无其它输出满 60 秒才追加 heartbeat |
+| 当前 attempt 阶段、最近进度 | 只在可见 active slot 内动态覆盖 | 不输出 | 不输出 |
+| waiting 队列 | 只显示数量,不逐项追加 | heartbeat 里给数量 | heartbeat 里给数量 |
+| passed attempt | 只增加动态计数 | 不输出 | 不输出 |
+| failed / errored + locator | 撤下 dashboard 后永久追加一次 | 立即追加一次 | 立即追加一次 |
+| provisioning retry / backoff | 可见 active slot 内动态更新 | 不逐次输出 | 不逐次输出 |
+| retry 耗尽、降级、budget 不可执行 | 去重后永久追加一次 | 去重后追加 warning | 去重后追加 warning |
+| budget 耗尽、用户中断、reporter 写失败 | 永久追加一次 | 追加一次 | 追加一次 |
+| 最终结论和结果路径 | 永久追加 | handoff block | result / artifact 行 |
+
+“立即追加”也必须有上限,防止失败风暴重新淹没输出。`human` 默认展开前 10 条失败、`agent` 前 5 条、`ci` 前 50 条;超过后只追加一次 `N more failures suppressed`,持续更新总失败数,完整清单保留在快照、JSON / JUnit 和 `view`。上限限制的是终端展开数,不是结果记录数。
+
+Human 的动态刷新由真实状态变化驱动并合并写入,最多每秒 4 帧;elapsed 最多每秒更新一次。spinner 动画本身不能触发重画——静态 `●` 已足以表示 running,存活性由持续增长的 elapsed 证明。这样一批长 eval 在没有状态变化时不会每 80ms 重写终端。
+
+profile 是消费者模型,TTY 是传输能力。显式 `--output human` 但输出被管道捕获时,CLI 自动退化为只追加的 human 文本 checkpoint,绝不能向非 TTY 写 ANSI;它不偷偷改成 `agent` 语义。
+
+### 输出流和落盘节奏
+
+动态区域与永久事件必须经过同一个 renderer 排序,不能让底层模块绕开它裸写终端。各 profile 的流边界固定为:
+
+| profile | `stderr` | `stdout` |
+|---|---|---|
+| `human` | 计划、永久事件、dashboard | 最终摘要与结果路径 |
+| `agent` | start、heartbeat、failure / warning envelope | 最终 handoff block |
+| `ci` | 仅 CLI 无法启动时的用法/配置错误 | 从 start 到 result 的单一有序事件流 |
+
+CI 不把普通 failure 分流到 `stderr`:两个 OS stream 被 CI runner 分开缓冲时会打乱顺序。只有连 profile 都没能启动的 argv、配置加载错误走 `stderr`。
+
+非 TTY 的 `human` 使用 human 文案和 human 最终摘要,但运行中退化为“start 一次 + 永久事件 + 空闲 30 秒 heartbeat”的追加流。它不输出 active attempt 的每次阶段变化。
+
+终端反馈不是结果存储。落盘按恢复价值分两类:
+
+- 结果快照逐步增加:调度前创建快照元数据;每个 attempt 完成后原子写入自己的 `result.json` 与已有 artifacts。进程中断时,已经完成的 attempt 仍可读取。
+- `--json` / `--junit` 是整次运行的最终聚合:收尾时写临时文件并原子替换目标,不在每个 attempt 后反复重写一个半成品汇总。
+
+因此“逐步增加”只发生在 append-only 终端事件和 attempt 级快照;Live 状态只覆盖,最终聚合文件只在完成时出现。
+
+## 人在终端里怎么用
+
+人在终端里通常不需要同时阅读 45 条 attempt 日志。运行中最重要的是全局是否推进、并发槽位在做什么、最近出现了什么问题。
 
 ```sh
 niceeval exp compare --max-concurrency 19
 ```
 
-运行中在 `stderr` 原地显示一帧 Live 状态,而不是不断追加新帧:
+TTY 下 `auto` 选择 `human`。开始计划、缓存摘要和已经发生的失败留在 scrollback,其下方才是在 `stderr` 原地维护、不超过终端高度的 dashboard:
 
 ```text
-  正在处理 45 个 attempt (9 eval × 5 配置,并发 19) · 本次运行 39 · 复用 6 · 8/45 已解决
-  ⠼ memory/agent-029-use-cac [compare/bub-e2b]       0/1  正在启动 sandbox…
-  ⠼ memory/agent-030-app-rou [compare/bub-e2b]       0/1  正在启动 sandbox…
-  · memory/agent-037-updatet [compare/bub-e2b]       0/1  排队等待中…
-  · memory/commit0-cachetool [compare/bub-e2b]       0/1  排队等待中…
-  … 其余 41 项(17 运行中 · 20 等待 · 4 已完成)
+Plan: 45 attempts · 9 evals × 5 configs · concurrency 19
+Reuse: 6 settled results from the latest matching snapshots
+✗ @7m2k9p memory/commit0-cachetool [compare/bub-e2b] gate: cache tool not used
+
+niceeval exp compare                                      2m 14s
+45 total · 6 reused · 19 running · 12 queued · 8 completed  $0.84
+
+ACTIVE
+● memory/agent-029-use-cac  compare/bub-e2b     1m 42s  running tests
+● memory/agent-030-app-rou  compare/codex       1m 18s  editing src/app.ts
+● memory/agent-037-updatet  compare/bub-e2b       54s  starting sandbox
+… 16 more active
 ```
 
-这里的数字口径固定为:
+Dashboard 只展示当前状态,不保存历史帧:
 
-- `45` 是选中矩阵的逻辑 attempt 总数;
-- `39` 是扣除缓存携入后真正需要派发的数量;
-- `6` 是从上次快照复用的数量;
-- `8/45` 是已经有终态的逻辑数量,包含复用结果和本次已完成结果。
+- 首行固定显示命令和已运行时间;
+- 第二行固定使用 `total / reused / running / queued / completed`;后四项是互斥状态且总和等于 `total`;
+- `ACTIVE` 使用稳定 slot:一项完成前不因为其它项更新而换位置,完成后才由下一项补位;
+- 中间 retry 只改变 active 行尾;失败、错误或 retry 耗尽先撤下 dashboard,在上方永久写一行,再重建 dashboard;
+- 终端变窄时先减少可见项,再截断消息,不能换行撑高 dashboard;
+- 没有真实状态变化时不重画;历史帧不得进入 scrollback;
+- 独立诊断出现时先撤下 dashboard,打印诊断,再在其下方重建。
 
-如果没有复用,表头省略“复用”,本次运行数等于总数:
+`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`running`、`queued`、`completed` 描述本次需要派发的 attempt。任何一帧都满足 `total = reused + running + queued + completed`,不能出现没有解释的 `Running 39 ... 8/45 done`。
+
+### 人看的结束反馈
+
+结束后清除 dashboard。终端不再打印整张 experiment × eval 明细表——大矩阵在 scrollback 里不可读,完整对比属于 `niceeval show` / `niceeval view`。结束反馈先回答成败,再给失败和下一步:
 
 ```text
-  正在处理 45 个 attempt (9 eval × 5 配置,并发 19) · 0/45 已解决
+FAILED  44 passed · 1 failed · 0 errored  (6 reused)
+        3m 48s · 1.2M tok · $1.37
+
+FAILURES
+@7m2k9p  memory/commit0-cachetool  [compare/bub-e2b]
+          gate: cache tool not used
+
+Inspect: niceeval show @7m2k9p
+Trace:   niceeval show @7m2k9p --execution
+Diff:    niceeval show @7m2k9p --diff
+Compare: niceeval view compare
+
+Results:
+  .niceeval/compare/bub-e2b/<snapshot>
+  .niceeval/compare/codex/<snapshot>
+  … 3 more
 ```
 
-Live 区域必须始终放得进当前终端视口。放不下时只保留当前最有用的行并显示“其余 N 项”摘要;窄终端截断列,不换出额外物理行。spinner 刷新只能覆盖上一帧,历史帧不得进入 scrollback。独立警告出现时先撤下 Live,打印警告,再在警告下方重建 Live。
-
-全部完成后先清除 Live 区域,再在 `stdout` 打印稳定的最终汇总和结果快照路径:
+全部通过时不留空的 `FAILURES` 区块:
 
 ```text
-实验
-实验                  模型       Agent      平均耗时   成功率   Tokens   成本       结果
-compare/bub-e2b       gpt-5.4    bub        <耗时>     89%      <token>  <成本>     8 通过 · 1 失败
-compare/codex         gpt-5.4    codex      <耗时>     100%     <token>  <成本>     9 通过
-…
+PASSED  45 passed · 0 failed · 0 errored  (0 reused)
+        3m 21s · 1.1M tok · $1.22
 
-Eval · compare/bub-e2b
-状态    Eval                         原因             耗时     Tokens   成本       Runs
-通过    memory/agent-029-use-cac                      <耗时>   <token>  <成本>     1/1
-失败    memory/agent-030-app-rou     gate 未通过      <耗时>   <token>  <成本>     0/1
-…
-
-结果:44 通过,1 失败,0 跳过  (<耗时> · <token> tok · <成本>)
-运行 `pnpm exec niceeval view` 以图形化查看结果。
-
-结构化结果:.niceeval/compare/bub-e2b/<时间戳>(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
-结构化结果:.niceeval/compare/codex/<时间戳>(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
-…
+Compare: niceeval view compare
+Results: .niceeval/compare/<5 snapshots>
 ```
 
-## 管道或 CI:纯文本输出
+人在调试单条 eval 时仍用相同模型,只是主动收窄选择,而不是要求 dashboard 展开更多日志:
 
 ```sh
-niceeval exp compare memory/agent --max-concurrency 2 2>&1 | tee niceeval.log
+niceeval exp compare/bub-e2b memory/commit0-cachetool --force
+niceeval show @7m2k9p --execution --diff
 ```
 
-`stderr` 不是 TTY 时不使用 spinner、清行或光标上移。输出只追加,每一行自带 experiment / eval 归属:
+## AI agent 怎么用
 
-```text
-本次运行 2 个 eval × 2 配置 = 4 次运行(并发 2)
-
-  · memory/agent-029-use-cac [compare/bub-e2b] 正在启动 sandbox…
-  · memory/agent-030-app-rou [compare/bub-e2b] 排队等待中…
-  ✓ memory/agent-029-use-cac  [bub/gpt-5.4]  (<耗时>  <token> tok  <成本>)
-  · memory/agent-030-app-rou [compare/bub-e2b] 正在启动 sandbox…
-  ✓ memory/agent-029-use-cac  [codex/gpt-5.4]  (<耗时>  <token> tok  <成本>)
-  …
-
-实验
-…
-结果:4 通过,0 失败,0 跳过  (<耗时> · <token> tok · <成本>)
-
-结构化结果:.niceeval/compare/bub-e2b/<时间戳>(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
-结构化结果:.niceeval/compare/codex/<时间戳>(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
-```
-
-并发完成顺序可以变化,但最终表格按发现顺序稳定排列,不按完成先后漂移。机器下游读取结果快照或 `--json` / `--junit`,不解析这段人读文本。
-
-## `--dry`:只看选择结果
+AI agent 不应解析 spinner、表格列宽或本地化的长日志,也不应把整次 transcript 塞进上下文。它需要三样东西:低频存活信号、失败的稳定身份、下一步可直接执行的命令。
 
 ```sh
-niceeval exp compare memory/agent --runs 3 --dry
+niceeval exp compare memory/commit0 --output agent
 ```
 
-只在 `stdout` 打印匹配到的矩阵,不调用 agent、不创建快照,也不写 `--json` / `--junit`:
+运行中向 `stderr` 追加 checkpoint。开始时写一行;之后只有失败、错误或去重后的 warning 立即追加。若连续 30 秒没有这些永久事件,才追加一条 heartbeat。普通状态变化和 attempt 日志不触发 checkpoint:
 
 ```text
-[dry] 2 个 eval × 2 个运行配置:
-  bub/gpt-5.4 (exp compare/bub-e2b): memory/agent-029-use-cac, memory/agent-030-app-rou  ×3
-  codex/gpt-5.4 (exp compare/codex): memory/agent-029-use-cac, memory/agent-030-app-rou  ×3
+NICEEVAL progress elapsed=0s total=5 reused=1 running=4 queued=0 completed=0
+NICEEVAL progress elapsed=30s total=5 reused=1 running=3 queued=0 completed=1
+NICEEVAL failure locator=@7m2k9p eval=memory/commit0-cachetool experiment=compare/bub-e2b verdict=failed
+NICEEVAL progress elapsed=75s total=5 reused=1 running=1 queued=0 completed=3
 ```
 
-`--tag` 和 eval id 前缀只收窄这里及真实运行中的矩阵:
+这些行是稳定的 ASCII `key=value` envelope;值需要空格时使用 JSON 字符串转义。它们用于判断进程是否存活,不是结果数据源。
+
+结束时 `stdout` 只打印一个有界 handoff block。失败再多也限制条数,其余通过结果不逐条列出:
+
+```text
+NICEEVAL RESULT failed
+summary: 4 passed, 1 failed, 0 errored (1 reused)
+snapshots:
+  - .niceeval/compare/bub-e2b/<snapshot>
+  - .niceeval/compare/codex/<snapshot>
+failures:
+  - @7m2k9p memory/commit0-cachetool [compare/bub-e2b]
+    gate: cache tool not used
+next:
+  niceeval show @7m2k9p
+  niceeval show @7m2k9p --execution
+  niceeval show @7m2k9p --diff
+```
+
+如果失败超过 handoff 上限:
+
+```text
+failures: 12 total, showing 5
+  - @7m2k9p …
+  - @4q8x1c …
+  … 7 more; inspect the JSON result or run `niceeval view compare`
+```
+
+Agent 反馈遵守以下边界:
+
+- locator 是继续调查的主键,不能只给 eval id 或第几个 attempt;
+- handoff 只给一层失败原因,源码、execution、trace、diff 按需通过 `show` 下钻;
+- 快照与 attempt artifacts 是权威数据,checkpoint 和 handoff 不是另一份结果 schema;
+- 输出不含 ANSI,不依赖终端宽度,不因本地化改变字段名;
+- 进程退出码仍是第一层红绿信号,agent 不靠自然语言猜成功。
+
+### AI 常见循环
+
+先看将运行什么:
 
 ```sh
-niceeval exp compare memory/agent --tag smoke --dry
+niceeval exp compare memory/commit0 --dry --output agent
 ```
 
 ```text
-[dry] 1 个 eval × 2 个运行配置:
-  bub/gpt-5.4 (exp compare/bub-e2b): memory/agent-029-use-cac  ×1
-  codex/gpt-5.4 (exp compare/codex): memory/agent-029-use-cac  ×1
+NICEEVAL PLAN total=5 evals=1 configs=5 runs=1
+compare/bub-e2b     memory/commit0-cachetool
+compare/codex       memory/commit0-cachetool
+… 3 more
 ```
 
-## `--runs` 与首过即停
+运行、读取失败 locator、只展开所需证据:
 
 ```sh
-niceeval exp compare/bub-e2b memory/agent-029 --runs 3
+niceeval exp compare memory/commit0 --output agent
+niceeval show @7m2k9p
+niceeval show @7m2k9p --execution
 ```
 
-默认启用首过即停。第一次通过后,该行直接进入终态并说明剩余次数没有派发,不能停在 `1/3` spinner:
-
-```text
-  ✓ memory/agent-029-use-cac [compare/bub-e2b]       1/3  通过;首过即停,其余 2 次未派发
-```
-
-最终汇总中的 Runs 只统计真实结果:
-
-```text
-状态    Eval                         原因   耗时     Tokens   成本       Runs
-通过    memory/agent-029-use-cac            <耗时>   <token>  <成本>     1/1
-```
-
-关闭首过即停会跑满三次:
+修复后只重跑受影响项;正常依赖指纹缓存,怀疑缓存口径时才用 `--force`:
 
 ```sh
-niceeval exp compare/bub-e2b memory/agent-029 --runs 3 --no-early-exit
+niceeval exp compare/bub-e2b memory/commit0-cachetool --output agent
+niceeval exp compare/bub-e2b memory/commit0-cachetool --output agent --force
 ```
 
-```text
-  ✓ memory/agent-029-use-cac [compare/bub-e2b]       3/3
-…
-状态    Eval                         原因   耗时     Tokens   成本       Runs
-通过    memory/agent-029-use-cac            <耗时>   <token>  <成本>     2/3
-```
+## CI 怎么用
 
-显式 `--early-exit` 与默认行为相同。
-
-## 缓存复用与 `--force`
-
-默认运行会在 Live 之前列出复用清单:
+CI 的权威接口是退出码和结构化文件,不是终端表格。推荐命令明确固定语言、严格判定和报告路径:
 
 ```sh
-niceeval exp compare
+NICEEVAL_LANG=en niceeval exp ci \
+  --output ci \
+  --strict \
+  --json .niceeval/ci-summary.json \
+  --junit .niceeval/junit.xml
 ```
+
+运行日志只追加阶段、低频 heartbeat、失败与诊断;不打印通过的 attempt:
 
 ```text
-  · 复用上次 6 个已判定的结果,重跑 39 个 eval
-      复用 [compare/bub-e2b] memory/agent-029-use-cac, memory/agent-030-app-rou
-      复用 [compare/codex] memory/agent-029-use-cac
-      …
+niceeval: start total=24 configs=3 concurrency=10 reused=18
+niceeval: progress elapsed=60s reused=18 running=6 queued=0 completed=0
+niceeval: failed locator=@7m2k9p eval=memory/commit0-cachetool experiment=ci/bub reason="gate: cache tool not used"
+niceeval: progress elapsed=120s reused=18 running=2 queued=0 completed=4
+niceeval: result=failed passed=23 failed=1 errored=0 reused=18 duration=128s
+niceeval: json=.niceeval/ci-summary.json
+niceeval: junit=.niceeval/junit.xml
+niceeval: snapshots=.niceeval/ci/<3 snapshots>
 ```
 
-`--force` 不显示复用清单,所有匹配项都进入待运行状态:
+CI profile 固定满足:
+
+- 无 ANSI、spinner、表格边框和光标控制;
+- 同一种事件一行,方便日志搜索与 CI annotation adapter 消费;
+- 连续 60 秒没有其它永久事件时才写 heartbeat,防止长 eval 被平台误判为无输出;失败或诊断刚写过就重新计时,不紧跟一条冗余 progress;
+- 成功项不逐条打印,失败和 errored 立即打印;
+- 最后一条 result 行可单独阅读,但 JSON / JUnit / 快照才是完整记录;
+- reporter 写失败必须判红,因为 CI 要求的结果文件缺失不能降级成普通 warning。
+
+退出码按 `(experiment, eval)` 的最终 verdict 折叠:
+
+```text
+0    所有组合通过
+1    至少一个组合 failed / errored,或要求的 reporter 写失败
+2    CLI / runner 未捕获崩溃
+130  用户或平台中断
+```
+
+### CI 常见 case
+
+PR 快速门禁,每条只跑一次:
 
 ```sh
-niceeval exp compare --force
+niceeval exp pr --output ci --strict --runs 1 --junit .niceeval/junit.xml
 ```
 
-```text
-  正在处理 45 个 attempt (9 eval × 5 配置,并发 19) · 0/45 已解决
-  ⠋ memory/agent-029-use-cac [compare/bub-e2b]       0/1  正在启动 sandbox…
-  …
-```
-
-## 并发、超时与预算
-
-`--max-concurrency` 的生效值出现在表头;未抢到名额的行用 `·` 和“排队等待中”,不用 spinner:
+夜间稳定性采样,必须跑满次数而不是首过即停:
 
 ```sh
-niceeval exp compare --max-concurrency 2
+niceeval exp nightly --output ci --strict --runs 5 --no-early-exit \
+  --json .niceeval/nightly.json --junit .niceeval/nightly.xml
 ```
 
-```text
-  正在处理 45 个 attempt (9 eval × 5 配置,并发 2) · 0/45 已解决
-  ⠋ memory/agent-029-use-cac [compare/bub-e2b]       0/1  正在启动 sandbox…
-  ⠋ memory/agent-030-app-rou [compare/bub-e2b]       0/1  正在启动 sandbox…
-  · memory/agent-037-updatet [compare/bub-e2b]       0/1  排队等待中…
-```
-
-单个 attempt 超时显示为 `errored`,并包含生效边界;其它组合继续运行:
+预算受限的外部模型回归:
 
 ```sh
-niceeval exp compare/bub-e2b memory/agent-029 --timeout 60000 2>&1 | cat
+niceeval exp regression --output ci --strict --budget 25 \
+  --json .niceeval/regression.json
 ```
+
+预算到顶属于“运行未完整覆盖”,CI 结论不能伪装成全绿:
 
 ```text
-本次运行 1 个 eval(并发 <并发数>)
-
-  ! memory/agent-029-use-cac 执行错误  [bub/gpt-5.4]  (1m 0s  — tok)
-      ! 错误:attempt 超时(60000ms)
-      最近进度:
-      正在运行测试…
-…
-结果:0 通过,0 失败,1 执行错误,0 跳过  (1m 0s · — tok)
+niceeval: budget_exhausted experiment=regression/codex spent=25.31 unstarted=4
+niceeval: result=incomplete passed=36 failed=0 errored=0 unstarted=4 duration=18m02s
 ```
 
-预算到顶后说明 experiment、已知花费和未派发数量:
+## 哪些参数改变什么
 
-```sh
-niceeval exp compare/bub-e2b --budget 1.00
-```
+输出 profile、运行选择和结果出口彼此正交:
+
+| 类别 | 参数 | 作用 |
+|---|---|---|
+| 反馈模型 | `--output auto\|human\|agent\|ci` | 决定终端展示,不改变运行 |
+| 选择 | experiment、eval 前缀、`--tag` | 决定矩阵里有什么 |
+| 调度 | `--runs`、`--max-concurrency`、`--timeout`、`--budget` | 决定尝试次数与资源边界 |
+| 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 决定 soft 是否判红、是否跑满 |
+| 缓存 | `--force` | 忽略可复用结果并全部重跑 |
+| 预览 | `--dry` | 只按所选 profile 打印计划,不运行、不落盘 |
+| 机器出口 | `--json <path>`、`--junit <path>` | 额外写结构化文件,不改变 profile |
+
+`--json` 和 `--junit` 不是终端格式开关。`human` 也可以同时写 CI 文件,`ci` 也可以只依赖快照。`--dry` 不创建快照、JSON 或 JUnit。
+
+### runs 与首过即停怎样展示
+
+`human` 把未派发原因收进动态计数和最终结论,不能留下永久 running 状态;通过本身不追加到 scrollback:
 
 ```text
-  budget 已到达 [compare/bub-e2b]:已知花费 $1.03,停止派发其余 4 个 attempt
-  ~ memory/agent-037-updatet [compare/bub-e2b]       0/1  budget 到顶,未派发
+45 total · 6 reused · 18 running · 12 queued · 9 completed
 ```
 
-连续多个结果没有成本数据时只警告一次,然后取消该 experiment 的预算护栏继续跑:
+`agent` / `ci` 不伪造两条 skipped attempt,而是在结论中给计数:
 
 ```text
-compare/bub-e2b 的 budget:连续多个 attempt 完成后都拿不到成本数据——budget 无法执行,取消护栏继续跑。
+NICEEVAL result locator=@2p9k4m verdict=passed attempts=1 planned=3 unstarted=2 reason=early_exit
 ```
 
-## `--strict`:soft 断言影响 verdict
-
-```sh
-niceeval exp compare/bub-e2b memory/agent-029 --strict 2>&1 | cat
-```
-
-soft 断言失败必须保留 `soft` 归因,同时把 eval 显示为失败:
+`--no-early-exit` 跑满后使用真实分母:
 
 ```text
-  ✗ memory/agent-029-use-cac 失败  [bub/gpt-5.4]  (<耗时>  <token> tok  <成本>)
-      - soft: context retained (得分 0.60 < 0.80)
-…
-结果:0 通过,1 失败,0 跳过  (<耗时> · <token> tok · <成本>)
+NICEEVAL result locator=@2p9k4m verdict=passed attempts=3 passed=2 rate=0.667
 ```
 
-不带 `--strict` 时同一 soft 断言仍列入证据,但不会单独把 eval 判为失败。
+### timeout、budget 与基础设施错误
 
-## `--quiet`:最小终端反馈
-
-```sh
-niceeval exp compare --quiet
-```
-
-不画 Live、不打印逐条成功结果和末尾汇总。必要的 attempt 进度、失败、执行错误和关键诊断仍写 `stderr`;快照路径仍写 `stdout`:
+三种 profile 使用同一错误分类,只改变密度:
 
 ```text
-  · memory/agent-029-use-cac [compare/bub-e2b] 正在启动 sandbox…
-  ✗ memory/agent-030-app-rou [compare/bub-e2b] failed
-  ! memory/agent-037-updatet [compare/codex] errored — attempt 超时(60000ms)
-结构化结果:.niceeval/compare/bub-e2b/<时间戳>(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
-结构化结果:.niceeval/compare/codex/<时间戳>(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)
+human  ! memory/agent-029  compare/bub-e2b  errored · timeout after 60000ms
+agent  NICEEVAL error locator=@8c1m2q kind=timeout timeout_ms=60000
+ci     niceeval: errored locator=@8c1m2q kind=timeout timeout_ms=60000
 ```
 
-`--quiet` 不是静默丢弃错误。如果需要保存完整的机器结果,和 `--json` 或 `--junit` 组合使用。
-
-## `--json` 与 `--junit`
-
-```sh
-niceeval exp compare --quiet --json .niceeval/summary.json --junit .niceeval/junit.xml
-```
-
-终端仍采用 `--quiet` 的输出;成功收尾后额外生成两个文件:
-
-```text
-.niceeval/summary.json   # RunSummary JSON,无 ANSI、无本地化展示字符串
-.niceeval/junit.xml     # testcase 名称可定位 experiment 与 eval
-```
-
-不带 `--quiet` 时两项也不改变 Live 或最终汇总。额外 reporter 写失败时给出带路径与阶段的诊断,但不抹掉已经完成的 eval 结果:
-
-```text
-reporter onRunComplete 失败(.niceeval/summary.json): EACCES: permission denied
-```
-
-`--dry` 不创建这两个文件。
+预算没有成本数据时只提示一次。`human` 把 warning 永久写入 scrollback,`agent` / `ci` 各追加一条稳定 warning;不得每个 attempt 重复同一诊断。
 
 ## 用法错误
 
@@ -298,25 +382,7 @@ niceeval exp compare --model gpt-5.4
 experiment 运行不支持 --model。请新增或复制一个 experiment 文件并修改 model。
 ```
 
-```sh
-niceeval exp compare --agent codex
-```
-
-```text
-experiment 运行不支持 --agent。请在 experiments/ 下新增或复制一个配置文件。
-```
-
-没有匹配的 experiment 时列出选择器,不创建快照:
-
-```sh
-niceeval exp missing
-```
-
-```text
-没有匹配 experiment:missing
-```
-
-标为 `show` / `view` 专用的 flag 也不能被 `exp` 静默忽略:
+标为 `show` / `view` 专用的 flag 不能被 `exp` 静默忽略:
 
 ```sh
 niceeval exp compare --history
@@ -326,14 +392,11 @@ niceeval exp compare --history
 --history 只适用于 niceeval show,不能用于 niceeval exp。
 ```
 
-以上用法错误写 `stderr` 并以非零状态退出。`--help` / `--version` 只打印帮助或版本,不加载 experiment、不显示进度、不创建结果。
-
-## 退出码
-
-退出码按 `(experiment, eval)` 折叠,不按单个 attempt 判定。同一组合的多次 attempt 中任一次通过,该组合即通过;被后续通过吸收的早期失败不把进程判红。仍有 `failed` / `errored` 的组合时退出 `1`,全部通过时退出 `0`;用法错误、运行时崩溃和用户中断的通用退出码见 [CLI 参考](../../../docs-site/zh/reference/cli.mdx#退出码)。
+用法错误始终写 `stderr` 并非零退出;错误形态不随 profile 改变。`--help` / `--version` 只打印帮助或版本,不加载 experiment、不创建结果。
 
 ## 相关阅读
 
 - [README](README.md) —— `defineExperiment` 的核心契约。
-- [Library](library.md) —— 实验怎么按文件夹组织成可对比组。
-- [Runner](../../runner.md) —— 矩阵展开、并发、首过即停、预算与结果顺序。
+- [Library](library.md) —— experiment 怎么组织成可对比组。
+- [Runner](../../runner.md) —— 矩阵展开、并发、首过即停、预算与退出码。
+- [Results](../results/README.md) —— AI 与 CI 应读取的权威快照。
