@@ -126,6 +126,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [vercel-site-domain-and-docs-routing](vercel-site-domain-and-docs-routing.md) — niceeval.com 域名指向和 docs routing 容易分裂成 404,部署 Ready ≠ 域名指对
 - [site-blog-empty-post-dir-breaks-build](site-blog-empty-post-dir-breaks-build.md) — posts/ 下缺 mdx 的空目录(git 不跟踪)让 site:build ENOENT 崩;全 draft 时 slug 页 404 是预期
 - [shared-worktree-concurrent-commit-race](shared-worktree-concurrent-commit-race.md) — 多 agent 共用工作树时 `git add`→`commit` 之间有竞态,暂存文件会被别人的提交带走;用 `git commit <paths>` 一步提交
+- 已修 [vitest-collects-agent-worktree-copies](vitest-collects-agent-worktree-copies.md) — `.claude/worktrees/` 被 git 忽略但不被 vitest 忽略,4 个废弃 agent worktree 里的整份 src 副本被当成正式测试跑(45% 的测试跑的是旧源码,抓不到回归却能凭陈旧原因弄红 CI);修为 vitest.config.ts 的 exclude 补 `.claude/**`(与 `.repos/**` 同类)
 - [e2e-suite-landing-gotchas](e2e-suite-landing-gotchas.md) — 拷 tier1 项目要同步改 package.json `file:` 与 workspace `link:` 两处深度;`budget` 对不报 usage 的 agent 空转不设防;GH runner 上 Codex bwrap 沙箱起不来要 `CODEX_SANDBOX_MODE=danger-full-access`
 - [e2e-verify-results-format-drift](e2e-verify-results-format-drift.md) — `verify.mjs` 手写扫描还认落快照(schemaVersion 4)之前的 `summary.json`,和当前 `snapshot.json`+`result.json` 布局对不上导致每次 push 必红;e2e 重构期间已把 `e2e.yml` 触发器收窄到只剩 `workflow_dispatch`
 - 已修 [typescript7-no-api-alias-recipe](typescript7-no-api-alias-recipe.md) — TS7 原生版只有 tsc 没有编程 API,直升会炸 next build;官方 alias 双装配方(`typescript`→typescript6 + `@typescript/native`→ts7),`typescript` 名下是 6.0.x 是有意为之
@@ -133,6 +134,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 设计决定
 
+- [test-budget-inverted-pyramid](test-budget-inverted-pyramid.md) — 裁决(2026-07-13):测试预算按「静默出错的代价」分配,不按代码量或好测程度,行覆盖率不作指标;出处=全套件审计实测「读结果/画结果」测到 0.91 而「判断对错」(scoring/expect/fingerprint/runEvals/computeVerdict)测到 0;套件质量本身是好的,问题是指向了错的代码,落成 docs/engineering/unit-tests/
+- [parity-test-compares-source-to-its-own-copy](parity-test-compares-source-to-its-own-copy.md) — 裁决(2026-07-13):「公开 API 够不够用户重建内置报告」由 fixture 能编译过证明,不由输出比对证明;曾选 643 行 built-in-user-parity 测试(把内置报告逐字拷进 fixture 再比对两者输出)因是纯改名检测器被否决——JSX 主体一字不差,恒成立,只在重构时收改名税
 - [e2e-repo-autonomy-replaces-shared-suite](e2e-repo-autonomy-replaces-shared-suite.md) — 裁决（2026-07-13）：E2E 从共享 factory/profile + 中央 verifier 翻案为独立 repo；每个 repo 自有 app/adapter/eval/experiment/验收，根仓只注入候选包并编排，crabbox 原样执行 repo 命令
 - [ai-bundled-docs-root-index](ai-bundled-docs-root-index.md) — 裁决：AI 随包文档以 npm 包根 `INDEX.md` 为稳定路由入口，不放进 Mintlify 内容树；INIT 与托管指引只依赖该入口
 - [terminology-overhaul-2026-07](terminology-overhaul-2026-07.md) — 术语大改名裁决(两批):Outcome→Verdict(经 Conclusion 同日翻案,eve/TTCN-3 先例)、Backend→Provider、早停→首过即停(代码名不动)、Judge/Attempt/Turn/artifact/Selection 中文直用、值断言/严重度/dual-render、结果快照限定语;多义词逐语境甄别纪律
