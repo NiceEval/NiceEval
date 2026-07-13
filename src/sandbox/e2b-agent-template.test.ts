@@ -2,6 +2,7 @@ import { Template } from "e2b";
 import { describe, expect, it } from "vitest";
 import {
   E2B_OFFICIAL_AGENT_TEMPLATES,
+  NICEEVAL_PUBLIC_E2B_TEMPLATES,
   e2bCodingAgentTemplate,
 } from "./e2b-agent-template.ts";
 
@@ -13,6 +14,10 @@ describe("e2bCodingAgentTemplate", () => {
     const json = JSON.parse(await Template.toJSON(e2bCodingAgentTemplate(agent)));
     expect(json.fromTemplate).toBe(base);
     expect(E2B_OFFICIAL_AGENT_TEMPLATES[agent]).toBe(base);
+    expect(NICEEVAL_PUBLIC_E2B_TEMPLATES[agent]).toContain(`/niceeval-${agent}`);
+    expect(JSON.stringify(json)).toContain(
+      agent === "claude-code" ? "claude.ai/install.sh" : "npm install -g",
+    );
   });
 
   it("builds Bub from the pinned NiceEval recipe and writes its marker", async () => {

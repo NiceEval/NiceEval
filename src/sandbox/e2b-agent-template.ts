@@ -6,6 +6,10 @@ import {
   bubInstallHash,
   normalizeBubPackages,
 } from "../agents/bub-install-spec.ts";
+import {
+  DEFAULT_CLAUDE_CODE_CLI_VERSION,
+  DEFAULT_CODEX_CLI_VERSION,
+} from "../agents/coding-cli-versions.ts";
 
 export type E2BCodingAgent = "claude-code" | "codex" | "bub";
 
@@ -18,6 +22,13 @@ export interface E2BCodingAgentTemplateOptions {
 export const E2B_OFFICIAL_AGENT_TEMPLATES = {
   "claude-code": "claude",
   codex: "codex",
+} as const;
+
+/** Public NiceEval baselines. Pin a release tag in CI; untagged names follow the current stable build. */
+export const NICEEVAL_PUBLIC_E2B_TEMPLATES = {
+  "claude-code": "correctroads-default-team/niceeval-claude-code",
+  codex: "correctroads-default-team/niceeval-codex",
+  bub: "correctroads-default-team/niceeval-bub",
 } as const;
 
 function shellQuote(value: string): string {
@@ -39,7 +50,16 @@ export function e2bCodingAgentTemplate(
     if (options.bubPythonPackages?.length) {
       throw new Error("bubPythonPackages can only be used with the Bub E2B template");
     }
-    return Template().fromTemplate(E2B_OFFICIAL_AGENT_TEMPLATES[agent]);
+    const template = Template().fromTemplate(E2B_OFFICIAL_AGENT_TEMPLATES[agent]);
+    if (agent === "claude-code") {
+      // E2B's official template puts a native Claude binary first in the user PATH; installing
+      // npm as root would leave that older binary shadowing /usr/local/bin/claude.
+      return template.runCmd(
+        `curl -fsSL https://claude.ai/install.sh | bash -s ${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
+        { user: "user" },
+      );
+    }
+    return template.runCmd(`npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`, { user: "root" });
   }
 
   const packages = normalizeBubPackages(options.bubPythonPackages ?? []);

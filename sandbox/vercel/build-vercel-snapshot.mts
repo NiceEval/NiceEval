@@ -18,10 +18,12 @@ import {
   DEFAULT_BUB_OVERRIDE,
   bubInstallHash,
 } from "../../src/agents/bub-install-spec.ts";
+import {
+  DEFAULT_CLAUDE_CODE_CLI_VERSION,
+  DEFAULT_CODEX_CLI_VERSION,
+} from "../../src/agents/coding-cli-versions.ts";
 
 const BUB_INSTALL_HASH = bubInstallHash([]);
-const CODEX_VERSION = "0.144.1";
-const CLAUDE_CODE_VERSION = "2.1.207";
 
 const token = process.env.VERCEL_API_TOKEN;
 const teamId = process.env.VERCEL_TEAM_ID;
@@ -41,7 +43,10 @@ console.log("装 git / curl / build-essential…");
 await run(sb, "command -v git && command -v curl || (dnf install -y git curl gcc gcc-c++ make || (apt-get update && apt-get install -y git curl build-essential))");
 
 console.log("装 codex + claude-code(npm -g → /usr/local/bin)…");
-await run(sb, `npm install -g @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}`);
+await run(
+  sb,
+  `npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION} @anthropic-ai/claude-code@${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
+);
 
 console.log("按运行时用户装 uv + bub，并写安装规格指纹…");
 await run(
@@ -61,7 +66,5 @@ console.log("自检三个 CLI…");
 await run(sb, "command -v codex && command -v claude && test -x $HOME/.local/bin/bub", false);
 
 console.log("拍快照…");
-const snap = await sb.snapshot();
+const snap = await sb.snapshot({ expiration: 0 });
 console.log(`\n✅ snapshotId: ${snap.snapshotId}\n   用法: vercelSandbox({ snapshotId: "${snap.snapshotId}" })`);
-
-await sb.stop();

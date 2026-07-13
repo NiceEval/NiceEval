@@ -1,0 +1,13 @@
+{
+  "snapshotId": "snap_7sIjfs71xfmVly0WEUTGhTBoMGeL",
+  "scope": "correctroadhs-projects",
+  "projectId": "prj_iwI8xE8xCUHctrA5sfSCyGJ0gJmV",
+  "createdAt": "2026-07-13T10:02:00Z",
+  "expiration": null,
+  "access": "project",
+  "verified": {
+    "claudeCode": "2.1.207",
+    "codex": "0.144.1",
+    "bubInstallMarker": "83770925b77a"
+  }
+}

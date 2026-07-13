@@ -48,6 +48,23 @@ npx niceeval exp local fixtures/button --runs 10 --early-exit
   没有对应的 CLI flag——后端选择完全写在代码里。如果 experiment 和 `niceeval.config.ts` 都没设置 `sandbox`，[NiceEval](https://niceeval.com/) 在创建 sandbox 时会直接报错，不会自动探测。
 </Note>
 
+云端跑 coding agent 时，可以直接使用 NiceEval 已发布的 E2B 公共模板，避免每个 Attempt 安装 CLI：
+
+```ts
+import { codexAgent } from "niceeval/adapter";
+import { e2bSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  sandbox: e2bSandbox({
+    template: "correctroads-default-team/niceeval-codex:v0.6.1",
+  }),
+});
+```
+
+Claude Code 使用 `correctroads-default-team/niceeval-claude-code:v0.6.1`，Bub 使用 `correctroads-default-team/niceeval-bub:v0.6.1`。版本 tag 适合 CI；省略 tag 会跟随当前稳定构建。如何继续增加系统包、二进制或模型缓存，见 [Sandbox 后端 · 基于官方 Agent 模板继续定制](/zh/guides/sandbox-providers#基于官方-agent-模板继续定制)。
+
 内置 agent 从 `niceeval/adapter` 导出的是工厂函数。需要配置鉴权、代理、MCP 或 GitHub skill 时，把这些写进工厂参数；模型仍然写在 experiment 的 `model` 字段，sandbox 后端仍然写在 `sandbox` 字段：
 
 ```ts

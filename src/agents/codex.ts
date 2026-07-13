@@ -10,6 +10,7 @@ import {
 import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
 import { t } from "../i18n/index.ts";
+import { DEFAULT_CODEX_CLI_VERSION } from "./coding-cli-versions.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -72,7 +73,9 @@ export function codexAgent(config?: CodexConfig): Agent {
 
     async setup(sb, ctx) {
       // 预制模板已把 codex 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
-      await sb.runShell("command -v codex >/dev/null 2>&1 || npm install -g @openai/codex");
+      await sb.runShell(
+        `command -v codex >/dev/null 2>&1 || npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`,
+      );
 
       // model 归属:实验决定(ctx.model);省略时不写 model 行,交给 codex CLI 原生默认,
       // 不在 adapter 里硬编码一个会过期的模型名。

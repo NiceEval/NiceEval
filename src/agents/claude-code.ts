@@ -5,6 +5,7 @@ import { cloneRepo, installSkills } from "./skills.ts";
 import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
 import { t } from "../i18n/index.ts";
+import { DEFAULT_CLAUDE_CODE_CLI_VERSION } from "./coding-cli-versions.ts";
 import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -88,7 +89,9 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
     async setup(sb) {
       // 预制模板已把 claude 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
-      await sb.runShell("command -v claude >/dev/null 2>&1 || npm install -g @anthropic-ai/claude-code");
+      await sb.runShell(
+        `command -v claude >/dev/null 2>&1 || npm install -g @anthropic-ai/claude-code@${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
+      );
 
       if (config?.mcpServers?.length) {
         const servers: Record<string, object> = {};
@@ -134,7 +137,12 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (ctx.session.id) args.push("--resume", ctx.session.id);
       args.push(input.text);
 
-      const env: Record<string, string> = { ANTHROPIC_API_KEY: getApiKey(), ...ctx.telemetry?.env };
+      const env: Record<string, string> = {
+        ANTHROPIC_API_KEY: getApiKey(),
+        // Eval runs must not silently change CLI version after the sandbox artifact was built.
+        DISABLE_AUTOUPDATER: "1",
+        ...ctx.telemetry?.env,
+      };
       const baseUrl = getBaseUrl();
       if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
 
