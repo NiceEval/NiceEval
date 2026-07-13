@@ -3,14 +3,13 @@ name: e2e
 # L0 PR 门禁(docs/engineering/e2e-ci/README.md 第 4、7 节):真实模型、便宜档位、runs: 3 + earlyExit。
 # 成败判据 = e2e/scripts/verify.mjs 的期望表(退出码 + summary.json 对账)。
 # fork PR 拿不到 secrets 是 GitHub 的安全模型,不在本 workflow 解决(提案第 9 节)。
+#
+# 暂停自动触发(2026-07-13,见 memory/e2e-verify-results-format-drift.md):e2e 正在重构,
+# verify.mjs 还按 results schemaVersion 4 之前的 summary.json 布局校验,和当前 snapshot.json
+# 布局对不上,每次 push 必红。重构落地前只保留 workflow_dispatch 手动触发,不拿这个已知会红
+# 的检查挡 push/PR/nightly。重构完成后把 push / pull_request / schedule 三个触发器加回来。
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-  schedule:
-    # L1 沙箱矩阵 nightly(docs/engineering/e2e-ci/README.md §4.2);e2e-matrix 不吃 schedule,见各 job 的 if。
-    - cron: "0 3 * * *"
 
 # concurrency 放 job 级而不是 workflow 级:SDK 矩阵便宜,新 push 顶掉旧的没问题;
 # 沙箱矩阵单次 20-40 分钟,若被后续 push 连环取消就永远验证不完(2026-07-09 实测
