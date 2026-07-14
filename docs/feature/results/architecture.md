@@ -163,7 +163,7 @@ interface AttemptRecord {
  * live 展示与 agent/ci envelope 的 `phase=` 都使用这同一个闭集,不存在第二套词表。
  */
 type LifecyclePhase =
-  // 主链:从排队到 trace collect,覆盖到结果构造为止,按执行序
+  // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue"        // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create"       // provider 起沙箱
   | "sandbox.setup"        // SandboxSpec.setup() 钩子链
@@ -188,19 +188,36 @@ interface PhaseTiming {
   durationMs: number;
   /** 该阶段抛错或被超时中断。主链至多一条,其后无主链条目;收尾阶段各自独立标记,不改判定。 */
   failed?: true;
-  /** 阶段内步级明细;label 只供人读,不是稳定身份,不做跨实验聚合。 */
-  steps?: StepTiming[];
+  /** Runner 直接观察到的阶段内时间树;只供单 attempt 诊断,不做跨实验聚合。 */
+  children?: TimingNode[];
 }
 
-interface StepTiming {
-  /**
-   * 人读标签:钩子链阶段逐钩子(具名钩子用函数名,匿名用 setup#<链上序号> / teardown#<链上序号>);
-   * eval.run 逐 send(`send#<i>`,这是 agent.run 在计时面的投影)。
-   */
+type TimingNodeKind = "hook" | "turn" | "command" | "provider" | "operation";
+
+interface TimingNode {
+  /** attempt 内唯一,供 children 与展示层稳定引用;不作为跨 attempt 身份。 */
+  id: string;
+  kind: TimingNodeKind;
+  /** 人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用 s<session>/t<turn>。 */
   label: string;
-  /** 该步耗时;失败步计到抛错那一刻。 */
+  /** 相对 attempt 单调时钟起点的偏移;并发 sibling 可据此还原重叠,不能只靠数组顺序相加。 */
+  startOffsetMs: number;
   durationMs: number;
   failed?: true;
+  children?: TimingNode[];
+
+  /** kind=turn 时存在;把 runner 的 send 墙钟包络与 trace.json 中同一轮的 spans 显式关联。 */
+  sessionIndex?: number;
+  turnIndex?: number;
+  turnId?: string;
+  traceId?: string;
+  traceAttribution?: "traceparent" | "window" | "none";
+
+  /** kind=command 时的有界脱敏摘要;环境变量值与 stdout/stderr 不进入时间树。 */
+  command?: {
+    display: string;
+    exitCode?: number;
+  };
 }
 
 interface AttemptError {
@@ -227,7 +244,15 @@ interface DiagnosticRecord {
 }
 ```
 
-`phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。`agent.run` 是唯一的嵌套成员：它在 `eval.run` 内随每次 `send` 打开，只作为 `error.phase` / `diagnostics[].phase` 的归因值出现，不在 `phases` 里单列条目——它的计时投影是 `eval.run` 条目的逐 send `steps`。阶段边界、主链 / 收尾两段的 failed 语义、钩子链的步级明细以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端与网页的展示入口见 [Show `--timing`](../reports/show.md#--timing时间花在哪个生命周期阶段) 与 [View](../reports/view.md) 的 Attempt 详情。
+`phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。结果封口必须发生在 Effect Scope 的 release 完成之后：`sandbox.stop` 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
+
+`children` 是 runner 直接观察到的时间树。`sandbox.setup` / `sandbox.teardown` 先按 hook 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run` 中 eval 手工命令与 adapter 启动 CLI 的命令、`workspace.diff` 以及各收尾阶段。包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。命令摘要截断并脱敏，env 只允许保留 key，stdout/stderr 仍由原有事件或诊断证据承载。
+
+`agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为 `error.phase` / `diagnostics[].phase` 的归因值出现，不在 `phases` 里单列。每次 send 由 runner 产生一个 `turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。`trace.json` 中的 agent/model/tool spans 不复制进 `children`，消费方按 `traceId` 把它们临时挂到对应 turn 下。这样没有 OTel 时仍有可靠的轮次总耗时，有 OTel 时才展开轮内模型、工具与子 agent 细节。
+
+`sandbox.create` 早于 Sandbox 对象存在，不能由 `runCommand` / `runShell` 包装捕获。内置 provider 可以把真实的 SDK 请求、宿主命令或创建步骤写成 `provider` children；第三方 provider 没有提供细分时只保留 `sandbox.create` 合计，不能把 API 调用伪装成 shell 命令。Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来自 `events.json`，耗时只在 OTel span 能唯一关联时提供。
+
+所有 runner duration 使用单调时钟；`startedAt` 单独保留 ISO 墙钟。`startOffsetMs` 只用于同一 attempt 内恢复顺序和重叠，不能拿远端 OTel 的绝对时间与 runner 墙钟硬对齐。父子节点允许嵌套与并发，子节点 duration 不可直接求和后与父节点比较。阶段边界、主链 / 收尾两段的 failed 语义、时间树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端与网页的展示入口见 [Show `--timing`](../reports/show.md#--timing整个-attempt-的统一时间树) 与 [View](../reports/view.md) 的 Attempt 详情。
 
 `error` 与 `diagnostics` 的 `phase` 都由 runner 在错误 / 诊断发生时按已打开的生命周期阶段绑定,调用方不能自行填写。两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。`diagnostic.level` 表达消息严重度,不是 verdict 的别名。
 

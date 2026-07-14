@@ -166,7 +166,7 @@ export default defineSandboxAgent({
     Inspect: niceeval show @12h8m4k1
 ```
 
-运行 `niceeval show @12h8m4k1` 可查看结构化错误、diagnostics 和已完成的生命周期阶段；`--timing` 给各阶段的耗时分解（排队、Sandbox 启动、setup 每个钩子、测试、收尾），可直接看出错误或超时发生在哪一步、之前的时间花在哪里；有 OTel trace 时再用 `--execution` 查看执行树。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
+运行 `niceeval show @12h8m4k1` 可查看结构化错误、diagnostics 和已完成的生命周期阶段；`--timing` 给完整时间树（排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool、收尾），可直接看出错误或超时发生在哪一层、之前的时间花在哪里。`--execution` 则以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
 
 ## `ctx.model` 与 `ctx.flags`
 

@@ -9,8 +9,8 @@ niceeval show                              # 当前结果的默认 ExperimentCom
 niceeval show memory/swelancer             # 按 eval id 前缀收窄
 niceeval show @1qrdcfq8                    # 打开一个 attempt 的诊断首页
 niceeval show @1qrdcfq8 --eval             # 断言标回 eval 源码
-niceeval show @1qrdcfq8 --execution        # 对话、工具调用和步骤耗时
-niceeval show @1qrdcfq8 --timing           # 生命周期阶段耗时分解
+niceeval show @1qrdcfq8 --execution        # 对话与工具调用；可关联时附 OTel 时间
+niceeval show @1qrdcfq8 --timing           # 生命周期、hook、命令、轮次与 OTel 时间树
 niceeval show @1qrdcfq8 --diff             # workspace 改动摘要
 niceeval show @1qrdcfq8 --diff=path/to.ts  # 某个文件的完整 diff
 niceeval show memory/swelancer --history   # 这个 eval 的真实执行历史
@@ -151,7 +151,7 @@ USER
 ASSISTANT
   I’m going to inspect the task layout and the decision format first ...
 
-TOOL · command_execution
+TOOL · command_execution  +12.8s · 1.3s
   input
     /bin/bash -lc 'find . -maxdepth 2 -type d | sort'
   result · completed · exit 0
@@ -160,18 +160,22 @@ TOOL · command_execution
     ./tasks
 ```
 
-主时间线只保留用户消息、assistant 消息、skill、subagent 与工具调用。没有关联到这些步骤的框架 telemetry 不混进对话；末尾会报告省略数量，并给出完整 `trace.json` 路径：
+`+12.8s` 是相对本次 trace 起点的位置，`1.3s` 是唯一关联到这条事件的 OTel span 耗时；没有可唯一关联的 span 时，这两个时间都省略，事件本身仍照常显示。主时间线只保留用户消息、assistant 消息、skill、subagent 与工具调用。没有关联到这些步骤的 telemetry 不混进对话；末尾会报告省略数量，并给出完整 `trace.json` 路径：
 
 ```text
 total 50.0s · 0 skill loads · 7 tool calls · 4 AI messages
 full events: .niceeval/.../events.json
-69 unlinked telemetry spans omitted; inspect the OTel trace for framework timing.
+69 unlinked telemetry spans omitted; inspect the OTel trace for full agent timing.
 full OTel trace: .niceeval/.../trace.json
 ```
 
-## `--timing`：时间花在哪个生命周期阶段
+`--execution` 以「做了什么」为主，时间只是事件旁的上下文注释；它不负责阶段聚合，也不把未关联 span 猜到某条事件上。要从整个 attempt 回答「时间花在哪里」，使用 `--timing`。
 
-首页的 `timing:` 行回答「大头在哪」；`--timing` 给完整分解：逐阶段一行，`sandbox.setup` / `sandbox.teardown` 钩子链展开到链上每个钩子，`eval.run` 展开到每次 send，收尾段单独分组并标明不计入总耗时。数据来自 `result.json` 的 `phases`（阶段边界与两段语义见 [Results Format](../results/architecture.md#resultjson)），不依赖 OTel。它与 `--execution` 分工明确：`--timing` 回答「环境与调度花了多久」（runner 侧阶段），`--execution` 回答「agent 内部每一步花了多久」（事件与 OTel span）。
+## `--timing`：整个 attempt 的统一时间树
+
+首页的 `timing:` 行回答「大头在哪」；`--timing` 是完整时间分析入口。它先按 `result.json.phases` 输出 runner 生命周期，再展开 runner 直接观察到的时间树：setup/teardown hook、所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令，以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、hook、命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
+
+`--timing` 与 `--execution` 可以显示同一个 tool span，但投影不同：前者把它放在「phase → turn → agent/model/tool」的时间树中用于找慢点，后者把它贴在对应事件旁用于理解上下文。两者都只消费同一份 span，不复制也不改写事实。
 
 ```text
 $ niceeval show @1qrdcfq8 --timing
@@ -182,23 +186,40 @@ sandbox.queue          0.2s
 sandbox.create         5.6s
 sandbox.setup          3.5s
   ├─ warmModelCache        2.9s
+  │  ├─ shell · mkdir -p ~/.cache/model       0.1s
+  │  └─ shell · restore-model-cache           2.8s
   └─ setup#2               0.6s
+     └─ shell · pnpm config set store-dir …   0.6s
 workspace.baseline     0.1s
+  └─ shell · git init && git commit …          0.1s
 agent.setup           12.1s
+  ├─ shell · npm install -g @openai/codex…    10.8s
+  ├─ shell · mkdir -p ~/.codex                 0.1s
+  └─ shell · codex plugin install …            1.2s
 telemetry.configure    0.1s
+  └─ shell · append ~/.codex/config.toml       0.1s
 eval.run              26.3s
-  └─ send#1               22.4s
+  └─ turn s1/t1           22.4s
+     └─ shell · codex exec …                  22.1s
+        ├─ agent · codex.exec                 22.0s  OTel
+        ├─ model · chat                       14.8s  OTel
+        └─ tool · shell                        3.2s  OTel
 workspace.diff         0.3s
+  └─ shell · git diff …                        0.3s
 scoring.evaluate       1.4s
 telemetry.collect      0.3s
 
 teardown (not counted in total):
 agent.teardown         0.2s
 sandbox.teardown       0.1s
+  └─ persistCache          0.1s
+     └─ shell · tar czf …                      0.1s
 sandbox.stop           0.5s
 ```
 
-主链各阶段之和小于等于 `total`，差值是阶段间的粘合代码，不单独列行。errored 或超时的 attempt 里，`--timing` 直接标出死在哪一步——最后一条主链阶段带 `✗`，其后没有主链条目；沙箱从未创建成功时收尾段整段缺席：
+缩进表达包含关系而不是可相加的账本：hook 包含命令，turn 包含启动 Agent CLI 的命令，OTel span 又可能嵌套或并发；子项不能求和后与父项比较。runner 节点使用本机单调时钟，OTel 节点使用 span 自带时钟，跨进程只按 `traceId` / parent span 关系归属，不按绝对时间硬对齐。主链各阶段之和小于等于 `total`，差值是阶段间的粘合代码，不单独列行。
+
+errored 或超时的 attempt 里，`--timing` 直接标出死在哪一步——最后一条主链阶段以及已知的最深 child 带 `✗`，其后没有主链条目；沙箱从未创建成功时收尾段整段缺席。`sandbox.create` 发生在 Sandbox 对象存在之前，只有 provider 主动提供步骤时才展开 SDK 请求或宿主命令；没有细分时只显示可靠的阶段合计：
 
 ```text
 $ niceeval show @12h8m4k1 --timing

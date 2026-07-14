@@ -69,6 +69,8 @@ expect(o11y.totalToolCalls).toBeLessThan(50);
 
 `ExecutionTree` 的骨架就是标准事件流本身:`message`、`thinking`、`skill.loaded`(一等事件——agent 加载 Skill 时归一化直接产出,不靠「识别到叫 `load_skill` 的工具调用」这类按名字猜的办法)、`action.called`/`action.result`(按 `callId` 合并成一个调用节点)、`subagent.called`/`subagent.completed`、`input.requested`、`compaction`、`error`。**骨架的节点、顺序、内容永远不因 OTel 有没有接入而变**——OTel span 只是叠加在同一个节点上的可选信息:起止时间、耗时、父子关系、错误状态。合并靠**显式 correlation ID 或 GenAI 语义约定属性**(如 `gen_ai.tool.call.id`),**永远不靠拿 span 名字 / 文本去猜哪个事件对应哪个 span**。没有 OTel 接入时,节点照样全部显示,只是耗时标「timing unavailable」;span 存在但唯一关联不上任何事件时,保留成一个单独标注的 telemetry-only 节点,不悄悄猜着合并到某个事件上。
 
+这份事件骨架用于 `show --execution`:它回答「agent 做了什么」,唯一关联上的 span 只作为该事件旁的时间注释。完整的时间分析入口是 `show --timing`:它以 runner 的 lifecycle/turn/command 时间树为骨架,再按 turn 保存的 `traceId` 把 OTel agent/model/tool 子树挂进去。两个视图可以显示同一条 tool span,但只是对同一事实的两种投影,不会把 span 复制进事件或 runner timing。
+
 这条线分两层,两层都得归一,但**含义层(语义约定)才是接新 agent 的真功夫**:
 
 | 层 | 干什么 | 谁做 |
@@ -261,15 +263,21 @@ run 级合计不落盘:总时长、总用量、总成本由消费方([Results Li
 
 ### 时间也是一等指标(效率三件套)
 
-成本不是新指标里唯一的一个。**wall-clock 时间一直就记录**——运行器给每个 attempt 整体计时,落进 `O11ySummary.durationMs`,现在和 token / 成本**并排**成组:
+成本不是新指标里唯一的一个。**wall-clock 时间一直就记录**——运行器给每个 attempt 整体计时,落进 `O11ySummary.durationMs`,并把生命周期、hook、沙箱命令与每轮 send 的单调时钟时间树落进 `result.json.phases`,现在和 token / 成本**并排**成组:
 
 | 维度 | 粒度 | 来源 |
 |---|---|---|
-| **时间(wall-clock)** | 每 attempt / 整个 run(+ 平均) | 运行器计时,adapter 不用做事 |
+| **时间(wall-clock)** | 每 attempt / lifecycle / hook / 沙箱命令 / turn / 整个 run(+ 平均) | 运行器单调时钟,adapter 不用做事 |
+| **Agent 内部时间** | turn 内的 agent / model / tool / subagent | OTel span,按显式 correlation 关联 |
 | **token 用量** | 同 | 标准事件流 / transcript 抠出 |
 | **估算成本 $** | 同 | usage × 价格表(或网关实测) |
 
-这份计时是**聚合粒度**的:`O11ySummary.durationMs` 只有整个 attempt 一个数,`StreamEvent` 本身不带任何一次工具调用 / 任何一轮的耗时。要细到「这次工具调用花了多久」「这一轮模型想了多久」,唯一的来源是 OTel span——见上面 [ExecutionTree](#otlp-traces--统一瀑布图):有 span 且能唯一关联上就在对应节点显示耗时,没有就诚实显示 timing unavailable,不拿整个 attempt 的耗时去反推单个节点。
+`O11ySummary.durationMs` 仍只有整个 attempt 一个聚合数,`StreamEvent` 本身也不携带时间。更细的时间来自两条互补事实线:
+
+- **Runner 时间树**:runner 在 lifecycle 边界、hook、`Sandbox.runCommand()` / `runShell()` 与每次 `send` 外层使用单调时钟计时。它能可靠回答「这一轮端到端花了多久」「安装 CLI 的命令花了多久」,不依赖 OTel；命令正文只保存有界脱敏摘要,env value 与输出不进时间树。
+- **OTel trace**:回答 turn 内部「模型想了多久」「Agent 工具调用多久」「谁套谁」。span 有显式 `traceId` / call ID 且能唯一关联时才挂到对应 turn 或 event；没有就诚实显示 timing unavailable,不拿 turn 或 attempt 总耗时反推。
+
+Runner 的 turn 包络与 OTel 子树不是两份互斥的计时:前者含 adapter、CLI 启动、IPC 与未埋点空白,后者只覆盖实际发 span 的内部操作。它们形成父子诊断视图,不能把可能嵌套或并发的 OTel children 简单求和后与 turn 比较。远端 span 也不靠绝对墙钟与 runner 对齐,只靠 trace/parent 关系归属。
 
 三个都留是因为**它们不总相关**:命中缓存的运行可能便宜但慢,推理重的可能贵但快 —— 只看一个会误判。所以控制台 `(42s) 38.2k tok $0.31` 三个并列,`niceeval view` 也能画「质量 × 成本 × 延迟」。
 

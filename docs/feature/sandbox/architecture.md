@@ -25,7 +25,11 @@
 
 环境层钩子排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于 git 基线跑——像镜像构建先于代码挂载——否则它写下的文件会被 `git diff` 误记成"agent 生成的改动",污染这条 eval 的 diff 归因。teardown 顺序对称颠倒:agent 级收尾先跑(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。
 
-这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、`setup` / `teardown` 钩子链逐钩子留步级明细、收尾段(agent 收尾 / 环境层收尾 / `stop`)在判定口径之外单独记录——「沙箱起了多久、setup 哪个钩子慢、超时死在哪一步、收尾卡没卡」都有落盘数据可查,阶段口径见 [Phase Timings](../../engineering/benchmark/README.md),终端与网页入口是 [`niceeval show --timing`](../reports/show.md#--timing时间花在哪个生命周期阶段) 与 `niceeval view` 的 Attempt 详情。
+这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、`setup` / `teardown` 钩子链逐钩子形成时间树、收尾段(agent 收尾 / 环境层收尾 / `stop`)在判定口径之外单独记录。Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经 `runCommand()` / `runShell()` 发出的公开调用自动挂到当时的 phase/hook/turn 下,所以 `eval.setup` 的依赖安装、`agent.setup` 的 CLI 安装与配置、adapter 启动 Agent CLI、workspace baseline/diff 以及 teardown 回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。
+
+`sandbox.create` 是特殊边界:此时 Sandbox 对象尚不存在,不能靠同一个包装器看到内部步骤。内置 provider 可把真实 SDK 请求、宿主命令或创建子步骤作为 `provider` 节点写入;第三方 provider 没提供细分时只记录 `sandbox.create` 合计,不能为了树好看把 API 调用伪装成 shell 命令。Agent CLI 内部自行执行的工具命令也不经过 Sandbox 包装,它们由标准事件流记录,有 OTel 且 correlation 唯一时才在 turn 下显示耗时。
+
+时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/hook”全局值——并行 hook 或并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value、stdout/stderr 与可能含 secret 的完整长脚本不进入 timing 记录。这样「沙箱起了多久、setup 哪个 hook/命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端与网页入口是 [`niceeval show --timing`](../reports/show.md#--timing整个-attempt-的统一时间树) 与 `niceeval view` 的 Attempt 详情。
 
 核心固定的是这条调用链本身(创建后先环境层钩子、再打一次空 git 基线、再 eval 夹具、再 agent 预置;销毁前先 agent 收尾、再环境层收尾、最后采 diff 已经完成)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval Authoring · 沙箱型](../eval/library.md#沙箱型手工把文件放进沙箱)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
 
