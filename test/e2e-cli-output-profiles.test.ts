@@ -135,6 +135,21 @@ test("--output auto:非 TTY 管道 + CI=true → 解析成 ci", async () => {
   expect(stdout).toContain("niceeval: result=");
 });
 
+test("exp 拒绝 show/view 专用 flag(--history):非零退出 + 明确用法错误,不静默忽略也不真的跑", async () => {
+  const { code, stdout, stderr } = await runCli(["exp", "--history"], cleanEnv());
+  expect(code).toBe(1);
+  expect(stderr).toContain("`--history` only applies to niceeval show");
+  // 没有静默吞掉后当成一次正常运行:不产生任何 profile 的结果收尾行。
+  expect(stdout).not.toContain("NICEEVAL RESULT");
+  expect(stdout).not.toContain("niceeval: result=");
+});
+
+test("exp 拒绝 view 专用 flag(--port):非零退出 + 明确用法错误", async () => {
+  const { code, stderr } = await runCli(["exp", "--port", "3000"], cleanEnv());
+  expect(code).toBe(1);
+  expect(stderr).toContain("`--port` only applies to niceeval view");
+});
+
 for (const profile of ["human", "agent", "ci"] as const) {
   test(`--dry --output ${profile}:不创建 .niceeval 快照目录,也不写 --json/--junit`, async () => {
     const tmp = await mkdtemp(join(tmpdir(), "niceeval-dry-"));

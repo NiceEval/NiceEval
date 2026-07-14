@@ -191,7 +191,7 @@ export function failingGateAssertions(result: EvalResult): AssertionResult[] {
  * soft 断言永不进入这份原因文案,soft 得分是独立概念,不与 reason 混用同一个字段。
  */
 export function reasonFor(result: EvalResult): string | undefined {
-  if (result.error !== undefined) return result.error;
+  if (result.error !== undefined) return result.error.message;
   if (result.skipReason !== undefined) return result.skipReason;
   const gates = failingGateAssertions(result);
   if (gates.length === 0) return undefined;
@@ -267,7 +267,7 @@ function attemptListItemOf(item: Item, redact: (text: string) => string): Attemp
     attempt: result.attempt,
     agent: result.agent,
     verdict: result.verdict,
-    ...(result.error !== undefined ? { error: redact(result.error) } : {}),
+    ...(result.error !== undefined ? { error: redact(result.error.message) } : {}),
     assertions: redactAssertions(result.assertions, redact),
     durationMs: result.durationMs,
     ...(cost !== null ? { costUSD: cost } : {}),

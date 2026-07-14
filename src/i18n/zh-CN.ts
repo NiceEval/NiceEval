@@ -95,6 +95,7 @@ export const zhCN = {
   "cli.eval.noMatchHintExperiment": "提示:\"{{pattern}}\" 是实验{{kind}},你大概想跑:niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "已发现 {{count}} 个 eval:{{evals}}\n",
   "cli.exp.agentModelFlagUnsupported": "`--agent` / `--model` 不能覆盖 experiment。请在 experiments/ 里新增或复制一个配置文件。\n",
+  "cli.exp.viewerFlagUnsupported": "`{{flag}}` 只适用于 niceeval {{command}},不能用于 niceeval exp。\n",
   "cli.experiment.noMatch": "没有匹配的实验:{{arg}}。已发现:{{experiments}}\n",
   "cli.experimentGroup": "组",
   "cli.fallbackCleanupTimeout": "\ngraceful 清理超时,强制清理沙箱…\n",

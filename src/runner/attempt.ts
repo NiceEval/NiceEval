@@ -20,7 +20,7 @@ import { computeVerdict } from "../scoring/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
 import { estimateCost } from "../o11y/cost.ts";
 import { t } from "../i18n/index.ts";
-import { formatThrown } from "../util.ts";
+import { describeError, firstLine, formatThrown } from "../util.ts";
 import { captureGeneratedFiles, initGitAndCommit } from "./sandbox-prep.ts";
 import { createRemoteSandbox, withEvalLocalPaths } from "./remote-sandbox.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
@@ -42,7 +42,16 @@ import type {
   TraceSpan,
 } from "../types.ts";
 import { reportAttemptLifecycle } from "./feedback/sink.ts";
-import type { AgentRun, Attempt, AttemptPhase, AttemptRef, RunOptions } from "./types.ts";
+import type {
+  AgentRun,
+  Attempt,
+  AttemptError,
+  AttemptPhase,
+  AttemptRef,
+  DiagnosticRecord,
+  LifecycleOperationName,
+  RunOptions,
+} from "./types.ts";
 
 export function runAttemptEffect(
   a: Attempt,
@@ -89,7 +98,12 @@ export function runAttemptEffect(
   // 跳过 agent-setup)。没有活跃 feedback coordinator 时 reportAttemptLifecycle 静默 no-op,
   // 不产生任何终端输出。
   const identity: AttemptRef = { experimentId: run.experimentId, evalId: evalDef.id, attempt };
+  // 最近跨入的正式 phase:errored 结果的 `errorDetail.phase` 从它取(见下方 timeout / scope
+  // 兜底与 runAttemptBody 的 body catch)。body 与本函数共用同一个 enterPhase 闭包(经 res 传下去),
+  // 所以 body 内部的阶段推进也会更新它,不需要 body 再单独维护一份。
+  let lastPhase: AttemptPhase | undefined;
   const enterPhase = (phase: AttemptPhase) => {
+    lastPhase = phase;
     onPhase?.(phase);
     reportAttemptLifecycle({ type: "attempt:phase", at: Date.now(), identity, phase });
   };
@@ -200,6 +214,7 @@ export function runAttemptEffect(
           signal: AbortSignal.any([signal, interruptSignal]),
           log,
           enterPhase,
+          getPhase: () => lastPhase,
         }),
       );
     }),
@@ -211,14 +226,20 @@ export function runAttemptEffect(
     Effect.timeoutTo({
       duration: Duration.millis(timeoutMs),
       onSuccess: (r: EvalResult) => r,
-      onTimeout: (): EvalResult => ({
-        ...base,
-        durationMs: Date.now() - t0,
-        error: t("runner.timeout", {
-          timeoutMs,
-          recentLogs: recentLogs.map((l) => `  · ${l}`).join("\n"),
-        }),
-      }),
+      onTimeout: (): EvalResult => {
+        // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
+        // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
+        const text = t("runner.timeout", { timeoutMs, recentLogs: recentLogs.map((l) => `  · ${l}`).join("\n") });
+        const message = firstLine(text);
+        const rest = text.length > message.length ? text.slice(message.length + 1).replace(/\n+$/, "") : "";
+        const error: AttemptError = {
+          code: "timeout",
+          message,
+          operation: operationForPhase(lastPhase),
+          ...(rest.trim() !== "" ? { stack: rest } : {}),
+        };
+        return { ...base, durationMs: Date.now() - t0, error };
+      },
     }),
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Scope 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Scope 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
@@ -226,13 +247,67 @@ export function runAttemptEffect(
     Effect.catchAllCause((cause) =>
       Cause.isInterrupted(cause)
         ? Effect.failCause(cause)
-        : Effect.succeed({ ...base, durationMs: Date.now() - t0, error: causeToError(cause) }),
+        : Effect.succeed({
+            ...base,
+            durationMs: Date.now() - t0,
+            error: errorFromThrown(Cause.squash(cause), lastPhase),
+          }),
     ),
   );
 }
 
-function causeToError(cause: Cause.Cause<never>): string {
-  return formatThrown(Cause.squash(cause));
+/** AttemptPhase(dashboard UI 投影)→ LifecycleOperationName(落盘归属)。两套词汇的关系见
+ *  types.ts 的 `LifecycleOperationName` 注释。`running` 归 `eval.run`(test() 驱动整段);没有
+ *  phase(极早期就挂/超时,还没跨进任何阶段)兜底 `eval.run`(主执行操作),不留空——operation
+ *  是 `AttemptError` 的必填字段。 */
+function operationForPhase(phase: AttemptPhase | undefined): LifecycleOperationName {
+  switch (phase) {
+    case "sandbox-provision":
+      return "sandbox.provision";
+    case "sandbox-setup":
+      return "sandbox.setup";
+    case "workspace-setup":
+      return "workspace.prepare";
+    case "eval-setup":
+      return "eval.setup";
+    case "agent-setup":
+      return "agent.setup";
+    case "telemetry-setup":
+      return "telemetry.configure";
+    case "running":
+      return "eval.run";
+    case "diff":
+      return "workspace.diff";
+    case "scoring":
+      return "scoring.evaluate";
+    case "trace":
+      return "telemetry.collect";
+    case "teardown":
+      return "agent.teardown";
+    case undefined:
+      return "eval.run";
+    default: {
+      const exhaustive: never = phase;
+      return exhaustive;
+    }
+  }
+}
+
+/** 把 catch 到的 e(body 里 test()/setup 抛错,或 Scope 层 squash 出来的原始错误)折成
+ *  `AttemptError`。message/stack/cause 由 `describeError` 拆分;operation 取失败那一刻打开的
+ *  lifecycle operation;code 目前只对确定已知的类别赋稳定码,其余走 `"unexpected-error"`
+ *  ——provider 专属的限流码分类留在各 provider 的 `classifyProvisionError`,没有中性入口能在这里
+ *  复算,不猜一个可能错的码(见 docs/feature/results/architecture.md:`code` 未知异常用
+ *  `"unexpected-error"`)。 */
+function errorFromThrown(e: unknown, phase: AttemptPhase | undefined): AttemptError {
+  const { message, stack, cause } = describeError(e);
+  return {
+    code: "unexpected-error",
+    message,
+    operation: operationForPhase(phase),
+    ...(stack ? { stack } : {}),
+    ...(cause ? { cause } : {}),
+  };
 }
 
 interface AttemptResources {
@@ -249,6 +324,8 @@ interface AttemptResources {
   log: (m: string) => void;
   /** 进入一个正式 AttemptPhase 边界(见 runAttemptEffect 顶部的定义)。 */
   enterPhase: (phase: AttemptPhase) => void;
+  /** 读当前最近跨入的 phase:body 的 error/diagnostic 落点用它填 `errorDetail.phase`。 */
+  getPhase: () => AttemptPhase | undefined;
 }
 
 // attempt 的固定段(上传→基线→setup→驱动 agent→采 diff→脚本→评分→判定)。
@@ -261,8 +338,14 @@ async function runAttemptBody(
   res: AttemptResources,
 ): Promise<EvalResult> {
   const { evalDef, run, attempt } = a;
-  const { sandbox, sandboxSetupHooks, sandboxTeardownHooks, receiver, telemetry, otel, signal, log, enterPhase } = res;
+  const { sandbox, sandboxSetupHooks, sandboxTeardownHooks, receiver, telemetry, otel, signal, log, enterPhase, getPhase } =
+    res;
   const usesSandbox = run.agent.kind === "sandbox";
+  // 本 attempt 累计的诊断(与 verdict 独立):teardown / cleanup 失败等挂在这里,收尾时并入结果。
+  // 在 finally 里 push、在两个 return 之前把它挂到 `result` 上(见文件末尾 finally 的 result 变异)。
+  const diagnostics: DiagnosticRecord[] = [];
+  // 在两个 return 前赋值,好让 finally 把 diagnostics 挂到即将返回的同一个对象上(见 finally 末尾)。
+  let result: EvalResult | undefined;
   // 整个 attempt 共用一份 agent ctx(sandbox 钩子 / agent setup / tracing configure / teardown 都用它)。
   const attemptCtx: AgentContext = {
     signal,
@@ -350,7 +433,7 @@ async function runAttemptBody(
       evalBaseDir: evalDef.baseDir,
     });
 
-    let error: string | undefined;
+    let error: AttemptError | undefined;
     let skipReason: string | undefined;
     try {
       await evalDef.test(context);
@@ -359,11 +442,13 @@ async function runAttemptBody(
       else if (e instanceof EvalRequirementFailed) {
         /* 断言已记录,非执行错误 */
       } else if (e instanceof TurnFailed) {
-        error = e.message;
+        // TurnFailed 是 eval 驱动 agent 时的一层可读失败(message 已是一句话);稳定 code
+        // `turn-failed`,不带控制流 stack(那指向 control-flow.ts,对定位无益)。
+        error = { code: "turn-failed", message: e.message, operation: operationForPhase(getPhase()) };
       } else {
-        // 带 stack——eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError 只有
-        // "name: message" 完全定位不到是哪一行,报告里必须能看见 eval 文件的 file:line。
-        error = formatThrown(e);
+        // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
+        // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
+        error = errorFromThrown(e, getPhase());
       }
     }
 
@@ -452,7 +537,7 @@ async function runAttemptBody(
     // 收 test 引用到的 eval 源码(按 send / 断言的 loc 去重),供 view 渲染代码视图。
     const sources = await collectSources(events, assertions, evalDef.source);
 
-    return {
+    const value: EvalResult = {
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
@@ -476,13 +561,17 @@ async function runAttemptBody(
       agentSetup,
       diff,
     };
+    result = value;
+    return value;
   } catch (e) {
-    return {
+    const value: EvalResult = {
       ...base,
       durationMs: Date.now() - t0,
-      error: formatThrown(e),
+      error: errorFromThrown(e, getPhase()),
       ...(agentSetup !== undefined ? { agentSetup } : {}),
     };
+    result = value;
+    return value;
   } finally {
     // teardown / cleanup 一律在 finally 跑(失败也跑),不改判定,各自兜错(diagnostic)。
     // LIFO:agent 级(setup 最晚 → cleanup / teardown 先跑)在前,sandbox 级(最早就绪)收尾在后
@@ -494,22 +583,25 @@ async function runAttemptBody(
     try {
       if (typeof agentCleanup === "function") await agentCleanup();
       if (agentDidSetup) await run.agent.teardown?.(sandbox, attemptCtx);
-    } catch {
-      // teardown 失败只是 diagnostic,不影响已出的结果
+    } catch (e) {
+      // teardown 失败只是 diagnostic,不改判定 —— 挂到 attempt.diagnostics(见 finally 末尾并入)。
+      diagnostics.push(teardownDiagnostic("agent.teardown", e));
     }
     try {
       // eval.setup 返回的 cleanup:排在 agent 级之后、sandbox 级之前(LIFO,与 setup 顺序对称)。
       if (typeof evalCleanup === "function") await evalCleanup();
-    } catch {
-      // 同上,只作 diagnostic
+    } catch (e) {
+      // eval 的 cleanup 由 eval.setup 注册,归属它;LifecycleOperationName 没有独立的 eval-teardown
+      // 项(见 memory 的 lifecycle-operation-missing-eval-teardown),按 owner 归到 eval.setup。
+      diagnostics.push(teardownDiagnostic("eval.setup", e));
     }
     if (usesSandbox) {
       // sandbox.setup 返回的 cleanup:LIFO(后 setup 先 cleanup),与 agent 级同构。
       for (let i = sandboxCleanups.length - 1; i >= 0; i--) {
         try {
           await sandboxCleanups[i]();
-        } catch {
-          // 同上,只作 diagnostic
+        } catch (e) {
+          diagnostics.push(teardownDiagnostic("sandbox.teardown", e));
         }
       }
       // sandbox.teardown 钩子:按追加的逆序执行,沙箱销毁前最后一步。
@@ -518,13 +610,30 @@ async function runAttemptBody(
         for (let i = sandboxTeardownHooks.length - 1; i >= 0; i--) {
           try {
             await sandboxTeardownHooks[i](sandbox, attemptCtx);
-          } catch {
-            // 同上,只作 diagnostic
+          } catch (e) {
+            diagnostics.push(teardownDiagnostic("sandbox.teardown", e));
           }
         }
       }
     }
+    // finally 在两个 return 求值之后、函数真正交还返回值之前运行;`result` 已经是那个即将被返回的
+    // 对象引用,这里往它上面挂 diagnostics,调用方拿到的就是带诊断的同一个对象(标准 try/finally
+    // 变异语义)。result 恒已赋值(两个 return 分支都先赋值再 return);极端情况下(finally 之前就
+    // 抛了、result 还没赋值)静默跳过,不掩盖原始异常。
+    if (diagnostics.length > 0 && result) result.diagnostics = diagnostics;
   }
+}
+
+/** 把一次 teardown / cleanup 失败折成一条 `DiagnosticRecord`(warning,不改判定)。message 取一层
+ *  摘要(`firstLine(formatThrown)`),完整 stack 不塞进单 attempt 诊断 —— 诊断是「顺带发生的清理
+ *  问题」,不是 attempt 的主因(主因在 verdict / error)。稳定 code `teardown-failed`。 */
+function teardownDiagnostic(operation: LifecycleOperationName, e: unknown): DiagnosticRecord {
+  return {
+    code: "teardown-failed",
+    level: "warning",
+    message: firstLine(formatThrown(e)),
+    operation,
+  };
 }
 
 /**

@@ -92,6 +92,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [live-raw-stderr-write-desyncs-redraw](live-raw-stderr-write-desyncs-redraw.md) — sandbox teardown 失败/budget 不可执行/reporter 抛错等独立诊断行绕开 live 表格裸写 stderr,回跳量与实际光标错位,每帧越滚越多刷屏(行数不超屏也会触发,和 live-overflow-redraw-appends-frames 是两条不同根因);修为新增 `src/tty-line.ts` 统一诊断行出口,live.ts 订阅后先清显示再放行(`tty-line.ts` + `sandbox/registry.ts` + `runner/run.ts` + `runner/report.ts` + `sandbox/docker.ts` + `sandbox/vercel.ts` + `runner/reporters/live.ts`)
 - 已修 [show-skipped-version-hint-missing](show-skipped-version-hint-missing.md) — `niceeval show` 全部落盘不可读时只报 `skipped <dir> (reason)`,不像 `view` 那样给 `npx niceeval@<version>` 建议;`show --run` 认结果根不认单快照,修为按版本分组给统一 `--run` 建议(`src/results/skipped-notice.ts` + `src/show/render.ts` 的 `skippedRunsText`)
 - 已修 [attempt-phase-tracking-teardown-always-last](attempt-phase-tracking-teardown-always-last.md) — 给失败通知补 `phase` 字段时,朴素地取「最后一次 onPhase 回调」几乎恒等于 `"teardown"`(它在 `finally` 里无条件触发,且从不影响 verdict);修为 `run.ts` 的 `lastPhase` 显式排除 teardown(`src/runner/run.ts` + `src/runner/attempt.ts` 新增的 `onPhase` 参数)
+- [lifecycle-operation-missing-eval-teardown](lifecycle-operation-missing-eval-teardown.md) — v6 结构化 error/diagnostics 的 `operation` 取自封闭 `LifecycleOperationName`,但集合没有 eval 的 teardown/cleanup 项(agent/sandbox 都有);eval cleanup 失败的诊断按 owner 归到 `eval.setup`,要精确区分需先给 docs 补 `eval.teardown` 项(契约未修,`src/runner/attempt.ts`)
 
 ## examples 与 tier-sync
 

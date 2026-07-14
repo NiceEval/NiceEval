@@ -241,7 +241,8 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
       onPhase: (phase) => phases.push(phase),
     });
 
-    expect(result.error).toContain("boom-from-eval");
+    expect(result.error?.message).toContain("boom-from-eval");
+    expect(result.error?.operation).toBe("eval.run");
     // test() 里的普通异常被 runAttemptBody 内层 try/catch 收作 result.error,不设置
     // skipReason——所以 diff/scoring 的跳过条件(`!skipReason`)不成立,两个阶段仍会进入,
     // 最后落 teardown。这是「running 阶段失败」的真实序列。
@@ -261,7 +262,8 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     const box = new FakeSandbox();
     const result = await runOnce(agent, box, { onPhase: (phase) => phases.push(phase) });
 
-    expect(result.error).toContain("boom-from-setup");
+    expect(result.error?.message).toContain("boom-from-setup");
+    expect(result.error?.operation).toBe("agent.setup");
     // 失败发生在 agent-setup:之后不再出现 running/diff/scoring —— run.ts 的 reportFailure()
     // 靠的正是这个真实的「最后已知阶段」,不是硬编码成 running(见 run.ts 的 lastPhase 注释)。
     expect(phases).toEqual(["sandbox-provision", "workspace-setup", "agent-setup", "teardown"]);

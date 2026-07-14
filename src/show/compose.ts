@@ -65,7 +65,7 @@ export function evalHistory(exp: Experiment, evalId: string): EvalHistoryRow[] {
       attempts: fresh.length,
       costUSD: cost,
       ...(failed ? { failedAssertion: `${failed.severity} ${failed.name}` } : {}),
-      ...(latest.result.error !== undefined ? { error: latest.result.error } : {}),
+      ...(latest.result.error !== undefined ? { error: latest.result.error.message } : {}),
     });
   }
   return rows.reverse();

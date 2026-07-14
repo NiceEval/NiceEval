@@ -49,7 +49,7 @@ export function JUnit(path: string): Reporter {
           const name = xmlAttr(`${r.id} [${r.agent}${r.model ? "/" + r.model : ""}]`);
           const time = (r.durationMs / 1000).toFixed(3);
           if (r.verdict === "errored") {
-            return `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(r.error ?? "execution error")}"/></testcase>`;
+            return `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(r.error?.message ?? "execution error")}"/></testcase>`;
           }
           if (r.verdict === "failed") {
             const msg = xmlAttr(r.assertions.filter((a) => !a.passed).map((a) => a.name).join("; "));

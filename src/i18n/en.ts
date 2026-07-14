@@ -100,6 +100,7 @@ export const en = {
   "cli.eval.noMatchHintExperiment": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.eval.noMatchKnown": "Discovered {{count}} evals: {{evals}}\n",
   "cli.exp.agentModelFlagUnsupported": "`--agent` / `--model` cannot override an experiment. Add or copy a config file under experiments/ instead.\n",
+  "cli.exp.viewerFlagUnsupported": "`{{flag}}` only applies to niceeval {{command}}, not niceeval exp.\n",
   "cli.experiment.noMatch": "No experiment matched: {{arg}}. Discovered: {{experiments}}\n",
   "cli.experimentGroup": " group",
   "cli.fallbackCleanupTimeout": "\ngraceful cleanup timed out; force-cleaning sandboxes...\n",

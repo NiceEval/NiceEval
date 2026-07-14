@@ -205,7 +205,7 @@ export function attemptEvidenceHeader(evidence: AttemptEvidence): string {
  * 依赖它的内部实现细节。
  */
 export function verdictReasonLine(result: EvalResult): string | undefined {
-  if (result.error !== undefined) return result.error;
+  if (result.error !== undefined) return result.error.message;
   if (result.skipReason !== undefined) return result.skipReason;
   const gates = result.assertions.filter((a) => !a.passed && a.severity === "gate");
   if (gates.length === 0) return undefined;
@@ -301,7 +301,7 @@ export function evalDetailText(opts: EvalDetailOptions): string {
       lines.push(indentBlock(wrapDisplay(assertionLine(a), width - 2).join("\n"), "  "));
     }
     if (detail.result.error !== undefined) {
-      lines.push(indentBlock(wrapDisplay(`error: ${detail.result.error}`, width - 2).join("\n"), "  "));
+      lines.push(indentBlock(wrapDisplay(`error: ${detail.result.error.message}`, width - 2).join("\n"), "  "));
     }
     if (detail.result.skipReason !== undefined) {
       lines.push(indentBlock(wrapDisplay(`skipped: ${detail.result.skipReason}`, width - 2).join("\n"), "  "));
@@ -642,6 +642,48 @@ function overviewDiffLine(diff: DiffData): string {
  * 执行事件计数、可选 OTel 时间指示、工作区 diff 摘要,不复现 `--eval` 的完整源码、
  * `--execution` 的完整事件流或 `--diff` 的完整文件列表(那些内容各自的证据 flag 才给)。
  */
+/** lifecycle operation → 首页可读标签:点换空格,与 docs/feature/reports/show.md 的
+ *  `phase: sandbox provision` 字面一致(不引入第二套本地化标签,show 首页用英文原样呈现)。 */
+function operationWords(operation: string): string {
+  return operation.replace(/\./g, " ");
+}
+
+/**
+ * errored attempt 的结构化 `error:` 块(见 docs/feature/reports/show.md「errored attempt 的首页」)。
+ * 先展开 phase(= operation 的可读形态)/ code / message / cause,stack 放在块后、保持原始换行。
+ * 字段来自结构化 `AttemptError`;非 errored(`r.error === undefined`)返回 undefined。
+ */
+function renderErrorBlock(r: EvalResult): string | undefined {
+  const err = r.error;
+  if (err === undefined) return undefined;
+  const lines = ["error:", `  phase: ${operationWords(err.operation)}`, `  code: ${err.code}`, `  message: ${err.message}`];
+  if (err.cause) {
+    const c = err.cause;
+    const causeText = c.name ? `${c.name} · ${c.message}` : c.message;
+    lines.push(`  cause: ${causeText}`);
+  }
+  // stack 放在 error 块之后、保持原始换行(见 docs);没有 stack(如 timeout / turn-failed)就不加空块。
+  if (err.stack && err.stack.trim() !== "") return `${lines.join("\n")}\n\n${err.stack.replace(/\n+$/, "")}`;
+  return lines.join("\n");
+}
+
+/**
+ * attempt 级诊断块(见 docs/feature/reports/show.md「diagnostics」)。每条一行标头
+ * `<level> · <operation> · <code>`,message 缩进在下一行;`count > 1` 时补 `(N occurrences)`。
+ * 诊断的 level 与 verdict 无关 —— passed / failed / errored 都可能带一条 cleanup / teardown
+ * warning。没有诊断返回 undefined。
+ */
+function renderAttemptDiagnostics(r: EvalResult): string | undefined {
+  if (!r.diagnostics || r.diagnostics.length === 0) return undefined;
+  const lines = ["diagnostics:"];
+  for (const d of r.diagnostics) {
+    lines.push(`  ${d.level} · ${d.operation} · ${d.code}`);
+    const occ = d.count && d.count > 1 ? ` (${d.count} occurrences)` : "";
+    lines.push(`    ${d.message}${occ}`);
+  }
+  return lines.join("\n");
+}
+
 export function attemptOverviewText(
   evidence: AttemptEvidence,
   opts: { header: string; artifactPath?: string; width: number },
@@ -656,17 +698,30 @@ export function attemptOverviewText(
 
   const blocks: string[] = [[header, metaParts.join(" · ")].join("\n")];
 
-  blocks.push(
-    [
-      assertionSummaryLine(r.assertions),
-      evidence.evalSource
-        ? `eval source: ${evidence.evalSource.sourcePath} · sha256:${evidence.evalSource.sourceSha256.slice(0, 8)}…`
-        : "eval source: unavailable (not captured for this attempt)",
-    ].join("\n"),
-  );
+  // errored attempt 的首页不靠 trace 就要能解释基础设施错误(见 docs/feature/reports/show.md
+  // 「errored attempt 的首页」):先展开结构化 error(phase/operation/code/message/cause + stack),
+  // 断言块对没有断言的 errored attempt 省略(它在评分之前就挂了)。
+  const errorBlock = renderErrorBlock(r);
+  if (errorBlock) blocks.push(errorBlock);
+
+  // errored 且没有任何断言时不打印空的 "assertions: 0 passed" —— 主因已经在 error 块里说清楚了。
+  if (r.assertions.length > 0 || r.error === undefined) {
+    blocks.push(
+      [
+        assertionSummaryLine(r.assertions),
+        evidence.evalSource
+          ? `eval source: ${evidence.evalSource.sourcePath} · sha256:${evidence.evalSource.sourceSha256.slice(0, 8)}…`
+          : "eval source: unavailable (not captured for this attempt)",
+      ].join("\n"),
+    );
+  }
 
   const diagnostics = failureDiagnostics(r.assertions, opts.width);
   if (diagnostics) blocks.push(diagnostics);
+
+  // attempt 级诊断(teardown/cleanup 等,与 verdict 独立;passed/failed/errored 都可能有)。
+  const attemptDiag = renderAttemptDiagnostics(r);
+  if (attemptDiag) blocks.push(attemptDiag);
 
   if (evidence.execution) {
     const nodes = evidence.execution.nodes.filter((node) => node.kind !== "telemetry");

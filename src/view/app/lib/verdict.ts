@@ -19,7 +19,7 @@ export function failingAssertions(result: ViewResult): Assertion[] {
 }
 
 export function reasonFor(result: ViewResult, failedGates: Assertion[]): string {
-  if (result.error) return result.error;
+  if (result.error) return result.error.message;
   if (result.skipReason) return result.skipReason;
   return failedGates.map((a: Assertion) => (a.detail ? `${a.name}: ${a.detail}` : a.name)).join(", ");
 }

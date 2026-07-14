@@ -20,7 +20,7 @@
 // "linked dependency" 场景(见任务要求里的第 4 种情形,在这里通过全部用例共用的 link 机制满足,
 // 不是第四个独立分支——三种 tsconfig 场景本就都跑在 link 消费之上)。
 //
-// 每个场景:临时目录 + 落一份新布局(schemaVersion 5,docs/feature/results/architecture.md)结果 +
+// 每个场景:临时目录 + 落一份新布局(schemaVersion 6,docs/feature/results/architecture.md)结果 +
 // symlink node_modules/niceeval → 仓库根,真实子进程跑
 // `node <consumer>/node_modules/niceeval/bin/niceeval.js show --report report.mjs`,断言退出码 0、stdout 渲染出
 // 显式报告(ExperimentComparison 摆的 ExperimentList),stderr 没有 ReferenceError /
@@ -46,7 +46,7 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-/** 落一份新布局(schemaVersion 5)结果:一个 experiment、一个 snapshot、一次 passed attempt——
+/** 落一份新布局(schemaVersion 6)结果:一个 experiment、一个 snapshot、一次 passed attempt——
  * show 裸跑只读 .niceeval/**,不依赖 niceeval.config.ts(见 src/cli.ts 的注释)。 */
 async function seedResults(consumerDir: string): Promise<void> {
   const snapDir = join(consumerDir, ".niceeval", "demo_bub", "2026-07-12T10-00-00-000Z");
@@ -56,7 +56,7 @@ async function seedResults(consumerDir: string): Promise<void> {
     JSON.stringify(
       {
         format: "niceeval.results",
-        schemaVersion: 5,
+        schemaVersion: 6,
         producer: { name: "niceeval", version: "0.4.6" },
         experimentId: "demo/bub",
         agent: "bub",

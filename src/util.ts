@@ -44,6 +44,35 @@ export function firstLine(text: string): string {
   return idx === -1 ? text : text.slice(0, idx);
 }
 
+/**
+ * 把 catch 到的 e 拆成 `AttemptError` 的三段:`message`(一层原因,Error.message,不带 name 前缀、
+ * 不拼 stack)、`stack`(完整多行栈,供 `niceeval show` 展开)、`cause`(沿 `e.cause` 取一层结构化
+ * 摘要 `{ name?, code?, message }`)。Node 的 `Error.stack` 不展开 cause 链,所以 cause 只能从
+ * `e.cause` 单独取。非 Error 值只给 message。
+ */
+export function describeError(e: unknown): {
+  message: string;
+  stack?: string;
+  cause?: { name?: string; code?: string; message: string };
+} {
+  if (!(e instanceof Error)) return { message: String(e) };
+  const out: { message: string; stack?: string; cause?: { name?: string; code?: string; message: string } } = {
+    message: e.message || e.name,
+  };
+  if (e.stack) out.stack = e.stack;
+  const raw = (e as { cause?: unknown }).cause;
+  if (raw instanceof Error) {
+    const c: { name?: string; code?: string; message: string } = { message: raw.message || raw.name };
+    if (raw.name) c.name = raw.name;
+    const code = (raw as { code?: unknown }).code;
+    if (typeof code === "string") c.code = code;
+    out.cause = c;
+  } else if (typeof raw === "string" && raw.trim() !== "") {
+    out.cause = { message: raw };
+  }
+  return out;
+}
+
 /** 零填充到 4 位(数据集扇出的 id:sql/0000)。 */
 export function pad4(n: number): string {
   return String(n).padStart(4, "0");

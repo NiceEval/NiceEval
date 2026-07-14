@@ -260,6 +260,30 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
   return { command, positionals, flags };
 }
 
+/**
+ * exp 只接受两类输入:位置参数选「跑哪些 eval」+ 调度/输出/机器出口 flag 选「对着哪个 agent、
+ * 怎么跑」。show / view 专属的证据切面(`--eval`/`--execution`/`--diff`)、时间轴(`--history`)、
+ * Selection 收窄(`--experiment`/`--run`)、报告装载(`--report`)、查看器(`--out`/`--port`/`--open`)
+ * 不能被 exp 静默忽略(见 docs/feature/experiments/cli.md「用法错误」)。返回第一个被误用的
+ * flag 及其归属命令(用于报错),没有误用返回 undefined。
+ */
+function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
+  const SHOW = "show";
+  const BOTH = "show / view";
+  const VIEW = "view";
+  if (flags.eval) return { flag: "--eval", command: SHOW };
+  if (flags.execution) return { flag: "--execution", command: SHOW };
+  if (flags.diff || flags.diffPath !== undefined) return { flag: "--diff", command: SHOW };
+  if (flags.history) return { flag: "--history", command: SHOW };
+  if (flags.experiment !== undefined) return { flag: "--experiment", command: BOTH };
+  if (flags.run !== undefined) return { flag: "--run", command: BOTH };
+  if (flags.report !== undefined) return { flag: "--report", command: BOTH };
+  if (flags.out !== undefined) return { flag: "--out", command: VIEW };
+  if (flags.port !== undefined) return { flag: "--port", command: VIEW };
+  if (flags.open !== undefined) return { flag: "--open", command: VIEW };
+  return undefined;
+}
+
 /** 调度项的环境变量层(标志 > 环境变量 > config > 默认,见 docs/cli.md「配置优先级」)。 */
 function envNumber(name: string): number | undefined {
   const raw = process.env[name]?.trim();
@@ -525,6 +549,11 @@ async function main(): Promise<void> {
   if (command === "exp") {
     if (flags.agent || flags.model) {
       process.stderr.write(t("cli.exp.agentModelFlagUnsupported"));
+      process.exit(1);
+    }
+    const viewerFlag = firstViewerOnlyFlag(flags);
+    if (viewerFlag) {
+      process.stderr.write(t("cli.exp.viewerFlagUnsupported", { flag: viewerFlag.flag, command: viewerFlag.command }));
       process.exit(1);
     }
     const experiments = await discoverExperiments(cwd);

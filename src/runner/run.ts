@@ -30,9 +30,9 @@ import type { AgentRun, Attempt, AttemptPhase, AttemptRef, RunOptions } from "./
  *  docs/feature/experiments/cli.md「AI agent 怎么用」的例子(`gate: cache tool not used`)
  *  一致,整句透传给 `FailureNotice.reason`,不再二次拆分。 */
 function describeFailureReason(result: EvalResult, strict: boolean | undefined): string {
-  if (result.verdict === "errored") return firstLine(result.error ?? result.verdict);
+  if (result.verdict === "errored") return firstLine(result.error?.message ?? result.verdict);
   const culprit = result.assertions.find((asn) => !asn.passed && (asn.severity === "gate" || strict));
-  return culprit ? `${culprit.severity}: ${culprit.name}` : firstLine(result.error ?? result.verdict);
+  return culprit ? `${culprit.severity}: ${culprit.name}` : firstLine(result.error?.message ?? result.verdict);
 }
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写

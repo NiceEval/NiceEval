@@ -52,7 +52,7 @@ type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
   Partial<
     Pick<
       EvalResult,
-      "attempt" | "durationMs" | "assertions" | "estimatedCostUSD" | "usage" | "error" | "startedAt" | "artifactBase" | "hasEvents" | "hasTrace"
+      "attempt" | "durationMs" | "assertions" | "estimatedCostUSD" | "usage" | "error" | "diagnostics" | "startedAt" | "artifactBase" | "hasEvents" | "hasTrace"
     >
   >;
 
@@ -647,6 +647,41 @@ describe("show @<locator>", () => {
     expect(out).toContain("changes: diff unavailable");
     expect(out).not.toContain("evidence:");
     expect(out).not.toContain("available:");
+  });
+
+  it("errored attempt 首页展开结构化 error(phase/code/message/cause)与 diagnostics", async () => {
+    const root = await makeRoot();
+    await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/claude-e2b", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("agent-029", "errored", {
+        error: {
+          code: "sandbox-rate-limit",
+          message: "E2B sandbox allocation failed after 5 attempts",
+          operation: "sandbox.provision",
+          cause: { name: "RateLimitError", message: "too many concurrent sandboxes" },
+        },
+        diagnostics: [
+          { code: "teardown-failed", level: "warning", message: "container stop timed out", operation: "sandbox.teardown" },
+        ],
+      }),
+    ]);
+    const results = await openResults(root);
+    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+
+    const { out, code } = await show(root, [locator]);
+    expect(code).toBe(0);
+    expect(out).toContain(`${locator} · agent-029 · compare/claude-e2b · errored`);
+    // 结构化 error 块:operation 点换空格作 phase 标签,code/message/cause 各一行(见 docs/feature/reports/show.md)
+    expect(out).toContain("error:");
+    expect(out).toContain("phase: sandbox provision");
+    expect(out).toContain("code: sandbox-rate-limit");
+    expect(out).toContain("message: E2B sandbox allocation failed after 5 attempts");
+    expect(out).toContain("cause: RateLimitError · too many concurrent sandboxes");
+    // attempt 级 diagnostics 块(与 verdict 独立)
+    expect(out).toContain("diagnostics:");
+    expect(out).toContain("warning · sandbox.teardown · teardown-failed");
+    expect(out).toContain("container stop timed out");
+    // errored 且无断言:不打印空的 assertions 汇总行
+    expect(out).not.toContain("assertions:");
   });
 
   it("available 只逐行列出实际存在的证据命令,不打印能力字母或合并式 next", async () => {

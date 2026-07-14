@@ -139,7 +139,10 @@ function richContext() {
         agent: "codex",
         model: "gpt-codex",
         results: [
-          res("algebra/x", "errored", { error: "adapter crashed", estimatedCostUSD: 0.3 }),
+          res("algebra/x", "errored", {
+            error: { code: "unexpected-error", message: "adapter crashed", operation: "eval.run" },
+            estimatedCostUSD: 0.3,
+          }),
           res("algebra/y", "skipped"),
           res("algebra/z", "passed", { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.15 } }),
         ],

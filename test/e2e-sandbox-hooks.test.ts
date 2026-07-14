@@ -136,7 +136,7 @@ test("sandbox 钩子:全序 + ctx.experimentId + 失败语义", async () => {
 
   // ── 3. 失败语义(error 实验):sandbox.setup 抛错 → errored,已进入的收尾仍执行 ──
   expect(errorResult!.verdict).toBe("errored");
-  expect(errorResult!.error ?? "").toContain("boom");
+  expect(errorResult!.error?.message ?? "").toContain("boom");
   const errorExperimentId = errorResult!.experimentId;
   expect(errorExperimentId).toBe("error/mock");
 

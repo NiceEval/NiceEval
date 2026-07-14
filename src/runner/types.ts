@@ -22,6 +22,63 @@ export interface ExperimentRunInfo {
   budget?: number;
 }
 
+/**
+ * runner 在错误 / 诊断发生时已经打开的 lifecycle operation —— `AttemptError` 与
+ * `DiagnosticRecord` 的 `operation` 都从这个封闭集合取,调用方不能自填(见
+ * docs/feature/results/architecture.md「result.json」)。这套 operation 名是结果语义的稳定 scope,
+ * 与用于 dashboard 展示的 `AttemptPhase` 是两套词汇:phase 是 UI 投影(`sandbox-provision`),
+ * operation 是落盘归属(`sandbox.provision`)。
+ */
+export type LifecycleOperationName =
+  | "sandbox.provision"
+  | "sandbox.setup"
+  | "sandbox.teardown"
+  | "sandbox.stop"
+  | "workspace.prepare"
+  | "workspace.diff"
+  | "eval.setup"
+  | "eval.run"
+  | "agent.setup"
+  | "agent.run"
+  | "agent.teardown"
+  | "telemetry.configure"
+  | "telemetry.collect"
+  | "scoring.evaluate";
+
+/**
+ * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/results/architecture.md 的
+ * `AttemptError`)。`message` 是人可读的一层原因(不拼整份 SDK response);完整 stack 单放
+ * `stack`,`niceeval show @locator` 首页展开、终端即时反馈不整段打印。榜单只显示 `message`。
+ */
+export interface AttemptError {
+  /** 稳定、可供 CI/Agent 分支处理的机器码;未知异常使用 `"unexpected-error"`。 */
+  code: string;
+  /** 人可读的一层原因,不拼接整份 SDK response。 */
+  message: string;
+  /** runner 在错误发生时已经打开的 lifecycle operation。 */
+  operation: LifecycleOperationName;
+  /** 原异常有 stack 时保留,供 show 展开;终端即时反馈不整段打印。 */
+  stack?: string;
+  /** 下层 SDK/OS 错误的有限摘要。 */
+  cause?: { name?: string; code?: string; message: string };
+}
+
+/**
+ * 不一定改变 verdict、但运行后仍需回顾的有界诊断(见 docs/feature/results/architecture.md 的
+ * `DiagnosticRecord`)。`level` 表达消息严重度,不是 verdict 的别名 —— passed / failed / errored
+ * 任一 verdict 都可以带 cleanup / teardown 诊断。与运行级的 `DiagnosticNotice` 不同,这条挂在单个
+ * attempt 结果上、随 `result.json` 落盘。
+ */
+export interface DiagnosticRecord {
+  code: string;
+  level: "warning" | "error";
+  message: string;
+  operation: LifecycleOperationName;
+  data?: Readonly<Record<string, JsonValue>>;
+  /** 相同 dedupeKey 折叠后的出现次数;省略等于 1。 */
+  count?: number;
+}
+
 export interface EvalResult {
   id: string;
   description?: string;
@@ -46,7 +103,10 @@ export interface EvalResult {
   assertions: AssertionResult[];
   usage?: Usage;
   estimatedCostUSD?: number;
-  error?: string;
+  /** 使 attempt 进入 `errored` 的唯一致命执行错误(结构化);榜单显示 `error.message` 一层原因。 */
+  error?: AttemptError;
+  /** 本 attempt 的诊断(与 verdict 独立);teardown / cleanup 失败等挂在这里,不改判定。 */
+  diagnostics?: readonly DiagnosticRecord[];
   skipReason?: string;
   events?: StreamEvent[];
   /** test 引用到的 eval 源码(按 loc 收集),供 view 渲染 github-diff 式代码视图。 */
@@ -72,8 +132,11 @@ export const RESULTS_FORMAT = "niceeval.results";
  * `5`(见 memory 的 attempt-locator-and-source-dedup 条目)= result.json 新增 `locator` 字段;
  * `sources.json` 从逐 attempt 内联全量内容改为「attempt 级引用 + 快照级 `sources/<sha256>.json`
  * 去重仓库」,`AttemptHandle.sources()` 的公开返回形状不变(仍是 `SourceArtifact[] | null`)。
+ * `6` = `error` 从自由字符串改为结构化 `AttemptError`(lifecycle operation / code / message + 可选
+ * stack / cause),并新增有界 `diagnostics`(`DiagnosticRecord[]`)。旧版快照按格式规则整份判为
+ * 不兼容并在扫描时列为占位条目,不迁移不降级。
  */
-export const RESULTS_SCHEMA_VERSION = 5;
+export const RESULTS_SCHEMA_VERSION = 6;
 
 /** 一次运行的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 docs/feature/results/architecture.md。 */
 export interface RunSummary {

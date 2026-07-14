@@ -6,7 +6,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { AssertionResult, EvalResult, O11ySummary, Verdict } from "../types.ts";
+import type { AssertionResult, AttemptError, EvalResult, O11ySummary, Verdict } from "../types.ts";
+
+/** 结构化 `AttemptError` 的最小构造(测试用):只关心一层 message,operation/code 取中性默认值。 */
+function erroredWith(message: string): AttemptError {
+  return { code: "unexpected-error", message, operation: "eval.run" };
+}
 import type { AttemptHandle, Selection, SelectionWarning, Snapshot } from "../results/index.ts";
 import type { Dimension, MetricCell } from "./types.ts";
 import { costUSD, defineMetric, durationMs, examScore, passRate, tokens, turns } from "./metrics.ts";
@@ -155,7 +160,7 @@ describe("ExperimentList.data", () => {
           durationMs: 2_000,
           usage: { inputTokens: 20, outputTokens: 10, costUSD: 0.2 },
         }),
-        res("memory/b", "errored", { error: "timeout", durationMs: 3_000 }),
+        res("memory/b", "errored", { error: erroredWith("timeout"), durationMs: 3_000 }),
       ],
     });
     s.experiment = { id: s.experimentId, runs: 2, earlyExit: false, sandbox: "e2b:fast", budget: 2, flags: { cache: true } };
@@ -274,7 +279,7 @@ describe("AttemptList.data", () => {
     const s = snap({
       experimentId: "exp/x",
       results: [
-        res("A", "errored", { error: "ENOENT /Users/me/repo/tool" }),
+        res("A", "errored", { error: erroredWith("ENOENT /Users/me/repo/tool") }),
         res("B", "failed", {
           assertions: [
             {
@@ -440,7 +445,7 @@ describe("examScore", () => {
   it("errored(断言空数组)得 0 —— 不因「gate 全过」空真得满分", async () => {
     const s = snap({
       experimentId: "exp/x",
-      results: [res("A", "errored", { assertions: [], error: "adapter crashed" })],
+      results: [res("A", "errored", { assertions: [], error: erroredWith("adapter crashed") })],
     });
     const data = await MetricTable.data([s], { rows: "agent", columns: [examScore] });
     const cell = data.rows[0].cells["exam-score"];
@@ -740,7 +745,7 @@ describe("MetricTable.data", () => {
 describe("reasonFor", () => {
   it("同一 result 同时含 error、失败 gate、失败 soft → 只显示 error", () => {
     const result = res("A", "errored", {
-      error: "adapter crashed",
+      error: erroredWith("adapter crashed"),
       assertions: [
         { name: "includes", severity: "gate", score: 0, passed: false, detail: "missing text" },
         softAssertion("judge", 0.2, { passed: false }),
