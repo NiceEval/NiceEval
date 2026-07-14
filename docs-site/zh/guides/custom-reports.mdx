@@ -40,14 +40,14 @@ import { CostPassRateComparison } from "niceeval/report";
 import {
   defineReport, Col, Section,
   MetricScatter, ExperimentList, EvalList, AttemptList, Scoreboard,
-  costUSD, passRate,
+  costUSD, taskPassRate,
 } from "niceeval/report";
 
 export default defineReport(async ({ selection }) => {
   const experiments = await ExperimentList.data(selection);
   return (
     <Col>
-      <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={passRate} />
+      <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={taskPassRate} />
       <ExperimentList items={experiments} />
       <Section title="考试成绩单">
         <Scoreboard data={await Scoreboard.data(selection, { rows: "agent", subjects: "evalGroup" })} />
@@ -153,7 +153,7 @@ latest 2026-07-01T11:30:00Z
 // reports/golf.tsx —— code-golf：谁写出能用的代码，谁写得短
 import {
   defineReport, Col, MetricTable,
-  defineMetric, passRate, costUSD,
+  defineMetric, taskPassRate, costUSD,
 } from "niceeval/report";
 
 // 项目自己的口径：只比能用的代码的行数
@@ -166,8 +166,8 @@ const codeLines = defineMetric({
   async value(attempt) {
     const diff = await attempt.diff();
     if (!diff) return null;
-    return Object.values(diff.generatedFiles)
-      .reduce((n, src) => n + src.split("\n").length, 0);
+    return Object.keys(diff.files)
+      .reduce((sum, path) => sum + (diff.get(path) ?? "").split("\n").length, 0);
   },
 });
 
@@ -175,8 +175,8 @@ export default defineReport(async ({ selection }) => (
   <Col>
     <MetricTable data={await MetricTable.data(selection, {
       rows: "agent",
-      columns: [passRate, codeLines, costUSD],
-      sort: passRate,
+      columns: [taskPassRate, codeLines, costUSD],
+      sort: taskPassRate,
     })} />
   </Col>
 ));
@@ -195,7 +195,7 @@ codex   80%         355 lines    $0.51
 
 `label` 可以是一份文案，也可以按语言给：`label: { en: "Code lines", "zh-CN": "代码行数" }`——查看器界面切语言时，按语言给的 label 跟着切；只给一份就两种语言都用它。指标算出来的数字本身不分语言。
 
-内置指标里 `passRate` / `costUSD` / `durationMs` / `tokens` 只读 attempt 自带的判定、用量这些字段，任何一份结果目录都算得出。`turns`（agent 的总轮次）不一样，它读 `attempt.o11y()`——这份数据发布时不一定随行，`copySnapshots` 要显式把 `"o11y"` 加进 `artifacts` 才带得上（见[结果数据 API](/zh/guides/results-data)的「发布」一节），漏了就渲染成 `—`，不是 0。自己写的指标只要读了 `o11y()` / `diff()` 这类 artifact（就像上面 `codeLines` 读 `attempt.diff()`），发布前都要过一遍同样的检查。
+内置指标里 `taskPassRate` / `costUSD` / `durationMs` / `tokens` 只读 attempt 自带的判定、用量这些字段，任何一份结果目录都算得出。`turns`（agent 的总轮次）不一样，它读 `attempt.o11y()`——这份数据 `copySnapshots` 缺省会随行，但如果发布脚本显式给了 `artifacts` 列表又没把 `"o11y"` 写进去，它就不在发布根里（见[结果数据 API](/zh/guides/results-data)的「发布」一节），指标渲染成 `—`，不是 0。自己写的指标只要读了 `o11y()` / `diff()` 这类 artifact（就像上面 `codeLines` 读 `attempt.diff()`），发布前都要过一遍同样的检查。
 
 ## 换分组：三种维度
 
@@ -221,7 +221,7 @@ const vendor: Dimension = {
 
 <MetricTable data={await MetricTable.data(selection, {
   rows: vendor,
-  columns: [passRate, costUSD],
+  columns: [taskPassRate, costUSD],
 })} />
 ```
 
@@ -248,7 +248,7 @@ export default defineExperiment({
 <MetricLine data={await MetricLine.data(selection, {
   x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
   series: flag("agents", { label: (v) => `${v} agents` }),
-  y: passRate,
+  y: taskPassRate,
 })} />
 ```
 
@@ -264,12 +264,12 @@ export default defineExperiment({
 
 ```tsx
 // reports/cost-board.tsx
-import { defineReport, Col, Table, MetricTable, costUSD, passRate } from "niceeval/report";
+import { defineReport, Col, Table, MetricTable, costUSD, taskPassRate } from "niceeval/report";
 
 export default defineReport(async ({ selection }) => {
   const board = await MetricTable.data(selection, {
     rows: "agent",
-    columns: [passRate, costUSD],
+    columns: [taskPassRate, costUSD],
   });
   return (
     <Col>
@@ -283,7 +283,7 @@ export default defineReport(async ({ selection }) => {
           key: r.key,
           cells: {
             agent: r.key,
-            pass: r.cells[passRate.name].display,
+            pass: r.cells[taskPassRate.name].display,
             // 缺数据交 null,组件渲染成 —;不要自己填 0
             cost: r.cells[costUSD.name].value === null ? null : r.cells[costUSD.name].display,
           },
@@ -324,7 +324,7 @@ codex       80%   $0.51
 // reports/passbars.tsx
 import {
   defineReport, defineComponent, Col, Style, MetricTable,
-  bar, padEnd, stringWidth, passRate,
+  bar, padEnd, stringWidth, taskPassRate,
 } from "niceeval/report";
 
 interface BarRow { key: string; ratio: number | null; display: string }
@@ -356,11 +356,11 @@ const PassBars = defineComponent<{ rows: BarRow[] }>({
 });
 
 export default defineReport(async ({ selection }) => {
-  const board = await MetricTable.data(selection, { rows: "agent", columns: [passRate] });
+  const board = await MetricTable.data(selection, { rows: "agent", columns: [taskPassRate] });
   const rows = board.rows.map((r) => ({
     key: r.key,
-    ratio: r.cells[passRate.name].value,   // 格子键锚在指标对象上,不裸写字符串
-    display: r.cells[passRate.name].display,
+    ratio: r.cells[taskPassRate.name].value,   // 格子键锚在指标对象上,不裸写字符串
+    display: r.cells[taskPassRate.name].display,
   }));
   return (
     <Col>

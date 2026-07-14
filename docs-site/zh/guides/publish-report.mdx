@@ -8,7 +8,7 @@ description: "把经过 copySnapshots 大小预检的结果目录提交进仓库
 
 ## 生成可提交的结果目录
 
-新建 `scripts/publish-results.mjs`：
+新建 `scripts/publish-results.ts`（项目里 eval 和配置本来就是 TypeScript，脚本也用 `.ts`，由 `tsx` 直接运行）：
 
 ```javascript
 import { rm } from "node:fs/promises";
@@ -20,10 +20,13 @@ const results = await openResults(".niceeval");
 await rm(output, { recursive: true, force: true });
 await copySnapshots(results.latest(), output, {
   artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
+  redact: (text) => text.replaceAll(/sk-[A-Za-z0-9]+/g, "[redacted]"),
 });
 ```
 
-运行 `node scripts/publish-results.mjs`，然后提交 `report-data/`。`copySnapshots` 在创建目录前检查所有待发布文件；任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 缺省不发布；需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
+`redact` 是必填项：给一个函数改写待发布文件里的自由文本，或者确认这批数据可以原文公开、显式传 `redact: false`。要发布的站点谁都能翻到 prompt 和工具输出，这个选择必须写在脚本里。
+
+运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`copySnapshots` 在创建目录前检查所有待发布文件；任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 缺省不发布；需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
 
 ## 构建命令就是导出命令
 
@@ -95,8 +98,8 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-日常循环是:本地跑 eval，运行 `node scripts/publish-results.mjs`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新结果快照；要发布其它选择策略，在脚本里替换 `results.latest()`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
+日常循环是:本地跑 eval，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新结果快照；要发布其它选择策略，在脚本里替换 `results.latest()`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
 
 ## 发布的是选中的证据
 
-整站导出会带上发布结果根里选中的 transcript、源码快照和 trace。新写入的超大 events / trace 字符串可能带结构化截断标记；`copySnapshots` 不改写内容，只做选择和整文件大小预检。发布到公网前确认结果里没有密钥或敏感数据；自定义报告页的自由文本消毒见[结果数据层](/zh/guides/results-data)的 `redact` 钩子。
+整站导出会带上发布结果根里选中的 transcript、源码快照和 trace。新写入的超大 events / trace 字符串可能带结构化截断标记。`copySnapshots` 只在你给了消毒函数时改写自由文本（`redact` 是必填项，见上），其余只做选择和整文件大小预检；传 `redact: false` 的目录再导出时还要加 `--allow-sensitive-artifacts` 确认一次。发布到公网前确认结果里没有密钥或敏感数据。

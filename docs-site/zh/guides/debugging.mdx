@@ -1,0 +1,208 @@
+---
+title: "排查失败与复盘历史运行"
+sidebarTitle: "Debug 手册"
+description: "一份按场景组织的排查手册：断言失败怎么定位、环境错误怎么进沙箱、agent 改了什么怎么看、旧的运行怎么翻出来复盘——每一步都有命令顺序和输出示例。"
+---
+
+跑完一次 `niceeval exp`，失败的 Attempt 都带一个 `@` 开头的定位符（如 `@1qrdcfq8`）。它出现在运行摘要、CI 日志和报告里，定位符本身不会过期——只要 `.niceeval/` 里对应的结果快照还在，今天的定位符下周还能用同一条命令打开同一次 Attempt。所有排查都从它开始。
+
+## 第一步永远是 `niceeval show @<定位符>`
+
+不带任何参数打开 Attempt，第一页就是为排查设计的：判定、失败的断言、耗时分布、改动概览，以及下一步可用的命令。
+
+```text
+$ niceeval show @1qrdcfq8
+@1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
+snapshot 2026-07-12T10:08:29.361Z · attempt 1 · 50.0s · 58.5k tokens · $0.05
+
+assertions: 3 passed · 1 gate failed
+eval source: evals/memory/swelancer-manager-proposals.eval.ts · sha256:ee33b9c4…
+
+failures:
+  gate · Issue 15193: selected proposal matches the one maintainers accepted
+    assertion: equals(4)
+    expected: 4
+    received: 1
+    source: evals/memory/swelancer-manager-proposals.eval.ts:40:11
+
+execution: 12 events · 0 skill loads · 7 tool calls · 4 AI messages
+timing: sandbox.queue 0.2s · sandbox.create 5.6s · sandbox.setup 3.5s · agent.setup 12.1s ·
+        eval.run 26.3s · workspace.diff 0.3s · scoring.evaluate 1.4s · teardown +0.8s
+
+changes: 2 files changed by agent · M manager_decisions.json · A notes/decision-log.md
+
+available:
+  niceeval show @1qrdcfq8 --eval
+  niceeval show @1qrdcfq8 --execution
+  niceeval show @1qrdcfq8 --timing
+  niceeval show @1qrdcfq8 --diff
+```
+
+看这一页先回答一个问题：**是 agent 答错了（`failed`），还是环境根本没跑起来（`errored`）？** 两种情况的排查路线完全不同。
+
+## 场景一：断言失败（failed）——agent 跑完了，但结果不对
+
+排查顺序是「哪条断言挂了 → agent 当时做了什么 → 它到底改了什么」。
+
+**1. 把断言放回源码。** `--eval` 显示运行时保存的那份 eval 源码（不是你工作区里可能已经改过的版本），失败的断言直接标在对应行上：
+
+```text
+$ niceeval show @1qrdcfq8 --eval
+38      for (const [issue, label] of Object.entries(expected)) {
+39        await t.group(`Issue ${issue}: selected proposal matches…`, async () => {
+40✗         t.check(Number(decisions[issue]?.selected_proposal_id), equals(label.selected_proposal_id));
+    gate · Issue 15193 · equals(4) · expected 4 · received 1
+41        });
+42      }
+```
+
+**2. 看 agent 当时做了什么。** `--execution` 把这次 Attempt 的对话按时间线展开——用户消息、assistant 回复、每次工具调用的入参和结果：
+
+```text
+$ niceeval show @1qrdcfq8 --execution
+TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
+  USER
+    Review the proposals and record your decision for each issue…
+
+  ASSISTANT
+    I'll inspect the task layout and the decision format first…
+
+  TOOL · command_execution  +12.8s · 1.3s
+    input
+      /bin/bash -lc 'cat tasks/15193/proposals.md'
+    result · completed · exit 0
+      Proposal 1: …
+```
+
+对话按轮分段，每轮头行给出编号（`s1/t1`）、状态、耗时和用量——这个编号和 `--diff`、`--timing` 里的轮次标签是同一套，能互相对照。
+
+**3. 看它到底改了什么。** `--diff` 只显示 **agent 自己改动的文件**——你上传的起始文件、跑完后写入的验证材料不会混在里面，所以列表里的每一行都真的是 agent 干的：
+
+```text
+$ niceeval show @1qrdcfq8 --diff
+2 files changed by agent
+  M manager_decisions.json   +6 -2    s1/t1, s1/t2
+  A notes/decision-log.md    +18      s1/t2
+
+single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
+```
+
+行尾的 `s1/t1` 表示这个文件是在第几轮对话里被改的，能和 `--execution` 的轮次对上。要看单个文件的逐行改动，用 `=` 连写文件路径：
+
+```text
+$ niceeval show @1qrdcfq8 --diff=manager_decisions.json
+M manager_decisions.json · changed in s1/t1, s1/t2
+@@ -1,5 +1,7 @@
+ {
+-  "15193": { "selected_proposal_id": 1 },
++  "15193": { "selected_proposal_id": 4 },
+```
+
+到这里通常能下结论：是任务描述有歧义、agent 理解错了，还是断言本身写得太死。
+
+**要看文件本身，而不只是改动？** 落盘的证据刻意不保存整个工作区——`--diff` 只有 agent 改过的文件，agent 该写没写的文件、你上传的起始材料、setup 装出来的东西都不在里面。想看它们的实际内容，进活现场：重跑这一条 eval 加 `--keep-sandbox`（`failed` 的 Attempt 同样会保留，不只是环境错误），用下面场景二的方式进沙箱，workdir 里就是这次跑完时的完整文件树。
+
+## 场景二：环境错误（errored）——agent 根本没跑起来
+
+`errored` 的第一页不列断言，而是列出错误发生在哪个阶段、什么原因：
+
+```text
+$ niceeval show @12h8m4k1
+@12h8m4k1 · memory/agent-029-use-cache · compare/claude-e2b · errored
+
+error:
+  phase: sandbox.create
+  code: sandbox-rate-limit
+  message: E2B sandbox allocation failed after 5 attempts
+  cause: RateLimitError · too many concurrent sandboxes
+
+execution: unavailable (attempt failed before telemetry was configured)
+timing: sandbox.queue 1.2s · sandbox.create 2m 6s ✗ failed here
+```
+
+`phase` 直接告诉你死在哪一步，而且决定了下一步走哪条路：
+
+**`sandbox.create` 失败——沙箱根本没创建出来，没有现场可留。** 这类错误（配额、限流、凭据、镜像 / 模板不存在）在你自己的机器和账号侧排查：核对 API key 和配额、降低 `--max-concurrency`、确认镜像 / 模板名。示例里的 rate-limit 就属于这类，重跑加 `--keep-sandbox` 只会原地再死一次。
+
+**`sandbox.setup` / `agent.setup` / `eval.run` 失败——沙箱活过，值得留现场。** 装依赖失败、agent CLI 起不来、跑到一半超时，这类问题事件流往往是空的，落盘证据帮不上忙，最快的办法是留住现场进去手动重跑一遍出错的命令：
+
+```bash
+# 只重跑这一条 eval，失败时保留沙箱
+npx niceeval exp compare memory/agent-029 --keep-sandbox
+```
+
+```text
+Kept sandboxes (1)
+  @18c1m2qx  memory/agent-029-use-cache #1  errored  docker · a3f9c2d1
+             enter: niceeval sandbox enter a3f9c2d1
+Stop them with: niceeval sandbox stop --all
+```
+
+`niceeval sandbox enter a3f9c2d1` 会唤醒现场并在 workdir 打开 shell——手动执行安装命令看真实报错、翻 `$HOME` 下的配置、检查 `PATH`，这些都在 artifact 之外，只有活现场能回答；退出 shell 后现场自动回到休眠，不白烧资源。保留策略、各 provider 的差别见[保留沙箱现场](/zh/guides/debug-sandbox)。
+
+## 查看和清理留下的沙箱
+
+保留下来的沙箱不会一直烧资源：Docker 容器停驻在磁盘上，E2B 微 VM 暂停计费，进入时自动唤醒。用 `niceeval sandbox` 管理：
+
+```text
+$ niceeval sandbox list
+ID        PROVIDER  STATE            FROM
+a3f9c2d1  docker    dormant          memory/agent-029-use-cache #1 · errored · @18c1m2qx · 2026-07-14 15:02
+            enter: niceeval sandbox enter a3f9c2d1
+9f21c07b  vercel    expired          onboarding/tool-first #2 · failed  · @1x7f3q8a · 2026-07-14 14:31
+            expired 2026-07-14 14:36 — remove with: niceeval sandbox stop 9f21c07b
+```
+
+`dormant` 是「睡着但随时能进」，`expired` 是「现场已经没了，只剩记录」。排查完记得清理：
+
+```bash
+niceeval sandbox stop a3f9c2d1     # id 可以只写唯一前缀
+niceeval sandbox stop --all
+```
+
+## 场景三：复盘旧的运行
+
+每次运行都会在 `.niceeval/<实验>/<时间戳>/` 下留一份完整的结果快照，判定、断言、事件流、diff 都在里面，**不会被下一次运行覆盖**。复盘有三个入口：
+
+**用旧定位符直接打开。** 从上周的终端记录、CI 日志或报告里复制 `@` 定位符，`niceeval show @<定位符>` 照常工作，上面的 `--eval` / `--execution` / `--diff` 全部可用——包括那份运行时的 eval 源码，哪怕你后来把 eval 改了。
+
+**按实验回看当前水位。** 不记得定位符时，从实验入手：
+
+```bash
+niceeval show --experiment compare/bub        # 这个实验每道题现在的判定
+niceeval show memory/swelancer --experiment compare/bub   # 收窄到某道题
+```
+
+列表里每道题、每次 Attempt 都带定位符，接着往深处钻就回到上面的场景一 / 场景二。
+
+**在浏览器里翻。** 复盘一批失败、对比多次 Attempt 时，网页比终端顺手：
+
+```bash
+niceeval view
+```
+
+首页是成本 × 通过率总览和实验对比表；每个 Attempt 的详情页有判定、断言、完整时间树、对话、trace 和 diff，还有「Copy fix prompt」按钮——把失败整理成一段可以直接交给 coding agent 的修复提示词。报告里的 Attempt 深链和 `show` 用同一套定位符。
+
+**打开归档或别人发来的结果。** 结果目录是自包含的——从 CI 下载的、同事拷给你的、发布到静态站前生成的目录，都能直接指过去：
+
+```bash
+niceeval show --run tmp/ci-artifacts/results
+niceeval view --run site-data/run
+```
+
+一个注意点：如果本地清理过旧快照目录，之后的运行里「沿用上次结果」的条目会找不到原始证据（显示为缺失）。要长期归档某次运行，先用 [`copySnapshots`](/zh/guides/results-data) 复制出一份再删。
+
+## 速查：症状 → 命令
+
+| 症状 | 命令顺序 |
+|---|---|
+| 断言挂了，不知道为什么 | `show @loc` → `show @loc --eval` |
+| 想知道 agent 当时做了什么 | `show @loc --execution` |
+| 想确认 agent 改了哪些文件 | `show @loc --diff` → `--diff=<path>` |
+| 哪一步慢 / 超时死在哪 | `show @loc`（看 `timing:` 行）→ `show @loc --timing` |
+| 沙箱创建就失败（配额 / 凭据 / 镜像） | `show @loc` 看 error 的 code 与 cause → 查账号配额、核对凭据、降 `--max-concurrency`（没有现场可留） |
+| 装依赖失败、CLI 起不来、跑一半超时 | 重跑该 eval 加 `--keep-sandbox` → `niceeval sandbox enter <id>` |
+| 想看文件实际内容（agent 没改的、起始材料、`$HOME`） | 重跑加 `--keep-sandbox`（failed 也留）→ `sandbox enter` 进 workdir 看 |
+| 留了哪些沙箱、清理 | `sandbox list` → `sandbox stop <id>` / `--all` |
+| 复盘上周那次失败 | 翻出旧定位符 → `show @loc`；不记得就 `show --experiment <实验>` |
+| 一批失败一起看 | `niceeval view` → Attempt 详情 → Copy fix prompt |

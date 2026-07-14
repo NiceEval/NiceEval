@@ -126,7 +126,7 @@ Pass rate 73.3% · 2 experiments · 15 evals · failed 3 · errored 1 · $0.93
 latest 2026-07-09T10:00:00Z
 ```
 
-通过率是 eval 级折叠计票口径：同一 eval 的多轮 attempt 先折成一个判定（任一轮通过则算通过，否则取最严重的），`passed / (passed + failed + errored)`，`skipped` 不进分母——与页头 `RunOverview` 那个两级聚合、带 partial credit 的 `passRate` 是两码事，两者服务不同问题：`GroupSummary` 回答「这组题过了几道」，`RunOverview` 回答「整体质量几分」，不要互相替代。`evals` 按 `experimentId + eval id` 的完整身份键去重——组里两个 experiment 各自的同名 eval 算两道题，不会被误合并成一道。`errored` 为 0 时这一段省略，但 `verdicts.errored` 这个数据字段本身永远在，省略只发生在渲染层。`totalCostUSD` 是组内可测 attempt 成本求和，一个 attempt 都没报成本时是 `null`，两面都渲染缺数据而不是 `$0`。
+通过率是 eval 级折叠计票口径：同一 eval 的多轮 attempt 先折成一个判定（任一轮通过则算通过，否则取最严重的），`passed / (passed + failed + errored)`，`skipped` 不进分母——与页头 `RunOverview` 那个两级聚合、带 partial credit 的 `taskPassRate` 是两码事，两者服务不同问题：`GroupSummary` 回答「这组题过了几道」，`RunOverview` 回答「整体质量几分」，不要互相替代。`evals` 按 `experimentId + eval id` 的完整身份键去重——组里两个 experiment 各自的同名 eval 算两道题，不会被误合并成一道。`errored` 为 0 时这一段省略，但 `verdicts.errored` 这个数据字段本身永远在，省略只发生在渲染层。`totalCostUSD` 是组内可测 attempt 成本求和，一个 attempt 都没报成本时是 `null`，两面都渲染缺数据而不是 `$0`。
 
 组摘要是普通的公开组件，`GroupSummary.data` 是普通的公开计算函数——想在自己的报告里按目录前缀分组、每组摆一块，按上面的写法收窄 Selection 再调它就行。
 
@@ -222,7 +222,7 @@ inspect: niceeval show @<id> [--eval|--execution|--diff]
 (3 more not shown · showing 20 of 23)
 ```
 
-发布前要消毒 error message/cause/stack、diagnostic message/data、断言 detail 或 Judge 评语时，把 `redact` 交给 `.data()`；稳定 code、lifecycle operation、experiment、Eval 和 locator 不改。要展示哪些 Attempt，过滤返回的 `AttemptListItem[]`。`limit` 也由报告作者在数组上用 `.slice(0, 20)` 表达，截断时把原始数量交给组件的 `total`，组件据此显示“还有 n 项未展示”，不静默截断。
+要在页面显示前遮蔽 error message/cause/stack、diagnostic message/data、断言 detail 或 Judge 评语，把 `redact` 交给 `.data()`；稳定 code、lifecycle operation、experiment、Eval 和 locator 不改。它只影响这份组件数据，管不到发布目录里的 artifact 文件——发布数据集的消毒用 [`copySnapshots` 的 `redact` 选项](/zh/guides/results-data)。要展示哪些 Attempt，过滤返回的 `AttemptListItem[]`。`limit` 也由报告作者在数组上用 `.slice(0, 20)` 表达，截断时把原始数量交给组件的 `total`，组件据此显示“还有 n 项未展示”，不静默截断。
 
 ## 指标表（`MetricTable`）
 
@@ -231,8 +231,8 @@ inspect: niceeval show @<id> [--eval|--execution|--diff]
 ```tsx
 <MetricTable data={await MetricTable.data(selection, {
   rows: "agent",
-  columns: [passRate, codeLines, costUSD],
-  sort: passRate,
+  columns: [taskPassRate, codeLines, costUSD],
+  sort: taskPassRate,
 })} />
 ```
 
@@ -251,7 +251,7 @@ codex   80% 12/15   355 lines    $0.51
 行 × 列两个维度、格子里一个指标，回答「哪道题谁挂了」。稀疏渲染：没有样本的格子空着，不编数。
 
 ```tsx
-<MetricMatrix data={await MetricMatrix.data(selection, { rows: "eval", columns: "agent", cell: passRate })} />
+<MetricMatrix data={await MetricMatrix.data(selection, { rows: "eval", columns: "agent", cell: taskPassRate })} />
 ```
 
 ```text
@@ -273,7 +273,7 @@ next: niceeval show geometry/area
 <MetricBars data={await MetricBars.data(selection, {
   rows: "evalGroup",        // 一组条 = 一个科目/benchmark
   columns: "agent",         // 一根条 = 一个 agent
-  cell: passRate,
+  cell: taskPassRate,
 })} />
 ```
 
@@ -317,11 +317,11 @@ codex   71.0/100   40/50          31/50 (1 missing)
   points="experiment"       // 每个点 = 一个配置的聚合
   series="agent"            // 同 agent 的档位连成线
   x={costUSD}
-  y={passRate}
+  y={taskPassRate}
 />
 ```
 
-直接把 `selection` 传给它，宿主渲染前替你算好数据——默认报告就是这么写的。要在自己已经跑起来的 React 应用里嵌这张图、或数据是预先算好的，改传 `data`：`<MetricScatter data={await MetricScatter.data(selection, { points: "experiment", series: "agent", x: costUSD, y: passRate })} />`；同时传 `data` 和 `selection`、或两者都不传，类型检查都会报错。
+直接把 `selection` 传给它，宿主渲染前替你算好数据——默认报告就是这么写的。要在自己已经跑起来的 React 应用里嵌这张图、或数据是预先算好的，改传 `data`：`<MetricScatter data={await MetricScatter.data(selection, { points: "experiment", series: "agent", x: costUSD, y: taskPassRate })} />`；同时传 `data` 和 `selection`、或两者都不传，类型检查都会报错。
 
 ```text
 pass ↑                                    （好 → 右上）
@@ -345,7 +345,7 @@ x 是有序变量、每个系列一条线，回答「变量拧大，分数怎么
 <MetricLine data={await MetricLine.data(selection, {
   x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
   series: flag("agents", { label: (v) => `${v} agents` }),
-  y: passRate,
+  y: taskPassRate,
 })} />
 ```
 
@@ -376,7 +376,7 @@ A 1 agents   B 4 agents   C 16 agents
     { a: "compare/bub", b: "compare/bub--agents-md", label: "bub" },
     { a: "compare/codex", b: "compare/codex--agents-md", label: "codex" },
   ],
-  metrics: [passRate, costUSD],
+  metrics: [taskPassRate, costUSD],
 })} />
 ```
 

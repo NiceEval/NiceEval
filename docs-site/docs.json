@@ -240,6 +240,7 @@
                   "zh/guides/ci-integration",
                   "zh/guides/reporters",
                   "zh/guides/viewing-results",
+                  "zh/guides/debugging",
                   "zh/guides/debug-sandbox",
                   "zh/guides/publish-report",
                   "zh/guides/custom-reports",
