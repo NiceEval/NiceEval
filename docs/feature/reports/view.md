@@ -28,10 +28,11 @@ niceeval view --report reports/exam.tsx
 ## 静态导出
 
 ```sh
-niceeval view --out site
+niceeval view --run site-data/run --out site               # 发布根(copySnapshots 产出):直接导出
+niceeval view --out site --allow-sensitive-artifacts       # 本地事实根:必须显式确认
 ```
 
-输出恒为目录：
+`--out` 按数据等级防呆：目标结果根的全部快照带 `publish: { redaction: "applied" }` 标记（[`copySnapshots` 补记](../results/library.md#复制与瘦身copysnapshots)）时直接导出；`redaction: "none"`、无标记结果或本地事实根，都必须显式传 `--allow-sensitive-artifacts`，否则报错并指引先走 `copySnapshots({ redact })`——静态站会原样携带证据文件，上游声明过原文发布也不豁免这里的确认。输出恒为目录：
 
 ```text
 site/
@@ -43,7 +44,9 @@ site/
         └── trace.json
 ```
 
-网页会按需 fetch 证据文件，因此不提供“单个 HTML”导出。`diff.json` 可能非常大，`o11y.json` 也不被证据室直接读取，两者不会随 view 静态站复制。要发布一份精确控制 artifact 的数据集，先用 [`copySnapshots()`](../results/library.md#复制与瘦身copysnapshots) 生成结果根，再对它运行 `view --run <dir> --out <site>`。
+网页会按需 fetch 证据文件，因此不提供“单个 HTML”导出。`diff.json` 可能非常大，`o11y.json` 也不被证据室直接读取，两者不会随 view 静态站复制。
+
+`artifact/` 由与 [`copySnapshots()`](../results/library.md#复制与瘦身copysnapshots) 同一条复制管线产出（同一 50 MiB 预检、同一布局知识）。带 `--allow-sensitive-artifacts` 对本地事实根导出的产物包含**未消毒的原始证据**——prompt、工具参数、完整输出、源码——只适合自己看或可信环境；报告组件的展示层 `redact` 不改变 `artifact/` 下的文件，深链一点开就是原文。要发布给别人，先用 `copySnapshots({ redact, artifacts })` 产出发布根，再对它运行 `view --run <发布根> --out <site>`——数据等级契约见 [Results · 复制与瘦身](../results/library.md#复制与瘦身copysnapshots)。
 
 ## 结果版本与错误
 

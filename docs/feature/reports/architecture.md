@@ -25,7 +25,7 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 1. `--run` 确定结果根。
 2. `--experiment` 和 eval id 位置参数收窄范围。
-3. 宿主按现刻水位规则，为每个 experiment × eval 选择跨历史最新判定。
+3. 宿主调用 `results.current()`——官方现刻水位口径（每个 experiment × eval 取「包含该 eval 的最新快照」里的 attempt），单点定义在 [Results · 官方现刻水位](../results/library.md#官方现刻水位resultscurrent)，宿主不自带第二套选择规则。
 4. 局部补跑、过旧或未完成快照形成结构化 warning。
 5. 同一份 Selection 交给各宿主默认首页或 `--report`。
 

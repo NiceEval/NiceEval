@@ -26,7 +26,8 @@ export default defineExperiment({
   agent: Agent;                              // 跑哪个 agent(adapter 实例)
   model?: string;                            // 单个模型(agent 留空);省略=原生默认。跨模型对比写多个实验文件
   reasoningEffort?: string;                  // 推理努力程度(agent 留空);省略=原生默认。经 ctx.reasoningEffort / t.reasoningEffort 透传
-  flags?: Record<string, unknown>;          // 任意 KV 参数,透传到 ctx.flags / t.flags(见 Library)
+  flags?: Record<string, JsonValue>;        // KV 参数,透传到 ctx.flags / t.flags(见 Library);必须 JSON 可序列化——
+                                            // 实验是可签入可复现的配置,函数/类实例装不进快照;解析时校验,非 JSON 值直接报错
   runs?: number;                             // 每个 (agent × model × eval) 跑几次(默认 1)
   earlyExit?: boolean;                        // 先过一次即停其余(默认 true)
   evals?: "*" | string[] | ((id: string) => boolean);  // 跑哪些 eval(默认 "*")
@@ -39,7 +40,7 @@ export default defineExperiment({
 
 `maxConcurrency` 是**实验自己的并发闸**:调度器为这个实验单建一道信号量,它的 attempt 先过这道闸再去占全局并发位;同批跑的其它实验不受影响,仍按全局并发(CLI / env / config / 沙箱默认)跑。两个用途:把有共享状态的实验串行化(例如跨 eval 累积记忆的场景,`maxConcurrency: 1` 保证 attempt 按 eval 顺序一个个跑),或给撞了 provider 限额的实验单独降速。
 
-experiment 只有"运行矩阵"字段,**没有 run / experiment 级整场生命周期钩子**——`ExperimentDef` 是纯配置数据,不携带任何 `setup` / `teardown` 之类的字段。但"这次实验要按配置准备什么环境"确实需要挂在某处:`sandbox` 字段拿到的 `SandboxSpec`(`dockerSandbox()` 等工厂产出)自带 `.setup(fn)` / `.teardown(fn)` 链式方法,装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态都挂在这里,在沙箱创建后、git 基线前最先跑,销毁前最后收尾;这条 eval 自己的任务夹具放 `EvalDef.setup` / `test(t)`,连 agent / 装 CLI 放 `SandboxAgent.setup`,整个 run 共享的外部服务用外部编排。四类职责的完整分工见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、钩子的链式写法见 [Sandbox · 沙箱生命周期钩子](../sandbox/library.md#沙箱生命周期钩子setup--teardown)。
+experiment 只有"运行矩阵"字段,**没有 run / experiment 级整场生命周期钩子**——`ExperimentDef` 是纯配置数据,不携带任何 `setup` / `teardown` 之类的字段。但"这次实验要按配置准备什么环境"确实需要挂在某处:`sandbox` 字段拿到的 `SandboxSpec`(`dockerSandbox()` 等工厂产出)自带 `.setup(fn)` / `.teardown(fn)` 链式方法,装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态都挂在这里,在沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾;这条 eval 自己的任务夹具放 `EvalDef.setup` / `test(t)`,连 agent / 装 CLI 放 `SandboxAgent.setup`,整个 run 共享的外部服务用外部编排。四类职责的完整分工见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、钩子的链式写法见 [Sandbox · 沙箱生命周期钩子](../sandbox/library.md#沙箱生命周期钩子setup--teardown)。
 
 id 从**路径**推导:`experiments/compare/bub-gpt-5.4.ts` → `compare/bub-gpt-5.4`(路径即身份,和 eval 一致,禁止手写 id);其中目录段 `compare/` 就是"可对比组",见 [Library · 实验怎么组织](library.md#实验怎么组织文件夹--一组可对比的实验)。
 

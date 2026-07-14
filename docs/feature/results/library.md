@@ -45,21 +45,26 @@ import { openResults, copySnapshots } from "niceeval/results";
 
 const results = await openResults(".niceeval");
 await copySnapshots(results.latest(), "site/data/run", {
-  artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
-                                                            // diff 不截断,缺省也不带;
-});                                                     // 所有待发布文件还会经过 50 MiB 单文件预检
+  artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],   // diff 不截断,缺省也不带
+  redact: (text) => text.replaceAll(/sk-[A-Za-z0-9]+/g, "[redacted]"),
+});   // redact 必填:传函数消毒,或显式传 false 声明「这批数据可以原文发布」
+      // 所有待发布文件还会经过 50 MiB 单文件预检
 ```
 
 `o11y` 在缺省携带之列。「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做不了消费它的内置指标;`turns`(见 [Reports 的内置指标](../reports/library.md#内置指标))就是它的消费者,且 `o11y.json` 实测几 KB 一个,没有不带的理由。
 
 逐值[截断](architecture.md#大值截断)与整文件发布预算解决不同问题:`events` / `trace` 的 256 KiB 上限会切断一条失控工具输出被重复落盘的常见爆炸链,但一个文件可以含很多正常值,不能据此宣称文件大小有界。`diff`、源码 blob 与历史版本的 events / trace 也可能超过 Git host 的单文件限制。因此 `.niceeval/` 是本地事实根,不是默认可提交目录;进 Git / 静态托管的结果集先经过 `copySnapshots`。
 
-动机来自真实消费者:coding-agent-memory-evals 把最新快照进仓库供静态托管——没有这个原语,消费方只能手写几十行脚本:按落盘 mtime 挑「最新」(口径还是错的:该挑快照),再按白名单拷贝 artifact 文件(布局知识泄漏)。`copySnapshots` 把这段收敛成上面几行,挑选交给 `results.latest()`(见[静态导出](../reports/view.md#静态导出))。复制不改 artifact 内容、不消毒——发布消毒是自由文本的事,归 [Reports 的 `AttemptList.data({ redact })`](../reports/library.md#数据计算与缓存边界)。三条契约细节:
+动机来自真实消费者:coding-agent-memory-evals 把最新快照进仓库供静态托管——没有这个原语,消费方只能手写几十行脚本:按落盘 mtime 挑「最新」(口径还是错的:该挑快照),再按白名单拷贝 artifact 文件(布局知识泄漏)。`copySnapshots` 把这段收敛成上面几行,挑选交给 `results.latest()`(见[静态导出](../reports/view.md#静态导出))。
+
+结果数据分**两个等级**:`.niceeval/` 是**本地事实根**——未消毒,prompt、工具参数、完整输出、源码全在里面;任何要离开本机的拷贝是**发布拷贝**,只能经 `copySnapshots` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。发布消毒因此也在这里做,而且**没有隐式默认**:`redact` 是必填项,取值 `(text: string) => string`(消毒函数)或字面量 `false`(显式声明原文发布)——省略直接报错。什么算敏感只有作者能判断,但「不消毒」必须是写在代码里的选择,不是忘了传参数的副作用。Reports 的 [`AttemptList.data({ redact })`](../reports/library.md#数据计算与缓存边界) 只是展示层遮蔽,不改变盘上或发布目录里的任何 artifact,不能当发布消毒用。契约细节:
 
 - **覆盖事实随数据走(`knownEvalIds`)。** `partial-coverage` 的分母是实验的历史并集,而发布目录没有历史——只复制选中快照,发布目录上重新 `openResults().latest()`,警告会静默消失,「缺口永远被算出来」在官方教的发布路径上断掉。解法不是持久化警告(那违反「reader 派生物删了可重算」),而是让警告的**依据**随数据走:`copySnapshots` 给每个复制出的快照补记 `knownEvalIds`(复制时刻该实验的 `exp.evalIds`);reader 端 `exp.evalIds` 的定义是**并集(本地历史, 各快照携带的 knownEvalIds)**——不是「优先字段」:把快照复制进已有历史的目录时,本地并集可能更大,优先字段会让分母缩水。字段是格式的一部分,`writer.snapshot()` 同样可声明(第三方转换器交代已知覆盖);可选新增字段不破坏兼容,按 [Architecture · 版本与升级设计](architecture.md#版本与升级设计)不递增 schemaVersion。「复制忠实于源」的精确含义:不改 artifact 内容,但随行补记挑选时的覆盖事实(落在复制出的 `snapshot.json` 上)。
 - **目标目录非空即报错**,不静默覆盖、不合并——发布脚本要幂等就自己先清目录;盘上不该出现「我没写的东西被动过」的惊讶。
 - **发布前整文件预检。** `copySnapshots` 在创建目标目录前先规划并序列化全部目标文件;任一文件超过固定的 `PUBLISH_FILE_MAX_BYTES = 50 * 1024 * 1024` 就整体失败,错误列出源路径、实际字节数与处理动作(从 `artifacts` 排除该类证据,或用当前 writer 重新生成历史 events / trace)。不自动删半个 artifact,也不留下半成品目标目录。50 MiB 为 GitHub 的 100 MB 单文件硬限保留余量,同时覆盖其它常见 Git host;它不是可调旋钮,避免发布脚本把保护调没。
 - **`artifacts` 合法值全集** `"events" | "trace" | "o11y" | "agentSetup" | "diff" | "sources"`;缺省带 `events` / `trace` / `o11y` / `agentSetup` / `sources`,不带 `diff`。显式带 `diff` 仍受同一发布预算约束。
+- **`redact` 逐值消毒,范围由 schema 的自由文本标注决定。** Results 格式为每个字符串字段声明它是**自由文本**(可能承载用户 / Agent 内容)还是**结构字段**(格式、判定、身份、路径、哈希),redactor 只对自由文本字段调用——`format`、verdict / Turn status / severity / outcome、`artifactBase`、源码路径、provider 名、事件 `type`、span `kind`、错误 code、lifecycle 阶段名这类结构字段永不经过它,发布根不会因 redact 变得不可读或引用断裂。自由文本清单由标注单点维护:events 的消息与工具入出参、trace 的属性值与可携带动态内容的 span name、源码内容、diff 内容、error / diagnostic 的 message / cause / stack、snapshot 的 `name` / `description`、flags 与 sandbox params 的字符串值、o11y / agent-setup 的自由文本字段。新增字符串字段必须声明标注,`test/` 的漂移守护拦未标注字段——「新字段默认漏网」由守护解决,不靠排除法(标注与 `AttemptList.redact` 共用同一份)。改写发生在序列化后、写盘前,50 MiB 预检按改写后的字节数算;源码内容被改写时,`sources.json` 引用按改写后内容重算 sha256——发布根里引用与内容永远一致。`redact: false` 时不改任何内容。
+- **发布根标记只声明流程,不证明结果。** 复制出的每个 `snapshot.json` 补记 `publish: { redaction: "applied" | "none" }`——`applied` 只说明消毒函数对全部自由文本字段跑过,函数没改干净的秘密它不担保;`none` 是作者显式的原文发布声明。`view --out` 的防呆相应分级(见 [View · 静态导出](../reports/view.md#静态导出)):只有全部快照 `redaction: "applied"` 的发布根直接导出;`"none"` 与无标记(本地事实根)都要求 `--allow-sensitive-artifacts`——上游一句「可以原文发布」不豁免下游操作者的确认。
 
 ## 读:`openResults`
 
@@ -115,6 +120,34 @@ await attempt.sources();       // SourceArtifact[] | null
 - **同一进程内按 handle 记忆化。** 两个都要读 diff 的消费方不会把「可达百 MB」的 `diff.json` 读两遍;扫全部历史仍然可能慢,但要慢得线性、可预期。
 - **只读不写事实。** reader 的一切派生物删了随时可重算;唯一事实来源仍是磁盘上的 Results Format。
 
+### 例:读 agent diff 做跨 attempt 分析
+
+`attempt.diff()` 返回的 `DiffData` 就是 [agent 归因增量](../sandbox/architecture.md#变更归因send-窗口与分类账)(形状见 [Architecture · diff.json](architecture.md#diffjson)):只有 agent 改动的文件,fixture 与校验材料已经天然不在里面,分析脚本不需要任何过滤白名单。比如回答「agent 最常动哪些文件、动了多少行」:
+
+```typescript
+import { openResults } from "niceeval/results";
+
+const results = await openResults(".niceeval");
+const current = results.current({ experiments: "compare/" });
+
+const touched = new Map<string, { attempts: number; lines: number }>();
+for (const snap of current.snapshots) {
+  for (const attempt of snap.attempts) {
+    const diff = await attempt.diff();                    // DiffData | null,懒加载
+    if (!diff) continue;                                  // remote agent / 发布时未带 diff
+    for (const path of Object.keys(diff.files)) {
+      const entry = touched.get(path) ?? { attempts: 0, lines: 0 };
+      entry.attempts += 1;
+      entry.lines += (diff.get(path) ?? "").split("\n").length;
+      touched.set(path, entry);
+    }
+  }
+}
+console.table([...touched.entries()].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 10));
+```
+
+`diff.files[path].windows`(如 `["s1/t1", "s1/t2"]`)进一步回答「第几轮改的」,`diff.windows` 保有逐窗口的完整 before/after——与 `show --timing` 的 turn 节点、`--execution` 的轮次同一套标签,可以把「改动发生在哪轮」与「那轮说了什么、调了什么工具」对上。要把这类分析做成可复用报告,写成[自定义指标](../reports/library.md#自定义指标)交给报告组件聚合;一次性核对用 [`show --diff`](../reports/show.md#--diff核对-agent-实际改动)。
+
 ## 快照:experiment × 一次运行
 
 **快照 = 单次跑的实验**,物理上就是一个快照目录(`.niceeval/<experiment>/<timestamp>-<suffix>/`),与 [View 增强 · Compare 计划](../../roadmap/view-enhancements.md#compare-挑两次运行对比) 的 `(experimentId, startedAt)` 同一口径。「每个 experiment 最新一次」天然是快照粒度:周一跑了整组 compare,周二只重跑 `compare/bub-gpt-5.4`,bub 的最新快照在周二,codex 的还在周一——`niceeval exp compare` 一次 CLI 调用会同时开多个快照目录(每实验一个),但它们各自独立,没有跨实验的聚合落盘。
@@ -148,7 +181,10 @@ const latest = results.latest({
   experiments: "compare/",     // 可选:experiment id 前缀过滤(string | string[],与 CLI 位置参数
 });                            // 可给多个前缀对齐),同一套前缀匹配机制
 
+latest.mode;                   // "latest-snapshots":这份 Selection 的口径,字面写在数据上
 latest.snapshots;              // Snapshot[]:每个实验最新一次
+latest.attempts;               // AttemptHandle[]:选中口径下的 attempt 全集,已物化——自定义脚本直接用它,
+                               // 不需要自己 flatten snapshots,也就不可能算错口径
 latest.warnings;               // SelectionWarning[]:结构化,不是渲染好的文本
 ```
 
@@ -186,9 +222,26 @@ latest.warnings[0];
 
 公开面的全集由参考页承载(`pnpm docs:reference` 从 TSDoc 生成),guide 只举例并声明「不止一种」。`missing-startedAt` **不透出到组件数据**:`writer.snapshot()` 的 `startedAt` 必填,官方产出与走写入面的转换永不缺,缺失只可能来自携带条目缺锚的极端情况;计算函数对这类条目不去重、如实保留重复,`dedupeAttempts` 直调时警告随返回值走。
 
+## 官方现刻水位:results.current()
+
+`latest()` 以**快照**为单位,是发布与归档的口径。回答「现在什么水平」还有一个更细的官方口径:**每个 experiment × eval 取「包含该 eval 的最新快照」里的全部 attempt**,跨历史拼出当前判定水位。`niceeval show` / `view` 的默认首页用的就是它(见 [Reports · Selection 是计算入口](../reports/architecture.md#selection-是计算入口)),自定义报告要与官方入口对上数字,也从 `current()` 出发:
+
+```typescript
+const current = results.current({ experiments: "compare/" });   // 前缀过滤与 latest() 同一套
+
+current.mode;        // "current-evals"
+current.snapshots;   // 贡献了至少一道题当前判定的快照集
+current.attempts;    // 已按口径物化:每 experiment × eval 只含「包含该 eval 的最新快照」里的 attempt
+current.warnings;    // 同一套 SelectionWarning
+```
+
+**Selection 的口径不是隐藏语义,是物化的数据**:`mode` 字面声明口径,`attempts` 是按口径挑好的 attempt 全集——自定义脚本消费 `attempts` 就自动正确,不需要知道两种口径怎么展开,也不可能因为自己 flatten `snapshots` 而把旧快照里同一道题的历史 attempt 重复计入。官方计算函数同样只消费 `attempts`。`snapshots` 保留给需要快照级信息(配置、producer、目录)的消费方;`filter(predicate)` 仍按快照删减,`attempts` 与 warnings 随之同步修剪。警告全集同样适用:旧快照的贡献触发 `stale-snapshot`,「水位里混着旧结果」永远可见;并集中某道题在全部历史里都没有 attempt 时照常触发 `partial-coverage`。
+
+自动携带(见下节)让常态下两个口径重合——最新快照本来就完整;`current()` 保证在携带缺席时(局部 `--force` 重跑、errored 不携带)口径依然诚实,不把报表分母缩成刚重跑的那几道题。选哪个:对外发布自包含数据集用 `latest()` + `copySnapshots`;看当前水平、连续开发中对数用 `current()`。
+
 ## 身份键与去重
 
-`--resume` 会把上一轮已通过的结果**携带合入**新快照(`RunOptions.priorResults`):这让续跑出来的最新快照天然完整(正好配合 `results.latest()`),代价是同一个 attempt 存在于多份落盘。
+运行器默认把上一轮 fingerprint 匹配、判定为终态(passed / failed)的结果**携带合入**新快照(`RunOptions.priorResults`;CLI 侧 `--force` 关闭携带全部重跑,见 [Runner · 缓存](../../runner.md#缓存指纹去重)):这让每次跑出来的最新快照天然完整(正好配合 `results.latest()`),代价是同一个 attempt 存在于多份落盘。
 
 **携带条目的落盘与读取面行为**:携带条目在新快照里也是一条 `result.json`,带原条目的 `startedAt`(身份锚)与 `artifactBase`(相对结果根,指向原快照的 attempt 目录),`has*` 真值原样携带——`artifactBase` 就是事实上的「携带」标记,不需要再发明一个。reader 据此定三条:
 

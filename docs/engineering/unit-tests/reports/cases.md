@@ -27,10 +27,10 @@ import { RunOverview } from "../../report/index.ts"
 it("RunOverview 使用两级聚合并保留覆盖率", async () => {
   const data = await RunOverview.data(selection)
 
-  expect(data.totals.passRate.value).toBeCloseTo(5 / 6)
-  expect(data.totals.passRate.display).toBe("83.3%")
-  expect(data.totals.passRate.samples).toBe(4)
-  expect(data.totals.passRate.total).toBe(5)
+  expect(data.totals.taskPassRate.value).toBeCloseTo(5 / 6)
+  expect(data.totals.taskPassRate.display).toBe("83.3%")
+  expect(data.totals.taskPassRate.samples).toBe(4)
+  expect(data.totals.taskPassRate.total).toBe(5)
 })
 ```
 
@@ -58,7 +58,7 @@ it("RunOverview 使用两级聚合并保留覆盖率", async () => {
 | `MetricMatrix` 是稀疏矩阵：无 attempt 的行列组合不生成格子；`MetricBars` 消费同一份矩阵数据 | 正例：缺组合无格子（而非 value:0）；正例：Bars 与 Matrix data 同源 |
 | `AttemptList` 的 `redact` 只改写 message/cause/stack、diagnostic、断言 detail 和 evidence；身份字段与 code、lifecycle operation 不被改写 | 正例：全替换函数下身份字段原样；反例：evidence 中的 secret 被替换 |
 | 分组维度上未声明的 flag 归 `(unset)` 组，不丢行 | 正例：部分 experiment 无该 flag 时 (unset) 计数正确 |
-| `MetricTable` 的 `sort` 决定初始行序，方向由指标 `better` 决定（好在前） | 正例：sort=passRate 高在前、sort=costUSD 低在前 |
+| `MetricTable` 的 `sort` 决定初始行序，方向由指标 `better` 决定（好在前） | 正例：sort=taskPassRate 高在前、sort=costUSD 低在前 |
 
 ## text/web 双面同源
 
@@ -80,7 +80,7 @@ import { createTextContext, renderNodeToText } from "../../report/tree.ts"
 
 it("text 与 web 显示同一个 MetricCell 终值和 warning", () => {
   const data = overviewDataFixture({
-    passRate: cells.partial,
+    taskPassRate: cells.partial,
     warnings: ["snapshot is incomplete"],
   })
 
