@@ -48,17 +48,18 @@ t.check(turn.data, satisfies((v) => Array.isArray(v) && v.length <= 5, "最多 5
 
 ## 改严重度与阈值
 
-每个 matcher 都可以链 `.gate(threshold?)` 或 `.atLeast(threshold)`，返回新的不可变 matcher，原实例不变、可复用：
+每个 matcher 都可以链 `.gate(threshold?)`、`.atLeast(threshold)` 或 `.optional()`，返回新的不可变 matcher，原实例不变、可复用：
 
 - `.gate(t?)`：变硬门槛，不及格即整条 eval 不通过。省略阈值按「分数 > 0」及格，给了阈值按「分数 ≥ 阈值」。
 - `.atLeast(t)`：变软阈值，不及格默认不影响 verdict；`--strict` 下才使 verdict 变 failed。
+- `.optional()`：允许这条断言证据缺席——评不了时只记录 `unavailable`，不把 attempt 拖成 `errored`；与 severity 正交，主要用在依赖证据通道的作用域断言和 judge 上（[折叠规则](../architecture/severity-and-verdict.md#证据不可用unavailable不折叠成通过)）。
 
 ```ts
 t.check(t.reply, similarity("布鲁克林今天晴。").atLeast(0.9)); // 收紧默认的 0.6
 t.check(t.reply, similarity("布鲁克林今天晴。").gate(0.8));    // 相似度不足直接挂
 ```
 
-Severity 折叠成 Verdict 的完整规则见 [Severity 与 Verdict](../architecture/severity-and-verdict.md)。
+Severity 折叠成 Verdict 的完整规则见 [Severity 与 Verdict](../architecture/severity-and-verdict.md)；每个 matcher 失败时在 show / view 里显示什么，见 [断言与 Turn 的展示](display.md)。
 
 ## 分组
 

@@ -30,5 +30,6 @@ export default defineEval({
 | 断言消息、工具、事件、状态和成本 | [作用域断言](library/scoped-assertions.md) |
 | 用裁判模型评价开放式结果 | [LLM-as-judge](library/judge.md) |
 | 编写自己的 matcher | [自定义断言](library/custom-assertions.md) |
+| 每类断言与 Turn 在 show / view 里长什么样 | [断言与 Turn 的展示](library/display.md) |
 
 `t`、session 与 turn 怎样取得，见 [Eval Context](../eval/library/context.md)；Sandbox 命令和文件怎样操作，见 [Sandbox 操作](../sandbox/library/operations.md)。

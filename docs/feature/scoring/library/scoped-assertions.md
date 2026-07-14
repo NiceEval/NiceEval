@@ -33,7 +33,7 @@ t.calledTool("get_weather", { count: 2 }); // 全 attempt
 | `eventsSatisfy(label, predicate)` | 用谓词检查事件流 |
 | `maxTokens(max)` / `maxCost(usd)` | token 或估算成本不超上限 |
 
-负断言和上限断言依赖完整证据；Adapter 漏事件或 usage 时可能静默通过。见 [证据与完整性](../architecture/evidence.md)。
+负断言和上限断言依赖完整证据；所需通道非 complete 时这些断言记为 `unavailable`（非 `.optional()` 断言评不了使 attempt `errored`），不会按空证据静默通过；正断言在非 complete 通道上没找到匹配同样记 `unavailable` 而不是 failed。覆盖声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。
 
@@ -86,3 +86,5 @@ t.eventsSatisfy("thinking 不超过 3 次", (events) =>
 | turn | `outputEquals(value)`、`outputMatches(schema)` | 直接评价这一轮的 `turn.data` |
 
 不要为了表面一致把这些能力下放给 session 或 turn。
+
+各断言失败时在 show / view 里显示什么（含负断言的反例定位），见 [断言与 Turn 的展示](display.md)。

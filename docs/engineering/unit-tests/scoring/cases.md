@@ -95,8 +95,8 @@ it("receiver 决定 scope", async () => {
 | `.atLeast(x)` 产生 soft threshold；`.gate()` 用默认通过线，`.gate(x)` 指定硬阈值并提级为 gate | 正例：gate(0.9) 下 0.8 → failed；边界：soft matcher 被 .gate() 提级 |
 | Sandbox 延迟断言在 finalize 时读取求值；值 matcher 与 require 立即求值——两种时机产出同一种 AssertionResult | 边界：finalize 前 diff 变化只被延迟断言看到；正例：两类结果结构一致 |
 | 五种评分来源（值/scope/judge/sandbox/效率）全部折叠进同一 collector 与同一 `assertions` 数组 | 正例：混合来源 finalize 输出单一有序数组 |
-| AssertionResult 必有 name/severity/passed/score；score 归一化；threshold 仅在设了阈值时出现；expected/received 是有界预览 | 正例：无阈值断言不含 threshold 键；边界：超长实际值被截断 |
-| 判定只消费 severity/passed/score/threshold 四字段 | 边界：改 name/expected 不改变 computeVerdict 输出 |
+| AssertionResult 是 `outcome` 判别联合：passed/failed 分支必有 score（归一化），threshold 仅在设了阈值时出现，expected/received 是有界预览；unavailable 分支必有 reason、无 score | 正例：无阈值断言不含 threshold 键；边界：超长实际值被截断；反例：unavailable 条目不含 score 键 |
+| 判定只消费 severity/outcome/optional/score/threshold | 边界：改 name/expected 不改变 computeVerdict 输出；正例：非 optional 断言 unavailable → errored，`.optional()` 的不影响 |
 
 链式分级检查调用次数是有意义的，因为"延迟断言只求值一次"是生命周期契约；一般 helper 调用次数不是：
 
@@ -116,7 +116,7 @@ it("atLeast 把 assertion 变为 soft threshold，evaluate 只运行一次", asy
     severity: "soft",
     threshold: 0.8,
     score: 0.7,
-    passed: false,
+    outcome: "failed",
   })
   expect(evaluate).toHaveBeenCalledOnce()
 })
@@ -188,7 +188,7 @@ it.each([
 
 | 契约 | 场景 |
 |---|---|
-| 未解析到 API key 时 judge 命名空间可调用不抛错，但不记录任何 judge Assertion | 反例：缺 key 时调用链 `.atLeast()` 不抛、finalize 无 judge 条目；正例：有 key 时记录一条 |
+| 未解析到模型 / API key 时 judge 断言记录为 `outcome: "unavailable"`（带 reason），绝不静默消失；非 `.optional()` 的使 attempt errored | 正例：缺 key 时 finalize 有一条 unavailable 且 verdict=errored；正例：`.optional()` 后 verdict 不受影响、条目仍在；反例：调用链 `.atLeast()` 不抛 |
 | judge 断言默认 soft 无阈值；`.atLeast(x)` 加 soft 阈值，`.gate(x?)` 变硬要求 | 正例：默认低分不影响 Verdict；反例：gate 后低分 → failed；边界：score 归一到 0..1 |
 | 模型解析优先级：单次 `{ model }` > eval judge config > 项目 judge config > `NICEEVAL_JUDGE_MODEL`，无内置默认 | 决策表：四层逐层覆盖；反例：全缺时不静默选一个 |
 | 默认材料按接收者分层：t 评主 session 对话、session 评该 session、turn 评 turn.message；`{ on }` 覆盖 | 正例：请求材料随接收者不同；边界：on 为 diff 时不含对话 |

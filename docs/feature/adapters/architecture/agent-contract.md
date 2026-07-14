@@ -8,6 +8,8 @@ core 只依赖中性的 `Agent`、`AgentContext`、`AgentSession`、`TurnInput` 
 interface Agent {
   readonly name: string;
   readonly kind: "sandbox" | "remote";
+  /** Adapter 常态证据覆盖声明;省略 = 全通道 unknown(保守),官方适配器显式声明(可用 completeCoverage 常量)。见 evidence.md。 */
+  readonly coverage?: EvidenceCoverage;
   setup?(sandbox: Sandbox, ctx: AgentContext): Promise<void | Cleanup> | void | Cleanup;
   tracing?: AgentTracing;
   spanMapper?: SpanMapper;
@@ -26,6 +28,8 @@ interface Turn {
   readonly data?: unknown;
   readonly status: "completed" | "failed" | "waiting";
   readonly usage?: Usage;
+  /** 相对 Agent.coverage 的本轮降级(只降不升);省略 = 沿用 Agent 默认。字段契约与消费规则见[断言证据与完整性](evidence.md)。 */
+  readonly coverage?: EvidenceCoverage;
 }
 ```
 
@@ -65,10 +69,12 @@ Agent 只配置怎样连接自己；运行条件不固化在 Agent 中。被测 
 
 ## 能力由构造证明
 
-Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用，HITL 来自 waiting + request + resume，行为断言来自事件，负断言可信度来自完整性证据，Sandbox 能力来自 sandbox kind，trace 来自 telemetry 配置。
+Agent 没有声明式 capabilities：会话能力来自 `ctx.session` 的使用，HITL 来自 waiting + request + resume，行为断言来自事件，负断言可信度来自完整性证据，Sandbox 能力来自 sandbox kind，trace 来自 telemetry 配置。`coverage` 不是能力位的例外——它是完整性证据的载体（诚实义务的声明），core 不据它启用或禁用任何行为，只用它折叠断言可信度。
 
 只有 Sandbox 设置运行时守卫。其它能力缺失时由返回数据自然表现，core 不按 Agent 名字分支。
 
 ## 生命周期不变量
 
 Agent setup 负责连接 Agent 自身并且每 attempt 只执行一次；环境预置属于 SandboxSpec，任务 fixture 属于 eval。setup 基础设施失败抛出为 errored，Agent 运行结果通过 Turn 表达。
+
+沙箱型 Agent 的 `send()` 返回时，Agent 侧可能写 workdir 的进程必须已退出、或已进入可证明不再写 workspace 的静止态（HITL waiting 挂起等输入即属此类）——`send()` 的返回就是 diff 归因的窗口边界，后台残留写入会落在窗口外、被错记成 eval 归因（见 [Sandbox · 变更归因](../../sandbox/architecture.md#变更归因send-窗口与分类账)）。

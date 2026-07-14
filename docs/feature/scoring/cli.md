@@ -19,4 +19,4 @@ Gate Assertion 不受 `--strict` 影响，任何模式下不通过都 failed。
 
 终端和报告必须分别统计 failed 与 errored，不能把基础设施故障展示成 Agent 答错。多 runs 展示通过率和各 attempt 分数，不把多个 Verdict 合并成新的状态。
 
-Judge 缺少 API key 时不会记录 judge Assertion；CLI 不把它单独报成失败。要求 judge 必须运行的 CI 应在启动 niceeval 前校验环境变量。
+Judge 缺少模型或 API key、以及证据覆盖缺口导致断言评不了时，对应 Assertion 记录为 `outcome: "unavailable"`：非 optional 断言的 unavailable 按 errored 报（归入基础设施 / 配置问题，不是 Agent 答错，不分 gate / soft）；`.optional()` 断言的 unavailable 在断言列表里如实显示状态与原因、不影响判定。终端与报告展示 unavailable 时必须带 `reason`，让「证据链断了」一眼可诊断。
