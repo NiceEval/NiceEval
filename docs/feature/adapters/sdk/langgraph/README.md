@@ -20,4 +20,4 @@ fromLangGraphEvents()
 
 Adapter 使用 `thread_id` 作为 `ctx.session.id`，并按应用协议把 `input.responses` 翻译成 `Command(resume=...)`。这些 transport 与会话操作不进入转换器。
 
-示例的目标形态：事件映射消费 LangGraph 官方协议 fixture，不各自手写重复的帧状态机；会话与 HITL 路径仍由示例的 adapter 自己承担。示例见 [`examples/zh/tier1/langgraph/`](../../../../examples/zh/tier1/langgraph/)。
+示例的目标形态：事件映射消费 LangGraph 官方协议 fixture，不各自手写重复的帧状态机；会话与 HITL 路径仍由示例的 adapter 自己承担。示例见 [`examples/zh/tier1/langgraph/`](../../../../../examples/zh/tier1/langgraph/)。

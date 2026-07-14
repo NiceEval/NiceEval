@@ -6,4 +6,4 @@ Codex SDK 负责 thread 持久化：首轮使用 `startThread()`，取得 thread
 
 Codex SDK 没有与 Claude Agent SDK `canUseTool` 等价的公开审批回调。不能观察到的 HITL 行为不得由 Adapter 猜测或伪造成 `input.requested`。
 
-完整示例见 [`examples/zh/tier1/codex-sdk/`](../../../../examples/zh/tier1/codex-sdk/)。Codex CLI 的 sandbox Adapter 与本 SDK 转换器共享事件词汇，但驱动和生命周期彼此独立。
+完整示例见 [`examples/zh/tier1/codex-sdk/`](../../../../../examples/zh/tier1/codex-sdk/)。Codex CLI 的 sandbox Adapter 与本 SDK 转换器共享事件词汇，但驱动和生命周期彼此独立。

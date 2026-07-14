@@ -16,4 +16,4 @@ AI SDK 有三种接入面，按被测应用的真实边界选择。
 
 可选 trace 集成从 `niceeval/adapter/otel` 导入 `aiSdkOtel()`；OTel 只生成 trace，不成为事件来源。
 
-完整示例见 [`examples/zh/tier1/ai-sdk-v7/`](../../../../examples/zh/tier1/ai-sdk-v7/)。
+完整示例见 [`examples/zh/tier1/ai-sdk-v7/`](../../../../../examples/zh/tier1/ai-sdk-v7/)。

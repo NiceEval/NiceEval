@@ -1,6 +1,6 @@
 # Adapter 路线图
 
-这里记录仍需外部稳定性、契约未定的接入候选。已定稿对象（含 [LangGraph](../../feature/adapters/sdk/langgraph.md) 与 [OpenClaw](../../feature/adapters/sdk/openclaw.md)）的契约页位于 [`../../feature/adapters/sdk/`](../../feature/adapters/sdk/README.md)。
+这里记录仍需外部稳定性、契约未定的接入候选。已定稿对象（含 [LangGraph](../../feature/adapters/sdk/langgraph/README.md) 与 [OpenClaw](../../feature/adapters/sdk/openclaw/README.md)）的契约页位于 [`../../feature/adapters/sdk/`](../../feature/adapters/sdk/README.md)。
 
 ## 观察
 

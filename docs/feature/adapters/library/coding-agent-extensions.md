@@ -86,6 +86,6 @@ Sandbox Agent setup 写出安装 manifest，attempt 结果保存实际安装的 
 
 每个 Agent 支持的字段和示例见：
 
-- [Claude Code](../sdk/claude-code.md)
-- [Codex CLI](../sdk/codex-cli.md)
-- [Bub](../sdk/bub.md)
+- [Claude Code](../sdk/claude-code/README.md)
+- [Codex CLI](../sdk/codex-cli/README.md)
+- [Bub](../sdk/bub/README.md)

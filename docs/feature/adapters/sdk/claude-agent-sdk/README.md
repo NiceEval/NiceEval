@@ -12,4 +12,4 @@
 
 会话 ID 由 Adapter 写入 `ctx.session.capture()`，后续请求使用 `ctx.session.id` 传给 SDK 的 resume 选项。`canUseTool` 如何暴露为应用端审批接口属于被测应用协议，不由转换器规定。
 
-完整示例见 [`examples/zh/tier1/claude-sdk/`](../../../../examples/zh/tier1/claude-sdk/)。Claude Code CLI 的 sandbox Adapter 是另一种接入形态，不与本转换器合并。
+完整示例见 [`examples/zh/tier1/claude-sdk/`](../../../../../examples/zh/tier1/claude-sdk/)。Claude Code CLI 的 sandbox Adapter 是另一种接入形态，不与本转换器合并。

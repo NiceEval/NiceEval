@@ -69,6 +69,7 @@ interface CommandOptions {
 ## 相关阅读
 
 - [Library](library.md) —— 路径与 workdir、用户与 root、provider 选择、生命周期钩子、自定义 provider。
+- [预制环境](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从产物起。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。
 - [断言 Sandbox 结果](library/asserting-results.md) —— 怎样判断 diff、文件和 shell 行为。

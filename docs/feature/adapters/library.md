@@ -120,9 +120,9 @@ export default defineSandboxAgent({
 
 不同 SDK 不在本页堆叠。每个 SDK 使用独立小文件记录其入口、原始事件、会话、HITL、usage 和完整性边界：
 
-- [AI SDK](sdk/ai-sdk.md)
-- [Claude Agent SDK](sdk/claude-agent-sdk.md)
-- [Codex SDK](sdk/codex-sdk.md)
-- [pi-agent-core](sdk/pi-agent-core.md)
-- [LangGraph](sdk/langgraph.md)
-- [OpenClaw](sdk/openclaw.md)
+- [AI SDK](sdk/ai-sdk/README.md)
+- [Claude Agent SDK](sdk/claude-agent-sdk/README.md)
+- [Codex SDK](sdk/codex-sdk/README.md)
+- [pi-agent-core](sdk/pi-agent-core/README.md)
+- [LangGraph](sdk/langgraph/README.md)
+- [OpenClaw](sdk/openclaw/README.md)

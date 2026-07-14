@@ -22,4 +22,8 @@ Adapter 用 Claude Code transcript JSONL 取得消息、thinking、工具、usag
 
 Claude Code 的原生 OTel 内容默认可能脱敏；行为断言仍以 transcript 为准，OTel 只用于 trace。
 
-Claude Agent SDK 的服务接入是另一种形态，见 [Claude Agent SDK](claude-agent-sdk.md)。
+## 预制环境
+
+Adapter 的 setup 检测 PATH 上的 `claude`：预装命中即跳过安装，缺失时回退 npm 全局安装——预装只是快速路径，不是正确性前提。E2B 官方 `claude` template 与 NiceEval 公共模板 `correctroads-default-team/niceeval-claude-code`（CI 钉 release tag）都是可用起点；构建项目自己的镜像/模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。
+
+Claude Agent SDK 的服务接入是另一种形态，见 [Claude Agent SDK](../claude-agent-sdk/README.md)。

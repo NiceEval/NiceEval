@@ -120,110 +120,13 @@ e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 
 `sandbox/resolve.ts` 把 spec 归一化成 `{ provider, image?, snapshotId?, template?, runtime? }`,再按 `provider` 派发到各 provider 的 `create()` —— **核心仍不按 provider 名分支**,参数只在对应 provider 的 `create()` 里消费。
 
-参数的典型用途是**预制模板**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑(见 [Architecture · 预制模板](architecture.md#e2b-provider云微-vm))。
+参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
-### 可发布预制环境与运行时 checkpoint
+### 可发布预制环境
 
-稳定、体积大、每个 attempt 都相同的内容应在跑 eval 之前做进 provider 的可发布环境:系统包、agent CLI、编译好的二进制、数百 MB 的模型 cache、固定语言工具链。NiceEval 统一**消费**这些产物,但不伪造统一的**构建**语法:
+稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布产物,attempt 从产物起实例:Docker 的 image、E2B 的 template、Vercel 的 snapshot。构建归 provider 原生工具,NiceEval 只消费 typed spec 里的产物 ID;`sandbox.setup` 只处理必须按 experiment / attempt 变化的小配置、状态恢复和 fail-fast 预检。
 
-| provider | 构建产物 | experiment 消费 |
-|---|---|---|
-| Docker | OCI image | `dockerSandbox({ image })` |
-| Vercel Sandbox | sandbox snapshot | `vercelSandbox({ snapshotId })` |
-| E2B | template | `e2bSandbox({ template })` |
-
-三者的构建上下文、凭据、发布、过期和销毁语义不同。把它们压成一个 `snapshot("name")` 会隐藏真实的运维边界;项目应保留 provider 原生的构建脚本,把产物 ID/名字写进 typed sandbox spec。`sandbox.setup` 只处理必须按 experiment / attempt 变化的小配置、状态恢复和 fail-fast 预检。
-
-但“没有跨 provider 构建 DSL”不等于每个项目都要从空白环境安装 coding agent。官方起点按所有权组合:
-
-| Agent | E2B 起点 | 所有者与校验 |
-|---|---|---|
-| Claude Code | E2B 官方 `claude` template | provider 维护 CLI;Claude Adapter 仍检查 `claude` |
-| Codex | E2B 官方 `codex` template | provider 维护 CLI;Codex Adapter 仍检查 `codex` |
-| Bub | NiceEval 的固定版本配方 | NiceEval 固定 Bub 与 OTel 插件 commit,并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
-
-NiceEval 已把三者构建成 E2B 公共模板。跨 Team 要使用完整 namespace;CI 固定 release tag:
-
-```typescript
-e2bSandbox({ template: "correctroads-default-team/niceeval-claude-code:v0.6.1" })
-e2bSandbox({ template: "correctroads-default-team/niceeval-codex:v0.6.1" })
-e2bSandbox({ template: "correctroads-default-team/niceeval-bub:v0.6.1" })
-```
-
-不带 tag 的名字跟随当前稳定构建,适合试用,不适合需要可复现结果的 CI。公开模板是 convenience baseline,不是 Adapter 的隐式默认值。
-
-`niceeval/sandbox/e2b-template` 把这三个起点收敛成一个很薄的 **E2B 专属** factory,返回原生 `TemplateBuilder`。用户可以继续链 E2B API,所以“官方基线”不会成为不能修改的黑盒:
-
-```typescript
-// scripts/build-e2b-template.ts
-import { Template } from "e2b";
-import { e2bCodingAgentTemplate } from "niceeval/sandbox/e2b-template";
-
-const template = e2bCodingAgentTemplate("codex") // 从 E2B 官方 codex template 派生
-  .aptInstall(["ripgrep", "jq"])
-  .runCmd("corepack enable && pnpm --version")
-  .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
-
-await Template.build(template, "acme-codex-evals:2026-07-13", {
-  cpuCount: 2,
-  memoryMB: 4096,
-});
-```
-
-```bash
-pnpm tsx scripts/build-e2b-template.ts
-```
-
-构建只在环境依赖变化时运行;日常 `niceeval exp` 直接消费项目自己的 alias:
-
-```typescript
-sandbox: e2bSandbox({ template: "acme-codex-evals:2026-07-13" })
-```
-
-Adapter 不自动替 experiment 选择这个 template:同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel,选择权属于 sandbox spec。反过来,sandbox 也不猜要运行哪个 Agent。预装只是快速路径;模板缺 CLI 时 Claude/Codex Adapter 会回退安装,Bub 则先核对完整安装规格指纹,不把 PATH 上任意一个 `bub` 当成兼容版本。
-
-E2B 的派生故事没有跨 provider 复制,但同一条「从官方基线继续」的原则对 Docker 与 Vercel 同样成立,只是走各自的原生工具。Docker 的官方基线就是 NiceEval 的默认镜像 `node:24-slim`(省略 `image` 时按 runtime 选它):写一个 Dockerfile 从它派生、把 Agent CLI 烘焙进去,experiment 只引用产物 tag。`npm install -g` 装进 `/usr/local/bin`,正好落在沙箱注入的 PATH 上;沙箱默认以非 root 的 `node`(UID 1000)用户跑命令,装到别处(如 `~/.local/bin`)的 Agent 需自己进 PATH。
-
-```dockerfile
-# Dockerfile
-FROM node:24-slim
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates git \
-  && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @openai/codex@0.144.1
-```
-
-```typescript
-// docker build -t acme-codex-evals:2026-07-13 . 之后
-sandbox: dockerSandbox({ image: "acme-codex-evals:2026-07-13" })
-```
-
-Vercel 没有 template registry,也没有 Dockerfile;快照从一台跑起来的 microVM 拍出来。用 Vercel SDK 从官方 runtime(`node24`)起沙箱、装 Agent CLI、调 `.snapshot()` 拿到 `snap_...`,experiment 再引用这个 ID:
-
-```typescript
-// scripts/build-vercel-snapshot.ts
-import { Sandbox } from "@vercel/sandbox";
-
-const sandbox = await Sandbox.create({ runtime: "node24" });
-await sandbox.runCommand({ cmd: "npm", args: ["install", "-g", "@openai/codex@0.144.1"], sudo: true });
-const { snapshotId } = await sandbox.snapshot(); // snap_...
-await sandbox.stop();
-```
-
-Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应的公共发布语义。NiceEval 仓库可记录维护者项目的 snapshot ID 供该项目复用,公共用户仍需在自己的 Vercel Project 运行构建脚本。文档和 API 必须把这个权限差异说出来,不能把“拿到 ID”写成“任何账号可启动”。
-
-Bub 若配置 `pythonPlugins`,模板 factory 要收到同一份 package 集合:`e2bCodingAgentTemplate("bub", { bubPythonPackages: ["bub-plugin-memory==1.3.0"] })`。Factory 与 Adapter 共用规范化和 hash 代码,插件顺序、空白和重复项不会制造假差异;集合真的不同则不会误用预装环境。
-
-`niceeval/sandbox` 另有 provider 无关的 `createCheckpoint` / `restoreCheckpoint`:它把指定的 Linux 文件路径打成 tar `Buffer`,之后恢复进另一个已创建的 Sandbox。它适合在运行时缓存安装结果或在同一套 harness 中搬运文件系统片段,不是云端可发布模板,也不会替你管理版本、过期或共享:
-
-```typescript
-import { createCheckpoint, restoreCheckpoint } from "niceeval/sandbox";
-
-const checkpoint = await createCheckpoint(sandbox, ["/home/user/.cache/my-tool"]);
-await restoreCheckpoint(nextSandbox, checkpoint);
-```
-
-归档、上传、下载或解压失败都会抛错;调用者决定把 `Buffer` 存到内存、磁盘还是外部对象存储。
+各 provider 的构建工作流、官方 coding agent 起点、自己写预制环境的 DX、新 provider 的义务与运行时 checkpoint,见 [预制环境](library/prebuilt-environments.md)。
 
 ## 沙箱生命周期钩子:`.setup()` / `.teardown()`
 
@@ -352,6 +255,7 @@ export default defineSandbox({
 ## 相关阅读
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
+- [预制环境](library/prebuilt-environments.md) —— 各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 清理命令。
 - [操作 Sandbox](library/operations.md) —— `t.sandbox` 的文件与命令 API。
 - [断言 Sandbox 结果](library/asserting-results.md) —— diff、文件和 shell 行为怎么评分。
