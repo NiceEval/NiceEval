@@ -350,6 +350,7 @@ export default defineSandbox({
 ## 相关阅读
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
+- [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 清理命令。
 - [操作 Sandbox](library/operations.md) —— `t.sandbox` 的文件与命令 API。
 - [断言 Sandbox 结果](library/asserting-results.md) —— diff、文件和 shell 行为怎么评分。
 - [Architecture](architecture.md) —— provider 内部实现、生命周期时序、性能与重试。

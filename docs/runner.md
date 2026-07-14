@@ -56,6 +56,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 - **预热池**:开启后,运行器在调度开始时按 `min(预热池大小, 计划 attempt 数)` 预先创建同 spec 沙箱挂进池里;attempt 到达 `sandbox.create` 阶段时先领池中现货,领到则该阶段只计领取耗时,池空则回落到即时创建。池只在同一次 run 内存活,run 结束时未被领用的沙箱一并销毁。
 - **跨 case 复用**:开启后,attempt 收尾不销毁沙箱,而是重置回基线(`git clean` + 回到空基线 commit,`$HOME` 等基线外路径不保证清理)再交给同 spec 的下一个 attempt;`sandbox.stop` 只在最后一次使用后发生。默认**关闭**——全新沙箱是隔离性的默认值,复用是用启动时间换隔离强度的显式选择,只应在 setup 成本可证明地主导总耗时、且 eval 不在基线外留状态时开启。
 - 两者都不改变生命周期钩子的调用顺序:复用的沙箱在每个 attempt 里仍然按 [固定调用链](feature/sandbox/architecture.md#沙箱在生命周期里的位置) 走一遍 `sandbox.setup` 链与 git 基线,钩子必须幂等。
+- [`--keep-sandbox`](feature/sandbox/cli.md) 生效时跨 case 复用关闭:留存的现场必须属于那一次 attempt,不能被 `git clean` 重置交给下一个。预热池不受影响——run 结束时未被领用的池内沙箱照常销毁,留存只作用于跑过 attempt 的沙箱。
 
 ## 缓存:指纹去重
 

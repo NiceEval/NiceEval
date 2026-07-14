@@ -9,7 +9,7 @@
 - **安全** —— agent 可能跑出危险命令,不能碰你的机器。
 - **可复现** —— 每个 case 一套干净环境,互不污染。
 - **可并发** —— 几十个 case 同时跑,各自独立。
-- **可采集** —— 跑完用 `git diff` 取改动、读 transcript,环境随后销毁。
+- **可采集** —— 跑完用 `git diff` 取改动、读 transcript,环境随后销毁;要进活现场 debug 时用 [`--keep-sandbox`](cli.md) 显式留存,事后 `niceeval sandbox stop` 清理。
 
 ## provider 统一接口
 
@@ -69,6 +69,7 @@ interface CommandOptions {
 ## 相关阅读
 
 - [Library](library.md) —— 路径与 workdir、用户与 root、provider 选择、生命周期钩子、自定义 provider。
+- [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。
 - [断言 Sandbox 结果](library/asserting-results.md) —— 怎样判断 diff、文件和 shell 行为。
 - [Architecture](architecture.md) —— provider 内部实现、生命周期在 attempt 里的位置、性能与重试。

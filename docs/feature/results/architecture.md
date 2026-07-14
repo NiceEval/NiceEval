@@ -142,6 +142,13 @@ interface AttemptRecord {
   /** 本 attempt 开始的墙钟时刻;缺失时读取面回退快照的 startedAt。携带条目保留原条目的值,身份键与去重以它为锚。 */
   startedAt?: string;
   /**
+   * 沙箱型 attempt 的执行环境标识:provider 名与实例 id(如 Docker 容器 ID 前缀),用于关联
+   * provider 侧日志与[留存现场](../sandbox/cli.md);remote 型 agent 无此字段。`kept` 表示
+   * 运行收尾时按 `--keep-sandbox` 留存了沙箱;之后的存活状态归 `niceeval sandbox list` 回答,
+   * 本记录一次写成、不回写。
+   */
+  sandbox?: { provider: string; sandboxId: string; kept?: true };
+  /**
    * 不透明的 Attempt 定位符:`@` + 1 位 scheme 字符 + 7 位 base36 body(如 `@1x7f3q9k`)。
    * 由 `{experimentId, 快照 startedAt, evalId, attempt}` 这个不可变身份元组确定性派生——
    * 不是数组下标、不是磁盘路径。非携带条目由 writer 落盘时算出;携带条目(见下)原样复制

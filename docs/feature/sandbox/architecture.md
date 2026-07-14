@@ -20,7 +20,7 @@
   → collectGeneratedFiles()                # git diff HEAD
   → SandboxAgent.teardown?.(sandbox, ctx)   # finally:agent 级收尾先跑
   → sandbox.teardown?.(sandbox, ctx)        # finally:环境层收尾最后跑,销毁前——回存跨 attempt 状态用这个时机
-  → sandbox.stop()                         # 销毁
+  → sandbox.stop()                         # 销毁;--keep-sandbox 命中时跳过,沙箱转入留存注册表(见下)
 ```
 
 环境层钩子排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于 git 基线跑——像镜像构建先于代码挂载——否则它写下的文件会被 `git diff` 误记成"agent 生成的改动",污染这条 eval 的 diff 归因。teardown 顺序对称颠倒:agent 级收尾先跑(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。
@@ -32,6 +32,23 @@
 时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/hook”全局值——并行 hook 或并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value、stdout/stderr 与可能含 secret 的完整长脚本不进入 timing 记录。这样「沙箱起了多久、setup 哪个 hook/命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端与网页入口是 [`niceeval show --timing`](../reports/show.md#--timing整个-attempt-的统一时间树) 与 `niceeval view` 的 Attempt 详情。
 
 核心固定的是这条调用链本身(创建后先环境层钩子、再打一次空 git 基线、再 eval 夹具、再 agent 预置;销毁前先 agent 收尾、再环境层收尾、最后采 diff 已经完成)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval Authoring · 沙箱型](../eval/library.md#沙箱型手工把文件放进沙箱)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
+
+## 留存(keep)与注册表
+
+[`--keep-sandbox`](cli.md) 的留存决策发生在 attempt 收尾链的最后一步:verdict 定稿后,策略命中(`failed` 档匹配 `failed` / `errored`,含硬超时打断的 `errored`;`always` 档全收)则跳过 `sandbox.stop()`,其余收尾(agent teardown、环境层 teardown、diff 采集)已经照常完成。授予留存的同时做两件事:
+
+- **移出本次 run 的清理集合** —— `stopAllSandboxes()` 兜底、Ctrl+C 三级路径、attempt Scope finalizer 都只清仍在集合里的沙箱。「不留无主沙箱」的不变量由此保持:任何沙箱要么在清理集合里(退出前必被 stop),要么已登记进注册表(`niceeval sandbox list` 可见、`stop` 可清),不存在第三种状态。
+- **登记进留存注册表** —— `.niceeval/sandboxes.json`,一条 = `{ sandboxId, provider, evalId, attempt, experimentId?, locator?, verdict, keptAt, workdir, enter?, expiresAt? }`。`enter` 是 provider 给出的进入命令(docker 的 `docker exec -it … bash`、e2b 的 `e2b sandbox connect …`);`expiresAt` 是云 provider 的自然过期时刻。条目的移除只发生在 `niceeval sandbox stop`。
+
+`sandbox list` / `stop` 按注册表条目的 `provider` 名路由到各 provider 的 **detached 销毁**能力——不需要原来的 run 进程或 `Sandbox` 实例还活着(docker:`rm -f`;e2b / vercel:SDK 按 id kill)。这层按名字路由发生在 CLI / 注册表边界,符合[核心中立](../../architecture.md)的分界:运行器与评分路径仍不感知 provider 名。
+
+各 provider 的留存语义:
+
+- **Docker** —— 留存的容器不会自己消失,是唯一需要用户主动清理的 provider。`--keep-sandbox` 的 run 在创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价;容器带 `niceeval.kept` 标签,与注册表互为核对(`docker ps -f label=niceeval.kept`)。
+- **E2B / Vercel Sandbox** —— 留存 = 不调 kill,微 VM 活到自身 session / 模板 timeout 自然过期,成本天然有界;`expiresAt` 写进注册表,`list` 据此报 `expired`。Vercel session 只有数分钟量级,留存窗口相应短,`list` 如实展示而不掩盖。
+- **`defineSandbox` 自定义 provider** —— 可选声明 `stopDetached(sandboxId)`。未声明时留存照常生效(跳过 `stop()` 不需要 provider 配合),但登记时附一条 diagnostic 说明该 provider 需按原生方式手动清理;`sandbox stop` 对这类条目只移除注册表记录并重复该提示。
+
+`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 `result.json` 落 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Results](../results/architecture.md#resultjson)),`phases` 无 `sandbox.stop` 条目。
 
 ## Docker provider(本地,零云依赖)
 
