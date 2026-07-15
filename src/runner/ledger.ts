@@ -14,6 +14,9 @@ import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.t
 /** ledger 的私有 git 目录:workdir 之外、runner 控制;agent 的工具默认不会去 /tmp 翻它。 */
 const LEDGER_GIT_DIR = "/tmp/.niceeval-ledger";
 
+/** 整相导出文件的落点(与 ledger 同前缀,同样是 runner 私有路径)。 */
+const EXPORT_DIR = "/tmp/.niceeval-ledger-export";
+
 /** 默认归因排除清单(锚点时冻结):依赖、构建产物、包管理器缓存与 niceeval 自己的落位。 */
 const DEFAULT_EXCLUDES = [
   ".git",
@@ -39,172 +42,54 @@ const MAX_WINDOW_PATHS = 10_000;
 const MAX_WINDOW_BLOB_BYTES = 64 * 1024 * 1024;
 
 /**
- * 每个 agent 窗口只发一次 provider 命令:路径枚举与逐 blob 读取都在 sandbox 本地完成。
- * 路径枚举与 blob 读取分别走常数次 git diff / cat-file --batch,不会把文件数放大成子进程或
- * E2B/Vercel 网络往返数。
+ * 整相导出:一条 POSIX shell 命令枚举**全部** agent 窗口并把证据写进沙箱内导出文件,宿主随后
+ * 经文件通道一次下载——provider 往返数与窗口数、文件数都无关。对沙箱环境的全部要求是 git 与
+ * POSIX 工具(sh/awk/wc/sort/grep),不依赖 node、python 等运行时。
+ *
+ * 沙箱内不组装 JSON:导出文件直接拼接 git 原生输出——每窗口四段,`diff-tree -z`(状态 + 前后
+ * blob sha + 路径,NUL 安全)、`numstat -z`(二进制识别)、`cat-file --batch-check`(全部 blob
+ * 尺寸)、`cat-file --batch`(文本 blob 内容,输出自带长度帧)——解析与校验全部在宿主侧完成。
+ * 需要在沙箱内做的两个判断都不解析路径列:sha 提取用 awk 取 diff-tree 原始输出的第 3/4 列
+ * (路径在其后,含空格也不影响);二进制排除靠 numstat 与 diff-tree 输出的行号对齐。
+ * 尺寸核算(--batch-check)先于内容读取(--batch),越界在产出任何内容前失败。
  */
-const EXPORT_WINDOW_SCRIPT = String.raw`node <<'NICEEVAL_LEDGER_EXPORT'
-const { spawnSync } = require("node:child_process");
-
-const commit = process.env.NICEEVAL_LEDGER_COMMIT;
-const maxPaths = ${MAX_WINDOW_PATHS};
-const maxBlobBytes = ${MAX_WINDOW_BLOB_BYTES};
-const childMaxBuffer = maxBlobBytes + 1024 * 1024;
-
-function runGit(args, encoding, input) {
-  const result = spawnSync("git", args, { encoding, input, maxBuffer: childMaxBuffer });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    const stderr = Buffer.isBuffer(result.stderr)
-      ? result.stderr.toString("utf8")
-      : String(result.stderr || "");
-    throw new Error("git " + args[0] + " failed" + (stderr.trim() ? ": " + stderr.trim() : ""));
-  }
-  return result.stdout;
-}
-
-function gitText(args, input) {
-  return runGit(args, "utf8", input);
-}
-
-function gitBytes(args, input) {
-  return runGit(args, null, input);
-}
-
-function parseNameStatus(text) {
-  const parts = text.split("\0");
-  const entries = [];
-  for (let i = 0; i < parts.length; ) {
-    const code = parts[i++];
-    if (!code) continue;
-    const path = parts[i++];
-    if (path === undefined) throw new Error("malformed git --name-status output");
-    entries.push({ code, path });
-  }
-  return entries;
-}
-
-function parseBinaryPaths(text) {
-  const paths = new Set();
-  for (const record of text.split("\0")) {
-    if (!record) continue;
-    const firstTab = record.indexOf("\t");
-    const secondTab = record.indexOf("\t", firstTab + 1);
-    if (firstTab === -1 || secondTab === -1) throw new Error("malformed git --numstat output");
-    if (record.slice(0, firstTab) === "-" && record.slice(firstTab + 1, secondTab) === "-") {
-      paths.add(record.slice(secondTab + 1));
-    }
-  }
-  return paths;
-}
-
-function parseBatchCheck(text, requests) {
-  const lines = text.trimEnd().split("\n");
-  if (lines.length !== requests.length) throw new Error("git cat-file --batch-check returned the wrong item count");
-  for (let i = 0; i < requests.length; i++) {
-    const line = lines[i];
-    if (line.endsWith(" missing")) throw new Error("missing ledger blob for " + requests[i].path);
-    const fields = line.split(" ");
-    const size = Number(fields[fields.length - 1]);
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error("invalid blob size for " + requests[i].path);
-    requests[i].size = size;
-  }
-}
-
-function applyBatchContents(output, requests) {
-  let offset = 0;
-  for (const request of requests) {
-    const newline = output.indexOf(10, offset);
-    if (newline === -1) throw new Error("malformed git cat-file --batch header");
-    const header = output.subarray(offset, newline).toString("utf8");
-    if (header.endsWith(" missing")) throw new Error("missing ledger blob for " + request.path);
-    const fields = header.split(" ");
-    const size = Number(fields[fields.length - 1]);
-    if (!Number.isSafeInteger(size) || size !== request.size) {
-      throw new Error("git cat-file --batch size mismatch for " + request.path);
-    }
-    const contentStart = newline + 1;
-    const contentEnd = contentStart + size;
-    if (contentEnd >= output.length || output[contentEnd] !== 10) {
-      throw new Error("truncated git cat-file --batch content for " + request.path);
-    }
-    request.change[request.field] = output.subarray(contentStart, contentEnd).toString("utf8");
-    offset = contentEnd + 1;
-  }
-  if (offset !== output.length) throw new Error("unexpected trailing git cat-file --batch output");
-}
-
-try {
-  if (!commit) throw new Error("missing NICEEVAL_LEDGER_COMMIT");
-  const before = commit + "^";
-  const entries = parseNameStatus(gitText(["diff", "--no-renames", "--name-status", "-z", before, commit]));
-  if (entries.length > maxPaths) {
-    throw new Error("niceeval diff window contains " + entries.length + " paths; limit is " + maxPaths);
-  }
-  const binaryPaths = parseBinaryPaths(gitText(["diff", "--no-renames", "--numstat", "-z", before, commit]));
-  const changes = {};
-  const requests = [];
-  let capturedBytes = 0;
-
-  function reserve(bytes) {
-    capturedBytes += bytes;
-    if (capturedBytes > maxBlobBytes) {
-      throw new Error(
-        "niceeval diff window contains more than " + maxBlobBytes + " blob bytes; " +
-        "narrow defineEval({ diff }) include/ignore rules"
-      );
-    }
-  }
-
-  for (const entry of entries) {
-    if (entry.path.includes("\n")) throw new Error("niceeval diff does not support newline in paths: " + JSON.stringify(entry.path));
-    const status = entry.code.startsWith("A")
-      ? "added"
-      : entry.code.startsWith("D")
-        ? "deleted"
-        : "modified";
-    const change = { status };
-
-    if (binaryPaths.has(entry.path)) {
-      const binary = {};
-      if (status !== "added") {
-        requests.push({ spec: before + ":" + entry.path, path: entry.path, field: "beforeBytes", binary, change, isBinary: true });
-      }
-      if (status !== "deleted") {
-        requests.push({ spec: commit + ":" + entry.path, path: entry.path, field: "afterBytes", binary, change, isBinary: true });
-      }
-      change.binary = binary;
-    } else {
-      if (status !== "added") {
-        requests.push({ spec: before + ":" + entry.path, path: entry.path, field: "before", change, isBinary: false });
-      }
-      if (status !== "deleted") {
-        requests.push({ spec: commit + ":" + entry.path, path: entry.path, field: "after", change, isBinary: false });
-      }
-    }
-    changes[entry.path] = change;
-  }
-
-  if (requests.length > 0) {
-    const requestInput = requests.map((request) => request.spec).join("\n") + "\n";
-    parseBatchCheck(gitText(["cat-file", "--batch-check"], requestInput), requests);
-    for (const request of requests) {
-      reserve(request.size);
-      if (request.isBinary) request.binary[request.field] = request.size;
-    }
-    const textRequests = requests.filter((request) => !request.isBinary);
-    if (textRequests.length > 0) {
-      const textInput = textRequests.map((request) => request.spec).join("\n") + "\n";
-      applyBatchContents(gitBytes(["cat-file", "--batch"], textInput), textRequests);
-    }
-  }
-
-  process.stdout.write(JSON.stringify(changes));
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 2;
-}
-NICEEVAL_LEDGER_EXPORT`;
+const EXPORT_SCRIPT = [
+  "set -eu",
+  `D=${EXPORT_DIR}`,
+  'rm -rf "$D" && mkdir -p "$D"',
+  'OUT=$D/export.bin',
+  ': > "$OUT"',
+  'fail() { printf "%s\\n" "$1" >&2; exit 2; }',
+  // 帧格式:`section <name> <bytes>` 头一行,后跟原始字节;长度前缀让内容里的任意字节都安全。
+  'emit() { printf "section %s %s\\n" "$1" "$(($(wc -c < "$2")))" >> "$OUT"; cat "$2" >> "$OUT"; }',
+  'git log --reverse --format="%H %s" > "$D/log.txt"',
+  "while IFS= read -r line; do",
+  '  hash=${line%% *}',
+  '  subject=${line#* }',
+  '  case $subject in "agent "*) ;; *) continue ;; esac',
+  '  label=${subject#agent }',
+  // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
+  '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
+  '  n=$(($(wc -l < "$D/dt.txt")))',
+  `  [ "$n" -le ${MAX_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; limit is ${MAX_WINDOW_PATHS}"`,
+  '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
+  // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
+  "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
+  '  git cat-file --batch-check < "$D/occ.txt" > "$D/sizes.txt"',
+  '  if grep -q " missing$" "$D/sizes.txt"; then fail "niceeval ledger export: blob object missing"; fi',
+  `  awk '{ s += $3 } END { exit (s > ${MAX_WINDOW_BLOB_BYTES}) ? 1 : 0 }' "$D/sizes.txt" || fail "niceeval diff window contains more than ${MAX_WINDOW_BLOB_BYTES} blob bytes; narrow defineEval({ diff }) include/ignore rules"`,
+  // 文本 blob 内容请求:numstat 第 1 列为 "-" 的行是二进制,按行号对齐排除;去重后交给 --batch。
+  '  awk \'NR==FNR { bin[FNR] = ($1 == "-"); next } bin[FNR] != 1 { if ($3 !~ /^0+$/) print $3; if ($4 !~ /^0+$/) print $4 }\' "$D/ns.txt" "$D/dt.txt" | sort -u > "$D/text.txt"',
+  '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
+  '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
+  '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
+  '  printf "window %s %s\\n" "$hash" "$label" >> "$OUT"',
+  '  emit difftree "$D/dtz.bin"',
+  '  emit numstat "$D/nsz.bin"',
+  '  emit sizes "$D/sizes.txt"',
+  '  emit blobs "$D/blobs.bin"',
+  'done < "$D/log.txt"',
+].join("\n");
 
 export interface ChangeLedger {
   /** send 进入前:workdir 有未记录变化就落一笔 eval 归因(fixture / setup / runCommand 副作用)。 */
@@ -277,30 +162,10 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
 }
 
 async function exportAgentWindows(sandbox: Sandbox, env: Record<string, string>): Promise<DiffArtifact> {
-  const windows: DiffWindow[] = [];
-  const logResult = await sandbox.runShell(`git log --reverse --format='%H %s'`, { env });
-  ensureCommandSucceeded(logResult, "read change ledger");
-  const log = logResult.stdout;
-  const commits = log
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const space = line.indexOf(" ");
-      return { hash: line.slice(0, space), subject: line.slice(space + 1) };
-    });
-
-  for (const commit of commits) {
-    if (!commit.subject.startsWith("agent ")) continue;
-    const label = commit.subject.slice("agent ".length);
-    const result = await sandbox.runShell(EXPORT_WINDOW_SCRIPT, {
-      env: { ...env, NICEEVAL_LEDGER_COMMIT: commit.hash },
-    });
-    ensureCommandSucceeded(result, `export diff window ${label}`);
-    const changes = parseWindowChanges(result.stdout, label);
-    windows.push({ window: label, changes });
-  }
-  return windows;
+  const result = await sandbox.runShell(EXPORT_SCRIPT, { env });
+  ensureCommandSucceeded(result, "export agent windows");
+  const payload = await sandbox.downloadFile(`${EXPORT_DIR}/export.bin`);
+  return parseExportPayload(payload);
 }
 
 function ensureCommandSucceeded(result: { exitCode: number; stderr: string }, operation: string): void {
@@ -309,55 +174,154 @@ function ensureCommandSucceeded(result: { exitCode: number; stderr: string }, op
   throw new Error(`${operation} failed (exit ${result.exitCode})${detail ? `: ${detail}` : ""}`);
 }
 
-function parseWindowChanges(text: string, label: string): Record<string, WindowChange> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`export diff window ${label} returned invalid JSON`, { cause: error });
-  }
-  if (!isRecord(parsed)) throw new Error(`export diff window ${label} returned a non-object payload`);
+// ---------- 导出文件的宿主侧解析(严格校验:帧、git 输出形状、尺寸与内容的完备性) ----------
 
-  const changes: Record<string, WindowChange> = {};
-  for (const [path, raw] of Object.entries(parsed)) changes[path] = parseWindowChange(raw, label, path);
-  return changes;
-}
+const ZERO_SHA = /^0+$/;
 
-function parseWindowChange(raw: unknown, label: string, path: string): WindowChange {
-  if (!isRecord(raw)) throw invalidWindowChange(label, path);
-  const status = raw.status;
-  if (status !== "added" && status !== "modified" && status !== "deleted") throw invalidWindowChange(label, path);
-  const change: WindowChange = { status };
-  if (raw.before !== undefined) {
-    if (typeof raw.before !== "string") throw invalidWindowChange(label, path);
-    change.before = raw.before;
-  }
-  if (raw.after !== undefined) {
-    if (typeof raw.after !== "string") throw invalidWindowChange(label, path);
-    change.after = raw.after;
-  }
-  if (raw.binary !== undefined) {
-    if (!isRecord(raw.binary)) throw invalidWindowChange(label, path);
-    const binary: NonNullable<WindowChange["binary"]> = {};
-    if (raw.binary.beforeBytes !== undefined) {
-      if (!isNonNegativeInteger(raw.binary.beforeBytes)) throw invalidWindowChange(label, path);
-      binary.beforeBytes = raw.binary.beforeBytes;
+function parseExportPayload(payload: Buffer): DiffArtifact {
+  const windows: DiffWindow[] = [];
+  let offset = 0;
+
+  const readLine = (): string => {
+    const newline = payload.indexOf(0x0a, offset);
+    if (newline === -1) throw new Error("niceeval ledger export: truncated header");
+    const line = payload.subarray(offset, newline).toString("utf8");
+    offset = newline + 1;
+    return line;
+  };
+  const readSection = (expected: string): Buffer => {
+    const header = readLine().split(" ");
+    if (header.length !== 3 || header[0] !== "section" || header[1] !== expected) {
+      throw new Error(`niceeval ledger export: expected section ${expected}, got ${JSON.stringify(header.join(" "))}`);
     }
-    if (raw.binary.afterBytes !== undefined) {
-      if (!isNonNegativeInteger(raw.binary.afterBytes)) throw invalidWindowChange(label, path);
-      binary.afterBytes = raw.binary.afterBytes;
+    const length = Number(header[2]);
+    if (!isNonNegativeInteger(length) || offset + length > payload.length) {
+      throw new Error(`niceeval ledger export: invalid ${expected} section length`);
     }
-    change.binary = binary;
+    const body = payload.subarray(offset, offset + length);
+    offset += length;
+    return body;
+  };
+
+  while (offset < payload.length) {
+    const header = readLine();
+    if (!header.startsWith("window ")) throw new Error(`niceeval ledger export: expected window header, got ${JSON.stringify(header)}`);
+    const rest = header.slice("window ".length);
+    const space = rest.indexOf(" ");
+    const label = space === -1 ? "" : rest.slice(space + 1);
+    const entries = parseDiffTree(readSection("difftree"), label);
+    const binaryPaths = parseBinaryPaths(readSection("numstat"), label);
+    const sizeBySha = parseSizes(readSection("sizes"), label);
+    const contentBySha = parseBlobBatch(readSection("blobs"), label);
+
+    const changes: Record<string, WindowChange> = {};
+    for (const entry of entries) {
+      const change: WindowChange = { status: entry.status };
+      if (binaryPaths.has(entry.path)) {
+        const binary: NonNullable<WindowChange["binary"]> = {};
+        if (entry.status !== "added") binary.beforeBytes = requireSize(sizeBySha, entry.beforeSha, label, entry.path);
+        if (entry.status !== "deleted") binary.afterBytes = requireSize(sizeBySha, entry.afterSha, label, entry.path);
+        change.binary = binary;
+      } else {
+        if (entry.status !== "added") change.before = requireContent(contentBySha, entry.beforeSha, label, entry.path);
+        if (entry.status !== "deleted") change.after = requireContent(contentBySha, entry.afterSha, label, entry.path);
+      }
+      changes[entry.path] = change;
+    }
+    windows.push({ window: label, changes });
   }
-  return change;
+  return windows;
 }
 
-function invalidWindowChange(label: string, path: string): Error {
-  return new Error(`export diff window ${label} returned an invalid change for ${JSON.stringify(path)}`);
+interface DiffTreeEntry {
+  path: string;
+  status: WindowChange["status"];
+  beforeSha: string;
+  afterSha: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** `git diff-tree -r --no-renames -z` 原始输出:`:mode mode sha sha status NUL path NUL` 重复。 */
+function parseDiffTree(section: Buffer, label: string): DiffTreeEntry[] {
+  const parts = section.toString("utf8").split("\0");
+  const entries: DiffTreeEntry[] = [];
+  for (let i = 0; i < parts.length; ) {
+    const meta = parts[i++];
+    if (!meta) continue;
+    const path = parts[i++];
+    const fields = meta.split(" ");
+    if (path === undefined || fields.length !== 5 || !fields[0]!.startsWith(":")) {
+      throw new Error(`export window ${label}: malformed git diff-tree output`);
+    }
+    const code = fields[4]!;
+    const status = code.startsWith("A") ? "added" : code.startsWith("D") ? "deleted" : "modified";
+    entries.push({ path, status, beforeSha: fields[2]!, afterSha: fields[3]! });
+  }
+  return entries;
+}
+
+/** `git diff-tree --numstat -z`:二进制条目的 added/removed 计数是 `-`。 */
+function parseBinaryPaths(section: Buffer, label: string): Set<string> {
+  const paths = new Set<string>();
+  for (const record of section.toString("utf8").split("\0")) {
+    if (!record) continue;
+    const firstTab = record.indexOf("\t");
+    const secondTab = record.indexOf("\t", firstTab + 1);
+    if (firstTab === -1 || secondTab === -1) throw new Error(`export window ${label}: malformed git --numstat output`);
+    if (record.slice(0, firstTab) === "-" && record.slice(firstTab + 1, secondTab) === "-") {
+      paths.add(record.slice(secondTab + 1));
+    }
+  }
+  return paths;
+}
+
+/** `git cat-file --batch-check`:每行 `sha type size`(输入是逐出现次数的 sha,重复无害)。 */
+function parseSizes(section: Buffer, label: string): Map<string, number> {
+  const sizes = new Map<string, number>();
+  for (const line of section.toString("utf8").split("\n")) {
+    if (!line) continue;
+    const fields = line.split(" ");
+    const size = Number(fields[fields.length - 1]);
+    if (fields.length < 3 || !isNonNegativeInteger(size)) {
+      throw new Error(`export window ${label}: malformed git cat-file --batch-check output`);
+    }
+    sizes.set(fields[0]!, size);
+  }
+  return sizes;
+}
+
+/** `git cat-file --batch`:自带长度帧——`sha type size\n` + size 字节内容 + `\n`。 */
+function parseBlobBatch(section: Buffer, label: string): Map<string, string> {
+  const contents = new Map<string, string>();
+  let offset = 0;
+  while (offset < section.length) {
+    const newline = section.indexOf(0x0a, offset);
+    if (newline === -1) throw new Error(`export window ${label}: malformed git cat-file --batch header`);
+    const fields = section.subarray(offset, newline).toString("utf8").split(" ");
+    const size = Number(fields[fields.length - 1]);
+    if (fields.length < 3 || !isNonNegativeInteger(size)) {
+      throw new Error(`export window ${label}: malformed git cat-file --batch header`);
+    }
+    const contentStart = newline + 1;
+    const contentEnd = contentStart + size;
+    if (contentEnd >= section.length || section[contentEnd] !== 0x0a) {
+      throw new Error(`export window ${label}: truncated git cat-file --batch content`);
+    }
+    contents.set(fields[0]!, section.subarray(contentStart, contentEnd).toString("utf8"));
+    offset = contentEnd + 1;
+  }
+  return contents;
+}
+
+function requireSize(sizes: Map<string, number>, sha: string, label: string, path: string): number {
+  const size = sizes.get(sha);
+  if (size === undefined || ZERO_SHA.test(sha)) throw new Error(`export window ${label}: missing blob size for ${JSON.stringify(path)}`);
+  return size;
+}
+
+function requireContent(contents: Map<string, string>, sha: string, label: string, path: string): string {
+  const content = contents.get(sha);
+  if (content === undefined || ZERO_SHA.test(sha)) throw new Error(`export window ${label}: missing blob content for ${JSON.stringify(path)}`);
+  return content;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

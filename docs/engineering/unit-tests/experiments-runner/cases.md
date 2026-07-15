@@ -172,7 +172,7 @@ it("已完成花费到顶后不再派发新 attempt，在飞的照常完成", as
 | 生命周期阶段按固定顺序发出且取自 LifecyclePhase 闭集；无对应钩子的步骤直接跳过；phase 只由 runner 发出 | 正例：无 setup 钩子时 phases 无 sandbox.setup；反例：hook 调 progress 不切 phase |
 | 主链 phase 在 Scope release 前封口，`sandbox.stop` / `sandbox.suspend` 只计入收尾；主链 phase 合计不超过 `durationMs` | 正例：延迟 stop 的 fake 中 stop 有独立耗时且主链不增长；反例：最后一个主链 phase 不能包含 stop |
 | `diagnostic` 同 attempt 内相同 `dedupeKey` 折叠并累计 count；`error` 级与 cleanup 阶段的 diagnostic 都不改变 verdict | 正例：并发同 key 只留一条；反例：error 级后 verdict 仍 passed |
-| 分类账按 send 窗口批量导出，provider 往返不随文件数增长；Python venv 默认不进账；窗口证据越界明确 errored | 正例：500 文件仍是每窗口一次导出命令；正例：`venv/` / `.testing-venv/` 排除；反例：超过文件数上限不返回空 diff |
+| 分类账整相一条命令导出全部窗口并经文件通道下载，provider 往返不随文件数与窗口数增长，只依赖 git + POSIX shell；Python venv 默认不进账；窗口证据越界明确 errored | 正例：多窗口 500 文件仍是一条导出命令加一次下载；正例：`venv/` / `.testing-venv/` 排除；反例：超过路径/字节上限不返回空 diff |
 
 示例——中断路径的资源释放：
 

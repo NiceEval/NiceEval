@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { exec } from "node:child_process";
-import { mkdtemp, rm, writeFile, mkdir, readdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -16,21 +16,30 @@ import type { CommandResult, Sandbox } from "../types.ts";
 
 const execAsync = promisify(exec);
 
-/** 宿主目录扮演沙箱 workdir;runShell 用真实 shell 跑(ledger 只用 runShell + env)。 */
-function hostSandbox(workdir: string, ledgerDir: string, onRunShell?: (script: string) => void): Sandbox {
+/** 宿主目录扮演沙箱 workdir;runShell 用真实 shell 跑,downloadFile 读宿主文件(ledger 只用这两个 + env)。 */
+function hostSandbox(
+  workdir: string,
+  ledgerDir: string,
+  counters?: { shells?: string[]; downloads?: string[] },
+): Sandbox {
+  // 把 ledger 的固定 /tmp 路径前缀重定向到本测试的私有目录,测试之间互不污染
+  // (导出目录 /tmp/.niceeval-ledger-export 共享同一前缀,一条规则同时覆盖)。
+  const patchPath = (s: string) => s.replaceAll("/tmp/.niceeval-ledger", ledgerDir);
   const runShell = async (script: string, opts?: { env?: Record<string, string> }): Promise<CommandResult> => {
-    onRunShell?.(script);
-    // 把 ledger 的固定 /tmp 路径重定向到本测试的私有目录,测试之间互不污染。
+    counters?.shells?.push(script);
     const env = { ...process.env, ...opts?.env };
     if (env.GIT_DIR === "/tmp/.niceeval-ledger") env.GIT_DIR = ledgerDir;
-    const patched = script.replaceAll("/tmp/.niceeval-ledger", ledgerDir);
     try {
-      const { stdout, stderr } = await execAsync(patched, { cwd: workdir, env, maxBuffer: 64 * 1024 * 1024 });
+      const { stdout, stderr } = await execAsync(patchPath(script), { cwd: workdir, env, maxBuffer: 64 * 1024 * 1024 });
       return { stdout, stderr, exitCode: 0 };
     } catch (e) {
       const err = e as { stdout?: string; stderr?: string; code?: number };
       return { stdout: err.stdout ?? "", stderr: err.stderr ?? "", exitCode: err.code ?? 1 };
     }
+  };
+  const downloadFile = async (path: string): Promise<Buffer> => {
+    counters?.downloads?.push(path);
+    return Buffer.from(await readFile(patchPath(path)));
   };
   return {
     workdir,
@@ -48,7 +57,7 @@ function hostSandbox(workdir: string, ledgerDir: string, onRunShell?: (script: s
     writeFiles: async () => {},
     uploadFiles: async () => {},
     uploadDirectory: async () => {},
-    downloadFile: async () => Buffer.from(""),
+    downloadFile,
     uploadFile: async () => {},
     stop: async () => {},
   } as unknown as Sandbox;
@@ -161,24 +170,29 @@ describe("createChangeLedger", () => {
     expect(paths.some((path) => path.includes("venv"))).toBe(false);
   });
 
-  it("单窗口无论改多少文件都只用一次 provider 导出命令", async () => {
+  it("整相导出只用一条 shell 命令 + 一次文件下载,不随文件数与窗口数增长", async () => {
     const { workdir, ledgerDir } = await makeDirs();
-    const commands: string[] = [];
-    const sandbox = hostSandbox(workdir, ledgerDir, (script) => commands.push(script));
+    const counters = { shells: [] as string[], downloads: [] as string[] };
+    const sandbox = hostSandbox(workdir, ledgerDir, counters);
     const ledger = await createChangeLedger(sandbox);
     await mkdir(join(workdir, "generated"), { recursive: true });
     await Promise.all(
       Array.from({ length: 500 }, (_, i) => writeFile(join(workdir, "generated", `${i}.txt`), `file ${i}\n`)),
     );
     await ledger.commitAgentWindow("s1/t1");
+    await writeFile(join(workdir, "second.txt"), "second window\n");
+    await ledger.commitAgentWindow("s1/t2");
 
-    const beforeExport = commands.length;
+    const beforeExport = counters.shells.length;
     const windows = await ledger.exportWindows();
 
-    // 一次 git log + 每个 agent 窗口一次 sandbox 内批量导出;不随 500 个文件增长。
-    expect(commands.length - beforeExport).toBe(2);
+    // 全部窗口一条沙箱内命令导出 + 一次导出文件下载;不随 500 个文件或窗口数增长。
+    expect(counters.shells.length - beforeExport).toBe(1);
+    expect(counters.downloads).toHaveLength(1);
+    expect(windows).toHaveLength(2);
     expect(Object.keys(windows[0]!.changes)).toHaveLength(500);
     expect(windows[0]!.changes["generated/499.txt"]).toEqual({ status: "added", after: "file 499\n" });
+    expect(windows[1]!.changes).toEqual({ "second.txt": { status: "added", after: "second window\n" } });
   });
 
   it("单窗口超过路径上限时明确失败,不伪造成空 diff", async () => {
@@ -192,6 +206,16 @@ describe("createChangeLedger", () => {
     await ledger.commitAgentWindow("s1/t1");
 
     await expect(ledger.exportWindows()).rejects.toThrow("contains 10001 paths; limit is 10000");
+  }, 30_000);
+
+  it("单窗口文本证据超过字节上限时明确失败,尺寸核算先于内容传输", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const sandbox = hostSandbox(workdir, ledgerDir);
+    const ledger = await createChangeLedger(sandbox);
+    await writeFile(join(workdir, "huge.txt"), "x".repeat(65 * 1024 * 1024));
+    await ledger.commitAgentWindow("s1/t1");
+
+    await expect(ledger.exportWindows()).rejects.toThrow("blob bytes");
   }, 30_000);
 
   it("窗口内没有变化时仍落一条空窗口(changes 为空对象)", async () => {
