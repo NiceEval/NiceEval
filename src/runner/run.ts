@@ -272,7 +272,9 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // 无限烧钱的安全网,不是精确计费闸,不应该反过来限制吞吐。
   interface BudgetState {
     spent: number;
-    completedNoCost: number;
+    /** 已经真正发起过 agent turn、但仍拿不到成本的 attempt 数。provider/setup 在 agent
+     *  运行前失败不计入——这种结果没有可执行的计费事实,不能据此声称 adapter 不报成本。 */
+    completedAgentRunsNoCost: number;
     unenforceableWarned: boolean;
     /** 因这个 budgetKey 预算到顶而未派发的 attempt 累计数——反馈层 "budget-exhausted" 事件
      *  (见 sink.ts 的 `BudgetExhaustedInput`)要求 emitter 自己维护这个累计值,reducer 不推导。 */
@@ -282,7 +284,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   const budgetState = (key: string): BudgetState => {
     let s = budgetStates.get(key);
     if (!s) {
-      s = { spent: 0, completedNoCost: 0, unenforceableWarned: false, unstartedCount: 0 };
+      s = { spent: 0, completedAgentRunsNoCost: 0, unenforceableWarned: false, unstartedCount: 0 };
       budgetStates.set(key, s);
     }
     return s;
@@ -497,10 +499,12 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               const s = budgetState(budgetKey);
               if (result.estimatedCostUSD !== undefined) {
                 s.spent += result.estimatedCostUSD;
-              } else {
-                s.completedNoCost += 1;
-                if (s.spent === 0 && s.completedNoCost >= 3 && !s.unenforceableWarned) {
-                  // 连续几次完成都拿不到成本:budget 对这个 agent 不可执行,说清楚一次。
+              } else if (result.phases?.some((phase) => phase.children?.some((child) => child.kind === "turn"))) {
+                s.completedAgentRunsNoCost += 1;
+                if (s.spent === 0 && s.completedAgentRunsNoCost >= 3 && !s.unenforceableWarned) {
+                  // 连续几次真正跑过 agent 的 attempt 都拿不到成本:budget 对这个 agent
+                  // 不可执行,说清楚一次。sandbox.create/setup 等前置失败没有 turn,跳过这里:
+                  // 此时应由 attempt error 回答根因,不能再用计费 warning 抢走注意力。
                   // s.unenforceableWarned 已经是 per-budgetKey 的一次性闸门;稳定 key 上的
                   // reportDiagnostic 去重是双保险,不依赖它单独生效。
                   s.unenforceableWarned = true;

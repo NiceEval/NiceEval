@@ -493,7 +493,7 @@ agent  NICEEVAL error locator=@18c1m2qx eval=memory/agent-029 experiment=compare
 ci     niceeval: errored locator=@18c1m2qx eval=memory/agent-029 experiment=compare/bub-e2b phase=agent.run reason="attempt timed out (60000ms)"
 ```
 
-预算没有成本数据时只提示一次。`human` 把 warning 永久写入 scrollback,`agent` / `ci` 各追加一条稳定 warning;不得每个 attempt 重复同一诊断。
+已经发起 agent turn 的 attempt 没有成本数据时只提示一次。`human` 把 warning 永久写入 scrollback,`agent` / `ci` 各追加一条稳定 warning;不得每个 attempt 重复同一诊断。attempt 在 `sandbox.create`、setup 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
 
 ## 用法错误
 

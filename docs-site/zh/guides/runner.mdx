@@ -58,7 +58,7 @@ npx niceeval exp local fixtures/button --runs 5 --no-early-exit
 npx niceeval exp local --timeout 300000 --budget 5
 ```
 
-超时保护单个 eval，预算保护整次运行成本。
+超时保护单个 eval，预算保护整次运行成本。NiceEval 只有在 Attempt 已经发起 Agent Turn、却连续拿不到成本数据时，才提示预算无法执行。如果 Attempt 在 `sandbox.create` 或 setup 阶段就失败，Agent 尚未运行，CLI 只显示对应的结构化执行错误，不再追加容易误导排查方向的预算警告。
 
 ## Reporter
 

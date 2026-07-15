@@ -46,7 +46,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 
 ## 预算护栏(budget)
 
-实验可设 `budget`(整个 run 的估算成本上限 $),`--budget` 覆盖。运行器只按**已完成 attempt 的实测花费**判断:同一 budget 域(experimentId,或没有 experiment 时的 agent 名)的已完成花费一旦到顶,就**停止派发新 attempt**——已经在飞的照常跑完,不会被中途打断;到顶之前不做任何预测性节流,并发完全由 `--max-concurrency` 与实验级 `maxConcurrency` 决定。这是有意的取舍:budget 是防止无限烧钱的安全网,不是精确计费闸,不应该反过来限制吞吐——已花 + 在飞未结算的总花费可能因此短暂超出 budget。连续多个 attempt 完成都拿不到成本数据(agent 不报用量)时,budget 对该域不可执行,运行器给一条去重后的 warning 而不是每个 attempt 重复提示。
+实验可设 `budget`(整个 run 的估算成本上限 $),`--budget` 覆盖。运行器只按**已完成 attempt 的实测花费**判断:同一 budget 域(experimentId,或没有 experiment 时的 agent 名)的已完成花费一旦到顶,就**停止派发新 attempt**——已经在飞的照常跑完,不会被中途打断;到顶之前不做任何预测性节流,并发完全由 `--max-concurrency` 与实验级 `maxConcurrency` 决定。这是有意的取舍:budget 是防止无限烧钱的安全网,不是精确计费闸,不应该反过来限制吞吐——已花 + 在飞未结算的总花费可能因此短暂超出 budget。连续多个**已经发起 agent turn** 的 attempt 都拿不到成本数据(agent 不报用量)时,budget 对该域不可执行,运行器给一条去重后的 warning 而不是每个 attempt 重复提示；`sandbox.create`、setup 等发生在首个 agent turn 之前的错误没有成本事实,只报告其结构化 attempt error,不额外产生 budget warning。
 
 预算耗尽而导致的未派发 attempt 数量计入运行[完成状态](#完成状态)的 `unstarted`,让整次运行的结论落在 `incomplete`,不能在 CI 里伪装成全绿。
 

@@ -10,6 +10,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 沙箱与内置 agent
 
+- [budget-warning-requires-agent-turn](budget-warning-requires-agent-turn.md) — `sandbox.create` 等 agent 启动前错误没有成本事实，不得触发 budget-unenforceable；只统计真实 turn 后仍无 cost 的 attempt
 - [skill-install-via-git-not-skills-cli](skill-install-via-git-not-skills-cli.md) — 设计裁决:repo skill 改走 git clone(`skills` CLI 没法钉 ref、也枚举不出仓库里有哪些 skill);已真机验证；Claude Code E2E 曾错用 `calledTool("Skill")` 查找已归一成 `skill.loaded` 的事件，现已修并 2/2 真机通过
 - [native-plugin-marketplace-name-not-caller-assignable](native-plugin-marketplace-name-not-caller-assignable.md) — `ClaudeCodePluginSpec`/`CodexPluginSpec` 的 `marketplace.name` 文档暗示调用方自定,真实 CLI 按目标仓库 manifest 自己的 `name` 注册,名字不匹配时 `marketplace add` 静默成功、下一步 `plugin install/add` 才报错;真实仓库复现,此 fixture 已落成两条 Docker 真机 e2e(Claude Code + Codex),bug 本身未修
 - 已修 [codex-plugin-list-json-shape-guessed-wrong](codex-plugin-list-json-shape-guessed-wrong.md) — `codex plugin list --json` 真实形状是 `{ installed: [...] }` + `pluginId` 字段,旧代码猜成裸数组/`{ plugins: [...] }` + `id`,`resolvedVersion` 对任何真实安装恒返回 undefined;native plugin 真机 e2e 复现(修在 `src/agents/codex.ts`)

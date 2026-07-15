@@ -580,6 +580,84 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
   });
 });
 
+describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn 的 attempt", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+  });
+
+  it("三个 attempt 都在 sandbox.create 失败时只保留根因,不误报 budget-unenforceable", async () => {
+    const experimentId = "template-missing-exp";
+    const evals = ["a", "b", "c"].map((id) => makeEval(id, () => {}));
+    const missingTemplate = defineSandbox({
+      name: "missing-template",
+      create: async () => {
+        throw new Error("404: template 'memory-evals-claude-mempal-deadbeef-0-9-0' not found");
+      },
+    });
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-budget"),
+      flags: {},
+      runs: 1,
+      earlyExit: false,
+      sandbox: missingTemplate,
+      timeoutMs: 5_000,
+      evalFilter: () => true,
+      experimentId,
+      budget: 10,
+    };
+    const plan: RunFeedbackPlan = {
+      shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 },
+      reused: 0,
+      reusedFailures: [],
+    };
+
+    await withCoordinator(plan, async (coordinator) => {
+      const { summary } = await run(evals, [agentRun]);
+
+      expect(summary.results).toHaveLength(3);
+      expect(summary.results.every((result) => result.error?.phase === "sandbox.create")).toBe(true);
+      expect(summary.results.every((result) => result.error?.message.includes("template") === true)).toBe(true);
+      expect(coordinator.state.failures).toHaveLength(3);
+      expect(coordinator.state.diagnostics.some((d) => d.key === `budget-unenforceable:${experimentId}`)).toBe(false);
+    });
+  });
+
+  it("三个 agent turn 都没有成本数据时仍只报一次 budget-unenforceable", async () => {
+    const experimentId = "missing-cost-exp";
+    const evals = ["a", "b", "c"].map((id) => makeEval(id, async (t) => {
+      await t.send("hello");
+    }));
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-budget"),
+      flags: {},
+      runs: 1,
+      earlyExit: false,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      evalFilter: () => true,
+      experimentId,
+      budget: 10,
+    };
+    const plan: RunFeedbackPlan = {
+      shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 },
+      reused: 0,
+      reusedFailures: [],
+    };
+
+    await withCoordinator(plan, async (coordinator) => {
+      const { summary } = await run(evals, [agentRun]);
+
+      expect(summary.results).toHaveLength(3);
+      expect(summary.results.every((result) => result.phases?.some(
+        (phase) => phase.children?.some((child) => child.kind === "turn"),
+      ) === true)).toBe(true);
+      const diagnostics = coordinator.state.diagnostics.filter((d) => d.key === `budget-unenforceable:${experimentId}`);
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]?.count).toBe(1);
+    });
+  });
+});
+
 // 携入数量不足以覆盖本次请求的 runs(典型触发:上次 runs:1 落了 1 条终态结果,这次把 runs
 // 调大到 3、没有 --force)时,差额必须真正计入调度,不能被 priorRunKeys 的"这个组合有过携入"
 // 整段跳过——那会让 pass@N 的 N 被携入悄悄砍短,运行还照样报 PASSED/exit 0(见
