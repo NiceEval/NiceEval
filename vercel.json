@@ -18,6 +18,14 @@
     {
       "source": "/docs/:match*",
       "destination": "https://fasteval.mintlify.site/docs/:match*"
+    },
+    {
+      "source": "/showcase/memory",
+      "destination": "https://coding-agent-memory-evals.vercel.app"
+    },
+    {
+      "source": "/showcase/memory/:match*",
+      "destination": "https://coding-agent-memory-evals.vercel.app/:match*"
     }
   ]
 }

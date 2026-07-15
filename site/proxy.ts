@@ -26,6 +26,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // 跳过 _next 资源和任何带扩展名的静态文件(robots.txt、sitemap*.xml 等),避免它们被重定向到 /en/robots.txt。
-  matcher: ["/((?!_next|docs|.*\\..*).*)"],
+  // 跳过 _next 资源、反代到外部站点的路径(docs、showcase——见 vercel.json 的 rewrites)
+  // 和任何带扩展名的静态文件(robots.txt、sitemap*.xml 等),避免它们被重定向到 /en/robots.txt
+  // 或 /en/showcase/...。
+  matcher: ["/((?!_next|docs|showcase|.*\\..*).*)"],
 };
