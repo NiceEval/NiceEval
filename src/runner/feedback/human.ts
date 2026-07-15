@@ -427,14 +427,16 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
 
 /** evalId/who 列宽按可用宽度成比例分配(约 55/45),不是固定 26/18 —— 固定宽度在窄终端下
  *  会让整行早早超出 `columns`(违反「宽度以 columns 为硬上限」),给宽终端又会截得比必要更早。
- *  三个定宽片段(symbol、elapsed、片段间分隔空格)算作 fixed overhead,剩余宽度才拿去分给
- *  两个可变列;算出来的 prefix 长度恒等于 `columns`(或更窄,极窄终端下两列先退化到 0)。 */
+ *  身份列不能吞掉全部剩余宽度：phase/detail 才是 active 行存在的理由，必须预留可见空间。 */
 function formatActiveRow(active: ActiveAttempt, io: FeedbackIO): string {
   const columns = io.stderr.columns;
   const elapsed = formatElapsed(io.clock.now() - active.phaseStartedAt).padStart(6);
   const sym = "● ";
   const fixedWidth = sym.length + elapsed.length + 6; // 6 = 三处两两分隔空格
-  const remaining = Math.max(0, columns - fixedWidth);
+  // 之前把 `columns - fixedWidth` 全给了 identity，导致 prefix 恒占满一行，detail
+  // budget 恒为 0；lifecycle/progress 已进 reducer，却永远无法画到终端。
+  const detailReserve = Math.min(80, Math.max(0, Math.floor(columns * 0.35)));
+  const remaining = Math.max(0, columns - fixedWidth - detailReserve);
   const evalWidth = Math.max(0, Math.round(remaining * 0.55));
   const whoWidth = Math.max(0, remaining - evalWidth);
   const evalCol = padTrunc(active.identity.evalId, evalWidth);

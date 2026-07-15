@@ -169,6 +169,31 @@ describe("TTY dashboard: 高度以 stderr.rows 为硬上限,窄终端先减 acti
 });
 
 describe("TTY dashboard: 宽度以 stderr.columns 为硬上限,截断消息而不是软换行", () => {
+  it("始终给 phase/detail 留出列宽，不能让身份列吞掉整行", async () => {
+    const { fake, coordinator } = setupTty({ rows: 40, columns: 180 });
+    coordinator.start(plan());
+    coordinator.emit({
+      type: "attempt:start",
+      at: 0,
+      identity: ref("memory/agent-029-use-cache-directive"),
+      who: "codex-e2b",
+      phase: "eval.run",
+    });
+    coordinator.emit({
+      type: "attempt:progress",
+      at: 0,
+      identity: ref("memory/agent-029-use-cache-directive"),
+      detail: "tool: pnpm test",
+    });
+    fake.advance(250);
+    await flush();
+
+    const lastAnsiFrame = fake.stderr.writes.filter((w) => w.includes(ESC)).at(-1)!;
+    expect(lastAnsiFrame).toContain("running eval: tool: pnpm test");
+
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
   it("窄终端下 active 行的纯文本长度不超过 columns,且不含内嵌换行", async () => {
     const { fake, coordinator } = setupTty({ rows: 40, columns: 36 });
     coordinator.start(plan());
