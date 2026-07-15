@@ -23,6 +23,7 @@ import type { TextContext } from "../tree.ts";
 import type { TableColumn, TableRow } from "../primitives.tsx";
 import {
   attemptItemReason,
+  experimentDisplayName,
   formatDurationMs,
   formatMetricValue,
   formatPlainNumber,
@@ -455,7 +456,7 @@ function locatorBadge(item: { locator: string; verdict: AttemptListItem["verdict
 
 // ── ExperimentList ──
 
-function experimentSummaryTable(items: ExperimentListItem[], ctx: TextContext): string {
+function experimentSummaryTable(items: ExperimentListItem[], ctx: TextContext, relativeTo?: string): string {
   const locale = ctx.locale;
   const compact = ctx.width < 100;
   const columns: TableColumn[] = [
@@ -471,7 +472,7 @@ function experimentSummaryTable(items: ExperimentListItem[], ctx: TextContext): 
   const rows: TableRow[] = items.map((item) => ({
     key: item.experimentId,
     cells: {
-      experiment: item.experimentId,
+      experiment: experimentDisplayName(item.experimentId, relativeTo),
       model: item.model ?? localeText(locale, "experimentList.defaultModel"),
       agent: item.agent,
       duration: cellText(item.duration),
@@ -483,14 +484,14 @@ function experimentSummaryTable(items: ExperimentListItem[], ctx: TextContext): 
   }));
   const metadata = items.flatMap((item) =>
     wrapDisplay(
-      `${item.experimentId}: ${localeText(locale, "overview.evalsCount", { n: item.evals })} · ${localeText(locale, "overview.attemptsCount", { n: item.attempts })} · ${item.lastRunAt}`,
+      `${experimentDisplayName(item.experimentId, relativeTo)}: ${localeText(locale, "overview.evalsCount", { n: item.evals })} · ${localeText(locale, "overview.attemptsCount", { n: item.attempts })} · ${item.lastRunAt}`,
       Math.max(8, ctx.width - 2),
     ).map((line) => `  ${line}`),
   );
   return [renderTableText({ columns, rows, locale }, ctx), metadata.join("\n")].join("\n");
 }
 
-function experimentDetailTable(item: ExperimentListItem, ctx: TextContext): string {
+function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, relativeTo?: string): string {
   const locale = ctx.locale;
   const columns: TableColumn[] = [
     { key: "status", header: localeText(locale, "experimentList.status") },
@@ -538,12 +539,17 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext): stri
   const flags = item.flags && Object.keys(item.flags).length > 0
     ? `${localeText(locale, "experimentList.flags")} ${Object.entries(item.flags).map(([key, value]) => `${key}=${String(value)}`).join(" · ")}`
     : undefined;
-  return [item.experimentId, flags, renderTableText({ columns, rows, locale }, ctx)].filter(Boolean).join("\n");
+  return [experimentDisplayName(item.experimentId, relativeTo), flags, renderTableText({ columns, rows, locale }, ctx)]
+    .filter(Boolean)
+    .join("\n");
 }
 
-export function experimentListText(items: ExperimentListItem[], ctx: TextContext): string {
+export function experimentListText(items: ExperimentListItem[], ctx: TextContext, relativeTo?: string): string {
   if (items.length === 0) return localeText(ctx.locale, "attemptList.empty");
-  return [experimentSummaryTable(items, ctx), ...items.map((item) => experimentDetailTable(item, ctx))].join("\n\n");
+  return [
+    experimentSummaryTable(items, ctx, relativeTo),
+    ...items.map((item) => experimentDetailTable(item, ctx, relativeTo)),
+  ].join("\n\n");
 }
 
 // ── EvalList ──

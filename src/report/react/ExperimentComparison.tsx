@@ -59,7 +59,7 @@ export function ExperimentComparisonView({
           >
             <summary>{group.key}</summary>
             <MetricScatter data={group.scatter} locale={locale} />
-            <ExperimentList items={group.experiments} filter locale={locale} />
+            <ExperimentList items={group.experiments} filter locale={locale} relativeTo={group.key} />
           </details>
         ))}
       </div>

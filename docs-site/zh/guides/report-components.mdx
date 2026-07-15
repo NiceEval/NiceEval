@@ -147,6 +147,8 @@ latest 2026-07-09T10:00:00Z
 
 每项固定代表一个 experiment。主行显示 experiment id、agent、model、flags、Eval 判定构成、通过率、Tokens、成本和耗时；展开后显示这个 experiment 的 Eval 列表。它不接受列配置——这是 experiment 的诊断视图，不是通用指标表。默认 `ExperimentComparison` 每次只把一个可比组的 items 交给它；组件本身不猜组边界。
 
+默认比较已经用组名作面板 / 段落标题，所以组内每行的 experiment 标签会去掉这层文件夹前缀，只显示 id 末段（和同组散点的点标签一致），不在每行重复文件夹名；完整 id 仍是排序、着色和身份的依据。独立使用 `ExperimentList`、不告诉它相对哪个组时，显示完整 id。
+
 ```tsx
 const experiments = await ExperimentList.data(selection);
 
@@ -158,17 +160,18 @@ const experiments = await ExperimentList.data(selection);
 `niceeval show` 每个 experiment 输出一行汇总，每个 Eval 只占一行。Attempt ID 后的证据位告诉 AI 能读什么，不展开重复命令：
 
 ```text
-compare/bub-gpt-5.4 · bub · gpt-5.4
-  pass 87% · 13 passed / 1 failed / 1 errored · 42 attempts · 4m 12s · $0.42
-  ✓ algebra/quadratic   @12f9k3aq✓ @141bm7cx✓   18s avg · $0.02 avg
-  ✗ weather/brooklyn    @1k2m9qrs✗ @1nx4dpqr✗ @19vq2jex✗   gate calledTool("get_weather")
-  ! fixtures/button     @1c3h6twx!   command timed out after 120s
+compare
+  bub-gpt-5.4 · bub · gpt-5.4
+    pass 87% · 13 passed / 1 failed / 1 errored · 42 attempts · 4m 12s · $0.42
+    ✓ algebra/quadratic   @12f9k3aq✓ @141bm7cx✓   18s avg · $0.02 avg
+    ✗ weather/brooklyn    @1k2m9qrs✗ @1nx4dpqr✗ @19vq2jex✗   gate calledTool("get_weather")
+    ! fixtures/button     @1c3h6twx!   command timed out after 120s
 
-compare/codex-gpt-5.4 · codex · gpt-5.4
-  pass 80% · 12 passed / 3 failed · 45 attempts · 5m 03s · $0.51
-  ✓ algebra/quadratic   @1d8p4kwz✓   16s · $0.02
-  ✗ algebra/matrix      @1e2j7mxa✗ @1f5r9nab✗ @1g4w8pcd✗   gate equals("42")
-  ✗ weather/brooklyn    @1h6t3vbe✗ @1j9m2qfg✗ @1k7c5rxh✗   gate calledTool("get_weather")
+  codex-gpt-5.4 · codex · gpt-5.4
+    pass 80% · 12 passed / 3 failed · 45 attempts · 5m 03s · $0.51
+    ✓ algebra/quadratic   @1d8p4kwz✓   16s · $0.02
+    ✗ algebra/matrix      @1e2j7mxa✗ @1f5r9nab✗ @1g4w8pcd✗   gate equals("42")
+    ✗ weather/brooklyn    @1h6t3vbe✗ @1j9m2qfg✗ @1k7c5rxh✗   gate calledTool("get_weather")
 
 inspect: niceeval show @<id> [--eval|--execution|--diff]
 ```

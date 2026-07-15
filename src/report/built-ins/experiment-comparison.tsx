@@ -91,7 +91,7 @@ function groupComposition(group: ExperimentComparisonGroupData, locale?: ReportL
   return (
     <Col className={className}>
       <MetricScatter data={group.scatter} locale={locale} />
-      <ExperimentList items={group.experiments} filter locale={locale} />
+      <ExperimentList items={group.experiments} filter locale={locale} relativeTo={group.key} />
     </Col>
   );
 }

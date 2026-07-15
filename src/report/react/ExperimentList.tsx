@@ -5,7 +5,7 @@
 import type { ReactElement } from "react";
 import type { AttemptLocator } from "../../results/locator.ts";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem } from "../types.ts";
-import { attemptItemReason } from "../format.ts";
+import { attemptItemReason, experimentDisplayName } from "../format.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../locale.ts";
 import { AttemptLocatorBadge } from "./AttemptList.tsx";
 import { MetricCellView } from "./cell.tsx";
@@ -117,16 +117,20 @@ function ExperimentRow({
   item,
   attemptHref,
   locale,
+  relativeTo,
 }: {
   item: ExperimentListItem;
   attemptHref: (locator: AttemptLocator) => string;
   locale: ReportLocale;
+  relativeTo?: string;
 }): ReactElement {
   return (
     <details className="nre-experiment-entry">
       <summary className="nre-experiment-summary">
         <span className="nre-experiment-name" data-sort-value={item.experimentId}>
-          <b className={cx("nre-experiment-id", "nre-key", colorClassForKey(item.experimentId))}>{item.experimentId}</b>
+          <b className={cx("nre-experiment-id", "nre-key", colorClassForKey(item.experimentId))}>
+            {experimentDisplayName(item.experimentId, relativeTo)}
+          </b>
           <small>
             {localeText(locale, "overview.evalsCount", { n: item.evals })}
             {item.attempts > item.evals ? ` · ${localeText(locale, "overview.attemptsCount", { n: item.attempts })}` : ""}
@@ -167,12 +171,14 @@ export function ExperimentList({
   filter = false,
   className,
   locale = DEFAULT_REPORT_LOCALE,
+  relativeTo,
 }: {
   items: ExperimentListItem[];
   attemptHref: (locator: AttemptLocator) => string;
   filter?: boolean;
   className?: string;
   locale?: ReportLocale;
+  relativeTo?: string;
 }): ReactElement {
   const labels = [
     localeText(locale, "experimentList.experiment"),
@@ -200,7 +206,7 @@ export function ExperimentList({
       </div>
       {items.length === 0 && <p className="nre-experiment-list-empty">{localeText(locale, "attemptList.empty")}</p>}
       {items.map((item) => (
-        <ExperimentRow key={item.experimentId} item={item} attemptHref={attemptHref} locale={locale} />
+        <ExperimentRow key={item.experimentId} item={item} attemptHref={attemptHref} locale={locale} relativeTo={relativeTo} />
       ))}
     </div>
   );

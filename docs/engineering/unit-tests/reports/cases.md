@@ -73,6 +73,7 @@ it("RunOverview 使用端到端两级聚合并保留覆盖率", async () => {
 | web 面排序/过滤只改变浏览状态，不改变数据、口径或初始 HTML 中的数值 | 正例：有无 filter prop 时数值与行集合相同 |
 | `ExperimentList` web 面是固定八列比较表，默认按 End-to-end pass rate 降序；Model 缺失显示明确空值 | 正例：断言 thead 列名与顺序；边界：model 缺失；反例：taskPassRate 高但 executionReliability 低的实验不能排到端到端成功率更高者之前 |
 | `ExperimentList` text 面保持实体层级：Eval 父行、Attempt `├─`/`└─` 子行，不压平 | 正例：一题两 attempt 只出现一次 Eval 标题 |
+| `ExperimentList` 传 `relativeTo` 时 web 与 text 两面行标签去掉该父路径前缀只显示 id 末段（与散点点标签同源），完整 id 仍用于排序键 / 着色 / 折叠；默认 `ExperimentComparison` 给每组传组键 | 正例：组键 `compare` 下 `compare/bub-gpt-5.4--agents-md` 显示 `bub-gpt-5.4--agents-md` 且 `data-sort-value` 仍是完整 id；边界：根目录单例组 id 无前缀时显示完整 id；反例：不传 `relativeTo` 时显示完整 id |
 
 ```tsx
 import { renderToStaticMarkup } from "react-dom/server"

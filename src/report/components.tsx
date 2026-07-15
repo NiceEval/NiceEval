@@ -92,6 +92,12 @@ export interface ExperimentListProps {
   items: ExperimentListItem[];
   /** web 面在比较表前显示实验过滤框；text 面忽略。 */
   filter?: boolean;
+  /**
+   * 可选父路径:两面的行标签去掉与它相同的前缀,只显示 experiment id 末段,避免在已经以组为
+   * 标题的上下文里重复文件夹名(默认 `ExperimentComparison` 给每组传组键)。完整 id 仍是排序 /
+   * 着色 / 过滤 / 折叠的键;不传或它不是前缀(如根目录单例组)时显示完整 id。
+   */
+  relativeTo?: string;
   /** chrome 文案 locale;省略时随宿主上下文(宿主外默认 "en")。 */
   locale?: ReportLocale;
   className?: string;
@@ -235,7 +241,7 @@ export const ExperimentList: ReportComponent<ExperimentListProps> & { data: type
   Object.assign(
     defineComponent<ExperimentListProps>({
       web: (props, ctx) => <ExperimentListWeb {...props} locale={props.locale ?? ctx.locale} attemptHref={ctx.attemptHref} />,
-      text: ({ items }, ctx) => experimentListText(items, ctx),
+      text: ({ items, relativeTo }, ctx) => experimentListText(items, ctx, relativeTo),
     }),
     { data: experimentListData },
   );

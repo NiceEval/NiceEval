@@ -1117,7 +1117,10 @@ describe("ExperimentComparison", () => {
     expect(out).toContain("No data to plot");
     expect(out).not.toContain("better → upper right");
     // 实验列表主行 + eval 级折叠计票 + 失败诊断(ExperimentList.data 在 build() 里直接 await)
-    expect(out).toMatch(/compare\/bub\s+default\s+bub/);
+    // 组已由 section 标题 "compare" 标注,列表行传 relativeTo=组键 去掉前缀,只显示 id 末段
+    expect(out).toMatch(/^compare$/m);
+    expect(out).toMatch(/^\s*bub\s+default\s+bub/m);
+    expect(out).not.toContain("compare/bub");
     expect(out).toMatch(/1 passed[\s\S]*?\/ 1\s+failed/);
     expect(out).toContain("50%");
     expect(out).toMatch(/✗ failed\s+algebra\/y[\s\S]*└─ @[0-9a-z]+/);
@@ -1133,6 +1136,9 @@ describe("ExperimentComparison", () => {
     expect(html).toContain("nre-metric-scatter");
     expect(html).toContain("nre-scatter-empty"); // 0 可画点的空态
     expect(html).toContain('<details class="nre-experiment-entry">');
+    // 行标签去掉组前缀只显示 id 末段;完整 id 仍留在 data-sort-value 作排序/身份键
+    expect(html).toMatch(/nre-experiment-id[^>]*>\s*bub\s*<\/b>/);
+    expect(html).toContain('data-sort-value="compare/bub"');
     expect(html).toContain("nre-experiment-head");
     expect(html).toContain('data-nre-experiment-filter=""');
     expect(html).toContain("nre-experiment-evals");
