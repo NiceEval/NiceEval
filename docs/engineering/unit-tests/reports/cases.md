@@ -62,6 +62,15 @@ it("RunOverview 使用端到端两级聚合并保留覆盖率", async () => {
 | 分组维度上未声明的 flag 归 `(unset)` 组，不丢行 | 正例：部分 experiment 无该 flag 时 (unset) 计数正确 |
 | `MetricTable` 的 `sort` 决定初始行序，方向由指标 `better` 决定（好在前） | 正例：sort=endToEndPassRate 高在前、sort=costUSD 低在前 |
 
+## MetricScatter 点标签布局（web 面）
+
+契约来源：[Library](../../../feature/reports/library.md)「MetricScatter」。布局是 `chart-math` 的纯几何函数，场景直接对函数断言标签框与点框的几何关系，不经 HTML。
+
+| 契约 | 场景 |
+|---|---|
+| 标签从点四周候选位择优：存在无冲突候选时，标签不与其它标签重叠、不遮盖任何数据点、不越出画布；全候选冲突时取重叠最小者，不丢标签 | 正例：三点近重合 + 正下方另一点的簇，标签框两两不叠且不压任何点框；反例：只向下推的级联布局会把第三个标签推到下方点上，可区分 |
+| 无冲突时标签取点右侧紧邻位且不带 leader 标记；离开左右紧邻位的标签带 leader 标记；靠画布右缘的点标签整体落在画布内 | 正例：稀疏两点右侧紧邻、无 leader；边界：右缘点锚到左侧紧邻位、标签框不越出画布、无 leader 标记 |
+
 ## text/web 双面同源
 
 契约来源：[Architecture](../../../feature/reports/architecture.md)、[View](../../../feature/reports/view.md)、[Show](../../../feature/reports/show.md)、[Library](../../../feature/reports/library.md)。

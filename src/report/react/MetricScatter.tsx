@@ -1,6 +1,7 @@
 // MetricScatter:质量 × 成本 frontier 的积木,内联 SVG、零图表库、零 hooks。
 // 轴向随 better:"lower" 的轴反向画,「好」的角落恒在右上(成本轴 $20 → $0 就是这么来的);
-// niceTicks 刻度 + 网格线;每个点直接标注(防撞布局,被挤开时补 leader line);
+// niceTicks 刻度 + 网格线;每个点直接标注(placePointLabels 候选位择优:避开其它标签、
+// 数据点与画布边界,离开左右紧邻位时补 leader line);
 // 同系列的点按 x 值排序连线,系列图例列在图下。x 或 y 为 null 的点不画,
 // 底部注脚如实报「n 个点缺数据」;hover 信息退化为 SVG <title>,不 hydrate 也在
 // (enhance.js 在场时升级为样式化 tooltip)。配色走类名(nre-series-cN)由 CSS 上色,
@@ -10,7 +11,7 @@ import type { ReactElement } from "react";
 import type { MetricColumn, ScatterData } from "../types.ts";
 import { formatMetricValue } from "../format.ts";
 import { DEFAULT_REPORT_LOCALE, countText, localeText, resolveMetricLabel, type ReportLocale } from "../locale.ts";
-import { layoutLabelOffsets, niceTicks } from "./chart-math.ts";
+import { niceTicks, placePointLabels } from "./chart-math.ts";
 import { colorClassForKey, seriesClassForKey } from "./colors.ts";
 import { cx } from "./format.ts";
 
@@ -124,12 +125,11 @@ export function MetricScatter({
   }
   for (const list of bySeries.values()) list.sort((a, b) => a.xValue - b.xValue);
 
-  // 直接标签的防撞布局:靠右的点把标签锚到左侧,重叠的往下推、补 leader line
-  const positions = points.map((p) => {
-    const anchorLeft = p.px >= MARGIN.left + PLOT_W * 0.72;
-    return { cx: p.px, cy: p.py, anchorLeft, width: p.label.length * 6.4 + 10 };
-  });
-  const labelOffsets = layoutLabelOffsets(positions);
+  // 直接标签的候选位择优布局:锚向、避让方向都由布局按空间决定,画布边界含边距
+  const labels = placePointLabels(
+    points.map((p) => ({ cx: p.px, cy: p.py, width: p.label.length * 6.4 + 10 })),
+    { x0: 2, y0: 2, x1: WIDTH - 2, y1: HEIGHT - 2 },
+  );
 
   return (
     <figure className={cx("nre", "nre-metric-scatter", className)}>
@@ -202,20 +202,18 @@ export function MetricScatter({
         {/* 点:g 内带 <title>(无 JS 的原生 hover)、直接标签与 leader line;
             pointHref 时包普通 <a>,静态导出也能下钻 */}
         {points.map((p, i) => {
-          const { anchorLeft } = positions[i];
-          const labelX = p.px + (anchorLeft ? -10 : 10);
-          const labelY = p.py + 4 + labelOffsets[i];
+          const label = labels[i];
           const group = (
             <g
               className={cx("nre-scatter-point", p.series !== undefined ? seriesClassForKey(p.series) : "nre-series-none")}
               data-key={p.key}
             >
               <title>{p.title}</title>
-              {/* 标签被挤开时补一条 leader line,避免脱离原点看不出对应关系 */}
-              {labelOffsets[i] !== 0 && <line className="nre-leader" x1={p.px} y1={p.py} x2={labelX} y2={labelY - 4} />}
+              {/* 标签不在紧邻位时补一条 leader line,避免脱离原点看不出对应关系 */}
+              {label.leader && <line className="nre-leader" x1={p.px} y1={p.py} x2={label.x} y2={label.y - 4} />}
               <circle className="nre-scatter-hit" cx={p.px} cy={p.py} r={12} />
               <circle className="nre-scatter-dot" cx={p.px} cy={p.py} r={4.5} />
-              <text className="nre-scatter-point-label" x={labelX} y={labelY} textAnchor={anchorLeft ? "end" : "start"}>
+              <text className="nre-scatter-point-label" x={label.x} y={label.y} textAnchor={label.anchor}>
                 {p.label}
               </text>
             </g>
