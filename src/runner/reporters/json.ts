@@ -52,7 +52,7 @@ export function JUnit(path: string): Reporter {
             return `    <testcase name="${name}" time="${time}"><error message="${xmlAttr(r.error?.message ?? "execution error")}"/></testcase>`;
           }
           if (r.verdict === "failed") {
-            const msg = xmlAttr(r.assertions.filter((a) => !a.passed).map((a) => a.name).join("; "));
+            const msg = xmlAttr(r.assertions.filter((a) => a.outcome === "failed").map((a) => a.name).join("; "));
             return `    <testcase name="${name}" time="${time}"><failure message="${msg}"/></testcase>`;
           }
           if (r.verdict === "skipped") {

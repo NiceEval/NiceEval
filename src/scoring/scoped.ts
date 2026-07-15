@@ -1,8 +1,26 @@
 // 作用域断言:读标准事件流的派生事实(toolCalls / parked …)、diff、脚本结果。
 // 每个 builder 产一个延迟 Spec,context 负责 record。规则覆盖不到的奇怪断言可直接落 events。
+//
+// 证据覆盖的三值折叠(见 docs/feature/scoring/architecture/evidence.md):
+// - 正断言:找到匹配即通过(证据存在就是证据);没找到且所需通道非 complete(含 unknown)
+//   记 unavailable——「没采到」不能算成「Agent 没做」;complete 通道上没找到才是 failed。
+// - 负断言:找到反例即 failed(反例是确凿证据);没找到反例且通道非 complete 记 unavailable——
+//   空流证明不了「没发生」。
+// - 上限断言:实测已超限即 failed(partial 只会少采,超限是确凿的);未超限且通道非 complete
+//   记 unavailable——缺证据不能按零聚合。
 
-import type { Spec } from "./collector.ts";
+import { unavailable, type EvalUnavailable, type Spec } from "./collector.ts";
+import type { CoverageChannel } from "./coverage.ts";
 import type { DiffData, ScoringContext, StreamEvent, SubagentCall, SubagentMatch, ToolCall, ToolMatch } from "../types.ts";
+
+// ── 覆盖折叠 ──
+
+/** 所需通道非 complete 时返回 unavailable(带机器可读 reason),complete 返回 undefined。 */
+function coverageGap(ctx: ScoringContext, channel: CoverageChannel): EvalUnavailable | undefined {
+  const c = ctx.coverage[channel];
+  if (c.status === "complete") return undefined;
+  return unavailable(`coverage:${channel}=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
+}
 
 // ── 工具匹配小语言 ──
 
@@ -49,7 +67,7 @@ function toolMatches(tc: ToolCall, name: string, match?: ToolMatch): boolean {
   return true;
 }
 
-// ── evidence:把调用的出入参带回断言结果,view 展开可见,不用翻原始事件流 ──
+// ── received:把调用的出入参带回断言结果,view 展开可见,不用翻原始事件流 ──
 
 function briefJson(value: unknown, max = 800): string {
   let s: string;
@@ -95,18 +113,50 @@ function subagentMatches(call: SubagentCall, name: string, match?: SubagentMatch
   return true;
 }
 
+/** ToolMatch 的期望描述(`≥1 call matching input.city = "Brooklyn"` 之类)。 */
+function describeToolExpectation(name: string, match?: ToolMatch): string {
+  const conditions: string[] = [];
+  if (match?.input) {
+    for (const [k, v] of Object.entries(match.input)) conditions.push(`input.${k} = ${briefJson(v, 120)}`);
+  }
+  if (match?.status) conditions.push(`status = ${match.status}`);
+  const cond = conditions.length ? ` matching ${conditions.join(", ")}` : "";
+  const count = match?.count !== undefined ? `exactly ${match.count} calls of ${name}` : `≥1 call of ${name}`;
+  return `${count}${cond}`;
+}
+
 // ── builders ──
 
 export function succeeded(): Spec {
   return {
     name: "succeeded",
     severity: "gate",
-    evaluate: (ctx) => (ctx.status !== "failed" && !ctx.facts.parked ? 1 : 0),
+    evaluate: (ctx) => {
+      // status 通道非 complete(恒 completed 的映射)时,末态不可信,通过与失败都评不了。
+      const gap = coverageGap(ctx, "status");
+      if (gap) return gap;
+      const ok = ctx.status !== "failed" && !ctx.facts.parked;
+      if (ok) return 1;
+      return {
+        score: 0,
+        received: ctx.facts.parked
+          ? `${ctx.facts.inputRequests.length || 1} unanswered input request`
+          : `status: ${ctx.status}`,
+      };
+    },
   };
 }
 
 export function parked(): Spec {
-  return { name: "parked", severity: "gate", evaluate: (ctx) => (ctx.facts.parked ? 1 : 0) };
+  return {
+    name: "parked",
+    severity: "gate",
+    evaluate: (ctx) => {
+      const gap = coverageGap(ctx, "status");
+      if (gap) return gap;
+      return ctx.facts.parked ? 1 : { score: 0, received: `status: ${ctx.status} (no pending input request)` };
+    },
+  };
 }
 
 export function messageIncludes(token: string | RegExp): Spec {
@@ -120,8 +170,15 @@ export function messageIncludes(token: string | RegExp): Spec {
         .map((e) => e.text)
         .join("\n");
       const ok = token instanceof RegExp ? token.test(text) : text.includes(token);
-      // 失败时把实际被扫的助手文本带回来(和 t.check 的口径一致);命中时行色已说明一切。
-      return ok ? 1 : { score: 0, evidence: text ? (text.length > 4000 ? text.slice(0, 4000) + "…" : text) : undefined };
+      if (ok) return 1;
+      // 正断言:非 complete 通道上没找到记 unavailable,不判失败。
+      const gap = coverageGap(ctx, "messages");
+      if (gap) return gap;
+      return {
+        score: 0,
+        expected: token instanceof RegExp ? `matches ${token}` : `contains ${JSON.stringify(token)}`,
+        received: text ? (text.length > 4000 ? text.slice(0, 4000) + "…" : text) : "(no assistant messages)",
+      };
     },
   };
 }
@@ -133,11 +190,24 @@ export function calledTool(name: string, match?: ToolMatch): Spec {
     evaluate: (ctx) => {
       const matched = ctx.facts.toolCalls.filter((tc) => toolMatches(tc, name, match));
       const n = matched.length;
-      const score = match?.count !== undefined ? (n === match.count ? 1 : 0) : n >= 1 ? 1 : 0;
+      const ok = match?.count !== undefined ? n === match.count : n >= 1;
       // 命中给命中调用的出入参;没命中给同名调用(条件不满足的近失);再没有就列出实际调过的工具。
       const sameName = ctx.facts.toolCalls.filter((tc) => tc.name === name || tc.originalName === name);
       const shown = matched.length ? matched : sameName.length ? sameName : ctx.facts.toolCalls;
-      return { score, evidence: describeCalls(shown) };
+      if (ok) return { score: 1, received: describeCalls(shown) };
+      // 精确 count 且实测已超出:partial 只会少采,超出是确凿失败;其余未命中按覆盖折叠。
+      const definitiveOvershoot = match?.count !== undefined && n > match.count;
+      if (!definitiveOvershoot) {
+        const gap = coverageGap(ctx, "actions");
+        if (gap) return gap;
+      }
+      return {
+        score: 0,
+        expected: describeToolExpectation(name, match),
+        received:
+          describeCalls(shown) ??
+          `${ctx.facts.toolCalls.length} tool calls, none matching`,
+      };
     },
   };
 }
@@ -148,7 +218,11 @@ export function notCalledTool(name: string, match?: ToolMatch): Spec {
     severity: "gate",
     evaluate: (ctx) => {
       const matched = ctx.facts.toolCalls.filter((tc) => toolMatches(tc, name, match));
-      return { score: matched.length === 0 ? 1 : 0, evidence: describeCalls(matched) };
+      // 负断言:找到反例即 failed(证据确凿),没找到时空流证明不了「没发生」。
+      if (matched.length > 0) return { score: 0, received: describeCalls(matched) };
+      const gap = coverageGap(ctx, "actions");
+      if (gap) return gap;
+      return 1;
     },
   };
 }
@@ -162,8 +236,15 @@ export function toolOrder(names: string[]): Spec {
       for (const tc of ctx.facts.toolCalls) {
         if (i < names.length && (tc.name === names[i] || tc.originalName === names[i])) i++;
       }
+      if (i === names.length) return 1;
+      const gap = coverageGap(ctx, "actions");
+      if (gap) return gap;
       const actual = ctx.facts.toolCalls.map((tc) => tc.originalName ?? tc.name).join(" → ");
-      return { score: i === names.length ? 1 : 0, evidence: actual || undefined };
+      return {
+        score: 0,
+        expected: names.join(" → "),
+        received: actual ? `${actual} (missing ${names[i]})` : "(no tool calls)",
+      };
     },
   };
 }
@@ -172,10 +253,12 @@ export function usedNoTools(): Spec {
   return {
     name: "usedNoTools",
     severity: "gate",
-    evaluate: (ctx) => ({
-      score: ctx.facts.toolCalls.length === 0 ? 1 : 0,
-      evidence: describeCalls(ctx.facts.toolCalls),
-    }),
+    evaluate: (ctx) => {
+      if (ctx.facts.toolCalls.length > 0) return { score: 0, received: describeCalls(ctx.facts.toolCalls) };
+      const gap = coverageGap(ctx, "actions");
+      if (gap) return gap;
+      return 1;
+    },
   };
 }
 
@@ -183,10 +266,14 @@ export function maxToolCalls(max: number): Spec {
   return {
     name: `maxToolCalls(${max})`,
     severity: "gate",
-    evaluate: (ctx) => ({
-      score: ctx.facts.toolCalls.length <= max ? 1 : 0,
-      evidence: describeCalls(ctx.facts.toolCalls),
-    }),
+    evaluate: (ctx) => {
+      const n = ctx.facts.toolCalls.length;
+      // 上限断言:实测已超限是确凿失败;未超限时,partial 通道可能漏采,不能按不完整计数放行。
+      if (n > max) return { score: 0, expected: `≤ ${max} tool calls`, received: describeCalls(ctx.facts.toolCalls) };
+      const gap = coverageGap(ctx, "actions");
+      if (gap) return gap;
+      return 1;
+    },
   };
 }
 
@@ -199,9 +286,15 @@ export function loadedSkill(skill: string): Spec {
     evaluate: (ctx) => {
       const loaded = ctx.events.filter((e): e is Extract<StreamEvent, { type: "skill.loaded" }> => e.type === "skill.loaded");
       const matched = loaded.filter((e) => e.skill === skill);
+      if (matched.length) return { score: 1, received: matched.map((e) => e.skill).join(", ") };
+      const gap = coverageGap(ctx, "events");
+      if (gap) return gap;
       // 没命中时把实际加载过的 skill 列出来(常见失败是名字对不上,而不是一个都没加载)。
-      const shown = matched.length ? matched : loaded;
-      return { score: matched.length ? 1 : 0, evidence: shown.length ? shown.map((e) => e.skill).join(", ") : undefined };
+      return {
+        score: 0,
+        expected: `skill ${JSON.stringify(skill)} loaded`,
+        received: loaded.length ? loaded.map((e) => e.skill).join(", ") : "(no skills loaded)",
+      };
     },
   };
 }
@@ -213,8 +306,13 @@ export function noFailedActions(): Spec {
     evaluate: (ctx) => {
       const failedTools = ctx.facts.toolCalls.filter((tc) => tc.status === "failed");
       const failedSubs = ctx.facts.subagentCalls.filter((s) => s.status === "failed");
-      const evidence = [describeCalls(failedTools), describeSubagents(failedSubs)].filter(Boolean).join("\n") || undefined;
-      return { score: failedTools.length || failedSubs.length ? 0 : 1, evidence };
+      if (failedTools.length || failedSubs.length) {
+        const received = [describeCalls(failedTools), describeSubagents(failedSubs)].filter(Boolean).join("\n") || undefined;
+        return { score: 0, received };
+      }
+      const gap = coverageGap(ctx, "actions");
+      if (gap) return gap;
+      return 1;
     },
   };
 }
@@ -226,8 +324,14 @@ export function calledSubagent(name: string, match?: SubagentMatch): Spec {
     evaluate: (ctx) => {
       const matched = ctx.facts.subagentCalls.filter((call) => subagentMatches(call, name, match));
       const n = matched.length;
-      const score = match?.count !== undefined ? (n === match.count ? 1 : 0) : n >= 1 ? 1 : 0;
-      return { score, evidence: describeSubagents(matched.length ? matched : ctx.facts.subagentCalls) };
+      const ok = match?.count !== undefined ? n === match.count : n >= 1;
+      if (ok) return { score: 1, received: describeSubagents(matched) };
+      const definitiveOvershoot = match?.count !== undefined && n > match.count;
+      if (!definitiveOvershoot) {
+        const gap = coverageGap(ctx, "actions");
+        if (gap) return gap;
+      }
+      return { score: 0, received: describeSubagents(matched.length ? matched : ctx.facts.subagentCalls) };
     },
   };
 }
@@ -238,8 +342,18 @@ export function eventOfType(type: string, opts?: { count?: number }): Spec {
     severity: "gate",
     evaluate: (ctx) => {
       const n = ctx.events.filter((e) => e.type === type).length;
-      if (opts?.count !== undefined) return n === opts.count ? 1 : 0;
-      return n >= 1 ? 1 : 0;
+      const ok = opts?.count !== undefined ? n === opts.count : n >= 1;
+      if (ok) return 1;
+      const definitiveOvershoot = opts?.count !== undefined && n > opts.count;
+      if (!definitiveOvershoot) {
+        const gap = coverageGap(ctx, "events");
+        if (gap) return gap;
+      }
+      return {
+        score: 0,
+        expected: opts?.count !== undefined ? `exactly ${opts.count} × ${type}` : `≥1 × ${type}`,
+        received: `${n} × ${type}`,
+      };
     },
   };
 }
@@ -248,7 +362,13 @@ export function notEventOfType(type: string): Spec {
   return {
     name: `notEvent(${type})`,
     severity: "gate",
-    evaluate: (ctx) => (ctx.events.some((e) => e.type === type) ? 0 : 1),
+    evaluate: (ctx) => {
+      const hits = ctx.events.filter((e) => e.type === type);
+      if (hits.length > 0) return { score: 0, received: `${hits.length} × ${type}` };
+      const gap = coverageGap(ctx, "events");
+      if (gap) return gap;
+      return 1;
+    },
   };
 }
 
@@ -261,19 +381,32 @@ export function eventOrder(types: StreamEvent["type"][]): Spec {
       for (const ev of ctx.events) {
         if (i < types.length && ev.type === types[i]) i++;
       }
-      return i === types.length ? 1 : 0;
+      if (i === types.length) return 1;
+      const gap = coverageGap(ctx, "events");
+      if (gap) return gap;
+      return {
+        score: 0,
+        expected: types.join(" → "),
+        received: `missing ${types[i]} (matched ${i}/${types.length})`,
+      };
     },
   };
 }
 
+/** label 是失败时的全部解释(谓词不透明),必填、进断言标题。 */
 export function eventsSatisfy(
+  label: string,
   predicate: (events: readonly StreamEvent[]) => boolean,
-  label = "predicate",
 ): Spec {
   return {
-    name: `eventsSatisfy(${label})`,
+    name: label,
     severity: "gate",
-    evaluate: (ctx) => (predicate(ctx.events) ? 1 : 0),
+    evaluate: (ctx) => {
+      if (predicate(ctx.events)) return 1;
+      const gap = coverageGap(ctx, "events");
+      if (gap) return gap;
+      return { score: 0, received: `${ctx.events.length} events in scope` };
+    },
   };
 }
 
@@ -293,7 +426,10 @@ export function fileChanged(path: string): Spec {
   return {
     name: `fileChanged(${path})`,
     severity: "gate",
-    evaluate: (ctx) => (ctx.diff.generatedFiles[path] !== undefined ? 1 : 0),
+    evaluate: (ctx) =>
+      ctx.diff.generatedFiles[path] !== undefined
+        ? 1
+        : { score: 0, expected: "changed in diff", received: "not in diff" },
   };
 }
 
@@ -301,7 +437,8 @@ export function fileDeleted(path: string): Spec {
   return {
     name: `fileDeleted(${path})`,
     severity: "gate",
-    evaluate: (ctx) => (ctx.diff.deletedFiles.includes(path) ? 1 : 0),
+    evaluate: (ctx) =>
+      ctx.diff.deletedFiles.includes(path) ? 1 : { score: 0, expected: "deleted in diff", received: "not deleted" },
   };
 }
 
@@ -309,7 +446,11 @@ export function notInDiff(re: RegExp): Spec {
   return {
     name: `notInDiff(${re})`,
     severity: "gate",
-    evaluate: (ctx) => (diffMatchesRe(ctx.diff, re) ? 0 : 1),
+    evaluate: (ctx) => {
+      if (!diffMatchesRe(ctx.diff, re)) return 1;
+      const hit = Object.entries(ctx.diff.generatedFiles).find(([p, c]) => re.test(p) || re.test(c));
+      return { score: 0, received: hit ? `matched in ${hit[0]}` : "matched a deleted path" };
+    },
   };
 }
 
@@ -319,7 +460,10 @@ export function noFailedShellCommands(): Spec {
     severity: "gate",
     evaluate: (ctx) => {
       const failed = ctx.facts.toolCalls.filter((tc) => tc.name === "shell" && tc.status === "failed");
-      return { score: failed.length ? 0 : 1, evidence: describeCalls(failed) };
+      if (failed.length) return { score: 0, received: describeCalls(failed) };
+      const gap = coverageGap(ctx, "actions");
+      if (gap) return gap;
+      return 1;
     },
   };
 }
@@ -332,7 +476,11 @@ export function maxTokens(max: number): Spec {
     severity: "gate",
     evaluate: (ctx) => {
       const total = ctx.usage.inputTokens + ctx.usage.outputTokens;
-      return total <= max ? 1 : 0;
+      // 上限断言:实测已超限是确凿失败;未超限时缺 usage 不能按零聚合。
+      if (total > max) return { score: 0, expected: `≤ ${max} tokens`, received: `${total} tokens` };
+      const gap = coverageGap(ctx, "usage");
+      if (gap) return gap;
+      return 1;
     },
   };
 }
@@ -343,7 +491,10 @@ export function maxCost(usd: number): Spec {
     severity: "gate",
     evaluate: (ctx) => {
       const cost = ctx.usage.costUSD ?? 0;
-      return cost <= usd ? 1 : 0;
+      if (cost > usd) return { score: 0, expected: `≤ $${usd}`, received: `$${cost.toFixed(4)}` };
+      const gap = coverageGap(ctx, "usage");
+      if (gap) return gap;
+      return 1;
     },
   };
 }

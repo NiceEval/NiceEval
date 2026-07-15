@@ -135,7 +135,7 @@ async function seedComposedRoot(): Promise<string> {
           name: 'fileChanged("src/components/Button.tsx")',
           severity: "gate",
           score: 0,
-          passed: false,
+          outcome: "failed" as const,
           detail: "file was not modified",
         },
       ],
@@ -280,15 +280,15 @@ describe("单 eval 详情", () => {
               name: 'calledTool("get_weather")',
               severity: "gate",
               score: 0,
-              passed: false,
+              outcome: "failed" as const,
               detail: "tool was never called",
             },
-            { name: "succeeded()", severity: "gate", score: 1, passed: true },
+            { name: "succeeded()", severity: "gate", score: 1, outcome: "passed" as const },
             {
               name: 'judge("回答基于实时数据")',
               severity: "soft",
               score: 0.2,
-              passed: false,
+              outcome: "failed" as const,
               detail: "reply invents a temperature without any tool call",
             },
           ],
@@ -341,7 +341,7 @@ describe("--history 时间轴", () => {
         res("weather/brooklyn", "failed", {
           attempt: 1,
           estimatedCostUSD: 0.04,
-          assertions: [{ name: 'calledTool("get_weather")', severity: "gate", score: 0, passed: false }],
+          assertions: [{ name: 'calledTool("get_weather")', severity: "gate", score: 0, outcome: "failed" as const }],
         }),
       ],
     );
@@ -549,7 +549,7 @@ describe("--eval", () => {
       root,
       "2026-07-08T10-00-00-000Z",
       { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" },
-      [res("weather/brooklyn", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, passed: false }] })],
+      [res("weather/brooklyn", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, outcome: "failed" as const }] })],
     );
     const { out, code } = await show(root, ["weather/brooklyn"], { eval: true });
     expect(code).toBe(0);
@@ -569,11 +569,11 @@ describe("--eval", () => {
               name: 'calledTool("get_weather")',
               severity: "gate",
               score: 0,
-              passed: false,
+              outcome: "failed" as const,
               detail: "tool was never called",
               loc: { file: "evals/weather/brooklyn.eval.ts", line: 2 },
             },
-            { name: "unlocated()", severity: "soft", score: 0.5, passed: false, detail: "no loc on this one" },
+            { name: "unlocated()", severity: "soft", score: 0.5, outcome: "failed" as const, detail: "no loc on this one" },
           ],
         }),
       ],
@@ -599,7 +599,7 @@ describe("--eval", () => {
   it("源码行标注保留 group 与值断言的 expected/received", async () => {
     const root = await makeRoot();
     const dir = await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
-      res("manager", "failed", { assertions: [{ name: "equals(4)", severity: "gate", score: 0, passed: false, evidence: "1", group: "Issue 15193", loc: { file: "evals/manager.eval.ts", line: 1 } }] }),
+      res("manager", "failed", { assertions: [{ name: "equals(4)", severity: "gate", score: 0, outcome: "failed" as const, expected: "4", received: "1", groupPath: ["Issue 15193"], loc: { file: "evals/manager.eval.ts", line: 1 } }] }),
     ]);
     const attemptDir = join(dir, "manager/a0");
     const content = "t.check(actual, equals(expected));\n";
@@ -618,7 +618,7 @@ describe("show @<locator>", () => {
   it("默认页直接解释失败断言的 group、期望值、实际值和源码位置", async () => {
     const root = await makeRoot();
     await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
-      res("manager", "failed", { assertions: [{ name: "equals(4)", severity: "gate", score: 0, passed: false, evidence: "1", group: "Issue 15193", loc: { file: "evals/manager.eval.ts", line: 40, column: 11 } }] }),
+      res("manager", "failed", { assertions: [{ name: "equals(4)", severity: "gate", score: 0, outcome: "failed" as const, expected: "4", received: "1", groupPath: ["Issue 15193"], loc: { file: "evals/manager.eval.ts", line: 40, column: 11 } }] }),
     ]);
     const results = await openResults(root);
     const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;

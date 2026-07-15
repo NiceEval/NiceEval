@@ -73,6 +73,41 @@ export interface AgentSetupManifest {
   pythonPlugins?: Array<{ package: string }>;
 }
 
+// ───────────────────────── 证据覆盖声明 ─────────────────────────
+
+/** 证据通道的覆盖状态。省略(不声明)= unknown,不是 complete——消费侧与 unavailable 同样保守。 */
+export type CoverageStatus = "complete" | "partial" | "unavailable";
+
+/** 单个证据通道的覆盖声明:状态 + 可选的人可读原因(如 "stream reconnected mid-turn")。 */
+export interface CoverageDeclaration {
+  status: CoverageStatus;
+  reason?: string;
+}
+
+/**
+ * 覆盖声明(EvidenceCoverage):完整性不是口头承诺,是随数据走的声明
+ * (见 docs/feature/adapters/architecture/evidence.md)。两层:
+ * - Agent 级默认(`defineAgent` / `defineSandboxAgent` 的 `coverage`)声明该 Adapter 的常态覆盖;
+ *   官方 SDK 适配器显式声明全通道 complete(用 `completeCoverage` 常量)。
+ * - Turn 级降级(`Turn.coverage`)只用于相对 Agent 默认值降级(这一轮流断了 / 拿不到 usage),
+ *   不能把 Agent 未声明的通道升格成 complete。
+ * 整个 Agent 不声明时全部通道视为 unknown。
+ */
+export interface EvidenceCoverage {
+  /** 完整事件流(event / notEvent / order 的依据)。 */
+  events?: CoverageDeclaration;
+  /** action 生命周期(工具正负断言、顺序、失败的依据)。 */
+  actions?: CoverageDeclaration;
+  /** assistant / user message(reply、messageIncludes 的依据)。 */
+  messages?: CoverageDeclaration;
+  /** usage(token / cost 上限断言的依据)。 */
+  usage?: CoverageDeclaration;
+  /** Turn status 的真实性(succeeded / parked 的依据)——恒 completed 的映射必须声明非 complete。 */
+  status?: CoverageDeclaration;
+  /** Turn.data(outputEquals / outputMatches 的依据)。 */
+  data?: CoverageDeclaration;
+}
+
 /** 随一轮消息附带的文件(图片等多模态输入)。 */
 export interface InputFile {
   /** 文件名(可选,供 adapter / 模型参考)。 */
@@ -111,6 +146,11 @@ export interface Turn {
   readonly data?: unknown;
   readonly status: "completed" | "failed" | "waiting";
   readonly usage?: Usage;
+  /**
+   * 本轮相对 Agent 默认覆盖的降级声明(这一轮流断了、拿不到 usage 等);
+   * 只能降级,不能把 Agent 未声明的通道升格成 complete(见 EvidenceCoverage)。
+   */
+  readonly coverage?: EvidenceCoverage;
 }
 
 /**
@@ -273,6 +313,8 @@ export interface Agent {
    * `t.sandbox`/`t.sandbox.fileChanged()` 等文件系统断言,见 docs-site「能力从哪来」一节。
    */
   readonly kind: "sandbox" | "remote";
+  /** 该 Adapter 的常态证据覆盖声明;省略 = 全通道 unknown(见 EvidenceCoverage)。 */
+  coverage?: EvidenceCoverage;
   setup?: AgentSetup;
   /** OTLP 导出配置(仅当此字段存在时运行器才为该 agent 开 OTLP 接收);与 setup 分开,见 AgentTracing。 */
   tracing?: AgentTracing;
@@ -286,6 +328,8 @@ export interface Agent {
 export interface SandboxAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
+  /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
+  coverage?: EvidenceCoverage;
   /**
    * 每个沙箱一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
    * 本轮内不变的东西)。运行器在沙箱备好(上传/基线/eval.setup 之后)、第一次 send 前
@@ -306,6 +350,8 @@ export interface SandboxAgentDef {
 export interface RemoteAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
+  /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
+  coverage?: EvidenceCoverage;
   /**
    * 每个 attempt 一次(remote agent 没有真实沙箱,运行器会传入一个仅含 `workdir`/`sandboxId`/
    * `otlpHost`/`stop` 等元信息的 stub `Sandbox`,其余方法调用即抛错——不要在这里调用

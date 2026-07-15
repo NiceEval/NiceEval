@@ -4,7 +4,8 @@
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { SessionManager, RunSession, lastAssistantText } from "./session.ts";
-import { AssertionCollector, computePassed } from "../scoring/collector.ts";
+import { AssertionCollector, computePassed, unavailable } from "../scoring/collector.ts";
+import type { ResolvedCoverage } from "../scoring/coverage.ts";
 import { deepEqual, validateSchema } from "../scoring/match.ts";
 import type { Spec } from "../scoring/collector.ts";
 import * as Scoped from "../scoring/scoped.ts";
@@ -168,6 +169,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     getEvents: () => readonly StreamEvent[],
     getStatus: () => "completed" | "failed" | "waiting",
     getUsage: () => Usage,
+    getCoverage: () => ResolvedCoverage,
   ) {
     return collector.record({
       ...spec,
@@ -179,6 +181,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
           facts: deriveRunFacts(events),
           status: getStatus(),
           usage: getUsage(),
+          coverage: getCoverage(),
         });
       },
     });
@@ -196,23 +199,24 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
 
   function makeSessionHandle(session: RunSession): SessionHandle {
     const scoped = (spec: Spec) =>
-      recordScoped(spec, () => session.events, () => session.lastStatus, () => session.usage);
+      recordScoped(spec, () => session.events, () => session.lastStatus, () => session.usage, () => session.coverage);
 
     const handle: SessionHandle = {
-      send: async (text) => makeTurnHandle(await manager.send(session, text), collector, deps, text),
-      sendFile: async (path, text) =>
-        makeTurnHandle(await manager.send(session, text ?? "", [await readInputFile(path)]), collector, deps, text ?? ""),
+      send: async (text) => {
+        const turn = await manager.send(session, text);
+        return makeTurnHandle(turn, collector, deps, text, manager.resolveTurnCoverage(turn));
+      },
+      sendFile: async (path, text) => {
+        const turn = await manager.send(session, text ?? "", [await readInputFile(path)]);
+        return makeTurnHandle(turn, collector, deps, text ?? "", manager.resolveTurnCoverage(turn));
+      },
       requireInputRequest: (filter) => requireInputRequest(session, filter),
       respond: async (...answers) => {
         if (answers.length === 0) throw new Error(t("hitl.respondEmpty"));
         const built = buildRespondInput(session, answers);
         session.pendingInputRequests.length = 0;
-        return makeTurnHandle(
-          await manager.send(session, built.text, undefined, built.responses),
-          collector,
-          deps,
-          built.text,
-        );
+        const turn = await manager.send(session, built.text, undefined, built.responses);
+        return makeTurnHandle(turn, collector, deps, built.text, manager.resolveTurnCoverage(turn));
       },
       respondAll: async (optionId) => {
         if (session.pendingInputRequests.length === 0) {
@@ -226,7 +230,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         }));
         session.pendingInputRequests.length = 0;
         const input = requests.map(() => optionId).join("\n");
-        return makeTurnHandle(await manager.send(session, input, undefined, responses), collector, deps, input);
+        const turn = await manager.send(session, input, undefined, responses);
+        return makeTurnHandle(turn, collector, deps, input, manager.resolveTurnCoverage(turn));
       },
       get reply() {
         return session.lastMessage;
@@ -251,7 +256,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       notEvent: (type) => scoped(Scoped.notEventOfType(type)),
       calledSubagent: (name, match) => scoped(Scoped.calledSubagent(name, match)),
       eventOrder: (types) => scoped(Scoped.eventOrder(types)),
-      eventsSatisfy: (predicate, label) => scoped(Scoped.eventsSatisfy(predicate, label)),
+      eventsSatisfy: (label, predicate) => scoped(Scoped.eventsSatisfy(label, predicate)),
       maxTokens: (max) => scoped(Scoped.maxTokens(max)),
       maxCost: (usd) => scoped(Scoped.maxCost(usd)),
       get usage() {
@@ -297,16 +302,17 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
 
     check: (value: unknown, assertion: ValueAssertion) => {
       // evaluate 读 spec 自己的 severity/threshold(而不是捕获记录时的快照):
-      // 句柄的 .gate()/.atLeast() 会事后改写 spec,evidence 判定必须和 finalize 同一口径。
+      // 句柄的 .gate()/.atLeast() 会事后改写 spec,received 判定必须和 finalize 同一口径。
       const spec: Spec = {
         name: assertion.name,
         severity: assertion.severity,
         threshold: assertion.threshold,
+        ...(assertion.isOptional ? { optional: true as const } : {}),
         evaluate: async (sc) => {
           const resolved = await resolveValue(value, sc);
           const score = await assertion.score(resolved);
           if (computePassed(spec.severity, spec.threshold, score)) return score;
-          return { score, evidence: previewCheckedValue(resolved) };
+          return { score, expected: assertion.expected, received: previewCheckedValue(resolved) };
         },
       };
       return collector.record(spec);
@@ -321,7 +327,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         name: assertion.name,
         severity: "gate",
         threshold: assertion.threshold,
-        evaluate: () => score,
+        evaluate: () =>
+          passed ? score : { score, expected: assertion.expected, received: previewCheckedValue(v) },
       });
       if (!passed) throw new EvalRequirementFailed(assertion.name);
       return value;
@@ -364,7 +371,13 @@ function mimeTypeFor(path: string): string {
   }
 }
 
-function makeTurnHandle(turn: Turn, collector: AssertionCollector, deps: ContextDeps, input: string): TurnHandle {
+function makeTurnHandle(
+  turn: Turn,
+  collector: AssertionCollector,
+  deps: ContextDeps,
+  input: string,
+  coverage: ResolvedCoverage,
+): TurnHandle {
   const message = lastAssistantText(turn.events) ?? "";
   const facts = deriveRunFacts(turn.events);
   const usage = turn.usage ?? { inputTokens: 0, outputTokens: 0 };
@@ -379,6 +392,7 @@ function makeTurnHandle(turn: Turn, collector: AssertionCollector, deps: Context
           facts,
           status: turn.status,
           usage,
+          coverage,
         }),
     });
 
@@ -404,13 +418,28 @@ function makeTurnHandle(turn: Turn, collector: AssertionCollector, deps: Context
       collector.record({
         name: "outputEquals",
         severity: "gate",
-        evaluate: () => (deepEqual(turn.data, value) ? 1 : 0),
+        evaluate: () => {
+          if (deepEqual(turn.data, value)) return 1;
+          // 正断言:data 通道非 complete 且这一轮根本没给 data,「没采到」不能算成「没输出」。
+          if (turn.data === undefined && coverage.data.status !== "complete") {
+            const c = coverage.data;
+            return unavailable(`coverage:data=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
+          }
+          return { score: 0, expected: brief(value, 800), received: brief(turn.data, 800) };
+        },
       }),
     outputMatches: (schema) =>
       collector.record({
         name: "outputMatches",
         severity: "gate",
-        evaluate: async () => ((await validateSchema(turn.data, schema)) ? 1 : 0),
+        evaluate: async () => {
+          if (await validateSchema(turn.data, schema)) return 1;
+          if (turn.data === undefined && coverage.data.status !== "complete") {
+            const c = coverage.data;
+            return unavailable(`coverage:data=${c.status}${c.reason ? ` (${c.reason})` : ""}`);
+          }
+          return { score: 0, received: brief(turn.data, 800) };
+        },
       }),
     messageIncludes: (token) => scoped(Scoped.messageIncludes(token)),
     succeeded: () => scoped(Scoped.succeeded()),
@@ -426,7 +455,7 @@ function makeTurnHandle(turn: Turn, collector: AssertionCollector, deps: Context
     notEvent: (type) => scoped(Scoped.notEventOfType(type)),
     calledSubagent: (name, match) => scoped(Scoped.calledSubagent(name, match)),
     eventOrder: (types) => scoped(Scoped.eventOrder(types)),
-    eventsSatisfy: (predicate, label) => scoped(Scoped.eventsSatisfy(predicate, label)),
+    eventsSatisfy: (label, predicate) => scoped(Scoped.eventsSatisfy(label, predicate)),
     maxTokens: (max) => scoped(Scoped.maxTokens(max)),
     maxCost: (usd) => scoped(Scoped.maxCost(usd)),
     judge: buildJudge({

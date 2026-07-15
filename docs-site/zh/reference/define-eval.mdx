@@ -380,10 +380,10 @@ eventOrder(types: StreamEvent["type"][]): AssertionHandle;
 #### `eventsSatisfy`
 
 ```ts
-eventsSatisfy(predicate: (events: readonly StreamEvent[]) => boolean, label?: string): AssertionHandle;
+eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): AssertionHandle;
 ```
 
-用自定义谓词对默认会话累计的整段事件流断言;失败时用 label 说明原因。
+用自定义谓词对默认会话累计的整段事件流断言;label 必填、进断言标题。
 
 #### `sandbox`
 
@@ -633,10 +633,10 @@ eventOrder(types: StreamEvent["type"][]): AssertionHandle;
 #### `eventsSatisfy`
 
 ```ts
-eventsSatisfy(predicate: (events: readonly StreamEvent[]) => boolean, label?: string): AssertionHandle;
+eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): AssertionHandle;
 ```
 
-用自定义谓词对本轮整段事件流断言;失败时用 label 说明原因。
+用自定义谓词对本轮整段事件流断言;label 必填、进断言标题(谓词不透明,解释责任在 label)。
 
 #### `maxTokens`
 

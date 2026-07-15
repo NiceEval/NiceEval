@@ -6,13 +6,13 @@
 // built-in-user-parity.test.tsx 以这份 fixture 证明「内置报告就是普通用户报告」——同一 Selection 下
 // 两者 resolve 出的树结构化相等,渲染出的事实相同,而不是靠注释声称。
 
-import { Col, ExperimentList, MetricScatter, costUSD, defineReport, passRate } from "../../../src/report/index.ts";
+import { Col, ExperimentList, MetricScatter, costUSD, defineReport, taskPassRate } from "../../../src/report/index.ts";
 
 export default defineReport(async ({ selection }) => {
   const experiments = await ExperimentList.data(selection);
   return (
     <Col>
-      <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={passRate} />
+      <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={taskPassRate} />
       <ExperimentList items={experiments} filter />
     </Col>
   );

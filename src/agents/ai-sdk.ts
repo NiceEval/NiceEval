@@ -13,6 +13,7 @@
 //     (不在 steps 里),这里挖出来补成 `action.result` —— 拒绝(execution-denied)映射成
 //     `status: "rejected"`,喂 `calledTool(..., { status: "rejected" })` 与 `noFailedActions()`。
 
+import { completeCoverage } from "../scoring/coverage.ts";
 import { randomUUID } from "node:crypto";
 
 import { defineAgent } from "../define.ts";
@@ -466,6 +467,8 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
 
   return defineAgent({
     name: options.name ?? "ai-sdk",
+    // 官方 SDK 完整 steps/output:全通道 complete(见 adapters/architecture/evidence.md)。
+    coverage: completeCoverage,
     // tracing 开了才让运行器为这个 agent 起 OTLP 接收器(ctx.telemetry 才会出现);
     // AgentTracing 的其余字段(env/configure/scope)这里都用不上,空对象即可。
     tracing: options.tracing ? {} : undefined,

@@ -6,7 +6,7 @@
 // closedQA / factuality / summarizes 直接用 autoevals 库(braintrust)。
 
 import { ClosedQA, Factuality, Summary } from "autoevals";
-import type { EvalScore } from "./collector.ts";
+import { unavailable, type EvalScore, type EvalUnavailable } from "./collector.ts";
 import type { AssertionHandle, AutoevalsNamespace, JudgeConfig, JudgeNamespace, ScoringContext } from "../types.ts";
 import { getEnv } from "../util.ts";
 import { t } from "../i18n/index.ts";
@@ -43,24 +43,13 @@ export interface JudgeDeps {
   record(spec: {
     name: string;
     severity: "soft";
-    evaluate(ctx: ScoringContext): Promise<EvalScore>;
+    evaluate(ctx: ScoringContext): Promise<EvalScore | EvalUnavailable>;
   }): AssertionHandle;
   judge: JudgeConfig | undefined;
   getOutput: () => string;
   /** 最后一条用户消息,作为 autoevals 的 input 字段。 */
   getInput: () => string;
   signal?: AbortSignal;
-}
-
-/** 没解析到 judge key 时返回的 no-op 命名空间:judge 断言静默跳过(不记录)。 */
-function noOpJudge(): JudgeNamespace {
-  const handle: AssertionHandle = {
-    atLeast: () => handle,
-    gate: () => handle,
-  };
-  const skip = () => handle;
-  const noOpAutoevals: AutoevalsNamespace = { closedQA: skip, factuality: skip, summarizes: skip };
-  return { autoevals: noOpAutoevals };
 }
 
 /** 预检显式配置的 judge:验证 model + API key 存在,并发最小请求确认端点可达。
@@ -99,11 +88,12 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
   return undefined;
 }
 
-/** 构造 t.judge 命名空间。每个方法 record 一条延迟 soft 断言。 */
+/** 构造 t.judge 命名空间。每个方法 record 一条延迟 soft 断言。
+ *  没解析到模型或 API key 时【不静默、不抛错】:该条断言照常记录,finalize 时落成
+ *  `outcome: "unavailable"`(带机器可读 reason)——rubric 写了就必须留下记录,评不了的
+ *  结论按 Severity 与 Verdict 的折叠规则使 attempt errored(除非作者链 `.optional()`)。 */
 export function buildJudge(deps: JudgeDeps): JudgeNamespace {
   const resolved = resolveJudge(deps.judge);
-  // 没 key 就静默跳过 judge —— eval 不必再手动 gate「环境里有没有 judge key」。
-  if (!resolved.apiKey) return noOpJudge();
 
   const materialFor = async (ctx: ScoringContext, on?: string): Promise<string> => {
     if (on) {
@@ -124,16 +114,23 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
 
   // 三个 autoevals 方法只差评分器和材料字段名,共享行为(record spec / 材料构造 /
   // 分数归一 / evidence)单一出处。model 解析:单次 { model } → judge config →
-  // NICEEVAL_JUDGE_MODEL;都没有是配置错误,调用点即报(不静默跳过,会藏住误配)。
+  // NICEEVAL_JUDGE_MODEL;没解析到模型或 key 时该条记 unavailable(带 reason),
+  // 绝不静默消失、也不在调用点崩——评不了的折叠交给 Severity 与 Verdict 规则。
   const makeAutoeval =
     (kind: "closedQA" | "factuality" | "summarizes", scorer: Scorer, payloadKey: "criteria" | "expected") =>
     (reference: string, opts?: { on?: string; model?: string }) => {
       const model = opts?.model ?? resolved.model;
-      if (!model) throw new Error(t("judge.modelMissing"));
       return deps.record({
         name: `judge:autoevals:${kind}`,
         severity: "soft",
         evaluate: async (ctx) => {
+          if (!model) {
+            return unavailable("judge-model-unresolved (no model in config, NICEEVAL_JUDGE_MODEL unset)");
+          }
+          if (!resolved.apiKey) {
+            const envHint = deps.judge?.apiKeyEnv ?? "NICEEVAL_JUDGE_KEY / OPENAI_API_KEY";
+            return unavailable(`judge-key-unresolved (${envHint} unset)`);
+          }
           const output = await materialFor(ctx, opts?.on);
           const result = await scorer({
             input: deps.getInput(),

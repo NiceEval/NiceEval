@@ -50,6 +50,26 @@ describe("fromClaudeSdkMessages", () => {
     expect(s.add({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: "denied" }] } })).toEqual([]);
   });
 
+  it("assistant 的 thinking 块 → thinking 事件,与 text/tool_use 保持原始顺序", () => {
+    const s = fromClaudeSdkMessages();
+    expect(
+      s.add({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "thinking", thinking: "先查天气", signature: "sig-1" },
+            { type: "text", text: "我来查" },
+            { type: "tool_use", id: "tu1", name: "get_weather", input: { city: "北京" } },
+          ],
+        },
+      }),
+    ).toEqual([
+      { type: "thinking", text: "先查天气" },
+      { type: "message", role: "assistant", text: "我来查" },
+      { type: "action.called", callId: "tu1", name: "get_weather", input: { city: "北京" } },
+    ]);
+  });
+
   it("stream_event 等未知帧返回 []", () => {
     expect(fromClaudeSdkMessages().add({ type: "stream_event" })).toEqual([]);
   });
@@ -85,6 +105,64 @@ describe("fromPiAgentEvents", () => {
     expect(s.add({ type: "tool_execution_end", toolCallId: "c9", isError: true })).toEqual([
       { type: "action.result", callId: "c9", output: undefined, status: "rejected" },
     ]);
+  });
+
+  it("三段式聚合成一条:start/delta 不产事件,end 帧的完整 content 只落一条", () => {
+    const s = fromPiAgentEvents();
+    expect(s.add({ type: "message_start", message: { role: "assistant", content: [] } })).toEqual([]);
+    expect(s.add({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "18" } })).toEqual([]);
+    expect(s.add({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: " 度" } })).toEqual([]);
+    // end 帧带完整 content:以它为准,增量不重复落地
+    expect(s.add({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "18 度" }] } })).toEqual([
+      { type: "message", role: "assistant", text: "18 度" },
+    ]);
+  });
+
+  it("end 帧缺 content 时用累加的 text/thinking 增量兜底", () => {
+    const s = fromPiAgentEvents();
+    s.add({ type: "message_start", message: { role: "assistant" } });
+    s.add({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "想" } });
+    s.add({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "想" } });
+    s.add({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "18 度" } });
+    expect(s.add({ type: "message_end", message: { role: "assistant" } })).toEqual([
+      { type: "message", role: "assistant", text: "18 度" },
+      { type: "thinking", text: "想想" },
+    ]);
+  });
+
+  it("只有 start/delta 的截断流不产半条消息,下一条消息不串入旧增量", () => {
+    const s = fromPiAgentEvents();
+    expect(s.add({ type: "message_start", message: { role: "assistant" } })).toEqual([]);
+    expect(s.add({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "半截" } })).toEqual([]);
+    // 流在这里断掉:没有 message_end,什么都不落地。新消息开始后旧增量作废。
+    expect(s.add({ type: "message_start", message: { role: "assistant" } })).toEqual([]);
+    expect(s.add({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "新消息" }] } })).toEqual([
+      { type: "message", role: "assistant", text: "新消息" },
+    ]);
+  });
+
+  it("失败状态帧:stopReason error/aborted → error 事件 + failed", () => {
+    const s = fromPiAgentEvents();
+    expect(s.failed).toBe(false);
+    expect(
+      s.add({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "试到一半" }], stopReason: "error", errorMessage: "boom" } }),
+    ).toEqual([
+      { type: "message", role: "assistant", text: "试到一半" },
+      { type: "error", message: "boom" },
+    ]);
+    expect(s.failed).toBe(true);
+
+    const aborted = fromPiAgentEvents();
+    expect(aborted.add({ type: "message_end", message: { role: "assistant", stopReason: "aborted" } })).toEqual([
+      { type: "error", message: "pi agent stopReason=aborted" },
+    ]);
+    expect(aborted.failed).toBe(true);
+  });
+
+  it("正常收尾(stopReason stop/toolUse)不置 failed", () => {
+    const s = fromPiAgentEvents();
+    s.add({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "好了" }], stopReason: "stop" } });
+    expect(s.failed).toBe(false);
   });
 });
 

@@ -15,7 +15,7 @@ export function verdictLabel(verdict: Verdict, t: T): string {
 
 // Only gate-severity failures are eval "failure reasons"; soft failures show as scores
 export function failingAssertions(result: ViewResult): Assertion[] {
-  return (result.assertions || []).filter((a: Assertion) => !a.passed && a.severity === "gate");
+  return (result.assertions || []).filter((a: Assertion) => a.outcome === "failed" && a.severity === "gate");
 }
 
 export function reasonFor(result: ViewResult, failedGates: Assertion[]): string {

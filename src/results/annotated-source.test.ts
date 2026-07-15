@@ -13,9 +13,9 @@ function assertion(over: Partial<AssertionResult> & Pick<AssertionResult, "name"
   return {
     severity: "soft",
     score: 1,
-    passed: true,
+    outcome: "passed" as const,
     ...over,
-  };
+  } as AssertionResult;
 }
 
 describe("buildAnnotatedEvalSource", () => {
@@ -94,10 +94,10 @@ describe("buildAnnotatedEvalSource", () => {
   it("computes summary counts across passed/failed and gate/soft, mapped and unmapped alike", () => {
     const content = "line 1\nline 2\n";
     const assertions = [
-      assertion({ name: "a", severity: "gate", passed: true, loc: { file: SOURCE_PATH, line: 1 } }),
-      assertion({ name: "b", severity: "gate", passed: false, loc: { file: SOURCE_PATH, line: 1 } }),
-      assertion({ name: "c", severity: "soft", passed: true, loc: { file: SOURCE_PATH, line: 2 } }),
-      assertion({ name: "d", severity: "soft", passed: false }), // unmapped
+      assertion({ name: "a", severity: "gate", outcome: "passed" as const, loc: { file: SOURCE_PATH, line: 1 } }),
+      assertion({ name: "b", severity: "gate", outcome: "failed" as const, loc: { file: SOURCE_PATH, line: 1 } }),
+      assertion({ name: "c", severity: "soft", outcome: "passed" as const, loc: { file: SOURCE_PATH, line: 2 } }),
+      assertion({ name: "d", severity: "soft", outcome: "failed" as const }), // unmapped
     ];
 
     const model = buildAnnotatedEvalSource({ path: SOURCE_PATH, content }, assertions);

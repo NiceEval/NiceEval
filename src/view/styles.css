@@ -849,6 +849,7 @@ a.brand:hover { opacity: 0.75; }
 .gstat.good { color: var(--good); }
 .gstat.bad { color: var(--bad); }
 .gstat.warn { color: var(--warn); }
+.gstat.na { color: var(--muted, #8a8f98); }
 .gsend { width: 13px; height: 13px; flex-shrink: 0; color: var(--blue); }
 
 .ctext { white-space: pre; color: var(--text); padding-left: 8px; }
@@ -866,6 +867,8 @@ a.brand:hover { opacity: 0.75; }
 .abadge.good { color: var(--good); border-color: color-mix(in oklch, var(--good), var(--line) 55%); background: color-mix(in oklch, var(--good), transparent 90%); }
 .abadge.bad { color: var(--bad); border-color: color-mix(in oklch, var(--bad), var(--line) 55%); background: color-mix(in oklch, var(--bad), transparent 90%); }
 .abadge.warn { color: var(--warn); border-color: color-mix(in oklch, var(--warn), var(--line) 55%); background: color-mix(in oklch, var(--warn), transparent 90%); }
+/* unavailable:独立第三态(非红非绿),证据评不了 ≠ 失败 */
+.abadge.na { color: var(--muted, #8a8f98); border-color: var(--line); background: color-mix(in oklch, var(--muted, #8a8f98), transparent 92%); }
 .abadge-th { opacity: 0.55; font-weight: 400; }
 
 /* 可点击行的显式提示:send 行一个 "reply" 药丸,断言行一个右侧展开箭头;hover 时变亮。 */

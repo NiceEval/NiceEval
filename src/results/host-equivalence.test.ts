@@ -339,7 +339,7 @@ describe("selectCurrentResults · 现刻水位结构化身份", () => {
     const rootA = await makeRoot();
     const rootB = await makeRoot();
     // 失败 eval 让 id 现于两面(通过 eval 只进折叠子行,不便断言);qa / qb 各根独有。
-    const boom = { assertions: [{ name: "succeeded()", severity: "gate" as const, score: 0, passed: false, detail: "boom" }] };
+    const boom = { assertions: [{ name: "succeeded()", severity: "gate" as const, score: 0, outcome: "failed" as const, detail: "boom" }] };
     await writeSnapshot(rootA, "2026-07-01T08-00-00-000Z", { experimentId: "onlyA/bub", startedAt: "2026-07-01T08:00:00.000Z" }, [res("qa", "failed", boom)]);
     await writeSnapshot(rootB, "2026-07-02T08-00-00-000Z", { experimentId: "onlyB/bub", startedAt: "2026-07-02T08:00:00.000Z" }, [res("qb", "failed", boom)]);
     const normB = normalizeSelection(selectCurrentResults(await openResults(rootB)));
@@ -389,7 +389,7 @@ async function seedPartialRerun(): Promise<string> {
   const root = await makeRoot();
   await writeSnapshot(root, "2026-07-01T08-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-01T08:00:00.000Z" }, [
     res("q1", "passed"),
-    res("q2", "failed", { assertions: [{ name: 'fileChanged("q2.tsx")', severity: "gate", score: 0, passed: false, detail: "file was not modified" }] }),
+    res("q2", "failed", { assertions: [{ name: 'fileChanged("q2.tsx")', severity: "gate", score: 0, outcome: "failed" as const, detail: "file was not modified" }] }),
   ]);
   await writeSnapshot(root, "2026-07-02T08-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-02T08:00:00.000Z" }, [
     res("q1", "passed"),
@@ -404,7 +404,7 @@ async function seedPartialCoverage(): Promise<string> {
     root,
     "2026-07-01T08-00-00-000Z",
     { experimentId: "compare/bub", startedAt: "2026-07-01T08:00:00.000Z", knownEvalIds: ["q1", "q2"] },
-    [res("q1", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, passed: false, detail: "boom" }] })],
+    [res("q1", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, outcome: "failed" as const, detail: "boom" }] })],
   );
   return root;
 }
@@ -431,7 +431,7 @@ describe("宿主接线 · show text 面与 view web 面反映同一批事实", (
   it("位置前缀收窄:两扇门都只见范围内的 eval,范围外一致排除", async () => {
     const root = await makeRoot();
     await writeSnapshot(root, "2026-07-01T08-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-01T08:00:00.000Z" }, [
-      res("weather/brooklyn", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, passed: false, detail: "boom" }] }),
+      res("weather/brooklyn", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, outcome: "failed" as const, detail: "boom" }] }),
       res("weather/queens", "passed"),
       res("algebra/quadratic", "passed"),
     ]);
@@ -497,7 +497,7 @@ function hasPartialCoverageHtml(html: string): boolean {
   it("通过计数一致:同一 fixture 两面反映 3 过 1 败", async () => {
     const root = await makeRoot();
     await writeSnapshot(root, "2026-07-01T08-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-01T08:00:00.000Z" }, [
-      res("q1", "failed", { durationMs: 40_000, estimatedCostUSD: 0.04, assertions: [{ name: "succeeded()", severity: "gate", score: 0, passed: false, detail: "boom" }] }),
+      res("q1", "failed", { durationMs: 40_000, estimatedCostUSD: 0.04, assertions: [{ name: "succeeded()", severity: "gate", score: 0, outcome: "failed" as const, detail: "boom" }] }),
       res("q2", "passed", { durationMs: 2_000, estimatedCostUSD: 0.02 }),
       res("q3", "passed", { durationMs: 2_000, estimatedCostUSD: 0.02 }),
       res("q4", "passed", { durationMs: 2_000, estimatedCostUSD: 0.02 }),

@@ -1,3 +1,4 @@
+import { completeCoverage } from "../scoring/coverage.ts";
 import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
@@ -70,6 +71,8 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
   return defineSandboxAgent({
     name: "claude-code",
+    // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
+    coverage: completeCoverage,
     spanMapper: mapClaudeCodeSpans,
 
     // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,

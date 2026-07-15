@@ -96,10 +96,10 @@ export interface ClaudeSdkStream {
 
 /**
  * Claude Agent SDK 消息流(`system` / `assistant` / `user` / `result`)→ 标准事件。
- * `assistant` 的 text/tool_use 块 → message / action.called;`user` 的 tool_result 块 →
- * action.result;`system`/`permission_denied` → rejected;`stream_event`(逐 token 渲染)
- * 整个忽略。HITL 的停轮判定(哪个工具被门控)是应用侧的知识,不在这里——扫描 add()
- * 返回的 action.called 自行决定。
+ * `assistant` 的 text/thinking/tool_use 块 → message / thinking / action.called;`user` 的
+ * tool_result 块 → action.result;`system`/`permission_denied` → rejected;`stream_event`
+ * (逐 token 渲染)整个忽略。HITL 的停轮判定(哪个工具被门控)是应用侧的知识,不在这里——
+ * 扫描 add() 返回的 action.called 自行决定。
  */
 export function fromClaudeSdkMessages(): ClaudeSdkStream {
   let sessionId: string | undefined;
@@ -152,6 +152,8 @@ export function fromClaudeSdkMessages(): ClaudeSdkStream {
             if (!isRecord(block)) continue;
             if (block.type === "text" && typeof block.text === "string" && block.text) {
               events.push({ type: "message", role: "assistant", text: block.text });
+            } else if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
+              events.push({ type: "thinking", text: block.thinking });
             } else if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
               events.push({ type: "action.called", callId: block.id, name: block.name, input: block.input as JsonValue });
             }
@@ -209,8 +211,14 @@ export interface PiAgentEventLike {
   message?: {
     role?: string;
     content?: unknown;
+    /** assistant 消息的收尾原因;"error" / "aborted" 表示这条消息以失败告终。 */
+    stopReason?: string;
+    /** stopReason 为 "error" 时的错误说明。 */
+    errorMessage?: string;
     usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: { total: number } };
   };
+  /** `message_update` 帧携带的增量事件(text_delta / thinking_delta 等)——只读 type/delta,防御式解析。 */
+  assistantMessageEvent?: { type?: string; delta?: unknown; [key: string]: unknown };
   [key: string]: unknown;
 }
 
@@ -219,17 +227,27 @@ export interface PiAgentStream {
   add(event: PiAgentEventLike): StreamEvent[];
   /** assistant `message_end` 逐条累加的用量。 */
   readonly usage: Usage | undefined;
+  /** assistant 消息以 stopReason "error" / "aborted" 收尾过。 */
+  readonly failed: boolean;
   /** 拒绝审批后续读前登记:该调用 `tool_execution_end` 的 isError 判成 "rejected" 而非 "failed"。 */
   markRejected(toolCallId: string): void;
 }
 
 /**
- * pi-agent-core 事件流(`message_end` / `tool_execution_start` / `tool_execution_end`)→
- * 标准事件。message_end 抠 assistant 文本与 thinking、累加 usage;
+ * pi-agent-core 事件流(`message_start` / `message_update` / `message_end` /
+ * `tool_execution_start` / `tool_execution_end`)→ 标准事件。消息三段式聚合成一条:
+ * message_start 清空增量缓冲、message_update 的 text_delta / thinking_delta 逐段累加、
+ * message_end 落地成 message / thinking(优先取 end 帧的完整 content,缺了用累加的增量兜底);
+ * 只有 start/delta 的截断流不产出半条消息。message_end 同时累加 usage;assistant 消息以
+ * stopReason "error" / "aborted" 收尾时记失败(`failed`)并发一条 error 事件。
  * tool_execution_start/end → action.called / action.result。
  */
 export function fromPiAgentEvents(): PiAgentStream {
   let usage: Usage | undefined;
+  let failed = false;
+  // message_start/update 累加的增量缓冲;message_end 落地后清空,截断流(无 end)不落地。
+  let deltaText = "";
+  let deltaThinking = "";
   const rejected = new Set<string>();
 
   const partText = (event: PiAgentEventLike, type: "text" | "thinking"): string => {
@@ -247,17 +265,44 @@ export function fromPiAgentEvents(): PiAgentStream {
     get usage() {
       return usage;
     },
+    get failed() {
+      return failed;
+    },
     markRejected(toolCallId) {
       rejected.add(toolCallId);
     },
     add(event) {
       const events: StreamEvent[] = [];
       switch (event.type) {
+        case "message_start": {
+          // 新消息开始:上一条没等到 message_end 的增量作废(不落地半条消息)。
+          deltaText = "";
+          deltaThinking = "";
+          break;
+        }
+        case "message_update": {
+          const e = event.assistantMessageEvent;
+          if (isRecord(e) && typeof e.delta === "string") {
+            if (e.type === "text_delta") deltaText += e.delta;
+            else if (e.type === "thinking_delta") deltaThinking += e.delta;
+          }
+          break;
+        }
         case "message_end": {
-          const text = partText(event, "text");
+          // 优先取 end 帧的完整 content;缺了(部分传输只带增量)用累加的 delta 兜底。
+          const text = partText(event, "text") || (event.message?.role === "assistant" ? deltaText : "");
           if (text) events.push({ type: "message", role: "assistant", text });
-          const thinking = partText(event, "thinking");
+          const thinking = partText(event, "thinking") || (event.message?.role === "assistant" ? deltaThinking : "");
           if (thinking) events.push({ type: "thinking", text: thinking });
+          deltaText = "";
+          deltaThinking = "";
+          if (event.message?.role === "assistant") {
+            const stopReason = event.message.stopReason;
+            if (stopReason === "error" || stopReason === "aborted") {
+              failed = true;
+              events.push({ type: "error", message: event.message.errorMessage ?? `pi agent stopReason=${stopReason}` });
+            }
+          }
           const u = event.message?.role === "assistant" ? event.message.usage : undefined;
           if (u) {
             usage = {
@@ -284,8 +329,8 @@ export function fromPiAgentEvents(): PiAgentStream {
           }
           break;
         }
-        // agent_start / turn_start / turn_end / message_start / message_update /
-        // tool_execution_update / agent_end:无对应 StreamEvent(message_end 已带完整文本)。
+        // agent_start / turn_start / turn_end / tool_execution_update / agent_end:
+        // 无对应 StreamEvent(消息文本统一在 message_end 落地)。
         default:
           break;
       }

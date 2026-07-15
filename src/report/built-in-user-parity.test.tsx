@@ -315,11 +315,11 @@ describe("必测场景:resolved data 事实", () => {
     const scatter = scatterOf(tree)!;
     const experiments = experimentListOf(tree)!;
 
-    // 散点:points=experiment、series=agent、x=cost、y=pass-rate
+    // 散点:points=experiment、series=agent、x=cost、y=task-pass-rate
     expect(scatter.points).toBe("experiment");
     expect(scatter.series).toBe("agent");
     expect(scatter.x.key).toBe("cost");
-    expect(scatter.y.key).toBe("pass-rate");
+    expect(scatter.y.key).toBe("task-pass-rate");
     expect(scatter.rows.map((r) => r.key).sort()).toEqual(["compare/bub-low", "compare/codex-mid", "solo/no-cost"]);
 
     const bub = scatter.rows.find((r) => r.key === "compare/bub-low")!;
@@ -330,7 +330,8 @@ describe("必测场景:resolved data 事实", () => {
     const codex = scatter.rows.find((r) => r.key === "compare/codex-mid")!;
     expect(codex.series).toBe("codex");
     expect(codex.x.value).toBeCloseTo(0.225, 10); // errored 0.3 与 passed 0.15,skipped 不计
-    expect(codex.y.value).toBeCloseTo(0.5, 10);
+    // taskPassRate:errored / skipped 都是 null 不进分母,只有 algebra/z 真被答过(通过)→ 1
+    expect(codex.y.value).toBeCloseTo(1, 10);
 
     // 场景 2:solo/no-cost 缺成本 → x 为 null(点在,不可画),y 仍有值
     const solo = scatter.rows.find((r) => r.key === "solo/no-cost")!;
@@ -507,10 +508,11 @@ describe("场景 7:en / zh-CN 数据 resolve 一次、chrome 分别本地化", (
     expect(bub.x.value).toBeCloseTo(0.1, 10);
     expect(bub.y.value).toBeCloseTo(0.75, 10);
     expect(codex.x.value).toBeCloseTo(0.225, 10);
-    expect(codex.y.value).toBeCloseTo(0.5, 10);
+    expect(codex.y.value).toBeCloseTo(1, 10); // taskPassRate:errored/skipped → null,只剩通过的 algebra/z
     expect(solo.x.value).toBeNull();
     expect(solo.y.value).toBeCloseTo(0.5, 10);
-    expect(experiments.map((e) => e.experimentId)).toEqual(["compare/bub-low", "compare/codex-mid", "solo/no-cost"]);
+    // ExperimentList 按 taskPassRate 从高到低:codex-mid(1)> bub-low(0.75)> solo(0.5)
+    expect(experiments.map((e) => e.experimentId)).toEqual(["compare/codex-mid", "compare/bub-low", "solo/no-cost"]);
   });
 
   it("spy 佐证:build() 里各计算函数恰好调用一次,随后两 locale 渲染不再重算", async () => {

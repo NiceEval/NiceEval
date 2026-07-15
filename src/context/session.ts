@@ -3,6 +3,7 @@
 
 import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, StreamEvent, Telemetry, TraceSpan, Turn, Usage } from "../types.ts";
 import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
+import { downgradeCoverage, resolveAgentCoverage, worstCoverage, type ResolvedCoverage } from "../scoring/coverage.ts";
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 
@@ -81,6 +82,8 @@ export class RunSession implements AgentSession {
   readonly events: StreamEvent[] = [];
   readonly pendingInputRequests: InputRequest[] = [];
   readonly usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, requests: 0 };
+  /** 本会话累计的证据覆盖(初值 = Agent 级默认,逐轮按 Turn.coverage 降级折叠)。 */
+  coverage!: ResolvedCoverage;
 }
 
 export interface SessionDeps {
@@ -104,6 +107,10 @@ export class SessionManager {
   readonly allEvents: StreamEvent[] = [];
   readonly usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, requests: 0 };
   lastStatus: "completed" | "failed" | "waiting" = "completed";
+  /** Agent 级默认覆盖(全通道解析,未声明 = unknown)。 */
+  readonly agentCoverage: ResolvedCoverage;
+  /** attempt 级累计覆盖:各轮解析后覆盖的最差值,随每次 send 折叠。 */
+  coverage: ResolvedCoverage;
 
   /** 归属到本 attempt 的 span(逐轮攒;attempt 末尾连同 sweep 的迟到 span 一起挂 trace)。 */
   readonly otelSpans: TraceSpan[] = [];
@@ -118,14 +125,22 @@ export class SessionManager {
   private sessionCount = 0;
 
   constructor(private readonly deps: SessionDeps) {
+    this.agentCoverage = resolveAgentCoverage(deps.agent.coverage);
+    this.coverage = this.agentCoverage;
     this.primary = this.newSession();
   }
 
   newSession(): RunSession {
     const s = new RunSession();
     s.index = ++this.sessionCount;
+    s.coverage = this.agentCoverage;
     this.sessions.push(s);
     return s;
+  }
+
+  /** 一轮的解析后覆盖:Agent 默认按 Turn.coverage 降级(只降不升)。 */
+  resolveTurnCoverage(turn: Turn): ResolvedCoverage {
+    return downgradeCoverage(this.agentCoverage, turn.coverage);
   }
 
   async send(
@@ -177,6 +192,10 @@ export class SessionManager {
       accumulateUsage(this.usage, turn.usage);
       accumulateUsage(session.usage, turn.usage);
     }
+    // 证据覆盖:attempt / session 级聚合取各轮最差值(见 scoring/coverage.ts)。
+    const turnCoverage = this.resolveTurnCoverage(turn);
+    this.coverage = worstCoverage([this.coverage, turnCoverage]);
+    session.coverage = worstCoverage([session.coverage, turnCoverage]);
     session.lastStatus = turn.status;
     this.lastStatus = turn.status;
     const reply = lastAssistantText(turn.events);

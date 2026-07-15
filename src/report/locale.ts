@@ -80,6 +80,7 @@ const en = {
   "attemptList.truncated": "and {n} more not shown",
   "attemptList.truncatedText": "({n} more not shown)",
   "attemptList.score": "score {score}",
+  "attemptList.unavailable": "unavailable",
   "attemptList.details": "details",
 
   "scoreboard.total": "Total",
@@ -166,6 +167,7 @@ const zhCN: Record<ReportMessageKey, string> = {
   "attemptList.truncated": "还有 {n} 条未列出",
   "attemptList.truncatedText": "(还有 {n} 条未列出)",
   "attemptList.score": "得分 {score}",
+  "attemptList.unavailable": "评不了",
   "attemptList.details": "详情",
 
   "scoreboard.total": "总分",

@@ -4,7 +4,7 @@
 
 import type { AttemptHandle, SelectionWarning } from "../results/types.ts";
 import type { AttemptLocator } from "../results/locator.ts";
-import type { AssertionResult, Verdict } from "../types.ts";
+import type { AssertionResult, AttemptError, DiagnosticRecord, Verdict } from "../types.ts";
 import type { LocalizedLabel, ReportLocale } from "./locale.ts";
 
 export type { SelectionWarning };
@@ -31,7 +31,7 @@ export interface MetricAggregate {
  * 指标:纯函数,吃一个 AttemptHandle 吐一个值(null = 此 attempt 测不了这个指标,
  * 不进聚合;0 = 测了结果是零,照常进),外加名字、两级聚合方式和渲染提示。
  * 内置指标与自定义指标是同一个类型,没有特权。name 走字面量泛型:列键锚在指标
- * 对象上(`row.cells[passRate.name]`),拼错列名编译不过。
+ * 对象上(`row.cells[taskPassRate.name]`),拼错列名编译不过。
  */
 export interface Metric<Name extends string = string> {
   /** MetricColumn.key 与列头的来源;同一次计算里重名是错误。 */
@@ -86,8 +86,24 @@ export interface FlagRef {
   readonly unit?: string;
 }
 
-/** 维度槽的输入:内置/自定义维度,或 experiment 声明的 flag。 */
-export type DimensionInput = Dimension | FlagRef;
+/**
+ * config() 的产物:把顶层运行配置(快照 `ExperimentRunInfo` 投影的字段全集,外加桥接到
+ * 快照顶层权威字段的 `model` / `agent` 两个键)当维度或轴,槽位用法与 {@link FlagRef} 一致。
+ * 未投影的值不猜:分组如实归「(unset)」,作轴不画点、注脚报数。
+ */
+export interface ConfigRef {
+  readonly kind: "config";
+  readonly name: string;
+  /** 组标签 / 轴标签;函数形态把投影值折成组名。 */
+  readonly label?: string | ((value: string | number | boolean) => string);
+  readonly unit?: string;
+}
+
+/** MetricLine 的 x 轴输入:experiment 声明的 flag,或顶层运行配置(config())。 */
+export type AxisInput = FlagRef | ConfigRef;
+
+/** 维度槽的输入:内置/自定义维度、experiment 声明的 flag,或顶层运行配置(config())。 */
+export type DimensionInput = Dimension | FlagRef | ConfigRef;
 
 // ───────────────────────── 计算产物(组件 data props)─────────────────────────
 
@@ -289,11 +305,11 @@ export interface OverviewData {
     errored: number;
     skipped: number;
     /**
-     * 通过率的唯一官方口径:`computeCell(passRate, items)`,与 `MetricTable.data(...,
-     * columns: [passRate])` 同一台两级聚合引擎(题内折叠 perEval、跨题折叠 across,默认都是
+     * 通过率的唯一官方口径:`computeCell(taskPassRate, items)`,与 `MetricTable.data(...,
+     * columns: [taskPassRate])` 同一台两级聚合引擎(题内折叠 perEval、跨题折叠 across,默认都是
      * mean)——一道题内多个 attempt 部分通过,贡献的是小数份额而不是二元票。`samples`/`total`
-     * 是两级聚合口径下的 attempt 计数(`total` 含 skipped,`samples` 不含),不等于上面四个
-     * verdict 计票的任何一个之和。
+     * 是两级聚合口径下的 attempt 计数(`total` 含 skipped 与 errored——taskPassRate 对两者都
+     * 记 null 不进分母,`samples` 不含),不等于上面四个 verdict 计票的任何一个之和。
      */
     passRate: MetricCell;
     /** 任一 attempt 报了成本才有;全缺 = null,不编 0。 */
@@ -335,8 +351,11 @@ export interface DeltaData<K extends string = string> {
 // `EvalListItem.attempts` 的元素,报告作者可以直接把这些嵌套数组喂给 `<AttemptList items={...} />`。
 
 /**
- * `AttemptList` 一项 = 一个 Attempt:身份、判定、断言、error、耗时、成本和 locator。
- * `ExperimentList` / `EvalList` 的下钻数组复用同一个类型,不是各自的精简版。
+ * `AttemptList` 一项 = 一个 Attempt:身份、判定、断言、结构化 error、diagnostics、耗时、
+ * 成本和 locator。`ExperimentList` / `EvalList` 的下钻数组复用同一个类型,不是各自的精简版。
+ * 渲染面只显示 error 的一层摘要(`error.message`);cause / stack 与 diagnostics 属于
+ * locator 下钻详情,不塞进比较列表,但随数据携带 —— `AttemptList.data` 的 `redact`
+ * 钩子覆盖它们的自由文本(见 docs/feature/reports/library.md「AttemptList」)。
  */
 export interface AttemptListItem {
   evalId: string;
@@ -344,7 +363,10 @@ export interface AttemptListItem {
   attempt: number;
   agent: string;
   verdict: Verdict;
-  error?: string;
+  /** 结构化执行错误(与 `EvalResult.error` 同构):列表只显示 `message` 一层摘要。 */
+  error?: AttemptError;
+  /** 本 attempt 的有界诊断(teardown / cleanup 失败等,与 verdict 独立);属于下钻详情。 */
+  diagnostics?: DiagnosticRecord[];
   assertions: AssertionResult[];
   durationMs: number;
   costUSD?: number;
@@ -373,7 +395,7 @@ export interface ExperimentListEvalRow {
 /**
  * `ExperimentList.data(selection)` 的一项 = 一个 experiment:身份(experimentId/agent/model)、
  * 声明的 flags、Eval 判定构成(`foldEvalVerdict` 计票,与 view 榜单同一口径)、官方两级聚合
- * 汇总指标(passRate/cost/duration/tokens,直接来自 `computeCell`,不现场重算),以及展开到
+ * 汇总指标(taskPassRate/cost/duration/tokens,直接来自 `computeCell`,不现场重算),以及展开到
  * 这个 experiment 每道 Eval 的 `evalRows`(按 eval id 升序)。
  */
 export interface ExperimentListItem {
@@ -383,7 +405,7 @@ export interface ExperimentListItem {
   flags?: Record<string, unknown>;
   /** eval 级折叠计票(foldEvalVerdict 口径,与 `TableRowMeta.verdicts`、view 榜单同一套)。 */
   verdicts: { passed: number; failed: number; errored: number; skipped: number };
-  /** 官方两级聚合口径,与 `MetricTable.data(..., columns: [passRate])` 同一台引擎。 */
+  /** 官方两级聚合口径(taskPassRate),与 `MetricTable.data(..., columns: [taskPassRate])` 同一台引擎。 */
   passRate: MetricCell;
   cost: MetricCell;
   duration: MetricCell;

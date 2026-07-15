@@ -482,6 +482,9 @@ async function runAttemptBody(
       scripts,
       usage,
       status: state.manager.lastStatus,
+      // attempt 级聚合覆盖(各轮最差值);t.* 作用域断言按它折叠,turn/session 作用域在
+      // record 时已换成各自的覆盖(见 context.ts 的 recordScoped / makeTurnHandle)。
+      coverage: state.manager.coverage,
       readFile: async (path) => {
         try {
           return await sandbox!.readFile(path);
@@ -560,6 +563,7 @@ async function runAttemptBody(
       trace,
       agentSetup,
       diff,
+      coverage: state.manager.coverage,
     };
     result = value;
     return value;

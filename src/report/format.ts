@@ -94,16 +94,20 @@ export function verdictMark(verdict: Verdict): string {
 }
 
 /**
- * 一个 AttemptListItem 的失败原因摘要,按优先级取第一个在场的:`error` → 未通过的 gate 断言
+ * 一个 AttemptListItem 的失败原因摘要,按优先级取第一个在场的:结构化 `error` 的一层摘要
+ * (`error.message`,cause/stack 属于下钻详情不进摘要)→ 未通过的 gate 断言
  * (原始声明顺序,`name`,detail 在场则 `"name: detail"`,多条用「, 」连接)→ 缺席。与
  * compute.ts 的 `reasonFor(EvalResult)` 同一口径,只是输入换成瘦身后的 AttemptListItem——
  * 没有 `skipReason` 字段(AttemptListItem 不携带),skipped 的 attempt 因此没有原因摘要,
  * 这与它们本来就不该出现在「为什么失败」列表里的事实一致。EvalList / ExperimentList 的
  * 逐 attempt 徽标行用它给每个 attempt 自己的原因(而不是复用整道题的代表原因)。
  */
-export function attemptItemReason(item: { error?: string; assertions: AssertionResult[] }): string | undefined {
-  if (item.error !== undefined) return item.error;
-  const gates = item.assertions.filter((a) => !a.passed && a.severity === "gate");
+export function attemptItemReason(item: {
+  error?: { message: string };
+  assertions: AssertionResult[];
+}): string | undefined {
+  if (item.error !== undefined) return item.error.message;
+  const gates = item.assertions.filter((a) => a.outcome === "failed" && a.severity === "gate");
   if (gates.length === 0) return undefined;
   return gates.map((a) => (a.detail ? `${a.name}: ${a.detail}` : a.name)).join(", ");
 }

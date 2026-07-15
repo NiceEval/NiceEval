@@ -17,24 +17,31 @@ export interface MatchOptions {
 // ───────────────────────── 内部工厂 ─────────────────────────
 
 /**
- * 唯一的内部工厂。gate()/atLeast() 都基于它返回新的不可变实例,
- * 共享同一个 score(只换 severity / threshold)。
+ * 唯一的内部工厂。gate()/atLeast()/optional() 都基于它返回新的不可变实例,
+ * 共享同一个 score(只换 severity / threshold / isOptional)。
+ * `expected` 是期望条件的有界文本描述(如 `contains "Brooklyn"`),失败时进
+ * AssertionResult.expected 供 show/view 展示。
  */
 function createAssertion(
   name: string,
   severity: Severity,
   score: (value: unknown) => number | Promise<number>,
   threshold?: number,
+  opts?: { expected?: string; isOptional?: boolean },
 ): ValueAssertion {
   const self: ValueAssertion = {
     name,
     severity,
     threshold,
+    ...(opts?.isOptional ? { isOptional: true } : {}),
+    ...(opts?.expected !== undefined ? { expected: opts.expected } : {}),
     score,
     // 转成硬门槛(失败即整条 eval 不通过)。
-    gate: (t?: number) => createAssertion(name, "gate", score, t),
+    gate: (t?: number) => createAssertion(name, "gate", score, t, opts),
     // 软阈值:默认不改变 verdict;--strict 下软阈值失败也会使 verdict=failed。
-    atLeast: (t: number) => createAssertion(name, "soft", score, t),
+    atLeast: (t: number) => createAssertion(name, "soft", score, t, opts),
+    // 允许证据缺席:评不了只记 unavailable,不影响判定(与 severity 正交)。
+    optional: () => createAssertion(name, severity, score, threshold, { ...opts, isOptional: true }),
   };
   return Object.freeze(self);
 }
@@ -86,28 +93,44 @@ function toMatchTarget(value: unknown, opts?: MatchOptions): string {
 export function includes(needle: string | RegExp, opts?: MatchOptions): ValueAssertion {
   const label = needle instanceof RegExp ? needle.toString() : safeLabel(needle);
   const suffix = opts?.stripComments ? ", stripComments" : "";
-  return createAssertion(`includes(${label}${suffix})`, "gate", (value) => {
-    const s = toMatchTarget(value, opts);
-    if (needle instanceof RegExp) return needle.test(s) ? 1 : 0;
-    return s.includes(needle) ? 1 : 0;
-  });
+  return createAssertion(
+    `includes(${label}${suffix})`,
+    "gate",
+    (value) => {
+      const s = toMatchTarget(value, opts);
+      if (needle instanceof RegExp) return needle.test(s) ? 1 : 0;
+      return s.includes(needle) ? 1 : 0;
+    },
+    undefined,
+    { expected: needle instanceof RegExp ? `matches ${label}` : `contains ${label}` },
+  );
 }
 
 /** includes 的取反:不含子串 / 不命中正则则 1,否则 0。默认硬门槛。opts.stripComments 时只看真实代码。 */
 export function excludes(needle: string | RegExp, opts?: MatchOptions): ValueAssertion {
   const label = needle instanceof RegExp ? needle.toString() : safeLabel(needle);
   const suffix = opts?.stripComments ? ", stripComments" : "";
-  return createAssertion(`excludes(${label}${suffix})`, "gate", (value) => {
-    const s = toMatchTarget(value, opts);
-    if (needle instanceof RegExp) return needle.test(s) ? 0 : 1;
-    return s.includes(needle) ? 0 : 1;
-  });
+  return createAssertion(
+    `excludes(${label}${suffix})`,
+    "gate",
+    (value) => {
+      const s = toMatchTarget(value, opts);
+      if (needle instanceof RegExp) return needle.test(s) ? 0 : 1;
+      return s.includes(needle) ? 0 : 1;
+    },
+    undefined,
+    { expected: needle instanceof RegExp ? `does not match ${label}` : `does not contain ${label}` },
+  );
 }
 
 /** 深相等则 1,否则 0。默认硬门槛。 */
 export function equals(expected: unknown): ValueAssertion {
-  return createAssertion(`equals(${safeLabel(expected)})`, "gate", (value) =>
-    deepEqual(value, expected) ? 1 : 0,
+  return createAssertion(
+    `equals(${safeLabel(expected)})`,
+    "gate",
+    (value) => (deepEqual(value, expected) ? 1 : 0),
+    undefined,
+    { expected: safeLabel(expected) },
   );
 }
 
@@ -138,6 +161,7 @@ export function similarity(expected: string): ValueAssertion {
       return 1 - levenshtein(a, b) / maxLen;
     },
     0.6,
+    { expected: safeLabel(expected) },
   );
 }
 
@@ -150,27 +174,33 @@ export function satisfies(predicate: (v: unknown) => boolean, label?: string): V
 /** value 非 null / 非 undefined 则 1,否则 0。省掉 `x !== undefined` + isTrue 的样板。默认硬门槛。 */
 export function isDefined(label?: string): ValueAssertion {
   const name = label ? `isDefined(${label})` : "isDefined()";
-  return createAssertion(name, "gate", (value) => (value != null ? 1 : 0));
+  return createAssertion(name, "gate", (value) => (value != null ? 1 : 0), undefined, { expected: "defined" });
 }
 
 /** value === true 则 1,否则 0。带 label 的布尔断言(fileExists 等检查用)。默认硬门槛。 */
 export function isTrue(label?: string): ValueAssertion {
   const name = label ? `isTrue(${label})` : "isTrue()";
-  return createAssertion(name, "gate", (value) => (value === true ? 1 : 0));
+  return createAssertion(name, "gate", (value) => (value === true ? 1 : 0), undefined, { expected: "true" });
 }
 
 /** CommandResult.exitCode === 0 则 1,否则 0。默认硬门槛。 */
 export function commandSucceeded(): ValueAssertion {
-  return createAssertion("commandSucceeded()", "gate", (value) => {
-    if (value === null || typeof value !== "object") return 0;
-    return (value as { exitCode?: unknown }).exitCode === 0 ? 1 : 0;
-  });
+  return createAssertion(
+    "commandSucceeded()",
+    "gate",
+    (value) => {
+      if (value === null || typeof value !== "object") return 0;
+      return (value as { exitCode?: unknown }).exitCode === 0 ? 1 : 0;
+    },
+    undefined,
+    { expected: "exit 0" },
+  );
 }
 
 /** value === false 则 1,否则 0。带 label 的布尔断言。默认硬门槛。 */
 export function isFalse(label?: string): ValueAssertion {
   const name = label ? `isFalse(${label})` : "isFalse()";
-  return createAssertion(name, "gate", (value) => (value === false ? 1 : 0));
+  return createAssertion(name, "gate", (value) => (value === false ? 1 : 0), undefined, { expected: "false" });
 }
 
 /**

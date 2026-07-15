@@ -24,6 +24,7 @@ export function defineSandboxAgent(def: SandboxAgentDef): Agent {
   return {
     name: def.name,
     kind: "sandbox",
+    coverage: def.coverage,
     setup: def.setup,
     tracing: def.tracing,
     spanMapper: def.spanMapper,
@@ -38,6 +39,7 @@ export function defineAgent(def: RemoteAgentDef): Agent {
   return {
     name: def.name,
     kind: "remote",
+    coverage: def.coverage,
     setup: def.setup,
     tracing: def.tracing,
     spanMapper: def.spanMapper,

@@ -93,7 +93,7 @@ export function buildAnnotatedEvalSource(
   let soft = 0;
 
   for (const assertion of assertions) {
-    if (assertion.passed) passed++;
+    if (assertion.outcome === "passed") passed++;
     else failed++;
     if (assertion.severity === "gate") gate++;
     else soft++;

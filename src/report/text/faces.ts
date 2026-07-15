@@ -571,15 +571,21 @@ function attemptListItemText(item: AttemptListItem, ctx: TextContext, locale: Re
   ].join(" · ");
   const lines = [head];
   if (item.error) {
-    lines.push(indentBlock(wrapDisplay(item.error, ctx.width - 4).join("\n"), "    "));
+    // 结构化 error 只显示一层摘要(message);cause/stack/diagnostics 属于 locator 下钻详情
+    lines.push(indentBlock(wrapDisplay(item.error.message, ctx.width - 4).join("\n"), "    "));
   }
   for (const assertion of item.assertions) {
+    if (assertion.outcome === "unavailable") {
+      lines.push(`  ${assertion.severity} ${assertion.name} · unavailable`);
+      lines.push(indentBlock(wrapDisplay(assertion.reason, ctx.width - 4).join("\n"), "    "));
+      continue;
+    }
     const scoreText =
       assertion.threshold !== undefined
         ? `${formatPlainNumber(assertion.score)}/${formatPlainNumber(assertion.threshold)}`
         : formatPlainNumber(assertion.score);
     lines.push(
-      `  ${assertion.severity} ${assertion.name} · ${localeText(locale, `verdict.${assertion.passed ? "passed" : "failed"}`)}${assertion.severity === "soft" ? ` ${scoreText}` : ""}`,
+      `  ${assertion.severity} ${assertion.name} · ${localeText(locale, `verdict.${assertion.outcome}`)}${assertion.severity === "soft" ? ` ${scoreText}` : ""}`,
     );
     if (assertion.detail) lines.push(indentBlock(wrapDisplay(assertion.detail, ctx.width - 4).join("\n"), "    "));
     if (assertion.evidence) {

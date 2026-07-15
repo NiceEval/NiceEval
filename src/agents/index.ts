@@ -4,6 +4,11 @@ export { defineAgent, defineSandboxAgent } from "../define.ts";
 export { shared } from "./shared.ts";
 export type { Shared } from "./shared.ts";
 
+// 证据覆盖声明:官方 SDK 适配器声明全通道 complete 用 completeCoverage;
+// 手写映射按实际情况声明(见 docs/feature/adapters/architecture/evidence.md)。
+export { completeCoverage } from "../scoring/coverage.ts";
+export type { CoverageStatus, CoverageDeclaration, EvidenceCoverage } from "../types.ts";
+
 // span → canonical GenAI 归一(只服务瀑布图,不喂断言)。私有埋点写自己的 spanMapper 时用:
 // tagSpan 把判定写回 span(原属性只增不改),heuristicTag 是通用兜底判定;mapCodexSpans 是
 // 现成的参考实现(无侵入接 codex 后端时直接声明 `spanMapper: mapCodexSpans`)。
@@ -43,6 +48,10 @@ export type {
   CodexThreadStream,
 } from "./sdk-streams.ts";
 
+// LangGraph 官方事件流转换器(不绑定 transport,不提供 langGraphAgent 工厂)。
+export { fromLangGraphEvents } from "./langgraph.ts";
+export type { LangGraphEventLike, LangGraphContentBlockLike, LangGraphStream } from "./langgraph.ts";
+
 // 通用「拼装方式」件:逐帧驱动循环、逐 token/参数增量累加器。见 docs-site/zh/guides/write-send.mdx——
 // 这些和任何具体协议无关,自己写 adapter 时优先拿这些拼,只有 transport(怎么发)与
 // 「帧类型 → 操作」这张映射表才是真正要手写的。会话续接与 HITL 停轮现场不再是可选件,
@@ -71,9 +80,11 @@ export { BUILTIN_AGENTS } from "./builtin.ts";
 export { claudeCodeAgent } from "./claude-code.ts";
 export { codexAgent } from "./codex.ts";
 export { bubAgent } from "./bub.ts";
+export { openClawAgent } from "./openclaw.ts";
 export type { ClaudeCodeConfig, ClaudeCodePluginSpec } from "./claude-code.ts";
 export type { CodexConfig, CodexPluginSpec } from "./codex.ts";
 export type { BubConfig, PythonPluginSpec } from "./bub.ts";
+export type { OpenClawConfig } from "./openclaw.ts";
 
 // 安装 manifest 的落点:adapter 写(shared.writeAgentSetup),运行器读并抬成 attempt artifact。
 export { AGENT_SETUP_MANIFEST_PATH } from "./manifest.ts";

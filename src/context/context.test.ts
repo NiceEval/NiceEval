@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEvalContext, type ContextState } from "./context.ts";
 import { includes } from "../expect/index.ts";
+import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
 import type { Agent, AgentContext, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
@@ -10,6 +11,7 @@ function calculatorAgent(): Agent {
     name: "calculator",
     // 测试注入了真实的 fake sandbox,kind: "sandbox" 让 t.sandbox 过沙箱能力守卫。
     kind: "sandbox",
+    coverage: completeCoverage,
     async send(_input: TurnInput, ctx: AgentContext): Promise<Turn> {
       ctx.session.capture("sess-1");
       const events: StreamEvent[] = [
@@ -84,11 +86,12 @@ describe("createEvalContext / TestContext live state", () => {
       scripts: state.late.scripts,
       usage: { inputTokens: 0, outputTokens: 0 },
       status: "completed",
+      coverage: resolveAgentCoverage(completeCoverage),
       readFile: async () => undefined,
     });
-    expect(result.passed).toBe(true);
-    expect(result.score).toBe(1);
-    expect(result.evidence).toBeUndefined();
+    expect(result.outcome).toBe("passed");
+    expect(result.outcome === "passed" ? result.score : -1).toBe(1);
+    expect(result.outcome === "passed" ? result.evidence : "?").toBeUndefined();
   });
 
   it("t.check(...) attaches the actually-checked value as evidence when it fails", async () => {
@@ -103,10 +106,11 @@ describe("createEvalContext / TestContext live state", () => {
       scripts: state.late.scripts,
       usage: { inputTokens: 0, outputTokens: 0 },
       status: "completed",
+      coverage: resolveAgentCoverage(completeCoverage),
       readFile: async () => undefined,
     });
-    expect(result.passed).toBe(false);
-    expect(result.evidence).toBe("1 + 1 = **2** 哦!😊");
+    expect(result.outcome).toBe("failed");
+    expect(result.outcome === "failed" ? result.received : undefined).toBe("1 + 1 = **2** 哦!😊");
   });
 
   it("t.events reflects the turn's events after send(), not an empty snapshot", async () => {
@@ -147,6 +151,7 @@ function scriptedAgent(turns: Turn[]): Agent & { received: TurnInput[] } {
   const agent: Agent = {
     name: "scripted",
     kind: "remote",
+    coverage: completeCoverage,
     async send(input: TurnInput) {
       received.push(input);
       const turn = turns[Math.min(i, turns.length - 1)] as Turn;
@@ -299,6 +304,7 @@ function baseScoringContext(state: ContextState) {
     scripts: state.late.scripts,
     usage: { inputTokens: 0, outputTokens: 0 },
     status: "completed" as const,
+    coverage: resolveAgentCoverage(completeCoverage),
     readFile: async () => undefined,
   };
 }
@@ -314,7 +320,7 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
 
     const [result] = await state.collector.finalize(baseScoringContext(state));
     expect(result.name).toBe("parked");
-    expect(result.passed).toBe(true);
+    expect(result.outcome).toBe("passed");
   });
 
   it("turn.noFailedActions() looks only at this turn's own tool calls", async () => {
@@ -333,7 +339,7 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
 
     const [result] = await state.collector.finalize(baseScoringContext(state));
     expect(result.name).toBe("noFailedActions");
-    expect(result.passed).toBe(false);
+    expect(result.outcome).toBe("failed");
   });
 
   it("turn.maxTokens()/turn.maxCost() read this turn's own Turn.usage, not the session total", async () => {
@@ -347,9 +353,9 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
 
     const [tokens, cost] = await state.collector.finalize(baseScoringContext(state));
     expect(tokens.name).toBe("maxTokens(1000)");
-    expect(tokens.passed).toBe(true);
+    expect(tokens.outcome).toBe("passed");
     expect(cost.name).toBe("maxCost(0.01)");
-    expect(cost.passed).toBe(false);
+    expect(cost.outcome).toBe("failed");
   });
 
   it("turn.loadedSkill() reads the skill.loaded event scoped to this turn", async () => {
@@ -364,7 +370,7 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     turn.loadedSkill("pdf-export");
 
     const [result] = await state.collector.finalize(baseScoringContext(state));
-    expect(result.passed).toBe(true);
+    expect(result.outcome).toBe("passed");
   });
 
   // Skill 加载是一等事件,不是「名字叫 load_skill 的工具调用」——adapter 负责归一
@@ -382,6 +388,6 @@ describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTo
     turn.loadedSkill("pdf-export");
 
     const [result] = await state.collector.finalize(baseScoringContext(state));
-    expect(result.passed).toBe(false);
+    expect(result.outcome).toBe("failed");
   });
 });

@@ -21,7 +21,7 @@ import type { AttemptLocator } from "../../results/locator.ts";
 
 const locator = (s: string): AttemptLocator => s as AttemptLocator;
 
-export const passRateColumn: MetricColumn = { key: "pass-rate", label: "pass rate", unit: "%", better: "higher" };
+export const passRateColumn: MetricColumn = { key: "task-pass-rate", label: "pass rate", unit: "%", better: "higher" };
 export const codeLinesColumn: MetricColumn = { key: "code-lines", label: "code lines", unit: "lines", better: "lower" };
 export const costColumn: MetricColumn = { key: "cost", label: "cost", unit: "$", better: "lower" };
 
@@ -73,7 +73,7 @@ export const groupSummaryData: GroupSummaryData = {
   lastRunAt: "2026-07-01T11:30:00Z",
 };
 
-export const tableData: TableData<"pass-rate" | "code-lines"> = {
+export const tableData: TableData<"task-pass-rate" | "code-lines"> = {
   dimension: "agent",
   // 行顺序故意不按 passRate 排:组件必须按传入顺序渲染,不重排
   columns: [passRateColumn, codeLinesColumn],
@@ -81,7 +81,7 @@ export const tableData: TableData<"pass-rate" | "code-lines"> = {
     {
       key: "codex",
       cells: {
-        "pass-rate": { value: 0.5, display: "50%", samples: 6, total: 6, refs: [] },
+        "task-pass-rate": { value: 0.5, display: "50%", samples: 6, total: 6, refs: [] },
         // 全 null:一个有效样本都没有 → 缺数据文案,绝不画 0
         "code-lines": { value: null, display: "—", samples: 0, total: 6, refs: [] },
       },
@@ -89,7 +89,7 @@ export const tableData: TableData<"pass-rate" | "code-lines"> = {
     {
       key: "bub",
       cells: {
-        "pass-rate": {
+        "task-pass-rate": {
           value: 0.87,
           display: "87%",
           samples: 6,
@@ -104,13 +104,13 @@ export const tableData: TableData<"pass-rate" | "code-lines"> = {
 };
 
 /** rows: "experiment" 的榜单形态:行携带 agent/model 元信息与 eval 级折叠计票。 */
-export const tableDataWithMeta: TableData<"pass-rate"> = {
+export const tableDataWithMeta: TableData<"task-pass-rate"> = {
   dimension: "experiment",
   columns: [passRateColumn],
   rows: [
     {
       key: "compare/bub",
-      cells: { "pass-rate": { value: 0.5, display: "50%", samples: 2, total: 2, refs: [] } },
+      cells: { "task-pass-rate": { value: 0.5, display: "50%", samples: 2, total: 2, refs: [] } },
       meta: {
         agent: "bub",
         model: "gpt-5.4",
@@ -119,7 +119,7 @@ export const tableDataWithMeta: TableData<"pass-rate"> = {
     },
     {
       key: "compare/codex",
-      cells: { "pass-rate": { value: 1, display: "100%", samples: 2, total: 2, refs: [] } },
+      cells: { "task-pass-rate": { value: 1, display: "100%", samples: 2, total: 2, refs: [] } },
       meta: {
         agent: "codex",
         verdicts: { passed: 2, failed: 0, errored: 0, skipped: 0 },
@@ -261,7 +261,7 @@ export const lineData: LineData = {
   ],
 };
 
-export const deltaData: DeltaData<"pass-rate" | "cost"> = {
+export const deltaData: DeltaData<"task-pass-rate" | "cost"> = {
   columns: [passRateColumn, costColumn],
   rows: [
     {
@@ -270,7 +270,7 @@ export const deltaData: DeltaData<"pass-rate" | "cost"> = {
       b: { experimentId: "compare/bub--agents-md" },
       cells: {
         // 通过率 +12pp:better higher → 好(绿)
-        "pass-rate": {
+        "task-pass-rate": {
           a: { value: 0.5, display: "50%", samples: 6, total: 6, refs: [] },
           b: { value: 0.62, display: "62%", samples: 6, total: 6, refs: [] },
           delta: 0.12,
@@ -290,7 +290,7 @@ export const deltaData: DeltaData<"pass-rate" | "cost"> = {
       a: { experimentId: "compare/codex" },
       b: { experimentId: "compare/codex--agents-md" },
       cells: {
-        "pass-rate": {
+        "task-pass-rate": {
           a: { value: 0.4, display: "40%", samples: 6, total: 6, refs: [] },
           b: { value: 0.4, display: "40%", samples: 6, total: 6, refs: [] },
           delta: 0,
@@ -322,7 +322,7 @@ const failedAttempt: AttemptListItem = {
       name: "roots-correct",
       severity: "gate",
       score: 0,
-      passed: false,
+      outcome: "failed" as const,
       detail: "expected x=2, got x=3",
       evidence: "judge: sign flipped when substituting into the quadratic formula",
     },
@@ -338,7 +338,17 @@ const erroredAttempt: AttemptListItem = {
   attempt: 0,
   agent: "codex",
   verdict: "errored",
-  error: "TypeError: cannot read properties of undefined (reading 'foo')",
+  // 结构化 error:列表只渲染 message 一层摘要;cause/stack 与 diagnostics 是下钻详情,随数据携带
+  error: {
+    code: "unexpected-error",
+    message: "TypeError: cannot read properties of undefined (reading 'foo')",
+    operation: "eval.run",
+    stack: "TypeError: cannot read properties of undefined (reading 'foo')\n    at run (adapter.ts:42:7)",
+    cause: { name: "TypeError", message: "cannot read properties of undefined (reading 'foo')" },
+  },
+  diagnostics: [
+    { code: "sandbox-teardown-failed", level: "warning", message: "sandbox teardown timed out", operation: "sandbox.teardown" },
+  ],
   assertions: [],
   durationMs: 4_500,
   locator: locator("@1c1c1c1"),
@@ -368,7 +378,7 @@ export const evalListItems: EvalListItem[] = [
     evalId: "geometry/angles",
     experimentId: "compare/codex",
     verdict: "errored",
-    reason: erroredAttempt.error,
+    reason: erroredAttempt.error!.message,
     score: { value: 0, display: "0%", samples: 1, total: 1, refs: [erroredAttempt.locator] },
     duration: { value: 4_500, display: "4.5s", samples: 1, total: 1, refs: [erroredAttempt.locator] },
     cost: { value: null, display: "—", samples: 0, total: 1, refs: [] },
@@ -423,7 +433,7 @@ export const experimentListItems: ExperimentListItem[] = [
       {
         evalId: "geometry/angles",
         verdict: "errored",
-        reason: erroredAttempt.error,
+        reason: erroredAttempt.error!.message,
         duration: { value: 4_500, display: "4.5s", samples: 1, total: 1, refs: [erroredAttempt.locator] },
         cost: { value: null, display: "—", samples: 0, total: 1, refs: [] },
         attempts: [erroredAttempt],

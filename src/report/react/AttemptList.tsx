@@ -31,18 +31,33 @@ export function AttemptLocatorBadge({
 }
 
 function AssertionRow({ assertion, locale }: { assertion: AttemptListItem["assertions"][number]; locale: ReportLocale }): ReactElement {
+  const unavailable = assertion.outcome === "unavailable";
   return (
-    <li className={cx("nre-assertion", `nre-assertion-${assertion.severity}`, !assertion.passed && "nre-assertion-failed")}>
+    <li
+      className={cx(
+        "nre-assertion",
+        `nre-assertion-${assertion.severity}`,
+        assertion.outcome === "failed" && "nre-assertion-failed",
+        unavailable && "nre-assertion-unavailable",
+      )}
+    >
       <span className="nre-assertion-severity">{assertion.severity}</span>
       <span className="nre-assertion-name">{assertion.name}</span>
       <span className="nre-assertion-score">
-        {localeText(locale, "attemptList.score", { score: assertion.score })}
+        {unavailable
+          ? localeText(locale, "attemptList.unavailable")
+          : localeText(locale, "attemptList.score", { score: assertion.score })}
       </span>
-      {(assertion.detail || assertion.evidence) && (
+      {unavailable && assertion.outcome === "unavailable" && (
+        <p className="nre-assertion-detail">{assertion.reason}</p>
+      )}
+      {(assertion.detail || (assertion.outcome !== "unavailable" && assertion.evidence)) && (
         <details className="nre-assertion-more">
           <summary>{localeText(locale, "attemptList.details")}</summary>
           {assertion.detail && <p className="nre-assertion-detail">{assertion.detail}</p>}
-          {assertion.evidence && <blockquote className="nre-assertion-evidence">{assertion.evidence}</blockquote>}
+          {assertion.outcome !== "unavailable" && assertion.evidence && (
+            <blockquote className="nre-assertion-evidence">{assertion.evidence}</blockquote>
+          )}
         </details>
       )}
     </li>
@@ -70,7 +85,8 @@ export function AttemptRow({
         <span className="nre-attempt-duration">{formatDurationMs(item.durationMs)}</span>
         {item.costUSD !== undefined && <span className="nre-attempt-cost">{formatUSD(item.costUSD)}</span>}
       </div>
-      {item.error && <p className="nre-attempt-error">{item.error}</p>}
+      {/* 结构化 error 只显示一层摘要;cause/stack/diagnostics 属于 locator 下钻详情,不塞进列表 */}
+      {item.error && <p className="nre-attempt-error">{item.error.message}</p>}
       {item.assertions.length > 0 && (
         <ul className="nre-assertions">
           {item.assertions.map((a, i) => (

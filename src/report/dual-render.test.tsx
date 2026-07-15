@@ -37,7 +37,7 @@ import {
   defineReport,
   isReportDefinition,
   padEnd,
-  passRate,
+  taskPassRate,
   renderReportToText,
   stringWidth,
 } from "./index.ts";
@@ -95,7 +95,7 @@ describe("RunOverview 双面", () => {
 //   attempt 原始占比(旧 bug 公式,曾经的 RunOverview 现场重算):3 passed / (3 passed + 1 failed) = 75%
 //   eval 折叠投票(evalLevelStats,GroupSummary/MetricTable meta 的口径):a、b 都折成 passed → 2/2 = 100%
 // 三个数互不相同,任何一处偷懒复用另一个公式都会在这里露馅。
-describe("RunOverview.data · passRate 两级聚合口径", () => {
+describe("RunOverview.data · taskPassRate 两级聚合口径", () => {
   function fakeVaryingAttemptsContext(): { selection: Selection; attempts: { evalId: string; result: { verdict: EvalResult["verdict"] } }[] } {
     const dir = "/results/compare_bub/snap-1";
     const base = {
@@ -169,7 +169,7 @@ describe("RunOverview.data · passRate 两级聚合口径", () => {
     expect(stats.passRate).not.toBeCloseTo(data.totals.passRate.value as number, 3);
   });
 
-  it("web 面与 text 面显示同一个 passRate.display,覆盖率角标(4/5)两面一致", async () => {
+  it("web 面与 text 面显示同一个 taskPassRate.display,覆盖率角标(4/5)两面一致", async () => {
     const { selection } = fakeVaryingAttemptsContext();
     const data = await RunOverview.data(selection);
     const html = renderToStaticMarkup(<RunOverview data={data} />);
@@ -467,6 +467,12 @@ describe("AttemptList 双面", () => {
       expect(html).toContain(piece);
       expect(term).toContain(piece);
     }
+    // 结构化 error 只显示一层摘要:stack / cause / diagnostics 属于 locator 下钻详情,
+    // 随数据携带但不塞进比较列表(docs/feature/reports/library.md「AttemptList」)。
+    for (const face of [html, term]) {
+      expect(face).not.toContain("adapter.ts:42"); // error.stack
+      expect(face).not.toContain("sandbox teardown timed out"); // diagnostics[].message
+    }
     // web 面走证据室路由(#/attempt/@<locator>);text 面只列 locator 本身,不重复整条命令
     // (docs/feature/reports/architecture.md「text 输出只在整份报告末尾给一次命令模板」)。
     expect(html).toContain('href="#/attempt/@1a4a4a4"');
@@ -535,7 +541,7 @@ describe("ExperimentList 双面", () => {
       expect(html).toContain(piece);
       expect(term).toContain(piece);
     }
-    // 官方两级聚合 passRate.display 两面同一个数字,不各自重算
+    // 官方两级聚合 taskPassRate.display 两面同一个数字,不各自重算
     expect(html).toContain("50%");
     expect(term).toContain("50%");
   });
@@ -1043,7 +1049,7 @@ describe("defineReport + 渲染入口", () => {
     // selection-form 的官方组件(ExperimentList/EvalList/AttemptList 没有 selection-form,
     // 这条契约不适用于它们)。
     expect(() =>
-      renderToStaticMarkup(<MetricScatter selection={selection} points="experiment" x={costUSD} y={passRate} />),
+      renderToStaticMarkup(<MetricScatter selection={selection} points="experiment" x={costUSD} y={taskPassRate} />),
     ).toThrow(/received unresolved \(selection-form\) props/);
   });
 });
@@ -1056,9 +1062,9 @@ describe("defineReport + 渲染入口", () => {
 // ExperimentComparison / defineReport 报告在同一文件里编译验证。
 function metricScatterPropsTypeChecks(selection: Selection, data: ScatterData): void {
   const ok1: MetricScatterProps = { data }; // 合法:data 形态
-  const ok2: MetricScatterProps = { selection, points: "experiment", series: "agent", x: costUSD, y: passRate }; // 合法:selection 形态
+  const ok2: MetricScatterProps = { selection, points: "experiment", series: "agent", x: costUSD, y: taskPassRate }; // 合法:selection 形态
   // @ts-expect-error 同时传 data 与 selection:非法
-  const bad1: MetricScatterProps = { data, selection, points: "experiment", x: costUSD, y: passRate };
+  const bad1: MetricScatterProps = { data, selection, points: "experiment", x: costUSD, y: taskPassRate };
   // @ts-expect-error data 与 selection 都不传:非法
   const bad2: MetricScatterProps = { pointHref: () => "/x" };
   // @ts-expect-error selection 形态缺必填的 x / y:非法
@@ -1104,7 +1110,7 @@ describe("ExperimentComparison", () => {
 
   it("locale 变体:en / zh-CN 都渲染(chrome 分语言),散点空态两面同一事实", async () => {
     const zhHtml = await renderReportToStaticHtml(ExperimentComparison, fakeContext(), { locale: "zh-CN" });
-    expect(zhHtml).toContain("成功率"); // passRate 的 zh-CN label(ExperimentList 主行)
+    expect(zhHtml).toContain("成功率"); // taskPassRate 的 zh-CN label(ExperimentList 主行)
     const enHtml = await renderReportToStaticHtml(ExperimentComparison, fakeContext(), { locale: "en" });
     expect(enHtml).toContain("Pass rate");
     const zhText = await renderReportToText(ExperimentComparison, fakeContext(), { locale: "zh-CN" });
@@ -1125,5 +1131,27 @@ describe("ExperimentComparison", () => {
     expect(out).not.toMatch(/^compare$/m);
     const html = await renderReportToStaticHtml(ExperimentComparison, fakeMultiGroupContext());
     expect(html).not.toContain("nre-section");
+  });
+
+  it(".data():两个子块 = 单独使用 MetricScatter.data / ExperimentList.data 时完全相同的计算结果", async () => {
+    const { selection } = fakeContext();
+    const data = await ExperimentComparison.data(selection);
+    expect(data.scatter).toEqual(
+      await MetricScatter.data(selection, { points: "experiment", series: "agent", x: costUSD, y: taskPassRate }),
+    );
+    expect(data.experiments).toEqual(await ExperimentList.data(selection));
+  });
+
+  it("组合件形态:<ExperimentComparison data={await .data(selection)}/> 与裸跑(build 面)渲染同一事实", async () => {
+    const data = await ExperimentComparison.data(fakeContext().selection);
+    const asComponent = defineReport(() => <ExperimentComparison data={data} />);
+    // text 面逐字相等:同一份数据、同一套子组件口径
+    const componentText = await renderReportToText(asComponent, fakeContext(), { width: 100 });
+    const bareText = await renderReportToText(ExperimentComparison, fakeContext(), { width: 100 });
+    expect(componentText).toBe(bareText);
+    // web 面同一事实
+    const componentHtml = await renderReportToStaticHtml(asComponent, fakeContext());
+    const bareHtml = await renderReportToStaticHtml(ExperimentComparison, fakeContext());
+    expect(componentHtml).toBe(bareHtml);
   });
 });

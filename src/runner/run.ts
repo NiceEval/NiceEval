@@ -31,7 +31,7 @@ import type { AgentRun, Attempt, AttemptPhase, AttemptRef, RunOptions } from "./
  *  一致,整句透传给 `FailureNotice.reason`,不再二次拆分。 */
 function describeFailureReason(result: EvalResult, strict: boolean | undefined): string {
   if (result.verdict === "errored") return firstLine(result.error?.message ?? result.verdict);
-  const culprit = result.assertions.find((asn) => !asn.passed && (asn.severity === "gate" || strict));
+  const culprit = result.assertions.find((asn) => asn.outcome === "failed" && (asn.severity === "gate" || strict));
   return culprit ? `${culprit.severity}: ${culprit.name}` : firstLine(result.error?.message ?? result.verdict);
 }
 

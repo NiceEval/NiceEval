@@ -128,43 +128,90 @@ function scoreText(score: number): string {
   return formatPlainNumber(Math.round(score * 100) / 100);
 }
 
-/** 断言行:✓/✗ + severity + name;gate 失败带 detail,soft 恒带 score/1(失败再补 detail)。 */
+/** 分组路径标题(嵌套用 " > " 拼接);无分组返回 undefined。 */
+function groupTitle(a: AssertionResult): string | undefined {
+  return a.groupPath && a.groupPath.length > 0 ? a.groupPath.join(" > ") : undefined;
+}
+
+/** 断言行:✓/✗/◌ + severity + 标题;unavailable 带 reason,soft 恒带 score/1(失败再补 detail)。 */
 export function assertionLine(a: AssertionResult): string {
-  const scope = a.group ? `${a.group} · ` : "";
-  const head = `${a.passed ? "✓" : "✗"} ${a.severity} ${scope}${a.name}`;
-  if (a.severity === "soft") {
-    const detail = !a.passed && a.detail ? `: ${a.detail}` : "";
-    return `${head} — ${scoreText(a.score)}/1${detail}`;
+  const group = groupTitle(a);
+  const scope = group ? `${group} · ` : "";
+  const optional = a.optional ? "optional · " : "";
+  if (a.outcome === "unavailable") {
+    return `◌ ${a.severity} · ${optional}${scope}${a.name} — unavailable: ${a.reason}`;
   }
-  if (!a.passed) {
+  const head = `${a.outcome === "passed" ? "✓" : "✗"} ${a.severity} ${optional}${scope}${a.name}`;
+  if (a.severity === "soft") {
+    const detail = a.outcome === "failed" && a.detail ? `: ${a.detail}` : "";
+    const threshold = a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : "/1";
+    return `${head} — ${scoreText(a.score)}${threshold}${detail}`;
+  }
+  if (a.outcome === "failed") {
     const reason = a.detail ?? `score ${scoreText(a.score)}`;
-    return a.evidence !== undefined ? `${head} — ${reason} · actual: ${a.evidence}` : `${head} — ${reason}`;
+    const received = a.received ?? a.evidence;
+    return received !== undefined ? `${head} — ${reason} · received: ${received}` : `${head} — ${reason}`;
   }
   return head;
 }
 
-function equalsExpected(name: string): string | undefined {
-  const match = /^equals\((.*)\)$/.exec(name);
-  return match?.[1];
+/** 每条的通用行组(见 docs/feature/scoring/library/display.md「通用渲染规则」):
+ *  首行 `severity · <标题>`(有分组时标题是分组路径,随后 assertion: 行给检查方式),
+ *  之后按有则显示的顺序列 expected / received / score / reason / source。 */
+function assertionRecordLines(a: AssertionResult): string[] {
+  const group = groupTitle(a);
+  const optional = a.optional ? "optional · " : "";
+  const title = group ?? a.name;
+  const lines: string[] = [];
+  const scoreSuffix =
+    a.outcome !== "unavailable" && (a.severity === "soft" || a.threshold !== undefined)
+      ? `   ${scoreText(a.score)}${a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : ""}`
+      : "";
+  lines.push(`  ${a.severity} · ${optional}${title}${scoreSuffix}`);
+  const detailLine = a.detail ?? (group ? a.name : undefined);
+  if (detailLine !== undefined && detailLine !== title) lines.push(`    assertion: ${detailLine}`);
+  if (a.outcome === "unavailable") {
+    lines.push(`    reason: ${a.reason}`);
+  } else {
+    if (a.expected !== undefined) lines.push(`    expected: ${a.expected}`);
+    if (a.received !== undefined) lines.push(`    received: ${a.received}`);
+    if (a.evidence !== undefined && a.evidence !== a.received) lines.push(`    evidence: ${a.evidence}`);
+  }
+  if (a.loc) lines.push(`    source: ${a.loc.file}:${a.loc.line}${a.loc.column ? `:${a.loc.column}` : ""}`);
+  return lines;
 }
 
-/** 默认 Attempt 页的首要诊断：不要求用户再猜一次 evidence flag 才知道为何失败。 */
-export function failureDiagnostics(assertions: AssertionResult[], width: number): string | undefined {
-  const failed = assertions.filter((a) => !a.passed);
-  if (failed.length === 0) return undefined;
-  const lines = ["failures:"];
-  for (const a of failed) {
-    const label = a.group ?? a.name;
-    lines.push(`  ${a.severity} · ${label}`);
-    if (a.group) lines.push(`    assertion: ${a.name}`);
-    const expected = equalsExpected(a.name);
-    if (expected !== undefined) lines.push(`    expected: ${expected}`);
-    if (a.evidence !== undefined) lines.push(`    received: ${a.evidence}`);
-    if (a.detail) lines.push(`    reason: ${a.detail}`);
-    if (a.loc) lines.push(`    source: ${a.loc.file}:${a.loc.line}${a.loc.column ? `:${a.loc.column}` : ""}`);
-    if (a.severity === "soft") lines.push(`    score: ${scoreText(a.score)}/1`);
-  }
+/**
+ * 默认 Attempt 页的首要诊断:按结果分节,只逐条列出需要看的(见 display.md)——
+ * `failures:`(gate 失败,含 --strict 下改判的 soft)、`soft below threshold:`、
+ * `scores:`(无阈值 judge 的纯打分)、`unavailable:`(证据评不了的,带 reason)。
+ * 全部通过时这些节整体省略(返回 undefined),只留计数行。
+ */
+export function failureDiagnostics(assertions: AssertionResult[], width: number, strict?: boolean): string | undefined {
+  const failures = assertions.filter(
+    (a) => a.outcome === "failed" && (a.severity === "gate" || strict),
+  );
+  const softBelow = assertions.filter(
+    (a) => a.outcome === "failed" && a.severity === "soft" && !strict,
+  );
+  const scores = assertions.filter(
+    (a) => a.outcome === "passed" && a.severity === "soft" && a.threshold === undefined && a.score < 1,
+  );
+  const unavailableOnes = assertions.filter((a) => a.outcome === "unavailable");
+  const lines: string[] = [];
+  const section = (title: string, items: AssertionResult[]) => {
+    if (items.length === 0) return;
+    if (lines.length > 0) lines.push("");
+    lines.push(title);
+    for (const a of items) lines.push(...assertionRecordLines(a));
+  };
+  section("failures:", failures);
+  section("soft below threshold:", softBelow);
+  section("scores:", scores);
+  section("unavailable:", unavailableOnes);
+  if (lines.length === 0) return undefined;
   return lines.flatMap((line) => {
+    if (line === "") return [line];
     const indent = line.length - line.trimStart().length;
     return wrapDisplay(line.trimStart(), Math.max(20, width - indent)).map((part) => `${" ".repeat(indent)}${part}`);
   }).join("\n");
@@ -207,8 +254,11 @@ export function attemptEvidenceHeader(evidence: AttemptEvidence): string {
 export function verdictReasonLine(result: EvalResult): string | undefined {
   if (result.error !== undefined) return result.error.message;
   if (result.skipReason !== undefined) return result.skipReason;
-  const gates = result.assertions.filter((a) => !a.passed && a.severity === "gate");
-  if (gates.length === 0) return undefined;
+  const gates = result.assertions.filter((a) => a.outcome === "failed" && a.severity === "gate");
+  if (gates.length === 0) {
+    const gap = result.assertions.find((a) => a.outcome === "unavailable" && !a.optional);
+    return gap && gap.outcome === "unavailable" ? `unavailable ${gap.name} (${gap.reason})` : undefined;
+  }
   return gates.map((a) => `gate ${a.name}`).join(", ");
 }
 
@@ -233,13 +283,15 @@ export function attemptIndexLine(opts: {
  * (未捕获源码),读 `result.assertions` 让这条摘要不因缺源码而跟着消失。
  */
 export function assertionSummaryLine(assertions: AssertionResult[]): string {
-  const passed = assertions.filter((a) => a.passed).length;
-  const gateFailed = assertions.filter((a) => !a.passed && a.severity === "gate").length;
-  const softBelow = assertions.filter((a) => !a.passed && a.severity === "soft").length;
+  const passed = assertions.filter((a) => a.outcome === "passed").length;
+  const gateFailed = assertions.filter((a) => a.outcome === "failed" && a.severity === "gate").length;
+  const softBelow = assertions.filter((a) => a.outcome === "failed" && a.severity === "soft").length;
+  const unavailableCount = assertions.filter((a) => a.outcome === "unavailable").length;
   const parts: string[] = [];
   if (passed > 0) parts.push(`${passed} passed`);
   if (gateFailed > 0) parts.push(`${gateFailed} gate failed`);
   if (softBelow > 0) parts.push(`${softBelow} soft below target`);
+  if (unavailableCount > 0) parts.push(`${unavailableCount} unavailable`);
   return `assertions: ${parts.length > 0 ? parts.join(" · ") : "(none)"}`;
 }
 
@@ -403,19 +455,25 @@ function indentedText(text: string, width: number, indent = 4, maxLines = 18): s
 
 const MAX_SOURCE_LINES = 400;
 
-/** gate 失败 / soft 恒带分——与 assertionLine 的严重度口径一致,但不带断言 name(源码行本身就是名字)。 */
+/** gate 失败 / soft 恒带分 / unavailable 带 reason——与 assertionLine 的口径一致,但不带断言
+ *  name(源码行本身就是名字)。 */
 function evalAssertionDetailLine(a: AssertionResult): string | undefined {
-  if (a.severity === "soft") {
-    const detail = !a.passed && a.detail ? ` · ${a.detail}` : "";
-    return `soft · ${scoreText(a.score)}/1${detail}`;
+  if (a.outcome === "unavailable") {
+    return `${a.severity} · unavailable · ${a.reason}`;
   }
-  if (!a.passed) {
+  if (a.severity === "soft") {
+    const detail = a.outcome === "failed" && a.detail ? ` · ${a.detail}` : "";
+    const threshold = a.threshold !== undefined ? ` / ${scoreText(a.threshold)}` : "/1";
+    return `soft · ${scoreText(a.score)}${threshold}${detail}`;
+  }
+  if (a.outcome === "failed") {
     const parts = ["gate"];
-    if (a.group) parts.push(a.group);
+    const group = groupTitle(a);
+    if (group) parts.push(group);
     parts.push(a.name);
-    const expected = equalsExpected(a.name);
-    if (expected !== undefined) parts.push(`expected ${expected}`);
-    if (a.evidence !== undefined) parts.push(`received ${a.evidence}`);
+    if (a.expected !== undefined) parts.push(`expected ${a.expected}`);
+    const received = a.received ?? a.evidence;
+    if (received !== undefined) parts.push(`received ${received}`);
     if (a.detail) parts.push(a.detail);
     return parts.join(" · ");
   }
@@ -423,8 +481,9 @@ function evalAssertionDetailLine(a: AssertionResult): string | undefined {
 }
 
 function evalSourceLineText(line: AnnotatedSourceLine, gutterWidth: number, width: number): string[] {
-  const anyFailed = line.assertions.some((a) => !a.passed);
-  const glyph = line.assertions.length === 0 ? " " : anyFailed ? "✗" : "✓";
+  const anyFailed = line.assertions.some((a) => a.outcome === "failed");
+  const anyUnavailable = line.assertions.some((a) => a.outcome === "unavailable");
+  const glyph = line.assertions.length === 0 ? " " : anyFailed ? "✗" : anyUnavailable ? "◌" : "✓";
   const marginWidth = gutterWidth + 2; // 行号列 + glyph + 分隔空格
   const prefix = `${padDisplay(String(line.line), gutterWidth)}${glyph} `;
   // 源码行的空白(尤其是缩进)是语义的一部分:wrapDisplay 按单词重排会把连续空格

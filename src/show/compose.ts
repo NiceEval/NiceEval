@@ -58,7 +58,7 @@ export function evalHistory(exp: Experiment, evalId: string): EvalHistoryRow[] {
       if (c !== null) cost = (cost ?? 0) + c;
     }
     const latest = fresh[fresh.length - 1];
-    const failed = latest.result.assertions.find((a) => !a.passed);
+    const failed = latest.result.assertions.find((a) => a.outcome !== "passed");
     rows.push({
       startedAt: snapshot.startedAt,
       verdict: foldEvalVerdict(fresh.map((a) => a.result)),

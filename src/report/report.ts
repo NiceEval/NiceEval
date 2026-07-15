@@ -44,10 +44,14 @@ export function defineReport(
   return { build, [REPORT_DEFINITION]: true };
 }
 
-/** 宿主装载报告文件时用:默认导出是不是 defineReport 的产物。 */
+/**
+ * 宿主装载报告文件时用:默认导出是不是 ReportDefinition。defineReport 的产物是普通对象;
+ * 「组件兼报告」(把 defineReport 产物 Object.assign 到双面组件上)是挂了 build 面的
+ * 可调用函数,同样算数——判据只看 build 面与标记,不看宿主形态。
+ */
 export function isReportDefinition(value: unknown): value is ReportDefinition {
   return (
-    typeof value === "object" &&
+    (typeof value === "object" || typeof value === "function") &&
     value !== null &&
     (value as Partial<ReportDefinition>)[REPORT_DEFINITION] === true &&
     typeof (value as Partial<ReportDefinition>).build === "function"

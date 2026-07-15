@@ -19,8 +19,8 @@ describe("toBraintrustEvent", () => {
     const event = toBraintrustEvent(
       baseResult({
         assertions: [
-          { name: "compiles", severity: "gate", score: 1, passed: true },
-          { name: "closedQA", severity: "soft", score: 0.7, passed: true },
+          { name: "compiles", severity: "gate", score: 1, outcome: "passed" as const },
+          { name: "closedQA", severity: "soft", score: 0.7, outcome: "passed" as const },
         ],
       }),
     );
@@ -31,9 +31,9 @@ describe("toBraintrustEvent", () => {
     const event = toBraintrustEvent(
       baseResult({
         assertions: [
-          { name: "check", severity: "soft", score: 0.5, passed: true },
-          { name: "check", severity: "soft", score: 2, passed: true },
-          { name: "check", severity: "soft", score: -1, passed: false },
+          { name: "check", severity: "soft", score: 0.5, outcome: "passed" as const },
+          { name: "check", severity: "soft", score: 2, outcome: "passed" as const },
+          { name: "check", severity: "soft", score: -1, outcome: "failed" as const },
         ],
       }),
     );
@@ -86,7 +86,7 @@ describe("toBraintrustEvent", () => {
         attempt: 1,
         verdict: "failed",
         experiment: { id: "compare/codex", flags: { tape: true } },
-        assertions: [{ name: "compiles", severity: "gate", score: 0, passed: false, detail: "tsc failed" }],
+        assertions: [{ name: "compiles", severity: "gate", score: 0, outcome: "failed" as const, detail: "tsc failed" }],
       }),
     );
     expect(event.metadata).toEqual({

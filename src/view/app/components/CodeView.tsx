@@ -6,9 +6,11 @@ import { highlightTs, indexAsserts, indexTurns, locKey } from "../lib/transcript
 import { formatScore } from "../lib/format.ts";
 import { InputBlock, ToolBlock, Transcript } from "./Transcript.tsx";
 
-/** soft 断言没过阈值不影响 verdict,颜色上跟 gate 失败(红)区分开,用 warn(黄)。 */
-function assertTone(a: Assertion): "good" | "warn" | "bad" {
-  if (a.passed) return "good";
+/** soft 断言没过阈值不影响 verdict,颜色上跟 gate 失败(红)区分开,用 warn(黄);
+ *  unavailable 用独立第三态(非红非绿)。 */
+function assertTone(a: Assertion): "good" | "warn" | "bad" | "na" {
+  if (a.outcome === "unavailable") return "na";
+  if (a.outcome === "passed") return "good";
   return a.severity === "soft" ? "warn" : "bad";
 }
 
@@ -118,13 +120,16 @@ export function CodeLine({
 }) {
   const hasReply = !!turn;
   const hasAsserts = !!(asserts && asserts.length);
-  // 只有 gate 断言没过才算这一行真的"fail";只剩 soft 断言没过阈值时是"warn"(不影响 verdict)。
+  // 只有 gate 断言没过才算这一行真的"fail";只剩 soft 断言没过阈值时是"warn"(不影响 verdict);
+  // 只剩 unavailable 时是第三态 "na"(非红非绿)。
   const status = hasAsserts
-    ? asserts?.every((a: Assertion) => a.passed)
+    ? asserts?.every((a: Assertion) => a.outcome === "passed")
       ? "pass"
-      : asserts?.some((a: Assertion) => !a.passed && a.severity === "gate")
+      : asserts?.some((a: Assertion) => a.outcome === "failed" && a.severity === "gate")
         ? "fail"
-        : "warn"
+        : asserts?.some((a: Assertion) => a.outcome === "failed")
+          ? "warn"
+          : "na"
     : null;
   const clickable = hasReply || hasAsserts;
   const rowCls =
@@ -149,6 +154,8 @@ export function CodeLine({
               <CheckCircle2 className="gstat good" aria-hidden="true" />
             ) : status === "warn" ? (
               <AlertCircle className="gstat warn" aria-hidden="true" />
+            ) : status === "na" ? (
+              <AlertCircle className="gstat na" aria-hidden="true" />
             ) : (
               <XCircle className="gstat bad" aria-hidden="true" />
             )
@@ -174,6 +181,7 @@ export function CodeLine({
 
 /** 行尾分数徽章:judge / 带阈值的断言显示分数(过绿不过红);纯 gate 断言靠行色 + gutter 勾叉。 */
 export function AssertBadge({ a }: { a: Assertion }) {
+  if (a.outcome === "unavailable") return <span className="abadge na">n/a</span>;
   const showPct = a.threshold !== undefined || (a.score > 0 && a.score < 1);
   if (!showPct) return null;
   return (
@@ -220,16 +228,29 @@ export function AssertDetail({ asserts, t }: { asserts: Assertion[]; t: T }) {
     <div className="line-detail assert-detail">
       {asserts.map((a: Assertion, i: number) => (
         <div key={i} className="assert-row">
-          <span className={`abadge ${assertTone(a)}`}>{a.passed ? t("assert.pass") : t("assert.fail")}</span>
-          <span className="assert-name">{a.name}</span>
+          <span className={`abadge ${assertTone(a)}`}>
+            {a.outcome === "unavailable" ? t("assert.unavailable") : a.outcome === "passed" ? t("assert.pass") : t("assert.fail")}
+          </span>
+          <span className="assert-name">
+            {a.groupPath?.length ? `${a.groupPath.join(" > ")} · ` : ""}
+            {a.name}
+          </span>
+          {a.optional ? <span className="assert-sev">{t("assert.optional")}</span> : null}
           {a.severity === "soft" ? <span className="assert-sev">{t("assert.soft")}</span> : null}
-          {a.threshold !== undefined ? (
+          {a.outcome !== "unavailable" && a.threshold !== undefined ? (
             <span className="assert-score">
               {formatScore(a.score)} / {formatScore(a.threshold)}
             </span>
           ) : null}
+          {a.outcome === "unavailable" ? <div className="assert-reason">{a.reason}</div> : null}
           {a.detail ? <div className="assert-reason">{a.detail}</div> : null}
-          {a.evidence ? (
+          {a.outcome !== "unavailable" && a.expected !== undefined ? (
+            <div className="assert-reason">expected: {a.expected}</div>
+          ) : null}
+          {a.outcome !== "unavailable" && a.received !== undefined ? (
+            <div className="assert-reason">received: {a.received}</div>
+          ) : null}
+          {a.outcome !== "unavailable" && a.evidence ? (
             <details className="assert-evidence">
               <summary>{t("assert.evidence")}</summary>
               <pre className="assert-evidence-pre">{a.evidence}</pre>

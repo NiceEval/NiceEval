@@ -8,9 +8,19 @@
 // ./web.ts,只有那一侧 import react-dom。写报告文件的项目要装 react(.tsx 编译产物
 // import react/jsx-runtime)。
 
-// 指标与 flag
-export { defineMetric, passRate, examScore, durationMs, tokens, costUSD, turns } from "./metrics.ts";
-export { flag } from "./flag.ts";
+// 指标与维度读取器(flag / config)
+export {
+  defineMetric,
+  taskPassRate,
+  executionReliability,
+  endToEndPassRate,
+  examScore,
+  durationMs,
+  tokens,
+  costUSD,
+  turns,
+} from "./metrics.ts";
+export { flag, config } from "./flag.ts";
 
 // 报告基座与双面组件基座
 export { defineReport, isReportDefinition, renderReportToText } from "./report.ts";
@@ -44,8 +54,10 @@ export {
 } from "./text/layout.ts";
 export type { ColumnAlign } from "./text/layout.ts";
 
-// 内置报告(show / view 裸跑时报告槽的出厂填充,一份普通 ReportDefinition,无 renderer 特权)
+// 内置报告兼组合件(show / view 裸跑时报告槽的出厂填充;也可作组件整体引用,
+// `<ExperimentComparison data={await ExperimentComparison.data(selection)} />`),无 renderer 特权
 export { ExperimentComparison } from "./built-ins/index.ts";
+export type { ExperimentComparisonData, ExperimentComparisonProps } from "./built-ins/index.ts";
 
 // locale:官方组件 chrome 文案的语言(en / zh-CN);指标 label 可按 locale 给字典
 export { DEFAULT_REPORT_LOCALE, resolveMetricLabel } from "./locale.ts";
@@ -97,6 +109,8 @@ export type {
   Aggregator,
   AttemptListItem,
   AttemptLocator,
+  AxisInput,
+  ConfigRef,
   DeltaData,
   Dimension,
   DimensionInput,

@@ -59,8 +59,8 @@ export interface TurnHandle {
   calledSubagent(name: string, match?: SubagentMatch): AssertionHandle;
   /** 断言本轮事件按给定类型顺序出现(允许中间夹杂其它事件)。 */
   eventOrder(types: StreamEvent["type"][]): AssertionHandle;
-  /** 用自定义谓词对本轮整段事件流断言;失败时用 label 说明原因。 */
-  eventsSatisfy(predicate: (events: readonly StreamEvent[]) => boolean, label?: string): AssertionHandle;
+  /** 用自定义谓词对本轮整段事件流断言;label 必填、进断言标题(谓词不透明,解释责任在 label)。 */
+  eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): AssertionHandle;
   /** 断言本轮 token 用量不超过 max。 */
   maxTokens(max: number): AssertionHandle;
   /** 断言本轮花费(USD)不超过 usd。 */
@@ -223,8 +223,8 @@ export interface SessionHandle {
   calledSubagent(name: string, match?: SubagentMatch): AssertionHandle;
   /** 断言这个会话累计事件按给定类型顺序出现。 */
   eventOrder(types: StreamEvent["type"][]): AssertionHandle;
-  /** 用自定义谓词对这个会话累计的整段事件流断言。 */
-  eventsSatisfy(predicate: (events: readonly StreamEvent[]) => boolean, label?: string): AssertionHandle;
+  /** 用自定义谓词对这个会话累计的整段事件流断言;label 必填、进断言标题。 */
+  eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): AssertionHandle;
   /** 断言这个会话累计 token 用量不超过 max。 */
   maxTokens(max: number): AssertionHandle;
   /** 断言这个会话累计花费(USD)不超过 usd。 */
@@ -330,8 +330,8 @@ export interface TestContext {
   calledSubagent(name: string, match?: SubagentMatch): AssertionHandle;
   /** 断言默认会话累计事件按给定类型顺序出现(允许中间夹杂其它事件)。 */
   eventOrder(types: StreamEvent["type"][]): AssertionHandle;
-  /** 用自定义谓词对默认会话累计的整段事件流断言;失败时用 label 说明原因。 */
-  eventsSatisfy(predicate: (events: readonly StreamEvent[]) => boolean, label?: string): AssertionHandle;
+  /** 用自定义谓词对默认会话累计的整段事件流断言;label 必填、进断言标题。 */
+  eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): AssertionHandle;
 
   // 工作区 / 沙箱
   /** 受限沙箱视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop 沙箱本身(见 SandboxHandle)。 */

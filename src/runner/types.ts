@@ -116,6 +116,11 @@ export interface EvalResult {
   trace?: TraceSpan[];
   /** 本 attempt 的 agent setup 实际装了什么(Skill / native plugin / MCP / Python plugin);不参与评分。 */
   agentSetup?: AgentSetupManifest;
+  /**
+   * attempt 级聚合的证据覆盖(各 turn 的最差值,unknown/unavailable < partial < complete),
+   * 报告据此展示证据覆盖徽标(见 docs/feature/adapters/architecture/evidence.md)。
+   */
+  coverage?: import("../scoring/coverage.ts").ResolvedCoverage;
   diff?: DiffData;
   rawTranscript?: string;
   /** 携带条目(--resume 合入)专用:artifact 目录(相对结果根目录),指向原快照里的落盘。 */

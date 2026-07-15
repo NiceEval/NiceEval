@@ -1,15 +1,18 @@
 // defineMetric 与内置指标。
 //
 // null ≠ 0:null = 此 attempt 测不了这个指标(不进聚合);0 = 测了,结果是零(照常进)。
-// 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/library.md「内置指标」的表格:
+// 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/library.md「内置指标」的表格。
+// 三个通过率指标把「Agent 答错」与「基建没跑起来」拆开,不互相伪装:
 //
-//   指标(name)             skipped  errored          failed  passed        better
-//   passRate(pass-rate)     null     0                0       1             higher
-//   examScore(exam-score)   null     0                0       soft 均分      higher
-//   durationMs(duration)    null     实测             实测     实测          lower
-//   tokens(tokens)          null     实测;无 usage→null 同左   同左          lower
-//   costUSD(cost)           null     同上             同左     同左          lower
-//   turns(turns)             null     实测;o11y 缺失→null 同左  同左          lower
+//   指标(name)                                    skipped  errored          failed  passed        better
+//   taskPassRate(task-pass-rate)                   null     null             0       1             higher
+//   executionReliability(execution-reliability)    null     0                1       1             higher
+//   endToEndPassRate(end-to-end-pass-rate)         null     0                0       1             higher
+//   examScore(exam-score)                          null     0                0       soft 均分      higher
+//   durationMs(duration)                           null     实测             实测     实测          lower
+//   tokens(tokens)                                 null     实测;无 usage→null 同左   同左          lower
+//   costUSD(cost)                                  null     同上             同左     同左          lower
+//   turns(turns)                                   null     实测;o11y 缺失→null 同左  同左          lower
 //
 // 两档指标(docs/feature/reports/library.md「内置指标」):以上除 turns 外全部只读 attempt.result
 // 的瘦身字段——任何 producer、任何 copySnapshots artifacts 选择都算得出,内置报告
@@ -39,10 +42,57 @@ export function attemptCostUSD(result: EvalResult): number | null {
   return result.usage?.costUSD ?? result.estimatedCostUSD ?? null;
 }
 
-export const passRate = defineMetric({
-  name: "pass-rate",
+/**
+ * Agent 答题质量:passed = 1,failed = 0,errored 记 null 不进分母 ——
+ * 基础设施故障不伪装成 Agent 答错(docs/feature/reports/library.md「内置指标」)。
+ */
+export const taskPassRate = defineMetric({
+  name: "task-pass-rate",
   label: { en: "Pass rate", "zh-CN": "成功率" },
-  description: "Share of evals that passed (skipped attempts excluded).",
+  description: "Agent answer quality: passed = 1, failed = 0; errored is null (infrastructure faults never masquerade as wrong answers).",
+  better: "higher",
+  unit: "%",
+  value(a) {
+    switch (a.result.verdict) {
+      case "passed":
+        return 1;
+      case "failed":
+        return 0;
+      default:
+        // errored = 基建没跑起来,不是 Agent 答错 → null 不进分母;skipped 同为 null。
+        return null;
+    }
+  },
+});
+
+/** 基建可靠性:跑到可判定(passed / failed)= 1,errored = 0;skipped → null。 */
+export const executionReliability = defineMetric({
+  name: "execution-reliability",
+  label: { en: "Execution reliability", "zh-CN": "基建可靠性" },
+  description: "Infrastructure reliability: reached a verdict (passed / failed) = 1, errored = 0.",
+  better: "higher",
+  unit: "%",
+  value(a) {
+    switch (a.result.verdict) {
+      case "passed":
+      case "failed":
+        return 1;
+      case "errored":
+        return 0;
+      default:
+        return null; // skipped
+    }
+  },
+});
+
+/**
+ * 端到端合成:passed = 1,failed / errored = 0;哪边拖累用
+ * taskPassRate / executionReliability 拆开看。
+ */
+export const endToEndPassRate = defineMetric({
+  name: "end-to-end-pass-rate",
+  label: { en: "End-to-end pass rate", "zh-CN": "端到端成功率" },
+  description: "End-to-end composite: passed = 1, failed / errored = 0. Split blame with taskPassRate and executionReliability.",
   better: "higher",
   unit: "%",
   value: (a) =>
@@ -62,9 +112,11 @@ export const examScore = defineMetric({
     // 字面实现会让条件空真成立、崩溃反而得满分 —— 交白卷是 0 分,不是缺数据,更不是满分。
     // failed 同理得 0:--strict 下被翻成 failed 的哪怕 soft 分不低也是 0(报告不重新判卷)。
     if (verdict !== "passed") return 0;
-    const soft = assertions.filter((x) => x.severity === "soft");
+    // unavailable 没有分数:不计入均分分母(评不了 ≠ 0 分;非 optional 的 unavailable
+    // 早已把 verdict 拖成 errored,走不到这个分支)。
+    const soft = assertions.filter((x) => x.severity === "soft" && x.outcome !== "unavailable");
     if (soft.length === 0) return 1;
-    return soft.reduce((sum, x) => sum + x.score, 0) / soft.length;
+    return soft.reduce((sum, x) => sum + (x.outcome === "unavailable" ? 0 : x.score), 0) / soft.length;
   },
 });
 

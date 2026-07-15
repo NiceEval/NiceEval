@@ -84,7 +84,7 @@ async function seedRoot(): Promise<string> {
   await writeSnapshot(root, "compare_bub", "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", agent: "bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
     res("weather/brooklyn", "passed"),
     res("fixtures/button", "failed", {
-      assertions: [{ name: 'fileChanged("Button.tsx")', severity: "gate", score: 0, passed: false }],
+      assertions: [{ name: 'fileChanged("Button.tsx")', severity: "gate", score: 0, outcome: "failed" as const }],
     }),
   ]);
   await writeSnapshot(root, "compare_codex", "2026-07-09T10-00-00-000Z", { experimentId: "compare/codex", agent: "codex", startedAt: "2026-07-09T10:00:00.000Z" }, [

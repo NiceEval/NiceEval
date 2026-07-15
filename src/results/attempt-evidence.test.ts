@@ -34,7 +34,7 @@ const SOURCE_PATH = "evals/a.eval.ts";
 const SOURCE_CONTENT = 'import { defineEval } from "niceeval";\nexport default defineEval({\n  test() {},\n});\n';
 
 const ASSERTIONS: EvalResult["assertions"] = [
-  { name: "check-1", passed: true, severity: "gate", score: 1, loc: { file: SOURCE_PATH, line: 3 } },
+  { name: "check-1", outcome: "passed" as const, severity: "gate", score: 1, loc: { file: SOURCE_PATH, line: 3 } },
 ];
 
 const EVENTS: StreamEvent[] = [

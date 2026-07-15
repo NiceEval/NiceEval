@@ -9,6 +9,8 @@ import type { AttemptHandle, Selection, SelectionWarning, Snapshot } from "../re
 import { encodeAttemptLocator, type AttemptLocator } from "../results/locator.ts";
 import type {
   Aggregator,
+  AxisInput,
+  ConfigRef,
   DimensionInput,
   Metric,
   MetricCell,
@@ -115,29 +117,56 @@ function isFlagRef(dimension: DimensionInput): dimension is FlagRef {
   return typeof dimension === "object" && "kind" in dimension && dimension.kind === "flag";
 }
 
+function isConfigRef(dimension: DimensionInput): dimension is ConfigRef {
+  return typeof dimension === "object" && "kind" in dimension && dimension.kind === "config";
+}
+
 /** experiment 声明的 flags(经 runner 原样透传进持久化字段 ExperimentRunInfo.flags)。 */
 function flagsOf(attempt: AttemptHandle): Record<string, unknown> | undefined {
   return attempt.result.experiment?.flags;
 }
 
+/**
+ * config() 的取值:读快照的 `ExperimentRunInfo` 投影(快照优先;第三方落盘只把投影拼在
+ * 条目上时回退 result.experiment),外加桥接到快照顶层权威字段的 `model` / `agent` 两个键
+ * (与 "model" / "agent" 内置维度同一读法,不另造第二套口径)。未投影 → undefined。
+ */
+function configValueOf(ref: ConfigRef, item: Item): unknown {
+  if (ref.name === "model") return item.attempt.result.model ?? item.snapshot.model;
+  if (ref.name === "agent") return item.attempt.result.agent || item.snapshot.agent;
+  const info = item.snapshot.experiment ?? item.attempt.result.experiment;
+  // ExperimentRunInfo 是穷尽可序列化投影;按字段名取值,新增投影字段无需改这里
+  return (info as Record<string, unknown> | undefined)?.[ref.name];
+}
+
 /** flag 声明值 → 组标签:label 函数优先,其余 String();未声明 → FLAG_UNSET。 */
 export function flagGroupKey(ref: FlagRef, item: Item): string {
-  const value = flagsOf(item.attempt)?.[ref.name];
+  return refGroupKey(ref, flagsOf(item.attempt)?.[ref.name]);
+}
+
+/** config 投影值 → 组标签,规则与 flagGroupKey 一致;未投影 → FLAG_UNSET。 */
+export function configGroupKey(ref: ConfigRef, item: Item): string {
+  return refGroupKey(ref, configValueOf(ref, item));
+}
+
+function refGroupKey(ref: FlagRef | ConfigRef, value: unknown): string {
   if (value === undefined) return FLAG_UNSET;
-  // 持久化字段是 Record<string, unknown>;声明侧的合法值就是这三种标量
+  // 声明侧的合法标量就是这三种;非标量投影(sandbox / selectedEvalIds…)如实 JSON 化,不猜
   if (typeof ref.label === "function") return ref.label(value as string | number | boolean);
+  if (typeof value === "object" && value !== null) return JSON.stringify(value);
   return String(value);
 }
 
-/** flag 作轴:要求数值;未声明或非数值 → null(点不画,注脚报数)。 */
-export function flagAxisValue(ref: FlagRef, item: Item): number | null {
-  const value = flagsOf(item.attempt)?.[ref.name];
+/** flag / config 作轴:要求数值;未声明、未投影或非数值 → null(点不画,注脚报数)。 */
+export function axisValue(ref: AxisInput, item: Item): number | null {
+  const value = ref.kind === "flag" ? flagsOf(item.attempt)?.[ref.name] : configValueOf(ref, item);
   return typeof value === "number" ? value : null;
 }
 
 export function dimensionKey(dimension: DimensionInput, item: Item): string {
   if (typeof dimension !== "string") {
     if (isFlagRef(dimension)) return flagGroupKey(dimension, item);
+    if (isConfigRef(dimension)) return configGroupKey(dimension, item);
     return dimension.of(item.attempt);
   }
   const result = item.attempt.result;

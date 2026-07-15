@@ -119,6 +119,8 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
 export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   const scores: Record<string, number> = {};
   for (const a of result.assertions) {
+    // unavailable 是没有分数的独立态:不写 0 分(评不了 ≠ 0 分),缺口进 metadata。
+    if (a.outcome === "unavailable") continue;
     const base = a.severity === "gate" ? `gate:${a.name}` : a.name;
     let key = base;
     for (let n = 2; key in scores; n++) key = `${base}#${n}`;
@@ -156,9 +158,13 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   }
   if (result.skipReason !== undefined) metadata.skipReason = result.skipReason;
   const failed = result.assertions
-    .filter((a) => !a.passed)
+    .filter((a) => a.outcome === "failed")
     .map((a) => ({ name: a.name, detail: a.detail }));
   if (failed.length > 0) metadata.failedAssertions = failed;
+  const unavailable = result.assertions
+    .filter((a) => a.outcome === "unavailable")
+    .map((a) => ({ name: a.name, reason: a.outcome === "unavailable" ? a.reason : "" }));
+  if (unavailable.length > 0) metadata.unavailableAssertions = unavailable;
 
   // 一次运行内 (experiment, eval, agent, model, attempt) 唯一;Braintrust 按 id 合并重复行。
   const id = [result.experimentId ?? "", result.id, result.agent, result.model ?? "", `a${result.attempt}`].join("|");

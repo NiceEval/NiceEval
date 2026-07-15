@@ -13,6 +13,7 @@
 import type {
   AttemptListItem,
   AttemptLocator,
+  AxisInput,
   DeltaData,
   DimensionInput,
   EvalListItem,
@@ -24,18 +25,18 @@ import type {
   Metric,
   MetricCell,
   OverviewData,
-  FlagRef,
   ScatterData,
   ScoreboardData,
   TableData,
   TableRowMeta,
 } from "./types.ts";
-import type { AssertionResult, EvalResult } from "../types.ts";
+import type { AssertionResult, AttemptError, DiagnosticRecord, EvalResult } from "../types.ts";
 import type { AttemptHandle } from "../results/types.ts";
 import { evalLevelStats, foldEvalVerdict } from "../shared/verdict.ts";
 import {
   applyAggregator,
   assertUniqueMetricNames,
+  axisValue,
   collectItems,
   computeCell,
   dimensionKey,
@@ -48,7 +49,6 @@ import {
   experimentIdOf,
   filterItems,
   groupItems,
-  flagAxisValue,
   locatorOf,
   resolveInput,
   snapshotKeyOf,
@@ -56,7 +56,7 @@ import {
   type Item,
   type SnapshotsInput,
 } from "./aggregate.ts";
-import { attemptCostUSD, costUSD, durationMs, examScore, passRate, tokens } from "./metrics.ts";
+import { attemptCostUSD, costUSD, durationMs, examScore, taskPassRate, tokens } from "./metrics.ts";
 import { formatMetricValue, formatPlainNumber } from "./format.ts";
 
 // ───────────────────────── MetricTable.data ─────────────────────────
@@ -181,7 +181,7 @@ function experimentRowMeta(group: Item[]): TableRowMeta {
  * 的断言列表共用这同一份材料,保证同一个 attempt 在各处给出同一个原因。
  */
 export function failingGateAssertions(result: EvalResult): AssertionResult[] {
-  return result.assertions.filter((a) => !a.passed && a.severity === "gate");
+  return result.assertions.filter((a) => a.outcome === "failed" && a.severity === "gate");
 }
 
 /**
@@ -247,13 +247,53 @@ export async function tableData<const M extends readonly Metric[]>(
 // (docs/feature/reports/library.md「实体列表」)。AttemptListItem 是三者共用的叶子形状——
 // ExperimentList / EvalList 的下钻数组直接复用它,不各自精简一份。
 
-/** 自由文本(error / 断言 detail / evidence)的发布消毒钩子;身份字段(name/severity/loc)不经它。 */
+/** 自由文本(断言 detail / evidence)的展示层遮蔽钩子;身份字段(name/severity/loc)不经它。 */
 function redactAssertions(assertions: AssertionResult[], redact: (text: string) => string): AssertionResult[] {
   if (assertions.length === 0) return assertions;
   return assertions.map((a) => ({
     ...a,
     ...(a.detail !== undefined ? { detail: redact(a.detail) } : {}),
-    ...(a.evidence !== undefined ? { evidence: redact(a.evidence) } : {}),
+    ...(a.outcome !== "unavailable" && a.evidence !== undefined ? { evidence: redact(a.evidence) } : {}),
+    ...(a.outcome !== "unavailable" && a.expected !== undefined ? { expected: redact(a.expected) } : {}),
+    ...(a.outcome !== "unavailable" && a.received !== undefined ? { received: redact(a.received) } : {}),
+  }));
+}
+
+/**
+ * 结构化 error 的遮蔽:message / stack / cause.message 是自由文本,经钩子;
+ * code / operation / cause.name / cause.code 是分类与身份字段,原样保留
+ * (与 copySnapshots({ redact }) 的改写范围约定一致)。
+ */
+function redactError(error: AttemptError, redact: (text: string) => string): AttemptError {
+  return {
+    ...error,
+    message: redact(error.message),
+    ...(error.stack !== undefined ? { stack: redact(error.stack) } : {}),
+    ...(error.cause !== undefined ? { cause: { ...error.cause, message: redact(error.cause.message) } } : {}),
+  };
+}
+
+/** JsonValue 树里逐个字符串值经钩子;结构与非字符串标量原样。 */
+function redactJsonValue<T>(value: T, redact: (text: string) => string): T {
+  if (typeof value === "string") return redact(value) as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => redactJsonValue(v, redact)) as unknown as T;
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, redactJsonValue(v, redact)]),
+    ) as unknown as T;
+  }
+  return value;
+}
+
+/** diagnostics 的遮蔽:message 与 data(自由内容)经钩子;code / operation / level / count 原样。 */
+function redactDiagnostics(
+  diagnostics: readonly DiagnosticRecord[],
+  redact: (text: string) => string,
+): DiagnosticRecord[] {
+  return diagnostics.map((d) => ({
+    ...d,
+    message: redact(d.message),
+    ...(d.data !== undefined ? { data: redactJsonValue(d.data, redact) } : {}),
   }));
 }
 
@@ -267,7 +307,10 @@ function attemptListItemOf(item: Item, redact: (text: string) => string): Attemp
     attempt: result.attempt,
     agent: result.agent,
     verdict: result.verdict,
-    ...(result.error !== undefined ? { error: redact(result.error.message) } : {}),
+    ...(result.error !== undefined ? { error: redactError(result.error, redact) } : {}),
+    ...(result.diagnostics !== undefined && result.diagnostics.length > 0
+      ? { diagnostics: redactDiagnostics(result.diagnostics, redact) }
+      : {}),
     assertions: redactAssertions(result.assertions, redact),
     durationMs: result.durationMs,
     ...(cost !== null ? { costUSD: cost } : {}),
@@ -278,7 +321,11 @@ function attemptListItemOf(item: Item, redact: (text: string) => string): Attemp
 const identityRedact = (text: string): string => text;
 
 export interface AttemptListDataOptions {
-  /** 发布消毒:error / 断言 detail / evidence 经这个钩子;身份字段(experimentId/evalId/locator…)不经它。 */
+  /**
+   * 展示层遮蔽:error 的 message/cause/stack、diagnostic 的 message/data、断言 detail 与
+   * evidence 经这个钩子;experimentId、evalId、locator、error/diagnostic code 与 lifecycle
+   * operation 等身份和分类字段不经它。只作用于这次计算产出的组件数据,不改盘上 artifact。
+   */
   redact?: (text: string) => string;
 }
 
@@ -360,7 +407,7 @@ export async function experimentListData(input: SnapshotsInput): Promise<Experim
         : {}),
       ...(experiment?.flags ? { flags: experiment.flags } : {}),
       verdicts: stats.verdicts,
-      passRate: await computeCell(passRate, group),
+      passRate: await computeCell(taskPassRate, group),
       cost: await computeCell(costUSD, group),
       duration: await computeCell(durationMs, group),
       tokens: await computeCell(tokens, group),
@@ -370,7 +417,7 @@ export async function experimentListData(input: SnapshotsInput): Promise<Experim
       evalRows,
     });
   }
-  // ExperimentList 是默认实验比较表:初始态按成功率从高到低,缺数据沉底;
+  // ExperimentList 是默认实验比较表:初始态按成功率(taskPassRate)从高到低,缺数据沉底;
   // 同分时按 experiment id 稳定排序。web 增强可临时重排,text 面沿用同一基准顺序。
   out.sort((a, b) => {
     if (a.passRate.value === null && b.passRate.value === null) return a.experimentId.localeCompare(b.experimentId);
@@ -571,10 +618,10 @@ export async function scatterData(input: SnapshotsInput, opts: ScatterDataOption
 // ───────────────────────── MetricLine.data ─────────────────────────
 
 export interface LineDataOptions {
-  /** x 轴:experiment 声明的 flag(数值),不解析 experiment 命名。 */
-  x: FlagRef;
+  /** x 轴:experiment 声明的 flag 或顶层运行配置 config()(要求数值),不解析 experiment 命名。 */
+  x: AxisInput;
   y: Metric;
-  /** 可选:每个系列一条线(flag 或普通维度);省略 = 单系列。 */
+  /** 可选:每个系列一条线(flag / config 或普通维度);省略 = 单系列。 */
   series?: DimensionInput;
 }
 
@@ -585,7 +632,7 @@ export async function lineData(input: SnapshotsInput, opts: LineDataOptions): Pr
   const groups = groupItems(items, "experiment");
   const rows: LineData["rows"] = [];
   for (const [key, group] of groups) {
-    const x = flagAxisValue(opts.x, group[0]); // flag 是 experiment 级声明,组内一致
+    const x = axisValue(opts.x, group[0]); // flag / config 都是 experiment 级声明,组内一致
     rows.push({
       key,
       series: opts.series ? dimensionKey(opts.series, group[0]) : undefined,
@@ -640,9 +687,10 @@ export async function overviewData(input: SnapshotsInput): Promise<OverviewData>
     const cost = attemptCostUSD(result);
     if (cost !== null) costUSD = (costUSD ?? 0) + cost;
   }
-  // 通过率的唯一官方口径:两级聚合(computeCell),不是从上面四个 verdict 计票现场重算——
-  // 一道题内 attempt 部分通过要算部分 credit,不是二元投票。
-  const passRateCell = await computeCell(passRate, items);
+  // 通过率的唯一官方口径:taskPassRate 的两级聚合(computeCell),不是从上面四个 verdict
+  // 计票现场重算——一道题内 attempt 部分通过要算部分 credit,不是二元投票;errored 记 null
+  // 不进分母(基建故障不伪装成答错),errored 的存在经上面的 verdict 计票如实呈现。
+  const passRateCell = await computeCell(taskPassRate, items);
   return {
     snapshots: snapshots.map((s) => ({
       experimentId: s.experimentId,
