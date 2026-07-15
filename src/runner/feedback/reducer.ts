@@ -24,6 +24,7 @@ export function createInitialRunFeedbackState(): RunFeedbackState {
     elapsedMs: 0,
     active: new Map(),
     failures: [],
+    freshFailureCount: 0,
     diagnostics: [],
     kept: [],
   };
@@ -46,7 +47,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         running: 0,
         completed: 0,
         active: new Map(),
-        failures: [],
+        failures: (event.plan.reusedFailures ?? []).map((failure) => ({ ...failure, at: event.at })),
+        freshFailureCount: 0,
         diagnostics: [],
       };
     }
@@ -104,11 +106,16 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         event.estimatedCostUSD === undefined
           ? state.estimatedCostUSD
           : (state.estimatedCostUSD ?? 0) + event.estimatedCostUSD;
+      const newTokenCount =
+        event.tokenCount === undefined
+          ? state.newTokenCount
+          : (state.newTokenCount ?? 0) + event.tokenCount;
       return {
         ...state,
         running: state.running - 1,
         completed: state.completed + 1,
         active,
+        newTokenCount,
         estimatedCostUSD,
       };
     }
@@ -124,7 +131,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         earlyExitSkipped: state.earlyExitSkipped + 1,
       };
 
-    case "failure":
+    case "failure": {
+      const isFresh = !state.failures.some((failure) => failure.locator === event.locator);
       return {
         ...state,
         failures: upsertFailure(state.failures, {
@@ -137,7 +145,9 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           ...(event.assertion !== undefined ? { assertion: event.assertion } : {}),
           ...(event.phase !== undefined ? { phase: event.phase } : {}),
         }),
+        freshFailureCount: state.freshFailureCount + (isFresh ? 1 : 0),
       };
+    }
 
     case "diagnostic":
       return {

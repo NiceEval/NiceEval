@@ -5,7 +5,6 @@
 import { readFile } from "node:fs/promises";
 import { Effect, Cause, Exit } from "effect";
 import { probeJudge } from "../scoring/judge.ts";
-import { compactAssertionSummary, primaryAssertionSummary } from "../scoring/display.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planCarry } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
@@ -19,18 +18,11 @@ import {
   reportFailure,
   reportInterrupted,
 } from "./feedback/sink.ts";
+import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../results/locator.ts";
 import { runWho } from "./types.ts";
-import { firstLine } from "../util.ts";
 import type { Agent, EvalResult, JudgeConfig, Reporter, ReporterRegistration, RunShape, RunSummary } from "../types.ts";
 import type { AgentRun, Attempt, LifecyclePhase, AttemptRef, RunOptions } from "./types.ts";
-
-/** 结构化摘要缺席时的防御性文本；正常 failed 会同时携带 assertion 字段。 */
-function describeFailureReason(result: EvalResult): string {
-  if (result.verdict === "errored") return firstLine(result.error?.message ?? result.verdict);
-  const assertion = primaryAssertionSummary(result.assertions, result.verdict);
-  return assertion ? compactAssertionSummary(assertion) : firstLine(result.error?.message ?? result.verdict);
-}
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -496,6 +488,9 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               identity: feedbackIdentity(a),
               who: feedbackWho(a),
               verdict: result.verdict,
+              tokenCount: result.usage
+                ? (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0)
+                : undefined,
               estimatedCostUSD: result.estimatedCostUSD,
             });
             if (a.run.budget !== undefined) {
@@ -547,25 +542,9 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
             // 只在拿到 locator 时报(裸 run 没有 locator,不产出这类事件,与上面 result.locator
             // 的省略规则一致),且只报真正计入 results 的 attempt(上面的并发去重分支已经
             // return 掉、不会走到这里,不会为一条被丢弃的重复 attempt 误报失败)。
-            if (locator && (result.verdict === "failed" || result.verdict === "errored")) {
-              // phase 只解释执行错误发生在哪里,直接取 attempt 已绑定的结构化 error.phase。
-              // 普通 failed 是断言 outcome,不属于 lifecycle phase;不能把 verdict 算出后继续经过的
-              // telemetry.collect 误报成失败位置(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
-              const failurePhase = result.verdict === "errored" ? result.error?.phase : undefined;
-              // error 是结构化执行根因时不附 assertion；其余 failed / assertion-unavailable
-              // 由 scoring 的共享摘要投影选择同一条主断言，三个 profile 与报告列表口径一致。
-              const assertion = result.error === undefined
-                ? primaryAssertionSummary(result.assertions, result.verdict)
-                : undefined;
-              reportFailure({
-                locator,
-                identity: feedbackIdentity(a),
-                who: feedbackWho(a),
-                verdict: result.verdict,
-                reason: describeFailureReason(result),
-                ...(assertion !== undefined ? { assertion } : {}),
-                ...(failurePhase !== undefined ? { phase: failurePhase } : {}),
-              });
+            if (locator) {
+              const failure = failureDetailFromResult(result);
+              if (failure) reportFailure(failure);
             }
             yield* reportMutex.withPermits(1)(
               // 每个 reporter 单独兜错:一个写文件失败 / 自定义 reporter 抛错只记 diagnostic,

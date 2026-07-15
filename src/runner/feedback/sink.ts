@@ -16,8 +16,8 @@
 
 import { writeStderrLine } from "../../tty-line.ts";
 import { t } from "../../i18n/index.ts";
-import type { AttemptLifecycleEvent, LifecyclePhase, AttemptRef } from "../types.ts";
-import type { PrimaryAssertionSummary, Verdict } from "../../scoring/types.ts";
+import type { AttemptLifecycleEvent, AttemptRef, FailureDetail } from "../types.ts";
+import type { Verdict } from "../../scoring/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import type { AttemptLocator } from "../../results/locator.ts";
 
@@ -39,19 +39,7 @@ export interface DiagnosticInput {
  *  `type`/`at`(由 coordinator 补上)。`locator` 只有在 attempt 挂靠 experiment 时才存在
  *  (见 `results/locator.ts` 的 `encodeAttemptLocator`);调用方(run.ts)只在拿到 locator 之后
  *  才应该调用这个函数——没有 locator 的裸 run 不产出这类永久失败通知。 */
-export interface FailureInput {
-  locator: AttemptLocator;
-  identity: AttemptRef;
-  who: string;
-  verdict: "failed" | "errored";
-  /** 一层可行动摘要(gate 断言名、error 消息……),整句透传,不拆分成 code/message 子字段
-   *  (见 agent.ts 顶部注释「为什么不拆 code/message」)。 */
-  reason: string;
-  /** failed / assertion-unavailable 的结构化摘要；CI 不解析 reason。 */
-  assertion?: PrimaryAssertionSummary;
-  /** 仅 errored 使用：结构化执行错误发生时所在的阶段。failed 是断言 outcome，不带 phase。 */
-  phase?: LifecyclePhase;
-}
+export type FailureInput = FailureDetail;
 
 /** `sink.budgetExhausted()` 的输入 —— 与 `DurableFeedbackEvent` 的 "budget-exhausted" 变体字段
  *  一致,只省略 `type`/`at`。调用方(run.ts)对每一个因预算到顶而不派发的 attempt 各调一次

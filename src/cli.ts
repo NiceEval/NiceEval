@@ -14,6 +14,7 @@ import { parseArgs as nodeParseArgs } from "node:util";
 import { discoverEvals, discoverExperiments, makeFilter } from "./runner/discover.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
 import { planCarry } from "./runner/fingerprint.ts";
+import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { sandboxRecommendedConcurrency } from "./sandbox/resolve.ts";
@@ -101,7 +102,7 @@ interface Flags {
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
   diffPath?: string;
-  timing: boolean;
+  timing?: "summary" | "full";
   keepSandbox?: "failed" | "all";
   all: boolean;
   allowSensitiveArtifacts: boolean;
@@ -162,7 +163,7 @@ const FLAG_OPTIONS = {
   eval: { type: "boolean" },
   /** `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。 */
   execution: { type: "boolean" },
-  /** `show` 命令专用:整个 attempt 的统一时间树(runner 阶段 + hook/命令/turn 包络 + 轮内 OTel)。 */
+  /** `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 */
   timing: { type: "boolean" },
   // --diff 是布尔;--diff=<路径> 在 parseArgs 前预扫成 diffPath(路径必须 = 连写,
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
@@ -223,6 +224,9 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
   let diffPath: string | undefined;
   // --keep-sandbox[=failed|all] 预扫:本体是布尔(裸 = failed 档),档位只接受 = 连写。
   let keepSandboxTier: "failed" | "all" | undefined;
+  // --timing[=summary|full] 预扫:node:util 的单个 option 不支持 boolean|string 联合，
+  // 所以 mode 在严格 parseArgs 前提取，再把两种形式统一成布尔 --timing。
+  let timingMode: "summary" | "full" | undefined;
   argv = argv.map((arg) => {
     if (arg.startsWith("--diff=")) {
       const path = arg.slice("--diff=".length);
@@ -237,6 +241,15 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
       }
       keepSandboxTier = tier;
       return "--keep-sandbox";
+    }
+    if (arg.startsWith("--timing=")) {
+      const mode = arg.slice("--timing=".length);
+      if (mode !== "summary" && mode !== "full") {
+        process.stderr.write(`--timing only accepts "summary" (default) or "full", got "${mode}".\n`);
+        process.exit(1);
+      }
+      timingMode = mode;
+      return "--timing";
     }
     return arg;
   });
@@ -285,7 +298,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     execution: values.execution === true,
     diff: values.diff === true && diffPath === undefined,
     diffPath,
-    timing: values.timing === true,
+    timing: values.timing === true ? (timingMode ?? "summary") : undefined,
     keepSandbox: values["keep-sandbox"] === true ? (keepSandboxTier ?? "failed") : undefined,
     all: values.all === true,
     allowSensitiveArtifacts: values["allow-sensitive-artifacts"] === true,
@@ -313,6 +326,7 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   const VIEW = "view";
   if (flags.eval) return { flag: "--eval", command: SHOW };
   if (flags.execution) return { flag: "--execution", command: SHOW };
+  if (flags.timing !== undefined) return { flag: "--timing", command: SHOW };
   if (flags.diff || flags.diffPath !== undefined) return { flag: "--diff", command: SHOW };
   if (flags.history) return { flag: "--history", command: SHOW };
   if (flags.experiment !== undefined) return { flag: "--experiment", command: BOTH };
@@ -634,6 +648,8 @@ async function main(): Promise<void> {
   }
 
   const agentRuns: AgentRun[] = [];
+  let experimentSelection = t("cli.all");
+  let availableExperimentGroups = t("cli.none");
 
   if (command === "exp") {
     if (flags.agent || flags.model) {
@@ -648,6 +664,10 @@ async function main(): Promise<void> {
     const experiments = await discoverExperiments(cwd);
     const expArg = positionals[0];
     const extraPatterns = positionals.slice(1);
+    experimentSelection = positionals.join(" ") || t("cli.all");
+    availableExperimentGroups = [...new Set(experiments.map((experiment) => experiment.group || experiment.id))]
+      .sort()
+      .join(", ") || t("cli.none");
     const selected = expArg
       ? experiments.filter((e) => e.group === expArg || e.id === expArg || e.id.startsWith(expArg + "/"))
       : experiments;
@@ -721,6 +741,14 @@ async function main(): Promise<void> {
   const totalRuns = agentRuns.reduce((sum, run, i) => sum + matchedByRun[i]!.length * run.runs, 0);
   const uniqueEvalIds = new Set(matchedByRun.flat().map((e) => e.id));
 
+  if (totalRuns === 0) {
+    process.stderr.write(t("cli.experiment.noEvalsSelected", {
+      selection: experimentSelection,
+      experiments: availableExperimentGroups,
+    }));
+    process.exit(1);
+  }
+
   if (flags.dry) {
     // --dry 只按所选 profile 打印计划,不运行、不落盘 —— 三种 profile 各自的展示逻辑
     // 都在 runner/feedback/{human,agent,ci}.ts 里,这里只负责拼数据、选函数、写流、退出。
@@ -771,23 +799,15 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // 提前算好携入计划:coordinator 的 plan 事件(reused/reusedByExperiment)与 runEvals 内部
+  // 提前算好携入计划:coordinator 的 plan 事件与 runEvals 内部
   // 实际调度必须共用同一份 planCarry() 判断,否则两边各自算一遍,一旦不一致,dashboard/
   // envelope 展示的"携入"就会和 run.ts 真实调度的"携入"对不上(见 memory 的
   // live-carry-row-shows-waiting-forever)。
   const priorResults = flags.force ? undefined : await loadLatestResultsPerEval(join(cwd, ".niceeval"));
   const carryPlan = priorResults?.length ? await planCarry(evals, agentRuns, priorResults) : undefined;
-  const reusedByExperiment: { experimentId: string; evalIds: string[] }[] = [];
-  {
-    const grouped = new Map<string, Set<string>>();
-    for (const r of carryPlan?.carriedResults ?? []) {
-      if (!r.experimentId) continue;
-      const ids = grouped.get(r.experimentId) ?? new Set<string>();
-      ids.add(r.id);
-      grouped.set(r.experimentId, ids);
-    }
-    for (const [experimentId, ids] of grouped) reusedByExperiment.push({ experimentId, evalIds: [...ids] });
-  }
+  const reusedFailures = (carryPlan?.carriedResults ?? [])
+    .map(failureDetailFromResult)
+    .filter((failure) => failure !== undefined);
 
   // 无全局默认:并发上限由 sandbox provider 的推荐值决定(多个 agentRun 各有 sandbox 时取
   // 最小值,最保守的 provider 决定上限)。同一个值既进 RunFeedbackPlan.shape,也传给 runEvals——
@@ -803,7 +823,7 @@ async function main(): Promise<void> {
   const plan: RunFeedbackPlan = {
     shape: { evals: uniqueEvalIds.size, configs: agentRuns.length, totalRuns, maxConcurrency },
     reused: carryPlan?.carriedResults.length ?? 0,
-    reusedByExperiment,
+    reusedFailures,
   };
 
   // 一个 run 内只有一个终端协调者(见 docs/feature/experiments/cli.md「输出流和落盘节奏」):

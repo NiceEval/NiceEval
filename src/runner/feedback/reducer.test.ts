@@ -45,20 +45,57 @@ describe("reduceRunFeedback: 守恒公式", () => {
     const b = ref("memory/b");
     const c = ref("memory/c");
     const state = replay([
-      { type: "plan", at: 0, plan: { shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedByExperiment: [] } },
+      { type: "plan", at: 0, plan: { shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedFailures: [] } },
       { type: "attempt:start", at: 1, identity: a, who: "codex", phase: "sandbox.create" },
       { type: "attempt:start", at: 1, identity: b, who: "codex", phase: "sandbox.create" },
       { type: "attempt:start", at: 1, identity: c, who: "codex", phase: "sandbox.create" },
       { type: "attempt:phase", at: 2, identity: a, phase: "eval.run" },
       { type: "attempt:progress", at: 3, identity: a, detail: "turn 2" },
-      { type: "attempt:complete", at: 4, identity: a, who: "codex", verdict: "passed", estimatedCostUSD: 0.1 },
-      { type: "attempt:complete", at: 5, identity: b, who: "codex", verdict: "passed", estimatedCostUSD: 0.2 },
+      { type: "attempt:complete", at: 4, identity: a, who: "codex", verdict: "passed", tokenCount: 15, estimatedCostUSD: 0.1 },
+      { type: "attempt:complete", at: 5, identity: b, who: "codex", verdict: "passed", tokenCount: 25, estimatedCostUSD: 0.2 },
       { type: "attempt:complete", at: 6, identity: c, who: "codex", verdict: "passed", estimatedCostUSD: 0.05 },
     ]);
     expect(state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, completed: 3 });
     expect(state.estimatedCostUSD).toBeCloseTo(0.35, 5);
+    expect(state.newTokenCount).toBe(40);
     expect(state.active.size).toBe(0);
     expect(state.failures).toEqual([]);
+  });
+
+  it("plan 静态注入复用失败；fresh failure 单独计数且同 locator 幂等", () => {
+    const carriedLocator = locator("carried");
+    const freshLocator = locator("fresh");
+    let state = reduceRunFeedback(createInitialRunFeedbackState(), {
+      type: "plan",
+      at: 0,
+      plan: {
+        shape: { evals: 2, configs: 1, totalRuns: 2, maxConcurrency: 1 },
+        reused: 1,
+        reusedFailures: [{
+          locator: carriedLocator,
+          identity: ref("memory/carried", 0, "compare/bub-e2b"),
+          who: "compare/bub-e2b",
+          verdict: "failed",
+          reason: "carried failure",
+        }],
+      },
+    });
+    expect(state.failures.map((failure) => failure.locator)).toEqual([carriedLocator]);
+    expect(state.freshFailureCount).toBe(0);
+
+    const event = {
+      type: "failure" as const,
+      at: 1,
+      locator: freshLocator,
+      identity: ref("memory/fresh", 0, "compare/bub-e2b"),
+      who: "compare/bub-e2b",
+      verdict: "failed" as const,
+      reason: "fresh failure",
+    };
+    state = reduceRunFeedback(state, event);
+    state = reduceRunFeedback(state, event);
+    expect(state.failures).toHaveLength(2);
+    expect(state.freshFailureCount).toBe(1);
   });
 
   it("carry:携入结果在 plan 那一刻就计入 reused,守恒公式在第一个事件后就成立", () => {
@@ -68,7 +105,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
       plan: {
         shape: { evals: 5, configs: 1, totalRuns: 5, maxConcurrency: 5 },
         reused: 2,
-        reusedByExperiment: [{ experimentId: "compare/bub-e2b", evalIds: ["memory/x", "memory/y"] }],
+        reusedFailures: [],
       },
     });
     // plan 之后立刻(在任何 attempt 事件之前)守恒公式就应成立:2 个 reused + 3 个 queued。
@@ -79,7 +116,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     const b = ref("memory/b", 0, "compare/bub-e2b");
     const c = ref("memory/c", 0, "compare/bub-e2b");
     const final = replay([
-      { type: "plan", at: 0, plan: { shape: { evals: 5, configs: 1, totalRuns: 5, maxConcurrency: 5 }, reused: 2, reusedByExperiment: [] } },
+      { type: "plan", at: 0, plan: { shape: { evals: 5, configs: 1, totalRuns: 5, maxConcurrency: 5 }, reused: 2, reusedFailures: [] } },
       { type: "attempt:start", at: 1, identity: a, who: "bub-e2b", phase: "sandbox.create" },
       { type: "attempt:start", at: 1, identity: b, who: "bub-e2b", phase: "sandbox.create" },
       { type: "attempt:start", at: 1, identity: c, who: "bub-e2b", phase: "sandbox.create" },
@@ -99,7 +136,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 4, configs: 1, totalRuns: 4, maxConcurrency: 4 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 4, configs: 1, totalRuns: 4, maxConcurrency: 4 }, reused: 0, reusedFailures: [] },
     });
     for (const identity of [a, b, c, d]) {
       state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity, who: "codex", phase: "eval.run" });
@@ -129,7 +166,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     const retry1 = ref("memory/retry", 1);
     const retry2 = ref("memory/retry", 2);
     const state = replay([
-      { type: "plan", at: 0, plan: { shape: { evals: 1, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedByExperiment: [] } },
+      { type: "plan", at: 0, plan: { shape: { evals: 1, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedFailures: [] } },
       { type: "attempt:start", at: 1, identity: first, who: "codex", phase: "eval.run" },
       { type: "attempt:complete", at: 2, identity: first, who: "codex", verdict: "passed" },
       { type: "attempt:early-exit", at: 3, identity: retry1, who: "codex" },
@@ -146,7 +183,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedFailures: [] },
     });
     state = reduceRunFeedback(state, {
       type: "attempt:start",
@@ -198,7 +235,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 4, configs: 1, totalRuns: 4, maxConcurrency: 4 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 4, configs: 1, totalRuns: 4, maxConcurrency: 4 }, reused: 0, reusedFailures: [] },
     });
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: a, who: "regression/codex", phase: "eval.run" });
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: b, who: "regression/codex", phase: "eval.run" });
@@ -241,7 +278,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedFailures: [] },
     });
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: a, who: "codex", phase: "eval.run" });
     const beforeInterrupt = state;
@@ -269,7 +306,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedFailures: [] },
     });
     const afterQueuedNoop = reduceRunFeedback(state, {
       type: "attempt:queued",
@@ -306,7 +343,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedFailures: [] },
     });
     const before = state;
     state = reduceRunFeedback(state, { type: "tick", at: 1000, elapsedMs: 1000 });
@@ -322,7 +359,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 }, reused: 0, reusedFailures: [] },
     });
     for (const identity of attempts) {
       state = reduceRunFeedback(state, {
@@ -344,7 +381,7 @@ describe("reduceRunFeedback: 守恒公式", () => {
     state = reduceRunFeedback(state, {
       type: "plan",
       at: 0,
-      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedByExperiment: [] },
+      plan: { shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1 }, reused: 0, reusedFailures: [] },
     });
     state = reduceRunFeedback(state, { type: "attempt:start", at: 1, identity: a, who: "codex", phase: "eval.run" });
     state = reduceRunFeedback(state, { type: "attempt:progress", at: 2, identity: a, detail: "tool: shell" });

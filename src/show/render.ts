@@ -831,7 +831,11 @@ export function attemptOverviewText(
     const skillLoads = nodes.filter((n) => n.kind === "skill.loaded").length;
     const toolCalls = nodes.filter((n) => n.kind === "action").length;
     const aiMessages = nodes.filter((n) => n.kind === "message" && n.role === "assistant").length;
-    const execLines = [`execution: ${nodes.length} events · ${skillLoads} skill loads · ${toolCalls} tool calls · ${aiMessages} AI messages`];
+    const counted = (count: number, singular: string, plural = `${singular}s`) =>
+      `${count} ${count === 1 ? singular : plural}`;
+    const execLines = [
+      `execution: ${counted(nodes.length, "event")} · ${counted(skillLoads, "skill load")} · ${counted(toolCalls, "tool call")} · ${counted(aiMessages, "AI message")}`,
+    ];
     const timingLine = overviewTimingLine(r);
     if (timingLine) execLines.push(timingLine);
     blocks.push(execLines.join("\n"));
@@ -958,10 +962,19 @@ function windowHunk(c: { status: string; before?: string; after?: string }): str
 
 const CLOSING_PHASE_NAMES = new Set(["eval.teardown", "agent.teardown", "sandbox.teardown", "sandbox.suspend", "sandbox.stop"]);
 
+// 首页只保留能回答「大头在哪」的阶段。分类账锚点与 telemetry bookkeeping 在很短时
+// 留给 --timing 完整树；一旦自身变成慢点或失败，仍必须抬到首页，不能被静默藏掉。
+const OVERVIEW_DETAIL_PHASE_NAMES = new Set(["workspace.baseline", "telemetry.configure", "telemetry.collect"]);
+const OVERVIEW_DETAIL_THRESHOLD_MS = 1_000;
+
 /** phases 主链摘要行(首页 `timing:`):各主链阶段耗时点隔,收尾段合计以 `teardown +N` 单列。 */
 export function overviewTimingLine(r: EvalResult): string | undefined {
   if (!r.phases || r.phases.length === 0) return undefined;
-  const main = r.phases.filter((p) => !CLOSING_PHASE_NAMES.has(p.name));
+  const main = r.phases.filter(
+    (p) =>
+      !CLOSING_PHASE_NAMES.has(p.name) &&
+      (p.failed === true || !OVERVIEW_DETAIL_PHASE_NAMES.has(p.name) || p.durationMs >= OVERVIEW_DETAIL_THRESHOLD_MS),
+  );
   const closing = r.phases.filter((p) => CLOSING_PHASE_NAMES.has(p.name));
   const parts = main.map((p) => `${p.name} ${formatDurationMs(p.durationMs)}${p.failed ? " ✗" : ""}`);
   const closingMs = closing.reduce((sum, p) => sum + p.durationMs, 0);
@@ -969,33 +982,216 @@ export function overviewTimingLine(r: EvalResult): string | undefined {
   return `timing: ${parts.join(" · ")}`;
 }
 
-function timingNodeLines(node: TimingNode, prefix: string, isLast: boolean, spans: TraceSpan[] | null): string[] {
-  const branch = `${prefix}${isLast ? "└─ " : "├─ "}`;
-  const childPrefix = `${prefix}${isLast ? "   " : "│  "}`;
-  const label =
-    node.kind === "command" && node.command
-      ? `shell · ${node.command.display}`
-      : node.kind === "turn"
-        ? `turn ${node.label}`
-        : node.label;
-  const lines = [`${branch}${label}   ${formatDurationMs(node.durationMs)}${node.failed ? " ✗" : ""}`];
-  const kids = node.children ?? [];
-  // turn 带 traceId 时,从 trace.json 把该轮的 agent/model/tool spans 挂到 turn 下。
-  const attached =
-    node.kind === "turn" && node.traceId && spans
-      ? spans
-          .filter((sp) => sp.traceId === node.traceId && (sp.kind === "agent" || sp.kind === "model" || sp.kind === "tool"))
-          .slice(0, 12)
-      : [];
-  kids.forEach((child, i) => {
-    const last = i === kids.length - 1 && attached.length === 0;
-    lines.push(...timingNodeLines(child, childPrefix, last, spans));
-  });
-  attached.forEach((sp, i) => {
-    const last = i === attached.length - 1;
+const TIMING_DETAIL_NODE_BUDGET = 80;
+
+interface DiagnosticTimingNode {
+  id: string;
+  label: string;
+  startOffsetMs: number;
+  durationMs: number;
+  failed: boolean;
+  otel: boolean;
+  children: DiagnosticTimingNode[];
+}
+
+function timingNodeLabel(node: TimingNode): string {
+  if (node.kind === "command" && node.command) return `shell · ${node.command.display}`;
+  if (node.kind === "turn") return `turn ${node.label}`;
+  if (node.kind === "operation" || node.kind === "provider") return `${node.kind} · ${node.label}`;
+  return node.label;
+}
+
+function traceReferenceCounts(nodes: readonly TimingNode[], counts = new Map<string, number>()): Map<string, number> {
+  for (const node of nodes) {
+    if (node.kind === "turn" && node.traceId) counts.set(node.traceId, (counts.get(node.traceId) ?? 0) + 1);
+    traceReferenceCounts(node.children ?? [], counts);
+  }
+  return counts;
+}
+
+/** OTel 只按唯一 traceId 归属和 span parent 关系挂接；不按绝对墙钟猜跨进程顺序。 */
+function otelForest(traceId: string, spans: readonly TraceSpan[], turnStartOffsetMs: number): DiagnosticTimingNode[] {
+  const unique = new Map<string, TraceSpan>();
+  for (const span of spans) if (span.traceId === traceId && !unique.has(span.spanId)) unique.set(span.spanId, span);
+  const selected = [...unique.values()];
+  if (selected.length === 0) return [];
+  const traceOrigin = Math.min(...selected.map((span) => span.startMs));
+  const nodes = new Map<string, DiagnosticTimingNode>();
+  for (const span of selected) {
+    nodes.set(span.spanId, {
+      id: `otel:${span.traceId}:${span.spanId}`,
+      label: `${span.kind ?? "span"} · ${span.name}`,
+      startOffsetMs: turnStartOffsetMs + Math.max(0, span.startMs - traceOrigin),
+      durationMs: Math.max(0, span.endMs - span.startMs),
+      failed: span.status === "error",
+      otel: true,
+      children: [],
+    });
+  }
+  const roots: DiagnosticTimingNode[] = [];
+  for (const span of selected) {
+    const node = nodes.get(span.spanId)!;
+    const parent = span.parentSpanId && span.parentSpanId !== span.spanId ? nodes.get(span.parentSpanId) : undefined;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  const sort = (items: DiagnosticTimingNode[]) => {
+    items.sort((a, b) => a.startOffsetMs - b.startOffsetMs || a.id.localeCompare(b.id));
+    for (const item of items) sort(item.children);
+  };
+  sort(roots);
+  return roots;
+}
+
+function diagnosticTimingNode(
+  node: TimingNode,
+  spans: readonly TraceSpan[],
+  uniqueTraceIds: ReadonlySet<string>,
+): DiagnosticTimingNode {
+  const children = (node.children ?? []).map((child) => diagnosticTimingNode(child, spans, uniqueTraceIds));
+  if (node.kind === "turn" && node.traceId && uniqueTraceIds.has(node.traceId)) {
+    children.push(...otelForest(node.traceId, spans, node.startOffsetMs));
+  }
+  return {
+    id: `runner:${node.id}`,
+    label: timingNodeLabel(node),
+    startOffsetMs: node.startOffsetMs,
+    durationMs: node.durationMs,
+    failed: node.failed === true,
+    otel: false,
+    children,
+  };
+}
+
+interface FlatTimingNode {
+  node: DiagnosticTimingNode;
+  path: readonly DiagnosticTimingNode[];
+}
+
+function flattenTimingForest(roots: readonly DiagnosticTimingNode[]): FlatTimingNode[] {
+  const flat: FlatTimingNode[] = [];
+  const visit = (node: DiagnosticTimingNode, ancestors: readonly DiagnosticTimingNode[]) => {
+    const path = [...ancestors, node];
+    flat.push({ node, path });
+    for (const child of node.children) visit(child, path);
+  };
+  for (const root of roots) visit(root, []);
+  return flat;
+}
+
+/**
+ * 默认 80-node 投影。四个稳定池先各用自己的配额，再把空余额按失败→最慢→首尾重分配。
+ * 选中深层节点必须连同祖先整条加入；四池合并后按 id 去重。
+ */
+function selectTimingNodes(roots: readonly DiagnosticTimingNode[]): ReadonlySet<string> {
+  const flat = flattenTimingForest(roots);
+  if (flat.length <= TIMING_DETAIL_NODE_BUDGET) return new Set(flat.map(({ node }) => node.id));
+
+  const selected = new Set<string>();
+  const byStart = [...flat].sort(
+    (a, b) => a.node.startOffsetMs - b.node.startOffsetMs || a.node.id.localeCompare(b.node.id),
+  );
+  const failed = byStart.filter(({ node }) => node.failed);
+  const slow = [...flat].sort(
+    (a, b) => b.node.durationMs - a.node.durationMs || a.node.startOffsetMs - b.node.startOffsetMs || a.node.id.localeCompare(b.node.id),
+  );
+  const latest = [...flat].sort(
+    (a, b) => b.node.startOffsetMs - a.node.startOffsetMs || a.node.id.localeCompare(b.node.id),
+  );
+
+  const add = (candidate: FlatTimingNode, allowance: number): number => {
+    const missing = candidate.path.filter((node) => !selected.has(node.id));
+    if (missing.length === 0 || missing.length > allowance || selected.size + missing.length > TIMING_DETAIL_NODE_BUDGET) {
+      return 0;
+    }
+    for (const node of missing) selected.add(node.id);
+    return missing.length;
+  };
+  const pool = (candidates: readonly FlatTimingNode[], cap: number) => {
+    let remaining = cap;
+    for (const candidate of candidates) {
+      if (remaining === 0) break;
+      remaining -= add(candidate, remaining);
+    }
+  };
+
+  pool(failed, 40);
+  pool(slow, 20);
+  pool(byStart, 10);
+  pool(latest, 10);
+
+  // 固定池未用满时，剩余额度按契约优先级继续分配；候选稳定、无法容纳的整条路径跳过。
+  for (const candidate of [...failed, ...slow, ...byStart, ...latest]) {
+    const remaining = TIMING_DETAIL_NODE_BUDGET - selected.size;
+    if (remaining === 0) break;
+    add(candidate, remaining);
+  }
+  return selected;
+}
+
+function subtreeStats(node: DiagnosticTimingNode): { nodes: number; failed: number } {
+  let nodes = 1;
+  let failed = node.failed ? 1 : 0;
+  for (const child of node.children) {
+    const stats = subtreeStats(child);
+    nodes += stats.nodes;
+    failed += stats.failed;
+  }
+  return { nodes, failed };
+}
+
+type VisibleTimingEntry =
+  | { kind: "node"; node: DiagnosticTimingNode }
+  | { kind: "omitted"; nodes: number; failed: number };
+
+function visibleTimingEntries(
+  nodes: readonly DiagnosticTimingNode[],
+  selected: ReadonlySet<string> | undefined,
+): VisibleTimingEntry[] {
+  if (!selected) return nodes.map((node) => ({ kind: "node", node }));
+  const entries: VisibleTimingEntry[] = [];
+  for (let i = 0; i < nodes.length;) {
+    const node = nodes[i]!;
+    if (selected.has(node.id)) {
+      entries.push({ kind: "node", node });
+      i += 1;
+      continue;
+    }
+    let omittedNodes = 0;
+    let omittedFailed = 0;
+    while (i < nodes.length && !selected.has(nodes[i]!.id)) {
+      const stats = subtreeStats(nodes[i]!);
+      omittedNodes += stats.nodes;
+      omittedFailed += stats.failed;
+      i += 1;
+    }
+    entries.push({ kind: "omitted", nodes: omittedNodes, failed: omittedFailed });
+  }
+  return entries;
+}
+
+function diagnosticTimingLines(
+  nodes: readonly DiagnosticTimingNode[],
+  prefix: string,
+  selected: ReadonlySet<string> | undefined,
+  locator: string,
+): string[] {
+  const entries = visibleTimingEntries(nodes, selected);
+  const lines: string[] = [];
+  entries.forEach((entry, index) => {
+    const last = index === entries.length - 1;
+    const branch = `${prefix}${last ? "└─ " : "├─ "}`;
+    const childPrefix = `${prefix}${last ? "   " : "│  "}`;
+    if (entry.kind === "omitted") {
+      const failed = entry.failed > 0 ? ` · ${entry.failed} failed` : "";
+      lines.push(`${branch}… ${entry.nodes} nodes omitted${failed} · full: niceeval show ${locator} --timing=full`);
+      return;
+    }
+    const node = entry.node;
     lines.push(
-      `${childPrefix}${last ? "└─ " : "├─ "}${sp.kind} · ${sp.name}   ${formatDurationMs(sp.endMs - sp.startMs)}  OTel`,
+      `${branch}${node.label}   ${formatDurationMs(node.durationMs)}${node.failed ? " ✗" : ""}${node.otel ? "  OTel" : ""}`,
     );
+    lines.push(...diagnosticTimingLines(node.children, childPrefix, selected, locator));
   });
   return lines;
 }
@@ -1007,7 +1203,7 @@ function timingNodeLines(node: TimingNode, prefix: string, isLast: boolean, span
  */
 export function timingText(
   evidence: AttemptEvidence,
-  opts: { header: string; artifactPath?: string; width: number },
+  opts: { header: string; artifactPath?: string; width: number; mode?: "summary" | "full" },
 ): string {
   const r = evidence.result;
   if (!r.phases || r.phases.length === 0) {
@@ -1016,15 +1212,23 @@ export function timingText(
   const spans = evidence.trace;
   const main = r.phases.filter((p) => !CLOSING_PHASE_NAMES.has(p.name));
   const closing = r.phases.filter((p) => CLOSING_PHASE_NAMES.has(p.name));
+  const traceCounts = new Map<string, number>();
+  for (const phase of r.phases) traceReferenceCounts(phase.children ?? [], traceCounts);
+  const uniqueTraceIds = new Set([...traceCounts].filter(([, count]) => count === 1).map(([traceId]) => traceId));
+  const phaseForests = new Map(
+    r.phases.map((phase) => [
+      phase,
+      (phase.children ?? []).map((node) => diagnosticTimingNode(node, spans ?? [], uniqueTraceIds)),
+    ]),
+  );
+  const allRoots = [...phaseForests.values()].flat();
+  const selected = opts.mode === "full" ? undefined : selectTimingNodes(allRoots);
 
   const lines: string[] = [`total ${formatDurationMs(r.durationMs)}`, ""];
   const renderPhase = (p: NonNullable<EvalResult["phases"]>[number]) => {
     const failedNote = p.failed ? ` ✗ failed here${r.error ? ` (${r.error.code})` : ""}` : "";
     lines.push(`${p.name.padEnd(22)}${formatDurationMs(p.durationMs)}${failedNote}`);
-    const kids = p.children ?? [];
-    kids.forEach((child, i) => {
-      lines.push(...timingNodeLines(child, "  ", i === kids.length - 1, spans));
-    });
+    lines.push(...diagnosticTimingLines(phaseForests.get(p) ?? [], "  ", selected, evidence.locator));
   };
   for (const p of main) renderPhase(p);
   if (closing.length > 0) {

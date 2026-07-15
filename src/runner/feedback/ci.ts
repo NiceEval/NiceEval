@@ -110,7 +110,7 @@ export function createCiRenderer(options: CiRendererOptions): FeedbackRenderer {
 
         case "failure": {
           noteCheckpoint(event.at);
-          writeFailureCheckpoint(io, event, state.failures.length);
+          writeFailureCheckpoint(io, event, state.freshFailureCount);
           return;
         }
 

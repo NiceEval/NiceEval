@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { openResults } from "../results/index.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
+import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type TimingNode, type TraceSpan, type Verdict } from "../types.ts";
 import { selectCurrentResults } from "../results/select.ts";
 import { evalHistory } from "./compose.ts";
 import { runShow, type ShowFlags } from "./index.ts";
@@ -52,7 +52,7 @@ type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
   Partial<
     Pick<
       EvalResult,
-      "attempt" | "durationMs" | "assertions" | "estimatedCostUSD" | "usage" | "error" | "diagnostics" | "startedAt" | "artifactBase" | "hasEvents" | "hasTrace"
+      "attempt" | "durationMs" | "assertions" | "estimatedCostUSD" | "usage" | "error" | "diagnostics" | "startedAt" | "artifactBase" | "hasEvents" | "hasTrace" | "phases"
     >
   >;
 
@@ -721,6 +721,186 @@ describe("show @<locator>", () => {
     expect(out).toContain("no events recorded for this attempt");
     // 紧凑全景独有的行不应该出现在证据切面输出里
     expect(out).not.toContain("available:");
+  });
+
+  it("单独 --timing 进入完整时间树,不回落到 attempt 首页", async () => {
+    const root = await makeRoot();
+    await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "passed", {
+        durationMs: 50_000,
+        phases: [
+          { name: "eval.run", durationMs: 42_000 },
+          { name: "sandbox.stop", durationMs: 800 },
+        ],
+      }),
+    ]);
+    const results = await openResults(root);
+    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+
+    const { out, code } = await show(root, [locator], { timing: true });
+    expect(code).toBe(0);
+    expect(out).toContain("total 50.0s");
+    expect(out).toContain("eval.run              42.0s");
+    expect(out).toContain("teardown (not counted in total):");
+    expect(out).toContain("sandbox.stop          800ms");
+    expect(out).not.toContain("assertions:");
+    expect(out).not.toContain("available:");
+  });
+
+  it("--timing 在 80 个 detail node 内与 full 等价，81 个开始原位省略", async () => {
+    const root = await makeRoot();
+    const children: TimingNode[] = Array.from({ length: 81 }, (_, index) => ({
+      id: `command-${String(index).padStart(3, "0")}`,
+      kind: "command",
+      label: "tool",
+      startOffsetMs: index * 10,
+      durationMs: 81 - index,
+      command: { display: `tool --item=${index}` },
+    }));
+    await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "passed", {
+        durationMs: 50_000,
+        phases: [
+          { name: "sandbox.create", durationMs: 1_000 },
+          { name: "eval.run", durationMs: 42_000, children },
+          { name: "sandbox.stop", durationMs: 800 },
+        ],
+      }),
+    ]);
+    const results = await openResults(root);
+    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+
+    const bounded = await show(root, [locator], { timing: "summary" });
+    const full = await show(root, [locator], { timing: "full" });
+    expect(bounded.out).toContain("sandbox.create");
+    expect(bounded.out).toContain("eval.run");
+    expect(bounded.out).toContain("sandbox.stop");
+    expect(bounded.out).toMatch(/… 1 nodes omitted/);
+    expect(bounded.out).toContain(`niceeval show ${locator} --timing=full`);
+    expect(full.out).not.toContain("nodes omitted");
+    expect(full.out).toContain("tool --item=0");
+    expect(full.out).toContain("tool --item=80");
+
+    // 去掉第 81 个后，默认投影不再省略，detail 行与 full 完全一致。
+    children.pop();
+    const root80 = await makeRoot();
+    await writeSnapshot(root80, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "passed", {
+        durationMs: 50_000,
+        phases: [{ name: "eval.run", durationMs: 42_000, children }],
+      }),
+    ]);
+    const results80 = await openResults(root80);
+    const locator80 = results80.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const bounded80 = await show(root80, [locator80], { timing: "summary" });
+    const full80 = await show(root80, [locator80], { timing: "full" });
+    expect(bounded80.out).toBe(full80.out);
+  });
+
+  it("默认投影保留失败路径/慢点/首尾，omission 报失败数且不虚构 children 合计", async () => {
+    const root = await makeRoot();
+    const children: TimingNode[] = Array.from({ length: 120 }, (_, index) => ({
+      id: `node-${String(index).padStart(3, "0")}`,
+      kind: "provider",
+      label: `provider-step-${index}`,
+      startOffsetMs: index * 100,
+      durationMs: index === 60 ? 99_000 : index + 1,
+      ...(index === 55 ? { failed: true as const } : {}),
+    }));
+    await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "errored", {
+        durationMs: 120_000,
+        error: { code: "provider-failed", message: "boom", phase: "sandbox.create" },
+        phases: [{ name: "sandbox.create", durationMs: 120_000, failed: true, children }],
+      }),
+    ]);
+    const results = await openResults(root);
+    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const { out } = await show(root, [locator], { timing: "summary" });
+
+    expect(out).toContain("provider-step-0");
+    expect(out).toContain("provider-step-55");
+    expect(out).toContain("provider-step-60");
+    expect(out).toContain("provider-step-119");
+    expect(out).not.toContain("combined");
+  });
+
+  it("operation 使用 producer label；full 按 parentSpanId 展开唯一关联 OTel 树", async () => {
+    const root = await makeRoot();
+    const dir = await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "passed", {
+        durationMs: 50_000,
+        hasTrace: true,
+        phases: [{
+          name: "workspace.diff",
+          durationMs: 5_000,
+          children: [{
+            id: "operation-1",
+            kind: "operation",
+            label: "export workspace diff · 1 window · 3,302 files",
+            startOffsetMs: 100,
+            durationMs: 4_000,
+            children: [{
+              id: "turn-1",
+              kind: "turn",
+              label: "s1/t1",
+              startOffsetMs: 200,
+              durationMs: 3_000,
+              traceId: "trace-1",
+            }],
+          }],
+        }],
+      }),
+    ]);
+    const trace: TraceSpan[] = [
+      { traceId: "trace-1", spanId: "child", parentSpanId: "root", name: "chat", kind: "model", startMs: 1_100, endMs: 2_000 },
+      { traceId: "trace-1", spanId: "root", name: "codex.exec", kind: "agent", startMs: 1_000, endMs: 3_000 },
+    ];
+    await writeFile(join(dir, "weather/brooklyn/a0/trace.json"), JSON.stringify(trace), "utf-8");
+    const results = await openResults(root);
+    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const { out } = await show(root, [locator], { timing: "full" });
+
+    expect(out).toContain("operation · export workspace diff · 1 window · 3,302 files");
+    expect(out).toMatch(/agent · codex\.exec[\s\S]*model · chat/);
+    expect(out).not.toContain("git show ×");
+  });
+
+  it("attempt 首页 timing 只列大头,但保留变慢的 telemetry 阶段", async () => {
+    const root = await makeRoot();
+    const dir = await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "passed", {
+        durationMs: 100_000,
+        hasEvents: true,
+        phases: [
+          { name: "sandbox.queue", durationMs: 0 },
+          { name: "sandbox.create", durationMs: 3_000 },
+          { name: "workspace.baseline", durationMs: 310 },
+          { name: "telemetry.configure", durationMs: 358 },
+          { name: "eval.run", durationMs: 45_000 },
+          { name: "telemetry.collect", durationMs: 35_300 },
+          { name: "sandbox.stop", durationMs: 8_500 },
+        ],
+      }),
+    ]);
+    await writeFile(
+      join(dir, "weather/brooklyn/a0/events.json"),
+      JSON.stringify([{ type: "message", role: "assistant", text: "done" }]),
+      "utf-8",
+    );
+    const results = await openResults(root);
+    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+
+    const { out } = await show(root, [locator]);
+    const timingLine = out.split("\n").find((line) => line.startsWith("timing:"));
+    expect(out).toContain("1 AI message");
+    expect(timingLine).toContain("sandbox.queue 0ms");
+    expect(timingLine).toContain("sandbox.create 3.0s");
+    expect(timingLine).toContain("eval.run 45.0s");
+    expect(timingLine).toContain("telemetry.collect 35.3s");
+    expect(timingLine).toContain("teardown +8.5s");
+    expect(timingLine).not.toContain("workspace.baseline");
+    expect(timingLine).not.toContain("telemetry.configure");
   });
 
   it("语法不对的 locator 报「not a valid attempt locator」,退出码 1,不崩", async () => {

@@ -609,8 +609,7 @@ export interface ActiveAttempt {
  * 字段全部结构化(locator / identity / verdict / phase 都是具名字段),profile renderer 不需要
  * 解析 `reason` 之外的任何文本就能拼出机器可读的输出。
  */
-export interface FailureNotice {
-  at: number;
+export interface FailureDetail {
   locator: AttemptLocator;
   identity: AttemptRef;
   who: string;
@@ -621,6 +620,11 @@ export interface FailureNotice {
   assertion?: PrimaryAssertionSummary;
   /** 仅 errored 使用：结构化执行错误发生时所在的阶段。failed 是断言 outcome，不带 phase。 */
   phase?: LifecyclePhase;
+}
+
+/** 带发生时间的失败通知；复用失败以 FailureDetail 静态进入 plan，不伪装成刚发生的事件。 */
+export interface FailureNotice extends FailureDetail {
+  at: number;
 }
 
 /**
@@ -678,9 +682,13 @@ export interface RunFeedbackState {
    *  diagnostic 的 count 单独区分,见 cli.ts 的 assembleRunCompletion)。 */
   earlyExitSkipped: number;
   elapsedMs: number;
+  /** 仅本次实际派发 attempt 的 token；carry 结果的历史 usage 不进入这里。 */
+  newTokenCount?: number;
   estimatedCostUSD?: number;
   active: ReadonlyMap<AttemptKey, ActiveAttempt>;
   failures: readonly FailureNotice[];
+  /** 本次实际派发后产生的去重失败数；复用失败不消耗 profile 的流式输出上限。 */
+  freshFailureCount: number;
   diagnostics: readonly DiagnosticNotice[];
   /** 留存授予的沙箱(--keep-sandbox);run 摘要后各 profile 追加输出。 */
   kept: readonly KeptNotice[];
@@ -698,13 +706,13 @@ export interface KeptNotice {
   enter?: string;
 }
 
-/** 一次 run 的初始计划,携带 carry/reuse 明细(按 experiment 分组的已复用 eval id 清单)。 */
+/** 一次 run 的初始计划。复用只暴露数量；失败明细仅用于静态初始化终局清单。 */
 export interface RunFeedbackPlan {
   shape: RunShape;
   /** 携入(carry)结果数,直接计入 `RunFeedbackState.reused`,不需要重新调度。 */
   reused: number;
-  /** 按 experiment 分组的携入 eval 清单,供 human 摘要打印「哪些被复用」。 */
-  reusedByExperiment: readonly { experimentId: string; evalIds: readonly string[] }[];
+  /** 复用结果中的失败；plan 时静态注入，不产生“刚发生”的失败事件。 */
+  reusedFailures?: readonly FailureDetail[];
 }
 
 /**
@@ -724,6 +732,8 @@ export type AttemptLifecycleEvent =
       identity: AttemptRef;
       who: string;
       verdict: Verdict;
+      /** 本次 attempt 的输入 + 输出 token；缺失表示 provider 未报告。 */
+      tokenCount?: number;
       estimatedCostUSD?: number;
     }
   | { type: "attempt:early-exit"; at: number; identity: AttemptRef; who: string };

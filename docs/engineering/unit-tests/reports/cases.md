@@ -121,11 +121,17 @@ it("text 与 web 显示同一个 MetricCell 终值和 warning", () => {
 | 两宿主对 `--run` / `--experiment` / 位置参数用同一套选择规则；局部补跑/过旧/未完成快照形成结构化 warning 随 Selection 携带 | 正例：未完成快照在两宿主产出相同 warning 集 |
 | `view` 位置参数收窄只作用于报告槽，证据室保留完整 attempt 集，深链不因首页过滤失效 | 正例：收窄后被滤掉的 attempt 仍可从证据室取到 |
 | `show` 中漏写 `@` 的 locator 按 eval id 前缀处理并明确报无匹配、列出候选 | 反例：输入 "1qrdcfq8" 报 "No results matched" 附候选 |
-| `--timing` 自身就是 attempt 证据切面，单独使用必须进完整时间树；首页 timing 只列大头，短的 baseline / telemetry bookkeeping 留给完整树 | 正例：locator + 单独 `--timing` 不回落首页；边界：短 telemetry 省略、慢 telemetry 保留 |
+| `--timing` 自身就是 Attempt 证据切面，单独使用必须进入有界诊断时间树；首页 timing 只列大头，短的 baseline / telemetry bookkeeping 留给时间树 | 正例：locator + 单独 `--timing` 不回落首页；边界：短 telemetry 省略、慢 telemetry 保留 |
+| detail node 不超过 80 时，裸 `--timing` 与 `--timing=full` 展开相同节点；phase 行和 omission 行不占预算 | 正例：79/80 节点无 omission；边界：81 节点出现 omission；反例：不能省略 lifecycle phase |
+| 超预算时间树按失败路径 40、最慢路径 20、最早/最晚各 10 的节点池稳定取样，选中深层节点时保留祖先并占池额度，未用额度按契约再分配；平局用 `startOffsetMs` / `id` | 正例：慢 command、深层失败 span 与首尾样本均保留；边界：失败路径自身超过预算时省略行报告未展示 failed 数；边界：无失败时空余额流给其它池 |
+| omission 在被截断子树原位报告省略节点数与失败数，并给出同 locator 的 `--timing=full`；不计算 children combined duration | 正例：3,302 个旧 command 默认输出有界且提示 full；反例：并发 sibling 不相加、不能写虚假的 combined time |
+| `--timing=full` 展开全部 runner timing node 与全部唯一关联 OTel span；`--timing=summary` 与裸 flag 等价，其它 mode 非零退出 | 正例：旧 artifact 的 3,302 个 command 在 full 中全部可见；反例：`--timing=verbose` 报用法错误 |
+| `operation` 的语义 label 来自 producer，renderer 不解析 command display、不执行 artifact callback、不按 shell family 猜分组 | 正例：workspace.diff 的批量 operation + 单个 command；反例：路径各异的 `git show` 不被 renderer 猜成 `git show ×N` |
+| TTY、pipe、CI 对同一 timing mode 选择相同节点且不自动启动 pager | 正例：stdout capture 与 TTY fixture 的节点集合相同；反例：非交互命令不读 stdin、不挂起 |
 | 扫描结果根时单个不可读快照不阻塞其余：忽略/incompatible/malformed/incomplete 各带原因 | 四种坏快照各一 fixture，好快照照常计入 |
 | 零可读结果时命令失败：show 非零退出（旧格式建议 `npx niceeval@<version>`）；view 不启动 server、`--out` 不生成空站 | 边界：空结果根与仅含旧格式两种 |
 | 明确指定单个 snapshot.json 时该文件不可读令 view 失败（与扫描模式的跳过相反） | 反例：损坏文件作位置参数报错退出；正例：同文件在扫描模式仅被跳过 |
-| 落盘无 phases 时 timing 如实输出 unavailable 不猜；有 phases 时主链之和 ≤ total，收尾段 `+N` 不计入 total | 正例：含 teardown 的 fixture；反例：无 phases 的第三方结果；边界：errored 中途时最后主链阶段带 `✗` |
+| 落盘无 phases 时 summary/full timing 都如实输出 unavailable 不猜；有 phases 时主链之和 ≤ total，收尾段 `+N` 不计入 total | 正例：含 teardown 的 fixture；反例：无 phases 的第三方结果；边界：errored 中途时最后主链阶段带 `✗` |
 
 宿主等价在装载边界记录 definition 与 Selection，不比较完整终端输出与完整 HTML——各宿主的导航壳和证据室本就不同：
 

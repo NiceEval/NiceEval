@@ -25,7 +25,7 @@ function plan(overrides: Partial<RunFeedbackPlan["shape"]> = {}, reused = 0): Ru
   return {
     shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1, ...overrides },
     reused,
-    reusedByExperiment: reused > 0 ? [{ experimentId: "compare/bub-e2b", evalIds: ["memory/carried"] }] : [],
+    reusedFailures: [],
   };
 }
 
@@ -287,6 +287,7 @@ describe("最终 stdout handoff:status/summary/快照/最多 5 个失败/show �
       "      equals(4) · expected 4 · received 3",
       "next:",
       "  niceeval show @17m2k9p",
+      "  niceeval show @17m2k9p --eval",
       "  niceeval show @17m2k9p --execution",
       "  niceeval show @17m2k9p --diff",
       "",

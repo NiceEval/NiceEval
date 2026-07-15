@@ -135,6 +135,16 @@ test("--output auto:非 TTY 管道 + CI=true → 解析成 ci", async () => {
   expect(stdout).toContain("niceeval: result=");
 });
 
+test("exp 选择存在但 eval pattern 匹配 0 条时明确报错且不创建结果", async () => {
+  const { code, stdout, stderr } = await runCli(["exp", "basic", "does-not-exist"], cleanEnv());
+  expect(code).toBe(1);
+  expect(stdout).toBe("");
+  expect(stderr).toContain("No evals selected");
+  expect(stderr).toContain("matched 0 evals");
+  expect(stderr).toContain("Available experiments: basic");
+  expect(await pathExists(niceevalDir)).toBe(false);
+});
+
 test("exp 拒绝 show/view 专用 flag(--history):非零退出 + 明确用法错误,不静默忽略也不真的跑", async () => {
   const { code, stdout, stderr } = await runCli(["exp", "--history"], cleanEnv());
   expect(code).toBe(1);
@@ -148,6 +158,16 @@ test("exp 拒绝 view 专用 flag(--port):非零退出 + 明确用法错误", as
   const { code, stderr } = await runCli(["exp", "--port", "3000"], cleanEnv());
   expect(code).toBe(1);
   expect(stderr).toContain("`--port` only applies to niceeval view");
+});
+
+test("--timing mode 严格解析：full 能进入 show-only 校验，未知 mode 直接报错", async () => {
+  const full = await runCli(["exp", "--timing=full"], cleanEnv());
+  expect(full.code).toBe(1);
+  expect(full.stderr).toContain("`--timing` only applies to niceeval show");
+
+  const invalid = await runCli(["show", "--timing=verbose"], cleanEnv());
+  expect(invalid.code).toBe(1);
+  expect(invalid.stderr).toContain('--timing only accepts "summary" (default) or "full"');
 });
 
 for (const profile of ["human", "agent", "ci"] as const) {

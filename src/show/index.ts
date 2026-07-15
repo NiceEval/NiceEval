@@ -61,8 +61,8 @@ export interface ShowFlags {
   eval?: boolean;
   /** 该 attempt 的标准执行事件流 + OTel enrichment(证据切面)。 */
   execution?: boolean;
-  /** --timing:整个 attempt 的统一时间树(phases + hook/命令/turn + 轮内 OTel)。 */
-  timing?: boolean;
+  /** --timing:默认有界诊断投影；full 逐节点展开。boolean 仅供库调用兼容，等价 summary。 */
+  timing?: boolean | "summary" | "full";
   /** --diff(文件级摘要)。 */
   diff?: boolean;
   /** --diff=<路径>(单个文件的完整改动;路径必须 = 连写,位置参数永远留给 eval id 前缀)。 */
@@ -123,7 +123,12 @@ async function show(
   flags: ShowFlags,
   io: { out: (s: string) => void; err: (s: string) => void; width: number; now: number },
 ): Promise<void> {
-  const evidence = flags.eval === true || flags.execution === true || flags.diff === true || flags.diffPath !== undefined;
+  const evidence =
+    flags.eval === true ||
+    flags.execution === true ||
+    (flags.timing !== undefined && flags.timing !== false) ||
+    flags.diff === true ||
+    flags.diffPath !== undefined;
 
   // 组合语义矩阵(docs/feature/reports/show.md「选择结果范围」):--history 与 --report 互斥,先于任何 IO 报出来。
   if (flags.history && flags.report !== undefined) {
@@ -168,7 +173,12 @@ async function show(
       const blocks: string[] = [];
       if (flags.eval) blocks.push(evalSourceText(attemptEvidence, { header, artifactPath, width: io.width }));
       if (flags.execution) blocks.push(executionText(attemptEvidence, { header, artifactPath, width: io.width }));
-      if (flags.timing) blocks.push(timingText(attemptEvidence, { header, artifactPath, width: io.width }));
+      if (flags.timing) blocks.push(timingText(attemptEvidence, {
+        header,
+        artifactPath,
+        width: io.width,
+        mode: flags.timing === "full" ? "full" : "summary",
+      }));
       if (flags.diff || flags.diffPath !== undefined) {
         blocks.push(diffText({ header, diff: attemptEvidence.diff, artifactPath, file: flags.diffPath }));
       }
@@ -232,7 +242,12 @@ async function show(
     const blocks: string[] = [];
     if (flags.eval) blocks.push(evalSourceText(attemptEvidence, { header, artifactPath, width: io.width }));
     if (flags.execution) blocks.push(executionText(attemptEvidence, { header, artifactPath, width: io.width }));
-    if (flags.timing) blocks.push(timingText(attemptEvidence, { header, artifactPath, width: io.width }));
+    if (flags.timing) blocks.push(timingText(attemptEvidence, {
+      header,
+      artifactPath,
+      width: io.width,
+      mode: flags.timing === "full" ? "full" : "summary",
+    }));
     if (flags.diff || flags.diffPath !== undefined) {
       blocks.push(diffText({ header, diff: attemptEvidence.diff, artifactPath, file: flags.diffPath }));
     }

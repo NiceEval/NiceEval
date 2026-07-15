@@ -91,7 +91,7 @@ npx niceeval exp compare-models weather
 | `--allow-sensitive-artifacts` | boolean | `view --out` 专用:对非发布根(快照没有 publish:&#123;redaction:"applied"&#125; 标记)导出时的显式确认——静态站会原样携带未消毒的证据文件。 |
 | `--eval` | boolean | `show` 命令专用:该 attempt 运行时保存的 Eval 源码,gate/soft 断言标回源码行(证据切面)。 |
 | `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。 |
-| `--timing` | boolean | `show` 命令专用:整个 attempt 的统一时间树(runner 阶段 + hook/命令/turn 包络 + 轮内 OTel)。 |
+| `--timing` | boolean | `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 |
 | `--diff` | boolean | `show` 命令专用:sandbox 里的文件改动摘要;`--diff=<文件路径>` 看单个文件的完整改动(路径必须 `=` 连写)。 |
 | `--history` | boolean | `show` 命令专用:跨 run 时间轴,只列真实执行;与 `--report` 互斥。 |
 | `--experiment` | string | `show` / `view` 命令专用:Selection 只留该实验。 |

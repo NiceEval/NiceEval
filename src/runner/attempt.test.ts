@@ -29,6 +29,8 @@ class FakeSandbox implements Partial<Sandbox> {
   readonly otlpHost = null;
   readonly files = new Map<string, string>();
 
+  constructor(private readonly stopDelayMs = 0) {}
+
   async runShell(): Promise<CommandResult> {
     return { stdout: "", stderr: "", exitCode: 0 };
   }
@@ -63,7 +65,9 @@ class FakeSandbox implements Partial<Sandbox> {
   async readSourceFiles(): Promise<never> {
     throw new Error("not implemented");
   }
-  async stop(): Promise<void> {}
+  async stop(): Promise<void> {
+    if (this.stopDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.stopDelayMs));
+  }
 }
 
 const asSandbox = (box: FakeSandbox): Sandbox => box as unknown as Sandbox;
@@ -267,5 +271,30 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     // 失败发生在 agent-setup:之后不再出现 running/diff/scoring —— run.ts 的 reportFailure()
     // 靠的正是这个真实的「最后已知阶段」,不是硬编码成 running(见 run.ts 的 lastPhase 注释)。
     expect(phases).toEqual(["sandbox.queue", "sandbox.create", "workspace.baseline", "agent.setup"]);
+  });
+});
+
+describe("runAttemptEffect · 主链与 Scope 收尾的计时边界", () => {
+  it("sandbox.stop 只计入收尾,主链 phase 合计不超过 durationMs", async () => {
+    const agent = defineSandboxAgent({
+      name: "fake-agent-timed-stop",
+      send: async () => ({ events: [], status: "completed" }),
+    });
+    const result = await runOnce(agent, new FakeSandbox(40));
+    const phases = result.phases ?? [];
+    const closing = new Set<LifecyclePhase>([
+      "eval.teardown",
+      "agent.teardown",
+      "sandbox.teardown",
+      "sandbox.suspend",
+      "sandbox.stop",
+    ]);
+    const mainDurationMs = phases
+      .filter((phase) => !closing.has(phase.name))
+      .reduce((sum, phase) => sum + phase.durationMs, 0);
+    const stop = phases.find((phase) => phase.name === "sandbox.stop");
+
+    expect(stop?.durationMs).toBeGreaterThanOrEqual(30);
+    expect(mainDurationMs).toBeLessThanOrEqual(result.durationMs);
   });
 });

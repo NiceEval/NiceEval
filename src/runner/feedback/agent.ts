@@ -96,7 +96,7 @@ export function createAgentRenderer(options: AgentRendererOptions): FeedbackRend
 
         case "failure": {
           noteCheckpoint(event.at);
-          writeFailureCheckpoint(io, event, state.failures.length);
+          writeFailureCheckpoint(io, event, state.freshFailureCount);
           return;
         }
 
@@ -337,6 +337,7 @@ function writeHandoff(
     const first = shown[0]!;
     lines.push("next:");
     lines.push(`  niceeval show ${first.locator}`);
+    lines.push(`  niceeval show ${first.locator} --eval`);
     lines.push(`  niceeval show ${first.locator} --execution`);
     lines.push(`  niceeval show ${first.locator} --diff`);
     if (hasKept) lines.push("  niceeval sandbox stop --all");

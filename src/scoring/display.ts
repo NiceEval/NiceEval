@@ -4,6 +4,19 @@
 import type { AssertionResult, PrimaryAssertionSummary, Verdict } from "./types.ts";
 
 /**
+ * Human/Agent 摘要是一条终端事实行，不是完整证据面。压成单行并设字符上限，避免 received
+ * 恰好是源码/工具输出时把多页内容灌进 scrollback；完整 AssertionResult 仍原样留给 show/view。
+ */
+const SUMMARY_TEXT_MAX_CHARS = 240;
+
+function summaryText(value: string): string {
+  const singleLine = value.replace(/\s+/g, " ").trim();
+  return singleLine.length <= SUMMARY_TEXT_MAX_CHARS
+    ? singleLine
+    : `${singleLine.slice(0, SUMMARY_TEXT_MAX_CHARS - 1)}…`;
+}
+
+/**
  * 按公开展示契约选择主失败断言：failed gate 优先；只有 soft 促成 failed verdict 时才取 soft；
  * errored 且没有结构化 error 时可由第一条非 optional unavailable 解释。
  */
@@ -34,17 +47,18 @@ export function primaryAssertionSummary(
 }
 
 function summaryOf(assertion: AssertionResult, additionalFailures: number): PrimaryAssertionSummary {
-  const title = assertion.groupPath?.length ? assertion.groupPath.join(" > ") : assertion.name;
-  const matcher = assertion.detail ?? assertion.name;
+  const rawTitle = assertion.groupPath?.length ? assertion.groupPath.join(" > ") : assertion.name;
+  const rawMatcher = assertion.detail ?? assertion.name;
+  const title = summaryText(rawTitle);
   return {
     severity: assertion.severity,
     assertion: title,
-    ...(matcher !== title ? { matcher } : {}),
+    ...(rawMatcher !== rawTitle ? { matcher: summaryText(rawMatcher) } : {}),
     ...(assertion.outcome === "unavailable"
-      ? { reason: assertion.reason }
+      ? { reason: summaryText(assertion.reason) }
       : {
-          ...(assertion.expected !== undefined ? { expected: assertion.expected } : {}),
-          ...(assertion.received !== undefined ? { received: assertion.received } : {}),
+          ...(assertion.expected !== undefined ? { expected: summaryText(assertion.expected) } : {}),
+          ...(assertion.received !== undefined ? { received: summaryText(assertion.received) } : {}),
           ...(assertion.severity === "soft" || assertion.threshold !== undefined ? { score: assertion.score } : {}),
           ...(assertion.threshold !== undefined ? { threshold: assertion.threshold } : {}),
         }),

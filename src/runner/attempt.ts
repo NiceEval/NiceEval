@@ -34,6 +34,7 @@ import type {
   Cleanup,
   Config,
   DiagnosticInput,
+  DiffArtifact,
   EvalResult,
   JudgeConfig,
   Sandbox,
@@ -692,7 +693,32 @@ async function runAttemptBody(
 
     // 采 agent 归因增量(workspace.diff 阶段:从分类账折叠逐窗口 delta)。remote agent 没有 workspace。
     if (!skipReason && usesSandbox) enterPhase("workspace.diff");
-    const diffWindows = skipReason || !usesSandbox || !ledger ? [] : await ledger.exportWindows();
+    let diffWindows: DiffArtifact = [];
+    if (!skipReason && usesSandbox && ledger) {
+      const startedAt = Date.now();
+      const operation = recorder.child({
+        kind: "operation",
+        label: "export workspace diff",
+        startOffsetMs: Math.max(0, startedAt - attemptEpoch),
+        durationMs: 0,
+      });
+      if (operation) recorder.pushParent(operation);
+      try {
+        diffWindows = await ledger.exportWindows();
+        if (operation) {
+          const files = new Set(diffWindows.flatMap((window) => Object.keys(window.changes))).size;
+          operation.label = `export workspace diff · ${diffWindows.length} ${diffWindows.length === 1 ? "window" : "windows"} · ${files} ${files === 1 ? "file" : "files"}`;
+        }
+      } catch (error) {
+        if (operation) operation.failed = true;
+        throw error;
+      } finally {
+        if (operation) {
+          operation.durationMs = Date.now() - startedAt;
+          recorder.popParent();
+        }
+      }
+    }
     const diff = deriveDiffData(diffWindows);
     state.late.diff = diff;
     if (!skipReason && usesSandbox) {
@@ -766,6 +792,10 @@ async function runAttemptBody(
       }
     }
 
+    // 主链到 telemetry.collect 为止。必须在 Effect Scope release 之前显式封口；否则最后一个
+    // 主链 phase 会一直开到 sandbox.stop 完成，既把收尾时间重复算进主链，也会让 phases
+    // 主链合计大于 durationMs。Scope finalizer 只负责另记 sandbox.stop / sandbox.suspend。
+    recorder.closeCurrent();
     const durationMs = Date.now() - t0;
     const o11y = buildO11ySummary(events, usage, durationMs);
     // 实测成本(网关带回)优先,缺则按 model + 用量查价格表估算(见 o11y/cost.ts)。

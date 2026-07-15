@@ -26,7 +26,6 @@ import type {
   AttemptKey,
   LifecyclePhase,
   DurableFeedbackEvent,
-  EvalResult,
   RunFeedbackPlan,
   RunFeedbackState,
 } from "../types.ts";
@@ -69,11 +68,12 @@ export function renderDurableLines(event: DurableFeedbackEvent, state: RunFeedba
     case "failure": {
       // 立即追加也要遵守展开上限(见 cli.md「'立即追加'也必须有上限,防止失败风暴重新淹没
       // 输出」)。reducer 已经把这一条计入 state.failures(emit() 先 reduce 再入队),所以
-      // state.failures.length 就是「算上这一条」的累计数,不需要另外维护一份计数器。越过上限
+      // freshFailureCount 就是「本次新发生且算上这一条」的累计数；plan 静态注入的复用失败
+      // 不消耗流式上限。越过上限
       // 的第一条给一次 suppressed 提示(让人立刻知道开始折叠了);再往后的每一条都静默 ——
       // 不然「追加一次」会变成每条失败都重复一遍「还剩多少条」,完成页的 FAILURES 区块才是
       // 最终准确总数的权威来源。
-      const count = state.failures.length;
+      const count = state.freshFailureCount;
       if (count <= HUMAN_FAILURE_CAP) return [buildFailureLine(event)];
       if (count === HUMAN_FAILURE_CAP + 1) {
         return [t("feedback.human.suppressedFailures", { count: 1 })];
@@ -132,10 +132,11 @@ function buildPlanLines(plan: RunFeedbackPlan): string[] {
     }),
   ];
   if (plan.reused > 0) {
-    lines.push(t("feedback.human.reuse", { reused: plan.reused }));
-    for (const group of [...plan.reusedByExperiment].sort((a, b) => a.experimentId.localeCompare(b.experimentId))) {
-      lines.push(`  [${group.experimentId}] ${group.evalIds.join(", ")}`);
-    }
+    lines.push(t("feedback.human.reuse", {
+      reused: plan.reused,
+      total: plan.shape.totalRuns,
+      toRun: Math.max(0, plan.shape.totalRuns - plan.reused),
+    }));
   }
   return lines;
 }
@@ -157,6 +158,7 @@ function buildDiagnosticLines(event: DurableFeedbackEvent & { type: "diagnostic"
 
 function buildSummaryLines(event: DurableFeedbackEvent & { type: "summary" }, state: RunFeedbackState): string[] {
   const { summary, completion } = event;
+  const fullReuse = state.total > 0 && state.total === state.reused;
   // required reporter(默认 artifacts、显式 --json/--junit)写失败必须让这行判红——它不是
   // CompletionStatus 的第四个值(那个枚举只有 complete/incomplete/interrupted 三态),但和
   // ci.ts 的 resultStatusWord() 同一个判断顺序:不能让人看到一句会被误读成"全绿"的 PASSED,
@@ -171,18 +173,17 @@ function buildSummaryLines(event: DurableFeedbackEvent & { type: "summary" }, st
           : t("feedback.human.resultPassed");
 
   const lines: string[] = [
-    `${verdictWord}  ${t("feedback.human.summaryLine", {
+    `${verdictWord}  ${t(fullReuse ? "feedback.human.summaryAllReusedLine" : "feedback.human.summaryLine", {
       passed: summary.passed,
       failed: summary.failed,
       errored: summary.errored,
       reused: state.reused,
     })}`,
-    `        ${formatSummaryDetail(summary.durationMs, summary.usage, summary.estimatedCostUSD)}`,
+    `        ${formatSummaryDetail(summary.durationMs, state)}`,
   ];
 
-  // 全通过时(state.failures 为空)不留空 FAILURES 区块 —— failed/errored attempt 各自的
-  // "failure" 永久事件由 run.ts 在拿到 locator 后发出(见 run.ts 的 reportFailure() 调用点),
-  // reducer 按 locator 去重折进 state.failures,这里只是读它,不重新推导。
+  // 全通过时(state.failures 为空)不留空 FAILURES 区块。fresh 失败来自 durable event，carry
+  // 失败由 plan 静态注入；reducer 把两者按 locator 收进同一清单，这里不从 RunSummary 再造。
   if (state.failures.length > 0) {
     lines.push("", t("feedback.human.failuresHeader"));
     const shown = state.failures.slice(0, HUMAN_FAILURE_CAP);
@@ -195,6 +196,7 @@ function buildSummaryLines(event: DurableFeedbackEvent & { type: "summary" }, st
     const first = shown[0];
     if (first) {
       lines.push("", t("feedback.human.inspect", { locator: first.locator }));
+      lines.push(t("feedback.human.evalHint", { locator: first.locator }));
       lines.push(t("feedback.human.trace", { locator: first.locator }));
       lines.push(t("feedback.human.diffHint", { locator: first.locator }));
     }
@@ -243,11 +245,15 @@ function deriveResultGroup(paths: readonly string[]): string | undefined {
   return groups.size === 1 ? [...groups][0] : undefined;
 }
 
-function formatSummaryDetail(durationMs: number, usage: EvalResult["usage"], costUSD: number | undefined): string {
+function formatSummaryDetail(durationMs: number, state: RunFeedbackState): string {
   const parts = [formatElapsed(durationMs)];
-  const tok = (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
-  if (tok > 0) parts.push(`${formatTokenCount(tok)} tok`);
-  const cost = formatCost(costUSD);
+  const fullReuse = state.total > 0 && state.total === state.reused;
+  if (fullReuse) {
+    parts.push("0 new tok", "$0.00");
+    return parts.join(" · ");
+  }
+  if (state.newTokenCount !== undefined) parts.push(`${formatTokenCount(state.newTokenCount)} new tok`);
+  const cost = formatCost(state.estimatedCostUSD);
   if (cost !== "—") parts.push(cost);
   return parts.join(" · ");
 }
@@ -354,6 +360,9 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
   let lastFrameText: string | undefined;
 
   function buildFrameLines(state: RunFeedbackState): string[] {
+    // 全量复用没有 active attempt，也没有“本次执行中”状态；plan/reuse 与终局摘要已经完整，
+    // 不画一块只有 0 running 的 dashboard。
+    if (state.total > 0 && state.total === state.reused) return [];
     const columns = io.stderr.columns;
     const lines: string[] = [formatCommandLine(command, state.elapsedMs, columns), formatCounts(state)];
     if (activeOrder.length === 0) return lines.map((l) => truncateNoWrap(l, columns));
@@ -381,6 +390,16 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     const lines = buildFrameLines(state);
     const text = lines.join("\n");
     if (text === lastFrameText) return; // 真实内容没变化,不写(checklist「rendered frame 与上一帧相同则不写」)
+    if (lines.length === 0) {
+      if (linesDrawn > 0) {
+        let out = `\x1B[${linesDrawn}A`;
+        out += "\x1B[2K\n".repeat(linesDrawn) + `\x1B[${linesDrawn}A`;
+        io.stderr.write(out);
+      }
+      linesDrawn = 0;
+      lastFrameText = text;
+      return;
+    }
     let out = linesDrawn > 0 ? `\x1B[${linesDrawn}A` : "";
     out += lines.map((l) => `\x1B[2K${l}`).join("\n") + "\n";
     // 本帧比上帧短(行完成后折叠、终端拉高)时,清掉下方残留的旧行,与 live.ts 旧实现同一手法。

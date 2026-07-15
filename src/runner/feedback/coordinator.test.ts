@@ -32,7 +32,7 @@ function plan(overrides: Partial<RunFeedbackPlan["shape"]> = {}): RunFeedbackPla
   return {
     shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1, ...overrides },
     reused: 0,
-    reusedByExperiment: [],
+    reusedFailures: [],
   };
 }
 

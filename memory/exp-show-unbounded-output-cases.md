@@ -20,6 +20,6 @@ metadata:
 
 **修法**:
 - 契约侧已补(先文档):`docs/feature/experiments/cli.md` 加「全部命中缓存」小节(fail/pass/空选择三 case)+ 成本口径不变式(headline tok/$ 只算本次新派发,reused 历史成本不进这行,`0s · 0 new tok · $0.00`)+ Reuse 不 per-config 展开。`display.md` 契约一把「压成有界单元格」拆成两步(先折单行、再宽度截断),点名 commandSucceeded 例子。`show.md` 裸 show 段加截断 worked example。
-- 代码侧未修:(a) exp 结束反馈在全 reused 时仍要走 FAILURES 折叠(reused 的 failed 也是 failed);(b) 结论行成本改成只统计本次派发;(c) show/exp Result 单元格套用 display-cell 截断(折单行 + 宽度 + `…`),`commandSucceeded` 的 received 走 `exit N · "…tail"` 而非 raw stdout。改后到真机重跑这两条命令核对。
+- 代码侧已修(2026-07-15):反馈状态把「最终结果集」与「本次实际派发」拆成两层。carry 的失败在 plan 阶段静态注入终局 FAILURES,不伪装成刚发生的 failure event；token/cost 只由 fresh `attempt:complete` 累计,全复用固定显示 `0s · 0 new tok · $0.00`；Reuse 只显示聚合数量；0 eval 选择在调度/落盘前非零退出。断言摘要统一先折单行、再做 240 字符安全上限,完整证据仍留在 show/view。类型检查、反馈/runner/scoring 定向测试与空选择 CLI e2e 已通过；全量 CLI profile 夹具另受并发中的 coverage 状态改动影响(`succeeded` coverage 变成 unknown),待该工作树收束后再做真机 full-reuse 复核。
 
 适用场景:任何终端表格/单元格渲染值时都要过「值先折单行」这步;任何「全 X」边界态(全 reused、全 pass、空选择)都要显式当独立 case 定稿,别假设通用路径自动覆盖。

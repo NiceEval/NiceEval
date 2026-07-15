@@ -241,7 +241,10 @@ interface TimingNode {
   /** attempt 内唯一,供 children 与展示层稳定引用;不作为跨 attempt 身份。 */
   id: string;
   kind: TimingNodeKind;
-  /** 人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用 s<session>/t<turn>。 */
+  /**
+   * 采集端写入的有界人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用 s<session>/t<turn>;
+   * operation 写逻辑工作及可安全公开的规模摘要。展示层不解析 command 文本来重造 label。
+   */
   label: string;
   /** 相对 attempt 单调时钟起点的偏移;并发 sibling 可据此还原重叠,不能只靠数组顺序相加。 */
   startOffsetMs: number;
@@ -293,11 +296,13 @@ interface DiagnosticRecord {
 
 `children` 是 runner 直接观察到的时间树。`sandbox.setup` / `sandbox.teardown` 先按 hook 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run` 中 eval 手工命令与 adapter 启动 CLI 的命令、`workspace.diff` 以及各收尾阶段。包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。命令摘要截断并脱敏，env 只允许保留 key，stdout/stderr 仍由原有事件或诊断证据承载。
 
+`operation` 是采集端拥有的语义父节点，不是 artifact 携带的自定义 renderer。runner、Sandbox 或 provider 知道某段工作是一个逻辑整体时，在执行边界直接写下稳定语义与有界规模摘要，例如 `export workspace diff · 2 windows · 3,302 files`，并把实际公开 Sandbox command 或 provider step 挂在下面。批量算法必须先在执行层把 provider 往返约束到逻辑批次，再用 operation 表达；不能记录成逐对象远端调用后只在 Reports 折叠。消费方只按 `kind`、树关系、失败、耗时和时序通用渲染，不解析 shell 文本猜测 `git show ×N`，也不执行 artifact 提供的 callback。
+
 `agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为 `error.phase` / `diagnostics[].phase` 的归因值出现，不在 `phases` 里单列。每次 send 由 runner 产生一个 `turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。`trace.json` 中的 agent/model/tool spans 不复制进 `children`，消费方按 `traceId` 把它们临时挂到对应 turn 下。这样没有 OTel 时仍有可靠的轮次总耗时，有 OTel 时才展开轮内模型、工具与子 agent 细节。
 
 `sandbox.create` 早于 Sandbox 对象存在，不能由 `runCommand` / `runShell` 包装捕获。内置 provider 可以把真实的 SDK 请求、宿主命令或创建步骤写成 `provider` children；第三方 provider 没有提供细分时只保留 `sandbox.create` 合计，不能把 API 调用伪装成 shell 命令。Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来自 `events.json`，耗时只在 OTel span 能唯一关联时提供。
 
-所有 runner duration 使用单调时钟；`startedAt` 单独保留 ISO 墙钟。`startOffsetMs` 只用于同一 attempt 内恢复顺序和重叠，不能拿远端 OTel 的绝对时间与 runner 墙钟硬对齐。父子节点允许嵌套与并发，子节点 duration 不可直接求和后与父节点比较。阶段边界、主链 / 收尾两段的 failed 语义、时间树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端与网页的展示入口见 [Show `--timing`](../reports/show.md#--timing整个-attempt-的统一时间树) 与 [View](../reports/view.md) 的 Attempt 详情。
+所有 runner duration 使用单调时钟；`startedAt` 单独保留 ISO 墙钟。`startOffsetMs` 只用于同一 attempt 内恢复顺序和重叠，不能拿远端 OTel 的绝对时间与 runner 墙钟硬对齐。父子节点允许嵌套与并发，子节点 duration 不可直接求和后与父节点比较。`result.json` 永远保存完整 runner 时间树；终端默认视图的节点预算只是读取投影，不得回写、裁剪或聚合 artifact。阶段边界、主链 / 收尾两段的 failed 语义、时间树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端的有界/full 两档见 [Show `--timing`](../reports/show.md#--timing整个-attempt-的统一时间树)，网页入口见 [View](../reports/view.md) 的 Attempt 详情。
 
 `error` 与 `diagnostics` 的 `phase` 都由 runner 在错误 / 诊断发生时按已打开的生命周期阶段绑定,调用方不能自行填写。两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。`diagnostic.level` 表达消息严重度,不是 verdict 的别名。
 

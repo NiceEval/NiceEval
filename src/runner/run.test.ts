@@ -491,7 +491,7 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
     const plan: RunFeedbackPlan = {
       shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 },
       reused: 0,
-      reusedByExperiment: [],
+      reusedFailures: [],
     };
 
     await withCoordinator(plan, async (coordinator) => {
@@ -560,7 +560,7 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
     const plan: RunFeedbackPlan = {
       shape: { evals: 3, configs: 1, totalRuns: 3, maxConcurrency: 3 },
       reused: 0,
-      reusedByExperiment: [],
+      reusedFailures: [],
     };
 
     await withCoordinator(plan, async (coordinator) => {
@@ -628,7 +628,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const plan: RunFeedbackPlan = {
       shape: { evals: 1, configs: 1, totalRuns: 3, maxConcurrency: 3 },
       reused: 1,
-      reusedByExperiment: [{ experimentId, evalIds: [evalId] }],
+      reusedFailures: [],
     };
 
     await withCoordinator(plan, async (coordinator) => {
@@ -692,7 +692,13 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const plan: RunFeedbackPlan = {
       shape: { evals: 1, configs: 1, totalRuns: 3, maxConcurrency: 3 },
       reused: 1,
-      reusedByExperiment: [{ experimentId, evalIds: [evalId] }],
+      reusedFailures: [{
+        locator: staleLocator,
+        identity: { experimentId, evalId, attempt: 0 },
+        who: `${experimentId}/agent-grow-failed`,
+        verdict: "failed",
+        reason: "failed",
+      }],
     };
 
     await withCoordinator(plan, async (coordinator) => {
@@ -711,6 +717,10 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       expect(matches.every((r) => r.verdict === "failed")).toBe(true);
 
       expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, completed: 2 });
+      // RunSummary 的三条 failed（1 carry + 2 fresh）与终局 handoff 的 FailureNotice 清单同口径。
+      // carry 不能只进 summary 计数而从 FAILURES / agent handoff 消失。
+      expect(coordinator.state.failures).toHaveLength(3);
+      expect(coordinator.state.failures.map((failure) => failure.locator)).toContain(staleLocator);
     });
   });
 });

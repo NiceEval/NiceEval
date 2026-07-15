@@ -25,7 +25,7 @@ function plan(overrides: Partial<RunFeedbackPlan["shape"]> = {}, reused = 0): Ru
   return {
     shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 1, ...overrides },
     reused,
-    reusedByExperiment: reused > 0 ? [{ experimentId: "ci/bub", evalIds: ["memory/carried"] }] : [],
+    reusedFailures: [],
   };
 }
 

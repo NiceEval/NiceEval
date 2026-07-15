@@ -60,4 +60,23 @@ describe("primaryAssertionSummary", () => {
     });
     expect(primaryAssertionSummary(assertions, "passed")).toBeUndefined();
   });
+
+  it("摘要把多行大值压成单行有界预览，完整断言证据不在这里展开", () => {
+    const assertions: AssertionResult[] = [{
+      name: "includes(/updateTag/)",
+      severity: "gate",
+      outcome: "failed",
+      score: 0,
+      expected: "matches /updateTag/",
+      received: `// app/actions/posts.ts\n'use server';\n${"const source = 1;\n".repeat(80)}`,
+    }];
+
+    const summary = primaryAssertionSummary(assertions, "failed")!;
+    expect(summary.received).not.toContain("\n");
+    expect(summary.received!.length).toBeLessThanOrEqual(240);
+    expect(summary.received).toMatch(/…$/);
+    const lines = assertionSummaryLines(summary);
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => !line.includes("\n"))).toBe(true);
+  });
 });
