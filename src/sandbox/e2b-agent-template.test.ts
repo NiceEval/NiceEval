@@ -2,11 +2,28 @@ import { Template } from "e2b";
 import { describe, expect, it } from "vitest";
 import {
   E2B_OFFICIAL_AGENT_TEMPLATES,
-  NICEEVAL_PUBLIC_E2B_TEMPLATES,
+  NICEEVAL_BUB_E2B_TEMPLATE,
+  NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE,
+  NICEEVAL_CODEX_E2B_TEMPLATE,
   e2bCodingAgentTemplate,
 } from "./e2b-agent-template.ts";
 
+const publicTemplates = {
+  "claude-code": NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE,
+  codex: NICEEVAL_CODEX_E2B_TEMPLATE,
+  bub: NICEEVAL_BUB_E2B_TEMPLATE,
+} as const;
+
 describe("e2bCodingAgentTemplate", () => {
+  it("exports complete public refs pinned to one verified release", () => {
+    const releases = Object.values(publicTemplates).map((template) => template.split(":").at(-1));
+
+    expect(new Set(releases).size).toBe(1);
+    for (const template of Object.values(publicTemplates)) {
+      expect(template).toMatch(/^correctroads-default-team\/.+:v\d+\.\d+\.\d+$/);
+    }
+  });
+
   it.each([
     ["claude-code", "claude"],
     ["codex", "codex"],
@@ -14,7 +31,7 @@ describe("e2bCodingAgentTemplate", () => {
     const json = JSON.parse(await Template.toJSON(e2bCodingAgentTemplate(agent)));
     expect(json.fromTemplate).toBe(base);
     expect(E2B_OFFICIAL_AGENT_TEMPLATES[agent]).toBe(base);
-    expect(NICEEVAL_PUBLIC_E2B_TEMPLATES[agent]).toContain(`/niceeval-${agent}`);
+    expect(publicTemplates[agent]).toContain(`/niceeval-${agent}`);
     expect(JSON.stringify(json)).toContain(
       agent === "claude-code" ? "claude.ai/install.sh" : "npm install -g",
     );

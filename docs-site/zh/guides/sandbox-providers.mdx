@@ -53,6 +53,12 @@ export default defineExperiment({
 
 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 返回的 spec 上有两个链式方法：`.setup(fn)` 和 `.teardown(fn)`。它们处理只有运行时才知道的环境内容，例如按实验写小配置、检查预制工具是否可用、安装 hook，或在多次 Attempt 之间载入和回存状态。
 
+共享 helper 需要显式标注回调类型时，从公开入口导入，不要从某个 provider 的 spec 反推：
+
+```ts
+import type { SandboxHook, SandboxHookContext } from "niceeval/sandbox";
+```
+
 稳定且体积大的依赖不要在这里重复安装。系统包、Agent CLI、编译好的二进制和大模型缓存应该先做进 Docker image、Vercel 沙箱快照或 E2B template。每个 Attempt 从预制环境启动，`.setup()` 只做薄薄的一层动态配置和 fail-fast 检查。
 
 ```ts
@@ -127,15 +133,22 @@ Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbo
 
 E2B 已提供 Claude Code 的 `claude` template 和 Codex 的 `codex` template。NiceEval 提供一个 E2B 专属的薄封装，让你从这两个官方起点继续链原生 E2B API。E2B 暂无 Bub 官方 template，因此 Bub 分支使用 NiceEval 固定到不可变 commit 的安装配方：
 
-NiceEval 同时发布了三份任何 E2B Team 都能引用的公共模板。CI 固定 release tag：
+NiceEval 同时发布了三份任何 E2B Team 都能引用的公共模板。完整 namespace 与经过验证的 release
+tag 由 NiceEval 自己维护，下游直接取完整引用：
 
 ```ts
-e2bSandbox({ template: "correctroads-default-team/niceeval-claude-code:v0.6.1" })
-e2bSandbox({ template: "correctroads-default-team/niceeval-codex:v0.6.1" })
-e2bSandbox({ template: "correctroads-default-team/niceeval-bub:v0.6.1" })
+import {
+  NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE,
+  NICEEVAL_CODEX_E2B_TEMPLATE,
+  NICEEVAL_BUB_E2B_TEMPLATE,
+} from "niceeval/sandbox/e2b-template";
+
+e2bSandbox({ template: NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE })
+e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
+e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-`v0.6.1` 已实际启动验证：Claude Code `2.1.207`、Codex `0.144.1`，Bub 安装指纹 `83770925b77a`。不带 tag 的名字指向当前稳定构建，适合交互试用；CI 不应让环境随 `default` 移动。跨 Team 引用公共 E2B template 时必须保留 `correctroads-default-team/` namespace。
+这些基线已实际启动验证：Claude Code `2.1.207`、Codex `0.144.1`，Bub 安装指纹 `83770925b77a`。每个值都是带 tag 的完整跨 Team 引用；业务仓库不应复制这些字符串，也不应维护或读取另一份 NiceEval release 常量。派生模板需要记录 base 身份时，直接使用所选的完整 template ref。
 
 ```ts title="scripts/build-e2b-template.ts"
 import { Template } from "e2b";
@@ -168,8 +181,10 @@ sandbox: e2bSandbox({ template: "acme-codex-evals:2026-07-13" })
 也可以直接从 NiceEval 公共模板继续派生，只支付项目依赖的构建成本：
 
 ```ts
+import { NICEEVAL_CODEX_E2B_TEMPLATE } from "niceeval/sandbox/e2b-template";
+
 const template = Template()
-  .fromTemplate("correctroads-default-team/niceeval-codex:v0.6.1")
+  .fromTemplate(NICEEVAL_CODEX_E2B_TEMPLATE)
   .aptInstall(["ripgrep", "jq"])
   .runCmd("corepack enable");
 ```

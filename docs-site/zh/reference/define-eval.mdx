@@ -1,7 +1,7 @@
 ---
 title: "defineEval：声明、配置并运行 NiceEval eval"
 sidebarTitle: "defineEval"
-description: "defineEval 参考：选项、test context t、Turn 返回值、sandbox helper 和数据集数组导出。"
+description: "defineEval 参考：选项、test context t、Turn 返回值、sandbox helper，以及数组和 keyed record 数据集导出。"
 ---
 
 `defineEval` 是编写 eval 的主要入口。每个 eval 文件调用一次，传入描述和 `test(t)`，并默认导出结果。
@@ -709,3 +709,5 @@ export default rows.map((row) =>
 ```
 
 数组导出会生成稳定 ID：`file/0000`、`file/0001` 等。
+
+已有稳定业务 key 时也可以默认导出 `Record<string, EvalDef>`。例如 key `15193` 在 `swelancer.eval.ts` 中生成 `swelancer/15193`。key 必须是非空单一路径片段，不能是 `.` / `..`，不能含 `/`、`\\` 或控制字符；发现顺序按 key 字典序固定。

@@ -1,14 +1,14 @@
 ---
 title: "数据驱动测试（dataset fan-out）：用多份数据运行同一套 eval"
 sidebarTitle: "数据驱动测试"
-description: "从 .eval.ts 文件导出数组，将一套 eval 逻辑展开为多个 case。用 loadYaml 或 loadJson 读取外部数据集，并获得稳定 ID。"
+description: "从 .eval.ts 文件导出数组或 keyed record，将一套 eval 逻辑展开为多个 case。用 loadYaml 或 loadJson 读取外部数据集，并获得稳定 ID。"
 ---
 
 数据驱动测试（dataset fan-out）适合大量结构相同、输入不同的测试。例如 SQL 生成、意图分类、检索问答和工具选择。
 
 ## 工作原理
 
-一个 `.eval.ts` 文件默认导出数组：
+没有外部业务 ID 时，一个 `.eval.ts` 文件默认导出数组：
 
 ```ts
 import { defineEval } from "niceeval";
@@ -41,6 +41,25 @@ sql/0001
 
 序号零填充，便于稳定引用和过滤。
 
+数据源已经带稳定 case、issue 或 benchmark ID 时，默认导出 keyed record：
+
+```ts
+export default Object.fromEntries(
+  rows.map((row) => [
+    row.issueId,
+    defineEval({
+      description: row.title,
+      async test(t) {
+        await t.send(row.prompt);
+        t.succeeded();
+      },
+    }),
+  ]),
+);
+```
+
+文件是 `evals/swelancer.eval.ts`、key 是 `15193` 时，ID 就是 `swelancer/15193`。key 必须是一个非空路径片段：不能是 `.` / `..`，不能含 `/`、`\\` 或控制字符。NiceEval 按 key 字典序发现，数据源返回顺序变化不会改变运行顺序。
+
 ## 从 YAML / JSON 加载
 
 ```ts
@@ -63,8 +82,11 @@ cases:
 # 运行整个数据集
 npx niceeval exp local sql
 
-# 只运行第一个 case
+# 只运行第一个数组 case
 npx niceeval exp local sql/0000
+
+# 运行一个 keyed case
+npx niceeval exp local swelancer/15193
 ```
 
 ## 数据集 vs 独立文件

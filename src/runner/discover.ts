@@ -1,4 +1,4 @@
-// 发现:扫 evals/ 找 *.eval.ts(默认导出 EvalDef 或数组),扫 experiments/ 找实验。
+// 发现:扫 evals/ 找 *.eval.ts(默认导出 EvalDef、数组或 keyed record),扫 experiments/ 找实验。
 // 路径即身份:id 从相对路径推导,排序保证稳定。
 
 import { readdir } from "node:fs/promises";
@@ -38,7 +38,9 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
   const files = (await walkFiles(dir, (n) => n.endsWith(".eval.ts") || n.endsWith(".eval.tsx"))).sort();
   const out: DiscoveredEval[] = [];
   for (const file of files) {
-    const mod = (await import(pathToFileURL(file).href)) as { default?: EvalDef | EvalDef[] };
+    const mod = (await import(pathToFileURL(file).href)) as {
+      default?: EvalDef | EvalDef[] | Record<string, EvalDef>;
+    };
     const def = mod.default;
     if (!def) continue;
     const baseId = relative(dir, file).replace(/\.eval\.tsx?$/, "").split(sep).join("/");
@@ -48,11 +50,43 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
     const source = await captureEvalSource(file, { root });
     if (Array.isArray(def)) {
       def.forEach((d, i) => out.push({ ...d, id: `${baseId}/${pad4(i)}`, baseDir, sourcePath: file, source }));
+    } else if (!isEvalDef(def)) {
+      const dataset = def;
+      for (const key of Object.keys(dataset).sort()) {
+        assertDatasetKey(key, file);
+        const d = dataset[key];
+        if (!d || typeof d.test !== "function") {
+          throw new Error(
+            `Invalid keyed eval dataset export in ${file}: key ${JSON.stringify(key)} must map to an EvalDef with test().`,
+          );
+        }
+        out.push({ ...d, id: `${baseId}/${key}`, baseDir, sourcePath: file, source });
+      }
     } else {
       out.push({ ...def, id: baseId, baseDir, sourcePath: file, source });
     }
   }
   return out;
+}
+
+function isEvalDef(value: EvalDef | Record<string, EvalDef>): value is EvalDef {
+  return typeof (value as EvalDef).test === "function";
+}
+
+function assertDatasetKey(key: string, file: string): void {
+  if (
+    key.length === 0 ||
+    key === "." ||
+    key === ".." ||
+    key.includes("/") ||
+    key.includes("\\") ||
+    /[\u0000-\u001f\u007f]/.test(key)
+  ) {
+    throw new Error(
+      `Invalid keyed eval dataset key ${JSON.stringify(key)} in ${file}: ` +
+        "keys must be non-empty path segments; '.', '..', '/', '\\', and control characters are not allowed.",
+    );
+  }
 }
 
 export async function discoverExperiments(root: string): Promise<DiscoveredExperiment[]> {

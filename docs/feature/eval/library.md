@@ -100,7 +100,11 @@ turn3.judge.autoevals.closedQA("这一轮是否回答了形状颜色?").gate();
 
 ## 数据集扇出
 
-一个文件默认导出**一个数组**,就扇出成多个 eval。这是写数据集的规范方式:
+数据集有两种默认导出形状：没有稳定业务标识的行导出**数组**，按位置生成零填充 id；已有外部 case / issue / benchmark id 的行导出 **keyed record**，把业务 key 原样接到文件 id 后。不要为了保留业务 id 复制一批只有参数不同的薄 `.eval.ts` wrapper。
+
+### 数组：位置就是身份
+
+一个文件默认导出数组，就扇出成多个 eval：
 
 ```typescript
 // evals/sql.eval.ts
@@ -135,6 +139,35 @@ cases:
 ```
 
 生成的 id:`sql/0000`、`sql/0001`……(零填充 4 位,稳定可引用)。`loadJson` 同理。
+
+### Keyed record：业务 key 就是身份
+
+数据源已有稳定 key 时，默认导出 `Record<string, EvalDef>`：
+
+```typescript
+// evals/swelancer.eval.ts
+const rows = [
+  { issue: "15193", prompt: "Review issue 15193" },
+  { issue: "25901", prompt: "Review issue 25901" },
+];
+
+export default Object.fromEntries(
+  rows.map((row) => [
+    row.issue,
+    defineEval({
+      description: `SWE-Lancer ${row.issue}`,
+      async test(t) {
+        await t.send(row.prompt);
+        t.succeeded();
+      },
+    }),
+  ]),
+);
+```
+
+生成的 id 是 `swelancer/15193`、`swelancer/25901`。key 必须是一个非空路径片段：不能含 `/`、`\\`，不能是 `.` / `..`，也不能含控制字符。发现结果按 key 字典序排列，因此数据源换行、对象构造顺序或上游返回顺序变化都不会改变运行与展示顺序。空 record 合法，表示这份数据集当前没有 case。
+
+选择规则很简单：位置本身有意义且稳定时用数组；外部系统已经给出稳定身份时用 keyed record。两种形状都共享同一份 eval 源码捕获，区别只在 id 的最后一段。
 
 ## Agent 由 experiment 选择
 

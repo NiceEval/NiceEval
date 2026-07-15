@@ -144,6 +144,12 @@ type SandboxHook = (
 ) => void | Cleanup | Promise<void | Cleanup>;
 ```
 
+`SandboxHook` 与 `SandboxHookContext` 都从公开入口 `niceeval/sandbox` 导出。需要在共享 helper 上固定签名时直接导入类型，不要从某个 provider spec 的 `.setup` 参数反推：
+
+```typescript
+import type { SandboxHook, SandboxHookContext } from "niceeval/sandbox";
+```
+
 Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。`setup` 可以返回一个 cleanup 闭包。多次 `.setup()` 按追加顺序跑,多次 `.teardown()` 按追加的逆序跑(和「先进后出」的 agent/环境层顺序是同一条纪律,只是发生在环境层内部)。
 
 这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。稳定的大依赖先做进 image/template/snapshot;钩子是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。

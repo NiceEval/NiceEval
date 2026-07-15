@@ -156,7 +156,7 @@
 
 ## 数据集与发现
 
-**Dataset** / **数据集** —— 一组共享同一 `test` 逻辑、只有输入不同的 case。用 `loadYaml`/`loadJson` 读进来,`.map(row => defineEval(...))` 扇出。生成的 id 形如 `sql/0000`、`sql/0001`(零填充 4 位)。
+**Dataset** / **数据集** —— 一组共享同一 `test` 逻辑、只有输入不同的 case。用 `loadYaml`/`loadJson` 读进来；没有业务身份的行导出 eval 数组，生成 `sql/0000`、`sql/0001`；已有稳定外部身份的行导出 keyed record，生成 `swelancer/15193` 这类 id。两者都由文件路径决定 id 前缀，不允许在 `defineEval` 内手写 id。
 
 **Discovery** / **发现** —— 运行器扫 `evals/` 找 `*.eval.ts` 与 `*.eval.tsx` 文件(要在 eval 里写 JSX 时用 `.tsx`,发现规则与 id 推导完全相同),据路径推导 id 并排序。没有目录层面的隐式发现——沙箱型 eval 和会话型 eval 一样,必须有一个 eval 文件;起始文件靠 `test()` 里手工 `t.sandbox.writeFiles` / `uploadFiles` 放进沙箱(见 [Eval Authoring](feature/eval/library.md#沙箱型手工把文件放进沙箱)),不靠运行器扫目录。
 

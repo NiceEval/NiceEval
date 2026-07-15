@@ -16,6 +16,8 @@ export type {
   SandboxOption,
   SandboxSpec,
   SandboxRuntime,
+  SandboxHook,
+  SandboxHookContext,
   DockerSandboxSpec,
   VercelSandboxSpec,
   E2BSandboxSpec,

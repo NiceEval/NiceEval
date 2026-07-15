@@ -24,12 +24,25 @@ export const E2B_OFFICIAL_AGENT_TEMPLATES = {
   codex: "codex",
 } as const;
 
-/** Public NiceEval baselines. Pin a release tag in CI; untagged names follow the current stable build. */
-export const NICEEVAL_PUBLIC_E2B_TEMPLATES = {
-  "claude-code": "correctroads-default-team/niceeval-claude-code",
-  codex: "correctroads-default-team/niceeval-codex",
-  bub: "correctroads-default-team/niceeval-bub",
-} as const;
+/**
+ * NiceEval 当前已发布并完成启动校验的公共 E2B template release。
+ *
+ * 这是公共模板 registry 的版本，不从源码 checkout 中可能滞后的 package.json 推导。
+ * 发布一组新的 Claude Code / Codex / Bub template 并验证后，由 NiceEval 在这里统一 bump；
+ * 下游不应再复制这条 release 知识。
+ */
+const NICEEVAL_E2B_TEMPLATE_RELEASE = "v0.6.1";
+
+/**
+ * NiceEval 官方公共 E2B baseline：每个值已经是完整、release-pinned、跨 Team template ref。
+ * 直接交给 `e2bSandbox({ template })`，或交给 E2B `Template().fromTemplate(...)` 继续派生。
+ */
+export const NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE =
+  `correctroads-default-team/niceeval-claude-code:${NICEEVAL_E2B_TEMPLATE_RELEASE}`;
+export const NICEEVAL_CODEX_E2B_TEMPLATE =
+  `correctroads-default-team/niceeval-codex:${NICEEVAL_E2B_TEMPLATE_RELEASE}`;
+export const NICEEVAL_BUB_E2B_TEMPLATE =
+  `correctroads-default-team/niceeval-bub:${NICEEVAL_E2B_TEMPLATE_RELEASE}`;
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;

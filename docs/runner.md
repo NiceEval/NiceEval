@@ -12,7 +12,7 @@
 
 `runner/discover.ts` 扫 `evals/`:
 
-- 找所有 `*.eval.ts` 与 `*.eval.tsx`(两种扩展名同等对待,`.tsx` 供要在 eval 里写 JSX 的场景),`import` 后看默认导出 —— 单个 eval 用文件 id;数组则扇出,id 加零填充索引(`sql/0000`)。没有另一种基于目录约定的隐式发现——沙箱型 eval 也必须有一个 eval 文件。
+- 找所有 `*.eval.ts` 与 `*.eval.tsx`(两种扩展名同等对待,`.tsx` 供要在 eval 里写 JSX 的场景),`import` 后看默认导出 —— 单个 eval 用文件 id；数组按位置扇出并加零填充索引(`sql/0000`)；keyed record 按合法业务 key 扇出(`swelancer/15193`)并按 key 字典序稳定排列。没有另一种基于目录约定的隐式发现——沙箱型 eval 也必须有一个 eval 文件。
 - 按相对路径排序,保证 id 稳定、输出可比。
 - 应用过滤:`niceeval exp <组|配置>` 后的位置参数(id 前缀,如 `weather` 命中 `weather/*`)、`--tag`。
 - `niceeval exp` 时另从 `experiments/` 扫实验文件(默认导出 `defineExperiment` 的 `.ts`),据路径推导实验 id;**目录段即"可对比组"** —— `niceeval exp <组>` 跑整个文件夹、同组互为对照(见 [实验怎么组织](feature/experiments/library.md#实验怎么组织文件夹--一组可对比的实验))。实验的 `evals` 字段再筛要跑哪些 eval(见[矩阵展开](#矩阵展开与通过率))。

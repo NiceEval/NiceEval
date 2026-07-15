@@ -4,12 +4,17 @@
 // defineSandbox() 这四个工厂产出的 spec 对象本身的构造行为。
 import { describe, expect, it } from "vitest";
 import { dockerSandbox, e2bSandbox, vercelSandbox, defineSandbox } from "./define.ts";
-import type { SandboxHook } from "./types.ts";
+// 从公开 subpath 取类型，守住下游共享 helper 的正式导入面。
+import type { SandboxHook, SandboxHookContext } from "./sandbox/index.ts";
 
 const noopSetup: SandboxHook = () => {};
 const noopTeardown: SandboxHook = () => {};
+const acceptsPublicHookContext = (_ctx: SandboxHookContext): void => {};
 
 describe("sandbox factories: .setup()/.teardown() chain", () => {
+  it("public sandbox subpath exports hook callback types", () => {
+    expect(typeof acceptsPublicHookContext).toBe("function");
+  });
   it("dockerSandbox() starts with empty hook arrays", () => {
     const spec = dockerSandbox({ image: "custom:latest" });
     expect(spec.provider).toBe("docker");

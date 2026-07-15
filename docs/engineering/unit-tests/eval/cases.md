@@ -11,6 +11,7 @@
 | id 只从文件路径推导（`evals/weather/brooklyn.eval.ts` → `weather/brooklyn`），配置对象禁止 `id` / `name` | 正例：嵌套目录的路径→id；类型负例：`@ts-expect-error` 传 id/name；运行时传入报明确错误 |
 | 只有 `.eval.ts` / `.eval.tsx` 被发现，两种后缀规则一致 | 正例：两种后缀同规则 id；反例：`.ts`、`.test.ts` 不被发现 |
 | 默认导出数组扇出为多个 eval，id 加 4 位零填充索引，顺序稳定 | 正例：3 行数组 → `x/0000..0002`；边界：单元素数组仍带索引、空数组 |
+| 默认导出 keyed record 按业务 key 扇出，id 接 key 且按 key 字典序稳定 | 正例：乱序 `{ b, a }` → `x/a, x/b`；边界：空 record；反例：空 key、`.`、`..`、含 `/` / `\\` / 控制字符时报出文件与 key |
 | `setup(sandbox, ctx)` 拿到完整 `Sandbox`（非 `t.sandbox` 受限视图），时机在环境层钩子与分类账锚点之后、agent 接入之前 | 类型正例：参数含完整面；顺序断言：setup 在 agent 首次 send 前 |
 | `setup` 返回的 cleanup 在 attempt 收尾时被调用 | 正例：恰好一次；边界：test 抛异常时仍被调用 |
 | `setup` 的 ctx 提供 progress/diagnostic，scope 绑定 `eval.setup` | 正例：setup 内 diagnostic 事件的 scope 字段 |
