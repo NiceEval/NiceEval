@@ -184,9 +184,26 @@ e2bCodingAgentTemplate("bub", {
 })
 ```
 
-#### Docker：从官方 node 基础镜像派生
+#### Docker：使用 NiceEval 维护的镜像，或从官方 node 基础镜像派生
 
-Docker 的官方基线就是 NiceEval 的默认镜像 `node:24-slim`（省略 `image` 时按 runtime 选它）。写一个 Dockerfile 从它派生，把 Agent CLI 和系统依赖烘焙进去，每个 Attempt 就不必再装一遍：
+要直接运行 NiceEval 内置的 `claude-code`、`codex` 或 `bub` Adapter，可以使用对应的公开镜像：
+[`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
+[`niceeval/codex`](https://hub.docker.com/r/niceeval/codex) 或
+[`niceeval/bub`](https://hub.docker.com/r/niceeval/bub)。每个镜像只包含自己的 Agent CLI，并为
+`linux/amd64` 和 `linux/arm64` 发布 manifest；每个 NiceEval release 都有同名 tag。稳定 CI 要固定
+release tag 或 digest，不要依赖会移动的 `latest`：
+
+```ts
+import { dockerSandbox } from "niceeval/sandbox";
+
+sandbox: dockerSandbox({ image: "niceeval/codex:v0.6.1" })
+```
+
+这个镜像是 NiceEval 维护的公开镜像，不是 Docker 的 `library/*` Official Image。它随 NiceEval
+release 更新，里面的 Agent CLI 版本由该 release 的构建配方固定。
+
+如果只需要一个 Agent，或还要加入项目专有依赖，写 Dockerfile 从 Docker 的官方基线
+`node:24-slim` 派生。省略 `image` 时，NiceEval 也会按 runtime 使用该默认镜像：
 
 ```dockerfile title="Dockerfile"
 FROM node:24-slim

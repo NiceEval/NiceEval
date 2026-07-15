@@ -1,0 +1,71 @@
+name: Publish Docker image
+
+# Docker Hub 是 NiceEval 预制 coding-agent 环境的公开分发处。和 npm 一样，只有
+# release tag 才能改变公开镜像；main 上的普通提交不会覆盖任何已发布 tag。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-image-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish niceeval/${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: claude-code
+          - image: codex
+          - image: bub
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: niceeval
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Choose image tags
+        id: tags
+        env:
+          IMAGE: niceeval/${{ matrix.image }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          {
+            echo 'tags<<EOF'
+            echo "$IMAGE:$TAG"
+            # 预发布也可消费，但不能把稳定使用者指向它。
+            if [[ "$TAG" != *-* ]]; then
+              echo "$IMAGE:latest"
+            fi
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push multi-platform image
+        uses: docker/build-push-action@v7
+        with:
+          context: sandbox/docker
+          target: ${{ matrix.image }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          provenance: mode=max
+          sbom: true

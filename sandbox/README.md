@@ -57,20 +57,35 @@ pnpm tsx sandbox/e2b/build-agent-template.mts bub acme-bub-evals
 构建会同时写 `default`、`stable` 和当前 Git release tag。公开模板要额外执行
 `e2b template publish <name> --yes`；跨 Team 引用必须保留 `correctroads-default-team/` namespace。
 
-## Docker：NiceEval 的三 Agent 基线镜像
+## Docker：NiceEval 的 Agent 基线镜像
 
-[`docker/Dockerfile`](./docker/Dockerfile) 预装 Codex、Claude Code 和 Bub。Bub 与运行时
-Adapter 使用相同的 `$HOME/.local` 布局和安装规格指纹；三个 Agent 的版本都固定，升级后
-应重建一个新 tag。
+[`docker/Dockerfile`](./docker/Dockerfile) 为 Codex、Claude Code 和 Bub 分别定义独立 target。
+Bub 与运行时 Adapter 使用相同的 `$HOME/.local` 布局和安装规格指纹；三个 Agent 的版本都固定，
+升级后应重建一个新 tag。
+
+NiceEval 维护三个公开镜像：[`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
+[`niceeval/codex`](https://hub.docker.com/r/niceeval/codex) 和
+[`niceeval/bub`](https://hub.docker.com/r/niceeval/bub)。每个 Git release tag 会发布同名的多架构
+tag（`linux/amd64`、`linux/arm64`）；稳定 release 额外更新 `latest`，预发布不会更新它。用户与
+CI 应固定 release tag 或 digest，`latest` 只适合交互试用：
+
+```ts
+sandbox: dockerSandbox({ image: "niceeval/codex:v0.6.1" })
+```
+
+镜像由 [Docker image workflow](../.github/workflows/docker-image.yml) 在推送 `v*` tag 时构建并
+推送。发布前在 GitHub 仓库设置里创建 `DOCKERHUB_TOKEN` secret：它是 Docker Hub 用户 `niceeval`
+的专用 PAT，权限至少为 Read & Write；不要使用登录密码或把 token 写进仓库。Docker Hub repository
+必须设为 Public，才能让外部 eval 项目拉取。
 
 ```bash
-docker build -t acme/niceeval-agents:2026-07-13 sandbox/docker
+docker build --target codex -t niceeval/codex:local sandbox/docker
 ```
 
 用不可变 tag 或 digest 运行 CI，不要依赖会移动的 `latest`：
 
 ```ts
-sandbox: dockerSandbox({ image: "acme/niceeval-agents:2026-07-13" })
+sandbox: dockerSandbox({ image: "niceeval/codex:v0.6.1" })
 ```
 
 要加项目依赖，写一个从该 image `FROM` 的项目 Dockerfile；不必 fork Adapter。
