@@ -273,6 +273,7 @@ export const zhCN = {
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
   "sandbox.dependencyMissing.vercel": "Vercel sandbox requires '@vercel/sandbox'. Install it with: pnpm add @vercel/sandbox",
   "sandbox.forceCleanup": "  · [sandbox] 强制清理 {{count}} 个沙箱…\n",
+  "sandbox.provisionReconcileFailed": "  · [sandbox] 创建重试前对账失败,放弃重试(可能已创建的实例无法核实/销毁):{{error}}\n",
   "sandbox.provisionRetry": "  · [sandbox] 创建被限流,{{delayMs}}ms 后重试(第 {{attempt}}/{{maxAttempts}} 次)…\n",
   "sandbox.stopFailed": "  · [sandbox] 停沙箱 {{id}} 失败(已忽略,靠 provider 过期兜底):{{message}}\n",
   "sandbox.stopTimeout": "stop 超时({{timeoutMs}}ms)",

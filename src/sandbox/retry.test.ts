@@ -41,6 +41,75 @@ describe("withProvisionRetry", () => {
     expect(calls).toEqual([]);
   });
 
+  it("throws an ambiguous error on the first attempt when no reconcile channel exists", async () => {
+    const err = new Error("fetch failed");
+    let attempts = 0;
+    await expect(
+      withProvisionRetry(
+        async () => {
+          attempts += 1;
+          throw err;
+        },
+        () => "ambiguous",
+      ),
+    ).rejects.toBe(err);
+    expect(attempts).toBe(1);
+  });
+
+  it("reconciles before every retry, including rejected-class errors like rate_limit", async () => {
+    vi.useFakeTimers();
+    try {
+      const order: string[] = [];
+      let attempts = 0;
+      const promise = withProvisionRetry(
+        async () => {
+          attempts += 1;
+          order.push(`create#${attempts}`);
+          if (attempts === 1) throw new Error("rate limited");
+          return "sandbox";
+        },
+        () => "rate_limit",
+        undefined,
+        undefined,
+        async () => {
+          order.push("reconcile");
+        },
+      );
+      await vi.runAllTimersAsync();
+      await expect(promise).resolves.toBe("sandbox");
+      // create() 闭包跨多个请求,429 可能来自实例已创建之后的初始化请求——拒绝类也必须先对账。
+      expect(order).toEqual(["create#1", "reconcile", "create#2"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts the retry and rethrows the original error when reconcile fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const createErr = new Error("rate limited");
+      let attempts = 0;
+      const promise = withProvisionRetry(
+        async () => {
+          attempts += 1;
+          throw createErr;
+        },
+        () => "rate_limit",
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("list also rate limited");
+        },
+      );
+      const assertion = expect(promise).rejects.toBe(createErr);
+      await vi.runAllTimersAsync();
+      await assertion;
+      expect(attempts).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("releases the slot before backing off and reacquires it before retrying", async () => {
     vi.useFakeTimers();
     try {

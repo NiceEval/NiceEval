@@ -5,7 +5,7 @@
 // 模板:opts.template 选 e2b 模板名/ID;省略用 e2b 默认 "base"。预制模板(烘焙好
 //       codex/claude-code/bub 的 "niceeval-agents")见 sandbox/e2b/。
 
-import { Sandbox as E2BSdkSandbox, CommandExitError, RateLimitError } from "e2b";
+import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
 import type {
   Sandbox,
   CommandResult,
@@ -30,22 +30,28 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 600_000;
 const SESSION_TIMEOUT_MS = 1_800_000;
 
 /** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 resolve.ts 的 withProvisionRetry。 */
-/** 歧义类 provisioning 失败的对账:按 metadata 里的 provision token 检索远端实例,查到即 kill。 */
+/**
+ * Provisioning 重试前的对账:按 metadata 里的 provision token 检索远端实例,查到即 kill。
+ * 检索或销毁失败必须抛出——对账是重试的硬前置,静默放行等于盲重试,会复制计费实例
+ * (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+ * 唯一的例外:实例已不存在(NotFound),视作对账完成。
+ */
 export async function reconcileProvision(token: string): Promise<void> {
-  try {
-    const apiKey = process.env.E2B_API_KEY;
-    const list = (E2BSdkSandbox as unknown as {
-      list?: (opts?: Record<string, unknown>) => Promise<Array<{ sandboxId: string; metadata?: Record<string, string> }>>;
-    }).list;
-    if (typeof list !== "function") return;
-    const sandboxes = await list({ apiKey });
-    for (const info of sandboxes) {
-      if (info.metadata?.["niceeval-provision-token"] !== token) continue;
-      const kill = (E2BSdkSandbox as unknown as { kill?: (id: string, opts?: Record<string, unknown>) => Promise<unknown> }).kill;
-      if (typeof kill === "function") await kill(info.sandboxId, { apiKey }).catch(() => {});
+  const apiKey = process.env.E2B_API_KEY;
+  const list = (E2BSdkSandbox as unknown as {
+    list?: (opts?: Record<string, unknown>) => Promise<Array<{ sandboxId: string; metadata?: Record<string, string> }>>;
+  }).list;
+  if (typeof list !== "function") throw new Error("this e2b SDK version has no Sandbox.list; cannot reconcile provision token");
+  const sandboxes = await list({ apiKey });
+  for (const info of sandboxes) {
+    if (info.metadata?.["niceeval-provision-token"] !== token) continue;
+    const kill = (E2BSdkSandbox as unknown as { kill?: (id: string, opts?: Record<string, unknown>) => Promise<unknown> }).kill;
+    if (typeof kill !== "function") throw new Error("this e2b SDK version has no Sandbox.kill; cannot reconcile provision token");
+    try {
+      await kill(info.sandboxId, { apiKey });
+    } catch (e) {
+      if (!(e instanceof NotFoundError)) throw e;
     }
-  } catch {
-    // 对账失败不掩盖原始错误。
   }
 }
 
@@ -86,9 +92,17 @@ export class E2BSandbox implements Sandbox {
     const sbx = opts.template
       ? await E2BSdkSandbox.create(opts.template, sdkOpts)
       : await E2BSdkSandbox.create(sdkOpts);
-    // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
-    await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-    return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs);
+    // kill-on-failure:实例句柄已到手,创建之后的初始化请求(如下面的 mkdir 撞 429)一旦失败,
+    // 先尽力销毁实例再抛出原始错误——否则重试层按「拒绝类=远端没有实例」盲重试,就会复制一台
+    // 计费实例(见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+    try {
+      // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
+      await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
+      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs);
+    } catch (e) {
+      await sbx.kill().catch(() => {});
+      throw e;
+    }
   }
 
   async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {

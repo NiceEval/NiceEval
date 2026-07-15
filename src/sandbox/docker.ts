@@ -39,25 +39,24 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
 }
 
 /**
- * 歧义类 provisioning 失败的对账:按 provision token 查询本地 daemon,查到的实例先销毁再重建
+ * Provisioning 重试前的对账:按 provision token 查询本地 daemon,查到的实例先销毁再重建
  * (不做断线收养,重建比重连语义干净)。docker create 是对本地 daemon 的调用,歧义窗口极小,
- * 这条主要兜 daemon 代理 / 远程 DOCKER_HOST 的场景。
+ * 这条主要兜 daemon 代理 / 远程 DOCKER_HOST 的场景。查询或销毁失败必须抛出——对账是重试的
+ * 硬前置,静默放行等于盲重试(见 docs/feature/sandbox/architecture.md);唯一的例外:
+ * 容器已不存在(404),视作对账完成。
  */
 export async function reconcileProvision(token: string): Promise<void> {
-  try {
-    const docker = new Docker();
-    const containers = await docker.listContainers({
-      all: true,
-      filters: { label: [`niceeval.provision-token=${token}`] },
-    });
-    for (const info of containers) {
-      await docker
-        .getContainer(info.Id)
-        .remove({ force: true })
-        .catch(() => {});
+  const docker = new Docker();
+  const containers = await docker.listContainers({
+    all: true,
+    filters: { label: [`niceeval.provision-token=${token}`] },
+  });
+  for (const info of containers) {
+    try {
+      await docker.getContainer(info.Id).remove({ force: true });
+    } catch (e) {
+      if ((e as { statusCode?: number }).statusCode !== 404) throw e;
     }
-  } catch {
-    // 对账失败不掩盖原始错误;留给 TTL / candidate label 的事后核对。
   }
 }
 
@@ -143,7 +142,15 @@ export class DockerSandbox implements Sandbox {
   /** 创建并启动一个 Docker 沙箱。 */
   static async create(options: DockerSandboxOptions = {}): Promise<DockerSandbox> {
     const sandbox = new DockerSandbox(options);
-    await sandbox.initialize();
+    try {
+      await sandbox.initialize();
+    } catch (e) {
+      // kill-on-failure:容器创建之后的初始化(start、基础工具安装、工作区属主)一旦失败,
+      // 先尽力销毁容器再抛出原始错误——不给重试层留一台无主容器
+      // (见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
+      await sandbox.container?.remove({ force: true }).catch(() => {});
+      throw e;
+    }
     return sandbox;
   }
 

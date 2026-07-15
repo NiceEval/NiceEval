@@ -122,16 +122,23 @@ await sandbox.runCommand("npm", ["install"]);     // cwd 省略 → workdir
 
 **后果**:同为瞬时,重试的安全性完全不同——
 
-- **拒绝类**(请求确定没被受理,远端没有实例):限流响应、连接建立失败(DNS 解析失败、连接被拒、TLS 握手失败)。直接指数退避重试(封顶次数 + 抖动)。
-- **歧义类**(请求可能已被受理、只是响应丢了,远端可能有一台正在计费的实例):响应中途的连接重置(`fetch failed`、`other side closed`)、请求超时、5xx。盲目重试会在远端积累没有任何一方持有 id 的实例——泄漏计费资源,也打破[「不留无主沙箱」](#留存keep与注册表)的不变量。歧义类重试前必须**对账**:每次 create 请求把一次性 provision token 写进 provider 原生元数据,重试前按 token 检索远端,查到的实例先销毁再重建——不做断线收养,重建比重连语义干净,冷启动成本本来就要付。provider 没有按元数据检索实例的通道时,歧义类不重试、第一次抛出:宁可判死一个 attempt,不留一台计费的无主实例。
+- **拒绝类**(请求确定没被受理):限流响应、连接建立失败(DNS 解析失败、连接被拒、TLS 握手失败)。
+- **歧义类**(请求可能已被受理、只是响应丢了):响应中途的连接重置(`fetch failed`、`other side closed`)、请求超时、5xx。
+
+这个分类描述的是**单个请求**,而被重试的单元是 provider 的整个 `create()`——它通常不止一个请求:SDK 创建调用之后还有初始化步骤(E2B 备工作区目录;Docker 启动容器、补装基础工具、修工作区属主)。一个被归入拒绝类的 429 完全可能来自实例已创建成功之后的初始化请求,「拒绝类 ⇒ 远端没有实例」对闭包整体不成立。盲目重试会在远端积累没有任何一方持有 id 的实例——泄漏计费资源,也打破[「不留无主沙箱」](#留存keep与注册表)的不变量。防泄漏因此是两道独立的防线:
+
+- **kill-on-failure(provider 义务)**:`create()` 内部一旦拿到实例句柄,后续任何失败都先尽力销毁实例再抛出原始错误(销毁本身失败不掩盖原始错误)。这条与分类、与是否重试都无关——句柄在手,清理就是 `create()` 自己的责任,不可重试的失败同样适用。
+- **重试前对账(重试层义务)**:每次 create 请求把一次性 provision token 写进 provider 原生元数据;有检索通道的 provider,**任何重试之前都按 token 检索远端**,查到的实例先销毁再重建,不区分拒绝类还是歧义类——分类器看不出错误落在闭包内哪个请求上,一次检索的成本远低于一台漏杀实例的计费。不做断线收养,重建比重连语义干净,冷启动成本本来就要付。对账排在退避睡眠**之后**:限流场景下紧跟失败发出的检索大概率同样被限流,睡醒再查;这也给刚受理的实例出现在列表里留了时间。**对账失败即放弃重试**,抛回原始 create 错误并留 diagnostic——对账是重试的硬前置,查不到账就重试与盲重试无异。
+
+provider 没有按元数据检索实例的通道时:拒绝类直接指数退避重试(封顶次数 + 抖动),安全性由该 provider `create()` 的单请求形态或 kill-on-failure 保证;歧义类不重试、第一次抛出——宁可判死一个 attempt,不留一台计费的无主实例。
 
 分类分两层,都留在 sandbox/ 内、不外泄到 Adapter / Runner:各内置 provider 先把自己 SDK 原生的限流错误(e2b 的 `RateLimitError`、vercel 的 `APIError{ response.status: 429 }`、docker 拉镜像时 message 里的 `toomanyrequests`)归入拒绝类;provider 没认出的错误再过一遍与文件 IO 重试共用的保守瞬时分类器(见下节),由错误形态落进拒绝类或歧义类。
 
 各内置 provider 的对账通道与重试面:
 
-- **Docker** —— create 是对本地 daemon 的调用,歧义窗口极小;容器创建时即带 niceeval label(与留存候选的 `niceeval.keep-candidate` 标签同一机制),对账 = 按 label 查询本地容器。拒绝类主要是拉镜像限流。
-- **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill 后重建。真实跑分中出现过的 `Sandbox.create` 阶段 `fetch failed · other side closed` 由此可安全重试。
-- **Vercel Sandbox** —— SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
+- **Docker** —— 容器创建时即带 provision token label(与留存候选的 `niceeval.keep-candidate` 标签同一机制),对账 = 按 label 查询本地容器、force remove(容器已不存在视作对账完成)。create 闭包在容器创建后还有 start、基础工具安装、工作区属主一串 exec,这些步骤失败由 kill-on-failure 直接 force remove。拒绝类主要是拉镜像限流(发生在容器创建之前)。
+- **E2B** —— create 经 `metadata` 打 provision token,对账走 SDK 实例列表的 metadata 过滤,查到即 kill(实例已不存在视作对账完成)。创建成功后的工作区准备命令失败由 kill-on-failure 先 kill 再抛。真实跑分中两类都出现过:`Sandbox.create` 阶段的 `fetch failed · other side closed`(歧义类),与创建成功之后初始化请求撞 429 被归入拒绝类(反例台账见 memory 的 e2b-provision-429-duplicate-sandbox 条目)——都由重试前对账兜住。
+- **Vercel Sandbox** —— create 是单个 SDK 调用、没有初始化尾巴;SDK 对 429 已内建多次退避重试(读 `Retry-After`),外层对拒绝类的封顶次数相应收窄,避免「外层次数 × 内层次数」在请求量和退避时长两个维度同时放大;SDK 没有按元数据检索实例的通道,歧义类第一次抛出。
 
 重试循环本身在 `resolve.ts` 的 `createProvider()`:
 
