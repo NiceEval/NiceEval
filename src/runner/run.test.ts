@@ -580,6 +580,7 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
   });
 });
 
+// bug: memory/budget-warning-requires-agent-turn.md
 describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn 的 attempt", () => {
   afterEach(() => {
     expect(activeFeedbackSinkCount()).toBe(0);
