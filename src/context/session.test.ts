@@ -5,7 +5,7 @@ import { createAgentSession, SessionManager } from "./session.ts";
 import type { Agent, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
 // createAgentSession() 是 ctx.session 的实现——一条会话线的存取器(见
-// docs-site/zh/concepts/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;
+// docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。这里直接测存取器本身;
 // 端到端的「同一条线同一个 ctx.session」由 SessionManager / RunSession 保证。
 
 function fakeSandbox(): Sandbox {

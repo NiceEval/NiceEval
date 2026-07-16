@@ -54,7 +54,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/pi-sdk",
     target: "examples/zh/tier1/pi-sdk",
-    out: "docs-site/zh/example/tier1-pi-sdk.mdx",
+    out: "docs-site/zh/examples/integrations/pi-sdk.mdx",
     frontmatter: {
       title: "pi-agent-core 如何非侵入式接入 NiceEval",
       sidebarTitle: "pi-agent-core 如何接入",
@@ -83,7 +83,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/claude-sdk",
     target: "examples/zh/tier1/claude-sdk",
-    out: "docs-site/zh/example/tier1-claude-sdk.mdx",
+    out: "docs-site/zh/examples/integrations/claude-sdk.mdx",
     frontmatter: {
       title: "Claude Agent SDK 如何非侵入式接入 NiceEval",
       sidebarTitle: "Claude Agent SDK 如何接入",
@@ -112,7 +112,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/codex-sdk",
     target: "examples/zh/tier1/codex-sdk",
-    out: "docs-site/zh/example/tier1-codex-sdk.mdx",
+    out: "docs-site/zh/examples/integrations/codex-sdk.mdx",
     frontmatter: {
       title: "Codex SDK 如何非侵入式接入 NiceEval",
       sidebarTitle: "Codex SDK 如何接入",
@@ -146,7 +146,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/langgraph",
     target: "examples/zh/tier1/langgraph",
-    out: "docs-site/zh/example/tier1-langgraph.mdx",
+    out: "docs-site/zh/examples/integrations/langgraph.mdx",
     frontmatter: {
       title: "LangGraph 如何非侵入式接入 NiceEval",
       sidebarTitle: "LangGraph 如何接入",
@@ -181,7 +181,7 @@ const PAIRS: DiffPair[] = [
   {
     source: "examples/zh/origin/ai-sdk-v7",
     target: "examples/zh/tier1/ai-sdk-v7",
-    out: "docs-site/zh/example/tier1-ai-sdk-v7.mdx",
+    out: "docs-site/zh/examples/integrations/ai-sdk-v7.mdx",
     frontmatter: {
       title: "AI SDK v7 如何非侵入式接入 NiceEval",
       sidebarTitle: "AI SDK v7 如何接入",

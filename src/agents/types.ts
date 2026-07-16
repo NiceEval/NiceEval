@@ -1,5 +1,5 @@
 // agent 域类型:Agent / Adapter 契约、会话与 tracing 导出配置。
-// 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 docs-site/zh/concepts/adapter.mdx)。
+// 「连到哪个被测对象、协议怎么说」的全部契约在这里(见 docs-site/zh/explanation/adapter.mdx)。
 // 能力不再是问卷式声明:t 上解锁什么完全由构造证据决定(见 docs-site 「能力从哪来」一节)。
 
 import type { Cleanup, DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
@@ -126,7 +126,7 @@ export interface InputFile {
 
 /**
  * HITL 回答轮里,人的裁决以结构化形式随 `input.responses` 到达——adapter 不需要解析
- * `text` 去猜哪句回答对应哪个请求、算不算批准。见 docs-site/zh/concepts/adapter.mdx
+ * `text` 去猜哪句回答对应哪个请求、算不算批准。见 docs-site/zh/explanation/adapter.mdx
  * 「不同回答的入参」一节的四种典型形态。
  */
 export interface InputResponse {
@@ -223,7 +223,7 @@ export interface AgentTracing {
  * 新会话线(eval 第一轮 / t.newSession() 之后)拿到一个全新的。**
  * 会话续接(`id`/`capture`、`history`)和 HITL 停轮现场(`hold`/`take`)的存取器都在它上面,
  * "第一轮"是新会话线的自然形态,没有要判断的分支;`state` 是这些存取器之外的逃生舱,
- * 框架从不往里写数据。见 docs-site/zh/concepts/adapter.mdx「AgentContext」一节。
+ * 框架从不往里写数据。见 docs-site/zh/explanation/adapter.mdx「AgentContext」一节。
  */
 export interface AgentSession {
   /** 会话续接:服务端记历史。本线记过的会话 id;新会话线是 undefined。 */

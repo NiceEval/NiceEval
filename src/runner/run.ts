@@ -265,7 +265,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // budget 护栏:只按「已完成 attempt 的实测花费」判断,不做预测性节流。之前的实现会按
   // 「平均成本 × 在飞数」预扣,快到顶就让还没起飞的 attempt 排队等——这在探测阶段(还没有任何
   // 成本样本时)等价于把同一 budgetKey 的并发摁到一个很小的数,且完全没有文档承诺过这个副作用
-  // (`docs-site/zh/guides/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
+  // (`docs-site/zh/how-to/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
   // 上限」)。新语义:已完成 attempt 的花费加总一旦到顶,就不再放新 attempt 起飞(已经在飞的
   // 照常跑完,不会被中途打断);到顶之前不做任何预测性限流,并发完全由 globalSem / runSem 决定。
   // 代价是「已花 + 在飞未结算」的总花费可能短暂超出 budget——这是有意识的取舍:budget 是防止

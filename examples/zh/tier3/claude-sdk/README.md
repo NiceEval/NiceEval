@@ -1,7 +1,7 @@
 # claude-sdk 示例：niceeval Tier 3 接入（侵入改造 + experiment params）
 
 这是 [`examples/zh/tier1/claude-sdk`](../../tier1/claude-sdk/) 的**副本 + 一层侵入 delta**
-（分档定义见 [docs-site · Tier](../../../../docs-site/zh/concepts/tier.mdx);这个应用没有
+（分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx);这个应用没有
 Tier 2——Claude Code CLI 的原生遥测只有 metrics+logs,niceeval 只消费 trace spans,所以
 tier3 直接叠在 tier1 之上)。Tier 1 应用代码一行不改;这一档**改应用内部代码**,把内部
 可变点暴露成 experiment 可选的配置——对照的不再只是模型,而是应用自己的行为变体。

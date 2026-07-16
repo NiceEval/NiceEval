@@ -2,7 +2,7 @@
 // judge 解析与请求材料的单测:端点/凭据/模型解析结果必须进入真实请求,低分过不了 .gate()。
 // fixture judge client = 截获 globalThis.fetch(autoevals 底层 openai client 走全局 fetch),
 // 不起 HTTP server、不 spawn CLI。契约见 docs/feature/scoring/library/judge.md 与
-// docs-site/zh/concepts/judge.mdx 的解析优先级表;用例登记在
+// docs-site/zh/explanation/judge.mdx 的解析优先级表;用例登记在
 // docs/engineering/unit-tests/scoring/cases.md 的 Judge 分区。
 
 import { afterEach, describe, expect, it, vi } from "vitest";

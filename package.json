@@ -89,7 +89,7 @@
     "prepare": "pnpm run view:build && pnpm run build:report",
     "site:dev": "cd site && node scripts/dev.mjs",
     "site:build": "cd site && next build",
-    "docs:dev": "cd docs-site && npx --yes mint@latest dev",
+    "docs:dev": "node scripts/docs-dev.mjs",
     "docs:validate": "cd docs-site && npx --yes mint@latest validate",
     "docs:links": "cd docs-site && npx --yes mint@latest broken-links --check-anchors --check-redirects"
   },

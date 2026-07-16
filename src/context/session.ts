@@ -8,7 +8,7 @@ import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
 
 /**
- * 一条会话线的存取器实现(见 docs-site/zh/concepts/adapter.mdx 的 AgentSession 契约)。
+ * 一条会话线的存取器实现(见 docs-site/zh/explanation/adapter.mdx 的 AgentSession 契约)。
  * 私有槽都关在闭包里——`state` 只归用户,框架内部数据不往里塞。
  */
 export function createAgentSession(): AgentSession {

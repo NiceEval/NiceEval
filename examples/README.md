@@ -41,4 +41,4 @@ pnpm tiers:sync
 
 `openllmetry`、`openinference` 两个示例（OTel 自动埋点向，非 agent framework 向）暂时移除，`langgraph` 那批已做完（见上表），但这两个还没重做，仍是待办。
 
-其中 `origin/langgraph` 同时是[连接可观测性指南](../docs-site/zh/guides/connect-otel.mdx)「2. 应用侧」LangSmith tab 的完整可跑版本（`origin/custom-genai` 已重写为 `origin/pi-sdk`，不再演示手写 OTel 埋点，「自己埋的 gen_ai」tab 暂时没有可跑参考实现）；`origin/claude-sdk`、`origin/codex-sdk` 对应仓库根 README「Agent Frameworks」Roadmap 的条目（Roadmap 勾选追踪 adapter 实现进度，不是示例有无）。
+其中 `origin/langgraph` 同时是[连接可观测性指南](../docs-site/zh/how-to/connect-otel.mdx)「2. 应用侧」LangSmith tab 的完整可跑版本（`origin/custom-genai` 已重写为 `origin/pi-sdk`，不再演示手写 OTel 埋点，「自己埋的 gen_ai」tab 暂时没有可跑参考实现）；`origin/claude-sdk`、`origin/codex-sdk` 对应仓库根 README「Agent Frameworks」Roadmap 的条目（Roadmap 勾选追踪 adapter 实现进度，不是示例有无）。

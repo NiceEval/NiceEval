@@ -100,6 +100,9 @@ export type MessageKey =
   | "code.conversation"
   | "code.noSource"
   | "code.sourceUnavailable"
+  | "attempt.timing"
+  | "attempt.teardown"
+  | "attempt.diagnostics"
   | "assert.pass"
   | "assert.fail"
   | "assert.passedCollapsed"
@@ -227,6 +230,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "code.conversation": "conversation",
     "code.noSource": "Source was not captured. This run may predate source-loc or the source may be unavailable. Re-run this eval to see the code view.",
     "code.sourceUnavailable": "Source was captured for this run, but its artifact files are missing from this deployment. Re-export with `niceeval view --out <dir>` (directory mode bundles artifacts), or open the results locally with `niceeval view`.",
+    "attempt.timing": "timing",
+    "attempt.teardown": "teardown (not counted in total)",
+    "attempt.diagnostics": "diagnostics",
     "assert.pass": "pass",
     "assert.fail": "fail",
     "assert.passedCollapsed": "{{count}} passed",
@@ -349,6 +355,9 @@ const dictionaries: Record<Locale, Dictionary> = {
     "code.conversation": "会话",
     "code.noSource": "源码未捕获。此 run 可能早于 source-loc，或源码不可读。重跑此 eval 即可看到代码视图。",
     "code.sourceUnavailable": "此 run 捕获过源码，但当前部署里缺少它的 artifact 文件。用 `niceeval view --out <目录>` 重新导出（目录模式会带上 artifact），或在本地 `niceeval view` 查看。",
+    "attempt.timing": "耗时",
+    "attempt.teardown": "收尾(不计入总耗时)",
+    "attempt.diagnostics": "诊断",
     "assert.pass": "通过",
     "assert.fail": "失败",
     "assert.passedCollapsed": "{{count}} 条通过",

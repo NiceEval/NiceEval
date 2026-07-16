@@ -24,4 +24,4 @@ return fromResponses(await client.responses.create({ model, input: message }));
 - **Chat Completions** 不承诺「响应 = 完整过程」——应用可能在服务端跑完工具循环，只把最终答案给你。`notCalledTool` 这类负断言只能当「没看到」，不能当「确实没发生」。
 - **Responses** 的协议契约里 `output` 数组记录了模型这一轮决定做的全部事（包括每个 `function_call`），负断言可信。
 
-这条差异体现在转换器声明的证据完整性上，两者产出的 `Turn` 形状本身相同。用户侧写法与「零映射」表格见 [docs-site 的 send 指南](../../../../../docs-site/zh/guides/write-send.mdx)。
+这条差异体现在转换器声明的证据完整性上，两者产出的 `Turn` 形状本身相同。用户侧写法与「零映射」表格见 [docs-site 的 send 指南](../../../../../docs-site/zh/how-to/write-send.mdx)。

@@ -16,4 +16,4 @@
 
 - [产品首页](https://niceeval.com/zh)
 - [博客](https://niceeval.com/zh/blog)
-- [中文文档](https://niceeval.com/docs/zh/quickstart)
+- [中文文档](https://niceeval.com/docs/zh/tutorials/quickstart)

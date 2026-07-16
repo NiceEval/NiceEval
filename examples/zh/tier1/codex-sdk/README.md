@@ -14,7 +14,7 @@ codex-sdk 应用本身（`src/backend/`）**一行没改**——真实 agent 是
 
 adapter 只是把这个已有的 HTTP + SSE 服务无侵入接进 niceeval，不改被测应用一行代码。全套断言
 都在这一档。往上还有两档，同一个应用各有一个目录，逐层只加一层 delta（分档定义见
-[docs-site · Tier](../../../../docs-site/zh/concepts/tier.mdx)）：
+[docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx)）：
 
 - **Tier 2（send + OTel）**：[`../../tier2/codex-sdk/`](../../tier2/codex-sdk/)——config 加
   `telemetry`、adapter 加 `spanMapper: mapCodexSpans`，换 `niceeval view` 的调用瀑布图。

@@ -1,7 +1,7 @@
 # codex-sdk 示例：niceeval Tier 2 接入（send + OTel）
 
 这是 [`examples/zh/tier1/codex-sdk`](../../tier1/codex-sdk/) 的**副本 + 一层 OTel delta**
-（分档定义见 [docs-site · Tier](../../../../docs-site/zh/concepts/tier.mdx)）。同一个 adapter
+（分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx)）。同一个 adapter
 骨架、同一批 evals/experiments,断言一条不变;这一档买到的是**观测**:`niceeval view` 的
 调用瀑布图。
 

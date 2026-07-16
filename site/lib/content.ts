@@ -21,7 +21,7 @@ export const blogSegment = "blog";
 // 文档站按语言分入口:en 是默认语言走根路径,zh 走 /zh 前缀。
 export const docsUrl: Record<Locale, string> = {
   en: "https://niceeval.com/docs/quickstart",
-  zh: "https://niceeval.com/docs/zh/quickstart",
+  zh: "https://niceeval.com/docs/zh/tutorials/quickstart",
 };
 
 export const initPrompt =

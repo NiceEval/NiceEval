@@ -963,6 +963,179 @@ a.brand:hover { opacity: 0.75; }
 .code-orphans { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .code-orphans-head { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 
+/* ── Attempt 详情(契约:docs/feature/reports/view.md「Attempt 详情」) ── */
+.modal-sect {
+  font-size: 11px;
+  font-weight: 660;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+/* 断言区:仅源码不可用时出现的 fallback 呈现面。 */
+.attempt-asserts { margin-bottom: 14px; }
+.attempt-asserts-open {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+/* 复用 CodeView 的 .assert-detail 排版,但脱离代码行上下文:去掉行内缩进与左缘。 */
+.attempt-asserts .assert-detail { padding: 10px 12px; border-left: 0; background: transparent; }
+/* 长 expected/received(整文件 dump)一律有界滚动:断言明细无论住在失败索引 fallback、
+   源码行展开还是 NoSourceBody,都不把页面其余区块挤出视口。 */
+.assert-reason { max-height: 180px; overflow-y: auto; }
+/* 失败索引行:summary 一行是标题(徽章/名字/matcher/锚),明细收在行内一次展开。 */
+.fail-row { border-bottom: 1px solid var(--line); }
+.fail-row:last-child { border-bottom: 0; }
+.fail-sum {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  min-width: 0;
+}
+.fail-sum::-webkit-details-marker { display: none; }
+.fail-sum::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--soft);
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  flex-shrink: 0;
+  align-self: center;
+  transition: transform 0.12s;
+}
+.fail-row[open] > .fail-sum::before { transform: rotate(90deg); }
+.fail-sum:hover { background: color-mix(in oklch, var(--panel), var(--line) 30%); }
+.fail-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.fail-matcher {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.fail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 12px 10px 24px;
+}
+.assert-loc {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--soft);
+  margin-left: 8px;
+  white-space: nowrap;
+}
+.asserts-passed { margin-top: 8px; }
+.asserts-passed > summary,
+.asserts-passed-group > summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.asserts-passed > summary:hover,
+.asserts-passed-group > summary:hover { color: var(--text); }
+.asserts-passed-group { margin: 6px 0 0 14px; }
+.asserts-passed-group > .assert-detail { margin-top: 4px; }
+
+/* ── Attempt 详情:统一时间树(主链分解条 + 默认收合的 children) ── */
+.attempt-timing { margin: 14px 0; }
+.phase-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  gap: 1px;
+  margin: 7px 0 8px;
+}
+.phase-seg { min-width: 2px; flex-basis: 0; }
+.phase-seg-1 { background: var(--series-1); }
+.phase-seg-2 { background: var(--series-2); }
+.phase-seg-3 { background: var(--series-3); }
+.phase-seg-4 { background: var(--series-4); }
+.phase-seg-5 { background: var(--series-5); }
+.phase-seg-6 { background: var(--series-6); }
+.phase-seg-bad { background: var(--bad); }
+.phase-list,
+.timing-kids { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.timing-kids { padding-left: 18px; margin-top: 2px; }
+.phase-row,
+.tnode-row { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 1.7; min-width: 0; }
+summary.phase-row,
+summary.tnode-row { cursor: pointer; user-select: none; list-style: none; }
+summary.phase-row::-webkit-details-marker,
+summary.tnode-row::-webkit-details-marker { display: none; }
+summary.phase-row::before,
+summary.tnode-row::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--soft);
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  flex-shrink: 0;
+  transition: transform 0.12s;
+}
+details[open] > summary.phase-row::before,
+details[open] > summary.tnode-row::before { transform: rotate(90deg); }
+/* 无 children 的行:占位对齐有箭头的行。 */
+li.phase-row::before,
+li.tnode-row::before { content: ""; width: 4px; flex-shrink: 0; }
+.phase-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.phase-dot-none { background: transparent; }
+/* 名称列定宽:各行的耗时起始对齐成一列(最长 phase 名 telemetry.configure 也在宽度内)。 */
+.phase-name { color: var(--text); white-space: nowrap; width: 168px; flex-shrink: 0; }
+.phase-dur { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.phase-fail { color: var(--bad); font-weight: 650; }
+.phase-kids {
+  font-size: 10px;
+  color: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 1.5;
+}
+.tnode-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tnode-meta { font-size: 11px; color: var(--soft); padding: 3px 0 3px 18px; }
+.tnode-trace { margin: 4px 0 6px 18px; }
+.phase-closing { margin-top: 8px; }
+.phase-closing-head { font-size: 11px; color: var(--soft); margin-bottom: 2px; }
+
+/* usage / sandbox 元信息 chips。 */
+.meta-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.meta-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  background: var(--panel);
+}
+.meta-chip b { color: var(--text); font-weight: 640; }
+
 /* lightweight TS syntax tokens */
 .tok-comment { color: var(--soft); font-style: italic; }
 .tok-str { color: light-dark(#0a7d3c, #7ee787); }
@@ -976,6 +1149,9 @@ a.brand:hover { opacity: 0.75; }
    两条链接之间的视觉间距(padding + gap + padding)与改前基本持平。 */
 .shell-links a { color: var(--soft); text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 4px; }
 .shell-links a:hover { color: var(--text); }
+/* ReportLink.icon:内联 SVG 字标,渲染在 label 前(shell.md「字段穷尽」)。 */
+.shell-link-icon { display: inline-flex; align-items: center; }
+.shell-link-icon svg { width: 14px; height: 14px; display: block; fill: currentColor; }
 .site-footer {
   display: flex;
   gap: 12px;
@@ -989,6 +1165,3 @@ a.brand:hover { opacity: 0.75; }
 .site-footer .powered-by a { color: var(--soft); text-decoration: none; }
 .site-footer .powered-by a:hover { color: var(--text); text-decoration: underline; }
 .nre-page-error pre { white-space: pre-wrap; }
-/* ReportLink.icon:内联 SVG 字标,渲染在 label 前(shell.md「字段穷尽」)。 */
-.shell-link-icon { display: inline-flex; align-items: center; }
-.shell-link-icon svg { width: 14px; height: 14px; display: block; fill: currentColor; }

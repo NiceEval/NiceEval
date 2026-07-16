@@ -2,7 +2,7 @@
 // 表格里的 fromChatCompletion(res) / fromResponses(res)。和 fromAiSdk 同一先例:结构化
 // *Like 类型,不依赖 openai 包,兼容任何声明自己走这两种协议形状的服务(不止 OpenAI 官方)。
 //
-// 两种形状对负断言的可信度不同(见 docs-site/zh/guides/write-send.mdx):
+// 两种形状对负断言的可信度不同(见 docs-site/zh/how-to/write-send.mdx):
 //   · Chat Completions 不承诺「响应 = 完整过程」(应用可能在服务端跑完工具循环,只把最终
 //     答案给你),所以 notCalledTool 这类负断言只能当「没看到」,不能当「确实没发生」。
 //   · Responses 的协议契约里 output 数组记录了模型这一轮决定做的全部事(包括每个

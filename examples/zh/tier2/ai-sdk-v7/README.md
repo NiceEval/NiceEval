@@ -1,7 +1,7 @@
 # ai-sdk-v7 示例：niceeval Tier 2 接入（send + OTel）
 
 这是 [`examples/zh/tier1/ai-sdk-v7`](../../tier1/ai-sdk-v7/) 的**副本 + 一层 OTel delta**
-（分档定义见 [docs-site · Tier](../../../../docs-site/zh/concepts/tier.mdx)）。同一个 adapter、
+（分档定义见 [docs-site · Tier](../../../../docs-site/zh/explanation/tier.mdx)）。同一个 adapter、
 同一批 evals/experiments,断言一条不变;这一档买到的是**观测**:`niceeval view` 的调用瀑布
 图——应用内部每次模型调用、各自的耗时与 token,按轮铺成时间线。
 

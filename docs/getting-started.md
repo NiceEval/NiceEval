@@ -40,7 +40,7 @@ export default defineConfig({
 
 ## 1. 评一个会话型 agent
 
-驱动一个暴露会话接口的 agent,断言它的回复与工具调用。连你的服务也是写一个 agent —— 它内部按你服务的协议发请求,URL 是它读 env 的私事(niceeval 不定义 agent 协议,所以没有 `--url`)。就算 agent 和 eval 在同一个代码库里,也照样让 adapter 走 HTTP,不要把 `fetch` 换成进程内的函数直调——直调绕过了用户实际走的链路、进程不隔离导致结果不可复现,取舍详见[接入你的 Agent · 为什么不直调](../docs-site/zh/guides/connect-your-agent.mdx):
+驱动一个暴露会话接口的 agent,断言它的回复与工具调用。连你的服务也是写一个 agent —— 它内部按你服务的协议发请求,URL 是它读 env 的私事(niceeval 不定义 agent 协议,所以没有 `--url`)。就算 agent 和 eval 在同一个代码库里,也照样让 adapter 走 HTTP,不要把 `fetch` 换成进程内的函数直调——直调绕过了用户实际走的链路、进程不隔离导致结果不可复现,取舍详见[接入你的 Agent · 为什么不直调](../docs-site/zh/how-to/connect-your-agent.mdx):
 
 ```typescript
 // agents/weather-bot.ts —— 远程 agent,URL 是它的私事

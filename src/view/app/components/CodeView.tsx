@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, CheckCircle2, ChevronRight, MessageCircle, XCircle } from "lucide-react";
 import type { T } from "../shared.ts";
 import type { Assertion, CodeSource, SourceTurn, TranscriptEvent } from "../types.ts";
@@ -8,7 +8,7 @@ import { InputBlock, ToolBlock, Transcript } from "./Transcript.tsx";
 
 /** soft 断言没过阈值不影响 verdict,颜色上跟 gate 失败(红)区分开,用 warn(黄);
  *  unavailable 用独立第三态(非红非绿)。 */
-function assertTone(a: Assertion): "good" | "warn" | "bad" | "na" {
+export function assertTone(a: Assertion): "good" | "warn" | "bad" | "na" {
   if (a.outcome === "unavailable") return "na";
   if (a.outcome === "passed") return "good";
   return a.severity === "soft" ? "warn" : "bad";
@@ -17,7 +17,12 @@ function assertTone(a: Assertion): "good" | "warn" | "bad" | "na" {
 export function CodeView({ sources, events, assertions, t }: { sources: CodeSource[]; events: TranscriptEvent[]; assertions: Assertion[]; t: T }) {
   const turns = useMemo(() => indexTurns(events), [events]);
   const asserts = useMemo(() => indexAsserts(assertions), [assertions]);
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  // 断言明细单点住在源码行(契约 docs/feature/reports/view.md「Attempt 详情」):
+  // 第一条失败行默认展开,打开页面即见「为什么失败」,不用逐行找红行点开。
+  const [open, setOpen] = useState<Set<string>>(() => {
+    const first = assertions.find((a) => a.outcome === "failed" && a.loc);
+    return new Set(first?.loc ? [locKey(first.loc.file, first.loc.line)] : []);
+  });
   const toggle = useCallback((k: string) => {
     setOpen((prev) => {
       const next = new Set(prev);
@@ -223,7 +228,7 @@ export function ReplyPanel({ turn, t }: { turn: SourceTurn; t: T }) {
   );
 }
 
-export function AssertDetail({ asserts, t }: { asserts: Assertion[]; t: T }) {
+export function AssertDetail({ asserts, t, anchor }: { asserts: Assertion[]; t: T; anchor?: (a: Assertion) => ReactNode }) {
   return (
     <div className="line-detail assert-detail">
       {asserts.map((a: Assertion, i: number) => (
@@ -234,6 +239,7 @@ export function AssertDetail({ asserts, t }: { asserts: Assertion[]; t: T }) {
           <span className="assert-name">
             {a.groupPath?.length ? `${a.groupPath.join(" > ")} · ` : ""}
             {a.name}
+            {anchor?.(a)}
           </span>
           {a.optional ? <span className="assert-sev">{t("assert.optional")}</span> : null}
           {a.severity === "soft" ? <span className="assert-sev">{t("assert.soft")}</span> : null}

@@ -6,11 +6,11 @@
 
 1. **不改 origin 的任何文件。** 接入产物放 `examples/zh/tier1/<同名>/`:从 origin 复制整个应用,被复制的文件保持逐字节不变(除 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量),接入代码全部是**新增**文件。`pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页,"应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它;这条铁律由 CI 的 `pnpm tiers:check`(verbatim 校验)看守,见 [tier-sync](engineering/example-tier-sync/README.md)。
 2. **协议以实际输出为准。** 动手写映射之前,先把应用跑起来,`curl -N` 打一轮 `/api/chat` 把 SSE 帧看一遍。本文的帧格式描述来自当前代码,但代码会演化,别背文档。
-3. **被测应用由你自己按它的方式启动,eval 不代管进程、不另开端口。** adapter 只经环境变量(如 `CODEX_SDK_URL`)指向一个已经在跑的实例——没有 `server-lifecycle.ts` 这类"eval 侧拉起子进程"的机制,这是刻意的取舍,理由见[接入你的 Agent · 为什么不直调](../docs-site/zh/guides/connect-your-agent.mdx)同一条脉络(eval 不代管被测进程)。
+3. **被测应用由你自己按它的方式启动,eval 不代管进程、不另开端口。** adapter 只经环境变量(如 `CODEX_SDK_URL`)指向一个已经在跑的实例——没有 `server-lifecycle.ts` 这类"eval 侧拉起子进程"的机制,这是刻意的取舍,理由见[接入你的 Agent · 为什么不直调](../docs-site/zh/how-to/connect-your-agent.mdx)同一条脉络(eval 不代管被测进程)。
 
 ## Tier 是什么,产出长什么样
 
-接入分三档(定义见 [docs-site · Tier](../docs-site/zh/concepts/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
+接入分三档(定义见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
 
 三档各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 
@@ -117,7 +117,7 @@ adapter 要这样做:
 - 内置的 `uiMessageStreamAgent`(`niceeval/adapter` 导出)整个托管了这个应用——不需要手写 `send`,adapter 缩成纯配置(`url` + `body(ctx)` 透传 `ctx.model` + `settleMs`)。会话续接(客户端全量重放)、HITL 审批改写重发、事件直构全部是这个内置件的事。
 - 模型对比:请求体 `model` 字段,`ctx.model` 直接透传,server 不用重启,可选值看 `GET /api/models`。
 - OTel:应用用官方 `@ai-sdk/otel`,产标准 GenAI span;`niceeval.config.ts` 钉固定端口,应用启动时环境变量指过来。应用用 `BatchSpanProcessor`,span 可能晚到几秒——`settleMs: 600` 把收集窗口拉宽一点,只影响瀑布图完整性。
-- 备注:**进程内直调不被推荐**(被测对象是用户实际部署的应用,走 HTTP;测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/guides/connect-your-agent.mdx))——这个示例统一走无侵入 HTTP 接入,不提供进程内直调的对照版本。
+- 备注:**进程内直调不被推荐**(被测对象是用户实际部署的应用,走 HTTP;测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/how-to/connect-your-agent.mdx))——这个示例统一走无侵入 HTTP 接入,不提供进程内直调的对照版本。
 
 ### claude-sdk
 

@@ -91,7 +91,7 @@ export interface ContextDeps {
  * 这是唯一仍需要构造证据之外强制检查的能力——`t.sandbox.file`/`t.sandbox.fileChanged()` 等直接读沙箱
  * 文件系统,没有沙箱就没有东西可读,不报错会静默返回空结果。其余能力(多轮对话、
  * 工具断言……)都不再问卷式声明,由「做没做到」的构造证据决定,见
- * docs-site/zh/concepts/adapter.mdx「能力从哪来」一节。
+ * docs-site/zh/explanation/adapter.mdx「能力从哪来」一节。
  */
 function capabilityGuard(agentName: string, cap: string, method: string): () => never {
   return () => {

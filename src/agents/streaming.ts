@@ -1,7 +1,7 @@
 // 官方的「拼装方式」件:把一个手写 send 里反复出现的事收成可复用的小东西,
 // 而不是每接一个新后端就重写一遍循环 + Map + if/else。
 //
-// 背景(见 docs-site/zh/guides/write-send.mdx):一轮交互里真正互不相干的事只有几类——
+// 背景(见 docs-site/zh/how-to/write-send.mdx):一轮交互里真正互不相干的事只有几类——
 //   1. 怎么把输入发出去(transport)——真做不掉,adapter 只写这个;
 //   2. 原始数据怎么变成 StreamEvent[]——按数据到达形状分「整段落地」(sdk-streams.ts 的
 //      fromXxxEvents,已有)和「逐 token / 逐参数增量」(deltaStream,这里新增)两种官方 reducer;
@@ -79,7 +79,7 @@ export async function driveFrameStream<Frame, RFrame = Frame>(
 
 // 会话续接(id/capture、history)与 HITL 停轮现场(hold/take)不再是这里的可选「拼装件」——
 // 它们是 ctx.session(AgentSession)本身的存取器,任何 adapter 直接取用,不需要额外声明什么。
-// 见 docs-site/zh/concepts/adapter.mdx 与 src/context/session.ts 的 createAgentSession。
+// 见 docs-site/zh/explanation/adapter.mdx 与 src/context/session.ts 的 createAgentSession。
 
 // ───────────────────────── deltaStream:逐 token / 逐参数增量累加器 ─────────────────────────
 
