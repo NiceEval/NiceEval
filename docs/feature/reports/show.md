@@ -361,9 +361,22 @@ niceeval show --experiment dev-e2b           # 整个可比组
 niceeval show --experiment dev-e2b/codex-e2b
 niceeval show memory/swelancer --experiment dev-e2b/codex-e2b
 niceeval show --report reports/exam.tsx
+niceeval show --report reports/site.tsx --page exam
 ```
 
 `--run` 改变结果根，`--experiment` 和位置参数在其中收窄 Selection；`--experiment` 按路径段匹配 id 前缀，因此 `--experiment dev-e2b` 选中整个可比组但不会误中 `dev-e2b-next`。收窄完成后默认报告才按组分区，位置参数仍只表示 eval id 前缀。`--report` 用自定义报告替换榜单，但 attempt locator 的下钻命令保持不变。`--history` 是内置时间轴，与 `--report` 互斥。
+
+`--report` 文件的默认导出是一棵报告树（`defineReport`）或一份站点（[`defineSite`](library.md#站点多页与导航外壳)）。站点只有一页、或 `--page <id>` 命中一页时，直接渲染该页报告的 text 面；多页且未传 `--page` 时只输出页索引与可复制的单页命令——与可比组索引同一模式，不把全部页倾倒进终端：
+
+```text
+$ niceeval show --report reports/site.tsx
+记忆能力评测 · 2 页
+
+  overview   总览      niceeval show --report reports/site.tsx --page overview
+  exam       成绩单    niceeval show --report reports/site.tsx --page exam
+```
+
+`--page` 未命中任何页 id、或对非站点的报告文件使用时，按用法错误非零退出并列出可用页 id。站点的导航外壳（`links`、`footer`、`scripts`、`styles`）是 web 面属性，text 面只消费页定义与站点标题。
 
 ## 无匹配与不可读结果
 

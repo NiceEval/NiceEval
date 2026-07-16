@@ -1,6 +1,6 @@
 # Reports —— 库用法
 
-`niceeval/report` 用来计算报告数据和定义可同时交给 `show`、`view` 渲染的报告；`niceeval/report/react` 提供可直接嵌入你自己 React 页面中的纯渲染组件。
+`niceeval/report` 用来计算报告数据和定义可同时交给 `show`、`view` 渲染的报告；`niceeval/report/react` 提供可直接嵌入你自己 React 页面中的纯渲染组件。单棵报告树装不下时，报告文件可以升级成带导航外壳的多页站点，见[站点](#站点多页与导航外壳)。
 
 最快的选择方式：先确定想回答的问题，再选组件。
 
@@ -438,7 +438,7 @@ await writeFile("public/evals.json", JSON.stringify(table));
 
 ## 排版原语
 
-`Row`、`Col`、`Section`、`Text`、`Style` 和 `Table` 是六个内置双面组件，用于组织报告树：
+`Row`、`Col`、`Section`、`Text`、`Style`、`Tabs` 和 `Table` 是七个内置双面组件，用于组织报告树：
 
 ```tsx
 return (
@@ -452,6 +452,24 @@ return (
   </Col>
 );
 ```
+
+### `Tabs`
+
+把一页里的并列视图组织成可切换的块。tab 是页内浏览状态，不是数据边界，也不是宿主寻址单位——需要能从 CLI 单独打开、有自己路由和导航项的块，用[站点页](#站点多页与导航外壳)而不是 tab。
+
+```tsx
+<Tabs>
+  <Tab title="质量 × 成本">
+    <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
+  </Tab>
+  <Tab title="分科得分">
+    <Scoreboard data={scoreboard} />
+  </Tab>
+</Tabs>
+```
+
+- 两个渲染面都输出全部 tab 的完整内容。web 面静态 HTML 把每个 tab 渲染为独立 `<details>`，第一个默认展开；渐进增强把它们变成单选 tab 条。切换是纯浏览状态，不改变数据、指标口径或初始 HTML 中的数值。text 面按声明顺序把每个 tab 输出为带标题的分节。
+- `Tab` 只有 `title: string` 一个属性。tab 不参与路由，没有 id，也没有 CLI 选择器。
 
 ### `Table`
 
@@ -530,6 +548,89 @@ return (
 ## 自定义组件
 
 要让自定义组件同时出现在 `show` 和 `view`，用 `defineComponent` 同时提供 `web` 与 `text` 面。只服务自己网页的组件直接写普通 React 组件即可。
+
+## 站点：多页与导航外壳
+
+`--report` 文件的默认导出有两种形状：`defineReport(...)` 产出一棵报告树，填进宿主默认外壳的报告槽；`defineSite(...)` 产出一份站点定义——若干个报告页，加一层导航外壳（站点标题、外部链接、页脚、自定义脚本与样式）。要发布带品牌和 GitHub 链接的 benchmark 站、或把成绩单与趋势分成独立页面时，用站点：
+
+```tsx
+// reports/site.tsx
+import { defineReport, defineSite, ExperimentComparison } from "niceeval/report";
+import exam from "./exam.tsx"; // 已有的 defineReport 文件直接复用为一页
+
+export default defineSite({
+  title: { en: "Memory Evals", "zh-CN": "记忆能力评测" },
+  links: [
+    { label: "GitHub", href: "https://github.com/you/coding-agent-memory-evals" },
+    { label: { en: "CI", "zh-CN": "CI" }, href: "https://github.com/you/repo/actions" },
+  ],
+  footer: { en: "Published nightly from CI.", "zh-CN": "由 CI 每晚发布。" },
+  scripts: [{ src: "./assets/annotate.js" }],
+  styles: [{ inline: ".nre .nre-hero { letter-spacing: 0.02em; }" }],
+  pages: [
+    {
+      id: "overview",
+      title: { en: "Overview", "zh-CN": "总览" },
+      report: defineReport(async ({ selection }) => (
+        <ExperimentComparison data={await ExperimentComparison.data(selection)} />
+      )),
+    },
+    { id: "exam", title: { en: "Exam", "zh-CN": "成绩单" }, report: exam },
+  ],
+});
+```
+
+```sh
+niceeval view --report reports/site.tsx              # 完整站点，首页是第一页
+niceeval show --report reports/site.tsx              # 多页时输出页索引
+niceeval show --report reports/site.tsx --page exam  # 渲染指定页
+```
+
+字段穷尽如下：
+
+```ts
+interface SiteDef {
+  /** 站点标题：浏览器标题、导航品牌与首页 hero。取值链是 site.title → 快照 name → "NiceEval"。 */
+  title?: LocalizedText;
+  /** 导航右侧的外部链接，如 GitHub、文档、CI。 */
+  links?: SiteLink[];
+  /** 每页页脚的一段文字；省略则无页脚。 */
+  footer?: LocalizedText;
+  /** 注入每个页面的脚本，在官方增强脚本之后、按声明顺序于 </body> 前加载。 */
+  scripts?: SiteAsset[];
+  /** 注入每个页面的样式表，在官方样式之后按声明顺序加载。 */
+  styles?: SiteAsset[];
+  /** 报告页，导航按数组顺序显示；省略时站点只有一页内置 ExperimentComparison。 */
+  pages?: SitePage[];
+}
+
+interface SitePage {
+  /** 页面身份：`--page <id>` 的取值、web 路由 `#/page/<id>` 与导航锚。小写字母、数字与连字符，站点内唯一。 */
+  id: string;
+  /** 导航中的页名。 */
+  title: LocalizedText;
+  /** 这一页的报告；每页接受宿主注入的同一份 Selection。 */
+  report: ReportDefinition;
+}
+
+interface SiteLink {
+  label: LocalizedText;
+  href: string;
+}
+
+/** src 是相对站点文件所在目录的资产路径；inline 是原样注入的脚本或样式正文。 */
+type SiteAsset = { src: string } | { inline: string };
+```
+
+站点的行为约束：
+
+- **页是宿主寻址单位，tab 是页内浏览状态。** 页有 id、路由、导航项和 `--page` 选择器；[`Tabs`](#tabs) 没有。需要单独打开、深链或在终端独立渲染的内容做成页，同页内的并列视图用 tab。
+- **所有页共享同一份 Selection。** 位置参数与 `--experiment` 收窄对全站生效；页是对同一批数据的不同看法，不承担数据过滤职责。要看不同数据范围，用命令行收窄或在页的报告里显式 filter。
+- **除 `title` 外的外壳字段是 web 面属性。** `links`、`footer`、`scripts`、`styles` 只被 `view` 与静态导出消费；`show` 读同一文件时消费 `pages`，并把 `title` 用作页索引的标题行。外壳文案是 `LocalizedText`，随外壳的语言切换取值。
+- **自定义脚本是增强层。** 与官方增强脚本同一不变量：初始静态 HTML 无 JS 时完整可读，脚本只添加浏览行为，不改变数据、指标口径或初始 HTML 中的数值。要改数据口径，改的是报告树或指标定义，不是脚本。
+- **`{src}` 资产按路径纪律解析。** 允许普通相对路径和 `./` 前缀，不允许 `..` 路径段、绝对路径或 `~`；本地 `view` 直接提供这些文件，静态导出把它们复制进导出目录的 `assets/` 并保持相对路径。引用的文件缺失时在启动或导出时报错并给出解析后的路径。
+- **校验在装载时完成。** 重复或非法的 page id、缺任一渲染面的页内组件，都在宿主装载站点时以完整用户反馈报错，不渲染半套站点。
+- **脚本随站点发布。** 静态导出会原样携带并在读者浏览器执行 `scripts`；[`--out` 的数据等级防呆](view.md#静态导出)只检查证据文件的消毒标记，不检查脚本内容，脚本里别嵌密钥。
 
 ## 相关阅读
 

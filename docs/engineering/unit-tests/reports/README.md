@@ -72,3 +72,12 @@ const cells = {
 3. **窄快照**：只锁短小、稳定、评审者能读懂的布局或完整错误反馈。
 
 计算与格式化分别可断言（`value` 与 `display` 独立），不从渲染字符串反推计算正确。
+
+## view 证据室的观察面
+
+证据室（Attempt 详情弹窗及其子块，`src/view/app/components/`）与报告组件同属确定性渲染语义，归单元层，不进 E2E（分层判据见[测试体系总览](../../testing/README.md)）。观察面是 React 静态 render 出的 DOM 结构事实，不是浏览器截图：
+
+- **纯渲染，注入数据**：组件对「已加载数据」渲染；artifact（sources / events / trace）的网络拉取隔离在装载边界之外，测试以 `ViewResult` 与 artifact fixture 直接注入 props，不发请求、不 mock fetch。
+- **折叠态用原生 `<details>` 表达**：默认展开与否就是标记上的 `open` 属性（报告 web 面 `EvalList` 的既有纪律），静态 `renderToStaticMarkup` 即可断言默认态与展开内容，不需要浏览器事件模拟；需要 JS 交互才能表达的折叠设计，先回到设计层改成 `<details>` 能表达的形态。
+- **断言结构事实**：区块存在与相对顺序、默认展开 / 折叠、计数、expected / received 文本、源码锚的指向。不断言 class 列表、内联样式或像素表现。
+- **样式回归不属于本层**：遮罩透明、滚动裁剪一类视觉问题 DOM 断言拦不住，踩到记 memory 台账（先例：[codeview-perline-hidden-scrollbar-clips-text](../../../../memory/codeview-perline-hidden-scrollbar-clips-text.md)）；改动 view 样式或组件后需要 `pnpm run view:build` 重建客户端产物。

@@ -78,6 +78,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view 对零可读结果曾静默导出空报告 exit 0,CI 发布会把空站顶上线;修为 loadViewScan 一律抛错并列 skipped 明细(修在 `src/view/data.ts`)
 - 已修 [codeview-perline-hidden-scrollbar-clips-text](codeview-perline-hidden-scrollbar-clips-text.md) — AttemptModal 代码视图长行(尤其 t.send prompt)被裁断且无滚动条提示,根因是横向滚动挂在每行自己身上还把滚动条砍成 0;改为整块 `.code-lines` 统一滚动(修在 `src/view/styles.css`,`d0b6718` 重构带入,记得改完要 `pnpm run view:build`)
 - 已修 [attempt-review-transparent-and-weak-diff](attempt-review-transparent-and-weak-diff.md) — Attempt review 的半透明模糊遮罩保留了报告纹理，暗色下断言行状态色又过淡；遮罩改为高不透明纯色，代码面强制不透底并提高 diff 红绿 gutter/行色对比
+- [view-attempt-detail-buries-failure](view-attempt-detail-buries-failure.md) — view 失败 attempt 弹窗首屏全是全展开 timing 树,契约要求的断言区从未实现(26e967e 删旧分组视图 + 792aae0 插时间树 + 74affaf 契约无场景行无测试);测试方案落 unit-tests/reports,修复计划在 plan/view-attempt-detail-evidence-first.md
 - 已修 [reasonfor-priority-and-severity-bug](reasonfor-priority-and-severity-bug.md) — `MetricTable` 展开子行、`CaseList.data`、`<DefaultReport />` failing board 曾各写一份 `.find(a => !a.passed)`,优先级还是断言先于 error、不查 skipReason、soft 断言混进失败原因;提炼成 `compute.ts` 的 `reasonFor`/`failingGateAssertions` 三处共用(修在 `src/report/compute.ts` + `official-report.tsx`)
 - 已修 [visual-migration-silently-changed-computed-formulas](visual-migration-silently-changed-computed-formulas.md) — `d0b6718` 把裸跑 UI 迁进 `defaultReport` 时没先建行为矩阵,静默换掉了通过率(two-level mean→朴素比例)、失败原因优先级、组汇总数字三处公式;修法=计算层预先算好唯一正确值(`OverviewData.totals.passRate`、共用 `reasonFor`、新增 `GroupSummary`),渲染面只展示不重算
 

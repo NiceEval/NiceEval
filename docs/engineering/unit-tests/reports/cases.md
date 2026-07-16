@@ -162,6 +162,34 @@ it("show 与 view 的默认报告槽消费同一 Selection", async () => {
 })
 ```
 
+## Attempt 详情（view 证据室）
+
+契约来源：[View](../../../feature/reports/view.md)「Attempt 详情」。台账：[view-attempt-detail-buries-failure](../../../../memory/view-attempt-detail-buries-failure.md)（断言区缺失、timing 树压顶如何逃逸到真实使用）。
+
+| 契约 | 场景 |
+|---|---|
+| 断言区是独立区块，先于时间树与代码视图渲染；数据来自 `result.json` 的 assertions，不依赖 sources / events / trace artifact 的加载 | 正例：无任何 artifact 的失败 attempt 仍渲染完整断言区；正例：DOM 中断言区节点先于 timing 区节点 |
+| 断言区先展开 failed / unavailable 与影响判定的 soft；passed 按 group 收进默认折叠区并显示数量 | 正例：1 gate-failed + 1 unavailable + 两 group 共 3 passed 的 fixture，前两者默认可见、passed 折叠且计数为 3；反例：全 passed 时无默认展开条目，只有折叠区；边界：soft 未达标默认展开，soft 达标进折叠区 |
+| 每条失败直接显示 matcher、expected / received 或 reason，并提供源码锚——不能要求用户从 matcher 名猜实际值 | 正例：失败条目静态渲染即含 expected 与 received 的值，且锚指向该断言的源码行；反例：无 expected / received 的失败（如 unavailable）显示 reason，不渲染空字段 |
+| 时间区默认只显示 phase 主链与收尾段；children（hook / 命令 / turn）收合在可展开结构里，失败最深节点带失败标记 | 正例：默认标记下 children 不可见，展开单个 phase 后逐层可见；边界：errored attempt 只有最深失败节点带 ✗，祖先不重复标记 |
+
+## 站点、页面与 Tabs
+
+契约来源：[Library](../../../feature/reports/library.md)「站点：多页与导航外壳」「Tabs」、[Architecture](../../../feature/reports/architecture.md)「站点：页之上的宿主外壳」、[Show](../../../feature/reports/show.md)、[View](../../../feature/reports/view.md)。
+
+| 契约 | 场景 |
+|---|---|
+| `--report` 按默认导出类型分派：`defineReport` 填默认外壳的报告槽，`defineSite` 渲染站点；同一 flag 无第二入口 | 正例：两种导出各走一条路径；反例：既非报告树也非站点的默认导出报完整用户反馈 |
+| show 对多页站点只输出站点标题、页索引与可复制的 `--page` 命令，不倾倒页内容；单页站点或 `--page` 命中时直接渲染该页 text 面 | 正例：双页站点索引含两条命令且无 experiment 明细；边界：单页站点直接渲染 |
+| `--page` 未命中页 id 或用于非站点报告文件时按用法错误非零退出并列出可用页 id | 反例：`--page typo` 报错附 overview / exam；反例：对 `defineReport` 文件传 `--page` 报用法错误 |
+| 全部页共享宿主注入的同一 Selection，位置参数与 `--experiment` 收窄对全站生效；页不承担数据过滤 | 正例：两页的 `.data()` refs 来自同一收窄后 Selection |
+| 本地宿主只 build 被打开的页；静态导出 build 全部页，任一页校验失败则导出整体失败 | 正例：打开 A 页时 B 页 build 未执行；反例：B 页含 `<div>` 时 `--out` 非零退出、不产出半套站点 |
+| 标题取值链 site.title → 快照 name → `NiceEval`；`links` / `footer` 渲染进导航壳，text 面不含这些字段 | 正例：三级 fallback 各一 fixture；反例：show 输出不含 links href |
+| `scripts` / `styles` 按声明序注入：styles 在官方样式后，scripts 在官方增强脚本后 `</body>` 前；初始静态 HTML 的数值不因注入改变 | 正例：注入前后初始 HTML 数据节点相同、注入顺序可断言 |
+| `{src}` 资产相对站点文件解析，拒绝 `..` 路径段、绝对路径与 `~`；静态导出复制进 `assets/` 保持相对路径，缺失文件报错并给出解析后路径 | 正例：`./assets/a.js` 被复制；反例：`../x.js` 装载报错；边界：缺失文件在导出时报错 |
+| 重复或非法 page id 在装载时校验失败，报错列出冲突 id | 反例：两页同 id `exam`；反例：id 含大写或斜杠 |
+| `Tabs` 两面都输出全部 tab 完整内容：web 静态 HTML 每 tab 一个 `<details>` 且仅首个 open，text 面按声明序输出带标题分节；切换不改变数据 | 正例：双 tab 两面各含两块完整内容且仅首个 open；反例：text 面不丢第二个 tab |
+
 ## Snapshot 的使用边界
 
 Snapshot 适合锁定：

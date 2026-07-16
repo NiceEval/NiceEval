@@ -13,6 +13,7 @@ niceeval view --run site-data/run
 niceeval view --no-open                # 只打印 URL
 niceeval view --port 4400              # 固定本地端口
 niceeval view --report reports/exam.tsx
+niceeval view --report reports/site.tsx --page exam   # 多页站点，指定初始页
 ```
 
 位置参数有两种含义：存在的文件表示只打开这一份 `snapshot.json`；其它字符串表示 eval id 前缀。存在的目录不能作为位置参数，结果根要用 `--run <dir>` 传入。
@@ -23,10 +24,11 @@ niceeval view --report reports/exam.tsx
 
 ## 页面构成
 
+- **导航外壳：** 品牌标题、页导航、外部链接、页脚与语言切换。标题的取值链是站点 `title` → 快照 `name` → `NiceEval`。`--report` 文件默认导出 [`defineSite`](library.md#站点多页与导航外壳) 时，导航按声明顺序列出全部报告页（路由 `#/page/<id>`，`--page <id>` 定初始页），`links` 显示在导航右侧，`footer`、`scripts`、`styles` 注入每一页；内置的 Runs、Traces 证据页始终排在报告页之后，站点定义不能移除它们。自定义脚本属于增强层：初始静态 HTML 无 JS 完整可读，脚本只添加浏览行为，不改变数据或指标口径。
 - **报告槽：** 默认接收完整 Selection 并显示全部可比组的索引；选中一组后，只为这一组显示成本 × 端到端成功率散点和 experiment 比较表。切组是纯 UI 状态：不重新扫描结果、不重新计算指标，也不丢掉其它组或证据室数据。可比组由 experiment id 的父目录确定：`compare/bub` 与 `compare/codex` 属于 `compare`，`dev-e2b/bub` 属于 `dev-e2b`，两组绝不共享图、连线、排序或统计；多层 id 使用完整父路径，根目录下的 experiment 各自形成单例组。组卡复用 `GroupSummary` 的口径，显示组名、experiment / eval 数、eval 级通过率、判定构成、成本和最后运行时间；它不会拿组内 attempt 重新现场推导另一个比例。无 JS 时每组仍以独立 `<details>` 完整可读，第一组默认展开；渐进增强把它们变成单选组切换，不改变数据。组内比较表由 `ExperimentList` 的 web 面渲染：一行一个 experiment，固定列出实验、模型、Agent、平均耗时、端到端成功率、Tokens、预估成本和结果摘要；表头可排序，默认按端到端成功率降序，过滤只搜索当前组的 experiment、agent、model、flag 或 eval 文本。端到端成功率把 `failed` 与 `errored` 都记为 0，只有 `skipped` 不进分母；error 仍在结果摘要中单独列出。每行可展开查看该 experiment 的 eval 与 attempt 证据；attempt 行只显示 [Scoring 定义的主失败断言摘要](../scoring/library/display.md#主失败断言怎样选)，passed 行为 `—`，不能罗列全部 matcher。`--report` 用同一份自定义报告文件替换整个槽。
 - **Runs：** 把所有 attempt 展成可筛选列表。
 - **Traces：** 用 canonical OTel 字段显示执行瀑布图。
-- **Attempt 详情：** 判定、断言、统一时间树、结构化错误、按 lifecycle 分组的 diagnostics、usage、对话、trace 和 diff 的入口。断言区先展开 failed / unavailable 与影响判定的 soft，passed 按 group 收进默认折叠区并显示数量；每条失败直接显示 matcher、expected / received 或 reason，并提供源码锚，不能要求用户从 matcher 名猜实际值。时间区以 `result.json.phases` 画主链分解条与收尾段列表,每个 phase 可继续展开 runner 直接观察到的 hook、沙箱命令和 session/turn；turn 带 `traceId` 时再从 `trace.json` 挂接 agent/model/tool spans。因而 `sandbox.setup` 能一路展开到某个 hook 里的 `pnpm install`,`agent.setup` 能看到安装 CLI 与写配置的命令,`eval.run` 能从 `s1/t1` 展开到启动 Agent CLI 的命令和轮内 OTel。失败或被超时中断的最深节点带失败标记；并发或嵌套 children 不相加。独立的 Traces 页仍只画被测 agent 的原始 span,runner 节点不写进 trace；Attempt 时间区只是按显式 correlation 组合两类事实。即使 attempt 在 telemetry 建立前失败、没有 trace,错误、diagnostics 与已发生的 phase/hook/command/turn 时间仍从 `result.json` 正常显示。
+- **Attempt 详情：** 判定、断言、统一时间树、结构化错误、按 lifecycle 分组的 diagnostics、usage、对话、trace 和 diff 的入口。断言区先展开 failed / unavailable 与影响判定的 soft，passed 按 group 收进默认折叠区并显示数量；每条失败直接显示 matcher、expected / received 或 reason，并提供源码锚，不能要求用户从 matcher 名猜实际值。时间区以 `result.json.phases` 画主链分解条与收尾段列表；phase 的 children——runner 直接观察到的 hook、沙箱命令和 session/turn——默认收合,按 phase 逐个展开,时间区首屏只占主链几行,不挤占断言区与源码；turn 带 `traceId` 时再从 `trace.json` 挂接 agent/model/tool spans。因而 `sandbox.setup` 能一路展开到某个 hook 里的 `pnpm install`,`agent.setup` 能看到安装 CLI 与写配置的命令,`eval.run` 能从 `s1/t1` 展开到启动 Agent CLI 的命令和轮内 OTel。失败或被超时中断的最深节点带失败标记；并发或嵌套 children 不相加。独立的 Traces 页仍只画被测 agent 的原始 span,runner 节点不写进 trace；Attempt 时间区只是按显式 correlation 组合两类事实。即使 attempt 在 telemetry 建立前失败、没有 trace,错误、diagnostics 与已发生的 phase/hook/command/turn 时间仍从 `result.json` 正常显示。
 - **Copy fix prompt：** 把单条或全部失败整理成可交给 coding agent 的修复 prompt。
 
 ## 静态导出
@@ -41,6 +43,7 @@ niceeval view --out site --allow-sensitive-artifacts       # 本地事实根:必
 ```text
 site/
 ├── index.html
+├── assets/                  # 站点 scripts / styles 的 {src} 资产，保持相对路径
 └── artifact/
     └── <snapshot-and-attempt-path>/
         ├── sources.json
@@ -48,7 +51,7 @@ site/
         └── trace.json
 ```
 
-网页会按需 fetch 证据文件，因此不提供“单个 HTML”导出。`diff.json` 可能非常大，`o11y.json` 也不被证据室直接读取，两者不会随 view 静态站复制。
+多页站点仍导出单个 `index.html`：页面是 `#/page/<id>` 路由，托管方不需要配置多路径。`assets/` 只在站点声明了 `{src}` 资产时出现；导出的站点会原样携带并在读者浏览器执行这些脚本，数据等级防呆不检查脚本内容。网页会按需 fetch 证据文件，因此不提供“单个 HTML”导出。`diff.json` 可能非常大，`o11y.json` 也不被证据室直接读取，两者不会随 view 静态站复制。
 
 `artifact/` 由与 [`copySnapshots()`](../results/library.md#复制与瘦身copysnapshots) 同一条复制管线产出（同一 50 MiB 预检、同一布局知识）。带 `--allow-sensitive-artifacts` 对本地事实根导出的产物包含**未消毒的原始证据**——prompt、工具参数、完整输出、源码——只适合自己看或可信环境；报告组件的展示层 `redact` 不改变 `artifact/` 下的文件，深链一点开就是原文。要发布给别人，先用 `copySnapshots({ redact, artifacts })` 产出发布根，再对它运行 `view --run <发布根> --out <site>`——数据等级契约见 [Results · 复制与瘦身](../results/library.md#复制与瘦身copysnapshots)。
 
@@ -66,13 +69,17 @@ site/
 
 零可读结果时，本地 server 不启动，`--out` 也不会生成空站。读取不会迁移或改写历史结果。
 
-## 自定义首页
+## 自定义报告与站点
 
 ```sh
-niceeval view --report reports/exam.tsx
+niceeval view --report reports/exam.tsx               # 报告树：替换默认外壳的报告槽
+niceeval view --report reports/site.tsx               # 站点：多页导航 + 品牌、外链、脚本
+niceeval view --report reports/site.tsx --page exam   # 指定初始页
 ```
 
 报告文件同时可被 `niceeval show --report` 使用。官方组件都有 web 和 text 两个渲染面，所以同一份报告在浏览器与终端保持相同数据口径；浏览器宿主额外注入 attempt 深链。写法见 [Library](library.md#交给-show--view-渲染)。
+
+`--report` 文件默认导出 `defineSite` 时，view 渲染完整站点：导航列出全部页，所有页共享同一份收窄后的 Selection，外壳字段（标题、外链、页脚、脚本、样式）只作用于 web 面。`--page <id>` 未命中任何页时按用法错误退出并列出可用页 id。站点字段的穷尽形状与行为约束见 [Library · 站点](library.md#站点多页与导航外壳)。
 
 `ExperimentComparison` 的两个渲染面共享同一份组划分、实体与指标数据，但不强求相同排版：web 面持有全部组并一次聚焦一个可比组；text 面遇到多个组时只输出组索引与可执行的单组查看命令，Selection 已经只有一个组时才输出散点与列表。任何一面都不能把多个组拍平成一张榜单。组内的 `ExperimentList` 在 web 面使用适合人工横向比较的固定列表格，text 面使用适合终端读取的紧凑列表。两面中的端到端成功率、成本、耗时、Tokens、判定构成和证据引用必须来自同一份计算结果。
 

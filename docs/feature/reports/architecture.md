@@ -68,6 +68,23 @@ definition.build(ctx)
 
 `defineComponent` 要求同时定义 `text` 与 `web`。因此任何可放入 `--report` 的组件都能被两个官方宿主判读；只用于用户网站的普通 React 组件不受这项约束。
 
+## 站点：页之上的宿主外壳
+
+`--report` 文件的默认导出有两种形状，宿主按导出类型分派，共用同一个 flag：
+
+- `defineReport(...)`：一棵报告树，填进宿主默认外壳的报告槽。
+- `defineSite(...)`：若干个页（每页一个 `ReportDefinition`）加导航外壳元数据（标题、外链、页脚、脚本、样式）。字段形状见 [Library · 站点](library.md#站点多页与导航外壳)。
+
+站点层的边界规则：
+
+- **页是宿主寻址单位。** 每页有唯一 id：`show --page <id>`、view 的 `#/page/<id>` 路由和导航项都用它。`Tabs` 是页内浏览状态，没有 id、路由或 CLI 选择器。这条分工决定内容放哪层：要能被单独打开、深链、在终端独立渲染的内容成为页；同页内的并列视图用 tab。
+- **所有页共享同一 Selection。** 宿主完成范围收窄与现刻水位选择后，把同一份 Selection 注入每一页的 build。页是对同一批数据的不同看法，不承担数据过滤职责。
+- **管线以页为单位执行。** `build → resolveReportTree → validateReportTree → render` 逐页跑：本地宿主只 build 被打开的页，静态导出 build 全部页。本地某页 build 或校验失败时，该页显示完整错误反馈，其它页照常可读；静态导出遇到任何一页失败则整体失败，不产出半套站点。
+- **外壳是 web 面元数据，`title` 例外。** 双面同源约束只作用于页内报告树；外壳不携带数据。`show` 只把 `title` 用作页索引标题，`links`、`footer`、`scripts`、`styles` 不进 text 面。
+- **自定义脚本属于增强层。** 与官方增强脚本同一不变量：初始静态 HTML 无 JS 完整可读，脚本只添加浏览行为，不改变计算口径或初始数据。注入顺序固定：官方样式 → 站点 `styles`（声明序）→ 页面内容 → 官方增强脚本 → 站点 `scripts`（声明序）。
+
+外壳配置住在报告文件而不是 `niceeval.config.ts` 或快照里，因为它是「怎么看」的看法而非运行事实：改一个 GitHub 链接不应该要求重跑，也不应该改写任何落盘结果。快照里的 `name`（来自 `config.name`）仍是零配置时的身份兜底，`site.title` 覆盖它。
+
 ## `show` 与 `view` 的职责
 
 两个宿主共享 Selection 与自定义报告协议，但默认首页和证据体验不同：
@@ -78,7 +95,8 @@ definition.build(ctx)
 | 默认填充 | `ExperimentComparison`：多组时只输出组索引与单组查看命令；单组时输出该组独立的成本 × 端到端成功率散点与 `ExperimentList` | 同一 `ExperimentComparison`：完整组索引 + 当前组独立的散点与可排序、可过滤 `ExperimentList` 固定列表格；切组不重新读取 Selection |
 | attempt 下钻 | `niceeval show @<locator>` | `#/attempt/@<locator>` |
 | 证据 | `--eval` / `--execution` / `--timing` / `--diff` | Runs / Traces / Attempt modal |
-| 自定义 | `--report <file>` | `--report <file>` |
+| 自定义 | `--report <file>`（报告树或站点） | `--report <file>`（报告树或站点） |
+| 站点页选择 | `--page <id>`；多页站点默认只输出页索引与单页命令 | `#/page/<id>` 路由；`--page <id>` 定初始页 |
 
 裸 `show` 与裸 `view` 只是在同一默认 definition 上选择不同渲染面；显式 `--report` 也替换同一个报告槽。`view` 的导航壳与证据室不属于报告树；attempt locator 仍由宿主注入，组件中的证据引用继续通向证据室。
 
@@ -94,7 +112,7 @@ definition.build(ctx)
 
 ## 静态网页
 
-web 面先输出完整可读的静态 HTML。官方 CSS 使用稳定 `nre-*` 类名；`className` 和 `Style` 提供样式入口。增强脚本只增加临时排序、过滤和 tooltip，不改变计算口径或初始数据。
+web 面先输出完整可读的静态 HTML。官方 CSS 使用稳定 `nre-*` 类名；`className` 和 `Style` 提供样式入口。增强脚本只增加临时排序、过滤和 tooltip，不改变计算口径或初始数据；站点的 `scripts` / `styles` 加入同一增强层并遵守同一不变量，`{src}` 资产随静态导出复制进 `assets/`。
 
 组件的实体边界不限制其视觉形态。`ExperimentList` 仍然严格保持“一项一个 experiment、展开到 eval”的实体语义，但 web 面必须把顶层项渲染为带列头的固定比较表；不能因为组件名是 `List` 就退化成无列头的 flex 文本行。text 面可以采用紧凑列表，因为终端与网页的排版目标不同；两面共享的约束是组划分、数据、指标、排序基准和证据引用同源。web 的组选择器只是渐进增强：静态 HTML 必须保留每组完整内容，且任意时刻显示的图和表都只消费该组数据。
 

@@ -324,3 +324,4 @@ niceeval 是 beta 软件，公开 API / CLI 的破坏性重设计是常态。仓
 - 不让某个真实模型仓库承担全部框架 contract；确定性机制放进专门 contract 仓库，SDK 仓库专注协议路径。
 - 不要求不同仓库拥有相同 Eval 文件名、数量、prompt、runs 或 assertion；覆盖矩阵对齐责任，不对齐源码。
 - 不把 crabbox 变成 E2E 语义层。它是可替换执行器，仓库命令在本地、CI 和 crabbox 上保持一致。
+- 不在 E2E 层验收 show / view 的渲染与报告 DOM。报告组件与证据室是确定性渲染语义，场景登记与测试方法在[单元测试 Reports](../unit-tests/reports/README.md)；E2E 仓库读取结果只走公开读取面，不断言终端布局或 HTML 结构。
