@@ -1,6 +1,6 @@
 # Results 的测试架构
 
-契约来源：[Results](../../../feature/results/README.md)、[Architecture](../../../feature/results/architecture.md) 和 [Library](../../../feature/results/library.md)。Results 测试分为落盘格式、读取分类、身份与去重、Selection、artifact 懒加载、copySnapshots 几组；不用一个巨大目录 snapshot 同时承担全部责任。用例登记在 [cases.md](cases.md)。
+契约来源：[Results](../../../feature/results/README.md)、[Architecture](../../../feature/results/architecture.md) 和 [Library](../../../feature/results/library.md)。Results 测试分为落盘格式、读取分类、身份与去重、Scope、artifact 懒加载、copySnapshots 几组；不用一个巨大目录 snapshot 同时承担全部责任。用例登记在 [cases.md](cases.md)。
 
 ## 两类 fixture
 
@@ -58,7 +58,7 @@ async function resultsDirFixture() {
 ## 观察面
 
 - **落盘面**：writer 写出的 JSON 文件内容与层级归属。断言字段**不存在**同样有效——TypeScript 保证不了 JSON 没有冗余字段。
-- **读取面**：`openResults()` 句柄的分类（experiments / skipped）、Selection 与警告、artifact 方法返回值。
+- **读取面**：`openResults()` 句柄的分类（experiments / skipped）、Scope 与警告、artifact 方法返回值。
 - **身份面**：locator、身份四元组、ref 归属。
 
 写读两面在 round-trip 测试里互相对账：writer 写出的 reader 必须能读回，且事实位于契约声明的唯一位置。

@@ -4,25 +4,31 @@
 
 ## 修失败：待处理失败清单
 
-回答「现在有哪些失败要处理、先看哪条」。实体数组用普通 JavaScript 过滤，不存在第二套过滤 DSL：
+回答「现在有哪些失败要处理、先看哪条」。取数后的过滤是组合组件里的普通 JavaScript，不存在第二套过滤 DSL：
 
 ```tsx
 // reports/todo.tsx
-import { AttemptList, Col, Section, Text, defineReport } from "niceeval/report";
+import {
+  AttemptList, Col, Section, Text,
+  attemptListData, defineComponent, defineReport,
+} from "niceeval/report";
 
-export default defineReport(async ({ selection }) => {
-  const all = await AttemptList.data(selection);
+const PendingFailures = defineComponent(async ({ limit = 20 }: { limit?: number }, ctx) => {
+  const all = await attemptListData(ctx.scope);
   const failed = all.filter((x) => x.verdict === "failed" || x.verdict === "errored");
-
   return (
-    <Col>
-      <Section title="待处理失败">
-        <AttemptList items={failed.slice(0, 20)} total={failed.length} />
-      </Section>
-      <Text>每行的 locator 可直接交给 niceeval show 下钻。</Text>
-    </Col>
+    <Section title="待处理失败">
+      <AttemptList data={failed.slice(0, limit)} total={failed.length} />
+    </Section>
   );
 });
+
+export default defineReport(
+  <Col>
+    <PendingFailures />
+    <Text>每行的 locator 可直接交给 niceeval show 下钻。</Text>
+  </Col>,
+);
 ```
 
 ## 考试：固定题集成绩单
@@ -33,15 +39,19 @@ export default defineReport(async ({ selection }) => {
 // reports/exam.tsx
 import { Scoreboard, defineReport, examScore } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => (
-  <Scoreboard data={await Scoreboard.data(selection, {
-    rows: "agent",
-    subjects: "evalGroup",
-    weights: { "security/": 3, "correctness/": 2 },
-    fullMarks: 100,
-    score: examScore,
-  })} />
-));
+export default defineReport(
+  <Scoreboard
+    rows="agent"
+    questions={[
+      "security/sql-injection",
+      "security/path-traversal",
+      "correctness/retry",
+    ]}
+    weights={{ "security/": 3, "correctness/": 2 }}
+    fullMarks={100}
+    score={examScore}
+  />,
+);
 ```
 
 ## 口径拆解：损失来自答题还是执行
@@ -55,13 +65,14 @@ import {
   endToEndPassRate, executionReliability, taskPassRate,
 } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => (
-  <MetricTable data={await MetricTable.data(selection, {
-    rows: "experiment",
-    columns: [endToEndPassRate, taskPassRate, executionReliability],
-    sort: endToEndPassRate,
-  })} filter />
-));
+export default defineReport(
+  <MetricTable
+    rows="experiment"
+    columns={[endToEndPassRate, taskPassRate, executionReliability]}
+    sort={endToEndPassRate}
+    filter
+  />,
+);
 ```
 
 ## 对比：基线与候选相差多少
@@ -71,16 +82,16 @@ export default defineReport(async ({ selection }) => (
 ```tsx
 // reports/ab.tsx
 import {
-  DeltaTable, defineReport,
-  costUSD, durationMs, endToEndPassRate,
+  DeltaTable, costUSD, defineReport, durationMs, endToEndPassRate,
 } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => (
-  <DeltaTable data={await DeltaTable.data(selection, {
-    pairs: [{ label: "memory", a: "baseline", b: "with-memory" }],
-    metrics: [endToEndPassRate, costUSD, durationMs],
-  })} />
-));
+export default defineReport(
+  <DeltaTable
+    by="experiment"
+    pairs={[{ label: "memory", a: "compare/baseline", b: "compare/with-memory" }]}
+    metrics={[endToEndPassRate, costUSD, durationMs]}
+  />,
+);
 ```
 
 ## 扫描：参数档位的趋势
@@ -89,42 +100,29 @@ export default defineReport(async ({ selection }) => (
 
 ```tsx
 // reports/scaling.tsx
-import { MetricLine, defineReport, endToEndPassRate, flag } from "niceeval/report";
+import { MetricLine, defineReport, endToEndPassRate, numericFlag } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => (
-  <MetricLine data={await MetricLine.data(selection, {
-    x: flag("budget", { label: "Token budget", unit: "tokens" }),
-    series: "agent",
-    y: endToEndPassRate,
-  })} />
-));
+const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
+
+export default defineReport(
+  <MetricLine x={budget} series="agent" y={endToEndPassRate} />,
+);
 ```
 
 ## 定位：哪道题在哪个配置上失败
 
-回答「失败集中在哪些题 × 哪些配置」。Matrix 与 Bars 消费同一份矩阵数据，摆在一起互为放大镜：
+回答「失败集中在哪些题 × 哪些配置」。Matrix 与 Bars 写同一份 spec，resolve 记忆化保证矩阵只算一次，摆在一起互为放大镜：
 
 ```tsx
 // reports/matrix.tsx
-import {
-  Col, MetricBars, MetricMatrix,
-  defineReport, endToEndPassRate,
-} from "niceeval/report";
+import { Col, MetricBars, MetricMatrix, defineReport, endToEndPassRate } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => {
-  const data = await MetricMatrix.data(selection, {
-    rows: "eval",
-    columns: "agent",
-    cell: endToEndPassRate,
-  });
-
-  return (
-    <Col>
-      <MetricMatrix data={data} />
-      <MetricBars data={data} />
-    </Col>
-  );
-});
+export default defineReport(
+  <Col>
+    <MetricMatrix rows="eval" columns="agent" cell={endToEndPassRate} />
+    <MetricBars rows="eval" columns="agent" cell={endToEndPassRate} />
+  </Col>,
+);
 ```
 
 ## 自定义指标：只比通过方案的改动行数
@@ -151,13 +149,13 @@ const changedLines = defineMetric({
   },
 });
 
-export default defineReport(async ({ selection }) => (
-  <MetricTable data={await MetricTable.data(selection, {
-    rows: "agent",
-    columns: [endToEndPassRate, changedLines, costUSD],
-    sort: endToEndPassRate,
-  })} />
-));
+export default defineReport(
+  <MetricTable
+    rows="agent"
+    columns={[endToEndPassRate, changedLines, costUSD]}
+    sort={endToEndPassRate}
+  />,
+);
 ```
 
 ## 自定义维度：按厂商折叠
@@ -167,45 +165,41 @@ export default defineReport(async ({ selection }) => (
 ```tsx
 // reports/vendor.tsx
 import { MetricTable, costUSD, defineReport, endToEndPassRate } from "niceeval/report";
-import type { Dimension } from "niceeval/report";
+import type { CustomDimension } from "niceeval/report";
 
-const vendor: Dimension = {
+const vendor: CustomDimension = {
   name: "vendor",
-  of: (a) => (a.result.model?.startsWith("gpt-") ? "OpenAI" : "Anthropic"),
+  of: (a) => (a.snapshot.model?.startsWith("gpt-") ? "OpenAI" : "Anthropic"),
 };
 
-export default defineReport(async ({ selection }) => (
-  <MetricTable data={await MetricTable.data(selection, {
-    rows: vendor,
-    columns: [endToEndPassRate, costUSD],
-  })} />
-));
+export default defineReport(
+  <MetricTable rows={vendor} columns={[endToEndPassRate, costUSD]} />,
+);
 ```
 
 ## 历史：一个实验的逐次快照走势
 
-回答「这个配置最近几次跑下来是变好还是变坏」。宿主注入的 `selection` 是现刻水位、不是完整历史；要历史就从 `results` 自己取 `exp.snapshots`，喂给组件的 `Snapshot[]` 入参：
+回答「这个配置最近几次跑下来是变好还是变坏」。宿主注入的 `scope` 是现刻水位、不是完整历史；要历史就在组合组件里从 `results` 自己取 `exp.snapshots`，作为 `input` 显式交给组件：
 
 ```tsx
 // reports/history.tsx
 import {
-  MetricTable, Section, Text, defineReport,
-  costUSD, endToEndPassRate,
+  MetricTable, Section, Text,
+  costUSD, defineComponent, defineReport, endToEndPassRate,
 } from "niceeval/report";
 
-export default defineReport(async ({ results }) => {
-  const exp = results.experiments.find((e) => e.id === "compare/bub-gpt-5.4");
-  if (!exp) return <Text>experiment compare/bub-gpt-5.4 has no results yet.</Text>;
+const History = defineComponent(async ({ experiment }: { experiment: string }, ctx) => {
+  const exp = ctx.results.experiments.find((e) => e.id === experiment);
+  if (!exp) return <Text>experiment {experiment} has no results yet.</Text>;
 
   return (
-    <Section title="compare/bub-gpt-5.4 · 历次快照">
-      <MetricTable data={await MetricTable.data(exp.snapshots, {
-        rows: "snapshot",
-        columns: [endToEndPassRate, costUSD],
-      })} />
+    <Section title={`${experiment} · 历次快照`}>
+      <MetricTable input={exp.snapshots} rows="snapshot" columns={[endToEndPassRate, costUSD]} />
     </Section>
   );
 });
+
+export default defineReport(<History experiment="compare/bub-gpt-5.4" />);
 ```
 
 ## 并列视图：一页里的两种看法
@@ -219,33 +213,33 @@ import {
   costUSD, defineReport, endToEndPassRate, examScore,
 } from "niceeval/report";
 
-export default defineReport(async ({ selection }) => {
-  const board = await Scoreboard.data(selection, {
-    rows: "agent",
-    subjects: "evalGroup",
-    score: examScore,
-  });
-
-  return (
-    <Tabs>
-      <Tab title="质量 × 成本">
-        <MetricScatter selection={selection} points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
-      </Tab>
-      <Tab title="分科得分">
-        <Scoreboard data={board} />
-      </Tab>
-    </Tabs>
-  );
-});
+export default defineReport(
+  <Tabs>
+    <Tab title="质量 × 成本">
+      <MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
+    </Tab>
+    <Tab title="分科得分">
+      <Scoreboard
+        rows="agent"
+        questions={[
+          "security/sql-injection",
+          "security/path-traversal",
+          "correctness/retry",
+        ]}
+        score={examScore}
+      />
+    </Tab>
+  </Tabs>,
+);
 ```
 
 ## 分组循环：每个可比组一块摘要
 
-回答「多组配置各自的水位」。组划分是普通代码：用 `selection.filter` 收窄出每组的 Selection，同一套折叠口径逐组复用：
+回答「多组配置各自的水位」。组划分是组合组件里的普通代码：用 `scope.filter` 收窄出每组的 Scope，作为 `input` 逐组交给同一个组件：
 
 ```tsx
 // reports/groups.tsx
-import { Col, GroupSummary, Section, defineReport } from "niceeval/report";
+import { Col, GroupSummary, Section, defineComponent, defineReport } from "niceeval/report";
 import type { Snapshot } from "niceeval/report";
 
 function groupOf(snapshot: Snapshot): string {
@@ -253,26 +247,27 @@ function groupOf(snapshot: Snapshot): string {
   return parts.length > 1 ? parts.slice(0, -1).join("/") : snapshot.experimentId;
 }
 
-export default defineReport(async ({ selection }) => {
-  const groups = [...new Set(selection.snapshots.map(groupOf))];
+const GroupBlocks = defineComponent((_props: {}, ctx) => {
+  const groups = [...new Set(ctx.scope.snapshots.map(groupOf))].sort();
 
   return (
     <Col>
-      {await Promise.all(
-        groups.map(async (key) => (
-          <Section key={key} title={key}>
-            <GroupSummary data={await GroupSummary.data(selection.filter((s) => groupOf(s) === key))} />
-          </Section>
-        )),
-      )}
+      {groups.map((key) => (
+        <Section key={key} title={key}>
+          <GroupSummary input={ctx.scope.filter((s) => groupOf(s) === key)} />
+        </Section>
+      ))}
     </Col>
   );
 });
+
+export default defineReport(<GroupBlocks />);
 ```
 
 ## 相关阅读
 
 - [外壳与多页](shell.md) —— 给任何配方加标题、GitHub 链接或拆页。
 - [内建报告](built-in.md) —— 不写树、只加品牌的最小形态。
+- [排版原语与自定义组件](layout.md) —— 组合组件与 `defineComponent` 的完整契约。
 - [指标与维度](metrics.md) —— 配方里指标与 `flag()` / 维度的口径契约。
-- [Results Library](../../results/library.md) —— `results.experiments`、`exp.snapshots` 与 Selection 的读取契约。
+- [Results Library](../../results/library.md) —— `results.experiments`、`exp.snapshots` 与 Scope 的读取契约。

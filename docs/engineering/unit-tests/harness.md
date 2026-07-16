@@ -1,6 +1,6 @@
 # 测试 Harness —— 共享构造器的所有权与稳定性
 
-测试代码里的 `scriptedAgent`、`recordingSandbox`、`runnerFixture`、`attemptEvidenceFixture`、`resultsDirFixture`、`reportSelectionFixture` 这类构造器统称 harness。它们是几十条测试的共同依赖：harness 的接口一动，所有用它的测试跟着动。因此 harness 是[变更预算](../testing/README.md)最大的杠杆，本篇定义它的所有权、稳定性和设计规则。
+测试代码里的 `scriptedAgent`、`recordingSandbox`、`runnerFixture`、`attemptEvidenceFixture`、`resultsDirFixture`、`reportScopeFixture` 这类构造器统称 harness。它们是几十条测试的共同依赖：harness 的接口一动，所有用它的测试跟着动。因此 harness 是[变更预算](../testing/README.md)最大的杠杆，本篇定义它的所有权、稳定性和设计规则。
 
 ## 所有权
 

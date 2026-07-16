@@ -150,6 +150,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 设计决定
 
+- [reports-component-page-report-redesign](reports-component-page-report-redesign.md) — 裁决(2026-07-16):Reports 三层重设计——组件自带 resolve(spec/data 双形态)、defineReport 单一产物+页字段 content、内建报告塌缩一行、Selection→Scope、ctx.report 只读声明;否决了手工两步式唯一写法、Body/Site 双产物、ReportBuild、definePage、自定义 config 袋
 - [annotated-source-absorbs-send-annotations](annotated-source-absorbs-send-annotations.md) — 裁决(2026-07-15):`--eval` 在 t.send 行标注 turn 头行事实,`AnnotatedEvalSource` 收编 `SendAnnotation`,推翻头注「events → 轮次是 ExecutionTree 地盘」;send 标注不设 unmapped 兜底桶
 - [end-to-end-pass-rate-is-default](end-to-end-pass-rate-is-default.md) — 裁决(2026-07-15):三指标拆分保留,但默认“成功率”从排除 errored 的 `taskPassRate` 改为 `endToEndPassRate`;`taskPassRate` 只作带限定名称的条件诊断指标,不能驱动默认排名;`2 passed / 5 errored` 默认显示 2/7 而非 100%
 - [scoped-match-language-docs-first](scoped-match-language-docs-first.md) — 裁决(2026-07-14):`eventsSatisfy(label, predicate)` label 必填在前、`calledTool` 的 `input` 是深度部分匹配小语言(值位 RegExp/顶层 RegExp/谓词);曾按源码反推把契约改成 `(predicate, label?)`+浅层包含被否决——docs 先行,源码落后应改代码;实现缺口在 src/scoring/scoped.ts

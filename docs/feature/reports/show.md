@@ -42,7 +42,7 @@ niceeval show --report reports/exam.tsx
 niceeval show --report reports/site.tsx --page exam
 ```
 
-`--run` 改变结果根，`--experiment` 和 eval id 位置参数在其中收窄 Selection；`--experiment` 按路径段匹配 id 前缀，因此 `--experiment dev-e2b` 选中整个可比组但不会误中 `dev-e2b-next`。收窄完成后默认报告才按组分区，位置参数仍只表示 eval id 前缀。`--report` 用自定义报告替换榜单，但 attempt locator 的下钻命令保持不变；单页、多页与 `--page` 的逐 case 操作步骤见 [`--report` 分篇](show/reports.md)。`--history` 是内置时间轴，与 `--report` 互斥。
+`--run` 改变结果根，`--experiment` 和 eval id 位置参数在其中收窄 Scope；`--experiment` 按路径段匹配 id 前缀，因此 `--experiment dev-e2b` 选中整个可比组但不会误中 `dev-e2b-next`。收窄完成后默认报告才按组分区，位置参数仍只表示 eval id 前缀。`--report` 用自定义报告替换榜单，但 attempt locator 的下钻命令保持不变；单页、多页与 `--page` 的逐 case 操作步骤见 [`--report` 分篇](show/reports.md)。`--history` 是内置时间轴，与 `--report` 互斥。
 
 ## 无匹配与不可读结果
 

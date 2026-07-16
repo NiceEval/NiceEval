@@ -106,7 +106,7 @@ interface SnapshotMeta {
   completedAt?: string;
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(copySnapshots 自动补记,writer 可声明)。 */
   knownEvalIds?: string[];
-  /** 发布拷贝的自描述标记:copySnapshots 补记,消毒函数 → "applied"、redact: false → "none";本地事实根没有此字段。只声明流程,不证明无秘密;view --out 据此分级防呆。 */
+  /** 发布拷贝的自描述标记:copySnapshots 补记,脱敏函数 → "applied"、redact: false → "none";本地事实根没有此字段。只声明流程,不证明无秘密;view --out 据此分级防呆。 */
   publish?: { redaction: "applied" | "none" };
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
@@ -479,7 +479,7 @@ interface Truncation {
 }
 ```
 
-view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方正则解析」与 [Selection 警告](library.md#警告-kind-全集) 是同一条原则。
+view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方正则解析」与 [Scope 警告](library.md#警告-kind-全集) 是同一条原则。
 
 两条明确不做:
 

@@ -80,15 +80,17 @@
 | 中文 | English | 含义 |
 |---|---|---|
 | 结果快照 | Snapshot | 结果读取面的单位:一个 experiment 在一次 run 里的结果(experiment × run,不是 run);与快照测试无关;沙箱侧的 microVM 快照一律写"沙箱快照(`snapshotId`)" |
-| Selection(挑选结果) | Selection | `results.latest()` 的返回物:挑好的快照 + 结构化挑选警告;唯一方法 `filter`(只删不换) |
+| Scope(范围) | Scope | `results.latest()` / `results.current()` 的返回物:挑好的快照 + 结构化挑选警告;唯一方法 `filter`(只删不换) |
 | Attempt 定位符 | AttemptLocator | attempt 的稳定引用,由 `{experimentId, 快照 startedAt, evalId, attempt}` 不可变元组派生的带版本、`@` 前缀短确定性字符串;不是数组下标也不是目录路径。reader 打开结果根时建一份 locator → AttemptHandle 索引,缺失 / 损坏 / 碰撞一律结构化报错,不回退"最新失败";报告页与 `niceeval view` 证据室的 attempt 深链(`#/attempt/@<locator>` 单段格式)共用同一个 locator 身份契约,见 [View](feature/reports/view.md) |
 | Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合:locator、身份、`EvalResult`、`AnnotatedEvalSource`、`ExecutionTree`、diff、artifact 路径与能力位(`eval` / `execution` / `timing` / `diff`);`show` / `view` / 静态导出 / 报告列表共用同一份,不各自重读 artifact |
 | 标注 Eval 源码 | AnnotatedEvalSource | 发现时捕获、按快照去重一份、SHA-256 归一化的运行时 Eval 源码;每条断言按 `SourceLoc` 标回源码行(状态 / 严重度 / 分数 / detail / evidence),没有 `SourceLoc` 的断言进"未映射断言"桶,不静默丢弃;`t.send(...)` 的调用行另标该轮 turn 头行事实(身份 / status / 墙钟,定位不到行的轮不进兜底桶——轮次全量面是 `--execution`);网页 CodeView 与 `show --eval` 共用同一份 model |
 | 指标 | Metric | 「一个 attempt 算出一个值」的计算单元,经「attempt → 题,题 → 组」两级聚合;缺数据算 `null` 不算 0 |
 | 维度 | Dimension | 决定 attempt 分到哪一组的分组键(agent / experiment / evalGroup / snapshot …) |
-| 报告 | Report | `defineReport` 定义的 `.tsx` 报告文件,返回一棵组件树,经 `--report` 交给宿主渲染 |
-| 双面组件 | Dual-render component | `defineComponent({ web, text })` 的产物:一个定义、两个纯函数渲染面,同一棵树两个宿主共用 |
-| 宿主 | Host | 打开结果、挑 Selection、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
+| 报告 | Report | `defineReport(外壳 + 内容)` 的产物:`.tsx` 报告文件的默认导出,唯一可被 `--report` 装载的单位;内容是一棵组件树或多页 |
+| 页 | Page | 报告内的宿主寻址单位:`{ id, title, content }` 字面量,给一棵树一个地址和导航名 |
+| 双面组件 | Dual-render component | `defineComponent({ resolve?, web, text })` 的产物:可选解析面取数,两个纯函数渲染面消费同一份渲染 props,同一棵树两个宿主共用 |
+| 组合组件 | Composition component | `defineComponent((props, ctx) => 树)` 的产物:只装配已有组件、不自己渲染,在 resolve 阶段展开 |
+| 宿主 | Host | 打开结果、挑 Scope、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
 | 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 都渲染内置 `ExperimentComparison`(成本 × 成功率散点图 + 逐实验明细表)，分别选择 text / web 面。它是一份普通 `ReportDefinition`，没有宿主特权 |
 | 报告槽 / 证据室 | —(内部代号) | 宿主结构的两半:报告槽整个归 `--report`,证据室(transcript / trace / diff 下钻)是宿主本体;这两个词不出现在公开站 |
 
@@ -98,8 +100,8 @@
 
 | 分类 | 中文 | English | API | 主展示单位 |
 |---|---|---|---|---|
-| 汇总 | 运行总览 | Run overview | `RunOverview` | 一批 Selection;汇总其中的 experiment、Eval 和 Attempt |
-| 汇总 | 组摘要 | Group summary | `GroupSummary` | 收窄后的一批 Selection;汇总一组 experiment 和 Eval |
+| 汇总 | 运行总览 | Run overview | `RunOverview` | 一批 Scope;汇总其中的 experiment、Eval 和 Attempt |
+| 汇总 | 组摘要 | Group summary | `GroupSummary` | 收窄后的一批 Scope;汇总一组 experiment 和 Eval |
 | 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval |
 | 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt |
 | 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 |

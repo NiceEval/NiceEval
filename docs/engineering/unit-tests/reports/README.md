@@ -7,7 +7,7 @@
 通过率 fixture 应让几种常见错误算法得到不同答案：
 
 ```ts
-const selection = reportSelectionFixture({
+const scope = reportScopeFixture({
   experiments: [{
     id: "compare/codex",
     evals: [
@@ -67,7 +67,7 @@ const cells = {
 
 ## 测试次序：先 data，再双面，最后窄快照
 
-1. **`.data()` 的事实**：数值、覆盖率、排序、缺失行为，全部数据级断言。
+1. **`*Data` 计算的事实**：数值、覆盖率、排序、缺失行为，全部数据级断言。
 2. **text/web 双面同源**：两面显示同一份终值与 warning，不逐字比较。
 3. **窄快照**：只锁短小、稳定、评审者能读懂的布局或完整错误反馈。
 

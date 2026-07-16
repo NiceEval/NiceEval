@@ -15,23 +15,23 @@
 | `Scoreboard` 使用固定题集分母：未跑到的题按 0 分计入分母并计入 missing | 正例：题集 4 只跑 2 分母仍 4；反例：与"只统计有样本"口径区分 |
 | `Scoreboard` 权重按 eval id 前缀匹配，多前缀命中取最长 | 正例：`security/` 与 `security/auth/` 同时命中取后者；边界：无命中 |
 | 跨快照计算先按 attempt 身份键去重，同一 attempt 出现在多快照不重复计数 | 正例：局部补跑重叠快照下 samples 不虚增 |
-| 宿主 Selection 为每个 experiment × eval 选择跨历史最新判定 | 正例：先 failed 后 passed 的两快照只用最新判定 |
+| 宿主 Scope 为每个 experiment × eval 选择跨历史最新判定 | 正例：先 failed 后 passed 的两快照只用最新判定 |
 | 自定义指标 `where` 是进入计算前的过滤；`aggregate: { perEval, across }` 两级分别生效 | 正例：failed attempt 不进聚合；边界：全被 where 排除 → missing；正例：perEval min + across mean 与双 mean 可区分 |
 | 报告消费落盘 verdict，不重新判卷 | 反例：断言明细与 verdict 故意矛盾时以 verdict 为准 |
 
-示例——先测 `.data()` 的事实：
+示例——先测 `*Data` 计算的事实：
 
 ```tsx
 import { expect, it } from "vitest"
-import { RunOverview } from "../../report/index.ts"
+import { runOverviewData } from "../../report/index.ts"
 
-it("RunOverview 使用端到端两级聚合并保留覆盖率", async () => {
-  const data = await RunOverview.data(selection)
+it("runOverviewData 使用端到端两级聚合并保留覆盖率", async () => {
+  const data = await runOverviewData(scope)
 
-  expect(data.totals.passRate.value).toBeCloseTo(5 / 9)
-  expect(data.totals.passRate.display).toBe("55.6%")
-  expect(data.totals.passRate.samples).toBe(5)
-  expect(data.totals.passRate.total).toBe(6)
+  expect(data.endToEndPassRate.value).toBeCloseTo(5 / 9)
+  expect(data.endToEndPassRate.display).toBe("55.6%")
+  expect(data.endToEndPassRate.samples).toBe(5)
+  expect(data.endToEndPassRate.total).toBe(6)
 })
 ```
 
@@ -46,13 +46,13 @@ it("RunOverview 使用端到端两级聚合并保留覆盖率", async () => {
 | 缺 artifact 时指标返回 null，渲染层不猜值；`turns` 缺 `o11y.json` 显示缺失不冒充 0 | 正例：删 o11y.json 后 turns 为 missing；反例：来自 result.json 的指标不受影响 |
 | value 与 display 分别可断言；display 由 unit 或自定义 display(value) 驱动 | 正例：value≈5/6 与 display="83.3%" 独立断言 |
 
-## 组件 `.data()` 行为
+## 数据计算函数（`*Data`）行为
 
 契约来源：[Library · 概览组件](../../../feature/reports/library/summaries.md)、[Library · 实体列表](../../../feature/reports/library/entity-lists.md)、[Library · 指标组件](../../../feature/reports/library/metric-views.md)、[Show](../../../feature/reports/show.md)。
 
 | 契约 | 场景 |
 |---|---|
-| `ExperimentComparison.data()` 在计算前按 experiment id 的完整父路径分区，根目录 experiment 各自形成单例组；每组子块与对该组独立调用 `GroupSummary.data` / `MetricScatter.data` / `ExperimentList.data` 完全相同 | 正例：两个多配置目录组 + 一个根目录单例组；逐组 deepEqual 对账并断言 scatter / list refs 不跨组 |
+| `experimentComparisonData()` 在计算前按 experiment id 的完整父路径分区，根目录 experiment 各自形成单例组；每组子块与对该组独立调用 `groupSummaryData` / `metricScatterData` / `experimentListData` 完全相同 | 正例：两个多配置目录组 + 一个根目录单例组；逐组 deepEqual 对账并断言 scatter / list refs 不跨组 |
 | `ExperimentComparison` 的 web 面接收全部组并输出组选择器与相互隔离的完整 panel，第一组默认展开且无 JS 仍可读；text 面多组时只给索引和单组查看命令，单组时才输出散点与实验列表 | 正例：双组 web 静态 HTML 含两个 panel 且仅首组 open；text 多组无 experiment 明细、单组有明细 |
 | `MetricScatter` 对缺 x 或 y 的点不绘制并报告缺失数；零点显示明确空态；单点照常绘制 | 边界：0 点 / 1 点 / 部分缺 x；反例：单点不被拒绝 |
 | `MetricLine` 对未声明数值 flag 的 experiment 不伪造 x 值并报告未绘制数 | 正例：flag 缺失与 flag="high" 两种；反例：不落到 x=0 |
@@ -61,6 +61,20 @@ it("RunOverview 使用端到端两级聚合并保留覆盖率", async () => {
 | `AttemptList` 的 `redact` 只改写 message/cause/stack、diagnostic、断言 detail 和 evidence；身份字段与 code、lifecycle operation 不被改写 | 正例：全替换函数下身份字段原样；反例：evidence 中的 secret 被替换 |
 | 分组维度上未声明的 flag 归 `(unset)` 组，不丢行 | 正例：部分 experiment 无该 flag 时 (unset) 计数正确 |
 | `MetricTable` 的 `sort` 决定初始行序，方向由指标 `better` 决定（好在前） | 正例：sort=endToEndPassRate 高在前、sort=costUSD 低在前 |
+
+## 组件解析（resolve）与组合组件
+
+契约来源：[Architecture](../../../feature/reports/architecture.md)「组件模型」「报告树与两个宿主」、[Library · 排版原语与自定义组件](../../../feature/reports/library/layout.md)、[Library · 指标组件](../../../feature/reports/library/metric-views.md)、[Library · 外壳与多页](../../../feature/reports/library/shell.md)。
+
+| 契约 | 场景 |
+|---|---|
+| spec 形态与「先手工调 `*Data` 再传 `data`」严格等价：同一 spec 经管线 resolve 与手工计算渲染出相同终值、覆盖率与 refs | 正例：`MetricScatter` spec 形态与 data 形态两棵树渲染深等；反例：同一组件同时给 `data` 与 spec 字段报完整用户反馈 |
+| spec 形态 `input` 省略时取宿主注入的 Scope，显式 `input` 覆盖数据来源 | 正例：`GroupSummary input={scope.filter(...)}` 只统计收窄后快照；正例：`MetricTable input={exp.snapshots}` 按快照出行 |
+| resolve 记忆化：一次页渲染内同引用 `input` + 深相等 spec 只计算一次 | 正例：Matrix 与 Bars 同 spec 时计算函数只被调一次；反例：不同 spec 或不同 `input` 各自计算 |
+| 组合组件在 resolve 阶段以 `(props, ctx)` 调用并递归展开返回树；`ctx` 携带 `scope`、`results` 与规范化声明 `report`；async 组合可用 | 正例：组合组件树与手写等价树渲染相同；正例：`ctx.results` 取历史快照喂 `input`；正例：`ctx.report.title` 是走完回退链的标题、`ctx.report.page` 是当前页 id |
+| 同层 sibling 并行取数与展开，输出保持声明顺序 | 正例：慢 resolve 在前、快 resolve 在后时输出顺序不变 |
+| 非法节点在展开遇到时以完整用户反馈拒绝且不为其取数：React 组件、未经 `defineComponent` 的普通函数、任意 HTML intrinsic | 反例：树中放裸函数组件报错文案可 snapshot；反例：`<div>` 同样拒绝 |
+| `defineComponent` 两种形态：函数形态产出组合组件；对象形态缺 `text` 或 `web` 在定义时报错（TS 编译期 + 无类型 JS 运行期） | 正例：函数形态产物可入树；反例：只给 `web` 的对象形态定义时报完整用户反馈 |
 
 ## MetricScatter 点标签布局（web 面）
 
@@ -77,7 +91,7 @@ it("RunOverview 使用端到端两级聚合并保留覆盖率", async () => {
 
 | 契约 | 场景 |
 |---|---|
-| 双面组件的 text 与 web 显示同一份 `.data()` 终值、覆盖率、判定构成和 warning，渲染不重算不丢值 | 正例：partial cell + warning 两面都含 "50%"、"1/2" 和 warning 文本；不要求逐字相同 |
+| 双面组件的 text 与 web 显示同一份解析终值、覆盖率、判定构成和 warning，渲染不重算不丢值 | 正例：partial cell + warning 两面都含 "50%"、"1/2" 和 warning 文本；不要求逐字相同 |
 | `validateReportTree` 拒绝缺任一渲染面的组件与任意 HTML intrinsic，报错为完整用户反馈 | 反例：树中放 `<div>` 或单面组件时校验失败，错误文案可 snapshot |
 | web 面排序/过滤只改变浏览状态，不改变数据、口径或初始 HTML 中的数值 | 正例：有无 filter prop 时数值与行集合相同 |
 | `ExperimentList` web 面是固定八列比较表，默认按 End-to-end pass rate 降序；Model 缺失显示明确空值 | 正例：断言 thead 列名与顺序；边界：model 缺失；反例：taskPassRate 高但 executionReliability 低的实验不能排到端到端成功率更高者之前 |
@@ -131,8 +145,8 @@ it("text 与 web 显示同一个 MetricCell 终值和 warning", () => {
 
 | 契约 | 场景 |
 |---|---|
-| 裸 `show` 与裸 `view` 把同一 Selection 交给同一份 `comparisonReport` definition；`--report` 替换同一报告槽 | 正例：装载边界捕获两宿主的 definition 同引用、selection 深等 |
-| 两宿主对 `--run` / `--experiment` / 位置参数用同一套选择规则；局部补跑/过旧/未完成快照形成结构化 warning 随 Selection 携带 | 正例：未完成快照在两宿主产出相同 warning 集 |
+| 裸 `show` 与裸 `view` 把同一 Scope 交给同一份内建报告定义（`niceeval/report/built-in` 默认导出）；`--report` 替换同一报告槽 | 正例：装载边界捕获两宿主的 definition 同引用、scope 深等 |
+| 两宿主对 `--run` / `--experiment` / 位置参数用同一套选择规则；局部补跑/过旧/未完成快照形成结构化 warning 随 Scope 携带 | 正例：未完成快照在两宿主产出相同 warning 集 |
 | 宿主显示警告时下一步随行：text 面原样打印 `message`（已以下一步收尾，不截断掉尾段）；web 面把警告的 `command` 渲染为可复制命令，无 `command` 的警告只显示 message 不硬造动作 | 正例：stale-snapshot 在 web 面出现复制动作且值为 `niceeval exp <真实 id>`；正例：text 面输出以忽略条件/命令收尾；反例：missing-startedAt 在 web 面无复制动作 |
 | `view` 位置参数收窄只作用于报告槽，证据室保留完整 attempt 集，深链不因首页过滤失效 | 正例：收窄后被滤掉的 attempt 仍可从证据室取到 |
 | `show` 中漏写 `@` 的 locator 按 eval id 前缀处理并明确报无匹配、列出候选 | 反例：输入 "1qrdcfq8" 报 "No results matched" 附候选 |
@@ -145,20 +159,25 @@ it("text 与 web 显示同一个 MetricCell 终值和 warning", () => {
 | TTY、pipe、CI 对同一 timing mode 选择相同节点且不自动启动 pager | 正例：stdout capture 与 TTY fixture 的节点集合相同；反例：非交互命令不读 stdin、不挂起 |
 | 扫描结果根时单个不可读快照不阻塞其余：忽略/incompatible/malformed/incomplete 各带原因 | 四种坏快照各一 fixture，好快照照常计入 |
 | 零可读结果时命令失败：show 非零退出（旧格式建议 `npx niceeval@<version>`）；view 不启动 server、`--out` 不生成空站 | 边界：空结果根与仅含旧格式两种 |
+| `--out` 无档位：根里存在且前端会读取的证据文件（sources / events / trace / diff）全部复制，缺的在证据位置显示缺失；`o11y.json` 永不复制 | 正例：带 diff.json 的根导出后 diff 可下钻；边界：无 diff.json 的根导出后 diff 位置显示缺失原因；反例：o11y.json 不进 `artifact/` |
+| 发布防呆二分：全部快照 `redaction: "applied"` 的根直接导出；`"none"`、无标记或本地事实根要求 `--allow-sensitive-artifacts`，否则报错并指引 `copySnapshots({ redact })` | 正例：发布根直接导出；反例：事实根缺 flag 时非零退出且文案含下一步；边界：混合根（部分快照无标记）按需确认 |
+| `--out` 与位置参数 / `--experiment` 互斥：按实验收窄发布走「换根」，报错文案含 `copySnapshots` + `filter` 下一步 | 反例：`--experiment compare --out site` 按用法错误非零退出且文案含 copySnapshots；正例：同参数不带 `--out` 时照常收窄报告槽 |
 | 明确指定单个 snapshot.json 时该文件不可读令 view 失败（与扫描模式的跳过相反） | 反例：损坏文件作位置参数报错退出；正例：同文件在扫描模式仅被跳过 |
 | 落盘无 phases 时 summary/full timing 都如实输出 unavailable 不猜；有 phases 时主链之和 ≤ total，收尾段 `+N` 不计入 total | 正例：含 teardown 的 fixture；反例：无 phases 的第三方结果；边界：errored 中途时最后主链阶段带 `✗` |
 
-宿主等价在装载边界记录 definition 与 Selection，不比较完整终端输出与完整 HTML——各宿主的导航壳和证据室本就不同：
+宿主等价在装载边界记录 definition 与 Scope，不比较完整终端输出与完整 HTML——各宿主的导航壳和证据室本就不同：
 
 ```ts
-it("show 与 view 的默认报告槽消费同一 Selection", async () => {
+import builtInReport from "../../report/built-in/index.tsx"
+
+it("show 与 view 的默认报告槽消费同一 Scope", async () => {
   const results = resultsFixtureWithPartialRerun()
   const show = await captureShowReportInput(results)
   const view = await captureViewReportInput(results)
 
-  expect(show.definition).toBe(comparisonReport)
-  expect(view.definition).toBe(comparisonReport)
-  expect(show.selection).toEqual(view.selection)
+  expect(show.definition).toBe(builtInReport)
+  expect(view.definition).toBe(builtInReport)
+  expect(show.scope).toEqual(view.scope)
 })
 ```
 
@@ -179,18 +198,18 @@ it("show 与 view 的默认报告槽消费同一 Selection", async () => {
 
 | 契约 | 场景 |
 |---|---|
-| `--report` 文件默认导出恒为 `defineReport` 产物；装载规范化唯一产物是「外壳 + 非空页列表」：`defineReport(build)` ≡ `{ report: build }` ≡ `pages: [{ id: "report", title: 内置页名, report: build }]`，任何形态走同一条装载管线；非 `defineReport` 产物的默认导出报完整用户反馈 | 正例：三种写法装载出等价的规范化结果（唯一页 id 为 `report`）；反例：默认导出普通对象或 React 组件时报完整用户反馈 |
-| `report` 与 `pages` 恰好声明一个：同时声明或都省略装载报错，报错文案给出 `niceeval/report/built-in` 的 import 与 `report: comparisonReport` 下一步 | 反例：同时声明报完整用户反馈；反例：都省略报错且文案含 `niceeval/report/built-in`；正例：`defineReport({ title, links, report: comparisonReport })` 渲染内建报告并带自定义外壳 |
-| 页不嵌套外壳：`report` / `page.report` 接受 build 函数或单页、无外壳字段的定义，带外壳字段或 `pages` 的产物装载报错 | 正例：build 函数与 `defineReport(build)` 产物都可直接作 `page.report`；反例：页里放带 `pages` 的定义装载报错 |
-| 裸 `show` / 裸 `view` 装载公开导出的 `comparisonReport`，与 `--report` 同一条 `装载 → build → resolve → validate → render` 管线 | 正例：裸宿主装载的 definition 与 `comparisonReport` 同引用 |
+| `--report` 文件默认导出恒为 `defineReport` 产物；装载规范化唯一产物是「外壳 + 非空页列表」：`defineReport(树)` ≡ `{ content: 树 }` ≡ `pages: [{ id: "report", title: 内置页名, content: 树 }]`，任何形态走同一条装载管线；非 `defineReport` 产物的默认导出报完整用户反馈 | 正例：三种写法装载出等价的规范化结果（唯一页 id 为 `report`）；反例：默认导出普通对象或 React 组件时报完整用户反馈 |
+| `content` 与 `pages` 恰好声明一个：同时声明或都省略装载报错，报错文案给出 `content: <ExperimentComparison />` 下一步 | 反例：同时声明报完整用户反馈；反例：都省略报错且文案含 `<ExperimentComparison />`；正例：`defineReport({ title, links, content: <ExperimentComparison /> })` 渲染内建内容并带自定义外壳 |
+| 页不嵌套外壳：`content` / `page.content` 只接受报告树节点，`defineReport` 产物放进任何 content 或树中装载报错（TS 编译期拒绝，无类型 JS 输入装载期同样校验） | 正例：具名导出的树与组合组件节点都可直接作 `page.content`；反例：页里放 `defineReport` 产物装载报错 |
+| 裸 `show` / 裸 `view` 装载 `niceeval/report/built-in` 的默认导出，与 `--report` 同一条 `装载 → resolve → validate → render` 管线 | 正例：裸宿主装载的 definition 与该默认导出同引用 |
 | show 对多页定义只输出标题、页索引与可复制的 `--page` 命令，不倾倒页内容；单页定义或 `--page` 命中时直接渲染该页 text 面 | 正例：双页定义索引含两条命令且无 experiment 明细；边界：单页定义直接渲染 |
-| `--page` 未命中页 id 时按用法错误非零退出并列出可用页 id；单页定义的唯一页 id 是缩写展开出的 `report` | 反例：`--page typo` 报错附 overview / exam；边界：对函数形态文件 `--page report` 命中唯一页，`--page typo` 报错列出 `report` |
+| `--page` 未命中页 id 时按用法错误非零退出并列出可用页 id；单页定义的唯一页 id 是缩写展开出的 `report` | 反例：`--page typo` 报错附 overview / exam；边界：对树形态文件 `--page report` 命中唯一页，`--page typo` 报错列出 `report` |
 | `show` 输出的页索引与组索引命令保留当前 `--run` / `--report` / `--page` 与位置参数上下文，复制即可复现下一层视图 | 正例：`--report` 下多组时组索引命令含 `--report` 与 `--page`；正例：`--run` 下页索引命令含 `--run` |
-| 全部页共享宿主注入的同一 Selection，位置参数与 `--experiment` 收窄对全部页生效；页不承担数据过滤 | 正例：两页的 `.data()` refs 来自同一收窄后 Selection |
-| 本地宿主只 build 被打开的页；静态导出 build 全部页，任一页校验失败则导出整体失败 | 正例：打开 A 页时 B 页 build 未执行；反例：B 页含 `<div>` 时 `--out` 非零退出、不产出半套站点 |
+| 全部页共享宿主注入的同一 Scope，位置参数与 `--experiment` 收窄对全部页生效；页不承担数据过滤 | 正例：两页的解析 refs 来自同一收窄后 Scope |
+| 本地宿主只 resolve 被打开的页；静态导出 resolve 并校验全部页，任一页失败则导出整体失败 | 正例：打开 A 页时 B 页的取数未执行；反例：B 页含 `<div>` 时 `--out` 非零退出、不产出半套站点 |
 | 标题取值链 def.title → 快照 name → `NiceEval`；`links` / `footer` 渲染进导航壳，text 面不含这些字段 | 正例：三级 fallback 各一 fixture；反例：show 输出不含 links href |
 | web 面外壳页脚恒含指向 niceeval 官网的 `Powered by niceeval`，位于自定义 `footer` 文案之后，无关闭配置；text 面与 `niceeval/report/react` 嵌入组件不含 | 正例：有 / 无 `footer` 两种 fixture 页脚都含该行且次序正确；反例：show 输出与 react 嵌入渲染不含该行 |
-| view 导航组成固定：报告页按声明序在前，内置 Runs、Traces 证据页恒排其后；报告定义不能移除或重排证据页 | 正例：双页定义导航序为 页A · 页B · Runs · Traces；边界：函数形态定义导航仍含证据页 |
+| view 导航组成固定：报告页按声明序在前，内置 Runs、Traces 证据页恒排其后；报告定义不能移除或重排证据页 | 正例：双页定义导航序为 页A · 页B · Runs · Traces；边界：树形态定义导航仍含证据页 |
 | `scripts` / `styles` 按声明序注入：styles 在官方样式后，scripts 在官方增强脚本后 `</body>` 前；初始静态 HTML 的数值不因注入改变 | 正例：注入前后初始 HTML 数据节点相同、注入顺序可断言 |
 | `{src}` 资产相对报告文件解析，拒绝 `..` 路径段、绝对路径与 `~`；静态导出复制进 `assets/` 保持相对路径，缺失文件报错并给出解析后路径 | 正例：`./assets/a.js` 被复制；反例：`../x.js` 装载报错；边界：缺失文件在导出时报错 |
 | 重复或非法 page id 在装载时校验失败，报错列出冲突 id | 反例：两页同 id `exam`；反例：id 含大写或斜杠 |
@@ -213,6 +232,6 @@ Snapshot 不适合锁定：
 ## 不这样测
 
 - 不把 Reports 整体当作"展示层"薄测；选择、去重、指标和聚合会静默给错答案。
-- 不只测 React component 能 render；要验证它没有重算或丢失 `.data()` 的终值。
+- 不只测 React component 能 render；要验证它没有重算或丢失 `*Data` 计算的终值。
 - 不用相同 attempt 数的题目验证两级聚合，因为它与平铺算法可能恰好相等。
 - 不用 snapshot 代替 `null`、`0`、samples/total 和 refs 的精确断言。
