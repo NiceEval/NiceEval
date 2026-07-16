@@ -1,0 +1,370 @@
+---
+title: "如何写好 Send"
+sidebarTitle: "如何写好 Send"
+description: "手写 Adapter 的 send 函数，一条主线七步走：发消息拿回复、接上之前的消息、记录消费、把工具解析成事件、人工介入（HITL）、接上 OTel trace、透传 experiment 的 flags。每一步只在上一步的代码上多几行，每一步解锁一组断言。"
+---
+
+[Adapter](/zh/explanation/adapter) 讲了契约：`send` 传入 `TurnInput` 和 `AgentContext`，返回 `Turn`。这一页讲怎么写它——从"发一条消息拿到回复"的最小形态起步，一步一步加到完整接入。每一步只在上一步的代码上多几行，前面已有的部分在代码里用 `// ……省略` 标出；每一步末尾说明这几行解锁了哪些断言。改完任何一步都能立刻验证：把新解锁的断言写进一条 eval 重跑 `npx niceeval exp`，`niceeval view` 里能看到这一步新增的数据——多轮轨迹、用量、工具事件、待回答请求。
+
+三个贯穿全文的原则：
+
+- **接的位置永远是用户前端本来就在用的那个接口。** 页面调哪个端点、收什么格式，Adapter 就调哪个端点、收什么格式——不为 eval 开新接口，也不 import 应用内部代码直调函数（为什么，见[接入你的 Agent](/zh/how-to/connect-your-agent)）。
+- **你唯一真正手写的是 transport**——URL、鉴权、请求体每家本来就不一样。解析（原始返回 → 标准事件流）有官方转换器，从 `niceeval/adapter` 导出；编排（会话续接、HITL 暂停恢复）的状态槽就挂在 `ctx.session` 上，取用即可，不需要额外声明什么。
+- **运行反馈走 `ctx`，不直接写终端。** 长步骤用 `ctx.progress(...)`；需要在运行后回顾的退化或异常上下文用 `ctx.diagnostic(...)`；无法继续时抛错。不要从 Adapter 调用 `console.log/error` 或写 `process.stdout/stderr`。
+
+![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 调用你的应用并返回标准事件流 Turn。](/images/agent-turn-roundtrip-zh.svg)
+
+## 起点：你的应用接口是什么形状
+
+[NiceEval](https://niceeval.com/) 不发明协议。你的应用大概率建在下面某种业界协议（或其变体）之上，官方件按这几种形状备齐：
+
+| 协议 | 谁在定义 | 一句话介绍 | 参考 |
+|---|---|---|---|
+| **Chat Completions** | OpenAI；业界事实标准，几乎所有模型服务商都提供兼容端点 | 无状态一问一答：客户端每轮发完整 `messages` 列表，一个 JSON 回来 | [API 参考](https://platform.openai.com/docs/api-reference/chat) |
+| **Responses / Open Responses** | OpenAI（Responses API）；Open Responses 是基于它的开放规范，OpenAI 发起、Hugging Face 等社区共建，用于多提供商互操作 | 有状态、面向 agent：请求带 `previous_response_id` 由服务端续接历史，`output` 数组承诺记录全过程 | [API 参考](https://platform.openai.com/docs/api-reference/responses) · [Open Responses 规范](https://www.openresponses.org/specification) |
+| **AI SDK（Vercel）** | Vercel；TypeScript 生态的事实标准 | 不是线上协议而是 SDK：`generateText` 返回完整结果，`useChat` 走它定义的 UI Message Stream 流协议 | [generateText 参考](https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text) · [UI Message Stream 协议](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol) |
+
+下面的主线用一个 Chat Completions 形接口的应用（最常见的形状）从零写到完整；接口是 Responses 形或流式的，替换件在第二、四步各自给出。
+
+## 第一步：发一条消息，拿到回复
+
+最小的 `send` 只做三件事：把 `input.text` 发给应用的接口，把回复放进一条 `message` 事件，报告本轮 `status`：
+
+```ts
+// agents/chat-app.ts
+import { defineAgent } from "niceeval/adapter";
+
+const BASE_URL = "http://localhost:8080";   // 要按 experiment 切换地址，改成工厂参数：见接入指南
+
+export default defineAgent({
+  name: "chat-app",
+  async send(input, ctx) {
+    ctx.progress({ message: "等待 Chat API" });
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {  // ← 前端本来就在用的接口
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: input.text }],
+        model: ctx.model,                                         // ← experiment.model 经 ctx.model 到这里；应用接口不支持选模型就删掉这行
+      }),
+      signal: ctx.signal,                                         // ← 运行器的超时与取消
+    }).then((r) => r.json());
+
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: res.choices[0].message.content }],
+    };
+  },
+});
+```
+
+如果接口返回了可继续处理、但证据不完整的响应，报告 diagnostic 而不是把原始响应全部打印出来：
+
+```ts
+if (!res.requestId) {
+  ctx.diagnostic({
+    code: "missing-request-id",
+    level: "warning",
+    message: "响应没有 request id，无法与服务端日志关联",
+  });
+}
+```
+
+`progress` 不落盘；diagnostic 会随 Attempt 保存并可通过 locator 回顾。HTTP 连接失败或响应无法解析时直接抛错，runner 会记录错误发生在 `agent.run`，并把 Attempt 标为 `errored`。
+
+**这一步解锁**：`t.reply`、`t.messageIncludes()`、judge 的全部对话材料，以及 experiment 侧的**模型对比**（`ctx.model` 就是 experiment 声明的 `model`，运行器原样递给你、Adapter 不解释含义，只转发——不需要等到后面的步骤，也不需要应用配合做任何改造，分档见 [Tier](/zh/explanation/tier)）。
+
+它有两个明显的局限：每轮都是一场全新对话（第二次 `t.send` 接不上第一次），工具调用完全看不见。后面两步各解决一个。
+
+## 第二步：接上之前的消息
+
+运行器在会话上只承诺一件事：**同一条会话线的每次 `send` 拿到同一个 `ctx.session`，新会话线（eval 的第一轮，或 `t.newSession()` 之后）拿到一个全新的。**
+
+"之前的消息"怎么接，取决于应用接口的形状。业界统共两种模式，`ctx.session` 上各备了一对存取器：
+
+- **客户端带全量历史**（服务端无状态，每轮发完整消息列表：Chat Completions 形是典型）→ `ctx.session.history<TMsg>()`
+- **服务端记历史**（接口收一个会话 id：Responses 形的 `previous_response_id`、各 SDK 的原生 session / thread）→ `ctx.session.id` + `ctx.session.capture(id)`
+
+主线的接口是前者：
+
+```ts
+// agents/chat-app.ts
+import { defineAgent } from "niceeval/adapter";
+
+const BASE_URL = "http://localhost:8080";
+
+interface Msg { role: "user" | "assistant"; content: string | null }
+
+export default defineAgent({
+  name: "chat-app",
+  async send(input, ctx) {
+    const history = ctx.session.history<Msg>();  // ← 本会话线的历史槽；新会话线是空的
+    const messages = [...history.get(), { role: "user" as const, content: input.text }];
+
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      // ……method、headers、signal 同第一步，省略
+      body: JSON.stringify({ messages, model: ctx.model }),        // ← 变化：发的是完整历史；model 同第一步转发
+    }).then((r) => r.json());
+
+    const reply = res.choices[0].message;
+    history.commit([...messages, reply]);        // ← 写回；同一条线的下一轮 get() 自动带上
+
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: reply.content }],
+    };
+  },
+});
+```
+
+注意这里**没有"第一轮"分支**：新会话线的 `history.get()` 自然返回空数组——"第一次发"的形态是新会话线的自然结果，不是要你判断的条件。也不需要在 `defineAgent` 上声明任何东西：接了 `ctx.session`，多轮就续得上；没接，每轮各是一场新对话。
+
+应用接口收会话 id 的话，历史在服务端，Adapter 只记 id——`send` 里只改两处：
+
+```ts
+// send 里：
+//   请求体带上一轮的 id …… previous_response_id: ctx.session.id   ← 新会话线自然是 undefined
+//   返回里抓到 id 就写回 …… ctx.session.capture(res.id)           ← 下一轮续接靠它
+```
+
+`capture` 只在还没记过 id 时落地，后端重复回传（甚至因 fork 变了）也不会覆盖正在续接的线。
+
+**这一步解锁**：多轮对话，以及 `t.newSession()` 的会话隔离。
+
+## 第三步：记录消费
+
+答对了但烧掉十倍 token 的 agent，不该跟省着用的拿一样的分。消费是 `Turn` 上和 `events`、`status` 并列的第四个字段 `usage`：应用接口回了用量就如实填上，运行器逐轮累加到会话线与整次运行。Chat Completions 形返回自带 `usage`，照抄进来——`send` 的其余部分和第二步完全一样：
+
+```ts
+    // ……transport 与会话同第二步，省略
+    return {
+      status: "completed",
+      events: [{ type: "message", role: "assistant", text: reply.content }],
+      usage: {                                        // ← 变化：把接口回的用量如实报上
+        inputTokens: res.usage.prompt_tokens,
+        outputTokens: res.usage.completion_tokens,
+      },
+    };
+```
+
+`Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheWriteTokens`、请求次数 `requests`，以及 `costUSD`——网关回了实测成本就填它，优先于价格表估算。接口不回用量就整个不填 `usage`，其它断言不受影响。这段照抄也是过渡：下一步的官方转换器会连 `usage` 一起填好。
+
+**这一步解锁**：`t.maxTokens()` / `t.maxCost()` 评分器（`maxCost` 用 `costUSD` 或配置里的价格表估算），以及报告和 `niceeval view` 里的用量。
+
+## 第四步：把工具解析成事件
+
+应用的返回里不只有回复文本——Chat Completions 形返回的 `tool_calls` 记录了这轮调过什么工具。Adapter 最重要的工作就是**把接口的返回归一成标准事件流**：本轮发生的每件事一个对象，按真实发生顺序排进 `Turn.events`，对象是下面十种类型之一（各字段的实际值，[契约页有一轮的完整示例](/zh/explanation/adapter)）：
+
+```ts
+type StreamEvent =
+  | { type: "message"; role: "assistant" | "user"; text: string }
+  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
+  | { type: "action.result"; callId: string; output?: JsonValue;
+      status: "completed" | "failed" | "rejected" }
+  | { type: "skill.loaded"; skill: string; callId?: string }
+  | { type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
+  | { type: "subagent.completed"; callId: string; output?: JsonValue;
+      status: "completed" | "failed" }
+  | { type: "input.requested"; request: InputRequest }
+  | { type: "thinking"; text: string }
+  | { type: "compaction"; reason?: string }
+  | { type: "error"; message: string };
+```
+
+解析就是一张"返回字段 → 事件"的映射。手写出来长这样——`send` 的其余部分和第二步完全一样：
+
+```ts
+    // ……transport 与会话同第二步，usage 同第三步，省略
+    const reply = res.choices[0].message;
+
+    const events: StreamEvent[] = [];
+    for (const call of reply.tool_calls ?? []) {
+      events.push({ type: "action.called", callId: call.id,
+                    name: call.function.name, input: JSON.parse(call.function.arguments) });
+    }
+    if (reply.content) events.push({ type: "message", role: "assistant", text: reply.content });
+
+    return { events, status: "completed", usage };
+```
+
+但这段循环通常**不用你写**。返回是标准形状时，官方转换器一行顶替上面全部——`events`、`status`、连第三步手抄的 `usage` 都在返回值里，拿来直接 `return`：
+
+```ts
+    // ……transport 与会话同第二步，省略
+    return fromChatCompletion(res);            // ← 上面那段映射加第三步的 usage，官方版
+```
+
+接口不是这个形状，就换对应的件：
+
+| 接口的到达形状 | 官方件 | 你写什么 |
+|---|---|---|
+| Chat Completions 形返回 | `fromChatCompletion(res)` | 零映射 |
+| Responses 形返回 | `fromResponses(res)` | 零映射 |
+| AI SDK `generateText` 的完整结果 | `fromAiSdk(result)` | 零映射 |
+| 流式：SDK 原生事件透传（一帧一个完整单元） | `fromClaudeSdkMessages()` / `fromPiAgentEvents()` / `fromCodexThreadEvents()` | 零映射 |
+| 流式：AI SDK 的 UI Message Stream（`useChat` 协议） | `uiMessageStreamAgent()` | 零映射（整个 Agent 都是现成的，连 send 都不用写） |
+| 流式：逐 token / 逐参数增量 | 协议方官方 reducer；没有才用 `deltaStream({ toOps })` | 一张"帧类型 → 操作"映射表 |
+| 只有最终答案 | 手写几条 events | 一条 `message` 起步（第一步就是这个档） |
+
+预设的件只到"形状"为止，不到"协议"为止——接口的到达形状统共就这几种，每种一个官方件；只有"增量流且协议方没有官方 reducer"这一种情况需要你写映射，而且写的是声明（这一帧对应哪个操作），拼接、配对、落地时机由 `deltaStream` 统一管。
+
+归一完成后，你吐哪种事件，eval 作者就能写哪族断言：
+
+| 你吐的事件 | 解锁的断言 |
+|---|---|
+| `message` | `t.reply`、`t.messageIncludes()`、judge 的对话材料 |
+| `action.called` / `action.result`（靠 `callId` 配对） | `t.calledTool()` / `t.toolOrder()` / `t.maxToolCalls()` / `t.noFailedActions()`… |
+| `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第五步） |
+| `thinking` / `compaction` / `error` | 对应断言与 o11y 计数 |
+
+一个如实交代：Chat Completions 这个形状**不承诺**"返回 = 全量过程记录"（应用完全可能在服务端跑完工具循环、只把最终答案吐给你），所以 `fromChatCompletion` 的返回不带完整性证明——`calledTool` 这类正断言照常可用，`notCalledTool` 这类负断言会提示不可信。Responses 形正相反：协议契约承诺 `output` 数组记录全过程，`fromResponses` 的返回自带完整性证明，负断言可信。同样零映射，可信度的差别完全来自接口形状本身。
+
+**这一步解锁**：`t.calledTool()`、`t.toolOrder()`、`t.maxToolCalls()`、`t.noFailedActions()` 等整族工具断言。
+
+## 第五步：HITL
+
+应用中途停下来等人（工具审批、等补充信息）时，`send` 两侧各有义务：
+
+- **停轮**：返回 `status: "waiting"`，并且每个待回答的问题吐一条带稳定 `id` 的 `input.requested` 事件——`t.parked()`、`t.requireInputRequest()` 读它，回答靠这个 `id` 对位。
+- **回答轮**：eval 里的 `t.respond(...)` 到 Adapter 是**又一次普通的 `send`**（还是同一条会话线、同一份状态），人的裁决以结构化形式随 `input.responses` 到达，每条带 `requestId`、`optionId` 或 `text`（形态见[不同回答的入参](/zh/explanation/adapter#不同回答的入参)）。Adapter 先把裁决交回应用，再接着取结果。被人拒绝的调用，`action.result` 的 `status` 置 `"rejected"` 而不是 `"failed"`——拒绝是人的决定、不是工具故障，`noFailedActions()` 不误伤。
+
+"停轮时读了一半的现场"（比如一条读到一半的 SSE 流）也存在 `ctx.session` 上：停轮时 `ctx.session.hold(现场)`，回答轮开头 `ctx.session.take()` 取回——取到即清除，一次消费。
+
+HITL 几乎总是发生在流式接口上（停在流中间），所以这一步的示例换成一个以 SSE 透传原生事件的应用——它同时用上前面几步的全部内容（完整可跑版本见 [tier1 示例](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)）：
+
+```ts
+// agents/my-app.ts
+import { defineAgent, sseJsonFrames, fromPiAgentEvents, driveFrameStream } from "niceeval/adapter";
+import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
+import type { Turn, TurnInput } from "niceeval";
+
+const BASE_URL = "http://localhost:5299";               // 应用自己的端口，eval 不代管进程
+
+interface Pending { cursor: SseFrameCursor<Frame>; stream: PiAgentStream; callId: string }
+
+function readStream(cursor: SseFrameCursor<Frame>, ctx: AgentContext, stream: PiAgentStream): Promise<Turn> {
+  return driveFrameStream(cursor, stream, ctx, (frame) => {
+    if (frame.type === "session") {
+      ctx.session.capture(frame.sessionId);             // ← 第二步：回传的 id 写回，下一轮续接
+      return;
+    }
+    if (frame.type === "approval_request") {            // ← 本步：应用停下等审批，存下现场
+      ctx.session.hold<Pending>({ cursor, stream, callId: frame.toolCallId });
+      return { pause: { id: frame.toolCallId, action: frame.toolName,
+                        options: [{ id: "approve" }, { id: "deny" }] } };
+      // driveFrameStream 收到 pause：补一条 input.requested、status 置 "waiting"、停止读流
+    }
+    if (frame.type === "server_error") return { fail: frame.message };
+  });
+}
+
+export default defineAgent({
+  name: "my-app",
+  async send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+    const held = ctx.session.take<Pending>();
+    if (held) {                                         // ← t.respond("approve")：普通 send，先交裁决
+      const approved = input.responses?.[0]?.optionId === "approve";  // 多请求并停时按 requestId 对位
+      if (!approved) held.stream.markRejected(held.callId);
+      await fetch(`${BASE_URL}/api/chat/approve`, { method: "POST", signal: ctx.signal,
+        body: JSON.stringify({ toolUseId: held.callId, approved }) });
+      return readStream(held.cursor, ctx, held.stream); //    再接着读同一条流，不重发请求
+    }
+
+    const res = await fetch(`${BASE_URL}/api/chat`, {   // ← transport：唯一真正手写的一段
+      method: "POST",
+      body: JSON.stringify({
+        message: input.text,                            // ← 第一步：发消息
+        model: ctx.model,                               // ← 第一步：experiment.model 转发
+        sessionId: ctx.session.id,                      // ← 第二步：第一次发自动不带，之后自动带
+      }),
+      signal: ctx.signal,
+    });
+    return readStream(sseJsonFrames<Frame>(res.body!), ctx, fromPiAgentEvents());  // ← 第四步：官方转换器零映射
+  },
+});
+```
+
+不需要 HITL 的接口，删掉停轮现场相关的三处（`Pending`、`hold`、开头的 `take` 分支）即可，其余不变。停轮 / 回答 / 续跑的完整心智模型见 [HITL](/zh/explanation/hitl)。
+
+**这一步解锁**：`t.parked()`、`t.requireInputRequest()`、`t.respond()` / `t.respondAll()`，以及 `calledTool(..., { status: "rejected" })` 的精确断言。
+
+## 第六步：接上 OTel trace
+
+应用已经埋了点（标准 OTel HTTP 服务端埋点即可）的话，接入分两半——一半是启动期配置，一半在 `send` 里。分清它们就是分清「不变的」和「每轮变的」。
+
+**端点是启动期配置，不从 send 传。** [NiceEval](https://niceeval.com/) 的 OTLP 接收地址每次运行都一样，所以它不走 `ctx`：在 `niceeval.config.ts` 里把接收端口钉住，应用启动时把自己的 OTel exporter 指向这个固定 URL，之后跑多少次 eval 都不用再改：
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  telemetry: { port: 4318 },   // 接收器固定监听 http://localhost:4318/v1/traces
+});
+```
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces node server.js
+```
+
+**send 里传的是本轮的 trace context，不是端点。** `ctx.telemetry.headers` 是运行器每轮新生成的 W3C `traceparent` 头——把它 spread 进请求，应用这一轮产生的 span 就精确挂到本轮的 trace 下，并发跑多条 eval 时归属不混。回到主线的 chat-app，`send` 里只多一行：
+
+```ts
+    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+      // ……其余同第四步，省略
+      headers: { "content-type": "application/json", ...ctx.telemetry?.headers },  // ← 只多这一行
+    }).then((r) => r.json());
+```
+
+`ctx.telemetry` 只在配置了 OTel 接入时出现，没配时 spread 一个 `undefined` 也安全，这行可以常驻。不带这个头 span 也能收到，但归属退化成时间窗口、该 agent 的轮次会降为串行——带上它是并发下归属准确的来源。
+
+**这一步解锁**：`niceeval view` 里的调用瀑布图——应用内部每次模型调用、每次工具执行的耗时与 token，按轮铺成时间线。断言不变：判定依据在前几步的事件映射里已经齐了，span 只进瀑布图、不喂断言。接收器怎么起、span 怎么归属到轮，见 [OTel 接入](/zh/how-to/connect-otel)。
+
+## 第七步：透传 experiment 的 flags（A/B 对比）
+
+应用把变体暴露成可切换的配置后，experiment 声明 `flags`，运行器每轮经 `ctx.flags` 原样递给 `send`；Adapter 不解释它们的含义，只随请求转发——应用按参数切换变体：
+
+```ts
+      // ……send 其余部分同前，省略
+      body: JSON.stringify({
+        messages,
+        model: ctx.model,        // ← 第一步就转发的 experiment.model；这里一起列出
+        flags: ctx.flags,      // ← experiment.flags 原样透传；没配时是 {}
+      }),
+```
+
+```ts
+// experiments/concise.ts
+import { defineExperiment } from "niceeval";
+import chatApp from "../agents/chat-app.ts";
+
+export default defineExperiment({
+  agent: chatApp,
+  model: "gpt-5.4",                      // ← 经 ctx.model 到 send
+  flags: { promptVariant: "concise" },  // ← 每轮经 ctx.flags 到 send
+});
+```
+
+两个 experiment 文件各声明一份 `flags`，`npx niceeval exp` 分别跑同一批 eval，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/explanation/tier)；`flags` 与 `model`、`runs` 等其余 experiment 字段见[写实验](/zh/how-to/write-experiment)。
+
+**这一步解锁**：同一批 eval 跨变体的成绩对比。
+
+## 对照：五个 t API 到 send 的形态
+
+七步写完，回头看 eval 侧的五个驱动 API——它们到 `send` 只是同一个函数收到不同字段，没有第二个要实现的方法：
+
+| eval 侧 | 到 Adapter 时 | `send` 收到什么 |
+|---|---|---|
+| `t.send(text)` | 一次 `send` | `input.text`；`ctx.session` 是这条会话线的自有状态 |
+| `t.sendFile(path, text?)` | 一次 `send` | 同上，外加 `input.files`（base64 的 `InputFile[]`）；按应用接口的方式放进请求体，不支持多模态就忽略 |
+| `t.newSession()` | 不直接触发 `send` | 开第二条会话线；该线随后第一次 `send` 拿到一份**全空的**状态——和整个 eval 的第一次 `send` 形态完全相同 |
+| `t.respond(...answers)` | 一次**普通的** `send` | `input.text` = 回答文本；`input.responses` 逐请求一条 `{ requestId, optionId }`（自由文本回答则是 `{ requestId, text }`）；还是同一条线、同一份状态 |
+| `t.respondAll(optionId)` | 一次**普通的** `send` | 同上，每条待处理请求各一条回答；`optionId` 已在 eval 侧对每条请求校验过存在，写错直接抛，不会静默传给应用 |
+
+## 相关阅读
+
+- [Adapter](/zh/explanation/adapter) — 契约本身：`send` 传入什么返回什么、三个接入等级、能力从哪来。
+- [接入你的 Agent](/zh/how-to/connect-your-agent) — 接入全景：最小接入、参数通道与增量地图。
+- [HITL](/zh/explanation/hitl) — 停轮等人的完整概念：握手时序与两侧义务。
+- [Drive](/zh/explanation/drive) — eval 侧视角：`t.send()`、`t.newSession()` 与 HITL 怎么用。
+- [Assert](/zh/explanation/assert) — 标准事件流驱动的完整断言词汇。

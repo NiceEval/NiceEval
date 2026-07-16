@@ -1,0 +1,127 @@
+---
+title: "为你的 Agent 项目设置评估"
+sidebarTitle: "快速开始"
+description: "安装 NiceEval，写三个文件，10 分钟内对你自己的应用跑通第一条 eval。"
+---
+
+接入你自己的应用只需要三个文件：一个 **adapter**（怎么调你的应用）、一个 **experiment**（评谁、跑几次）、一条 **eval**（断言什么）。下面是完整的最短路径；写给 coding agent 的一键接入和场景示例在后面。
+
+## 让 AI 帮你接入 (推荐)
+<Steps>
+  <Step title="安装">
+    ```text
+    READ https://niceeval.com/INIT.md and install niceeval for this repo.
+
+    ```
+  </Step>
+  <Step title="运行测试">
+    ```bash
+    pnpm exec niceeval exp 实验名
+    ```
+  </Step>
+  <Step title="查看结果">
+    ```bash
+    pnpm exec niceeval show         # 终端摘要，适合直接交给 AI 阅读
+    pnpm exec niceeval view         # 网页查看器，适合人浏览证据
+    ```
+  </Step>
+</Steps>
+
+
+## 人工接入
+
+```bash
+pnpm add -D niceeval
+pnpm exec niceeval init
+```
+
+### Adapter
+Adapter 是连接 Agent 与 [NiceEval](https://niceeval.com/) 的中间层。有三种不同程序的接入方式，从无侵入式到部分修改你的 Agent 代码，来解锁更有用的评估功能。 见[Tier](/zh/explanation/tier)。
+
+```ts
+// agents/my-bot.ts
+import { defineAgent } from "niceeval/adapter";
+
+export default defineAgent({
+  name: "my-bot",
+  async send(input, ctx) {
+    // 示例地址：换成你自己 agent 的真实端点（HTTP、CLI、SDK 都行，只要 send 里能拿到回复文本）
+    const r = await fetch("http://localhost:3000/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: input.text, model: ctx.model }), // ← experiment.model 经 ctx.model 到这里
+      signal: ctx.signal,
+    });
+    const body = await r.json();
+    return {
+      status: r.ok ? "completed" : "failed",
+      events: [{ type: "message", role: "assistant", text: body.reply }],
+    };
+  },
+});
+```
+
+### Experiment
+
+```ts
+// experiments/my-bot.ts
+import { defineExperiment } from "niceeval";
+import myBot from "../agents/my-bot.ts";
+
+export default defineExperiment({
+  description: "my-bot 基线",
+  model: "gpt-4o",
+  agent: myBot,
+  runs: 1,
+});
+```
+
+### Eval
+
+```ts
+// evals/refund-policy.eval.ts
+import { defineEval } from "niceeval";
+import { includes } from "niceeval/expect";
+
+export default defineEval({
+  description: "退款政策问答",
+  async test(t) {
+    await t.send("你们的退款政策是什么?");
+    t.succeeded();
+    t.check(t.reply, includes("30 天"));
+  },
+});
+```
+
+```bash
+pnpm exec niceeval exp my-bot   # 跑起来
+pnpm exec niceeval show         # 在终端读结果；失败项会给出继续下钻的命令
+pnpm exec niceeval view         # 需要交互浏览时打开本地查看器
+```
+
+到这里第一条 eval 已经跑通。
+
+这个最小 adapter 是**单轮**的——第二轮不会记得第一轮说了什么，因为还没告诉应用怎么接上历史。多轮会话和工具调用事件（解锁 `t.calledTool()`）、HITL、tracing 一样，都是之后给 adapter 加的可选增量：顺着[接入你的 Agent](/zh/how-to/connect-your-agent)逐层往下走即可，已写的 eval 不用改。
+
+## 对照完整项目
+
+第一条 Eval 跑通后，再到 [Examples](/zh/examples) 按被测对象选择完整项目。那里提供可运行源码；通用操作步骤仍以 How-to Guides 为准。
+
+## 放进 CI
+
+```yaml
+name: evals
+on: [pull_request]
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm ci
+      - run: npm exec niceeval exp my-bot
+```
+
+<Tip>
+  接下来读 [编写 eval](/zh/how-to/authoring) 和 [评分指南](/zh/how-to/scoring-guide)，把示例替换成你的真实场景。
+</Tip>

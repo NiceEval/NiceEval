@@ -1,0 +1,57 @@
+---
+title: "评估 Coding Agent 扩展"
+sidebarTitle: "Coding Agent 扩展"
+description: "用真实 Workspace、基线实验和自定义报告，评估 Skill、提示词与 Plugin Benchmark 是否改善 Coding Agent 的任务结果。"
+---
+
+这个案例把扩展内容作为 Experiment 变量，让同一个 Coding Agent 在同一批真实开发任务上运行，再比较任务成功率、成本、耗时和行为差异。
+
+- [查看完整源码](https://github.com/CorrectRoadH/coding-agent-skill)
+- [查看 Fixtures 指南](/zh/how-to/fixtures)
+
+## 两组实验
+
+| 实验 | 对照 | 测什么 |
+| --- | --- | --- |
+| Zod Skill | `with-skill` vs `baseline` | Skill 是否让 Agent 稳定使用 `z.object().safeParse()`，而不是退回手写校验 |
+| Ponytail Benchmark | Baseline / Caveman / Ponytail / YAGNI One-liner | 完整决策 Skill 是否比裸 Agent、简短风格 Skill 或一句提示更有效 |
+
+Ponytail 这一组迁移自第三方 Plugin 的 Agentic Benchmark，但这个仓库实际比较的是注入给 Agent 的内容与提示。它不用于证明某个原生 Plugin 包装或安装协议是否正确。原生 Skill / Plugin 的安装配置见 [官方适配器](/zh/reference/official-adapters)。
+
+## 实验设计
+
+每个 Arm 固定相同的模型、Sandbox、任务集、Runs 和预算，只改变注入内容。Eval 不读取“当前是哪个 Arm”，也不为实验组降低验收标准。
+
+```text
+coding-agent-skill/
+├── skills/                  # 各 Arm 注入的内容
+├── workspaces/ts-starter/   # 每个 Eval 的初始项目
+├── evals/                   # 真实开发任务与验证
+├── experiments/             # Baseline 和实验 Arm
+└── reports/benchmark.tsx    # Arm × Metric 自定义报告
+```
+
+验证优先看最终产物：项目测试、隐藏探针、源码和 Diff。只有事件稳定且完整时，才把 Skill Load 或工具调用作为 Gate。
+
+## 跑起来
+
+```bash
+git clone https://github.com/CorrectRoadH/coding-agent-skill.git
+cd coding-agent-skill
+pnpm install
+cp .env.example .env
+docker info
+
+pnpm exec niceeval exp ponytail-baseline
+pnpm exec niceeval exp caveman
+pnpm exec niceeval exp ponytail
+pnpm exec niceeval exp yagni-oneliner
+pnpm exec niceeval view --report reports/benchmark.tsx
+```
+
+## 从这个案例复用什么
+
+- 用 Experiment 表达有扩展和无扩展的对照，不让 Eval 知道实验条件。
+- Prompt 不泄露答案；验证阶段再检查测试、源码、Diff 和行为证据。
+- 把任务成功率作为主指标，把 Token、成本、耗时和行为作为解释指标。
+- [评分指南](/zh/how-to/scoring-guide) 负责选择 Gate、Soft 和 Judge；本页不复制评分 API。

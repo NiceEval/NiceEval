@@ -1,0 +1,125 @@
+---
+title: "写实验：用 defineExperiment 固定运行配置"
+sidebarTitle: "写实验"
+description: "学习如何在 experiments/ 里用 defineExperiment 选择 agent、传 model 和 flags、设置 runs、预算、并发与 sandbox。"
+---
+
+Experiment 是可签入的运行配置：同一批 eval 对着哪个 adapter、哪个模型、开哪些 flags、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛 eval，不负责临时改 agent 或运行配置。
+
+## 最小实验
+
+```ts
+// experiments/local.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "../agents/web-agent.ts";
+
+export default defineExperiment({
+  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
+});
+```
+
+`agent` 放的是已经配置好的 agent 实例。被测系统的 URL、鉴权、协议细节通常传给 adapter 工厂；运行器不会单独保存一个 `agentConfig` 字段。
+
+## 传 model 和 flags
+
+```ts
+// experiments/concise.ts
+import { defineExperiment } from "niceeval";
+import { webAgent } from "../agents/web-agent.ts";
+
+export default defineExperiment({
+  description: "简洁 prompt 变体",
+  agent: webAgent({
+    baseUrl: "https://staging.example.com",
+    apiKey: process.env.STAGING_AGENT_API_KEY,
+  }),
+  model: "gpt-5.4",
+  flags: {
+    promptVariant: "concise",
+    webResearch: false,
+  },
+  runs: 3,
+  earlyExit: true,
+  budget: 5,
+});
+```
+
+`model` 会作为 `ctx.model` 传给 adapter；应用接口支持模型选择时，adapter 把它放进请求体、header 或 CLI 参数即可。
+
+`flags` 会作为 `ctx.flags` 传给 adapter，也会作为 `t.flags` 出现在 eval 里。语义就是产品 A/B 测试里的 feature flag：一个 experiment 就是一组 flag 取值，例如 prompt 版本、工具集、检索开关；值可以是任意 JSON（变体名、数字、配置对象），不限于布尔。真正按 flag 切换行为的是你的应用或 adapter，[NiceEval](https://niceeval.com/) 只负责原样透传。它与命令行开关是两回事——后者在文档里一律写作 CLI flag 或字面的 `--xxx`。
+
+```ts
+// agents/web-agent.ts
+async send(input, ctx) {
+  await fetch(`${baseUrl}/api/turn`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      message: input.text,
+      model: ctx.model,
+      flags: ctx.flags,
+    }),
+    signal: ctx.signal,
+  });
+}
+```
+
+## 一组实验怎么写
+
+一个实验文件是一格配置。要比较多个模型、agent 或 flag 取值，就把多个文件放进同一个文件夹：
+
+```text
+experiments/
+  prompt-variants/
+    baseline.ts
+    concise.ts
+    with-retrieval.ts
+```
+
+```bash
+npx niceeval exp prompt-variants
+```
+
+这样报告会按同一组展示，差异也能在 Git 里 review。
+
+只想验证组里某一个配置时，把位置参数写成该配置的完整 id（`组/文件名`，不带扩展名），精确匹配到单个文件：
+
+```bash
+npx niceeval exp prompt-variants/concise
+```
+
+用于逐配置排查——确认某一格改动是否达标，不用先跑完整组，也不用把其它配置文件挪出目录。
+
+## 常用字段
+
+| 字段 | 用途 |
+|---|---|
+| `agent` | 选择并配置 adapter；必填 |
+| `model` | 单个模型名，经 `ctx.model` 透传 |
+| `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
+| `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
+| `runs` | 每个 eval × 配置最多跑几次 |
+| `earlyExit` | 多次运行里通过一次就提前停止 |
+| `evals` | 限定这一格配置跑哪些 eval |
+| `timeoutMs` | 单个 attempt 的超时 |
+| `budget` | 这一格配置的预算上限 |
+| `maxConcurrency` | 这一格配置的并发上限 |
+| `sandbox` | sandbox agent 使用的 provider，如 `dockerSandbox()` / `e2bSandbox()`；spec 上可以链 `.setup()` / `.teardown()` 挂按实验变化的环境钩子 |
+
+Experiment 本身是纯配置数据，没有 `setup` / `teardown` 这类字段。要在跑 agent 前按实验准备环境（装二进制、预热、跨 attempt 载入和回存状态），挂在 `sandbox` 字段的 spec 上：
+
+```ts
+export default defineExperiment({
+  agent: codexAgent({ mcpServers: [mempalMcp] }),
+  sandbox: e2bSandbox({ template: "fasteval-agents" })
+    .setup(mempalSetup("codex"))        // 预检、写动态配置、预热、载入状态
+    .teardown(mempalTeardown("codex")), // 回存状态
+  maxConcurrency: 1,                    // 载入和回存之间不能并发，声明串行
+});
+```
+
+固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot；`.setup()` 不应在每个 Attempt 重建同一套环境。如何从官方 Docker 镜像、E2B 模板或 Vercel runtime 继续派生来提速，见 [沙箱 provider · 从官方基线继续构建以提速](/zh/how-to/sandbox-providers#从官方基线继续构建以提速)。
+
+钩子的执行时机、多钩子顺序和失败语义见 [沙箱 provider · 环境钩子](/zh/how-to/sandbox-providers#环境钩子)。
+
+跨配置比较的设计建议见[实验矩阵](/zh/how-to/experiments)。adapter 如何消费 `ctx.model` 和 `ctx.flags` 见[Adapter](/zh/explanation/adapter)。

@@ -30,7 +30,7 @@
     },
     {
       "source": "/zh/guides/sandbox-backends",
-      "destination": "/zh/guides/sandbox-providers"
+      "destination": "/zh/how-to/sandbox-providers"
     },
     {
       "source": "/concepts/scoring",
@@ -50,15 +50,15 @@
     },
     {
       "source": "/zh/concepts/scoring",
-      "destination": "/zh/concepts/assert"
+      "destination": "/zh/explanation/assert"
     },
     {
       "source": "/zh/concepts/agents-adapters",
-      "destination": "/zh/concepts/adapter"
+      "destination": "/zh/explanation/adapter"
     },
     {
       "source": "/zh/concepts/write-send",
-      "destination": "/zh/guides/write-send"
+      "destination": "/zh/how-to/write-send"
     },
     {
       "source": "/reference/configuration",
@@ -70,7 +70,175 @@
     },
     {
       "source": "/zh/example/eval-multil-turn-for-your-agent",
-      "destination": "/zh/concepts/drive"
+      "destination": "/zh/explanation/drive"
+    },
+    {
+      "source": "/zh/quickstart",
+      "destination": "/zh/tutorials/quickstart"
+    },
+    {
+      "source": "/zh/concepts/overview",
+      "destination": "/zh/explanation/overview"
+    },
+    {
+      "source": "/zh/concepts/evals",
+      "destination": "/zh/explanation/evals"
+    },
+    {
+      "source": "/zh/concepts/experiment",
+      "destination": "/zh/explanation/experiment"
+    },
+    {
+      "source": "/zh/concepts/adapter",
+      "destination": "/zh/explanation/adapter"
+    },
+    {
+      "source": "/zh/concepts/tier",
+      "destination": "/zh/explanation/tier"
+    },
+    {
+      "source": "/zh/concepts/drive",
+      "destination": "/zh/explanation/drive"
+    },
+    {
+      "source": "/zh/concepts/hitl",
+      "destination": "/zh/explanation/hitl"
+    },
+    {
+      "source": "/zh/concepts/assert",
+      "destination": "/zh/explanation/assert"
+    },
+    {
+      "source": "/zh/concepts/judge",
+      "destination": "/zh/explanation/judge"
+    },
+    {
+      "source": "/zh/guides/connect-your-agent",
+      "destination": "/zh/how-to/connect-your-agent"
+    },
+    {
+      "source": "/zh/guides/official-adapters",
+      "destination": "/zh/reference/official-adapters"
+    },
+    {
+      "source": "/zh/guides/write-send",
+      "destination": "/zh/how-to/write-send"
+    },
+    {
+      "source": "/zh/guides/connect-otel",
+      "destination": "/zh/how-to/connect-otel"
+    },
+    {
+      "source": "/zh/guides/sandbox-agent",
+      "destination": "/zh/how-to/sandbox-agent"
+    },
+    {
+      "source": "/zh/guides/sandbox-providers",
+      "destination": "/zh/how-to/sandbox-providers"
+    },
+    {
+      "source": "/zh/guides/authoring",
+      "destination": "/zh/how-to/authoring"
+    },
+    {
+      "source": "/zh/guides/write-experiment",
+      "destination": "/zh/how-to/write-experiment"
+    },
+    {
+      "source": "/zh/guides/experiments",
+      "destination": "/zh/how-to/experiments"
+    },
+    {
+      "source": "/zh/guides/fixtures",
+      "destination": "/zh/how-to/fixtures"
+    },
+    {
+      "source": "/zh/guides/dataset-fanout",
+      "destination": "/zh/how-to/dataset-fanout"
+    },
+    {
+      "source": "/zh/guides/scoring-guide",
+      "destination": "/zh/how-to/scoring-guide"
+    },
+    {
+      "source": "/zh/guides/runner",
+      "destination": "/zh/explanation/runner"
+    },
+    {
+      "source": "/zh/guides/ci-integration",
+      "destination": "/zh/how-to/ci-integration"
+    },
+    {
+      "source": "/zh/guides/reporters",
+      "destination": "/zh/how-to/reporters"
+    },
+    {
+      "source": "/zh/guides/viewing-results",
+      "destination": "/zh/how-to/viewing-results"
+    },
+    {
+      "source": "/zh/guides/debugging",
+      "destination": "/zh/troubleshooting/debugging"
+    },
+    {
+      "source": "/zh/guides/debug-sandbox",
+      "destination": "/zh/troubleshooting/debug-sandbox"
+    },
+    {
+      "source": "/zh/guides/publish-report",
+      "destination": "/zh/how-to/publish-report"
+    },
+    {
+      "source": "/zh/guides/custom-reports",
+      "destination": "/zh/how-to/custom-reports"
+    },
+    {
+      "source": "/zh/guides/report-components",
+      "destination": "/zh/reference/report-components"
+    },
+    {
+      "source": "/zh/guides/results-data",
+      "destination": "/zh/reference/results-data"
+    },
+    {
+      "source": "/zh/guides/agent-feedback-loop",
+      "destination": "/zh/how-to/agent-feedback-loop"
+    },
+    {
+      "source": "/zh/example/ai-agent-application",
+      "destination": "/zh/examples/ai-agent-application"
+    },
+    {
+      "source": "/zh/example/claude-code-codex-plugin",
+      "destination": "/zh/examples/coding-agent-extensions"
+    },
+    {
+      "source": "/zh/example/claude-code-codex-skill",
+      "destination": "/zh/examples/coding-agent-extensions"
+    },
+    {
+      "source": "/zh/example/showcase",
+      "destination": "/zh/examples"
+    },
+    {
+      "source": "/zh/example/tier1-ai-sdk-v7",
+      "destination": "/zh/examples/integrations/ai-sdk-v7"
+    },
+    {
+      "source": "/zh/example/tier1-claude-sdk",
+      "destination": "/zh/examples/integrations/claude-sdk"
+    },
+    {
+      "source": "/zh/example/tier1-codex-sdk",
+      "destination": "/zh/examples/integrations/codex-sdk"
+    },
+    {
+      "source": "/zh/example/tier1-langgraph",
+      "destination": "/zh/examples/integrations/langgraph"
+    },
+    {
+      "source": "/zh/example/tier1-pi-sdk",
+      "destination": "/zh/examples/integrations/pi-sdk"
     }
   ],
   "navigation": {
@@ -179,80 +347,93 @@
         "language": "zh-Hans",
         "tabs": [
           {
-            "tab": "文档",
+            "tab": "Tutorials",
             "groups": [
               {
                 "group": "开始使用",
                 "pages": [
                   "zh/introduction",
-                  "zh/quickstart"
-                ]
-              },
-              {
-                "group": "核心概念",
-                "pages": [
-                  "zh/concepts/overview",
-                  "zh/concepts/evals",
-                  "zh/concepts/experiment",
-                  "zh/concepts/adapter",
-                  "zh/concepts/tier",
-                  "zh/concepts/drive",
-                  "zh/concepts/hitl",
-                  "zh/concepts/assert",
-                  "zh/concepts/judge"
-                ]
-              },
-              {
-                "group": "连接 Agent",
-                "pages": [
-                  "zh/guides/connect-your-agent",
-                  "zh/guides/official-adapters",
-                  "zh/guides/write-send",
-                  "zh/guides/connect-otel",
-                  "zh/guides/sandbox-agent",
-                  "zh/guides/sandbox-providers"
-                ]
-              },
-              {
-                "group": "评估与实验",
-                "pages": [
-                  "zh/guides/authoring",
-                  "zh/guides/write-experiment",
-                  "zh/guides/experiments",
-                  "zh/guides/fixtures",
-                  "zh/guides/dataset-fanout",
-                  "zh/guides/scoring-guide"
-                ]
-              },
-              {
-                "group": "示例",
-                "pages": [
-                  "zh/example/claude-code-codex-plugin",
-                  "zh/example/claude-code-codex-skill",
-                  "zh/example/ai-agent-application",
-                  "zh/example/showcase"
-                ]
-              },
-              {
-                "group": "运行与观察",
-                "pages": [
-                  "zh/guides/runner",
-                  "zh/guides/ci-integration",
-                  "zh/guides/reporters",
-                  "zh/guides/viewing-results",
-                  "zh/guides/debugging",
-                  "zh/guides/debug-sandbox",
-                  "zh/guides/publish-report",
-                  "zh/guides/custom-reports",
-                  "zh/guides/report-components",
-                  "zh/guides/results-data",
-                  "zh/guides/agent-feedback-loop"
+                  "zh/tutorials/quickstart"
                 ]
               }
             ]
           },
           {
-            "tab": "参考",
+            "tab": "How-to Guides",
+            "groups": [
+              {
+                "group": "连接 Agent",
+                "pages": [
+                  "zh/how-to/connect-your-agent",
+                  "zh/how-to/write-send",
+                  "zh/how-to/connect-otel",
+                  "zh/how-to/sandbox-agent",
+                  "zh/how-to/sandbox-providers"
+                ]
+              },
+              {
+                "group": "编写评估",
+                "pages": [
+                  "zh/how-to/authoring",
+                  "zh/how-to/write-experiment",
+                  "zh/how-to/experiments",
+                  "zh/how-to/fixtures",
+                  "zh/how-to/dataset-fanout",
+                  "zh/how-to/scoring-guide"
+                ]
+              },
+              {
+                "group": "运行、观察与发布",
+                "pages": [
+                  "zh/how-to/ci-integration",
+                  "zh/how-to/reporters",
+                  "zh/how-to/viewing-results",
+                  "zh/how-to/publish-report",
+                  "zh/how-to/custom-reports",
+                  "zh/how-to/agent-feedback-loop"
+                ]
+              },
+              {
+                "group": "问题排查",
+                "pages": [
+                  "zh/troubleshooting/debugging",
+                  "zh/troubleshooting/debug-sandbox"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Explanation",
+            "groups": [
+              {
+                "group": "核心模型",
+                "pages": [
+                  "zh/explanation/overview",
+                  "zh/explanation/evals",
+                  "zh/explanation/experiment",
+                  "zh/explanation/adapter",
+                  "zh/explanation/tier"
+                ]
+              },
+              {
+                "group": "交互与评分",
+                "pages": [
+                  "zh/explanation/drive",
+                  "zh/explanation/hitl",
+                  "zh/explanation/assert",
+                  "zh/explanation/judge"
+                ]
+              },
+              {
+                "group": "执行模型",
+                "pages": [
+                  "zh/explanation/runner"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Reference",
             "groups": [
               {
                 "group": "API",
@@ -261,15 +442,56 @@
                   "zh/reference/define-agent",
                   "zh/reference/events",
                   "zh/reference/capabilities",
-                  "zh/reference/builtin-agents",
                   "zh/reference/define-config",
                   "zh/reference/expect"
+                ]
+              },
+              {
+                "group": "适配器",
+                "pages": [
+                  "zh/reference/builtin-agents",
+                  "zh/reference/official-adapters"
+                ]
+              },
+              {
+                "group": "结果与报告",
+                "pages": [
+                  "zh/reference/results-data",
+                  "zh/reference/report-components"
                 ]
               },
               {
                 "group": "CLI",
                 "pages": [
                   "zh/reference/cli"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Examples",
+            "groups": [
+              {
+                "group": "选择示例",
+                "pages": [
+                  "zh/examples/index"
+                ]
+              },
+              {
+                "group": "接入 Agent Framework",
+                "pages": [
+                  "zh/examples/integrations/ai-sdk-v7",
+                  "zh/examples/integrations/claude-sdk",
+                  "zh/examples/integrations/codex-sdk",
+                  "zh/examples/integrations/pi-sdk",
+                  "zh/examples/integrations/langgraph"
+                ]
+              },
+              {
+                "group": "完整评测项目",
+                "pages": [
+                  "zh/examples/ai-agent-application",
+                  "zh/examples/coding-agent-extensions"
                 ]
               }
             ]

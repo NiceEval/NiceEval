@@ -9,7 +9,7 @@
 - `concepts/`：英文核心概念页，解释心智模型。
 - `guides/`：英文任务指南，按工作流组织。
 - `reference/`：英文 API / CLI 参考，列完整字段和选项。
-- `zh/`：中文文档。中文定位、概念命名和场景示例是公开叙事的准绳；英文页或 README 与中文冲突时，先按中文和当前代码核对，再同步其它入口。
+- `zh/`：中文文档。按 Tutorial、How-to、Explanation、Reference 和 Troubleshooting 分区，具体边界见 `zh/README.md`。中文定位、概念命名和场景示例是公开叙事的准绳；英文页或 README 与中文冲突时，先按中文和当前代码核对，再同步其它入口。
 
 ## 术语表
 
@@ -47,7 +47,7 @@
 - 只在 @docs-site/zh 下面更新中文版本，英语版本由其它 AI 翻译
 - 新增或重命名页面时同时更新 `docs.json`，必要时加 redirect，避免旧链接断掉。
 - 链接示例必须指向真实存在的 `examples/` 目录；当前完整示例主要在 `examples/zh/`。
-- 工作流写成 guide，字段全集写成 reference，概念边界写成 concepts。不要把一个页面同时写成教程、设计文档和 API 字典。
+- 第一次成功路径写进 `zh/tutorials/`，现实任务写进 `zh/how-to/`，概念边界写进 `zh/explanation/`，字段全集写进 `zh/reference/`，按症状修复写进 `zh/troubleshooting/`。不要把一个页面同时写成教程、设计文档和 API 字典。
 - 命令、路径、flag、文件名、包名、代码标识用反引号。
 - `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm docs:reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取 `src/cli.ts` 里 `FLAG_OPTIONS` 各项的 JSDoc；region 与源码的映射见 `scripts/generate-reference.ts`）。要改这些文案，改源码注释后从仓库根跑 `pnpm docs:reference`；手改会被 `pnpm test` 的漂移守护拦下。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。

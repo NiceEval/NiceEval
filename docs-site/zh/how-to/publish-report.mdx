@@ -1,0 +1,105 @@
+---
+title: "通过 CI 发布报告"
+sidebarTitle: "CI 发布报告"
+description: "把经过 copySnapshots 大小预检的结果目录提交进仓库,CI 用一行 view --run 导出报告站;超大文件在 commit 前就会得到可执行错误。"
+---
+
+`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、结果快照列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/how-to/viewing-results#导出与静态托管))。CI 发布只需要让结果数据到构建机手里，但不要直接提交本地事实根 `.niceeval/`：逐字符串截断能防一条失控输出膨胀，不能保证整个文件小于 Git host 的限制。先用 `copySnapshots` 生成经过 50 MiB 单文件预检的发布结果根，再提交这个目录。
+
+## 生成可提交的结果目录
+
+新建 `scripts/publish-results.ts`（项目里 eval 和配置本来就是 TypeScript，脚本也用 `.ts`，由 `tsx` 直接运行）：
+
+```javascript
+import { rm } from "node:fs/promises";
+import { copySnapshots, openResults } from "niceeval/results";
+
+const output = "report-data";
+const results = await openResults(".niceeval");
+
+await rm(output, { recursive: true, force: true });
+await copySnapshots(results.latest(), output, {
+  artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
+  redact: (text) => text.replaceAll(/sk-[A-Za-z0-9]+/g, "[redacted]"),
+});
+```
+
+`redact` 是必填项：给一个函数改写待发布文件里的自由文本，或者确认这批数据可以原文公开、显式传 `redact: false`。要发布的站点谁都能翻到 prompt 和工具输出，这个选择必须写在脚本里。
+
+运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`copySnapshots` 在创建目录前检查所有待发布文件；任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 缺省不发布；需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
+
+## 构建命令就是导出命令
+
+```bash
+npx niceeval view --run report-data --out site
+```
+
+`view` 对零可读结果直接报错、非零退出,不会导出一张空报告——`report-data/` checkout 坏掉,或所有落盘与当前 niceeval 的 schemaVersion 不兼容被整批跳过时,构建失败,Vercel / GitHub Pages 保留上一次部署。错误逐条列出被跳过的快照目录与原因,schemaVersion 场景还给出能直接查看旧落盘的 `npx niceeval@<版本> view` 命令。
+
+## 发布自定义报告
+
+不传 `--report` 时,发布出来的首页是默认报告。想让首页换成自己的报告,把 [`defineReport` 报告文件](/zh/how-to/custom-reports)传给 `--report` 就行——attempt 证据页(transcript、trace、代码视图)仍在同一个站里,报告里的每个数字点进去就是对应证据,和本地 `view --report` 看到的一模一样:
+
+```bash
+npx niceeval view --run report-data --report reports/exam.tsx --out site
+```
+
+报告文件和 `report-data/` 一样提交在仓库里,改完版面 push,线上就跟着更新。用下面的 `vercel.json` / workflow 时,把构建命令换成这一行即可,其余配置不用动。
+
+## 接托管平台
+
+**Vercel**:仓库根放一个 `vercel.json`,导入项目后 push 即部署。
+
+```json
+{
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "npx niceeval view --run report-data --out site",
+  "outputDirectory": "site"
+}
+```
+
+**GitHub Pages**:仓库 Settings → Pages 把 Source 设为 GitHub Actions,再加 workflow:
+
+```yaml
+# .github/workflows/report.yml
+name: report
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx niceeval view --run report-data --out site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+日常循环是:本地跑 eval，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新结果快照；要发布其它选择策略，在脚本里替换 `results.latest()`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
+
+## 发布的是选中的证据
+
+整站导出会带上发布结果根里选中的 transcript、源码快照和 trace。新写入的超大 events / trace 字符串可能带结构化截断标记。`copySnapshots` 只在你给了消毒函数时改写自由文本（`redact` 是必填项，见上），其余只做选择和整文件大小预检；传 `redact: false` 的目录再导出时还要加 `--allow-sensitive-artifacts` 确认一次。发布到公网前确认结果里没有密钥或敏感数据。

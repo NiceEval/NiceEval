@@ -1,0 +1,63 @@
+---
+title: "自写 Adapter 评估 AI Agent 应用"
+sidebarTitle: "AI Agent 应用"
+description: "一个可运行的 AI SDK v6 Web Agent 评测项目，覆盖自写 Adapter、工具调用、图片理解、多轮会话、模型对比和双路可观测。"
+---
+
+这个项目演示如何用 `defineAgent` 把已有 HTTP Agent 接入 NiceEval。它适合需要控制自有协议和事件映射的应用。
+
+- [查看完整源码](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/ai-sdk)
+- 本地目录：`examples/zh/ai-sdk/`
+
+<Note>
+  如果应用使用 AI SDK v7 的 UI Message Stream，优先使用内置 `uiMessageStreamAgent`。对应的无侵入示例见 [AI SDK v7](/zh/examples/integrations/ai-sdk-v7)。
+</Note>
+
+## 这个项目证明什么
+
+| 部分 | 实现 |
+| --- | --- |
+| 被测应用 | AI SDK v6 Web Agent，HTTP `POST /api/turn` |
+| Adapter | `defineAgent` + 自定义 `AgentEvent` → `StreamEvent` 映射 |
+| Eval | 天气工具、图片理解、多轮文本、多轮图片上下文 |
+| Experiment | 每个文件固定一个模型，同组比较 DeepSeek 与 GPT |
+| 可观测 | 应用继续上报 Langfuse，同时把本轮 OTLP 数据发给 NiceEval |
+
+Adapter 只负责连接和翻译。URL 与模型属于 Experiment；Eval 只描述交互与好结果。这个分层让同一批 Eval 可以复用到不同模型和部署实例。
+
+## 目录
+
+```text
+examples/zh/ai-sdk/
+├── src/                     # 被测 Web Agent
+├── adapter/adapter.ts       # 自写 NiceEval Adapter
+├── evals/                   # 工具、图片和多轮 Eval
+├── experiments/             # 模型对比
+└── niceeval.config.ts
+```
+
+## 跑起来
+
+这个示例调用真实模型，没有 Mock 模式。先复制环境变量并填入 OpenAI 兼容服务的凭据：
+
+```bash
+cd examples/zh/ai-sdk
+pnpm install
+cp .env.example .env
+pnpm dev
+```
+
+另开一个终端运行：
+
+```bash
+cd examples/zh/ai-sdk
+pnpm exec niceeval list
+pnpm exec niceeval exp compare-models weather-tool
+pnpm exec niceeval view
+```
+
+## 继续阅读
+
+- [接入你的 Agent](/zh/how-to/connect-your-agent)：从最小 Adapter 开始接入自己的协议。
+- [如何写好 Send](/zh/how-to/write-send)：逐步补齐会话、工具、HITL 和 OTel。
+- [实验矩阵](/zh/how-to/experiments)：组织模型和配置对比。

@@ -1,0 +1,194 @@
+---
+title: "沙箱 Agent：评估 Claude Code、Codex 和 bub"
+sidebarTitle: "沙箱 Agent"
+description: "使用 NiceEval 内置 agents 或自定义 adapter，在 Docker 或云端 sandbox 中运行 coding-agent CLI。"
+---
+
+Sandbox agent 会在隔离环境中启动 coding-agent CLI，给它 workspace 和任务，让它自由修改文件、运行命令，然后收集 transcript、diff 和测试结果。
+
+## 内置 sandbox agents
+
+<CardGroup cols={3}>
+  <Card title="claude-code" icon="code">
+    运行 Anthropic Claude Code CLI，需要 `ANTHROPIC_API_KEY`。
+  </Card>
+  <Card title="codex" icon="terminal">
+    运行 OpenAI Codex CLI，需要 `CODEX_API_KEY`。
+  </Card>
+  <Card title="bub" icon="robot">
+    运行 bub coding agent，鉴权遵循 bub CLI 自身约定。
+  </Card>
+</CardGroup>
+
+## 运行内置 agent
+
+在 experiment 里设置 `sandbox`（或者作为项目级兜底写进 `niceeval.config.ts`），选择 [NiceEval](https://niceeval.com/) 在哪里创建隔离环境：
+
+```ts
+// experiments/local.ts
+import { defineExperiment } from "niceeval";
+import { claudeCodeAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: claudeCodeAgent(),
+  model: "claude-sonnet-4-6",
+  sandbox: dockerSandbox(),
+});
+```
+
+```shell
+export ANTHROPIC_API_KEY=sk-ant-...
+npx niceeval exp local fixtures/button
+
+npx niceeval exp local fixtures/button --runs 10
+```
+
+<Note>
+  没有对应的 CLI flag——provider 选择完全写在代码里。如果 experiment 和 `niceeval.config.ts` 都没设置 `sandbox`，[NiceEval](https://niceeval.com/) 在创建 sandbox 时会直接报错，不会自动探测。
+</Note>
+
+云端跑 coding agent 时，可以直接使用 NiceEval 已发布的 E2B 公共模板，避免每个 Attempt 安装 CLI：
+
+```ts
+import { codexAgent } from "niceeval/adapter";
+import { e2bSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: codexAgent(),
+  model: "gpt-5.4",
+  sandbox: e2bSandbox({
+    template: "correctroads-default-team/niceeval-codex:v0.6.1",
+  }),
+});
+```
+
+Claude Code 使用 `correctroads-default-team/niceeval-claude-code:v0.6.1`，Bub 使用 `correctroads-default-team/niceeval-bub:v0.6.1`。版本 tag 适合 CI；省略 tag 会跟随当前稳定构建。如何继续增加系统包、二进制或模型缓存，见 [沙箱 provider · 从官方基线继续构建以提速](/zh/how-to/sandbox-providers#从官方基线继续构建以提速)。
+
+内置 agent 从 `niceeval/adapter` 导出的是工厂函数。需要配置鉴权、代理、MCP 或 GitHub skill 时，把这些写进工厂参数；模型仍然写在 experiment 的 `model` 字段，sandbox provider 仍然写在 `sandbox` 字段：
+
+```ts
+import { defineExperiment } from "niceeval";
+import { claudeCodeAgent } from "niceeval/adapter";
+import { dockerSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: claudeCodeAgent({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    baseUrl: process.env.ANTHROPIC_BASE_URL,
+    maxTurns: 8,
+    mcpServers: [
+      {
+        name: "browser",
+        command: "npx",
+        args: ["-y", "@anthropic/mcp-browser"],
+      },
+    ],
+    skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2" }],
+  }),
+  model: "claude-sonnet-4-6",
+  sandbox: dockerSandbox(),
+});
+```
+
+## agent 环境变量
+
+| Agent | 必需变量 |
+|---|---|
+| `claude-code` | `ANTHROPIC_API_KEY` |
+| `codex` | `CODEX_API_KEY` |
+| `bub` | 遵循 bub CLI 鉴权 |
+
+## 工作流程
+
+```text
+createSandbox
+  → sandbox spec 的 .setup() 钩子?    # 环境准备（按实验装东西）；没挂就跳过
+  → eval 的 setup?                   # 这条 eval 的任务夹具（如果定义了）
+  → adapter.setup?                   # 装 CLI / 写 agent 配置
+  → test(t): uploadDirectory(...)     # 写入这条 eval 的起始文件
+  → adapter.send(input, ctx)          # agent 在这一步改动的文件才进 diff
+  → test(t): runCommand(...)          # 手工运行验证命令
+  → 汇总 agent 改动的文件              # 供 t.sandbox.diff / fileChanged 使用
+  → 评分与判定
+  → adapter.teardown?                 # agent 收尾
+  → sandbox spec 的 .teardown() 钩子?  # 环境收尾（如回存状态），销毁前最后跑
+  → sandbox.stop()
+```
+
+起始文件和验证命令都写在 `test(t)` 中。agent 执行阶段只能看到你已经写进 sandbox 的文件。
+
+`t.sandbox.diff` 与 `t.sandbox.fileChanged()` 只包含 **agent 在 `t.send()` 期间改动的文件**：NiceEval 在每次 `t.send()` 前后记录一次工作区状态，把中间的变化记在 agent 名下。你上传的起始文件、`t.send()` 之后写入的验证材料都不会混进来，所以 `fileChanged("src/app.ts")` 只在 agent 真的动过这个文件时通过。
+
+环境钩子（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它写下的文件属于环境，不会被算进 agent 产出的 diff。写法和规则见 [沙箱 provider · 环境钩子](/zh/how-to/sandbox-providers#环境钩子)。
+
+## 自定义 sandbox agent
+
+```ts
+import { defineSandboxAgent } from "niceeval/adapter";
+
+export default defineSandboxAgent({
+  name: "my-agent",
+  async setup(sandbox, ctx) {
+    ctx.progress({ message: "检查 my-agent 安装" });
+    await sandbox.runCommand("npm", ["install", "-g", "my-agent"]);
+  },
+  async send(input, ctx) {
+    ctx.progress({ message: "运行 my-agent CLI" });
+    await ctx.sandbox.runCommand("my-agent", ["run", input.text, "--json-out", "agent-events.json"]);
+    const transcript = await ctx.sandbox.readFile("agent-events.json");
+    if (transcript.trim() === "") {
+      ctx.diagnostic({
+        code: "empty-transcript",
+        level: "warning",
+        message: "my-agent 没有写出 transcript，工具断言可能缺少证据",
+      });
+    }
+    return {
+      status: "completed",
+      events: parseTranscript(transcript),
+    };
+  },
+});
+```
+
+`setup`、每次 `send` 和 `teardown` 都拿到各自作用域的反馈方法：
+
+- `ctx.progress({ message, current?, total? })` 更新当前短期状态，适合安装 CLI、运行 Turn、读取 transcript；不要逐 token 或逐 JSONL frame 调用。
+- `ctx.diagnostic({ code, level, message, data?, dedupeKey? })` 保存协议退化、transcript 缺失和清理问题。它会进入终端永久事件和 `result.json`。
+- 无法继续运行时抛出异常，runner 会把 Attempt 标为 `errored`，并保存发生阶段、错误码、message、cause 和 stack。
+
+不要从 Adapter 直接调用 `console.log/error` 或写 `process.stdout/stderr`。它们会打散 Human dashboard，也会破坏 CI 日志顺序。
+
+运行中看到 Sandbox 或 Adapter 错误时，终端会给出 Attempt locator：
+
+```text
+✗ @12h8m4k1 fixtures/button [local] errored · agent setup
+    agent-install-failed: npm install my-agent exited with code 1
+    Inspect: niceeval show @12h8m4k1
+```
+
+运行 `niceeval show @12h8m4k1` 可查看结构化错误、diagnostics 和已完成的生命周期阶段；`--timing` 给有界诊断时间树（排队、Sandbox 启动、setup/teardown hook 里的 shell、Agent CLI 安装与启动命令、每轮 send、可关联的 OTel model/tool、收尾），可直接看出错误或超时发生在哪一层、之前的时间花在哪里。树超过 80 个细节节点时会保留失败、慢点和首尾样本并提示省略数量；需要逐节点审计时使用 `--timing=full`。`--execution` 则以事件为骨架查看 agent 做了什么，有 OTel 时只把时间贴到能唯一关联的事件旁。Sandbox 创建失败可能发生在 telemetry 建立前，所以错误回顾不依赖 trace。
+
+## `ctx.model` 与 `ctx.flags`
+
+experiment 声明的 model 和 flags 会出现在 adapter context 中。adapter 可以决定如何把它们转成 CLI 参数或 HTTP payload。
+
+## 在 experiment 中使用自定义 agent
+
+```ts
+import { defineExperiment } from "niceeval";
+import { dockerSandbox } from "niceeval/sandbox";
+import myAgent from "./agents/my-agent";
+
+export default defineExperiment({
+  agent: myAgent,
+  model: "claude-sonnet-4-6",
+  sandbox: dockerSandbox(),
+  runs: 3,
+});
+```
+
+<Warning>
+  不要在 runner 里写 agent-specific 分支。差异行为应该放进 adapter。
+</Warning>

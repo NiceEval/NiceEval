@@ -49,15 +49,15 @@ export default defineAgent({
 
 ### 工具/动作事件完整性
 
-含义：这一轮的每次工具调用是否都以 `action.called` + `action.result` 出现在 events 里（[事件流参考](/zh/reference/events)）。来源只有两个：官方转换器按被测协议的契约保证；手工映射由你的代码决定。OTel span 不是来源——span 只进瀑布图，不进事件流（见 [OTel 接入](/zh/guides/connect-otel)）。
+含义：这一轮的每次工具调用是否都以 `action.called` + `action.result` 出现在 events 里（[事件流参考](/zh/reference/events)）。来源只有两个：官方转换器按被测协议的契约保证；手工映射由你的代码决定。OTel span 不是来源——span 只进瀑布图，不进事件流（见 [OTel 接入](/zh/how-to/connect-otel)）。
 
 ### 会话续接
 
-含义：用 `ctx.session.id` / `capture` 或 `ctx.session.history` 把请求连到同一个后端会话/累计历史上。有它，跨轮记忆断言、`t.newSession()` 隔离断言才有意义。两种实现写法见[写 send](/zh/guides/write-send)。
+含义：用 `ctx.session.id` / `capture` 或 `ctx.session.history` 把请求连到同一个后端会话/累计历史上。有它，跨轮记忆断言、`t.newSession()` 隔离断言才有意义。两种实现写法见[写 send](/zh/how-to/write-send)。
 
 ### `tracing` —— 发 OTLP trace
 
-runner 消费：运行时起一个本机 OTLP 接收器，把本轮 trace context 经 `ctx.telemetry.headers` 交给你；span 归一后在 `niceeval view` 画瀑布图——只画图，不喂断言。来源：CLI 型写 `tracing` 字段（env / configure 把端点交给被测进程）；长驻应用在 `niceeval.config.ts` 配 `telemetry: { port }` 固定端口（见 [OTel 接入](/zh/guides/connect-otel)）。
+runner 消费：运行时起一个本机 OTLP 接收器，把本轮 trace context 经 `ctx.telemetry.headers` 交给你；span 归一后在 `niceeval view` 画瀑布图——只画图，不喂断言。来源：CLI 型写 `tracing` 字段（env / configure 把端点交给被测进程）；长驻应用在 `niceeval.config.ts` 配 `telemetry: { port }` 固定端口（见 [OTel 接入](/zh/how-to/connect-otel)）。
 
 ### `kind: "sandbox"` —— 沙箱与改文件
 
@@ -70,7 +70,7 @@ runner 消费：为每次 attempt 准备沙箱（Docker / Vercel / E2B），经 
 ## 相关阅读
 
 - [事件流参考](/zh/reference/events) —— 事件流承诺的具体内容。
-- [Adapter 概念](/zh/concepts/adapter) —— `ctx`/`Turn` 的完整契约、能力从哪来。
-- [接入你的 agent](/zh/guides/connect-your-agent) —— 每种接入路径怎么做。
-- [OTel 接入](/zh/guides/connect-otel) —— span 只进瀑布图、不喂断言的完整走法。
+- [Adapter 概念](/zh/explanation/adapter) —— `ctx`/`Turn` 的完整契约、能力从哪来。
+- [接入你的 agent](/zh/how-to/connect-your-agent) —— 每种接入路径怎么做。
+- [OTel 接入](/zh/how-to/connect-otel) —— span 只进瀑布图、不喂断言的完整走法。
 - [内置 Agent 能力](/zh/reference/builtin-agents) —— 内置 adapter 各自做到什么。

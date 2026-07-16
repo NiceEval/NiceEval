@@ -16,14 +16,16 @@
 
 如果一个页面同时承担两种以上主要目标,**优先拆页**,不要加小标题硬塞。
 
-## NiceEval 目录映射
+## NiceEval 中文目录映射
 
-- `quickstart`:Tutorial。只保留一条最短成功路径。
-- `guides/*`:How-to。一个页面解决一个任务。
-- `concepts/*`:Explanation。解释核心心智模型和概念边界。
-- `reference/*`:Reference。只列当前实现支持的事实。
-- `troubleshooting/*`(未来):按症状组织排错。
-- `example` / `examples/*`:真实可运行例子,不承担完整解释。
+- `zh/tutorials/*`:Tutorial。当前只保留一条最短成功路径，不为凑结构增加教程。
+- `zh/how-to/*`:How-to。一个页面解决一个现实任务。
+- `zh/explanation/*`:Explanation。解释核心心智模型、概念边界和运行原理。
+- `zh/reference/*`:Reference。只列当前实现支持的事实；API 签名、字段和 CLI flags 从源码生成。
+- `zh/troubleshooting/*`:Troubleshooting。按用户可见症状组织排错。
+- `zh/examples/*`:真实可运行案例。它是独立资源入口，不冒充 Tutorial，也不承担完整 How-to 或 Reference。
+
+英文目录仍使用 `quickstart`、`guides/*` 和 `concepts/*`。中文是公开叙事的准绳，英文后续按中文结构翻译和同步。
 
 ## 每种类型的典型越界(写之前自查)
 

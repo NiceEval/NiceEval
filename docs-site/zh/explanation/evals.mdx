@@ -1,0 +1,125 @@
+---
+title: "NiceEval 中的 eval：生命周期、verdict 与文件"
+sidebarTitle: "评估"
+description: "eval 是一个测试用例：描述和 test 函数，agent-neutral。了解 eval 如何被发现、调度、评分和报告。"
+---
+
+一个 eval 是一个可运行的测试用例。它通常由一个 `*.eval.ts` 文件导出，通过 `defineEval` 声明。
+
+## eval 的组成
+
+```ts
+import { defineEval } from "niceeval";
+import { includes } from "niceeval/expect";
+
+export default defineEval({
+  description: "Brooklyn weather query",
+  async test(t) {
+    await t.send("What's the weather like in Brooklyn today?");
+    t.succeeded();
+    t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });
+    t.check(t.reply, includes("sunny"));
+  },
+});
+```
+
+核心字段：
+
+| 字段 | 说明 |
+|---|---|
+| `description` | 给人看的描述，出现在报告里 |
+| `test(t)` | 交互和断言逻辑 |
+
+eval 本身不声明用哪个 Agent——它默认保持 agent-neutral，同一个 eval 可以在不同 experiment 下跑不同 Agent。选哪个 Agent 是 experiment 的字段，不由 CLI 临时覆盖。
+
+<Note>
+  不要手写 `id` 或 `name`。[NiceEval](https://niceeval.com/) 从文件路径推导 ID。
+</Note>
+
+## 路径即身份
+
+`evals/weather/brooklyn.eval.ts` 的 ID 是 `weather/brooklyn`。experiment 名之后的位置参数按 ID 前缀过滤：
+
+```bash
+npx niceeval exp local weather
+npx niceeval exp local weather/brooklyn
+```
+
+这种方式让 ID 稳定、可读，并自然跟目录结构保持一致。
+
+## 生命周期
+
+<Steps>
+  <Step title="Discovery">
+    runner 加载 `evals/` 下的 `*.eval.ts` 文件和 fixture 目录。
+  </Step>
+  <Step title="Scheduling">
+    结合并发、缓存、runs、attempt 和 early-exit 生成执行计划。
+  </Step>
+  <Step title="agent.send">
+    `t.send()` 调用被选中的 Adapter，并得到标准 `Turn`。
+  </Step>
+  <Step title="Scoring">
+    [NiceEval](https://niceeval.com/) 收集值断言、作用域断言、judge 分数和测试结果。
+  </Step>
+  <Step title="Verdict">
+    所有断言结果折叠成一个最终 verdict。
+  </Step>
+  <Step title="Report">
+    控制台和 reporters 输出结果，同时写入 `.niceeval/` artifacts。
+  </Step>
+</Steps>
+
+## Verdict 类型
+
+<CardGroup cols={2}>
+  <Card title="passed" icon="circle-check" color="#22c55e">
+    所有 gate 断言通过（`--strict` 下 soft 断言也都达到阈值），并且没有执行错误。
+  </Card>
+  <Card title="failed" icon="circle-xmark" color="#ef4444">
+    至少一个 gate 断言失败，或 `--strict` 下有 soft 断言低于阈值。
+  </Card>
+  <Card title="errored" icon="triangle-exclamation" color="#f59e0b">
+    执行异常、超时或作者错误，本次执行无法形成可信结论。
+  </Card>
+  <Card title="skipped" icon="forward" color="#6b7280">
+    eval 主动跳过，通常通过 `t.skip(reason)`。
+  </Card>
+</CardGroup>
+
+## gate 与 soft
+
+`gate` 是硬门槛，失败会让 eval 失败；`soft` 参与打分，但不一定让 eval 失败。完整规则见 [Assert](/zh/explanation/assert)。
+
+## `*.eval.ts` 约定
+
+只有以 `.eval.ts` 结尾的文件会被发现。用目录表达分组：
+
+```text
+evals/
+└─ billing/
+   └─ refund.eval.ts  # id: billing/refund
+```
+
+## 数组导出与数据驱动测试（dataset fan-out）
+
+一个文件也可以默认导出 `defineEval(...)` 数组，用同一套逻辑生成多个 case：
+
+```ts
+export default rows.map((row) =>
+  defineEval({
+    description: row.task,
+    async test(t) {
+      await t.send(row.prompt);
+      t.check(t.reply, equals(row.expected));
+    },
+  }),
+);
+```
+
+生成 ID 类似 `sql/0000`、`sql/0001`。详见 [数据驱动测试](/zh/how-to/dataset-fanout)。
+
+## 相关阅读
+
+- [实验](/zh/explanation/experiment) — 另一半：评谁、怎么跑；为什么和 eval 分开（晚绑定）。
+- [Assert](/zh/explanation/assert) — gate 与 soft 的完整判定规则。

@@ -1,0 +1,50 @@
+---
+title: "NiceEval Examples"
+sidebarTitle: "选择示例"
+description: "按被测对象选择可运行的 NiceEval 示例：Agent Framework 接入、完整 AI Agent 评测、Coding Agent 扩展 benchmark 和真实项目。"
+---
+
+这里的每个示例都有真实可运行源码。先按被测对象选择，不必从头依次阅读。
+
+如果你还没有跑通过第一条 Eval，先读 [Quickstart](/zh/tutorials/quickstart)。如果你已经知道要完成什么，直接进入对应的 [How-to Guides](/zh/how-to/connect-your-agent)。
+
+## 接入已有 Agent Framework
+
+下面五组示例都保留接入前的普通应用和接入 NiceEval 后的完整项目。页面中的代码 diff 从这两份源码生成。
+
+| 被测对象 | 接入方式 | 示例覆盖 |
+| --- | --- | --- |
+| [AI SDK v7](/zh/examples/integrations/ai-sdk-v7) | 内置 `uiMessageStreamAgent` | UI Message Stream、多轮、工具、HITL |
+| [Claude Agent SDK](/zh/examples/integrations/claude-sdk) | `fromClaudeSdkMessages` | 原生事件流、多轮、工具、HITL |
+| [Codex SDK](/zh/examples/integrations/codex-sdk) | `fromCodexThreadEvents` | 编码任务、文件和命令、usage；SDK 不支持 HITL |
+| [pi-agent-core](/zh/examples/integrations/pi-sdk) | `fromPiAgentEvents` | 原生事件流、多轮、工具、HITL；SDK 没有 OTel |
+| [LangGraph](/zh/examples/integrations/langgraph) | 手写自定义 SSE 帧映射 | Python 应用、多轮、工具、HITL |
+
+每组源码都位于 [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) 和 [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1)。需要 OTel 或 Experiment Flags 时，再沿相同项目进入 `tier2/` 和 `tier3/`。
+
+## 完整评测项目
+
+<CardGroup cols={2}>
+  <Card title="自写 Adapter 评估 AI Agent 应用" icon="robot" href="/zh/examples/ai-agent-application">
+    一个 AI SDK v6 Web Agent，覆盖工具调用、图片理解、多轮会话、模型对比和双路可观测。
+  </Card>
+  <Card title="评估 Coding Agent 扩展" icon="wand-magic-sparkles" href="/zh/examples/coding-agent-extensions">
+    用真实 Workspace 和对照实验衡量 Skill、提示词与 Plugin Benchmark 对任务结果的影响。
+  </Card>
+</CardGroup>
+
+## 真实项目
+
+### Coding Agent Memory Evals
+
+[coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) 用同一批开发任务和同一个模型，对比 Coding Agent 是否带持久记忆时的任务成功率、成本、耗时和行为差异。
+
+- [查看在线报告](https://niceeval.com/showcase/memory)
+- [查看项目源码](https://github.com/CorrectRoadH/coding-agent-memory-evals)
+
+## 什么不放在 Examples
+
+- 单段 API 用法放进 How-to 或 Reference。
+- 没有可运行源码的伪项目不收录。
+- Roadmap 和尚未实现的接入不收录。
+- 同一个项目不为 Skill、Plugin、Hook 等相邻叫法复制多张案例页。

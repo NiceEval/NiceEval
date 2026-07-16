@@ -1,0 +1,57 @@
+---
+title: "保留沙箱现场排查问题"
+sidebarTitle: "保留沙箱现场"
+description: "用 --keep-sandbox 把失败 Attempt 的沙箱保留成可随时唤醒的现场，用 niceeval sandbox enter 进去手动排查，用 sandbox list / stop 查看和清理。"
+---
+
+沙箱默认在每个 Attempt 结束后销毁，排查依据是落盘的 artifact：`niceeval show` 能看到判定、断言、diff 和事件流。大多数问题到这里就够了——完整的排查路线见 [Debug 手册](/zh/troubleshooting/debugging)。
+
+但有些问题只能进活的环境里看：
+
+- **环境起不来**——setup 阶段装依赖失败、agent CLI 启动不了。这时 agent 还没开始跑，事件流是空的，最快的办法是进沙箱手动重跑一遍安装命令。
+- **改动落在 `git diff` 之外**——全局装了什么包、`$HOME` 下写了什么配置、`PATH` 实际是什么，artifact 里没有。
+- **重跑太慢**——冷启动加安装要几分钟，想逐条验证猜测时，留着现场比每次重跑快得多。
+
+## 跑的时候保留现场
+
+```bash
+npx niceeval exp local onboarding/tool-first --keep-sandbox        # 等价 --keep-sandbox=failed
+npx niceeval exp local onboarding/tool-first --keep-sandbox=all    # 通过的也保留
+```
+
+`--keep-sandbox` 是 `niceeval exp` 的运行参数，两档：`failed`（缺省值）保留判定为 `failed` 或 `errored` 的 Attempt（包括超时打断的）；`all` 连通过的也保留——调 setup 钩子、核对通过环境的真实状态时用它，不用故意弄挂一条 eval。不带这个参数时全部销毁。
+
+运行结束后，摘要里会列出保留了哪些沙箱、怎么进去：
+
+```text
+Kept sandboxes (1)
+  @1x7f3q9k  onboarding/tool-first #1  errored  docker · a3f9c2d1
+             enter: niceeval sandbox enter a3f9c2d1
+Stop them with: niceeval sandbox stop --all
+```
+
+每行给三样东西：Attempt 定位符（用 `niceeval show @1x7f3q9k` 看落盘证据）、沙箱实例 id、进入现场的命令。保留下来的沙箱不会一直跑着烧资源——Docker 容器停在磁盘上，E2B 微 VM 暂停计费，Vercel 保存文件系统。`niceeval sandbox enter` 会先唤醒再进入，在 workdir 打开 shell；退出 shell 后现场自动回到休眠（想让它保持运行，加 `--leave-running`）。进去之后就是这次 Attempt 跑完时的环境，可以手动执行命令、翻文件、复现失败。
+
+## 查看和清理
+
+保留下来的沙箱逐条记录在 `.niceeval/sandboxes/` 里，用 `niceeval sandbox` 管理：
+
+```bash
+niceeval sandbox list              # 列出保留的沙箱和现场状态
+niceeval sandbox enter a3f9c2d1    # 唤醒并进入；退出后自动回到休眠
+niceeval sandbox stop a3f9c2d1     # 销毁指定沙箱（id 可以只写唯一前缀）
+niceeval sandbox stop --all        # 全部销毁
+```
+
+`stop` 是幂等的：沙箱已经不在了（手动删过、云端过期）不算错误，只会把记录移掉并说明。如果 provider 销毁失败，命令会保留记录并返回错误，方便稍后重试，不会把仍活着的资源从列表里藏掉。忘了清也有提醒——下次运行开始时，如果还有上次保留的沙箱，会打一行提示。
+
+## 各 Provider 的差别
+
+- **Docker**：保留 = 容器停在磁盘上（不占内存，重启 Docker 也还在），进入时自动启动。容器不会自己消失，是唯一需要主动清理的 provider。除了 `niceeval sandbox stop`，也可以用 `docker ps -a -f label=niceeval.keep-candidate=true` 直接核对。
+- **E2B**：保留 = 暂停微 VM——文件和内存整体保存，暂停期间停止计费、无限期保留，进入时自动恢复。
+- **Vercel Sandbox**：保留 = 停止微 VM——文件系统保存、之后可恢复，但内存状态不保留，唤醒后进程要重新启动；超过 provider 的保留期限后 `niceeval sandbox list` 标成 `expired`。
+- **自定义 Provider**：`defineSandbox` 产出的 provider 不支持留存，因为事后的 `sandbox stop` 不加载用户配置，无法在新进程里安全找回自定义销毁函数。
+
+## 边界
+
+保留的沙箱只用来排查，不能续跑或重新评分；判定、断言、diff 这些结论仍以 artifact 为准。查看 artifact 的方法见[查看结果](/zh/how-to/viewing-results)。
