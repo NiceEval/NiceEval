@@ -12,8 +12,8 @@ type Aggregator = "mean" | "sum" | "min" | "max" |
 interface MetricAggregate {
   /** 同一 experiment × eval 的多个 attempt 先折成题级值；默认 mean。 */
   perEval?: Aggregator;
-  /** 一个组内的题级值再折成终值；默认 mean。 */
-  across?: Aggregator;
+  /** 题级值再跨 experiment × eval 折成终值；默认 mean。 */
+  acrossEvals?: Aggregator;
 }
 
 interface Metric<Name extends string = string> {
@@ -72,7 +72,8 @@ interface MetricCell {
 | `durationMs` | attempt 判定链耗时（不含收尾段，口径见 [Results](../../results/architecture.md#resultjson)） | 低 | `result.json` |
 | `tokens` | input + output tokens | 低 | `result.json` |
 | `costUSD` | 网关实测成本优先，否则估算成本 | 低 | `result.json` |
-| `turns` | assistant turn 数 | 低 | `o11y.json` |
+| `assistantTurns` | o11y 事件流中的 assistant turn 数；与 `t.send` 的 `s<session>/t<turn>` 轮次是两个计数，名字因此带限定词 | 低 | `o11y.json` |
+| `repeatedFailedCommands` | 同一 attempt 内同一条 shell 命令的重复失败数：每条命令失败 n 次（n > 1）记 n − 1，求和。回答 agent 是否在反复撞同一个已知失败的命令 | 低 | `o11y.json` |
 
 `skipped` 对这些指标返回 `null`。`errored` 只在 `taskPassRate` 中返回 `null`，在默认 `endToEndPassRate` 与 `executionReliability` 中都返回 0。三个指标都遵守“先在同一 eval 的 attempts 内聚合，再跨 eval 聚合”的两级规则；每个 eval 只有一个 attempt 时，`endToEndPassRate` 才简化为 `passed / (passed + failed + errored)`。三个指标必须按名字展示：任何默认总览和任何只写“Pass rate / 成功率”的位置都使用 `endToEndPassRate`；`taskPassRate` 必须标成“Task pass rate / 可判定任务通过率”等条件口径，不能把 `2 passed / 5 errored` 显示成无条件的 `100%`。要定位损失来自答题还是执行，可把三列并排：
 
@@ -84,7 +85,7 @@ interface MetricCell {
 />
 ```
 
-`turns` 需要 `o11y.json`；发布时没复制该 artifact 就显示缺失，不会冒充 0。`endToEndPassRate` 与 Eval 最终 verdict 是两个问题：前者衡量单次实际交付成功的概率；后者为了 early-exit / 退出码按 `passed > failed > errored > skipped` 折叠多轮。Reports 可以同时展示终态判定构成和 `endToEndPassRate`，但不得用前者现场重算后者。
+`assistantTurns` 与 `repeatedFailedCommands` 需要 `o11y.json`；发布时没复制该 artifact 就显示缺失，不会冒充 0。`endToEndPassRate` 与 Eval 最终 verdict 是两个问题：前者衡量单次实际交付成功的概率；后者为了 early-exit / 退出码按 `passed > failed > errored > skipped` 折叠多轮。Reports 可以同时展示终态判定构成和 `endToEndPassRate`，但不得用前者现场重算后者。
 
 ## 自定义指标
 
@@ -103,7 +104,7 @@ export const changedLines = defineMetric({
     return Object.keys(diff.files)
       .reduce((sum, path) => sum + (diff.get(path) ?? "").split("\n").length, 0);
   },
-  aggregate: { perEval: "min", across: "mean" },
+  aggregate: { perEval: "min", acrossEvals: "mean" },
 });
 ```
 
@@ -114,7 +115,7 @@ export const changedLines = defineMetric({
 
 ## 维度与数值轴
 
-可直接使用的维度有 `agent`、`model`、`experiment`、`eval`、`evalGroup` 和 `snapshot`。完整形状是：
+可直接使用的维度有 `agent`、`model`、`experiment`、`eval`、`evalGroup` 和 `snapshot`。`evalGroup` 的分组键是 eval id 的完整父路径，没有 `/` 的 eval id 取完整 id 形成单例组——与 experiment 可比组同一条派生规则：`security/sql-injection` 归 `security`，`a/b/c` 归 `a/b`。完整形状是：
 
 ```ts
 type BuiltInDimension =

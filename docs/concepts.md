@@ -96,12 +96,11 @@
 
 ### 报告组件
 
-中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用“榜单”“工作台”这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/guides/report-components.mdx)。
+中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用“榜单”“工作台”这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/reference/report-components.mdx)。
 
 | 分类 | 中文 | English | API | 主展示单位 |
 |---|---|---|---|---|
-| 汇总 | 范围总览 | Scope overview | `ScopeOverview` | 一批 Scope;汇总其中的 experiment、Eval 和 Attempt(attempt 级计票) |
-| 汇总 | 范围摘要 | Scope summary | `ScopeSummary` | 收窄后的一批 Scope;汇总一组 experiment 和 Eval(eval 级计票) |
+| 汇总 | 范围摘要 | Scope summary | `ScopeSummary` | 一批 Scope;汇总其中的 experiment、Eval 和 Attempt。data 同时携带 eval 级与 attempt 级两份计票,呈现 prop `votes` 选择显示哪一级(默认 eval) |
 | 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval |
 | 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt |
 | 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 |
@@ -128,7 +127,7 @@
 
 **Task** —— 要让被测对象完成的"那件事"。不管会话型还是沙箱型,都是一串 `t.send(...)` 的输入——沙箱型只是 `t` 多了 `t.sandbox`,任务本身照样写在 `t.send(...)` 里。Task 描述意图,不描述如何判分。
 
-**Agent** —— "一条连到 AI 的连接"的抽象,由 experiment 引用。`Agent.kind` 只有两类:`"remote"`(按你自己服务的协议发请求,`defineAgent` 产出)、`"sandbox"`(在 [Sandbox](#sandbox) 里 spawn coding agent 的 CLI,`defineSandboxAgent` 产出)。进程内直调你的函数不是独立的第三类——它只是 `kind: "remote"` 的 `send` 里选择怎么实现的一种写法,而且不是推荐写法(测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/guides/connect-your-agent.mdx))。运行器只认统一动词 `send`,`t` 上暴露哪些动作由 Agent 的[能力](#capability)决定——能力不是声明出来的,是 `send` 实际做到了什么的构造证据。niceeval 不定义任何 agent 协议,所以没有 `--url`、没有通用 http target —— 连你自己的服务也是写一个 agent,URL 是它的内部配置。详见 [Agents 与 Adapters](feature/adapters/README.md)。
+**Agent** —— "一条连到 AI 的连接"的抽象,由 experiment 引用。`Agent.kind` 只有两类:`"remote"`(按你自己服务的协议发请求,`defineAgent` 产出)、`"sandbox"`(在 [Sandbox](#sandbox) 里 spawn coding agent 的 CLI,`defineSandboxAgent` 产出)。进程内直调你的函数不是独立的第三类——它只是 `kind: "remote"` 的 `send` 里选择怎么实现的一种写法,而且不是推荐写法(测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/how-to/connect-your-agent.mdx))。运行器只认统一动词 `send`,`t` 上暴露哪些动作由 Agent 的[能力](#capability)决定——能力不是声明出来的,是 `send` 实际做到了什么的构造证据。niceeval 不定义任何 agent 协议,所以没有 `--url`、没有通用 http target —— 连你自己的服务也是写一个 agent,URL 是它的内部配置。详见 [Agents 与 Adapters](feature/adapters/README.md)。
 
 **Scorer** / **评分器** —— 把"结果"映射成分数的东西。三类:**值断言**(`expect` 里的 `includes`/`equals`/`matches`…;`check` 记录并继续,`require` 作为前置条件立即等待并失败中止)、**作用域断言**(`t.succeeded()`/`t.calledTool()`…,在 `test` 结束后对本次 eval run 聚合评估;同一套断言挂在 [Session](#运行与结果) 上则只看这条 session,挂在 [Turn](#运行与结果) 上则只看这一个 Turn)、**LLM-as-judge**(用一个大模型当裁判给开放式回答打分)。沙箱型里,手工在沙箱内跑验证命令,再用 `t.check(result, commandSucceeded())` 判定,本身也是一种 Scorer。
 
@@ -152,7 +151,7 @@
 
 **Capability** / **能力** —— `t` 上暴露哪些动作(会话续接、工具调用观测、文件 diff、trace…),完全由**构造证据**决定,不是声明式的能力位:`send` 里接了 `ctx.session` 的续接存取器就有多轮,返回过 `waiting` + `input.requested` 就有 HITL,用官方转换器就带完整性证明(负断言可信),`defineSandboxAgent` 构造就有 `t.sandbox`。`Agent` 接口上不存在 `capabilities` 字段。核心**按构造证据分发**,不按名字分支。模块边界见 [Architecture](architecture.md#一个授权面能力决定形状);逐能力的精确义务见[能力参考](../docs-site/zh/reference/capabilities.mdx)与[Agent 数据契约](feature/adapters/architecture/agent-contract.md#能力由构造证明)。
 
-**Integration tier** / **接入等级** —— 按「Adapter 接到哪里、额外拿到什么观测数据」给接入方式分的三级(和下面的 **`model` 字段**是两回事,后者说的是给 agent 指定哪个模型)。**Tier 1(只接 send)**:应用代码一行不改——adapter 适配应用现有对外接口实现 `send`,靠手写事件映射或官方转换器拿到工具断言;应用接口本身暴露模型选择的话,**模型对比**类 [Experiment](#experiment) 也在这一档(`model` 经 `ctx.model` 透传)。**Tier 2(send + OTel)**:还是同一个 `send`,事件来源换成应用发给 niceeval 的 OTel span(应用已埋点则零代码,未埋点补一段通用 OTel 初始化)——买到的是观测质量的跃升:事件流免手写映射、负断言带完整性证明、trace 瀑布图。**Tier 3(侵入改造 + experiment flags)**:改应用内部代码,把内部可变点(prompt、工具集、feature flag)暴露成 experiment 可选的配置(经 `flags` → `ctx.flags` 透传),解锁**完整的 feature A/B test**——对照的不再只是模型,而是应用内部的功能变体。前两档都是**无侵入**的:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口,Adapter 只对着用户前端本来就在用的那个接口收发。三档递进不互斥,详见 [docs-site · Tier](../docs-site/zh/concepts/tier.mdx)。
+**Integration tier** / **接入等级** —— 按「Adapter 接到哪里、额外拿到什么观测数据」给接入方式分的三级(和下面的 **`model` 字段**是两回事,后者说的是给 agent 指定哪个模型)。**Tier 1(只接 send)**:应用代码一行不改——adapter 适配应用现有对外接口实现 `send`,靠手写事件映射或官方转换器拿到工具断言;应用接口本身暴露模型选择的话,**模型对比**类 [Experiment](#experiment) 也在这一档(`model` 经 `ctx.model` 透传)。**Tier 2(send + OTel)**:还是同一个 `send`,事件来源换成应用发给 niceeval 的 OTel span(应用已埋点则零代码,未埋点补一段通用 OTel 初始化)——买到的是观测质量的跃升:事件流免手写映射、负断言带完整性证明、trace 瀑布图。**Tier 3(侵入改造 + experiment flags)**:改应用内部代码,把内部可变点(prompt、工具集、feature flag)暴露成 experiment 可选的配置(经 `flags` → `ctx.flags` 透传),解锁**完整的 feature A/B test**——对照的不再只是模型,而是应用内部的功能变体。前两档都是**无侵入**的:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口,Adapter 只对着用户前端本来就在用的那个接口收发。三档递进不互斥,详见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)。
 
 **Model** / **模型(`model` 字段)** —— 给 agent 指定模型的标识(如 `opus`)。由 [Experiment](#experiment) 的 `model` 字段指定;省略则用 agent 原生默认,不经额外的策略层决定。推理努力程度(如 `low`/`medium`/`high`,取值由具体模型定义)是独立的 `reasoningEffort` 字段,经 `ctx.reasoningEffort`/`t.reasoningEffort` 透传,归属与 `model` 一致——都是实验决定、agent 留空。
 

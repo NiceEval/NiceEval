@@ -9,7 +9,7 @@ import { ExperimentComparison, defineReport } from "niceeval/report";
 export default defineReport(<ExperimentComparison />);
 ```
 
-它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、指标、排版原语），内建报告是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线；外壳行为——确定的标题回退、页脚的 `Powered by niceeval` 行、Runs 与 Traces 证据页恒随导航——对内建与自定义定义一致生效。「builtin」不是类型系统或装载逻辑里的类别，只是「宿主默认拿哪个值」的事实。
+它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、指标、排版原语），内建报告是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线；外壳行为——确定的标题回退、页脚的 `Powered by niceeval` 行、Attempts 与 Traces 证据页恒随导航——对内建与自定义定义一致生效。「builtin」不是类型系统或装载逻辑里的类别，只是「宿主默认拿哪个值」的事实。
 
 任何用户报告都能达到内建报告的全部能力——内建的全部内容就是工具箱里人人可用的 `ExperimentComparison` 组件，要复用它不需要 import 内建入口，直接写 `<ExperimentComparison />`。反过来，报告 API 的验收标准之一就是内建自己必须写得顺——内建写不出来或写着别扭，说明 API 缺了东西；「内容一行」正是这条标准的落点。
 

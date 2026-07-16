@@ -6,10 +6,10 @@
 
 | 想回答的问题 | 组件 |
 |---|---|
-| 这批结果有多大、整体是否健康 | [`ScopeOverview`](library/summaries.md#scopeoverview) |
 | 按可比组看当前水位，并只在组内比较 | [`ExperimentComparison`](library/summaries.md#experimentcomparison) |
-| 某一个范围的整体情况 | [`ScopeSummary`](library/summaries.md#scopesummary) |
+| 一个范围有多大、整体是否健康（eval 级或 attempt 级计票） | [`ScopeSummary`](library/summaries.md#scopesummary) |
 | 每个 experiment / eval / attempt 发生了什么 | [`ExperimentList` / `EvalList` / `AttemptList`](library/entity-lists.md) |
+| 现在有哪些失败要处理、先看哪条 | [`FailureList`](library/entity-lists.md#failurelist) |
 | 谁整体更好，多个指标并排比较 | [`MetricTable`](library/metric-views.md#metrictable) |
 | 哪道题在哪个配置上失败 | [`MetricMatrix` 或 `MetricBars`](library/metric-views.md#metricmatrix-与-metricbars) |
 | 固定题集的总分与分科得分 | [`Scoreboard`](library/metric-views.md#scoreboard) |
@@ -55,18 +55,18 @@ niceeval show --report reports/quality-cost.tsx
 niceeval view --report reports/quality-cost.tsx
 ```
 
-宿主先按位置参数、`--run` 和 `--experiment` 选择数据，再把 Scope 注入报告；管线在 [resolve 阶段](architecture.md#报告树与两个宿主)并行完成所有组件的取数，作者不写任何取数管道。覆盖不完整、快照过旧或未完成等警告由宿主在报告树外统一显示，报告不自己补警告组件，`ScopeOverviewData` 也不携带它们。显示时下一步随行：text 面原样打印 `message`（[三段式](../../error-feedback.md#消息三段式)，已含下一步），web 面额外把 `command` 渲染为可复制的命令。
+宿主先按位置参数、`--results` 和 `--experiment` 选择数据，再把 Scope 注入报告；管线在 [resolve 阶段](architecture.md#报告树与两个宿主)并行完成所有组件的取数，作者不写任何取数管道。覆盖不完整、快照过旧或未完成等警告由宿主在报告树外统一显示，报告不自己补警告组件，`ScopeSummaryData` 也不携带它们。显示时下一步随行：text 面原样打印 `message`（[三段式](../../error-feedback.md#消息三段式)，已含下一步），web 面额外把 `command` 渲染为可复制的命令。
 
 取数之后要用普通 JavaScript 加工（filter / slice / 自定义排序）时，写一个[组合组件](library/layout.md#自定义组件)：在里面调 `*Data` 函数、加工数组，再以 **data 形态** 把结果递给组件：
 
 ```tsx
-// reports/components/recent-failures.tsx
+// reports/components/costliest-attempts.tsx
 import { AttemptList, attemptListData, defineComponent } from "niceeval/report";
 
-export const RecentFailures = defineComponent(async ({ limit = 20 }: { limit?: number }, ctx) => {
+export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
   const all = await attemptListData(ctx.scope);
-  const failed = all.filter((x) => x.verdict === "failed" || x.verdict === "errored");
-  return <AttemptList data={failed.slice(0, limit)} total={failed.length} />;
+  const ranked = [...all].sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
+  return <AttemptList data={ranked.slice(0, limit)} total={all.length} />;
 });
 ```
 
@@ -78,18 +78,18 @@ spec 形态与 data 形态的完整契约在 [Architecture · 组件模型](arch
 
 ```tsx
 import { openResults } from "niceeval/results";
-import { MetricTable, ScopeOverview } from "niceeval/report/react";
+import { MetricTable, ScopeSummary } from "niceeval/report/react";
 import {
   costUSD, durationMs, endToEndPassRate,
-  metricTableData, scopeOverviewData,
+  metricTableData, scopeSummaryData,
 } from "niceeval/report";
 
 export default async function EvalsPage() {
   const results = await openResults(".niceeval");
   const scope = results.current({ experiments: "compare/" });
 
-  const [overview, table] = await Promise.all([
-    scopeOverviewData(scope),
+  const [summary, table] = await Promise.all([
+    scopeSummaryData(scope),
     metricTableData(scope, {
       rows: "experiment",
       columns: [endToEndPassRate, costUSD, durationMs],
@@ -102,7 +102,7 @@ export default async function EvalsPage() {
       {scope.warnings.map((warning) => (
         <p key={`${warning.kind}:${warning.message}`}>{warning.message}</p>
       ))}
-      <ScopeOverview data={overview} />
+      <ScopeSummary data={summary} />
       <MetricTable
         data={table}
         filter

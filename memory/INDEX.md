@@ -151,6 +151,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ## 设计决定
 
 - [reports-component-page-report-redesign](reports-component-page-report-redesign.md) — 裁决(2026-07-16):Reports 三层重设计——组件自带 resolve(spec/data 双形态)、defineReport 单一产物+页字段 content、内建报告塌缩一行、Selection→Scope、ctx.report 只读声明;否决了手工两步式唯一写法、Body/Site 双产物、ReportBuild、definePage、自定义 config 袋
+- [reports-dx-dogfood-rulings](reports-dx-dogfood-rulings.md) — 裁决(2026-07-16):真实 repo 试写回灌——pairsByFlag 派生配对(A/B 由 flags 导出不手抄 id)、FailureList 成品组合件、非空元组按元素来源二分(pairs/questions 放宽)、repeatedFailedCommands 内置;否决隐藏未命中 pair 的旋钮
+- [reports-fourth-review-rulings](reports-fourth-review-rulings.md) — 裁决(2026-07-16):Reports 第四轮全量 docs 评审——ScopeOverview 并入 ScopeSummary(votes 选计票级)、--run→--results、Runs 页→Attempts、turns→assistantTurns、across→acrossEvals、数据形状维度名统一 +Dimension 后缀、redact 扩到三列表、evalGroup/--history/--snapshot/Row·Style 补契约、evals 计数示例对账修正;撤回 locales 与 relativeTo 改名(尊重第三轮否决)、poweredBy 开关(用户当场推翻)
 - [reports-external-review-rulings](reports-external-review-rulings.md) — 裁决(2026-07-16):Reports 外部评审第三轮——current() 加可比性前提、AttemptListItem 瘦身成 failureSummary、ReportNode 穷尽定义、Scoreboard 拆 notRun/unscorable、ScopeOverview/ScopeSummary/runConfig()/--source 等改名;否决 groupBy/locales 旋钮(路径即分组 API、回退即多语)与 Powered-by/locator/redact 各改名翻案
 - [annotated-source-absorbs-send-annotations](annotated-source-absorbs-send-annotations.md) — 裁决(2026-07-15):`--eval` 在 t.send 行标注 turn 头行事实,`AnnotatedEvalSource` 收编 `SendAnnotation`,推翻头注「events → 轮次是 ExecutionTree 地盘」;send 标注不设 unmapped 兜底桶
 - [end-to-end-pass-rate-is-default](end-to-end-pass-rate-is-default.md) — 裁决(2026-07-15):三指标拆分保留,但默认“成功率”从排除 errored 的 `taskPassRate` 改为 `endToEndPassRate`;`taskPassRate` 只作带限定名称的条件诊断指标,不能驱动默认排名;`2 passed / 5 errored` 默认显示 2/7 而非 100%

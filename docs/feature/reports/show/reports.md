@@ -2,7 +2,7 @@
 
 `--report <file>` 用报告文件替换默认榜单，文件的默认导出恒为 `defineReport` 产物（[树或配置对象形态](../library/shell.md)）；`--history` 与 `--report` 互斥。attempt locator 的下钻命令不随 `--report` 改变。本页按 case 列出操作步骤；页与外壳的字段契约见 [Library · 外壳与多页](../library/shell.md)。
 
-**索引命令携带完整上下文。** `show` 输出的每一条可复制命令（页索引、可比组索引）都保留当前的 `--run`、`--report`、`--page` 与位置参数——复制即可精确复现下一层视图，不需要用户自己补参数。
+**索引命令携带完整上下文。** `show` 输出的每一条可复制命令（页索引、可比组索引）都保留当前的 `--results`、`--report`、`--page` 与位置参数——复制即可精确复现下一层视图，不需要用户自己补参数。
 
 ## Case 1：单页文件——直接渲染
 
@@ -43,9 +43,9 @@ error: page "typo" not found in reports/site.tsx. Available pages: overview, exa
 ```sh
 $ niceeval show --report reports/site.tsx --page overview
 
-实验组                  实验   Eval   端到端成功率   Eval 结果         预估成本   最后运行
-compare                    2      6          75.0%   9 通过 / 3 失败      $1.42   2026-07-12 18:08
-dev-e2b                    3      6          61.1%   11 通过 / 5 失败     $0.31   2026-07-12 18:09
+实验组                  实验   Eval   端到端成功率   Eval 结果         成本      最后运行
+compare                    2     12          75.0%   9 通过 / 3 失败      $1.42   2026-07-12 18:08
+dev-e2b                    3     16          61.1%   11 通过 / 5 失败     $0.31   2026-07-12 18:09
 
 查看组内详情：
   niceeval show --experiment compare --report reports/site.tsx --page overview
@@ -64,8 +64,8 @@ $ niceeval show --experiment dev-e2b --report reports/site.tsx --page overview
 ```sh
 $ niceeval show memory/swelancer --report reports/site.tsx --page exam
                                         # 只统计 memory/swelancer 前缀的 eval，再渲染成绩单页
-$ niceeval show --run tmp/published-results --report reports/site.tsx
-                                        # 换结果根后输出页索引；索引命令同样带 --run
+$ niceeval show --results tmp/published-results --report reports/site.tsx
+                                        # 换结果根后输出页索引；索引命令同样带 --results
 ```
 
 ## Case 5：attempt 下钻不受 `--report` 影响

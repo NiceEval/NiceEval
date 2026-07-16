@@ -55,6 +55,10 @@ interface TabProps extends LayoutProps {
 
 宿主语言切换只选择 `LocalizedText` 字段和官方 chrome 词典；`Text` 的自由正文是内容而不是 chrome，需要多语时由作者生成两份报告或使用自定义双面组件，不在数据层按 locale 重算指标。
 
+`Col` 在两个面都按声明序纵向排列。`Row` 的 web 面横排；text 面在可用宽度装得下全部子块时按显示宽度并排（与下文 `columns` 工具同一把尺），装不下时整块退化为纵向堆叠——不截断、不隐藏任何子块。
+
+`Style` 注入的 CSS 是页级全局的：树位置只决定声明顺序，不限定作用域；text 面零输出。它服务树形态文件与自带样式的组件——配置对象形态的报告要全站样式优先用外壳 [`styles`](shell.md)，两条通道注入同一增强层、遵守同一不变量。
+
 ```tsx
 // reports/nightly.tsx —— 排版原语组织报告树的完整文件形态
 import {
@@ -219,7 +223,7 @@ interface ReportMeta {
   /** 规范化后的页列表（id 与导航页名），恒非空。 */
   pages: readonly [{ id: string; title: LocalizedText }, ...Array<{ id: string; title: LocalizedText }>];
   /** 当前渲染中的页 id。 */
-  page: string;
+  pageId: string;
 }
 
 interface ResolveContext {
@@ -263,18 +267,18 @@ function defineComponent<Props, RenderProps = Props>(
 ```tsx
 import { AttemptList, Section, attemptListData, defineComponent } from "niceeval/report";
 
-export const RecentFailures = defineComponent(async ({ limit = 20 }: { limit?: number }, ctx) => {
+export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
   const all = await attemptListData(ctx.scope);
-  const failed = all.filter((x) => x.verdict === "failed" || x.verdict === "errored");
+  const ranked = [...all].sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
   return (
-    <Section title="待处理失败">
-      <AttemptList data={failed.slice(0, limit)} total={failed.length} />
+    <Section title="最贵的 attempt">
+      <AttemptList data={ranked.slice(0, limit)} total={all.length} />
     </Section>
   );
 });
 
 // 用的时候是普通节点：
-<RecentFailures limit={10} />
+<CostliestAttempts limit={10} />
 ```
 
 组合组件在管线的 resolve 阶段展开为它返回的树，随后逐节点继续解析与校验；它不需要 text / web 面，因为它不产生自己的渲染输出。React 组件或未经 `defineComponent` 的普通函数不能进报告树，展开遇到时以完整用户反馈拒绝——这个包装就是「树中每个节点两个宿主都能判读」的资格证。

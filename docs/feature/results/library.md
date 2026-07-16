@@ -51,7 +51,7 @@ await copySnapshots(results.latest(), "site/data/run", {
       // 所有待发布文件还会经过 50 MiB 单文件预检
 ```
 
-`o11y` 在缺省携带之列。「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做不了消费它的内置指标;`turns`(见 [Reports 的内置指标](../reports/library/metrics.md#内置指标))就是它的消费者,且 `o11y.json` 实测几 KB 一个,没有不带的理由。
+`o11y` 在缺省携带之列。「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做不了消费它的内置指标;`assistantTurns`(见 [Reports 的内置指标](../reports/library/metrics.md#内置指标))就是它的消费者,且 `o11y.json` 实测几 KB 一个,没有不带的理由。
 
 逐值[截断](architecture.md#大值截断)与整文件发布预算解决不同问题:`events` / `trace` 的 256 KiB 上限会切断一条失控工具输出被重复落盘的常见爆炸链,但一个文件可以含很多正常值,不能据此宣称文件大小有界。`diff`、源码 blob 与历史版本的 events / trace 也可能超过 Git host 的单文件限制。因此 `.niceeval/` 是本地事实根,不是默认可提交目录;进 Git / 静态托管的结果集先经过 `copySnapshots`。
 
@@ -209,7 +209,7 @@ latest.warnings[0];
 
 **Scope 有且只有一个方法:`filter(predicate)`。** 最常见的自定义不是另起口径,而是微调官方口径——「latest 减掉一个已知坏掉的实验」「排除 partial 的快照」。若一 `.filter()` 就降级成裸 `Snapshot[]`,幸存快照本该有的警告全丢。`scope.filter((s) => …)` 返回新 Scope:快照删减,warnings 按规则修剪——**experimentId 不在幸存快照中的警告丢弃,非实验作用域的警告保留**(为将来非 per-experiment 的 kind 留位置)。边界同样明确:`filter` 只做删减;「换成该实验上一个完整快照」这类**替换式**重挑不给方法(那才是 DSL 的开端),回 `exp.snapshots` 自己挑,挑出来的裸数组没有挑选过程、没有 warnings,也如实——这是显式立场,不是漏做。
 
-**Scope 是下游的通用输入**:Reports 的计算函数与 `copySnapshots` 都收 `Scope | readonly Snapshot[]`。收 Scope 时 warnings 始终保留在 Scope 上；`show` / `view` 宿主在报告树外无条件渲染，所以自定义报告不会因没放 `ScopeOverview` 而静默丢失警告，也不会因放了它而重复。自有 React 页面不是官方宿主，应显式渲染 `scope.warnings`；手工挑的 `Snapshot[]` 没有挑选过程,自然没有 warnings 可带,也如实。
+**Scope 是下游的通用输入**:Reports 的计算函数与 `copySnapshots` 都收 `Scope | readonly Snapshot[]`。收 Scope 时 warnings 始终保留在 Scope 上；`show` / `view` 宿主在报告树外无条件渲染，所以自定义报告不会因没放 `ScopeSummary` 而静默丢失警告，也不会因放了它而重复。自有 React 页面不是官方宿主，应显式渲染 `scope.warnings`；手工挑的 `Snapshot[]` 没有挑选过程,自然没有 warnings 可带,也如实。
 
 ### 警告 kind 全集
 

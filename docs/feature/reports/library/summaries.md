@@ -1,6 +1,6 @@
 # 概览组件
 
-回答“这批结果有多大、整体是否健康、当前水位在哪”的三个组件。三者都没有计算选项：spec 形态只有可选的 `input`（默认宿主注入的 Scope），data 形态接收配套 `*Data` 函数的返回值；props 组合规则 `DataProps` 见[指标组件](metric-views.md)。
+回答“这批结果有多大、整体是否健康、当前水位在哪”的两个组件：`ExperimentComparison` 是内建报告的默认组合件，`ScopeSummary` 是它逐组复用的汇总卡，也可单独使用。两者都没有计算选项：spec 形态只有可选的 `input`（默认宿主注入的 Scope），data 形态接收配套 `*Data` 函数的返回值；props 组合规则 `DataProps` 见[指标组件](metric-views.md)。
 
 ## `ExperimentComparison`
 
@@ -37,66 +37,56 @@ type ExperimentComparisonProps = DataProps<ExperimentComparisonData, {}, {
 
 组按 `key` 字典序排列；组内 experiment 按端到端成功率从高到低预排。自定义报告若直接组合 [`MetricScatter`](metric-views.md#metricscatter) / [`ExperimentList`](entity-lists.md#experimentlist)，就是在显式接管分区责任。
 
-## `ScopeOverview`
+## `ScopeSummary`
 
-显示贡献当前数据的快照时间范围、experiment / eval / attempt 数、端到端成功率和总成本。Scope warning 不进组件 data：`show` / `view` 宿主已在报告树外统一显示，自有 React 页面则直接渲染 `scope.warnings`，不用内容匹配做去重。
+显示一个范围的快照时间窗、experiment / eval / attempt 数、两级判定计票、端到端成功率和总成本。eval 的身份键是 `experimentId + evalId`：一个 eval 在不同 experiment 中运行时是两道独立题，`evals` 与 `evalVerdicts` 都按这个身份计数，与 verdict 构成同分母。`ExperimentComparison` 的组卡就是逐组调用它。
+
+data 恒携带两级计票，两份序列化 JSON 摆在一起时口径自明；渲染面显示哪一级由呈现 prop `votes` 决定：
+
+- `evalVerdicts`（`votes: "eval"`，默认）：每个 experimentId + evalId 先按「任一轮 passed 即 passed，否则 `failed > errored > skipped`」折成最终 verdict 后计票，回答「多少道题最终过了」。
+- `attemptVerdicts`（`votes: "attempt"`）：attempt 原始计票，不折叠，回答「实际跑的每一轮各是什么结果」。
+
+两级计票与 `endToEndPassRate` 互不反推：成功率来自官方两级指标引擎，渲染面不得从任一计票现场重算。Scope warning 不进组件 data：`show` / `view` 宿主已在报告树外统一显示，自有 React 页面则直接渲染 `scope.warnings`，不用内容匹配做去重。
 
 ```ts
-interface ScopeOverviewData {
+interface ScopeSummaryData {
+  /** 贡献当前数据的快照时间范围；空范围为 null，不编造当前时间。 */
   range: { earliestStartedAt: string | null; latestStartedAt: string | null };
   experiments: number;
   /** experimentId + evalId 的去重计数。 */
   evals: number;
   attempts: number;
+  /** 每个 experimentId + evalId 先折成最终 verdict 后计票。 */
+  evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };
   /** attempt 原始计票，不折叠。 */
   attemptVerdicts: { passed: number; failed: number; errored: number; skipped: number };
+  /** 官方两级 endToEndPassRate，不从任一计票重算。 */
   endToEndPassRate: MetricCell;
   /** costUSD 按 attempt 求和；缺失成本不伪造为 0。 */
   totalCostUSD: MetricCell;
 }
 
-function scopeOverviewData(input: ReportInput): Promise<ScopeOverviewData>;
-
-type ScopeOverviewProps = DataProps<ScopeOverviewData, {}, {
-  locale?: ReportLocale;
-  className?: string;
-}>;
-```
-
-```tsx
-<ScopeOverview />
-```
-
-`attemptVerdicts` 是 attempt 原始计票，`endToEndPassRate` 来自官方两级指标引擎；两者不互相反推。字段名带 `attempt` 前缀正是为了与 [`ScopeSummary`](#scopesummary) 的 eval 级计票区分——两份序列化 JSON 摆在一起时口径自明。空范围的时间窗、成功率和总成本值都为 `null`，不编造当前时间或 0%。
-
-## `ScopeSummary`
-
-显示一个范围内的 experiment / eval / attempt 数、Eval 最终 verdict 构成、端到端成功率、总成本和最后运行时间。一个 eval 在不同 experiment 中运行时是两道独立题，身份键为 `experimentId + evalId`。`ExperimentComparison` 的组卡就是逐组调用它。
-
-```ts
-interface ScopeSummaryData {
-  experiments: number;
-  evals: number;
-  attempts: number;
-  /** 每个 experimentId + evalId 先折成最终 verdict 后计票。 */
-  evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };
-  /** 官方两级 endToEndPassRate，不从 evalVerdicts 重算。 */
-  endToEndPassRate: MetricCell;
-  /** costUSD 按 attempt 求和；完整 refs 允许下钻。 */
-  totalCostUSD: MetricCell;
-  lastRunAt: string | null;
-}
-
 function scopeSummaryData(input: ReportInput): Promise<ScopeSummaryData>;
 
 type ScopeSummaryProps = DataProps<ScopeSummaryData, {}, {
+  /** 显示哪一级计票；默认 "eval"。data 恒携带两级，votes 只选择呈现。 */
+  votes?: "eval" | "attempt";
   locale?: ReportLocale;
   className?: string;
 }>;
 ```
 
 ```tsx
-<ScopeSummary input={scope.filter((snapshot) => snapshot.experimentId.startsWith("compare/"))} />
+<ScopeSummary />                    // 当前 Scope 的摘要，eval 级计票
+<ScopeSummary votes="attempt" />    // 同一份 data，改看 attempt 原始计票
+```
+
+收窄范围时在[组合组件](layout.md#自定义组件)里显式传 `input`：
+
+```tsx
+const CompareSummary = defineComponent((_props: {}, ctx) => (
+  <ScopeSummary input={ctx.scope.filter((s) => s.experimentId.startsWith("compare/"))} />
+));
 ```
 
 ## 相关阅读

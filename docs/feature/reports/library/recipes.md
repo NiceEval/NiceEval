@@ -4,28 +4,15 @@
 
 ## 修失败：待处理失败清单
 
-回答「现在有哪些失败要处理、先看哪条」。取数后的过滤是组合组件里的普通 JavaScript，不存在第二套过滤 DSL：
+回答「现在有哪些失败要处理、先看哪条」。最常见的失败清单是成品组件 [`FailureList`](entity-lists.md#failurelist)，一行即可；其它筛选口径才需要组合组件加工 `attemptListData`：
 
 ```tsx
 // reports/todo.tsx
-import {
-  AttemptList, Col, Section, Text,
-  attemptListData, defineComponent, defineReport,
-} from "niceeval/report";
-
-const PendingFailures = defineComponent(async ({ limit = 20 }: { limit?: number }, ctx) => {
-  const all = await attemptListData(ctx.scope);
-  const failed = all.filter((x) => x.verdict === "failed" || x.verdict === "errored");
-  return (
-    <Section title="待处理失败">
-      <AttemptList data={failed.slice(0, limit)} total={failed.length} />
-    </Section>
-  );
-});
+import { Col, FailureList, Text, defineReport } from "niceeval/report";
 
 export default defineReport(
   <Col>
-    <PendingFailures />
+    <FailureList limit={20} />
     <Text>每行的 locator 可直接交给 niceeval show 下钻。</Text>
   </Col>,
 );
@@ -77,18 +64,18 @@ export default defineReport(
 
 ## 对比：基线与候选相差多少
 
-回答「加了 memory / 换了配置，指标是改善还是退化」。任一侧缺数据时 delta 保持缺失，不当 0：
+回答「加了 memory / 换了配置，指标是改善还是退化」。实验矩阵是「同配置开关某个 flag」时用 `pairsByFlag`——配对由 experiment 配置机械导出，加实验不用改报告；要自定义 label 或比较任意两个 id 时写字面 pairs。任一侧缺数据时 delta 保持缺失，不当 0：
 
 ```tsx
 // reports/ab.tsx
 import {
-  DeltaTable, costUSD, defineReport, durationMs, endToEndPassRate,
+  DeltaTable, costUSD, defineReport, durationMs, endToEndPassRate, pairsByFlag,
 } from "niceeval/report";
 
 export default defineReport(
   <DeltaTable
     by="experiment"
-    pairs={[{ label: "memory", a: "compare/baseline", b: "compare/with-memory" }]}
+    pairs={pairsByFlag("memory")}
     metrics={[endToEndPassRate, costUSD, durationMs]}
   />,
 );

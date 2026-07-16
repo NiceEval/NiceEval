@@ -37,6 +37,37 @@
 
 明确否决（不要实现）：`ExperimentComparison` 不加 `groupBy`（路径即分组 API，自定义分组走组合组件）；`*Data` 不加 `locales` 选项；`redact` / `Col` / `relativeTo` / `DeltaTable.by` 不改名；`Powered by niceeval` 行、证据页归宿主、`TableRow.locator` 维持原契约。`Reporter` 改名（`RunObserver`）不在本轮范围，未裁决。
 
+## 2026-07-16 第四轮评审修订（docs 已全部改完）
+
+第四轮全量 docs 评审的契约修订已落进 `docs/feature/reports/`、`docs/concepts.md`、`docs/feature/results/library.md`、`docs/feature/sandbox/cli.md` 与两份 cases.md（裁决台账见 `memory/reports-fourth-review-rulings.md`）。实现时再对照这批：
+
+24. **`ScopeOverview` 并入 `ScopeSummary`**（对第 11 条改名清单的再翻案）：单一组件 `ScopeSummary` / `scopeSummaryData` / `ScopeSummaryData`；data 恒携带 `range: { earliestStartedAt, latestStartedAt }`、`attemptVerdicts` 与 `evalVerdicts` 两份计票（`lastRunAt` 字段删除，由 `range.latestStartedAt` 承担）；呈现 prop `votes?: "eval" | "attempt"`（默认 `"eval"`）只选择显示哪份计票，不改变 data。`ScopeOverview` / `scopeOverviewData` / `ScopeOverviewData` 删除。见 `docs/feature/reports/library/summaries.md`。
+25. **CLI flag `--run` → `--results`**（show / view / sandbox enter·list·stop 共用；破坏性，不留别名）：值是结果根目录；`show` 索引命令携带的上下文同步。
+26. **view 证据页 `Runs` → `Attempts`**（导航项、路由与文案）。
+27. **view 位置参数收窄为 eval id 前缀**：文件路径语义移到新 flag `--snapshot <file>`；位置参数不再随文件系统状态改变含义。
+28. **指标改名**：`turns` → `assistantTurns`；`MetricAggregate.across` → `acrossEvals`；`ReportMeta.page` → `pageId`。
+29. **数据形状维度名字段统一 `+Dimension` 后缀**（选项 props 名不动）：`TableData.dimension` → `rowDimension`、`ScoreboardData.dimension` → `rowDimension`、`MatrixData.rows/columns` → `rowDimension`/`columnDimension`、`ScatterData.points/series` → `pointDimension`/`seriesDimension`、`LineData.series` → `seriesDimension`、`DeltaData.by` → `byDimension`；条目数组一律 `rows`（Matrix 稀疏格子仍 `cells`）。
+30. **`EntityListDataOptions { redact }` 三列表共用**：`experimentListData` / `evalListData` / `attemptListData` 都收 `redact`，改写范围=条目与全部嵌套 attempt 的 `failureSummary`。
+31. **`AttemptListItem.costUSD: number | null`**（不再 optional；缺失一律 null）。
+32. **`evalGroup` 维度定义**：eval id 完整父路径，无 `/` 取完整 id；Scoreboard `subject` 缺省同规则（不再是「第一段」）。
+33. **`evals` 计数口径**：`ScopeSummaryData.evals` 与组索引 Eval 列都按 `experimentId + evalId` 计，与 verdict 构成同分母（示例 12/16 见 `show/default-report.md`）。
+34. **`--history` 契约**：逐 `experimentId + evalId` 分节、attempt 身份键跨快照去重、startedAt 升序，每行时间 / verdict / 单行摘要（display 契约）/ 耗时 / 成本 / locator；与 `--report` 互斥。见 `docs/feature/reports/show.md#--history一个-eval-的执行时间轴`。
+35. **`ExperimentList` 成本列头 `Est. cost` → `Cost`**（中文「预估成本」→「成本」）。
+36. **`Row` / `Col` text 面与 `Style` 作用域**：Col 两面纵向；Row text 面宽度装得下按显示宽度并排、装不下整块纵向堆叠不截断；`Style` 页级全局、树位置只定声明顺序。
+
+第四轮明确否决 / 撤回（不要实现）：`locales` 选项与 `relativeTo` 改名维持第三轮否决；`poweredBy` 关闭配置被用户当场推翻——`Powered by niceeval` 行继续写死、恒带官网链接。
+
+## 2026-07-16 DX 试写回灌（第五批，docs 已改完）
+
+在真实 eval repo 按新契约试写报告后的四条裁决（台账见 `memory/reports-dx-dogfood-rulings.md`）：
+
+37. **`pairsByFlag(name, { baseline? })`**：`DeltaTableOptions.pairs` 接受 `FlagPairs` 派生声明（仅 `by: "experiment"`）——配对域=同可比组 + 删除该 flag 后可比性配置深相等（复用 `current()` 可比性字段集）；a=baseline（缺省=未声明该 flag），b 侧每个其它取值各一对；label 自动 `<a 末段> · <flag>=<显示键>`；(a 末段, 显示键) 字典序；0 对显示空态（N 个实验、0 个可配对），`by` 非 experiment 报完整用户反馈。见 `docs/feature/reports/library/metric-views.md#deltatable`。
+38. **`FailureList` 官方组合件**（`niceeval/report` 导出）：verdict ∈ failed/errored、开始时间降序（同刻按 locator 字典序）、`limit` 默认 20、`total` 报截断前总数；props `{ limit?, input?, redact?, attemptHref?, locale?, className? }`；与手写组合严格等价。见 `docs/feature/reports/library/entity-lists.md#failurelist`。
+39. **非空元组放宽（按元素来源二分）**：`DeltaTableOptions.pairs` 与 `ScoreboardOptions.questions` 改 `readonly T[]`，空数组在计算时按完整用户反馈报错；`metrics` / `columns` / `pages` 保留非空元组。
+40. **`repeatedFailedCommands` 内置指标**：同一 attempt 内每条 shell 命令失败 n 次（n>1）记 n−1 求和；lower better、unit cmds、源 `o11y.json`，skipped 与缺 o11y 返回 null。见 `docs/feature/reports/library/metrics.md#内置指标`。
+
+否决：DeltaTable 不加「隐藏未命中 pair」选项（缺失格契约已覆盖，隐藏走组合组件）。参考消费方：`/Users/ctrdh/Code/coding-agent-memory-evals/reports/memory-conditions.tsx` 已按 37–40 写好，可作实现后的真实冒烟对象。
+
 ## 步骤建议
 
 1. 类型层:Scope 改名 + 新 `defineComponent`/`defineReport` 签名(`src/types.ts`、`src/report/report.ts`、`src/define.ts` 如涉及)。
