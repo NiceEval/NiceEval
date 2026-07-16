@@ -1,12 +1,12 @@
 // cases: docs/engineering/unit-tests/reports/cases.md
-// niceeval show 终端宿主的测试(行为规范:docs-site/zh/guides/viewing-results.mdx;
+// niceeval show 终端宿主的测试(行为规范:docs-site/zh/how-to/viewing-results.mdx;
 // 组合语义:docs/feature/reports/architecture.md「Selection 是计算入口」)。覆盖:
 // - 榜单合成口径:每 experiment × eval 取最新判定,局部重跑从更早快照补齐,头部标注合成自几个快照;
 // - 前缀过滤收窄 Selection,覆盖警告分母 = 已知并集 ∩ 范围;
 // - --history 时间轴只列真实执行,resume 携带的复印件不占行;
 // - --report 装载(合法 / 非法默认导出 / 文件缺失)、位置前缀收窄注入 Selection、attemptCommand 下钻;
 // - 互斥:--history 与 --report;
-// - 单 eval 详情、`@<locator>` 精确定位与 --eval / --execution / --diff 证据切面的输出形态。
+// - 单 eval 详情、`@<locator>` 精确定位与 --source / --execution / --diff 证据切面的输出形态。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
 // 依据是 docs/feature/results/architecture.md 的稳定磁盘契约,不经 writer 运行时 API(避免与并行重写的
@@ -20,7 +20,7 @@ import { createHash } from "node:crypto";
 import { openResults } from "../results/index.ts";
 import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type TimingNode, type TraceSpan, type Verdict } from "../types.ts";
 import { selectCurrentResults } from "../results/select.ts";
-import { evalHistory } from "./compose.ts";
+import { attemptHistory } from "./compose.ts";
 import { runShow, type ShowFlags } from "./index.ts";
 import { stringWidth } from "../report/text/layout.ts";
 
@@ -113,7 +113,7 @@ interface Captured {
 async function show(root: string, patterns: string[], flags: ShowFlags = {}, width = 100): Promise<Captured> {
   let out = "";
   let err = "";
-  const code = await runShow(root, patterns, { run: root, ...flags }, {
+  const code = await runShow(root, patterns, { results: root, ...flags }, {
     out: (s) => (out += s),
     err: (s) => (err += s),
     width,
@@ -312,7 +312,7 @@ describe("单 eval 详情", () => {
     // 每 experiment 一行都带紧凑索引(locator + 失败原因),详情块再补一条精确的 attempt locator
     expect(out).toMatch(/✗ failed\s+2 attempts.*@1[0-9a-z]{7}.*gate calledTool/);
     expect(out).toMatch(/attempt locator: @1[0-9a-z]{7}/);
-    expect(out).toMatch(/next: niceeval show @1[0-9a-z]{7} \[--eval\|--execution\|--diff\]/);
+    expect(out).toMatch(/next: niceeval show @1[0-9a-z]{7} \[--source\|--execution\|--diff\]/);
   });
 });
 
@@ -349,33 +349,45 @@ describe("--history 时间轴", () => {
     return root;
   }
 
-  it("时间轴只列真实执行:复印件不占行,新失败带断言", async () => {
+  it("逐 attempt 分节:复印件按身份键去重不占行,startedAt 升序,行带摘要 / 成本 / locator", async () => {
     const root = await seedHistoryRoot();
     const results = await openResults(root);
     const exp = results.experiments.find((e) => e.id === "compare/bub")!;
-    const rows = evalHistory(exp, "weather/brooklyn");
-    // 快照2 里复印件被识别,真实执行只有:快照1 的 passed + 快照2 的 failed(新 attempt)
+    const rows = attemptHistory(exp, "weather/brooklyn");
+    // 快照2 里复印件被识别(与快照1 的真实执行同身份键),历次 attempt = 快照1 的 passed +
+    // 快照2 的 failed(新 attempt);startedAt 升序,旧的在前。
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ verdict: "failed", attempts: 1, costUSD: 0.04 });
-    expect(rows[0].failedAssertion).toBe('gate calledTool("get_weather")');
-    expect(rows[1]).toMatchObject({ verdict: "passed", attempts: 1, costUSD: 0.03 });
+    expect(rows[0]).toMatchObject({ verdict: "passed", costUSD: 0.03 });
+    expect(rows[0].summary).toBeUndefined();
+    expect(rows[1]).toMatchObject({ verdict: "failed", costUSD: 0.04 });
+    expect(rows[1].summary).toContain('calledTool("get_weather")');
+    expect(rows[1].locator).toMatch(/^@/);
 
     const { out, code } = await show(root, ["weather/brooklyn"], { history: true });
     expect(code).toBe(0);
-    expect(out).toContain("compare/bub · 2 runs · passed 1/2");
-    expect(out).toContain("2026-07-09T10-00");
-    expect(out).toContain("2026-07-07T09-00");
-    // 复印件那份 passed 判定只出现一行(快照1),不在快照2 再占一行
+    // 分节头:experimentId + evalId 一起出现,计数按 attempt。
+    expect(out).toContain("weather/brooklyn · compare/bub · 2 attempts · passed 1/2");
+    // 复印件那份 passed 判定只出现一行,不在快照2 再占一行;升序:passed 行在 failed 行之前。
     expect(out.match(/✓ passed/g)).toHaveLength(1);
+    expect(out.indexOf("✓ passed")).toBeLessThan(out.indexOf("✗ failed"));
+    // 每行携带可复制的 locator。
+    expect(out).toMatch(/@\w+/);
   });
 
-  it("裸 --history:每个 experiment 的 per-run 通过率序列", async () => {
+  it("裸 --history:对 Scope 中每个 experimentId + evalId 分节,不再输出快照级序列", async () => {
     const root = await seedHistoryRoot();
     const { out, code } = await show(root, [], { history: true });
     expect(code).toBe(0);
-    expect(out).toContain("compare/bub · 2 runs");
-    // 每个快照一行(快照2 折叠含携带的 passed 复印件,任一轮通过 → passed)
-    expect(out.match(/1\/1 passed/g)).toHaveLength(2);
+    expect(out).toContain("weather/brooklyn · compare/bub · 2 attempts · passed 1/2");
+    // 不是「每个快照一行」的通过率序列。
+    expect(out).not.toContain("1/1 passed");
+  });
+
+  it("--history 与 --page 组合是用法矛盾:直说", async () => {
+    const root = await seedHistoryRoot();
+    const { err, code } = await show(root, [], { history: true, page: "report" });
+    expect(code).toBe(1);
+    expect(err).toContain("--page");
   });
 });
 
@@ -473,6 +485,29 @@ describe("--report 装载", () => {
     expect(out).not.toContain("CUSTOM");
     expect(out).toContain("no diff recorded"); // fixture 没有 diff artifact:如实说缺
   });
+
+  it("--page 命中单页定义的唯一页 id `report`:与直接渲染等价", async () => {
+    const root = await seedComposedRoot();
+    const report = await writeReportFile(root);
+    const bare = await show(root, [], { report });
+    const paged = await show(root, [], { report, page: "report" });
+    expect(paged.code).toBe(0);
+    expect(paged.out).toBe(bare.out);
+  });
+
+  it("--page 未命中:按用法错误非零退出并列出可用页 id(内建报告同样成立)", async () => {
+    const root = await seedComposedRoot();
+    const report = await writeReportFile(root);
+    const miss = await show(root, [], { report, page: "typo" });
+    expect(miss.code).toBe(1);
+    expect(miss.err).toContain(`page "typo" not found in ${report}`);
+    expect(miss.err).toContain("Available pages: report");
+
+    const builtin = await show(root, [], { page: "typo" });
+    expect(builtin.code).toBe(1);
+    expect(builtin.err).toContain('page "typo" not found in the built-in report');
+    expect(builtin.err).toContain("Available pages: report");
+  });
 });
 
 // ───────────────────────── 证据切面:--execution ─────────────────────────
@@ -541,9 +576,9 @@ describe("--execution", () => {
   });
 });
 
-// ───────────────────────── 证据切面:--eval ─────────────────────────
+// ───────────────────────── 证据切面:--source ─────────────────────────
 
-describe("--eval", () => {
+describe("--source", () => {
   it("evalSource === null 时如实说源码未捕获", async () => {
     const root = await makeRoot();
     await writeSnapshot(
@@ -552,7 +587,7 @@ describe("--eval", () => {
       { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" },
       [res("weather/brooklyn", "failed", { assertions: [{ name: "succeeded()", severity: "gate", score: 0, outcome: "failed" as const }] })],
     );
-    const { out, code } = await show(root, ["weather/brooklyn"], { eval: true });
+    const { out, code } = await show(root, ["weather/brooklyn"], { source: true });
     expect(code).toBe(0);
     expect(out).toContain("eval source unavailable for this attempt");
   });
@@ -586,7 +621,7 @@ describe("--eval", () => {
     await mkdir(join(dir, "sources"), { recursive: true });
     await writeFile(join(dir, "sources", `${sha}.json`), JSON.stringify({ content }), "utf-8");
 
-    const { out, code } = await show(root, ["weather/brooklyn"], { eval: true });
+    const { out, code } = await show(root, ["weather/brooklyn"], { source: true });
     expect(code).toBe(0);
     expect(out).toContain(`eval source: evals/weather/brooklyn.eval.ts · sha256:${sha.slice(0, 8)}`);
     // 源码行的缩进是语义的一部分,渲染必须原样保留(不按词重排折叠掉这两个空格)。
@@ -608,7 +643,7 @@ describe("--eval", () => {
     await writeFile(join(attemptDir, "sources.json"), JSON.stringify([{ path: "evals/manager.eval.ts", sha256: sha }]), "utf-8");
     await mkdir(join(dir, "sources"), { recursive: true });
     await writeFile(join(dir, "sources", `${sha}.json`), JSON.stringify({ content }), "utf-8");
-    const { out } = await show(root, ["manager"], { eval: true });
+    const { out } = await show(root, ["manager"], { source: true });
     expect(out).toContain("gate · Issue 15193 · equals(4) · expected 4 · received 1");
   });
 });
@@ -702,7 +737,7 @@ describe("show @<locator>", () => {
 
     const { out, code } = await show(root, [locator]);
     expect(code).toBe(0);
-    expect(out).toContain(`available:\n  niceeval show ${locator} --eval\n  niceeval show ${locator} --execution`);
+    expect(out).toContain(`available:\n  niceeval show ${locator} --source\n  niceeval show ${locator} --execution`);
     expect(out).not.toContain(`niceeval show ${locator} --diff`);
     expect(out).not.toContain("evidence:");
     expect(out).not.toContain("next:");

@@ -1,5 +1,5 @@
 // show 的文本渲染:单 eval 详情、--history 时间轴、三个证据切面(transcript / trace / diff)。
-// 输出形态照 docs-site/zh/guides/viewing-results.mdx 的示例块;长内容一律截断,
+// 输出形态照 docs-site/zh/how-to/viewing-results.mdx 的示例块;长内容一律截断,
 // 但截断永远如实标注剩余数量和原始 artifact 路径 —— 输出对上下文窗口友好,事实源留在盘上。
 // 全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
@@ -15,7 +15,8 @@ import { summaryText } from "../scoring/display.ts";
 import { attemptCostUSD } from "../report/metrics.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/format.ts";
 import { indentBlock, padDisplay, renderAlignedRows, wrapDisplay } from "../report/text/layout.ts";
-import type { EvalHistoryRow, ExperimentHistoryRow } from "./compose.ts";
+import type { AttemptHistoryRow } from "./compose.ts";
+import { localizeText, showCommand, type HostCommandContext, type HostReport } from "./report-host.ts";
 
 const MISSING = "—";
 
@@ -72,8 +73,8 @@ export function attemptArtifactsPath(attempt: AttemptHandle, cwd: string): strin
 
 /**
  * 裸 `show` 零可读结果时,skipped 目录的展示文案。niceeval 自己写的、schemaVersion 不兼容的
- * 落盘按 producer 版本分组,一条 `npx niceeval@<version> show --run <结果根>` 覆盖同版本全部
- * 快照——show 没有 view 的单快照直读模式,`--run` 认的是结果根(其下可以有多个 experiment),
+ * 落盘按 producer 版本分组,一条 `npx niceeval@<version> show --results <结果根>` 覆盖同版本全部
+ * 快照——show 没有 view 的单快照直读模式,`--results` 认的是结果根(其下可以有多个 experiment),
  * 不是单个快照目录,所以不对每个目录重复拼一条各自的命令(那条命令用同一个 root 跑起来
  * 结果完全一样,重复只会刷屏)。其余(第三方 harness、版本信息缺失、malformed、incomplete)
  * 没有可执行的统一建议,原样逐条列出。
@@ -86,7 +87,7 @@ export function skippedRunsText(skipped: readonly SkippedDir[], root: string, cw
     const count = g.dirs.length;
     const version = g.producer.version;
     const schema = g.schemaVersion !== undefined ? ` (schemaVersion ${g.schemaVersion})` : "";
-    const cmd = `npx niceeval@${version} show --run ${rootDisplay}`;
+    const cmd = `npx niceeval@${version} show --results ${rootDisplay}`;
     lines.push(
       `  ${count} snapshot${count === 1 ? "" : "s"} written by niceeval ${version}${schema} — run \`${cmd}\` to view`,
     );
@@ -374,8 +375,8 @@ export function evalDetailText(opts: EvalDetailOptions): string {
     if (detail.locator) tail.push(`attempt locator: ${detail.locator}`);
     tail.push(
       detail.locator
-        ? `next: niceeval show ${detail.locator} [--eval|--execution|--diff]`
-        : `next: niceeval show ${evalId} [--eval|--execution|--diff]`,
+        ? `next: niceeval show ${detail.locator} [--source|--execution|--diff]`
+        : `next: niceeval show ${evalId} [--source|--execution|--diff]`,
     );
     blocks.push(tail.join("\n"));
   }
@@ -385,43 +386,58 @@ export function evalDetailText(opts: EvalDetailOptions): string {
 
 // ───────────────────────── --history ─────────────────────────
 
-/** 单 eval 时间轴:`compare/codex-gpt-5.4 · 5 runs · passed 2/5` + 每次真实执行一行。 */
-export function evalHistoryText(opts: {
+/**
+ * 一个 experimentId + evalId 的执行时间轴分节(docs/feature/reports/show.md「--history」):
+ * 节头 `<evalId> · <experimentId> · N attempts · passed x/N`,节内每行
+ * 时间 / verdict / 单行摘要 / 耗时 / 成本 / locator,startedAt 升序(compose 已排好)。
+ */
+export function attemptHistoryText(opts: {
   experimentId: string;
-  /** 多 eval 前缀时块头带上 eval id;单 eval 与 mdx 示例一致不带。 */
-  evalId?: string;
-  rows: EvalHistoryRow[];
+  evalId: string;
+  rows: AttemptHistoryRow[];
 }): string {
   const { experimentId, evalId, rows } = opts;
   const passed = rows.filter((r) => r.verdict === "passed").length;
   const head = [
-    ...(evalId ? [evalId] : []),
+    evalId,
     experimentId,
-    `${rows.length} ${rows.length === 1 ? "run" : "runs"}`,
+    attemptsLabel(rows.length),
     `passed ${passed}/${rows.length}`,
   ].join(" · ");
   if (rows.length === 0) return head;
   const table = renderAlignedRows(
     rows.map((r) => [
-      timelineStamp(r.startedAt),
+      r.startedAt !== undefined ? timelineStamp(r.startedAt) : MISSING,
       `${verdictMark(r.verdict)} ${r.verdict}`,
-      attemptsLabel(r.attempts),
+      r.summary ?? MISSING,
+      formatDurationMs(r.durationMs),
       r.costUSD === null ? MISSING : formatUSD(r.costUSD),
-      r.failedAssertion ?? (r.error ? `error: ${r.error}` : ""),
+      r.locator ?? MISSING,
     ]),
   );
   return `${head}\n\n${indentBlock(table, "  ")}`;
 }
 
-/** 实验级 per-run 通过率序列(裸 `show --history`)。 */
-export function experimentHistoryText(experimentId: string, rows: ExperimentHistoryRow[]): string {
-  const head = `${experimentId} · ${rows.length} ${rows.length === 1 ? "run" : "runs"}`;
-  if (rows.length === 0) return head;
+// ───────────────────────── --report 页索引 ─────────────────────────
+
+/**
+ * 多页报告的页索引(docs/feature/reports/show/reports.md Case 2):标题行 + 每页一行
+ * (id / 本 locale 页名 / 可复制的 `--page` 命令)。索引命令携带完整上下文
+ * (--results / --report / 位置参数),复制即可精确复现下一层视图。
+ */
+export function pageIndexText(opts: {
+  report: HostReport;
+  title: string;
+  command: HostCommandContext;
+  locale: string;
+}): string {
+  const { report, title, command, locale } = opts;
+  const head = `${title} · ${locale === "zh-CN" ? `${report.pages.length} 页` : `${report.pages.length} pages`}`;
   const table = renderAlignedRows(
-    rows.map((r) => [
-      timelineStamp(r.startedAt),
-      `${r.passedEvals}/${r.totalEvals} passed`,
-      r.costUSD === null ? MISSING : formatUSD(r.costUSD),
+    report.pages.map((page) => [
+      page.id,
+      localizeText(page.title, locale) ?? page.id,
+      showCommand({ ...command, page: page.id }),
     ]),
   );
   return `${head}\n\n${indentBlock(table, "  ")}`;
@@ -603,7 +619,7 @@ function execBody(
 /**
  * action / subagent 节点渲染成两行(call + result)——节点模型把 call+result 合并成一个
  * ExecutionNode(按 callId),但分两行读更符合「先看调用、再看结果」的阅读顺序,
- * 与 docs-site/zh/guides/agent-feedback-loop.mdx 的示例一致。
+ * 与 docs-site/zh/how-to/agent-feedback-loop.mdx 的示例一致。
  */
 function executionNodeLines(node: ExecutionNode, originMs: number, timingAvailable: boolean, width: number): string[] {
   const time = node.kind !== "telemetry" && node.span ? relSeconds(node.span.startMs, originMs) : undefined;
@@ -889,7 +905,7 @@ export function attemptOverviewText(
   const tail: string[] = [];
   if (artifactPath) tail.push(`artifacts: ${artifactPath}/`);
   const available = [
-    evidence.capabilities.eval ? `niceeval show ${evidence.locator} --eval` : undefined,
+    evidence.capabilities.source ? `niceeval show ${evidence.locator} --source` : undefined,
     evidence.capabilities.execution ? `niceeval show ${evidence.locator} --execution` : undefined,
     evidence.capabilities.timing ? `niceeval show ${evidence.locator} --timing` : undefined,
     evidence.capabilities.diff ? `niceeval show ${evidence.locator} --diff` : undefined,

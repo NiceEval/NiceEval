@@ -1,25 +1,37 @@
 // view 的数据层:读取经 niceeval/results 的 openResults(布局/版本知识只住在那)。
-// 这里只做编排:报告槽 Selection 恒经 selectCurrentResults(现刻水位;与 show 调同一个函数,
-// 两扇门判定不分叉)、快照明细注入(locator / artifactBase)、skipped 透传、报告槽渲染
-// (renderReportSlot:裸跑填充 ExperimentComparison,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
-// --report 只换报告定义,注入的 Selection 与裸跑同一份。统计口径整体住在报告槽里
+// 这里只做编排:报告槽 Scope 恒经 selectCurrentResults(现刻水位;与 show 调同一个函数,
+// 两扇门判定不分叉)、快照明细注入(locator / artifactBase)、skipped 透传、报告装载与逐页渲染
+// (裸跑填充 niceeval/report/built-in 的默认导出,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
+// --report 只换报告定义,注入的 Scope 与裸跑同一份。统计口径整体住在报告页里
 // (报告组件的官方计算函数),viewData 不再携带 overview / 榜单这类统计产物,
 // 见 docs/feature/reports/view.md「打开与收窄」。
 
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { dedupeAttempts, openResults } from "../results/index.ts";
-import type { AttemptHandle, Results, Selection, Snapshot, SkippedDir } from "../results/index.ts";
-// dist-sourced: ReportDefinition/ReportLoadError identity must match the built-ins/web.ts
-// module instance renderReportSlot() dynamically imports below (see its comment).
-import { loadReportFile } from "../../dist/report/load.js";
+import type { AttemptHandle, Results, Scope, Snapshot, SkippedDir } from "../results/index.ts";
+import {
+  loadHostReport,
+  renderHostPageHtml,
+  reportMetaFor,
+  resolveReportTitle,
+  type HostReport,
+  type HostReportAsset,
+} from "../show/report-host.ts";
 import { selectCurrentResults, filterExperiments } from "../results/select.ts";
 import type { EvalResult } from "../types.ts";
-import type { ReportSlotHtml, SkippedRunNotice, ViewData, ViewEvalResult, ViewSnapshot } from "./shared/types.ts";
+import type {
+  SkippedRunNotice,
+  ViewData,
+  ViewEvalResult,
+  ViewReportMeta,
+  ViewReportPageHtml,
+  ViewSnapshot,
+} from "./shared/types.ts";
 import { t } from "../i18n/index.ts";
 import { RESULTS_SCHEMA_VERSION } from "../types.ts";
 
-export type { ReportSlotHtml } from "./shared/types.ts";
+export type { ViewReportMeta, ViewReportPageHtml } from "./shared/types.ts";
 
 export interface ViewScan {
   viewData: ViewData;
@@ -36,12 +48,14 @@ export interface ViewScan {
    */
   attemptsByBase: Map<string, AttemptHandle>;
   /**
-   * 报告槽:报告树经 renderReportToStaticHtml 渲染出的静态 HTML(en / zh-CN 各一份),
-   * 裸跑填充内置默认报告 ExperimentComparison,--report 整槽替换。作为两个 <template> 静态块
-   * 烘进页面(与 __NICEEVAL_VIEW_DATA__ 相邻),不进 viewData —— 前端只负责把当前
-   * 界面语言对应的那块 HTML 摆进报告槽位置,不解析。
+   * 报告页:每页渲染成静态 HTML(en / zh-CN 各一份),裸跑填充内建报告(单页 id `report`),
+   * --report 整槽替换(树 / 配置对象形态都规范化成页列表)。作为 <template
+   * id="niceeval-report-<pageId>-<locale>"> 静态块烘进页面(与 __NICEEVAL_VIEW_DATA__ 相邻),
+   * HTML 本体不进 viewData —— 前端只负责把当前页 / 当前界面语言对应的块摆进报告槽位置,不解析。
    */
-  reportHtml: ReportSlotHtml;
+  reportPages: ViewReportPageHtml[];
+  /** 外壳注入资产(styles / scripts;{src} 已按路径纪律解析成 inline 内容),只进 web 面。 */
+  shellAssets: { styles: string[]; scripts: string[] };
   /**
    * --out 的数据等级(见 docs/feature/reports/view.md「静态导出」):全部选中快照带
    * publish:{redaction:"applied"} 才是 "applied",否则 "sensitive"(含本地事实根与
@@ -50,14 +64,22 @@ export interface ViewScan {
   publishState: "applied" | "sensitive";
 }
 
-/** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Selection 是计算入口」)。 */
+/** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Scope 是计算入口」)。 */
 export interface ViewScanOptions {
-  /** eval id 前缀(位置参数):收窄报告槽 Selection;证据室(快照明细)不收窄,深链恒可达。 */
+  /** eval id 前缀(位置参数):收窄报告槽 Scope;证据室(快照明细)不收窄,深链恒可达。 */
   patterns?: string[];
-  /** experiment id 前缀(--experiment):Selection 只留该实验。 */
+  /** experiment id 前缀(--experiment):Scope 只留该实验。 */
   experiment?: string;
   /** --report 报告文件:相对 cwd 的路径。装载失败抛 ReportLoadError(CLI 打印后退出)。 */
   report?: { path: string; cwd: string };
+  /** --page:多页报告的初始页 id;未命中任何页按用法错误退出并列出可用页 id。 */
+  page?: string;
+  /**
+   * 单页渲染失败的处置(docs/feature/reports/architecture.md「管线以页为单位执行」):
+   * 本地 server 传 "embed"(该页显示完整错误反馈,其它页照常可读);静态导出与启动前预检
+   * 缺省 "throw"(任一页失败整体失败,不产出半套站点)。
+   */
+  pageFailure?: "throw" | "embed";
 }
 
 /** 可预期的用户输入错误:CLI 打一句英文直说问题与下一步,退出码 1,不抛堆栈。 */
@@ -74,7 +96,7 @@ export interface IncompatibleRun {
 /** 用能读这份报告的 niceeval 版本查看的命令;第三方 harness 的落盘拼不出 npx,返回 undefined。 */
 export function incompatibleViewCommand(run: IncompatibleRun): string | undefined {
   if (run.producer && run.producer.name !== "niceeval") return undefined;
-  return `npx niceeval@${run.producer?.version ?? "<version>"} view ${run.dir}`;
+  return `npx niceeval@${run.producer?.version ?? "<version>"} view --snapshot ${run.dir}/snapshot.json`;
 }
 
 /** 版本不匹配的完整提示文案;CLI 单文件模式和目录扫描占位共用。 */
@@ -206,9 +228,10 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     );
   }
 
-  // 报告槽:裸跑填充 ExperimentComparison,--report 整槽替换。报告吃同一份注入 Selection,
-  // web 面在计算侧静态渲染成 HTML(en / zh-CN 各一遍,切界面语言不重算数据)。
-  const reportHtml = await renderReportSlot(opts.report, results, selection);
+  // 报告槽:裸跑装载内建报告默认导出,--report 整槽替换——同一条「装载 → 规范化 → 逐页渲染」
+  // 管线(docs/feature/reports/library/shell.md)。报告吃同一份注入 Scope,web 面在计算侧
+  // 静态渲染成 HTML(en / zh-CN 各一遍,切界面语言不重算数据)。
+  const slot = await renderReportSlot(opts.report, opts.page, results, selection, opts.pageFailure ?? "throw");
 
   // 跨快照按身份键去重:--resume 携带的条目在多份落盘里重复,只保留最新快照里的那份
   // (与官方计算函数的聚合口径一致,Runs / Traces 的计数因此不被复印件灌票)。
@@ -260,18 +283,26 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   const viewData: ViewData = {
     ...(latestSnapshot?.name !== undefined ? { name: latestSnapshot.name } : {}),
     ...(latestSnapshot ? { lastRunAt: latestSnapshot.startedAt } : {}),
-    // 合成 Selection 的快照是跨快照拼出来的,来源物理 run 数从 attempt 自己的 snapshot
-    // 反向引用取——每个 attempt 的 .snapshot 恒指向它真实所在的贡献快照(无论 Selection
+    // 合成 Scope 的快照是跨快照拼出来的,来源物理 run 数从 attempt 自己的 snapshot
+    // 反向引用取——每个 attempt 的 .snapshot 恒指向它真实所在的贡献快照(无论 Scope
     // 是否合成),所以这条对裸跑与收窄一律成立,不需要分支。
     composedRuns: new Set(selection.snapshots.flatMap((s) => s.attempts.map((a) => a.snapshot.dir))).size,
     snapshots,
     skippedRuns: results.skipped.map(toSkippedNotice),
+    report: slot.meta,
   };
   const publishState =
     selection.snapshots.length > 0 && selection.snapshots.every((snap) => snap.publish?.redaction === "applied")
       ? ("applied" as const)
       : ("sensitive" as const);
-  return { viewData, artifactDirs, attemptsByBase, reportHtml, publishState };
+  return {
+    viewData,
+    artifactDirs,
+    attemptsByBase,
+    reportPages: slot.pages,
+    shellAssets: slot.shellAssets,
+    publishState,
+  };
 }
 
 /**
@@ -296,34 +327,99 @@ export async function loadAttemptIndex(input?: string): Promise<Map<string, Atte
   return index;
 }
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** 外壳 `{src}` 资产的路径纪律(shell.md「行为约束」):相对报告文件解析;拒绝 `..` 路径段、绝对路径与 `~`。 */
+function resolveShellAssets(assets: HostReportAsset[], baseDir: string | undefined, kind: "styles" | "scripts"): string[] {
+  const out: string[] = [];
+  for (const asset of assets) {
+    if (asset.inline !== undefined) {
+      out.push(asset.inline);
+      continue;
+    }
+    const src = asset.src;
+    if (src.startsWith("/") || src.startsWith("~") || src.split("/").includes("..")) {
+      throw new ViewInputError(
+        `Report ${kind} asset "${src}" is not a plain relative path. Assets resolve relative to the report file; ".." segments, absolute paths and "~" are not allowed.`,
+      );
+    }
+    const abs = resolve(baseDir ?? process.cwd(), src);
+    try {
+      out.push(readFileSync(abs, "utf-8"));
+    } catch {
+      throw new ViewInputError(`Report ${kind} asset not found: ${abs} (declared as "${src}").`);
+    }
+  }
+  return out;
+}
+
 /**
- * 报告槽渲染:装载报告文件(--report;dev server 语义 —— 文件变更下次请求整页重算,
- * 经 mtime cache-busting),缺省用内置默认报告 ExperimentComparison → 注入 Selection →
- * web 面 renderToStaticMarkup 成静态 HTML,en / zh-CN 各渲染一遍(chrome 文案按 locale)。
+ * 报告装载与逐页渲染:装载报告文件(--report;dev server 语义 —— 文件变更下次请求整页重算,
+ * 经 mtime cache-busting),缺省装载内建报告默认导出 → 规范化成「外壳 + 非空页列表」→
+ * 注入 Scope → 每页 web 面渲染成静态 HTML,en / zh-CN 各渲染一遍(chrome 文案按 locale)。
+ * 本地 server 下单页渲染失败折成该页的完整错误反馈块,其它页照常可读(静态导出的
+ * 「任一页失败整体失败」由 buildView 侧的 failFast 保证)。
  * react / react-dom 动态加载:data.ts 还被 runner 的续跑携带(loadLatestResultsPerEval)
- * 消费,渲染依赖不进那条路径。attemptHref 缺省即 `#/attempt/@<locator>` 深链路由(web.ts 的默认值),
- * 单段、不透明——证据室(`src/view/app/`)的 attempt 路由消费同一个格式(attempt-route.ts),
- * 报告槽深链与证据室深链是同一条路由的两个来源。
+ * 消费,渲染依赖不进那条路径。attemptHref 缺省即 `#/attempt/@<locator>` 深链路由,
+ * 报告页深链与证据室深链是同一条路由的两个来源。
  */
 async function renderReportSlot(
   report: { path: string; cwd: string } | undefined,
+  page: string | undefined,
   results: Results,
-  selection: Selection,
-): Promise<ReportSlotHtml> {
-  // built-ins/index.ts 和 web.ts 都碰 JSX(.tsx / import react-dom);package-owned 的报告
-  // runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view 消费方
-  // cwd/tsconfig 影响 —— 见 tsconfig.report-build.json。两个动态 import 必须落在同一份编译
-  // 产物图里(dist/report/tree.js 的 WebContext 模块级状态不能跨实例),不能一个走 dist
-  // 一个走 src。
-  const definition = report
-    ? await loadReportFile(report.cwd, report.path, { freshImport: true })
-    : (await import("../../dist/report/built-ins/index.js")).ExperimentComparison;
-  const { renderReportToStaticHtml } = await import("../../dist/report/web.js");
-  const ctx = { selection, results };
-  return {
-    en: await renderReportToStaticHtml(definition, ctx, { locale: "en" }),
-    "zh-CN": await renderReportToStaticHtml(definition, ctx, { locale: "zh-CN" }),
+  selection: Scope,
+  pageFailure: "throw" | "embed" = "throw",
+): Promise<{ meta: ViewReportMeta; pages: ViewReportPageHtml[]; shellAssets: { styles: string[]; scripts: string[] } }> {
+  // 报告 runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view
+  // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../show/report-host.ts(两个宿主共用的联系面)。
+  const hostReport: HostReport = await loadHostReport(report?.cwd ?? process.cwd(), report?.path, {
+    freshImport: true,
+  });
+
+  const initialPageId = page ?? hostReport.pages[0]!.id;
+  if (!hostReport.pages.some((p) => p.id === initialPageId)) {
+    throw new ViewInputError(
+      `error: page "${page}" not found in ${report?.path ?? "the built-in report"}. Available pages: ${hostReport.pages.map((p) => p.id).join(", ")}`,
+    );
+  }
+
+  const reportDir = report ? dirname(resolve(report.cwd, report.path)) : undefined;
+  const shellAssets = {
+    styles: resolveShellAssets(hostReport.styles, reportDir, "styles"),
+    scripts: resolveShellAssets(hostReport.scripts, reportDir, "scripts"),
   };
+
+  const pages: ViewReportPageHtml[] = [];
+  for (const hostPage of hostReport.pages) {
+    const meta = reportMetaFor(hostReport, hostPage.id, selection.snapshots);
+    const ctx = { scope: selection, results, report: meta };
+    try {
+      pages.push({
+        id: hostPage.id,
+        html: {
+          en: await renderHostPageHtml(hostPage, ctx, { locale: "en" }),
+          "zh-CN": await renderHostPageHtml(hostPage, ctx, { locale: "zh-CN" }),
+        },
+      });
+    } catch (e) {
+      if (pageFailure !== "embed") throw e;
+      // 本地 server:该页显示完整错误反馈,其它页照常可读(不让一页的树错误拖垮整站)。
+      const message = e instanceof Error ? e.message : String(e);
+      const block = `<div class="nre nre-page-error"><pre>${escapeHtml(message)}</pre></div>`;
+      pages.push({ id: hostPage.id, html: { en: block, "zh-CN": block } });
+    }
+  }
+
+  const meta: ViewReportMeta = {
+    title: resolveReportTitle(hostReport.title, selection.snapshots),
+    links: hostReport.links,
+    ...(hostReport.footer !== undefined ? { footer: hostReport.footer } : {}),
+    pages: hostReport.pages.map((p) => ({ id: p.id, title: p.title })),
+    initialPageId,
+  };
+  return { meta, pages, shellAssets };
 }
 
 /**

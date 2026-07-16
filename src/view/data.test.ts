@@ -111,7 +111,9 @@ describe("loadViewScan · skipped 三种原因进 viewData", () => {
     await mkdir(join(incompleteDir, "q1", "a0"), { recursive: true });
     await writeFile(join(incompleteDir, "q1", "a0", "events.json"), "[]", "utf-8");
 
-    const { viewData, reportHtml } = await loadViewScan(root);
+    const scan = await loadViewScan(root);
+    const { viewData } = scan;
+    const reportHtml = scan.reportPages[0]!.html;
     const byReason = new Map(viewData.skippedRuns!.map((s) => [s.dir, s]));
     expect(viewData.skippedRuns).toHaveLength(4);
 
@@ -161,7 +163,9 @@ describe("loadViewScan · 报告槽是现刻水位口径,裸跑与局部收窄�
       res("q1", "passed"),
     ]);
 
-    const { viewData, reportHtml } = await loadViewScan(root);
+    const scan = await loadViewScan(root);
+    const { viewData } = scan;
+    const reportHtml = scan.reportPages[0]!.html;
     // 现刻水位:q1 取周二(更新,通过),q2 取周一(仅此一次,通过)—— 两题全过(2/2 = 100%),
     // 不是「只看周二快照的 1/1」。深链分别指向各自的贡献快照(AttemptLocator 由身份元组——
     // 含快照 startedAt——确定性派生,两个不同快照的 q1/q2 编出两个不同的 locator)。
@@ -251,7 +255,9 @@ describe("loadViewScan · 新布局落盘直接可读(写入面 / 读取面同�
       ],
     );
 
-    const { viewData, reportHtml } = await loadViewScan(root);
+    const scan = await loadViewScan(root);
+    const { viewData } = scan;
+    const reportHtml = scan.reportPages[0]!.html;
     // 报告槽(ExperimentComparison 的 web 面):Experiment 工作台行 + 官方通过率格子(1 过 1 败 = 50%)。
     expect(reportHtml.en).toContain("compare/bub");
     expect(reportHtml.en).toContain("50%");

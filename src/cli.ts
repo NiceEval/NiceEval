@@ -97,7 +97,7 @@ interface Flags {
   help: boolean;
   version: boolean;
   // ── show 专属(位置参数仍是 eval id 前缀 / `@<locator>`;这些 flag 选「怎么看」)──
-  eval: boolean;
+  source: boolean;
   execution: boolean;
   diff: boolean;
   /** --diff=<路径>(必须 = 连写;空格形式会把路径当 eval id 前缀,按文档如此)。 */
@@ -111,8 +111,10 @@ interface Flags {
   leaveRunning: boolean;
   history: boolean;
   experiment?: string;
-  run?: string;
+  results?: string;
+  snapshot?: string;
   report?: string;
+  page?: string;
 }
 
 // 表驱动的 flag 定义(node:util parseArgs)。--no-x 显式声明,不依赖 allowNegative(需 Node 20.14+,
@@ -156,11 +158,11 @@ const FLAG_OPTIONS = {
   port: { type: "string" },
   /** `view --out` 专用:对非发布根(快照没有 publish:{redaction:"applied"} 标记)导出时的显式确认——静态站会原样携带未消毒的证据文件。 */
   "allow-sensitive-artifacts": { type: "boolean" },
-  // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/guides/viewing-results.mdx)。
+  // show 的证据切面 / 时间轴 / 报告装载(docs-site/zh/how-to/viewing-results.mdx)。
   // 证据切面只认 `@<locator>`(或收窄到单个 eval 的前缀)选出的那一个 attempt——不再有
   // 数字 `--attempt`,选哪个 attempt 由 locator 精确指名,不是「先选 eval 再挑第几次」。
   /** `show` 命令专用:该 attempt 运行时保存的 Eval 源码,gate/soft 断言标回源码行(证据切面)。 */
-  eval: { type: "boolean" },
+  source: { type: "boolean" },
   /** `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。 */
   execution: { type: "boolean" },
   /** `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 */
@@ -169,14 +171,18 @@ const FLAG_OPTIONS = {
   // 空格形式的下一个 token 仍是位置参数 = eval id 前缀,与文档一致)。
   /** `show` 命令专用:sandbox 里的文件改动摘要;`--diff=<文件路径>` 看单个文件的完整改动(路径必须 `=` 连写)。 */
   diff: { type: "boolean" },
-  /** `show` 命令专用:跨 run 时间轴,只列真实执行;与 `--report` 互斥。 */
+  /** `show` 命令专用:执行时间轴——对匹配的每个 experiment × eval 分节,逐 attempt 列时间 / verdict / 摘要 / 耗时 / 成本 / locator;与 `--report` 互斥。 */
   history: { type: "boolean" },
   /** `show` / `view` 命令专用:按路径段前缀收窄 experiment;组名会选中组内全部配置。 */
   experiment: { type: "string" },
-  /** `show` / `view` 命令专用:钉死看某一个结果目录(某次快照或 `copySnapshots` 产物)。 */
-  run: { type: "string" },
+  /** `show` / `view` / `sandbox enter|list|stop` 共用:结果根目录(`.niceeval` 之外的另一个根,如 `copySnapshots` 产出的发布根)。 */
+  results: { type: "string" },
+  /** `view` 命令专用:只打开这一份快照文件(`snapshot.json`);文件不可读时命令失败(扫描模式只跳过)。 */
+  snapshot: { type: "string" },
   /** `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 */
   report: { type: "string" },
+  /** `show` / `view` 命令专用:选择多页报告的页(页 id 见 `show --report` 的页索引);`view` 里定初始页。 */
+  page: { type: "string" },
   /** 只打印本次会匹配到的 eval × 运行配置,不实际执行(按下面 `--output` 选中的 profile 给出预览)。 */
   dry: { type: "boolean" },
   /** 反馈 profile:`auto`(默认)按环境自动选择,`human` / `agent` / `ci` 强制指定;只改变终端展示,不改变选择、调度、判定、artifact 或退出码。`auto` 依次判定:stderr 是 TTY → human;否则 `CI`(或其它常见 CI 平台环境变量)存在 → ci;否则 → agent。 */
@@ -294,7 +300,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
     help: values.help === true,
     version: values.version === true,
-    eval: values.eval === true,
+    source: values.source === true,
     execution: values.execution === true,
     diff: values.diff === true && diffPath === undefined,
     diffPath,
@@ -307,31 +313,35 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     leaveRunning: values["leave-running"] === true,
     history: values.history === true,
     experiment: values.experiment as string | undefined,
-    run: values.run as string | undefined,
+    results: values.results as string | undefined,
+    snapshot: values.snapshot as string | undefined,
     report: values.report as string | undefined,
+    page: values.page as string | undefined,
   };
   return { command, positionals, flags };
 }
 
 /**
  * exp 只接受两类输入:位置参数选「跑哪些 eval」+ 调度/输出/机器出口 flag 选「对着哪个 agent、
- * 怎么跑」。show / view 专属的证据切面(`--eval`/`--execution`/`--diff`)、时间轴(`--history`)、
- * Selection 收窄(`--experiment`/`--run`)、报告装载(`--report`)、查看器(`--out`/`--port`/`--open`)
- * 不能被 exp 静默忽略(见 docs/feature/experiments/cli.md「用法错误」)。返回第一个被误用的
- * flag 及其归属命令(用于报错),没有误用返回 undefined。
+ * 怎么跑」。show / view 专属的证据切面(`--source`/`--execution`/`--diff`)、时间轴(`--history`)、
+ * Scope 收窄(`--experiment`/`--results`)、报告装载(`--report`/`--page`)、查看器
+ * (`--snapshot`/`--out`/`--port`/`--open`)不能被 exp 静默忽略(见 docs/feature/experiments/
+ * cli.md「用法错误」)。返回第一个被误用的 flag 及其归属命令(用于报错),没有误用返回 undefined。
  */
 function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
   const SHOW = "show";
   const BOTH = "show / view";
   const VIEW = "view";
-  if (flags.eval) return { flag: "--eval", command: SHOW };
+  if (flags.source) return { flag: "--source", command: SHOW };
   if (flags.execution) return { flag: "--execution", command: SHOW };
   if (flags.timing !== undefined) return { flag: "--timing", command: SHOW };
   if (flags.diff || flags.diffPath !== undefined) return { flag: "--diff", command: SHOW };
   if (flags.history) return { flag: "--history", command: SHOW };
   if (flags.experiment !== undefined) return { flag: "--experiment", command: BOTH };
-  if (flags.run !== undefined) return { flag: "--run", command: BOTH };
+  if (flags.results !== undefined) return { flag: "--results", command: BOTH };
   if (flags.report !== undefined) return { flag: "--report", command: BOTH };
+  if (flags.page !== undefined) return { flag: "--page", command: BOTH };
+  if (flags.snapshot !== undefined) return { flag: "--snapshot", command: VIEW };
   if (flags.out !== undefined) return { flag: "--out", command: VIEW };
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
   if (flags.open !== undefined) return { flag: "--open", command: VIEW };
@@ -393,7 +403,7 @@ const AGENT_RULES_CONTENT = [
   "the bundled Chinese docs are the authoritative version matching this installation.",
   "After a run, drill into failures with `niceeval show` — pick an `@<locator>` from the",
   "compact index it prints, then `niceeval show @<locator>` for a compact overview, or add",
-  "`--eval` / `--execution` / `--diff` for evidence; the snapshot directories the CLI prints",
+  "`--source` / `--execution` / `--diff` for evidence; the snapshot directories the CLI prints",
   "are the structured source of truth: `snapshot.json` holds the run's metadata and each",
   "`<evalId>/a<attempt>/result.json` holds that attempt's verdict and assertions, next to",
   "its artifact files (`events.json` / `trace.json` / `diff.json`).",
@@ -560,11 +570,17 @@ async function main(): Promise<void> {
   }
 
   if (command === "view") {
-    // 位置参数 = eval id 前缀(收窄报告槽 Selection);存在的文件路径 = 单文件模式;
-    // 结果目录经 --run 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件)。
+    // 位置参数只有一种含义:eval id 前缀(收窄报告槽 Scope)。结果根经 --results 递入,
+    // 单开一份快照经 --snapshot 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件),
+    // --page 定初始页。文件与目录都不进位置参数(docs/feature/reports/view.md「打开与收窄」)。
+    // --out 与位置参数 / --experiment 的互斥在 buildView 内校验(单点,报错文案含 copySnapshots
+    // + filter 的下一步),经 exitOnViewUserError 按用法错误退出。
     let viewInput: { input?: string; patterns: string[] };
     try {
-      viewInput = resolveViewInput(cwd, positionals, flags.run);
+      viewInput = resolveViewInput(cwd, positionals, {
+        ...(flags.results !== undefined ? { results: flags.results } : {}),
+        ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+      });
     } catch (e) {
       exitOnViewUserError(e);
     }
@@ -572,6 +588,7 @@ async function main(): Promise<void> {
       patterns: viewInput.patterns,
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
+      ...(flags.page !== undefined ? { page: flags.page } : {}),
     };
     if (flags.out) {
       const out = await buildView({ input: viewInput.input, out: flags.out, allowSensitiveArtifacts: flags.allowSensitiveArtifacts, scan }).catch(exitOnViewUserError);
@@ -599,23 +616,25 @@ async function main(): Promise<void> {
       window: flags.window,
       path: flags.sandboxPath,
       leaveRunning: flags.leaveRunning,
-      run: flags.run,
+      // CLI flag 是 --results(结果根);sandbox 命令组的内部选项名保持 run,值语义相同。
+      run: flags.results,
     });
     process.exit(code);
   }
 
   if (command === "show") {
-    // show 不依赖 niceeval.config.ts:读的是 .niceeval/(或 --run 指定的某个快照目录)的落盘结果。
+    // show 不依赖 niceeval.config.ts:读的是 .niceeval/(或 --results 指定的结果根)的落盘结果。
     const code = await runShow(cwd, positionals, {
-      eval: flags.eval,
+      source: flags.source,
       execution: flags.execution,
       timing: flags.timing,
       diff: flags.diff,
       diffPath: flags.diffPath,
       history: flags.history,
       experiment: flags.experiment,
-      run: flags.run,
+      results: flags.results,
       report: flags.report,
+      page: flags.page,
     });
     process.exit(code);
   }

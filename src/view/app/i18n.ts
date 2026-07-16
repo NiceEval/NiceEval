@@ -8,7 +8,7 @@ export type MessageKey =
   | "nav.label"
   | "nav.report"
   | "nav.experiments"
-  | "nav.runs"
+  | "nav.attempts"
   | "nav.traces"
   | "hero.title"
   | "hero.lastRun"
@@ -18,13 +18,13 @@ export type MessageKey =
   | "metric.duration"
   | "metric.cost"
   | "section.experiments"
-  | "section.individualRuns"
+  | "section.attempts"
   | "section.traces"
   | "search.experiments"
-  | "search.runs"
+  | "search.attempts"
   | "empty.summary"
-  | "empty.individualRuns"
-  | "empty.runsFilter"
+  | "empty.attempts"
+  | "empty.attemptsFilter"
   | "empty.traces"
   | "table.experiment"
   | "table.model"
@@ -132,7 +132,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "nav.label": "Report",
     "nav.report": "Report",
     "nav.experiments": "Experiments",
-    "nav.runs": "Runs",
+    "nav.attempts": "Attempts",
     "nav.traces": "Traces",
     "hero.title": "Eval Run Results",
     "hero.lastRun": "Last run:",
@@ -142,13 +142,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "metric.duration": "Duration",
     "metric.cost": "Estimated Cost",
     "section.experiments": "Experiments",
-    "section.individualRuns": "Individual Runs",
+    "section.attempts": "Attempts",
     "section.traces": "Traces",
     "search.experiments": "Filter experiment, agent, model, or eval...",
-    "search.runs": "Filter eval ID or experiment...",
+    "search.attempts": "Filter eval ID or experiment...",
     "empty.summary": "No snapshots found. Run niceeval or pass niceeval view path/to/snapshot.json.",
-    "empty.individualRuns": "No individual runs found.",
-    "empty.runsFilter": "No results match the filter.",
+    "empty.attempts": "No attempts found.",
+    "empty.attemptsFilter": "No results match the filter.",
     "empty.traces": "No traces available. Traces are collected during eval runs when artifacts are saved.",
     "table.experiment": "Experiment",
     "table.model": "Model",
@@ -253,7 +253,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "nav.label": "报告",
     "nav.report": "报告",
     "nav.experiments": "实验",
-    "nav.runs": "运行",
+    "nav.attempts": "Attempts",
     "nav.traces": "追踪",
     "hero.title": "Eval 运行结果",
     "hero.lastRun": "最近运行:",
@@ -263,13 +263,13 @@ const dictionaries: Record<Locale, Dictionary> = {
     "metric.duration": "耗时",
     "metric.cost": "预估成本",
     "section.experiments": "实验",
-    "section.individualRuns": "单次运行",
+    "section.attempts": "Attempts",
     "section.traces": "追踪",
     "search.experiments": "筛选实验、agent、model 或 eval...",
-    "search.runs": "筛选 eval ID 或实验...",
+    "search.attempts": "筛选 eval ID 或实验...",
     "empty.summary": "没有找到快照。请先运行 niceeval，或传入 niceeval view path/to/snapshot.json。",
-    "empty.individualRuns": "没有单次运行结果。",
-    "empty.runsFilter": "没有匹配筛选条件的结果。",
+    "empty.attempts": "还没有 attempt。",
+    "empty.attemptsFilter": "没有匹配筛选条件的结果。",
     "empty.traces": "没有可用追踪。保存 artifact 的 eval run 会收集 traces。",
     "table.experiment": "实验",
     "table.model": "模型",
@@ -325,7 +325,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "trace.clickDetails": "点击行查看详情",
     "trace.enableHint": "这次运行没有 trace。接入 OTel 才有调用瀑布图——看",
     "trace.enableHintLink": "OTel 接入指南",
-    "trace.enableHintUrl": "https://niceeval.com/docs/zh/guides/connect-otel",
+    "trace.enableHintUrl": "https://niceeval.com/docs/zh/how-to/connect-otel",
     "transcript.noEvents": "没有事件",
     "transcript.user": "user",
     "transcript.assistant": "assistant",

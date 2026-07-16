@@ -46,7 +46,7 @@ export const zhCN = {
     "修法:\n" +
     "  - [init] 运行 `npx niceeval init` 生成 niceeval.config.ts 和 evals/\n" +
     "  - [cd] 切到包含 niceeval.config.ts 的项目根再运行\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/quickstart.mdx",
+    "  文档:node_modules/niceeval/docs-site/zh/tutorials/quickstart.mdx",
   "cli.config.noDefault": "niceeval.config.ts 需要 default export(defineConfig(...))。",
   "cli.dry.header": "\n[dry] {{evals}} 个 eval × {{configs}} 个运行配置:\n",
   "cli.dry.noMatches": "(无匹配)",
@@ -58,7 +58,7 @@ export const zhCN = {
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
   "judge.modelMissing":
     "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } })、eval 的 judge 配置或环境变量 NICEEVAL_JUDGE_MODEL 里指定裁判模型(没有内置默认模型)。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/guides/scoring-guide.mdx",
+    "  文档:node_modules/niceeval/docs-site/zh/how-to/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
   "cli.flag.parseError": "{{message}}\n运行 `niceeval --help` 查看用法。\n",
@@ -72,18 +72,19 @@ export const zhCN = {
     "        (locator + 失败原因)\n" +
     "      单个 eval id:attempt 与断言明细\n" +
     "      @<locator>  精确一个 attempt:无 flag → 紧凑全景;带 flag → 对应证据切面\n" +
-    "      --eval        该 attempt 运行时保存的 Eval 源码,断言标回源码行\n" +
+    "      --source      该 attempt 运行时保存的 Eval 源码,断言标回源码行\n" +
     "      --execution   该 attempt 的执行事件流(消息/thinking/Skill/工具调用),\n" +
     "        有 OTel 时同一节点补时间\n" +
     "      --timing      整个 attempt 的统一时间树(阶段 + hook/命令/turn + 轮内 OTel)\n" +
     "      --diff[=文件] agent 归因的文件改动摘要;=文件 按窗口展开单个文件\n" +
-    "      --history   跨 run 时间轴(与 --report 互斥)\n" +
-    "      --run <目录> 钉死结果目录   --experiment <id> 只看该实验\n" +
-    "      --report <文件> 自定义报告\n" +
+    "      --history   逐 experiment × eval 的执行时间轴(与 --report 互斥)\n" +
+    "      --results <目录> 钉死结果根   --experiment <id> 只看该实验\n" +
+    "      --report <文件> 自定义报告   --page <id> 选页(多页报告先输出页索引)\n" +
     "  niceeval list                            列出发现到的 eval\n" +
-    "  niceeval view [eval-id 前缀…|snapshot.json] [--out 目录] [--port n] [--no-open]\n" +
-    "      报告槽 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
-    "      --run <目录> 钉死结果目录   --experiment <id> 只看该实验\n" +
+    "  niceeval view [eval-id 前缀…] [--out 目录] [--port n] [--no-open]\n" +
+    "      报告页 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
+    "      --page <id> 定初始页   --results <目录> 钉死结果根\n" +
+    "      --snapshot <文件> 只打开这一份快照   --experiment <id> 只看该实验\n" +
     "      --out <目录> 静态导出:index.html 连同查看器 artifact,可直接静态托管\n" +
     "  niceeval sandbox list|enter|history|diff|stop  查看与销毁 --keep-sandbox 留下的现场\n" +
     "  niceeval clean                           删除 .niceeval/ 历史 artifact\n" +
@@ -102,9 +103,9 @@ export const zhCN = {
   "cli.show.noEvalMatch": "No results matched: {{patterns}}. Evals with results: {{evals}}\n",
   "cli.show.noExperimentMatch": "No experiment matched --experiment {{arg}}. Experiments with results: {{experiments}}\n",
   "cli.show.historyReportConflict":
-    "`--history` and `--report` are mutually exclusive: --history is the built-in trend view. For a custom trend, compose exp.snapshots inside your report file instead.\n",
+    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for snapshot-level trends, compose exp.snapshots inside your report file instead.\n",
   "cli.show.evidenceNeedsEval":
-    "--eval / --execution / --diff show one attempt's evidence, but the selection matched {{matched}} evals. Pick an attempt locator from the index below:\n{{index}}\n",
+    "--source / --execution / --diff show one attempt's evidence, but the selection matched {{matched}} evals. Pick an attempt locator from the index below:\n{{index}}\n",
   "cli.show.locatorMalformed": "{{message}}\n",
   "cli.show.locatorNotFound": "{{message}}\n",
   "cli.eval.noMatch": "没有匹配的 eval:{{patterns}}。\n",
@@ -127,7 +128,7 @@ export const zhCN = {
   "cli.resultsPath": "结构化结果:{{path}}(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)\n",
   "cli.run.experimentRequired":
     "运行 eval 必须通过 experiment:用 `niceeval exp [实验组|配置] [eval id 前缀]`。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/guides/write-experiment.mdx\n",
+    "  文档:node_modules/niceeval/docs-site/zh/how-to/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "提示:\"{{pattern}}\" 是实验{{kind}},你大概想跑:niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "已发现实验:{{experiments}}\n",
   "cli.unimplemented": "命令 \"{{command}}\" 暂未实现(MVP)。\n",
@@ -138,7 +139,7 @@ export const zhCN = {
   "cli.view.url": "niceeval view: {{url}}\n",
   "context.capabilityMissing":
     "agent \"{{agent}}\" 不是沙箱型(defineSandboxAgent 构造),t.{{method}} 这类断言只有沙箱型 agent 可用。换用 defineSandboxAgent 构造的 agent,或去掉这条断言。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/guides/sandbox-agent.mdx",
+    "  文档:node_modules/niceeval/docs-site/zh/how-to/sandbox-agent.mdx",
   "context.skipEmpty": "skip() 需要一个非空理由。",
   "context.turnFailed": "本轮 send 返回 failed(turn status = failed):{{message}}",
   "context.turnFailedDefault": "本轮 send 返回 failed(turn status = failed)",
@@ -162,7 +163,7 @@ export const zhCN = {
   "feedback.human.compare": "Compare: niceeval view {{group}}",
   "feedback.human.counts": "共 {{total}} · 复用 {{reused}} · 运行中 {{running}} · 排队 {{queued}} · 已完成 {{completed}}",
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
-  "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --eval",
+  "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.heartbeat": "已运行 {{elapsed}} · {{counts}}",
   "feedback.human.inspect": "Inspect: niceeval show {{locator}}",
@@ -269,7 +270,7 @@ export const zhCN = {
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, or e2b",
   "sandbox.missingSpec":
     "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认 provider——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/guides/sandbox-providers.mdx",
+    "  文档:node_modules/niceeval/docs-site/zh/how-to/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
   "sandbox.dependencyMissing.vercel": "Vercel sandbox requires '@vercel/sandbox'. Install it with: pnpm add @vercel/sandbox",

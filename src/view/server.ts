@@ -33,9 +33,11 @@ const TEMPLATE_PLACEHOLDERS = {
 export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServer> {
   const input = opts.input;
   const root = viewRoot(input);
-  // 数据装载先跑一遍:单文件模式指向读不了的报告、--report 装载失败、
+  // 本地 server 的单页失败折成该页的错误块,其它页照常可读(静态导出仍整体失败)。
+  const scanOptions = { ...opts.scan, pageFailure: "embed" as const };
+  // 数据装载先跑一遍:--snapshot 指向读不了的快照、--report 装载失败、
   // 前缀匹配不到,都要在起 server 前就失败并给出提示。
-  await loadViewScan(input, opts.scan);
+  await loadViewScan(input, scanOptions);
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -67,7 +69,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       });
       // 每次请求现读现算,永远是盘上最新数据;--report 的报告文件变更同样在
       // 下次请求整页重算(装载走 mtime cache-busting,见 report/load.ts)。
-      res.end(await renderHtml(await loadViewScan(input, opts.scan)));
+      res.end(await renderHtml(await loadViewScan(input, scanOptions)));
     } catch (e) {
       res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
       res.end(formatThrown(e));
@@ -86,12 +88,13 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
 
 /**
  * 把 viewData(只含原始值与相对路径,不含宿主机绝对路径)和前端产物烘焙进单个 HTML。
- * 报告槽恒在:报告 HTML 作为 <template id="niceeval-report-en"> / <template
- * id="niceeval-report-zh-CN"> 两个静态块烘在 __NICEEVAL_VIEW_DATA__ 旁(不 hydrate,
- * 自定义组件的 <Style> 产物已内联其中),并恒内联官方组件样式(report/react/styles.css)
- * 与渐进增强 runtime(report/react/enhance.js,内联 <script>:排序 / 过滤 / tooltip,
- * document 级事件委托,报告块被前端搬进槽位也无需重绑;无 JS 时报告内容依旧完整);
- * 前端只把当前界面语言对应的那块摆进报告槽位置,不解析。
+ * 报告槽恒在:每页报告 HTML 作为 <template id="niceeval-report-<pageId>-<locale>"> 静态块
+ * 烘在 __NICEEVAL_VIEW_DATA__ 旁(不 hydrate,自定义组件的 <Style> 产物已内联其中),
+ * 并恒内联官方组件样式(report/react/styles.css)与渐进增强 runtime(report/react/enhance.js,
+ * 内联 <script>:排序 / 过滤 / tooltip,document 级事件委托,报告块被前端搬进槽位也无需重绑;
+ * 无 JS 时报告内容依旧完整);外壳声明的 styles 注入在官方样式之后、scripts 注入在官方
+ * 增强脚本之后 </body> 前,均按声明顺序(docs/feature/reports/library/shell.md)。
+ * 前端只把当前页 / 当前界面语言对应的块摆进报告槽位置,不解析。
  */
 export async function renderHtml(scan: ViewScan): Promise<string> {
   const template = await readViewAsset("template.html");
@@ -102,19 +105,27 @@ export async function renderHtml(scan: ViewScan): Promise<string> {
     readFile(new URL("../report/react/enhance.js", import.meta.url), "utf-8"),
   ]);
 
+  const shellStyles = scan.shellAssets.styles.map((css) => `\n<style>\n${css}\n</style>`).join("");
+  const shellScripts = scan.shellAssets.scripts.map((js) => `<script>\n${js}\n</script>\n`).join("");
+
+  const pageTemplates = scan.reportPages
+    .flatMap((page) => [
+      `<template id="niceeval-report-${page.id}-en">${page.html.en}</template>`,
+      `<template id="niceeval-report-${page.id}-zh-CN">${page.html["zh-CN"]}</template>`,
+    ])
+    .join("\n");
+
   return template
     .replace(
       TEMPLATE_PLACEHOLDERS.styles,
-      () => `<style>\n${styles}\n</style>\n<style>\n${reportStyles}\n</style>\n<script>\n${reportEnhance}\n</script>`,
-    )
-    .replace(
-      TEMPLATE_PLACEHOLDERS.reportSlot,
       () =>
-        `<template id="niceeval-report-en">${scan.reportHtml.en}</template>\n` +
-        `<template id="niceeval-report-zh-CN">${scan.reportHtml["zh-CN"]}</template>`,
+        `<style>\n${styles}\n</style>\n<style>\n${reportStyles}\n</style>\n<script>\n${reportEnhance}\n</script>` +
+        shellStyles,
     )
+    .replace(TEMPLATE_PLACEHOLDERS.reportSlot, () => pageTemplates)
     .replace(TEMPLATE_PLACEHOLDERS.viewData, () => JSON.stringify(scan.viewData).replace(/</g, "\\u003c"))
-    .replace(TEMPLATE_PLACEHOLDERS.appCode, () => JSON.stringify(app).replace(/</g, "\\u003c"));
+    .replace(TEMPLATE_PLACEHOLDERS.appCode, () => JSON.stringify(app).replace(/</g, "\\u003c"))
+    .replace("</body>", () => `${shellScripts}</body>`);
 }
 
 /** rel 的末段文件名;base = 去掉末段后剩下的部分(与 artifactUrl 的按段编码/拼接对称)。 */

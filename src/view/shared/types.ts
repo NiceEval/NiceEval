@@ -12,10 +12,37 @@ import type { AttemptLocator } from "../../results/locator.ts";
 export type { AttemptLocator };
 
 /**
- * 报告槽的双语静态 HTML:同一棵报告树按 locale 渲染两遍(en / zh-CN),server 烘成
- * 两个 <template> 静态块,前端按当前界面语言摆放对应块,切语言不重算数据。
+ * 一页报告的双语静态 HTML:同一棵页树按 locale 渲染两遍(en / zh-CN),server 烘成
+ * <template id="niceeval-report-<pageId>-<locale>"> 静态块,前端按当前页与界面语言摆放
+ * 对应块,切语言 / 切页不重算数据。
  */
 export type ReportSlotHtml = Record<ReportLocale, string>;
+
+/** 服务端渲染好的一页报告(HTML 本体不进 viewData,烘成 <template> 静态块)。 */
+export interface ViewReportPageHtml {
+  id: string;
+  html: ReportSlotHtml;
+}
+
+/** 导航里的一页(id = `#/page/<id>` 路由与 `--page` 的取值)。 */
+export interface ViewReportPageMeta {
+  id: string;
+  title: LocalizedText;
+}
+
+/**
+ * 规范化后的报告外壳声明(docs/feature/reports/library/shell.md):壳(导航 / 页脚)由前端
+ * 渲染,页内容消费 <template> 静态块。title 已走完回退链(def.title → 唯一且相同的快照 name →
+ * "NiceEval");scripts / styles 是注入资产,不进 viewData。
+ */
+export interface ViewReportMeta {
+  title: LocalizedText;
+  links: { label: LocalizedText; href: string }[];
+  footer?: LocalizedText;
+  pages: ViewReportPageMeta[];
+  /** 初始页(--page 或声明序第一页);`#/page/<id>` 路由覆盖它。 */
+  initialPageId: string;
+}
 
 /** view 侧的 attempt 结果 = 瘦身后的 EvalResult + loader 注入的深链身份(不透明 AttemptLocator,
  * `#/attempt/@<locator>` 路由的参数,与 Reports 的 MetricCell.refs / `ctx.attemptHref` 同一身份契约)
@@ -67,8 +94,10 @@ export interface ViewData {
   lastRunAt?: string;
   /** 报告槽 Selection 合成自几个物理 run;hero「合成来源」标注。 */
   composedRuns: number;
-  /** 全部历史快照(跨快照按身份键去重后);修复 prompt 吃 latest,Runs / Traces 吃全部。 */
+  /** 全部历史快照(跨快照按身份键去重后);修复 prompt 吃 latest,Attempts / Traces 吃全部。 */
   snapshots: ViewSnapshot[];
   /** 读不了的落盘(三种原因);前端顶部横幅展示,不静默。 */
   skippedRuns?: SkippedRunNotice[];
+  /** 报告外壳与页导航的声明(规范化后);缺省时前端按单页 `report` 兜底。 */
+  report?: ViewReportMeta;
 }

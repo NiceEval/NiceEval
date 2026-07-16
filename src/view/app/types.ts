@@ -18,10 +18,13 @@ export type {
   ReportSlotHtml,
   SkippedRunNotice,
   ViewData,
+  ViewReportMeta,
+  ViewReportPageMeta,
   ViewSnapshot,
 } from "../shared/types.ts";
 
-export type Tab = "report" | "runs" | "traces";
+/** 导航 tab:报告页(`page:<id>`,路由 `#/page/<id>`)在前,内置证据页 Attempts / Traces 恒在其后。 */
+export type Tab = `page:${string}` | "attempts" | "traces";
 
 /** 前端拿到的单条 attempt 结果就是瘦身后的 EvalResult(locator / artifactBase 由 loader 注入)。 */
 export type ViewResult = ViewEvalResult;

@@ -48,7 +48,7 @@ export const en = {
     "Ways to fix:\n" +
     "  - [init] Run `npx niceeval init` to scaffold niceeval.config.ts and evals/\n" +
     "  - [cd] Run from the project root that contains niceeval.config.ts\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/quickstart.mdx",
+    "  Docs: node_modules/niceeval/docs-site/zh/tutorials/quickstart.mdx",
   "cli.config.noDefault": "niceeval.config.ts must default export defineConfig(...).",
   "cli.dry.header": "\n[dry] {{evals}} evals × {{configs}} run configs:\n",
   "cli.dry.noMatches": "(no matches)",
@@ -60,7 +60,7 @@ export const en = {
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "judge.modelMissing":
     "No judge model configured. Set it in defineConfig({ judge: { model: \"...\" } }), the eval's judge config, or the NICEEVAL_JUDGE_MODEL environment variable (there is no built-in default model).\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/guides/scoring-guide.mdx",
+    "  Docs: node_modules/niceeval/docs-site/zh/how-to/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",
   "cli.flag.parseError": "{{message}}\nRun `niceeval --help` for usage.\n",
@@ -75,20 +75,22 @@ export const en = {
     "      a single eval id: attempts + assertion details\n" +
     "      @<locator>  exactly one attempt: no flag -> compact overview;\n" +
     "        with a flag -> that evidence slice\n" +
-    "      --eval        the Eval source captured when this attempt ran,\n" +
+    "      --source      the Eval source captured when this attempt ran,\n" +
     "        assertions mapped back to source lines\n" +
     "      --execution   this attempt's execution event stream (messages/thinking/\n" +
     "        Skill loads/tool calls); OTel adds timing to the same node when present\n" +
     "      --timing      unified timing tree for the attempt (phases + hooks/commands/turns + per-turn OTel)\n" +
     "      --diff[=file] sandbox workspace file-change summary; =file expands one file\n" +
-    "      --history   cross-run timeline (mutually exclusive with --report)\n" +
-    "      --run <dir>   pin a results dir    --experiment <id>   one experiment\n" +
-    "      --report <file>   custom report\n" +
+    "      --history   per experiment × eval execution timeline (mutually exclusive with --report)\n" +
+    "      --results <dir>   pin a results root    --experiment <id>   one experiment\n" +
+    "      --report <file>   custom report    --page <id>   pick a page (multi-page\n" +
+    "        reports print a page index with copyable commands)\n" +
     "  niceeval list                                       list discovered evals\n" +
-    "  niceeval view [eval-id-prefix…|snapshot.json] [--out dir] [--port n] [--no-open]\n" +
-    "      report slot + evidence rooms; --report <file> swaps in your report\n" +
-    "      (same file as show); --run <dir> pins a results dir;\n" +
-    "      --experiment <id> one experiment\n" +
+    "  niceeval view [eval-id-prefix…] [--out dir] [--port n] [--no-open]\n" +
+    "      report pages + evidence rooms; --report <file> swaps in your report\n" +
+    "      (same file as show); --page <id> picks the initial page;\n" +
+    "      --results <dir> pins a results root; --snapshot <file> opens exactly\n" +
+    "      one snapshot; --experiment <id> one experiment\n" +
     "      --out <dir> exports a static site: index.html plus the viewer\n" +
     "      artifacts, ready for any static host\n" +
     "  niceeval sandbox list|enter|history|diff|stop  inspect & destroy sandboxes kept by --keep-sandbox\n" +
@@ -107,9 +109,9 @@ export const en = {
   "cli.show.noEvalMatch": "No results matched: {{patterns}}. Evals with results: {{evals}}\n",
   "cli.show.noExperimentMatch": "No experiment matched --experiment {{arg}}. Experiments with results: {{experiments}}\n",
   "cli.show.historyReportConflict":
-    "`--history` and `--report` are mutually exclusive: --history is the built-in trend view. For a custom trend, compose exp.snapshots inside your report file instead.\n",
+    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for snapshot-level trends, compose exp.snapshots inside your report file instead.\n",
   "cli.show.evidenceNeedsEval":
-    "--eval / --execution / --diff show one attempt's evidence, but the selection matched {{matched}} evals. Pick an attempt locator from the index below:\n{{index}}\n",
+    "--source / --execution / --diff show one attempt's evidence, but the selection matched {{matched}} evals. Pick an attempt locator from the index below:\n{{index}}\n",
   "cli.show.locatorMalformed": "{{message}}\n",
   "cli.show.locatorNotFound": "{{message}}\n",
   "cli.eval.noMatch": "No eval matched: {{patterns}}.\n",
@@ -132,7 +134,7 @@ export const en = {
   "cli.resultsPath": "Structured results: {{path}} (snapshot.json + per-attempt result.json / events.json / trace.json / diff.json)\n",
   "cli.run.experimentRequired":
     "Run evals through an experiment: use `niceeval exp [group|config] [eval id prefix]`.\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/guides/write-experiment.mdx\n",
+    "  Docs: node_modules/niceeval/docs-site/zh/how-to/write-experiment.mdx\n",
   "cli.run.experimentRequiredHint": "Hint: \"{{pattern}}\" is an experiment{{kind}}; you probably meant: niceeval exp {{pattern}}\n",
   "cli.run.experimentRequiredKnown": "Discovered experiments: {{experiments}}\n",
   "cli.unimplemented": "Command \"{{command}}\" is not implemented yet (MVP).\n",
@@ -143,7 +145,7 @@ export const en = {
   "cli.view.url": "niceeval view: {{url}}\n",
   "context.capabilityMissing":
     "Agent \"{{agent}}\" is not sandbox-backed (built with defineSandboxAgent), so t.{{method}} is unavailable. Use an agent built with defineSandboxAgent, or drop this assertion.\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/guides/sandbox-agent.mdx",
+    "  Docs: node_modules/niceeval/docs-site/zh/how-to/sandbox-agent.mdx",
   "context.skipEmpty": "skip() requires a non-empty reason.",
   "context.turnFailed": "This send returned failed (turn status = failed): {{message}}",
   "context.turnFailedDefault": "This send returned failed (turn status = failed)",
@@ -167,7 +169,7 @@ export const en = {
   "feedback.human.compare": "Compare: niceeval view {{group}}",
   "feedback.human.counts": "{{total}} total · {{reused}} reused · {{running}} running · {{queued}} queued · {{completed}} completed",
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
-  "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --eval",
+  "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.failuresHeader": "FAILURES",
   "feedback.human.heartbeat": "{{elapsed}} elapsed · {{counts}}",
   "feedback.human.inspect": "Inspect: niceeval show {{locator}}",
@@ -274,7 +276,7 @@ export const en = {
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, or e2b",
   "sandbox.missingSpec":
     "sandbox agent needs a sandbox, but none was given. niceeval no longer picks a default — set `sandbox` in defineExperiment()/defineConfig() to dockerSandbox() / vercelSandbox() / e2bSandbox() (import from \"niceeval/sandbox\").\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/guides/sandbox-providers.mdx",
+    "  Docs: node_modules/niceeval/docs-site/zh/how-to/sandbox-providers.mdx",
   "sandbox.dependencyMissing.docker": "Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode",
   "sandbox.dependencyMissing.e2b": "E2B sandbox requires 'e2b'. Install it with: pnpm add e2b",
   "sandbox.dependencyMissing.vercel": "Vercel sandbox requires '@vercel/sandbox'. Install it with: pnpm add @vercel/sandbox",

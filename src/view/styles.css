@@ -965,3 +965,21 @@ a.brand:hover { opacity: 0.75; }
 .tok-kw { color: light-dark(#9333ea, #c792ea); }
 .tok-num { color: light-dark(#b25000, #f0a36b); }
 .tok-fn { color: light-dark(#0b62d6, #82aaff); }
+
+/* ── 外壳:导航右侧外部链接与页脚(docs/feature/reports/library/shell.md) ── */
+.shell-links { display: flex; gap: 14px; align-items: center; margin-left: auto; }
+.shell-links a { color: var(--soft); text-decoration: none; font-size: 13px; }
+.shell-links a:hover { color: var(--text); }
+.site-footer {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 24px 24px 32px;
+  color: var(--soft);
+  font-size: 12px;
+}
+.site-footer .powered-by a { color: var(--soft); text-decoration: none; }
+.site-footer .powered-by a:hover { color: var(--text); text-decoration: underline; }
+.nre-page-error pre { white-space: pre-wrap; }
