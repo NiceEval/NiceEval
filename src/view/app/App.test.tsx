@@ -33,10 +33,14 @@ describe("外壳:品牌位、hero 标题与 ReportLink.icon", () => {
         reportPages={reportPages}
       />,
     );
-    // 品牌位:恒定的 NiceEval 字标,不吃报告 title。
-    const brand = html.match(/class="brand"[\s\S]*?<\/a>/)![0];
+    // 品牌位:恒定的 NiceEval 字标,不吃报告 title,外链官网并带归因参数。
+    const brand = html.match(/<a[^>]*class="brand"[\s\S]*?<\/a>/)![0];
     expect(brand).toContain(">NiceEval</span>");
     expect(brand).not.toContain("Memory Evals");
+    expect(brand).toContain("https://niceeval.com/?utm_source=report&amp;utm_medium=brand");
+    // Powered by 行:同样外链官网,utm_medium 区分品牌位。
+    const poweredBy = html.match(/<span class="powered-by">[\s\S]*?<\/span>/)![0];
+    expect(poweredBy).toContain("https://niceeval.com/?utm_source=report&amp;utm_medium=powered-by");
     // hero:报告 title(node 环境 locale 回退 en)。
     const hero = html.match(/<h1>[\s\S]*?<\/h1>/)![0];
     expect(hero).toContain("Memory Evals");

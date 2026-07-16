@@ -20,8 +20,10 @@ const EVIDENCE_TABS: { id: Tab; label: "nav.attempts" | "nav.traces" }[] = [
   { id: "traces", label: "nav.traces" },
 ];
 
-/** niceeval 官网;web 面 hero 下方恒含指向它的 `Powered by NiceEval` 一行,无关闭配置。 */
-const NICEEVAL_SITE_URL = "https://niceeval.com";
+// niceeval 官网。页头品牌字标与 hero 下的 `Powered by NiceEval` 行都外链到它,
+// utm_medium 区分点击来自哪个品牌位(shell.md「行为约束」)。
+const BRAND_HREF = "https://niceeval.com/?utm_source=report&utm_medium=brand";
+const POWERED_BY_HREF = "https://niceeval.com/?utm_source=report&utm_medium=powered-by";
 
 /**
  * LocalizedText 的确定回退(docs/feature/reports/library/shell.md):当前 locale → en →
@@ -163,8 +165,11 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: Record
     <Tabs value={tab} onValueChange={(v) => selectTab(v as Tab)}>
       <header className="topbar">
         {/* 页头左端是恒定的 NiceEval 品牌字标(与 Powered by 行同族的产品品牌位),
-            报告定义不能覆盖或移除;报告 title 的落点是下方 hero 与浏览器标题。 */}
-        <a className="brand" href={hashForTab(`page:${initialPageId}`)}>
+            报告定义不能覆盖或移除,点击外链官网;报告 title 的落点是下方 hero 与浏览器标题,
+            报告内回首页走导航里的首个报告页 tab。 */}
+        {/* rel 用 noopener 而非 noreferrer:保留 Referer(默认策略只发 origin),
+            官网统计由此得知点击来自哪个报告站点;utm 只负责区分品牌位。 */}
+        <a className="brand" href={BRAND_HREF} target="_blank" rel="noopener">
           <span className="mark" />
           <span>NiceEval</span>
         </a>
@@ -224,7 +229,7 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: Record
           {/* 品牌行:恒在 hero 之下、恒带官网链接,不占 footer 的语义位、没有关闭配置
               (shell.md「行为约束」)。 */}
           <span className="powered-by">
-            <a href={NICEEVAL_SITE_URL} target="_blank" rel="noreferrer">
+            <a href={POWERED_BY_HREF} target="_blank" rel="noopener">
               Powered by NiceEval
             </a>
           </span>

@@ -228,9 +228,9 @@ it("show 与 view 的默认报告槽消费同一 Scope", async () => {
 | `show` 输出的页索引与组索引命令保留当前 `--results` / `--report` / `--page` 与位置参数上下文，复制即可复现下一层视图 | 正例：`--report` 下多组时组索引命令含 `--report` 与 `--page`；正例：`--results` 下页索引命令含 `--results` |
 | 全部页共享宿主注入的同一 Scope，位置参数与 `--experiment` 收窄对全部页生效；页不承担数据过滤 | 正例：两页的解析 refs 来自同一收窄后 Scope |
 | 本地宿主只 resolve 被打开的页；静态导出 resolve 并校验全部页，任一页失败则导出整体失败 | 正例：打开 A 页时 B 页的取数未执行；反例：B 页含 `<div>` 时 `--out` 非零退出、不产出半套站点 |
-| 标题取值链 def.title → Scope 中唯一且相同（LocalizedText 深相等）的快照 name → 内置文案「Eval 运行结果 / Eval Results」，落点是 hero、浏览器标题与 show 页索引标题行；页头品牌位恒为 NiceEval 字标，不由 title 覆盖；`links` / `footer` 渲染进导航壳，text 面不含这些字段 | 正例：三级 fallback 各一 fixture 且 hero 与品牌位各自正确；边界：两快照 name 的 en 相同、zh-CN 不同时任何 locale 下都落内置文案；反例：声明 title 后品牌位仍是 NiceEval；反例：show 输出不含 links href |
+| 标题取值链 def.title → Scope 中唯一且相同（LocalizedText 深相等）的快照 name → 内置文案「Eval 运行结果 / Eval Results」，落点是 hero、浏览器标题与 show 页索引标题行；页头品牌位恒为 NiceEval 字标，不由 title 覆盖，点击新标签页打开官网（href 带 `utm_source=report&utm_medium=brand`）；`links` / `footer` 渲染进导航壳，text 面不含这些字段 | 正例：三级 fallback 各一 fixture 且 hero 与品牌位各自正确；正例：品牌位 href 为官网并含 `utm_medium=brand`；边界：两快照 name 的 en 相同、zh-CN 不同时任何 locale 下都落内置文案；反例：声明 title 后品牌位仍是 NiceEval；反例：show 输出不含 links href |
 | `ReportLink.icon` 是内联 SVG 字符串（`{ svg }`）：web 面渲染在 label 前、静态导出原样内联；不收组件，show 不消费 | 正例：带 svg 的 GitHub 链接导航项含该 SVG；反例：无类型 JS 传 ReactNode 作 icon 装载报错；反例：show 页索引不含 svg |
-| web 面外壳 hero 下方恒含指向 niceeval 官网的 `Powered by NiceEval` 品牌行，不随 `footer` 配置增减，无关闭配置；省略 `footer` 时不渲染页脚；text 面与 `niceeval/report/react` 嵌入组件不含 | 正例：有 / 无 `footer` 两种 fixture hero 下都含该行，无 `footer` 时无页脚元素；反例：show 输出与 react 嵌入渲染不含该行 |
+| web 面外壳 hero 下方恒含指向 niceeval 官网的 `Powered by NiceEval` 品牌行（href 带 `utm_source=report&utm_medium=powered-by`），不随 `footer` 配置增减，无关闭配置；省略 `footer` 时不渲染页脚；text 面与 `niceeval/report/react` 嵌入组件不含 | 正例：有 / 无 `footer` 两种 fixture hero 下都含该行且 href 含 `utm_medium=powered-by`，无 `footer` 时无页脚元素；反例：show 输出与 react 嵌入渲染不含该行 |
 | view 导航组成固定：报告页按声明序在前，内置 Attempts、Traces 证据页恒排其后；报告定义不能移除或重排证据页 | 正例：双页定义导航序为 页A · 页B · Attempts · Traces；边界：树形态定义导航仍含证据页 |
 | `scripts` / `styles` 按声明序注入：styles 在官方样式后，scripts 在官方增强脚本后 `</body>` 前；初始静态 HTML 的数值不因注入改变 | 正例：注入前后初始 HTML 数据节点相同、注入顺序可断言 |
 | `{src}` 资产相对报告文件解析，拒绝 `..` 路径段、绝对路径与 `~`；静态导出复制进 `assets/` 保持相对路径，缺失文件报错并给出解析后路径 | 正例：`./assets/a.js` 被复制；反例：`../x.js` 装载报错；边界：缺失文件在导出时报错 |
