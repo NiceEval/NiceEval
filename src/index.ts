@@ -25,6 +25,7 @@ export type {
   Verdict,
   EvalDef,
   ExperimentDef,
+  ExperimentHookContext,
   Config,
   LocalizedText,
   JudgeConfig,
