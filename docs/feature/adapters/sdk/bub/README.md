@@ -13,7 +13,7 @@ const agent = bubAgent({
 });
 ```
 
-Bub 支持 `skills` 和 `pythonPlugins`，不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。Python package 集合属于安装 checkpoint key，配置变化必须触发重新安装。
+Bub 支持 `skills`、`pythonPlugins` 和安装后按序运行的 `postSetup` 钩子（见 [Adapter · 安装后运行脚本](../../library/coding-agent-extensions.md#安装后运行脚本postsetup)），不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。Python package 集合属于安装 checkpoint key，配置变化必须触发重新安装。
 
 行为轨来自 Bub tape JSONL；session 由 Adapter 管理。缺少显式 call ID 的旧事件只能按位配对，因此并发工具完整性取决于原始 tape 是否提供稳定关联字段。Usage 和 cost 从 run 事件读取。
 

@@ -138,6 +138,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [mintlify-zh-heading-anchor-slug](mintlify-zh-heading-anchor-slug.md) — 中文标题的锚点 slug 规则,github-slugger 直觉全错
 - [mintlify-npx-cache-corruption](mintlify-npx-cache-corruption.md) — docs:dev/validate 报 ENOTEMPTY / permission denied 是 npx 缓存损坏,清 `~/.npm/_npx` 别改脚本
 - 已修 [reference-docs-drift-generated-regions](reference-docs-drift-generated-regions.md) — 参考页手写漂移(matches 写成正则、虚构 .soft() 等);修法=TSDoc 唯一事实来源 + `pnpm docs:reference` 生成区块 + vitest 漂移守护,区块内永远不手改
+- 已修 [reference-generator-url-in-tsdoc-nested-quotes](reference-generator-url-in-tsdoc-nested-quotes.md) — TSDoc 里带引号的 URL 字面量经 docs:reference 的自动反引号包裹生成嵌套引号乱码;修法=TSDoc 不写带引号的 URL 示例,改文字描述
 - 已修 [custom-reports-dimension-false-dichotomy](custom-reports-dimension-false-dichotomy.md) — custom-reports guide 曾写「内置维度覆盖不了的都走 flag()」,漏讲自定义维度 `{name, of}`,把下游 agent 推去改 8 个 experiment 文件;修法=「换分组:三种维度」三路并列 + 选择判据(guide 讲联合类型要逐臂对照导出面)
 
 ## 环境、发布与部署

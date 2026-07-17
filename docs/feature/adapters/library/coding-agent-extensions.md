@@ -1,6 +1,6 @@
 # 配置 Coding Agent 扩展
 
-Claude Code、Codex CLI 和 Bub 的 Adapter factory 可以在每个 attempt 开始前安装 Skills、MCP servers 和各自的原生扩展；Claude Code 与 Codex 还可以安装各自的官方原生配置文件。扩展与配置文件作为 Agent 构造参数进入 experiment，便于组织可复现的 A/B 对比。
+Claude Code、Codex CLI 和 Bub 的 Adapter factory 可以在每个 attempt 开始前安装 Skills、MCP servers 和各自的原生扩展；Claude Code 与 Codex 还可以安装各自的官方原生配置文件。安装全部完成后，factory 的 `postSetup` 钩子在沙箱里按序运行用户脚本。扩展、配置文件与钩子作为 Agent 构造参数进入 experiment，便于组织可复现的 A/B 对比。
 
 ## 安装本地 Skill
 
@@ -34,6 +34,8 @@ const agent = claudeCodeAgent({
 
 ## 添加 MCP Server
 
+MCP server 有两种形态，按形状判别：本地 stdio 进程写 `command`，远程 Streamable HTTP 端点写 `url`。
+
 ```ts
 const browser = {
   name: "browser",
@@ -42,11 +44,43 @@ const browser = {
   env: { BROWSER_MODE: "headless" },
 };
 
-const claude = claudeCodeAgent({ mcpServers: [browser] });
-const codex = codexAgent({ mcpServers: [browser] });
+const memory = {
+  name: "team-memory",
+  url: "https://mem.example.com/mcp/",
+  headers: { Authorization: `Bearer ${process.env.MEM_API_KEY}` },
+};
+
+const claude = claudeCodeAgent({ mcpServers: [browser, memory] });
+const codex = codexAgent({ mcpServers: [browser, memory] });
 ```
 
+`url` 必须是沙箱内可达的端点：沙箱在云端时，宿主机上的服务先经隧道（cloudflared / tailscale 等）暴露成公网 URL，再把隧道地址传进来。`headers` 逐字进入每个请求的 HTTP 头，常用于 `Authorization`。header 值与 stdio 形态的 `env` 同属 secret：manifest 对 stdio 只记 `name`/`command`/`args`，对 HTTP 只记 `name`/`url`，两者的敏感字段都不落盘。一个 server 同时写 `command` 和 `url` 属于配置错误，setup 阶段报错点名该 server。
+
 MCP 只在 factory 构造时传入。需要条件变体时包装 factory 并合并数组，不在 Agent 构造后修改配置文件。
+
+## 安装后运行脚本：`postSetup`
+
+插件生态的标准动作里有一类「装完插件后跑一次它自带的 setup 脚本」——写全局 hook、把插件自己的配置块登记进 agent 主配置。这类脚本必须在 Adapter 全部安装步骤（写主配置、挂 MCP、装 Skills 与 Plugin、写 manifest）之后执行，否则它写下的配置会被后续步骤覆盖。把它声明成 factory 的 `postSetup` 钩子：
+
+```ts
+import type { SandboxHook } from "niceeval/sandbox";
+
+const installMemHooks: SandboxHook = async (sandbox) => {
+  await sandbox.runShell("python ~/.codex/plugins/nowledge-mem/scripts/install_hooks.py");
+};
+
+const agent = codexAgent({
+  plugins: [{
+    marketplace: { name: "nowledge-community", source: "nowledge/codex-plugins", ref: "v0.9.4" },
+    name: "nowledge-mem",
+  }],
+  postSetup: [installMemHooks],
+});
+```
+
+`postSetup` 复用沙箱钩子的类型与窄上下文（`SandboxHook` / `SandboxHookContext`，见 [Sandbox · 沙箱生命周期钩子](../../sandbox/library.md#沙箱生命周期钩子setup--teardown)）：拿到 sandbox 句柄和 `experimentId`/`signal`/`progress`/`diagnostic`，不借用完整 `AgentContext`。多个钩子按数组顺序执行；钩子返回的 cleanup 按 LIFO 与 agent teardown 一起收尾。钩子抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
+
+它与 `sandbox.setup()` 的分工只看相对 agent 安装的时机：与 agent 配置无关的环境预置进沙箱钩子（跑在 agent 安装之前）；要读写 agent 安装产物（插件文件、agent 主配置）的脚本进 `postSetup`（跑在 agent 安装之后）。`postSetup` 是过程钩子，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，钩子不复制 factory 拥有的配置知识。
 
 ## 使用官方原生配置文件
 

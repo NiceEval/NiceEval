@@ -24,6 +24,8 @@ export const en = {
   "skill.repoAmbiguous": "Repo skill {{source}} contains multiple skills; select which ones to enable with `skills: [...]`. Available: {{available}}.",
   "skill.repoUnknownSkill": "Repo skill {{source}} (ref: {{ref}}) has no skill named \"{{skill}}\". Available: {{available}}.",
   "skill.copyFailed": "Could not install skill \"{{name}}\" into {{dest}}:\n{{tail}}",
+  "mcp.ambiguousTransport":
+    "MCP server \"{{name}}\" specifies both \"command\" and \"url\" — pick one transport: \"command\" for a local stdio server, \"url\" for a remote Streamable HTTP endpoint.",
   "plugin.marketplaceFailed": "Could not connect {{agent}} marketplace \"{{name}}\" (source: {{source}}, ref: {{ref}}):\n{{tail}}",
   "plugin.marketplaceVerifyFailed": "Could not read back the registered marketplace list after adding {{agent}} marketplace \"{{name}}\" ({{command}}):\n{{tail}}",
   "plugin.marketplaceNameMismatch":

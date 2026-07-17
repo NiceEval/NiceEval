@@ -11,7 +11,8 @@ import {
 import { writeAgentSetupManifest } from "./manifest.ts";
 import { createCheckpoint, restoreCheckpoint } from "../sandbox/checkpoint.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
-import type { Agent, AgentContext, AgentSetupManifest, Sandbox, SkillSpec } from "../types.ts";
+import { runPostSetupHooks } from "./post-setup.ts";
+import type { Agent, AgentContext, AgentSetupManifest, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -61,6 +62,13 @@ export interface BubConfig {
    * 安装 checkpoint(否则第二个变体会静默拿到第一个变体的环境)。
    */
   pythonPlugins?: PythonPluginSpec[];
+  /**
+   * 安装后按数组顺序运行的用户钩子(复用 SandboxHook 的窄上下文):在装 bub、装 Skills /
+   * Python package、写 manifest 全部完成后执行。钩子返回的 cleanup 按 LIFO 与 teardown 一起
+   * 收尾;抛错按基础设施错误计(attempt errored)。
+   * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
+   */
+  postSetup?: SandboxHook[];
 }
 
 const UV = "$HOME/.local/bin/uv";
@@ -278,6 +286,10 @@ export function bubAgent(config?: BubConfig): Agent {
       if (manifest.skills.length || manifest.pythonPlugins?.length) {
         await writeAgentSetupManifest(sb, manifest);
       }
+
+      // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+      // 钩子失败不该丢掉这份证据。返回的合成 cleanup 交给 runner,与 teardown 一起 LIFO 收尾。
+      return await runPostSetupHooks(sb, ctx, config?.postSetup);
     },
 
     async send(input, ctx) {

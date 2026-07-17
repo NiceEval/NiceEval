@@ -7,7 +7,11 @@ import { claudeCodeAgent } from "niceeval/adapter";
 
 const agent = claudeCodeAgent({
   skills: [{ kind: "local", path: "skills/review/SKILL.md" }],
-  mcpServers: [{ name: "browser", command: "npx", args: ["-y", "server"] }],
+  mcpServers: [
+    { name: "browser", command: "npx", args: ["-y", "server"] },
+    // 远程 Streamable HTTP 端点:写 url,headers 逐字进请求头
+    { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: `Bearer ${process.env.MEM_API_KEY}` } },
+  ],
   plugins: [{
     // name 必须等于 acme/claude-plugins 仓库 manifest 里声明的 name,不是随意起的别名
     marketplace: { name: "acme-plugins", source: "acme/claude-plugins", ref: "v1.3.0" },
@@ -16,7 +20,7 @@ const agent = claudeCodeAgent({
 });
 ```
 
-`skills`、`mcpServers` 和 Claude Code 原生 `plugins` 均在 setup 阶段安装。Marketplace 连接不代表启用其中所有插件，每项必须显式给出 Plugin 名。
+`skills`、`mcpServers` 和 Claude Code 原生 `plugins` 均在 setup 阶段安装。Marketplace 连接不代表启用其中所有插件，每项必须显式给出 Plugin 名。MCP 的 stdio 形态写进用户级 `~/.claude.json` 的 `mcpServers` 条目；HTTP 形态写成 `{ "type": "http", "url": …, "headers": … }`。安装全部完成后要跑的用户脚本走 `postSetup` 钩子，见 [Adapter · 安装后运行脚本](../../library/coding-agent-extensions.md#安装后运行脚本postsetup)。
 
 接入与成本三个字段：`apiKey` 是 Anthropic API key，省略时读 `ANTHROPIC_API_KEY` 环境变量；`baseUrl` 是自定义 API 端点（代理 / 内网网关），省略时读 `ANTHROPIC_BASE_URL`，两者都没有则用 Anthropic 官方端点；`maxTurns` 限制单次 send 最多跑几个 tool-use 轮次（透传 `--max-turns`），用于给 eval 成本设上限，省略时用 CLI 原生默认（无限制）。模型选择不在这里——它归 experiment 的 `model` 维度。
 

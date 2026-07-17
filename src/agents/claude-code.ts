@@ -14,7 +14,9 @@ import {
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CLAUDE_CODE_CLI_VERSION } from "./coding-cli-versions.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
+import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
+import { runPostSetupHooks } from "./post-setup.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -69,7 +71,8 @@ export interface ClaudeCodeConfig {
   maxTurns?: number;
   /**
    * 额外 MCP server(每个沙箱 setup 时写进用户级 ~/.claude.json)。
-   * 示例:{ name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] }
+   * stdio 形态写 command(可带 args / env);Streamable HTTP 形态写 url(可带 headers,
+   * 逐字进请求头),落成 { "type": "http", "url": …, "headers": … } 条目。
    */
   mcpServers?: McpServer[];
   /**
@@ -88,6 +91,14 @@ export interface ClaudeCodeConfig {
    * setup 报错。manifest 只记项目相对路径与字节 SHA-256,不落正文。
    */
   settingsFile?: string;
+  /**
+   * 安装后按数组顺序运行的用户钩子(复用 SandboxHook 的窄上下文):在写 settings、挂 MCP、
+   * 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 setup 脚本这类
+   * 「安装产物就位后才能跑」的过程动作。钩子返回的 cleanup 按 LIFO 与 teardown 一起收尾;
+   * 抛错按基础设施错误计(attempt errored)。
+   * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
+   */
+  postSetup?: SandboxHook[];
 }
 
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
@@ -115,7 +126,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       }),
     },
 
-    async setup(sb) {
+    async setup(sb, ctx) {
       // 预制模板已把 claude 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
       await sb.runShell(
         `command -v claude >/dev/null 2>&1 || npm install -g @anthropic-ai/claude-code@${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
@@ -140,13 +151,20 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       }
 
       if (config?.mcpServers?.length) {
+        assertMcpServers(config.mcpServers);
         const servers: Record<string, object> = {};
         for (const s of config.mcpServers) {
-          servers[s.name] = {
-            command: s.command,
-            ...(s.args?.length && { args: s.args }),
-            ...(s.env && { env: s.env }),
-          };
+          servers[s.name] = isHttpMcp(s)
+            ? {
+                type: "http",
+                url: s.url,
+                ...(s.headers && Object.keys(s.headers).length && { headers: s.headers }),
+              }
+            : {
+                command: s.command,
+                ...(s.args?.length && { args: s.args }),
+                ...(s.env && { env: s.env }),
+              };
         }
         // 用户级 MCP 配置在 ~/.claude.json(顶层 mcpServers 字段),不是 ~/.claude/claude.json
         // ——后者 claude CLI 根本不读,MCP 静默挂不上(本机 `claude mcp list` 可核对)。
@@ -161,12 +179,8 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
         manifest.nativePlugins = await installPlugins(sb, config.plugins);
       }
       if (config?.mcpServers?.length) {
-        // manifest 里只记「挂了哪个 server、怎么起」;env 里可能有 token,不落盘。
-        manifest.mcpServers = config.mcpServers.map((s) => ({
-          name: s.name,
-          command: s.command,
-          ...(s.args?.length ? { args: [...s.args] } : {}),
-        }));
+        // manifest 里只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
+        manifest.mcpServers = mcpManifestEntries(config.mcpServers);
       }
       if (settings) {
         // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
@@ -181,6 +195,10 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       ) {
         await writeAgentSetupManifest(sb, manifest);
       }
+
+      // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+      // 钩子失败不该丢掉这份证据。返回的合成 cleanup 交给 runner,与 teardown 一起 LIFO 收尾。
+      return await runPostSetupHooks(sb, ctx, config?.postSetup);
     },
 
     async send(input, ctx) {

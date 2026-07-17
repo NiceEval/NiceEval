@@ -22,6 +22,8 @@ export const zhCN = {
   "skill.repoAmbiguous": "repo skill {{source}} 里有多个 skill,必须用 `skills: [...]` 明确选择要启用哪些。可选:{{available}}。",
   "skill.repoUnknownSkill": "repo skill {{source}}(ref: {{ref}})里没有名为 \"{{skill}}\" 的 skill。可选:{{available}}。",
   "skill.copyFailed": "skill \"{{name}}\" 装进 {{dest}} 失败:\n{{tail}}",
+  "mcp.ambiguousTransport":
+    "MCP server \"{{name}}\" 同时给出了 command 和 url——二选一:本地 stdio 进程写 command,远程 Streamable HTTP 端点写 url。",
   "plugin.marketplaceFailed": "{{agent}} marketplace \"{{name}}\" 连接失败(source: {{source}}, ref: {{ref}}):\n{{tail}}",
   "plugin.marketplaceVerifyFailed": "{{agent}} marketplace \"{{name}}\" add 后回读注册列表失败({{command}}):\n{{tail}}",
   "plugin.marketplaceNameMismatch":

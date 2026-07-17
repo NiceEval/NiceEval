@@ -218,7 +218,7 @@ describe("claudeCodeAgent settingsFile · setup", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  const ctx = {} as AgentContext; // claude 的 setup 不读 ctx
+  const ctx = {} as AgentContext; // 本组用例不配 postSetup,setup 不会读 ctx 的字段
 
   it("原始字节原样上传并 mv 成用户级 ~/.claude/settings.json;manifest 记项目相对路径 + SHA-256,不落正文", async () => {
     const body = '{\n  "$schema": "https://json.schemastore.org/claude-code-settings.json",\n  "permissions": { "deny": ["WebSearch", "WebFetch"] }\n}\n';
@@ -269,5 +269,47 @@ describe("claudeCodeAgent settingsFile · setup", () => {
     expect(box.uploads).toHaveLength(0);
     expect(box.commands.some((c) => c.includes("settings.json"))).toBe(false);
     expect(box.written["__niceeval__/agent-setup.json"]).toBeUndefined();
+  });
+});
+
+describe("claudeCodeAgent mcpServers · 形态落位", () => {
+  const ctx = {} as AgentContext;
+
+  it("HTTP 形态写成 ~/.claude.json 的 type http + url + headers 条目,stdio 条目不变;manifest 只记非 secret 字段", async () => {
+    const box = sb();
+    await claudeCodeAgent({
+      apiKey: "k",
+      mcpServers: [
+        { name: "browser", command: "npx", args: ["-y", "server"], env: { TOKEN: "env-sekret" } },
+        { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: "Bearer sekret" } },
+      ],
+    }).setup!(asSandbox(box), ctx);
+
+    // 用户级 MCP 配置经 heredoc 写进 ~/.claude.json(shared.writeFile),内容在命令里。
+    const write = box.commands.find((c) => c.includes("cat > ~/.claude.json"))!;
+    expect(write).toContain('"type": "http"');
+    expect(write).toContain('"url": "https://mem.example.com/mcp/"');
+    expect(write).toContain('"Authorization": "Bearer sekret"');
+    expect(write).toContain('"command": "npx"');
+
+    const manifestRaw = box.written["__niceeval__/agent-setup.json"]!;
+    const manifest = JSON.parse(manifestRaw) as AgentSetupManifest;
+    expect(manifest.mcpServers).toEqual([
+      { name: "browser", command: "npx", args: ["-y", "server"] },
+      { name: "team-memory", url: "https://mem.example.com/mcp/" },
+    ]);
+    expect(manifestRaw).not.toContain("sekret");
+  });
+
+  it("边界:HTTP 形态无 headers → 条目不带 headers 字段", async () => {
+    const box = sb();
+    await claudeCodeAgent({
+      apiKey: "k",
+      mcpServers: [{ name: "team-memory", url: "https://mem.example.com/mcp/" }],
+    }).setup!(asSandbox(box), ctx);
+
+    const write = box.commands.find((c) => c.includes("cat > ~/.claude.json"))!;
+    expect(write).toContain('"type": "http"');
+    expect(write).not.toContain("headers");
   });
 });

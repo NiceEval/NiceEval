@@ -15,10 +15,11 @@ description: "NiceEval 内置的 Sandbox 和非 Sandbox 适配器分别是什么
 ### claude-code
 
 - **鉴权**：`ANTHROPIC_API_KEY`（工厂参数 `apiKey` 可覆盖），可选 `ANTHROPIC_BASE_URL`（工厂参数 `baseUrl`）。
-- **装 MCP server**：`mcpServers` 配置项，`setup` 阶段写进沙箱里用户级的 `~/.claude.json`（顶层 `mcpServers` 字段）。
+- **装 MCP server**：`mcpServers` 配置项，`setup` 阶段写进沙箱里用户级的 `~/.claude.json`（顶层 `mcpServers` 字段）。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）；远程 Streamable HTTP 端点写 `url`（可带 `headers`，逐字进请求头，常用于 `Authorization`），写成 `{ "type": "http", "url": …, "headers": … }` 条目。`url` 要沙箱内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
 - **装 Skill**：`skills: SkillSpec[]`——本地 Skill（`{ kind: "local", path }`，从项目根读文件或目录）或 Repo Skill（`{ kind: "repo", source, ref, skills }`，可钉 commit/tag、可只启用多 Skill 仓库里的一部分）。装进沙箱的 project 级 `.claude/skills/<name>/`，claude CLI 原生发现（原生 `Skill` 工具调用被 adapter 归一为 `skill.loaded` 事件，不重复记成工具调用；用 `t.loadedSkill()` 断言，不是 `t.calledTool("Skill", ...)`）。
 - **装原生 Plugin**：`plugins: ClaudeCodePluginSpec[]`，每一项声明 Marketplace 连接（`name` / `source` / 可选 `ref`）和其中的 Plugin 名。这个类型只属于 claude-code，传不进 codex。
 - **官方配置文件**：`settingsFile` 是运行 NiceEval 的机器上的本地项目路径，不是 Sandbox 内路径；它指向一份完整的 Claude Code `settings.json`。路径相对项目根，只允许普通相对路径或 `./` 前缀；`..`、绝对路径、`~` 和解析后逃出项目根的符号链接都会报错。Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.claude/settings.json`；不继承宿主机配置，也不 deep merge 或重新序列化。`model` 和 `env` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。Secret 走环境变量，别写进配置文件。
+- **安装后脚本**：`postSetup: SandboxHook[]`，在写 settings、挂 MCP、装 Skill 与 Plugin 全部完成后，按数组顺序在沙箱里跑你的钩子函数。典型用途是运行插件自带的 setup 脚本（比如它要往全局配置里登记 hook）——这类脚本必须等安装产物就位才能跑。钩子抛错算基础设施错误（Attempt 记 errored），不算 agent 答题失败。
 - **tracing**：claude CLI 的 beta 原生遥测（`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`），span 只有结构和计时，细节见 [OTel 接入](/zh/how-to/connect-otel)。
 
 例如，用 `configs/claude-code/no-web.json` 关闭内置联网检索：
@@ -60,15 +61,16 @@ export default defineExperiment({
 ### codex
 
 - **鉴权**：`CODEX_API_KEY`（工厂参数 `apiKey` 可覆盖，不是 `OPENAI_API_KEY`），可选 `CODEX_BASE_URL`（工厂参数 `baseUrl`）接 OpenAI 兼容代理。
-- **装 MCP server**：`mcpServers` 配置项，`setup` 阶段追加进 `~/.codex/config.toml` 的 `[mcp_servers.<name>]` 段。
+- **装 MCP server**：`mcpServers` 配置项，`setup` 阶段追加进 `~/.codex/config.toml` 的 `[mcp_servers.<name>]` 段。两种形态按字段区分：本地 stdio 进程写 `command`（可带 `args` / `env`）；远程 Streamable HTTP 端点写 `url`（可带 `headers`，写成 `[mcp_servers.<name>.http_headers]` 子表）。`url` 要沙箱内可达：服务跑在你自己机器上时，先用 cloudflared / tailscale 这类隧道暴露成公网地址。
 
   <Warning>
     是复数 `mcp_servers`：单数 `[mcp_server.x]` 会被 codex CLI 静默忽略，MCP 压根挂不上，且不会报错——自查用 `codex mcp list`。
   </Warning>
 
 - **装 Skill**：`skills: SkillSpec[]`，与 claude-code 同一个类型。装进 `.agents/skills/<name>/`，并把发现指引写进 AGENTS.md——codex 没有 claude-code 那种原生 Skill 工具，只把文件装进去它不会主动去读；断言"用没用到"看它是否真的执行过读那个文件的 shell 命令，没有工具调用可以直接认。
-- **装原生 Plugin**：`plugins: CodexPluginSpec[]`，声明 Marketplace 连接（`name` / `source` / 可选 `ref`）和其中的 Plugin 名。这个类型只属于 codex，传不进 claude-code。
+- **装原生 Plugin**：`plugins: CodexPluginSpec[]`，声明 Marketplace 连接（`name` / `source` / 可选 `ref` / 可选 `sparse`）和其中的 Plugin 名。`sparse: true` 让 `codex plugin marketplace add` 带 `--sparse`，大仓库只拉插件所需路径，装出来的内容不变。这个类型只属于 codex，传不进 claude-code。
 - **官方配置文件**：`configFile` 是运行 NiceEval 的机器上的本地项目路径，不是 Sandbox 内路径；它指向一份完整的 Codex `config.toml`。路径相对项目根，只允许普通相对路径或 `./` 前缀；`..`、绝对路径、`~` 和解析后逃出项目根的符号链接都会报错。Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.codex/config.toml`；不继承宿主机配置，也不拼接、deep merge 或解析后重写。`model`、`model_provider`、`model_providers`、`model_reasoning_effort`、`mcp_servers`、`otel` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。Secret 走环境变量，别写进配置文件。
+- **安装后脚本**：`postSetup: SandboxHook[]`，语义与 claude-code 相同：全部安装步骤完成后按序在沙箱里跑你的钩子函数，适合运行插件自带的 setup 脚本。
 - **tracing**：内置，通过 `config.toml` 的 `[otel.trace_exporter.otlp-http]` 段配置，协议 `http/json`。
 
 例如，用 `configs/codex/no-web.toml` 关闭内置联网检索：
@@ -87,6 +89,7 @@ export default defineExperiment({
   agent: codexAgent({
     mcpServers: [
       { name: "browser", command: "npx", args: ["-y", "@anthropic/mcp-browser"] },
+      { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: `Bearer ${process.env.MEM_API_KEY}` } },
     ],
     skills: [{ kind: "repo", source: "Effect-TS/skills", ref: "8f3c1a2", skills: ["effect"] }],
     plugins: [
@@ -109,6 +112,7 @@ export default defineExperiment({
 - **装插件**：`pythonPlugins: PythonPluginSpec[]`（`{ package }`：PyPI 包、版本约束或 git URL），`setup` 阶段进 `uv tool install … --with <package>`。这个类型只属于 bub；package 集合进安装 checkpoint key，插件不同的两个变体不会复用同一份安装缓存。
 - **预制 Bub**：NiceEval 的 E2B 配方会把 Bub、OTel 插件和 Python 插件集合算成安装指纹。Adapter 只复用指纹完全一致的环境；仅在 PATH 里放一个 `bub` 不足以证明兼容。构建入口见 [沙箱 provider · 从官方基线继续构建以提速](/zh/how-to/sandbox-providers#从官方基线继续构建以提速)。
 - bub 没有 `mcpServers`——MCP 只属于支持它的 Adapter，Config 上压根没有这个字段。
+- **安装后脚本**：`postSetup: SandboxHook[]`，语义与另外两个 Adapter 相同：全部安装步骤完成后按序在沙箱里跑你的钩子函数。
 - **安装方式**：走 `uv tool install`（PyPI 包，不是 npm 包），首次安装会建 checkpoint 缓存加速后续沙箱。
 - **tracing**：内置，通过环境变量注入，协议 `http/protobuf`。
 
@@ -132,15 +136,16 @@ export default defineExperiment({
 | | claude-code | codex | bub |
 |---|---|---|---|
 | 鉴权环境变量 | `ANTHROPIC_API_KEY` | `CODEX_API_KEY` | `BUB_API_KEY` + `BUB_API_BASE` |
-| MCP server | ✅ `mcpServers` | ✅ `mcpServers` | ❌ |
+| MCP server | ✅ `mcpServers`（stdio + HTTP） | ✅ `mcpServers`（stdio + HTTP） | ❌ |
 | Skill | ✅ `skills: SkillSpec[]`（原生发现） | ✅ `skills: SkillSpec[]`（+ 发现指引） | ✅ `skills: SkillSpec[]`（+ 发现指引） |
 | 原生 Plugin | ✅ `plugins: ClaudeCodePluginSpec[]` | ✅ `plugins: CodexPluginSpec[]` | ❌ |
 | 官方配置文件 | ✅ `settingsFile`（完整 settings.json） | ✅ `configFile`（完整 config.toml） | ❌ |
 | Python Plugin | ❌ | ❌ | ✅ `pythonPlugins: PythonPluginSpec[]` |
+| 安装后脚本 | ✅ `postSetup: SandboxHook[]` | ✅ `postSetup: SandboxHook[]` | ✅ `postSetup: SandboxHook[]` |
 | tracing | ✅（beta，仅结构与计时） | ✅ | ✅ |
 | 安装方式 | npm 全局包 | npm 全局包 | `uv tool install`（PyPI） |
 
-装了什么有据可查：Adapter 在 `setup` 收尾把安装清单写进沙箱的 `__niceeval__/agent-setup.json`，运行器把它存成 Attempt Artifact `agent-setup.json`（库里读 `attempt.agentSetup()`）。清单只记来源、ref、Skill/Plugin 名、解析出的版本，以及官方配置文件的项目相对路径和 SHA-256；不保存配置正文、API Key 或环境变量值。
+装了什么有据可查：Adapter 在 `setup` 收尾把安装清单写进沙箱的 `__niceeval__/agent-setup.json`，运行器把它存成 Attempt Artifact `agent-setup.json`（库里读 `attempt.agentSetup()`）。清单只记来源、ref、Skill/Plugin 名、解析出的版本，以及官方配置文件的项目相对路径和 SHA-256；不保存配置正文、API Key 或环境变量值。MCP server 同理只记非敏感字段：stdio 形态记 `name` / `command` / `args` 不记 `env`，HTTP 形态记 `name` / `url` 不记 `headers`。
 
 ## 非 Sandbox 适配器
 

@@ -19,7 +19,9 @@ import {
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
 import { t } from "../i18n/index.ts";
 import { DEFAULT_CODEX_CLI_VERSION } from "./coding-cli-versions.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SkillSpec } from "../types.ts";
+import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
+import { runPostSetupHooks } from "./post-setup.ts";
+import type { Agent, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -59,6 +61,11 @@ export interface CodexPluginSpec {
     source: string;
     /** 固定 Marketplace 的 Tag、Commit 或 Branch(→ `codex plugin marketplace add --ref`)。 */
     ref?: string;
+    /**
+     * sparse 拉取(→ `codex plugin marketplace add --sparse`):大仓库只取插件所需路径。
+     * 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
+     */
+    sparse?: boolean;
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -71,7 +78,8 @@ export interface CodexConfig {
   baseUrl?: string;
   /**
    * 额外 MCP server(每个沙箱 setup 时追加进 ~/.codex/config.toml)。
-   * 格式对应 codex config.toml 的 [mcp_servers.<name>] 表。
+   * stdio 形态(command/args/env)写 [mcp_servers.<name>] 的 command 行;
+   * Streamable HTTP 形态(url/headers)写 url 行,headers 进 [mcp_servers.<name>.http_headers] 子表。
    */
   mcpServers?: McpServer[];
   /**
@@ -92,6 +100,14 @@ export interface CodexConfig {
    * 项目相对路径与字节 SHA-256,不落正文。
    */
   configFile?: string;
+  /**
+   * 安装后按数组顺序运行的用户钩子(复用 SandboxHook 的窄上下文):在写主配置、挂 MCP、
+   * 装 Skills / Plugin、写 manifest 全部完成后执行,适合跑插件自带的 setup 脚本这类
+   * 「安装产物就位后才能跑」的过程动作。钩子返回的 cleanup 按 LIFO 与 teardown 一起收尾;
+   * 抛错按基础设施错误计(attempt errored)。
+   * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
+   */
+  postSetup?: SandboxHook[];
 }
 
 export function codexAgent(config?: CodexConfig): Agent {
@@ -155,15 +171,25 @@ export function codexAgent(config?: CodexConfig): Agent {
       }
 
       if (config?.mcpServers?.length) {
+        assertMcpServers(config.mcpServers);
         const mcpToml = config.mcpServers
           .map((s) => {
             // 注意是复数 mcp_servers:单数 [mcp_server.x] 会被 codex 静默忽略,
             // MCP 压根挂不上(实测 codex-cli 0.142.x,`codex mcp list` 可核对)。
-            const lines: string[] = [`[mcp_servers.${s.name}]`, `command = "${s.command}"`];
-            if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
-            if (s.env && Object.keys(s.env).length) {
-              lines.push(`[mcp_servers.${s.name}.env]`);
-              for (const [k, v] of Object.entries(s.env)) lines.push(`${k} = "${v}"`);
+            const lines: string[] = [`[mcp_servers.${s.name}]`];
+            if (isHttpMcp(s)) {
+              lines.push(`url = "${s.url}"`);
+              if (s.headers && Object.keys(s.headers).length) {
+                lines.push(`[mcp_servers.${s.name}.http_headers]`);
+                for (const [k, v] of Object.entries(s.headers)) lines.push(`"${k}" = "${v}"`);
+              }
+            } else {
+              lines.push(`command = "${s.command}"`);
+              if (s.args?.length) lines.push(`args = [${s.args.map((a) => `"${a}"`).join(", ")}]`);
+              if (s.env && Object.keys(s.env).length) {
+                lines.push(`[mcp_servers.${s.name}.env]`);
+                for (const [k, v] of Object.entries(s.env)) lines.push(`${k} = "${v}"`);
+              }
             }
             return lines.join("\n");
           })
@@ -184,12 +210,8 @@ export function codexAgent(config?: CodexConfig): Agent {
         manifest.nativePlugins = await installPlugins(sb, config.plugins);
       }
       if (config?.mcpServers?.length) {
-        // manifest 只记「挂了哪个 server、怎么起」;env 里可能有 token,不落盘。
-        manifest.mcpServers = config.mcpServers.map((s) => ({
-          name: s.name,
-          command: s.command,
-          ...(s.args?.length ? { args: [...s.args] } : {}),
-        }));
+        // manifest 只记「挂了哪个 server、怎么连」;env / headers 里可能有 token,不落盘。
+        manifest.mcpServers = mcpManifestEntries(config.mcpServers);
       }
       if (nativeConfig) {
         // 只记来源路径与字节哈希,不落正文(任意官方配置都可能带敏感字符串)。
@@ -203,6 +225,10 @@ export function codexAgent(config?: CodexConfig): Agent {
       ) {
         await writeAgentSetupManifest(sb, manifest);
       }
+
+      // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,
+      // 钩子失败不该丢掉这份证据。返回的合成 cleanup 交给 runner,与 teardown 一起 LIFO 收尾。
+      return await runPostSetupHooks(sb, ctx, config?.postSetup);
     },
 
     tracing: {
@@ -324,8 +350,10 @@ export async function installPlugins(
     const { marketplace } = plugin;
     if (!connected.has(marketplace.name)) {
       const refFlag = marketplace.ref ? ` --ref ${shared.shellQuote(marketplace.ref)}` : "";
+      // --sparse 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
+      const sparseFlag = marketplace.sparse ? " --sparse" : "";
       const add = await sb.runShell(
-        `codex plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}`,
+        `codex plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}${sparseFlag}`,
       );
       if (add.exitCode !== 0) {
         throw new Error(

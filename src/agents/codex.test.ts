@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexAgent, installPlugins, type CodexPluginSpec } from "./codex.ts";
 import { createAgentSession } from "../context/session.ts";
-import type { AgentContext, AgentSetupManifest, CommandOptions, CommandResult, Sandbox, SandboxFile } from "../types.ts";
+import type { AgentContext, AgentSetupManifest, CommandOptions, CommandResult, McpServer, Sandbox, SandboxFile } from "../types.ts";
 
 /** 内存沙箱:runShell 记命令(可按命令包含的子串打脚本化输出),uploadFile / writeFiles 记内容。 */
 class FakeSandbox implements Partial<Sandbox> {
@@ -89,6 +89,15 @@ describe("codex installPlugins · 命令构造", () => {
     expect(out).toEqual([
       { agent: "codex", marketplace: { name: "acme", source: "acme/codex-plugins" }, name: "repo-map" },
     ]);
+  });
+
+  it("marketplace.sparse → add 命令带 --sparse(缺省不含由上面的精确命令断言覆盖);manifest 不记录 sparse", async () => {
+    const box = sb();
+    const out = await installPlugins(asSandbox(box), [
+      { marketplace: { name: "acme", source: "acme/codex-plugins", sparse: true }, name: "repo-map" },
+    ]);
+    expect(box.commands[0]).toBe("codex plugin marketplace add 'acme/codex-plugins' --sparse");
+    expect(out[0]!.marketplace).toEqual({ name: "acme", source: "acme/codex-plugins" });
   });
 
   it("同名 marketplace 只连一次:两个 plugin 共用一个 marketplace.name → 只有一条 marketplace add,两条 plugin add", async () => {
@@ -337,5 +346,119 @@ describe("codexAgent · live step feedback", () => {
       { type: "message", role: "assistant", text: "All tests passed." },
     ]);
     expect(ctx.session.id).toBe("thread-1");
+  });
+});
+
+describe("codexAgent mcpServers · 形态落位", () => {
+  const ctx = { flags: {} } as AgentContext;
+
+  it("HTTP 形态:url 行 + [mcp_servers.<name>.http_headers] 子表;manifest 只记 name/url,headers 值不落盘", async () => {
+    const box = sb();
+    await codexAgent({
+      apiKey: "k",
+      mcpServers: [
+        { name: "team-memory", url: "https://mem.example.com/mcp/", headers: { Authorization: "Bearer sekret" } },
+      ],
+    }).setup!(asSandbox(box), ctx);
+
+    const mcp = box.commands.find((c) => c.includes("[mcp_servers.team-memory]"))!;
+    expect(mcp).toContain('url = "https://mem.example.com/mcp/"');
+    expect(mcp).toContain("[mcp_servers.team-memory.http_headers]");
+    expect(mcp).toContain('"Authorization" = "Bearer sekret"');
+    expect(mcp).not.toContain("command =");
+
+    const manifestRaw = box.written["__niceeval__/agent-setup.json"]!;
+    const manifest = JSON.parse(manifestRaw) as AgentSetupManifest;
+    expect(manifest.mcpServers).toEqual([{ name: "team-memory", url: "https://mem.example.com/mcp/" }]);
+    expect(manifestRaw).not.toContain("sekret");
+  });
+
+  it("边界:HTTP 形态无 headers → 不写空 http_headers 子表", async () => {
+    const box = sb();
+    await codexAgent({
+      apiKey: "k",
+      mcpServers: [{ name: "team-memory", url: "https://mem.example.com/mcp/" }],
+    }).setup!(asSandbox(box), ctx);
+
+    const mcp = box.commands.find((c) => c.includes("[mcp_servers.team-memory]"))!;
+    expect(mcp).toContain('url = "https://mem.example.com/mcp/"');
+    expect(mcp).not.toContain("http_headers");
+  });
+
+  it("反例:同一 server 同时给出 command 与 url → setup 报错点名该 server,不写 MCP 块", async () => {
+    const box = sb();
+    // 形状判别不设 kind 标签,双字段的错误配置在类型上可能混得进来 —— 运行期兜底点名报错。
+    const dup = { name: "dup-server", command: "npx", url: "https://x.example.com/mcp" } as McpServer;
+    await expect(codexAgent({ apiKey: "k", mcpServers: [dup] }).setup!(asSandbox(box), ctx)).rejects.toThrow(
+      /dup-server/,
+    );
+    expect(box.commands.some((c) => c.includes("[mcp_servers."))).toBe(false);
+  });
+});
+
+describe("codexAgent postSetup · 安装后钩子", () => {
+  const mkCtx = (): AgentContext =>
+    ({
+      flags: {},
+      experimentId: "exp-1",
+      signal: new AbortController().signal,
+      progress: () => {},
+      diagnostic: () => {},
+    }) as unknown as AgentContext;
+
+  it("钩子在 Adapter 安装与 manifest 之后按数组顺序执行,拿到 SandboxHook 窄上下文", async () => {
+    const box = sb();
+    const seen: string[] = [];
+    let manifestPresentAtHook = false;
+    await codexAgent({
+      apiKey: "k",
+      mcpServers: [{ name: "browser", command: "npx" }],
+      postSetup: [
+        async (sandbox, hookCtx) => {
+          manifestPresentAtHook = box.written["__niceeval__/agent-setup.json"] !== undefined;
+          seen.push(`a:${hookCtx.experimentId}`);
+          await sandbox.runShell("post-hook-a");
+        },
+        async (sandbox) => {
+          seen.push("b");
+          await sandbox.runShell("post-hook-b");
+        },
+      ],
+    }).setup!(asSandbox(box), mkCtx());
+
+    expect(seen).toEqual(["a:exp-1", "b"]);
+    expect(manifestPresentAtHook).toBe(true);
+    const configIdx = box.commands.findIndex((c) => c.includes("config.toml"));
+    const aIdx = box.commands.indexOf("post-hook-a");
+    const bIdx = box.commands.indexOf("post-hook-b");
+    expect(aIdx).toBeGreaterThan(configIdx);
+    expect(bIdx).toBeGreaterThan(aIdx);
+  });
+
+  it("钩子返回的 cleanup 合成一个闭包交还 runner,按 LIFO 执行", async () => {
+    const box = sb();
+    const order: string[] = [];
+    const cleanup = await codexAgent({
+      apiKey: "k",
+      postSetup: [() => () => void order.push("a"), () => () => void order.push("b")],
+    }).setup!(asSandbox(box), mkCtx());
+
+    expect(typeof cleanup).toBe("function");
+    await (cleanup as () => Promise<void> | void)();
+    expect(order).toEqual(["b", "a"]);
+  });
+
+  it("反例:钩子抛错从 setup 传播(attempt errored 通道)", async () => {
+    const box = sb();
+    await expect(
+      codexAgent({
+        apiKey: "k",
+        postSetup: [
+          () => {
+            throw new Error("hook boom");
+          },
+        ],
+      }).setup!(asSandbox(box), mkCtx()),
+    ).rejects.toThrow("hook boom");
   });
 });

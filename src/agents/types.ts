@@ -7,20 +7,41 @@ import type { StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 
 /**
- * MCP server 描述符 —— 支持 MCP 的 adapter(Claude Code / Codex)共用的工具服务单元,
- * 不是 native plugin 的一种。在 agent factory config 里声明,setup 阶段写进各自的配置文件。
- * 见 docs/feature/adapters/architecture/coding-agent-extensions.md「类型边界」。
+ * 本地 stdio 形态的 MCP server:沙箱内起子进程,按 stdio 说 MCP 协议。
+ * 与 {@link McpHttpServer} 按形状判别(有 `command` 的是 stdio,有 `url` 的是 HTTP)。
  */
-export interface McpServer {
+export interface McpStdioServer {
   /** 服务器唯一名(config key)。 */
   name: string;
   /** 启动命令(如 "npx"、"node"、"uvx")。 */
   command: string;
   /** 传给命令的参数。 */
   args?: string[];
-  /** 注入服务器进程的环境变量。 */
+  /** 注入服务器进程的环境变量(可能含 secret,不进 manifest)。 */
   env?: Record<string, string>;
 }
+
+/**
+ * 远程 Streamable HTTP 形态的 MCP server:沙箱直接连一个 HTTP 端点。
+ * `url` 必须沙箱内可达——宿主机上的服务先经隧道(cloudflared / tailscale 等)暴露。
+ */
+export interface McpHttpServer {
+  /** 服务器唯一名(config key)。 */
+  name: string;
+  /** Streamable HTTP 端点(如 https://mem.example.com/mcp/)。 */
+  url: string;
+  /** 逐字写进每个请求的 HTTP 头(常用于 Authorization;可能含 secret,不进 manifest)。 */
+  headers?: Record<string, string>;
+}
+
+/**
+ * MCP server 描述符 —— 支持 MCP 的 adapter(Claude Code / Codex)共用的工具服务单元,
+ * 不是 native plugin 的一种。stdio 与 Streamable HTTP 两种形态按形状判别,不设 kind 标签
+ * (两种形态各有唯一必填判别字段);同时给出 `command` 与 `url` 属配置错误,setup 报错点名。
+ * 在 agent factory config 里声明,setup 阶段写进各自的配置文件。
+ * 见 docs/feature/adapters/architecture/coding-agent-extensions.md「类型边界」。
+ */
+export type McpServer = McpStdioServer | McpHttpServer;
 
 /**
  * Skill 的来源描述 —— Claude Code / Codex / Bub 共用的**数据类型**:只统一「从哪里取得
@@ -67,8 +88,8 @@ export interface AgentSetupManifest {
     /** 安装后 CLI 报告的版本;取不到时省略。 */
     resolvedVersion?: string;
   }>;
-  /** 挂上的 MCP server(不含 env:secret 不进 manifest)。 */
-  mcpServers?: Array<{ name: string; command: string; args?: string[] }>;
+  /** 挂上的 MCP server(只记非 secret 字段:stdio 不含 env,HTTP 不含 headers)。 */
+  mcpServers?: Array<{ name: string; command: string; args?: string[] } | { name: string; url: string }>;
   /**
    * 官方原生配置文件(Claude Code `settings.json` / Codex `config.toml`):只记 Agent 名、
    * 项目相对来源路径与原始字节的 SHA-256,不落正文 —— 任意官方配置都可能携带敏感字符串,
