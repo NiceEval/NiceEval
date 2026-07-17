@@ -67,6 +67,11 @@ export function defineExperiment(def: ExperimentDef): ExperimentDef {
     throw new Error(t("define.experimentIdRejected"));
   }
   if (!def.agent) throw new Error(t("define.experimentAgentRequired"));
+  // setup 是实验级生命周期钩子(整场一次,宿主机侧,见 runner/types.ts 的 ExperimentDef.setup);
+  // 传成非函数(如误把 sandbox 钩子对象塞进来)在解析时就报,不等到调度才炸。
+  if (def.setup !== undefined && typeof def.setup !== "function") {
+    throw new Error(t("define.experimentSetupNotFunction"));
+  }
   // flags 必须可 JSON 序列化(进结果快照的 ExperimentRunInfo.flags):解析时即校验,
   // 非 JSON 值(函数 / undefined / 循环引用 / bigint)直接报错,不等到落盘才炸。
   if (def.flags !== undefined) {

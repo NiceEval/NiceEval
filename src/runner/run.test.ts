@@ -805,3 +805,230 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     });
   });
 });
+
+// ───────────────────────── 实验级生命周期(ExperimentDef.setup) ─────────────────────────
+// 契约见 docs/feature/experiments/architecture.md「实验级生命周期」:整场至多一次的宿主机
+// setup、返回的 cleanup 在全部 attempt 收尾后必跑(中断也跑)、setup 抛错 → 本实验所有
+// attempt 逐条合成 errored、cleanup 抛错只作运行级诊断。
+
+describe("runEvals · 实验级 setup/teardown", () => {
+  function runWithSetup(
+    experimentId: string,
+    setup: AgentRun["setup"],
+    overrides: Partial<AgentRun> = {},
+  ): AgentRun {
+    return {
+      agent: makeAgent(`agent-${experimentId}`),
+      flags: {},
+      runs: 1,
+      earlyExit: true,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      evalFilter: () => true,
+      experimentId,
+      setup,
+      ...overrides,
+    };
+  }
+
+  it("setup 整场恰好一次:并发 attempt 共享 memoized 结果,cleanup 在全部 attempt 收尾后恰好一次", async () => {
+    let setupCalls = 0;
+    let cleanupCalls = 0;
+    let completedAtCleanup = -1;
+    let completed = 0;
+    const evals = ["a", "b", "c"].map((id) =>
+      makeEval(id, () => {
+        completed += 1;
+      }),
+    );
+    const agentRun = runWithSetup("lifecycle-exp", async () => {
+      setupCalls += 1;
+      // 给并发的其它 attempt 一个真实的等待窗口,验证它们不各自重跑 setup
+      await new Promise((r) => setTimeout(r, 20));
+      return () => {
+        cleanupCalls += 1;
+        completedAtCleanup = completed;
+      };
+    }, { runs: 2 });
+
+    const { summary } = await run(evals, [agentRun], { maxConcurrency: 4 });
+
+    expect(setupCalls).toBe(1);
+    expect(cleanupCalls).toBe(1);
+    expect(summary.results).toHaveLength(6);
+    expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
+    // cleanup 必须晚于本实验全部 attempt 的执行(runs:2 但 earlyExit 会省略第二轮,
+    // 至少 3 条 eval 各完成一次)
+    expect(completedAtCleanup).toBeGreaterThanOrEqual(3);
+  });
+
+  it("两个实验各自的 setup/cleanup 各跑一次,互不共享", async () => {
+    const calls: string[] = [];
+    const evals = [makeEval("shared", () => {})];
+    const mk = (id: string) =>
+      runWithSetup(id, () => {
+        calls.push(`setup:${id}`);
+        return () => {
+          calls.push(`cleanup:${id}`);
+        };
+      });
+
+    await run(evals, [mk("exp-a"), mk("exp-b")]);
+
+    expect(calls.filter((c) => c === "setup:exp-a")).toHaveLength(1);
+    expect(calls.filter((c) => c === "setup:exp-b")).toHaveLength(1);
+    expect(calls.filter((c) => c === "cleanup:exp-a")).toHaveLength(1);
+    expect(calls.filter((c) => c === "cleanup:exp-b")).toHaveLength(1);
+  });
+
+  it("全部结果被 carry 携入、无 attempt 派发时 setup 不执行", async () => {
+    let setupCalls = 0;
+    const experimentId = "carry-exp";
+    const evalDef = makeEval("done", () => {});
+    const agentRun = runWithSetup(experimentId, () => {
+      setupCalls += 1;
+    });
+    const carried: EvalResult = {
+      id: "done",
+      experimentId,
+      agent: agentRun.agent.name,
+      verdict: "passed",
+      attempt: 0,
+      durationMs: 1,
+      assertions: [],
+    };
+
+    const { summary } = await run([evalDef], [agentRun], {
+      carryPlan: {
+        plannedFingerprints: new Map(),
+        priorRunKeys: new Set([`${experimentId}|done`]),
+        carriedResults: [carried],
+      },
+    });
+
+    expect(setupCalls).toBe(0);
+    expect(summary.results).toHaveLength(1);
+    expect(summary.results[0]!.verdict).toBe("passed");
+  });
+
+  it("setup 抛错:本实验所有 attempt 合成 errored(code/phase 结构化),同批其它实验不受影响", async () => {
+    const evals = [makeEval("m1", () => {}), makeEval("m2", () => {})];
+    const broken = runWithSetup(
+      "broken-exp",
+      () => {
+        throw new Error("tunnel refused to start");
+      },
+      { runs: 2, earlyExit: false },
+    );
+    const healthy = runWithSetup("healthy-exp", () => {});
+
+    const { summary } = await run(evals, [broken, healthy], { maxConcurrency: 4 });
+
+    const brokenResults = summary.results.filter((r) => r.experimentId === "broken-exp");
+    // 2 eval × runs 2 全部逐条 errored——setup 失败不派发 agent、零成本,不被 fail-fast 截短
+    expect(brokenResults).toHaveLength(4);
+    for (const r of brokenResults) {
+      expect(r.verdict).toBe("errored");
+      expect(r.error).toMatchObject({ code: "experiment-setup-failed", phase: "experiment.setup" });
+      expect(r.error?.message).toContain("tunnel refused to start");
+      expect(r.locator).toBeDefined();
+    }
+    const healthyResults = summary.results.filter((r) => r.experimentId === "healthy-exp");
+    expect(healthyResults).toHaveLength(2);
+    expect(healthyResults.every((r) => r.verdict === "passed")).toBe(true);
+  });
+
+  it("运行被中断(signal abort)时 cleanup 仍执行", async () => {
+    let cleanupCalls = 0;
+    const controller = new AbortController();
+    const evalDef = makeEval("abort-me", async () => {
+      controller.abort();
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    const agentRun = runWithSetup("interrupted-exp", () => () => {
+      cleanupCalls += 1;
+    });
+
+    await run([evalDef], [agentRun], { signal: controller.signal });
+
+    expect(cleanupCalls).toBe(1);
+  });
+
+  it("ctx 携带 experimentId / selectedEvalIds / signal,setup 未返回函数时收尾无动作", async () => {
+    let seen: { experimentId: string; selectedEvalIds: readonly string[]; hasSignal: boolean } | undefined;
+    const controller = new AbortController();
+    const evals = [makeEval("ctx-a", () => {}), makeEval("ctx-b", () => {})];
+    const agentRun = runWithSetup("ctx-exp", (ctx) => {
+      seen = {
+        experimentId: ctx.experimentId,
+        selectedEvalIds: ctx.selectedEvalIds,
+        hasSignal: ctx.signal !== undefined,
+      };
+      ctx.progress({ message: "warming" });
+    });
+
+    const { summary } = await run(evals, [agentRun], { signal: controller.signal });
+
+    expect(seen).toEqual({ experimentId: "ctx-exp", selectedEvalIds: ["ctx-a", "ctx-b"], hasSignal: true });
+    expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
+  });
+});
+
+describe("runEvals · 实验级 cleanup 失败只作运行级诊断", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+  });
+
+  it("cleanup 抛错:verdict 不变,产生 experiment-teardown-failed 诊断", async () => {
+    const experimentId = "leaky-exp";
+    const evalDef = makeEval("ok", () => {});
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-leaky"),
+      flags: {},
+      runs: 1,
+      earlyExit: true,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      evalFilter: () => true,
+      experimentId,
+      setup: () => () => {
+        throw new Error("port already released");
+      },
+    };
+    const plan: RunFeedbackPlan = {
+      shape: { evals: 1, configs: 1, totalRuns: 1, maxConcurrency: 3 },
+      reused: 0,
+      reusedFailures: [],
+    };
+
+    await withCoordinator(plan, async (coordinator) => {
+      const { summary } = await run([evalDef], [agentRun]);
+
+      expect(summary.results).toHaveLength(1);
+      expect(summary.results[0]!.verdict).toBe("passed");
+      const diag = coordinator.state.diagnostics.find((d) => d.key === `experiment-teardown-failed:${experimentId}`);
+      expect(diag).toBeDefined();
+      expect(diag!.severity).toBe("warning");
+      expect(diag!.message).toContain("port already released");
+    });
+  });
+});
+
+describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
+  it("只改 setup 函数体不改变 fingerprint(改钩子要重跑用 --force,与 sandbox 钩子同规则)", async () => {
+    const evalDef = makeEval("fp", () => {});
+    const base: AgentRun = {
+      agent: makeAgent("agent-fp"),
+      flags: {},
+      runs: 1,
+      earlyExit: true,
+      timeoutMs: 5_000,
+      evalFilter: () => true,
+      experimentId: "fp-exp",
+    };
+    const withHook: AgentRun = { ...base, setup: () => () => {} };
+
+    const { computeFingerprint } = await import("./fingerprint.ts");
+    expect(await computeFingerprint(evalDef, withHook)).toBe(await computeFingerprint(evalDef, base));
+  });
+});

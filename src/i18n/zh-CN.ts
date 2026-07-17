@@ -58,9 +58,11 @@ export const zhCN = {
   "cli.flag.invalidOutput": "标志 --output 需要 auto|human|agent|ci 之一,收到 \"{{value}}\"。\n",
   "runner.budgetUnenforceable":
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
+  "runner.experimentTeardownFailed":
+    "实验 {{experimentId}} 的 setup 返回的 cleanup 执行失败:{{message}}。结果不受影响,但该实验起的宿主机资源可能没有回收,请手动检查。\n",
   "judge.modelMissing":
     "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } })、eval 的 judge 配置或环境变量 NICEEVAL_JUDGE_MODEL 里指定裁判模型(没有内置默认模型)。\n" +
-    "  文档:node_modules/niceeval/docs-site/zh/how-to/scoring-guide.mdx",
+    "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
   "cli.flag.parseError": "{{message}}\n运行 `niceeval --help` 查看用法。\n",
@@ -152,6 +154,7 @@ export const zhCN = {
   "define.evalTestRequired": "defineEval 需要一个 async test(t) 函数。",
   "define.experimentAgentRequired": "defineExperiment 需要 agent。",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} 不是可 JSON 序列化的值(函数 / undefined / 循环引用 / bigint 不允许);flags 会原样进入结果快照,必须是纯 JSON。",
+  "define.experimentSetupNotFunction": "experiment.setup 必须是函数((ctx) => void | cleanup);要按实验准备沙箱内环境请挂 sandbox spec 的 .setup() 钩子链。",
   "define.experimentIdRejected": "defineExperiment 不接受 id —— id 由文件路径推导。",
   "define.sandboxAgentNameRequired": "defineSandboxAgent 需要 name。",
   "define.sandboxCreateRequired": "defineSandbox 需要一个 create() 函数。",
@@ -189,6 +192,7 @@ export const zhCN = {
   "feedback.phase.evalSetup": "eval 预置",
   "feedback.phase.sandboxCreate": "创建沙箱",
   "feedback.phase.sandboxQueue": "排队等沙箱",
+  "feedback.phase.experimentSetup": "实验预置",
   "feedback.phase.sandboxSetup": "沙箱预置",
   "feedback.phase.scoring": "评分",
   "feedback.phase.teardown": "清理中",

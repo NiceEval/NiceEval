@@ -78,7 +78,13 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 
 ## 环境预置不进运行器,但按顺序调它
 
-niceeval **没有 run / experiment 级生命周期钩子**——`ExperimentDef` 仍是纯配置数据,不携带任何生命周期字段,运行器不会替用户在整个 run 前后跑任意 `setup` / `teardown`。但"跑 agent 前要不要准备环境"这件事确实需要一个家:沙箱创建后、变更分类账锚点之前,运行器会调用 `experiment.sandbox` 链上挂的环境钩子(`SandboxSpec.setup()` / `.teardown()`,见 [Sandbox · 沙箱生命周期钩子](feature/sandbox/library.md#沙箱生命周期钩子setup--teardown));沙箱固定段("发现 → 调度 → 沙箱起停 / 分类账锚点 / 折叠 agent diff → 评分 → 报告"这条主轴)之内,还分出这条 eval 的任务夹具(`EvalDef.setup` 或 `test(t)`)和 agent 自己的一次性预置([`SandboxAgent.setup`](feature/adapters/architecture/agent-contract.md#生命周期不变量))。运行器只固定这几个调用点的**顺序**,钩子内部做什么、要不要按实验变化,全部交给对应的作者决定,不写进运行器本身。整个 run 共享的外部服务(mock API、DB)仍然用外部编排(`docker compose` / CI 脚本)起停、经 env 传入——这类资源跨进程共享,不属于任何一次沙箱的生命周期。四类职责的完整分工表见 [环境预置放哪](feature/sandbox/library.md#环境预置放哪)。
+运行器不承载环境预置的内容,只固定各生命周期钩子的**调用点与顺序**,钩子内部做什么全部交给对应的作者决定。调用点从外到内:
+
+- **实验级** —— `ExperimentDef.setup`:每实验整场至多一次、宿主机侧,本实验第一个要派发的 attempt 前跑,返回的 cleanup 在全部 attempt 收尾后跑(中断也跑);管每实验一份的共享服务(隧道、mock server),语义见 [Experiments · 实验级生命周期](feature/experiments/architecture.md#实验级生命周期setup-与它返回的-teardown)。
+- **沙箱级** —— 沙箱创建后、变更分类账锚点之前,运行器调用 `experiment.sandbox` 链上挂的环境钩子(`SandboxSpec.setup()` / `.teardown()`,见 [Sandbox · 沙箱生命周期钩子](feature/sandbox/library.md#沙箱生命周期钩子setup--teardown))。
+- **eval 级 / agent 级** —— 沙箱固定段("发现 → 调度 → 沙箱起停 / 分类账锚点 / 折叠 agent diff → 评分 → 报告"这条主轴)之内,还分出这条 eval 的任务夹具(`EvalDef.setup` 或 `test(t)`)和 agent 自己的一次性预置([`SandboxAgent.setup`](feature/adapters/architecture/agent-contract.md#生命周期不变量))。
+
+跨实验共享、生命周期长于一次 run 的外部服务(共享 DB、公司内网服务本体)仍然用外部编排(`docker compose` / CI 脚本)起停、经 env 传入——这类资源跨进程共享,不属于任何一次 run 的生命周期。完整分工表见 [环境预置放哪](feature/sandbox/library.md#环境预置放哪)。
 
 **下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行钩子——这是从 agent-eval 的 `onRunComplete` 收敛过来的(见 [Experiments 砍字段](feature/experiments/architecture.md#从-agent-eval-砍掉了什么以及为什么))。
 

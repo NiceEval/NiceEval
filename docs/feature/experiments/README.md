@@ -35,12 +35,16 @@ export default defineExperiment({
   sandbox?: SandboxSpec;                     // 沙箱型 Agent 在哪跑；省略时只能由 Config.sandbox 显式兜底
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验
+  setup?: (ctx) => void | Cleanup | Promise<void | Cleanup>;  // 实验级生命周期:整场一次、宿主机侧;
+                                            // 返回的 cleanup 在本实验全部 attempt 收尾后执行(见下)
 });
 ```
 
 `maxConcurrency` 是**实验自己的并发闸**:调度器为这个实验单建一道信号量,它的 attempt 先过这道闸再去占全局并发位;同批跑的其它实验不受影响,仍按全局并发(CLI / env / config / 沙箱默认)跑。两个用途:把有共享状态的实验串行化(例如跨 eval 累积记忆的场景,`maxConcurrency: 1` 保证 attempt 按 eval 顺序一个个跑),或给撞了 provider 限额的实验单独降速。
 
-experiment 只有"运行矩阵"字段,**没有 run / experiment 级整场生命周期钩子**——`ExperimentDef` 是纯配置数据,不携带任何 `setup` / `teardown` 之类的字段。但"这次实验要按配置准备什么环境"确实需要挂在某处:`sandbox` 字段拿到的 `SandboxSpec`(`dockerSandbox()` 等工厂产出)自带 `.setup(fn)` / `.teardown(fn)` 链式方法,装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态都挂在这里,在沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾;这条 eval 自己的任务夹具放 `EvalDef.setup` / `test(t)`,连 agent / 装 CLI 放 `SandboxAgent.setup`,整个 run 共享的外部服务用外部编排。四类职责的完整分工见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、钩子的链式写法见 [Sandbox · 沙箱生命周期钩子](../sandbox/library.md#沙箱生命周期钩子setup--teardown)。
+`setup` 是**实验级生命周期钩子**:整场一次、跑在宿主机上——本实验第一个真正要派发的 attempt 之前执行,返回的 cleanup 在本实验全部 attempt 收尾后执行(失败、中断也执行)。它管「每个实验一份、所有 attempt 共享」的宿主机侧资源:起一条到内网服务的隧道、拉起本实验专用的 mock server、租一个 license。之所以是「setup 返回 teardown」而不是两个独立字段:teardown 只在 setup 真正跑过之后才有意义,返回式注册天然绑定这层因果——setup 半路失败时该回收什么,由 setup 自己在抛错前处理,不存在「teardown 收到一个不完整现场」的形态。用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与它返回的-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与它返回的-teardown)。
+
+生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式钩子(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务夹具放 `EvalDef.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。完整分工见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、沙箱钩子的链式写法见 [Sandbox · 沙箱生命周期钩子](../sandbox/library.md#沙箱生命周期钩子setup--teardown)。
 
 `sandbox` 是整个 experiment 的单一固定 spec。一批 eval 需要不同预制环境时，eval 用 `environment` 声明需求 profile，spec 的 `environments` 表把 profile 翻译成该 provider 的具体产物——experiment 仍只有一个 spec、覆盖全部选中 eval，快照与对比横截面不因此拆分。写法见 [Library · 不同 eval 起自不同预制环境](library.md#不同-eval-起自不同预制环境)。
 

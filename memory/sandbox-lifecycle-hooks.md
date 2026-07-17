@@ -1,5 +1,7 @@
 # 设计裁决:沙箱生命周期钩子挂在 SandboxSpec 上(`.setup()` / `.teardown()` 链式)
 
+> **部分被后续裁决替代**(2026-07-17):「实验级整场钩子不存在 / ExperimentDef 保持纯配置数据」一条被推翻,见 [[experiment-level-lifecycle-hooks]]——`ExperimentDef.setup`(整场一次、宿主机侧、返回 cleanup)已落地。本条其余裁决(沙箱钩子挂 SandboxSpec、persistentState 不做、sandbox.setup 的顺序)不受影响,仍然有效。
+
 **裁决**(2026-07-10,用户定案):环境预置(「本想烘进 template/Dockerfile、但要按实验变化」的东西——装二进制、预热模型、写 hook 文件、载入/回存跨 attempt 状态)的家是 SandboxSpec 的链式钩子 `.setup(fn)` / `.teardown(fn)`。生命周期四层各归各位:eval 级 setup = 任务夹具,agent 级 = 协议接入,沙箱级 = 环境预置(挂 spec),**实验级整场钩子不存在**——ExperimentDef 保持纯配置数据。
 
 **曾选方案**(同日连续两次翻案,均未落地成代码):

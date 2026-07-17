@@ -725,6 +725,7 @@ async function main(): Promise<void> {
         // 实验级并发上限:随 AgentRun 进调度器按实验单独限流(runner 两级信号量),
         // 不再取所有选中实验的最小值钳全局——那会让一个串行实验拖慢整批基线。
         maxConcurrency: exp.maxConcurrency,
+        setup: exp.setup,
       });
     }
   } else {

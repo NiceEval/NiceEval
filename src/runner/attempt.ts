@@ -456,7 +456,7 @@ export function runAttemptEffect(
  *  生命周期阶段(极早期就挂、还没跨进任何阶段时兜底 `eval.run`——phase 是必填字段,不留空);
  *  code 目前只对确定已知的类别赋稳定码,其余走 `"unexpected-error"`——provider 专属的限流码
  *  分类留在各 provider 的 `classifyProvisionError`,没有中性入口能在这里复算,不猜一个可能错的码。 */
-function errorFromThrown(e: unknown, phase: LifecyclePhase | undefined): AttemptError {
+export function errorFromThrown(e: unknown, phase: LifecyclePhase | undefined): AttemptError {
   const { message, stack, cause } = describeError(e);
   return {
     code: "unexpected-error",
@@ -1017,7 +1017,7 @@ async function collectSources(
 
 /** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/results/architecture.md):
  *  agent/model 只在快照顶层,这里不复制;sandbox 只经 provider 的公开参数投影落盘。 */
-function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox"]): EvalResult["experiment"] {
+export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox"]): EvalResult["experiment"] {
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),

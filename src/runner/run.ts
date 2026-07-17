@@ -8,7 +8,7 @@ import { probeJudge } from "../scoring/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planCarry } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
-import { runAttemptEffect } from "./attempt.ts";
+import { errorFromThrown, experimentRunInfo, runAttemptEffect } from "./attempt.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
 import {
   reportActivity,
@@ -23,7 +23,8 @@ import { encodeAttemptLocator, type AttemptLocator } from "../results/locator.ts
 import { runWho } from "./types.ts";
 import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
 import type { Agent, EvalResult, JudgeConfig, Reporter, ReporterRegistration, RunShape, RunSummary } from "../types.ts";
-import type { AgentRun, Attempt, LifecyclePhase, AttemptRef, RunOptions } from "./types.ts";
+import type { AgentRun, Attempt, ExperimentHookContext, LifecyclePhase, AttemptRef, RunOptions } from "./types.ts";
+import type { Cleanup } from "../shared/types.ts";
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -269,7 +270,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   // budget 护栏:只按「已完成 attempt 的实测花费」判断,不做预测性节流。之前的实现会按
   // 「平均成本 × 在飞数」预扣,快到顶就让还没起飞的 attempt 排队等——这在探测阶段(还没有任何
   // 成本样本时)等价于把同一 budgetKey 的并发摁到一个很小的数,且完全没有文档承诺过这个副作用
-  // (`docs-site/zh/how-to/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
+  // (`docs-site/zh/tutorials/write-experiment.mdx` 对 `budget` 的描述只有一句「这一格配置的预算
   // 上限」)。新语义:已完成 attempt 的花费加总一旦到顶,就不再放新 attempt 起飞(已经在飞的
   // 照常跑完,不会被中途打断);到顶之前不做任何预测性限流,并发完全由 globalSem / runSem 决定。
   // 代价是「已花 + 在飞未结算」的总花费可能短暂超出 budget——这是有意识的取舍:budget 是防止
@@ -319,6 +320,94 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   if (!opts.otelPool) {
     opts = { ...opts, otelPool: new OtelReceiverPool(opts.config.telemetry?.port) };
   }
+
+  // 实验级生命周期(见 docs/feature/experiments/architecture.md「实验级生命周期」):
+  // setup 整场至多一次——第一个通过派发许可(preflight)的 attempt 触发,后续 attempt 等同一个
+  // memoized promise;等待发生在 gated 里、globalSem 之外,不占全局并发位。teardown = setup
+  // 返回的 cleanup,按 per-run 剩余 attempt 计数在最后一个 attempt 收尾后执行;计数递减挂在
+  // Effect.ensuring 上,中断路径同样递减,teardown 因此必跑。
+  interface ExperimentLifecycle {
+    /** memoized 的 setup 执行;undefined = 还没有 attempt 触发过。 */
+    setupPromise?: Promise<void>;
+    /** setup 抛过错(用独立布尔标记,不能拿 error 值判断——throw undefined 也是失败)。 */
+    setupFailed: boolean;
+    setupError?: unknown;
+    cleanup?: Cleanup;
+    /** 本实验还没收尾的 attempt 数;归零即触发 teardown。 */
+    remaining: number;
+    /** teardown 已触发(或已确认无事可做),后到的 setup 完成回调据此立即自清。 */
+    tornDown: boolean;
+  }
+  const expLifecycles = new Map<AgentRun, ExperimentLifecycle>();
+  for (const a of attempts) {
+    if (!a.run.setup) continue;
+    let lc = expLifecycles.get(a.run);
+    if (!lc) expLifecycles.set(a.run, (lc = { setupFailed: false, remaining: 0, tornDown: false }));
+    lc.remaining += 1;
+  }
+  const runExperimentTeardown = async (run: AgentRun, lc: ExperimentLifecycle): Promise<void> => {
+    const cleanup = lc.cleanup;
+    lc.cleanup = undefined;
+    if (!cleanup) return;
+    const experimentId = run.experimentId ?? run.agent.name;
+    try {
+      await cleanup();
+    } catch (e) {
+      // cleanup 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
+      // teardown-failed 同一语义);资源可能泄漏,所以要说出来。
+      reportDiagnostic({
+        key: `experiment-teardown-failed:${experimentId}`,
+        severity: "warning",
+        message: t("runner.experimentTeardownFailed", {
+          experimentId,
+          message: e instanceof Error ? e.message : String(e),
+        }).trimEnd(),
+        data: { experimentId },
+      });
+    }
+  };
+  const ensureExperimentSetup = (a: Attempt): Promise<void> => {
+    const lc = expLifecycles.get(a.run)!;
+    if (!lc.setupPromise) {
+      const run = a.run;
+      const experimentId = run.experimentId ?? run.agent.name;
+      const ctx: ExperimentHookContext = {
+        experimentId: run.experimentId ?? "",
+        selectedEvalIds: run.selectedEvalIds ?? [],
+        signal: opts.signal,
+        // progress 是短命状态:进运行级 activity 行,不属于任何 attempt 的 active 条目。
+        progress: (u) => {
+          const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
+          reportActivity(`[${experimentId}] ${u.message}${suffix}`);
+        },
+        // diagnostic 进运行级永久事件流;实验级钩子不属于任何单个 attempt,不落 result.json。
+        diagnostic: (input) =>
+          reportDiagnostic({
+            key: input.dedupeKey ?? `${input.code}:experiment:${experimentId}`,
+            severity: input.level,
+            message: input.message,
+            data: { experimentId, ...(input.data ?? {}) },
+          }),
+      };
+      lc.setupPromise = (async () => {
+        const cleanup = await run.setup!(ctx);
+        if (typeof cleanup === "function") {
+          // 极端时序:全部 attempt 在 setup 完成前就被中断收尾(remaining 已归零),
+          // 没有人再会触发 teardown——这里立即自清,不留孤儿资源。
+          if (lc.tornDown) {
+            lc.cleanup = cleanup;
+            await runExperimentTeardown(run, lc);
+          } else {
+            lc.cleanup = cleanup;
+          }
+        }
+      })().catch((e) => {
+        lc.setupFailed = true;
+        lc.setupError = e;
+      });
+    }
+    return lc.setupPromise;
+  };
 
   // earlyExit:为每个 key 各建一个 AbortController。某 attempt 通过或 errored 时 abort 它,
   // 让并发进行中的同 key attempt 通过 signal 尽早退出,而不只是等排队的才能被跳过。
@@ -469,7 +558,29 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               who: feedbackWho(a),
               phase: initialPhase,
             });
-            const result = yield* runAttemptEffect(a, opts, sandboxSem, attemptSignal);
+            // 实验级 setup 失败:不派发 agent,为这条 attempt 合成结构化 errored 结果
+            // (code experiment-setup-failed、phase experiment.setup),走与真实结果完全相同的
+            // 下游路径(locator / 反馈事件 / reporter / 落盘)——环境起不来是每条 eval 都没跑成
+            // 的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
+            // architecture.md「实验级生命周期」)。
+            const expLc = expLifecycles.get(a.run);
+            const result = expLc?.setupFailed
+              ? ({
+                  id: a.evalDef.id,
+                  description: a.evalDef.description,
+                  experimentId: a.run.experimentId,
+                  experiment: experimentRunInfo(a.run, opts.config.sandbox),
+                  agent: a.run.agent.name,
+                  model: a.run.model,
+                  verdict: "errored",
+                  fingerprint: a.fingerprint,
+                  attempt: a.attempt,
+                  startedAt: new Date().toISOString(),
+                  durationMs: 0,
+                  assertions: [],
+                  error: { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" },
+                } satisfies EvalResult)
+              : yield* runAttemptEffect(a, opts, sandboxSem, attemptSignal);
             // locator 在这里确定 —— 早于本 attempt 触发的任何 reporter 回调 / 事件
             // (onEvalComplete、eval:complete),所以每一个观察者看到的都已经是最终值,
             // 和落盘 result.json 完全一致(writer.ts 的 entry.locator ?? 兜底分支因此
@@ -530,9 +641,11 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               // 并发情况:同 key 另一个 attempt 已通过后本 attempt 才完成(被 abort 后产出
               // errored),不计入结果。
               return;
-            } else if (result.verdict === "errored") {
+            } else if (result.verdict === "errored" && !expLc?.setupFailed) {
               // errored 不中止其余样本(基建可能自愈);只有同一错误 code 连续复现才判定为
               // 确定性错误,进 run 级 fail-fast 停止派发(不 abort 已在飞的 attempt)。
+              // 实验级 setup 失败的合成结果不进 fail-fast:它不派发 agent、零成本,
+              // 契约是本实验「所有」attempt 逐条记 errored 进报告,不该被止损机制截短。
               const code = result.error?.code ?? "unexpected-error";
               const prev = lastErrorCode.get(a.key);
               const streak = prev?.code === code ? prev.streak + 1 : 1;
@@ -576,10 +689,29 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
         const gated = Effect.gen(function* () {
           const proceed = yield* preflight;
           if (!proceed) return;
+          // 实验级 setup:第一个走到这里的 attempt 真正执行,其余等同一个 memoized promise
+          // (它从不 reject——失败收进 lc.setupFailed,由 body 合成 errored 结果);等待发生在
+          // globalSem 之外,慢启动的 setup 不占全局并发位。
+          if (a.run.setup) yield* Effect.promise(() => ensureExperimentSetup(a));
           yield* globalSem.withPermits(1)(body);
         });
         const runSem = runSems.get(a.run);
-        return runSem ? runSem.withPermits(1)(gated) : gated;
+        const withRunSem = runSem ? runSem.withPermits(1)(gated) : gated;
+        if (!a.run.setup) return withRunSem;
+        // 实验级 teardown 计数:每个 attempt 收尾(含被 preflight 跳过、被中断的)都递减,
+        // 归零触发 setup 返回的 cleanup。ensuring 在中断路径同样执行,teardown 因此必跑。
+        return withRunSem.pipe(
+          Effect.ensuring(
+            Effect.promise(async () => {
+              const lc = expLifecycles.get(a.run)!;
+              lc.remaining -= 1;
+              if (lc.remaining === 0 && !lc.tornDown) {
+                lc.tornDown = true;
+                await runExperimentTeardown(a.run, lc);
+              }
+            }),
+          ),
+        );
       },
       { concurrency: "unbounded", discard: true },
     ).pipe(

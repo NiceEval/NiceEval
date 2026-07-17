@@ -54,6 +54,20 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 )
 ```
 
+## 实验级生命周期（`ExperimentDef.setup`）
+
+契约来源：[Experiments Architecture · 实验级生命周期](../../../feature/experiments/architecture.md#实验级生命周期setup-与它返回的-teardown)、[Experiments Library](../../../feature/experiments/library.md#实验级共享服务setup-与它返回的-teardown)。
+
+| 契约 | 场景 |
+|---|---|
+| `setup` 每实验整场至多一次：第一个通过派发许可的 attempt 触发,并发 attempt 等同一个 memoized 结果 | 正例：runs×evals 多 attempt 并发时 setup 只执行 1 次；正例：两个实验各自的 setup 各执行 1 次 |
+| 全部结果被 carry 携入、无 attempt 派发时 `setup` 不执行 | 边界：priorResults 全命中时 setup 调用数为 0 |
+| `setup` 抛错 → 本实验所有 attempt 记 `errored`(code `experiment-setup-failed`、phase `experiment.setup`),同批其它实验不受影响 | 反例：实验 A setup 抛错,A 的 attempt 全 errored 且 error 字段结构化;正例:实验 B 结果正常 |
+| teardown = setup 返回的 cleanup:本实验全部 attempt 收尾后执行恰好一次;中断(signal abort)也执行 | 正例:全部完成后 cleanup 已执行;正例:中途 abort 后 cleanup 仍执行;边界:setup 未返回函数时无收尾动作 |
+| cleanup 抛错只产生运行级 diagnostic(`experiment-teardown-failed`),不改变任何已产出的 verdict | 反例:cleanup 抛错后 results 的 verdict 不变,diagnostic 事件可见 |
+| `setup` 的 ctx:experimentId / selectedEvalIds / signal / progress / diagnostic 齐备,diagnostic 进运行级永久事件流 | 正例:ctx 字段值与实验一致;正例:diagnostic 以 experiment.setup 归因出现在事件流 |
+| 钩子函数体不进 fingerprint:只改 setup 逻辑不使携带失效 | 边界:改 setup 后 fingerprint 不变 |
+
 ## early exit
 
 契约来源：[Runner](../../../runner.md)、[Experiments](../../../feature/experiments/README.md)。

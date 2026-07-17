@@ -60,9 +60,11 @@ export const en = {
   "cli.flag.invalidOutput": "Flag --output expects one of auto|human|agent|ci, got \"{{value}}\".\n",
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
+  "runner.experimentTeardownFailed":
+    "cleanup returned by experiment {{experimentId}}'s setup failed: {{message}}. Results are unaffected, but host-side resources started by this experiment may not have been released; check manually.\n",
   "judge.modelMissing":
     "No judge model configured. Set it in defineConfig({ judge: { model: \"...\" } }), the eval's judge config, or the NICEEVAL_JUDGE_MODEL environment variable (there is no built-in default model).\n" +
-    "  Docs: node_modules/niceeval/docs-site/zh/how-to/scoring-guide.mdx",
+    "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",
   "cli.flag.parseError": "{{message}}\nRun `niceeval --help` for usage.\n",
@@ -157,6 +159,7 @@ export const en = {
   "define.evalTestRequired": "defineEval requires an async test(t) function.",
   "define.experimentAgentRequired": "defineExperiment requires agent.",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result snapshots and must be plain JSON.",
+  "define.experimentSetupNotFunction": "experiment.setup must be a function ((ctx) => void | cleanup); to prepare the in-sandbox environment per experiment, chain .setup() hooks on the sandbox spec instead.",
   "define.experimentIdRejected": "defineExperiment does not accept id; ids are derived from file paths.",
   "define.sandboxAgentNameRequired": "defineSandboxAgent requires name.",
   "define.sandboxCreateRequired": "defineSandbox requires a create() function.",
@@ -194,6 +197,7 @@ export const en = {
   "feedback.phase.evalSetup": "eval setup",
   "feedback.phase.sandboxCreate": "creating sandbox",
   "feedback.phase.sandboxQueue": "queued for sandbox",
+  "feedback.phase.experimentSetup": "experiment setup",
   "feedback.phase.sandboxSetup": "sandbox setup",
   "feedback.phase.scoring": "scoring",
   "feedback.phase.teardown": "cleaning up",

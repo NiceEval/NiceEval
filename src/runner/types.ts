@@ -1,7 +1,7 @@
 // runner 域类型:结果 / 汇总 / reporter 契约,eval / experiment / config 定义,
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
-import type { Cleanup, JsonValue, LocalizedText, SourceArtifact } from "../shared/types.ts";
+import type { Cleanup, JsonValue, LocalizedText, ScopedFeedback, SourceArtifact } from "../shared/types.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
 import type { Sandbox, SandboxHookContext, SandboxOption } from "../sandbox/types.ts";
@@ -50,6 +50,10 @@ export interface SandboxRunInfo {
  * provider / 用户 hook 能直接设置的公共字段。
  */
 export type LifecyclePhase =
+  // 实验级(整场一次,宿主机侧):只用于错误/诊断归因,不属于任何单个 attempt,
+  // 永不出现在 phases[] 计时里(见 docs/feature/experiments/architecture.md「实验级生命周期」)
+  | "experiment.setup" // ExperimentDef.setup;setup 抛错时本实验所有 attempt 的 error.phase
+  | "experiment.teardown" // setup 返回的 cleanup;失败只产生运行级 diagnostic
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue" // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create" // provider 起沙箱
@@ -363,6 +367,19 @@ export interface DiscoveredEval extends EvalDef {
   source: CapturedEvalSource;
 }
 
+/**
+ * `ExperimentDef.setup` 与它返回的 cleanup 拿到的窄上下文。`progress` 进运行级 activity 行,
+ * `diagnostic` 进运行级永久事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的
+ * `result.json`;setup 抛错以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。
+ */
+export interface ExperimentHookContext extends ScopedFeedback {
+  readonly experimentId: string;
+  /** 本实验解析后实际选中的 eval id 全集(evals 过滤器的求值结果)。 */
+  readonly selectedEvalIds: readonly string[];
+  /** 用户中断(Ctrl+C / kill)时 abort;长启动的 setup 应观察它提前退出。 */
+  readonly signal?: AbortSignal;
+}
+
 export interface ExperimentDef {
   /** 路径推导,定义里禁止手写(defineExperiment 会拒绝显式传入)。 */
   id?: string;
@@ -406,6 +423,18 @@ export interface ExperimentDef {
    * 或给撞 provider 限额的实验单独降速。
    */
   maxConcurrency?: number;
+  /**
+   * 实验级生命周期钩子:整场至多一次、宿主机侧,管「每实验一份、所有 attempt 共享」的
+   * 宿主机资源(隧道、mock server、license 租约)。本实验第一个通过派发许可的 attempt
+   * 触发(memoized,并发 attempt 等同一个结果;全部结果被 carry 携入时不执行);返回的
+   * cleanup 在本实验全部 attempt 收尾后执行,运行被中断也执行。setup 抛错 → 本实验所有
+   * attempt 记 `errored`(code `"experiment-setup-failed"`、phase `"experiment.setup"`),
+   * 同批其它实验不受影响;cleanup 抛错只记运行级 diagnostic(`experiment-teardown-failed`),
+   * 不改判定。钩子产出的运行时值(URL / 凭据)经模块闭包流进同文件的 agent / sandbox 钩子,
+   * runner 不做值的中介;函数体不进 fingerprint,改了钩子逻辑用 `--force` 强制重跑。
+   * 见 docs/feature/experiments/architecture.md「实验级生命周期」。
+   */
+  setup?: (ctx: ExperimentHookContext) => void | Cleanup | Promise<void | Cleanup>;
 }
 
 export interface DiscoveredExperiment extends ExperimentDef {
@@ -508,6 +537,9 @@ export interface AgentRun {
   /** 本配置自己的并发上限(来自 ExperimentDef.maxConcurrency):调度器为它单建信号量,
    *  attempt 先过这道闸再占全局并发位;省略则只受全局并发约束。 */
   maxConcurrency?: number;
+  /** 实验级生命周期钩子(来自 ExperimentDef.setup):整场至多一次,调度器 memoize 执行、
+   *  在全部 attempt 收尾后跑它返回的 cleanup(语义见 ExperimentDef.setup)。 */
+  setup?: (ctx: ExperimentHookContext) => void | Cleanup | Promise<void | Cleanup>;
 }
 
 export interface RunOptions {

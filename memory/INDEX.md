@@ -185,7 +185,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [terminology-overhaul-2026-07](terminology-overhaul-2026-07.md) — 术语大改名裁决(两批):Outcome→Verdict(经 Conclusion 同日翻案,eve/TTCN-3 先例)、Backend→Provider、早停→首过即停(代码名不动)、Judge/Attempt/Turn/artifact/Selection 中文直用、值断言/严重度/dual-render、结果快照限定语;多义词逐语境甄别纪律
 - [sandbox-field-no-bare-string](sandbox-field-no-bare-string.md) — `sandbox` 字段只接受工厂产出的 SandboxSpec:不接受裸字符串、没有默认值、没有自动探测(用户 review 明确定案)
 - [registermcp-post-hoc-primitive](registermcp-post-hoc-primitive.md) — 翻案裁决:不提供后置追加 MCP 原语,`shared.registerMcp` 当日落地当日撤销;MCP 只走 factory 构造期,条件包装器应接收 factory 而不是已构造 Agent
-- [sandbox-lifecycle-hooks](sandbox-lifecycle-hooks.md) — 环境预置的家是 SandboxSpec 链式 `.setup()/.teardown()`(实验级/沙箱级两次翻案后定案);ExperimentDef 保持纯数据;persistentState 不做,状态钩子自管、键用 ctx.experimentId
+- 部分被后续裁决替代 [sandbox-lifecycle-hooks](sandbox-lifecycle-hooks.md) — 环境预置的家是 SandboxSpec 链式 `.setup()/.teardown()`;「ExperimentDef 保持纯数据/实验级钩子不存在」一条已被下一行推翻,其余(沙箱钩子挂 spec、persistentState 不做)仍有效
+- [experiment-level-lifecycle-hooks](experiment-level-lifecycle-hooks.md) — 翻案裁决(2026-07-17):`ExperimentDef.setup` 落地(整场一次、宿主机侧、返回 cleanup 即 teardown);动因是 nowledge 隧道被迫住在 wrapper 脚本里;setup 失败全 attempt 合成 errored 且绕过 fail-fast,词表新增 experiment.* 两员不递增 schemaVersion
 - [experiment-flags-naming-reversal](experiment-flags-naming-reversal.md) — 条件键定名 flags(A/B feature flag 语义,2026-07-10 params 同日翻案);字段改名=递增 schemaVersion,不做读取别名
 - [report-zero-js-to-progressive-enhancement](report-zero-js-to-progressive-enhancement.md) — 翻案裁决:报告 web 面「零客户端 JS」改为渐进增强(enhance.js:表头排序/行过滤/tooltip);口径同源由 sort 预排保证,view 默认首页迁到报告槽后榜单没有排序过滤在浏览上不成立
 - [report-locale-rendering](report-locale-rendering.md) — 裁决:report 渲染面引入 locale(en/zh-CN)与内部字典 src/report/locale.ts,不复用 CLI 专用的 src/i18n;label 扩 LocalizedText 而 display 不本地化(display 是口径的一部分)

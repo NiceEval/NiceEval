@@ -281,6 +281,12 @@ export function formatTokenCount(n: number): string {
  *  机器面(agent/ci 的 `phase=` 与落盘)保留精确的点分名,收尾段在 Human 侧合并显示为一档。 */
 function phaseLabel(phase: LifecyclePhase): string {
   switch (phase) {
+    // 实验级两员不会作为 ActiveAttempt.phase 出现(钩子跑的时候没有活跃 attempt),
+    // 这里只服务 failure 行的 phase 标注(experiment.setup 失败的合成 errored 结果)。
+    case "experiment.setup":
+      return t("feedback.phase.experimentSetup");
+    case "experiment.teardown":
+      return t("feedback.phase.teardown");
     case "sandbox.queue":
       return t("feedback.phase.sandboxQueue");
     case "sandbox.create":

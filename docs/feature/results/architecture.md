@@ -201,11 +201,15 @@ interface AttemptRecord {
 }
 
 /**
- * 一次 attempt 的生命周期词表——全仓唯一一套。
+ * 生命周期词表——全仓唯一一套。
  * 计时(`phases[].name`)、错误归因(`error.phase`)、诊断归属(`diagnostics[].phase`)、
  * live 展示与 agent/ci envelope 的 `phase=` 都使用这同一个闭集,不存在第二套词表。
+ * 实验级两员只用于归因(不属于任何单个 attempt,永不出现在 `phases[]` 计时里)。
  */
 type LifecyclePhase =
+  // 实验级(整场一次,宿主机侧;仅错误/诊断归因)
+  | "experiment.setup"     // ExperimentDef.setup;setup 抛错时本实验所有 attempt 的 error.phase
+  | "experiment.teardown"  // setup 返回的 cleanup;失败只产生运行级 diagnostic
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue"        // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
   | "sandbox.create"       // provider 起沙箱
@@ -294,7 +298,7 @@ interface DiagnosticRecord {
 }
 ```
 
-`sandbox` 是新增的可选字段(remote attempt 与旧 producer 都可以没有),老读取器按未知字段忽略,这类新增本身按本页版本规则不递增 `schemaVersion`。
+`sandbox` 是新增的可选字段(remote attempt 与旧 producer 都可以没有),老读取器按未知字段忽略,这类新增本身按本页版本规则不递增 `schemaVersion`。词表新增成员(如实验级两员)同理:消费方把 `phase` 当归因标签渲染,不得假设穷尽后拒绝未知成员,所以扩充词表不递增版本。
 
 `phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。结果封口必须发生在 Effect Scope 的 release 完成之后：`sandbox.stop` 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
