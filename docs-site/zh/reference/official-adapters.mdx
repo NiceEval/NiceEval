@@ -68,7 +68,7 @@ export default defineExperiment({
   </Warning>
 
 - **装 Skill**：`skills: SkillSpec[]`，与 claude-code 同一个类型。装进 `.agents/skills/<name>/`，并把发现指引写进 AGENTS.md——codex 没有 claude-code 那种原生 Skill 工具，只把文件装进去它不会主动去读；断言"用没用到"看它是否真的执行过读那个文件的 shell 命令，没有工具调用可以直接认。
-- **装原生 Plugin**：`plugins: CodexPluginSpec[]`，声明 Marketplace 连接（`name` / `source` / 可选 `ref` / 可选 `sparse`）和其中的 Plugin 名。`sparse: true` 让 `codex plugin marketplace add` 带 `--sparse`，大仓库只拉插件所需路径，装出来的内容不变。这个类型只属于 codex，传不进 claude-code。
+- **装原生 Plugin**：`plugins: CodexPluginSpec[]`，声明 Marketplace 连接（`name` / `source` / 可选 `ref` / 可选 `sparse`）和其中的 Plugin 名。`sparse` 是路径数组（如 `[".agents", "plugins/repo-map"]`），每项让 `codex plugin marketplace add` 带一个 `--sparse <path>`，大仓库只拉插件所需路径，装出来的内容不变。这个类型只属于 codex，传不进 claude-code。
 - **官方配置文件**：`configFile` 是运行 NiceEval 的机器上的本地项目路径，不是 Sandbox 内路径；它指向一份完整的 Codex `config.toml`。路径相对项目根，只允许普通相对路径或 `./` 前缀；`..`、绝对路径、`~` 和解析后逃出项目根的符号链接都会报错。Adapter 从本地读取后上传文件，原样替换 Sandbox 中原本为空的用户级 `~/.codex/config.toml`；不继承宿主机配置，也不拼接、deep merge 或解析后重写。`model`、`model_provider`、`model_providers`、`model_reasoning_effort`、`mcp_servers`、`otel` 归 Experiment 和 Adapter 管，出现在文件里会在 `setup` 阶段报错并点名冲突键。Secret 走环境变量，别写进配置文件。
 - **安装后脚本**：`postSetup: SandboxHook[]`，语义与 claude-code 相同：全部安装步骤完成后按序在沙箱里跑你的钩子函数，适合运行插件自带的 setup 脚本。
 - **tracing**：内置，通过 `config.toml` 的 `[otel.trace_exporter.otlp-http]` 段配置，协议 `http/json`。

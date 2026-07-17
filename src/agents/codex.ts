@@ -62,10 +62,11 @@ export interface CodexPluginSpec {
     /** 固定 Marketplace 的 Tag、Commit 或 Branch(→ `codex plugin marketplace add --ref`)。 */
     ref?: string;
     /**
-     * sparse 拉取(→ `codex plugin marketplace add --sparse`):大仓库只取插件所需路径。
+     * sparse 拉取的路径列表,每项生成一个 `codex plugin marketplace add --sparse <path>`
+     * (codex 的 `--sparse` 必须带路径参数、可重复):大仓库只取插件所需路径,省略或空数组即全量 clone。
      * 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
      */
-    sparse?: boolean;
+    sparse?: string[];
   };
   /** Marketplace 中的 Plugin 名。 */
   name: string;
@@ -351,9 +352,11 @@ export async function installPlugins(
     if (!connected.has(marketplace.name)) {
       const refFlag = marketplace.ref ? ` --ref ${shared.shellQuote(marketplace.ref)}` : "";
       // --sparse 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
-      const sparseFlag = marketplace.sparse ? " --sparse" : "";
+      const sparseFlags = (marketplace.sparse ?? [])
+        .map((path) => ` --sparse ${shared.shellQuote(path)}`)
+        .join("");
       const add = await sb.runShell(
-        `codex plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}${sparseFlag}`,
+        `codex plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}${sparseFlags}`,
       );
       if (add.exitCode !== 0) {
         throw new Error(

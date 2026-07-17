@@ -54,7 +54,7 @@ export default defineExperiment({
   </Warning>
 
 - **Installing Skills**: `skills: SkillSpec[]`, the same type as claude-code. Skills land in `.agents/skills/<name>/`, and the adapter also writes a discovery instruction into AGENTS.md — codex has no native Skill tool like claude-code, so merely installing the files does not make it read them. Asserting "was it used" can only look at whether it actually ran the shell command that reads that file — there is no tool call to assert directly.
-- **Installing native plugins**: `plugins: CodexPluginSpec[]`; each entry declares the marketplace connection (`name` / `source` / optional `ref`) and the plugin name inside it. That type belongs to codex only — it cannot be passed to claude-code.
+- **Installing native plugins**: `plugins: CodexPluginSpec[]`; each entry declares the marketplace connection (`name` / `source` / optional `ref` / optional `sparse`) and the plugin name inside it. `sparse` is a list of paths (e.g. `[".agents", "plugins/repo-map"]`); each one adds a `--sparse <path>` to `codex plugin marketplace add` so large repos only fetch what the plugin needs, without changing what gets installed. That type belongs to codex only — it cannot be passed to claude-code.
 - **Tracing**: built in, configured through the `[otel.trace_exporter.otlp-http]` section of `config.toml`, protocol `http/json`.
 
 ```ts

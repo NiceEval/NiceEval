@@ -91,13 +91,30 @@ describe("codex installPlugins · 命令构造", () => {
     ]);
   });
 
-  it("marketplace.sparse → add 命令带 --sparse(缺省不含由上面的精确命令断言覆盖);manifest 不记录 sparse", async () => {
+  it("marketplace.sparse 逐项生成 --sparse <path>(缺省不含由上面的精确命令断言覆盖);manifest 不记录 sparse", async () => {
     const box = sb();
     const out = await installPlugins(asSandbox(box), [
-      { marketplace: { name: "acme", source: "acme/codex-plugins", sparse: true }, name: "repo-map" },
+      {
+        marketplace: {
+          name: "acme",
+          source: "acme/codex-plugins",
+          sparse: [".agents", "plugins/repo-map"],
+        },
+        name: "repo-map",
+      },
     ]);
-    expect(box.commands[0]).toBe("codex plugin marketplace add 'acme/codex-plugins' --sparse");
+    expect(box.commands[0]).toBe(
+      "codex plugin marketplace add 'acme/codex-plugins' --sparse '.agents' --sparse 'plugins/repo-map'",
+    );
     expect(out[0]!.marketplace).toEqual({ name: "acme", source: "acme/codex-plugins" });
+  });
+
+  it("marketplace.sparse 空数组与缺省等价:add 命令不含 --sparse", async () => {
+    const box = sb();
+    await installPlugins(asSandbox(box), [
+      { marketplace: { name: "acme", source: "acme/codex-plugins", sparse: [] }, name: "repo-map" },
+    ]);
+    expect(box.commands[0]).toBe("codex plugin marketplace add 'acme/codex-plugins'");
   });
 
   it("同名 marketplace 只连一次:两个 plugin 共用一个 marketplace.name → 只有一条 marketplace add,两条 plugin add", async () => {

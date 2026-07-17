@@ -14,7 +14,7 @@ const agent = codexAgent({
   ],
   plugins: [{
     // name 必须等于 acme/codex-plugins 仓库 manifest 里声明的 name,不是随意起的别名
-    marketplace: { name: "acme-plugins", source: "acme/codex-plugins", ref: "v2", sparse: true },
+    marketplace: { name: "acme-plugins", source: "acme/codex-plugins", ref: "v2", sparse: [".agents", "plugins/repo-map"] },
     name: "repo-map",
   }],
   // 安装全部完成后按序跑的用户脚本(如插件自带的 setup 脚本),见 Adapter · 安装后运行脚本
@@ -22,7 +22,7 @@ const agent = codexAgent({
 });
 ```
 
-stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；HTTP 形态写 `url`，`headers` 进 `[mcp_servers.<name>.http_headers]` 子表。`marketplace.sparse` 让 `codex plugin marketplace add` 带 `--sparse`（大仓库只拉插件所需路径）；不影响装出来的内容，manifest 不记录它。
+stdio 形态的 MCP 写成 `[mcp_servers.<name>]` 的 `command`/`args`/`env`；HTTP 形态写 `url`，`headers` 进 `[mcp_servers.<name>.http_headers]` 子表。`marketplace.sparse` 列出 sparse 拉取的路径，每个元素生成一个 `--sparse <path>`（codex 的 `--sparse` 必须带路径参数、可重复），大仓库只拉插件所需路径；省略或空数组即全量 clone。它只影响拉取速度，不影响装出来的内容，manifest 不记录它。
 
 接入两个字段：`apiKey` 是代理 / OpenAI API key，省略时读 `CODEX_API_KEY` 环境变量；`baseUrl` 是 OpenAI 兼容代理端点（如 `https://s2a.example.com/v1`），省略时读 `CODEX_BASE_URL`。模型选择不在这里——它归 experiment 的 `model` 维度。
 
