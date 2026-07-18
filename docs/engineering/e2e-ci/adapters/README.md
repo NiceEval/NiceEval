@@ -11,7 +11,7 @@
 3. **经 CLI 展示核验接收完整性**：仓库验收脚本把同一份新结果交给读面 CLI——`niceeval show` 退出 0、榜单列出本仓库每条 Eval 的 id 与 verdict、与 `--json` 口径一致；对一个通过的 attempt 跑 `show --execution`，执行树就是「适配器收到了什么」的用户可见投影，第 2 步断言过的那批调用应全部以节点出现。适配器有没有正常接收到各种信息，以 CLI 展示为断言面——这一条断言穿透整条链（归一 → 落盘 → 读取面 → 渲染），一次真实运行同时验收协议路径和 CLI 读面。断言边界见[总则 · CLI 读回](../README.md#43-cli-读回)。
 4. **核验 OTel 记录**：调用是否记录到 OTel 同样先看展示——声明了 tracing 面的适配器，执行树节点带 span 时间注释；未声明的显示 timing unavailable。展示读不出的机制事实用 `openResults()` 兜底：断言「attempt 不产生 trace」，或抽查 span 经显式 correlation（`gen_ai.tool.call.id` 这类 GenAI 语义约定属性）与事件对应、不靠名字猜。trace 只作时间与结构证据，从不参与判分——判分断言永远只读事件流（见 [Observability](../../../observability.md)）。
 
-第 2 步是 Eval 的判分断言，第 3、4 步是仓库验收脚本的机制断言，两层都在该仓库的所有权边界内。
+第 2 步是 Eval 的判分断言，第 3、4 步是仓库验收脚本的机制断言，两层都在该仓库的所有权边界内。验收脚本的具体代码写法与断言用例见[验收脚本写法](../verification.md)。
 
 ## 覆盖表
 
