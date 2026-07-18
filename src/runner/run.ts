@@ -325,8 +325,9 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     /** setup 抛过错(用独立布尔标记,不能拿 error 值判断——throw undefined 也是失败)。 */
     setupFailed: boolean;
     setupError?: unknown;
-    /** teardown 已被消费(运行路径与强清 drain 先到者置位)——「互斥恰好一次」的全部机制。 */
-    teardownConsumed: boolean;
+    /** teardown 的 memoized 执行体:谁先到(计数归零 / 扫尾 / 强清 drain)谁启动,后到者等
+     *  同一个 promise——「恰好一次 + 在飞可等待」的全部机制。undefined = 还没人启动。 */
+    teardownPromise?: Promise<void>;
     /** 本实验还没收尾的 attempt 数;归零即触发 teardown。 */
     remaining: number;
     /** 本实验的收尾时点已走到(计数归零 / run 收尾扫尾)。 */
@@ -337,10 +338,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     if (!a.run.setup && !a.run.teardown) continue;
     let lc = expLifecycles.get(a.run);
     if (!lc)
-      expLifecycles.set(
-        a.run,
-        (lc = { triggered: false, setupFailed: false, teardownConsumed: false, remaining: 0, tornDown: false }),
-      );
+      expLifecycles.set(a.run, (lc = { triggered: false, setupFailed: false, remaining: 0, tornDown: false }));
     lc.remaining += 1;
   }
   const makeExperimentHookContext = (run: AgentRun): ExperimentHookContext => {
@@ -364,42 +362,48 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
         }),
     };
   };
-  const runExperimentTeardown = async (run: AgentRun, lc: ExperimentLifecycle): Promise<void> => {
-    // 同步一次性交换:正常路径(计数归零 / run 收尾扫尾)与强清 drain 可能都走到这里,
-    // 先到者置 consumed,后到者直接返回。
-    if (lc.teardownConsumed) return;
-    lc.teardownConsumed = true;
-    const experimentId = run.experimentId ?? run.agent.name;
-    unregisterExperimentTeardown(experimentId);
-    // 触发规则(docs/feature/experiments/architecture.md):setup 时点没走到(一个 attempt 都
-    // 没通过派发许可)则跳过;setup 抛错不豁免——半初始化现场同样要扫尾。
-    if (!lc.triggered || !run.teardown) return;
-    // 与 setup 串行:setup 仍在飞(极端时序:全部 attempt 在 setup 完成前被中断收尾)时等它
-    // settle 再收尾;setupPromise 自带 catch(失败收进 setupFailed),这里不会 reject。
-    await lc.setupPromise;
-    // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级钩子的显示」)。
-    reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
-    const startedAt = Date.now();
-    try {
-      // 有界执行(docs/cli.md「中断:三级响应」的有界性前提):挂起的 teardown 到点按失败收束,
-      // 不能无限拖住退出;超时后遗留的 promise 悬空,随进程退出消亡。
-      const ctx = makeExperimentHookContext(run);
-      await withCleanupTimeout(() => run.teardown!(ctx));
-      reportExperimentHook({ experimentId, hook: "teardown", status: "done", durationMs: Date.now() - startedAt });
-    } catch (e) {
-      reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
-      // teardown 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
-      // teardown-failed 同一语义);资源可能泄漏,所以要说出来。
-      reportDiagnostic({
-        key: `experiment-teardown-failed:${experimentId}`,
-        severity: "warning",
-        message: t("runner.experimentTeardownFailed", {
-          experimentId,
-          message: e instanceof Error ? e.message : String(e),
-        }).trimEnd(),
-        data: { experimentId },
-      });
-    }
+  const runExperimentTeardown = (run: AgentRun, lc: ExperimentLifecycle): Promise<void> => {
+    // memoized 一次性执行体(docs/cli.md「中断:三级响应」):正常路径(计数归零 / run 收尾
+    // 扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——
+    // 不双跑、也不空转;注册表条目在 settle 后注销,drain 因此能等待在飞中的 teardown。
+    lc.teardownPromise ??= (async () => {
+      const experimentId = run.experimentId ?? run.agent.name;
+      try {
+        // 触发规则(docs/feature/experiments/architecture.md):setup 时点没走到(一个 attempt
+        // 都没通过派发许可)则跳过;setup 抛错不豁免——半初始化现场同样要扫尾。
+        if (!lc.triggered || !run.teardown) return;
+        // 与 setup 串行:setup 仍在飞(极端时序:全部 attempt 在 setup 完成前被中断收尾)时等它
+        // settle 再收尾;setupPromise 自带 catch(失败收进 setupFailed),这里不会 reject。
+        await lc.setupPromise;
+        // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级钩子的显示」)。
+        reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
+        const startedAt = Date.now();
+        try {
+          // 有界执行(docs/cli.md 的有界性前提):挂起的 teardown 到点按失败收束,不能无限拖住
+          // 退出;超时后遗留的 promise 悬空,随进程退出消亡。
+          const ctx = makeExperimentHookContext(run);
+          await withCleanupTimeout(() => run.teardown!(ctx));
+          reportExperimentHook({ experimentId, hook: "teardown", status: "done", durationMs: Date.now() - startedAt });
+        } catch (e) {
+          reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
+          // teardown 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
+          // teardown-failed 同一语义);资源可能泄漏,所以要说出来。
+          reportDiagnostic({
+            key: `experiment-teardown-failed:${experimentId}`,
+            severity: "warning",
+            message: t("runner.experimentTeardownFailed", {
+              experimentId,
+              message: e instanceof Error ? e.message : String(e),
+            }).trimEnd(),
+            data: { experimentId },
+          });
+        }
+      } finally {
+        // settle 后才注销:drain 的「启动全部未启动 + 等待全部未 settle」依赖条目在飞期间仍可见。
+        unregisterExperimentTeardown(experimentId);
+      }
+    })();
+    return lc.teardownPromise;
   };
   const ensureExperimentSetup = (a: Attempt): Promise<void> => {
     const lc = expLifecycles.get(a.run)!;
@@ -782,15 +786,18 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     for (const [run, lc] of expLifecycles) {
       if (lc.tornDown) continue;
       lc.tornDown = true;
-      // 无事可扫:teardown 已被消费 / 没触发过 / 没声明——不报诊断,静默跳过。
-      if (lc.teardownConsumed || !lc.triggered || !run.teardown) continue;
-      const experimentId = run.experimentId ?? run.agent.name;
-      reportDiagnostic({
-        key: `experiment-teardown-late:${experimentId}`,
-        severity: "warning",
-        message: t("runner.experimentTeardownLate", { experimentId }).trimEnd(),
-        data: { experimentId, remaining: lc.remaining },
-      });
+      // 无事可扫:没触发过 / 没声明 teardown——静默跳过。
+      if (!lc.triggered || !run.teardown) continue;
+      // 只有扫尾是启动者时才报「late」诊断;已在飞的(如强清 drain 先到)只等 settle,不算漏。
+      if (!lc.teardownPromise) {
+        const experimentId = run.experimentId ?? run.agent.name;
+        reportDiagnostic({
+          key: `experiment-teardown-late:${experimentId}`,
+          severity: "warning",
+          message: t("runner.experimentTeardownLate", { experimentId }).trimEnd(),
+          data: { experimentId, remaining: lc.remaining },
+        });
+      }
       await runExperimentTeardown(run, lc);
     }
   };

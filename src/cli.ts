@@ -17,6 +17,7 @@ import { planCarry } from "./runner/fingerprint.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
 import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
+import { CLEANUP_TIMEOUT_MS } from "./runner/cleanup-timeout.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { prepareRunSandboxes, resolvedSandboxRecommendedConcurrency } from "./runner/sandbox-selection.ts";
 import { Json, JUnit } from "./runner/reporters/json.ts";
@@ -876,11 +877,14 @@ async function main(): Promise<void> {
   const ctrl = new AbortController();
   let signalCount = 0;
   // 强清 = 加速收尾,不是绕过收尾(docs/cli.md「中断:三级响应」)。顺序:先强停沙箱(卡在
-  // 沙箱 I/O 上的 teardown 立刻失败返回),再给在飞的收尾链(attempt 级 teardown + 实验级扫尾,
-  // 各可调用体自身有 30s 上限)一个有界窗口跑完,最后把没被在飞路径消费的实验级 cleanup 从
-  // 宿主机侧注册表兜底排空。只跑一次;先停 dashboard 的 tick/动态区域(coordinator.stopDynamic()),
+  // 沙箱 I/O 上的收尾立刻失败返回),然后事件驱动收口——并发等待「在飞收尾链 settle」与
+  // 「实验级 teardown 注册表排空」(drain 会启动未启动的、等待在飞的同一 memoized promise),
+  // 两者都 settle 即退。兜底上限从单可调用体清理上限推导(docs 声明的不等式:provider stop 8s
+  // < 看门狗 < CLEANUP_TIMEOUT_MS ≤ 本上限),不是第 2 级的语义——settle 才是——只拦
+  // 「收尾可调用体绕过了自己的超时」的失守病态,到点放弃退出(职责同第 3 级硬退)。
+  // 只跑一次;先停 dashboard 的 tick/动态区域(coordinator.stopDynamic()),
   // 避免硬退时终端卡在半帧 ANSI 状态。
-  const FORCE_SETTLE_WAIT_MS = 15_000;
+  const FORCE_SETTLE_CAP_MS = CLEANUP_TIMEOUT_MS * 2;
   let runInFlight: Promise<unknown> | undefined;
   let forcing = false;
   const forceCleanupAndExit = (code: number) => {
@@ -888,18 +892,16 @@ async function main(): Promise<void> {
     forcing = true;
     void (async () => {
       await Promise.all([coordinator.stopDynamic(), stopAllSandboxes()]);
-      if (runInFlight) {
-        await Promise.race([
-          runInFlight.then(
-            () => {},
-            () => {},
-          ),
-          new Promise<void>((r) => {
-            setTimeout(r, FORCE_SETTLE_WAIT_MS).unref();
-          }),
-        ]);
-      }
-      await drainExperimentTeardowns();
+      const settled = Promise.allSettled([
+        ...(runInFlight ? [runInFlight] : []),
+        drainExperimentTeardowns(),
+      ]);
+      await Promise.race([
+        settled.then(() => {}),
+        new Promise<void>((r) => {
+          setTimeout(r, FORCE_SETTLE_CAP_MS).unref();
+        }),
+      ]);
       process.exit(code);
     })();
   };
@@ -909,13 +911,16 @@ async function main(): Promise<void> {
       if (signalCount === 1) {
         reportActivity(t("cli.interruptCleanup").trimEnd());
         ctrl.abort();
-        // 看门狗:graceful 清理 12s 还没让进程自己收口,就强清兜底。
+        // 看门狗:graceful 清理迟迟没让进程自己收口,就强清兜底。取值在 docs/cli.md 声明的
+        // 不等式链里:> provider stop 超时(8s,一次正常停容器超时后才升级,不误伤),
+        // < CLEANUP_TIMEOUT_MS(30s)。
+        const GRACEFUL_WATCHDOG_MS = 12_000;
         setTimeout(() => {
           if (liveSandboxCount() > 0) {
             reportActivity(t("cli.fallbackCleanupTimeout").trimEnd());
             forceCleanupAndExit(130);
           }
-        }, 12_000).unref();
+        }, GRACEFUL_WATCHDOG_MS).unref();
       } else if (signalCount === 2) {
         reportActivity(t("cli.forceCleanupExit").trimEnd());
         forceCleanupAndExit(130);

@@ -173,15 +173,18 @@ const exit = await Effect.runPromiseExit(
 ```text
 第 1 次 Ctrl+C   → ctrl.abort() → Effect 收到中断信号 → 各 attempt 的 Scope 跑完整收尾链
                    (eval/agent/sandbox teardown → 停容器),runner 随后收尾实验级 teardown
-                   同时起 12s 看门狗:到点若仍有存活沙箱(优雅停容器卡住的信号),转强清
-第 2 次 Ctrl+C   → 强清:先强停全部沙箱(带超时),再给在飞收尾链一个 15s 有界窗口跑完其余
-                   teardown,最后排空实验级 cleanup 注册表兜底,退出
+                   同时起看门狗:到点若仍有存活沙箱(优雅停容器卡住的信号),转强清
+第 2 次 Ctrl+C   → 强清:先强停全部沙箱(带超时),然后事件驱动收口——并发等待「在飞收尾链
+                   settle」与「实验级 teardown 注册表排空(启动全部未启动、等到全部 settle)」,
+                   两者都 settle 即退;派生的兜底上限只拦收尾链自身失守的病态情形
 第 3 次 Ctrl+C   → 硬退(process.exit),放弃一切未完成的收尾
 ```
 
-**强清不是绕过收尾,而是加速它。** 中断路径上每一层 teardown 都要跑:attempt 级收尾链(`eval.teardown` → `agent.teardown` → `sandbox.teardown`)与实验级 cleanup 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的 teardown 立刻失败返回——其余宿主机侧收尾(回存状态、实验级反激活)在有界窗口内照常执行完。窗口到点仍未被在飞路径消费的实验级 cleanup,由宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)一次性排空;同一 cleanup 的消费是同步一次性交换,在飞路径与兜底排空不会双跑。`main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套兜底再退出。attempt 级钩子活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户钩子会双跑,它们靠「强停沙箱 + 有界窗口」拿到执行机会,窗口到点仍未跑完的按放弃计。
+**强清不是绕过收尾,而是加速它。** 中断路径上每一层 teardown 都要跑:attempt 级收尾链(`eval.teardown` → `agent.teardown` → `sandbox.teardown`)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的收尾立刻失败返回——随后的退出条件是**事件驱动的 settle,不是时钟**:并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
 
-**有界性是这条设计的前提**:每个收尾可调用体(eval cleanup、agent cleanup/teardown、sandbox 钩子链里的每个钩子、实验级 cleanup)各自有 30s 清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段,不能无限拖住退出;provider stop 另有自己的 8s 超时。因此收尾链的总时长有上界,强清的有界窗口等得起。
+实验级 teardown 在宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)从**触发时点**(本实验第一个通过派发许可的 attempt)起登记为可执行入口——setup 挂起、抛错都不影响它可达。执行体是 memoized 的一次性 promise:正常路径(计数归零 / run 收尾扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——不双跑、也不空转;条目在 settle 后注销,所以 drain 的完整语义就是「启动全部未启动 + 等待全部未 settle」。`main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套兜底再退出。attempt 级钩子活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户钩子会双跑,它们靠「强停沙箱 + 等待在飞链 settle」拿到执行机会。
+
+**有界性是事件驱动收口的前提**:每个收尾可调用体(eval / agent teardown、sandbox 钩子链里的每个钩子、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。因此「等全部 settle」有确定上界,不会无限拖住退出。四个时间常量之间是声明的不等式链,不是各自孤立的数字:**provider stop 超时(8s)< 看门狗(12s)< `CLEANUP_TIMEOUT_MS`(30s)≤ 强清兜底上限(2 × `CLEANUP_TIMEOUT_MS`,实现里直接从常量推导,防手写漂移)**——看门狗晚于一次 provider stop 超时才升级(否则误伤正常收尾),兜底上限至少容纳一个满额清理超时。兜底上限不是第 2 级的语义(settle 才是),它只拦「收尾可调用体绕过了自己的超时」这种失守病态,到点放弃退出——那时的职责与第 3 级相同。
 
 目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱、不漏任何一层 teardown:每个沙箱要么在本次 run 的清理集合里——退出前必被 stop,第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次走上述强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先走同一个兜底函数再退出;要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从清理集合移出(`niceeval sandbox list` 可见、`stop` 可清)。中断时刻尚无 verdict 的 attempt 拿不到留存授予,照常被清。`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内;provider label / TTL 留作事后核对。
 

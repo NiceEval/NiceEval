@@ -66,7 +66,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 | `teardown`:本实验全部 attempt 收尾后执行恰好一次,setup 时点走到过才触发;中断(signal abort)也执行;setup 抛错不豁免 | 正例:全部完成后 teardown 已执行;正例:中途 abort 后仍执行;正例:setup 抛错后仍执行;边界:未声明 teardown 时无收尾动作;边界:无 attempt 派发(setup 未触发)时不执行 |
 | teardown 抛错只产生运行级 diagnostic(`experiment-teardown-failed`),不改变任何已产出的 verdict | 反例:teardown 抛错后 results 的 verdict 不变,diagnostic 事件可见 |
 | teardown 执行有界:超过 30s 清理超时按 `experiment-teardown-failed` 诊断收束,run 照常返回 | 反例:挂起的可调用体在小超时下抛超时错(机制在 cleanup-timeout 单测);超时错→诊断与上一行 teardown 抛错同一路径(出处:memory/force-exit-skips-experiment-teardown.md) |
-| 强清兜底注册表:未被运行路径消费的实验级 teardown 由 `drainExperimentTeardowns` 一次性排空;已消费的不重跑,与正常路径互斥恰好一次 | 正例:登记两条后 drain 全部执行且再次 drain 为 0;反例:正常收尾(或 unregister)后 drain 无动作(出处:memory/force-exit-skips-experiment-teardown.md) |
+| 强清兜底注册表:teardown 执行体是 memoized 一次性 promise,drain 启动全部未启动、等待全部未 settle(含在飞);条目 settle 后自行注销,正常路径与 drain 并发到达同一 teardown 只执行一次且都等到 settle | 正例:登记两条后 drain 全部执行且再次 drain 为 0;正例:drain 与正常路径并发调用同一入口,执行计数为 1 且两者都在 settle 后返回;反例:正常收尾(settle 已注销)后 drain 无动作(出处:memory/force-exit-skips-experiment-teardown.md) |
 | 正常完整跑完后注册表为空:teardown 由运行路径消费,不留待兜底的条目 | 边界:runEvals 返回后 pendingExperimentTeardownCount() 为 0 |
 | `setup` 的 ctx:experimentId / selectedEvalIds / signal / progress / diagnostic 齐备,diagnostic 进运行级永久事件流 | 正例:ctx 字段值与实验一致;正例:diagnostic 以 experiment.setup 归因出现在事件流 |
 | 钩子函数体不进 fingerprint:只改 setup / teardown 逻辑不使携带失效 | 边界:改 setup 后 fingerprint 不变 |
