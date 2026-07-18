@@ -1,10 +1,8 @@
 ---
 title: "Authoring evals: single-turn, multi-turn, and dataset patterns"
 sidebarTitle: "Authoring Evals"
-description: "Learn how to write NiceEval evals with defineEval, including single-turn assertions, multi-turn conversations, dataset fan-out, and sandbox workspaces."
+description: "Write evals with defineEval, covering single-turn conversations, multi-turn conversations, data-driven testing, Sandbox workspaces, and the eval lifecycle and fixtures."
 ---
-
-Every [NiceEval](https://niceeval.com/) eval is a TypeScript file that default-exports `defineEval(...)`. The core rules are simple: **path is identity**, **one file is one eval**, and **write linearly with assertions next to the interaction they check**.
 
 ## The `defineEval` shape
 
@@ -23,10 +21,6 @@ export default defineEval({
 });
 ```
 
-<Warning>
-  Do not set `id` or `name`. `evals/weather/brooklyn.eval.ts` automatically becomes the ID `weather/brooklyn`.
-</Warning>
-
 ## Single-turn evals
 
 ```ts
@@ -44,7 +38,7 @@ export default defineEval({
 });
 ```
 
-`t.send()` drives one interaction. `t.succeeded()` and `t.calledTool()` are scoped assertions. `t.check()` records an immediate value assertion.
+`t.send()` drives one interaction, `t.succeeded()` and `t.calledTool()` are scoped assertions, and `t.check()` is a value assertion recorded immediately.
 
 ### The `Turn` object
 
@@ -73,11 +67,11 @@ export default defineEval({
 });
 ```
 
-Use `t.newSession()` when you need multiple independent conversations in parallel.
+Use `t.newSession()` when you need parallel, independent sessions.
 
 ## Dataset fan-out
 
-One file can export an eval array:
+One file can export an array of evals:
 
 ```ts
 export default rows.map((row) =>
@@ -91,11 +85,11 @@ export default rows.map((row) =>
 );
 ```
 
-That generates IDs such as `sql/0000`, `sql/0001`, and so on. See [Dataset fan-out](/guides/dataset-fanout).
+That generates IDs such as `sql/0000`, `sql/0001`, and so on. See [Dataset fan-out](/tutorials/dataset-fanout).
 
 ## Sandbox workspace
 
-Coding-agent evals are still normal `.eval.ts` files. They just prepare a sandbox workspace, send a task, and inspect files or tests:
+Coding-agent evals are still normal `.eval.ts` files. `test` just prepares a Sandbox workspace, sends a task, and inspects the resulting files:
 
 ```ts
 import { defineEval } from "niceeval";
@@ -110,11 +104,11 @@ export default defineEval({
 });
 ```
 
-See [Fixtures](/guides/fixtures) for the full pattern.
+See [Fixtures](/tutorials/fixtures).
 
-## Report long steps and diagnostics from an eval
+## Report progress and diagnostics
 
-`setup` prepares the task fixture for this eval. Its second argument is bound to the eval setup phase; feedback sent from inside `test(t)` is bound to the eval run phase:
+`setup` handles this eval's Fixture. Its second argument is bound to the eval's setup phase; feedback from inside `test(t)` is bound to the eval's run phase:
 
 ```ts
 export default defineEval({
@@ -142,7 +136,39 @@ export default defineEval({
 });
 ```
 
-`progress` only updates short-lived status while the run is in flight; it never enters the result. `diagnostic` is written into the current attempt's `result.json`, but it does not replace an assertion or change the verdict on its own: business conclusions still come from `t.check` / `t.require` / gates, and you throw when the infrastructure cannot continue.
+`progress` only updates short-lived status while the run is in flight; it never enters the result. `diagnostic` is written into the current Attempt's `result.json`, but it does not replace an assertion or change the verdict on its own: business conclusions still come from `t.check` / `t.require` / gates, and you throw when the infrastructure cannot continue.
+
+## Eval lifecycle
+
+`setup(sandbox, ctx)` prepares the Fixture; pair it with a `teardown(sandbox, ctx)` to clean up. Together they form this eval's Fixture, and each runs once per Attempt. Execution order: `setup` runs after the Sandbox lifecycle hooks and the git baseline anchor, and before `test(t)`; `teardown` is the first link in the Attempt's teardown chain (eval teardown first, then agent teardown, then Sandbox teardown) — the Sandbox is still alive at this point, so teardown code can read it as usual.
+
+Most Fixtures do not need `teardown` — starting files written into the Sandbox and dependencies installed there disappear automatically when the Sandbox is destroyed. `teardown` is for Fixtures **outside the Sandbox**: temporary resources this Attempt created in a shared external service (a temporary repo, bucket, queue topic) that leak unless you clean them up.
+
+Multiple Attempts of the same eval (`runs` greater than 1, or several experiments in the same batch running the same eval) run concurrently and share the same module, so a `setup` handle cannot live in a plain module variable — a later concurrent Attempt would overwrite it. Key it off the `sandbox` instance instead (`WeakMap`): a sandbox maps one-to-one to an Attempt, so it is a natural per-attempt key:
+
+```ts
+// evals/pr-review/close-stale.eval.ts
+import { defineEval } from "niceeval";
+import type { Sandbox } from "niceeval/sandbox";
+
+// Concurrent Attempts share this module: key the handle off sandbox, not a plain module variable
+const fixtures = new WeakMap<Sandbox, { repoUrl: string; destroy(): Promise<void> }>();
+
+export default defineEval({
+  async setup(sandbox, ctx) {
+    ctx.progress({ message: "seeding fixture repo" });
+    const fixture = await createFixtureRepo("pr-review/close-stale"); // a temporary resource outside the sandbox
+    fixtures.set(sandbox, fixture);
+    await sandbox.runCommand("git", ["clone", fixture.repoUrl, "workspace"]);
+  },
+  async teardown(sandbox) {
+    await fixtures.get(sandbox)?.destroy(); // also reached when setup throws: skip if nothing was created
+  },
+  async test(t) { /* drive the agent to clean up the stale PR, assert */ },
+});
+```
+
+`teardown` runs if and only if this Attempt reached `setup` — a thrown error in `setup` does not exempt it, so teardown code must guard against resources that may not have been created. If `teardown` throws, or exceeds its 30-second cleanup budget, that only records a `teardown-failed` diagnostic; it does not change the verdict this Attempt already produced. To make a cleanup step affect the outcome, throw from `setup` or `test` — do not expect `teardown` to change the verdict.
 
 ## Naming conventions
 

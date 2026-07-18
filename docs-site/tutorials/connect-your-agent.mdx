@@ -1,32 +1,32 @@
 ---
-title: "Connect your agent"
+title: "Connect your Agent"
 sidebarTitle: "Connect Agent"
-description: "The full picture of integration: write an adapter, configure an experiment, and get the first eval running; how configuration and parameters are declared in the experiment and consumed by the Adapter. Event streams, multi-turn, HITL, and tracing are increments, each with its own page."
+description: "Write an Adapter, configure an Experiment, and run the first eval; then pass configuration and parameters from the Experiment to the Adapter and the app under test."
 ---
 
-Connecting a subject under test to [NiceEval](https://niceeval.com/) means writing one **adapter** for it: `defineAgent` wrapping a `send` function — it receives one turn of input, drives your agent, and returns that turn's result. The entire integration is this one file.
+Connecting a subject under test to [NiceEval](https://niceeval.com/) requires an **Adapter**. `defineAgent` wraps a `send` function: it receives the input, drives the Agent, and returns the turn's result.
 
-This page answers only two questions: **how this file and its two companions (experiment, eval) get running end to end**, and **how parameters flow from the experiment to the Adapter and on to your app**. Event streams, multi-turn, HITL, and tracing are all optional increments that come later, each with its own page; a map is at the end.
+This tutorial first gets a minimal integration running with an Adapter, an Experiment, and an eval, then explains how parameters flow from the Experiment to the Adapter and on to the app under test. Event streams, multi-turn, HITL, and tracing are optional capabilities, with the corresponding tutorials listed at the end.
 
-## Pick a path first: what is your subject under test?
+## Choose the integration path for your subject under test
 
 <CardGroup cols={3}>
   <Card title="AI SDK app" icon="bolt" href="/reference/builtin-agents">
-    Apps built with the Vercel AI SDK (`useChat` backend): the built-in `uiMessageStreamAgent` connects to their HTTP interface non-intrusively — zero mapping, HITL included, with a complete before/after example. You do not need this page.
+    Apps built with the Vercel AI SDK can connect to an existing HTTP interface using the built-in adapter.
   </Card>
-  <Card title="Coding agent CLI" icon="terminal" href="/guides/sandbox-agent">
-    Evaluating claude-code / codex / bub and other file-editing coding agents: use the built-in sandbox agent.
+  <Card title="Agent" icon="terminal" href="/tutorials/sandbox-agent">
+    Evaluating a standalone agent like Claude Code / Codex / bub: use the built-in Sandbox Agent.
   </Card>
   <Card title="Other AI Agent" icon="plug">
-    Custom agent loops, LangGraph / OpenAI Agents SDK apps, deployed agents: hand-write `send` (this page + [Write Send](/guides/write-send)). If the app already emits OTel, hook it up while you are at it — `niceeval view` gains a call waterfall ([OTel integration](/guides/connect-otel)).
+    Your own agent needs to [write Send](/tutorials/write-send). If your app already has OTel instrumentation, you can [connect OTel](/tutorials/connect-otel).
   </Card>
 </CardGroup>
 
-## Get the minimal integration running
+## Minimal integration example
 
-Assume the project has already run `npx niceeval init` (so `niceeval.config.ts` and the `evals/` directory exist). Three files, one job each: **the adapter connects to the system under test, the experiment decides who to evaluate and how to run, the eval writes the interaction and assertions.**
+Assume the project already has `npx niceeval init` run, so `niceeval.config.ts` and the `evals/` directory exist. Three files, one job each: **the Adapter connects to the system under test, the Experiment pins down the run configuration, and the eval defines the interaction and assertions.**
 
-**1. Write the adapter.** The minimal integration fills only `status` and `events`: whatever your agent said goes into one `message` event.
+**1. Write the Adapter.** The minimal integration only fills `status` and `events`: put the Agent's reply into a `message` event.
 
 ```ts
 // agents/my-agent.ts
@@ -52,18 +52,14 @@ export default defineAgent({
 });
 ```
 
-Hardcoding the URL is fine for now — how to pass it in from the experiment is covered below in ["How parameters flow in"](#how-parameters-flow-in-the-experiment-declares-the-adapter-consumes). The full `send` contract (every field of `TurnInput` / `AgentContext` / `Turn`) is in [Adapter](/concepts/adapter).
+The minimal example starts with a hardcoded URL. When you need to pass the URL in per environment, use [how parameters flow in](#experiment-flags) below. The full `send` contract (every field of `TurnInput` / `AgentContext` / `Turn`) is in [Adapter](/explanation/adapter).
 
-Even when the agent runtime and the evals live in the same codebase, still go through HTTP — do not replace the `fetch` with an in-process function call:
+Even when the Agent runtime and the evals live in the same codebase, still call the interface the way a frontend user would, and do not replace `fetch` with an in-process function call, because:
 
-- **A direct call does not evaluate the path your users take.** The HTTP layer, serialization, middleware, and streaming are all bypassed; a passing eval does not mean production behavior is correct.
-- **No process isolation, so results are not reproducible.** Crashes, global state, and memory leaks in the code under test drag the runner down with them; concurrent evals pollute each other through shared state.
-- **Timeouts and cancellation stop working.** `ctx.signal` can only actually kill a runaway turn when it is attached to a request; an in-process function call cannot be stopped.
-- **The adapter gets welded to this codebase.** An HTTP adapter runs against local / staging / production by swapping `baseUrl` (see the two experiment files below); a direct call cannot.
+- **An in-process call is not the path your users take.** The HTTP layer, serialization, middleware, and streaming are all bypassed; a passing eval does not mean production behavior is correct.
+- **An Adapter that calls in-process cannot be reused across deployment environments.** An HTTP Adapter connects to local, staging, or production just by swapping `baseUrl` (see the two Experiment files below); an in-process call is tied to the current codebase.
 
-Starting a local dev server costs one command; none of the above is worth trading for it.
-
-**2. Register it in an experiment:**
+**2. Experiment**
 
 ```ts
 // experiments/my-agent.ts
@@ -78,7 +74,7 @@ export default defineExperiment({
 });
 ```
 
-**3. Write the first eval, then run:**
+**3. Eval**
 
 ```ts
 // evals/refund-policy.eval.ts
@@ -97,29 +93,29 @@ export default defineEval({
 ```
 
 ```bash
-npx niceeval exp my-agent        # run all evals under this experiment
-npx niceeval exp my-agent refund # only those whose ID starts with refund
+npx niceeval exp my-agent        # run every eval under this experiment
+npx niceeval exp my-agent refund # only run those whose ID starts with refund
 npx niceeval view              # inspect results in the local viewer
 ```
 
-**What success looks like**: running in a terminal, a person sees a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay permanently above it. At the end it prints only the summary, the failure locators, and the result path. `npx niceeval view` shows each eval's per-turn inputs, events, and scoring detail.
+**What a successful run looks like**: the terminal shows a live dashboard where the completed and queued counts update in place; failures, errors, and warnings stay in the output. When the run finishes, it prints the summary, the failure locators, and the result path. `npx niceeval view` shows each eval's per-turn inputs, events, and scoring detail.
 
-If it does not run, triage by where the error shows up, in three buckets:
+If it doesn't run, triage by where the error shows up, into three buckets:
 
-- **`fetch` throws outright** (connection refused, etc.): the app is not up, or the URL in `send` is wrong — first send the same request to that endpoint with `curl` to confirm.
-- **`t.succeeded()` fails and the turn verdict is failed**: the request went out, but the Turn the app returned is `failed`. Map the protocol's failures onto `Turn.status` or a standard `error` event; keep any extra bounded context with `ctx.diagnostic(...)` instead of printing the whole response body.
+- **`fetch` throws directly** (connection refused, etc.): the app is not running, or the URL in `send` is wrong — first send the same request to that endpoint with `curl` to confirm.
+- **`t.succeeded()` fails and the turn's verdict is failed**: the request went out, but the Turn the app returned is `failed`. Map the protocol's failures onto `Turn.status` or a standard `error` event; keep any extra bounded context you need with `ctx.diagnostic(...)`, not by printing the full response body.
 - **Only content assertions fail**: the integration itself already works — compare the actual value of `t.reply` in `view`, then adjust the assertion or the app.
 
-At this point the integration is complete: text assertions and judge scoring both work. For more assertions (tools, multi-turn, approval flows), see the increment map at the end.
+Once these steps are done, text assertions and Judge scoring both work. Tool, multi-turn, and approval-flow assertions require adding the optional capabilities listed at the end.
 
-## How parameters flow in: the experiment declares, the Adapter consumes
+## Experiment flags
 
-Configuration has exactly two channels; keep them apart and the integration stays untangled:
+Configuration belongs to exactly two channels; keep them separate and the integration stays untangled:
 
-1. **Static configuration goes through the Adapter factory.** URL, auth, protocol details — the "what does this environment look like" kind of configuration — are written as factory options in the experiment file: the `agent` field of `defineExperiment` holds an **already-configured instance**.
-2. **Per-turn dynamic values go through `ctx`.** The `model` and `flags` declared by the experiment are handed to `send` verbatim via `ctx` every turn; the Adapter does not interpret their meaning, it only forwards them to the app with the request.
+1. **Static configuration goes through the Adapter factory.** Environment-level configuration such as URL, auth, and protocol details is written as factory parameters in the Experiment file. The `agent` field of `defineExperiment` receives an **already-configured instance**.
+2. **Per-turn dynamic values go through `ctx`.** The `model` and `flags` declared by the experiment are handed to `send` verbatim via `ctx` on every turn; the Adapter does not interpret their meaning, it only forwards them to the app with the request.
 
-Putting the two channels together means turning step 1's my-agent from "an instance with a hardcoded URL" into "a factory that receives configuration": the default export becomes a function returning `defineAgent(...)`, the hardcoded spots in `send` become reads of factory options; the `model` and `flags` declared by the experiment arrive via `ctx` every turn and are forwarded inside `send` with the request:
+Turn step 1's `my-agent` from an instance with a hardcoded URL into a factory that receives configuration. Change the default export to a function that returns `defineAgent(...)`, and have `send` read the factory parameters. The `model` and `flags` declared by the Experiment arrive via `ctx` on every turn, and `send` forwards them with the request:
 
 ```ts
 // agents/my-agent.ts — factory: static configuration goes into the closure
@@ -136,7 +132,7 @@ export function myAgent(options: { baseUrl: string }): Agent {
         body: JSON.stringify({
           message: input.text,
           model: ctx.model,     // ← experiment.model: forward it if the app's interface accepts a model choice
-          flags: ctx.flags,     // ← experiment.flags: hand to the app as-is; the app switches on flags
+          flags: ctx.flags,   // ← experiment.flags: hand it to the app as-is; the app switches on it
         }),
         signal: ctx.signal,     // ← runner timeout and cancellation: attach to every request
       });
@@ -150,7 +146,7 @@ export function myAgent(options: { baseUrl: string }): Agent {
 }
 ```
 
-Auth headers, protocol switches, and the like are static configuration too — add them to `options` the same way. The experiment side changes in two small places: a named import of the factory, and the `agent` field goes from "referencing an instance" to "calling the factory":
+Auth headers, protocol switches, and the like are static configuration too — add them to `options` the same way. The experiment side changes in two small places: a named import of the factory, and the `agent` field goes from referencing an instance to calling the factory:
 
 ```ts
 // experiments/my-agent.ts — where parameters are declared
@@ -161,21 +157,21 @@ export default defineExperiment({
   description: "my-agent baseline",
   agent: myAgent({ baseUrl: "http://localhost:3000" }),  // ← static configuration: passed at instantiation
   model: "gpt-5.4",                                    // ← dynamic value: reaches send via ctx.model
-  flags: { promptVariant: "concise" },                 // ← dynamic value: reaches send via ctx.flags
+  flags: { promptVariant: "concise" },                // ← dynamic value: reaches send via ctx.flags
 });
 ```
 
 The `ctx` fields a turn may use, and how to consume them:
 
-| `ctx` field | Who provides it | How the Adapter consumes it |
+| `ctx` field | Source | How the Adapter uses it |
 |---|---|---|
 | `signal` | The runner (timeout and cancellation) | Attach it to every outgoing request |
 | `model` | The experiment's `model` | Forward it with the request if the app's interface accepts a model choice; ignore it otherwise |
-| `flags` | The experiment's `flags` | Forward as-is (request body or header both work); the app switches variants on flags |
-| `telemetry` | Present when OTel integration is configured | Touch only `headers`: a fresh W3C `traceparent` per turn, spread into the request headers. The receiver endpoint is the same on every run — pin it in `defineConfig` and point the app at it on startup; it is not passed from send — see [OTel integration](/guides/connect-otel) |
-| `session` | The runner (one per session line) | The accessors for session continuation and HITL held state all live on it: `history()`, `id` / `capture()`, `hold()` / `take()` — see [Write Send](/guides/write-send) |
-| `progress(update)` | The runner (bound to the current `agent.run`) | Report the short-lived status of a turn or tool; the human dashboard may show it, and it is not saved with the results |
-| `diagnostic(input)` | The runner (bound to the current `agent.run`) | Save warnings/errors such as protocol degradation or an incomplete response; a locator can drill back down into them |
+| `flags` | The experiment's `flags` | Forward as-is (request body or header both work); the app switches variants on it |
+| `telemetry` | Present when OTel integration is configured | Touch only `headers`: a fresh W3C `traceparent` each turn, spread into the request headers. The receiving endpoint is the same on every run — pin it in `defineConfig` and point the app at it on startup; it is not passed from send — see [OTel Integration](/tutorials/connect-otel) |
+| `session` | The runner (one per session line) | The accessors for session continuation and HITL held state all live on it: `history()`, `id` / `capture()`, `hold()` / `take()` — see [Write Send](/tutorials/write-send) |
+| `progress(update)` | The runner (bound to the current `agent.run`) | Report the short-lived status of a turn or tool; the human dashboard may show it, but it is not saved with the results |
+| `diagnostic(input)` | The runner (bound to the current `agent.run`) | Save warnings/errors such as protocol degradation or an incomplete response; a locator can drill back into them |
 
 ### Progress, diagnostics, and fatal errors in the Adapter
 
@@ -198,11 +194,11 @@ async send(input, ctx) {
 }
 ```
 
-`progress` is short-lived status that later updates overwrite; `diagnostic` is a bounded record you can still review after the run ends. Neither can pick a phase or an output stream, and neither changes `Turn.status` or the Attempt verdict on its own. Infrastructure errors — a failed connection, parsing that cannot continue — should throw; a failure of the agent under test that you received normally is expressed with `Turn.status: "failed"`.
+`progress` is short-lived status that later updates overwrite; `diagnostic` is a bounded record you can still review after the run ends. Neither can specify a phase or output stream, and neither automatically changes `Turn.status` or the Attempt verdict. Infrastructure errors — a failed connection, parsing that cannot continue — should throw an exception; a normal failure of the Agent under test is expressed with `Turn.status: "failed"`.
 
-The terminal shows only a one-layer summary of the error plus the locator. The complete code, message, cause, stack, and diagnostics are in `result.json`; read them with `niceeval show @<locator>`. An OTel trace only adds call relationships and timing — it is not a prerequisite for recording errors.
+The terminal shows only a one-layer summary of the error, plus the locator. The full code, message, cause, stack, and diagnostics are in `result.json`; view them with `niceeval show @<locator>`. An OTel trace only adds call relationships and timing — it is not a prerequisite for recording errors.
 
-Running the same agent against local and production separately is just two experiment files with two sets of factory options:
+To evaluate local and production separately, create two Experiment files and pass in different factory parameters:
 
 ```ts
 // experiments/local.ts
@@ -223,31 +219,31 @@ npx niceeval exp local
 npx niceeval exp prod
 ```
 
-Do not put URLs into CLI positional arguments — the positional arguments after the experiment name only filter eval IDs. For the full experiment fields (`runs`, `budget`, concurrency, `sandbox`), see [Write experiments](/guides/write-experiment).
+Do not put URLs into CLI positional arguments — the positional arguments after the experiment name are only for filtering eval IDs. For the full experiment fields (`runs`, `budget`, concurrency, `sandbox`), see [Write Experiments](/tutorials/write-experiment).
 
-## The increments after: a map
+## Add optional capabilities
 
-After the minimal integration, every increment you give the adapter unlocks a family of assertions, and the evals you have already written stay untouched:
+Once the minimal integration is done, extend the Adapter as needed. Existing evals don't need to change:
 
-| What you want to unlock | What to add to the adapter | Where to look |
+| Target capability | Adapter change | Tutorial |
 |---|---|---|
-| Tool assertions (`calledTool` / `toolOrder` / negative assertions) | Map the app's response into the standard event stream | [Write Send](/guides/write-send), [Events reference](/reference/events) |
-| Multi-turn conversations, `t.newSession()` isolation | Connect `ctx.session`: `history()` or `id` + `capture()` | [Write Send](/guides/write-send) |
-| Approval flows (HITL, human-in-the-loop) | Pause the turn with `waiting` + `input.requested`, resume on the answer turn | [HITL](/concepts/hitl) |
-| The call waterfall in `niceeval view` | The app sends OTel spans to NiceEval (does not affect assertions) | [OTel integration](/guides/connect-otel) |
-| Feature A/B comparison | The app exposes variants as configuration switchable by `flags` | [Tier](/concepts/tier), [Write experiments](/guides/write-experiment) |
+| Tool assertions (`calledTool` / `toolOrder` / negative assertions) | Map the app's response into the standard event stream | [Write Send](/tutorials/write-send), [Events reference](/reference/events) |
+| Multi-turn conversations, `t.newSession()` isolation | Connect `ctx.session`: `history()` or `id` + `capture()` | [Write Send](/tutorials/write-send) |
+| Approval flows (HITL, human-in-the-loop) | Return `waiting` + `input.requested` to pause the turn, resume on the answer turn | [HITL](/explanation/hitl) |
+| The call waterfall in `niceeval view` | The app sends OTel spans to NiceEval (does not affect assertions) | [OTel Integration](/tutorials/connect-otel) |
+| Feature A/B comparison | The app exposes variants as configuration switchable via `flags` | [Tier](/explanation/tier), [Write Experiments](/tutorials/write-experiment) |
 
-Which tier each increment lands in, and what each tier buys, is in [Tier](/concepts/tier).
+For the integration tier and scope each capability corresponds to, see [Tier](/explanation/tier).
 
 ## Reference implementations
 
-Complete runnable references: the five non-intrusive integration examples under [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) (ai-sdk-v7, claude-sdk, codex-sdk, pi-sdk, langgraph), covering event-stream assertions, multi-turn isolation, HITL approve / reject, and the trace waterfall. When hand-writing `send`, all you really write is the transport and the mapping table — the state slots for session continuation and HITL pause/resume are on `ctx.session`, and frame-by-frame driving is official machinery; see [Built-in agent capabilities](/reference/builtin-agents).
+[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) provides five runnable non-intrusive integration examples (ai-sdk-v7, claude-sdk, codex-sdk, pi-sdk, langgraph), covering event-stream assertions, multi-turn isolation, HITL approve/reject, and the trace waterfall. Hand-writing `send` only requires implementing the transport and the mapping table; session continuation and HITL pause/resume are provided by `ctx.session`, and frame-by-frame driving can use the built-in implementation — see [Built-in agent capabilities](/reference/builtin-agents).
 
 ## Related reading
 
-- [Official adapters](/guides/official-adapters) — which official Adapters exist, sandboxed and non-sandboxed, and how to configure them, when your subject under test can use one directly.
-- [Write Send](/guides/write-send) — the complete tutorial for hand-writing an Adapter: seven progressive steps, from sending one message to HITL, OTel, and flags.
-- [Adapter](/concepts/adapter) — the `send` contract: `TurnInput` / `AgentContext` / `Turn`, field by field.
-- [OTel integration](/guides/connect-otel) — send the app's spans to [NiceEval](https://niceeval.com/) too, in exchange for the call waterfall in `niceeval view`.
-- [Tier](/concepts/tier) — what each of the three integration tiers costs and buys.
-- [Write experiments](/guides/write-experiment) — the full `defineExperiment` fields.
+- [Official adapters overview](/reference/official-adapters) — Sandbox and non-Sandbox Adapters and their configuration options.
+- [Write Send](/tutorials/write-send) — the complete tutorial for hand-writing an Adapter: seven progressive steps, from sending one message to HITL, OTel, and flags.
+- [Adapter](/explanation/adapter) — the `send` contract: `TurnInput` / `AgentContext` / `Turn`, field by field.
+- [OTel Integration](/tutorials/connect-otel) — send the app's spans to [NiceEval](https://niceeval.com/) too, in exchange for the call waterfall in `niceeval view`.
+- [Tier](/explanation/tier) — the requirements and capabilities of the three integration tiers.
+- [Write Experiments](/tutorials/write-experiment) — the full `defineExperiment` fields.

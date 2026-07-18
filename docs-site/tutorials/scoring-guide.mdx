@@ -1,16 +1,16 @@
 ---
-title: "Scoring guide: assertions, judge, and cost limits"
-sidebarTitle: "Scoring Guide"
-description: "Evaluate any NiceEval run with five scoring mechanisms: value assertions, scoped assertions, LLM-as-judge, test-as-scoring, and efficiency checks."
+title: "Assertions, Judge, and cost limits"
+sidebarTitle: "Assertions"
+description: "Value assertions, scoped assertions, LLM-as-judge, test-as-scoring, and efficiency checks."
 ---
 
-A good eval should decompose "did this succeed?" into signals you can explain. [NiceEval](https://niceeval.com/) lets you mix precise assertions, semantic judge checks, event-stream checks, and real tests.
+A good eval should decompose "did this succeed?" into signals you can explain. [NiceEval](https://niceeval.com/) lets you mix precise assertions, semantic judges, event-stream checks, and real tests.
 
 ## Choose the assertion type
 
 | Goal | Recommended mechanism |
 |---|---|
-| Reply includes a fixed field | `includes` / `matches` |
+| Reply contains a fixed substring or matches a regex | `includes` |
 | Structured JSON matches exactly | `equals` |
 | A tool call happened | `t.calledTool` / `t.notCalledTool` |
 | Output is semantically correct | `t.judge.*` |
@@ -20,14 +20,14 @@ A good eval should decompose "did this succeed?" into signals you can explain. [
 ## Value assertions
 
 ```ts
-import { includes, equals, matches } from "niceeval/expect";
+import { includes, equals } from "niceeval/expect";
 
 t.check(t.reply, includes("refund"));
 t.check(turn.data, equals({ intent: "refund" }));
-t.check(t.reply, matches(/order #\d+/));
+t.check(t.reply, includes(/order #\d+/));
 ```
 
-Value assertions fit results that are precise, stable, and low ambiguity.
+`includes` accepts both substrings and regexes. `matches` only accepts a Standard Schema / Zod schema, for structural validation — it does not do regex matching. Value assertions fit results that are precise, stable, and low-ambiguity.
 
 ## Scoped assertions
 
@@ -39,7 +39,7 @@ t.sandbox.fileChanged("src/app.ts");
 t.check(await t.sandbox.runCommand("npm", ["test"]), commandSucceeded());
 ```
 
-These check facts about the run, usually from the standard event stream or sandbox artifacts.
+These check facts about the whole run, usually from the standard event stream or sandbox artifacts.
 
 ## LLM-as-judge
 
@@ -48,7 +48,7 @@ t.judge.autoevals.factuality("Refunds are available within 30 days.", { on: t.re
 t.judge.autoevals.closedQA("The answer is specific, polite, and does not invent policy.", { on: t.reply }).atLeast(0.75);
 ```
 
-Judge checks are good for semantic quality. They are not a replacement for all deterministic assertions. Prefer exact checks when you can make them.
+Judge checks fit semantic quality, but they don't replace every deterministic assertion. Prefer exact checks wherever you can make them.
 
 ## Gate vs soft
 
@@ -57,8 +57,8 @@ t.check(t.reply, includes("refund").gate());
 t.check(t.reply, includes("friendly tone").atLeast(0.7));
 ```
 
-- `gate`: failure is a run failure
-- `soft`: keep the score for comparison without turning it into a hard failure
+- `gate`: a failure is a failure.
+- `soft`: keep the score, used to compare quality.
 
 ## Use tests to score code tasks
 
@@ -81,12 +81,12 @@ t.maxTokens(25_000);
 t.maxCost(0.1);
 ```
 
-This is especially useful for coding agents and long-chain agents, where repeated retries or excessive tool use can hide quality problems.
+This is especially useful for coding agents and long-chain agents, where hiding quality problems behind heavy retries or excessive tool calls becomes possible.
 
 ## Practical advice
 
-- Start with one or two gates to establish the minimum bar.
-- Add soft scores to compare quality across variants.
-- Use judge for complex semantics, but give it a clear rubric.
-- For coding-agent results, prefer real tests when possible.
-- Make failure messages explicit so reports are actionable.
+- Write one or two gates first to establish the task's baseline.
+- Then add soft scores to compare quality.
+- Use Judge for complex semantics, but give the Judge a clear rubric.
+- For coding-agent results, verify with real tests wherever possible.
+- Write failure messages clearly, so you can locate problems directly from the report.

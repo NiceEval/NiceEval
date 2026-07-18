@@ -41,7 +41,7 @@ export default defineExperiment({
 export ANTHROPIC_API_KEY=sk-ant-...
 npx niceeval exp local fixtures/button
 
-npx niceeval exp local fixtures/button --runs 10 --early-exit
+npx niceeval exp local fixtures/button --runs 10
 ```
 
 <Note>
@@ -63,7 +63,7 @@ export default defineExperiment({
 });
 ```
 
-Claude Code uses `correctroads-default-team/niceeval-claude-code:v0.6.1`, and Bub uses `correctroads-default-team/niceeval-bub:v0.6.1`. The version tag suits CI; omitting the tag follows the current stable build. To keep adding system packages, binaries, or model caches on top, see [Sandbox providers · Build on the official baselines to speed things up](/guides/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
+Claude Code uses `correctroads-default-team/niceeval-claude-code:v0.6.1`, and Bub uses `correctroads-default-team/niceeval-bub:v0.6.1`. The version tag suits CI; omitting the tag follows the current stable build. To keep adding system packages, binaries, or model caches on top, see [Sandbox providers · Build on the official baselines to speed things up](/tutorials/sandbox-providers).
 
 The built-in agents exported from `niceeval/adapter` are factory functions. Put auth, proxy, MCP, or GitHub Skill setup in the factory arguments. Keep the model in the experiment's `model` field, and the sandbox provider in `sandbox`:
 
@@ -103,14 +103,14 @@ export default defineExperiment({
 
 ```text
 createSandbox
-  → the sandbox spec's .setup() hook?    # environment setup (installs per experiment); skipped if none
-  → git init && git commit
-  → the eval's setup?                    # this eval's task fixture (if defined)
-  → adapter.setup?                       # install the CLI / write agent config
+  → the sandbox spec's .setup() hook?     # environment setup (installs per experiment); skipped if none
+  → the eval's setup?                     # this eval's Fixture (if defined)
+  → adapter.setup?                        # install the CLI / write agent config
   → test(t): uploadDirectory(...)         # write this eval's starting files
-  → adapter.send(input, ctx)
+  → adapter.send(input, ctx)              # only files the agent changes at this step enter the diff
   → test(t): runCommand(...)              # run verification commands by hand
-  → collectGeneratedFiles()               # git diff HEAD
+  → collect the agent's changed files     # used by t.sandbox.diff / fileChanged
+  → scoring and verdict
   → adapter.teardown?                     # agent cleanup
   → the sandbox spec's .teardown() hook?  # environment cleanup (such as saving state back), last before destroy
   → sandbox.stop()
@@ -118,7 +118,9 @@ createSandbox
 
 The starting files and verification commands both live in `test(t)`. During agent execution, it can only see the files you already wrote into the sandbox.
 
-The environment hooks (`.setup()` / `.teardown()`) hang off the spec in the experiment's `sandbox` field, and handle environment setup that varies per experiment — installing a binary specific to one experiment, warming something up, loading and saving state across attempts. They run before the git baseline, so the files they write are not counted in the agent's diff. For how to write them and the rules they follow, see [Sandbox providers · Environment hooks](/guides/sandbox-providers#environment-hooks).
+`t.sandbox.diff` and `t.sandbox.fileChanged()` only include **files the agent changed during `t.send()`**: NiceEval records the workspace state right before and right after each `t.send()` call, and attributes whatever changed in between to the agent. The starting files you uploaded, and any verification material written after `t.send()`, never get mixed in — so `fileChanged("src/app.ts")` only passes when the agent actually touched that file.
+
+The lifecycle hooks (`.setup()` / `.teardown()`) hang off the spec in the experiment's `sandbox` field, and handle environment setup that varies per experiment — installing a binary specific to one experiment, warming something up, loading and saving state across attempts. The files they write belong to the environment and are not counted in the agent's diff. For how to write them and the rules they follow, see [Sandbox providers · Environment hooks](/tutorials/sandbox-providers).
 
 ## Custom sandbox agent
 
@@ -161,12 +163,12 @@ Do not call `console.log/error` or write to `process.stdout/stderr` directly fro
 When a sandbox or adapter error shows up during a run, the terminal gives you an attempt locator:
 
 ```text
-✗ @2h8m4k1 fixtures/button [local] errored · agent setup
+✗ @12h8m4k1 fixtures/button [local] errored · agent setup
     agent-install-failed: npm install my-agent exited with code 1
-    Inspect: niceeval show @2h8m4k1
+    Inspect: niceeval show @12h8m4k1
 ```
 
-Run `niceeval show @2h8m4k1` to see the structured error, the diagnostics, and the lifecycle phases that completed. If there is an OTel trace, add `--execution` to see the execution tree. Sandbox creation can fail before telemetry is established, so reviewing the error does not depend on a trace.
+Run `niceeval show @12h8m4k1` to see the structured error, the diagnostics, and the lifecycle phases that completed. `--timing` gives a bounded diagnostic time tree (queueing, sandbox startup, the shell inside setup/teardown hooks, the agent CLI's install and launch commands, each send, correlated OTel model/tool spans, and cleanup), so you can see directly which layer the error or timeout happened in, and where the time went before that. When the tree has more than 80 detail nodes, it keeps the failures, the slow points, and the head/tail samples, and reports how many were omitted; use `--timing=full` when you need to audit node by node. `--execution` instead uses the event stream as the skeleton to see what the agent did; when OTel is present, it only attaches timing to events it can uniquely correlate. Sandbox creation can fail before telemetry is established, so reviewing the error does not depend on a trace.
 
 ## `ctx.model` and `ctx.flags`
 

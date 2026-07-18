@@ -1,14 +1,14 @@
 ---
-title: "Sandbox fixtures: evaluate coding agents with tasks"
+title: "Sandbox Fixture: evaluate coding agents with tasks"
 sidebarTitle: "Fixtures"
-description: "Use .eval.ts files to prepare isolated workspaces, send real coding-agent tasks, and verify results with files, commands, diffs, and judges."
+description: "Use .eval.ts to give a coding agent an isolated workspace, send it a real task, and verify the result with Sandbox files, commands, diffs, and a Judge."
 ---
 
-When you evaluate a coding agent, a chat assertion is not enough. You usually need to give it a real project, let it read and edit files, run commands, and then inspect the result. The current recommended NiceEval shape is a normal `.eval.ts` file that explicitly prepares the sandbox workspace, sends the task, and records assertions.
+When you evaluate a coding agent, checking a single reply is not enough. You usually need to give it a real project, let it read and write files, run commands, and commit changes, then check whether the output is correct. [NiceEval](https://niceeval.com/)'s current recommended shape is a normal `.eval.ts` file that explicitly prepares the Sandbox workspace, sends the task, and asserts on the result.
 
-See [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) for a runnable reference.
+See [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill) (a separate repository) for a runnable reference.
 
-## Recommended structure
+## Recommended directory structure
 
 ```text
 evals/
@@ -30,11 +30,11 @@ experiments/
 └─ with-skill.ts
 ```
 
-`workspaces/` contains the starting project the agent can see. The `.eval.ts` file decides when to upload it, what prompt to send, and what to verify. `experiments/` decides which agent/model runs and whether a Skill or plugin is injected.
+`workspaces/` holds the starting project the Agent can see. `.eval.ts` controls when the workspace is uploaded, the task prompt, and what to verify. `experiments/` selects the Agent, the model, and whether to inject a Skill or plugin.
 
 ## Prepare the workspace
 
-Upload the starting project inside the eval:
+Inside the eval, upload the starting project to the Sandbox:
 
 ```ts
 import { defineEval } from "niceeval";
@@ -51,7 +51,7 @@ export default defineEval({
 });
 ```
 
-You can also use `t.sandbox.writeFiles()` to add small seed files inside a single eval, which is a good fit for small tasks or security probes.
+You can also use `t.sandbox.writeFiles()` to add seed files within a single eval — a good fit for small tasks or security probes.
 
 ## Write the task prompt
 
@@ -71,7 +71,7 @@ Requirements:
   .then((turn) => turn.succeeded());
 ```
 
-Leave implicit requirements, such as path traversal defense or reuse of existing helpers, for the verification phase. That is how you measure whether a Skill or plugin helped the agent infer missing context.
+Leave implicit quality requirements, such as whether the code defends against path traversal or reuses existing tools, for the verification phase. That is how you find out whether a Skill or plugin actually helps the agent fill in missing context on its own.
 
 ## Verify files and code
 
@@ -88,11 +88,11 @@ t.check(code, excludes(/process\.env\.\w+\s*\?\?/));
 t.sandbox.fileChanged("src/config/env.ts");
 ```
 
-`t.sandbox.fileChanged()` is a scoped assertion: it checks the sandbox diff after the run to confirm the target file actually changed.
+`t.sandbox.fileChanged()` is a scoped assertion: after the run ends, it uses a Sandbox diff to determine whether the target file actually changed.
 
-## Run project tests or probes
+## Run project tests or probe scripts
 
-Real commands are often more reliable than text matching for coding-agent tasks:
+For coding-agent tasks, real commands are usually more reliable than text matching:
 
 ```ts
 await t.sandbox.writeFiles({
@@ -125,7 +125,7 @@ t.check(result, commandSucceeded());
 
 ## Use experiments for baselines
 
-Do not put agent names, plugin names, or URLs into CLI positionals. Experiments decide which agent to run and how; eval positionals only filter eval IDs.
+Do not put Agent names, plugin names, or URLs into positionals. The Experiment selects the Agent and pins the run configuration; the CLI's eval positionals only filter eval IDs.
 
 ```bash
 pnpm exec niceeval exp compare
@@ -134,16 +134,16 @@ pnpm exec niceeval exp compare api-validation
 
 A typical A/B setup:
 
-- `experiments/baseline.ts`: plain agent.
-- `experiments/with-skill.ts`: same agent plus a setup hook that writes `CLAUDE.md`.
-- Same eval set, model, runs, and budget in both cells.
+- `experiments/baseline.ts`: a plain agent.
+- `experiments/with-skill.ts`: the same agent plus a setup hook that writes `CLAUDE.md`.
+- Both groups use the same eval set, model, run count, and budget.
 
-## When to use sandbox fixtures
+## When to use Sandbox Fixture
 
-- The agent must modify real files.
-- You need to run tests, builds, or lint.
-- You need to inspect diffs.
-- You are evaluating Claude Code, Codex, or another coding agent.
+- The agent needs to modify real files.
+- You need to run the project's tests, build, or lint.
+- You need to compare diffs.
+- You are evaluating a coding agent such as Claude Code or Codex.
 - You are comparing whether a Skill, plugin, or Hook improves real tasks.
 
-If the system under test is a direct agent application, a direct adapter is lighter.
+If you are only evaluating a direct agent application, a plain direct adapter is lighter.

@@ -1,14 +1,14 @@
 ---
 title: "Data-driven testing (dataset fan-out): run one eval suite across many rows of data"
 sidebarTitle: "Data-driven testing"
-description: "Export an array from a .eval.ts file to fan one eval out into many cases. Use loadYaml or loadJson to read external datasets, with stable IDs."
+description: "Export an array or a keyed record from a .eval.ts file to fan one eval out into many cases. Use loadYaml or loadJson to read external datasets, with stable IDs."
 ---
 
 Data-driven testing (dataset fan-out) is a good fit when many test cases share the same structure and only the inputs change. Typical examples are SQL generation, intent classification, retrieval QA, and tool selection.
 
 ## How fan-out works
 
-A `.eval.ts` file can export an array by default:
+When there is no external business ID, a `.eval.ts` file exports an array by default:
 
 ```ts
 import { defineEval } from "niceeval";
@@ -30,7 +30,7 @@ export default rows.map((row) =>
 );
 ```
 
-## Generated ID format
+## Generated IDs
 
 If the file is `evals/sql.eval.ts`, the generated IDs are:
 
@@ -40,6 +40,25 @@ sql/0001
 ```
 
 The numeric suffix is zero-padded so IDs stay stable and easy to filter.
+
+When the data source already carries a stable case, issue, or benchmark ID, export a keyed record by default instead:
+
+```ts
+export default Object.fromEntries(
+  rows.map((row) => [
+    row.issueId,
+    defineEval({
+      description: row.title,
+      async test(t) {
+        await t.send(row.prompt);
+        t.succeeded();
+      },
+    }),
+  ]),
+);
+```
+
+If the file is `evals/swelancer.eval.ts` and the key is `15193`, the ID is `swelancer/15193`. A key must be a non-empty path segment: it cannot be `.` or `..`, and it cannot contain `/`, `\`, or control characters. NiceEval discovers cases in key lexicographic order, so a change in the data source's return order never changes run order.
 
 ## Loading from YAML and JSON
 
@@ -63,8 +82,11 @@ cases:
 # Run the whole dataset
 npx niceeval exp local sql
 
-# Run only the first case
+# Run only the first array case
 npx niceeval exp local sql/0000
+
+# Run a keyed case
+npx niceeval exp local swelancer/15193
 ```
 
 ## Datasets vs separate files

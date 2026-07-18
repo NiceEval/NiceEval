@@ -4,14 +4,14 @@ sidebarTitle: "Quickstart"
 description: "Install NiceEval, write three files, and run the first eval against your own application in about 10 minutes."
 ---
 
-Connecting your own application takes three files: an **adapter** (how to call your app), an **experiment** (who to evaluate, how many runs), and an **eval** (what to assert). Below is the shortest complete path. Scenario-specific guides and the coding-agent handoff path come after it.
+Connecting your application takes three files: an **Adapter** that knows how to call it, an **Experiment** that fixes the subject under test and the run count, and an **eval** that defines assertions. The steps below give the shortest complete path, covering both automatic setup with a coding agent and manual setup.
 
-## Let AI wire it up for you (recommended)
-
+## Set up with a coding agent (recommended)
 <Steps>
   <Step title="Install">
     ```text
     READ https://niceeval.com/INIT.md and install niceeval for this repo.
+
     ```
   </Step>
   <Step title="Run evals">
@@ -21,13 +21,14 @@ Connecting your own application takes three files: an **adapter** (how to call y
   </Step>
   <Step title="View results">
     ```bash
-    pnpm exec niceeval show         # terminal summary, easy to hand straight to an AI
+    pnpm exec niceeval show         # terminal summary, easy to hand to a coding agent
     pnpm exec niceeval view         # web viewer, for browsing evidence yourself
     ```
   </Step>
 </Steps>
 
-## Manual integration
+
+## Manual setup
 
 ```bash
 pnpm add -D niceeval
@@ -35,8 +36,7 @@ pnpm exec niceeval init
 ```
 
 ### Adapter
-
-The adapter is the layer between your agent and [NiceEval](https://niceeval.com/). There are three integration tiers, from non-invasive to partially instrumented, which unlock more useful eval features. See [Tier](/concepts/tier).
+The Adapter connects your Agent to [NiceEval](https://niceeval.com/). Three integration tiers, from non-intrusive connection to modifying your agent's configuration, unlock different eval capabilities — see [Tier](/explanation/tier).
 
 ```ts
 // agents/my-agent.ts
@@ -101,23 +101,11 @@ pnpm exec niceeval view         # open the local viewer when you want to browse 
 
 At this point, the first eval has run successfully.
 
-This minimal adapter is **single-turn**. The second turn will not remember the first until you teach the app how to continue conversation history. Multi-turn sessions, tool-call events that unlock `t.calledTool()`, HITL, and tracing are all optional increments you add later. Follow [Connect Your Agent](/guides/connect-your-agent) step by step. Existing evals do not need to be rewritten.
+This minimal Adapter only supports **single-turn** calls; the second turn does not carry the first turn's history. Multi-turn sessions, tool-call events (used by `t.calledTool()`), HITL, and tracing are all optional capabilities you add later. Existing evals do not need to change when you extend the setup by following [Connect Your Agent](/tutorials/connect-your-agent).
 
-## Start from a scenario
+## Compare against a complete project
 
-If you already know what you want to evaluate, jump straight into the matching path:
-
-<CardGroup cols={3}>
-  <Card title="Eval your Claude Code / Codex plugin" icon="plug" href="/example/claude-code-codex-plugin">
-    For plugins, hooks, MCP servers, and project-level coding-agent extensions.
-  </Card>
-  <Card title="Eval your Claude Code / Codex Skill" icon="wand-magic-sparkles" href="/example/claude-code-codex-skill">
-    For verifying whether a Skill is triggered, follows the intended workflow, and genuinely improves task success.
-  </Card>
-  <Card title="Eval your AI agent application" icon="globe" href="/example/ai-agent-application">
-    For full examples built on AI SDK, LangGraph, Pi, or a custom agent app.
-  </Card>
-</CardGroup>
+Once the first eval runs successfully, go to [Examples](/examples) and pick a complete project by subject under test. Those pages ship runnable source code; general operating steps live in the matching Tutorials task page.
 
 ## Put it in CI
 
@@ -135,5 +123,5 @@ jobs:
 ```
 
 <Tip>
-  Next, read [Authoring Evals](/guides/authoring) and [Scoring Guide](/guides/scoring-guide), then replace the example with your real behavior.
+  Read [Authoring Evals](/tutorials/authoring) and the [Scoring Guide](/tutorials/scoring-guide), then replace the example with your real scenario.
 </Tip>

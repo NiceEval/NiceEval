@@ -1,14 +1,14 @@
 ---
 title: "Publish a report through CI"
-sidebarTitle: "Publish Report"
-description: "Commit a results directory that has passed the copySnapshots size precheck, and CI exports the report site with a single view --run. Oversized files produce an actionable error before you ever commit."
+sidebarTitle: "Publish via CI"
+description: "Commit a results directory that has passed the copySnapshots size precheck, and CI exports the report site with a single view --results. Oversized files produce an actionable error before you ever commit."
 ---
 
-`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/guides/viewing-results#exporting-and-static-hosting)). Publishing through CI only requires getting the result data into the build machine's hands — but do not commit the local source of truth `.niceeval/` directly: per-string truncation can stop one runaway output from ballooning, but it cannot guarantee a whole file stays under a Git host's limit. First use `copySnapshots` to produce a publish results root that has passed the 50 MiB per-file precheck, then commit that directory.
+`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results)). Publishing through CI only requires getting the result data into the build machine's hands — but do not commit the local source of truth `.niceeval/` directly: per-string truncation can stop one runaway output from ballooning, but it cannot guarantee a whole file stays under a Git host's limit. First use `copySnapshots` to produce a publish results root that has passed the 50 MiB per-file precheck, then commit that directory.
 
 ## Producing a committable results directory
 
-Create `scripts/publish-results.mjs`:
+Create `scripts/publish-results.ts` (the project's evals and config are already TypeScript, so the script uses `.ts` too, and runs directly via `tsx`):
 
 ```javascript
 import { rm } from "node:fs/promises";
@@ -23,25 +23,69 @@ await copySnapshots(results.latest(), output, {
 });
 ```
 
-Run `node scripts/publish-results.mjs`, then commit `report-data/`. `copySnapshots` checks every file it is about to publish before creating the directory; if any file exceeds 50 MiB, the whole copy fails, lists the path, the size, and what to do about it, and leaves no half-written directory behind. `diff` is not published by default; add it to `artifacts` explicitly when you need it, and it is bound by the same budget. Oversized events / trace left behind by an older version are never silently rewritten — the precheck asks you to exclude that class of evidence or rerun with the current version.
+Run `npx tsx scripts/publish-results.ts`, then commit `report-data/`. `copySnapshots` checks every file it is about to publish before creating the directory; if any file exceeds 50 MiB, the whole copy fails, lists the path, the size, and what to do about it, and leaves no half-written directory behind. `diff` is not published by default; add it to `artifacts` explicitly when you need it, and it is bound by the same budget. Oversized events / trace left behind by an older version are never silently rewritten — the precheck asks you to exclude that class of evidence or rerun with the current version.
 
 ## The build command is the export command
 
 ```bash
-npx niceeval view --run report-data --out site
+npx niceeval view --results report-data --out site
+```
+
+To publish only a subset of experiments, hand the narrowing directly to the export command — the page and its evidence then contain only the narrowed scope (see [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results)):
+
+```bash
+npx niceeval view --results report-data --exp compare --out site
 ```
 
 `view` fails outright with a non-zero exit code on zero readable results — it never exports an empty report. If the `report-data/` checkout is broken, or every stored snapshot is incompatible with the current niceeval's `schemaVersion` and gets skipped wholesale, the build fails and Vercel / GitHub Pages keeps the previous deployment. The error lists every skipped snapshot directory with its reason, and for the `schemaVersion` case also gives the `npx niceeval@<version> view` command that can view the old data directly.
 
 ## Publishing a custom report
 
-Without `--report`, the published site is the default report's three pages (Report, Attempts, Traces). To switch to your own pages, pass a [`defineReport` report file](/guides/custom-reports) to `--report` — attempt detail (transcript, trace, code view) stays in the same site, and every number in the report drills into its corresponding evidence, exactly like local `view --report`:
+Without `--report`, the published site is the default report's three pages (Report, Attempts, Traces). To switch to your own pages, pass a [`defineReport` report file](/tutorials/custom-reports) to `--report` — attempt detail (transcript, trace, code view) stays in the same site, and every number in the report drills into its corresponding evidence, exactly like local `view --report`:
 
 ```bash
-npx niceeval view --run report-data --report reports/exam.tsx --out site
+npx niceeval view --results report-data --report reports/exam.tsx --out site
 ```
 
 The report file is committed in the repo just like `report-data/` — edit the layout, push, and the live site updates. With the `vercel.json` / workflow below, just swap the build command for this one line; nothing else needs to change.
+
+## Connecting site analytics and third-party scripts
+
+To hook the published site up to Google Analytics, tracking pixels, or a comment widget, declare tags in the report file's `head` field. Copy the vendor's snippet field-for-field into an object — for GA4, the two `<script>` blocks the vendor gives you become two entries. Page content doesn't need to be rewritten: the default report is exported as `standard` from `niceeval/report/built-in`, and `extends`-ing it gives you the default site as-is, plus your title and scripts:
+
+```tsx
+import { defineReport } from "niceeval/report";
+import { standard } from "niceeval/report/built-in";
+
+export default defineReport({
+  extends: standard,
+  title: "Memory Evals",
+  head: [
+    { tag: "script", attrs: { async: true, src: "https://www.googletagmanager.com/gtag/js?id=G-XXXX" } },
+    {
+      tag: "script",
+      children: `
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-XXXX');
+      `,
+    },
+  ],
+});
+```
+
+There are only a few rules:
+
+- `tag` supports four values — `meta`, `link`, `script`, `style` — rendered into every page's `<head>` in declaration order. SEO meta, favicon, fonts, and JSON-LD all go through here.
+- An `attrs` value of `true` outputs a bare attribute (`async`, `defer`); a string outputs `key="value"`. For third-party scripts configured through `data-*` attributes (comments, tracking), copy the attributes straight in.
+- `src` / `href` values that are `https://` external links are kept as-is; relative paths like `./favicon.svg` get copied automatically into the exported site's `assets/` and have their reference rewritten.
+- Scripts are published verbatim and execute in the reader's browser — don't embed secrets in them.
+
+```tsx
+// A tracking script configured through data-*: copy the attributes straight in
+{ tag: "script", attrs: { async: true, src: "https://tracker.example/t.js", "data-project": "memory-evals" } }
+```
 
 ## Connecting a hosting platform
 
@@ -50,7 +94,7 @@ The report file is committed in the repo just like `report-data/` — edit the l
 ```json
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --run report-data --out site",
+  "buildCommand": "npx niceeval view --results report-data --out site",
   "outputDirectory": "site"
 }
 ```
@@ -80,7 +124,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --run report-data --out site
+      - run: npx niceeval view --results report-data --out site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
@@ -95,8 +139,8 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-The daily loop is: run the eval locally, run `node scripts/publish-results.mjs`, commit the updated `report-data/`, and push. The publish directory keeps only the latest snapshot per experiment; to publish under a different selection policy, swap out `results.latest()` in the script. Your local `.niceeval/` can keep the full history and diffs — there is no need to cut away debugging evidence just to satisfy a Git limit.
+The daily loop: run the eval locally, run `npx tsx scripts/publish-results.ts`, commit the updated `report-data/`, and push. The publish directory keeps only the latest result snapshot per experiment; to publish under a different selection policy, swap out `results.latest()` in the script. Your local `.niceeval/` can keep the full history and diffs — there is no need to cut away debugging evidence just to satisfy a Git limit.
 
 ## What gets published is the selected evidence
 
-The full site export carries the transcripts, source snapshots, and traces selected in the publish results root. Newly written oversized events / trace strings may carry structured truncation markers; `copySnapshots` does not rewrite content — it only selects and runs the whole-file size precheck. Before publishing to the public internet, confirm the results contain no secrets or sensitive data; for redacting free text on custom report pages, see the `redact` hook in [Results Data API](/guides/results-data).
+The full site export carries the transcripts, source snapshots, and traces selected in the publish results root. Newly written oversized events / trace strings may carry structured truncation markers. `copySnapshots` only selects files and runs the whole-file size precheck — it never rewrites content. Anyone can browse the published site down to prompts and tool outputs, so confirm the results are fit to make public before you publish to the public internet — NiceEval never writes environment variable values or command output into result files when it records a run, so what ends up in the transcript is only the Agent's own input and output plus your eval's task itself.

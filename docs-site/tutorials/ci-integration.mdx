@@ -66,7 +66,7 @@ jobs:
 
 ```text
 niceeval: start total=24 configs=3 concurrency=10 reused=18
-niceeval: errored locator=@2h8m4k1 eval=fixtures/button experiment=ci/codex phase=sandbox-provision reason="E2B sandbox allocation failed after 5 attempts"
+niceeval: errored locator=@12h8m4k1 eval=fixtures/button experiment=ci/codex phase=sandbox.create reason="E2B sandbox allocation failed after 5 attempts"
 niceeval: result=failed passed=23 failed=0 errored=1 reused=18 duration=128s
 niceeval: json=.niceeval/ci-summary.json
 niceeval: junit=.niceeval/junit.xml
@@ -74,7 +74,7 @@ niceeval: junit=.niceeval/junit.xml
 
 The exit code is the first-line red/green signal; JSON, JUnit, and the results snapshot are the complete machine interface — log lines are only for searching and annotation. An `errored` line carries a locator, the eval/experiment identity, the formal phase when known, and a one-line `reason` summary. The full cause, stack, and diagnostics live in the attempt's `result.json` — keep the artifacts and run `niceeval show @<locator>` to review them.
 
-The JSON/JUnit files the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](/guides/reporters).
+The JSON/JUnit files the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](./reporters).
 
 ## Discovery only
 
@@ -107,4 +107,4 @@ Sandbox evals should stay conservative on a standard GitHub-hosted runner. Remot
   </Card>
 </CardGroup>
 
-Publish results as a static report site (auto-updating on Vercel or GitHub Pages) — see [Publish reports from CI](/guides/publish-report).
+Publish results as a static report site (auto-updating on Vercel or GitHub Pages) — see [Publish reports from CI](./publish-report).

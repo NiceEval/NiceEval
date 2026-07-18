@@ -35,6 +35,10 @@ export default defineExperiment({
 npx niceeval exp compare-models   # renders a side-by-side report for every model in the group
 ```
 
+Each configuration stays in its own file, which makes naming, diffing, and review straightforward. The directory structure itself explains which files belong to the same comparison.
+
+By default, `niceeval show` / `view` follow the same boundary: only experiments in the same folder go into one cost vs. end-to-end pass rate chart and experiment table; different folders are shown separately.
+
 When one cell's result looks off and you need to reproduce it in isolation, run just that cell by its full id (`group/filename`) instead of the whole group:
 
 ```bash
@@ -47,9 +51,7 @@ If the group also has a shared-prefix variant like `gpt-5.4-mini.ts`, you don't 
 npx niceeval exp compare-models/gpt
 ```
 
-Each configuration stays in its own file, which makes naming, diffing, and review straightforward. The directory structure itself explains which files belong to the same comparison.
-
-See [Write Experiments](/guides/write-experiment) for the full `defineExperiment` field list and how `flags` flow into adapters.
+See [Write Experiments](/tutorials/write-experiment) for the full `defineExperiment` field list and how `flags` flow into adapters.
 
 ## What this is good for
 
@@ -57,10 +59,10 @@ See [Write Experiments](/guides/write-experiment) for the full `defineExperiment
 - Comparing different models. Tier 1 is enough as long as the application exposes model choice and the value is forwarded through `ctx.model`
 - Comparing prompts or feature flags. This usually needs Tier 3, because the application has to expose the variant as an experiment-selectable config and forward it through `flags` -> `ctx.flags`
 - Comparing different sandbox providers
-- Comparing different runtime environment conditions (for example, whether a memory tool's binary is installed, or whether some state is pre-seeded). Write the environment difference into the `.setup()` / `.teardown()` hooks of the `sandbox` spec, one experiment file per variant. See [Sandbox providers · Environment hooks](/guides/sandbox-providers#environment-hooks)
+- Comparing different runtime environment conditions (for example, whether a memory tool's binary is installed, or whether some state is pre-seeded). Write the environment difference into the `.setup()` / `.teardown()` hooks of the `sandbox` spec, one experiment file per variant. See [Sandbox providers · Lifecycle](/tutorials/sandbox-providers)
 - Measuring pass@N for the same task
 
-See [Tier](/concepts/tier) for what Tier 1, Tier 2, and Tier 3 mean.
+See [Tier](/explanation/tier) for what Tier 1, Tier 2, and Tier 3 mean.
 
 ## Reading the results
 
@@ -73,6 +75,13 @@ api-validation   claude-code             pass@3 = 1/3 (33%)    mean 41s
 
 Beyond pass rate, you should also compare mean time, tokens, cost, and failure types.
 
+```bash
+npx niceeval show --exp compare-models
+npx niceeval view
+```
+
+`show --exp` matches id prefixes by path segment, so a group name selects every configuration in that group, without accidentally matching another group whose name merely looks similar as a string. `view` loads the full results by default and lets you pick a group directly on the page; `--exp` is just an optional narrowing at startup.
+
 ## Design advice
 
 - Keep the eval set stable so the comparison does not mix in extra variables.
@@ -82,4 +91,5 @@ Beyond pass rate, you should also compare mean time, tokens, cost, and failure t
 
 ## Relation to ordinary runs
 
-`npx niceeval exp <experiment>` answers "did this eval suite pass under this configuration?" An experiment group answers "which configuration is better?" Both use the same evals, adapters, scoring, and artifacts.
+`npx niceeval exp <experiment>` checks whether a batch of evals passes under a given configuration; an experiment group compares multiple configurations. Both use the same evals, adapters, scoring, and artifacts.
+</content>
