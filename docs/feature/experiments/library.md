@@ -88,6 +88,114 @@ export default defineExperiment({
 
 `setup` 管的是**宿主机侧、每实验一份**的资源;别把其它层的活挪进来:沙箱内的环境预置(装二进制、预热)挂 `sandbox` spec 的链式钩子,任务夹具写 `EvalDef.setup` / `test(t)`,跨实验共享、run 之前就该存在的服务仍用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。运行时值要传给沙箱内的 agent 时,在 agent / sandbox 钩子里把闭包值写成沙箱内的 env 或配置文件——那是每 attempt 的事,发生在 `setup` 之后。
 
+### 多个实验共享同一段生命周期
+
+对比组里常常是几个实验文件对着同一套基础设施(同一个记忆服务、同一类 mock server)。先分清共享的单位是**代码**还是**实例**,写法不同;两种都是普通用户代码,niceeval 不为共享设框架原语。
+
+**共享代码、每实验一份实例(默认)**——helper 是一个工厂,返回共享闭包的一对钩子;每个实验文件各自实例化,各起各的服务、各拆各的,同组并行跑也互不串扰。共享 helper 固定签名时直接导入 `ExperimentHookContext`(包根导出),不从某个字段反推:
+
+```typescript
+// experiments/shared/nowledge.ts
+import type { ExperimentHookContext } from "niceeval";
+
+export function nowledgeLifecycle() {
+  let tunnel: { url: string; apiKey: string; stop(): Promise<void> } | undefined;
+  return {
+    endpoint: () => ({ url: tunnel!.url, apiKey: tunnel!.apiKey }),
+    async setup(ctx: ExperimentHookContext) {
+      tunnel = await nowledgeTunnel({ signal: ctx.signal });
+    },
+    async teardown() {
+      await tunnel?.stop();
+    },
+  };
+}
+
+// experiments/compare/claude--nowledge.ts —— 对照组的一格
+const nowledge = nowledgeLifecycle();
+export default defineExperiment({
+  agent: nowledgeAgent(nowledge.endpoint),
+  setup: nowledge.setup,
+  teardown: nowledge.teardown,
+});
+
+// experiments/compare/codex--nowledge.ts —— 同组另一格,自己的一份隧道
+const nowledge = nowledgeLifecycle();
+export default defineExperiment({
+  agent: codexNowledgeAgent(nowledge.endpoint),
+  setup: nowledge.setup,
+  teardown: nowledge.teardown,
+});
+```
+
+**同批共享一份实例(贵重资源)**——服务起多份太贵时,helper 导出同一对钩子对象给所有实验引用,内部用「首进启动、末出关停」的计数:并发到达的 setup 等同一个启动 promise,最后一个实验的 teardown 关停。计数能平衡,靠的是成对触发规则本身:teardown 当且仅当同层 setup 时点走到过、`setup` 抛错也配对执行,`refs` 不会泄漏:
+
+```typescript
+// experiments/shared/nowledge-shared.ts
+import type { ExperimentHookContext } from "niceeval";
+
+let refs = 0;
+let starting: Promise<void> | undefined;
+let service: { url: string; stop(): Promise<void> } | undefined;
+
+export const sharedNowledge = {
+  async setup(ctx: ExperimentHookContext) {
+    refs += 1;
+    starting ??= startNowledge().then((s) => { service = s; });
+    await starting;                        // 并发实验等同一个启动;启动失败各自抛错
+  },
+  async teardown() {
+    refs -= 1;
+    if (refs === 0) {
+      await service?.stop();               // 启动失败时 service 未赋值,防御式跳过
+      service = undefined;
+      starting = undefined;
+    }
+  },
+};
+```
+
+边界在生命周期:同批共享的服务活不过这次 run。要**跨 run** 存在的服务(先起好、连续跑多次 `niceeval exp`)仍归外部编排,URL 经 env 传入,见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
+
+### 与沙箱钩子在同一个实验文件里协作
+
+实验级钩子起宿主机侧服务,沙箱钩子每沙箱把坐标写进沙箱、收尾回存状态——两层在同一个文件里靠模块闭包衔接,时序由 runner 保证:实验级 `setup` 早于本实验任何沙箱钩子,沙箱钩子读到的闭包值一定已赋好:
+
+```typescript
+// experiments/compare/claude--nowledge.ts
+import { defineExperiment } from "niceeval";
+import { e2bSandbox } from "niceeval/sandbox";
+import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
+import { loadMemoryState, saveMemoryState } from "../shared/memory-state.ts";
+
+let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
+
+export default defineExperiment({
+  agent: nowledgeAgent(() => ({ url: tunnel.url, apiKey: tunnel.apiKey })),
+  evals: ["memory/"],
+  maxConcurrency: 1,          // [载入…回存] 是临界区,声明式串行(见 Sandbox · 沙箱生命周期钩子)
+  sandbox: e2bSandbox({ template: "niceeval-agents" })
+    .setup(async (sandbox, ctx) => {
+      // 每沙箱一次,晚于实验级 setup:把宿主机侧坐标写进沙箱
+      await sandbox.writeFiles({
+        ".nowledge/config.json": JSON.stringify({ url: tunnel.url, apiKey: tunnel.apiKey }),
+      });
+      await loadMemoryState(sandbox, ctx.experimentId);
+    })
+    .teardown(async (sandbox, ctx) => {
+      await saveMemoryState(sandbox, ctx.experimentId);   // 每沙箱回存跨 attempt 状态
+    }),
+  async setup(ctx) {
+    tunnel = await nowledgeTunnel({ signal: ctx.signal }); // 整场一次,宿主机侧
+  },
+  async teardown() {
+    await tunnel?.stop();                                  // 全部 attempt 收尾后拆
+  },
+});
+```
+
+一份实验文件从上往下读就是完整的运行说明:整场一次的宿主机资源在实验级钩子对里;每沙箱的写入与回存在 `sandbox` 链式钩子里,经闭包消费实验级产物;agent 怎么连自己、eval 的任务夹具各在 agent 定义与 `EvalDef` 里,不进实验文件。层的分工判据(随什么变化 × 活在哪一侧)见 [环境预置放哪](../sandbox/library.md#环境预置放哪)。
+
 ## 生命周期代码怎样向这次运行反馈
 
 真正执行工作的实验级 setup、sandbox provider、sandbox hook、eval 和 Agent Adapter 会从 runner 注入的上下文获得同一套**作用域反馈 API**:
