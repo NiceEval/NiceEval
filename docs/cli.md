@@ -171,13 +171,19 @@ const exit = await Effect.runPromiseExit(
 ## 中断:三级响应
 
 ```text
-第 1 次 Ctrl+C   → ctrl.abort() → Effect 收到中断信号 → 各 attempt 的 Scope 跑 release(优雅停容器)
-                   同时起 12s 看门狗:到点若仍有存活沙箱,直接强清
-第 2 次 Ctrl+C   → 立即强清(stopAllSandboxes,带超时)后退出,不再等优雅路径
-第 3 次 Ctrl+C   → 硬退(process.exit),此时多半已无可清理的
+第 1 次 Ctrl+C   → ctrl.abort() → Effect 收到中断信号 → 各 attempt 的 Scope 跑完整收尾链
+                   (eval/agent/sandbox teardown → 停容器),runner 随后收尾实验级 teardown
+                   同时起 12s 看门狗:到点若仍有存活沙箱(优雅停容器卡住的信号),转强清
+第 2 次 Ctrl+C   → 强清:先强停全部沙箱(带超时),再给在飞收尾链一个 15s 有界窗口跑完其余
+                   teardown,最后排空实验级 cleanup 注册表兜底,退出
+第 3 次 Ctrl+C   → 硬退(process.exit),放弃一切未完成的收尾
 ```
 
-目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱:每个沙箱要么在本次 run 的清理集合里——退出前必被 stop,第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次直接兜底强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先 `stopAllSandboxes()` 再退出,三条路径共用同一个兜底函数;要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从清理集合移出(`niceeval sandbox list` 可见、`stop` 可清)。中断时刻尚无 verdict 的 attempt 拿不到留存授予,照常被清。`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内;provider label / TTL 留作事后核对。
+**强清不是绕过收尾,而是加速它。** 中断路径上每一层 teardown 都要跑:attempt 级收尾链(`eval.teardown` → `agent.teardown` → `sandbox.teardown`)与实验级 cleanup 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的 teardown 立刻失败返回——其余宿主机侧收尾(回存状态、实验级反激活)在有界窗口内照常执行完。窗口到点仍未被在飞路径消费的实验级 cleanup,由宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)一次性排空;同一 cleanup 的消费是同步一次性交换,在飞路径与兜底排空不会双跑。`main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套兜底再退出。attempt 级钩子活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户钩子会双跑,它们靠「强停沙箱 + 有界窗口」拿到执行机会,窗口到点仍未跑完的按放弃计。
+
+**有界性是这条设计的前提**:每个收尾可调用体(eval cleanup、agent cleanup/teardown、sandbox 钩子链里的每个钩子、实验级 cleanup)各自有 30s 清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段,不能无限拖住退出;provider stop 另有自己的 8s 超时。因此收尾链的总时长有上界,强清的有界窗口等得起。
+
+目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱、不漏任何一层 teardown:每个沙箱要么在本次 run 的清理集合里——退出前必被 stop,第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次走上述强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先走同一个兜底函数再退出;要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从清理集合移出(`niceeval sandbox list` 可见、`stop` 可清)。中断时刻尚无 verdict 的 attempt 拿不到留存授予,照常被清。`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内;provider label / TTL 留作事后核对。
 
 ## 相关阅读
 

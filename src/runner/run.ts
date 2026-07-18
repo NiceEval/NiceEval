@@ -24,6 +24,8 @@ import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../results/locator.ts";
 import { runWho } from "./types.ts";
 import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
+import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
+import { withCleanupTimeout } from "./cleanup-timeout.ts";
 import type { Agent, EvalResult, JudgeConfig, Reporter, ReporterRegistration, RunShape, RunSummary } from "../types.ts";
 import type { AgentRun, Attempt, ExperimentHookContext, LifecyclePhase, AttemptRef, RunOptions } from "./types.ts";
 import type { Cleanup } from "../shared/types.ts";
@@ -335,15 +337,20 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     lc.remaining += 1;
   }
   const runExperimentTeardown = async (run: AgentRun, lc: ExperimentLifecycle): Promise<void> => {
+    // 同步一次性交换:正常路径(计数归零 / run 收尾扫尾)与强清 drain 可能都走到这里,
+    // 先到者取走 cleanup,后到者拿到 undefined 直接返回——这就是「互斥恰好一次」的全部机制。
     const cleanup = lc.cleanup;
     lc.cleanup = undefined;
     if (!cleanup) return;
     const experimentId = run.experimentId ?? run.agent.name;
+    unregisterExperimentTeardown(experimentId);
     // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级钩子的显示」)。
     reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
     const startedAt = Date.now();
     try {
-      await cleanup();
+      // 有界执行(docs/cli.md「中断:三级响应」的有界性前提):挂起的 cleanup 到点按失败收束,
+      // 不能无限拖住退出;超时后遗留的 promise 悬空,随进程退出消亡。
+      await withCleanupTimeout(cleanup);
       reportExperimentHook({ experimentId, hook: "teardown", status: "done", durationMs: Date.now() - startedAt });
     } catch (e) {
       reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
@@ -404,6 +411,9 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
             await runExperimentTeardown(run, lc);
           } else {
             lc.cleanup = cleanup;
+            // 登记进宿主机侧兜底表:强清退出(二次中断/看门狗/崩溃路径)时 cli 由此排空
+            // 未被运行路径消费的 teardown(docs/cli.md「中断:三级响应」)。
+            registerExperimentTeardown(experimentId, () => runExperimentTeardown(run, lc));
           }
         }
       })().catch((e) => {
@@ -733,34 +743,40 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     { signal: opts.signal },
   );
   await opts.otelPool?.close();
-  if (Exit.isFailure(exit)) {
-    // signal abort 或 cause 含中断 → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出。
-    if (opts.signal?.aborted || Cause.isInterrupted(exit.cause)) {
-      interrupted = true;
-    } else {
-      throw Cause.squash(exit.cause);
-    }
-  }
-  if (interrupted) reportInterrupted();
 
   // 实验级 teardown 兜底扫尾:正常路径由 per-attempt ensuring 的计数归零触发(见上),但一次
   // 真实批跑观察到过计数路径未触发的间歇现象(根因未定位,排查记录见 memory 的
   // experiment-teardown-missed-once-in-batch)。走到这里时 forEach 的全部 fiber 连同 finalizer
   // 都已结算,任何 tornDown 仍为 false 的实验都意味着泄漏;在此强制收尾并报警示诊断——
   // 扫尾幂等(cleanup 消费一次性),宁可多一道兜底,不把宿主机资源(隧道/容器)留给用户手拆。
-  for (const [run, lc] of expLifecycles) {
-    if (lc.tornDown) continue;
-    lc.tornDown = true;
-    if (!lc.cleanup) continue;
-    const experimentId = run.experimentId ?? run.agent.name;
-    reportDiagnostic({
-      key: `experiment-teardown-late:${experimentId}`,
-      severity: "warning",
-      message: t("runner.experimentTeardownLate", { experimentId }).trimEnd(),
-      data: { experimentId, remaining: lc.remaining },
-    });
-    await runExperimentTeardown(run, lc);
+  // 真·缺陷抛出前同样要扫(finalizer 语义,见 docs/feature/experiments/architecture.md
+  // 「实验级生命周期」);cli 的 main().catch() 只兜沙箱,不知道实验级 cleanup 的存在。
+  const sweepExperimentTeardowns = async (): Promise<void> => {
+    for (const [run, lc] of expLifecycles) {
+      if (lc.tornDown) continue;
+      lc.tornDown = true;
+      if (!lc.cleanup) continue;
+      const experimentId = run.experimentId ?? run.agent.name;
+      reportDiagnostic({
+        key: `experiment-teardown-late:${experimentId}`,
+        severity: "warning",
+        message: t("runner.experimentTeardownLate", { experimentId }).trimEnd(),
+        data: { experimentId, remaining: lc.remaining },
+      });
+      await runExperimentTeardown(run, lc);
+    }
+  };
+  if (Exit.isFailure(exit)) {
+    // signal abort 或 cause 含中断 → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出。
+    if (opts.signal?.aborted || Cause.isInterrupted(exit.cause)) {
+      interrupted = true;
+    } else {
+      await sweepExperimentTeardowns();
+      throw Cause.squash(exit.cause);
+    }
   }
+  if (interrupted) reportInterrupted();
+  await sweepExperimentTeardowns();
 
   // 稳定排序:按发现顺序 + attempt;携带结果并入后一起排
   const order = new Map(opts.evals.map((e, i) => [e.id, i]));

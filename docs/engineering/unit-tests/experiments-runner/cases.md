@@ -65,6 +65,9 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 | `setup` 抛错 → 本实验所有 attempt 记 `errored`(code `experiment-setup-failed`、phase `experiment.setup`),同批其它实验不受影响 | 反例：实验 A setup 抛错,A 的 attempt 全 errored 且 error 字段结构化;正例:实验 B 结果正常 |
 | teardown = setup 返回的 cleanup:本实验全部 attempt 收尾后执行恰好一次;中断(signal abort)也执行 | 正例:全部完成后 cleanup 已执行;正例:中途 abort 后 cleanup 仍执行;边界:setup 未返回函数时无收尾动作 |
 | cleanup 抛错只产生运行级 diagnostic(`experiment-teardown-failed`),不改变任何已产出的 verdict | 反例:cleanup 抛错后 results 的 verdict 不变,diagnostic 事件可见 |
+| cleanup 执行有界:超过 30s 清理超时按 `experiment-teardown-failed` 诊断收束,run 照常返回 | 反例:挂起的可调用体在小超时下抛超时错(机制在 cleanup-timeout 单测);超时错→诊断与上一行 cleanup 抛错同一路径(出处:memory/force-exit-skips-experiment-teardown.md) |
+| 强清兜底注册表:未被运行路径消费的实验级 cleanup 由 `drainExperimentTeardowns` 一次性排空;已消费的不重跑,与正常路径互斥恰好一次 | 正例:登记两条后 drain 全部执行且再次 drain 为 0;反例:正常收尾(或 unregister)后 drain 无动作(出处:memory/force-exit-skips-experiment-teardown.md) |
+| 正常完整跑完后注册表为空:teardown 由运行路径消费,不留待兜底的条目 | 边界:runEvals 返回后 pendingExperimentTeardownCount() 为 0 |
 | `setup` 的 ctx:experimentId / selectedEvalIds / signal / progress / diagnostic 齐备,diagnostic 进运行级永久事件流 | 正例:ctx 字段值与实验一致;正例:diagnostic 以 experiment.setup 归因出现在事件流 |
 | 钩子函数体不进 fingerprint:只改 setup 逻辑不使携带失效 | 边界:改 setup 后 fingerprint 不变 |
 | 钩子起止由 runner 发布为运行级反馈事件(`status=started|done|failed`,done/failed 带 duration);reducer 据此维护 `experimentHooks` 状态(started 添加、done/failed 移除、plan 重置),等待 setup 的 attempt 计数保持 `queued` | 正例:setup 成功发 started+done;反例:setup 抛错发 failed 而非 done;正例:reducer 状态随事件增删;边界:plan 事件清空残留 |

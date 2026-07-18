@@ -8,6 +8,7 @@ import { readFile as readSourceFile } from "node:fs/promises";
 import { Effect, Cause, Duration } from "effect";
 import { createSandbox, resolveSandbox } from "../sandbox/resolve.ts";
 import { stopSandbox, unregisterSandbox } from "../sandbox/registry.ts";
+import { withCleanupTimeout } from "./cleanup-timeout.ts";
 import { KEEPABLE_PROVIDERS, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
@@ -863,7 +864,9 @@ async function runAttemptBody(
       await recorder
         .measureClosing("eval.teardown", async () => {
           try {
-            await evalCleanupFn();
+            // 收尾可调用体一律有界(docs/cli.md「中断:三级响应」的有界性前提):挂起的 cleanup
+            // 到点按本段失败语义收束,后续段照常执行,收尾链不能无限拖住退出。下同。
+            await withCleanupTimeout(evalCleanupFn);
           } catch (e) {
             // 收尾失败只是 diagnostic,不改判定 —— 挂到 attempt.diagnostics(见 finally 末尾并入)。
             diagnostics.push(teardownDiagnostic("eval.teardown", e));
@@ -878,8 +881,10 @@ async function runAttemptBody(
       await recorder
         .measureClosing("agent.teardown", async () => {
           try {
-            if (agentCleanupFn) await agentCleanupFn();
-            if (agentDidSetup) await run.agent.teardown?.(sandbox, attemptCtx);
+            if (agentCleanupFn) await withCleanupTimeout(agentCleanupFn);
+            if (agentDidSetup && run.agent.teardown) {
+              await withCleanupTimeout(() => run.agent.teardown!(sandbox, attemptCtx));
+            }
           } catch (e) {
             diagnostics.push(teardownDiagnostic("agent.teardown", e));
             throw e;
@@ -892,10 +897,11 @@ async function runAttemptBody(
       await recorder
         .measureClosing("sandbox.teardown", async () => {
           const before = diagnostics.length;
-          // sandbox.setup 返回的 cleanup:LIFO(后 setup 先 cleanup)。
+          // sandbox.setup 返回的 cleanup:LIFO(后 setup 先 cleanup)。逐钩子有界:一个挂起的
+          // 钩子不阻塞链上其余钩子拿到执行机会。
           for (let i = sandboxCleanups.length - 1; i >= 0; i--) {
             try {
-              await sandboxCleanups[i]();
+              await withCleanupTimeout(sandboxCleanups[i]);
             } catch (e) {
               diagnostics.push(teardownDiagnostic("sandbox.teardown", e));
             }
@@ -905,10 +911,12 @@ async function runAttemptBody(
             log(t("runner.startSandboxTeardown"));
             for (let i = sandboxTeardownHooks.length - 1; i >= 0; i--) {
               try {
-                const teardownCleanup = await sandboxTeardownHooks[i](sandbox, hookCtx);
-                // SandboxHook 类型允许返回 Cleanup(与 setup 同一签名);teardown 返回的
-                // cleanup 没有更晚的挂点,立即执行。
-                if (typeof teardownCleanup === "function") await teardownCleanup();
+                await withCleanupTimeout(async () => {
+                  const teardownCleanup = await sandboxTeardownHooks[i](sandbox, hookCtx);
+                  // SandboxHook 类型允许返回 Cleanup(与 setup 同一签名);teardown 返回的
+                  // cleanup 没有更晚的挂点,立即执行。
+                  if (typeof teardownCleanup === "function") await teardownCleanup();
+                });
               } catch (e) {
                 diagnostics.push(teardownDiagnostic("sandbox.teardown", e));
               }

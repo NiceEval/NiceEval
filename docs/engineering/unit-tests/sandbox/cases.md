@@ -12,6 +12,7 @@
 | setup 抛错时已成功 setup 的 cleanup 按逆序执行，teardown 链与 stop 仍被调用 | 反例：setup:b 抛错后 cleanup:a、teardown、stop 全跑；边界：第一个/最后一个抛 |
 | test 失败或中断路径下 SandboxAgent.teardown → sandbox.teardown → stop 均为 finally 语义 | 反例：test 抛错；边界：teardown 自身抛错不阻断 stop |
 | sandbox.setup 抛错按执行错误计（verdict `errored`）；sandbox.teardown 报错只记日志，不改变已完成判定 | 正例：setup 抛 → errored；反例：teardown 抛 → 结果不变且有日志 |
+| 收尾链每个可调用体各有 30s 清理超时:挂起的 cleanup/钩子到点记 `teardown-failed` 诊断,后续段照常执行 | 反例:挂起的可调用体在小超时下抛超时错(机制在 cleanup-timeout 单测);超时错→诊断、后续段照常与「teardown 自身抛错不阻断 stop」同一路径(出处:memory/force-exit-skips-experiment-teardown.md) |
 | 多次 `.setup()` 按追加顺序执行，多次 `.teardown()` 按追加逆序（LIFO） | 正例：3 setup + 2 teardown 顺序断言 |
 | `.setup()` / `.teardown()` 返回新 spec，不修改原 spec | 正例：链式后原 spec 钩子数不变；边界：同基 spec 两条派生链互不影响 |
 | 创建成功后被 provider 终止属 lifecycle failure，不进同实例 IO 重试，保留终止原因 | 反例：Sandbox terminated 不进重试循环 |

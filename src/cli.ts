@@ -16,6 +16,7 @@ import { runEvals, type AgentRun } from "./runner/run.ts";
 import { planCarry } from "./runner/fingerprint.ts";
 import { failureDetailFromResult } from "./runner/feedback/failure.ts";
 import { stopAllSandboxes, liveSandboxCount } from "./sandbox/registry.ts";
+import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { prepareRunSandboxes, resolvedSandboxRecommendedConcurrency } from "./runner/sandbox-selection.ts";
 import { Json, JUnit } from "./runner/reporters/json.ts";
@@ -874,13 +875,33 @@ async function main(): Promise<void> {
   //   3 次:真不耐烦了,硬退(此时多半已无可清理的)。
   const ctrl = new AbortController();
   let signalCount = 0;
-  // 兜底强清 + 退出:只跑一次,带超时(stopAllSandboxes 内每个 stop 各自有超时)。先停 dashboard
-  // 的 tick/动态区域(coordinator.stopDynamic()),避免硬退时终端卡在半帧 ANSI 状态。
+  // 强清 = 加速收尾,不是绕过收尾(docs/cli.md「中断:三级响应」)。顺序:先强停沙箱(卡在
+  // 沙箱 I/O 上的 teardown 立刻失败返回),再给在飞的收尾链(attempt 级 teardown + 实验级扫尾,
+  // 各可调用体自身有 30s 上限)一个有界窗口跑完,最后把没被在飞路径消费的实验级 cleanup 从
+  // 宿主机侧注册表兜底排空。只跑一次;先停 dashboard 的 tick/动态区域(coordinator.stopDynamic()),
+  // 避免硬退时终端卡在半帧 ANSI 状态。
+  const FORCE_SETTLE_WAIT_MS = 15_000;
+  let runInFlight: Promise<unknown> | undefined;
   let forcing = false;
   const forceCleanupAndExit = (code: number) => {
     if (forcing) return;
     forcing = true;
-    void Promise.all([coordinator.stopDynamic(), stopAllSandboxes()]).finally(() => process.exit(code));
+    void (async () => {
+      await Promise.all([coordinator.stopDynamic(), stopAllSandboxes()]);
+      if (runInFlight) {
+        await Promise.race([
+          runInFlight.then(
+            () => {},
+            () => {},
+          ),
+          new Promise<void>((r) => {
+            setTimeout(r, FORCE_SETTLE_WAIT_MS).unref();
+          }),
+        ]);
+      }
+      await drainExperimentTeardowns();
+      process.exit(code);
+    })();
   };
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {
@@ -922,7 +943,7 @@ async function main(): Promise<void> {
 
   let summary: RunSummary;
   try {
-    summary = await runEvals({
+    const inFlight = runEvals({
       config,
       evals,
       agentRuns,
@@ -934,15 +955,20 @@ async function main(): Promise<void> {
       keepSandbox: flags.keepSandbox,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
     });
+    // 交给强清路径一个可等待的收尾句柄:二次中断/看门狗强清时先有界等它收口,让在飞的
+    // teardown 链跑完,而不是 process.exit 把它们连同进程一起杀掉。
+    runInFlight = inFlight;
+    summary = await inFlight;
   } catch (e) {
     // 真崩溃前先撤下 dashboard,不让半帧 ANSI 状态和下面 main().catch 打印的错误交织。
     await coordinator.stopDynamic();
     throw e;
   }
 
-  // 正常返回(含被中断后走部分汇总)后再兜一刀:Scope finalizer 没停掉的残留沙箱在这里强清。
-  // 跑顺利时登记表已空,是 no-op。
+  // 正常返回(含被中断后走部分汇总)后再兜一刀:Scope finalizer 没停掉的残留沙箱、没被运行
+  // 路径消费的实验级 cleanup 在这里强清。跑顺利时两份登记表都已空,是 no-op。
   await stopAllSandboxes();
+  await drainExperimentTeardowns();
 
   // completion 要先算好,--json/--junit 是否"这次真的写出"才有依据(见下)。
   const completion = assembleRunCompletion(coordinator.state);
@@ -980,7 +1006,8 @@ async function main(): Promise<void> {
 
 main().catch(async (e) => {
   process.stderr.write(t("cli.error", { error: formatThrown(e) }));
-  // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时),再退。
+  // 真·崩溃路径也别留孤儿:强清还活着的沙箱(带超时)、排空实验级 cleanup 注册表,再退。
   await stopAllSandboxes();
+  await drainExperimentTeardowns();
   process.exit(2);
 });

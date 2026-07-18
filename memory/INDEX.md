@@ -114,6 +114,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对 `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle phase 反推 verdict 原因
 - 已修 [experiment-setup-progress-activity-blackhole](experiment-setup-progress-activity-blackhole.md) — 实验级 setup 全程零输出(状态行全员 queued 像卡死):runner 不为 setup 发布事件且 cli.md 无显示契约,`ctx.progress`→`reportActivity` 因四个渲染器都没实现可选 `activity()` 钩子被静默丢弃;修为 runner 发布 `experiment-hook` 起止事件 + 运行级 active 行 + agent/ci 起止行,human 实现 `activity()`(feedback 各文件 + run.ts)
 - [lifecycle-operation-missing-eval-teardown](lifecycle-operation-missing-eval-teardown.md) — v6 结构化 error/diagnostics 的 `operation` 取自封闭 `LifecycleOperationName`,但集合没有 eval 的 teardown/cleanup 项(agent/sandbox 都有);eval cleanup 失败的诊断按 owner 归到 `eval.setup`,要精确区分需先给 docs 补 `eval.teardown` 项(契约未修,`src/runner/attempt.ts`)
+- 已修 [force-exit-skips-experiment-teardown](force-exit-skips-experiment-teardown.md) — Ctrl-C 强清路径(二次中断/12s 看门狗)只停沙箱就 process.exit,实验级 teardown(nowledge 反激活)被跳过留孤儿;修为强清=加速收尾三件套:experiment-cleanup-registry 兜底排空 + 强清先停沙箱再有界等 runEvals 收口 + 收尾可调用体逐个 30s 超时(cleanup-timeout.ts)
 
 ## examples 与 tier-sync
 

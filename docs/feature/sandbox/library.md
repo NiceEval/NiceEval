@@ -168,7 +168,7 @@ export default defineExperiment({
 
 跨 attempt 状态本身没有框架原语——没有 `persistentState` 这类东西。载入 / 回存是用户在 `setup` / `teardown` 里自己写的普通代码(读写一个外部 KV、文件、数据库,用什么都行);要用哪个键隔离不同实验的状态,靠 `ctx.experimentId`——`AgentContext` 新增的只读字段,值是路径推导的实验 id(与结果里 `experimentId` 同源),不经 experiment 跑时是 `undefined`。[载入…回存] 这段读写外部状态的代码是临界区,想让同一实验的 attempt 不并发踩踏,在 experiment 上声明 `maxConcurrency: 1` 即可串行,不需要框架另设锁。
 
-失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。
+失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与钩子)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
 
 remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它不参与、直接被忽略——钩子天然不会跑,不需要为此写 fail-fast 分支或额外校验。
 

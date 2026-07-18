@@ -18,6 +18,7 @@ import {
   type ExperimentHookInput,
   type ExperimentProgressInput,
 } from "./feedback/sink.ts";
+import { drainExperimentTeardowns, pendingExperimentTeardownCount } from "./experiment-cleanup-registry.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { CarryPlan } from "./fingerprint.ts";
 import type { AgentRun, RunFeedbackPlan, RunOptions } from "./types.ts";
@@ -1029,6 +1030,32 @@ describe("runEvals · 实验级 setup/teardown", () => {
 describe("runEvals · 实验级 cleanup 失败只作运行级诊断", () => {
   afterEach(() => {
     expect(activeFeedbackSinkCount()).toBe(0);
+  });
+
+  // bug: memory/force-exit-skips-experiment-teardown.md
+  it("正常完整跑完后强清兜底注册表为空:teardown 已被运行路径消费恰好一次,drain 无动作", async () => {
+    let cleanupCalls = 0;
+    const evalDef = makeEval("tidy", () => {});
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-registry"),
+      flags: {},
+      runs: 1,
+      earlyExit: true,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      evalFilter: () => true,
+      experimentId: "registry-exp",
+      setup: () => () => {
+        cleanupCalls += 1;
+      },
+    };
+
+    await run([evalDef], [agentRun]);
+
+    expect(cleanupCalls).toBe(1);
+    expect(pendingExperimentTeardownCount()).toBe(0);
+    expect(await drainExperimentTeardowns()).toBe(0);
+    expect(cleanupCalls).toBe(1);
   });
 
   it("cleanup 抛错:verdict 不变,产生 experiment-teardown-failed 诊断", async () => {

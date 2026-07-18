@@ -60,6 +60,7 @@ export const zhCN = {
     "{{budgetKey}} 的 budget:连续多个 attempt 完成后都拿不到成本数据(agent 不上报用量且模型不在价格表)——该 agent 的 budget 无法执行,取消护栏继续跑。\n",
   "runner.experimentTeardownFailed":
     "实验 {{experimentId}} 的 setup 返回的 cleanup 执行失败:{{message}}。结果不受影响,但该实验起的宿主机资源可能没有回收,请手动检查。\n",
+  "runner.cleanupTimeout": "cleanup 执行超过 {{timeoutMs}}ms 清理超时\n",
   "runner.experimentTeardownLate":
     "实验 {{experimentId}} 的 teardown 未被正常计数路径触发,已在运行收尾兜底执行。结果不受影响;这行出现说明命中了一个未定位的调度间歇问题,请把本次运行信息记入 memory 台账。\n",
   "judge.modelMissing":
