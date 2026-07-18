@@ -25,9 +25,9 @@ export default defineExperiment({
 - `model` / `flags`：透传语义。[NiceEval](https://niceeval.com/) 不解释它们的含义，原样经 `ctx` 递给 Adapter，由 Adapter 随请求转发、应用按需切换——这正是 [Tier](/zh/explanation/tier) 里模型对比（Tier 1）和 feature A/B（Tier 3）的通道。
 - `runs`、`budget`、并发、`sandbox` 等运行参数：怎么跑、跑多少。完整字段见[写实验](/zh/tutorials/write-experiment)。
 
-Experiment 还有一对实验级钩子 `setup` / `teardown`：整个实验只跑一次，在你自己的机器上执行，用来起停所有 Attempt 共享的服务（比如一条到内网服务的隧道、一个实验专用的 mock server）——`setup` 在本实验第一个 Attempt 派发前执行，`teardown` 在全部 Attempt 收尾后执行（中断也执行），当且仅当 `setup` 的时点已经走到才触发。要按实验在 Sandbox 里准备环境（装二进制、预热、跨 attempt 存取状态），则挂在 `sandbox` 字段的 spec 上——`dockerSandbox()` 等工厂返回的对象可以链 `.setup()` / `.teardown()`。两者的边界与写法见[写实验 · 启动 Experiment 共享服务](/zh/tutorials/write-experiment#启动-experiment-共享服务)与[Sandbox provider · 环境钩子](/zh/tutorials/sandbox-providers#环境钩子)。
+Experiment 还有一对实验级 Hook `setup` / `teardown`：整个实验只跑一次，在你自己的机器上执行，用来起停所有 Attempt 共享的服务（比如一条到内网服务的隧道、一个实验专用的 mock server）——`setup` 在本实验第一个 Attempt 派发前执行，`teardown` 在全部 Attempt 收尾后执行（中断也执行），当且仅当 `setup` 的时点已经走到才触发。要按实验在 Sandbox 里准备环境（装二进制、预热、跨 attempt 存取状态），则挂在 `sandbox` 字段的 spec 上——`dockerSandbox()` 等工厂返回的对象可以链 `.setup()` / `.teardown()`。两者的边界与写法见[写实验 · 启动 Experiment 共享服务](/zh/tutorials/write-experiment#启动-experiment-共享服务)与[Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
 
-同一实验里的评估用例需要不同预制环境时，评估用例只声明 provider-neutral 的 `environment` profile；sandbox spec 的 `environments` 表再把 profile 映射到 Docker image、E2B template 或 Vercel sandbox snapshot。这样任务需求留在评估用例，provider 产物留在 spec，一个实验仍覆盖全部评估用例、对比不拆分。写法见[写实验 · 让不同评估用例使用不同预制环境](/zh/tutorials/write-experiment#让不同-eval-使用不同预制环境)。
+同一实验里的评估用例需要不同预制环境时，评估用例只声明 provider-neutral 的 `environment` profile；sandbox spec 的 `environments` 表再把 profile 映射到 Docker image、E2B template 或 Vercel Sandbox snapshot。这样任务需求留在评估用例，provider 产物留在 spec，一个实验仍覆盖全部评估用例、对比不拆分。写法见[写实验 · 让不同评估用例使用不同预制环境](/zh/tutorials/write-experiment#让不同评估用例使用不同预制环境)。
 
 ## 矩阵对比
 

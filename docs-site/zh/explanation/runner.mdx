@@ -37,7 +37,7 @@ npx niceeval exp local fixtures/button
 npx niceeval exp local --max-concurrency 8
 ```
 
-远程 HTTP agent 可以用更高并发；本地 Docker sandbox 通常需要更低并发，避免 CPU、内存和磁盘竞争。
+远程 HTTP agent 可以用更高并发；本地 Docker Sandbox 通常需要更低并发，避免 CPU、内存和磁盘竞争。
 
 ## runs 与 early-exit
 
@@ -50,7 +50,7 @@ npx niceeval exp local fixtures/button --runs 5 --no-early-exit
 
 ## 缓存
 
-[NiceEval](https://niceeval.com/) 可以根据输入、配置和相关文件 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、沙箱异常等框架/环境层面的不确定失败）永远重试。缓存适合加速迭代，但如果你在调试非确定性行为，应该明确关闭（`--force`）或清理相关缓存。
+[NiceEval](https://niceeval.com/) 可以根据输入、配置和相关文件 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、Sandbox 异常等框架/环境层面的不确定失败）永远重试。缓存适合加速迭代，但如果你在调试非确定性行为，应该明确关闭（`--force`）或清理相关缓存。
 
 ## 超时和预算
 
@@ -58,7 +58,7 @@ npx niceeval exp local fixtures/button --runs 5 --no-early-exit
 npx niceeval exp local --timeout 300000 --budget 5
 ```
 
-超时保护单个 eval，预算保护整次运行成本。NiceEval 只有在 Attempt 已经发起 Agent Turn、却连续拿不到成本数据时，才提示预算无法执行。如果 Attempt 在 `sandbox.create` 或 setup 阶段就失败，Agent 尚未运行，CLI 只显示对应的结构化执行错误，不再追加容易误导排查方向的预算警告。
+超时保护单个评估用例，预算保护整次运行成本。NiceEval 只有在 Attempt 已经发起 Agent Turn、却连续拿不到成本数据时，才提示预算无法执行。如果 Attempt 在 `sandbox.create` 或 setup 阶段就失败，Agent 尚未运行，CLI 只显示对应的结构化执行错误，不再追加容易误导排查方向的预算警告。
 
 ## Reporter
 
@@ -72,7 +72,7 @@ npx niceeval exp local --output ci     # CI：单一有序 stdout 事件流
 
 省略时使用 `auto`：TTY 选择 Human，CI 环境选择 CI，其它非 TTY 选择 Agent。输出模型只改变反馈，不改变调度、判定或 artifact。
 
-Runner 在 Eval 完成后把结果交给 Reporters：
+Runner 在评估用例完成后把结果交给 Reporters：
 
 - JSON artifacts 用于后续分析。
 - JUnit reporter 适合 CI。

@@ -1,6 +1,6 @@
 ---
-title: "沙箱 Agent：评估 Claude Code、Codex 和 bub"
-sidebarTitle: "沙箱 Agent"
+title: "Sandbox Agent：评估 Claude Code、Codex 和 bub"
+sidebarTitle: "Sandbox Agent"
 description: "使用 NiceEval 内置 agents 或自定义 adapter，在 Docker 或云端 sandbox 中运行 coding-agent CLI。"
 ---
 
@@ -120,7 +120,7 @@ createSandbox
 
 `t.sandbox.diff` 与 `t.sandbox.fileChanged()` 只包含 **agent 在 `t.send()` 期间改动的文件**：NiceEval 在每次 `t.send()` 前后记录一次工作区状态，把中间的变化记在 agent 名下。你上传的起始文件、`t.send()` 之后写入的验证材料都不会混进来，所以 `fileChanged("src/app.ts")` 只在 agent 真的动过这个文件时通过。
 
-环境钩子（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它写下的文件属于环境，不会被算进 agent 产出的 diff。写法和规则见 [沙箱 provider · 环境钩子](/zh/tutorials/sandbox-providers#环境钩子)。
+生命周期（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它写下的文件属于环境，不会被算进 agent 产出的 diff。写法和规则见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
 
 ## 自定义 sandbox agent
 

@@ -106,4 +106,4 @@ pricing?: Record<string, PriceOverride>;
 
 {/* GENERATED:END config-fields */}
 
-[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：eval 自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 `setup`。sandbox provider 只来自代码里的 `sandbox` 字段，不做环境变量自动探测，也没有对应的 CLI flag——用 `niceeval/sandbox` 里的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 构造后填进 `sandbox` 字段（可以直接写在 experiment 上，也可以只写在这里作为项目级兜底：`exp.sandbox ?? config.sandbox`）。
+[NiceEval](https://niceeval.com/) 把环境准备放在普通代码里：评估用例自己需要的文件写在 `test(t)`，agent 自己的准备写在 adapter 的 `setup`。sandbox provider 只来自代码里的 `sandbox` 字段，不做环境变量自动探测，也没有对应的 CLI flag——用 `niceeval/sandbox` 里的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` 构造后填进 `sandbox` 字段（可以直接写在 experiment 上，也可以只写在这里作为项目级兜底：`exp.sandbox ?? config.sandbox`）。

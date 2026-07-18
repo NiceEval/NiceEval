@@ -1,7 +1,7 @@
 ---
 title: "Sandbox Fixture：用任务评估 coding agents"
 sidebarTitle: "Fixture"
-description: "用 .eval.ts 给 coding agent 准备隔离 workspace、发送真实任务，并用 sandbox 文件、命令、diff 和 judge 验证结果。"
+description: "用 .eval.ts 给 coding agent 准备隔离 workspace、发送真实任务，并用 Sandbox 文件、命令、diff 和 judge 验证结果。"
 ---
 
 评估 coding agent 时，单纯检查一段回复不够。你通常要给它一个真实项目，让它读写文件、运行命令、提交改动，然后检查产物是否正确。[NiceEval](https://niceeval.com/) 的当前推荐写法是：用普通 `.eval.ts` 文件显式准备 sandbox workspace、发送任务并断言结果。
@@ -88,7 +88,7 @@ t.check(code, excludes(/process\.env\.\w+\s*\?\?/));
 t.sandbox.fileChanged("src/config/env.ts");
 ```
 
-`t.sandbox.fileChanged()` 是作用域断言：它在运行结束后用 sandbox diff 判断目标文件是否真的被修改。
+`t.sandbox.fileChanged()` 是作用域断言：它在运行结束后用 Sandbox diff 判断目标文件是否真的被修改。
 
 ## 运行项目测试或探针脚本
 

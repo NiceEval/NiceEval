@@ -1,10 +1,10 @@
 ---
-title: "写实验：用 defineExperiment 固定运行配置"
-sidebarTitle: "写实验"
-description: "在 experiments/ 中用 defineExperiment 选择 Agent、传递 model 和 flags，设置 runs、预算、并发与 sandbox，并用 setup / teardown 起停实验级共享服务。"
+title: "实验与生命周期"
+sidebarTitle: "实验"
+description: "如何写好实验。选择 Agent、传递 model 和 flags，设置 runs、预算、并发与 Sandbox，并用 setup / teardown 起停实验级共享服务。"
 ---
 
-Experiment 是可签入的运行配置：同一批 eval 对着哪个 adapter、哪个模型、开哪些 flags、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛 eval，不负责临时改 agent 或运行配置。
+Experiment 是可签入的运行配置：同一批评估用例对着哪个 adapter、哪个模型、开哪些 flags、跑几次、预算多少，都写在 `experiments/` 里。CLI 的位置参数只负责筛评估用例，不负责临时改 agent 或运行配置。
 
 ## 最小实验
 
@@ -66,7 +66,7 @@ export default defineExperiment({
 
 `model` 会作为 `ctx.model` 传给 Adapter；如果你的 Agent 支持模型选择，自己构建请求
 
-`flags` 会作为 `ctx.flags` 传给 Adapter，也会作为 `t.flags` 出现在评例代码中里。
+`flags` 会作为 `ctx.flags` 传给 Adapter，也会作为 `t.flags` 出现在评估用例里。
 
 语义就是产品 A/B 测试里的 feature flag，应该编写 Adapter 把 Flag 发给你的 Agent，Agent 根据 Flag 切换不同的 System Prompt 或者行为。
 
@@ -120,19 +120,19 @@ npx niceeval exp prompt-variants/concise
 | `model` | 单个模型名，经 `ctx.model` 透传 |
 | `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
 | `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
-| `runs` | 每个 eval × 配置最多跑几次 |
+| `runs` | 每个评估用例 × 配置最多跑几次 |
 | `earlyExit` | 多次运行里通过一次就提前停止 |
-| `evals` | 限定这一格配置跑哪些 eval |
+| `evals` | 限定这一格配置跑哪些评估用例 |
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |
 | `maxConcurrency` | 这一格配置的并发上限 |
-| `sandbox` | sandbox agent 使用的固定 spec；spec 可带 `environments` 表按评估用例的环境 profile 换预制产物，也可以链 `.setup()` / `.teardown()` 挂环境钩子 |
-| `setup` | 实验级钩子：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
-| `teardown` | 与 `setup` 成对的实验级钩子：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
+| `sandbox` | sandbox agent 使用的固定 spec；spec 可带 `environments` 表按评估用例的环境 profile 换预制产物，也可以链 `.setup()` / `.teardown()` 挂环境 Hook |
+| `setup` | 实验级 Hook：整个实验只跑一次、在你自己的机器上执行，启动全部 Attempt 共享的服务（见下） |
+| `teardown` | 与 `setup` 成对的实验级 Hook：全部 Attempt 收尾后执行一次，当且仅当 `setup` 的时点已经走到（见下） |
 
 ## 启动 Experiment 共享服务
 
-有些资源是「一个实验一份、所有 Attempt 共用」的：一条到内网记忆服务的隧道、一个实验专用的 mock server、一个 license 租约。这类资源写进一对实验级钩子 `setup` / `teardown`：整场至多各跑一次。`setup` 在这个实验第一个要派发的 Attempt 前执行；`teardown` 在全部 Attempt 收尾后执行（运行被中断也执行），当且仅当 `setup` 的时点已经走到才触发——`setup` 抛错同样要走到 `teardown`，收尾代码要对可能未赋值的变量做防御。上一次的结果全部被复用、这个实验一个 Attempt 都不需要真正运行时，`setup` 和 `teardown` 都不会执行：
+有些资源是「一个实验一份、所有 Attempt 共用」的：一条到内网记忆服务的隧道、一个实验专用的 mock server、一个 license 租约。这类资源写进一对实验级 Hook `setup` / `teardown`：整场至多各跑一次。`setup` 在这个实验第一个要派发的 Attempt 前执行；`teardown` 在全部 Attempt 收尾后执行（运行被中断也执行），当且仅当 `setup` 的时点已经走到才触发——`setup` 抛错同样要走到 `teardown`，收尾代码要对可能未赋值的变量做防御。上一次的结果全部被复用、这个实验一个 Attempt 都不需要真正运行时，`setup` 和 `teardown` 都不会执行：
 
 ```ts
 // setup 拿到的地址、密钥放模块变量：teardown 和同文件里的 agent（每个 Attempt 都会执行、晚于 setup）直接读它。
@@ -184,11 +184,11 @@ export default defineExperiment({
 
 固定的 Agent CLI、系统包和大模型缓存应先做进 image/template/snapshot；`.setup()` 不应在每个 Attempt 重建同一套环境。从官方 Docker 镜像、E2B 模板或 Vercel runtime 派生预制环境的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
-钩子的执行时机、多钩子顺序和失败语义见 [Sandbox provider · 环境钩子](/zh/tutorials/sandbox-providers#环境钩子)。
+Hook 的执行时机、多 Hook 顺序和失败语义见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
 
-### 与 Sandbox 钩子协作
+### 与 Sandbox Hook 协作
 
-实验级钩子起宿主机侧服务，Sandbox 钩子每个 Sandbox 把坐标写进去、收尾时回存状态——两层在同一个文件里靠模块变量衔接，时序由 runner 保证：实验级 `setup` 早于本实验任何 Sandbox 钩子，Sandbox 钩子读到的变量一定已经赋好值：
+实验级 Hook 起宿主机侧服务，Sandbox Hook 每个 Sandbox 把坐标写进去、收尾时回存状态——两层在同一个文件里靠模块变量衔接，时序由 runner 保证：实验级 `setup` 早于本实验任何 Sandbox Hook，Sandbox Hook 读到的变量一定已经赋好值：
 
 ```ts
 // experiments/compare/claude--nowledge.ts
@@ -223,11 +223,11 @@ export default defineExperiment({
 });
 ```
 
-一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级钩子对里；每 Sandbox 的写入与回存在 `sandbox` 链式钩子里，读实验级产物；agent 怎么连自己、评估用例的任务夹具各在 agent 定义与 `EvalDef` 里，不进实验文件。
+一份实验文件从上往下读就是完整的运行说明：整场一次的宿主机资源在实验级 Hook 对里；每 Sandbox 的写入与回存在 `sandbox` 链式 Hook 里，读实验级产物；agent 怎么连自己、评估用例的任务夹具各在 agent 定义与 `EvalDef` 里，不进实验文件。
 
 ### 多个实验共享同一套生命周期代码
 
-对比组里常常是几个实验对着同一类基础设施——同一个记忆产品，claude 与 codex 各一格对照，起停机制完全一样。把起停写成一个**工厂函数**，返回共享同一闭包的整套件：实验级钩子对、给 agent / MCP 工厂读坐标的 getter、把坐标写进 Sandbox 的 sandbox 钩子。每个实验文件各自调用一次工厂，同一套代码、各自的实例与坐标：
+对比组里常常是几个实验对着同一类基础设施——同一个记忆产品，claude 与 codex 各一格对照，起停机制完全一样。把起停写成一个**工厂函数**，返回共享同一闭包的整套件：实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进 Sandbox 的 sandbox Hook。每个实验文件各自调用一次工厂，同一套代码、各自的实例与坐标：
 
 ```ts
 // experiments/shared/nowledge.ts —— 启停一份代码；实例、坐标每实验一份

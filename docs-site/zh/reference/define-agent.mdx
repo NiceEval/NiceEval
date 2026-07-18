@@ -6,7 +6,7 @@ description: "defineAgent 和 defineSandboxAgent 参考：AgentContext、AgentSe
 
 每个 [NiceEval](https://niceeval.com/) agent 都是一个 adapter：一段知道如何驱动特定 backend，并把输出转成标准事件流的代码。runner 只调用 `agent.send(input, ctx)`。
 
-![一次 t.send 的完整往返：eval 调用 t.send，运行器组装 TurnInput 与 ctx，adapter 返回标准事件流 Turn。](/images/agent-turn-roundtrip-zh.svg)
+![一次 t.send 的完整往返：评估用例调用 t.send，运行器组装 TurnInput 与 ctx，adapter 返回标准事件流 Turn。](/images/agent-turn-roundtrip-zh.svg)
 
 ## `defineAgent`
 
@@ -252,7 +252,7 @@ readonly experimentId?: string;
 
 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
 experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:
-`SandboxSpec.setup` 钩子按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
+`SandboxSpec.setup` Hook 按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
 `ctx.experimentId` 分区),或 adapter 按实验切换鉴权 / 路由。与 `flags`(实验条件的
 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
 
@@ -317,7 +317,7 @@ log(msg: string): void;
 
 {/* GENERATED:END agent-def */}
 
-`ctx.session`(`AgentSession`)是一条会话线的状态槽:同一条会话线的每次 `send` 拿到同一个 `ctx.session`,新会话线(eval 第一轮 / `t.newSession()` 之后)拿到一个全新的。存取器:
+`ctx.session`(`AgentSession`)是一条会话线的状态槽:同一条会话线的每次 `send` 拿到同一个 `ctx.session`,新会话线(评估用例第一轮 / `t.newSession()` 之后)拿到一个全新的。存取器:
 
 - `id?: string` / `capture(id): void` —— 会话续接·服务端记历史时用:`id` 是本线记过的会话 id(新线是 `undefined`),`capture` 记回传的 id(只在还没记过时落地)。
 - `history<TMsg>(): { get(): TMsg[]; commit(messages: TMsg[]): void }` —— 会话续接·客户端带全量历史时用。
@@ -328,7 +328,7 @@ log(msg: string): void;
 
 ## Sandbox 接口
 
-沙箱型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄；`CommandOptions` 是 `runCommand` / `runShell` 的可选项：
+Sandbox 型 agent 的 `ctx.sandbox`(`Sandbox`)是当前隔离环境的句柄；`CommandOptions` 是 `runCommand` / `runShell` 的可选项：
 
 {/* GENERATED:BEGIN sandbox-methods */}
 
@@ -530,4 +530,4 @@ root?: boolean;
 
 ## ctx 与 t
 
-`ctx` 是 adapter 侧看到的运行上下文；`t` 是 eval 作者看到的测试上下文。两者使用同一批运行数据，但职责不同。
+`ctx` 是 adapter 侧看到的运行上下文；`t` 是评估用例作者看到的测试上下文。两者使用同一批运行数据，但职责不同。

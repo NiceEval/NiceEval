@@ -67,7 +67,7 @@ npx niceeval exp compare-models weather
 
 ## 常用 flags
 
-下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 sandbox provider 的 CLI flag：sandbox provider 只能写在代码里——在 experiment（`defineExperiment`）里设置 `sandbox`，或者在 `niceeval.config.ts`（`defineConfig`）里设置作为项目级兜底，值来自 `niceeval/sandbox` 的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`。
+下表由 CLI 的 flag 解析表生成，表外的 flag 一律按未知 flag 报错并以非零状态退出。**没有**用于选择 Sandbox provider 的 CLI flag：Sandbox provider 只能写在代码里——在 experiment（`defineExperiment`）里设置 `sandbox`，或者在 `niceeval.config.ts`（`defineConfig`）里设置作为项目级兜底，值来自 `niceeval/sandbox` 的 `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()`。
 
 {/* GENERATED:BEGIN cli-flags */}
 
@@ -81,8 +81,8 @@ npx niceeval exp compare-models weather
 | `--max-concurrency` | number | 设置同时运行的 eval 数量。 |
 | `--timeout` | number | 单个 attempt 的超时时间,单位毫秒。 |
 | `--budget` | number | 整次运行的预算上限(美元)。 |
-| `--keep-sandbox` | boolean | `exp` 命令专用:跑完留下 failed/errored attempt 的沙箱现场(= `--keep-sandbox=failed`);`--keep-sandbox=all` 连 passed 也留。事后用 `niceeval sandbox list/enter/stop` 查看与销毁。 |
-| `--all` | boolean | `sandbox stop` 专用:销毁全部留存沙箱。 |
+| `--keep-sandbox` | boolean | `exp` 命令专用:跑完留下 failed/errored attempt 的 Sandbox 现场(= `--keep-sandbox=failed`);`--keep-sandbox=all` 连 passed 也留。事后用 `niceeval sandbox list/enter/stop` 查看与销毁。 |
+| `--all` | boolean | `sandbox stop` 专用:销毁全部留存 Sandbox。 |
 | `--window` | string | `sandbox diff` 专用:只看某个 send 窗口(如 `--window s1/t2`);省略输出全部窗口的串联视图。 |
 | `--path` | string | `sandbox diff` 专用:只看某个文件的 patch;省略输出该窗口的全部文件。 |
 | `--leave-running` | boolean | `sandbox enter` 专用:shell 退出后让现场保持运行,不送回休眠。 |

@@ -33,6 +33,7 @@
 - **OTel 接入**：Tier 2 的接入方式。只在讲 `send + OTel` 时使用，不要把 OTel 写进 Tier 1。
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
+- **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
 - **默认报告（内建报告）**：`niceeval show` / `view` 不传 `--report` 时装载的三页内置报告（报告 / Attempts / 追踪），每页由公开组件组成，与用户报告文件完全同构。首页的比较组件是实验组比较（`ExperimentComparison`）：按 experiment id 的父目录切成可比组，只在同组内画成本 × 端到端成功率散点并列实验列表（`ExperimentList`）；网页持有全部组并一次聚焦一组，终端多组时只列索引和单组查看命令、单组时才展开详情。
 - **Snapshot**：结果读取面的单位（experiment × run）。中文写“结果快照”（同页后续可简写“快照”）；与快照测试无关；沙箱 microVM 快照一律写“沙箱快照（`snapshotId`）”。
 - **Selection**：`results.latest()` 的返回物（挑好的结果快照 + 挑选警告）。中文直接写 `Selection`，不写“选集”。

@@ -21,7 +21,7 @@ export default defineEval({
 });
 ```
 
-## 单轮 eval
+## 单轮评估
 
 ```ts
 import { defineEval } from "niceeval";
@@ -51,7 +51,7 @@ export default defineEval({
 | `turn.message` | assistant 文本回复 |
 | `turn.toolCalls` | 本轮工具调用 |
 
-## 多轮 eval
+## 多轮评估
 
 ```ts
 export default defineEval({
@@ -71,7 +71,7 @@ export default defineEval({
 
 ## 数据驱动测试（dataset fan-out）
 
-一个文件可以导出 eval 数组：
+一个文件可以导出评估用例数组：
 
 ```ts
 export default rows.map((row) =>
@@ -89,7 +89,7 @@ export default rows.map((row) =>
 
 ## Sandbox workspace
 
-Coding-agent eval 仍然是普通 `.eval.ts` 文件，只是 test 里会准备 sandbox workspace、发送任务并检查文件结果：
+Coding-agent 评估用例仍然是普通 `.eval.ts` 文件，只是 test 里会准备 Sandbox workspace、发送任务并检查文件结果：
 
 ```ts
 import { defineEval } from "niceeval";
@@ -108,7 +108,7 @@ export default defineEval({
 
 ## 输出信息
 
-`setup` 用于这条 Eval 的 Fixture。第二个参数绑定到 eval setup 阶段；`test(t)` 里的反馈绑定到 eval run 阶段：
+`setup` 用于这条评估用例的 Fixture。第二个参数绑定到评估用例 setup 阶段；`test(t)` 里的反馈绑定到评估用例 run 阶段：
 
 ```ts
 export default defineEval({
@@ -140,11 +140,11 @@ export default defineEval({
 
 ## 评估的生命周期
 
-`setup(sandbox, ctx)` 准备 Fixture；配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条 eval 的 Fixture，每个 Attempt 各执行一次。执行顺序：`setup` 在沙箱环境钩子和 git 基线锚点之后、`test(t)` 之前跑；`teardown` 是 Attempt 收尾链的第一段（先 eval teardown，再 agent teardown，最后 sandbox teardown），这时沙箱还活着，收尾代码可以照常读沙箱。
+`setup(sandbox, ctx)` 准备 Fixture；配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条评估用例的 Fixture，每个 Attempt 各执行一次。执行顺序：`setup` 在 Sandbox 生命周期 Hook 和 git 基线锚点之后、`test(t)` 之前跑；`teardown` 是 Attempt 收尾链的第一段（先评估用例 teardown，再 agent teardown，最后 Sandbox teardown），这时 Sandbox 还活着，收尾代码可以照常读 Sandbox。
 
-大多数 Fixture 不需要 `teardown`——写进沙箱的起始文件、装的依赖随沙箱销毁自动没了。需要 `teardown` 的是**沙箱外**的 Fixture：在共享外部服务里为这个 Attempt 建的临时资源（临时 repo、bucket、队列 topic），不收就泄漏。
+大多数 Fixture 不需要 `teardown`——写进 Sandbox 的起始文件、装的依赖随 Sandbox 销毁自动没了。需要 `teardown` 的是**Sandbox 外**的 Fixture：在共享外部服务里为这个 Attempt 建的临时资源（临时 repo、bucket、队列 topic），不收就泄漏。
 
-同一条 eval 的多个 Attempt（`runs` 大于 1、或同批多个实验跑同一条 eval）并发执行且共享同一个模块，`setup` 的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 `sandbox` 实例作键存取（`WeakMap`）：sandbox 与 Attempt 一一对应，天然是 per-attempt 键：
+同一条评估用例的多个 Attempt（`runs` 大于 1、或同批多个实验跑同一条评估用例）并发执行且共享同一个模块，`setup` 的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 `sandbox` 实例作键存取（`WeakMap`）：sandbox 与 Attempt 一一对应，天然是 per-attempt 键：
 
 ```ts
 // evals/pr-review/close-stale.eval.ts

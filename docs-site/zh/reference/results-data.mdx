@@ -244,7 +244,7 @@ await copySnapshots(results.latest(), "site-data/run", {
 
 复制开始前，NiceEval 会规划全部目标文件并检查序列化后的大小。任一文件超过固定的 50 MiB，整次复制在创建目标目录前失败，错误会列出路径、实际大小和处理建议。你可以从 `artifacts` 排除那类证据；如果是旧版本留下的超大 events / trace，用当前版本重跑后再发布。这个检查既覆盖没有逐值截断的源码 / diff，也覆盖单值都正常但累计过大的 JSON，避免直到 `git push` 才撞上 Git host 的单文件限制。
 
-大小预检只决定整次复制成功或失败，不会从一个超大文件中间删内容。复制忠实于源：artifact 按原字节复制，不重新序列化、不改写。唯一随行补记的是挑选时的**覆盖事实**：`partial-coverage` 警告的分母是实验的历史并集，而发布目录没有历史——所以每个复制出的快照带上 `knownEvalIds`（复制时刻该实验已知的 eval 并集），reader 端把它并进 `exp.evalIds` 的计算（取本地历史与快照携带值的并集）。发布目录上重新 `openResults().latest()`，残缺警告被同一套机制重新算出来，不靠发布者转述。复制出的目录就是标准结果目录，`niceeval view --results <目录>` 直接能看；要让报告站随 push 自动更新，workflow 见[通过 CI 发布报告](/zh/tutorials/publish-report)。
+大小预检只决定整次复制成功或失败，不会从一个超大文件中间删内容。复制忠实于源：artifact 按原字节复制，不重新序列化、不改写。唯一随行补记的是挑选时的**覆盖事实**：`partial-coverage` 警告的分母是实验的历史并集，而发布目录没有历史——所以每个复制出的快照带上 `knownEvalIds`（复制时刻该实验已知的评估用例并集），reader 端把它并进 `exp.evalIds` 的计算（取本地历史与快照携带值的并集）。发布目录上重新 `openResults().latest()`，残缺警告被同一套机制重新算出来，不靠发布者转述。复制出的目录就是标准结果目录，`niceeval view --results <目录>` 直接能看；要让报告站随 push 自动更新，workflow 见[通过 CI 发布报告](/zh/tutorials/publish-report)。
 
 ## 分层速览
 

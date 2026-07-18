@@ -20,26 +20,6 @@ description: "NiceEval 怎么知道你的 adapter 做到了什么：没有声明
 
 没做到的能力 = 没有对应的事件/字段出现，相关断言组不可用（不是"报错"，是断言本身没有可判断的依据）；基础断言（文本、结构化、judge）永远可用。
 
-## 为什么没有声明这一层
-
-NiceEval 不设 `capabilities: { conversation, toolObservability }` 这类布尔声明层来补"代码证明不了的部分"，因为这类声明承诺的事情本身就不该由声明来担保：
-
-- **构造即证明**：用了 `defineSandboxAgent`，说明被测对象在沙箱里改文件——不需要再声明一遍 `workspace: true`。
-- **字段即证明**：写了 `tracing`（怎么把 OTLP 端点交给 CLI），tracing 就成立。字段本身就是使用凭证，不需要旁边再放一个布尔值重复一遍。
-- **来源即证明**：`fromAiSdk(result)` 消费的 `result.steps` 是 AI SDK 契约保证的**全量**工具循环记录，返回值自带"事件流完整"的证明；内置 CLI 的 parser 同理。手工映射时，事件完不完整取决于你的映射代码写没写全——这不是一个可以靠声明担保的东西，声明了也不会让代码更完整。
-- **行为即证明**：HITL 没有能力位——`send` 返回 `status: "waiting"` + `input.requested` 事件，行为本身可见。
-- **接了就续得上**：会话续接没有"声明了才有"的开关。`ctx.session` 一直都在；用了 `id`/`capture` 或 `history` 存取器就会续接上下文，不用就每轮都是全新会话——两种都是正常状态，都不会报错，区别只在你的 adapter 实际怎么写。
-
-```ts
-export default defineAgent({
-  name: "my-ai-sdk-agent",
-  async send(input, ctx) {
-    const result = await generateText({ model, tools, prompt: input.text });
-    return { ...fromAiSdk(result), data: result.text };
-    // ↑ 返回值自带完整的工具事件，不需要任何能力声明
-  },
-});
-```
 
 ## 手工映射时事件不全，会怎样
 
@@ -59,9 +39,9 @@ export default defineAgent({
 
 runner 消费：运行时起一个本机 OTLP 接收器，把本轮 trace context 经 `ctx.telemetry.headers` 交给你；span 归一后在 `niceeval view` 画瀑布图——只画图，不喂断言。来源：CLI 型写 `tracing` 字段（env / configure 把端点交给被测进程）；长驻应用在 `niceeval.config.ts` 配 `telemetry: { port }` 固定端口（见 [OTel 接入](/zh/tutorials/connect-otel)）。
 
-### `kind: "sandbox"` —— 沙箱与改文件
+### `kind: "sandbox"` —— Sandbox 与改文件
 
-runner 消费：为每次 attempt 准备沙箱（Docker / Vercel / E2B），经 `ctx.sandbox` 交给 adapter；解锁 `t.sandbox.fileChanged()` 等 diff 断言。来源：`defineSandboxAgent` 构造，内部判别字段，不用你写。
+runner 消费：为每次 attempt 准备 Sandbox（Docker / Vercel / E2B），经 `ctx.sandbox` 交给 adapter；解锁 `t.sandbox.fileChanged()` 等 diff 断言。来源：`defineSandboxAgent` 构造，内部判别字段，不用你写。
 
 ### 压缩可见（compaction）
 

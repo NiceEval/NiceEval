@@ -19,7 +19,7 @@ npx niceeval exp local onboarding/tool-first --keep-sandbox        # 等价 --ke
 npx niceeval exp local onboarding/tool-first --keep-sandbox=all    # 通过的也保留
 ```
 
-`--keep-sandbox` 是 `niceeval exp` 的运行参数，两档：`failed`（缺省值）保留判定为 `failed` 或 `errored` 的 Attempt（包括超时打断的）；`all` 连通过的也保留——调 setup 钩子、核对通过环境的真实状态时用它，不用故意弄挂一条评估用例。不带这个参数时全部销毁。
+`--keep-sandbox` 是 `niceeval exp` 的运行参数，两档：`failed`（缺省值）保留判定为 `failed` 或 `errored` 的 Attempt（包括超时打断的）；`all` 连通过的也保留——调 setup Hook、核对通过环境的真实状态时用它，不用故意弄挂一条评估用例。不带这个参数时全部销毁。
 
 运行结束后，摘要里会列出保留了哪些 Sandbox、怎么进去：
 
