@@ -80,6 +80,20 @@ TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
 
 对话按轮分段，每轮头行给出编号（`s1/t1`）、状态、耗时和用量——这个编号和 `--diff`、`--timing` 里的轮次标签是同一套，能互相对照。
 
+不想通读全文时，接 `grep` 定向查。列出这次 Attempt 用过哪些工具、各多少次：
+
+```text
+$ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
+   5   TOOL · command_execution
+   2   TOOL · file_change
+```
+
+想确认它有没有跑过某条命令、有没有提到某个文件，直接搜关键词：
+
+```bash
+niceeval show @1qrdcfq8 --execution | grep proposals
+```
+
 **3. 看它到底改了什么。** `--diff` 只显示 **agent 自己改动的文件**——你上传的起始文件、跑完后写入的验证材料不会混在里面，所以列表里的每一行都真的是 agent 干的：
 
 ```text
@@ -179,6 +193,15 @@ niceeval show memory/swelancer --exp compare/bub   # 收窄到某道题
 
 列表里每道题、每次 Attempt 都带定位符，接着往深处钻就回到上面的场景一 / 场景二。
 
+**同一个检查刷一批 Attempt。** 从实验列表里复制定位符，套一层循环。比如核对这几次 Attempt 里谁调用过 `file_change`：
+
+```bash
+for loc in @1qrdcfq8 @1x7f3q8a @18c1m2qx; do
+  echo "== $loc"
+  niceeval show $loc --execution | grep "TOOL · file_change"
+done
+```
+
 **在浏览器里翻。** 复盘一批失败、对比多次 Attempt 时，网页比终端顺手：
 
 ```bash
@@ -202,6 +225,7 @@ niceeval view --results site-data/run
 |---|---|
 | 断言挂了，不知道为什么 | `show @loc` → `show @loc --eval` |
 | 想知道 agent 当时做了什么 | `show @loc --execution` |
+| 想确认有没有调用过某个工具 / 搜对话关键词 | `show @loc --execution \| grep "TOOL ·" \| sort \| uniq -c` / `\| grep <关键词>` |
 | 想确认 agent 改了哪些文件 | `show @loc --diff` → `--diff=<path>` |
 | 哪一步慢 / 超时死在哪 | `show @loc`（看 `timing:` 行）→ `show @loc --timing` |
 | 沙箱创建就失败（配额 / 凭据 / 镜像） | `show @loc` 看 error 的 code 与 cause → 查账号配额、核对凭据、降 `--max-concurrency`（没有现场可留） |
