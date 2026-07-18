@@ -228,7 +228,17 @@ Dashboard 只展示当前状态,不保存历史帧:
 | `errored` | locator / eval / experiment + `error.phase` / code / message | failures 中给同一层错误摘要；cause / stack / diagnostics 下钻 |
 | `skipped` | 不冒充失败；只有需要用户行动的 skip 才以 diagnostic 留痕 | 只进 skipped / completion 汇总 |
 
-普通 assertion failure 的第一行给 locator / eval / experiment，后两行给语义标题与 matcher + expected / received。只展示一条主失败，其余写 `+N more failures`；不得把全部 assertion name 逐条拼进 scrollback。源码不在这里内联，最终 handoff 给 `show @locator --source`。
+`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
+
+```text
+✗ @1czntzel memory/agent-029-use-cache-directive [codex-gpt-5.6-luna--mempal]
+    gate: Catalog reads use use-cache directive and products cache tag
+          includes(/['"]use cache['"];?/) · expected matches /['"]use cache['"];?/
+          received: // next.config.ts import type { NextConfig } from "next"; c…
++2 more failures
+```
+
+只展示一条主失败，其余全部折进这条独立尾行；不得把全部 assertion name 逐条拼进 scrollback。源码不在这里内联，最终 handoff 给 `show @locator --source`。排版细则见 [Scoring · 一条摘要怎样排版](../scoring/library/display.md#一条摘要怎样排版)。
 
 执行错误即时输出一层可行动摘要,不把 stack 或 provider SDK response 全部灌进 scrollback。摘要固定包含 locator、eval/experiment、正式 phase、稳定 code 和 message:
 
