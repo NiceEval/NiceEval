@@ -1,152 +1,63 @@
 ---
-title: "Eval Your AI Agent Application"
-sidebarTitle: "Eval AI Agent Applications"
-description: "Evaluate a general-purpose AI SDK-based assistant application with a direct adapter: tool calls, image understanding, and multi-turn conversation."
+title: "Eval an AI Agent Application with a Hand-Written Adapter"
+sidebarTitle: "AI Agent Application"
+description: "A runnable AI SDK v6 web agent eval project covering a hand-written adapter, tool calls, image understanding, multi-turn sessions, model comparison, and dual observability."
 ---
 
-This example shows how to use [NiceEval](https://niceeval.com/) to evaluate your own AI Agent application.
+This project shows how to use `defineAgent` to connect an existing HTTP agent to NiceEval. It's a good fit for applications that need control over their own protocol and event mapping.
+
+- [View the full source](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/ai-sdk)
+- Local directory: `examples/zh/ai-sdk/`
 
 <Note>
-This is the **full-capability** reference example: sessions, tool events, tracing, model comparison, and dual observability all in one place. For your first integration, follow the step-by-step path in [Connect Your Agent](/guides/connect-your-agent) (minimal integration → event stream → multi-turn → HITL → tracing) instead, then come back to this page to see what a real project looks like.
+  If your application uses AI SDK v7's UI Message Stream, prefer the built-in `uiMessageStreamAgent` instead. See the corresponding non-intrusive example: [AI SDK v7](/examples/integrations/ai-sdk-v7).
 </Note>
 
-See the full example code: https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/ai-sdk
+## What this project demonstrates
 
-The system under test is a general-purpose AI assistant application built with an AI SDK tool loop: it sends messages, calls tools (weather / calculator / search), understands images, and uses Langfuse for its own observability. The application doesn't need a sandbox during testing — [NiceEval](https://niceeval.com/) reaches it through a direct adapter.
+| Part | Implementation |
+| --- | --- |
+| System under test | AI SDK v6 web agent, HTTP `POST /api/turn` |
+| Adapter | `defineAgent` + custom `AgentEvent` → `StreamEvent` mapping |
+| Evals | Weather tool, image understanding, multi-turn text, multi-turn image context |
+| Experiment | Each file pins one model; the group compares DeepSeek against GPT |
+| Observability | The app keeps reporting to Langfuse while also sending this turn's OTLP data to NiceEval |
 
-# Directory structure
+The adapter is only responsible for connecting and translating. The URL and model belong to the experiment; evals only describe the interaction and what a good result looks like. This separation lets the same evals be reused across different models and deployment instances.
+
+## Directory structure
 
 ```text
 examples/zh/ai-sdk/
-  src/                     # web agent under test (POST /api/turn, tools + image understanding)
-  adapter/adapter.ts       # niceeval adapter: factory webAgent({ baseUrl })
-  evals/                   # conversational evals
-    weather-tool.eval.ts        # ask about weather → calls get_weather
-    image-understanding.eval.ts # image understanding
-  experiments/
-    compare-models/        # experiment group: one file per model
-      gpt-5.4.ts
-      deepseek-v4-pro.ts
-  niceeval.config.ts       # register adapter, judge, concurrency
+├── src/                     # web agent under test
+├── adapter/adapter.ts       # hand-written NiceEval adapter
+├── evals/                   # tool, image, and multi-turn evals
+├── experiments/             # model comparison
+└── niceeval.config.ts
 ```
 
-# Define the adapter
+## Run it
 
-The adapter tells [NiceEval](https://niceeval.com/) how to send requests to the AI Agent and how to read responses as a standard event stream. It's a factory function: `baseUrl` (where the service runs) is passed in from the outside so the adapter never hardcodes it or reads from env.
-
-```ts
-// adapter/adapter.ts
-import { defineAgent } from "niceeval/adapter";
-import type { Agent } from "niceeval/adapter";
-import type { StreamEvent } from "niceeval";
-import type { AgentEvent, AgentResponse } from "../src/protocol.ts";
-
-export function webAgent(opts: { baseUrl: string }): Agent {
-  const baseUrl = opts.baseUrl.replace(/\/$/, "");
-  return defineAgent({
-    name: "web-agent",
-    async send(input, ctx) {
-      const response = await fetch(`${baseUrl}/api/turn`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sessionId: ctx.session.id,
-          message: input.text,
-          model: ctx.model,
-          files: input.files,
-          otelEndpoint: ctx.telemetry?.endpoint, // dual observability: let the app send this turn's spans back to NiceEval
-        }),
-        signal: ctx.signal,
-      });
-      // Shared contract within the same workspace — read as AgentResponse directly, no need to validate as unknown.
-      const body = (await response.json()) as AgentResponse;
-      ctx.session.capture(body.sessionId);
-      return {
-        events: body.events.map(toStreamEvent),
-        data: body.data,
-        status: "completed" as const,
-      };
-    },
-  });
-}
-
-function toStreamEvent(event: AgentEvent): StreamEvent {
-  if (event.type === "action.called") return { ...event, tool: "unknown" };
-  return event;
-}
-```
-
-## Multi-turn messages
-
-Within the same conversation line, `ctx.session.id` automatically carries over to the next turn; the adapter just writes the agent's returned `sessionId` back with `ctx.session.capture()`. To split traffic by feature flag within an experiment, see [Experiments](/guides/experiments).
-
-# Define evals
-
-Each eval sends a message and asserts on the reply, tool calls, and image understanding. Deterministic assertions (`calledTool`, `messageIncludes`) run without an API key; open-ended scoring with a judge requires a key to be set.
-
-```ts
-// evals/weather-tool.eval.ts
-import { defineEval } from "niceeval";
-
-export default defineEval({
-  description: "AI assistant: asking about weather calls get_weather",
-  async test(t) {
-    const turn = await t.send("What's the weather like in Brooklyn today?");
-    turn.succeeded();
-    await t.group("calls get_weather with correct city", () => {
-      t.calledTool("get_weather", { input: { city: "Brooklyn" } });
-      t.messageIncludes(/°[CF]|temperature|weather/i);
-    });
-    t.judge.autoevals.closedQA("Does the assistant answer based on the tool's returned weather data, not a hallucination?").atLeast(0.7);
-  },
-});
-```
-
-For image understanding, use `t.sendFile()` to attach an image. The adapter forwards `input.files` to the web agent:
-
-```ts
-// evals/image-understanding.eval.ts
-await t.sendFile(new URL("./fixtures/sample.png", import.meta.url).pathname);
-const turn = await t.send("What's in this image?");
-t.messageIncludes(/cat/i); // the sample image is a cat
-```
-
-# Define experiments
-
-**One experiment file = one configuration** (single model). For cross-model comparison, write multiple files in the same experiment group folder:
-
-```ts
-// experiments/compare-models/gpt-5.4.ts
-import { defineExperiment } from "niceeval";
-import { webAgent } from "../../adapter/adapter.ts";
-
-export default defineExperiment({
-  description: "gpt-5.4: model comparison",
-  agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
-  model: "gpt-5.4", // single string; copy this file and change one line for each model
-  runs: 2,
-  earlyExit: true,
-});
-```
-
-# Start evaluating
-
-First start the agent application under test (defaults to mock mode — no API key required). This example is a standalone npm project where `niceeval` is a local dependency:
-
-```bash
-cd examples/zh/ai-sdk && pnpm install && pnpm dev
-```
-
-Open a second terminal and run evals:
+This example calls real models — there's no mock mode. Copy the environment variables first and fill in credentials for an OpenAI-compatible service:
 
 ```bash
 cd examples/zh/ai-sdk
-pnpm exec niceeval exp compare-models   # run the model comparison experiment
-pnpm exec niceeval exp compare-models weather-tool   # run one eval inside that experiment
+pnpm install
+cp .env.example .env
+pnpm dev
+```
+
+In a second terminal, run:
+
+```bash
+cd examples/zh/ai-sdk
+pnpm exec niceeval list
+pnpm exec niceeval exp compare-models weather-tool
+pnpm exec niceeval view
 ```
 
 ## Next steps
 
-- [Connect Your Agent](/guides/connect-your-agent) — the from-scratch tutorial for `defineAgent`.
-- [Authoring Evals](/guides/authoring) — single-turn, multi-turn, and dataset evals.
-- [CI Integration](/guides/ci-integration) — put agent regression tests in PRs.
+- [Connect Your Agent](/tutorials/connect-your-agent): Start from a minimal adapter and connect your own protocol.
+- [Write Send](/tutorials/write-send): Gradually fill in sessions, tools, HITL, and OTel.
+- [Experiment Matrix](/tutorials/experiments): Organize model and configuration comparisons.

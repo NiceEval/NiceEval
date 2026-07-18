@@ -1,20 +1,50 @@
 ---
-title: "Showcase"
-sidebarTitle: "Showcase"
-description: "Real projects and live sites that build evals with NiceEval, collected over time."
+title: "NiceEval Examples"
+sidebarTitle: "Choose an Example"
+description: "Pick a runnable NiceEval example by subject under test: Agent Framework integrations, full AI agent evals, coding-agent extension benchmarks, and real projects."
 ---
 
-This page collects real projects and live sites that use [NiceEval](https://niceeval.com/) to build evals.
+Every example here has real, runnable source. Choose by subject under test — you don't need to read them in order.
 
-## coding-agent-memory-evals
+If you haven't run your first eval yet, read [Quickstart](/tutorials/quickstart) first. If you already know your task, go straight to the matching [Tutorials](/tutorials/connect-your-agent) page.
 
-[coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) compares how a coding agent's memory mechanism affects task success: the same tasks, the same model, only whether the agent carries [Tape](https://tape.systems/) memory changes.
+## Connect an Existing Agent Framework
 
-- Online report: [niceeval.com/showcase/memory](https://niceeval.com/showcase/memory)
-- Source repository: [github.com/CorrectRoadH/coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals)
+Each of the five examples below keeps both the plain application before integration and the full project after integrating NiceEval. The code diffs on each page are generated from those two sources.
 
-## Next Steps
+| Subject under test | Integration path | Example coverage |
+| --- | --- | --- |
+| [AI SDK v7](/examples/integrations/ai-sdk-v7) | Built-in `uiMessageStreamAgent` | UI Message Stream, multi-turn, tools, HITL |
+| [Claude Agent SDK](/examples/integrations/claude-sdk) | `fromClaudeSdkMessages` | Native event stream, multi-turn, tools, HITL |
+| [Codex SDK](/examples/integrations/codex-sdk) | `fromCodexThreadEvents` | Coding tasks, files and commands, usage; the SDK doesn't support HITL |
+| [pi-agent-core](/examples/integrations/pi-sdk) | `fromPiAgentEvents` | Native event stream, multi-turn, tools, HITL; the SDK has no OTel |
+| [LangGraph](/examples/integrations/langgraph) | Hand-written custom SSE frame mapping | Python application, multi-turn, tools, HITL |
 
-- [Connect Your Agent](/guides/connect-your-agent) — integrate a coding-agent adapter from scratch.
-- [Experiments](/guides/experiments) — organize comparable experiment matrices.
-- [Evaluate Skill Impact](/example/claude-code-codex-skill) — use the same "with / without X" comparison pattern for Skills.
+Every example's source lives under [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) and [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1). When you need OTel or Experiment Flags, follow the same project into `tier2/` and `tier3/`.
+
+## Full Eval Projects
+
+<CardGroup cols={2}>
+  <Card title="Eval an AI Agent Application with a Hand-Written Adapter" icon="robot" href="/examples/ai-agent-application">
+    An AI SDK v6 web agent covering tool calls, image understanding, multi-turn sessions, model comparison, and dual observability.
+  </Card>
+  <Card title="Eval Coding Agent Extensions" icon="wand-magic-sparkles" href="/examples/coding-agent-extensions">
+    Use a real workspace and controlled experiments to measure how Skills, prompts, and plugin benchmarks affect task outcomes.
+  </Card>
+</CardGroup>
+
+## Real Projects
+
+### Coding Agent Memory Evals
+
+[coding-agent-memory-evals](https://github.com/CorrectRoadH/coding-agent-memory-evals) uses the same batch of development tasks and the same model to compare task success rate, cost, latency, and behavior differences between a coding agent with persistent memory and one without.
+
+- [View the live report](https://niceeval.com/showcase/memory)
+- [View the source code](https://github.com/CorrectRoadH/coding-agent-memory-evals)
+
+## Scope of Examples
+
+- Single-snippet API usage belongs in a task tutorial or the Reference, not here.
+- Toy projects without runnable source code are not included.
+- Roadmap items and integrations that aren't implemented yet are not included.
+- The same project doesn't get duplicated across multiple case pages just because it's also called a Skill, a Plugin, or a Hook.
