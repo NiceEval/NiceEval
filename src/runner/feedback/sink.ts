@@ -16,7 +16,7 @@
 
 import { writeStderrLine } from "../../tty-line.ts";
 import { t } from "../../i18n/index.ts";
-import type { AttemptLifecycleEvent, AttemptRef, FailureDetail } from "../types.ts";
+import type { AttemptLifecycleEvent, AttemptRef, ExperimentHookName, FailureDetail } from "../types.ts";
 import type { Verdict } from "../../scoring/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
 import type { AttemptLocator } from "../../results/locator.ts";
@@ -51,6 +51,22 @@ export interface BudgetExhaustedInput {
   unstarted: number;
 }
 
+/** `sink.experimentHook()` 的输入 —— 与 `DurableFeedbackEvent` 的 "experiment-hook" 变体字段
+ *  一致,省略 `type`/`at`(由 coordinator 补上)。调用方(run.ts)在钩子真正开始/结束时各调
+ *  一次;`durationMs` 只在 done/failed 上给。 */
+export interface ExperimentHookInput {
+  experimentId: string;
+  hook: ExperimentHookName;
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+/** `sink.experimentProgress()` 的输入 —— 实验级 `ctx.progress` 压好的单行文本。 */
+export interface ExperimentProgressInput {
+  experimentId: string;
+  detail: string;
+}
+
 /** `sink.kept()` 的输入 —— 与 `DurableFeedbackEvent` 的 "kept" 变体字段一致,省略 type/at。 */
 export interface KeptInput {
   locator: AttemptLocator;
@@ -76,6 +92,11 @@ export interface FeedbackSink {
   budgetExhausted(input: BudgetExhaustedInput): void;
   /** 一次留存授予(--keep-sandbox);见 `KeptInput` 与 docs/feature/sandbox/cli.md。 */
   kept(input: KeptInput): void;
+  /** 实验级钩子(`ExperimentDef.setup` / teardown)的起止(见 `ExperimentHookInput`)。 */
+  experimentHook(input: ExperimentHookInput): void;
+  /** 实验级 `ctx.progress` 的短命投影:只更新运行级行的 detail。与 `lifecycle` 同级别的
+   *  「只服务正在画着的 dashboard」信号,没有活跃 coordinator 时静默丢弃是安全的。 */
+  experimentProgress(input: ExperimentProgressInput): void;
   /** attempt 生命周期事件(queued/start/phase/progress/complete/early-exit),见
    *  `AttemptLifecycleEvent`。只驱动 human dashboard 的 active slot,不落 RunSummary/结果文件,
    *  所以没有活跃 coordinator 时(见 `reportAttemptLifecycle`)静默丢弃是安全的 —— 这类信息
@@ -153,6 +174,24 @@ export function reportKept(input: KeptInput): void {
     return;
   }
   writeStderrLine(`kept sandbox ${input.sandboxId} (${input.provider}) — ${input.identity.evalId} #${input.identity.attempt} ${input.verdict}\n`);
+}
+
+/** 实验级钩子的起止(见 `ExperimentHookInput`)。没有活跃 coordinator 时退回一行 stderr ——
+ *  长 setup 的可见性正是这条通道存在的理由,不能像 lifecycle 那样静默丢弃。 */
+export function reportExperimentHook(input: ExperimentHookInput): void {
+  const sink = current();
+  if (sink) {
+    sink.experimentHook(input);
+    return;
+  }
+  const duration = input.durationMs !== undefined ? ` (${Math.round(input.durationMs / 1000)}s)` : "";
+  writeStderrLine(`experiment ${input.hook} ${input.status} · ${input.experimentId}${duration}\n`);
+}
+
+/** 实验级 `ctx.progress` 的短命投影。与 `reportAttemptLifecycle` 同理:只服务正在画着的
+ *  dashboard,没有活跃 coordinator 时静默 no-op。 */
+export function reportExperimentProgress(input: ExperimentProgressInput): void {
+  current()?.experimentProgress(input);
 }
 
 export function reportBudgetExhausted(input: BudgetExhaustedInput): void {

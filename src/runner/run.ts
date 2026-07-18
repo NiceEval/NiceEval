@@ -15,6 +15,8 @@ import {
   reportAttemptLifecycle,
   reportBudgetExhausted,
   reportDiagnostic,
+  reportExperimentHook,
+  reportExperimentProgress,
   reportFailure,
   reportInterrupted,
 } from "./feedback/sink.ts";
@@ -170,21 +172,8 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     }
   }
 
-  if (carriedResults.length > 0) {
-    const retryCount = new Set(attempts.map((a) => `${a.run.experimentId ?? ""}|${a.evalDef.id}`)).size;
-    reportActivity(t("runner.resumeCarry", { carried: carriedResults.length, retry: retryCount }).trimEnd());
-    // 按 experiment 分组列出被复用(跳过)的 eval:不列清单的话,用户只看到数量,
-    // 无法核对「跳过的是不是我以为已经过了的那些」。同一 key 多个 run 去重。
-    const carriedByExperiment = new Map<string, Set<string>>();
-    for (const r of carriedResults) {
-      const ids = carriedByExperiment.get(r.experimentId!) ?? new Set<string>();
-      ids.add(r.id);
-      carriedByExperiment.set(r.experimentId!, ids);
-    }
-    for (const [experiment, ids] of [...carriedByExperiment].sort(([a], [b]) => a.localeCompare(b))) {
-      reportActivity(t("runner.resumeCarryDetail", { experiment, evals: [...ids].sort().join(", ") }).trimEnd());
-    }
-  }
+  // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:
+  // 哪些 eval 复用、哪些重跑属于 --dry 与 niceeval view,不占 human 的 scrollback)。
 
   // onRunStart 报「本次实际要跑的 eval」(过滤 + 去重),不是发现到的全部 —— 否则计数误导。
   const runningIds = new Set(attempts.map((a) => a.evalDef.id));
@@ -350,9 +339,14 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     lc.cleanup = undefined;
     if (!cleanup) return;
     const experimentId = run.experimentId ?? run.agent.name;
+    // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级钩子的显示」)。
+    reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
+    const startedAt = Date.now();
     try {
       await cleanup();
+      reportExperimentHook({ experimentId, hook: "teardown", status: "done", durationMs: Date.now() - startedAt });
     } catch (e) {
+      reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
       // cleanup 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
       // teardown-failed 同一语义);资源可能泄漏,所以要说出来。
       reportDiagnostic({
@@ -375,10 +369,10 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
         experimentId: run.experimentId ?? "",
         selectedEvalIds: run.selectedEvalIds ?? [],
         signal: opts.signal,
-        // progress 是短命状态:进运行级 activity 行,不属于任何 attempt 的 active 条目。
+        // progress 是短命状态:只更新本实验运行级行的 detail,不属于任何 attempt 的 active 条目。
         progress: (u) => {
           const suffix = u.current !== undefined && u.total !== undefined ? ` (${u.current}/${u.total})` : "";
-          reportActivity(`[${experimentId}] ${u.message}${suffix}`);
+          reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
         },
         // diagnostic 进运行级永久事件流;实验级钩子不属于任何单个 attempt,不落 result.json。
         diagnostic: (input) =>
@@ -390,7 +384,18 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
           }),
       };
       lc.setupPromise = (async () => {
-        const cleanup = await run.setup!(ctx);
+        // 起止由 runner 发布(见 cli.md「实验级钩子的显示」):一个什么都不调的 setup 也必须
+        // 可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死。
+        reportExperimentHook({ experimentId, hook: "setup", status: "started" });
+        const startedAt = Date.now();
+        let cleanup: Cleanup | void;
+        try {
+          cleanup = await run.setup!(ctx);
+        } catch (e) {
+          reportExperimentHook({ experimentId, hook: "setup", status: "failed", durationMs: Date.now() - startedAt });
+          throw e;
+        }
+        reportExperimentHook({ experimentId, hook: "setup", status: "done", durationMs: Date.now() - startedAt });
         if (typeof cleanup === "function") {
           // 极端时序:全部 attempt 在 setup 完成前就被中断收尾(remaining 已归零),
           // 没有人再会触发 teardown——这里立即自清,不留孤儿资源。

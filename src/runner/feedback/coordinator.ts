@@ -25,6 +25,8 @@ import {
   activateFeedbackSink,
   type BudgetExhaustedInput,
   type DiagnosticInput,
+  type ExperimentHookInput,
+  type ExperimentProgressInput,
   type FailureInput,
   type FeedbackSink,
   type KeptInput,
@@ -144,6 +146,10 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       case "attempt:early-exit":
         queue.push(() => renderer.onLifecycle?.(event, snapshot));
         return;
+      case "experiment:progress":
+        // 短命状态,只进 reducer(上面已更新 state.experimentHooks 的 detail);下一次 tick 的
+        // 重画会读到新值,不为每条 progress 单独排一次渲染任务。
+        return;
       case "tick":
         queue.push(() => renderer.onTick?.(event, snapshot));
         return;
@@ -242,6 +248,21 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     });
   }
 
+  function experimentHook(input: ExperimentHookInput): void {
+    emit({
+      type: "experiment-hook",
+      at: io.clock.now(),
+      experimentId: input.experimentId,
+      hook: input.hook,
+      status: input.status,
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+    });
+  }
+
+  function experimentProgress(input: ExperimentProgressInput): void {
+    emit({ type: "experiment:progress", at: io.clock.now(), experimentId: input.experimentId, detail: input.detail });
+  }
+
   function reporterError(input: { reporter: string; required: boolean; message: string }): void {
     emit({
       type: "reporter-error",
@@ -280,6 +301,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       failure,
       budgetExhausted,
       kept,
+      experimentHook,
+      experimentProgress,
       lifecycle,
     });
     emit({ type: "plan", at: startedAtMs, plan });
@@ -343,6 +366,8 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     failure,
     budgetExhausted,
     kept,
+    experimentHook,
+    experimentProgress,
     lifecycle,
     stopDynamic,
     finish,
@@ -367,6 +392,9 @@ function fallbackTextFor(event: DurableFeedbackEvent): string | undefined {
     case "plan":
     case "summary":
     case "saved":
+    case "experiment-hook":
+      // 钩子起止不是失败证据:setup 失败的每条 attempt 另有 "failure" 事件兜底,
+      // renderer 崩溃丢一行起止不丢数据。
       return undefined;
   }
 }

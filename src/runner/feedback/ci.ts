@@ -137,6 +137,17 @@ export function createCiRenderer(options: CiRendererOptions): FeedbackRenderer {
           return;
         }
 
+        case "experiment-hook": {
+          // 实验级钩子起止各一行(见 cli.md「实验级钩子的显示」):CI 日志没有动态区域,
+          // 长 setup 期间只有 heartbeat 无法区分「钩子在跑」和「挂死」。
+          noteCheckpoint(event.at);
+          const word = event.hook === "setup" ? "experiment_setup" : "experiment_teardown";
+          const parts = [`niceeval: ${word}`, kv("experiment", event.experimentId), kv("status", event.status)];
+          if (event.durationMs !== undefined) parts.push(kv("duration", formatCiSeconds(event.durationMs)));
+          io.stdout.write(parts.join(" ") + "\n");
+          return;
+        }
+
         case "interrupted": {
           noteCheckpoint(event.at);
           if (!isFirstOccurrence(state, "interrupted")) return;

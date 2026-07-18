@@ -23,6 +23,7 @@ export function createInitialRunFeedbackState(): RunFeedbackState {
     earlyExitSkipped: 0,
     elapsedMs: 0,
     active: new Map(),
+    experimentHooks: new Map(),
     failures: [],
     freshFailureCount: 0,
     diagnostics: [],
@@ -47,6 +48,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         running: 0,
         completed: 0,
         active: new Map(),
+        experimentHooks: new Map(),
         failures: (event.plan.reusedFailures ?? []).map((failure) => ({ ...failure, at: event.at })),
         freshFailureCount: 0,
         diagnostics: [],
@@ -118,6 +120,30 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         newTokenCount,
         estimatedCostUSD,
       };
+    }
+
+    case "experiment-hook": {
+      // 运行级行的增删:started 添加,done/failed 移除(见 cli.md「实验级钩子的显示」)。
+      // 不动 running/queued 计数——等待 setup 的 attempt 保持 queued,计数不变量不受钩子影响。
+      const experimentHooks = new Map(state.experimentHooks);
+      if (event.status === "started") {
+        experimentHooks.set(event.experimentId, {
+          experimentId: event.experimentId,
+          hook: event.hook,
+          startedAt: event.at,
+        });
+      } else {
+        experimentHooks.delete(event.experimentId);
+      }
+      return { ...state, experimentHooks };
+    }
+
+    case "experiment:progress": {
+      const existing = state.experimentHooks.get(event.experimentId);
+      if (!existing) return state; // 防御:没有对应运行级行时静默忽略,不让 renderer 崩
+      const experimentHooks = new Map(state.experimentHooks);
+      experimentHooks.set(event.experimentId, { ...existing, detail: event.detail });
+      return { ...state, experimentHooks };
     }
 
     case "attempt:early-exit":

@@ -105,7 +105,7 @@ interface ScopedFeedback {
 }
 ```
 
-- `progress(...)` 表达**此刻正在做什么**,例如下载 3/8、恢复缓存或等待 agent 完成一轮。它是短命状态:Human profile 可以更新 active 行,Agent/CI profile 不逐条打印,也不进入最终结果。
+- `progress(...)` 表达**此刻正在做什么**,例如下载 3/8、恢复缓存或等待 agent 完成一轮。它是短命状态:Human profile 更新 active 行的次要文本(attempt 级回调更新该 attempt 的行,实验级钩子更新该实验的运行级行,见 [CLI · 实验级钩子的显示](cli.md#实验级钩子的显示)),Agent/CI profile 不逐条打印,也不进入最终结果。
 - `diagnostic(...)` 表达**运行结束后仍应保留的问题**,例如退化到备用缓存、provider 返回异常响应或 transcript 不完整。它进入 Human、Agent、CI 的永久事件流;`dedupeKey` 用于并发 attempt 产生同一问题时去重。
 - 两个方法都不接受 `phase`、`scope`、颜色、输出流或 ANSI。runner 已经知道当前回调属于 `sandbox.setup`、`eval.run` 还是 `agent.run`,并据此决定 Human active 行显示的正式阶段。
 - 两个方法都不改变执行结论。要让 setup/attempt 进入 `errored`,抛出异常;要让 eval 判定失败,使用 `t.check` / `t.require` / gate 断言。`diagnostic({ level: "error" })` 只表示一条需要永久保留的错误诊断。
@@ -164,7 +164,7 @@ trace 不能替代 diagnostic/error:沙箱创建可能发生在 telemetry 建立
 
 diagnostic 是有界摘要,不是原始 SDK 日志转储。相同 `dedupeKey` 在同一 attempt 内折叠为一条并累计 `count`;`data` 只放定位所需的结构化小字段,不得放 token、完整 transcript 或无限增长的 stdout/stderr。原始 agent 行为属于 `events.json`,trace 属性属于 `trace.json`。
 
-实验级钩子(`ExperimentDef.setup` 与它返回的 cleanup)不属于任何单个 attempt,它的 `diagnostic(...)` 只进运行级永久事件流(Human/Agent/CI 各追加一条),不落 attempt 的 `result.json`;`setup` 抛错则以每条 attempt 的结构化 `error`(`phase: "experiment.setup"`)落盘,失败照样可回顾。
+实验级钩子(`ExperimentDef.setup` 与它返回的 cleanup)不属于任何单个 attempt,它的 `diagnostic(...)` 只进运行级永久事件流(Human/Agent/CI 各追加一条),不落 attempt 的 `result.json`;`setup` 抛错则以每条 attempt 的结构化 `error`(`phase: "experiment.setup"`)落盘,失败照样可回顾。钩子的起止本身由 runner 直接发布为运行级反馈(Human 的运行级 active 行、agent/ci 的起止行,见 [CLI · 实验级钩子的显示](cli.md#实验级钩子的显示)),不写 `progress` 的 setup 在终端上同样可见。
 
 attempt 在 teardown、cleanup 与 sandbox stop 都结束后才封口并原子写 `result.json`,因此收尾 diagnostic 也能随 attempt 保存。cleanup/teardown diagnostic 默认不反改已经得到的 verdict;如果某个收尾动作是结果正确性的必要条件,它应抛出致命错误并由 runner 明确把 attempt 记为 `errored`,而不是只打一条 diagnostic。
 

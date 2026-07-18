@@ -126,6 +126,8 @@ export default defineExperiment({
 });
 ```
 
+`setup` 在跑的时候，终端的 `ACTIVE` 区会显示一行 `experiment setup · <实验 id>`，`ctx.progress(...)` 的消息就更新在这一行末尾；等它的 Attempt 计入排队数，这不是卡住。在 CI 或 agent 输出里，`setup` 的开始和结束各追加一行。
+
 `setup` 抛错时，这个实验的每条 Attempt 都记为 `errored`（错误码 `experiment-setup-failed`）、逐条进报告；同一批的其它实验照常跑。上一次的结果全部被复用、一个 Attempt 都不需要真正运行时，`setup` 不会执行。
 
 `setup` 只管「在你机器上、一个实验一份」的服务。要在跑 agent 前按实验在**沙箱里**准备环境（装二进制、预热、跨 attempt 载入和回存状态），挂在 `sandbox` 字段的 spec 上：

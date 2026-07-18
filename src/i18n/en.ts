@@ -200,6 +200,9 @@ export const en = {
   "feedback.phase.sandboxCreate": "creating sandbox",
   "feedback.phase.sandboxQueue": "queued for sandbox",
   "feedback.phase.experimentSetup": "experiment setup",
+  "feedback.phase.experimentTeardown": "experiment teardown",
+  "feedback.human.hookDone": "done",
+  "feedback.human.hookFailed": "failed",
   "feedback.phase.sandboxSetup": "sandbox setup",
   "feedback.phase.scoring": "scoring",
   "feedback.phase.teardown": "cleaning up",
@@ -279,8 +282,6 @@ export const en = {
   "runner.startSandboxTeardown": "sandbox teardown (environment provisioning hooks)...",
   "runner.timeout": "attempt timed out ({{timeoutMs}}ms)\nRecent progress:\n{{recentLogs}}",
   "runner.traceSelected": " -> kept {{count}} semantic spans",
-  "runner.resumeCarry": "  · reusing {{carried}} settled results from last run, re-running {{retry}} evals\n",
-  "runner.resumeCarryDetail": "      carried [{{experiment}}] {{evals}}\n",
   "runner.useRemoteAgent": "using remote agent (no sandbox created)...",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, or e2b",
   "sandbox.missingSpec":

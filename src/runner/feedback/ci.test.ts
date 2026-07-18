@@ -560,3 +560,37 @@ describe("集成测试覆盖 cli.md「CI 常见 case」的三条命令", () => {
     expect(computeCiExitCode(summary({ passed: 36, failed: 0, errored: 0 }), runCompletion)).toBe(1);
   });
 });
+
+// ───────────────────────── 实验级钩子起止行(cases.md「实验级生命周期」) ─────────────────────────
+
+describe("ci: 实验级钩子起止各追加一行", () => {
+  it("experiment_setup / experiment_teardown 各含 experiment 与 status 字段,done/failed 带 duration", async () => {
+    const { fake, coordinator } = setup();
+    coordinator.start(plan({ totalRuns: 2, evals: 2 }));
+    coordinator.experimentHook({ experimentId: "ci/claude", hook: "setup", status: "started" });
+    coordinator.experimentHook({ experimentId: "ci/claude", hook: "setup", status: "done", durationMs: 42_000 });
+    coordinator.experimentHook({ experimentId: "ci/claude", hook: "teardown", status: "started" });
+    coordinator.experimentHook({ experimentId: "ci/claude", hook: "teardown", status: "failed", durationMs: 3_000 });
+    await flush();
+    const lines = fake.stdout.writes.join("").split("\n");
+    expect(lines).toContain("niceeval: experiment_setup experiment=ci/claude status=started");
+    expect(lines).toContain("niceeval: experiment_setup experiment=ci/claude status=done duration=42s");
+    expect(lines).toContain("niceeval: experiment_teardown experiment=ci/claude status=started");
+    expect(lines).toContain("niceeval: experiment_teardown experiment=ci/claude status=failed duration=3s");
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("实验级 progress 与 activity 在 ci 下零输出(短命状态不进事件流)", async () => {
+    const { fake, coordinator } = setup();
+    coordinator.start(plan());
+    await flush(); // 先让 start 行落盘,再取零输出基线
+    const beforeOut = fake.stdout.writes.length;
+    const beforeErr = fake.stderr.writes.length;
+    coordinator.experimentProgress({ experimentId: "ci/claude", detail: "starting tunnel" });
+    coordinator.activity("prechecking judge config...");
+    await flush();
+    expect(fake.stdout.writes.slice(beforeOut).join("")).toBe("");
+    expect(fake.stderr.writes.slice(beforeErr).join("")).toBe("");
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+});

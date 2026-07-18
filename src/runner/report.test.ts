@@ -136,6 +136,8 @@ describe("runReporter / emitReporterEvent · required/best-effort 原样转发,�
       failure() {},
       budgetExhausted() {},
       kept() {},
+      experimentHook() {},
+      experimentProgress() {},
       lifecycle() {},
     });
     return fn(calls).finally(deactivate);

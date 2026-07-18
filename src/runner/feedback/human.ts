@@ -23,7 +23,9 @@ import { assertionSummaryLines } from "../../scoring/display.ts";
 import { encodeAttemptKey } from "../types.ts";
 import type {
   ActiveAttempt,
+  ActiveExperimentHook,
   AttemptKey,
+  ExperimentHookName,
   LifecyclePhase,
   DurableFeedbackEvent,
   RunFeedbackPlan,
@@ -98,6 +100,16 @@ export function renderDurableLines(event: DurableFeedbackEvent, state: RunFeedba
       // 留存授予单条不即时打印;run 摘要后由 buildSummaryLines 汇总成 Kept sandboxes 块
       // (见 docs/feature/sandbox/cli.md「run 收尾输出」)。
       return [];
+    case "experiment-hook": {
+      // 只服务非 TTY 退化流(TTY dashboard 的 appendDurable 对这个事件直接返回,运行级行
+      // 由 state.experimentHooks 驱动,成功钩子不进 scrollback,见 cli.md「实验级钩子的显示」)。
+      const label = experimentHookLabel(event.hook);
+      const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
+      if (event.status === "started") return [`${label} · ${event.experimentId}`];
+      const statusWord =
+        event.status === "done" ? t("feedback.human.hookDone") : t("feedback.human.hookFailed");
+      return [`${label} ${statusWord} · ${event.experimentId}${duration}`];
+    }
     case "summary":
       return buildSummaryLines(event, state);
     case "saved":
@@ -323,6 +335,13 @@ function phaseLabel(phase: LifecyclePhase): string {
   }
 }
 
+/** 实验级钩子的运行级行标签。`phaseLabel` 把 `experiment.teardown` 与其它收尾段合并成
+ *  「cleaning up」一档(那是 attempt failure 行的语境);运行级行没有 attempt 语境,必须
+ *  自报家门是哪个实验级钩子,所以这里用独立的两个词。 */
+function experimentHookLabel(hook: ExperimentHookName): string {
+  return hook === "setup" ? t("feedback.phase.experimentSetup") : t("feedback.phase.experimentTeardown");
+}
+
 function formatCounts(state: RunFeedbackState): string {
   const counts = t("feedback.human.counts", {
     total: state.total,
@@ -371,18 +390,24 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     if (state.total > 0 && state.total === state.reused) return [];
     const columns = io.stderr.columns;
     const lines: string[] = [formatCommandLine(command, state.elapsedMs, columns), formatCounts(state)];
-    if (activeOrder.length === 0) return lines.map((l) => truncateNoWrap(l, columns));
+    // 实验级钩子的运行级行排在 attempt 行前面(见 cli.md「实验级钩子的显示」):它解释了
+    // 为什么后面的 attempt 还停在 queued。Map 按插入序迭代,天然满足稳定 slot。
+    const hookRows = [...state.experimentHooks.values()];
+    if (activeOrder.length === 0 && hookRows.length === 0) return lines.map((l) => truncateNoWrap(l, columns));
 
     lines.push("", t("feedback.human.active"));
     const rowBudget = Math.max(0, io.stderr.rows - lines.length - DASHBOARD_ROW_RESERVE);
-    const total = activeOrder.length;
+    const total = hookRows.length + activeOrder.length;
     // 窄/矮终端先减 active slots(减少行数),而不是先压缩单行内容 ——
     // 单行内容的截断在 formatActiveRow 里按 columns 单独处理。
     const showCount = total <= rowBudget ? total : Math.max(0, rowBudget - 1);
-    for (let i = 0; i < showCount; i++) {
-      const active = state.active.get(activeOrder[i]!);
-      if (active) lines.push(formatActiveRow(active, io));
+    const rows: string[] = hookRows.map((hookRow) => formatExperimentHookRow(hookRow, io));
+    for (const key of activeOrder) {
+      if (rows.length >= showCount) break;
+      const active = state.active.get(key);
+      if (active) rows.push(formatActiveRow(active, io));
     }
+    lines.push(...rows.slice(0, showCount));
     if (total > showCount) {
       lines.push(t("feedback.human.moreActive", { count: total - showCount }));
     }
@@ -418,7 +443,16 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
 
   return {
     appendDurable(event, state) {
+      // 实验级钩子起止在 TTY 下只驱动运行级 active 行(state.experimentHooks 已由 reducer
+      // 更新,coordinator 紧接着的 redrawDynamic 会画出来);成功钩子不写 scrollback 永久行
+      // (见 cli.md「实验级钩子的显示」)。非 TTY 退化流才逐行追加(见 renderDurableLines)。
+      if (event.type === "experiment-hook") return;
       writeDurable(io, event, state);
+    },
+    activity(text) {
+      // 运行级瞬时通知(judge 预检、provider 一次性通知……):coordinator 已按
+      // clearDynamic → activity → redrawDynamic 包好顺序,这里只管把这一行落进 scrollback。
+      io.stderr.write(text.endsWith("\n") ? text : `${text}\n`);
     },
     clearDynamic() {
       if (linesDrawn === 0) return; // 幂等:coordinator 收尾时会无条件再调一次
@@ -475,6 +509,22 @@ function formatActiveRow(active: ActiveAttempt, io: FeedbackIO): string {
   return prefix + detail.slice(0, budget);
 }
 
+/** 实验级钩子的运行级行:与 attempt 行同一套列宽算法,label 跨过 evalId+who 两列的宽度,
+ *  elapsed 列因此对齐;detail 来自实验级 `ctx.progress`,没有就只留标签行。 */
+function formatExperimentHookRow(hook: ActiveExperimentHook, io: FeedbackIO): string {
+  const columns = io.stderr.columns;
+  const elapsed = formatElapsed(io.clock.now() - hook.startedAt).padStart(6);
+  const sym = "● ";
+  const fixedWidth = sym.length + elapsed.length + 6;
+  const detailReserve = Math.min(80, Math.max(0, Math.floor(columns * 0.35)));
+  const remaining = Math.max(0, columns - fixedWidth - detailReserve);
+  // attempt 行的身份区是 evalCol + 两格间隔 + whoCol(合计 remaining + 2),这里用同一跨度。
+  const label = padTrunc(`${experimentHookLabel(hook.hook)} · ${hook.experimentId}`, remaining + 2);
+  const prefix = `${sym}${label}  ${elapsed}  `;
+  const budget = Math.max(0, columns - prefix.length);
+  return prefix + (hook.detail ?? "").slice(0, budget);
+}
+
 // ───────────────────────── 非 TTY:human 文案的纯追加流 ─────────────────────────
 
 function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
@@ -486,6 +536,12 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
       lastDurableAtMs = event.at;
       writeDurable(io, event, state);
     },
+    activity(text) {
+      // 运行级瞬时通知按永久行追加(非 TTY 没有可覆盖的动态区域),并重置 heartbeat 计时 ——
+      // 刚有输出就不需要紧跟一条「还活着」。
+      lastDurableAtMs = io.clock.now();
+      io.stderr.write(text.endsWith("\n") ? text : `${text}\n`);
+    },
     onTick(event, state) {
       if (event.at - lastDurableAtMs < NON_TTY_HEARTBEAT_IDLE_MS) return;
       lastDurableAtMs = event.at;
@@ -493,7 +549,7 @@ function createPlainRenderer(io: FeedbackIO): FeedbackRenderer {
         `${t("feedback.human.heartbeat", { elapsed: formatElapsed(state.elapsedMs), counts: formatCounts(state) })}\n`,
       );
     },
-    // 没有 clearDynamic/redrawDynamic/activity/onLifecycle:非 TTY 退化流不维护动态区域,
+    // 没有 clearDynamic/redrawDynamic/onLifecycle:非 TTY 退化流不维护动态区域,
     // 不展示 active attempt 的逐次阶段变化,也不逐次输出 provisioning retry/backoff ——
     // 这些行为由「不实现对应可选钩子」天然满足,不需要在这里写 profile 分支。
   };

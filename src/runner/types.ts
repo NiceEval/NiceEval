@@ -368,9 +368,11 @@ export interface DiscoveredEval extends EvalDef {
 }
 
 /**
- * `ExperimentDef.setup` 与它返回的 cleanup 拿到的窄上下文。`progress` 进运行级 activity 行,
- * `diagnostic` 进运行级永久事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的
- * `result.json`;setup 抛错以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。
+ * `ExperimentDef.setup` 与它返回的 cleanup 拿到的窄上下文。`progress` 更新本实验运行级
+ * active 行的次要文本(短命状态,agent/ci profile 不逐条输出),`diagnostic` 进运行级永久
+ * 事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的 `result.json`;setup 抛错
+ * 以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。钩子的起止本身由 runner 直接发布为
+ * 运行级反馈,不依赖这里的 `progress`(见 docs/feature/experiments/cli.md「实验级钩子的显示」)。
  */
 export interface ExperimentHookContext extends ScopedFeedback {
   readonly experimentId: string;
@@ -653,6 +655,25 @@ export interface ActiveAttempt {
   detail?: string;
 }
 
+/** 实验级钩子只有 setup 与它返回的 teardown 两员,同一实验内两者永不并发
+ *  (teardown 在全部 attempt 收尾后才触发),所以运行级行按 experimentId 建 key 就够。 */
+export type ExperimentHookName = "setup" | "teardown";
+
+/**
+ * dashboard 当前可见的一个实验级钩子运行级行(见 docs/feature/experiments/cli.md
+ * 「实验级钩子的显示」)。与 `ActiveAttempt` 分开建模:钩子不属于任何单个 attempt、不占并发位,
+ * 也不参与 `total = reused + running + queued + completed` 的计数不变量——等待 setup 的
+ * attempt 保持 `queued`,这行就是「为什么它们还在排队」的解释。`detail` 来自实验级
+ * `ctx.progress`,后一条覆盖前一条。
+ */
+export interface ActiveExperimentHook {
+  experimentId: string;
+  hook: ExperimentHookName;
+  /** 钩子开始的墙钟时间(epoch ms),用于渲染运行级行的耗时。 */
+  startedAt: number;
+  detail?: string;
+}
+
 /**
  * 一次失败/错误的永久通知:human 撤下 dashboard 后追加一行、agent/ci 立即追加一行,都读它。
  * 字段全部结构化(locator / identity / verdict / phase 都是具名字段),profile renderer 不需要
@@ -735,6 +756,9 @@ export interface RunFeedbackState {
   newTokenCount?: number;
   estimatedCostUSD?: number;
   active: ReadonlyMap<AttemptKey, ActiveAttempt>;
+  /** 在飞的实验级钩子(experimentId → 运行级行状态),由 "experiment-hook" 事件增删、
+   *  "experiment:progress" 更新 detail(见 docs/feature/experiments/cli.md「实验级钩子的显示」)。 */
+  experimentHooks: ReadonlyMap<string, ActiveExperimentHook>;
   failures: readonly FailureNotice[];
   /** 本次实际派发后产生的去重失败数；复用失败不消耗 profile 的流式输出上限。 */
   freshFailureCount: number;
@@ -786,6 +810,17 @@ export type AttemptLifecycleEvent =
       estimatedCostUSD?: number;
     }
   | { type: "attempt:early-exit"; at: number; identity: AttemptRef; who: string };
+
+/**
+ * 实验级 `ctx.progress` 的短命投影:只覆盖对应运行级行的 `detail`,不追加永久行——与
+ * `attempt:progress` 同一判断标准(新值使旧值失去意义)。对应的运行级行不存在时静默忽略。
+ */
+export interface ExperimentProgressEvent {
+  type: "experiment:progress";
+  at: number;
+  experimentId: string;
+  detail: string;
+}
 
 /**
  * 运行级时钟 tick:唯一允许更新 `RunFeedbackState.elapsedMs` 的事件,由 coordinator 的定时器产出
@@ -844,6 +879,21 @@ export type DurableFeedbackEvent =
       sandboxId: string;
       enter?: string;
     }
+  /**
+   * 实验级钩子(`ExperimentDef.setup` / 它返回的 teardown)的起止,由 runner 在钩子真正
+   * 开始/结束时各发一次(见 docs/feature/experiments/cli.md「实验级钩子的显示」)。`failed`
+   * 只标记钩子自身的结局——setup 失败的每条 attempt 仍以 "failure" 事件逐条给出。human TTY
+   * 用它维护运行级 active 行(不写 scrollback),append-only profile 起止各追加一行。
+   */
+  | {
+      type: "experiment-hook";
+      at: number;
+      experimentId: string;
+      hook: ExperimentHookName;
+      status: "started" | "done" | "failed";
+      /** 只在 done / failed 上出现:钩子从开始到结束的耗时。 */
+      durationMs?: number;
+    }
   | { type: "interrupted"; at: number }
   | { type: "reporter-error"; at: number; reporter: string; required: boolean; message: string }
   | { type: "summary"; at: number; summary: RunSummary; completion: RunCompletion }
@@ -868,4 +918,4 @@ export type DurableFeedbackEvent =
  * profile renderer 只消费这里的具名字段,不解析 `ReporterEvent` 里的 i18n 文案或表格列宽
  *(见 docs/feature/experiments/cli.md「输出流和落盘节奏」)。
  */
-export type RunFeedbackEvent = AttemptLifecycleEvent | FeedbackTickEvent | DurableFeedbackEvent;
+export type RunFeedbackEvent = AttemptLifecycleEvent | ExperimentProgressEvent | FeedbackTickEvent | DurableFeedbackEvent;

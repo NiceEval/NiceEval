@@ -112,6 +112,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [report-src-changes-need-dist-rebuild](report-src-changes-need-dist-rebuild.md) — 改 `src/report/**` 后 CLI 行为不变:show/view 宿主 import 的是 `dist/report` 预编译产物,单测绿 + CLI 旧 ≈ 忘了 `pnpm run build:report`
 - 已被后续裁决替代 [attempt-phase-tracking-teardown-always-last](attempt-phase-tracking-teardown-always-last.md) — 给失败通知补 `phase` 字段时,朴素地取「最后一次 onPhase 回调」几乎恒等于 `"teardown"`;排除 teardown 仍会被正常的 diff/scoring/trace collect 污染,最终修法见下一条
 - 已修 [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对 `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle phase 反推 verdict 原因
+- 已修 [experiment-setup-progress-activity-blackhole](experiment-setup-progress-activity-blackhole.md) — 实验级 setup 全程零输出(状态行全员 queued 像卡死):runner 不为 setup 发布事件且 cli.md 无显示契约,`ctx.progress`→`reportActivity` 因四个渲染器都没实现可选 `activity()` 钩子被静默丢弃;修为 runner 发布 `experiment-hook` 起止事件 + 运行级 active 行 + agent/ci 起止行,human 实现 `activity()`(feedback 各文件 + run.ts)
 - [lifecycle-operation-missing-eval-teardown](lifecycle-operation-missing-eval-teardown.md) — v6 结构化 error/diagnostics 的 `operation` 取自封闭 `LifecycleOperationName`,但集合没有 eval 的 teardown/cleanup 项(agent/sandbox 都有);eval cleanup 失败的诊断按 owner 归到 `eval.setup`,要精确区分需先给 docs 补 `eval.teardown` 项(契约未修,`src/runner/attempt.ts`)
 
 ## examples 与 tier-sync

@@ -67,6 +67,10 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 | cleanup 抛错只产生运行级 diagnostic(`experiment-teardown-failed`),不改变任何已产出的 verdict | 反例:cleanup 抛错后 results 的 verdict 不变,diagnostic 事件可见 |
 | `setup` 的 ctx:experimentId / selectedEvalIds / signal / progress / diagnostic 齐备,diagnostic 进运行级永久事件流 | 正例:ctx 字段值与实验一致;正例:diagnostic 以 experiment.setup 归因出现在事件流 |
 | 钩子函数体不进 fingerprint:只改 setup 逻辑不使携带失效 | 边界:改 setup 后 fingerprint 不变 |
+| 钩子起止由 runner 发布为运行级反馈事件(`status=started|done|failed`,done/failed 带 duration);reducer 据此维护 `experimentHooks` 状态(started 添加、done/failed 移除、plan 重置),等待 setup 的 attempt 计数保持 `queued` | 正例:setup 成功发 started+done;反例:setup 抛错发 failed 而非 done;正例:reducer 状态随事件增删;边界:plan 事件清空残留 |
+| Human TTY 在 ACTIVE 区为在飞钩子渲染运行级行(排在 attempt 行前),实验级 `ctx.progress` 只更新该行 detail;成功钩子不写 scrollback 永久行 | 正例:钩子在跑的帧含 `experiment setup · <experimentId>` 行;正例:progress 后 detail 更新;反例:done 后 TTY scrollback 无新增行 |
+| agent / ci / 非 TTY human 起止各追加一行(`NICEEVAL experiment_setup …` / `niceeval: experiment_setup …` / human 文案),实验级 progress 不逐条输出 | 正例:agent/ci 各两行含 experiment 与 status 字段;正例:非 TTY human started/done 文案行;反例:progress 在 agent/ci 零输出 |
+| 运行级瞬时通知(`reportActivity`):human 追加一行(TTY 先撤 dashboard 再重建),agent/ci 不输出 | 正例:TTY human scrollback 出现通知行且 dashboard 重建;反例:agent/ci 零输出 |
 
 ## early exit
 

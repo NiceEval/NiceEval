@@ -195,6 +195,9 @@ export const zhCN = {
   "feedback.phase.sandboxCreate": "创建沙箱",
   "feedback.phase.sandboxQueue": "排队等沙箱",
   "feedback.phase.experimentSetup": "实验预置",
+  "feedback.phase.experimentTeardown": "实验收尾",
+  "feedback.human.hookDone": "完成",
+  "feedback.human.hookFailed": "失败",
   "feedback.phase.sandboxSetup": "沙箱预置",
   "feedback.phase.scoring": "评分",
   "feedback.phase.teardown": "清理中",
@@ -274,8 +277,6 @@ export const zhCN = {
   "runner.startSandboxTeardown": "sandbox teardown(环境预置钩子)…",
   "runner.timeout": "attempt 超时({{timeoutMs}}ms)\n最近进度:\n{{recentLogs}}",
   "runner.traceSelected": " → 留 {{count}}(按语义)",
-  "runner.resumeCarry": "  · 复用上次 {{carried}} 个已判定的结果,重跑 {{retry}} 个 eval\n",
-  "runner.resumeCarryDetail": "      复用 [{{experiment}}] {{evals}}\n",
   "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, or e2b",
   "sandbox.missingSpec":

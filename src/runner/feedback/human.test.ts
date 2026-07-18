@@ -12,6 +12,7 @@ import { createFeedbackCoordinator, type FeedbackCoordinator } from "./coordinat
 import { createFakeFeedbackIO, type FakeFeedbackIO } from "./testing.ts";
 import { activeFeedbackSinkCount } from "./sink.ts";
 import { createHumanRenderer, formatElapsed, formatTokenCount, renderDurableLines } from "./human.ts";
+import { t } from "../../i18n/index.ts";
 import { createInitialRunFeedbackState } from "./reducer.ts";
 import type { AttemptLocator } from "../../results/locator.ts";
 import type { AttemptRef, RunCompletion, RunFeedbackPlan, RunSummary } from "../types.ts";
@@ -612,5 +613,111 @@ describe("renderDurableLines: 纯函数,不需要经过 coordinator 也能验证
     const state = createInitialRunFeedbackState();
     const lines = renderDurableLines({ type: "interrupted", at: 0 }, state);
     expect(lines.join("\n")).toContain("interrupted");
+  });
+});
+
+// ───────────────────────── 实验级钩子:运行级行 / 起止行(cases.md「实验级生命周期」) ─────────────────────────
+
+describe("TTY dashboard: 实验级钩子的运行级行", () => {
+  it("setup started 后 ACTIVE 区出现运行级行,progress 只更新该行 detail,done 后行消失且不写 scrollback", async () => {
+    const { fake, coordinator } = setupTty();
+    coordinator.start(plan({ totalRuns: 2, evals: 2 }));
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "started" });
+    fake.advance(1000);
+    await flush();
+    const rowLabel = `${t("feedback.phase.experimentSetup")} · compare/bub-e2b`;
+    expect(fake.stderr.writes.join("")).toContain(rowLabel);
+
+    coordinator.experimentProgress({ experimentId: "compare/bub-e2b", detail: "starting tunnel (2/5)" });
+    fake.advance(1000);
+    await flush();
+    expect(fake.stderr.writes.join("")).toContain("starting tunnel (2/5)");
+
+    const before = fake.stderr.writes.length;
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "done", durationMs: 42_000 });
+    fake.advance(1000);
+    await flush();
+    // done 之后的帧不再含运行级行;成功钩子也不追加任何 scrollback 永久行。
+    expect(fake.stderr.writes.slice(before).join("")).not.toContain(t("feedback.phase.experimentSetup"));
+    expect(fake.stderr.writes.join("")).not.toContain(t("feedback.human.hookDone"));
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("运行级行排在 attempt 行前面", async () => {
+    const { fake, coordinator } = setupTty();
+    coordinator.start(plan({ totalRuns: 2, evals: 2 }));
+    coordinator.emit({ type: "attempt:start", at: 0, identity: ref("memory/a"), who: "bub-e2b", phase: "eval.run" });
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "started" });
+    fake.advance(1000);
+    await flush();
+    const lastFrame = fake.stderr.writes.filter((w) => w.includes(ESC)).at(-1)!;
+    const hookIdx = lastFrame.indexOf(t("feedback.phase.experimentSetup"));
+    const attemptIdx = lastFrame.indexOf("memory/a");
+    expect(hookIdx).toBeGreaterThan(-1);
+    expect(attemptIdx).toBeGreaterThan(-1);
+    expect(hookIdx).toBeLessThan(attemptIdx);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+});
+
+describe("非 TTY human: 实验级钩子起止各追加一行", () => {
+  it("started / done 各一行 human 文案,done 带耗时;failed 行同形;全程无 ANSI", async () => {
+    const { fake, coordinator } = setupPlain();
+    coordinator.start(plan({ totalRuns: 2, evals: 2 }));
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "started" });
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "done", durationMs: 42_000 });
+    coordinator.experimentHook({ experimentId: "compare/codex", hook: "setup", status: "started" });
+    coordinator.experimentHook({ experimentId: "compare/codex", hook: "setup", status: "failed", durationMs: 3_000 });
+    await flush();
+    const all = fake.stderr.writes.join("");
+    const label = t("feedback.phase.experimentSetup");
+    expect(all).toContain(`${label} · compare/bub-e2b`);
+    expect(all).toContain(`${label} ${t("feedback.human.hookDone")} · compare/bub-e2b (42s)`);
+    expect(all).toContain(`${label} ${t("feedback.human.hookFailed")} · compare/codex (3s)`);
+    expect(all).not.toContain(ESC);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("实验级 progress 在非 TTY human 下零输出(短命状态没有可覆盖的区域)", async () => {
+    const { fake, coordinator } = setupPlain();
+    coordinator.start(plan());
+    await flush(); // 先让 plan 行落盘,再取零输出基线
+    const before = fake.stderr.writes.length;
+    coordinator.experimentProgress({ experimentId: "compare/bub-e2b", detail: "starting tunnel" });
+    await flush();
+    expect(fake.stderr.writes.slice(before).join("")).toBe("");
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+});
+
+// ───────────────────────── 运行级瞬时通知(activity)(cases.md「实验级生命周期」) ─────────────────────────
+
+describe("运行级瞬时通知(activity): human 追加一行", () => {
+  it("TTY:activity 落进 scrollback,dashboard 撤下后重建(通知行不被下一帧覆盖)", async () => {
+    const { fake, coordinator } = setupTty();
+    coordinator.start(plan());
+    coordinator.emit({ type: "attempt:start", at: 0, identity: ref("memory/a"), who: "bub-e2b", phase: "eval.run" });
+    fake.advance(1000);
+    await flush();
+    coordinator.activity("Braintrust experiment: https://example.test/exp/1");
+    fake.advance(1000);
+    await flush();
+    const all = fake.stderr.writes.join("");
+    expect(all).toContain("Braintrust experiment: https://example.test/exp/1");
+    // 通知之后 dashboard 还在:activity 之后仍有 ANSI 重画帧。
+    const activityIdx = fake.stderr.writes.findIndex((w) => w.includes("Braintrust"));
+    expect(fake.stderr.writes.slice(activityIdx + 1).some((w) => w.includes(ESC))).toBe(true);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("非 TTY:activity 追加一行,无 ANSI", async () => {
+    const { fake, coordinator } = setupPlain();
+    coordinator.start(plan());
+    coordinator.activity("prechecking judge config...");
+    await flush();
+    const all = fake.stderr.writes.join("");
+    expect(all).toContain("prechecking judge config...");
+    expect(all).not.toContain(ESC);
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
   });
 });

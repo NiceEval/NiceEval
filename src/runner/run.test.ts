@@ -12,7 +12,12 @@ import { encodeAttemptLocator } from "../results/locator.ts";
 import { equals } from "../expect/index.ts";
 import { createFeedbackCoordinator, type FeedbackCoordinator } from "./feedback/coordinator.ts";
 import { createFakeFeedbackIO } from "./feedback/testing.ts";
-import { activeFeedbackSinkCount } from "./feedback/sink.ts";
+import {
+  activateFeedbackSink,
+  activeFeedbackSinkCount,
+  type ExperimentHookInput,
+  type ExperimentProgressInput,
+} from "./feedback/sink.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { CarryPlan } from "./fingerprint.ts";
 import type { AgentRun, RunFeedbackPlan, RunOptions } from "./types.ts";
@@ -971,6 +976,53 @@ describe("runEvals · 实验级 setup/teardown", () => {
 
     expect(seen).toEqual({ experimentId: "ctx-exp", selectedEvalIds: ["ctx-a", "ctx-b"], hasSignal: true });
     expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
+  });
+
+  it("钩子起止经 feedback sink 发布:成功 started+done、抛错 started+failed(done/failed 带耗时),progress 压成运行级 detail", async () => {
+    const hookEvents: ExperimentHookInput[] = [];
+    const progressEvents: ExperimentProgressInput[] = [];
+    const deactivate = activateFeedbackSink({
+      activity() {},
+      diagnostic() {},
+      interrupted() {},
+      reporterError() {},
+      failure() {},
+      budgetExhausted() {},
+      kept() {},
+      experimentHook(input) {
+        hookEvents.push(input);
+      },
+      experimentProgress(input) {
+        progressEvents.push(input);
+      },
+      lifecycle() {},
+    });
+    try {
+      const evals = [makeEval("ok", () => {})];
+      const good = runWithSetup("good-exp", (ctx) => {
+        ctx.progress({ message: "starting tunnel", current: 2, total: 5 });
+        return () => {};
+      });
+      const bad = runWithSetup("bad-exp", () => {
+        throw new Error("boom");
+      });
+      await run(evals, [good, bad], { maxConcurrency: 2 });
+    } finally {
+      deactivate();
+    }
+
+    const good = hookEvents.filter((e) => e.experimentId === "good-exp");
+    expect(good.map((e) => `${e.hook}:${e.status}`)).toEqual([
+      "setup:started",
+      "setup:done",
+      "teardown:started",
+      "teardown:done",
+    ]);
+    expect(good[0]!.durationMs).toBeUndefined();
+    expect(good[1]!.durationMs).toBeGreaterThanOrEqual(0);
+    const bad = hookEvents.filter((e) => e.experimentId === "bad-exp").map((e) => `${e.hook}:${e.status}`);
+    expect(bad).toEqual(["setup:started", "setup:failed"]);
+    expect(progressEvents).toContainEqual({ experimentId: "good-exp", detail: "starting tunnel (2/5)" });
   });
 });
 

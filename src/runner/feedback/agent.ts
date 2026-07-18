@@ -126,6 +126,17 @@ export function createAgentRenderer(options: AgentRendererOptions): FeedbackRend
           return;
         }
 
+        case "experiment-hook": {
+          // 实验级钩子起止各一行(见 cli.md「实验级钩子的显示」):agent 没有动态区域,
+          // 长 setup 期间只有 heartbeat 的日志无法区分「钩子在跑」和「挂死」。
+          noteCheckpoint(event.at);
+          const word = event.hook === "setup" ? "experiment_setup" : "experiment_teardown";
+          const parts = [`NICEEVAL ${word}`, kv("experiment", event.experimentId), kv("status", event.status)];
+          if (event.durationMs !== undefined) parts.push(kv("duration", formatElapsedSeconds(event.durationMs)));
+          io.stderr.write(parts.join(" ") + "\n");
+          return;
+        }
+
         case "interrupted": {
           noteCheckpoint(event.at);
           if (!isFirstOccurrence(state, "interrupted")) return;

@@ -502,3 +502,35 @@ describe("`--dry --output agent`:不经 coordinator,直接渲染 PLAN envelope",
     expect(text.split("\n")).toHaveLength(3);
   });
 });
+
+// ───────────────────────── 实验级钩子起止行(cases.md「实验级生命周期」) ─────────────────────────
+
+describe("agent: 实验级钩子起止各追加一行", () => {
+  it("experiment_setup / experiment_teardown 各含 experiment 与 status 字段,done/failed 带 duration", async () => {
+    const { fake, coordinator } = setup();
+    coordinator.start(plan({ totalRuns: 2, evals: 2 }));
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "started" });
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "setup", status: "done", durationMs: 42_000 });
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "teardown", status: "started" });
+    coordinator.experimentHook({ experimentId: "compare/bub-e2b", hook: "teardown", status: "failed", durationMs: 3_000 });
+    await flush();
+    const lines = fake.stderr.writes.join("").split("\n");
+    expect(lines).toContain("NICEEVAL experiment_setup experiment=compare/bub-e2b status=started");
+    expect(lines).toContain("NICEEVAL experiment_setup experiment=compare/bub-e2b status=done duration=42s");
+    expect(lines).toContain("NICEEVAL experiment_teardown experiment=compare/bub-e2b status=started");
+    expect(lines).toContain("NICEEVAL experiment_teardown experiment=compare/bub-e2b status=failed duration=3s");
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+
+  it("实验级 progress 与 activity 在 agent 下零输出(短命状态不进 checkpoint 流)", async () => {
+    const { fake, coordinator } = setup();
+    coordinator.start(plan());
+    await flush(); // 先排空 start 事件的队列任务,再取零输出基线
+    const before = fake.stderr.writes.length;
+    coordinator.experimentProgress({ experimentId: "compare/bub-e2b", detail: "starting tunnel" });
+    coordinator.activity("prechecking judge config...");
+    await flush();
+    expect(fake.stderr.writes.slice(before).join("")).toBe("");
+    await coordinator.finish({ summary: summary(), completion: completion(), paths: [] });
+  });
+});

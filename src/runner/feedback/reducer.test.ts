@@ -393,3 +393,67 @@ describe("reduceRunFeedback: 守恒公式", () => {
     expect(activeAfterPhase?.detail).toBeUndefined();
   });
 });
+
+describe("reduceRunFeedback: 实验级钩子", () => {
+  const plan: RunFeedbackEvent = {
+    type: "plan",
+    at: 0,
+    plan: { shape: { evals: 2, configs: 1, totalRuns: 2, maxConcurrency: 2 }, reused: 0, reusedFailures: [] },
+  };
+
+  it("started 添加运行级行,done 移除;等待 setup 的 attempt 保持 queued(计数不变量不受钩子影响)", () => {
+    const afterStart = replay([
+      plan,
+      { type: "experiment-hook", at: 1, experimentId: "compare/bub-e2b", hook: "setup", status: "started" },
+    ]);
+    expect(afterStart).toMatchObject({ total: 2, running: 0, queued: 2, completed: 0 });
+    expect(afterStart.experimentHooks.get("compare/bub-e2b")).toMatchObject({
+      experimentId: "compare/bub-e2b",
+      hook: "setup",
+      startedAt: 1,
+    });
+
+    const afterDone = replay([
+      plan,
+      { type: "experiment-hook", at: 1, experimentId: "compare/bub-e2b", hook: "setup", status: "started" },
+      { type: "experiment-hook", at: 5, experimentId: "compare/bub-e2b", hook: "setup", status: "done", durationMs: 4 },
+    ]);
+    expect(afterDone.experimentHooks.size).toBe(0);
+  });
+
+  it("failed 同样移除运行级行(setup 抛错的证据走每条 attempt 的 failure 事件,不留孤儿行)", () => {
+    const state = replay([
+      plan,
+      { type: "experiment-hook", at: 1, experimentId: "compare/codex", hook: "setup", status: "started" },
+      { type: "experiment-hook", at: 3, experimentId: "compare/codex", hook: "setup", status: "failed", durationMs: 2 },
+    ]);
+    expect(state.experimentHooks.size).toBe(0);
+  });
+
+  it("experiment:progress 只覆盖对应行的 detail;没有对应行时静默忽略", () => {
+    const state = replay([
+      plan,
+      { type: "experiment-hook", at: 1, experimentId: "compare/bub-e2b", hook: "setup", status: "started" },
+      { type: "experiment:progress", at: 2, experimentId: "compare/bub-e2b", detail: "starting tunnel (1/3)" },
+      { type: "experiment:progress", at: 3, experimentId: "compare/bub-e2b", detail: "starting tunnel (2/3)" },
+      { type: "experiment:progress", at: 3, experimentId: "compare/unknown", detail: "ignored" },
+    ]);
+    expect(state.experimentHooks.get("compare/bub-e2b")?.detail).toBe("starting tunnel (2/3)");
+    expect(state.experimentHooks.has("compare/unknown")).toBe(false);
+  });
+
+  it("plan 事件清空残留的运行级行(reducer 复用于多次 run 时不带上一次的钩子状态)", () => {
+    let state = createInitialRunFeedbackState();
+    state = reduceRunFeedback(state, plan);
+    state = reduceRunFeedback(state, {
+      type: "experiment-hook",
+      at: 1,
+      experimentId: "compare/bub-e2b",
+      hook: "teardown",
+      status: "started",
+    });
+    expect(state.experimentHooks.size).toBe(1);
+    state = reduceRunFeedback(state, plan);
+    expect(state.experimentHooks.size).toBe(0);
+  });
+});
