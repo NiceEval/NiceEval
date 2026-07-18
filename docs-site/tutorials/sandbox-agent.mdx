@@ -63,7 +63,7 @@ export default defineExperiment({
 });
 ```
 
-Claude Code uses `correctroads-default-team/niceeval-claude-code:v0.6.1`, and Bub uses `correctroads-default-team/niceeval-bub:v0.6.1`. The version tag suits CI; omitting the tag follows the current stable build. To keep adding system packages, binaries, or model caches on top, see [Sandbox providers · Build on the official baselines to speed things up](/tutorials/sandbox-providers).
+Claude Code uses `correctroads-default-team/niceeval-claude-code:v0.6.1`, and Bub uses `correctroads-default-team/niceeval-bub:v0.6.1`. The version tag suits CI; omitting the tag follows the current stable build. To keep adding system packages, binaries, or model caches on top, see [Sandbox provider · Build on the official baselines to speed things up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
 
 The built-in agents exported from `niceeval/adapter` are factory functions. Put auth, proxy, MCP, or GitHub Skill setup in the factory arguments. Keep the model in the experiment's `model` field, and the sandbox provider in `sandbox`:
 
@@ -120,7 +120,7 @@ The starting files and verification commands both live in `test(t)`. During agen
 
 `t.sandbox.diff` and `t.sandbox.fileChanged()` only include **files the agent changed during `t.send()`**: NiceEval records the workspace state right before and right after each `t.send()` call, and attributes whatever changed in between to the agent. The starting files you uploaded, and any verification material written after `t.send()`, never get mixed in — so `fileChanged("src/app.ts")` only passes when the agent actually touched that file.
 
-The lifecycle hooks (`.setup()` / `.teardown()`) hang off the spec in the experiment's `sandbox` field, and handle environment setup that varies per experiment — installing a binary specific to one experiment, warming something up, loading and saving state across attempts. The files they write belong to the environment and are not counted in the agent's diff. For how to write them and the rules they follow, see [Sandbox providers · Environment hooks](/tutorials/sandbox-providers).
+The lifecycle hooks (`.setup()` / `.teardown()`) hang off the spec in the experiment's `sandbox` field, and handle environment setup that varies per experiment — installing a binary specific to one experiment, warming something up, loading and saving state across attempts. The files they write belong to the environment and are not counted in the agent's diff. For how to write them and the rules they follow, see [Sandbox provider · Lifecycle](/tutorials/sandbox-providers#lifecycle).
 
 ## Custom sandbox agent
 

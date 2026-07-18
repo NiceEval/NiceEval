@@ -29,7 +29,7 @@ The paused turn must also say **what** it is waiting for. Each pending question 
 Two easy mistakes to avoid:
 
 - **The response turn is not a new conversation.** It happens on the same session line — `ctx.session` still points to the same conversation, and the adapter uses it to recover the state it paused on in the previous turn.
-- **You don't have to guess the answer from free text.** `input.responses` carries `{ requestId, optionId }` per request (or `{ requestId, text }` for free-text answers); an `optionId` that hits one of the request's options has already been validated on the eval side, so a typo throws instead of silently reaching the application. See [Inputs for the different answers](/explanation/adapter) for what each answer shape looks like once it reaches the adapter.
+- **You don't have to guess the answer from free text.** `input.responses` carries `{ requestId, optionId }` per request (or `{ requestId, text }` for free-text answers); an `optionId` that hits one of the request's options has already been validated on the eval side, so a typo throws instead of silently reaching the application. See [Inputs for the different answers](/explanation/adapter#inputs-for-the-different-answers) for what each answer shape looks like once it reaches the adapter.
 
 ## On the eval side: three actions
 
@@ -47,7 +47,7 @@ t.calledTool("send_email", { status: "completed" });
 - `t.requireInputRequest(filter)` picks exactly one pending request, matching fields such as `id`, `prompt`, `action`, or `optionIds`. It throws when 0 or more than 1 requests match — this is how you disambiguate when several requests are paused at once.
 - `t.respond(...)` answers it and emits the next turn; when several requests of the same kind should get the same answer (for example, approving a batch of changes one by one), `t.respondAll(optionId)` handles them all at once.
 
-Approval and rejection are two branches of the same gate — coverage is only complete when you write an eval for each: what should happen after approval happens, and what should happen after rejection does not. See [Drive](/explanation/drive) for the full API-by-API usage.
+Approval and rejection are two branches of the same gate — coverage is only complete when you write an eval for each: what should happen after approval happens, and what should happen after rejection does not. See [Drive](/explanation/drive#human-in-the-loop-hitl) for the full API-by-API usage.
 
 ## On the adapter side: two obligations, one continuation
 
@@ -57,9 +57,9 @@ HITL asks the adapter to do exactly three things — the first two happen on the
 2. **Emit one `input.requested` event for each pending question**, with a stable `id` and as many fields populated as possible — the eval-side checks and matching all depend on them.
 3. **On the next `send`, hand over the decision before continuing**: take the verdict from `input.responses` by `requestId` (do not guess by order), then continue from where the previous turn paused, instead of resending the request.
 
-The paused execution state (for example, a partially read SSE stream) lives on the session line, in `ctx.session`: call `ctx.session.hold(state)` on the paused turn and `ctx.session.take()` on the response turn to retrieve it — `take()` clears it once read. See [Write Send](/tutorials/write-send) step 5 for the full skeleton of how this fits together with streaming.
+The paused execution state (for example, a partially read SSE stream) lives on the session line, in `ctx.session`: call `ctx.session.hold(state)` on the paused turn and `ctx.session.take()` on the response turn to retrieve it — `take()` clears it once read. See [Write Send](/tutorials/write-send#step-5-hitl) step 5 for the full skeleton of how this fits together with streaming.
 
-Like the rest of [NiceEval](https://niceeval.com/)'s capabilities, HITL is not declared with a boolean flag: **doing it is having it**. If `send` has returned `"waiting"` and emitted `input.requested`, `t.respond` works; if it has not, the eval fails explicitly at the first `parked()` or `requireInputRequest()`, instead of silently passing. See [Adapter](/explanation/adapter) for how capabilities follow from construction.
+Like the rest of [NiceEval](https://niceeval.com/)'s capabilities, HITL is not declared with a boolean flag: **doing it is having it**. If `send` has returned `"waiting"` and emitted `input.requested`, `t.respond` works; if it has not, the eval fails explicitly at the first `parked()` or `requireInputRequest()`, instead of silently passing. See [Adapter](/explanation/adapter#where-capabilities-come-from-proof-by-construction-not-a-questionnaire) for how capabilities follow from construction.
 
 ## Rejection is not a failure
 
@@ -77,7 +77,7 @@ The rule is simple: use HITL only when your agent's execution loop has a branch 
 
 ## Related reading
 
-- [Drive](/explanation/drive) — The full eval-side usage: `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()`.
+- [Drive](/explanation/drive#human-in-the-loop-hitl) — The full eval-side usage: `t.parked()`, `t.requireInputRequest()`, `t.respond()` / `t.respondAll()`.
 - [Adapter](/explanation/adapter) — The structured input that answers carry to the adapter, four typical shapes.
 - [Write Send](/tutorials/write-send) — The adapter-side practice: `ctx.session.hold` / `take` and the full skeleton for streaming + HITL.
 - [Connect Your Agent](/tutorials/connect-your-agent) — The integration overview: minimal integration, parameter channels, and the incremental map.

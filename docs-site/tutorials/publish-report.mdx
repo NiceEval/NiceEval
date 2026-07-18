@@ -4,7 +4,7 @@ sidebarTitle: "Publish via CI"
 description: "Commit a results directory that has passed the copySnapshots size precheck, and CI exports the report site with a single view --results. Oversized files produce an actionable error before you ever commit."
 ---
 
-`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results)). Publishing through CI only requires getting the result data into the build machine's hands — but do not commit the local source of truth `.niceeval/` directly: per-string truncation can stop one runaway output from ballooning, but it cannot guarantee a whole file stays under a Git host's limit. First use `copySnapshots` to produce a publish results root that has passed the 50 MiB per-file precheck, then commit that directory.
+`niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)). Publishing through CI only requires getting the result data into the build machine's hands — but do not commit the local source of truth `.niceeval/` directly: per-string truncation can stop one runaway output from ballooning, but it cannot guarantee a whole file stays under a Git host's limit. First use `copySnapshots` to produce a publish results root that has passed the 50 MiB per-file precheck, then commit that directory.
 
 ## Producing a committable results directory
 
@@ -31,7 +31,7 @@ Run `npx tsx scripts/publish-results.ts`, then commit `report-data/`. `copySnaps
 npx niceeval view --results report-data --out site
 ```
 
-To publish only a subset of experiments, hand the narrowing directly to the export command — the page and its evidence then contain only the narrowed scope (see [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results)):
+To publish only a subset of experiments, hand the narrowing directly to the export command — the page and its evidence then contain only the narrowed scope (see [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)):
 
 ```bash
 npx niceeval view --results report-data --exp compare --out site

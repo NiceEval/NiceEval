@@ -49,7 +49,7 @@ The SDKs for the three built-in providers do not install alongside NiceEval. Ins
 
 A missing SDK does not fail silently: NiceEval errors the moment it creates the sandbox and prints the install command above, for example `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`.
 
-## Environment hooks
+## Lifecycle
 
 The spec returned by `dockerSandbox()` / `vercelSandbox()` / `e2bSandbox()` has two chainable methods: `.setup(fn)` and `.teardown(fn)`. They handle the parts of the environment you only know at runtime — writing a small config per experiment, checking that a prebuilt tool is available, installing a hook, or loading and saving state between attempts.
 

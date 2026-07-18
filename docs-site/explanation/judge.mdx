@@ -113,7 +113,7 @@ defineConfig({
 
 ## Severity: judge defaults to soft
 
-Judge calls are scoring functions like any other assertion, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert) — but their **default** is different from most value matchers:
+Judge calls are scoring functions like any other assertion, so they follow the same mechanics described in [Assert · Gate vs soft severity](/explanation/assert#gate-vs-soft-severity) — but their **default** is different from most value matchers:
 
 ```ts
 t.judge.autoevals.closedQA("Is the tone polite?");              // no threshold → soft, pure score, never fails the eval

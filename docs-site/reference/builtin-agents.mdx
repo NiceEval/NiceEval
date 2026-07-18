@@ -432,7 +432,7 @@ Runnable references: the claude-sdk / pi-sdk / codex-sdk adapters under [`exampl
 
 ## Generic "assembly" pieces: `driveFrameStream` / `deltaStream` + `ctx.session`
 
-Inside a hand-written send, only three truly independent parts exist: transport (how to send), reduce (raw data → events, handled by the converters above), and orchestration (session continuation + HITL pause/resume). The third part is protocol-agnostic, pure control-flow pattern — the accessors for session continuation (`id`/`capture`, `history`) and the HITL paused-turn scene (`hold`/`take`) hang directly off `ctx.session` (`AgentSession`, see [Adapter concept](/explanation/adapter)); nothing to import separately and nothing to declare. What actually remains reusable across protocols is just two official pieces:
+Inside a hand-written send, only three truly independent parts exist: transport (how to send), reduce (raw data → events, handled by the converters above), and orchestration (session continuation + HITL pause/resume). The third part is protocol-agnostic, pure control-flow pattern — the accessors for session continuation (`id`/`capture`, `history`) and the HITL paused-turn scene (`hold`/`take`) hang directly off `ctx.session` (`AgentSession`, see [Adapter concept](/explanation/adapter#context-agentcontext)); nothing to import separately and nothing to declare. What actually remains reusable across protocols is just two official pieces:
 
 | Piece | What it solves |
 |---|---|
