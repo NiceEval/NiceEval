@@ -109,7 +109,7 @@ bench/
 
 ### 复用点:直接调 runner 的单次 attempt 引擎,不重新拼装顺序
 
-单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](../e2e-ci/README.md) 的 `verify.mjs` 黑盒起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
+单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](../e2e-ci/README.md) 的 `verify.ts` 黑盒起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
 
 探测 eval 用 `defineEval`(公开 API)在脚本里就地内联构造,不落 `.eval.ts` 文件、不经过 discover:
 

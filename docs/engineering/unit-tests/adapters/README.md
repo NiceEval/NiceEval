@@ -26,7 +26,7 @@ src/agents/fixtures/codex-cli/
 
 真实协议 fixture 的采集来源是 E2E 测试仓库的真实运行产物：E2E 跑真实模型时留下的 wire 输出脱敏后沉淀成单元层 fixture，两层共享同一份协议事实，不各自手写。脱敏映射（随机 id → `<call-1>`、path / prompt / thread id 的占位规则）与来源版本一起记录在 fixture 目录的 `README.md`，重采时按同一映射执行，保证 diff 可读。
 
-fixture 与 SDK 版本同批保鲜：对应 E2E 仓库升级 SDK 时（政策见 [E2E · 上游 SDK 版本](../../e2e-ci/README.md)），受影响的 wire fixture 用新版本重新采集并更新表中的来源版本；来源版本落后于该 E2E 仓库 lockfile 锁定版本的 fixture 视为过期，是该次升级未完成的部分，不是可接受的常态。
+fixture 与 SDK 版本同批保鲜：对应 E2E 仓库升级 SDK 时（政策见 [E2E 适配器域 · 上游 SDK 版本](../../e2e-ci/adapters/README.md)），受影响的 wire fixture 用新版本重新采集并更新表中的来源版本；来源版本落后于该 E2E 仓库 lockfile 锁定版本的 fixture 视为过期，是该次升级未完成的部分，不是可接受的常态。
 
 ### 领域场景 builder
 
