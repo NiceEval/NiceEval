@@ -11,6 +11,7 @@
 
 import type { Results, Scope } from "../results/index.ts";
 import type { LocalizedText } from "../types.ts";
+import type { AttemptLocator } from "../results/locator.ts";
 import type { PageContext } from "../../dist/report/tree.js";
 import type {
   ReportDefinition,
@@ -124,11 +125,16 @@ export async function renderHostPageText(
   return renderReportTreeToText(page.content, ctx, options);
 }
 
-/** 渲染一页的 web 面(静态 HTML)。 */
+/**
+ * 渲染一页的 web 面(静态 HTML)。attemptHref 缺省时报告有 attempt-input page 就用
+ * niceeval/report 的根相对默认值(`attempt/<encodeURIComponent(locator)>.html`,index.html
+ * 视角);从 attempt 页面自身内容渲染时(该 page 引用了其它 locator)view 显式传入同级
+ * 相对版本覆盖它——两种情形都不在这里判断,只透传。
+ */
 export async function renderHostPageHtml(
   page: ReportPage,
   ctx: HostRenderContext,
-  options: { locale: string },
+  options: { locale: string; attemptHref?: (locator: AttemptLocator) => string },
 ): Promise<string> {
   const { renderReportTreeToStaticHtml } = await import("../../dist/report/web.js");
   return renderReportTreeToStaticHtml(page.content, ctx, options);

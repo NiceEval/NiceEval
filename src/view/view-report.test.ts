@@ -13,7 +13,7 @@
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
 // 依据是 docs/feature/results/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
 
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,6 +26,7 @@ import { ViewInputError, loadViewScan, type ViewScan } from "./data.ts";
 import { renderHtml } from "./site.ts";
 import { buildView, resolveViewInput } from "./index.ts";
 import { runShow } from "../show/index.ts";
+import { createResultsWriter } from "../results/index.ts";
 import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 
 const EXAM_REPORT = resolve(__dirname, "../../test/fixtures/report/exam-report.tsx");
@@ -246,9 +247,9 @@ describe("loadViewScan · 默认报告槽(裸跑)", () => {
     expect(reportHtml["zh-CN"]).toContain("通过率"); // ExperimentList 主行(zh-CN)
     for (const html of [reportHtml.en, reportHtml["zh-CN"]]) {
       expect(html).toContain("compare/bub");
-      // 失败案例深链进证据室:不透明 AttemptLocator 单段路由 `#/attempt/@<locator>`,
-      // 不再是旧的两段式 `#/attempt/<snapshot>/<attempt>`。
-      expect(html).toMatch(/href="#\/attempt\/@[0-9a-z]+"/);
+      // 失败案例深链进独立 attempt 文档:不透明 AttemptLocator 编码进文件名
+      // (`attempt/<encodeURIComponent(locator)>.html`),不再是旧的 hash 路由。
+      expect(html).toMatch(/href="attempt\/%40[0-9a-z]+\.html"/);
       expect(html).not.toContain("<script"); // 报告槽产物零客户端 JS,不 hydrate
     }
   });
@@ -468,7 +469,7 @@ describe("buildView · --out 与 --report", () => {
     const artifactDir = join(root, "compare_codex", "2026-07-09T10-00-00-000Z", "weather", "brooklyn", "a0");
     await mkdir(artifactDir, { recursive: true });
     await writeFile(join(artifactDir, "events.json"), "[]", "utf-8");
-    await writeFile(join(artifactDir, "diff.json"), '{"windows":[]}', "utf-8");
+    await writeFile(join(artifactDir, "diff.json"), "[]", "utf-8");
     await writeFile(join(artifactDir, "o11y.json"), "{}", "utf-8");
 
     const out = join(root, "site");
@@ -528,5 +529,99 @@ describe("buildView · --out 与 --report", () => {
     expect(html).toContain("__nreEnhanced");
     const block = html.split('<template id="niceeval-report-report-en">')[1]!.split("</template>")[0]!;
     expect(block).not.toContain("<script");
+  });
+});
+
+// ───────────────────── attempt/<locator>.html:独立静态详情文档 ─────────────────────
+
+describe("buildView · attempt/<locator>.html", () => {
+  it("收窄后有效根内每个可达 locator 各一份文档,收窄外 locator 不生成文件(cases.md 第 205 行)", async () => {
+    const root = await makeRoot();
+    const writer = createResultsWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
+    const snapA = await writer.snapshot({ experimentId: "exp/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
+    await snapA.writeAttempt({ id: "q1", verdict: "passed", attempt: 0, durationMs: 1000, assertions: [] });
+    const snapB = await writer.snapshot({ experimentId: "exp/b", agent: "bub", startedAt: "2026-07-01T09:00:00.000Z" });
+    await snapB.writeAttempt({ id: "q2", verdict: "passed", attempt: 0, durationMs: 1000, assertions: [] });
+    await writer.finish();
+
+    const scanFull = await loadViewScan(root);
+    const scanNarrowed = await loadViewScan(root, { experiment: "exp/a" });
+    expect(scanFull.attemptPages!.locators.size).toBe(2);
+    expect(scanNarrowed.attemptPages!.locators.size).toBe(1);
+    const [keptLocator] = [...scanNarrowed.attemptPages!.locators.keys()];
+    const droppedLocator = [...scanFull.attemptPages!.locators.keys()].find((l) => l !== keptLocator)!;
+
+    const out = join(root, "site");
+    await buildView({ input: root, out, scan: { experiment: "exp/a" } });
+    const files = await readdir(join(out, "attempt"));
+    expect(files).toEqual([`${keptLocator}.html`]);
+    expect(existsSync(join(out, "attempt", `${droppedLocator}.html`))).toBe(false);
+  });
+
+  it("直接读取该文档(无 JavaScript 场景)即可见完整内容:身份/verdict/断言/时间树/diagnostics/usage/对话/trace/diff 都在可见的 en 区块里,不藏在 hidden 或 <template> 里(cases.md 第 206 行)", async () => {
+    const root = await makeRoot();
+    const writer = createResultsWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
+    const snap = await writer.snapshot({ experimentId: "compare/bub", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
+    await snap.writeAttempt(
+      {
+        id: "weather/brooklyn",
+        verdict: "failed",
+        attempt: 0,
+        durationMs: 4200,
+        assertions: [
+          {
+            name: "temperature matches forecast",
+            severity: "gate",
+            outcome: "failed",
+            score: 0,
+            expected: "72",
+            received: "71",
+            loc: { file: "evals/weather.eval.ts", line: 1 },
+          },
+        ],
+        phases: [{ name: "eval.run", durationMs: 4000 }],
+        diagnostics: [{ code: "teardown-failed", level: "warning", phase: "sandbox.teardown", message: "container stop timed out" }],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      },
+      {
+        sources: [{ path: "evals/weather.eval.ts", content: "export default 1;\n" }],
+        events: [
+          { type: "message", role: "user", text: "what is the forecast for brooklyn" },
+          { type: "message", role: "assistant", text: "72 degrees and sunny" },
+        ],
+        trace: [{ name: "turn", kind: "turn" }] as never,
+        diff: [{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "1" } } }] as never,
+      },
+    );
+    await writer.finish();
+
+    const out = join(root, "site");
+    await buildView({ input: root, out });
+    const [locator] = [...(await loadViewScan(root)).attemptPages!.locators.keys()];
+    const html = await readFile(join(out, "attempt", `${locator}.html`), "utf-8");
+
+    // 结构:en 可见(无 hidden 属性),zh-CN 带 hidden——两者都不需要 JS 才能被浏览器正确
+    // 处理(hidden 是浏览器原生渲染指令,不是 JS 行为);没有 <template> 把内容整个锁起来。
+    expect(html).toMatch(/<div data-nre-locale="en">/);
+    expect(html).not.toMatch(/<div data-nre-locale="en"[^>]*\shidden/);
+    expect(html).toMatch(/<div data-nre-locale="zh-CN" hidden>/);
+    const body = html.split("<body>")[1]!.split("</body>")[0]!;
+    expect(body).not.toContain("<template"); // 不像 index.html 那样把内容锁进 <template>
+    const enBlock = html.split('<div data-nre-locale="en">')[1]!.split('<div data-nre-locale="zh-CN"')[0]!;
+    for (const needle of [
+      "weather/brooklyn", // 身份
+      "compare/bub",
+      "evals/weather.eval.ts", // source
+      "temperature matches forecast", // 断言
+      "71", // received(fix prompt 里的摘要行)
+      "4.0s", // 时间树(eval.run 4000ms)
+      "container stop timed out", // diagnostics
+      "output tokens", // usage
+      "what is the forecast", // 对话
+      "nre-attempt-trace", // trace
+      "a.txt", // diff 摘要
+    ]) {
+      expect(enBlock, needle).toContain(needle);
+    }
   });
 });

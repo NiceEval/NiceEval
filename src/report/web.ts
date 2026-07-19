@@ -17,8 +17,15 @@ import {
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "./locale.ts";
 import { buildReportMeta, pickReportPage, type ReportDefinition, type ReportHostContext } from "./report.ts";
 
-/** 默认证据室深链:view 的 attempt 路由格式(`#/attempt/@<locator>`,单段、不透明)。 */
-const DEFAULT_ATTEMPT_HREF = (locator: AttemptLocator): string => `#/attempt/${locator}`;
+/**
+ * 默认证据室深链:view 静态站的 attempt 文档路径,根相对(与 index.html 同级 —— scope-input
+ * page 恒在文档树的根)。文件名是 URL 编码后的 locator(architecture.md「Attempt 详情是一张
+ * 参数化 page」);磁盘/清单键用未编码的原始 locator,两者的对应关系与拆分只住在 view 的站点
+ * 管线(site.ts),这里只产出 href 字符串。从 attempt 页面自身内容渲染时(极少见:自定义
+ * attempt-input page 里嵌了别的证据引用组件)view 显式传入同级相对版本覆盖这个默认值,
+ * 不依赖这里的根相对形态。
+ */
+const DEFAULT_ATTEMPT_HREF = (locator: AttemptLocator): string => `attempt/${encodeURIComponent(locator)}.html`;
 
 export interface StaticHtmlOptions {
   /** 渲染哪一页;缺省第一张可导航页。命中 attempt-input page 抛 ReportPageNeedsLocatorError。 */

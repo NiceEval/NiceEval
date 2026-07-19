@@ -8,14 +8,16 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import { dedupeAttempts, openResults } from "../results/index.ts";
+import { dedupeAttempts, loadAttemptEvidence, openResults } from "../results/index.ts";
 import type { AttemptHandle, Results, Scope, Snapshot, SkippedDir } from "../results/index.ts";
+import type { AttemptLocator } from "../results/locator.ts";
 import {
   buildHostReportMeta,
   loadHostReport,
   renderHostPageHtml,
   type ReportAsset,
   type ReportDefinition,
+  type ReportPage,
   type HeadTag,
 } from "../show/report-host.ts";
 import { selectCurrentResults, filterExperiments } from "../results/select.ts";
@@ -57,7 +59,25 @@ export interface ViewScan {
   reportPages: ViewReportPageHtml[];
   /** 外壳注入资产(styles / scripts;{src} 已按路径纪律解析成 inline 内容),只进 web 面。 */
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
+  /**
+   * 报告声明了 attempt-input page 时才存在(architecture.md「Attempt 详情是一张参数化 page」)。
+   * `locators` 是收窄后有效根内可达的 locator → AttemptHandle(与 scope-input pages 同一份
+   * `scopedExperiments ∩ matchEval ∩ survivors` 口径——去重只吞掉 `--resume` 携带的字面重复,
+   * 不排除真实历史 attempt,见 view.md「打开与收窄」);站点管线(site.ts)据此为每个可达
+   * locator 生成一份 `attempt/<locator>.html`,不在这份索引里的 locator 不出站。
+   * `render` 装配一个 locator 的 `AttemptEvidence` 并渲染该 page 两种语言的内容 HTML(不含外层
+   * 文档 —— 独立 HTML 文档的组装是 site.ts 的事);pageFailure 语义与 scope pages 一致。
+   */
+  attemptPages?: {
+    page: ReportPage;
+    locators: Map<AttemptLocator, AttemptHandle>;
+    render(locator: AttemptLocator, handle: AttemptHandle): Promise<{ en: string; "zh-CN": string }>;
+  };
 }
+
+/** attempt 页面内容(不是 index.html 的 scope-input page)链去同目录 attempt/ 下的兄弟文档,
+ *  不带 `attempt/` 目录前缀(site.ts「站点管线」;两处 href 的对应关系与拆分只住在那)。 */
+const SIBLING_ATTEMPT_HREF = (locator: AttemptLocator): string => `${encodeURIComponent(locator)}.html`;
 
 /** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Scope 是计算入口」)。 */
 export interface ViewScanOptions {
@@ -240,6 +260,9 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   // (与官方计算函数的聚合口径一致,Runs / Traces 的计数因此不被复印件灌票)。
   const artifactDirs = new Map<string, string>();
   const attemptsByBase = new Map<string, AttemptHandle>();
+  // 报告没有 attempt-input page 时不建这份索引:没有 attempt/ 目录,站点管线不需要它
+  // (view.md「静态导出」)。
+  const attemptsByLocator = slot.attemptPage ? new Map<AttemptLocator, AttemptHandle>() : undefined;
   // latest 标记恒按 results.latest() 口径打(ViewSnapshot.latest 的声明语义),
   // 与报告槽 Selection(现刻水位,可能合成自更早快照)是两个独立概念,不混用。
   const latestSet = new Set(latestPerExperiment.snapshots);
@@ -271,6 +294,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
           const { annotated, base, abs } = annotateResult(a, root);
           artifactDirs.set(base, abs);
           attemptsByBase.set(base, a);
+          if (attemptsByLocator && a.locator !== undefined) attemptsByLocator.set(a.locator, a);
           return annotated;
         }),
       });
@@ -302,6 +326,9 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     attemptsByBase,
     reportPages: slot.pages,
     shellAssets: slot.shellAssets,
+    ...(slot.attemptPage && attemptsByLocator
+      ? { attemptPages: { page: slot.attemptPage, locators: attemptsByLocator, render: slot.renderAttemptPage } }
+      : {}),
   };
 }
 
@@ -420,6 +447,8 @@ async function renderReportSlot(
   meta: ViewReportMeta;
   pages: ViewReportPageHtml[];
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
+  attemptPage: ReportPage | undefined;
+  renderAttemptPage: (locator: AttemptLocator, handle: AttemptHandle) => Promise<{ en: string; "zh-CN": string }>;
 }> {
   // 报告 runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view
   // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../show/report-host.ts(两个宿主共用的联系面)。
@@ -482,7 +511,36 @@ async function renderReportSlot(
     pages: scopePages.map((p) => ({ id: p.id, title: p.title })),
     initialPageId,
   };
-  return { meta, pages, shellAssets };
+
+  const attemptPage = hostReport.pages.find((p) => p.input === "attempt");
+  // 装配一个 locator 的 AttemptEvidence 并渲染该 page 两种语言的内容 HTML(不含外层文档);
+  // pageFailure 语义与 scope pages 相同 —— 本地 server 折成该文档的完整错误反馈块,
+  // 静态导出直接抛出(writeSite 侧汇总成「整体失败,不留半套目录」)。
+  const renderAttemptPage = async (
+    locator: AttemptLocator,
+    handle: AttemptHandle,
+  ): Promise<{ en: string; "zh-CN": string }> => {
+    const evidence = await loadAttemptEvidence(handle);
+    const ctx = {
+      scope: selection,
+      results,
+      report: hostMeta,
+      page: { id: attemptPage!.id, input: "attempt" as const, locator, evidence },
+    };
+    try {
+      return {
+        en: await renderHostPageHtml(attemptPage!, ctx, { locale: "en", attemptHref: SIBLING_ATTEMPT_HREF }),
+        "zh-CN": await renderHostPageHtml(attemptPage!, ctx, { locale: "zh-CN", attemptHref: SIBLING_ATTEMPT_HREF }),
+      };
+    } catch (e) {
+      if (pageFailure !== "embed") throw e;
+      const message = e instanceof Error ? e.message : String(e);
+      const block = `<div class="nre nre-page-error"><pre>${escapeHtml(message)}</pre></div>`;
+      return { en: block, "zh-CN": block };
+    }
+  };
+
+  return { meta, pages, shellAssets, attemptPage, renderAttemptPage };
 }
 
 /**

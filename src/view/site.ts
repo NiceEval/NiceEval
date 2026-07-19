@@ -9,13 +9,21 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { loadViewScan, type ResolvedHeadTag, type ViewScan, type ViewScanOptions } from "./data.ts";
 import { localizeText } from "../show/report-host.ts";
+import type { AttemptHandle } from "../results/index.ts";
+import type { AttemptLocator } from "../results/locator.ts";
 
-/** 站点产物清单里的一个文件:现算内容,或指向结果根内的原文件。 */
+/**
+ * 站点产物清单里的一个文件:现算内容(content)、指向结果根内的原文件(file),或延迟到
+ * 真正被请求 / 导出时才求值的产出器(lazy)。lazy 专为 `attempt/<locator>.html` 准备——
+ * 每个可达 locator 一份,数量可能很大,不能像 index.html 那样在建清单时就全部渲染
+ * (architecture.md「管线以 page 实例为单位执行」:本地 server 按请求求值并缓存进当前
+ * plan,`writeSite` 在写任何文件前对全部产出器求值一次)。
+ */
 export interface SiteFile {
   /** 站点相对路径(posix),如 `index.html`、`artifact/<base>/events.json`。 */
   path: string;
   contentType: string;
-  source: { kind: "content"; body: string } | { kind: "file"; abs: string };
+  source: { kind: "content"; body: string } | { kind: "file"; abs: string } | { kind: "lazy"; produce: () => Promise<string> };
 }
 
 export interface SitePlan {
@@ -63,15 +71,51 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}): Prom
       files.set(path, { path, contentType: JSON_TYPE, source: { kind: "content", body: JSON.stringify(sources ?? []) } });
     }
   }
+
+  // attempt/<locator>.html:报告声明了 attempt-input page 时才出现,收窄后有效根内每个可达
+  // locator 各一份(view.md「静态导出」)。头资产的相对路径要从 attempt/ 子目录回退一层,
+  // 因此单独物化一份 `../` 前缀版本(与 index.html 的根相对版本共用同一份 files 内容寻址,
+  // 同一份资产只按内容哈希写一次)。每份文档的 IO/resolve 延迟到真正被请求或导出时才发生——
+  // 可达 locator 数量可能很大,不能像 index.html 一样在建清单时就全部渲染
+  // (architecture.md「管线以 page 实例为单位执行」)。
+  if (scan.attemptPages) {
+    const { locators, render } = scan.attemptPages;
+    const nestedHeadHtml = await materializeHeadAssets(scan.shellAssets.head, files, "../");
+    for (const [locator, handle] of locators) {
+      const path = `attempt/${locator}.html`;
+      files.set(path, {
+        path,
+        contentType: HTML_TYPE,
+        source: { kind: "lazy", produce: () => renderAttemptDocument(scan, locator, handle, render, nestedHeadHtml) },
+      });
+    }
+  }
+
   return { files, scan };
 }
 
-/** 把站点产物清单写盘(`--out`)。输入本身已是导出布局(对上次导出的目录重新生成)时原文件不自拷。 */
+/**
+ * 把站点产物清单写盘(`--out`)。输入本身已是导出布局(对上次导出的目录重新生成)时原文件不自拷。
+ * 先对全部 lazy 产出器求值(任一份 attempt page resolve 失败就在这一步整体抛出,不写入任何
+ * 文件——architecture.md「写 writeSite 的整体失败语义」:静态导出不留半套目录),求值期间
+ * 头资产可能按内容哈希追加注册进 plan.files(见 planSite 的 `../` 前缀变体),因此写盘前
+ * 重新遍历一次清单,不用求值前的快照。
+ */
 export async function writeSite(plan: SitePlan, outDir: string): Promise<void> {
+  const lazyBodies = new Map<string, string>();
+  await Promise.all(
+    [...plan.files.values()]
+      .filter((file): file is SiteFile & { source: { kind: "lazy"; produce: () => Promise<string> } } => file.source.kind === "lazy")
+      .map(async (file) => {
+        lazyBodies.set(file.path, await file.source.produce());
+      }),
+  );
   for (const file of plan.files.values()) {
     const dest = join(outDir, file.path);
     await mkdir(dirname(dest), { recursive: true });
-    if (file.source.kind === "content") {
+    if (file.source.kind === "lazy") {
+      await writeFile(dest, lazyBodies.get(file.path)!, "utf-8");
+    } else if (file.source.kind === "content") {
       await writeFile(dest, file.source.body, "utf-8");
     } else if (resolve(file.source.abs) !== resolve(dest)) {
       await copyFile(file.source.abs, dest);
@@ -79,9 +123,14 @@ export async function writeSite(plan: SitePlan, outDir: string): Promise<void> {
   }
 }
 
-/** 取清单中一个文件的字节(server 响应体与写盘内容同源;file 类缺失时返回 undefined,由宿主 404)。 */
+/**
+ * 取清单中一个文件的字节(server 响应体与写盘内容同源;file 类缺失时返回 undefined,由宿主 404)。
+ * lazy 类每次调用都重新求值(不在这里缓存)——server.ts 按「同一路径同一 plan 生命周期内
+ * 不重复计算」的语义自行把求值结果写回 plan.files,这里保持纯函数,不持有 plan 状态。
+ */
 export async function readSiteFile(file: SiteFile): Promise<string | Buffer | undefined> {
   if (file.source.kind === "content") return file.source.body;
+  if (file.source.kind === "lazy") return file.source.produce();
   try {
     // 原字节读取:assets/ 里的 head 资产可以是二进制(favicon、字体),不能按 utf-8 解码。
     return await readFile(file.source.abs);
@@ -121,11 +170,14 @@ function renderHeadTagHtml(tag: ResolvedHeadTag, attrs: Record<string, string | 
 }
 
 /**
- * head 标签落成 HTML,本地 src/href 资产进站点清单:`assets/<sha256><ext>`,
- * source 指向原文件(写盘 copyFile、server 原字节下发都二进制安全),标签属性回填该相对路径。
- * 外链(http(s)://)原样透传,不进 assets/。
+ * head 标签落成 HTML,本地 src/href 资产进站点清单:`assets/<sha256><ext>`(与调用方无关,
+ * 同内容同扩展名跨全部文档去重),source 指向原文件(写盘 copyFile、server 原字节下发都
+ * 二进制安全)。标签属性回填的路径按 `prefix` 相对当前文档:index.html 在站点根,
+ * `prefix` 为空;`attempt/<locator>.html` 低一级,`prefix` 是 `"../"`(view.md「静态导出」
+ * 「所有 HTML 都按自身相对位置生成 assets/ / artifact/ 引用」)。外链(http(s)://)原样透传,
+ * 不进 assets/,prefix 对它们不生效。
  */
-async function materializeHeadAssets(head: ResolvedHeadTag[], files: Map<string, SiteFile>): Promise<string> {
+async function materializeHeadAssets(head: ResolvedHeadTag[], files: Map<string, SiteFile>, prefix = ""): Promise<string> {
   const rendered: string[] = [];
   for (const tag of head) {
     const attrs = { ...tag.attrs };
@@ -138,7 +190,7 @@ async function materializeHeadAssets(head: ResolvedHeadTag[], files: Map<string,
         contentType: ASSET_CONTENT_TYPES[tag.localAsset.ext.toLowerCase()] ?? "application/octet-stream",
         source: { kind: "file", abs: tag.localAsset.abs },
       });
-      attrs[tag.localAsset.attr] = path;
+      attrs[tag.localAsset.attr] = `${prefix}${path}`;
     }
     rendered.push(renderHeadTagHtml(tag, attrs));
   }
@@ -187,10 +239,7 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
   const title = localizeText(scan.viewData.report?.title, "en") ?? "Eval Results";
 
   return template
-    .replace(
-      /<title>[^<]*<\/title>/,
-      () => `<title>${title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</title>`,
-    )
+    .replace(/<title>[^<]*<\/title>/, () => `<title>${escapeText(title)}</title>`)
     .replace(
       TEMPLATE_PLACEHOLDERS.styles,
       () =>
@@ -202,6 +251,65 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
     .replace(TEMPLATE_PLACEHOLDERS.viewData, () => JSON.stringify(scan.viewData).replace(/</g, "\\u003c"))
     .replace(TEMPLATE_PLACEHOLDERS.appCode, () => JSON.stringify(app).replace(/</g, "\\u003c"))
     .replace("</body>", () => `${shellScripts}</body>`);
+}
+
+function escapeText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * localStorage 里存的界面语言优先,否则按 navigator 语言猜(与 app/i18n.ts 的 detectLocale()
+ * 同一套判定规则,故意在这里用一份独立的极小 vanilla 版本——standalone 文档不拉入
+ * react/react-dom,不需要为了一次语言判定背上整个 SPA 打包产物)。
+ */
+const ATTEMPT_LOCALE_SWAP_SCRIPT = `(function(){try{var s=localStorage.getItem("niceeval:view:locale");var l=s==="zh-CN"||s==="en"?s:((navigator.languages||[navigator.language]).some(function(v){return /^zh/i.test(String(v||"").trim())})?"zh-CN":"en");if(l==="zh-CN"){var en=document.querySelector('[data-nre-locale="en"]');var zh=document.querySelector('[data-nre-locale="zh-CN"]');if(en)en.hidden=true;if(zh){zh.hidden=false;}document.documentElement.lang="zh-CN";}}catch(e){}})();`;
+
+/**
+ * 一个 locator 的独立 attempt 文档:与 index.html 是「文档」而非「App」——en 内容直接可见
+ * (无 JavaScript 时浏览器正常渲染这个 div),zh-CN 变体带 `hidden` 属性(同样不需要 JS 就能
+ * 被浏览器正确隐藏,只是不显示,不是不存在),一段极小内联脚本按检测到的界面语言在两者间切换
+ * (docs/feature/reports/view.md「静态导出」:基线链接直接指向这份文档,保证无 JavaScript 也能
+ * 读完整详情)。不复用 renderHtml/template.html 的 SPA 外壳——那条路径的 #root 要等 React
+ * 挂载才有内容,不满足这里「无 JS 仍完整可读」的要求。增强脚本(index.html 里的渐进增强,
+ * 拦截 locator 链接后 fetch 这份文档、按同一 `[data-nre-locale]` 选择器取出对应语言的内容
+ * 塞进 dialog)与这里的选择器保持同一套约定,不维护第二份提取逻辑。
+ */
+async function renderAttemptDocument(
+  scan: ViewScan,
+  locator: AttemptLocator,
+  handle: AttemptHandle,
+  render: (locator: AttemptLocator, handle: AttemptHandle) => Promise<{ en: string; "zh-CN": string }>,
+  headHtml: string,
+): Promise<string> {
+  const content = await render(locator, handle);
+  const [reportStyles, reportEnhance] = await Promise.all([
+    readFile(new URL("../report/react/styles.css", import.meta.url), "utf-8"),
+    readFile(new URL("../report/react/enhance.js", import.meta.url), "utf-8"),
+  ]);
+  const shellStyles = scan.shellAssets.styles.map((css) => `\n<style>\n${css}\n</style>`).join("");
+  const shellScripts = scan.shellAssets.scripts.map((js) => `<script>\n${js}\n</script>\n`).join("");
+  const title = `${handle.evalId} · ${handle.experimentId}`;
+
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${escapeText(title)}</title>`,
+    `<style>\n${reportStyles}\n</style>`,
+    `<script>\n${reportEnhance}\n</script>`,
+    shellStyles,
+    headHtml ? `\n${headHtml}` : "",
+    "</head>",
+    "<body>",
+    `<div data-nre-locale="en">${content.en}</div>`,
+    `<div data-nre-locale="zh-CN" hidden>${content["zh-CN"]}</div>`,
+    `<script>${ATTEMPT_LOCALE_SWAP_SCRIPT}</script>`,
+    shellScripts,
+    "</body>",
+    "</html>",
+  ].join("\n");
 }
 
 async function readViewAsset(name: string): Promise<string> {
