@@ -18,7 +18,7 @@ That's not a mistake on your part. The root cause is that prompt evaluation and 
 
 Prompt evaluation is intuitive. You give the model an input, it returns an output, and you judge whether that output is good. It's like grading a fill-in-the-blank quiz: an answer is either right or wrong.
 
-Typical metrics include answer relevance, factual accuracy, and format compliance, sometimes with toxicity or hallucination detection layered on top. A mature set of tools has grown up around this paradigm — DeepEval, RAGAS, LangFuse — and they all do the job well, as long as all you need is to evaluate a prompt.
+Typical metrics include answer relevance, factual accuracy, and format compliance, sometimes with toxicity or hallucination detection layered on top. A mature set of tools has grown up around this paradigm — DeepEval, Promptfoo, LangFuse — and they all do the job well, as long as all you need is to evaluate a prompt.
 
 In one line: prompt evaluation asks whether the output is correct.
 
@@ -53,7 +53,7 @@ Put the two paradigms side by side and the difference becomes clear:
 | Time dimension | Static snapshot | Multi-turn dynamic process |
 | What's evaluated | Output text quality | Decision path (tool choice, arguments, skills, state) |
 | Cost of failure | A sentence in the output is wrong | A wrong action already had side effects (sent an email it shouldn't have, called an API it shouldn't have) |
-| Typical tools | DeepEval, RAGAS, LangFuse | NiceEval |
+| Typical tools | DeepEval, Promptfoo, LangFuse | NiceEval |
 
 The key difference is in the last row. The tools on the left don't transfer to the right — not because they lack features, but because the underlying model is entirely different. They were built to look at output, and they can't see an agent's execution trace.
 
@@ -91,7 +91,7 @@ The evaluation logic is decoupled from the agent under test. Swapping models or 
 
 ## How to choose
 
-If your product today is a single-turn chatbot, a text classifier, or a summarizer, prompt evaluation tools are enough. DeepEval or RAGAS, plus a handful of test cases, will cover your quality needs.
+If your product today is a single-turn chatbot, a text classifier, or a summarizer, prompt evaluation tools are enough. DeepEval or Promptfoo, plus a handful of test cases, will cover your quality needs.
 
 But the moment your system starts calling tools, running multi-turn conversations, and loading skills, you need agent evaluation. That's not a feature upgrade — it's a paradigm shift. What you need isn't a stronger prompt scorer; it's an evaluation framework that can trace the full decision path.
 
