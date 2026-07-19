@@ -55,8 +55,12 @@ function assertionLine(a: AssertionResult): string {
   if (a.outcome === "unavailable") return `◌ unavailable · ${group}${a.name} — ${a.reason}`;
   const mark = a.outcome === "passed" ? "✓" : "✗";
   const detail = a.detail && a.detail !== a.name ? `: ${a.detail}` : "";
-  const evidence = a.received !== undefined ? ` · received: ${a.received}` : "";
-  return `${mark} ${a.severity} · ${group}${a.name}${detail}${evidence}`;
+  const evidence = [
+    a.expected !== undefined ? `expected: ${a.expected}` : undefined,
+    a.received !== undefined ? `received: ${a.received}` : undefined,
+  ].filter((part): part is string => part !== undefined);
+  const evidenceSuffix = evidence.length > 0 ? ` · ${evidence.join(" · ")}` : "";
+  return `${mark} ${a.severity} · ${group}${a.name}${detail}${evidenceSuffix}`;
 }
 
 export function attemptAssertionsText(data: AttemptAssertionsData | null, _ctx: TextContext): string {

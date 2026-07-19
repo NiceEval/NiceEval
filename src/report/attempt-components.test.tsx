@@ -322,6 +322,19 @@ describe("text/web 共享同一份 data,不逐字比较", () => {
     expect(html).toContain("failed");
     expect(text).toContain("failed");
   });
+
+  it("失败断言的 expected/received 两面都可见(docs/feature/reports/library/attempt-detail.md「在 show 与 view 怎样渲染」表)", () => {
+    const assertions: AssertionResult[] = [
+      { name: "check", severity: "gate", outcome: "failed", score: 0, detail: "equals(4)", expected: "4", received: "3" },
+    ];
+    const data = attemptAssertionsData(evidenceOf({ result: resultOf({ verdict: "failed", assertions }) }))!;
+    const html = renderToStaticMarkup(<AttemptAssertions data={data} /> as never);
+    const text = renderNodeToText(<AttemptAssertions data={data} /> as never, createTextContext({ width: 100 }));
+    for (const face of [html, text]) {
+      expect(face).toContain("expected: 4");
+      expect(face).toContain("received: 3");
+    }
+  });
 });
 
 // ───────────────────────── AttemptConversation:loc 分轮 ─────────────────────────
