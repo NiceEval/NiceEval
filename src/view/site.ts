@@ -312,6 +312,25 @@ async function renderAttemptDocument(
   ].join("\n");
 }
 
+/**
+ * 独立渲染一个 locator 的 attempt 文档,不依赖已建好的站点清单——供本地 server 的「越过收窄」
+ * 回退路由使用(docs/engineering/unit-tests/reports/cases.md 第 198/220 行:本地宿主的 attempt
+ * 详情路由对完整结果根解析,不受 `--exp`/eval 前缀收窄限制,与 `show @<locator>` 同一套「各自
+ * 结果根语义寻址」)。头资产的物化路径由内容哈希确定性算出,这里用一个用后即弃的 Map 重新
+ * 算一遍就够——真正的文件已经由主 plan(`planSite` 对 index.html 的物化)写过一次,不需要
+ * 在这里重新登记。调用方(server.ts)负责先确认 `scan.attemptPages` 存在且这个 locator
+ * 在里面能查到对应的 handle。
+ */
+export async function renderStandaloneAttemptDocument(
+  scan: ViewScan,
+  locator: AttemptLocator,
+  handle: AttemptHandle,
+): Promise<string> {
+  const throwaway = new Map<string, SiteFile>();
+  const headHtml = await materializeHeadAssets(scan.shellAssets.head, throwaway, "../");
+  return renderAttemptDocument(scan, locator, handle, scan.attemptPages!.render, headHtml);
+}
+
 async function readViewAsset(name: string): Promise<string> {
   return readFile(new URL(name, import.meta.url), "utf-8");
 }

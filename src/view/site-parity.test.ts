@@ -114,4 +114,27 @@ describe("站点管线奇偶:server 与 --out 是同一份产物", () => {
     const direct = await (await fetch(new URL(`/${eventsPath}`, server.url))).text();
     expect(await res.text()).toBe(direct);
   });
+
+  it("本地宿主的 attempt 详情路由越过 --exp 收窄,对完整结果根解析(cases.md 第 198/220 行,与 show @<locator> 同一套「各自结果根语义寻址」)", async () => {
+    const root = await makeDir("niceeval-parity-unnarrowed-");
+    await seedSnapshot(root, "exp-a", "q1");
+    await seedSnapshot(root, "exp-b", "q2");
+    server = await startViewServer({ input: root, scan: { experiment: "exp-a" } });
+
+    const full = await planSite(root); // 不收窄,拿到两个实验各自的 attempt 路径
+    const attemptPaths = [...full.files.keys()].filter((p) => p.startsWith("attempt/"));
+    expect(attemptPaths).toHaveLength(2);
+
+    // 收窄后的 plan 只剩 exp-a 的那份(row 205 已覆盖导出侧的同一断言;这里确认 plan 本身也收窄)。
+    const narrowed = await planSite(root, { experiment: "exp-a" });
+    const narrowedPaths = new Set(narrowed.files.keys());
+    const outsideScopePath = attemptPaths.find((p) => !narrowedPaths.has(p))!;
+    expect(outsideScopePath).toBeTruthy();
+
+    // 但本地 server 仍能直接打开它:路由越过收窄,对完整结果根解析。
+    const res = await fetch(new URL(`/${outsideScopePath}`, server.url));
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("q2"); // exp-b 的证据内容真的解析出来了,不是空白/占位
+  });
 });

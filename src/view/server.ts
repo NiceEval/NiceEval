@@ -5,9 +5,19 @@
 // (pageFailure: "embed")。位置参数 / --exp 收窄是管线输入,不是宿主语义——两宿主同义。
 
 import { createServer, type Server } from "node:http";
-import { type ViewScanOptions } from "./data.ts";
-import { planSite, readSiteFile, type SitePlan } from "./site.ts";
+import { loadViewScan, type ViewScanOptions } from "./data.ts";
+import { planSite, readSiteFile, renderStandaloneAttemptDocument, type SitePlan } from "./site.ts";
 import { formatThrown } from "../util.ts";
+import type { AttemptLocator } from "../results/locator.ts";
+
+const HTML_TYPE = "text/html; charset=utf-8";
+
+/** `attempt/<locator>.html` 站点路径 → 磁盘/清单键用的原始 locator(未编码,含字面 `@`;
+ *  见 site.ts「站点管线」对编码边界的说明)。不是这个形状返回 undefined。 */
+function attemptLocatorFromSitePath(sitePath: string): AttemptLocator | undefined {
+  if (!sitePath.startsWith("attempt/") || !sitePath.endsWith(".html")) return undefined;
+  return sitePath.slice("attempt/".length, -".html".length) as AttemptLocator;
+}
 
 export interface ViewOptions {
   input?: string;
@@ -70,6 +80,21 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         file = plan.files.get(sitePath);
       }
       if (!file) {
+        // 本地宿主的 attempt 详情路由越过收窄,对完整结果根解析(docs/engineering/unit-tests/
+        // reports/cases.md 第 198/220 行;与 `show @<locator>` 同一套「各自结果根语义寻址」,
+        // 不是 SitePlan 清单之外的旁路取数——这条路由本来就不该受 --exp/eval 前缀收窄限制,
+        // 与「server 不提供清单之外的路径」的奇偶保证不冲突,那条保证只约束收窄之内的路径)。
+        const locator = attemptLocatorFromSitePath(sitePath);
+        if (locator !== undefined) {
+          const fullScan = await loadViewScan(input, { ...scanOptions, experiment: undefined, patterns: [] }).catch(() => undefined);
+          const handle = fullScan?.attemptPages?.locators.get(locator);
+          if (fullScan && handle) {
+            const body = await renderStandaloneAttemptDocument(fullScan, locator, handle);
+            res.writeHead(200, { "content-type": HTML_TYPE, "cache-control": "no-store" });
+            res.end(body);
+            return;
+          }
+        }
         res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
         res.end("not found");
         return;
@@ -79,6 +104,11 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
         res.end("not found");
         return;
+      }
+      // 同一路径同一 plan 生命周期内不重复求值(architecture.md「管线以 page 实例为单位执行」):
+      // lazy 产出器求值一次后把结果写回清单,下一次同路径请求(未触发 rebuild 之前)直接命中。
+      if (file.source.kind === "lazy") {
+        plan.files.set(sitePath, { ...file, source: { kind: "content", body: body as string } });
       }
       res.writeHead(200, { "content-type": file.contentType, "cache-control": "no-store" });
       res.end(body);

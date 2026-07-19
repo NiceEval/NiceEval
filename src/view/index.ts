@@ -10,7 +10,7 @@ import { planSite, writeSite } from "./site.ts";
 import type { ViewOptions } from "./server.ts";
 
 export { startViewServer, type ViewOptions, type ViewServer } from "./server.ts";
-export { planSite, writeSite, renderHtml, type SitePlan, type SiteFile } from "./site.ts";
+export { planSite, writeSite, renderHtml, renderStandaloneAttemptDocument, type SitePlan, type SiteFile } from "./site.ts";
 export {
   IncompatibleResultsError,
   ViewInputError,
