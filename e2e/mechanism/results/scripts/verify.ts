@@ -132,7 +132,7 @@ export async function runVerify(): Promise<void> {
   assert.equal(typeof snapshot.schemaVersion, "number", "snapshot.json.schemaVersion must be a number");
   assert.equal((snapshot.producer as { name?: string } | undefined)?.name, "niceeval", 'snapshot.json.producer.name must be "niceeval" for the official writer');
   assert.equal(snapshot.experimentId, "main", "snapshot.json.experimentId must be the experiment id");
-  assert.equal(snapshot.agent, "openai-compat", "snapshot.json.agent must be the Agent's name");
+  assert.equal(snapshot.agent, "results-mechanism", "snapshot.json.agent must be the Agent's name");
   assert.equal(snapshot.model, "deepseek-chat", "snapshot.json.model must be the experiment's model");
   assert.equal(typeof snapshot.startedAt, "string", "snapshot.json.startedAt must be an ISO string");
   for (const perAttemptField of ["attempts", "evals", "results"]) {
@@ -267,7 +267,7 @@ export async function runVerify(): Promise<void> {
     errored: number;
     results: AttemptRecordLike[];
   }>("main.json");
-  assert.equal(jsonSummary.agent, "openai-compat", "--json RunSummary.agent disagrees with the Agent's name");
+  assert.equal(jsonSummary.agent, "results-mechanism", "--json RunSummary.agent disagrees with the Agent's name");
   assert.equal(jsonSummary.model, "deepseek-chat", "--json RunSummary.model disagrees with the experiment's model");
   assert.equal(jsonSummary.passed, 2, "--json RunSummary.passed should count both tool-call attempts");
   assert.equal(jsonSummary.failed, 0, "--json RunSummary.failed should be 0 for the main Experiment");
