@@ -34,7 +34,7 @@ timing: sandbox.queue 0.2s · sandbox.create 5.6s · sandbox.setup 3.5s · agent
 changes: 2 files changed by agent · M manager_decisions.json · A notes/decision-log.md
 
 available:
-  niceeval show @1qrdcfq8 --eval
+  niceeval show @1qrdcfq8 --source
   niceeval show @1qrdcfq8 --execution
   niceeval show @1qrdcfq8 --timing
   niceeval show @1qrdcfq8 --diff
@@ -46,10 +46,10 @@ This page answers one question first: **did the agent get it wrong (`failed`), o
 
 The troubleshooting order is "which assertion failed → what the agent actually did → what it actually changed."
 
-**1. Put the assertion back next to its source.** `--eval` shows the Eval source saved at run time (not whatever version you may have since edited in your workspace), with the failed assertion marked right on its line. The `t.send(...)` call line is marked with the turn it produced — the turn label (`s1/t1`, the same scheme `--execution` / `--timing` use), whether that turn completed, and how long it took:
+**1. Put the assertion back next to its source.** `--source` shows the Eval source saved at run time (not whatever version you may have since edited in your workspace), with the failed assertion marked right on its line. The `t.send(...)` call line is marked with the turn it produced — the turn label (`s1/t1`, the same scheme `--execution` / `--timing` use), whether that turn completed, and how long it took:
 
 ```text
-$ niceeval show @1qrdcfq8 --eval
+$ niceeval show @1qrdcfq8 --source
 21✓     await t.send("Review the proposals and record your decision…");
     s1/t1 · completed · 22.4s
 38      for (const [issue, label] of Object.entries(expected)) {
@@ -182,7 +182,7 @@ niceeval sandbox stop --all
 
 Every run leaves a complete result snapshot under `.niceeval/<experiment>/<timestamp>/` — the verdict, assertions, event stream, and diff are all in there, and **it's never overwritten by the next run**. There are three ways in to review it:
 
-**Open it directly with the old locator.** Copy the `@` locator from last week's terminal history, CI logs, or a report; `niceeval show @<locator>` works exactly the same, and `--eval` / `--execution` / `--diff` above all still work — including the Eval source captured at run time, even if you've since edited the Eval.
+**Open it directly with the old locator.** Copy the `@` locator from last week's terminal history, CI logs, or a report; `niceeval show @<locator>` works exactly the same, and `--source` / `--execution` / `--diff` above all still work — including the Eval source captured at run time, even if you've since edited the Eval.
 
 **Look back at an experiment's current state.** When you don't remember the locator, start from the experiment:
 
@@ -223,7 +223,7 @@ One caveat: if you've cleaned up an old snapshot directory locally, any later ru
 
 | Symptom | Command sequence |
 |---|---|
-| An assertion failed and you don't know why | `show @loc` → `show @loc --eval` |
+| An assertion failed and you don't know why | `show @loc` → `show @loc --source` |
 | Want to know what the agent actually did | `show @loc --execution` |
 | Want to confirm whether a tool was called / search the conversation for a keyword | `show @loc --execution \| grep "TOOL ·" \| sort \| uniq -c` / `\| grep <keyword>` |
 | Want to confirm which files the agent changed | `show @loc --diff` → `--diff=<path>` |

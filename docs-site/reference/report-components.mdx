@@ -203,7 +203,7 @@ fixtures/button · compare/bub-gpt-5.4 · errored
   score — · 1 attempt · 2m 00s · $0.09
   @1c3h6twx! · command timed out after 120s
 
-inspect: niceeval show @<id> [--eval|--execution|--diff]
+inspect: niceeval show @<id> [--source|--execution|--diff]
 ```
 
 `.data(selection)` returns a plain `EvalListItem[]`. Filter by eval id prefix, experiment, verdict, or score with array `.filter()`; the component only renders whatever `items` it's handed.
@@ -231,7 +231,7 @@ const attempts = await AttemptList.data(selection);
 
 ! @1c3h6twx · fixtures/button · compare/bub-gpt-5.4 · 2m 00s · $0.09
   command timed out after 120s
-inspect: niceeval show @<id> [--eval|--execution|--diff]
+inspect: niceeval show @<id> [--source|--execution|--diff]
 
 (3 more not shown · showing 20 of 23)
 ```

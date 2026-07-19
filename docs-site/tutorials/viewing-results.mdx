@@ -52,7 +52,7 @@ niceeval show                       # Default report: split into experiment grou
 niceeval show weather               # Prefix filter: verdicts for every eval under weather/*
 niceeval show weather/brooklyn      # Single eval: each experiment's attempt row (with @<locator>), assertion detail for the default attempt
 niceeval show @1k2m9qrs             # Pinpoint one attempt: assertions, execution, diff, and a summary of available evidence
-niceeval show @1k2m9qrs --eval      # The eval source saved when this attempt ran, with assertions annotated back onto it
+niceeval show @1k2m9qrs --source      # The eval source saved when this attempt ran, with assertions annotated back onto it
 niceeval show @1k2m9qrs --execution # This attempt's messages, thinking, skill loads, and tool calls, with timing added when OTel is available
 niceeval show @1c3h6twx --timing    # Bounded diagnostic timing tree: phase, hook, operation, shell, turn, OTel, and wrap-up
 niceeval show @1c3h6twx --timing=full # The same timing tree, fully expanded node by node
@@ -75,7 +75,7 @@ Every view in `niceeval view` has a terminal equivalent:
 | The default grouped comparison report for the current results | `niceeval show` |
 | That eval's verdict row per experiment + assertion detail for the default attempt | `niceeval show <eval id>` |
 | One attempt's summary (assertions, execution, diff, and evidence availability) | `niceeval show @<locator>` |
-| Eval source annotated with assertions (mapped back to source lines) | `niceeval show @<locator> --eval` |
+| Eval source annotated with assertions (mapped back to source lines) | `niceeval show @<locator> --source` |
 | The AI's conversation, thinking, skill loads, and tool calls (with timing when OTel is available) | `niceeval show @<locator> --execution` |
 | One attempt's phase-by-phase timing breakdown | `niceeval show @<locator> --timing`; audit node by node with `--timing=full` |
 | File changes | `niceeval show @<locator> --diff` |
@@ -103,7 +103,7 @@ attempt 3 · compare/codex-gpt-5.4 · failed · 41.2s · 12.3k tokens · $0.04
 
 artifacts: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/
 attempt locator: @1k2m9qrs
-next: niceeval show @1k2m9qrs [--eval|--execution]
+next: niceeval show @1k2m9qrs [--source|--execution]
 ```
 
 Each experiment's row in the compact index ends with the `@<locator>` for the attempt it represents (`compare/bub-gpt-5.4` has just one attempt, so it represents itself; `compare/codex-gpt-5.4` represents the failing attempt expanded by default); the expanded detail block repeats the exact `attempt locator:` again at the end, and both places give the same value. To look at a different attempt — say, an earlier failure of `compare/codex-gpt-5.4` — find its locator via `--history` or the artifact directory, and `niceeval show @<locator>` jumps straight to it, no need to come back through this list first.
@@ -134,21 +134,21 @@ changes: diff unavailable · no workspace diff was recorded for this attempt
 
 artifacts: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/
 available:
-  niceeval show @1k2m9qrs --eval
+  niceeval show @1k2m9qrs --source
   niceeval show @1k2m9qrs --execution
   niceeval show @1k2m9qrs --timing
 ```
 
 This overview only gives a summary — it never reproduces a facet's full content; the full source, the full event stream, and the full file list are each expanded by their matching evidence flag. The `changes` line states the specific reason a diff is unavailable: here `weather/brooklyn` isn't a Sandbox eval, so no workspace change was ever collected; when a Sandbox eval didn't modify any file, it instead shows "produced no workspace file changes."
 
-### `--eval`, `--execution`, `--timing`, `--diff`: four evidence facets
+### `--source`, `--execution`, `--timing`, `--diff`: four evidence facets
 
 All four evidence flags work either right after `@<locator>` (pinpointing one attempt) or after a prefix that narrows uniquely to a single eval (picking the attempt chosen by the same default heuristic — the latest failure, or the latest attempt if none failed, the same one the single-eval detail block expands). If the prefix matches more than one eval, it errors out, and the error body gives you the `@<locator>` for every candidate eval right there — copy one and continue. You can pass multiple evidence flags at once to print every facet you want in one go.
 
-`--eval` is the eval source saved at run time, annotated line by line: gate failures and soft scores print directly under their matching source line, and an assertion that couldn't be pinned to a specific line (no position info, or the position points to another file) gets its own section instead of being dropped:
+`--source` is the eval source saved at run time, annotated line by line: gate failures and soft scores print directly under their matching source line, and an assertion that couldn't be pinned to a specific line (no position info, or the position points to another file) gets its own section instead of being dropped:
 
 ```text
-$ niceeval show @1k2m9qrs --eval
+$ niceeval show @1k2m9qrs --source
 @1k2m9qrs · weather/brooklyn · compare/codex-gpt-5.4 · failed
 
 eval source: evals/weather/brooklyn.eval.ts · sha256:a3fa4555…
@@ -189,7 +189,7 @@ full events: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weath
 full OTel trace: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/trace.json
 ```
 
-This attempt has just two messages and no tool-call nodes at all — which is exactly why the `calledTool("get_weather")` gate assertion above failed; `--execution` directly corroborates what `--eval`'s assertion annotation already told you. When there are skill loads and tool calls, `--execution` lays them into the same tree in the order they happened, splitting a tool call into two lines to read — "call" and "result":
+This attempt has just two messages and no tool-call nodes at all — which is exactly why the `calledTool("get_weather")` gate assertion above failed; `--execution` directly corroborates what `--source`'s assertion annotation already told you. When there are skill loads and tool calls, `--execution` lays them into the same tree in the order they happened, splitting a tool call into two lines to read — "call" and "result":
 
 ```text
 $ niceeval show @1c3h6twx --execution
@@ -297,7 +297,7 @@ Hand a coding agent this exact loop. Each step continues only when the previous 
 2. Run niceeval show <eval-id> to read that question's verdict per experiment, the default
    attempt's assertion detail, and the @<locator> at the end of each row.
 3. Run niceeval show @<locator> and confirm from the summary what evidence this attempt captured.
-4. Pick --eval, --execution, --timing, or --diff based on the question; you can pass multiple
+4. Pick --source, --execution, --timing, or --diff based on the question; you can pass multiple
    evidence flags at once.
 5. When output is truncated, read the sources.json, events.json, trace.json, or diff.json path
    printed at the end.
@@ -305,7 +305,7 @@ Hand a coding agent this exact loop. Each step continues only when the previous 
    before calling it done, do a --force full rerun to confirm the overall result.
 ```
 
-`--eval` shows what the eval checked and how each assertion turned out, `--execution` shows the agent's messages and calls (with OTel timing attached where it correlates), `--timing` shows the attempt's phase-by-phase duration, and `--diff` shows the sandbox's file changes. Pick the evidence that matches what you're diagnosing — you don't need to read all four views every time.
+`--source` shows what the eval checked and how each assertion turned out, `--execution` shows the agent's messages and calls (with OTel timing attached where it correlates), `--timing` shows the attempt's phase-by-phase duration, and `--diff` shows the sandbox's file changes. Pick the evidence that matches what you're diagnosing — you don't need to read all four views every time.
 
 ### History and Flakiness: `--history`
 
@@ -418,7 +418,7 @@ Soft assertion scores are recorded in `assertions[].score`; outside `--strict`, 
 ## Debugging Advice
 
 - Every failing or errored question in the index comes with its own drill-down command: start with `niceeval show <eval id>` for the assertion detail, then use the `@<locator>` at the end of a row to drill precisely into one attempt.
-- Use `--eval` to check what the eval checked and how each assertion turned out; assertion annotations map back to source lines.
+- Use `--source` to check what the eval checked and how each assertion turned out; assertion annotations map back to source lines.
 - Use `--execution` to check the agent's messages and calls; correlated OTel timing shows up right next to the same event.
 - For a coding-agent failure, look at `--diff` and the tool calls in `--execution`; together they show whether it "edited the wrong file" or "never called the tool it was supposed to."
 - When a Sandbox eval runs slowly or times out, look at `--timing` first. It separately lists queueing, Sandbox startup, shell commands inside setup hooks, agent install commands, each turn's `send`, correlated OTel model/tool time, and the wrap-up phase.

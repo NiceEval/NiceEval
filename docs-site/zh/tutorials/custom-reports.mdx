@@ -81,7 +81,7 @@ niceeval view --report reports/exam.tsx    # 网页：渲染网页面，Attempt 
 
 选择警告（`ScopeWarnings`）组件显示覆盖不全、快照过期、运行未完成和快照读取失败等提醒。提醒按 Experiment 分组，组头列出实验名、问题标签和可复制的重跑命令；每条原文位于可展开区域中。默认报告的每一页都包含该组件。自定义报告需要显示提醒时，在页首添加 `<ScopeWarnings />`。
 
-命令行的范围先作用在挑选上，报告拿到的就是收窄到这个范围后的 `selection`：位置参数的评估用例 id 前缀收窄 Selection 覆盖的评估用例（覆盖提醒的分母同样收窄到范围内），`--results` 把结果根换成指定目录，`--exp` 让 Selection 只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `exp.snapshots` 自行组织；证据视图（`--eval` / `--execution` / `--diff`）只看证据，不渲染报告。
+命令行的范围先作用在挑选上，报告拿到的就是收窄到这个范围后的 `selection`：位置参数的评估用例 id 前缀收窄 Selection 覆盖的评估用例（覆盖提醒的分母同样收窄到范围内），`--results` 把结果根换成指定目录，`--exp` 让 Selection 只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `exp.snapshots` 自行组织；证据视图（`--source` / `--execution` / `--diff`）只看证据，不渲染报告。
 
 页面里的每个组件都是**双面**的：网页面是 React 渲染，终端面是字符渲染，两面吃同一份算好的数据。实体列表按 experiment → Eval → Attempt 展示事实；指标表、矩阵、条形图、成绩单、散点图、趋势图和差异表展示聚合值。完整清单见[报告组件](/zh/reference/report-components)。网页面的实体、格子和点深链到 Attempt 详情，终端面印出对应的 `niceeval show <eval id>` 下钻命令。
 

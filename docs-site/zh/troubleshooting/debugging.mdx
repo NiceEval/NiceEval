@@ -34,7 +34,7 @@ timing: sandbox.queue 0.2s · sandbox.create 5.6s · sandbox.setup 3.5s · agent
 changes: 2 files changed by agent · M manager_decisions.json · A notes/decision-log.md
 
 available:
-  niceeval show @1qrdcfq8 --eval
+  niceeval show @1qrdcfq8 --source
   niceeval show @1qrdcfq8 --execution
   niceeval show @1qrdcfq8 --timing
   niceeval show @1qrdcfq8 --diff
@@ -46,10 +46,10 @@ available:
 
 排查顺序是「哪条断言挂了 → agent 当时做了什么 → 它到底改了什么」。
 
-**1. 把断言放回源码。** `--eval` 显示运行时保存的那份评估用例源码（不是你工作区里可能已经改过的版本），失败的断言直接标在对应行上；`t.send(...)` 的调用行标出它产生的那一轮——轮标签（`s1/t1`，与 `--execution` / `--timing` 用同一套）、这轮成没成、花了多久：
+**1. 把断言放回源码。** `--source` 显示运行时保存的那份评估用例源码（不是你工作区里可能已经改过的版本），失败的断言直接标在对应行上；`t.send(...)` 的调用行标出它产生的那一轮——轮标签（`s1/t1`，与 `--execution` / `--timing` 用同一套）、这轮成没成、花了多久：
 
 ```text
-$ niceeval show @1qrdcfq8 --eval
+$ niceeval show @1qrdcfq8 --source
 21✓     await t.send("Review the proposals and record your decision…");
     s1/t1 · completed · 22.4s
 38      for (const [issue, label] of Object.entries(expected)) {
@@ -182,7 +182,7 @@ niceeval sandbox stop --all
 
 每次运行都会在 `.niceeval/<实验>/<时间戳>/` 下留一份完整的结果快照，判定、断言、事件流、diff 都在里面，**不会被下一次运行覆盖**。复盘有三个入口：
 
-**用旧定位符直接打开。** 从上周的终端记录、CI 日志或报告里复制 `@` 定位符，`niceeval show @<定位符>` 照常工作，上面的 `--eval` / `--execution` / `--diff` 全部可用——包括那份运行时的评估用例源码，哪怕你后来把评估用例改了。
+**用旧定位符直接打开。** 从上周的终端记录、CI 日志或报告里复制 `@` 定位符，`niceeval show @<定位符>` 照常工作，上面的 `--source` / `--execution` / `--diff` 全部可用——包括那份运行时的评估用例源码，哪怕你后来把评估用例改了。
 
 **按实验回看现在的判定。** 不记得定位符时，从实验入手：
 
@@ -223,7 +223,7 @@ niceeval view --results site-data/run
 
 | 症状 | 命令顺序 |
 |---|---|
-| 断言挂了，不知道为什么 | `show @loc` → `show @loc --eval` |
+| 断言挂了，不知道为什么 | `show @loc` → `show @loc --source` |
 | 想知道 agent 当时做了什么 | `show @loc --execution` |
 | 想确认有没有调用过某个工具 / 搜对话关键词 | `show @loc --execution \| grep "TOOL ·" \| sort \| uniq -c` / `\| grep <关键词>` |
 | 想确认 agent 改了哪些文件 | `show @loc --diff` → `--diff=<path>` |

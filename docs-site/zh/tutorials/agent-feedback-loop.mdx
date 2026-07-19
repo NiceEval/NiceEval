@@ -96,7 +96,7 @@ AI 通常按任务选择这些入口：
 
     full eval source: …/weather/brooklyn/a2/sources.json
     available:
-      niceeval show @1k2m9qtr --eval
+      niceeval show @1k2m9qtr --source
       niceeval show @1k2m9qtr --execution
       niceeval show @1k2m9qtr --timing
     ```
@@ -172,7 +172,7 @@ AI 通常按任务选择这些入口：
     | 诊断目标 | 入口 | 输出必须包含 |
     | --- | --- | --- |
     | 查看一次 Attempt 摘要 | `niceeval show @<id>` | 评估用例断言、执行步骤、生命周期阶段耗时摘要、diff 摘要及各块可用性 |
-    | 检查评估用例断言及其通过或失败原因 | `niceeval show @<id> --eval` | 运行时评估用例源码、源码哈希、断言所在行、严重度、分数与原因 |
+    | 检查评估用例断言及其通过或失败原因 | `niceeval show @<id> --source` | 运行时评估用例源码、源码哈希、断言所在行、严重度、分数与原因 |
     | 检查 Coding Agent 的消息与调用 | `niceeval show @<id> --execution` | 消息、thinking、Skill load、工具调用与结果；有 OTel 时在同一节点附时间、父子关系和错误状态 |
     | 检查 Attempt 各阶段耗时 | `niceeval show @<id> --timing` | lifecycle → hook/turn → shell → OTel 的统一时间树；出错的 Attempt 标出已知的最深失败节点 |
     | 检查 Sandbox 工作区改动 | `niceeval show @<id> --diff` | 文件摘要、增删行数、具体补丁和原始 diff 路径；无文件工作区时明确 unavailable |
@@ -270,7 +270,7 @@ Coding Agent 应先从 `failures` 选中 Attempt locator，再按证据位执行
 读取 node_modules/niceeval/INDEX.md，再按索引读取与任务有关的文档。
 运行 npx niceeval exp local --output agent，并根据退出码和失败 locator 决定下一步。
 对每个失败的 Eval，从报告选择一个 Attempt locator；再运行 niceeval show @<id>
-并按问题选择 --eval、--execution、--timing 或 --diff；--timing 从 lifecycle 展开 setup/teardown
+并按问题选择 --source、--execution、--timing 或 --diff；--timing 从 lifecycle 展开 setup/teardown
 hook、shell 命令、每轮 send 与可关联的 OTel model/tool，回答整个 Attempt 的时间花在哪里。
 写出失败原因的假设，并判断应该修改被测程序、
 Eval，还是实验环境。修改后用 --force 重跑对应 Eval，比较新的判定和证据。

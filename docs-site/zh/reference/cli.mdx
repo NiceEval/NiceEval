@@ -162,7 +162,7 @@ npx niceeval view
 npx niceeval show
 npx niceeval show weather/brooklyn
 npx niceeval show @1k2m9qrs
-npx niceeval show @1k2m9qrs --eval
+npx niceeval show @1k2m9qrs --source
 npx niceeval show @1k2m9qrs --execution
 npx niceeval show fixtures/button --diff
 npx niceeval show weather/brooklyn --history
@@ -170,7 +170,7 @@ npx niceeval show weather/brooklyn --history
 
 `show` 是终端结果入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。位置参数选「看哪些评估用例」（ID 前缀）或直接用 `@<locator>` 精确选一个 attempt；不带位置参数时直接比较当前 Scope，`--exp` 按 experiment id 路径收窄。
 
-`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）；`--eval`、`--execution`、`--diff` 是同一 attempt 的证据切面，分别展开运行时保存的评估用例源码、标准执行事件流、工作区文件改动，因此必须搭配 `@<locator>` 精确指名一个 attempt。`--results <目录>` 指定结果根，`--history` 查看跨 run 趋势。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
+`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）；`--source`、`--execution`、`--diff` 是同一 attempt 的证据切面，分别展开运行时保存的评估用例源码、标准执行事件流、工作区文件改动，因此必须搭配 `@<locator>` 精确指名一个 attempt。`--results <目录>` 指定结果根，`--history` 查看跨 run 趋势。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
 
 ## `--early-exit` 与 `--strict`
 

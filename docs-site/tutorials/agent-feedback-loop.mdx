@@ -97,7 +97,7 @@ The goal of the loop isn't to make a command exit green — it's to form and ver
 
     full eval source: …/weather/brooklyn/a2/sources.json
     available:
-      niceeval show @1k2m9qtr --eval
+      niceeval show @1k2m9qtr --source
       niceeval show @1k2m9qtr --execution
       niceeval show @1k2m9qtr --timing
     ```
@@ -173,7 +173,7 @@ The goal of the loop isn't to make a command exit green — it's to form and ver
     | Question you're trying to answer | Entry point | Output must include |
     | --- | --- | --- |
     | Quickly tell what happened in one attempt | `niceeval show @<id>` | Eval assertions, execution steps, a lifecycle-stage timing summary, a diff summary, and which blocks are available |
-    | What the eval actually checked, and why a given gate/soft passed or failed | `niceeval show @<id> --eval` | The eval source at run time, its source hash, the line each assertion sits on, severity, score, and reason |
+    | What the eval actually checked, and why a given gate/soft passed or failed | `niceeval show @<id> --source` | The eval source at run time, its source hash, the line each assertion sits on, severity, score, and reason |
     | What the agent did, what it called, where the time went | `niceeval show @<id> --execution` | Messages, thinking, skill loads, tool calls and results; with OTel, timing, parent/child relationships, and error status on the same nodes |
     | How an attempt's time breaks down phase by phase | `niceeval show @<id> --timing` | A unified time tree from lifecycle → hook/turn → shell → OTel; an errored attempt marks the deepest known failing node |
     | What the Sandbox workspace's files turned into | `niceeval show @<id> --diff` | A file summary, added/removed line counts, the actual patch, and the original diff path; explicitly unavailable when there's no file workspace |
@@ -272,7 +272,7 @@ Read node_modules/niceeval/INDEX.md, then follow the index to read whatever
 docs relate to the task.
 Run npx niceeval exp local --output agent, and decide the next step from the
 exit code and the failure locators. For every failing eval, pick an attempt
-locator from the report; then run niceeval show @<id> and choose --eval,
+locator from the report; then run niceeval show @<id> and choose --source,
 --execution, --timing, or --diff depending on the question you're asking;
 --timing expands the lifecycle into setup/teardown hooks, shell commands,
 each turn's send, and correlated OTel model/tool spans, to answer where an

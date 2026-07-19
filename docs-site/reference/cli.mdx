@@ -162,7 +162,7 @@ Open the local result viewer. It shares the same default report and the same def
 npx niceeval show
 npx niceeval show weather/brooklyn
 npx niceeval show @1k2m9qrs
-npx niceeval show @1k2m9qrs --eval
+npx niceeval show @1k2m9qrs --source
 npx niceeval show @1k2m9qrs --execution
 npx niceeval show fixtures/button --diff
 npx niceeval show weather/brooklyn --history
@@ -170,7 +170,7 @@ npx niceeval show weather/brooklyn --history
 
 `show` is the terminal entry point for results — suited both to a person reading directly and to a coding agent drilling down level by level inside its context window. The positional argument picks which evals to look at (an ID prefix), or picks exactly one attempt with `@<locator>`. With no positional argument, it shows the default comparison report partitioned by experiment group; giving an eval ID prefix only narrows the evals the report covers, it does not change the group boundaries.
 
-`@<locator>` with no evidence flag gives that attempt's compact overview (assertion summary, execution summary, optional OTel timing, diff summary). `--eval`, `--execution`, and `--diff` are evidence facets of the same attempt — they expand, respectively, the Eval source captured at run time, the standard execution event stream, and the workspace file changes, so they must be paired with an `@<locator>` that names exactly one attempt. `--results <dir>` sets the results root, and `--history` shows the cross-run trend. See [Viewing results](/tutorials/viewing-results) for the full reading order, output examples, and artifact details.
+`@<locator>` with no evidence flag gives that attempt's compact overview (assertion summary, execution summary, optional OTel timing, diff summary). `--source`, `--execution`, and `--diff` are evidence facets of the same attempt — they expand, respectively, the Eval source captured at run time, the standard execution event stream, and the workspace file changes, so they must be paired with an `@<locator>` that names exactly one attempt. `--results <dir>` sets the results root, and `--history` shows the cross-run trend. See [Viewing results](/tutorials/viewing-results) for the full reading order, output examples, and artifact details.
 
 ## `--early-exit` and `--strict`
 
