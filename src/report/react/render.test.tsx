@@ -400,9 +400,13 @@ describe("ExperimentList", () => {
   });
 
   it("展开到 Eval:父行只有折叠判定与题级聚合,失败摘要只在 Attempt 子行", () => {
-    expect(html).toContain("algebra/quadratic");
-    expect(html).toContain('href="#/attempt/@1a4a4a4a"');
-    expect(html).toContain('href="#/attempt/@1b5b5b5b"');
+    // 独立自有 React 场景:显式传 attemptHref 才产生外部链接(没有报告宿主注入 ctx.attemptHref)。
+    const linked = renderToStaticMarkup(
+      <ExperimentList data={experimentListItems} filter attemptHref={(l) => `#/attempt/${l}`} />,
+    );
+    expect(linked).toContain("algebra/quadratic");
+    expect(linked).toContain('href="#/attempt/@1a4a4a4a"');
+    expect(linked).toContain('href="#/attempt/@1b5b5b5b"');
     expect(html.match(/algebra\/quadratic/g)).toHaveLength(1);
     expect(html).toContain("nre-experiment-eval-header");
     expect(html.match(/nre-experiment-attempt-row/g)).toHaveLength(4);

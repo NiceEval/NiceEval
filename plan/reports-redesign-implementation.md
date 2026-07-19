@@ -1,5 +1,7 @@
 # PLAN:Reports 三层重设计的实现落地
 
+> **第 44/51 条(attempt 详情"保持宿主路由,不占导航")已被 `plan/report-pages-attempt-detail-alignment.md` 与 `memory/attempt-detail-is-a-parametrized-page.md` 取代:attempt 详情现在是报告里唯一的参数化 page,内容由报告定义持有,不再是宿主路由内容。深链对完整结果根解析的结论不变,变的只是"内容归谁"。执行 Agent 请以 `report-pages-attempt-detail-alignment.md` 与当前 `docs/feature/reports/` 为准。**
+
 设计已定稿并全部落进 `docs/feature/reports/`（2026-07-16,设计裁决台账见 `memory/reports-component-page-report-redesign.md`）。本 PLAN 给实现 Agent:按 docs 声明改 `src/`,测试只实现 `docs/engineering/unit-tests/reports/cases.md` 已登记的行。
 
 ## 契约变更总览(实现对照清单)

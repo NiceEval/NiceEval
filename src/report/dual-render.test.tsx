@@ -25,6 +25,7 @@ import {
   FALLBACK_REPORT_TITLE,
   pickReportPage,
   renderReportToText,
+  ReportPageNeedsLocatorError,
   ReportPageNotFoundError,
   resolveReportTitle,
 } from "./report.ts";
@@ -136,10 +137,12 @@ function resultsOf(snapshots: Snapshot[]): Results {
 /** 管线便捷入口:resolve + validate + text 渲染,报告声明用最小 meta。 */
 async function renderTreeText(node: ReportNode, scope: Scope, width = 100): Promise<string> {
   const definition = defineReport(node);
-  const resolved = await resolveReportTree(pickReportPage(definition).content, {
+  const page = pickReportPage(definition);
+  const resolved = await resolveReportTree(page.content, {
     scope,
     results: resultsOf(scope.snapshots),
-    report: buildReportMeta(definition, scope, "report"),
+    report: buildReportMeta(definition, scope),
+    page: { id: page.id, input: "scope" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -336,14 +339,14 @@ describe("组合组件(函数形态)", () => {
     expect(composed).toBe(manual);
   });
 
-  it("ctx.results 可自行挑 Snapshot[] 喂 input;ctx.report 携带走完回退链的 title 与当前 pageId", async () => {
+  it("ctx.results 可自行挑 Snapshot[] 喂 input;ctx.report 携带走完回退链的 title,ctx.page 携带当前页 id", async () => {
     const named = snap({ experimentId: "hist/a", name: "Memory Evals", results: [res("q", "passed")] });
     const scope = scopeOf([named]);
     const Meta = defineComponent((_props: Record<never, never>, ctx) => {
       const history = ctx.results.experiments[0]!.snapshots;
       return (
         <Col>
-          <Text>{`title=${typeof ctx.report.title === "string" ? ctx.report.title : "?"} page=${ctx.report.pageId}`}</Text>
+          <Text>{`title=${typeof ctx.report.title === "string" ? ctx.report.title : "?"} page=${ctx.page.id}`}</Text>
           <ScopeSummary input={history} />
         </Col>
       );
@@ -755,6 +758,55 @@ describe("defineReport 装载规范化", () => {
     expect(() => defineReport({ title: {}, content: null })).toThrow(/no non-empty value/);
   });
 
+  it("page 省略 input 规范化为 scope + navigation:true;显式 attempt 必须 navigation:false", () => {
+    const definition = defineReport({
+      pages: [
+        { id: "report", title: "Report", content: null },
+        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, content: null },
+      ],
+    });
+    expect(definition.pages[0]).toMatchObject({ input: "scope", navigation: true });
+    expect(definition.pages[1]).toMatchObject({ input: "attempt", navigation: false });
+
+    expect(() =>
+      defineReport({
+        pages: [
+          // @ts-expect-error input:"attempt" 必须显式 navigation:false;这里模拟无类型 JS 输入
+          { id: "a", title: "A", input: "attempt", content: null },
+        ],
+      }),
+    ).toThrow(/navigation: false/);
+    expect(() =>
+      defineReport({
+        pages: [
+          // @ts-expect-error navigation:true 与 input:"attempt" 互斥;这里模拟无类型 JS 输入
+          { id: "a", title: "A", input: "attempt", navigation: true, content: null },
+        ],
+      }),
+    ).toThrow(/navigation: false/);
+  });
+
+  it("navigation: false 的 scope-input page 不进导航但仍是普通 scope page", () => {
+    const definition = defineReport({
+      pages: [
+        { id: "report", title: "Report", content: null },
+        { id: "hidden", title: "Hidden", navigation: false, content: null },
+      ],
+    });
+    expect(definition.pages[1]).toMatchObject({ input: "scope", navigation: false });
+  });
+
+  it("一份 definition 最多一张 attempt-input page,第二张同类 page 装载报错", () => {
+    expect(() =>
+      defineReport({
+        pages: [
+          { id: "a1", title: "A1", input: "attempt", navigation: false, content: null },
+          { id: "a2", title: "A2", input: "attempt", navigation: false, content: null },
+        ],
+      }),
+    ).toThrow(/at most one input: "attempt" page/);
+  });
+
   it("{src} 资产拒绝 .. 路径段、绝对路径与 ~;inline/src 互斥", () => {
     expect(() => defineReport({ content: null, scripts: [{ src: "../x.js" }] })).toThrow(/not allowed/);
     expect(() => defineReport({ content: null, scripts: [{ src: "/abs.js" }] })).toThrow(/not allowed/);
@@ -784,6 +836,34 @@ describe("defineReport 装载规范化", () => {
     // 树形态文件的唯一页 id 是缩写展开出的 report
     const single = defineReport(<ScopeSummary />);
     expect(pickReportPage(single, "report").id).toBe("report");
+  });
+
+  it("pickReportPage 缺省跳过 navigation:false 的页,只挑第一张可导航页;可用列表也只含可导航页", () => {
+    const definition = defineReport({
+      pages: [
+        { id: "hidden", title: "Hidden", navigation: false, content: null },
+        { id: "overview", title: "Overview", content: null },
+        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, content: null },
+      ],
+    });
+    expect(pickReportPage(definition).id).toBe("overview");
+    try {
+      pickReportPage(definition, "typo");
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(ReportPageNotFoundError);
+      expect((e as ReportPageNotFoundError).available).toEqual(["overview"]);
+    }
+  });
+
+  it("显式选择 attempt-input page 但没有 locator:ReportPageNeedsLocatorError", () => {
+    const definition = defineReport({
+      pages: [
+        { id: "report", title: "Report", content: null },
+        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, content: null },
+      ],
+    });
+    expect(() => pickReportPage(definition, "attempt")).toThrow(ReportPageNeedsLocatorError);
   });
 
   it("标题回退链:def.title → 唯一且相同的快照 name → 内置文案「Eval 运行结果 / Eval Results」;en 相同 zh 不同也落内置文案", () => {
@@ -960,7 +1040,7 @@ describe("extends 与内建视图集合", () => {
 
     // ctx.report.title 取 extends 上声明的 title
     const s = snap({ experimentId: "compare/a", results: [res("q", "passed")] });
-    expect(buildReportMeta(branded, scopeOf([s]), "report").title).toBe("Memory Evals");
+    expect(buildReportMeta(branded, scopeOf([s])).title).toBe("Memory Evals");
   });
 
   it("无外壳字段的 extends 与内建逐页两面渲染逐字节相同", async () => {

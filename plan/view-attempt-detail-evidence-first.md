@@ -1,5 +1,7 @@
 # view Attempt 详情:断言区落地 + 时间树默认收合
 
+> **已被 `plan/report-pages-attempt-detail-alignment.md` 取代。** 本文件把 attempt 详情当作 `src/view/app/components/AttemptModal.tsx` 内部要修的一块内容;新契约下详情内容整体迁出 view,变成 `niceeval/report` 公开的 `AttemptDetail` 组合组件与 11 个叶子组件(见 `docs/feature/reports/library/attempt-detail.md`),`view` 只保留 page 寻址与 dialog 摆放。本文件提到的断言区优先、时间树默认收合等具体行为要求仍然成立,但落点已经不是 `AttemptModal.tsx`,而是新组件族的 web 面实现——执行时请对照 `report-pages-attempt-detail-alignment.md` 第 7 节(Phase C)。
+
 ## 背景
 
 契约 `docs/feature/reports/view.md`「Attempt 详情」要求断言区(failed / unavailable 先展开、每条失败直接显示 matcher、expected / received 或 reason、passed 按 group 折叠计数、源码锚),且时间树 children 默认收合。当前 view 实现两者都没有:断言只以代码视图行内锚存在(点行才展开),`PhaseTimingBlock` 无条件全展开压满首屏。来龙去脉与根因见 `memory/view-attempt-detail-buries-failure.md`。

@@ -55,7 +55,7 @@ it("scopeSummaryData 使用端到端两级聚合并保留覆盖率", async () =>
 
 | 契约 | 场景 |
 |---|---|
-| `experimentComparisonData()` 对完整 input 计算一份 `ScopeSummary` / `MetricScatter` / `ExperimentList`，每个 experiment 的 eval 集以快照 `selectedEvalIds` 为准；不同深度目录（如 `compare/a`、`bench/long/x`、`standalone`）的 experiments 一律进同一份 data，不再按父路径分组比较 | 正例：两个 experiment 选择不同 eval 集，列表 eval 数与各自分母如实且未选择项不补失败；正例：三种深度不同的 experiment id 混在一份 data 里，summary/scatter/experiments 三块与对完整投影 input 单独调用结果深等；正例：来源快照缺 `selectedEvalIds`（第三方）时该 experiment 按其实际 evals 可见 |
+| `experimentListData()` 对完整 input 计算 experiment 列表，每个 experiment 的 eval 集以快照 `selectedEvalIds` 为准；不同深度目录（如 `compare/a`、`bench/long/x`、`standalone`）的 experiments 一律进同一份 data，不再按父路径分组比较；`ExperimentComparison` 把同一个 `input`（缺省 `ctx.scope`）原样透传给 `ScopeSummary` / `MetricScatter` / `ExperimentList`，组合本身不二次计算或过滤，也不导出自己的 `data` 形态 | 正例：两个 experiment 选择不同 eval 集，列表 eval 数与各自分母如实且未选择项不补失败；正例：三种深度不同的 experiment id 混在一份 input 里，直接调用 `experimentListData` 与经 `ExperimentComparison` resolve 展开后 `ExperimentList` 收到的 spec 深等；正例：来源快照缺 `selectedEvalIds`（第三方）时该 experiment 按其实际 evals 可见；正例：resolve 后 `ExperimentComparison` 展开树里 `ScopeSummary`/`MetricScatter`/`ExperimentList` 三个组件收到的 spec `input` 与 `ctx.scope` 同引用 |
 | `ExperimentComparison` 的 web/text 面都直接显示完整 Scope，不输出实验组选择器或组索引 | 正例：多 experiment 的两面都有摘要、散点与实验明细；反例：web 面 DOM 中无 `role=tablist` 与任何 group `<details>`/data 属性；反例：text 面不含分组索引段与 `niceeval exp <group>` 命令提示；正例：`ExperimentList` 行显示完整 experiment id（不按父路径截断） |
 | `MetricScatter` 对缺 x 或 y 的点不绘制并报告缺失数；零点显示明确空态；单点照常绘制 | 边界：0 点 / 1 点 / 部分缺 x；反例：单点不被拒绝 |
 | 散点轴方向跟随指标 `better`：lower 反向（左贵右便宜）、higher 正向，「更好」恒指向右上，提示恒为「越靠右上越好」；刻度显示真实值；未声明 better 的轴正向且整图不出方向提示；两面同规则 | 正例：成本 × 通过率图上低成本点落在右侧且刻度值仍从大到小；边界：x 无 better 时无方向提示；正例：text 面同方向 |
@@ -79,7 +79,7 @@ it("scopeSummaryData 使用端到端两级聚合并保留覆盖率", async () =>
 
 | 契约 | 场景 |
 |---|---|
-| 内建报告是三页普通 `defineReport`（`report` / `attempts` / `traces`），页内容全部由公开组件组成，与 `--report` 同内容文件完全等价 | 正例：裸宿主装载的 definition 与内建入口默认导出同引用；正例：内建定义的页 id、页名与逐页组件构成和 built-in.md 全文一致 |
+| 内建报告 `standard` 是四张 page（`report` / `attempts` / `traces` / `attempt`），其中三张进导航、第四张是 `navigation: false` 的参数化 attempt-input page，页内容全部由公开组件组成，与 `--report` 同内容文件完全等价 | 正例：裸宿主装载的 definition 与内建入口默认导出同引用；正例：内建定义四张 page 的 id、标题、`input`/`navigation` 与逐页组件构成和 built-in.md 全文一致；正例：`standard.pages` 第四项与具名导出 `standardAttemptPage` 同引用 |
 | 内建入口是视图集合：每个内建视图按名字具名导出（当前只有 `standard`），默认导出恒等于 `standard` | 正例：默认导出与 `standard` 同引用 |
 | `defineReport({ extends: base, … })` 在整份报告上叠外壳：页列表取 base 的页列表（同引用）；外壳字段声明即整字段覆盖、未声明沿用 base；产物是普通 `ReportDefinition`，可再被 extends | 正例：无外壳字段的 `defineReport({ extends: standard })` 逐页两面渲染与内建逐字节相同；正例：`defineReport({ extends: standard, title, links })` 页列表与 `standard` 逐项同引用、`ctx.report.title` 取自定义 `title` 且 links 生效；正例：二级 extends 链的页列表仍与 `standard` 同引用且外壳按最近声明取值（声明整字段覆盖、未声明沿用） |
 | `Hero` 组合组件缺省取 `ctx.report.title`（回退链后的站点标题），显式 `title` prop 覆盖；与手写 `<HeroCard title={…} data={await heroData(ctx.scope)} />` 严格等价 | 正例：声明 `title` 后 `<Hero />` 两面输出含该标题且与浏览器标题同源；正例：显式 `title` prop 覆盖声明；正例：与手写组合渲染深等 |
@@ -99,7 +99,7 @@ it("scopeSummaryData 使用端到端两级聚合并保留覆盖率", async () =>
 | spec 形态 `input` 省略时取宿主注入的 Scope，显式 `input` 覆盖数据来源 | 正例：`ScopeSummary input={scope.filter(...)}` 只统计收窄后快照；正例：`MetricTable input={exp.snapshots}` 按快照出行 |
 | resolve 记忆化：一次页渲染内同引用 `input` + 深相等 spec 只计算一次；深相等中函数与 Metric / Dimension / NumericAxis 实例按引用比较 | 正例：Matrix 与 Bars 同 spec 时计算函数只被调一次；反例：不同 spec 或不同 `input` 各自计算；边界：两个字段相同但实例不同的 Metric 各自计算、不报错 |
 | `ReportNode` 全集：元素、数组 / Fragment（展平保序）、null / undefined / boolean（渲染为空）；裸字符串与数字在树校验时按完整用户反馈拒绝并指引包 `Text` | 正例：`groups.map(...)` 数组与 `cond && <X />` 两面渲染正确；反例：树中放裸字符串报错文案含 Text 指引 |
-| 组合组件在 resolve 阶段以 `(props, ctx)` 调用并递归展开返回树；`ctx` 携带 `scope`、`results` 与规范化声明 `report`；async 组合可用 | 正例：组合组件树与手写等价树渲染相同；正例：`ctx.results` 取历史快照喂 `input`；正例：`ctx.report.title` 是走完回退链的标题、`ctx.report.pageId` 是当前页 id |
+| 组合组件在 resolve 阶段以 `(props, ctx)` 调用并递归展开返回树；`ctx` 携带 `scope`、`results`、规范化声明 `report`（`pages` 逐项含 `id`/`title`/`input`/`navigation`）与当前页判别 `page`；async 组合可用 | 正例：组合组件树与手写等价树渲染相同；正例：`ctx.results` 取历史快照喂 `input`；正例：`ctx.report.title` 是走完回退链的标题、`ctx.report.pages` 逐项含 `input`/`navigation`；正例：scope-input page 内组合组件收到 `ctx.page` 为 `{ id, input: "scope" }`；正例：attempt-input page 内 `ctx.page` 为 `{ id, input: "attempt", locator, evidence }`，`evidence` 与宿主装配的 `AttemptEvidence` 同引用 |
 | 同层 sibling 并行取数与展开，输出保持声明顺序 | 正例：慢 resolve 在前、快 resolve 在后时输出顺序不变 |
 | 非法节点在展开遇到时以完整用户反馈拒绝且不为其取数：React 组件、未经 `defineComponent` 的普通函数、任意 HTML intrinsic | 反例：树中放裸函数组件报错文案可 snapshot；反例：`<div>` 同样拒绝 |
 | `defineComponent` 两种形态：函数形态产出组合组件；对象形态缺 `text` 或 `web` 在定义时报错（TS 编译期 + 无类型 JS 运行期） | 正例：函数形态产物可入树；反例：只给 `web` 的对象形态定义时报完整用户反馈 |
@@ -197,6 +197,14 @@ it("text 与 web 显示同一个 MetricCell 终值和 warning", () => {
 | 显示时下一步随行：web 面带 `command` 的条目渲染为可复制命令，无 `command` 的只显示 message 不硬造动作；空警告集两面零输出；裸 `Snapshot[]` 输入渲染为空 | 正例：stale-snapshot 在 web 面出现复制动作且值为 `niceeval exp <真实 id>`；反例：missing-startedAt 形态的无 command 条目在 web 面无复制动作；边界：空 warnings 不渲染容器节点 |
 | `view` 位置参数与 `--exp` 收窄对全部页生效（含内建 Attempts 页）；attempt 详情路由对完整结果根解析，被滤掉的 attempt 深链仍可打开 | 正例：收窄后 Attempts 页行集缩小，`#/attempt/@<locator>` 对被滤掉的 attempt 仍解析成功 |
 | `show` 中漏写 `@` 的 locator 按 eval id 前缀处理并明确报无匹配、列出候选 | 反例：输入 "1qrdcfq8" 报 "No results matched" 附候选 |
+| 报告定义存在 `input:"attempt"` page 时，locator 输出（Table、Experiment/Eval/Attempt/Failure list、`TraceWaterfall`、`CopyFixPrompt`）在两面生成寻址链接/命令：show 侧命令保留当前 `--results`/`--report`；view 侧生成到该 page 的链接 | 正例：自定义 `--report` 含 attempt page 时，`show` 输出的 locator 命令带 `--report <file>` 与 `--results`；正例：`view` 对应行是可点击链接 |
+| 报告定义没有 `input:"attempt"` page 时，同一批 locator 输出在两面都只是纯文本，不生成空 href、假命令或回退到内建详情 | 反例：无 attempt page 的自定义 report，`view` 的 locator 单元格不含 `<a>`；反例：`show` 对应文本不含任何 `@<locator>` 之外的命令提示 |
+| 裸 `show @<locator>`（无证据 flag）选择当前 report definition 中唯一的 attempt-input page，装配 `AttemptEvidence` 并按普通 page 管线 resolve/validate/渲染其 text 面，不再直接调用专用首页渲染函数 | 正例：自定义 `--report` 声明了非默认布局的 attempt page 时，`show @<locator> --report <file>` 输出该自定义布局的 text 面，而非内建固定首页文案 |
+| `--source`/`--execution`/`--timing`/`--diff` 仍是直接读取 `AttemptEvidence` 的专用终端投影，不经过 page content，即使自定义报告删除了 attempt page 也不受影响 | 正例：无 attempt page 的自定义 report 下 `show @<locator> --diff` 仍正常输出；反例：同一情形下裸 `show @<locator>`（无 flag）报错 |
+| 自定义报告没有 attempt page 时，裸 `show @<locator> --report <file>` 按完整用户反馈报错，指引 `extends: standard`、加入 `standardAttemptPage` 或声明自己的 page；不回退到内建详情 | 反例：报错文案含三种解决路径中至少一种的具体写法 |
+| 报告声明 attempt page 时，站点为收窄后有效根内每个可达 locator 生成一份 `attempt/<encodeURIComponent(locator)>.html`；收窄之外的 locator 不生成文件，深链如实显示证据缺失 | 正例：`--exp` 收窄后 `attempt/` 文件数等于该收窄下去重 locator 数；反例：收窄外 locator 没有对应文件 |
+| 直接打开 `attempt/<locator>.html`（无 JavaScript）即可读到完整 attempt page 内容：身份、verdict、断言/source、时间树、diagnostics、usage、对话、trace、diff 摘要都已在初始 HTML 中 | 正例：关闭 JS 场景下上述字段全部可从初始 DOM 读到，不依赖任何异步 fetch |
+| 增强脚本拦截 locator 链接后，dialog 内容与直接打开该 HTML 文档的内容是同一份 server-rendered 字节/DOM 片段，不维护客户端镜像渲染 | 正例：dialog 打开后的内容片段与对应 `attempt/<locator>.html` 该区域的静态内容一致 |
 | `--timing` 自身就是 Attempt 证据切面，单独使用必须进入有界诊断时间树；首页 timing 只列大头，短的 baseline / telemetry bookkeeping 留给时间树 | 正例：locator + 单独 `--timing` 不回落首页；边界：短 telemetry 省略、慢 telemetry 保留 |
 | detail node 不超过 80 时，裸 `--timing` 与 `--timing=full` 展开相同节点；phase 行和 omission 行不占预算 | 正例：79/80 节点无 omission；边界：81 节点出现 omission；反例：不能省略 lifecycle phase |
 | 超预算时间树按失败路径 40、最慢路径 20、最早/最晚各 10 的节点池稳定取样，选中深层节点时保留祖先并占池额度，未用额度按契约再分配；平局用 `startOffsetMs` / `id` | 正例：慢 command、深层失败 span 与首尾样本均保留；边界：失败路径自身超过预算时省略行报告未展示 failed 数；边界：无失败时空余额流给其它池 |
@@ -212,7 +220,7 @@ it("text 与 web 显示同一个 MetricCell 终值和 warning", () => {
 | 本地宿主的 attempt 详情路由越过收窄对完整结果根解析；导出站对范围外 locator 的深链在证据位置如实显示缺失 | 正例：本地 `--exp compare` 下 dev-e2b attempt 的 `#/attempt/@<locator>` 仍解析成功、证据可 fetch；正例：收窄导出站里同一 locator 显示证据缺失而非报错白屏 |
 | `--snapshot` 指定单个快照文件时该文件不可读令 view 失败（与扫描模式的跳过相反）；view 位置参数只表示 eval id 前缀，不接受文件或目录 | 反例：损坏文件经 `--snapshot` 报错退出；正例：同文件在扫描模式仅被跳过；反例：文件路径作位置参数按 eval 前缀报无匹配 |
 | 落盘无 phases 时 summary/full timing 都如实输出 unavailable 不猜；有 phases 时主链之和 ≤ total，收尾段 `+N` 不计入 total | 正例：含 teardown 的 fixture；反例：无 phases 的第三方结果；边界：errored 中途时最后主链阶段带 `✗` |
-| 本地 server 与 `--out` 消费同一份站点产物：同一结果根与同一收窄下，同一路径在两宿主逐字节一致（index.html 与全部 artifact 文件），两宿主不各自携带取数或布局知识 | 正例：对同一结果根（含带收窄的输入），导出目录的每个文件与 server 对同路径的响应字节相等（含解引用后的 sources）；反例：server 除 attempt 详情证据请求外不提供产物清单之外的路径 |
+| 本地 server 与 `--out` 消费同一份站点产物：同一结果根与同一收窄下，同一路径在两宿主逐字节一致（`index.html`、全部 `attempt/*.html` 与全部 artifact 文件），两宿主不各自携带取数或布局知识 | 正例：对同一结果根（含带收窄的输入），导出目录的每个文件——含每份 `attempt/<locator>.html`——与 server 对同路径的响应字节相等（含解引用后的 sources）；反例：server 除产物清单内路径外不提供其它路径 |
 | server 打开首页触发站点产物整份重建，数据永远是盘上最新；artifact 请求未命中最近产物清单时管线重建一次再查，新落盘证据无需重启 | 正例：server 启动后新写一份快照，下一次 `GET /` 即含新数据；正例：新快照的 events.json 不重启 server 可 fetch；反例：重建后仍未知的路径 404 |
 
 宿主等价在装载边界记录 definition 与 Scope，不比较完整终端输出与完整 HTML——各宿主的导航壳和证据室本就不同：
@@ -231,21 +239,21 @@ it("show 与 view 的默认报告槽消费同一 Scope", async () => {
 })
 ```
 
-## Attempt 详情（view 证据室）
+## Attempt 参数化 page 与详情组件族
 
-契约来源：[View](../../../feature/reports/view.md)「Attempt 详情」。台账：[view-attempt-detail-buries-failure](../../../../memory/view-attempt-detail-buries-failure.md)（断言区缺失、timing 树压顶如何逃逸到真实使用）。
+契约来源：[Library · Attempt 详情组件](../../../feature/reports/library/attempt-detail.md)、[Architecture](../../../feature/reports/architecture.md)「Attempt 详情是一张参数化 page」。台账：[view-attempt-detail-buries-failure](../../../../memory/view-attempt-detail-buries-failure.md)（断言区缺失、timing 树压顶如何逃逸到真实使用）、[attempt-detail-is-a-parametrized-page](../../../../memory/attempt-detail-is-a-parametrized-page.md)（详情从宿主路由内容翻案为参数化 page 的裁决）。
 
 | 契约 | 场景 |
 |---|---|
-| 断言区是独立区块，先于时间树与代码视图渲染；数据来自 `result.json` 的 assertions，不依赖 sources / events / trace artifact 的加载 | 正例：无任何 artifact 的失败 attempt 仍渲染完整断言区；正例：DOM 中断言区节点先于 timing 区节点 |
-| 断言区先展开 failed / unavailable 与影响判定的 soft；passed 按 group 收进默认折叠区并显示数量 | 正例：1 gate-failed + 1 unavailable + 两 group 共 3 passed 的 fixture，前两者默认可见、passed 折叠且计数为 3；反例：全 passed 时无默认展开条目，只有折叠区；边界：soft 未达标默认展开，soft 达标进折叠区 |
-| 每条失败直接显示 matcher、expected / received 或 reason，并提供源码锚——不能要求用户从 matcher 名猜实际值 | 正例：失败条目静态渲染即含 expected 与 received 的值，且锚指向该断言的源码行；反例：无 expected / received 的失败（如 unavailable）显示 reason，不渲染空字段 |
-| 时间区默认只显示 phase 主链与收尾段；children（hook / 命令 / turn）收合在可展开结构里，失败最深节点带失败标记 | 正例：默认标记下 children 不可见，展开单个 phase 后逐层可见；边界：errored attempt 只有最深失败节点带 ✗，祖先不重复标记 |
-| 事件流按条目校验、按条目容错：未识别或形状不合的事件条目包成原始条目（`view.raw`）原样呈现并进入回复聚合，不静默丢弃；已识别事件正常呈现 | 正例：含 `skill.loaded` 的 events 数组不被判空，带 `loc` 的 send 仍聚出全部回复；正例：混入完全未知的事件类型（如 `future.event`）时该条目以原始 JSON 保留、其余事件照常；边界：非对象条目丢弃；反例：非数组的 events 载荷整体拒绝 |
-| `skill.loaded` 是一等回复条目：send 展开面与对话流都显示 Skill 名，不伪装成工具调用 | 正例：`indexTurns` 把 `skill.loaded` 聚成 `kind: "skill"` 回复并保留 Skill 名 |
-| 轮的归属按 `loc` 判定：无 `loc` 的 user 消息不开新轮——同文本回显吃掉、轮内注入作为 `kind: "user"` 回复留在当前轮，后续回复仍聚到带 `loc` 的 send | 正例：send（带 loc）后紧跟同文本无 loc 回显，回复仍全部聚到 send 行；正例：轮中段的 stop-hook 反馈成为 `kind: "user"` 回复且其后的 assistant 回复不脱轮；边界：流首无 loc 的 user 消息（旧工件）仍开 noloc 轮 |
-| 源码视图 send 行真实可交互：带 `loc` 的 send 行点开显示该轮回复（assistant 文本 / thinking），再点收起；轮内没有任何回复事件时展开面如实显示「无回复」空态，不留空白 | 正例：jsdom 点击 send 行后回复面板含 assistant 文本与 thinking；正例：只有 send 事件时展开面是「(无回复)」文案；反例：未点开时回复不可见 |
-| 源码视图断言行真实可交互：第一条失败断言默认展开（matcher 与 expected / received 的值直接可见），点行可收起；passed 行不默认展开、点开后有明细 | 正例：jsdom 下 gate-failed 行免点击即见 received 值；正例：passed 行初始无明细节点、点击后出现；反例：收起后 received 值不可见 |
+| `AttemptEvidence` 由 `loadAttemptEvidence` 一次装配；11 个叶子的 `attempt*Data(evidence)` 只做同步/纯派生，不读文件、不 fetch、不重复调用 `attempt.events()` / `attempt.trace()` / `attempt.diff()` | 正例：spy 底层 IO 方法后 resolve 一张 attempt page 只触发一次装配；正例：对同一份 fixture evidence 依次调用全部 11 个 `attempt*Data`，互不触发额外 IO |
+| 11 个叶子组件的非空/空证据矩阵：`AttemptSummary` 恒非空；其余 10 个在对应能力位为空时零输出（`AttemptError` 无 error、`AttemptAssertions` 无 assertion、`AttemptSource` 无 source、`AttemptFixPrompt` passed 或无可操作失败、`AttemptTimeline` 无 phase、`AttemptConversation` 无 events、`AttemptDiagnostics` 无 diagnostics、`AttemptUsage` 无 usage、`AttemptTrace` 无 trace、`AttemptDiff` 无变更） | 表驱动：11 行 ×{完整证据, 该项证据缺失} 两态，零输出态断言两面都不产生可见节点，非零输出态断言两面都含预期字段 |
+| `AttemptAssessment` 只表达 `AttemptError` + `AttemptSource`/`AttemptAssertions` 二选一：`evidence.capabilities.source` 为真时放 `AttemptSource`，否则放 `AttemptAssertions`；不在 attempt-input page 之外调用时报错 | 正例：有 source 的失败 attempt 展开树含 `AttemptSource` 不含 `AttemptAssertions`；正例：无 source 时相反；反例：`ctx.page.input !== "attempt"` 时 resolve 报完整用户反馈 |
+| `AttemptDetail` 按内建顺序装配 `AttemptSummary → AttemptAssessment → AttemptFixPrompt → AttemptTimeline → AttemptDiagnostics → AttemptUsage → AttemptConversation → AttemptTrace → AttemptDiff`，不产生新 data 或渲染面 | 正例：展开树的一级子节点类型序列与该顺序逐项相同 |
+| 叶子组件的 spec 形态省略 `input` 时取当前 attempt-input page 注入的 evidence；显式 `data` 与手工 `attempt*Data(evidence)` 结果深等；放在 scope-input page 且未显式传 `input`/`data` 时 resolve 报完整用户反馈并指引移到 attempt-input page 或传入 evidence | 正例：`<AttemptSummary />` 在 attempt page 内的 spec 结果与手工 `attemptSummaryData(evidence)` 深等；反例：`<AttemptSummary />` 放进 scope-input page 报错文案含"移到 attempt-input page"或"传入 evidence" |
+| text/web 两面共享同一次 resolve 产出的 data 事实（verdict、计数、能力位、引用），不逐字比较布局；text 面允许把大块内容折成摘要 + 专用证据命令（`--source`/`--execution`/`--timing`/`--diff`），但不得改变判定、计数或引用 | 正例：同一 fixture 的两面都显示相同 verdict、相同失败计数、相同 attempt 引用；不要求文本长度或视觉结构相同 |
+| `AttemptConversation` 数据来自 `AttemptEvidence.events`（标准事件流），按 `loc` 分轮：无 `loc` 的 user 消息不开新轮（同文本回显吃掉、轮内注入按 `kind:"user"` 留在当前轮）；事件按条目容错，未识别类型包成 `view.raw` 原样呈现且不吞没其余事件；`skill.loaded` 是一等回复条目 | 正例：send（带 loc）后紧跟同文本无 loc 回显，回复仍全部聚到 send 行；正例：混入完全未知的事件类型时该条目原始 JSON 保留、其余事件照常聚合；正例：`skill.loaded` 显示 Skill 名不伪装成工具调用；边界：流首无 loc 的 user 消息（旧 artifact）仍开 noloc 轮 |
+| 断言区（`AttemptAssertions`/`AttemptSource`）默认展开 failed / unavailable 与影响判定的 soft；passed 按 group 折叠计数；每条失败直接显示 matcher、expected / received 或 reason，并提供源码锚 | 正例：1 gate-failed + 1 unavailable + 两 group 共 3 passed 的 fixture，前两者默认可见、passed 折叠且计数为 3；反例：全 passed 时无默认展开条目，只有折叠区；正例：失败条目静态渲染即含 expected / received 的值，且锚指向该断言的源码行 |
+| `AttemptTimeline` 默认只显示 phase 主链与收尾段；children（hook / 命令 / turn）收合在原生 `<details>` 里，失败最深节点带失败标记 | 正例：默认（无 `open`）时 children 不可见，标记 `open` 后逐层可见；边界：errored attempt 只有最深失败节点带 ✗，祖先不重复标记 |
 
 ## 外壳、页面与 Tabs
 
@@ -266,7 +274,7 @@ it("show 与 view 的默认报告槽消费同一 Scope", async () => {
 | 标题取值链 def.title → Scope 中唯一且相同（LocalizedText 深相等）的快照 name → 内置文案「Eval 运行结果 / Eval Results」，落点是浏览器标题、show 页索引标题行与 `ctx.report.title`；`links` / `footer` 渲染进导航壳，text 面不含这些字段 | 正例：三级 fallback 各一 fixture，浏览器标题与 `ctx.report.title` 同源；边界：两快照 name 的 en 相同、zh-CN 不同时任何 locale 下都落内置文案；反例：show 输出不含 links href |
 | `ReportLink.icon` 是内联 SVG 字符串（`{ svg }`）：web 面渲染在 label 前、静态导出原样内联；不收组件，show 不消费 | 正例：带 svg 的 GitHub 链接导航项含该 SVG；反例：无类型 JS 传 ReactNode 作 icon 装载报错；反例：show 页索引不含 svg |
 | 宿主页头恒渲染报告改不动的 NiceEval 字标（外链官网、`utm_medium=brand`）；报告作者能声明的品牌只有 `PoweredBy`：无 props，web 面渲染指向官网的品牌行（href 含 `utm_source=report&utm_medium=powered-by`、`rel` 仅 `noopener`），text 面零输出；`Hero` / `HeroCard` 恒含品牌行、无拆除 prop；省略 `footer` 时不渲染页脚 | 正例：宿主导航壳 DOM 含 `class="brand"` 的 NiceEval 字标且外链官网；正例：内建报告每页 web 面含 `PoweredBy` 品牌行且 href 正确；反例：宿主壳无 hero 区、show 输出不含品牌行；边界：无 `footer` 时无页脚元素但品牌行仍在 |
-| view 导航只有报告页、按声明序排列，宿主不追加或保留任何导航项；attempt 详情路由不占导航 | 正例：双页自定义定义的导航恰为 页A · 页B；正例：裸 view 导航为 报告 · Attempts · 追踪（来自内建报告三页）；边界：树形态定义导航只有一项 report |
+| view 导航只有 `navigation !== false` 的 pages、按声明序排列，宿主不追加或保留任何导航项 | 正例：双页自定义定义的导航恰为 页A · 页B；正例：裸 view 导航为 报告 · Attempts · 追踪三项，`standard` 第四张参数化 attempt page 不出现在导航里；边界：树形态定义导航只有一项 report |
 | `scripts` / `styles` 按声明序注入：styles 在官方样式后，scripts 在官方增强脚本后 `</body>` 前；初始静态 HTML 的数值不因注入改变 | 正例：注入前后初始 HTML 数据节点相同、注入顺序可断言 |
 | `{src}` 资产相对报告文件解析，拒绝 `..` 路径段、绝对路径与 `~`；静态导出复制进 `assets/` 保持相对路径，缺失文件报错并给出解析后路径 | 正例：`./assets/a.js` 被复制；反例：`../x.js` 装载报错；边界：缺失文件在导出时报错 |
 | `head` 标签白名单是 `meta` / `link` / `script` / `style`，白名单外与宿主自有单例（`title` 不在白名单、`meta charset`、`meta name="viewport"`）装载报错并指回对应契约 | 反例：`{ tag: "base" }` 装载报错；反例：`meta charset` / `meta viewport` 装载报错且文案指回 title 契约或宿主职责 |
@@ -276,6 +284,10 @@ it("show 与 view 的默认报告槽消费同一 Scope", async () => {
 | `head` 不进 `ctx.report`（与 `scripts` / `styles` 同为注入资产）；show 不消费 `head` | 正例：声明 head 后组合组件 `ctx.report` 无该字段；反例：show 输出不含 head 标签内容 |
 | `scripts` / `styles` 的 `{src}` 只收本地路径，外链装载报错并指引改写成 `head` 条目 | 反例：`{ src: "https://cdn.example/x.js" }` 装载报错且文案含 `head` 写法 |
 | 重复或非法 page id 在装载时校验失败，报错列出冲突 id | 反例：两页同 id `exam`；反例：id 含大写或斜杠 |
+| page 省略 `input` 时规范化为 `input: "scope"`、`navigation: true`；声明 `input: "attempt"` 的 page 必须显式 `navigation: false`，省略或传 `true` 时装载报错 | 正例：省略 input 的 page 规范化后 `input === "scope"` 且 `navigation === true`；反例：`{ input: "attempt" }` 不带 `navigation: false` 装载报错；反例：`{ input: "attempt", navigation: true }` 装载报错 |
+| 一份 definition 最多声明一张 `input: "attempt"` 的 page，第二张同类 page 装载报错并指出冲突 page id | 反例：两张 `input: "attempt"` 的 page 装载报错 |
+| 没有 locator 时不能用 `--page` / `#/page/<id>` 打开 attempt-input page；有 locator 时才注入对应 `AttemptEvidence` 并 resolve | 反例：`--page attempt`（无 locator）报用户错误，不拿 Scope 强行 resolve；正例：带 locator 时该 page 正常 resolve |
+| show 的初始页选择、页尾"其余页"索引与 view 的导航、`--page` 可用列表只看 `navigation !== false` 的 pages；attempt-input page 从不出现在这些列表里 | 正例：`--page typo` 报错列出的可用 id 不含 attempt page id；正例：多页定义下 show 页尾索引不含 attempt page |
 | `Tabs` 两面都输出全部 tab 完整内容：web 静态 HTML 每 tab 一个 `<details>` 且仅首个 open，text 面按声明序输出带标题分节、不折成索引也不省略；切换不改变数据 | 正例：双 tab 两面各含两块完整内容且仅首个 open；反例：text 面不丢第二个 tab |
 
 ## Snapshot 的使用边界

@@ -63,9 +63,9 @@ site/
             └── diff.json        # 根里有才出现；缺时证据位置如实显示缺失
 ```
 
-源码查看因此自包含：前端按 `sources.json` 的引用 fetch 同快照的 `sources/<sha256>.json` 取正文；携带条目（`artifactBase` 指向原快照）的源码正文由复制管线归拢进本快照的 `sources/`，静态站不需要原快照在场。
+站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同快照的 `sources/<sha256>.json`，读取这份导出目录的下游消费方（下载后用 `niceeval/results` 重新打开、或另行编写的查看器）按这条引用取源码正文；携带条目（`artifactBase` 指向原快照）的源码正文由复制管线归拢进本快照的 `sources/`，静态站不需要原快照在场。这是 `artifact/` 自身的存储去重机制，与页面渲染路径无关——`AttemptSource` 消费的标注源码已经在 `AttemptEvidence.evalSource` 里解引用好，构建期直接写进对应 attempt 页面的初始 HTML，不依赖浏览器再去读这份引用。
 
-多页报告仍只用一个 `index.html`：页面是 `#/page/<id>` 路由，托管方不需要为每页配置路径。attempt 不同：基线 locator 链接直接指向 `attempt/<locator>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/attempt/@<locator>`。所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。`assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。`head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。网页会按需 fetch 证据文件，因此不提供“单个 HTML”导出。
+多页报告仍只用一个 `index.html`：页面是 `#/page/<id>` 路由，托管方不需要为每页配置路径。attempt 不同：基线 locator 链接直接指向 `attempt/<locator>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/attempt/@<locator>`。所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。`assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。`head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。attempt 页面的基线内容——判定、断言、时间树、对话、diagnostics、usage、trace、diff 摘要与可展开细节——已经在构建期写进该 locator 的静态 HTML，不依赖浏览器再去 fetch；`artifact/` 是与 HTML 平行的独立证据树，只服务下载、外部程序读取与渐进增强的补充链接，不是页面基线内容的数据来源。因此不提供“单个 HTML”导出：站点仍需要 `assets/`（样式 / 脚本）与 `artifact/`（独立证据文件）等外部文件，这是站点由多个物理文件构成的结构性原因，与页面是否需要联网取数无关。
 
 导出没有档位：`view --out` 不做体积取舍，收窄范围内存在且前端会读取的证据文件——`sources.json` 及其引用的快照级 `sources/<sha256>.json` 正文、`events.json`、`trace.json`、`diff.json`——全部随站复制，缺的在对应证据位置如实显示缺失，不猜也不冒充。体积取舍不在导出层做：要瘦站点，在构建发布根时用 [`copySnapshots({ artifacts })`](../results/library.md#复制与瘦身copysnapshots) 决定带什么（其缺省不带 diff）。唯一永不复制的是 `o11y.json`——报告数字在导出时已烘进 HTML，浏览器不读它，这是「前端读什么带什么」规则的推论，不是一个档位。
 

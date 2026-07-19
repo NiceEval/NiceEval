@@ -1,93 +1,67 @@
-// 报告装载的宿主联系面:show 与 view 共用(view 从这里 import;两个宿主对同一份
-// defineReport 产物必须得到同一个规范化结果,见 docs/feature/reports/library/shell.md)。
+// 报告装载的宿主联系面:show 与 view 共用。ReportDefinition / ReportPage / ReportMeta 的
+// 类型体系,以及装载规范化、resolve、text/web render 全部住在 niceeval/report 的构建单元
+// (src/report/**,经 `pnpm run build:report` 编译进 dist/report/**);这里只做两个宿主都
+// 需要、但只属于宿主编排的两件事——文件 vs 内建报告的装载分流、页索引命令拼装——不重复声明
+// 任何报告类型或规范化逻辑(docs/feature/reports/architecture.md「单一 report runtime 身份」)。
 //
-// 契约(docs/feature/reports/library/shell.md「行为约束」/ architecture.md「外壳与页:装载规范化」):
-// - `--report` 文件默认导出恒为 defineReport 产物;裸宿主装载 `niceeval/report/built-in` 的默认导出,
-//   走同一条「装载 → resolve → validate → render」管线。
-// - 装载规范化唯一产物是「外壳 + 非空页列表」:`defineReport(树)` ≡ `{ content: 树 }` ≡
-//   `pages: [{ id: "report", title: 内置页名, content: 树 }]`。
-// - 标题回退单点:def.title → Scope 中唯一且相同(LocalizedText 深相等)的非空快照 name →
-//   内置文案「Eval 运行结果 / Eval Results」。宿主落点是浏览器标题与 show 页索引标题行;
-//   页内 hero 标题由 Hero 组件消费同一取值链(ctx.report.title),宿主页头无品牌位。
-// - LocalizedText 回退:当前 locale → en → 按 locale 键字典序的第一个非空值。
-//
-// ⚠ 集成状态:src/report/** 正被并行重写(plan/reports-redesign-implementation.md)。这里把宿主
-// 需要的新报告 runtime API 收敛成唯一联系面,并对「新 dist 尚未产出」提供旧 API 桥接
-// (旧 ReportDefinition 是 build 函数形态,恒为单页)。集成阶段的对接点(搜索 INTEGRATION):
-//   1. `dist/report/built-in/index.js` 默认导出(内建报告入口;恒为新格式,无桥接——
-//      它随本包源码一起构建,不存在旧产物)。
-//   2. `normalizeReport(definition)`:装载规范化(外壳 + 非空页列表);旧桥接对 build 形态自行包单页。
-//   3. `renderReportTreeToText(tree, ctx, options)` / `renderReportTreeToStaticHtml(tree, ctx, options)`:
-//      逐页渲染入口(ctx = { scope, results, report });旧桥接调 renderReportToText /
-//      renderReportToStaticHtml(definition 整体)。
+// 值(函数 / 类)一律动态 import dist/report/**:report-host.ts 被 cli.ts 的多数命令间接
+// import,不是所有命令都渲染报告,静态 import 会让不需要报告的命令也背上 react / react-dom
+// 依赖。类型用 `import type` 从同一批 dist 模块拿——编译期擦除,零运行时代价,不产生
+// 第二份模块实例;同一进程不混用 raw src/report/** 与 dist/report/** 的同一状态模块。
 
-import type { Results } from "../results/index.ts";
+import type { Results, Scope } from "../results/index.ts";
 import type { LocalizedText } from "../types.ts";
+import type { PageContext } from "../../dist/report/tree.js";
+import type {
+  ReportDefinition,
+  ReportMeta,
+  ReportPage,
+} from "../../dist/report/report.js";
 
-/** 页:宿主寻址单位(`--page <id>` / `#/page/<id>`)。content 是报告树(旧桥接下是整个旧 definition)。 */
-export interface HostReportPage {
-  id: string;
-  title: LocalizedText;
-  content: unknown;
-}
-
-export interface HostReportLink {
-  label: LocalizedText;
-  href: string;
-  /**
-   * 可选内联 SVG 字标(shell.md「字段穷尽」):web 面渲染在 label 前,静态导出原样内联;
-   * 不收组件(外壳声明经 viewData 序列化边界);show 不消费。
-   */
-  icon?: { svg: string };
-}
-
-/** `{src}` 与 `{inline}` 两种形态不可同时出现(shell.md「字段穷尽」)。 */
-export type HostReportAsset = { src: string; inline?: never } | { inline: string; src?: never };
-
-/**
- * 结构化 head 标签(shell.md「字段穷尽」):白名单闭集(meta/link/script/style),
- * attrs 值 true 渲染裸布尔属性、字符串转义后渲染 `key="value"`;script/style 的
- * children 原样落进标签。形状与闭合序列在 defineReport 装载期已校验。
- */
-export type HostHeadTag =
-  | { tag: "meta" | "link"; attrs: Record<string, string | true>; children?: never }
-  | { tag: "script" | "style"; attrs?: Record<string, string | true>; children?: string };
-
-/** 装载规范化产物:外壳 + 非空页列表。show 只消费 title / pages;其余是 web 面属性。 */
-export interface HostReport {
-  title?: LocalizedText;
-  links: HostReportLink[];
-  footer?: LocalizedText;
-  head: HostHeadTag[];
-  scripts: HostReportAsset[];
-  styles: HostReportAsset[];
-  pages: HostReportPage[];
-}
-
-/** 单页缩写展开出的唯一页使用内置页名(shell.md:「报告 / Report」)。 */
-export const BUILT_IN_PAGE_TITLE: LocalizedText = { en: "Report", "zh-CN": "报告" };
-export const SINGLE_PAGE_ID = "report";
-
-/** 标题回退链的终点:内置文案「Eval 运行结果 / Eval Results」(shell.md「行为约束」)。 */
-export const BUILT_IN_REPORT_TITLE: LocalizedText = { en: "Eval Results", "zh-CN": "Eval 运行结果" };
-
-/** 规范化报告声明的只读注入(组合组件 ctx.report;ReportMeta,见 library/layout.md)。 */
-export interface HostReportMeta {
-  title: LocalizedText;
-  links: HostReportLink[];
-  footer?: LocalizedText;
-  pages: { id: string; title: LocalizedText }[];
-  pageId: string;
-}
+export type { PageContext } from "../../dist/report/tree.js";
+export type {
+  HeadTag,
+  ReportAsset,
+  ReportDefinition,
+  ReportMeta,
+  ReportMetaPage,
+  ReportPage,
+} from "../../dist/report/report.js";
 
 /** 可预期的装载用户错误(与 ReportLoadError 同待遇:打一句直说问题与下一步,不抛堆栈)。 */
 export class HostReportError extends Error {}
 
-// ───────────────────────── LocalizedText ─────────────────────────
+// ───────────────────────── 装载 ─────────────────────────
+
+/**
+ * 装载宿主报告:`--report <file>` 走 dist 里的 `loadReportFile`;缺省(裸 show / 裸 view)
+ * 装载内建 `standard`。两条路的产物都已经是 `defineReport` 规范化后的 `ReportDefinition`——
+ * 没有第二个规范化步骤,`defineReport` 本身就是唯一规范化点。
+ */
+export async function loadHostReport(
+  cwd: string,
+  reportPath: string | undefined,
+  options?: { freshImport?: boolean },
+): Promise<ReportDefinition> {
+  if (reportPath !== undefined) {
+    const { loadReportFile } = await import("../../dist/report/load.js");
+    return loadReportFile(cwd, reportPath, options) as Promise<ReportDefinition>;
+  }
+  const { standard } = await import("../../dist/report/built-in/index.js");
+  return standard as ReportDefinition;
+}
+
+/** ctx.report 的构建(不携带当前页——那是 HostRenderContext.page 的事)。 */
+export async function buildHostReportMeta(definition: ReportDefinition, scope: Scope): Promise<ReportMeta> {
+  const { buildReportMeta } = await import("../../dist/report/report.js");
+  return buildReportMeta(definition, scope);
+}
 
 /**
  * LocalizedText 的确定回退(shell.md「行为约束」):当前 locale → en → 按 locale 键字典序的
- * 第一个非空值。对象没有任何非空值时返回 undefined(装载期应当已报错,渲染兜底不再抛)。
+ * 第一个非空值。undefined 输入原样返回 undefined——两个宿主用它给"可能没声明"的字段
+ * (页标题、外壳字段)取显示字符串。算法与 niceeval/report 的 resolveLocalizedText 是同一份
+ * shell.md 文档契约的两处实现(这里没有报告类型或规范化状态,纯字符串函数,不经 dist 边界)。
  */
 export function localizeText(text: LocalizedText | undefined, locale: string): string | undefined {
   if (text === undefined) return undefined;
@@ -101,214 +75,9 @@ export function localizeText(text: LocalizedText | undefined, locale: string): s
   return undefined;
 }
 
-/** LocalizedText 深相等:按字段值比较,对象键顺序不影响结果(shell.md「标题回退必须确定」)。 */
-export function localizedTextEquals(a: LocalizedText, b: LocalizedText): boolean {
-  if (typeof a === "string" || typeof b === "string") return a === b;
-  const keysA = Object.keys(a).sort();
-  const keysB = Object.keys(b).sort();
-  if (keysA.length !== keysB.length) return false;
-  return keysA.every((key, i) => key === keysB[i] && a[key] === b[key]);
-}
+// ───────────────────────── 页索引命令 ─────────────────────────
 
-/** LocalizedText 是否有任何非空值(空串 / 全空对象都算空)。 */
-function hasText(text: LocalizedText | undefined): text is LocalizedText {
-  if (text === undefined) return false;
-  if (typeof text === "string") return text.length > 0;
-  return Object.values(text).some((v) => typeof v === "string" && v.length > 0);
-}
-
-/**
- * 标题回退单点(show 页索引标题与 view hero / 浏览器标题共用):def.title → Scope 中唯一且相同
- * (深相等)的非空快照 name → 内置文案「Eval 运行结果 / Eval Results」。多个不同 name 时
- * 不随机挑一个,直接落到内置文案。
- */
-export function resolveReportTitle(
-  defTitle: LocalizedText | undefined,
-  snapshots: readonly { name?: LocalizedText }[],
-): LocalizedText {
-  if (hasText(defTitle)) return defTitle;
-  let unique: LocalizedText | undefined;
-  for (const snapshot of snapshots) {
-    if (!hasText(snapshot.name)) continue;
-    if (unique === undefined) {
-      unique = snapshot.name;
-    } else if (!localizedTextEquals(unique, snapshot.name)) {
-      return BUILT_IN_REPORT_TITLE;
-    }
-  }
-  return unique ?? BUILT_IN_REPORT_TITLE;
-}
-
-/** 组合组件 ctx.report 的形状(走完回退链的 title;scripts / styles 不进)。 */
-export function reportMetaFor(
-  report: HostReport,
-  pageId: string,
-  snapshots: readonly { name?: LocalizedText }[],
-): HostReportMeta {
-  return {
-    title: resolveReportTitle(report.title, snapshots),
-    links: report.links,
-    ...(report.footer !== undefined ? { footer: report.footer } : {}),
-    pages: report.pages.map((p) => ({ id: p.id, title: p.title })),
-    pageId,
-  };
-}
-
-// ───────────────────────── 装载与规范化 ─────────────────────────
-
-/** 旧(集成前)ReportDefinition:build 函数形态,恒为单页。集成阶段删除。 */
-interface LegacyReportDefinition {
-  build: (ctx: unknown) => unknown;
-}
-
-function isLegacyDefinition(value: unknown): value is LegacyReportDefinition {
-  return (
-    (typeof value === "object" || typeof value === "function") &&
-    value !== null &&
-    typeof (value as Partial<LegacyReportDefinition>).build === "function"
-  );
-}
-
-const PAGE_ID_PATTERN = /^[a-z0-9-]+$/;
-
-/**
- * 装载期校验 `ReportLink.icon`(shell.md「字段穷尽」):唯一合法形状是 `{ svg: string }`。
- * 无类型 JS 传组件 / ReactNode / 裸字符串都在这里被完整用户反馈拒绝——外壳声明要过
- * viewData 的序列化边界,ReactNode 过不去,可序列化是外壳契约的一部分。
- */
-function assertLinkIcon(link: unknown, sourceLabel: string): void {
-  const icon = (link as { icon?: unknown })?.icon;
-  if (icon === undefined) return;
-  const svg = (icon as { svg?: unknown })?.svg;
-  if (typeof icon !== "object" || icon === null || typeof svg !== "string" || svg.length === 0) {
-    throw new HostReportError(
-      `${sourceLabel}: a link "icon" must be { svg: string } — an inline SVG string rendered before the label. ` +
-        "Components and React nodes are not accepted: the shell declaration crosses a serialization boundary. " +
-        'Write e.g. icon: { svg: "<svg …>…</svg>" }.',
-    );
-  }
-}
-
-/**
- * 装载规范化:把 defineReport 产物折成「外壳 + 非空页列表」。三种入参写法
- * (树 / `content:` / `pages:`)展开成同一形状;page id 的唯一性与字符纪律在这里校验
- * (shell.md「校验分两期」的装载期部分)。
- */
-export function normalizeHostReport(definition: unknown, sourceLabel: string): HostReport {
-  // INTEGRATION(2):新 defineReport 产物(kind === "report")。规范化后的外壳与页列表
-  // 若由新报告 runtime 导出的 normalizeReport 承担,这里改为直接调它;当前按 docs 的
-  // 字段穷尽读取产物自带的声明。
-  if (typeof definition === "object" && definition !== null && (definition as { kind?: unknown }).kind === "report") {
-    const def = definition as {
-      title?: LocalizedText;
-      links?: HostReportLink[];
-      footer?: LocalizedText;
-      head?: HostHeadTag[];
-      scripts?: HostReportAsset[];
-      styles?: HostReportAsset[];
-      content?: unknown;
-      pages?: { id: string; title: LocalizedText; content: unknown }[];
-    };
-    const hasContent = def.content !== undefined;
-    const hasPages = def.pages !== undefined;
-    if (hasContent === hasPages) {
-      // content / pages 同缺或同给:装载期完整用户反馈(defineReport 产物恒已折叠,这里只拦
-      // 手搓 kind:"report" 的无类型输入),下一步指向内建视图的 extends 复用。
-      throw new HostReportError(
-        `${sourceLabel}: a report declares exactly one of "content" or "pages" — ` +
-          (hasContent ? "it declares both. " : "it declares neither. ") +
-          `To render the built-in report, write extends: standard (import { standard } from "niceeval/report/built-in").`,
-      );
-    }
-    const pages: HostReportPage[] = hasPages
-      ? def.pages!.map((p) => ({ id: p.id, title: p.title, content: p.content }))
-      : [{ id: SINGLE_PAGE_ID, title: BUILT_IN_PAGE_TITLE, content: def.content }];
-    if (pages.length === 0) {
-      throw new HostReportError(`${sourceLabel}: "pages" must be a non-empty list of report pages.`);
-    }
-    const seen = new Set<string>();
-    for (const page of pages) {
-      if (!PAGE_ID_PATTERN.test(page.id)) {
-        throw new HostReportError(
-          `${sourceLabel}: page id "${page.id}" is invalid. Page ids use lowercase letters, digits and hyphens.`,
-        );
-      }
-      if (seen.has(page.id)) {
-        throw new HostReportError(`${sourceLabel}: duplicate page id "${page.id}". Page ids must be unique per file.`);
-      }
-      seen.add(page.id);
-    }
-    for (const link of def.links ?? []) assertLinkIcon(link, sourceLabel);
-    return {
-      ...(def.title !== undefined ? { title: def.title } : {}),
-      links: def.links ?? [],
-      ...(def.footer !== undefined ? { footer: def.footer } : {}),
-      head: def.head ?? [],
-      scripts: def.scripts ?? [],
-      styles: def.styles ?? [],
-      pages,
-    };
-  }
-
-  // INTEGRATION(2) 桥接:旧 build 函数形态(集成前的 dist);恒为单页,无外壳字段。
-  if (isLegacyDefinition(definition)) {
-    return {
-      links: [],
-      head: [],
-      scripts: [],
-      styles: [],
-      pages: [{ id: SINGLE_PAGE_ID, title: BUILT_IN_PAGE_TITLE, content: definition }],
-    };
-  }
-
-  throw new HostReportError(
-    `${sourceLabel} does not default-export a report. Export default defineReport(<ExperimentComparison />) (or defineReport({ title, content })) from "niceeval/report".`,
-  );
-}
-
-/**
- * 装载宿主报告:`--report <file>` 走 loadReportFile;缺省(裸 show / 裸 view)装载内建报告的
- * 默认导出。两条路都进 normalizeHostReport,同一条装载管线。
- */
-export async function loadHostReport(
-  cwd: string,
-  reportPath: string | undefined,
-  options?: { freshImport?: boolean },
-): Promise<HostReport> {
-  if (reportPath !== undefined) {
-    const { loadReportFile } = await import("../../dist/report/load.js");
-    const definition = await loadReportFile(cwd, reportPath, options);
-    return normalizeHostReport(definition, reportPath);
-  }
-  return normalizeHostReport(await loadBuiltInDefinition(), "the built-in report");
-}
-
-/** 内建报告即 `niceeval/report/built-in` 的默认导出(dist 预编译产物,`prepare` 时构建)。 */
-async function loadBuiltInDefinition(): Promise<unknown> {
-  const mod = await import("../../dist/report/built-in/index.js");
-  return mod.default;
-}
-
-// ───────────────────────── 逐页渲染 ─────────────────────────
-
-export interface HostRenderContext {
-  /** 宿主按官方现刻水位挑好的 Scope(集成前类型名仍是 Selection;两者同物)。 */
-  scope: unknown;
-  results: Results;
-  report: HostReportMeta;
-}
-
-export interface HostTextRenderOptions {
-  width?: number;
-  locale?: string;
-  /**
-   * 索引命令的完整上下文(docs/feature/reports/show/reports.md:「索引命令携带完整上下文」):
-   * 组索引 / 页索引输出的每一条可复制命令都保留当前 --results / --report / --page 与位置参数。
-   * INTEGRATION(3):由新 text 面消费;旧桥接的 renderReportToText 不认识该字段,原样忽略。
-   */
-  commandContext?: HostCommandContext;
-}
-
+/** 宿主索引命令的完整上下文(docs/feature/reports/show/reports.md「索引命令携带完整上下文」)。 */
 export interface HostCommandContext {
   patterns: string[];
   results?: string;
@@ -328,62 +97,39 @@ export function showCommand(ctx: HostCommandContext, extra: string[] = []): stri
   return parts.join(" ");
 }
 
-/**
- * 渲染一页的 text 面。INTEGRATION(3):新 runtime 的入口是
- * `renderReportTreeToText(tree, { scope, results, report }, options)`;旧桥接下 content 是
- * 整个旧 definition,调 renderReportToText(definition, { selection, results }, options)。
- */
+// ───────────────────────── 逐页渲染 ─────────────────────────
+
+/** 逐页渲染的宿主上下文:官方口径的 Scope、结果根读取面、规范化声明与当前页判别。 */
+export interface HostRenderContext {
+  scope: Scope;
+  results: Results;
+  report: ReportMeta;
+  page: PageContext;
+}
+
+export interface HostTextRenderOptions {
+  width?: number;
+  locale?: string;
+  /** 索引命令的完整上下文(docs/feature/reports/show/reports.md);逐页渲染时透传。 */
+  commandContext?: HostCommandContext;
+}
+
+/** 渲染一页的 text 面。 */
 export async function renderHostPageText(
-  page: HostReportPage,
+  page: ReportPage,
   ctx: HostRenderContext,
   options: HostTextRenderOptions,
 ): Promise<string> {
-  const mod = (await import("../../dist/report/report.js")) as Record<string, unknown>;
-  const renderTree = mod.renderReportTreeToText as
-    | ((tree: unknown, ctx: HostRenderContext, options: HostTextRenderOptions) => Promise<string>)
-    | undefined;
-  if (typeof renderTree === "function" && !isLegacyDefinition(page.content)) {
-    return renderTree(page.content, ctx, options);
-  }
-  if (isLegacyDefinition(page.content)) {
-    const renderLegacy = mod.renderReportToText as (
-      definition: unknown,
-      ctx: { selection: unknown; results: Results },
-      options: { width?: number; locale?: string },
-    ) => Promise<string>;
-    return renderLegacy(
-      page.content,
-      { selection: ctx.scope, results: ctx.results },
-      { ...(options.width !== undefined ? { width: options.width } : {}), ...(options.locale !== undefined ? { locale: options.locale } : {}) },
-    );
-  }
-  throw new HostReportError(
-    "The installed report runtime cannot render this report page yet (renderReportTreeToText is missing). Rebuild dist/report with `pnpm run build:report`.",
-  );
+  const { renderReportTreeToText } = await import("../../dist/report/report.js");
+  return renderReportTreeToText(page.content, ctx, options);
 }
 
-/** 渲染一页的 web 面(静态 HTML)。INTEGRATION(3) 同上,web 侧入口在 dist/report/web.js。 */
+/** 渲染一页的 web 面(静态 HTML)。 */
 export async function renderHostPageHtml(
-  page: HostReportPage,
+  page: ReportPage,
   ctx: HostRenderContext,
   options: { locale: string },
 ): Promise<string> {
-  const mod = (await import("../../dist/report/web.js")) as Record<string, unknown>;
-  const renderTree = mod.renderReportTreeToStaticHtml as
-    | ((tree: unknown, ctx: HostRenderContext, options: { locale: string }) => Promise<string>)
-    | undefined;
-  if (typeof renderTree === "function" && !isLegacyDefinition(page.content)) {
-    return renderTree(page.content, ctx, options);
-  }
-  if (isLegacyDefinition(page.content)) {
-    const renderLegacy = mod.renderReportToStaticHtml as (
-      definition: unknown,
-      ctx: { selection: unknown; results: Results },
-      options: { locale: string },
-    ) => Promise<string>;
-    return renderLegacy(page.content, { selection: ctx.scope, results: ctx.results }, options);
-  }
-  throw new HostReportError(
-    "The installed report runtime cannot render this report page yet (renderReportTreeToStaticHtml is missing). Rebuild dist/report with `pnpm run build:report`.",
-  );
+  const { renderReportTreeToStaticHtml } = await import("../../dist/report/web.js");
+  return renderReportTreeToStaticHtml(page.content, ctx, options);
 }

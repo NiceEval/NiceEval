@@ -36,9 +36,9 @@ import { selectCurrentResults, filterExperiments } from "../results/select.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { attemptHistory } from "./compose.ts";
 import {
+  buildHostReportMeta,
   HostReportError,
   loadHostReport,
-  reportMetaFor,
   renderHostPageText,
   type HostCommandContext,
 } from "./report-host.ts";
@@ -96,8 +96,9 @@ function clampWidth(columns: number | undefined): number {
   return Math.max(40, Math.min(columns as number, 160));
 }
 
-// --report 的装载与规范化住在 ./report-host.ts(两个宿主共用的唯一联系面)。
-export { loadHostReport, normalizeHostReport, resolveReportTitle, localizeText } from "./report-host.ts";
+// --report 的装载住在 ./report-host.ts(两个宿主共用的唯一联系面);规范化本身是
+// `defineReport` 自己的职责,不在宿主层重复。
+export { loadHostReport, localizeText } from "./report-host.ts";
 
 export async function runShow(
   cwd: string,
@@ -322,16 +323,23 @@ async function show(
   };
   const sourceLabel = flags.report ?? "the built-in report";
 
-  // 初始页 = --page 指定的页,缺省第一页(docs/feature/reports/show/reports.md Case 2);
-  // 本地宿主只 resolve 被打开的这一页——其余页只留 id / title,不触发取数(见 shell.md
-  // 「行为约束」「本地宿主只 resolve 被打开的页」)。
-  let page = report.pages[0];
+  // 初始页 = --page 指定的页,缺省第一张可导航页(docs/feature/reports/show/reports.md
+  // Case 2);本地宿主只 resolve 被打开的这一页——其余页只留 id / title,不触发取数(见
+  // shell.md「行为约束」「本地宿主只 resolve 被打开的页」)。navigation:false 的页(参数化
+  // attempt 详情)不参与缺省选择,也不能被 --page 直接打开——没有 locator 不能拿 Scope 强行
+  // resolve(architecture.md「Attempt 详情是一张参数化 page」)。
+  let page = report.pages.find((p) => p.navigation !== false) ?? report.pages[0];
   if (flags.page !== undefined) {
     const hit = report.pages.find((p) => p.id === flags.page);
     if (!hit) {
       // 用法错误:列出可用页 id(docs/feature/reports/show/reports.md Case 1/2 的报错样例)。
       throw new ShowError(
-        `error: page "${flags.page}" not found in ${sourceLabel}. Available pages: ${report.pages.map((p) => p.id).join(", ")}\n`,
+        `error: page "${flags.page}" not found in ${sourceLabel}. Available pages: ${report.pages.filter((p) => p.navigation !== false).map((p) => p.id).join(", ")}\n`,
+      );
+    }
+    if (hit.input === "attempt") {
+      throw new ShowError(
+        `error: page "${hit.id}" in ${sourceLabel} is an attempt-input page and needs a locator — it cannot be opened with --page directly. Use niceeval show @<locator> instead.\n`,
       );
     }
     page = hit;
@@ -339,10 +347,10 @@ async function show(
 
   // attemptCommand 留给渲染管线的默认值:AttemptLocator 已经是可直接 `niceeval show @<locator>`
   // 的真实 CLI 语法,不需要再反查 eval id 拼一条近似命令。
-  const meta = reportMetaFor(report, page.id, selection.snapshots);
+  const meta = await buildHostReportMeta(report, selection);
   const text = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta },
+    { scope: selection, results, report: meta, page: { id: page.id, input: "scope" } },
     {
       width: io.width,
       locale,
@@ -350,8 +358,9 @@ async function show(
     },
   );
 
-  // 页数大于一时尾部附「其余页」索引(只列未渲染的页,不倾倒内容);单页定义没有这段。
-  const remaining = report.pages.filter((p) => p.id !== page.id);
+  // 页数大于一时尾部附「其余页」索引(只列未渲染、且可导航的页,不倾倒内容);单页定义
+  // 没有这段;隐藏的 attempt page 不出现在「其余页」里。
+  const remaining = report.pages.filter((p) => p.id !== page.id && p.navigation !== false);
   if (remaining.length === 0) {
     io.out(text + "\n");
     return;

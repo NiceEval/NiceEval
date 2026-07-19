@@ -526,6 +526,7 @@ describe("宿主接线 · show text 面与 view web 面反映同一批事实", (
         '  kind: "report",',
         '  [Symbol.for("niceeval.report.definition")]: true,',
         "  links: [],",
+        "  head: [],",
         "  scripts: [],",
         "  styles: [],",
         "  pages: [{",

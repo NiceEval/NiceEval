@@ -9,8 +9,6 @@ import type { AttemptLocator } from "../../results/locator.ts";
 import { DEFAULT_REPORT_LOCALE, countText, localeText, type ReportLocale } from "../locale.ts";
 import { cx, formatDurationMs } from "./format.ts";
 
-const DEFAULT_ATTEMPT_HREF = (locator: AttemptLocator): string => `#/attempt/${locator}`;
-
 function pct(part: number, total: number): string {
   if (total <= 0) return "0%";
   return `${Math.min(100, Math.max(0, (part / total) * 100)).toFixed(2)}%`;
@@ -22,7 +20,7 @@ function pct(part: number, total: number): string {
  */
 export function TraceWaterfall({
   data,
-  attemptHref = DEFAULT_ATTEMPT_HREF,
+  attemptHref,
   className,
   locale = DEFAULT_REPORT_LOCALE,
 }: {
@@ -40,9 +38,13 @@ export function TraceWaterfall({
           return (
             <li key={row.locator} className="nre-waterfall-row">
               <div className="nre-waterfall-head">
-                <a className="nre-locator" href={attemptHref(row.locator)}>
-                  {row.locator}
-                </a>
+                {attemptHref ? (
+                  <a className="nre-locator" href={attemptHref(row.locator)}>
+                    {row.locator}
+                  </a>
+                ) : (
+                  <span className="nre-locator">{row.locator}</span>
+                )}
                 <span className="nre-waterfall-eval">{row.evalId}</span>
                 <span className="nre-waterfall-experiment">{row.experimentId}</span>
                 {/* trace 缺失如实显示缺失,不猜值、不藏行 */}

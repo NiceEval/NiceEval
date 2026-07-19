@@ -4,7 +4,7 @@
 // 全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, DiffData, EvalResult, TimingNode, TraceSpan, Verdict } from "../types.ts";
+import type { AssertionResult, DiffData, EvalResult, LocalizedText, TimingNode, TraceSpan, Verdict } from "../types.ts";
 import type { AttemptEvidence, AttemptHandle, Snapshot } from "../results/index.ts";
 import type { AnnotatedSourceLine, SendAnnotation } from "../results/index.ts";
 import { groupIncompatibleVersionSkips } from "../results/index.ts";
@@ -16,7 +16,7 @@ import { attemptCostUSD } from "../report/metrics.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/format.ts";
 import { indentBlock, padDisplay, renderAlignedRows, wrapDisplay } from "../report/text/layout.ts";
 import type { AttemptHistoryRow } from "./compose.ts";
-import { localizeText, showCommand, type HostCommandContext, type HostReport } from "./report-host.ts";
+import { localizeText, showCommand, type HostCommandContext } from "./report-host.ts";
 
 const MISSING = "—";
 
@@ -427,7 +427,7 @@ export function attemptHistoryText(opts: {
  * 拼接这段(单页定义没有「其余页」段);`otherPages` 不含被渲染的那一页。
  */
 export function otherPagesText(opts: {
-  otherPages: { id: string; title: HostReport["pages"][number]["title"] }[];
+  otherPages: { id: string; title: LocalizedText }[];
   command: HostCommandContext;
   locale: string;
 }): string {

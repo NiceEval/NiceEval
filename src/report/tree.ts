@@ -11,10 +11,35 @@
 
 import type { ReactNode } from "react";
 import type { AttemptLocator } from "../results/locator.ts";
+import type { AttemptEvidence } from "../results/attempt-evidence.ts";
 import type { Results, Scope } from "../results/types.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "./locale.ts";
 import type { ReportInput } from "./types.ts";
 import type { ReportMeta } from "./report.ts";
+
+// ───────────────────────── 当前页判别(PageContext) ─────────────────────────
+
+/** scope-input page 的当前页上下文:消费宿主选择的 Scope,没有 locator/evidence。 */
+export interface ScopePageContext {
+  id: string;
+  input: "scope";
+}
+
+/** attempt-input page 的当前页上下文:按 locator 消费一份 AttemptEvidence。 */
+export interface AttemptPageContext {
+  id: string;
+  input: "attempt";
+  locator: AttemptLocator;
+  evidence: AttemptEvidence;
+}
+
+/**
+ * 当前渲染中的页判别联合(docs/feature/reports/library/shell.md「行为约束」、
+ * library/attempt-detail.md「page 输入与 spec / data 形态」)。经 ComposeContext.page 与
+ * ResolveContext.page 双双可见:组合组件靠它读当前页 id 与输入分支;attempt 叶子组件靠它
+ * 取省略 input 时的缺省 evidence。
+ */
+export type PageContext = ScopePageContext | AttemptPageContext;
 
 // ───────────────────────── 节点形状 ─────────────────────────
 
@@ -67,8 +92,12 @@ export interface TextContext {
   locale: ReportLocale;
   /** 容器组件渲染 children 用,宽度显式传递。 */
   render(node: ReportNode, width?: number): string;
-  /** 下钻命令,通证据室:`niceeval show @<locator>`。 */
-  attemptCommand(locator: AttemptLocator): string;
+  /**
+   * 下钻命令,通 attempt-input page:`niceeval show @<locator>`。当前报告没有声明
+   * attempt-input page 时不存在——宿主不生成假命令,locator 只是文本(architecture.md
+   * 「Attempt 详情是一张参数化 page」)。
+   */
+  attemptCommand?(locator: AttemptLocator): string;
   /**
    * 组索引一类「按实验收窄」命令的生成;宿主注入以携带完整上下文(--results / --report /
    * --page 与位置参数),默认 `niceeval show --exp <id>`。非契约字段,官方组件内部用。
@@ -77,8 +106,12 @@ export interface TextContext {
 }
 
 export interface WebContext {
-  /** 证据室深链,同 view 的 attempt 路由(`#/attempt/@<locator>`,单段、不透明)。 */
-  attemptHref(locator: AttemptLocator): string;
+  /**
+   * attempt-input page 深链,同 view 的 attempt 路由(`#/attempt/@<locator>`,单段、不透明)。
+   * 当前报告没有声明 attempt-input page 时不存在——宿主不生成空 href 或假链接,locator 只是
+   * 文本(architecture.md「Attempt 详情是一张参数化 page」)。
+   */
+  attemptHref?(locator: AttemptLocator): string;
   /** chrome 文案的 locale;官方组件渲染面经上下文读取,宿主外默认 "en"。 */
   locale: ReportLocale;
 }
@@ -86,6 +119,8 @@ export interface WebContext {
 /** 双面组件解析面的上下文:宿主注入的数据来源;props 显式给出 input 时以 props 为准。 */
 export interface ResolveContext {
   input: ReportInput;
+  /** 当前页判别;attempt 叶子组件省略 input 时从这里的 attempt 分支取缺省 evidence。 */
+  page: PageContext;
 }
 
 /** 组合组件的上下文:宿主 Scope、结果根完整读取面与规范化后的报告声明。 */
@@ -96,6 +131,8 @@ export interface ComposeContext {
   results: Results;
   /** 规范化后的报告声明,只读(docs/feature/reports/library/layout.md「自定义组件」)。 */
   report: ReportMeta;
+  /** 当前页判别:scope 分支只有 id;attempt 分支带 locator + evidence。 */
+  page: PageContext;
 }
 
 export interface ComponentFaces<P, R = P> {
@@ -125,9 +162,9 @@ export type ReportComponent<P> = ((props: P) => ReactNode) & {
 };
 
 // web 面的环境上下文:web 宿主渲染前设好;宿主之外(组件直接嵌进用户 React 应用)
-// 用默认值 —— attemptHref 默认 view 的 attempt 路由格式。
+// 用默认值——没有 attemptHref,组件显式传 prop 才产生外部链接(architecture.md
+// 「Attempt 详情是一张参数化 page」:没有 target 时 locator 只是文本,不生成假 href)。
 const DEFAULT_WEB_CONTEXT: WebContext = {
-  attemptHref: (locator) => `#/attempt/${locator}`,
   locale: DEFAULT_REPORT_LOCALE,
 };
 let activeWebContext: WebContext | null = null;
@@ -141,11 +178,6 @@ export function runWithWebContext<T>(ctx: WebContext, fn: () => T): T {
   } finally {
     activeWebContext = prev;
   }
-}
-
-/** 官方组件的装配用:宿主上下文激活时才把 ctx.attemptHref 当默认下钻。 */
-export function isHostWebContextActive(): boolean {
-  return activeWebContext !== null;
 }
 
 /** 函数形态:组合组件,只装配已有组件,可以异步;ctx 携带 scope / results / report。 */
@@ -269,11 +301,13 @@ export class ResolveMemo {
   }
 }
 
-/** resolveReportTree 的环境:宿主注入的 Scope / 读取面 / 规范化声明。 */
+/** resolveReportTree 的环境:宿主注入的 Scope / 读取面 / 规范化声明 / 当前页判别。 */
 export interface ResolveEnv {
   scope: Scope;
   results: Results;
   report: ReportMeta;
+  /** 当前渲染的页:scope 分支只有 id;attempt 分支带 locator + evidence。 */
+  page: PageContext;
   /** 一次页渲染一份;跨页共享缓存时由宿主显式传同一实例。 */
   memo?: ResolveMemo;
 }
@@ -323,7 +357,7 @@ function bareTextError(value: string | number, path: string[]): Error {
  */
 export async function resolveReportTree(node: ReportNode, env: ResolveEnv): Promise<ReportNode> {
   const memo = env.memo ?? new ResolveMemo();
-  const composeCtx: ComposeContext = { scope: env.scope, results: env.results, report: env.report };
+  const composeCtx: ComposeContext = { scope: env.scope, results: env.results, report: env.report, page: env.page };
   return resolveNode(node, { memo, composeCtx }, []);
 }
 
@@ -367,6 +401,7 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
       const input = ((props as { input?: unknown }).input as ReportInput | undefined) ?? state.composeCtx.scope;
       const ctx: InternalResolveContext = {
         input,
+        page: state.composeCtx.page,
         memoFetch: <T,>(dataFn: unknown, dataInput: unknown, options: unknown, compute: () => Promise<T>) =>
           state.memo.fetch(dataFn, dataInput, options, compute) as Promise<T>,
       };
@@ -528,9 +563,10 @@ function shellQuote(value: string): string {
 export function createTextContext(options?: TextRenderOptions): TextContext {
   const width = Math.max(20, options?.width ?? 80);
   const locale = options?.locale ?? DEFAULT_REPORT_LOCALE;
-  // 默认下钻命令:AttemptLocator 是 `@` 前缀的不透明短串,`niceeval show @<locator>` 是
-  // show 已实现的真实 CLI 语法,不需要反查 eval id 再拼一条近似命令。
-  const attemptCommand = options?.attemptCommand ?? ((locator: AttemptLocator) => `niceeval show ${locator}`);
+  // 没有默认值:当前报告没有声明 attempt-input page 时不存在下钻命令——宿主(report.ts /
+  // web.ts 的渲染入口)据规范化 definition 是否有 attempt page 决定要不要注入生成器,
+  // 这里只透传调用方给的值(architecture.md「Attempt 详情是一张参数化 page」)。
+  const attemptCommand = options?.attemptCommand;
   const experimentCommand =
     options?.experimentCommand ?? ((prefix: string) => `niceeval show --exp ${shellQuote(prefix)}`);
   const make = (w: number): TextContext => ({

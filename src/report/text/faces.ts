@@ -776,8 +776,9 @@ export function scopeWarningsText(warnings: readonly ScopeWarning[], ctx: TextCo
 
 /**
  * TraceWaterfall 的 text 面:每 attempt 一行——locator、总耗时(缺 trace 如实显示缺失)、
- * 顶层 span 计数与失败标记,行尾是可复制的 `--timing` 下钻命令(经宿主注入的
- * attemptCommand 通道拼出,携带宿主上下文)。attempt 有选择器,索引终结于可执行命令。
+ * 顶层 span 计数与失败标记,行尾是可复制的 `--timing` 下钻命令(经宿主注入的 attemptCommand
+ * 通道拼出,携带宿主上下文)。当前报告没有 attempt-input page 时 `ctx.attemptCommand`
+ * 不存在,行退化为纯文本,不生成假命令(architecture.md「Attempt 详情是一张参数化 page」)。
  */
 export function traceWaterfallText(rows: readonly TraceWaterfallRow[], ctx: TextContext): string {
   const locale = ctx.locale;
@@ -792,7 +793,8 @@ export function traceWaterfallText(rows: readonly TraceWaterfallRow[], ctx: Text
         countText(locale, "traceWaterfall.spans", row.spans.length),
         ...(failedSpans > 0 ? [`✗ ${countText(locale, "traceWaterfall.failedSpans", failedSpans)}`] : []),
       ];
-      return `${parts.join(" · ")}   ${ctx.attemptCommand(row.locator)} --timing`;
+      const line = parts.join(" · ");
+      return ctx.attemptCommand ? `${line}   ${ctx.attemptCommand(row.locator)} --timing` : line;
     })
     .join("\n");
 }

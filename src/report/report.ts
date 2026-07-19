@@ -10,12 +10,14 @@
 // 装载(规范化 + 静态校验)→ resolve → validate → render。
 
 import type { Results, Scope } from "../results/types.ts";
+import type { AttemptLocator } from "../results/locator.ts";
 import {
   createTextContext,
   renderNodeToText,
   resolveReportTree,
   validateReportTree,
   ResolveMemo,
+  type PageContext,
   type ReportNode,
   type TextRenderOptions,
 } from "./tree.ts";
@@ -73,7 +75,7 @@ export interface ReportShell {
 
 export type NonEmptyArray<T> = readonly [T, ...T[]];
 
-export interface ReportPage {
+export interface ReportPageBase {
   /** 页面身份:`--page <id>` 的取值、web 路由 `#/page/<id>` 与导航锚。小写字母、数字与连字符。 */
   id: string;
   /** 导航中的页名。 */
@@ -81,6 +83,18 @@ export interface ReportPage {
   /** 这一页的报告树;ReportDefinition 不是 ReportNode,页装不进外壳。 */
   content: ReportNode;
 }
+
+/**
+ * 页按输入分两种形态,仍是同一个类型族,走同一条 resolve → validate → render 管线
+ * (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」):
+ * - `input` 省略或为 `"scope"`:消费宿主选择的 Scope;省略时规范化为 `navigation: true`。
+ * - `input: "attempt"`:以 locator 为参数,消费一份 AttemptEvidence;没有 locator 时不能打开,
+ *   必须显式 `navigation: false`,不进导航。
+ * 一份报告至多声明一张 attempt-input page。
+ */
+export type ReportPage =
+  | (ReportPageBase & { input?: "scope"; navigation?: boolean })
+  | (ReportPageBase & { input: "attempt"; navigation: false });
 
 /** content / pages / extends 三选一由类型表达,不把非法状态留到运行期。 */
 export type ReportDef = ReportShell &
@@ -92,7 +106,7 @@ export type ReportDef = ReportShell &
         extends?: never;
       }
     | {
-        /** 非空页列表;导航按数组顺序显示。 */
+        /** 非空页列表;`navigation !== false` 的项按数组顺序显示。 */
         pages: NonEmptyArray<ReportPage>;
         content?: never;
         extends?: never;
@@ -128,17 +142,27 @@ export interface ReportDefinition {
   readonly pages: NonEmptyArray<ReportPage>;
 }
 
-/** 规范化后的报告声明,经组合组件 ctx.report 只读可见(scripts / styles 是注入资产,不进)。 */
+/** 规范化后页列表在 ctx.report 上的元数据形态(id / 导航页名 / 输入声明 / 导航资格)。 */
+export interface ReportMetaPage {
+  id: string;
+  title: LocalizedText;
+  input: "scope" | "attempt";
+  navigation: boolean;
+}
+
+/**
+ * 规范化后的报告声明,经组合组件 ctx.report 只读可见(scripts / styles 是注入资产,不进)。
+ * 不携带"当前是哪一页"——那由 ctx.page(PageContext)表达,两者不是同一份状态
+ * (docs/feature/reports/library/shell.md「行为约束」)。
+ */
 export interface ReportMeta {
   /** 走完回退链(声明 title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Results」)后的标题。 */
   title: LocalizedText;
   /** 页头外链;声明省略时为空数组。 */
   links: readonly ReportLink[];
   footer?: LocalizedText;
-  /** 规范化后的页列表(id 与导航页名),恒非空。 */
-  pages: NonEmptyArray<{ id: string; title: LocalizedText }>;
-  /** 当前渲染中的页 id。 */
-  pageId: string;
+  /** 规范化后的页列表,恒非空。 */
+  pages: NonEmptyArray<ReportMetaPage>;
 }
 
 /** 单页缩写展开出的唯一页 id 与内置页名。 */
@@ -332,6 +356,53 @@ function assertHeadTags(tags: unknown): HeadTag[] {
   return tags as HeadTag[];
 }
 
+/**
+ * page 的 input / navigation 规范化(shell.md「page 显式声明输入」):省略或 "scope" 时补
+ * `input: "scope"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`——
+ * 没有 locator 时不可打开,不能悄悄挤进导航,省略或传 true 都在装载期报错。
+ */
+function normalizePageInputAndNavigation(page: Record<string, unknown>): ReportPage {
+  const input = page.input;
+  if (input === undefined || input === "scope") {
+    return {
+      id: page.id as string,
+      title: page.title as LocalizedText,
+      content: page.content as ReportNode,
+      input: "scope",
+      navigation: page.navigation !== false,
+    };
+  }
+  if (input === "attempt") {
+    if (page.navigation !== false) {
+      throw new Error(
+        `Report page "${page.id}" declares input: "attempt" but not navigation: false — an attempt-input page has no content without a locator, so it must not appear in navigation. Add navigation: false.`,
+      );
+    }
+    return {
+      id: page.id as string,
+      title: page.title as LocalizedText,
+      content: page.content as ReportNode,
+      input: "attempt",
+      navigation: false,
+    };
+  }
+  throw new Error(
+    `Report page "${page.id}" input ${JSON.stringify(input)} is not valid — input is omitted, "scope", or "attempt".`,
+  );
+}
+
+/** 一份报告至多一张 attempt-input page,避免 show @<locator> 与 locator 链接出现多个目标。 */
+function assertAtMostOneAttemptPage(pages: readonly ReportPage[]): void {
+  const attemptPages = pages.filter((p) => p.input === "attempt");
+  if (attemptPages.length > 1) {
+    throw new Error(
+      `A report can declare at most one input: "attempt" page — got ${attemptPages.length} (${attemptPages
+        .map((p) => `"${p.id}"`)
+        .join(", ")}). Keep one and remove the others, or fold their content into a single attempt-input page.`,
+    );
+  }
+}
+
 export function defineReport(content: ReportNode): ReportDefinition;
 export function defineReport(def: ReportDef): ReportDefinition;
 export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
@@ -379,7 +450,9 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     pages = base.pages;
   } else if (hasContent) {
     assertNotDefinition(def.content, 'defineReport "content"');
-    pages = [{ id: DEFAULT_PAGE_ID, title: DEFAULT_PAGE_TITLE, content: def.content as ReportNode }];
+    pages = [
+      { id: DEFAULT_PAGE_ID, title: DEFAULT_PAGE_TITLE, input: "scope", navigation: true, content: def.content as ReportNode },
+    ];
   } else {
     const raw = def.pages as unknown;
     if (!Array.isArray(raw) || raw.length === 0) {
@@ -388,6 +461,7 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
       );
     }
     const seen = new Set<string>();
+    const normalized: ReportPage[] = [];
     for (const page of raw as Array<Record<string, unknown>>) {
       if (typeof page?.id !== "string" || !PAGE_ID_PATTERN.test(page.id)) {
         throw new Error(
@@ -402,9 +476,11 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
       seen.add(page.id);
       assertLocalizedText(page.title, `Report page "${page.id}" title`);
       assertNotDefinition(page.content, `Report page "${page.id}" content`);
+      normalized.push(normalizePageInputAndNavigation(page));
     }
-    pages = raw as ReportPage[];
+    pages = normalized;
   }
+  assertAtMostOneAttemptPage(pages);
 
   if (def.title !== undefined) assertLocalizedText(def.title, "defineReport title");
   if (def.footer !== undefined) assertLocalizedText(def.footer, "defineReport footer");
@@ -482,23 +558,27 @@ export function resolveReportTitle(definition: ReportDefinition, scope: Scope): 
   return names.every((name) => localizedTextEquals(name, first)) ? first : FALLBACK_REPORT_TITLE;
 }
 
-/** 规范化声明 → 组合组件可见的 ReportMeta(scripts / styles 是注入资产,不进)。 */
-export function buildReportMeta(definition: ReportDefinition, scope: Scope, pageId: string): ReportMeta {
+/** 规范化声明 → 组合组件可见的 ReportMeta(scripts / styles 是注入资产,不进;不携带当前页)。 */
+export function buildReportMeta(definition: ReportDefinition, scope: Scope): ReportMeta {
   return {
     title: resolveReportTitle(definition, scope),
     links: definition.links,
     ...(definition.footer !== undefined ? { footer: definition.footer } : {}),
-    pages: definition.pages.map((page) => ({ id: page.id, title: page.title })) as unknown as NonEmptyArray<{
-      id: string;
-      title: LocalizedText;
-    }>,
-    pageId,
+    pages: definition.pages.map((page) => ({
+      id: page.id,
+      title: page.title,
+      input: page.input ?? "scope",
+      navigation: page.navigation ?? true,
+    })) as unknown as NonEmptyArray<ReportMetaPage>,
   };
 }
 
+/** 默认下钻命令:`niceeval show <locator>` 是 show 已实现的真实 CLI 语法,不需要反查 eval id 再拼近似命令。 */
+const DEFAULT_ATTEMPT_COMMAND = (locator: AttemptLocator): string => `niceeval show ${locator}`;
+
 // ───────────────────────── 页选择与 text 宿主入口 ─────────────────────────
 
-/** `--page` 未命中:宿主据此按用法错误退出并列出可用页 id。 */
+/** `--page` 未命中:宿主据此按用法错误退出并列出可用页 id(只列 navigation !== false 的)。 */
 export class ReportPageNotFoundError extends Error {
   readonly pageId: string;
   readonly available: string[];
@@ -509,15 +589,35 @@ export class ReportPageNotFoundError extends Error {
   }
 }
 
+/** 显式请求了 attempt-input page,但当前入口没有 locator 可注入 evidence。 */
+export class ReportPageNeedsLocatorError extends Error {
+  readonly pageId: string;
+  constructor(pageId: string) {
+    super(
+      `Page "${pageId}" is an attempt-input page and needs a locator — it cannot be opened with --page or #/page/<id> directly. ` +
+        "Use the host's locator addressing instead (niceeval show @<locator>, or the view attempt route), which resolves this page with the matching AttemptEvidence.",
+    );
+    this.pageId = pageId;
+  }
+}
+
+/**
+ * 挑选要渲染的 page:省略 pageId 时挑第一张 `navigation !== false` 的页(跳过参数化详情页,
+ * 它没有 locator 就不可打开);显式 pageId 命中 attempt-input page 时报
+ * ReportPageNeedsLocatorError——这个入口没有 locator,不能拿 Scope 强行 resolve。
+ */
 export function pickReportPage(definition: ReportDefinition, pageId?: string): ReportPage {
-  if (pageId === undefined) return definition.pages[0];
+  if (pageId === undefined) {
+    return definition.pages.find((p) => p.navigation !== false) ?? definition.pages[0];
+  }
   const page = definition.pages.find((p) => p.id === pageId);
   if (!page) {
     throw new ReportPageNotFoundError(
       pageId,
-      definition.pages.map((p) => p.id),
+      definition.pages.filter((p) => p.navigation !== false).map((p) => p.id),
     );
   }
+  if (page.input === "attempt") throw new ReportPageNeedsLocatorError(page.id);
   return page;
 }
 
@@ -529,15 +629,15 @@ export interface ReportHostContext {
 }
 
 export interface RenderReportTextOptions extends TextRenderOptions {
-  /** 渲染哪一页;缺省第一页。未命中抛 ReportPageNotFoundError。 */
+  /** 渲染哪一页;缺省第一张可导航页。命中 attempt-input page 抛 ReportPageNeedsLocatorError,未命中抛 ReportPageNotFoundError。 */
   pageId?: string;
 }
 
 /**
- * text 宿主的装载语义:选页 → resolve(组合展开 + spec 取数,唯一的 await 边界)→ 树校验 →
- * 遍历渲染 text 面。不需要 react-dom。宿主不在报告树外另设警告通道——挑选警告的呈现件是
- * `ScopeWarnings` 组件,内建报告每页都放它,自定义报告放不放是作者义务
- * (docs/feature/reports/architecture.md「Scope 是计算入口」)。
+ * text 宿主的装载语义:选页(只能是 scope-input page,见 pickReportPage)→ resolve(组合展开 +
+ * spec 取数,唯一的 await 边界)→ 树校验 → 遍历渲染 text 面。不需要 react-dom。宿主不在报告树外
+ * 另设警告通道——挑选警告的呈现件是 `ScopeWarnings` 组件,内建报告每页都放它,自定义报告放不放
+ * 是作者义务(docs/feature/reports/architecture.md「Scope 是计算入口」)。
  */
 export async function renderReportToText(
   definition: ReportDefinition,
@@ -545,15 +645,23 @@ export async function renderReportToText(
   options?: RenderReportTextOptions,
 ): Promise<string> {
   const page = pickReportPage(definition, options?.pageId);
-  const meta = buildReportMeta(definition, ctx.scope, page.id);
+  const meta = buildReportMeta(definition, ctx.scope);
+  const hasAttemptPage = definition.pages.some((p) => p.input === "attempt");
   const resolved = await resolveReportTree(page.content, {
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
+    page: { id: page.id, input: "scope" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
-  return renderNodeToText(resolved, createTextContext(options));
+  return renderNodeToText(
+    resolved,
+    createTextContext({
+      ...options,
+      attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
+    }),
+  );
 }
 
 /** 页索引标题行(show 多页索引 / view 导航共用的解析结果):按 locale 解析的标题字符串。 */
@@ -587,11 +695,13 @@ function experimentCommandFor(ctx: HostCommandContext): (experimentIdPrefix: str
   };
 }
 
-/** 逐页渲染的宿主上下文:官方口径的 Scope、结果根读取面与规范化声明(ctx.report)。 */
+/** 逐页渲染的宿主上下文:官方口径的 Scope、结果根读取面、规范化声明(ctx.report)与当前页判别。 */
 export interface ReportTreeHostContext {
   scope: Scope;
   results: Results;
   report: ReportMeta;
+  /** 当前渲染的页:scope 分支只有 id;attempt 分支带 locator + evidence(宿主已完成寻址与装配)。 */
+  page: PageContext;
 }
 
 export interface RenderTreeTextOptions extends TextRenderOptions {
@@ -602,7 +712,8 @@ export interface RenderTreeTextOptions extends TextRenderOptions {
 /**
  * 渲染一页报告树的 text 面(宿主逐页调用;页选择归宿主):
  * resolve(组合展开 + spec 取数)→ validate → render。宿主不在报告树外另设警告通道,
- * 挑选警告由页内的 `ScopeWarnings` 组件呈现(内建报告每页都放它)。
+ * 挑选警告由页内的 `ScopeWarnings` 组件呈现(内建报告每页都放它)。当前 definition 没有
+ * attempt-input page 时不注入默认下钻命令,调用方也没显式给,`ctx.attemptCommand` 就不存在。
  */
 export async function renderReportTreeToText(
   tree: ReportNode,
@@ -613,11 +724,14 @@ export async function renderReportTreeToText(
     scope: ctx.scope,
     results: ctx.results,
     report: ctx.report,
+    page: ctx.page,
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
+  const hasAttemptPage = ctx.report.pages.some((p) => p.input === "attempt");
   const textCtx = createTextContext({
     ...options,
+    attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
     ...(options?.experimentCommand === undefined && options?.commandContext !== undefined
       ? { experimentCommand: experimentCommandFor(options.commandContext) }
       : {}),

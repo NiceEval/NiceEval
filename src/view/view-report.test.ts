@@ -274,14 +274,17 @@ describe("loadViewScan · 默认报告槽(裸跑)", () => {
 // ───────────────────────── 报告槽整槽替换 ─────────────────────────
 
 describe("loadViewScan · --report 报告槽", () => {
-  it("报告树渲染为静态 HTML:官方水位 + 自定义摆法 + <Style> 产物 + 证据室深链,零 <script>", async () => {
+  it("报告树渲染为静态 HTML:官方水位 + 自定义摆法 + <Style> 产物,零 <script>", async () => {
     const root = await seedRoot();
     const scan = await loadViewScan(root, { report: { path: EXAM_REPORT, cwd: root } });
     const html = slotHtml(scan).en;
     expect(html).toContain("考试成绩单"); // 自定义 Section
     expect(html).toContain("nre-"); // 官方组件的稳定类名
     expect(html).toContain("<style>.exam-note { color: #4a7; }</style>"); // <Style> 随树带走
-    expect(html).toMatch(/href="#\/attempt\/@[0-9a-z]+"/); // 失败案例深链进证据室(单段 locator 路由)
+    // exam-report.tsx 是树形态 defineReport,没有声明 attempt-input page:locator 因此只是
+    // 纯文本,不生成假 href(architecture.md「Attempt 详情是一张参数化 page」)。
+    expect(html).toMatch(/<span class="nre-locator[^"]*">@[0-9a-z]+/);
+    expect(html).not.toMatch(/href="#\/attempt\//);
     expect(html).not.toContain("<script"); // 报告槽产物零客户端 JS,不 hydrate
     // 用户报告同样双语渲染两遍(壳按界面语言摆放)。
     expect(slotHtml(scan)["zh-CN"]).toContain("考试成绩单");
@@ -352,6 +355,7 @@ describe("loadViewScan · 外壳标题与 ReportLink.icon", () => {
       '  kind: "report",',
       '  title: { en: "Memory Evals", "zh-CN": "记忆能力评测" },',
       '  links: [{ label: "GitHub", href: "https://example.com", icon: { svg: "<svg data-mark></svg>" } }],',
+      "  head: [],",
       "  scripts: [],",
       "  styles: [],",
       '  pages: [{ id: "report", title: "Report", content: { $$typeof: Symbol.for("react.transitional.element"), type: Block, props: {}, key: null } }],',
@@ -402,6 +406,7 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
       "const definition = {",
       '  kind: "report",',
       "  links: [],",
+      "  head: [],",
       "  scripts: [],",
       "  styles: [],",
       '  pages: [{ id: "report", title: "Report", content: { $$typeof: Symbol.for("react.transitional.element"), type: Block, props: {}, key: null } }],',

@@ -120,22 +120,29 @@ function hostCtx(scope: Scope) {
   return { scope, results: resultsOf(scope.snapshots) };
 }
 
+/** 站点组件测试固定"宿主已声明 attempt-input page"这条件,验证 attemptCommand/attemptHref 通道本身接得对;
+ * 「没有 attempt page 时退化成纯文本」由 report.test.ts / show.test.ts 的报告级测试单独覆盖。 */
+const DEFAULT_TEST_ATTEMPT_COMMAND = (locator: string) => `niceeval show ${locator}`;
+const DEFAULT_TEST_ATTEMPT_HREF = (locator: string) => `#/attempt/${locator}`;
+
 /** 管线便捷入口:装载 → resolve → validate → text 渲染(与 show 同一条管线,不带宿主前置块)。 */
 async function treeText(node: ReportNode, scope: Scope, width = 120): Promise<string> {
   const definition = defineReport(node);
-  const resolved = await resolveReportTree(pickReportPage(definition).content, {
+  const page = pickReportPage(definition);
+  const resolved = await resolveReportTree(page.content, {
     scope,
     results: resultsOf(scope.snapshots),
-    report: buildReportMeta(definition, scope, "report"),
+    report: buildReportMeta(definition, scope),
+    page: { id: page.id, input: "scope" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
-  return renderNodeToText(resolved, createTextContext({ width }));
+  return renderNodeToText(resolved, createTextContext({ width, attemptCommand: DEFAULT_TEST_ATTEMPT_COMMAND }));
 }
 
 /** 管线便捷入口:web 面静态 HTML(经 renderReportToStaticHtml;测试用无警告 Scope,免宿主前置块)。 */
 async function treeHtml(node: ReportNode, scope: Scope): Promise<string> {
-  return renderReportToStaticHtml(defineReport(node), hostCtx(scope));
+  return renderReportToStaticHtml(defineReport(node), hostCtx(scope), { attemptHref: DEFAULT_TEST_ATTEMPT_HREF });
 }
 
 // ───────────────────────── 警告 fixture(按 ScopeWarning 联合造)─────────────────────────

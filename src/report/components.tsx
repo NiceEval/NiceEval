@@ -9,12 +9,12 @@
 // 组件消费 `data` 时校验结构,不符合当前形状按完整用户反馈报错并提示可能的版本漂移。
 //
 // 官方组件在宿主里自动接上证据室:web 面的 attemptHref 缺省取 ctx.attemptHref
-// (宿主注入的证据室深链);显式传 prop 可覆盖(嵌进自己应用时自定去处)。
+// (宿主注入的证据室深链,当前 definition 没有 attempt-input page 时不存在);
+// 显式传 prop 可覆盖(嵌进自己应用时自定去处)。
 
 import type { ReactNode } from "react";
 import {
   defineComponent,
-  isHostWebContextActive,
   memoFetchOf,
   type ReportComponent,
   type ResolveContext,
@@ -388,12 +388,16 @@ function makeDataComponent<Data, Options, Presentation>(
   return component;
 }
 
-/** 宿主内缺省接证据室,显式 prop 覆盖;宿主外不传 attemptHref 就是纯展示。 */
+/**
+ * 缺省接证据室,显式 prop 覆盖。`ctx.attemptHref` 本身已经是「有没有」的完整信号——
+ * 宿主外直接渲染、或宿主内但当前 definition 没有 attempt-input page 时它就是 undefined,
+ * 不需要再判断是否在宿主里。
+ */
 function hrefOf(
   props: { attemptHref?: (locator: AttemptLocator) => string },
   ctx: WebContext,
 ): ((locator: AttemptLocator) => string) | undefined {
-  return props.attemptHref ?? (isHostWebContextActive() ? ctx.attemptHref : undefined);
+  return props.attemptHref ?? ctx.attemptHref;
 }
 
 // ───────────────────────── 呈现选项类型 ─────────────────────────
@@ -457,7 +461,7 @@ export const ExperimentComparison = makeDataComponent<ExperimentComparisonData, 
       connect={props.connect}
       locale={props.locale ?? ctx.locale}
       className={props.className}
-      attemptHref={isHostWebContextActive() ? ctx.attemptHref : undefined}
+      attemptHref={ctx.attemptHref}
     />
   ),
   text: (props, ctx) => experimentComparisonText(props.data, props.className, ctx, props.connect),
@@ -502,7 +506,7 @@ export const ExperimentList = makeDataComponent<
       filter={props.filter}
       relativeTo={props.relativeTo}
       locale={props.locale ?? ctx.locale}
-      attemptHref={hrefOf(props, ctx) ?? ctx.attemptHref}
+      attemptHref={hrefOf(props, ctx)}
       className={props.className}
     />
   ),
@@ -523,7 +527,7 @@ export const EvalList = makeDataComponent<readonly EvalListItem[], Record<never,
     <EvalListWeb
       data={props.data}
       locale={props.locale ?? ctx.locale}
-      attemptHref={hrefOf(props, ctx) ?? ctx.attemptHref}
+      attemptHref={hrefOf(props, ctx)}
       className={props.className}
     />
   ),
@@ -559,7 +563,7 @@ export const AttemptList = makeDataComponent<
       total={props.total}
       filter={props.filter}
       locale={props.locale ?? ctx.locale}
-      attemptHref={hrefOf(props, ctx) ?? ctx.attemptHref}
+      attemptHref={hrefOf(props, ctx)}
       className={props.className}
     />
   ),
@@ -753,7 +757,7 @@ export const TraceWaterfall = makeDataComponent<
   web: (props, ctx) => (
     <TraceWaterfallWeb
       data={props.data}
-      attemptHref={hrefOf(props, ctx) ?? ctx.attemptHref}
+      attemptHref={hrefOf(props, ctx)}
       locale={props.locale ?? ctx.locale}
       className={props.className}
     />

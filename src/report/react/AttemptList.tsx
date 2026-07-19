@@ -12,24 +12,31 @@ import { DEFAULT_REPORT_LOCALE, countText, localeText, type ReportLocale } from 
 import { colorClassForKey } from "./colors.ts";
 import { cx, formatDurationMs, formatUSD, verdictMark } from "./format.ts";
 
-const DEFAULT_ATTEMPT_HREF = (locator: AttemptLocator): string => `#/attempt/${locator}`;
-
-/** locator + 判定符的普通 <a>,AttemptList/EvalList/ExperimentList 共用。 */
+/**
+ * locator + 判定符,AttemptList/EvalList/ExperimentList 共用。没有 target(当前报告没有
+ * declare attempt-input page,也没有显式 attemptHref)时是纯文本,不生成空 href 或假链接
+ * (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」)。
+ */
 export function AttemptLocatorBadge({
   item,
-  attemptHref = DEFAULT_ATTEMPT_HREF,
+  attemptHref,
 }: {
   item: Pick<AttemptListItem, "locator" | "verdict">;
   attemptHref?: (locator: AttemptLocator) => string;
 }): ReactElement {
-  return (
-    <a
-      className={cx("nre-locator", `nre-verdict-${item.verdict}`)}
-      href={attemptHref(item.locator)}
-    >
+  const className = cx("nre-locator", `nre-verdict-${item.verdict}`);
+  const content = (
+    <>
       {item.locator}
       <span className="nre-locator-mark">{verdictMark(item.verdict)}</span>
+    </>
+  );
+  return attemptHref ? (
+    <a className={className} href={attemptHref(item.locator)}>
+      {content}
     </a>
+  ) : (
+    <span className={className}>{content}</span>
   );
 }
 
@@ -44,7 +51,7 @@ export function failureSummaryText(item: Pick<AttemptListItem, "failureSummary" 
 /** 一条 Attempt 的比较卡片;完整 assertions 通过 locator 下钻,不在列表内展开。 */
 export function AttemptRow({
   item,
-  attemptHref = DEFAULT_ATTEMPT_HREF,
+  attemptHref,
   locale = DEFAULT_REPORT_LOCALE,
 }: {
   item: AttemptListItem;
@@ -74,7 +81,7 @@ export function AttemptList({
   data,
   total,
   filter = false,
-  attemptHref = DEFAULT_ATTEMPT_HREF,
+  attemptHref,
   className,
   locale = DEFAULT_REPORT_LOCALE,
 }: {

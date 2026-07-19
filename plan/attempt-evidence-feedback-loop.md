@@ -5,6 +5,8 @@
 > 状态：设计已定，代码尚未实现。这是一次完整重构 TODO，不分阶段交付，不保留全局 React shim、旧组件兼容层或两套证据 renderer 作为中间终点。
 >
 > 最终验收仓库：`/Users/ctrdh/Code/coding-agent-memory-evals`。
+>
+> **要求宿主保留默认 Attempt 首页内容的部分已被 `plan/report-pages-attempt-detail-alignment.md` 与 `memory/attempt-detail-is-a-parametrized-page.md` 取代**：attempt 详情不再是宿主默认持有的首页内容，而是报告里唯一的参数化 page；没有该 page 时宿主不回退到任何内建详情。本文件里 `AttemptEvidence` 的字段草案（缺 `trace`、`capabilities.eval` 而非 `capabilities.source`）也已被 `src/results/attempt-evidence.ts` 的实际实现取代，字段以当前源码与 `docs/concepts.md`《Attempt 证据》词条为准。CLI 用法（`show @<id> [--source|--execution|--diff]`）与证据装配分层的部分仍然成立。
 
 ## 完成后的唯一体验
 

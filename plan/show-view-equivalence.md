@@ -1,6 +1,8 @@
 # PLAN：让 `niceeval show` 与 `niceeval view` 使用同一份现刻水位
 
 > 状态：Selection 等价部分仍有效；“共用默认报告”的部分已被 2026-07-13 的后续 show 契约取代。裸 show 使用专用 Attempt 索引，view 使用 `CostPassRateComparison`。
+>
+> **进一步更新（`plan/report-pages-attempt-detail-alignment.md`）**：`Selection` 已改名 `Scope`，`CostPassRateComparison` 已被 `ExperimentComparison` 取代，裸 `show` 的"专用 Attempt 索引"已并入内建 `standard` 报告（三张导航页 + 一张参数化 attempt 详情页）。本文件仅剩的"Selection 等价"验收标准若仍需引用，按当前 `docs/feature/reports/architecture.md`《Scope 是计算入口》一节核对符号名后使用，不要照抄本文件的具体类型/组件名。
 
 > 面向执行者：把本文件直接交给实现 AI。按阶段顺序执行；每个阶段都必须先满足自己的验收条件，再进入下一阶段。
 >

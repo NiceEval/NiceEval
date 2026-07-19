@@ -344,9 +344,13 @@ export const Table = defineComponent<TableProps>({
               {hasLocator ? (
                 <td>
                   {row.locator ? (
-                    <a className="nre-locator" href={ctx.attemptHref(row.locator)}>
-                      {row.locator}
-                    </a>
+                    ctx.attemptHref ? (
+                      <a className="nre-locator" href={ctx.attemptHref(row.locator)}>
+                        {row.locator}
+                      </a>
+                    ) : (
+                      <span className="nre-locator">{row.locator}</span>
+                    )
                   ) : (
                     <span className="nre-missing">{MISSING_MARK}</span>
                   )}

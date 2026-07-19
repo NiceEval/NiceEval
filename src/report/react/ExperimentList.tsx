@@ -13,8 +13,6 @@ import { MetricCellView } from "./cell.tsx";
 import { colorClassForKey } from "./colors.ts";
 import { cx, formatDurationMs, formatUSD, verdictMark } from "./format.ts";
 
-const DEFAULT_ATTEMPT_HREF = (locator: AttemptLocator): string => `#/attempt/${locator}`;
-
 const verdictOrder = ["passed", "failed", "errored", "skipped"] as const;
 
 function passRateTone(value: number | null): string | undefined {
@@ -50,7 +48,7 @@ function ExperimentAttemptRow({
 }: {
   attempt: AttemptListItem;
   last: boolean;
-  attemptHref: (locator: AttemptLocator) => string;
+  attemptHref?: (locator: AttemptLocator) => string;
   locale: ReportLocale;
 }): ReactElement {
   const reason = failureSummaryText(attempt, locale);
@@ -76,7 +74,7 @@ function EvalAttempts({
   locale,
 }: {
   row: ExperimentListEvalRow;
-  attemptHref: (locator: AttemptLocator) => string;
+  attemptHref?: (locator: AttemptLocator) => string;
   locale: ReportLocale;
 }): ReactElement {
   const duration = row.durationMs.value === null ? localeText(locale, "cell.missing") : formatDurationMs(row.durationMs.value);
@@ -128,7 +126,7 @@ function ExperimentRow({
   relativeTo,
 }: {
   item: ExperimentListItem;
-  attemptHref: (locator: AttemptLocator) => string;
+  attemptHref?: (locator: AttemptLocator) => string;
   locale: ReportLocale;
   relativeTo?: string;
 }): ReactElement {
@@ -181,7 +179,7 @@ function ExperimentRow({
 
 export function ExperimentList({
   data,
-  attemptHref = DEFAULT_ATTEMPT_HREF,
+  attemptHref,
   filter = false,
   className,
   locale = DEFAULT_REPORT_LOCALE,

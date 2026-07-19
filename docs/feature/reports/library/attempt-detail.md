@@ -34,7 +34,7 @@ export default defineReport({
 | `AttemptAssessment` | 先放 `AttemptError`，有 source 时放 `AttemptSource`，否则放 `AttemptAssertions` | 子组件都为空时零输出 |
 | `AttemptFixPrompt` | 把当前失败的身份、error / assertion、相关源码与变更摘要组装成单条修复 prompt | passed 或没有可操作失败时零输出 |
 | `AttemptTimeline` | runner phases、hook / command / session / turn，以及按 `traceId` 关联的 agent / model / tool spans | 没有 phase 时零输出 |
-| `AttemptConversation` | 标准事件流按轮组织的 user / assistant / thinking / tool / Skill / HITL / error 条目 | 没有 execution 时零输出 |
+| `AttemptConversation` | 标准事件流按轮组织的 user / assistant / thinking / tool / Skill / HITL / error 条目 | 没有 events 时零输出 |
 | `AttemptDiagnostics` | lifecycle 分组的 diagnostics 与 coverage reason | 没有 diagnostics 时零输出 |
 | `AttemptUsage` | token、cache token、成本及 provider usage 明细 | 没有 usage 时零输出 |
 | `AttemptTrace` | 不混入 runner 节点的原始 OTel span 树 / 瀑布 | 没有 trace 时零输出 |

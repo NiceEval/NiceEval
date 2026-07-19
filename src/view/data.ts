@@ -11,13 +11,12 @@ import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { dedupeAttempts, openResults } from "../results/index.ts";
 import type { AttemptHandle, Results, Scope, Snapshot, SkippedDir } from "../results/index.ts";
 import {
+  buildHostReportMeta,
   loadHostReport,
   renderHostPageHtml,
-  reportMetaFor,
-  resolveReportTitle,
-  type HostHeadTag,
-  type HostReport,
-  type HostReportAsset,
+  type ReportAsset,
+  type ReportDefinition,
+  type HeadTag,
 } from "../show/report-host.ts";
 import { selectCurrentResults, filterExperiments } from "../results/select.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
@@ -345,7 +344,7 @@ export interface ResolvedHeadTag {
 }
 
 /** head 标签 attrs 的 src/href 解析:外链透传,本地路径按 `{src}` 同一路径纪律落成绝对路径并验存在。 */
-function resolveShellHead(tags: HostHeadTag[], baseDir: string | undefined): ResolvedHeadTag[] {
+function resolveShellHead(tags: readonly HeadTag[], baseDir: string | undefined): ResolvedHeadTag[] {
   const out: ResolvedHeadTag[] = [];
   for (const entry of tags) {
     const attrs = { ...(entry.attrs ?? {}) };
@@ -378,7 +377,7 @@ function resolveShellHead(tags: HostHeadTag[], baseDir: string | undefined): Res
 }
 
 /** 外壳 `{src}` 资产的路径纪律(shell.md「行为约束」):相对报告文件解析;拒绝 `..` 路径段、绝对路径与 `~`。 */
-function resolveShellAssets(assets: HostReportAsset[], baseDir: string | undefined, kind: "styles" | "scripts"): string[] {
+function resolveShellAssets(assets: readonly ReportAsset[], baseDir: string | undefined, kind: "styles" | "scripts"): string[] {
   const out: string[] = [];
   for (const asset of assets) {
     if (asset.inline !== undefined) {
@@ -424,14 +423,27 @@ async function renderReportSlot(
 }> {
   // 报告 runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view
   // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../show/report-host.ts(两个宿主共用的联系面)。
-  const hostReport: HostReport = await loadHostReport(report?.cwd ?? process.cwd(), report?.path, {
+  const hostReport: ReportDefinition = await loadHostReport(report?.cwd ?? process.cwd(), report?.path, {
     freshImport: true,
   });
 
-  const initialPageId = page ?? hostReport.pages[0]!.id;
-  if (!hostReport.pages.some((p) => p.id === initialPageId)) {
+  // scope-input pages 只有这些参与本函数的「全部烘进 index.html」渲染;attempt-input page(如果
+  // 报告声明了)没有 locator 就不能 resolve,它的每-locator 静态文档是独立机制,不在这里渲染
+  // (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」)。
+  const scopePages = hostReport.pages.filter((p) => p.input !== "attempt");
+  const navigablePages = scopePages.filter((p) => p.navigation !== false);
+
+  const initialPageId = page ?? navigablePages[0]?.id ?? scopePages[0]?.id;
+  const initialPage = initialPageId !== undefined ? scopePages.find((p) => p.id === initialPageId) : undefined;
+  if (initialPageId === undefined || !initialPage) {
+    const requested = hostReport.pages.find((p) => p.id === page);
+    if (requested?.input === "attempt") {
+      throw new ViewInputError(
+        `error: page "${page}" in ${report?.path ?? "the built-in report"} is an attempt-input page and needs a locator — it cannot be opened as the initial page directly.`,
+      );
+    }
     throw new ViewInputError(
-      `error: page "${page}" not found in ${report?.path ?? "the built-in report"}. Available pages: ${hostReport.pages.map((p) => p.id).join(", ")}`,
+      `error: page "${page}" not found in ${report?.path ?? "the built-in report"}. Available pages: ${navigablePages.map((p) => p.id).join(", ")}`,
     );
   }
 
@@ -442,10 +454,10 @@ async function renderReportSlot(
     head: resolveShellHead(hostReport.head, reportDir),
   };
 
+  const hostMeta = await buildHostReportMeta(hostReport, selection);
   const pages: ViewReportPageHtml[] = [];
-  for (const hostPage of hostReport.pages) {
-    const meta = reportMetaFor(hostReport, hostPage.id, selection.snapshots);
-    const ctx = { scope: selection, results, report: meta };
+  for (const hostPage of scopePages) {
+    const ctx = { scope: selection, results, report: hostMeta, page: { id: hostPage.id, input: "scope" as const } };
     try {
       pages.push({
         id: hostPage.id,
@@ -464,10 +476,10 @@ async function renderReportSlot(
   }
 
   const meta: ViewReportMeta = {
-    title: resolveReportTitle(hostReport.title, selection.snapshots),
-    links: hostReport.links,
+    title: hostMeta.title,
+    links: [...hostReport.links],
     ...(hostReport.footer !== undefined ? { footer: hostReport.footer } : {}),
-    pages: hostReport.pages.map((p) => ({ id: p.id, title: p.title })),
+    pages: scopePages.map((p) => ({ id: p.id, title: p.title })),
     initialPageId,
   };
   return { meta, pages, shellAssets };

@@ -97,6 +97,6 @@ describe("defineReport head 通道(装载校验)", () => {
     ];
     const definition = defineReport({ content: null, head });
     expect(definition.head).toEqual(head);
-    expect(buildReportMeta(definition, emptyScope, "report")).not.toHaveProperty("head");
+    expect(buildReportMeta(definition, emptyScope)).not.toHaveProperty("head");
   });
 });

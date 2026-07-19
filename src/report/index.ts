@@ -32,6 +32,7 @@ export {
   reportTitleText,
   resolveReportTitle,
   ReportPageNotFoundError,
+  ReportPageNeedsLocatorError,
   DEFAULT_PAGE_ID,
 } from "./report.ts";
 export type {
@@ -47,18 +48,23 @@ export type {
   ReportHostContext,
   ReportLink,
   ReportMeta,
+  ReportMetaPage,
   ReportPage,
+  ReportPageBase,
   ReportShell,
 } from "./report.ts";
 export { defineComponent, createTextContext, renderNodeToText, resolveReportTree, validateReportTree, ResolveMemo } from "./tree.ts";
 export type {
+  AttemptPageContext,
   ComponentFaces,
   ComposeContext,
+  PageContext,
   ReportComponent,
   ReportElement,
   ReportNode,
   ResolveContext,
   ResolveEnv,
+  ScopePageContext,
   TextContext,
   TextRenderOptions,
   WebContext,
