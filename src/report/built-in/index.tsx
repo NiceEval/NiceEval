@@ -3,8 +3,8 @@
 // (docs/feature/reports/library/built-in.md)。新增内建视图 = 新文件 + 新具名导出,
 // 不需要注册表,也不改变装载管线。
 
-import { standard } from "./standard.tsx";
+import { standard, standardAttemptPage } from "./standard.tsx";
 
-export { standard };
+export { standard, standardAttemptPage };
 
 export default standard;

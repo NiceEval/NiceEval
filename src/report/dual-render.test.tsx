@@ -25,11 +25,12 @@ import {
   FALLBACK_REPORT_TITLE,
   pickReportPage,
   renderReportToText,
+  renderReportTreeToText,
   ReportPageNeedsLocatorError,
   ReportPageNotFoundError,
   resolveReportTitle,
 } from "./report.ts";
-import { renderReportToStaticHtml } from "./web.ts";
+import { renderReportToStaticHtml, renderReportTreeToStaticHtml } from "./web.ts";
 import {
   AttemptList,
   CopyFixPrompt,
@@ -45,11 +46,14 @@ import {
   ScopeWarnings,
   TraceWaterfall,
 } from "./components.tsx";
+import { AttemptDetail } from "./attempt-components.tsx";
 import { Col, Row, Section, Style, Tab, Table, Tabs, Text } from "./primitives.tsx";
 import { attemptListData, experimentListData, metricScatterData, scopeSummaryData } from "./compute.ts";
 import { costUSD, defineMetric, endToEndPassRate } from "./metrics.ts";
 import { label } from "./flag.ts";
-import builtInReport, { standard } from "./built-in/index.tsx";
+import builtInReport, { standard, standardAttemptPage } from "./built-in/index.tsx";
+import type { AttemptEvidence } from "../results/attempt-evidence.ts";
+import { encodeAttemptLocator } from "../results/locator.ts";
 
 // ───────────────────────── fake 数据 ─────────────────────────
 
@@ -133,6 +137,23 @@ function resultsOf(snapshots: Snapshot[]): Results {
     latest: () => makeScope("latest-snapshots", experiments.map((e) => e.latest), []),
     current: () => makeScope("current-evals", experiments.map((e) => e.latest), []),
   } as unknown as Results;
+}
+
+/** 最小 AttemptEvidence fixture:只用于验证 standardAttemptPage 的渲染管线接线,不摆事实。 */
+function attemptEvidenceOf(): AttemptEvidence {
+  const identity = { experimentId: "exp/a", snapshotStartedAt: "2026-07-01T00:00:00.000Z", evalId: "eval/one", attempt: 0 };
+  return {
+    locator: encodeAttemptLocator(identity),
+    identity,
+    result: { id: "eval/one", agent: "agent-x", verdict: "passed" as Verdict, attempt: 0, durationMs: 1000, assertions: [] },
+    events: null,
+    evalSource: null,
+    execution: null,
+    diff: null,
+    trace: null,
+    artifactPaths: { dir: "/results/exp/a/eval-one/a0" },
+    capabilities: { source: false, execution: false, timing: false, diff: false },
+  };
 }
 
 /** 管线便捷入口:resolve + validate + text 渲染,报告声明用最小 meta。 */
@@ -904,13 +925,14 @@ describe("defineReport 装载规范化", () => {
 // ───────────────────────── 内建报告 ─────────────────────────
 
 describe("内建报告", () => {
-  it("三页普通 defineReport:页 id、页名与逐页组件构成和 built-in.md 全文一致", () => {
+  it("四页普通 defineReport:页 id、页名与逐页组件构成和 built-in.md 全文一致,第四页是不进导航的 attempt-input page", () => {
     expect(builtInReport.kind).toBe("report");
-    expect(builtInReport.pages.map((p) => p.id)).toEqual(["report", "attempts", "traces"]);
+    expect(builtInReport.pages.map((p) => p.id)).toEqual(["report", "attempts", "traces", "attempt"]);
     expect(builtInReport.pages.map((p) => p.title)).toEqual([
       { en: "Report", "zh-CN": "报告" },
       "Attempts",
       { en: "Traces", "zh-CN": "追踪" },
+      "Attempt",
     ]);
     // 逐页组件构成:每页一个 Col,children 按 built-in.md 全文的声明序,全部是公开组件。
     const childTypes = (content: unknown) => {
@@ -918,7 +940,7 @@ describe("内建报告", () => {
       expect(col.type).toBe(Col);
       return col.props.children;
     };
-    const [reportPage, attemptsPage, tracesPage] = builtInReport.pages;
+    const [reportPage, attemptsPage, tracesPage, attemptPage] = builtInReport.pages;
     expect(childTypes(reportPage!.content).map((c) => c.type)).toEqual([
       Hero,
       ScopeWarnings,
@@ -929,6 +951,16 @@ describe("内建报告", () => {
     expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, ScopeWarnings, AttemptList]);
     expect(attemptsChildren[2]!.props.filter).toBe(true);
     expect(childTypes(tracesPage!.content).map((c) => c.type)).toEqual([Hero, ScopeWarnings, TraceWaterfall]);
+    // 第四页是参数化详情页:content 就是裸 AttemptDetail(不套 Col),input/navigation 与文档一致。
+    // defineReport 规范化会重建页对象(id/title/content 逐字段拷贝),所以整页对象不可能与
+    // 具名导出 standardAttemptPage 保持引用相等;但 content 字段是原样透传,同引用证明
+    // standard.tsx 确实把 standardAttemptPage 整个复用进了 pages 数组,不是另抄一份同形的
+    // <AttemptDetail /> JSX(两次书写同样的 JSX 字面量在运行时是两个不同的 element 对象)。
+    expect(attemptPage!.content).toBe(standardAttemptPage.content);
+    expect(attemptPage).toEqual(standardAttemptPage);
+    expect(attemptPage!.input).toBe("attempt");
+    expect(attemptPage!.navigation).toBe(false);
+    expect((attemptPage!.content as { type: unknown }).type).toBe(AttemptDetail);
   });
 
   it("与 --report 同内容文件完全等价:同一棵页树经同一条管线渲染出逐字节相同的两面", async () => {
@@ -957,6 +989,7 @@ describe("内建报告", () => {
           title: { en: "Traces", "zh-CN": "追踪" },
           content: <Col><Hero /><ScopeWarnings /><TraceWaterfall /></Col>,
         },
+        { id: "attempt", title: "Attempt", input: "attempt" as const, navigation: false as const, content: <AttemptDetail /> },
       ],
     });
     for (const pageId of ["report", "attempts", "traces"]) {
@@ -967,6 +1000,16 @@ describe("内建报告", () => {
         await renderReportToStaticHtml(user, ctx, { pageId }),
       );
     }
+    // 第四页(attempt-input,不能经 pageId 挑选)另走 tree 级渲染入口逐字节比对。
+    const evidence = attemptEvidenceOf();
+    const page = { id: "attempt", input: "attempt" as const, locator: evidence.locator, evidence };
+    const treeCtx = { scope, results: resultsOf([s1, s2]), report: buildReportMeta(builtInReport, scope), page };
+    expect(await renderReportTreeToText(standardAttemptPage.content, treeCtx, { width: 120 })).toBe(
+      await renderReportTreeToText(<AttemptDetail />, treeCtx, { width: 120 }),
+    );
+    expect(await renderReportTreeToStaticHtml(standardAttemptPage.content, treeCtx)).toBe(
+      await renderReportTreeToStaticHtml(<AttemptDetail />, treeCtx),
+    );
   });
 
   it("首页 web/text 两面都展示完整 Scope,不同深度目录的 experiment 同屏且显示完整 id;无组选择器或组索引", async () => {
