@@ -1,0 +1,4 @@
+# configFile 实验用的原生 Codex config.toml 片段:关掉内置联网检索工具。
+# 保留键(model / model_provider / model_providers / model_reasoning_effort / mcp_servers /
+# otel)不出现在这里——它们归 Adapter 生成层,写进来会在 setup 阶段报错。
+web_search = "disabled"

@@ -1,0 +1,16 @@
+{
+  "id": "ai-sdk",
+  "group": "sdk",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 15,
+  "secrets": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_BASE_URL",
+    "NICEEVAL_JUDGE_KEY",
+    "NICEEVAL_JUDGE_BASE"
+  ],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
+  "requires": { "runtimes": ["node>=22"] }
+}

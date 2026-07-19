@@ -184,6 +184,7 @@ it("已完成花费到顶后不再派发新 attempt，在飞的照常完成", as
 | 退出码矩阵：0 = complete 且无 failed/errored；1 = 有 failed/errored 或 incomplete 或 required reporter 写失败；130 = interrupted | 每个分支各一例；边界：`--strict` 下 soft 未达标改判 failed |
 | required reporter 写失败 → 非 complete、退出码 1、明细进 `reporterErrors`；非 required 失败不判红但记录 | 正例：required 失败判红；反例：可选 reporter 失败仍 0 |
 | 汇总按 `(agent, model, eval)` 分组给通过率与均值；被 abort 的不进分母 | 正例：4/5 = 80%；边界：early exit 后分母为实跑数 |
+| `RunSummary.model` 取首个 `AgentRun` 声明的 model，随 `--json` 输出面对外可读 | 正例：experiment 声明 `model: "x"` 时 `--json` 的顶层 `model` 字段等于 `"x"`；边界：未声明 model 时该字段省略 |
 
 ## CLI 启动期错误格式
 

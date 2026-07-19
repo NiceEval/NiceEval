@@ -535,12 +535,19 @@ export class DockerSandbox implements Sandbox {
   /**
    * 向容器任意路径写文件(二进制)。
    * 打成单文件 tar → putArchive 到目标目录,与 uploadFiles 同一机制但目标路径自由。
+   *
+   * 修正属主:putArchive 以 root 解包,不 chown 的话文件在容器里保持 root 属主——非 root
+   * 沙箱用户不仅不能编辑它,后续对它做 `mv`/`rm` 这类改动它所在目录项的操作,只要目标目录带
+   * sticky bit(如 `/tmp`),也会因为「非属主不能改别人的目录项」被内核拒成
+   * `Operation not permitted`(与 uploadFiles() 对整个目标目录 chown 是同一个属主问题,
+   * 这里只需精确 chown 这一个文件;真机复现见 memory/docker-uploadfile-tmp-mv-eperm.md)。
    */
   async uploadFile(destPath: string, content: Buffer): Promise<void> {
     if (!this.container) throw new Error(t("docker.containerNotInitialized"));
     const absPath = resolveSandboxPath(this.workdir, destPath);
     const pack = packFilesToTar([{ name: basename(absPath), content }]);
     await (this.container as Docker.Container).putArchive(pack, { path: dirname(absPath) });
+    await this.chownToSandboxUser(absPath);
   }
 
   /** 销毁容器:显式 stop + remove(创建时不带 AutoRemove,见 createContainer 的注释)。 */

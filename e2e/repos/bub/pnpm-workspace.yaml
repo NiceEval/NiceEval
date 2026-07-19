@@ -1,0 +1,12 @@
+# 独立安装,不并入 e2e/ 或仓库根 workspace(见 docs/engineering/e2e-ci/README.md §2.1)。
+# 空 packages 让 pnpm 把本目录当成离自己最近的 workspace root,不再继续向上游走到仓库根
+# workspace,保证候选 niceeval tarball 注入时解析到的就是本仓库自己的 node_modules。
+packages: []
+allowBuilds:
+  # dockerode(niceeval 的 docker sandbox 可选 peer dep)带来的传递依赖:本仓库只经本机
+  # unix socket 跟 Docker daemon 说话,用不到 ssh2 的 SSH 传输,原生构建脚本不需要跑
+  # (与仓库根 pnpm-workspace.yaml 的同名决策保持一致)。
+  cpu-features: false
+  esbuild: true
+  protobufjs: false
+  ssh2: false

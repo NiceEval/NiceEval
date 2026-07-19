@@ -1,0 +1,11 @@
+.env
+.niceeval/
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+logs/
+*.log
+junit.xml
+fail.xml
+error.xml

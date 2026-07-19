@@ -1,0 +1,23 @@
+{
+  "name": "bub-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "tsx scripts/e2e.ts",
+    "eval": "niceeval"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "niceeval": "^0.9.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

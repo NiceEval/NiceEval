@@ -1,0 +1,21 @@
+{
+  "name": "niceeval-e2e-results-contract",
+  "private": true,
+  "type": "module",
+  "description": "results-contract E2E repo — validates the on-disk Results format, openResults() library parity, --json parity and --junit folding against a real run (docs/engineering/e2e-ci/report.md).",
+  "scripts": {
+    "e2e": "tsx scripts/e2e.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "niceeval": "^0.9.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

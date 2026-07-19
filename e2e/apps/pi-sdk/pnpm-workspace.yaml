@@ -1,6 +1,0 @@
-# 独立安装,不并入仓库根 workspace(见 e2e/README.md)
-packages: []
-allowBuilds:
-  '@google/genai': false
-  esbuild: true
-  protobufjs: false

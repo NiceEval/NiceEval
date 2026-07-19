@@ -1,0 +1,6 @@
+node_modules/
+.niceeval/
+.env
+logs/
+junit.xml
+.claude-home/

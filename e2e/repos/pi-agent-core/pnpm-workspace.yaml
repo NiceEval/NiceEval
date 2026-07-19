@@ -1,0 +1,9 @@
+# 独立安装,不并入 e2e/ 或仓库根 workspace(见 docs/engineering/e2e-ci/README.md §2.1)。
+# 空 packages 让 pnpm 把本目录当成离自己最近的 workspace root,不再继续往上找到
+# e2e/pnpm-workspace.yaml(那份文件的 overrides.niceeval: link:.. 会把 niceeval 解析到
+# 父目录 src/,违反「不得 file:/link: 到父目录」的结构约束,也会让候选 tarball 注入失效)。
+packages: []
+allowBuilds:
+  '@google/genai': false
+  esbuild: true
+  protobufjs: false

@@ -1,5 +1,0 @@
-node_modules
-.env
-dist/
-# Codex 在这个目录里落地它的编辑/命令结果,纯 scratch,不进版本库。
-workspace/

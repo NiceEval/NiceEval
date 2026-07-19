@@ -1,0 +1,9 @@
+{
+  "id": "codex-cli",
+  "group": "sandbox",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 40,
+  "secrets": ["CODEX_API_KEY", "CODEX_BASE_URL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
+  "requires": { "docker": true }
+}

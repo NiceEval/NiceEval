@@ -1,0 +1,9 @@
+{
+  "id": "bub",
+  "group": "sandbox",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 25,
+  "secrets": ["BUB_API_KEY", "BUB_API_BASE", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
+  "requires": { "docker": true, "runtimes": ["python>=3.11"] }
+}

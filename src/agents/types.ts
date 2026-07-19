@@ -283,7 +283,7 @@ export interface AgentContext {
   /**
    * 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
    * experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:
-   * `SandboxSpec.setup` 钩子按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
+   * `SandboxSpec.setup` Hook 按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
    * `ctx.experimentId` 分区),或 adapter 按实验切换鉴权 / 路由。与 `flags`(实验条件的
    * 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
    */

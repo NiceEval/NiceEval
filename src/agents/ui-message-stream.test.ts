@@ -93,6 +93,16 @@ afterEach(() => {
 });
 
 describe("uiMessageStreamAgent", () => {
+  it("声明全通道 complete,usage 例外(协议帧不带 token 计数)——官方 SDK 适配器的覆盖声明义务", () => {
+    const agent = uiMessageStreamAgent({ name: "t", url: "http://x/api/chat" });
+    expect(agent.coverage?.events?.status).toBe("complete");
+    expect(agent.coverage?.actions?.status).toBe("complete");
+    expect(agent.coverage?.messages?.status).toBe("complete");
+    expect(agent.coverage?.status?.status).toBe("complete");
+    expect(agent.coverage?.data?.status).toBe("complete");
+    expect(agent.coverage?.usage?.status).toBe("unavailable");
+  });
+
   it("纯文本轮:message 事件 + completed;第二轮重放全量历史(客户端带历史的协议语义)", async () => {
     const agent = uiMessageStreamAgent({ name: "t", url: "http://x/api/chat", body: (c) => ({ model: c.model }) });
     fetchMock.mockResolvedValueOnce(sse([{ type: "text-delta", delta: "你好" }, { type: "text-delta", delta: "!" }]));

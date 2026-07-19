@@ -1,0 +1,6 @@
+# 这个仓库不是 niceeval 根 workspace 的成员,也不属于 e2e/ 的 workspace——空 `packages: []`
+# 让 pnpm 把这里当独立项目安装依赖,不再往上层目录找 workspace root(见
+# docs/engineering/e2e-ci/README.md §2.1「不加入 niceeval 根 workspace」)。
+packages: []
+allowBuilds:
+  esbuild: true

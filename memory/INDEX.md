@@ -36,6 +36,11 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [mcp-tool-naming-claude-vs-codex](mcp-tool-naming-claude-vs-codex.md) — MCP 工具规范名两家不同:claude-code 是 `mcp__<server>__<tool>`,codex 是 `<server>.<tool>`(点分隔)
 - [run-command-canonical-tool-name-portability](run-command-canonical-tool-name-portability.md) — 断言"跑过 shell"要用规范类目 `"shell"`,不要用某一家的原始工具名字面量(如 `"command_execution"` 只对 codex 恰好成立)
 - [docker-apple-silicon-amd64-emulation-slow](docker-apple-silicon-amd64-emulation-slow.md) — 本机 Apple Silicon 上 dockerSandbox 默认拉 amd64 镜像走模拟,沙箱型 eval 实测比原生慢好几倍,timeoutMs 要留余量
+- [codex-docker-default-image-missing-git](codex-docker-default-image-missing-git.md) — dockerSandbox 默认镜像 node:24-slim 不带 git,codex native Plugin(owner/repo 形态)与 SkillSpec{kind:"repo"} 都靠系统 git clone 实现,必现 ENOENT;修法是只给需要的实验用 `dockerSandbox().setup()` 装 git,不全局装
+- [codex-cli-callid-collision-across-resumed-turns](codex-cli-callid-collision-across-resumed-turns.md) — codex exec --json 的 item.id 按单次进程调用从零编号,`codex exec resume` 续接是新进程、同样从头编号;多轮会话各自一次工具调用时数字常年撞车,call id 配对跨轮错位;要断言多个工具调用就收进同一轮 t.send()
+- [codex-cli-show-board-collapses-multi-experiment](codex-cli-show-board-collapses-multi-experiment.md) — 裸 `niceeval show` 在多 experiment 仓库里按实验组折叠成汇总表,不逐条列 Eval id;"少排用例不能全绿"检查要用 `show --page attempts`,已修在 e2e/repos/codex-cli/scripts/verify.ts
+- 已修 [codex-cli-execution-tool-header-shows-raw-name](codex-cli-execution-tool-header-shows-raw-name.md) — `show --execution` 的 TOOL 卡片头显示 `ExecutionActionNode.name`(协议原始名),codex 的 command_execution/file_change 不会显示 shell/file_edit;verify.ts 断言改 OR 兼容两种(镜像 codex-sdk 已有写法)
+- [codex-cli-otel-tool-span-callid-not-in-json-protocol](codex-cli-otel-tool-span-callid-not-in-json-protocol.md) — codex CLI `--json` 协议的 item 只有 item.id,原生 OTel 工具 span 的关联键是另一套 call_id(OpenAI Responses 风格),两者协议层面无共同字段,现有 call_id 精确匹配策略对 codex CLI 工具级 span 结构性地永远关联不上;真机验证到字段级,是否/如何解决未定,留待裁决
 - [claude-code-persistent-memory-breaks-verbal-isolation](claude-code-persistent-memory-breaks-verbal-isolation.md) — claude-code 会把"帮我记住"写进磁盘 memory,newSession 后合法记得;session-isolation 反证要测 transcript 不回放历史,不测回答不含事实
 - [sandbox-provision-ratelimit-retry](sandbox-provision-ratelimit-retry.md) — 设计裁决:provisioning 瞬时错误退避重试(2026-07-14 两轮 + 2026-07-15 推翻「拒绝类可盲重试」)——防线 = provider create 的 kill-on-failure + 有对账通道时任何重试前按 provision token 对账(对账失败即放弃重试),无检索通道则歧义类第一次抛;vercel 外层封顶收窄防嵌套放大;重试在 resolve.ts 而非 runner
 - 已修 [e2b-provision-429-duplicate-sandbox](e2b-provision-429-duplicate-sandbox.md) — E2B create 成功后的 mkdir 初始化请求撞 429 被归拒绝类盲重试,同 token 开两台、首台泄漏计费(实跑 10 evals 见 14 台);修为 create 内 kill-on-failure(e2b.ts/docker.ts)+ 重试前一律对账且对账失败不重试(retry.ts)
@@ -44,6 +49,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [keep-dormancy-provider-forms](keep-dormancy-provider-forms.md) — 设计裁决:留存现场转入 provider 休眠形态(docker stop 停驻 / e2b pause 可 resume;2026-07-14),推翻「keep = 保持运行」;docker pause 与 commit 转镜像同场否决
 - 已修 [provision-retry-holds-concurrency-slot](provision-retry-holds-concurrency-slot.md) — provisioning 退避重试期间攥着 sandboxSem 并发名额陪跑 setTimeout,一批 429 能把实际并发拖到远低于 --max-concurrency 声明值(个位数);修为 ProvisionSlot 退避前 release、睡醒后 reacquire(`src/sandbox/retry.ts` + `resolve.ts` + `runner/attempt.ts`)
 - 已修 [e2b-list-returns-paginator-not-array](e2b-list-returns-paginator-not-array.md) — reconcileProvision 用 `as unknown as` 猜了个 e2b `Sandbox.list()` 从未真实存在过的签名(真实是同步返回 `SandboxPaginator`,不是 `Promise<数组>`),for...of 直接 `TypeError: sandboxes is not iterable`,对账硬失败、重试被 abort;修为改用真实类型 + `hasNext`/`nextItems()` 翻页 + 服务端 metadata 过滤(`src/sandbox/e2b.ts`)
+- 已修 [ui-message-stream-coverage-undeclared](ui-message-stream-coverage-undeclared.md) — 内置 uiMessageStreamAgent 没声明 EvidenceCoverage,真机跑 e2e/repos/ai-sdk 时 succeeded()/notCalledTool()/noFailedActions() 全部 unknown→errored(不是断言写错);修为补 coverage(complete + usage unavailable)(`src/agents/ui-message-stream.ts`)
+- 已修 [docker-uploadfile-tmp-mv-eperm](docker-uploadfile-tmp-mv-eperm.md) — Docker sandbox 的 `uploadFile()` 不 chown 上传文件(与 `uploadFiles()` 不同),claude-code `settingsFile` 真机上传到 `/tmp` 后 `mv` 到 `~/.claude/settings.json` 因 sticky-bit 目录 + root 属主 100% EPERM;修为 putArchive 后补 `chownToSandboxUser(absPath)`(`src/sandbox/docker.ts`,同路径也影响 codex 的 `configFile`)
 
 ## judge
 
@@ -63,6 +70,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [loose-gate-regex-plus-soft-judge-false-pass](loose-gate-regex-plus-soft-judge-false-pass.md) — 宽泛 OR 正则 gate + soft judge 阈值叠加,会把明确失败判成 passed(gate 正则别放过泛词)
 - [drive-frame-stream-reducer-variance](drive-frame-stream-reducer-variance.md) — `driveFrameStream` 单型参时 reducer 与传输帧联合类型不兼容,tsc 过不了
 - [ai-sdk-v7-streamtext-reuse-and-gateway-image-limits](ai-sdk-v7-streamtext-reuse-and-gateway-image-limits.md) — eval 复用生产 streamText 的正确姿势(v7 await 字段即消费流);网关不支持图像在 eval 侧 skip,不改应用元数据
+- 已修 [claude-code-e2e-session-resume-maxtokens-budget-too-tight](claude-code-e2e-session-resume-maxtokens-budget-too-tight.md) — `t.maxTokens(80_000)` 当 usage 非空哨兵时贴着真实采样值设上限,真机第二次跑就在 90008 tokens 假阳性判 regression;usage 哨兵上限要留 2~3 倍余量,不能按样本量 1 定(修在 `e2e/repos/claude-code/evals/session-resume.eval.ts`,提到 200_000)
 
 ## o11y 采集与 view
 
@@ -71,6 +79,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [details-ua-slot-breaks-display-contents-tabs](details-ua-slot-breaks-display-contents-tabs.md) — `<details>` 的 UA shadow slot 让 display:contents 布局失效(Chrome 下 order 失效、残留 0 宽盒);Tabs 增强改用 flex 换行方案(styles.css)
 - [publish-redaction-copysnapshots-not-report](publish-redaction-copysnapshots-not-report.md) — 设计裁决:发布消毒移到 copySnapshots({ redact }),AttemptList.redact 降为展示层(2026-07-14),推翻「消毒归报告」——view --out 原样发布 artifact,列表脱敏挡不住深链
 - [ai-sdk-otel-needsapproval-no-execute-tool-span](ai-sdk-otel-needsapproval-no-execute-tool-span.md) — @ai-sdk/otel 不给 `needsApproval:true` 的工具产 execute_tool span,action 断言派生不出
+- [ai-sdk-agent-otel-timing-subtree-unlinked](ai-sdk-agent-otel-timing-subtree-unlinked.md) — `aiSdkAgent` 的 attempt-scope tracing 下 `show --execution` 的 span↔节点关联正常工作,但 `show --timing` 的 OTel 子树永远挂不出来:turn 从未拿到 `traceId`(shared-pool 才会赋值),就算强制走 shared-pool,window-attribution 生成的合成 traceId 也从不匹配真实 span traceId;未修,e2e/repos/ai-sdk 的 verify.ts 已写成非 gating 断言
 - [langsmith-dialect-langchain-completion-shape-gap](langsmith-dialect-langchain-completion-shape-gap.md) — langsmith 方言解析不了 LangChain ChatOpenAI 实际吐的 gen_ai.completion 形状,message 事件恒空
 - [codex-mapcodexspans-not-publicly-exported](codex-mapcodexspans-not-publicly-exported.md) — `mapCodexSpans` 没从 `niceeval/adapter` 公开导出,外部包只能省略 spanMapper 走通用 heuristic
 - [events-user-message-and-source-loc](events-user-message-and-source-loc.md) — 事件流 user message 曾丢失 + `t.event("message")` 计数翻倍的根因与修法
@@ -112,6 +121,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [show-skipped-version-hint-missing](show-skipped-version-hint-missing.md) — `niceeval show` 全部落盘不可读时只报 `skipped <dir> (reason)`,不像 `view` 那样给 `npx niceeval@<version>` 建议;`show --run` 认结果根不认单快照,修为按版本分组给统一 `--run` 建议(`src/results/skipped-notice.ts` + `src/show/render.ts` 的 `skippedRunsText`)
 - 已修 [exp-show-unbounded-output-cases](exp-show-unbounded-output-cases.md) — 真机实测:exp 全 reused 时缺 FAILURES + per-config 复用清单铺开 + `0s` 却 `$7.04`(时长本次/成本累计矛盾);show 的 `commandSucceeded` Result 单元格 dump 整段 stdout ~30 行;契约已补 docs,exp 反馈侧与 show 展示侧(两步压缩第二步 + received 分层塑形 + CommandResult.command evidence)均已修,落点见正文
 - 已修 [report-src-changes-need-dist-rebuild](report-src-changes-need-dist-rebuild.md) — 改 `src/report/**` 后 CLI 行为不变:show/view 宿主 import 的是 `dist/report` 预编译产物,单测绿 + CLI 旧 ≈ 忘了 `pnpm run build:report`
+- 已修 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md) — 没有前端的消费方项目(如 pi-agent-core E2E 仓库)跑裸 `niceeval show` 报 `Cannot find package 'react'`:react/react-dom 只是可选 peerDependency,不装就用不了默认内建报告;修为该仓库自己显式加这两个依赖
 - 已被后续裁决替代 [attempt-phase-tracking-teardown-always-last](attempt-phase-tracking-teardown-always-last.md) — 给失败通知补 `phase` 字段时,朴素地取「最后一次 onPhase 回调」几乎恒等于 `"teardown"`;排除 teardown 仍会被正常的 diff/scoring/trace collect 污染,最终修法见下一条
 - 已修 [failure-notice-phase-is-error-origin-not-last-lifecycle-phase](failure-notice-phase-is-error-origin-not-last-lifecycle-phase.md) — failure 通知对 `failed` 不发 phase,对 `errored` 直接取 `result.error.phase`;不能用最后 lifecycle phase 反推 verdict 原因
 - 已修 [experiment-setup-progress-activity-blackhole](experiment-setup-progress-activity-blackhole.md) — 实验级 setup 全程零输出(状态行全员 queued 像卡死):runner 不为 setup 发布事件且 cli.md 无显示契约,`ctx.progress`→`reportActivity` 因四个渲染器都没实现可选 `activity()` 钩子被静默丢弃;修为 runner 发布 `experiment-hook` 起止事件 + 运行级 active 行 + agent/ci 起止行,human 实现 `activity()`(feedback 各文件 + run.ts)
@@ -124,7 +134,10 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [ai-sdk-usechat-typing-indicator-start-chunk](ai-sdk-usechat-typing-indicator-start-chunk.md) — useChat 收到 start chunk 就推空 assistant 消息,按 role 判断的"思考中"指示器立刻消失
 - [ai-sdk-weather-tool-empty-reply-flake](ai-sdk-weather-tool-empty-reply-flake.md) — weather-tool 全断言失败可能是上游模型瞬时空回复,不是采集问题
 - [claude-sdk-concurrent-hitl-approve-race](claude-sdk-concurrent-hitl-approve-race.md) — 两条 HITL eval 并发打同一个 claude-sdk server 会永久 404,必须串行或每 attempt 独立实例
+- 已修 [langgraph-e2e-hitl-resume-register-before-send](langgraph-e2e-hitl-resume-register-before-send.md) — 同类并发 HITL 404,但根因已定位:自建 SSE bridge 先发 interrupted 帧再登记 pending queue,客户端 resume 能在同进程代码登记前抢先到达;修为登记必须先于发送(`e2e/repos/langgraph/src/backend/server.py`)
+- 已修 [langgraph-stream-status-stale-across-resume](langgraph-stream-status-stale-across-resume.md) — `fromLangGraphEvents()` 的 `LangGraphStream.status` 是持久 getter,resume 后新帧不碰 lifecycle 时仍读到暂停前的 "waiting";判断"这一帧是否新产生 input.requested"要看 `stream.add(frame)` 自己这次返回了什么,不能读 `status`(修在 `e2e/repos/langgraph/agents/langgraph.ts`)
 - [codex-sdk-web-search-s2a-flaky](codex-sdk-web-search-s2a-flaky.md) — codex-sdk 走 s2a 代理时内置 web_search 极不稳定,WebSearchItem 无成败字段
+- 已修 [codex-sdk-e2e-codex-home-personal-config-leak](codex-sdk-e2e-codex-home-personal-config-leak.md) — `e2e/repos/codex-sdk` 在开发者本机跑会读到真实 `~/.codex/config.toml`:ChatGPT 桌面版注册的 `node_repl` MCP server 让 mcp-tool 断言随机失配;`danger-full-access`/`approval_policy=never` 曾悄悄兜底 coding-tool 的文件写入;隔离后还发现自定义 model_provider 默认不请求 reasoning summary 导致 usage 的 thinking 断言恒 0;三处均已修(`e2e/repos/codex-sdk/agents/codex-sdk.ts` 隔离 `CODEX_HOME` + 显式 sandboxMode/approvalPolicy/model_reasoning_summary,`evals/mcp-tool.eval.ts`/`evals/usage.eval.ts` 配套改 prompt)
 - [examples-eval-niceeval-file-link-depth](examples-eval-niceeval-file-link-depth.md) — `examples/zh/eval/<name>` 的 `file:`/`link:` 深度容易少写一层,pnpm 不报错但装错
 - [origin-examples-real-ai-credentials](origin-examples-real-ai-credentials.md) — origin 示例已删 mock 模式,全部用真实 DeepSeek/Codex 代理凭据
 - 已修 [prompt-ab-variant-loosens-tool-discipline](prompt-ab-variant-loosens-tool-discipline.md) — 整份替换 systemPrompt 的 A/B 变体会顺带改松工具纪律:模型心算跳过工具,HITL/calledTool 断言失真;变体里工具规则要写得和默认 prompt 一样硬(修在 tier3/pi-sdk concise.ts)
@@ -152,15 +165,19 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [npm-published-lags-verdict-rename](npm-published-lags-verdict-rename.md) — 本地 checkout 的 docs 已经在讲 `verdict`,但 npm 上的 `niceeval@0.5.4` 还是改名前的 `outcome`/`outcomes`;写外部消费者项目代码时以 `node_modules/niceeval/src/` 实际字段为准,不要以本仓库 docs 为准
 - [pnpm11-allowbuilds-placeholder-blocks-install](pnpm11-allowbuilds-placeholder-blocks-install.md) — pnpm 11 给新依赖写 allowBuilds 占位符并让 install exit 1,要手改 pnpm-workspace.yaml
 - [pnpm11-verify-deps-gate-blocks-niceeval-cli](pnpm11-verify-deps-gate-blocks-niceeval-cli.md) — pnpm 11 pre-run gate 会在 niceeval 启动前拦死 CLI(消费方项目)
+- [e2e-repos-stale-pnpm-workspace-hijacks-lockfile](e2e-repos-stale-pnpm-workspace-hijacks-lockfile.md) — `e2e/pnpm-workspace.yaml`(旧架构遗留)把 `e2e/repos/<id>` 的 `pnpm install` 顶到 e2e/ 根共享 lockfile;仓库自己的 install 要加 `--ignore-workspace`
+- [e2e-s2a-jihuayu-proxy-decommissioned](e2e-s2a-jihuayu-proxy-decommissioned.md) — 旧 `s2a.jihuayu.site` 代理签发的 `OPENAI_*`/`CODEX_*`/`NICEEVAL_JUDGE_*` 凭据全部 401;`api.deepseek.com` 官方端点可平替 chat-completions 场景,Codex(Responses API)不适用、已暂缓
 - [vercel-site-domain-and-docs-routing](vercel-site-domain-and-docs-routing.md) — niceeval.com 域名指向和 docs routing 容易分裂成 404,部署 Ready ≠ 域名指对
 - [site-blog-empty-post-dir-breaks-build](site-blog-empty-post-dir-breaks-build.md) — posts/ 下缺 mdx 的空目录(git 不跟踪)让 site:build ENOENT 崩;全 draft 时 slug 页 404 是预期
 - [shared-worktree-concurrent-commit-race](shared-worktree-concurrent-commit-race.md) — 多 agent 共用工作树时 `git add`→`commit` 之间有竞态,暂存文件会被别人的提交带走;用 `git commit <paths>` 一步提交
 - 已修 [vitest-collects-agent-worktree-copies](vitest-collects-agent-worktree-copies.md) — `.claude/worktrees/` 被 git 忽略但不被 vitest 忽略,4 个废弃 agent worktree 里的整份 src 副本被当成正式测试跑(45% 的测试跑的是旧源码,抓不到回归却能凭陈旧原因弄红 CI);修为 vitest.config.ts 的 exclude 补 `.claude/**`(与 `.repos/**` 同类)
+- 已修 [vitest-collects-sandbox-plugin-content-under-e2e-repos](vitest-collects-sandbox-plugin-content-under-e2e-repos.md) — 同类问题:`e2e/repos/codex-sdk/.codex-home/` 下真机拉的第三方插件内容含 `*.test.ts`,被根 vitest 当正式测试跑;修为 exclude 补 `e2e/repos/**`
 - [e2e-suite-landing-gotchas](e2e-suite-landing-gotchas.md) — 拷 tier1 项目要同步改 package.json `file:` 与 workspace `link:` 两处深度;`budget` 对不报 usage 的 agent 空转不设防;GH runner 上 Codex bwrap 沙箱起不来要 `CODEX_SANDBOX_MODE=danger-full-access`
 - [e2e-verify-results-format-drift](e2e-verify-results-format-drift.md) — `verify.mjs` 手写扫描还认落快照(schemaVersion 4)之前的 `summary.json`,和当前 `snapshot.json`+`result.json` 布局对不上导致每次 push 必红;e2e 重构期间已把 `e2e.yml` 触发器收窄到只剩 `workflow_dispatch`
 - 已修 [ci-dead-legacy-dist-import-typecheck](ci-dead-legacy-dist-import-typecheck.md) — built-ins→built-in 目录改名后残留的 legacy 桥接导入让 CI typecheck 红、本地靠陈旧 dist 假绿;修为删死代码直连新入口(`src/show/report-host.ts`),验证 dist 路径改动要先清 dist 重建
 - 已修 [typescript7-no-api-alias-recipe](typescript7-no-api-alias-recipe.md) — TS7 原生版只有 tsc 没有编程 API,直升会炸 next build;官方 alias 双装配方(`typescript`→typescript6 + `@typescript/native`→ts7),`typescript` 名下是 6.0.x 是有意为之
 - 已修 [site-seo-lcp-and-stale-audit](site-seo-lcp-and-stale-audit.md) — landing 移动端 LCP 慢在渲染阻塞 CSS + 启动 JS(prism 同 chunk),不是字体/图片,`inlineCss`+`next/dynamic` 修(5f1ba01);审计报 `/docs` 死链是 7-03 proxy 修复前的旧数据,先 curl 核实
+- 已修 [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-report-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package 'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享 `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency `react`/`react-dom`,补上即全绿,见 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)
 
 ## 设计决定
 

@@ -40,6 +40,8 @@ const agent = claudeCodeAgent({
 
 Adapter 用 Claude Code transcript JSONL 取得消息、thinking、工具、usage 和 session ID，按 `tool_use.id` / `tool_result.tool_use_id` 配对。Skill Tool 调用归一为 `skill.loaded`。会话通过原生 resume ID 续接。
 
+Claude Code 自己的 SessionStart / UserPromptSubmit hook 往模型上下文前置的附加文本，在 transcript 里以独立的 `hook_additional_context` 行出现（配对的 `hook_success` 行只是执行确认、不带上下文文本，不产生事件），归一为 `context.injected`，`source` 取该行的 `hookName`（如 `"SessionStart"`）。这条通路只归一「确实注入了文本」的行——hook 有没有执行、执行是否成功是被测 CLI 自己的生命周期，不是 niceeval 的[生命周期 Hook](../../../../runner.md#环境预置不进运行器但按顺序调它)，两者不要混着理解。
+
 Claude Code 的原生 OTel 内容默认可能脱敏；行为断言仍以 transcript 为准，OTel 只用于 trace。
 
 ## 预制环境

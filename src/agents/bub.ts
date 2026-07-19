@@ -63,13 +63,13 @@ export interface BubConfig {
    */
   pythonPlugins?: PythonPluginSpec[];
   /**
-   * 安装后按数组顺序运行的用户钩子(复用 SandboxHook 的窄上下文):在装 bub、装 Skills /
+   * 安装后按数组顺序运行的用户 Hook(复用 SandboxHook 的窄上下文):在装 bub、装 Skills /
    * Python package、写 manifest 全部完成后执行。抛错按基础设施错误计(attempt errored)。
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
   postSetup?: SandboxHook[];
   /**
-   * 与 `postSetup` 成对的收尾钩子:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
+   * 与 `postSetup` 成对的收尾 Hook:按 `postSetup` 的逆序语义,在 agent 自己的 teardown 步骤
    * 之前执行(LIFO 镜像 —— `postSetup` 跑在 agent 安装之后,`preTeardown` 就跑在 agent 收尾
    * 之前),当且仅当 `postSetup` 的时点走到过才触发。抛错按基础设施错误计,由 teardown 段
    * 按 teardown-failed 诊断收束。

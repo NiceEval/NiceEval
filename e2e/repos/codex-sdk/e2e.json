@@ -1,0 +1,8 @@
+{
+  "id": "codex-sdk",
+  "group": "sdk",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 20,
+  "secrets": ["CODEX_API_KEY", "CODEX_BASE_URL", "AGENT_MODEL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"]
+}

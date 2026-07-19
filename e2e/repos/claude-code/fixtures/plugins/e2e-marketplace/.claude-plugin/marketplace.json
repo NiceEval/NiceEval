@@ -1,0 +1,11 @@
+{
+  "name": "niceeval-e2e-marketplace",
+  "owner": { "name": "niceeval-e2e" },
+  "plugins": [
+    {
+      "name": "e2e-plugin",
+      "source": "./e2e-plugin",
+      "description": "niceeval e2e fixture: a plugin that bundles its own deterministic MCP server"
+    }
+  ]
+}

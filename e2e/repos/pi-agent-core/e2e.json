@@ -1,0 +1,9 @@
+{
+  "id": "pi-agent-core",
+  "group": "sdk",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 15,
+  "secrets": ["DEEPSEEK_API_KEY", "AGENT_MODEL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
+  "requires": { "runtimes": ["node>=22"] }
+}

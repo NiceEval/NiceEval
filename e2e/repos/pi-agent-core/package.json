@@ -1,0 +1,25 @@
+{
+  "name": "e2e-pi-agent-core",
+  "private": true,
+  "type": "module",
+  "description": "niceeval E2E: pi-agent-core adapter (fromPiAgentEvents) against a real HTTP+SSE app built on @earendil-works/pi-agent-core",
+  "scripts": {
+    "start": "node --env-file .env --import tsx/esm src/server.ts",
+    "e2e": "tsx scripts/e2e.ts",
+    "verify": "tsx scripts/verify.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.80.3",
+    "@earendil-works/pi-ai": "0.80.3",
+    "niceeval": "^0.9.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

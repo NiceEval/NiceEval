@@ -46,7 +46,7 @@ export async function emitReporterEvent(
 /** 按 eval id 过滤 RunSummary 并重新计数 —— eval 级 reporter 只看它观测的那部分。 */
 export function filterSummary(summary: RunSummary, ids: ReadonlySet<string>): RunSummary {
   const results = summary.results.filter((r) => ids.has(r.id));
-  const sub = summarize(results, summary.agent, summary.startedAt, summary.durationMs, summary.name);
+  const sub = summarize(results, summary.agent, summary.startedAt, summary.durationMs, summary.name, summary.model);
   // completedAt 用原值(summarize 会重新取 now);name 等其余字段原样保留。
   return { ...summary, ...sub, completedAt: summary.completedAt };
 }
@@ -101,6 +101,7 @@ export function summarize(
   startedAt: string,
   durationMs: number,
   name?: LocalizedText,
+  model?: string,
 ): RunSummary {
   const counts = { passed: 0, failed: 0, skipped: 0, errored: 0 };
   let inTok = 0;
@@ -115,6 +116,7 @@ export function summarize(
   return {
     name,
     agent,
+    model,
     startedAt,
     completedAt: new Date().toISOString(),
     passed: counts.passed,

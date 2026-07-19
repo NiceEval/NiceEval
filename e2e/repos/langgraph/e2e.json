@@ -1,0 +1,9 @@
+{
+  "id": "langgraph",
+  "group": "sdk",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 15,
+  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "AGENT_MODEL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
+  "requires": { "runtimes": ["node>=22", "python>=3.11"] }
+}

@@ -45,6 +45,18 @@ describe("filterSummary", () => {
     expect(sub.estimatedCostUSD).toBe(0.1);
     expect(sub.completedAt).toBe("2026-07-07T00:01:00.000Z");
   });
+
+  it("保留原 summary 的 model 字段(docs/engineering/unit-tests/experiments-runner/cases.md「汇总判定与退出码」)", () => {
+    const s = { ...summary([result("a/1")]), model: "deepseek-chat" };
+    const sub = filterSummary(s, new Set(["a/1"]));
+    expect(sub.model).toBe("deepseek-chat");
+  });
+
+  it("未声明 model 时该字段省略,不伪造成空字符串或 undefined 字面量", () => {
+    const s = summary([result("a/1")]);
+    const sub = filterSummary(s, new Set(["a/1"]));
+    expect(sub.model).toBeUndefined();
+  });
 });
 
 describe("scopeReporter", () => {

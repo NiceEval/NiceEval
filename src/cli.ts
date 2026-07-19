@@ -138,9 +138,9 @@ const FLAG_OPTIONS = {
   timeout: { type: "string" },
   /** 整次运行的预算上限(美元)。 */
   budget: { type: "string" },
-  /** `exp` 命令专用:跑完留下 failed/errored attempt 的沙箱现场(= `--keep-sandbox=failed`);`--keep-sandbox=all` 连 passed 也留。事后用 `niceeval sandbox list/enter/stop` 查看与销毁。 */
+  /** `exp` 命令专用:跑完留下 failed/errored attempt 的 Sandbox 现场(= `--keep-sandbox=failed`);`--keep-sandbox=all` 连 passed 也留。事后用 `niceeval sandbox list/enter/stop` 查看与销毁。 */
   "keep-sandbox": { type: "boolean" },
-  /** `sandbox stop` 专用:销毁全部留存沙箱。 */
+  /** `sandbox stop` 专用:销毁全部留存 Sandbox。 */
   all: { type: "boolean" },
   /** `sandbox diff` 专用:只看某个 send 窗口(如 `--window s1/t2`);省略输出全部窗口的串联视图。 */
   window: { type: "string" },

@@ -1,0 +1,9 @@
+{
+  "id": "claude-code",
+  "group": "sandbox",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 30,
+  "secrets": ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
+  "requires": { "runtimes": ["node>=22"], "docker": true }
+}

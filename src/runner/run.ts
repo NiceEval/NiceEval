@@ -154,6 +154,30 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
     }
   }
 
+  // 派发顺序:瓶颈优先(docs/runner.md「派发顺序:瓶颈优先,追求最小总墙钟时间」)。
+  // 单次 attempt 耗时未知且假设同批内大致均匀,轮次数(该 run 的 attempt 数 / 有效并发宽度,
+  // 向上取整)就是耗时的代理指标——把 identical-machine 调度的 LPT 规则推广到 moldable job
+  // 场景:轮次多的 run 是关键路径瓶颈,让它先抢到并发位,总时长才接近瓶颈自身的串行耗时,
+  // 而不是「瓶颈耗时 + 排在它前面的其它 run 先跑完的耗时」。只在建 attempt 列表时算一次,
+  // 不随 earlyExit / fail-fast / budget 实际提前收尾而重算(动态调整不值得为一个尽力而为的
+  // 启发式引入)。只重排派发顺序,不改两级信号量本身;结果仍按发现顺序输出(见下方 sort)。
+  {
+    const byRun = new Map<AgentRun, Attempt[]>();
+    for (const a of attempts) {
+      let group = byRun.get(a.run);
+      if (!group) byRun.set(a.run, (group = []));
+      group.push(a);
+    }
+    const rounds = (run: AgentRun, count: number): number => {
+      const width = Math.min(run.maxConcurrency ?? opts.maxConcurrency, opts.maxConcurrency);
+      return Math.ceil(count / width);
+    };
+    const groups = [...byRun.entries()];
+    groups.sort((a, b) => rounds(b[0], b[1].length) - rounds(a[0], a[1].length));
+    attempts.length = 0;
+    for (const [, group] of groups) attempts.push(...group);
+  }
+
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
   // 放在 attempts 展开之后,fail fast 只对会真正触发 judge 的运行生效
   // (目标收集逻辑见 judgeProbeTargets;全部结果携入、attempts 为空时也自然跳过)。
@@ -180,6 +204,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
   const runningIds = new Set(attempts.map((a) => a.evalDef.id));
   const runningEvals = [...runningIds].map((id) => ({ id }));
   const firstAgent = opts.agentRuns[0]?.agent;
+  const firstModel = opts.agentRuns[0]?.model;
   const shape: RunShape = {
     evals: runningEvals.length,
     configs: opts.agentRuns.length,
@@ -823,7 +848,7 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
       a.attempt - b.attempt,
   );
 
-  const summary = summarize(allResults, firstAgent?.name ?? "", startedAt, Date.now() - t0, opts.config.name);
+  const summary = summarize(allResults, firstAgent?.name ?? "", startedAt, Date.now() - t0, opts.config.name, firstModel);
   await emitReporterEvent(reporters, { type: "run:summary", summary });
   for (const reg of reporters) {
     // required reporter(默认 artifacts、显式 --json/--junit)在这一步失败,不能中断其它

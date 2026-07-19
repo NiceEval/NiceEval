@@ -1,0 +1,9 @@
+{
+  "id": "results-contract",
+  "group": "contract",
+  "command": ["pnpm", "e2e"],
+  "timeoutMinutes": 10,
+  "secrets": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"],
+  "artifacts": [".niceeval/**", "*.xml", "*.json", "logs/**"],
+  "requires": { "runtimes": ["node>=22"] }
+}

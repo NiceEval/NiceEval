@@ -1,0 +1,24 @@
+{
+  "name": "e2e-repo-codex-cli",
+  "private": true,
+  "type": "module",
+  "description": "niceeval E2E adapter repo: Codex CLI (codexAgent, Docker sandbox) — see docs/engineering/e2e-ci/adapters/codex-cli.md",
+  "scripts": {
+    "e2e": "tsx scripts/e2e.ts",
+    "verify": "tsx scripts/verify.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "niceeval": "^0.4.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.31",
+    "@types/node": "^22.0.0",
+    "dotenv": "^17.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

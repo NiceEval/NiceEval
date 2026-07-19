@@ -1,0 +1,24 @@
+{
+  "name": "e2e-repo-codex-sdk",
+  "private": true,
+  "type": "module",
+  "description": "niceeval E2E adapter repo: Codex SDK (fromCodexThreadEvents) — see docs/engineering/e2e-ci/adapters/codex-sdk.md",
+  "scripts": {
+    "e2e": "tsx scripts/e2e.ts",
+    "verify": "tsx scripts/verify.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server-everything": "^2026.7.4",
+    "@openai/codex-sdk": "^0.142.5",
+    "niceeval": "^0.4.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dotenv": "^17.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

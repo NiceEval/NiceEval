@@ -1,65 +1,181 @@
 name: e2e
 
-# L0 PR 门禁(docs/engineering/e2e-ci/README.md 第 4、7 节):真实模型、便宜档位、runs: 3 + earlyExit。
-# 成败判据 = e2e/scripts/verify.mjs 的期望表(退出码 + summary.json 对账)。
-# fork PR 拿不到 secrets 是 GitHub 的安全模型,不在本 workflow 解决(提案第 9 节)。
+# 独立测试仓库矩阵的 CI 编排(docs/engineering/e2e-ci/README.md §6.1)。
 #
-# 暂停自动触发(2026-07-13,见 memory/e2e-verify-results-format-drift.md):e2e 正在重构,
-# verify.mjs 还按 results schemaVersion 4 之前的 summary.json 布局校验,和当前 snapshot.json
-# 布局对不上,每次 push 必红。重构落地前只保留 workflow_dispatch 手动触发,不拿这个已知会红
-# 的检查挡 push/PR/nightly。重构完成后把 push / pull_request / schedule 三个触发器加回来。
-on:
-  workflow_dispatch:
+# 设计原则:本 workflow 不重新实现根编排逻辑——`discover` job 只做「发现 + 按触发层级
+# 过滤」,真正的每仓库执行永远是同一条命令 `pnpm e2e --repo <id>`(§5),与开发者本机、
+# crabbox 完全一致。matrix 由 `e2e/scripts/list.ts --json` 动态生成,不写死仓库列表;
+# runner 规格、python 环境、需要哪些 secrets、上传哪些 artifact 全部读自每个仓库自己的
+# `e2e.json`,中央 workflow 不内置任何仓库专属知识(README §5「编排器不得」)。
+#
+# 触发层级(README §6.1):
+#   1. PR 门禁    — pull_request + push(main):sdk + contract 组,仓库自己 Experiment
+#                    声明的便宜档位。
+#   2. 路径门禁   — sandbox 组(Docker 仓库),仅当改动触及沙箱相关路径时随 1 一起跑。
+#   3. Nightly    — 全量矩阵(全部 group),schedule + workflow_dispatch(可选 --repo/--group)。
+#
+# fork PR 说明:`pull_request` 事件下,来自 fork 的 PR 按 GitHub 的安全模型拿不到本仓库
+# secrets;各测试仓库自己的 fail-fast secret 检查会让这类运行直接判红(退出 1)。这是
+# GitHub 平台边界,不在本 workflow 解决——同代码库直接在 main 上开发的场景下影响有限。
 
-# concurrency 放 job 级而不是 workflow 级:SDK 矩阵便宜,新 push 顶掉旧的没问题;
-# 沙箱矩阵单次 20-40 分钟,若被后续 push 连环取消就永远验证不完(2026-07-09 实测
-# 连续两次被 docs push 顶掉),所以它 cancel-in-progress: false,在跑的跑完再排新的。
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 03:17 UTC——避开整点堆积的 GitHub Actions 高峰;具体时间点没有强约束,人工可按需调整。
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "只跑这一个仓库 id(留空则按 group 选择;覆盖下面的 group 输入)"
+        required: false
+        type: string
+      group:
+        description: "留空 repo 时按此 group 选择;all = 全量矩阵"
+        required: false
+        type: choice
+        options:
+          - all
+          - sdk
+          - sandbox
+          - contract
+        default: all
+
+permissions:
+  contents: read
 
 jobs:
-  # push 事件下判断本次改动是否触及沙箱矩阵关心的路径(docker 沙箱后端、内置
-  # agent adapter、沙箱 e2e 项目、共享套件、本 workflow)。判不出来一律当命中
-  # (fail-open):宁可多跑一次矩阵,不静默漏掉验证。
-  detect-sandbox-paths:
-    name: detect sandbox-relevant changes
-    if: github.event_name == 'push'
+  # 发现 e2e/repos/*/e2e.json,按本次触发层级过滤成最终 matrix。
+  # 不读取、不解释任何仓库的 .niceeval/、Eval 或 Experiment 内容(README §5 编排边界)。
+  discover:
+    name: discover e2e matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    concurrency:
+      group: e2e-discover-${{ github.ref }}
+      cancel-in-progress: true
     outputs:
-      hit: ${{ steps.diff.outputs.hit }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      has-jobs: ${{ steps.matrix.outputs.has-jobs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # 路径门禁判定需要和 base commit 做 diff,浅克隆下不一定有那个提交
 
-      - name: Diff changed paths against sandbox triggers
-        id: diff
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (for tsx)
+        run: pnpm install --frozen-lockfile
+
+      # 只在 stdout 打印紧凑 JSON 数组——list.ts --json 的契约就是「stdout 只有 JSON,
+      # 别的都走 stderr」,下面用文件重定向而不是命令替换,方便解析失败时直接查文件内容。
+      - name: Run list.ts --json
+        run: npx tsx e2e/scripts/list.ts --json > "$RUNNER_TEMP/e2e-repos.json"
+
+      # push/pull_request 下判断本次改动是否触及 sandbox 组关心的路径:该组仓库自己的
+      # 目录(从上一步 list.ts --json 的输出里动态取 group=="sandbox" 的 id,不写死
+      # 仓库名——中央 workflow 不内置仓库专属知识这条原则同样适用于路径门禁)、niceeval
+      # 里被这些仓库依赖的 Agent/Sandbox 源码,以及编排脚本自身。判不出来一律当命中
+      # (fail-open)——宁可多跑一次沙箱矩阵,不静默漏掉验证。
+      - name: Detect sandbox-relevant path changes
+        id: sandbox-paths
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         env:
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
-            echo "base commit unavailable (new branch or force push), defaulting to hit=true"
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            echo "base commit unavailable (new branch, force-push, or shallow history) — defaulting to hit=true"
             echo "hit=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed=$(git diff --name-only "$BEFORE" "$AFTER")
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "changed files:"
           echo "$changed"
-          if echo "$changed" | grep -qE '^(src/sandbox/|src/agents/|e2e/projects/(claude-code|codex)/|e2e/shared/|e2e/scripts/|\.github/workflows/e2e\.yml)'; then
+
+          sandbox_ids=$(jq -r '[.[] | select(.group == "sandbox") | .id] | join("|")' "$RUNNER_TEMP/e2e-repos.json")
+          pattern='^(src/agents/|src/sandbox/|e2e/scripts/|\.github/workflows/e2e\.yml)'
+          if [ -n "$sandbox_ids" ]; then
+            pattern="^(e2e/repos/($sandbox_ids)/|src/agents/|src/sandbox/|e2e/scripts/|\\.github/workflows/e2e\\.yml)"
+          fi
+
+          if echo "$changed" | grep -qE "$pattern"; then
             echo "hit=true" >> "$GITHUB_OUTPUT"
           else
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
 
-  e2e-matrix:
-    name: e2e matrix (5 SDK projects)
-    if: github.event_name != 'schedule'
+      # 按事件类型选出本次要跑的仓库子集,写成紧凑 JSON 供下游 matrix 用 fromJson(...) 消费。
+      - name: Build matrix for this trigger tier
+        id: matrix
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SANDBOX_HIT: ${{ steps.sandbox-paths.outputs.hit }}
+          DISPATCH_REPO: ${{ github.event.inputs.repo }}
+          DISPATCH_GROUP: ${{ github.event.inputs.group }}
+          REPOS_JSON_PATH: ${{ runner.temp }}/e2e-repos.json
+        run: |
+          node <<'NODE_EOF'
+          const fs = require("fs");
+
+          const repos = JSON.parse(fs.readFileSync(process.env.REPOS_JSON_PATH, "utf8"));
+          const event = process.env.EVENT_NAME;
+          const sandboxHit = process.env.SANDBOX_HIT === "true";
+          const dispatchRepo = (process.env.DISPATCH_REPO || "").trim();
+          const dispatchGroup = (process.env.DISPATCH_GROUP || "all").trim();
+
+          let selected;
+          if (event === "workflow_dispatch" && dispatchRepo) {
+            selected = repos.filter((r) => r.id === dispatchRepo);
+          } else if (event === "workflow_dispatch") {
+            selected = dispatchGroup === "all" ? repos : repos.filter((r) => r.group === dispatchGroup);
+          } else if (event === "schedule") {
+            selected = repos; // nightly: full matrix, all groups
+          } else {
+            // pull_request / push(main): sdk + contract always, sandbox only on path hit
+            selected = repos.filter((r) => r.group === "sdk" || r.group === "contract" || (r.group === "sandbox" && sandboxHit));
+          }
+
+          const matrixLine = `matrix=${JSON.stringify(selected)}\n`;
+          const hasJobsLine = `has-jobs=${selected.length > 0 ? "true" : "false"}\n`;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, matrixLine + hasJobsLine);
+
+          console.log(`[e2e] event=${event} selected ${selected.length} repo(s): ${selected.map((r) => r.id).join(", ") || "(none)"}`);
+          NODE_EOF
+
+  # 每个 matrix cell 只运行一个测试仓库(README §6.1)。真正的执行永远只有一条命令:
+  # `pnpm e2e --repo <id>`——本 job 不重新实现候选包注入、secrets 过滤或退出码分类,
+  # 那些都是 e2e/scripts/run.ts 的职责,本地、CI、crabbox 共用同一条命令。
+  e2e:
+    name: e2e (${{ matrix.repo.id }})
+    needs: discover
+    if: needs.discover.outputs.has-jobs == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJson(needs.discover.outputs.matrix) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 当前矩阵里的 requires 只出现 docker 与 runtimes(node/python),没有仓库要求
+    # arch 或 memoryGB 超出标准 runner——ubuntu-latest 自带 Docker,统一用它比为空
+    # 需求发明 runner 标签更简单(README §6.1 + requires 字段核对,见任务报告)。
+    timeout-minutes: 150
     concurrency:
-      group: e2e-matrix-${{ github.ref }}
-      cancel-in-progress: true
+      # sandbox 组单仓库可能跑 20-40 分钟(且内部对 75 退出码重跑一次),被连续 push
+      # 顶掉就永远验证不完;sdk/contract 组便宜,新 push 顶掉旧的没问题。按仓库 id
+      # 分组是因为同一仓库不该并发跑两份,不同仓库之间本就没有互斥必要。
+      group: e2e-${{ matrix.repo.id }}-${{ github.ref }}
+      cancel-in-progress: ${{ matrix.repo.group != 'sandbox' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,202 +183,156 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11
+          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
+      # 只有 requires.runtimes 声明了 python 的仓库才需要——用 toJson 兜底 requires
+      # 整体缺省的情况(undefined 序列化成 "null",contains 自然是 false)。
       - name: Set up Python
+        if: contains(toJSON(matrix.repo.requires), 'python')
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: e2e/apps/langgraph/requirements.txt
 
-      - name: Install repo dependencies (CLI runtime)
+      # 根仓库自己的依赖(tsx、run.ts 需要的一切)——每个测试仓库自己的依赖由
+      # `pnpm e2e --repo <id>` 内部在隔离拷贝里装,这里不代劳。
+      - name: Install orchestrator dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install e2e suite dependencies
-        run: |
-          pnpm install --dir e2e --frozen-lockfile
-          for d in ai-sdk-v7 claude-sdk codex-sdk pi-sdk; do
-            pnpm install --dir e2e/apps/$d --frozen-lockfile
-          done
-          python3 -m venv e2e/apps/langgraph/.venv
-          e2e/apps/langgraph/.venv/bin/pip install -q -r e2e/apps/langgraph/requirements.txt
-
-      # 凭据映射见 memory/origin-examples-real-ai-credentials.md:同一把 DeepSeek key
-      # 按协议分饰 Anthropic 兼容(/anthropic)与 OpenAI 兼容(无后缀)两个 base URL;
-      # s2a 代理 key 供 codex 与 judge(gpt-5.4)。base URL 不是秘密,直接写死。
-      - name: Write .env files from secrets
+      # 读这个仓库自己的 e2e.json,只取本 job 需要的三件事:声明的 secret 名(用于
+      # 下一步最小化过滤注入)、artifact glob(用于上传前定位文件)、以及供
+      # actions/upload-artifact 直接消费的仓库前缀路径列表。不重复 run.ts 的
+      # discoverRepos/schema 校验——那条校验已经在 discover job 的 list.ts 里跑过。
+      - name: Read repo manifest
+        id: manifest
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
-          NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
+          REPO_ID: ${{ matrix.repo.id }}
         run: |
-          cat > e2e/apps/ai-sdk-v7/.env <<EOF
-          OPENAI_API_KEY=$CODEX_API_KEY
-          OPENAI_BASE_URL=https://s2a.jihuayu.site/v1
-          DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
-          DEEPSEEK_BASE_URL=https://api.deepseek.com
-          EOF
-          cat > e2e/apps/claude-sdk/.env <<EOF
-          ANTHROPIC_API_KEY=$DEEPSEEK_API_KEY
-          ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
-          AGENT_MODEL=deepseek-v4-flash
-          EOF
-          cat > e2e/apps/codex-sdk/.env <<EOF
-          CODEX_API_KEY=$CODEX_API_KEY
-          CODEX_BASE_URL=https://s2a.jihuayu.site/v1
-          AGENT_MODEL=gpt-5.4
-          CODEX_SANDBOX_MODE=danger-full-access
-          EOF
-          cat > e2e/apps/langgraph/.env <<EOF
-          OPENAI_API_KEY=$DEEPSEEK_API_KEY
-          OPENAI_BASE_URL=https://api.deepseek.com
-          AGENT_MODEL=deepseek-v4-flash
-          EOF
-          cat > e2e/apps/pi-sdk/.env <<EOF
-          DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
-          AGENT_MODEL=deepseek-v4-flash
-          EOF
-          for p in ai-sdk-v7 claude-sdk codex-sdk langgraph pi-sdk; do
-            cat > e2e/projects/$p/.env <<EOF
-          NICEEVAL_JUDGE_KEY=$NICEEVAL_JUDGE_KEY
-          NICEEVAL_JUDGE_BASE=https://s2a.jihuayu.site/v1
-          EOF
-          done
+          manifest="e2e/repos/$REPO_ID/e2e.json"
+          echo "secrets=$(jq -c '.secrets' "$manifest")" >> "$GITHUB_OUTPUT"
+          echo "artifacts=$(jq -c '.artifacts' "$manifest")" >> "$GITHUB_OUTPUT"
+          {
+            echo "artifact-paths<<E2E_ARTIFACT_PATHS_EOF"
+            jq -r --arg dir "e2e/repos/$REPO_ID" '.artifacts[] | "\($dir)/\(.)"' "$manifest"
+            echo "E2E_ARTIFACT_PATHS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
-      # 起应用的是 CI workflow(扮演用户),不是 eval 框架——不违反"eval 不代管进程"。
-      - name: Start apps
+      # 标准安全模式(README §6.1 第 3 点):把全部 secrets 塞进这一步自己的 env 作为
+      # 一个 JSON blob,再按 e2e.json.secrets 过滤成这个仓库自己声明的最小子集,写进
+      # $GITHUB_ENV 供本 job 后续步骤使用——本 job 只运行一个仓库,所以「注入到本
+      # job 的环境」和「注入到这个仓库」是一回事,不会有其它仓库的 secret 混进来。
+      # 用 <<marker 形式写 GITHUB_ENV 是为了不对 secret 值本身的换行/特殊字符做任何
+      # 假设;不手动 echo 或 ::add-mask:: 任何值——那样反而会先把值打进日志。
+      - name: Inject this repo's declared secrets only
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
+          SECRET_NAMES_JSON: ${{ steps.manifest.outputs.secrets }}
         run: |
-          mkdir -p "$RUNNER_TEMP/e2e-logs"
-          (cd e2e/apps/ai-sdk-v7 && nohup pnpm start > "$RUNNER_TEMP/e2e-logs/ai-sdk-v7.log" 2>&1 &)
-          (cd e2e/apps/claude-sdk && nohup pnpm start > "$RUNNER_TEMP/e2e-logs/claude-sdk.log" 2>&1 &)
-          (cd e2e/apps/codex-sdk && nohup pnpm start > "$RUNNER_TEMP/e2e-logs/codex-sdk.log" 2>&1 &)
-          (cd e2e/apps/pi-sdk && nohup pnpm start > "$RUNNER_TEMP/e2e-logs/pi-sdk.log" 2>&1 &)
-          (cd e2e/apps/langgraph && nohup .venv/bin/python src/backend/server.py > "$RUNNER_TEMP/e2e-logs/langgraph.log" 2>&1 &)
-          for port in 34001 32001 31001 33001 35000; do
-            for i in $(seq 1 60); do
-              nc -z 127.0.0.1 $port && break
-              [ "$i" = 60 ] && { echo "port $port never came up"; cat "$RUNNER_TEMP"/e2e-logs/*.log; exit 1; }
-              sleep 1
+          node <<'NODE_EOF'
+          const fs = require("fs");
+
+          const all = JSON.parse(process.env.ALL_SECRETS_JSON);
+          const names = JSON.parse(process.env.SECRET_NAMES_JSON);
+
+          const lines = [];
+          let injected = 0;
+          for (const name of names) {
+            const value = all[name];
+            if (typeof value !== "string" || value.length === 0) continue;
+            const marker = `E2E_SECRET_${name}_${Math.random().toString(36).slice(2)}`;
+            lines.push(`${name}<<${marker}`, value, marker);
+            injected++;
+          }
+          if (lines.length > 0) {
+            fs.appendFileSync(process.env.GITHUB_ENV, lines.join("\n") + "\n");
+          }
+          console.log(`[e2e] injected ${injected} of ${names.length} declared secret(s) for this repo`);
+          NODE_EOF
+
+      # CI 不重新实现编排逻辑——本地、CI、crabbox 三处永远是这一条命令(README §6.1/§6.2)。
+      - name: Run e2e for ${{ matrix.repo.id }}
+        run: pnpm e2e --repo ${{ matrix.repo.id }}
+
+      # 无论成败都收集(README §6.1):对声明的 artifact glob 命中的每个文件,把本次
+      # 注入的 secret 值原地替换成 <redacted:VAR_NAME> 再上传——真实 Agent/服务日志可能
+      # 回显环境变量,脱敏由这一层兜底,不指望每个仓库的日志纪律。
+      #
+      # run.ts 在隔离拷贝里跑完命令后(无论成败)把声明的 artifacts 拷回这里的
+      # e2e/repos/<id>/,再删 scratch 目录——下面两步读到的就是这份拷回的证据。
+      - name: Redact secret values from collected artifacts
+        if: always()
+        env:
+          ALL_SECRETS_JSON: ${{ toJSON(secrets) }}
+          SECRET_NAMES_JSON: ${{ steps.manifest.outputs.secrets }}
+          ARTIFACTS_JSON: ${{ steps.manifest.outputs.artifacts }}
+          REPO_DIR: e2e/repos/${{ matrix.repo.id }}
+        run: |
+          shopt -s globstar dotglob nullglob
+          mapfile -t patterns < <(node -e 'process.stdout.write(JSON.parse(process.env.ARTIFACTS_JSON).join("\n"))')
+
+          matched="$RUNNER_TEMP/e2e-artifact-files.txt"
+          : > "$matched"
+          if [ -d "$REPO_DIR" ]; then
+            pushd "$REPO_DIR" > /dev/null
+            for p in "${patterns[@]}"; do
+              for f in $p; do
+                [ -f "$f" ] && echo "$f" >> "$matched"
+              done
             done
-            echo "port $port up"
-          done
-
-      # 只跑 SDK 组(HTTP 被测应用那 5 个项目);沙箱矩阵在下面的 e2e-sandbox job。
-      - name: Verify (exit codes + summary.json 对账)
-        run: node e2e/scripts/verify.mjs sdk
-
-      - name: Upload run artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-artifacts
-          path: |
-            e2e/projects/*/.niceeval
-            ${{ runner.temp }}/e2e-logs
-          retention-days: 14
-          if-no-files-found: ignore
-          # .niceeval 是隐藏目录,v4 默认排除隐藏文件,不开这个只会传出 app 日志
-          include-hidden-files: true
-
-  # L1 沙箱矩阵(docs/engineering/e2e-ci/README.md §4.2):claude-code / codex 内置 agent × dockerSandbox。
-  # 每个 attempt 在容器里现装 agent CLI + 真实模型调用,又慢又花钱,所以不做
-  # 全量 push 门禁;nightly + 手动 dispatch 之外,只有 push 触及沙箱相关路径
-  # (见 detect-sandbox-paths)才跑。失败是健康信号,不阻塞合并。
-  # if 里的 !cancelled() 是为了让 schedule/dispatch 事件下 detect 被 skip 时
-  # 本 job 不被连坐 skip(GitHub 默认 needs 里有 skip 则全 skip)。
-  e2e-sandbox:
-    name: e2e sandbox matrix (claude-code / codex × docker)
-    needs: detect-sandbox-paths
-    if: >-
-      !cancelled() && (
-        github.event_name == 'schedule' ||
-        github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'push' && needs.detect-sandbox-paths.outputs.hit == 'true')
-      )
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    concurrency:
-      group: e2e-sandbox-${{ github.ref }}
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install repo dependencies (CLI runtime)
-        run: pnpm install --frozen-lockfile
-
-      - name: Install e2e suite dependencies
-        run: pnpm install --dir e2e --frozen-lockfile
-
-      # 凭据映射同 e2e-matrix:DeepSeek key 走 Anthropic 兼容端点喂 claude CLI,
-      # s2a 代理 key 喂 codex CLI 与 judge。变量集与各项目 .env.example 一致。
-      - name: Write .env files from secrets
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
-          NICEEVAL_JUDGE_KEY: ${{ secrets.NICEEVAL_JUDGE_KEY }}
-        run: |
-          cat > e2e/projects/claude-code/.env <<EOF
-          ANTHROPIC_API_KEY=$DEEPSEEK_API_KEY
-          ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
-          NICEEVAL_JUDGE_KEY=$NICEEVAL_JUDGE_KEY
-          NICEEVAL_JUDGE_BASE=https://s2a.jihuayu.site/v1
-          EOF
-          cat > e2e/projects/codex/.env <<EOF
-          CODEX_API_KEY=$CODEX_API_KEY
-          CODEX_BASE_URL=https://s2a.jihuayu.site/v1
-          NICEEVAL_JUDGE_KEY=$NICEEVAL_JUDGE_KEY
-          NICEEVAL_JUDGE_BASE=https://s2a.jihuayu.site/v1
-          EOF
-
-      - name: Verify sandbox matrix
-        run: node e2e/scripts/verify.mjs sandbox
-
-      - name: Upload run artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-sandbox-artifacts
-          path: e2e/projects/*/.niceeval
-          retention-days: 14
-          if-no-files-found: ignore
-          include-hidden-files: true
-
-      # nightly 失败发 issue(docs/engineering/e2e-ci/README.md §4.2 的"失败发通知"),否则标红没人看
-      # 等于没跑。已有同名 open issue 就追评,避免连败刷屏。push 触发的失败不发:
-      # 那种红本身就在 commit 状态里可见。
-      - name: File issue on nightly failure
-        if: failure() && github.event_name == 'schedule'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          title="e2e nightly sandbox matrix failed"
-          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
-            --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
-              --body "Failed again: $RUN_URL"
-          else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
-              --body "Nightly sandbox matrix run failed: $RUN_URL"
+            popd > /dev/null
           fi
+
+          count=$(wc -l < "$matched" | tr -d ' ')
+          echo "[e2e] $count artifact file(s) matched declared globs"
+          if [ "$count" -eq 0 ]; then
+            echo "[e2e] nothing to redact"
+            exit 0
+          fi
+
+          MATCHED_FILE="$matched" node <<'NODE_EOF'
+          const fs = require("fs");
+          const path = require("path");
+
+          const repoDir = process.env.REPO_DIR;
+          const files = fs.readFileSync(process.env.MATCHED_FILE, "utf8").split("\n").filter(Boolean);
+          const names = JSON.parse(process.env.SECRET_NAMES_JSON);
+          const all = JSON.parse(process.env.ALL_SECRETS_JSON);
+          const replacements = names
+            .map((name) => ({ name, value: all[name] }))
+            .filter(({ value }) => typeof value === "string" && value.length > 0);
+
+          let hits = 0;
+          for (const rel of files) {
+            const abs = path.join(repoDir, rel);
+            let text;
+            try {
+              text = fs.readFileSync(abs, "utf8");
+            } catch {
+              continue; // not UTF-8 text (or vanished mid-scan) — leave as-is, still uploaded
+            }
+            let next = text;
+            for (const { name, value } of replacements) {
+              if (next.includes(value)) {
+                hits += next.split(value).length - 1;
+                next = next.split(value).join(`<redacted:${name}>`);
+              }
+            }
+            if (next !== text) fs.writeFileSync(abs, next, "utf8");
+          }
+          console.log(`[e2e] redaction scan: ${hits} secret-value occurrence(s) replaced across ${files.length} file(s)`);
+          NODE_EOF
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.repo.id }}
+          path: ${{ steps.manifest.outputs.artifact-paths }}
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true

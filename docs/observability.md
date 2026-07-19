@@ -36,6 +36,7 @@ interface O11ySummary {
   webFetches: { url: string; status?: number; success?: boolean }[];
   errors: string[];
   thinkingBlocks: number;
+  contextInjections: number;             // 被测系统内部机制(如 Claude Code 的 SessionStart/UserPromptSubmit hook)注入进上下文的次数
   durationMs: number;                    // 本次运行的 wall-clock 耗时(运行器计时)
   usage: Usage;                          // 累加这个 attempt 所有轮的 token 用量
   estimatedCostUSD?: number;             // usage × 价格表换算(见下)
@@ -67,7 +68,7 @@ expect(o11y.totalToolCalls).toBeLessThan(50);
 
 展示层则同时消费两条数据:span 除了喂瀑布图,还作为**可选 enrichment** 合并进事件骨架,构成 `ExecutionTree`,供 `niceeval show --execution` 这类需要「一份读完」的视图消费——把 events 和 trace 分成两份文件、两套 renderer 去读,对着一次失败要来回翻两个视图拼时间线;`ExecutionTree` 用纯函数 `buildExecutionTree(events, spans)` 把两者合并成一份视图(事件当骨架),只服务展示,不反哺判分。
 
-`ExecutionTree` 的骨架就是标准事件流本身:`message`、`thinking`、`skill.loaded`(一等事件——agent 加载 Skill 时归一化直接产出,不靠「识别到叫 `load_skill` 的工具调用」这类按名字猜的办法)、`action.called`/`action.result`(按 `callId` 合并成一个调用节点)、`subagent.called`/`subagent.completed`、`input.requested`、`compaction`、`error`。**骨架的节点、顺序、内容永远不因 OTel 有没有接入而变**——OTel span 只是叠加在同一个节点上的可选信息:起止时间、耗时、父子关系、错误状态。合并靠**显式 correlation ID 或 GenAI 语义约定属性**(如 `gen_ai.tool.call.id`),**永远不靠拿 span 名字 / 文本去猜哪个事件对应哪个 span**。没有 OTel 接入时,节点照样全部显示,只是耗时标「timing unavailable」;span 存在但唯一关联不上任何事件时,保留成一个单独标注的 telemetry-only 节点,不悄悄猜着合并到某个事件上。
+`ExecutionTree` 的骨架就是标准事件流本身:`message`、`thinking`、`skill.loaded`(一等事件——agent 加载 Skill 时归一化直接产出,不靠「识别到叫 `load_skill` 的工具调用」这类按名字猜的办法)、`action.called`/`action.result`(按 `callId` 合并成一个调用节点)、`subagent.called`/`subagent.completed`、`input.requested`、`context.injected`(被测系统内部机制注入进上下文的文本,不属于任何一方"说的话",单独成一类节点,不并进 `message`,详见[标准事件模型 · 不变量 9](feature/adapters/architecture/events.md))、`compaction`、`error`。**骨架的节点、顺序、内容永远不因 OTel 有没有接入而变**——OTel span 只是叠加在同一个节点上的可选信息:起止时间、耗时、父子关系、错误状态。合并靠**显式 correlation ID 或 GenAI 语义约定属性**(如 `gen_ai.tool.call.id`),**永远不靠拿 span 名字 / 文本去猜哪个事件对应哪个 span**。没有 OTel 接入时,节点照样全部显示,只是耗时标「timing unavailable」;span 存在但唯一关联不上任何事件时,保留成一个单独标注的 telemetry-only 节点,不悄悄猜着合并到某个事件上。
 
 这份事件骨架用于 `show --execution`:它回答「agent 做了什么」,唯一关联上的 span 只作为该事件旁的时间注释。完整的时间分析入口是 `show --timing`:它以 runner 的 lifecycle/turn/command 时间树为骨架,再按 turn 保存的 `traceId` 把 OTel agent/model/tool 子树挂进去。两个视图可以显示同一条 tool span,但只是对同一事实的两种投影,不会把 span 复制进事件或 runner timing。
 

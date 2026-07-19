@@ -80,6 +80,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "niceeval": "node bin/niceeval.js",
+    "e2e": "tsx e2e/scripts/run.ts",
     "gen:diff-code": "tsx scripts/gen-diff-code.ts",
     "docs:reference": "tsx scripts/generate-reference.ts",
     "tiers:sync": "node scripts/sync-tiers.mjs sync",

@@ -55,6 +55,7 @@
 | 中文 | English | 含义 |
 |---|---|---|
 | 运行器 | Runner | 调度引擎:发现、有界并发、重试、首过即停、缓存,把结果交给报告器 |
+| 生命周期 Hook | Hook | 四层(实验级 / Sandbox 级 / eval 级 / agent 级)共用同一形态的成对 `setup` / `teardown` 回调;`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出。中文正文写"生命周期"(泛指机制)或"生命周期 Hook"(指具体回调),不写"钩子" |
 | 实验 | Experiment | 可签入的运行配置:用哪个 agent / model / flags、跑几次、预算多少;不碰评分 |
 | 可对比组 | Comparison group | `experiments/` 下的一个文件夹,装一组要并排比较的单一配置 |
 | 实验 flags | Flags | experiment 的 A/B 条件键(一组 feature flag 取值),经 `ctx.flags` 给 adapter、`t.flags` 给 eval;裸词 flags 专指它 |
@@ -65,10 +66,10 @@
 | 首过即停 | EarlyExit | 取通过率时先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit` |
 | 指纹 | Fingerprint | `(eval 代码 + 配置)` 的哈希,用于缓存去重:未变且已通过的默认跳过 |
 | Transcript | Transcript | agent 一次运行的逐事件原始记录(各 agent 自己的 JSONL),归一化后供消费 |
-| 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript--标准事件流) |
+| 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / `context.injected` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript--标准事件流) |
 | o11y 摘要 | o11y summary | 从标准事件流派生的统计(工具调用、文件、耗时、token、成本),注入沙箱供行为断言 |
 | trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨;在 `ExecutionTree` 里是事件骨架之上的可选 enrichment,详见 [Observability](observability.md#otlp-traces--统一瀑布图) |
-| 执行树 | ExecutionTree | 标准事件流骨架(message / thinking / `skill.loaded` / `action.called`+`action.result` 按 call ID 合并 / `subagent.called`+`completed` / `input.requested` / compaction / error)与可关联的 OTel span 合成的统一执行记录;span 只按明确 correlation ID 或 GenAI 语义属性关联到节点,关联不上就保留成单独标注的 telemetry-only 节点,不按名字/文本猜;没有 OTel 时骨架的节点、顺序、内容不变,只是时间显示不可用 |
+| 执行树 | ExecutionTree | 标准事件流骨架(message / thinking / `skill.loaded` / `action.called`+`action.result` 按 call ID 合并 / `subagent.called`+`completed` / `input.requested` / `context.injected` / compaction / error)与可关联的 OTel span 合成的统一执行记录;span 只按明确 correlation ID 或 GenAI 语义属性关联到节点,关联不上就保留成单独标注的 telemetry-only 节点,不按名字/文本猜;没有 OTel 时骨架的节点、顺序、内容不变,只是时间显示不可用 |
 | 用量 | Usage | 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写) |
 | 成本 | Cost | 用量经价格表换算的估算金额(`estimatedCostUSD`);`--budget <usd>` 给整个 run 设上限 |
 | 报告器 | Reporter | 运行中流式消费结果的插件(控制台、JUnit、JSON…);与运行后的「报告」(Report)是两个词 |
@@ -167,6 +168,8 @@
 ## 运行与结果
 
 **Runner** / **运行器** —— 调度引擎。负责发现、有界并发执行、重试、首过即停、缓存,以及把结果交给报告器。详见 [Runner](runner.md)。
+
+**Hook** / **生命周期 Hook** —— 成对的 `setup` / `teardown` 回调,`setup` 不返回值。四层共用同一种形态(实验级、Sandbox 级、eval 级、agent 级),同层多个 Hook 按注册序 `setup`、逆序 `teardown`(LIFO)。中文写"生命周期"(泛指这套机制)或"生命周期 Hook"(指某一个具体回调),不写"钩子"。详见 [Runner · 生命周期钩子](runner.md#环境预置不进运行器但按顺序调它)。
 
 **Experiment** / **实验** —— 一份可签入的**运行配置**,描述「怎么跑这批 eval」:用哪个 [Agent](#agent)、跑几次、过滤哪些、预算多少。由 `defineExperiment` 定义在 `experiments/` 下,id 从路径推导。**一文件 = 一个单一配置**;**一个文件夹 = 一组要并排对比的实验**(`niceeval exp <组>` 跑整组),可比性由目录表达。它**不碰评分**——「怎么算对」是 eval 的事。详见 [Experiments](feature/experiments/README.md)。
 

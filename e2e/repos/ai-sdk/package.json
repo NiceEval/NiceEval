@@ -1,0 +1,28 @@
+{
+  "name": "e2e-ai-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "tsx scripts/e2e.ts",
+    "start": "tsx src/backend/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.5",
+    "@ai-sdk/otel": "^1.0.9",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
+    "ai": "^7.0.9",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
+    "niceeval": "^0.4.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

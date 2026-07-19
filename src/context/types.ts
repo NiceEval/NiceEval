@@ -140,35 +140,35 @@ export interface RespondAnswer {
   readonly text?: string;
 }
 
-/** eval 作者可见的受限沙箱视图:能执行命令 / 文件 IO / 读最终 diff,但不能 stop。 */
+/** 评估用例作者可见的受限 Sandbox 视图:能执行命令 / 文件 IO / 读最终 diff,但不能 stop。 */
 export interface SandboxHandle {
-  /** 沙箱内的工作目录绝对路径。 */
+  /** Sandbox 内的工作目录绝对路径。 */
   readonly workdir: string;
-  /** 在沙箱里执行一条命令(argv 形式,不经 shell)。装系统依赖等需要 root 时传 `{ root: true }`。 */
+  /** 在 Sandbox 里执行一条命令(argv 形式,不经 shell)。装系统依赖等需要 root 时传 `{ root: true }`。 */
   runCommand(cmd: string, args?: string[], opts?: CommandOptions): Promise<CommandResult>;
-  /** 在沙箱里执行一段 shell 脚本(经 shell 解释,支持管道 / 重定向)。 */
+  /** 在 Sandbox 里执行一段 shell 脚本(经 shell 解释,支持管道 / 重定向)。 */
   runShell(script: string, opts?: CommandOptions): Promise<CommandResult>;
-  /** 读沙箱内某文件此刻的文本内容(实时读,不是 diff 快照)。 */
+  /** 读 Sandbox 内某文件此刻的文本内容(实时读,不是 diff 快照)。 */
   readFile(path: string): Promise<string>;
-  /** 沙箱内某路径此刻是否存在。 */
+  /** Sandbox 内某路径此刻是否存在。 */
   fileExists(path: string): Promise<boolean>;
-  /** 按选项批量读回沙箱里的源文件,供比对 / judge 用材料。 */
+  /** 按选项批量读回 Sandbox 里的源文件,供比对 / judge 用材料。 */
   readSourceFiles(opts?: ReadSourceFilesOptions): Promise<SourceFiles>;
-  /** 把一组内容写进沙箱(路径相对 targetDir,默认 workdir)。 */
+  /** 把一组内容写进 Sandbox(路径相对 targetDir,默认 workdir)。 */
   writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;
-  /** 把一批内存中的文件上传进沙箱。 */
+  /** 把一批内存中的文件上传进 Sandbox。 */
   uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
-  /** 把本地目录整体上传进沙箱;`opts.ignore` 排除指定路径。 */
+  /** 把本地目录整体上传进 Sandbox;`opts.ignore` 排除指定路径。 */
   uploadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
-  /** 从沙箱下载某文件内容。 */
+  /** 从 Sandbox 下载某文件内容。 */
   downloadFile(path: string): Promise<Buffer>;
-  /** 把一段内容上传成沙箱里的单个文件。 */
+  /** 把一段内容上传成 Sandbox 里的单个文件。 */
   uploadFile(path: string, content: Buffer): Promise<void>;
-  /** 沙箱 provider 分配的实例 id,用于排查 / 关联日志。 */
+  /** Sandbox provider 分配的实例 id,用于排查 / 关联日志。 */
   readonly sandboxId: string;
   /** 相对 git 基线的最终 diff 视图(test() 跑完、finalize 前才落定)。 */
   readonly diff: DiffView;
-  /** 取沙箱内某文件的最终内容,占位延迟到 finalize 才真正读取;只能配合 t.check 使用。 */
+  /** 取 Sandbox 内某文件的最终内容,占位延迟到 finalize 才真正读取;只能配合 t.check 使用。 */
   file(path: string): string;
   /** 断言 diff 里某路径发生了变化(新增或修改)。 */
   fileChanged(path: string): AssertionHandle;
@@ -176,7 +176,7 @@ export interface SandboxHandle {
   fileDeleted(path: string): AssertionHandle;
   /** 断言 diff 的路径与内容都不匹配给定正则(常用来否定式检查不该出现的改动)。 */
   notInDiff(re: RegExp): AssertionHandle;
-  /** 断言沙箱里执行过的命令都没有失败退出。 */
+  /** 断言 Sandbox 里执行过的命令都没有失败退出。 */
   noFailedShellCommands(): AssertionHandle;
 }
 
@@ -285,7 +285,7 @@ export interface TestContext {
   /** 本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。 */
   readonly flags: Readonly<Record<string, unknown>>;
   /**
-   * 作用域反馈:报告 eval 自己执行的长步骤(上传 fixture、跑构建……)。短命状态,scope 固定
+   * 作用域反馈:报告评估用例自己执行的长步骤(上传 Fixture、跑构建……)。短命状态,scope 固定
    * 为 `eval.run`;只报告不断言(见 docs/feature/eval/library/context.md「向运行反馈长步骤」)。
    */
   progress(update: ProgressUpdate): void;
@@ -296,18 +296,18 @@ export interface TestContext {
   diagnostic(input: DiagnosticInput): void;
   /** `progress({ message: msg })` 的别名(调试日志),不出现在最终结果里。 */
   log(msg: string): void;
-  /** 立即中止本 eval 并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。 */
+  /** 立即中止本评估用例并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。 */
   skip(reason: string): never;
 
   // 值断言
   /**
    * 对任意值跑一个 ValueAssertion,返回可链 `.gate()` / `.atLeast()` 的 AssertionHandle。
-   * 打分延迟到 eval 结束后统一 finalize,调用本身同步、不抛错——不通过只是记一条失败断言,
-   * 不会中止后续代码。要「不满足就立即中止 eval」用 require。
+   * 打分延迟到评估用例结束后统一 finalize,调用本身同步、不抛错——不通过只是记一条失败断言,
+   * 不会中止后续代码。要「不满足就立即中止评估用例」用 require。
    */
   check(value: unknown, assertion: ValueAssertion): AssertionHandle;
   /**
-   * 对任意值跑一个 ValueAssertion,立即(await 时)求值;不满足就抛错中止整个 eval 剩余步骤
+   * 对任意值跑一个 ValueAssertion,立即(await 时)求值;不满足就抛错中止整个评估用例剩余步骤
    * (仍会把这条断言计入报告,不影响已记录的其它断言)。跟 check 的区别:check 只记录、
    * 从不抛错,打分留到最后统一算;require 当场判定、失败即中止,适合「前置条件不满足,
    * 后面写了也没意义」的场景。
@@ -352,7 +352,7 @@ export interface TestContext {
   eventsSatisfy(label: string, predicate: (events: readonly StreamEvent[]) => boolean): AssertionHandle;
 
   // 工作区 / 沙箱
-  /** 受限沙箱视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop 沙箱本身(见 SandboxHandle)。 */
+  /** 受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 SandboxHandle)。 */
   readonly sandbox: SandboxHandle;
 
   // 效率 / 成本

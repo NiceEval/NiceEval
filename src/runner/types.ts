@@ -326,25 +326,25 @@ export interface EvalDef {
   description?: string;
   /** 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。 */
   tags?: string[];
-  /** 这条 eval 需要的环境 profile id(provider-neutral,如 `"python-3.9-astropy-4.2"`);由 sandbox spec 的 `environments` 表翻译成该 provider 的预制产物。 */
+  /** 这条评估用例需要的环境 profile id(provider-neutral,如 `"python-3.9-astropy-4.2"`);由 sandbox spec 的 `environments` 表翻译成该 provider 的预制产物。 */
   environment?: string;
-  /** 覆盖项目级 Config.judge,只对这一个 eval 生效(如换个更贵的评审模型)。 */
+  /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
   judge?: JudgeConfig;
-  /** 覆盖 / 追加项目级 Config.reporters,只对这一个 eval 生效。 */
+  /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
-  /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一个 eval 生效。 */
+  /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
   timeoutMs?: number;
   /** 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。 */
   metadata?: Record<string, unknown>;
   /**
-   * 调整 agent diff 的归因排除清单(仅沙箱型;见 docs/feature/eval/README.md):两个数组都是
+   * 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
    * gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产物/包管理器缓存;
    * `ignore` 在默认清单上追加排除;`include` 优先级最高,把匹配路径显式加回。
    * 合成规则固定为「默认 ∪ ignore,再被 include 打洞」,清单在分类账锚点时冻结。
    */
   diff?: { include?: string[]; ignore?: string[] };
   /**
-   * eval 级预置:拿到沙箱(已上传 workspace + git 基线 + 装好依赖前)。
+   * 评估用例级预置:拿到 Sandbox(已上传 workspace + git 基线 + 装好依赖前)。
    * 默认命令以非 root 跑(agent 的自然环境);装系统依赖时给 `runCommand` 传 `{ root: true }`
    * (如 `runCommand("apt-get", ["install", …], { root: true })`),跨 provider 语义一致。
    * 第二个参数是绑定到 `eval.setup` 的窄上下文(`ctx.progress` / `ctx.diagnostic`,
@@ -353,14 +353,14 @@ export interface EvalDef {
    */
   setup?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
   /**
-   * eval 级收尾:attempt 收尾链的第一段(`eval.teardown` → `agent.teardown` →
-   * `sandbox.teardown`),沙箱此刻还活着。当且仅当 `eval.setup` 时点走到过才执行——
+   * 评估用例级收尾:attempt 收尾链的第一段(`eval.teardown` → `agent.teardown` →
+   * `sandbox.teardown`),Sandbox 此刻还活着。当且仅当 `eval.setup` 时点走到过才执行——
    * `setup` / `test` 抛错都不豁免,未声明 `setup` 不影响触发;抛错或超 30s 清理上限
-   * 只记 `teardown-failed` 诊断,不改判定。管沙箱外的临时夹具(临时 repo / bucket),
-   * 沙箱内的东西随销毁自动回收、不需要它。
+   * 只记 `teardown-failed` 诊断,不改判定。管 Sandbox 外的临时 Fixture(临时 repo / bucket),
+   * Sandbox 内的东西随销毁自动回收、不需要它。
    */
   teardown?: (sandbox: Sandbox, ctx: SandboxHookContext) => Promise<void> | void;
-  /** eval 主体:拿到 TestContext,驱动对话 / 沙箱操作并就地断言。 */
+  /** 评估用例主体:拿到 TestContext,驱动对话 / Sandbox 操作并就地断言。 */
   test(t: TestContext): Promise<void> | void;
 }
 

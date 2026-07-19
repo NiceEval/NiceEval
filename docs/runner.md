@@ -23,7 +23,21 @@
 
 全局并发上限来源:`--max-concurrency` → 配置 `maxConcurrency` → **该沙箱 provider 的推荐默认值**。推荐值反映的是 **provider 侧**约束(daemon 容量、API 配额、session 池大小),不是你的 agent API 限速——后者自己用 `--max-concurrency` 压。「云的就能开大」这个直觉是错的:`docker` 10(本地 daemon 建容器有开销)、`e2b` 20(账户配额的保守估计)、**`vercel` 1**(sandbox session 并发限制严,再高就 429),自定义 provider 取它自己声明的 `recommendedConcurrency`(省略则 5)。实验文件里的 `maxConcurrency` 不参与这条全局解析,只在该实验内部限流。
 
-## 矩阵展开与通过率
+## 派发顺序:瓶颈优先,追求最小总墙钟时间
+
+attempt 的**派发**顺序(fiber 抢占 permit 的顺序)按**整批跑完的总墙钟时间最短**这个目标排,不是发现顺序。判断一个 run 是不是瓶颈,不能只看它的 `maxConcurrency` 有多紧,还要看它有多少 attempt 要排这条队——`maxConcurrency: 1` 但只有 1 个 attempt 的 run 谈不上瓶颈,`maxConcurrency: 5` 但有 500 个 attempt 的 run 才是。两者合起来才是这个 run 需要多少**轮次**才能跑完:轮次越多,越早开始占用并发位,总时长就越接近"瓶颈自身的串行耗时",而不是"瓶颈耗时 + 排在它前面的其它 run 先跑完的耗时"。轮次少或不设实验级上限的 run 不构成瓶颈,可以随时见缝插针补进空出来的并发位,晚发不拖尾。这一层只重排**派发**顺序,不改变前一节的两级信号量本身,也不影响结果排序——结果仍按发现顺序输出(见上一节)。
+
+推荐算法(单次 attempt 耗时未知且假设同批内大致均匀,轮次数就是耗时的代理指标——这是把 identical-machine 调度的 LPT 规则推广到「moldable job」场景的标准做法):
+
+```text
+effectiveWidth(run) = min(run.maxConcurrency ?? globalMaxConcurrency, globalMaxConcurrency)
+rounds(run)          = ceil(attemptsOf(run).count / effectiveWidth(run))
+
+dispatchOrder = stableSortDescendingBy(runs, rounds(run))   # 轮次多的 run 排前面
+attempts      = dispatchOrder.flatMap(run => attemptsOf(run))  # run 内部顺序不变(仍是 round i → eval)
+```
+
+`rounds` 只在建 attempt 列表时算一次(用规划阶段已知的「每个 run 有多少 attempt」),不随运行中 earlyExit / fail-fast / budget 实际提前收尾而重算——那是动态优先级调整,复杂度不值得为一个尽力而为的启发式引入;`stableSortDescendingBy` 保证同轮次数的 run 保留原发现顺序,同 run 内部 attempt 的相对顺序也不变。
 
 一次 `exp` 运行把一批配置展成 attempt:通常来自**一组文件夹里的多个单一配置**(`compare/bub-gpt-5.4` + `compare/codex-gpt-5.4`,见 [实验怎么组织](feature/experiments/library.md#实验怎么组织文件夹--一组可对比的实验));再 × `eval × runs`。比如 2 个实验配置 × `runs: 5` × 3 个 eval = 30 个 attempt。汇总按 `(agent, model, eval)` 分组,不再是单一判定,而是**通过率** + 平均耗时 / token / 成本:
 
