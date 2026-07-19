@@ -11,13 +11,13 @@ import { defineEval } from "niceeval";
 // Eval 闭环)——这是非 optional 的上限断言,若这条通道被判定不完整(unavailable),整个 attempt
 // 会 errored 而不是静默通过,所以它同时是「usage 确实落到了 Turn 上」的正向证明。
 export default defineEval({
-  description: "agent calls get_weather with the literal city argument and answers from the tool result",
+  description: "agent 调用 get_weather 时带上原样的城市参数,并根据工具结果作答",
 
   async test(t) {
-    const turn = await t.send("What's the weather like in Brooklyn right now? Call the get_weather tool to check.");
+    const turn = await t.send("Brooklyn 现在天气怎么样?调用 get_weather 工具查一下。");
     turn.expectOk();
 
-    await t.group("calls get_weather with city=Brooklyn, never calls the unmounted search tool", () => {
+    await t.group("调用 get_weather 且 city=Brooklyn,不调用未挂载的 search 工具", () => {
       t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } });
       t.notCalledTool("mcp__demo-tools__search");
       t.messageIncludes(/sunny|22|°C|weather/i);

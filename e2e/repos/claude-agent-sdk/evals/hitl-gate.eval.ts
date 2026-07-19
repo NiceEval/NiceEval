@@ -9,11 +9,11 @@ import { equals } from "niceeval/expect";
 // 提示词不提"审批"——不同模型在提示词里看到"审批"字样时,有的会倾向于用文字问"可以吗"而不是
 // 真的发起工具调用;审批门是服务端 canUseTool 自动挂的,跟用户怎么问无关。
 export default defineEval({
-  description: "canUseTool gate: calculate is approved (completed) or rejected (rejected, no result) via HITL",
+  description: "canUseTool 审批门:calculate 经 approve 后状态为 completed 并返回结果,经 reject 后状态为 rejected 且无结果",
 
   async test(t) {
-    await t.group("approved: calculate runs normally and returns a result", async () => {
-      const draft = await t.send("Use the calculator to work out (23+19)*3");
+    await t.group("approved:calculate 正常执行并返回结果", async () => {
+      const draft = await t.send("用计算器算出 (23+19)*3");
       t.check(draft.status, equals("waiting"));
       t.requireInputRequest({ action: "mcp__demo-tools__calculate" });
 
@@ -27,8 +27,8 @@ export default defineEval({
     // 独立 session:上面那条 calculate 调用已经 resolve,这里开一条全新的对话线,避免与上面
     // 的审批状态混在一起。
     const denySession = t.newSession();
-    await t.group("rejected: calculate is marked rejected, not failed, and produces no result", async () => {
-      await denySession.send("Use the calculator to work out (23+19)*3");
+    await t.group("rejected:calculate 标记为 rejected 而非 failed,且不产生结果", async () => {
+      await denySession.send("用计算器算出 (23+19)*3");
       denySession.requireInputRequest({ action: "mcp__demo-tools__calculate" });
 
       // deepseek-v4-flash 被拒绝一次后偶尔会不死心、原样再试一次同一个工具调用(新的 tool_use
