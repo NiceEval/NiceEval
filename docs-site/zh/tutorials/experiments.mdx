@@ -83,10 +83,13 @@ npx niceeval view
 每个 experiment 用自己的 `evals` 选择评估用例。函数形式会遍历所有已发现的评估用例：
 
 ```ts
-evals: (eval) => eval.tags.includes("coding") && eval.environment !== "gpu"
+evals: (eval) =>
+  eval.id.startsWith("coding/") &&
+  eval.tags.includes("coding") &&
+  eval.environment !== "gpu"
 ```
 
-在[评估用例](/zh/tutorials/authoring#tags-与-environment)里的两个例子中，`coding/fix-button` 会被选中，`research/gpu-literature` 不会。实验快照记录解析后的 `selectedEvalIds`；报告直接读取它：不同 experiment 的 eval 集可以不同，报告按各自分母聚合。
+`eval.id` 是文件路径推导出的项目内 ID，不是绝对路径，可以直接用 `startsWith` / `includes` 判断。在[评估用例](/zh/tutorials/authoring#tags-与-environment)里的两个例子中，`coding/fix-button` 会被选中，`research/gpu-literature` 不会。实验快照记录解析后的 `selectedEvalIds`；报告直接读取它。
 
 ## 设计 experiment 的建议
 

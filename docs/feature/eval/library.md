@@ -29,7 +29,7 @@ export default defineEval({
 ## tags 与 environment：让 experiment 选择
 
 ```typescript
-// evals/coding/fix-button.eval.ts
+// evals/coding/fix-button.eval.ts → id: coding/fix-button
 export default defineEval({
   description: "修复 Button 组件",
   tags: ["coding", "frontend"],
@@ -37,7 +37,7 @@ export default defineEval({
   async test(t) { /* coding task */ },
 });
 
-// evals/research/gpu-literature.eval.ts
+// evals/research/gpu-literature.eval.ts → id: research/gpu-literature
 export default defineEval({
   description: "在 GPU 环境检索论文",
   tags: ["research"],

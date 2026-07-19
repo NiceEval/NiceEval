@@ -31,12 +31,13 @@ export default defineExperiment({
 export default defineExperiment({
   agent: codexAgent(),
   evals: (eval) =>
+    eval.id.startsWith("coding/") &&
     eval.tags.includes("coding") &&
     eval.environment !== "gpu",
 });
 ```
 
-上例对应 [Eval Library](../eval/library.md#tags-与-environment让-experiment-选择) 里声明的 `coding/fix-button` 与 `research/gpu-literature`：前者返回 `true`，后者返回 `false`。NiceEval 把发现后的每条 eval 作为只读 `EvalDescriptor` 依次传入；数据集扇出已经完成，所以每次调用都有最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
+上例对应 [Eval Library](../eval/library.md#tags-与-environment让-experiment-选择) 里声明的 `coding/fix-button` 与 `research/gpu-literature`：前者返回 `true`，后者返回 `false`。`eval.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。数据集扇出已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
 
 选择结果随快照保存，报告不再重跑表达式：
 
