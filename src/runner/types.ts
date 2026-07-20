@@ -422,7 +422,8 @@ export interface ExperimentDef {
   labels?: Record<string, string | number>;
   /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--runs` 覆盖时默认 1。 */
   runs?: number;
-  /** 一次重复(runs > 1)里某次 attempt 失败后是否跳过剩余重复;省略默认 true(提前退出省钱)。 */
+  /** 一次重复(runs > 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`runs` 跑满、测完整通过率),
+   *  显式打开用于「只想知道能不能过」的省钱场景。 */
   earlyExit?: boolean;
   /**
    * 这个实验覆盖哪些 eval:`"*"` 全部、字符串数组按 id 前缀、或自定义谓词(逐条收到发现并扇出后的

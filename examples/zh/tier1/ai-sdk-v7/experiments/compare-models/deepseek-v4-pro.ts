@@ -6,7 +6,6 @@ export default defineExperiment({
   description: "deepseek-v4-pro: 对比模型",
   agent,
   model: "deepseek-v4-pro",
-  runs: 2,
-  earlyExit: true,
+  runs: 2, // 跑满 2 次,才能比较 model 间的通过率
   budget: 2,
 });

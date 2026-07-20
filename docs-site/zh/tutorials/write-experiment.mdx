@@ -38,7 +38,6 @@ export default defineExperiment({
     promptVariant: "v1",
   },
   runs: 1,
-  earlyExit: true,
   budget: 5,
 });
 ```
@@ -58,7 +57,6 @@ export default defineExperiment({
     promptVariant: "v1",
   },
   runs: 1,
-  earlyExit: true,
   budget: 5,
 });
 ```
@@ -120,7 +118,7 @@ npx niceeval exp prompts/concise
 | `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
 | `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
 | `runs` | 每个评估用例 × 配置最多跑几次 |
-| `earlyExit` | 多次运行里通过一次就提前停止 |
+| `earlyExit` | 多次运行里通过一次就提前停止；默认关，`runs` 默认跑满测完整通过率 |
 | `evals` | `"*"`、id 前缀数组，或遍历只读 eval 描述并返回 boolean 的函数 |
 | `timeoutMs` | 单个 attempt 的超时 |
 | `budget` | 这一格配置的预算上限 |

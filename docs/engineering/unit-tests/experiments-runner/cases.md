@@ -89,7 +89,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 | 只有 `passed` 触发首过即停；`failed` 与 `errored` 都不触发，剩余轮次照常启动（errored 是瞬态基建错误，下个 attempt 可能自愈） | 反例：failed 后剩余照常启动；反例：errored 后剩余照常启动 |
 | 确定性错误走独立的 run 级 fail-fast：预检命中或同一错误 code 在同一 eval 连续复现时停止派发受同一配置影响的后续 attempt，如实报 errored | 正例：同 code 连续复现后停发；反例：不同 code 的偶发 errored 不触发 |
 | early exit 只作用于同一 eval，其它 eval 继续调度 | 正例：eval a 首过后 eval b 仍跑满 |
-| earlyExit 默认开；`--no-early-exit` / `earlyExit: false` 跑满 runs | 正例：默认省略次数；反例：关闭后 attempts = runs |
+| CLI/实验解析层 earlyExit 默认关（`flags.earlyExit ?? exp.earlyExit ?? false`）；`--early-exit` / `earlyExit: true` 才会省略次数 | 正例：关闭时 attempts = runs；反例：显式开启后省略次数 |
 | 省略的次数计入 `earlyExitUnstarted` 而非 `unstarted`，不导致 status 变 `incomplete` | 正例：首过省 2 次仍 complete |
 | `run:earlyExit { evalId, experimentId }` 只在实际省略了至少一个轮次时发出 | 正例：事件字段；反例：no-early-exit 下无此事件；边界：最后一轮才通过省略数为零，不发事件 |
 

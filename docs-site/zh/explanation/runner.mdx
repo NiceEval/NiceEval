@@ -43,12 +43,12 @@ npx niceeval exp local --max-concurrency 8
 
 ```bash
 npx niceeval exp local fixtures/button --runs 5
-npx niceeval exp local fixtures/button --runs 5 --no-early-exit
+npx niceeval exp local fixtures/button --runs 5 --early-exit
 ```
 
-`runs` 用于测 pass rate。首过即停默认开启：某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。想拿完整的通过率分布时，用 `--no-early-exit` 关闭，让每个 eval 跑满 `runs` 次。
+`runs` 用于测 pass rate，默认跑满 `runs` 次，给出完整的通过率分布。首过即停默认关闭；只想知道"这题能不能过"、不在乎完整分布时，用 `--early-exit` 打开——某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。
 
-`runs` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt；已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
+`runs` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt；已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1 并开启 `earlyExit`：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
 
 ## 缓存
 

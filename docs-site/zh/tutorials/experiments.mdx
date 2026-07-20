@@ -25,8 +25,7 @@ export default defineExperiment({
   description: "gpt-5.4: 对比模型",
   agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
   model: "gpt-5.4",   // 单个字符串;另一个模型就复制一份文件改这一行
-  runs: 2,
-  earlyExit: true,
+  runs: 2,             // earlyExit 默认关,跑满 2 次才能比较 pass rate
 });
 ```
 

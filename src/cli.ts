@@ -190,8 +190,9 @@ const FLAG_OPTIONS = {
   force: { type: "boolean" },
   /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
   strict: { type: "boolean" },
-  /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts。 */
+  /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`runs` 默认跑满、测完整通过率)。 */
   "early-exit": { type: "boolean" },
+  /** 强制关闭首过即停,即使实验文件里写了 `earlyExit: true`。 */
   "no-early-exit": { type: "boolean" },
   /** `view` 命令专用:启动后自动打开浏览器(默认行为)。 */
   open: { type: "boolean" },
@@ -695,7 +696,7 @@ async function main(): Promise<void> {
         reasoningEffort: exp.reasoningEffort,
         flags: exp.flags ?? {},
         runs: flags.runs ?? envNumber("NICEEVAL_RUNS") ?? exp.runs ?? 1,
-        earlyExit: flags.earlyExit ?? exp.earlyExit ?? true,
+        earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
         sandbox: exp.sandbox ?? config.sandbox,
         timeoutMs: flags.timeout ?? envNumber("NICEEVAL_TIMEOUT") ?? exp.timeoutMs ?? config.timeoutMs,
         budget: flags.budget ?? envNumber("NICEEVAL_BUDGET") ?? exp.budget,

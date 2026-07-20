@@ -432,8 +432,7 @@ export default defineExperiment({
   description: "bub · gpt-5.4(tape on)",
   agent: bubAgent(),
   model: "gpt-5.4",        // 对照配置钉同一 model,差异归因到 agent / 记忆机制
-  runs: 5,
-  earlyExit: false,        // 要完整通过率分布(pass^k)
+  runs: 5,                 // earlyExit 默认关,跑满 5 次给出完整通过率分布(pass^k)
   budget: 15,
 });
 
@@ -443,7 +442,6 @@ export default defineExperiment({
   agent: codexAgent(),
   model: "gpt-5.4",
   runs: 5,
-  earlyExit: false,
   budget: 15,
 });
 

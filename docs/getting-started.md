@@ -183,7 +183,10 @@ export default defineEval({
 export ANTHROPIC_API_KEY=sk-ant-...
 npx niceeval exp local fixtures/button
 
-# 跑 10 次取通过率,先过一次就首过即停
+# 跑 10 次测通过率(默认跑满,不提前退出)
+npx niceeval exp local fixtures/button --runs 10
+
+# 只想知道能不能过、不在乎通过率:过一次就停,省下剩余次数
 npx niceeval exp local fixtures/button --runs 10 --early-exit
 ```
 

@@ -11,7 +11,6 @@ export default defineExperiment({
   description: "AI 助手:gpt-4o",
   agent: webAgent({ baseUrl: "https://example.com" }),
   model: "gpt-4o",
-  runs: 3,          // 跑 3 次评估稳定性
-  earlyExit: false, // 要完整分布而不是首次通过就停
-  budget: 5,        // $5 上限
+  runs: 3,   // 跑 3 次评估稳定性,earlyExit 默认关,给出完整分布
+  budget: 5, // $5 上限
 });

@@ -493,10 +493,10 @@ PR 快速门禁,每条只跑一次:
 niceeval exp pr --output ci --strict --runs 1 --junit .niceeval/junit.xml
 ```
 
-夜间稳定性采样,必须跑满次数而不是首过即停:
+夜间稳定性采样,跑满次数而不是首过即停(默认行为,不用额外 flag):
 
 ```sh
-niceeval exp nightly --output ci --strict --runs 5 --no-early-exit \
+niceeval exp nightly --output ci --strict --runs 5 \
   --json .niceeval/nightly.json --junit .niceeval/nightly.xml
 ```
 
@@ -538,13 +538,13 @@ niceeval: result=incomplete passed=36 failed=0 errored=0 unstarted=4 duration=18
 45 total · 6 reused · 18 running · 12 queued · 9 completed
 ```
 
-`agent` / `ci` 不伪造两条 skipped attempt,而是在结论中给计数:
+开了 `earlyExit`(`--early-exit` 或实验里 `earlyExit: true`)时,`agent` / `ci` 不伪造两条 skipped attempt,而是在结论中给计数:
 
 ```text
 NICEEVAL eval locator=@12p9k4mz verdict=passed attempts=1 planned=3 unstarted=2 reason=early_exit
 ```
 
-`--no-early-exit` 跑满后使用真实分母:
+默认(earlyExit 关)跑满后使用真实分母:
 
 ```text
 NICEEVAL eval locator=@12p9k4mz verdict=passed attempts=3 passed=2 rate=0.667

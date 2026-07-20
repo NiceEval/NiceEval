@@ -56,9 +56,9 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 - **只有 `passed` 触发首过即停**:某 attempt 通过且 `earlyExit` 开 → `abort()` 同 eval 其余 attempt;被 abort 的不计入分母。`run:earlyExit` 事件只在实际省略了至少一个轮次时发出——最后一轮才通过时没有可省的轮次,不发事件。
 - `errored` 不触发:超时、限流、沙箱挂掉这类瞬态基建错误在下一个 attempt 上完全可能自愈,因一次 errored 停掉其余样本等于放弃重试机会,还会把基建抖动放大成整题无结果。
 - 确定性错误不靠 earlyExit 兜,走独立的 **run 级 fail-fast**:凭据缺失、模板不存在、作者代码必现抛错这类同因必复现的错误,识别出(预检命中,或同一错误 code 在同一 eval 连续复现)即停止派发受同一配置影响的后续 attempt,如实报 errored——这是止损,不是「首过即停」,两个机制互不混用。
-- 默认开;`--no-early-exit` 关(想要完整通过率分布时)。
+- 默认关;`runs` 因此默认跑满 N 次,给出完整通过率分布——这是这个工具的核心指标(衡量 agent 稳不稳,见[矩阵展开](#派发顺序瓶颈优先追求最小总墙钟时间)),默认不该被无声截断。只想知道"能不能做到"、不在乎分布时,显式 `earlyExit: true`(或 `--early-exit`)打开。
 - **earlyExit 不改变派发节奏,只减少已派发的浪费**:同一个 eval 的多个 attempt 该不该并发跑,由 [有界并发](#调度有界并发)的 permit 数(实验级 `maxConcurrency` 或全局 `maxConcurrency`)决定,与 earlyExit 是否开无关——`runs: N` 建的 N 个 fiber 一起去抢 permit,抢到几个就并发跑几个,不会等前一个出结果再决定要不要派发下一个。earlyExit 只在其中某个已经 `passed` 后,abort 掉**还没抢到 permit** 的其余 fiber;已经在跑的不受影响,跑完照样计入(除非 provider/adapter 自己接了 abort signal 提前终止)。
-- 因此,「探到一次能过就停,过不了才继续跑下一次」这种严格串行的重试语义,不是 earlyExit 单独提供的——它是 `maxConcurrency: 1` 与默认 earlyExit 组合出的效果:permit 只有一张时,同 eval 的 attempt 只能一个接一个抢,前一个不释放 permit,后一个进不去;前一个 `passed` 时 abort 还没抢到 permit 的后续,天然就是"过了就停"。不设 `maxConcurrency: 1`(如实验级默认继承全局并发)时,`runs` 的多次 attempt 可能同一时刻就有好几个在跑,earlyExit 能省下的只是**这些已经在飞的之外、原本还要排队的那些**。
+- 因此,「探到一次能过就停,过不了才继续跑下一次」这种严格串行的重试语义,是 `maxConcurrency: 1` 与显式 `earlyExit: true` 组合出的效果:permit 只有一张时,同 eval 的 attempt 只能一个接一个抢,前一个不释放 permit,后一个进不去;前一个 `passed` 时 abort 还没抢到 permit 的后续,天然就是"过了就停"。不设 `maxConcurrency: 1`(如实验级默认继承全局并发)时,`runs` 的多次 attempt 可能同一时刻就有好几个在跑,earlyExit 能省下的只是**这些已经在飞的之外、原本还要排队的那些**。
 
 ## 预算护栏(budget)
 

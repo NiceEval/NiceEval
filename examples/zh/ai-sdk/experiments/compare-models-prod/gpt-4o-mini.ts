@@ -8,6 +8,5 @@ export default defineExperiment({
   agent: webAgent({ baseUrl: "https://example.com" }),
   model: "gpt-4o-mini",
   runs: 3,
-  earlyExit: false,
   budget: 5,
 });
