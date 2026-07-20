@@ -14,7 +14,11 @@ import type {
   SourceFiles,
   ReadSourceFilesOptions,
 } from "../types.ts";
-import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
+import {
+  classifyProvisionErrorFallback,
+  isRetryableProvisionError,
+  type SandboxProvisionErrorKind,
+} from "./errors.ts";
 import { classifySandboxIoError } from "./errors.ts";
 import { readSourceFilesByList } from "./source-files.ts";
 import { collectLocalFiles } from "./local-files.ts";
@@ -30,6 +34,13 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 600_000;
 const SESSION_TIMEOUT_MS = 1_800_000;
 
 /** e2b 的限流错误是 SDK 原生的 RateLimitError(HTTP 429 映射而来);见 resolve.ts 的 withProvisionRetry。 */
+// 对账本身只有一次机会:retry.ts 的 withProvisionRetry 对账失败就直接放弃重试、抛回原始
+// create() 错误(见那边的注释)。对账走的这次 list 请求跟刚失败的 create() 往往挨得很近,
+// 大概率处在同一段网络抖动里——不给它自己的重试,一次瞬时失败就会把本可能自愈的 attempt
+// 判死。这里给 nextItems() 单独包一层短重试,只吃与 create() 侧同一套分类下的瞬时错误。
+const RECONCILE_LIST_MAX_ATTEMPTS = 3;
+const RECONCILE_LIST_RETRY_DELAY_MS = 500;
+
 /**
  * Provisioning 重试前的对账:按 metadata 里的 provision token 检索远端实例,查到即 kill。
  * 检索或销毁失败必须抛出——对账是重试的硬前置,静默放行等于盲重试,会复制计费实例
@@ -43,13 +54,38 @@ export async function reconcileProvision(token: string): Promise<void> {
   // 命中的实例数极少,通常一页打完。
   const paginator = E2BSdkSandbox.list({ apiKey, query: { metadata: { "niceeval-provision-token": token } } });
   while (paginator.hasNext) {
-    const sandboxes = await paginator.nextItems();
+    const sandboxes = await fetchNextItemsWithRetry(paginator);
     for (const info of sandboxes) {
       try {
         await E2BSdkSandbox.kill(info.sandboxId, { apiKey });
       } catch (e) {
         if (!(e instanceof NotFoundError)) throw e;
       }
+    }
+  }
+}
+
+/**
+ * `nextItems()` 按类型契约总是 resolve 成数组(SDK 内部对空响应也兜了 `?? []`),但对账这条
+ * 路径线上真实撞见过它 resolve 成非数组的一次——没能复现出确切成因,不排它,原样让下面的
+ * `for...of` 抛出,但换一句能定位的诊断,而不是留一条裸的 "X is not iterable"。
+ */
+async function fetchNextItemsWithRetry(
+  paginator: ReturnType<typeof E2BSdkSandbox.list>,
+): Promise<Awaited<ReturnType<typeof paginator.nextItems>>> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const items = await paginator.nextItems();
+      if (!Array.isArray(items)) {
+        throw new Error(
+          `e2b Sandbox.list() 分页器 nextItems() 返回了非数组(${typeof items}),不是 SDK 类型契约里的 SandboxInfo[]`,
+        );
+      }
+      return items;
+    } catch (e) {
+      const kind = classifyProvisionErrorFallback(e);
+      if (attempt >= RECONCILE_LIST_MAX_ATTEMPTS - 1 || !isRetryableProvisionError(kind)) throw e;
+      await new Promise((resolve) => setTimeout(resolve, RECONCILE_LIST_RETRY_DELAY_MS * 2 ** attempt));
     }
   }
 }
