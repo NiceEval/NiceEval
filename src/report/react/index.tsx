@@ -55,6 +55,8 @@ export type {
   AttemptListItem,
   AttemptLocator,
   AttemptSourceData,
+  AttemptSourceLineData,
+  AttemptSourceTurn,
   AttemptSummaryData,
   AttemptTimelineData,
   AttemptTraceData,

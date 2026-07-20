@@ -15,6 +15,7 @@
 
 import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,6 +32,11 @@ import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict }
 
 const EXAM_REPORT = resolve(__dirname, "../../test/fixtures/report/exam-report.tsx");
 const DEFAULT_REPORT_REEXPORT = resolve(__dirname, "../../test/fixtures/report/default-report-reexport.tsx");
+// jsdom 自带包当前没有配套类型依赖；通过 Node 的动态 require 只声明本测试会用到的最小面，
+// 避免为了一个 computed-style smoke 把整个 @types/jsdom 加进公开开发依赖。
+const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
+  JSDOM: new (html: string, options: { pretendToBeVisual: boolean }) => { window: Window };
+};
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {
@@ -577,7 +583,7 @@ describe("buildView · attempt/<locator>.html", () => {
     expect(existsSync(join(out, "attempt", `${droppedLocator}.html`))).toBe(false);
   });
 
-  it("直接读取该文档(无 JavaScript 场景)即可见完整内容:身份/verdict/断言/时间树/diagnostics/usage/对话/trace/diff 都在可见的 en 区块里,不藏在 hidden 或 <template> 里(cases.md 第 206 行)", async () => {
+  it("直接读取该文档即可见完整内容,且官方 stylesheet 为详情语义块提供结构化布局(cases.md Attempt 参数化 page)", async () => {
     const root = await makeRoot();
     const writer = createResultsWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
     const snap = await writer.snapshot({ experimentId: "compare/bub", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
@@ -642,5 +648,25 @@ describe("buildView · attempt/<locator>.html", () => {
     ]) {
       expect(enBlock, needle).toContain(needle);
     }
+
+    // bug: memory/attempt-detail-components-shipped-without-styles.md
+    // 这里观察真实独立文档里的「组件 HTML + 官方 stylesheet」组合，不锁颜色/尺寸：
+    // 421474f 的回归中 class 与 CSS 都在文档里，但 AttemptDetail 新 class 没有任何规则，
+    // 所有节点静默退化为 UA 默认 block/details，内容存在性断言仍然全绿。
+    const dom = new JSDOM(html, { pretendToBeVisual: true });
+    const styleOf = (selector: string): CSSStyleDeclaration => {
+      const element = dom.window.document.querySelector(selector);
+      expect(element, selector).not.toBeNull();
+      return dom.window.getComputedStyle(element!);
+    };
+    expect(styleOf(".nre-attempt-summary-head").display).toBe("flex");
+    expect(styleOf(".nre-attempt-summary-kpis").display).toBe("grid");
+    expect(styleOf(".nre-attempt-source-lines").overflowX).toBe("auto");
+    expect(styleOf(".nre-source-line-summary").display).toBe("grid");
+    expect(styleOf(".nre-source-line").borderBottomStyle).toBe("none");
+    expect(styleOf(".nre-source-text").whiteSpace).toBe("pre");
+    expect(styleOf(".nre-source-line-detail").display).toBe("flex");
+    expect(styleOf(".nre-attempt-usage").display).toBe("grid");
+    expect(dom.window.document.querySelector(".nre-attempt-conversation")).toBeNull();
   });
 });

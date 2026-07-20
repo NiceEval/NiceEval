@@ -18,6 +18,7 @@ import type {
   AttemptErrorData,
   AttemptFixPromptData,
   AttemptSourceData,
+  AttemptSourceTurn,
   AttemptSummaryData,
   AttemptTimelineData,
   AttemptTraceData,
@@ -71,7 +72,55 @@ export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAsserti
 export function attemptSourceData(evidence: AttemptEvidence): AttemptSourceData | null {
   if (!evidence.capabilities.source || evidence.evalSource === null) return null;
   const { sourcePath, lines, unmapped, summary } = evidence.evalSource;
-  return { locator: evidence.locator, sourcePath, lines, unmapped, summary };
+  const projectedLines = lines.map((line) => ({
+    ...line,
+    turns: line.sends.map<AttemptSourceTurn>((send) => ({
+      label: send.label,
+      status: send.status,
+      ...(send.durationMs === undefined ? {} : { durationMs: send.durationMs }),
+      sentText: "",
+      replies: [],
+    })),
+  }));
+  const usedTurns = new Map<number, number>();
+  const unlocatedTurns: AttemptSourceTurn[] = [];
+  const conversation = attemptConversationData(evidence);
+
+  for (const [roundIndex, round] of (conversation?.rounds ?? []).entries()) {
+    const status = round.replies.some(
+      (reply) =>
+        reply.kind === "error" ||
+        ((reply.kind === "tool" || reply.kind === "subagent") && reply.status === "failed"),
+    )
+      ? "failed"
+      : round.replies.some((reply) => reply.kind === "input")
+        ? "waiting"
+        : "completed";
+    const fallback: AttemptSourceTurn = {
+      label: `t${roundIndex + 1}`,
+      status,
+      sentText: round.sentText,
+      replies: round.replies,
+    };
+    const loc = round.loc;
+    if (!loc || loc.file !== sourcePath || loc.line < 1 || loc.line > projectedLines.length) {
+      unlocatedTurns.push(fallback);
+      continue;
+    }
+
+    const line = projectedLines[loc.line - 1]!;
+    const turnIndex = usedTurns.get(loc.line) ?? 0;
+    usedTurns.set(loc.line, turnIndex + 1);
+    const annotated = line.turns[turnIndex];
+    if (annotated) {
+      annotated.sentText = round.sentText;
+      annotated.replies = round.replies;
+    } else {
+      line.turns.push(fallback);
+    }
+  }
+
+  return { locator: evidence.locator, sourcePath, lines: projectedLines, unmapped, unlocatedTurns, summary };
 }
 
 // ───────────────────────── AttemptFixPrompt ─────────────────────────

@@ -484,13 +484,29 @@ export interface AttemptAssertionsData {
   passedGroups: { group: string; items: AssertionResult[] }[];
 }
 
-/** `AttemptSource` 的 data:AnnotatedEvalSource 的展示投影;没有 source 时 null。 */
+/** `AttemptSource` 源码行内的一轮执行：send 头事实 + 标准事件流归并出的完整回复。 */
+export interface AttemptSourceTurn {
+  label: string;
+  status: "completed" | "failed" | "waiting";
+  durationMs?: number;
+  sentText: string;
+  replies: AttemptConversationReply[];
+}
+
+/** AnnotatedSourceLine 加上 web 源码视图需要的行内执行轮。 */
+export interface AttemptSourceLineData extends AnnotatedSourceLine {
+  turns: AttemptSourceTurn[];
+}
+
+/** `AttemptSource` 的 data:AnnotatedEvalSource + 按 loc 投影的标准事件流;没有 source 时 null。 */
 export interface AttemptSourceData {
   /** text 面拼 `niceeval show <locator> --source` 下钻命令用;web 面不需要。 */
   locator: AttemptLocator;
   sourcePath: string;
-  lines: AnnotatedSourceLine[];
+  lines: AttemptSourceLineData[];
   unmapped: AssertionResult[];
+  /** 没有 loc、指向其它文件或越界的轮次；不能静默丢弃，放在源码块末尾。 */
+  unlocatedTurns: AttemptSourceTurn[];
   summary: AnnotatedEvalSourceSummary;
 }
 

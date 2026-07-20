@@ -271,6 +271,8 @@ export type {
   AttemptErrorData,
   AttemptFixPromptData,
   AttemptSourceData,
+  AttemptSourceLineData,
+  AttemptSourceTurn,
   AttemptSummaryData,
   AttemptTimelineData,
   AttemptTraceData,

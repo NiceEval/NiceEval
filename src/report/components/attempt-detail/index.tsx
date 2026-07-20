@@ -261,13 +261,24 @@ export const AttemptAssertions = makeAttemptComponent<AttemptAssertionsData>({
 
 /** AnnotatedSourceLine(src/results/annotated-source.ts):一行源码 + 映射到这一行的断言 / send 标注。 */
 function annotatedSourceLineProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an AnnotatedSourceLine { line, text, assertions, sends }`;
+  if (!isObject(value)) return `"${path}" must be an AttemptSourceLineData { line, text, assertions, sends, turns }`;
   if (typeof value.line !== "number") return `"${path}.line" must be a number`;
   if (typeof value.text !== "string") return `"${path}.text" must be a string`;
   const assertionsProblem = arrayProblem(value.assertions, `${path}.assertions`, assertionResultProblem);
   if (assertionsProblem !== null) return assertionsProblem;
   if (!Array.isArray(value.sends)) return `"${path}.sends" must be an array`;
-  return null;
+  return arrayProblem(value.turns, `${path}.turns`, sourceTurnProblem);
+}
+
+function sourceTurnProblem(value: unknown, path: string): string | null {
+  if (!isObject(value)) return `"${path}" must be an AttemptSourceTurn`;
+  if (typeof value.label !== "string") return `"${path}.label" must be a string`;
+  if (value.status !== "completed" && value.status !== "failed" && value.status !== "waiting") {
+    return `"${path}.status" must be "completed", "failed", or "waiting"`;
+  }
+  if (value.durationMs !== undefined && typeof value.durationMs !== "number") return `"${path}.durationMs" must be a number`;
+  if (typeof value.sentText !== "string") return `"${path}.sentText" must be a string`;
+  return arrayProblem(value.replies, `${path}.replies`, conversationReplyProblem);
 }
 
 /** AnnotatedEvalSourceSummary(src/results/annotated-source.ts):全是计数字段。 */
@@ -297,6 +308,8 @@ export function validateSourceData(data: unknown): string | null {
   if (linesProblem !== null) return linesProblem;
   const unmappedProblem = arrayProblem(data.unmapped, "unmapped", assertionResultProblem);
   if (unmappedProblem !== null) return unmappedProblem;
+  const turnsProblem = arrayProblem(data.unlocatedTurns, "unlocatedTurns", sourceTurnProblem);
+  if (turnsProblem !== null) return turnsProblem;
   return sourceSummaryProblem(data.summary, "summary");
 }
 
@@ -566,18 +579,22 @@ export const AttemptAssessment = defineComponent((_props: Record<string, never>,
 });
 AttemptAssessment.displayName = "AttemptAssessment";
 
-/** 内建排列顺序;不产生新的 data 或渲染面,用户可以在自己的 attempt-input page 里重排这些叶子。 */
-export const AttemptDetail = defineComponent(() => (
-  <Col>
-    <AttemptSummary />
-    <AttemptAssessment />
-    <AttemptFixPrompt />
-    <AttemptTimeline />
-    <AttemptDiagnostics />
-    <AttemptUsage />
-    <AttemptConversation />
-    <AttemptTrace />
-    <AttemptDiff />
-  </Col>
-));
+/** 内建排列顺序;有 source 时回复已按 loc 展开在 AttemptSource 行内，不再重复一份 round 卡。 */
+export const AttemptDetail = defineComponent((_props: Record<string, never>, ctx) => {
+  const conversationLivesInSource =
+    ctx.page.input === "attempt" && ctx.page.evidence.capabilities.source && ctx.page.evidence.evalSource !== null;
+  return (
+    <Col>
+      <AttemptSummary />
+      <AttemptAssessment />
+      <AttemptFixPrompt />
+      <AttemptTimeline />
+      <AttemptDiagnostics />
+      <AttemptUsage />
+      {conversationLivesInSource ? null : <AttemptConversation />}
+      <AttemptTrace />
+      <AttemptDiff />
+    </Col>
+  );
+});
 AttemptDetail.displayName = "AttemptDetail";

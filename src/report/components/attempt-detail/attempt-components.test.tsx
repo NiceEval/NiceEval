@@ -310,14 +310,20 @@ describe("AttemptAssessment / AttemptDetail(组合组件)", () => {
     await expect(resolveOnScopePage(<AttemptAssessment />)).rejects.toThrow(/attempt-input page/);
   });
 
-  it("AttemptDetail:一级子节点类型序列与内建顺序逐项相同", () => {
+  it("AttemptDetail:有 source 时不重复 Conversation，无 source 时在 usage 后保留 fallback", () => {
     // AttemptDetail 自己是组合组件:resolve 会把它(以及嵌套的 AttemptAssessment)递归展开,
     // 所以这里直接检查它的 compose 函数产出的原始树(与「内建报告」测试检查 standard.tsx
     // 原始声明同一手法),不走完整 resolve——那样 AttemptAssessment 会被替换成它自己展开出的
     // <Col> 而不再是 AttemptAssessment 这个类型。
     const compose = composeOf(AttemptDetail)!;
-    const tree = compose({}, {} as never) as unknown as { props: { children: Array<{ type: unknown }> } };
-    expect(tree.props.children.map((c) => c.type)).toEqual([
+    const childTypes = (evidence: AttemptEvidence): unknown[] => {
+      const tree = compose({}, { page: { input: "attempt", evidence } } as never) as unknown as {
+        props: { children: Array<{ type: unknown } | null> };
+      };
+      return tree.props.children.filter((child): child is { type: unknown } => child !== null).map((child) => child.type);
+    };
+    const withoutSource = childTypes(evidenceOf());
+    expect(withoutSource).toEqual([
       AttemptSummary,
       AttemptAssessment,
       AttemptFixPrompt,
@@ -328,6 +334,30 @@ describe("AttemptAssessment / AttemptDetail(组合组件)", () => {
       AttemptTrace,
       AttemptDiff,
     ]);
+
+    const withSource = childTypes(
+      evidenceOf({
+        capabilities: { ...NO_CAPS, source: true },
+        evalSource: {
+          sourcePath: "evals/a.ts",
+          sourceSha256: "x",
+          lines: [{ line: 1, text: "", assertions: [], sends: [] }],
+          unmapped: [],
+          summary: {
+            totalAssertions: 0,
+            mappedAssertions: 0,
+            unmappedAssertions: 0,
+            passed: 0,
+            failed: 0,
+            gate: 0,
+            soft: 0,
+            totalLines: 1,
+            annotatedLines: 0,
+          },
+        },
+      }),
+    );
+    expect(withSource).toEqual(withoutSource.filter((type) => type !== AttemptConversation));
   });
 });
 
@@ -452,6 +482,83 @@ describe("AttemptConversation:标准事件流按 loc 分轮", () => {
       { kind: "tool", callId: "c1", name: "bash", tool: "shell", input: { command: "ls" }, output: "file.txt", status: "completed" },
     ]);
     expect(validateConversationData(data)).toBeNull();
+  });
+});
+
+// bug: memory/attempt-detail-components-shipped-without-styles.md
+describe("AttemptSource:GitHub diff 式源码证据交互", () => {
+  it("按 loc 把回复挂回 send 行，并输出 token、四种行状态与可展开详情", () => {
+    const sourcePath = "evals/a.ts";
+    const lines = [
+      { line: 1, text: 'import { defineEval } from "niceeval";', assertions: [], sends: [] },
+      {
+        line: 2,
+        text: 'const reply = await t.send("hello");',
+        assertions: [],
+        sends: [{ label: "s1/t1", status: "completed" as const, durationMs: 120, loc: { file: sourcePath, line: 2 } }],
+      },
+      {
+        line: 3,
+        text: "reply.includes('ok');",
+        assertions: [{ name: "includes ok", severity: "gate" as const, outcome: "passed" as const, score: 1 }],
+        sends: [],
+      },
+      {
+        line: 4,
+        text: "reply.includes('done');",
+        assertions: [{ name: "includes done", severity: "gate" as const, outcome: "failed" as const, score: 0 }],
+        sends: [],
+      },
+      {
+        line: 5,
+        text: "reply.score();",
+        assertions: [{ name: "quality", severity: "soft" as const, outcome: "failed" as const, score: 0.4, threshold: 0.7 }],
+        sends: [],
+      },
+    ];
+    const data = attemptSourceData(
+      evidenceOf({
+        capabilities: { ...NO_CAPS, source: true, execution: true },
+        evalSource: {
+          sourcePath,
+          sourceSha256: "x",
+          lines,
+          unmapped: [],
+          summary: {
+            totalAssertions: 3,
+            mappedAssertions: 3,
+            unmappedAssertions: 0,
+            passed: 1,
+            failed: 2,
+            gate: 2,
+            soft: 1,
+            totalLines: 5,
+            annotatedLines: 3,
+          },
+        },
+        events: [
+          { type: "message", role: "user", text: "hello", loc: { file: sourcePath, line: 2 } },
+          { type: "message", role: "assistant", text: "assistant reply attached to the source line" },
+        ],
+      }),
+    )!;
+
+    expect(data.lines[1]!.turns[0]).toMatchObject({ label: "s1/t1", sentText: "hello" });
+    expect(data.lines[1]!.turns[0]!.replies).toEqual([
+      { kind: "assistant", text: "assistant reply attached to the source line" },
+    ]);
+    const html = renderToStaticMarkup(<AttemptSource data={data} /> as never);
+    expect(html).toContain('<span class="tok-kw">import</span>');
+    expect(html).toContain('<span class="tok-str">&quot;niceeval&quot;</span>');
+    expect(html).toContain("nre-source-line-send");
+    expect(html).toContain("nre-tone-good");
+    expect(html).toContain("nre-tone-bad");
+    expect(html).toContain("nre-tone-warn");
+    expect(html).toContain("assistant reply attached to the source line");
+    expect(html).not.toContain("s1/t1");
+    expect(html).toContain('<div class="nre-source-line"><span class="nre-source-line-summary">');
+    expect((html.match(/<details class="nre-source-line/g) ?? [])).toHaveLength(4);
+    expect(html).toMatch(/<details class="nre-source-line nre-tone-bad" open="">/);
   });
 });
 

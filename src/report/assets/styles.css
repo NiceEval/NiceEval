@@ -769,6 +769,842 @@ table.nre,
 }
 .nre-delta-table-empty .nre-missing { margin: 0; }
 
+/* ---- Attempt 详情组件族 ---------------------------------------------------
+   这些规则属于 report web face，不属于 view dialog chrome：同一份 AttemptDetail
+   无论直接打开独立文档、塞进 view dialog，还是嵌入用户自己的 React 页面，都必须
+   只靠 niceeval/report/react/styles.css 得到完整可读的结构化布局。 ---- */
+
+/* Summary:判定与 locator 是标题行，身份/时间/成本是自适应 KPI 网格。 */
+.nre-attempt-summary {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.nre-attempt-summary .nre-attempt-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.nre-attempt-summary .nre-attempt-summary-locator {
+  min-width: 0;
+  color: var(--text);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-summary .nre-attempt-summary-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  margin: 0;
+}
+.nre-attempt-summary .nre-attempt-summary-kpis > div {
+  min-width: 0;
+  padding: 13px 16px 14px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.nre-attempt-summary .nre-attempt-summary-kpis dt,
+.nre-attempt-usage dt {
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.nre-attempt-summary .nre-attempt-summary-kpis dd,
+.nre-attempt-usage dd {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-summary .nre-attempt-summary-caps {
+  margin: -1px 0 0;
+  padding: 9px 16px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* Error 与断言:同一套左侧语义边和可展开明细。 */
+.nre-attempt-error {
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--bad), var(--line) 64%);
+  border-left: 3px solid var(--bad);
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--bad), var(--panel) 95%);
+}
+.nre-attempt-error .nre-attempt-error-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 7px 14px;
+  margin: 0;
+  padding: 13px 15px;
+}
+.nre-attempt-error .nre-attempt-error-fields dt {
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.nre-attempt-error .nre-attempt-error-fields dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-error .nre-attempt-error-stack {
+  max-height: 22rem;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 15px;
+  border-top: 1px solid color-mix(in oklch, var(--bad), var(--line) 70%);
+  background: color-mix(in oklch, var(--bad), var(--panel-2) 96%);
+  color: var(--muted);
+  font: 12px/1.55 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-assertions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nre-attempt-assertions .nre-assertion-row,
+.nre-attempt-source .nre-source-line-detail .nre-assertion-row {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.nre-attempt-assertions .nre-assertion-row > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.nre-attempt-assertions .nre-assertion-row > summary::-webkit-details-marker,
+.nre-attempt-assertions .nre-assertions-passed > summary::-webkit-details-marker,
+.nre-attempt-assertions .nre-assertions-passed-group > summary::-webkit-details-marker {
+  display: none;
+}
+.nre .nre-assertion-badge {
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nre .nre-assertion-name { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.nre .nre-assertion-detail { flex: 1 1 100%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.nre .nre-assertion-body {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.nre .nre-tone-good { color: var(--good); }
+.nre .nre-tone-warn { color: var(--warn); }
+.nre .nre-tone-bad { color: var(--bad); }
+.nre .nre-tone-na { color: var(--soft); }
+.nre-attempt-assertions .nre-assertions-passed {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.nre-attempt-assertions .nre-assertions-passed > summary,
+.nre-attempt-assertions .nre-assertions-passed-group > summary {
+  padding: 9px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.nre-attempt-assertions .nre-assertions-passed-group {
+  margin: 0 12px 9px;
+  border-left: 2px solid var(--line-strong);
+}
+
+/* Source:GitHub diff 式整块横向滚动；普通行只是 div，只有有证据的行才是可点击 details。
+   send 蓝，pass 绿，gate-fail 红，soft-fail 黄，颜色占整行而不是只染一个小图标。 */
+.nre-attempt-source {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.nre-attempt-source .nre-attempt-source-head,
+.nre-attempt-source .nre-attempt-source-unmapped-head {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  background: color-mix(in oklch, var(--panel-2), var(--line) 35%);
+}
+.nre-attempt-source .nre-attempt-source-lines {
+  overflow-x: auto;
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
+  font: 12.5px/1.7 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+.nre-attempt-source .nre-source-line {
+  width: max-content;
+  min-width: 100%;
+  border-left: 3px solid transparent;
+  color: var(--text);
+}
+.nre-attempt-source .nre-source-line > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.nre-attempt-source .nre-source-line > summary::-webkit-details-marker { display: none; }
+.nre-attempt-source .nre-source-line-summary {
+  display: grid;
+  grid-template-columns: 46px 22px minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 100%;
+  width: max-content;
+}
+.nre-attempt-source details.nre-source-line > summary:hover {
+  background: color-mix(in oklch, var(--line), transparent 72%);
+}
+.nre-attempt-source details.nre-source-line[open] > summary {
+  background: color-mix(in oklch, var(--panel), var(--line) 34%);
+}
+.nre-attempt-source .nre-source-ln {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 1px 8px 1px 0;
+  color: var(--soft);
+  font-size: 11px;
+  text-align: right;
+  user-select: none;
+}
+.nre-attempt-source .nre-source-status {
+  display: grid;
+  width: 13px;
+  height: 13px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--soft);
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  user-select: none;
+}
+.nre-attempt-source .nre-source-status-empty { border-color: transparent; }
+.nre-attempt-source .nre-source-status-send { border: 0; }
+.nre-attempt-source .nre-source-status-send svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.nre-attempt-source .nre-source-text {
+  padding-left: 8px;
+  color: var(--text);
+  font: inherit;
+  white-space: pre;
+}
+.nre-attempt-source .nre-source-line-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 12px;
+  font: 11px/1.7 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: nowrap;
+}
+.nre-attempt-source .nre-source-turn-badge,
+.nre-attempt-source .nre-source-score-badge {
+  border: 1px solid color-mix(in oklch, currentColor, transparent 52%);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+.nre-attempt-source .nre-source-chevron {
+  color: var(--soft);
+  font-size: 18px;
+  transition: transform 0.12s ease;
+}
+.nre-attempt-source details[open] > summary .nre-source-chevron { transform: rotate(90deg); }
+
+.nre-attempt-source .nre-source-line-send {
+  border-left-color: var(--nre-c0);
+  background: color-mix(in oklch, var(--nre-c0), var(--panel) 88%);
+}
+.nre-attempt-source .nre-source-line-send .nre-source-ln {
+  background: color-mix(in oklch, var(--nre-c0), var(--panel) 74%);
+}
+.nre-attempt-source .nre-source-line-send .nre-source-status,
+.nre-attempt-source .nre-source-line-send .nre-source-turn-badge { color: var(--nre-c0); }
+.nre-attempt-source details.nre-source-line-send[open] > summary,
+.nre-attempt-source details.nre-source-line-send > summary:hover {
+  background: color-mix(in oklch, var(--nre-c0), var(--panel) 82%);
+}
+.nre-attempt-source .nre-source-line.nre-tone-good {
+  border-left-color: var(--good);
+  background: color-mix(in oklch, var(--good), var(--panel) 58%);
+  color: var(--text);
+}
+.nre-attempt-source .nre-source-line.nre-tone-good .nre-source-ln {
+  background: color-mix(in oklch, var(--good), var(--panel) 34%);
+}
+.nre-attempt-source .nre-source-line.nre-tone-good .nre-source-status { color: var(--good); }
+.nre-attempt-source .nre-source-line.nre-tone-bad {
+  border-left-color: var(--bad);
+  background: color-mix(in oklch, var(--bad), var(--panel) 58%);
+  color: var(--text);
+}
+.nre-attempt-source .nre-source-line.nre-tone-bad .nre-source-ln {
+  background: color-mix(in oklch, var(--bad), var(--panel) 34%);
+}
+.nre-attempt-source .nre-source-line.nre-tone-bad .nre-source-status { color: var(--bad); }
+.nre-attempt-source .nre-source-line.nre-tone-warn,
+.nre-attempt-source .nre-source-line.nre-tone-na {
+  border-left-color: var(--warn);
+  background: color-mix(in oklch, var(--warn), var(--panel) 58%);
+  color: var(--text);
+}
+.nre-attempt-source .nre-source-line.nre-tone-warn .nre-source-ln,
+.nre-attempt-source .nre-source-line.nre-tone-na .nre-source-ln {
+  background: color-mix(in oklch, var(--warn), var(--panel) 34%);
+}
+.nre-attempt-source .nre-source-line.nre-tone-warn .nre-source-status,
+.nre-attempt-source .nre-source-line.nre-tone-na .nre-source-status { color: var(--warn); }
+
+.nre-attempt-source .nre-source-line-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 100%;
+  padding: 10px 16px 12px 60px;
+  border-top: 1px dashed var(--line);
+  border-left: 3px solid color-mix(in oklch, var(--blue, var(--nre-c0)), var(--line) 40%);
+  background: color-mix(in oklch, var(--panel), var(--line) 22%);
+  color: var(--text);
+  font: 12.5px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  white-space: normal;
+}
+.nre-attempt-source .nre-source-line.nre-tone-good > .nre-source-line-detail { border-left-color: var(--good); }
+.nre-attempt-source .nre-source-line.nre-tone-bad > .nre-source-line-detail { border-left-color: var(--bad); }
+.nre-attempt-source .nre-source-line.nre-tone-warn > .nre-source-line-detail,
+.nre-attempt-source .nre-source-line.nre-tone-na > .nre-source-line-detail { border-left-color: var(--warn); }
+.nre-attempt-source .nre-source-line-detail .nre-assertion-row {
+  display: grid;
+  font-size: 12px;
+}
+.nre-attempt-source .nre-source-assertion-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.nre-attempt-source .nre-source-assertion-score { margin-left: auto; font-variant-numeric: tabular-nums; }
+.nre-attempt-source .nre-source-line-detail .nre-assertion-detail { padding: 0 10px 8px; }
+.nre-attempt-source .nre-source-turn {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+}
+.nre-attempt-source .nre-source-turn-head {
+  display: flex;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font: 11px/1.4 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+.nre-attempt-source .nre-source-turn-head > :first-child { color: var(--text); font-weight: 650; }
+.nre-attempt-source .nre-source-line-detail .nre-source-turn-head,
+.nre-attempt-source .nre-source-line-detail .nre-source-turn > .nre-conv-sent { display: none; }
+.nre-attempt-source .nre-source-line-detail .nre-conv-replies {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-assistant,
+.nre-attempt-source .nre-source-line-detail .nre-conv-user,
+.nre-attempt-source .nre-source-line-detail .nre-conv-skill,
+.nre-attempt-source .nre-source-line-detail .nre-conv-error,
+.nre-attempt-source .nre-source-line-detail .nre-conv-input,
+.nre-attempt-source .nre-source-line-detail .nre-conv-compaction,
+.nre-attempt-source .nre-source-line-detail .nre-conv-thinking,
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool,
+.nre-attempt-source .nre-source-line-detail .nre-conv-subagent,
+.nre-attempt-source .nre-source-line-detail .nre-conv-raw {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-role {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--blue, var(--nre-c0));
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-user .nre-conv-text { color: var(--muted); }
+.nre-attempt-source .nre-source-line-detail .nre-conv-thinking > summary,
+.nre-attempt-source .nre-source-line-detail .nre-conv-subagent > summary,
+.nre-attempt-source .nre-source-line-detail .nre-conv-raw > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted);
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-thinking > summary::-webkit-details-marker,
+.nre-attempt-source .nre-source-line-detail .nre-conv-subagent > summary::-webkit-details-marker,
+.nre-attempt-source .nre-source-line-detail .nre-conv-raw > summary::-webkit-details-marker { display: none; }
+.nre-attempt-source .nre-source-line-detail .nre-conv-subagent > summary::before,
+.nre-attempt-source .nre-source-line-detail .nre-conv-raw > summary::before { content: "▸ "; }
+.nre-attempt-source .nre-source-line-detail .nre-conv-thinking > summary::before { content: "▸ "; }
+.nre-attempt-source .nre-source-line-detail .nre-conv-subagent[open] > summary::before,
+.nre-attempt-source .nre-source-line-detail .nre-conv-raw[open] > summary::before,
+.nre-attempt-source .nre-source-line-detail .nre-conv-thinking[open] > summary::before { content: "▾ "; }
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool > summary {
+  display: grid;
+  grid-template-columns: 8px minmax(110px, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool > summary::-webkit-details-marker { display: none; }
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--good);
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-failed { background: var(--bad); }
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-rejected { background: var(--warn); }
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-pending { background: var(--soft); }
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-name {
+  overflow: hidden;
+  color: var(--text);
+  font: 600 12px/1.5 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-preview {
+  overflow: hidden;
+  color: var(--soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nre-attempt-source .nre-source-line-detail .nre-conv-tool-io {
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--panel), black 8%);
+  color: var(--muted);
+  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-source .nre-attempt-source-unmapped,
+.nre-attempt-source .nre-attempt-source-unlocated { border-top: 1px solid var(--line); }
+.nre-attempt-source .nre-attempt-source-unmapped > .nre-assertion-row {
+  display: flex;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn { margin: 10px 14px; }
+.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue, var(--nre-c0));
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn-failed { border-left-color: var(--bad); }
+.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn-waiting { border-left-color: var(--warn); }
+
+/* 与旧 CodeView 同一套逐行轻量 TypeScript token。 */
+.nre-attempt-source .tok-comment { color: var(--soft); font-style: italic; }
+.nre-attempt-source .tok-str { color: light-dark(#0a7d3c, #7ee787); }
+.nre-attempt-source .tok-kw { color: light-dark(#9333ea, #c792ea); }
+.nre-attempt-source .tok-num { color: light-dark(#b25000, #f0a36b); }
+.nre-attempt-source .tok-fn { color: light-dark(#0b62d6, #82aaff); }
+
+/* Fix prompt 与时间树:顶层 details 是完整 panel，嵌套 details 只负责层级。 */
+.nre-attempt-fix-prompt,
+.nre-attempt-timeline {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.nre-attempt-fix-prompt > summary,
+.nre-attempt-timeline > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+.nre-attempt-fix-prompt > summary::-webkit-details-marker,
+.nre-attempt-timeline > summary::-webkit-details-marker,
+.nre-attempt-timeline summary::-webkit-details-marker,
+.nre-attempt-trace summary::-webkit-details-marker,
+.nre-attempt-conversation summary::-webkit-details-marker {
+  display: none;
+}
+.nre-attempt-fix-prompt[open] > summary,
+.nre-attempt-timeline[open] > summary { border-bottom: 1px solid var(--line); }
+.nre-attempt-fix-prompt .nre-attempt-fix-prompt-copy {
+  margin: 12px 14px 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 5px 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.nre-attempt-fix-prompt .nre-attempt-fix-prompt-copy:hover { border-color: var(--soft); }
+.nre-attempt-fix-prompt .nre-attempt-fix-prompt-text {
+  max-height: 28rem;
+  overflow: auto;
+  margin: 10px 14px 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 12px/1.55 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-timeline .nre-timeline-phases,
+.nre-attempt-timeline .nre-timeline-children,
+.nre-attempt-timeline .nre-timeline-spans {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nre-attempt-timeline > .nre-timeline-phases { padding: 7px 14px 10px; }
+.nre-attempt-timeline .nre-timeline-phase,
+.nre-attempt-timeline .nre-timeline-node,
+.nre-attempt-timeline .nre-timeline-spans > li {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+}
+.nre-attempt-timeline summary.nre-timeline-phase,
+.nre-attempt-timeline summary.nre-timeline-node { cursor: pointer; }
+.nre-attempt-timeline summary.nre-timeline-phase:hover,
+.nre-attempt-timeline summary.nre-timeline-node:hover { background: var(--panel-2); }
+.nre-attempt-timeline .nre-timeline-dur,
+.nre-attempt-trace .nre-span-dur {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nre-attempt-timeline .nre-timeline-children,
+.nre-attempt-timeline .nre-timeline-spans {
+  margin-left: 15px;
+  padding-left: 11px;
+  border-left: 1px solid var(--line);
+}
+.nre-attempt-timeline .nre-timeline-failed { color: var(--bad); }
+.nre-attempt-timeline .nre-timeline-closing {
+  padding: 8px 14px 11px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.nre-attempt-timeline .nre-timeline-closing-head {
+  margin-bottom: 3px;
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* Diagnostics 与 usage:技术信息保持紧凑，但不再落成裸 ul/dl。 */
+.nre-attempt-diagnostics {
+  display: grid;
+  gap: 9px;
+}
+.nre-attempt-diagnostics .nre-diagnostics-group {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.nre-attempt-diagnostics .nre-diagnostics-phase {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 650;
+}
+.nre-attempt-diagnostics .nre-diagnostics-group ul { list-style: none; margin: 0; padding: 0; }
+.nre-attempt-diagnostics .nre-diagnostics-item {
+  display: grid;
+  gap: 3px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.nre-attempt-diagnostics .nre-diagnostics-item:last-child { border-bottom: 0; }
+.nre-attempt-diagnostics .nre-diagnostics-meta {
+  color: currentColor;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nre-attempt-usage {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.nre-attempt-usage .nre-attempt-usage-row {
+  min-width: 0;
+  padding: 11px 13px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Conversation:每轮一张卡，sent 与 replies 分层；长输出在自己的 pre 内滚动。 */
+.nre-attempt-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.nre-attempt-conversation .nre-conv-round {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.nre-attempt-conversation .nre-conv-round-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+.nre-attempt-conversation .nre-conv-round-loc {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-weight: 450;
+}
+.nre-attempt-conversation .nre-conv-sent {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklch, var(--blue, var(--nre-c0)), var(--panel) 94%);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nre-attempt-conversation .nre-conv-replies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+.nre-attempt-conversation .nre-conv-assistant,
+.nre-attempt-conversation .nre-conv-user,
+.nre-attempt-conversation .nre-conv-skill,
+.nre-attempt-conversation .nre-conv-error,
+.nre-attempt-conversation .nre-conv-input,
+.nre-attempt-conversation .nre-conv-compaction,
+.nre-attempt-conversation .nre-conv-thinking,
+.nre-attempt-conversation .nre-conv-tool,
+.nre-attempt-conversation .nre-conv-subagent,
+.nre-attempt-conversation .nre-conv-raw {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.nre-attempt-conversation .nre-conv-role {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.nre-attempt-conversation .nre-conv-text { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.nre-attempt-conversation .nre-conv-error { border-color: color-mix(in oklch, var(--bad), var(--line) 62%); color: var(--bad); }
+.nre-attempt-conversation .nre-conv-input { border-color: color-mix(in oklch, var(--warn), var(--line) 62%); color: var(--warn); }
+.nre-attempt-conversation .nre-conv-thinking > summary,
+.nre-attempt-conversation .nre-conv-tool > summary,
+.nre-attempt-conversation .nre-conv-subagent > summary,
+.nre-attempt-conversation .nre-conv-raw > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.nre-attempt-conversation .nre-conv-thinking > .nre-conv-text { margin-top: 7px; }
+.nre-attempt-conversation .nre-conv-tool-io {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+  font: 11px/1.5 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 原始 trace 与 diff 摘要。 */
+.nre-attempt-trace,
+.nre-attempt-trace .nre-trace-children,
+.nre-attempt-diff {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nre-attempt-trace {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.nre-attempt-trace .nre-trace-span {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr) max-content auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+}
+.nre-attempt-trace summary.nre-trace-span { cursor: pointer; }
+.nre-attempt-trace summary.nre-trace-span:hover { background: var(--panel-2); }
+.nre-attempt-trace .nre-trace-children {
+  margin-left: 15px;
+  border-left: 1px solid var(--line);
+}
+.nre-attempt-trace .nre-span-kind {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--soft);
+  font-size: 10px;
+  text-align: center;
+}
+.nre-attempt-diff {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.nre-attempt-diff .nre-diff-file {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.nre-attempt-diff .nre-diff-file:last-child { border-bottom: 0; }
+.nre-attempt-diff .nre-diff-net {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nre-attempt-diff .nre-diff-path { min-width: 0; font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; overflow-wrap: anywhere; }
+.nre-attempt-diff .nre-diff-lines { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nre-attempt-diff .nre-diff-added .nre-diff-net { color: var(--good); }
+.nre-attempt-diff .nre-diff-modified .nre-diff-net { color: var(--warn); }
+.nre-attempt-diff .nre-diff-deleted .nre-diff-net { color: var(--bad); }
+
+@media (max-width: 640px) {
+  .nre-attempt-summary .nre-attempt-summary-kpis { grid-template-columns: 1fr; }
+  .nre-attempt-summary .nre-attempt-summary-kpis > div { border-right: 0; }
+  .nre-attempt-error .nre-attempt-error-fields { grid-template-columns: 1fr; gap: 2px; }
+  .nre-attempt-usage { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nre-attempt-trace .nre-trace-span { grid-template-columns: max-content minmax(0, 1fr) max-content; }
+  .nre-attempt-diff .nre-diff-file { grid-template-columns: 1fr max-content; }
+  .nre-attempt-diff .nre-diff-net { grid-column: 1 / -1; }
+}
+
 /* ---- 排版原语 Row / Col / Section / Text ---- */
 .nre-col {
   display: flex;

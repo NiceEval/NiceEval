@@ -107,6 +107,9 @@ export function attemptSourceText(data: AttemptSourceData | null, ctx: TextConte
   const command = evidenceCommand(ctx, data.locator, "--source");
   const headerParts = [`${data.sourcePath} · ${data.summary.annotatedLines}/${data.summary.totalLines} lines annotated`];
   if (command) headerParts.push(command);
+  const hasConversation = data.unlocatedTurns.length > 0 || data.lines.some((line) => line.turns.length > 0);
+  const executionCommand = hasConversation ? evidenceCommand(ctx, data.locator, "--execution") : null;
+  if (executionCommand) headerParts.push(executionCommand);
   // 源码锚由 assertionLine 自己按 a.loc 拼(与 AttemptAssertions 共用同一份逻辑);这里只负责
   // 挑出非 passed 的条目,不重复算锚点。
   const failed = data.lines.flatMap((line) => line.assertions.filter((a) => a.outcome !== "passed"));

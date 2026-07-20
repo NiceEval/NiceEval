@@ -106,8 +106,9 @@ describe("validateSourceData", () => {
   const valid = {
     locator: "@1abcdef2",
     sourcePath: "eval.ts",
-    lines: [{ line: 1, text: "t.send(...)", assertions: [], sends: [] }],
+    lines: [{ line: 1, text: "t.send(...)", assertions: [], sends: [], turns: [] }],
     unmapped: [],
+    unlocatedTurns: [],
     summary: validSummary,
   };
 
@@ -126,8 +127,24 @@ describe("validateSourceData", () => {
   });
 
   it("lines[i].assertions 嵌套断言结构错误报错", () => {
-    const bad = { ...valid, lines: [{ line: 1, text: "x", assertions: [{ name: "eq" }], sends: [] }] };
+    const bad = { ...valid, lines: [{ line: 1, text: "x", assertions: [{ name: "eq" }], sends: [], turns: [] }] };
     expect(validateSourceData(bad)).toMatch(/"lines\[0\]\.assertions\[0\]\.severity"/);
+  });
+
+  it("lines[i].turns[j].replies[k] 递归校验回复判别联合", () => {
+    const bad = {
+      ...valid,
+      lines: [
+        {
+          line: 1,
+          text: "x",
+          assertions: [],
+          sends: [],
+          turns: [{ label: "s1/t1", status: "completed", sentText: "go", replies: [{ kind: "assistant" }] }],
+        },
+      ],
+    };
+    expect(validateSourceData(bad)).toMatch(/"lines\[0\]\.turns\[0\]\.replies\[0\]\.text"/);
   });
 });
 

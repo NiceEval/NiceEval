@@ -30,7 +30,7 @@ export default defineReport({
 | `AttemptSummary` | locator、experiment / eval / attempt 身份、verdict、开始时间、总耗时、成本与证据能力位 | 身份与 verdict 恒有，不为空 |
 | `AttemptError` | 结构化 error、cause 与基础设施失败信息；不重复 assertion | 没有 error 时零输出 |
 | `AttemptAssertions` | 非 passed 条目按原始声明顺序列一份平铺列表(failed / soft / unavailable 混排、不分段);passed 条目按 group 折叠成计数;不渲染源码 | 没有 assertion 时零输出 |
-| `AttemptSource` | 带 send / assertion 标注的 eval 源码；行内展开 assertion 细节 | 没有 source 时零输出,不自行 fallback |
+| `AttemptSource` | GitHub diff 式带标注源码：TypeScript 轻量语法高亮，send / assertion 按蓝 / 绿 / 红 / 黄整行着色，点击对应源码行展开该轮完整回复与 assertion 细节 | 没有 source 时零输出,不自行 fallback |
 | `AttemptAssessment` | 先放 `AttemptError`，有 source 时放 `AttemptSource`，否则放 `AttemptAssertions` | 子组件都为空时零输出 |
 | `AttemptFixPrompt` | 把当前失败的身份、简要失败原因与排查步骤(含 `--source`/`--execution`/`--timing`/`--diff` 提示命令、复跑与确认步骤)组装成单条修复 prompt;不内嵌源码或 diff 原文,由 agent 自己跑命令查看 | passed 或没有可操作失败时零输出 |
 | `AttemptTimeline` | runner phases、hook / command / session / turn，以及按 `traceId` 关联的 agent / model / tool spans | 没有 phase 时零输出 |
@@ -39,9 +39,9 @@ export default defineReport({
 | `AttemptUsage` | token、cache token、成本及 provider usage 明细 | 没有 usage 时零输出 |
 | `AttemptTrace` | 不混入 runner 节点的原始 OTel span 树 / 瀑布 | 没有 trace 时零输出 |
 | `AttemptDiff` | generated / modified / deleted 文件摘要与 patch | 没有变更时零输出 |
-| `AttemptDetail` | 按内建顺序装配以上区块的成品组合；不产生新的 data 或渲染面 | 随子组件 |
+| `AttemptDetail` | 按内建顺序装配以上区块；有 source 时回复已在 `AttemptSource` 行内展开，不再重复 `AttemptConversation`，无 source 时保留独立分轮视图 | 随子组件 |
 
-区块按事实边界拆分，不按某个宿主当前的卡片拆分。`AttemptTimeline` 可以把 span 按显式 correlation 挂回 runner 时间树；`AttemptTrace` 则保留原始 OTel 视角，因此二者可以择一，也可以同时放。`AttemptSource` 与 `AttemptAssertions` 会呈现同一批 assertion 的不同视角，默认组合通过 `AttemptAssessment` 二选一，避免重复；作者显式同时放置时，重复是作者选择。
+区块按事实边界拆分，不按某个宿主当前的卡片拆分。`AttemptTimeline` 可以把 span 按显式 correlation 挂回 runner 时间树；`AttemptTrace` 则保留原始 OTel 视角，因此二者可以择一，也可以同时放。`AttemptSource` 与 `AttemptAssertions` 会呈现同一批 assertion 的不同视角，默认组合通过 `AttemptAssessment` 二选一，避免重复。`AttemptSource` 还把标准事件流按 `loc` 投影回 send 行，点击行可在源码上下文中展开回复；因此默认 `AttemptDetail` 有 source 时不再追加独立 `AttemptConversation`，没有 source 时才把它作为完整事件流 fallback。报告作者仍可显式同时放置两者，此时两种视角并存是作者选择。
 
 ## page 输入与 spec / data 形态
 
@@ -117,19 +117,25 @@ export const AttemptAssessment = defineComponent((_props, ctx) => {
 `AttemptDetail` 只表达内建排列顺序，全文是：
 
 ```tsx
-export const AttemptDetail = defineComponent(() => (
-  <Col>
-    <AttemptSummary />
-    <AttemptAssessment />
-    <AttemptFixPrompt />
-    <AttemptTimeline />
-    <AttemptDiagnostics />
-    <AttemptUsage />
-    <AttemptConversation />
-    <AttemptTrace />
-    <AttemptDiff />
-  </Col>
-));
+export const AttemptDetail = defineComponent((_props, ctx) => {
+  const conversationLivesInSource =
+    ctx.page.input === "attempt" &&
+    ctx.page.evidence.capabilities.source &&
+    ctx.page.evidence.evalSource !== null;
+  return (
+    <Col>
+      <AttemptSummary />
+      <AttemptAssessment />
+      <AttemptFixPrompt />
+      <AttemptTimeline />
+      <AttemptDiagnostics />
+      <AttemptUsage />
+      {conversationLivesInSource ? null : <AttemptConversation />}
+      <AttemptTrace />
+      <AttemptDiff />
+    </Col>
+  );
+});
 ```
 
 用户可以在参数化 page 中直接重排公开区块，不需要复制 view：
@@ -161,7 +167,7 @@ export const AttemptDetail = defineComponent(() => (
 |---|---|---|
 | `AttemptSummary` | 紧凑身份与 verdict 摘要 | 详情标题、状态和统计卡 |
 | `AttemptError` / `AttemptAssertions` | 有界错误与未通过项列表;不带专属命令(完整 locator 已在 `AttemptSummary` 那一行) | 可展开的完整结构化细节 |
-| `AttemptSource` | 未通过 assertion 的源码位置与 expected / received，加 `--source` 命令；不倾倒整份源码 | 完整带标注源码，失败行可展开 |
+| `AttemptSource` | 未通过 assertion 的源码位置与 expected / received，加 `--source` 命令；含轮次时同时保留 `--execution` 下钻入口，不倾倒整份源码 | TypeScript 语法高亮的完整源码；send / pass / gate-fail / soft-fail 行分别着色，可点击展开该轮回复或 assertion 细节 |
 | `AttemptFixPrompt` | 零输出；终端已有可直接交给 agent 的 evidence 命令 | 单条失败的复制按钮与完整 prompt |
 | `AttemptTimeline` | phase 摘要与 `--timing` 命令 | 可逐层展开的 runner + correlated spans 时间树 |
 | `AttemptConversation` | 轮次摘要与 `--execution` 命令 | 完整分轮事件卡 |
