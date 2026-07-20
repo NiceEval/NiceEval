@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CorrectRoadH/niceeval"
+    "url": "git+https://github.com/NiceEval/NiceEval.git"
   },
   "engines": {
     "node": ">=18"
