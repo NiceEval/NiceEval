@@ -189,6 +189,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 设计决定
 
+- [turn-label-plain-words](turn-label-plain-words.md) — 裁决(2026-07-21):轮/窗口标签从 `s<session>/t<turn>` 改为自描述词——主会话 `turn<N>`、`t.newSession()` 会话 `session<K>/turn<N>`(从 2 起),全证据面同一枚 token、`--window` 等值匹配;否决全局连号(并行 session 竞态)与恒带 session 前缀(主线噪音);标签不透明不解析,schemaVersion 不递增、旧快照不迁移
 - [dispatch-priority-binds-to-slot-grant](dispatch-priority-binds-to-slot-grant.md) — 裁决(2026-07-20):瓶颈优先绑在「全局并发位分配时刻」而非 fiber 创建顺序,空位给等待集中轮次最高者、不看谁先等;否决为 setup 中的瓶颈 run 预留名额(容量空转)、抢占在飞 attempt(成本不可回收)、削弱承诺(在最该生效的场景失效);根因是承诺句与「setup 不占并发位」组合不自洽的设计 bug,实现未走样
 - [init-bootstrap-install-first](init-bootstrap-install-first.md) — 裁决(2026-07-18):INIT 收缩成自举文件(心智模型/前置/安装+交接 INDEX.md),接入正文搬进随包 `agent-onboarding.mdx`,顺序翻为「先装后探」;否决安装前维护 9 条官网 URL 路由表(零守护,实测已全 404)与 API 复述(版本错位窗口);守护拦 INIT 里的线上文档链接
 - [lifecycle-paired-teardown-replaces-cleanup-return](lifecycle-paired-teardown-replaces-cleanup-return.md) — 裁决(2026-07-18):四层生命周期统一成对 setup/teardown、setup 返回 void,否决 setup-returns-cleanup(双写法并存、setup 半途抛错丢收尾、可见性差);触发规则=同层 setup 时点走到过;attempt 层状态通道以 sandbox 实例作键(纠正「一律模块闭包」);postSetup 配对命名 preTeardown;旧写法运行时护栏报错

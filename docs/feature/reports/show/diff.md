@@ -7,8 +7,8 @@ $ niceeval show @1qrdcfq8 --diff
 @1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · failed
 
 2 files changed by agent
-  M manager_decisions.json   +6 -2    s1/t1, s1/t2
-  A notes/decision-log.md    +18      s1/t2
+  M manager_decisions.json   +6 -2    turn1, turn2
+  A notes/decision-log.md    +18      turn2
 
 single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
 ```
@@ -17,15 +17,15 @@ single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
 
 ```text
 $ niceeval show @1qrdcfq8 --diff=manager_decisions.json
-M manager_decisions.json · touched in s1/t1, s1/t2
+M manager_decisions.json · touched in turn1, turn2
 
-── window s1/t1
+── window turn1
 @@ -1,5 +1,6 @@
  {
 -  "15193": { "selected_proposal_id": 1 },
 +  "15193": { "selected_proposal_id": 4 },
 
-── window s1/t2
+── window turn2
 @@ -2,6 +2,7 @@
 +  "15201": { "selected_proposal_id": 2 },
 ```

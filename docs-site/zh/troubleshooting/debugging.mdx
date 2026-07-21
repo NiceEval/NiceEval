@@ -46,12 +46,12 @@ available:
 
 排查顺序是「哪条断言挂了 → agent 当时做了什么 → 它到底改了什么」。
 
-**1. 把断言放回源码。** `--source` 显示运行时保存的那份评估用例源码（不是你工作区里可能已经改过的版本），失败的断言直接标在对应行上；`t.send(...)` 的调用行标出它产生的那一轮——轮标签（`s1/t1`，与 `--execution` / `--timing` 用同一套）、这轮成没成、花了多久：
+**1. 把断言放回源码。** `--source` 显示运行时保存的那份评估用例源码（不是你工作区里可能已经改过的版本），失败的断言直接标在对应行上；`t.send(...)` 的调用行标出它产生的那一轮——轮标签（`turn1`，与 `--execution` / `--timing` 用同一套；`t.newSession()` 开的会话记 `session2/turn1`）、这轮成没成、花了多久：
 
 ```text
 $ niceeval show @1qrdcfq8 --source
 21✓     await t.send("Review the proposals and record your decision…");
-    s1/t1 · completed · 22.4s
+    turn1 · completed · 22.4s
 38      for (const [issue, label] of Object.entries(expected)) {
 39        await t.group(`Issue ${issue}: selected proposal matches…`, async () => {
 40✗         t.check(Number(decisions[issue]?.selected_proposal_id), equals(label.selected_proposal_id));
@@ -64,7 +64,7 @@ $ niceeval show @1qrdcfq8 --source
 
 ```text
 $ niceeval show @1qrdcfq8 --execution
-TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
+turn1 · completed · 22.4s · 12.4k tok · $0.02
   USER
     Review the proposals and record your decision for each issue…
 
@@ -78,7 +78,7 @@ TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
       Proposal 1: …
 ```
 
-对话按轮分段，每轮头行给出编号（`s1/t1`）、状态、耗时和用量——这个编号和 `--diff`、`--timing` 里的轮次标签是同一套，能互相对照。
+对话按轮分段，每轮头行给出轮标签（`turn1`）、状态、耗时和用量——这个标签和 `--diff`、`--timing` 里的轮次标签是同一套，能互相对照。
 
 不想通读全文时，接 `grep` 定向查。列出这次 Attempt 用过哪些工具、各多少次：
 
@@ -99,17 +99,17 @@ niceeval show @1qrdcfq8 --execution | grep proposals
 ```text
 $ niceeval show @1qrdcfq8 --diff
 2 files changed by agent
-  M manager_decisions.json   +6 -2    s1/t1, s1/t2
-  A notes/decision-log.md    +18      s1/t2
+  M manager_decisions.json   +6 -2    turn1, turn2
+  A notes/decision-log.md    +18      turn2
 
 single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
 ```
 
-行尾的 `s1/t1` 表示这个文件是在第几轮对话里被改的，能和 `--execution` 的轮次对上。要看单个文件的逐行改动，用 `=` 连写文件路径：
+行尾的 `turn1` 表示这个文件是在第几轮对话里被改的，能和 `--execution` 的轮次对上。要看单个文件的逐行改动，用 `=` 连写文件路径：
 
 ```text
 $ niceeval show @1qrdcfq8 --diff=manager_decisions.json
-M manager_decisions.json · changed in s1/t1, s1/t2
+M manager_decisions.json · changed in turn1, turn2
 @@ -1,5 +1,7 @@
  {
 -  "15193": { "selected_proposal_id": 1 },

@@ -176,7 +176,7 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 4. **收尾独立 failed**:teardown 钩子抛错的 fixture,`sandbox.teardown` 条目标 `failed: true`、`sandbox.stop` 照常记录,verdict 不因此改变。
 5. **时间树与命令归属**:挂多个 setup 钩子的 fixture,`sandbox.setup.children` 逐 hook 有条目、顺序与链序一致；每个 hook 发出的 `runCommand` / `runShell` 只出现一次并挂在正确 hook 下。`agent.setup`、`workspace.baseline` 与 teardown 命令同样落在各自 phase。
 6. **并发与单调时钟**:两个并发 command 的 `startOffsetMs` 可以重叠,不能被串成虚假的顺序；wall-clock 跳变不产生负 duration。
-7. **turn 与 OTel 关联**:多 session、多 turn fixture 产生 `s1/t1`、`s2/t1` 等结构化身份；有 traceparent 时保存 traceId/attribution,无 OTel 时 turn duration 仍存在。
+7. **turn 与 OTel 关联**:多 session、多 turn fixture 产生 `turn1`、`session2/turn1` 等结构化身份；有 traceparent 时保存 traceId/attribution,无 OTel 时 turn duration 仍存在。
 8. **归因与计时同词表**:构造一个 send 内抛错的 fixture,`error.phase` 为 `agent.run`、`phases` 主链止于 `eval.run`——两个字段取值都在同一个 `LifecyclePhase` 闭集内。
 
 ## 相关阅读

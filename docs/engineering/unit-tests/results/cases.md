@@ -18,6 +18,7 @@
 | 携带条目（resume 合入）：startedAt 保留原值、artifactBase 指向原快照、locator 原样复制从不重算、has* 真值原样携带 | 正例：locator 与原条目逐字节相同；反例：用新快照 startedAt 重算会得到不同串 |
 | 目录名只是身份的清洗投影，权威身份在 snapshot.json 字段；两个 experimentId 清洗后撞名时 reader 仍按字段归为两个实验 | 正例：`dev-e2b/codex-e2b` → `dev-e2b_codex-e2b`；边界：撞名目录按字段分组 |
 | 快照目录名由 startedAt ISO 串清洗加 4 位随机后缀构成；reader 不依赖目录名解析 startedAt | 正例：目录名正则；正例：改名后仍按字段读 |
+| 同一轮的[轮标签](../../../feature/scoring/library/display.md#turntsend的展示)在 `diff.json` 的 `window`、时间树 turn 节点的 `label`、send 标注的 `label` 三处逐字相等；消费方按字符串等值对照，不解析标签内部结构 | 正例：单会话一轮 fixture 三处均为 `turn1`；边界：`t.newSession()` 轮三处均为 `session2/turn1` |
 
 示例——round-trip 断言字段归属：
 
@@ -187,7 +188,7 @@ it.each([
 |---|---|
 | 断言按 `SourceLoc` 标回源码行；无 loc / 异文件 / 越界行进 unmapped 桶，never silently dropped | 正例：同一行多条断言；反例：三类不可映射断言都出现在 unmapped；边界：`summary` 的 totalAssertions/mappedAssertions/unmappedAssertions 与 passed/failed、gate/soft 双维计数按映射结果精确统计，空断言数组时全零但行数仍正确 |
 | send 标注按同一映射规则落到 `t.send(...)` 调用行，一行多轮逐轮保留；定位不到行的轮直接丢（轮次全量面是 `--execution`，不设兜底桶） | 正例：同一行两轮都保留；反例：异文件与越界行的轮不落任何行 |
-| `deriveSendAnnotations`：第 i 条用户消息配 `eval.run` 下第 i 个 turn 节点（与 `--execution` 分轮同一规则），头行事实取 turn 节点的 label / failed / durationMs；用户消息无 loc 的轮不产出且不使后续轮错位 | 正例：三轮中第二轮无 loc 时第三轮仍配对正确；边界：时间树缺 turn 节点回退 `t<i>` 标签、无墙钟；边界：空事件流产出空数组 |
+| `deriveSendAnnotations`：第 i 条用户消息配 `eval.run` 下第 i 个 turn 节点（与 `--execution` 分轮同一规则），头行事实取 turn 节点的 label / failed / durationMs；用户消息无 loc 的轮不产出且不使后续轮错位 | 正例：三轮中第二轮无 loc 时第三轮仍配对正确；边界：时间树缺 turn 节点回退 `turn<i>` 标签、无墙钟；边界：空事件流产出空数组 |
 | `content` 按行切分不产生幻影尾空行（结尾单个换行符不多出一行，结尾双换行保留一行真实空行），空文件视为一行空字符串；`sourceSha256` 用 SHA-256 归一化后的源码计算，CRLF 与 LF 内容一致时哈希与行文本都相同 | 正例：单/双尾换行两态各自产出正确行数；边界：空文件为单个空行；正例：CRLF 与 LF 的 `sourceSha256` 相同且逐行文本一致 |
 
 ## Attempt 证据装配（AttemptEvidence）

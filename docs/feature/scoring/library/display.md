@@ -72,7 +72,7 @@ CI 单行反馈使用独立结构化字段 `severity=` / `assertion=` / `matcher
 - **show 的 attempt 首页**按结果分节，只逐条列出需要看的：`failures:`（gate 失败，含 `--strict` 下改判的 soft）、`soft below threshold:`（soft 未达标但不影响 verdict）、`scores:`（无阈值 judge 的纯打分）、`unavailable:`（证据评不了的，带 reason）。全部通过时这些节整体省略，只留 `assertions: N passed` 计数行。
 - **每条的行格式**：首行 `severity · <标题>`——有 `group` 时标题是分组路径（嵌套用 " > " 拼接），随后 `assertion: <detail>` 行给检查方式；没有分组时标题就是 `name`（即 matcher / judge 摘要），`assertion:` 行与标题重复时省略。之后按有则显示的顺序列 `expected:` / `received:` / `score`（judge 与 soft 带阈值时含 `threshold`）/ `reason:`（仅 unavailable），最后 `source: <loc>`。
 - **view 的 Attempt 详情**保留**全量**断言，但默认先展开 failed / unavailable 与影响判定的 soft，passed 收进按 group 组织的折叠区并在区头显示数量；每条一行（状态图标 + 分组路径 + name + detail + 分数），展开显示 expected / received / `evidence`（这条分数看的材料预览，默认折叠）与源码位置锚（点击跳 `--source` 同款源码视图）；judge 额外画分数条与阈值线；`unavailable` 用独立的第三态样式（非红非绿）标 reason。
-- **作用域前缀**：挂在 turn / session 上的断言，`name` 带接收者前缀（`s1/t2 · calledTool(...)`、`s2 · succeeded()`）；挂在 `t` 上的 attempt 级断言无前缀。
+- **作用域前缀**：挂在 turn / session 上的断言，`name` 带接收者前缀——turn 断言用[轮标签](#turntsend的展示)（`turn2 · calledTool(...)`），session 断言用会话标签（`session2 · succeeded()`）；挂在 `t` 上的 attempt 级断言无前缀。
 - 所有值都是有界预览（截断规则见 [Results · 大值截断](../../results/architecture.md#大值截断)），且展示前都剥控制字节（与契约一同一条规则：去 ANSI 转义与不可打印 C0/C1，保留换行等结构性空白）——`show` 终端面与 view / HTML 报告面都不把捕获输出里的着色码原样渲染；完整原始字节仍在 `events.json` / `diff.json` 等 artifact。
 
 ## 值断言
@@ -126,7 +126,7 @@ soft below threshold:
 `calledTool` 失败时 `expected` 是匹配条件、`received` 是作用域内实际调用的有界清单——回答「那它到底调了什么」：
 
 ```text
-  gate · s1/t1 · calledTool("get_weather", { input: { city: "Brooklyn" } })
+  gate · turn1 · calledTool("get_weather", { input: { city: "Brooklyn" } })
     expected: ≥1 call matching input.city = "Brooklyn"
     received: 2 tool calls: get_weather({"city":"SF"}) · get_time({})
 ```
@@ -135,7 +135,7 @@ soft below threshold:
 
 ```text
   gate · notCalledTool("bash", { input: { command: /npm i/ } })
-    received: matched at s1/t2 · action#5 · bash({"command":"npm install lodash"})
+    received: matched at turn2 · action#5 · bash({"command":"npm install lodash"})
 ```
 
 `toolOrder` / `eventOrder` 的 `received` 是实际顺序摘要，标出首个违反点：
@@ -225,7 +225,9 @@ failures:
 
 ## Turn（`t.send()`）的展示
 
-一次 `t.send()` 产生一个 Turn，它自己有五样要展示的东西：**身份**（`s<session>/t<turn>`，全部证据面共用这套标签）、**status**（completed / failed / waiting）、**事件流**（这一轮的对话与工具卡片）、**usage**（这一轮的 token / 成本）、**`turn.data`**（结构化输出，如果 Adapter 给了）。语法契约在 [Show](../../reports/show.md) 与 [View](../../reports/view.md)，这里给对照示例。
+一次 `t.send()` 产生一个 Turn，它自己有五样要展示的东西：**身份**（轮标签，见下）、**status**（completed / failed / waiting）、**事件流**（这一轮的对话与工具卡片）、**usage**（这一轮的 token / 成本）、**`turn.data`**（结构化输出，如果 Adapter 给了）。语法契约在 [Show](../../reports/show.md) 与 [View](../../reports/view.md)，这里给对照示例。
+
+**轮标签**是本节的单点定义，别处只引用：主会话（`t.send`）的第 N 轮是 `turn<N>`（`turn1`、`turn2`……）；`t.newSession()` 开的会话按创建序编号——主会话是会话 1，新会话从 2 起——其轮是 `session<K>/turn<N>`（如 `session2/turn1`），轮次在各自会话内计数。标签用完整单词，第一次读输出的人不需要图例就能读懂；主会话不带前缀，与「`t.send()` 是主线、`t.newSession()` 是额外会话」的 API 形态一一对应。同一枚 token 原样出现在 `--execution` 的轮头行、`--timing` 的 turn 节点、`--source` 的 send 标注、`--diff` / `diff.json` 的 `windows` 与 [`sandbox history` / `diff`](../../sandbox/cli.md#回放留存现场的变更历史sandbox-history--diff)，复制进 `--window` 也是它。标签是不透明字符串：跨面对照按字符串等值，消费方不解析它的内部结构。
 
 **show 首页 `execution:` 行**——整个 attempt 的事件计数，一行看规模：
 
@@ -233,10 +235,10 @@ failures:
 execution: 12 events · 0 skill loads · 7 tool calls · 4 AI messages
 ```
 
-**`show --execution`**——按轮分段：每轮以 **turn 头行**开始（身份 · status · 该轮墙钟 · 该轮 usage），轮内是时间线卡片（USER / ASSISTANT / TOOL / SKILL / SUBAGENT），工具卡片带 input 与 result。多轮、多 session 的边界因此不用数消息猜：
+**`show --execution`**——按轮分段：每轮以 **turn 头行**开始，头行首列就是轮标签（标签 · status · 该轮墙钟 · 该轮 usage），轮内是时间线卡片（USER / ASSISTANT / TOOL / SKILL / SUBAGENT），工具卡片带 input 与 result。多轮、多 session 的边界因此不用数消息猜：
 
 ```text
-TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
+turn1 · completed · 22.4s · 12.4k tok · $0.02
   USER
     把部署脚本改成蓝绿发布。
 
@@ -249,7 +251,7 @@ TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
     result · completed · exit 0
       #!/usr/bin/env bash …
 
-TURN s1/t2 · waiting · 3.1s · 1.8k tok
+turn2 · waiting · 3.1s · 1.8k tok
   ASSISTANT
     Ready to apply. Confirm?
 
@@ -265,31 +267,31 @@ TURN s1/t2 · waiting · 3.1s · 1.8k tok
     { "city": "Brooklyn", "temperature": 24, "condition": "sunny" }
 ```
 
-**`show --timing`**——每轮是 `eval.run` 下的一个 `turn s<session>/t<turn>` 节点，记 send 的墙钟包络；该轮带 `traceId` 时向下挂接 agent / model / tool spans。`--execution` 回答「这一轮做了什么」，`--timing` 回答「这一轮慢在哪」，标签同源可互相对照：
+**`show --timing`**——每轮是 `eval.run` 下以轮标签命名的节点，记 send 的墙钟包络；该轮带 `traceId` 时向下挂接 agent / model / tool spans。`--execution` 回答「这一轮做了什么」，`--timing` 回答「这一轮慢在哪」，标签同源可互相对照：
 
 ```text
 eval.run              26.3s
-  ├─ turn s1/t1           22.4s
+  ├─ turn1                22.4s
   │    ├─ agent · codex run             21.9s
   │    │    ├─ model · gpt-5.4 call #1   6.3s
   │    │    └─ tool · shell              1.1s
-  └─ turn s1/t2            3.1s
+  └─ turn2                 3.1s
 ```
 
 **`show --source`**——`t.send(...)` 的调用行标注该轮的头行事实（身份、status、墙钟与 usage——有记录才出现），失败轮标 `✗`；不内联回复与工具卡片，语法契约见 [Show · --source](../../reports/show/eval-source.md)：
 
 ```text
 27✓       .send("Implement `run_tasks` in `run.py`. …")
-    s1/t1 · completed · 3m 11s
+    turn1 · completed · 3m 11s
 ```
 
 **view Attempt 详情**——对话区与 `--execution` 同一分轮卡片语法并挂接 trace；每个 turn 头行可折叠。Turn 的 `coverage` 相对 Agent 默认降级时，该轮头部显示证据徽标，与 `unavailable` 断言的 reason 同源：
 
 ```text
-TURN s1/t2 · completed · evidence: actions partial — stream reconnected mid-turn
+turn2 · completed · evidence: actions partial — stream reconnected mid-turn
 ```
 
-**agent diff 的轮次归属**——`show --diff` 与 `diff.json` 的 `windows` 字段用同一套 `s1/t1` 标签标出每个文件是哪几轮改的（见 [diff.json](../../results/architecture.md#diffjson)），从「这轮说了什么」到「这轮改了什么」双向可对。
+**agent diff 的轮次归属**——`show --diff` 与 `diff.json` 的 `windows` 字段用同一枚轮标签标出每个文件是哪几轮改的（见 [diff.json](../../results/architecture.md#diffjson)），从「这轮说了什么」到「这轮改了什么」双向可对。
 
 ## 相关阅读
 

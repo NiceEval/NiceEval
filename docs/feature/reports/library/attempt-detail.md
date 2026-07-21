@@ -49,7 +49,7 @@ export default defineReport({
 
 - **密度**：等宽 12.5px / 1.65 行高；整块源码统一横向滚动，普通行之间不画分隔线；行盒撑到最长行宽度，状态底色与左缘盖满整行，不在横向滚动后断成半截。
 - **行状态**：状态 = 整行浅染 + 2px 左缘 + 行号位图标。send 行蓝、passed 绿、gate-fail 红、soft-fail / unavailable 黄；浅染是 tone 色约 8% 的透明混合，不是饱和色块。有状态的行用内联 SVG 图标顶替行号（send 对话气泡、passed 圈勾、failed 圈叉、soft-fail 圈叹号、unavailable 圈问号；不引第三方图标库），普通行显示行号。
-- **右缘 meta**：行右侧只放阈值分数 pill 与展开 chevron，钉在滚动视口右缘（sticky），横向滚动时始终可见；不显示内部 turn 标签（如 `s1/t1`）。
+- **右缘 meta**：行右侧只放阈值分数 pill 与展开 chevron，钉在滚动视口右缘（sticky），横向滚动时始终可见；不显示内部 turn 标签（如 `turn1`）。
 - **展开区**：点击行展开的回复 / assertion 细节直接接在源码行下，dashed 上边线 + tone 色左缘；按容器可视宽度排版换行并钉在滚动视口左缘，不跟随代码横向滚动；不套二级卡片，不重复 turn 头与 sent prompt。首个失败或警告行默认展开。
 - **语法高亮**：零依赖逐行 TypeScript token（comment / string / keyword / number / function 五类语义 class）；暗色 token 取 VS Code Dark+ 系（与示例卡的 prism vsDark 主题同源），浅色为等价可读色。
 - **交互载体**：展开一律是原生 `<details>`，静态文档零 JS 成立。

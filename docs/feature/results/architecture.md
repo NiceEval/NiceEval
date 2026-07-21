@@ -250,7 +250,8 @@ interface TimingNode {
   id: string;
   kind: TimingNodeKind;
   /**
-   * 采集端写入的有界人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用 s<session>/t<turn>;
+   * 采集端写入的有界人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用轮标签
+   * (主会话 turn<N>,t.newSession() 会话 session<K>/turn<N>,语法单点见 Scoring · Turn 的展示);
    * operation 写逻辑工作及可安全公开的规模摘要。展示层不解析 command 文本来重造 label。
    */
   label: string;
@@ -418,7 +419,7 @@ attempt 的结果封口发生在 teardown 链与 sandbox stop 之后;随后 `res
 type DiffArtifact = DiffWindow[];
 
 interface DiffWindow {
-  /** send 窗口标签,与时间树 turn 节点、--execution 轮次同源(如 "s1/t2")。 */
+  /** send 窗口标签,与时间树 turn 节点、--execution 轮次同一枚轮标签(如 "turn2")。 */
   window: string;
   /** 该窗口内 agent 改动的文件;窗口内没有 workspace 变化时窗口仍落一条、changes 为空对象。 */
   changes: Record<string, WindowChange>;

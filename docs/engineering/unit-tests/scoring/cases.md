@@ -199,6 +199,7 @@ it.each([
 | 单值收口 `summaryText`：先 `stripControl` 再折单行 + 240 字符上限，超出以 `…` 收口 | 正例：多行大值折成单行有界预览且不含换行；反例：带 ANSI 着色的命令输出折出的单行不含任何 ESC 字节 |
 | 比较列表单元格的宽度收口按优先级让位：语义标题先截、matcher 次之、expected / received 与 `+N more failures` 最后截 | 正例：预算充足时与 `compactAssertionSummary` 逐字一致；反例：预算不足时长标题全称消失而 expected/received 前缀仍在；边界：极小预算下整串 ≤ 预算且以 `…` 收口 |
 | `assertionSummaryLines`（Human 永久行/handoff）：`received` 与 `matcher · expected` 合并成一行仍在预算内就合并，超预算则 `received` 单独截断一行；`+N more failures` 永远独立成尾行，不参与截断也不拼接在被截断的值末尾 | 正例：短 `received`（如 `received 3`）与 matcher/expected 维持同一行；反例：大段 `received`（源码/命令输出）拆出独立一行且行内不含 `+N more failures`；边界：`+N more failures` 出现时始终是最后一行，且不因 `received` 被截断而消失或粘连 |
+| 作用域前缀：turn 断言的 `name` 前缀是[轮标签](../../../feature/scoring/library/display.md#turntsend的展示)（`turn2 · …`），session 断言是会话标签（`session2 · …`），attempt 级（挂 `t`）无前缀 | 正例：主会话第 2 轮断言前缀 `turn2`；正例：newSession 会话断言前缀 `session2`；反例：`t` 级断言 `name` 无任何前缀 |
 
 ## Judge
 

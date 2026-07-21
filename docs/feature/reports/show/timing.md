@@ -33,7 +33,7 @@ $ niceeval show @1qrdcfq8 --timing
 │ telemetry.configure    0.1s                                                    │
 │   └─ shell · append ~/.codex/config.toml       0.1s                            │
 │ eval.run              26.3s                                                    │
-│   └─ turn s1/t1           22.4s                                                │
+│   └─ turn1                22.4s                                                │
 │      └─ shell · codex exec …                  22.1s                            │
 │         ├─ agent · codex.exec                 22.0s  OTel                      │
 │         ├─ model · chat                       14.8s  OTel                      │

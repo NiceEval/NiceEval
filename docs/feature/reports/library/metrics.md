@@ -72,7 +72,7 @@ interface MetricCell {
 | `durationMs` | attempt 判定链耗时（不含收尾段，口径见 [Results](../../results/architecture.md#resultjson)） | 低 | `result.json` |
 | `tokens` | input + output tokens | 低 | `result.json` |
 | `costUSD` | 网关实测成本优先，否则估算成本 | 低 | `result.json` |
-| `assistantTurns` | o11y 事件流中的 assistant turn 数；与 `t.send` 的 `s<session>/t<turn>` 轮次是两个计数，名字因此带限定词 | 低 | `o11y.json` |
+| `assistantTurns` | o11y 事件流中的 assistant turn 数；与 `t.send` 的轮次（轮标签 `turn<N>`）是两个计数，名字因此带限定词 | 低 | `o11y.json` |
 | `repeatedFailedCommands` | 同一 attempt 内同一条 shell 命令的重复失败数：每条命令失败 n 次（n > 1）记 n − 1，求和。回答 agent 是否在反复撞同一个已知失败的命令 | 低 | `o11y.json` |
 
 `skipped` 对这些指标返回 `null`。`errored` 只在 `taskPassRate` 中返回 `null`，在默认 `endToEndPassRate` 与 `executionReliability` 中都返回 0。三个指标都遵守“先在同一 eval 的 attempts 内聚合，再跨 eval 聚合”的两级规则；每个 eval 只有一个 attempt 时，`endToEndPassRate` 才简化为 `passed / (passed + failed + errored)`。它的完整口径名是“End-to-end pass rate / 端到端通过率”，默认组件的可见短标签统一为“Pass rate / 通过率”；任何默认总览和任何只写这个短标签的位置都使用 `endToEndPassRate`。`taskPassRate` 必须标成“Task pass rate / 可判定任务通过率”等条件口径，不能把 `2 passed / 5 errored` 显示成无条件的 `100%`。要定位损失来自答题还是执行，可把三列并排：

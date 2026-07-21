@@ -142,7 +142,7 @@ for (const snap of current.snapshots) {
 console.table([...touched.entries()].sort((a, b) => b[1].attempts - a[1].attempts).slice(0, 10));
 ```
 
-`diff.files[path].windows`(如 `["s1/t1", "s1/t2"]`)进一步回答「第几轮改的」,`diff.windows` 保有逐窗口的完整 before/after——与 `show --timing` 的 turn 节点、`--execution` 的轮次同一套标签,可以把「改动发生在哪轮」与「那轮说了什么、调了什么工具」对上。要把这类分析做成可复用报告,写成[自定义指标](../reports/library/metrics.md#自定义指标)交给报告组件聚合;一次性核对用 [`show --diff`](../reports/show/diff.md)。
+`diff.files[path].windows`(如 `["turn1", "turn2"]`)进一步回答「第几轮改的」,`diff.windows` 保有逐窗口的完整 before/after——与 `show --timing` 的 turn 节点、`--execution` 的轮次同一套标签,可以把「改动发生在哪轮」与「那轮说了什么、调了什么工具」对上。要把这类分析做成可复用报告,写成[自定义指标](../reports/library/metrics.md#自定义指标)交给报告组件聚合;一次性核对用 [`show --diff`](../reports/show/diff.md)。
 
 ## 快照:experiment × 一次运行
 

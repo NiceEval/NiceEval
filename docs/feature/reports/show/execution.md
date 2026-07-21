@@ -1,9 +1,9 @@
 # `--execution`：看 agent 做了什么
 
-对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始：身份（`s<session>/t<turn>`，与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一套标签）、Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Scoring · 断言与 Turn 的展示](../../scoring/library/display.md#turntsend的展示)：
+对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../scoring/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Scoring · 断言与 Turn 的展示](../../scoring/library/display.md#turntsend的展示)：
 
 ```text
-TURN s1/t1 · completed · 22.4s · 12.4k tok · $0.02
+turn1 · completed · 22.4s · 12.4k tok · $0.02
   USER
     You are the engineering manager for this project. ...
 

@@ -271,6 +271,7 @@ it("show 与 view 的默认报告槽消费同一 Scope", async () => {
 | `AttemptConversation` 数据来自 `AttemptEvidence.events`（标准事件流），按 `loc` 分轮：无 `loc` 的 user 消息不开新轮（同文本回显吃掉、轮内注入按 `kind:"user"` 留在当前轮）；事件按条目容错，未识别类型包成 `view.raw` 原样呈现且不吞没其余事件；`skill.loaded` 是一等回复条目 | 正例：send（带 loc）后紧跟同文本无 loc 回显，回复仍全部聚到 send 行；正例：混入完全未知的事件类型时该条目原始 JSON 保留、其余事件照常聚合；正例：`skill.loaded` 显示 Skill 名不伪装成工具调用；边界：流首无 loc 的 user 消息（旧 artifact）仍开 noloc 轮 |
 | 断言区（`AttemptAssertions`）默认展开 failed / unavailable 与影响判定的 soft；passed 按 group 折叠计数；每条失败直接显示 matcher、expected / received 或 reason，并提供源码锚 | 正例：1 gate-failed + 1 unavailable + 两 group 共 3 passed 的 fixture，前两者默认可见、passed 折叠且计数为 3；反例：全 passed 时无默认展开条目，只有折叠区；正例：失败条目静态渲染即含 expected / received 的值，且锚指向该断言的源码行 |
 | `AttemptTimeline` 默认只显示 phase 主链与收尾段；children（hook / 命令 / turn）收合在原生 `<details>` 里，失败最深节点带失败标记 | 正例：默认（无 `open`）时 children 不可见，标记 `open` 后逐层可见；边界：errored attempt 只有最深失败节点带 ✗，祖先不重复标记 |
+| 各证据面的 turn 标识原样使用证据里的[轮标签](../../../feature/scoring/library/display.md#turntsend的展示)：对话面的轮头行以标签开头（`turn1 · completed · …`），时间树 turn 节点、源码 send 标注展示同一枚 token；渲染层不自造轮次编号或改写标签 | 正例：同一 fixture 的对话轮头、时间树节点与 send 标注展示同一枚 `turn1`；反例：轮头行首 token 之外不出现第二套轮次编号 |
 
 ## 外壳、页面与 Tabs
 
