@@ -188,6 +188,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [stale-dist-report-type-identity-typecheck](stale-dist-report-type-identity-typecheck.md) — 改 src 公共类型后 `dist/report` 陈旧,typecheck 在 show/view 宿主报「X not assignable to X」同名类型不相认;修法=先 `pnpm run build:report` 重建再排查,不要顺着报错改 src
 - [report-component-data-fn-spyon-must-target-component](report-component-data-fn-spyon-must-target-component.md) — 组件 `.data` 是 `Object.assign` 装配时按值拷贝的,`vi.spyOn(计算模块, "xxxData")` 拦不住经组件属性发起的调用,要 spy 组件对象自己(`vi.spyOn(ExperimentList, "data")`)
 - 已修 [show-test-duplicates-selection-and-attempt-detail-coverage](show-test-duplicates-selection-and-attempt-detail-coverage.md) — show.test.ts 曾有三条断言经 `runShow()` 整条 CLI 管线复述 `host-equivalence.test.ts` 已直调 `selectCurrentResults` 验证过的 Selection 语义,另一条渲染断言自认与 Attempt 详情组件测试同契约仍留着;测试体系重划 A2 分拣时删除重复覆盖
+- [table-primitive-validation-only-reachable-via-render](table-primitive-validation-only-reachable-via-render.md) — `Table` 的列/行 key 校验只嵌在 `web()`/`text()` 渲染面函数体内、未独立导出,纯 resolve/validate 断言够不着,与已导出且有专属测试的 `validateGridColumns` 不对称;测试体系重划 A4 保留渲染触发作为唯一例外,根治需要 touch `primitives.tsx`(超出 A4 范围)
 
 ## o11y 采集
 
