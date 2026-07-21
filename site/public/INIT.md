@@ -2,15 +2,16 @@
 
 You are being asked to integrate [niceeval](https://github.com/CorrectRoadH/niceeval) into **the repository currently open here** (not niceeval's own source repository). Communicate with the user in the user's language. Do not improvise from stale API knowledge in model memory.
 
-This file is responsible for exactly one thing: getting the package into the project. The integration workflow itself (exploring the project, confirming the path with the user, writing adapter / experiment / eval, getting the first run green) lives entirely in the bundled docs, which ship with the installed version — so this file contains no online doc links. Once installed, route everything through `node_modules/niceeval/INDEX.md`. The bundled docs are written in Chinese — read them anyway; they are the version-accurate source, and you still communicate with the user in the user's language.
+This file is responsible for exactly one thing: getting the package into the project. The integration workflow itself (exploring the project, confirming the path with the user, writing adapter / experiment / eval, getting the first run green) lives entirely in the bundled docs, which ship with the installed version — so this file contains no online doc links. Once installed, route everything through `node_modules/niceeval/INDEX.md`. The bundled docs are written in Chinese — read them anyway; they are the version-accurate source, and you still communicate with the user in the user's language. In particular, do not fetch niceeval.com or GitHub looking for an English version of a page: an English page for a different version is worse than a Chinese page for yours.
 
-## Step 0: Three core ideas
+## Step 0: Four core ideas
 
-niceeval is a TypeScript evals library: you define "what a good result looks like" with a declarative API, then apply that to a coding agent, a deployed agent/service, or a pure function. These three ideas are all you need for the install decision:
+niceeval is a TypeScript evals library: you define "what a good result looks like" with a declarative API, then apply that to a coding agent, a deployed agent/service, or a pure function. These four ideas are all you need for the install decision:
 
 1. Each of the three files owns exactly one concern: **adapter** (how to talk to the system under test), **experiment** (what to evaluate, with what config, and how many runs), and **eval** (what input to send and what to assert).
 2. niceeval **does not define any agent protocol**. If you are connecting to the user's own service, the adapter is just a normal HTTP request. URL and auth belong in adapter factory params, not in niceeval config.
 3. CLI positional arguments are only for selecting "which evals to run" (by eval id prefix). Choosing "which agent/model to run against" must always be done via flags or experiment files. Do not overload positional args with URLs, agent names, or runtime config.
+4. **"It runs" is not the bar for "it is done."** The eval input must make the system under test do its core job (not answer meta-questions about itself, like "what are you / what can you do"). Assertions must turn red when the system under test makes things up — never assert words that already appear in the input, because then echoing the question back is enough to pass. Whenever possible, include one negative case: send an input the system should not be able to answer, and assert that it says so instead of fabricating a result. The wrap-up checklist lives in the bundled tutorial page.
 
 ## Step 1: Confirm prerequisites
 
