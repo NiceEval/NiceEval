@@ -151,6 +151,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [view-shell-nav-ignores-page-navigation-flag](view-shell-nav-ignores-page-navigation-flag.md) — scope-input page 显式声明 `navigation: false` 时,view 外壳导航仍把它渲染成 tab;`renderReportSlot` 算出的 `navigablePages` 只喂 `initialPageId` 兜底,没喂 `viewData.report.pages`;目前无场景触发(唯一会设它的 attempt-input page 更早已被过滤掉),未修
 - 已修 [scatter-series-color-collision](scatter-series-color-collision.md) — 散点两个不同 series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/report/react/colors.ts` 的 colorIndicesForKeys)
 - 已修 [react19-dangerously-set-inner-html-identity](react19-dangerously-set-inner-html-identity.md) — React 19 对 dangerouslySetInnerHTML 只比 `{__html}` 对象身份,内联字面量让任何重渲染都整树重建报告槽(开关 attempt 弹窗丢 details/排序/过滤状态);修为 useMemo 包 `{__html}`(`src/view/app/App.tsx` 的 ReportSlot)
 - [details-ua-slot-breaks-display-contents-tabs](details-ua-slot-breaks-display-contents-tabs.md) — `<details>` 的 UA shadow slot 让 display:contents 布局失效(Chrome 下 order 失效、残留 0 宽盒);Tabs 增强改用 flex 换行方案(styles.css)
