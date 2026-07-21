@@ -64,7 +64,7 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 3. 写入失败时保持 `stop`,记录 diagnostic,让 Scope finalizer 正常销毁;该 attempt 的 `sandbox.kept` 不得写成 `true`。
 4. disposition 为 `keep` 时,Scope release 阶段执行 provider **suspend**(`sandbox.suspend` phase,有界计时——e2b pause 的耗时随内存增长,不许藏在计时外):成功后把登记项 `state` 更新为 `"dormant"`;失败时保持 `"alive"` 并追加 diagnostic——现场仍被注册表管理、仍可 enter,只是没省下资源,**不销毁、不冒充 dormant**。suspend 与任何收尾步骤一样不反改 verdict。
 
-持久注册表是 `.niceeval/sandboxes/` 下的**逐条目文件**,不是多个 attempt 竞争改写的一份 JSON。entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时文件、`fsync` 文件后 `rename` 成 `<entry-id>.json`,再 `fsync` 目录;不同 attempt 与不同 niceeval 进程不会覆盖彼此。`sandbox stop` 先完成 detached 销毁(实例已不存在也算完成),再删除对应条目并同步目录;销毁失败则保留条目并退出 1,不能为了让列表变干净而制造无主资源。受支持的正常返回、异常、超时和 Ctrl+C 路径因此保持:沙箱要么仍在内存清理集合,要么已有可被 `list` / `stop` 发现的持久条目。无法拦截的进程 `SIGKILL` / 宿主断电不承诺分布式原子性;Docker 的 candidate label 与云 provider TTL 用于事后核对这类外部中断。
+持久注册表是 `.niceeval/sandboxes/` 下的**逐条目文件**,不是多个 attempt 竞争改写的一份 JSON。entry id 由 `provider + sandboxId` 做稳定散列;每条先写同目录临时文件、`fsync` 文件后 `rename` 成 `<entry-id>.json`,再 `fsync` 目录;不同 attempt 与不同 niceeval 进程不会覆盖彼此。`sandbox stop` 先完成 detached 销毁(实例已不存在也算完成),再删除对应条目并同步目录;销毁失败则保留条目并退出 1,不能为了让列表变干净而制造无主资源。受支持的正常返回、异常、超时和 Ctrl+C 路径因此保持:沙箱要么仍在内存清理集合,要么已有可被 `list` / `stop` 发现的持久条目。无法拦截的进程 `SIGKILL` / 宿主断电不承诺分布式原子性;这类外部中断留下的实例由[孤儿核对](#孤儿核对强杀路径的实例面兜底)按创建期写入的运行标识事后收回。
 
 `enter` 是 provider 原生的进入命令,记进注册表供直连与审计;日常入口是 [`niceeval sandbox enter <id>`](cli.md#sandbox-enter),由它负责唤醒、进入与退出后重新休眠。`expiresAt` 是现场可找回的截止时刻——provider 声明了保留期限才写(vercel 写,e2b pause 无限期保留则不写)。
 
@@ -72,13 +72,22 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 
 各 provider 的留存语义——suspend 把现场转入该 provider **最持久的低成本形态(休眠)**,「留下」不等于「继续跑」:
 
-- **Docker** —— suspend = `docker stop`:文件系统落盘持久、不占内存、跨 daemon 重启存活。创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价;容器带 `niceeval.keep-candidate=true` 标签,正常 run 结束后该标签下只剩已登记的 kept 容器,异常硬退时可用它核对未完成提交的候选。停驻的容器不会自己消失,仍是唯一需要用户主动清理的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
+- **Docker** —— suspend = `docker stop`:文件系统落盘持久、不占内存、跨 daemon 重启存活。创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价;容器带 `niceeval.keep-candidate=true` 标签,正常 run 结束后该标签下只剩已登记的 kept 容器;强杀留下的未登记候选由[孤儿核对](#孤儿核对强杀路径的实例面兜底)按运行标识收回。停驻的容器不会自己消失,仍是唯一需要用户主动清理的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - **E2B** —— suspend = `pause`:文件系统与内存整体持久化,暂停期间停止计费,现场无限期保留、可 `resume` 找回;没有自然过期时刻,`expiresAt` 不写。
 - **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 provider 声明的保留期限(有则写)。
 - **Local** —— 不参与留存,`--keep-sandbox` 组合在创建前报错:本地档从不销毁,现场天然留在用户的工作树里,无需注册表纳管(见[本地执行](local.md))。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
 `Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 `result.json` 落 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Results](../results/architecture.md#resultjson)),`phases` 无 `sandbox.stop` 条目。
+
+## 孤儿核对:强杀路径的实例面兜底
+
+进程内的清理集合与 Scope finalizer 覆盖不到 `SIGKILL` / 宿主断电——没有任何代码来得及执行,正在跑的沙箱就地变成 provider 侧的无主实例。这条路径的兜底不追求「杀不掉的进程也能收尾」(做不到),而是把「事后认领」做成可靠的机器动作:创建时把归属写进实例元数据,事后按归属核对与收回。
+
+- **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(快照时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的兜底是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
+- **孤儿的判定是三条「与」**:带 niceeval 运行标识、不在留存注册表、且属主 run 已被证实死亡(标识里的 `host` 等于当前宿主机名,且 `pid` 探测不存活)。三条缺一不可:注册表里的 kept 沙箱是被管理的现场,不是孤儿;属主 run 还活着的实例属于并发运行中的另一次 run,绝不能收;`host` 不匹配或 pid 无法核对的实例标 `unverified`,列出但不自动销毁——误杀一台活实例的代价高于多留一台待人工确认,判定必须偏保守。
+- **核对与收回分成只读、破坏两个入口**:[`niceeval sandbox list --orphans`](cli.md#sandbox-list---orphans) 只读列出,[`niceeval sandbox prune`](cli.md#sandbox-prune) 销毁已核实孤儿;`unverified` 只有显式 `--force` 才销毁。两个入口与 sandbox 命令组其余成员同一契约:不读 config、不执行用户代码,销毁走各 provider 的 detached 通道。
+- 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,兜底在实验面,机制见 [Experiments · 强杀后的收尾兜底](../experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)。
 
 ## Docker provider(本地,零云依赖)
 

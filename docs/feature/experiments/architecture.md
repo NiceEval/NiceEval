@@ -42,15 +42,25 @@ experiment 影响调度的字段就四个，语义单点在 [Runner](../../runne
 - **起止可见性由 runner 发布**:setup / teardown 的开始与结束是运行级反馈事件(Human dashboard 的运行级 active 行、agent/ci 的起止行),不依赖钩子自己调 `progress`——渲染契约见 [CLI · 实验级钩子的显示](cli.md#实验级钩子的显示)。
 - **ctx**:`experimentId`、`selectedEvalIds`、`signal`(用户中断时 abort),以及作用域反馈 `progress` / `diagnostic`(绑定到当前钩子对应的 `experiment.setup` / `experiment.teardown`,见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈))。
 - **失败语义**:`setup` 抛错 → 本实验**所有** attempt 记 `errored`(`error.code = "experiment-setup-failed"`,`error.phase = "experiment.setup"`),逐条落 `result.json`、进报告——环境起不来是每条 eval 都没跑成的事实,不是一条一次性日志;同批其它实验不受任何影响。同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
-- **teardown 的触发**:本实验最后一个 attempt 收尾后执行,当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免(半初始化的现场同样要扫尾,teardown 对可能未赋值的闭包变量做防御),一个 attempt 都没派发则跳过;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
+- **teardown 的触发**:本实验最后一个 attempt 收尾后执行,当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免(半初始化的现场同样要扫尾,teardown 对可能未赋值的闭包变量做防御),一个 attempt 都没派发则跳过;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内兜底范围,由[强杀后的收尾兜底](#强杀后的收尾兜底收尾登记与启动自愈)在磁盘上接手。
 - **teardown 的失败语义**:抛错记一条运行级 diagnostic(`experiment-teardown-failed`),不改变任何已产出的 verdict——与 `sandbox.teardown` 的失败语义一致;执行有界(30s 清理超时,到点同样记 `experiment-teardown-failed`),不能无限拖住退出。
 - **产出的运行时值经模块闭包流动**:`setup` 拿到的 URL / 凭据写进实验文件的模块级变量,`teardown` 与同文件里 agent / sandbox 钩子(后两者每 attempt 执行,晚于 `setup`)从闭包读取。runner 不做值的中介,也不把这些值写进快照——它们是运行时基础设施坐标,不是实验条件(实验条件进 `flags`)。
 - **不进 fingerprint**:钩子函数体与 `SandboxSpec` 钩子一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--force`。
 - **两个钩子都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../results/architecture.md#resultjson))与运行级反馈行的标注。
 
+## 强杀后的收尾兜底:收尾登记与启动自愈
+
+进程内的兜底注册表覆盖正常、中断与崩溃退出,覆盖不到 `SIGKILL` / 宿主断电——此时实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)没有任何代码来得及释放,而且强杀往往来自会重复触发的外部看门狗(CI 时限、宿主超时),泄漏会随重跑累积。这条路径的兜底建立在磁盘上:
+
+- **收尾登记与触发时点同步落盘。** 实验的触发时点(第一个通过派发许可的 attempt)在跑 `setup` 之前,先把收尾登记原子写入 `.niceeval/teardowns/<entry>.json`(与留存注册表同一套逐条目文件纪律):`{ experimentId, experimentFile, selectedEvalIds, pid, host, startedAt }`。teardown settle 后——不论由哪条路径触发、成功还是超时——删除登记。不变量:磁盘上存在登记,当且仅当某次 run 的实验级收尾义务尚未完成。
+- **启动自愈。** `niceeval exp` 启动时扫描登记目录。`host` 等于当前宿主机名且 `pid` 不存活的登记是**遗留义务**:该实验在本次 run 的选择里时,先补执行一次它的 teardown(运行级反馈行标注 recovery)再照常走 `setup`——被强杀后重跑同一条命令,收尾自动补上,不累积泄漏。不在本次选择里的遗留登记打一行提醒并给出 `--teardown` 补收尾命令。`pid` 仍存活或 `host` 不匹配的登记可能属于并发 run,不触碰。
+- **补执行是新进程语义。** 原进程的模块闭包已随强杀丢失,补执行时 teardown 读到的闭包变量是未赋值状态——这正是 teardown 既有防御契约(`tunnel?.stop()`)覆盖的形态;需要跨进程收尾的资源应由 teardown 从环境或自身的持久化(容器名、pid 文件、幂等的外部 down 脚本)找回,不依赖 `setup` 的内存产物。`ctx.selectedEvalIds` 从登记恢复,`ctx.signal` 绑定当前进程的中断。
+- **删登记是互斥点,义务至多补执行一次。** 补执行(启动自愈或 `--teardown`)先原子删除登记,删除成功者获得执行权;登记已被别的进程删除则跳过——同一份遗留义务不会被两个进程双跑。补执行失败按既有失败语义记 `experiment-teardown-failed` diagnostic,不自动重试;手动 `--teardown` 是重试入口。
+- **手动补收尾:`--teardown`。** `niceeval exp <experiment 路径> --teardown` 只对选中的实验各执行一次实验级 teardown(新进程语义):不派发任何 attempt、不跑 `setup`,完成后删除对应遗留登记;没有登记也照常执行——手动补收尾不依赖登记存在,这让「我知道有东西泄漏了」的场景不需要先考证登记去向。teardown 抛错记 diagnostic 并退出 1。与 eval 前缀位置参数组合报用法错误——这个 flag 选择的是「只收尾」这种跑法,不参与 eval 选择。
+
 ## Carry：自动携带
 
-上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次快照（带 `artifactBase` 指回原 artifact），让最新快照保持完整；`--force` 关闭携带全部重跑；`errored` / `skipped` 判定不可信，永不携带。缓存规则见 [Runner · 缓存](../../runner.md#缓存指纹去重)，携带条目的落盘与读取语义见 [Results · 两类条目](../results/architecture.md#resultjson)。
+上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次快照（带 `artifactBase` 指回原 artifact），让最新快照保持完整；`--force` 关闭携带全部重跑；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求快照收尾，因此被中断或强杀的 run **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [Runner · 缓存](../../runner.md#缓存指纹去重)，携带条目的落盘与读取语义见 [Results · 两类条目](../results/architecture.md#resultjson)。
 
 ## Completion 与退出
 

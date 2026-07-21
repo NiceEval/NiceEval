@@ -83,6 +83,10 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 | Human TTY 在 ACTIVE 区为在飞钩子渲染运行级行(排在 attempt 行前),实验级 `ctx.progress` 只更新该行 detail;成功钩子不写 scrollback 永久行 | 正例:钩子在跑的帧含 `experiment setup · <experimentId>` 行;正例:progress 后 detail 更新;反例:done 后 TTY scrollback 无新增行 |
 | agent / ci / 非 TTY human 起止各追加一行(`NICEEVAL experiment_setup …` / `niceeval: experiment_setup …` / human 文案),实验级 progress 不逐条输出 | 正例:agent/ci 各两行含 experiment 与 status 字段;正例:非 TTY human started/done 文案行;反例:progress 在 agent/ci 零输出 |
 | 运行级瞬时通知(`reportActivity`):human 追加一行(TTY 先撤 live 面板再重建),agent/ci 不输出 | 正例:TTY human scrollback 出现通知行且 live 面板重建;反例:agent/ci 零输出 |
+| 收尾登记随触发时点原子落盘 `.niceeval/teardowns/<entry>.json`(experimentId / experimentFile / selectedEvalIds / pid / host / startedAt),teardown settle 后删除——不论正常、强清还是崩溃路径触发 | 正例:setup 触发前登记文件存在;正例:run 收尾后登记目录为空;边界:setup 抛错时登记仍在,teardown settle 后才删 |
+| 启动自愈:同宿主且 pid 已死的遗留登记,实验在本次选择里则先补执行 teardown(新进程语义,ctx.selectedEvalIds 取自登记)再 setup;不在选择里只提醒;pid 存活或异宿主不触碰 | 正例:遗留登记 + 选中 → teardown 先于 setup 执行且登记被删;反例:pid 存活的登记不动;边界:异宿主登记只出提醒行 |
+| 删登记是补执行互斥点:原子删除成功者执行,已被删则跳过;补执行失败记 `experiment-teardown-failed` 不自动重试 | 正例:两个进程并发自愈同一登记,teardown 执行计数为 1;反例:补执行抛错后登记不复活、diagnostic 可见 |
+| `--teardown` 只执行选中实验的 teardown:不派发 attempt、不跑 setup,无登记也执行,完成删除对应登记;teardown 抛错退出 1;与 eval 前缀组合报用法错误 | 正例:--teardown 后 teardown 执行且零 attempt;正例:无登记时照常执行;反例:带 eval 前缀报用法错误;边界:teardown 抛错退出码 1 |
 
 ## early exit
 
@@ -178,6 +182,8 @@ it("已完成花费到顶后不再派发新 attempt，在飞的照常完成", as
 | 上次 `passed` 或 `failed` 且指纹未变 → 跳过并复用（两者都是可复用终态） | 正例：passed 复用；正例：failed 也复用（易漏）；反例：指纹变了不复用 |
 | `errored` 和 `skipped` 不缓存，总是重跑 | 反例：上次 errored 不得被复用 |
 | 指纹变化只重跑受影响 eval | 正例：改一个 eval 只重跑它；边界：改共享配置全部重跑 |
+| 携带以 attempt 为粒度：指纹未变时逐条携带终态 attempt,只补跑缺失序号;已携入 passed 且 earlyExit 开时缺失序号计入 earlyExitUnstarted | 正例:runs 5 已有 3 终态只派发 2;边界:携入 passed + earlyExit 时零派发且 earlyExitUnstarted 计数正确 |
+| 未收尾快照(缺 completedAt)是合法携带来源:已落盘终态 attempt 照常携带 | 正例:中断快照的 passed attempt 被携入;反例:该快照中 errored attempt 仍重跑 |
 | `--force` 忽略全部可复用结果；`--dry` 只打印计划，无任何落盘 | 正例：force 下缓存命中仍执行；反例：dry 后无落盘 |
 | 任意时刻 `total = reused + running + queued + completed` | 边界：含 reused 时每个事件快照恒等式成立 |
 

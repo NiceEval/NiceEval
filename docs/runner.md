@@ -88,6 +88,8 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 `runner/fingerprint.ts` 对每个 eval 算 `(eval 代码 + 相关配置)` 的哈希:
 
 - 上次判定是 `passed` 或 `failed`、且指纹未变 → 默认**跳过**,结果**携带合入**本次快照(带 `artifactBase` 指回原 artifact,落盘语义见 [Results · 两类条目](feature/results/architecture.md#resultjson)),最新快照因此保持完整。两者都是"跑完了、判定确定"的终态,没理由重花一次 agent/sandbox 成本去复现同一个已知结果。
+- **携带以 attempt 为粒度,缺失序号补跑。** 指纹未变时,上一轮已落盘的终态 attempt 逐条携带,本轮只派发计划内缺失的 attempt 序号——`runs: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。携带的 `passed` 与首过即停组合遵守既有语义:已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
+- **携带来源不要求快照收尾。** attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与快照有没有补上 `completedAt` 无关;被中断或强杀的 run 留下的未收尾快照,其中已落盘的终态 attempt 照常携带。**重跑同一条命令就是续跑**:只花缺失 attempt 的成本——这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径,配合[实验面的启动自愈](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)与[实例面的孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底),重跑前不需要任何手工清理。
 - 改了 fixture、改了配置、或 `--force` → 重跑。
 - `errored`(框架/环境层面的不确定失败,如超时、沙箱挂了)和 `skipped` 不缓存,总会重试——它们的判定本身不可信,不是可复用的终态。
 

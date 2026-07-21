@@ -570,6 +570,7 @@ niceeval: result=incomplete passed=36 failed=0 errored=0 unstarted=4 duration=18
 | 调度 | `--runs`、`--max-concurrency`、`--timeout`、`--budget` | 决定尝试次数与资源边界 |
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 决定 soft 是否判红、是否跑满 |
 | 缓存 | `--force` | 忽略可复用结果并全部重跑 |
+| 收尾 | `--teardown` | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
 | 预览 | `--dry` | 只按所选 profile 打印计划,不运行、不落盘 |
 | 机器出口 | `--json <path>`、`--junit <path>` | 额外写结构化文件,不改变 profile |
 

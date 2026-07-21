@@ -52,6 +52,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [ui-message-stream-coverage-undeclared](ui-message-stream-coverage-undeclared.md) — 内置 uiMessageStreamAgent 没声明 EvidenceCoverage,真机跑 e2e/repos/ai-sdk 时 succeeded()/notCalledTool()/noFailedActions() 全部 unknown→errored(不是断言写错);修为补 coverage(complete + usage unavailable)(`src/agents/ui-message-stream.ts`)
 - 已修 [docker-uploadfile-tmp-mv-eperm](docker-uploadfile-tmp-mv-eperm.md) — Docker sandbox 的 `uploadFile()` 不 chown 上传文件(与 `uploadFiles()` 不同),claude-code `settingsFile` 真机上传到 `/tmp` 后 `mv` 到 `~/.claude/settings.json` 因 sticky-bit 目录 + root 属主 100% EPERM;修为 putArchive 后补 `chownToSandboxUser(absPath)`(`src/sandbox/docker.ts`,同路径也影响 codex 的 `configFile`)
 
+- [hard-kill-leaves-orphans-and-experiment-leaks](hard-kill-leaves-orphans-and-experiment-leaks.md) — SIGKILL(外部看门狗 ~1h 强杀)下孤儿容器与实验 teardown 泄漏无事后入口;设计定稿三面兜底(运行标识+prune / 收尾登记+启动自愈 / attempt 级续跑),实现见 plan/hard-kill-recovery.md
+
 ## judge
 
 - [judge-missing-key-unavailable-not-silent](judge-missing-key-unavailable-not-silent.md) — 设计裁决:judge 缺 key 记 unavailable 断言(gate → errored;2026-07-14),推翻「静默不记录 + CI 自查」;unavailable 态同时承载证据覆盖缺口

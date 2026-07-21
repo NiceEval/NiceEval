@@ -189,6 +189,16 @@ it("runCommand 保留参数边界、cwd、env 和 root 语义", async () => {
 | 只观察不还原:agent 写入落真实工作树且进 agent diff;用户 `.git`(HEAD / index / 未提交改动)全程不被触碰;`stop()` 只清 runner 私有资源,不删除、不还原工作树任何文件 | 正例:diff 采到且用户 git 状态逐字节不变;反例:`stop()` 后 agent 写入的文件仍在 |
 | `--keep-sandbox` 与 local 组合在创建前报错,不先起实例 | 反例:报错发生在 create 之前且说明现场天然留在工作树 |
 
+## 孤儿核对与 prune
+
+契约来源：[Architecture · 孤儿核对](../../../feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底)、[CLI · sandbox prune](../../../feature/sandbox/cli.md#sandbox-prune)。
+
+| 契约 | 场景 |
+|---|---|
+| 创建期写入运行标识元数据(host / pid / startedAt):docker 走 label、e2b 走 SDK metadata,与 provision token 同机制;vercel 无检索通道不写、不报错 | 正例:docker / e2b create 携带三字段;边界:vercel 不写且创建照常 |
+| 孤儿判定三条「与」:有标识 + 不在留存注册表 + 属主 run 死亡(同宿主 pid 探测);注册表 kept 条目与活 run 的实例绝不判孤儿;异宿主或不可核对标 unverified | 正例:pid 已死的未登记实例判 orphan;反例:pid 存活不判、注册表条目不判;边界:异宿主标识判 unverified |
+| prune 只销毁 orphan,`--force` 才含 unverified;幂等(实例已不存在不算错),销毁失败如实列出退出 1;不触碰注册表条目;list --orphans 只读 | 正例:orphan 被销毁且注册表不变;反例:unverified 未带 --force 保留;边界:某台销毁失败退出 1 且其余照常处理 |
+
 ## 不这样测
 
 - 不在 Context 测试里重新实现一个会执行真实 shell 的 fake Sandbox。

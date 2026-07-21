@@ -1,0 +1,62 @@
+---
+title: "运行被强杀后恢复"
+description: "进程被 kill -9、CI 超时或断电杀掉后，重跑同一条命令续跑没跑完的部分，用 niceeval sandbox prune 收回没清理的容器，用 --teardown 补齐实验收尾。"
+---
+
+`niceeval exp` 跑到一半被 `kill -9`、CI 时限或断电直接杀掉时，进程没有机会做任何清理。你会碰到三种残留：没跑完的评估、还在 Provider 侧占资源的 Sandbox 实例、实验 `setup` 起过但没关掉的外部服务（隧道、共享服务、license 席位）。三种各有一个恢复入口，都不需要手工翻 Docker 或云控制台。
+
+正常的 Ctrl+C 或 SIGTERM 不在本页范围：那些路径 NiceEval 会自己走完全部收尾，不留残留。
+
+## 重跑同一条命令，续跑没跑完的部分
+
+已经跑完并落盘的 Attempt 是可信结果，重跑时自动带入，不再花一次 Agent 和 Sandbox 的成本：
+
+```bash
+niceeval exp compare/bub-e2b memory/commit0
+```
+
+- 只补跑缺的部分：`--runs 5` 已经落盘 3 次，就只再跑 2 次。
+- 被强杀的实验如果留了没做完的收尾，重跑会先补一次实验级 `teardown` 再开始，泄漏不会越积越多。
+- 判定为 `errored` 的 Attempt 不复用，照常重跑。
+- 想全部重来，加 `--force`。
+
+## 收回没清理的 Sandbox 实例
+
+先核对有哪些实例属于已经死掉的运行：
+
+```bash
+niceeval sandbox list --orphans
+```
+
+```text
+ID        PROVIDER  OWNER              STARTED            STATE
+f31b9a02  docker    pid 4242@mbp dead  2026-07-20 14:02   orphan
+```
+
+确认后一条命令收回：
+
+```bash
+niceeval sandbox prune
+```
+
+- `orphan` 表示属主进程已确认死亡，可以安全销毁；正在跑的运行的实例不会出现在列表里。
+- 从别的机器创建、无法核对的实例标为 `unverified`，默认不动；确认后用 `niceeval sandbox prune --force`。
+- Vercel Sandbox 无法按元数据核对，到 Provider 的保留期限后自动回收，不需要处理。
+- `--keep-sandbox` 留存的现场不受 `prune` 影响，仍用 `niceeval sandbox stop` 管理。
+
+## 补齐实验收尾
+
+实验 `setup` 起的外部服务要靠实验 `teardown` 关掉。被强杀的运行如果你暂时不想重跑，单独补一次收尾：
+
+```bash
+niceeval exp compare/bub-e2b --teardown
+```
+
+- 只执行选中实验的 `teardown`，不跑任何评估、不跑 `setup`。
+- 随时可以执行，不依赖上次运行留下的记录；`teardown` 自身要能容忍重复执行。
+- 强杀后原进程的内存已经丢失，`teardown` 里要从容器名、pid 文件或幂等的关停脚本这类持久信息找回要关的资源，不要依赖 `setup` 存在内存里的对象。
+
+## 预防：让下一次强杀无害
+
+- 长任务放在有时限的环境（CI、外部看门狗）里跑时，把时限内跑不完当成常态：靠上面的续跑机制分多次跑完，不必强求单次完成。
+- 实验 `teardown` 写成幂等的：重复执行不报错、目标已经关掉也算成功。这是补收尾机制正确工作的前提。

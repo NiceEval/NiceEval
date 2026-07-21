@@ -685,7 +685,8 @@
                 "group": "问题排查",
                 "pages": [
                   "zh/troubleshooting/debugging",
-                  "zh/troubleshooting/debug-sandbox"
+                  "zh/troubleshooting/debug-sandbox",
+                  "zh/troubleshooting/recover-after-kill"
                 ]
               }
             ]
