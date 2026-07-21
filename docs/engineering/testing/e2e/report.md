@@ -35,8 +35,8 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
 
 show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真实产物断言 [Reports](../../../feature/reports/README.md) 声明的呈现行为：
 
-- **结构**：区块存在与相对顺序、默认展开 / 折叠（原生 `<details>` 的 `open` 标记）、计数、expected / received 文本、失败断言的默认可见性、locator 链接与下钻命令；空证据位的组件零输出，不留空占位。
-- **终端排版**：Table 的列宽 / 折行 / 丢列标注、Section 框线与窄宽降级、Grid 列数规划、显示宽度口径（CJK 记 2 列）——对 show 输出逐行断言，语义来源是 [Library · 排版原语](../../../feature/reports/library/layout.md)。
+- **结构**：区块存在与相对顺序、默认展开 / 折叠（原生 `<details>` 的 `open` 标记）、计数、expected / received 文本、失败断言的默认可见性、locator 链接与下钻命令；空证据位的组件零输出，不留空占位；`PoweredBy` / `HeroCard` 品牌行的固定链接（`utm_source=report&utm_medium=powered-by`、`rel="noopener"` 不含 `noreferrer`）与 web 恒含、text 零输出的两面差异；同一维度键在 `MetricTable` / `MetricMatrix` / `Scoreboard` / `AttemptList` / `ExperimentList` / `MetricScatter` 之间的配色类名一致（`colorClassForKey` / `seriesClassForKey` 稳定散列，与渲染顺序无关）；`MetricScatter` 轴方向随指标 `better` 反向、刻度显示真实值、connect 折线与图例的一致性。
+- **终端排版**：Table 的列宽 / 折行 / 丢列标注、Section 框线与窄宽降级、Grid 列数规划、显示宽度口径（CJK 记 2 列）——对 show 输出逐行断言，语义来源是 [Library · 排版原语](../../../feature/reports/library/layout.md)；`MetricScatter` 字符坐标图的标记分配顺序（图例字典序、series 内 x 升序）、图例文本与 `connect` 逐段位移摘要，语义来源是 [Library · 指标组件](../../../feature/reports/library/metric-views.md#metricscatter)。
 - **双面同源**：text 与 web 显示同一份解析终值、覆盖率、判定构成和 warning，渲染不重算不丢值；不逐字比较布局。
 - **视觉与交互**：对同一次运行执行 `niceeval view --out` 导出静态站，用真实浏览器打开 index 与失败 attempt 的 `attempt/<locator>.html` 文档，验收「组件 + 官方 stylesheet」在真实证据上的组合成立：详情各语义块是结构化布局而非 UA 默认排版；源码行按 [`AttemptSource` 视觉规范](../../../feature/reports/library/attempt-detail.md#attemptsource-web-面视觉规范)呈现状态染色与行号位标记；点击 send / assertion 行由原生 `<details>` 展开行内回复与断言细节，普通行不可展开；文档零 JS 依赖（禁 JS 后上述内容仍完整可读）。
 - **自定义报告的用户操作回归**：渲染验收不只对内建 `standard` 报告做。仓库签入一组代表性自定义报告文件（`extends: standard` 叠外壳、自定义多页、自定义组件与 attempt page），对每份用 `show --report` / `view --report` 走同一条读面与渲染验收：页导航与 `--page` 索引、折叠展开、过滤框、locator 深链与下钻命令在真实浏览器里逐项操作可达。用户改一份报告文件就能踩到的路径，回归也要踩到。
