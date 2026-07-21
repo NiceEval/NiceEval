@@ -18,6 +18,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [diff-attribution-send-window-ledger](diff-attribution-send-window-ledger.md) — 设计裁决:agent diff 改为 send 窗口归因的私有 git 分类账(2026-07-14),推翻「空基线 + git diff HEAD」;E2B 实跑补齐 `*venv*/` 排除、按窗口批量导出与证据上限(2026-07-15)
 - [keep-dormancy-provider-forms](keep-dormancy-provider-forms.md) — 设计裁决:留存现场转入 provider 休眠形态(docker stop 停驻 / e2b pause 可 resume;2026-07-14),推翻「keep = 保持运行」;docker pause 与 commit 转镜像同场否决
 - [reuse-once-setup-supersedes-idempotent-hooks](reuse-once-setup-supersedes-idempotent-hooks.md) — 裁决(2026-07-21):沙箱复用定稿为串行复用(`--reuse-sandbox`,温基线一次装好、题间只 reset workdir),推翻 runner.md 旧「每 attempt 重跑幂等钩子」;与 keep/local/异构批次组合创建前报错,复用结果不进缓存
+- [keep-reuse-carry-insulation-decision](keep-reuse-carry-insulation-decision.md) — 裁决(2026-07-21):keep 留存档内不消费携带(否决「让用户配 --force」)、reuse 与缓存双向绝缘、显式 `--max-concurrency`×reuse 创建前报用法错误(否决静默钉 1);起因是 keep 两篇用例被携带击穿成零派发
 - [eval-environment-profile-sandbox-resolver](eval-environment-profile-sandbox-resolver.md) — 裁决:Eval 只声明 provider-neutral environment profile；否决 Eval 直接绑定 template/provider。resolver 解析形态 2026-07-17 被推翻,见下条
 - [eval-environments-map-replaces-resolver](eval-environments-map-replaces-resolver.md) — 裁决:profile→预制产物映射改为 sandbox spec 工厂的 environments 数据表(删 resolver 与函数指纹);否决按环境拆 experiment(分数横截面被切碎)与 config 顶层注册表
 - [sandbox-field-no-bare-string](sandbox-field-no-bare-string.md) — `sandbox` 字段只接受工厂产出的 SandboxSpec:不接受裸字符串、没有默认值、没有自动探测(用户 review 明确定案)

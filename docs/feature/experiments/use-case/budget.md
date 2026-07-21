@@ -6,7 +6,7 @@
 
 ## 全流程
 
-1. 实验签入常规预算(`budget: 15`,见 [README · `defineExperiment` 的形状](../README.md#defineexperiment-的形状));本次回归想封顶 25 美元:
+1. 实验签入常规预算(`budget: 15`,见 [README · `defineExperiment` 的形状](../README.md#defineexperiment-的形状));本次回归想把每个选中配置的上限临时提到 25 美元——budget 按 experimentId 域各自计,`regression` 展开成几个配置就是几份 25,不是一次调用的总闸:
 
    ```sh
    niceeval exp regression --output ci --strict --budget 25 \

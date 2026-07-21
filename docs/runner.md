@@ -70,7 +70,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 
 ## 预算护栏(budget)
 
-实验可设 `budget`(整个 run 的估算成本上限 $),`--budget` 覆盖。运行器只按**已完成 attempt 的实测花费**判断:同一 budget 域(experimentId,或没有 experiment 时的 agent 名)的已完成花费一旦到顶,就**停止派发新 attempt**——已经在飞的照常跑完,不会被中途打断;到顶之前不做任何预测性节流,并发完全由 `--max-concurrency` 与实验级 `maxConcurrency` 决定。这是有意的取舍:budget 是防止无限烧钱的安全网,不是精确计费闸,不应该反过来限制吞吐——已花 + 在飞未结算的总花费可能因此短暂超出 budget。连续多个**已经发起 agent turn** 的 attempt 都拿不到成本数据(agent 不报用量)时,budget 对该域不可执行,运行器给一条去重后的 warning 而不是每个 attempt 重复提示；`sandbox.create`、setup 等发生在首个 agent turn 之前的错误没有成本事实,只报告其结构化 attempt error,不额外产生 budget warning。
+budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 experiment 时按 agent 名),实验的 `budget` 字段与 `--budget` 覆盖设定的都是**每个域各自**的上限——一次运行选中 N 个实验,就是 N 份各自独立的上限,总花费上界是各域之和。运行器只按**已完成 attempt 的实测花费**判断:一个域的已完成花费一旦到顶,就**停止向该域派发新 attempt**——已经在飞的照常跑完,不会被中途打断;到顶之前不做任何预测性节流,并发完全由 `--max-concurrency` 与实验级 `maxConcurrency` 决定。这是有意的取舍:budget 是防止无限烧钱的安全网,不是精确计费闸,不应该反过来限制吞吐——已花 + 在飞未结算的总花费可能因此短暂超出 budget。连续多个**已经发起 agent turn** 的 attempt 都拿不到成本数据(agent 不报用量)时,budget 对该域不可执行,运行器给一条去重后的 warning 而不是每个 attempt 重复提示；`sandbox.create`、setup 等发生在首个 agent turn 之前的错误没有成本事实,只报告其结构化 attempt error,不额外产生 budget warning。
 
 预算耗尽而导致的未派发 attempt 数量计入运行[完成状态](#完成状态)的 `unstarted`,让整次运行的结论落在 `incomplete`,不能在 CI 里伪装成全绿。
 
@@ -79,7 +79,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 沙箱冷启动的优先级排序(先预制环境、再小 setup、最后才是池化)在 [Sandbox · 性能](feature/sandbox/architecture.md#性能预制环境复用与预热)——provider 侧提供"创建、重置、销毁"的能力;什么时候预创建、什么时候复用是运行器的调度决策,契约如下:
 
 - **预热池**:开启后,运行器在调度开始时按 `min(预热池大小, 计划 attempt 数)` 预先创建同 spec 沙箱挂进池里;attempt 到达 `sandbox.create` 阶段时先领池中现货,领到则该阶段只计领取耗时,池空则回落到即时创建。池只在同一次 run 内存活,run 结束时未被领用的沙箱一并销毁。预热池不改变生命周期钩子的调用顺序:领到的沙箱仍在 attempt 里按[固定调用链](feature/sandbox/architecture.md#沙箱在生命周期里的位置)走一遍 `sandbox.setup` 链与分类账锚点。
-- **串行复用**:`--reuse-sandbox` 打开后,整批同基线 eval 共用一个热沙箱串行跑:不随 eval 变的层(`createSandbox`、`sandbox.setup` 链、`SandboxAgent.setup`)整组只执行一次,落成温基线 commit;题间把 workdir 重置回温基线(`git reset --hard` + 尊重分类账排除清单的 `git clean`),每题只重放 `EvalDef.setup` / `test(t)` 夹具。复用与并发互斥(一个热沙箱 = 一条执行道,并发钉成 1),复用结果不进跨 run 缓存;完整契约——温基线分层、诚实边界、同基线批次约束——见 [Sandbox · 串行复用](feature/sandbox/serial-reuse.md)。
+- **串行复用**:`--reuse-sandbox` 打开后,整批同基线 eval 共用一个热沙箱串行跑:不随 eval 变的层(`createSandbox`、`sandbox.setup` 链、`SandboxAgent.setup`)整组只执行一次,落成温基线 commit;题间把 workdir 重置回温基线(`git reset --hard` + 尊重分类账排除清单的 `git clean`),每题只重放 `EvalDef.setup` / `test(t)` 夹具。复用与并发互斥(一个热沙箱 = 一条执行道,并发钉成 1,显式 `--max-concurrency` 组合是创建前的用法错误),复用与指纹缓存双向绝缘(不消费携带、不产生命中);完整契约——温基线分层、诚实边界、同基线批次约束——见 [Sandbox · 串行复用](feature/sandbox/serial-reuse.md)。
 - [`--keep-sandbox`](feature/sandbox/cli.md) 与 `--reuse-sandbox` 互斥,组合在创建沙箱前报错:留存的现场必须属于那一次 attempt,不能被题间 `git reset` 抹掉后再当现场留下。预热池不受影响——run 结束时未被领用的池内沙箱照常销毁,留存只作用于跑过 attempt 的沙箱。
 
 ## 缓存:指纹去重
@@ -89,6 +89,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 - 上次判定是 `passed` 或 `failed`、且指纹未变 → 默认**跳过**,结果**携带合入**本次快照(带 `artifactBase` 指回原 artifact,落盘语义见 [Results · 两类条目](feature/results/architecture.md#resultjson)),最新快照因此保持完整。两者都是"跑完了、判定确定"的终态,没理由重花一次 agent/sandbox 成本去复现同一个已知结果。
 - **携带以 attempt 为粒度,缺失序号补跑。** 指纹未变时,上一轮已落盘的终态 attempt 逐条携带,本轮只派发计划内缺失的 attempt 序号——`runs: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。携带的 `passed` 与首过即停组合遵守既有语义:已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
 - **携带来源不要求快照收尾。** attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与快照有没有补上 `completedAt` 无关;被中断或强杀的 run 留下的未收尾快照,其中已落盘的终态 attempt 照常携带。**重跑同一条命令就是续跑**:只花缺失 attempt 的成本——这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径,配合[实验面的启动自愈](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)与[实例面的孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底),重跑前不需要任何手工清理。
+- **执行模式 flag 划走两块例外。** [`--reuse-sandbox`](feature/sandbox/serial-reuse.md#与留存缓存重试的组合) 与指纹缓存**双向绝缘**:复用 run 不消费携带,计划内每个 attempt 都真实在热道上跑;复用产出也永不成为后续 run 的缓存命中。绝缘让一份快照里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。[`--keep-sandbox`](feature/sandbox/cli.md) 下,历史终态 verdict 落在**当前留存档内**的 attempt 不携带、照常派发重跑:留存要的是一次真实执行的现场,携带条目没有沙箱可留——`failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。
 - 改了 fixture、改了配置、或 `--force` → 重跑。
 - `errored`(框架/环境层面的不确定失败,如超时、沙箱挂了)和 `skipped` 不缓存,总会重试——它们的判定本身不可信,不是可复用的终态。
 

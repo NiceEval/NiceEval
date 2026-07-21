@@ -561,18 +561,22 @@ niceeval: result=incomplete passed=36 failed=0 errored=0 unstarted=4 duration=18
 
 ## 哪些参数改变什么
 
-输出 profile、运行选择和结果出口彼此正交:
+输出 profile、运行选择和结果出口彼此正交。每个数值参数都有自己的作用域——数字套在哪个单位上,是读懂这张表的关键,尤其是四个调度参数各不相同:
 
-| 类别 | 参数 | 作用 |
-|---|---|---|
-| 反馈模型 | `--output auto\|human\|agent\|ci` | 决定终端展示,不改变运行 |
-| 选择 | experiment、eval 前缀、`--tag` | 决定矩阵里有什么 |
-| 调度 | `--runs`、`--max-concurrency`、`--timeout`、`--budget` | 决定尝试次数与资源边界 |
-| 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 决定 soft 是否判红、是否跑满 |
-| 缓存 | `--force` | 忽略可复用结果并全部重跑 |
-| 收尾 | `--teardown` | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
-| 预览 | `--dry` | 只按所选 profile 打印计划,不运行、不落盘 |
-| 机器出口 | `--json <path>`、`--junit <path>` | 额外写结构化文件,不改变 profile |
+| 类别 | 参数 | 作用域 | 作用 |
+|---|---|---|---|
+| 反馈模型 | `--output auto\|human\|agent\|ci` | 整次调用(仅展示) | 决定终端展示,不改变运行 |
+| 选择 | experiment、eval 前缀、`--tag` | 整次调用 | 决定矩阵里有什么 |
+| 调度 | `--runs` | 每条 eval | 每条 eval 尝试多少次 |
+| 调度 | `--max-concurrency` | 全局并发位(实验级 `maxConcurrency` 闸不参与,见 [Runner · 调度](../../runner.md#调度有界并发)) | 同时运行多少 attempt |
+| 调度 | `--timeout` | 每个 attempt | 单次尝试的时间上限 |
+| 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是总闸(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
+| 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
+| 缓存 | `--force` | 整次调用 | 忽略可复用结果并全部重跑 |
+| 执行模式 | [`--keep-sandbox`](../sandbox/cli.md)、[`--reuse-sandbox`](../sandbox/serial-reuse.md) | 整次调用(两者互斥;与缓存携带的交互见 [Runner · 缓存](../../runner.md#缓存指纹去重)) | 留存现场 / 单热道串行复用 |
+| 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
+| 预览 | `--dry` | 整次调用 | 只按所选 profile 打印计划,不运行、不落盘 |
+| 机器出口 | `--json <path>`、`--junit <path>` | 整次调用 | 额外写结构化文件,不改变 profile |
 
 `--json` 和 `--junit` 不是终端格式开关。`human` 也可以同时写 CI 文件,`ci` 也可以只依赖快照。`--dry` 不创建快照、JSON 或 JUnit。
 

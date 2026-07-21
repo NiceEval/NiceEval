@@ -1,0 +1,91 @@
+---
+title: "本地批跑提速：复用一个热 Sandbox"
+sidebarTitle: "本地批跑提速"
+description: "用 --reuse-sandbox 让一批评估共用一个装好的 Sandbox 串行跑，把重复安装折成一次；并按生命周期把安装写对层，让每道题几乎立即开跑。"
+---
+
+改了共享 prompt、Adapter 配置或公共 Fixture，想在本地把一批评估快速过一遍看有没有明显问题。默认模式下每个 Attempt 都是一套全新 Sandbox：12 道题就是 12 次「起容器、装依赖、装 Agent CLI」，大部分时间花在重复安装同一套环境上。`--reuse-sandbox` 让这批评估共用一个装好的 Sandbox 串行跑，安装只付一次。
+
+## 怎么跑
+
+用评估 id 前缀收窄选题，带上参数：
+
+```sh
+npx niceeval exp memory/commit0 onboarding --reuse-sandbox
+```
+
+启动反馈会如实标注这次的运行模式：
+
+```text
+reuse mode: one hot sandbox, serial (concurrency pinned to 1)
+workdir-only reset between evals — $HOME / global installs persist; results excluded from cache
+```
+
+这次运行只有一条执行道，并发就是 1；显式传 `--max-concurrency` 会在创建 Sandbox 之前直接报错，不会被静默忽略。
+
+## 这批评估经历了什么
+
+1. 第一道题开跑前，NiceEval 起一个 Sandbox，把所有安装跑完：Sandbox 级 `setup` Hook（系统依赖、`pnpm install` 这类）、Agent CLI 安装。装完的干净状态被记住。
+2. 每道题只执行自己的部分：`defineEval` 里 `setup` 和 `test(t)` 写入的 Fixture、`t.send()` 的 Agent 运行、评分。
+3. 题与题之间，workspace 被重置回第 1 步的干净状态：上一道题的 Fixture 和 Agent 改动全部消失，但 `node_modules` 这类依赖目录保留。下一道题几乎立即开跑。
+4. 最后一道题跑完，`teardown` Hook 照常执行，Sandbox 销毁。
+
+## 安装写在哪一层，决定它付几次
+
+判断标准只有一个：**这个准备工作随不随评估用例变。**
+
+**整批共用的安装，写在 Sandbox spec 的 `.setup()` Hook 里。** 它整批只执行一次：
+
+```ts
+import { dockerSandbox } from "niceeval";
+
+export const sandbox = dockerSandbox({ image: "node:24" })
+  .setup(async (sb) => {
+    await sb.runCommand("corepack", ["enable"]);
+    await sb.uploadDirectory("./workspace-template", ".");
+    await sb.runCommand("pnpm", ["install"]);
+  });
+```
+
+**每道题自己的任务素材，写在 `defineEval` 的 `setup` / `test(t)` 里。** 它每题重置后重放，这正是 [Fixture](/zh/tutorials/fixtures) 的家。就算你把 `pnpm install` 写在了这一层也不会重复下载：重置保留 `node_modules` 和包管理器缓存，lockfile 没变时重放的 `pnpm install` 秒级完成。
+
+**连那一次安装都不想付，把环境烘进预制镜像或模板。** 见 [Sandbox Provider 的预制环境](/zh/tutorials/sandbox-providers)。三层是叠加关系：镜像决定装什么，`.setup()` 决定补什么，`--reuse-sandbox` 决定起几次。
+
+## 一批里混了不同环境
+
+共用一个 Sandbox 的前提是整批评估解析到同一套 Sandbox 配置。批里混了不同 Provider 或不同环境档位时，NiceEval 在创建任何 Sandbox 之前一次性报错并列出分组：
+
+```text
+Error: --reuse-sandbox requires all selected evals to share one sandbox baseline.
+  docker · node24        8 evals   onboarding/*, memory/*
+  e2b · fasteval-agents  3 evals   research/*
+Narrow the selection to one group, or drop --reuse-sandbox.
+```
+
+按报错里的前缀收窄到一组重跑；两组都要就分两次调用，或去掉参数用默认模式一次跑完。
+
+## 结果只当快速信号
+
+复用模式拿隔离换速度，结果的用法有三条边界：
+
+- **不进缓存，CI 不采信。** 上一道题写进 `$HOME` 或全局安装的东西会留给下一道题，所以这批结果不会被后续运行当作缓存命中；要出一份可采信的通过记录，去掉参数用默认模式重跑。
+- **「串起来挂、单独跑过」出现时，用默认模式单独重跑那一道题定案。** 不要在串行批次里排查这种问题。
+- **要进 Sandbox 排查现场，换 `--keep-sandbox`。** 两个参数互斥：复用的 Sandbox 被整批共享，留下来对任何一道题都不忠实。用默认模式对挂掉的那道题单独加 `--keep-sandbox` 重跑，流程见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
+
+本地 Docker 或云 Provider 都支持复用；`localSandbox()` 不支持——它直接跑在你的真实工作目录里，没有冷启动可省，题间重置也绝不能动你的未提交改动，组合时会在创建前报错。
+
+## 典型节奏
+
+```sh
+# 1. 改完公共配置，先看计划再花钱
+npx niceeval exp memory/commit0 onboarding --dry
+
+# 2. 复用模式快速过一遍
+npx niceeval exp memory/commit0 onboarding --reuse-sandbox
+
+# 3. 某道题挂了，默认模式单独重跑拿现场
+npx niceeval exp memory/commit0 onboarding/tool-first --keep-sandbox
+
+# 4. 修完，默认模式验证，出可采信的结果
+npx niceeval exp memory/commit0 onboarding
+```

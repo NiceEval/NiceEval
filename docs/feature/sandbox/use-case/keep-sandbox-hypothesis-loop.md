@@ -6,7 +6,7 @@
 
 ## 全流程
 
-1. 失败重跑一次,留下现场:
+1. 失败重跑一次,留下现场。上一轮的 `failed` 终态不会被缓存携带吃掉——留存档内不参与携带,这一条必然真实重跑([契约](../cli.md)):
 
    ```bash
    niceeval exp local onboarding/tool-first --keep-sandbox

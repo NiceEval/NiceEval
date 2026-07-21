@@ -673,6 +673,7 @@
               {
                 "group": "运行、观察与发布",
                 "pages": [
+                  "zh/tutorials/local-iteration",
                   "zh/tutorials/ci-integration",
                   "zh/tutorials/reporters",
                   "zh/tutorials/viewing-results",
