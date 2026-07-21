@@ -1,0 +1,77 @@
+name: Canary
+
+# 从 main 一键发 canary 预发布版:Actions 页面点 Run workflow 即可,不需要本地任何操作。
+#
+# 版本号自动算:npm 上 latest 的下一个 patch + `-canary.<run_number>`(如 0.10.3-canary.7),
+# run_number 单调递增,不会撞号。发布链(写版本号 → build → typecheck → publish)与 release.yml
+# 完全同构,dist-tag 按同一条规则落到 canary;发完再打 git tag `v<version>` 推回仓库——
+# 消费侧(NiceEval-Eval 的 pin-candidate)靠这个 tag 取按版本存档的 INIT.md,缺了它
+# canary 就评不了。
+#
+# tag 用默认 GITHUB_TOKEN 推,GitHub 不会用它级联触发 release.yml——这是刻意依赖的行为,
+# 不然同一个版本会被发布两次。
+#
+# 为什么不在 push main 时自动发:eval 只是偶尔对比 canary,每次 push 都发一版只会在 npm
+# 上刷版本号噪声。要改成定期发,加一段 schedule 触发即可,发布逻辑不用动。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # 推 tag、创建 release 需要
+  id-token: write # npm provenance 需要
+
+jobs:
+  publish:
+    name: Publish canary to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Compute canary version
+        id: version
+        run: |
+          LATEST="$(npm view niceeval version)"
+          BASE="$(node -p "const [a,b,c]='$LATEST'.split('.').map(Number); [a,b,c+1].join('.')")"
+          VERSION="$BASE-canary.${{ github.run_number }}"
+          echo "Canary version: $VERSION (npm latest: $LATEST)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build:report
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Publish
+        run: pnpm publish --no-git-checks --provenance --access public --tag canary
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push tag and create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" --generate-notes --prerelease
