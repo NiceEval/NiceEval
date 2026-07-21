@@ -235,6 +235,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [vm0-has-public-rest-contract](vm0-has-public-rest-contract.md) — vm0 有公开版本化 REST 契约,"无公开 API"的旧调研结论是错的
 - [e2e-repo-autonomy-replaces-shared-suite](e2e-repo-autonomy-replaces-shared-suite.md) — 裁决（2026-07-13）：E2E 从共享 factory/profile + 中央 verifier 翻案为独立 repo；每个 repo 自有 app/adapter/eval/experiment/验收，根仓只注入候选包并编排，crabbox 原样执行 repo 命令
 - [e2e-repo-self-root-workspace](e2e-repo-self-root-workspace.md) — 裁决(2026-07-21):每个 E2E 仓库必带只含 `packages: []` 的 pnpm-workspace.yaml 自成 workspace root,否则就地 install 会并入父级 workspace 绕过候选注入;曾半数仓库缺、run.ts 注释错引 §2.1,已补齐仓库+升进 docs §2.1/§8+加结构守护
+- 已修 [e2e-artifacts-glob-overwrites-repo-manifest](e2e-artifacts-glob-overwrites-repo-manifest.md) — `e2e/report/e2e.json` 曾用 `"*.json"`/`"*.xml"` 通配声明 artifacts,根编排器收尾把隔离副本顶层文件拷回真实仓库时连带命中并覆盖真实 `package.json`(改写成失效的临时 tarball 路径),下次直接 install/typecheck 报 ENOENT;修为显式文件名(`main.json`/`main.xml`/`fail.xml`/`error.xml`),裸 glob 会命中仓库自带顶层文件是通用坑
 
 ## docs · docs-site · reference
 

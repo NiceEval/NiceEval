@@ -14,8 +14,11 @@
   ],
   "artifacts": [
     ".niceeval/**",
-    "*.xml",
-    "*.json",
+    "site-export/**",
+    "main.xml",
+    "fail.xml",
+    "error.xml",
+    "main.json",
     "logs/**"
   ],
   "requires": {

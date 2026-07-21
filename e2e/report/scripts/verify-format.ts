@@ -1,77 +1,25 @@
-// CLI-black-box-but-format-exempt assertions for results
-// (docs/engineering/testing/e2e/README.md §4.2 explicitly exempts this repo: format IS what
-// it tests). Style follows docs/engineering/testing/e2e/verification.md: shell-literal
-// commands via spawnSync, node:assert/strict, no test framework — one linear script that
-// throws on the first broken contract.
+// Format & mechanism domain (docs/engineering/testing/e2e/report.md points 1-4): asserts the
+// on-disk Results format, openResults() library parity, --json parity, --junit folding, and
+// the README §4.3 CLI read-back (show / show --execution) on the real passed attempt.
+// Consumes the Evidence object from scripts/evidence.ts — does not run any Experiment itself
+// (docs/engineering/testing/e2e/README.md §4.2 explicitly exempts this repo from the
+// CLI-black-box rule for point 1: format IS what it tests). Style follows
+// docs/engineering/testing/e2e/verification.md: shell-literal commands via `sh()`,
+// node:assert/strict, no test framework — throws on the first broken contract.
 //
-// Four things get checked against the SAME real run, per docs/engineering/testing/e2e/report.md:
+// Four things get checked against the SAME real run:
 //   1. on-disk format        — snapshot.json / result.json / events.json / sources.json / o11y.json
 //   2. openResults() parity  — the public read library is a faithful projection of #1
 //   3. --json parity         — the CLI's machine summary agrees with #1/#2
 //   4. --junit folding       — failed → <failure>, errored → <error>
-// plus the README §4.3 CLI read-back (show / show --execution) on the real passed attempt.
+// plus the README §4.3 CLI read-back on the real passed attempt.
 
-import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { openResults } from "niceeval/results";
-
-const RESULTS_ROOT = ".niceeval";
-const LOCATOR_RE = /^@[0-9a-z]{8}$/;
-const PROVIDER_FAULT_RE = /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/i;
-
-/** Thrown only for the main Experiment's command — see e2e.ts's exit-code classification. */
-export class InfraError extends Error {}
-
-function sh(cmd: string, expect: number | "nonzero" = 0): string {
-  const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
-  const exit = res.status ?? -1;
-  const ok = expect === "nonzero" ? exit !== 0 : exit === expect;
-  assert.ok(
-    ok,
-    `${cmd}\nexited ${exit}, expected ${expect}. stderr tail:\n${res.stderr.slice(-2000)}\nstdout tail:\n${res.stdout.slice(-2000)}`,
-  );
-  return res.stdout;
-}
-
-/**
- * Same as `sh` but for the one command that's expected to exit 0 (the real gateway
- * call): an unexpected nonzero exit here throws InfraError instead of a plain
- * AssertionError when --output ci's own text confirms a provider-side fault
- * (429/5xx/network) — the doc-specified confirmable-external-fault signal
- * (docs/engineering/testing/e2e/verification.md「失败分类」). Anything else stays a regression.
- */
-function shExpectZero(cmd: string): string {
-  const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
-  const exit = res.status ?? -1;
-  if (exit === 0) return res.stdout;
-  const combined = `${res.stdout}\n${res.stderr}`;
-  if (PROVIDER_FAULT_RE.test(combined)) {
-    throw new InfraError(`${cmd} exited ${exit} with a provider-side fault visible in --output ci text:\n${combined.slice(-3000)}`);
-  }
-  throw new Error(`${cmd}\nexited ${exit}, expected 0. stdout/stderr tail:\n${combined.slice(-3000)}`);
-}
-
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
-/** Exactly one subdirectory expected (e.g. the single snapshot dir after one --force run). Never hardcode the timestamp+suffix name. */
-function singleSubdir(dir: string, context: string): string {
-  const names = readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name);
-  assert.equal(names.length, 1, `expected exactly one directory under ${dir} (${context}), found ${names.length}: ${names.join(", ")}`);
-  return join(dir, names[0]);
-}
-
-function subdirNames(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort();
-}
+import { sh } from "./sh.ts";
+import type { Evidence } from "./evidence.ts";
 
 interface AssertionResultLike {
   outcome: "passed" | "failed" | "unavailable";
@@ -89,44 +37,26 @@ interface AttemptRecordLike {
   error?: unknown;
 }
 
-export async function runVerify(): Promise<void> {
-  // ---------------------------------------------------------------------
-  // Run the three Experiments as three separate invocations (keeps the
-  // exit-code + --json reasoning scoped to one Experiment each).
-  //
-  // deliberate-fail / deliberate-error run FIRST, deliberately: they never call the real
-  // gateway, so point 4's assertions below always execute regardless of whether the main
-  // Experiment's real HTTP call succeeds — and a deliberately broken deliberate-fail/error
-  // Eval (or a broken point-4 assertion) fails right here, before main ever runs, instead
-  // of being masked by a later, unrelated main-experiment failure.
-  // ---------------------------------------------------------------------
-  sh("pnpm exec niceeval exp deliberate-fail --force --output ci --junit fail.xml", "nonzero");
-  sh("pnpm exec niceeval exp deliberate-error --force --output ci --junit error.xml", "nonzero");
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
 
+export async function verifyFormat(evidence: Evidence): Promise<void> {
   // ---------------------------------------------------------------------
-  // Point 4: JUnit folding — failed → <failure>, errored → <error>, mutually exclusive.
+  // Point 4 (JUnit folding): failed → <failure>, errored → <error>, mutually exclusive.
   // ---------------------------------------------------------------------
-  const failXml = readFileSync("fail.xml", "utf8");
+  const failXml = readFileSync(evidence.junit.fail, "utf8");
   assert.ok(failXml.includes("<failure"), "deliberate-fail's JUnit has no <failure> — failed verdict didn't fold correctly");
   assert.ok(!failXml.includes("<error"), "deliberate-fail's JUnit unexpectedly has an <error> — failed/errored folding isn't mutually exclusive");
 
-  const errorXml = readFileSync("error.xml", "utf8");
+  const errorXml = readFileSync(evidence.junit.error, "utf8");
   assert.ok(errorXml.includes("<error"), "deliberate-error's JUnit has no <error> — errored verdict didn't fold correctly");
   assert.ok(!errorXml.includes("<failure"), "deliberate-error's JUnit unexpectedly has a <failure> — errored got miscategorized as a failed assertion");
 
   // ---------------------------------------------------------------------
-  // The real gateway call. Everything below this line (points 1-3 + CLI read-back)
-  // needs the main Experiment to have actually passed.
-  // ---------------------------------------------------------------------
-  shExpectZero("pnpm exec niceeval exp main --force --output ci --json main.json --junit main.xml");
-
-  // ---------------------------------------------------------------------
   // Point 1: on-disk format, read directly (this repo is exempt from the CLI-only rule).
   // ---------------------------------------------------------------------
-  const expDir = join(RESULTS_ROOT, "main");
-  assert.ok(existsSync(expDir), `${expDir} missing — the main Experiment produced no experiment directory`);
-  const snapDir = singleSubdir(expDir, "main experiment directory after a single --force run");
-
+  const snapDir = evidence.main.snapshotDir;
   const snapshot = readJson<Record<string, unknown>>(join(snapDir, "snapshot.json"));
   assert.equal(snapshot.format, "niceeval.results", 'snapshot.json.format must be the literal string "niceeval.results"');
   assert.equal(typeof snapshot.schemaVersion, "number", "snapshot.json.schemaVersion must be a number");
@@ -142,20 +72,13 @@ export async function runVerify(): Promise<void> {
     );
   }
 
-  const evalDir = join(snapDir, "tool-call");
-  const attemptDirNames = subdirNames(evalDir);
-  assert.equal(
-    attemptDirNames.length,
-    2,
-    `expected 2 attempt directories under ${evalDir} (runs:2, earlyExit:false), found ${attemptDirNames.length}: ${attemptDirNames.join(", ")}`,
-  );
+  assert.equal(evidence.main.attempts.length, 2, `Evidence.main.attempts should have 2 entries (runs:2, earlyExit:false), found ${evidence.main.attempts.length}`);
 
   const attemptRecords: AttemptRecordLike[] = [];
   const sourceShas = new Set<string>();
   let sharedSha: string | undefined;
 
-  for (const name of attemptDirNames) {
-    const attemptDir = join(evalDir, name);
+  for (const { attemptDir } of evidence.main.attempts) {
     const result = readJson<AttemptRecordLike>(join(attemptDir, "result.json"));
     attemptRecords.push(result);
 
@@ -178,8 +101,6 @@ export async function runVerify(): Promise<void> {
     assert.equal(typeof result.usage!.outputTokens, "number", `usage.outputTokens missing in ${attemptDir}`);
     assert.equal(typeof result.estimatedCostUSD, "number", `estimatedCostUSD missing alongside usage in ${attemptDir} (architecture.md: durationMs/usage/estimatedCostUSD 三件套成组出现)`);
     assert.ok(result.estimatedCostUSD! > 0, `estimatedCostUSD should be > 0 in ${attemptDir}, got ${result.estimatedCostUSD}`);
-
-    assert.ok(LOCATOR_RE.test(result.locator ?? ""), `result.json.locator "${result.locator}" doesn't match the @<scheme><7 base36 chars> shape in ${attemptDir}`);
 
     const events = readJson<{ type: string; name?: string; callId?: string; status?: string; role?: string }[]>(join(attemptDir, "events.json"));
     const called = events.find((e) => e.type === "action.called" && e.name === "get_stock_price");
@@ -216,7 +137,7 @@ export async function runVerify(): Promise<void> {
   // ---------------------------------------------------------------------
   // Point 2: openResults() parity — faithful projection of point 1, not a second source of truth.
   // ---------------------------------------------------------------------
-  const results = await openResults(RESULTS_ROOT);
+  const results = await openResults(evidence.resultsRoot);
   const exp = results.experiments.find((e) => e.id === "main");
   assert.ok(exp, 'openResults() has no experiment "main"');
   const snap = exp!.latest;
@@ -266,7 +187,7 @@ export async function runVerify(): Promise<void> {
     failed: number;
     errored: number;
     results: AttemptRecordLike[];
-  }>("main.json");
+  }>(evidence.jsonSummaryPath);
   assert.equal(jsonSummary.agent, "results-mechanism", "--json RunSummary.agent disagrees with the Agent's name");
   assert.equal(jsonSummary.model, "deepseek-chat", "--json RunSummary.model disagrees with the experiment's model");
   assert.equal(jsonSummary.passed, 2, "--json RunSummary.passed should count both tool-call attempts");
@@ -284,7 +205,7 @@ export async function runVerify(): Promise<void> {
   // ---------------------------------------------------------------------
   // README §4.3 CLI read-back, on the real passed attempt.
   // ---------------------------------------------------------------------
-  const locator = attemptRecords[0].locator!;
+  const locator = evidence.main.attempts[0]!.locator;
   const board = sh(`pnpm exec niceeval show ${locator}`);
   assert.ok(board.includes("tool-call"), "show @locator output doesn't mention the tool-call eval id");
   assert.ok(board.includes("passed"), "show @locator output doesn't show a passed verdict");
