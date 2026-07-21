@@ -122,6 +122,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 - [publish-redaction-copysnapshots-not-report](publish-redaction-copysnapshots-not-report.md) — 设计裁决:发布消毒移到 copySnapshots({ redact }),AttemptList.redact 降为展示层(2026-07-14),推翻「消毒归报告」——view --out 原样发布 artifact,列表脱敏挡不住深链
 - [view-compare-tab-rejected](view-compare-tab-rejected.md) — 裁决(2026-07-21):不做 view 内建 Compare tab 与 Eval 目录页,roadmap「View 增强」删除;两快照对比由 `DeltaTable by="snapshot"` 报告组件承担,内建 tab 违反「宿主不拥有 pages 之外的导航」契约
+- [chart-subcomponent-syntax-decisions](chart-subcomponent-syntax-decisions.md) — 裁决(2026-07-21):图表子组件语法三候选收敛为自研子组件单一设计(recharts SVG 生成器与「只加阶梯」否决,阶梯并入);component-mapping 撤页溶进 library,facet 容器/共享图例/线端标注定为设计上不支持,by+value 合并=精确匹配覆盖;roadmap 文档不留待裁决中间态、不写「现状做不到」
 - [view-out-narrowing-reversal](view-out-narrowing-reversal.md) — 裁决(2026-07-17):view 收窄(位置参数/--exp)改为管线输入,滤出有效根,页面+viewData+证据树一致收窄,`view <收窄> --out` ≡ 对收窄后的根导出;翻案旧「--out 与收窄互斥、发布收窄走 copySnapshots」;中途方案「只滤证据清单、viewData 全量」因数据仍烘进 HTML 出站被收紧;同日 `--experiment` 更名 `--exp`
 - [report-extends-and-builtin-view-collection](report-extends-and-builtin-view-collection.md) — 裁决(2026-07-17):报告级复用走 `defineReport({ extends })`(页归 base、外壳逐字段覆盖、调用时折叠),`niceeval/report/built-in` 改为具名视图集合(当前只有 `standard`,默认导出恒等于它);否决照抄唯一路径(加个 title 要抄 40 行)与页具名导出(复用单位应是整份有名字的报告);改 src 后必须 `pnpm run build:report`,exports 指向 dist
 - [publish-redaction-removed](publish-redaction-removed.md) — 设计裁决:发布脱敏管线(redact 必填/publish 标记/--allow-sensitive-artifacts/展示层 redact)整体移除;保密边界在采集侧,真实根实测零秘密;兜底方向是只警告不改写的凭据扫描

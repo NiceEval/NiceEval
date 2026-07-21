@@ -1,126 +1,197 @@
-# Library 举例——现状写法 vs 候选写法
+# Library 逐组件说明——图表族每个组件的契约与写法
 
-这篇逐场景对比[现状图表组件](../../feature/reports/library/metric-views.md)的扁平 props 写法与[候选 A](README.md#候选契约)的声明式子组件写法,给出每个场景下语法是否更短、表现力是否更强的具体结论——结论并不总是"候选更好",子组件语法只在特定场景下有真实收益,见文末[结论](#结论子组件语法的收益边界)。本页从 niceeval 的场景出发;从真实报告图的形态出发的反向检验在[真实图表对照](gallery.md),两篇互补。候选写法沿用[组件对照](component-mapping.md)定下的命名:`MetricLine`/`MetricBars` 保留现状名字只新增 children,`MetricComposed` 是唯一的新容器,`ChartSeries`/`Tooltip`/`Legend`/`CartesianGrid`/`ReferenceLine` 是子组件——这些都是本页用来举例的候选形状,不是定稿契约。
+按组件遍历图表族:哪些容器接受子组件、每个子组件的 props、相对 recharts 的命名判定与两面投影,并给出写法示例。节点类别与容器解释机制见 [Architecture](architecture.md);真实报告图的结构对照见 [真实图表对照](gallery.md);现状组件的完整 props 契约见 [指标组件](../../feature/reports/library/metric-views.md)。
 
-## 场景 1——单一 series 趋势图:候选没有优势
+四件事 recharts 没有对应物、由 niceeval 既有契约自带,本页不逐组件重复:
 
-`MetricLine` 现状只有四个概念:x 轴、series 维度、y 指标、要不要连线;候选写法把 series 拆成子组件,反而多了一层嵌套:
+- **Metric 绑定与两级聚合**:series 永远绑定 `Metric` 实例(聚合口径、`better` 方向、单位),聚合值携带 `samples`/`refs` 证据——recharts 的每个数值只是原始对象数组里的一个字段。
+- **spec / data 双形态**:[`DataProps`](../../feature/reports/library/metric-views.md#共用数据形状) 照常适用;data 形态与子组件的交互规则见 [Architecture · 容器解释流程](architecture.md#容器解释流程)。
+- **text 面**:每个组件两面同源;子组件的 text 投影写在各自小节。
+- **`evals` 前缀过滤与 `attemptHref`/`pointHref` 下钻**:照常适用于全部图表容器。
+
+## 容器总览
+
+| 容器 | 子组件化 | 判定 |
+|---|---|---|
+| `MetricLine` | 接受 | series 随维度取值域增长,逐 series 覆盖与标注需要可插拔子节点 |
+| `MetricBars` | 接受 | 同上;另有省略 `columns` 的单维排行形态 |
+| `MetricComposed` | 接受(新容器) | 多 series 类型混合是它唯一的存在理由;对应 recharts `ComposedChart` |
+| `MetricScatter` | 不子组件化 | 概念数量固定(点、series、x、y),扁平 props 是更短的表达 |
+| `MetricMatrix` | 不子组件化 | 格子呈现没有可插拔的 series/标注概念 |
+| `MetricTable` / `DeltaTable` / `Scoreboard` | 不子组件化 | 表类组件,不属图表族 |
+
+`MetricLine`/`MetricBars` 沿用现状名而不采用 recharts 的 `LineChart`/`BarChart`:这两个名字是 niceeval 已导出的定稿概念,子组件只扩展它们的组合能力,不打散已有心智;`MetricComposed` 是唯一的新容器名。无子组件时全部容器保持现状写法不变——子组件是可选扩展,不是替代。
+
+## `MetricLine`
+
+保留 `x` / `series` / `y` 容器 props;`y` 是容器级共享指标,`ChartSeries` 在它下面不收 `metric`。单 series、无定制的趋势图仍用扁平 props,一行是最短表达,子组件在这里不带来任何新能力:
 
 ```tsx
-// 现状
 <MetricLine x={budget} series="agent" y={endToEndPassRate} />
 ```
 
-```tsx
-// 候选 A:MetricLine 保留 x/y 容器 prop,series 维度降级成一个 by="agent" 的子节点
-<MetricLine x={budget} y={endToEndPassRate}>
-  <ChartSeries by="agent" />
-</MetricLine>
-```
-
-**结论:** 现状一行四个 props 已经把这四个概念说清楚,候选写法要两层标签才能表达同一件事。这个场景下拆子组件没有换来任何新能力,只有更多样板——子组件语法的价值不在这里。
-
-## 场景 2——逐 series 单独定制视觉:现状做不到
-
-比较 baseline 与加了记忆机制的变体,要求两条线用不同线型区分(baseline 实线、变体虚线高亮),且给变体一个自定义图例名。现状 `MetricLineOptions` 没有"某个 series 值单独覆盖呈现"的入口——`series` 只是一个分组维度,`LineData` 不携带按 series 区分的呈现字段,要做这件事只能抛开 `MetricLine` 从零写自定义双面组件,连带丢失内置的两级指标聚合和两面同步:
+逐 series 单独定制视觉时,series 以子节点声明、各自携带专属呈现——`series` prop 只是分组维度,`LineData` 不携带按 series 区分的呈现字段,这个组合只有子组件形态能表达:
 
 ```tsx
-// 现状:MetricLine 不支持,只能整体放弃、自己写渲染
-```
-
-```tsx
-// 候选 A:两个 series 都是字面量 value 声明(不是自动展开的 by),各带专属呈现 prop;
-// 指标沿用容器级 y,不必在每个 ChartSeries 上重复
 <MetricLine x={budget} y={endToEndPassRate}>
   <ChartSeries value="compare/baseline" label="baseline" />
   <ChartSeries value="compare/with-memory" label="+memory" strokeDasharray="4 2" />
 </MetricLine>
 ```
 
-真实报告里的同类诉求——自家模型在全部面板中统一强调,靠的就是这个"逐值携带专属呈现"能力([真实图表对照 · 图 2](gallery.md#图-2多题集小面板)):
-
-![八个题集各一块条形小面板,同一组模型,其中一个模型全程强调](assets/per-eval-bar-panels.jpg)
-
-**结论:** 这里候选语法不是"更简洁",是把现状**表达不了**的组合变成可表达——因为每个 series 现在是一个独立节点,可以各自携带专属 prop,不需要为"按 series 值覆盖呈现"在 `MetricLineOptions` 里发明一种新的嵌套选项(如 `seriesOverrides?: Record<string, {...}>`,这要求 series 取值在声明时就已知,与"`series` 从数据里发现取值域"的现状模型冲突)。这是真实的表现力提升。`value`(字面量单个 series)与场景 1 的 `by`(自动展开一个维度)是 `ChartSeries` 的两种互斥声明形态,详见[组件对照](component-mapping.md#chartseries-的两种声明形态)。
-
-## 场景 3——同一张图混合柱与线:现状完全不可能
-
-成本用柱状图、通过率用线,共享同一条 `agent` 轴画在同一张图里,不是上下两张图。现状 `MetricBars` 与 `MetricMatrix` 共享 `MatrixData`,但各自整张图渲染,没有"半张图柱、半张图线"的组合方式;[`ExperimentComparison`](../../feature/reports/library/summaries.md#experimentcomparison) 展示的是把多个独立组件按 `Col` 摞起来,是多张图并列,不是同一张画布内部混合:
+追加标注是加子组件类型,不在容器 options 里开洞:
 
 ```tsx
-// 现状:没有对应组件,只能各自成图上下摆放
-<Col>
-  <MetricBars rows="agent" columns="eval" cell={costUSD} />
-  <MetricLine x={budget} series="agent" y={endToEndPassRate} />
-</Col>
-```
-
-```tsx
-// 候选 A:新增的 MetricComposed 容器没有单一的容器级 y,
-// 每个 ChartSeries 必须自带 metric——这是与场景 1/2 的 MetricLine 用法不同的地方
-<MetricComposed x="agent">
-  <ChartSeries as="bar" metric={costUSD} />
-  <ChartSeries as="line" metric={endToEndPassRate} yAxis="right" />
-</MetricComposed>
-```
-
-"每个 series 各带自己的指标画进同一根柱/同一张画布"在真实报告里的形态是成本构成堆叠柱——同属 `MetricComposed` 的领地,只是混合方式从"柱旁叠线"换成"柱内堆叠"([真实图表对照 · 图 3](gallery.md#图-3成本构成堆叠条形)):
-
-![每个模型组合一根柱,柱内按 Planner/Worker 成本构成堆叠,柱顶显示总成本](assets/stacked-cost-bars.webp)
-
-**结论:** 与场景 2 同类——不是语法偏好,是能力缺口的填补。现状拿不出"同一画布混合两种呈现"的等价物,候选写法把"呈现类型"变成子节点的一个属性(`as="bar"` / `as="line"`),新增第三种呈现类型时只是再加一个 `ChartSeries`,不用改动容器或其它子节点。`MetricComposed` 是[组件对照](component-mapping.md)里唯一新增的容器名字,其余场景都沿用现状的 `MetricLine`/`MetricBars`。
-
-## 场景 4——加一条参考线标注:两种模型都能做,但扩展成本不同
-
-在通过率趋势图上标一条"目标 80%"横线。现状指标组件里没有参考线概念,要做到只能自定义整个渲染;如果按现状模型补这个能力,得往 `MetricLineOptions` 继续加字段(如 `referenceLines?: Array<{ value: number; label?: string }>`),这是"给容器加一种子概念"的现状套路——可行,但每加一种新标注(参考线、参考区间、参考点)都要在同一个 options interface 里再加一个数组字段:
-
-```tsx
-// 现状:需要先给 MetricLineOptions 添加 referenceLines 字段(候选形状,现状未声明)
-<MetricLine
-  x={budget}
-  series="agent"
-  y={endToEndPassRate}
-  referenceLines={[{ value: 0.8, label: "目标" }]}
-/>
-```
-
-```tsx
-// 候选 A:标注是新增的子组件类型,不改动已有的 ChartSeries
 <MetricLine x={budget} y={endToEndPassRate}>
   <ChartSeries by="agent" />
   <ReferenceLine y={0.8} label="目标" />
 </MetricLine>
 ```
 
-**结论:** 两种模型都能达到目的,候选写法的优势是可维护性而非"能不能":新增一种标注是加一个独立子组件类型,不需要在已有容器的 options interface 里继续开洞;现状模型把所有附加能力都堆进同一个 interface,字段会越来越多。这条收益比场景 2/3 弱——它省的是未来维护成本,不是当下的表达能力。
+## `MetricBars`
 
-## 场景 5——`MetricScatter`:不提案子组件化
+两种数据形态,子组件规则与 `MetricLine` 相同(`cell` 是容器级指标):
 
-`MetricScatter` 固定只有四个概念:点维度、series、x、y,x/y 两个指标对全部点共享、不会像 `MetricComposed` 那样出现"每个 series 各自不同指标"的诉求,也没有场景 2 那种"逐 series 覆盖呈现"的实际需要——[组件对照](component-mapping.md)因此没有给它设计对应的候选写法,现状保持不变:
+- **矩阵形态**:`rows` × `columns` 二维,消费 `MatrixData`,与现状一致。
+- **排行形态**:省略 `columns`,一个维度值一根条,条的维度即 series 维度;`sort` 沿用 [`MetricTable.sort`](../../feature/reports/library/metric-views.md#metrictable) 语义——必须是声明了 `better` 的同一个 Metric 实例,方向由 `better` 决定,省略时按行 key 字典序;条尾数值标签是默认呈现,text 面本来就以数字呈现,web 面同源。recharts 没有排序概念(作者自备排好序的 `data` 数组);niceeval 的条形数据产自聚合管线,作者手里没有中间数组,排序必须是组件选项。
+
+排行 + 置信区间([真实图表对照 · 图 1](gallery.md#图-1单指标排行条形与置信区间)):
 
 ```tsx
-<MetricScatter points="experiment" series={label("line")} connect x={costUSD} y={endToEndPassRate} />
+<MetricBars rows="agent" cell={endToEndPassRate} sort={endToEndPassRate}>
+  <ErrorBar />
+</MetricBars>
 ```
 
-真实报告里最复杂的散点形态——成本-质量前沿(series 内连线、`better: "lower"` 的成本轴反向、单点与多点 series 混排)——现状这一行语法就能配出来([真实图表对照 · 图 4](gallery.md#图-4成本-质量前沿散点)):
+![按单一指标排行的横向条形图,每条带置信区间须线与行尾数值](assets/pass-at-1-ranked-bars.png)
+
+多面板拼排用 `Grid` + JSX 遍历。niceeval 不设 facet 容器:报告是 TSX,「一次声明展开成面板」就是一次普通的数组 map,框架再包一层只是复述语言已有的能力。跨面板的集中共享图例同样不设——每块面板自带图例,「同一 series 跨面板同色」由配色的稳定散列契约(同键跨图同色,见[指标组件 · MetricScatter](../../feature/reports/library/metric-views.md#metricscatter))承担,一致性不依赖共享图例:
+
+```tsx
+<Grid columns={4}>
+  {["terminal-bench/", "swe-verified/", "swe-pro/", "swe-multilingual/"].map((prefix) => (
+    <MetricBars key={prefix} evals={prefix} rows="agent" cell={examScore}>
+      <ChartSeries by="agent" />
+      <ChartSeries value="ornith-9b" emphasis />
+    </MetricBars>
+  ))}
+</Grid>
+```
+
+![八个题集各一块条形小面板,同一组模型,其中一个模型全程强调](assets/per-eval-bar-panels.jpg)
+
+`by` 兜底展开全部取值、`value` 显式强调一个,按 [`ChartSeries` 合并规则](#chartseries)生效。
+
+## `MetricComposed`
+
+唯一的多 series 类型混合容器,对应 recharts 的 `ComposedChart`。没有容器级 `y`——混合的意义就是每个 series 指标可能不同,`metric` 是每个 `ChartSeries` 的必填项。混合类型限 `as="line" | "bar" | "area"`:散点不进混合画布——离散点云的逐点证据语义(`pointHref` 下钻)与聚合 series 在同一坐标系互相混淆,散点的领地是 `MetricScatter`。
+
+柱线混合,共享一条维度轴:
+
+```tsx
+<MetricComposed x="agent">
+  <ChartSeries as="bar" metric={costUSD} />
+  <ChartSeries as="line" metric={endToEndPassRate} yAxis="right" />
+</MetricComposed>
+```
+
+`yAxis="right"` 把 series 分配到右轴;每侧轴的单位、刻度与 `better` 方向从分配到该侧 series 的 `metric` 推导,同侧单位或 `better` 不一致按完整用户反馈报错(数据形状与推导细则见 [Architecture](architecture.md#metriccomposed-的数据形状))。
+
+堆叠:`stack` 同值的 series 堆进同一根柱,柱顶默认显示堆叠和标签——它是堆叠呈现的组成部分,不是独立组件([真实图表对照 · 图 3](gallery.md#图-3成本构成堆叠条形)):
+
+```tsx
+// plannerCostUSD / workerCostUSD 是作者自定义的成本构成指标
+<MetricComposed x="experiment">
+  <ChartSeries as="bar" metric={plannerCostUSD} stack="cost" />
+  <ChartSeries as="bar" metric={workerCostUSD} stack="cost" />
+</MetricComposed>
+```
+
+![每个模型组合一根柱,柱内按 Planner/Worker 成本构成堆叠,柱顶显示总成本](assets/stacked-cost-bars.webp)
+
+图题与脚注属排版层(`Col` + 文本节点),不进图表契约。
+
+## `MetricScatter`——不子组件化
+
+概念数量固定:点维度、series、x、y;x/y 对全部点共享,不存在「每个 series 各自不同指标」或「逐 series 覆盖呈现」的组合空间,扁平 props 保持现状。真实报告里最复杂的散点形态一行就能写([真实图表对照 · 图 4](gallery.md#图-4成本-质量前沿散点)):
+
+```tsx
+<MetricScatter points="experiment" series="agent" connect x={costUSD} y={endToEndPassRate} />
+```
 
 ![各模型的成本-质量前沿:series 内沿成本轴连线,成本轴反向(便宜在右),单点与多点 series 混排](assets/cost-quality-frontier.png)
 
-强行改写成子组件形式(如把 `x`/`y` 拆成两个 `ChartAxis` 子节点)只会比现状一行四个 props 更啰嗦,不会带来任何现状表达不了的组合,所以这不是候选 A 覆盖的范围——呼应下面的[结论](#结论子组件语法的收益边界)。
+`connect` 连线、`better: "lower"` 的成本轴反向、单点与多点 series 混排、点级直接标签都是现状契约。「series 名标注在线端以替代图例」设计上不支持:图例契约两面同源、顺序确定,点级直接标签已承担就近识别,线端标注是重复的识别通道。
 
-## 结论:子组件语法的收益边界
+## `MetricMatrix`——不子组件化
 
-子组件语法的表现力提升集中在两类场景,不是全面替代现状:
+格子热图没有可插拔的 series、轴或标注概念;「矩阵里一部分行画成柱、一部分画成线」不是矩阵的变体,是 `MetricComposed` 的场景。
 
-- **同一张图需要混合多种呈现类型**(场景 3),或**同一组件需要逐值单独覆盖视觉**(场景 2)——这两类现状**做不到**,候选写法能表达;收益是真实的能力扩展,不是语法偏好。
-- **给容器追加可选的附加标注**(场景 4)——两种模型都能做,候选写法把维护成本从"容器 options 持续开洞"换成"新增独立子组件类型",收益是长期可维护性。
+## 子组件
 
-对概念数量固定、不需要"任意混合多种呈现"或"逐值覆盖"的组件(`MetricTable`、`MetricScatter`、场景 1 的单 series `MetricLine`),候选写法只会让代码更长,没有表现力优势——现状的扁平 props 已经是这些场景下更短、更直接的表达。这意味着子组件语法不该覆盖 metric-views 全部组件,只该用在真正有"可插拔组合"诉求的图表族(`MetricLine`/`MetricMatrix`/`MetricBars` 这类随 series 数量和呈现类型增长的组件),呼应 [README 待裁决分歧](README.md#待裁决的分歧)里"多 series 类型混合是否是必须能力"这一条——本页场景 2/3 的结论是:对这部分组件,是必须能力,不是锦上添花。
+子组件是结构描述节点:只携带配置、没有独立渲染面,校验与解释机制见 [Architecture](architecture.md#节点类别结构描述子节点)。命名判定:
+
+- **原样借用**:`Tooltip`、`Legend`、`CartesianGrid`、`ReferenceLine`、`ReferenceArea` 与 recharts 同名——它们是纯呈现,不绑定 Metric/Dimension 语义,recharts 的名字就是准确的名字;都不与 niceeval 现有导出撞名,从属关系靠容器的结构校验表达(`Tab` 只能在 `Tabs` 下同理),不用命名前缀。
+- **`ChartSeries`**:合并 recharts `Line`/`Bar`/`Area`/`Scatter` 四个 series 组件后的新名。四个组件的真正差异只在「怎么画」不在「怎么取数」(取数永远是绑定一个 `Metric`),拆四个名字会让「新增一种画法」等价于「照抄一个新组件」;不叫 `Series` 是因为这个词过泛、与无处不在的 `series` prop 撞读——`Chart` 前缀收窄名词,不表达从属(它出现在三个容器下)。
+- **`ErrorBar`**:与 recharts 同名、取数改造,见下文小节。
+- **不设的子组件**:`XAxis`/`YAxis`——recharts 需要独立轴组件是因为它的 `data` 只是裸数组,tick 格式、label、domain 全靠组件 props;niceeval 的 `Metric`/`NumericAxis` 对象自带这些字段,再包一层 JSX 是纯重复。`ResponsiveContainer`——响应式由 CSS 承担,`ResizeObserver` 首帧尺寸不定与「静态 HTML 先完整可读」不变量冲突([References · Recharts](../../references.md#recharts))。
+
+### `ChartSeries`
+
+一个 series 的声明。两种互斥形态,呼应 [`DeltaTable.pairs`](../../feature/reports/library/metric-views.md#deltatable) 字面数组与 `pairsByFlag()` 派生声明并存的先例:
+
+```tsx
+// by:按维度展开取值域,每个值各成一个 series,呈现取默认
+<ChartSeries by="agent" />
+
+// value:字面量声明单个已知 series,携带专属呈现
+<ChartSeries value="compare/with-memory" label="+memory" strokeDasharray="4 2" />
+```
+
+**合并规则**(`by` 与 `value` 同容器混用):`by` 展开维度全域;每个 `value` 按键精确匹配域中的一个取值,把自己的呈现 props 与 `label` 覆盖到该 series 上——匹配到的取值仍是同一个 series,不重复出现。`value` 的键不在展开域中,或同一键出现多个 `value` 声明,计算以完整用户反馈失败;精确匹配、不做前缀或模糊匹配,与 `DeltaTable` 字面 `a`/`b` 的匹配规则同一先例。无 `by` 时,若干 `value` 就是字面量声明的完整 series 集合。
+
+**props**:
+
+- `metric: Metric` —— `MetricComposed` 下必填(没有容器级共享指标);`MetricLine`/`MetricBars` 有容器级 `y`/`cell`,不收。
+- `as: "line" | "bar" | "area"` —— 呈现类型,仅 `MetricComposed` 下有意义(单一类型容器由容器决定画法)。呈现 props 按 `as` 判别收窄(TS 判别联合):`strokeDasharray` 只属 line,`stack` 只属 bar,填充只属 area,不同呈现的专属参数不互相渗漏;单一类型容器下的 props 集即该容器画法的呈现集。
+- `stack?: string` —— 同容器内同值的 bar series 堆进同一根柱,不同值各成堆;recharts `stackId` 的对应物。
+- `emphasis?: boolean` —— 强调呈现,具体样式由主题决定。
+- `label?: LocalizedText` —— 图例显示名,缺省用维度值显示键。
+- `dot` / 逐点 `label` 等关键呈现点 —— 三态定制阶梯 `false | { 部分属性 } | 渲染函数`;渲染函数收到该 series 已解析的单点数据,只接管 web 面,text 投影保持默认。
+
+### `Tooltip`
+
+web 渐进增强层的悬停提示,默认内容是该点的轴值与证据引用;`content` 走三态阶梯。text 面无投影——悬停不存在于终端。
+
+### `Legend`
+
+控制图例显隐(默认显示);图例内容、顺序与两面投影沿用现状契约(series 按显示键字典序),子组件不改变它们。
+
+### `CartesianGrid`
+
+web 面背景网格线;text 面无投影。
+
+### `ReferenceLine` / `ReferenceArea`
+
+参考线 / 参考区间标注:`x` 或 `y` 给出位置(区间给两端),`label` 可选。web 面画进坐标系;text 面在图例区以「label = 值」一行列出,不进字符坐标图。
+
+### `ErrorBar`
+
+误差线。容器的直接子节点,对图内全部 series 生效。与 recharts 同名但不收 `dataKey`:recharts 不知道数据从哪来,误差值只能作者自备;niceeval 的聚合值天然携带 attempt 级样本证据(`samples`/`refs`),让作者手工再算置信区间等于把管线已有的信息复写进报告。作者只选统计口径:`kind="ci95"`(默认)或 `"stderr"`。web 面画须线;text 面在数值后追加 `±` 区间。
+
+## 收益边界
+
+子组件语法的收益集中在两类真实能力,不是全面替代:
+
+- **逐值覆盖**(`value` 形态携带专属呈现)与**多类型混合**(`MetricComposed`)——扁平 props 表达不了的组合。
+- **追加标注**(`ReferenceLine`/`ErrorBar` 等)——把「容器 options 持续开洞」换成「新增子组件类型」,收的是长期维护成本。
+
+概念数量固定的组件(`MetricScatter`、`MetricMatrix`、表类)不子组件化;单 series、无定制的图,扁平 props 一行仍是最短表达。
 
 ## 相关阅读
 
-- [图表组件的声明式子组件语法](README.md) —— 问题陈述、recharts 模型、兼容性分析与候选契约全文。
-- [组件对照](component-mapping.md) —— 每个 recharts 组件原样借用、改名还是不借用,及 niceeval 新增的部分,本页命名的判定依据。
-- [真实图表对照](gallery.md) —— 四张真实报告图的结构对照,本页场景 2/5 的结论在真实图上的验证。
+- [README](README.md) —— 问题、recharts 模型与设计定案。
+- [Architecture](architecture.md) —— 结构描述子节点与容器解释机制。
+- [真实图表对照](gallery.md) —— 本页契约在四张真实报告图上的检验。
 - [指标组件](../../feature/reports/library/metric-views.md) —— 现状组件的完整 props 契约与数据形状。
-- [概览组件](../../feature/reports/library/summaries.md) —— `ExperimentComparison` 现状"多图并列"的组合方式。
+- [概览组件](../../feature/reports/library/summaries.md) —— `ExperimentComparison` 的多图并列组合方式。
