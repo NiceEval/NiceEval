@@ -1,6 +1,6 @@
 # Experiments 与 Runner 怎么测
 
-契约来源：[Experiments](../../../feature/experiments/README.md)、[Experiments Architecture](../../../feature/experiments/architecture.md)、[Experiments Library](../../../feature/experiments/library.md)、[Experiments CLI](../../../feature/experiments/cli.md)、[Runner](../../../runner.md)、[执行错误类型](../../../feature/error-classification/README.md)、[错误与警告反馈](../../../error-feedback.md)。Runner 测试关心 attempt 的集合、开始条件、结束条件、事件与资源释放，不锁定内部循环、Promise 数量或 Effect combinator。
+契约来源：[Experiments](../../../feature/experiments/README.md)、[Experiments Architecture](../../../feature/experiments/architecture.md)、[Experiments Library](../../../feature/experiments/library.md)、[Experiments CLI](../../../feature/experiments/cli.md)、[Runner](../../../runner.md)、[执行错误类型](../../../feature/error-classification/README.md)、[错误与警告反馈](../../../error-feedback.md)。Runner 测试关心 attempt 的集合、开始条件、结束条件、事件与资源释放，不锁定内部循环、Promise 数量或 Effect combinator。本篇的缝：fake Agent / Sandbox / Reporter 与时钟，测其上的调度逻辑；缝的真实侧（真实进程与真实 attempt）由 [E2E 功能域 · CLI](../e2e/cli.md) 验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。
 
 ## 观察面与边界
 

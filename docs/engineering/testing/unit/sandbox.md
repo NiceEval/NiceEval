@@ -1,6 +1,6 @@
 # Sandbox 怎么测
 
-契约来源：[Sandbox](../../../feature/sandbox/README.md)、[Architecture](../../../feature/sandbox/architecture.md)、[Library](../../../feature/sandbox/library.md)、[操作](../../../feature/sandbox/library/operations.md)、[结果断言](../../../feature/sandbox/library/asserting-results.md)、[本地执行](../../../feature/sandbox/local.md)、[串行复用](../../../feature/sandbox/serial-reuse.md)、[CLI](../../../feature/sandbox/cli.md)。单测证明 provider 共同契约、路径规则、重试分类和生命周期；真实容器与云 provider 连通性由 [E2E](../e2e/README.md) 用真实沙箱验证。
+契约来源：[Sandbox](../../../feature/sandbox/README.md)、[Architecture](../../../feature/sandbox/architecture.md)、[Library](../../../feature/sandbox/library.md)、[操作](../../../feature/sandbox/library/operations.md)、[结果断言](../../../feature/sandbox/library/asserting-results.md)、[本地执行](../../../feature/sandbox/local.md)、[串行复用](../../../feature/sandbox/serial-reuse.md)、[CLI](../../../feature/sandbox/cli.md)。单测证明 provider 共同契约、路径规则、重试分类和生命周期；真实容器与云 provider 连通性由 [E2E](../e2e/README.md) 用真实沙箱验证。本篇的缝：内存 provider 实现自有 `Sandbox` 接口，测 provider 之上的共同逻辑；同一 contract suite 的真实侧由 E2E 沙箱仓库对真实 provider 执行（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。
 
 ## Fixture 规范
 

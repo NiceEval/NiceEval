@@ -2,7 +2,7 @@
 
 契约来源：[Reports](../../../feature/reports/README.md)、[Architecture](../../../feature/reports/architecture.md)、[Library](../../../feature/reports/library.md)、[Show](../../../feature/reports/show.md)、[View](../../../feature/reports/view.md)、[Observability](../../../observability.md)。
 
-单元层证明 Reports 的**数据语义**：`*Data` 计算函数、指标聚合口径、resolve 管线、报告定义的装载规范化与校验反馈。观察面全部是数据——计算结果、规范化结构、错误对象与文案。渲染出来的终端排版、DOM 结构、双面比对、样式与交互不在本层，归 [E2E 功能域 · 报告与读面](../e2e/report.md)对真实运行的产物验收（先例台账：[codeview-perline-hidden-scrollbar-clips-text](../../../../memory/codeview-perline-hidden-scrollbar-clips-text.md)、[attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)——渲染缺陷在单元层的 DOM 断言下照样逃逸，只有真实产物上的验收拦得住）。
+单元层证明 Reports 的**数据语义**：`*Data` 计算函数、指标聚合口径、resolve 管线、报告定义的装载规范化与校验反馈。观察面全部是数据——计算结果、规范化结构、错误对象与文案。本篇的缝：构造 Scope / evidence fixture 作输入，测其上的计算与装载逻辑；缝的真实侧（真实产物上的出口与渲染）由 [E2E 功能域 · 报告与读面](../e2e/report.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。渲染出来的终端排版、DOM 结构、双面比对、样式与交互不在本层，归 [E2E 功能域 · 报告与读面](../e2e/report.md)对真实运行的产物验收（先例台账：[codeview-perline-hidden-scrollbar-clips-text](../../../../memory/codeview-perline-hidden-scrollbar-clips-text.md)、[attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)——渲染缺陷在单元层的 DOM 断言下照样逃逸，只有真实产物上的验收拦得住）。
 
 ## Fixture 规范
 

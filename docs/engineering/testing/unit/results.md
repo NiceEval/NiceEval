@@ -1,6 +1,6 @@
 # Results 怎么测
 
-契约来源：[Results](../../../feature/results/README.md)、[Architecture](../../../feature/results/architecture.md)、[Library](../../../feature/results/library.md)、[concepts · 标注 Eval 源码 / Attempt 证据](../../../concepts.md)。Results 测试分为落盘格式、读取分类、身份与去重、Scope、artifact 懒加载、copySnapshots 几组；不用一个巨大目录 snapshot 同时承担全部责任。
+契约来源：[Results](../../../feature/results/README.md)、[Architecture](../../../feature/results/architecture.md)、[Library](../../../feature/results/library.md)、[concepts · 标注 Eval 源码 / Attempt 证据](../../../concepts.md)。Results 测试分为落盘格式、读取分类、身份与去重、Scope、artifact 懒加载、copySnapshots 几组；不用一个巨大目录 snapshot 同时承担全部责任。本篇的缝：不 fake——构造数据 + 每例独立的真实临时目录，测 writer / reader 与选择逻辑；缝的真实侧（真实运行的落盘与读回）由 [E2E 功能域 · 报告与读面](../e2e/report.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。
 
 ## Fixture 规范
 

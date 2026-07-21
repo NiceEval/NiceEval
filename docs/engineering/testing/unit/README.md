@@ -54,6 +54,25 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 
 测试预算由静默错误的影响和发现难度决定，而不是按层平均分配。判定、证据归一、缓存、调度、结果选择和指标聚合都可能给出看似合理但错误的答案，应得到更强的组合与边界覆盖。渲染产物不在本层断言（归 [E2E 功能域](../e2e/report.md)），但 Reports 的计算口径与装载语义仍是高风险面，不因"展示层"标签薄测。
 
+## Fake 边界：mock 什么，测哪一层
+
+每个 Feature 的单元测试都站在一条**缝**上：缝上面的逻辑是被测对象，缝下面用两种手段之一替代——**构造输入数据**（证据图、Scope、落盘树：没有替身，只有受控输入），或 **fake 自有稳定接口**（Agent、Sandbox、Reporter、judge 传输、时钟）。这条缝的选择有一条硬规则：
+
+- **fake 只发生在 niceeval 自己声明的契约接口上。** 自有接口要漂移只能是我们自己改契约，fake 不会静默失真。
+- **外部协议接口从不 fake。** 别人的协议是会漂移的外部事实，fake 它只能证明"与自己采的样本一致"——协议归 [E2E 适配器域](../e2e/adapter/README.md)的真实运行。
+- **外部基础设施不 fake，用隔离的真实实例。** 文件系统用每例独立的临时目录，不 mock fs。
+
+每条缝的真实侧由对应 E2E 域验收；unit 证明缝上面的逻辑在整个输入空间上正确，E2E 证明缝接进真实世界是通的，两层合起来才是完整证明：
+
+| 测试文档 | 被测逻辑（缝上面） | fake / 构造（缝下面） | 缝的真实侧验收 |
+|---|---|---|---|
+| [eval.md](eval.md) | Context、session、HITL、能力边界 | scripted Agent 与 recording Sandbox（自有 `Agent` / `Sandbox` 接口） | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent 走同一条 Context 链 |
+| [experiments-runner.md](experiments-runner.md) | 调度、缓存、budget、退出码折叠 | fake Agent / Sandbox / Reporter、受控时钟与 barrier | [e2e/cli](../e2e/cli.md)：真实进程与真实 attempt 下同一批行为 |
+| [scoring.md](scoring.md) | matcher、collector、scope、verdict | 构造的证据图（`ScoringContext`）；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
+| [sandbox.md](sandbox.md) | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因 | 内存 provider 实现自有 `Sandbox` 接口 | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
+| [results.md](results.md) | writer / reader、身份、选择、去重 | 不 fake：构造数据 + 每例独立的真实临时目录 | [e2e/report](../e2e/report.md)：真实运行的落盘与读回 |
+| [reports.md](reports.md) | `*Data` 计算、装载、resolve | 构造的 Scope / evidence fixture | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染 |
+
 ## Feature 测试文档
 
 每个 Feature 一篇文档，写的是**体系与规范，不是场景列举**，固定四段：

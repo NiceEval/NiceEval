@@ -1,6 +1,6 @@
 # Eval 与 Context 怎么测
 
-契约来源：[Eval](../../../feature/eval/README.md)、[Library](../../../feature/eval/library.md)、[Context](../../../feature/eval/library/context.md)、[Architecture](../../../feature/eval/architecture.md)、[执行错误类型](../../../feature/error-classification/README.md)。测试重点不是 `defineEval` 返回了几个字段，而是 eval 作者观察到的 context、session、turn 和能力边界是否符合契约。
+契约来源：[Eval](../../../feature/eval/README.md)、[Library](../../../feature/eval/library.md)、[Context](../../../feature/eval/library/context.md)、[Architecture](../../../feature/eval/architecture.md)、[执行错误类型](../../../feature/error-classification/README.md)。测试重点不是 `defineEval` 返回了几个字段，而是 eval 作者观察到的 context、session、turn 和能力边界是否符合契约。本篇的缝：fake 自有 `Agent` / `Sandbox` 接口，测其上的 Context 逻辑；缝的真实侧（真实 Agent）由 [E2E 适配器域](../e2e/adapter/README.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。
 
 ## 观察面与边界
 

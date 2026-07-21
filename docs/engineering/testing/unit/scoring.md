@@ -1,6 +1,6 @@
 # Scoring 与断言怎么测
 
-契约来源：[Scoring](../../../feature/scoring/README.md)、[值断言](../../../feature/scoring/library/value-assertions.md)、[作用域断言](../../../feature/scoring/library/scoped-assertions.md)、[Judge](../../../feature/scoring/library/judge.md)、[Scope](../../../feature/scoring/architecture/scopes.md)、[证据完整性](../../../feature/scoring/architecture/evidence.md)、[Severity/Verdict](../../../feature/scoring/architecture/severity-and-verdict.md)、[断言与 Turn 的展示](../../../feature/scoring/library/display.md)、[Scoring CLI](../../../feature/scoring/cli.md)。判定层给出"看似合理但错误的答案"的代价最高，是全套件预算最重的领域（裁决出处见 memory 的 [test-budget-inverted-pyramid](../../../../memory/test-budget-inverted-pyramid.md)）。
+契约来源：[Scoring](../../../feature/scoring/README.md)、[值断言](../../../feature/scoring/library/value-assertions.md)、[作用域断言](../../../feature/scoring/library/scoped-assertions.md)、[Judge](../../../feature/scoring/library/judge.md)、[Scope](../../../feature/scoring/architecture/scopes.md)、[证据完整性](../../../feature/scoring/architecture/evidence.md)、[Severity/Verdict](../../../feature/scoring/architecture/severity-and-verdict.md)、[断言与 Turn 的展示](../../../feature/scoring/library/display.md)、[Scoring CLI](../../../feature/scoring/cli.md)。判定层给出"看似合理但错误的答案"的代价最高，是全套件预算最重的领域（裁决出处见 memory 的 [test-budget-inverted-pyramid](../../../../memory/test-budget-inverted-pyramid.md)）。本篇的缝：构造证据图（`ScoringContext`）作输入、judge 只 fake 传输层，测其上的判定逻辑；缝的真实侧（真实证据与真实裁判模型）由 [E2E 适配器域](../e2e/adapter/README.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。
 
 ## 观察面与边界
 
