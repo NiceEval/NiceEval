@@ -11,15 +11,17 @@
 ```typescript
 // evals/install/db-gpt.eval.ts
 import { defineScoreEval } from "niceeval";
-import { commandSucceeded, exists, includes } from "niceeval/expect";
+import { commandSucceeded, includes, isTrue } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT,通过健康检查",
   async test(t) {
     await t.send("把 DB-GPT 装起来,启动服务并确保健康检查通过。");
 
-    // 前置:repo 都没 clone 下来,后面的步骤无从谈起
-    await t.require(t.sandbox.file("db-gpt/README.md"), exists());
+    // 前置:repo 都没 clone 下来,后面的步骤无从谈起——存在性检查用 fileExists(布尔),
+    // 不是取内容的 file()(那个留给 t.check 配 matches/includes 这类内容断言)。
+    const cloned = await t.sandbox.fileExists("db-gpt/README.md");
+    await t.require(cloned, isTrue("db-gpt cloned"));
 
     // 五个检查点各值 1 分,互相独立:挂一条照记 0 分,不连坐后面
     t.sandbox.fileChanged("db-gpt/.env").points(1);                          // ① 配置了环境

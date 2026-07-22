@@ -66,14 +66,15 @@ t.check(t.reply, includes("friendly tone").atLeast(0.7));
 
 ```ts
 import { defineScoreEval } from "niceeval";
-import { commandSucceeded, exists } from "niceeval/expect";
+import { commandSucceeded, isTrue } from "niceeval/expect";
 
 export default defineScoreEval({
   description: "安装并启动 DB-GPT",
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
     // 前置条件没过，后面步骤没意义，直接中止，后面的分自然挣不到。
-    await t.require(t.sandbox.file("db-gpt/README.md"), exists());
+    const cloned = await t.sandbox.fileExists("db-gpt/README.md");
+    await t.require(cloned, isTrue("db-gpt cloned"));
 
     t.sandbox.fileChanged("db-gpt/.env").points(1);
     t.calledTool("shell", { input: { command: /pip install/ } }).points(1);
