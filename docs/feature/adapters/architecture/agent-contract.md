@@ -53,12 +53,13 @@ interface AgentContext {
   readonly experimentId?: string;
   progress(update: { message: string; current?: number; total?: number }): void;
   diagnostic(input: DiagnosticInput): void;
+  log(msg: string): void;
 }
 ```
 
-`ctx` 是驱动 Agent 的低层上下文，eval 的 `t` 是运行器构造的断言视图。二者共享 experiment 输入、signal 与作用域反馈能力，但只有 `ctx` 暴露 Agent 会话状态，只有 `t` 暴露断言和 judge。
+`ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。
 
-runner 为 `setup`、每次 `send` 与 `teardown` 分别构造上下文,所以同名 `progress/diagnostic` 会自动绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown` operation。Adapter 不能传 phase/scope,也不能把上下文保存到另一个回调复用。`progress` 是 Human active 行可覆盖的短期状态;`diagnostic` 是永久 warning/error,但不改变 Turn status 或 attempt verdict。完整用法见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
+runner 为 `setup`、每次 `send` 与 `teardown` 分别构造上下文,所以同名 `progress/diagnostic` 会自动绑定到当前 `agent.setup`、`agent.run` 或 `agent.teardown` operation。Adapter 不能传 phase/scope,也不能把上下文保存到另一个回调复用。`progress` 是 Human active 行可覆盖的短期状态;`diagnostic` 是永久 warning/error,但不改变 Turn status 或 attempt verdict。`log(msg)` 是 `progress({ message: msg })` 的便捷别名,不是第三条通道——同样绑定当前生命周期阶段,只是省去构造 update 对象;超时失败时最近若干行会并入结果的 error 信息,方便定位 Adapter 卡在哪一步。完整用法见 [Adapter Library · 向运行反馈进度与诊断](../library.md#向运行反馈进度与诊断)。
 
 ## 配置归属不变量
 

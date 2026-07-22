@@ -76,6 +76,9 @@ const results = await openResults(".niceeval");
 
 results.experiments;           // Experiment[]:每个实验一项,挂着自己的全部历史(id 字典序)
 results.skipped;               // 读不了的落盘:{ dir, reason, schemaVersion?, producer?, detail? }[](detail 是 malformed 的一句英文诊断)
+results.root;                  // 结果根目录的绝对路径(openResults() 入参解析后的原样值,不论传入的是结果根、
+                               // 实验目录、快照目录还是某个 snapshot.json);unreadable-snapshot 警告拼版本化
+                               // command(npx niceeval@<version> show --results <root>)时取它
 
 const exp = results.experiments.find((e) => e.id === "compare/bub-gpt-5.4")!;
 exp.snapshots;                 // Snapshot[]:历次快照,最新在前

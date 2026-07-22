@@ -65,6 +65,8 @@ const shell = await t.sandbox.runShell("pnpm lint && pnpm test");
 | `env?: Record<string, string>` | 追加/覆盖本命令的环境变量，与沙箱默认环境叠加；provider 固定的 `PATH` 等不保证能覆盖 |
 | `root?: boolean` | 以 root 跑本命令，默认非 root；装系统依赖时用，语义见 [用户与 root](../library.md#用户与-root) |
 | `stream?: boolean` | 把输出送进沙箱原生日志流（`docker logs` 实时可见）；不支持的 provider 忽略 |
+| `onStdout?: (chunk: string) => void \| Promise<void>` | 命令 stdout 每到一块就调用一次，只用于运行中的短命反馈；完整 stdout 仍原样出现在返回的 `CommandResult` 里。provider 不支持真流时，至少在命令结束后按完整 stdout 调用一次，不会静默丢掉 |
+| `onStderr?: (chunk: string) => void \| Promise<void>` | `onStdout` 的 stderr 对应物；完整 stderr 同样保留在 `CommandResult` 里 |
 
 返回 `CommandResult = { stdout: string; stderr: string; exitCode: number; command?: string }`。`command` 是这次执行的命令摘要（有界、脱敏，与时间树 command 节点同一份文案），由运行器在最外层公开调用处附加——`commandSucceeded()` 失败时的 evidence（「命令行本身」）就取自它；直接从 provider 拿到的裸结果可能没有这个字段。两者只执行并返回结果，非零退出码不抛错也不自动评分，判定交给 `commandSucceeded()` 等 matcher。
 
