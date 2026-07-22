@@ -1,18 +1,18 @@
-// Format & mechanism domain (docs/engineering/testing/e2e/report.md points 1-4): asserts the
-// on-disk Results format, openResults() library parity, --json parity, --junit folding, and
-// the README §4.3 CLI read-back (show / show --execution) on the real passed attempt.
-// Consumes the Evidence object from scripts/evidence.ts — does not run any Experiment itself
-// (docs/engineering/testing/e2e/README.md §4.2 explicitly exempts this repo from the
-// CLI-black-box rule for point 1: format IS what it tests). Style follows
-// docs/engineering/testing/e2e/verification.md: shell-literal commands via `sh()`,
-// node:assert/strict, no test framework — throws on the first broken contract.
+// Format & mechanism domain(docs/engineering/testing/e2e/report.md 第 1-4 点):断言磁盘上的
+// Results 格式、openResults() 库读取的一致性、--json 的一致性、--junit 折叠规则,以及在真实
+// passed attempt 上的 README §4.3 CLI 读回(show / show --execution)。
+// 消费 scripts/evidence.ts 产出的 Evidence 对象——自己不运行任何 Experiment
+// (docs/engineering/testing/e2e/README.md §4.2 明确把本仓库对第 1 点排除在 CLI-black-box 规则
+// 之外:format 本身就是被测对象)。风格遵循 docs/engineering/testing/e2e/verification.md:
+// 通过 `sh()` 执行 shell 字面量命令,用 node:assert/strict,不用测试框架——遇到第一个被破坏的
+// 契约就直接抛出。
 //
-// Four things get checked against the SAME real run:
-//   1. on-disk format        — snapshot.json / result.json / events.json / sources.json / o11y.json
-//   2. openResults() parity  — the public read library is a faithful projection of #1
-//   3. --json parity         — the CLI's machine summary agrees with #1/#2
-//   4. --junit folding       — failed → <failure>, errored → <error>
-// plus the README §4.3 CLI read-back on the real passed attempt.
+// 针对同一次真实运行,检查以下四件事:
+//   1. 磁盘格式            —— snapshot.json / result.json / events.json / sources.json / o11y.json
+//   2. openResults() 一致性 —— 公开的读取库是对 #1 的忠实投影
+//   3. --json 一致性        —— CLI 的机器可读摘要与 #1/#2 一致
+//   4. --junit 折叠         —— failed → <failure>,errored → <error>
+// 再加上在真实 passed attempt 上的 README §4.3 CLI 读回。
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,7 +43,7 @@ function readJson<T>(path: string): T {
 
 export async function verifyFormat(evidence: Evidence): Promise<void> {
   // ---------------------------------------------------------------------
-  // Point 4 (JUnit folding): failed → <failure>, errored → <error>, mutually exclusive.
+  // 第 4 点(JUnit 折叠):failed → <failure>,errored → <error>,二者互斥。
   // ---------------------------------------------------------------------
   const failXml = readFileSync(evidence.junit.fail, "utf8");
   assert.ok(failXml.includes("<failure"), "deliberate-fail's JUnit has no <failure> — failed verdict didn't fold correctly");
@@ -54,7 +54,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   assert.ok(!errorXml.includes("<failure"), "deliberate-error's JUnit unexpectedly has a <failure> — errored got miscategorized as a failed assertion");
 
   // ---------------------------------------------------------------------
-  // Point 1: on-disk format, read directly (this repo is exempt from the CLI-only rule).
+  // 第 1 点:磁盘格式,直接读取(本仓库对「只能走 CLI」规则免除)。
   // ---------------------------------------------------------------------
   const snapDir = evidence.main.snapshotDir;
   const snapshot = readJson<Record<string, unknown>>(join(snapDir, "snapshot.json"));
@@ -95,7 +95,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
       }
     }
 
-    // durationMs / usage / estimatedCostUSD trio: usage present ⇒ estimatedCostUSD present too.
+    // durationMs / usage / estimatedCostUSD 三件套:usage 存在 ⇒ estimatedCostUSD 也必须存在。
     assert.ok(result.usage, `result.json.usage missing in ${attemptDir} — the real gateway call didn't report usage`);
     assert.equal(typeof result.usage!.inputTokens, "number", `usage.inputTokens missing in ${attemptDir}`);
     assert.equal(typeof result.usage!.outputTokens, "number", `usage.outputTokens missing in ${attemptDir}`);
@@ -123,7 +123,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
     assert.ok(o11y.usage, `o11y.json.usage missing in ${attemptDir}`);
   }
 
-  // Both attempts of the same eval file must dedup to the SAME snapshot-level source blob.
+  // 同一个 eval 文件的两次 attempt 必须去重到同一个 snapshot 级别的 source blob。
   assert.equal(
     sourceShas.size,
     1,
@@ -135,7 +135,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   assert.ok(blob.content.includes("get_stock_price"), `sources/${sharedSha}.json content doesn't look like tool-call.eval.ts`);
 
   // ---------------------------------------------------------------------
-  // Point 2: openResults() parity — faithful projection of point 1, not a second source of truth.
+  // 第 2 点:openResults() 一致性——是对第 1 点的忠实投影,而不是另一个独立的真相来源。
   // ---------------------------------------------------------------------
   const results = await openResults(evidence.resultsRoot);
   const exp = results.experiments.find((e) => e.id === "main");
@@ -178,7 +178,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   }
 
   // ---------------------------------------------------------------------
-  // Point 3: --json parity — the CLI's machine summary agrees with disk + openResults().
+  // 第 3 点:--json 一致性——CLI 的机器可读摘要与磁盘 + openResults() 保持一致。
   // ---------------------------------------------------------------------
   const jsonSummary = readJson<{
     agent: string;
@@ -203,7 +203,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   }
 
   // ---------------------------------------------------------------------
-  // README §4.3 CLI read-back, on the real passed attempt.
+  // README §4.3 CLI 读回,在真实 passed attempt 上验证。
   // ---------------------------------------------------------------------
   const locator = evidence.main.attempts[0]!.locator;
   const board = sh(`pnpm exec niceeval show ${locator}`);

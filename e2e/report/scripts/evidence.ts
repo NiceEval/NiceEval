@@ -1,14 +1,13 @@
-// Produces the ONE body of evidence every scripts/verify-<domain>.ts module in this repo
-// asserts against (docs/engineering/testing/e2e/report.md: "一次真实运行产出的证据被下面
-// 全部验收组共用,断言条数不增加模型成本"). Runs the three Experiments exactly once, exports
-// a real static site once, and returns a structured `Evidence` object carrying every
-// locator/path a verify-<domain>.ts module needs to make assertions — so new domains never
-// re-run an Experiment or re-derive a locator by scanning `.niceeval/` themselves.
+// 生成本仓库所有 scripts/verify-<domain>.ts 模块共同断言的「唯一一份」证据
+// (docs/engineering/testing/e2e/report.md:"一次真实运行产出的证据被下面
+// 全部验收组共用,断言条数不增加模型成本")。只运行一次三个 Experiment,只导出一次真实的
+// 静态站点,并返回一个结构化的 `Evidence` 对象,携带每个 verify-<domain>.ts 模块做断言所需的
+// 全部 locator/路径——这样新增的 domain 永远不需要重新跑一次 Experiment,也不需要自己扫描
+// `.niceeval/` 去反推 locator。
 //
-// This module only PRODUCES evidence and asserts the minimum structural shape needed to
-// type it (attempt-directory counts, locator format). It does not judge the evidence against
-// report.md's format/rendering/read-back contract — that's each verify-<domain>.ts's job,
-// reading the paths/locators handed back here.
+// 本模块只负责「产出」证据,并断言给它定型所需的最小结构形状(attempt 目录数量、locator 格式)。
+// 它不对照 report.md 的 format/rendering/read-back 契约去评判这份证据——那是每个
+// verify-<domain>.ts 自己的工作,它们读取这里返回的路径/locator 去做判断。
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -21,55 +20,55 @@ const SITE_EXPORT_DIR = "site-export";
 const LOCATOR_RE = /^@[0-9a-z]{8}$/;
 const PROVIDER_FAULT_RE = /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/i;
 
-/** Thrown only for the main Experiment's real gateway call — see scripts/e2e.ts's exit-code classification. */
+/** 只在 main Experiment 的真实网关调用失败时抛出——具体的退出码分类见 scripts/e2e.ts。 */
 export class InfraError extends Error {}
 
 export type Verdict = "passed" | "failed" | "skipped" | "errored";
 
-/** One attempt's coordinates — enough to run `niceeval show @<locator> ...` or read its files directly. */
+/** 单个 attempt 的定位信息——足够用来执行 `niceeval show @<locator> ...` 或直接读取它的文件。 */
 export interface AttemptEvidence {
-  /** Eval id this attempt belongs to (e.g. "tool-call", "deliberate-fail", "deliberate-error"). */
+  /** 该 attempt 所属的 eval id(例如 "tool-call"、"deliberate-fail"、"deliberate-error")。 */
   evalId: string;
-  /** This attempt's real verdict, as produced by this run — read off disk, not assumed. */
+  /** 该 attempt 的真实 verdict,是本次运行实际产生的——从磁盘读出来的,不是假设的。 */
   verdict: Verdict;
-  /** Opaque `@<locator>` string, ready to use in `niceeval show @<locator>`, `--exp`, etc. */
+  /** 不透明的 `@<locator>` 字符串,可直接用于 `niceeval show @<locator>`、`--exp` 等场景。 */
   locator: string;
-  /** Attempt directory holding this attempt's result.json/events.json/sources.json/o11y.json, relative to repo root (cwd when scripts run). */
+  /** 该 attempt 存放 result.json/events.json/sources.json/o11y.json 的目录,相对于仓库根目录(脚本运行时的 cwd)。 */
   attemptDir: string;
 }
 
-/** Structured evidence for one of this repo's three Experiments. */
+/** 本仓库三个 Experiment 中某一个的结构化证据。 */
 export interface Evidence {
-  /** Results root all three Experiments share — pass to `openResults()` or `--results`. Relative to repo root; scripts run with cwd = repo root. */
+  /** 三个 Experiment 共用的 results 根目录——传给 `openResults()` 或 `--results`。相对于仓库根目录;脚本运行时 cwd 就是仓库根目录。 */
   resultsRoot: string;
-  /** `niceeval view --out` export directory for this same run — real static site, shared by the rendering/CLI-readback domains. Relative to repo root. */
+  /** 本次运行对应的 `niceeval view --out` 导出目录——真实的静态站点,由 rendering/CLI-readback 各 domain 共用。相对于仓库根目录。 */
   siteExportDir: string;
-  /** main: `runs: 2` real gateway attempts of "tool-call", both expected passed. */
+  /** main:"tool-call" 的 `runs: 2` 次真实网关 attempt,均预期为 passed。 */
   main: {
     id: "main";
     evalId: "tool-call";
-    /** This run's snapshot directory, `.niceeval/main/<timestamp-suffix>/`. */
+    /** 本次运行的快照目录,`.niceeval/main/<timestamp-suffix>/`。 */
     snapshotDir: string;
-    /** Both real attempts (length 2). */
+    /** 两次真实 attempt(长度为 2)。 */
     attempts: AttemptEvidence[];
   };
-  /** deliberate-fail: exactly 1 deterministic failed attempt. */
+  /** deliberate-fail:恰好 1 个确定性失败的 attempt。 */
   deliberateFail: {
     id: "deliberate-fail";
     evalId: "deliberate-fail";
     snapshotDir: string;
     attempt: AttemptEvidence;
   };
-  /** deliberate-error: exactly 1 deterministic errored attempt. */
+  /** deliberate-error:恰好 1 个确定性出错的 attempt。 */
   deliberateError: {
     id: "deliberate-error";
     evalId: "deliberate-error";
     snapshotDir: string;
     attempt: AttemptEvidence;
   };
-  /** JUnit files from each Experiment invocation, relative to repo root. */
+  /** 每次 Experiment 调用产出的 JUnit 文件,相对于仓库根目录。 */
   junit: { main: string; fail: string; error: string };
-  /** `--json` machine summary path from the main Experiment's invocation, relative to repo root. */
+  /** main Experiment 调用产出的 `--json` 机器可读摘要路径,相对于仓库根目录。 */
   jsonSummaryPath: string;
 }
 
@@ -77,7 +76,7 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
-/** Exactly one subdirectory expected (e.g. the single snapshot dir after one --force run). Never hardcode the timestamp+suffix name. */
+/** 预期恰好存在一个子目录(例如一次 --force 运行后唯一的快照目录)。绝不硬编码 timestamp+suffix 这个名字。 */
 function singleSubdir(dir: string, context: string): string {
   const names = readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
@@ -94,11 +93,11 @@ function subdirNames(dir: string): string[] {
 }
 
 /**
- * Same as `sh` but for the one command that's expected to exit 0 (the real gateway call):
- * an unexpected nonzero exit here throws InfraError instead of a plain AssertionError when
- * `--output ci`'s own text confirms a provider-side fault (429/5xx/network) — the
- * doc-specified confirmable-external-fault signal
- * (docs/engineering/testing/e2e/verification.md「失败分类」). Anything else stays a regression.
+ * 和 `sh` 一样,但专用于那种预期退出码为 0 的命令(真实网关调用):
+ * 当 `--output ci` 自身的文本内容证实是 provider 端故障(429/5xx/网络问题)时——文档规定的
+ * 「可确认的外部故障」信号(docs/engineering/testing/e2e/verification.md「失败分类」)——这里
+ * 出现意料之外的非零退出会抛出 InfraError,而不是普通的 AssertionError。除此之外的情况一律
+ * 视为回归问题。
  */
 function shExpectZero(cmd: string): string {
   const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
@@ -111,7 +110,7 @@ function shExpectZero(cmd: string): string {
   throw new Error(`${cmd}\nexited ${exit}, expected 0. stdout/stderr tail:\n${combined.slice(-3000)}`);
 }
 
-/** Reads back one Experiment's single-attempt result (deliberate-fail / deliberate-error shape). */
+/** 读回某个 Experiment 的单 attempt 结果(deliberate-fail / deliberate-error 的形状)。 */
 function readSingleAttempt(experimentId: string, evalId: string): { snapshotDir: string; attempt: AttemptEvidence } {
   const expDir = join(RESULTS_ROOT, experimentId);
   assert.ok(existsSync(expDir), `${expDir} missing — the ${experimentId} Experiment produced no experiment directory`);
@@ -126,22 +125,21 @@ function readSingleAttempt(experimentId: string, evalId: string): { snapshotDir:
 }
 
 /**
- * Runs this repo's three Experiments exactly once, exports a static site of the combined
- * result, and returns the coordinates every verify-<domain>.ts module needs.
+ * 只运行一次本仓库的三个 Experiment,导出一次合并结果的静态站点,并返回每个
+ * verify-<domain>.ts 模块所需的定位信息。
  */
 export async function produceEvidence(): Promise<Evidence> {
   // ---------------------------------------------------------------------
-  // deliberate-fail / deliberate-error run FIRST, deliberately: they never call the real
-  // gateway, so the evidence they produce is available regardless of whether the main
-  // Experiment's real HTTP call succeeds — a deliberately broken deliberate-fail/error Eval
-  // fails right here, before main ever runs, instead of being masked by a later, unrelated
-  // main-experiment failure.
+  // deliberate-fail / deliberate-error 故意排在最前面运行:它们从不调用真实网关,所以无论 main
+  // Experiment 的真实 HTTP 调用是否成功,它们产出的证据都是可用的——一个故意写坏的
+  // deliberate-fail/error Eval 会在这里就直接失败,而不会被之后 main experiment 一个不相关的
+  // 失败所掩盖。
   // ---------------------------------------------------------------------
   sh("pnpm exec niceeval exp deliberate-fail --force --output ci --junit fail.xml", "nonzero");
   sh("pnpm exec niceeval exp deliberate-error --force --output ci --junit error.xml", "nonzero");
 
   // ---------------------------------------------------------------------
-  // The real gateway call, last.
+  // 真实网关调用,放在最后。
   // ---------------------------------------------------------------------
   shExpectZero("pnpm exec niceeval exp main --force --output ci --json main.json --junit main.xml");
 
@@ -166,9 +164,9 @@ export async function produceEvidence(): Promise<Evidence> {
   });
 
   // ---------------------------------------------------------------------
-  // All three Experiments have run and now coexist under RESULTS_ROOT (passed/failed/errored).
-  // Export a static site of the combined result once, shared by every rendering/CLI-readback
-  // verify-<domain>.ts module — no domain re-exports its own site.
+  // 三个 Experiment 现已全部运行完毕,并在 RESULTS_ROOT 下共存(passed/failed/errored)。
+  // 只导出一次合并结果的静态站点,供每个 rendering/CLI-readback 的 verify-<domain>.ts
+  // 模块共用——没有哪个 domain 会重新导出自己的一份站点。
   // ---------------------------------------------------------------------
   sh(`pnpm exec niceeval view --out ${SITE_EXPORT_DIR}`);
 

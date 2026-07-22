@@ -1,16 +1,15 @@
-// Shared shell-command helper for this repo's scripts/evidence.ts and every
-// scripts/verify-<domain>.ts module (docs/engineering/testing/e2e/verification.md
-// 「执行 niceeval 命令」). Commands appear as shell-literal strings in the caller — exactly
-// what a developer would type, safe to copy out and re-run by hand. This is the one place
-// that owns spawnSync plumbing so domain scripts don't each reimplement it.
+// 本仓库 scripts/evidence.ts 及所有 scripts/verify-<domain>.ts 模块共用的 shell 命令执行辅助函数
+// (docs/engineering/testing/e2e/verification.md「执行 niceeval 命令」)。命令在调用方代码里以
+// shell 字面量字符串的形式出现——就是开发者会敲的原样命令,可以直接复制出去手动重跑。这是唯一
+// 拥有 spawnSync 底层逻辑的地方,这样各个 domain 脚本就不用各自重新实现一遍。
 
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 
 /**
- * Runs `cmd` through the shell, asserts its exit code matches `expect`, and returns stdout.
- * `expect: "nonzero"` makes an expected-failure invocation (e.g. deliberate-fail) a first-class
- * case instead of an exception.
+ * 通过 shell 执行 `cmd`,断言其退出码与 `expect` 相符,并返回 stdout。
+ * `expect: "nonzero"` 让一次预期会失败的调用(例如 deliberate-fail)成为一等公民场景,
+ * 而不是被当作异常抛出。
  */
 export function sh(cmd: string, expect: number | "nonzero" = 0): string {
   const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
