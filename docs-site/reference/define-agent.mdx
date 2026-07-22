@@ -383,15 +383,6 @@ fileExists(path: string): Promise<boolean>;
 
 Check whether a path exists inside the sandbox. Semantics are not fully consistent across providers: only guaranteed reliable for regular files — behavior for directory paths is not guaranteed consistent across providers.
 
-#### `readSourceFiles`
-
-```ts
-readSourceFiles(opts?: ReadSourceFilesOptions): Promise<SourceFiles>;
-```
-
-Read every source file in one shell round trip (collected by extension, ignored by directory/file name).
-Replaces hand-written find + per-file readFile in each eval directory.
-
 #### `writeFiles`
 
 ```ts
@@ -469,6 +460,14 @@ uploadFile(path: string, content: Buffer): Promise<void>;
 
 Write a file (binary) to any path inside the sandbox.
 Provider mapping: Docker putArchive / Vercel fs.writeFile(Buffer) / e2b files.write / …
+
+#### `downloadDirectory`
+
+```ts
+downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
+```
+
+Recursively download an entire directory from inside the sandbox to local disk, symmetric with `uploadDirectory`: writes each file's exact bytes to `localDir` by remote-relative path (creates directories as needed, no text-encoding conversion, no concatenation, no wrapper type with convenience methods). Falls back to workdir (the sandbox-side anchor) when `targetDir` is omitted; `opts.ignore` has the same name and meaning as `uploadDirectory`'s — excludes paths by basename, no filtering when omitted.
 
 ### `CommandOptions`
 

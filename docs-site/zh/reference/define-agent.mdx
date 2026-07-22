@@ -394,15 +394,6 @@ fileExists(path: string): Promise<boolean>;
 
 检查 Sandbox 内路径是否存在。跨 provider 语义不完全一致:仅保证对普通文件可靠,对目录路径的行为不同 provider 不保证一致。
 
-#### `readSourceFiles`
-
-```ts
-readSourceFiles(opts?: ReadSourceFilesOptions): Promise<SourceFiles>;
-```
-
-一次 shell 往返读全部源码文件(按扩展名收、按目录/文件名忽略)。
-取代每个评估用例目录里手写的 find + 逐文件 readFile。
-
 #### `writeFiles`
 
 ```ts
@@ -480,6 +471,17 @@ uploadFile(path: string, content: Buffer): Promise<void>;
 
 向 Sandbox 内任意路径写入文件(二进制)。
 对应各 provider:Docker putArchive / Vercel fs.writeFile(Buffer) / e2b files.write / …
+
+#### `downloadDirectory`
+
+```ts
+downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
+```
+
+把 Sandbox 内一个目录整体递归下载到本地磁盘,与 `uploadDirectory` 对称:按远端相对路径
+把每个文件字节精确落盘到 `localDir`(自动建目录,不做文本编码转换,不拼接,不返回带便利
+方法的包装类型)。省略 `targetDir` 落到 workdir(Sandbox 侧锚点);`opts.ignore` 与
+`uploadDirectory` 同名同义——按 basename 排除路径,省略即不过滤。
 
 ### `CommandOptions`
 

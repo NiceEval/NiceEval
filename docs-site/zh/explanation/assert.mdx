@@ -193,8 +193,8 @@ import { commandSucceeded, includes } from "niceeval/expect";
 const testResult = await t.sandbox.runCommand("npm", ["test"]);
 t.check(testResult, commandSucceeded());
 
-const src = await t.sandbox.readSourceFiles({ extensions: ["ts"] });
-t.check(src.text(), includes(/z\.object\s*\(/));
+const src = await t.sandbox.runShell("find . -name '*.ts' -exec cat {} +");
+t.check(src.stdout, includes(/z\.object\s*\(/));
 ```
 
 也可以通过标准事件流断言行为：`t.calledTool(...)`、`t.sandbox.noFailedShellCommands()`、`t.eventsSatisfy(...)`，以及 `t.sandbox.fileChanged(...)` 这类 diff 断言。

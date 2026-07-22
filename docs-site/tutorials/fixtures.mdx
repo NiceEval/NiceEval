@@ -78,9 +78,7 @@ Leave implicit quality requirements, such as whether the code defends against pa
 ```ts
 import { includes, excludes } from "niceeval/expect";
 
-const src = await t.sandbox.readSourceFiles({ extensions: ["ts"] });
-const config = src.fileMatching(/env/);
-const code = config?.content ?? "";
+const code = await t.sandbox.readFile("src/config/env.ts");
 
 t.check(code, includes(/z\.object\s*\(/));
 t.check(code, includes(/EnvSchema\.parse\s*\(\s*process\.env/));
