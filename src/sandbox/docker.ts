@@ -19,6 +19,7 @@ import { resolveSandboxPath } from "./paths.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
+import { dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 
 /**
  * dockerode 对镜像拉取限流没有专门的错误类型;Docker Hub 429 体现在错误 message 里
@@ -102,6 +103,12 @@ export interface DockerSandboxOptions {
   feedback?: import("../types.ts").ScopedFeedback;
   /** 一次性 provision token:写进容器 label,歧义类失败重试前按它对账(见 errors.ts 的两维分类)。 */
   provisionToken?: string;
+  /**
+   * 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 label 事后收回(见
+   * docs/feature/sandbox/architecture.md「孤儿核对」)。省略时不写这组 label(如直接单测构造
+   * DockerSandbox,不经 resolve.ts 的 createProvider())。
+   */
+  runIdentity?: RunIdentity;
 }
 
 /**
@@ -119,6 +126,7 @@ export class DockerSandbox implements Sandbox {
   private image?: string;
   private feedback?: import("../types.ts").ScopedFeedback;
   private provisionToken?: string;
+  private runIdentity?: RunIdentity;
 
   constructor(options: DockerSandboxOptions = {}) {
     this.docker = new Docker();
@@ -127,6 +135,7 @@ export class DockerSandbox implements Sandbox {
     this.image = options.image;
     this.feedback = options.feedback;
     this.provisionToken = options.provisionToken;
+    this.runIdentity = options.runIdentity;
   }
 
   /** 创建并启动一个 Docker 沙箱。 */
@@ -175,6 +184,7 @@ export class DockerSandbox implements Sandbox {
       Labels: {
         "niceeval.keep-candidate": "true",
         ...(this.provisionToken ? { "niceeval.provision-token": this.provisionToken } : {}),
+        ...(this.runIdentity ? dockerRunIdentityLabels(this.runIdentity) : {}),
       },
       Tty: true,
       HostConfig: {

@@ -12,6 +12,7 @@ import { normalizeSandboxPaths } from "./paths.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { withProvisionRetry, type ProvisionSlot } from "./retry.ts";
+import { currentRunIdentity } from "./run-identity.ts";
 
 /** 归一化后的沙箱描述:确定的 provider + 各 provider 参数(只有对应 provider 用得上的会有值)。 */
 export interface ResolvedSandbox {
@@ -163,8 +164,19 @@ async function createProvider(
       });
       // 一次性 provision token:歧义类失败重试前按它对账(销毁可能已创建的实例再重建)。
       const token = randomUUID();
+      // 运行标识(host/pid/startedAt)与 provision token 同一 label 机制:强杀之后
+      // `sandbox list --orphans` / `prune` 按它事后核对与收回(见 run-identity.ts)。
+      const runIdentity = currentRunIdentity();
       return withProvisionRetry(
-        () => DockerSandbox.create({ timeout, runtime: r.runtime, image: r.image, feedback, provisionToken: token }),
+        () =>
+          DockerSandbox.create({
+            timeout,
+            runtime: r.runtime,
+            image: r.image,
+            feedback,
+            provisionToken: token,
+            runIdentity,
+          }),
         classifyProvisionError,
         provisionSlot,
         feedback,
@@ -188,8 +200,16 @@ async function createProvider(
         throw new Error(t("sandbox.dependencyMissing.e2b"));
       });
       const token = randomUUID();
+      const runIdentity = currentRunIdentity();
       return withProvisionRetry(
-        () => E2BSandbox.create({ timeout, runtime: r.runtime, template: r.template, provisionToken: token }),
+        () =>
+          E2BSandbox.create({
+            timeout,
+            runtime: r.runtime,
+            template: r.template,
+            provisionToken: token,
+            runIdentity,
+          }),
         classifyProvisionError,
         provisionSlot,
         feedback,

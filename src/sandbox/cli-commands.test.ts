@@ -35,6 +35,17 @@ vi.mock("./keep.ts", async (importOriginal) => {
   };
 });
 
+// orphans.ts 的核对/分类/prune 逻辑由 orphans.test.ts 覆盖(mock dockerode/e2b);这里只证明
+// cli-commands.ts 自己的编排——输出格式与退出码,不重复孤儿判定的等价类。
+const mockListOrphanCandidates = vi.fn();
+const mockPruneOrphans = vi.fn();
+const mockDockerOrphanCount = vi.fn();
+vi.mock("./orphans.ts", () => ({
+  listOrphanCandidates: mockListOrphanCandidates,
+  pruneOrphans: mockPruneOrphans,
+  dockerOrphanCount: mockDockerOrphanCount,
+}));
+
 const { runSandboxCommand } = await import("./cli-commands.ts");
 
 let roots: string[] = [];
@@ -48,6 +59,9 @@ afterEach(async () => {
   mockExecInDetached.mockReset();
   mockOpenInteractiveShell.mockReset();
   mockDetachedCapabilityGap.mockReset();
+  mockListOrphanCandidates.mockReset();
+  mockPruneOrphans.mockReset();
+  mockDockerOrphanCount.mockReset();
 });
 
 async function makeRoot(): Promise<string> {
@@ -74,6 +88,14 @@ function entry(over: Partial<KeptSandboxEntry> = {}): KeptSandboxEntry {
 function collectOut() {
   const lines: string[] = [];
   return { io: { out: (s: string) => lines.push(s), err: (s: string) => lines.push(s) }, lines: () => lines.join("") };
+}
+
+/** cli-commands.ts 的 formatWhen() 按本地时区渲染 "YYYY-MM-DD HH:MM";测试用同一算法算期望值,
+ *  不跨时区断言绝对小时数(运行测试的机器时区不固定)。 */
+function localWhen(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 describe("niceeval sandbox list — expired 分支", () => {
@@ -309,5 +331,91 @@ describe("sandbox enter/stop — 条目级 lease 互斥", () => {
     const stopCode2 = await runSandboxCommand(root, ["stop", id], { run: niceevalRoot }, stopIo2.io);
     expect(stopCode2).toBe(0);
     expect(mockDestroyDetached).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sandbox list --orphans / prune — 命令组编排(判定与销毁逻辑由 orphans.test.ts 覆盖)", () => {
+  it("list --orphans 零候选时输出 No orphan sandboxes.,退出码 0", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    mockListOrphanCandidates.mockResolvedValue([]);
+    const { io, lines } = collectOut();
+
+    const code = await runSandboxCommand(root, ["list"], { run: niceevalRoot, orphans: true }, io);
+
+    expect(code).toBe(0);
+    expect(lines()).toBe("No orphan sandboxes.\n");
+  });
+
+  it("list --orphans 有候选时按 ID/PROVIDER/OWNER/STARTED/STATE 列输出,orphan 的 OWNER 带 dead 后缀", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    const startedAtOrphan = "2026-07-20T14:02:00.000Z";
+    const startedAtUnverified = "2026-07-20T13:40:00.000Z";
+    mockListOrphanCandidates.mockResolvedValue([
+      { provider: "docker", sandboxId: "f31b9a02", identity: { host: "mbp", pid: 4242, startedAt: startedAtOrphan }, state: "orphan" },
+      { provider: "e2b", sandboxId: "77e01bc2", identity: { host: "ci-07", pid: 913, startedAt: startedAtUnverified }, state: "unverified" },
+    ]);
+    const { io, lines } = collectOut();
+
+    const code = await runSandboxCommand(root, ["list"], { run: niceevalRoot, orphans: true }, io);
+
+    expect(code).toBe(0);
+    const out = lines();
+    // 时间列按本地时区渲染(与 formatWhen 同源),不跨时区断言绝对小时数——只核对结构与其余各列。
+    expect(out).toContain(`f31b9a02  docker    pid 4242@mbp dead  ${localWhen(startedAtOrphan)}   orphan\n`);
+    expect(out).toContain(`77e01bc2  e2b       pid 913@ci-07      ${localWhen(startedAtUnverified)}   unverified\n`);
+    expect(out).toContain("Remove orphans with: niceeval sandbox prune\n");
+  });
+
+  it("prune 无候选时输出 No orphan sandboxes.,退出码 0", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    mockPruneOrphans.mockResolvedValue({ pruned: [], failed: [], unverifiedRemaining: 0 });
+    const { io, lines } = collectOut();
+
+    const code = await runSandboxCommand(root, ["prune"], { run: niceevalRoot }, io);
+
+    expect(code).toBe(0);
+    expect(lines()).toBe("No orphan sandboxes.\n");
+  });
+
+  it("prune 全部成功时退出码 0,并按 --force 透传给 pruneOrphans", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    mockPruneOrphans.mockResolvedValue({
+      pruned: [{ provider: "docker", sandboxId: "f31b9a02", identity: { host: "mbp", pid: 4242, startedAt: "2026-07-20T14:02:00.000Z" }, state: "orphan" }],
+      failed: [],
+      unverifiedRemaining: 1,
+    });
+    const { io, lines } = collectOut();
+
+    const code = await runSandboxCommand(root, ["prune"], { run: niceevalRoot, force: true }, io);
+
+    expect(code).toBe(0);
+    expect(mockPruneOrphans).toHaveBeenCalledWith(expect.any(Set), true);
+    expect(lines()).toContain("pruned 1 orphan sandbox\n");
+    expect(lines()).toContain("unverified left");
+  });
+
+  it("prune 单台失败时退出码 1,failed 的信息照实列出", async () => {
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+    mockPruneOrphans.mockResolvedValue({
+      pruned: [],
+      failed: [
+        {
+          candidate: { provider: "docker", sandboxId: "f31b9a02", identity: { host: "mbp", pid: 4242, startedAt: "t" }, state: "orphan" },
+          message: "docker daemon rejected removal",
+        },
+      ],
+      unverifiedRemaining: 0,
+    });
+    const { io, lines } = collectOut();
+
+    const code = await runSandboxCommand(root, ["prune"], { run: niceevalRoot }, io);
+
+    expect(code).toBe(1);
+    expect(lines()).toContain("failed to prune f31b9a02 (docker): docker daemon rejected removal");
   });
 });

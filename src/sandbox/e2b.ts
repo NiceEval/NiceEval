@@ -17,6 +17,7 @@ import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { shellQuote } from "./shell.ts";
 import { resolveSandboxPath } from "./paths.ts";
+import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
@@ -104,17 +105,30 @@ export class E2BSandbox implements Sandbox {
   }
 
   static async create(
-    opts: { timeout?: number; runtime?: "node20" | "node24"; template?: string; provisionToken?: string } = {},
+    opts: {
+      timeout?: number;
+      runtime?: "node20" | "node24";
+      template?: string;
+      provisionToken?: string;
+      /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
+       *  (见 docs/feature/sandbox/architecture.md「孤儿核对」)。 */
+      runIdentity?: RunIdentity;
+    } = {},
   ): Promise<E2BSandbox> {
     const commandTimeoutMs = opts.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
     // e2b 的 node 版本由模板决定,runtime 仅作记录(不在创建时选)。
     const apiKey = process.env.E2B_API_KEY;
-    // provision token 经 metadata 打进实例:歧义类失败(fetch failed · other side closed)
-    // 重试前按它检索远端、销毁可能已创建的实例(见 reconcileProvision)。
+    // provision token 与运行标识都经 metadata 打进实例(同一通道):歧义类失败(fetch failed ·
+    // other side closed)重试前按 token 检索远端、销毁可能已创建的实例(见 reconcileProvision);
+    // 运行标识供 `sandbox list --orphans` 按 metadata 过滤事后核对。
+    const metadata: Record<string, string> = {
+      ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
+      ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
+    };
     const sdkOpts = {
       apiKey,
       timeoutMs: SESSION_TIMEOUT_MS,
-      ...(opts.provisionToken ? { metadata: { "niceeval-provision-token": opts.provisionToken } } : {}),
+      ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     } as const;
     // 有 template 就从模板起,否则用 e2b 默认 "base"。
     const sbx = opts.template

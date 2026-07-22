@@ -21,6 +21,7 @@ import {
   updateKeptEntry,
   type KeptSandboxEntry,
 } from "./keep-registry.ts";
+import { dockerOrphanCount, listOrphanCandidates, pruneOrphans, type OrphanCandidate } from "./orphans.ts";
 
 export interface SandboxCommandFlags {
   all?: boolean;
@@ -29,6 +30,10 @@ export interface SandboxCommandFlags {
   leaveRunning?: boolean;
   /** 仓库外执行时显式指定结果根(.niceeval 或其父目录)。 */
   run?: string;
+  /** `sandbox list` 专用:核对强杀路径留下的无主实例(见「孤儿核对」)。 */
+  orphans?: boolean;
+  /** `sandbox prune` 专用:连 unverified 一起销毁。 */
+  force?: boolean;
 }
 
 interface Io {
@@ -55,7 +60,7 @@ export async function runSandboxCommand(
   }
   switch (sub) {
     case "list":
-      return listCommand(root, io);
+      return flags.orphans ? listOrphansCommand(root, io) : listCommand(root, io);
     case "stop":
       return stopCommand(root, positionals.slice(1), flags, io);
     case "enter":
@@ -64,10 +69,71 @@ export async function runSandboxCommand(
       return historyCommand(root, positionals.slice(1), flags, io);
     case "diff":
       return diffCommand(root, positionals.slice(1), flags, io);
+    case "prune":
+      return pruneCommand(root, flags, io);
     default:
-      io.err(`usage: niceeval sandbox <list|enter|history|diff|stop> …\n`);
+      io.err(`usage: niceeval sandbox <list|enter|history|diff|stop|prune> …\n`);
       return 1;
   }
+}
+
+/** 留存注册表条目的 sandboxId 集合——孤儿核对与 prune 都要排除它们(被管理的现场不是孤儿)。 */
+async function keptSandboxIds(root: string): Promise<Set<string>> {
+  const { entries } = await readKeptEntries(root);
+  return new Set(entries.map(({ entry }) => entry.sandboxId));
+}
+
+async function listOrphansCommand(root: string, io: Io): Promise<number> {
+  const candidates = await listOrphanCandidates(await keptSandboxIds(root));
+  if (candidates.length === 0) {
+    io.out("No orphan sandboxes.\n");
+    return 0;
+  }
+  io.out(`ID        PROVIDER  OWNER              STARTED            STATE\n`);
+  for (const c of candidates) {
+    io.out(
+      `${c.sandboxId.padEnd(10)}${c.provider.padEnd(10)}${ownerLabel(c).padEnd(19)}${formatWhen(c.identity.startedAt).padEnd(19)}${c.state}\n`,
+    );
+  }
+  io.out(`Remove orphans with: niceeval sandbox prune\n`);
+  return 0;
+}
+
+async function pruneCommand(root: string, flags: SandboxCommandFlags, io: Io): Promise<number> {
+  const outcome = await pruneOrphans(await keptSandboxIds(root), flags.force === true);
+  if (outcome.pruned.length === 0 && outcome.failed.length === 0) {
+    io.out("No orphan sandboxes.\n");
+  } else {
+    if (outcome.pruned.length > 0) {
+      io.out(`pruned ${outcome.pruned.length} orphan sandbox${outcome.pruned.length === 1 ? "" : "es"}\n`);
+      for (const c of outcome.pruned) {
+        io.out(`  ${c.sandboxId}  ${c.provider}  ${ownerLabel(c)} · started ${formatWhen(c.identity.startedAt)}\n`);
+      }
+    }
+    for (const f of outcome.failed) {
+      io.err(`failed to prune ${f.candidate.sandboxId} (${f.candidate.provider}): ${f.message}\n`);
+    }
+  }
+  if (outcome.unverifiedRemaining > 0) {
+    io.out(
+      `${outcome.unverifiedRemaining} unverified left — inspect: niceeval sandbox list --orphans · force: niceeval sandbox prune --force\n`,
+    );
+  }
+  return outcome.failed.length > 0 ? 1 : 0;
+}
+
+/** `pid <pid>@<host>`,同宿主确认死亡时追加 ` dead`——unverified(异宿主)不冒充已核实。 */
+function ownerLabel(c: OrphanCandidate): string {
+  return `pid ${c.identity.pid}@${c.identity.host}${c.state === "orphan" ? " dead" : ""}`;
+}
+
+/** 留存注册表里还有条目时,`niceeval exp` 启动打的一行提醒(不阻塞、不清理)。 */
+export async function orphanReminder(cwd: string): Promise<string | undefined> {
+  const root = await findNiceevalRoot(cwd);
+  const keptIds = root ? await keptSandboxIds(root) : new Set<string>();
+  const count = await dockerOrphanCount(keptIds);
+  if (count === 0) return undefined;
+  return `${count} orphan docker sandbox${count === 1 ? "" : "es"} from a killed run — niceeval sandbox prune\n`;
 }
 
 async function resolveRegistryRoot(cwd: string, runFlag: string | undefined): Promise<string | undefined> {
