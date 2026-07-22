@@ -4,6 +4,20 @@ You are being asked to integrate [niceeval](https://github.com/CorrectRoadH/nice
 
 This file is responsible for exactly one thing: getting the package into the project. The integration workflow itself (exploring the project, confirming the path with the user, writing adapter / experiment / eval, getting the first run green) lives entirely in the bundled docs, which ship with the installed version — so this file contains no online doc links. Once installed, route everything through `node_modules/niceeval/INDEX.md`. The bundled docs are written in Chinese — read them anyway; they are the version-accurate source, and you still communicate with the user in the user's language. In particular, do not fetch niceeval.com or GitHub looking for an English version of a page: an English page for a different version is worse than a Chinese page for yours.
 
+## First write a TODO: installing the package is only the first step
+
+When the user says "install niceeval," the bar for done is **not** "added the dependency." It is **getting at least one real evaluation to run against the system under test in this repo, and being able to see the result with `niceeval show`**. Before you begin, turn the checklist below into a checkable TODO and track it item by item — don't call it done the moment the package is installed:
+
+- [ ] Install the package and run `init` (Steps 1–2)
+- [ ] Read `node_modules/niceeval/INDEX.md` and pick the "onboarding from scratch" tutorial page; from this step on, do every step by following the bundled docs (Step 3)
+- [ ] Explore this repo: what is the system under test, and how do you connect to it
+- [ ] Before writing any code, confirm the integration plan with the user (only decide on your own and continue if the task explicitly states there is nobody to confirm with)
+- [ ] Write the adapter / experiment / eval trio
+- [ ] Actually run it once and get it green, and confirm the result is visible with `niceeval show` — only writing the files without ever running them does not count
+- [ ] Follow the wrap-up self-check on the tutorial page, then ask the user whether they want to go to a deeper integration level
+
+Until every item on the list is checked off, this task is not done.
+
 ## Step 0: Four core ideas
 
 niceeval is a TypeScript evals library: you define "what a good result looks like" with a declarative API, then apply that to a coding agent, a deployed agent/service, or a pure function. These four ideas are all you need for the install decision:
