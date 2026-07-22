@@ -12,13 +12,13 @@
    $ niceeval show memory/swelancer --history
    执行历史 · memory/swelancer 匹配 1 个 eval · 1 个 experiment
 
-   ╭─ dev-e2b/codex-e2b · memory/swelancer-manager-proposals ────────────── 5 次执行 · 3 通过 2 失败 ─╮
-   │ 2026-06-28 09:12  ✓ 通过  —                                            2m 04s   $0.08  @160iuj3h │
-   │ 2026-07-01 18:40  ✗ 失败  equals(4) · expected 4, received 3            50.0s   $0.05  @1qrdcfq8 │
-   │ 2026-07-05 11:27  ✓ 通过  —                                            2m 48s   $0.13  @1pcdj0az │
-   │ 2026-07-08 22:03  ✗ 失败  commandSucceeded() · exit 1 · "…1 failed"    2m 53s   $0.19  @13wrnsc4 │
-   │ 2026-07-12 10:08  ✓ 通过  —                                            2m 10s   $0.11  @1m3akx2d │
-   ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+   ╭─ dev-e2b/codex-e2b · memory/swelancer-manager-proposals ───────────────────── 5 次执行 · 3 通过 2 失败 ─╮
+   │ 2026-06-28 09:12  ✓ 通过  —                                                   2m 04s   $0.08  @160iuj3h │
+   │ 2026-07-01 18:40  ✗ 失败  equals(4) · received 3                               50.0s   $0.05  @1qrdcfq8 │
+   │ 2026-07-05 11:27  ✓ 通过  —                                                   2m 48s   $0.13  @1pcdj0az │
+   │ 2026-07-08 22:03  ✗ 失败  commandSucceeded() · received exit 1 · "…1 failed"  2m 53s   $0.19  @13wrnsc4 │
+   │ 2026-07-12 10:08  ✓ 通过  —                                                   2m 10s   $0.11  @1m3akx2d │
+   ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
    ```
 
    对 Scope 中匹配的每个 `experimentId + evalId` 各成一个区域框,节内按 startedAt 升序列出历次 attempt,红绿交替一眼可辨;行尾 locator 就是下钻入口(分节、字段与去重规则见[契约](../show/history.md))。

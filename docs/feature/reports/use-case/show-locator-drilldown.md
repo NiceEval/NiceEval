@@ -10,7 +10,7 @@
 
    ```text
    ✗ 失败    memory/swelancer-manager-proposals
-     ✗       └─ @1qrdcfq8                            equals(4) · expected 4, received 3          50.0s     $0.05
+     ✗       └─ @1qrdcfq8                            equals(4) · received 3                      50.0s     $0.05
    ```
 
 2. 打开诊断首页,一页判断「为什么失败」:

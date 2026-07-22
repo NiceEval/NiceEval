@@ -11,7 +11,7 @@ $ niceeval show @1qrdcfq8
 │ evals/memory/swelancer-manager-proposals.eval.ts                               │
 │                                                                                │
 │ ✗ gate · Issue 15193: selected proposal matches the accepted proposal          │
-│          equals(4) · expected: 4 · received: 3                                 │
+│          equals(4) · expected 4 · received 3                                   │
 │          source: evals/memory/swelancer-manager-proposals.eval.ts:40:11        │
 ╰───────────────────────────────────────────── niceeval show @1qrdcfq8 --source ─╯
 
@@ -55,7 +55,7 @@ trace: 3 spans · niceeval show @1qrdcfq8 --timing
 
 这页应当足以判断“为什么失败”。每块证据是一个 `Section`，按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：块名嵌上边框左侧，规模或判定嵌右侧，下钻命令嵌下边框——命令因此总是紧贴它能展开的那块证据，而不是散落在正文行尾。没有捕获某类证据时，那一整块（连同框和命令）一起省略，不留光秃的标题。单个事实的摘要（`usage:`、`trace:`）本来就不是 `Section`，仍是无框单行，不为一个标量套一个框。只有在需要理解断言上下文、agent 为什么给出这个结果、或具体改了什么时，才继续打开证据切面：[`--source`](eval-source.md)、[`--execution`](execution.md)、[`--timing`](timing.md)、[`--diff`](diff.md)。
 
-有 eval 源码时，`AttemptSource` 把文件路径放在框内首行、被标注的行数放上边框右侧、`--source` 命令放下边框，随后按原始声明顺序平铺列出全部非 passed 断言（`✗ gate`/`✗ soft`/`◌ unavailable` 混排，不分四段），每行带分组、matcher、期望值、实际值与 `file:line:col` 源码锚；全通过的断言只在没有失败可看时才会出现，且只按 group 折成 `✓ passed · <group> · <count>` 一行，不逐条展开。源码不可用时换成 `AttemptAssertions`，规则完全一致，只是没有文件路径与逐行标注。`AttemptFixPrompt` 的文本面固定为空——终端已经有本页顶部的 locator，直接跑 `niceeval show @<locator>` 就是给 agent 的下一步，不需要在这里再拼一份 prompt 正文；prompt 全文只在 web 面的复制按钮里。
+有 eval 源码时，`AttemptSource` 把文件路径放在框内首行、被标注的行数放上边框右侧、`--source` 命令放下边框，随后按原始声明顺序平铺列出全部非 passed 断言（`✗ gate`/`✗ soft`/`◌ unavailable` 混排，不分四段；无阈值 judge 的纯打分行不带判定图标，按声明位置列出分数），每行带分组、matcher、期望值、实际值与 `file:line:col` 源码锚（逐条格式的单源在[断言展示契约](../../scoring/library/display.md#通用渲染规则)）；全通过的断言只在没有失败可看时才会出现，且只按 group 折成 `✓ passed · <group> · <count>` 一行，不逐条展开。源码不可用时换成 `AttemptAssertions`，规则完全一致，只是没有文件路径与逐行标注。`AttemptFixPrompt` 的文本面固定为空——终端已经有本页顶部的 locator，直接跑 `niceeval show @<locator>` 就是给 agent 的下一步，不需要在这里再拼一份 prompt 正文；prompt 全文只在 web 面的复制按钮里。
 
 `timing` 是 `AttemptTimeline` 的紧凑摘要：主链每个 `LifecyclePhase` 各占一行，有子节点的阶段在行尾标 `(N children collapsed)`（完整分解见 [`--timing`](timing.md)）；收尾阶段是一个嵌套 `Section`，按只画最外层的规则降为 `├─ teardown ─┤` 隔条，不计入上边框右侧的总耗时。这里不筛选“大头”——只要 phase 存在就列一行，多余的只是折叠子节点，不是丢弃阶段。落盘没有 `phases`（旧结果或第三方 harness 写入）时这一整块省略，不猜一个假总耗时。
 

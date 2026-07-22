@@ -97,12 +97,12 @@ $ niceeval show weather/brooklyn
 weather/brooklyn — 布鲁克林天气查询
 
 compare/bub-gpt-5.4     ✓ passed   1 attempt    38.0s   $0.03   (2h ago)    @1xqur9kx
-compare/codex-gpt-5.4   ✗ failed   3 attempts   41.2s   $0.12   (40s ago)   @1k2m9qrs   gate calledTool("get_weather")
+compare/codex-gpt-5.4   ✗ failed   3 attempts   41.2s   $0.12   (40s ago)   @1k2m9qrs   calledTool("get_weather") · received 0 tool calls
 
 attempt 3 · compare/codex-gpt-5.4 · failed · 41.2s · 12.3k tokens · $0.04
-  ✗ gate calledTool("get_weather") — tool was never called
+  ✗ gate · calledTool("get_weather") · received 0 tool calls
   ✓ gate succeeded()
-  ✗ soft judge("回答基于实时数据") — 0.2/1: reply invents a temperature without any tool call
+  ✗ soft · judge("回答基于实时数据")   0.2 / 1 · reply invents a temperature without any tool call
 
 artifacts: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/
 attempt locator: @1k2m9qrs
@@ -123,12 +123,11 @@ snapshot 2026-07-09T10:00:00.000Z · attempt 3 · 41.2s · 12.3k tokens · $0.04
 assertions: 1 passed · 1 gate failed · 1 soft below target
 eval source: evals/weather/brooklyn.eval.ts · sha256:a3fa4555…
 
-failures:
-  gate · Issue 15193: selected proposal matches the one maintainers accepted
-    assertion: equals(4)
-    expected: 4
-    received: 1
-    source: evals/memory/swelancer-manager-proposals.eval.ts:40:11
+✗ gate · calledTool("get_weather")
+    received: 0 tool calls
+    source: evals/weather/brooklyn.eval.ts:12:7
+✗ soft · judge("回答基于实时数据")   0.2 / 1
+    source: evals/weather/brooklyn.eval.ts:14:7
 
 execution: 2 events · 0 skill loads · 0 tool calls · 1 AI messages
 timing: eval.run 40.8s · scoring.evaluate 0.3s
@@ -161,10 +160,10 @@ eval source: evals/weather/brooklyn.eval.ts · sha256:a3fa4555…
 3    async test(t) {
 4      const turn = await t.send("布鲁克林今天天气怎么样?");
 5✗     turn.calledTool("get_weather");
-   gate · tool was never called
+   calledTool("get_weather") · received 0 tool calls
 6✓     turn.succeeded();
 7✗     t.check(turn.message, judge("回答基于实时数据"));
-   soft · 0.2/1 · reply invents a temperature without any tool call
+   judge("回答基于实时数据") · 0.2 / 1 · reply invents a temperature without any tool call
 8    },
 9  });
 
@@ -315,13 +314,13 @@ $ niceeval show @1c3h6twx --diff=src/components/Button.tsx
 $ niceeval show weather/brooklyn --history
 执行历史 · weather/brooklyn 匹配 1 个评估用例 · 1 个 experiment
 
-╭─ compare/codex-gpt-5.4 · weather/brooklyn ──────────────────────────── 5 次执行 · 2 通过 3 失败 ─╮
-│ 2026-07-07 16:40  ✗ 失败  calledTool("get_weather") · 未调用            12.4s   $0.05  @1w3k0dqe │
-│ 2026-07-08 11:05  ✓ 通过  —                                             8.9s   $0.03  @1m82hyqk │
-│ 2026-07-08 18:22  ✗ 失败  calledTool("get_weather") · 未调用            11.7s   $0.05  @19fjq2xw │
-│ 2026-07-09 08:12  ✓ 通过  —                                             9.2s   $0.03  @1zpk57vn │
-│ 2026-07-09 10:00  ✗ 失败  calledTool("get_weather") · 未调用            13.1s   $0.04  @1c4vmt8d │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ compare/codex-gpt-5.4 · weather/brooklyn ─────────────────────────────────── 5 次执行 · 2 通过 3 失败 ─╮
+│ 2026-07-07 16:40  ✗ 失败  calledTool("get_weather") · received 0 tool calls    12.4s   $0.05  @1w3k0dqe │
+│ 2026-07-08 11:05  ✓ 通过  —                                                    8.9s   $0.03  @1m82hyqk │
+│ 2026-07-08 18:22  ✗ 失败  calledTool("get_weather") · received 0 tool calls    11.7s   $0.05  @19fjq2xw │
+│ 2026-07-09 08:12  ✓ 通过  —                                                    9.2s   $0.03  @1zpk57vn │
+│ 2026-07-09 10:00  ✗ 失败  calledTool("get_weather") · received 0 tool calls    13.1s   $0.04  @1c4vmt8d │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ✓✗ 交替说明这个评估用例在抖，该修的是稳定性（被测程序或断言），反复重跑碰运气只会烧钱。从时间轴上挑一次失败和一次通过，复制行尾 `@<locator>` 分别 `niceeval show @<locator> --execution`，比对 Agent 两次行为差在哪。红绿分界正好对着一次配置改动（换过 model、flags）时，那不是抖，是配置引入的变化：默认报告只统计与实验当前配置一致的结果，时间轴不做这个筛选，改配置之前的执行也在轴上，正适合看出这条分界线。同一次执行被之后的运行以缓存携带时，时间轴仍只占一行——列的是执行本身，不是它被复制的次数。

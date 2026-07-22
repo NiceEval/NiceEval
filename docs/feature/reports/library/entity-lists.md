@@ -147,10 +147,10 @@ compare/codex   gpt-5.4-mini   codex   1m 12s      50%         42k      $0.08   
 compare/codex
 Status      Eval / Attempt       Result                       Duration   Cost
 ✓ passed    algebra/retry                                      17.1s avg   $0.02 avg
-  ✗         ├─ @1first01         equals(42) · expected 42, received 41   16.0s   $0.02
+  ✗         ├─ @1first01         equals(42) · received 41   16.0s   $0.02
   ✓         └─ @1second2         —                            18.2s      $0.02
 ✗ failed    weather/tool   ↩ 3d                               42.1s avg   $0.04 avg
-  ✗         └─ @1third03   ↩ 3d   calledTool("get_weather") · received 2 other calls   42.1s   $0.04
+  ✗         └─ @1third03   ↩ 3d   calledTool("get_weather") · received 2 tool calls: get_time({}) …   42.1s   $0.04
 —           weather/rerank       当前配置下无结果 · niceeval exp compare/codex
 ```
 

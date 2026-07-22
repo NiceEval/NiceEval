@@ -4,7 +4,7 @@
 
 ## 分节与行内字段
 
-Scope 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。节内是跨快照按 [attempt 身份键](../../results/library.md#身份键与去重)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与榜单同一 [display 契约](../../scoring/library/display.md#契约一结果摘要)）、耗时、成本与 locator。locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
+Scope 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。节内是跨快照按 [attempt 身份键](../../results/library.md#身份键与去重)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与榜单同一[单行压缩形态](../../scoring/library/display.md#单行压缩形态)）、耗时、成本与 locator。locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
 
 ## 输出
 
@@ -14,18 +14,18 @@ Scope 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 
 $ niceeval show memory/swelancer --history
 执行历史 · memory/swelancer 匹配 1 个 eval · 2 个 experiment
 
-╭─ dev-e2b/codex-e2b · memory/swelancer-manager-proposals ────────────── 5 次执行 · 3 通过 2 失败 ─╮
-│ 2026-06-28 09:12  ✓ 通过  —                                            2m 04s   $0.08  @160iuj3h │
-│ 2026-07-01 18:40  ✗ 失败  equals(4) · expected 4, received 3            50.0s   $0.05  @1qrdcfq8 │
-│ 2026-07-05 11:27  ✓ 通过  —                                            2m 48s   $0.13  @1pcdj0az │
-│ 2026-07-08 22:03  ✗ 失败  commandSucceeded() · exit 1 · "…1 failed"    2m 53s   $0.19  @13wrnsc4 │
-│ 2026-07-12 10:08  ✓ 通过  —                                            2m 10s   $0.11  @1m3akx2d │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ dev-e2b/codex-e2b · memory/swelancer-manager-proposals ───────────────────── 5 次执行 · 3 通过 2 失败 ─╮
+│ 2026-06-28 09:12  ✓ 通过  —                                                   2m 04s   $0.08  @160iuj3h │
+│ 2026-07-01 18:40  ✗ 失败  equals(4) · received 3                               50.0s   $0.05  @1qrdcfq8 │
+│ 2026-07-05 11:27  ✓ 通过  —                                                   2m 48s   $0.13  @1pcdj0az │
+│ 2026-07-08 22:03  ✗ 失败  commandSucceeded() · received exit 1 · "…1 failed"  2m 53s   $0.19  @13wrnsc4 │
+│ 2026-07-12 10:08  ✓ 通过  —                                                   2m 10s   $0.11  @1m3akx2d │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-╭─ dev-e2b/claude-e2b · memory/swelancer-manager-proposals ───────────── 2 次执行 · 2 通过 0 失败 ─╮
-│ 2026-07-02 15:31  ✓ 通过  —                                            3m 05s   $0.44  @1w7kqe2f │
-│ 2026-07-12 10:21  ✓ 通过  —                                            2m 41s   $0.37  @1hv93mdz │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ dev-e2b/claude-e2b · memory/swelancer-manager-proposals ──────────────────── 2 次执行 · 2 通过 0 失败 ─╮
+│ 2026-07-02 15:31  ✓ 通过  —                                                   3m 05s   $0.44  @1w7kqe2f │
+│ 2026-07-12 10:21  ✓ 通过  —                                                   2m 41s   $0.37  @1hv93mdz │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 结果摘要列与榜单同一口径：passed 固定为 `—`，failed 只显示主失败断言的单行压缩，errored 显示结构化 error 的一层摘要；超宽先折单行再按列宽截断，绝不逐行铺开命令输出。时间轴上任意一行都可下钻：复制行尾 locator，`niceeval show @1qrdcfq8` 打开这次执行的诊断首页，继续看断言、对话、时间树与 diff（[失败诊断首页](attempt.md)）。

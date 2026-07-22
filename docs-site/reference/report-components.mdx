@@ -195,9 +195,9 @@ const evals = await EvalList.data(selection);
 ```text
 weather/brooklyn · compare/bub-gpt-5.4 · failed
   score 0.20 · 3 attempts · 41s avg · $0.04 avg
-  @1k2m9qrs✗ · gate calledTool("get_weather") — tool was never called
-  @1nx4dpqr✗ · gate calledTool("get_weather") — tool was never called
-  @19vq2jex✗ · gate calledTool("get_weather") — tool was never called
+  @1k2m9qrs✗ · calledTool("get_weather") · received 0 tool calls
+  @1nx4dpqr✗ · calledTool("get_weather") · received 0 tool calls
+  @19vq2jex✗ · calledTool("get_weather") · received 0 tool calls
 
 fixtures/button · compare/bub-gpt-5.4 · errored
   score — · 1 attempt · 2m 00s · $0.09
@@ -224,9 +224,9 @@ const attempts = await AttemptList.data(selection);
 
 ```text
 ✗ @1k2m9qrs · weather/brooklyn · compare/bub-gpt-5.4 · 41s · $0.04
-  gate calledTool("get_weather") · failed
-    tool was never called
-  soft judge("回答基于实时数据") · 0.2/1
+  ✗ gate · calledTool("get_weather")
+    received: 0 tool calls
+  ✗ soft · judge("回答基于实时数据")   0.2 / 1
     reply invents a temperature
 
 ! @1c3h6twx · fixtures/button · compare/bub-gpt-5.4 · 2m 00s · $0.09

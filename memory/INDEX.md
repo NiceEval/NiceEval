@@ -123,6 +123,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [one-line-summary-grammar-and-flat-attempt-assertions](one-line-summary-grammar-and-flat-attempt-assertions.md) — 裁决(2026-07-22):单行失败摘要语法收拢为 display.md#单行压缩形态 单点(` · ` 分隔、matcher 即条件时省 expected、received 永不省);attempt 首页四段分节(failures:/soft/scores/unavailable)被 Phase G 平铺混排取代,display 与 docs-site 中英示例已同步铲平
 - [staleness-demoted-from-warning-to-provenance](staleness-demoted-from-warning-to-provenance.md) — 裁决(2026-07-22):stale-snapshot/partial-coverage 两个警告 kind 删除——时效降级为行级 `↩` 标注(attempt.carried/historical),覆盖缺口物化为 scope.coverage+榜单占位行,新增 fresh 口径(--fresh);warnings 只留定位不到行的三种;否决理由=警告粒度与事实粒度错位、carry 是正常功能不该带「多数情况请忽略」的警告
 - [publish-redaction-copysnapshots-not-report](publish-redaction-copysnapshots-not-report.md) — 设计裁决:发布消毒移到 copySnapshots({ redact }),AttemptList.redact 降为展示层(2026-07-14),推翻「消毒归报告」——view --out 原样发布 artifact,列表脱敏挡不住深链
 - [copysnapshots-deletion-rejected-carried-entries](copysnapshots-deletion-rejected-carried-entries.md) — 裁决(2026-07-22):否决「writer stamp knownEvalIds 后删 copySnapshots、手工 cp 子集合法」——携带条目 artifactBase 指向原快照,子集 cp 静默丢证据,物化只能是库原语;不可替代核心=自包含物化,发布判据同日改「跨出可信边界」

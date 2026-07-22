@@ -73,21 +73,14 @@ The goal of the loop isn't to make a command exit green — it's to form and ver
     10    async test(t) {
     11      const turn = await t.send("What's the weather in Brooklyn today?");
     12 ✗    turn.calledTool("get_weather");
-           gate · tool was never called
+           calledTool("get_weather") · received 0 tool calls
     13 ✓    turn.succeeded();
     14 ✗    t.check(turn.message, judge("reply is based on real-time data"));
-           soft · 0.2/1 · reply invents a temperature without any tool call
+           judge("the answer is based on real-time data") · 0.2 / 1 · reply invents a temperature without any tool call
     15    },
     16  });
 
     assertions: 1 passed · 1 gate failed · 1 soft below target
-
-    failures:
-      gate · Issue 15193: selected proposal matches the one maintainers accepted
-        assertion: equals(4)
-        expected: 4
-        received: 1
-        source: evals/memory/swelancer-manager-proposals.eval.ts:40:11
 
     execution: 3 events · 0 skill loads · 0 tool calls · 1 AI messages
     timing: eval.run 40.4s · scoring.evaluate 0.5s · teardown +0.2s
@@ -220,7 +213,8 @@ snapshots:
   - .niceeval/local/2026-07-09T10-00-00-000Z-x1f2/
 failures:
   - @1k2m9qtr weather/brooklyn [local]
-    gate: tool was never called
+    gate: calledTool("get_weather")
+          received 0 tool calls
 next:
   niceeval show @1k2m9qtr
   niceeval show @1k2m9qtr --execution
