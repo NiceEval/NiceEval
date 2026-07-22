@@ -12,6 +12,7 @@ import { COMPONENT_RAW_CHILDREN, COMPONENT_ROLE, defineComponent, type ReportNod
 import { localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../model/locale.ts";
 import { indentBlock, joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
 import type { ColumnAlign } from "../model/text-layout.ts";
+import { encodeDividerLine, panelContentWidth, renderPanel, rowsFromBodyText } from "../model/panel.ts";
 import { renderTableText } from "./table-text.ts";
 import { normalizeGrid, planTextGrid, type GridDensity, type GridVariant } from "./grid-layout.ts";
 
@@ -208,16 +209,15 @@ export interface SectionProps extends LayoutProps {
   meta?: LocalizedText;
 }
 
-/** 标题行右侧同一行放不下 meta 时,退化成标题后两格缩进折行。 */
-function sectionHeadingLine(heading: string, metaText: string | undefined, width: number): string {
-  if (metaText === undefined) return heading;
-  const gap = width - stringWidth(heading) - stringWidth(metaText);
-  if (gap >= 1) return heading + " ".repeat(gap) + metaText;
-  const wrapped = wrapDisplay(metaText, Math.max(1, width - 2)).join("\n");
-  return `${heading}\n${indentBlock(wrapped, "  ")}`;
-}
+// text 面的框线体裁(docs/feature/reports/library/layout.md「区域框」):顶层 Section 画完整
+// 四边框,嵌在其中的 Section 降为横隔 `├─ ─┤`。「嵌套」按运行期调用栈深度判断(而不是静态树
+// 结构),天然处理任意中间层(Row/Col/Grid/Tabs)——只在 boxed 模式下计数,plain 模式的嵌套
+// 靠递归自然处理(每层各自加两格缩进),不需要这份计数。深度在 try/finally 里配对增减,
+// 渲染是纯同步调用栈,不会跨 Section 泄漏。
+let sectionBoxedDepth = 0;
 
-/** 带标题的块:网页是标题层级(可选 meta 同行右对齐),终端是标题行加缩进。 */
+/** 带标题的块:网页是标题层级(可选 meta 同行右对齐);终端面框线体裁全部委托给 panel.ts,
+ *  这里只负责按 ctx.panelMode 组装 title/meta/rows 喂给它,不自己拼框字符。 */
 export const Section = defineComponent<SectionProps>({
   web({ title, meta, children, className }, ctx) {
     const titleText = resolveLocalizedText(title, ctx.locale);
@@ -239,12 +239,47 @@ export const Section = defineComponent<SectionProps>({
   text({ title, meta, children }, ctx) {
     const heading = resolveLocalizedText(title, ctx.locale);
     const metaText = meta !== undefined ? resolveLocalizedText(meta, ctx.locale) : undefined;
-    const headingLine = sectionHeadingLine(heading, metaText, ctx.width);
-    const body = childArray(children)
-      .map((child) => ctx.render(child, ctx.width - 2))
-      .filter((block) => block.length > 0)
-      .join("\n\n");
-    return body.length > 0 ? `${headingLine}\n${indentBlock(body, "  ")}` : headingLine;
+
+    if (ctx.panelMode !== "boxed") {
+      // plain:递归天然处理嵌套(每层 Section 各自渲染标题行 + 两格缩进的正文),不需要
+      // 横隔展开——降级后所有 Section 都按同一条规则显示,不区分是否嵌套。
+      const body = childArray(children)
+        .map((child) => ctx.render(child, ctx.width - 2))
+        .filter((block) => block.length > 0)
+        .join("\n\n");
+      return renderPanel({
+        title: heading,
+        meta: metaText,
+        rows: body.length > 0 ? [{ kind: "line", text: body }] : [],
+        width: ctx.width,
+        mode: "plain",
+      }).join("\n");
+    }
+
+    const nested = sectionBoxedDepth > 0;
+    const contentWidth = panelContentWidth(ctx.width, "boxed");
+    sectionBoxedDepth++;
+    try {
+      const body = childArray(children)
+        .map((child) => ctx.render(child, contentWidth))
+        .filter((block) => block.length > 0)
+        .join("\n\n");
+      if (nested) {
+        // 嵌套 Section 不再画自己的框,借字符串桥接把「这是一条横隔」的意图交给外层
+        // (真正调用 renderPanel 的那个 Section);中间层(Row/Col/…)把它当普通文本块透传。
+        const marker = encodeDividerLine(heading, metaText);
+        return body.length > 0 ? `${marker}\n${body}` : marker;
+      }
+      return renderPanel({
+        title: heading,
+        meta: metaText,
+        rows: rowsFromBodyText(body),
+        width: ctx.width,
+        mode: "boxed",
+      }).join("\n");
+    } finally {
+      sectionBoxedDepth--;
+    }
   },
 });
 Section.displayName = "Section";

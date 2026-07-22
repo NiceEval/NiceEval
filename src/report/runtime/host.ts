@@ -110,6 +110,9 @@ export interface HostTextRenderOptions {
   locale?: string;
   /** 索引命令的完整上下文(docs/feature/reports/show/reports.md);逐页渲染时透传。 */
   commandContext?: HostCommandContext;
+  /** `Section` 的框线传输能力(docs/feature/reports/library/layout.md「区域框」);宿主按真实
+   *  TTY / NO_COLOR 探测结果注入,省略时降级为无框文本(`createTextContext` 的默认值)。 */
+  panelMode?: "boxed" | "plain";
 }
 
 /** 渲染一页的 text 面。 */

@@ -16,6 +16,7 @@ import type { Results, Scope } from "../../results/types.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 import type { ReportInput } from "../model/types.ts";
 import type { ReportMeta } from "./report.ts";
+import type { PanelMode } from "../model/panel.ts";
 
 // ───────────────────────── 当前页判别(PageContext) ─────────────────────────
 
@@ -103,6 +104,13 @@ export interface TextContext {
    * --page 与位置参数),默认 `niceeval show --exp <id>`。非契约字段,官方组件内部用。
    */
   experimentCommand(experimentIdPrefix: string): string;
+  /**
+   * `Section` text 面的框线传输能力(docs/feature/reports/library/layout.md「区域框」):
+   * `"boxed"` 时画区域框,`"plain"` 时降级为无框文本。宿主按真实 TTY / NO_COLOR 探测结果
+   * 注入;省略时默认 `"plain"`——不假设有终端,保证现有(未显式声明能力的)调用方行为不变。
+   * 是否真的画框还要再叠加宽度下限,那份判断只在 `panel.ts` 里做一次。
+   */
+  panelMode: PanelMode;
 }
 
 export interface WebContext {
@@ -554,6 +562,8 @@ export interface TextRenderOptions {
   experimentCommand?: (experimentIdPrefix: string) => string;
   /** chrome 文案的 locale;默认 "en"(`niceeval show` 现有输出不变)。 */
   locale?: ReportLocale;
+  /** `Section` 的框线传输能力;默认 `"plain"`,由宿主按真实 TTY / NO_COLOR 探测结果注入。 */
+  panelMode?: PanelMode;
 }
 
 function shellQuote(value: string): string {
@@ -569,11 +579,13 @@ export function createTextContext(options?: TextRenderOptions): TextContext {
   const attemptCommand = options?.attemptCommand;
   const experimentCommand =
     options?.experimentCommand ?? ((prefix: string) => `niceeval show --exp ${shellQuote(prefix)}`);
+  const panelMode = options?.panelMode ?? "plain";
   const make = (w: number): TextContext => ({
     width: w,
     locale,
     attemptCommand,
     experimentCommand,
+    panelMode,
     render(node, childWidth) {
       return renderNodeToText(node, childWidth === undefined ? this : make(Math.max(10, childWidth)));
     },

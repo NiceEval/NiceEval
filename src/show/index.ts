@@ -88,6 +88,14 @@ export interface ShowIO {
   err?: (text: string) => void;
   width?: number;
   now?: number;
+  /** `Section` 的框线传输能力(docs/feature/reports/library/layout.md「区域框」);省略时按
+   *  `process.stdout.isTTY` 与 `NO_COLOR` 探测——测试注入固定值,不依赖真实终端设备。 */
+  panelMode?: "boxed" | "plain";
+}
+
+/** 真实 CLI 入口的框线传输能力探测:是 TTY 且没有要求朴素输出时才画框。 */
+function detectPanelMode(): "boxed" | "plain" {
+  return process.stdout.isTTY === true && process.env.NO_COLOR === undefined ? "boxed" : "plain";
 }
 
 /** 可预期的用户错误:打一句英文直说问题与下一步,退出码 1,不抛堆栈。 */
@@ -116,6 +124,7 @@ export async function runShow(
       err,
       width: clampWidth(io.width ?? process.stdout.columns),
       now: io.now ?? Date.now(),
+      panelMode: io.panelMode ?? detectPanelMode(),
     });
     return 0;
   } catch (e) {
@@ -131,7 +140,7 @@ async function show(
   cwd: string,
   patterns: string[],
   flags: ShowFlags,
-  io: { out: (s: string) => void; err: (s: string) => void; width: number; now: number },
+  io: { out: (s: string) => void; err: (s: string) => void; width: number; now: number; panelMode: "boxed" | "plain" },
 ): Promise<void> {
   const evidence =
     flags.source === true ||
@@ -227,7 +236,7 @@ async function show(
         report: meta,
         page: { id: attemptPage.id, input: "attempt", locator: attempt.locator!, evidence: attemptEvidence },
       },
-      { width: io.width, locale },
+      { width: io.width, locale, panelMode: io.panelMode },
     );
     io.out(text + "\n");
     return;
@@ -383,6 +392,7 @@ async function show(
     {
       width: io.width,
       locale,
+      panelMode: io.panelMode,
       commandContext: { ...commandContext, ...(flags.page !== undefined ? { page: flags.page } : {}) },
     },
   );
