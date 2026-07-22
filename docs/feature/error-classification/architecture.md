@@ -48,7 +48,7 @@ export function turnErrorText(turn: Turn): string | undefined;
 
 ## 重试执行体
 
-执行体包住 context 层对 `agent.send(...)` 的那一次调用——全仓库只有这一个 choke point,adapter、runner、eval 都不再各自处理瞬时错误。时序:
+执行体包住 context 层对 `agent.send(...)` 的那一次调用——全仓库只有这一个 choke point,adapter、runner、eval 都不再各自处理瞬时错误。进入执行体的失败已是 agent 内层自愈(被测 CLI 自己的断连重连,能力因 agent 而异)的最终结果,执行体不区分、也不探测 agent 有没有这层能力([分层契约](README.md#在自愈阶梯里的位置))。时序:
 
 1. 会话记账(`session.turnCount` 自增、`userEvent` 推入事件流)在进入执行体之前完成,整个重试循环内不重复。
 2. 调 `agent.send(input, ctx)`。返回 `completed` / `waiting` → 原样交回管道,循环结束。
