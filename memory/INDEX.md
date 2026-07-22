@@ -193,6 +193,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [show-single-eval-narrow-drops-page-index](show-single-eval-narrow-drops-page-index.md) — 位置参数把 show 收窄到恰好 1 个 eval 时切换成单题详情视图,尾部不附「Other pages」多页索引;写 --page 相关 E2E 断言要选会命中多个 eval 的前缀
 - [verify-readback-mutation-orders-later-e2e-report-domains](verify-readback-mutation-orders-later-e2e-report-domains.md) — verifyReadback 结尾对 .niceeval/main 追加 2 次真实快照,晚于它调用、现场跑 show 核对 evidence.main 原始 locator 的验收域会在「当前」Scope 里查不到;e2e.ts 里此类只读域必须排在 verifyReadback 之前
 - [experimentlist-text-column-order-and-wrap-instability](experimentlist-text-column-order-and-wrap-instability.md) — ExperimentList text 面真实列序(Results 排 Tokens/Cost 之前)与 entity-lists.md 范例不符;width 80 折行哪列换行随真实数值内容漂移,只有 deliberate-error/deliberate-fail 这类恒定长 id 折行稳定可断言;tokens 聚合值可为小数
+- [computed-style-color-mix-oklch-not-rgba](computed-style-color-mix-oklch-not-rgba.md) — 报告 CSS 状态染色大量用 `color-mix(in oklch, ...)`,Chromium `getComputedStyle` 算出来是 `oklch(L C H / A)` 斜杠语法而非 `rgba(r,g,b,a)`;B4 浏览器视觉验收里解析 alpha 的正则要两种语法都认
 
 ## o11y 采集
 
