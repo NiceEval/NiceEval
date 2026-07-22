@@ -18,6 +18,7 @@ export {
   repeatedFailedCommands,
   taskPassRate,
   tokens,
+  totalScore,
 } from "./model/metrics.ts";
 export { flag, label, numericFlag, numericLabel, numericRunConfig, runConfig } from "./model/flag.ts";
 

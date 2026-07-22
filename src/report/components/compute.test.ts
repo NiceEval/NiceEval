@@ -1244,6 +1244,17 @@ describe("totalScore", () => {
     // acrossEvals sum:q1 的 perEval 均值(3)+ q2 的值(5)= 8,不是全部 attempt 直接相加(11)。
     expect(table.rows[0]!.cells[totalScore.name]!.value).toBe(8);
   });
+
+  it("从公开导出面(niceeval/report 顶层)可以拿到同一个 totalScore 实例,构建自定义报告不需要下钻到 model/metrics.ts", async () => {
+    const { totalScore: totalScoreFromBarrel } = await import("../index.ts");
+    expect(totalScoreFromBarrel).toBe(totalScore); // 同引用:barrel 不复制一份新指标
+    const s = snap({
+      experimentId: "score/barrel",
+      results: [res("checkpoints", "passed", { scoring: "points", assertions: [pointsAssertion("a", 4)] })],
+    });
+    const table = await metricTableData([s], { rows: "eval", columns: [totalScoreFromBarrel] });
+    expect(table.rows.find((r) => r.key === "checkpoints")!.cells[totalScoreFromBarrel.name]!.value).toBe(4);
+  });
 });
 
 // ───────────────────────── labels 维度、series 归类与 connect ─────────────────────────
