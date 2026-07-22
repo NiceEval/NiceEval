@@ -50,6 +50,9 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **Local provider**：仓库根解析与仓库外报错；只观察不还原（用户 git 状态不被触碰、stop 不删工作树）；不提权；与 keep 组合创建前报错。
 - **串行复用**：不随 eval 变的层整组只执行一次、 Fixture 每题重放；题间重置尊重排除清单；温基线即归因锚点（跨题 diff 零串扰）；互斥与异构批次在创建前报错；与指纹缓存双向绝缘（复用 attempt 不作缓存来源，复用 run 也不消费携带——存在可携带终态时计划内 attempt 仍全量派发）；显式 `--max-concurrency` 组合是创建前用法错误且与值无关（`1` 也报），环境层并发缺省被覆盖为 1 并在 PLAN 标注。
 - **孤儿核对与 prune**：创建期运行标识元数据的写入边界；孤儿三条件与 unverified 的保守判定；prune 的幂等、`--force` 语义与失败退出码。
+- **留存(keep)登记项的 `expiresAt`**：按 provider 声明的保留期限计算——vercel 写 `keptAt` 加默认快照保留期(30 天),e2b(pause 官方契约无自然过期)与 docker(本地停驻,非远端保留期概念)都不写；`niceeval sandbox list` 的过期分支据登记项的 `expiresAt` 展示保留截止时刻。
+- **detached 生命周期路由(`keep.ts`)**：`nativeEnterCommand`/`wakeDetached`/`suspendDetached`/`inspectDetached`/`destroyDetached`/`execInDetached` 三 provider 分支各自的正常路径与失败路径——mock 各自 SDK 模块(`dockerode`/`e2b`/`@vercel/sandbox`),不发真实请求。vercel 分支专门证明:唤醒走 `Sandbox.get({ name, resume: true })`(name 而非 sessionId,与官方 CLI/SDK 按 name 索引一致)、查状态与销毁走 `resume:false` 不产生唤醒副作用、销毁调用 `delete()` 而非 `stop()`(`stop()` 是可恢复的 suspend,不是永久销毁)；`detachedCapabilityGap` 对已知三 provider 返回 undefined、对未知 provider 名返回可展示的原因(供 CLI 报「不支持,原因」而不是逐条 `if (provider === …)`)。
+- **`sandbox enter`/`history`/`diff` 的能力路由(`cli-commands.ts`)**：三条命令统一走"能力声明 gap 检查 → 唤醒 → 操作 → 回眠"路径,不含 provider 名分支——docker 与 e2b 各证明一次唤醒成功路径;interactive enter 的原生命令 spawn 失败(未装对应 CLI)现场保持 alive 并提示直连命令,不误判成功;条目级 lease 互斥——`enter` 持有 lease 时并发 `stop` 拒绝并报出 holder,过期 lease 允许下一个命令接管并如实提示。
 
 ## 不这样测
 

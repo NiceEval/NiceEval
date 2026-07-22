@@ -2,12 +2,14 @@
 // 不读 niceeval.config.ts、不发现 eval,只操作留存注册表(.niceeval/sandboxes/ 逐条目文件)
 // 与内置 provider 的 detached 能力;provider 名的路由发生在 CLI / 注册表边界(sandbox/ 域内)。
 
-import { spawn } from "node:child_process";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import {
   destroyDetached,
+  detachedCapabilityGap,
+  execInDetached,
   inspectDetached,
+  openInteractiveShell,
   suspendDetached,
   wakeDetached,
 } from "./keep.ts";
@@ -215,23 +217,30 @@ async function enterCommand(root: string, ids: string[], flags: SandboxCommandFl
     return 1;
   }
   const { id, entry } = resolved[0]!;
+  const gap = detachedCapabilityGap(entry.provider);
+  if (gap) {
+    io.err(`${entry.sandboxId}: ${gap}\n`);
+    return 1;
+  }
   const state = await inspectDetached(entry.provider, entry.sandboxId);
   if (state === "expired") {
     io.err(`${entry.sandboxId} (${entry.provider}) is gone — the instance no longer exists. Clean up with: niceeval sandbox stop ${id}\n`);
-    return 1;
-  }
-  if (entry.provider !== "docker") {
-    // 云 provider 的交互式 shell 走各家原生 CLI(注册表里的 enter 命令);niceeval 不复刻各家 PTY。
-    io.err(
-      `interactive enter is currently only implemented for docker; use the provider-native command instead${entry.enter ? `:\n  ${entry.enter}` : "."}\n`,
-    );
     return 1;
   }
 
   const result = await withLease(root, id, entry, "enter", io, async () => {
     await wakeDetached(entry.provider, entry.sandboxId);
     await updateKeptEntry(root, id, { state: "alive" });
-    const code = await interactiveDockerShell(entry.sandboxId, entry.workdir);
+    let code: number;
+    try {
+      code = await openInteractiveShell(entry.provider, entry.sandboxId, entry.workdir);
+    } catch (e) {
+      // 原生命令本身起不来(如未装对应 CLI):现场保持 alive,提示改用注册表里的原生命令直连。
+      io.err(
+        `failed to open an interactive shell for ${entry.sandboxId} (${entry.provider}): ${e instanceof Error ? e.message : String(e)}${entry.enter ? `\nconnect directly instead: ${entry.enter}` : ""}\n`,
+      );
+      return 1;
+    }
     if (flags.leaveRunning) {
       await updateKeptEntry(root, id, { state: "alive" });
       io.out(`left running: ${entry.sandboxId} (re-suspend with another enter, or destroy with niceeval sandbox stop ${id})\n`);
@@ -250,51 +259,11 @@ async function enterCommand(root: string, ids: string[], flags: SandboxCommandFl
   return result ?? 1;
 }
 
-function interactiveDockerShell(containerId: string, workdir: string): Promise<number> {
-  return new Promise((resolvePromise) => {
-    const child = spawn("docker", ["exec", "-it", "-w", workdir, containerId, "bash", "-l"], {
-      stdio: "inherit",
-    });
-    child.on("exit", (code) => resolvePromise(code ?? 0));
-    child.on("error", () => resolvePromise(1));
-  });
-}
-
-/** 在留存现场里跑一条命令(非交互;history/diff 用)。docker 走 exec;其它 provider 报不支持。 */
+/** 在留存现场里跑一条命令(非交互;history/diff 用)——按 provider 能力路由到 `execInDetached`。 */
 async function execInKept(entry: KeptSandboxEntry, script: string): Promise<string> {
-  if (entry.provider !== "docker") {
-    throw new Error(`replaying the ledger is currently only implemented for docker sandboxes (got ${entry.provider})`);
-  }
-  const { default: Docker } = await import("dockerode");
-  const container = new Docker().getContainer(entry.sandboxId);
-  const exec = await container.exec({
-    Cmd: ["sh", "-c", script],
-    AttachStdout: true,
-    AttachStderr: true,
-    Env: [
-      "GIT_DIR=/tmp/.niceeval-ledger",
-      `GIT_WORK_TREE=${entry.workdir}`,
-      "HOME=/tmp",
-    ],
-  });
-  const stream = await exec.start({});
-  return await new Promise<string>((resolvePromise, reject) => {
-    const chunks: Buffer[] = [];
-    stream.on("data", (chunk: Buffer) => chunks.push(chunk));
-    stream.on("end", () => {
-      // docker 多路复用帧:每帧 8 字节头(stream type + 长度),逐帧剥掉。
-      const raw = Buffer.concat(chunks);
-      let out = "";
-      let offset = 0;
-      while (offset + 8 <= raw.length) {
-        const size = raw.readUInt32BE(offset + 4);
-        out += raw.subarray(offset + 8, offset + 8 + size).toString("utf-8");
-        offset += 8 + size;
-      }
-      resolvePromise(out || raw.toString("utf-8"));
-    });
-    stream.on("error", reject);
-  });
+  const gap = detachedCapabilityGap(entry.provider);
+  if (gap) throw new Error(gap);
+  return execInDetached(entry.provider, entry.sandboxId, entry.workdir, script);
 }
 
 /** 唤醒 → 读 → 送回休眠(现场休眠中同样可用;读完不留 alive)。 */
@@ -304,6 +273,8 @@ async function withWokenSandbox<T>(
   entry: KeptSandboxEntry,
   fn: () => Promise<T>,
 ): Promise<T> {
+  const gap = detachedCapabilityGap(entry.provider);
+  if (gap) throw new Error(`${entry.sandboxId}: ${gap}`);
   const state = await inspectDetached(entry.provider, entry.sandboxId);
   if (state === "expired") {
     throw new Error(`${entry.sandboxId} (${entry.provider}) is gone; the in-sandbox ledger died with it (artifacts are unaffected). Clean up with: niceeval sandbox stop ${id}`);

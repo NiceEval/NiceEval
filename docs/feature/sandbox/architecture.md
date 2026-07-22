@@ -74,7 +74,7 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 
 - **Docker** —— suspend = `docker stop`:文件系统落盘持久、不占内存、跨 daemon 重启存活。创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价;容器带 `niceeval.keep-candidate=true` 标签,正常 run 结束后该标签下只剩已登记的 kept 容器;强杀留下的未登记候选由[孤儿核对](#孤儿核对强杀路径的实例面兜底)按运行标识收回。停驻的容器不会自己消失,仍是唯一需要用户主动清理的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - **E2B** —— suspend = `pause`:文件系统与内存整体持久化,暂停期间停止计费,现场无限期保留、可 `resume` 找回;没有自然过期时刻,`expiresAt` 不写。
-- **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 provider 声明的保留期限(有则写)。
+- **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 自动打一次快照保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 `keptAt` 加上快照的默认保留期限——`snapshotExpiration` 默认 30 天(2,592,000,000ms,从快照最后一次使用起算),niceeval 不覆盖这个参数,默认值就是留存现场实际的保留期限。
 - **Local** —— 不参与留存,`--keep-sandbox` 组合在创建前报错:本地档从不销毁,现场天然留在用户的工作树里,无需注册表纳管(见[本地执行](local.md))。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 

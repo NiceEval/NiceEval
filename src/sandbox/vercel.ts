@@ -85,7 +85,10 @@ export class VercelSandbox implements Sandbox {
     // 实测发现超大的 timeout 值(>1200s)会导致 Vercel 返回实际更短的 session。
     // 1200000ms 是经验证能跑完 ~355s eval 的上限。
     const vsb = await VSandbox.create({ runtime, timeout: SESSION_TIMEOUT_MS, ...sourceParams, ...credParams } as Parameters<typeof VSandbox.create>[0]);
-    const id = vsb.currentSession().sessionId;
+    // sandboxId = 沙箱的持久 name(留存唤醒的查找键),不是当前 session 的 sessionId——
+    // session 在 rotate / stop-resume 之间会变,name 才是 `Sandbox.get({ name })` 能找回的
+    // 稳定身份(SDK 与官方文档都按 name 索引,见 vercel.com/docs/sandbox/cli-reference)。
+    const id = vsb.name;
     return new VercelSandbox(vsb, id, commandTimeoutMs, runtime);
   }
 

@@ -10,7 +10,7 @@ import { createSandbox, resolveSandbox } from "../sandbox/resolve.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { stopSandbox, unregisterSandbox } from "../sandbox/registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
-import { KEEPABLE_PROVIDERS, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
+import { KEEPABLE_PROVIDERS, computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
@@ -379,6 +379,8 @@ export function runAttemptEffect(
         if (KEEPABLE_PROVIDERS.has(providerName)) {
           try {
             const enter = nativeEnterCommand(providerName, sandbox.sandboxId);
+            const keptAt = new Date().toISOString();
+            const expiresAt = computeExpiresAt(providerName, keptAt);
             yield* Effect.promise(() =>
               writeKeptEntry(niceevalRoot, {
                 sandboxId: sandbox.sandboxId,
@@ -388,9 +390,10 @@ export function runAttemptEffect(
                 ...(run.experimentId !== undefined ? { experimentId: run.experimentId } : {}),
                 locator: String(a.locator),
                 verdict: bodyResult.verdict,
-                keptAt: new Date().toISOString(),
+                keptAt,
                 workdir: sandbox.workdir,
                 ...(enter !== undefined ? { enter } : {}),
+                ...(expiresAt !== undefined ? { expiresAt } : {}),
                 state: "alive",
               }),
             );
