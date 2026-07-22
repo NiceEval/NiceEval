@@ -11,6 +11,7 @@ import { Effect } from "effect";
 import { runAttemptEffect } from "./attempt.ts";
 import { defineSandboxAgent, defineSandbox } from "../define.ts";
 import { writeAgentSetupManifest, AGENT_SETUP_MANIFEST_PATH } from "../agents/manifest.ts";
+import { equals } from "../expect/index.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { Attempt, AgentRun, LifecyclePhase, RunOptions } from "./types.ts";
 import type {
@@ -21,6 +22,7 @@ import type {
   DiscoveredEval,
   Sandbox,
   SandboxFile,
+  ScoreTestContext,
 } from "../types.ts";
 
 /** 内存沙箱:writeFiles/readFile 记文件,runShell 恒成功(供 initGitAndCommit / diff 采集用)。 */
@@ -342,5 +344,51 @@ describe("runAttemptEffect · 主链与 Scope 收尾的计时边界", () => {
 
     expect(stop?.durationMs).toBeGreaterThanOrEqual(30);
     expect(mainDurationMs).toBeLessThanOrEqual(result.durationMs);
+  });
+});
+
+describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () => {
+  const scoringAgent = () =>
+    defineSandboxAgent({
+      name: "fake-agent-scoring",
+      send: async () => ({ events: [], status: "completed" }),
+    });
+
+  it(".points()/t.score() 的挣分正确写进 EvalResult.assertions[].points 与 scoreEntries", async () => {
+    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+      evalDefOverrides: {
+        scoring: "points",
+        test: (async (t: ScoreTestContext) => {
+          t.check("actual", equals("actual")).points(3); // 0/1 断言通过挣满 3 分
+          t.score("手动给分", 7);
+        }) as unknown as DiscoveredEval["test"],
+      },
+    });
+
+    expect(result.scoring).toBe("points");
+    const passedAssertion = result.assertions.find((a) => a.outcome === "passed") as { points?: number } | undefined;
+    expect(passedAssertion?.points).toBe(3);
+    expect(result.scoreEntries).toEqual([{ label: "手动给分", points: 7 }]);
+  });
+
+  it("t.require 中止后:verdict 为 failed(非 errored),中止前的给分保留、中止后的代码不执行", async () => {
+    const result = await runOnce(scoringAgent(), new FakeSandbox(), {
+      evalDefOverrides: {
+        scoring: "points",
+        test: (async (t: ScoreTestContext) => {
+          t.score("早期给分", 5);
+          await t.require("actual", equals("expected")); // 必然不匹配,抛出并中止 test()
+          t.score("永不执行", 100); // require 挂了之后这行代码不会跑到
+        }) as unknown as DiscoveredEval["test"],
+      },
+    });
+
+    // require 已经把断言记下来了,不是执行异常——中止挣 0 是 agent 的责任,verdict 是 failed
+    // 不是 errored(见 docs/feature/experiments/score-points.md「计分制:叠加给分」)。
+    expect(result.error).toBeUndefined();
+    expect(result.verdict).toBe("failed");
+    expect(result.scoreEntries).toEqual([{ label: "早期给分", points: 5 }]); // 没有"永不执行"那 100 分
+    expect(result.assertions).toHaveLength(1); // require 之后的断言代码从未执行
+    expect(result.assertions[0]!.outcome).toBe("failed");
   });
 });

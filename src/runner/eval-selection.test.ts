@@ -5,6 +5,9 @@
 import { describe, expect, it } from "vitest";
 import { evalDescriptorOf, resolveExperimentEvals, selectedEvalsForRun, splitByScoring } from "./eval-selection.ts";
 import type { DiscoveredEval, EvalDescriptor } from "./types.ts";
+import { interpolate } from "../i18n/core.ts";
+import { en } from "../i18n/en.ts";
+import { zhCN } from "../i18n/zh-CN.ts";
 
 const source = { path: "evals/fake.eval.ts", content: "export default { test() {} };\n", sha256: "fake" };
 
@@ -224,5 +227,46 @@ describe("splitByScoring", () => {
     const split = splitByScoring([a, b]);
     expect(split.pass).toEqual(["pass-eval"]);
     expect(split.points).toEqual(["points-eval"]);
+  });
+});
+
+// CLI 混型启动校验的报错文案(cli.experiment.mixedScoring)：splitByScoring 只做检测,
+// 格式化职责在 CLI(见 eval-selection.ts 顶部注释);这里直接对 i18n 消息模板断言,
+// 不需要起一个真实 CLI 进程(见 docs/engineering/testing/e2e/cli.md「边界」:错误文案的
+// 语义广度归单元测试)。
+describe("cli.experiment.mixedScoring 报错文案", () => {
+  it("列出两侧 eval id、各自计数,并给出收窄建议(zh-CN 与 en 都要有区分力)", () => {
+    const split = splitByScoring([
+      makeEval("evals/pass-a", { scoring: "pass" }),
+      makeEval("evals/points-b", { scoring: "points" }),
+      makeEval("evals/points-c", { scoring: "points" }),
+    ]);
+    const vars = {
+      experimentId: "agents/codex",
+      passCount: split.pass.length,
+      passIds: split.pass.join(", "),
+      pointsCount: split.points.length,
+      pointsIds: split.points.join(", "),
+    };
+
+    const zh = interpolate(zhCN["cli.experiment.mixedScoring"], vars);
+    expect(zh).toContain("agents/codex");
+    expect(zh).toContain("evals/pass-a");
+    expect(zh).toContain("evals/points-b");
+    expect(zh).toContain("evals/points-c");
+    expect(zh).toContain(String(split.pass.length));
+    expect(zh).toContain(String(split.points.length));
+    expect(zh).toMatch(/tags|前缀|scoring/); // 收窄建议:按 tags/id 前缀/scoring 字段收窄,或拆两个实验文件
+    expect(zh).toMatch(/两个实验文件/);
+
+    const enText = interpolate(en["cli.experiment.mixedScoring"], vars);
+    expect(enText).toContain("agents/codex");
+    expect(enText).toContain("evals/pass-a");
+    expect(enText).toContain("evals/points-b");
+    expect(enText).toContain("evals/points-c");
+    expect(enText).toContain(String(split.pass.length));
+    expect(enText).toContain(String(split.points.length));
+    expect(enText).toMatch(/tags|prefix|scoring/);
+    expect(enText).toMatch(/two experiment files/);
   });
 });
