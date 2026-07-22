@@ -231,6 +231,12 @@ export const zhCN = {
   "live.running": "  正在运行 {{totalRuns}} 次 ({{evals}} eval × {{configs}} 配置, 并发 {{concurrency}})       {{completed}}/{{total}} 完成",
   "live.runningUnknown": "  正在运行…  {{completed}}/{{total}} 完成",
   "live.waiting": "排队等待中…",
+  "local.commandTimeout": "Command timed out after {{timeoutMs}}ms",
+  "local.dirMissing": "本地沙箱目录不存在:{{dir}}。请先创建它,或让 localSandbox({ dir }) 指向一个已存在的目录。",
+  "local.dirNotWritable": "本地沙箱目录不可写:{{dir}}({{message}})",
+  "local.notARepo":
+    "当前目录(及其上级目录)都不在任何 git 仓库内,localSandbox() 没有确定的 workdir 可用。cd 进要跑的仓库再执行,或显式传 localSandbox({ dir: \"/path/to/repo\" })。",
+  "local.rootUnsupported": "本地 provider 不支持 { root: true }——niceeval 不会在你的机器上提权。需要 root 的步骤请改用容器 provider(docker / e2b / vercel)。",
   "report.assertionThreshold": " (得分 {{score}} < {{threshold}})",
   "report.error": "错误",
   "report.errored": "错误",
@@ -276,6 +282,8 @@ export const zhCN = {
   "runner.otlpOverride": "OTLP 接收器(覆盖 host) → {{endpoint}}",
   "runner.otlpReceiver": "OTLP 接收器 → {{endpoint}}{{proto}}",
   "runner.otlpShared": "OTLP 共享接收器(run 级) → {{endpoint}}",
+  "runner.providerExclusiveSerial":
+    "  · [sandbox] “{{provider}}” provider 强制 attempt 一次只跑一个(独占串行);不论 --max-concurrency 写了 {{concurrency}},它的实际并发恒为 1\n",
   "runner.remoteSandboxUnavailable": "remote agent 没有 sandbox.{{method}};请改用 sandbox agent 或移除 workspace 断言。",
   "runner.reporterDiagnostic": "  · [diagnostic] {{stage}} 失败(已忽略):{{message}}\n",
   "runner.scoreJudge": "评分 / judge…",
@@ -288,7 +296,7 @@ export const zhCN = {
   "runner.timeout": "attempt 超时({{timeoutMs}}ms)\n最近进度:\n{{recentLogs}}",
   "runner.traceSelected": " → 留 {{count}}(按语义)",
   "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
-  "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, or e2b",
+  "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
     "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认 provider——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",

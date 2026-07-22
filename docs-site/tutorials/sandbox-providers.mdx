@@ -46,6 +46,7 @@ The SDKs for the three built-in providers do not install alongside NiceEval. Ins
 | `dockerSandbox()` | `pnpm add dockerode @types/dockerode` |
 | `vercelSandbox()` | `pnpm add @vercel/sandbox` |
 | `e2bSandbox()` | `pnpm add e2b` |
+| `localSandbox()` | no extra install |
 
 A missing SDK does not fail silently: NiceEval errors the moment it creates the sandbox and prints the install command above, for example `Docker sandbox requires 'dockerode'. Install it with: pnpm add dockerode @types/dockerode`.
 
@@ -318,6 +319,32 @@ Docker is good for local development and standard CI. It is simple, controllable
 ## Vercel Sandbox
 
 Vercel Sandbox is good when you want cloud isolation, more resources, or a more stable environment. It requires the right token or OIDC setup.
+
+## Local directory
+
+`localSandbox()` runs the agent directly inside a Git repository on your own machine — no Docker, no cloud credentials:
+
+```ts
+import { defineExperiment } from "niceeval";
+import { localSandbox } from "niceeval/sandbox";
+
+export default defineExperiment({
+  agent: myCodingAgent,
+  sandbox: localSandbox(), // defaults to the current Git repo root as the working directory
+});
+```
+
+To evaluate a different directory, pass `localSandbox({ dir: "/path/to/repo" })`.
+
+NiceEval only observes — it never reverts. Whatever the agent changes lands for real on your working tree; NiceEval captures the diff and scores it with its own private Git ledger, which never touches your `.git`, your staged changes, or your uncommitted work, and never runs `git reset` when the run finishes. Whether to keep or discard the agent's changes is entirely up to you.
+
+Three things to keep in mind before you use it:
+
+- The agent runs commands as you, on your machine. Only use it when you trust the task and the prompt; use Docker or a cloud provider when you need isolation.
+- The local directory runs only one attempt at a time (forced serial); `--max-concurrency` cannot raise it.
+- When you run several evals back to back, one eval's changes stay on the working tree and become the starting point for the next. Use a container provider when you need a clean starting point for every eval.
+
+`{ root: true }` and `--keep-sandbox` are unavailable for the local directory and fail immediately: NiceEval does not escalate privileges on your machine, and there is nothing to "retain" — the workspace already sits exactly where it was.
 
 ## Custom provider
 

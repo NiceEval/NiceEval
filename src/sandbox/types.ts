@@ -21,7 +21,7 @@ export interface SandboxFile {
 }
 
 /** 内置 provider 名;不出现在 `sandbox` 字段的类型里(spec 用各自的 `provider` 判别字段区分)。 */
-export type SandboxProvider = "docker" | "vercel" | "e2b";
+export type SandboxProvider = "docker" | "vercel" | "e2b" | "local";
 
 /** 镜像/模板里的 Node 运行时版本。 */
 export type SandboxRuntime = "node20" | "node24";
@@ -117,6 +117,18 @@ export interface E2BSandboxSpec extends SandboxHooks<E2BSandboxSpec> {
   readonly runtime?: SandboxRuntime;
 }
 /**
+ * 本地执行:宿主机本地目录直接当 workdir 跑,零隔离、零仪式(见 docs/feature/sandbox/local.md)。
+ * `dir` 省略时从进程当前目录向上解析 git 仓库根;不在任何 git 仓库内时报错并给出两条出路
+ * (进入目标仓库再跑,或显式传 `dir`)。显式 `dir` 允许任意本地目录,不要求已是 git 仓库。
+ */
+export interface LocalSandboxSpec extends SandboxHooks<LocalSandboxSpec> {
+  readonly provider: "local";
+  /** 显式指定 workdir;省略时从当前目录向上解析 git 仓库根。目录必须已存在且可写。 */
+  readonly dir?: string;
+  readonly runtime?: SandboxRuntime;
+}
+
+/**
  * 用户自定义 provider:`create` 直接产出一个 `Sandbox` 实例,不经 resolve.ts 的内置 provider switch。
  * 用 `defineSandbox()` 构造(见 src/define.ts)。`provider` 只用于展示 / 日志,不参与分发。
  */
@@ -124,6 +136,12 @@ export interface CustomSandboxSpec extends SandboxHooks<CustomSandboxSpec> {
   readonly provider: string;
   readonly runtime?: SandboxRuntime;
   readonly recommendedConcurrency?: number;
+  /**
+   * 独占串行声明:该 provider 的所有 attempt 共享同一份不可并发的底层资源(如同一棵真实工作树),
+   * runner 加一道 provider 级串行闸,显式 `--max-concurrency` / 实验级 `maxConcurrency` 都不解除
+   * (见 docs/runner.md「调度:有界并发」)。中性的 provider 声明,省略即不独占。
+   */
+  readonly exclusive?: boolean;
   /** `feedback` 绑定到 `sandbox.create` 阶段:分配实例 / 拉镜像 / 恢复 snapshot 的进度与诊断走它。 */
   readonly create: (opts: { timeout?: number; runtime?: SandboxRuntime; feedback: ScopedFeedback }) => Promise<Sandbox>;
   /**
@@ -133,7 +151,7 @@ export interface CustomSandboxSpec extends SandboxHooks<CustomSandboxSpec> {
   readonly publicConfig?: () => Record<string, import("../shared/types.ts").JsonValue>;
 }
 
-export type SandboxSpec = DockerSandboxSpec | VercelSandboxSpec | E2BSandboxSpec | CustomSandboxSpec;
+export type SandboxSpec = DockerSandboxSpec | VercelSandboxSpec | E2BSandboxSpec | LocalSandboxSpec | CustomSandboxSpec;
 
 /** config / experiment 的 `sandbox` 字段:必须是工厂函数产出的 spec 数据结构;沙箱型 agent 不能省略。 */
 export type SandboxOption = SandboxSpec;

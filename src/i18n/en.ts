@@ -236,6 +236,14 @@ export const en = {
   "live.running": "  Running {{totalRuns}} attempts ({{evals}} evals × {{configs}} configs, concurrency {{concurrency}})       {{completed}}/{{total}} done",
   "live.runningUnknown": "  Running...  {{completed}}/{{total}} done",
   "live.waiting": "waiting for a slot...",
+  "local.commandTimeout": "Command timed out after {{timeoutMs}}ms",
+  "local.dirMissing":
+    "local sandbox directory does not exist: {{dir}}. Create it first, or point localSandbox({ dir }) at an existing directory.",
+  "local.dirNotWritable": "local sandbox directory is not writable: {{dir}} ({{message}})",
+  "local.notARepo":
+    "the current directory (and its parents) is not inside a git repository, so localSandbox() has no deterministic root to run in. cd into the repository you want to evaluate, or pass an explicit directory: localSandbox({ dir: \"/path/to/repo\" }).",
+  "local.rootUnsupported":
+    "the local sandbox provider does not support { root: true } — niceeval does not escalate privileges on your machine. Use a container provider (docker / e2b / vercel) for steps that need root.",
   "report.assertionThreshold": " (got {{score}} < {{threshold}})",
   "report.error": "error",
   "report.errored": "errored",
@@ -281,6 +289,8 @@ export const en = {
   "runner.otlpOverride": "OTLP receiver (host override) -> {{endpoint}}",
   "runner.otlpReceiver": "OTLP receiver -> {{endpoint}}{{proto}}",
   "runner.otlpShared": "OTLP shared receiver (run-scoped) -> {{endpoint}}",
+  "runner.providerExclusiveSerial":
+    "  · [sandbox] the \"{{provider}}\" provider forces attempts to run one at a time (exclusive); concurrency stays at 1 for it regardless of --max-concurrency {{concurrency}}\n",
   "runner.remoteSandboxUnavailable": "remote agents do not have sandbox.{{method}}; use a sandbox agent or remove workspace assertions.",
   "runner.reporterDiagnostic": "  · [diagnostic] {{stage}} failed (ignored): {{message}}\n",
   "runner.scoreJudge": "scoring / judge...",
@@ -293,7 +303,7 @@ export const en = {
   "runner.timeout": "attempt timed out ({{timeoutMs}}ms)\nRecent progress:\n{{recentLogs}}",
   "runner.traceSelected": " -> kept {{count}} semantic spans",
   "runner.useRemoteAgent": "using remote agent (no sandbox created)...",
-  "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, or e2b",
+  "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
     "sandbox agent needs a sandbox, but none was given. niceeval no longer picks a default — set `sandbox` in defineExperiment()/defineConfig() to dockerSandbox() / vercelSandbox() / e2bSandbox() (import from \"niceeval/sandbox\").\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/sandbox-providers.mdx",

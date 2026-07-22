@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defineEval, e2bSandbox, vercelSandbox } from "../define.ts";
+import { defineEval, e2bSandbox, localSandbox, vercelSandbox } from "../define.ts";
 import type { Agent, DiscoveredEval } from "../types.ts";
 import type { AgentRun } from "./types.ts";
 import { computeFingerprint } from "./fingerprint.ts";
@@ -127,6 +127,15 @@ describe("eval-level sandbox selection", () => {
     });
     expect(resolvedSandboxRecommendedConcurrency([item, plain], [e2bRun])).toBe(20);
     expect(resolvedSandboxRecommendedConcurrency([plain], [e2bRun, vercelRun])).toBe(1);
+
+    // local:同一棵真实工作树不允许并发写,推荐值同样是 1(见 docs/runner.md「调度:有界并发」)——
+    // 与 vercel 的 1 出于不同理由(session 限流 vs 独占串行正确性约束),数值恰好相同。
+    const localRun = run({
+      experimentId: "profiles/local",
+      sandbox: localSandbox(),
+      selectedEvalIds: ["weather/basic"],
+    });
+    expect(resolvedSandboxRecommendedConcurrency([plain], [localRun])).toBe(1);
 
     const remote = run({
       agent: agent("remote"),

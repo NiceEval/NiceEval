@@ -10,11 +10,17 @@
 // - agent 归因增量 = 逐窗口 delta 序列(DiffWindow[]),不做跨窗口压缩。
 
 import type { DiffArtifact, DiffWindow, Sandbox, WindowChange } from "../types.ts";
+import { ledgerPathsFor } from "../sandbox/ledger-paths.ts";
 
-/** ledger 的私有 git 目录:workdir 之外、runner 控制;agent 的工具默认不会去 /tmp 翻它。 */
+/**
+ * ledger 的私有 git 目录:workdir 之外、runner 控制;agent 的工具默认不会去 /tmp 翻它。这是
+ * 沙箱内 provider(docker/e2b/vercel)的默认值——每个实例都是全新隔离文件系统,固定路径不会
+ * 跨实例踩踏。宿主本身即工作树的 provider(如 local)按 sandboxId 登记专属路径覆盖它
+ * (见 sandbox/ledger-paths.ts),避免同机多次运行共享同一个 /tmp。
+ */
 const LEDGER_GIT_DIR = "/tmp/.niceeval-ledger";
 
-/** 整相导出文件的落点(与 ledger 同前缀,同样是 runner 私有路径)。 */
+/** 整相导出文件的落点(与 ledger 同前缀,同样是 runner 私有路径;覆盖规则同上)。 */
 const EXPORT_DIR = "/tmp/.niceeval-ledger-export";
 
 /** 默认归因排除清单(锚点时冻结):依赖、构建产物、包管理器缓存与 niceeval 自己的落位。 */
@@ -53,43 +59,47 @@ const MAX_WINDOW_BLOB_BYTES = 64 * 1024 * 1024;
  * (路径在其后,含空格也不影响);二进制排除靠 numstat 与 diff-tree 输出的行号对齐。
  * 尺寸核算(--batch-check)先于内容读取(--batch),越界在产出任何内容前失败。
  */
-const EXPORT_SCRIPT = [
-  "set -eu",
-  `D=${EXPORT_DIR}`,
-  'rm -rf "$D" && mkdir -p "$D"',
-  'OUT=$D/export.bin',
-  ': > "$OUT"',
-  'fail() { printf "%s\\n" "$1" >&2; exit 2; }',
-  // 帧格式:`section <name> <bytes>` 头一行,后跟原始字节;长度前缀让内容里的任意字节都安全。
-  'emit() { printf "section %s %s\\n" "$1" "$(($(wc -c < "$2")))" >> "$OUT"; cat "$2" >> "$OUT"; }',
-  'git log --reverse --format="%H %s" > "$D/log.txt"',
-  "while IFS= read -r line; do",
-  '  hash=${line%% *}',
-  '  subject=${line#* }',
-  '  case $subject in "agent "*) ;; *) continue ;; esac',
-  '  label=${subject#agent }',
-  // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
-  '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
-  '  n=$(($(wc -l < "$D/dt.txt")))',
-  `  [ "$n" -le ${MAX_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; limit is ${MAX_WINDOW_PATHS}"`,
-  '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
-  // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
-  "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
-  '  git cat-file --batch-check < "$D/occ.txt" > "$D/sizes.txt"',
-  '  if grep -q " missing$" "$D/sizes.txt"; then fail "niceeval ledger export: blob object missing"; fi',
-  `  awk '{ s += $3 } END { exit (s > ${MAX_WINDOW_BLOB_BYTES}) ? 1 : 0 }' "$D/sizes.txt" || fail "niceeval diff window contains more than ${MAX_WINDOW_BLOB_BYTES} blob bytes; narrow defineEval({ diff }) include/ignore rules"`,
-  // 文本 blob 内容请求:numstat 第 1 列为 "-" 的行是二进制,按行号对齐排除;去重后交给 --batch。
-  '  awk \'NR==FNR { bin[FNR] = ($1 == "-"); next } bin[FNR] != 1 { if ($3 !~ /^0+$/) print $3; if ($4 !~ /^0+$/) print $4 }\' "$D/ns.txt" "$D/dt.txt" | sort -u > "$D/text.txt"',
-  '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
-  '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
-  '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
-  '  printf "window %s %s\\n" "$hash" "$label" >> "$OUT"',
-  '  emit difftree "$D/dtz.bin"',
-  '  emit numstat "$D/nsz.bin"',
-  '  emit sizes "$D/sizes.txt"',
-  '  emit blobs "$D/blobs.bin"',
-  'done < "$D/log.txt"',
-].join("\n");
+function buildExportScript(exportDir: string): string {
+  return [
+    "set -eu",
+    // shellQuote:多数 provider 的 exportDir 是固定字面量(无空格);local 的 exportDir 来自
+    // mkdtemp(可能落在含空格的自定义 TMPDIR 下),赋值行不加引号会被 shell 拆成多个词。
+    `D=${shellQuote(exportDir)}`,
+    'rm -rf "$D" && mkdir -p "$D"',
+    'OUT=$D/export.bin',
+    ': > "$OUT"',
+    'fail() { printf "%s\\n" "$1" >&2; exit 2; }',
+    // 帧格式:`section <name> <bytes>` 头一行,后跟原始字节;长度前缀让内容里的任意字节都安全。
+    'emit() { printf "section %s %s\\n" "$1" "$(($(wc -c < "$2")))" >> "$OUT"; cat "$2" >> "$OUT"; }',
+    'git log --reverse --format="%H %s" > "$D/log.txt"',
+    "while IFS= read -r line; do",
+    '  hash=${line%% *}',
+    '  subject=${line#* }',
+    '  case $subject in "agent "*) ;; *) continue ;; esac',
+    '  label=${subject#agent }',
+    // 非 -z 的 diff-tree 把特殊路径引号转义成单行,一行 = 一个条目:wc -l 即路径数,awk 列取 sha 不碰路径。
+    '  git diff-tree -r --no-renames "$hash^" "$hash" > "$D/dt.txt"',
+    '  n=$(($(wc -l < "$D/dt.txt")))',
+    `  [ "$n" -le ${MAX_WINDOW_PATHS} ] || fail "niceeval diff window contains $n paths; limit is ${MAX_WINDOW_PATHS}"`,
+    '  git diff-tree -r --no-renames --numstat "$hash^" "$hash" > "$D/ns.txt"',
+    // 全部 blob 出现次数(before + after,零 sha = 无此侧,排除)→ 逐次尺寸核算。
+    "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
+    '  git cat-file --batch-check < "$D/occ.txt" > "$D/sizes.txt"',
+    '  if grep -q " missing$" "$D/sizes.txt"; then fail "niceeval ledger export: blob object missing"; fi',
+    `  awk '{ s += $3 } END { exit (s > ${MAX_WINDOW_BLOB_BYTES}) ? 1 : 0 }' "$D/sizes.txt" || fail "niceeval diff window contains more than ${MAX_WINDOW_BLOB_BYTES} blob bytes; narrow defineEval({ diff }) include/ignore rules"`,
+    // 文本 blob 内容请求:numstat 第 1 列为 "-" 的行是二进制,按行号对齐排除;去重后交给 --batch。
+    '  awk \'NR==FNR { bin[FNR] = ($1 == "-"); next } bin[FNR] != 1 { if ($3 !~ /^0+$/) print $3; if ($4 !~ /^0+$/) print $4 }\' "$D/ns.txt" "$D/dt.txt" | sort -u > "$D/text.txt"',
+    '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
+    '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
+    '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
+    '  printf "window %s %s\\n" "$hash" "$label" >> "$OUT"',
+    '  emit difftree "$D/dtz.bin"',
+    '  emit numstat "$D/nsz.bin"',
+    '  emit sizes "$D/sizes.txt"',
+    '  emit blobs "$D/blobs.bin"',
+    'done < "$D/log.txt"',
+  ].join("\n");
+}
 
 export interface ChangeLedger {
   /** send 进入前:workdir 有未记录变化就落一笔 eval 归因(fixture / setup / runCommand 副作用)。 */
@@ -107,9 +117,9 @@ interface LedgerOptions {
 }
 
 /** 每条 git 命令都带上私有 GIT_DIR + workdir work-tree;项目/全局 gitignore 一律不参与。 */
-function gitEnv(sandbox: Sandbox): Record<string, string> {
+function gitEnv(sandbox: Sandbox, gitDir: string): Record<string, string> {
   return {
-    GIT_DIR: LEDGER_GIT_DIR,
+    GIT_DIR: gitDir,
     GIT_WORK_TREE: sandbox.workdir,
     GIT_AUTHOR_NAME: "niceeval",
     GIT_AUTHOR_EMAIL: "niceeval@localhost",
@@ -144,7 +154,13 @@ function gitignorePathspecs(pattern: string, exclude: boolean): string[] {
 export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions): Promise<ChangeLedger> {
   const excludes = [...DEFAULT_EXCLUDES, ...(opts?.ignore ?? [])];
   const includes = opts?.include ?? [];
-  const env = gitEnv(sandbox);
+  // 多数 provider 用固定的宿主内私有路径(每实例全新隔离文件系统,天然不冲突);宿主本身即
+  // 工作树的 provider(如 local)按 sandboxId 登记专属路径,避免同机多次运行互相踩踏
+  // (见 sandbox/ledger-paths.ts —— 这里不认 provider 名,只问登记表)。
+  const paths = ledgerPathsFor(sandbox.sandboxId);
+  const gitDir = paths?.gitDir ?? LEDGER_GIT_DIR;
+  const exportDir = paths?.exportDir ?? EXPORT_DIR;
+  const env = gitEnv(sandbox, gitDir);
 
   // add -A -f:绕过项目自己的 .gitignore(项目 ignore 的文件照常记录);排除靠 pathspec
   // (runner 私有清单,agent / fixture 写 .gitignore 影响不了它);include 用第二次 add 打洞加回。
@@ -158,7 +174,7 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
     ' && if [ -n "$nested" ]; then printf \'%s\\n\' "niceeval ledger cannot track nested Git repository $nested as file-level evidence; move the checkout to sandbox.workdir root, or add the whole path to defineEval({ diff: { ignore: [...] } }) when it is intentionally out of scope" >&2; exit 2; fi';
   const addAll = `git -c advice.addEmbeddedRepo=false add -A -f -- . ${excludeSpecs}${includeAdd}${rejectGitlinks}`;
 
-  const anchor = await sandbox.runShell(`git init -q "${LEDGER_GIT_DIR}" && ${addAll} && git commit -q --allow-empty -m "anchor"`, {
+  const anchor = await sandbox.runShell(`git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor"`, {
     env,
   });
   ensureCommandSucceeded(anchor, "create change ledger anchor");
@@ -177,15 +193,15 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
       ensureCommandSucceeded(result, `commit agent window ${label}`);
     },
     async exportWindows(): Promise<DiffArtifact> {
-      return exportAgentWindows(sandbox, env);
+      return exportAgentWindows(sandbox, env, exportDir);
     },
   };
 }
 
-async function exportAgentWindows(sandbox: Sandbox, env: Record<string, string>): Promise<DiffArtifact> {
-  const result = await sandbox.runShell(EXPORT_SCRIPT, { env });
+async function exportAgentWindows(sandbox: Sandbox, env: Record<string, string>, exportDir: string): Promise<DiffArtifact> {
+  const result = await sandbox.runShell(buildExportScript(exportDir), { env });
   ensureCommandSucceeded(result, "export agent windows");
-  const payload = await sandbox.downloadFile(`${EXPORT_DIR}/export.bin`);
+  const payload = await sandbox.downloadFile(`${exportDir}/export.bin`);
   return parseExportPayload(payload);
 }
 

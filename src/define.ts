@@ -9,6 +9,7 @@ import type {
   E2BSandboxSpec,
   EvalDef,
   ExperimentDef,
+  LocalSandboxSpec,
   RemoteAgentDef,
   SandboxAgentDef,
   SandboxHook,
@@ -177,6 +178,23 @@ export function e2bSandbox(
 }
 
 /**
+ * 本地沙箱:宿主机本地目录直接当 workdir 跑(见 docs/feature/sandbox/local.md)。`dir` 省略时
+ * 从当前目录向上解析 git 仓库根;显式 `dir` 可以是任意本地目录,不要求已是 git 仓库。
+ */
+export function localSandbox(
+  opts: Omit<LocalSandboxSpec, "provider" | keyof SandboxHooks<unknown>> = {},
+): LocalSandboxSpec {
+  const build = (state: HookState): LocalSandboxSpec => ({
+    provider: "local",
+    ...opts,
+    setupHooks: state.setupHooks,
+    teardownHooks: state.teardownHooks,
+    ...hookMethods(state, build),
+  });
+  return build(EMPTY_HOOKS);
+}
+
+/**
  * 自定义沙箱 provider:`create` 直接返回一个实现 `Sandbox` 接口的实例,不需要 niceeval 内置支持
  * 这个 provider 名字。用于接入 docker/vercel/e2b 之外的运行环境(自建 VM、Modal、Fly 等)。
  */
@@ -184,6 +202,12 @@ export function defineSandbox(def: {
   name: string;
   create: CustomSandboxSpec["create"];
   recommendedConcurrency?: number;
+  /**
+   * 独占串行声明:该 provider 的所有 attempt 共享同一份不可并发的底层资源(如同一棵真实工作树)时
+   * 声明 `true`——runner 加一道 provider 级串行闸,`--max-concurrency` / 实验级 `maxConcurrency`
+   * 都不解除(内置 `local` provider 即声明它)。省略 = 不独占,照常按并发上限调度。
+   */
+  exclusive?: boolean;
   /** 可发布参数的投影(进结果快照);未实现时只落 provider 名。 */
   publicConfig?: CustomSandboxSpec["publicConfig"];
 }): CustomSandboxSpec {
@@ -193,6 +217,7 @@ export function defineSandbox(def: {
     provider: def.name,
     create: def.create,
     recommendedConcurrency: def.recommendedConcurrency,
+    exclusive: def.exclusive,
     publicConfig: def.publicConfig,
     setupHooks: state.setupHooks,
     teardownHooks: state.teardownHooks,

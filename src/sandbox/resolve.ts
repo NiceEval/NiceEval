@@ -23,23 +23,36 @@ export interface ResolvedSandbox {
   snapshotId?: string;
   /** e2b */
   template?: string;
+  /** local:显式 workdir;省略时从当前目录向上解析 git 仓库根(见 sandbox/local.ts)。 */
+  dir?: string;
   /** 自定义 provider(defineSandbox):有它就直接调用,跳过下面的内置 provider switch。 */
   create?: CustomSandboxSpec["create"];
   recommendedConcurrency?: number;
+  /**
+   * 独占串行声明(见 docs/runner.md「调度:有界并发」):runner 对声明了它的 provider 加一道
+   * provider 级串行闸,`--max-concurrency` / 实验级 `maxConcurrency` 都不解除。内置 `local`
+   * provider 恒为 true;自定义 provider 由 `defineSandbox({ exclusive })` 声明,省略即 false。
+   */
+  exclusive: boolean;
 }
 
 /** 把 spec 数据结构归一化成 ResolvedSandbox;省略(undefined)直接报错——没有默认 provider。 */
 export function resolveSandbox(opt: SandboxOption | undefined, runtimeDefault?: SandboxRuntime): ResolvedSandbox {
   if (!opt) throw new Error(t("sandbox.missingSpec"));
-  return { ...opt, runtime: opt.runtime ?? runtimeDefault };
+  // local 的独占串行是内置事实(同一棵真实工作树,见 docs/feature/sandbox/local.md);自定义
+  // provider 走各自声明的 exclusive 字段——两条路径都归一成同一个布尔字段,runner 只读它。
+  const exclusive = opt.provider === "local" ? true : (opt as CustomSandboxSpec).exclusive === true;
+  return { ...opt, runtime: opt.runtime ?? runtimeDefault, exclusive };
 }
 
 /**
- * 各 provider 的推荐默认并发数。反映的是 provider 侧约束(daemon 容量、API quota、session 池大小),
- * 不是用户侧的 agent API 限速——后者由用户通过 --max-concurrency 或 config.maxConcurrency 设置。
+ * 各 provider 的推荐默认并发数。反映的是 provider 侧约束(daemon 容量、API quota、session 池大小、
+ * 独占串行的正确性约束),不是用户侧的 agent API 限速——后者由用户通过 --max-concurrency 或
+ * config.maxConcurrency 设置。
  * docker:本地 daemon 创建容器有开销,10 是经验上稳健的上限。
  * e2b:云服务,20 是默认账户并发配额的保守估计。
  * vercel:sandbox session 有严格的并发限制,1 避免 429。
+ * local:同一棵真实工作树不允许并发写,1 是独占串行约束的自然默认值。
  */
 export function sandboxRecommendedConcurrency(opt: SandboxOption | undefined): number {
   if (!opt) return 10;
@@ -48,6 +61,7 @@ export function sandboxRecommendedConcurrency(opt: SandboxOption | undefined): n
     case "docker":  return 10;
     case "e2b":     return 20;
     case "vercel":  return 1;
+    case "local":   return 1;
     default:        return r.recommendedConcurrency ?? 5;
   }
 }
@@ -71,6 +85,7 @@ export function sandboxRunInfo(
     if (r.image !== undefined) p.image = r.image;
     if (r.snapshotId !== undefined) p.snapshotId = r.snapshotId;
     if (r.template !== undefined) p.template = r.template;
+    if (r.dir !== undefined) p.dir = r.dir;
     if (r.runtime !== undefined) p.runtime = r.runtime;
     params = Object.keys(p).length > 0 ? p : undefined;
   }
@@ -85,7 +100,7 @@ export function sandboxRunInfo(
 /** 报告 / 日志用的简短标签:provider 名,带上区分性的参数(镜像 / 快照 / 模板)。 */
 export function sandboxLabel(opt: SandboxOption | undefined): string {
   const r = resolveSandbox(opt);
-  const detail = r.image ?? r.snapshotId ?? r.template;
+  const detail = r.image ?? r.snapshotId ?? r.template ?? r.dir;
   return detail ? `${r.provider}:${detail}` : r.provider;
 }
 
@@ -180,6 +195,12 @@ async function createProvider(
         feedback,
         () => reconcileProvision(token),
       );
+    }
+    case "local": {
+      // 不参与 provisioning 重试(见 docs/feature/sandbox/local.md「非目标」):创建不经网络
+      // 控制面,失败(目录不存在/不可写/不在 git 仓库内)都是确定性错误,第一次如实抛出。
+      const { LocalSandbox } = await import("./local.ts");
+      return LocalSandbox.create({ timeout, dir: r.dir });
     }
     default:
       throw new Error(t("sandbox.providerNotImplemented", { provider: r.provider }));

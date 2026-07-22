@@ -9,6 +9,7 @@ import { t } from "../i18n/index.ts";
 import { cacheKey, planCarry } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import { errorFromThrown, experimentRunInfo, runAttemptEffect } from "./attempt.ts";
+import { resolveSandbox } from "../sandbox/resolve.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { runReporter, emitReporterEvent, scopeReporter, summarize } from "./report.ts";
 import {
@@ -28,7 +29,7 @@ import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
-import type { Agent, EvalResult, JudgeConfig, Reporter, ReporterRegistration, RunShape, RunSummary } from "../types.ts";
+import type { Agent, EvalResult, JudgeConfig, Reporter, ReporterRegistration, RunShape, RunSummary, SandboxOption } from "../types.ts";
 import type { AgentRun, Attempt, ExperimentHookContext, LifecyclePhase, AttemptRef, RunOptions } from "./types.ts";
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
@@ -331,6 +332,39 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
       runSems.set(run, Effect.runSync(Effect.makeSemaphore(Math.max(1, run.maxConcurrency))));
     }
   }
+
+  // provider 级独占串行闸(见 docs/runner.md「调度:有界并发」):声明了 exclusive 的 provider
+  // (如 local——同一棵真实工作树不允许并发写)按 provider 名共享一把 permit=1 的信号量,
+  // --max-concurrency / 实验级 maxConcurrency 都不解除。核心不认 provider 名分支:这里只读
+  // resolveSandbox() 折出的中性 `exclusive` 字段;按 provider 字符串分组只是「同一份不可
+  // 并发的底层资源用同一把锁」,不是 `provider === "local"` 的行为分支。
+  const providerExclusiveSems = new Map<string, Effect.Semaphore>();
+  let exclusiveConcurrencyWarned = false;
+  const exclusiveSemFor = (spec: SandboxOption | undefined): Effect.Semaphore | undefined => {
+    if (!spec) return undefined;
+    const resolved = resolveSandbox(spec);
+    if (!resolved.exclusive) return undefined;
+    let sem = providerExclusiveSems.get(resolved.provider);
+    if (!sem) {
+      sem = Effect.runSync(Effect.makeSemaphore(1));
+      providerExclusiveSems.set(resolved.provider, sem);
+    }
+    // 如实标注串行事实(一次性,不管命中多少条 attempt):全局上限比 1 高时,这个 provider 的
+    // attempt 实际仍然一个一个跑——不管 --max-concurrency 写了多少,这是正确性约束不是调度旋钮。
+    if (opts.maxConcurrency > 1 && !exclusiveConcurrencyWarned) {
+      exclusiveConcurrencyWarned = true;
+      reportDiagnostic({
+        key: `provider-exclusive-serial:${resolved.provider}`,
+        severity: "warning",
+        message: t("runner.providerExclusiveSerial", {
+          provider: resolved.provider,
+          concurrency: opts.maxConcurrency,
+        }).trimEnd(),
+        data: { provider: resolved.provider, concurrency: opts.maxConcurrency },
+      });
+    }
+    return sem;
+  };
 
   // 非沙箱 tracing agent 的共享 OTLP 接收池:被测应用是长驻进程,端点不能随
   // attempt 换 —— receiver 粒度跟被测进程走(每 agent 一个,整个 run 复用),run 结束回收。
@@ -776,6 +810,10 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
               Effect.promise(() => emitReporterEvent(reporters, { type: "eval:complete", result })),
             );
           });
+        // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
+        // 只包住「真正占用并发位执行」这一段——preflight 与等待实验级 setup 都在它之外,和
+        // globalSem 的「等待不占位」纪律保持一致(见上面 exclusiveSemFor 的注释)。
+        const exclusiveSem = exclusiveSemFor(a.sandboxSpec);
         const gated = Effect.gen(function* () {
           const proceed = yield* preflight;
           if (!proceed) return;
@@ -783,7 +821,8 @@ export async function runEvals(opts: RunOptions): Promise<RunSummary> {
           // (它从不 reject——失败收进 lc.setupFailed,由 body 合成 errored 结果);等待发生在
           // globalSem 之外,慢启动的 setup 不占全局并发位。
           if (a.run.setup || a.run.teardown) yield* Effect.promise(() => ensureExperimentSetup(a));
-          yield* globalSem.withPermits(1)(body);
+          const scoped = globalSem.withPermits(1)(body);
+          yield* exclusiveSem ? exclusiveSem.withPermits(1)(scoped) : scoped;
         });
         const runSem = runSems.get(a.run);
         const withRunSem = runSem ? runSem.withPermits(1)(gated) : gated;

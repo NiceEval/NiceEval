@@ -1181,3 +1181,106 @@ describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
     expect(await computeFingerprint(evalDef, withHook)).toBe(await computeFingerprint(evalDef, base));
   });
 });
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+// provider 级独占串行闸(见 docs/runner.md「调度:有界并发」/ docs/feature/sandbox/local.md):
+// 声明 exclusive: true 的 provider(内置 local 即是,这里用一个同样声明的自定义 provider 代表它,
+// 不需要真起本地沙箱)必须让同 provider 的 attempt 一次只跑一个,即便全局 maxConcurrency 开得
+// 比 attempt 总数还宽;同批其它(未声明 exclusive)provider 的 attempt 不受这道闸影响。观察面是
+// 在飞峰值(create() 里自增/自减的计数器),不是断言内部信号量被调用几次。
+describe("runEvals · exclusive provider 强制串行", () => {
+  it("同一 exclusive provider 的 attempt 一次只跑一个,不管全局 maxConcurrency 开多宽", async () => {
+    let concurrent = 0;
+    let peak = 0;
+    const exclusiveSpec = defineSandbox({
+      name: "exclusive-fake",
+      exclusive: true,
+      create: async () => {
+        concurrent += 1;
+        peak = Math.max(peak, concurrent);
+        await sleep(20);
+        concurrent -= 1;
+        return asSandbox(new FakeSandbox());
+      },
+    });
+    const evals = ["a", "b", "c", "d"].map((id) => makeEval(id, () => {}));
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-exclusive"),
+      flags: {},
+      runs: 1,
+      earlyExit: false,
+      sandbox: exclusiveSpec,
+      timeoutMs: 5_000,
+      selectedEvalIds: evals.map((e) => e.id),
+      experimentId: "exclusive-exp",
+    };
+
+    const { summary } = await run(evals, [agentRun], { maxConcurrency: 4 });
+
+    expect(summary.results).toHaveLength(4);
+    expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
+    expect(peak).toBe(1);
+  });
+
+  it("同批其它(非 exclusive)provider 的 attempt 不受影响,照常并发", async () => {
+    let exclusiveConcurrent = 0;
+    let exclusivePeak = 0;
+    const exclusiveSpec = defineSandbox({
+      name: "exclusive-fake-2",
+      exclusive: true,
+      create: async () => {
+        exclusiveConcurrent += 1;
+        exclusivePeak = Math.max(exclusivePeak, exclusiveConcurrent);
+        await sleep(20);
+        exclusiveConcurrent -= 1;
+        return asSandbox(new FakeSandbox());
+      },
+    });
+    let normalConcurrent = 0;
+    let normalPeak = 0;
+    const normalSpec = defineSandbox({
+      name: "normal-fake",
+      create: async () => {
+        normalConcurrent += 1;
+        normalPeak = Math.max(normalPeak, normalConcurrent);
+        await sleep(20);
+        normalConcurrent -= 1;
+        return asSandbox(new FakeSandbox());
+      },
+    });
+
+    const exclusiveEvals = ["e1", "e2", "e3"].map((id) => makeEval(id, () => {}));
+    const normalEvals = ["n1", "n2", "n3"].map((id) => makeEval(id, () => {}));
+    const exclusiveRun: AgentRun = {
+      agent: makeAgent("agent-excl"),
+      flags: {},
+      runs: 1,
+      earlyExit: false,
+      sandbox: exclusiveSpec,
+      timeoutMs: 5_000,
+      selectedEvalIds: exclusiveEvals.map((e) => e.id),
+      experimentId: "excl-exp",
+    };
+    const normalRun: AgentRun = {
+      agent: makeAgent("agent-normal"),
+      flags: {},
+      runs: 1,
+      earlyExit: false,
+      sandbox: normalSpec,
+      timeoutMs: 5_000,
+      selectedEvalIds: normalEvals.map((e) => e.id),
+      experimentId: "normal-exp",
+    };
+
+    const { summary } = await run([...exclusiveEvals, ...normalEvals], [exclusiveRun, normalRun], {
+      maxConcurrency: 6,
+    });
+
+    expect(summary.results).toHaveLength(6);
+    expect(exclusivePeak).toBe(1);
+    expect(normalPeak).toBeGreaterThan(1);
+  });
+});

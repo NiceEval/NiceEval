@@ -188,16 +188,23 @@ export function runAttemptEffect(
       // 规划期按当前 eval 解析出的同一个 SandboxSpec，既用来起 provider，也作为
       // sandbox.setup / sandbox.teardown 钩子(SandboxSpec.setup()/.teardown() 链式挂的)来源。
       const sandboxSpec = a.sandboxSpec ?? sandboxForEval(run, evalDef, config.sandbox);
-      // defineSandbox 自定义 provider 不参与留存(事后命令不执行用户项目代码,新进程无法安全
-      // 找回用户对象上的 stopDetached);组合使用在创建沙箱前报清晰错误。
-      if (
-        run.agent.kind === "sandbox" &&
-        opts.keepSandbox !== undefined &&
-        resolveSandbox(sandboxSpec).create !== undefined
-      ) {
-        throw new Error(
-          `--keep-sandbox is not supported with a defineSandbox custom provider ("${resolveSandbox(sandboxSpec).provider}"): the after-the-fact 'niceeval sandbox' commands never load project code, so a detached stop for user-defined sandboxes cannot be recovered safely. Use a built-in provider (docker / e2b / vercel), or drop --keep-sandbox.`,
-        );
+      // 留存前置校验:两类 provider 不参与留存,组合使用在创建沙箱前报清晰错误(不先起一个
+      // 无法纳管的实例)——defineSandbox 自定义 provider(事后命令不执行用户项目代码,新进程
+      // 无法安全找回用户对象上的 stopDetached)与内置但不在 KEEPABLE_PROVIDERS 里的 provider
+      // (目前只有 local:它从不销毁沙箱,现场天然留在工作树里,无需注册表纳管)。用
+      // KEEPABLE_PROVIDERS 判断而不是逐个 provider 名分支,新增内置 provider 时这里不用改。
+      if (run.agent.kind === "sandbox" && opts.keepSandbox !== undefined) {
+        const resolved = resolveSandbox(sandboxSpec);
+        if (resolved.create !== undefined) {
+          throw new Error(
+            `--keep-sandbox is not supported with a defineSandbox custom provider ("${resolved.provider}"): the after-the-fact 'niceeval sandbox' commands never load project code, so a detached stop for user-defined sandboxes cannot be recovered safely. Use a built-in provider (docker / e2b / vercel), or drop --keep-sandbox.`,
+          );
+        }
+        if (!KEEPABLE_PROVIDERS.has(resolved.provider)) {
+          throw new Error(
+            `--keep-sandbox is not supported with the "${resolved.provider}" provider: it never destroys the sandbox in the first place, so there is nothing to register for later retention — the workspace already sits exactly where the agent left it. Drop --keep-sandbox, or use a built-in cloud/container provider (docker / e2b / vercel) if you need a registry-managed retained sandbox.`,
+          );
+        }
       }
       // 留存 disposition:只在本 attempt 内可变,初始 stop;只有留存提交成功才改成 keep
       // (Ctrl+C 中断外层 Scope 时仍是 stop,照常清理)。
