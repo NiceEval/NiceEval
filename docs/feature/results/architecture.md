@@ -15,6 +15,7 @@
         <sha256>.json                # { content }:一份源码文本,快照内多少 attempt 引用它都只存一份
       <evalId>/a<attempt>/           # 单个 eval attempt 的目录
         result.json                  # 判决、断言、用量、locator —— attempt 完成时一次写成
+        commands.json                # 非零 Sandbox 命令的 stdout/stderr 证据
         events.json
         sources.json                 # 引用 sources/ 里的条目,不内联源码内容(见下)
         trace.json
@@ -40,7 +41,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -51,7 +52,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `8`。历史各版本的字段差异与升版原因不在正文维护,记录在 memory 的 results-schema-version-history 条目;读取器不需要这份历史——版本不同一律按下节的不兼容路径处理。
+当前 `schemaVersion` 是 `9`。历史各版本的字段差异与升版原因不在正文维护,记录在 memory 的 results-schema-version-history 条目;读取器不需要这份历史——版本不同一律按下节的不兼容路径处理。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个快照(snapshot.json + 全部 attempt 文件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份结果的 niceeval 版本查看:
 
@@ -212,11 +213,12 @@ interface AttemptRecord {
   locator?: string;
   /** 携带条目专用: artifact 目录(相对结果根目录),指向原快照里的落盘。 */
   artifactBase?: string;
-  hasEvents?: boolean;
-  hasTrace?: boolean;
-  hasSources?: boolean;
-  /** 本次 attempt 至少有一条 Sandbox 命令非零退出，存在 commands.json。 */
-  hasCommands?: boolean;
+  /**
+   * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在[证据 registry](#证据-registry),
+   * 如 ["commands", "events", "sources"])。省略等价于空列表;携带条目原样携带。读取面的懒加载语义
+   * (缺失返回 null)独立成立,本字段只服务「不 stat 磁盘就知道有什么」的消费方。
+   */
+  artifacts?: string[];
 }
 
 /**
@@ -343,9 +345,7 @@ attempt 的结果封口发生在 teardown 链与 sandbox stop 之后;随后 `res
 两类条目:
 
 - **本快照跑出的条目**:artifact 与 `result.json` 同目录,不需要任何路径引用字段。
-- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本快照,让最新快照保持完整;`--force` 关闭携带全部重跑,语义见 [Runner · 缓存](../../runner.md#缓存指纹去重)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对结果根,指向原快照的 attempt 目录),`has*` 真值原样携带。`artifactBase` 就是事实上的「携带」标记。清理历史快照前先用 `copySnapshots` 物化要保留的结果——原快照删除后,携带条目的 artifact 懒加载如实返回 `null`。
-
-`o11y.json` 和 `diff.json` 没有对应的 `has*` 标记;读取面的懒加载语义(缺失返回 `null`)吸收了存在性判断,见 [Library](library.md)。
+- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本快照,让最新快照保持完整;`--force` 关闭携带全部重跑,语义见 [Runner · 缓存](../../runner.md#缓存指纹去重)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对结果根,指向原快照的 attempt 目录),`artifacts` 列表原样携带。`artifactBase` 就是事实上的「携带」标记。清理历史快照前先用 `copySnapshots` 物化要保留的结果——原快照删除后,携带条目的 artifact 懒加载如实返回 `null`。
 
 ### Usage
 
@@ -377,6 +377,25 @@ interface Usage {
 - **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment / sandbox setup 尚未运行时，runner 已经决定哪些 attempt 可以携带。计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--force` 重跑，再用 facts 审计实际状态。把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
 - **读取面原样转发**:facts 在 show 的 `facts:` 行、对照矩阵与 `--json` 中呈现；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
 
+## 证据 registry
+
+artifact 的横切属性——存储形态、截断策略、`copySnapshots` 发布缺省、存在性声明——单源在下面这张 registry 表,不散布在各小节各自维护清单。writer(`snap.writeAttempt`)的参数面、reader 的懒加载方法、`copySnapshots` 的 `artifacts` 词表与缺省携带、[大值截断](#大值截断)的适用范围、`view --out` 的「前端读什么带什么」复制全部由这张表驱动;新增一种证据 = 加一行并声明类型与懒加载方法,不逐处扩清单。
+
+| artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `copySnapshots` 缺省 | 内容职责 |
+|---|---|---|---|---|---|---|
+| `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判决、断言、错误与诊断的权威记录 |
+| `commands.json` | `commands` | attempt 级,按需 | `FailedCommandEvidence[]` | 截 | 带 | 非零 Sandbox 命令的 stdout/stderr |
+| `events.json` | `events` | attempt 级,按需 | `StreamEvent[]` | 截 | 带 | 归一化标准事件流 |
+| `trace.json` | `trace` | attempt 级,按需 | `TraceSpan[]` | 截 | 带 | OTel span 树 |
+| `o11y.json` | `o11y` | attempt 级,按需 | `O11ySummary` | 不适用(派生缓存) | 带 | 行为计数缓存(见其小节) |
+| `agent-setup.json` | `agentSetup` | attempt 级,按需 | `AgentSetupManifest` | 不适用(摘要文件) | 带 | 扩展与原生配置安装清单 |
+| `diff.json` | `diff` | attempt 级,按需 | `DiffWindow[]` | 不截(完整语义单位) | 不带 | agent 归因增量 |
+| `sources.json` + `sources/<sha256>.json` | `sources` | attempt 级引用 + 快照级去重仓库 | `SourcesRef` / `SourceBlob` | 不截(断言定位锚) | 带(解引用后按内容重新去重) |
+
+- **词干**是 artifact 在全部程序面共用的名字:`AttemptRecord.artifacts` 的取值、`copySnapshots` 的 `artifacts` 选项、reader 懒加载方法名(`attempt.events()` 等)都用同一枚词干,不另造别名。
+- 按需 artifact 空数据不落文件;存在性由 `AttemptRecord.artifacts` 声明,读取面的懒加载(缺失返回 `null`)独立成立、不依赖该声明。
+- 词表当前是封闭集:每一行在 core 内都有类型与消费方。第三方自带证据种类的开放注册不在本表范围——没有消费方的落盘只是死重量;该方向作为提案属 roadmap。
+
 ## Attempt 级文件
 
 ### `commands.json`
@@ -407,8 +426,8 @@ type CommandsArtifact = FailedCommandEvidence[];
   「被处理」不等于「没发生」。
 - provider 内部实现步骤、Agent 自己调用的 shell 不经过公开 Sandbox 包装，不伪装成这里的命令；
   前者只进 provider timing，后者来自 `events.json`。
-- 携带条目按 `artifactBase` 读取原文件；`copySnapshots` 的 `artifacts` 选择把 `commands` 与
-  `events` / `trace` / `diff` 同级处理。`hasCommands` 只表示 writer 确实写过该文件。
+- 携带条目按 `artifactBase` 读取原文件；发布携带与截断策略按[证据 registry](#证据-registry) 的
+  `commands` 行处理。`AttemptRecord.artifacts` 含 `commands` 只表示 writer 确实写过该文件。
 
 ### `events.json`
 
@@ -477,9 +496,11 @@ type CommandsArtifact = FailedCommandEvidence[];
 
 ### `o11y.json`
 
-类型是 `O11ySummary`。这是从标准事件流派生的行为摘要,包括工具调用计数、读写文件、shell 命令、web fetch、错误、思考块、压缩次数、耗时、usage 和估算成本。
+类型是 `O11ySummary`:从 `events.json` 派生的**行为计数缓存**——工具调用计数、读写文件、shell 命令、web fetch、错误、思考块、压缩次数与轮数。
 
-这个文件面向人和调试脚本:当一个 attempt 失败时,先看 `result.json` 的 `verdict` / `error`,再看 `events.json` 与 `o11y.json`,通常能分清是断言没过、agent runtime 错误,还是 adapter / provider / timeout 问题。
+它是本格式中唯一的落盘派生物,定位是缓存而非权威:`events.json` 体积大,而行为计数被指标(如 `assistantTurns`)与 show 的 usage 行高频消费,逐次重扫不划算。缓存契约与报告派生数据一致——同一 niceeval 版本写读,删除后可从 `events.json` 重算;与 `events.json` 直接派生的结果不一致时,以 `events.json` 为准。token 用量与成本**不在**本文件:权威分别是 `result.json` 的 [`Usage`](#usage) 与 `estimatedCostUSD`,同一事实不落第三份。
+
+诊断路线上它面向人和脚本:attempt 失败时先看 `result.json` 的 `verdict` / `error`,再看 `events.json` 与 `o11y.json`,通常能分清是断言没过、agent runtime 错误,还是 adapter / provider / timeout 问题。
 
 ### `agent-setup.json`
 
@@ -543,7 +564,7 @@ Agent 的一次工具调用可以产出任意大的输出——一条递归 grep
 契约:
 
 - **落点唯一**:`snap.writeAttempt()`(见 [Library](library.md))。不在 adapter、不在 OTLP 解析、不在事件归一化里做——任何 adapter、任何 sandbox 产出的 artifact 都被同一条规则约束,adapter 作者不需要记得截断。
-- **适用范围**:`events.json` 的事件字段、`trace.json` 的 span 属性与 `commands.json` 的 stdout/stderr 里的**任意字符串值**。不只工具输出——`thinking` 文本、`error` 消息同样可能爆。`result.json` / `o11y.json` / `snapshot.json` 保存摘要,不参与这条逐值截断。`sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。`diff.json` 不截断:它的每个文件是完整语义单位,截断后不再是一份能 apply 的证据。未被逐值截断的文件和累计后的 artifact 总量统一由 [`copySnapshots`](library.md#复制与瘦身copysnapshots) 的发布预算兜底。
+- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性与 `commands.json` 的 stdout/stderr 里的**任意字符串值**。不只工具输出——`thinking` 文本、`error` 消息同样可能爆。`result.json` / `o11y.json` / `snapshot.json` 保存摘要,不参与这条逐值截断。`sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。`diff.json` 不截断:它的每个文件是完整语义单位,截断后不再是一份能 apply 的证据。未被逐值截断的文件和累计后的 artifact 总量统一由 [`copySnapshots`](library.md#复制与瘦身copysnapshots) 的发布预算兜底。
 - **上限**:每个字符串值 256 KiB(UTF-8 字节),常量 `ARTIFACT_VALUE_MAX_BYTES`。截断按 UTF-8 字符边界回退,不切断多字节字符。
 - **没有 flag、没有配置项。**「需要完整落盘」的场景不存在:评分看的是运行时全量,诊断一条失控命令 256 KiB 绰绰有余(足够看清它 grep 进了 `node_modules`)。给旋钮只会让某天有人把它调大、再把仓库塞爆。
 
@@ -598,8 +619,7 @@ view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则
 因此,不要在文档或工具里假设本地结果有 `results.jsonl`、transcript NDJSON 或固定测试输出文件。当前稳定契约是:
 
 - 快照级: `snapshot.json`、`sources/<sha256>.json`(eval 源码去重仓库);
-- attempt 级: `result.json`、`commands.json`(仅有非零 Sandbox 命令时)、`events.json`、`sources.json`(引用,不内联内容)、`trace.json`、`o11y.json`、`agent-setup.json`、`diff.json`;
-- `commands.json`、`events.json` 与 `trace.json` 里的字符串值有 256 KiB 上限,超出的带 `truncated` 标记(见[大值截断](#大值截断));
+- attempt 级文件的全集、截断与发布属性单源在[证据 registry](#证据-registry);
 - 每个文件都是 JSON,不是 JSONL。
 
 ## 相关阅读
