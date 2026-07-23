@@ -17,6 +17,13 @@ export interface CharPlotOptions {
   /** 网格行数;默认 9。 */
   height?: number;
   points: PlotPoint[];
+  /**
+   * 值域(已按呼吸边距 / bounds 钳制推定,与 web 面共用同一份——见
+   * chart-math.ts 的 `paddedAxisDomain`,调用方在此之前算好,text 面按字符行列粒度取整,
+   * 不重算)。
+   */
+  xDomain: [number, number];
+  yDomain: [number, number];
   /** 值空间的折线(同系列点按 x 排序连线),用 · 描画,字母覆盖其上。 */
   lines?: { x: number; y: number }[][];
   xLabel: string;
@@ -36,9 +43,7 @@ interface Scale {
   at(value: number): number;
 }
 
-function makeScale(values: number[], cells: number, invert: boolean): Scale {
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
+function makeScale(lo: number, hi: number, cells: number, invert: boolean): Scale {
   const span = hi - lo;
   return {
     lo,
@@ -64,14 +69,14 @@ function drawLine(grid: string[][], a: { col: number; row: number }, b: { col: n
 
 export function renderCharPlot(opts: CharPlotOptions): string {
   const height = Math.max(4, opts.height ?? 9);
-  const yTickTexts = [opts.formatY(Math.min(...opts.points.map((p) => p.y))), opts.formatY(Math.max(...opts.points.map((p) => p.y)))];
+  const yTickTexts = [opts.formatY(opts.yDomain[0]), opts.formatY(opts.yDomain[1])];
   const gutter = Math.max(...yTickTexts.map(stringWidth)) + 1;
   const plotWidth = Math.max(16, opts.width - gutter - 1);
 
-  const xScale = makeScale(opts.points.map((p) => p.x), plotWidth, opts.invertX ?? false);
+  const xScale = makeScale(opts.xDomain[0], opts.xDomain[1], plotWidth, opts.invertX ?? false);
   // y:大下标 = 「好」的一端;网格第 0 行是顶端,行下标 = height-1 - at,
   // 所以 invertY=false(higher 好)时 hi 折到 at=height-1 → 顶行,lower 好时反之
-  const yScale = makeScale(opts.points.map((p) => p.y), height, opts.invertY ?? false);
+  const yScale = makeScale(opts.yDomain[0], opts.yDomain[1], height, opts.invertY ?? false);
   const rowOf = (y: number) => height - 1 - yScale.at(y);
 
   const grid: string[][] = Array.from({ length: height }, () => Array.from({ length: plotWidth }, () => " "));

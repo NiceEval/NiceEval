@@ -363,6 +363,7 @@ export function toColumn(metric: Metric): MetricColumn {
     ...(metric.description !== undefined ? { description: metric.description } : {}),
     ...(metric.unit !== undefined ? { unit: metric.unit } : {}),
     ...(metric.better !== undefined ? { better: metric.better } : {}),
+    ...(metric.bounds !== undefined ? { bounds: metric.bounds } : {}),
   };
 }
 

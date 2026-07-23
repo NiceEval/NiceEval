@@ -64,6 +64,12 @@ export interface Metric<Name extends string = string> {
   /** 渲染提示:越高越好还是越低越好(排序方向、轴向、涨跌配色用)。 */
   better?: "higher" | "lower";
   /**
+   * 指标值的自然边界(如通过率 0–1、成本下界 0)。图轴呼吸边距不越过声明的边界——
+   * 贴边数据点如实落在框线上(如通过率 100%),那是指标的自然边界,不是裁剪
+   * (docs/feature/reports/library/metric-views.md「图轴值域」)。
+   */
+  bounds?: { min?: number; max?: number };
+  /**
    * 声明式前置:不满足 → null,语义等价于在 value 开头 return null。
    * 单独设字段是因为这一步最容易忘(忘了它,code-golf 会奖励「写得短的坏代码」)。
    */
@@ -145,6 +151,8 @@ export interface MetricColumn {
   unit?: string;
   /** 渲染提示:排序方向、轴向、涨跌配色。 */
   better?: "higher" | "lower";
+  /** = metric.bounds,原样投影;图轴值域推定读这里(docs/feature/reports/library/metric-views.md「图轴值域」)。 */
+  bounds?: { min?: number; max?: number };
 }
 
 export interface MetricCell {

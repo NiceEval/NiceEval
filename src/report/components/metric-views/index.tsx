@@ -51,6 +51,11 @@ function metricColumnProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be a MetricColumn { key, label }`;
   if (typeof value.key !== "string") return `"${path}.key" must be a string`;
   if (!isLocalizedText(value.label)) return `"${path}.label" must be a LocalizedText`;
+  if (value.bounds !== undefined) {
+    if (!isObject(value.bounds)) return `"${path}.bounds" must be an object { min?, max? }`;
+    if (value.bounds.min !== undefined && typeof value.bounds.min !== "number") return `"${path}.bounds.min" must be a number`;
+    if (value.bounds.max !== undefined && typeof value.bounds.max !== "number") return `"${path}.bounds.max" must be a number`;
+  }
   return null;
 }
 

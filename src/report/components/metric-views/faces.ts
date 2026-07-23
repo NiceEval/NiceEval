@@ -19,6 +19,7 @@ import { formatMetricValue, formatPlainNumber } from "../../model/format.ts";
 import { countText, localeText, resolveLocalizedText, resolveMetricLabel, type ReportLocale } from "../../model/locale.ts";
 import { padDisplay, stringWidth, textBar } from "../../model/text-layout.ts";
 import { renderTableText } from "../../definition/table-text.ts";
+import { paddedAxisDomain } from "./chart-math.ts";
 import { renderCharPlot, renderCoordinateTable, type PlotPoint } from "./plot.ts";
 import { cellText, missingText, MISSING_MARK } from "../shared-faces.ts";
 
@@ -293,9 +294,13 @@ export function scatterText(data: ScatterData, ctx: TextContext, opts?: ScatterT
     rowsBySeries.set(r.series, list);
   }
 
+  // 值域与 web 面共用同一条规则(chart-math.ts 的 paddedAxisDomain):呼吸边距 + bounds 钳制,
+  // text 面在 renderCharPlot 内部按字符行列粒度取整,不重算这份值域。
   const plot = renderCharPlot({
     width: ctx.width,
     points,
+    xDomain: paddedAxisDomain(ordered.map((r) => r.x.value as number), data.x.bounds),
+    yDomain: paddedAxisDomain(ordered.map((r) => r.y.value as number), data.y.bounds),
     lines: [],
     xLabel: axes.x,
     yLabel: axes.y,
@@ -378,9 +383,12 @@ export function lineText(data: LineData, ctx: TextContext): string {
       .sort((a, b) => a.x - b.x),
   );
 
+  // x 轴是 NumericAxis,没有 bounds 声明,只扩边距不钳制;y 轴按指标 bounds 钳制。
   const plot = renderCharPlot({
     width: ctx.width,
     points,
+    xDomain: paddedAxisDomain(drawable.map((r) => r.x as number)),
+    yDomain: paddedAxisDomain(drawable.map((r) => r.y.value as number), data.y.bounds),
     lines: lines.filter((l) => l.length > 1),
     xLabel,
     yLabel: axisLabel(data.y, locale),

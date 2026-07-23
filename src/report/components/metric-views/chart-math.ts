@@ -1,4 +1,4 @@
-// 通用图表数值工具:round-number 刻度生成与点标签布局,零依赖纯函数。
+// 通用图表数值工具:图轴值域推定、round-number 刻度生成与点标签布局,零依赖纯函数。
 
 function niceNumber(range: number, round: boolean): number {
   if (range <= 0) return 1;
@@ -19,19 +19,81 @@ function niceNumber(range: number, round: boolean): number {
   return niceFraction * 10 ** exponent;
 }
 
-/** [min, max] 区间上生成 count 个左右的“整齐”刻度(Heckbert nice-numbers)。 */
-export function niceTicks(min: number, max: number, count = 5): number[] {
-  if (min === max) {
-    min -= 1;
-    max += 1;
-  }
-  const range = niceNumber(max - min, false);
-  const step = niceNumber(range / Math.max(1, count - 1), true);
-  const niceMin = Math.floor(min / step) * step;
-  const niceMax = Math.ceil(max / step) * step;
+/** 指标的自然边界(Metric.bounds / MetricColumn.bounds);两端各自可选。 */
+export interface AxisBounds {
+  min?: number;
+  max?: number;
+}
+
+/**
+ * 图轴值域推定(docs/feature/reports/library/metric-views.md「图轴值域」):数据极值向两端
+ * 各扩数据跨度的 5%,数据极值点因此不落在绘图框线上。数据跨度为零(单点,或全部点同值)时,
+ * 边距改取该值绝对值的 5%;值恰为 0 时取 1(否则唯一的点仍会贴框)。声明了 bounds 的一端,
+ * 边距截到边界为止——贴边数据点如实落在框线上(如通过率 100%),那是指标的自然边界,不是
+ * 裁剪。MetricScatter 的两轴与 MetricLine 的两轴共用同一个函数;MetricLine 的 x 轴
+ * (NumericAxis)没有 bounds,调用时不传第二参,只扩边距不钳制。web SVG 与 text 字符坐标图
+ * 消费同一份返回值,渲染层不重算。
+ */
+export function paddedAxisDomain(values: readonly number[], bounds?: AxisBounds): [number, number] {
+  const dataLo = Math.min(...values);
+  const dataHi = Math.max(...values);
+  const span = dataHi - dataLo;
+  const margin = span > 0 ? span * 0.05 : dataLo === 0 ? 1 : Math.abs(dataLo) * 0.05;
+  let lo = dataLo - margin;
+  let hi = dataHi + margin;
+  if (bounds?.min !== undefined) lo = Math.max(lo, bounds.min);
+  if (bounds?.max !== undefined) hi = Math.min(hi, bounds.max);
+  return [lo, hi];
+}
+
+/**
+ * `[lo, hi]` 域内的整齐(Heckbert nice-numbers)刻度。与经典算法的差别:经典算法向外扩张
+ * `[min, max]` 到下一个整齐边界再取刻度;这里 `[lo, hi]` 已经是呼吸边距 / bounds 钳制后的
+ * 值域本身,刻度只在其内部取值,不再向外扩张——否则会在值域之外画出不存在的假刻度。
+ */
+export function ticksInDomain(lo: number, hi: number, count = 5): number[] {
+  if (lo >= hi) return [lo];
+  const step = niceNumber((hi - lo) / Math.max(1, count - 1), true);
+  const eps = step * 1e-9;
   const ticks: number[] = [];
-  for (let v = niceMin; v <= niceMax + step * 0.5; v += step) ticks.push(Number(v.toFixed(10)));
-  return ticks;
+  for (let v = Math.ceil((lo - eps) / step) * step; v <= hi + eps; v += step) {
+    const rounded = Number(v.toFixed(10));
+    if (rounded >= lo - eps && rounded <= hi + eps) ticks.push(rounded);
+  }
+  return ticks.length > 0 ? ticks : [lo, hi];
+}
+
+export interface AxisScale {
+  /** 值域内的整齐刻度(ticksInDomain 的产物)。 */
+  ticks: number[];
+  /** 值 → 像素坐标的线性映射。 */
+  scale(value: number): number;
+}
+
+/**
+ * 一根轴的完整推定:先用 `paddedAxisDomain` 定值域(呼吸边距 + bounds 钳制),再用
+ * `ticksInDomain` 在域内取整齐刻度,最后按 `[pixelLo, pixelHi]` 做线性映射。`invert` 只影响
+ * 最后这一步的映射方向(`better: "lower"` 的轴反向渲染)——值域先按呼吸边距 / bounds 推定,
+ * 再决定要不要反向,反向不改变值域本身或钳制结果。MetricScatter 与 MetricLine 的两轴共用
+ * 这一个函数(docs/feature/reports/library/metric-views.md「图轴值域」)。
+ */
+export function axisScale(
+  values: readonly number[],
+  bounds: AxisBounds | undefined,
+  pixelLo: number,
+  pixelHi: number,
+  invert: boolean,
+): AxisScale {
+  const [lo, hi] = paddedAxisDomain(values, bounds);
+  const ticks = ticksInDomain(lo, hi, 5);
+  return {
+    ticks,
+    scale(v: number): number {
+      let t = (v - lo) / (hi - lo || 1);
+      if (invert) t = 1 - t;
+      return pixelLo + t * (pixelHi - pixelLo);
+    },
+  };
 }
 
 export interface PointLabelInput {

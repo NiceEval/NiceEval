@@ -16,6 +16,10 @@
 //   assistantTurns(assistant-turns)                null     实测;o11y 缺失→null 同左  同左          lower
 //   repeatedFailedCommands(repeated-failed-commands) null   实测;o11y 缺失→null 同左  同左          lower
 //
+// bounds(自然边界,驱动图轴呼吸边距的钳制,见 docs/feature/reports/library/metric-views.md
+// 「图轴值域」):三个通过率指标与 examScore 是 { min: 0, max: 1 };其余七个(totalScore、
+// durationMs、tokens、costUSD、assistantTurns、repeatedFailedCommands)是 { min: 0 }。
+//
 // 两档指标(docs/feature/reports/library/metrics.md「内置指标」):以上除 assistantTurns 与
 // repeatedFailedCommands 外全部只读 attempt.result 的瘦身字段——任何 producer、任何
 // copySnapshots artifacts 选择都算得出,内置报告 ExperimentComparison 只用这一档。
@@ -56,6 +60,7 @@ export const taskPassRate = defineMetric({
   description: "Conditional task quality among attempts that formed a trustworthy verdict: passed = 1, failed = 0; errored is null.",
   better: "higher",
   unit: "%",
+  bounds: { min: 0, max: 1 },
   value(a) {
     switch (a.result.verdict) {
       case "passed":
@@ -76,6 +81,7 @@ export const executionReliability = defineMetric({
   description: "Execution reliability: reached a trustworthy verdict (passed / failed) = 1, errored = 0.",
   better: "higher",
   unit: "%",
+  bounds: { min: 0, max: 1 },
   value(a) {
     switch (a.result.verdict) {
       case "passed":
@@ -99,6 +105,7 @@ export const endToEndPassRate = defineMetric({
   description: "End-to-end composite: passed = 1, failed / errored = 0. Split blame with taskPassRate and executionReliability.",
   better: "higher",
   unit: "%",
+  bounds: { min: 0, max: 1 },
   value: (a) =>
     a.result.verdict === "skipped" ? null : a.result.verdict === "passed" ? 1 : 0,
 });
@@ -109,6 +116,7 @@ export const examScore = defineMetric({
   description: "Per-eval score: gates decide pass, soft assertions grade quality.",
   better: "higher",
   unit: "%",
+  bounds: { min: 0, max: 1 },
   value(a) {
     const { verdict, assertions } = a.result;
     if (verdict === "skipped") return null;
@@ -142,6 +150,7 @@ export const totalScore = defineMetric({
   label: { en: "Total score", "zh-CN": "总分" },
   description: "Points-scoring eval's earned points: sum of assertions[].points + scoreEntries[].points. Not applicable (null) to pass-scoring evals.",
   better: "higher",
+  bounds: { min: 0 },
   value(a) {
     if (a.result.scoring !== "points") return null;
     if (a.result.verdict === "errored" || a.result.verdict === "skipped") return null;
@@ -161,6 +170,7 @@ export const durationMs = defineMetric({
   description: "Wall-clock duration of the attempt.",
   better: "lower",
   unit: "ms",
+  bounds: { min: 0 },
   value: (a) => (a.result.verdict === "skipped" ? null : a.result.durationMs),
 });
 
@@ -170,6 +180,7 @@ export const tokens = defineMetric({
   description: "Input + output tokens (cache reads/writes excluded).",
   better: "lower",
   unit: "tokens",
+  bounds: { min: 0 },
   value(a) {
     if (a.result.verdict === "skipped") return null;
     const usage = a.result.usage;
@@ -186,6 +197,7 @@ export const costUSD = defineMetric({
   description: "USD cost per attempt (gateway-measured beats estimated).",
   better: "lower",
   unit: "$",
+  bounds: { min: 0 },
   value: (a) => (a.result.verdict === "skipped" ? null : attemptCostUSD(a.result)),
 });
 
@@ -201,6 +213,7 @@ export const assistantTurns = defineMetric({
   description: "Assistant turns in the o11y event stream per attempt. Reads o11y — “—” if not published alongside this attempt.",
   better: "lower",
   unit: "turns",
+  bounds: { min: 0 },
   async value(a) {
     if (a.result.verdict === "skipped") return null;
     const o11y = await a.o11y();
@@ -219,6 +232,7 @@ export const repeatedFailedCommands = defineMetric({
   description: "Per attempt: for each shell command failing n > 1 times, count n − 1, summed. Reads o11y — “—” if not published alongside this attempt.",
   better: "lower",
   unit: "cmds",
+  bounds: { min: 0 },
   async value(a) {
     if (a.result.verdict === "skipped") return null;
     const o11y = await a.o11y();

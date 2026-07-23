@@ -14,7 +14,7 @@ import type { ReactElement } from "react";
 import type { MetricColumn, ScatterData } from "../../model/types.ts";
 import { formatMetricValue, shortestUniqueLabels } from "../../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, countText, localeText, resolveLocalizedText, resolveMetricLabel, type ReportLocale } from "../../model/locale.ts";
-import { niceTicks, placePointLabels } from "./chart-math.ts";
+import { axisScale, placePointLabels } from "./chart-math.ts";
 import { colorIndicesForKeys } from "../../assets/colors.ts";
 import { cx } from "../shared.ts";
 
@@ -34,23 +34,6 @@ interface DrawablePoint {
   title: string;
   px: number;
   py: number;
-}
-
-/**
- * 一根轴:niceTicks 撑出整齐的值域,值 → 像素做线性映射。轴方向跟随指标的 `better`:
- * `better: "lower"` 的轴反向渲染(值大的一端在左 / 下),「更好」因此恒指向右与上;
- * 刻度标签始终显示真实值,反向只改方向不改数字(docs/feature/reports/library/metric-views.md)。
- */
-function axisScale(values: number[], pixelLo: number, pixelHi: number, invert: boolean) {
-  const ticks = niceTicks(Math.min(...values), Math.max(...values), 5);
-  const lo = ticks[0];
-  const hi = ticks[ticks.length - 1];
-  const scale = (v: number) => {
-    let t = (v - lo) / (hi - lo || 1);
-    if (invert) t = 1 - t;
-    return pixelLo + t * (pixelHi - pixelLo);
-  };
-  return { ticks, scale };
 }
 
 export function MetricScatter({
@@ -96,6 +79,7 @@ export function MetricScatter({
   // 轴方向跟随 better:lower 反向(值大在左 / 下),higher 与未声明正向。
   const xScale = axisScale(
     drawableRows.map((r) => r.x.value as number),
+    data.x.bounds,
     MARGIN.left,
     MARGIN.left + PLOT_W,
     data.x.better === "lower",
@@ -103,6 +87,7 @@ export function MetricScatter({
   // y 像素轴向下增长:正向 = 高值在上 → 映射到 [bottom, top];lower 反向 = 高值在下。
   const yScale = axisScale(
     drawableRows.map((r) => r.y.value as number),
+    data.y.bounds,
     MARGIN.top + PLOT_H,
     MARGIN.top,
     data.y.better === "lower",

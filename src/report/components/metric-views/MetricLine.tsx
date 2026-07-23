@@ -8,7 +8,9 @@
 import type { ReactElement } from "react";
 import type { LineData } from "../../model/types.ts";
 import { DEFAULT_REPORT_LOCALE, countText, localeText, resolveLocalizedText, resolveMetricLabel, type ReportLocale } from "../../model/locale.ts";
+import { formatMetricValue } from "../../model/format.ts";
 import { colorIndicesForKeys } from "../../assets/colors.ts";
+import { axisScale } from "./chart-math.ts";
 import { cx } from "../shared.ts";
 
 const WIDTH = 640;
@@ -23,19 +25,6 @@ interface DrawablePoint {
   title: string;
   px: number;
   py: number;
-}
-
-function linearScale(values: number[], pixelLo: number, pixelHi: number, invert: boolean) {
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  const span = hi - lo || 2;
-  const padded = { lo: lo - (hi - lo ? span * 0.08 : 1), hi: hi + (hi - lo ? span * 0.08 : 1) };
-  const scale = (v: number) => {
-    let t = (v - padded.lo) / (padded.hi - padded.lo);
-    if (invert) t = 1 - t;
-    return pixelLo + t * (pixelHi - pixelLo);
-  };
-  return { lo, hi, scale };
 }
 
 export function MetricLine({
@@ -70,10 +59,12 @@ export function MetricLine({
     );
   }
 
-  const xScale = linearScale(drawableRows.map((r) => r.x as number), PLOT.left, PLOT.right, false);
+  // x 轴是 NumericAxis,没有 bounds 声明,只扩边距不钳制。
+  const xScale = axisScale(drawableRows.map((r) => r.x as number), undefined, PLOT.left, PLOT.right, false);
   // y 像素轴向下增长:higher 高值在上;lower 反向后「好」的一端同样在上
-  const yScale = linearScale(
+  const yScale = axisScale(
     drawableRows.map((r) => r.y.value as number),
+    data.y.bounds,
     PLOT.bottom,
     PLOT.top,
     data.y.better === "lower",
@@ -104,17 +95,6 @@ export function MetricLine({
   // 同图撞色消解:散列格作起点,按图例顺序线性探测空格(colors.ts 的契约注释)
   const colorIdx = colorIndicesForKeys(seriesOrder.filter((s) => s !== ""));
   const seriesClassOf = (series: string) => (series === "" ? "nre-series-none" : `nre-series-c${colorIdx.get(series) ?? 0}`);
-
-  const xTicks = xScale.lo === xScale.hi ? [xScale.lo] : [xScale.lo, xScale.hi];
-  const yTicks = yScale.lo === yScale.hi ? [yScale.lo] : [yScale.lo, yScale.hi];
-  const xDisplayFor = (value: number) => {
-    const row = drawableRows.find((r) => r.x === value);
-    return row === undefined ? String(value) : resolveLocalizedText(row.xDisplay, locale);
-  };
-  const yDisplayFor = (value: number) => {
-    const row = drawableRows.find((r) => r.y.value === value);
-    return row === undefined ? String(value) : resolveLocalizedText(row.y.display, locale);
-  };
 
   return (
     <figure className={cx("nre", "nre-metric-line", className)}>
@@ -147,14 +127,14 @@ export function MetricLine({
           {data.y.unit ? `(${data.y.unit})` : ""}
         </text>
 
-        {xTicks.map((v) => (
+        {xScale.ticks.map((v) => (
           <text key={`x${v}`} className="nre-line-tick" x={xScale.scale(v)} y={PLOT.bottom + 16} textAnchor="middle">
-            {xDisplayFor(v)}
+            {formatMetricValue(v, data.x.unit)}
           </text>
         ))}
-        {yTicks.map((v) => (
+        {yScale.ticks.map((v) => (
           <text key={`y${v}`} className="nre-line-tick" x={PLOT.left - 6} y={yScale.scale(v) + 4} textAnchor="end">
-            {yDisplayFor(v)}
+            {formatMetricValue(v, data.y.unit)}
           </text>
         ))}
 
