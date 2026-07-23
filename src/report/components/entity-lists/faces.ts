@@ -8,6 +8,7 @@ import type { AttemptListItem, EvalListItem, ExperimentListItem } from "../../mo
 import type { TextContext } from "../../definition/tree.ts";
 import type { TableColumn, TableRow } from "../../definition/primitives.tsx";
 import {
+  experimentListScoringComposition,
   fitFailureSummary,
   formatDurationMs,
   formatHistoricalGap,
@@ -68,16 +69,35 @@ function experimentSummaryTable(
 ): string {
   const locale = ctx.locale;
   const compact = ctx.width < 100;
+  // 主读数列按题型构成选择,与 web 面共用同一份判据(entity-lists.md「ExperimentList」)。
+  const composition = experimentListScoringComposition(items);
+  const showPassRate = composition !== "points";
+  const showTotalScore = composition !== "pass";
   const columns: TableColumn[] = [
     { key: "experiment", header: compact && locale === "en" ? "Exp." : localeText(locale, "experimentList.experiment") },
     { key: "model", header: localeText(locale, "table.model") },
     { key: "agent", header: localeText(locale, "table.agent") },
     { key: "duration", header: compact && locale === "en" ? "Avg" : localeText(locale, "experimentList.avgDuration"), align: "right" },
-    { key: "passRate", header: compact && locale === "en" ? "Pass" : localeText(locale, "experimentList.passRate"), align: "right" },
+  ];
+  if (showPassRate) {
+    columns.push({
+      key: "passRate",
+      header: compact && locale === "en" ? "Pass" : localeText(locale, "experimentList.passRate"),
+      align: "right",
+    });
+  }
+  if (showTotalScore) {
+    columns.push({
+      key: "totalScore",
+      header: compact && locale === "en" ? "Score" : localeText(locale, "experimentList.totalScore"),
+      align: "right",
+    });
+  }
+  columns.push(
     { key: "result", header: localeText(locale, "experimentList.result") },
     { key: "tokens", header: localeText(locale, "experimentList.tokens"), align: "right" },
     { key: "cost", header: localeText(locale, "experimentList.cost"), align: "right" },
-  ];
+  );
   const rows: TableRow[] = items.map((item) => ({
     key: item.experimentId,
     cells: {
@@ -85,7 +105,11 @@ function experimentSummaryTable(
       model: item.model ?? localeText(locale, "experimentList.defaultModel"),
       agent: item.agent,
       duration: cellText(item.durationMs, locale),
-      passRate: cellText(item.endToEndPassRate, locale),
+      // 计分制行的通过率是可判定的真实数字,不是缺数据——mixed 表里强制显示 —,不让它冒充
+      // 这一行的主读数(entity-lists.md「ExperimentList」)。
+      ...(showPassRate ? { passRate: item.scoring === "points" ? MISSING_MARK : cellText(item.endToEndPassRate, locale) } : {}),
+      // 通过制行的 totalScore 本就是 null cell,cellText 的缺数据渲染(—)已经够用,不需要强制。
+      ...(showTotalScore ? { totalScore: cellText(item.totalScore, locale) } : {}),
       result: verdictTallyText(item.evalVerdicts, locale),
       tokens: cellText(item.tokens, locale),
       cost: cellText(item.costUSD, locale),
@@ -117,6 +141,9 @@ function experimentSummaryTable(
 
 function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label: string): string {
   const locale = ctx.locale;
+  // 题型是定义期事实,单个 experiment 内由启动期强制同型:这里只需看这一个 item 的 scoring,
+  // 不需要 experimentListScoringComposition 那份跨行判据。
+  const showScore = item.scoring === "points";
   const columns: TableColumn[] = [
     { key: "status", header: localeText(locale, "experimentList.status") },
     { key: "entity", header: localeText(locale, "experimentList.evalAttempt") },
@@ -125,6 +152,11 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label
     { key: "duration", header: localeText(locale, "experimentList.duration"), align: "right" },
     { key: "cost", header: localeText(locale, "experimentList.cost"), align: "right" },
   ];
+  // 计分制实验:附一列挣分,Eval 父行是这道题的平均、Attempt 子行是这一轮的原始值
+  // (与 duration/cost 的父行 avg、子行原始值同一惯例)。通过制实验没有这个读数,不摆占位列。
+  if (showScore) {
+    columns.push({ key: "score", header: localeText(locale, "experimentList.totalScore"), align: "right" });
+  }
   // Result 的字符预算 ≈ 两行 × 它能分到的列宽(总宽减其它列的自然宽与列距)。这里只做
   // 粗预算;精确的按宽度收口由列的 maxLines 兜底。
   const statusWidth = Math.max(
@@ -135,7 +167,9 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label
     stringWidth(localeText(locale, "experimentList.evalAttempt")),
     ...item.evalRows.flatMap((row) => [stringWidth(row.evalId), ...row.attempts.map((a) => stringWidth(a.locator) + 3)]),
   );
-  const fixedWidth = statusWidth + entityWidth + 8 /* duration */ + 6 /* cost */ + 3 * 4; /* 4 段列距 */
+  const columnCount = showScore ? 6 : 5;
+  const fixedWidth =
+    statusWidth + entityWidth + 8 /* duration */ + 6 /* cost */ + (showScore ? 8 : 0) /* score */ + 3 * (columnCount - 1); /* 列距 */
   const resultBudget = Math.max(24, (ctx.width - fixedWidth) * 2);
   const rows: TableRow[] = item.evalRows.flatMap((row) => {
     // Eval 父行只承载折叠判定与题级聚合;失败摘要只在 Attempt 子行出现。
@@ -147,6 +181,7 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label
         result: "",
         duration: localeText(locale, "entityList.average", { value: cellText(row.durationMs, locale) }),
         cost: localeText(locale, "entityList.average", { value: cellText(row.costUSD, locale) }),
+        ...(showScore ? { score: localeText(locale, "entityList.average", { value: cellText(row.totalScore, locale) }) } : {}),
       },
     };
     const attempts: TableRow[] = row.attempts.map((attempt, index) => ({
@@ -157,6 +192,7 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label
         result: attemptReasonText(attempt, locale, resultBudget) ?? MISSING_MARK,
         duration: attempt.verdict === "skipped" && attempt.durationMs === 0 ? null : formatDurationMs(attempt.durationMs),
         cost: attempt.costUSD === null ? null : formatUSD(attempt.costUSD),
+        ...(showScore ? { score: cellText(attempt.totalScore, locale) } : {}),
       },
     }));
     return [parent, ...attempts];
@@ -171,6 +207,7 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label
       result: `${localeText(locale, "experimentList.noResultsForConfig")} · niceeval exp ${item.experimentId}`,
       duration: null,
       cost: null,
+      ...(showScore ? { score: null } : {}),
     },
   }));
   rows.push(...missingRows);

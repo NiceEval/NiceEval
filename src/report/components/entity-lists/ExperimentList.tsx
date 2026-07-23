@@ -1,13 +1,14 @@
-// ExperimentList:实体列表的第一级。web 面是一行一个 experiment 的固定八列比较表
-// (Experiment / Model / Agent / Avg. time / Pass rate / Tokens / Cost / Results),
-// 每行用原生 <details> 展开到 Eval 与 Attempt locator。数据完全来自 experimentListData(),
-// 组件不重算、不推断组边界。
+// ExperimentList:实体列表的第一级。web 面是一行一个 experiment 的固定列比较表
+// (Experiment / Model / Agent / Avg. time / 主读数 / Tokens / Cost / Results);主读数列
+// 按列表内题型构成选择——纯通过制是 Pass rate,纯计分制是 Total score,两型并存时两列并排
+// (entity-lists.md「ExperimentList」)。每行用原生 <details> 展开到 Eval 与 Attempt locator。
+// 数据完全来自 experimentListData(),组件不重算、不推断组边界。
 
 import type { ReactElement } from "react";
 import type { AttemptLocator } from "../../../results/locator.ts";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem } from "../../model/types.ts";
-import { shortestUniqueLabels } from "../../model/format.ts";
-import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
+import { experimentListScoringComposition, shortestUniqueLabels } from "../../model/format.ts";
+import { DEFAULT_REPORT_LOCALE, localeText, resolveLocalizedText, type ReportLocale } from "../../model/locale.ts";
 import { AttemptLocatorBadge, EvalHistoricalMark, HistoricalMark, failureSummaryText } from "./AttemptList.tsx";
 import { MetricCellView } from "../cell.tsx";
 import { colorClassForKey } from "../../assets/colors.ts";
@@ -44,11 +45,14 @@ function VerdictSummary({ item, locale }: { item: ExperimentListItem; locale: Re
 function ExperimentAttemptRow({
   attempt,
   last,
+  scoring,
   attemptHref,
   locale,
 }: {
   attempt: AttemptListItem;
   last: boolean;
+  /** 所属 experiment 的题型(定义期事实,单个 experiment 内由启动期强制同型)。 */
+  scoring: "pass" | "points";
   attemptHref?: (locator: AttemptLocator) => string;
   locale: ReportLocale;
 }): ReactElement {
@@ -63,6 +67,15 @@ function ExperimentAttemptRow({
       <span className="nre-eval-attempt-metrics">
         {formatDurationMs(attempt.durationMs)}
         {attempt.costUSD !== null && <> · {formatUSD(attempt.costUSD)}</>}
+        {/* 计分制:附这一轮挣的分;通过制没有这个读数,不摆占位 */}
+        {scoring === "points" && (
+          <>
+            {" · "}
+            {attempt.totalScore.value === null
+              ? localeText(locale, "cell.missing")
+              : resolveLocalizedText(attempt.totalScore.display, locale)}
+          </>
+        )}
       </span>
       {/* passed attempt 的 Result 是 —,不罗列通过的 assertions */}
       <span className="nre-eval-reason">{reason ?? "—"}</span>
@@ -72,15 +85,19 @@ function ExperimentAttemptRow({
 
 function EvalAttempts({
   row,
+  scoring,
   attemptHref,
   locale,
 }: {
   row: ExperimentListEvalRow;
+  /** 所属 experiment 的题型(定义期事实,单个 experiment 内由启动期强制同型)。 */
+  scoring: "pass" | "points";
   attemptHref?: (locator: AttemptLocator) => string;
   locale: ReportLocale;
 }): ReactElement {
   const duration = row.durationMs.value === null ? localeText(locale, "cell.missing") : formatDurationMs(row.durationMs.value);
   const cost = row.costUSD.value === null ? localeText(locale, "cell.missing") : formatUSD(row.costUSD.value);
+  const score = row.totalScore.value === null ? localeText(locale, "cell.missing") : resolveLocalizedText(row.totalScore.display, locale);
   return (
     <li className="nre-experiment-eval">
       {/* Eval 父行只显示折叠判定、Attempt 数与题级平均;失败原因只在 Attempt 子行 */}
@@ -93,6 +110,8 @@ function EvalAttempts({
           {localeText(locale, "entityList.average", { value: duration })}
           {" · "}
           {localeText(locale, "entityList.average", { value: cost })}
+          {/* 计分制:附这道题挣的分;通过制没有这个读数,不摆占位 */}
+          {scoring === "points" && <> · {score}</>}
         </span>
       </div>
       <ul className="nre-experiment-attempts">
@@ -101,6 +120,7 @@ function EvalAttempts({
             key={attempt.locator}
             attempt={attempt}
             last={index === row.attempts.length - 1}
+            scoring={scoring}
             attemptHref={attemptHref}
             locale={locale}
           />
@@ -153,14 +173,19 @@ function Flags({ flags, locale }: { flags: Record<string, unknown> | undefined; 
 function ExperimentRow({
   item,
   label,
+  composition,
   attemptHref,
   locale,
 }: {
   item: ExperimentListItem;
   label: string;
+  /** 整份列表的题型构成——决定主读数是 Pass rate、Total score,还是两列并存。 */
+  composition: "pass" | "points" | "mixed";
   attemptHref?: (locator: AttemptLocator) => string;
   locale: ReportLocale;
 }): ReactElement {
+  const showPassRate = composition !== "points";
+  const showTotalScore = composition !== "pass";
   return (
     <details className="nre-experiment-entry">
       <summary className="nre-experiment-summary">
@@ -188,12 +213,23 @@ function ExperimentRow({
         <span className="nre-num" data-sort-value={item.durationMs.value ?? ""}>
           <MetricCellView cell={item.durationMs} locale={locale} />
         </span>
-        <span
-          className={cx("nre-num", passRateTone(item.endToEndPassRate.value))}
-          data-sort-value={item.endToEndPassRate.value ?? ""}
-        >
-          <MetricCellView cell={item.endToEndPassRate} locale={locale} />
-        </span>
+        {showPassRate && (
+          // 计分制行的通过率是可判定的真实数字,不是缺数据——mixed 列表里强制显示 — 并清空
+          // 排序值,不让藏起来的数字驱动排序(entity-lists.md「ExperimentList」主读数列)。
+          <span
+            className={cx("nre-num", item.scoring !== "points" && passRateTone(item.endToEndPassRate.value))}
+            data-sort-value={item.scoring === "points" ? "" : (item.endToEndPassRate.value ?? "")}
+          >
+            {item.scoring === "points" ? "—" : <MetricCellView cell={item.endToEndPassRate} locale={locale} />}
+          </span>
+        )}
+        {showTotalScore && (
+          // 通过制行的 totalScore 本就是 null cell,MetricCellView 的缺数据渲染已经够用,
+          // 这个方向没有「藏起来的真实值」问题,不需要像上面那样强制。
+          <span className="nre-num" data-sort-value={item.totalScore.value ?? ""}>
+            <MetricCellView cell={item.totalScore} locale={locale} />
+          </span>
+        )}
         <span className="nre-num" data-sort-value={item.tokens.value ?? ""}>
           <MetricCellView cell={item.tokens} locale={locale} />
         </span>
@@ -206,7 +242,7 @@ function ExperimentRow({
         <Flags flags={item.flags} locale={locale} />
         <ul className="nre-experiment-evals">
           {item.evalRows.map((row) => (
-            <EvalAttempts key={row.evalId} row={row} attemptHref={attemptHref} locale={locale} />
+            <EvalAttempts key={row.evalId} row={row} scoring={item.scoring} attemptHref={attemptHref} locale={locale} />
           ))}
           {item.missingEvalIds.map((evalId) => (
             <MissingEvalRow key={evalId} evalId={evalId} experimentId={item.experimentId} locale={locale} />
@@ -215,6 +251,14 @@ function ExperimentRow({
       </div>
     </details>
   );
+}
+
+/** 表头一列的渲染信息:数字列靠右对齐,defaultSort 是这份 data 默认排序落在这列时的初始箭头方向。 */
+interface ExperimentHeadColumn {
+  label: string;
+  numeric?: boolean;
+  defaultSort?: "asc" | "desc";
+  title?: string;
 }
 
 export function ExperimentList({
@@ -231,28 +275,56 @@ export function ExperimentList({
   locale?: ReportLocale;
 }): ReactElement {
   const experimentLabels = shortestUniqueLabels(data.map((item) => item.experimentId));
-  const labels = [
-    localeText(locale, "experimentList.experiment"),
-    localeText(locale, "table.model"),
-    localeText(locale, "table.agent"),
-    localeText(locale, "experimentList.avgDuration"),
-    localeText(locale, "experimentList.passRate"),
-    localeText(locale, "experimentList.tokens"),
-    localeText(locale, "experimentList.cost"),
-    localeText(locale, "experimentList.result"),
+  // 主读数列按列表内题型构成选择;web/text 共用同一份判据,不各自重新判断
+  // (docs/feature/reports/library/entity-lists.md「ExperimentList」)。
+  const composition = experimentListScoringComposition(data);
+  const showPassRate = composition !== "points";
+  const showTotalScore = composition !== "pass";
+  const columns: ExperimentHeadColumn[] = [
+    // mixed 时两种读数不能互相排名,默认排序退回 experiment id 字典序(升序)——这里是唯一
+    // 显示初始排序箭头的列;pass/points 单读数时箭头显示在下面那一列,这列不显示。
+    { label: localeText(locale, "experimentList.experiment"), defaultSort: composition === "mixed" ? "asc" : undefined },
+    { label: localeText(locale, "table.model") },
+    { label: localeText(locale, "table.agent") },
+    { label: localeText(locale, "experimentList.avgDuration"), numeric: true },
   ];
+  if (showPassRate) {
+    columns.push({
+      label: localeText(locale, "experimentList.passRate"),
+      numeric: true,
+      defaultSort: composition === "pass" ? "desc" : undefined,
+      title: localeText(locale, "experimentList.passRateDescription"),
+    });
+  }
+  if (showTotalScore) {
+    columns.push({
+      label: localeText(locale, "experimentList.totalScore"),
+      numeric: true,
+      defaultSort: composition === "points" ? "desc" : undefined,
+      title: localeText(locale, "experimentList.totalScoreDescription"),
+    });
+  }
+  columns.push(
+    { label: localeText(locale, "experimentList.tokens"), numeric: true },
+    { label: localeText(locale, "experimentList.cost"), numeric: true },
+    { label: localeText(locale, "experimentList.result") },
+  );
   const board = (
-    <div className="nre-experiment-table">
+    <div className={cx("nre-experiment-table", composition === "mixed" && "nre-mixed-scoring")}>
       <div className="nre-experiment-head">
-        {labels.map((label, index) => (
+        {columns.map((col, index) => (
           <button
             type="button"
             data-nre-experiment-sort={index}
-            className={cx(index >= 3 && index <= 6 && "nre-num-head", index === 4 && "nre-sort-desc")}
-            key={label}
-            title={index === 4 ? localeText(locale, "experimentList.passRateDescription") : undefined}
+            className={cx(
+              col.numeric && "nre-num-head",
+              col.defaultSort === "asc" && "nre-sort-asc",
+              col.defaultSort === "desc" && "nre-sort-desc",
+            )}
+            key={col.label}
+            title={col.title}
           >
-            <span className="nre-sort-label">{label}</span>
+            <span className="nre-sort-label">{col.label}</span>
             <span className="nre-sort-icon" aria-hidden="true" />
           </button>
         ))}
@@ -263,6 +335,7 @@ export function ExperimentList({
           key={item.experimentId}
           item={item}
           label={experimentLabels.get(item.experimentId) ?? item.experimentId}
+          composition={composition}
           attemptHref={attemptHref}
           locale={locale}
         />

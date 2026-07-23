@@ -84,10 +84,13 @@
 .nre-eval-list .nre-attempts { list-style:none; margin:0 0 12px; padding:0 0 0 20px; border-left:2px solid color-mix(in oklch,var(--nre-c0),transparent 55%); }
 .nre-eval-list .nre-eval-list-empty { border:1px dashed var(--line-strong); border-radius:8px; padding:18px; color:var(--muted); text-align:center; background:var(--panel); }
 
-/* ---- ExperimentList:web 面固定八列比较表,一条 <details> 一个 experiment ---- */
+/* ---- ExperimentList:web 面比较表,一条 <details> 一个 experiment;固定八列,两种题型并存
+   (mixed)时 Pass rate 与 Total score 两列并排变九列,.nre-mixed-scoring 覆盖轨数 ---- */
 .nre-experiment-table { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:var(--panel); }
 .nre-experiment-head,
 .nre-experiment-summary { display:grid; grid-template-columns:minmax(240px,1.35fr) minmax(115px,.72fr) minmax(95px,.58fr) minmax(108px,.62fr) minmax(105px,.58fr) minmax(112px,.66fr) minmax(92px,.52fr) minmax(160px,.86fr); column-gap:14px; align-items:center; }
+.nre-experiment-table.nre-mixed-scoring .nre-experiment-head,
+.nre-experiment-table.nre-mixed-scoring .nre-experiment-summary { grid-template-columns:minmax(240px,1.35fr) minmax(115px,.72fr) minmax(95px,.58fr) minmax(108px,.62fr) minmax(105px,.58fr) minmax(105px,.58fr) minmax(112px,.66fr) minmax(92px,.52fr) minmax(160px,.86fr); }
 .nre-experiment-head { padding:13px 20px; color:var(--muted); font-size:12px; line-height:1.2; font-weight:620; border-bottom:1px solid var(--line); }
 .nre-experiment-head button { appearance:none; display:inline-flex; width:max-content; max-width:100%; align-items:center; gap:5px; border:0; padding:0; background:transparent; color:inherit; font:inherit; line-height:inherit; text-align:left; white-space:nowrap; cursor:pointer; }
 .nre-experiment-head button:hover,
@@ -139,7 +142,7 @@
 .nre-experiment-list .nre-eval-attempt-metrics,
 .nre-experiment-list .nre-eval-reason { color:var(--muted); font-size:.92em; }
 .nre-experiment-list .nre-experiment-list-empty { border:1px dashed var(--line-strong); border-radius:8px; padding:18px; color:var(--muted); text-align:center; background:var(--panel); }
-@media(max-width:1160px){.nre-experiment-table{overflow-x:auto}.nre-experiment-head,.nre-experiment-summary{min-width:1120px}.nre-experiment-detail{min-width:1120px}}
+@media(max-width:1160px){.nre-experiment-table{overflow-x:auto}.nre-experiment-head,.nre-experiment-summary{min-width:1120px}.nre-experiment-detail{min-width:1120px}.nre-experiment-table.nre-mixed-scoring .nre-experiment-head,.nre-experiment-table.nre-mixed-scoring .nre-experiment-summary{min-width:1240px}}
 
 /* ---- verdict 判定色(EvalList/ExperimentList 的判定符;errored 在这里按 bad 收敛) ---- */
 .nre .nre-eval-verdict.nre-verdict-passed { color:var(--good); }

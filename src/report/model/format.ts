@@ -229,3 +229,27 @@ export function verdictMark(verdict: Verdict): string {
 export function fitFailureSummary(summary: string, maxChars: number): string {
   return summary.length <= maxChars ? summary : `${summary.slice(0, Math.max(0, maxChars - 1))}…`;
 }
+
+// ── ExperimentList(web ExperimentList.tsx / text faces.ts)共用的题型构成判据 ──
+
+/**
+ * 一份 `ExperimentList` data 的题型构成:主读数列该显示 Pass rate、Total score,还是两者
+ * 并存(docs/feature/reports/library/entity-lists.md「ExperimentList」主读数列)。与
+ * `entity-lists/compute.ts` 里 `experimentListData` 默认排序专用的 `listScoringComposition`
+ * 同一套判据——跳过 `attempts === 0` 的行(coverage-only 占位,`scoring` 是占位默认值不是
+ * 读到的事实,一屏占位行不该把纯计分制列表误判成 mixed)。web 面与 text 面在这里读同一份
+ * 判据,不各自重新判断,列集合与 `experimentListData` 已经算好的默认排序永远对得上。
+ */
+export function experimentListScoringComposition(
+  items: readonly { scoring: "pass" | "points"; attempts: number }[],
+): "pass" | "points" | "mixed" {
+  let hasPass = false;
+  let hasPoints = false;
+  for (const item of items) {
+    if (item.attempts === 0) continue;
+    if (item.scoring === "points") hasPoints = true;
+    else hasPass = true;
+  }
+  if (hasPass && hasPoints) return "mixed";
+  return hasPoints ? "points" : "pass";
+}
