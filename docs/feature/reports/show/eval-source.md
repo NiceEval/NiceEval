@@ -1,6 +1,6 @@
 # `--source`：把断言放回源码
 
-`--source` 显示运行时保存的 eval 源码，而不是工作树中可能已经修改过的文件。两类调用行有标注：
+`--source` 是 attempt-detail 组件族对应区块的 text 面，显示运行时保存的 eval 源码，而不是工作树中可能已经修改过的文件。两类调用行有标注：
 
 - **断言行**：通过与失败断言标在对应行；失败行紧跟分组、matcher、期望值和实际值。期望值与实际值经摘要收口（折单行、设上限）——标注是源码页里的一行事实。落盘的 `expected` / `received` 本身是[有界预览](../../scoring/architecture.md)，attempt 首页按原始换行展开这份预览，原始证据在 `events.json` / `diff.json` 等 artifact（存在时才可回溯，不是每条断言都有）。
 - **send 行**：`t.send(...)` 的调用行标注它产生的 turn 的头行事实——[轮标签](../../scoring/library/display.md#turntsend的展示)（与 [`--execution`](execution.md) 的 turn 头行、[`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token）、status、该轮墙钟与该轮 usage（有记录才出现），失败轮标 `✗`。一行源码触发多轮（循环里 send）时逐轮标注。回复全文与轮内工具卡片不内联——源码视图回答「这行代码对应哪一轮、这一轮成了没成」，「这一轮做了什么」归 [`--execution`](execution.md)。

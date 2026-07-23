@@ -1,6 +1,6 @@
 # `--diff`：核对 agent 实际改动
 
-显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)：只有 agent 在 send 窗口内改动的文件，起始 fixture 与验证材料不混在里面。裸 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
+`--diff` 是 attempt-detail 组件族对应区块的 text 面，显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)：只有 agent 在 send 窗口内改动的文件，起始 fixture 与验证材料不混在里面。裸 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
 
 ```text
 $ niceeval show @1qrdcfq8 --diff

@@ -20,16 +20,20 @@
 ```
 R 传播(核心裁决已落架构,见上)
 ├─ [x] N0 核心:results/architecture.md + reports/architecture.md + 两条 memory 裁决(planner,已完成)
-├─ [ ] W1 exp `--json` 事件流 typed 单源                    ── 并行
+├─ [x] W1 exp `--json` 事件流 typed 单源                    ── 并行(已验收;ResultEvent.status 四值按 CompletionStatus 对称补全,ExpPlanDocument 待实现期回填真实示例)
 ├─ [x] W2 results 库文档与词表贯通                          ── 并行(已验收;planner 顺手清掉 observability/testing-results/source-map 三处清单外 has* 残留)
 ├─ [ ] W3 对照与稳定性组件(DeltaTable 多条件 + StabilityMatrix)── 并行
 ├─ [x] W4 usage 组件化(UsageTable + 组装口径归位)          ── 并行(已验收;口径单源锚点 attempt-detail.md#usagetable-组装口径单源)
 ├─ [x] W5 show 总纲与 json 信封重写                         ── 并行(已验收;--history 明确留在组件模型之外,与 architecture 切片表一致)
-├─ [ ] W6 证据切片归属重写(execution/timing/diff/source)   ── 并行
-└─ [ ] W7 既有 plan 波及同步                                ── 串行,等 W1–W6 全部验收后
+├─ [x] W6 证据切片归属重写(execution/timing/diff/source)   ── 并行(已验收;行为契约数值/语法逐字未动,planner 补 attempt.md 口径指针化)
+├─ [ ] W7a plan/show-scope-slice-json.md 波及同步            ── 串行,等 W3+W6
+├─ [ ] W7b plan/failed-command-evidence.md 波及同步          ── 并行(依赖 registry,已定稿)
+├─ [ ] W7c plan/exp-json-machine-form.md 波及同步            ── 串行,等 W1
+├─ [ ] W8 测试覆盖规范同步(engineering/testing/unit/reports.md)── 并行
+└─ [ ] V1 已合并节点对抗性校验(只读,报告不改文件)          ── 并行,滚动执行
 ```
 
-W1–W6 文件集互不相交,可全并行;W7 引用 W1–W6 定稿后的小节名,必须串行殿后。planner 在每个节点完成后验收并按路径提交。
+W1–W6、W7b、W8、V1 文件集互不相交(V1 只读),可全并行;W7a/W7c 各等其依赖节点验收。planner 在每个节点完成后验收并按路径提交。W7 拆分理由:三份 plan 依赖不同——failed-command 只依赖证据 registry(N0/W2 已定稿),show plan 依赖 W3/W6 的组件锚点,exp plan 依赖 W1 的事件 schema 锚点。
 
 ## 节点定义
 

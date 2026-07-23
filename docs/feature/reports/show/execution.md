@@ -1,6 +1,6 @@
 # `--execution`：看执行中做了什么
 
-对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../scoring/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Scoring · 断言与 Turn 的展示](../../scoring/library/display.md#turntsend的展示)：
+`--execution` 是 attempt-detail 组件族对应区块的 text 面：对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../scoring/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Scoring · 断言与 Turn 的展示](../../scoring/library/display.md#turntsend的展示)：
 
 ```text
 turn1 · completed · 22.4s · 12.4k tok · $0.02
@@ -47,7 +47,7 @@ Attempt 首页在错误摘要后明确提示
 
 ## 卡片预览预算与 `--expand`
 
-卡片正文是**有界预览**：保留原始换行，超过 8 KiB（UTF-8 字节，按字符边界回退）截断到预算。截断尾巴不是死胡同——它自带出路，报被折字符数与这张卡片的**展开句柄**，沿用 `next:` 提示的习语：
+卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整 resolve 产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。卡片正文是**有界预览**：保留原始换行，超过 8 KiB（UTF-8 字节，按字符边界回退）截断到预算。截断尾巴不是死胡同——它自带出路，报被折字符数与这张卡片的**展开句柄**，沿用 `next:` 提示的习语：
 
 ```text
   TOOL · memory_search  +4.1s
@@ -62,13 +62,13 @@ Attempt 首页在错误摘要后明确提示
 - Agent 事件卡句柄语法是 `t<turn 序号>.c<轮内卡片序号>`，两个序号都从 1 起，由 `events.json` 的事件序确定性派生。失败 Sandbox 命令卡使用 `cmd<序号>`，按 `commands.json` 中 `timingNodeId` 对应节点的 `startOffsetMs` 稳定排序后从 1 编号。同一份 artifact 上句柄永远指同一张卡片，可以写进脚本与笔记。
 - `--expand <handle>` 与 `--execution` 组合、要求恰好一个 attempt 的范围，输出该卡片的完整落盘内容（原始换行，不再截断）。落盘时已被 [256 KiB 上限](../../results/architecture.md#大值截断)截断的值如实带 `truncated` 标注与原始字节数——展开还原的是落盘证据，不是运行时全量。
 - 句柄未命中（turn 或卡片序号超界）按用法错误退出，并报该 attempt 实际的 turn 数与该 turn 的卡片数，不猜相邻卡片。
-- `--json` 形态没有预览预算，卡片恒为完整落盘内容，因此 `--expand` 与 `--json` 组合是用法错误（[形状](json.md)）。
+- JSON 面恒为完整 resolve 产物，不受预览预算约束；`--expand` 与 `--json` 组合因此是用法错误的推论，不是特判（[形状](json.md)）。
 
 ## 范围化：跨 attempt 扫描与 `--grep`
 
-`--execution` 接受任意[范围](../show.md#一次调用--范围--切片--形态)：范围含多个 attempt 时按 experimentId、evalId、attempt 序逐 attempt 分节，节头一行 `@<locator> · <evalId> · <experimentId> · <verdict>`，节内格式与单 attempt 相同。全量输出很长是允许的（与 `--timing=full` 同一态度）；跨 attempt 的常规问法用 `--grep` 收窄。
+`--execution` 接受任意[范围](../show.md#一次调用--范围--切片--形态)：范围含多个 attempt 时，宿主机器按 experimentId、evalId、attempt 序把这个区块逐 attempt 映射并分节，节头一行 `@<locator> · <evalId> · <experimentId> · <verdict>` 是宿主机器写的定位行，节内内容仍由组件的 text 面产出，格式与单 attempt 相同。全量输出很长是允许的（与 `--timing=full` 同一态度）；跨 attempt 的常规问法用 `--grep` 收窄这个 text 渲染面的注意力范围。
 
-`--grep <pattern>` 只输出命中的卡片。pattern 是 JS 正则，匹配面是卡片的全部文本字段——角色文本、工具名、input、result，以及失败 Sandbox 命令的 display / stdout / stderr；每张命中卡片自带定位行，末尾汇总命中数：
+`--grep <pattern>` 是这个区块 text 渲染面的选项，不是事实过滤器：它只输出命中的卡片，不改变哪些证据存在。pattern 是 JS 正则，匹配面是卡片的全部文本字段——角色文本、工具名、input、result，以及失败 Sandbox 命令的 display / stdout / stderr；每张命中卡片自带定位行，末尾汇总命中数：
 
 ```text
 $ niceeval show --exp memory/codex-nowledge --execution --grep 'memory_search|nmem m search'

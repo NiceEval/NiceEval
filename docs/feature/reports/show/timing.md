@@ -1,8 +1,8 @@
 # `--timing`：整个 attempt 的统一时间树
 
-[首页](attempt.md)的 `timing:` 行给出逐阶段一行的完整摘要（子节点只是折叠成计数，阶段本身不筛选）；`--timing` 是整个 Attempt 的时间分析入口，展开首页折叠掉的子节点。它先按 `result.json.phases` 输出 runner 生命周期，再投影 runner 直接观察到的时间树：setup/teardown hook、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、runner 拥有的语义 operation，以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、hook、operation、命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
+`--timing` 是 attempt-detail 组件族对应区块的 text 面。[首页](attempt.md)的 `timing:` 行给出逐阶段一行的完整摘要（子节点只是折叠成计数，阶段本身不筛选）；`--timing` 是整个 Attempt 的时间分析入口，展开首页折叠掉的子节点。它先按 `result.json.phases` 输出 runner 生命周期，再投影 runner 直接观察到的时间树：setup/teardown hook、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、runner 拥有的语义 operation，以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、hook、operation、命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
 
-时间分析入口有两档密度：
+时间分析入口有两档密度，都是这个区块 text 渲染面的选项，不是事实过滤器；`--json` 面恒为完整 resolve 产物，等价 `--timing=full` 的节点集合，不受 detail node 预算约束（[切片是组件选择](../architecture.md#show-的切片是组件选择)）：
 
 - 裸 `--timing` 是**有界诊断投影**。所有实际存在的 lifecycle phase 与收尾 phase 都必须出现；phase 下的 runner child 与已关联 OTel span 共用 80 个 detail node 的全局预算。未超过预算时，它与 full 输出相同；超过预算时，优先保留失败路径、最慢节点及首尾时序样本，并在每棵被截断的子树原位写明省略节点数、其中的失败数和 full 命令。
 - `--timing=full` 逐节点展开 artifact 中全部 runner timing node 与能唯一挂接到 turn 的全部 OTel span，不受 detail node 预算限制。它是审计、脚本取证和检查 renderer 摘要是否诚实的入口；输出很长是允许的。

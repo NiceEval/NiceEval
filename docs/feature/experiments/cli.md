@@ -410,7 +410,198 @@ niceeval exp compare --json
 - reporter 写失败必须判红,因为消费方要求的结果文件缺失不能降级成普通 warning。
 - 进程退出码仍是第一层红绿信号,消费方不靠自然语言猜成功。
 
-配合 `--dry` 时输出单个 JSON 文档(计划是一次完成的读取,不是流):选中的 experiment × eval 矩阵与复用预测,形状同样复用 Results 词表,顶层同样携带身份字段(`format: "niceeval.exp-plan"`、`schemaVersion`),与事件流的 `start` 事件可区分。
+### 事件与计划文档的 TypeScript 形状
+
+事件流的每一行是下面这个判别联合(判别字段 `event`)之一。只有首事件 `start` 携带 `format` / `schemaVersion` 标识整条流;其余事件不重复这两个字段,`schemaVersion` 只在破坏性形状变更时递增。`phase` 复用 [Results · result.json 的生命周期词表](../results/architecture.md#resultjson)(`LifecyclePhase`),`verdict` 复用同一页的 `AttemptRecord.verdict`,`JsonValue` 复用 [Results · snapshot.json](../results/architecture.md#snapshotjson) 的定义:
+
+```typescript
+type LifecyclePhase = /* 见 Results · result.json 的生命周期词表(全仓唯一一套) */ string;
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+interface StartEvent {
+  format: "niceeval.exp";
+  schemaVersion: number;
+  event: "start";
+  /** 选中的 attempt 总数。 */
+  total: number;
+  /** 选中的 experiment(config)数。 */
+  configs: number;
+  concurrency: number;
+  /** 缓存携入、预计不会重新派发的 attempt 数。 */
+  reused: number;
+}
+
+interface ProgressEvent {
+  event: "progress";
+  elapsedMs: number;
+  total: number;
+  reused: number;
+  running: number;
+  queued: number;
+  completed: number;
+}
+
+interface FailureEvent {
+  event: "failure";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  severity: "gate" | "soft";
+  /** 主失败断言的标题。 */
+  assertion: string;
+  /** matcher / judge 摘要;省略表示这条断言没有摘要文本。 */
+  matcher?: string;
+  expected?: JsonValue;
+  received?: JsonValue;
+}
+
+interface ErrorEvent {
+  event: "error";
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  phase: LifecyclePhase;
+  reason: string;
+}
+
+interface EvalEvent {
+  event: "eval";
+  /** 代表 attempt 的定位符:earlyExit 下取 attempt 序号最小的命中通过项,跑满时取序号最大项。 */
+  locator: string;
+  evalId: string;
+  experimentId: string;
+  /** 代表 attempt 自身的判定,不是整组折叠判定;题目级结论看 attempts / passed。 */
+  verdict: "passed" | "failed" | "skipped" | "errored";
+  attempts: number;
+  /** 跑满(earlyExit 关)时给出:该 eval 全部已派发 attempt 里通过的计数。 */
+  passed?: number;
+  /** earlyExit 开时给出:该 eval 原计划的 attempt 总数。 */
+  planned?: number;
+  /** earlyExit 开时给出:命中终态提前停止后未派发的 attempt 数。 */
+  unstarted?: number;
+  /** earlyExit 开时给出。 */
+  reason?: "early_exit";
+}
+
+interface KeptEvent {
+  event: "kept";
+  locator: string;
+  evalId: string;
+  attempt: number;
+  verdict: "passed" | "failed" | "errored";
+  provider: string;
+  sandboxId: string;
+  /** 进入现场的命令,统一走 `niceeval sandbox enter`。 */
+  enter: string;
+}
+
+interface WarningEvent {
+  event: "warning";
+  code: string;
+  level: "warning" | "error";
+  message: string;
+  phase?: LifecyclePhase;
+  experimentId?: string;
+  /** 同一 dedupeKey 折叠后的出现次数;省略等于 1。 */
+  count?: number;
+}
+
+interface BudgetExhaustedEvent {
+  event: "budget_exhausted";
+  experimentId: string;
+  spent: number;
+  /** 因预算耗尽未派发的 attempt 数。 */
+  unstarted: number;
+}
+
+interface ReporterErrorEvent {
+  event: "reporter_error";
+  /** 抛错的 reporter 名。 */
+  reporter: string;
+  /** 该 reporter 是否 required——true 时写失败让 completion 非 complete、退出码判红。 */
+  required: boolean;
+  message: string;
+}
+
+interface InterruptedEvent {
+  event: "interrupted";
+}
+
+interface ExperimentSetupEvent {
+  event: "experiment_setup";
+  experimentId: string;
+  status: "started" | "done" | "failed";
+  /** status 为 done 或 failed 时给出。 */
+  durationMs?: number;
+}
+
+interface ExperimentTeardownEvent {
+  event: "experiment_teardown";
+  experimentId: string;
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
+interface ResultEvent {
+  event: "result";
+  /**
+   * 结论词:completion 为 "complete" 时是折叠出的 verdict("passed" 或 "failed");
+   * completion 非 "complete" 时结论词直接等于 completion 本身(如 budget 耗尽时的
+   * "incomplete"),不允许伪装成全绿。
+   */
+  status: "passed" | "failed" | "incomplete" | "interrupted";
+  passed: number;
+  failed: number;
+  errored: number;
+  /** 缓存携入的计数。 */
+  reused?: number;
+  /** 因 budget 或 fail-fast 未派发的 attempt 数;仅 completion 非 complete 时给出。 */
+  unstarted?: number;
+  completion: "complete" | "incomplete" | "interrupted";
+  snapshots: string[];
+  /** 传了 `--junit <path>` 才出现。 */
+  junit?: string;
+}
+
+type ExpEvent =
+  | StartEvent
+  | ProgressEvent
+  | FailureEvent
+  | ErrorEvent
+  | EvalEvent
+  | KeptEvent
+  | WarningEvent
+  | BudgetExhaustedEvent
+  | ReporterErrorEvent
+  | InterruptedEvent
+  | ExperimentSetupEvent
+  | ExperimentTeardownEvent
+  | ResultEvent;
+```
+
+`--dry --json` 输出单个 `ExpPlanDocument`,是一次完成的读取,不是事件流:选中的 experiment × eval 矩阵与复用预测一次性给出,`total` / `configs` / `reused` 与 `start` 事件同一口径,`matrix` 逐行给出复用预测;顶层身份字段(`format: "niceeval.exp-plan"`、`schemaVersion`)与事件流的 `start` 事件可区分:
+
+```typescript
+interface ExpPlanDocument {
+  format: "niceeval.exp-plan";
+  schemaVersion: number;
+  /** matrix 行数 × runs。 */
+  total: number;
+  evals: number;
+  configs: number;
+  runs: number;
+  /** matrix 逐行 reused 之和。 */
+  reused: number;
+  matrix: ExpPlanRow[];
+}
+
+interface ExpPlanRow {
+  experimentId: string;
+  evalId: string;
+  /** 命中缓存指纹,本次不会派发新 attempt。 */
+  reused: boolean;
+}
+```
 
 退出码按 `(experiment, eval)` 的最终 verdict 折叠,两种形态同一套——`0` 全部通过且覆盖完整(complete)、`1` 有 failed / errored 或 incomplete 或 required reporter 写失败、`2` 未捕获崩溃、`130` 中断;语义单源在 [Runner · 退出码](../../runner.md#退出码)。
 
