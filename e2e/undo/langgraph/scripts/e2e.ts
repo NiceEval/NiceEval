@@ -103,7 +103,24 @@ async function main(): Promise<void> {
     } catch {
       // 没跑到写 ci 日志那一步(比如 readiness 就超时了),留空——下面按 InfraError 分类。
     }
-    const infra = err instanceof InfraError || /errored .*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/.test(ciLog);
+    // ciLog 是 `--json` NDJSON 事件流(scripts/verify.ts 落盘),按结构化 `error` 事件的
+    // `reason` 字段判定,不再正则抠 `--output ci` 时代的人读 "errored" 文本(那个 flag 已经
+    // 从 CLI 整个删除)。
+    const infra =
+      err instanceof InfraError ||
+      ciLog.split("\n").some((line) => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) return false;
+        let evt: unknown;
+        try {
+          evt = JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+        if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") return false;
+        const reason = String((evt as { reason?: unknown }).reason ?? "");
+        return /429|5\d\d|ECONNREFUSED|ETIMEDOUT/.test(reason);
+      });
     process.exitCode = infra ? 75 : 1;
   } finally {
     server.kill();

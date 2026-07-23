@@ -118,9 +118,13 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
     sourceShas.add(evalSource!.sha256);
     sharedSha = evalSource!.sha256;
 
+    // v9 起 o11y.json 是纯行为计数缓存(docs/feature/results/architecture.md#o11yjson);
+    // token 用量的权威在 result.json 的 usage,断言面各归各的家、不落第二份。
     const o11y = readJson<{ totalToolCalls: number; usage?: unknown }>(join(attemptDir, "o11y.json"));
     assert.ok(o11y.totalToolCalls >= 1, `o11y.json.totalToolCalls should be >= 1 in ${attemptDir}, got ${o11y.totalToolCalls}`);
-    assert.ok(o11y.usage, `o11y.json.usage missing in ${attemptDir}`);
+    assert.ok(o11y.usage === undefined, `o11y.json must not carry usage (behavior-count cache only) in ${attemptDir}`);
+    const attemptResult = readJson<{ usage?: Record<string, unknown> }>(join(attemptDir, "result.json"));
+    assert.ok(attemptResult.usage && Object.keys(attemptResult.usage).length > 0, `result.json.usage missing in ${attemptDir}`);
   }
 
   // 同一个 eval 文件的两次 attempt 必须去重到同一个 snapshot 级别的 source blob。
@@ -178,29 +182,67 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   }
 
   // ---------------------------------------------------------------------
-  // 第 3 点:--json 一致性——CLI 的机器可读摘要与磁盘 + openResults() 保持一致。
+  // 第 3 点:--json 一致性——CLI 的机器可读事件流与磁盘 + openResults() 保持一致。`--json` 是
+  // stdout 上的 NDJSON 事件流(docs/feature/experiments/cli.md「机器怎么读:--json」),不是
+  // 单个聚合文档——没有 RunSummary 这种形状,也没有把 2 个 attempt 的 locator 逐条摊平进流里
+  // (那是 `show` 下钻的职责);这里按事件流真实提供的东西断言:`result` 事件的 attempt 级聚合
+  // 计数,以及 `eval` 事件给出的代表 attempt(runs:2 且 earlyExit:false 时取 attempt 序号最大
+  // 项)与磁盘的一致性。
   // ---------------------------------------------------------------------
-  const jsonSummary = readJson<{
-    agent: string;
-    model?: string;
+  interface ResultEvent {
+    event: "result";
+    status: string;
     passed: number;
     failed: number;
     errored: number;
-    results: AttemptRecordLike[];
-  }>(evidence.jsonSummaryPath);
-  assert.equal(jsonSummary.agent, "results-mechanism", "--json RunSummary.agent disagrees with the Agent's name");
-  assert.equal(jsonSummary.model, "deepseek-chat", "--json RunSummary.model disagrees with the experiment's model");
-  assert.equal(jsonSummary.passed, 2, "--json RunSummary.passed should count both tool-call attempts");
-  assert.equal(jsonSummary.failed, 0, "--json RunSummary.failed should be 0 for the main Experiment");
-  assert.equal(jsonSummary.errored, 0, "--json RunSummary.errored should be 0 for the main Experiment");
-  assert.ok(Array.isArray(jsonSummary.results) && jsonSummary.results.length === 2, "--json RunSummary.results should have 2 entries (2 attempts)");
-
-  for (const r of jsonSummary.results) {
-    const onDisk = diskByLocator.get(r.locator);
-    assert.ok(onDisk, `--json result with locator ${r.locator} has no matching on-disk result.json`);
-    assert.equal(r.verdict, onDisk!.verdict, "--json verdict disagrees with disk result.json");
-    assert.equal(r.estimatedCostUSD, onDisk!.estimatedCostUSD, "--json estimatedCostUSD disagrees with disk result.json");
+    completion: string;
+    snapshots: string[];
   }
+  interface EvalEvent {
+    event: "eval";
+    locator: string;
+    evalId: string;
+    experimentId: string;
+    verdict: string;
+    attempts: number;
+    passed?: number;
+  }
+  interface JsonEvent {
+    event: string;
+    format?: string;
+  }
+
+  const ndjsonLines = readFileSync(evidence.jsonEventsPath, "utf8")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+  const events = ndjsonLines.map((line) => JSON.parse(line) as JsonEvent);
+  assert.ok(events.length > 0, `--json events file ${evidence.jsonEventsPath} is empty`);
+  assert.equal(events[0]!.event, "start", "--json's first event should be `start`");
+  assert.equal(events[0]!.format, "niceeval.exp", '--json start event should carry format: "niceeval.exp"');
+
+  const resultEvent = events.find((e): e is ResultEvent => e.event === "result");
+  assert.ok(resultEvent, "--json event stream has no `result` event");
+  assert.equal(resultEvent!.status, "passed", "--json result.status should be passed for the main Experiment");
+  assert.equal(resultEvent!.passed, 2, "--json result.passed should count both tool-call attempts");
+  assert.equal(resultEvent!.failed, 0, "--json result.failed should be 0 for the main Experiment");
+  assert.equal(resultEvent!.errored, 0, "--json result.errored should be 0 for the main Experiment");
+  assert.equal(resultEvent!.completion, "complete", "--json result.completion should be complete");
+
+  const evalEvents = events.filter((e): e is EvalEvent => e.event === "eval");
+  assert.equal(evalEvents.length, 1, `--json event stream should have exactly 1 \`eval\` event for the single tool-call eval, found ${evalEvents.length}`);
+  const toolCallEvalEvent = evalEvents[0]!;
+  assert.equal(toolCallEvalEvent.evalId, "tool-call", "--json eval event has the wrong evalId");
+  assert.equal(toolCallEvalEvent.attempts, 2, "--json eval event should report 2 attempts (runs:2)");
+  assert.equal(toolCallEvalEvent.passed, 2, "--json eval event should report 2 passed (earlyExit:false runs to completion)");
+  assert.equal(toolCallEvalEvent.verdict, "passed", "--json eval event's representative-attempt verdict should be passed");
+
+  const onDiskForEvalLocator = diskByLocator.get(toolCallEvalEvent.locator);
+  assert.ok(onDiskForEvalLocator, `--json eval event's representative locator ${toolCallEvalEvent.locator} has no matching on-disk result.json`);
+  assert.equal(onDiskForEvalLocator!.verdict, "passed", "--json eval event's representative locator should point at a passed attempt on disk");
+
+  // 没有失败/错误 attempt,所以流里不应该出现 failure/error 事件——这本身也是一致性的一部分:
+  // main Experiment 真实跑出 2 个 passed attempt,不该混进不属于它的失败证据。
+  assert.ok(!events.some((e) => e.event === "failure" || e.event === "error"), "--json event stream unexpectedly has a failure/error event for the fully-passing main Experiment");
 
   // ---------------------------------------------------------------------
   // README §4.3 CLI 读回,在真实 passed attempt 上验证。

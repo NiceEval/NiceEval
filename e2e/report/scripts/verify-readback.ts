@@ -43,7 +43,7 @@ function shExpectZero(cmd: string): string {
   if (exit === 0) return res.stdout;
   const combined = `${res.stdout}\n${res.stderr}`;
   if (PROVIDER_FAULT_RE.test(combined)) {
-    throw new InfraError(`${cmd} exited ${exit} with a provider-side fault visible in --output ci text:\n${combined.slice(-3000)}`);
+    throw new InfraError(`${cmd} exited ${exit} with a provider-side fault visible in the human-text output:\n${combined.slice(-3000)}`);
   }
   throw new Error(`${cmd}\nexited ${exit}, expected 0. stdout/stderr tail:\n${combined.slice(-3000)}`);
 }
@@ -155,11 +155,11 @@ function expectServerDoesNotStart(extraArgs: string[]): Promise<{ exitCode: numb
 // ---------------------------------------------------------------------------
 // 手写的最小 Results 格式 fixture(遵循 docs/feature/results/architecture.md 的 schema)——
 // 用来演示在本仓库真实证据中不会自然出现的那几种 Scope 警告,以及"无 phases → unavailable"
-// 场景。`schemaVersion: 8` 是 architecture.md「版本与升级设计」记录的当前格式版本;这是手写
-// 的 fixture 值,不是从 `.niceeval/` 读出来的(本模块从不读取 `.niceeval/`——见文件头部说明)。
+// 场景。schemaVersion 从候选 niceeval 包的公开常量取值,不手抄数字——候选升版时 fixture
+// 自动跟随,不再产生「fixture 锁旧版、reader 拒读」的漂移(本模块仍从不读取 `.niceeval/`)。
 // ---------------------------------------------------------------------------
 
-const FIXTURE_SCHEMA_VERSION = 8;
+import { RESULTS_SCHEMA_VERSION as FIXTURE_SCHEMA_VERSION } from "niceeval/results";
 
 function fixtureSnapshotMeta(over: Record<string, unknown>) {
   return {
@@ -357,7 +357,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
 
   // 为同一个 Experiment 制造出第二份真实快照(真实网关小额开销——专门为这项检查批准的,因为
   // Evidence 本身每个 Experiment 只会产出一份快照)。
-  shExpectZero(`pnpm exec niceeval exp main --force --output ci`);
+  shExpectZero(`pnpm exec niceeval exp main --force`);
 
   const afterForce = sh(`pnpm exec niceeval show tool-call --results ${root} --history`);
   const afterForceRows = historyRows(afterForce);
@@ -369,8 +369,9 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
 
   // 一次免费的复用运行(不带 --force):eval/agent/model 都没变,指纹匹配,于是刚创建的快照里的
   // 2 个 attempt 会原封不动地被 carry forward 进第三份快照。
-  const reuseOutput = shExpectZero(`pnpm exec niceeval exp main --output ci`);
-  assert.ok(/reused=2/.test(reuseOutput), `expected the no-force re-run to carry forward 2 attempts (reused=2); got: ${reuseOutput}`);
+  const reuseOutput = shExpectZero(`pnpm exec niceeval exp main`);
+  // 人读文本的缓存复用摘要行(feedback.human.reuse 文案):"M of N carried in from cache · K to run"。
+  assert.ok(/2 of 2 carried in from cache/.test(reuseOutput), `expected the no-force re-run to carry forward 2 attempts ("2 of 2 carried in from cache"); got: ${reuseOutput}`);
 
   const afterReuse = sh(`pnpm exec niceeval show tool-call --results ${root} --history`);
   const afterReuseRows = historyRows(afterReuse);
@@ -484,9 +485,17 @@ async function verifyScopeWarnings(fixture: ScopeWarningsFixture): Promise<void>
   // show:三种警告类型全部出现,并且尽管第三个 experiment 不可读,另外两个可读的 experiment
   // 依然完整渲染——"单个坏快照不阻塞其余"。
   const board = sh(`pnpm exec niceeval show --results ${fixture.root}`);
-  assert.ok(board.includes("scratch-partial") && board.includes("coverage 1/2"), `expected a partial-coverage warning for scratch-partial (1/2); got:\n${board}`);
-  assert.ok(board.includes("1 of 2 evals"), `partial-coverage message should state "1 of 2 evals"; got:\n${board}`);
-  assert.ok(board.includes("scratch-stale") && board.includes("8 days behind"), `expected a stale-snapshot warning for scratch-stale (8 days behind); got:\n${board}`);
+  // 07-22 裁决(staleness-demoted-from-warning-to-provenance)后,覆盖缺口不再是警告:
+  // knownEvalIds 里没跑的题渲染成占位行——期望从 fixture 事实推导(缺的是 eval-ghost),
+  // 结果列带「当前配置下无结果」文案与可复制补跑命令,不冒充失败也不进警告区。
+  assert.ok(board.includes("scratch-partial") && board.includes("eval-ghost"), `expected a placeholder row for the un-run eval-ghost under scratch-partial; got:\n${board}`);
+  // text 面在受控列宽下结果列可能截断长命令(表格通用截断,非占位行特例);
+  // 「可复制补跑命令」的完整断言放在下方 web 面(HTML 不受列宽截断)。
+  assert.ok(board.includes("no results under the current"), `placeholder row should state the no-results copy; got:\n${board}`);
+  // 时效同理不再是警告,且 ↩ 标注只属于同 experiment 内的携带/跨快照拼入——scratch-stale
+  // 是自家唯一快照的新执行,跨 experiment 的「谁更旧」在新契约下不标注、不警告:普通行渲染。
+  assert.ok(board.includes("scratch-stale"), `scratch-stale should render as a normal experiment; got:\n${board}`);
+  assert.ok(!board.includes("behind"), `staleness must not surface as a warning after the 07-22 ruling; got:\n${board}`);
   assert.ok(board.includes("snapshot") && board.includes("skipped") && board.includes("malformed"), `expected an unreadable-snapshot warning mentioning the malformed skip; got:\n${board}`);
   assert.ok(board.includes(fixture.brokenDir), "unreadable-snapshot warning should name the actual skipped directory");
   // 尽管有一个 experiment 损坏,另外两个依然完整渲染(不受阻塞):
@@ -500,8 +509,9 @@ async function verifyScopeWarnings(fixture: ScopeWarningsFixture): Promise<void>
   try {
     sh(`pnpm exec niceeval view --results ${fixture.root} --out ${outDir} --no-open`);
     const indexHtml = readFileSync(join(outDir, "index.html"), "utf8");
-    assert.ok(indexHtml.includes("coverage 1/2"), "view --out's index.html should carry the same partial-coverage warning as show");
-    assert.ok(indexHtml.includes("8 days"), "view --out's index.html should carry the same stale-snapshot warning as show");
+    assert.ok(indexHtml.includes("eval-ghost"), "view --out's index.html should carry the same eval-ghost placeholder row as show");
+    assert.ok(indexHtml.includes("niceeval exp scratch-partial"), "web placeholder row must carry the full copyable rerun command (entity-lists.md 占位行契约)");
+    assert.ok(indexHtml.includes("↩"), "view --out's index.html should carry the same inline historical marker as show");
     assert.ok(indexHtml.includes("malformed"), "view --out's index.html should carry the same unreadable-snapshot warning as show");
   } finally {
     rmSync(outDir, { recursive: true, force: true });

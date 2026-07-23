@@ -83,11 +83,13 @@ async function main(): Promise<void> {
     }
     console.log(`[e2e] app ready at http://127.0.0.1:${PORT}`);
 
-    console.log("[e2e] running: pnpm exec niceeval exp ci --force --output ci --junit junit.xml");
+    console.log("[e2e] running: pnpm --silent exec niceeval exp ci --force --json --junit junit.xml");
     const expLog = join(ROOT, "logs", "exp-ci.log");
+    // `--json` 把 NDJSON 事件流打到 stdout(`--output` 已经从 CLI 整个删除);`--silent` 防止
+    // pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
     const exp = spawnSync(
       "pnpm",
-      ["exec", "niceeval", "exp", "ci", "--force", "--output", "ci", "--junit", "junit.xml"],
+      ["--silent", "exec", "niceeval", "exp", "ci", "--force", "--json", "--junit", "junit.xml"],
       { cwd: ROOT, encoding: "utf8" },
     );
     writeFileSync(expLog, `${exp.stdout ?? ""}\n${exp.stderr ?? ""}`, "utf8");
@@ -97,12 +99,21 @@ async function main(): Promise<void> {
     const expExit = exp.status ?? -1;
     if (expExit !== 0) {
       const ciLog = readFileSync(expLog, "utf8");
-      // 每行独立判断,`.` 不跨行——避免把无关行(如快照目录名里的时间戳 "...-565Z")
-      // 误判成 5xx 状态码。只有 errored 计数非零、且同一行能看到 429/5xx/连接类错误码时才算
-      // 可确证的外部故障;单纯的断言失败(failed>0, errored=0)一律按回归处理。
-      const infra = ciLog
-        .split("\n")
-        .some((line) => /errored/i.test(line) && !/errored=0\b/.test(line) && /(429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)/.test(line));
+      // ciLog 现在是 NDJSON 事件流,按结构化 `error` 事件的 `reason` 字段判定,不再正则抠
+      // `--output ci` 时代的人读 "errored" 文本(那个 flag 已经从 CLI 整个删除)。
+      const infra = ciLog.split("\n").some((line) => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) return false;
+        let evt: unknown;
+        try {
+          evt = JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+        if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") return false;
+        const reason = String((evt as { reason?: unknown }).reason ?? "");
+        return /429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/.test(reason);
+      });
       throw infra
         ? new InfraError(`niceeval exp ci exited ${expExit} with a confirmed provider/network error — see ${expLog}`)
         : new Error(`niceeval exp ci exited ${expExit} — see ${expLog}`);

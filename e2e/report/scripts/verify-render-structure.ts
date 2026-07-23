@@ -68,6 +68,18 @@
 //      本证据里这些表格的形状来说,80 这个宽度还不足以触发丢列(只会触发折行,已验证并覆盖在
 //      下文)。宽度 80 本身就是一个合法的真实场景(任何管道/非交互式的 `show` 调用都会落在
 //      这个宽度),所以本模块覆盖了宽度 80 下的折行(折行),但没有覆盖更窄宽度下的丢列(丢列)。
+//   7. `ScopeWarnings` 与 `SnapshotDiagnostics` 的非空渲染(计数汇总行、按实验/kind 聚合分组、
+//      折叠阈值、徽标)、以及 ScopeWarnings 消息的双面一致性,都无法用这份证据验证:警告 kind
+//      全集(docs/feature/results/library.md#警告-kind-全集)现在只剩 unfinished-snapshot /
+//      missing-startedAt / unreadable-snapshot 三种,produceEvidence() 的 main /
+//      deliberate-fail / deliberate-error 都是正常收尾、schema 合规、带 startedAt 的完整快照,
+//      不触发任何一种——warnings 与 diagnostics 恒为空集,两个组件两面都零输出(本模块只断言
+//      「不渲染」,见 verifyScopeWarningsBrandAndNavigation)。要覆盖非空路径需要一份专门构造
+//      不完整/不可读快照或强杀中断的 fixture,这个决定应该由人来做,不是本模块自己造假快照
+//      绕过。同一份证据里 `GroupMatrix`(内建 standard 报告首页新接线的组件,紧跟在
+//      `ExperimentComparison` 后面)同样是零输出——本仓库的 3 个 Eval 都没有用 `t.group`
+//      产生分组证据(docs/feature/reports/library/built-in.md:「没有分组证据时后者零输出」),
+//      所以它不出现在渲染出的 HTML 里,本模块也没有断言它的非空路径。
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -92,7 +104,7 @@ const ATTEMPT_DETAIL_ORDER = [
   "attempt-fix-prompt",
   "attempt-timeline",
   "attempt-diagnostics",
-  "attempt-usage",
+  "usage-table",
   "attempt-conversation",
   "attempt-trace",
   "attempt-diff",
@@ -108,10 +120,6 @@ function escapeRegExp(s: string): string {
  * 这个函数在做包含检查之前,先把所有连续空白(包括折行产生的换行符)折叠成单个空格。 */
 function looseIncludes(text: string, phrase: string): boolean {
   return text.replace(/\s+/g, " ").includes(phrase);
-}
-
-function decodeHtmlEntities(s: string): string {
-  return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
 function readSiteFile(evidence: Evidence, ...parts: string[]): string {
@@ -134,7 +142,7 @@ function englishLocaleSlice(html: string): string {
 function attemptBlockOrder(evidence: Evidence, locator: string): string[] {
   const en = englishLocaleSlice(attemptHtml(evidence, locator));
   const blocks: string[] = [];
-  const re = /class="nre nre-(attempt-[a-z-]+)"/g;
+  const re = /class="nre nre-((?:attempt-[a-z-]+|usage-table))"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(en))) blocks.push(m[1]!);
   return blocks;
@@ -190,7 +198,7 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     Summary、Source、Timeline、Usage;其余部分没有证据可渲染。
   const mainBlocks = attemptBlockOrder(evidence, mainLocator);
   assertSubsequenceOfCanonicalOrder(mainBlocks, `attempt/${mainLocator}.html (passed)`);
-  for (const must of ["attempt-summary", "attempt-source", "attempt-timeline", "attempt-usage"]) {
+  for (const must of ["attempt-summary", "attempt-source", "attempt-timeline", "usage-table"]) {
     assert.ok(mainBlocks.includes(must), `passed attempt ${mainLocator} is missing "${must}"`);
   }
   for (const mustNot of ["attempt-error", "attempt-assertions", "attempt-fix-prompt", "attempt-diagnostics", "attempt-conversation", "attempt-trace", "attempt-diff"]) {
@@ -202,7 +210,7 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     所以它保持为空)。
   const failBlocks = attemptBlockOrder(evidence, failLocator);
   assertSubsequenceOfCanonicalOrder(failBlocks, `attempt/${failLocator}.html (failed)`);
-  for (const must of ["attempt-summary", "attempt-source", "attempt-fix-prompt", "attempt-timeline", "attempt-usage"]) {
+  for (const must of ["attempt-summary", "attempt-source", "attempt-fix-prompt", "attempt-timeline", "usage-table"]) {
     assert.ok(failBlocks.includes(must), `failed attempt ${failLocator} is missing "${must}"`);
   }
   for (const mustNot of ["attempt-error", "attempt-assertions", "attempt-diagnostics", "attempt-conversation", "attempt-trace", "attempt-diff"]) {
@@ -215,7 +223,7 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     (结构化的异常信息)。
   const errorBlocks = attemptBlockOrder(evidence, errorLocator);
   assertSubsequenceOfCanonicalOrder(errorBlocks, `attempt/${errorLocator}.html (errored)`);
-  for (const must of ["attempt-summary", "attempt-error", "attempt-fix-prompt", "attempt-timeline", "attempt-usage"]) {
+  for (const must of ["attempt-summary", "attempt-error", "attempt-fix-prompt", "attempt-timeline", "usage-table"]) {
     assert.ok(errorBlocks.includes(must), `errored attempt ${errorLocator} is missing "${must}"`);
   }
   for (const mustNot of ["attempt-source", "attempt-assertions", "attempt-diagnostics", "attempt-conversation", "attempt-trace", "attempt-diff"]) {
@@ -274,12 +282,19 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   const indexHtml = readSiteFile(evidence, "index.html");
   const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
 
-  // --- ScopeWarnings:deliberate-fail/deliberate-error 恒定是被标记的那 2 个 experiment
-  //     (produceEvidence() 恒定先跑它们再跑 main,所以 main 恒定是最新的)。
-  assert.ok(reportTpl.includes('<summary class="nre-warnings-summary">2 experiments flagged</summary>'), 'ScopeWarnings summary should read exactly "2 experiments flagged"');
-  assert.ok(/<details class="nre-warnings">(?!\s*open)/.test(reportTpl), "ScopeWarnings' outer <details> should be collapsed by default (no open attribute)");
-  const innerOpenCount = (reportTpl.match(/<details class="nre-warning-details" open="">/g) ?? []).length;
-  assert.equal(innerOpenCount, 2, `both per-experiment warning groups should default-open (total warnings = 2 <= 3 threshold); found ${innerOpenCount} open inner <details>`);
+  // --- ScopeWarnings:警告 kind 全集现在只有 unfinished-snapshot / missing-startedAt /
+  //     unreadable-snapshot 三种(docs/feature/results/library.md#警告-kind-全集)——旧的
+  //     stale-snapshot(deliberate-fail/deliberate-error 比 main 旧)与 partial-coverage 已经
+  //     从警告全集里删除,时效改成行级 ↩ 标注、覆盖缺口改成榜单占位行,两者都不再是页面级警告
+  //     (裁决见 memory/staleness-demoted-from-warning-to-provenance.md)。produceEvidence() 的 3 个
+  //     Experiment 都是正常收尾的完整快照,不触发这三种 kind 中的任何一种,所以这份证据里
+  //     warnings 恒为空集——ScopeWarnings 两面零输出、不渲染空容器
+  //     (docs/feature/reports/library/site-components.md「空警告集两面零输出,不渲染空容器」)。
+  //     断言的是「不存在」,不是某个具体计数;折叠/展开阈值、徽标聚合这些行为需要一份真正触发
+  //     警告的 fixture(比如强杀中断产生 unfinished-snapshot)才能验证,不属于本仓库现有证据的
+  //     覆盖范围(见文件头覆盖缺口 #7)。
+  assert.ok(!reportTpl.includes("nre-warnings-summary"), "ScopeWarnings should render zero output for this evidence's 3 clean completed snapshots — none of them trigger unfinished-snapshot/missing-startedAt/unreadable-snapshot");
+  assert.ok(!reportTpl.includes('class="nre-warnings"'), "ScopeWarnings' outer <details> should not render at all when the warning set is empty");
 
   // --- CopyFixPrompt:deliberate-fail + deliberate-error 恒定是那 2 个失败(main 的两次真实
   //     网关 attempt 恒定都通过)。
@@ -498,18 +513,6 @@ async function verifyTerminalTypography(evidence: Evidence): Promise<void> {
 // verdict 构成和警告——这里比较的是提取出的事实,绝不比较整行的排版字符串。
 // ---------------------------------------------------------------------------
 
-function extractWebWarningMessage(reportTpl: string, experimentId: string): string {
-  const m = reportTpl.match(new RegExp(`<span class="nre-warning-title">${escapeRegExp(experimentId)}</span>[\\s\\S]*?<li class="nre-warning" data-kind="[^"]*">([^<]+)</li>`));
-  assert.ok(m, `couldn't find a web ScopeWarnings message for experiment "${experimentId}"`);
-  return decodeHtmlEntities(m![1]!);
-}
-
-function extractTextWarningMessage(showText: string, experimentId: string): string {
-  const m = showText.match(new RegExp(`^!\\s+(verdicts for "${escapeRegExp(experimentId)}"[^\\n]*)$`, "m"));
-  assert.ok(m, `couldn't find a text-face ScopeWarnings message for experiment "${experimentId}"`);
-  return m![1]!;
-}
-
 function extractMainRowFromText(showText: string): { tokens: string; cost: string; passRate: string } {
   const line = showText.split("\n").find((l) => l.trimStart().startsWith("main") && l.includes("tokens"));
   assert.ok(line, "couldn't find main's ExperimentList row (line 1) in text output");
@@ -573,14 +576,8 @@ async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
   assert.equal(textRow.cost, webRow.cost, `main's cost differs between text (${textRow.cost}) and web (${webRow.cost})`);
   assert.equal(textRow.passRate, webRow.passRate, `main's pass rate differs between text (${textRow.passRate}%) and web (${webRow.passRate}%)`);
 
-  // --- ScopeWarnings 消息的一致性:完整的三段式消息文本(Results 三段式),包括它动态的
-  //     "落后 N 秒" / 时间戳内容,在两个面上必须是完全相同的字符串——互相比较,不和硬编码
-  //     字面量比较。
-  for (const experimentId of [evidence.deliberateFail.id, evidence.deliberateError.id]) {
-    const webMsg = extractWebWarningMessage(reportTpl, experimentId);
-    const textMsg = extractTextWarningMessage(showText, experimentId);
-    assert.equal(textMsg, webMsg, `ScopeWarnings message for "${experimentId}" differs between text and web faces`);
-  }
+  // ScopeWarnings 消息的双面一致性没有在这里覆盖:见文件头覆盖缺口 #7——这份证据的 3 个
+  // Experiment 在当前警告 kind 全集下恒为空警告集,两个面都零输出,没有消息可比较。
 }
 
 // ---------------------------------------------------------------------------

@@ -87,10 +87,25 @@ async function main(): Promise<void> {
     // provider/网络侧 429、5xx、连接类错误,或 sandbox.create/setup 阶段的超时——本仓库跑在
     // 共享 Docker daemon 上,与其它并发仓库争抢资源时会在起容器这步本身超时,这是环境问题,
     // 不是本仓库的契约回归。判不准就按回归退出——宁可误报回归,不可把回归漏报成环境问题。
+    // ciLog 是 `--json` NDJSON 事件流(scripts/verify.ts 的 sh() 落盘),按结构化 `error`
+    // 事件的 `reason`/`phase` 字段判定,不再正则抠 `--output ci` 时代的人读 "errored" 文本
+    // (那个 flag 已经从 CLI 整个删除)。
     const infra =
       err instanceof InfraError ||
-      /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)/i.test(ciLog) ||
-      /errored.*phase=sandbox\.(create|setup)/i.test(ciLog);
+      ciLog.split("\n").some((line) => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) return false;
+        let evt: unknown;
+        try {
+          evt = JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+        if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") return false;
+        const reason = String((evt as { reason?: unknown }).reason ?? "");
+        const phase = String((evt as { phase?: unknown }).phase ?? "");
+        return /429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(reason) || /^sandbox\.(create|setup)$/i.test(phase);
+      });
     process.exitCode = infra ? EX_TEMPFAIL : 1;
   }
 }

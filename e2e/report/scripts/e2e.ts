@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   // 2. 清空这个仓库上一次运行留下的证据——绝不能成为这次运行的输入。
   rmSync(join(REPO_ROOT, ".niceeval"), { recursive: true, force: true });
   rmSync(join(REPO_ROOT, "site-export"), { recursive: true, force: true });
-  for (const relPath of ["main.json", "main.xml", "fail.xml", "error.xml"]) {
+  for (const relPath of ["main.ndjson", "main.xml", "fail.xml", "error.xml"]) {
     rmSync(join(REPO_ROOT, relPath), { force: true });
   }
 

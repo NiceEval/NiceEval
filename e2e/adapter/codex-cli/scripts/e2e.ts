@@ -53,8 +53,23 @@ main()
     let infra = err instanceof InfraError;
     if (!infra) {
       try {
+        // logs/exp-ci.log 是 `--json` 的 NDJSON 事件流(scripts/verify.ts 落盘),不是
+        // `--output ci` 时代的人读文本——按结构化 `error` 事件的 `reason` 字段判定,不再
+        // 正则抠 "errored" 这个词(`--output` 已经从 CLI 整个删除)。
         const ciLog = readFileSync("logs/exp-ci.log", "utf8");
-        infra = /errored .*(429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)/i.test(ciLog);
+        infra = ciLog.split("\n").some((line) => {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("{")) return false;
+          let evt: unknown;
+          try {
+            evt = JSON.parse(trimmed);
+          } catch {
+            return false;
+          }
+          if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") return false;
+          const reason = String((evt as { reason?: unknown }).reason ?? "");
+          return /429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(reason);
+        });
       } catch {
         // 日志还没落地(比如 install 阶段就失败了)——不算已确证的 infra 故障,按回归退出。
       }

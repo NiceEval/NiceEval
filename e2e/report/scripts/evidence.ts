@@ -9,7 +9,7 @@
 // 它不对照 report.md 的 format/rendering/read-back 契约去评判这份证据——那是每个
 // verify-<domain>.ts 自己的工作,它们读取这里返回的路径/locator 去做判断。
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
@@ -68,8 +68,12 @@ export interface Evidence {
   };
   /** 每次 Experiment 调用产出的 JUnit 文件,相对于仓库根目录。 */
   junit: { main: string; fail: string; error: string };
-  /** main Experiment 调用产出的 `--json` 机器可读摘要路径,相对于仓库根目录。 */
-  jsonSummaryPath: string;
+  /**
+   * main Experiment 那次 `--json` 调用的原始 NDJSON 事件流,原样落盘,相对于仓库根目录
+   * (docs/feature/experiments/cli.md「机器怎么读:--json」)——一行一个 JSON 对象,不是单个
+   * 聚合文档;`--json` 没有 `<path>` 聚合文件出口,消费方自己重定向 stdout。
+   */
+  jsonEventsPath: string;
 }
 
 function readJson<T>(path: string): T {
@@ -93,19 +97,42 @@ function subdirNames(dir: string): string[] {
 }
 
 /**
+ * 逐行尝试把 `--json` NDJSON 事件流解析成对象,只看 `event: "error"` 这类结构化错误事件的
+ * `reason` / `phase` 字段是否命中 provider 端故障——不再对着人读文本正则抠 "errored" 这个词
+ * (那是 `--output` 时代的产物,`--output` 已经从 CLI 整个删除)。非 JSON 行(比如用法错误落在
+ * stderr 的两行 `error:`/`fix:`)原样交给 PROVIDER_FAULT_RE 兜底,两条判据取或。
+ */
+function hasStructuredProviderFault(combined: string): boolean {
+  for (const line of combined.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) continue;
+    let evt: unknown;
+    try {
+      evt = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") continue;
+    const reason = String((evt as { reason?: unknown }).reason ?? "");
+    if (PROVIDER_FAULT_RE.test(reason)) return true;
+  }
+  return PROVIDER_FAULT_RE.test(combined);
+}
+
+/**
  * 和 `sh` 一样,但专用于那种预期退出码为 0 的命令(真实网关调用):
- * 当 `--output ci` 自身的文本内容证实是 provider 端故障(429/5xx/网络问题)时——文档规定的
- * 「可确认的外部故障」信号(docs/engineering/testing/e2e/verification.md「失败分类」)——这里
- * 出现意料之外的非零退出会抛出 InfraError,而不是普通的 AssertionError。除此之外的情况一律
- * 视为回归问题。
+ * 当命令输出(`--json` 时是结构化 error 事件,否则是人读文本)证实是 provider 端故障
+ * (429/5xx/网络问题)时——文档规定的「可确认的外部故障」信号(docs/engineering/testing/
+ * e2e/verification.md「失败分类」)——这里出现意料之外的非零退出会抛出 InfraError,而不是
+ * 普通的 AssertionError。除此之外的情况一律视为回归问题。
  */
 function shExpectZero(cmd: string): string {
   const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
   const exit = res.status ?? -1;
   if (exit === 0) return res.stdout;
   const combined = `${res.stdout}\n${res.stderr}`;
-  if (PROVIDER_FAULT_RE.test(combined)) {
-    throw new InfraError(`${cmd} exited ${exit} with a provider-side fault visible in --output ci text:\n${combined.slice(-3000)}`);
+  if (hasStructuredProviderFault(combined)) {
+    throw new InfraError(`${cmd} exited ${exit} with a provider-side fault:\n${combined.slice(-3000)}`);
   }
   throw new Error(`${cmd}\nexited ${exit}, expected 0. stdout/stderr tail:\n${combined.slice(-3000)}`);
 }
@@ -135,13 +162,16 @@ export async function produceEvidence(): Promise<Evidence> {
   // deliberate-fail/error Eval 会在这里就直接失败,而不会被之后 main experiment 一个不相关的
   // 失败所掩盖。
   // ---------------------------------------------------------------------
-  sh("pnpm exec niceeval exp deliberate-fail --force --output ci --junit fail.xml", "nonzero");
-  sh("pnpm exec niceeval exp deliberate-error --force --output ci --junit error.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-fail --force --junit fail.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-error --force --junit error.xml", "nonzero");
 
   // ---------------------------------------------------------------------
-  // 真实网关调用,放在最后。
+  // 真实网关调用,放在最后。`--json` 把 NDJSON 事件流打到 stdout(不是聚合文件——`--json
+  // <path>` 那种文件出口已经从 CLI 删除),这里原样落盘供 verify-format.ts 的「第 3 点:--json
+  // 一致性」解析;`pnpm --silent exec` 防止 pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
   // ---------------------------------------------------------------------
-  shExpectZero("pnpm exec niceeval exp main --force --output ci --json main.json --junit main.xml");
+  const mainNdjson = shExpectZero("pnpm --silent exec niceeval exp main --force --json --junit main.xml");
+  writeFileSync("main.ndjson", mainNdjson, "utf8");
 
   const deliberateFail = readSingleAttempt("deliberate-fail", "deliberate-fail");
   const deliberateError = readSingleAttempt("deliberate-error", "deliberate-error");
@@ -177,6 +207,6 @@ export async function produceEvidence(): Promise<Evidence> {
     deliberateFail: { id: "deliberate-fail", evalId: "deliberate-fail", snapshotDir: deliberateFail.snapshotDir, attempt: deliberateFail.attempt },
     deliberateError: { id: "deliberate-error", evalId: "deliberate-error", snapshotDir: deliberateError.snapshotDir, attempt: deliberateError.attempt },
     junit: { main: "main.xml", fail: "fail.xml", error: "error.xml" },
-    jsonSummaryPath: "main.json",
+    jsonEventsPath: "main.ndjson",
   };
 }

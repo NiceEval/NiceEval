@@ -56,11 +56,26 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error(err);
     const ciLog = existsSync("logs/exp-ci.log") ? readFileSync("logs/exp-ci.log", "utf8") : "";
+    // logs/exp-ci.log is the `--json` NDJSON event stream (scripts/verify.ts's runCmd), not
+    // `--output ci` human text — classify off the structured `error` event's `reason` field
+    // instead of regexing the word "errored" (the `--output` flag it came from is gone).
     const infra =
       err instanceof InfraError ||
-      /errored .*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/.test(ciLog);
+      ciLog.split("\n").some((line) => {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("{")) return false;
+        let evt: unknown;
+        try {
+          evt = JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+        if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") return false;
+        const reason = String((evt as { reason?: unknown }).reason ?? "");
+        return /429|5\d\d|ECONNREFUSED|ETIMEDOUT/.test(reason);
+      });
     // Judged by structured evidence only (own readiness timeout, or a provider-attributable
-    // errored line in the ci log) — anything else is a regression, per the classification
+    // `error` event in the ci log) — anything else is a regression, per the classification
     // rule in README §3.1: rather over-report regression than under-report infra.
     exitCode = infra ? 75 : 1;
   } finally {

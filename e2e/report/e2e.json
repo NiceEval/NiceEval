@@ -18,7 +18,7 @@
     "main.xml",
     "fail.xml",
     "error.xml",
-    "main.json",
+    "main.ndjson",
     "logs/**"
   ],
   "requires": {

@@ -1,7 +1,7 @@
 node_modules/
 .niceeval/
 site-export/
-main.json
+main.ndjson
 main.xml
 fail.xml
 error.xml

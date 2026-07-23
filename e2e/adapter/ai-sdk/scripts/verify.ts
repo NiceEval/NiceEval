@@ -28,9 +28,12 @@ function locatorOf(evalId: string): string {
 }
 
 export async function runVerify(): Promise<void> {
-  // logged unconditionally so scripts/e2e.ts can classify infra-vs-regression from the
-  // raw --output ci log even when the assert below throws.
-  const runCmd = "pnpm exec niceeval exp --force --output ci --json summary.json --junit junit.xml";
+  // logged unconditionally so scripts/e2e.ts can classify infra-vs-regression even when the
+  // assert below throws. `--json` streams NDJSON events to stdout (`--output` and `--json
+  // <path>` file sinks are both gone from the CLI — see docs/feature/experiments/cli.md「机器
+  // 怎么读:--json」); `pnpm --silent exec` keeps pnpm's own preamble line out of stdout so the
+  // captured log stays valid NDJSON.
+  const runCmd = "pnpm --silent exec niceeval exp --force --json --junit junit.xml";
   const res = spawnSync(runCmd, { shell: true, encoding: "utf8" });
   writeFileSync("logs/exp-ci.log", `${res.stdout}\n${res.stderr}`, "utf8");
   assert.equal(

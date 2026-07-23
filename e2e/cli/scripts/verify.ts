@@ -58,7 +58,9 @@ function latestAttemptLine(evalId: string): string {
 
 function selectionExperimentUnmatched(): void {
   console.log("\n=== 1. selection: unmatched experiment selector exits as a usage error ===");
-  const out = sh("pnpm exec niceeval exp totally-bogus-selector-zzz --output ci", "nonzero");
+  // 用法错误始终写 stderr、恒非零退出,错误形态不随输出形态改变(cli.md「用法错误」)——
+  // 不需要也不接受 --output(该 flag 已从 CLI 整个删除)。
+  const out = sh("pnpm exec niceeval exp totally-bogus-selector-zzz", "nonzero");
   assert.ok(
     out.includes("No experiment matched"),
     `未命中选择器没有给出 "No experiment matched" 的可行动反馈——用法错误的输出契约变了:\n${out.slice(-1000)}`,
@@ -75,10 +77,8 @@ function selectionExperimentUnmatched(): void {
 // 「边界」)。--dry 零网络成本。
 function selectionEvalUnmatched(): void {
   console.log("\n=== 2. selection: matched experiment but unmatched eval id prefix exits as a usage error ===");
-  const out = sh(
-    "pnpm exec niceeval exp normal totally-bogus-eval-prefix-zzz --dry --output agent",
-    "nonzero",
-  );
+  // 用法错误的输出契约不随形态改变,同一条理由不需要 --output;--dry 只是保留零网络成本。
+  const out = sh("pnpm exec niceeval exp normal totally-bogus-eval-prefix-zzz --dry", "nonzero");
   assert.ok(
     out.includes("No evals selected"),
     `experiment 命中但 eval 前缀零命中时没有给出 "No evals selected"——用法错误的输出契约变了:\n${out.slice(-1000)}`,
@@ -89,32 +89,66 @@ function selectionEvalUnmatched(): void {
   );
 }
 
+interface ExpPlanRow {
+  experimentId: string;
+  evalId: string;
+  reused: boolean;
+}
+
+interface ExpPlanDocument {
+  format: "niceeval.exp-plan";
+  schemaVersion: number;
+  total: number;
+  evals: number;
+  configs: number;
+  runs: number;
+  reused: number;
+  matrix: ExpPlanRow[];
+}
+
+/**
+ * `--dry --json` 输出单个 `ExpPlanDocument`(docs/feature/experiments/cli.md「机器怎么读:
+ * --json」),不是事件流——结构化断言直接读 `matrix` 里的 evalId,不再正则抠 `--output agent`
+ * 那种人读 plan-row 文本(`--output` 已经从 CLI 整个删除)。`pnpm --silent exec` 防止 pnpm 自己
+ * 的 preamble 行混进 stdout 污染 JSON。
+ */
+function dryPlan(cmd: string): ExpPlanDocument {
+  const raw = sh(`pnpm --silent exec niceeval ${cmd} --dry --json`);
+  return JSON.parse(raw) as ExpPlanDocument;
+}
+
 function selectionNarrowing(): void {
-  console.log("\n=== 3. selection: eval id prefix narrows the plan (--dry, no network) ===");
-  const planGreet = sh("pnpm exec niceeval exp normal greet --dry --output agent");
-  assert.ok(planGreet.includes("greet/hello"), `--dry 计划缺少 greet/hello:\n${planGreet}`);
+  console.log("\n=== 3. selection: eval id prefix narrows the plan (--dry --json, no network) ===");
+  const planGreet = dryPlan("exp normal greet");
   assert.ok(
-    !planGreet.includes("tool/weather"),
-    `eval id 前缀 "greet" 没有收窄——tool/weather 混进了计划:\n${planGreet}`,
+    planGreet.matrix.some((row) => row.evalId === "greet/hello"),
+    `--dry --json 计划缺少 greet/hello:\n${JSON.stringify(planGreet)}`,
+  );
+  assert.ok(
+    !planGreet.matrix.some((row) => row.evalId === "tool/weather"),
+    `eval id 前缀 "greet" 没有收窄——tool/weather 混进了计划:\n${JSON.stringify(planGreet)}`,
   );
 
-  const planTool = sh("pnpm exec niceeval exp normal tool --dry --output agent");
-  assert.ok(planTool.includes("tool/weather"), `--dry 计划缺少 tool/weather:\n${planTool}`);
+  const planTool = dryPlan("exp normal tool");
   assert.ok(
-    !planTool.includes("greet/hello"),
-    `eval id 前缀 "tool" 没有收窄——greet/hello 混进了计划:\n${planTool}`,
+    planTool.matrix.some((row) => row.evalId === "tool/weather"),
+    `--dry --json 计划缺少 tool/weather:\n${JSON.stringify(planTool)}`,
+  );
+  assert.ok(
+    !planTool.matrix.some((row) => row.evalId === "greet/hello"),
+    `eval id 前缀 "tool" 没有收窄——greet/hello 混进了计划:\n${JSON.stringify(planTool)}`,
   );
 
-  const planAll = sh("pnpm exec niceeval exp normal --dry --output agent");
+  const planAll = dryPlan("exp normal");
   assert.ok(
-    planAll.includes("greet/hello") && planAll.includes("tool/weather"),
-    `不带 eval 前缀时应选中 normal 实验下的全部 eval:\n${planAll}`,
+    planAll.matrix.some((row) => row.evalId === "greet/hello") && planAll.matrix.some((row) => row.evalId === "tool/weather"),
+    `不带 eval 前缀时应选中 normal 实验下的全部 eval:\n${JSON.stringify(planAll)}`,
   );
 }
 
 function exitCodeFoldingDeliberateFail(): void {
   console.log("\n=== 4. exit-code folding: deliberate-fail → failed, <failure> ===");
-  sh("pnpm exec niceeval exp deliberate-fail --force --output ci --junit junit/fail.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-fail --force --junit junit/fail.xml", "nonzero");
   const failXml = readFileSync("junit/fail.xml", "utf8");
   assert.ok(
     failXml.includes("<failure"),
@@ -130,7 +164,7 @@ function exitCodeFoldingDeliberateFail(): void {
 
 function exitCodeFoldingDeliberateError(): void {
   console.log("\n=== 5. exit-code folding: deliberate-error → errored, <error> ===");
-  sh("pnpm exec niceeval exp deliberate-error --force --output ci --junit junit/error.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-error --force --junit junit/error.xml", "nonzero");
   const errorXml = readFileSync("junit/error.xml", "utf8");
   assert.ok(
     errorXml.includes("<error"),
@@ -153,7 +187,7 @@ interface NormalBaseline {
 /** 正常路径全部通过(真实 DeepSeek 调用),同时建立缓存三步的基线计数。 */
 function exitCodeFoldingNormal(): NormalBaseline {
   console.log("\n=== 6. exit-code folding: normal (real DeepSeek calls) → passed, exit 0 ===");
-  sh("pnpm exec niceeval exp normal --force --output ci --junit junit/normal.xml");
+  sh("pnpm exec niceeval exp normal --force --junit junit/normal.xml");
   const normalXml = readFileSync("junit/normal.xml", "utf8");
   assert.ok(
     !normalXml.includes("<failure") && !normalXml.includes("<error"),
@@ -179,7 +213,7 @@ function cliReadBack(greetLine: string): void {
 
 function cacheThreeStep(baseline: NormalBaseline): void {
   console.log("\n=== 8. cache three-step dance ===");
-  const second = sh("pnpm exec niceeval exp normal --output ci"); // 不带 --force:复用
+  const second = sh("pnpm exec niceeval exp normal"); // 不带 --force:复用
   assert.ok(second.includes("reused"), `第二次运行的摘要没有报告复用——缓存没生效:\n${second}`);
   assert.equal(
     attemptCount("greet/hello"),
@@ -192,7 +226,7 @@ function cacheThreeStep(baseline: NormalBaseline): void {
     "不带 --force 对 tool/weather 产生了新 attempt——缓存复用没有生效",
   );
 
-  sh("pnpm exec niceeval exp normal --force --output ci"); // 再带 --force:真实新 attempt
+  sh("pnpm exec niceeval exp normal --force"); // 再带 --force:真实新 attempt
   assert.equal(
     attemptCount("greet/hello"),
     baseline.greet + 1,

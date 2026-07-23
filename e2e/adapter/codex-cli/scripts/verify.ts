@@ -53,8 +53,10 @@ export default async function runVerify(): Promise<void> {
   mkdirSync("logs", { recursive: true });
 
   // 用例一:跑本仓库全部 5 个实验(覆盖 7 条 Eval),断言退出码。--force 保证真实新跑,
-  // --output ci 保证只追加的稳定日志,--junit 落 CI 出口。日志无论成败都先落盘(shWithLog)。
-  shWithLog("pnpm exec niceeval exp --force --output ci --junit junit.xml", "logs/exp-ci.log");
+  // --json 把 NDJSON 事件流打到 stdout 供 e2e.ts 的 infra/regression 分类解析结构化 error
+  // 事件(`--output` 已经从 CLI 整个删除),--junit 落 CI 出口。日志无论成败都先落盘
+  // (shWithLog);`pnpm --silent exec` 防止 pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
+  shWithLog("pnpm --silent exec niceeval exp --force --json --junit junit.xml", "logs/exp-ci.log");
 
   // 用例二:show 榜单——应发现的 Eval 都实际运行了(少排用例不能全绿)。本仓库有 5 个
   // experiment(baseline/mcp/plugin/skill/configfile),裸 `show` 不带位置参数时按「实验组」

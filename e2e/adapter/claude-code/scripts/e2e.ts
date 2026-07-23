@@ -75,15 +75,32 @@ function stopServer(child: ChildProcess): Promise<void> {
   });
 }
 
-/** 能确证的外部故障依据:自己的 InfraError,或 --output ci 日志中 errored 行明确指向 provider。 */
+/**
+ * 能确证的外部故障依据:自己的 InfraError,或 `--json` NDJSON 事件流(scripts/verify.ts 落盘
+ * 到 logs/exp-ci.log)里出现的结构化 `error` 事件、`reason` 字段明确指向 provider/网络故障
+ * (`--output` 时代靠正则抠人读 "errored" 文本的做法已经删除,CLI 不再产出那种日志)。
+ */
 function isInfraFailure(err: unknown): boolean {
   if (err instanceof InfraError) return true;
+  let ciLog: string;
   try {
-    const ciLog = readFileSync("logs/exp-ci.log", "utf8");
-    return /errored[^\n]*(429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND)/i.test(ciLog);
+    ciLog = readFileSync("logs/exp-ci.log", "utf8");
   } catch {
     return false;
   }
+  return ciLog.split("\n").some((line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) return false;
+    let evt: unknown;
+    try {
+      evt = JSON.parse(trimmed);
+    } catch {
+      return false;
+    }
+    if (!evt || typeof evt !== "object" || (evt as { event?: string }).event !== "error") return false;
+    const reason = String((evt as { reason?: unknown }).reason ?? "");
+    return /429|5\d\d|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(reason);
+  });
 }
 
 async function main(): Promise<void> {

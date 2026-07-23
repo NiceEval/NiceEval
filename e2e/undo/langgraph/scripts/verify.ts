@@ -38,8 +38,9 @@ function extractLocator(line: string, evalId: string): string {
 export async function runVerify(): Promise<void> {
   mkdirSync("logs", { recursive: true });
 
-  // 用例一:跑实验,断言退出码;--output ci 落一份稳定日志供 e2e.ts 的故障分类读,--junit 落 CI 出口。
-  const runOutput = sh("pnpm exec niceeval exp langgraph --force --output ci --junit junit.xml");
+  // 用例一:跑实验,断言退出码;--json 把 NDJSON 事件流落一份供 e2e.ts 的故障分类读
+  // (`--output` 已经从 CLI 整个删除),--junit 落 CI 出口。
+  const runOutput = sh("pnpm --silent exec niceeval exp langgraph --force --json --junit junit.xml");
   writeFileSync("logs/exp-ci.log", runOutput);
 
   // 用例二:show 榜单——应发现的 4 条 Eval 都实际运行了,少排用例不能全绿。

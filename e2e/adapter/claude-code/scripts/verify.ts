@@ -72,7 +72,10 @@ function latestAttemptLine(evalId: string): string {
 
 function runExperiments(): void {
   console.log("\n=== 1. run all 5 experiments for real (--force) ===");
-  sh("pnpm exec niceeval exp --force --output ci --junit junit.xml");
+  // `--json` 把 NDJSON 事件流打到 stdout(`--output` 已经从 CLI 整个删除),落进 CI_LOG 供
+  // e2e.ts 的 isInfraFailure() 解析结构化 error 事件;`pnpm --silent exec` 防止 pnpm 自己的
+  // preamble 行混进 stdout 污染 NDJSON。
+  sh("pnpm --silent exec niceeval exp --force --json --junit junit.xml");
   const junitXml = readFileSync("junit.xml", "utf8");
   assert.ok(
     !junitXml.includes("<failure") && !junitXml.includes("<error"),
