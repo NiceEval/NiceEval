@@ -8,7 +8,7 @@
 
 | 契约 | 入口 | 目的 | passed attempt | failed / assertion-unavailable attempt |
 |---|---|---|---|---|
-| **结果摘要** | `exp` 的 Human 永久行与最终 handoff、Agent handoff、CI failure 行；`show` / `view` 的 `ExperimentList`、`EvalList`、`AttemptList` 比较列表 | 先定位哪条 attempt 红、最主要为什么红 | 不逐条输出；比较列表 Result 显示 `—` | 只输出一条**主失败断言摘要**，其余失败只报 `+N more failures` |
+| **结果摘要** | `exp` 的 Human 永久行与最终 handoff、Agent handoff、CI failure 行；`show` / `view` 的 `ExperimentList`、`EvalList`、`AttemptList` 比较列表 | 先定位哪条 attempt 红、最主要为什么红；计分制额外回答分丢在哪 | 不逐条输出；比较列表 Result 显示 `—`（计分制有丢分时显示首条丢分摘要，见「主失败断言怎样选」） | 只输出一条**主失败断言摘要**，其余失败只报 `+N more failures` |
 | **具体诊断与源码** | `show @locator`、view Attempt 详情；`show @locator --source`、view source 模式 | 完整解释全部断言，并把它们放回运行时源码 | Attempt 首页显示 `N passed`，通过项在 view 默认折叠；源码行标 `✓` | failed / soft / unavailable 按声明顺序完整展开；源码行标 `✗` 并紧跟标题、matcher、expected / received 或 reason |
 
 结果摘要里的 `—` 表示“这条 attempt 没有需要解释的失败摘要”，不表示没有 assertions。任何摘要面都不得把 `assertions.map(a => a.name)` 拼进 Result 单元格：这会让通过项比失败项更吵，也会把几十条 matcher 挤成不可读的多行文本。
@@ -23,6 +23,11 @@
 2. assertion unavailable 造成 `errored` 且没有结构化执行 error 时，取第一条非 optional unavailable。
 3. 结构化执行 error 优先显示 error 摘要，不拿某条 assertion 冒充根因。
 4. 其余同类失败计数为 `+N more failures`；只能在 Attempt 详情展开，不能继续塞进比较列表。
+
+计分制（`defineScoreEval`）在同一套规则上补两条，摘要回答的问题从「为什么红」扩展到「分丢在哪」：
+
+5. 计分制 `failed` 只有前置中止一个来源，规则 1 自然选中中止的那条前置（它是记录顺序最后一条断言、也是唯一 failed 的 gate）；单行摘要照常拼装，不追加中止标注——`⤓` 属于 attempt 详情（见[计分制](#计分制points-与给分记录)），摘要行首的 verdict 已表达「这轮没跑完」。
+6. 计分制 `passed` attempt 存在丢分得分点（带 `.points` 的断言 outcome 为 failed，或 `.optional()` 下 unavailable）时，取记录顺序第一条丢分得分点为主摘要，单行尾缀其挣分标注（`… · +0 pts`）；其余丢分得分点计 `+N more lost points`。得分点全部挣满（或没有得分点）时 Result 仍为 `—`。`t.score` 是作者算好条件才给的分，没有「丢」的概念，不进摘要。丢分进摘要的理由：对比场景里「模型 B 只挣 1 分」的下一个问题就是「卡在哪个检查点」，这一格不该只回答红不红——丢分不是失败，但它是这条 attempt 最需要解释的事实。
 
 #### 一条摘要怎样排版
 
@@ -61,6 +66,7 @@ gate: Catalog reads use use-cache directive and products cache tag
 - 分隔一律 ` · `，关键词后不带冒号；字段有则出现，检查方式与标题相同时省略（同两行排版）。不带 `gate:` 前缀——行首的 verdict 图标已表达严重级。
 - 检查方式的参数已写出期望条件时（`equals(4)`、`includes("Brooklyn")`、`calledTool("get_weather")`、`maxCost(0.5)` 这类 matcher 即条件的断言）省 `expected`——重复一遍只挤占宽度；自定义断言给了独立 `expected` 的保留。`received` 连同关键词永不省，它是单行里唯一的新事实：`equals(4) · received 3`、`calledTool("get_weather") · received 0 tool calls`、`commandSucceeded() · received exit 1 · "… 2 failed, 14 passed"`。
 - soft 促成判定时以 `<score> / <threshold>` 占值位（`similarity("布鲁克林今天晴。") · 0.71 / 0.90`）；unavailable 促成 `errored` 时以 reason 占值位（`closedQA("修改是否聚焦问题?") · judge-model-unresolved`）；结构化执行 error 显示 error 的一层摘要，不套断言语法。
+- 计分制的挣分标注是单行的最后一个尾缀（`commandSucceeded() · received exit 1 · +0 pts`）；`+N more lost points` 与 `+N more failures` 同规则：独立成尾，不参与截断也不拼进被截断的值。
 - 宽度不足时先截断语义标题，再截断检查方式，`received` 值与分数最后截断；单个 attempt 的 Result 最多占两行，被 `…` 收口；`+N more failures` 独立，不参与截断也不拼进被截断的值。
 - 完整未折行的值在 attempt 首页与 `events.json` / `diff.json` 等 artifact 里，单行面只给能扫读的预览。
 
@@ -72,16 +78,16 @@ CI 单行反馈使用独立结构化字段 `severity=` / `assertion=` / `matcher
 
 `show @locator` 与 view Attempt 详情消费完整 `AssertionResult[]`，而不是结果摘要里挑出的那一条。它们必须同时提供：
 
-- 顶部计数：passed、gate failed、soft below threshold、unavailable 各多少；
+- 顶部计数：passed、gate failed、soft below threshold、unavailable 各多少；计分制 attempt 加一项得分点挣满计数（`2/5 得分点挣满`，见[计分制](#计分制points-与给分记录)）；
 - 非 passed 断言的完整展开（show 按声明顺序平铺，view 默认先展开失败项）：每条保留 group、matcher、expected / received、score / threshold、reason 与 `source: file:line:column`；
-- passed 收纳：show 只保留计数，view 按 group 默认折叠但可展开全部；
+- passed 收纳：show 只保留计数，view 按 group 默认折叠但可展开全部；计分制的得分点不收纳（[计分制](#计分制points-与给分记录)）；
 - 源码入口：`show @locator --source` 与 view source 使用运行时保存的 eval source，在断言调用行标 `✓` / `✗`，行后只附属于该行的断言详情。
 
 源码模式不负责重新判定，也不从源码反推字段；行内标注仍然来自 `AssertionResult.loc` 与同一条结构化记录。没有 source artifact 或 loc 时，Attempt 详情照常显示完整断言，只把源码入口标为 unavailable。
 
 ## 通用渲染规则
 
-- **show 的 attempt 首页**（[失败诊断首页](../../reports/show/attempt.md)的 `AttemptSource` / `AttemptAssertions` 区块）按原始声明顺序平铺列出全部非 passed 断言——`✗ gate`（含 `--strict` 下改判的 soft）、`✗ soft`（未达标但不影响 verdict）、`◌ unavailable`（证据评不了，带 reason）混排，不按结果分段；无阈值 judge 的纯打分行没有判定，不算失败也不折进通过计数，同样按声明位置列出分数。全部通过且无分数可看时不逐条展开，只按 group 折成 `✓ passed · <group> · <count>` 计数行。
+- **show 的 attempt 首页**（[失败诊断首页](../../reports/show/attempt.md)的 `AttemptSource` / `AttemptAssertions` 区块）按原始声明顺序平铺列出全部非 passed 断言——`✗ gate`（含 `--strict` 下改判的 soft）、`✗ soft`（未达标但不影响 verdict）、`◌ unavailable`（证据评不了，带 reason）混排，不按结果分段；无阈值 judge 的纯打分行没有判定，不算失败也不折进通过计数，同样按声明位置列出分数。挣分标注与给分记录同属「分数可看」：计分制 attempt 的得分点（含 passed）与给分记录始终逐条 / 成块出现。全部通过且无分数可看时不逐条展开，只按 group 折成 `✓ passed · <group> · <count>` 计数行。
 - **每条的行格式**：首行 `<状态图标> <severity> · <标题>`（`✗` 失败、`◌` unavailable，纯打分行不带图标）——有 `group` 时标题是分组路径（嵌套用 " > " 拼接），随后 `assertion: <detail>` 行给检查方式；没有分组时标题就是 `name`（即 matcher / judge 摘要），`assertion:` 行与标题重复时省略。之后按有则显示的顺序列 `expected:` / `received:` / `score`（judge 与 soft 带阈值时含 `threshold`）/ `reason:`（仅 unavailable），最后 `source: <loc>`；`expected` / `received` 是短值时可并进检查方式行（无冒号、` · ` 分隔，与[单行压缩形态](#单行压缩形态)同款），长值按键值行展开。
 - **view 的 Attempt 详情**保留**全量**断言，但默认先展开 failed / unavailable 与影响判定的 soft，passed 收进按 group 组织的折叠区并在区头显示数量；每条一行（状态图标 + 分组路径 + name + detail + 分数），展开显示 expected / received / `evidence`（这条分数看的材料预览，默认折叠）与源码位置锚（点击跳 `--source` 同款源码视图）；judge 额外画分数条与阈值线；`unavailable` 用独立的第三态样式（非红非绿）标 reason。
 - **作用域前缀**：挂在 turn / session 上的断言，`name` 带接收者前缀——turn 断言用[轮标签](#turntsend的展示)（`turn2 · calledTool(...)`），session 断言用会话标签（`session2 · succeeded()`）；挂在 `t` 上的 attempt 级断言无前缀。
@@ -245,6 +251,8 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
 
 得分点的 severity 是 `soft`——丢分不改 verdict（[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)），失败行照常展开证据。
 
+**得分点不参与 passed 收纳**：`✓ passed · 装了依赖 · +1 pt` 是分数面的证据，挣到的分和丢掉的分同样要能逐条核对——把它折进 `✓ passed · <group> · <count>` 计数行，等于让判定面的收纳规则吞掉分数面的明细。收纳只作用于不带 `.points` 的观测断言。契约二的顶部计数在计分制 attempt 加一项**得分点挣满计数**（`2/5 得分点挣满`，挣满 = 挣到全部声明分值，连续打分断言不足 `n × 1.0` 即不算挣满）；**本轮挣分总和只在 attempt 头行出现一次**（`AttemptSummary` 的总分位，见 [Attempt 详情组件](../../reports/library/attempt-detail.md#公开组件集)），计数行与给分记录区块不重复这个总数。
+
 **前置中止**：计分制里链了 `.gate()` 的断言挂掉会就地结束 `test()`，它按 `✗ gate` 展开，行尾追加一个中止标注，其后不再有任何断言或给分记录——详情里「后面是空的」和「后面全挂了」因此一眼可分：
 
 ```text
@@ -262,6 +270,8 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
     代码精简 · +15 pts
     重构说明 · +16 pts
 ```
+
+**源码面同样承载给分证据**：有源码时（`show @locator --source`、view 的 `AttemptSource`）给分证据不换家也不消失——得分点的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后的源码行整体降灰，「没写断言的行」和「没跑到的行」在源码面同样一眼可分；`loc` 不在展示源码内的得分点与给分记录落在源码块后的 unmapped 区，给分记录仍按 `groupPath` 分组。视觉细则单点在 [Attempt 详情组件 · `AttemptSource` 视觉规范](../../reports/library/attempt-detail.md#attemptsource-web-面视觉规范)。
 
 通过制（`scoring` 省略或 `"pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。
 

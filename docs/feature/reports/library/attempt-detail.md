@@ -27,12 +27,12 @@ export default defineReport({
 
 | 组件 | 只负责什么 | 空证据 |
 |---|---|---|
-| `AttemptSummary` | locator、experiment / eval / attempt 身份、verdict、开始时间、总耗时、成本与证据能力位 | 身份与 verdict 恒有，不为空 |
+| `AttemptSummary` | locator、experiment / eval / attempt 身份、verdict、计分制 attempt 的本轮挣分（分数面总读数在详情页的唯一出现处，其它区块不重复它）、开始时间、总耗时、成本与证据能力位 | 身份与 verdict 恒有，不为空 |
 | `AttemptError` | 结构化 error、cause 与基础设施失败信息；不重复 assertion | 没有 error 时零输出 |
 | `AttemptAssertions` | 非 passed 条目按原始声明顺序列一份平铺列表(failed / soft / unavailable 混排、不分段);passed 条目按 group 折叠成计数;计分制 eval 的 `.points` 挣分随所在断言一并显示,`t.score` 给分记录按 group 单独成一个区块;不渲染源码 | 没有 assertion 且没有给分记录时零输出 |
-| `AttemptSource` | GitHub diff 式带标注源码：TypeScript 轻量语法高亮，send / assertion 按蓝 / 绿 / 红 / 黄整行着色，点击对应源码行展开该轮完整回复与 assertion 细节 | 没有 source 时零输出,不自行 fallback |
+| `AttemptSource` | GitHub diff 式带标注源码：TypeScript 轻量语法高亮，send / assertion 按蓝 / 绿 / 红 / 黄整行着色，点击对应源码行展开该轮完整回复与 assertion 细节；计分制下承载全部给分证据——得分点行右缘挂挣分 pill、`t.score` 调用行原位标注给分、前置中止行标 `⤓` 且其后源码降灰，`loc` 不在源码内的得分点与给分记录进 unmapped 区（[计分制展示](../../scoring/library/display.md#计分制points-与给分记录)） | 没有 source 时零输出,不自行 fallback |
 | `AttemptAssessment` | 先放 `AttemptError`，有 source 时放 `AttemptSource`，否则放 `AttemptAssertions` | 子组件都为空时零输出 |
-| `AttemptFixPrompt` | 把当前失败的身份、简要失败原因与排查步骤(含 `--source`/`--execution`/`--timing`/`--diff` 提示命令、复跑与确认步骤)组装成单条修复 prompt;不内嵌源码或 diff 原文,由 agent 自己跑命令查看 | passed 或没有可操作失败时零输出 |
+| `AttemptFixPrompt` | 把当前失败的身份、简要失败原因与排查步骤(含 `--source`/`--execution`/`--timing`/`--diff` 提示命令、复跑与确认步骤)组装成单条修复 prompt;不内嵌源码或 diff 原文,由 agent 自己跑命令查看 | 没有可操作失败时零输出。计分制的丢分得分点与前置中止都算可操作失败——`passed` 但有丢分的 attempt 照常出 prompt,围绕丢分检查点组装;挣满且未中止才零输出。通过制 passed 恒零输出 |
 | `AttemptTimeline` | runner phases、hook / command / session / turn，以及按 `traceId` 关联的 agent / model / tool spans | 没有 phase 时零输出 |
 | `AttemptConversation` | 标准事件流按轮组织的 user / assistant / thinking / tool / Skill / HITL / error 条目 | 没有 events 时零输出 |
 | `AttemptDiagnostics` | lifecycle 分组的 diagnostics(warning/error 级别的 code + message + 出现次数) | 没有 diagnostics 时零输出 |
@@ -48,8 +48,9 @@ export default defineReport({
 `AttemptSource` 的 web 面与产品站首页的 eval 示例卡（`site/components/site-home-setup.tsx` + `site/app/globals.css` 的 `.eval-code` 族）是同一套视觉语言的两份实现：示例卡是这套「源码即报告」叙事的公开形象，报告里的真实源码视图与它同语言，用户从官网到报告不切换视觉心智。二者不共享组件——示例卡是需要 hydration 的营销交互（React state 展开、轮播、埋点），`AttemptSource` 按报告契约必须在零 JS 的静态 attempt 文档里完整成立；数据上示例卡是策划数据，`AttemptSource` 是真实证据（一行多条 assertion、四种 tone、unmapped / unlocated 区）。因此对齐的单位是下面这份规范，不是组件：
 
 - **密度**：等宽 12.5px / 1.65 行高；整块源码统一横向滚动，普通行之间不画分隔线；行盒撑到最长行宽度，状态底色与左缘盖满整行，不在横向滚动后断成半截。
-- **行状态**：状态 = 整行浅染 + 2px 左缘 + 行号位图标。send 行蓝、passed 绿、gate-fail 红、soft-fail / unavailable 黄；浅染是 tone 色约 8% 的透明混合，不是饱和色块。有状态的行用内联 SVG 图标顶替行号（send 对话气泡、passed 圈勾、failed 圈叉、soft-fail 圈叹号、unavailable 圈问号；不引第三方图标库），普通行显示行号。
-- **右缘 meta**：行右侧只放阈值分数 pill 与展开 chevron，钉在滚动视口右缘（sticky），横向滚动时始终可见；不显示内部 turn 标签（如 `turn1`）。
+- **行状态**：状态 = 整行浅染 + 2px 左缘 + 行号位图标。send 行蓝、passed 绿、gate-fail 红、soft-fail / unavailable 黄；浅染是 tone 色约 8% 的透明混合，不是饱和色块。有状态的行用内联 SVG 图标顶替行号（send 对话气泡、passed 圈勾、failed 圈叉、soft-fail 圈叹号、unavailable 圈问号；不引第三方图标库），普通行显示行号。计分制的前置中止行按 gate-fail 红；中止行之后的全部源码行整体降灰（未到达——那些行没有任何断言或给分记录，不是因为没写，是因为没跑到），行号照常显示。
+- **给分行**：`t.score(...)` 调用行不着判定色——给分是分数面事实，不是判定；行号照常，右缘挂挣分 pill，展开区显示该条给分记录（label、挣分、分组路径）。`loc` 不在展示源码内的得分点与给分记录列在源码块后的 unmapped 区，给分记录按 `groupPath` 分组（与 `AttemptAssertions` 同一套分组算法）。
+- **右缘 meta**：行右侧只放分数 pill（soft 的阈值分数，或计分制的挣分 `+1 pt` / `+0 pts`）、中止行的 `⤓` 标记与展开 chevron，钉在滚动视口右缘（sticky），横向滚动时始终可见；不显示内部 turn 标签（如 `turn1`）。
 - **展开区**：点击行展开的回复 / assertion 细节直接接在源码行下，dashed 上边线 + tone 色左缘；按容器可视宽度排版换行并钉在滚动视口左缘，不跟随代码横向滚动；不套二级卡片，不重复 turn 头与 sent prompt。首个失败或警告行默认展开。
 - **语法高亮**：零依赖逐行 TypeScript token（comment / string / keyword / number / function 五类语义 class）；暗色 token 取 VS Code Dark+ 系（与示例卡的 prism vsDark 主题同源），浅色为等价可读色。
 - **交互载体**：展开一律是原生 `<details>`，静态文档零 JS 成立。
@@ -178,9 +179,9 @@ export const AttemptDetail = defineComponent((_props, ctx) => {
 
 | 组件 | `show @locator --report ...` 的 text 面 | `view` 的 web 面 |
 |---|---|---|
-| `AttemptSummary` | 紧凑身份与 verdict 摘要 | 详情标题、状态和统计卡 |
+| `AttemptSummary` | 紧凑身份与 verdict 摘要（计分制含本轮挣分） | 详情标题、状态和统计卡（计分制含本轮挣分） |
 | `AttemptError` / `AttemptAssertions` | 有界错误与未通过项列表;不带专属命令(完整 locator 已在 `AttemptSummary` 那一行) | 可展开的完整结构化细节 |
-| `AttemptSource` | 未通过 assertion 的源码位置与 expected / received，加 `--source` 命令；含轮次时同时保留 `--execution` 下钻入口，不倾倒整份源码 | TypeScript 语法高亮的完整源码；send / pass / gate-fail / soft-fail 行分别着色，可点击展开该轮回复或 assertion 细节 |
+| `AttemptSource` | 未通过 assertion 的源码位置与 expected / received，加 `--source` 命令；含轮次时同时保留 `--execution` 下钻入口，不倾倒整份源码；计分制同时列得分点挣分与给分记录 | TypeScript 语法高亮的完整源码；send / pass / gate-fail / soft-fail 行分别着色，可点击展开该轮回复或 assertion 细节；计分制附挣分 pill、给分行标注与中止后降灰 |
 | `AttemptFixPrompt` | 零输出；终端已有可直接交给 agent 的 evidence 命令 | 单条失败的复制按钮与完整 prompt |
 | `AttemptTimeline` | phase 摘要与 `--timing` 命令 | 可逐层展开的 runner + correlated spans 时间树 |
 | `AttemptConversation` | 轮次摘要与 `--execution` 命令 | 完整分轮事件卡 |

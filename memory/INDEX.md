@@ -91,6 +91,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [turn-retry-backoff-releases-experiment-serial-lock](turn-retry-backoff-releases-experiment-serial-lock.md) — turn 级重试退避把实验级 runSem 一并释放,`maxConcurrency: 1` 的串行契约被击穿(下游 mempal 记忆回存竞态、running=2 实证);修法=退避只释放 globalSem,退避期间继续持有 runSem
 - 已修 [exp-eval-prefix-segment-drift](exp-eval-prefix-segment-drift.md) — `exp` 把「eval ID 前缀」实现成路径段匹配，和文档/show/view 分叉；统一为裸字符串 prefix
 - 已修 [experiment-maxconcurrency-was-global-clamp](experiment-maxconcurrency-was-global-clamp.md) — 实验级 maxConcurrency 曾按最小值钳全局,一个串行实验拖慢整批;修为 runner 两级信号量按实验限流(src/runner/run.ts + cli.ts)
 - 已修 [cli-exit-code-attempt-level-not-eval-level](cli-exit-code-attempt-level-not-eval-level.md) — 退出码曾按 attempt 计红,earlyExit 重试吸收的失败也 exit 1;修为 foldEvalOutcome 按 eval 折叠(src/cli.ts + e2e verify.mjs)
@@ -125,6 +126,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [score-display-source-face-carries-score-evidence](score-display-source-face-carries-score-evidence.md) — 裁决(2026-07-23):计分制给分证据在有源码的 attempt 详情由 AttemptSource 承载(pts pill/t.score 行标注/⤓+未到达降灰/unmapped 兜底),否决「AttemptAssessment 追加给分区块」;配套=总分只在 AttemptSummary 头行、得分点豁免 passed 收纳、passed 丢分进结果摘要、FixPrompt 把丢分算可操作失败;起因是 display.md 承诺与 AttemptAssessment 二选一契约互相矛盾
 - [one-line-summary-grammar-and-flat-attempt-assertions](one-line-summary-grammar-and-flat-attempt-assertions.md) — 裁决(2026-07-22):单行失败摘要语法收拢为 display.md#单行压缩形态 单点(` · ` 分隔、matcher 即条件时省 expected、received 永不省);attempt 首页四段分节(failures:/soft/scores/unavailable)被 Phase G 平铺混排取代,display 与 docs-site 中英示例已同步铲平
 - [staleness-demoted-from-warning-to-provenance](staleness-demoted-from-warning-to-provenance.md) — 裁决(2026-07-22):stale-snapshot/partial-coverage 两个警告 kind 删除——时效降级为行级 `↩` 标注(attempt.carried/historical),覆盖缺口物化为 scope.coverage+榜单占位行,新增 fresh 口径(--fresh);warnings 只留定位不到行的三种;否决理由=警告粒度与事实粒度错位、carry 是正常功能不该带「多数情况请忽略」的警告
 - [scopewarning-includes-member-never-pushed-to-scope-warnings](scopewarning-includes-member-never-pushed-to-scope-warnings.md) — 上一条落地时的实现细节:`ScopeWarning` 判别联合恰三个成员(含 `missing-startedAt`),但 `missing-startedAt` 永远不会被 push 进 `Scope.warnings`——只由 `dedupeAttempts()` 直调返回,`DedupeWarning` 降级为该成员的类型别名
