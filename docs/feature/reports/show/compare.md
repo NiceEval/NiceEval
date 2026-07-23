@@ -16,7 +16,7 @@ $ niceeval show --exp memory/claude-baseline --exp memory/claude-mempal
 对照 · 2 个条件 · 配对身份 eval id · 基准 memory/claude-baseline
 共同 7 · 仅 claude-baseline 0 · 仅 claude-mempal 1
 
-eval                                claude-baseline           claude-mempal                    Δ
+eval                                claude-baseline           claude-mempal          Δ claude-mempal
 memory/agent-037-updatetag-cache    ✓   512.3k   $0.71        ✓   305.1k   $0.44         -207.2k   -$0.27
 memory/repomod-hello-world-api      ✓   688.9k   $0.95        ✓   701.2k   $0.98          +12.3k   +$0.03
 memory/swelancer-manager-proposals  ✗   621.0k   $0.83        ✓   298.4k   $0.41    ⇄    -322.6k   -$0.42

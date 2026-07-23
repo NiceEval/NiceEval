@@ -173,6 +173,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [axis-tick-labels-collapse-at-tiny-ranges](axis-tick-labels-collapse-at-tiny-ranges.md) — 图轴值域改版后极小量程刻度标签折叠成同一字符串(report e2e 逮住);根因=精度固定不随步长,2.5×10^k 档 ⌈-log10⌉ 还少一位;修为 formatTickValue 按步长十进制位数取精度
 - [non-tty-pipe-narrow-table-width-fallback](non-tty-pipe-narrow-table-width-fallback.md) — 非 TTY 管道下 show 表格窄折行是 stdout.columns 缺失的宽度回退,不是渲染缺陷;取样用 script+stty cols 给宽度再比对 docs 示例
 - 已修 [report-test-scope-fixture-duplication-tax](report-test-scope-fixture-duplication-tax.md) — report 四个测试文件各复制一份 `scopeOf`/`resultsOf`,makeScope 两天两次改签名每次连改四处;修为收敛进 `src/report/components/scope.harness.ts`(`*.harness.ts` 不进 vitest 收集与 dist/report)
 - 已修 [attempt-source-unlocated-conversation-unstyled-and-escape-leak](attempt-source-unlocated-conversation-unstyled-and-escape-leak.md) — AttemptSource「Other conversation」兜底区文字墙 + 工具结果 `\n` 字面直出:`.nre-conv-*` 按容器限定没盖到第三容器、`compact()` 在 stringify 之后才收口;修为第三容器补 CSS + 先收口后字符串化;教训=共享 renderer 进新容器 CSS 不自动跟、自由文本收口必须在序列化前

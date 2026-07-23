@@ -98,11 +98,11 @@
   - [x] G.2 全部通过后删除 `plan/report-primary-reading-by-scoring-type.md`；若有未通过项，把剩余项迁入单独 plan，不能因“基本落地”直接丢台账
   - [x] G.3 把 `src/sandbox/keep.ts` 的 detached inspect 改为 `while (paginator.hasNext)` 完整翻页查找，补“目标只在第二页”测试；provision reconcile 与 detached inspect 都满足 memory 后，保留 `memory/INDEX.md` 的“已修”状态
 
-- [ ] **H. 全树集成收口**（依赖 A–G 的实现节点；单一 worker 串行）
-  - [ ] H.1 全仓 grep：旧 Invocation 名、合成 Snapshot 注释/构造、缺失 SnapshotDiagnostics 导出、错误 source-map 断言均归零；有意历史引用逐条人工确认
-  - [ ] H.2 按影响面运行 `pnpm run build:report` → `pnpm run view:build` → `pnpm run typecheck` → `pnpm test`
-  - [ ] H.3 运行 `pnpm docs:reference`、`pnpm docs:validate`、`pnpm docs:links`，确认生成区块无漂移
-  - [ ] H.4 Results / Reports 改动跑 `pnpm e2e --repo report`；runner / 公开 Reporter 破坏性变更跑 `pnpm e2e --repo cli`，再按测试矩阵修复全部受影响官方适配器仓库
+- [x] **H. 全树集成收口**（依赖 A–G 的实现节点；单一 worker 串行）
+  - [x] H.1 全仓 grep：旧 Invocation 名、合成 Snapshot 注释/构造、缺失 SnapshotDiagnostics 导出、错误 source-map 断言均归零；有意历史引用逐条人工确认
+  - [x] H.2 按影响面运行 `pnpm run build:report` → `pnpm run view:build` → `pnpm run typecheck` → `pnpm test`
+  - [x] H.3 运行 `pnpm docs:reference`、`pnpm docs:validate`、`pnpm docs:links`，确认生成区块无漂移
+  - [x] H.4 Results / Reports 改动跑 `pnpm e2e --repo report`；runner / 公开 Reporter 破坏性变更跑 `pnpm e2e --repo cli`，再按测试矩阵修复全部受影响官方适配器仓库
   - [x] H.5 最后更新 `docs/source-map.md`：删除已闭合差异，只保留 E 若尚停在设计裁决；不得把尚未验收的节点提前写成已实现（已删除「`current()` 仍合成报告用 Snapshot」「公开 Invocation 命名尚未落地」「Snapshot diagnostics 尚未落地」「`GroupMatrix` 已作为公开组件落地，但尚未接入内建 `standard`」四条已闭合差异，逐条到 `src/results/select.ts`、`src/runner/types.ts`、`src/results/writer.ts` + `src/report/components/site-components/index.tsx`、`src/report/built-in/standard.tsx` 复核；`--json` 题目级 `eval` 事件条目按现状改写为「已在源码落地，plan 台账尚未收口」）
 
 ## 验收
