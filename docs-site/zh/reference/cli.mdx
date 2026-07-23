@@ -133,22 +133,22 @@ npx niceeval exp compare-models weather-tool
 
 `show` 与 `view` 是顶层命令，应写成 `npx niceeval show`、`npx niceeval view`。误写成 `npx niceeval exp show` / `exp view` 且没有同名 experiment 时，CLI 会在“不存在的实验”错误后提示正确命令；仓库确实存在同名 experiment 时仍按合法 id 执行。
 
-## `--output`：human / agent / ci
+## 两种输出：人读文本与 `--json`
 
-`--output` 选一种终端反馈模型，只改变展示，不改变选择、调度、判定、artifact 或退出码；省略时的默认值 `auto` 按环境自动选择。三种消费者各有推荐命令：
+`exp` 的输出只有两种形态，只改变展示，不改变选择、调度、判定、artifact 或退出码：
 
 ```bash
-# 人在 TTY 前：动态 dashboard + 永久失败/诊断行
-npx niceeval exp compare --output human
+# 不加 flag = 人读文本：TTY 里是动态 dashboard，管道/CI 日志里自动降级为只追加的纯文本流
+npx niceeval exp compare
 
-# coding agent / 自动修复循环：低频 checkpoint + 有界 handoff block
-npx niceeval exp compare --output agent
+# --json = 机器面：stdout 上单一有序的 NDJSON 事件流，coding agent、CI adapter、脚本共用
+npx niceeval exp compare --json
 
-# CI job：单一有序 stdout 事件流 + 退出码 + JSON/JUnit
-npx niceeval exp compare --output ci --strict --json .niceeval/ci-summary.json --junit .niceeval/junit.xml
+# CI 门禁:退出码 + JUnit；需要 JSON 汇总时运行后用 show --json 重定向
+npx niceeval exp compare --strict --junit .niceeval/junit.xml
 ```
 
-三种 profile 的完整对比见[运行器 · Reporter](/zh/explanation/runner#reporter)；人在终端里怎么读 dashboard 与结束摘要见上面的[常用 flags](#常用-flags)与本页各命令示例；AI 反馈闭环的完整用法（读输出、按 locator 下钻、局部重跑）见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)；CI 集成（GitHub Actions、退出码、JSON/JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。
+两种形态怎么选见[运行器 · Reporter](/zh/explanation/runner#reporter)；AI 反馈闭环的完整用法（读事件流、按 locator 下钻、局部重跑）见 [AI 反馈闭环](/zh/tutorials/agent-feedback-loop)；CI 集成（GitHub Actions、退出码、JUnit）见 [CI 集成](/zh/tutorials/ci-integration)。
 
 ## `view`
 

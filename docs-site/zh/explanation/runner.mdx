@@ -70,15 +70,14 @@ npx niceeval exp local --timeout 300000 --budget 5
 
 ## Reporter
 
-运行中的反馈由 `--output` 选择消费者模型；Reporter 负责把完成后的结果写到其它目的地。两者不是同一层：
+运行中的反馈只有两种形态，Reporter 是另一层，负责把运行结束后的结果写到其它目的地：
 
 ```bash
-npx niceeval exp local --output human  # 人：TTY dashboard + 永久错误/诊断
-npx niceeval exp local --output agent  # AI：稳定 envelope + locator handoff
-npx niceeval exp local --output ci     # CI：单一有序 stdout 事件流
+npx niceeval exp local          # 人读文本：TTY 下原地刷新 live 面板，非 TTY（管道、CI 日志）自动降级成只追加的文本流
+npx niceeval exp local --json   # 机器面：stdout 一行一个 JSON 对象，start 打头、result 收尾
 ```
 
-省略时使用 `auto`：TTY 选择 Human，CI 环境选择 CI，其它非 TTY 选择 Agent。输出模型只改变反馈，不改变调度、判定或 artifact。
+`--json` 不逐条打印每次状态变化：只有失败、错误和去重后的 warning 立即追加一行，长时间没有这些事件才补一条 `progress` 心跳。两种形态读取同一套事实，调度、判定和 artifact 完全一致，只是呈现不同。
 
 Runner 在评估用例完成后把结果交给 Reporters：
 

@@ -4,7 +4,7 @@ sidebarTitle: "Reporters"
 description: "Use built-in reporters to send eval results to Braintrust experiments, JUnit XML, or custom destinations."
 ---
 
-[NiceEval](https://niceeval.com/) runs and scores evals itself. Reporters send completed results elsewhere. Feedback while a run is in flight (Human/Agent/CI) is chosen with `niceeval exp --output ...`, not a user-configured Reporter; the `.niceeval/` results artifacts are always on. Other reporters are imported from `niceeval/reporters` and mounted as needed.
+[NiceEval](https://niceeval.com/) runs and scores evals itself. Reporters send completed results elsewhere. Feedback while a run is in flight (human text or `--json`) is decided by `niceeval exp` itself, not a user-configured Reporter; the `.niceeval/` results artifacts are always on. Other reporters are imported from `niceeval/reporters` and mounted as needed.
 
 There are two mount points:
 

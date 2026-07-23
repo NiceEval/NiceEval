@@ -12,13 +12,11 @@ By default, [NiceEval](https://niceeval.com/) exits non-zero when any gate fails
 
 ```bash
 NICEEVAL_LANG=en npx niceeval exp ci \
-  --output ci \
   --strict \
-  --json .niceeval/ci-summary.json \
   --junit .niceeval/junit.xml
 ```
 
-The `ci` profile never prints ANSI, a spinner, or a dynamic table. Its log is a single ordered stdout stream that only appends `start`, low-frequency heartbeats, failures/errors, diagnostics, and the final result — passed attempts are never printed one by one.
+CI doesn't need a separate output mode: human text without `--json`, on a non-TTY (a CI log page), automatically degrades to an append-only stream — no boxes, no ANSI, only appending a line at start, on each failure/error, on each diagnostic, and at the final verdict; passed attempts are never printed one by one. That log is for people to read; platform annotations go through `--junit`, and a JSON summary is read from the results plane after the run (see below).
 
 ## GitHub Actions example
 
@@ -38,10 +36,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: >-
-          npx niceeval exp ci --output ci --strict
-          --json .niceeval/ci-summary.json
-          --junit .niceeval/junit.xml
+      - run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
         env:
           NICEEVAL_LANG: en
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -64,17 +59,35 @@ jobs:
 
 ## JSON, JUnit, and structured errors
 
+The default human-text log appends lines in the order things happen:
+
 ```text
 niceeval: start total=24 configs=3 concurrency=10 reused=18
 niceeval: errored locator=@12h8m4k1 eval=fixtures/button experiment=ci/codex phase=sandbox.create reason="E2B sandbox allocation failed after 5 attempts"
 niceeval: result=failed passed=23 failed=0 errored=1 reused=18 duration=128s
-niceeval: json=.niceeval/ci-summary.json
-niceeval: junit=.niceeval/junit.xml
 ```
 
-The exit code is the first-line red/green signal; JSON, JUnit, and the results snapshot are the complete machine interface — log lines are only for searching and annotation. An `errored` line carries a locator, the eval/experiment identity, the formal phase when known, and a one-line `reason` summary. The full cause, stack, and diagnostics live in the attempt's `result.json` — keep the artifacts and run `niceeval show @<locator>` to review them.
+The exit code is the first-line red/green signal; JUnit and the results snapshot are the complete machine interface — log lines are only for searching and annotation. An `errored` line carries a locator, the eval/experiment identity, the formal phase when known, and a one-line `reason` summary. The full cause, stack, and diagnostics live in the attempt's `result.json` — keep the artifacts and run `niceeval show @<locator>` to review them.
 
-The JSON/JUnit files the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](./reporters).
+When something needs to parse run events programmatically (a custom annotation adapter, a live dashboard), add `--json` to that same command to get the same facts as an NDJSON event stream, starting with `start` and ending with `result`:
+
+```bash
+NICEEVAL_LANG=en npx niceeval exp ci --strict --junit .niceeval/junit.xml --json
+```
+
+When you just need a JSON summary file, don't parse the run log — read the results plane after the run instead:
+
+```bash
+npx niceeval show --json > .niceeval/ci-summary.json
+```
+
+<Tip>
+  If the repo uses pnpm, swap that command for `pnpm --silent exec niceeval show --json > .niceeval/ci-summary.json`. `pnpm exec` prints a startup banner to stdout by default, which ends up inside the redirected JSON file; `--silent` turns that banner off.
+</Tip>
+
+`show --json` reads the results root's current state (including carried-forward and historical snapshots); on a fresh CI checkout that's the same as this run, but when the results root persists across runs (for example a nightly job reusing `.niceeval/`), narrow it to this run's conditions and fresh executions with `--exp` / `--fresh`.
+
+The `--json` / `--junit` output the CLI is explicitly told to write, and the default results artifact, are all required outputs: a write failure must turn the job red, not just log a warning and exit 0. To also report results to an experiment platform such as Braintrust, see [Reporters](./reporters).
 
 ## Discovery only
 
@@ -91,7 +104,7 @@ You can cache `.niceeval/` in CI, but make sure the fingerprint covers every inp
 ## Control concurrency
 
 ```bash
-npx niceeval exp ci --output ci --max-concurrency 2
+npx niceeval exp ci --max-concurrency 2
 ```
 
 Sandbox evals should stay conservative on a standard GitHub-hosted runner. Remote HTTP evals can usually run with higher concurrency if the service allows it.

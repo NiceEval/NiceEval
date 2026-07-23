@@ -4,7 +4,7 @@ sidebarTitle: "Reporter 上报"
 description: "用内置 reporters 把评估用例结果送到 Braintrust 实验、JUnit XML 或自定义目的地。"
 ---
 
-[NiceEval](https://niceeval.com/) 自己跑、自己判分；Reporter 负责把完成结果送到其它目的地。运行中的 Human/Agent/CI 反馈由 `niceeval exp --output ...` 选择，不是用户配置的 Reporter；`.niceeval/` results artifacts 始终开启。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
+[NiceEval](https://niceeval.com/) 自己跑、自己判分；Reporter 负责把完成结果送到其它目的地。运行中的反馈（人读文本或 `--json`）由 `niceeval exp` 自己决定，不是用户配置的 Reporter；`.niceeval/` results artifacts 始终开启。其余 Reporter 从 `niceeval/reporters` 导入，按需挂载。
 
 挂载位置有两个：
 

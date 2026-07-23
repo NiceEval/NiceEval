@@ -62,15 +62,14 @@ Timeout protects a single eval; budget protects the cost of the entire run. Nice
 
 ## Reporter
 
-Feedback while a run is in flight is chosen by `--output`; reporters write completed results elsewhere. The two are not the same layer:
+Feedback while a run is in flight only comes in two forms; reporters are a different layer that write completed results elsewhere:
 
 ```bash
-npx niceeval exp local --output human  # a person: TTY dashboard + permanent errors/diagnostics
-npx niceeval exp local --output agent  # an AI: stable envelope + locator handoff
-npx niceeval exp local --output ci     # CI: a single ordered stdout event stream
+npx niceeval exp local          # human text: a live-refreshing TTY panel, or an append-only text stream on non-TTY (pipes, CI logs)
+npx niceeval exp local --json   # machine face: one JSON object per line on stdout, starting with `start` and ending with `result`
 ```
 
-The default is `auto`: a TTY picks human, a CI environment picks ci, any other non-TTY picks agent. The output model only changes feedback — it never changes scheduling, verdicts, or artifacts.
+`--json` does not print every state change: only failures, errors, and deduplicated warnings append a line immediately, and a `progress` heartbeat only appears after a stretch with none of those events. Both forms read the same facts — scheduling, verdicts, and artifacts stay identical, only the presentation changes.
 
 After each eval finishes, the runner hands the result to reporters:
 

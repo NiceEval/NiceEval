@@ -38,10 +38,14 @@ AI 通常按任务选择这些入口：
 <Steps>
   <Step title="运行实验">
     ```bash
-    npx niceeval exp local --output agent
+    npx niceeval exp local --json
     ```
 
-    先读取退出码：`0` 表示所有评估用例通过；`1` 表示至少一个评估用例失败或出错；`2` 表示 NiceEval 自身未能完成运行。退出码决定是否继续，控制台文本用于定位原因。
+    <Tip>
+      仓库用 pnpm 时把命令换成 `pnpm --silent exec niceeval exp local --json`。`pnpm exec` 默认会在 stdout 最前面打印一段启动信息，混进要解析的 NDJSON 流；`--silent` 关掉这段前缀。`npx` 没有这个问题。
+    </Tip>
+
+    先读取退出码：`0` 表示所有评估用例通过；`1` 表示至少一个评估用例失败或出错；`2` 表示 NiceEval 自身未能完成运行。退出码决定是否继续；`--json` 输出的事件流给出失败的稳定定位符（locator），下一步据此下钻。
   </Step>
   <Step title="读取失败">
     ```bash
@@ -185,7 +189,7 @@ AI 通常按任务选择这些入口：
   </Step>
   <Step title="局部重跑并验证假设">
     ```bash
-    npx niceeval exp local weather/brooklyn --output agent --force
+    npx niceeval exp local weather/brooklyn --json --force
     npx niceeval show weather/brooklyn
     ```
 
@@ -193,7 +197,7 @@ AI 通常按任务选择这些入口：
   </Step>
   <Step title="全量确认没有回归">
     ```bash
-    npx niceeval exp local --output agent --force
+    npx niceeval exp local --json --force
     npx niceeval show
     ```
 
@@ -203,23 +207,15 @@ AI 通常按任务选择这些入口：
 
 ## 从输出读取诊断信号
 
-`--output agent` 运行中只向 stderr 追加低频 checkpoint（存活信号，不是结果数据源），结束时向 stdout 打印一个有界 handoff block——这才是 AI 应该解析的部分：
+`--json` 在 stdout 上输出一行一个 JSON 对象的 NDJSON 流——这才是 Coding Agent 应该解析的部分。首行是携带流身份的 `start` 事件；之后只有失败、错误或去重后的 warning 立即追加一行，长时间没有这些事件才补一条 `progress` 心跳（存活信号，不是结果数据源）；最后一个事件永远是给出结论、计数和快照路径的 `result`：
 
 ```text
-NICEEVAL RESULT failed
-summary: 14 passed, 1 failed, 0 errored (0 reused)
-snapshots:
-  - .niceeval/local/2026-07-09T10-00-00-000Z-x1f2/
-failures:
-  - @1k2m9qtr weather/brooklyn [local]
-    gate: calledTool("get_weather")
-          received 0 tool calls
-next:
-  niceeval show @1k2m9qtr
-  niceeval show @1k2m9qtr --execution
+{"format":"niceeval.exp","schemaVersion":1,"event":"start","total":15,"configs":1,"concurrency":8,"reused":0}
+{"event":"failure","locator":"@1k2m9qtr","evalId":"weather/brooklyn","experimentId":"local","severity":"gate","assertion":"calledTool(\"get_weather\")","received":"0 tool calls"}
+{"event":"result","status":"failed","passed":14,"failed":1,"errored":0,"reused":0,"completion":"complete","snapshots":[".niceeval/local/2026-07-09T10-00-00-000Z-x1f2/"]}
 ```
 
-Coding Agent 应先从 `failures` 选中 Attempt locator，再按证据位执行 `next` 给出的 `niceeval show @<id>` 或对应证据 flag。不要解析运行期间 stderr 上低频追加的 checkpoint 行；这些行只用于判断进程是否存活。失败条数超过上限（默认 5 条）时，handoff 只展开前几条并给出总数，完整清单从结果快照读取。机器读取以结果快照为事实来源：
+Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运行 `niceeval show @<id>` 或按需加证据 flag；事件按发生顺序追加，不用等到 `result` 才开始处理已经拿到的 locator。不要用 `progress` 心跳判断结果，它只说明进程还活着。`--json` 不做数量截断——每条失败都是独立事件，量大时用 `niceeval view` 或结果快照做批量分析。机器读取以结果快照为事实来源：
 
 ```text
 .niceeval/<experiment>/<快照>/
@@ -262,14 +258,14 @@ Coding Agent 应先从 `failures` 选中 Attempt locator，再按证据位执行
 
 ```text
 读取 node_modules/niceeval/INDEX.md，再按索引读取与任务有关的文档。
-运行 npx niceeval exp local --output agent，并根据退出码和失败 locator 决定下一步。
-对每个失败的 Eval，从报告选择一个 Attempt locator；再运行 niceeval show @<id>
+运行 npx niceeval exp local --json，并根据退出码和 failure/error 事件里的 locator 决定下一步。
+对每个失败的 Eval，从事件里取一个 Attempt locator；再运行 niceeval show @<id>
 并按问题选择 --source、--execution、--timing 或 --diff；--timing 从 lifecycle 展开 setup/teardown
 hook、shell 命令、每轮 send 与可关联的 OTel model/tool，回答整个 Attempt 的时间花在哪里。
 写出失败原因的假设，并判断应该修改被测程序、
 Eval，还是实验环境。修改后用 --force 重跑对应 Eval，比较新的判定和证据。
 同一问题连续三轮没有新证据或改善时停止并汇报，不要为得到通过结果而放宽正确的断言。
-全部局部失败清零后，用 npx niceeval exp local --output agent --force 全量验证；退出码 0 才完成。
+全部局部失败清零后，用 npx niceeval exp local --json --force 全量验证；退出码 0 才完成。
 ```
 
 真实 Agent 的运行可能产生费用。实验阶段可以加 `--budget <美元>` 限制本轮累计成本；预算只能限制单次命令，不能替代上面的停止条件。

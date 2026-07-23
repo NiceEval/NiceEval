@@ -101,8 +101,8 @@ The table below is generated from the CLI's flag-parsing table; any flag outside
 | `--snapshot` | string | `view` command only: open only this one snapshot file (`snapshot.json`); the command fails if the file can't be read (scan mode just skips it). |
 | `--report` | string | `show` / `view` command only: replace the default report shared by both with the `defineReport(...)` a file default-exports. |
 | `--page` | string | `show` / `view` command only: pick the report's initial page; `show` renders that page and appends an index of the remaining pages, `view` uses it as the initial route. An unmatched page id exits as a usage error and lists the available page ids. |
-| `--dry` | boolean | Only print which evals × run configs would match, without actually running them (rendered as a preview in whichever `--output` profile is selected below). |
-| `--output` | string | Feedback profile: `auto` (default) picks one automatically from the environment; `human` / `agent` / `ci` force a specific one. It only changes terminal output — never selection, scheduling, verdicts, artifacts, or the exit code. `auto` resolves in order: stderr is a TTY → `human`; otherwise `CI` (or another common CI platform env var) is set → `ci`; otherwise → `agent`. |
+| `--dry` | boolean | Only print which evals × run configs would match, without actually running them (human text, or a single JSON plan document with `--json`). |
+| `--json` | boolean | `exp` command only: the machine face — a single ordered NDJSON event stream on stdout (one JSON object per line) for coding agents, CI annotation adapters, and scripts; `--dry --json` emits a single JSON plan document instead of a stream. Omit it for human text (TTY live panel / non-TTY append stream). |
 | `--force` | boolean | Ignore the previous run's results — do not skip (experiment, eval) pairs that already passed, forcing a full rerun. |
 | `--strict` | boolean | Recommended in CI: make soft-threshold (`soft`) failures also count toward the whole eval's verdict. |
 | `--early-exit` / `--no-early-exit` | boolean | Stop an eval's remaining attempts once one attempt passes. |
@@ -131,22 +131,22 @@ Run a named experiment, comparing agents, models, or flags in a matrix. Argument
 
 `show` and `view` are top-level commands — write them as `npx niceeval show` and `npx niceeval view`. If you mistype them as `npx niceeval exp show` / `exp view` and no experiment shares that name, the CLI adds a hint for the correct command after the "no such experiment" error; if the repository does have an experiment with that same name, it still runs as that valid id.
 
-## `--output`: human / agent / ci
+## Two output forms: human text and `--json`
 
-`--output` picks a terminal feedback model. It only changes what gets displayed — never selection, scheduling, verdicts, artifacts, or the exit code. The default, `auto`, picks one automatically from the environment. Each consumer has a recommended command:
+`exp` has exactly two output forms. They only change what gets displayed — never selection, scheduling, verdicts, artifacts, or the exit code:
 
 ```bash
-# A person at a TTY: a dynamic dashboard plus permanent failure/diagnostic lines
-npx niceeval exp compare --output human
+# No flag = human text: a dynamic dashboard on a TTY, auto-degrading to an append-only plain stream in pipes/CI logs
+npx niceeval exp compare
 
-# A coding agent / auto-fix loop: low-frequency checkpoints plus a bounded handoff block
-npx niceeval exp compare --output agent
+# --json = the machine face: a single ordered NDJSON event stream on stdout, shared by coding agents, CI adapters, and scripts
+npx niceeval exp compare --json
 
-# A CI job: a single ordered stdout event stream plus the exit code and JSON/JUnit
-npx niceeval exp compare --output ci --strict --json .niceeval/ci-summary.json --junit .niceeval/junit.xml
+# CI gate: exit code + JUnit; for a JSON summary, redirect `show --json` after the run
+npx niceeval exp compare --strict --junit .niceeval/junit.xml
 ```
 
-See [Runner · Reporter](/explanation/runner#reporter) for how the three profiles compare; for how a person reads the dashboard and the closing summary in the terminal, see [Common flags](#common-flags) above and the per-command examples on this page; see [Agent Feedback Loop](/tutorials/agent-feedback-loop) for the full agent loop (reading output, drilling into a locator, targeted reruns); see [CI Integration](/tutorials/ci-integration) for GitHub Actions setup, exit codes, and JSON/JUnit.
+See [Runner · Reporter](/explanation/runner#reporter) for how the two forms compare; see [Agent Feedback Loop](/tutorials/agent-feedback-loop) for the full agent loop (reading the event stream, drilling into a locator, targeted reruns); see [CI Integration](/tutorials/ci-integration) for GitHub Actions setup, exit codes, and JUnit.
 
 ## `view`
 
