@@ -2,7 +2,7 @@
 
 **来源:** OpenTelemetry 官方文档 / [semantic-conventions-genai 仓库](https://github.com/open-telemetry/semantic-conventions-genai)、各标准官方 spec(2026-07 抓取)。这是**调研记录**,和 [agent-eval 笔记](agent-eval.md)对照着读:同一个问题——"agent 干了什么,用什么 schema 记下来"——agent-eval 选择**自己定义一套闭集事件类型**,OTel GenAI 是**行业标准的另一套**。本篇记录 OTel GenAI 到底定义了什么、还有哪些标准在解决同一问题、以及这些对 niceeval 的 `StreamEvent` / trace 双轨设计意味着什么。
 
-niceeval 自己的选择已经定了(见 [Observability](../../../observability.md#otlp-traces--统一瀑布图)):**断言走自定义 `StreamEvent[]`,trace 归一到 OTel GenAI semconv,不发明私有 trace schema**。本篇是这个决定背后的对照材料。
+niceeval 自己的选择已经定了(见 [Observability](../../../observability.md#otlp-traces-统一瀑布图)):**断言走自定义 `StreamEvent[]`,trace 归一到 OTel GenAI semconv,不发明私有 trace schema**。本篇是这个决定背后的对照材料。
 
 ## 问题的两条路线
 
@@ -27,7 +27,7 @@ niceeval 自己的选择已经定了(见 [Observability](../../../observability.
 
 工具执行 span:`gen_ai.operation.name = "execute_tool"`,配 `gen_ai.tool.name`、`gen_ai.tool.call.id`、`gen_ai.tool.description`、`gen_ai.tool.type`。
 
-**agent spans**(比 niceeval [observability.md 的 kind 映射表](../../../observability.md#canonical-目标--opentelemetry-genai-语义约定不发明私有-schema)收录的更多,mapper 可按需扩展):
+**agent spans**(比 niceeval [observability.md 的 kind 映射表](../../../observability.md#canonical-目标-opentelemetry-genai-语义约定不发明私有-schema)收录的更多,mapper 可按需扩展):
 
 | `gen_ai.operation.name` | span 命名 | 含义 |
 |---|---|---|

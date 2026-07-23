@@ -15,7 +15,7 @@
 - 找所有 `*.eval.ts` 与 `*.eval.tsx`(两种扩展名同等对待,`.tsx` 供要在 eval 里写 JSX 的场景),`import` 后看默认导出 —— 单个 eval 用文件 id；数组按位置扇出并加零填充索引(`sql/0000`)；keyed record 按合法业务 key 扇出(`swelancer/15193`)并按 key 字典序稳定排列。没有另一种基于目录约定的隐式发现——沙箱型 eval 也必须有一个 eval 文件。
 - 按相对路径排序,保证 id 稳定、输出可比。
 - 应用过滤:`niceeval exp <组|配置>` 后的位置参数(id 前缀,如 `weather` 命中 `weather/*`)、`--tag`。
-- `niceeval exp` 时另从 `experiments/` 扫实验文件(默认导出 `defineExperiment` 的 `.ts`),据路径推导实验 id；目录路径只支持批量选择。实验的 `evals` 遍历发现结果并筛出要跑的 eval(见[矩阵展开](#矩阵展开与通过率))。
+- `niceeval exp` 时另从 `experiments/` 扫实验文件(默认导出 `defineExperiment` 的 `.ts`),据路径推导实验 id；目录路径只支持批量选择。实验的 `evals` 遍历发现结果并筛出要跑的 eval(见[矩阵展开](#派发顺序瓶颈优先追求最小总墙钟时间))。
 
 ## 调度:有界并发
 
@@ -129,12 +129,12 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 调用点从外到内:
 
 - **实验级** —— `ExperimentDef.setup` / `.teardown`:每实验整场至多一次、宿主机侧;`setup` 在本实验第一个要派发的 attempt 前跑,`teardown` 在全部 attempt 收尾后跑(中断、强清退出也跑,执行带 30s 清理上限);管每实验一份的共享服务(隧道、mock server),语义见 [Experiments · 实验级生命周期](feature/experiments/architecture.md#实验级生命周期setup-与-teardown)。
-- **沙箱级** —— 沙箱创建后、变更分类账锚点之前,运行器调用 `experiment.sandbox` 链上挂的环境钩子(`SandboxSpec.setup()` / `.teardown()`,见 [Sandbox · 沙箱生命周期钩子](feature/sandbox/library.md#沙箱生命周期钩子setup--teardown))。
+- **沙箱级** —— 沙箱创建后、变更分类账锚点之前,运行器调用 `experiment.sandbox` 链上挂的环境钩子(`SandboxSpec.setup()` / `.teardown()`,见 [Sandbox · 沙箱生命周期钩子](feature/sandbox/library.md#沙箱生命周期钩子setup-teardown))。
 - **eval 级 / agent 级** —— 沙箱固定段("发现 → 调度 → 沙箱起停 / 分类账锚点 / 折叠 agent diff → 评分 → 报告"这条主轴)之内,还分出这条 eval 的任务 Fixture(`EvalDef.setup` 或 `test(t)`)和 agent 自己的一次性预置([`SandboxAgent.setup`](feature/adapters/architecture/agent-contract.md#生命周期不变量))。
 
 跨实验共享、生命周期长于一次 run 的外部服务(共享 DB、公司内网服务本体)仍然用外部编排(`docker compose` / CI 脚本)起停、经 env 传入——这类资源跨进程共享,不属于任何一次 run 的生命周期。完整分工表见 [环境预置放哪](feature/sandbox/library.md#环境预置放哪)。
 
-**下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行钩子——这是从 agent-eval 的 `onRunComplete` 收敛过来的(见 [Experiments 砍字段](feature/experiments/architecture.md#从-agent-eval-砍掉了什么以及为什么));NiceEval 自己的对应回调名是 `onInvocationComplete`。
+**下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行钩子——这是从 agent-eval 的 `onRunComplete` 收敛过来的(见 [Experiments 砍字段](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么));NiceEval 自己的对应回调名是 `onInvocationComplete`。
 
 ## Reporter 与运行器事件
 

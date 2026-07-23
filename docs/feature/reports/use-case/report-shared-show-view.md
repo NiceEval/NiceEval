@@ -6,7 +6,7 @@
 
 ## 全流程
 
-1. 写报告文件,默认导出恒为 `defineReport` 产物:树形态展开为单张 scope-input page,配置对象形态声明外壳与多张 page(写法见 [Library](../library.md#交给-show--view-渲染))。
+1. 写报告文件,默认导出恒为 `defineReport` 产物:树形态展开为单张 scope-input page,配置对象形态声明外壳与多张 page(写法见 [Library](../library.md#交给-show-view-渲染))。
 2. 浏览器面:
 
    ```bash

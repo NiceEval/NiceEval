@@ -1,6 +1,6 @@
 # Origin 应用接入手册
 
-`examples/zh/origin/` 下五个独立应用,按应用逐个说明怎么把它们接进 niceeval,产出按分档铺在 `examples/zh/tier1|tier2|tier3/<name>/`(分层索引见 [examples/zh · 接入分层](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3))。本文记录接入配方和各应用的陷阱,再接一个类似的应用时可以照抄;权威来源永远是各 tier 目录的源码和各自的 README,本文只是导读。
+`examples/zh/origin/` 下五个独立应用,按应用逐个说明怎么把它们接进 niceeval,产出按分档铺在 `examples/zh/tier1|tier2|tier3/<name>/`(分层索引见 [examples/zh · 接入分层](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3))。本文记录接入配方和各应用的陷阱,再接一个类似的应用时可以照抄;权威来源永远是各 tier 目录的源码和各自的 README,本文只是导读。
 
 先记住三条铁律:
 
@@ -12,7 +12,7 @@
 
 接入分三档(定义见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
 
-三档各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin--tier1--tier2--tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
+三档各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 
 ## 统一的接入配方
 
@@ -89,7 +89,7 @@ adapter 要这样做:
 
 ### OTel:只画瀑布图,和事件映射完全无关(这一节的产物在 tier2)
 
-不管应用有没有 OTel 输出,事件映射(上面几节讲的)都一样要做——**OTel 只喂 `niceeval view` 的调用瀑布图,不产出任何事件,也不影响任何断言**,详见 [Observability · OTLP traces](observability.md#otlp-traces--统一瀑布图)。
+不管应用有没有 OTel 输出,事件映射(上面几节讲的)都一样要做——**OTel 只喂 `niceeval view` 的调用瀑布图,不产出任何事件,也不影响任何断言**,详见 [Observability · OTLP traces](observability.md#otlp-traces-统一瀑布图)。
 
 五个应用里,ai-sdk-v7、codex-sdk、langgraph 发 OTel span,claude-sdk、pi-sdk 不发(claude-sdk 的 CLI 遥测只有 metrics+logs,niceeval 只消费 trace spans;pi-agent-core 没有官方 OTel 集成)。这层接线是 Tier 2 的 delta,落在 `examples/zh/tier2/<name>/`(tier1 不配 telemetry、没有瀑布图);有 span 的应用接法都一样:
 

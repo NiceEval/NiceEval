@@ -106,7 +106,7 @@ niceeval view --report reports/site.tsx               # 配置对象形态：品
 niceeval view --report reports/site.tsx --page exam   # 指定初始页
 ```
 
-报告文件同时可被 `niceeval show --report` 使用。官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；view 注入静态详情链接与 dialog 路由，show 注入带完整 `--report` 上下文的 locator 命令。写法见 [Library](library.md#交给-show--view-渲染)。
+报告文件同时可被 `niceeval show --report` 使用。官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；view 注入静态详情链接与 dialog 路由，show 注入带完整 `--report` 上下文的 locator 命令。写法见 [Library](library.md#交给-show-view-渲染)。
 
 `--report` 文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 scope-input page；[配置对象形态](library/shell.md)声明外壳与 pages。view 只把 `navigation !== false` 的 pages 列进导航；scope-input page 读取 Scope，attempt-input page 按 locator 读取 `AttemptEvidence`。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
 

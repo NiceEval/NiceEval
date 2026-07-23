@@ -36,7 +36,7 @@
 
 「清空 repo」不引入任何新机制,直接复用分类账已经在 workdir 上维护的 git:上一题跑完、diff 折叠完之后,把工作树 `git reset --hard` 回温基线那笔 commit,再 `git clean` 掉未跟踪文件(Fixture、agent 新建的文件、构建产物),workdir 就回到「刚装完、还没碰任何题目」的状态。下一题在这张干净的工作树上重放自己的 Fixture、重取归因窗口。
 
-不发明第二套 checkpoint / 快照机制是刻意的:分类账已经是「便携、增量、带内容、能支撑逐窗口归因的 git 引擎」(见架构文里选 git 的理由),温基线只是它上面多钉一个可 reset 回去的 commit。运行时 [`createCheckpoint` / `restoreCheckpoint`](library/prebuilt-environments.md#运行时-checkpointcreatecheckpoint--restorecheckpoint) 解决的是「跨沙箱搬文件系统片段」,与「同一沙箱内回退工作树」是两件事,本文不碰它。
+不发明第二套 checkpoint / 快照机制是刻意的:分类账已经是「便携、增量、带内容、能支撑逐窗口归因的 git 引擎」(见架构文里选 git 的理由),温基线只是它上面多钉一个可 reset 回去的 commit。运行时 [`createCheckpoint` / `restoreCheckpoint`](library/prebuilt-environments.md#运行时-checkpointcreatecheckpoint-restorecheckpoint) 解决的是「跨沙箱搬文件系统片段」,与「同一沙箱内回退工作树」是两件事,本文不碰它。
 
 ### 串行是本质,不是附带限制
 

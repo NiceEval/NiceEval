@@ -65,5 +65,5 @@
 
 - [otel-instrumentation.md](otel-instrumentation.md) —— 应用侧现成 OTel 埋点里有什么数据(mixin 可行性的证据)。
 - [otel-genai.md](otel-genai.md) —— 记录 agent 行为的 schema 标准对照(OTel GenAI / OpenInference / AG-UI …)。
-- [Observability · OTLP traces](../../../observability.md#otlp-traces--统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。
+- [Observability · OTLP traces](../../../observability.md#otlp-traces-统一瀑布图) —— OTel 在当前设计里的实际角色(只画瀑布图,不产出事件)。
 - [标准事件模型](../architecture/events.md) —— 这些原语要映射到的目标形状。

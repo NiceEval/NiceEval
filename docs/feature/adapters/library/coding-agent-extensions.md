@@ -78,7 +78,7 @@ const agent = codexAgent({
 });
 ```
 
-`postSetup` 复用沙箱钩子的类型与窄上下文（`SandboxHook` / `SandboxHookContext`，见 [Sandbox · 沙箱生命周期钩子](../../sandbox/library.md#沙箱生命周期钩子setup--teardown)）：拿到 sandbox 句柄和 `experimentId`/`signal`/`progress`/`diagnostic`，不借用完整 `AgentContext`。多个钩子按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发（四层统一的成对语义见 [Runner · 环境预置](../../../runner.md#环境预置不进运行器但按顺序调它)）。钩子抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
+`postSetup` 复用沙箱钩子的类型与窄上下文（`SandboxHook` / `SandboxHookContext`，见 [Sandbox · 沙箱生命周期钩子](../../sandbox/library.md#沙箱生命周期钩子setup-teardown)）：拿到 sandbox 句柄和 `experimentId`/`signal`/`progress`/`diagnostic`，不借用完整 `AgentContext`。多个钩子按数组顺序执行；成对的 `preTeardown` 数组承载收尾：按逆序、先于 agent teardown 执行（LIFO 镜像——`postSetup` 跑在 agent 安装之后，`preTeardown` 就跑在 agent 收尾之前），当且仅当 `postSetup` 的时点走到过才触发（四层统一的成对语义见 [Runner · 环境预置](../../../runner.md#环境预置不进运行器但按顺序调它)）。钩子抛错按基础设施错误计（attempt errored），不是 agent 解题失败。
 
 钩子往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
 

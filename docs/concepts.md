@@ -65,9 +65,9 @@
 | 首过即停 | EarlyExit | 取通过率时先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit` |
 | 指纹 | Fingerprint | `(eval 代码 + 配置)` 的哈希,用于缓存去重:未变且已通过的默认跳过 |
 | Transcript | Transcript | agent 一次运行的逐事件原始记录(各 agent 自己的 JSONL),归一化后供消费 |
-| 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / `context.injected` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript--标准事件流) |
+| 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / `context.injected` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript-标准事件流) |
 | o11y 摘要 | o11y summary | 从标准事件流可重算的行为计数(工具调用、文件、shell、思考块等),注入沙箱供行为断言;token / 成本 / 耗时权威在 `result.json` |
-| trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨;在 `ExecutionTree` 里是事件骨架之上的可选 enrichment,详见 [Observability](observability.md#otlp-traces--统一瀑布图) |
+| trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨;在 `ExecutionTree` 里是事件骨架之上的可选 enrichment,详见 [Observability](observability.md#otlp-traces-统一瀑布图) |
 | 执行树 | ExecutionTree | 标准事件流骨架(message / thinking / `skill.loaded` / `action.called`+`action.result` 按 call ID 合并 / `subagent.called`+`completed` / `input.requested` / `context.injected` / compaction / error)与可关联的 OTel span 合成的统一执行记录;span 只按明确 correlation ID 或 GenAI 语义属性关联到节点,关联不上就保留成单独标注的 telemetry-only 节点,不按名字/文本猜;没有 OTel 时骨架的节点、顺序、内容不变,只是时间显示不可用 |
 | 用量 | Usage | 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写) |
 | 成本 | Cost | 用量经价格表换算的估算金额(`estimatedCostUSD`);`--budget <usd>` 给整个 run 设上限 |
@@ -190,7 +190,7 @@
 
 **Usage** / **用量** —— 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写)。随结果带回:remote agent 由 `send` 返回,沙箱型由 transcript 解析器从 agent 的 JSONL 抠出累加。可经 `t.usage` 读、`t.maxTokens()` 断言。
 
-**Cost** / **成本** —— 用量经配置的价格表(模型 → 每百万 token 单价)换算的估算金额(`estimatedCostUSD`)。让跨 agent 对比从 pass-rate 升级为**质量 × 成本**。`--budget <usd>` 给每个选中 Experiment 的 budget 域各设一份上限,不是 Invocation 总闸。详见 [Observability](observability.md#用量与成本token--计费)。
+**Cost** / **成本** —— 用量经配置的价格表(模型 → 每百万 token 单价)换算的估算金额(`estimatedCostUSD`)。让跨 agent 对比从 pass-rate 升级为**质量 × 成本**。`--budget <usd>` 给每个选中 Experiment 的 budget 域各设一份上限,不是 Invocation 总闸。详见 [Observability](observability.md#用量与成本token-计费)。
 
 **Reporter** / **报告器** —— 消费 Invocation 中结果的插件,可实现分阶段 `onEvent`(`invocation:start` / `eval:start` / `eval:complete` / `invocation:summary` 等),也可实现 `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`。内置控制台、JUnit、JSON;可接第三方实验跟踪平台。报告器在独立的串行队列上回调,不阻塞执行池。详见 [Reporters](observability.md#reporters)。
 

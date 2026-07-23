@@ -279,7 +279,7 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
 
 一次 `t.send()` 产生一个 Turn，它自己有五样要展示的东西：**身份**（轮标签，见下）、**status**（completed / failed / waiting）、**事件流**（这一轮的对话与工具卡片）、**usage**（这一轮的 token / 成本）、**`turn.data`**（结构化输出，如果 Adapter 给了）。语法契约在 [Show](../../reports/show.md) 与 [View](../../reports/view.md)，这里给对照示例。
 
-**轮标签**是本节的单点定义，别处只引用：主会话（`t.send`）的第 N 轮是 `turn<N>`（`turn1`、`turn2`……）；`t.newSession()` 开的会话按创建序编号——主会话是会话 1，新会话从 2 起——其轮是 `session<K>/turn<N>`（如 `session2/turn1`），轮次在各自会话内计数。标签用完整单词，第一次读输出的人不需要图例就能读懂；主会话不带前缀，与「`t.send()` 是主线、`t.newSession()` 是额外会话」的 API 形态一一对应。同一枚 token 原样出现在 `--execution` 的轮头行、`--timing` 的 turn 节点、`--source` 的 send 标注、`--diff` / `diff.json` 的 `windows` 与 [`sandbox history` / `diff`](../../sandbox/cli.md#回放留存现场的变更历史sandbox-history--diff)，复制进 `--window` 也是它。标签是不透明字符串：跨面对照按字符串等值，消费方不解析它的内部结构。
+**轮标签**是本节的单点定义，别处只引用：主会话（`t.send`）的第 N 轮是 `turn<N>`（`turn1`、`turn2`……）；`t.newSession()` 开的会话按创建序编号——主会话是会话 1，新会话从 2 起——其轮是 `session<K>/turn<N>`（如 `session2/turn1`），轮次在各自会话内计数。标签用完整单词，第一次读输出的人不需要图例就能读懂；主会话不带前缀，与「`t.send()` 是主线、`t.newSession()` 是额外会话」的 API 形态一一对应。同一枚 token 原样出现在 `--execution` 的轮头行、`--timing` 的 turn 节点、`--source` 的 send 标注、`--diff` / `diff.json` 的 `windows` 与 [`sandbox history` / `diff`](../../sandbox/cli.md#回放留存现场的变更历史sandbox-history-diff)，复制进 `--window` 也是它。标签是不透明字符串：跨面对照按字符串等值，消费方不解析它的内部结构。
 
 **show 首页 `execution:` 行**——整个 attempt 的事件计数，一行看规模：
 

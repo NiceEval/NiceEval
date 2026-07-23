@@ -55,7 +55,7 @@ export default defineEval({
 - 目录只形成 id 前缀：`evals/billing/refund.eval.ts` → `billing/refund`；运行选择仍由 experiment 的 `evals` 决定。
 - 数据集放 `evals/data/`；沙箱型 eval 的起始文件素材可以放 `evals/fixtures/`（纯目录命名约定，运行器不扫描不自动加载，仍要在 `test()` 里显式写入沙箱）。
 - `description` 写给人看，id 给机器引用。**禁止**手写 `id` / `name`——从文件路径推导，改名即改 id，不会腐烂。
-- `t.group` 的组名是跨 eval 的对比维度，按字面对齐：同类检查抽成共享函数（如 `evals/*/share/`），组名在函数里写一次，跨 eval 天然一致（[计分粒度 · 组名对齐](../experiments/score-points.md#跨-eval-的组名对齐)）。
+- `t.group` 的组名是跨 eval 的对比维度，按字面对齐：同类检查抽成共享函数（如 `evals/*/share/`），组名在函数里写一次，跨 eval 天然一致（[计分粒度 · 组名对齐](../experiments/score-points.md#得分点-组对比读取的下钻粒度)）。
 
 ## 相关阅读
 

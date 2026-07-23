@@ -50,7 +50,7 @@ export default defineExperiment({
 
 **你会看到**:attempt 严格一个接一个跑(按 eval 顺序)。上一个 attempt 的回存钩子没跑完、沙箱没销毁,下一个 attempt 的沙箱不会创建——即使上一个 attempt 撞了限流、正在退避睡眠,下一个也不会趁机进场。所以钩子里**不需要自己加锁**,`maxConcurrency: 1` 这一行就是全部的正确性声明。
 
-钩子的完整写法(状态文件路径、tmp+rename 原子回存)见 [Sandbox · 沙箱生命周期钩子](../../sandbox/library.md#沙箱生命周期钩子setup--teardown)。
+钩子的完整写法(状态文件路径、tmp+rename 原子回存)见 [Sandbox · 沙箱生命周期钩子](../../sandbox/library.md#沙箱生命周期钩子setup-teardown)。
 
 ## 3. 跨 eval 累积记忆:状态在中心服务里
 

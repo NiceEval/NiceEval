@@ -66,7 +66,7 @@ Attempt 首页在错误摘要后明确提示
 
 ## 范围化：跨 attempt 扫描与 `--grep`
 
-`--execution` 接受任意[范围](../show.md#一次调用--范围--切片--形态)：范围含多个 attempt 时，宿主机器按 experimentId、evalId、attempt 序把这个区块逐 attempt 映射并分节，节头一行 `@<locator> · <evalId> · <experimentId> · <verdict>` 是宿主机器写的定位行，节内内容仍由组件的 text 面产出，格式与单 attempt 相同。全量输出很长是允许的（与 `--timing=full` 同一态度）；跨 attempt 的常规问法用 `--grep` 收窄这个 text 渲染面的注意力范围。
+`--execution` 接受任意[范围](../show.md#一次调用-范围-切片-形态)：范围含多个 attempt 时，宿主机器按 experimentId、evalId、attempt 序把这个区块逐 attempt 映射并分节，节头一行 `@<locator> · <evalId> · <experimentId> · <verdict>` 是宿主机器写的定位行，节内内容仍由组件的 text 面产出，格式与单 attempt 相同。全量输出很长是允许的（与 `--timing=full` 同一态度）；跨 attempt 的常规问法用 `--grep` 收窄这个 text 渲染面的注意力范围。
 
 `--grep <pattern>` 是这个区块 text 渲染面的选项，不是事实过滤器：它只输出命中的卡片，不改变哪些证据存在。pattern 是 JS 正则，匹配面是卡片的全部文本字段——角色文本、工具名、input、result，以及失败 Sandbox 命令的 display / stdout / stderr；每张命中卡片自带定位行，末尾汇总命中数：
 
