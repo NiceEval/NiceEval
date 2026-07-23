@@ -186,7 +186,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
   "verdict": "passed",
   "attempt": 1,
   "durationMs": 2184,
-  "hasCommands": false, "hasEvents": true, "hasTrace": false, "hasSources": true,
+  "artifacts": ["events", "sources"],
   "assertions": [
     { "name": "succeeded", "severity": "gate", "score": 1, "passed": true },
     { "name": "calledTool(get_weather)", "severity": "gate", "score": 1, "passed": true }

@@ -194,7 +194,7 @@
 
 **Reporter** / **报告器** —— 消费 Invocation 中结果的插件,可实现分阶段 `onEvent`(`invocation:start` / `eval:start` / `eval:complete` / `invocation:summary` 等),也可实现 `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`。内置控制台、JUnit、JSON;可接第三方实验跟踪平台。报告器在独立的串行队列上回调,不阻塞执行池。详见 [Reporters](observability.md#reporters)。
 
-**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果快照**(一个 experiment 的一次运行):快照目录 `.niceeval/<experiment>/<snapshot>/` 下放快照级 `snapshot.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判决、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的 `commands.json`、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见「结果数据与报告」词表),不直接引用路径或数组下标。详见 [Results Format](feature/results/architecture.md)。
+**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果快照**(一个 experiment 的一次运行):快照目录 `.niceeval/<experiment>/<snapshot>/` 下放快照级 `snapshot.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判决、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的证据文件——完整词干、存储形态与内容职责单源在[证据 registry](feature/results/architecture.md#证据-registry)。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见「结果数据与报告」词表),不直接引用路径或数组下标。详见 [Results Format](feature/results/architecture.md)。
 
 ## 配置词汇
 
