@@ -89,6 +89,27 @@ describe("renderPanel — 宽度上限与截断优先级", () => {
     expect(stringWidth(lines[0]!)).toBe(100);
   });
 
+  it("调用方声明 capWidth: false 时框宽豁免 100 上限、跟随传入宽度(动态面板形态)", () => {
+    const lines = renderPanel({
+      title: "niceeval exp compare",
+      rows: [{ kind: "line", text: "x" }],
+      width: 200,
+      mode: "boxed",
+      capWidth: false,
+    });
+    for (const line of lines) expect(stringWidth(line)).toBe(200);
+  });
+
+  it("省略 capWidth 时默认行为不变,仍然封顶 100(豁免是显式 opt-in,不是新默认值)", () => {
+    const lines = renderPanel({
+      title: "PLAN",
+      rows: [{ kind: "line", text: "x" }],
+      width: 200,
+      mode: "boxed",
+    });
+    expect(stringWidth(lines[0]!)).toBe(100);
+  });
+
   it("先缩横线到最短一段,标题/meta 仍完整时不截断内容", () => {
     const lines = renderPanel({
       title: "PLAN",
@@ -209,5 +230,11 @@ describe("renderPanel — CJK / ambiguous 宽度量测", () => {
     expect(panelContentWidth(82, "plain")).toBe(80);
     // 宽度低于 60 时 boxed 请求同样按 plain 的算法折算(与 renderPanel 的降级判断一致)
     expect(panelContentWidth(50, "boxed")).toBe(48);
+  });
+
+  it("panelContentWidth 的 capWidth: false 豁免同一个 100 上限,内容宽仍是 width - 4", () => {
+    expect(panelContentWidth(200, "boxed", false)).toBe(196);
+    // 省略第三个参数时默认仍封顶 100,内容宽固定 96,不随 width 继续增长
+    expect(panelContentWidth(200, "boxed")).toBe(96);
   });
 });

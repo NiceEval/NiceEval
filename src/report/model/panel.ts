@@ -43,22 +43,29 @@ export interface PanelInput {
   readonly footerCommand?: string;
   /** 已经组好的逻辑行,声明顺序即渲染顺序。 */
   readonly rows: readonly PanelRow[];
-  /** 调用方报告的可用显示列数(终端宽度或已定宽的渲染上下文);上限 100 在这里统一夹紧。 */
+  /** 调用方报告的可用显示列数(终端宽度或已定宽的渲染上下文);默认在这里统一夹紧到 100,
+   *  `capWidth: false` 声明豁免时框宽原样跟随这个值。 */
   readonly width: number;
   /** 传输能力;是否真的画框由这里叠加宽度下限后决定,调用方不重复这份判断。 */
   readonly mode: PanelMode;
+  /** 声明豁免 100 列上限:`false` 时框宽跟随 `width` 全宽,不夹紧;省略或 `true` 时沿用上限
+   *  (默认行为不变)。只有原地重绘、从不进入 scrollback 的动态面板可以声明豁免——豁免声明见
+   *  docs/feature/reports/library/layout.md「区域框:text 面的框线体裁」几何段。 */
+  readonly capWidth?: boolean;
 }
 
-/** 区域框契约的宽度上限:框宽跟随终端但不超过这个显示列数。 */
+/** 区域框契约的宽度上限:框宽跟随终端但不超过这个显示列数,除非调用方经
+ *  `PanelInput.capWidth: false` 声明豁免。 */
 const MAX_BOX_WIDTH = 100;
 /** 终端窄于这个显示列数时,不论 `mode` 如何都整体降级为无框文本。 */
 const MIN_BOXED_WIDTH = 60;
 /** 标题/meta 截断时补的省略号;East-Asian-Ambiguous,按 `charDisplayWidth` 恒记 1 列。 */
 const ELLIPSIS = "…";
 
-/** 框宽 = min(终端可用宽度, 100),两侧留出边框列。 */
-function boxWidthOf(width: number): number {
-  return Math.max(1, Math.min(MAX_BOX_WIDTH, Math.floor(width)));
+/** 框宽 = capWidth 时 min(终端可用宽度, 100),豁免时原样等于终端可用宽度;两侧留出边框列。 */
+function boxWidthOf(width: number, capWidth: boolean): number {
+  const floored = Math.max(1, Math.floor(width));
+  return capWidth ? Math.min(MAX_BOX_WIDTH, floored) : floored;
 }
 
 /** 宽度下限与 `mode` 叠加后的真实体裁:调用方只报能力,「窄于 60 列怎么办」只在这里判一次。 */
@@ -71,9 +78,9 @@ function effectiveMode(mode: PanelMode, width: number): PanelMode {
  * 1 列 + 1 格 padding);`plain` 模式下只减 2(两列缩进)。嵌套 Section 复用同一个函数、
  * 同一个 `width` 参数——嵌套不吞可用宽度。
  */
-export function panelContentWidth(width: number, mode: PanelMode): number {
+export function panelContentWidth(width: number, mode: PanelMode, capWidth = true): number {
   const eff = effectiveMode(mode, width);
-  if (eff === "boxed") return Math.max(1, boxWidthOf(width) - 4);
+  if (eff === "boxed") return Math.max(1, boxWidthOf(width, capWidth) - 4);
   return Math.max(1, Math.floor(width) - 2);
 }
 
@@ -182,7 +189,7 @@ function buildContentLine(text: string, contentWidth: number): string {
 
 /** boxed 体裁:顶层完整四边框,`rows` 里的 `divider` 降为横隔,不再嵌套画框。 */
 function renderBoxed(input: PanelInput): string[] {
-  const boxWidth = boxWidthOf(input.width);
+  const boxWidth = boxWidthOf(input.width, input.capWidth ?? true);
   const contentWidth = boxWidth - 4;
   const lines: string[] = [buildBorderLine(["╭", "╮"], input.title, input.meta, boxWidth)];
   for (const row of input.rows) {
@@ -224,9 +231,10 @@ function renderPlain(input: PanelInput): string[] {
  * 面板渲染件的唯一入口:同步纯函数,收 `PanelInput`,返回物理行数组——调用方直接
  * `join("\n")` 写出,或逐行喂给 live 面板的覆盖重画。
  *
- * 实现区域框契约的全部几何规则:宽度上限 100 显示列、边框嵌字与「先保标题后保 meta」的
- * 截断次序、嵌套 Section 降横隔、终端窄于 60 列时整体降级为无框文本。不做 IO、不管重画——
- * 传输能力（TTY / NO_COLOR / 宽度）由调用方探测后经 `mode` / `width` 注入。
+ * 实现区域框契约的全部几何规则:宽度上限 100 显示列(调用方经 `capWidth: false` 声明豁免)、
+ * 边框嵌字与「先保标题后保 meta」的截断次序、嵌套 Section 降横隔、终端窄于 60 列时整体降级
+ * 为无框文本。不做 IO、不管重画——传输能力(TTY / NO_COLOR / 宽度)由调用方探测后经
+ * `mode` / `width` 注入。
  *
  * @param input 面板内容与传输能力,见 {@link PanelInput}。
  * @returns 物理行数组,已经按显示宽度对齐/截断,不含结尾换行。
