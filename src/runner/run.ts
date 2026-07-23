@@ -116,7 +116,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
   // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
   const { plannedFingerprints, carriedAttemptsByKey, carriedResults } =
-    opts.carryPlan ?? (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox));
+    opts.carryPlan ??
+    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox, opts.config.timeoutMs));
 
   // 展开 attempts
   // 外层按「round」(run index)迭代,内层按 eval 迭代:同一 key 的第 i+1 次 attempt 排在

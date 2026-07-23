@@ -22,7 +22,7 @@ function makeEval(id: string): DiscoveredEval {
   return { id, baseDir: "/project", sourcePath, source, test: () => {} };
 }
 
-function makeRun(experimentId: string, selectedEvalIds: string[], runs: number): AgentRun {
+function makeRun(experimentId: string, selectedEvalIds: string[], runs: number, timeoutMs?: number): AgentRun {
   return {
     agent: defineAgent({ name: `agent-${experimentId}`, send: async () => ({ events: [], status: "completed" }) }),
     flags: {},
@@ -30,6 +30,7 @@ function makeRun(experimentId: string, selectedEvalIds: string[], runs: number):
     earlyExit: false,
     selectedEvalIds,
     experimentId,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   };
 }
 
@@ -123,5 +124,117 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
     expect(plan.carriedResults).toHaveLength(1);
+  });
+});
+
+describe("planCarry · timeoutMs 是携带资格判据,不进指纹哈希", () => {
+  it("指纹不受 timeoutMs 影响:同一个 eval 在不同 timeoutMs 的 run 下算出相同指纹", async () => {
+    const evals = [makeEval("e")];
+    const shortRun = makeRun("exp", ["e"], 1, 1_200_000); // 20m
+    const longRun = makeRun("exp", ["e"], 1, 2_400_000); // 40m
+
+    const fpShort = await computeFingerprint(evals[0]!, shortRun);
+    const fpLong = await computeFingerprint(evals[0]!, longRun);
+
+    expect(fpShort).toBe(fpLong);
+  });
+
+  it("调高 timeoutMs 上限:旧终态 attempt(含贴着旧线的耗时)全部照常携带,不重跑", async () => {
+    const evals = [makeEval("e")];
+    // 旧一轮在 20m 上限下跑完;新一轮把上限提到 40m。
+    const oldRun = makeRun("exp", ["e"], 1, 1_200_000);
+    const newRun = makeRun("exp", ["e"], 1, 2_400_000);
+    const fingerprint = await computeFingerprint(evals[0]!, oldRun);
+
+    const priorResults: EvalResult[] = [
+      // 19m,贴着旧线但仍是终态(没撞线),新线(40m)下应恒可携带。
+      result({ id: "e", attempt: 0, verdict: "passed", fingerprint, durationMs: 19 * 60_000 }),
+    ];
+
+    const plan = await planCarry(evals, [newRun], priorResults);
+
+    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect(plan.carriedResults).toHaveLength(1);
+  });
+
+  it("调低 timeoutMs 上限:耗时超过新线的旧终态不可携带,必须重新调度", async () => {
+    const evals = [makeEval("e")];
+    const oldRun = makeRun("exp", ["e"], 1, 2_400_000); // 40m
+    const newRun = makeRun("exp", ["e"], 1, 600_000); // 10m
+    const fingerprint = await computeFingerprint(evals[0]!, oldRun);
+
+    const priorResults: EvalResult[] = [
+      // 19m 在旧的 40m 线下是正常终态,在新的 10m 线下超线,不可在新配置下复现。
+      result({ id: "e", attempt: 0, verdict: "passed", fingerprint, durationMs: 19 * 60_000 }),
+    ];
+
+    const plan = await planCarry(evals, [newRun], priorResults);
+
+    expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
+    expect(plan.carriedResults).toEqual([]);
+  });
+
+  it("调低 timeoutMs 上限但旧耗时仍在新线以内:照常携带", async () => {
+    const evals = [makeEval("e")];
+    const oldRun = makeRun("exp", ["e"], 1, 2_400_000); // 40m
+    const newRun = makeRun("exp", ["e"], 1, 600_000); // 10m
+    const fingerprint = await computeFingerprint(evals[0]!, oldRun);
+
+    const priorResults: EvalResult[] = [
+      // 5m,新线(10m)以内,即使上限被调低也不受影响。
+      result({ id: "e", attempt: 0, verdict: "passed", fingerprint, durationMs: 5 * 60_000 }),
+    ];
+
+    const plan = await planCarry(evals, [newRun], priorResults);
+
+    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect(plan.carriedResults).toHaveLength(1);
+  });
+
+  it("run/evalDef/config 三层都未设 timeoutMs:视为无穷,不论 durationMs 多大都恒可携带", async () => {
+    const evals = [makeEval("e")];
+    const run = makeRun("exp", ["e"], 1); // 无 timeoutMs
+    const fingerprint = await computeFingerprint(evals[0]!, run);
+
+    const priorResults: EvalResult[] = [
+      result({ id: "e", attempt: 0, verdict: "passed", fingerprint, durationMs: 10 * 60 * 60_000 }), // 10 小时
+    ];
+
+    const plan = await planCarry(evals, [run], priorResults);
+
+    expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+  });
+
+  it("项目级 Config.timeoutMs 兜底生效:run/evalDef 都未设时按 configTimeoutMs 判定", async () => {
+    const evals = [makeEval("e")];
+    const run = makeRun("exp", ["e"], 1); // run.timeoutMs 未设
+    const fingerprint = await computeFingerprint(evals[0]!, run);
+
+    const priorResults: EvalResult[] = [
+      result({ id: "e", attempt: 0, verdict: "passed", fingerprint, durationMs: 19 * 60_000 }), // 19m
+    ];
+
+    // configTimeoutMs = 10m,低于 19m 的旧耗时:即使 run/evalDef 都没显式设置,project 级兜底也要拦下。
+    const planLow = await planCarry(evals, [run], priorResults, undefined, 600_000);
+    expect(planLow.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
+
+    // configTimeoutMs = 40m,高于 19m:照常携带。
+    const planHigh = await planCarry(evals, [run], priorResults, undefined, 2_400_000);
+    expect(planHigh.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+  });
+
+  it("旧记录 durationMs 缺失(磁盘数据损坏)时保守判不可携带,不当作 0 处理", async () => {
+    const evals = [makeEval("e")];
+    const run = makeRun("exp", ["e"], 1, 1_200_000);
+    const fingerprint = await computeFingerprint(evals[0]!, run);
+
+    const priorResults: EvalResult[] = [
+      { ...result({ id: "e", attempt: 0, verdict: "passed", fingerprint }), durationMs: undefined as unknown as number },
+    ];
+
+    const plan = await planCarry(evals, [run], priorResults);
+
+    expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
+    expect(plan.carriedResults).toEqual([]);
   });
 });
