@@ -4,8 +4,8 @@
 // 装载 → resolve → validate → render 管线。「builtin」不是装载逻辑里的类别,
 // 只是宿主默认拿哪个值的事实;用户报告经 defineReport({ extends: standard, … }) 整站复用。
 //
-// 四页:report(Hero + 警告 + 批量修复 prompt + 实验对比)、attempts(带过滤的 attempt
-// 全列表)、traces(执行瀑布)三页进导航;第四张 standardAttemptPage 以 locator 为输入、
+// 四页:report(Hero + 警告 + 批量修复 prompt + 实验对比 + 分组下钻矩阵)、attempts(带过滤的
+// attempt 全列表)、traces(执行瀑布)三页进导航;第四张 standardAttemptPage 以 locator 为输入、
 // 不进导航,locator 深链打开它,content 就是公开的 AttemptDetail 组合组件。裸宿主导航上能
 // 看到的一切内容都在这份定义里;宿主保留的只有机器(docs/feature/reports/architecture.md
 // 「宿主保留的只有机器」)。
@@ -16,6 +16,7 @@ import {
   Col,
   CopyFixPrompt,
   ExperimentComparison,
+  GroupMatrix,
   Hero,
   ScopeWarnings,
   SnapshotDiagnostics,
@@ -43,6 +44,7 @@ export const standard = defineReport({
           <SnapshotDiagnostics />
           <CopyFixPrompt />
           <ExperimentComparison />
+          <GroupMatrix />
         </Col>
       ),
     },

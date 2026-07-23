@@ -80,12 +80,12 @@
   - [x] D.3 补 runner feedback 单测：纯跑满、首过即停、并发时已有在飞 attempt、fail-fast 与 budget 未派发不得误标 early_exit
   - [x] D.4 `pnpm e2e --repo cli` 验收 agent 与 ci 两种 profile 的真实 stdout 单一事件流
 
-- [ ] **E. 组深度读取面重新设计并实现**（设计部分无依赖，可与 A–D/F/G 并行；实现依赖 E.1 裁决）
-  - [ ] E.1 在 `docs/roadmap/report-chart-composition/` 或独立 ADR 比较两种形状：扩展通用 Matrix 为“一 attempt 多成员 + cell context”，或新增专用组深度组件；**推荐专用组件**，因为组是 assertion/score-entry 子实体，不是 Attempt 身份维度
-  - [ ] E.2 用穷尽类型定稿：输入、行键（eval + `groupPath` 的无损结构）、计分制组内挣分、通过制组质量分、失败/中止定位、稀疏/null、refs 与 text/web 呈现；不要只写一句“MetricMatrix 支持 group”
-  - [ ] E.3 裁决后重写 `docs/feature/experiments/score-points.md` 与 Reports 组件目录；若采用专用组件，撤掉把该行为强塞给 `MetricMatrix` 的字面契约并更新 source-map
-  - [ ] E.4 先在 `docs/engineering/testing/unit/reports.md` 登记覆盖类别，再实现 data、validate、两面组件、公开导出和内建/配方接线
-  - [ ] E.5 fixture 至少含嵌套 groupPath、同一 attempt 多组、跨 eval 同名字面组、缺组、计分制中止与通过制 gate；精确断言组内数值和 refs，渲染归 E2E
+- [x] **E. 组深度读取面重新设计并实现**（设计部分无依赖，可与 A–D/F/G 并行；实现依赖 E.1 裁决）
+  - [x] E.1 在 `docs/roadmap/report-chart-composition/` 或独立 ADR 比较两种形状：扩展通用 Matrix 为“一 attempt 多成员 + cell context”，或新增专用组深度组件；**推荐专用组件**，因为组是 assertion/score-entry 子实体，不是 Attempt 身份维度
+  - [x] E.2 用穷尽类型定稿：输入、行键（eval + `groupPath` 的无损结构）、计分制组内挣分、通过制组质量分、失败/中止定位、稀疏/null、refs 与 text/web 呈现；不要只写一句“MetricMatrix 支持 group”
+  - [x] E.3 裁决后重写 `docs/feature/experiments/score-points.md` 与 Reports 组件目录；若采用专用组件，撤掉把该行为强塞给 `MetricMatrix` 的字面契约并更新 source-map
+  - [x] E.4 先在 `docs/engineering/testing/unit/reports.md` 登记覆盖类别，再实现 data、validate、两面组件、公开导出和内建/配方接线
+  - [x] E.5 fixture 至少含嵌套 groupPath、同一 attempt 多组、跨 eval 同名字面组、缺组、计分制中止与通过制 gate；精确断言组内数值和 refs，渲染归 E2E
 
 - [x] **F. 让 orphan 单测与 `ps` 能力无关**（无依赖，可与 A–E/G 并行）
   - [x] F.1 给候选分类路径注入窄判据（如 `classifyRunIdentity` 或 `readPidStartedAt`），生产默认仍用真实系统探测

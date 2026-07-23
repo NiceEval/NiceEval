@@ -30,7 +30,7 @@ import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } 
 import { AttemptList, ExperimentList, FailureList } from "../components/entity-lists/index.tsx";
 import { CopyFixPrompt, Hero, ScopeWarnings, SnapshotDiagnostics, TraceWaterfall } from "../components/site-components/index.tsx";
 import { ExperimentComparison, ScopeSummary } from "../components/summaries/index.tsx";
-import { MetricBars, MetricMatrix, MetricScatter, MetricTable } from "../components/metric-views/index.tsx";
+import { GroupMatrix, MetricBars, MetricMatrix, MetricScatter, MetricTable } from "../components/metric-views/index.tsx";
 import { AttemptDetail } from "../components/attempt-detail/index.tsx";
 import { Col, Section, Tab, Table, Tabs, Text } from "../definition/primitives.tsx";
 import { attemptListData, experimentListData } from "../components/entity-lists/compute.ts";
@@ -674,6 +674,7 @@ describe("内建报告", () => {
       SnapshotDiagnostics,
       CopyFixPrompt,
       ExperimentComparison,
+      GroupMatrix,
     ]);
     const attemptsChildren = childTypes(attemptsPage!.content);
     expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, ScopeWarnings, SnapshotDiagnostics, AttemptList]);
