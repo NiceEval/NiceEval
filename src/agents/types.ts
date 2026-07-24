@@ -369,10 +369,11 @@ export interface Agent {
   spanMapper?: SpanMapper;
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   /**
-   * 可选 turn 失败分类器:按重试安全性归类一次 send 失败(抛出或返回 `status: "failed"` 的
-   * Turn),返回 `undefined` 回落保守兜底。分类器只声明决策与诊断词,不影响重试策略(次数、
-   * 退避对所有 agent 一致);抛错按不可重试处理并被吞掉。形状与分类链、执行体时序见
-   * docs/feature/error-classification/architecture.md。
+   * 可选 turn 失败分类器:归类一次 send 失败(抛出或返回 `status: "failed"` 的 Turn),
+   * 返回 `undefined` 表示不认识、回落保守兜底。链上排在实验的 `classifyFailure` 之后,
+   * 实验作者认领过的失败问不到这里。分类器只声明决策轴与诊断词,不影响重试策略(次数、
+   * 退避对所有 agent 一致);抛错按 `undefined` 回落并被吞掉,不掩盖原始失败。形状与分类链、
+   * 执行体时序见 docs/feature/error-classification/architecture.md。
    */
   classifyTurnError?: TurnErrorClassifier;
   teardown?: AgentTeardown;

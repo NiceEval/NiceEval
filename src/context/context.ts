@@ -12,6 +12,7 @@ import * as Scoped from "../scoring/scoped.ts";
 import { buildJudge } from "../scoring/judge.ts";
 import { EvalSkipped, EvalRequirementFailed, TurnFailed } from "./control-flow.ts";
 import { turnErrorText } from "./turn-errors.ts";
+import { attachFailureClass, type FailureClass } from "../shared/failure-class.ts";
 import type { ConcurrencySlot } from "./send-retry.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
 import { diffIsEmpty, diffMatches, emptyDiffData } from "../scoring/diff.ts";
@@ -91,6 +92,8 @@ export interface ContextDeps {
   onTurn?: import("./session.ts").SessionDeps["onTurn"];
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 SessionManager。 */
   concurrencySlot?: ConcurrencySlot;
+  /** 实验声明的失败分类器(`ExperimentDef.classifyFailure`);透传给 SessionManager。 */
+  experimentClassifier?: import("./session.ts").SessionDeps["experimentClassifier"];
   /** 仅供确定性单测注入:透传给 SessionManager 的 turn 重试随机数/睡眠(生产路径省略)。 */
   retryRandom?: import("./session.ts").SessionDeps["retryRandom"];
   retrySleep?: import("./session.ts").SessionDeps["retrySleep"];
@@ -131,6 +134,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     onTurn: deps.onTurn,
     ledgerHooks: deps.ledgerHooks,
     concurrencySlot: deps.concurrencySlot,
+    experimentClassifier: deps.experimentClassifier,
     retryRandom: deps.retryRandom,
     retrySleep: deps.retrySleep,
   });
@@ -332,11 +336,11 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         const text = typeof input === "string" ? input : input.text;
         const files = typeof input === "string" ? undefined : input.files;
         const turn = await send(session, text, files);
-        return makeTurnHandle(turn, collector, deps, text, manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, text, manager.resolveTurnCoverage(turn), manager.resolveTurnFailureClass(turn));
       },
       sendFile: async (path, text) => {
         const turn = await send(session, text ?? "", [await readInputFile(path)]);
-        return makeTurnHandle(turn, collector, deps, text ?? "", manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, text ?? "", manager.resolveTurnCoverage(turn), manager.resolveTurnFailureClass(turn));
       },
       requireInputRequest: (filter) => requireInputRequest(session, filter),
       respond: async (...answers) => {
@@ -344,7 +348,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         const built = buildRespondInput(session, answers);
         session.pendingInputRequests.length = 0;
         const turn = await send(session, built.text, undefined, built.responses);
-        return makeTurnHandle(turn, collector, deps, built.text, manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, built.text, manager.resolveTurnCoverage(turn), manager.resolveTurnFailureClass(turn));
       },
       respondAll: async (optionId) => {
         if (session.pendingInputRequests.length === 0) {
@@ -359,7 +363,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
         session.pendingInputRequests.length = 0;
         const input = requests.map(() => optionId).join("\n");
         const turn = await send(session, input, undefined, responses);
-        return makeTurnHandle(turn, collector, deps, input, manager.resolveTurnCoverage(turn));
+        return makeTurnHandle(turn, collector, deps, input, manager.resolveTurnCoverage(turn), manager.resolveTurnFailureClass(turn));
       },
       get reply() {
         return session.lastMessage;
@@ -565,6 +569,7 @@ function makeTurnHandle(
   deps: ContextDeps,
   input: string,
   coverage: ResolvedCoverage,
+  failureClass?: FailureClass,
 ): TurnHandle {
   const message = lastAssistantText(turn.events) ?? "";
   const facts = deriveRunFacts(turn.events);
@@ -598,7 +603,11 @@ function makeTurnHandle(
         // 与保守兜底分类器、turn 级重试摘要读的同一段文本(见 turn-errors.ts 的 turnErrorText)——
         // 不出现「报错说 A、分类看 B」。
         const message = turnErrorText(turn);
-        throw new TurnFailed(message !== undefined ? t("context.turnFailed", { message }) : undefined);
+        const error = new TurnFailed(message !== undefined ? t("context.turnFailed", { message }) : undefined);
+        // 终局失败的分类随错误浮出:attempt 封口据此落止损闸(见
+        // docs/feature/error-classification/architecture.md「止损执行体」)。没有分类
+        // (未经重试执行体的手工构造 Turn)时不标记,落缺省 attempt 档。
+        throw failureClass ? attachFailureClass(error, failureClass) : error;
       }
       return handle;
     },

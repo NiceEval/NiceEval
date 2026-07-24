@@ -6,7 +6,8 @@
 
 import type { Turn } from "../types.ts";
 import { t } from "../i18n/index.ts";
-import { resolveTurnErrorClass, type TurnErrorClass, type TurnErrorClassifier, type TurnFailure } from "./turn-errors.ts";
+import { attachFailureClass, type AttemptFailureClassifier, type FailureClass } from "../shared/failure-class.ts";
+import { resolveTurnFailureClass, type TurnErrorClassifier, type TurnFailure } from "./turn-errors.ts";
 
 /** 单次 send 调用封顶的尝试次数(首次 + 至多 3 次重试)。 */
 export const SEND_MAX_ATTEMPTS = 4;
@@ -47,6 +48,14 @@ export interface TurnLens<T> {
 export interface SendRetryDeps {
   /** adapter 声明的分类器(可选),undefined 回落保守兜底。 */
   classifier?: TurnErrorClassifier;
+  /** 实验声明的分类器(`ExperimentDef.classifyFailure`,可选),排在 adapter 之前询问。 */
+  experimentClassifier?: AttemptFailureClassifier;
+  /**
+   * 终局失败(不重试 / 重试耗尽)的分类回执:被重试吸收的失败不回调——只有真正浮出的失败
+   * 携带分类,止损闸消费的空间轴由此抵达 attempt 封口。`turn-failed` 形态的失败没有错误对象
+   * 可标记(错误在 `expectOk()` 才铸造),经这条回执转交调用方。
+   */
+  onFinalFailure?: (cls: FailureClass, failure: TurnFailure) => void;
   /** attempt 级预算,持续扣减(调用方在 attempt 生命周期内只创建一份并跨多次 send 复用)。 */
   budget: AttemptRetryBudget;
   /** 省略时不释放槽位(测试 / 无并发闸场景)。 */
@@ -116,10 +125,15 @@ export async function sendWithTurnRetry<T>(
       failure = { type: "thrown", error: e };
     }
 
-    const cls = resolveTurnErrorClass(failure, deps.classifier);
-    if (!cls.retryable) return finalize(failure, result, lens);
-    if (sendAttempt >= SEND_MAX_ATTEMPTS) return finalize(failure, result, lens, { layer: "send", cls });
-    if (deps.budget.remaining <= 0) return finalize(failure, result, lens, { layer: "attempt", cls });
+    const cls = resolveTurnFailureClass(failure, {
+      experiment: deps.experimentClassifier,
+      adapter: deps.classifier,
+    });
+    // 终局失败才携带分类浮出:被吸收的失败尝试不留痕(见 architecture.md「重试执行体」),
+    // 它的 scope 永远到不了止损闸。
+    if (!cls.retryable) return finalize(failure, result, lens, deps, cls);
+    if (sendAttempt >= SEND_MAX_ATTEMPTS) return finalize(failure, result, lens, deps, cls, { layer: "send", cls });
+    if (deps.budget.remaining <= 0) return finalize(failure, result, lens, deps, cls, { layer: "attempt", cls });
 
     deps.budget.remaining -= 1;
     const delayMs = BASE_DELAY_MS * 2 ** (sendAttempt - 1) * random();
@@ -143,15 +157,22 @@ export async function sendWithTurnRetry<T>(
   }
 }
 
-/** 循环收口:未耗尽的非重试失败原样浮出;耗尽时按耗尽层追加摘要文本。 */
+/**
+ * 循环收口:未耗尽的非重试失败原样浮出;耗尽时按耗尽层追加摘要文本。两条路径都先把终局分类
+ * 挂到浮出的失败上(`thrown` 形态标在错误对象上,沿 cause 链可读;两种形态都经 `onFinalFailure`
+ * 回执),抛出点自己声明过分类的错误不被覆盖。
+ */
 function finalize<T>(
   failure: TurnFailure,
   result: T | undefined,
   lens: TurnLens<T>,
-  exhausted?: { layer: "send" | "attempt"; cls: Extract<TurnErrorClass, { retryable: true }> },
+  deps: SendRetryDeps,
+  cls: FailureClass,
+  exhausted?: { layer: "send" | "attempt"; cls: Extract<FailureClass, { retryable: true }> },
 ): T {
   if (!exhausted) {
-    if (failure.type === "thrown") throw failure.error;
+    deps.onFinalFailure?.(cls, failure);
+    if (failure.type === "thrown") throw attachFailureClass(failure.error, cls);
     return result as T;
   }
   const suffix =
@@ -160,11 +181,15 @@ function finalize<T>(
       : t("session.turnRetryBudgetExhausted", { maxRetries: ATTEMPT_MAX_RETRIES, reason: exhausted.cls.reason });
 
   if (failure.type === "thrown") {
+    deps.onFinalFailure?.(cls, failure);
     const e = failure.error;
-    // adapter 抛出的 Error 仍可能被上层保留、复用或记录；不要原地篡改它。
-    if (e instanceof Error) throw new Error(e.message + suffix, { cause: e });
-    throw e;
+    // adapter 抛出的 Error 仍可能被上层保留、复用或记录；不要原地篡改它(分类标记挂在外层)。
+    if (e instanceof Error) throw attachFailureClass(new Error(e.message + suffix, { cause: e }), cls);
+    throw attachFailureClass(e, cls);
   }
+  // 追加摘要产出的是一个新的 Turn 对象;回执必须报浮出的那个,分类才登记在调用方拿到的 Turn 上。
   const withSuffix = appendToLastErrorEvent(failure.turn, suffix);
+  const finalTurn = withSuffix ?? failure.turn;
+  deps.onFinalFailure?.(cls, { type: "turn-failed", turn: finalTurn });
   return withSuffix ? lens.set(result as T, withSuffix) : (result as T);
 }

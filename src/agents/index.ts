@@ -9,11 +9,13 @@ export type { Shared } from "./shared.ts";
 export { completeCoverage } from "../scoring/coverage.ts";
 export type { CoverageStatus, CoverageDeclaration, EvidenceCoverage } from "../types.ts";
 
-// turn 级瞬时错误分类:`Agent.classifyTurnError` 认的输入/输出形状 + 摘要取值器
-// (与 turn-failed 报错文案同源)。分类判据、分类链与重试执行体见
+// 执行失败分类:`Agent.classifyTurnError` 认的输入/输出形状 + 摘要取值器(与 turn-failed
+// 报错文案同源)。两轴词表(FailureClass / FailureScope)与包根导出的是同一个形状——adapter
+// 作者与 eval 作者各自的入口拿到同一份类型。判据、分类链与重试执行体见
 // docs/feature/error-classification/architecture.md。
 export { turnErrorText } from "../context/turn-errors.ts";
-export type { TurnErrorClass, TurnErrorClassifier, TurnFailure } from "../context/turn-errors.ts";
+export type { TurnErrorClassifier, TurnFailure } from "../context/turn-errors.ts";
+export type { FailureClass, FailureScope } from "../shared/failure-class.ts";
 
 // span → canonical GenAI 归一(只服务瀑布图,不喂断言)。私有埋点写自己的 spanMapper 时用:
 // tagSpan 把判定写回 span(原属性只增不改),heuristicTag 是通用兜底判定;mapCodexSpans 是

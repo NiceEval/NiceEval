@@ -2,6 +2,7 @@
 // 以及调度器的编排类型(AgentRun / RunOptions / Attempt)。
 
 import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact } from "../shared/types.ts";
+import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
 import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
 import type { Sandbox, SandboxHookContext, SandboxOption } from "../sandbox/types.ts";
@@ -567,6 +568,15 @@ export interface ExperimentDef {
    * `maxConcurrency: 1` 因此是严格的临界区,不会被同实验的下一个 attempt 提前闯入。
    */
   maxConcurrency?: number;
+  /**
+   * 本实验的失败分类器:识别以第三方错误形态浮出的自家共享基建死因(对自家隧道 host 的拒连
+   * 一类),返回 `undefined` 表示「不认识,交给后续链路」。本实验任意 per-attempt 阶段的失败
+   * 都会问到它;turn 失败链上它排在 adapter 的 `classifyTurnError` 之前——按自家坐标过滤的
+   * 特异性高于协议通用形状,两者同时认领时空间轴才赢得下来。分类器要快、纯、不抛错(抛错按
+   * `undefined` 回落并被吞掉);只声明决策轴与 `reason` 词,重试与落闸策略归执行体。
+   * 见 docs/feature/error-classification/library.md「实验 / eval 作者:声明死因的波及范围」。
+   */
+  classifyFailure?: AttemptFailureClassifier;
   /**
    * 实验级生命周期钩子对的 setup 侧:整场至多一次、宿主机侧,管「每实验一份、所有 attempt
    * 共享」的宿主机资源(隧道、mock server、license 租约)。本实验第一个通过派发许可的

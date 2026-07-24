@@ -1,20 +1,18 @@
-// turn 级瞬时错误分类:把一次 send 失败(抛出 / 返回 failed Turn)按重试安全性归类。
-// 判据全文见 docs/feature/error-classification/README.md「分类」;这里只落三道分类链里
-// 「保守兜底」与「受理证据门」两道的实现,adapter 分类器本身不在这个文件(它是 Agent 的可选字段,
-// 挂载在 src/agents/types.ts)。执行体的重试时序在 send-retry.ts,不在这里——本模块只回答
-// 「这次失败能不能安全重发」,不碰次数/退避/槽位。
+// turn 失败分类链:把一次 send 失败(抛出 / 返回 failed Turn)归成一份 `FailureClass`。
+// 判据全文见 docs/feature/error-classification/README.md「分类」;两轴词表、糖衣类与守卫在
+// src/shared/failure-class.ts(全仓单源),这里只落 turn 这条链——五道里的「保守兜底」与
+// 「受理证据门」两道的实现在本文件,抛出点声明走守卫、实验分类器挂在 ExperimentDef、adapter
+// 分类器挂在 Agent(src/agents/types.ts),本文件只按序询问它们。执行体的重试时序在
+// send-retry.ts:本模块只回答「这次失败能不能安全重发、波及多远」,不碰次数/退避/槽位。
 
 import type { Turn } from "../types.ts";
-
-/**
- * 一次 send 失败的分类结果:`retryable` 是执行体唯一消费的决策轴;`reason` 是开放词表的
- * 细分诊断,只进 activity 与耗尽摘要,不参与策略。内建兜底产出 reason `"rate_limit"` /
- * `"network"`;adapter 分类器可自造词。`retryable: true` 时 `reason` 必填——可重试的失败
- * 一定会出现在 activity 行与可能的耗尽摘要里,那里需要一个给人读的词。
- */
-export type TurnErrorClass =
-  | { readonly retryable: true; readonly reason: string }
-  | { readonly retryable: false; readonly reason?: string };
+import {
+  callClassifier,
+  errorChainText,
+  failureClassOf,
+  type AttemptFailureClassifier,
+  type FailureClass,
+} from "../shared/failure-class.ts";
 
 /** 一次 send 失败的两种浮出形态:`send()` 抛出异常,或返回 `status: "failed"` 的 Turn。 */
 export type TurnFailure =
@@ -22,10 +20,10 @@ export type TurnFailure =
   | { readonly type: "turn-failed"; readonly turn: Turn };
 
 /**
- * adapter 可选分类器:返回 `undefined` 表示「不认识,交给保守兜底」。分类器必须快、纯、
- * 不抛错——执行体按「抛错等价于不可重试」处理,自身错误被吞掉,不会掩盖原始失败。
+ * adapter 可选分类器:返回 `undefined` 表示「不认识,交给后续链路」。分类器必须快、纯、
+ * 不抛错——抛错按 `undefined` 回落处理,自身错误被吞掉,不会掩盖原始失败。
  */
-export type TurnErrorClassifier = (failure: TurnFailure) => TurnErrorClass | undefined;
+export type TurnErrorClassifier = (failure: TurnFailure) => FailureClass | undefined;
 
 /**
  * 失败 Turn 的错误摘要:取 `events` 里最后一个 `type: "error"` 事件的 message。
@@ -41,22 +39,13 @@ export function turnErrorText(turn: Turn): string | undefined {
   return undefined;
 }
 
-/** `thrown` 形态的错误文本:沿错误链(含 `cause`)取 message,串接成一段供分类器与摘要读的文本。 */
-function thrownErrorText(error: unknown): string {
-  const parts: string[] = [];
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && current != null; depth++) {
-    const message = current instanceof Error ? current.message : String(current);
-    if (message) parts.push(message);
-    current = current instanceof Error ? (current as { cause?: unknown }).cause : undefined;
-  }
-  return parts.join(" · ");
-}
-
 /** 两种 `TurnFailure` 形态统一取「给人读也给分类器看」的那段文本。 */
 export function turnFailureText(failure: TurnFailure): string {
-  return failure.type === "thrown" ? thrownErrorText(failure.error) : (turnErrorText(failure.turn) ?? "");
+  return failure.type === "thrown" ? errorChainText(failure.error) : (turnErrorText(failure.turn) ?? "");
 }
+
+/** turn 失败在生命周期词表里的归属:adapter send 期间打开的那一段。 */
+const TURN_FAILURE_PHASE = "agent.run" as const;
 
 // 限流关键字 / 明示 retry later → rate_limit;正则形状对齐 sandbox IO 分类器
 // (src/sandbox/errors.ts 的 classifySandboxIoError),各自实现、不共享模块。
@@ -68,10 +57,11 @@ const NETWORK_CODE_PATTERN = /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHO
 const NETWORK_MESSAGE_PATTERN = /getaddrinfo|connection refused|certificate|tls handshake|connect etimedout|connection timeout/i;
 
 /**
- * 保守兜底分类器:三道分类链里的第二道。对失败文本做正则匹配,认不出的一律 `{ retryable: false }`
- * ——宁可判死一个 attempt,不产出不可信的 verdict(判据见 README「分类」)。
+ * 保守兜底分类器:turn 链里的第四道。对失败文本做正则匹配,认不出的一律 `{ retryable: false }`
+ * ——宁可判死一个 attempt,不产出不可信的 verdict(判据见 README「分类」)。兜底永不给出超出
+ * `"attempt"` 的 scope:框架无法从文案证明兄弟必死,扩 scope 只属于携带作者知识的通道。
  */
-export function classifyTurnError(failure: TurnFailure): TurnErrorClass {
+export function classifyTurnError(failure: TurnFailure): FailureClass {
   const text = turnFailureText(failure);
   if (RATE_LIMIT_PATTERN.test(text)) return { retryable: true, reason: "rate_limit" };
   const code = errorCode(failure);
@@ -98,25 +88,45 @@ export function hasAgentEvidence(turn: Turn): boolean {
   return turn.events.some((e) => AGENT_EVIDENCE_TYPES.has(e.type));
 }
 
+/** turn 链上两个可选声明通道;都省略时链退化成「抛出点 → 兜底 → 证据门」。 */
+export interface TurnClassifiers {
+  /** 实验作者的 `ExperimentDef.classifyFailure`,按自家坐标识别共享基建死因。 */
+  experiment?: AttemptFailureClassifier;
+  /** adapter 作者的 `Agent.classifyTurnError`,识别自家协议的错误形状。 */
+  adapter?: TurnErrorClassifier;
+}
+
 /**
- * 三道分类链的完整决议:adapter 分类器(可选,抛错按不可重试处理并吞掉)→ 保守兜底 →
- * 受理证据门(否决权,失败 Turn 带 agent 产出事件时强制降级)。执行体只需要调这一个函数,
- * 不必自己拼三道链的顺序。
+ * turn 失败分类链的完整决议(五道,先给出非 `undefined` 结果的一道定分类):
+ *
+ * 1. 抛出点携带的分类(`failureClassOf`,含 cause 链穿透)——作者知识优先级最高;
+ * 2. 实验分类器——按自家坐标(host、路径)过滤,特异性高于协议通用形状,排在 adapter 之前
+ *    保证「两者同时认领时 scope 赢」(裁决见 memory/failure-chain-experiment-before-adapter.md);
+ * 3. adapter 分类器;
+ * 4. 保守兜底正则;
+ * 5. 受理证据门(执行体的否决权,只裁时间轴):失败 Turn 里已有 agent 产出事件时 `retryable`
+ *    强制降为 `false`,`reason` 与 `scope` 原样保留——门裁的是重发安全性,不是波及范围。
+ *
+ * 分类器抛错按 `undefined` 回落(继续问后续通道),分类是旁路,不得用新错误掩盖原始失败。
  */
-export function resolveTurnErrorClass(failure: TurnFailure, adapterClassifier?: TurnErrorClassifier): TurnErrorClass {
-  let cls: TurnErrorClass | undefined;
-  if (adapterClassifier) {
-    try {
-      cls = adapterClassifier(failure);
-    } catch {
-      // 分类器抛错按不可重试处理:分类是旁路,不得用新错误掩盖原始失败,也不回落到兜底
-      // (自造分类器都判断不了的形状,交给通用正则复判没有意义)。
-      return { retryable: false };
-    }
-  }
-  const resolved = cls ?? classifyTurnError(failure);
+export function resolveTurnFailureClass(failure: TurnFailure, classifiers: TurnClassifiers = {}): FailureClass {
+  const declared = failure.type === "thrown" ? failureClassOf(failure.error) : undefined;
+  const resolved = declared ?? classifyByChain(failure, classifiers);
   if (resolved.retryable && failure.type === "turn-failed" && hasAgentEvidence(failure.turn)) {
-    return { retryable: false };
+    return { ...resolved, retryable: false };
   }
   return resolved;
+}
+
+function classifyByChain(failure: TurnFailure, classifiers: TurnClassifiers): FailureClass {
+  if (classifiers.experiment) {
+    const info = {
+      phase: TURN_FAILURE_PHASE,
+      text: turnFailureText(failure),
+      cause: failure.type === "thrown" ? failure.error : failure.turn,
+    };
+    const cls = callClassifier(classifiers.experiment, info);
+    if (cls) return cls;
+  }
+  return callClassifier(classifiers.adapter, failure) ?? classifyTurnError(failure);
 }

@@ -114,6 +114,11 @@ export function defineExperiment(def: ExperimentDef): ExperimentDef {
   if (def.setup !== undefined && typeof def.setup !== "function") {
     throw new Error(t("define.experimentSetupNotFunction"));
   }
+  // classifyFailure 是失败分类链上的实验通道(见 runner/types.ts 的 ExperimentDef.classifyFailure):
+  // 传成非函数在解析时就报,不等到某条 attempt 撞死才发现这一路声明白写。
+  if (def.classifyFailure !== undefined && typeof def.classifyFailure !== "function") {
+    throw new Error(t("define.experimentClassifyFailureNotFunction"));
+  }
   // flags 必须可 JSON 序列化(进结果快照的 ExperimentRunInfo.flags):解析时即校验,
   // 非 JSON 值(函数 / undefined / 循环引用 / bigint)直接报错,不等到落盘才炸。
   if (def.flags !== undefined) {

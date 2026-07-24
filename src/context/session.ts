@@ -12,6 +12,8 @@ import {
   type AttemptRetryBudget,
   type ConcurrencySlot,
 } from "./send-retry.ts";
+import type { AttemptFailureClassifier, FailureClass } from "../shared/failure-class.ts";
+import type { TurnFailure } from "./turn-errors.ts";
 import { recordFact } from "../shared/facts.ts";
 
 /**
@@ -144,6 +146,11 @@ export interface SessionDeps {
    * architecture.md「退避与槽位」)。省略时退避不释放槽位(测试 / 无并发闸场景)。
    */
   concurrencySlot?: ConcurrencySlot;
+  /**
+   * 实验声明的失败分类器(`ExperimentDef.classifyFailure`):turn 链上排在 adapter 分类器
+   * 之前询问(决议序见 docs/feature/error-classification/architecture.md「分类链」)。
+   */
+  experimentClassifier?: AttemptFailureClassifier;
   /** 仅供确定性单测注入:turn 重试执行体的随机数与睡眠(生产路径省略,走真实退避)。 */
   retryRandom?: () => number;
   retrySleep?: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -193,6 +200,17 @@ export class SessionManager {
   resolveTurnCoverage(turn: Turn): ResolvedCoverage {
     return downgradeCoverage(this.agentCoverage, turn.coverage);
   }
+
+  /**
+   * 终局失败 Turn 的分类:失败 Turn 本身不是错误(作者不调 `expectOk()` 就不算失败),分类
+   * 因此不能挂在 Turn 上,只在 `expectOk()` 铸造 `TurnFailed` 时随错误浮出——这里按 Turn 身份
+   * 登记,`makeTurnHandle` 取用。被重试吸收的失败 Turn 从不外泄,也就不会被登记。
+   */
+  resolveTurnFailureClass(turn: Turn): FailureClass | undefined {
+    return this.turnFailureClasses.get(turn);
+  }
+
+  private readonly turnFailureClasses = new WeakMap<Turn, FailureClass>();
 
   async send(
     session: RunSession,
@@ -271,6 +289,12 @@ export class SessionManager {
     // 因此能被 Effect interruption 干净打断,不新增超时语义。
     const retryDeps = {
       classifier: this.deps.agent.classifyTurnError,
+      experimentClassifier: this.deps.experimentClassifier,
+      // 终局失败的分类落账:thrown 形态由执行体标在错误对象上,turn-failed 形态在这里按 Turn
+      // 身份登记,`expectOk()` 铸造 TurnFailed 时取出随错误浮出(止损闸的消费点在 attempt 封口)。
+      onFinalFailure: (cls: FailureClass, failure: TurnFailure) => {
+        if (failure.type === "turn-failed") this.turnFailureClasses.set(failure.turn, cls);
+      },
       budget: this.retryBudget,
       slot: this.deps.concurrencySlot,
       reportRetry: (message: string) => ctx.progress({ message }),
