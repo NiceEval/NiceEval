@@ -81,6 +81,7 @@
   - [x] D.4 `pnpm e2e --repo cli` 验收 agent 与 ci 两种 profile 的真实 stdout 单一事件流
 
 - [x] **E. 组深度读取面重新设计并实现**（设计部分无依赖，可与 A–D/F/G 并行；实现依赖 E.1 裁决）
+  - **已回退**：`GroupMatrix` 组件及其内建报告接线整体移除——跨 experiment 的组深度聚合报告不再提供，组级读数只在 attempt 详情按 `groupPath` 下钻（见 `docs/feature/experiments/score-points.md`）。`t.group` 运行时 API 与折叠树计分语义不受影响。
   - [x] E.1 在 `docs/roadmap/report-chart-composition/` 或独立 ADR 比较两种形状：扩展通用 Matrix 为“一 attempt 多成员 + cell context”，或新增专用组深度组件；**推荐专用组件**，因为组是 assertion/score-entry 子实体，不是 Attempt 身份维度
   - [x] E.2 用穷尽类型定稿：输入、行键（eval + `groupPath` 的无损结构）、计分制组内挣分、通过制组质量分、失败/中止定位、稀疏/null、refs 与 text/web 呈现；不要只写一句“MetricMatrix 支持 group”
   - [x] E.3 裁决后重写 `docs/feature/experiments/score-points.md` 与 Reports 组件目录；若采用专用组件，撤掉把该行为强塞给 `MetricMatrix` 的字面契约并更新 source-map

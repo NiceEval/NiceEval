@@ -5,7 +5,6 @@
 
 import type {
   DeltaData,
-  GroupMatrixData,
   LineData,
   MatrixData,
   MetricCell,
@@ -147,32 +146,6 @@ export function barsText(data: MatrixData, ctx: TextContext): string {
     }
   }
   return lines.join("\n");
-}
-
-// ───────────────────────── GroupMatrix ─────────────────────────
-
-export function groupMatrixText(data: GroupMatrixData, ctx: TextContext): string {
-  if (data.rows.length === 0) return "";
-  const locale = ctx.locale;
-  const byPosition = new Map<string, GroupMatrixData["cells"][number]["cell"]>();
-  for (const entry of data.cells) {
-    byPosition.set(JSON.stringify([entry.evalId, entry.groupPath, entry.column]), entry.cell);
-  }
-  const columns: TableColumn[] = [
-    { key: "row", header: "eval \u00d7 group" },
-    ...data.columns.map((column, i) => ({ key: `column${i}`, header: column })),
-  ];
-  const rows: TableRow[] = data.rows.map((row) => {
-    const rowKey = JSON.stringify([row.evalId, row.groupPath]);
-    const cells: Record<string, string | null> = { row: `${row.evalId} ${row.groupPath.join(" > ")}` };
-    data.columns.forEach((column, i) => {
-      const cell = byPosition.get(JSON.stringify([row.evalId, row.groupPath, column]));
-      // 稀疏格子在文本里以 — 呈现,不编数;localizedFailure 加 "!" 后缀,不新开一列。
-      cells[`column${i}`] = cell ? `${cellText(cell, locale)}${cell.localizedFailure ? "!" : ""}` : null;
-    });
-    return { key: rowKey, cells };
-  });
-  return renderTableText({ columns: columns as unknown as [TableColumn, ...TableColumn[]], rows, locale }, ctx);
 }
 
 // ───────────────────────── Scoreboard ─────────────────────────

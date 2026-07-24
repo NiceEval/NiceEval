@@ -197,44 +197,6 @@ export interface MatrixData {
   cells: Array<{ row: string; column: string; cell: MetricCell }>;
 }
 
-/**
- * `GroupMatrix` 的一行:一个 eval 内的一个 `t.group` 组(按子树折叠,见
- * docs/feature/reports/library/metric-views.md「GroupMatrix」)。
- */
-export interface GroupMatrixRow {
-  evalId: string;
-  /** 外层在前的 t.group 标题数组;空数组不会出现(隐式根组不进本组件)。 */
-  groupPath: readonly string[];
-  /** 该行所属 eval 的题型,决定 cell.value 的口径。 */
-  scoring: "pass" | "points";
-}
-
-/**
- * `GroupMatrix` 的格子:points 制读组子树内挣分之和,通过制读组子树内质量分(soft 断言均值)。
- * `refs` 只跟随 `samples`(对这个 groupPath 子树有过证据的 attempt),不跟随 `total`——
- * 与 `MetricCell.refs` 跟随全覆盖范围刻意不同,见组件文档。
- */
-export interface GroupMatrixCell {
-  /** null = 该组子树没有对应证据(points 制无满分声明,不编 0);跨 experiment 列相对比较。 */
-  value: number | null;
-  display: LocalizedText;
-  /** 贡献本格的 attempt 中,至少一次在这个确切 groupPath(不含后代组)上发生 gate 断言失败。 */
-  localizedFailure: boolean;
-  /** 该 (eval, groupPath 子树, experiment) 组合里,实际出现过匹配证据的 attempt 数。 */
-  samples: number;
-  /** 该 (eval, experiment) 组合的 attempt 总数,含从未涉及这个组的 attempt。 */
-  total: number;
-  refs: AttemptLocator[];
-}
-
-export interface GroupMatrixData {
-  rows: readonly GroupMatrixRow[];
-  /** 列 = 贡献了至少一格的 experiment id,字典序。 */
-  columns: readonly string[];
-  /** 稀疏格子:某 (eval, groupPath, experiment) 组合没有任何 attempt 涉及这个组时不生成格子。 */
-  cells: ReadonlyArray<{ evalId: string; groupPath: readonly string[]; column: string; cell: GroupMatrixCell }>;
-}
-
 export interface ScatterData {
   pointDimension: string;
   seriesDimension?: string;

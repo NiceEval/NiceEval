@@ -120,9 +120,7 @@ export default defineScoreEval({
 `show` 与 `view` 共用同一份 page 声明（[Reports](../reports/README.md)），读取面在内建 `standard` 报告一处声明、两个宿主同时生效：
 
 - **榜单按实验题型选主列**：通过制实验显示通过率列，计分制实验显示总分列；存在质量分时两者都附质量分列。不摆空列。
-- **组深度视图 `GroupMatrix`**：行 = eval × 组（按组子树折叠，同一组的后代组各自也单独成行），列 = experiment；格在计分制下读组子树内挣分之和，通过制下读组子树内质量分，叠加失败定位标记（通过制标组 gate 挂在哪层，计分制标中止发生在哪个组）；`null` 显示为缺数据，不编 0。字段全集与聚合口径见 [Reports Library · `GroupMatrix`](../reports/library/metric-views.md#groupmatrix)。
-- attempt 详情按 `groupPath` 分块展示断言与给分记录是既有行为的延伸（[断言与 Turn 的展示](../scoring/library/display.md)），失败定位的逐条证据在那里下钻。
-- 自定义报告经 `niceeval/report` 读同一套折叠读数，组件契约的家在 [Reports Library](../reports/library.md)。
+- **组级读数在 attempt 详情下钻**：attempt 详情按 `groupPath` 分块展示断言与给分记录（[断言与 Turn 的展示](../scoring/library/display.md)），「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。
 
 ## 怎么选题型
 

@@ -127,7 +127,6 @@ export type {
 } from "./components/entity-lists/index.tsx";
 export {
   DeltaTable,
-  GroupMatrix,
   MetricBars,
   MetricLine,
   MetricMatrix,
@@ -138,7 +137,6 @@ export {
 } from "./components/metric-views/index.tsx";
 export type {
   DeltaTableProps,
-  GroupMatrixProps,
   MetricBarsProps,
   MetricLineProps,
   MetricMatrixProps,
@@ -191,7 +189,6 @@ export { attemptListData, evalListData, experimentListData } from "./components/
 export {
   conditionsByFlag,
   deltaTableData,
-  groupMatrixData,
   metricLineData,
   metricMatrixData,
   metricScatterData,
@@ -201,7 +198,6 @@ export {
 } from "./components/metric-views/compute.ts";
 export type {
   DeltaTableOptions,
-  GroupMatrixOptions,
   MetricLineOptions,
   MetricMatrixOptions,
   MetricScatterOptions,
@@ -249,9 +245,6 @@ export type {
   ExperimentListEvalRow,
   ExperimentListItem,
   FlagConditions,
-  GroupMatrixCell,
-  GroupMatrixData,
-  GroupMatrixRow,
   HeroData,
   LineData,
   MatrixData,

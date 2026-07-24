@@ -1045,7 +1045,7 @@ describe("metricLineData", () => {
 
 // deltaTableData(对照矩阵)与 stabilityMatrixData(稳定性矩阵)的测试住
 // src/report/components/metric-views/delta-table.test.ts 与 stability-matrix.test.ts
-// (与 groupMatrixData 同一个惯例:专用组件测试文件,不挤共享 compute.test.ts)。
+// (专用组件测试文件,不挤共享 compute.test.ts)。
 
 // ───────────────────────── examScore ─────────────────────────
 

@@ -18,7 +18,7 @@ builtIn;  // 默认导出 === standard，宿主装载取这个值
 // niceeval/report/built-in 的 standard 视图，没有任何私有钩子
 import {
   AttemptDetail, AttemptList,
-  Col, CopyFixPrompt, ExperimentComparison, GroupMatrix, Hero, ScopeWarnings, SnapshotDiagnostics,
+  Col, CopyFixPrompt, ExperimentComparison, Hero, ScopeWarnings, SnapshotDiagnostics,
   TraceWaterfall, defineReport,
 } from "niceeval/report";
 
@@ -42,7 +42,6 @@ export const standard = defineReport({
           <SnapshotDiagnostics />
           <CopyFixPrompt />
           <ExperimentComparison />
-          <GroupMatrix />
         </Col>
       ),
     },
@@ -156,7 +155,7 @@ export default defineReport({
 
 ## 内建报告显示什么
 
-首页先用 `ExperimentComparison` 展示实验整体主读数，再用 `GroupMatrix` 展示存在 `t.group` 证据时的组级挣分 / 质量分；没有分组证据时后者零输出。两者的行为契约分别单点定义在[概览组件](summaries.md#experimentcomparison)与[指标组件](metric-views.md#groupmatrix)；`Hero` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](site-components.md)；Attempts 页的本体是[带过滤的 `AttemptList`](entity-lists.md#attemptlist)。
+首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](summaries.md#experimentcomparison)；`Hero` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](site-components.md)；Attempts 页的本体是[带过滤的 `AttemptList`](entity-lists.md#attemptlist)。
 
 ## 相关阅读
 

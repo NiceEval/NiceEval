@@ -5,7 +5,6 @@
 import type { ReportComponent } from "../../definition/tree.ts";
 import type {
   DeltaData,
-  GroupMatrixData,
   LineData,
   MatrixData,
   ScatterData,
@@ -27,7 +26,6 @@ import {
 } from "../shared.ts";
 import {
   deltaTableData,
-  groupMatrixData,
   metricLineData,
   metricMatrixData,
   metricScatterData,
@@ -35,7 +33,6 @@ import {
   scoreboardData,
   stabilityMatrixData,
   type DeltaTableOptions,
-  type GroupMatrixOptions,
   type MetricLineOptions,
   type MetricMatrixOptions,
   type MetricScatterOptions,
@@ -46,7 +43,6 @@ import {
 import {
   barsText,
   deltaText,
-  groupMatrixText,
   lineText,
   matrixText,
   scatterText,
@@ -57,7 +53,6 @@ import {
 import { MetricTable as MetricTableWeb } from "./MetricTable.tsx";
 import { MetricMatrix as MetricMatrixWeb } from "./MetricMatrix.tsx";
 import { MetricBars as MetricBarsWeb } from "./MetricBars.tsx";
-import { GroupMatrix as GroupMatrixWeb } from "./GroupMatrix.tsx";
 import { Scoreboard as ScoreboardWeb } from "./Scoreboard.tsx";
 import { MetricScatter as MetricScatterWeb } from "./MetricScatter.tsx";
 import { MetricLine as MetricLineWeb } from "./MetricLine.tsx";
@@ -106,41 +101,6 @@ export const validateMatrixData: Validator = (data) => {
       return `"${path}.row" / "${path}.column" must be strings`;
     }
     return cellProblem(item.cell, `${path}.cell`);
-  });
-};
-/** GroupMatrixCell:同 MetricCell 加一个 localizedFailure 布尔字段。 */
-function groupCellProblem(value: unknown, path: string): string | null {
-  const base = cellProblem(value, path);
-  if (base !== null) return base;
-  const cell = value as Record<string, unknown>;
-  if (typeof cell.localizedFailure !== "boolean") return `"${path}.localizedFailure" must be a boolean`;
-  return null;
-}
-
-export const validateGroupMatrixData: Validator = (data) => {
-  if (!isObject(data)) return "expected an object";
-  if (!Array.isArray(data.rows)) return '"rows" must be an array';
-  const rowsProblem = arrayProblem(data.rows, "rows", (row, path) => {
-    if (!isObject(row)) return `"${path}" must be an object`;
-    if (typeof row.evalId !== "string") return `"${path}.evalId" must be a string`;
-    if (!Array.isArray(row.groupPath) || !row.groupPath.every((g) => typeof g === "string")) {
-      return `"${path}.groupPath" must be an array of strings`;
-    }
-    if (row.scoring !== "pass" && row.scoring !== "points") return `"${path}.scoring" must be "pass" or "points"`;
-    return null;
-  });
-  if (rowsProblem !== null) return rowsProblem;
-  if (!Array.isArray(data.columns) || !data.columns.every((c) => typeof c === "string")) {
-    return '"columns" must be an array of strings';
-  }
-  return arrayProblem(data.cells, "cells", (item, path) => {
-    if (!isObject(item)) return `"${path}" must be an object`;
-    if (typeof item.evalId !== "string") return `"${path}.evalId" must be a string`;
-    if (!Array.isArray(item.groupPath) || !item.groupPath.every((g) => typeof g === "string")) {
-      return `"${path}.groupPath" must be an array of strings`;
-    }
-    if (typeof item.column !== "string") return `"${path}.column" must be a string`;
-    return groupCellProblem(item.cell, `${path}.cell`);
   });
 };
 export const validateScatterData: Validator = (data) => {
@@ -406,33 +366,6 @@ export const MetricBars = makeDataComponent<
   ),
   text: (props, ctx) => barsText(props.data, ctx),
 }) as unknown as ReportComponent<MetricBarsProps>;
-
-export type GroupMatrixProps = DataProps<
-  GroupMatrixData,
-  GroupMatrixOptions,
-  ChromeProps & { attemptHref?: (locator: AttemptLocator) => string }
->;
-
-/** 得分点 = 组的下钻矩阵:行 = eval × t.group 组(按子树折叠),列 = experiment,回答
- *  「哪个得分点谁挣了多少分/质量分,死在哪层」。不接收 Metric——折叠树的读法是题型固定语义
- *  （docs/feature/reports/library/metric-views.md「GroupMatrix」）。 */
-export const GroupMatrix = makeDataComponent<
-  GroupMatrixData,
-  GroupMatrixOptions,
-  ChromeProps & { attemptHref?: (locator: AttemptLocator) => string }
->({
-  name: "GroupMatrix",
-  dataFnName: "groupMatrixData",
-  shapeName: "GroupMatrixData",
-  dataFn: (input, options) => groupMatrixData(input, options ?? {}),
-  specKeys: ["evals"],
-  validate: validateGroupMatrixData,
-  web: (props, ctx) =>
-    props.data.rows.length === 0 ? null : (
-      <GroupMatrixWeb data={props.data} locale={props.locale ?? ctx.locale} attemptHref={hrefOf(props, ctx)} className={props.className} />
-    ),
-  text: (props, ctx) => groupMatrixText(props.data, ctx),
-}) as unknown as ReportComponent<GroupMatrixProps>;
 
 export type ScoreboardProps = DataProps<
   ScoreboardData,

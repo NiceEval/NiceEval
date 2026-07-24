@@ -15,7 +15,6 @@ export { ScopeSummary } from "../components/summaries/ScopeSummary.tsx";
 export { MetricTable } from "../components/metric-views/MetricTable.tsx";
 export { MetricMatrix } from "../components/metric-views/MetricMatrix.tsx";
 export { MetricBars } from "../components/metric-views/MetricBars.tsx";
-export { GroupMatrix } from "../components/metric-views/GroupMatrix.tsx";
 export { MetricScatter } from "../components/metric-views/MetricScatter.tsx";
 export { MetricLine } from "../components/metric-views/MetricLine.tsx";
 export { DeltaTable } from "../components/metric-views/DeltaTable.tsx";
@@ -68,9 +67,6 @@ export type {
   EvalListItem,
   ExperimentListEvalRow,
   ExperimentListItem,
-  GroupMatrixCell,
-  GroupMatrixData,
-  GroupMatrixRow,
   HeroData,
   LineData,
   MatrixData,

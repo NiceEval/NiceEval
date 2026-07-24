@@ -667,23 +667,6 @@ table.nre,
   margin-left: 0.75em;
 }
 
-/* ---- GroupMatrix:行头两段(eval id + groupPath),失败定位格加左侧警示条 ---- */
-.nre-group-matrix .nre-row-key {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.nre-group-matrix .nre-group-eval {
-  color: var(--muted);
-  font-size: 0.85em;
-}
-.nre-group-matrix .nre-group-path {
-  font-weight: 610;
-}
-.nre-group-matrix .nre-td-localized-failure {
-  box-shadow: inset 3px 0 0 var(--bad);
-}
-
 /* ---- Scoreboard ---- */
 .nre-scoreboard .nre-total {
   font-weight: 700;

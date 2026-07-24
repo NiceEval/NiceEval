@@ -13,7 +13,6 @@
 | 现在有哪些失败要处理、先看哪条 | [`FailureList`](library/entity-lists.md#failurelist) |
 | 谁整体更好，多个指标并排比较 | [`MetricTable`](library/metric-views.md#metrictable) |
 | 哪道题在哪个配置上失败 | [`MetricMatrix` 或 `MetricBars`](library/metric-views.md#metricmatrix-与-metricbars) |
-| 得分点(`t.group` 组)在每个配置上的挣分或质量分，哪层死的 | [`GroupMatrix`](library/metric-views.md#groupmatrix) |
 | 固定题集的总分与分科得分 | [`Scoreboard`](library/metric-views.md#scoreboard) |
 | 两个指标之间的取舍 | [`MetricScatter`](library/metric-views.md#metricscatter) |
 | 参数变化时指标怎样变化 | [`MetricLine`](library/metric-views.md#metricline) |
