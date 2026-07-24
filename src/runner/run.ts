@@ -1492,7 +1492,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               const outcome = yield* Effect.promise(() => tryAcquireCase(caseState));
               if (outcome.kind === "aborted") return { kind: "done" } as const;
               if (outcome.kind === "busy") return { kind: "suspend", window: outcome.window } as const;
-              // 接管过期锁时顺带重查过携带:这个序号已经被对方跑完,不重复派发。
+              // 取锁时顺带重查过携带(接管 / 多开)且这个序号已经被对方跑完:不重复派发。
               if (caseState.carried.has(a.attempt)) return { kind: "done" } as const;
             }
             const proceed = yield* preflight;
