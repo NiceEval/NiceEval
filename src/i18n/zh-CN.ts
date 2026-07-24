@@ -75,6 +75,8 @@ export const zhCN = {
     "接管了 {{experimentId}}/{{evalId}} 的过期用例锁(原持有者 pid {{pid}}@{{host}},心跳已过期)——那次运行大概率没能正常释放它;本次运行现在接手派发这条用例。\n",
   "runner.gateLeaseTakenOver":
     "接管了实验 {{experimentId}} 的过期并发名额租约(槽位 {{slot}},原持有者 pid {{pid}}@{{host}},心跳已过期)——那次运行大概率没能正常释放它;本次运行现在接手这个名额。\n",
+  "runner.dispatchHaltedExperiment": "实验已止损(dispatch-halted):{{message}}\n",
+  "runner.dispatchHaltedEval": "eval 已止损:{{message}}\n",
   "judge.modelMissing":
     "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } })、eval 的 judge 配置或环境变量 NICEEVAL_JUDGE_MODEL 里指定裁判模型(没有内置默认模型)。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",

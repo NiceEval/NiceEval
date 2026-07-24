@@ -728,6 +728,9 @@ export interface AgentRun {
    *  (语义见 ExperimentDef 对应字段)。 */
   setup?: (ctx: ExperimentHookContext) => void | Promise<void>;
   teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;
+  /** 实验声明的失败分类器(来自 ExperimentDef.classifyFailure):turn 链上排在 adapter 之前,
+   *  生命周期链上排在抛出点声明之后;产出的空间轴由止损闸在 attempt 封口消费。 */
+  classifyFailure?: AttemptFailureClassifier;
 }
 
 export interface RunOptions {

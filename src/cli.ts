@@ -547,6 +547,7 @@ async function openBrowser(url: string): Promise<boolean> {
 function assembleInvocationCompletion(state: RunFeedbackState): InvocationCompletion {
   let unstarted = 0;
   let failFastSkipped = 0;
+  let haltedSkipped = 0;
   let interrupted = false;
   const reporterErrors: ReporterError[] = [];
   for (const d of state.diagnostics) {
@@ -559,6 +560,13 @@ function assembleInvocationCompletion(state: RunFeedbackState): InvocationComple
       // docs/feature/experiments/architecture.md「Completion 与退出」)。
       unstarted += d.count;
       failFastSkipped += d.count;
+    } else if (d.key.startsWith("dispatch-halted:")) {
+      // 止损闸停派发造成的未派发(见 docs/feature/error-classification/architecture.md
+      // 「记账」)。这条诊断的 count 是「同一死因被声明了几次」(重复声明折叠),不是未派发数——
+      // 未派发数由 emitter 累计后写在 data.unstarted 里(与 budget-exhausted 同一口径)。
+      const halted = typeof d.data?.unstarted === "number" ? d.data.unstarted : 0;
+      unstarted += halted;
+      haltedSkipped += halted;
     } else if (d.key.startsWith("reporter-error:")) {
       // required 决定这条错误是否写进 InvocationCompletion.reporterErrors 并让 completion 非 complete
       // (见 docs/cli.md「required reporter」);best-effort reporter 的失败只保留为 diagnostic。
@@ -573,9 +581,9 @@ function assembleInvocationCompletion(state: RunFeedbackState): InvocationComple
   // 中断造成的未派发(仍在 queued 的 attempt)同样计入 unstarted(见 docs/feature/experiments/
   // architecture.md「Completion 与退出」:budget 耗尽、fail-fast 或中断造成的未派发都不伪装成全绿)。
   if (interrupted) unstarted += state.queued;
-  // attempt:early-exit 计数含 fail-fast 的未派发(反馈层同一事件驱动计数守恒);
-  // 「省下的重复验证」= 总数减去 fail-fast 那部分。
-  const earlyExitUnstarted = Math.max(0, state.earlyExitSkipped - failFastSkipped);
+  // attempt:early-exit 计数含 fail-fast 与止损闸的未派发(反馈层同一事件驱动计数守恒);
+  // 「省下的重复验证」= 总数减去那两部分。
+  const earlyExitUnstarted = Math.max(0, state.earlyExitSkipped - failFastSkipped - haltedSkipped);
   const status: CompletionStatus = interrupted
     ? "interrupted"
     : unstarted > 0 || reporterErrors.length > 0
@@ -877,6 +885,9 @@ async function main(): Promise<void> {
         maxConcurrency: exp.maxConcurrency,
         setup: exp.setup,
         teardown: exp.teardown,
+        // 实验级失败分类器:随 AgentRun 进 attempt(turn 链与生命周期链共用同一份),
+        // 产出的 scope 由止损闸消费(见 docs/feature/error-classification/architecture.md)。
+        classifyFailure: exp.classifyFailure,
       });
     }
   } else {

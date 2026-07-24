@@ -8,7 +8,13 @@ import { probeJudge } from "../scoring/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, planCarry } from "./fingerprint.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
-import { errorFromThrown, experimentRunInfo, runAttemptEffect } from "./attempt.ts";
+import {
+  errorFromThrown,
+  experimentRunInfo,
+  runAttemptEffect,
+  type AttemptFailureDeclaration,
+} from "./attempt.ts";
+import { firstLine } from "../util.ts";
 import { resolveSandbox } from "../sandbox/resolve.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
@@ -560,6 +566,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           // teardown 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
           // teardown-failed 同一语义);资源可能泄漏,所以要说出来。同时进实验域诊断累积器,
           // 供该 Experiment 的 Snapshot 封口时持久化(docs/runner.md「实验域诊断持久化」)。
+          // 止损闸边界:实验级 teardown 里抛糖衣类**不落闸**,降级为这条普通 teardown 诊断
+          // (docs/feature/error-classification/architecture.md「生命周期边界」)——这个时点
+          // 本实验已无可保护的派发余量,且止损状态不跨 invocation,声明无处生效。所以这里
+          // 刻意不读 FailureClass:少一行代码就是契约本身,别顺手补上。
           const message = t("runner.experimentTeardownFailed", {
             experimentId,
             message: e instanceof Error ? e.message : String(e),
@@ -764,20 +774,177 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // attempt 接手;锁释放/过期后重查携带,仍要自跑的那些从 ① 重新走一遍这条链。
 
   /**
-   * 止损闸检查点 —— **C2 接入点**(plan/runner-dispatch-spine-refactor.md 节点 C2「止损执行体
-   * 接入」)。返回「这条 attempt 是否被作者声明的止损闸拦下」:落闸后本 eval / 本实验剩余
-   * attempt 不再派发,计入 `unstarted`、完成状态落 `incomplete`
-   * (契约见 docs/feature/error-classification/README.md「自愈阶梯与止损阶梯」)。
+   * 一把止损闸(docs/feature/error-classification/architecture.md「止损执行体」)。粒度两级:
+   * 每个 experiment 一把实验闸,每个 (experiment, eval) 一把 eval 闸;实验闸落下**蕴含**该实验
+   * 全部 eval 闸——检查点同时读两把,不做物理级联(eval 闸的数量随选择集变化,级联要遍历,
+   * 蕴含只要多读一个字段)。
    *
-   * 本节点(C1)只留桩:恒不落闸,派发行为与接入前完全一致。C2 把函数体换成真检查——读该
-   * eval 闸 / 该实验闸的 `Effect.makeLatch` 状态(闸在 attempt 封口读终局失败的 scope 时落下,
-   * 幂等、invocation 内不可逆、实验闸蕴含全部 eval 闸),并在下面唯一的调用点补上 `unstarted`
-   * 记账与 `dispatch-halted` 诊断。调用点每轮循环都会重新问一次:挂起在 elsewhere 的用例被
-   * 唤醒后同样先过这道闸,不会绕开已经落下的闸重新入场。
+   * 三个状态载体各有不可替代的角色,不是同一件事的三份副本:
+   * - `latch`:`Effect.unsafeMakeLatch(false)`,落闸 = `unsafeOpen()`。`open` 幂等且不可回退,
+   *   「落闸幂等、invocation 内不可逆」因此是结构保证而不是调用方自律;`latch.await` 同时是
+   *   「等到这把闸落下」的 Effect,给等在全局并发位上的 fiber 当中止信号(见 withGlobalSlot)。
+   * - `halted`:同步读的镜像。派发检查点在每轮循环开头问一次,不能为此付一次 await
+   *   (`Effect.Latch` 没有同步状态读)。恒在 `unsafeOpen()` 之前置位,两者不会互相领先。
+   * - `abort`:同一时刻 abort。Promise 世界的两处长等待——实验闸名额租约、撞用例锁后的
+   *   elsewhere 轮询——一律经 AbortSignal 中止,那是本仓既有的 interruption 通路,不为止损闸
+   *   另造一条。
    */
-  const checkDispatchHalt = (a: Attempt): { halted: false } | { halted: true; scope: "eval" | "experiment" } => {
-    void a;
+  interface HaltGate {
+    readonly scope: "eval" | "experiment";
+    /** 展示与折叠用的实验身份(裸 run 退回 agent 名,与 budgetKey / teardown 诊断同一口径)。 */
+    readonly experimentId: string;
+    /** 持久化用的真实 experimentId;裸 run 没有 Snapshot 可挂,为 undefined。 */
+    readonly persistedExperimentId: string | undefined;
+    /** eval 闸才有。 */
+    readonly evalId: string | undefined;
+    /** 两条诊断通路共用的折叠键(= scope + evalId,契约见 architecture.md「诊断」)。 */
+    readonly dedupeKey: string;
+    readonly latch: Effect.Latch;
+    readonly abort: AbortController;
+    halted: boolean;
+    /** 被这把闸拦下、未派发的 attempt 数(进 InvocationCompletion.unstarted)。 */
+    unstarted: number;
+    /** 触发落闸的失败 message,即作者的修复提示;走完通知与诊断两条通路。 */
+    message: string;
+  }
+  const haltGates = new Map<string, HaltGate>();
+  const haltGateKey = (run: AgentRun, evalId: string | undefined): string =>
+    evalId === undefined
+      ? `dispatch-halted:experiment:${run.experimentId ?? run.agent.name}`
+      : `dispatch-halted:eval:${run.experimentId ?? run.agent.name}|${evalId}`;
+  const haltGateOf = (run: AgentRun, evalId: string | undefined): HaltGate => {
+    const dedupeKey = haltGateKey(run, evalId);
+    let gate = haltGates.get(dedupeKey);
+    if (!gate) {
+      gate = {
+        scope: evalId === undefined ? "experiment" : "eval",
+        experimentId: run.experimentId ?? run.agent.name,
+        persistedExperimentId: run.experimentId,
+        evalId,
+        dedupeKey,
+        latch: Effect.unsafeMakeLatch(false),
+        abort: new AbortController(),
+        halted: false,
+        unstarted: 0,
+        message: "",
+      };
+      haltGates.set(dedupeKey, gate);
+    }
+    return gate;
+  };
+  // 闸预先建好(而不是落闸那一刻懒建):等待中的 fiber 要能先订阅 latch / abort,懒建会让
+  // 「先开始等、后落闸」的 attempt 订阅到一个已经被换掉的对象上,永远等不到中止。
+  for (const a of attempts) {
+    haltGateOf(a.run, undefined);
+    haltGateOf(a.run, a.evalDef.id);
+  }
+  /** 这条 attempt 头上的两把闸,实验闸在前(蕴含关系:实验闸落下即视为本 eval 也落闸)。 */
+  const haltGatesOf = (a: Attempt): readonly [HaltGate, HaltGate] => [
+    haltGateOf(a.run, undefined),
+    haltGateOf(a.run, a.evalDef.id),
+  ];
+
+  /**
+   * 止损闸检查点:「这条 attempt 是否被作者声明的止损闸拦下」。落闸后本 eval / 本实验剩余
+   * attempt 不再派发,计入 `unstarted`、完成状态落 `incomplete`(契约见
+   * docs/feature/error-classification/README.md「自愈阶梯与止损阶梯」)。
+   *
+   * 每轮循环都会重新问一次:挂起在 elsewhere 的用例被唤醒后同样先过这道闸,不会绕开已经落下
+   * 的闸重新入场。检查点存在良性竞态——闸落下的瞬间可能有 attempt 已越过检查、照常跑完,
+   * 代价是多烧一个沙箱,不为它引入额外互斥(architecture.md「派发」)。
+   */
+  const checkDispatchHalt = (
+    a: Attempt,
+  ): { halted: false } | { halted: true; scope: "eval" | "experiment"; gate: HaltGate } => {
+    const [experimentGate, evalGate] = haltGatesOf(a);
+    if (experimentGate.halted) return { halted: true, scope: "experiment", gate: experimentGate };
+    if (evalGate.halted) return { halted: true, scope: "eval", gate: evalGate };
     return { halted: false };
+  };
+
+  /** 落闸后唤醒 Promise 世界等待的中止信号:两把闸任一落下、或用户中断,都算这次等待到头了。 */
+  const haltAbortSignal = (a: Attempt, extra?: AbortSignal): AbortSignal => {
+    const [experimentGate, evalGate] = haltGatesOf(a);
+    const signals = [experimentGate.abort.signal, evalGate.abort.signal];
+    if (opts.signal) signals.push(opts.signal);
+    if (extra) signals.push(extra);
+    return AbortSignal.any(signals);
+  };
+  /** 「等到这条 attempt 头上任一把闸落下」;给 Effect 世界的等待(全局并发位)当中止信号。 */
+  const haltAwait = (a: Attempt): Effect.Effect<void> => {
+    const [experimentGate, evalGate] = haltGatesOf(a);
+    return Effect.raceFirst(experimentGate.latch.await, evalGate.latch.await);
+  };
+
+  /**
+   * 运行期即时通知:反馈流一条 error 级通知(architecture.md「观察面」的落闸形态)。与持久化的
+   * `dispatch-halted` 诊断**同源互不派生**——两条通路各自从同一份 gate 状态取值,谁都不是谁的
+   * 派生物。`data.unstarted` 随未派发数增长刷新(reducer 的 upsert 用最新 data 覆盖、count 自增),
+   * cli.ts 的 assembleInvocationCompletion 读它折成 InvocationCompletion.unstarted。
+   */
+  const reportHaltNotice = (gate: HaltGate): void => {
+    reportDiagnostic({
+      key: gate.dedupeKey,
+      severity: "error",
+      message: t(
+        gate.scope === "experiment" ? "runner.dispatchHaltedExperiment" : "runner.dispatchHaltedEval",
+        { message: gate.message },
+      ).trimEnd(),
+      data: {
+        experimentId: gate.experimentId,
+        scope: gate.scope,
+        ...(gate.evalId !== undefined ? { evalId: gate.evalId } : {}),
+        unstarted: gate.unstarted,
+      },
+    });
+  };
+
+  /**
+   * 落闸:attempt 封口的空间轴回执携带超出 `"attempt"` 的 scope 时调用(唯一入口)。
+   * 幂等——并发 attempt 同时声明同一死因是常态,重复触发只折叠两条通路的诊断计数;不可逆——
+   * latch 只开不关,在飞 attempt 之后成功也不重开派发;不抢占——本函数只置状态,不碰任何
+   * 已经在跑的 attempt。
+   */
+  const closeHaltGate = (a: Attempt, declaration: AttemptFailureDeclaration): void => {
+    const scope = declaration.class.scope;
+    if (scope !== "eval" && scope !== "experiment") return; // 缺省档:死因只属于本次执行,无闸可落
+    const gate = haltGateOf(a.run, scope === "experiment" ? undefined : a.evalDef.id);
+    const message = firstLine(declaration.text);
+    // 持久化通路:按 dedupeKey 折叠成一条 dispatch-halted(docs 的形状),落进该 Experiment 的
+    // snapshot.json。裸 run 没有 Snapshot 可挂,recordExperimentDiagnostic 自己丢弃。
+    recordExperimentDiagnostic({
+      experimentId: gate.persistedExperimentId,
+      code: "dispatch-halted",
+      level: "error",
+      message,
+      phase: declaration.phase,
+      dedupeKey: gate.dedupeKey,
+      data: { scope, ...(gate.evalId !== undefined ? { evalId: gate.evalId } : {}) },
+    });
+    if (!gate.halted) {
+      gate.message = message;
+      gate.halted = true; // 同步镜像先置位,再开 latch:两者不会互相领先
+      gate.latch.unsafeOpen();
+      gate.abort.abort();
+    }
+    reportHaltNotice(gate);
+  };
+
+  /**
+   * 未派发记账:与 run 级 fail-fast / budget 停派发同一条通路——每个未派发 attempt 各发一次
+   * `attempt:early-exit`(queued → completed,反馈层五项计数守恒),再把当次累计的未派发数刷进
+   * 同一条 `dispatch-halted` 诊断。不为没跑过的 attempt 制造 `errored` 记录(architecture.md
+   * 「记账」);退出码由观察到失败的那条 `errored` attempt 判红。
+   */
+  const accountDispatchHalted = (a: Attempt, gate: HaltGate): void => {
+    gate.unstarted += 1;
+    reportAttemptLifecycle({
+      type: "attempt:early-exit",
+      at: Date.now(),
+      identity: feedbackIdentity(a),
+      who: feedbackWho(a),
+    });
+    reportHaltNotice(gate);
   };
 
   const lockIdentity = { pid: process.pid, host: currentHost };
@@ -1020,6 +1187,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const suspendUntilCaseFree = (st: CaseLockState, holder: CaseLockRecord): Promise<void> => {
     if (st.suspension) return st.suspension;
     const startedAt = Date.now();
+    // 等待期间本 eval / 本实验的止损闸落下 → 这一轮等待到头(对方可能还要跑很久,没必要陪着)。
+    // 窗口照常走完 recheckCarry 并发出 `lock_wait resolved`:少发一次 resolved,这批 attempt 就
+    // 永远挂在 elsewhere 上,五项恒等式当场破。
+    const waitSignal = haltAbortSignal(st.group[0]!);
     reportLockWait({
       experimentId: st.experimentId,
       evalId: st.evalId,
@@ -1030,8 +1201,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     });
     const window = (async (): Promise<void> => {
       for (;;) {
-        await delayOrAbort(CASE_LOCK_HEARTBEAT_INTERVAL_MS, opts.signal);
-        if (opts.signal?.aborted || dispatchClosed) break;
+        await delayOrAbort(CASE_LOCK_HEARTBEAT_INTERVAL_MS, waitSignal);
+        if (waitSignal.aborted || dispatchClosed) break;
         const record = await readCaseLock(niceevalRoot, st.experimentId, st.evalId).catch(() => undefined);
         if (record === undefined || isCaseLockStale(record, Date.now())) break;
       }
@@ -1062,8 +1233,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     experimentId: string,
     maxConcurrency: number,
     fiberSignal: AbortSignal,
+    haltSignal: AbortSignal,
   ): Promise<GateLeaseClaim | undefined> => {
-    const signal = combinedSignal(fiberSignal);
+    // 等名额期间止损闸落下 → 立刻放弃取位(不占别人还在用的名额、也不干等一个不会派发的位子);
+    // 与用户中断走同一条 AbortSignal 通路,调用方按 undefined 分辨「没取到」的两种成因。
+    const signal = AbortSignal.any([combinedSignal(fiberSignal), haltSignal]);
     try {
       const { claim, takenOver, takenOverFrom } = await acquireGateSlot(
         niceevalRoot,
@@ -1107,8 +1281,13 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   };
 
   /** 派发链一轮的结局:`done` = 这条 attempt 已经了结(跑完 / 被跳过 / 携入 / 中断),
-   *  `suspend` = 撞上别人持有的用例锁,许可全部归还、挂进 `window` 这个 elsewhere 窗口后重来。 */
-  type DispatchOutcome = { kind: "done" } | { kind: "suspend"; window: Promise<void> };
+   *  `suspend` = 撞上别人持有的用例锁,许可全部归还、挂进 `window` 这个 elsewhere 窗口后重来,
+   *  `recheck` = 许可获取被止损闸打断,许可全部归还、回到许可链 ① 重新过闸(记账在那里做)。
+   *  `recheck` 只在闸已经落下时产生,循环顶因此必然收束,不会空转。 */
+  type DispatchOutcome =
+    | { kind: "done" }
+    | { kind: "suspend"; window: Promise<void> }
+    | { kind: "recheck" };
 
   /** 全局并发位的显式持有句柄:`withPermits` 的作用域语义没法表达「中途让位、回来再拿」,
    *  而实验级 setup 与 turn 退避都要求让位(docs/runner.md「调度:有界并发」)。两个成员都
@@ -1118,7 +1297,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     readonly reacquire: Effect.Effect<void>;
   }
 
-  const withGlobalSlot = <A>(use: (slot: GlobalSlotHold) => Effect.Effect<A>): Effect.Effect<A> =>
+  const withGlobalSlot = (
+    haltSignal: Effect.Effect<void>,
+    use: (slot: GlobalSlotHold) => Effect.Effect<DispatchOutcome>,
+  ): Effect.Effect<DispatchOutcome> =>
     Effect.uninterruptibleMask((restore) => {
       const state = { held: false };
       const release = Effect.suspend(() =>
@@ -1141,9 +1323,21 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       );
       // 取位本身可中断(restore):Ctrl+C 不该被「等一个全局位」拖住;拿到之后的执行体同样
       // 可中断,只有归还挂在 ensuring 上,中断路径照样跑。
-      return restore(reacquire).pipe(
-        Effect.flatMap(() => restore(use({ release, reacquire })).pipe(Effect.ensuring(release))),
-      );
+      //
+      // 排队等位期间止损闸落下 → 竞速的 haltSignal 先到,这一轮不进场(交回 recheck,由许可链
+      // ① 做未派发记账)。这是「等待集中同闸 attempt 经 interruption 中止」在 Effect 世界的落点;
+      // 竞速只覆盖「还在等位」这一段——拿到位子那一刻竞速已结算,之后的执行体不再被抢占。
+      // `ensuring(release)` 提到最外层(而不是只挂在拿到位子之后):极端时序下 take 已经成功、
+      // 竞速却判 haltSignal 赢,位子照样归还,不泄漏一个全局名额。
+      return Effect.raceFirst(restore(reacquire).pipe(Effect.as(true)), restore(haltSignal).pipe(Effect.as(false)))
+        .pipe(
+          Effect.flatMap((entered) =>
+            entered
+              ? restore(use({ release, reacquire }))
+              : Effect.succeed<DispatchOutcome>({ kind: "recheck" }),
+          ),
+          Effect.ensuring(release),
+        );
     });
 
   /**
@@ -1161,11 +1355,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const localSem = gateLocalSems.get(a.run);
     if (maxConcurrency === undefined || localSem === undefined) return use;
     if (experimentId === undefined) return localSem.withPermits(1)(use);
+    const haltSignal = haltAbortSignal(a);
     const leased = Effect.uninterruptibleMask((restore) =>
-      restore(Effect.promise((sig) => acquireGateLease(experimentId, maxConcurrency, sig))).pipe(
+      restore(Effect.promise((sig) => acquireGateLease(experimentId, maxConcurrency, sig, haltSignal))).pipe(
         Effect.flatMap((claim) =>
           claim === undefined
-            ? Effect.succeed<DispatchOutcome>({ kind: "done" })
+            ? // 没取到名额有两种成因:用户中断(就此了结)与止损闸落下(回到许可链 ① 记账)。
+              Effect.succeed<DispatchOutcome>(
+                checkDispatchHalt(a).halted ? { kind: "recheck" } : { kind: "done" },
+              )
             : restore(use).pipe(
                 Effect.ensuring(Effect.promise(() => claim.release().catch(() => {}))),
               ),
@@ -1367,7 +1565,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   assertions: [],
                   error: { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" },
                 } satisfies EvalResult)
-              : yield* runAttemptEffect(a, opts, sandboxSem, { parentSignal: attemptSignal, concurrencySlot });
+              : yield* runAttemptEffect(a, opts, sandboxSem, {
+                  parentSignal: attemptSignal,
+                  concurrencySlot,
+                  // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
+                  // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
+                  // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
+                  onFailureClass: (declaration) => closeHaltGate(a, declaration),
+                });
             // locator 在这里确定 —— 早于本 attempt 触发的任何 reporter 回调 / 事件
             // (onEvalComplete、eval:complete),所以每一个观察者看到的都已经是最终值,
             // 和落盘 result.json 完全一致(writer.ts 的 entry.locator ?? 兜底分支因此
@@ -1483,8 +1688,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 独占串行 provider(如 local):同一 provider 名的所有 attempt 共享一把 permit=1 的锁,
         // 包在全局位之外(见上面 exclusiveSemFor 的注释)。
         const exclusiveSem = exclusiveSemFor(a.sandboxSpec);
-        const dispatch = withGlobalSlot((slot) =>
+        const dispatch = withGlobalSlot(haltAwait(a), (slot) =>
           Effect.gen(function* () {
+            // 拿到位子的这一刻再问一次闸:排在独占 provider 锁 / 实验闸本地信号量上的那段等待
+            // 不在上面的竞速覆盖范围里(竞速只包全局位),闸可能正是在那段时间落下的。
+            if (checkDispatchHalt(a).halted) return { kind: "recheck" } as const;
             // 派发时刻取锁:授位之后才试,非阻塞。撞上别人持有的新鲜锁就把这个位子连同实验闸
             // 名额一起还回去(返回 "suspend"),由外层转入 elsewhere 挂起;位子当场空出来,
             // 排队中的下一条没被锁的用例接手。
@@ -1516,11 +1724,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 重新取,不能拿着别人在等的名额干等),携入的直接收工。
         const pipeline = Effect.gen(function* () {
           for (;;) {
-            // ① 止损闸(C1 桩:恒不落闸;C2 换真检查)。
-            if (checkDispatchHalt(a).halted) return;
+            // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
+            const halt = checkDispatchHalt(a);
+            if (halt.halted) {
+              accountDispatchHalted(a, halt.gate);
+              return;
+            }
             // ② 实验闸 → ③ 全局位 → ④ 用例锁 → preflight → body
             const outcome = yield* withExperimentGate(a, guarded);
             if (outcome.kind === "done") return;
+            // 许可获取被落下的闸打断:许可已随作用域归还,回到 ① 让上面的检查点记账。
+            if (outcome.kind === "recheck") continue;
             // ② ③ 已随作用域归还。挂起等锁:不占并发位、计入 elsewhere;锁释放或过期后重查
             // 携带——携入的收工,仍要自跑的按原优先级回到派发队列(下一轮循环)。
             yield* Effect.promise(() => outcome.window);

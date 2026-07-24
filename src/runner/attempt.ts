@@ -30,6 +30,11 @@ import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { deriveDiffData, emptyDiffData } from "../scoring/diff.ts";
 import { createRemoteSandbox, withEvalLocalPaths } from "./remote-sandbox.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
+import {
+  attemptFailureInfo,
+  resolveAttemptFailureClass,
+  type FailureClass,
+} from "../shared/failure-class.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type {
   AgentContext,
@@ -66,6 +71,18 @@ import type {
   RunOptions,
 } from "./types.ts";
 
+/**
+ * 一次终局失败的空间轴回执:止损闸的消费点(见 docs/feature/error-classification/architecture.md
+ * 「止损执行体」)。`class` 是分类链决议出的 `FailureClass`,`text` 与报错文案同源(作者的修复
+ * 提示),`phase` 是失败所在的生命周期阶段。回执是旁路:不改 verdict、不改 `AttemptError` 形状,
+ * 也不走错误通道传播(attempt fiber 的 `E` 仍恒为 `never`)。
+ */
+export interface AttemptFailureDeclaration {
+  readonly class: FailureClass;
+  readonly phase: LifecyclePhase;
+  readonly text: string;
+}
+
 export interface RunAttemptEffectOptions {
   /** 父级调度器的中断信号；测试直调时省略。 */
   parentSignal?: AbortSignal;
@@ -79,13 +96,19 @@ export interface RunAttemptEffectOptions {
    * 省略时(如测试直调)退避不释放槽位。
    */
   concurrencySlot?: ConcurrencySlot;
+  /**
+   * 终局失败的空间轴回执(每条终局失败各回调一次,含 per-attempt teardown 的失败——teardown
+   * 声明照常落闸、不改 verdict,见 architecture.md「生命周期边界」)。省略(如测试直调)时
+   * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
+   */
+  onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
 }
 
 export function runAttemptEffect(
   a: Attempt,
   opts: RunOptions,
   sandboxSem: Effect.Semaphore,
-  { parentSignal, onPhase, concurrencySlot }: RunAttemptEffectOptions = {},
+  { parentSignal, onPhase, concurrencySlot, onFailureClass }: RunAttemptEffectOptions = {},
 ): Effect.Effect<EvalResult> {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
@@ -154,6 +177,21 @@ export function runAttemptEffect(
     recorder.enter(phase);
     onPhase?.(phase);
     reportAttemptLifecycle({ type: "attempt:phase", at: Date.now(), identity, phase });
+  };
+  /**
+   * 终局失败的分类与回执 —— **必须在把错误折成纯数据 `AttemptError` 之前调**:折完之后原错误
+   * 对象(连同它携带的 `_tag`/`class` 与 cause 链)就不再是任何人的引用,空间轴声明再也读不出来。
+   * 走生命周期链的三道决议(抛出点声明 → 实验分类器 → 缺省不可重试,见
+   * src/shared/failure-class.ts 的 `resolveAttemptFailureClass`);turn 失败的时间轴已由 send 重试
+   * 执行体在 context 层消费完,浮出到这里的一定是终局失败,这里只读空间轴。
+   * 缺省档(`scope` 省略或 `"attempt"`)不回执:那是「死因只属于本次执行」,没有闸可落。
+   */
+  const declareFailure = (phase: LifecyclePhase, e: unknown): void => {
+    if (!onFailureClass) return;
+    const info = attemptFailureInfo(phase, e);
+    const cls = resolveAttemptFailureClass(info, run.classifyFailure);
+    if (cls.scope !== "eval" && cls.scope !== "experiment") return;
+    onFailureClass({ class: cls, phase, text: info.text });
   };
   // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):sandbox hook / eval.setup·teardown /
   // agent setup·send·teardown 经 ctx.fact() 上报的都落这里(同一 attempt 内后写覆盖先写),
@@ -434,6 +472,7 @@ export function runAttemptEffect(
           facts,
           commands,
           concurrencySlot,
+          declareFailure,
           registerEvidence: (getEvents, getUsage) => {
             liveEvents = getEvents;
             liveUsage = getUsage;
@@ -548,11 +587,18 @@ export function runAttemptEffect(
     Effect.catchAllCause((cause) =>
       Cause.isInterrupted(cause)
         ? Effect.failCause(cause)
-        : Effect.succeed({
-            ...base,
-            durationMs: Date.now() - t0,
-            error: errorFromThrown(Cause.squash(cause), sendActive ? "agent.run" : lastPhase),
-            ...(commands.length > 0 ? { commands: [...commands] } : {}),
+        : Effect.suspend(() => {
+            // 资源获取 / Scope 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
+            // 失败:先读空间轴回执,再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
+            const raw = Cause.squash(cause);
+            const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
+            declareFailure(phase, raw);
+            return Effect.succeed({
+              ...base,
+              durationMs: Date.now() - t0,
+              error: errorFromThrown(raw, sendActive ? "agent.run" : lastPhase),
+              ...(commands.length > 0 ? { commands: [...commands] } : {}),
+            });
           }),
     ),
     // 结果封口在 Scope release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
@@ -629,6 +675,9 @@ interface AttemptResources {
   commands: FailedCommandEvidence[];
   /** turn 级重试退避期间释放/收回的全局并发槽位;透传给 createEvalContext。 */
   concurrencySlot?: ConcurrencySlot;
+  /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
+   *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
+  declareFailure: (phase: LifecyclePhase, e: unknown) => void;
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
   registerEvidence: (getEvents: () => readonly StreamEvent[], getUsage: () => Usage) => void;
@@ -665,6 +714,7 @@ async function runAttemptBody(
     facts,
     commands,
     concurrencySlot,
+    declareFailure,
     registerEvidence,
     registerLedger,
   } = res;
@@ -831,6 +881,10 @@ async function runAttemptBody(
       feedback,
       fact,
       concurrencySlot,
+      // 实验分类器:turn 链上排在 adapter 的 classifyTurnError 之前(见
+      // docs/feature/error-classification/architecture.md「分类链」)。与本文件 declareFailure
+      // 走的生命周期链是同一个函数,两条链的决议序各自单源在 turn-errors.ts / failure-class.ts。
+      experimentClassifier: run.classifyFailure,
       // 题型:计分制下句柄上的 .gate() 是前置(就地求值 + 挂了中止 test()),见 collector。
       scoring: evalDef.scoring ?? "pass",
       // 前置断言就地求值要看当前已提交窗口的 agent diff(非沙箱型没有分类账,省略)。
@@ -881,10 +935,15 @@ async function runAttemptBody(
         // TurnFailed 是 eval 驱动 agent 时的可读失败(message 首行是一层摘要,后续行是
         // diagnose 的 output tail 等下钻证据,单行面各自取首行);稳定 code
         // `turn-failed`,不带控制流 stack(那指向 control-flow.ts,对定位无益)。
+        // 分类先读:turn 链决议出的 FailureClass 由 expectOk() 铸造 TurnFailed 时挂在错误上,
+        // 下一行折成纯数据后就读不到了(见 declareFailure)。
+        declareFailure(getPhase() ?? "eval.run", e);
         error = { code: "turn-failed", message: e.message, phase: getPhase() ?? "eval.run" };
       } else {
         // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
         // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
+        // 作者从 test(t) 体内抛的 ExperimentFatalError / EvalFatalError 也走这条分支。
+        declareFailure(getPhase() ?? "eval.run", e);
         error = errorFromThrown(e, getPhase());
       }
     }
@@ -1048,6 +1107,9 @@ async function runAttemptBody(
     return value;
   } catch (e) {
     recorder.failCurrent();
+    // sandbox 钩子 / agent.setup / eval.setup / 评分链路抛出的终局失败:同样先读空间轴回执,
+    // 再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
+    declareFailure(getPhase() ?? "eval.run", e);
     const value: EvalResult = {
       ...base,
       durationMs: Date.now() - t0,
@@ -1074,6 +1136,9 @@ async function runAttemptBody(
             await withCleanupTimeout(() => evalDef.teardown!(withEvalLocalPaths(sandbox, evalDef.baseDir), hookCtx));
           } catch (e) {
             // 收尾失败只是 diagnostic,不改判定 —— 挂到 attempt.diagnostics(见 finally 末尾并入)。
+            // 但空间轴声明照常落闸:知识就是知识,兄弟 attempt 还在派发中(architecture.md
+            // 「生命周期边界」)。落闸不改 verdict,两件事互不影响。
+            declareFailure("eval.teardown", e);
             diagnostics.push(teardownDiagnostic("eval.teardown", e));
             throw e; // 让 measureClosing 把这段标 failed
           }
@@ -1087,6 +1152,7 @@ async function runAttemptBody(
           try {
             await withCleanupTimeout(() => run.agent.teardown!(sandbox, attemptCtx));
           } catch (e) {
+            declareFailure("agent.teardown", e);
             diagnostics.push(teardownDiagnostic("agent.teardown", e));
             throw e;
           }
@@ -1106,6 +1172,7 @@ async function runAttemptBody(
             try {
               await withCleanupTimeout(() => sandboxTeardownHooks[i](sandbox, hookCtx));
             } catch (e) {
+              declareFailure("sandbox.teardown", e);
               diagnostics.push(teardownDiagnostic("sandbox.teardown", e));
             }
           }

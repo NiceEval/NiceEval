@@ -78,6 +78,8 @@ export const en = {
     "took over an expired case lock for {{experimentId}}/{{evalId}} (previously held by pid {{pid}} on {{host}}; its heartbeat went stale) — that run likely died without releasing it; this run now owns dispatching this case.\n",
   "runner.gateLeaseTakenOver":
     "took over an expired concurrency-slot lease for experiment {{experimentId}} (slot {{slot}}, previously held by pid {{pid}} on {{host}}; its heartbeat went stale) — that run likely died without releasing it; this run now owns the slot.\n",
+  "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
+  "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
     "No judge model configured. Set it in defineConfig({ judge: { model: \"...\" } }), the eval's judge config, or the NICEEVAL_JUDGE_MODEL environment variable (there is no built-in default model).\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
