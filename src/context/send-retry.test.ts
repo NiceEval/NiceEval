@@ -9,6 +9,7 @@ import {
   type SendRetryDeps,
   type TurnLens,
 } from "./send-retry.ts";
+import { failureClassOf, type FailureClass } from "../shared/failure-class.ts";
 import type { Turn } from "../types.ts";
 
 // 直调执行体,不用真实 setTimeout 睡眠——sleep 注入即返回(受控时钟),random 注入固定值,
@@ -262,6 +263,91 @@ describe("sendWithTurnRetry · adapter 分类器接入", () => {
     expect(calls).toBe(SEND_MAX_ATTEMPTS);
     const message = (result.events[0] as { message: string }).message;
     expect(message).toContain("acme_queue_full");
+  });
+});
+
+describe("sendWithTurnRetry · 终局失败携带分类浮出(止损闸的进料)", () => {
+  const tunnelDown = { retryable: false, scope: "experiment", reason: "tunnel_down" } as const;
+
+  it("thrown 形态:终局失败的分类标在浮出的错误上,经 failureClassOf 读得到", async () => {
+    const original = new Error("connect ECONNREFUSED tunnel.example:443");
+    const promise = sendWithTurnRetry(
+      async () => {
+        throw original;
+      },
+      identityLens,
+      baseDeps({ experimentClassifier: () => tunnelDown }),
+    );
+    await expect(promise).rejects.toBe(original); // 浮出的仍是原始错误对象,不被包装替换
+    expect(failureClassOf(original)).toEqual(tunnelDown);
+  });
+
+  it("turn-failed 形态:分类经 onFinalFailure 回执转交调用方(Turn 上不留字段)", async () => {
+    const seen: { cls: FailureClass; turn?: Turn }[] = [];
+    const result = await sendWithTurnRetry(
+      async () => failedTurn("connect ECONNREFUSED tunnel.example:443"),
+      identityLens,
+      baseDeps({
+        experimentClassifier: () => tunnelDown,
+        onFinalFailure: (cls, failure) => {
+          seen.push({ cls, turn: failure.type === "turn-failed" ? failure.turn : undefined });
+        },
+      }),
+    );
+    expect(seen).toEqual([{ cls: tunnelDown, turn: result }]);
+    expect(failureClassOf(result)).toBeUndefined();
+  });
+
+  it("被重试吸收的失败不外泄:重试后成功时没有任何终局分类回执", async () => {
+    const seen: FailureClass[] = [];
+    let calls = 0;
+    const result = await sendWithTurnRetry(
+      async () => {
+        calls++;
+        return calls === 1 ? failedTurn("too many requests, retry later") : completedTurn();
+      },
+      identityLens,
+      baseDeps({
+        experimentClassifier: () => ({ retryable: true, reason: "tunnel_flaky", scope: "experiment" }),
+        onFinalFailure: (cls) => seen.push(cls),
+      }),
+    );
+    expect(result.status).toBe("completed");
+    expect(seen).toEqual([]);
+  });
+
+  it("重试耗尽时 scope 随失败携带浮出,回执报的是带耗尽摘要的那个 Turn", async () => {
+    const seen: { cls: FailureClass; turn?: Turn }[] = [];
+    const result = await sendWithTurnRetry(
+      async () => failedTurn("too many requests, retry later"),
+      identityLens,
+      baseDeps({
+        experimentClassifier: () => ({ retryable: true, reason: "tunnel_flaky", scope: "experiment" }),
+        onFinalFailure: (cls, failure) => {
+          seen.push({ cls, turn: failure.type === "turn-failed" ? failure.turn : undefined });
+        },
+      }),
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0].cls).toEqual({ retryable: true, reason: "tunnel_flaky", scope: "experiment" });
+    expect(seen[0].turn).toBe(result);
+    expect((result.events[0] as { message: string }).message).toContain("tunnel_flaky");
+  });
+
+  it("实验分类器排在 adapter 之前:两者同时认领时携带的是实验的 scope", async () => {
+    const original = new Error("connect ECONNREFUSED tunnel.example:443");
+    const promise = sendWithTurnRetry(
+      async () => {
+        throw original;
+      },
+      identityLens,
+      baseDeps({
+        experimentClassifier: () => tunnelDown,
+        classifier: () => ({ retryable: true, reason: "network" }),
+      }),
+    );
+    await expect(promise).rejects.toBe(original);
+    expect(failureClassOf(original)).toEqual(tunnelDown);
   });
 });
 
