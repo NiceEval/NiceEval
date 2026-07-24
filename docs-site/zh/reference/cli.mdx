@@ -93,7 +93,7 @@ npx niceeval exp models weather
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
 | `--source` | boolean | `show` 命令专用:该 attempt 运行时保存的 Eval 源码,gate/soft 断言标回源码行(证据切面)。 |
-| `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。 |
+| `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。单张卡片正文超过 8 KiB 预览预算会被截断,截断尾巴自带 `--expand` 展开句柄。 |
 | `--timing` | boolean | `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 |
 | `--grep` | string | `show` 命令专用:只与 `--execution` 组合;JS 正则,只输出命中的执行卡片(角色文本、工具名、input、result,失败命令再加 display/stdout/stderr),末尾报跨 attempt 汇总 `N matches in M attempts`。与 `--expand` 互斥。 |
 | `--expand` | string | `show` 命令专用:只与 `--execution` 组合,要求范围恰好命中一个 attempt;展开一张卡片的完整落盘内容(不截断)。句柄语法 `t<轮次>.c<卡片>`(agent 事件)或 `cmd<n>`(失败 Sandbox 命令),来自截断卡片自带的提示。与 `--grep` 互斥。 |
