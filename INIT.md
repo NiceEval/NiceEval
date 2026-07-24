@@ -11,7 +11,7 @@ When the user says "install niceeval," the bar for done is **not** "added the de
 - [ ] Install the package and run `init` (Steps 1–2)
 - [ ] Read `node_modules/niceeval/INDEX.md` and pick the "onboarding from scratch" tutorial page; from this step on, do every step by following the bundled docs (Step 3)
 - [ ] Explore this repo: what is the system under test, and how do you connect to it
-- [ ] Before writing any code, confirm the integration plan with the user (only decide on your own and continue if the task explicitly states there is nobody to confirm with)
+- [ ] Before writing any code, **stop and ask** — confirm the integration plan with the user: (a) how you will talk to the system under test (state the endpoint / protocol / request-response shape you found, for them to verify), (b) whether to reuse or hook into its existing tracing / OTel, (c) whether to expose config variants as experiment flags, and (d) which integration tier to target — read the tier page in the bundled docs first and present all three tiers. Wait for the answer (only decide on your own and continue if the task explicitly states there is nobody to confirm with)
 - [ ] Write the adapter / experiment / eval trio
 - [ ] Actually run it once and get it green, and confirm the result is visible with `niceeval show` — only writing the files without ever running them does not count
 - [ ] Follow the wrap-up self-check on the tutorial page, then ask the user whether they want to go to a deeper integration level
@@ -29,10 +29,11 @@ niceeval is a TypeScript evals library: you define "what a good result looks lik
 
 ## Step 1: Confirm prerequisites
 
-- The system under test can be built with any language or platform (iOS, Python service, anything else). niceeval only requires that this machine has Node and can run commands like `npx` or `pnpm exec`. The adapter/experiment/eval trio is written in TS, but the host repo does not need to be a TS/JS project. If the current repo has no `package.json`, create one in place (or in a subdirectory) just to host those files. Do not stop just because the host project uses another language.
+- The system under test can be built with any language or platform (iOS, Python service, anything else). niceeval only requires that this machine has Node and can run commands like `npx` or `pnpm exec`. The adapter/experiment/eval trio is written in TS, but the host repo does not need to be a TS/JS project. Do not stop just because the host project uses another language.
 - The only real prerequisite is: this machine can install Node dependencies and run Node commands. Only if even that is confirmed impossible, tell the user honestly and stop for their decision.
 - Check whether niceeval is already installed: look for `niceeval.config.ts`, an `evals/` directory, or a `niceeval` dependency in `package.json`. If it is already set up, skip installing, go straight to Step 3 and read the bundled docs, then add the missing files within the existing structure. Do not run `init` again.
-- Detect the package manager from lockfiles (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`) and use that package manager for every command afterward. Do not default to npm.
+- **Decide where the eval workspace lives — before detecting the package manager.** If the repo root's own `package.json` *is* the system under test (a JS/TS host project), install there as a devDependency. Otherwise — a Python or other-language host, or a repo that merely *contains* JS subprojects (`web/`, `frontend/`, a docs site) — create a fresh subdirectory (e.g. `niceeval/`) with its own new `package.json` and install there. **Never install into an existing subproject's `package.json`**: its lockfile and toolchain belong to the system under test, and mixing the eval harness into them can break the niceeval CLI (older loaders in the host's `node_modules` cannot resolve it) and pull the host's own type errors into your typecheck.
+- Detect the package manager **from the lockfile at the chosen install location only** (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`), and use it for every command afterward. A lockfile deep inside a host subproject does not decide for you. In a fresh subdirectory, use any package manager available on this machine; do not default to npm when a lockfile says otherwise.
 
 ## Step 2: Install
 
