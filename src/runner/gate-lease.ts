@@ -191,11 +191,26 @@ export async function tryAcquireGateSlotOnce(
   return { kind: "full", holders };
 }
 
-/** 续租:只重写 `heartbeatAt`,其余字段原样保留;槽已经不是自己的(被接管)就不写,不踩别人的租约。 */
-async function renewHeartbeat(dir: string, id: string, mine: GateLeaseRecord, nowMs: number): Promise<void> {
+/**
+ * 续租:只重写 `heartbeatAt`,其余字段原样保留;槽已经不是自己的(被接管)就不写,不踩别人的
+ * 租约。`isReleased` 是 `acquireGateSlot` 闭包里 `released` 标志的读取器——`release()` 只
+ * `clearInterval`,拦不住已经进入回调、卡在 `readEntryFile` 这次 await 上的心跳:它读完时
+ * 租约文件可能已被 `rm`,若不再确认就直接写回,会把刚删掉的文件重新创建出来(与 lock.ts 同一条
+ * 竞态,见 memory/lock-heartbeat-resurrects-released-lock.md)。写回前必须再查一次;入口也查
+ * 一次省一次读,但不是竞态的关键检查点。
+ */
+async function renewHeartbeat(
+  dir: string,
+  id: string,
+  mine: GateLeaseRecord,
+  nowMs: number,
+  isReleased: () => boolean,
+): Promise<void> {
+  if (isReleased()) return;
   const current = await readEntryFile<GateLeaseRecord>(dir, id);
   if (current === undefined) return; // 租约已经不在了(已释放或被接管),没有心跳可续
   if (!isSameHolder(current, mine)) return;
+  if (isReleased()) return; // 释放发生在上面这次 await 期间——写回之前的最后一道闸
   await writeEntryFile(dir, id, { ...current, heartbeatAt: new Date(nowMs).toISOString() });
 }
 
@@ -289,19 +304,29 @@ export async function acquireGateSlot(
   const id = gateLeaseEntryId(experimentId, slot);
   const key = heldKey(niceevalRoot, id);
 
+  // `inFlight` 追踪当前正在飞的心跳续租调用。仅在写回前查一次 `released` 不够:一旦某次心跳
+  // 通过了检查、开始调用 `writeEntryFile`,该调用内部(mkdir/写临时文件/rename)本身还有多个
+  // await 点——release() 可能在这些 await 之间跑完 `rm`,随后心跳的 rename 落地,把刚删掉的
+  // 文件重新创建出来。真正堵住这条缝的办法不是"检查更早",而是让 release() 在删除之前等所有
+  // 已发起的心跳调用结束,保证不会有写回落在 rm 之后(与 lock.ts 同构)。
+  let released = false;
+  const inFlight = new Set<Promise<void>>();
   const timer = setInterval(() => {
-    void renewHeartbeat(dir, id, mine, Date.now()).catch(() => {
+    if (released) return;
+    const task = renewHeartbeat(dir, id, mine, Date.now(), () => released).catch(() => {
       // 心跳续租失败(如磁盘瞬时错误)不应该让定时器本身崩溃;下一个周期再试。
     });
+    inFlight.add(task);
+    void task.finally(() => inFlight.delete(task));
   }, heartbeatIntervalMs);
   timer.unref?.();
 
-  let released = false;
   const release = async (): Promise<void> => {
     if (released) return;
     released = true;
     clearInterval(timer);
     held.delete(key);
+    await Promise.all(inFlight); // 等在飞心跳全部落地(写或不写),再删——不然写回可能晚于 rm
     const current = await readEntryFile<GateLeaseRecord>(dir, id);
     if (current !== undefined && !isSameHolder(current, mine)) return; // 槽已被接管,不删别人的租约
     await rm(join(dir, `${id}.json`), { force: true });

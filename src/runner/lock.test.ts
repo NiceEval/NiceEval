@@ -404,6 +404,33 @@ describe("acquireCaseLock / claim.release: 释放", () => {
   });
 });
 
+describe("acquireCaseLock / claim.release: 释放与在飞心跳的竞态", () => {
+  it("回归 memory/lock-heartbeat-resurrects-released-lock.md:释放时若有一次心跳已读完记录、还没写回,写回不会把已删的锁文件复活", async () => {
+    // 心跳的「读—改—写」与 release() 的 `rm` 之间原本没有互斥:心跳读完记录、还没来得及
+    // writeEntryFile 写回时,release() 先把文件 rm 掉,随后心跳的写回会把原路径重新创建
+    // 出来。极短心跳周期(1ms)让每次释放大概率撞上一次在飞的心跳,配合真实定时器重复
+    // 多轮,能稳定复现(台账记录:修复前 40 次释放 39 次复活)。这里断言修复后不管重复
+    // 多少轮,释放后锁目录始终为空。
+    const root = await makeRoot();
+    const niceevalRoot = join(root, ".niceeval");
+
+    for (let i = 0; i < 40; i += 1) {
+      const { claim } = await acquireCaseLock(
+        niceevalRoot,
+        "compare/bub-e2b",
+        `memory/commit-${i}`,
+        { pid: 1, host: "h" },
+        { heartbeatIntervalMs: 1 },
+      );
+      await realDelay(5); // 让至少一次心跳进入「读—改—写」的飞行窗口
+      await claim.release();
+      await realDelay(15); // 给在飞的那次心跳足够时间尝试(错误地)写回
+    }
+
+    expect(await readdir(locksDirOf(niceevalRoot))).toEqual([]);
+  });
+});
+
 describe("drainHeldCaseLocks / pendingHeldCaseLockCount", () => {
   it("释放当前进程持有的全部锁,幂等", async () => {
     const root = await makeRoot();
