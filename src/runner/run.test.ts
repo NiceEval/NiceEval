@@ -21,6 +21,7 @@ import {
 import { drainExperimentTeardowns, pendingExperimentTeardownCount } from "./experiment-cleanup-registry.ts";
 import { computeFingerprint } from "./fingerprint.ts";
 import { locksDirOf, pendingHeldCaseLockCount, type CaseLockRecord } from "./lock.ts";
+import { pendingHeldGateLeaseCount } from "./gate-lease.ts";
 import { slugHashEntryId } from "../shared/entry-file-store.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { CarryPlan } from "./fingerprint.ts";
@@ -2444,5 +2445,484 @@ describe("runEvals · 用例锁: 释放路径", () => {
     expect(summary.results[0]!.verdict).toBe("errored");
     expect(summary.results[0]!.error?.code).toBe("experiment-setup-failed");
     expect(await lockFilesRemaining(root)).toEqual([]);
+  });
+});
+
+// ─────────────────── 派发探针:「在飞峰值」与「启动集合」的统一观察面 ───────────────────
+// 覆盖规范对用例锁调度的断言面是可观察的调度事实(锁目录条目数、在飞峰值、启动集合),
+// 不是内部信号量的调用次数。下面这组用例统一用「eval 的 test() 里登记自己被真实派发、
+// 然后挂在 barrier 上」取样:barrier 没释放前,「此刻在飞几条」「谁被派发过」在任何时刻
+// 都可读,且被派发两次的用例会在 started 里出现两次(双跑当场可见)。
+
+interface DispatchProbe {
+  /** 真实执行过 test() 的 evalId,按进入顺序;同一个 id 出现两次 = 这条用例被双跑了。 */
+  started: string[];
+  inFlight: number;
+  peak: number;
+}
+
+function newDispatchProbe(): DispatchProbe {
+  return { started: [], inFlight: 0, peak: 0 };
+}
+
+/** 一条挂在 `barrier` 上的 eval:进入 test() 即计入 `probes` 里的每个探针(多开场景要同时
+ *  记进「本侧」与「全局」两个探针),barrier 释放后立刻返回。 */
+function gatedEval(id: string, barrier: Promise<void>, ...probes: DispatchProbe[]): DiscoveredEval {
+  return makeEval(id, async () => {
+    for (const p of probes) {
+      p.started.push(id);
+      p.inFlight += 1;
+      p.peak = Math.max(p.peak, p.inFlight);
+    }
+    await barrier;
+    for (const p of probes) p.inFlight -= 1;
+  });
+}
+
+function makeBarrier(): { barrier: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { barrier, release };
+}
+
+/** 派发探针场景统一用的 AgentRun 骨架:timeoutMs 开得远大于测试里推进的假时钟总量,
+ *  免得「推过锁的 30s 判死线」顺带把在飞 attempt 推成外层超时。 */
+function probeRun(
+  agent: Agent,
+  experimentId: string,
+  selectedEvalIds: string[],
+  extra: Partial<AgentRun> = {},
+): AgentRun {
+  return {
+    agent,
+    flags: {},
+    runs: 1,
+    earlyExit: false,
+    sandbox: fakeSandboxSpec(),
+    timeoutMs: 600_000,
+    selectedEvalIds,
+    experimentId,
+    ...extra,
+  };
+}
+
+/** 模块装载期抓住的真实 setTimeout —— vi.useFakeTimers() 之后 globalThis.setTimeout 是假的,
+ *  下面 advanceWithRealYield 要靠它换一个真实的宏任务轮次。 */
+const realSetTimeout = globalThis.setTimeout;
+
+/**
+ * 分步推进假时钟,**每步之间让出真实事件循环**。`advanceTimersByTimeAsync` 只喂微任务,而
+ * runner 的取锁 / 落盘 / 租约续期全是真实磁盘 I/O(宏任务):一路推假时钟会把它们饿死,
+ * 表现为「推了几百秒虚拟时间,锁却一直没释放、名额一直交接不出去」。
+ *
+ * 与 `advancePastCaseLockPolling` 的分工:那个 helper 靠「等下一轮定时器重新挂上」隐式让出
+ * 真实时间,只在等待方**没有**别的挂起定时器时才有效;实验闸租约的等待方全程挂着心跳定时器,
+ * `getTimerCount()` 恒 ≥ 1,于是它一次也不让 —— 必须像这里一样显式让。
+ */
+async function advanceWithRealYield(isDone: () => boolean, stepMs: number, maxSteps: number): Promise<void> {
+  for (let i = 0; i < maxSteps && !isDone(); i++) {
+    await vi.advanceTimersByTimeAsync(stepMs);
+    for (let k = 0; k < 10 && !isDone(); k++) {
+      await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+    }
+  }
+}
+
+describe("runEvals · 用例锁: 排队用例不持锁", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+  });
+
+  it("四条用例、全局并发 2:锁目录条目数等于在跑用例数(排队的两条不持锁),收尾后清空", async () => {
+    const root = await makeRoot();
+    const experimentId = "lock-queue-exp";
+    const ids = ["q-a", "q-b", "q-c", "q-d"];
+    const { barrier, release } = makeBarrier();
+    const probe = newDispatchProbe();
+    const evals = ids.map((id) => gatedEval(id, barrier, probe));
+    const agentRun = probeRun(makeAgent("agent-lock-queue"), experimentId, ids);
+
+    const runPromise = runWithPriorResults(evals, [agentRun], { priorResults: [], root, maxConcurrency: 2 });
+    try {
+      await vi.waitFor(() => expect(probe.inFlight).toBe(2), { timeout: 5_000 });
+
+      // 关键断言:计划里有 4 条,此刻只有 2 条在跑 —— 锁目录也只有 2 条。取锁发生在派发时刻,
+      // 排队中的两条还没摸过锁目录(旧的「计划期一次性全量取锁」在这里会是 4)。
+      expect(await lockFilesRemaining(root)).toHaveLength(2);
+      expect(probe.started).toHaveLength(2);
+    } finally {
+      release();
+    }
+
+    const { summary } = await runPromise;
+    expect(summary.results).toHaveLength(4);
+    expect([...probe.started].sort()).toEqual([...ids].sort());
+    expect(await lockFilesRemaining(root)).toEqual([]);
+  });
+});
+
+describe("runEvals · 用例锁: 撞锁转派", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+  });
+
+  it("撞新鲜锁的用例让出全局位,位子转派给下一条没被锁的用例:在飞峰值仍等于全局上限,启动集合是未被锁的那些", async () => {
+    vi.useFakeTimers();
+    try {
+      const root = await makeRoot();
+      const experimentId = "lock-handoff-exp";
+      const lockedId = "h-locked";
+      const freeIds = ["h-free-1", "h-free-2"];
+      // 被锁的那条排在数组第一位:它一定会先摸到全局位,证明「转派」不是靠运气排在后面。
+      await seedCaseLock(root, freshLockRecord(experimentId, lockedId));
+
+      const { barrier, release } = makeBarrier();
+      const probe = newDispatchProbe();
+      const evals = [lockedId, ...freeIds].map((id) => gatedEval(id, barrier, probe));
+      const agentRun = probeRun(makeAgent("agent-lock-handoff"), experimentId, [lockedId, ...freeIds]);
+
+      let done = false;
+      const runPromise = runWithPriorResults(evals, [agentRun], {
+        priorResults: [],
+        root,
+        maxConcurrency: 2,
+      }).then((r) => {
+        done = true;
+        return r;
+      });
+      try {
+        await vi.waitFor(() => expect(probe.inFlight).toBe(2), { timeout: 5_000 });
+
+        // 峰值没有因为一条撞锁就塌成 1:让出来的位子当场被下一条没被锁的用例接手。
+        expect(probe.peak).toBe(2);
+        expect([...probe.started].sort()).toEqual([...freeIds].sort());
+        expect(probe.started).not.toContain(lockedId);
+      } finally {
+        release();
+      }
+
+      // 种下的心跳没人续租,推过 30s 判死线后被接管,这条用例照常补跑。
+      // 种下的心跳没人续租,推过 30s 判死线后被接管,这条用例照常补跑。
+      await advanceWithRealYield(() => done, 10_000, 12);
+      expect(probe.started).toContain(lockedId);
+
+      const { summary } = await runPromise;
+      expect(summary.results).toHaveLength(3);
+      expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
+      expect(await lockFilesRemaining(root)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("runEvals · 用例锁: 多开分工", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+  });
+
+  // 两条 runEvals 共用同一个 niceevalRoot(不是各自建一个临时根 —— 那测的是"零竞争各自跑")。
+  // 选择重叠:A 选 {m-1, m-2},B 把这两条连同 {m-3, m-4} 一起选上。先起 A 让它认领重叠的两条,
+  // 再起 B —— B 撞锁转而认领另外两条,于是"谁跑哪些"完全由锁自然分工,不靠测试摆布。
+  //
+  // 为什么不让两边选择完全相同:那样两边都会剩下"第一波没抢到位"的第二波 attempt,而第二波
+  // 摸锁的时刻与对方释放锁的时刻是真实竞争 —— 从没撞过锁、也没读到过别人记录的那一侧
+  // (multiOpenSeen 恒 false)会跳过重查携带,把对方刚跑完的用例再跑一遍。这是已登记的残留窗口
+  // (memory/dispatch-time-lock-needs-carry-recheck-on-fresh-acquire.md「残留窗口」),不是本测试
+  // 要验的契约点;让 A 没有第二波即可把它排除在外,三条断言面(不相交 / 并集覆盖 / 峰值)一条不少。
+  it("两条 runEvals 同 root、选择重叠:真实派发的用例集不相交、并集覆盖两边选择集,全局在飞峰值达到两边上限之和", async () => {
+    vi.useFakeTimers();
+    try {
+      const root = await makeRoot();
+      const experimentId = "multi-open-exp";
+      const sharedIds = ["m-1", "m-2"];
+      const soloIds = ["m-3", "m-4"];
+      const agent = makeAgent("agent-multi-open");
+      const sandbox = fakeSandboxSpec();
+
+      const { barrier, release } = makeBarrier();
+      const all = newDispatchProbe();
+      const sideA = newDispatchProbe();
+      const sideB = newDispatchProbe();
+      const evalsA = sharedIds.map((id) => gatedEval(id, barrier, sideA, all));
+      const evalsB = [...sharedIds, ...soloIds].map((id) => gatedEval(id, barrier, sideB, all));
+      // 指纹只吃 (eval 源码 + experimentId/agent/model/flags/sandbox/strict),不吃 selectedEvalIds
+      // 与 runs —— 两侧选择不同但指纹相同,B 才能真的携入 A 跑出来的重叠部分。
+      const runA = probeRun(agent, experimentId, sharedIds, { sandbox });
+      const runB = probeRun(agent, experimentId, [...sharedIds, ...soloIds], { sandbox });
+
+      let aDone = false;
+      let bDone = false;
+      const pa = runWithPriorResults(evalsA, [runA], { priorResults: [], root, maxConcurrency: 2 }).then((r) => {
+        aDone = true;
+        return r;
+      });
+      await vi.waitFor(() => expect(sideA.inFlight).toBe(2), { timeout: 5_000 });
+
+      const pb = runWithPriorResults(evalsB, [runB], { priorResults: [], root, maxConcurrency: 2 }).then((r) => {
+        bDone = true;
+        return r;
+      });
+      try {
+        await vi.waitFor(() => expect(sideB.inFlight).toBe(2), { timeout: 5_000 });
+
+        // ① 两边真实派发的用例集不相交;② 并集覆盖两边选择集的并集;③ 全局在飞峰值 = 2 + 2。
+        expect([...sideA.started].sort()).toEqual([...sharedIds].sort());
+        expect([...sideB.started].sort()).toEqual([...soloIds].sort());
+        expect(sideA.started.filter((id) => sideB.started.includes(id))).toEqual([]);
+        expect([...new Set(all.started)].sort()).toEqual([...sharedIds, ...soloIds].sort());
+        expect(all.peak).toBe(4);
+      } finally {
+        release();
+      }
+
+      await advanceWithRealYield(() => aDone && bDone, 10_000, 12);
+      const [ra, rb] = await Promise.all([pa, pb]);
+
+      // 重叠的两条在 B 侧是携入(A 释放锁后重查携带命中),不是重跑:全局每条用例恰好被
+      // 真实派发一次。
+      expect([...all.started].sort()).toEqual([...sharedIds, ...soloIds].sort());
+      expect(ra.summary.results).toHaveLength(2);
+      expect(rb.summary.results).toHaveLength(4);
+      expect(rb.summary.results.every((r) => r.verdict === "passed")).toBe(true);
+      expect(await lockFilesRemaining(root)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("runEvals · 实验闸租约跨 runEvals 共享名额", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+    expect(pendingHeldGateLeaseCount()).toBe(0);
+  });
+
+  // 两条 runEvals 各自有独立的进程内信号量,唯一共享的东西是同一个 niceevalRoot 下的租约条目
+  // ——所以「峰值恒为 1」只可能来自跨 runEvals 的名额域。两边故意选不相交的 eval 子集:用例锁
+  // 零交集,限流的只可能是实验闸(这正是 memory/case-lock-dispatch-time-acquire-ruling 里说的
+  // 「双终端选不相交子集跑同一个 maxConcurrency: 1 实验,锁零交集,状态照踩」那个洞)。
+  it("maxConcurrency: 1 的实验:两条 runEvals 同 root 跑不相交用例,该实验全局在飞峰值恒为 1", async () => {
+    vi.useFakeTimers();
+    try {
+      const root = await makeRoot();
+      const experimentId = "gate-cross-exp";
+      const agent = makeAgent("agent-gate-cross");
+      const sandbox = fakeSandboxSpec();
+      const idsA = ["g-a1", "g-a2"];
+      const idsB = ["g-b1", "g-b2"];
+
+      const all = newDispatchProbe();
+      // 不用 barrier:名额是串行的,挂住任何一条都会把整条链堵死。改用一个假时钟上的
+      // 让步点——两条 attempt 若真的同时持有名额,它们的让步窗口会重叠,峰值当场记成 2。
+      const tickingEval = (id: string): DiscoveredEval =>
+        makeEval(id, async () => {
+          all.started.push(id);
+          all.inFlight += 1;
+          all.peak = Math.max(all.peak, all.inFlight);
+          await new Promise<void>((resolve) => setTimeout(resolve, 1));
+          all.inFlight -= 1;
+        });
+
+      const runA = probeRun(agent, experimentId, idsA, { sandbox, maxConcurrency: 1 });
+      const runB = probeRun(agent, experimentId, idsB, { sandbox, maxConcurrency: 1 });
+
+      let aDone = false;
+      let bDone = false;
+      const pa = runWithPriorResults(idsA.map(tickingEval), [runA], {
+        priorResults: [],
+        root,
+        maxConcurrency: 4,
+      }).then((r) => {
+        aDone = true;
+        return r;
+      });
+      const pb = runWithPriorResults(idsB.map(tickingEval), [runB], {
+        priorResults: [],
+        root,
+        maxConcurrency: 4,
+      }).then((r) => {
+        bDone = true;
+        return r;
+      });
+
+      // 名额交接跨 runEvals 走租约轮询(周期 = 心跳周期),必须分步推假时钟。
+      await advanceWithRealYield(() => aDone && bDone, 5_000, 40);
+      const [ra, rb] = await Promise.all([pa, pb]);
+
+      expect(all.peak).toBe(1);
+      expect([...all.started].sort()).toEqual([...idsA, ...idsB].sort());
+      expect(ra.summary.results).toHaveLength(2);
+      expect(rb.summary.results).toHaveLength(2);
+      expect([...ra.summary.results, ...rb.summary.results].every((r) => r.verdict === "passed")).toBe(true);
+      expect(await lockFilesRemaining(root)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("runEvals · 用例锁: runs > 1 的兄弟 attempt 共享同一把锁", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+  });
+
+  it("自己已持有的直接放行:runs: 3 三条 attempt 同时在飞,锁目录仍只有一条(锁是逐用例的,不是逐 attempt)", async () => {
+    const root = await makeRoot();
+    const experimentId = "lock-sibling-hold-exp";
+    const evalId = "sibling-hold-eval";
+    const { barrier, release } = makeBarrier();
+    const probe = newDispatchProbe();
+    const agentRun = probeRun(makeAgent("agent-lock-sibling-hold"), experimentId, [evalId], { runs: 3 });
+
+    const runPromise = runWithPriorResults([gatedEval(evalId, barrier, probe)], [agentRun], {
+      priorResults: [],
+      root,
+      maxConcurrency: 3,
+    });
+    try {
+      await vi.waitFor(() => expect(probe.inFlight).toBe(3), { timeout: 5_000 });
+      expect(await lockFilesRemaining(root)).toHaveLength(1);
+    } finally {
+      release();
+    }
+
+    const { summary } = await runPromise;
+    expect(summary.results.map((r) => r.attempt).sort()).toEqual([0, 1, 2]);
+    expect(await lockFilesRemaining(root)).toEqual([]);
+  });
+
+  it("别人持有时整组挂在同一个等待窗口上:只开一条 lock_wait、elsewhere 计为 3 且与 queued 互斥,接管后三条一起派发", async () => {
+    vi.useFakeTimers();
+    try {
+      const root = await makeRoot();
+      const experimentId = "lock-sibling-wait-exp";
+      const evalId = "sibling-wait-eval";
+      await seedCaseLock(root, freshLockRecord(experimentId, evalId));
+
+      let calls = 0;
+      const evalDef = makeEval(evalId, () => {
+        calls += 1;
+      });
+      const agentRun = probeRun(makeAgent("agent-lock-sibling-wait"), experimentId, [evalId], { runs: 3 });
+      const plan: RunFeedbackPlan = {
+        shape: { evals: 1, configs: 1, totalAttempts: 3, maxConcurrency: 3 },
+        reused: 0,
+        reusedFailures: [],
+      };
+
+      await withCoordinator(plan, async (coordinator) => {
+        let done = false;
+        const runPromise = runWithPriorResults([evalDef], [agentRun], {
+          priorResults: [],
+          root,
+          maxConcurrency: 3,
+        }).then((r) => {
+          done = true;
+          return r;
+        });
+
+        await vi.waitFor(() => expect(coordinator.state.elsewhere).toBe(3), { timeout: 5_000 });
+        // 三条兄弟共享一次试锁与一个等待窗口:等待条目是「一条用例」而不是「三个 attempt」,
+        // 但 elsewhere 计的是 attempt 数(五项恒等式的口径)。
+        expect(coordinator.state.lockWaits.get(experimentId)?.waiting.size).toBe(1);
+        expect(coordinator.state.queued).toBe(0); // elsewhere 与 queued 互斥
+        const mid = coordinator.state;
+        expect(mid.total).toBe(mid.reused + mid.running + mid.elsewhere + mid.queued + mid.completed);
+        expect(calls).toBe(0);
+
+        await advanceWithRealYield(() => done, 10_000, 12);
+        const { summary } = await runPromise;
+
+        expect(calls).toBe(3);
+        expect(summary.results.map((r) => r.attempt).sort()).toEqual([0, 1, 2]);
+        expect(coordinator.state.elsewhere).toBe(0);
+        const end = coordinator.state;
+        expect(end.total).toBe(end.reused + end.running + end.elsewhere + end.queued + end.completed);
+        expect(await lockFilesRemaining(root)).toEqual([]);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+  });
+
+  // 与「用例锁: 释放后续接」那组的区别:那组走的是「撞上过期锁 → 接管」这条路径,重查携带
+  // 顺带在取锁里发生;这里走的是真实的挂起窗口(撞新鲜锁 → elsewhere → 持有方正常释放),
+  // 断言面是 elsewhere 两个方向的迁移本身:命中的序号迁 reused、没命中的序号迁 queued 自跑。
+  // 判定必须逐 attempt(memory/carry-must-be-per-attempt-not-whole-eval-key:按整段 key 判会
+  // 让同 eval 里一个序号的终态连带携入其它序号)。
+  it("磁盘只有序号 0 的终态时:序号 0 从 elsewhere 迁 reused 不重跑,序号 1 迁 queued 自跑", async () => {
+    const root = await makeRoot();
+    const experimentId = "lock-recheck-exp";
+    const evalId = "recheck-eval";
+    const agent = makeAgent("agent-lock-recheck");
+    const sandbox = fakeSandboxSpec();
+
+    // 先用一次真实运行落下序号 0 的 passed 终态(指纹由生产路径自己算,不手工拼)。
+    const producerRun = probeRun(agent, experimentId, [evalId], { sandbox });
+    const { summary: produced } = await run([makeEval(evalId, () => {})], [producerRun], { root });
+    expect(produced.results[0]!.verdict).toBe("passed");
+
+    // 另一条 Invocation 此刻正持有这把锁(心跳新鲜:走等待窗口,不是过期接管)。
+    await seedCaseLock(root, freshLockRecord(experimentId, evalId));
+
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const subjectEval = makeEval(evalId, () => {
+        calls += 1;
+      });
+      const subjectRun = probeRun(agent, experimentId, [evalId], { sandbox, runs: 2 });
+      const plan: RunFeedbackPlan = {
+        shape: { evals: 1, configs: 1, totalAttempts: 2, maxConcurrency: 2 },
+        reused: 0,
+        reusedFailures: [],
+      };
+
+      await withCoordinator(plan, async (coordinator) => {
+        let done = false;
+        const runPromise = runWithPriorResults([subjectEval], [subjectRun], {
+          priorResults: [],
+          root,
+          maxConcurrency: 2,
+        }).then((r) => {
+          done = true;
+          return r;
+        });
+
+        await vi.waitFor(() => expect(coordinator.state.elsewhere).toBe(2), { timeout: 5_000 });
+        expect(coordinator.state.reused).toBe(0); // 静态携带规划(priorResults 为空)一条都没命中
+
+        // 持有方正常收尾:锁文件消失 —— 等待窗口下一轮轮询就结束,并重新做一次携带规划。
+        await rm(caseLockPath(root, experimentId, evalId), { force: true });
+        await advanceWithRealYield(() => done, 10_000, 12);
+        const { summary } = await runPromise;
+
+        expect(calls).toBe(1); // 只有缺的序号 1 自跑,序号 0 是携入
+        expect(coordinator.state.reused).toBe(1); // elsewhere → reused
+        expect(coordinator.state.elsewhere).toBe(0);
+        const end = coordinator.state;
+        expect(end.total).toBe(end.reused + end.running + end.elsewhere + end.queued + end.completed);
+        expect(summary.results.map((r) => r.attempt).sort()).toEqual([0, 1]);
+        expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
+        expect(await lockFilesRemaining(root)).toEqual([]);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
