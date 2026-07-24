@@ -7,8 +7,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createHumanRenderer, renderDurableLines, renderHumanDryPlan } from "./human.ts";
 import { createFakeFeedbackIO } from "./testing.ts";
-import { createInitialRunFeedbackState } from "./reducer.ts";
-import { encodeAttemptKey } from "../types.ts";
+import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
+import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import { stringWidth } from "../../report/model/text-layout.ts";
 import type { DurableFeedbackEvent, InvocationCompletion, InvocationSummary, RunFeedbackPlan, RunFeedbackState } from "../types.ts";
 import type { AttemptLocator } from "../../results/locator.ts";
@@ -565,6 +565,77 @@ describe("用例锁等待(elsewhere)的显示", () => {
     expect(out).toContain("lock wait resolved · compare/codex");
     expect(out).toContain("2 carried");
     expect(out).toContain("1 to run");
+  });
+});
+
+describe("诊断行:标题读稳定词法,止损闸落闸是一行 error 级通知", () => {
+  /** 把同一条诊断喂 N 次(emitter 刷新 data.unstarted 时就是这个形状),返回每一次的渲染行。 */
+  function replayDiagnostic(event: DurableFeedbackEvent & { type: "diagnostic" }, times: number): string[][] {
+    let state = createInitialRunFeedbackState();
+    const out: string[][] = [];
+    for (let i = 0; i < times; i++) {
+      state = reduceRunFeedback(state, event);
+      out.push(renderDurableLines(event, state, { mode: "plain", width: 100 }));
+    }
+    return out;
+  }
+
+  it("普通诊断的标题用 code,不把编了身份的去重 key 甩进人读的一行", () => {
+    const [lines] = replayDiagnostic(
+      {
+        type: "diagnostic",
+        at: 0,
+        key: "lock-taken-over:compare/codex|memory/retention",
+        code: "lock-taken-over",
+        severity: "warning",
+        message: "took over a stale lock from pid 41267",
+      },
+      1,
+    );
+    expect(lines![0]).toBe("! lock-taken-over");
+    expect(lines![1]).toContain("took over a stale lock");
+  });
+
+  it("同一 key 再次出现时标题带 ×N 折叠计数(非止损闸诊断保持既有形态)", () => {
+    const rounds = replayDiagnostic(
+      { type: "diagnostic", at: 0, key: "memory-warmup-degraded", severity: "warning", message: "cold index" },
+      3,
+    );
+    expect(rounds[0]![0]).toBe("! memory-warmup-degraded");
+    expect(rounds[2]![0]).toBe("! memory-warmup-degraded (3 attempts)");
+  });
+
+  it("实验闸落闸:一行 error 级通知,文案就是契约字面,不再多一行标题", () => {
+    const [lines] = replayDiagnostic(
+      {
+        type: "diagnostic",
+        at: 0,
+        key: "dispatch-halted:experiment:compare/codex",
+        code: HALT_DIAGNOSTIC_CODE,
+        severity: "error",
+        message: "experiment halted (dispatch-halted): shared service is down; restart the tunnel",
+        data: { experimentId: "compare/codex", scope: "experiment", phase: "eval.run", unstarted: 0 },
+      },
+      1,
+    );
+    expect(lines).toEqual(["✗ experiment halted (dispatch-halted): shared service is down; restart the tunnel"]);
+  });
+
+  it("每条未派发 attempt 刷一次的后续声明零输出:被中止的等待集不逐条刷屏,数量归完成状态的 unstarted", () => {
+    const rounds = replayDiagnostic(
+      {
+        type: "diagnostic",
+        at: 0,
+        key: "dispatch-halted:eval:compare/codex|memory/retention",
+        code: HALT_DIAGNOSTIC_CODE,
+        severity: "error",
+        message: "eval halted: fixture db is empty; run scripts/seed.ts",
+        data: { experimentId: "compare/codex", scope: "eval", evalId: "memory/retention", phase: "eval.run", unstarted: 4 },
+      },
+      5,
+    );
+    expect(rounds[0]).toEqual(["✗ eval halted: fixture db is empty; run scripts/seed.ts"]);
+    expect(rounds.slice(1).flat()).toEqual([]);
   });
 });
 

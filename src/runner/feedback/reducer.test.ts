@@ -391,6 +391,25 @@ describe("reduceRunFeedback: 守恒公式", () => {
     expect(state.diagnostics[0]).toMatchObject({ key: "memory-warmup-degraded", count: 3 });
   });
 
+  it("diagnostic:code 原样带进 DiagnosticNotice;折叠仍按 key —— 同 code 不同身份是两条", () => {
+    let state = createInitialRunFeedbackState();
+    for (const evalId of ["memory/a", "memory/b", "memory/a"]) {
+      state = reduceRunFeedback(state, {
+        type: "diagnostic",
+        at: 1,
+        key: `dispatch-halted:eval:compare/codex|${evalId}`,
+        code: "dispatch-halted",
+        severity: "error",
+        message: `eval halted: ${evalId} needs a seeded fixture`,
+        data: { experimentId: "compare/codex", scope: "eval", evalId },
+      });
+    }
+    expect(state.diagnostics).toHaveLength(2);
+    expect(state.diagnostics.map((d) => d.code)).toEqual(["dispatch-halted", "dispatch-halted"]);
+    expect(state.diagnostics[0]).toMatchObject({ key: "dispatch-halted:eval:compare/codex|memory/a", count: 2 });
+    expect(state.diagnostics[1]).toMatchObject({ key: "dispatch-halted:eval:compare/codex|memory/b", count: 1 });
+  });
+
   it("phase 变化清空上一个 phase 的 detail,不把旧阶段的次要文本带进新阶段", () => {
     const a = ref("memory/a");
     let state = createInitialRunFeedbackState();

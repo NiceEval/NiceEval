@@ -8,8 +8,10 @@
 // docs/engineering/testing/e2e/cli.md「反馈输出格式」在真实进程输出上验收。
 
 import { describe, expect, it } from "vitest";
-import { computeExitCode, renderJsonPlanDocument } from "./json.ts";
-import type { InvocationCompletion, InvocationSummary } from "../types.ts";
+import { computeExitCode, createJsonRenderer, renderJsonPlanDocument } from "./json.ts";
+import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
+import { createFakeFeedbackIO } from "./testing.ts";
+import { HALT_DIAGNOSTIC_CODE, type DurableFeedbackEvent, type InvocationCompletion, type InvocationSummary } from "../types.ts";
 
 function summary(overrides: Partial<InvocationSummary> = {}): InvocationSummary {
   return {
@@ -74,6 +76,113 @@ describe("computeExitCode:CompletionStatus 驱动退出码,不只看 failed/erro
     expect(
       computeExitCode(summary({ passed: 10, failed: 0, errored: 0 }), completion({ earlyExitUnstarted: 6, unstarted: 0 })),
     ).toBe(0);
+  });
+});
+
+/** 依次喂进 reducer 再交给 json renderer(与生产的 coordinator 同序:先 reduce 后 render),
+ *  返回逐行解析出的事件对象。 */
+function emitDurable(events: readonly DurableFeedbackEvent[]): Record<string, unknown>[] {
+  const { io, stdout } = createFakeFeedbackIO();
+  const renderer = createJsonRenderer({ io });
+  let state = createInitialRunFeedbackState();
+  for (const event of events) {
+    state = reduceRunFeedback(state, event);
+    renderer.appendDurable(event, state);
+  }
+  return stdout.writes
+    .join("")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+describe("warning 事件:code 是稳定词法,折叠身份走具名字段", () => {
+  it("code 用 DiagnosticInput.code 的干净字面量,不透传编了身份的去重 key", () => {
+    const [warning] = emitDurable([
+      {
+        type: "diagnostic",
+        at: 1,
+        key: "lock-taken-over:compare/codex|memory/retention",
+        code: "lock-taken-over",
+        severity: "warning",
+        message: "took over a stale lock",
+        data: { experimentId: "compare/codex", evalId: "memory/retention" },
+      },
+    ]);
+    expect(warning).toMatchObject({
+      event: "warning",
+      code: "lock-taken-over",
+      level: "warning",
+      experimentId: "compare/codex",
+      evalId: "memory/retention",
+    });
+  });
+
+  it("没给 code 的诊断回落到 key(折叠身份本就不进 key 的那些天生是干净字面量)", () => {
+    const [warning] = emitDurable([
+      { type: "diagnostic", at: 1, key: "memory-warmup-degraded", severity: "warning", message: "cold index" },
+    ]);
+    expect(warning).toMatchObject({ code: "memory-warmup-degraded" });
+    expect(warning).not.toHaveProperty("experimentId");
+    expect(warning).not.toHaveProperty("evalId");
+  });
+
+  it("eval 闸的 dispatch-halted:code 干净、evalId 与 phase 都在事件流里透得出", () => {
+    const [warning] = emitDurable([
+      {
+        type: "diagnostic",
+        at: 1,
+        key: "dispatch-halted:eval:compare/codex|memory/retention",
+        code: HALT_DIAGNOSTIC_CODE,
+        severity: "error",
+        message: "eval halted: fixture db is empty; run scripts/seed.ts",
+        data: {
+          experimentId: "compare/codex",
+          scope: "eval",
+          evalId: "memory/retention",
+          phase: "eval.run",
+          unstarted: 0,
+        },
+      },
+    ]);
+    expect(warning).toMatchObject({
+      event: "warning",
+      code: "dispatch-halted",
+      level: "error",
+      phase: "eval.run",
+      experimentId: "compare/codex",
+      evalId: "memory/retention",
+    });
+  });
+
+  it("身份从 data 取(闸不是 attempt 级、不伪造 identity);有 identity 时 identity 优先", () => {
+    const [fromIdentity] = emitDurable([
+      {
+        type: "diagnostic",
+        at: 1,
+        key: "fail-fast:x",
+        code: "fail-fast",
+        severity: "warning",
+        message: "deterministic failure",
+        identity: { experimentId: "compare/codex", evalId: "memory/a", attempt: 0 },
+        data: { experimentId: "other/exp", evalId: "memory/z" },
+      },
+    ]);
+    expect(fromIdentity).toMatchObject({ experimentId: "compare/codex", evalId: "memory/a" });
+  });
+
+  it("同一 dedupeKey 只追加一次:emitter 为刷新 data.unstarted 反复报同一条闸,事件流不重复", () => {
+    const halted = (at: number, unstarted: number): DurableFeedbackEvent => ({
+      type: "diagnostic",
+      at,
+      key: "dispatch-halted:experiment:compare/codex",
+      code: HALT_DIAGNOSTIC_CODE,
+      severity: "error",
+      message: "experiment halted (dispatch-halted): shared service is down",
+      data: { experimentId: "compare/codex", scope: "experiment", phase: "eval.run", unstarted },
+    });
+    const events = emitDurable([halted(1, 0), halted(2, 1), halted(3, 2)]);
+    expect(events.filter((e) => e.event === "warning")).toHaveLength(1);
   });
 });
 
