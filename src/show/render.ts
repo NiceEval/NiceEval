@@ -393,14 +393,16 @@ function relSeconds(ms: number, originMs: number): string {
 }
 
 /** 卡片正文的有界预览预算(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」):
- *  8 KiB,按 UTF-8 字节计,超限时按字符边界(codepoint,不切分代理对)回退截断。 */
-const CARD_BODY_BUDGET_BYTES = 8 * 1024;
+ *  主尺度是行——每个内容段最多显示前 3 行(保留原始换行);每段另有 1 KiB(UTF-8 字节)兜底,
+ *  防单行超长的 JSON blob 击穿行预算。 */
+const CARD_SEGMENT_MAX_LINES = 3;
+const CARD_SEGMENT_BUDGET_BYTES = 1024;
 
 /**
  * 按 UTF-8 字节预算截断,永不切断一个 codepoint。快速路径:总字节数不超预算时不做任何逐字符
  * 扫描。慢速路径只在确实超限时才逐 codepoint 累加字节数,找到恰好塞满预算的前缀。
  */
-function truncateCardBody(text: string, maxBytes: number): { shown: string; foldedChars: number } {
+function truncateByteBudget(text: string, maxBytes: number): { shown: string; foldedChars: number } {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return { shown: text, foldedChars: 0 };
   const chars = Array.from(text);
   let bytes = 0;
@@ -411,6 +413,55 @@ function truncateCardBody(text: string, maxBytes: number): { shown: string; fold
     bytes += charBytes;
   }
   return { shown: chars.slice(0, i).join(""), foldedChars: chars.length - i };
+}
+
+/** 一段内容截断后的状态:`shown` 是保留的前缀,`linesFullyHidden` 是被 3 行上限整行折掉的行数
+ *  (不含被字节兜底截到一半的那一行),`partialCut` 标记这段是否被字节兜底从中间截断过,
+ *  `foldedChars` 是这段被折掉的字符总数(= 原文 codepoint 数 − `shown` 的 codepoint 数)。 */
+interface SegmentTruncation {
+  shown: string;
+  linesFullyHidden: number;
+  partialCut: boolean;
+  foldedChars: number;
+}
+
+/**
+ * 单段的行 + 字节双重预算截断(docs/feature/reports/show/execution.md「卡片预览预算与
+ * --expand」):先按 3 行裁剪(保留原始换行),再对裁剪结果套 1 KiB 字节兜底(按字符边界回退,
+ * 不切分代理对),防单行超长的 JSON blob 击穿行预算。两次裁剪都只从末尾裁,`shown` 因此恒是
+ * 原文的一个前缀,折字符数可以直接用两侧 codepoint 数之差倒推。
+ */
+function truncateSegment(text: string): SegmentTruncation {
+  const lines = text.split("\n");
+  const shownLineCount = Math.min(CARD_SEGMENT_MAX_LINES, lines.length);
+  const candidate = lines.slice(0, shownLineCount).join("\n");
+  const { shown, foldedChars: byteFoldedChars } = truncateByteBudget(candidate, CARD_SEGMENT_BUDGET_BYTES);
+  const totalChars = Array.from(text).length;
+  const shownChars = Array.from(shown).length;
+  return {
+    shown,
+    linesFullyHidden: lines.length - shownLineCount,
+    partialCut: byteFoldedChars > 0,
+    foldedChars: totalChars - shownChars,
+  };
+}
+
+/**
+ * 卡尾截断提示的聚合(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」):
+ * N 是全卡各段被整行折掉的行数之和,再加上「同一张卡里确实有整行被折」时,每个被字节兜底截到
+ * 一半的段各计 1 行——这条规则只在 N 本来就 > 0 时生效;如果全卡没有任何一段整行被折、只是
+ * 某段字节兜底切了字符(单段本身没超 3 行,但这一两行太长),N 退化为 0,尾巴退化成
+ * `(+M chars · …)`,不虚报一行「被折」。返回 undefined 表示这张卡没有任何段被截断,调用方不
+ * 应追加尾巴。
+ */
+function foldCardTail(bits: readonly SegmentTruncation[], locator: string, handle: string): string | undefined {
+  const totalFoldedChars = bits.reduce((sum, b) => sum + b.foldedChars, 0);
+  if (totalFoldedChars === 0) return undefined;
+  const totalHiddenLines = bits.reduce((sum, b) => sum + b.linesFullyHidden, 0);
+  const partialCutCount = bits.reduce((sum, b) => sum + (b.partialCut ? 1 : 0), 0);
+  const n = totalHiddenLines > 0 ? totalHiddenLines + partialCutCount : 0;
+  const head = n > 0 ? `+${n} line${n === 1 ? "" : "s"} · ${totalFoldedChars} chars` : `+${totalFoldedChars} chars`;
+  return `(${head} · niceeval show ${locator} --execution --expand ${handle})`;
 }
 
 /** 逐行加前缀,保留原始换行(不做 wrapDisplay 折行——「保留原始换行」是这个区块 text 面的契约)。
@@ -522,38 +573,49 @@ function nodeMeta(node: ExecutionNode, originMs: number): string {
   return `${relSeconds(span.startMs, originMs)} · ${formatDurationMs(span.endMs - span.startMs)}`;
 }
 
+/** 卡片正文的一个内容段(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」):
+ *  预览预算(3 行 + 1 KiB 兜底)按段独立截断,不是对整卡正文一次性截断。 */
+interface CardSegment {
+  /** 段的骨架行(如 `input` / `result · completed`);不计入预算、不截断。undefined 表示这段
+   *  没有骨架行——单段卡的正文,或失败命令卡的命令行本身。 */
+  label?: string;
+  /** 这段的完整(未截断)原始内容,保留原始换行;预算截断与 --expand 的完整输出都基于它。 */
+  text: string;
+}
+
 interface CardParts {
   /** 卡片标题行(不缩进,含 kind 标签与相对时间/耗时 meta)。 */
   header: string;
-  /** 卡片正文的完整(未截断)原始内容,保留原始换行;预算截断与 --expand 的完整输出都基于它。 */
-  body: string;
+  /** 卡片正文按结构划分的段落;角色文本/thinking 这类单段卡只有 1 段,TOOL 卡 input/result
+   *  各一段,失败命令卡命令行/stdout/stderr 各一段。 */
+  segments: CardSegment[];
   /** --grep 的匹配面:角色文本、工具名、input、result(docs/feature/reports/show/execution.md
    *  「范围化:跨 attempt 扫描与 --grep」);未经截断,grep 命中不受预览预算影响。 */
   matchText: string;
-  /** 截断尾巴 `(+N chars · …)` 相对卡片正文的额外缩进——多段结构(如 TOOL 的 input/result)
-   *  的正文本身已经带一层内嵌缩进,尾巴要落在同一层,不是贴着卡片左边。 */
+  /** 截断尾巴相对卡片正文的额外缩进——多段结构(如 TOOL 的 input/result)的正文本身已经带
+   *  一层内嵌缩进,尾巴要落在同一层,不是贴着卡片左边。 */
   tailIndent: string;
 }
 
-/** 一个 Agent 事件节点 → 卡片的标题/正文/匹配面。`node.kind` 已排除 telemetry(见调用方的
+/** 一个 Agent 事件节点 → 卡片的标题/段落/匹配面。`node.kind` 已排除 telemetry(见调用方的
  *  agentNodes 过滤),telemetry 分支仅为联合类型穷尽性存在,不会被触达。 */
 function agentCardParts(node: ExecutionNode, originMs: number): CardParts {
   const meta = nodeMeta(node, originMs);
   const withMeta = (title: string) => (meta ? `${title}  ${meta}` : title);
   switch (node.kind) {
     case "message":
-      return { header: withMeta(node.role.toUpperCase()), body: node.text, matchText: node.text, tailIndent: "" };
+      return { header: withMeta(node.role.toUpperCase()), segments: [{ text: node.text }], matchText: node.text, tailIndent: "" };
     case "thinking":
-      return { header: withMeta("THINKING"), body: node.text, matchText: node.text, tailIndent: "" };
+      return { header: withMeta("THINKING"), segments: [{ text: node.text }], matchText: node.text, tailIndent: "" };
     case "context.injected":
       return {
         header: withMeta(node.source ? `CONTEXT INJECTED · ${node.source}` : "CONTEXT INJECTED"),
-        body: node.text,
+        segments: [{ text: node.text }],
         matchText: node.text,
         tailIndent: "",
       };
     case "skill.loaded":
-      return { header: withMeta(`SKILL · ${node.skill}`), body: "loaded", matchText: node.skill, tailIndent: "" };
+      return { header: withMeta(`SKILL · ${node.skill}`), segments: [{ text: "loaded" }], matchText: node.skill, tailIndent: "" };
     case "action": {
       const input = recordOf(node.input);
       const output = recordOf(node.output);
@@ -564,36 +626,43 @@ function agentCardParts(node: ExecutionNode, originMs: number): CardParts {
           ? jsonText(node.output)
           : "(no result)";
       const exit = typeof output?.exit_code === "number" ? ` · exit ${output.exit_code}` : "";
-      const body = ["input", indentLines(inputText, "  "), `result · ${node.status}${exit}`, indentLines(outputText, "  ")].join("\n");
-      return { header: withMeta(`TOOL · ${node.name}`), body, matchText: `${node.name} ${inputText} ${outputText}`, tailIndent: "  " };
+      return {
+        header: withMeta(`TOOL · ${node.name}`),
+        segments: [
+          { label: "input", text: inputText },
+          { label: `result · ${node.status}${exit}`, text: outputText },
+        ],
+        matchText: `${node.name} ${inputText} ${outputText}`,
+        tailIndent: "  ",
+      };
     }
     case "subagent": {
       const resultText = node.output === undefined ? node.status : `result · ${node.status}: ${jsonText(node.output)}`;
-      return { header: withMeta(`SUBAGENT · ${node.name}`), body: resultText, matchText: `${node.name} ${resultText}`, tailIndent: "" };
+      return { header: withMeta(`SUBAGENT · ${node.name}`), segments: [{ text: resultText }], matchText: `${node.name} ${resultText}`, tailIndent: "" };
     }
     case "input.requested": {
       const text = node.request.prompt ?? node.request.display ?? "(input requested)";
       const matchText = [text, node.request.action, node.request.input !== undefined ? jsonText(node.request.input) : undefined]
         .filter((s): s is string => s !== undefined)
         .join(" ");
-      return { header: withMeta("INPUT REQUESTED"), body: text, matchText, tailIndent: "" };
+      return { header: withMeta("INPUT REQUESTED"), segments: [{ text }], matchText, tailIndent: "" };
     }
     case "compaction":
-      return { header: withMeta("COMPACTION"), body: node.reason ?? "context compacted", matchText: node.reason ?? "", tailIndent: "" };
+      return { header: withMeta("COMPACTION"), segments: [{ text: node.reason ?? "context compacted" }], matchText: node.reason ?? "", tailIndent: "" };
     case "error":
-      return { header: withMeta("ERROR"), body: node.message, matchText: node.message, tailIndent: "" };
+      return { header: withMeta("ERROR"), segments: [{ text: node.message }], matchText: node.message, tailIndent: "" };
     case "telemetry":
-      return { header: "TELEMETRY", body: "", matchText: "", tailIndent: "" };
+      return { header: "TELEMETRY", segments: [], matchText: "", tailIndent: "" };
   }
 }
 
 function commandCardParts(command: FailedCommandEvidence): CardParts {
-  const sections = [command.display];
-  if (command.stdout) sections.push("stdout", indentLines(command.stdout, "  "));
-  if (command.stderr) sections.push("stderr", indentLines(command.stderr, "  "));
+  const segments: CardSegment[] = [{ text: command.display }];
+  if (command.stdout) segments.push({ label: "stdout", text: command.stdout });
+  if (command.stderr) segments.push({ label: "stderr", text: command.stderr });
   return {
     header: "",
-    body: sections.join("\n"),
+    segments,
     matchText: `${command.display} ${command.stdout} ${command.stderr}`,
     tailIndent: "  ",
   };
@@ -629,19 +698,37 @@ function turnUsageText(turn: TimingNode | undefined): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-/** 一张卡片的完整渲染:`full` 时输出未截断的落盘内容(--expand);否则按 8 KiB 预算截断,
- *  截断尾巴带被折字符数与展开句柄。两种形态都只做逐行前缀(indentLines),不做 wrapDisplay 折行
- *  ——保留原始换行是这个区块 text 面的契约,不是遗漏。 */
+/**
+ * 一张卡片的完整渲染:`full` 时逐段输出未截断的落盘内容(--expand);否则每段独立按 3 行 + 1 KiB
+ * 预算截断(docs/feature/reports/show/execution.md「卡片预览预算与 --expand」),卡尾追加一条
+ * 聚合尾巴。带 `label` 的段(TOOL 的 input/result、失败命令的 stdout/stderr)先输出骨架行,
+ * 段正文本身再多缩进一层;没有 label 的段(单段卡的正文,命令行本身)正文与骨架行同一层。
+ * 两种形态都只做逐行前缀(indentLines),不做 wrapDisplay 折行——保留原始换行是这个区块 text
+ * 面的契约,不是遗漏。
+ */
 function renderCardLines(parts: CardParts, handle: string, locator: string, full: boolean): string[] {
-  if (full) {
-    const body = indentLines(parts.body, "  ");
-    return parts.header ? [parts.header, ...body.split("\n")] : body.split("\n");
+  const bodyLines: string[] = [];
+  const truncations: SegmentTruncation[] = [];
+  for (const seg of parts.segments) {
+    let content: string;
+    if (full) {
+      content = seg.text;
+    } else {
+      const t = truncateSegment(seg.text);
+      truncations.push(t);
+      content = t.shown;
+    }
+    if (seg.label) {
+      bodyLines.push(seg.label, ...indentLines(content, "  ").split("\n"));
+    } else {
+      bodyLines.push(...content.split("\n"));
+    }
   }
-  const { shown, foldedChars } = truncateCardBody(parts.body, CARD_BODY_BUDGET_BYTES);
-  const withTail = foldedChars > 0
-    ? `${shown}\n${parts.tailIndent}(+${foldedChars} chars · niceeval show ${locator} --execution --expand ${handle})`
-    : shown;
-  const body = indentLines(withTail, "  ");
+  if (!full) {
+    const tail = foldCardTail(truncations, locator, handle);
+    if (tail) bodyLines.push(`${parts.tailIndent}${tail}`);
+  }
+  const body = indentLines(bodyLines.join("\n"), "  ");
   return parts.header ? [parts.header, ...body.split("\n")] : body.split("\n");
 }
 
@@ -814,7 +901,9 @@ export interface ExecutionRenderOptions {
  * (`cmd<N>`,来自 `commands.json`,经 `evidence.commands` 读取;没有失败命令时这一段自然
  * 零输出,见 `failedCommandsOf`)。
  *
- * 卡片正文是 8 KiB(UTF-8 字节,按字符边界回退)的有界预览,截断尾巴带被折字符数与展开句柄；
+ * 卡片正文按段(单段卡的正文、TOOL 卡的 input/result、失败命令卡的命令行/stdout/stderr)分别是
+ * 3 行(保留原始换行)的有界预览,单段另有 1 KiB 字节兜底(按字符边界回退);截断尾巴带被折
+ * 行数与字符数、以及展开句柄(全卡没有整行被折、只是字节兜底切了字符时,行数退化为省略)。
  * `options.expand` 精确定位一张卡片输出完整落盘内容;`options.grep` 只输出匹配面(角色文本/
  * 工具名/input/result,命令卡另加 display/stdout/stderr)命中的卡片,返回值的 `matches` 是本
  * attempt 内的命中卡片数——「N matches in M attempts」与 0 命中的措辞归调用方组装。

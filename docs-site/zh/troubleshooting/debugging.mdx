@@ -93,12 +93,12 @@ $ niceeval show @1qrdcfq8 --execution | grep "TOOL ·" | sort | uniq -c
 niceeval show @1qrdcfq8 --execution | grep proposals
 ```
 
-工具结果超过 8 KiB 时只显示预览，但截断尾巴自带这张卡片的展开句柄——整行复制就是看全量的下一条命令，不用去翻 `events.json`：
+超长的工具结果只显示前 3 行预览，但截断尾巴自带这张卡片的展开句柄——整行复制就是看全量的下一条命令，不用去翻 `events.json`：
 
 ```text
   result · completed · exit 0
     Proposal 1: …
-    (+18553 chars · niceeval show @1qrdcfq8 --execution --expand t1.c17)
+    (+412 lines · 18553 chars · niceeval show @1qrdcfq8 --execution --expand t1.c17)
 
 $ niceeval show @1qrdcfq8 --execution --expand t1.c17    # 只输出这张卡片，完整不截断
 ```

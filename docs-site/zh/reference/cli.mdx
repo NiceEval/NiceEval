@@ -93,7 +93,7 @@ npx niceeval exp models weather
 | `--out` | string | `view` 命令专用:把结果查看器静态导出到指定目录。 |
 | `--port` | number | `view` 命令专用:指定本地服务器监听端口。 |
 | `--source` | boolean | `show` 命令专用:该 attempt 运行时保存的 Eval 源码,gate/soft 断言标回源码行(证据切面)。 |
-| `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。单张卡片正文超过 8 KiB 预览预算会被截断,截断尾巴自带 `--expand` 展开句柄。 |
+| `--execution` | boolean | `show` 命令专用:该 attempt 的标准执行事件流(消息、thinking、Skill load、工具调用/结果);有 OTel 时同一节点补时间(证据切面)。每个内容段最多预览前 3 行,截断尾巴自带 `--expand` 展开句柄。 |
 | `--timing` | boolean | `show` 命令专用:整个 Attempt 的统一时间树;裸 `--timing` 给有界诊断投影,`--timing=full` 逐节点展开全部 runner/已关联 OTel 节点。 |
 | `--grep` | string | `show` 命令专用:只与 `--execution` 组合;JS 正则,只输出命中的执行卡片(角色文本、工具名、input、result,失败命令再加 display/stdout/stderr),末尾报跨 attempt 汇总 `N matches in M attempts`。与 `--expand` 互斥。 |
 | `--expand` | string | `show` 命令专用:只与 `--execution` 组合,要求范围恰好命中一个 attempt;展开一张卡片的完整落盘内容(不截断)。句柄语法 `t<轮次>.c<卡片>`(agent 事件)或 `cmd<n>`(失败 Sandbox 命令),来自截断卡片自带的提示。与 `--grep` 互斥。 |
@@ -179,10 +179,10 @@ npx niceeval show weather/brooklyn --history
 
 `@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）；`--source`、`--execution`、`--timing`、`--diff` 是证据切面，各自接受任意范围，不限于单个 `@<locator>`——范围含多个 attempt 时按 experiment id、eval id、attempt 序逐 attempt 分节。`--results <目录>` 指定结果根，`--history` 查看跨 run 趋势。`--exp` 可重复：出现一次收窄范围，两次以上进入对照语义（每个 `--exp` 必须恰好解析到一个 experiment，顺序即对照条件顺序）。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
 
-`--execution` 的卡片正文是有界预览：超过 8 KiB（UTF-8 字节）截断，截断尾巴报被折字符数并自带该卡片的展开句柄，整行就是可复制的完整命令：
+`--execution` 的卡片正文是有界预览：每个内容段（消息正文；工具卡的 input 与 result 各算一段）最多显示前 3 行，每段另有 1 KiB（UTF-8 字节）兜底防单行超长。有折叠的卡片在卡尾报被折的行数与字符数，并自带该卡片的展开句柄，整行就是可复制的完整命令：
 
 ```text
-    (+263161 chars · niceeval show @1k2m9qrs --execution --expand t2.c3)
+    (+3055 lines · 263161 chars · niceeval show @1k2m9qrs --execution --expand t2.c3)
 ```
 
 `--expand <handle>` 只与 `--execution` 组合、要求范围恰好命中一个 attempt，单独输出该卡片的完整落盘内容。句柄 `t<轮次>.c<轮内卡序>`（agent 事件卡）或 `cmd<n>`（失败 Sandbox 命令卡）从截断提示里抄，不自己数。落盘时已过 256 KiB 单值上限的内容展开后如实标注 `truncated` 与原始字节数。`--grep` 命中的卡片同样受预览预算，尾巴照带句柄；`--json` 恒输出完整值、从不截断，与 `--expand` 互斥。

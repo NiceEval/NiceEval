@@ -36,8 +36,8 @@ full OTel trace: .niceeval/.../trace.json
     stderr
       npm error code EACCES
       npm error path /usr/lib/node_modules/pnpm
-      …
-      (+1480 chars · niceeval show @1jmvhiau --execution --expand cmd1)
+      npm error errno -13
+      (+18 lines · 1480 chars · niceeval show @1jmvhiau --execution --expand cmd1)
 ```
 
 失败命令按 timing `startOffsetMs` 排列；`timingNodeId` 唯一关联失败命令卡与
@@ -47,7 +47,9 @@ Attempt 首页在错误摘要后明确提示
 
 ## 卡片预览预算与 `--expand`
 
-卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整 resolve 产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。卡片正文是**有界预览**：保留原始换行，超过 8 KiB（UTF-8 字节，按字符边界回退）截断到预算。截断尾巴不是死胡同——它自带出路，报被折字符数与这张卡片的**展开句柄**，沿用 `next:` 提示的习语：
+卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整 resolve 产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。卡片正文是**有界预览**，主尺度是行：每个内容段最多显示前 3 行（保留原始换行）。段按卡片结构划分——角色文本、thinking 这类单段卡的正文即一段；TOOL 卡的 input 与 result 各为一段（`input` / `result · <status>` 骨架行不计入）；失败命令卡的命令行、stdout、stderr 各为一段。每段另有 1 KiB（UTF-8 字节，按字符边界回退）兜底，防单行超长的 JSON blob 击穿行预算。选 3 行而不是更宽，是因为这个视图的职责是全景骨架——回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；细读任何一张卡都是一条显式的 `--expand` 命令，不靠预览硬扛。
+
+任一段被折叠时，卡尾追加一条截断尾巴。尾巴不是死胡同——它自带出路，报整卡被折的行数与字符数，以及这张卡片的**展开句柄**，沿用 `next:` 提示的习语：
 
 ```text
   TOOL · memory_search  +4.1s
@@ -56,7 +58,8 @@ Attempt 首页在错误摘要后明确提示
     result · completed
       total=5 · [0.845] react-datepicker-month-navigation: The month-change
       notification also fires while syncing preselection, so the panel index
-      (+3877 chars · niceeval show @1jmvhiau --execution --expand t2.c3)
+      resets to the preselected month even after the user has navigated away.
+      (+41 lines · 3877 chars · niceeval show @1jmvhiau --execution --expand t2.c3)
 ```
 
 - Agent 事件卡句柄语法是 `t<turn 序号>.c<轮内卡片序号>`，两个序号都从 1 起，由 `events.json` 的事件序确定性派生。失败 Sandbox 命令卡使用 `cmd<序号>`，按 `commands.json` 中 `timingNodeId` 对应节点的 `startOffsetMs` 稳定排序后从 1 编号。同一份 artifact 上句柄永远指同一张卡片，可以写进脚本与笔记。

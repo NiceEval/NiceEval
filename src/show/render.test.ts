@@ -4,11 +4,12 @@
 // 完整多行 message 归 attempt 详情块展开。
 // bug: memory/diagnose-tail-inline-defeats-one-line-elision.md
 //
-// 「execution 的预算、句柄与 grep」(docs/engineering/testing/unit/reports.md):卡片预览预算按
-// UTF-8 字节在字符边界截断;Agent 卡的 t<N>.c<M> 从事件序确定性派生,失败 Sandbox 命令卡的
-// cmd<N> 按 timing node 时序派生;--expand 命中还原完整落盘值、句柄超界的完整报错;--grep 的
-// 匹配面覆盖角色文本、工具名、input、result 与失败命令 display/stdout/stderr;命中计数与
-// 0 命中的明确输出。
+// 「execution 的预算、句柄与 grep」(docs/engineering/testing/unit/reports.md):卡片预览预算按段
+// 独立截断——每段最多显示前 3 行(骨架行不计入),每段另有 1 KiB 字节兜底(按字符边界回退);
+// 卡尾聚合全卡各段被折的行数与字符数,没有整行被折时行数退化省略;Agent 卡的 t<N>.c<M> 从事件序
+// 确定性派生,失败 Sandbox 命令卡的 cmd<N> 按 timing node 时序派生;--expand 命中还原完整落盘值、
+// 句柄超界的完整报错;--grep 的匹配面覆盖角色文本、工具名、input、result 与失败命令
+// display/stdout/stderr;命中计数与 0 命中的明确输出。
 
 import { describe, expect, it } from "vitest";
 import { executionText, verdictReasonLine } from "./render.ts";
@@ -164,9 +165,88 @@ describe("--execution:轮内卡片句柄 t<N>.c<M> 从事件序确定性派生",
   });
 });
 
-describe("--execution:卡片预览预算按 UTF-8 字节在字符边界截断", () => {
-  function bigBodyEvidence(): AttemptEvidence {
-    const bigText = "x".repeat(8190) + "🙂".repeat(3); // 8190 ascii(1B) + 3 emoji(4B) = 8202B > 8192B 预算
+describe("--execution:单段卡按 3 行截断,骨架行不计入,尾巴 `(+N lines · M chars · …)`", () => {
+  function fiveLineEvidence(): AttemptEvidence {
+    // 5 行,前 3 行("alpha"/"bravo"/"charlie")在预算内,后 2 行("delta"/"echo")被整行折掉。
+    const events: StreamEvent[] = [
+      { type: "message", role: "user", text: "start" },
+      { type: "thinking", text: "alpha\nbravo\ncharlie\ndelta\necho" },
+    ];
+    return evidenceOf({ execution: buildExecutionTree(events, []), result: resultOf({ phases: twoTurnPhases() }) });
+  }
+
+  it("只显示前 3 行(保留原始换行),第 4/5 行整行折掉,尾巴报被折行数与字符数", () => {
+    const evidence = fiveLineEvidence();
+    const { text } = executionText(evidence, OPTS);
+    expect(text).toContain("alpha\n    bravo\n    charlie");
+    expect(text).not.toContain("delta");
+    expect(text).not.toContain("echo");
+    // "\ndelta\necho" 相对 "alpha\nbravo\ncharlie" 前缀被折掉的字符(含分隔行首的 \n)。
+    expect(text).toContain(`(+2 lines · 11 chars · niceeval show ${LOCATOR} --execution --expand t1.c2)`);
+  });
+
+  it("--expand 还原完整未截断内容,不带尾巴", () => {
+    const evidence = fiveLineEvidence();
+    const { text } = executionText(evidence, OPTS, { expand: "t1.c2" });
+    // --expand 走 renderExpand,不经 renderFull 的额外一层 turn 缩进,只剩 renderCardLines 自身
+    // 的基础缩进(2 空格),比预览路径(4 空格)少一层。
+    expect(text).toContain("alpha\n  bravo\n  charlie\n  delta\n  echo");
+    expect(text).not.toContain("niceeval show");
+  });
+});
+
+describe("--execution:TOOL 卡 input/result 各自独立按 3 行截断,尾巴聚合两段", () => {
+  function toolCardEvidence(): AttemptEvidence {
+    const events: StreamEvent[] = [
+      { type: "message", role: "user", text: "start" },
+      { type: "action.called", callId: "call-1", name: "shell", input: { command: "cmd1\ncmd2\ncmd3\ncmd4" } },
+      {
+        type: "action.result",
+        callId: "call-1",
+        output: { output: "out1\nout2\nout3\nout4\nout5", exit_code: 0 },
+        status: "completed",
+      },
+    ];
+    return evidenceOf({ execution: buildExecutionTree(events, []), result: resultOf({ phases: twoTurnPhases() }) });
+  }
+
+  it("input(4 行折 1 行)与 result(5 行折 2 行)各自独立截断,骨架行`input`/`result · <status>`原样全显", () => {
+    const evidence = toolCardEvidence();
+    const { text } = executionText(evidence, OPTS);
+    expect(text).toContain("input");
+    expect(text).toContain("result · completed · exit 0");
+    expect(text).toContain("cmd1");
+    expect(text).toContain("cmd2");
+    expect(text).toContain("cmd3");
+    expect(text).not.toContain("cmd4");
+    expect(text).toContain("out1");
+    expect(text).toContain("out2");
+    expect(text).toContain("out3");
+    expect(text).not.toContain("out4");
+    expect(text).not.toContain("out5");
+  });
+
+  it("卡尾只有一条,聚合两段各自被折的行数(1+2=3)与字符数(5+10=15)", () => {
+    const evidence = toolCardEvidence();
+    const { text } = executionText(evidence, OPTS);
+    expect(text).toContain(`(+3 lines · 15 chars · niceeval show ${LOCATOR} --execution --expand t1.c2)`);
+    // 每卡只出现一次尾巴,不是 input/result 各带一条。
+    expect(text.match(/niceeval show .* --expand/g)?.length).toBe(1);
+  });
+
+  it("--expand 还原两段完整内容,不截断", () => {
+    const evidence = toolCardEvidence();
+    const { text } = executionText(evidence, OPTS, { expand: "t1.c2" });
+    expect(text).toContain("cmd4");
+    expect(text).toContain("out5");
+    expect(text).not.toContain("niceeval show");
+  });
+});
+
+describe("--execution:1 KiB 字节兜底(按字符边界回退,不切分代理对),没有整行被折时 N 退化省略", () => {
+  function bigSingleLineEvidence(): AttemptEvidence {
+    // 单行(不触发 3 行上限)但 1022 ascii(1B) + 3 emoji(4B) = 1034B > 1024B 段预算。
+    const bigText = "x".repeat(1022) + "🙂".repeat(3);
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "start" },
       { type: "thinking", text: bigText },
@@ -174,28 +254,49 @@ describe("--execution:卡片预览预算按 UTF-8 字节在字符边界截断", 
     return evidenceOf({ execution: buildExecutionTree(events, []), result: resultOf({ phases: twoTurnPhases() }) });
   }
 
-  it("超预算截到恰好塞满 8192 字节的 codepoint 边界,不切分代理对/多字节字符", () => {
-    const evidence = bigBodyEvidence();
+  it("超预算截到恰好塞满 1024 字节的 codepoint 边界,没有整行被折,尾巴退化为 `(+M chars · …)`(没有 `lines` 段)", () => {
+    const evidence = bigSingleLineEvidence();
     const { text } = executionText(evidence, OPTS);
-    // 8190 个 ascii "x" 用尽预算内的 8190 字节,下一枚 emoji(4B)放不进剩余 2 字节,整枚被折掉。
+    // 1022 个 ascii "x" 用尽预算内的 1022 字节,下一枚 emoji(4B)放不进剩余 2 字节,整枚被折掉。
     // 用最长连续 x 串而不是全文 x 计数——尾巴里的 "--execution"/"--expand" 与 header 的 "exp/a"
     // 本身也含 'x' 字母,全文计数会被这些无关 'x' 污染。
     const longestXRun = Math.max(0, ...[...text.matchAll(/x+/g)].map((m) => m[0].length));
-    expect(longestXRun).toBe(8190);
+    expect(longestXRun).toBe(1022);
     expect(text).not.toContain("🙂");
     expect(text).toContain(`(+3 chars · niceeval show ${LOCATOR} --execution --expand t1.c2)`);
+    expect(text).not.toContain("lines ·");
   });
 
   it("--expand 还原完整未截断内容(原始换行,不再截断)", () => {
-    const evidence = bigBodyEvidence();
+    const evidence = bigSingleLineEvidence();
     const { text } = executionText(evidence, OPTS, { expand: "t1.c2" });
     expect(text).toContain("🙂🙂🙂");
     expect(text).not.toContain("niceeval show");
     const longestXRun = Math.max(0, ...[...text.matchAll(/x+/g)].map((m) => m[0].length));
-    expect(longestXRun).toBe(8190);
+    expect(longestXRun).toBe(1022);
   });
 
-  it("落盘已截断的值(marker 是写入时刻烘进正文的字面文本)在预览与 --expand 中都原样透传", () => {
+  it("被字节兜底截到一半的行,如果全卡还有整行被折,计入被折行数(不退化)", () => {
+    // 4 行:前 2 行短,第 3 行(2000 个 'x')把候选(3 行)的字节数撑到 1024 以上触发字节兜底,
+    // 第 4 行("hiddenLine")完全在 3 行上限之外被整行折掉——两种折法同一张卡都发生。
+    const events: StreamEvent[] = [
+      { type: "message", role: "user", text: "start" },
+      { type: "thinking", text: `short1\nshort2\n${"x".repeat(2000)}\nhiddenLine` },
+    ];
+    const evidence = evidenceOf({ execution: buildExecutionTree(events, []), result: resultOf({ phases: twoTurnPhases() }) });
+    const { text } = executionText(evidence, OPTS);
+    expect(text).toContain("short1");
+    expect(text).toContain("short2");
+    expect(text).not.toContain("hiddenLine");
+    const longestXRun = Math.max(0, ...[...text.matchAll(/x+/g)].map((m) => m[0].length));
+    expect(longestXRun).toBe(1010); // 1024 字节预算 - "short1\nshort2\n"(14 字节) = 1010 个 x
+    // N = 1(hiddenLine 整行被折) + 1(第 3 行被字节兜底截到一半,全卡有整行被折时计入) = 2。
+    expect(text).toContain(`(+2 lines · 1001 chars · niceeval show ${LOCATOR} --execution --expand t1.c2)`);
+  });
+});
+
+describe("--execution:落盘已截断的值原样透传", () => {
+  it("marker 是写入时刻烘进正文的字面文本,在预览与 --expand 中都原样透传(短文本,预算内不截断)", () => {
     const diskTruncated = "partial output before cut\n[niceeval] truncated 51467156 → 262144 bytes";
     const events: StreamEvent[] = [
       { type: "message", role: "user", text: "start" },

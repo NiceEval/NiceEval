@@ -252,7 +252,7 @@ full events: fixtures/button/a1/events.json
 full OTel trace: fixtures/button/a1/trace.json
 ```
 
-超长的工具结果既不整段打印、也不被一刀切丢掉。卡片正文是**有界预览**：保留原始换行，超过 8 KiB（UTF-8 字节）截到预算为止；截断尾巴报被折的字符数，并自带这张卡片的**展开句柄**——整行就是下一条可直接复制的命令。读大文件、全仓 `rg`、curl 整页文档这类动辄几十上百 KB 的结果，预览负责回答「这一步做了什么、开头长什么样」，要看全量再花第二条命令，不用为了防备某张卡片超长就整棵树不敢打开：
+超长的工具结果既不整段打印、也不被一刀切丢掉。卡片正文是**有界预览**：每个内容段（消息正文；工具卡的 input 与 result 各算一段）最多显示前 3 行，保留原始换行，另有每段 1 KiB 兜底防单行超长。有折叠的卡片在卡尾报被折的行数与字符数，并自带这张卡片的**展开句柄**——整行就是下一条可直接复制的命令。预览负责回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；要看全量再花第二条命令：
 
 ```text
 $ niceeval show @1c3h6twx --execution
@@ -264,7 +264,7 @@ TOOL · command_execution  5.2s · 1.9s
     node_modules/niceeval/AGENTS.md
     node_modules/niceeval/INDEX.md
     node_modules/niceeval/INIT.md
-    (+263161 chars · niceeval show @1c3h6twx --execution --expand t2.c3)
+    (+3055 lines · 263161 chars · niceeval show @1c3h6twx --execution --expand t2.c3)
 ```
 
 `--expand` 接截断尾巴里的句柄，单独输出这一张卡片的完整落盘内容（原始换行，不再截断），其余卡片不打印；范围必须恰好命中一个 attempt。句柄 `t<轮次>.c<轮内卡序>`（失败 Sandbox 命令卡是 `cmd<n>`）由 `events.json` 的事件序确定性派生，同一 attempt 反复解析恒定——昨天终端记录里抄来的句柄今天照样有效：
