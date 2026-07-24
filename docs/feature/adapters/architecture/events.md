@@ -24,7 +24,7 @@ type StreamEvent =
 ## 不变量
 
 1. 保持原始发生顺序，不按事件类型重排。
-2. action called/result 与 subagent called/completed 使用稳定 call ID 配对。
+2. action called/result 与 subagent called/completed 使用稳定 call ID 配对。call ID 只需在**一个 called→result 配对内**稳定,不要求跨轮唯一——adapter 按各轮各自编号(OpenAI 兼容协议、transcript 归一常复用 `c1`/`c2`…)是允许的。同一个 call ID 在它的 result 之后再次以 called 出现时,是新的一次调用,core 起一条新记录而非覆盖前一条(否则跨轮聚合会把前几轮的调用抹成「只剩最后一轮」)。
 3. `name` 保留原始工具名，`tool` 保存跨 Agent 规范名。
 4. 人工拒绝是 `rejected`，执行故障是 `failed`。
 5. Skill 加载只产 `skill.loaded`，不重复计入工具调用。

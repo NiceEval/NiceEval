@@ -61,10 +61,16 @@ function pickExitCode(output: JsonValue | undefined): number | undefined {
 // ───────────────────────── deriveRunFacts ─────────────────────────
 
 export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
-  const toolCallMap = new Map<string, ToolCall>();
-  const toolCallOrder: string[] = [];
-  const subagentMap = new Map<string, SubagentCall>();
-  const subagentOrder: string[] = [];
+  // 折叠是逐条按发生顺序进行的:called 追加一条新调用,result 回填「当前还没配上 result 的
+  // 同 callId 调用」。callId 只在一个 called→result 配对内保证稳定,不保证跨轮唯一——adapter
+  // 常按轮各自编号(OpenAI 兼容协议、transcript 归一都会复用 c1/c2…)。所以一个 callId 在其
+  // result 之后再次以 called 出现,是新的一次调用,起一条新记录,不覆盖前一轮那条(否则跨轮
+  // 聚合会把前面几轮的工具调用抹成「只剩最后一轮」)。用 open*ByCallId 只跟踪各 callId 当前
+  // 敞口的那条,配上 result 即关闭。
+  const toolCalls: ToolCall[] = [];
+  const openToolByCallId = new Map<string, number>();
+  const subagentCalls: SubagentCall[] = [];
+  const openSubagentByCallId = new Map<string, number>();
   const inputRequests: InputRequest[] = [];
   let messageCount = 0;
   let compactions = 0;
@@ -81,8 +87,8 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
         break;
 
       case "action.called": {
-        if (!toolCallMap.has(ev.callId)) toolCallOrder.push(ev.callId);
-        toolCallMap.set(ev.callId, {
+        openToolByCallId.set(ev.callId, toolCalls.length);
+        toolCalls.push({
           callId: ev.callId,
           name: ev.tool ?? "unknown",
           originalName: ev.name,
@@ -94,14 +100,14 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
       }
 
       case "action.result": {
-        const existing = toolCallMap.get(ev.callId);
-        if (existing) {
-          existing.output = ev.output;
-          existing.status = ev.status;
+        const idx = openToolByCallId.get(ev.callId);
+        if (idx !== undefined) {
+          toolCalls[idx].output = ev.output;
+          toolCalls[idx].status = ev.status;
+          openToolByCallId.delete(ev.callId);
         } else {
           // 只有结果、没配上调用:补一条占位 ToolCall。
-          toolCallOrder.push(ev.callId);
-          toolCallMap.set(ev.callId, {
+          toolCalls.push({
             callId: ev.callId,
             name: "unknown",
             input: null,
@@ -113,8 +119,8 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
       }
 
       case "subagent.called": {
-        if (!subagentMap.has(ev.callId)) subagentOrder.push(ev.callId);
-        subagentMap.set(ev.callId, {
+        openSubagentByCallId.set(ev.callId, subagentCalls.length);
+        subagentCalls.push({
           callId: ev.callId,
           name: ev.name,
           remoteUrl: ev.remoteUrl,
@@ -125,13 +131,13 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
       }
 
       case "subagent.completed": {
-        const existing = subagentMap.get(ev.callId);
-        if (existing) {
-          existing.output = ev.output;
-          existing.status = ev.status;
+        const idx = openSubagentByCallId.get(ev.callId);
+        if (idx !== undefined) {
+          subagentCalls[idx].output = ev.output;
+          subagentCalls[idx].status = ev.status;
+          openSubagentByCallId.delete(ev.callId);
         } else {
-          subagentOrder.push(ev.callId);
-          subagentMap.set(ev.callId, {
+          subagentCalls.push({
             callId: ev.callId,
             name: "unknown",
             output: ev.output,
@@ -164,8 +170,8 @@ export function deriveRunFacts(events: readonly StreamEvent[]): DerivedFacts {
   }
 
   return {
-    toolCalls: toolCallOrder.map((id) => toolCallMap.get(id)!),
-    subagentCalls: subagentOrder.map((id) => subagentMap.get(id)!),
+    toolCalls,
+    subagentCalls,
     inputRequests,
     parked,
     messageCount,

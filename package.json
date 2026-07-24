@@ -113,6 +113,8 @@
     "autoevals": "0.0.132",
     "effect": "^3.21.4",
     "mermaid": "^11.16.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "tar-stream": "^3.1.7",
     "tsx": "^4.19.2"
   },
@@ -141,8 +143,6 @@
     "mixpanel-browser": "^2.80.0",
     "next": "16.2.10",
     "prism-react-renderer": "^2.4.1",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
     "react-grab": "^0.1.48",
     "shiki": "^4.3.0",
     "tailwind-merge": "^3.6.0",
@@ -159,9 +159,7 @@
     "ai": ">=5.0.0",
     "braintrust": ">=0.0.150",
     "dockerode": ">=4.0.0",
-    "e2b": ">=2.0.0",
-    "react": ">=18",
-    "react-dom": ">=18"
+    "e2b": ">=2.0.0"
   },
   "peerDependenciesMeta": {
     "@ai-sdk/otel": {
@@ -186,12 +184,6 @@
       "optional": true
     },
     "e2b": {
-      "optional": true
-    },
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
       "optional": true
     }
   }

@@ -58,6 +58,46 @@ describe("deriveRunFacts:pending 折叠", () => {
   });
 });
 
+describe("deriveRunFacts:callId 跨轮复用不覆盖", () => {
+  // 回归:adapter 常按轮各自编号(OpenAI 兼容 / transcript 归一复用 c1/c2…)。同一 callId 在其
+  // result 之后再次出现是新的一次调用——旧折叠按 callId 存 Map 会被后一轮覆盖,跨轮聚合断言
+  // (t.calledTool)于是「只扫最后一轮」,前几轮的工具调用被抹掉(定稿见 events.md 不变量 2)。
+  it("同一 callId 完成后在后一轮再次 called,折叠成两条独立调用而非覆盖成一条", () => {
+    const events: StreamEvent[] = [
+      // 第一轮:读 init、读 INDEX(都用 c1/c2 编号)
+      { type: "action.called", callId: "c1", name: "read", input: { path: "init.md" } },
+      { type: "action.result", callId: "c1", output: "init contents", status: "completed" },
+      { type: "action.called", callId: "c2", name: "read", input: { path: "INDEX.md" } },
+      { type: "action.result", callId: "c2", output: "index contents", status: "completed" },
+      { type: "message", role: "assistant", text: "第一轮做完" },
+      // 第二轮:续轮,adapter 从 c1 重新编号
+      { type: "action.called", callId: "c1", name: "write", input: { path: "note.md" } },
+      { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+      { type: "message", role: "assistant", text: "答复" },
+    ];
+    const facts = deriveRunFacts(events);
+    expect(facts.toolCalls).toHaveLength(3); // 两轮共 3 次调用,后一轮不覆盖前一轮
+    expect(facts.toolCalls.map((tc) => tc.originalName)).toEqual(["read", "read", "write"]);
+    // 第一轮的两次 read 都在,且各配对到自己的 result(不是都取最后一条)
+    expect(facts.toolCalls[0]!.input).toEqual({ path: "init.md" });
+    expect(facts.toolCalls[0]!.output).toBe("init contents");
+    expect(facts.toolCalls[1]!.input).toEqual({ path: "INDEX.md" });
+    expect(facts.toolCalls[1]!.output).toBe("index contents");
+  });
+
+  it("subagent 折叠同理:同一 callId 完成后再次 called 起新记录", () => {
+    const events: StreamEvent[] = [
+      { type: "subagent.called", callId: "s1", name: "researcher" },
+      { type: "subagent.completed", callId: "s1", output: "round1", status: "completed" },
+      { type: "subagent.called", callId: "s1", name: "writer" },
+      { type: "subagent.completed", callId: "s1", output: "round2", status: "completed" },
+    ];
+    const facts = deriveRunFacts(events);
+    expect(facts.subagentCalls).toHaveLength(2);
+    expect(facts.subagentCalls.map((sc) => sc.name)).toEqual(["researcher", "writer"]);
+  });
+});
+
 describe("deriveRunFacts:contextInjections 计数", () => {
   it("统计事件流里 context.injected 事件的次数,不与 messageCount 混计", () => {
     const events: StreamEvent[] = [

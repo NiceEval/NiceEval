@@ -355,6 +355,40 @@ function baseScoringContext(state: ContextState) {
   };
 }
 
+describe("t.* 作用域断言聚合全部轮次(callId 跨轮复用)", () => {
+  // 回归:续轮场景下 adapter 常按轮各自编号(复用 c1)。第一轮读了 INDEX,第二轮才给答复;
+  // t.calledTool 聚合全部轮次,应命中第一轮的 read——旧折叠按 callId 覆盖会让它「只扫最后一轮」而 miss。
+  it("t.calledTool 命中发生在第一轮、callId 被第二轮复用的工具调用", async () => {
+    const agent = scriptedAgent([
+      {
+        status: "completed",
+        events: [
+          { type: "action.called", callId: "c1", name: "read", input: { path: "INDEX.md" } },
+          { type: "action.result", callId: "c1", output: "index contents", status: "completed" },
+          { type: "message", role: "assistant", text: "读完了 INDEX,继续" },
+        ],
+      },
+      {
+        status: "completed",
+        events: [
+          { type: "action.called", callId: "c1", name: "write", input: { path: "note.md" } },
+          { type: "action.result", callId: "c1", output: "ok", status: "completed" },
+          { type: "message", role: "assistant", text: "答复" },
+        ],
+      },
+    ]);
+    const { context, state } = makeContext(agent);
+    await context.send("第一轮"); // 读 INDEX
+    await context.send("第二轮"); // 续轮,复用 callId c1
+
+    context.calledTool("read", { input: { path: "INDEX.md" } });
+
+    const [result] = await state.collector.finalize(baseScoringContext(state));
+    expect(result.name).toBe("calledTool(read)");
+    expect(result.outcome).toBe("passed");
+  });
+});
+
 describe("TurnHandle scoped assertions (parked/loadedSkill/noFailedActions/maxTokens/maxCost)", () => {
   it("mirror t/session scope: turn.parked() reflects this turn's own waiting status", async () => {
     const agent = scriptedAgent([

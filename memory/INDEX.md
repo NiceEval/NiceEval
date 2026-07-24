@@ -184,6 +184,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [react19-dangerously-set-inner-html-identity](react19-dangerously-set-inner-html-identity.md) — React 19 对 dangerouslySetInnerHTML 只比 `{__html}` 对象身份,内联字面量让任何重渲染都整树重建报告槽(开关 attempt 弹窗丢 details/排序/过滤状态);修为 useMemo 包 `{__html}`(`src/view/app/App.tsx` 的 ReportSlot)
 - [details-ua-slot-breaks-display-contents-tabs](details-ua-slot-breaks-display-contents-tabs.md) — `<details>` 的 UA shadow slot 让 display:contents 布局失效(Chrome 下 order 失效、残留 0 宽盒);Tabs 增强改用 flex 换行方案(styles.css)
 - [view-tool-io-dropped-not-adapter-bug](view-tool-io-dropped-not-adapter-bug.md) — view 里工具出入参"看不到"是渲染层丢的,不是 adapter / SDK 的问题
+- 已修 [show-view-react-runtime-dep-missing](show-view-react-runtime-dep-missing.md) — 全新安装 `show`/`view` 崩 `ERR_MODULE_NOT_FOUND: react`:react 曾是可选 peerDep(pnpm 不装),但 report web 面靠 `react-dom/server` 是硬运行时依赖;修为把 react/react-dom 移入 `dependencies`(`package.json`)
 - [attempt-source-text-missing-passed-summary](attempt-source-text-missing-passed-summary.md) — `attemptSourceText` 全通过时零输出,没按 docs 要求补 `✓ passed · <group> · <count>` 摘要行(`attemptAssertionsText` 降级路径行为正确,只有 AttemptSource 这条路径漏了);未修
 - 已修 [static-site-export-drops-sources](static-site-export-drops-sources.md) — 静态托管导出丢 sources.json,code view 显示"源码未捕获"(0.3.0 已修)
 - 已修 [view-sources-artifact-serving-not-dereferenced](view-sources-artifact-serving-not-dereferenced.md) — sources.json 落盘改两层去重存储后,`server.ts`/`index.ts` 的 artifact 出口仍原样转发/拷贝引用格式(`{path,sha256}[]`),浏览器端 guard 因缺 `content` 字段静默判空;修为两处都改经 `AttemptHandle.sources()` 解引用(`src/view/server.ts` + `src/view/index.ts` + `src/view/data.ts` 的 `loadAttemptIndex`/`attemptsByBase`)
@@ -236,6 +237,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [sdk-stream-transformers-missing-canonical-tool](sdk-stream-transformers-missing-canonical-tool.md) — `fromCodexThreadEvents` 曾不发 `tool` 规范名,`calledTool("shell")` 在 SDK 流路径静默失配(修在 `src/agents/sdk-streams.ts`;`fromClaudeSdkMessages` 同类未修)
 - [execution-tree-merges-events-and-otel-spans](execution-tree-merges-events-and-otel-spans.md) — 裁决(2026-07-12):`buildExecutionTree(events, spans)` 把标准事件流与 OTel span 合并进一棵树,事件当骨架、span 只补时间,推翻 `docs/observability.md` 现行"events 与 spans 永不合并"的旧决定;设计已定稿代码未实现
 - 已修 [usage-requests-accumulation-padded-with-1](usage-requests-accumulation-padded-with-1.md) — `SessionManager.accumulateUsage` 曾对缺失的 `requests` 用 `?? 1` 凑数(转录解析型 adapter 的一轮 send 被误算成 1 个请求)、`cacheReadTokens`/`cacheWriteTokens` 同理被垫 0;修为只在某轮真带回该值时才累加(`src/context/session.ts`)
+- 已修 [derive-callid-crossturn-overwrite](derive-callid-crossturn-overwrite.md) — 续轮 + adapter 按轮各自编号 callId 时,`deriveRunFacts` 按 callId 存 Map 被后轮覆盖,`t.calledTool` 等 t 级聚合断言「只扫最后一轮」miss 掉前几轮工具调用;修为逐条按序折叠 + open 指针(`src/o11y/derive.ts`)
 
 ## 写 eval · scoring · 断言 · judge
 

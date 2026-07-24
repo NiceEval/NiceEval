@@ -127,7 +127,7 @@ src/report/model/panel.ts         面板渲染件:同步纯函数,消费 text-la
 
 ### 为什么不引第三方终端 UI 库
 
-- **`ink`(React 终端渲染器)**:报告树已有自己的双面组件模型与 `resolve → validate → render` 管线,ink 再带一套 reconciler 与 JSX runtime 就是第二个组件模型。live 面板的刷新契约(真实状态变化驱动、每秒最多 4 帧、历史帧不得进 scrollback)要求重绘时点完全受控,交给 reconciler 就失去这层控制。且 `react` 在本包只是可选 peerDependency,CLI 核心路径不能硬依赖它。
+- **`ink`(React 终端渲染器)**:报告树已有自己的双面组件模型与 `resolve → validate → render` 管线,ink 再带一套 reconciler 与 JSX runtime 就是第二个组件模型。live 面板的刷新契约(真实状态变化驱动、每秒最多 4 帧、历史帧不得进 scrollback)要求重绘时点完全受控,交给 reconciler 就失去这层控制。report 的 web 面(`show` / `view`)本就以 `react` + `react-dom/server` 渲染静态 HTML,`react` 是本包的运行时依赖;但 live 面板走的是无模块态同步纯函数的 text 面,重绘时点自持,不经 react——不为了终端 UI 再叠一层 reconciler。
 - **`boxen` / `cli-table3` 这类框线库**:框画得出来,但它们各自内置宽度量测(`string-width` 及其 East-Asian-Ambiguous 策略),与区域框契约定死的宽度表(CJK 记 2 列、`·` `●` 等 ambiguous 恒记 1 列)不保证一致——两张宽度表并存正是要消灭的漂移;边框嵌标题 / meta / 下钻命令、嵌套降横隔、100 列上限这些契约规则它们也不覆盖,包一层适配后几何还是要自己写。
 - **结论**:框线几何是百行级同步纯函数,底层唯一的难点(显示宽度)已由 `text-layout.ts` 单源解决;引库的成本(供应链、版本漂移、第二张宽度表)高于自写成本。色彩只标结论词,按需写 ANSI 转义,不引 `chalk`。
 
