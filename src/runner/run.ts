@@ -806,6 +806,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     unstarted: number;
     /** 触发落闸的失败 message,即作者的修复提示;走完通知与诊断两条通路。 */
     message: string;
+    /** 触发落闸的失败所在的生命周期阶段;`--json` 的 warning 事件从 data.phase 读它。 */
+    phase: LifecyclePhase;
   }
   const haltGates = new Map<string, HaltGate>();
   const haltGateKey = (run: AgentRun, evalId: string | undefined): string =>
@@ -827,6 +829,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         halted: false,
         unstarted: 0,
         message: "",
+        phase: "eval.run",
       };
       haltGates.set(dedupeKey, gate);
     }
@@ -894,6 +897,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         experimentId: gate.experimentId,
         scope: gate.scope,
         ...(gate.evalId !== undefined ? { evalId: gate.evalId } : {}),
+        phase: gate.phase,
         unstarted: gate.unstarted,
       },
     });
@@ -923,6 +927,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     });
     if (!gate.halted) {
       gate.message = message;
+      gate.phase = declaration.phase;
       gate.halted = true; // 同步镜像先置位,再开 latch:两者不会互相领先
       gate.latch.unsafeOpen();
       gate.abort.abort();
