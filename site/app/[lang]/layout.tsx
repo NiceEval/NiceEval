@@ -42,6 +42,12 @@ export default async function LangLayout({ children, params }: { children: React
           data-endpoint="https://api.goshipfast.com"
           strategy="lazyOnload"
         />
+        <Script
+          src="https://vibeloft.ai/telemetry/v1.js"
+          data-vl-product-id="b5b155b2-4d7d-426e-89f8-95eaa1f61ba9"
+          data-vl-auth-key="REPLACE_WITH_NEW_WEB_AUTH_KEY"
+          strategy="lazyOnload"
+        />
         <Script src="https://www.googletagmanager.com/gtag/js?id=G-Q30H5WX93X" strategy="afterInteractive" />
         <Script id="ga4" strategy="afterInteractive">
           {`
