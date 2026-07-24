@@ -42,9 +42,10 @@
 
 | 行为 | 文件 |
 |---|---|
-| `FailureClass` / `FailureScope` / `TurnFailure` / `TurnErrorClassifier` / `turnErrorText` / 保守兜底分类器 / 受理证据门 / 分类链决议 | `src/context/turn-errors.ts` |
+| 两轴词表(`FailureScope` / `FailureClass` / `AttemptFailureInfo` / `AttemptFailureClassifier`)、糖衣类(`ExperimentFatalError` / `EvalFatalError`)、结构守卫 `failureClassOf`、生命周期分类链(`resolveAttemptFailureClass` / `attemptFailureInfo`) | `src/shared/failure-class.ts`(全仓单源,零 effect 依赖;sandbox provisioning 分类共享这份词表) |
+| turn 链决议 `resolveTurnFailureClass`、保守兜底分类器 `classifyTurnError`、受理证据门 `hasAgentEvidence`、`turnErrorText` / `turnFailureText`、`TurnFailure` / `TurnErrorClassifier` | `src/context/turn-errors.ts` |
 | `Agent.classifyTurnError` 挂载面(`SandboxAgentDef` / `RemoteAgentDef` / `Agent`) | `src/agents/types.ts`;经 `src/define.ts` 的 `defineSandboxAgent` / `defineAgent` 透传 |
-| 重试执行体(两层预算、指数全抖动退避、`ConcurrencySlot` 槽位释放、activity 与耗尽摘要) | `src/context/send-retry.ts` |
+| 重试执行体 `sendWithTurnRetry`(两层预算、指数全抖动退避、`ConcurrencySlot` 槽位释放、activity 与耗尽摘要) | `src/context/send-retry.ts` |
 | 挂载点:包住 `agent.send(...)` 的那一次调用(非 otel / otel 两条路径) | `src/context/session.ts`(`SessionManager.sendSerialized` / `sendWithOtel`) |
 | `concurrencySlot`(globalSem / 实验级 runSem 的临时释放/收回)从 run 级信号量到 context 的透传 | `src/runner/run.ts` → `src/runner/attempt.ts`(`runAttemptEffect` / `AttemptResources`)→ `src/context/context.ts`(`ContextDeps.concurrencySlot`) |
 | `expectOk()` 的失败文本(`turnErrorText` 同源) | `src/context/context.ts`(`makeTurnHandle.expectOk`) |
