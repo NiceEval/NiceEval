@@ -58,18 +58,21 @@ npx niceeval exp local fixtures/button --runs 5 --early-exit
 
 ## 并行开多个终端
 
-想同时跑几个 Experiment，直接开几个终端各跑各的：
+想同时跑几个 Experiment，直接开几个终端各跑各的；一场大实验嫌慢，就再开一个终端跑同一条命令，两边会自动分工：
 
 ```bash
-# 终端 1
-npx niceeval exp compare/codex
-# 终端 2
-npx niceeval exp compare/claude
+# 各跑各的：两个实验并行
+npx niceeval exp compare/codex     # 终端 1
+npx niceeval exp compare/claude    # 终端 2
+
+# 给同一场实验加速：同一条命令再跑一遍
+npx niceeval exp compare/bub       # 终端 1
+npx niceeval exp compare/bub       # 终端 2
 ```
 
-每次运行写自己的结果快照目录，互不覆盖。就算两条命令选中了同一条评估用例，NiceEval 也不会把它跑两遍：正在跑的评估用例会在 `.niceeval/locks/` 下持有一把带心跳的锁，另一次运行撞到锁就等它跑完，这些评估用例在 live 面板上单独计成 `elsewhere`（别人在运行），并显示一行 `waiting on another run` 说明在等谁。对方跑完后，等待方按缓存规则直接复用它落盘的结果，还缺的 Attempt 才自己补跑。两边最后都拿到完整结果，交集部分只花一份钱。
+每次运行写自己的结果快照目录，互不覆盖。就算两条命令选中了同一批评估用例，NiceEval 也不会把任何一条跑两遍：每条评估用例开跑前会在 `.niceeval/locks/` 下拿一把带心跳的锁，锁是跑到哪条拿哪条，不会一口气把整批占住。另一次运行撞到锁，就先去跑还没人认领的评估用例——所以同一条命令开两个终端就是加速：两边自动认领不同的评估用例，各按自己的 `--max-concurrency` 推进，总吞吐接近两边之和。撞锁的评估用例在 live 面板上单独计成 `elsewhere`（别人在运行），并显示一行 `waiting on another run` 说明在等谁；对方跑完后，等待方按缓存规则直接复用它落盘的结果，还缺的 Attempt 才自己补跑。两边最后都拿到完整结果，每条评估用例只花一份钱。
 
-锁只防止重复运行，不会合并两边的并发名额：两个终端各有自己的 `--max-concurrency`，Sandbox provider 和模型接口承受的是两边之和，配额紧张时把两边都调低一点。
+锁不会合并两边的全局并发名额：两个终端各有自己的 `--max-concurrency`，Sandbox provider 和模型接口承受的是两边之和，配额紧张时把两边都调低一点。例外是实验自己的 `maxConcurrency`：这个名额是同一个实验的所有运行共用的——声明了 `maxConcurrency: 1` 的串行实验，开几个终端也还是同一时刻只跑一个 Attempt，累积状态不会被并行打乱。
 
 某次运行被 `kill -9` 或断电杀掉时，它留下的锁不会卡住后来者：心跳停止 30 秒后，下一次运行会自动接管这把锁照常跑。`.niceeval/locks/` 不需要手工清理。
 

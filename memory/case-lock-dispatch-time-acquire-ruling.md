@@ -1,0 +1,7 @@
+# 用例锁改派发时刻取锁,实验闸升级跨进程租约(翻案计划期全量取锁)
+
+- **裁决**(2026-07-24):用例锁的取锁时机从「携带规划之后、派发之前(全部待跑用例一次性取锁)」改为**派发时刻逐用例非阻塞取锁**——排队中的用例不持锁,撞锁的用例挂起并把并发位转派给下一条未被锁的用例。配套把实验级 `maxConcurrency` 升级为**跨 Invocation 名额域**(`.niceeval/locks/` 下 `(experimentId, slot)` 租约文件,心跳/过期/接管与用例锁同纪律;两边 N 不一致取最小值)。全局 `--max-concurrency` 维持进程私有,非目标条款收窄为只豁免全局位。契约单源 `docs/feature/experiments/architecture.md#并发-invocation用例锁`,实现 plan 见 `plan/exp-case-lock-dispatch-time.md`。
+- **曾选方案(原契约)**:取锁在计划期一次性进行,「要真实派发的用例先取锁,成功才进入派发许可链」。**否决理由**(真机现象,2026-07-24 MemoryBench 双终端):`Effect.forEach` 一口气派生全部 attempt fiber、取锁又在 preflight 之前,于是先启动的 Invocation 把全部待跑用例(24 条)的锁囤在手里、实际只按自己的 `--max-concurrency` 跑 1 条;第二条 Invocation 整体 `elsewhere` 干等,全局吞吐 = 持锁方上限。这与契约自己的两条声明矛盾:非目标说「并发闸不跨进程」(实际持锁方的闸跨了,方向是囤积),粒度裁决说「选用例粒度是为了不无谓折损多开并行度」(全量囤锁把用例锁退化成整个选择集的一把大锁)。改后多开成为水平扩展:两终端各 2 并发 → 全局 4 在飞,分工由锁自然形成,carry 汇合完整结果。
+- **实验闸跨进程的动机**:改派发时刻取锁后,「计划期囤锁恰好挡住全量重叠多开踩踏共享状态实验」的偶然保护消失;且该洞**原本就存在**(双终端选不相交子集跑同一个 `maxConcurrency: 1` 实验,锁零交集,状态照踩)——用例手册「`maxConcurrency: 1` 这一行就是全部的正确性声明」的承诺跨进程原本是假的。租约域让承诺在同一工作副本内真正成立;不同实验打同一 agent API 的配额分配仍归用户(真正的配额问题,边界不动)。
+- **保留的原裁决**:撞锁=等待不跳过、`elsewhere` 独立计数、用例粒度、心跳/接管纪律均不变(见 [[case-lock-wait-not-skip-ruling]]);本条只翻取锁时机与实验闸作用域。[[case-lock-gate-reorders-global-semaphore-queue]] 的 `caseLockAcquireMutex` 修法是为 preflight 前取锁的乱序而设,新时序下待重估(见 plan TODO A)。
+- **实现状态**:契约已落 docs(architecture/runner/use-case/docs-site/覆盖规范,2026-07-24),代码未动,待实现 Agent 按 plan 执行。

@@ -22,7 +22,7 @@
 核心调度用 `Effect.forEach({ concurrency: "unbounded" })` + **两级并发闸**实现:每个 attempt 立刻有自己的 fiber,但执行体要先过实验级闸(`ExperimentDef.maxConcurrency`,可选,先来后到)、再拿到全局并发位(全局 `maxConcurrency`,空位按瓶颈优先分配,纪律见[下一节](#派发顺序瓶颈优先追求最小总墙钟时间))才真正开跑。两级闸按**持有期**分工,这也是各自的用途边界:
 
 - **全局并发位管吞吐**:只在 attempt 真正执行时占用,内部等待——turn 重试的退避睡眠(见[执行错误分类 · 退避与槽位](feature/error-classification/architecture.md#退避与槽位))、等待实验级 `setup`——都把名额让给别的 attempt。它是纯调度参数,不承诺任何互斥语义;让出的名额立刻派给排队中的 attempt,所以对外(agent API / provider 侧)的总压力不因退避下降——「被限流时不加压」是实验级闸的语义,不是全局位的。
-- **实验级闸管正确性与本实验自己的节奏**:名额与 attempt **同生命周期**——从进入 attempt(先于沙箱创建与 `sandbox.setup` 链)持有到收尾完成(`teardown` 链、沙箱销毁)之后才归还,中途任何等待都不释放。实验级闸只让该实验自己的 attempt 排队,同批其它实验照常并发——串行化有共享状态的实验(如跨 eval 累积记忆)不拖慢整批基线,而 `maxConcurrency: 1` 是严格的临界区保证:上一个 attempt 的回存收尾没跑完,下一个 attempt 的载入不会开始。
+- **实验级闸管正确性与本实验自己的节奏**:名额与 attempt **同生命周期**——从进入 attempt(先于沙箱创建与 `sandbox.setup` 链)持有到收尾完成(`teardown` 链、沙箱销毁)之后才归还,中途任何等待都不释放。实验级闸只让该实验自己的 attempt 排队,同批其它实验照常并发——串行化有共享状态的实验(如跨 eval 累积记忆)不拖慢整批基线,而 `maxConcurrency: 1` 是严格的临界区保证:上一个 attempt 的回存收尾没跑完,下一个 attempt 的载入不会开始。名额域**跨 Invocation 共享**:同一工作副本上并行的多条 Invocation 从同一实验的同一批名额取位(租约文件机制见 [Experiments · 并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁)),临界区保证在多开下同样成立。
 
 报告回调走 **permit=1 的信号量串行化**,不阻塞执行 fiber。结果最后按**发现顺序**排序(而非完成顺序),让输出稳定可 diff。
 
@@ -95,7 +95,7 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 - **携带以 attempt 为粒度,缺失序号补跑。** 指纹未变时,上一轮已落盘的终态 attempt 逐条携带,本轮只派发计划内缺失的 attempt 序号——`runs: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。携带的 `passed` 与首过即停组合遵守既有语义:已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
 - **`timeoutMs` 不进指纹哈希,是携带的资格判据。** 超时上限不改变「结果是什么」,只决定「等不等得到」:一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟的上限下是同一个事实,把 `timeoutMs` 掺进哈希会让提高上限作废全部已完成结果——为一个不影响它们的参数付全量重跑。因此指纹不含 `timeoutMs`;携带在指纹匹配之外追加一条判据:**终态 attempt 可携带,当且仅当其 `durationMs` ≤ 当前 resolved `timeoutMs`**(未设上限视为无穷)。提高上限时全部已完成结果照常携带,只有当初撞线的 `errored`(本就不携带)重跑;调低上限时,耗时超过新线的旧结果不可在新配置下复现,如实重跑。
 - **携带来源不要求快照收尾。** attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与快照有没有补上 `completedAt` 无关;被中断或强杀的 run 留下的未收尾快照,其中已落盘的终态 attempt 照常携带。**重跑同一条命令就是续跑**:只花缺失 attempt 的成本——这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径,配合[实验面的启动自愈](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)与[实例面的孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底),重跑前不需要任何手工清理。
-- **并发 Invocation 靠用例锁把续跑扩展到多开。** 同一条 `(experiment, eval)` 正被另一条并行 Invocation 派发时,本次运行不双跑:该用例在带心跳的用例锁上等待(不占并发位、计入独立的 `elsewhere` 计数状态),锁释放后重查携带——对方落盘的终态指纹匹配就携入,仍缺的 attempt 序号才自己补跑。锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁)。
+- **并发 Invocation 靠用例锁把续跑扩展到多开。** 锁在派发时刻逐用例取:一条 Invocation 只锁自己正在跑的用例,不囤积选择集,两条选择重叠的 Invocation 因此各自认领不同用例、按各自并发上限并行推进——多开一条终端就是给同一批选择加吞吐。撞上别人持有的锁时该用例不双跑:挂起等待(不占并发位、计入独立的 `elsewhere` 计数状态,并发位转派给下一条没被锁的用例),锁释放后重查携带——对方落盘的终态指纹匹配就携入,仍缺的 attempt 序号才自己补跑。锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁)。
 - **执行模式 flag 划走两块例外。** [`--reuse-sandbox`](feature/sandbox/serial-reuse.md#与留存缓存重试的组合) 与指纹缓存**双向绝缘**:复用 run 不消费携带,计划内每个 attempt 都真实在热道上跑;复用产出也永不成为后续 run 的缓存命中。绝缘让一份快照里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。[`--keep-sandbox`](feature/sandbox/cli.md) 下,历史终态 verdict 落在**当前留存档内**的 attempt 不携带、照常派发重跑:留存要的是一次真实执行的现场,携带条目没有沙箱可留——`failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。
 - 改了 fixture、改了配置、或 `--force` → 重跑。
 - `errored`(框架/环境层面的不确定失败,如超时、沙箱挂了)和 `skipped` 不缓存,总会重试——它们的判定本身不可信,不是可复用的终态。

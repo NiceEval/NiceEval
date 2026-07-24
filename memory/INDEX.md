@@ -95,7 +95,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [scoped-feedback-finalized](scoped-feedback-finalized.md) — 裁决(2026-07-14):ScopedFeedback(progress/diagnostic)定稿为 feature 契约、单一归属 experiments/library.md,roadmap 提案页删除;三个遗留分歧逐条裁决(ctx 注入签名、core 中立属实现纪律、`ctx.log` = progress 别名);07-13 的推迟裁决仍约束实现排期,不再约束文档定稿状态
 - [experiment-gate-tenure-ruling](experiment-gate-tenure-ruling.md) — 裁决(2026-07-23):两级并发闸按持有期分工——全局位吞吐(等待让位)、实验闸全程持有(退避不释放,maxConcurrency:1 即严格临界区);否决 serial:true 拆字段与全局位也不释放;同场裁定 docs 改用例手册体裁,统一归 docs/feature/experiments/use-case/
 - [live-dashboard-full-width-ruling](live-dashboard-full-width-ruling.md) — 裁决(2026-07-23):live 面板默认占满终端全宽(豁免 100 列上限,scrollback 面板照旧封顶),ACTIVE 身份列按实际最长值定宽只放宽不回缩、detail 拿走其余全部;否决固定比例分配与按计划集合预算列宽
-- [case-lock-wait-not-skip-ruling](case-lock-wait-not-skip-ruling.md) — 裁决(2026-07-24):并发 Invocation 用例锁((exp,eval) 粒度、.niceeval/locks/ 心跳 10s/过期 30s/rename 接管)撞新鲜锁=等待+锁释放后重查携带,等待计独立 `elsewhere` 状态;否决跳过记 incomplete 与计数混进 queued
+- [case-lock-wait-not-skip-ruling](case-lock-wait-not-skip-ruling.md) — 裁决(2026-07-24):并发 Invocation 用例锁((exp,eval) 粒度、.niceeval/locks/ 心跳 10s/过期 30s/rename 接管)撞新鲜锁=等待+锁释放后重查携带,等待计独立 `elsewhere` 状态;否决跳过记 incomplete 与计数混进 queued;取锁时机后被翻案,见下一条
+- [case-lock-dispatch-time-acquire-ruling](case-lock-dispatch-time-acquire-ruling.md) — 翻案裁决(2026-07-24):取锁从计划期全量囤锁改为派发时刻逐用例非阻塞取(真机实证囤锁把多开吞吐钉在持锁方上限、与非目标和粒度裁决自相矛盾),多开升级为水平扩展;实验级 maxConcurrency 配套升为跨 Invocation 租约名额域,`maxConcurrency: 1` 正确性声明跨进程成立;docs 已重写,代码待实现(plan/exp-case-lock-dispatch-time.md)
 - [judge-precheck-run-level-line-not-transient](judge-precheck-run-level-line-not-transient.md) — 裁决(2026-07-24):judge 预检从「运行级瞬时通知」升格为运行级生命周期行(ACTIVE 区 `● prechecking judge config <elapsed>`,新增 `precheck` 事件+`activePrecheck` 状态,不复用 experiment-hook 伪造 id);起因=慢判分网关(x1api.top ~14s)让面板冻在 `1 queued` 像卡死;同批给 `probeJudge` fetch 加 20s 超时(TimeoutError→专门的「无响应」错误,根治「永久挂」)
 
 ### 台账
