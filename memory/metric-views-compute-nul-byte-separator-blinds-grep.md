@@ -1,6 +1,6 @@
 ---
 name: metric-views-compute-nul-byte-separator-blinds-grep
-description: src/report/components/metric-views/compute.ts 里两处用真实 NUL 字节当 Map key 分隔符,导致 grep/rg 把整个文件当二进制、静默返回空结果
+description: 复合 key 的 NUL 分隔符曾以裸 NUL 字节写进源码,grep/rg 把文件当二进制静默返回空;已改写成 \u0000 转义(分隔符本身不动)
 metadata:
   type: project
 ---
@@ -29,13 +29,17 @@ metadata:
 1. 在这个仓库里撞见"看起来像应该是空格/分隔符,但 diff 显示怪异或 Edit 工具莫名匹配失败"的位置,先查这条 memory,不要凭直觉当 corruption 修掉。
 2. Edit 工具处理含多个 `${}` 插值的反引号模板字面量 old_string 时不可靠,确认匹配失败后不要重试同一个大块 old_string——换成逐字节精确的脚本操作(python `rb`/`wb` 模式 + `assert data.count(old) == 1`),或拆成不含反引号的最小片段。
 
-## 影响与规避
+## 影响与规避(修前)
 
-任何要 grep/rg 这些文件(尤其在其它 agent 或工具流水线里)的场景,不带二进制标记参数会静默拿到空结果、误判"没匹配到"。规避:
+任何要 grep/rg 这些文件(尤其在其它 agent 或工具流水线里)的场景,不带二进制标记参数会静默拿到空结果、误判"没匹配到"。当时的规避:`grep -a` / `rg -a`(强制文本模式)可以匹配穿过 NUL,或直接用 Read 工具整篇读。下面的修法把这条影响整个消掉了,这两个规避只在读旧 commit 的文件版本时还用得上。
 
-- `grep -a` / `rg -a`(强制文本模式)可以正常匹配穿过 NUL。
-- 或直接用 Read 工具整篇读,不受影响。
+## 修法(已修)
 
-## 修法(未修)
+分成两件事看,原条目把它们混成了一件:
 
-功能上无害,是故意的写法惯例,不需要修。真要统一改成别的复合 key 构造(如 `JSON.stringify([a, b])`),裸换成空格/`|` 等可打印分隔符**是退步**(见上面"差点踩的坑"),需要单独验证与提交,不要顺手当"清理"塞进无关 commit。
+1. **NUL 当复合 key 分隔符**——是故意的惯例,**不改**。裸换成空格/`|` 等可打印分隔符**是退步**(见上面"差点踩的坑");`locator.ts` 那处还喂进 sha256,换分隔符会让磁盘上已写出的全部 attempt locator 摘要对不上,是破坏性变更。
+2. **分隔符以裸 NUL *字节* 写进源码**——这是可以无损去掉的那一半,已修:源码里的裸 0x00 全部改写成 `\u0000` 转义序列(6 个 ASCII 字符)。模板字面量里的 `\u0000` 与裸 NUL 字节产出**逐字节相同**的运行时字符串(`` `x` + 转义 + `y` `` === `String.fromCharCode(120,0,121)`,已实测),所以 Map key、React key、哈希输入、既有 locator 摘要全部不变;文件回到纯文本,`grep`/`rg`/`git diff`/Edit 工具一并恢复正常。
+
+落点(修时全仓 5 处,比原条目记的 4 处多一处 `src/show/index.ts`,2 个字节):`src/report/components/metric-views/compute.ts`(`metricLineData` 的 `bucketKey`)、`src/report/components/entity-lists/EvalList.tsx`(React key)、`src/results/locator.ts`(sha256 输入)、`src/results/skipped-notice.ts`(分组 Map key)、`src/show/index.ts`(usage 矩阵的两处配对 key)。
+
+**新惯例**:再需要 NUL 分隔符时写转义序列,不要往源码里塞裸字节。上面"差点踩的坑"里那条"撞见可疑 NUL 先查这份 memory、别当 corruption 修掉"仍然有效——但今后正常写法下不该再有裸字节,真撞见就是写坏了。

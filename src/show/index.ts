@@ -553,7 +553,7 @@ async function renderUsageCompareSlice(
   const usageRows = await usageRowsOf(selection.attempts);
   const byConditionByEval = new Map<string, UsageTableData[]>();
   for (const row of usageRows) {
-    const key = `${row.experimentId} ${row.evalId}`;
+    const key = `${row.experimentId}\u0000${row.evalId}`;
     const list = byConditionByEval.get(key);
     if (list) list.push(row);
     else byConditionByEval.set(key, [row]);
@@ -566,7 +566,7 @@ async function renderUsageCompareSlice(
     const cellsText = conditions.flatMap((condition) => {
       const deltaCell = row.cells[condition];
       if (!deltaCell) return USAGE_MATRIX_METRIC_COLUMNS.map(() => MISSING_MARK);
-      const usageCell = usageMatrixCellOf(byConditionByEval.get(`${condition} ${row.key}`) ?? []);
+      const usageCell = usageMatrixCellOf(byConditionByEval.get(`${condition}\u0000${row.key}`) ?? []);
       return usageMatrixCellText(usageCell, deltaCell.historical);
     });
     return [row.key, ...cellsText];

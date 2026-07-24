@@ -421,7 +421,7 @@ export async function metricLineData(input: ReportInput, options: MetricLineOpti
       );
     }
     const series = options.series ? seriesKey(options.series, item) : undefined;
-    const bucketKey = `${series ?? ""} ${x === null ? "null" : String(x)}`;
+    const bucketKey = `${series ?? ""}\u0000${x === null ? "null" : String(x)}`;
     const bucket = buckets.get(bucketKey);
     if (bucket) bucket.items.push(item);
     else buckets.set(bucketKey, { series, x, items: [item] });
