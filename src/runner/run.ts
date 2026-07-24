@@ -355,12 +355,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 进程内信号量而是磁盘上的逐槽租约——多开不叠加 N,`maxConcurrency: 1` 的临界区声明在
   // 多开下同样成立。全局位反过来是每条 Invocation 私有的吞吐旋钮,仍是进程内信号量。
   const globalSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
-  // 租约按 experimentId 建键:裸 run(没有 experimentId)没有可共享的名额域,退回进程内
-  // 信号量——它不与任何别的 Invocation 协调,语义上就只剩「本进程内限流」这一半。
-  const gateFallbackSems = new Map<AgentRun, Effect.Semaphore>();
+  // 实验闸在进程内先垫一层同名额的信号量,再去取租约。两个原因:
+  // ① 名额在本进程内部交接是即时的(Effect 信号量把 permit 直接递给排队的下一个 attempt),
+  //    不必等租约轮询的下一个周期——单开是绝大多数场景,不该为跨进程协调付整整一个轮询周期
+  //    的空转;② 同实验同时去拍磁盘的 attempt 至多 N 个,不让 runs 展开出的一大批兄弟一起
+  //    轮询。它只会更严、不会更松:permit 数恒等于该实验 resolved 的 N,真正的名额权威仍是
+  //    租约(跨 Invocation 共用、min-N 收紧)。裸 run(没有 experimentId、没有可共享的名额域)
+  //    就只有这一层,不产生任何跨进程协调。
+  const gateLocalSems = new Map<AgentRun, Effect.Semaphore>();
   for (const run of opts.agentRuns) {
-    if (run.maxConcurrency !== undefined && run.experimentId === undefined) {
-      gateFallbackSems.set(run, Effect.runSync(Effect.makeSemaphore(Math.max(1, run.maxConcurrency))));
+    if (run.maxConcurrency !== undefined) {
+      gateLocalSems.set(run, Effect.runSync(Effect.makeSemaphore(Math.max(1, run.maxConcurrency))));
     }
   }
 
@@ -1119,11 +1124,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     use: Effect.Effect<DispatchOutcome>,
   ): Effect.Effect<DispatchOutcome> => {
     const { maxConcurrency, experimentId } = a.run;
-    if (maxConcurrency === undefined) return use;
-    const fallback = gateFallbackSems.get(a.run);
-    if (fallback) return fallback.withPermits(1)(use);
-    return Effect.uninterruptibleMask((restore) =>
-      restore(Effect.promise((sig) => acquireGateLease(experimentId!, maxConcurrency, sig))).pipe(
+    const localSem = gateLocalSems.get(a.run);
+    if (maxConcurrency === undefined || localSem === undefined) return use;
+    if (experimentId === undefined) return localSem.withPermits(1)(use);
+    const leased = Effect.uninterruptibleMask((restore) =>
+      restore(Effect.promise((sig) => acquireGateLease(experimentId, maxConcurrency, sig))).pipe(
         Effect.flatMap((claim) =>
           claim === undefined
             ? Effect.succeed<DispatchOutcome>({ kind: "done" })
@@ -1133,6 +1138,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         ),
       ),
     );
+    return localSem.withPermits(1)(leased);
   };
 
   // earlyExit:为每个 key 各建一个 AbortController。某 attempt 通过或 errored 时 abort 它,
