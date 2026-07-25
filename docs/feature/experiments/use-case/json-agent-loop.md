@@ -31,7 +31,7 @@
    niceeval show @17m2k9pq --execution
    ```
 
-4. 修复后只重跑受影响项;正常依赖指纹缓存,通过项不重付(怀疑缓存口径时才配 [`--force`](force.md)):
+4. 修复后只重跑受影响项;正常依赖指纹缓存,通过项不重付(怀疑缓存口径时才配 [`--rerun all`](rerun.md)):
 
    ```sh
    niceeval exp compare/bub-e2b memory/commit0-cachetool --json

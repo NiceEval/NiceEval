@@ -7,7 +7,7 @@
 ## 全流程
 
 1. **整体与逐题对照**:`niceeval show --exp memory/claude-baseline --exp memory/claude-mempal` 输出[对照矩阵](../show/compare.md)——逐 eval 一行、`⇄` 标出判定翻转的行、尾部对基准的通过率 / tokens / 成本差值。第一个 `--exp` 是基准。
-2. **确认计划条件与实际观测**:先核对 experiment 的 flags / model / agent / sandbox 配置确实构成对照，再看 [facts](../../results/architecture.md#facts运行事实)（如 `memory.notes=73`）确认实际起步状态。facts 是运行后审计值、不参与缓存；外部状态变过而配置未变时先 `--force`，不能拿携带结果上的旧 fact 当当前条件。
+2. **确认计划条件与实际观测**:先核对 experiment 的 flags / model / agent / sandbox 配置确实构成对照，再看 [facts](../../results/architecture.md#facts运行事实)（如 `memory.notes=73`）确认实际起步状态。facts 是运行后审计值、不参与缓存；外部状态变过而配置未变时先 `--rerun all`，不能拿携带结果上的旧 fact 当当前条件。
 3. **效率归因**:`--usage` 换到[用量切片](../show/usage.md),逐题看 `uncached in` 与 `cache read` 的拆分——协议逐轮重发上下文时,膨胀多在 cache read,这层拆分决定「贵在哪」的结论。
 4. **行为归因**:对翻转的题,`niceeval show pr-6058 --exp A --exp B --json` 收窄后从各条件 cell 的 `attempts` 拿两侧 locator(text 矩阵是聚合视图,不逐格展开 locator),再各自 `--execution` 通读;横跨整个条件的行为问题(「每个 attempt 都 search 了吗、查了什么词」)用 [`--execution --grep`](../show/execution.md#范围化跨-attempt-扫描与---grep) 一次扫完,命中卡片被截断时按尾巴里的 `--expand` 句柄展开全文。
 5. **先排除环境与题目本身**:归因翻转前,`niceeval show --stats` 看[稳定性矩阵](../show/stats.md)——`never ✓` 的题先审题目质量,`!`(执行错误)扎堆的列先修 provider 限流/并发,两者都不该记到条件头上。

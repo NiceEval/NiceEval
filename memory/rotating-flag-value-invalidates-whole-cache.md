@@ -15,26 +15,22 @@ PLAN 头变成裸的 `36 attempts`——**一条都没携带**,连这次中断�
 服务端实例地址、跑批时刻。`labels` 不进指纹但也不透传运行时,接不住这类值;
 放 `flags` 又被整袋哈希——修改前的 niceeval 没有第三种位置,这是设计缺口不是用法失误。
 
-**修法。**(2026-07-24,niceeval + MemoryBench 同批)
+**修法。** 第一版修法(`ExperimentDef.provenanceFlags` 键名 deny-list + 反事实重算,commit
+`e924fd4a`)当日验证有效,次日整体推翻——它在携带条目上记了错的出处,而且把「哪些值算条件」这条线
+交回给用户。定稿的修法见裁决条目
+[fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md):
 
-1. niceeval 加 `ExperimentDef.provenanceFlags: string[]`:列出的键照常落盘、照常透传
-   `ctx.flags` / `t.flags`,只是指纹按**抹掉它们之后**的 flags 算(`src/runner/fingerprint.ts`
-   的 `fingerprintFlags`)。其余 flag 照旧一变即作废。
-2. 声明之前落盘的结果(指纹按整袋 flags 算)靠**反事实重算**救回:拿快照记下的
-   `ExperimentRunInfo.flags` 替换本次 flags 口径重算一遍指纹,等于历史那一串就证明
-   「除 flags 外一切都没变」;再要求两袋 flags 抹掉声明键后逐字相等才放行
-   (`acceptableFingerprints`)。哈希不可差分,所以只能这样反着问。历史结果因此不必重跑一轮
-   来「洗」,也不必去改已落盘的 `result.json`。
-3. 携带判定从「指纹相等」改成「指纹 ∈ 可携带集合」(`CarryPlan.acceptableFingerprints`),
-   静态规划与派发时刻的重查共用这一个集合;`plannedFingerprints` 退化成只给新跑的 attempt 打戳。
-4. MemoryBench 侧:`experiments/shared/nowledge.ts` 导出 `NOWLEDGE_PROVENANCE_FLAGS`,
-   五个 nowledge 实验各加一行 `provenanceFlags: NOWLEDGE_PROVENANCE_FLAGS`。
+1. 指纹构成不开放配置,`flags` 整袋进、无逐键豁免。
+2. 轮换坐标不写 `flags`——它是 `setup` 跑起来才有的值,经工厂闭包给 agent / sandbox 钩子用,
+   要进记录就在 **attempt 作用域**(sandbox 钩子 / agent setup)`ctx.fact()` 上报,
+   随携带条目原样携带,报告按 `fact()` 选轴分组。
+3. 已经写进 `flags` 的搬迁那一次带 `--carry-ignoring-flag <key>`,不赔一轮重烧。
 
-**适用场景与判据。** 往 `flags` 里放任何「每次跑都可能不一样、但不改变被测行为」的值之前,
-先问一句:它变了,已经跑完的结果还算不算数?算数就必须进 `provenanceFlags`——否则表现出来
-是「缓存莫名其妙全失效」,而 PLAN 头只会少掉一行 carried,不会告诉你是哪个 flag 变了。
-反过来,服务端版本号(`nowledgeVersion`)这类**变了行为可能真不一样**的值不要点名,让它照常作废。
+**适用场景与判据。** 往 `flags` 里放值之前先问:**这个值是我写下的,还是跑起来才知道的?**
+跑起来才知道的一律不进 `flags`——否则表现出来是「缓存莫名其妙全失效」,而 PLAN 头只会少掉一行
+carried,不会告诉你是哪个 flag 变了。服务端版本号两种角色都成立:实验声明「我要 0.10.39」是条件,
+进 `flags`、变了就该作废;跑起来问服务端「你是哪个版本」是观测,进 fact。
 
 **留下的口子。** 携带落空目前没有可诊断性:0 carried 与「本来就没跑过」在输出上长得一样,
-定位只能靠人肉 `--dry` 对照两次。要补的话,落点是 plan 阶段——用同一套反事实重算指出
-「差异面在 flags 的哪个键 / 在 eval 源码 / 在 sandbox」。
+定位只能靠人肉 `--dry` 对照两次。落点是 plan 阶段——指出「差异面在 flags 的哪个键 / 在 eval 源码 /
+在 sandbox」,并对每轮都在变的键直接指路 fact。

@@ -53,7 +53,7 @@ export default defineExperiment({
 
 `evals` 选中的 eval 必须**同一题型**（`EvalDescriptor.scoring`，`defineEval` 的通过制或 `defineScoreEval` 的计分制）：通过率和总分是两种不能相加的读数，一个实验只回答一种。混型选择是启动期配置错误，报错列出两类 eval id 并建议按 tags / 前缀 / `scoring` 谓词收窄，或拆成两个实验文件（计分语义见[计分粒度](score-points.md)）。
 
-`flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。按场景查[用例手册 · flags 还是 labels](use-case/flags-labels.md);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)。
+`flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/flags-labels-facts.md);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
 
 `maxConcurrency` 是**实验自己的并发闸**:只限流本实验的 attempt,同批其它实验照常按全局并发跑。名额从沙箱创建前一直握到 `teardown` 与沙箱销毁完成,中途不松手——所以 `maxConcurrency: 1` 的实验里,上一个 attempt 的回存钩子没跑完,下一个 attempt 的载入不会开始,共享状态的正确性只靠这一行声明,钩子里不需要自己加锁。什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`runs` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/concurrency.md);闸的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 

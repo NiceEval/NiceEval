@@ -91,7 +91,7 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 
 1. **加载配置。** CLI 合并 标志 → 环境变量 → `niceeval.config.ts` → 默认值。
 2. **发现。** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
-3. **指纹与缓存。** 对每个 eval 算 `(eval 代码 + 配置)` 指纹;已通过且指纹未变的,标记跳过(除非 `--force`)。
+3. **指纹与缓存。** 对每个 eval 算 `(eval 代码 + 配置)` 指纹;已通过且指纹未变的,标记跳过(除非 `--rerun all`)。
 4. **建 attempt 列表。** 每个 eval × `runs` 次 → 一批 attempt。为每个 eval 建一个 `AbortController`(供首过即停)。
 5. **有界并发调度。** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。可疑的"秒挂"(< 5s 且非超时)按指数退避重试。
 6. **准备环境,交给 `test(t)`。** 沙箱型:`Sandbox.create` → 若 `experiment.sandbox` 链上挂了 `.setup()`,先跑这些环境层钩子(装二进制、预热、写 hook 文件,按追加顺序;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 若这条 eval 定义了 `EvalDef.setup` 就跑它(任务 Fixture)→ 跑 agent 自己的 `SandboxAgent.setup`(装 CLI 等)。之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeFiles`/`uploadFiles`(手工写入起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流、注入 `__niceeval__/results.json`)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。

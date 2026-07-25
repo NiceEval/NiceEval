@@ -21,7 +21,7 @@ ExperimentDef(运行配置 + 实验级 setup 钩子,experiments/ 下一文件一
 
 - `evals` 过滤器在解析时遍历发现后的 `EvalDescriptor` 全集（数据集已扇出），产出 `selectedEvalIds`；函数必须同步返回 boolean。落盘的是求值结果与过滤器指纹，不是函数本身。
 - `sandbox` 是本实验唯一的固定 `SandboxSpec`。spec 携带 `environments` 表时，解析期按每条选中 eval 的 `environment` 查表得出该 eval 的有效产物参数：选中 eval 声明的 profile 缺表项属于启动期配置错误，一次穷举列出全部缺项，不创建任何沙箱。逐 eval 的解析结果进入该 eval 的 fingerprint、provider 并发推荐值与 `ExperimentRunInfo.sandboxByEval`；remote Agent 不创建 sandbox，不参与查表。
-- eval 级 fingerprint 由 eval 源码 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据。
+- eval 级 fingerprint 由 eval 源码 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [Runner · 缓存](../../runner.md#缓存指纹去重)。解析期求值这一步同时划定了指纹的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
 - 落盘投影 `ExperimentRunInfo` 的穷尽形状单点定义在 [Results · snapshot.json](../results/architecture.md#snapshotjson)；`model` / `agent` 只在快照顶层存在。
 
 ## 调度接口
@@ -47,8 +47,8 @@ experiment 影响调度的字段就这五个：
 - **失败语义**:`setup` 抛错 → 本实验**所有** attempt 记 `errored`(`error.code = "experiment-setup-failed"`,`error.phase = "experiment.setup"`),逐条落 `result.json`、进报告——环境起不来是每条 eval 都没跑成的事实,不是一条一次性日志;同批其它实验不受任何影响。同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
 - **teardown 的触发**:本实验最后一个 attempt 收尾后执行,当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免(半初始化的现场同样要扫尾,teardown 对可能未赋值的闭包变量做防御),一个 attempt 都没派发则跳过;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内兜底范围,由[强杀后的收尾兜底](#强杀后的收尾兜底收尾登记与启动自愈)在磁盘上接手。
 - **teardown 的失败语义**:抛错记一条快照级 diagnostic(`experiment-teardown-failed`, `phase: "experiment.teardown"`),随该 Experiment 的 `completedAt` 封口落入 `snapshot.json`,不改变任何已产出的 verdict——与 `sandbox.teardown` 的失败语义一致;执行有界(30s 清理超时,到点同样记 `experiment-teardown-failed`),不能无限拖住退出。
-- **产出的运行时值经模块闭包流动**:`setup` 拿到的 URL / 凭据写进实验文件的模块级变量,`teardown` 与同文件里 agent / sandbox 钩子(后两者每 attempt 执行,晚于 `setup`)从闭包读取。runner 不做值的中介,也不把这些值写进快照——它们是运行时基础设施坐标,不是实验条件(实验条件进 `flags`)。
-- **不进 fingerprint**:钩子函数体与 `SandboxSpec` 钩子一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--force`。
+- **产出的运行时值经模块闭包流动**:`setup` 拿到的 URL / 凭据写进实验文件的模块级变量,`teardown` 与同文件里 agent / sandbox 钩子(后两者每 attempt 执行,晚于 `setup`)从闭包读取。runner 不做值的中介——它们是运行时基础设施坐标,不是实验条件(实验条件进 `flags`,一并进指纹)。要把这轮实际用的坐标留进记录,在钩子里 `ctx.fact()` 上报:落 `facts` 而不是配置,因此不参与可比性,坐标轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
+- **不进 fingerprint**:钩子函数体与 `SandboxSpec` 钩子一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
 - **两个钩子都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../results/architecture.md#resultjson))与运行级反馈行的标注。
 
 ## 强杀后的收尾兜底:收尾登记与启动自愈
@@ -74,14 +74,14 @@ experiment 影响调度的字段就这五个：
 - **锁不含指纹。** 键只有身份,不掺 resolved 配置:两边配置不同(携带必不匹配)时,等待换到的只剩「不同时双跑」——这仍然值得,它保护有共享状态的用例不被并发踩踏,判据也因此保持「读锁文件即可判定」的简单形态,不需要在锁上再算一遍指纹。
 - **过期锁经原子 rename 接管。** 竞争者把过期锁文件 rename 成自己的接管标记,rename 成功者获得执行权、随后写入自己的新锁;输者按撞锁处理,转入等待。与收尾登记的「删登记是互斥点」同构:同一把过期锁不会被两个进程双接管。接管记一条 warning 级运行 diagnostic(code `lock-taken-over`,按 dedupeKey 折叠)——它意味着某次 run 死得没来得及清锁,值得让操作者看见,但不值得中止任何事。
 - **释放与兜底。** 用例的全部 attempt 收尾(含沙箱销毁)后删除自己的锁;中断与强清退出路径由既有的宿主机侧兜底排空;`SIGKILL` / 断电不释放,由心跳过期接管兜底。锁目录不需要手工清理,也没有对应的清理命令。
-- **执行模式组合。** `--force` 不豁免锁:等待照旧,等完不消费携带、全部自跑——force 关掉的是缓存,不是「别双跑」。[`--reuse-sandbox`](../sandbox/serial-reuse.md) 与携带双向绝缘,等完同样自跑。[`--keep-sandbox`](../sandbox/cli.md) 的携带豁免规则照常作用于等待后的那次携带规划。`--dry` 不取锁、不等待,只读锁目录把撞锁用例如实标进计划(见 [CLI · 计划文档](cli.md#事件与计划文档的-typescript-形状))。
+- **执行模式组合。** `--rerun` 不豁免锁:等待照旧,等完按本次口径判携带(`all` 档全部自跑)——它关掉的是缓存,不是「别双跑」。[`--reuse-sandbox`](../sandbox/serial-reuse.md) 与携带双向绝缘,等完同样自跑。[`--keep-sandbox`](../sandbox/cli.md) 的携带豁免规则照常作用于等待后的那次携带规划。`--dry` 不取锁、不等待,只读锁目录把撞锁用例如实标进计划(见 [CLI · 计划文档](cli.md#事件与计划文档的-typescript-形状))。
 - **实验级 `maxConcurrency` 的名额域跨 Invocation。** 声明了 `maxConcurrency` 的实验,其 N 个名额是**该实验所有并行 Invocation 共用的**:名额落成 `.niceeval/locks/` 下按 `(experimentId, slot)` 逐条目的租约文件,心跳、过期判据与 rename 接管和用例锁同一套纪律;名额与 attempt 同生命周期的持有规则不变(见 [Runner · 调度](../../runner.md#调度有界并发))。这让 `maxConcurrency: 1` 作为共享状态实验的正确性声明在多开下依然成立——两条 Invocation 各选同一实验不同 eval 子集时,attempt 仍严格互斥;给撞限额实验降速的 N 也不因多开叠加对 agent 的压力。未声明 `maxConcurrency` 的实验没有名额域,不产生任何跨进程协调。两边 resolved 的 N 不一致(配置漂移)时,取在场声明中的最小值——正确性从紧。
 
 **非目标**:用例锁与实验闸不把**全局**并发位扩展到跨进程——`--max-concurrency` 是每条 Invocation 自己的吞吐旋钮,两条并行 Invocation 对 provider 与模型接口的总压力是各自之和,配额分配归用户(各自调低 `--max-concurrency`)。同一实验被两条 Invocation 选中时,实验级 `setup` 在每条 Invocation 各执行一次,跨进程共享服务的互斥仍归外部编排。它也不是跨机分布式锁:判据依赖同一份文件系统与同一只时钟,不同工作副本各有各的 `.niceeval`,天然不共享锁域。
 
 ## Carry：自动携带
 
-上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次快照（带 `artifactBase` 指回原 artifact），让最新快照保持完整；`--force` 关闭携带全部重跑；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求快照收尾，因此被中断或强杀的 Invocation **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [Runner · 缓存](../../runner.md#缓存指纹去重)，携带条目的落盘与读取语义见 [Results · 两类条目](../results/architecture.md#resultjson)。
+上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次快照（带 `artifactBase` 指回原 artifact），让最新快照保持完整；[`--rerun`](use-case/rerun.md) 收窄「哪些还算数」(`failed` 档只采信 `passed`，`all` 档一律不采信)；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求快照收尾，因此被中断或强杀的 Invocation **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [Runner · 缓存](../../runner.md#缓存指纹去重)，携带条目的落盘与读取语义见 [Results · 两类条目](../results/architecture.md#resultjson)。
 
 ## Invocation Completion 与退出
 

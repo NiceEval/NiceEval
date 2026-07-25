@@ -87,27 +87,37 @@ export default defineExperiment({
 - **横切**:同一份声明换个轴,`series={label("memory")}` 让 baseline 们与 mempal 们各成一类,跨 agent 比较记忆机制本身;`series={["agent", label("memory")]}` 复合归类。
 - **参数进程**:数值坐标(`labels: { contextK: 32 }`)用 `numericLabel("contextK")` 直接当 `MetricLine` 的 x 轴。
 
-与 `flags` 的分界一句话:**这个值会改变 attempt 里发生的事吗?** 会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类 → `labels`。两边都落盘、报告都能分组(`flag()` / `label()`),区别只在运行时可见性与可比性——已经用 `flags` 表达且确实影响行为的变量不必迁移到 labels。运行时要看得见、但值变了不该作废结果的坐标是第三种,见下一节。
+与 `flags` 的分界一句话:**这个值会改变 attempt 里发生的事吗?** 会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类 → `labels`。两边都落盘、报告都能分组(`flag()` / `label()`),区别只在运行时可见性与可比性——已经用 `flags` 表达且确实影响行为的变量不必迁移到 labels。两者都是**你写下的声明**;跑起来才知道的值两边都不进,见下一节。
 
-## provenanceFlags:只作出处记录的 flag
+## 运行时坐标不进配置:三个家
 
-有一类值必须留在 `flags` 里——eval 或 adapter 要读它,报告要按 `flag()` 看这轮连的是哪个——但它每次跑都可能换,换了却不改变 attempt 里发生什么:隧道 / 反向代理 URL、服务端实例地址、跑批时刻。按整袋 `flags` 算指纹会让这类坐标每轮换一次就作废全部已完成结果。`provenanceFlags` 列出这些键名,把它们摘出可比性配置:
+隧道 / 反向代理 URL、服务端实例地址这类坐标每次跑都可能换,但换了不改变 attempt 里发生什么。它们不属于配置:`flags` 整袋进指纹、**没有逐键豁免**,把轮换值写进去等于每换一次坐标就作废全部已完成结果。它们的本质是**跑起来才存在**的事实——`setup` 起完隧道才有 URL——所以坐标经工厂闭包流给 agent / sandbox 钩子(见[多个实验共享同一套生命周期代码](#多个实验共享同一套生命周期代码)),要留在记录里就用 `ctx.fact()` 上报。
+
+判据因此是机械的,不需要判断「它会不会改变行为」:
+
+> **值是你写下的 → 配置(`flags` / `labels`);值是跑起来才有的 → `ctx.fact()`。**
+
+| | 谁写 | 进指纹 | 运行时可见 | 落盘 | 携带条目读到的值 |
+|---|---|---|---|---|---|
+| `flags` | 实验作者静态声明 | 整袋,无逐键豁免 | `ctx.flags` / `t.flags` | 快照级 `ExperimentRunInfo.flags` | 本轮的值 |
+| `labels` | 实验作者静态声明 | 否 | 否 | 快照级 `ExperimentRunInfo.labels` | 本轮的值 |
+| `ctx.fact()` | 生命周期代码运行时上报 | 结构上进不来 | 工厂闭包 | attempt 级 / 快照级 `facts` | 产出它那一轮的值 |
 
 ```typescript
-export default defineExperiment({
-  agent: codexAgent(),
-  model: "gpt-5.6-luna",
-  flags: { memory: "nowledge", nowledgeVersion: "0.10.39", nowledgeEndpoint: tunnelUrl() },
-  // 隧道 URL 每次重启就换一个,但连的是同一个实例、同一个库
-  provenanceFlags: ["nowledgeEndpoint"],
-});
+// experiments/shared/nowledge.ts —— 工厂闭包里那个每沙箱执行的钩子
+sandboxSetup(): SandboxHook {
+  return async (sandbox, ctx) => {
+    ctx.fact("nowledge.endpoint", env!.url);   // 这条 attempt 实际连的实例,随它的结果落盘
+    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env!.url}\n` });
+  };
+}
 ```
 
-- **只改可比性,不改别的。** 列出来的键照常落盘进 `ExperimentRunInfo.flags`、照常透给 `ctx.flags` / `t.flags`、照常能被 `flag()` 分组;唯一的区别是指纹按抹掉它们之后的 flags 算,值变了已跑完的结果照常携带。
-- **其余 flag 照旧一变即作废。** 只在这些键上不同才放行;`webResearch` 从 `true` 改成 `false` 这种真改变行为的照常重跑。
-- **声明之前跑出来的结果同样携带得到。** 携带判定对历史结果做一次反事实重算(机制见 [Runner · 缓存](../../runner.md#缓存指纹去重)),不需要重跑一轮来「洗」旧结果,也不需要动已落盘的文件。
-- **键不必存在于 `flags` 里。** 把一个键从 `flags` 移走(比如改用 `labels` 记录)时留着这条声明,历史结果照样不作废。
-- 完全不需要在运行时被看见的事实用 [`labels`](#labels声明归类坐标不进运行时):它本来就不进指纹,不必再声明一次。
+- **报在哪个作用域,决定它跟不跟着结果走。** attempt 作用域(sandbox 钩子、agent setup / teardown、adapter send)上报的进 `AttemptRecord.facts`,随携带条目**原样携带**——携带来的那条读到的仍是产出它那一轮的地址,报告按它分组不会张冠李戴。experiment 作用域(`setup` / `teardown`)上报的进 `SnapshotMeta.facts`,记的是整场观测。要按它分组、要它跟着单条结果走,就报在 attempt 作用域。
+- **报告按 [`fact()`](../reports/library/metrics.md#维度与数值轴) 选轴**分组,与 `flag()` / `label()` 并列。
+- **同一个事实是条件还是观测,由谁写下决定。** 实验声明「我要 0.10.39」→ `flags`,换版本作废旧结果正是想要的;跑起来问服务端「你现在是哪个版本」→ `ctx.fact()`,那是审计证据。
+- **别把实验条件写成 fact。** 「启用了哪个特性」只报 fact、不进 `flags`,条件变了旧结果会被错误携带(边界见 [Results · facts](../results/architecture.md#facts运行事实))。
+- 已经把轮换坐标写进 `flags` 的实验,搬进 fact 会让 flags 袋变化、历史结果一次性作废;搬迁那一次用 [`--carry-ignoring-flag`](use-case/cache-invalidation.md) 保住它们。
 
 文件名与归类自此脱钩:`codex-gpt-5.4--mempal.ts` 的后缀只是给人看的命名习惯,报告不从 experiment id 字符串里猜任何语义,归类只认 `labels` 声明。
 

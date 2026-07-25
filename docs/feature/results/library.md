@@ -264,7 +264,7 @@ current.warnings;    // 同一套 ScopeWarning
 
 删除同一个 experiment 的一个贡献来源、保留另一个,因此是合法且诚实的操作:结果是「这个 experiment 现在的水位少了被删来源贡献的那些 eval,其余 eval 的水位不变」,而不是「整个 experiment 从 Scope 里消失」或「整个 experiment 的旧数据原样全留」。时效同样物化:旧快照拼入的 attempt 是历史执行(见下节[时效](#时效新执行与历史执行)),「水位里混着旧结果」逐行可见,不靠读者去猜。
 
-自动携带(见下节)让常态下两个口径重合——最新快照本来就完整;`current()` 保证在携带缺席时(局部 `--force` 重跑、errored 不携带)口径依然诚实,不把报表分母缩成刚重跑的那几道题。选哪个:对外发布自包含数据集用 `latest()` + `copySnapshots`;看当前水平、连续开发中对数用 `current()`。
+自动携带(见下节)让常态下两个口径重合——最新快照本来就完整;`current()` 保证在携带缺席时(局部 `--rerun all` 重跑、errored 不携带)口径依然诚实,不把报表分母缩成刚重跑的那几道题。选哪个:对外发布自包含数据集用 `latest()` + `copySnapshots`;看当前水平、连续开发中对数用 `current()`。
 
 ## 时效:新执行与历史执行
 
@@ -287,7 +287,7 @@ const fresh = results.current({ experiments: "compare/", fresh: true });
 
 ## 身份键与去重
 
-运行器默认把上一轮 fingerprint 匹配、判定为终态(passed / failed)的结果**携带合入**新快照(`RunOptions.priorResults`;CLI 侧 `--force` 关闭携带全部重跑,见 [Runner · 缓存](../../runner.md#缓存指纹去重)):这让每次跑出来的最新快照天然完整(正好配合 `results.latest()`),代价是同一个 attempt 存在于多份落盘。
+运行器默认把上一轮 fingerprint 匹配、判定为终态(passed / failed)的结果**携带合入**新快照(`RunOptions.priorResults`;CLI 侧 `--rerun all` 关闭携带全部重跑,见 [Runner · 缓存](../../runner.md#缓存指纹去重)):这让每次跑出来的最新快照天然完整(正好配合 `results.latest()`),代价是同一个 attempt 存在于多份落盘。
 
 **携带条目的落盘与读取面行为**:携带条目在新快照里也是一条 `result.json`,带原条目的 `startedAt`(身份锚)、`artifactBase`(相对结果根,指向原快照的 attempt 目录)与 `artifacts` 词干列表,三者原样携带——`artifactBase` 就是事实上的「携带」标记,不需要再发明一个;读取面把它投影成 `attempt.carried`,消费方不自己探测 artifactBase。reader 据此定三条:
 

@@ -9,7 +9,7 @@
 
 每篇适配器文档按同一个三段式写清该仓库的验收说明：
 
-1. **跑对应的 Eval**：Experiment 直接从 `niceeval/adapter` 导入并实例化官方 Agent 工厂，以 `--force`
+1. **跑对应的 Eval**：Experiment 直接从 `niceeval/adapter` 导入并实例化官方 Agent 工厂，以 `--rerun all`
    运行真实模型 Eval。仓库不拥有 `agents/`，不包装转换器，也不实现
    `send()`；配置能力不够时修官方工厂。
 2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、裸工具名）、调用与结果按 call

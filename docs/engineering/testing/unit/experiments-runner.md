@@ -208,7 +208,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   `elsewhere` 迁 `reused`、不匹配转 `queued` 自跑、`runs`
   部分携入部分补跑，三面都要有区分力场景；心跳与接管——续租与等待轮询按注入 clock 推进、过期判据（心跳落后超过阈值）、接管 rename 的互斥（两个竞争者恰一个获得执行权、输者转入等待）、接管产生去重的
   `lock-taken-over`
-  warning；释放路径——正常收尾、中断、实验 setup 抛错各路径锁文件都被删除，遗留过期锁被下一次运行接管（不需要手工清理）；执行模式组合——`--force`
+  warning；释放路径——正常收尾、中断、实验 setup 抛错各路径锁文件都被删除，遗留过期锁被下一次运行接管（不需要手工清理）；执行模式组合——`--rerun all`
   等待后全部自跑、`--reuse-sandbox` 等待后不消费携带；`lock_wait` 起止事件与 `elsewhere`
   计数归约进反馈状态，字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。锁文件走隔离
   `niceevalRoot` 下的真实文件系统（每例独立临时根，不许写进真实仓库的 `.niceeval/`），时间推进用
@@ -235,9 +235,9 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped`
   总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs`
   不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `durationMs`
-  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**`provenanceFlags` 声明的 flag 不进指纹**——只有这些键取值不同的历史终态照常携带、其余 flag 有任一不同则重跑(fixture 两个方向都要有区分力场景)，声明之前落盘的历史结果(指纹按整袋 flags 算)同样携带得到、反事实重算的候选 flags 取自该实验全部快照(fixture 要有「结果自带的那袋对不上、更早快照那袋才对得上」的区分力场景)、缺 `ExperimentRunInfo.flags` 的落盘不携带；**携带条目合入新快照时指纹按本次规划重新打戳**(其余字段原样)；携带以 attempt 为粒度、未收尾快照是合法来源；执行模式 flag 的携带豁免——`--keep-sandbox`
+  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数进,而 `runs` / `labels` / 调度字段 / 生命周期钩子函数体改动不作废携带；**`--carry-ignoring-flag <key>` 只作用于本次调用**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、本次落一条 `carry-ignoring-flag` 快照 diagnostic、不写进任何持久声明；**携带条目合入新快照时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾快照是合法来源；执行模式 flag 的携带豁免——`--keep-sandbox`
   下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed`
-  一起豁免），档外照常携带；`--force`/`--dry` 语义；计数恒等式
+  一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、裸写与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式
   `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)`
   最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。

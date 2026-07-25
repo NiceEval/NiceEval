@@ -232,15 +232,15 @@ AI 通常按任务选择这些入口：
   </Step>
   <Step title="局部重跑并验证假设">
     ```bash
-    npx niceeval exp local weather/brooklyn --json --force
+    npx niceeval exp local weather/brooklyn --json --rerun all
     npx niceeval show weather/brooklyn
     ```
 
-    位置参数按评估用例 ID 前缀缩小实验范围。调试同一个失败时加 `--force`，确保刚才的修改真的触发一次新运行。然后用 `show` 验证判定、断言和证据是否按预期变化。
+    位置参数按评估用例 ID 前缀缩小实验范围。调试同一个失败时加 `--rerun all`，确保刚才的修改真的触发一次新运行。然后用 `show` 验证判定、断言和证据是否按预期变化。
   </Step>
   <Step title="全量确认没有回归">
     ```bash
-    npx niceeval exp local --json --force
+    npx niceeval exp local --json --rerun all
     npx niceeval show
     ```
 
@@ -275,25 +275,26 @@ Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运
 - `events.json` 是对话与工具调用事件，`trace.json` 是调用链，`diff.json` 是 Sandbox 文件变化。
 - 某类证据不存在时，对应文件不会生成。先以 `show` 的提示为准，不要假设每个目录都有全部文件。
 
-`show` 的默认结果可能合成自多次运行：每个 Experiment × 评估用例选择最新判定，因此局部重跑后仍能看到其它评估用例的旧结果。该视图用于查看每条评估用例的最新已知判定；同一版代码的整体结果必须通过一次 `--force` 全量运行确认。
+`show` 的默认结果可能合成自多次运行：每个 Experiment × 评估用例选择最新判定，因此局部重跑后仍能看到其它评估用例的旧结果。该视图用于查看每条评估用例的最新已知判定；同一版代码的整体结果必须通过一次 `--rerun all` 全量运行确认。
 
 ## 结果复用条件
 
-不传 `--force` 时，NiceEval 会比较当前指纹与最近结果。指纹由评估用例源码和运行配置组成，包括实验 ID、Agent、model、flags、Sandbox、timeout 与 strict 等设置。
+不传 `--rerun all` 时，NiceEval 会比较当前指纹与最近结果。指纹由评估用例源码和运行配置组成，包括实验 ID、Agent、model、flags、Sandbox、timeout 与 strict 等设置。
 
 | 最近结果与当前输入 | 本次行为 |
 | --- | --- |
 | 指纹相同，判定为 `passed` 或 `failed` | 携入旧结果，不重新执行 |
 | 指纹不同 | 重新执行 |
 | 最近结果为 `errored` 或 `skipped` | 重新执行 |
-| 使用 `--force` | 忽略旧结果，重新执行 |
+| 使用 `--rerun` | 只有 `passed` 携入，失败项重新执行 |
+| 使用 `--rerun all` | 忽略旧结果，全部重新执行 |
 
 被测程序的源码不在指纹里。修改实现后，即使行为已经变化，旧的 `passed` 或 `failed` 仍可能被复用。因此可以这样选择：
 
 - 只想重看已有结果：运行 `niceeval show`，不产生新费用。
 - 修改了评估用例或实验配置：直接重跑；指纹变化会触发对应任务。
-- 修改了被测程序：对受影响的评估用例使用 `--force`。
-- 准备结束本轮工作：对整个实验使用 `--force`，排除其它评估用例的回归。
+- 修改了被测程序，要复验失败项：加 `--rerun`。已通过的照常携入，不必先去找失败的评估用例 ID——失败面板的 `Retry:` 行给的就是这条命令。
+- 准备结束本轮工作：对整个实验使用 `--rerun all`，排除其它评估用例的回归。
 
 ## 设置自主迭代协议
 
@@ -306,9 +307,9 @@ Coding Agent 应从 `failure` / `error` 事件里取出 `locator`，再逐个运
 并按问题选择 --source、--execution、--timing 或 --diff；--timing 从 lifecycle 展开 setup/teardown
 hook、shell 命令、每轮 send 与可关联的 OTel model/tool，回答整个 Attempt 的时间花在哪里。
 写出失败原因的假设，并判断应该修改被测程序、
-Eval，还是实验环境。修改后用 --force 重跑对应 Eval，比较新的判定和证据。
+Eval，还是实验环境。修改后用 --rerun 重跑失败项，比较新的判定和证据。
 同一问题连续三轮没有新证据或改善时停止并汇报，不要为得到通过结果而放宽正确的断言。
-全部局部失败清零后，用 npx niceeval exp local --json --force 全量验证；退出码 0 才完成。
+全部局部失败清零后，用 npx niceeval exp local --json --rerun all 全量验证；退出码 0 才完成。
 ```
 
 真实 Agent 的运行可能产生费用。实验阶段可以加 `--budget <美元>` 限制本轮累计成本；预算只能限制单次命令，不能替代上面的停止条件。

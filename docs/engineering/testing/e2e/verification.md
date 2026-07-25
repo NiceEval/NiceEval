@@ -37,12 +37,12 @@ function sh(cmd: string, expect: number | "nonzero" = 0): string {
 
 ## 用例一：跑实验，断言退出码
 
-`--force` 保证真实新跑，`--json` 保证可解析的稳定事件流，`--junit` 落 CI 出口：
+`--rerun all` 保证真实新跑，`--json` 保证可解析的稳定事件流，`--junit` 落 CI 出口：
 
 ```ts
 const EXPECTED_EVALS = ["weather/brooklyn", "weather/hitl-reject"];
 
-sh("pnpm exec niceeval exp weather --force --json --junit junit.xml");
+sh("pnpm exec niceeval exp weather --rerun all --json --junit junit.xml");
 ```
 
 ## 用例二：`show` 榜单——应发现的 Eval 都实际运行了
@@ -134,7 +134,7 @@ assert.ok(
 出口断言——JUnit 按 verdict 折叠为 `<failure>` 与 `<error>`：
 
 ```ts
-sh("pnpm exec niceeval exp deliberate-fail --force --json --junit fail.xml", "nonzero");
+sh("pnpm exec niceeval exp deliberate-fail --rerun all --json --junit fail.xml", "nonzero");
 const failXml = readFileSync("fail.xml", "utf8");
 assert.ok(
   failXml.includes("<failure"),
@@ -145,7 +145,7 @@ assert.ok(
   "deliberate-fail 混进了 <error>——failed 与 errored 的互斥判定破了",
 );
 
-sh("pnpm exec niceeval exp deliberate-error --force --json --junit error.xml", "nonzero");
+sh("pnpm exec niceeval exp deliberate-error --rerun all --json --junit error.xml", "nonzero");
 const errorXml = readFileSync("error.xml", "utf8");
 assert.ok(
   errorXml.includes("<error"),
@@ -156,7 +156,7 @@ assert.ok(
 ## 用例七：缓存三步（`cli`）
 
 复用与新跑的区别从 `show --history`
-的 attempt 行数断言——history 跨快照按 attempt 身份去重，复用不产生新行，`--force` 产生新行：
+的 attempt 行数断言——history 跨快照按 attempt 身份去重，复用不产生新行，`--rerun all` 产生新行：
 
 ```ts
 function attemptCount(evalId: string): number {
@@ -165,19 +165,19 @@ function attemptCount(evalId: string): number {
     .filter((l) => l.includes("@")).length;
 }
 
-sh("pnpm exec niceeval exp cached --force --json");
+sh("pnpm exec niceeval exp cached --rerun all --json");
 const baseline = attemptCount("cached/echo");
 
-const second = sh("pnpm exec niceeval exp cached --json"); // 不带 --force：复用
+const second = sh("pnpm exec niceeval exp cached --json"); // 不带 --rerun all：复用
 assert.ok(second.includes("reused"), "第二次运行的摘要没有报告复用——缓存没生效");
 assert.equal(
   attemptCount("cached/echo"),
   baseline,
-  "不带 --force 产生了新 attempt——缓存复用没有生效",
+  "不带 --rerun all 产生了新 attempt——缓存复用没有生效",
 );
 
-sh("pnpm exec niceeval exp cached --force --json"); // 再带 --force：真实新 attempt
-assert.equal(attemptCount("cached/echo"), baseline + 1, "--force 没有产生新 attempt——强制重跑失效");
+sh("pnpm exec niceeval exp cached --rerun all --json"); // 再带 --rerun all：真实新 attempt
+assert.equal(attemptCount("cached/echo"), baseline + 1, "--rerun all 没有产生新 attempt——强制重跑失效");
 ```
 
 ## 失败分类：回归还是基础设施

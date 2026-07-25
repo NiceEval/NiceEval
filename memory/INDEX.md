@@ -74,6 +74,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [rerun-gear-replaces-force](rerun-gear-replaces-force.md) — 裁决(2026-07-25):`--force` 删除,换成一根轴三档的 `--rerun[=failed|all]`(不带=passed+failed 都算数,裸写=只采信 passed 重跑失败项,all=全量重烧),词表与 `--keep-sandbox` 同构;起因=「改了不在指纹里的东西后只复验失败项」没有档位,只能手工挖失败 id;否决再加一个布尔 `--retry-failed`;配套 NEXT 面板加 `Retry:` 行
+- [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md) — 裁决(2026-07-25):指纹构成不开放配置,`flags` 整袋进无逐键豁免;推翻次日前刚落地的 `provenanceFlags` deny-list(多声明=静默跨条件携带、且它给携带条目记了错的出处);轮换坐标(隧道 URL)的家是 attempt 作用域 `ctx.fact()` + 报告 `fact()` 选轴,搬迁只留一次性 CLI 出口 `--carry-ignoring-flag`
 - [exp-output-two-forms-ruling](exp-output-two-forms-ruling.md) — 裁决(2026-07-23):`--output` 三档删除,exp 对齐「人读文本 + --json」全 CLI 原则(非 TTY 人读降级流即 CI 日志,--json=NDJSON,自造 NICEEVAL/niceeval: 方言与 --json <path> 聚合文件一并删);否决中间稿 human/log 两档(半人半机才需要自造词法);起因=show --json 定稿后 agent 档只剩参数差;补充裁决同日:非 TTY 人读整流单一 stdout 保序,CI 日志不回双流乱序
 - [turn-error-binary-retryable-open-reason](turn-error-binary-retryable-open-reason.md) — 裁决(2026-07-22):turn 失败分类改判别联合 `{retryable, reason?}`——二分决策轴 + 开放 reason 词表,推翻同日封闭三词枚举 `rate_limit|network|unknown`;同场加 attempt 级总重试上限(8 次)与 send 级封顶(4 次)叠成两层预算
 - [external-review-round2-rulings](external-review-round2-rulings.md) — 设计裁决:第二轮外部评审翻案清单(2026-07-14)——coverage 省略=unknown、AssertionResult 判别联合、redact 必填、earlyExit 只认 passed、keep=failed|all、passRate 三拆、Selection 物化 attempts、ExperimentRunInfo 存 resolved
@@ -103,7 +105,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
-- 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);修法=`ExperimentDef.provenanceFlags` 摘出可比性 + 对历史落盘做反事实重算救回,携带判定改「指纹 ∈ 可携带集合」
+- 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报 `ctx.fact()`(见 [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md))
 - 已修 [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-release-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超 `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user 并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档
 - 已修 [failure-class-carry-on-turn-failed-has-no-error](failure-class-carry-on-turn-failed-has-no-error.md) — 终局失败的 scope 要走出重试执行体:`turn-failed` 形态没有错误对象可挂(错误到 `expectOk()` 才铸造),且耗尽摘要会换出一个新的 Turn 对象——按 Turn 身份登记时登记错对象会让 scope 静默丢失、只在「重试耗尽」这条路径上错;修法=onFinalFailure 回执报浮出的那个 Turn + WeakMap 登记 + expectOk 附着;接线方注意 attempt.ts 转 AttemptError 时原错误即被丢弃
 - 已修 [turn-retry-backoff-releases-experiment-serial-lock](turn-retry-backoff-releases-experiment-serial-lock.md) — turn 级重试退避把实验级 runSem 一并释放,`maxConcurrency: 1` 的串行契约被击穿(下游 mempal 记忆回存竞态、running=2 实证);修法=退避只释放 globalSem,退避期间继续持有 runSem(裁决见 experiment-gate-tenure-ruling,commit `9d7b352`+`6953d51`);MemoryBench 真机回归三条判据全过
@@ -190,7 +192,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 台账
 
 - 已修 [axis-tick-labels-collapse-at-tiny-ranges](axis-tick-labels-collapse-at-tiny-ranges.md) — 图轴值域改版后极小量程刻度标签折叠成同一字符串(report e2e 逮住);根因=精度固定不随步长,2.5×10^k 档 ⌈-log10⌉ 还少一位;修为 formatTickValue 按步长十进制位数取精度
-- [non-tty-pipe-narrow-table-width-fallback](non-tty-pipe-narrow-table-width-fallback.md) — 非 TTY 管道下 show 表格窄折行是 stdout.columns 缺失的宽度回退,不是渲染缺陷;取样用 script+stty cols 给宽度再比对 docs 示例
+- [non-tty-pipe-narrow-table-width-fallback](non-tty-pipe-narrow-table-width-fallback.md) — 非 TTY 管道下 show 表格窄折行是 stdout.columns 缺失的宽度回退;取样用 script+stty cols 给宽度再比对 docs 示例。2026-07-25 起契约要求 `COLUMNS` 生效,「窄」不再等于「合理」
+- [show-table-truncates-identity-columns](show-table-truncates-identity-columns.md) — 发现(docs 已补契约、代码未修):show 表格把 eval id 压成两三字符、`COLUMNS=200` 不生效,拿失败清单只能写脚本遍历 result.json;layout 契约已加「身份列下限 24 列、压不动就丢右侧列」与宽度来源优先级(显式 → COLUMNS → TTY → 80)
 - 已修 [report-test-scope-fixture-duplication-tax](report-test-scope-fixture-duplication-tax.md) — report 四个测试文件各复制一份 `scopeOf`/`resultsOf`,makeScope 两天两次改签名每次连改四处;修为收敛进 `src/report/components/scope.harness.ts`(`*.harness.ts` 不进 vitest 收集与 dist/report)
 - 已修 [attempt-source-unlocated-conversation-unstyled-and-escape-leak](attempt-source-unlocated-conversation-unstyled-and-escape-leak.md) — AttemptSource「Other conversation」兜底区文字墙 + 工具结果 `\n` 字面直出:`.nre-conv-*` 按容器限定没盖到第三容器、`compact()` 在 stringify 之后才收口;修为第三容器补 CSS + 先收口后字符串化;教训=共享 renderer 进新容器 CSS 不自动跟、自由文本收口必须在序列化前
 - 已修 [eval-header-historical-mark-shifts-grid-columns](eval-header-historical-mark-shifts-grid-columns.md) — ExperimentList Eval 父行的 `↩` 时效标注曾裸插进按位置取列的 4 轨 grid 当第 5 个子元素,全携带的题整行错位、rollup 挤进 20px 列逐字竖排;修为嵌进题目名格内(`ExperimentList.tsx` EvalAttempts);教训=固定轨数 grid 不能裸插条件子元素

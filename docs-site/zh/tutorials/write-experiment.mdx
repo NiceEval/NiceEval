@@ -117,7 +117,6 @@ npx niceeval exp prompts/concise
 | `model` | 单个模型名，经 `ctx.model` 透传 |
 | `reasoningEffort` | 单个推理努力程度（如 `"high"`），经 `ctx.reasoningEffort` / `t.reasoningEffort` 透传，归属与 `model` 一致 |
 | `flags` | 实验条件（A/B 里的 feature flag），任意 JSON 对象，经 `ctx.flags` / `t.flags` 透传 |
-| `provenanceFlags` | 列出只作出处记录的 flag 键名：照常落盘和透传，但不进缓存指纹，值变了不作废已跑完的结果（见下） |
 | `runs` | 每个评估用例 × 配置最多跑几次 |
 | `earlyExit` | 多次运行里通过一次就提前停止；默认关，`runs` 默认跑满测完整通过率 |
 | `evals` | `"*"`、id 前缀数组，或遍历只读 eval 描述并返回 boolean 的函数 |
@@ -130,21 +129,18 @@ npx niceeval exp prompts/concise
 
 ## 记下这轮连的是哪个地址，又不让它作废缓存
 
-把服务地址记进 `flags`，报告里就能按它分组、看出这轮连的是哪个实例。但隧道 URL 每次重启就换一个，而 `flags` 变了等于配置变了——下一次跑，已经跑完的结果一条都复用不上，全部重跑。
+`flags` 写的是实验条件，它整袋参与缓存判定：值一变，已经跑完的结果就要重跑。所以隧道地址不要写进 `flags`——隧道每次重启换一个 URL，写进去就等于每次重启都作废全部已完成结果。
 
-在 `provenanceFlags` 里点名这个键，它就只作记录、不进缓存指纹：
+这个地址是 `setup` 跑起来才拿到的，用 `ctx.fact()` 把它记进结果：
 
 ```ts
-export default defineExperiment({
-  agent: nowledgeAgent(),
-  evals: ["memory/"],
-  flags: {
-    memory: "nowledge",
-    memoryVersion: "0.10.39",
-    memoryEndpoint: process.env.NMEM_URL!,  // 隧道重启就换一个
-  },
-  provenanceFlags: ["memoryEndpoint"],
-});
+// experiments/shared/nowledge.ts —— 每个 Sandbox 执行一次的 Hook
+sandboxSetup(): SandboxHook {
+  return async (sandbox, ctx) => {
+    ctx.fact("nowledge.endpoint", env.url); // 这条 Attempt 实际连的实例
+    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env.url}\n` });
+  };
+}
 ```
 
 换了 URL 再跑，已完成的照常复用，只跑还缺的：
@@ -157,9 +153,9 @@ $ pnpm exec niceeval exp compare/codex--nowledge
 ╰─────────────────────────────────────────────────╯
 ```
 
-`memoryVersion` 没点名——服务端换了版本，行为可能真的不一样，那种变化就该让结果重跑。加上声明之前跑的结果也复用得到，不用为了「洗」旧结果先空跑一轮。
+记录一样不少：`niceeval show` 的 `facts:` 行会列出这条 Attempt 连的地址，报告也能按它分组。复用进来的结果带的是它当初那一轮的地址，不会被这一轮的新 URL 顶替。
 
-完全不需要在 Adapter 或评估用例里被读到的事实，直接写 `labels`：那是报告侧坐标，本来就不进指纹。
+服务端版本号则相反：写成 `flags: { memoryVersion: "0.10.39" }`，换了版本行为可能真的不一样，那种变化就该让结果重跑。判据是**谁写下这个值**——你在实验里声明的是条件，写 `flags`；跑起来才知道的是观测，用 `ctx.fact()`。Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
 
 ## 启动 Experiment 共享服务
 

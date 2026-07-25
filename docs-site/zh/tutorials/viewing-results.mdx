@@ -68,7 +68,7 @@ niceeval show weather/brooklyn --history      # 跨 run 时间轴：抖动与回
 
 Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存错误的 `code`、`message`、生命周期阶段（`phase`）、有限 cause/stack 和 diagnostics；trace 只在存在时补调用关系与耗时。Attempt 在 cleanup、teardown 和 sandbox stop 结束后才封口写入，因此收尾 diagnostic 也能回顾。
 
-同一个 Experiment 多次运行会留下多份结果。不带 `@<locator>` 的默认视图显示每个 Experiment × 评估用例最新的判定，并可能从同一个 Experiment 的多次运行中组合结果。按前缀只重跑部分评估用例时，其余评估用例的判定从更早的运行补齐。每份判定都带有生成时间，因此可以识别组合结果的来源。组合结果可能包含不同版本的被测代码，最终判定应以 `--force` 全量重跑为准。
+同一个 Experiment 多次运行会留下多份结果。不带 `@<locator>` 的默认视图显示每个 Experiment × 评估用例最新的判定，并可能从同一个 Experiment 的多次运行中组合结果。按前缀只重跑部分评估用例时，其余评估用例的判定从更早的运行补齐。每份判定都带有生成时间，因此可以识别组合结果的来源。组合结果可能包含不同版本的被测代码，最终判定应以 `--rerun all` 全量重跑为准。
 
 用 eval id 前缀收窄范围时，同一个评估用例的多次 Attempt 全部按顺序列出，不做默认展开；需要精确查看就复制该行的 `@<locator>`。`--exp agents/codex` 按 experiment id 路径收窄；`--results` 换结果根，`--snapshot` 只看某一次快照。
 
@@ -365,7 +365,7 @@ $ niceeval show @1c3h6twx --diff=src/components/Button.tsx
 3. 运行 niceeval show @<locator>，从摘要确认这次 Attempt 捕获的证据类型。
 4. 按问题选择 --source、--execution、--timing 或 --diff；可以同时传多个证据 flag。
 5. 输出被截断时，读取末尾标出的 sources.json、events.json、trace.json 或 diff.json 原始路径。
-6. 修复后重跑该 eval，再用 niceeval show <eval-id> 验证新的 @<locator>；收工前用 --force 全量重跑确认整体结果。
+6. 修复后重跑该 eval，再用 niceeval show <eval-id> 验证新的 @<locator>；收工前用 --rerun all 全量重跑确认整体结果。
 ```
 
 `--source` 显示评估用例检查内容和断言结果，`--execution` 显示 Agent 消息与调用（可关联时附 OTel 时间），`--timing` 显示 Attempt 各阶段耗时，`--diff` 显示 Sandbox 文件改动。按诊断目标选择证据，不需要每次读取全部四种视图。

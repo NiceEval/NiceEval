@@ -156,7 +156,7 @@ interface CustomDimension {
 }
 
 interface DimensionRef {
-  readonly kind: "flag" | "runConfig" | "label";
+  readonly kind: "flag" | "runConfig" | "label" | "fact";
   readonly name: string;
   readonly label?: LocalizedText;
   readonly unit?: string;
@@ -192,9 +192,11 @@ type RunConfigKey = keyof ExperimentRunInfo | "model" | "agent";
 function flag(name: string, options?: DimensionOptions): DimensionRef;
 function label(name: string, options?: DimensionOptions): DimensionRef;
 function runConfig(name: RunConfigKey, options?: DimensionOptions): DimensionRef;
+function fact(name: string, options?: DimensionOptions): DimensionRef;
 function numericFlag(name: string, options?: NumericAxisOptions): NumericAxis;
 function numericLabel(name: string, options?: NumericAxisOptions): NumericAxis;
 function numericRunConfig(name: RunConfigKey, options?: NumericRunConfigAxisOptions): NumericAxis;
+function numericFact(name: string, options?: NumericAxisOptions): NumericAxis;
 ```
 
 自定义维度：
@@ -206,7 +208,7 @@ const verdictFamily = {
 };
 ```
 
-experiment 中声明的变量用声明它的字段对应的构造器读取，不从 experiment id 字符串猜。三个来源三个构造器，一一对应：`flag()` 读 `ExperimentDef.flags`（运行参数，agent / eval 可见），`label()` 读 `ExperimentDef.labels`（报告归类标注，运行时不可见，声明语义见 [Experiments · labels](../../experiments/library.md#labels声明归类坐标不进运行时)），`runConfig()` 读顶层运行配置：
+experiment 中声明的变量用声明它的字段对应的构造器读取，不从 experiment id 字符串猜。三个声明来源三个构造器，一一对应：`flag()` 读 `ExperimentDef.flags`（运行参数，agent / eval 可见），`label()` 读 `ExperimentDef.labels`（报告归类标注，运行时不可见，声明语义见 [Experiments · labels](../../experiments/library.md#labels声明归类坐标不进运行时)），`runConfig()` 读顶层运行配置：
 
 ```ts
 const memory = label("memory", { label: "Memory mechanism" });
@@ -220,11 +222,19 @@ const reasoning = runConfig("reasoningEffort", { label: "Reasoning effort" });
 const budget = runConfig("budget", { label: "Budget", unit: "USD" });
 ```
 
-`flag()` / `label()` / `runConfig()` 只是分组维度；它们读取的落盘值可能是字符串、数字、布尔值、数组或对象，不冒充数值轴。分组显示键按稳定 JSON 规则生成：字符串直接显示，其它值用对象键递归排序后的 JSON，缺失值显示内置文案 `(missing)`。若不同原始值生成同一个显示键，计算函数报出冲突并要求改用 `CustomDimension`，绝不静默合组。
+第四个构造器读的不是声明而是观测：`fact()` 读 `AttemptRecord.facts`（生命周期代码经 `ctx.fact()` 上报的运行事实，[字段契约](../../results/architecture.md#facts运行事实)），用来按「这条 attempt 实际连的是哪个实例、实际起步有多少条笔记」分组——这类值不进指纹，换了不作废任何结果，而携带条目带着**产出它那一轮**的 facts，分组因此不会张冠李戴：
+
+```ts
+const endpoint = fact("nowledge.endpoint", { label: "Memory instance" });
+```
+
+fact 是逐 attempt 的，同一 experiment 的 attempt 可能落在不同值上（跨轮携带、实例中途轮换）；分组按 attempt 各自的值走，不折叠到 experiment 层。experiment 作用域上报的 fact 进 `SnapshotMeta.facts`，不是 attempt 事实，`fact()` 不读它。
+
+`flag()` / `label()` / `runConfig()` / `fact()` 只是分组维度；它们读取的落盘值可能是字符串、数字、布尔值、数组或对象，不冒充数值轴。分组显示键按稳定 JSON 规则生成：字符串直接显示，其它值用对象键递归排序后的 JSON，缺失值显示内置文案 `(missing)`。若不同原始值生成同一个显示键，计算函数报出冲突并要求改用 `CustomDimension`，绝不静默合组。
 
 接受 `SeriesInput` 的选项传数组时解析为**复合维度**：维度 name 为成员 name 依声明顺序以 ` × ` 连接；每个 attempt 的维度值为各成员显示键依同一顺序以 ` · ` 连接，任一成员缺失沿用 `(missing)` 显示键参与连接；显示键冲突检测仍按成员各自执行。`["agent", label("memory")]` 即「agent × 记忆机制」各自成类。
 
-`MetricLine` 的 x 必须是 `NumericAxis`，用 `numericFlag()` / `numericLabel()` / `numericRunConfig()` 或自定义 `of` 构造：
+`MetricLine` 的 x 必须是 `NumericAxis`，用 `numericFlag()` / `numericLabel()` / `numericRunConfig()` / `numericFact()` 或自定义 `of` 构造：
 
 ```ts
 const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
@@ -236,7 +246,7 @@ const reasoning = numericRunConfig("reasoningEffort", {
 });
 ```
 
-`numericFlag(name, options?)` 只接受落盘值为 number 的 flag；`numericLabel(name, options?)` 同理只接受 number 值的 label——labels 由作者亲手声明，要数值轴就直接声明成 number，不设 map；`numericRunConfig(name, options?)` 对数值配置直接返回该值，对字符串配置必须显式给 `map: Record<string, number>`（`reasoningEffort` 这类词表由外部定义，才需要映射）。未声明、未投影、非数值或未命中 map 的值返回 `null`，折线不绘该点并报告缺失。
+`numericFlag(name, options?)` 只接受落盘值为 number 的 flag；`numericLabel(name, options?)` 同理只接受 number 值的 label——labels 由作者亲手声明，要数值轴就直接声明成 number，不设 map；`numericRunConfig(name, options?)` 对数值配置直接返回该值，对字符串配置必须显式给 `map: Record<string, number>`（`reasoningEffort` 这类词表由外部定义，才需要映射）；`numericFact(name, options?)` 只接受落盘值为 number 的 attempt 级 fact（「起步有多少条笔记」这类量,由上报方直接报成数值）。未声明、未投影、非数值或未命中 map 的值返回 `null`，折线不绘该点并报告缺失。
 
 ## 相关阅读
 

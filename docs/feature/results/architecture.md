@@ -347,7 +347,7 @@ attempt 的结果封口发生在 teardown 链与 sandbox stop 之后;随后 `res
 两类条目:
 
 - **本快照跑出的条目**:artifact 与 `result.json` 同目录,不需要任何路径引用字段。
-- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本快照,让最新快照保持完整;`--force` 关闭携带全部重跑,语义见 [Runner · 缓存](../../runner.md#缓存指纹去重)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对结果根,指向原快照的 attempt 目录),`artifacts` 列表原样携带。`artifactBase` 就是事实上的「携带」标记。清理历史快照前先用 `copySnapshots` 物化要保留的结果——原快照删除后,携带条目的 artifact 懒加载如实返回 `null`。
+- **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动携带合入本快照,让最新快照保持完整;`--rerun all` 关闭携带全部重跑,语义见 [Runner · 缓存](../../runner.md#缓存指纹去重)):`startedAt` 保留原条目的时刻,另带 `artifactBase`(相对结果根,指向原快照的 attempt 目录),`artifacts` 列表、`facts` 与判定、证据指向一律原样携带——**携带来的是那一轮真实发生过的事,不按本轮改写**。唯一按本快照重打的字段是 `fingerprint`:携带的判据就是指纹相等,重打让「快照里每个条目的 fingerprint 都等于本快照配置算出的指纹」成为不变量,读取面不必翻更早的快照就能把条目与快照记下的配置对上号。`artifactBase` 就是事实上的「携带」标记。清理历史快照前先用 `copySnapshots` 物化要保留的结果——原快照删除后,携带条目的 artifact 懒加载如实返回 `null`。
 
 ### Usage
 
@@ -382,8 +382,10 @@ interface Usage {
 - **上报通道**:各作用域上下文的 `fact(key, value)`,与 `progress` / `diagnostic` 并列的第三条反馈通道(声明见 [Sandbox hooks](../sandbox/library.md)、[Experiment hooks](../experiments/architecture.md)、[AgentContext](../adapters/architecture/agent-contract.md#agentcontext))。三条通道语义互斥:`progress` 是不落盘的短期状态,`diagnostic` 是需要回顾的异常,`fact` 是中性的环境事实。
 - **归属跟随作用域**:sandbox hook、agent setup/teardown、adapter send 上报的进 `AttemptRecord.facts`;experiment setup/teardown 上报的进 `SnapshotMeta.facts`。runner 自动归属,调用方不能指定层级。
 - **形状**:key 匹配 `[a-z0-9._-]{1,64}`,value 是 `string | number | boolean` 标量。同一作用域内同 key 后写覆盖先写——fact 是现刻观测,不是追加日志;需要留痕迹的过程用 `diagnostic`。
-- **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment / sandbox setup 尚未运行时，runner 已经决定哪些 attempt 可以携带。计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--force` 重跑，再用 facts 审计实际状态。把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
-- **读取面原样转发**:facts 在 show 的 `facts:` 行、对照矩阵与 `--json` 中呈现；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
+- **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment / sandbox setup 尚未运行时，runner 已经决定哪些 attempt 可以携带。计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--rerun all` 重跑，再用 facts 审计实际状态。把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
+- **运行时坐标的家就是这里**:隧道 / 反向代理 URL、服务端实例地址这类「每次跑都可能换、换了不改变 attempt 里发生什么」的连接坐标,是运行起来才存在的观测,报成 fact——写进 `flags` 会让每一次轮换作废全部已完成结果(整袋 `flags` 进指纹,没有逐键豁免)。与上一条不矛盾:**条件是你写下的,坐标是跑出来的**,判据与三个家的分工见 [Experiments · 运行时坐标不进配置](../experiments/library.md#运行时坐标不进配置三个家)。
+- **要它跟着单条结果走就报在 attempt 作用域**:`AttemptRecord.facts` 随[携带条目](#resultjson)原样携带,携带来的那条读到的仍是产出它那一轮的观测,不被本轮的新值冒名顶替;`SnapshotMeta.facts` 记的是本次运行整场的观测,携带条目不继承它。按 fact 分组的报告因此只读 attempt 级。
+- **读取面原样转发**:facts 在 show 的 `facts:` 行、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/metrics.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
 
 ## 证据 registry
 

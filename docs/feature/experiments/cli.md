@@ -346,6 +346,7 @@ live 面板只展示当前状态,不保存历史帧:
 │ Source:  niceeval show @1bwcxxiy --source                                      │
 │ Trace:   niceeval show @1bwcxxiy --execution                                   │
 │ Diff:    niceeval show @1bwcxxiy --diff                                        │
+│ Retry:   niceeval exp compare --rerun                                          │
 │ Compare: niceeval view                                                         │
 ├─ RESULTS ──────────────────────────────────────────────────────────────────────┤
 │ .niceeval/compare/bub-e2b/<snapshot>                                           │
@@ -353,6 +354,8 @@ live 面板只展示当前状态,不保存历史帧:
 │ … 3 more                                                                       │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 ```
+
+**有失败就给复验命令。** `Retry:` 行只在本次存在 `failed` 时出现,原样回放本次调用的位置参数加上 [`--rerun`](use-case/rerun.md)——修完不在指纹里的东西(agent 的 prompt、被测服务)直接复制这一行,只重跑失败项。它不列具体 eval id:按判定收窄本来就不需要 id,操作者也就不必再去结果树里挖清单。
 
 结论面板的标题就是结论词,时长嵌在右侧。全部通过时不留空的 `FAILURES` 面板:
 
@@ -371,7 +374,7 @@ live 面板只展示当前状态,不保存历史帧:
 
 #### 全部命中缓存
 
-选择的 attempt 全部可复用时(`reused = total`,其余八项全为零),没有 attempt 派发,不出 live 面板,`PLAN` 面板之后直接打印结束反馈。复用不改变 verdict 折叠:携入的 `failed` 仍然是 `failed`,照常进 `FAILURES` 并给下钻命令——不能因为「这次没重跑」就把失败藏起来只丢一句计数。结论面板明确「全部来自缓存、本次没有新开销」,后续与普通结束反馈同构;失败条数超过终端展开上限时,总数与展开数嵌进 `FAILURES` 的上边框右侧:
+选择的 attempt 全部可复用时(`reused = total`,其余八项全为零),没有 attempt 派发,不出 live 面板,`PLAN` 面板之后直接打印结束反馈。复用不改变 verdict 折叠:携入的 `failed` 仍然是 `failed`,照常进 `FAILURES` 并给下钻命令与 `Retry:` 行——不能因为「这次没重跑」就把失败藏起来只丢一句计数;这一档下 `Retry:` 尤其是操作者要的那条命令,携入的失败正是靠它重新派发。结论面板明确「全部来自缓存、本次没有新开销」,后续与普通结束反馈同构;失败条数超过终端展开上限时,总数与展开数嵌进 `FAILURES` 的上边框右侧:
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
@@ -398,6 +401,7 @@ live 面板只展示当前状态,不保存历史帧:
 │ Source:  niceeval show @1bwcxxiy --source                                      │
 │ Trace:   niceeval show @1bwcxxiy --execution                                   │
 │ Diff:    niceeval show @1bwcxxiy --diff                                        │
+│ Retry:   niceeval exp compare --rerun                                          │
 │ Compare: niceeval view                                                         │
 ├─ RESULTS ──────────────────────────────────────────────────────────────────────┤
 │ .niceeval/dev-e2b/bub-e2b/<snapshot>                                           │
@@ -436,7 +440,7 @@ Run `niceeval exp dev-e2b --dry` to see what it covers, or drop the eval filter 
 人在调试单条 eval 时仍用相同模型,只是主动收窄选择,而不是要求 live 面板展开更多日志:
 
 ```sh
-niceeval exp compare/bub-e2b memory/commit0-cachetool --force
+niceeval exp compare/bub-e2b memory/commit0-cachetool --rerun all
 niceeval show @17m2k9pq --execution --diff
 ```
 
@@ -710,11 +714,12 @@ niceeval show @17m2k9pq
 niceeval show @17m2k9pq --execution
 ```
 
-修复后只重跑受影响项;正常依赖指纹缓存,怀疑缓存口径时才用 `--force`:
+修复后只重跑受影响项。改的是 eval 或配置时指纹自己会变,直接重跑同一条命令即可;改的是不在指纹里的东西(agent 的 prompt、被测服务)时加 `--rerun` 复验失败项——已通过的照常携带,不必先去挖失败的 eval id;只在怀疑缓存口径本身时才上 `--rerun all`:
 
 ```sh
 niceeval exp compare/bub-e2b memory/commit0-cachetool --json
-niceeval exp compare/bub-e2b memory/commit0-cachetool --json --force
+niceeval exp compare/bub-e2b memory/commit0-cachetool --json --rerun
+niceeval exp compare/bub-e2b memory/commit0-cachetool --json --rerun all
 ```
 
 agent 也可以完全不解析运行流——跑默认人读文本、只看退出码,失败后直接 `niceeval show` 拿证据;`--json` 是需要在运行中程序化消费(计数、看板、并行编排)时的入口。
@@ -768,7 +773,8 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 调度 | `--timeout` | 每个 attempt | 单次尝试的时间上限 |
 | 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是总闸(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
-| 缓存 | `--force` | 整次调用 | 忽略可复用结果并全部重跑 |
+| 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;裸写 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/rerun.md)) |
+| 缓存 | `--carry-ignoring-flag <key>` | 整次调用(可重复) | 携带判定忽略这些 `flags` 键;把误当条件写进 `flags` 的连接坐标搬进 `ctx.fact()` 的那一次用,记 `carry-ignoring-flag` diagnostic 留痕(见[改什么会作废缓存](use-case/cache-invalidation.md)) |
 | 执行模式 | [`--keep-sandbox`](../sandbox/cli.md)、[`--reuse-sandbox`](../sandbox/serial-reuse.md) | 整次调用(两者互斥;与缓存携带的交互见 [Runner · 缓存](../../runner.md#缓存指纹去重)) | 留存现场 / 单热道串行复用 |
 | 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
 | 预览 | `--dry` | 整次调用 | 只打印计划(人读文本或 `--json` 单文档),不运行、不落盘 |

@@ -9,7 +9,7 @@
 
 - [并发怎么配](concurrency.md) —— 要不要 `maxConcurrency`?配几?串行 / 降速 / 严格重试 / 快慢混跑,9 个场景。
 - [环境预置与收尾怎么放](lifecycle.md) —— 装依赖、起服务、载入状态写在哪层 setup;常见错位清单。
-- [flags 还是 labels](flags-labels.md) —— 这个值改不改变 attempt 里发生的事。
+- [flags / labels / facts 放哪个](flags-labels-facts.md) —— 你写下的条件、报表坐标、跑起来才有的观测,三个家。
 - [选哪些 eval 来跑](eval-selection.md) —— `evals` 声明、tag 谓词、CLI 收窄、混型报错。
 
 ## 位置参数(选择器)
@@ -32,7 +32,8 @@
 
 ## 缓存
 
-- [`--force`:指纹未变但外部世界变了,全量重验](force.md)
+- [改什么会作废缓存](cache-invalidation.md) —— 改 eval / flags / 超时 / 沙箱各会不会重跑,不想重跑怎么办,11 个场景。
+- [`--rerun`:上一轮的结果哪些还算数](rerun.md) —— 只复验失败项 / 全量重验两档,以及各自的边界。
 
 ## 对比怎么计分
 

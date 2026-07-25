@@ -54,7 +54,7 @@ npx niceeval exp local fixtures/button --runs 5 --early-exit
 
 ## 缓存
 
-[NiceEval](https://niceeval.com/) 可以根据输入、配置和相关文件 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、Sandbox 异常等框架/环境层面的不确定失败）永远重试。缓存适合加速迭代，但如果你在调试非确定性行为，应该明确关闭（`--force`）或清理相关缓存。
+[NiceEval](https://niceeval.com/) 可以根据输入、配置和相关文件 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、Sandbox 异常等框架/环境层面的不确定失败）永远重试。缓存适合加速迭代，但如果你在调试非确定性行为，应该明确关闭（`--rerun all`）或清理相关缓存。
 
 ## 并行开多个终端
 
