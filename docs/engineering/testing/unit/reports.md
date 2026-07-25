@@ -107,7 +107,12 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **`Markdown` 的解析与两面投影**（[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。覆盖：每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）；裸 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出；表格语法按完整用户反馈报错并指引 `Table`；折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）；`LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
 - **页级色分配**（[系列色](../../../feature/reports/components/README.md#系列色分配单位是页)）：给定一页已解析数据里的
   `(维度, 值)` 集合产出映射——同一键在同页多个组件（图表 series 与实体列表的维度键）得到同一个色槽、撞色按显示键字典序线性探测、keyset
-  超过色板才复用、缩短后的显示名不参与取键；断言面是映射本身，不断言渲染出的颜色值。
+  超过色板才复用、缩短后的显示名不参与取键；断言面是映射本身，不断言渲染出的颜色值。公开读取面同属这一类（[呈现算法](../../../feature/reports/library/layout.md#呈现算法)）：双面组件在渲染面调
+  `ctx.seriesColor(维度, 值)` 与官方组件对同一个键取到同一个 `SeriesColor`（`index` / `className` /
+  `seriesClassName` / `hex` 四字段自洽）、页内未出现的值按稳定散列回落且不占用页内色格、`TextContext`
+  上没有这个方法；`seriesColors(keys)` 一次收全集时与页级映射同值，区分力场景是「逐键调用得不到消解结果」。
+  `shortestUniqueLabels` 与 `seriesColors` 从 `niceeval/report`
+  顶层导出并与内部定义同一引用——官方组件与自定义组件复现同一份显示名和同一个色槽。
 - **纯函数布局算法**：散点点标签布局是 `chart-math`
   纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts.md#值域)）同属这一类——直接对推定函数断言扩后的
   `[min, max]`：两端各扩数据跨度 20%、零跨度 fallback（值绝对值的 20%、值为 0 取 1）、有自然

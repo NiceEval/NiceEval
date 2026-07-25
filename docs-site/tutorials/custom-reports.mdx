@@ -423,6 +423,38 @@ The component contract:
 - **Styles travel with the tree.** A static export doesn't bundle your code, so CSS referenced by `className` goes into the page tree with the built-in primitive `<Style>{css}</Style>` — the web face emits a `<style>` tag, the text face renders nothing; the example above styles `.passbars` exactly this way.
 - **The honesty contract applies here too.** Missing data renders as `—`, never padded to `0`; truncation faithfully labels the remaining count — in the example above, `claude` having no samples is exactly why it shows `—`.
 
+### Give your component the same names and colors as the official ones
+
+On a single page, `compare/with-memory` is shortened to `with-memory` in the official leaderboard and gets a blue slot. To make your own component look the same, use these two exits rather than reimplementing either one:
+
+```tsx
+import { defineComponent, shortestUniqueLabels } from "niceeval/report";
+
+const MyLegend = defineComponent<{ ids: string[] }>({
+  web({ ids }, ctx) {
+    const labels = shortestUniqueLabels(ids);          // Pass the whole set, never one id at a time
+    return (
+      <ul>
+        {ids.map((id) => (
+          // Color keys off the full id; display the shortened label
+          <li key={id} className={ctx.seriesColor("experiment", id).className}>
+            {labels.get(id)}
+          </li>
+        ))}
+      </ul>
+    );
+  },
+  text({ ids }) {
+    const labels = shortestUniqueLabels(ids);
+    return ids.map((id) => labels.get(id)).join("  ");  // The terminal face carries no color
+  },
+});
+```
+
+`ctx.seriesColor(dimension, value)` reads the colors already assigned for this page: the official chart legend, the entity lists, and your component all get the same slot for the same id. What you pass in must be the full dimension value, not the shortened display label.
+
+Embedding `niceeval/report/react` components in your own React page means there is no such page-level step — hand the whole set of keys to `seriesColors(keys)` once and use the returned map. Passing keys one at a time does not resolve collisions the way a full set does.
+
 ## Publishing: export is a static site
 
 Publishing a custom report and publishing the official viewer are the same action — `--out` plus `--report`:

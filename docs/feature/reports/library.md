@@ -33,6 +33,7 @@
 | 按场景抄一份完整报告文件改起 | [配方](library/recipes.md) |
 | 选内置指标、定义自己的指标或分组维度 | [指标与维度](library/metrics.md) |
 | 组织报告树、拼自由摘要格、写组合组件或双面组件 | [排版原语与自定义组件](library/layout.md) |
+| 让自定义组件复现官方的标签缩写与系列色 | [呈现算法](library/layout.md#呈现算法) |
 | 加标题、GitHub 链接、页脚，或拆成多页 | [外壳与多页](library/shell.md) |
 | 改强调色、状态色、图表色板或完整覆盖 CSS | [主题与 CSS 定制](library/theme.md) |
 | 摆 hero、品牌行、警告区、快照诊断区、修复 prompt 或 trace 瀑布 | [站点组件](components/site.md) |

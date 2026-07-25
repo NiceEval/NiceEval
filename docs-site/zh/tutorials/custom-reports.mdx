@@ -484,6 +484,38 @@ codex   ████████████████░░░░  80%
 - **样式随树带走。** 静态导出不打包你的代码,`className` 引用的 CSS 用内置原语 `<Style>{css}</Style>` 放进页面树——web 面吐 `<style>` 标签,text 面渲染为空,上面的例子就是这么给 `.passbars` 上样式的。
 - **诚实契约同样适用。** 缺数据渲染 `—` 不补 0,截断如实标注剩余数量——上面例子里 `克劳德` 没有样本就是 `—`。
 
+### 让自己的组件和官方组件叫同一个名字、上同一个颜色
+
+同一页里,`compare/with-memory` 在官方榜单上缩成 `with-memory`、配一个蓝色;自己写的组件要显示成同一个样子,用这两个出口,不要自己实现一遍:
+
+```tsx
+import { defineComponent, experimentListData, shortestUniqueLabels } from "niceeval/report";
+
+const MyLegend = defineComponent<{ ids: string[] }>({
+  web({ ids }, ctx) {
+    const labels = shortestUniqueLabels(ids);          // 整组一起传,不逐个调
+    return (
+      <ul>
+        {ids.map((id) => (
+          // 取色用完整 id(键),显示用缩写(名字)
+          <li key={id} className={ctx.seriesColor("experiment", id).className}>
+            {labels.get(id)}
+          </li>
+        ))}
+      </ul>
+    );
+  },
+  text({ ids }) {
+    const labels = shortestUniqueLabels(ids);
+    return ids.map((id) => labels.get(id)).join("  ");  // 终端不上色
+  },
+});
+```
+
+`ctx.seriesColor(维度, 维度值)` 读的是这一页已经分好的色:官方图表的图例、实体列表的行、你这个组件,同一个 id 拿到的是同一个色槽。传进去的必须是完整的维度值,不是缩写后的显示名。
+
+在自己的 React 页面里嵌 `niceeval/report/react` 组件时没有这一页,自己把要上色的键一次交给 `seriesColors(keys)` 拿映射——一次传全集,逐个键调用得不到同页消解撞色的结果。
+
 ## 发布:导出即静态站
 
 发布自定义报告和发布官方查看器是同一个动作——`--out` 加上 `--report`:

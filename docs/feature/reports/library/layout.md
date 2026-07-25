@@ -489,6 +489,47 @@ interface TableProps {
 | `bar` | `(ratio: number, width: number) => string` | 字符条：`█` 填充、`░` 补齐到 `width` |
 | `columns` | `(blocks: string[], widths: number[], separator?: string) => string` | 多块并排 |
 
+## 呈现算法
+
+官方组件把长 id 缩成短标签、把维度值映射成颜色时用的是确定算法，两者都在公开面上——自定义组件复现的是同一份结果，同一个 experiment 不会在官方榜单里叫一个名字、在自写组件里叫另一个。
+
+### 标签缩写
+
+```ts
+/** 一组 id → 各自在这组内唯一的最短路径后缀。 */
+function shortestUniqueLabels(ids: readonly string[]): Map<string, string>;
+```
+
+每个 id 缩成最短的唯一 `/` 分段后缀，重名的逐段加长到能区分为止；组内只有一个 id 时也缩到最后一段。缩写只产出**显示名**：排序、过滤、折叠与颜色分配的身份键始终是完整 id。传入的 id 集合决定结果——同一个 id 在不同集合里可能缩成不同长度，所以一处呈现只调一次，把整组 id 一起传进去，不要逐个调用。
+
+### 系列色
+
+颜色的分配单位是页（规则见[组件树 · 系列色](../components/README.md#系列色分配单位是页)），公开面因此是**读取**，不是计算：
+
+```ts
+interface SeriesColor {
+  /** 色板下标。 */
+  index: number;
+  /** 文字与色点的类名（`nre-c3`）。 */
+  className: string;
+  /** SVG 图形的系列类名（`nre-series-c3`）；由 CSS 变量上色，深色主题随之切换。 */
+  seriesClassName: string;
+  /** 浅色主题的十六进制值；只给不经 CSS 的消费方。 */
+  hex: string;
+}
+```
+
+- **报告树内**：双面组件从 `WebContext.seriesColor(dimension, value)` 读，返回这一页已分配好的结果。传入的是维度与维度**值**（`("agent", "codex")`），不是显示名——缩写过的标签、加了前缀的图例文案都不是键。这一页的已解析数据里没出现过的值按稳定散列回落，不占用页内色格。text 面不消费颜色，`TextContext` 没有这个方法。
+- **自有 React 页面**：没有 niceeval 的页级阶段，作者自己拥有页。把这一页要着色的全部键**一次**交给 `seriesColors`，得到的映射再分给各组件：
+
+  ```ts
+  function seriesColors(keys: readonly string[]): ReadonlyMap<string, SeriesColor>;
+  ```
+
+  一次传全集是这个函数的使用契约：它在集合内消解撞色，逐键调用得不到消解结果。渲染面优先挂 `className` / `seriesClassName` 由 CSS 上色，`hex` 留给导出图片这类不经 CSS 的消费方。
+
+单键散列不在公开面上：它按单个键算，天然给不出集合内消解后的结果，两处消费同一个键会各自算出不同的颜色。
+
 ## 自定义组件
 
 `defineComponent` 定义可入报告树的组件，两种入参形态产出同一种报告组件（模型定义在 [Architecture · 组件模型](../architecture.md#组件模型解析面与渲染面)）：
@@ -540,6 +581,8 @@ interface WebContext {
   locale: ReportLocale;
   /** 当前定义有 attempt-input page 或嵌入方显式接外部路由时存在。 */
   attemptHref?: (locator: AttemptLocator) => string;
+  /** 读这一页已分配好的系列色；见[呈现算法](#呈现算法)。 */
+  seriesColor(dimension: string, value: string): SeriesColor;
 }
 
 interface ComponentFaces<Props, RenderProps = Props> {
