@@ -154,7 +154,7 @@ Adapters and Sandboxes do not guess each other's configuration: the Adapter chec
 
 #### E2B: derive from official and public templates
 
-E2B already provides a `claude` template for Claude Code and a `codex` template for Codex. NiceEval ships a thin E2B-specific wrapper that lets you keep chaining the native E2B API from those two official starting points. E2B has no official Bub template yet, so the Bub branch uses a NiceEval install recipe pinned to an immutable commit.
+E2B already provides a `claude` template for Claude Code and a `codex` template for Codex. NiceEval ships a thin E2B-specific wrapper that lets you keep chaining the native E2B API from those two official starting points. E2B has no official Bub template yet, so the Bub branch uses a NiceEval install recipe with pinned versions (a Bub release plus a same-generation OTel plugin).
 
 NiceEval also publishes three public templates that any E2B team can reference. NiceEval itself maintains the full namespace and the verified release tag; downstream code just takes the complete reference:
 
@@ -170,7 +170,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-These baselines have been verified by actually booting them: Claude Code `2.1.207`, Codex `0.144.1`, Bub install fingerprint `83770925b77a`. A template's version follows the agent it ships (`0.144.1-r1`: agent version plus NiceEval's recipe revision); the three agents are released independently, and NiceEval's own library version never appears in the tag. So use the constants directly instead of copying these strings or tracking versions — including when a derived template needs to record which base it came from.
+These baselines have been verified by actually booting them: Claude Code `2.1.207`, Codex `0.144.1`, Bub `0.4.0` (its install fingerprint moves with the version and OTel plugin pins). A template's version follows the agent it ships (`0.144.1-r1`: agent version plus NiceEval's recipe revision); the three agents are released independently, and NiceEval's own library version never appears in the tag. So use the constants directly instead of copying these strings or tracking versions — including when a derived template needs to record which base it came from.
 
 ```ts title="scripts/build-e2b-template.ts"
 import { Template } from "e2b";

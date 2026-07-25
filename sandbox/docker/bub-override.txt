@@ -1,1 +1,1 @@
-bub @ git+https://github.com/CorrectRoadH/bub.git@86fbd0febc1665353f5131173554e1f513e66b4c
+bub==0.4.0

@@ -41,7 +41,8 @@
   tag 是 `<Agent 版本>-r<配方修订>`，三个 Agent 各自独立发版）
   - [ ] C1. 逐 agent 构建并发布：`pnpm tsx sandbox/e2b/build-agent-template.mts <agent>`
     （tag 由 `agentBaselineVersionTag()` 给出，当前是 `2.1.207-r2` / `0.144.1-r2` /
-    `0.3.9-r2`），记录 Template ID / Build ID 与验证结果。
+    `0.4.0-r1`），记录 Template ID / Build ID 与验证结果。Bub 那份同时换代到上游
+    `bub==0.4.0`（台账条目已按 `supersededBy` 记下待发布 tag），发布后删掉该字段。
   - [ ] C2. 每发布并验证完一个 agent，就更新它在 `sandbox/e2b/published.json` 的条目与
     `src/sandbox/e2b-agent-template.ts` 的 `PUBLISHED_E2B_BASELINE_TAG`；不再等三份齐了才动，
     但也不能让某一项常量先指向尚未发布的 tag（`src/sandbox/official-baselines.test.ts` 守护）。

@@ -22,8 +22,9 @@ import {
   BUB_CHECKPOINT_SUBDIRS,
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_OTEL_PLUGIN,
-  DEFAULT_BUB_OVERRIDE,
+  DEFAULT_BUB_REQUIREMENT,
   bubInstallHash,
+  bubRequirement,
   normalizeBubPackages,
 } from "./bub-install-spec.ts";
 
@@ -57,6 +58,19 @@ export interface BubConfig {
    */
   skills?: SkillSpec[];
   /**
+   * 装哪一版 Bub(PyPI 版本号,如 `"0.4.0"`)。省略时用 NiceEval 钉的默认版本;
+   * 永远是确定版本,不装 latest —— 被测对象的版本要能从实验配置读出来。
+   */
+  version?: string;
+  /**
+   * OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval 钉的默认 pin。
+   *
+   * 插件与 Bub 的 tape 协议同代:默认 pin 从 `bub.tape` 取类型,要求 Bub ≥ 0.3.10;更早的
+   * 插件 commit 按 republic 的类型校验,配 Bub ≤ 0.3.9。配错代不会安装失败,而是 span 全被拒、
+   * 时间轨静默为空 —— 所以往回钉 `version` 时必须同批钉配套的插件 commit。
+   */
+  otelPlugin?: string;
+  /**
    * 额外装进 bub tool 环境的 Python Package,每个 Sandbox setup 时进 `uv tool install … --with <pkg>`。
    * 规范化后的 package 列表进安装 checkpoint key:plugin 集合不同的两个 agent 变体不会复用同一个
    * 安装 checkpoint(否则第二个变体会静默拿到第一个变体的环境)。
@@ -83,15 +97,25 @@ const UV = "$HOME/.local/bin/uv";
 /** bub 的 skill 目录(`skills` 生态的「通用」目录);bub 不原生扫描它,靠 AGENTS.md 的发现指引。 */
 const SKILL_DIR = ".agents/skills";
 
-// TODO(upstream): BUB_OVERRIDE 钉在个人 fork 的修复分支上(tool-call 分支丢助手文本的修复
-// 尚未进上游,见 memory/bub-tapestore-otel…drift.md 台账),等上游包含后改回发布版。
-// 要试别的 pin 就改这两个常量——不设环境变量后门:装哪个包是配置,配置的家是代码
-// (边界见 docs/architecture.md「配置从代码来,凭据从环境来」)。
-const BUB_OVERRIDE = DEFAULT_BUB_OVERRIDE;
+// bub 与 OTel 插件的 pin 都从 config 来(缺省用源码里的默认 pin)——不设环境变量后门:
+// 装哪个包是配置,配置的家是代码(边界见 docs/architecture.md「配置从代码来,凭据从环境来」)。
+//
+// override 文件不是历史包袱:插件所在 workspace 把 `bub` 声明成 git 依赖,不覆盖的话每次
+// 安装都会去拉 Bub 主干,版本失控。所以安装前总是先把 `bub==<version>` 写进这个文件。
 const BUB_OVERRIDE_FILE = "/tmp/bub-override.txt";
-// otel 插件跟上游 main 走(bub-contrib#50 起从 bub.tape 导入,要求 bub ≥ 0.3.10dev,
-// 与上面的 override 分支兼容)。插件不发 PyPI,git 依赖是唯一安装方式。
-const OTEL_PLUGIN = DEFAULT_BUB_OTEL_PLUGIN;
+
+/** 一个 agent 变体装的那套 bub:requirement + OTel 插件,两者都进安装指纹。 */
+interface BubInstallPin {
+  requirement: string;
+  otelPlugin: string;
+}
+
+function resolvePin(config?: BubConfig): BubInstallPin {
+  return {
+    requirement: config?.version ? bubRequirement(config.version) : DEFAULT_BUB_REQUIREMENT,
+    otelPlugin: config?.otelPlugin ?? DEFAULT_BUB_OTEL_PLUGIN,
+  };
+}
 
 // NiceEval 的预制配方与运行时安装都写到 $HOME/.local；显式使用该路径，避免 PATH 上
 // 另一个未知版本的 bub 抢先命中。
@@ -109,8 +133,8 @@ function normalizePackages(plugins?: readonly PythonPluginSpec[]): string[] {
   return normalizeBubPackages((plugins ?? []).map((plugin) => plugin.package));
 }
 
-function installHashOf(packages: readonly string[]): string {
-  return bubInstallHash(packages, BUB_OVERRIDE, OTEL_PLUGIN);
+function installHashOf(packages: readonly string[], pin: BubInstallPin): string {
+  return bubInstallHash(packages, pin.requirement, pin.otelPlugin);
 }
 
 function diskCachePath(home: string, installHash: string): string {
@@ -129,8 +153,9 @@ async function ensureBub(
   home: string,
   log: AgentContext["log"],
   packages: readonly string[],
+  pin: BubInstallPin,
 ): Promise<void> {
-  const installHash = installHashOf(packages);
+  const installHash = installHashOf(packages, pin);
   const marker = `${home}/${BUB_INSTALL_MARKER}`;
   // 只信任带完整安装规格指纹的预制环境。仅 command -v bub 无法证明版本、OTel 插件和
   // 用户 pythonPlugins 一致；NiceEval 的 E2B Bub 配方和运行时安装都会写这个 marker。
@@ -177,13 +202,13 @@ async function ensureBub(
 
   try {
     await sb.runShell(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
-    await sb.runShell(`printf '%s\\n' '${BUB_OVERRIDE}' > ${BUB_OVERRIDE_FILE}`);
+    await sb.runShell(`printf '%s\\n' '${pin.requirement}' > ${BUB_OVERRIDE_FILE}`);
     let last = { stdout: "", stderr: "" };
     for (let attempt = 1; attempt <= 3; attempt++) {
       // python plugin 与 bub 同一条 uv 命令装完:分两条(先装 bub、再 --reinstall 带 --with)
       // 会让 checkpoint 抓到的环境与 key 描述的环境错位,且第二条命令白白重装一遍 bub。
       const install = await sb.runShell(
-        `${UV} tool install --reinstall --python 3.12 --prerelease allow 'bub' --overrides ${BUB_OVERRIDE_FILE} --with '${OTEL_PLUGIN}'${withPlugins ? ` ${withPlugins}` : ""}`,
+        `${UV} tool install --reinstall --python 3.12 --prerelease allow 'bub' --overrides ${BUB_OVERRIDE_FILE} --with '${pin.otelPlugin}'${withPlugins ? ` ${withPlugins}` : ""}`,
       );
       if (install.exitCode === 0) break;
       last = install;
@@ -257,7 +282,7 @@ export function bubAgent(config?: BubConfig): Agent {
       // 跨多个 attempt 复用同一次安装:警告归属到「触发这次安装的那个 attempt」的 log,
       // 不追求归属到全部受益 attempt(已裁决口径)。
       const packages = normalizePackages(config?.pythonPlugins);
-      await ensureBub(sb, home, ctx.log, packages);
+      await ensureBub(sb, home, ctx.log, packages, resolvePin(config));
 
       if (!(await sb.fileExists(`${workspace}/AGENTS.md`))) {
         await shared.writeFile(

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_OTEL_PLUGIN,
-  DEFAULT_BUB_OVERRIDE,
+  DEFAULT_BUB_REQUIREMENT,
 } from "../agents/bub-install-spec.ts";
 import {
   E2B_NODE_TOOL_PREFIX,
@@ -80,7 +80,9 @@ describe("e2bCodingAgentTemplate", () => {
       bubPythonPackages: ["bub-plugin-memory==1.3.0"],
     }));
     // pin 的单源在 bub-install-spec.ts;这里只证明 spec → 模板 recipe 的传播,不复刻 pin 值。
-    expect(json).toContain(DEFAULT_BUB_OVERRIDE.split("@").at(-1)!);
+    // requirement 必须经 override 文件落进 recipe:少了它,构建会拉 Bub 主干而不是钉死的版本。
+    expect(json).toContain(DEFAULT_BUB_REQUIREMENT);
+    expect(json).toContain("--overrides");
     expect(json).toContain(DEFAULT_BUB_OTEL_PLUGIN.split("@").at(-1)!.split("#")[0]!);
     expect(json).toContain(BUB_INSTALL_MARKER.split("/").at(-1)!);
     expect(json).toContain("bub-plugin-memory==1.3.0");

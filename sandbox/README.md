@@ -15,7 +15,8 @@ Vercel snapshot 保留各自的原生生命周期；Experiment 统一用 typed s
 
 E2B 已提供 Claude Code 的 `claude` template 和 Codex 的 `codex` template。NiceEval 的
 `e2bCodingAgentTemplate()` 直接从这两个官方起点派生。E2B 暂无 Bub 官方 template，NiceEval
-为 Bub 提供固定到不可变 Git commit 的等价配方，并写安装规格指纹供 Adapter 校验。
+为 Bub 提供钉死版本的等价配方（PyPI 上的 Bub release + 同代 OTel 插件 commit），并写安装规格
+指纹供 Adapter 校验。
 
 NiceEval 已发布三份公共模板。消费方从 `niceeval/sandbox/e2b-template` 取具名常量
 （`NICEEVAL_CODEX_E2B_TEMPLATE` 等），不手抄 namespace 或版本：
@@ -135,7 +136,17 @@ CI 应把 ID 当成部署产物管理，并定期重建，而不是在每个 Att
 ## Bub 一致性约定
 
 Bub 的默认版本、OTel 插件和安装指纹的唯一代码源是
-[`src/agents/bub-install-spec.ts`](../src/agents/bub-install-spec.ts)。E2B 和 Vercel 构建代码
-直接复用它；Dockerfile 不能导入 TypeScript，修改该文件后必须同步
-[`docker/bub-override.txt`](./docker/bub-override.txt)、Dockerfile 的插件 URL和 marker hash，
-再重建制品。测试会守护这些值不漂移。
+[`src/agents/bub-install-spec.ts`](../src/agents/bub-install-spec.ts)（版本位本身在
+[`src/agents/coding-cli-versions.ts`](../src/agents/coding-cli-versions.ts)）。E2B 和 Vercel 构建
+代码直接复用它；Dockerfile 不能导入 TypeScript，修改该文件后必须同步
+[`docker/bub-override.txt`](./docker/bub-override.txt)、Dockerfile 的插件 URL 和 marker hash，
+再重建制品。`src/sandbox/official-baselines.test.ts` 守护这些值不漂移。
+
+那份 override 文件不是遗留物：OTel 插件所在的 workspace 把 `bub` 声明成 git 依赖，不覆盖的话
+每次安装都会去拉 Bub 主干，制品里的版本随构建时间漂移。所以三条构建路径与运行时安装都先写一份
+把 `bub` 钉成 `bub==<version>` 的 override 再装。
+
+换 Bub 版本时必须同批核对插件 pin：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型，
+配 0.3.9 会 import 失败；反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨
+静默为空。两代成对钉的契约与用户侧旋钮见
+[Bub 契约页](../docs/feature/adapters/sdk/bub/README.md#装哪一版-bub)。

@@ -33,9 +33,10 @@ RUN claude --version
 FROM base AS bub
 
 # Bub 有原生依赖，单独加编译工具链。以运行时的 node 用户安装，布局与 adapter 的运行时回退完全相同。
-# bub-override.txt 把 bub 钉到不可变 commit。
-# --overrides 是必须的:OTEL 插件依赖上游 bubbuild/bub,与 fork 冲突,靠 override 统一。
-# override 行与 --with 的 OTEL 插件都必须与 agents/bub.ts 的 BUB_OVERRIDE / OTEL_PLUGIN 一致。
+# bub-override.txt 把 bub 钉到一个 PyPI 版本:OTEL 插件所在 workspace 把 bub 声明成 git 依赖,
+# 不覆盖的话构建会拉 Bub 主干,镜像里的版本随构建时间漂移。
+# override 行、--with 的 OTEL 插件与 marker hash 都必须与 agents/bub-install-spec.ts 的默认 pin
+# 一致(Dockerfile 不能 import TypeScript,漂移由 src/sandbox/official-baselines.test.ts 守护)。
 # COPY 到 /opt(持久),不要用 /tmp —— e2b 的层间不保证保留 /tmp。
 USER root
 RUN apt-get update \
@@ -47,9 +48,9 @@ USER node
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
  && $HOME/.local/bin/uv tool install --python 3.12 --prerelease allow 'bub' \
       --overrides /opt/bub-override.txt \
-      --with 'git+https://github.com/bubbuild/bub-contrib.git@add4a6a133c5658aec8f167ef50804d9ee55d22e#subdirectory=packages/bub-tapestore-otel' \
+      --with 'git+https://github.com/bubbuild/bub-contrib.git@34715077877041b21472dcca39d91529296a1a9e#subdirectory=packages/bub-tapestore-otel' \
  && mkdir -p $HOME/.local/share/niceeval \
- && printf '%s' '83770925b77a' > $HOME/.local/share/niceeval/bub-install-hash
+ && printf '%s' '7319e17be62e' > $HOME/.local/share/niceeval/bub-install-hash
 
 # Bub 没有 --version；--help 会完成同一条入口的 Python import 与 CLI 初始化。
 RUN $HOME/.local/bin/bub --help >/dev/null

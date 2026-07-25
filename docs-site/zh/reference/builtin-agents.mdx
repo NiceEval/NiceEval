@@ -259,6 +259,27 @@ skills?: SkillSpec[];
 装进 Sandbox 的 Skill(本地目录/文件,或 repo + 可钉 ref + 可选启用集)。
 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md(bub 没有原生 Skill 加载机制)。
 
+#### `version`
+
+```ts
+version?: string;
+```
+
+装哪一版 Bub(PyPI 版本号,如 `"0.4.0"`)。省略时用 NiceEval 钉的默认版本;
+永远是确定版本,不装 latest —— 被测对象的版本要能从实验配置读出来。
+
+#### `otelPlugin`
+
+```ts
+otelPlugin?: string;
+```
+
+OTel tape store 插件的 git 依赖(时间轨的来源)。省略时用 NiceEval 钉的默认 pin。
+
+插件与 Bub 的 tape 协议同代:默认 pin 从 `bub.tape` 取类型,要求 Bub ≥ 0.3.10;更早的
+插件 commit 按 republic 的类型校验,配 Bub ≤ 0.3.9。配错代不会安装失败,而是 span 全被拒、
+时间轨静默为空 —— 所以往回钉 `version` 时必须同批钉配套的插件 commit。
+
 #### `pythonPlugins`
 
 ```ts

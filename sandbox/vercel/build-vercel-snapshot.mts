@@ -15,7 +15,7 @@ import { Sandbox as VSandbox } from "@vercel/sandbox";
 import {
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_OTEL_PLUGIN,
-  DEFAULT_BUB_OVERRIDE,
+  DEFAULT_BUB_REQUIREMENT,
   bubInstallHash,
 } from "../../src/agents/bub-install-spec.ts";
 import {
@@ -53,7 +53,7 @@ await run(
   sb,
   [
     "curl -LsSf https://astral.sh/uv/install.sh | sh",
-    `printf '%s\\n' '${DEFAULT_BUB_OVERRIDE}' > /tmp/bub-override.txt`,
+    `printf '%s\\n' '${DEFAULT_BUB_REQUIREMENT}' > /tmp/bub-override.txt`,
     `$HOME/.local/bin/uv tool install --python 3.12 --prerelease allow 'bub' --overrides /tmp/bub-override.txt --with '${DEFAULT_BUB_OTEL_PLUGIN}'`,
     `mkdir -p "$HOME/$(dirname '${BUB_INSTALL_MARKER}')"`,
     `printf '%s' '${BUB_INSTALL_HASH}' > "$HOME/${BUB_INSTALL_MARKER}"`,

@@ -20,8 +20,9 @@
     "bub": {
       "name": "correctroads-default-team/niceeval-bub",
       "versionTag": "v0.6.1",
-      "agentVersion": "0.3.9",
+      "agentVersion": "0.3.10.dev+86fbd0fe",
       "installMarker": "83770925b77a",
+      "supersededBy": "0.4.0-r1",
       "templateId": "7lf2vc2cweienpn1ragk",
       "buildId": "c9a947b4-fe47-4d6b-904d-ac14fa897ce5",
       "publishedAt": "2026-07-13T10:07:00Z"

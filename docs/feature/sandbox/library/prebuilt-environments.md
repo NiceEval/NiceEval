@@ -122,7 +122,7 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 |---|---|---|---|
 | [Claude Code](../../adapters/sdk/claude-code/README.md) | `correctroads-default-team/niceeval-claude-code` | `niceeval/claude-code` | E2B 侧从 provider 官方 `claude` template 派生;Claude Adapter 仍检查 `claude` |
 | [Codex](../../adapters/sdk/codex-cli/README.md) | `correctroads-default-team/niceeval-codex` | `niceeval/codex` | E2B 侧从 provider 官方 `codex` template 派生;Codex Adapter 仍检查 `codex` |
-| [Bub](../../adapters/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 固定 commit 的配方,并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
+| [Bub](../../adapters/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 钉版本的配方(Bub 版本 + 同代 OTel 插件),并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
 
 Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker;Vercel 用户按上面的[快照构建流程](#vercel-sandbox从运行实例拍快照)在自己的 Project 里构建。
 

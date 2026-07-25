@@ -20,6 +20,9 @@
 //      子树所需的 per-turn 前提没有满足——即使同一次 attempt 的 --execution 通过
 //      gen_ai.tool.call.id 精确匹配确实拿到了逐工具调用的 span 耗时。这是观察到的真实行为
 //      (不是猜测),细节见本文件末尾的注记与本次任务的交付报告。
+//   6. legacy 版本线——把 version 往回钉一代(0.3.9 + 同代 OTel 插件)只跑 coding-task,证明
+//      pin 真的落到旧版本且时间轨仍在。放最后:它一跑完结果目录就变多 experiment,`show`
+//      榜单会折叠成实验汇总表(memory 的 codex-cli-show-board-collapses-multi-experiment)。
 
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
@@ -150,6 +153,38 @@ function timingShowsRealPhaseTimeline(locators: Record<string, string>): void {
   assert.ok(/turn\s+s\d+\/t\d+/.test(timing), `--timing 缺少 turn 节点——找不到本轮的真实耗时:\n${timing}`);
 }
 
+/**
+ * 6. 上一代版本线:`experiments/legacy.ts` 把 `version` 往回钉到 0.3.9,并同批钉配套的
+ * OTel 插件 commit。只跑 coding-task 一条(版本线是覆盖维度,不是新协议行为),证明两件事:
+ * 安装路径按 pin 装到了旧版本,且旧版插件在旧版 Bub 上仍产出 span(时间注释在)。
+ *
+ * 放在最后跑:多 experiment 的结果目录会让 `show` 榜单折叠成实验汇总表(见 memory 的
+ * codex-cli-show-board-collapses-multi-experiment 台账),上面 2-5 步的 show 断言必须在
+ * 只有 ci 结果时完成。
+ */
+function legacyVersionLanePasses(): void {
+  console.log("\n=== 6. legacy version lane: bub 0.3.9 + matching OTel plugin ===");
+  sh("pnpm --silent exec niceeval exp legacy coding-task --force --json --junit junit-legacy.xml");
+  const junitXml = readFileSync("junit-legacy.xml", "utf8");
+  assert.ok(
+    !junitXml.includes("<failure") && !junitXml.includes("<error"),
+    `legacy 版本线本应通过,JUnit 里却出现了 failure/error:\n${junitXml}`,
+  );
+
+  // --history 的最后一行就是刚跑完的 legacy attempt(ci 的同名 Eval attempt 在它之前)。
+  const line = latestAttemptLine("coding-task/write-and-verify");
+  assert.ok(line.includes("passed"), `legacy 版本线的 attempt 不是 passed:${line}`);
+  const locator = line.match(/@\S+/)?.[0];
+  assert.ok(locator, `legacy attempt 行里没有 @locator:${line}`);
+
+  const execution = sh(`pnpm exec niceeval show ${locator} --execution`);
+  assert.ok(
+    !execution.includes("timing unavailable"),
+    "legacy 版本线的执行树没有时间注释——旧版 OTel 插件没在旧版 Bub 上产出 span," +
+      "说明 version/otelPlugin 这对 pin 配错了代(新插件要求 bub ≥ 0.3.10)",
+  );
+}
+
 export async function runVerify(): Promise<void> {
   ensureDirs();
 
@@ -158,6 +193,7 @@ export async function runVerify(): Promise<void> {
   const locators = historyReportsPassed();
   executionShowsToolCallsAndTiming(locators);
   timingShowsRealPhaseTimeline(locators);
+  legacyVersionLanePasses();
 
   console.log("\nbub: all assertions passed.");
 }

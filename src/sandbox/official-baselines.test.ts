@@ -13,8 +13,9 @@ import {
 import {
   BUB_INSTALL_MARKER,
   DEFAULT_BUB_OTEL_PLUGIN,
-  DEFAULT_BUB_OVERRIDE,
+  DEFAULT_BUB_REQUIREMENT,
   bubInstallHash,
+  bubRequirement,
 } from "../agents/bub-install-spec.ts";
 import {
   NICEEVAL_BUB_E2B_TEMPLATE,
@@ -51,6 +52,8 @@ interface PublishedTemplate {
   installMarker?: string;
   templateId: string;
   buildId: string;
+  /** 源码配方已前进到这个 tag、制品尚未发布时填;值必须就是配方派生出的 tag。 */
+  supersededBy?: string;
 }
 
 const ledger = JSON.parse(
@@ -90,12 +93,26 @@ describe("official coding-agent baselines", () => {
     // 具名常量只能指向台账里真实存在的制品:发布是维护者手动动作,常量不能先跑到发布前面。
     expect(published.name).toBe(NICEEVAL_E2B_TEMPLATE_NAME[agent]);
     expect(e2bTemplates[agent]).toBe(`${published.name}:${published.versionTag}`);
-    // 台账记的是那份制品里 Agent 的版本;与源码版本常量分叉说明该发新基线了。
-    expect(published.agentVersion).toBe(AGENT_BASELINE_VERSION[agent]);
+    // 台账记的是那份制品里 Agent 的版本。源码把版本位往前推却没发布,只有一条合法出路:
+    // 在台账里写下待发布的 tag(supersededBy)。默不作声地分叉不行——那正是「常量指着装了
+    // 旧 Agent 的制品」而全绿的形态。
+    if (published.supersededBy === undefined) {
+      expect(published.agentVersion).toBe(AGENT_BASELINE_VERSION[agent]);
+    } else {
+      expect(published.supersededBy).toBe(agentBaselineVersionTag(agent));
+    }
   });
 
   it("keeps the published Bub template's install fingerprint in sync with the recipe", () => {
-    expect(ledger.templates.bub.installMarker).toBe(bubInstallHash([]));
+    const published = ledger.templates.bub;
+
+    // 换 pin 必然换指纹:预装环境的 marker 对不上时 Adapter 回退完整安装,所以旧制品仍可用,
+    // 但台账必须承认它已被取代。
+    if (published.supersededBy === undefined) {
+      expect(published.installMarker).toBe(bubInstallHash([]));
+    } else {
+      expect(published.installMarker).not.toBe(bubInstallHash([]));
+    }
   });
 
   it("keeps the Dockerfile's pinned versions in sync with the source constants", () => {
@@ -106,12 +123,24 @@ describe("official coding-agent baselines", () => {
     expect(dockerfile).toContain(`'${bubInstallHash([])}' > $HOME/${BUB_INSTALL_MARKER}`);
   });
 
+  it("puts both Bub pins into the install fingerprint", () => {
+    const baseline = bubInstallHash([]);
+
+    // 预装环境靠 marker 命中。版本或插件换了指纹却不变,就会在配方已变时继续命中旧环境,
+    // 装到上一代 Bub 而全程无声。
+    expect(bubInstallHash([], bubRequirement("0.3.9"))).not.toBe(baseline);
+    expect(bubInstallHash([], DEFAULT_BUB_REQUIREMENT, `${DEFAULT_BUB_OTEL_PLUGIN}x`)).not.toBe(baseline);
+    expect(bubRequirement("0.3.9")).toBe("bub==0.3.9");
+  });
+
   it("keeps the Docker bub override file in sync with the pinned recipe", async () => {
     const override = await readFile(
       new URL("../../sandbox/docker/bub-override.txt", import.meta.url),
       "utf8",
     );
 
-    expect(override.trim()).toBe(DEFAULT_BUB_OVERRIDE);
+    // 这份 override 不是遗留物:插件所在 workspace 把 bub 声明成 git 依赖,少了它构建会拉
+    // Bub 主干,镜像里的版本随构建时间漂移。
+    expect(override.trim()).toBe(DEFAULT_BUB_REQUIREMENT);
   });
 });

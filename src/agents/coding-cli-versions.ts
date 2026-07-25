@@ -3,12 +3,12 @@ export const DEFAULT_CODEX_CLI_VERSION = "0.144.1";
 export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.207";
 
 /**
- * bub release that the pinned NiceEval recipe commit descends from.
+ * Bub release installed from PyPI by runtime fallback installs and official sandbox recipes.
  *
- * Bub 装的是一个不可变 fork commit（pin 见 `bub-install-spec.ts`），没有自己的 npm/PyPI 版本号；
- * 官方基线制品的版本位取该 commit 承接的上游 release。换 pin 时同批核对这个值，并 bump 下面的配方修订号。
+ * 换版本时同批核对 `bub-install-spec.ts` 的 OTel 插件 pin：插件与 Bub 的 tape 协议同代，
+ * 配错代不会安装失败，而是时间轨静默为空。
  */
-export const DEFAULT_BUB_VERSION = "0.3.9";
+export const DEFAULT_BUB_VERSION = "0.4.0";
 
 /** 有官方公共基线制品（E2B template + Docker image）的内置 coding agent。 */
 export type CodingAgentBaseline = "claude-code" | "codex" | "bub";
@@ -30,7 +30,7 @@ export const AGENT_BASELINE_VERSION: Record<CodingAgentBaseline, string> = {
 export const AGENT_BASELINE_RECIPE_REVISION: Record<CodingAgentBaseline, number> = {
   "claude-code": 2,
   codex: 2,
-  bub: 2,
+  bub: 1,
 };
 
 /**
