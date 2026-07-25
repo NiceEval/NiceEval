@@ -40,6 +40,9 @@ canonical OTel mapper，不把 OpenClaw 方言加入 core。
 行为轨优先来自 session transcript
 （`~/.openclaw/agents/**/sessions/*.jsonl`，pi-agent 系消息格式）。
 工具调用按 `toolCall` / `toolResult` 的 call ID 配对。
+采集优先读 `--json` 封包里的 `meta.agentMeta.sessionFile`；
+否则取该目录 mtime 最新的 session `*.jsonl`，并排除同目录
+`*.trajectory.jsonl`（旁路轨迹，不是消息轨）。
 
 transcript 拿不到时，只保留 `--json` 封包的最终回复，
 并声明负断言不可信——不从最终文本猜测工具行为。

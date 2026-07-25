@@ -22,6 +22,7 @@ export const OPENCLAW_TOOL_ALIASES: Record<string, ToolName> = {
   read: "file_read",
   write: "file_write",
   edit: "file_edit",
+  exec: "shell",
   process: "shell",
   browser: "web_fetch",
 };
@@ -224,6 +225,11 @@ export interface OpenClawRunJson {
   text?: string;
   /** 本次 run 的 session key(首轮 capture、后续 resume 用)。 */
   sessionId?: string;
+  /**
+   * 本轮 session transcript 绝对路径(`meta.agentMeta.sessionFile`)。
+   * 有的话优先按路径读,避开同目录 `*.trajectory.jsonl` 抢「最新」mtime。
+   */
+  sessionFile?: string;
   /** 封包报告的用量;没报就省略,不编造。 */
   usage?: Usage;
   /** 封包自报失败(error 字段 / status=error|failed / success=false)。 */
@@ -253,14 +259,29 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
     str(get(doc, "reply")) ??
     str(get(doc, "message"));
 
+  const meta = get(doc, "meta");
+  const agentMeta = get(meta, "agentMeta");
+
   const sessionId =
     str(get(doc, "sessionId")) ??
     str(get(doc, "session_id")) ??
     str(get(doc, "sessionKey")) ??
     str(get(result, "sessionId")) ??
-    str(get(result, "session_id"));
+    str(get(result, "session_id")) ??
+    str(get(agentMeta, "sessionId")) ??
+    str(get(agentMeta, "session_id"));
 
-  const rawUsage = get(doc, "usage") ?? get(result, "usage") ?? get(get(doc, "meta"), "usage");
+  const sessionFile =
+    str(get(agentMeta, "sessionFile")) ??
+    str(get(doc, "sessionFile")) ??
+    str(get(result, "sessionFile"));
+
+  const rawUsage =
+    get(doc, "usage") ??
+    get(result, "usage") ??
+    get(meta, "usage") ??
+    get(agentMeta, "usage") ??
+    get(agentMeta, "lastCallUsage");
   let usage: Usage | undefined;
   if (rawUsage && typeof rawUsage === "object") {
     const input = num(rawUsage, "input", "input_tokens", "inputTokens", "prompt_tokens");
@@ -283,6 +304,7 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
   return {
     ...(text !== undefined ? { text } : {}),
     ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(sessionFile !== undefined ? { sessionFile } : {}),
     ...(usage !== undefined ? { usage } : {}),
     failed,
   };

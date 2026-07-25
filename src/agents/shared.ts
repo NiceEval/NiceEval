@@ -55,14 +55,25 @@ async function ensureInstalled(sandbox: Sandbox, cmd: string, args: string[]): P
  * 用沙箱里的 node 递归找全局最新:不依赖 GNU find 的 -printf(BSD / 精简镜像没有),
  * 也没有 `-exec ls -t +` 的 ARG_MAX 分批陷阱(每批各自排序,head -1 不是全局最新)。
  * 沙箱必然有 node(agent CLI 靠 npm 装,预制镜像也带)。
+ *
+ * `excludeName` 可选:跳过文件名匹配的旁路产物(例如 OpenClaw 同目录下的
+ * `*.trajectory.jsonl`,mtime 常比 session transcript 新,但不是消息轨)。
  */
-async function captureLatestJsonl(sandbox: Sandbox, dir: string): Promise<string | undefined> {
+async function captureLatestJsonl(
+  sandbox: Sandbox,
+  dir: string,
+  opts?: { excludeName?: RegExp },
+): Promise<string | undefined> {
+  const excludeSource = opts?.excludeName?.source ?? "";
+  const excludeFlags = opts?.excludeName?.flags ?? "";
+  // exclude 正则以 JSON 字面量塞进 node -e,避免 shell 转义坑;空串 = 不排除。
   const script =
     'const fs=require("fs"),p=require("path");let best=null;' +
+    `const exclude=${JSON.stringify(excludeSource)}?new RegExp(${JSON.stringify(excludeSource)},${JSON.stringify(excludeFlags)}):null;` +
     "const walk=(d)=>{let es;try{es=fs.readdirSync(d,{withFileTypes:true})}catch{return}" +
     "for(const e of es){const f=p.join(d,e.name);" +
     "if(e.isDirectory())walk(f);" +
-    'else if(e.name.endsWith(".jsonl")){try{const m=fs.statSync(f).mtimeMs;if(!best||m>best.m)best={f,m}}catch{}}}};' +
+    'else if(e.name.endsWith(".jsonl")&&!(exclude&&exclude.test(e.name))){try{const m=fs.statSync(f).mtimeMs;if(!best||m>best.m)best={f,m}}catch{}}}};' +
     "walk(process.argv[1]);if(best)process.stdout.write(best.f);";
   try {
     // dir 不加引号以便 shell 展开 ~;受信内部路径(同 writeFile 的约定)。

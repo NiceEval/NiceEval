@@ -12,11 +12,29 @@ export const OPENCODE_TOOL_ALIASES: Record<string, ToolName> = {
   create: "file_write",
   edit: "file_edit",
   patch: "file_edit",
+  // OpenCode 写文件主路径是 apply_patch;Add File 在下方按 patch 内容升成 file_write。
+  apply_patch: "file_edit",
   bash: "shell",
   shell: "shell",
   webfetch: "web_fetch",
   websearch: "web_search",
 };
+
+/** 从 apply_patch 的 patchText 抠 path,并把 Add File 升成 file_write。 */
+function enrichApplyPatchInput(input: JsonValue): { input: JsonValue; tool: ToolName } {
+  const obj = input && typeof input === "object" && !Array.isArray(input)
+    ? { ...(input as Record<string, unknown>) }
+    : ({ patchText: input } as Record<string, unknown>);
+  const patchText = typeof obj.patchText === "string" ? obj.patchText : typeof obj.patch === "string" ? obj.patch : "";
+  const add = patchText.match(/\*\*\*\s*Add File:\s*(.+)/);
+  const update = patchText.match(/\*\*\*\s*(?:Update|Delete) File:\s*(.+)/);
+  const path = (add?.[1] ?? update?.[1] ?? "").trim();
+  if (path) obj.path = path;
+  return {
+    input: obj as JsonValue,
+    tool: add ? "file_write" : "file_edit",
+  };
+}
 
 function normalizeToolName(name: string): ToolName {
   return normalizeShared(name, OPENCODE_TOOL_ALIASES);
@@ -138,7 +156,13 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
 
       if (eventType === "tool_use" && part && str(get(part, "tool"))) {
         const name = str(get(part, "tool"))!;
-        const input = coerceArgs(get(state, "input") ?? get(part, "input"));
+        let input = coerceArgs(get(state, "input") ?? get(part, "input"));
+        let tool = normalizeToolName(name);
+        if (name.toLowerCase() === "apply_patch" || name.toLowerCase() === "patch") {
+          const enriched = enrichApplyPatchInput(input);
+          input = enriched.input;
+          tool = enriched.tool;
+        }
         const callId =
           str(get(part, "callID")) ??
           str(get(part, "callId")) ??
@@ -153,7 +177,7 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
           callId,
           name,
           input,
-          tool: normalizeToolName(name),
+          tool,
         });
         const status = str(get(state, "status"));
         if (status === "completed" || status === "error" || get(state, "output") !== undefined) {
@@ -181,7 +205,16 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
       }
 
       if (eventType === "step_finish" || eventType === "step_start") {
-        addUsage(get(data, "usage") ?? get(part, "usage") ?? get(state, "usage"));
+        // OpenCode 1.18 把用量放在 part.tokens({input,output,...}) + part.cost。
+        const tokens = get(part, "tokens") ?? get(data, "tokens");
+        if (tokens && typeof tokens === "object") {
+          addUsage({
+            ...(tokens as Record<string, unknown>),
+            cost: get(part, "cost") ?? get(data, "cost"),
+          });
+        } else {
+          addUsage(get(data, "usage") ?? get(part, "usage") ?? get(state, "usage"));
+        }
         continue;
       }
 

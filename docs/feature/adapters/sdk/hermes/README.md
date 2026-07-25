@@ -13,7 +13,9 @@ const agent = hermesAgent({
 接入字段：`apiKey` 是模型 API key，省略时读 `HERMES_API_KEY`，
 再回落 `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`；
 `baseUrl` 是可选的 OpenAI 兼容端点，省略时读 `HERMES_API_BASE`。
-模型选择归 experiment 的 `model` 维度。
+写了 `baseUrl` 时，Adapter 在 `~/.hermes/config.yaml` 注册
+`provider: custom` 与 `custom_providers`，secret 写进 `~/.hermes/.env`，
+`--provider custom` 透传给 CLI。模型选择归 experiment 的 `model` 维度。
 
 `version` 钉 PyPI 包 `hermes-agent` 的版本；省略时用 NiceEval 钉的默认版本，
 不装 latest。

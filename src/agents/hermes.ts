@@ -18,8 +18,13 @@ import type { Agent, AgentSetupManifest, EvidenceCoverage, Sandbox, SkillSpec, S
 // Hermes Agent sandbox adapter。驱动:`hermes chat -q … --yolo`;
 // 行为轨优先 `hermes sessions export`,不足时 sqlite 读 messages。
 // 契约见 docs/feature/adapters/sdk/hermes/README.md。
+//
+// Docker 沙箱会覆盖 PATH(不含 $HOME/.local/bin),所以安装与调用一律走
+// `$HOME/.local/bin/hermes`(同 bub 裁决),不依赖 command -v。
 
 const SKILL_DIR = ".hermes/skills";
+const UV = "$HOME/.local/bin/uv";
+const HERMES = "$HOME/.local/bin/hermes";
 
 export interface HermesConfig {
   /** 模型 API key。省略时读 HERMES_API_KEY → OPENROUTER_API_KEY → ANTHROPIC_API_KEY。 */
@@ -41,12 +46,24 @@ function resolveApiKey(config?: HermesConfig): string {
   );
 }
 
-async function exportSession(sb: Sandbox, sessionId: string): Promise<string | undefined> {
+function resolveBaseUrl(config?: HermesConfig): string | undefined {
+  return config?.baseUrl ?? getEnv("HERMES_API_BASE");
+}
+
+async function hermesShell(
+  sb: Sandbox,
+  args: string[],
+  env: Record<string, string>,
+  opts?: { stream?: boolean },
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  // HERMES 变量本身不要 quote,以便 shell 展开 $HOME。
+  const script = `${HERMES} ${args.map(shellQuote).join(" ")}`;
+  return sb.runShell(script, { env, stream: opts?.stream });
+}
+
+async function exportSession(sb: Sandbox, sessionId: string, env: Record<string, string>): Promise<string | undefined> {
   const outPath = `/tmp/niceeval-hermes-${sessionId}.jsonl`;
-  const res = await sb.runCommand(
-    "hermes",
-    ["sessions", "export", outPath, "--session-id", sessionId],
-  );
+  const res = await hermesShell(sb, ["sessions", "export", outPath, "--session-id", sessionId], env);
   if (res.exitCode !== 0) return undefined;
   try {
     return await sb.readFile(outPath);
@@ -92,19 +109,35 @@ export function hermesAgent(config?: HermesConfig): Agent {
     spanMapper: mapGenericSpans,
 
     async setup(sb) {
-      // 预装命中且能跑通 version 就跳过;否则 uv/pip 钉版本安装。
+      // 装到当前沙箱用户 $HOME/.local(Docker 下是 /home/node);显式路径,不靠 PATH。
+      await sb.runShell(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
       await sb.runShell(
-        [
-          `if ! command -v hermes >/dev/null 2>&1; then`,
-          `  if command -v uv >/dev/null 2>&1; then`,
-          `    uv tool install hermes-agent==${version}`,
-          `  else`,
-          `    pip install --user hermes-agent==${version}`,
-          `    export PATH="$HOME/.local/bin:$PATH"`,
-          `  fi`,
-          `fi`,
-        ].join("\n"),
+        `test -x ${HERMES} || ${UV} tool install hermes-agent==${version}`,
       );
+
+      const baseUrl = resolveBaseUrl(config);
+      if (baseUrl) {
+        // OpenAI 兼容网关:写 custom provider + model.base_url;
+        // secret 进 ~/.hermes/.env,不进 git 可见配置。
+        const apiKey = resolveApiKey(config);
+        const hermesConfig = [
+          "model:",
+          "  provider: custom",
+          `  base_url: ${baseUrl}`,
+          "custom_providers:",
+          "  - name: compat",
+          `    base_url: ${baseUrl}`,
+          `    api_key: ${apiKey}`,
+          "",
+        ].join("\n");
+        const hermesEnv = [
+          `OPENAI_API_KEY=${apiKey}`,
+          `OPENAI_BASE_URL=${baseUrl}`,
+          "",
+        ].join("\n");
+        await shared.writeFile(sb, "~/.hermes/config.yaml", hermesConfig);
+        await shared.writeFile(sb, "~/.hermes/.env", hermesEnv);
+      }
 
       const manifest: AgentSetupManifest = { skills: [] };
       if (config?.skills?.length) {
@@ -121,8 +154,10 @@ export function hermesAgent(config?: HermesConfig): Agent {
 
     async send(input, ctx) {
       const sb = ctx.sandbox;
-      const args = ["chat", "-q", input.text, "--yolo"];
+      const baseUrl = resolveBaseUrl(config);
+      const args = ["chat", "-q", input.text, "--yolo", "-Q"];
       if (ctx.model) args.push("--model", ctx.model);
+      if (baseUrl) args.push("--provider", "custom");
       if (ctx.session.id) args.push("--resume", ctx.session.id);
 
       const apiKey = resolveApiKey(config);
@@ -134,14 +169,13 @@ export function hermesAgent(config?: HermesConfig): Agent {
         HERMES_YOLO_MODE: "1",
         ...ctx.telemetry?.env,
       };
-      const baseUrl = config?.baseUrl ?? getEnv("HERMES_API_BASE");
       if (baseUrl) {
         env.HERMES_API_BASE = baseUrl;
         env.OPENAI_BASE_URL = baseUrl;
         env.ANTHROPIC_BASE_URL = baseUrl;
       }
 
-      const res = await sb.runCommand("hermes", args, { env, stream: true });
+      const res = await hermesShell(sb, args, env, { stream: true });
       let sessionId =
         sessionIdFromHermesOutput(res.stdout) ??
         sessionIdFromHermesOutput(res.stderr) ??
@@ -164,7 +198,7 @@ print(r[0] if r else "")'`,
 
       let raw: string | undefined;
       if (sessionId) {
-        raw = await exportSession(sb, sessionId);
+        raw = await exportSession(sb, sessionId, env);
         if (!raw) raw = await dumpMessagesFromDb(sb, sessionId);
       }
 

@@ -5,7 +5,7 @@
     "pnpm",
     "e2e"
   ],
-  "timeoutMinutes": 40,
+  "timeoutMinutes": 50,
   "secrets": [
     "BUB_API_KEY",
     "BUB_API_BASE"

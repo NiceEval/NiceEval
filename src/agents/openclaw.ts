@@ -10,6 +10,7 @@ import {
 import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
+import { completeCoverage } from "../scoring/coverage.ts";
 import { DEFAULT_OPENCLAW_CLI_VERSION } from "./coding-cli-versions.ts";
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
@@ -72,20 +73,11 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
 
-  // 契约(sdk/openclaw/README.md):只有 fixture 证明完整的行为才进入公开能力。transcript
-  // 完整性尚未经真实 CLI fixture 验证,常态覆盖只声明 partial(不是 complete)——负断言在
-  // 非 complete 通道上一律 unavailable,「明确限制负断言」由覆盖声明落实,不靠口头承诺。
-  const FIXTURE_UNVERIFIED = "OpenClaw transcript completeness is not yet fixture-verified";
-  const defaultCoverage: EvidenceCoverage = {
-    events: { status: "partial", reason: FIXTURE_UNVERIFIED },
-    actions: { status: "partial", reason: FIXTURE_UNVERIFIED },
-    messages: { status: "partial", reason: FIXTURE_UNVERIFIED },
-    usage: { status: "partial", reason: FIXTURE_UNVERIFIED },
-  };
-
   return defineSandboxAgent({
     name: "openclaw",
-    coverage: defaultCoverage,
+    // e2e 已用真实 CLI 证明 session transcript 能给出工具轨 / 消息 / 用量;
+    // 采集失败的单轮仍会在 send 里把 coverage 降成 unavailable/partial。
+    coverage: completeCoverage,
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
@@ -108,14 +100,21 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
         // OpenAI 兼容网关走自定义 provider + openai-completions;
-        // 具体模型由 send 的 --model compat/<id> 选择。
+        // skipBootstrap 跳过首轮身份仪式,否则 agent 会先问 "Who am I"。
+        // workspace 钉沙箱工作目录,文件工具写到 eval 可见的路径。
         const openclawConfig = {
+          agents: {
+            defaults: {
+              skipBootstrap: true,
+              workspace: sb.workdir,
+            },
+          },
           models: {
             mode: "merge",
             providers: {
               [COMPAT_PROVIDER]: {
                 baseUrl,
-                apiKey: "${OPENCLAW_API_KEY}",
+                apiKey: resolveApiKey(config),
                 api: "openai-completions",
                 models: [
                   { id: "gpt-5.6-luna", name: "gpt-5.6-luna" },
@@ -127,6 +126,22 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
           },
         };
         await shared.writeFile(sb, "~/.openclaw/openclaw.json", JSON.stringify(openclawConfig, null, 2));
+        // 预置最小身份文件,避免缺 IDENTITY 时仍触发仪式文案。
+        await shared.writeFile(
+          sb,
+          `${sb.workdir}/IDENTITY.md`,
+          "# Identity\n\nName: niceeval\nEmoji: ✓\n",
+        );
+        await shared.writeFile(
+          sb,
+          `${sb.workdir}/USER.md`,
+          "# User\n\nEval harness operator.\n",
+        );
+        await shared.writeFile(
+          sb,
+          `${sb.workdir}/SOUL.md`,
+          "# Soul\n\nExecute the user's task directly. Do not ask who you are.\n",
+        );
       }
 
       const manifest: AgentSetupManifest = { skills: [] };
@@ -173,10 +188,23 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       // 首轮已用自发 id 落地时不覆盖)。
       ctx.session.capture(runJson.sessionId);
 
-      // 完整工具轨迹的唯一来源:session transcript。「最新 jsonl」而非按 session id 精确定位
-      // (同 claude-code 的裁决:send 串行,最新的一定是刚跑完的这次;超时 fallback 若产生
-      // 第二条 run,也落在同一个最新 transcript 里,单次读取不重复采集)。
-      const raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents");
+      // 完整工具轨迹的唯一来源:session transcript。
+      // 优先读封包给出的 sessionFile(精确);否则在 agents 目录取最新 *.jsonl,
+      // 但排除同目录旁路产物 *.trajectory.jsonl(mtime 常更新、却不是消息轨——
+      // 误读会导致 events 为空、整轮 coverage 降成 unavailable)。
+      let raw: string | undefined;
+      if (runJson.sessionFile) {
+        try {
+          raw = await sb.readFile(runJson.sessionFile);
+        } catch {
+          raw = undefined;
+        }
+      }
+      if (raw === undefined) {
+        raw = await shared.captureLatestJsonl(sb, "~/.openclaw/agents", {
+          excludeName: /\.trajectory\.jsonl$/i,
+        });
+      }
       const parsed = parseOpenClawTranscript(raw);
       const events: StreamEvent[] = [...parsed.events];
 

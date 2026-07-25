@@ -1,7 +1,7 @@
 import { defineExperiment } from "niceeval";
 import { hermesAgent } from "niceeval/adapter";
 
-// 与 bub 同源的 OpenAI 兼容网关(s2a.niceeval.com)。
+// 与 bub 同源的 OpenAI 兼容网关。
 const agent = hermesAgent({
   apiKey: process.env.HERMES_API_KEY ?? process.env.BUB_API_KEY,
   baseUrl: process.env.HERMES_API_BASE ?? process.env.BUB_API_BASE,
