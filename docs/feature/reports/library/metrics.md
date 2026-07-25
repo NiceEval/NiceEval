@@ -163,10 +163,10 @@ interface DimensionRef {
   readonly unit?: string;
 }
 
-type DimensionInput = BuiltInDimension | CustomDimension | DimensionRef;
+type SingleDimension = BuiltInDimension | CustomDimension | DimensionRef;
 
-/** series 类绑定(图表 series 的 by、ExperimentComparison 的 by)额外接受非空数组,解析为复合维度。 */
-type SeriesInput = DimensionInput | readonly [DimensionInput, ...DimensionInput[]];
+/** 非空数组解析为复合维度。收维度的位置一律接受它——轴、行、列、格、series 的 by 没有形态差别。 */
+type DimensionInput = SingleDimension | readonly [SingleDimension, ...SingleDimension[]];
 
 interface NumericAxis {
   name: string;
@@ -233,7 +233,9 @@ fact 是逐 attempt 的，同一 experiment 的 attempt 可能落在不同值上
 
 `flag()` / `label()` / `runConfig()` / `fact()` 只是分组维度；它们读取的落盘值可能是字符串、数字、布尔值、数组或对象，不冒充数值轴。分组显示键按稳定 JSON 规则生成：字符串直接显示，其它值用对象键递归排序后的 JSON，缺失值显示内置文案 `(missing)`。若不同原始值生成同一个显示键，计算函数报出冲突并要求改用 `CustomDimension`，绝不静默合组。
 
-接受 `SeriesInput` 的选项传数组时解析为**复合维度**：维度 name 为成员 name 依声明顺序以 ` × ` 连接；每个 attempt 的维度值为各成员显示键依同一顺序以 ` · ` 连接，任一成员缺失沿用 `(missing)` 显示键参与连接；显示键冲突检测仍按成员各自执行。`["agent", label("memory")]` 即「agent × 记忆机制」各自成类。
+维度传数组时解析为**复合维度**：维度 name 为成员 name 依声明顺序以 ` × ` 连接；每个 attempt 的维度值为各成员显示键依同一顺序以 ` · ` 连接，任一成员缺失沿用 `(missing)` 显示键参与连接；显示键冲突检测仍按成员各自执行。`["agent", label("memory")]` 即「agent × 记忆机制」各自成类。
+
+复合维度在收维度的每个位置都合法，没有「只有 series 能复合」的例外：榜单的行身份天生可能是复合的——「agent 线 × 记忆机制」是一行，不是两行。所以 `<YAxis dimension={["agent", label("memory")]} sort={endToEndPassRate} />` 与 `<Rows dimension={["agent", label("memory")]} />` 与 `<Line by={["agent", label("memory")]} />` 解析出同一个维度，只是投影成轴、行还是 series 不同。
 
 数值轴 `XAxis` 的绑定必须是 `NumericAxis`，用 `numericFlag()` / `numericLabel()` / `numericRunConfig()` / `numericFact()` 或自定义 `of` 构造：
 

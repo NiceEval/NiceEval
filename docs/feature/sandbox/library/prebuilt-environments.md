@@ -38,7 +38,7 @@ export const e2b = e2bSandbox({
 构建语法各异,工作流骨架跨 provider 相同:
 
 1. **构建脚本进 eval 项目仓库**,约定放 `scripts/build-<provider>-env.*`;experiment 里永远只出现产物 ID,不出现构建逻辑。
-2. **产物命名带版本**:`<项目>-<agent>-evals:<日期或语义版本>`(如 `acme-codex-evals:2026-07-13`)。CI 与需要可复现结果的场景钉死 tag;不带 tag 的名字跟随最新构建,只适合本地试用。
+2. **产物命名带版本,版本位写产物里装的东西**:`<项目>-<agent>-evals:<agent 版本>-r<配方修订>`(如 `acme-codex-evals:0.144.1-r1`)。消费者关心的是"这份环境里的 Agent 是哪一版",不是构建脚本所在仓库发到第几版;`-r` 位留给"Agent 版本没变、配方变了"的重建([官方基线用的是同一套规则](#版本号跟着被装的-agent-走))。CI 与需要可复现结果的场景钉死 tag;不带 tag 的名字跟随最新构建,只适合本地试用。
 3. **重建只在环境依赖变化时发生**:改了要装的 CLI 版本、系统包或模型 cache 才跑构建脚本;日常 `niceeval exp` 直接消费既有产物。
 4. **升级 agent CLI 版本 = 构建一个新 tag**,experiment 改引用即可、回滚可逆;不要原地覆盖同一个 tag——那会让"同一配置"在不同时间指向不同环境,跑分失去可比性。
 
@@ -58,8 +58,8 @@ RUN npm install -g @openai/codex@0.144.1
 ```
 
 ```typescript
-// docker build -t acme-codex-evals:2026-07-13 . 之后
-sandbox: dockerSandbox({ image: "acme-codex-evals:2026-07-13" })
+// docker build -t acme-codex-evals:0.144.1-r1 . 之后
+sandbox: dockerSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
 镜像只在构建机上时是单机可用;要在 CI 或多机消费,push 到项目自己的 registry,`image` 字段写完整引用。
@@ -68,7 +68,7 @@ sandbox: dockerSandbox({ image: "acme-codex-evals:2026-07-13" })
 
 `niceeval/sandbox/e2b-template` 提供一个很薄的 **E2B 专属** factory `e2bCodingAgentTemplate(agent)`,从官方 coding agent 起点派生并返回原生 `TemplateBuilder`。用户可以继续链 E2B API,所以"官方基线"不会成为不能修改的黑盒:
 
-Factory 同时收敛三条基线的 Node 工具安装面：运行用户的 `npm prefix -g` 是 `/usr/local`，`/usr/local/bin` 已在 PATH，`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 官方 `claude` 与 `codex` 起点的 Node 路径和默认 prefix 不同，这层规范化是 NiceEval 派生 baseline 的职责；否则同一条 eval 的 `npm install -g` 会只因换 Agent 而成片失败。因此项目追加全局 Node 工具用普通 `npm install -g <pkg>`，不需要按 Agent 分支，也不需要 sudo。`verifyE2BNodeToolContract(template)` 把这三条断言链进 build，任一项漂移时模板在写入 registry 前构建失败。各 release 的实际满足情况见本页下方「官方 coding agent 起点」。
+Factory 同时收敛三条基线的 Node 工具安装面：运行用户的 `npm prefix -g` 是 `/usr/local`，`/usr/local/bin` 已在 PATH，`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 官方 `claude` 与 `codex` 起点的 Node 路径和默认 prefix 不同，这层规范化是 NiceEval 派生 baseline 的职责；否则同一条 eval 的 `npm install -g` 会只因换 Agent 而成片失败。因此项目追加全局 Node 工具用普通 `npm install -g <pkg>`，不需要按 Agent 分支，也不需要 sudo。`verifyE2BNodeToolContract(template)` 把这三条断言链进 build，任一项漂移时模板在写入 registry 前构建失败——这也是[官方公共基线](#官方-coding-agent-起点)的发布门槛。
 
 ```typescript
 // scripts/build-e2b-template.ts
@@ -80,7 +80,7 @@ const template = e2bCodingAgentTemplate("codex") // 从 E2B 官方 codex templat
   .runCmd("corepack enable && pnpm --version")
   .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
 
-await Template.build(template, "acme-codex-evals:2026-07-13", {
+await Template.build(template, "acme-codex-evals:0.144.1-r1", {
   cpuCount: 2,
   memoryMB: 4096,
 });
@@ -93,7 +93,7 @@ pnpm tsx scripts/build-e2b-template.ts
 构建只在环境依赖变化时运行;日常 `niceeval exp` 直接消费项目自己的 alias:
 
 ```typescript
-sandbox: e2bSandbox({ template: "acme-codex-evals:2026-07-13" })
+sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
 ```
 
 Bub 若配置 `pythonPlugins`,模板 factory 要收到同一份 package 集合:`e2bCodingAgentTemplate("bub", { bubPythonPackages: ["bub-plugin-memory==1.3.0"] })`。Factory 与 Adapter 共用规范化和 hash 代码,插件顺序、空白和重复项不会制造假差异;集合真的不同则不会误用预装环境(指纹语义见 [Bub 接入页](../../adapters/sdk/bub/README.md))。
@@ -116,16 +116,31 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 
 ## 官方 coding agent 起点
 
-"没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。官方起点按所有权组合:
+"没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。NiceEval 为三个内置 Agent 维护公共基线制品,E2B template 与 Docker image 各一份,配方同源:
 
-| Agent | E2B 起点 | 所有者与校验 |
-|---|---|---|
-| [Claude Code](../../adapters/sdk/claude-code/README.md) | E2B 官方 `claude` template | provider 维护 CLI;Claude Adapter 仍检查 `claude` |
-| [Codex](../../adapters/sdk/codex-cli/README.md) | E2B 官方 `codex` template | provider 维护 CLI;Codex Adapter 仍检查 `codex` |
-| [Bub](../../adapters/sdk/bub/README.md) | NiceEval 的固定版本配方 | NiceEval 固定 Bub 与 OTel 插件 commit,并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
+| Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |
+|---|---|---|---|
+| [Claude Code](../../adapters/sdk/claude-code/README.md) | `correctroads-default-team/niceeval-claude-code` | `niceeval/claude-code` | E2B 侧从 provider 官方 `claude` template 派生;Claude Adapter 仍检查 `claude` |
+| [Codex](../../adapters/sdk/codex-cli/README.md) | `correctroads-default-team/niceeval-codex` | `niceeval/codex` | E2B 侧从 provider 官方 `codex` template 派生;Codex Adapter 仍检查 `codex` |
+| [Bub](../../adapters/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 固定 commit 的配方,并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
 
-NiceEval 已把三者构建成 E2B 公共模板。消费方不拼 namespace 或 release tag；从
-`niceeval/sandbox/e2b-template` 的具名常量取得与当前 NiceEval 已验证基线配套的完整引用：
+Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker;Vercel 用户按上面的[快照构建流程](#vercel-sandbox从运行实例拍快照)在自己的 Project 里构建。
+
+### 版本号跟着被装的 Agent 走
+
+公共基线的版本形如 `<Agent 版本>-r<配方修订>`,例如 `niceeval/codex:0.144.1-r1`:
+
+- **版本位是制品里那个 Agent 的版本**——Claude Code 与 Codex 取 CLI 版本,Bub 取所钉 commit 承接的 bub release。消费者唯一关心的就是这个:这份环境里的被测对象是哪一版。
+- **`-r` 修订位是 NiceEval 配方自己的修订号**。Agent 版本没变、基线配方变了(Node 工具契约、PATH 规范化、换 pin 的 commit、插件集合)就 +1;Agent 版本一变归 1。已发布 tag [不可原地覆盖](#用户怎么写自己的预制环境),配方变更必须在版本里有位置表达,否则"同一配置"会在不同时间指向不同环境。
+- **三个 Agent 各自独立发版**。换 Codex CLI 只重建 codex 的两份制品,Claude Code 与 Bub 的引用一个字不动。
+- **niceeval 自身的版本不参与命名**。库与制品内容无关:发一个 patch 不会让模板里的 Agent 变新,模板换代也不必等库发版。
+- **同一个 Agent 在 E2B 与 Docker 上共用一个版本号**:一个版本号 = 一套基线配方,两个 provider 上的制品可以直接对照。任一侧的配方变更同时 bump 两侧的 `-r`,并重建两份。
+
+版本位与 Adapter 运行时回退安装读的是同一批版本常量,所以"命中预装"和"回退安装"永远装同一版 Agent——走了哪条路径不会改变被测对象。
+
+### 消费:具名常量,不拼版本号
+
+版本按 Agent 各自演进,业务仓库不该跟踪三条版本线。两个 provider 的完整引用都由 NiceEval 导出:
 
 ```typescript
 import {
@@ -133,23 +148,21 @@ import {
   NICEEVAL_CODEX_E2B_TEMPLATE,
   NICEEVAL_BUB_E2B_TEMPLATE,
 } from "niceeval/sandbox/e2b-template";
+import {
+  NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE,
+  NICEEVAL_CODEX_DOCKER_IMAGE,
+  NICEEVAL_BUB_DOCKER_IMAGE,
+} from "niceeval/sandbox";
 
-e2bSandbox({ template: NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE })
-e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
-e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
+e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })      // 跨 Team namespace + 钉死版本
+dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })      // repository + 同一个版本
 ```
 
-返回值始终带完整跨 Team namespace 与已验证 release tag；release 选择属于 NiceEval 的发布知识，
-下游不再维护或读取另一份易漂移的版本常量。派生模板如果需要把 base 身份编码进名字或
-provenance，应直接使用所选完整 template ref。公开模板是 convenience baseline,不是 Adapter 的隐式默认值。
+每个常量都是完整、版本钉死的引用,值只在 NiceEval 发布新基线时变化。下游不复制这些字符串,也不维护第二份版本常量;派生制品要把 base 身份写进名字或 provenance 时,直接用常量的值。公开基线是 convenience baseline,不是 Adapter 的隐式默认值。
 
-源码中的 factory 契约只影响之后构建的模板，不会改写已经发布的 registry 制品。当前具名常量仍指向
-`v0.6.1`；该 release 的 Claude Code 模板保留 E2B 官方 `/usr` npm prefix，运行用户执行
-`npm install -g` 会遇到权限错误。发布下一组模板并 bump 常量前，直接消费 `v0.6.1` 的 eval 应显式写
-`npm install -g --prefix /usr/local <pkg>`；`/usr/local/bin` 已在三个模板的 PATH 中。不要用
-`sudo npm install -g` 绕过：root 侧可能与模板预装包发生文件冲突。
+常量指向的一定是**已发布并验证过的**制品:E2B 侧由维护者发布后登记进[发布台账](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布门槛(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的制品不写进 registry。
 
-Adapter 不自动替 experiment 选择 template:同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel,选择权属于 sandbox spec;反过来,sandbox 也不猜要运行哪个 Agent。预装只是快速路径,各 agent 检测预装与回退安装的具体语义在各自的接入页(上表链接)。
+Adapter 不自动替 experiment 选择制品:同一个 Codex Adapter 可以跑 Docker、E2B 或 Vercel,选择权属于 sandbox spec;反过来,sandbox 也不猜要运行哪个 Agent。预装只是快速路径,各 agent 检测预装与回退安装的具体语义在各自的接入页(上表链接)。
 
 ## 新 provider 的预制环境义务
 

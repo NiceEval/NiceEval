@@ -118,7 +118,12 @@ interface ReportTheme {
   warning?: ThemeColor;
   /** 六个分类色；稳定散列只选择下标，不用分类色表示好坏。 */
   series?: ThemeSeries;
+  /** 把指定维度值钉在指定色板下标上；其余值照常自动分配。 */
+  seriesPins?: SeriesPins;
 }
+
+/** 外层键是维度 name，内层键是维度值显示键，值是 [0, 6) 的色板下标。 */
+type SeriesPins = Readonly<Record<string, Readonly<Record<string, number>>>>;
 
 function defineTheme(theme: ReportTheme): Readonly<ReportTheme>;
 ```
@@ -126,6 +131,27 @@ function defineTheme(theme: ReportTheme): Readonly<ReportTheme>;
 主题字段是穷尽集合。颜色只接受 `#RRGGBB`，不接受短 hex、alpha、CSS 颜色名、`var()`、`light-dark()` 或任意 CSS 片段；任意 CSS 值属于下文的 CSS 出口。`series` 固定为六色，因为官方图表用稳定 key 散列到六个分类槽；换 palette 不改变散列、图例顺序或 series 身份。
 
 字段未知、pair 缺任一分支、数组长度不是六或颜色格式非法时，`defineTheme` / `defineReport` 按完整用户反馈拒绝，并指到具体字段路径，例如 `theme.series[3].dark`。
+
+## 钉色
+
+[页级色分配](../components/README.md#系列色分配单位是页)不需要配置就能保证一页内同键同色，但它不知道作者的语义：发布图上「baseline 恒中性、我们的方案恒蓝」是作者的判断，不是散列能推出来的。`seriesPins` 就是写下这个判断的地方：
+
+```ts
+theme: defineTheme({
+  seriesPins: {
+    memory: { baseline: 3, mempal: 1, nowledge: 5 },
+  },
+}),
+```
+
+- **钉的是色板下标，不是 hex。** 颜色仍然来自 `series` 六色，因此深浅主题、对比度与换 palette 全都照常跟随。要改颜色本身就改 `series`。
+- **外层键是维度的 `name`**——内置维度就是 `"agent"` / `"experiment"`，`label("memory")` 的 name 是 `"memory"`，复合维度的 name 是成员 name 以 ` × ` 连接。这与 `ChartData` / `TableData` 里 `*Dimension` 字段的值是同一个字符串。
+- **内层键是维度值显示键**，与分组显示键同一套规则（非字符串值走稳定 JSON，缺失值是 `(missing)`）。
+- **钉住的键原样占位，自动分配只在剩下的槽里探测。** 多个值钉同一个下标是合法的——作者显式要求它们同色（例如两条基线都走中性色）；这不触发探测。
+- **钉了但这一页没出现的键什么都不做**，不为它保留槽位。
+- 维度 name 或值键不是非空字符串、下标不是 `[0, 6)` 内的整数时，`defineTheme` / `defineReport` 按完整用户反馈拒绝并指到 `theme.seriesPins.<维度>.<值>`。
+
+主题是跨页的，所以钉色也是跨页的：同一个维度值在总览页与分科页恒同色。这正是它住在主题层而不是某个组件上的原因——写在一棵树里的声明管不到另一张页。
 
 ## 每种颜色表达什么
 
@@ -136,6 +162,7 @@ function defineTheme(theme: ReportTheme): Readonly<ReportTheme>;
 | `negative` | failed、regressed、负向 `Stat` 主值 | errored 或普通提示 |
 | `warning` | errored、partial coverage、截断、缺失与不可用状态 | failed |
 | `series` | experiment / agent / label 等名义分类身份 | 质量大小或判定好坏 |
+| `seriesPins` | 「这个维度值恒用这个分类槽」的作者判断 | 一个新的颜色——它只选下标，颜色仍来自 `series` |
 
 未声明时使用以下官方值：
 

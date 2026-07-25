@@ -455,6 +455,24 @@ const MyLegend = defineComponent<{ ids: string[] }>({
 
 Embedding `niceeval/report/react` components in your own React page means there is no such page-level step — hand the whole set of keys to `seriesColors(keys)` once and use the returned map. Passing keys one at a time does not resolve collisions the way a full set does.
 
+### Pinning a value to a color
+
+Automatic assignment guarantees that one value keeps one color across a page, but it cannot know your semantics: "baseline is always neutral, our approach is always blue" is your judgment. Write it in the report shell's theme:
+
+```tsx
+export default defineReport({
+  title: "MemoryBench",
+  theme: {
+    seriesPins: {
+      memory: { baseline: 3, mempal: 1, nowledge: 5 },   // dimension → value → palette slot
+    },
+  },
+  content: <Leaderboard />,
+});
+```
+
+What you pin is a **slot** in the six-color palette, not a hex value — so light/dark themes, contrast, and swapping the palette all keep working; to change the color itself, change the theme's `series`. Pinned values claim their slot first and everything else is assigned around them. Pinning lives in the theme rather than on a component because it has to hold across pages: one memory mechanism must keep its color on the overview page and the per-subject page alike.
+
 ## Publishing: export is a static site
 
 Publishing a custom report and publishing the official viewer are the same action — `--out` plus `--report`:

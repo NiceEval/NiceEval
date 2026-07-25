@@ -194,7 +194,7 @@ const template = e2bCodingAgentTemplate("codex")
   .runCmd("corepack enable && pnpm --version")
   .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
 
-await Template.build(template, "acme-codex-evals:2026-07-13", {
+await Template.build(template, "acme-codex-evals:0.144.1-r1", {
   cpuCount: 2,
   memoryMB: 4096,
 });
@@ -210,7 +210,7 @@ pnpm tsx scripts/build-e2b-template.ts
 ```ts
 import { e2bSandbox } from "niceeval/sandbox";
 
-sandbox: e2bSandbox({ template: "acme-codex-evals:2026-07-13" })
+sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
 ```
 
 也可以直接从 NiceEval 公共模板继续派生，只支付项目依赖的构建成本：
@@ -266,7 +266,7 @@ RUN npm install -g @openai/codex@0.144.1
 ```
 
 ```bash
-docker build -t acme-codex-evals:2026-07-13 .
+docker build -t acme-codex-evals:0.144.1-r1 .
 ```
 
 然后在 Experiment 里只引用构建结果：
@@ -274,7 +274,7 @@ docker build -t acme-codex-evals:2026-07-13 .
 ```ts
 import { dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: "acme-codex-evals:2026-07-13" })
+sandbox: dockerSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
 Docker Sandbox 默认以非 root 的 `node` 用户（UID 1000）跑命令，并把 `/usr/local/bin` 放进 PATH，所以 `npm install -g` 装的全局二进制天然可见；要装到别处的 Agent（如落在 `~/.local/bin`）记得让它进 PATH。本地快速迭代可以直接省略 `image` 用默认 `node:*-slim`，稳定 CI 引用不可变 tag。

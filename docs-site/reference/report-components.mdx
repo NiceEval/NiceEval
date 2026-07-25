@@ -329,6 +329,34 @@ geometry
 
 The web face is vertically grouped columns: values labeled atop each bar, series colors consistent with other components' stable palette, legend auto-generated. The terminal face is horizontal bars, where character width is the scale, sorted by value within each group (direction follows `better`). Metrics with `better: "lower"` (cost, duration) fill their bars in reverse — a short bar is always "good".
 
+### The leaderboard on a benchmark site's landing page
+
+Turn it sideways, one row per entrant, sorted by value, and you have the leaderboard block every benchmark site opens with:
+
+```tsx
+<BarChart layout="vertical">
+  <XAxis metric={endToEndPassRate} orientation="top" />
+  <YAxis
+    dimension={["agent", label("memory")]}   {/* one row = one agent line × one memory mechanism */}
+    sort={endToEndPassRate}                  {/* rank by value; direction follows better */}
+    limit={10}                               {/* keep the top ten */}
+    rest="Other"                             {/* fold the rest into one re-aggregated row */}
+  />
+  <Bar metric={endToEndPassRate} colorBy={label("memory")}>
+    <LabelList position="right" />           {/* value at the end of the row */}
+    <ErrorBar kind="ci95" />                 {/* confidence interval */}
+  </Bar>
+</BarChart>
+```
+
+Three things worth calling out:
+
+- **A row identity can be composite.** One value of `["agent", label("memory")]` is one row (`codex · mempal`), not two.
+- **`rest` re-aggregates; it does not average the rows it dropped.** It answers "what do all the remaining attempts add up to", so it carries its own sample count and evidence refs and drills down like any other row.
+- **Color can say something else.** Rows are "agent × memory mechanism" while `colorBy` makes color express the memory mechanism alone — so one mechanism keeps the same color in this chart, its legend, and anywhere else on the page keyed by that dimension. To decide which value gets which color (baseline always neutral, say), [pin it in the theme](/tutorials/custom-reports#pinning-a-value-to-a-color).
+
+To number the rows `#1`, `#2`, customize the tick: the `index` your `tick` callback receives is the post-sort rank.
+
 ## Scoreboard (`Scoreboard`)
 
 Total score plus per-subject subtotals, answering "how many points does it score on this set of questions". Per-question point values: weights are configured by eval id prefix, the denominator is constant across everyone scored, and a question never attempted earns 0 points and is faithfully reported as `missing`.

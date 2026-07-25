@@ -181,7 +181,7 @@ const template = e2bCodingAgentTemplate("codex")
   .runCmd("corepack enable && pnpm --version")
   .copy("fixtures/toolchain.lock", "/opt/evals/toolchain.lock");
 
-await Template.build(template, "acme-codex-evals:2026-07-13", {
+await Template.build(template, "acme-codex-evals:0.144.1-r1", {
   cpuCount: 2,
   memoryMB: 4096,
 });
@@ -197,7 +197,7 @@ Then reference only the build result in the experiment:
 ```ts
 import { e2bSandbox } from "niceeval/sandbox";
 
-sandbox: e2bSandbox({ template: "acme-codex-evals:2026-07-13" })
+sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
 ```
 
 You can also derive directly from a NiceEval public template and pay only for the build cost of your project's own dependencies:
@@ -246,7 +246,7 @@ RUN npm install -g @openai/codex@0.144.1
 ```
 
 ```bash
-docker build -t acme-codex-evals:2026-07-13 .
+docker build -t acme-codex-evals:0.144.1-r1 .
 ```
 
 Then reference only the build result in the experiment:
@@ -254,7 +254,7 @@ Then reference only the build result in the experiment:
 ```ts
 import { dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: "acme-codex-evals:2026-07-13" })
+sandbox: dockerSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 ```
 
 The Docker Sandbox runs commands as the non-root `node` user (UID 1000) by default and puts `/usr/local/bin` on the PATH, so global binaries installed with `npm install -g` are visible out of the box. If an agent installs somewhere else (for example into `~/.local/bin`), remember to put that directory on the PATH. For fast local iteration you can omit `image` and use the default `node:*-slim`; stable CI should reference an immutable tag.

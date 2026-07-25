@@ -91,10 +91,20 @@ type ChartProps =
 三个互斥绑定：
 
 ```ts
+type DimensionAxisBinding = {
+  dimension: DimensionInput;
+  /** 稳定排序的依据；必须是图中已声明且有 better 的 Metric。 */
+  sort?: Metric;
+  /** 只保留排序后的前 N 个维度值；要求同时给出 sort。 */
+  limit?: number;
+  /** limit 截掉的维度值聚成一条，用这个名字；省略时直接截断。 */
+  rest?: LocalizedText;
+};
+
 type XAxisBinding =
-  | { dimension: DimensionInput; numeric?: never; metric?: never; sort?: Metric }
-  | { numeric: NumericAxis; dimension?: never; metric?: never; sort?: never }
-  | { metric: Metric; dimension?: never; numeric?: never; sort?: never };
+  | (DimensionAxisBinding & { numeric?: never; metric?: never })
+  | { numeric: NumericAxis; dimension?: never; metric?: never; sort?: never; limit?: never; rest?: never }
+  | { metric: Metric; dimension?: never; numeric?: never; sort?: never; limit?: never; rest?: never };
 
 interface XAxisPresentationProps {
   xAxisId?: string | number;
@@ -107,13 +117,13 @@ interface XAxisPresentationProps {
 
 type XAxisProps =
   | (XAxisBinding & XAxisPresentationProps)
-  | ({ xAxisId: string | number; dimension?: never; numeric?: never; metric?: never; sort?: never } & XAxisPresentationProps);
+  | ({ xAxisId: string | number; dimension?: never; numeric?: never; metric?: never; sort?: never; limit?: never; rest?: never } & XAxisPresentationProps);
 ```
 
-- `dimension` 是分类轴，用于排行、分组柱或按离散配置比较。
+- `dimension` 是分类轴，用于排行、分组柱或按离散配置比较。传数组即[复合维度](../library/metrics.md#维度与数值轴)——`["agent", label("memory")]` 的一个取值是一根柱，不是两根。
 - `numeric` 是 [`NumericAxis`](../library/metrics.md#维度与数值轴)，用于参数趋势；每个点保留数值原值和等价显示值。字符串配置必须显式映射到数值，组件不猜 `low < medium < high`。
 - `metric` 是散点图横轴；格式、bounds 与 `better` 来自 Metric。
-- `sort` 只属于维度轴。它必须绑定图中一个已声明且有 `better` 的 Metric；方向跟随 `better`，同值以维度 key 稳定收口。
+- `sort` / `limit` / `rest` 只属于维度轴，规则见[排序与截断](#排序与截断)。
 
 `xAxisId` 默认 `0`。显式呈现 props 覆盖默认呈现，不改变聚合数据。
 
@@ -121,8 +131,8 @@ type XAxisProps =
 
 ```ts
 type YAxisBinding =
-  | { metric: Metric; dimension?: never; sort?: never }
-  | { dimension: DimensionInput; sort?: Metric; metric?: never };
+  | { metric: Metric; dimension?: never; sort?: never; limit?: never; rest?: never }
+  | (DimensionAxisBinding & { metric?: never });
 
 interface YAxisPresentationProps {
   yAxisId?: string | number;
@@ -135,10 +145,10 @@ interface YAxisPresentationProps {
 
 type YAxisProps =
   | (YAxisBinding & YAxisPresentationProps)
-  | ({ yAxisId: string | number; dimension?: never; metric?: never; sort?: never } & YAxisPresentationProps);
+  | ({ yAxisId: string | number; dimension?: never; metric?: never; sort?: never; limit?: never; rest?: never } & YAxisPresentationProps);
 ```
 
-`metric` 是数值轴的完整语义声明，不是可省略的格式提示：它提供 label、单位、bounds、显示格式与 `better`。`dimension` 用于 `BarChart layout="vertical"` 的纵向分类轴，`sort` 规则与维度 `XAxis` 相同。series 通过 `yAxisId` 显式绑定，双轴不靠猜：
+`metric` 是数值轴的完整语义声明，不是可省略的格式提示：它提供 label、单位、bounds、显示格式与 `better`。`dimension` 用于 `BarChart layout="vertical"` 的纵向分类轴，排序与截断规则与维度 `XAxis` 相同。series 通过 `yAxisId` 显式绑定，双轴不靠猜：
 
 ```tsx
 <YAxis yAxisId="cost" metric={costUSD} />
@@ -157,6 +167,18 @@ data 形态下轴绑定已经在 `ChartData` 里，`XAxis` / `YAxis` 只按 id �
 - 分配到 Metric 轴的 series metric 必须与其单位、格式、bounds 和方向兼容。常规布局的 Metric 轴是 Y，`BarChart layout="vertical"` 的 Metric 轴是 X。
 - `Scatter` 的 `x` / `y` 必须分别与所绑定 X / Y 轴的 Metric 相同；其它 series 的 `metric` 必须与 Y 轴 Metric 相同，或通过 Metric 的显式轴兼容声明证明同单位同尺度。
 - 同一个 `stackId` 只允许绑定同一对轴的 `Bar` / `Area`，堆中指标必须可相加。字符串恰好相同不能越过单位或尺度校验。
+
+### 排序与截断
+
+`sort` 必须绑定图中一个已声明且有 `better` 的 Metric；方向跟随 `better`，同值以维度 key 稳定收口。省略 `sort` 时维度值按稳定 key 字典序。
+
+`limit` 只保留排序后的前 N 个维度值。榜单一长就要截断，而截断只能由组件做：聚合发生在计算函数内部，事后拿到的是已聚合的行，从中还原不出「被截掉那些合起来是多少」。规则：
+
+- **`limit` 要求同时给出 `sort`。** 没有排序就没有「前 N」，只给 `limit` 按完整用户反馈报错。
+- **`rest` 是重新聚合，不是把截掉的几行平均。** 给了 `rest` 时被截掉的维度值合成一个组，在合并后的 keyset 上走同一套两级聚合——它回答「其余那些 attempt 合起来是多少」。省略 `rest` 就是直接截断，图上不出现被截掉的值。
+- **`rest` 恒排在末位**，不参与 `sort` 的比较；它的 `MetricCell` 带自己的 `samples` / `total` / `refs`，与其它条同口径，因此也能下钻到证据。
+- **维度值数量不超过 `limit` 时不产生 `rest` 条目**，不画一条空的「其余」。
+- `limit` 小于 1 或非整数按完整用户反馈报错。
 
 ### 轴方向
 
@@ -183,8 +205,8 @@ data 形态下轴绑定已经在 `ChartData` 里，`XAxis` / `YAxis` 只按 id �
 ```ts
 type SeriesSelection =
   | { by?: never; value?: never }
-  | { by: SeriesInput; value?: never }
-  | { by: SeriesInput; value: string };
+  | { by: DimensionInput; value?: never }
+  | { by: DimensionInput; value: string };
 
 interface SeriesAxisBinding {
   xAxisId?: string | number;
@@ -197,7 +219,7 @@ type MetricSeriesBinding =
 ```
 
 - 不给 `by`：一个 Metric 形成一个 series。
-- 只给 `by`：按该维度的已观测 domain 动态展开多个 series。[`SeriesInput`](../library/metrics.md#维度与数值轴) 传数组时解析为复合维度。
+- 只给 `by`：按该维度的已观测 domain 动态展开多个 series。传数组时解析为[复合维度](../library/metrics.md#维度与数值轴)。
 - 同给 `by` 与 `value`：精确选择这个维度值，适合逐 series 定制。
 
 `value` 永远不能单独出现，也不猜它属于 agent、experiment 还是 label。同一 metric 可以用一个动态声明展开，也可以用多个显式声明逐值定制：
@@ -243,6 +265,8 @@ type LineProps = MetricSeriesBinding & {
 type BarProps = MetricSeriesBinding & {
   name?: LocalizedText;
   stackId?: string | number;
+  /** 每根柱按这个维度取页级色；省略时整条 series 一个颜色。 */
+  colorBy?: DimensionInput;
   fill?: string;
   stroke?: string;
   maxBarSize?: number;
@@ -252,6 +276,20 @@ type BarProps = MetricSeriesBinding & {
 ```
 
 同一 stack 必须绑定同一对轴且 Metric 可相加；柱顶总值用 `<LabelList value="stackTotal" position="top" />` 显式声明，不作为无法关闭的隐式装饰。
+
+`colorBy` 解决「行身份是一回事、颜色要表达另一回事」：榜单每行是「agent 线 × 记忆机制」，而颜色要说的是记忆机制。它取的是[页级色映射](README.md#系列色分配单位是页)里 `(该维度, 该柱的维度值)` 的颜色，因此同一个记忆机制在这张图、图例和页上任何按同一维度取色的地方恒同色，深浅主题也跟着走：
+
+```tsx
+<BarChart layout="vertical">
+  <XAxis metric={endToEndPassRate} orientation="top" />
+  <YAxis dimension={["agent", label("memory")]} sort={endToEndPassRate} limit={10} rest="其余" />
+  <Bar metric={endToEndPassRate} colorBy={label("memory")}>
+    <LabelList position="right" />
+  </Bar>
+</BarChart>
+```
+
+`colorBy` 的维度必须能从每根柱的位置唯一确定取值——它是位置维度本身，或位置维度的一个成员（复合维度的成员），否则一根柱对应多个取值，按完整用户反馈报错并列出冲突的取值。要给具体某个取值指定颜色而不是让它自动分配，用[主题层的钉色](../library/theme.md#钉色)；要单独强调一两根柱而不引入第二个维度，用 `<Cell>`。
 
 ### `Area`
 
@@ -381,7 +419,7 @@ type YAxisSpec =
 type MetricSeriesSpec = {
   dataKey?: string;
   metric: Metric;
-  by?: SeriesInput;
+  by?: DimensionInput;
   value?: string;
   xAxisId?: AxisId;
   yAxisId?: AxisId;
@@ -392,7 +430,7 @@ type ScatterSeriesSpec = {
   points: DimensionInput;
   x: Metric;
   y: Metric;
-  by?: SeriesInput;
+  by?: DimensionInput;
   value?: string;
   xAxisId?: AxisId;
   yAxisId?: AxisId;
@@ -526,6 +564,6 @@ web 渲染回调属于呈现，可以故意改变可见内容；默认 text 投�
 - [组件树](README.md) —— 结构节点规则、子节点资格总表与共用呈现 props。
 - [Gallery](gallery.md) —— 四张真实报告图在本契约下的写法。
 - [表格与矩阵](tables.md) —— 同一份指标的非图形投影。
-- [指标与维度](../library/metrics.md) —— Metric、Dimension、SeriesInput 与 NumericAxis。
+- [指标与维度](../library/metrics.md) —— Metric、Dimension 与 NumericAxis。
 - [References · Recharts](../../../references.md#recharts) —— 组件词汇的外部参考。
 </content>

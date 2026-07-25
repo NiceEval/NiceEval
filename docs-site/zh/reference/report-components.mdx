@@ -408,6 +408,34 @@ geometry
 
 网页面是竖向分组柱：柱顶要数值就加一个 `<LabelList position="top" />`，颜色与同页其它组件一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。同一页里矩阵和条形图用同一组维度时，底层数据只算一次。
 
+### benchmark 站首屏的那张排行榜
+
+换成横向、一行一名、按值排序，就是 benchmark 站首屏那块榜单：
+
+```tsx
+<BarChart layout="vertical">
+  <XAxis metric={endToEndPassRate} orientation="top" />
+  <YAxis
+    dimension={["agent", label("memory")]}   {/* 一行 = 一个 agent 线 × 一种记忆机制 */}
+    sort={endToEndPassRate}                  {/* 按值排名，方向随 better */}
+    limit={10}                               {/* 只留前十 */}
+    rest="其余"                               {/* 剩下的合成一行重新聚合 */}
+  />
+  <Bar metric={endToEndPassRate} colorBy={label("memory")}>
+    <LabelList position="right" />           {/* 行尾数值 */}
+    <ErrorBar kind="ci95" />                 {/* 置信区间 */}
+  </Bar>
+</BarChart>
+```
+
+三处值得单独说：
+
+- **行身份可以是复合的。** `["agent", label("memory")]` 的一个取值是一行（`codex · mempal`），不是两行。
+- **`rest` 是重新聚合，不是把截掉的几行平均。** 它回答的是「其余那些 attempt 合起来多少」，所以带自己的样本数和证据引用，也能下钻。
+- **颜色可以说另一件事。** 行是「agent × 记忆机制」，而 `colorBy` 让颜色只表达记忆机制——同一种记忆机制在这张图、图例和页上任何按它取色的地方恒同色。要指定具体哪个值用哪个颜色（例如 baseline 恒中性），在[主题里钉色](/zh/tutorials/custom-reports#钉住某个值的颜色)。
+
+要在行首标 `#1` `#2`，用刻度的呈现定制：`tick` 回调收到的 `index` 就是排序后的名次。
+
 ## 成绩单（`Scoreboard`）
 
 总分 + 分科小计，回答「这套题它能得几分」。逐题分值制：题目和分科逐条写在子标签里，权重挂在题目或分科上，分母对所有被打分者恒定，没跑到的题挣 0 分并如实报 `missing`。

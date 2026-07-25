@@ -104,6 +104,18 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   产物，与手工传同一份 options 深相等。反馈覆盖：节点放错父组件（错误同时给出收到的父类型、允许的父类型与正确嵌套示例）、必填节点缺失或重复、零个
   `<Question>` / 少于两个 `<Condition>` / 没有或多于一个 `baseline`、`<Condition>` 与
   `<FlagConditions>` 混用、data 形态下子节点仍带数据绑定字段、动态 `by` 同时给显式 `dataKey`。
+- **维度绑定的三件通用能力**（[排序与截断](../../../feature/reports/components/charts.md#排序与截断)、[复合维度](../../../feature/reports/library/metrics.md#维度与数值轴)）：轴、行、列、格、series 的 `by`
+  用同一份解析——**复合维度**在每个位置都合法且解析出同一个维度（name 以 ` × ` 连接、值以 ` · ` 连接、成员缺失走
+  `(missing)`），区分力场景是「同一个数组分别作 `<YAxis dimension>` / `<Rows dimension>` / `<Line by>`
+  时 keyset 深相等」；**`limit` / `rest`** 的截断在计算函数内部发生——`rest`
+  是在合并后的 keyset 上重新聚合而不是把截掉的几行平均（fixture 要让「合并重算」与「行均值」得出不同的数），`rest`
+  恒排末位且带自己的 `samples` / `total` / `refs`、维度值不超过 `limit`
+  时不产生 `rest` 条目、只给 `limit` 不给 `sort` 按完整用户反馈报错；**`Bar.colorBy`**
+  取页级映射里 `(该维度, 该柱的值)` 的色，颜色键与位置键不同也一致，`colorBy`
+  维度无法从柱的位置唯一确定取值时报错并列出冲突取值。
+- **主题钉色**（[钉色](../../../feature/reports/library/theme.md#钉色)）：`seriesPins`
+  的键原样占位、自动分配只在剩余槽里探测、多个值钉同一下标不触发探测、钉了但页内未出现的键不占槽；非法维度 name / 值键 /
+  下标按完整用户反馈拒绝并指到 `theme.seriesPins.<维度>.<值>`。区分力场景是「同一份数据加钉与不加钉，未钉键的落槽不同」。
 - **呈现别名的四档解析**（[呈现别名](../../../feature/reports/components/charts.md#呈现别名)）：`tick` / `label` /
   `dot` / `shape` / `line` 各自的 `false`、部分字段对象、单函数（只接管 web，text 走默认投影）与 `{ web, text }`
   四种取值归一成同一份呈现规格；回调收到的渲染数据字段齐全——刻度的 `index` 取自轴解析后的顺序（`sort`

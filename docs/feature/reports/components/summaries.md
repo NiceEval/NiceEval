@@ -18,7 +18,7 @@ web 与 text 两面都输出当前 Scope 的摘要、散点和实验列表，不
 interface ExperimentComparisonProps {
   input?: ReportInput;
   /** 散点的 series 维度。缺省:有 label `line` 声明 → label("line") 并连线;否则 "agent"、不连线。 */
-  by?: SeriesInput;
+  by?: DimensionInput;
   /** 透传给散点；契约同 Scatter 的 line。 */
   line?: boolean;
   locale?: ReportLocale;

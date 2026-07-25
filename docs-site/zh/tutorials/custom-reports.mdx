@@ -516,6 +516,24 @@ const MyLegend = defineComponent<{ ids: string[] }>({
 
 在自己的 React 页面里嵌 `niceeval/report/react` 组件时没有这一页,自己把要上色的键一次交给 `seriesColors(keys)` 拿映射——一次传全集,逐个键调用得不到同页消解撞色的结果。
 
+### 钉住某个值的颜色
+
+自动分配保证同一页里同一个值恒同色,但它不知道你的语义:发布图上「baseline 恒中性、我们的方案恒蓝」是你的判断。写在报告外壳的主题里:
+
+```tsx
+export default defineReport({
+  title: "MemoryBench",
+  theme: {
+    seriesPins: {
+      memory: { baseline: 3, mempal: 1, nowledge: 5 },   // 维度名 → 值 → 色板下标
+    },
+  },
+  content: <Leaderboard />,
+});
+```
+
+钉的是六色色板的**下标**,不是 hex——所以深浅主题、对比度和换色板全都照常跟随;要改颜色本身,改的是主题的 `series` 六色。被钉住的值原样占位,其余值在剩下的槽里自动分配。钉色写在主题里而不是某个组件上,是因为它要跨页一致:同一个记忆机制在总览页和分科页必须同色。
+
 ## 发布:导出即静态站
 
 发布自定义报告和发布官方查看器是同一个动作——`--out` 加上 `--report`:

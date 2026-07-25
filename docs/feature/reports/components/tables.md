@@ -48,10 +48,16 @@ interface DimensionBindingProps {
   dimension: DimensionInput;
   /** 稳定排序的依据；必须是同组件内已声明且有 better 的 Metric。 */
   sort?: Metric;
+  /** 只保留排序后的前 N 个维度值；要求同时给出 sort。 */
+  limit?: number;
+  /** limit 截掉的维度值聚成一行/一列，用这个名字；省略时直接截断。 */
+  rest?: LocalizedText;
 }
 ```
 
-`sort` 的方向跟随 Metric 的 `better`，同值以维度 key 收口；省略时按 key 字典序，不为「更好」方向不明的指标猜顺序。行列头的颜色来自[页级色分配](README.md#系列色分配单位是页)。
+`sort` 的方向跟随 Metric 的 `better`，同值以维度 key 收口；省略时按 key 字典序，不为「更好」方向不明的指标猜顺序。`limit` / `rest` 的语义与[图表维度轴的排序与截断](charts.md#排序与截断)逐条相同——`rest` 是在合并后的 keyset 上重新聚合，不是把截掉的几行平均，因此它必须住在计算函数里。行列头的颜色来自[页级色分配](README.md#系列色分配单位是页)。
+
+`dimension` 传数组即[复合维度](../library/metrics.md#维度与数值轴)：`["agent", label("memory")]` 的一个取值是一行，不是两行。
 
 ## `MetricTable`
 
