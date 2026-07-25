@@ -6,7 +6,9 @@
 - 你在写文档 / 代码,想跟现有用法保持一致;
 - 你需要一页纸把整套词汇过一遍。
 
-这是一份术语表,分两层:先用「术语总表」对齐每个词的中文写法、英文写法和一句话含义;总表之后的分区展开每个词的完整契约。两个同义词并存时,**首选写法**用粗体。
+这是一份术语表,分三层:先用「术语总表」对齐每个词的中文写法、英文写法和一句话含义;
+总表之后的分区展开每个词的完整契约;末尾的[禁用写法](#禁用写法)登记已裁决不许再出现的词。
+两个同义词并存时,**首选写法**用粗体。
 
 ## 术语总表
 
@@ -39,7 +41,7 @@
 | Fixture | Fixture | `test(t)` 里显式写入沙箱的起始文件,加上 `EvalDef.setup` 准备的任务素材;两类写入都算 eval 归因,不进 agent diff |
 | 能力 | Capability | `t` 上暴露哪些动作,由 `send` 的构造证据决定,不是声明式的能力位 |
 | 接入等级 | Integration tier | 按「Adapter 接到哪里、额外拿到什么观测数据」分的三级:Tier 1 只接 `send`,Tier 2 `send` + OTel,Tier 3 侵入改造 + flags |
-| 无侵入 | Non-intrusive | Tier 1 / Tier 2 的共同性质:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口。不写「黑盒」 |
+| 无侵入 | Non-intrusive | Tier 1 / Tier 2 的共同性质:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口。不写 `黑盒` |
 | 模型(`model` 字段) | Model | 给 agent 指定模型的标识(如 `opus`),由 experiment 的 `model` 字段指定 |
 | 人工介入 | HITL(human-in-the-loop) | agent 中途等待人工输入的交互;`send` 返回过 `waiting` + `input.requested` 即具备该能力 |
 
@@ -55,7 +57,7 @@
 | 中文 | English | 含义 |
 |---|---|---|
 | 运行器 | Runner | 调度引擎:发现、有界并发、重试、首过即停、缓存,把结果交给报告器 |
-| 生命周期 Hook | Hook | 四层(实验级 / Sandbox 级 / eval 级 / agent 级)共用同一形态的成对 `setup` / `teardown` 回调;`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出。中文正文写"生命周期"(泛指机制)或"生命周期 Hook"(指具体回调),不写"钩子" |
+| 生命周期 Hook | Hook | 四层(实验级 / Sandbox 级 / eval 级 / agent 级)共用同一形态的成对 `setup` / `teardown` 回调;`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出。中文正文写"生命周期"(泛指机制)或"生命周期 Hook"(指具体回调),不写 `钩子` |
 | 实验 | Experiment | 可签入的运行配置:用哪个 agent / model / flags、跑几次、预算多少;不碰评分 |
 | 实验 flags | Flags | experiment 的 A/B 条件键(一组 feature flag 取值),经 `ctx.flags` 给 adapter、`t.flags` 给 eval;裸词 flags 专指它 |
 | Invocation | Invocation | 一次 `niceeval` CLI 调用的瞬时编排边界;可同时调度多个 Experiment,但不是持久化领域实体 |
@@ -97,7 +99,7 @@
 
 ### 报告组件
 
-中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用“榜单”“工作台”这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/reference/report-components.mdx)。
+中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用 `榜单`、`工作台` 这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/reference/report-components.mdx)。
 
 | 分类 | 中文 | English | API | 主展示单位 |
 |---|---|---|---|---|
@@ -167,7 +169,7 @@
 
 **Runner** / **运行器** —— 调度引擎。负责发现、有界并发执行、重试、首过即停、缓存,以及把结果交给报告器。详见 [Runner](runner.md)。
 
-**Hook** / **生命周期 Hook** —— 成对的 `setup` / `teardown` 回调,`setup` 不返回值。四层共用同一种形态(实验级、Sandbox 级、eval 级、agent 级),同层多个 Hook 按注册序 `setup`、逆序 `teardown`(LIFO)。中文写"生命周期"(泛指这套机制)或"生命周期 Hook"(指某一个具体回调),不写"钩子"。详见 [Runner · 生命周期钩子](runner.md#环境预置不进运行器但按顺序调它)。
+**Hook** / **生命周期 Hook** —— 成对的 `setup` / `teardown` 回调,`setup` 不返回值。四层共用同一种形态(实验级、Sandbox 级、eval 级、agent 级),同层多个 Hook 按注册序 `setup`、逆序 `teardown`(LIFO)。中文写"生命周期"(泛指这套机制)或"生命周期 Hook"(指某一个具体回调),不写 `钩子`。详见 [Runner · 生命周期钩子](runner.md#环境预置不进运行器但按顺序调它)。
 
 **Experiment** / **实验** —— 一份可签入的**运行配置**,描述「怎么跑这批 eval」:用哪个 [Agent](#评测核心词汇)、跑几次、过滤哪些、预算多少。由 `defineExperiment` 定义在 `experiments/` 下,id 从路径推导。**一文件 = 一个单一配置**；`evals` 遍历发现到的 eval 并选择这份配置要跑的集合，解析结果以 `selectedEvalIds` 落盘。它**不碰评分**——「怎么算对」是 eval 的事。详见 [Experiments](feature/experiments/README.md)。
 
@@ -193,7 +195,7 @@
 
 **Reporter** / **报告器** —— 消费 Invocation 中结果的插件,可实现分阶段 `onEvent`(`invocation:start` / `eval:start` / `eval:complete` / `invocation:summary` 等),也可实现 `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`。内置控制台、JUnit、JSON;可接第三方实验跟踪平台。报告器在独立的串行队列上回调,不阻塞执行池。详见 [Reporters](observability.md#reporters)。
 
-**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果快照**(一个 experiment 的一次运行):快照目录 `.niceeval/<experiment>/<snapshot>/` 下放快照级 `snapshot.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判决、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的证据文件——完整词干、存储形态与内容职责单源在[证据 registry](feature/results/architecture.md#证据-registry)。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见「结果数据与报告」词表),不直接引用路径或数组下标。详见 [Results Format](feature/results/architecture.md)。
+**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果快照**(一个 experiment 的一次运行):快照目录 `.niceeval/<experiment>/<snapshot>/` 下放快照级 `snapshot.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判定、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的证据文件——完整词干、存储形态与内容职责单源在[证据 registry](feature/results/architecture.md#证据-registry)。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见「结果数据与报告」词表),不直接引用路径或数组下标。详见 [Results Format](feature/results/architecture.md)。
 
 ## 配置词汇
 
@@ -218,6 +220,16 @@ agent 不在 config 里注册:每个 experiment 直接引用一个 agent adapter
 **Strict mode** / **严格模式** —— 默认情况下 soft 断言低于阈值仍判 `passed`;`--strict` 下同样的情况改判 `failed`。用于 CI 把质量回归当成红灯。
 
 **环境预置** —— niceeval 把准备逻辑放在普通代码里。要在跑 agent 前准备环境,放三处之一:这条 eval 的沙箱预置写在 `test(t)` 里(手工 `t.sandbox.writeFiles` / `runCommand`),连 agent / 装 CLI 写在 [`SandboxAgent.setup`](feature/adapters/architecture/agent-contract.md#生命周期不变量),整个 run 共享的外部服务(mock API、DB)用外部编排(`docker compose` / CI 脚本)起停、经 env 传入。详见 [Sandbox · 环境预置放哪](feature/sandbox/library.md#环境预置放哪)。
+
+## 禁用写法
+
+已裁决不许出现在 `docs/` 正文里的写法登记在
+[`writing-rules.json`](writing-rules.json) 的 `bannedTerms` 里,不写成表格——
+这份清单的用途是被脚本读:一条记录带 `term` / `use` / `why` 三个字段,
+`pnpm docs:lint` 命中时原样打印 `use` 和 `why`,改的人不必回来翻文档。
+
+裁决一个新术语时同批往那份 JSON 加一条:`why` 写清为什么这个词会误导读者,不写"统一一下"。
+扫描规则、行宽台账与收紧办法见 [`docs/README.md` · 校验与同步](README.md#校验与同步)。
 
 ## 相关阅读
 
