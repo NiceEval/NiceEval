@@ -23,6 +23,13 @@ const ALLOWED = new Set([
   "CODEX_BASE_URL",
   "BUB_API_KEY",
   "BUB_API_BASE",
+  "OPENCODE_API_KEY",
+  "OPENCODE_BASE_URL",
+  "HERMES_API_KEY",
+  "HERMES_API_BASE",
+  "OPENROUTER_API_KEY",
+  "OPENCLAW_API_KEY",
+  "OPENCLAW_BASE_URL",
   // 凭据:judge(judge.apiKeyEnv 指定别的名字时是运行期动态读取,不出现在静态扫描里)
   "NICEEVAL_JUDGE_KEY",
   // 凭据:sandbox provider
