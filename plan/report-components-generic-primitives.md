@@ -7,6 +7,9 @@
 契约单源,一律以 docs 为准,不在本文复述:
 
 - 三层模型、`Cell` 判别联合、`RowSource`:`docs/feature/reports/components/README.md`
+- **四个角色与三问判据**(每个节点判断「这段逻辑该写在哪」的公共依据):
+  同上文件「谁认识 niceeval」——第 1 问命中进数据源、第 2 问命中进管线、都不命中才是原语。
+  跨组件对齐(页级色分配、标签缩写互斥、text 面宽度自适应)一律属管线,不许写进数据源或原语。
 - 单元格渲染契约(全部原语照抄同一份):`docs/feature/reports/components/primitives/table.md#单元格渲染`
 - 数据源目录与写法纪律:`docs/feature/reports/components/sources/README.md`
 - 翻案记录:`memory/report-components-generic-primitives-ruling.md`
@@ -40,6 +43,7 @@
 ```
 R 组件通用化
 ├─ [x] N0 核心:三层模型 + Cell + 8 篇原语 + 数据源目录(planner,已完成)
+├─ [x] N1 归属判据:四个角色(加「管线」)+ 三问定位(planner,已完成)
 ├─ [ ] W1 实体行数据源                      ── 并行
 ├─ [ ] W2 指标、成绩单与对照数据源          ── 并行
 ├─ [ ] W3 attempt 级数据源                  ── 并行
