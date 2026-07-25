@@ -20,6 +20,7 @@ niceeval view --port 4400              # 固定本地端口
 niceeval view --report reports/exam.tsx
 niceeval view --report reports/site.tsx --page exam   # 多页报告，指定初始页
 niceeval view --report standard        # 内建视图名，回到默认报告
+niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 ```
 
 位置参数只有一种含义：eval id 前缀，与 `show` 一致。结果根用 `--results <dir>` 传入，单开一份快照用 `--snapshot <file>`——文件与目录都不进位置参数，位置参数的含义不随文件系统状态改变。
@@ -111,14 +112,29 @@ niceeval view --report reports/site.tsx --page exam   # 指定初始页
 
 报告文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 scope-input page；[配置对象形态](library/shell.md)声明外壳与 pages。写好的定义填进 `niceeval.config.ts` 的 `report` 字段，裸 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](README.md#项目默认报告)）。view 只把 `navigation !== false` 的 pages 列进导航；scope-input page 读取 Scope，attempt-input page 按 locator 读取 `AttemptEvidence`。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
 
-整站主题也属于这份报告定义。高频定制用外壳 `theme` 声明 accent、状态色与六色图表 palette；完整视觉覆盖继续用 `styles` 或页内 `Style`。主题同时作用于 view 导航 chrome 与页内报告组件，本地模式和 `--out` 使用同一份静态 CSS，`show` 忽略这些 web 面属性。Library API、语义色边界与 CSS 级联见[主题与 CSS 定制](library/theme.md)。
-
 `ExperimentComparison` 的两个渲染面共享同一份实体与指标数据：web 面使用可排序的实验表，text 面使用紧凑列表；两面都直接消费完整 Scope，不设实验组选择器。端到端通过率、成本、耗时、Tokens、判定构成和证据引用来自同一份计算结果。
+
+## 主题
+
+站点长什么样是一份和报告分开的制品。`--theme` 换一次外观而不动报告文件，报告自己的 `theme` 外壳字段是它自带的外观，两者与项目配置、内建 [`basalt`](themes/basalt.md) 组成[四档取值链](library/theme.md#装载链)：
+
+```sh
+niceeval view --theme ./themes/acme.ts                       # 换成自己的主题
+niceeval view --report reports/site.tsx --theme ./themes/acme.ts
+niceeval view --theme basalt                                 # 内建主题名，回到官方外观
+niceeval view --theme ./themes/acme.ts --out site            # 导出带同一份主题
+```
+
+主题同时作用于 view 导航 chrome 与页内报告组件，本地模式和 `--out` 使用同一份静态 CSS。主题的令牌与它自带的 `styles` 在报告外壳的 `styles` 之前加载，所以报告作者的覆盖压在主题之上。
+
+浅色与深色由主题的 `appearance` 决定：`system` 时初始跟随浏览器 / OS，页头带一个浅 / 深切换控件，读者的选择按站点记在浏览器本地；`light` / `dark` 锁定全站，不渲染控件。无 JavaScript 时初始 HTML 就是声明的外观，切换控件是增强层，不改变任何数值。
+
+`--theme` 是 web 面的 flag：`niceeval show --theme …` 按完整用户反馈报错并指向 `view`。裸词一律查内建主题名表，不回落到文件探测；想装载文件就写成带路径形。令牌全集、语义边界与 CSS 级联见[主题](library/theme.md)。
 
 ## 相关阅读
 
 - [Show](show.md) —— 同一批结果的终端入口。
 - [Reports Library](library.md) —— 自定义报告槽；外壳与多页见[分篇](library/shell.md)。
-- [Theme](library/theme.md) —— 主题色的 Library 写法、语义令牌和 CSS 覆盖。
+- [Theme](library/theme.md) —— 主题制品、装载链、令牌全集与 CSS 覆盖。
 - [Results](../results/README.md) —— view 读取与导出的数据。
 - [Architecture](architecture.md) —— 报告宿主与「宿主只剩机器」的边界清单。

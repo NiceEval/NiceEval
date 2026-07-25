@@ -155,6 +155,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [theme-as-separate-artifact](theme-as-separate-artifact.md) — 裁决(2026-07-25):主题上提为与报告并列的可分发制品(四档链 `--theme`→外壳→config→内建 `basalt`,自带 CSS,令牌扩到中性面/字体/圆角),seriesPins 搬回报告外壳;否决主题 extends、跨档深合并、读者覆盖 accent、社区注册表;实现前必读令牌面对不上那一段
 - [report-components-unified-component-tree](report-components-unified-component-tree.md) — 裁决(2026-07-25):报告组件库整体统一为组件树(绑定与局部配置=结构子节点),MetricLine/MetricBars/MetricScatter 换成 Recharts 词汇的图表族,Scoreboard 的 subject 函数+权重前缀表换 `<Subject>`/`<Question>`,DeltaTable 换 `<Condition baseline>`;否决实体列表开放选列与组合组件用子节点覆盖装配;落点 docs/feature/reports/components/
 - [report-page-level-color-assignment](report-page-level-color-assignment.md) — 裁决(2026-07-25):维度值配色的分配单位从「一张图」上提到「一页」,图表图例与实体列表 agent 名读同一份映射;推翻 scatter-series-color-collision「跨块单键着色不消解」那一句(起因=首页图例蓝/绿、同页列表两个 agent 都蓝)
 - [builtin-page-reuse-stays-all-or-nothing](builtin-page-reuse-stays-all-or-nothing.md) — 裁决(2026-07-25):内建报告复用只有整站 `extends` 与照抄两条路,页级 override 与「四张内建 page 具名导出」双双否决(只能加不能删=半套复用面,补上删除即等于开槽位);起因是下游反馈「插一块内容就得整页抄、从此不跟随演进」

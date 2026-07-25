@@ -642,10 +642,12 @@ export const Badge = defineComponent<BadgeProps>({
 });
 ```
 
-缺 `web` 或 `text` 在 TypeScript 中直接报错；无类型 JavaScript 输入仍在 `defineComponent` 调用时校验。带 `resolve` 的组件在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化，且 `resolve` 之后两面消费同一份渲染 props——两面同源由结构保证，不靠作者自觉。只服务自己网页的组件直接写普通 React 组件即可，但它只能住在你的页面里，进不了报告树。
+缺 `web` 或 `text` 在 TypeScript 中直接报错；无类型 JavaScript 输入仍在 `defineComponent` 调用时校验。双面组件的 web 面要跟随任何主题：颜色只能来自 `ctx.seriesColor`、官方语义 class 与 `var(--nre-*)` 令牌，不写死 hex（纪律全表见[自己写报告组件](../use-case/write-custom-component.md)）。带 `resolve` 的组件在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化，且 `resolve` 之后两面消费同一份渲染 props——两面同源由结构保证，不靠作者自觉。只服务自己网页的组件直接写普通 React 组件即可，但它只能住在你的页面里，进不了报告树。
 
 ## 相关阅读
 
+- [自己写报告组件](../use-case/write-custom-component.md) —— 从一个真实需求走完两种形态、取色纪律与验收清单。
+- [主题](theme.md) —— 自定义组件要读的令牌与语义 class。
 - [外壳与多页](shell.md) —— 树之上的导航外壳与页。
 - [组件树](../components/README.md) —— 官方组件的结构子节点、spec / data 双形态与共用呈现 props。
 - [Architecture](../architecture.md) —— 报告树的 resolve / validate / render 管线。

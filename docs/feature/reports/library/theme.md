@@ -1,49 +1,81 @@
-# 主题与 CSS 定制
+# 主题：可分发的外观制品
 
-Reports 把视觉定制分成两层：`theme` 是类型化的高频入口，用语义令牌更换站点强调色、状态色和图表分类色；外壳 `styles` 与页内 `Style` 是完整 CSS 出口，用来改中性表面、字体、密度或组件外观。两层共用同一组公开 CSS 令牌。
+主题回答「这份结果长什么样」，报告回答「这份结果给谁看什么」。两者是分开的制品：一份主题可以套在任何报告上，一份报告也可以换任何主题。团队的品牌只写一次，之后每个 benchmark 站、每份成绩单、每次本地 `view` 都取同一份。
 
-`theme` 是 report 外壳属性：它同时作用于 `view` 宿主 chrome 和页内 `.nre` 组件，本地查看与 `view --out` 静态导出使用同一份主题。`show` 忽略这个 web 面属性；主题不改变 text 面内容、判定文字或指标口径。
+主题内部再分两层，共用同一组公开 CSS 令牌：
 
-## Library DX
+- **令牌**是类型化的高频入口——外观分支、强调色、状态色、六色图表色板、中性表面、字体与圆角。
+- **`styles`** 是主题自带的完整 CSS 出口，用来改令牌表达不了的东西：组件外观、密度、装饰、字体加载。
 
-只改品牌强调色时，从内建报告继承 pages，声明一个 `accent` 即可：
+主题只作用于 web 面：`view` 宿主 chrome 与页内 `.nre` 组件读同一份令牌，本地查看与 `view --out` 静态导出使用同一份主题。`show` 是 text 面，不消费主题；主题不改变判定文字、指标口径或任何数值。
 
-```tsx
-// reports/brand.tsx
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
+## 装载链
 
-export default defineReport({
-  extends: standard,
-  title: "Acme Evals",
-  theme: { accent: "#7C3AED" },
+`view` 每次运行只生效一份主题，四档，前档缺席才落下一档：
+
+| 档 | 取值 | 用途 |
+|---|---|---|
+| 1 | `--theme <名字\|文件>` | 单次运行指定；裸词是内建主题名（`--theme basalt`），带路径形是主题文件 |
+| 2 | 报告定义的 [`theme` 外壳字段](shell.md#字段穷尽) | 这份报告自带的外观，随报告文件一起分发 |
+| 3 | `niceeval.config.ts` 的 `theme` 字段 | 项目默认外观，团队里每个人裸跑 `view` 都看这一份 |
+| 4 | 内建 [`basalt`](../themes/basalt.md) | NiceEval 官方主题 |
+
+四档取的都是 `defineTheme` 产物，走同一条 `装载 → 规范化 → 生成令牌块与资产` 管线。
+
+**档只决定用哪一份主题，不跨档合并。** 生效的那一份里没声明的令牌一律取内建默认值，不从下一档借。这条和外壳 `extends` 的整字段覆盖是同一条纪律：读一份主题文件就能知道站点最终长什么样，不必再去翻另外三档。要在别人的主题上改，见下面的[复用与分发](#复用与分发)。
+
+`--theme` 是 `view` 的 flag。`niceeval show --theme …` 按完整用户反馈报错，说明主题只作用于 web 面，并指出下一步是改用 `view`。
+
+## 项目默认主题
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+import { acmeTheme } from "./themes/acme";
+import site from "./reports/site";
+
+export default defineConfig({
+  report: site,
+  theme: acmeTheme,
 });
 ```
 
+字段收 `defineTheme` 产物本身，不是路径字符串：配置文件是 TS，import 自己的主题即可，写错在类型检查时就暴露。填了非 `defineTheme` 产物（普通对象、CSS 字符串、报告定义）按完整用户反馈报错，出处点名配置文件的 `theme` 字段。
+
+`theme` 和 `report` 一样只影响读面：`niceeval exp` 不装载主题，主题不进快照，换主题不必重跑。
+
+## Library DX
+
+只改品牌强调色时，一个 `accent` 就是一份完整主题：
+
+```tsx
+// themes/acme.ts
+import { defineTheme } from "niceeval/report";
+
+export default defineTheme({ accent: "#7C3AED" });
+```
+
 ```sh
-niceeval view --report reports/brand.tsx
-niceeval view --report reports/brand.tsx --out site
+niceeval view --theme ./themes/acme.ts
+niceeval view --theme ./themes/acme.ts --out site
 ```
 
 单个颜色在浅色与深色外观下原样使用。品牌色只适合某个背景时，显式给出两套；NiceEval 不从一个颜色猜另一个外观的变体：
 
 ```tsx
-export default defineReport({
-  extends: standard,
-  theme: {
-    appearance: "system",
-    accent: { light: "#6D28D9", dark: "#C4B5FD" },
-  },
+export default defineTheme({
+  appearance: "system",
+  accent: { light: "#6D28D9", dark: "#C4B5FD" },
 });
 ```
 
-需要在多份报告复用完整主题时，用 `defineTheme` 独立校验并导出：
+一份认真的主题会同时动色板、中性面、字体与形状，再用 `styles` 收尾：
 
 ```tsx
-// reports/acme-theme.ts
+// themes/acme.ts
 import { defineTheme } from "niceeval/report";
 
-export const acmeTheme = defineTheme({
+export default defineTheme({
   appearance: "system",
   accent: { light: "#6D28D9", dark: "#C4B5FD" },
   positive: { light: "#047857", dark: "#6EE7B7" },
@@ -57,30 +89,43 @@ export const acmeTheme = defineTheme({
     { light: "#DB2777", dark: "#F472B6" },
     { light: "#0891B2", dark: "#22D3EE" },
   ],
+  page: { light: "#FFFBF5", dark: "#120F0C" },
+  surface: { light: "#FFFFFF", dark: "#1C1713" },
+  font: { sans: '"IBM Plex Sans", ui-sans-serif, sans-serif' },
+  radius: "2px",
+  styles: [
+    { src: "./acme.css" },
+    { inline: `.nre .nre-hero-title { letter-spacing: -0.035em; text-transform: uppercase; }` },
+  ],
 });
 ```
 
-```tsx
-// reports/site.tsx
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
-import { acmeTheme } from "./acme-theme.ts";
+主题文件里的 `{ src }` 相对**主题文件自己**解析，不是报告文件。这是主题能独立分发的前提：把主题连同它的 CSS 一起搬到别的项目，路径照旧成立。
 
-export default defineReport({
-  extends: standard,
-  title: "Acme Evals",
-  theme: acmeTheme,
-});
-```
+## 复用与分发
 
-`defineTheme` 只做类型与运行时校验，不注册全局状态、不写文件。内联的 `theme: { … }` 走同样校验。报告使用 `extends` 时，`theme` 与其它外壳字段一样按整字段覆盖：未声明就继承 base 的主题，声明则整体取代。想在现有主题上改一项，显式展开普通对象：
+主题是普通值，因此分发不需要新机制：
+
+- **同项目复用**：`export default defineTheme(…)`，别的报告文件或配置 import 进来填进 `theme` 字段。
+- **跨项目分发**：发一个 npm 包，默认导出 `defineTheme` 产物，消费方 `import acme from "@acme/niceeval-theme"` 后填字段。包里的 CSS 与字体随包走，因为 `styles` 的路径相对主题文件。
+- **临时试装**：`--theme ./themes/acme.ts` 不改任何文件就换一次外观，用来对着同一份报告比几套配色。
+
+在别人的主题上改一项时，展开普通对象——令牌整字段覆盖，`styles` 是数组，拼接是普通数组操作：
 
 ```tsx
-theme: defineTheme({
-  ...acmeTheme,
+import { defineTheme } from "niceeval/report";
+import base from "@acme/niceeval-theme";
+
+export default defineTheme({
+  ...base,
   accent: { light: "#0F766E", dark: "#5EEAD4" },
-}),
+  styles: [...(base.styles ?? []), { inline: ".nre .nre-hero { padding-block: 48px; }" }],
+});
 ```
+
+主题没有 `extends`：它是一个扁平的令牌对象，对象展开已经把「继承一份再改两项」表达清楚，再加一层合并语义只会让「这个色到底从哪来」多一个要查的地方。
+
+`defineTheme` 只做类型与运行时校验，不注册全局状态、不写文件。三个去处收的都是它的产物，不收裸对象——外壳的 `theme`、配置的 `theme` 与 `--theme` 装载的默认导出同一条规则，与[报告定义](shell.md)那边一致：读一行 `theme: acme` 就知道那是一份校验过的主题，而不是一坨可能拼错字段名的字面量。
 
 ## 公开形状
 
@@ -105,9 +150,15 @@ type ThemeSeries = readonly [
   ThemeColor,
 ];
 
+/** 一段 CSS 值，原样落进令牌块；src 相对主题文件解析。与外壳 styles 同类型。 */
+type ReportAsset =
+  | { src: string; inline?: never }
+  | { inline: string; src?: never };
+
 interface ReportTheme {
-  /** system 跟随浏览器/OS；light 与 dark 强制全站外观。默认 system。 */
+  /** system 跟随浏览器/OS 并给读者一个浅/深切换；light 与 dark 锁定全站外观。默认 system。 */
   appearance?: "system" | "light" | "dark";
+
   /** 站点身份与交互强调，不表示判定好坏。 */
   accent?: ThemeColor;
   /** passed、improved 与 tone="positive" 的语义色。 */
@@ -118,40 +169,59 @@ interface ReportTheme {
   warning?: ThemeColor;
   /** 六个分类色；稳定散列只选择下标，不用分类色表示好坏。 */
   series?: ThemeSeries;
-  /** 把指定维度值钉在指定色板下标上；其余值照常自动分配。 */
-  seriesPins?: SeriesPins;
+
+  /** 页面底色。 */
+  page?: ThemeColor;
+  /** 卡片、表格与面板的表面色。 */
+  surface?: ThemeColor;
+  /** 表头、斑马行与次级区块的表面色。 */
+  surfaceSubtle?: ThemeColor;
+  /** 常规分隔线与描边。 */
+  border?: ThemeColor;
+  /** 需要强调的分隔线，如表格主分区。 */
+  borderStrong?: ThemeColor;
+  /** 正文色。 */
+  text?: ThemeColor;
+  /** 次要文字：标签、单位、说明。 */
+  textMuted?: ThemeColor;
+  /** 最弱文字：占位、缺失标记、轴刻度。 */
+  textSoft?: ThemeColor;
+  /** 键盘 focus 环。默认取 accent 的值。 */
+  focus?: ThemeColor;
+
+  /** 字体栈；值是 CSS font-family 片段。 */
+  font?: { sans?: string; mono?: string };
+  /** 报告根字号，如 "14px" / "0.9375rem"。 */
+  fontSize?: string;
+  /** 卡片、按钮与表格的圆角，如 "2px" / "0"。 */
+  radius?: string;
+
+  /** 主题自带的样式表，在令牌块之后、报告外壳 styles 之前按声明顺序加载。 */
+  styles?: readonly ReportAsset[];
 }
 
-/** 外层键是维度 name，内层键是维度值显示键，值是 [0, 6) 的色板下标。 */
-type SeriesPins = Readonly<Record<string, Readonly<Record<string, number>>>>;
+/**
+ * defineTheme 的唯一产物：作主题文件的默认导出、报告外壳的 theme 字段，
+ * 或 defineConfig 的 theme 字段。它不是 ReportNode,也不是 ReportDefinition。
+ */
+interface ThemeDefinition {
+  readonly kind: "theme";
+}
 
-function defineTheme(theme: ReportTheme): Readonly<ReportTheme>;
+function defineTheme(theme: ReportTheme): ThemeDefinition;
+
+/** 把一份主题规范化成可直接注入 <style> 的令牌块，给自建 React 页面用。 */
+function themeStylesheet(theme: ThemeDefinition): string;
 ```
 
-主题字段是穷尽集合。颜色只接受 `#RRGGBB`，不接受短 hex、alpha、CSS 颜色名、`var()`、`light-dark()` 或任意 CSS 片段；任意 CSS 值属于下文的 CSS 出口。`series` 固定为六色，因为官方图表用稳定 key 散列到六个分类槽；换 palette 不改变散列、图例顺序或 series 身份。
+主题字段是穷尽集合，未列出的字段即不存在。校验分两类：
 
-字段未知、pair 缺任一分支、数组长度不是六或颜色格式非法时，`defineTheme` / `defineReport` 按完整用户反馈拒绝，并指到具体字段路径，例如 `theme.series[3].dark`。
+- **颜色**只接受 `#RRGGBB`，不接受短 hex、alpha、CSS 颜色名、`var()`、`light-dark()` 或任意 CSS 片段。宿主要把单值展开成两个外观分支、要保证令牌块可解析，所以这一类必须是它能读懂的值。
+- **`font` / `fontSize` / `radius`** 的值本身就是 CSS，收非空字符串，宿主不解析语义——写错了浏览器怎么表现是作者义务。它们原样落进令牌块，因此值里出现 `;` 或 `}` 时按完整用户反馈拒绝，并指引改用 `styles`：那是写完整 CSS 规则的地方。
 
-## 钉色
+`series` 固定为六色，因为官方图表用稳定 key 散列到六个分类槽；换 palette 不改变散列、图例顺序或 series 身份。
 
-[页级色分配](../components/README.md#系列色分配单位是页)不需要配置就能保证一页内同键同色，但它不知道作者的语义：发布图上「baseline 恒中性、我们的方案恒蓝」是作者的判断，不是散列能推出来的。`seriesPins` 就是写下这个判断的地方：
-
-```ts
-theme: defineTheme({
-  seriesPins: {
-    memory: { baseline: 3, mempal: 1, nowledge: 5 },
-  },
-}),
-```
-
-- **钉的是色板下标，不是 hex。** 颜色仍然来自 `series` 六色，因此深浅主题、对比度与换 palette 全都照常跟随。要改颜色本身就改 `series`。
-- **外层键是维度的 `name`**——内置维度就是 `"agent"` / `"experiment"`，`label("memory")` 的 name 是 `"memory"`，复合维度的 name 是成员 name 以 ` × ` 连接。这与 `ChartData` / `TableData` 里 `*Dimension` 字段的值是同一个字符串。
-- **内层键是维度值显示键**，与分组显示键同一套规则（非字符串值走稳定 JSON，缺失值是 `(missing)`）。
-- **钉住的键原样占位，自动分配只在剩下的槽里探测。** 多个值钉同一个下标是合法的——作者显式要求它们同色（例如两条基线都走中性色）；这不触发探测。
-- **钉了但这一页没出现的键什么都不做**，不为它保留槽位。
-- 维度 name 或值键不是非空字符串、下标不是 `[0, 6)` 内的整数时，`defineTheme` / `defineReport` 按完整用户反馈拒绝并指到 `theme.seriesPins.<维度>.<值>`。
-
-主题是跨页的，所以钉色也是跨页的：同一个维度值在总览页与分科页恒同色。这正是它住在主题层而不是某个组件上的原因——写在一棵树里的声明管不到另一张页。
+字段未知、pair 缺任一分支、数组长度不是六、颜色格式非法或资产路径违规时，`defineTheme` / `defineReport` 按完整用户反馈拒绝，并指到具体字段路径，例如 `theme.series[3].dark`。
 
 ## 每种颜色表达什么
 
@@ -162,43 +232,82 @@ theme: defineTheme({
 | `negative` | failed、regressed、负向 `Stat` 主值 | errored 或普通提示 |
 | `warning` | errored、partial coverage、截断、缺失与不可用状态 | failed |
 | `series` | experiment / agent / label 等名义分类身份 | 质量大小或判定好坏 |
-| `seriesPins` | 「这个维度值恒用这个分类槽」的作者判断 | 一个新的颜色——它只选下标，颜色仍来自 `series` |
+| 中性面令牌 | 页面、卡片、分隔与三级文字层次 | 任何状态含义 |
 
-未声明时使用以下官方值：
+组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#系列色分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`seriesPins`](shell.md#钉色) 声明），`DeltaTable` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+
+未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--nre-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子：
 
 | 令牌 | light | dark |
 |---|---|---|
-| `accent` | `#1D63D8` | `#6EA8FE` |
-| `positive` | `#087F5B` | `#3DDC97` |
-| `negative` | `#B42318` | `#FF6B6B` |
-| `warning` | `#9A6700` | `#E8B84A` |
-| `series` | `#2A78D6`, `#1BAF7A`, `#EDA100`, `#008300`, `#E34948`, `#EB6834` | `#3987E5`, `#199E70`, `#C98500`, `#008300`, `#E66767`, `#D95926` |
+| `accent` | `#26323A` | `#CBD6DC` |
+| `positive` | `#2F6B4F` | `#7FBFA0` |
+| `negative` | `#A33A30` | `#E58F86` |
+| `warning` | `#7A6428` | `#D6BC78` |
+| `series` | `#3F6B87`, `#587046`, `#8A6B2E`, `#5A4E7C`, `#9E4E44`, `#2E6F6A` | `#A8C8DC`, `#7E9B6E`, `#E0C894`, `#9A8DBA`, `#C4837B`, `#6FAAA4` |
+| `page` | `#FAFAFA` | `#0A0B0C` |
+| `surface` | `#FFFFFF` | `#101214` |
+| `surfaceSubtle` | `#F2F3F4` | `#16191B` |
+| `border` | `#E1E3E5` | `#22262A` |
+| `borderStrong` | `#C4C8CC` | `#333A40` |
+| `text` | `#16191B` | `#E6E9EB` |
+| `textMuted` | `#5C6469` | `#9AA2A8` |
+| `textSoft` | `#8A9298` | `#6A7278` |
+| `focus` | 同 `accent` | 同 `accent` |
 
-组件根据领域语义选 token，不读取 hex 值后反推意义。例如图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#系列色分配单位是页)），`DeltaTable` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+非颜色令牌：
 
-NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从报告的 `accent` 取色。报告主题不是隐藏或伪装宿主品牌的机制。
+| 令牌 | 值 |
+|---|---|
+| `font.sans` | `ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif` |
+| `font.mono` | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` |
+| `fontSize` | `13px` |
+| `radius` | `0` |
+
+Basalt 自己的视觉主张、分类色的明度阶梯与验收要求写在[它的设计页](../themes/basalt.md)。
+
+NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主题的 `accent` 取色。主题不是隐藏或伪装宿主品牌的机制。
+
+## 外观与浅深切换
+
+`appearance` 一个字段同时表达「默认哪一支」和「读者能不能换」：
+
+- **`system`（默认）**：初始跟随浏览器 / OS，`view` 页头渲染一个浅 / 深切换控件。读者的选择按站点作用域记在浏览器本地，下次打开同一个站保持。
+- **`light` / `dark`**：全站锁定该分支，不渲染切换控件。主题的 CSS 只为一种背景写过时用这一档。
+
+无 JavaScript 时初始 HTML 就是声明的外观——`color-scheme` 与 `light-dark()` 在样式层完成选色，导出站在直接打开、静态托管与本地 server 中规则相同。切换控件属于增强层，与自定义脚本受同一条不变量约束：只改变浏览的样子，不改变数据、指标口径或初始 HTML 里的任何数值。
 
 ## 在 view 中怎样生效
 
-装载期先把 `ReportTheme` 规范化为完整令牌表：未声明的 token 取 NiceEval 默认值，单色展开成相同的 light / dark 值，pair 保留两个分支。站点管线再把一个纯 CSS 令牌块挂到 view 文档根；页内 `.nre` 报告边界继承这些 token。report 官方样式只在每个 `var(--nre-*, <default>)` 使用点保留同源默认值，使它脱离 view 嵌入用户页面时仍零配置可读，而不在 `.nre` 上重新声明一套会遮住宿主主题的变量。宿主 chrome 与报告组件因此读同一份值，不在 `src/view` 与 `niceeval/report` 各复制一份色板。
+装载期先把 `ReportTheme` 规范化为完整令牌表：未声明的令牌取官方值，单色展开成相同的 light / dark 值，pair 保留两个分支。站点管线再把一个纯 CSS 令牌块挂到 view 文档根；页内 `.nre` 报告边界继承这些令牌。report 官方样式只在每个 `var(--nre-*, <default>)` 使用点保留同源默认值，使它脱离 view 嵌入用户页面时仍零配置可读，而不在 `.nre` 上重新声明一套会遮住宿主主题的变量。宿主 chrome 与报告组件因此读同一份值，不在 `src/view` 与 `niceeval/report` 各复制一份色板。
 
-`appearance: "system"` 输出支持 light / dark 的 `color-scheme`，由浏览器环境选分支；`light` / `dark` 把全站锁到对应分支。基线 HTML 不依赖 JavaScript 选色，导出站在直接打开、静态托管与本地 server 中保持相同规则。
+主题的 `styles` 与外壳 `styles` 走同一套资产纪律：`{src}` 只收本地路径（允许 `./` 前缀，不允许 `..` 路径段、绝对路径或 `~`），本地 `view` 与静态导出都按内容哈希物化为 `assets/<sha256><ext>` 并改写引用，同内容去重。区别只在解析基准——主题的资产相对主题文件，外壳的资产相对报告文件。文件缺失时在启动或导出时报错并给出解析后的路径。
 
-主题不进 `ctx.report`。组件输出稳定的语义 class，再由 CSS token 取色；组件不能在 resolve 阶段读主题后改变组件树或数据。因此换主题只改 CSS，不会导致指标重算、HTML 内容分叉或证据链改变。
+主题不进 `ctx.report`。组件输出稳定的语义 class，再由 CSS 令牌取色；组件不能在 resolve 阶段读主题后改变组件树或数据。因此换主题只改 CSS，不会导致指标重算、HTML 内容分叉或证据链改变——这也是主题可以独立分发的根据：一份主题装到任何报告上都不可能改动那份报告的数字。
 
 样式级联顺序固定为：
 
-1. view 与 report 官方样式及默认 token；
-2. 由 `theme` 生成的 token；
-3. 外壳 `styles`，按声明顺序；
-4. 外壳 `head` 中的 `style`，按声明顺序；
-5. 页树里的 `Style`，按树的 resolve / render 顺序。
+1. view 与 report 官方样式及默认令牌；
+2. 生效主题的令牌块；
+3. 生效主题的 `styles`，按声明顺序；
+4. 报告外壳 `styles`，按声明顺序；
+5. 外壳 `head` 中的 `style`，按声明顺序；
+6. 页树里的 `Style`，按树的 resolve / render 顺序。
 
-后一层可以覆盖前一层。这让主题承担常用配置，CSS 仍是最终视觉出口。
+后一层可以覆盖前一层。主题在下、报告在上：装一份外来主题不会锁死这份报告自己的微调，报告作者的 `styles` 与 `Style` 永远有最终发言权。
 
 ## CSS 覆盖与完整重写
 
-公开 CSS token 全部使用 `--nre-` 前缀，由 view 根节点向 `.nre` 继承；把 report React 组件嵌进自己的页面时，也可在包住 `.nre` 的应用容器上直接声明同一组 token。主题控制的高频 token 是：
+公开 CSS 令牌全部使用 `--nre-` 前缀，由 view 根节点向 `.nre` 继承。把 report React 组件嵌进自己的页面时，在包住 `.nre` 的容器上声明同一组令牌即可；已经有 `defineTheme` 产物时直接注入它的令牌块：
+
+```tsx
+import { themeStylesheet } from "niceeval/report";
+import acme from "@acme/niceeval-theme";
+
+<style dangerouslySetInnerHTML={{ __html: themeStylesheet(acme) }} />;
+```
+
+完整令牌表：
 
 ```css
 --nre-accent
@@ -211,11 +320,6 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从报
 --nre-series-4
 --nre-series-5
 --nre-series-6
-```
-
-中性基础 token 不进入 `ReportTheme`，但属于受支持的 CSS 覆盖面：
-
-```css
 --nre-page
 --nre-surface
 --nre-surface-subtle
@@ -226,48 +330,42 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从报
 --nre-text-soft
 --nre-focus
 --nre-font-sans
+--nre-font-mono
+--nre-font-size
 --nre-radius
 ```
 
-需要非 hex 色值、自定义中性表面、字体或形状时，用外壳 `styles`：
+令牌表不到的地方用 CSS。主题自己的 `styles` 是主题作者的出口，报告外壳 `styles` 是报告作者的出口，单页特例放在页树的 `Style`：
 
 ```tsx
 export default defineReport({
   extends: standard,
-  theme: {
-    accent: { light: "#6D28D9", dark: "#C4B5FD" },
-  },
   styles: [{
     inline: `
-      :root {
-        --nre-page: light-dark(#fffbf5, #120f0c);
-        --nre-surface: light-dark(#ffffff, #1c1713);
-        --nre-font-sans: "IBM Plex Sans", ui-sans-serif, sans-serif;
-        --nre-radius: 2px;
-      }
-      .nre .nre-hero-title {
-        letter-spacing: -0.035em;
-        text-transform: uppercase;
-      }
+      .nre .nre-hero-title { letter-spacing: -0.035em; }
+      .nre .nre-scoreboard td { font-variant-numeric: tabular-nums; }
     `,
   }],
 });
 ```
 
-`styles: [{ src: "./theme.css" }]` 适合大型覆盖，本地 view 与静态导出按既有资产规则物化。单页特例放在页树的 `Style`。官方组件继续提供稳定 `nre-*` 语义 class；自定义组件用自己的 `className` 建立边界。
+官方组件提供稳定的 `nre-*` 语义 class，这是主题与自定义组件共同的着力点；自定义组件用自己的 `className` 前缀建立边界，写法见[自己写报告组件](../use-case/write-custom-component.md)。
 
 CSS 可以重写排版块的视觉结构，但不得改变数据、初始 HTML 中的数值和无 JavaScript 可读性；也不得隐藏 NiceEval 固定品牌位，或用颜色作为 passed / failed、不同 series 的唯一信息载体。
 
 ## 质量与归属
 
-NiceEval 默认主题保证官方组件的对比度与分类色可分辨性。自定义颜色的可读性由报告作者负责；宿主只校验形状和颜色语法，不自动改色或重排 series。主题验收至少覆盖浅色与深色背景、四种 verdict、六条同图 series、键盘 focus 态与色觉缺陷模拟。
+NiceEval 官方主题 [Basalt](../themes/basalt.md) 保证官方组件的对比度与分类色可分辨性。自定义主题的可读性由主题作者负责；宿主只校验形状和颜色语法，不自动改色或重排 series。主题验收至少覆盖浅色与深色背景、四种 verdict、六条同图 series、键盘 focus 态与色觉缺陷模拟。
 
-- `theme`、`styles` 与 `Style` 都只影响 web 面。
-- `theme` 是整站字段，不能按 page 切换；单页特例用该页树中的 `Style`。
-- 主题不进入结果根、snapshot 或 `niceeval.config.ts`。它是“怎么看”的报告配置，改色不需要重跑 eval。
+- 主题只影响 web 面；`show` 不消费它。
+- 主题是整站的，不能按 page 切换；单页特例用该页树中的 `Style`。
+- 主题不进入结果根、snapshot。它是“怎么看”的配置，改色不需要重跑 eval。
 
 ## 相关阅读
 
-- [外壳与多页](shell.md) —— `theme` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
+- [自己写报告组件](../use-case/write-custom-component.md) —— 自定义组件怎么取色、怎么跟随任何主题。
+- [给报告换主题、做自己的主题包](../use-case/theme-and-distribute.md) —— 从换一次色到发一个主题包的全流程。
+- [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
+- [外壳与多页](shell.md) —— `theme` / `seriesPins` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
 - [排版原语与自定义组件](layout.md) —— 页内 `Style`、`className` 与双面组件。
-- [View](../view.md) —— 本地查看与静态导出怎样消费同一份报告。
+- [View](../view.md) —— 本地查看与静态导出怎样消费同一份主题。

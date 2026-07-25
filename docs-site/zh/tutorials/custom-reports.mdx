@@ -518,21 +518,42 @@ const MyLegend = defineComponent<{ ids: string[] }>({
 
 ### 钉住某个值的颜色
 
-自动分配保证同一页里同一个值恒同色,但它不知道你的语义:发布图上「baseline 恒中性、我们的方案恒蓝」是你的判断。写在报告外壳的主题里:
+自动分配保证同一页里同一个值恒同色,但它不知道你的语义:发布图上「baseline 恒中性、我们的方案恒蓝」是你的判断。写在报告外壳的 `seriesPins` 里:
 
 ```tsx
 export default defineReport({
   title: "MemoryBench",
-  theme: {
-    seriesPins: {
-      memory: { baseline: 3, mempal: 1, nowledge: 5 },   // 维度名 → 值 → 色板下标
-    },
+  seriesPins: {
+    memory: { baseline: 3, mempal: 1, nowledge: 5 },   // 维度名 → 值 → 色板下标
   },
   content: <Leaderboard />,
 });
 ```
 
-钉的是六色色板的**下标**,不是 hex——所以深浅主题、对比度和换色板全都照常跟随;要改颜色本身,改的是主题的 `series` 六色。被钉住的值原样占位,其余值在剩下的槽里自动分配。钉色写在主题里而不是某个组件上,是因为它要跨页一致:同一个记忆机制在总览页和分科页必须同色。
+钉的是六色色板的**下标**,不是颜色——所以深浅外观、对比度和[换主题](/zh/tutorials/theming)全都照常跟随;要改颜色本身,改的是主题的 `series` 六色。被钉住的值原样占位,其余值在剩下的槽里自动分配。
+
+钉色写在报告里而不是主题里,是因为它说的是数据含义:换一套配色不该让基线和候选方案对调身份。它也是整站字段,所以同一个记忆机制在总览页和分科页必须同色。
+
+### 让自己的组件跟随任何主题
+
+自己写的组件要能装上任何一份主题——包括别人分发给你的那一份。颜色只有三个来源,没有第四条路:
+
+| 要表达 | 用什么 |
+|---|---|
+| 好 / 坏 / 警告 | `Stat` 的 `tone`,或 `var(--nre-positive)` / `var(--nre-negative)` / `var(--nre-warning)` |
+| 某个维度值的分类身份 | `ctx.seriesColor(维度, 维度值)` |
+| 其余一切(文字、表面、分隔、圆角、字体) | `var(--nre-*)` 令牌 |
+
+```css
+.nre .acme-panel {
+  background: var(--nre-surface);
+  border: 1px solid var(--nre-border);
+  border-radius: var(--nre-radius);   /* 零圆角主题下自动变直角 */
+  color: var(--nre-text);
+}
+```
+
+三条纪律:写死的颜色值在深色分支会失灵、换主题不跟随;自己的 class 用自己的前缀,不占 `nre-`(那是主题瞄准的公开语义面);宽度、位置这类由数据算出来的几何量可以写成行内样式,颜色不行。令牌全集与更多写法见[给报告换主题](/zh/tutorials/theming)。
 
 ## 发布:导出即静态站
 

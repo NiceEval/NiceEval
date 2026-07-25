@@ -23,7 +23,9 @@
 
 - [先证明数据范围值得相信](audit-scope-quality.md) —— `ScopeWarnings` / `SnapshotDiagnostics` / `ScopeSummary` / `ExperimentList`。
 - [用 artifact 定义业务指标](build-custom-metric.md) —— `defineMetric` / 自定义维度。
-- [从单页报告升级为多页站点](build-multipage-report.md) —— `defineReport` / pages / attempt-input page / theme。
+- [从单页报告升级为多页站点](build-multipage-report.md) —— `defineReport` / pages / attempt-input page。
+- [自己写报告组件：规范与取主题色](write-custom-component.md) —— `defineComponent` 两形态 / 取色纪律 / `ctx.seriesColor`。
+- [给报告换主题，或做一份自己的主题包](theme-and-distribute.md) —— `--theme` / `defineTheme` / 令牌 / 分发。
 - [把报告嵌入自己的产品页](embed-in-product.md) —— `*Data` + `niceeval/report/react`。
 
 ## `niceeval view`(浏览器与静态站)
@@ -50,7 +52,9 @@
 | snapshot 维度 / `ctx.results.experiments` | [Experiment 历史](track-experiment-history.md) |
 | `ScopeWarnings` / `SnapshotDiagnostics` / `ScopeSummary` / `ExperimentList` | [范围完整性](audit-scope-quality.md) |
 | `defineMetric` / `CustomDimension` | [业务指标](build-custom-metric.md) |
-| `defineReport({ pages })` / shell / theme | [多页报告](build-multipage-report.md) |
+| `defineReport({ pages })` / shell / `seriesPins` | [多页报告](build-multipage-report.md) |
+| `defineComponent` / `ctx.seriesColor` / `--nre-*` 令牌 | [自己写组件](write-custom-component.md) |
+| `defineTheme` / `--theme` / `themeStylesheet` | [换主题与主题包](theme-and-distribute.md) |
 | `*Data` / `niceeval/report/react` | [嵌入产品页](embed-in-product.md) |
 | `Grid` / `Stat` / `Row` / `Col` / `Section` / `Tabs` | 所有 Library 用例的布局层;内容过多时看[多页报告](build-multipage-report.md) |
 
@@ -72,3 +76,4 @@
 | `--no-open` / `--port` | view | [裸 `view` 与收窄](view-local-narrowing.md) |
 | `--out` | view | [静态导出](view-out-publish.md) |
 | `--report` / `--page` | show / view | [自定义报告](report-shared-show-view.md) |
+| `--theme` | view | [换主题与主题包](theme-and-distribute.md) |

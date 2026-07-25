@@ -167,6 +167,25 @@ export default defineReport({
 
 ② 是最小品牌化形态：`title` 进浏览器标题与 `ctx.report.title`，内建页自带的 `<Hero />` 跟随同一标题并带品牌行。③ 从引用切换到照抄，pages 归自己所有；因为列表里没有 attempt-input page，locator 不会接到隐藏详情。需要详情时把 `standardAttemptPage` 放进 pages，或声明一张相同输入、content 由[公开详情区块](../components/attempt-detail.md)重组的 page。`content` / `pages` / `extends` 必须恰好声明一个（见[外壳与多页](shell.md)）。
 
+## 内建主题
+
+内建视图不声明 `theme`：它靠[主题装载链](theme.md#装载链)最后一档拿到官方主题 [Basalt](../themes/basalt.md)，因此裸 `view` 与任何 `--theme` 都对同一份内建报告成立。要在自己的报告里显式引用官方外观，或在它上面改两项，从同一个入口取：
+
+```ts
+import { basalt } from "niceeval/report/built-in";
+
+basalt; // ThemeDefinition：官方令牌全集，--theme basalt 取的就是这个值
+```
+
+```tsx
+import { defineTheme } from "niceeval/report";
+import { basalt } from "niceeval/report/built-in";
+
+export default defineTheme({ ...basalt, accent: "#7C3AED" });
+```
+
+**具名导出名同样是 CLI 上的主题名。** `--theme basalt` 查的是[内建主题名表](../themes/README.md)，当前只有 `basalt`；新增一份内建主题的形态与新增内建视图相同——一份新的 `defineTheme` 成品、一个新名字、一个新文件、一条新的具名导出。视图与主题共用这个入口但互不耦合：`standard` 不绑定 `basalt`，换主题不改页，换报告不改色。
+
 ## 内建报告显示什么
 
 首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries.md#experimentcomparison)；`Hero` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](../components/site.md)；Attempts 页的本体是[带过滤的 `AttemptList`](../components/entity-lists.md#attemptlist)。
@@ -174,6 +193,8 @@ export default defineReport({
 ## 相关阅读
 
 - [外壳与多页](shell.md) —— 配置对象的字段穷尽、`extends` 合并语义与行为约束。
+- [主题](theme.md) —— 主题制品、装载链与令牌全集。
+- [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
 - [站点组件](../components/site.md) —— hero、品牌、警告、快照诊断与瀑布的组件契约。
 - [Attempt 详情组件](../components/attempt-detail.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
 - [概览组件](../components/summaries.md) —— `ExperimentComparison` 的契约。

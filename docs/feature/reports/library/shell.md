@@ -1,6 +1,6 @@
 # 外壳与多页
 
-`defineReport` 接受两种入参：传一棵报告树，填进宿主默认外壳的报告槽；传配置对象则在内容之外声明导航外壳——标题、GitHub 等外部链接、页脚、[主题](theme.md)、head 标签注入、自定义脚本与样式——并可把内容拆成多页、加入以 locator 为输入的参数化 page，或用 `extends` 把另一份报告整站接过来。给报告加品牌、发布 benchmark 站、把成绩单与趋势分成独立页面、定制 attempt 详情，始终只操作 pages：
+`defineReport` 接受两种入参：传一棵报告树，填进宿主默认外壳的报告槽；传配置对象则在内容之外声明导航外壳——标题、GitHub 等外部链接、页脚、这份报告自带的[主题](theme.md)、钉色、head 标签注入、自定义脚本与样式——并可把内容拆成多页、加入以 locator 为输入的参数化 page，或用 `extends` 把另一份报告整站接过来。给报告加品牌、发布 benchmark 站、把成绩单与趋势分成独立页面、定制 attempt 详情，始终只操作 pages：
 
 ```tsx
 // reports/frontier.tsx —— ① 一棵树：树入参，等价于 { content: 树 }
@@ -108,8 +108,16 @@ interface ReportShell {
   links?: ReportLink[];
   /** 每页页脚的一段文字；省略时不渲染页脚（品牌行归 PoweredBy 组件，不占页脚）。 */
   footer?: LocalizedText;
-  /** view 整站的类型化视觉令牌；精确形状、语义与 CSS 出口见 Theme。 */
-  theme?: ReportTheme;
+  /**
+   * 这份报告自带的外观，收 `defineTheme` 产物。它是[主题装载链](theme.md#装载链)的第 2 档：
+   * `--theme` 缺席时生效，声明了也会被 `--theme` 整份换掉。
+   */
+  theme?: ThemeDefinition;
+  /**
+   * 「哪个维度值恒占哪个色槽」的作者判断，是关于数据含义的声明，跨页一致且不随主题走；
+   * 色板本身归主题的 `series`。见下方钉色。
+   */
+  seriesPins?: SeriesPins;
   /**
    * 注入每页 `<head>` 的结构化标签，在官方与外壳样式之后按声明顺序渲染。
    * 第三方 snippet（分析、埋点、评论）、SEO meta、favicon、字体、JSON-LD 的家：
@@ -118,7 +126,7 @@ interface ReportShell {
   head?: HeadTag[];
   /** 注入每个页面的脚本，在官方增强脚本之后、按声明顺序于 </body> 前加载；宿主管线接管的增强层资产（本地文件 / 内联）。 */
   scripts?: ReportAsset[];
-  /** 注入每个页面的样式表，在官方样式之后按声明顺序加载。 */
+  /** 注入每个页面的样式表，在生效主题的令牌与样式之后按声明顺序加载；报告作者的覆盖压在主题之上。 */
   styles?: ReportAsset[];
 }
 
@@ -204,13 +212,13 @@ type ReportAsset =
 
 - **单页与多页在宿主内都规范化成 page 列表。** 树入参规范化为 `{ content: 树 }`，`content: 树` 再展开为 `pages: [{ id: "report", title: 内置页名「报告 / Report」, input: "scope", navigation: true, content: 树 }]`。缩写不是隐式默认。`show` 渲染初始 scope-input page（`--page` 指定，缺省第一张可导航 page），随后只为其它 `navigation !== false` 的 pages 附索引；参数化 page 不进索引，也不能在没有 locator 时用 `--page` 单独打开。裸 `show` / `view` 装载的[内建报告](built-in.md)走同一条装载管线。
 - **`content` / `pages` / `extends` 恰好声明一个，没有隐式默认。** 多选或都省略，装载时以完整用户反馈报错，报错指出下一步：要渲染内建报告，写 `extends: standard`（`import { standard } from "niceeval/report/built-in"`）。省略不是一种有含义的取值——读报告文件的人必须能看出会渲染什么。
-- **`extends` 的合并语义是「pages 归 base、外壳逐字段覆盖」，且在 `defineReport` 调用时折叠完成。** 页列表取 base 的完整 pages——包括不进导航的参数化 page；本对象声明的外壳字段（`title` / `links` / `footer` / `theme` / `head` / `scripts` / `styles`）整字段替换 base 的同名字段，未声明的沿用 base。`theme` 的内层 token 也不隐式深合并；需要局部改色时显式展开主题对象（[写法](theme.md#library-dx)）。要改任一 page 的 content，按既有规则从公开组件重新声明 pages；没有 page 之外可单独覆盖的内容槽。产物是普通 `ReportDefinition`：base 不被修改，链式 extends 天然成立，宿主装载看到的永远是已折叠的 page 列表与外壳。`extends` 只收 `defineReport` 产物，其它值（普通对象、React 组件、报告树）装载报错。
+- **`extends` 的合并语义是「pages 归 base、外壳逐字段覆盖」，且在 `defineReport` 调用时折叠完成。** 页列表取 base 的完整 pages——包括不进导航的参数化 page；本对象声明的外壳字段（`title` / `links` / `footer` / `theme` / `seriesPins` / `head` / `scripts` / `styles`）整字段替换 base 的同名字段，未声明的沿用 base。`theme` 收的是一份主题制品，替换的单位是整份主题，不做令牌级深合并；要在一份主题上改两项，在主题那边用对象展开（[写法](theme.md#复用与分发)）。要改任一 page 的 content，按既有规则从公开组件重新声明 pages；没有 page 之外可单独覆盖的内容槽。产物是普通 `ReportDefinition`：base 不被修改，链式 extends 天然成立，宿主装载看到的永远是已折叠的 page 列表与外壳。`extends` 只收 `defineReport` 产物，其它值（普通对象、React 组件、报告树）装载报错。
 - **`defineReport` 产物只有两个去处：默认导出交宿主装载，或作 `extends` 的 base。** `ReportDefinition` 是普通值——可赋给变量、可直接断言测试、可从别的模块 re-export；「默认导出」只是宿主装载 convention，不是值本身的限制。它不在 `ReportNode` 类型里：把它放进 `content`、`pages[].content` 或任何报告树，TypeScript 在编译期拒绝，无类型 JavaScript 输入在装载期以完整用户反馈拒绝——报告级复用只有 `extends` 这一个位置。要在多个站点间复用一页内容，具名导出那棵树或那个组件；`extends` 产物是新值、base 不被修改，所以给一个报告加外壳永远不会破坏别处对 base 的引用。
 - **页是宿主寻址单位，tab 是页内浏览状态。** 页有 id、路由、导航项和 `--page` 选择器；[`Tabs`](layout.md#tabs) 没有。需要单独打开、深链或在终端独立渲染的内容做成页，同页内的并列视图用 tab。
 - **page 显式声明输入。** scope-input page 消费同一份收窄后的 Scope；`input: "attempt"` 的参数化 page 每次只消费 locator 对应的一份 `AttemptEvidence`。后者仍是 page，只因没有 locator 时不可打开而要求 `navigation: false`。一份报告至多一张 attempt-input page；没有时 locator 只显示为文本，宿主不追加详情（见 [Attempt 详情组件](../components/attempt-detail.md)）。
-- **规范化声明经 `ctx.report` 只读可见，当前输入经 `ctx.page` 可见。** 组合组件的 ctx 携带 [`report`](layout.md#自定义组件)——走完回退链的 `title`、`links`、`footer` 与完整 pages 元数据；`ctx.page` 是 `{ id, input: "scope" } | { id, input: "attempt", locator, evidence }`。注入资产与视觉配置（`theme` / `head` / `scripts` / `styles`）不进 `ctx.report`，组件靠稳定语义 class 和 CSS token 取色，不按主题改变数据或树。宿主 chrome 消费的每一份声明组件都能读，没有数据秘密，也没有保留内容——hero、警告区、attempt 列表、trace 瀑布与 attempt 详情区块都是 page 内的普通组件。宿主保留的是机器加一个固定品牌位：装载与 resolve 管线、page 路由与导航渲染、locator 解析与 dialog 摆放、文档单例、语言切换，以及页头左端的 NiceEval 字标（[边界清单](../architecture.md#宿主保留的只有机器)）。
+- **规范化声明经 `ctx.report` 只读可见，当前输入经 `ctx.page` 可见。** 组合组件的 ctx 携带 [`report`](layout.md#自定义组件)——走完回退链的 `title`、`links`、`footer` 与完整 pages 元数据；`ctx.page` 是 `{ id, input: "scope" } | { id, input: "attempt", locator, evidence }`。注入资产与视觉配置（`theme` / `seriesPins` / `head` / `scripts` / `styles`）不进 `ctx.report`，组件靠稳定语义 class 和 CSS 令牌取色、靠 `ctx.seriesColor` 读页级色分配，不按主题改变数据或树。宿主 chrome 消费的每一份声明组件都能读，没有数据秘密，也没有保留内容——hero、警告区、attempt 列表、trace 瀑布与 attempt 详情区块都是 page 内的普通组件。宿主保留的是机器加一个固定品牌位：装载与 resolve 管线、page 路由与导航渲染、locator 解析与 dialog 摆放、文档单例、语言切换，以及页头左端的 NiceEval 字标（[边界清单](../architecture.md#宿主保留的只有机器)）。
 - **`head` 是元数据与第三方脚本的注入口。** 标签按声明顺序渲染进每页 `<head>`，落在官方与外壳样式之后。`tag` 白名单是 `meta`、`link`、`script`、`style` 四种，白名单外装载报错；宿主自有的文档单例不接受声明——`<title>` 不在白名单里（标题走 `title` 字段的回退链），`meta charset` 与 `meta name="viewport"` 由宿主拥有，声明它们装载报错并指回对应契约。`script` / `style` 的 `children` 原样落进标签，其中出现 `</script>` / `</style>` 时装载报错（该上下文无法转义，报错给出拆分或转移建议）。GA4、data-* 驱动的 tracker、og:image、favicon、字体、JSON-LD 都是 vendor 文档的逐字段直译，不需要 DOM 自举样板。head 里的脚本与 `scripts` 同受增强层不变量约束。
-- **除 `title` 外的外壳字段是 web 面属性。** `links`、`footer`、`theme`、`head`、`scripts`、`styles` 只被 `view` 与静态导出消费；`show` 读同一文件时消费 `pages`，并把 `title` 用作页索引的标题行。外壳文案是 `LocalizedText`，随外壳的语言切换取值。
+- **除 `title` 外的外壳字段是 web 面属性。** `links`、`footer`、`theme`、`seriesPins`、`head`、`scripts`、`styles` 只被 `view` 与静态导出消费；`show` 读同一文件时消费 `pages`，并把 `title` 用作页索引的标题行。外壳文案是 `LocalizedText`，随外壳的语言切换取值。
 - **`title` 的落点是浏览器标题、`show` 页索引标题行与 `ctx.report.title`。** 页面里的 hero 标题不是外壳渲染的——它由 [`Hero` 组件](../components/site.md#hero)承担，`Hero` 缺省消费 `ctx.report.title`，同一取值链因此贯通浏览器标题与页内 hero。标题回退必须确定：取值链是 `def.title` → Scope 中唯一且相同的非空 snapshot `name` → 内置文案「Eval 运行结果 / Eval Results」。快照中没有 name 或存在多个不同 name 时都落到内置文案，不按数组顺序随机挑一个。`LocalizedText` 按字段值深相等比较，对象键顺序不影响结果。浏览器 `<title>` 与 `meta charset` / `viewport` 同族，是宿主拥有的文档单例——这是「宿主只剩机器」里机器的一部分，不是内容特权。
 - **`LocalizedText` 的回退确定。** 取当前 locale；缺失时取 `en`；仍缺失时取按 locale 键字典序的第一个非空值。对象没有任何非空值时装载报错，不渲染空导航项。这条规则同时适用于外壳、page / tab / section 标题、表头和指标 label。
 - **报告能声明的品牌是组件，不是外壳属性；宿主页头另有一个报告改不动的固定品牌位。** `view` 页头左端恒定渲染 NiceEval 字标（45° 方块 mark + 文字），外链官网 `https://niceeval.com/?utm_source=report&utm_medium=brand`，是产品品牌位、属宿主 chrome（[边界清单](../architecture.md#宿主保留的只有机器)），报告定义与外壳字段都不能覆盖或移除它。报告作者能声明的品牌只有一件:[`PoweredBy`](../components/site.md#poweredby)——无 props、无关闭配置的双面组件，web 面渲染指向 niceeval 官网 `https://niceeval.com/?utm_source=report&utm_medium=powered-by`（`utm_medium` 区分点击来自页头字标还是页内品牌行）的一行品牌色小字，text 面零输出。链接不抑制 Referer（`rel` 只声明 `noopener`），报告站点的来源域由浏览器默认 Referer 策略带给官网统计，不进 URL 参数——静态导出在构建期不知道自己最终托管在哪个域名。`Hero` / `HeroCard` 恒含品牌行，组件本身不给拆除配置；不想要品牌的站点不用这几个组件、自己写双面组件——品牌跟着组件走，用组件就带上它的完整行为。`footer` 文案单独渲染在页面底部，省略 `footer` 时不渲染页脚，与品牌无关。
@@ -219,12 +227,39 @@ type ReportAsset =
 - **校验分两期。** `defineReport({...})` 与宿主装载期校验外壳形状、非空页列表、重复 / 非法 page id、资产路径和 `head` 标签结构（白名单、宿主自有单例、children 上下文）；`content` / `pages` 互斥与外壳嵌套已由类型拒绝，运行期仍对无类型 JS 输入做同样校验。页内树在 [resolve 展开](../architecture.md#报告树与两个宿主)时逐节点校验资格；缺任一渲染面或包含任意 HTML intrinsic 时，按该页的失败规则反馈。
 - **脚本随导出发布。** 静态导出会原样携带并在读者浏览器执行 `scripts` 与 `head` 里的脚本，导出不检查脚本内容，脚本里别嵌密钥。
 
+## 钉色
+
+[页级色分配](../components/README.md#系列色分配单位是页)不需要配置就能保证一页内同键同色，但它不知道作者的语义：发布图上「baseline 恒中性、我们的方案恒蓝」是作者对数据的判断，不是散列能推出来的。`seriesPins` 就是写下这个判断的地方：
+
+```ts
+export default defineReport({
+  extends: standard,
+  seriesPins: {
+    memory: { baseline: 3, mempal: 1, nowledge: 5 },
+  },
+});
+```
+
+```ts
+/** 外层键是维度 name，内层键是维度值显示键，值是 [0, 6) 的色板下标。 */
+type SeriesPins = Readonly<Record<string, Readonly<Record<string, number>>>>;
+```
+
+- **钉的是色板下标，不是颜色。** 颜色仍然来自生效主题的 `series` 六色，因此深浅外观、对比度与换主题全都照常跟随。钉色住在报告而不是主题里，正因为它说的是数据含义：换一套配色不该让 baseline 和候选方案对调身份。要改颜色本身，改主题。
+- **外层键是维度的 `name`**——内置维度就是 `"agent"` / `"experiment"`，`label("memory")` 的 name 是 `"memory"`，复合维度的 name 是成员 name 以 ` × ` 连接。这与 `ChartData` / `TableData` 里 `*Dimension` 字段的值是同一个字符串。
+- **内层键是维度值显示键**，与分组显示键同一套规则（非字符串值走稳定 JSON，缺失值是 `(missing)`）。
+- **钉住的键原样占位，自动分配只在剩下的槽里探测。** 多个值钉同一个下标是合法的——作者显式要求它们同色（例如两条基线都走中性色）；这不触发探测。
+- **钉了但这一页没出现的键什么都不做**，不为它保留槽位。
+- 维度 name 或值键不是非空字符串、下标不是 `[0, 6)` 内的整数时，`defineReport` 按完整用户反馈拒绝并指到 `seriesPins.<维度>.<值>`。
+
+钉色是整站字段，所以同一个维度值在总览页与分科页恒同色。这正是它住在外壳而不是某个组件上的原因——写在一棵树里的声明管不到另一张页。
+
 导航的组成只有一条规则：pages 中 `navigation !== false` 的项按声明序排列，宿主不追加任何项。裸宿主导航里的报告、Attempts、Traces 与 locator 详情都是[内建报告](built-in.md)声明的 page；最后一张因为 `navigation: false` 不显示。换 `--report` 后要不要它们全部由报告文件决定。见 [View · 页面构成](../view.md#页面构成) 与 [Architecture](../architecture.md#外壳与页装载规范化)。
 
 ## 相关阅读
 
 - [内建报告](built-in.md) —— 裸宿主装载的定义与升级路径。
-- [主题与 CSS 定制](theme.md) —— 强调色、状态色、分类色板与完整 CSS 出口。
+- [主题](theme.md) —— 主题制品、装载链、令牌全集与 CSS 出口。
 - [站点组件](../components/site.md) —— hero、品牌行、警告区、快照诊断区、修复 prompt 与 trace 瀑布。
 - [Attempt 详情组件](../components/attempt-detail.md) —— attempt-input page 能用哪些公开区块组装。
 - [排版原语与自定义组件](layout.md) —— 页 content 里的树怎么组织，组合组件怎么写。

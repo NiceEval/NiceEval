@@ -35,7 +35,8 @@
 | 组织报告树、拼自由摘要格、写组合组件或双面组件 | [排版原语与自定义组件](library/layout.md) |
 | 让自定义组件复现官方的标签缩写与系列色 | [呈现算法](library/layout.md#呈现算法) |
 | 加标题、GitHub 链接、页脚，或拆成多页 | [外壳与多页](library/shell.md) |
-| 改强调色、状态色、图表色板或完整覆盖 CSS | [主题与 CSS 定制](library/theme.md) |
+| 改强调色、状态色、图表色板、字体或完整覆盖 CSS | [主题](library/theme.md) |
+| 自己写一个报告组件，并让它跟随任何主题 | [自己写报告组件](use-case/write-custom-component.md) |
 | 摆 hero、品牌行、警告区、快照诊断区、修复 prompt 或 trace 瀑布 | [站点组件](components/site.md) |
 | 声明、删减或重排 attempt-input page | [Attempt 详情](components/attempt-detail.md) |
 | 看裸 `show` / `view` 装载的默认定义怎么写 | [内建报告](library/built-in.md) |

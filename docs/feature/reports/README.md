@@ -20,6 +20,17 @@
 
 三档产出同一种 `ReportDefinition`，走同一条 `装载 → resolve → validate → render` 管线。所有内容都是 page 内公开组件，没有宿主特权。
 
+**看什么和长什么样是两份制品。** 报告说这份结果给谁看什么，[主题](library/theme.md)说它长什么样；一份主题可以套在任何报告上，一份报告也可以换任何主题。主题因此有自己的一条取值链，四档：
+
+| 档 | 取值 | 用途 |
+|---|---|---|
+| 1 | `--theme <名字\|文件>` | 单次运行指定；裸词是[内建主题名](themes/README.md)（`--theme basalt`），带路径形是主题文件 |
+| 2 | 报告定义的 [`theme` 外壳字段](library/shell.md#字段穷尽) | 这份报告自带的外观，随报告文件一起分发 |
+| 3 | `niceeval.config.ts` 的 `theme` 字段 | 项目默认外观 |
+| 4 | 内建 [`basalt`](themes/basalt.md) | NiceEval 官方主题：黑色系、零圆角、发丝分隔线 |
+
+`--theme` 只作用于 web 面，是 `view` 的 flag；`show --theme` 报错并指向 `view`。
+
 ## 项目默认报告
 
 自定义报告写好后不该要求每个人每次都敲 `--report`。把 `defineReport` 产物填进项目配置的 `report` 字段，裸 `show` / `view` 就装载它：
@@ -38,6 +49,20 @@ export default defineConfig({
 
 这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进快照。要临时回到内建榜单排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
 
+团队品牌同理，`theme` 字段收 `defineTheme` 产物：
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+import { acmeTheme } from "./themes/acme";
+import site from "./reports/site";
+
+export default defineConfig({
+  report: site,
+  theme: acmeTheme,
+});
+```
+
 报告只表达“怎么看”。原始判定、断言、事件、trace 和 diff 的事实归 [Results](../results/README.md)；运行过程中把事实写出去的回调叫 [Reporter](../../runner.md),不属于这里。
 
 ## 从哪开始
@@ -46,7 +71,8 @@ export default defineConfig({
 - 想浏览或发布完整结果站：看 [`view`](view.md)。
 - 想写自己的报告：看 [Library](library.md)，先按“选择组件”表挑形状，再进对应分篇复制配方。
 - 想把结果发布成带品牌、外链和多页导航的站点：看 [Library · 外壳与多页](library/shell.md)。
-- 想改整站强调色、状态色、图表色板或进一步覆盖 CSS：看 [Library · 主题与 CSS](library/theme.md)。
+- 想改整站强调色、状态色、图表色板、字体或进一步覆盖 CSS：看 [Library · 主题](library/theme.md)。
+- 想自己写一个报告组件，并让它跟随任何主题：看[自己写报告组件](use-case/write-custom-component.md)。
 - 想知道默认报告本身怎么写、怎么逐步改造：看 [Library · 内建报告](library/built-in.md)。
 - 想知道字段从哪个文件来：看 [Results Architecture](../results/architecture.md)。
 
@@ -56,7 +82,8 @@ export default defineConfig({
 - [View](view.md) —— 本地网页、结果收窄和静态导出。
 - [用例手册](use-case/README.md) —— `show` / `view` 输入与 Library 组件分别在什么真实任务中使用。
 - [Library](library.md) —— 报告组件目录和常用组合配方。
-- [Theme](library/theme.md) —— view 主题令牌、Library 配置 DX 与完整 CSS 出口。
+- [Theme](library/theme.md) —— 主题制品、四档装载链、令牌全集与完整 CSS 出口。
+- [主题目录](themes/README.md) —— 内建主题一览；官方主题 [Basalt](themes/basalt.md) 的取值与主张。
 - [Architecture](architecture.md) —— 两个宿主、报告树和可序列化边界。
 - [Results Lib](../results/library.md) —— 结果读写库:类型的家、writer、`openResults`、实验/快照层次、选择器、身份键;第二档吃它的读取面。
 - [Results Format](../results/architecture.md) —— 唯一持久化事实来源。
