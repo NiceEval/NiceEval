@@ -59,6 +59,31 @@ type ChartProps =
 </LineChart>
 ```
 
+## 呈现别名
+
+轴、series 与嵌套节点上以 `Presentation` 结尾的 props 都是[双面投影阶梯](README.md#双面投影边界)的实例——`Presentation<该节点的渲染数据, 该节点的默认呈现字段>`。因此每一处都是同样四档：`false` 关掉、部分字段对象只调样式与位置、函数接管 web 面、`{ web, text }` 同时接管两面。渲染回调只收到解析后的只读数据片段，不能触发第二次聚合。
+
+| 别名 | 出现在 | 渲染数据 |
+|---|---|---|
+| `TickPresentation` | `XAxis.tick` / `YAxis.tick` | `{ value, label, index, count }`：`value` 是维度值或数值原值，`label` 是默认刻度文案，`index` 是该刻度在轴顺序里的下标 |
+| `LabelPresentation` | 轴、`Reference*` 与 `Line` / `Bar` / `Area` 的 `label` | `{ value, label }`；series 上逐图形项调用，轴与参考标注上只调一次。额外接受 `LocalizedText` 短写，与单个 `<Label value="…" />` 等价 |
+| `DotPresentation` | `Line.dot` / `Line.activeDot` / `Area.dot` | `{ cell, seriesKey }` |
+| `ShapePresentation` | `Scatter.shape` | `{ cell, seriesKey, pointKey }` |
+| `ScatterLinePresentation` | `Scatter.line` | `{ seriesKey, points }` |
+
+`index` 跟随轴解析后的顺序——`sort` 之后、`reversed` 之前，所以排序过的维度轴上 `index` 就是名次。名次序号因此是刻度的呈现定制，不是新的绑定：
+
+```tsx
+<YAxis
+  dimension="agent"
+  sort={endToEndPassRate}
+  tick={{
+    web: ({ label, index }) => <tspan>{`#${index + 1}  ${label}`}</tspan>,
+    text: ({ label, index }) => `#${index + 1}  ${label}`,
+  }}
+/>
+```
+
 ## 轴
 
 ### `XAxis`
