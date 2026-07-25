@@ -7,4 +7,5 @@
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
 - [Adapters](adapters/README.md) —— LangGraph、OpenClaw 与其它候选接入
 - [图表组件的声明式子组件语法](report-chart-composition/README.md) —— 借鉴 recharts 子组件组合模型的候选契约,含逐组件语法对比举例
+- [源码调用树](eval-source-view/README.md) —— eval 判定痕迹散落在多个文件时，`--source` 与 `AttemptSource` 按调用链展示的候选契约
 - [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 终端/HTML 语义结构断言 DSL、容差 golden 与 vitest 宿主的候选契约
