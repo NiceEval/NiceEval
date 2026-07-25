@@ -103,7 +103,7 @@
     "docs/feature/experiments/architecture.md": 46,
     "docs/feature/experiments/cli.md": 80,
     "docs/feature/experiments/library.md": 54,
-    "docs/feature/experiments/score-points.md": 30,
+    "docs/feature/experiments/score-points.md": 29,
     "docs/feature/experiments/use-case/README.md": 4,
     "docs/feature/experiments/use-case/budget.md": 8,
     "docs/feature/experiments/use-case/cache-invalidation.md": 18,
@@ -398,9 +398,6 @@
     "docs/feature/experiments/library.md": {
       "不再": 1,
       "钩子": 25
-    },
-    "docs/feature/experiments/score-points.md": {
-      "榜单": 2
     },
     "docs/feature/experiments/use-case/cache-invalidation.md": {
       "钩子": 5

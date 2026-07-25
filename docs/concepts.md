@@ -94,7 +94,7 @@
 | 双面组件 | Dual-render component | `defineComponent({ resolve?, web, text })` 的产物:可选解析面取数,两个纯函数渲染面消费同一份渲染 props,同一棵树两个宿主共用 |
 | 组合组件 | Composition component | `defineComponent((props, ctx) => 树)` 的产物:只装配已有组件、不自己渲染,在 resolve 阶段展开 |
 | 宿主 | Host | 打开结果、挑 Scope、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
-| 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 都渲染 `niceeval/report/built-in` 的默认导出——报告 / Attempts / 追踪三页的普通 `defineReport`。首页由 `Hero`、`ScopeWarnings`、`CopyFixPrompt` 与 `ExperimentComparison`(当前 Scope 的成本 × 成功率散点 + 逐实验明细表)组成,与用户 `--report` 文件同层,没有宿主特权 |
+| 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 都渲染 `niceeval/report/built-in` 的默认导出 `standard`——一份四张 page 的普通 `defineReport`:报告 / Attempts / 追踪三张进导航,第四张是以 locator 为输入的 attempt 详情。首页由 `Hero`、`ScopeWarnings`、`SnapshotDiagnostics`、`CopyFixPrompt` 与 `ExperimentComparison`(当前 Scope 的成本 × 成功率散点 + 逐实验明细表)组成,与用户 `--report` 文件同层,没有宿主特权 |
 | 报告槽 | —(内部代号) | 宿主结构里可被 `--report` 整体替换的部分:裸跑渲染内建报告,显式 `--report` 换成用户报告文件;`报告槽`不出现在公开站 |
 
 ### 报告组件

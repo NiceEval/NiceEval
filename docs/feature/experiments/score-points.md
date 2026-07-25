@@ -1,10 +1,12 @@
 # 计分粒度：对比里一个 eval 记几分
 
-一条 eval 怎么计分由它的**定义函数**声明，两种题型：**`defineEval` = 通过制**——整题折叠成一分，gate 硬、soft 软；**`defineScoreEval` = 计分制**——题内用给分 API 叠加挣分，五步走完三步挣 3 分，rubric 大题按分值给分。题型是定义期事实：发现期就可知、进 `EvalDescriptor`，不靠执行 `test()` 推断——榜单列形态、errored 时分数显示 `null` 还是不参与，都在题目一行代码没跑时就有答案。**一个 experiment 选中的 eval 必须同型**：通过制实验读通过率、计分制实验读总分，混型选择是启动期配置错误（报错列出两类 eval id 并给收窄建议）；两类都要跑就写两个实验文件，报告并排两个实验组。experiment 不得改变计分语义——「怎么算分」是题目的契约，不是跑法的参数。
+一条 eval 怎么计分由它的**定义函数**声明，两种题型：**`defineEval` = 通过制**——整题折叠成一分，gate 硬、soft 软；**`defineScoreEval` = 计分制**——题内用给分 API 叠加挣分，五步走完三步挣 3 分，rubric 大题按分值给分。题型是定义期事实：发现期就可知、进 `EvalDescriptor`，不靠执行 `test()` 推断——实验列表的主列形态、errored 时分数显示 `null` 还是不参与，都在题目一行代码没跑时就有答案。**一个 experiment 选中的 eval 必须同型**：通过制实验读通过率、计分制实验读总分，混型选择是启动期配置错误（报错列出两类 eval id 并给收窄建议）；两类都要跑就写两个实验文件，报告并排两个实验组。experiment 不得改变计分语义——「怎么算分」是题目的契约，不是跑法的参数。
 
 ## 通过制（`defineEval`，默认）：一个 eval 一分
 
-- 一条 eval 的一次 attempt 折叠成四态 [Verdict](../scoring/architecture/severity-and-verdict.md)，`passed` 记 1、其余记 0；`runs > 1` 时按通过率。`Scoreboard` / `ExperimentComparison` 读的就是这个数。
+- 一条 eval 的一次 attempt 折叠成四态 [Verdict](../scoring/architecture/severity-and-verdict.md)，`passed` 记 1、其余记 0；
+  `runs > 1` 时按通过率。这个数就是内置指标 [`endToEndPassRate`](../reports/library/metrics.md#内置指标)，
+  通过制的对比主读数读的是它。
 - 断言只是 verdict 的**内部构成**：一条 eval 写 3 条还是 20 条 gate，对比里都是一分。这与 eve 的模型一致：一个 eval 就是一分，soft 分数 tracked-only。
 
 通过制是**对的默认**，三个理由：
@@ -119,8 +121,12 @@ export default defineScoreEval({
 
 `show` 与 `view` 共用同一份 page 声明（[Reports](../reports/README.md)），读取面在内建 `standard` 报告一处声明、两个宿主同时生效：
 
-- **榜单按实验题型选主列**：通过制实验显示通过率列，计分制实验显示总分列；存在质量分时两者都附质量分列。不摆空列。
-- **组级读数在 attempt 详情下钻**：attempt 详情按 `groupPath` 分块展示断言与给分记录（[断言与 Turn 的展示](../scoring/library/display.md)），「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。
+- **实验列表按题型选主列**：通过制实验出通过率列，计分制实验出总分列，两型并存时两列都出、不适用的格显示 `—`。
+  判据是[主读数映射](../reports/library/metrics.md#题型构成与主读数)这一条单点规则，
+  列集合的完整契约在 [`ExperimentList`](../reports/components/entity-lists/experiment-list.md)。
+- **组级读数在 attempt 详情下钻**：非 passed 断言按声明顺序平铺、标题即分组路径，passed 断言按组折成计数行，
+  `t.score` 给分记录单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](../scoring/library/display.md)）。
+  「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。
 
 ## 怎么选题型
 
