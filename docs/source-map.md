@@ -91,7 +91,7 @@
 | `downloadDirectory`(vercel/e2b 共用的 find 列路径 + 逐文件二进制读取两阶段模板;docker 走 `getArchive` 单次 tar 取回,见上一行 docker-stream.ts) | `src/sandbox/download-directory.ts` |
 | NiceEval 公共 E2B baseline 的具名版本钉死 ref、官方起点派生 factory、三模板统一的运行用户 npm global 契约 | `src/sandbox/e2b-agent-template.ts`(`NICEEVAL_*_E2B_TEMPLATE` / `PUBLISHED_E2B_BASELINE_TAG` / `e2bCodingAgentTemplate` / `verifyE2BNodeToolContract`)；发布构建与最终状态自检在 `sandbox/e2b/build-agent-template.mts`，已发布事实的台账在 `sandbox/e2b/published.json` |
 | 官方基线制品的版本号(`<Agent 版本>-r<配方修订>`,niceeval 自身版本不参与) | `src/agents/coding-cli-versions.ts`(`AGENT_BASELINE_VERSION` / `AGENT_BASELINE_RECIPE_REVISION` / `agentBaselineVersionTag`)——同一批常量喂 Adapter 的运行时回退安装；一致性守护在 `src/sandbox/official-baselines.test.ts` |
-| NiceEval 公共 Docker 基线镜像的具名 ref | `src/sandbox/docker-agent-image.ts`(`NICEEVAL_*_DOCKER_IMAGE`)；配方在 `sandbox/docker/Dockerfile`，按配方变更发布的 CI 在 `.github/workflows/docker-image.yml` |
+| NiceEval 公共 Docker 基线镜像的具名 ref | `src/sandbox/docker-agent-image.ts`(`NICEEVAL_*_DOCKER_IMAGE`)；配方在 `sandbox/docker/Dockerfile`，按配方变更发布的 CI 在 `.github/workflows/docker-image.yml`；Agent 集合是完整的 `CodingAgentBaseline`，E2B 侧子集见 `E2BCodingAgent` |
 | 显式 `SandboxSpec` 解析与 provider 实例创建(无默认值、无环境探测) | `src/sandbox/resolve.ts` |
 | Provisioning 瞬时错误分类 + 退避重试(各 provider 的 `classifyProvisionError` 认原生限流,兜底走与文件 IO 共用的瞬时分类器 → `createProvider()` 统一重试) | `src/sandbox/errors.ts`、`src/sandbox/retry.ts`;各 provider 文件的 `classifyProvisionError` |
 | `defineSandbox`(自定义 provider 逃生舱:`create()` 直接产出 `Sandbox` 实例,`resolve.ts` 里 `r.create` 优先于内置 backend switch) | `src/define.ts`、`src/sandbox/resolve.ts`(`createBackend`) |

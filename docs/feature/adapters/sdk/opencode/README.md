@@ -49,4 +49,5 @@ OpenCode 不接受 Claude/Codex 的 `mcpServers` 或原生 `plugins` 字段。
 
 setup 检测 PATH 上的 `opencode`：预装命中即跳过安装，
 缺失时回退 `npm install -g opencode-ai@<version>`。
-预装只是快速路径，不是正确性前提。
+NiceEval 公共镜像 `niceeval/opencode`（`NICEEVAL_OPENCODE_DOCKER_IMAGE`）把 CLI
+烘焙进 `/usr/local/bin`。预装只是快速路径，不是正确性前提。

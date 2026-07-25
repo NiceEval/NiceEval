@@ -1,17 +1,18 @@
 # NiceEval 预制 coding-agent 镜像。每个 target 只装一个 CLI，发布为同名 Docker Hub
-# repository（niceeval/codex、niceeval/claude-code、niceeval/bub），使 eval 不必下载无关
-# 的 Agent 和运行时依赖。
+# repository（niceeval/codex、niceeval/claude-code、niceeval/bub、niceeval/opencode、
+# niceeval/hermes、niceeval/openclaw），使 eval 不必下载无关的 Agent 和运行时依赖。
 #
 # 这是 Docker provider 的基线配方。E2B 从 provider 官方 Agent template 派生，Vercel
 # 对运行中的 microVM 拍 snapshot；三者的构建入口见 ../README.md。
 #
-# Codex / Claude Code 装到 /usr/local/bin；Bub 按 Docker provider 的标准 node 用户装到
-# $HOME/.local，并写 NiceEval 安装规格指纹。Adapter 只有在指纹完全匹配时才跳过安装。
+# Codex / Claude Code / OpenCode / OpenClaw 装到 /usr/local/bin；Bub / Hermes 按
+# Docker provider 的标准 node 用户装到 $HOME/.local。Bub 另写 NiceEval 安装规格指纹，
+# Adapter 只有在指纹完全匹配时才跳过安装。
 
 FROM node:24-slim AS base
 
 # 各 target 共用的系统依赖:git/curl(git+https 安装、uv 安装脚本)、ca-certificates。
-# build-essential 只留给 bub target，避免 Codex / Claude Code image 背上编译工具链。
+# build-essential / python3 只留给需要它们的 target，避免 npm 型 image 背上多余工具链。
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
@@ -29,6 +30,35 @@ FROM base AS claude-code
 ARG CLAUDE_CODE_VERSION=2.1.207
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 RUN claude --version
+
+FROM base AS opencode
+
+# npm 全局安装 → /usr/local/bin/opencode（包名 opencode-ai）。
+ARG OPENCODE_VERSION=1.18.5
+RUN npm install -g opencode-ai@${OPENCODE_VERSION}
+RUN opencode --version
+
+FROM base AS openclaw
+
+# npm 全局安装 → /usr/local/bin/openclaw。OpenClaw CLI 要求 Node >=22.22.3 或 >=24。
+ARG OPENCLAW_VERSION=2026.7.1-2
+RUN npm install -g openclaw@${OPENCLAW_VERSION}
+RUN openclaw --version
+
+FROM base AS hermes
+
+# Hermes 装到 $HOME/.local（与 Adapter 运行时回退同一路径）；系统 python3 供
+# sessions export 失败时的 sqlite 旁读。以运行时的 node 用户安装。
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 \
+ && rm -rf /var/lib/apt/lists/*
+USER node
+ARG HERMES_VERSION=0.19.0
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+ && $HOME/.local/bin/uv tool install hermes-agent==${HERMES_VERSION}
+# Hermes 没有稳定的 --version 契约；--help 完成入口 import 与 CLI 初始化。
+RUN $HOME/.local/bin/hermes --help >/dev/null
 
 FROM base AS bub
 

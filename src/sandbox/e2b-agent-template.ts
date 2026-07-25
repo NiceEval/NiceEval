@@ -7,13 +7,18 @@ import {
   normalizeBubPackages,
 } from "../agents/bub-install-spec.ts";
 import {
-  type CodingAgentBaseline,
   DEFAULT_CLAUDE_CODE_CLI_VERSION,
   DEFAULT_CODEX_CLI_VERSION,
   agentBaselineVersionTag,
 } from "../agents/coding-cli-versions.ts";
 
-export type E2BCodingAgent = CodingAgentBaseline;
+/**
+ * 已发布（或即将发布进台账）的 E2B 公共基线 Agent。
+ *
+ * 是 `CodingAgentBaseline` 的子集：OpenCode / Hermes / OpenClaw 只有 Docker 公共镜像，
+ * E2B 模板尚未进 `sandbox/e2b/published.json`，不能提前导出指向空制品的常量。
+ */
+export type E2BCodingAgent = "claude-code" | "codex" | "bub";
 
 export interface E2BCodingAgentTemplateOptions {
   /** Extra packages installed in Bub's uv tool environment and included in its compatibility marker. */

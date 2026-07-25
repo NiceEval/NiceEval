@@ -52,6 +52,7 @@ Skills 落到 Hermes 可发现目录（默认 `~/.hermes/skills/<name>/`），
 
 ## 预制环境
 
-setup 检测 PATH 上的 `hermes`：预装且版本匹配即跳过安装，
-缺失时用 `uv tool install hermes-agent==<version>`（或等价 pip）回退安装。
-预装只是快速路径，不是正确性前提。
+setup 检测 `$HOME/.local/bin/hermes`：预装命中即跳过安装，
+缺失时用 `uv tool install hermes-agent==<version>` 回退安装（路径与 Bub 相同，
+不依赖沙箱注入的 PATH）。NiceEval 公共镜像 `niceeval/hermes`
+（`NICEEVAL_HERMES_DOCKER_IMAGE`）按同一布局烘焙。预装只是快速路径，不是正确性前提。

@@ -19,14 +19,28 @@ export const DEFAULT_HERMES_CLI_VERSION = "0.19.0";
 /** OpenClaw CLI（npm `openclaw`）默认钉的版本。 */
 export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.7.1-2";
 
-/** 有官方公共基线制品（E2B template + Docker image）的内置 coding agent。 */
-export type CodingAgentBaseline = "claude-code" | "codex" | "bub";
+/**
+ * 有官方公共基线制品的内置 coding agent。
+ *
+ * Docker 侧六家齐全；E2B 侧目前只发布 Claude Code / Codex / Bub
+ *（见 `E2BCodingAgent`），其余 Agent 的 E2B 模板尚未进台账。
+ */
+export type CodingAgentBaseline =
+  | "claude-code"
+  | "codex"
+  | "bub"
+  | "opencode"
+  | "hermes"
+  | "openclaw";
 
 /** 每个官方基线制品里装的那个 Agent 的版本——制品版本号的版本位。 */
 export const AGENT_BASELINE_VERSION: Record<CodingAgentBaseline, string> = {
   "claude-code": DEFAULT_CLAUDE_CODE_CLI_VERSION,
   codex: DEFAULT_CODEX_CLI_VERSION,
   bub: DEFAULT_BUB_VERSION,
+  opencode: DEFAULT_OPENCODE_CLI_VERSION,
+  hermes: DEFAULT_HERMES_CLI_VERSION,
+  openclaw: DEFAULT_OPENCLAW_CLI_VERSION,
 };
 
 /**
@@ -40,6 +54,9 @@ export const AGENT_BASELINE_RECIPE_REVISION: Record<CodingAgentBaseline, number>
   "claude-code": 2,
   codex: 2,
   bub: 1,
+  opencode: 1,
+  hermes: 1,
+  openclaw: 1,
 };
 
 /**

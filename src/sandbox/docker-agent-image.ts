@@ -8,6 +8,9 @@ export const NICEEVAL_DOCKER_IMAGE_NAME: Record<CodingAgentBaseline, string> = {
   "claude-code": "niceeval/claude-code",
   codex: "niceeval/codex",
   bub: "niceeval/bub",
+  opencode: "niceeval/opencode",
+  hermes: "niceeval/hermes",
+  openclaw: "niceeval/openclaw",
 };
 
 /**
@@ -28,3 +31,6 @@ export function niceevalDockerImage(agent: CodingAgentBaseline): string {
 export const NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE = niceevalDockerImage("claude-code");
 export const NICEEVAL_CODEX_DOCKER_IMAGE = niceevalDockerImage("codex");
 export const NICEEVAL_BUB_DOCKER_IMAGE = niceevalDockerImage("bub");
+export const NICEEVAL_OPENCODE_DOCKER_IMAGE = niceevalDockerImage("opencode");
+export const NICEEVAL_HERMES_DOCKER_IMAGE = niceevalDockerImage("hermes");
+export const NICEEVAL_OPENCLAW_DOCKER_IMAGE = niceevalDockerImage("openclaw");

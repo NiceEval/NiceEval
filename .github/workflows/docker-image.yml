@@ -2,7 +2,8 @@ name: Publish Docker image
 
 # Docker Hub 是 NiceEval 预制 coding-agent 环境的公开分发处。镜像的版本跟着它装的那个
 # Agent 走，不跟 niceeval 的 release：发布由基线配方变更触发，niceeval 发一个 patch 不会
-# 重建三份没变的镜像。已发布的 tag 不原地覆盖——想重建就先 bump 配方修订号。
+# 重建没变的镜像。已发布的 tag 不原地覆盖——想重建就先 bump 配方修订号；同一次 push
+# 里未变的 Agent 直接跳过，不影响其它 Agent 的发布。
 on:
   push:
     branches:
@@ -37,6 +38,9 @@ jobs:
           - image: claude-code
           - image: codex
           - image: bub
+          - image: opencode
+          - image: hermes
+          - image: openclaw
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,34 +64,47 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "已解析 niceeval/$AGENT:$VERSION"
 
-      - name: Refuse to overwrite a published tag
-        if: ${{ inputs.overwrite != true }}
+      - name: Decide whether to publish
+        id: gate
         env:
           IMAGE: niceeval/${{ matrix.image }}
           VERSION: ${{ steps.version.outputs.version }}
+          OVERWRITE: ${{ inputs.overwrite }}
         # 同一个 tag 在不同时间指向不同环境会让"同一配置"的跑分失去可比性。
+        # 未要求 overwrite 且 tag 已存在时跳过本 Agent，让同次 push 里其它新 Agent 继续发。
         run: |
           STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
             "https://hub.docker.com/v2/repositories/$IMAGE/tags/$VERSION")
-          if [[ "$STATUS" == "200" ]]; then
-            echo "::error::$IMAGE:$VERSION 已发布。配方变了就 bump AGENT_BASELINE_RECIPE_REVISION，Agent 版本变了就改版本常量。" >&2
-            exit 1
+          if [[ "$OVERWRITE" == "true" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "overwrite 开启，继续构建 $IMAGE:$VERSION（HTTP $STATUS）。"
+            exit 0
           fi
+          if [[ "$STATUS" == "200" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$IMAGE:$VERSION 已发布，跳过。配方变了就 bump AGENT_BASELINE_RECIPE_REVISION。"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
           echo "$IMAGE:$VERSION 尚未发布（HTTP $STATUS），继续构建。"
 
       - name: Log in to Docker Hub
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/login-action@v4
         with:
           username: niceeval
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up QEMU
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push multi-platform image
+        if: steps.gate.outputs.publish == 'true'
         uses: docker/build-push-action@v7
         with:
           context: sandbox/docker

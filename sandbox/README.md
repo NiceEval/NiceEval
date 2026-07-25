@@ -78,14 +78,19 @@ pnpm tsx sandbox/e2b/build-agent-template.mts bub
 
 ## Docker：NiceEval 的 Agent 基线镜像
 
-[`docker/Dockerfile`](./docker/Dockerfile) 为 Codex、Claude Code 和 Bub 分别定义独立 target。
-Bub 与运行时 Adapter 使用相同的 `$HOME/.local` 布局和安装规格指纹；三个 Agent 的版本都固定，
-升级后应重建一个新 tag。
+[`docker/Dockerfile`](./docker/Dockerfile) 为每个内置 coding Agent 定义独立 target。
+Bub / Hermes 与运行时 Adapter 使用相同的 `$HOME/.local` 布局；Bub 另写安装规格指纹。
+各 Agent 的版本都固定，升级后应重建一个新 tag。
 
-NiceEval 维护三个公开镜像：[`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
-[`niceeval/codex`](https://hub.docker.com/r/niceeval/codex) 和
-[`niceeval/bub`](https://hub.docker.com/r/niceeval/bub)。每个镜像发布多架构 manifest
-（`linux/amd64`、`linux/arm64`），tag 与同一个 Agent 的 E2B 模板同号：`<Agent 版本>-r<配方修订>`。
+NiceEval 维护公开镜像：
+[`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
+[`niceeval/codex`](https://hub.docker.com/r/niceeval/codex)、
+[`niceeval/bub`](https://hub.docker.com/r/niceeval/bub)、
+[`niceeval/opencode`](https://hub.docker.com/r/niceeval/opencode)、
+[`niceeval/hermes`](https://hub.docker.com/r/niceeval/hermes)、
+[`niceeval/openclaw`](https://hub.docker.com/r/niceeval/openclaw)。
+每个镜像发布多架构 manifest（`linux/amd64`、`linux/arm64`），tag 为
+`<Agent 版本>-r<配方修订>`；已有 E2B 模板的 Agent 与对应模板同号。
 `latest` 跟随该 Agent 的最新基线，只适合交互试用；用户与 CI 固定版本 tag 或 digest，
 并直接用 `niceeval/sandbox` 导出的常量：
 
@@ -97,14 +102,15 @@ sandbox: dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
 
 镜像由 [Docker image workflow](../.github/workflows/docker-image.yml) 在基线配方变更落到 `main`
 时构建并推送（`sandbox/docker/**` 与版本常量所在文件），也可手动派发；它按
-`agentBaselineVersionTag()` 解析 tag，并在 tag 已发布时直接失败——重建要先 bump 配方修订号，
-不原地覆盖。因此 Docker 侧的具名常量由版本常量直接派生，不像 E2B 侧那样另存一份发布台账。
+`agentBaselineVersionTag()` 解析 tag。已发布的 tag 默认跳过（不原地覆盖）——重建要先 bump
+配方修订号；同一次 push 里未变的 Agent 跳过，不影响新 Agent 的发布。因此 Docker 侧的具名常量由版本常量直接派生，不像 E2B 侧那样另存一份发布台账。
 发布前在 GitHub 仓库设置里创建 `DOCKERHUB_TOKEN` secret：它是 Docker Hub 用户 `niceeval`
 的专用 PAT，权限至少为 Read & Write；不要使用登录密码或把 token 写进仓库。Docker Hub repository
 必须设为 Public，才能让外部 eval 项目拉取。
 
 ```bash
 docker build --target codex -t niceeval/codex:local sandbox/docker
+docker build --target opencode -t niceeval/opencode:local sandbox/docker
 ```
 
 要加项目依赖，写一个从该 image `FROM` 的项目 Dockerfile；不必 fork Adapter。派生镜像的 tag

@@ -7,6 +7,9 @@ import {
   DEFAULT_BUB_VERSION,
   DEFAULT_CLAUDE_CODE_CLI_VERSION,
   DEFAULT_CODEX_CLI_VERSION,
+  DEFAULT_HERMES_CLI_VERSION,
+  DEFAULT_OPENCLAW_CLI_VERSION,
+  DEFAULT_OPENCODE_CLI_VERSION,
   type CodingAgentBaseline,
   agentBaselineVersionTag,
 } from "../agents/coding-cli-versions.ts";
@@ -18,6 +21,7 @@ import {
   bubRequirement,
 } from "../agents/bub-install-spec.ts";
 import {
+  type E2BCodingAgent,
   NICEEVAL_BUB_E2B_TEMPLATE,
   NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE,
   NICEEVAL_CODEX_E2B_TEMPLATE,
@@ -29,11 +33,23 @@ import {
   NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE,
   NICEEVAL_CODEX_DOCKER_IMAGE,
   NICEEVAL_DOCKER_IMAGE_NAME,
+  NICEEVAL_HERMES_DOCKER_IMAGE,
+  NICEEVAL_OPENCLAW_DOCKER_IMAGE,
+  NICEEVAL_OPENCODE_DOCKER_IMAGE,
 } from "./docker-agent-image.ts";
 
-const AGENTS = ["claude-code", "codex", "bub"] as const;
+const DOCKER_AGENTS = [
+  "claude-code",
+  "codex",
+  "bub",
+  "opencode",
+  "hermes",
+  "openclaw",
+] as const satisfies readonly CodingAgentBaseline[];
 
-const e2bTemplates: Record<CodingAgentBaseline, string> = {
+const E2B_AGENTS = ["claude-code", "codex", "bub"] as const satisfies readonly E2BCodingAgent[];
+
+const e2bTemplates: Record<E2BCodingAgent, string> = {
   "claude-code": NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE,
   codex: NICEEVAL_CODEX_E2B_TEMPLATE,
   bub: NICEEVAL_BUB_E2B_TEMPLATE,
@@ -43,6 +59,9 @@ const dockerImages: Record<CodingAgentBaseline, string> = {
   "claude-code": NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE,
   codex: NICEEVAL_CODEX_DOCKER_IMAGE,
   bub: NICEEVAL_BUB_DOCKER_IMAGE,
+  opencode: NICEEVAL_OPENCODE_DOCKER_IMAGE,
+  hermes: NICEEVAL_HERMES_DOCKER_IMAGE,
+  openclaw: NICEEVAL_OPENCLAW_DOCKER_IMAGE,
 };
 
 interface PublishedTemplate {
@@ -58,7 +77,7 @@ interface PublishedTemplate {
 
 const ledger = JSON.parse(
   await readFile(new URL("../../sandbox/e2b/published.json", import.meta.url), "utf8"),
-) as { templates: Record<CodingAgentBaseline, PublishedTemplate> };
+) as { templates: Record<E2BCodingAgent, PublishedTemplate> };
 
 const dockerfile = await readFile(
   new URL("../../sandbox/docker/Dockerfile", import.meta.url),
@@ -66,17 +85,21 @@ const dockerfile = await readFile(
 );
 
 describe("official coding-agent baselines", () => {
-  it.each(AGENTS)("versions the %s baseline by the agent it ships, not by niceeval", (agent) => {
+  it.each(DOCKER_AGENTS)("versions the %s Docker baseline by the agent it ships, not by niceeval", (agent) => {
     // 版本位是被装的那个 Agent 的版本;-r 位是 NiceEval 配方自己的修订号。
     expect(agentBaselineVersionTag(agent)).toBe(
       `${AGENT_BASELINE_VERSION[agent]}-r${AGENT_BASELINE_RECIPE_REVISION[agent]}`,
     );
-    // 同一个 Agent 的两份制品共用一个版本号:一个版本号 = 一套基线配方。
     expect(dockerImages[agent]).toBe(
       `${NICEEVAL_DOCKER_IMAGE_NAME[agent]}:${agentBaselineVersionTag(agent)}`,
     );
+    // 接受 semver(`0.144.1-r2`)与 OpenClaw calver(`2026.7.1-2-r1`)。
+    expect(agentBaselineVersionTag(agent)).toMatch(/^\d+(\.\d+)+(?:-\d+)?-r\d+$/);
+  });
+
+  it.each(E2B_AGENTS)("keeps the %s E2B build tag on the same recipe version as Docker", (agent) => {
+    // 同一个 Agent 的两份制品共用一个版本号:一个版本号 = 一套基线配方。
     expect(e2bBaselineBuildTag(agent)).toBe(agentBaselineVersionTag(agent));
-    expect(agentBaselineVersionTag(agent)).toMatch(/^\d+\.\d+\.\d+-r\d+$/);
   });
 
   it("takes the version position from the same constants the runtime fallback installs", () => {
@@ -84,10 +107,13 @@ describe("official coding-agent baselines", () => {
       "claude-code": DEFAULT_CLAUDE_CODE_CLI_VERSION,
       codex: DEFAULT_CODEX_CLI_VERSION,
       bub: DEFAULT_BUB_VERSION,
+      opencode: DEFAULT_OPENCODE_CLI_VERSION,
+      hermes: DEFAULT_HERMES_CLI_VERSION,
+      openclaw: DEFAULT_OPENCLAW_CLI_VERSION,
     });
   });
 
-  it.each(AGENTS)("points the exported %s E2B ref at a published template", (agent) => {
+  it.each(E2B_AGENTS)("points the exported %s E2B ref at a published template", (agent) => {
     const published = ledger.templates[agent];
 
     // 具名常量只能指向台账里真实存在的制品:发布是维护者手动动作,常量不能先跑到发布前面。
@@ -119,6 +145,9 @@ describe("official coding-agent baselines", () => {
     // Dockerfile 不能 import TypeScript,漂移只在真实构建时暴露,所以逐个比对。
     expect(dockerfile).toContain(`ARG CODEX_VERSION=${DEFAULT_CODEX_CLI_VERSION}`);
     expect(dockerfile).toContain(`ARG CLAUDE_CODE_VERSION=${DEFAULT_CLAUDE_CODE_CLI_VERSION}`);
+    expect(dockerfile).toContain(`ARG OPENCODE_VERSION=${DEFAULT_OPENCODE_CLI_VERSION}`);
+    expect(dockerfile).toContain(`ARG OPENCLAW_VERSION=${DEFAULT_OPENCLAW_CLI_VERSION}`);
+    expect(dockerfile).toContain(`ARG HERMES_VERSION=${DEFAULT_HERMES_CLI_VERSION}`);
     expect(dockerfile).toContain(DEFAULT_BUB_OTEL_PLUGIN.replace(/^git\+/, ""));
     expect(dockerfile).toContain(`'${bubInstallHash([])}' > $HOME/${BUB_INSTALL_MARKER}`);
   });

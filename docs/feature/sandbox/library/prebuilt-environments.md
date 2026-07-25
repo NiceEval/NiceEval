@@ -116,13 +116,19 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 
 ## 官方 coding agent 起点
 
-"没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。NiceEval 为三个内置 Agent 维护公共基线制品,E2B template 与 Docker image 各一份,配方同源:
+"没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。NiceEval 为内置
+coding Agent 维护公共基线制品：Docker image 六家齐全；E2B template 覆盖
+Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进台账，不导出常量）；
+配方同源、版本号共用：
 
 | Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |
 |---|---|---|---|
 | [Claude Code](../../adapters/sdk/claude-code/README.md) | `correctroads-default-team/niceeval-claude-code` | `niceeval/claude-code` | E2B 侧从 provider 官方 `claude` template 派生;Claude Adapter 仍检查 `claude` |
 | [Codex](../../adapters/sdk/codex-cli/README.md) | `correctroads-default-team/niceeval-codex` | `niceeval/codex` | E2B 侧从 provider 官方 `codex` template 派生;Codex Adapter 仍检查 `codex` |
 | [Bub](../../adapters/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 钉版本的配方(Bub 版本 + 同代 OTel 插件),并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
+| [OpenCode](../../adapters/sdk/opencode/README.md) | — | `niceeval/opencode` | Docker 烘焙 `opencode-ai`;Adapter 检测 PATH 上的 `opencode` |
+| [Hermes](../../adapters/sdk/hermes/README.md) | — | `niceeval/hermes` | Docker 按 `$HOME/.local` 装 `hermes-agent`;Adapter 走同路径 |
+| [OpenClaw](../../adapters/sdk/openclaw/README.md) | — | `niceeval/openclaw` | Docker 烘焙 `openclaw`;Adapter 检测 PATH 上的 `openclaw` |
 
 Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker;Vercel 用户按上面的[Run 构建流程](#vercel-sandbox从运行实例拍 Run)在自己的 Project 里构建。
 
@@ -132,9 +138,10 @@ Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker
 
 - **版本位是制品里那个 Agent 的版本**——Claude Code 与 Codex 取 CLI 版本,Bub 取所钉 commit 承接的 bub release。消费者唯一关心的就是这个:这份环境里的被测对象是哪一版。
 - **`-r` 修订位是 NiceEval 配方自己的修订号**。Agent 版本没变、基线配方变了(Node 工具契约、PATH 规范化、换 pin 的 commit、插件集合)就 +1;Agent 版本一变归 1。已发布 tag [不可原地覆盖](#用户怎么写自己的预制环境),配方变更必须在版本里有位置表达,否则"同一配置"会在不同时间指向不同环境。
-- **三个 Agent 各自独立发版**。换 Codex CLI 只重建 codex 的两份制品,Claude Code 与 Bub 的引用一个字不动。
+- **各 Agent 各自独立发版**。换 Codex CLI 只重建 codex 的制品,其它 Agent 的引用一个字不动。
+  同一 Agent 若某一侧(E2B / Docker)尚未发布,只重建已有侧,不伪造另一侧的引用。
 - **niceeval 自身的版本不参与命名**。库与制品内容无关:发一个 patch 不会让模板里的 Agent 变新,模板换代也不必等库发版。
-- **同一个 Agent 在 E2B 与 Docker 上共用一个版本号**:一个版本号 = 一套基线配方,两个 provider 上的制品可以直接对照。任一侧的配方变更同时 bump 两侧的 `-r`,并重建两份。
+- **同一个 Agent 在已发布的 provider 上共用一个版本号**:一个版本号 = 一套基线配方。任一侧的配方变更 bump `-r`,并重建该侧已有制品。
 
 版本位与 Adapter 运行时回退安装读的是同一批版本常量,所以"命中预装"和"回退安装"永远装同一版 Agent——走了哪条路径不会改变被测对象。
 
@@ -152,10 +159,14 @@ import {
   NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE,
   NICEEVAL_CODEX_DOCKER_IMAGE,
   NICEEVAL_BUB_DOCKER_IMAGE,
+  NICEEVAL_OPENCODE_DOCKER_IMAGE,
+  NICEEVAL_HERMES_DOCKER_IMAGE,
+  NICEEVAL_OPENCLAW_DOCKER_IMAGE,
 } from "niceeval/sandbox";
 
 e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })      // 跨 Team namespace + 钉死版本
 dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })      // repository + 同一个版本
+dockerSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
 ```
 
 每个常量都是完整、版本钉死的引用,值只在 NiceEval 发布新基线时变化。下游不复制这些字符串,也不维护第二份版本常量;派生制品要把 base 身份写进名字或 provenance 时,直接用常量的值。公开基线是 convenience baseline,不是 Adapter 的隐式默认值。
