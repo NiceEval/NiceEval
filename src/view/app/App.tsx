@@ -199,7 +199,9 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: Record
   const selectTab = useCallback((value: Tab) => {
     setTab(value);
     try {
-      history.replaceState(null, "", hashForTab(value));
+      // 路径部分显式带上:文档可能落了站点根归一的 <base>(site.ts SITE_BASE_SCRIPT),
+      // 裸 hash 会按 base 解析,切页会顺手把地址栏路径改写成目录形态。
+      history.replaceState(null, "", `${location.pathname}${location.search}${hashForTab(value)}`);
     } catch {
       // 更新路由失败不影响切页。
     }

@@ -135,6 +135,8 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   只含证据室元信息（`composedRuns`、`skippedRuns`、`report` 元信息）不携带统计产物；外壳标题取值链与
   `ReportLink.icon` 原样透传进
   `viewData.report`；`viewData.report.pages` 是外壳认识的全部 scope-input page（同时是内容块与 `#/page/<id>` 路由的键），声明 `navigation: false` 的页带标记在列而不是被删掉——导航列不列由外壳按这个标记决定；报告文件缺失、非法默认导出、前缀 / 实验匹配不到、零可读结果的完整错误反馈；报告文件变更后下一次装载读取新内容（不复用陈旧模块缓存）。全部以返回结构、Map/Set 内容与错误对象为断言面，不断言渲染出的 HTML 或终端文本。
+- **站点根归一（`index.html` 的 `<base>` 引导脚本）**：脚本对 `location.pathname` 的站点根判定——无尾斜杠的索引路径（cleanUrls 托管）补出目录形态、已是目录形态（`/`、`/sub/`）不插入 `<base>`、末段带扩展名（`/out/index.html`）按其目录取根。断言面是把导出产物里那段脚本原样喂给 fake `location` /
+  `document` 后落下的 `base.href`，不是整页 HTML；无尾斜杠那一格是唯一能把「按文档目录解析」与「按站点根解析」区分开的输入，缺了它相对引用少一层的错误算法照样全绿。
 - **Attempt 证据组件族**：`attempt*Data(evidence)`
   纯派生零 IO、装配恰好一次；组合组件的展开树构成与二选一规则；spec 缺省取注入 evidence、错位使用的完整反馈；对话数据的分轮与容错。渲染出的 DOM、默认展开标记、染色与交互归 E2E；改动这些组件后需要
   `pnpm run build:report`，改动 view 壳 / dialog 摆放后需要 `pnpm run view:build`。

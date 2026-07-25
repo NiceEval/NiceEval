@@ -197,7 +197,21 @@ async function materializeHeadAssets(head: ResolvedHeadTag[], files: Map<string,
   return rendered.join("\n");
 }
 
+/**
+ * 站点根归一:托管方可以把站点根暴露成无尾斜杠路径(cleanUrls 用 `/showcase/memory` 直接服务
+ * `index.html`,并把带斜杠形态 308 回无斜杠),而浏览器按文档 URL 的**目录**解析相对引用——
+ * 那时 `attempt/<locator>.html`、`assets/`、`artifact/` 全部少一层,链接、证据 fetch 与 head
+ * 资产一起断。`index.html` 按构造恒是站点根,所以这段引导脚本在任何相对引用被解析之前
+ * 落一个 `<base>` 把根写成目录形态(view.md「静态导出」)。判定只看 pathname:已是目录形态
+ * 不插入,末段带扩展名(`/out/index.html`、`file://` 直接打开)取其目录,其余补一层斜杠。
+ * 独立 attempt 文档住在真实的 `attempt/` 目录下,相对引用天然对齐,不带这段脚本。
+ * 写成 `location` / `document` 两个自由变量的形式:测试直接把这段源码原样喂给假的宿主执行,
+ * 断言的是导出产物里的同一份字节,不复制第二份判定逻辑。
+ */
+export const SITE_BASE_SCRIPT = `(function(){try{var p=location.pathname;if(p.charAt(p.length-1)==="/")return;var i=p.lastIndexOf("/");var root=/\\.[A-Za-z0-9]+$/.test(p.slice(i+1))?p.slice(0,i+1):p+"/";var b=document.createElement("base");b.href=root;document.head.appendChild(b);}catch(e){}})();`;
+
 const TEMPLATE_PLACEHOLDERS = {
+  siteBase: "__NICEEVAL_SITE_BASE_SCRIPT__",
   styles: "<!-- __NICEEVAL_STYLES__ -->",
   appCode: "__NICEEVAL_APP_CODE__",
   viewData: "__NICEEVAL_VIEW_DATA_JSON__",
@@ -206,6 +220,7 @@ const TEMPLATE_PLACEHOLDERS = {
 
 /**
  * 把 viewData(只含原始值与相对路径,不含宿主机绝对路径)和前端产物烘焙进单个 HTML。
+ * `<head>` 最前面是站点根归一的引导脚本(SITE_BASE_SCRIPT),排在任何相对引用之前。
  * 报告槽恒在:每页报告 HTML 作为 <template id="niceeval-report-<pageId>-<locale>"> 静态块
  * 烘在 __NICEEVAL_VIEW_DATA__ 旁(不 hydrate,自定义组件的 <Style> 产物已内联其中),
  * 并恒内联官方组件样式(report/react/styles.css)与渐进增强 runtime(report/react/enhance.js,
@@ -239,6 +254,7 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
   const title = localizeText(scan.viewData.report?.title, "en") ?? "Eval Results";
 
   return template
+    .replace(TEMPLATE_PLACEHOLDERS.siteBase, () => SITE_BASE_SCRIPT)
     .replace(/<title>[^<]*<\/title>/, () => `<title>${escapeText(title)}</title>`)
     .replace(
       TEMPLATE_PLACEHOLDERS.styles,
