@@ -1,11 +1,23 @@
 name: Publish Docker image
 
-# Docker Hub 是 NiceEval 预制 coding-agent 环境的公开分发处。和 npm 一样，只有
-# release tag 才能改变公开镜像；main 上的普通提交不会覆盖任何已发布 tag。
+# Docker Hub 是 NiceEval 预制 coding-agent 环境的公开分发处。镜像的版本跟着它装的那个
+# Agent 走，不跟 niceeval 的 release：发布由基线配方变更触发，niceeval 发一个 patch 不会
+# 重建三份没变的镜像。已发布的 tag 不原地覆盖——想重建就先 bump 配方修订号。
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+    paths:
+      - "sandbox/docker/**"
+      - "src/agents/coding-cli-versions.ts"
+      - "src/agents/bub-install-spec.ts"
+      - ".github/workflows/docker-image.yml"
+  workflow_dispatch:
+    inputs:
+      overwrite:
+        description: "覆盖已发布的同名 tag（只在确认制品未被引用时使用）"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,6 +41,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve baseline version
+        id: version
+        env:
+          AGENT: ${{ matrix.image }}
+        # 版本号的单源是 src/agents/coding-cli-versions.ts，workflow 不再拼一份自己的。
+        run: |
+          VERSION=$(node -e '
+            import("./src/agents/coding-cli-versions.ts").then((m) => {
+              process.stdout.write(m.agentBaselineVersionTag(process.env.AGENT));
+            });
+          ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "已解析 niceeval/$AGENT:$VERSION"
+
+      - name: Refuse to overwrite a published tag
+        if: ${{ inputs.overwrite != true }}
+        env:
+          IMAGE: niceeval/${{ matrix.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+        # 同一个 tag 在不同时间指向不同环境会让"同一配置"的跑分失去可比性。
+        run: |
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            "https://hub.docker.com/v2/repositories/$IMAGE/tags/$VERSION")
+          if [[ "$STATUS" == "200" ]]; then
+            echo "::error::$IMAGE:$VERSION 已发布。配方变了就 bump AGENT_BASELINE_RECIPE_REVISION，Agent 版本变了就改版本常量。" >&2
+            exit 1
+          fi
+          echo "$IMAGE:$VERSION 尚未发布（HTTP $STATUS），继续构建。"
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
         with:
@@ -41,22 +87,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Choose image tags
-        id: tags
-        env:
-          IMAGE: niceeval/${{ matrix.image }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          {
-            echo 'tags<<EOF'
-            echo "$IMAGE:$TAG"
-            # 预发布也可消费，但不能把稳定使用者指向它。
-            if [[ "$TAG" != *-* ]]; then
-              echo "$IMAGE:latest"
-            fi
-            echo EOF
-          } >> "$GITHUB_OUTPUT"
-
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v7
         with:
@@ -64,7 +94,10 @@ jobs:
           target: ${{ matrix.image }}
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.tags.outputs.tags }}
+          # latest 跟随该 Agent 的最新基线，只适合交互试用；CI 钉版本 tag 或 digest。
+          tags: |
+            niceeval/${{ matrix.image }}:${{ steps.version.outputs.version }}
+            niceeval/${{ matrix.image }}:latest
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           provenance: mode=max

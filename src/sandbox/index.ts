@@ -4,6 +4,11 @@
 
 export { dockerSandbox, vercelSandbox, e2bSandbox, localSandbox, defineSandbox } from "../define.ts";
 export { createCheckpoint, restoreCheckpoint } from "./checkpoint.ts";
+export {
+  NICEEVAL_BUB_DOCKER_IMAGE,
+  NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE,
+  NICEEVAL_CODEX_DOCKER_IMAGE,
+} from "./docker-agent-image.ts";
 
 export type {
   Sandbox,

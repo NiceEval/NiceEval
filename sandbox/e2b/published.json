@@ -1,25 +1,30 @@
 {
   "teamSlug": "correctroads-default-team",
-  "releaseTag": "v0.6.1",
-  "publishedAt": "2026-07-13T10:07:00Z",
   "templates": {
     "claude-code": {
       "name": "correctroads-default-team/niceeval-claude-code",
+      "versionTag": "v0.6.1",
+      "agentVersion": "2.1.207",
       "templateId": "k710teqtjmv03pfcgyt7",
       "buildId": "bad8ccdf-a1b5-4c71-8728-2981722d5cb0",
-      "cliVersion": "2.1.207"
+      "publishedAt": "2026-07-13T10:07:00Z"
     },
     "codex": {
       "name": "correctroads-default-team/niceeval-codex",
+      "versionTag": "v0.6.1",
+      "agentVersion": "0.144.1",
       "templateId": "trocggdwkcjgdtn3syrd",
       "buildId": "281a434b-5bf3-4745-9589-3e7b479e5554",
-      "cliVersion": "0.144.1"
+      "publishedAt": "2026-07-13T10:07:00Z"
     },
     "bub": {
       "name": "correctroads-default-team/niceeval-bub",
+      "versionTag": "v0.6.1",
+      "agentVersion": "0.3.9",
+      "installMarker": "83770925b77a",
       "templateId": "7lf2vc2cweienpn1ragk",
       "buildId": "c9a947b4-fe47-4d6b-904d-ac14fa897ce5",
-      "installMarker": "83770925b77a"
+      "publishedAt": "2026-07-13T10:07:00Z"
     }
   }
 }

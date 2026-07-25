@@ -170,7 +170,7 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-These baselines have been verified by actually booting them: Claude Code `2.1.207`, Codex `0.144.1`, Bub install fingerprint `83770925b77a`. Each value is a complete, tagged, cross-team reference; your own repo should not copy these strings, nor maintain or read another copy of NiceEval's release constants. When a derived template needs to record which base it came from, use the full template ref you picked directly.
+These baselines have been verified by actually booting them: Claude Code `2.1.207`, Codex `0.144.1`, Bub install fingerprint `83770925b77a`. A template's version follows the agent it ships (`0.144.1-r1`: agent version plus NiceEval's recipe revision); the three agents are released independently, and NiceEval's own library version never appears in the tag. So use the constants directly instead of copying these strings or tracking versions — including when a derived template needs to record which base it came from.
 
 ```ts title="scripts/build-e2b-template.ts"
 import { Template } from "e2b";
@@ -223,15 +223,15 @@ e2bCodingAgentTemplate("bub", {
 
 #### Docker: use NiceEval-maintained images, or derive from the official node base image
 
-To run NiceEval's built-in `claude-code`, `codex`, or `bub` Adapters directly, use the matching public image: [`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code), [`niceeval/codex`](https://hub.docker.com/r/niceeval/codex), or [`niceeval/bub`](https://hub.docker.com/r/niceeval/bub). Each image contains only its own Agent CLI and publishes a manifest for `linux/amd64` and `linux/arm64`; every NiceEval release has a matching tag. Stable CI should pin a release tag or digest, not the moving `latest`:
+To run NiceEval's built-in `claude-code`, `codex`, or `bub` Adapters directly, use the matching public image: [`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code), [`niceeval/codex`](https://hub.docker.com/r/niceeval/codex), or [`niceeval/bub`](https://hub.docker.com/r/niceeval/bub). Each image contains only its own Agent CLI and publishes a manifest for `linux/amd64` and `linux/arm64`. Its tag matches the corresponding E2B public template — the version position is the version of the agent inside the image. Stable CI should use the named constant or a digest, not the moving `latest`:
 
 ```ts
-import { dockerSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: "niceeval/codex:v0.6.1" })
+sandbox: dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
 ```
 
-This image is a public image maintained by NiceEval, not a Docker `library/*` Official Image. It updates with each NiceEval release, and the Agent CLI version inside it is pinned by that release's build recipe.
+This image is a public image maintained by NiceEval, not a Docker `library/*` Official Image. A new tag is published when the agent version or the build recipe changes, independently of NiceEval's own release cadence.
 
 If you only need one agent, or you also need to add project-specific dependencies, write a Dockerfile that derives from Docker's official baseline, `node:24-slim`. When you omit `image`, NiceEval also uses this same default image:
 

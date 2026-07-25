@@ -7,7 +7,7 @@
 
 ## 背景与当前状态
 
-当前公共 release `v0.6.1` 继承了两套不相容的 Node 布局：
+当前公共制品（旧命名下的 `v0.6.1`）继承了两套不相容的 Node 布局：
 
 | baseline | node | 默认 npm prefix | 运行用户 `npm install -g` |
 |---|---|---|---|
@@ -36,12 +36,19 @@
     用 `command -v` 解析二进制。至少覆盖 pnpm；Claude Code 分支额外确认 native `claude` 未被
     npm 路径遮蔽。
 
-- [ ] **C. 发布次序**
-  - [ ] C1. 构建并发布三份同 tag 模板，记录 Template ID / Build ID 与验证结果。
-  - [ ] C2. 只有三份均通过后，统一 bump `NICEEVAL_E2B_TEMPLATE_RELEASE`；不能让常量先指向
-    不存在或只发布了两份的 release。
-  - [ ] C3. 更新 `sandbox/e2b/published.json`、`sandbox/README.md` 与公开 Sandbox 教程，移除
-    `v0.6.1` workaround，并记录新 release 的共同契约。
+- [ ] **C. 发布次序**（版本方案见
+  [预制环境 · 版本号跟着被装的 Agent 走](../docs/feature/sandbox/library/prebuilt-environments.md#版本号跟着被装的-agent-走)：
+  tag 是 `<Agent 版本>-r<配方修订>`，三个 Agent 各自独立发版）
+  - [ ] C1. 逐 agent 构建并发布：`pnpm tsx sandbox/e2b/build-agent-template.mts <agent>`
+    （tag 由 `agentBaselineVersionTag()` 给出，当前是 `2.1.207-r2` / `0.144.1-r2` /
+    `0.3.9-r2`），记录 Template ID / Build ID 与验证结果。
+  - [ ] C2. 每发布并验证完一个 agent，就更新它在 `sandbox/e2b/published.json` 的条目与
+    `src/sandbox/e2b-agent-template.ts` 的 `PUBLISHED_E2B_BASELINE_TAG`；不再等三份齐了才动，
+    但也不能让某一项常量先指向尚未发布的 tag（`src/sandbox/official-baselines.test.ts` 守护）。
+  - [ ] C3. 三份都换代后，移除 `sandbox/README.md` 与公开 Sandbox 教程里的
+    `--prefix /usr/local` workaround 段落，并同步 `docs/source-map.md` 的已知差异条目。
+  - [ ] C4. Docker 侧：确认 `main` 上的镜像 CI 已推出 `niceeval/<agent>:<Agent 版本>-r2`
+    三份多架构 manifest（新 workflow 由基线配方变更触发，不再跟 `v*` tag）。
 
 ## 错误证据的配套边界
 

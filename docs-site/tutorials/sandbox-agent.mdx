@@ -53,17 +53,16 @@ When you run a coding agent in the cloud, you can use the E2B public templates N
 ```ts
 import { codexAgent } from "niceeval/adapter";
 import { e2bSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_E2B_TEMPLATE } from "niceeval/sandbox/e2b-template";
 
 export default defineExperiment({
   agent: codexAgent(),
   model: "gpt-5.4",
-  sandbox: e2bSandbox({
-    template: "correctroads-default-team/niceeval-codex:v0.6.1",
-  }),
+  sandbox: e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE }),
 });
 ```
 
-Claude Code uses `correctroads-default-team/niceeval-claude-code:v0.6.1`, and Bub uses `correctroads-default-team/niceeval-bub:v0.6.1`. The version tag suits CI; omitting the tag follows the current stable build. To keep adding system packages, binaries, or model caches on top, see [Sandbox provider · Build on the official baselines to speed things up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
+Claude Code uses `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE`, and Bub uses `NICEEVAL_BUB_E2B_TEMPLATE`. Each constant is a complete, version-pinned reference whose version follows the agent baked into the template, so you never have to track it yourself. To keep adding system packages, binaries, or model caches on top, see [Sandbox provider · Build on the official baselines to speed things up](/tutorials/sandbox-providers#build-on-the-official-baselines-to-speed-things-up).
 
 The built-in agents exported from `niceeval/adapter` are factory functions. Put auth, proxy, MCP, or GitHub Skill setup in the factory arguments. Keep the model in the experiment's `model` field, and the sandbox provider in `sandbox`:
 

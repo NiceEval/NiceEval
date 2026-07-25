@@ -53,17 +53,16 @@ npx niceeval exp local fixtures/button --runs 10
 ```ts
 import { codexAgent } from "niceeval/adapter";
 import { e2bSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_E2B_TEMPLATE } from "niceeval/sandbox/e2b-template";
 
 export default defineExperiment({
   agent: codexAgent(),
   model: "gpt-5.4",
-  sandbox: e2bSandbox({
-    template: "correctroads-default-team/niceeval-codex:v0.6.1",
-  }),
+  sandbox: e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE }),
 });
 ```
 
-Claude Code 使用 `correctroads-default-team/niceeval-claude-code:v0.6.1`，Bub 使用 `correctroads-default-team/niceeval-bub:v0.6.1`。版本 tag 适合 CI；省略 tag 会跟随当前稳定构建。添加系统包、二进制或模型缓存的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
+Claude Code 用 `NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE`，Bub 用 `NICEEVAL_BUB_E2B_TEMPLATE`。常量的值是完整、版本钉死的引用，版本跟着模板里那个 Agent 的版本走，你不用跟踪它。添加系统包、二进制或模型缓存的步骤见 [Sandbox Provider · 从官方基线继续构建以提速](/zh/tutorials/sandbox-providers#从官方基线继续构建以提速)。
 
 内置 agent 从 `niceeval/adapter` 导出的是工厂函数。需要配置鉴权、代理、MCP 或 GitHub skill 时，把这些写进工厂参数；模型仍然写在 experiment 的 `model` 字段，sandbox provider 仍然写在 `sandbox` 字段：
 

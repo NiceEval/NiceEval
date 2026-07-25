@@ -7,11 +7,13 @@ import {
   normalizeBubPackages,
 } from "../agents/bub-install-spec.ts";
 import {
+  type CodingAgentBaseline,
   DEFAULT_CLAUDE_CODE_CLI_VERSION,
   DEFAULT_CODEX_CLI_VERSION,
+  agentBaselineVersionTag,
 } from "../agents/coding-cli-versions.ts";
 
-export type E2BCodingAgent = "claude-code" | "codex" | "bub";
+export type E2BCodingAgent = CodingAgentBaseline;
 
 export interface E2BCodingAgentTemplateOptions {
   /** Extra packages installed in Bub's uv tool environment and included in its compatibility marker. */
@@ -24,25 +26,49 @@ export const E2B_OFFICIAL_AGENT_TEMPLATES = {
   codex: "codex",
 } as const;
 
-/**
- * NiceEval 当前已发布并完成启动校验的公共 E2B template release。
- *
- * 这是公共模板 registry 的版本，不从源码 checkout 中可能滞后的 package.json 推导。
- * 发布一组新的 Claude Code / Codex / Bub template 并验证后，由 NiceEval 在这里统一 bump；
- * 下游不应再复制这条 release 知识。
- */
-const NICEEVAL_E2B_TEMPLATE_RELEASE = "v0.6.1";
+/** NiceEval 公共 E2B baseline 所在的 Team namespace;跨 Team 引用必须带它。 */
+export const NICEEVAL_E2B_TEAM = "correctroads-default-team";
+
+/** 每个 Agent 的公共 E2B template 名字（不含 tag）。 */
+export const NICEEVAL_E2B_TEMPLATE_NAME: Record<E2BCodingAgent, string> = {
+  "claude-code": `${NICEEVAL_E2B_TEAM}/niceeval-claude-code`,
+  codex: `${NICEEVAL_E2B_TEAM}/niceeval-codex`,
+  bub: `${NICEEVAL_E2B_TEAM}/niceeval-bub`,
+};
 
 /**
- * NiceEval 官方公共 E2B baseline：每个值已经是完整、release-pinned、跨 Team template ref。
+ * 各 Agent 当前已发布并完成启动校验的公共 template tag。
+ *
+ * E2B 的发布是维护者手动动作（需要 `e2b auth login`），所以这里记的是**已发布事实**，
+ * 不是源码配方派生值：构建脚本按 `agentBaselineVersionTag()` 打 tag，发布并真机验证后，
+ * 同一批改动更新这张表与 `sandbox/e2b/published.json`。两者与源码版本常量的一致性由
+ * `e2b-agent-template.test.ts` 守护——版本常量走在发布前面时测试红，常量不会先指向不存在的制品。
+ */
+const PUBLISHED_E2B_BASELINE_TAG: Record<E2BCodingAgent, string> = {
+  "claude-code": "v0.6.1",
+  codex: "v0.6.1",
+  bub: "v0.6.1",
+};
+
+/**
+ * NiceEval 官方公共 E2B baseline：每个值已经是完整、版本钉死、跨 Team 的 template ref。
  * 直接交给 `e2bSandbox({ template })`，或交给 E2B `Template().fromTemplate(...)` 继续派生。
  */
 export const NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE =
-  `correctroads-default-team/niceeval-claude-code:${NICEEVAL_E2B_TEMPLATE_RELEASE}`;
+  `${NICEEVAL_E2B_TEMPLATE_NAME["claude-code"]}:${PUBLISHED_E2B_BASELINE_TAG["claude-code"]}`;
 export const NICEEVAL_CODEX_E2B_TEMPLATE =
-  `correctroads-default-team/niceeval-codex:${NICEEVAL_E2B_TEMPLATE_RELEASE}`;
+  `${NICEEVAL_E2B_TEMPLATE_NAME.codex}:${PUBLISHED_E2B_BASELINE_TAG.codex}`;
 export const NICEEVAL_BUB_E2B_TEMPLATE =
-  `correctroads-default-team/niceeval-bub:${NICEEVAL_E2B_TEMPLATE_RELEASE}`;
+  `${NICEEVAL_E2B_TEMPLATE_NAME.bub}:${PUBLISHED_E2B_BASELINE_TAG.bub}`;
+
+/**
+ * Build tag for the next official E2B baseline of this agent: `<agent version>-r<recipe revision>`.
+ *
+ * 构建脚本用它打 tag,而不是用 niceeval 自己的 release——制品的版本位是它装的那个 Agent 的版本。
+ */
+export function e2bBaselineBuildTag(agent: E2BCodingAgent): string {
+  return agentBaselineVersionTag(agent);
+}
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;

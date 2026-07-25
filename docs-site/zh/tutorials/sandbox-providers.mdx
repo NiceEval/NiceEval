@@ -156,8 +156,8 @@ Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbo
 
 E2B 已提供 Claude Code 的 `claude` template 和 Codex 的 `codex` template。NiceEval 提供一个 E2B 专属的薄封装，让你从这两个官方起点继续链原生 E2B API。E2B 暂无 Bub 官方 template，因此 Bub 分支使用 NiceEval 固定到不可变 commit 的安装配方：
 
-NiceEval 同时发布了三份任何 E2B Team 都能引用的公共模板。完整 namespace 与经过验证的 release
-tag 由 NiceEval 自己维护，下游直接取完整引用：
+NiceEval 同时发布了三份任何 E2B Team 都能引用的公共模板。完整 namespace 与版本由 NiceEval 自己维护，
+下游直接取完整引用：
 
 ```ts
 import {
@@ -171,9 +171,9 @@ e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })
 e2bSandbox({ template: NICEEVAL_BUB_E2B_TEMPLATE })
 ```
 
-这些基线已实际启动验证：Claude Code `2.1.207`、Codex `0.144.1`，Bub 安装指纹 `83770925b77a`。每个值都是带 tag 的完整跨 Team 引用；业务仓库不应复制这些字符串，也不应维护或读取另一份 NiceEval release 常量。派生模板需要记录 base 身份时，直接使用所选的完整 template ref。
+这些基线都实际启动验证过：Claude Code `2.1.207`、Codex `0.144.1`，Bub 安装指纹 `83770925b77a`。模板的版本号跟着它装的那个 Agent 走（形如 `0.144.1-r1`：Agent 版本 + NiceEval 配方修订号），三个 Agent 各自独立发版，NiceEval 库自己的版本不参与命名。所以业务仓库直接用常量，不复制这些字符串、也不跟踪版本；派生模板需要记录 base 身份时，同样用常量的值。
 
-当前常量指向的 `v0.6.1` 中，Claude Code 模板沿用 E2B 官方 `/usr` npm prefix，普通用户不能直接写全局模块。需要在运行时追加 pnpm、yarn 等全局 Node 工具时，显式把它们装到两个模板都已加入 PATH 的 `/usr/local`：
+当前这批公共模板中，Claude Code 模板沿用 E2B 官方 `/usr` npm prefix，普通用户不能直接写全局模块。需要在运行时追加 pnpm、yarn 等全局 Node 工具时，显式把它们装到两个模板都已加入 PATH 的 `/usr/local`：
 
 ```ts
 await t.sandbox.runCommand("npm", [
@@ -240,17 +240,17 @@ e2bCodingAgentTemplate("bub", {
 [`niceeval/claude-code`](https://hub.docker.com/r/niceeval/claude-code)、
 [`niceeval/codex`](https://hub.docker.com/r/niceeval/codex) 或
 [`niceeval/bub`](https://hub.docker.com/r/niceeval/bub)。每个镜像只包含自己的 Agent CLI，并为
-`linux/amd64` 和 `linux/arm64` 发布 manifest；每个 NiceEval release 都有同名 tag。稳定 CI 要固定
-release tag 或 digest，不要依赖会移动的 `latest`：
+`linux/amd64` 和 `linux/arm64` 发布 manifest。tag 与对应的 E2B 公共模板同号——版本位是镜像里那个
+Agent 的版本。稳定 CI 用具名常量或 digest，不要依赖会移动的 `latest`：
 
 ```ts
-import { dockerSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CODEX_DOCKER_IMAGE, dockerSandbox } from "niceeval/sandbox";
 
-sandbox: dockerSandbox({ image: "niceeval/codex:v0.6.1" })
+sandbox: dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })
 ```
 
-这个镜像是 NiceEval 维护的公开镜像，不是 Docker 的 `library/*` Official Image。它随 NiceEval
-release 更新，里面的 Agent CLI 版本由该 release 的构建配方固定。
+这个镜像是 NiceEval 维护的公开镜像，不是 Docker 的 `library/*` Official Image。它在 Agent 版本或
+构建配方变化时发布新 tag，跟 NiceEval 库的发版节奏无关。
 
 如果只需要一个 Agent，或还要加入项目专有依赖，写 Dockerfile 从 Docker 的官方基线
 `node:24-slim` 派生。省略 `image` 时，NiceEval 也会按 runtime 使用该默认镜像：
