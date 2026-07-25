@@ -60,11 +60,10 @@ a { color: inherit; }
      shell-links—语言切换)恒有最小间距,不依赖富余空间。 */
   gap: 28px;
   padding: 0 clamp(20px, 5vw, 80px);
-  background: color-mix(in oklch, var(--bg), transparent 4%);
+  background: var(--bg);
   position: sticky;
   top: 0;
   z-index: 10;
-  backdrop-filter: blur(10px);
 }
 /* 页头左端的恒定品牌位:NiceEval 字标 + 45° 方块 mark,外链官网(App.tsx 的 .brand)。
    与 hero 下 nre-powered-by 品牌行同族,由宿主渲染、报告定义不能覆盖或移除。 */

@@ -56,9 +56,10 @@
 
 /* ---- AttemptList:实体列表的叶子层,一条卡片一个 Attempt ---- */
 .nre-attempt-list .nre-attempts { list-style:none; margin:0; padding:0; }
-.nre-attempt-list .nre-attempt { border:1px solid var(--line); border-left:3px solid var(--line-strong); border-radius:8px; padding:10px 14px; margin-bottom:8px; background:var(--panel); }
+.nre-attempt-list .nre-attempt { border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:8px; background:var(--panel); }
+/* 只有 failed/errored 留左边语义色条;其余靠 hairline,避免每行都像 callout */
 .nre-attempt-list .nre-attempt-failed,
-.nre-attempt-list .nre-attempt-errored { border-left-color: var(--bad); }
+.nre-attempt-list .nre-attempt-errored { border-left: 3px solid var(--bad); }
 .nre-attempt-list .nre-attempt-head { display:flex; flex-wrap:wrap; gap:.75em; align-items:baseline; }
 .nre-attempt-list .nre-attempt-eval { font-weight:620; }
 .nre-attempt-list .nre-attempt-experiment,
@@ -336,9 +337,8 @@ table.nre,
 .nre-scope-summary .nre-scope-kpi:last-child { border-right: 0; }
 .nre-scope-summary .nre-scope-kpi dt {
   color: var(--soft);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 550;
 }
 .nre-scope-summary .nre-scope-kpi dd {
   margin: 6px 0 0;
@@ -949,13 +949,13 @@ table.nre,
   letter-spacing: 0.04em;
 }
 
-/* Error 与断言:同一套左侧语义边和可展开明细。 */
+/* Error 与断言:中性底 + 失败左边条;可展开明细。 */
 .nre-attempt-error {
   overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--bad), var(--line) 64%);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--bad);
   border-radius: 9px;
-  background: color-mix(in oklch, var(--bad), var(--panel) 95%);
+  background: var(--panel);
 }
 .nre-attempt-error .nre-attempt-error-fields {
   display: grid;
@@ -980,8 +980,8 @@ table.nre,
   overflow: auto;
   margin: 0;
   padding: 12px 15px;
-  border-top: 1px solid color-mix(in oklch, var(--bad), var(--line) 70%);
-  background: color-mix(in oklch, var(--bad), var(--panel-2) 96%);
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
   color: var(--muted);
   font: 12px/1.55 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   white-space: pre-wrap;
@@ -996,9 +996,13 @@ table.nre,
 .nre-attempt-source .nre-source-line-detail .nre-assertion-row {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--line-strong);
   border-radius: 8px;
   background: var(--panel);
+}
+/* 只有 gate failed(tone-bad)留左边色条;soft/passed/na 用 hairline */
+.nre-attempt-assertions .nre-assertion-row:has(.nre-tone-bad),
+.nre-attempt-source .nre-source-line-detail .nre-assertion-row.nre-tone-bad {
+  border-left: 3px solid var(--bad);
 }
 .nre-attempt-assertions .nre-assertion-row > summary {
   display: flex;
@@ -1358,12 +1362,10 @@ table.nre,
 .nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--blue, var(--nre-c0));
   border-radius: 8px;
   background: var(--panel-2);
 }
-.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn-failed { border-left-color: var(--bad); }
-.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn-waiting { border-left-color: var(--warn); }
+.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn-failed { border-left: 3px solid var(--bad); }
 
 /* Other conversation(unlocated turns):TurnDetail 在这里复用 AttemptConversation 同一套回复
    renderer(showMeta/showSent 都为真,没有可依附的 send 行),但 .nre-conv-* 的规则此前只覆盖了
