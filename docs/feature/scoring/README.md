@@ -19,6 +19,7 @@ Scoring 回答“一次 eval attempt 算不算通过”。eval 通过值断言�
 | 写值断言、作用域断言、judge 或自定义 matcher | [Library](library.md) |
 | 理解 scope、Severity、Verdict 与证据折叠 | [Architecture](architecture.md) |
 | 理解 `--strict` 和 CLI 结果 | [CLI](cli.md) |
+| 照着一个真实场景走一遍全流程 | [用例](use-case/README.md) |
 
 ## 目录索引
 
@@ -37,6 +38,10 @@ scoring/
 │   ├── scopes.md
 │   ├── severity-and-verdict.md
 │   └── evidence.md
+├── use-case/
+│   ├── README.md
+│   ├── strict-quality-gate.md
+│   └── judge-not-scoring.md
 └── reference/
     └── provenance.md
 ```

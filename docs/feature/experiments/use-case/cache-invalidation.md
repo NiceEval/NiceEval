@@ -66,6 +66,8 @@ $ pnpm exec niceeval exp compare/codex--nowledge --carry-ignoring-flag nowledgeE
 
 **你会看到**:提高上限**不作废任何东西**——超时上限不改变「结果是什么」,只决定「等不等得到」,它不进指纹;已完成的照常携带,只有当初撞线的 `errored`(本就永不携带)重跑。反过来调低上限时,`durationMs` 超过新线的旧终态在新配置下复现不出来,如实重跑。
 
+**改之前先看清楚现在这个上限是哪一层给的**:它由 `--timeout` → experiment → eval → config 解析而来(链见 [Resolved config](../architecture.md#resolved-config一次求值处处同源)),超时报错里的 `from …` 直接写着答案。改错层的症状是「改了没生效」——experiment 里钉了 20 分钟时,去 config 上调到 40 分钟不会有任何变化。
+
 ## 7. `runs` 从 3 提到 5
 
 **你会看到**:不作废。携带以 attempt 为粒度,已有的 3 条终态携入,本次只跑缺的 2 条,通过率的分母由两者凑满。同理,`runs` 调小不会删掉已有结果。

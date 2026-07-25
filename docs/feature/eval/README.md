@@ -12,7 +12,7 @@ export default defineEval({
   tags?: string[];                 // 供 --tag 与 ExperimentDef.evals 谓词过滤
   judge?: JudgeConfig;             // 覆盖默认裁判模型
   reporters?: Reporter[];          // 这个 eval 专用的报告器
-  timeoutMs?: number;              // 覆盖默认超时
+  timeoutMs?: number;              // 这条 eval 需要多久才跑得完
   environment?: string;            // 这条 eval 需要的环境 profile id；也可由 ExperimentDef.evals 谓词读取
   diff?: { include?: string[]; ignore?: string[] };   // 调整 agent diff 的归因排除清单(仅沙箱型;见下)
   metadata?: Record<string, unknown>;
@@ -21,6 +21,8 @@ export default defineEval({
   async test(t) { /* 交互 + 断言 */ },
 });
 ```
+
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。两者都排在 `niceeval.config.ts` 之前——项目级配置是没写时的缺省底，压不掉 eval 写下的值；要按次覆盖，用运行侧的 `--timeout` 或 experiment 字段（`judge` 的模型另有单次 `{ model }` 出口，见 [LLM-as-judge](../scoring/library/judge.md#模型与鉴权)）。完整的四层链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
 
 `environment` 声明这条 eval 需要哪种**环境 profile**，例如 `"python-3.9-astropy-4.2"`。它是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。省略此字段的 eval 从 spec 的基础产物起步；数据集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。选中 eval 声明的 profile 在所用 spec 里缺表项是启动期配置错误。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；remote Agent 不创建沙箱，此字段只参与指纹。
 

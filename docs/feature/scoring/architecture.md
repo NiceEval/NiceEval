@@ -63,8 +63,14 @@ type AssertionResult =
     })
   | (AssertionBase & {
       outcome: "unavailable";
-      /** 机器可读原因,如 "judge-model-unresolved"、"coverage:actions=partial"。 */
+      /** 机器可读原因,如 "judge-model-unresolved"、"judge-call-failed"、"coverage:actions=partial"。 */
       reason: string;
+      /**
+       * 评不了的一层人读细节:judge 调用失败时是状态码 / 异常摘要,证据通道不完整时是缺的通道与
+       * 实际覆盖度。`reason` 回答「归哪一类」,它回答「这一条具体怎么了」——没有它,一个
+       * `judge-call-failed` 分不出是网关拒了鉴权还是请求体不合协议,而两者的下一步完全不同。
+       */
+      evidence?: string;
     });
 
 /**

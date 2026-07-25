@@ -105,6 +105,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`
 - 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报 `ctx.fact()`(见 [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md))
 - 已修 [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-release-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超 `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user 并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档
 - 已修 [failure-class-carry-on-turn-failed-has-no-error](failure-class-carry-on-turn-failed-has-no-error.md) — 终局失败的 scope 要走出重试执行体:`turn-failed` 形态没有错误对象可挂(错误到 `expectOk()` 才铸造),且耗尽摘要会换出一个新的 Turn 对象——按 Turn 身份登记时登记错对象会让 scope 静默丢失、只在「重试耗尽」这条路径上错;修法=onFinalFailure 回执报浮出的那个 Turn + WeakMap 登记 + expectOk 附着;接线方注意 attempt.ts 转 AttemptError 时原错误即被丢弃

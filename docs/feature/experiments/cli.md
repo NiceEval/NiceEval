@@ -147,7 +147,7 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### judge 预检的显示
 
-`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Scoring · Judge](../scoring/library/judge.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级钩子同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级钩子共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测有 20s 上限:网关接受了连接却一直不回时,预检超时中止本次运行、给出「端点无响应」的可行动错误,而不是无限等待。
+`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Scoring · Judge](../scoring/library/judge.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级钩子同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级钩子共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
 
 - **Human(TTY)**:预检期间 ACTIVE 区显示一行运行级行 `● prechecking judge config   <elapsed>`,排在实验钩子行与 attempt 行之前——它发生在最前,是「为什么 attempt 还停在 `queued`」的解释;存活性由持续增长的 elapsed 证明(不做 spinner 动画,与 attempt 行同一约定)。预检结束该行即消失,不在 scrollback 留永久行。
 
@@ -166,7 +166,7 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
   {"event":"judge_precheck","status":"done","durationMs":12000}
   ```
 
-- 预检失败(缺 key、端点不通、鉴权失败、20s 无响应超时)不是这条通道的事:它以既有错误路径中止本次运行、逐条给出可行动的 `fix:`,不折进上面的起止事件。
+- 预检失败(缺 key、端点不通、鉴权失败、20s 无响应超时)不是这条通道的事:它以既有错误路径中止本次运行、逐条给出可行动的 `fix:`(各类失败的 `fix:` 口径见 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检)),不折进上面的起止事件。
 
 ### 等待并发 run 的显示
 
@@ -811,9 +811,11 @@ eval 级聚合行的 `locator` 指**代表 attempt**——earlyExit 下取 attem
 两种形态使用同一错误分类,只改变呈现:
 
 ```text
-人读    ! memory/agent-029  compare/bub-e2b  errored · timeout after 60000ms
---json  {"event":"error","locator":"@18c1m2qx","evalId":"memory/agent-029","experimentId":"compare/bub-e2b","phase":"agent.run","reason":"attempt timed out (60000ms)"}
+人读    ! memory/agent-029  compare/bub-e2b  errored · timeout after 60000ms (from config)
+--json  {"event":"error","locator":"@18c1m2qx","evalId":"memory/agent-029","experimentId":"compare/bub-e2b","phase":"agent.run","reason":"attempt timed out (60000ms, from config)"}
 ```
+
+超时消息带**这个上限是哪一层给的**——`from flag` / `from experiment` / `from eval` / `from config`,对应 [Resolved config](architecture.md#resolved-config一次求值处处同源) 的解析链。撞线时用户要的下一步是「去哪儿把它调大」,光一个毫秒数得自己回去对四个地方;尤其当 eval 声明了 35 分钟却被别处的 20 分钟掐死时,来源标注是一眼看出配置解析走岔了的唯一线索。它写在 `AttemptError.message` 里(两个面同源),不另立结构化字段:这是给人排查用的一层原因,不是要 CI 分支的决策轴。
 
 已经发起 agent turn 的 attempt 没有成本数据时只提示一次。人读文本把 warning 永久写入 scrollback,`--json` 追加一条 `warning` 事件;不得每个 attempt 重复同一诊断。attempt 在 `sandbox.create`、setup 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
 

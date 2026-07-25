@@ -17,7 +17,7 @@ ExperimentDef(运行配置 + 实验级 setup 钩子,experiments/ 下一文件一
 
 ## Resolved config：一次求值，处处同源
 
-配置优先级是 CLI flag → experiment 字段 → `niceeval.config.ts` 兜底 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。解析发生在调度任何 attempt 之前、一次完成，运行中不再重读；此后所有消费方——调度器、fingerprint、快照投影、报告——引用同一份 resolved 值：
+配置优先级是 CLI flag → experiment 字段 → eval 字段 → `niceeval.config.ts` 兜底 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`），排在 config 之前：**config 是缺省底，不是覆盖层——项目里写了 config 不得使 eval 自己的声明失效**。一条声明 35 分钟上限的安装型 eval，在 config 写了 20 分钟的项目里仍按 35 分钟跑；要一次性把整批掐短，用运行侧的 `--timeout` 或 experiment 字段显式压过它——运行侧只以显式声明取胜，不靠 config 的缺省值遮蔽题目自己的需求。解析发生在调度任何 attempt 之前、一次完成，运行中不再重读；此后所有消费方——调度器、fingerprint、快照投影、报告——引用同一份 resolved 值：
 
 - `evals` 过滤器在解析时遍历发现后的 `EvalDescriptor` 全集（数据集已扇出），产出 `selectedEvalIds`；函数必须同步返回 boolean。落盘的是求值结果与过滤器指纹，不是函数本身。
 - `sandbox` 是本实验唯一的固定 `SandboxSpec`。spec 携带 `environments` 表时，解析期按每条选中 eval 的 `environment` 查表得出该 eval 的有效产物参数：选中 eval 声明的 profile 缺表项属于启动期配置错误，一次穷举列出全部缺项，不创建任何沙箱。逐 eval 的解析结果进入该 eval 的 fingerprint、provider 并发推荐值与 `ExperimentRunInfo.sandboxByEval`；remote Agent 不创建 sandbox，不参与查表。
@@ -31,7 +31,7 @@ experiment 影响调度的字段就这五个：
 - `maxConcurrency` —— 实验级并发闸，先过它再占全局并发位；名额与 attempt 同生命周期（沙箱创建到销毁全程持有，turn 退避等内部等待不释放），串行化共享状态实验或给撞限额的实验单独降速。名额域是该实验所有并行 Invocation 共用的（租约机制见[并发 Invocation](#并发-invocation用例锁)），多开不叠加 N。
 - `earlyExit` —— 只由 `passed` 触发的首过即停；`errored` 不中止其余样本，确定性错误走 run 级 fail-fast（见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)）。
 - `budget` —— 按已完成 attempt 实测花费停止派发的安全网。
-- `timeoutMs` —— 单 attempt 外层超时。不进 eval fingerprint 哈希,以携带资格判据参与 carry(`durationMs` ≤ 当前值才可携带,见 [Runner · 缓存](../../runner.md#缓存指纹去重));超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
+- `timeoutMs` —— 单 attempt 外层超时。四层来源按 [Resolved config](#resolved-config一次求值处处同源) 的链解析(`--timeout` → experiment → eval → config),此后一切消费方用的都是这份 resolved 值。不进 eval fingerprint 哈希,以携带资格判据参与 carry(`durationMs` ≤ 当前 resolved 值才可携带,见 [Runner · 缓存](../../runner.md#缓存指纹去重));超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
 - `classifyFailure` —— 实验级失败分类器:识别以第三方错误形态浮出的自家共享基建死因(对共享隧道 host 的拒连),命中的 `scope` 触发止损闸停止派发。类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型),写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
 
 前四个字段的调度语义单点在 [Runner](../../runner.md)。

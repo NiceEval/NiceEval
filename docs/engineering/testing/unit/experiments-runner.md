@@ -100,6 +100,10 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **调度项优先级**：CLI flag → experiment → config
   → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与快照投影。**这条链里没有环境变量层**（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/`
   下所有非测试源码实际读取的环境变量名，断言它们全部落在「凭据 + 终端环境」白名单内。加一条配置类环境变量回来就会红，不需要预先知道它叫什么名字；白名单本身是那份边界表的机器可读副本，改动它等于改契约。
+- **含 eval 层的字段解析链（`timeoutMs`）**：`--timeout` → experiment → eval → config
+  → 无上限，五档逐层可区分。区分力最强的一格必测：**config 有值、experiment 没写、eval 写了自己的值时取 eval 的值**——`??` 链少写一层回落时这一格恰好是唯一会红的，其余四格照常通过。断言面取
+  attempt 实际生效的 deadline 与超时消息里的来源标注（`from eval` / `from config`…），不是解析函数的中间返回值；同一份 resolved 值同时喂给
+  carry 的资格判据（`durationMs` ≤ 当前上限），两处不分叉。
 - **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→
   `zh-CN`。断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C`
   / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` /

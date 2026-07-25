@@ -101,6 +101,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 **给共享接口加可选字段：数着调用点过。** 跨多个调用点的接口 / 回调签名新增**可选**字段时，类型系统一次都拦不住：生产侧漏填是合法省略，消费侧不读新字段旧字段还在，两侧的回落分支（`x.code ?? x.key.split(":")[0]` 这类）让漏改在大多数 fixture 上恰好正确。加字段的那次改动必须包含一次**调用点普查**——grep 出全部构造点与消费点（消费点要 grep **旧**字段名，不是新字段名），逐个判定「该填 / 有意不填」，并配一条真正跑该字段生效路径的行为测试。`pnpm run typecheck` 绿不构成「所有实现方都接住了」的证据。能做成必选就别做成可选。详见 [memory 条目](memory/optional-field-additions-need-call-site-census.md)。
 
+**一个字段能从两处以上来：先在 docs 定死解析链，再写 `??`。** flag / experiment / eval / config 各有一个同名字段时，`a ?? b ?? c` 少写一层类型系统一次都拦不住，而且只有**同时配了两层**的项目才露馅——单层配置的 fixture 和示例全绿。链里有「兜底层」时特别检查它有没有被提前物化成上游的值：把 `config` 的缺省提前塞进 run 配置，下游那层 `??` 就永远短路，症状是「eval 里写的值不生效」，报错还落在离改动很远的地方。解析顺序单点声明在对应功能文档里（`timeoutMs` 见 [Resolved config](docs/feature/experiments/architecture.md#resolved-config一次求值处处同源)），新增来源的那次改动配一条「上层缺省 + 下层显式」的区分力测试——那一格是唯一会红的。详见 [memory 条目](memory/multi-source-field-resolution-order.md)。
+
 ## CLI Model
 
 CLI 只有两类输入：位置参数选择“跑哪些 eval”（eval id 前缀），flag 选择“对着哪个 agent、怎么跑”。不要把 agent 名字、URL 或运行配置混进位置参数语义里；新增命令或报错时保持这个模型清晰。
