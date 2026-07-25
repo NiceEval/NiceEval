@@ -11,7 +11,7 @@ Evals should live in CI the same way tests do. They catch agent regressions on p
 By default, [NiceEval](https://niceeval.com/) exits non-zero when any gate fails. In CI you usually want `--strict` so failure is explicit:
 
 ```bash
-NICEEVAL_LANG=en npx niceeval exp ci \
+npx niceeval exp ci \
   --strict \
   --junit .niceeval/junit.xml
 ```
@@ -38,7 +38,6 @@ jobs:
       - run: npm ci
       - run: npx niceeval exp ci --strict --junit .niceeval/junit.xml
         env:
-          NICEEVAL_LANG: en
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -90,7 +89,7 @@ The exit code is the first-line red/green signal; JUnit and the results snapshot
 When something needs to parse run events programmatically (a custom annotation adapter, a live dashboard), add `--json` to that same command to get the same facts as an NDJSON event stream, starting with `start` and ending with `result`:
 
 ```bash
-NICEEVAL_LANG=en npx niceeval exp ci --strict --junit .niceeval/junit.xml --json
+npx niceeval exp ci --strict --junit .niceeval/junit.xml --json
 ```
 
 When you just need a JSON summary file, don't parse the run log — read the results plane after the run instead:

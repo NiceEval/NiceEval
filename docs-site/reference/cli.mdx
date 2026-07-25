@@ -31,14 +31,17 @@ The [NiceEval](https://niceeval.com/) CLI is the entry point for discovering, ru
 
 ## Output language
 
-The [NiceEval](https://niceeval.com/) CLI and runtime copy support localization without any configuration in `niceeval.config.ts`. When you need a fixed output language, use an environment variable:
+The [NiceEval](https://niceeval.com/) CLI and runtime copy support localization. To fix the output language (CI logs especially), set it in `niceeval.config.ts`:
 
-```bash
-NICEEVAL_LANG=en npx niceeval list
-NICEEVAL_LANG=zh-CN npx niceeval list
+```ts
+import { defineConfig } from "niceeval";
+
+export default defineConfig({
+  locale: "en",
+});
 ```
 
-Detection order is `NICEEVAL_LANG`, `NICEEVAL_LOCALE`, `LC_ALL`, `LC_MESSAGES`, then `LANG`. Values starting with `zh` use `zh-CN`; everything else uses `en`. If none are set, the default is `zh-CN`. This only affects terminal/runtime copy — it does not change the machine-readable fields in result JSON, and it does not translate LLM judge prompts.
+Without `locale`, the language follows the system locale, checked in the order `LC_ALL`, `LC_MESSAGES`, then `LANG`. Values starting with `zh` use `zh-CN`; everything else uses `en`. If none are set, the default is `zh-CN`. This only affects terminal/runtime copy — it does not change the machine-readable fields in result JSON, and it does not translate LLM judge prompts.
 
 ## `npx niceeval exp [group|config] [id-prefix...]`
 
@@ -181,20 +184,11 @@ npx niceeval show weather/brooklyn --history
 
 `--strict` does not mean "report errors more strictly" — it changes how soft-threshold assertions are judged. A soft threshold like `.atLeast(n)` (`soft` severity) failing normally does not mark the whole eval as `failed` (it just records an assertion that fell short); with `--strict`, a soft threshold falling short also makes the eval's overall verdict count as `failed`. This is recommended in CI, to avoid the case where "the assertion score is short but the eval shows as passed" slips through.
 
-## Environment variable overrides
+## Environment variables hold credentials only
 
-The following environment variables correspond to some flags, for cases where passing CLI arguments is inconvenient (such as CI environment configuration):
+Runs, timeout, concurrency, budget, judge model and endpoint, interface language — all of these are configuration, read only from CLI flags, the experiment files under `experiments/`, and `niceeval.config.ts`. Priority from highest to lowest: CLI flag > experiment > `niceeval.config.ts` > built-in default. There is no environment variable counterpart, so a value never has a third source.
 
-| Environment variable | Corresponding flag |
-|---|---|
-| `NICEEVAL_RUNS` | `--runs` |
-| `NICEEVAL_MAX_CONCURRENCY` | `--max-concurrency` |
-| `NICEEVAL_TIMEOUT` | `--timeout` |
-| `NICEEVAL_BUDGET` | `--budget` |
-
-Priority from highest to lowest: CLI flag > environment variable > value in the experiment / `niceeval.config.ts` > built-in default. All four environment variables must be valid numbers; parsing failures exit with an error immediately.
-
-[NiceEval](https://niceeval.com/) also automatically loads a `.env` file from the cwd on startup (no extra configuration needed, and it never overrides an environment variable that already exists) — commonly used to keep credentials like `ANTHROPIC_API_KEY` locally without exporting them manually every time.
+Environment variables are for credentials (API keys, provider tokens) and terminal facts (`NO_COLOR`, the system locale). Each agent / sandbox / judge recognizes exactly one variable name and never hunts for another key in the environment; `.env` in the cwd is loaded at startup (without overwriting variables that already exist). The full list, and what to replace older variables with, is in [Config & environment](/tutorials/configuration).
 
 ## Exit codes
 

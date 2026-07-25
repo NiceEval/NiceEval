@@ -5,7 +5,9 @@ export default defineConfig({
   name: { "zh-CN": "e2e: codex-cli (codexAgent, docker sandbox)", en: "e2e: codex-cli (codexAgent, docker sandbox)" },
   // NICEEVAL_JUDGE_BASE 这个网关只认 deepseek-v4-pro / deepseek-v4-flash(实测确认,同一凭据
   // 已在 e2e/adapter/codex-sdk 验证过),不是通用 OpenAI 兼容网关,不能沿用 gpt-5.4 之类的模型名。
-  judge: { model: "deepseek-v4-flash" },
+  // judge 端点是配置,niceeval 不再内置读任何环境变量:这里自己读 NICEEVAL_JUDGE_BASE
+  // (值在本仓库 .env / CI secret 里),key 仍由 niceeval 按 NICEEVAL_JUDGE_KEY 读。
+  judge: { model: "deepseek-v4-flash", baseUrl: process.env.NICEEVAL_JUDGE_BASE },
   // 用 NiceEval 官方预制镜像(sandbox/README.md「Docker」),codex CLI 与 git/curl/
   // ca-certificates 都已烘焙进镜像,agent setup 的 `command -v codex` 直接命中、跳过
   // npm install -g;多架构 manifest 也顺带避开 Apple Silicon 本机拉 amd64 镜像走 QEMU

@@ -16,6 +16,7 @@ import { openResults } from "../results/index.ts";
 import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 import { runShow, type ShowFlags } from "./index.ts";
 import type { ShowJson } from "./json.ts";
+import { setConfiguredLocale } from "../i18n/index.ts";
 
 // ───────────────────────── fixture 工具(同 show.test.ts 的最小子集,自成一份不跨文件耦合) ─────────────────────────
 
@@ -29,14 +30,11 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
-let langBackup: string | undefined;
 beforeAll(() => {
-  langBackup = process.env.NICEEVAL_LANG;
-  process.env.NICEEVAL_LANG = "en";
+  setConfiguredLocale("en");
 });
 afterAll(() => {
-  if (langBackup === undefined) delete process.env.NICEEVAL_LANG;
-  else process.env.NICEEVAL_LANG = langBackup;
+  setConfiguredLocale(undefined);
 });
 
 type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &

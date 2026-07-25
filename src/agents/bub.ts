@@ -1,6 +1,6 @@
 import { completeCoverage } from "../scoring/coverage.ts";
 import { defineSandboxAgent } from "../define.ts";
-import { requireEnv, getEnv } from "../util.ts";
+import { requireEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
   appendProjectInstruction,
@@ -85,16 +85,13 @@ const SKILL_DIR = ".agents/skills";
 
 // TODO(upstream): BUB_OVERRIDE 钉在个人 fork 的修复分支上(tool-call 分支丢助手文本的修复
 // 尚未进上游,见 memory/bub-tapestore-otel…drift.md 台账),等上游包含后改回发布版。
-// 可用 NICEEVAL_BUB_OVERRIDE / NICEEVAL_BUB_OTEL_PLUGIN 覆盖,不必改源码。
-const BUB_OVERRIDE =
-  getEnv("NICEEVAL_BUB_OVERRIDE") ??
-  DEFAULT_BUB_OVERRIDE;
+// 要试别的 pin 就改这两个常量——不设环境变量后门:装哪个包是配置,配置的家是代码
+// (边界见 docs/architecture.md「配置从代码来,凭据从环境来」)。
+const BUB_OVERRIDE = DEFAULT_BUB_OVERRIDE;
 const BUB_OVERRIDE_FILE = "/tmp/bub-override.txt";
 // otel 插件跟上游 main 走(bub-contrib#50 起从 bub.tape 导入,要求 bub ≥ 0.3.10dev,
 // 与上面的 override 分支兼容)。插件不发 PyPI,git 依赖是唯一安装方式。
-const OTEL_PLUGIN =
-  getEnv("NICEEVAL_BUB_OTEL_PLUGIN") ??
-  DEFAULT_BUB_OTEL_PLUGIN;
+const OTEL_PLUGIN = DEFAULT_BUB_OTEL_PLUGIN;
 
 // NiceEval 的预制配方与运行时安装都写到 $HOME/.local；显式使用该路径，避免 PATH 上
 // 另一个未知版本的 bub 抢先命中。

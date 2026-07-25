@@ -483,7 +483,7 @@ export default defineExperiment({
 - **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`、`sandbox`。`Config.sandbox` 必须是工厂函数产出的显式 `SandboxSpec`（可携带 `environments` 表）；experiment 的 `sandbox` 可以覆盖它。两处都没配置时，沙箱型 Agent 直接报错，不探测环境或选择内置 Provider 默认值。
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
-调度项覆盖优先级(高 → 低):**CLI flag → 环境变量(`NICEEVAL_RUNS` / `NICEEVAL_TIMEOUT` / `NICEEVAL_BUDGET` / `NICEEVAL_MAX_CONCURRENCY`)→ experiment → config → 内置默认**。CLI 启动时加载项目根的 `.env`。agent、model、flags 属于 experiment,不由 CLI / 环境变量覆盖。
+调度项覆盖优先级(高 → 低):**CLI flag → experiment → config → 内置默认**。这条链里没有环境变量:配置项的家是代码(experiment / config)与本次命令(flag),环境变量只承担凭据和终端环境事实([边界](../../architecture.md#配置从代码来凭据从环境来))。agent、model、flags 属于 experiment,不由 CLI 覆盖。
 
 ## 相关阅读
 

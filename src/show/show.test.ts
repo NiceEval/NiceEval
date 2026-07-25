@@ -29,6 +29,7 @@ import { openResults } from "../results/index.ts";
 import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type StreamEvent, type Verdict } from "../types.ts";
 import { attemptHistory } from "./compose.ts";
 import { runShow, type ShowFlags } from "./index.ts";
+import { setConfiguredLocale } from "../i18n/index.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 
@@ -44,14 +45,11 @@ afterEach(async () => {
 
 // show 的报告 chrome 跟随 CLI 界面语言(detectLocale);本文件的断言按英文写,
 // 固定 en 让用例不随宿主机 LANG 漂移。
-let langBackup: string | undefined;
 beforeAll(() => {
-  langBackup = process.env.NICEEVAL_LANG;
-  process.env.NICEEVAL_LANG = "en";
+  setConfiguredLocale("en");
 });
 afterAll(() => {
-  if (langBackup === undefined) delete process.env.NICEEVAL_LANG;
-  else process.env.NICEEVAL_LANG = langBackup;
+  setConfiguredLocale(undefined);
 });
 
 /** 一条 attempt 的最小 fixture;字段照 docs/feature/results/architecture.md 的 AttemptRecord。 */

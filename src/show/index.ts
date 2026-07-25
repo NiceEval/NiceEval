@@ -1087,7 +1087,7 @@ async function show(
   // 报告槽:裸 show / eval id 前缀 / 单个 `--exp` 都落在这里,装载 `niceeval/report/built-in`
   // 的默认导出,--report 整槽替换——同一条
   // 「装载 → 规范化(外壳 + 非空页列表)→ 逐页渲染」管线(docs/feature/reports/library/shell.md)。
-  // locale = CLI 界面语言(NICEEVAL_LANG / LC_* / LANG 检测):报告 chrome 文案跟随终端语言。
+  // locale = CLI 界面语言(config.locale,回落到 LC_* / LANG):报告 chrome 文案跟随它。
   const report = await loadHostReport(cwd, flags.report);
   const locale = detectLocale();
   const commandContext: HostCommandContext = {

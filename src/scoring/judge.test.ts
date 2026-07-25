@@ -93,13 +93,11 @@ afterEach(() => {
 });
 
 describe("judge 端点/凭据/模型解析进入真实请求", () => {
-  it("NICEEVAL_JUDGE_BASE/KEY 落在请求 URL 与 Bearer 头;config model 压过 NICEEVAL_JUDGE_MODEL;score 0 过不了 .gate(0.7)", async () => {
-    vi.stubEnv("NICEEVAL_JUDGE_BASE", "http://judge.fixture.internal/v1");
+  it("config 的 baseUrl 与 NICEEVAL_JUDGE_KEY 落在请求 URL 与 Bearer 头;score 0 过不了 .gate(0.7)", async () => {
     vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
-    vi.stubEnv("NICEEVAL_JUDGE_MODEL", "env-model");
     const captured = stubJudgeFetch();
 
-    const { collector, ns } = judgeWith({ model: "config-model" });
+    const { collector, ns } = judgeWith({ model: "config-model", baseUrl: "http://judge.fixture.internal/v1" });
     ns.autoevals.closedQA("助手是否描述了这张图片的内容,而不是答非所问?").gate(0.7);
     const [result] = await collector.finalize(ctx());
 
@@ -128,16 +126,59 @@ describe("judge 端点/凭据/模型解析进入真实请求", () => {
     expect(captured[0]!.body.model).toBe("call-model");
   });
 
-  it("config 缺席时回落到 NICEEVAL_JUDGE_MODEL", async () => {
+  // 配置是模型的唯一来源:环境里摆着旧的 NICEEVAL_JUDGE_MODEL / OPENAI_API_KEY /
+  // OPENAI_BASE_URL 也一概不看——既不当模型用,也不拿来当 key、当端点。
+  it("config 缺席时不回落到任何环境变量,记 model-unresolved", async () => {
     vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
     vi.stubEnv("NICEEVAL_JUDGE_MODEL", "env-model");
     const captured = stubJudgeFetch();
 
     const { collector, ns } = judgeWith(undefined);
     ns.autoevals.closedQA("是否切题?");
+    const [result] = await collector.finalize(ctx());
+
+    expect(captured).toHaveLength(0);
+    expect(result).toMatchObject({ outcome: "unavailable" });
+    expect((result as { reason?: string }).reason).toContain("judge-model-unresolved");
+  });
+
+  it("端点与 key 都不从 OPENAI_* / CODEX_* 借:没有 judge 自己的 key 就记 key-unresolved", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "app-key");
+    vi.stubEnv("OPENAI_BASE_URL", "http://app.fixture.internal/v1");
+    vi.stubEnv("CODEX_API_KEY", "codex-key");
+    vi.stubEnv("CODEX_BASE_URL", "http://codex.fixture.internal/v1");
+    const captured = stubJudgeFetch();
+
+    const { collector, ns } = judgeWith({ model: "config-model" });
+    ns.autoevals.closedQA("是否切题?");
+    const [result] = await collector.finalize(ctx());
+
+    expect(captured).toHaveLength(0);
+    expect(result).toMatchObject({ outcome: "unavailable" });
+    expect((result as { reason?: string }).reason).toContain("judge-key-unresolved");
+  });
+
+  it("judge.apiKeyEnv 指定的变量名决定读哪个 key", async () => {
+    vi.stubEnv("MY_GATEWAY_KEY", "gateway-key");
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "default-key");
+    const captured = stubJudgeFetch();
+
+    const { collector, ns } = judgeWith({ model: "config-model", apiKeyEnv: "MY_GATEWAY_KEY" });
+    ns.autoevals.closedQA("是否切题?");
     await collector.finalize(ctx());
 
-    expect(captured[0]!.body.model).toBe("env-model");
+    expect(captured[0]!.authorization).toBe("Bearer gateway-key");
+  });
+
+  it("没配 baseUrl 时打官方端点", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    const captured = stubJudgeFetch();
+
+    const { collector, ns } = judgeWith({ model: "config-model" });
+    ns.autoevals.closedQA("是否切题?");
+    await collector.finalize(ctx());
+
+    expect(captured[0]!.url).toBe("https://api.openai.com/v1/chat/completions");
   });
 });
 

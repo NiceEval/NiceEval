@@ -191,7 +191,7 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
 
 ```text
 ◌ gate · closedQA("修改是否聚焦问题?")
-    reason: judge-model-unresolved (no model in config, NICEEVAL_JUDGE_MODEL unset)
+    reason: judge-model-unresolved (no judge model in the eval or project config)
 ```
 
 ## Sandbox 断言

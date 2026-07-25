@@ -31,11 +31,20 @@ t.judge.autoevals.closedQA("diff 是否只修改目标逻辑?", {
 
 ## 模型与鉴权
 
-模型优先级：单次 `{ model }` → eval judge config → 项目 judge config → `NICEEVAL_JUDGE_MODEL`。没有内置默认模型。
+模型优先级：单次 `{ model }` → eval judge config → 项目 judge config。没有内置默认模型，也没有环境变量层——模型和端点是配置，只从代码来（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。
 
 ```ts
 // 单条断言换更强的裁判,不动全局配置
 t.judge.autoevals.factuality("布鲁克林今天是晴天", { model: "gpt-4o" }).atLeast(0.8);
+```
+
+端点默认是官方的 `https://api.openai.com/v1`；接 OpenAI 兼容代理时在 `judge.baseUrl` 里显式写出来，niceeval 不去环境里找代理地址。API key 是凭据，只从环境变量读：`judge.apiKeyEnv` 指定读哪个变量，不指定时读 `NICEEVAL_JUDGE_KEY`——judge 有自己的一个变量名，不会去借用被测应用的 `OPENAI_API_KEY` 或某个 agent 的 key。
+
+```ts
+// niceeval.config.ts —— 走自己的网关,凭据放 .env 里的 MY_GATEWAY_KEY
+export default defineConfig({
+  judge: { model: "gpt-5.4-mini", baseUrl: "https://gateway.example.com/v1", apiKeyEnv: "MY_GATEWAY_KEY" },
+});
 ```
 
 没有解析到模型或 API key 时，该条 judge 断言记录为 `outcome: "unavailable"`（带原因，如 `judge-model-unresolved`），绝不静默消失。写下的 rubric 默认要求可评估——无论 soft 还是 gate，unavailable 都使 attempt `errored`（评不了的结论不可信，不能算通过，也不该算 agent 答错）；确实允许这条 rubric 缺席时显式链 `.optional()`，它的 unavailable 只保留在记录里，不影响判定。折叠规则见 [Severity 与 Verdict](../architecture/severity-and-verdict.md)。CI 不需要从报告里是否有分数反推 judge 是否真的跑了：缺 key 直接红，optional 的 unavailable 在记录里可查。

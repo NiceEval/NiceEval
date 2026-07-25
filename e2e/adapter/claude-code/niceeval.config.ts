@@ -3,7 +3,9 @@ import { dockerSandbox } from "niceeval/sandbox";
 
 export default defineConfig({
   name: { "zh-CN": "e2e: claude-code(沙箱型内置 agent,docker)", en: "e2e: claude-code (built-in sandbox agent, docker)" },
-  judge: { model: "deepseek-v4-pro" },
+  // judge 端点是配置,niceeval 不再内置读任何环境变量:这里自己读 NICEEVAL_JUDGE_BASE
+  // (值在本仓库 .env / CI secret 里),key 仍由 niceeval 按 NICEEVAL_JUDGE_KEY 读。
+  judge: { model: "deepseek-v4-pro", baseUrl: process.env.NICEEVAL_JUDGE_BASE },
   // 用 NiceEval 官方预制镜像(sandbox/README.md「Docker」),claude CLI 已烘焙进
   // /usr/local/bin,agent setup 的 `command -v claude` 直接命中、跳过 npm install -g;
   // 多架构 manifest 也顺带避开 Apple Silicon 本机拉 amd64 镜像走 QEMU 模拟的问题。

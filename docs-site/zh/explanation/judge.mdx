@@ -83,7 +83,7 @@ defineEval({
 t.judge.autoevals.closedQA("rubric", { on: t.reply, model: "openai/gpt-4o" });
 ```
 
-三级都没配时，最后还会读环境变量 `NICEEVAL_JUDGE_MODEL`；连它也没有就是配置错误，调用点直接报错——judge 没有内置默认模型。
+三级都没配就是配置错误，调用点直接报错——judge 没有内置默认模型，也没有对应的环境变量（模型是配置，只从代码来）。
 
 ## 评判端点与 key：OpenAI 兼容协议
 
@@ -100,15 +100,17 @@ defineConfig({
 });
 ```
 
-`baseUrl` 和 key 都按从具体到笼统解析，配置字段优先、环境变量兜底：
+端点是配置，key 是凭据，两者的来源分开：
 
 | 项 | 解析顺序 |
 |---|---|
-| 端点 | `judge.baseUrl` → `NICEEVAL_JUDGE_BASE` → `CODEX_BASE_URL` → `OPENAI_BASE_URL` → `https://api.openai.com/v1` |
-| key | `judge.apiKeyEnv` 指定的环境变量 → `NICEEVAL_JUDGE_KEY` → `CODEX_API_KEY` → `OPENAI_API_KEY` |
+| 端点 | `judge.baseUrl` → `https://api.openai.com/v1` |
+| key | `judge.apiKeyEnv` 指定的环境变量 → `NICEEVAL_JUDGE_KEY` |
+
+接自己的网关或 OpenAI 兼容代理时把地址显式写进 `judge.baseUrl`——NiceEval 不去环境里翻 `OPENAI_BASE_URL` 这类变量猜端点。key 同理只读一个名字：`judge.apiKeyEnv` 指定的那个，或默认的 `NICEEVAL_JUDGE_KEY`；judge 有自己的凭据，不会借用被测应用或某个 agent 的 key。
 
 <Warning>
-  key 一个都解析不到时，judge 断言**静默跳过**——不报错、不记分，eval 照常跑。全绿不代表 judge 真的评过。配完 key 先跑一条带 `t.judge` 的 eval，在 `niceeval view` 里确认出现了 judge 分数。
+  模型或 key 解析不到时，这条 judge 断言记成 `unavailable`（带原因），不会静默消失：除非显式链了 `.optional()`，评不了就让这次 attempt 记 `errored`——评不出来的结论既不算通过，也不该算 agent 答错。配完 key 先跑一条带 `t.judge` 的 eval，在 `niceeval view` 里确认出现了 judge 分数。
 </Warning>
 
 ## 严重度：judge 默认 soft

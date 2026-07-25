@@ -89,7 +89,7 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 
 以一个沙箱型 agent eval 为例(会话型是它的子集:第 6 步没有 `Sandbox.create` / 变更分类账,直接跑 `test(t)`;跳过第 7 步,没有沙箱 diff 可折叠):
 
-1. **加载配置。** CLI 合并 标志 → 环境变量 → `niceeval.config.ts` → 默认值。
+1. **加载配置。** CLI 合并 标志 → experiment → `niceeval.config.ts` → 默认值（[配置与凭据的边界](#配置从代码来凭据从环境来)）。
 2. **发现。** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
 3. **指纹与缓存。** 对每个 eval 算 `(eval 代码 + 配置)` 指纹;已通过且指纹未变的,标记跳过(除非 `--rerun all`)。
 4. **建 attempt 列表。** 每个 eval × `runs` 次 → 一批 attempt。为每个 eval 建一个 `AbortController`(供首过即停)。
@@ -102,6 +102,22 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 11. **收尾与留存。** finally 里按 eval cleanup → `SandboxAgent.teardown` → 环境层 `.teardown()`(回存跨 attempt 状态的时机)的顺序收尾——收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。阶段词表以 [Results 的 `LifecyclePhase` 闭集](feature/results/architecture.md#resultjson)为唯一权威。
 12. **报告。** 每个 eval 完成即在串行报告队列上回调 `onEvalComplete`(不阻塞执行池),对应 attempt 的判决与 artifact 随之写进该实验快照目录(`.niceeval/<experiment>/<snapshot>/<evalId>/aN/result.json`);每个 Snapshot 在该 Experiment 收尾后补 `completedAt` 与快照级 diagnostics,全部结束后回调 `onInvocationComplete`。
 13. **退出码。** 有 `verdict=failed`(含 `--strict` 下 soft 未达标而改判的)或 `verdict=errored` → 非零退出;报告里两者分开列,供 CI 判红和诊断。
+
+## 配置从代码来,凭据从环境来
+
+环境变量在 niceeval 里只有两个合法用途,两个之外的一切都从代码读:
+
+| 类别 | 从哪来 | 说明 |
+|---|---|---|
+| **配置**(跑几次、超时、并发、预算、judge 模型与端点、默认报告、界面语言、adapter 与 sandbox 的行为参数) | CLI flag → experiment → `niceeval.config.ts` → 内置默认 | 没有环境变量层。同一个值不存在第三条来路,`--dry` 打印的 resolved 值就是真正生效的值 |
+| **凭据**(API key、provider token) | 环境变量,变量名由代码声明 | adapter / sandbox 工厂各自声明自己那一个官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`);judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。**只读自己家族那一个名字**,不跨家族回落、不做"环境里有哪个 key 就用哪个"的探测 |
+| **终端环境事实**(`NO_COLOR`、TTY、系统 locale) | 环境 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置。`config.locale` 优先于系统 locale |
+
+CLI 启动时仍加载项目根的 `.env`(不覆盖已有环境变量)——那是凭据的投递方式,不是配置层。
+
+**配置是代码,所以"从环境注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。区别在于变量名由项目自己起、自己读,niceeval 不内置任何配置类变量名、也不去环境里猜——这正是这条边界要保住的东西。
+
+这条边界的理由:配置有三条来路时,「为什么本地和 CI 跑出不同结果」要靠翻环境才能回答,而环境不进快照、不进指纹、复现时也不在手边。凭据反过来——它不能进签入 git 的代码,所以只能来自环境;niceeval 能做的是不去猜它叫什么名字。
 
 ## 错误隔离
 

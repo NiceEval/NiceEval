@@ -54,7 +54,7 @@ import {
 // 是两份不同源码位置,即使运行时同名同形,TS 类型与 instanceof 都不认。
 import { ReportLoadError } from "../dist/report/runtime/load.js";
 import { runShow } from "./show/index.ts";
-import { t } from "./i18n/index.ts";
+import { setConfiguredLocale, t } from "./i18n/index.ts";
 import { formatThrown, upsertManagedBlock } from "./util.ts";
 import type {
   CompletionStatus,
@@ -382,18 +382,6 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   return undefined;
 }
 
-/** 调度项的环境变量层(标志 > 环境变量 > config > 默认,见 docs/cli.md「配置优先级」)。 */
-function envNumber(name: string): number | undefined {
-  const raw = process.env[name]?.trim();
-  if (!raw) return undefined;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) {
-    process.stderr.write(t("cli.envInvalidNumber", { name, value: raw }));
-    process.exit(1);
-  }
-  return n;
-}
-
 /** 加载 cwd/.env(不覆盖已有环境变量)。 */
 async function loadDotenv(cwd: string): Promise<void> {
   const path = join(cwd, ".env");
@@ -410,6 +398,23 @@ async function loadDotenv(cwd: string): Promise<void> {
       value = value.slice(1, -1);
     }
     if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+/**
+ * 界面语言只从 `defineConfig({ locale })` 来,所以每条命令(含不依赖 config 的 show / view)
+ * 都要在派发前看一眼配置。这里刻意宽容:没有配置文件、或配置本身有错时静默回到系统 locale
+ * 判定——语言是装饰性设置,不该让 `niceeval show` 因为一个坏 config 打不开结果;真正需要
+ * config 的命令随后走 loadConfig,由它报出完整错误(模块缓存让这次装载不重复付出代价)。
+ */
+async function applyConfiguredLocale(cwd: string): Promise<void> {
+  const path = join(cwd, "niceeval.config.ts");
+  if (!existsSync(path)) return;
+  try {
+    const mod = (await import(pathToFileURL(path).href)) as { default?: Config };
+    setConfiguredLocale(mod.default?.locale);
+  } catch {
+    // 交给后续 loadConfig 报错;这里不抢在语言还没定下来时打印任何东西。
   }
 }
 
@@ -606,6 +611,7 @@ async function packageVersion(): Promise<string> {
 async function main(): Promise<void> {
   const cwd = process.cwd();
   await loadDotenv(cwd);
+  await applyConfiguredLocale(cwd);
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
 
   // --help / --version 不需要 config,先于一切命令处理。
@@ -875,11 +881,11 @@ async function main(): Promise<void> {
         reasoningEffort: exp.reasoningEffort,
         flags: exp.flags ?? {},
         ...(exp.provenanceFlags !== undefined ? { provenanceFlags: exp.provenanceFlags } : {}),
-        runs: flags.runs ?? envNumber("NICEEVAL_RUNS") ?? exp.runs ?? 1,
+        runs: flags.runs ?? exp.runs ?? 1,
         earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
         sandbox: exp.sandbox ?? config.sandbox,
-        timeoutMs: flags.timeout ?? envNumber("NICEEVAL_TIMEOUT") ?? exp.timeoutMs ?? config.timeoutMs,
-        budget: flags.budget ?? envNumber("NICEEVAL_BUDGET") ?? exp.budget,
+        timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
+        budget: flags.budget ?? exp.budget,
         selectedEvalIds,
         experimentId: exp.id,
         description: exp.description,
@@ -1011,7 +1017,6 @@ async function main(): Promise<void> {
   const sandboxDefaultConcurrency = resolvedSandboxRecommendedConcurrency(evals, agentRuns, config.sandbox);
   const maxConcurrency =
     flags.maxConcurrency ??
-    envNumber("NICEEVAL_MAX_CONCURRENCY") ??
     config.maxConcurrency ??
     sandboxDefaultConcurrency;
 

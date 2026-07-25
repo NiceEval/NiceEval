@@ -203,6 +203,7 @@
 | 字段 | 类型 | 作用 |
 |---|---|---|
 | `name` | `LocalizedText` | 项目名,显示在 `niceeval view` 顶部;可给字符串,或按 locale 给多语言(`{ en, "zh-CN" }`) |
+| `locale` | `string` | CLI 与运行时文案的界面语言(BCP 47,如 `"en"` / `"zh-CN"`);省略则按系统 locale(`LC_ALL` / `LC_MESSAGES` / `LANG`)判定,都没有时用 `zh-CN` |
 | `judge` | `JudgeConfig` | 默认 Judge(裁判模型,见 [Scoring](feature/scoring/library/judge.md)) |
 | `reporters` | `Reporter[]` | 全局报告器(见 [Observability](observability.md#reporters)) |
 | `report` | `ReportDefinition` | 项目默认报告定义(`defineReport` 产物,直接 import 自己的报告文件);`show` / `view` 不带 `--report` 时装载它,省略则装载内建 `standard`(见 [Reports](feature/reports/README.md)) |

@@ -98,7 +98,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   调用不出现在结果里）；没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为
   `passed`——计分制的 `failed` 只有中止一个来源。
 - **调度项优先级**：CLI flag → experiment → config
-  → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与快照投影。
+  → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与快照投影。**这条链里没有环境变量层**（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/`
+  下所有非测试源码实际读取的环境变量名，断言它们全部落在「凭据 + 终端环境」白名单内。加一条配置类环境变量回来就会红，不需要预先知道它叫什么名字；白名单本身是那份边界表的机器可读副本，改动它等于改契约。
+- **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→
+  `zh-CN`。断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C`
+  / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` /
+  `NICEEVAL_LOCALE`）在场也不参与。
 - **并发**：全局与实验级上限、全局上限的三层解析与 Provider 推荐值、exclusive
   Provider 强制串行。退避睡眠释放全局槽位，实验级闸全程持有。`maxConcurrency: 1`
   时，前一 Attempt 进入退避窗口，下一 Attempt 不得启动。前一 Attempt 的 `sandbox.teardown`

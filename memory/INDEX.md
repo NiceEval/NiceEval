@@ -350,6 +350,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- [env-only-credentials-config-only-code](env-only-credentials-config-only-code.md) — 裁决(2026-07-25):环境变量只剩凭据 + 终端事实,配置项只从 flag/experiment/config 来;删 NICEEVAL_RUNS/TIMEOUT/BUDGET/MAX_CONCURRENCY、judge 的 MODEL/BASE 与跨家族 key 回落、NICEEVAL_LANG/LOCALE(换成 config.locale)、bub 两个 env 后门;凭据保留内置默认变量名;守护 test/config-env-boundary.test.ts(正则要排除写入子进程 env 的赋值)
 - [index-classification-by-subsystem](index-classification-by-subsystem.md) — 裁决(2026-07-21):memory 索引按「子系统」单一主轴归档(分区=动手前扫哪块),溶解「设计决定」分区、报告拆出独立、大区内拆裁决(≈DX 反馈)/台账(≈bug);否决把 bug/DX 反馈当顶层主轴(类型轴切顶层=同一块工作扫两处,正是原问题根因)与分离已修条目(违反不归档规则);commit 05a040e
 - [turn-label-plain-words](turn-label-plain-words.md) — 裁决(2026-07-21):轮/窗口标签从 `s<session>/t<turn>` 改为自描述词——主会话 `turn<N>`、`t.newSession()` 会话 `session<K>/turn<N>`(从 2 起),全证据面同一枚 token、`--window` 等值匹配;否决全局连号(并行 session 竞态)与恒带 session 前缀(主线噪音);标签不透明不解析,schemaVersion 不递增、旧快照不迁移
 - [unit-audit-2026-07-meaningless-test-verdicts](unit-audit-2026-07-meaningless-test-verdicts.md) — 全量单测审查裁决(2026-07-23):21k 行仅 5 条直接删除级(恒真占位/协议归一越层/语言能力/跨家族重复四类病因),2 条唯一覆盖搬家、2 处类型检查空转迁编译期;跟改率高 ≠ 该删,头部跟改文件恰是质量最好的;遗留改写候选与 6 处覆盖登记缺口清单在正文

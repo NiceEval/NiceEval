@@ -29,7 +29,7 @@
    t.judge.autoevals.closedQA("是否遵守安全规范?").gate(0.8);   // 硬要求
    ```
 
-4. 裁判模型的优先级是：单次 `{ model }` → eval 的 `judge` 字段 → 项目配置 → `NICEEVAL_JUDGE_MODEL`。没有内置默认模型：
+4. 裁判模型的优先级是：单次 `{ model }` → eval 的 `judge` 字段 → 项目配置。没有内置默认模型，也没有环境变量层：
 
    ```typescript
    t.judge.autoevals.factuality("布鲁克林今天是晴天", { model: "gpt-4o" }).atLeast(0.8);

@@ -33,7 +33,7 @@ export interface FeedbackClock {
 export interface FeedbackIO {
   readonly stdout: FeedbackStream;
   readonly stderr: FeedbackStream;
-  /** 只读环境变量面(profile 自动检测的 CI 标记、NICEEVAL_LANG 等都从这里读,不直接碰
+  /** 只读环境变量面(profile 自动检测的 CI 标记、NO_COLOR 等都从这里读,不直接碰
    *  process.env),同样是为了让 profile.ts 的纯函数可测。 */
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly clock: FeedbackClock;

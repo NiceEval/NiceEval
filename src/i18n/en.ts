@@ -83,12 +83,11 @@ export const en = {
   "runner.dispatchHaltedExperiment": "experiment halted (dispatch-halted): {{message}}\n",
   "runner.dispatchHaltedEval": "eval halted: {{message}}\n",
   "judge.modelMissing":
-    "No judge model configured. Set it in defineConfig({ judge: { model: \"...\" } }), the eval's judge config, or the NICEEVAL_JUDGE_MODEL environment variable (there is no built-in default model).\n" +
+    "No judge model configured. Set it in defineConfig({ judge: { model: \"...\" } }) or the eval's judge config (there is no built-in default model, and no environment variable for it).\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",
   "cli.flag.parseError": "{{message}}\nRun `niceeval --help` for usage.\n",
-  "cli.envInvalidNumber": "Environment variable {{name}} is not a number: \"{{value}}\".\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
     "Usage:\n" +
@@ -142,8 +141,9 @@ export const en = {
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
-    "how to run come from experiments/ + flags. Env overrides (flag > env > config):\n" +
-    "  NICEEVAL_RUNS  NICEEVAL_MAX_CONCURRENCY  NICEEVAL_TIMEOUT  NICEEVAL_BUDGET\n",
+    "how to run come from experiments/ + flags. Resolution: flag > experiment >\n" +
+    "niceeval.config.ts > built-in default. Configuration has no environment layer;\n" +
+    "environment variables hold credentials such as API keys.\n",
   "cli.show.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval show`.\n",
   "cli.show.runDirMissing": "Results directory not found: {{dir}}\n",
   "cli.show.noEvalMatch": "No results matched: {{patterns}}. Evals with results: {{evals}}\n",
@@ -317,7 +317,7 @@ export const en = {
   "hitl.respondAllEmpty": "There is no pending input.requested request; respond() / respondAll() cannot work. Confirm the turn parked with t.parked(), then answer via t.requireInputRequest() or t.respond().",
   "hitl.respondEmpty": "t.respond(...) requires at least one answer.",
   "hitl.stringAmbiguous": "There are {{count}} pending input requests; a plain-string answer cannot be matched to one. Use the { request, optionId } or { request, text } object form to name it explicitly.",
-  "judge.apiKeyMissing": "judge is missing an API key (CODEX_API_KEY / OPENAI_API_KEY).",
+  "judge.apiKeyMissing": "judge is missing an API key: set NICEEVAL_JUDGE_KEY, or point judge.apiKeyEnv at another environment variable.",
   "judge.httpError": "judge HTTP {{status}}: {{body}}",
   "judge.probeFailed": "judge precheck failed ({{model}}): {{error}}",
   "judge.probeTimeout": "judge precheck timed out after {{seconds}}s ({{model}}): the endpoint accepted the connection but never responded — check the judge baseUrl / gateway, or point NICEEVAL_JUDGE_BASE at a responsive one",

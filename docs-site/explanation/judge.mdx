@@ -83,7 +83,7 @@ defineEval({
 t.judge.autoevals.closedQA("rubric", { on: t.reply, model: "openai/gpt-4o" });
 ```
 
-If all three levels are unset, NiceEval falls back to the environment variable `NICEEVAL_JUDGE_MODEL`. If that is also unset, the judge call fails at the call site as a configuration error. There is no built-in default judge model.
+If all three levels are unset, the judge call fails at the call site as a configuration error. There is no built-in default judge model, and no environment variable for it — the model is configuration, so it comes from code only.
 
 ## Judge endpoint and key: OpenAI-compatible protocol
 
@@ -100,15 +100,17 @@ defineConfig({
 });
 ```
 
-`baseUrl` and the API key are both resolved from most-specific to most-generic, with the config field first and environment variables as fallbacks:
+The endpoint is configuration and the key is a credential, so they come from different places:
 
 | Item | Resolution order |
 |---|---|
-| Endpoint | `judge.baseUrl` → `NICEEVAL_JUDGE_BASE` → `CODEX_BASE_URL` → `OPENAI_BASE_URL` → `https://api.openai.com/v1` |
-| Key | env var named by `judge.apiKeyEnv` → `NICEEVAL_JUDGE_KEY` → `CODEX_API_KEY` → `OPENAI_API_KEY` |
+| Endpoint | `judge.baseUrl` → `https://api.openai.com/v1` |
+| Key | env var named by `judge.apiKeyEnv` → `NICEEVAL_JUDGE_KEY` |
+
+Point `judge.baseUrl` explicitly at your gateway or OpenAI-compatible proxy — NiceEval does not go looking for an endpoint in variables like `OPENAI_BASE_URL`. The key works the same way: exactly one name, either the one `judge.apiKeyEnv` names or the default `NICEEVAL_JUDGE_KEY`. The judge has its own credential and never borrows the one belonging to the app under test or to an agent.
 
 <Warning>
-  When no API key resolves, judge assertions are **skipped silently**: no error, no score, and the eval keeps running. All green does not mean the judge actually scored anything. After configuring keys, run one eval with `t.judge` and confirm the judge score appears in `niceeval view`.
+  When the model or key does not resolve, the judge assertion is recorded as `unavailable` (with a reason) rather than vanishing: unless you explicitly chain `.optional()`, an assertion that cannot be evaluated makes the attempt `errored` — a verdict nobody could reach is neither a pass nor the agent's fault. After configuring keys, run one eval with `t.judge` and confirm the judge score appears in `niceeval view`.
 </Warning>
 
 ## Severity: judge defaults to soft

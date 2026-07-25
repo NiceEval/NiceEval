@@ -42,7 +42,6 @@ function shResult(cmd: string, expect: number | "nonzero" = 0): ShellResult {
   const res = spawnSync(cmd, {
     shell: true,
     encoding: "utf8",
-    env: { ...process.env, NICEEVAL_LANG: "en" },
   });
   const exit = res.status ?? -1;
   const stdout = res.stdout ?? "";
@@ -71,7 +70,6 @@ function shPty(cmd: string, columns = 72, rows = 12): string {
   console.log(`\n$ script (PTY ${columns}x${rows}) -- ${cmd}`);
   const res = spawnSync("script", args, {
     encoding: "utf8",
-    env: { ...process.env, NICEEVAL_LANG: "en" },
   });
   const exit = res.status ?? -1;
   const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;

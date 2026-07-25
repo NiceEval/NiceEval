@@ -35,6 +35,16 @@ name?: LocalizedText;
 Project name, shown in the hero (`<h1>`) at the top of `niceeval view`; falls back to a generic title when omitted.
 Can be a plain string, or per-locale text (e.g. `{ en: "...", "zh-CN": "..." }`) that switches with the view's language.
 
+#### `locale`
+
+```ts
+locale?: string;
+```
+
+Language of the CLI and runtime copy (BCP 47, e.g. `"en"` / `"zh-CN"`); set it when CI logs
+should stay in one language. Omitted, the language follows the system locale (`LC_ALL` /
+`LC_MESSAGES` / `LANG`), falling back to `zh-CN` when none is set.
+
 #### `sandbox`
 
 ```ts
@@ -73,7 +83,7 @@ Project-level default reporter list (e.g. writing results to disk / uploading th
 maxConcurrency?: number;
 ```
 
-Project-level default concurrency ceiling; the CLI flag / env var / experiment setting of the same name takes priority.
+Project-level default concurrency ceiling; the CLI flag / experiment setting of the same name takes priority (there is no environment variable layer).
 
 #### `timeoutMs`
 

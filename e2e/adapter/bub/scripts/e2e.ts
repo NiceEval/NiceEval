@@ -19,7 +19,7 @@ import { ensureDockerImage } from "./build-docker-env.ts";
 import { runVerify } from "./verify.ts";
 
 const EX_TEMPFAIL = 75;
-const REQUIRED_SECRETS = ["BUB_API_KEY", "BUB_API_BASE", "NICEEVAL_JUDGE_KEY", "NICEEVAL_JUDGE_BASE"] as const;
+const REQUIRED_SECRETS = ["BUB_API_KEY", "BUB_API_BASE"] as const;
 
 class InfraError extends Error {}
 

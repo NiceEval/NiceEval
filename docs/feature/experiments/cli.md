@@ -729,11 +729,13 @@ agent 也可以完全不解析运行流——跑默认人读文本、只看退�
 CI 的权威接口是退出码和结构化文件。日志页给人看,用默认人读文本(非 TTY 自动是只追加流);平台注解走 `--junit`,自建看板在运行后用 `show --json` 聚合:
 
 ```sh
-NICEEVAL_LANG=en niceeval exp ci \
+niceeval exp ci \
   --strict \
   --junit .niceeval/junit.xml
 niceeval show --json > .niceeval/ci-summary.json   # 需要 JSON 汇总时,读结果面而不是运行流
 ```
+
+日志语言要钉死时写进配置(`defineConfig({ locale: "en" })`),不靠 CI 环境变量——语言和其它配置项一样只从代码来。
 
 PR 快速门禁,每条只跑一次:
 

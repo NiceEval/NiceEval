@@ -6,10 +6,10 @@
 
 ## 全流程
 
-1. 门禁命令固定语言、严格判定和报告路径:
+1. 门禁命令钉严格判定和报告路径;日志语言在 `niceeval.config.ts` 里用 `locale: "en"` 钉死,不在命令行传环境变量:
 
    ```sh
-   NICEEVAL_LANG=en niceeval exp ci \
+   niceeval exp ci \
      --strict \
      --junit .niceeval/junit.xml
    ```

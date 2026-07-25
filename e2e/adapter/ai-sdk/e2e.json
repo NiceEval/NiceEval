@@ -6,8 +6,7 @@
   "secrets": [
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
-    "NICEEVAL_JUDGE_KEY",
-    "NICEEVAL_JUDGE_BASE"
+    "NICEEVAL_JUDGE_KEY"
   ],
   "artifacts": [".niceeval/**", "junit.xml", "logs/**"],
   "requires": { "runtimes": ["node>=22"] }

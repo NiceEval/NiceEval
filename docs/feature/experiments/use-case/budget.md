@@ -31,7 +31,7 @@
 
 - budget 是防止无限烧钱的安全网,不是精确计费闸:已花 + 在飞未结算的总花费可能短暂超出上限;要压吞吐用 [`--max-concurrency`](max-concurrency.md)。
 - 判断依据是 agent 报回的用量;连续多个已发起 agent turn 的 attempt 都拿不到成本数据时,budget 对该域不可执行,运行器给一条去重后的 warning,而不是每个 attempt 重复提示。首个 agent turn 之前失败的 attempt 没有成本事实,不产生这条 warning。
-- 覆盖优先级是 CLI flag → `NICEEVAL_BUDGET` → experiment → config(见 [Library · 与 config 的关系](../library.md#与-config-的关系));判断仍按每个实验自己的 budget 域分别计。
+- 覆盖优先级是 CLI flag → experiment → config(见 [Library · 与 config 的关系](../library.md#与-config-的关系));判断仍按每个实验自己的 budget 域分别计。
 
 ## 相关阅读
 

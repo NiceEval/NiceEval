@@ -323,7 +323,7 @@ export interface InvocationShape {
   configs: number;
   /** 总 attempt 数(evals × configs × runs);逐行输出与汇总计数都按它。 */
   totalAttempts: number;
-  /** 本次运行实际生效的全局并发数(flag/env/config/sandbox 默认值解析后的结果);
+  /** 本次运行实际生效的全局并发数(flag/config/sandbox 默认值解析后的结果);
    *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
   maxConcurrency: number;
   /**
@@ -643,6 +643,11 @@ export interface Config {
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
    */
   name?: LocalizedText;
+  /**
+   * CLI 与运行时文案的界面语言(BCP 47,如 `"en"` / `"zh-CN"`);CI 里想让日志恒定一种语言就写这个。
+   * 省略则按系统 locale(`LC_ALL` / `LC_MESSAGES` / `LANG`)判定,都没有时用 `zh-CN`。
+   */
+  locale?: string;
   /** 项目级默认 Sandbox provider(docker / vercel / e2b / custom);experiment 可覆盖。 */
   sandbox?: SandboxOption;
   /** 上传进 Sandbox 的工作区根目录,省略则用项目根;评估用例的 sandbox 视图从这里起步。 */
@@ -651,7 +656,7 @@ export interface Config {
   judge?: JudgeConfig;
   /** 项目级默认 reporter 列表(如落盘 / 上传结果);EvalDef.reporters 会与它合并。 */
   reporters?: Reporter[];
-  /** 项目级默认并发上限;CLI flag / env / experiment 的同名设置优先级更高。 */
+  /** 项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。 */
   maxConcurrency?: number;
   /** 项目级默认单次 attempt 超时(毫秒);CLI flag / experiment / EvalDef 的同名设置优先级更高。 */
   timeoutMs?: number;

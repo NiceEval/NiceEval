@@ -495,6 +495,7 @@
                 "pages": [
                   "introduction",
                   "tutorials/quickstart",
+                  "tutorials/configuration",
                   "tutorials/agent-onboarding"
                 ]
               },
@@ -646,6 +647,7 @@
                 "pages": [
                   "zh/introduction",
                   "zh/tutorials/quickstart",
+                  "zh/tutorials/configuration",
                   "zh/tutorials/agent-onboarding"
                 ]
               },

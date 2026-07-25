@@ -80,12 +80,11 @@ export const zhCN = {
   "runner.dispatchHaltedExperiment": "实验已止损(dispatch-halted):{{message}}\n",
   "runner.dispatchHaltedEval": "eval 已止损:{{message}}\n",
   "judge.modelMissing":
-    "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } })、eval 的 judge 配置或环境变量 NICEEVAL_JUDGE_MODEL 里指定裁判模型(没有内置默认模型)。\n" +
+    "judge 未配置模型:在 defineConfig({ judge: { model: \"...\" } }) 或 eval 的 judge 配置里指定裁判模型(没有内置默认模型,也没有对应的环境变量)。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
   "cli.flag.parseError": "{{message}}\n运行 `niceeval --help` 查看用法。\n",
-  "cli.envInvalidNumber": "环境变量 {{name}} 不是数字:\"{{value}}\"。\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
     "用法:\n" +
@@ -134,8 +133,8 @@ export const zhCN = {
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
-    "标志。环境变量覆盖(标志 > 环境变量 > config):\n" +
-    "  NICEEVAL_RUNS  NICEEVAL_MAX_CONCURRENCY  NICEEVAL_TIMEOUT  NICEEVAL_BUDGET\n",
+    "标志。取值优先级:标志 > experiment > niceeval.config.ts > 内置默认;配置项没有\n" +
+    "环境变量层,环境变量只放 API key 这类凭据。\n",
   // show 的错误文案保持英文(错误文案英文的仓库约定);noResults 是提示,翻译。
   "cli.show.noResults": "{{root}} 下没有结果。先 `niceeval exp` 跑一轮,再 `niceeval show`。\n",
   "cli.show.runDirMissing": "Results directory not found: {{dir}}\n",
@@ -310,7 +309,7 @@ export const zhCN = {
   "hitl.respondAllEmpty": "没有待回答的 input.requested 请求,respond() / respondAll() 无法工作;先用 t.parked() 确认停轮,再用 t.requireInputRequest() 或 t.respond() 回答。",
   "hitl.respondEmpty": "t.respond(...) 至少需要一个回答。",
   "hitl.stringAmbiguous": "有 {{count}} 条待回答请求,字符串回答无法对位,请用 { request, optionId } 或 { request, text } 对象形式显式指名。",
-  "judge.apiKeyMissing": "judge 缺少 API key(CODEX_API_KEY / OPENAI_API_KEY)。",
+  "judge.apiKeyMissing": "judge 缺少 API key:设置 NICEEVAL_JUDGE_KEY,或用 judge.apiKeyEnv 指向别的环境变量。",
   "judge.httpError": "judge HTTP {{status}}: {{body}}",
   "judge.probeFailed": "judge 预检失败({{model}}): {{error}}",
   "judge.probeTimeout": "judge 预检 {{seconds}}s 超时({{model}}):端点接受了连接但一直不回 —— 检查 judge 的 baseUrl / 网关,或把 NICEEVAL_JUDGE_BASE 指向一个有响应的网关",
