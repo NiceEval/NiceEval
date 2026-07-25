@@ -7,6 +7,7 @@
 [![typescript](https://img.shields.io/badge/typescript-5.6-blue?style=flat-square)](../tsconfig.json)
 [![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)](../package.json)
 [![docs](https://img.shields.io/badge/docs-readable-111827?style=flat-square)](../docs/README.md)
+[![discord](https://img.shields.io/badge/discord-join%20chat-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/yTMdZjFFJ)
 
 [English](../README.md) | [中文](../README.zh.md) | [Español](README.es.md) | [français](README.fr.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Português](README.pt.md) | [Русский](README.ru.md)
 
