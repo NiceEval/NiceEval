@@ -146,8 +146,9 @@ Official Adapters
   - [x] Claude Code
   - [x] Codex
   - [x] Bub
-  - [ ] OpenClaw
-  - [ ] Hermess Agent
+  - [x] OpenCode
+  - [x] Hermes Agent
+  - [x] OpenClaw
   - [ ] Alma
   - [ ] ...
 

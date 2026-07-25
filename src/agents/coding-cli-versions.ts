@@ -10,6 +10,15 @@ export const DEFAULT_CLAUDE_CODE_CLI_VERSION = "2.1.207";
  */
 export const DEFAULT_BUB_VERSION = "0.4.0";
 
+/** OpenCode CLI（npm `opencode-ai`）默认钉的版本。 */
+export const DEFAULT_OPENCODE_CLI_VERSION = "1.18.5";
+
+/** Hermes Agent（PyPI `hermes-agent`）默认钉的版本。 */
+export const DEFAULT_HERMES_CLI_VERSION = "0.19.0";
+
+/** OpenClaw CLI（npm `openclaw`）默认钉的版本。 */
+export const DEFAULT_OPENCLAW_CLI_VERSION = "2026.7.1-2";
+
 /** 有官方公共基线制品（E2B template + Docker image）的内置 coding agent。 */
 export type CodingAgentBaseline = "claude-code" | "codex" | "bub";
 

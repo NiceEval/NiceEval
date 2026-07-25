@@ -40,9 +40,12 @@
 | Claude Code | `claude-code` | `sandbox` | `claudeCodeAgent`      | [claude-code.md](claude-code.md) |
 | Codex CLI   | `codex-cli`   | `sandbox` | `codexAgent`           | [codex-cli.md](codex-cli.md)     |
 | Bub         | `bub`         | `sandbox` | `bubAgent`             | [bub.md](bub.md)                 |
+| OpenCode    | `opencode`    | `sandbox` | `openCodeAgent`        | [opencode.md](opencode.md)       |
+| Hermes      | `hermes`      | `sandbox` | `hermesAgent`          | [hermes.md](hermes.md)           |
+| OpenClaw    | `openclaw`    | `sandbox` | `openClawAgent`        | [openclaw.md](openclaw.md)       |
 
 待补完整官方工厂：Claude Agent SDK、Codex SDK、pi-agent-core、LangGraph。它们的 Fixture 位于
-`e2e/undo/`，对应验收说明保留在本目录；工厂落地前不参与发现、CI 或覆盖统计。OpenClaw 需要真实 Fixture 固定后再建立仓库。
+`e2e/undo/`，对应验收说明保留在本目录；工厂落地前不参与发现、CI 或覆盖统计。
 
 官方工厂清单以
 [SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。协议归一（事件转换、session、usage、证据完整性）的唯一验收面就是本域仓库的真实运行——没有单元层 wire

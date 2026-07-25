@@ -1,5 +1,5 @@
 import { defineSandboxAgent } from "../define.ts";
-import { requireEnv } from "../util.ts";
+import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import {
   appendProjectInstruction,
@@ -10,6 +10,7 @@ import {
 import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
+import { DEFAULT_OPENCLAW_CLI_VERSION } from "./coding-cli-versions.ts";
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
 
@@ -25,16 +26,16 @@ import type { Agent, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEven
 // 经 ctx.log 明确记录这个限制。
 // ───────────────────────────────────────────────────────────────────────────
 
-// 契约要求实现前用真实 CLI fixture 钉版本;fixture 固定前先跟 npm latest 走,
-// 钉死后归口 coding-cli-versions.ts(与 codex / claude-code 同源管理)。
-const DEFAULT_OPENCLAW_CLI_VERSION = "latest";
-
 /** OpenClaw 的 skill 目录(`skills` 生态的「通用」目录);发现靠 AGENTS.md 指引,不依赖原生扫描。 */
 const SKILL_DIR = ".agents/skills";
+/** 自定义 OpenAI 兼容网关在 openclaw.json 里的 provider id。 */
+const COMPAT_PROVIDER = "compat";
 
 export interface OpenClawConfig {
-  /** 模型 API key(OpenClaw 默认走 Anthropic)。省略时读 ANTHROPIC_API_KEY env。 */
+  /** 模型 API key。省略时读 OPENCLAW_API_KEY,再回落 ANTHROPIC_API_KEY。 */
   apiKey?: string;
+  /** OpenAI 兼容端点。省略时读 OPENCLAW_BASE_URL。 */
+  baseUrl?: string;
   /** 固定安装的 openclaw npm 版本(如 "1.2.3");省略时用内置默认。 */
   version?: string;
   /**
@@ -42,6 +43,21 @@ export interface OpenClawConfig {
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md。
    */
   skills?: SkillSpec[];
+}
+
+function resolveApiKey(config?: OpenClawConfig): string {
+  return config?.apiKey ?? getEnv("OPENCLAW_API_KEY") ?? requireEnv("ANTHROPIC_API_KEY");
+}
+
+function resolveBaseUrl(config?: OpenClawConfig): string | undefined {
+  return config?.baseUrl ?? getEnv("OPENCLAW_BASE_URL");
+}
+
+/** experiment.model → `--model`。裸模型名在自定义网关下补成 `compat/<model>`。 */
+function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): string | undefined {
+  if (!model) return undefined;
+  if (model.includes("/")) return model;
+  return hasCompatBase ? `${COMPAT_PROVIDER}/${model}` : model;
 }
 
 /**
@@ -54,7 +70,6 @@ export interface OpenClawConfig {
  * `t.newSession()` 后的新会话线自然拿到新 id,session 之间互相隔离。
  */
 export function openClawAgent(config?: OpenClawConfig): Agent {
-  const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
 
   // 契约(sdk/openclaw/README.md):只有 fixture 证明完整的行为才进入公开能力。transcript
@@ -90,6 +105,30 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         `command -v openclaw >/dev/null 2>&1 || npm install -g openclaw@${version}`,
       );
 
+      const baseUrl = resolveBaseUrl(config);
+      if (baseUrl) {
+        // OpenAI 兼容网关走自定义 provider + openai-completions;
+        // 具体模型由 send 的 --model compat/<id> 选择。
+        const openclawConfig = {
+          models: {
+            mode: "merge",
+            providers: {
+              [COMPAT_PROVIDER]: {
+                baseUrl,
+                apiKey: "${OPENCLAW_API_KEY}",
+                api: "openai-completions",
+                models: [
+                  { id: "gpt-5.6-luna", name: "gpt-5.6-luna" },
+                  { id: "gpt-5.4-mini", name: "gpt-5.4-mini" },
+                  { id: "gpt-5.4", name: "gpt-5.4" },
+                ],
+              },
+            },
+          },
+        };
+        await shared.writeFile(sb, "~/.openclaw/openclaw.json", JSON.stringify(openclawConfig, null, 2));
+      }
+
       const manifest: AgentSetupManifest = { skills: [] };
       if (config?.skills?.length) {
         manifest.skills = await installSkills(sb, config.skills, { dir: SKILL_DIR });
@@ -110,11 +149,23 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       const sessionId = ctx.session.id ?? `niceeval-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
       ctx.session.capture(sessionId);
 
+      const baseUrl = resolveBaseUrl(config);
       const args = ["agent", "--local", "--session-id", sessionId, "--message", input.text, "--json"];
+      const model = resolveModelFlag(ctx.model, Boolean(baseUrl));
+      if (model) args.push("--model", model);
+
+      const apiKey = resolveApiKey(config);
       const env: Record<string, string> = {
-        ANTHROPIC_API_KEY: getApiKey(),
+        OPENCLAW_API_KEY: apiKey,
+        ANTHROPIC_API_KEY: apiKey,
+        OPENAI_API_KEY: apiKey,
         ...ctx.telemetry?.env,
       };
+      if (baseUrl) {
+        env.OPENCLAW_BASE_URL = baseUrl;
+        env.OPENAI_BASE_URL = baseUrl;
+      }
+
       const res = await sb.runCommand("openclaw", args, { env, stream: true });
 
       const runJson = parseOpenClawRunJson(res.stdout);

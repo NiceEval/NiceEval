@@ -125,4 +125,6 @@ export default defineSandboxAgent({
 - [Codex SDK](sdk/codex-sdk/README.md)
 - [pi-agent-core](sdk/pi-agent-core/README.md)
 - [LangGraph](sdk/langgraph/README.md)
+- [OpenCode](sdk/opencode/README.md)
+- [Hermes Agent](sdk/hermes/README.md)
 - [OpenClaw](sdk/openclaw/README.md)

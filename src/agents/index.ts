@@ -88,10 +88,14 @@ export { BUILTIN_AGENTS } from "./builtin.ts";
 export { claudeCodeAgent } from "./claude-code.ts";
 export { codexAgent } from "./codex.ts";
 export { bubAgent } from "./bub.ts";
+export { openCodeAgent } from "./opencode.ts";
+export { hermesAgent } from "./hermes.ts";
 export { openClawAgent } from "./openclaw.ts";
 export type { ClaudeCodeConfig, ClaudeCodePluginSpec } from "./claude-code.ts";
 export type { CodexConfig, CodexPluginSpec } from "./codex.ts";
 export type { BubConfig, PythonPluginSpec } from "./bub.ts";
+export type { OpenCodeConfig } from "./opencode.ts";
+export type { HermesConfig } from "./hermes.ts";
 export type { OpenClawConfig } from "./openclaw.ts";
 
 // 安装 manifest 的落点:adapter 写(shared.writeAgentSetup),运行器读并抬成 attempt artifact。
