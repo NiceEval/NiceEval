@@ -20,7 +20,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 - `INIT.zh.md` / `INIT.md`：安装自举文件。它们工作的阶段包还不在 `node_modules`，从官网 / GitHub raw 读取，因此内容收敛到安装前就能定稿的三件事——心智模型、前置条件、安装命令，装完立即交接给随包 `INDEX.md`。自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关；接入流程正文住在随包页面 [`docs-site/zh/tutorials/agent-onboarding.mdx`](../../../docs-site/zh/tutorials/agent-onboarding.mdx)，`test/bundled-docs-index.test.ts` 拦截向导里出现的线上文档链接。
 - `docs-site/` 英文入口与站点配置（`docs.json` 等）：服务网站构建，不服务包内读者。
-- `docs/`、`memory/`、`plan/`：内部设计契约与过程记录，读者是维护 niceeval 仓库的人，不是用户项目里的 agent。
+- `docs/`、`memory/`：内部设计契约与过程记录，读者是维护 niceeval 仓库的人，不是用户项目里的 agent。
 
 ## 发现机制：两跳静态路径
 

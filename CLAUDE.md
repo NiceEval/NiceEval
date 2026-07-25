@@ -19,7 +19,7 @@ niceeval 是一个 TypeScript evals 库。CLI 入口在 `bin/niceeval.mjs`，运
 - 变更 docs，写下预期的cli的用法与输入、写下library应该用用户怎么用这个api在代码中
 - 同批在 `docs/engineering/testing/unit/<feature>.md` 的「覆盖规范」声明该变更的覆盖类别；实现 Agent 只为已声明的类别写测试，先声明后写测（规则见 `docs/engineering/testing/unit/registry.md`）
 - 变更 docs-site，教用户如何使用该功能
-- 写下变更PLAN在 plan 下面。会有其它 agent 并行来执行
+- **设计只落 docs，不写执行计划。** 定稿的契约本身就是实现 Agent 的输入：要做什么写在 `docs/` 正文，为什么这么定写在正文的理由句或 `reference/`，翻案与弯路写在 `memory/`。不再单独维护一份任务分解——它会与 docs 正文重复一遍契约，并且落后于 docs 的下一次迭代。多 agent 并行按 docs 的目录边界切工作，不按计划文件里的节点切。
 ### 实现Agent
 - 实现功能
 - 在真实的eval相关的repo(如`/Users/ctrdh/Code/coding-agent-memory-evals`) 里面执行 pnpm exec niceeval xxx 测试输出是否与docs下面的预期一样。

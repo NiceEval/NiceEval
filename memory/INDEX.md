@@ -7,6 +7,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - **写完即索引**:新增 memory 文件必须同步在这里加一行,格式 `- [条目名](条目文件名.md) — 一句现象+结论`,归到对应子系统(大区里再判裁决/台账)。`test/memory-index.test.ts` 随 `pnpm test` 校验每个条目都有索引行。
 - **修好标注,不删除**:bug 修好后行首标「已修」,并在条目正文补修法落点(文件/commit)。已修条目是后续复盘"这个修法合理不合理"的材料,不归档不删除。
 - **复盘出口**:修法复盘后被确认为长期约束的,升格为 CLAUDE.md 或 docs/ 里的一句规则(原条目保留作出处);被推翻的,更新原条目记录新判断。
+- **历史条目里的 `plan/` 引用照原样保留**:设计不再单独写执行计划(规则在 CLAUDE.md「设计Agent」),`plan/` 目录已移除。旧条目提到某份计划文件是当时真实发生过的过程,改写它等于篡改记录;要找那份内容去 git 历史。
 
 ## 沙箱 · Agent adapter
 
@@ -68,7 +69,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [e2b-list-returns-paginator-not-array](e2b-list-returns-paginator-not-array.md) — `Sandbox.list()` 真实是同步返回 `SandboxPaginator`，不是 Promise 数组；provision reconcile 与 detached keep inspect 都改为 `hasNext`/`nextItems()` 翻页，避免将真机 TypeError 吞成错误的过期状态(`src/sandbox/e2b.ts`、`src/sandbox/keep.ts`)
 - 已修 [ui-message-stream-coverage-undeclared](ui-message-stream-coverage-undeclared.md) — 内置 uiMessageStreamAgent 没声明 EvidenceCoverage,真机跑 e2e/adapter/ai-sdk 时 succeeded()/notCalledTool()/noFailedActions() 全部 unknown→errored(不是断言写错);修为补 coverage(complete + usage unavailable)(`src/agents/ui-message-stream.ts`)
 - 已修 [docker-uploadfile-tmp-mv-eperm](docker-uploadfile-tmp-mv-eperm.md) — Docker sandbox 的 `uploadFile()` 不 chown 上传文件(与 `uploadFiles()` 不同),claude-code `settingsFile` 真机上传到 `/tmp` 后 `mv` 到 `~/.claude/settings.json` 因 sticky-bit 目录 + root 属主 100% EPERM;修为 putArchive 后补 `chownToSandboxUser(absPath)`(`src/sandbox/docker.ts`,同路径也影响 codex 的 `configFile`)
-- [hard-kill-leaves-orphans-and-experiment-leaks](hard-kill-leaves-orphans-and-experiment-leaks.md) — SIGKILL(外部看门狗 ~1h 强杀)下孤儿容器与实验 teardown 泄漏无事后入口;设计定稿三面兜底(运行标识+prune / 收尾登记+启动自愈 / attempt 级续跑),实现见 plan/hard-kill-recovery.md
+- [hard-kill-leaves-orphans-and-experiment-leaks](hard-kill-leaves-orphans-and-experiment-leaks.md) — SIGKILL(外部看门狗 ~1h 强杀)下孤儿容器与实验 teardown 泄漏无事后入口;设计定稿三面兜底(运行标识+prune / 收尾登记+启动自愈 / attempt 级续跑)
 - 已修 [orphans-test-assumes-ps-restricted-environment](orphans-test-assumes-ps-restricted-environment.md) — orphans.test.ts 的 docker 用例把「ps 被禁的降级路径」写成对所有环境的期待,本机 ps 可用时属主判活成功、候选 1≠2 稳定红;修为给 listOrphanCandidates 开 OrphanClassifier 注入缝、用例注入按 pid 裁决三态的窄判据(`328b35bc`)
 - 已修 [keep-sandbox-suspend-wrapper-drops-capability](keep-sandbox-suspend-wrapper-drops-capability.md) — `normalizeSandboxPaths` 包装丢了接口外的 `suspend()` 能力,`--keep-sandbox` 对 docker/e2b/vercel 三家全部假成功真不停(state 永远停 alive,只留一条 warning);真机跑通 docker 全链路才发现,mock 单测互相拼不出这个 bug;修为按 `appendLog` 先例原样转发(`src/sandbox/paths.ts`)
 
@@ -370,4 +371,4 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [optional-field-additions-need-call-site-census](optional-field-additions-need-call-site-census.md) — 复盘(2026-07-24):给共享接口加**可选**字段时类型系统一次都拦不住——生产侧漏填是合法省略、消费侧不读新字段旧字段还在、两侧的回落分支让漏改行为在简单 fixture 上恰好正确;`DiagnosticInput.code?` 四个调用点全静默回落(attempt.ts / sandbox/resolve.ts / cli.ts 记账 / eval-conclusions.ts),加上 `Results` 的 `fresh?` 同日共五次;修法=加字段的那次 commit 里 grep 出全部构造点与消费点列清单逐个判定(消费点要 grep 旧字段名)、回落分支旁写清回落条件、配行为测试、能必选就别可选
 - [error-feedback-message-carries-fix](error-feedback-message-carries-fix.md) — 裁决(2026-07-15):报错必带下一步定为跨切面契约(docs/error-feedback.md,三段式+可选 `command`);曾选「必填独立 fix 字段」否决——拆走下一步破坏「只打 message 就完整」承诺、留内嵌又成重复;AttemptError 划在契约边界外
 - [test-system-two-layers-no-offline-integration](test-system-two-layers-no-offline-integration.md) — 裁决(2026-07-14):测试体系只有 unit(确定性 fixture)+E2E(全真实)两层,否决「离线 CLI 集成层/无 key 档」(AI 不贵,mock 协议=再实现一遍协议);同批确立变更预算判据(无关测试变红=缺陷)、unit-tests 每 Feature 拆架构/用例两页,并修正 budget 与 Results 选择两处旧测试文档漂移
-- [testing-restructure-flat-e2e-owns-behavior](testing-restructure-flat-e2e-owns-behavior.md) — 裁决(2026-07-21):测试文档三目录合并为 testing/{unit,e2e},e2e 平铺 adapter/cli/report 三域(mechanism 取消);单元层收窄到数据语义,渲染/CLI 进程/协议归一整体归 E2E(adapters 单元维度与 22 个 wire-fixture 测试删除);unit 每 Feature 合并成单篇测试文档、登记单位升为覆盖类别(场景由测试代码枚举);守护取舍=流程守护留、结构复检删(e2e-structure.test.ts 删);跟改率口径落 churn.md,迁移清单落 plan/testing-layer-realignment.md
+- [testing-restructure-flat-e2e-owns-behavior](testing-restructure-flat-e2e-owns-behavior.md) — 裁决(2026-07-21):测试文档三目录合并为 testing/{unit,e2e},e2e 平铺 adapter/cli/report 三域(mechanism 取消);单元层收窄到数据语义,渲染/CLI 进程/协议归一整体归 E2E(adapters 单元维度与 22 个 wire-fixture 测试删除);unit 每 Feature 合并成单篇测试文档、登记单位升为覆盖类别(场景由测试代码枚举);守护取舍=流程守护留、结构复检删(e2e-structure.test.ts 删);跟改率口径落 churn.md
