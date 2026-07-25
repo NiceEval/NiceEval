@@ -4,6 +4,7 @@
 
 设计定稿后按目标形态重写并移入 [`../feature/`](../feature/)，不在原文追加“现已定稿”的时间线说明。
 
+- [Testsets](testsets/README.md) —— 可分发的测试集、从测试集拼出的 benchmark，以及跨人可比靠的内容指纹
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
 - [Adapters](adapters/README.md) —— LangGraph、OpenClaw 与其它候选接入
 - [源码调用树](eval-source-view/README.md) —— eval 判定痕迹散落在多个文件时，`--source` 与 `AttemptSource` 按调用链展示的候选契约

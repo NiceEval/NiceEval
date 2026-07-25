@@ -46,6 +46,7 @@ docs/
 │   └── reports/                         show、view 与报告组件
 │
 ├── roadmap/                             尚未定稿的功能设计
+│   ├── testsets/                        分享测试集与自建 benchmark
 │   └── multi-agent/                     多 Agent Eval 场景
 │
 ├── engineering/                         仓库自身的工程机制
