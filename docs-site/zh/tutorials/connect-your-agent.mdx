@@ -84,11 +84,13 @@ export default defineEval({
   async test(t) {
     await t.send("你们的退款政策是什么?");
     t.succeeded();
-    t.check(t.reply, includes("30 天"));
+    t.check(t.reply, includes(/30\s*天|一个月|30[- ]?days?/i));  // ← 多措辞等价的正则，不是单一精确短语
     t.judge.autoevals.closedQA("回答是否说明了退款期限?").atLeast(0.7);
   },
 });
 ```
+
+断言那行的写法是重点，别照抄成 `includes("30 天")`：回答的措辞每次都不一样，用单一精确短语卡开放式回答，被测系统答对了也会红。措辞开放的内容有三条路子——多措辞等价的正则、形状断言（`includesUrl()` / `hasSections()`），或 `t.judge` 的语义判定；确定性的结果（具体数值、ID）才用精确断言。完整取舍见[评分指南](/zh/tutorials/scoring-guide)。
 
 ```bash
 npx niceeval exp my-agent        # 跑这个 experiment 下的全部 eval

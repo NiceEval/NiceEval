@@ -12,8 +12,8 @@ When the user says "install niceeval," the bar for done is **not** "added the de
 - [ ] Read `node_modules/niceeval/INDEX.md` and pick the "onboarding from scratch" tutorial page; from this step on, do every step by following the bundled docs (Step 3)
 - [ ] Explore this repo: what is the system under test, and how do you connect to it
 - [ ] Before writing any code, **stop and ask** — confirm the integration plan with the user: (a) how you will talk to the system under test (state the endpoint / protocol / request-response shape you found, for them to verify), (b) whether to reuse or hook into its existing tracing / OTel, (c) whether to expose config variants as experiment flags, and (d) which integration tier to target — read the tier page in the bundled docs first and present all three tiers. Wait for the answer (only decide on your own and continue if the task explicitly states there is nobody to confirm with)
-- [ ] Write the adapter / experiment / eval trio
-- [ ] Actually run it once and get it green, and confirm the result is visible with `niceeval show` — only writing the files without ever running them does not count
+- [ ] Write the adapter / experiment / eval trio. If you are hand-writing the adapter, read the bundled "编写 send" (write-send) page first — an adapter is not done until it maps the response into the standard event stream (tool calls included, not just the final text) and hooks up `ctx.session` when the interface supports multi-turn
+- [ ] Actually run it once and get it green, and confirm the result is visible with `niceeval show` — only writing the files without ever running them does not count, and neither does a run that comes back all `errored` / `failed`
 - [ ] Follow the wrap-up self-check on the tutorial page, then ask the user whether they want to go to a deeper integration level
 
 Until every item on the list is checked off, this task is not done.

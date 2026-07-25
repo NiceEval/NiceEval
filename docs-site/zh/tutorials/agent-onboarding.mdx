@@ -32,7 +32,7 @@ description: "给 Coding Agent 的完整接入流程：探索项目、与用户�
 | 用 Vercel AI SDK（`useChat` 后端）写的应用 | [内置 Agent 参考](/zh/reference/builtin-agents)：内置 `uiMessageStreamAgent` 无侵入接入，不用手写事件映射 |
 | coding agent CLI（claude-code / codex / bub 等改文件的任务） | [在 Sandbox 中评测 Agent](/zh/tutorials/sandbox-agent)：要配 `sandbox`，默认 `dockerSandbox()`，先跟用户确认 Provider |
 | 给 Claude Code / Codex 写的 Skill、Plugin、Hook 或 MCP server | [评测 Coding Agent 扩展](/zh/examples/coding-agent-extensions)：同样跑在 Sandbox 里，Provider 确认方式同上 |
-| 其它自研 agent loop、LangGraph、OpenAI Agents SDK、已部署 Agent | [接入自己的 Agent](/zh/tutorials/connect-your-agent) 起步，手写 `send` 的完整教程在[编写 send](/zh/tutorials/write-send) |
+| 其它自研 agent loop、LangGraph、OpenAI Agents SDK、已部署 Agent | **[编写 send](/zh/tutorials/write-send)**：手写 Adapter 必读，动手前至少读完第一到第四步（发消息 / 续接会话 / 记用量 / 把响应映射成事件流）。参数怎么从 Experiment 流到 Adapter 见[接入自己的 Agent](/zh/tutorials/connect-your-agent) |
 | 纯函数、没有独立服务的场景 | 先读[接入自己的 Agent](/zh/tutorials/connect-your-agent) 里「为什么不直调」那段，跟用户确认这确实是他们要的边缘用法，再继续 |
 
 ## 第 2 步：配置 Judge
@@ -62,8 +62,17 @@ export default defineConfig({
 
 按第 1 步选中的方向读完对应文档后，依次写：
 
-1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——只填 `defineAgent` 的 `send`，配置走工厂参数，不写死、不读 `process.env`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [defineAgent 参考](/zh/reference/define-agent)，事件映射见[事件参考](/zh/reference/events)。两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身；**`coverage` 按实际映射如实声明**——只把最终文本映射出来就不要声明 complete，声明会被报告采信，虚报比不报更糟。
-2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`runs` 等。模型对比写两个实验文件，各自钉一个 `model`；`evals: (eval) => boolean` 决定各自运行哪些评估用例。路径只负责 id 和批量运行，报告读取每份快照的 `selectedEvalIds`。
+1. **Adapter**（`agents/*.ts` 或用户项目里约定的目录）——只填 `defineAgent` 的 `send`。契约见 [Adapter](/zh/explanation/adapter)，API 签名见 [defineAgent 参考](/zh/reference/define-agent)，写法见[编写 send](/zh/tutorials/write-send)，事件类型表见[事件参考](/zh/reference/events)。**三件都要做完才算 Adapter 写完**，它们全在 Tier 1 之内，不是以后再说的事：
+   - **transport**：对着用户前端在用的那个接口收发，`ctx.signal` 挂到每个请求上，`ctx.model` 随请求转发。
+   - **把响应归一成事件流**，不要只吐一条最终文本。返回是标准形状（Chat Completions / Responses / AI SDK）就用官方转换器一行搞定（`return fromChatCompletion(res)`）；不是标准形状就照事件表把工具调用映射成 `action.called` / `action.result`。只映射最终文本的 Adapter 也能跑绿，但 `t.calledTool()` / `t.toolOrder()` / `t.noFailedActions()` 整族断言从此用不了——评估只能看最后那段话，看不见它中间干了什么。
+   - **被测接口支持多轮就接 `ctx.session`**（`history()`，或 `id` + `capture()`）。不接的话每次 `t.send` 都是一场新对话，多轮场景与 `t.newSession()` 的会话隔离全都测不了。
+
+   两个容易踩的点：**端点/模式要选被测系统核心能力的入口，不是最容易跑通的入口**——比如被测平台既有「纯 LLM 聊天」又有「连库执行」两种模式，接前者等于评了个底层模型代理，没评到产品本身；**`coverage` 按实际映射如实声明**——只把最终文本映射出来就不要声明 complete，声明会被报告采信，虚报比不报更糟。
+
+   配置归属：URL、鉴权这类静态配置走 Adapter 工厂参数，由实验文件传进来（想给个环境默认值就写成工厂参数的默认值 `process.env.MY_APP_URL ?? "http://localhost:3000"`）；**不要在 `send` 内部读 `process.env`**——那样配置藏进了环境，实验文件里看不见，也没法两格连不同实例做对比。
+2. **Experiment**（`experiments/*.ts`）——引用上面的 Adapter，声明 `model`、`flags`、`runs` 等。一个文件一格配置；对比组默认放在 `experiments/compare-models/` 下（目录只负责 id 和批量运行，报告读取每份快照的 `selectedEvalIds`），`evals: (eval) => boolean` 决定各自运行哪些评估用例。
+
+   做模型对比先**探明被测系统实际支持哪些模型**：读它的 `/models` 接口、配置文件、README 或前端的模型选择器，拿两个真实存在的值各钉一格。探不到就不要硬凑——两格钉同一个模型（包括两格都写成同一个环境变量默认值）等于没有对比，那种情况下要么改用 `flags` 做 prompt / 工具集变体的对比，要么就只写一格基线并在收尾时告诉用户「没做成模型对比，原因是探不到可选模型」。
 3. **评估用例**（`evals/*.eval.ts`）——**先探明这个应用是干嘛的，再写一条贴着它真实功能的评估用例**：读它的 README、路由、工具定义或系统提示，找出它的核心用例（客服机器人就问一条真实的客服问题、SQL agent 就给一个真实的查询任务），拿这个用例做第一条评估用例的输入和断言。两类输入都不合格：「你好」这种和应用无关的占位输入，以及「你是什么/你能做什么」这种**问被测系统它自己的元问题**——那不是用户拿它干活的用例。形式上仍从最小写起：一句输入，`t.succeeded()` + 一个针对预期回答的内容断言——但最小形式只是调通的脚手架，不是交付标准，收尾前还要满足两条：
    - **断言在被测系统胡编时要会变红**。不要断言输入里本来就有的词（问「X 是什么」再断言回答含「X」，被测方复读题目就能通过）；断言预期回答独有的实质内容——具体事实、结构（`hasSections()`）、真实链接（`includesUrl()`），或用 `t.judge` 做语义判定。
    - **至少一条负例**。喂一个被测系统应该答不了的输入（不存在的表、检索不到的主题），断言它明确说查不到/做不到，而不是编造一个看似合理的结果——对连着真实数据/检索源的 agent，这是最值得先测的失败形态。
@@ -79,11 +88,13 @@ export default defineConfig({
 ## 第 4 步：跑通并验证
 
 ```sh
-<包管理器> exec niceeval exp models   # 按路径运行两个模型配置
+<包管理器> exec niceeval exp compare-models   # 按路径运行对比组的两格配置
 <包管理器> exec niceeval view                 # 查看器里看对比结果
 ```
 
-按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval show`、`--transcript`、`--trace` 和 `--diff` 完成运行、观察、修改和重跑；查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对；`t.succeeded()` 不过 → 应用回了非成功状态；只有内容断言不过 → 接入已经通了，调断言或调应用。
+**跑一次并且跑绿，才算写完**：文件写好没跑过不算，跑出来全是 `errored` / `failed` 也不算。按 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)用 `niceeval show`、`--transcript`、`--trace` 和 `--diff` 完成运行、观察、修改和重跑；查看器用法见[查看结果](/zh/tutorials/viewing-results)。没跑通分三类定位：`fetch` 直接抛错 → 应用没起来或 URL 不对；`t.succeeded()` 不过 → 应用回了非成功状态；只有内容断言不过 → 接入已经通了，调断言或调应用。
+
+**被测系统起不来的时候**：先按它自己的方式起（`pnpm dev`、`docker compose up`、它 README 里那条命令），起不来就把缺什么（端口、密钥、数据库、模型服务）明确告诉用户，请他们起——评估侧不代管被测进程。确实需要先自证 Adapter 链路通（比如没人在场、又必须交付一个跑过的结果）时，可以临时把 Adapter 指向一个最小的桩服务跑一轮，但这**不是有效的评估结果**：桩不进交付物，收尾总结里要写明「链路已验证，但还没对真实的被测系统跑过」。
 
 ## 第 5 步：收尾，告诉用户做了什么
 
@@ -94,6 +105,9 @@ export default defineConfig({
 - [ ] 至少有一条负例（应该答不了的输入，断言它明确说做不到）
 - [ ] 有 key 时 Judge 已配置，且在 `niceeval view` 里看到过 Judge 分数；没 key 时总结里说明了
 - [ ] Experiment 里声明的 `model` / `flags` 确实被 Adapter 消费（没有写了没人读的死配置，也没有编造被测系统不存在的 model 值）
+- [ ] 被测系统的响应里有工具调用/过程信息的，Adapter 已把它们映射成事件流，不是只吐一条最终文本
+- [ ] 被测接口支持多轮的，Adapter 已接 `ctx.session`（没接的话在总结里说明，因为多轮场景从此测不了）
+- [ ] **真跑过至少一次，且是绿的**；没绿就说清卡在哪（被测系统没起、断言待调），不要拿没跑过的文件交付
 
 跑通之后先总结，再谈下一步。总结要说清：接了什么被测对象、生成了哪几个文件（Adapter / Experiment / 评估用例各在哪）、`niceeval exp compare-models` 和 `niceeval view` 怎么跑、第一次运行的结果是什么样。不要在没被要求的情况下顺手重构用户已有代码，也不要在这几个文件之外新增抽象。
 
@@ -103,10 +117,10 @@ export default defineConfig({
 
 | 能做什么 | 改动量 | 好处 | 文档 |
 |---|---|---|---|
-| 工具调用断言（`t.calledTool()` 等） | 只改 Adapter：把应用响应映射成标准事件流，约 10–30 行映射代码 | 评估用例能断言「Agent 有没有调对工具、参数对不对」，不再只看最终回复 | [编写 send](/zh/tutorials/write-send)、[事件参考](/zh/reference/events) |
-| 多轮对话、会话隔离 | 只改 Adapter：接上 `ctx.session`（`history()` 或 `id` + `capture()`），几行到十几行 | 评估用例能写多轮场景、`t.newSession()` 验证会话间不串味 | [驱动多轮交互](/zh/explanation/drive)、[编写 send](/zh/tutorials/write-send) |
-| 人工审批流（HITL） | 只改 Adapter：停轮返回 `waiting` + `input.requested`，回答轮续跑，约 10–20 行 | 评估用例能覆盖「批准/拒绝之后 Agent 行为对不对」这类审批场景 | [HITL](/zh/explanation/hitl) |
+| 人工审批流（HITL） | 只改 Adapter：停轮返回 `waiting` + `input.requested`，回答轮续跑，约 10–20 行。**被测系统本来就有审批/等人环节才做** | 评估用例能覆盖「批准/拒绝之后 Agent 行为对不对」这类审批场景 | [HITL](/zh/explanation/hitl) |
 | 调用瀑布图（升 Tier 2） | 应用已有 OTel 埋点（第 1 步探过）：只是把 span 多发一份给 NiceEval，几行配置；没埋点：补一段通用 OTel 初始化 | `niceeval view` 里看到应用内部每次模型调用、工具执行的耗时和 token 时间线；不影响任何断言 | [配置 OTel](/zh/tutorials/connect-otel) |
 | feature A/B 对比（升 Tier 3） | 改应用：把变体暴露成 `flags` 可切换的配置，改动量取决于应用；已有 A/B 开关（第 1 步探过）就是现成入口 | Experiment 层面直接对比「改 prompt / 换工具集 / 开关 feature 谁更好」 | [组织 Experiment](/zh/tutorials/experiments)、[接入等级](/zh/explanation/tier) |
+
+**工具调用断言和多轮会话不在这张表里**——它们是 Tier 1 的一部分，第 3 步写 Adapter 时就该做完（事件流映射、`ctx.session`）。要是当时因为被测接口给不出过程信息或不支持多轮而没做，这里如实告诉用户「这两族断言暂时用不了，原因是接口本身不提供」，而不是把它们说成「以后可以加的功能」。
 
 共同点也要讲给用户：这些全是给 Adapter 或应用加增量，**已写的评估用例一行不用改**。三档投入分别买到什么、什么时候值得升级，见[接入等级](/zh/explanation/tier)。第 1 步探到应用已有 OTel 埋点的话，瀑布图那条要主动推荐——成本接近零。

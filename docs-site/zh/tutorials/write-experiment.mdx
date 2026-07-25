@@ -21,21 +21,21 @@ export default defineExperiment({
 `agent` 放的是已经配置好的 agent 实例。被测系统的 URL、鉴权、协议细节通常传给 adapter 工厂；运行器不会单独保存一个 `agentConfig` 字段。
 
 ## 评估不同的 System Prompt 对于 Agent 的影响
-使用 flag 机制，配置不同的 Flag，设置两个实验，对比不同 Prompt 的区别。
+使用 flag 机制，配置不同的 Flag，设置两个实验，对比不同 Prompt 的区别。两格之间**只差一个变量**（这里是 `flags.promptVariant`），其余字段逐字相同——差别越少，分数差能归因到的东西越明确：
 
 ```ts
-// experiments/concise.ts
+// experiments/prompts/v1.ts
 import { defineExperiment } from "niceeval";
-import { webAgent } from "../agents/web-agent.ts";
+import { webAgent } from "../../agents/web-agent.ts";
 
 export default defineExperiment({
-  description: "测试 V1 System Prompt",
+  description: "System Prompt v1（基线）",
   agent: webAgent({
     baseUrl: "https://staging.example.com",
   }),
   model: "gpt-5.4",
   flags: {
-    promptVariant: "v1",
+    promptVariant: "v1",     // ← 唯一的变量
   },
   runs: 1,
   budget: 5,
@@ -43,23 +43,25 @@ export default defineExperiment({
 ```
 
 ```ts
-// experiments/concise.ts
+// experiments/prompts/v2.ts
 import { defineExperiment } from "niceeval";
-import { webAgent } from "../agents/web-agent.ts";
+import { webAgent } from "../../agents/web-agent.ts";
 
 export default defineExperiment({
-  description: "测试 V1 System Prompt",
+  description: "System Prompt v2（对比）",
   agent: webAgent({
     baseUrl: "https://staging.example.com",
   }),
   model: "gpt-5.4",
   flags: {
-    promptVariant: "v1",
+    promptVariant: "v2",     // ← 唯一的变量
   },
   runs: 1,
   budget: 5,
 });
 ```
+
+两格写成同一个 `flags`（或模型对比里两格钉同一个 `model`，包括两格都写成同一个环境变量默认值）是最常见的失误：跑得完、报告也出得来，但两列数字比的是同一套配置，看不出任何东西。
 
 
 `model` 会作为 `ctx.model` 传给 Adapter；如果你的 Agent 支持模型选择，自己构建请求

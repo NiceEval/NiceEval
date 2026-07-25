@@ -88,7 +88,7 @@ export default defineEval({
   async test(t) {
     await t.send("你们的退款政策是什么?");
     t.succeeded();
-    t.check(t.reply, includes("30 天"));
+    t.check(t.reply, includes(/30\s*天|一个月/));  // 措辞会变，用等价正则而不是单一精确短语
   },
 });
 ```
