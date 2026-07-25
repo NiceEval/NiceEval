@@ -1,6 +1,6 @@
 # `niceeval view` —— 在浏览器读结果
 
-`niceeval view` 把结果根呈现为本地网页：内容全部来自装载报告的 pages（不带 `--report` 时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加一张不进导航的 attempt-input page）。view 只拥有 page / locator 寻址、导航与 dialog 摆放，不拥有详情区块。它不依赖外部服务。
+`niceeval view` 把结果根呈现为本地网页：内容全部来自装载报告的 pages。装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](README.md#项目默认报告)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加一张不进导航的 attempt-input page。view 只拥有 page / locator 寻址、导航与 dialog 摆放，不拥有详情区块。它不依赖外部服务。
 
 本地模式与静态导出共用**同一条站点管线**：管线的输入是结果根加可选收窄（位置参数 / `--exp`）。收窄把根滤成只含匹配实验与 attempt 的**有效根**。管线把 scope-input pages 物化进 `index.html`；若报告声明了 attempt-input page，再为每个可达 locator 把同一张 page 物化为 `attempt/<locator>.html`；`artifact/` 则携带前端会读取的证据文件。本地模式按路径服务这份产物，`--out` 把同一份产物写盘；同一输入下同一路径逐字节一致。宿主不携带 page 的取数或布局知识。
 
@@ -19,6 +19,7 @@ niceeval view --no-open                # 只打印 URL
 niceeval view --port 4400              # 固定本地端口
 niceeval view --report reports/exam.tsx
 niceeval view --report reports/site.tsx --page exam   # 多页报告，指定初始页
+niceeval view --report standard        # 内建视图名，回到默认报告
 ```
 
 位置参数只有一种含义：eval id 前缀，与 `show` 一致。结果根用 `--results <dir>` 传入，单开一份快照用 `--snapshot <file>`——文件与目录都不进位置参数，位置参数的含义不随文件系统状态改变。
@@ -30,7 +31,7 @@ niceeval view --report reports/site.tsx --page exam   # 多页报告，指定初
 ## 页面构成
 
 - **导航机器与品牌位：** 页头左端是报告改不动的恒定 NiceEval 字标（外链官网），右侧是 page 导航、外部链接与语言切换。导航只列报告中 `navigation !== false` 的 pages，按声明顺序排列——裸 `view` 的「报告 / Attempts / 追踪」三个 tab 是内建四张 pages 中的前三张，参数化详情页不进导航。宿主不追加导航项。浏览器标题、外壳链接、页脚与资产仍按[外壳契约](library/shell.md#行为约束)消费；hero、品牌行、警告区和快照诊断区都是 page 内[站点组件](library/site-components.md)。
-- **默认报告页（内建首页）：** 页首是 `Hero`、`ScopeWarnings`、`SnapshotDiagnostics` 与 `CopyFixPrompt`，随后 `ExperimentComparison` 直接展示当前 Scope 的摘要、成本 × 端到端通过率散点和 experiment 比较表。每个 experiment 的 eval 集来自快照记录的 `selectedEvalIds`；未选择的 eval 不进入该 experiment 的分母。散点 series 有 label `line` 时按线归类并绘制折线，否则按 agent 归类、不连线。实验表一行一个 experiment，可展开查看 eval 与 attempt 证据。`--report` 用自定义报告文件替换整份页面声明。
+- **默认报告页（内建首页）：** 页首是 `Hero`、`ScopeWarnings`、`SnapshotDiagnostics` 与 `CopyFixPrompt`，随后 `ExperimentComparison` 直接展示当前 Scope 的摘要、成本 × 端到端通过率散点和 experiment 比较表。每个 experiment 的 eval 集来自快照记录的 `selectedEvalIds`；未选择的 eval 不进入该 experiment 的分母。散点 series 有 label `line` 时按线归类并绘制折线，否则按 agent 归类、不连线。实验表一行一个 experiment，可展开查看 eval 与 attempt 证据。`--report` 用自定义报告替换整份页面声明；配置的 `report` 字段把同一份替换设成项目默认。
 - **Attempts 页（内建）：** `Hero` + `ScopeWarnings` + `SnapshotDiagnostics` + 带过滤的 [`AttemptList`](library/entity-lists.md#attemptlist)，把范围内所有 attempt 展成可筛选列表；页名与全库的 attempt 术语一致。
 - **追踪页（内建）：** `Hero` + `ScopeWarnings` + `SnapshotDiagnostics` + [`TraceWaterfall`](library/site-components.md#tracewaterfall)，用 canonical OTel 字段显示每个 attempt 的执行瀑布行。
 - **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、`navigation: false` 的 page，content 是普通 [`AttemptDetail`](library/attempt-detail.md) 组合组件。它再用 `AttemptSummary`、`AttemptAssessment`、`AttemptFixPrompt`、`AttemptTimeline`、`AttemptDiagnostics`、`UsageTable`、`AttemptConversation`、`AttemptTrace`、`AttemptDiff` 组装判定、断言、修复 prompt、时间树、diagnostics、usage、对话、trace 和 diff。以下是这些组件的 web 面契约，不是 view 硬编码布局：`AttemptAssessment` 有源码时用 `AttemptSource`，否则用 `AttemptAssertions`；`AttemptTimeline` 组合 runner phase 与显式关联的 spans；`AttemptTrace` 保留原始 OTel 视角；`AttemptConversation` 按标准事件流分轮。用户可把 page content 换成任意公开组件组合。
@@ -108,7 +109,7 @@ niceeval view --report reports/site.tsx --page exam   # 指定初始页
 
 报告文件同时可被 `niceeval show --report` 使用。官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；view 注入静态详情链接与 dialog 路由，show 注入带完整 `--report` 上下文的 locator 命令。写法见 [Library](library.md#交给-show-view-渲染)。
 
-`--report` 文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 scope-input page；[配置对象形态](library/shell.md)声明外壳与 pages。view 只把 `navigation !== false` 的 pages 列进导航；scope-input page 读取 Scope，attempt-input page 按 locator 读取 `AttemptEvidence`。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
+报告文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 scope-input page；[配置对象形态](library/shell.md)声明外壳与 pages。写好的定义填进 `niceeval.config.ts` 的 `report` 字段，裸 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](README.md#项目默认报告)）。view 只把 `navigation !== false` 的 pages 列进导航；scope-input page 读取 Scope，attempt-input page 按 locator 读取 `AttemptEvidence`。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
 
 整站主题也属于这份报告定义。高频定制用外壳 `theme` 声明 accent、状态色与六色图表 palette；完整视觉覆盖继续用 `styles` 或页内 `Style`。主题同时作用于 view 导航 chrome 与页内报告组件，本地模式和 `--out` 使用同一份静态 CSS，`show` 忽略这些 web 面属性。Library API、语义色边界与 CSS 级联见[主题与 CSS 定制](library/theme.md)。
 

@@ -88,7 +88,8 @@ function defineReport(content: ReportNode): ReportDefinition;
 function defineReport(def: ReportDef): ReportDefinition;
 
 /**
- * defineReport 的唯一产物：只作 --report 文件的默认导出，交给宿主装载。
+ * defineReport 的唯一产物：作报告文件的默认导出，或 defineConfig 的 report 字段，
+ * 两条路都交给宿主装载。
  * 它不是 ReportNode——不能放进任何 content 或报告树，外壳因此不可嵌套。
  */
 interface ReportDefinition {

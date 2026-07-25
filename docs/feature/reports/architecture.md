@@ -199,16 +199,28 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 
 ## 外壳与页：装载规范化
 
-`--report` 文件的默认导出恒为 `defineReport` 产物，产物只有一种：一层外壳（标题、外链、页脚、主题、脚本、样式）与**非空 page 列表**——单页、多页与参数化详情都不换机制，差别只在 page 数量和输入。入参的页内容有两级缩写，各有精确展开：
+报告文件的默认导出恒为 `defineReport` 产物，产物只有一种：一层外壳（标题、外链、页脚、主题、脚本、样式）与**非空 page 列表**——单页、多页与参数化详情都不换机制，差别只在 page 数量和输入。入参的页内容有两级缩写，各有精确展开：
 
 - 树入参是 `defineReport({ content: 树 })` 的缩写。
 - `content: 树` 是 `pages: [{ id: "report", title: 内置页名「报告 / Report」, content: 树 }]` 的缩写。
 - `content` 与 `pages` 恰好声明一个：同时声明或都省略，装载按完整用户反馈报错——省略不是一种有含义的取值，缩写的展开则完全由写下的值决定。
 - 树 / `content` 缩写展开出的 page 是 `input: "scope"`、`navigation: true`；它不会偷带参数化详情。要有 locator 详情，就在 `pages` 中显式声明一张 attempt-input page，或 `extends: standard` 继承内建全部 pages。
 
-`defineReport` 产物只有一个去处：文件默认导出，交给宿主装载。页内复用的单位是组件与树的具名导出；`ReportDefinition` 不在 `ReportNode` 类型里，外壳不嵌套由类型天然保证——给一个报告文件加外壳永远不会破坏别处对它内容的复用，因为复用从不消费默认导出。
+`defineReport` 产物只有两个去处，都是交给宿主装载：报告文件的默认导出，或 `niceeval.config.ts` 的 `report` 字段。页内复用的单位是组件与树的具名导出；`ReportDefinition` 不在 `ReportNode` 类型里，外壳不嵌套由类型天然保证——给一个报告文件加外壳永远不会破坏别处对它内容的复用，因为复用从不消费默认导出。
 
-裸 `show` 与裸 `view` 不是第二条路径：宿主默认装载的就是 `niceeval/report/built-in` 的默认导出——报告、Attempts、Traces 三张导航 page 加一张参数化详情 page 的普通 `defineReport`（全文见 [Library · 内建报告](library/built-in.md)），与任何 `--report` 文件走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是装载逻辑里的类别，只是宿主默认拿哪个值的事实。
+**装载哪一份定义有一条取值链。** 宿主拿到 definition 的来源恰好三档，前档缺席才落下一档，之后的管线完全相同：
+
+1. **`--report <名字|文件>`**——本次运行显式指定。
+2. **`config.report`**——项目配置里的 `defineReport` 产物，类型是 `ReportDefinition`。两个宿主启动时读项目根 `niceeval.config.ts`；没有配置文件或没声明该字段等价于未声明。
+3. **内建 `standard`**——`niceeval/report/built-in` 的默认导出：报告、Attempts、Traces 三张导航 page 加一张参数化详情 page 的普通 `defineReport`（全文见 [Library · 内建报告](library/built-in.md)）。
+
+裸 `show` 与裸 `view` 因此不是第二条路径，与任何 `--report` 值走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是装载逻辑里的类别，只是取值链最后一档拿哪个值的事实。
+
+`--report` 的值按形态判别，判别只看字符串本身、不探测文件系统：含 `/`、以 `.` 开头，或带 `.ts` / `.tsx` / `.js` / `.mjs` 后缀的，按报告文件路径装载其默认导出；其余裸词查[内建视图名表](library/built-in.md)（视图的具名导出名，当前只有 `standard`）。裸词未命中名表时按完整用户反馈报错，列出可用名字并提示文件要写成带路径形（`./reports/site.tsx`），不回落到文件探测、也不静默落回默认报告。
+
+`config.report` 与 `--report` 的合法值判定同源：拿到的不是 `defineReport` 产物（普通对象、React 组件、裸报告树）时按完整用户反馈报错，两者只有出处一句不同——一个指向文件的默认导出，一个指向 `niceeval.config.ts` 的 `report` 字段。`view` 本地 server 的 mtime cache-busting 对两档同规则：只击穿装载入口本体，入口 import 的模块仍走缓存。`--report <文件>` 的入口就是报告文件，改它下次请求即生效；`config.report` 的入口是 `niceeval.config.ts`，报告文件是它的依赖，改报告文件要重启 server 才生效。边写边看报告的工作流因此是 `--report ./reports/site.tsx` 直接指文件，定型后再填进配置。
+
+报告定义只属于读面：`config.report` 不参与 `niceeval exp`，报告树不进快照，换报告不改写任何落盘结果。
 
 页层的边界规则：
 
@@ -223,7 +235,7 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 - **外壳是 web 面元数据，`title` 例外。** 双面同源约束只作用于页内报告树；外壳不携带数据。`show` 只把 `title` 用作页索引标题，`links`、`footer`、`theme`、`scripts`、`styles` 不进 text 面。
 - **主题与自定义资产属于视觉 / 增强层。** `theme` 只规范化为宿主 chrome 与报告组件共用的 CSS 语义令牌，不进 `ctx.report`、不改变组件树或计算口径；精确色槽、Library DX 与样式级联见[主题与 CSS](library/theme.md)。自定义脚本与官方增强脚本遵守同一不变量：初始静态 HTML 无 JS 完整可读，脚本只添加浏览行为，不改变计算口径或初始数据。这条不变量是对报告作者的义务约定，宿主不校验也无法校验脚本内容——脚本在读者浏览器里能做任何事，违反义务的站点其数字可信度由作者自己负责。
 
-外壳配置住在报告文件而不是 `niceeval.config.ts` 或快照里，因为它是「怎么看」的看法而非运行事实：改一个 GitHub 链接不应该要求重跑，也不应该改写任何落盘结果。快照里的 `name`（来自 `config.name`）仍是零配置时的身份兜底，定义的 `title` 覆盖它。
+外壳字段（`title`、`links`、`footer`、`theme`、`head`、`scripts`、`styles`）住在报告文件而不是 `niceeval.config.ts` 或快照里，因为它们是「怎么看」的看法而非运行事实：改一个 GitHub 链接不应该要求重跑，也不应该改写任何落盘结果。配置里的 `report` 不违背这条分工——它只声明默认装载哪一份 definition，不承载任何外壳字段，改它同样不重跑、不改写结果。快照里的 `name`（来自 `config.name`）仍是零配置时的身份兜底，定义的 `title` 覆盖它。
 
 ### 宿主保留的只有机器
 
@@ -247,7 +259,7 @@ scope-input page 与 attempt-input page 是 page 协议的两个明确输入分�
 | 层 | `show` | `view` |
 |---|---|---|
 | 报告槽 | text 面 | static HTML web 面 |
-| 默认填充 | [内建报告](library/built-in.md)首页：`ExperimentComparison` 输出当前 Scope 的摘要、成本 × 主读数散点（通过制通过率 / 计分制总分，[映射单点](library/metrics.md#题型构成与主读数)）与 `ExperimentList`；尾部附 Attempts / Traces 页索引 | 同一内建报告：`ExperimentComparison` 输出同一份摘要、散点与可排序、可过滤的 `ExperimentList` |
+| 默认填充 | `config.report`，未声明时是[内建报告](library/built-in.md)首页：`ExperimentComparison` 输出当前 Scope 的摘要、成本 × 主读数散点（通过制通过率 / 计分制总分，[映射单点](library/metrics.md#题型构成与主读数)）与 `ExperimentList`；尾部附 Attempts / Traces 页索引 | 同一内建报告：`ExperimentComparison` 输出同一份摘要、散点与可排序、可过滤的 `ExperimentList` |
 | attempt 下钻 | `niceeval show @<locator>` | `#/attempt/@<locator>` |
 | attempt 内容 | 同一 report definition 中 attempt-input page 的 text 面；显式 flag 选择 attempt-detail 组件区块的 text 面 | 同一 page 的 web 面；可渐进增强为 dialog |
 | 自定义 | `--report <file>` 替换整份 page 声明 | `--report <file>` 替换整份 page 声明 |

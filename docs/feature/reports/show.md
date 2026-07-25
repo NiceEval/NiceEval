@@ -11,7 +11,7 @@ show 的输入沿三条正交轴组合。三条轴各自独立取值，组合语
 - **形态**选择输出给谁：缺省 text 面给人和终端里的 agent；[`--json`](show/json.md) 把同一范围、同一切片选出的实体输出成结构化文档给脚本。两个形态消费同一套选择、去重与聚合规则，共有派生字段同值；JSON 可保留 text 注意力预算省略的字段，是数据超集。
 
 ```sh
-niceeval show                              # 内建报告首页：默认榜单 + 尾部页索引
+niceeval show                              # 默认报告首页：默认榜单 + 尾部页索引
 niceeval show memory/swelancer             # 按 eval id 前缀收窄
 niceeval show @1qrdcfq8                    # 打开一个 attempt 的诊断首页
 niceeval show @1qrdcfq8 --report reports/site.tsx
@@ -73,13 +73,16 @@ niceeval show memory/swelancer --exp dev-e2b/codex-e2b
 niceeval show --fresh                 # 只统计最新一次运行实测的 attempt
 niceeval show --report reports/exam.tsx
 niceeval show --report reports/site.tsx --page exam
+niceeval show --report standard        # 内建视图名，回到默认榜单
 ```
 
 `--results` 改变结果根；`--exp` 按 experiment id 路径段匹配，eval id 位置参数按裸前缀过滤。`--fresh` 把口径收窄成只含新执行的 attempt——排除携带条目与跨快照拼入的历史执行，被排除的题按覆盖事实转为榜单占位行，不静默消失（语义见 [Results · 时效](../results/library.md#时效新执行与历史执行)）。`--fresh` 与其它范围输入作用于所有切片与两个形态，不是榜单专属。
 
 `--exp` 出现两次以上时进入对照语义：每个 `--exp` 是一个对照条件，必须恰好解析到一个 experiment；某个 `--exp` 前缀匹配到多个 experiment 时按用法错误退出并列出全部候选 id，不猜测意图（契约见[对照矩阵](show/compare.md)）。`@<locator>` 位置参数与重复 `--exp` 互斥——locator 已经唯一确定了 experiment，再给对照条件没有可执行的语义。
 
-`--report` 替换整份 pages：无证据 flag 的 `show @<locator> --report <file>` 选择其中唯一的 attempt-input page，注入 locator 对应的 evidence 并渲染 text 面；`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。`--report` 与 `--json` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」；要自定义结构，先 `--json` 拿事实再自己加工，或直接消费 [`niceeval/results` 读取面](../results/library.md)。
+`--report <名字|文件>` 替换整份 pages。值按形态判别：含 `/`、以 `.` 开头或带 `.ts` / `.tsx` / `.js` / `.mjs` 后缀的当报告文件路径，其余裸词查[内建视图名](library/built-in.md)（当前只有 `standard`），裸词未命中就列出可用名字并提示文件要写成 `./reports/site.tsx`。不带 `--report` 时装载项目配置的 `report` 字段，没配则装载内建 `standard`（[三档取值链](README.md#项目默认报告)）。
+
+无证据 flag 的 `show @<locator> --report <file>` 选择其中唯一的 attempt-input page，注入 locator 对应的 evidence 并渲染 text 面；`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。`--report` 与 `--json` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」；要自定义结构，先 `--json` 拿事实再自己加工，或直接消费 [`niceeval/results` 读取面](../results/library.md)。
 
 ## 无匹配与不可读结果
 

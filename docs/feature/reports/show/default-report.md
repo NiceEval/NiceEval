@@ -1,6 +1,6 @@
 # 裸 `show`：默认报告的 text 面
 
-裸 `niceeval show` 装载[内建报告](../library/built-in.md)并渲染其首页（报告页），尾部附 Attempts、追踪两页的索引。页首是 `Hero`、`ScopeWarnings` 与 `SnapshotDiagnostics`，随后 `ExperimentComparison` 直接输出当前 Scope 的摘要、成本 × 主读数散点和 `ExperimentList`。散点 y 轴与榜单主列跟随 Scope 的主读数（[映射单点](../library/metrics.md#题型构成与主读数)）：本页示例都是通过制 Scope，读通过率；计分制 Scope 的同一页把 y 轴与主列换成总分、预排按总分（散点标题相应为「平均每个 eval 成本（越低越好） × 总分」）；混型 Scope 按题型并排两组散点与列表。整页组件树没有 `Section`，所以 text 面无框铺开——散点与宽表占满可用列宽；圆角面板只随 `Section` 出现（约定见 [Layout](../library/layout.md)），在 `AttemptDetail` 这类多区域详情页上。每个 experiment 的 eval 数与指标分母来自快照记录的 `selectedEvalIds`；未选择的 eval 不补成失败。实验列表保持 experiment → Eval → Attempt 层级。
+没配 `config.report` 时，裸 `niceeval show` 装载[内建报告](../library/built-in.md)并渲染其首页（报告页），尾部附 Attempts、追踪两页的索引（配了就装载配置里那份，取值链见 [Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份）。页首是 `Hero`、`ScopeWarnings` 与 `SnapshotDiagnostics`，随后 `ExperimentComparison` 直接输出当前 Scope 的摘要、成本 × 主读数散点和 `ExperimentList`。散点 y 轴与榜单主列跟随 Scope 的主读数（[映射单点](../library/metrics.md#题型构成与主读数)）：本页示例都是通过制 Scope，读通过率；计分制 Scope 的同一页把 y 轴与主列换成总分、预排按总分（散点标题相应为「平均每个 eval 成本（越低越好） × 总分」）；混型 Scope 按题型并排两组散点与列表。整页组件树没有 `Section`，所以 text 面无框铺开——散点与宽表占满可用列宽；圆角面板只随 `Section` 出现（约定见 [Layout](../library/layout.md)），在 `AttemptDetail` 这类多区域详情页上。每个 experiment 的 eval 数与指标分母来自快照记录的 `selectedEvalIds`；未选择的 eval 不补成失败。实验列表保持 experiment → Eval → Attempt 层级。
 
 Scope 内实验声明了 `labels: { line: … }` 时（下例每个实验声明了 `line` 与变体轴 `memory`），散点按线归类：
 

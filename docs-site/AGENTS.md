@@ -37,7 +37,7 @@
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
-- **默认报告（内建报告）**：`niceeval show` / `view` 不传 `--report` 时装载的内置报告——报告 / Attempts / 追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页，每页由公开组件组成，与用户报告文件完全同构。首页的实验比较（`ExperimentComparison`）直接消费当前 Scope，按各快照的 `selectedEvalIds` 计算评估用例集合，并展示成本 × 主指标散点（通过制实验读端到端通过率，计分制实验读总分）与实验列表（`ExperimentList`）；网页与终端读取同一份数据。
+- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的内置报告——报告 / Attempts / 追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页，每页由公开组件组成，与用户报告文件完全同构。首页的实验比较（`ExperimentComparison`）直接消费当前 Scope，按各快照的 `selectedEvalIds` 计算评估用例集合，并展示成本 × 主指标散点（通过制实验读端到端通过率，计分制实验读总分）与实验列表（`ExperimentList`）；网页与终端读取同一份数据。
 - **Snapshot**：结果读取面的单位（experiment × run）。中文写“结果快照”（同页后续可简写“快照”）；与快照测试无关；沙箱 microVM 快照一律写“沙箱快照（`snapshotId`）”。
 - **Scope**：`results.latest()` / `results.current()` 的返回物（挑好的结果快照 + 挑选警告）。中文直接写 `Scope`，不写“范围”或“选集”。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。

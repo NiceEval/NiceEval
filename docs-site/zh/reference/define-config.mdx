@@ -8,13 +8,17 @@ description: "defineConfig 参考：judge、reporters、并发、超时和 sandb
 
 ```ts
 import { defineConfig } from "niceeval";
+import site from "./reports/site";
 
 export default defineConfig({
   judge: { model: "gpt-5.4-mini" },
   maxConcurrency: 4,
   timeoutMs: 300_000,
+  report: site,
 });
 ```
+
+`report` 收 `defineReport` 的产物本身（import 自己的报告文件），不是路径字符串。`niceeval show` 与 `niceeval view` 不带 `--report` 时装载它，没写就装载内置的默认报告；`--report` 按次覆盖，`--report standard` 回到内置报告。写法与整套报告能力见[编写自定义报告](/zh/tutorials/custom-reports#设成项目默认)。
 
 ## Config 字段
 
@@ -69,7 +73,7 @@ reporters?: Reporter[];
 maxConcurrency?: number;
 ```
 
-项目级默认并发上限;CLI flag / env / experiment 的同名设置优先级更高。
+项目级默认并发上限;CLI flag / experiment 的同名设置优先级更高(没有环境变量层)。
 
 #### `timeoutMs`
 

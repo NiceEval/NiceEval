@@ -8,7 +8,35 @@
 | 在浏览器浏览历史、图表和完整证据 | [`niceeval view`](view.md) | 人工复盘、分享静态报告 |
 | 定义自己的成绩单、榜单或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
 
-`show` 和 `view` 都接受 `--report <file>` 替换同一份 page 声明。`--report` 文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 scope-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。不传 `--report` 时，两者装载内建 `standard`：报告、Attempts、追踪三张导航页，加一张 `AttemptDetail` 参数化页（[全文](library/built-in.md)）。所有内容都是 page 内公开组件，没有宿主特权。
+`show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 scope-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
+
+两个宿主装载哪份定义只有一条取值链，三档，前档缺席才落下一档：
+
+| 档 | 取值 | 用途 |
+|---|---|---|
+| 1 | `--report <名字\|文件>` | 单次运行指定；裸词是[内建视图名](library/built-in.md)（`--report standard`），带路径形是报告文件 |
+| 2 | `niceeval.config.ts` 的 [`report` 字段](#项目默认报告) | 项目默认报告，团队里每个人裸跑 `show` / `view` 都看这一份 |
+| 3 | 内建 `standard` | 报告、Attempts、追踪三张导航页，加一张 `AttemptDetail` 参数化页（[全文](library/built-in.md)） |
+
+三档产出同一种 `ReportDefinition`，走同一条 `装载 → resolve → validate → render` 管线。所有内容都是 page 内公开组件，没有宿主特权。
+
+## 项目默认报告
+
+自定义报告写好后不该要求每个人每次都敲 `--report`。把 `defineReport` 产物填进项目配置的 `report` 字段，裸 `show` / `view` 就装载它：
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+import site from "./reports/site";
+
+export default defineConfig({
+  report: site,
+});
+```
+
+字段收 `defineReport` 产物本身，不是路径字符串：配置文件是 TS，import 自己的报告文件即可，写错在类型检查时就暴露。想在内建报告上加外壳或改页，`defineReport({ extends: standard, … })` 的产物同样直接填进来。填了非 `defineReport` 产物（普通对象、React 组件、报告树）按完整用户反馈报错，出处点名配置文件的 `report` 字段。
+
+这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进快照。要临时回到内建榜单排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
 
 报告只表达“怎么看”。原始判定、断言、事件、trace 和 diff 的事实归 [Results](../results/README.md)；运行过程中把事实写出去的回调叫 [Reporter](../../runner.md),不属于这里。
 

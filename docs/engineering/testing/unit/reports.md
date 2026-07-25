@@ -119,6 +119,15 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **宿主装载等价**：裸 `show`/`view` 与 `--report`
   在装载边界消费同一份 definition（同引用）与同规则选出的 Scope（深等）；`--fresh`
   在两宿主注入同一个 `fresh` 口径——不比较终端输出与 HTML，渲染面与进程级读面行为归 E2E。
+- **报告取值链与 `--report` 值判别**：两宿主共用的解析函数，断言面是解析出的 definition
+  引用与错误对象，不经渲染。覆盖：三档取值链按 `--report` → `config.report` → 内建 `standard`
+  逐档回落，且每档产出的 definition 与直接 import 该定义同引用（`config.report`
+  在场时裸跑不得再取内建）；`--report` 的形态判别——含 `/`、以 `.` 开头、带
+  `.ts`/`.tsx`/`.js`/`.mjs` 后缀的按文件装载，其余裸词查内建视图名表，`standard`
+  命中且与 `niceeval/report/built-in` 默认导出同引用；裸词未命中时报错列出可用名字并给出路径写法，不做文件系统探测（fixture 里存在同名
+  `./site.tsx` 时 `--report site` 仍报错，证明判别只看字符串）；`config.report`
+  不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；mtime cache-busting 只作用于装载入口本体——`--report
+  <文件>` 改报告文件后下一次装载读到新内容，`config.report` 的入口是配置文件，断言面是传给装载器的入口路径，不测进程重启行为。
 - **view 数据装载（ViewScan）**：`resolveViewInput` 的位置参数 / `--results` / `--snapshot`
   互斥与存在性校验，位置参数按 eval id 前缀透传、含义不随文件系统状态改变；`loadViewScan`
   的有效根收窄使证据室（`attemptsByBase` / `artifactDirs` /

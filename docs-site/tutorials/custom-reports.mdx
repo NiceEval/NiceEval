@@ -6,11 +6,11 @@ description: "Write a custom report — with defineReport, built-in report compo
 
 [Viewing Results](/tutorials/viewing-results) covers the terminal output of `niceeval show` and the web output of `niceeval view`. This tutorial uses that same results data to write custom reports — an exam scorecard, a lines-of-code table, a quality × cost chart.
 
-A report is a report file. `niceeval show` and `niceeval view` open the results and inject the data into the report function. Arrange the layout with the built-in components and `Row` / `Col`, then hand the file path to `--report` to render the same report in the terminal and on the web. A custom report supports the same attempt evidence links, `--results` to specify a results root, and static export.
+A report is a report file. `niceeval show` and `niceeval view` open the results and inject the data into the report function. Arrange the layout with the built-in components and `Row` / `Col`, then hand the file path to `--report` to render the same report in the terminal and on the web; once it settles, put it in the `report` field of `niceeval.config.ts` so a bare `show` / `view` renders your report by default (see [Set it as the project default](#set-it-as-the-project-default)). A custom report supports the same attempt evidence links, `--results` to specify a results root, and static export.
 
 ## The default report `show` and `view` render is also a report file
 
-The default report `niceeval show` / `view` render without `--report` is not a private implementation — it is an ordinary report file the package ships: three pages (Report, Attempts, Traces), each built from components publicly exported by `niceeval/report` — the page header (`Hero`), the selection warnings (`ScopeWarnings`), the report page's comparison component `ExperimentComparison`, the Attempts page's attempt list (`AttemptList`), and the Traces page's trace waterfall (`TraceWaterfall`).
+The default report `niceeval show` / `view` render when there is no `--report` and no `report` field in the config is not a private implementation — it is an ordinary report file the package ships: three pages (Report, Attempts, Traces), each built from components publicly exported by `niceeval/report` — the page header (`Hero`), the selection warnings (`ScopeWarnings`), the report page's comparison component `ExperimentComparison`, the Attempts page's attempt list (`AttemptList`), and the Traces page's trace waterfall (`TraceWaterfall`).
 
 This default report is itself exported from `niceeval/report/built-in` under the name `standard`. When all you want is to add a site title, a GitHub link, or an analytics script on top of the default report, stack your own shell on it with `extends` — you don't need to write a single line of page content, and page improvements that come with a NiceEval upgrade carry over automatically too:
 
@@ -86,6 +86,33 @@ Command-line scope acts on the picking step first, so the report gets a `selecti
 Every component on the page is **dual-render**: the web face is React rendering, the terminal face is character rendering, and both faces consume the same precomputed data. The entity lists show facts by experiment → Eval → Attempt; the metric table, matrix, bar chart, scoreboard, scatter plot, line chart, and delta table show aggregate values. The full list is in [Report Components](/reference/report-components). On the web face, entities, cells, and points deep-link to the attempt detail; on the terminal face they print the matching `niceeval show <eval id>` drill-down command.
 
 The default report has no special privilege: all three of its pages are built entirely from public components, and your report is their sibling. Need the same "group by directory, compare within group" layout — write `<ExperimentComparison />` directly; need an Attempts page — write a filtered `<AttemptList />`; don't need one — don't add it. That includes the page header and the `Powered by NiceEval` brand line: they are the `Hero` and `PoweredBy` components respectively — use them and you get them, skip them and you don't; the components themselves offer no toggle. When you compose `MetricScatter` / `ExperimentList` directly yourself, the general-purpose components only consume the data you hand them and never group automatically — feeding them cross-group data is you explicitly choosing a cross-group analysis.
+
+## Set it as the project default
+
+Once the report settles, nobody should have to type `--report` every time. Import the `defineReport` product into your config and hand it to the `report` field:
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+import site from "./reports/site";
+
+export default defineConfig({
+  report: site,
+});
+```
+
+The field takes the report definition itself, not a path string — the config is a TypeScript file, so just import it and a wrong path fails at type-check time. After that:
+
+```bash
+niceeval show                     # your report, no --report needed
+niceeval view --page exam         # --page, positional narrowing, and @locator drill-down all unchanged
+niceeval show --report standard   # back to the built-in report for this run, without editing the config
+niceeval view --report ./reports/exam.tsx   # a different file for this run
+```
+
+`--report` takes two shapes of value: anything that looks like a path (`./reports/exam.tsx`, `reports/exam.tsx`) loads that file; a bare word is looked up as a built-in report name (today only `standard`). A bare word that misses the name table is an error listing the available names — it never falls back to guessing a same-named file.
+
+The `report` field only affects reading results, never running them: `niceeval exp` does not read it and the report is not written into result snapshots, so changing the report never requires a re-run.
 
 ## Layout: `Row` and `Col` hold on both faces
 
@@ -411,4 +438,4 @@ A dual-render component's web face is an ordinary React component, and its `data
 
 ## The boundaries of a custom report
 
-Only one report renders at a time, and `--report` takes an explicit file path — no auto-discovered `reports/` directory, no plugin registry, no config file. Custom metrics and custom components both live inside your report file and are passed in along with it; the host never grows a registration surface for them. Without `--report`, what renders is the default report, and your report is a sibling implementation at the same level.
+Only one report renders at a time, and it comes from exactly two places: an explicit `--report` value, or the `report` field in the config — no auto-discovered `reports/` directory, no plugin registry. Custom metrics and custom components both live inside your report file and are passed in along with it; the host never grows a registration surface for them. With neither of the two, what renders is the built-in default report, and your report is a sibling implementation at the same level.

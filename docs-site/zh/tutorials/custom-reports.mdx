@@ -6,11 +6,11 @@ description: "用 defineReport、内置报告组件和双面组件编写一份�
 
 [查看结果](/zh/tutorials/viewing-results)介绍 `niceeval show` 的终端输出和 `niceeval view` 的网页输出。本教程用相同的结果数据编写考试成绩单、代码行数表和质量 × 成本图等自定义报告。
 
-一份报告对应一个报告文件：一棵由内置组件搭起来的树。`niceeval show` 和 `niceeval view` 打开结果、选出当前范围（Scope），交给这棵树渲染。把文件路径传给 `--report`，同一份定义在终端和网页都能渲染。自定义报告同样支持 Attempt 证据链接、`--results` 指定结果根和静态导出。
+一份报告对应一个报告文件：一棵由内置组件搭起来的树。`niceeval show` 和 `niceeval view` 打开结果、选出当前范围（Scope），交给这棵树渲染。把文件路径传给 `--report`，同一份定义在终端和网页都能渲染；写顺手了再把它填进 `niceeval.config.ts` 的 `report` 字段，裸跑 `show` / `view` 就默认是自己的报告（见[设成项目默认](#设成项目默认)）。自定义报告同样支持 Attempt 证据链接、`--results` 指定结果根和静态导出。
 
 ## show / view 的默认报告也是一份报告文件
 
-`niceeval show` / `view` 不传 `--report` 时渲染的默认报告不是私有实现，而是包里自带的一个普通报告文件：报告、Attempts、追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页，每页都由 `niceeval/report` 公开导出的组件搭成。
+`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时渲染的默认报告不是私有实现，而是包里自带的一个普通报告文件：报告、Attempts、追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页，每页都由 `niceeval/report` 公开导出的组件搭成。
 
 这份默认报告本身以 `standard` 为名从 `niceeval/report/built-in` 导出。只想在默认报告上加站点标题、GitHub 链接或统计脚本时，用 `extends` 在它上面叠自己的外壳，页面内容一行不用写；NiceEval 升级带来的页面改进也会自动跟过来：
 
@@ -104,6 +104,33 @@ const ProdSummary = defineComponent((_props: {}, ctx) => (
 页面里的每个组件都是**双面**的:网页面是 React 渲染,终端面是字符渲染,两面吃同一份算好的数据。实体列表按 experiment → Eval → Attempt 展示事实;指标表、矩阵、条形图、成绩单、散点图、趋势图和差异表展示聚合值。完整清单见[报告组件](/zh/reference/report-components)。网页面的实体、格子和点深链到 Attempt 详情,终端面印出对应的 `niceeval show <eval id>` 下钻命令。
 
 默认报告没有特权:它的四个页面全部由公开组件搭成。需要同样的当前 Scope 比较就写 `<ExperimentComparison />`;要子集就在报告里先 `filter`,或从 CLI 用 `--exp` 收窄。
+
+## 设成项目默认
+
+报告定型以后，不用再要求团队每次都敲 `--report`。把 `defineReport` 的产物 import 进配置，填给 `report` 字段：
+
+```ts
+// niceeval.config.ts
+import { defineConfig } from "niceeval";
+import site from "./reports/site";
+
+export default defineConfig({
+  report: site,
+});
+```
+
+字段收报告定义本身，不是路径字符串——配置是 TS 文件，import 就好，写错路径在类型检查时就报出来。之后：
+
+```bash
+niceeval show                     # 自己的报告,不用再写 --report
+niceeval view --page exam         # --page、位置参数收窄、@locator 下钻全部照旧
+niceeval show --report standard   # 本次回到内建默认报告,不改配置
+niceeval view --report ./reports/exam.tsx   # 本次换成另一份文件
+```
+
+`--report` 的值有两种形态：写成带路径的样子（`./reports/exam.tsx`、`reports/exam.tsx`）按文件装载，裸词当内置报告名查（今天只有 `standard`）。裸词查不到就报错并列出可用的名字，不会去猜同名文件。
+
+配置里的 `report` 只影响看结果，不影响跑：`niceeval exp` 不读它，报告也不写进结果快照，所以改报告不用重跑。
 
 ## 排版:内置排版原语
 
@@ -452,4 +479,4 @@ niceeval view --report reports/exam.tsx --out site
 
 ## 自定义报告的边界
 
-一次只渲染一份报告,`--report` 收显式文件路径——没有 `reports/` 目录自动发现、没有插件注册表、没有配置文件。自定义指标和自定义组件都住在你的报告文件里,随文件一起递入,宿主不为它们长任何注册面。不传 `--report` 时渲染的就是默认报告,你的报告和它是同级实现。
+一次只渲染一份报告,来源只有两处:`--report` 的显式取值,和配置里的 `report` 字段——没有 `reports/` 目录自动发现,也没有插件注册表。自定义指标和自定义组件都住在你的报告文件里,随文件一起递入,宿主不为它们长任何注册面。两处都没有时渲染的就是内置默认报告,你的报告和它是同级实现。

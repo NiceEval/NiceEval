@@ -8,13 +8,17 @@ description: "defineConfig reference: judge, reporters, concurrency, timeout, an
 
 ```ts
 import { defineConfig } from "niceeval";
+import site from "./reports/site";
 
 export default defineConfig({
   judge: { model: "gpt-5.4-mini" },
   maxConcurrency: 4,
   timeoutMs: 300_000,
+  report: site,
 });
 ```
+
+`report` takes the `defineReport` product itself (import your own report file), not a path string. `niceeval show` and `niceeval view` load it when `--report` is absent, and fall back to the built-in default report when it is not set; `--report` overrides it per run, and `--report standard` goes back to the built-in one. Writing reports is covered in [Write a custom report](/tutorials/custom-reports#set-it-as-the-project-default).
 
 ## Config fields
 

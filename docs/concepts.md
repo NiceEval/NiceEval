@@ -205,6 +205,7 @@
 | `name` | `LocalizedText` | 项目名,显示在 `niceeval view` 顶部;可给字符串,或按 locale 给多语言(`{ en, "zh-CN" }`) |
 | `judge` | `JudgeConfig` | 默认 Judge(裁判模型,见 [Scoring](feature/scoring/library/judge.md)) |
 | `reporters` | `Reporter[]` | 全局报告器(见 [Observability](observability.md#reporters)) |
+| `report` | `ReportDefinition` | 项目默认报告定义(`defineReport` 产物,直接 import 自己的报告文件);`show` / `view` 不带 `--report` 时装载它,省略则装载内建 `standard`(见 [Reports](feature/reports/README.md)) |
 | `maxConcurrency` | `number` | 并发上限(见 [Runner](runner.md#调度有界并发)) |
 | `timeoutMs` | `number` | 单 eval 超时 |
 | `sandbox` | `SandboxOption` | 项目默认 sandbox spec(`dockerSandbox()` 等工厂产出);experiment 可覆盖。两处都没设、又用了沙箱型 agent 时直接报错——没有隐式默认,也没有 `--sandbox` 这种 CLI 覆盖 |

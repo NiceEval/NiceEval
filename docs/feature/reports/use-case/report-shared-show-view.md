@@ -2,7 +2,9 @@
 
 ## 解决什么问题
 
-内建报告是通用榜单,汇报口径常常是自己的:一张固定题集的成绩单页、一套带品牌外壳的多页站。`--report <file>` 用报告文件替换整份 pages;官方组件都有 web 和 text 两个渲染面,同一份文件交给 `view` 得到网页、交给 `show` 得到终端输出,同一张 page 在两个宿主保持相同数据口径([契约](../view.md#自定义报告与外壳))。
+内建报告是通用榜单,汇报口径常常是自己的:一张固定题集的成绩单页、一套带品牌外壳的多页站。`--report` 用自己的报告替换整份 pages;官方组件都有 web 和 text 两个渲染面,同一份文件交给 `view` 得到网页、交给 `show` 得到终端输出,同一张 page 在两个宿主保持相同数据口径([契约](../view.md#自定义报告与外壳))。
+
+自定义报告一旦定型,再要求团队每次敲 `--report` 就是重复劳动:把它设成项目默认(下面第 6 步),裸 `show` / `view` 直接是自己的口径,`--report` 退回成「本次换一份」的临时开关。
 
 ## 全流程
 
@@ -31,9 +33,38 @@
 
 5. attempt 下钻用同一份定义:报告声明了 attempt-input page 时,view 的 locator URL 与 `niceeval show @1qrdcfq8 --report reports/site.tsx` 打开的都是这张 page——前者渲染 web 面,后者渲染 text 面。
 
+6. 定型后设成项目默认,把 `defineReport` 产物填进配置的 `report` 字段(收产物本身,不是路径字符串):
+
+   ```ts
+   // niceeval.config.ts
+   import { defineConfig } from "niceeval";
+   import site from "./reports/site";
+
+   export default defineConfig({
+     report: site,
+   });
+   ```
+
+   之后裸 `niceeval show` 与 `niceeval view` 都装载这份定义,`--page`、位置参数收窄、locator 下钻全部照旧:
+
+   ```bash
+   niceeval show                    # 自己的报告,不必再写 --report
+   niceeval view --page exam
+   niceeval show @1qrdcfq8          # 自定义 attempt-input page 的 text 面
+   ```
+
+7. 排查「是报告写错还是数据不对」时按次回到内建榜单,不改配置:
+
+   ```bash
+   niceeval show --report standard
+   niceeval view --report standard
+   ```
+
 ## 边界
 
 - `--page <id>` 未命中按完整用户反馈报错并列出可用页:`error: page "typo" not found in reports/frontier.tsx. Available pages: report`。
+- `--report` 的裸词一律查内建视图名表,不回落到文件探测:想装载文件就写成带路径形(`./reports/site.tsx`),未命中的裸词按完整用户反馈报错并列出可用名字。
+- 配置里的 `report` 只影响读面:`niceeval exp` 不装载报告树,报告定义也不进快照,换报告不必重跑。
 - 报告没声明 attempt-input page 时 locator 只是文本,不生成一条会悄悄落回内建详情的命令;要沿用官方详情,显式 `extends: standard`,或把 `standardAttemptPage` 放进自己的 pages([契约](../show/reports.md))。
 - `--history` 与 `--report` 互斥,两者都占据主输出。
 - 外壳的 `links`、`footer`、`theme`、`head`、`scripts`、`styles` 是 web 面属性,`show` 只消费 `title` 与 `pages`。
