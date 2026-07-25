@@ -165,7 +165,7 @@ export default defineReport(
 
 ## `Grid` 与 `Stat`
 
-`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Scope、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables.md)或[图表](../components/charts.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
+`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Scope、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables/README.md)或[图表](../components/charts/README.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
 
 `Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格；`columns` 是每行的宽面上限，不要求子节点数量恰好为其倍数。一个格子里要放多个区块时，用已有 `Col` 把它们归成一个直接子节点：
 
@@ -391,7 +391,7 @@ export default defineReport(
 
 ## `Table`
 
-自定义表格的标准件：列是 `<Column>` 结构子节点，行是 `rows` 数据；text 面按显示宽度对齐、web 面输出 `<table>`。列是声明、行是数据，这条分工与[官方表格](../components/tables.md)一致。
+自定义表格的标准件：列是 `<Column>` 结构子节点，行是 `rows` 数据；text 面按显示宽度对齐、web 面输出 `<table>`。列是声明、行是数据，这条分工与[官方表格](../components/tables/README.md)一致。
 
 ```tsx
 <Table

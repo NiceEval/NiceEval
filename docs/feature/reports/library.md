@@ -1,6 +1,6 @@
 # Reports —— 库用法
 
-`niceeval/report` 导出 `defineReport`、`defineComponent`、可交给 `show` / `view` 的双面叶子组件与配套 `*Data` 计算函数，以及 `ExperimentComparison`、`AttemptDetail` 这类只装配叶子的普通组合组件；`niceeval/report/react` 只导出叶子的纯 web renderer 和数据类型，不导出取数代码或 report-only 组合。两个入口的同名叶子组件接收同一份 `data`。`defineReport` 的内容只有 pages：page 可以消费 Scope，也可以声明为按 locator 消费 `AttemptEvidence` 的参数化 page，见[外壳与多页](library/shell.md)和 [Attempt 详情](components/attempt-detail.md)。
+`niceeval/report` 导出 `defineReport`、`defineComponent`、可交给 `show` / `view` 的双面叶子组件与配套 `*Data` 计算函数，以及 `ExperimentComparison`、`AttemptDetail` 这类只装配叶子的普通组合组件；`niceeval/report/react` 只导出叶子的纯 web renderer 和数据类型，不导出取数代码或 report-only 组合。两个入口的同名叶子组件接收同一份 `data`。`defineReport` 的内容只有 pages：page 可以消费 Scope，也可以声明为按 locator 消费 `AttemptEvidence` 的参数化 page，见[外壳与多页](library/shell.md)和 [Attempt 详情](components/attempt-detail/README.md)。
 
 组件的数据绑定与局部配置写成结构子节点，组合规则单源在[组件树](components/README.md)。最快的选择方式：先确定想回答的问题，再选组件。
 
@@ -8,22 +8,22 @@
 |---|---|
 | 自由摆放 label、主值与辅助信息组成摘要面板 | [`Grid` / `Stat`](library/layout.md#grid-与-stat) |
 | 写方法学、口径说明、脚注这类散文 | [`Markdown`](library/layout.md#markdown) |
-| 比较当前 Scope 里的 experiments | [`ExperimentComparison`](components/summaries.md#experimentcomparison) |
-| 一个范围有多大、整体是否健康（eval 级或 attempt 级计票） | [`ScopeSummary`](components/summaries.md#scopesummary) |
-| 每个 experiment / eval / attempt 发生了什么 | [`ExperimentList` / `EvalList` / `AttemptList`](components/entity-lists.md) |
-| 现在有哪些失败要处理、先看哪条 | [`FailureList`](components/entity-lists.md#failurelist) |
-| 谁整体更好，多个指标并排比较 | [`MetricTable`](components/tables.md#metrictable) |
-| 哪道题在哪个配置上失败 | [`MetricMatrix`](components/tables.md#metricmatrix) |
-| 固定题集的总分与分科得分 | [`Scoreboard`](components/tables.md#scoreboard) |
-| A 与 B 相差多少 | [`DeltaTable`](components/tables.md#deltatable) |
-| 哪些题历史上从来没稳过 | [`StabilityMatrix`](components/tables.md#stabilitymatrix) |
-| 两个指标之间的取舍、参数变化时指标怎样变化、排行与堆叠构成 | [图表](components/charts.md) |
-| 页首放站点标题、最后运行时间与品牌行 | [`Hero`](components/site.md#hero) |
-| 这批数据的选择警告（快照未收尾、落盘被跳过） | [`ScopeWarnings`](components/site.md#scopewarnings) |
-| 哪些真实快照发生过无法归属单行的运行诊断 | [`SnapshotDiagnostics`](components/site.md#snapshotdiagnostics) |
-| 把全部失败打包成可交给 coding agent 的修复 prompt | [`CopyFixPrompt`](components/site.md#copyfixprompt) |
-| 每个 attempt 的执行时间瀑布 | [`TraceWaterfall`](components/site.md#tracewaterfall) |
-| 自定义 locator 打开的参数化 page | [`AttemptDetail`，或 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等详情组件](components/attempt-detail.md) |
+| 比较当前 Scope 里的 experiments | [`ExperimentComparison`](components/summaries/experiment-comparison.md) |
+| 一个范围有多大、整体是否健康（eval 级或 attempt 级计票） | [`ScopeSummary`](components/summaries/scope-summary.md) |
+| 每个 experiment / eval / attempt 发生了什么 | [`ExperimentList` / `EvalList` / `AttemptList`](components/entity-lists/README.md) |
+| 现在有哪些失败要处理、先看哪条 | [`FailureList`](components/entity-lists/failure-list.md) |
+| 谁整体更好，多个指标并排比较 | [`MetricTable`](components/tables/metric-table.md) |
+| 哪道题在哪个配置上失败 | [`MetricMatrix`](components/tables/metric-matrix.md) |
+| 固定题集的总分与分科得分 | [`Scoreboard`](components/tables/scoreboard.md) |
+| A 与 B 相差多少 | [`DeltaTable`](components/tables/delta-table.md) |
+| 哪些题历史上从来没稳过 | [`StabilityMatrix`](components/tables/stability-matrix.md) |
+| 两个指标之间的取舍、参数变化时指标怎样变化、排行与堆叠构成 | [图表](components/charts/README.md) |
+| 页首放站点标题、最后运行时间与品牌行 | [`Hero`](components/site/hero.md) |
+| 这批数据的选择警告（快照未收尾、落盘被跳过） | [`ScopeWarnings`](components/site/scope-warnings.md) |
+| 哪些真实快照发生过无法归属单行的运行诊断 | [`SnapshotDiagnostics`](components/site/snapshot-diagnostics.md) |
+| 把全部失败打包成可交给 coding agent 的修复 prompt | [`CopyFixPrompt`](components/site/copy-fix-prompt.md) |
+| 每个 attempt 的执行时间瀑布 | [`TraceWaterfall`](components/site/trace-waterfall.md) |
+| 自定义 locator 打开的参数化 page | [`AttemptDetail`，或 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等详情组件](components/attempt-detail/README.md) |
 
 组件之外按任务读分篇：
 
@@ -37,8 +37,8 @@
 | 加标题、GitHub 链接、页脚，或拆成多页 | [外壳与多页](library/shell.md) |
 | 改强调色、状态色、图表色板、字体或完整覆盖 CSS | [主题](library/theme.md) |
 | 自己写一个报告组件，并让它跟随任何主题 | [自己写报告组件](use-case/write-custom-component.md) |
-| 摆 hero、品牌行、警告区、快照诊断区、修复 prompt 或 trace 瀑布 | [站点组件](components/site.md) |
-| 声明、删减或重排 attempt-input page | [Attempt 详情](components/attempt-detail.md) |
+| 摆 hero、品牌行、警告区、快照诊断区、修复 prompt 或 trace 瀑布 | [站点组件](components/site/README.md) |
+| 声明、删减或重排 attempt-input page | [Attempt 详情](components/attempt-detail/README.md) |
 | 看裸 `show` / `view` 装载的默认定义怎么写 | [内建报告](library/built-in.md) |
 
 ## 两种使用方式
@@ -75,7 +75,7 @@ niceeval show --report reports/quality-cost.tsx
 niceeval view --report reports/quality-cost.tsx
 ```
 
-宿主先按位置参数、`--results`、`--exp` 和 `--fresh` 选择数据，再把 Scope 注入报告；管线在 [resolve 阶段](architecture.md#报告树与两个宿主)并行完成所有组件的取数，作者不写任何取数管道。快照未收尾、落盘不可读等选择警告由 [`ScopeWarnings`](components/site.md#scopewarnings) 呈现；属于真实 Snapshot、但无法归属单行的运行诊断由 [`SnapshotDiagnostics`](components/site.md#snapshotdiagnostics) 呈现。宿主不在报告树外为两者另设通道，[内建报告](library/built-in.md)的三张 scope-input page 都相邻放置它们（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。能定位到行的事实不进任一面板：覆盖缺口是 [`ExperimentList` 的占位行](components/entity-lists.md#experimentlist)，携带与跨快照拼接是行上的[时效标注](components/entity-lists.md#时效标注)，Attempt 事实进入详情。`ScopeSummaryData` 等指标数据不复制警告或诊断。`ScopeWarnings` 按下一步动作聚合闭集 kind；`SnapshotDiagnostics` 按真实 experiment → Snapshot 来源组织开放 code，两者各自的聚合、排序与折叠规则见[组件契约](components/site.md)。
+宿主先按位置参数、`--results`、`--exp` 和 `--fresh` 选择数据，再把 Scope 注入报告；管线在 [resolve 阶段](architecture.md#报告树与两个宿主)并行完成所有组件的取数，作者不写任何取数管道。快照未收尾、落盘不可读等选择警告由 [`ScopeWarnings`](components/site/scope-warnings.md) 呈现；属于真实 Snapshot、但无法归属单行的运行诊断由 [`SnapshotDiagnostics`](components/site/snapshot-diagnostics.md) 呈现。宿主不在报告树外为两者另设通道，[内建报告](library/built-in.md)的三张 scope-input page 都相邻放置它们（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。能定位到行的事实不进任一面板：覆盖缺口是 [`ExperimentList` 的占位行](components/entity-lists/experiment-list.md)，携带与跨快照拼接是行上的[时效标注](components/entity-lists/README.md#时效标注)，Attempt 事实进入详情。`ScopeSummaryData` 等指标数据不复制警告或诊断。`ScopeWarnings` 按下一步动作聚合闭集 kind；`SnapshotDiagnostics` 按真实 experiment → Snapshot 来源组织开放 code，两者各自的聚合、排序与折叠规则见[组件契约](components/site/README.md)。
 
 取数之后要用普通 JavaScript 加工（filter / slice / 自定义排序）时，写一个[组合组件](library/layout.md#自定义组件)：在里面调 `*Data` 函数、加工数组，再以 **data 形态** 把结果递给组件：
 
@@ -158,7 +158,7 @@ await writeFile("public/evals.json", JSON.stringify(table));
 - [用例手册](use-case/README.md) —— 按用户问题选报告能力,并划出何时换另一种组件或宿主。
 - [配方](library/recipes.md) —— 按场景可整份复制的完整报告文件。
 - [组件树](components/README.md) —— 组合模型、子节点资格总表与页级色分配。
-- [图表](components/charts.md) / [表格与矩阵](components/tables.md) / [实体列表](components/entity-lists.md) / [概览](components/summaries.md) / [Attempt 详情](components/attempt-detail.md) / [站点组件](components/site.md) —— 组件契约分篇。
+- [图表](components/charts/README.md) / [表格与矩阵](components/tables/README.md) / [实体列表](components/entity-lists/README.md) / [概览](components/summaries/README.md) / [Attempt 详情](components/attempt-detail/README.md) / [站点组件](components/site/README.md) —— 组件契约分篇。
 - [指标与维度](library/metrics.md) —— 内置指标口径与自定义指标。
 - [排版原语与自定义组件](library/layout.md) —— 报告树的组织件、组合组件与 text 排版工具。
 - [外壳与多页](library/shell.md) —— 标题、外链、页脚、脚本与 `pages`。

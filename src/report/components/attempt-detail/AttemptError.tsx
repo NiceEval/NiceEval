@@ -1,4 +1,4 @@
-// AttemptError:结构化 error 明细。没有 error 时零输出(docs/feature/reports/components/attempt-detail.md)。
+// AttemptError:结构化 error 明细。没有 error 时零输出(docs/feature/reports/components/attempt-detail/README.md)。
 // 字段标签是低层技术标识,与终端 `niceeval show` 一样保持英文,不进 view 的 i18n 词典。
 
 import type { ReactElement } from "react";

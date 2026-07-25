@@ -1,7 +1,7 @@
 // TraceWaterfall:执行时间瀑布的 web 面——每个 attempt 一行,静态渲染顶层 span 分解条
 // (定位按 startOffsetMs / durationMs 百分比;失败 span 带失败标记),行链接 attempt 详情。
 // trace 缺失的行照常出现并如实显示缺失;排序、缩放是渐进增强,静态 HTML 无 JS 完整可读
-// (docs/feature/reports/components/site.md「TraceWaterfall」)。
+// (docs/feature/reports/components/site/trace-waterfall.md)。
 
 import type { ReactElement } from "react";
 import type { TraceWaterfallRow } from "../../model/types.ts";

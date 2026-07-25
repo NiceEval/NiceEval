@@ -159,7 +159,7 @@ console.table([...touched.entries()].sort((a, b) => b[1].attempts - a[1].attempt
 
 ## 快照:Experiment 的一次执行水位
 
-**快照 = 一个 Experiment 的执行水位**,物理上就是一个快照目录(`.niceeval/<experiment>/<timestamp>-<suffix>/`),快照身份即 `(experimentId, startedAt)`,与报告组件 snapshot 维度(如 [`DeltaTable`](../reports/components/tables.md#deltatable) 的成对比较)同一口径。它可由多次 Invocation 通过 carry 续成,每条 Attempt 以 `carried` 与 `startedAt` 诚实交代出身,不声称所有内容在单次进程中实际执行。「每个 experiment 最新一次」天然是快照粒度:周一跑了整组 compare,周二只重跑 `compare/bub-gpt-5.4`,bub 的最新快照在周二,codex 的还在周一——`niceeval exp compare` 一次 Invocation 会同时开多个快照目录(每实验一个),但它们各自独立,没有跨实验的成员关系或聚合落盘。
+**快照 = 一个 Experiment 的执行水位**,物理上就是一个快照目录(`.niceeval/<experiment>/<timestamp>-<suffix>/`),快照身份即 `(experimentId, startedAt)`,与报告组件 snapshot 维度(如 [`DeltaTable`](../reports/components/tables/delta-table.md) 的成对比较)同一口径。它可由多次 Invocation 通过 carry 续成,每条 Attempt 以 `carried` 与 `startedAt` 诚实交代出身,不声称所有内容在单次进程中实际执行。「每个 experiment 最新一次」天然是快照粒度:周一跑了整组 compare,周二只重跑 `compare/bub-gpt-5.4`,bub 的最新快照在周二,codex 的还在周一——`niceeval exp compare` 一次 Invocation 会同时开多个快照目录(每实验一个),但它们各自独立,没有跨实验的成员关系或聚合落盘。
 
 ```typescript
 interface Snapshot {
@@ -183,7 +183,7 @@ interface Snapshot {
 
 快照与实验归组只切片、不合并、不去重;合并与聚合永远发生在消费方([Reports](../reports/README.md) 的计算函数,或你自己的脚本),reader 不预设看法。
 
-快照级 `diagnostics` 只收“属于某次快照运行、但无法诚实定位到单个 Eval 或 Attempt 行”的操作性事实,并始终绑定它真实所属的 `(experimentId, startedAt)` Snapshot。能定位到具体行的事实归占位行、时效标注或 Attempt 详情,不进快照诊断。Scope 不设聚合后的 diagnostics 字段,不把它们提升为 `warnings`,也不复制到 Attempt 上;`latest()` / `current()` 只通过 `scope.snapshots` 带上贡献数据的真实 Snapshot 及其 diagnostics。消费方用 [`SnapshotDiagnostics`](../reports/components/site.md#snapshotdiagnostics) 呈现时逐条保留来源快照身份与时效。这样旧快照的 teardown 或 budget 诊断解释的是该快照贡献的数据,不会冒充另一快照或整份 Scope 的事实。
+快照级 `diagnostics` 只收“属于某次快照运行、但无法诚实定位到单个 Eval 或 Attempt 行”的操作性事实,并始终绑定它真实所属的 `(experimentId, startedAt)` Snapshot。能定位到具体行的事实归占位行、时效标注或 Attempt 详情,不进快照诊断。Scope 不设聚合后的 diagnostics 字段,不把它们提升为 `warnings`,也不复制到 Attempt 上;`latest()` / `current()` 只通过 `scope.snapshots` 带上贡献数据的真实 Snapshot 及其 diagnostics。消费方用 [`SnapshotDiagnostics`](../reports/components/site/snapshot-diagnostics.md) 呈现时逐条保留来源快照身份与时效。这样旧快照的 teardown 或 budget 诊断解释的是该快照贡献的数据,不会冒充另一快照或整份 Scope 的事实。
 
 ## 选择快照:`results.latest()` 返回 Scope
 
@@ -215,19 +215,19 @@ latest.coverage[0];
 // }
 ```
 
-覆盖缺口是**逐行的事实**——缺的是具体哪几道题,所以呈现在行的位置上:报告把 `missingEvalIds` 渲染成榜单里的占位行(「当前配置下无结果」+ 可复制的补跑命令,契约见 [ExperimentList · 占位行](../reports/components/entity-lists.md#experimentlist)),读者在正在看的表里直接看见分母缺口。程序消费同样直接:CI 里「覆盖缩水就 fail」判 `coverage.some((c) => c.missingEvalIds.length > 0)`。缺口永远被算出来,不静默。
+覆盖缺口是**逐行的事实**——缺的是具体哪几道题,所以呈现在行的位置上:报告把 `missingEvalIds` 渲染成榜单里的占位行(「当前配置下无结果」+ 可复制的补跑命令,契约见 [ExperimentList · 占位行](../reports/components/entity-lists/experiment-list.md)),读者在正在看的表里直接看见分母缺口。程序消费同样直接:CI 里「覆盖缩水就 fail」判 `coverage.some((c) => c.missingEvalIds.length > 0)`。缺口永远被算出来,不静默。
 
 `warnings` 承载的是**定位不到任何一行**的完整性问题——快照未收尾、落盘不可读这类「选中集合本身可能不对」的事实(全集见[警告 kind 全集](#警告-kind-全集))。每条警告都带可判断的结构化字段与渲染好的英文 `message`;`message` 以下一步收尾,要展示就原样打——用户读完不用再查「这条警告怎么办」;能用一条命令直接推进的警告同时带 `command`(已替换真实 id,复制即跑),web 渲染面把它呈现为可复制动作,程序消费方直接取用、不从 message 里正则抠命令。报错必带下一步是全仓库统一契约,见[错误与警告反馈](../../error-feedback.md)。warnings 不是普通字符串数组——「渲染与否在消费方」的承诺只对可判断的数据成立,只给文本等于逼消费方正则解析。
 
 **Scope 有且只有一个方法:`filter(predicate)`。** 最常见的自定义不是另起口径,而是微调官方口径——「latest 减掉一个已知坏掉的实验」「排除覆盖残缺的快照」。若一 `.filter()` 就降级成裸 `Snapshot[]`,幸存快照本该有的覆盖事实与警告全丢。`scope.filter((s) => …)` 返回新 Scope:快照删减,coverage 与 warnings 随幸存实验同步修剪——**experimentId 不在幸存快照中的条目丢弃,非实验作用域的警告保留**(为将来非 per-experiment 的 kind 留位置)。边界同样明确:`filter` 只做删减;「换成该实验上一个完整快照」这类**替换式**重挑不给方法(那才是 DSL 的开端),回 `exp.snapshots` 自己挑,挑出来的裸数组没有挑选过程、没有 coverage 也没有 warnings,也如实——这是显式立场,不是漏做。
 
-**Scope 是下游的通用输入**:Reports 的计算函数与 `copySnapshots` 都收 `Scope | readonly Snapshot[]`。收 Scope 时 coverage 与 warnings 始终保留在 Scope 上:覆盖事实由 [`ExperimentList`](../reports/components/entity-lists.md#experimentlist) 消费成占位行,警告的呈现件是 [`ScopeWarnings` 组件](../reports/components/site.md#scopewarnings)——内建报告每页都放它,自定义报告与自有 React 页面同样显式摆放(React 页面用 data 形态传 `scope.warnings`),警告可见性是作者义务。指标与摘要数据不复制警告,同一份事实不会因放了 `ScopeSummary` 而重复。手工挑的 `Snapshot[]` 没有挑选过程,自然没有 coverage 与 warnings 可带,也如实。
+**Scope 是下游的通用输入**:Reports 的计算函数与 `copySnapshots` 都收 `Scope | readonly Snapshot[]`。收 Scope 时 coverage 与 warnings 始终保留在 Scope 上:覆盖事实由 [`ExperimentList`](../reports/components/entity-lists/experiment-list.md) 消费成占位行,警告的呈现件是 [`ScopeWarnings` 组件](../reports/components/site/scope-warnings.md)——内建报告每页都放它,自定义报告与自有 React 页面同样显式摆放(React 页面用 data 形态传 `scope.warnings`),警告可见性是作者义务。指标与摘要数据不复制警告,同一份事实不会因放了 `ScopeSummary` 而重复。手工挑的 `Snapshot[]` 没有挑选过程,自然没有 coverage 与 warnings 可带,也如实。
 
 ### 警告 kind 全集
 
 warnings 只收**定位不到任何一行**的完整性事实;能定位到行的事实各归其位——覆盖缺口是 `coverage` 数据与榜单占位行,携带与跨快照拼接是 attempt 的时效属性(见[时效](#时效新执行与历史执行)),都不是警告。新增 kind 前先自问:这个事实能不能落到某一行上?能就放到行上,不进这张表。
 
-每种警告都带 `kind`、可判断的结构化字段和渲染好的英文 `message`;message 以「下一步」列声明的动作收尾([三段式契约](../../error-feedback.md#消息三段式)),能用一条命令推进的 kind 同时带 `command`。kind 同批登记**徽标 / 组头模板**,供 [`ScopeWarnings`](../reports/components/site.md#scopewarnings) 组件聚合呈现:模板是 en 文案、占位符取结构化字段,zh 等 locale 由组件 chrome 词典对应,`message` 不经模板、始终是完整叙述的单源。kind 与它的模板、下一步都是契约的一部分,新增 kind 要回这张表登记:
+每种警告都带 `kind`、可判断的结构化字段和渲染好的英文 `message`;message 以「下一步」列声明的动作收尾([三段式契约](../../error-feedback.md#消息三段式)),能用一条命令推进的 kind 同时带 `command`。kind 同批登记**徽标 / 组头模板**,供 [`ScopeWarnings`](../reports/components/site/scope-warnings.md) 组件聚合呈现:模板是 en 文案、占位符取结构化字段,zh 等 locale 由组件 chrome 词典对应,`message` 不经模板、始终是完整叙述的单源。kind 与它的模板、下一步都是契约的一部分,新增 kind 要回这张表登记:
 
 | kind | 归属 | 触发 | 结构化字段 | 徽标 / 组头模板 | 下一步 |
 |---|---|---|---|---|---|
@@ -273,7 +273,7 @@ Scope 里每条 attempt 都带完整的时效事实,回答「这个数字是不�
 - **新执行**:属于该实验在 Scope 中最新快照、且非携带的 attempt——最新一次运行里真实跑出来的。
 - **历史执行**:其余两种出身——携带条目(`attempt.carried === true`,fingerprint 未变、上一轮终态合入本快照),与 `current()` 从旧快照拼入的 attempt(所属快照早于该实验在 Scope 中的最新快照)。
 
-两种历史出身对读者是同一个事实——「这条不是最新一次跑出来的」——报告用同一种时效标注呈现(实体名后 `↩` + 人话时距,契约见[实体列表 · 时效标注](../reports/components/entity-lists.md#时效标注));机制差异(携带 vs 拼接)只在数据字段上可分辨,供脚本按需区分。
+两种历史出身对读者是同一个事实——「这条不是最新一次跑出来的」——报告用同一种时效标注呈现(实体名后 `↩` + 人话时距,契约见[实体列表 · 时效标注](../reports/components/entity-lists/README.md#时效标注));机制差异(携带 vs 拼接)只在数据字段上可分辨,供脚本按需区分。
 
 历史执行不是异常:携带是 fingerprint 担保下的正常缓存(「旧但有效」,语义见 [Runner · 缓存](../../runner.md#缓存指纹去重)),跨快照拼接受 `current()` 的可比性前提保护。所以它不进 warnings——时效是每行数字的出身属性,跟着数字走,不是页面级警告。
 

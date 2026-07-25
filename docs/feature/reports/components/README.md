@@ -4,12 +4,12 @@
 
 | 想回答的问题 | 组件族 |
 |---|---|
-| 画一张折线、柱状、面积、散点或混合图 | [图表](charts.md) |
-| 谁整体更好、哪道题在哪个配置上失败、固定题集得几分、A 与 B 差多少、哪些题历史上不稳 | [表格与矩阵](tables.md) |
-| 每个 experiment / eval / attempt 发生了什么、现在有哪些失败要处理 | [实体列表](entity-lists.md) |
-| 这批数据有多大、整体是否健康、默认首页怎么装配 | [概览](summaries.md) |
-| 一次 attempt 的判定、源码、对话、时间树与 diff | [Attempt 详情](attempt-detail.md) |
-| 站点标题、选择警告、快照诊断、批量修复 prompt、trace 瀑布 | [站点组件](site.md) |
+| 画一张折线、柱状、面积、散点或混合图 | [图表](charts/README.md) |
+| 谁整体更好、哪道题在哪个配置上失败、固定题集得几分、A 与 B 差多少、哪些题历史上不稳 | [表格与矩阵](tables/README.md) |
+| 每个 experiment / eval / attempt 发生了什么、现在有哪些失败要处理 | [实体列表](entity-lists/README.md) |
+| 这批数据有多大、整体是否健康、默认首页怎么装配 | [概览](summaries/README.md) |
+| 一次 attempt 的判定、源码、对话、时间树与 diff | [Attempt 详情](attempt-detail/README.md) |
+| 站点标题、选择警告、快照诊断、批量修复 prompt、trace 瀑布 | [站点组件](site/README.md) |
 | 四张真实报告图在本模型下怎么写 | [Gallery](gallery.md) |
 
 ## 结构节点
@@ -35,11 +35,11 @@
 2. **局部作用域的配置**——只作用于某个子部分的设置（某条 series 的误差线、某个格子的强调、某根轴的标签）。它挂在所属节点下，不做成容器上的 `Record<string, ...>` 侧表：侧表要靠键字符串对齐，读的人必须在两处之间跳着看才知道谁配了谁。
 3. **可变的嵌套关系**——条目自己还要分组（分科包着题目）。
 
-留在 props 的是：整组件唯一的标量口径（`evals`、`fullMarks`、`votes`、`limit`）、呈现开关（`filter`、`locale`、`className`、`attemptHref`），以及**契约固定、没有选择余地的部分**。不为只有一种合法值的绑定摆一个节点——[`StabilityMatrix`](tables.md#stabilitymatrix) 的行恒为 eval，所以它只有 `<Columns>`，没有 `<Rows>`。
+留在 props 的是：整组件唯一的标量口径（`evals`、`fullMarks`、`votes`、`limit`）、呈现开关（`filter`、`locale`、`className`、`attemptHref`），以及**契约固定、没有选择余地的部分**。不为只有一种合法值的绑定摆一个节点——[`StabilityMatrix`](tables/stability-matrix.md) 的行恒为 eval，所以它只有 `<Columns>`，没有 `<Rows>`。
 
 ### 组合组件不收结构子节点
 
-[`ExperimentComparison`](summaries.md#experimentcomparison) 与 [`AttemptDetail`](attempt-detail.md#attemptdetail) 这类组合组件的全部价值就是那份默认装配。它们不接受子节点覆盖排列——覆盖的方式是不用它，直接把公开区块写进 `Col`；两篇文档各自给出等价全文，照抄即可逐块增删。这样「这个组件会渲染什么」永远只有一个答案，不存在「给了子节点走一套、不给走另一套」的两份语义。
+[`ExperimentComparison`](summaries/experiment-comparison.md) 与 [`AttemptDetail`](attempt-detail/attempt-detail.md) 这类组合组件的全部价值就是那份默认装配。它们不接受子节点覆盖排列——覆盖的方式是不用它，直接把公开区块写进 `Col`；两篇文档各自给出等价全文，照抄即可逐块增删。这样「这个组件会渲染什么」永远只有一个答案，不存在「给了子节点走一套、不给走另一套」的两份语义。
 
 ## 数据绑定与两种形态
 
@@ -57,7 +57,7 @@ type ComponentProps<Data, Presentation> =
 
 `niceeval/report` 导出组件与配套 `*Data`；`niceeval/report/react` 只导出纯 web 渲染面，那里的同名组件只有 data 形态。完整模型见 [Architecture · 组件模型](../architecture.md#组件模型解析面与渲染面)。
 
-`evals` 是数据组件唯一的数据过滤选项：eval id 前缀，与 CLI 位置参数同语义，在聚合**之前**收窄题集——聚合发生在计算函数内部，事后 JavaScript 无法从聚合值还原题级过滤，所以它必须是选项。逐实体成行的[实体列表](entity-lists.md)不设它：列表数据的聚合边界就是单实体，取数后用普通 JavaScript 过滤与任何选项严格等价。
+`evals` 是数据组件唯一的数据过滤选项：eval id 前缀，与 CLI 位置参数同语义，在聚合**之前**收窄题集——聚合发生在计算函数内部，事后 JavaScript 无法从聚合值还原题级过滤，所以它必须是选项。逐实体成行的[实体列表](entity-lists/README.md)不设它：列表数据的聚合边界就是单实体，取数后用普通 JavaScript 过滤与任何选项严格等价。
 
 ## 子节点资格总表
 
@@ -65,21 +65,21 @@ type ComponentProps<Data, Presentation> =
 
 | 组件 | 结构子节点 | 为什么 |
 |---|---|---|
-| [`LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart`](charts.md#容器) | `XAxis` / `YAxis` / `Line` / `Bar` / `Area` / `Scatter` / `CartesianGrid` / `Tooltip` / `Legend` / `ReferenceLine` / `ReferenceArea` / `ReferenceDot` | 轴与 series 数量可变，且每条 series 要独立选轴、堆叠与误差呈现 |
-| [`Line` / `Bar` / `Area` / `Scatter`](charts.md#series) | `ErrorBar` / `LabelList` / `Cell` | 作用域恰是这条 series 或它的某个图形项 |
-| [`XAxis` / `YAxis` / `Reference*`](charts.md#嵌套节点) | `Label` | 标签属于该节点自己 |
-| [`MetricTable`](tables.md#metrictable) | `Rows` / `Column` | 列是同型条目列表，逐列要各自的排序与格式 |
-| [`MetricMatrix`](tables.md#metricmatrix) | `Rows` / `Columns` / `Cells` | 行、列、格是三个独立绑定 |
-| [`Scoreboard`](tables.md#scoreboard) | `Rows` / `Subject` / `Question` | 固定题集与分科是可嵌套的同型条目；权重挂在条目上 |
-| [`DeltaTable`](tables.md#deltatable) | `Columns` → `Condition` / `FlagConditions` | 条件是列维度上的有序同型取值，基准是其中一个；行恒为 eval |
-| [`StabilityMatrix`](tables.md#stabilitymatrix) | `Columns` | 行恒为 eval，没有选择；不摆只有一种合法值的节点 |
-| [`ExperimentList` / `EvalList` / `AttemptList`](entity-lists.md) | 无 | 列是下钻契约不是配置面（见[为什么实体列表不开放列](entity-lists.md#为什么实体列表不开放列)）；要自选列用 `MetricTable` |
-| [`FailureList`](entity-lists.md#failurelist) | 无 | 成品组合件，等价于取数 → 过滤 → `AttemptList` |
-| [`ScopeSummary`](summaries.md#scopesummary) | 无 | 字段集由 Scope 的题型构成决定，不由作者挑 |
-| [`ExperimentComparison`](summaries.md#experimentcomparison) | 无 | 组合组件；覆盖方式是不用它 |
-| [`AttemptDetail`](attempt-detail.md#attemptdetail) / [`AttemptAssessment`](attempt-detail.md#attemptassessment) | 无 | 同上；区块重排直接写进 page 的 `content` |
-| [Attempt 详情各区块](attempt-detail.md#公开区块集) | 无 | 每个区块是一份事实的完整投影，取舍在放不放它 |
-| [`Hero` / `PoweredBy` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall`](site.md) | 无 | 聚合轴、折叠层级与品牌行是契约，不设开关 |
+| [`LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart`](charts/README.md#容器) | `XAxis` / `YAxis` / `Line` / `Bar` / `Area` / `Scatter` / `CartesianGrid` / `Tooltip` / `Legend` / `ReferenceLine` / `ReferenceArea` / `ReferenceDot` | 轴与 series 数量可变，且每条 series 要独立选轴、堆叠与误差呈现 |
+| [`Line` / `Bar` / `Area` / `Scatter`](charts/README.md#series) | `ErrorBar` / `LabelList` / `Cell` | 作用域恰是这条 series 或它的某个图形项 |
+| [`XAxis` / `YAxis` / `Reference*`](charts/README.md#嵌套节点) | `Label` | 标签属于该节点自己 |
+| [`MetricTable`](tables/metric-table.md) | `Rows` / `Column` | 列是同型条目列表，逐列要各自的排序与格式 |
+| [`MetricMatrix`](tables/metric-matrix.md) | `Rows` / `Columns` / `Cells` | 行、列、格是三个独立绑定 |
+| [`Scoreboard`](tables/scoreboard.md) | `Rows` / `Subject` / `Question` | 固定题集与分科是可嵌套的同型条目；权重挂在条目上 |
+| [`DeltaTable`](tables/delta-table.md) | `Columns` → `Condition` / `FlagConditions` | 条件是列维度上的有序同型取值，基准是其中一个；行恒为 eval |
+| [`StabilityMatrix`](tables/stability-matrix.md) | `Columns` | 行恒为 eval，没有选择；不摆只有一种合法值的节点 |
+| [`ExperimentList` / `EvalList` / `AttemptList`](entity-lists/README.md) | 无 | 列是下钻契约不是配置面（见[为什么实体列表不开放列](entity-lists/README.md#为什么实体列表不开放列)）；要自选列用 `MetricTable` |
+| [`FailureList`](entity-lists/failure-list.md) | 无 | 成品组合件，等价于取数 → 过滤 → `AttemptList` |
+| [`ScopeSummary`](summaries/scope-summary.md) | 无 | 字段集由 Scope 的题型构成决定，不由作者挑 |
+| [`ExperimentComparison`](summaries/experiment-comparison.md) | 无 | 组合组件；覆盖方式是不用它 |
+| [`AttemptDetail`](attempt-detail/attempt-detail.md) / [`AttemptAssessment`](attempt-detail/attempt-assessment.md) | 无 | 同上；区块重排直接写进 page 的 `content` |
+| [Attempt 详情各区块](attempt-detail/README.md#公开区块集) | 无 | 每个区块是一份事实的完整投影，取舍在放不放它 |
+| [`Hero` / `PoweredBy` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall`](site/README.md) | 无 | 聚合轴、折叠层级与品牌行是契约，不设开关 |
 | [`Tabs`](../library/layout.md#tabs) | `Tab` | 并列视图数量可变 |
 | [`Table`](../library/layout.md#table) | `Column` | 列是同型条目列表；行是数据，仍为 `rows` prop |
 | [`Grid` / `Row` / `Col` / `Section`](../library/layout.md#排版原语) | 无（children 是普通 `ReportNode`） | 排版原语组织的是节点，不是绑定 |
@@ -91,7 +91,7 @@ type ComponentProps<Data, Presentation> =
 
 | Prop | 作用 |
 |---|---|
-| `attemptHref?: (locator: AttemptLocator) => string` | 证据引用的链接目标。当前报告声明了 [attempt-input page](attempt-detail.md) 时宿主自动注入；自有 React 页面显式传入。没有链接目标时 locator 两面都只渲染成文本，宿主不追加隐藏 fallback |
+| `attemptHref?: (locator: AttemptLocator) => string` | 证据引用的链接目标。当前报告声明了 [attempt-input page](attempt-detail/README.md) 时宿主自动注入；自有 React 页面显式传入。没有链接目标时 locator 两面都只渲染成文本，宿主不追加隐藏 fallback |
 | `locale?: ReportLocale` | 组件自带文案的语言；省略时随宿主 |
 | `className?: string` | 挂在组件根元素上的 web 类名 |
 | `filter?: boolean` | 只给 web 面增加过滤输入框的渐进增强；不改变数据与 text 面。只有声明了它的组件才有这个开关 |
@@ -104,9 +104,9 @@ type ComponentProps<Data, Presentation> =
 
 同一个维度值在一页里恒定一个颜色。读者在同一页上先看图例、再看表格里的同名键，两处颜色必须是同一个——所以颜色的分配单位不是组件，是**页**。
 
-- **色只按 `(维度, 维度值)` 分配**，不按组件、不按显示名。[`ExperimentList`](entity-lists.md#experimentlist) 的行标签缩成最短唯一后缀不影响颜色：键仍是完整值。
+- **色只按 `(维度, 维度值)` 分配**，不按组件、不按显示名。[`ExperimentList`](entity-lists/experiment-list.md) 的行标签缩成最短唯一后缀不影响颜色：键仍是完整值。
 - **分配在 resolve 之后、render 之前一次完成**：收集这一页已解析数据里出现的全部 `(维度, 值)` 对，得到每个维度的页内 keyset；[外壳钉住](../library/shell.md#钉色)的键先原样占位，其余键以稳定散列为起点，同一 keyset 内撞色时按显示键字典序线性探测下一个空色格，keyset 超过色板容量才复用。它是确定的纯函数，不改变任何 `*Data`，不进入序列化数据。
-- **颜色键可以与位置键不同**：榜单一行是「agent 线 × 记忆机制」，颜色要说的却是记忆机制。这由 [`Bar.colorBy`](charts.md#bar) 声明——它取的仍是这一页 `(该维度, 该值)` 的颜色，因此与页上任何按同一维度取色的地方一致。
+- **颜色键可以与位置键不同**：榜单一行是「agent 线 × 记忆机制」，颜色要说的却是记忆机制。这由 [`Bar.colorBy`](charts/bar-chart.md#bar) 声明——它取的仍是这一页 `(该维度, 该值)` 的颜色，因此与页上任何按同一维度取色的地方一致。
 - **页内全部消费者读同一份映射**：图表 series 与图例、实体列表里的 agent 键、矩阵的行列头，同一个键在这一页恒同色。自定义双面组件也读这一份——渲染面的 [`ctx.seriesColor(dimension, value)`](../library/layout.md#系列色) 是它唯一的入口，自己按键算色会绕开页内消解，与官方组件对不上。
 - **跨页与跨报告让位给页内可辨**：稳定散列保证 keyset 不冲突时跨页同色；发生冲突时以页内可辨为准。读者跨页比较靠的是标签，页内比较靠的才是颜色。
 - text 面不消费颜色映射，无 ANSI 时输出仍自足。
@@ -144,9 +144,9 @@ type Presentation<Props, Defaults> =
 
 ## 相关阅读
 
-- [图表](charts.md) —— 容器、轴、series、嵌套节点与 `ChartData`。
-- [表格与矩阵](tables.md) —— 榜单、矩阵、成绩单、对照表与稳定性矩阵。
-- [实体列表](entity-lists.md) / [概览](summaries.md) / [Attempt 详情](attempt-detail.md) / [站点组件](site.md) —— 其余组件族。
+- [图表](charts/README.md) —— 容器、轴、series、嵌套节点与 `ChartData`。
+- [表格与矩阵](tables/README.md) —— 榜单、矩阵、成绩单、对照表与稳定性矩阵。
+- [实体列表](entity-lists/README.md) / [概览](summaries/README.md) / [Attempt 详情](attempt-detail/README.md) / [站点组件](site/README.md) —— 其余组件族。
 - [Gallery](gallery.md) —— 真实报告图的结构验证。
 - [指标与维度](../library/metrics.md) —— 组件消费的 Metric、Dimension 与 NumericAxis。
 - [排版原语与自定义组件](../library/layout.md) —— 组件之间的组织件与 `defineComponent`。

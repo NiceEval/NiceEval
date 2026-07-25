@@ -104,7 +104,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   产物，与手工传同一份 options 深相等。反馈覆盖：节点放错父组件（错误同时给出收到的父类型、允许的父类型与正确嵌套示例）、必填节点缺失或重复、零个
   `<Question>` / 少于两个 `<Condition>` / 没有或多于一个 `baseline`、`<Condition>` 与
   `<FlagConditions>` 混用、data 形态下子节点仍带数据绑定字段、动态 `by` 同时给显式 `dataKey`。
-- **维度绑定的三件通用能力**（[排序与截断](../../../feature/reports/components/charts.md#排序与截断)、[复合维度](../../../feature/reports/library/metrics.md#维度与数值轴)）：轴、行、列、格、series 的 `by`
+- **维度绑定的三件通用能力**（[排序与截断](../../../feature/reports/components/charts/README.md#排序与截断)、[复合维度](../../../feature/reports/library/metrics.md#维度与数值轴)）：轴、行、列、格、series 的 `by`
   用同一份解析——**复合维度**在每个位置都合法且解析出同一个维度（name 以 ` × ` 连接、值以 ` · ` 连接、成员缺失走
   `(missing)`），区分力场景是「同一个数组分别作 `<YAxis dimension>` / `<Rows dimension>` / `<Line by>`
   时 keyset 深相等」；**`limit` / `rest`** 的截断在计算函数内部发生——`rest`
@@ -116,7 +116,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **主题钉色**（[钉色](../../../feature/reports/library/theme.md#钉色)）：`seriesPins`
   的键原样占位、自动分配只在剩余槽里探测、多个值钉同一下标不触发探测、钉了但页内未出现的键不占槽；非法维度 name / 值键 /
   下标按完整用户反馈拒绝并指到 `theme.seriesPins.<维度>.<值>`。区分力场景是「同一份数据加钉与不加钉，未钉键的落槽不同」。
-- **呈现别名的四档解析**（[呈现别名](../../../feature/reports/components/charts.md#呈现别名)）：`tick` / `label` /
+- **呈现别名的四档解析**（[呈现别名](../../../feature/reports/components/charts/README.md#呈现别名)）：`tick` / `label` /
   `dot` / `shape` / `line` 各自的 `false`、部分字段对象、单函数（只接管 web，text 走默认投影）与 `{ web, text }`
   四种取值归一成同一份呈现规格；回调收到的渲染数据字段齐全——刻度的 `index` 取自轴解析后的顺序（`sort`
   之后、`reversed` 之前，排序过的维度轴上即名次），`LabelPresentation` 的 `LocalizedText`
@@ -132,7 +132,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   `shortestUniqueLabels` 与 `seriesColors` 从 `niceeval/report`
   顶层导出并与内部定义同一引用——官方组件与自定义组件复现同一份显示名和同一个色槽。
 - **纯函数布局算法**：散点点标签布局是 `chart-math`
-  纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts.md#值域)）同属这一类——直接对推定函数断言扩后的
+  纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts/README.md#值域)）同属这一类——直接对推定函数断言扩后的
   `[min, max]`：两端各扩数据跨度 20%、零跨度 fallback（值绝对值的 20%、值为 0 取 1）、有自然
   `bounds`
   时保证最小跨度为量程参考的 1/3 并钳到边界（贴边数据点落在框线上）、无量程参考的轴不强造最小跨度，反向轴先扩边距再反向；两面共用同一份值域，不在渲染层重算；labels 维度与 series 归类的解析规则；[页级色分配](../../../feature/reports/components/README.md#系列色分配单位是页)同属这一类——给定一页的 `(维度, 值)` 集合，稳定散列起点与撞色线性探测产出确定性索引，不断言渲染出的颜色值。
@@ -222,10 +222,10 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - 每一种参数冲突都返回完整用法错误。
 
   用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/cli-cross-condition-attribution.md)。口径单源见
-  [Metric Views](../../../feature/reports/components/charts.md)。
+  [Metric Views](../../../feature/reports/components/charts/README.md)。
 
 - **usage 组装与 facts 投影**:usage 行/表的组装口径单源见
-  [Library · Attempt 详情 · `UsageTable` 组装口径（单源）](../../../feature/reports/components/attempt-detail.md#usagetable-组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自
+  [Library · Attempt 详情 · `UsageTable` 组装口径（单源）](../../../feature/reports/components/attempt-detail/usage-table.md#组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自
   `Usage`(桶恒互斥,`inputTokens` 即未缓存输入)、token 片段只在 `cacheReadTokens` 在场时标 "uncached
   in"(fixture 要有「cache 桶缺席」的场景证明不给无拆分的数字贴标注)、`requests`
   缺失时片段整段省略(区分「省略」与「显示 0/1」)、合计对含 `—` 的列标不完整;这些判据的断言面是

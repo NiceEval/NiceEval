@@ -136,7 +136,7 @@ function EvalAttempts({
 /**
  * 覆盖缺口的占位行:状态列为 —,结果列为「当前配置下无结果」+ 可复制的补跑命令,无 attempt
  * 子行,不参与任何指标聚合——只把分母缺口摆进读者正在看的表里
- * (docs/feature/reports/components/entity-lists.md「ExperimentList」)。
+ * (docs/feature/reports/components/entity-lists/experiment-list.md)。
  */
 function MissingEvalRow({
   evalId,
@@ -279,7 +279,7 @@ export function ExperimentList({
 }): ReactElement {
   const experimentLabels = shortestUniqueLabels(data.map((item) => item.experimentId));
   // 主读数列按列表内题型构成选择;web/text 共用同一份判据,不各自重新判断
-  // (docs/feature/reports/components/entity-lists.md「ExperimentList」)。
+  // (docs/feature/reports/components/entity-lists/experiment-list.md)。
   const composition = experimentListScoringComposition(data);
   const showPassRate = composition !== "points";
   const showTotalScore = composition !== "pass";

@@ -251,7 +251,7 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
 
 得分点的 severity 是 `soft`——丢分不改 verdict（[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)），失败行照常展开证据。
 
-**得分点不参与 passed 收纳**：`✓ passed · 装了依赖 · +1 pt` 是分数面的证据，挣到的分和丢掉的分同样要能逐条核对——把它折进 `✓ passed · <group> · <count>` 计数行，等于让判定面的收纳规则吞掉分数面的明细。收纳只作用于不带 `.points` 的观测断言。契约二的顶部计数在计分制 attempt 加一项**得分点挣满计数**（`2/5 得分点挣满`，挣满 = 挣到全部声明分值，连续打分断言不足 `n × 1.0` 即不算挣满）；**本轮挣分总和只在 attempt 头行出现一次**（`AttemptSummary` 的总分位，见 [Attempt 详情组件](../../reports/components/attempt-detail.md#公开组件集)），计数行与给分记录区块不重复这个总数。
+**得分点不参与 passed 收纳**：`✓ passed · 装了依赖 · +1 pt` 是分数面的证据，挣到的分和丢掉的分同样要能逐条核对——把它折进 `✓ passed · <group> · <count>` 计数行，等于让判定面的收纳规则吞掉分数面的明细。收纳只作用于不带 `.points` 的观测断言。契约二的顶部计数在计分制 attempt 加一项**得分点挣满计数**（`2/5 得分点挣满`，挣满 = 挣到全部声明分值，连续打分断言不足 `n × 1.0` 即不算挣满）；**本轮挣分总和只在 attempt 头行出现一次**（`AttemptSummary` 的总分位，见 [Attempt 详情组件](../../reports/components/attempt-detail/README.md#公开区块集)），计数行与给分记录区块不重复这个总数。
 
 **前置中止**：计分制里链了 `.gate()` 的断言挂掉会就地结束 `test()`，它按 `✗ gate` 展开，行尾追加一个中止标注，其后不再有任何断言或给分记录——详情里「后面是空的」和「后面全挂了」因此一眼可分：
 
@@ -271,7 +271,7 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
     重构说明 · +16 pts
 ```
 
-**源码面同样承载给分证据**：有源码时（`show @locator --source`、view 的 `AttemptSource`）给分证据不换家也不消失——得分点的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后的源码行整体降灰，「没写断言的行」和「没跑到的行」在源码面同样一眼可分；`loc` 不在展示源码内的得分点与给分记录落在源码块后的 unmapped 区，给分记录仍按 `groupPath` 分组。视觉细则单点在 [Attempt 详情组件 · `AttemptSource` 视觉规范](../../reports/components/attempt-detail.md#attemptsource-web-面视觉规范)。
+**源码面同样承载给分证据**：有源码时（`show @locator --source`、view 的 `AttemptSource`）给分证据不换家也不消失——得分点的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后的源码行整体降灰，「没写断言的行」和「没跑到的行」在源码面同样一眼可分；`loc` 不在展示源码内的得分点与给分记录落在源码块后的 unmapped 区，给分记录仍按 `groupPath` 分组。视觉细则单点在 [Attempt 详情组件 · `AttemptSource` 视觉规范](../../reports/components/attempt-detail/attempt-source.md#web-面视觉规范)。
 
 通过制（`scoring` 省略或 `"pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。
 

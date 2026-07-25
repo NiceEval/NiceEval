@@ -3,7 +3,7 @@
 // <details>,<summary> 是恒可见的计数汇总行(涉及多少个 experiment、多少个 Snapshot、
 // 多少条记录与最高严重度)。单个快照只有一条诊断时退化成一行,不摆只有一个孩子的空壳
 // 层级。空诊断集零输出,不渲染空容器
-// (docs/feature/reports/components/site.md「SnapshotDiagnostics」)。
+// (docs/feature/reports/components/site/snapshot-diagnostics.md)。
 
 import type { ReactElement } from "react";
 import type { DiagnosticRecord } from "../../../types.ts";

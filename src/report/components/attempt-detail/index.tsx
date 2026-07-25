@@ -1,4 +1,4 @@
-// Attempt 详情组件族的装配点(docs/feature/reports/components/attempt-detail.md)。11 个叶子
+// Attempt 详情组件族的装配点(docs/feature/reports/components/attempt-detail/README.md)。11 个叶子
 // 组件都是同一份 spec/data 判别联合(AttemptSectionProps<Data>):省略 input 时取当前
 // attempt-input page 注入的 evidence;放在 scope-input page 且未显式传 input/data 时
 // resolve 报完整用户反馈并指引移到 attempt-input page 或传入 evidence。

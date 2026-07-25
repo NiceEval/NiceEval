@@ -1,5 +1,5 @@
 // AttemptConversation:标准事件流按轮组织的完整分轮事件卡。没有 events 时零输出
-// (docs/feature/reports/components/attempt-detail.md)。
+// (docs/feature/reports/components/attempt-detail/README.md)。
 
 import type { ReactElement, ReactNode } from "react";
 import type { AttemptConversationData, AttemptConversationReply, AttemptConversationRound } from "../../model/types.ts";

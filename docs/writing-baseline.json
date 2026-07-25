@@ -26,7 +26,7 @@
     "docs/engineering/testing/unit/experiments-runner.md": 35,
     "docs/engineering/testing/unit/harness.md": 10,
     "docs/engineering/testing/unit/registry.md": 10,
-    "docs/engineering/testing/unit/reports.md": 41,
+    "docs/engineering/testing/unit/reports.md": 42,
     "docs/engineering/testing/unit/results.md": 9,
     "docs/engineering/testing/unit/sandbox.md": 22,
     "docs/engineering/testing/unit/scoring.md": 14,
@@ -102,7 +102,7 @@
     "docs/feature/experiments/README.md": 13,
     "docs/feature/experiments/architecture.md": 46,
     "docs/feature/experiments/cli.md": 80,
-    "docs/feature/experiments/library.md": 53,
+    "docs/feature/experiments/library.md": 54,
     "docs/feature/experiments/score-points.md": 30,
     "docs/feature/experiments/use-case/README.md": 4,
     "docs/feature/experiments/use-case/budget.md": 8,
@@ -120,17 +120,44 @@
     "docs/feature/reports/README.md": 8,
     "docs/feature/reports/architecture.md": 82,
     "docs/feature/reports/components/README.md": 24,
-    "docs/feature/reports/components/attempt-detail.md": 25,
-    "docs/feature/reports/components/charts.md": 43,
-    "docs/feature/reports/components/entity-lists.md": 21,
+    "docs/feature/reports/components/attempt-detail/README.md": 10,
+    "docs/feature/reports/components/attempt-detail/attempt-assessment.md": 1,
+    "docs/feature/reports/components/attempt-detail/attempt-detail.md": 1,
+    "docs/feature/reports/components/attempt-detail/attempt-source.md": 10,
+    "docs/feature/reports/components/attempt-detail/usage-table.md": 6,
+    "docs/feature/reports/components/charts/README.md": 42,
+    "docs/feature/reports/components/charts/area-chart.md": 3,
+    "docs/feature/reports/components/charts/bar-chart.md": 6,
+    "docs/feature/reports/components/charts/composed-chart.md": 2,
+    "docs/feature/reports/components/charts/line-chart.md": 3,
+    "docs/feature/reports/components/charts/scatter-chart.md": 4,
+    "docs/feature/reports/components/entity-lists/README.md": 10,
+    "docs/feature/reports/components/entity-lists/attempt-list.md": 2,
+    "docs/feature/reports/components/entity-lists/eval-list.md": 2,
+    "docs/feature/reports/components/entity-lists/experiment-list.md": 8,
+    "docs/feature/reports/components/entity-lists/failure-list.md": 3,
     "docs/feature/reports/components/gallery.md": 7,
-    "docs/feature/reports/components/site.md": 31,
-    "docs/feature/reports/components/summaries.md": 16,
-    "docs/feature/reports/components/tables.md": 25,
+    "docs/feature/reports/components/site/README.md": 3,
+    "docs/feature/reports/components/site/copy-fix-prompt.md": 1,
+    "docs/feature/reports/components/site/hero-card.md": 2,
+    "docs/feature/reports/components/site/hero.md": 2,
+    "docs/feature/reports/components/site/powered-by.md": 1,
+    "docs/feature/reports/components/site/scope-warnings.md": 8,
+    "docs/feature/reports/components/site/snapshot-diagnostics.md": 11,
+    "docs/feature/reports/components/site/trace-waterfall.md": 4,
+    "docs/feature/reports/components/summaries/README.md": 2,
+    "docs/feature/reports/components/summaries/experiment-comparison.md": 9,
+    "docs/feature/reports/components/summaries/scope-summary.md": 6,
+    "docs/feature/reports/components/tables/README.md": 6,
+    "docs/feature/reports/components/tables/delta-table.md": 13,
+    "docs/feature/reports/components/tables/metric-matrix.md": 3,
+    "docs/feature/reports/components/tables/metric-table.md": 1,
+    "docs/feature/reports/components/tables/scoreboard.md": 4,
+    "docs/feature/reports/components/tables/stability-matrix.md": 4,
     "docs/feature/reports/library.md": 13,
     "docs/feature/reports/library/built-in.md": 11,
     "docs/feature/reports/library/layout.md": 60,
-    "docs/feature/reports/library/metrics.md": 20,
+    "docs/feature/reports/library/metrics.md": 21,
     "docs/feature/reports/library/recipes.md": 6,
     "docs/feature/reports/library/shell.md": 25,
     "docs/feature/reports/library/theme.md": 25,
@@ -215,7 +242,7 @@
     "docs/roadmap/e2e-acceptance-dsl/use-cases/package-consumer.md": 6,
     "docs/roadmap/e2e-acceptance-dsl/use-cases/readback.md": 3,
     "docs/roadmap/e2e-acceptance-dsl/use-cases/render-structure.md": 6,
-    "docs/roadmap/eval-source-view/README.md": 18,
+    "docs/roadmap/eval-source-view/README.md": 19,
     "docs/roadmap/eval-source-view/architecture.md": 18,
     "docs/roadmap/eval-source-view/cli.md": 9,
     "docs/roadmap/eval-source-view/display.md": 16,
@@ -408,21 +435,27 @@
       "不再": 1,
       "榜单": 2
     },
-    "docs/feature/reports/components/attempt-detail.md": {
+    "docs/feature/reports/components/attempt-detail/README.md": {
       "不再": 2
     },
-    "docs/feature/reports/components/charts.md": {
+    "docs/feature/reports/components/charts/README.md": {
       "不再": 1,
-      "榜单": 2
+      "榜单": 1
     },
-    "docs/feature/reports/components/entity-lists.md": {
+    "docs/feature/reports/components/charts/bar-chart.md": {
+      "榜单": 1
+    },
+    "docs/feature/reports/components/entity-lists/attempt-list.md": {
       "选集": 1
     },
-    "docs/feature/reports/components/site.md": {
+    "docs/feature/reports/components/site/scope-warnings.md": {
       "不再": 1
     },
-    "docs/feature/reports/components/tables.md": {
-      "榜单": 2
+    "docs/feature/reports/components/tables/README.md": {
+      "榜单": 1
+    },
+    "docs/feature/reports/components/tables/delta-table.md": {
+      "榜单": 1
     },
     "docs/feature/reports/library.md": {
       "不再": 1

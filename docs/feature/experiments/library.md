@@ -83,9 +83,9 @@ export default defineExperiment({
 
 `line` 是默认报告识别的归类键:当前 Scope 任一实验声明了它,散点就按线归类并连线——codex / claude 各成一色,基线 → 加 mempal 的位移直接可见。变体轴(`memory`)和其它轴名由报告侧用 [`label()`](../reports/library/metrics.md#维度与数值轴) 显式选轴:
 
-- **成线**(自定义报告里等价写法):[`<Scatter by={label("line")} line />`](../reports/components/charts.md#scatter)。
+- **成线**(自定义报告里等价写法):[`<Scatter by={label("line")} line />`](../reports/components/charts/scatter-chart.md#scatter)。
 - **横切**:同一份声明换个轴,`by={label("memory")}` 让 baseline 们与 mempal 们各成一类,跨 agent 比较记忆机制本身;`by={["agent", label("memory")]}` 复合归类。
-- **参数进程**:数值坐标(`labels: { contextK: 32 }`)用 `numericLabel("contextK")` 直接当[数值 `XAxis`](../reports/components/charts.md#xaxis) 的绑定。
+- **参数进程**:数值坐标(`labels: { contextK: 32 }`)用 `numericLabel("contextK")` 直接当[数值 `XAxis`](../reports/components/charts/README.md#xaxis) 的绑定。
 
 与 `flags` 的分界一句话:**这个值会改变 attempt 里发生的事吗?** 会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类 → `labels`。两边都落盘、报告都能分组(`flag()` / `label()`),区别只在运行时可见性与可比性——已经用 `flags` 表达且确实影响行为的变量不必迁移到 labels。两者都是**你写下的声明**;跑起来才知道的值两边都不进,见下一节。
 

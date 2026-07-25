@@ -83,12 +83,12 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
   [Library · 排版原语](../../../feature/reports/library/layout.md)；散点
   字符坐标图的标记分配顺序（图例字典序、series 内 x 升序）、图例文本与 `line`
   逐段位移摘要，语义来源是
-  [图表 · 两面投影](../../../feature/reports/components/charts.md#两面投影)。
+  [图表 · 两面投影](../../../feature/reports/components/charts/README.md#两面投影)。
 - **双面同源**：text 与 web 显示同一份解析终值、覆盖率、判定构成和 warning，渲染不重算不丢值；不逐字比较布局。
 - **视觉与交互**：对同一次运行执行 `niceeval view --out`
   导出静态站，用真实浏览器打开 index 与失败 attempt 的 `attempt/<locator>.html`
   文档，验收「组件 + 官方 stylesheet」在真实证据上的组合成立：详情各语义块是结构化布局而非 UA 默认排版；源码行按
-  [`AttemptSource` 视觉规范](../../../feature/reports/components/attempt-detail.md#attemptsource-web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
+  [`AttemptSource` 视觉规范](../../../feature/reports/components/attempt-detail/attempt-source.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
   assertions / Other conversation）同样是结构化条目而非 UA 默认排版，分轮卡片与
   `AttemptConversation`
   同视觉语言，工具预览无 JSON 字面转义直出——共享回复 renderer 的每个新渲染容器都要在这里验收一次样式覆盖（先例：[memory/attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)，同类缺陷在单元层 DOM 断言下恒逃逸）；点击 send

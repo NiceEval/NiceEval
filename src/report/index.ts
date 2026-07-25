@@ -163,7 +163,7 @@ export type {
   TraceWaterfallProps,
 } from "./components/site-components/index.tsx";
 
-// Attempt 详情组件族(docs/feature/reports/components/attempt-detail.md):11 个叶子 + 2 个
+// Attempt 详情组件族(docs/feature/reports/components/attempt-detail/README.md):11 个叶子 + 2 个
 // 只装配叶子的组合组件(AttemptAssessment / AttemptDetail),都从 niceeval/report 导出。
 export {
   AttemptAssertions,

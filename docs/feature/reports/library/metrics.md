@@ -1,6 +1,6 @@
 # 指标与维度
 
-指标定义值与聚合口径，维度定义分组；[图表](../components/charts.md)与[表格](../components/tables.md)只是它们的投影。
+指标定义值与聚合口径，维度定义分组；[图表](../components/charts/README.md)与[表格](../components/tables/README.md)只是它们的投影。
 
 ## 公开计算模型
 
@@ -115,7 +115,7 @@ function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 | `"points"` | `totalScore` | 同上位置全部换成总分；通过率不出现（不摆空列） |
 | `"mixed"` | 两者并排、各读各的 | 「过了 31/40 道」和「挣了 142 分」不能相加也不能互相排名：摘要两个 KPI 都显示，按题型拆组的位置各组用自己的主读数 |
 
-组件本身保持中立：图表与 `MetricTable` 只收 `Metric`，不感知题型；分支只发生在消费 `scoringComposition` 的那几处组装点——[`ScopeSummary`](../components/summaries.md#scopesummary) 的渲染面、[`ExperimentList`](../components/entity-lists.md#experimentlist) 的主列、[`ExperimentComparison`](../components/summaries.md#experimentcomparison) 的 compose。自定义报告需要同样的切换时调用同一个函数，不重新发明判据。
+组件本身保持中立：图表与 `MetricTable` 只收 `Metric`，不感知题型；分支只发生在消费 `scoringComposition` 的那几处组装点——[`ScopeSummary`](../components/summaries/scope-summary.md) 的渲染面、[`ExperimentList`](../components/entity-lists/experiment-list.md) 的主列、[`ExperimentComparison`](../components/summaries/experiment-comparison.md) 的 compose。自定义报告需要同样的切换时调用同一个函数，不重新发明判据。
 
 ## 自定义指标
 
@@ -253,5 +253,5 @@ const reasoning = numericRunConfig("reasoningEffort", {
 
 ## 相关阅读
 
-- [图表](../components/charts.md) / [表格与矩阵](../components/tables.md) —— 指标的图形与表格投影。
+- [图表](../components/charts/README.md) / [表格与矩阵](../components/tables/README.md) —— 指标的图形与表格投影。
 - [Results Format](../../results/architecture.md) —— 指标读取的落盘字段。

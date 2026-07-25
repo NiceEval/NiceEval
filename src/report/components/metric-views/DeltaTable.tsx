@@ -1,7 +1,6 @@
 // DeltaTable:对照矩阵。每行一道 eval,每组列一个条件(首个是基准),尾部对基准的 Δ 列组;
 // 通过制显示 verdict、计分制在同一位置显示挣分,tokens / 成本恒显示;翻转标记 ⇄ 只在该行各
-// 条件判定不一致时出现;历史执行叠加 ↩ 标注(docs/feature/reports/components/tables.md
-// 「DeltaTable」)。任一侧缺数据时对应分量各自显示缺,不硬算成 0。
+// 条件判定不一致时出现;历史执行叠加 ↩ 标注(docs/feature/reports/components/tables/delta-table.md)。任一侧缺数据时对应分量各自显示缺,不硬算成 0。
 
 import type { ReactElement } from "react";
 import type { DeltaData } from "../../model/types.ts";

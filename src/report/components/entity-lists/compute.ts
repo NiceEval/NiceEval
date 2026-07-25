@@ -1,5 +1,5 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。实体列表族(ExperimentList / EvalList /
-// AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/components/entity-lists.md)。
+// AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/components/entity-lists/README.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
 // - 第一参收 ReportInput = Scope | readonly Snapshot[];warnings 不进组件数据(宿主统一显示);

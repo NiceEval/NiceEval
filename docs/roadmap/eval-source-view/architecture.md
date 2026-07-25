@@ -113,7 +113,7 @@ interface SourceCall {
 
 `SourceNode.lines` 已经是过滤后的展示行：主干含定义行范围内的全部行，被调节点只含标注行与上下文行。省略区段不进数组，消费方按行号不连续渲染 `⋯ N lines`。这让 text 面与 web 面共用同一份可序列化数据，不各自重算取哪些行。
 
-`attemptSourceData(evidence)` 产出这棵树（组件契约见 [Attempt 详情组件](../../feature/reports/components/attempt-detail.md)）。装配在 `loadAttemptEvidence` 里一次完成：读 `sources.json` 解引用正文，按每条 `loc` 的链把标注挂到节点上，再按上下文半径裁行。
+`attemptSourceData(evidence)` 产出这棵树（组件契约见 [Attempt 详情组件](../../feature/reports/components/attempt-detail/README.md)）。装配在 `loadAttemptEvidence` 里一次完成：读 `sources.json` 解引用正文，按每条 `loc` 的链把标注挂到节点上，再按上下文半径裁行。
 
 **同一调用行调用多次**（循环里调 helper）合并成一个 `SourceCall`，`summary.calls` 记次数，各次的标注按发生顺序累加到同一批行上——与「一行多断言」同规则。
 
@@ -121,7 +121,7 @@ interface SourceCall {
 
 `AttemptSource` 消费同一棵树，投影规则与终端的差别只在展开策略与交互：
 
-- 主干整段渲染，视觉规范（密度、行状态、展开区、兜底区）沿用 [`AttemptSource` web 面视觉规范](../../feature/reports/components/attempt-detail.md#attemptsource-web-面视觉规范)。
+- 主干整段渲染，视觉规范（密度、行状态、展开区、兜底区）沿用 [`AttemptSource` web 面视觉规范](../../feature/reports/components/attempt-detail/attempt-source.md#web-面视觉规范)。
 - 调用行右缘挂汇总 pill（`11 checks · 2 ✗ · 7/11`），点击展开内联片段；片段左缘一条竖线表示层级，片段内的行与主干的行是同一套行状态样式。
 - 报告必须在零 JS 的静态 attempt 文档里完整成立，因此展开态用 `<details>` 承载，不依赖脚本。含未通过标注的路径默认展开。
 - 静态导出照旧在构建期把解引用好的树写进初始 HTML，浏览器不回头读 `sources.json`。
@@ -132,4 +132,4 @@ interface SourceCall {
 - [Results Architecture](../../feature/results/architecture.md#sourcesjson)：`sources.json` 的捕获范围。
 - [Concepts](../../concepts.md)：`AnnotatedEvalSource` 的一句话定义。
 - [`--source`](../../feature/reports/show/eval-source.md)：替换为 [CLI](cli.md) 的形态。
-- [Attempt 详情组件](../../feature/reports/components/attempt-detail.md)：`AttemptSource` 的数据与视觉规范、兜底区的两类划分。
+- [Attempt 详情组件](../../feature/reports/components/attempt-detail/README.md)：`AttemptSource` 的数据与视觉规范、兜底区的两类划分。

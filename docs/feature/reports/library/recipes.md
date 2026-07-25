@@ -4,7 +4,7 @@
 
 ## 修失败：待处理失败清单
 
-回答「现在有哪些失败要处理、先看哪条」。最常见的失败清单是成品组件 [`FailureList`](../components/entity-lists.md#failurelist)，一行即可；其它筛选口径才需要组合组件加工 `attemptListData`：
+回答「现在有哪些失败要处理、先看哪条」。最常见的失败清单是成品组件 [`FailureList`](../components/entity-lists/failure-list.md)，一行即可；其它筛选口径才需要组合组件加工 `attemptListData`：
 
 ```tsx
 // reports/todo.tsx

@@ -1,36 +1,20 @@
 # 图表
 
-图表把 [指标](../library/metrics.md) 投影成折线、柱、面积、散点与它们的混合。一张图是一棵树：容器持有共享坐标系，轴与 series 是容器的子节点，误差线、数值标签和单项覆盖又属于具体 series。组合模型与结构节点规则见[组件树](README.md)，真实图例见 [Gallery](gallery.md)。
+图表把 [指标](../../library/metrics.md) 投影成折线、柱、面积、散点与它们的混合。一张图是一棵树：容器持有共享坐标系，轴与 series 是容器的子节点，误差线、数值标签和单项覆盖又属于具体 series。组合模型与结构节点规则见[组件树](../README.md)，真实图例见 [Gallery](../gallery.md)。
 
-```tsx
-<ComposedChart input={scope}>
-  <CartesianGrid />
-  <XAxis dimension="experiment" />
-  <YAxis yAxisId="cost" metric={costUSD} />
-  <YAxis yAxisId="quality" metric={endToEndPassRate} orientation="right" />
-  <Tooltip />
-  <Legend />
+niceeval 的扩展只在数据语义上：容器用 `input` 接收 [`ReportInput`](../../library/metrics.md#公开计算模型)，不接收作者预聚合的裸对象数组；轴与 series 用 Metric、Dimension、NumericAxis 绑定，不用对象属性路径取值；聚合结果保留 `MetricCell.samples` / `refs`，由同一份 `ChartData` 驱动 text 与 web 两面。
 
-  <Bar metric={plannerCostUSD} stackId="cost" yAxisId="cost">
-    <ErrorBar kind="ci95" />
-  </Bar>
-  <Bar metric={workerCostUSD} stackId="cost" yAxisId="cost" />
-  <Line metric={endToEndPassRate} yAxisId="quality" dot={false} />
-  <ReferenceLine y={0.8} yAxisId="quality" label="目标" />
-</ComposedChart>
-```
-
-niceeval 的扩展只在数据语义上：容器用 `input` 接收 [`ReportInput`](../library/metrics.md#公开计算模型)，不接收作者预聚合的裸对象数组；轴与 series 用 Metric、Dimension、NumericAxis 绑定，不用对象属性路径取值；聚合结果保留 `MetricCell.samples` / `refs`，由同一份 `ChartData` 驱动 text 与 web 两面。
+这一篇是图表族的共用机制：容器与 `ChartProps`、呈现别名、轴、Series 的共用选择模型、嵌套节点、图表直接子节点、计算规格、`ChartData`、spec / data 形态、聚合规则与两面投影。每种容器的 series 专属 props 与用法在各自的文件里：[`LineChart`](line-chart.md)、[`BarChart`](bar-chart.md)、[`AreaChart`](area-chart.md)、[`ScatterChart`](scatter-chart.md)、[`ComposedChart`](composed-chart.md)。
 
 ## 容器
 
 | 容器 | 直接 series 子节点 | 用途 |
 |---|---|---|
-| `LineChart` | `Line` | 数值参数趋势或维度折线 |
-| `BarChart` | `Bar` | 排行、分组柱与堆叠柱 |
-| `AreaChart` | `Area` | 强调累计量或区间的面积图 |
-| `ScatterChart` | `Scatter` | 两个 Metric 的点云或前沿 |
-| `ComposedChart` | `Line` / `Bar` / `Area` / `Scatter` | 同一坐标系混合多种 series |
+| [`LineChart`](line-chart.md) | `Line` | 数值参数趋势或维度折线 |
+| [`BarChart`](bar-chart.md) | `Bar` | 排行、分组柱与堆叠柱 |
+| [`AreaChart`](area-chart.md) | `Area` | 强调累计量或区间的面积图 |
+| [`ScatterChart`](scatter-chart.md) | `Scatter` | 两个 Metric 的点云或前沿 |
+| [`ComposedChart`](composed-chart.md) | `Line` / `Bar` / `Area` / `Scatter` | 同一坐标系混合多种 series |
 
 图表类型由 JSX 元素名表达，不用字符串 `as`；容器的 children 是唯一的轴、series 与呈现声明。
 
@@ -61,7 +45,7 @@ type ChartProps =
 
 ## 呈现别名
 
-轴、series 与嵌套节点上以 `Presentation` 结尾的 props 都是[双面投影阶梯](README.md#双面投影边界)的实例——`Presentation<该节点的渲染数据, 该节点的默认呈现字段>`。因此每一处都是同样四档：`false` 关掉、部分字段对象只调样式与位置、函数接管 web 面、`{ web, text }` 同时接管两面。渲染回调只收到解析后的只读数据片段，不能触发第二次聚合。
+轴、series 与嵌套节点上以 `Presentation` 结尾的 props 都是[双面投影阶梯](../README.md#双面投影边界)的实例——`Presentation<该节点的渲染数据, 该节点的默认呈现字段>`。因此每一处都是同样四档：`false` 关掉、部分字段对象只调样式与位置、函数接管 web 面、`{ web, text }` 同时接管两面。渲染回调只收到解析后的只读数据片段，不能触发第二次聚合。
 
 | 别名 | 出现在 | 渲染数据 |
 |---|---|---|
@@ -120,8 +104,8 @@ type XAxisProps =
   | ({ xAxisId: string | number; dimension?: never; numeric?: never; metric?: never; sort?: never; limit?: never; rest?: never } & XAxisPresentationProps);
 ```
 
-- `dimension` 是分类轴，用于排行、分组柱或按离散配置比较。传数组即[复合维度](../library/metrics.md#维度与数值轴)——`["agent", label("memory")]` 的一个取值是一根柱，不是两根。
-- `numeric` 是 [`NumericAxis`](../library/metrics.md#维度与数值轴)，用于参数趋势；每个点保留数值原值和等价显示值。字符串配置必须显式映射到数值，组件不猜 `low < medium < high`。
+- `dimension` 是分类轴，用于排行、分组柱或按离散配置比较。传数组即[复合维度](../../library/metrics.md#维度与数值轴)——`["agent", label("memory")]` 的一个取值是一根柱，不是两根。
+- `numeric` 是 [`NumericAxis`](../../library/metrics.md#维度与数值轴)，用于参数趋势；每个点保留数值原值和等价显示值。字符串配置必须显式映射到数值，组件不猜 `low < medium < high`。
 - `metric` 是散点图横轴；格式、bounds 与 `better` 来自 Metric。
 - `sort` / `limit` / `rest` 只属于维度轴，规则见[排序与截断](#排序与截断)。
 
@@ -190,7 +174,7 @@ data 形态下轴绑定已经在 `ChartData` 里，`XAxis` / `YAxis` 只按 id �
 
 **呼吸边距**：数据极值向两端各扩数据跨度的 20%，数据极值点不落在绘图框线上。落在框线上的点标记被框线穿过、视觉上残缺，而极值点（最好与最差）恰是图上最需要被完整看清的点；边距同时给极值点旁的文字标签留出排布空间。数据跨度为零（单点，或全部点同值）时，边距改取该值绝对值的 20%；值恰为 0 时取 1。
 
-**最小跨度下限**：扩完边距后，值域跨度不得小于量程参考的 1/3。值域若永远贴着数据画，数据聚集时微小差距会撑满整个绘图区，读者把噪声读成显著差异；下限保证 1 个单位的差距在图上占的比例有上界。不足下限时以数据为中心向两端对称扩展补足，一端被 `bounds` 顶住时余量推到另一端。量程参考取自指标声明的 `bounds`（自然边界，见[指标](../library/metrics.md)）：两端都声明时为 bounds 全量程——通过率的参考是 0–100%，值域至少画 33 个百分点；只声明一端时为声明端到数据另一侧极值的距离——成本的参考是 $0 到数据最大值；两端都未声明的轴（数值 `XAxis`）没有量程参考，不适用下限。
+**最小跨度下限**：扩完边距后，值域跨度不得小于量程参考的 1/3。值域若永远贴着数据画，数据聚集时微小差距会撑满整个绘图区，读者把噪声读成显著差异；下限保证 1 个单位的差距在图上占的比例有上界。不足下限时以数据为中心向两端对称扩展补足，一端被 `bounds` 顶住时余量推到另一端。量程参考取自指标声明的 `bounds`（自然边界，见[指标](../../library/metrics.md)）：两端都声明时为 bounds 全量程——通过率的参考是 0–100%，值域至少画 33 个百分点；只声明一端时为声明端到数据另一侧极值的距离——成本的参考是 $0 到数据最大值；两端都未声明的轴（数值 `XAxis`）没有量程参考，不适用下限。
 
 声明了 `bounds` 的轴，边距与下限扩展都截到边界为止：通过率 100% 的点落在框线上是「顶到语义天花板」的如实呈现，不是裁剪——此时框线就是指标的自然边界。
 
@@ -219,7 +203,7 @@ type MetricSeriesBinding =
 ```
 
 - 不给 `by`：一个 Metric 形成一个 series。
-- 只给 `by`：按该维度的已观测 domain 动态展开多个 series。传数组时解析为[复合维度](../library/metrics.md#维度与数值轴)。
+- 只给 `by`：按该维度的已观测 domain 动态展开多个 series。传数组时解析为[复合维度](../../library/metrics.md#维度与数值轴)。
 - 同给 `by` 与 `value`：精确选择这个维度值，适合逐 series 定制。
 
 `value` 永远不能单独出现，也不猜它属于 agent、experiment 还是 label。同一 metric 可以用一个动态声明展开，也可以用多个显式声明逐值定制：
@@ -241,101 +225,7 @@ type MetricSeriesBinding =
 
 `name` 是图例显示名。`dataKey` 定义或选择解析后的 series 身份，不是对象属性路径；动态 `by` 解析成多个 series，因此这种形态不能显式给单个 `dataKey`。spec 形态可以省略 `dataKey`，data 形态必须提供且不能再给数据绑定字段。
 
-### `Line`
-
-```ts
-type LineProps = MetricSeriesBinding & {
-  name?: LocalizedText;
-  type?: "linear" | "monotone" | "step";
-  stroke?: string;
-  strokeWidth?: number;
-  strokeDasharray?: string;
-  dot?: DotPresentation;
-  activeDot?: DotPresentation;
-  label?: LabelPresentation;
-  connectNulls?: boolean;
-};
-```
-
-`connectNulls` 默认 `false`；开启时只跨缺失值连线，不会为缺失点制造 `MetricCell`。
-
-### `Bar`
-
-```ts
-type BarProps = MetricSeriesBinding & {
-  name?: LocalizedText;
-  stackId?: string | number;
-  /** 每根柱按这个维度取页级色；省略时整条 series 一个颜色。 */
-  colorBy?: DimensionInput;
-  fill?: string;
-  stroke?: string;
-  maxBarSize?: number;
-  radius?: number | readonly [number, number, number, number];
-  label?: LabelPresentation;
-};
-```
-
-同一 stack 必须绑定同一对轴且 Metric 可相加；柱顶总值用 `<LabelList value="stackTotal" position="top" />` 显式声明，不作为无法关闭的隐式装饰。
-
-`colorBy` 解决「行身份是一回事、颜色要表达另一回事」：榜单每行是「agent 线 × 记忆机制」，而颜色要说的是记忆机制。它取的是[页级色映射](README.md#系列色分配单位是页)里 `(该维度, 该柱的维度值)` 的颜色，因此同一个记忆机制在这张图、图例和页上任何按同一维度取色的地方恒同色，深浅主题也跟着走：
-
-```tsx
-<BarChart layout="vertical">
-  <XAxis metric={endToEndPassRate} orientation="top" />
-  <YAxis dimension={["agent", label("memory")]} sort={endToEndPassRate} limit={10} rest="其余" />
-  <Bar metric={endToEndPassRate} colorBy={label("memory")}>
-    <LabelList position="right" />
-  </Bar>
-</BarChart>
-```
-
-`colorBy` 的维度必须能从每根柱的位置唯一确定取值——它是位置维度本身，或位置维度的一个成员（复合维度的成员），否则一根柱对应多个取值，按完整用户反馈报错并列出冲突的取值。要给具体某个取值指定颜色而不是让它自动分配，用[主题层的钉色](../library/theme.md#钉色)；要单独强调一两根柱而不引入第二个维度，用 `<Cell>`。
-
-### `Area`
-
-```ts
-type AreaProps = MetricSeriesBinding & {
-  name?: LocalizedText;
-  stackId?: string | number;
-  type?: "linear" | "monotone" | "step";
-  stroke?: string;
-  fill?: string;
-  fillOpacity?: number;
-  dot?: DotPresentation;
-  label?: LabelPresentation;
-  connectNulls?: boolean;
-};
-```
-
-面积是独立 series 类型，不是折线上的布尔开关；因此它有自己的类型、props 与合法 children。
-
-### `Scatter`
-
-```ts
-type ScatterBinding =
-  | ({ points: DimensionInput; x: Metric; y: Metric; dataKey?: string } & SeriesSelection)
-  | { dataKey: string; points?: never; x?: never; y?: never; by?: never; value?: never };
-
-type ScatterProps = ScatterBinding & {
-  name?: LocalizedText;
-  xAxisId?: string | number;
-  yAxisId?: string | number;
-  line?: boolean | ScatterLinePresentation;
-  shape?: ShapePresentation;
-};
-```
-
-`points` 定义点身份，`by` 定义可选的 series 维度。`line` 开启后每个解析后 series 内按 x 原始值升序连线——只给「线 = 同族变体」的 lineage series 用：基线与加了某个机制的变体同线，连线显示位移。散点云之间没有天然顺序，对无关点连线只会画出虚构趋势；表达数值参数的进程用数值 `XAxis` 的折线。
-
-```tsx
-<ScatterChart>
-  <XAxis metric={costUSD} />
-  <YAxis metric={endToEndPassRate} />
-  <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} line />
-</ScatterChart>
-```
-
-散点直接消费调用方给出的 Scope，不根据 experiment id 隐式分区。
+具体 series 的 props 与用法见各自容器的文档：[`Line`](line-chart.md#line)、[`Bar`](bar-chart.md#bar)、[`Area`](area-chart.md#area)、[`Scatter`](scatter-chart.md#scatter)。
 
 ## 嵌套节点
 
@@ -554,16 +444,15 @@ text 面是字符坐标图，web 面是 SVG，两面同一份数据与同一套�
 - 点用标记字母 `A`、`B`、`C`… 标识，分配顺序即图例顺序：series 按显示键字典序，series 内按 x 原始值升序，无 series 维度时全部点按点维度键字典序。
 - 图例一行一个 series，行首是 series 显示名，后接该 series 各点的标记与 id；图表标题行尾显示归类维度（`· 按 line 归类`）。
 - `line` 开启时，图例把 series 内各点以 ` → ` 串联（顺序同 x 升序），并为每段相邻点在下一行给出**位移摘要**——两轴指标的带符号差值（`通过率 +37.5pt · 成本 +$0.13`，`%` 的差是百分点、单位写 `pt`）。text 面不在坐标图里画折线，位移摘要就是线的 text 投影；单点 series 无箭头无摘要。
-- web 面每个点都有直接标签。点维度是 experiment 时，只有在当前 data 中末段唯一才缩成末段；重名时使用能区分它们的最短路径后缀，完整 id 与两轴值仍进 tooltip。标签布局保证不静默丢标签，冲突时用 leader line 连回原点。这份最短唯一后缀算法与 [`ExperimentList`](entity-lists.md#experimentlist) 行标签共用同一份实现，同一个 experiment id 在图和列表里缩成同一个显示名。
-- series 颜色来自[页级色分配](README.md#系列色分配单位是页)，与同页实体列表里的同名键恒同色。
+- web 面每个点都有直接标签。点维度是 experiment 时，只有在当前 data 中末段唯一才缩成末段；重名时使用能区分它们的最短路径后缀，完整 id 与两轴值仍进 tooltip。标签布局保证不静默丢标签，冲突时用 leader line 连回原点。这份最短唯一后缀算法与 [`ExperimentList`](../entity-lists/experiment-list.md) 行标签共用同一份实现，同一个 experiment id 在图和列表里缩成同一个显示名。
+- series 颜色来自[页级色分配](../README.md#系列色分配单位是页)，与同页实体列表里的同名键恒同色。
 
 web 渲染回调属于呈现，可以故意改变可见内容；默认 text 投影仍读取原始 `ChartData`，只有作者提供 `{ web, text }` 双面定制时才替换 text 内容。
 
 ## 相关阅读
 
-- [组件树](README.md) —— 结构节点规则、子节点资格总表与共用呈现 props。
-- [Gallery](gallery.md) —— 四张真实报告图在本契约下的写法。
-- [表格与矩阵](tables.md) —— 同一份指标的非图形投影。
-- [指标与维度](../library/metrics.md) —— Metric、Dimension 与 NumericAxis。
-- [References · Recharts](../../../references.md#recharts) —— 组件词汇的外部参考。
-</content>
+- [组件树](../README.md) —— 结构节点规则、子节点资格总表与共用呈现 props。
+- [Gallery](../gallery.md) —— 四张真实报告图在本契约下的写法。
+- [表格与矩阵](../tables/README.md) —— 同一份指标的非图形投影。
+- [指标与维度](../../library/metrics.md) —— Metric、Dimension 与 NumericAxis。
+- [References · Recharts](../../../../references.md#recharts) —— 组件词汇的外部参考。

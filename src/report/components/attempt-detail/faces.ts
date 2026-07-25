@@ -1,4 +1,4 @@
-// Attempt 详情组件族的 text 面(docs/feature/reports/components/attempt-detail.md「在 show 与
+// Attempt 详情组件族的 text 面(docs/feature/reports/components/attempt-detail/README.md「在 show 与
 // view 怎样渲染」):与 web 面共享同一次 resolve 产出的 data 事实(verdict、计数、能力位、
 // 引用),允许把大块内容折成摘要 + 专用证据命令,但不得改变判定、计数或引用。
 // 零 react、零 IO、纯同步——text 宿主不需要 react-dom 的那一半。
@@ -304,7 +304,7 @@ export function attemptDiagnosticsText(data: AttemptDiagnosticsData | null, _ctx
 // ───────────────────────── UsageTable ─────────────────────────
 
 /**
- * 单行装配形态,与 docs/feature/reports/components/attempt-detail.md#usagetable-组装口径单源
+ * 单行装配形态,与 docs/feature/reports/components/attempt-detail/usage-table.md#组装口径单源
  * 的示例行文案是同一形态本身,不是它的近似摘要:
  *   `usage: 6 turns · 21 tool calls · 62.3k uncached in + 942.6k cache read / 6.7k out · 24 requests · $1.14`
  * 每个片段独立地只在对应事实存在时出现,顺序保持不变;全部缺失时整行不出现(返回 ""),
@@ -332,7 +332,7 @@ export function usageTableText(data: UsageTableData | null, _ctx: TextContext): 
     data.toolCalls !== undefined ? `${data.toolCalls} tool call${data.toolCalls === 1 ? "" : "s"}` : undefined,
     tokenSegment || undefined,
     // requests 只在协议真实提供时显示——协议不提供就整段省略,绝不凑一个 1
-    // (docs/feature/reports/components/attempt-detail.md#usagetable-组装口径单源)。
+    // (docs/feature/reports/components/attempt-detail/usage-table.md#组装口径单源)。
     usage?.requests !== undefined ? `${usage.requests} requests` : undefined,
     data.estimatedCostUSD !== undefined ? formatUSD(data.estimatedCostUSD) : undefined,
   ].filter((s): s is string => s !== undefined);

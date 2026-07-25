@@ -78,7 +78,7 @@ assembleSourceTree(
 树是可序列化的纯数据，两个面都不重新分桶、不重新裁行：
 
 - **text 面**渲染缩进 `│` 层级、`↳` 汇总行、`⋯ N lines`，按终端宽度截长行。
-- **web 面**（`AttemptSource`）把 `SourceCall` 渲染成调用行右缘的汇总 pill 加一个 `<details>`，展开态内联片段；含未通过标注的路径 `open` 默认为真。零 JS 静态文档因此完整成立，展开不依赖脚本。行状态、展开区、兜底区的视觉沿用[既有规范](../../feature/reports/components/attempt-detail.md#attemptsource-web-面视觉规范)，片段内的行与主干的行是同一套样式——新容器不会自动继承样式，片段容器要有自己的规则覆盖。
+- **web 面**（`AttemptSource`）把 `SourceCall` 渲染成调用行右缘的汇总 pill 加一个 `<details>`，展开态内联片段；含未通过标注的路径 `open` 默认为真。零 JS 静态文档因此完整成立，展开不依赖脚本。行状态、展开区、兜底区的视觉沿用[既有规范](../../feature/reports/components/attempt-detail/attempt-source.md#web-面视觉规范)，片段内的行与主干的行是同一套样式——新容器不会自动继承样式，片段容器要有自己的规则覆盖。
 
 ## 落地时展示层要改的落点
 

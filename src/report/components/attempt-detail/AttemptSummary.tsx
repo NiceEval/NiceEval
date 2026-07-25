@@ -1,4 +1,4 @@
-// AttemptSummary:恒非空的身份/verdict/时间/成本卡(docs/feature/reports/components/attempt-detail.md)。
+// AttemptSummary:恒非空的身份/verdict/时间/成本卡(docs/feature/reports/components/attempt-detail/README.md)。
 
 import type { ReactElement } from "react";
 import type { AttemptSummaryData } from "../../model/types.ts";

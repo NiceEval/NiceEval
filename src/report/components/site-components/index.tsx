@@ -152,7 +152,7 @@ const assertHeroData = (data: unknown): HeroData => {
  * 合成物,没有单独的 spec 等价形。web 面渲染 hero 标题(h1)、按渲染 locale 格式化的运行
  * meta(latestStartedAt 为 null 时内置「暂无运行」文案)与品牌行(等同 PoweredBy,恒含、
  * 无拆除 prop);text 面输出标题行与 meta 行,不含品牌行
- * (docs/feature/reports/components/site.md「HeroCard」)。
+ * (docs/feature/reports/components/site/hero-card.md)。
  */
 export const HeroCard = defineComponent<HeroCardProps>({
   web: (props, ctx) => {
@@ -177,7 +177,7 @@ export interface HeroCardProps {
  * `Hero`:页首的站点标题区——标题、最后运行时间、快照合成来源,恒含品牌行。官方组合组件,
  * 与手写 `<HeroCard title={title ?? ctx.report.title} data={await heroData(ctx.scope)} />`
  * 严格等价、没有私有能力;读 `ctx.report` 意味着输出跟随站点,要站点无关的标题区直接用
- * `HeroCard` 显式传值(docs/feature/reports/components/site.md「Hero」)。
+ * `HeroCard` 显式传值(docs/feature/reports/components/site/hero.md)。
  */
 export const Hero = defineComponent<HeroProps>(async ({ title, className }, ctx) => (
   <HeroCard title={title ?? ctx.report.title} data={await heroData(ctx.scope)} className={className} />
@@ -188,7 +188,7 @@ Hero.displayName = "Hero";
  * `PoweredBy`:唯一的品牌件,无 props 双面组件。web 面渲染指向 niceeval 官网的一行品牌色
  * 小字(`utm_source=report&utm_medium=powered-by`,`rel` 仅 `noopener` 以保留 Referer);
  * text 面零输出。没有任何配置——品牌契约是「提供一个组件,不给开关」:不想要品牌就不用
- * 这些组件、自己写替代组件(docs/feature/reports/components/site.md「PoweredBy」)。
+ * 这些组件、自己写替代组件(docs/feature/reports/components/site/powered-by.md)。
  */
 export const PoweredBy = defineComponent<Record<never, never>>({
   web: () => <PoweredByWeb />,
@@ -204,7 +204,7 @@ export type ScopeWarningsProps = DataProps<readonly ScopeWarning[], Record<never
  * 按「下一步动作」聚合渲染(带 experimentId 的按实验聚合、非实验作用域按 kind 聚合;
  * 实验作用域组在前、非实验作用域组在后);web 面组头带去重后的可复制命令、明细收原生
  * `<details>`(总条数 ≤ 3 默认展开),text 面同构但不折叠。空警告集与裸 `Snapshot[]` 输入
- * 两面零输出(docs/feature/reports/components/site.md「ScopeWarnings」)。
+ * 两面零输出(docs/feature/reports/components/site/scope-warnings.md)。
  */
 export const ScopeWarnings = makeDataComponent<readonly ScopeWarning[], Record<never, never>, ChromeProps>({
   name: "ScopeWarnings",
@@ -229,7 +229,7 @@ export type SnapshotDiagnosticsProps = DataProps<SnapshotDiagnosticsData, Record
  * web 面整个区域是默认折叠的原生 `<details>`,`<summary>` 恒可见汇总涉及的 experiment 数、
  * Snapshot 数、记录数(按 count 计数)与最高严重度;单诊断快照退化成一行,不摆空壳层级;
  * text 面同构但不折叠。空诊断集两面零输出
- * (docs/feature/reports/components/site.md「SnapshotDiagnostics」)。
+ * (docs/feature/reports/components/site/snapshot-diagnostics.md)。
  */
 export const SnapshotDiagnostics = makeDataComponent<SnapshotDiagnosticsData, Record<never, never>, ChromeProps>({
   name: "SnapshotDiagnostics",
@@ -252,7 +252,7 @@ export type CopyFixPromptProps = DataProps<CopyFixPromptData, Record<never, neve
  * `CopyFixPrompt`:把当前范围的全部失败整理成一段可交给 coding agent 的修复 prompt。
  * prompt 在 resolve 阶段算好、烘进静态 HTML,无 JS 时在折叠块里完整可读,「复制」是增强层
  * 行为;`failures` 为 0 时两面零输出;text 面恒零输出——终端里的等价能力是 `show` 的
- * attempt 下钻命令本身(docs/feature/reports/components/site.md「CopyFixPrompt」)。
+ * attempt 下钻命令本身(docs/feature/reports/components/site/copy-fix-prompt.md)。
  */
 export const CopyFixPrompt = makeDataComponent<CopyFixPromptData, Record<never, never>, ChromeProps>({
   name: "CopyFixPrompt",
@@ -280,7 +280,7 @@ export type TraceWaterfallProps = DataProps<
  * 的原始 span(agent / model / tool)。web 面静态渲染顶层 span 分解条(失败 span 带失败
  * 标记),行链接 attempt 详情;text 面每 attempt 一行(locator、总耗时、span 计数与失败
  * 标记)+ 可复制的 `--timing` 下钻命令。trace 缺失的行照常出现并如实显示缺失;runner
- * 生命周期节点不进瀑布(docs/feature/reports/components/site.md「TraceWaterfall」)。
+ * 生命周期节点不进瀑布(docs/feature/reports/components/site/trace-waterfall.md)。
  */
 export const TraceWaterfall = makeDataComponent<
   readonly TraceWaterfallRow[],

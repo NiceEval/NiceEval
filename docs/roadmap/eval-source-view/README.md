@@ -1,6 +1,6 @@
 # 源码调用树：eval 源码分布在多个文件时的展示
 
-这是尚未定为当前契约的候选设计，见 [Roadmap 约定](../README.md)。终端契约见 [CLI](cli.md)，装配算法与降级见 [Display](display.md)，数据模型、捕获规则与 web 面投影见 [Architecture](architecture.md)。它替换的当前契约是[`--source`：把断言放回源码](../../feature/reports/show/eval-source.md)与 [`AttemptSource`](../../feature/reports/components/attempt-detail.md)的单文件假设。
+这是尚未定为当前契约的候选设计，见 [Roadmap 约定](../README.md)。终端契约见 [CLI](cli.md)，装配算法与降级见 [Display](display.md)，数据模型、捕获规则与 web 面投影见 [Architecture](architecture.md)。它替换的当前契约是[`--source`：把断言放回源码](../../feature/reports/show/eval-source.md)与 [`AttemptSource`](../../feature/reports/components/attempt-detail/README.md)的单文件假设。
 
 ## 问题
 
@@ -19,7 +19,7 @@ evals/install/share/eval-authoring.ts        84 行
 lib/candidate.ts / lib/routing.ts           213 行
 ```
 
-eval 文件里只有 `t.judge`、`t.calledTool` 十来条，`t.check` 一条没有；四十多条判定的 `loc` 全部指向 `share/` 下的 helper。当前契约下 `--source` 因此退化成最坏形态：整整一屏没有一处标注的主干源码，后面跟一个装着全部断言的兜底桶——源码视图既没告诉读者哪条失败，也没告诉读者失败发生在哪一步，还比 [`AttemptAssertions`](../../feature/reports/components/attempt-detail.md) 的平铺列表多花了一屏。
+eval 文件里只有 `t.judge`、`t.calledTool` 十来条，`t.check` 一条没有；四十多条判定的 `loc` 全部指向 `share/` 下的 helper。当前契约下 `--source` 因此退化成最坏形态：整整一屏没有一处标注的主干源码，后面跟一个装着全部断言的兜底桶——源码视图既没告诉读者哪条失败，也没告诉读者失败发生在哪一步，还比 [`AttemptAssertions`](../../feature/reports/components/attempt-detail/README.md) 的平铺列表多花了一屏。
 
 天真的修法是把引用到的文件全部倒出来：这次 attempt 会得到 1300 行源码，读者要自己在文件之间重建「哪次调用触发了这条断言」。而这恰好是读者唯一真正想要的信息——`evalInstall` 里那条 `t.check(version, satisfies(...))` 红了，读者要问的不是「eval-install.ts 第 246 行长什么样」，是「我这道题的第 98 步『评估安装』没过」。
 
@@ -56,12 +56,12 @@ eval 文件里只有 `t.judge`、`t.calledTool` 十来条，`t.check` 一条没�
 
 树把「loc 在别的文件」这一类从兜底桶里拿走了。剩下两类仍然不静默丢弃：
 
-- **没有 `loc` 的断言**：动态构造、或由 adapter 内部产生，平铺成一列，形态与 [`AttemptAssertions`](../../feature/reports/components/attempt-detail.md) 的条目一致。
+- **没有 `loc` 的断言**：动态构造、或由 adapter 内部产生，平铺成一列，形态与 [`AttemptAssertions`](../../feature/reports/components/attempt-detail/README.md) 的条目一致。
 - **调用链不经过主干的断言**：例如判定发生在 setup hook 或另一个入口里。它们按最外层用户帧的文件分组，仍然以片段形式呈现，排在主干之后而不是塞进主干中间——源码即报告的待遇不因为挂不上主干就取消。
 
 ## 非目标
 
-- **不做运行时栈的通用展示。** 这棵树只承载判定痕迹（断言、给分记录、`t.send`）的归属。`assertPagesInCandidate()` 这类直接抛错中断 attempt 的用户代码由 [`AttemptError`](../../feature/reports/components/attempt-detail.md) 呈现，不进源码树。
+- **不做运行时栈的通用展示。** 这棵树只承载判定痕迹（断言、给分记录、`t.send`）的归属。`assertPagesInCandidate()` 这类直接抛错中断 attempt 的用户代码由 [`AttemptError`](../../feature/reports/components/attempt-detail/README.md) 呈现，不进源码树。
 - **不做跨 attempt 的源码对照。** 树的输入恒为一个 attempt 的证据。
 - **不改判定语义。** 树只改「标注挂在哪、展开多少」；判定、`expected` / `received` 收口、never-drop 契约照 [Scoring · 断言与 Turn 的展示](../../feature/scoring/library/display.md)不变。
 - **不改轮次的诊断面。** `t.send` 行的头行事实照旧标在源码上，轮次全量清单仍在 [`--execution`](../../feature/reports/show/execution.md)。
@@ -78,5 +78,5 @@ eval 文件里只有 `t.judge`、`t.calledTool` 十来条，`t.check` 一条没�
 - [Display](display.md) —— 归属、建树、裁行三阶段装配算法，展开预算与链不完整时的降级。
 - [Architecture](architecture.md) —— `loc` 调用链、捕获规则、递归数据模型与 web 面投影。
 - [`--source` 当前契约](../../feature/reports/show/eval-source.md) —— 被本设计替换的单文件形态。
-- [Attempt 详情组件](../../feature/reports/components/attempt-detail.md) —— `AttemptSource` 的组件位置与视觉规范。
+- [Attempt 详情组件](../../feature/reports/components/attempt-detail/README.md) —— `AttemptSource` 的组件位置与视觉规范。
 - [Results · `sources.json`](../../feature/results/architecture.md#sourcesjson) —— 源码落盘的引用 + 去重仓库两层结构。

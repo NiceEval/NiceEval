@@ -31,12 +31,12 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 
 ## 页面构成
 
-- **导航机器与品牌位：** 页头左端是报告改不动的恒定 NiceEval 字标（外链官网），右侧是 page 导航、外部链接与语言切换。导航只列报告中 `navigation !== false` 的 pages，按声明顺序排列——裸 `view` 的「报告 / Attempts / 追踪」三个 tab 是内建四张 pages 中的前三张，参数化详情页不进导航。宿主不追加导航项。浏览器标题、外壳链接、页脚与资产仍按[外壳契约](library/shell.md#行为约束)消费；hero、品牌行、警告区和快照诊断区都是 page 内[站点组件](components/site.md)。
+- **导航机器与品牌位：** 页头左端是报告改不动的恒定 NiceEval 字标（外链官网），右侧是 page 导航、外部链接与语言切换。导航只列报告中 `navigation !== false` 的 pages，按声明顺序排列——裸 `view` 的「报告 / Attempts / 追踪」三个 tab 是内建四张 pages 中的前三张，参数化详情页不进导航。宿主不追加导航项。浏览器标题、外壳链接、页脚与资产仍按[外壳契约](library/shell.md#行为约束)消费；hero、品牌行、警告区和快照诊断区都是 page 内[站点组件](components/site/README.md)。
 - **默认报告页（内建首页）：** 页首是 `Hero`、`ScopeWarnings`、`SnapshotDiagnostics` 与 `CopyFixPrompt`，随后 `ExperimentComparison` 直接展示当前 Scope 的摘要、成本 × 端到端通过率散点和 experiment 比较表。每个 experiment 的 eval 集来自快照记录的 `selectedEvalIds`；未选择的 eval 不进入该 experiment 的分母。散点 series 有 label `line` 时按线归类并绘制折线，否则按 agent 归类、不连线。实验表一行一个 experiment，可展开查看 eval 与 attempt 证据。`--report` 用自定义报告替换整份页面声明；配置的 `report` 字段把同一份替换设成项目默认。
-- **Attempts 页（内建）：** `Hero` + `ScopeWarnings` + `SnapshotDiagnostics` + 带过滤的 [`AttemptList`](components/entity-lists.md#attemptlist)，把范围内所有 attempt 展成可筛选列表；页名与全库的 attempt 术语一致。
-- **追踪页（内建）：** `Hero` + `ScopeWarnings` + `SnapshotDiagnostics` + [`TraceWaterfall`](components/site.md#tracewaterfall)，用 canonical OTel 字段显示每个 attempt 的执行瀑布行。
-- **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、`navigation: false` 的 page，content 是普通 [`AttemptDetail`](components/attempt-detail.md) 组合组件。它再用 `AttemptSummary`、`AttemptAssessment`、`AttemptFixPrompt`、`AttemptTimeline`、`AttemptDiagnostics`、`UsageTable`、`AttemptConversation`、`AttemptTrace`、`AttemptDiff` 组装判定、断言、修复 prompt、时间树、diagnostics、usage、对话、trace 和 diff。以下是这些组件的 web 面契约，不是 view 硬编码布局：`AttemptAssessment` 有源码时用 `AttemptSource`，否则用 `AttemptAssertions`；`AttemptTimeline` 组合 runner phase 与显式关联的 spans；`AttemptTrace` 保留原始 OTel 视角；`AttemptConversation` 按标准事件流分轮。用户可把 page content 换成任意公开组件组合。
-- **Copy fix prompt：** 全部失败的批量修复 prompt 由内建报告页里的 [`CopyFixPrompt`](components/site.md#copyfixprompt) 组件提供；attempt 详情里保留单条失败的复制入口。
+- **Attempts 页（内建）：** `Hero` + `ScopeWarnings` + `SnapshotDiagnostics` + 带过滤的 [`AttemptList`](components/entity-lists/attempt-list.md)，把范围内所有 attempt 展成可筛选列表；页名与全库的 attempt 术语一致。
+- **追踪页（内建）：** `Hero` + `ScopeWarnings` + `SnapshotDiagnostics` + [`TraceWaterfall`](components/site/trace-waterfall.md)，用 canonical OTel 字段显示每个 attempt 的执行瀑布行。
+- **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、`navigation: false` 的 page，content 是普通 [`AttemptDetail`](components/attempt-detail/README.md) 组合组件。它再用 `AttemptSummary`、`AttemptAssessment`、`AttemptFixPrompt`、`AttemptTimeline`、`AttemptDiagnostics`、`UsageTable`、`AttemptConversation`、`AttemptTrace`、`AttemptDiff` 组装判定、断言、修复 prompt、时间树、diagnostics、usage、对话、trace 和 diff。以下是这些组件的 web 面契约，不是 view 硬编码布局：`AttemptAssessment` 有源码时用 `AttemptSource`，否则用 `AttemptAssertions`；`AttemptTimeline` 组合 runner phase 与显式关联的 spans；`AttemptTrace` 保留原始 OTel 视角；`AttemptConversation` 按标准事件流分轮。用户可把 page content 换成任意公开组件组合。
+- **Copy fix prompt：** 全部失败的批量修复 prompt 由内建报告页里的 [`CopyFixPrompt`](components/site/copy-fix-prompt.md) 组件提供；attempt 详情里保留单条失败的复制入口。
 
 ## 静态导出
 

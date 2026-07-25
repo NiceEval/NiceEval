@@ -80,7 +80,7 @@ report/
 
 一份报告至多声明一张 attempt-input page，避免 `show @<locator>` 与 locator 链接出现多个目标。报告未声明它时 locator 只是普通文本，宿主不悄悄补一张官方详情页。view 的 locator URL 与 `show @<locator>` 只是定位这张 page 并传参的宿主语法，不构成第二种内容模型。
 
-内建 `standard` 的 `pages` 因而有四项：报告、Attempts、追踪三张导航页，以及一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页。它的 `content` 是普通 [`AttemptDetail`](components/attempt-detail.md) 组合组件；`AttemptDetail` 与 `ExperimentComparison` 同级，都只用公开叶子组件装配，没有私有 renderer。用户可以直接用成品组合，也可以在该 page 的 `content` 里用 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等区块重新组装。
+内建 `standard` 的 `pages` 因而有四项：报告、Attempts、追踪三张导航页，以及一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页。它的 `content` 是普通 [`AttemptDetail`](components/attempt-detail/README.md) 组合组件；`AttemptDetail` 与 `ExperimentComparison` 同级，都只用公开叶子组件装配，没有私有 renderer。用户可以直接用成品组合，也可以在该 page 的 `content` 里用 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等区块重新组装。
 
 view 只保留 page 寻址、locator 历史记录与内容摆放机制。它可把已渲染的参数化 page 渐进增强成 dialog，但 dialog 内部的区块、顺序、样式和取舍全部来自 page content。本地模式与静态导出对同一 locator 物化相同字节的独立 page 文档；基线链接直接指向该文档，所以无 JavaScript 仍能打开，JavaScript 只拦截链接并把同一内容放进 dialog，不另造一份内容实现。`show @<locator>` 渲染同一 page 的 text 面；`--source` / `--execution` / `--timing` / `--diff` 选择 attempt-detail 组件族对应区块的 text 面（见下节）。
 
@@ -109,7 +109,7 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 ## Scope 是计算入口
 
-所有官方 `*Data(input, options?)` 计算函数接受 `ReportInput = Scope | readonly Snapshot[]`。Scope 同时携带真实快照、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”的信息拆开。warning 的呈现件是 [`ScopeWarnings`](components/site.md#scopewarnings)，快照实体上开放词表 diagnostics 的呈现件是 [`SnapshotDiagnostics`](components/site.md#snapshotdiagnostics)；宿主不在报告树外另设通道，[内建报告](library/built-in.md)的三张 scope-input page 都相邻放置两者（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。`SnapshotDiagnostics` 对 Scope 只投影 `scope.snapshots`，对裸 `Snapshot[]` 同样工作；它的 data 形态只携带 experimentId、startedAt 与 DiagnosticRecord[]，不把 Snapshot 拖进浏览器。覆盖缺口由 `experimentListData` 消费成占位行、时效由 attempt 行的时效标注呈现（见[实体列表](components/entity-lists.md)），指标与列表组件的数据不复制 warning 或 diagnostic。
+所有官方 `*Data(input, options?)` 计算函数接受 `ReportInput = Scope | readonly Snapshot[]`。Scope 同时携带真实快照、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”的信息拆开。warning 的呈现件是 [`ScopeWarnings`](components/site/scope-warnings.md)，快照实体上开放词表 diagnostics 的呈现件是 [`SnapshotDiagnostics`](components/site/snapshot-diagnostics.md)；宿主不在报告树外另设通道，[内建报告](library/built-in.md)的三张 scope-input page 都相邻放置两者（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。`SnapshotDiagnostics` 对 Scope 只投影 `scope.snapshots`，对裸 `Snapshot[]` 同样工作；它的 data 形态只携带 experimentId、startedAt 与 DiagnosticRecord[]，不把 Snapshot 拖进浏览器。覆盖缺口由 `experimentListData` 消费成占位行、时效由 attempt 行的时效标注呈现（见[实体列表](components/entity-lists/README.md)），指标与列表组件的数据不复制 warning 或 diagnostic。
 
 指标与列表组件的数据样本一律来自 `Scope.attempts`——按 `current()` / `latest()` 口径挑好的 attempt 全集，组件不各自 `flatMap` `snapshots` 重新展开，避免同一道题的历史 attempt 被不同组件用不同口径重复计入或漏算。配置（agent / model / flags / sandbox 等）、diagnostics 与快照目录这类**快照级**信息来自真实 `Scope.snapshots`。`current()` 下同一个 experiment 可能有多个贡献 Snapshot（不同 eval 取自不同历史快照，见 [Results · 官方现刻水位](../results/library.md#官方现刻水位resultscurrent)）；此时该 experiment 展示用的“水位基准 Snapshot”是这些贡献来源里 `startedAt` 最新的一个——表头、hero 与 `config()` 桥接读取的 agent / model / flags 都以这一个为准，不是任取某个来源或合并多个来源的字段。
 
@@ -276,7 +276,7 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 - **文档单例**：浏览器 `<title>`（消费外壳 `title` 的回退链）、`meta charset` / `viewport`。
 - **品牌位**：`view` 页头左端恒定的 NiceEval 字标（45° 方块 mark + 文字），外链官网、带 `utm_medium=brand`。它是产品品牌位，报告定义不能覆盖或移除；与页内 `PoweredBy` 品牌行同族（`utm_medium=powered-by` 区分点击来自哪个位）。报告 `title` 的落点是页内 hero 与浏览器 `<title>`，不进这个品牌位。
 
-scope-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`TraceWaterfall` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/site.md#tracewaterfall)），符合「索引终结于可执行命令」的省略规则。
+scope-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`TraceWaterfall` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/site/trace-waterfall.md)），符合「索引终结于可执行命令」的省略规则。
 
 ### text 面的省略规则
 

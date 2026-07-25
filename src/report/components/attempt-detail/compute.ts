@@ -1,4 +1,4 @@
-// Attempt 详情组件族的计算函数(docs/feature/reports/components/attempt-detail.md)。每个
+// Attempt 详情组件族的计算函数(docs/feature/reports/components/attempt-detail/README.md)。每个
 // `attempt*Data(evidence)` 都是纯同步派生:evidence 已经由 loadAttemptEvidence 一次性
 // 装配好全部证据,这里只做适合展示与序列化的取舍,不读文件、不 fetch、不重复调用
 // attempt.events() / trace() / diff()。
@@ -263,7 +263,7 @@ export function attemptSourceData(evidence: AttemptEvidence): AttemptSourceData 
 
 /**
  * 单条 attempt 版的批量修复 prompt(与 CopyFixPrompt 的多条版本同一份步骤文案)。三态
- * (docs/feature/reports/components/attempt-detail.md「`AttemptFixPrompt`」):计分制丢分或中止 →
+ * (docs/feature/reports/components/attempt-detail/README.md「`AttemptFixPrompt`」):计分制丢分或中止 →
  * 非 null(围绕丢分检查点组装);计分制挣满且未中止、或通过制 passed → null;skipped 恒 null。
  */
 export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromptData | null {
@@ -355,7 +355,7 @@ function sortFailedCommands(
 }
 
 /**
- * 标准事件流按 `loc` 分轮(docs/feature/reports/components/attempt-detail.md「Attempt 详情组件」):
+ * 标准事件流按 `loc` 分轮(docs/feature/reports/components/attempt-detail/README.md「Attempt 详情组件」):
  * 带 loc 的 user 消息开一轮;无 loc 的 user 消息不开新轮——与当前轮 sent 同文本的回显直接
  * 吃掉,其它(stop-hook 反馈、skill 注入等轮内注入)作为回复条目留在当前轮。流首出现无 loc
  * 的 user 消息(没有当前轮可归入)时退化开一条 loc 缺省的兜底轮,不丢弃。未识别的事件类型
@@ -482,7 +482,7 @@ export function attemptDiagnosticsData(evidence: AttemptEvidence): AttemptDiagno
 // ───────────────────────── UsageTable ─────────────────────────
 
 /**
- * 组装口径单源:docs/feature/reports/components/attempt-detail.md#usagetable-组装口径单源。
+ * 组装口径单源:docs/feature/reports/components/attempt-detail/usage-table.md#组装口径单源。
  * identity 字段(locator/experimentId/evalId/attempt/verdict)恒有;turns/toolCalls 是 events
  * 派生(与 o11y.json 行为摘要同源,buildO11ySummary 与 o11y.json 落盘走同一份纯函数),没有
  * events 就整对省略——不因为其中一个恰好是 0 就当作"缺失"处理,0 是观测到的事实。

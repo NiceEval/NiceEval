@@ -1,5 +1,5 @@
 // AttemptDiff:generated / modified / deleted 文件摘要与展开的行变化统计。没有变更时零输出
-// (docs/feature/reports/components/attempt-detail.md)。
+// (docs/feature/reports/components/attempt-detail/README.md)。
 
 import type { ReactElement } from "react";
 import type { AttemptDiffData, AttemptDiffFileEntry } from "../../model/types.ts";

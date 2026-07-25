@@ -419,7 +419,7 @@ export function filterExperiments(experiments: Experiment[], filter?: string | s
 /**
  * 时效标注(`↩` + 人话时距)的粒度选择:选粒度最大的单位,四舍五入。结构化形态是单源——
  * entity-lists 渲染面的紧凑时距("3d")与曾经的 stale-snapshot message 用同一套阈值,
- * 阈值不写两份(docs/feature/reports/components/entity-lists.md「时效标注」)。
+ * 阈值不写两份(docs/feature/reports/components/entity-lists/README.md「时效标注」)。
  */
 export function gapParts(fromIso: string, toIso: string): { n: number; unit: "second" | "minute" | "hour" | "day" } {
   const ms = Math.max(0, Date.parse(toIso) - Date.parse(fromIso));
