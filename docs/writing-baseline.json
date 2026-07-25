@@ -17,7 +17,6 @@
     "docs/engineering/testing/e2e/adapter/ai-sdk.md": 1,
     "docs/engineering/testing/e2e/adapter/bub.md": 3,
     "docs/engineering/testing/e2e/adapter/langgraph.md": 1,
-    "docs/engineering/testing/e2e/adapter/openclaw.md": 2,
     "docs/engineering/testing/e2e/cli.md": 4,
     "docs/engineering/testing/e2e/report.md": 13,
     "docs/engineering/testing/e2e/verification.md": 3,
@@ -73,7 +72,6 @@
     "docs/feature/adapters/sdk/langgraph/cost.md": 2,
     "docs/feature/adapters/sdk/openai-compat/README.md": 4,
     "docs/feature/adapters/sdk/openai-compat/cost.md": 4,
-    "docs/feature/adapters/sdk/openclaw/README.md": 1,
     "docs/feature/adapters/sdk/openclaw/cost.md": 2,
     "docs/feature/adapters/sdk/pi-agent-core/README.md": 3,
     "docs/feature/adapters/sdk/pi-agent-core/cost.md": 2,
@@ -119,7 +117,6 @@
     "docs/feature/experiments/use-case/selector-narrowing.md": 6,
     "docs/feature/reports/README.md": 8,
     "docs/feature/reports/architecture.md": 82,
-    "docs/feature/reports/components/README.md": 24,
     "docs/feature/reports/components/attempt-detail/README.md": 10,
     "docs/feature/reports/components/attempt-detail/attempt-assessment.md": 1,
     "docs/feature/reports/components/attempt-detail/attempt-detail.md": 1,
@@ -232,7 +229,6 @@
     "docs/origin-integration.md": 43,
     "docs/references.md": 41,
     "docs/roadmap/README.md": 3,
-    "docs/roadmap/adapters/README.md": 2,
     "docs/roadmap/e2e-acceptance-dsl/README.md": 26,
     "docs/roadmap/e2e-acceptance-dsl/library.md": 13,
     "docs/roadmap/e2e-acceptance-dsl/use-cases/README.md": 4,
@@ -429,8 +425,7 @@
       "榜单": 2
     },
     "docs/feature/reports/components/README.md": {
-      "不再": 1,
-      "榜单": 2
+      "不再": 1
     },
     "docs/feature/reports/components/attempt-detail/README.md": {
       "不再": 2
