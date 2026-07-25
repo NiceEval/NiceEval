@@ -53,7 +53,7 @@ niceeval 不维护按字符串名称查找 Agent 的运行时注册表。Adapter
 import { defineExperiment } from "niceeval";
 import agent from "../agents/support.ts";
 
-export default defineExperiment({ agent, runs: 3 });
+export default defineExperiment({ agent, attempts: 3 });
 ```
 
 要比较 Agent 或模型，定义不同 experiment 并复用同一个 factory。名字用于结果标识和路由，不用于 core 按供应商分支。

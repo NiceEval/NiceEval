@@ -1,6 +1,6 @@
 # Reports —— 查看与呈现结果
 
-实验结束后有三种查看方式,它们读取同一份 [`.niceeval/` 运行产物](../results/README.md),区别只是交互深度和定制程度:
+实验结束后有三种查看方式,它们读取同一份 [`.niceeval/` 运行产物](../record/README.md),区别只是交互深度和定制程度:
 
 | 需求 | 入口 | 适合场景 |
 |---|---|---|
@@ -8,7 +8,7 @@
 | 在浏览器浏览历史、图表和完整证据 | [`niceeval view`](view.md) | 人工复盘、分享静态报告 |
 | 定义自己的成绩单、榜单或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
 
-`show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 scope-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
+`show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 sample-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
 
 两个宿主装载哪份定义只有一条取值链，三档，前档缺席才落下一档：
 
@@ -47,7 +47,7 @@ export default defineConfig({
 
 字段收 `defineReport` 产物本身，不是路径字符串：配置文件是 TS，import 自己的报告文件即可，写错在类型检查时就暴露。想在内建报告上加外壳或改页，`defineReport({ extends: standard, … })` 的产物同样直接填进来。填了非 `defineReport` 产物（普通对象、React 组件、报告树）按完整用户反馈报错，出处点名配置文件的 `report` 字段。
 
-这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进快照。要临时回到内建榜单排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
+这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进 Run。要临时回到内建榜单排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
 
 团队品牌同理，`theme` 字段收 `defineTheme` 产物：
 
@@ -63,7 +63,7 @@ export default defineConfig({
 });
 ```
 
-报告只表达“怎么看”。原始判定、断言、事件、trace 和 diff 的事实归 [Results](../results/README.md)；运行过程中把事实写出去的回调叫 [Reporter](../../runner.md),不属于这里。
+报告只表达“怎么看”。原始判定、断言、事件、trace 和 diff 的事实归 [Record](../record/README.md)；运行过程中把事实写出去的回调叫 [Reporter](../../runner.md),不属于这里。
 
 ## 从哪开始
 
@@ -74,7 +74,7 @@ export default defineConfig({
 - 想改整站强调色、状态色、图表色板、字体或进一步覆盖 CSS：看 [Library · 主题](library/theme.md)。
 - 想自己写一个报告组件，并让它跟随任何主题：看[自己写报告组件](use-case/write-custom-component.md)。
 - 想知道默认报告本身怎么写、怎么逐步改造：看 [Library · 内建报告](library/built-in.md)。
-- 想知道字段从哪个文件来：看 [Results Architecture](../results/architecture.md)。
+- 想知道字段从哪个文件来：看 [Record Architecture](../record/architecture.md)。
 
 ## 相关阅读
 
@@ -85,5 +85,5 @@ export default defineConfig({
 - [Theme](library/theme.md) —— 主题制品、四档装载链、令牌全集与完整 CSS 出口。
 - [主题目录](themes/README.md) —— 内建主题一览；官方主题 [Basalt](themes/basalt.md) 的取值与主张。
 - [Architecture](architecture.md) —— 两个宿主、报告树和可序列化边界。
-- [Results Lib](../results/library.md) —— 结果读写库:类型的家、writer、`openResults`、实验/快照层次、选择器、身份键;第二档吃它的读取面。
-- [Results Format](../results/architecture.md) —— 唯一持久化事实来源。
+- [Record Lib](../record/library.md) —— 结果读写库:类型的家、writer、`openRecord`、实验/Run 层次、选择器、身份键;第二档吃它的读取面。
+- [Record Format](../record/architecture.md) —— 唯一持久化事实来源。

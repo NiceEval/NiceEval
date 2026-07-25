@@ -1,4 +1,4 @@
-// niceeval/results —— 实验结果数据的读写库(定稿见 docs/feature/results/library.md、docs/feature/results/architecture.md)。
+// niceeval/results —— 实验结果数据的读写库(定稿见 docs/feature/record/library.md、docs/feature/record/architecture.md)。
 //
 // 读:openResults(实验 → 快照 → eval → attempt 分层、skipped、latest() / current() Scope);
 // 写:createResultsWriter(快照声明 + attempt 增量落盘 + finish 补 completedAt);

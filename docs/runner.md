@@ -52,14 +52,14 @@ onSlotFree():   # 初始 globalMaxConcurrency 个并发位视为同样多次空�
 
 `priority` 只在建 attempt 列表时算一次(用规划阶段已知的「每个 run 有多少 attempt」),不随运行中 earlyExit / fail-fast / budget 实际提前收尾而重算——那是动态优先级调整,复杂度不值得为一个尽力而为的启发式引入。实验级闸(`ExperimentDef.maxConcurrency`)不参与这条纪律,先来后到即可:同一 run 的 attempt 优先级相同,它们内部谁先谁后不影响总墙钟。等待中的 attempt 被中止(earlyExit、fail-fast、用户中断)时退出等待集,不占用后续分配。
 
-一次 `exp` 运行把按路径选中的多个单一配置展成 attempt，再 × `eval × runs`；每个配置先用自己的 `evals` 谓词遍历发现结果。比如 2 个实验配置 × `runs: 5` × 3 个 eval = 30 个 attempt。汇总按 `(agent, model, eval)` 分组,不再是单一判定,而是**通过率** + 平均耗时 / token / 成本:
+一次 `exp` 运行把按路径选中的多个单一配置展成 attempt，再 × `eval × attempts`；每个配置先用自己的 `evals` 谓词遍历发现结果。比如 2 个实验配置 × `attempts: 5` × 3 个 eval = 30 个 attempt。汇总按 `(agent, model, eval)` 分组,不再是单一判定,而是**通过率** + 平均耗时 / token / 成本:
 
 ```text
 fixtures/button   claude-code   pass@5 = 4/5 (80%)   mean 34s · 58k tok · $0.44
 fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.39
 ```
 
-用于衡量 agent 的稳定性(一次过 ≠ 可靠),以及跨 agent 的**质量 × 成本**对比。不写实验时退化成单 agent × `runs`。
+用于衡量 agent 的稳定性(一次过 ≠ 可靠),以及跨 agent 的**质量 × 成本**对比。不写实验时退化成单 agent × `attempts`。
 
 ## 首过即停(earlyExit)
 
@@ -69,9 +69,9 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 - **只有 `passed` 触发首过即停**:某 attempt 通过且 `earlyExit` 开 → `abort()` 同 eval 其余 attempt;被 abort 的不计入分母。`invocation:earlyExit` 事件只在实际省略了至少一个轮次时发出——最后一轮才通过时没有可省的轮次,不发事件。
 - `errored` 不触发:超时、限流、沙箱挂掉这类瞬态基建错误在下一个 attempt 上完全可能自愈,因一次 errored 停掉其余样本等于放弃重试机会,还会把基建抖动放大成整题无结果。
 - 确定性错误不靠 earlyExit 兜,走独立的 **run 级 fail-fast**:凭据缺失、模板不存在、作者代码必现抛错这类同因必复现的错误,识别出(预检命中,或同一错误 code 在同一 eval 连续复现)即停止派发受同一配置影响的后续 attempt,如实报 errored——这是止损,不是「首过即停」,两个机制互不混用。作者声明的**止损闸**(失败携带 `scope: "eval"` / `"experiment"`,一次命中即停对应粒度的派发)与 streak 推断**并存、互不替代**:声明是作者背书下的第一次即停,streak 是无声明时的保守兜底(闸的契约见[执行失败分类](feature/error-classification/README.md#自愈阶梯与止损阶梯))。turn 层的瞬时故障(限流、连接建立失败)在进入这条判定之前已被有界重试吸收,streak 看到的 `turn-failed` 是重试耗尽后的最终结果(契约见[执行失败分类](feature/error-classification/README.md))。
-- 默认关;`runs` 因此默认跑满 N 次,给出完整通过率分布——这是这个工具的核心指标(衡量 agent 稳不稳,见[矩阵展开](#派发顺序瓶颈优先追求最小总墙钟时间)),默认不该被无声截断。只想知道"能不能做到"、不在乎分布时,显式 `earlyExit: true`(或 `--early-exit`)打开。
+- 默认关;`attempts` 因此默认跑满 N 次,给出完整通过率分布——这是这个工具的核心指标(衡量 agent 稳不稳,见[矩阵展开](#派发顺序瓶颈优先追求最小总墙钟时间)),默认不该被无声截断。只想知道"能不能做到"、不在乎分布时,显式 `earlyExit: true`(或 `--early-exit`)打开。
 - **earlyExit 不改变派发节奏,只减少已派发的浪费**:同一个 eval 的多个 attempt 该不该并发跑,由 [有界并发](#调度有界并发)的并发位数(实验级 `maxConcurrency` 或全局 `maxConcurrency`)决定,与 earlyExit 是否开无关——`runs: N` 建的 N 个 fiber 一起进等待集,有几个位就并发跑几个,不会等前一个出结果再决定要不要派发下一个(同一个 run 的 attempt 优先级相同,它们之间按 attempt 顺序拿位)。earlyExit 只在其中某个已经 `passed` 后,abort 掉**还在等待集里**的其余 fiber;已经在跑的不受影响,跑完照样计入(除非 provider/adapter 自己接了 abort signal 提前终止)。
-- 因此,「探到一次能过就停,过不了才继续跑下一次」这种严格串行的重试语义,是 `maxConcurrency: 1` 与显式 `earlyExit: true` 组合出的效果:实验级闸只放一个时,同 eval 的 attempt 只能一个接一个过闸,前一个不出闸,后一个进不去;前一个 `passed` 时 abort 掉还没出闸的后续,天然就是"过了就停"。不设 `maxConcurrency: 1`(如实验级默认继承全局并发)时,`runs` 的多次 attempt 可能同一时刻就有好几个在跑,earlyExit 能省下的只是**这些已经在飞的之外、原本还要排队的那些**。
+- 因此,「探到一次能过就停,过不了才继续跑下一次」这种严格串行的重试语义,是 `maxConcurrency: 1` 与显式 `earlyExit: true` 组合出的效果:实验级闸只放一个时,同 eval 的 attempt 只能一个接一个过闸,前一个不出闸,后一个进不去;前一个 `passed` 时 abort 掉还没出闸的后续,天然就是"过了就停"。不设 `maxConcurrency: 1`(如实验级默认继承全局并发)时,`attempts` 的多次 attempt 可能同一时刻就有好几个在跑,earlyExit 能省下的只是**这些已经在飞的之外、原本还要排队的那些**。
 
 ## 预算护栏(budget)
 
@@ -94,7 +94,7 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 | 进指纹 | 不进指纹 |
 |---|---|
 | eval 源码文件全文 | `timeoutMs`(改用携带资格判据,见下) |
-| eval 声明的 `id` / `tags` / `environment` / `metadata` | `runs`(改用缺失序号补跑,见下) |
+| eval 声明的 `id` / `tags` / `environment` / `metadata` | `attempts`(改用缺失序号补跑,见下) |
 | `experimentId` | `labels`(纯报告坐标) |
 | agent 的名字 | agent 工厂的内部参数 |
 | `model`、`reasoningEffort` | 调度字段:`earlyExit`、`maxConcurrency`、`budget`、`--max-concurrency` |
@@ -102,16 +102,16 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 | 该 eval 解析到的 sandbox provider 与预制产物参数 | 运行时才产生的一切:`ctx.fact()` 上报的观测、`setup` 起出来的坐标 |
 | `strict` | 指纹看不见的外部世界:agent CLI 版本、被测服务状态、镜像重建 |
 
-两条边界值得单说。**agent 工厂的内部参数不进指纹**——`codexAgent({ webSearch: true })` 改成 `false` 不作废任何结果,因为指纹只认 agent 的名字;要让一个开关参与可比性,把它声明进 `flags` 再由工厂从 `ctx.flags` 读。**运行时产生的值结构上进不来**——携带决策发生在任何 `setup` 执行之前,那时这些值还不存在;它们的家是 [`ctx.fact()`](feature/results/architecture.md#facts运行事实),连接坐标(隧道 URL、实例地址)因此换多少次都不作废已完成结果(三个家的判据见 [Experiments · 运行时坐标不进配置](feature/experiments/library.md#运行时坐标不进配置三个家))。
+两条边界值得单说。**agent 工厂的内部参数不进指纹**——`codexAgent({ webSearch: true })` 改成 `false` 不作废任何结果,因为指纹只认 agent 的名字;要让一个开关参与可比性,把它声明进 `flags` 再由工厂从 `ctx.flags` 读。**运行时产生的值结构上进不来**——携带决策发生在任何 `setup` 执行之前,那时这些值还不存在;它们的家是 [`ctx.fact()`](feature/record/architecture.md#facts运行事实),连接坐标(隧道 URL、实例地址)因此换多少次都不作废已完成结果(三个家的判据见 [Experiments · 运行时坐标不进配置](feature/experiments/library.md#运行时坐标不进配置三个家))。
 
-- 上次判定是 `passed` 或 `failed`、且指纹未变 → 默认**跳过**,结果**携带合入**本次快照(带 `artifactBase` 指回原 artifact,落盘语义见 [Results · 两类条目](feature/results/architecture.md#resultjson)),最新快照因此保持完整。两者都是"跑完了、判定确定"的终态,没理由重花一次 agent/sandbox 成本去复现同一个已知结果。
-- **携带以 attempt 为粒度,缺失序号补跑。** 指纹未变时,上一轮已落盘的终态 attempt 逐条携带,本轮只派发计划内缺失的 attempt 序号——`runs: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。携带的 `passed` 与首过即停组合遵守既有语义:已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
+- 上次判定是 `passed` 或 `failed`、且指纹未变 → 默认**跳过**,结果**携带合入**本次 Run(带 `artifactBase` 指回原 artifact,落盘语义见 [Results · 两类条目](feature/record/architecture.md#resultjson)),最新 Run 因此保持完整。两者都是"跑完了、判定确定"的终态,没理由重花一次 agent/sandbox 成本去复现同一个已知结果。
+- **携带以 attempt 为粒度,缺失序号补跑。** 指纹未变时,上一轮已落盘的终态 attempt 逐条携带,本轮只派发计划内缺失的 attempt 序号——`attempts: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。携带的 `passed` 与首过即停组合遵守既有语义:已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
 - **`timeoutMs` 不进指纹哈希,是携带的资格判据。** 超时上限不改变「结果是什么」,只决定「等不等得到」:一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟的上限下是同一个事实,把 `timeoutMs` 掺进哈希会让提高上限作废全部已完成结果——为一个不影响它们的参数付全量重跑。因此指纹不含 `timeoutMs`;携带在指纹匹配之外追加一条判据:**终态 attempt 可携带,当且仅当其 `durationMs` ≤ 当前 resolved `timeoutMs`**(未设上限视为无穷;四层来源的解析顺序单源在 [Experiments · Resolved config](feature/experiments/architecture.md#resolved-config一次求值处处同源))。提高上限时全部已完成结果照常携带,只有当初撞线的 `errored`(本就不携带)重跑;调低上限时,耗时超过新线的旧结果不可在新配置下复现,如实重跑。
-- **一份快照里的条目共享一个指纹口径。** 携带的含义是「这条已落盘的结果对本次规划的输入依然成立」,携带的判据又正是指纹相等,两者合起来落成一条不变量:**快照里每个条目的 fingerprint 都等于本快照配置算出的指纹**,携带条目不背着产出它那一轮的旧指纹漂下去。读取面因此不必翻更早的快照就能把条目与快照记下的配置对上号,`flags` 与条目指纹恒同源。合入只重打指纹一个字段:`locator`、`artifactBase`、判定、`facts` 与证据指向照旧原样携带(见 [Results · 两类条目](feature/results/architecture.md#resultjson))。
-- **`--carry-ignoring-flag <key>` 是搬迁用的一次性出口。** 把误当成实验条件写进 `flags` 的连接坐标搬进 [`ctx.fact()`](feature/results/architecture.md#facts运行事实) 时,`flags` 袋子变了、指纹随之全变,历史结果会一次性作废。这一次调用带上该键名(可重复),携带判定按抹掉这些键之后的 flags 认账,搬迁不必赔上一轮重烧;本次调用记一条快照 diagnostic(`carry-ignoring-flag`)留痕。它**只作用于这一次调用**,不是可以写进实验文件的声明——放宽携带是当场的人为决定,必须留痕且不得长期悄悄生效;真正的修法是让那个值不再出现在 `flags` 里。
-- **携带来源不要求快照收尾。** attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与快照有没有补上 `completedAt` 无关;被中断或强杀的 run 留下的未收尾快照,其中已落盘的终态 attempt 照常携带。**重跑同一条命令就是续跑**:只花缺失 attempt 的成本——这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径,配合[实验面的启动自愈](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)与[实例面的孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底),重跑前不需要任何手工清理。
+- **一份 Run 里的条目共享一个指纹口径。** 携带的含义是「这条已落盘的结果对本次规划的输入依然成立」,携带的判据又正是指纹相等,两者合起来落成一条不变量:**Run 里每个条目的 fingerprint 都等于本 Run 配置算出的指纹**,携带条目不背着产出它那一轮的旧指纹漂下去。读取面因此不必翻更早的 Run 就能把条目与 Run 记下的配置对上号,`flags` 与条目指纹恒同源。合入只重打指纹一个字段:`locator`、`artifactBase`、判定、`facts` 与证据指向照旧原样携带(见 [Results · 两类条目](feature/record/architecture.md#resultjson))。
+- **`--carry-ignoring-flag <key>` 是搬迁用的一次性出口。** 把误当成实验条件写进 `flags` 的连接坐标搬进 [`ctx.fact()`](feature/record/architecture.md#facts运行事实) 时,`flags` 袋子变了、指纹随之全变,历史结果会一次性作废。这一次调用带上该键名(可重复),携带判定按抹掉这些键之后的 flags 认账,搬迁不必赔上一轮重烧;本次调用记一条 Run diagnostic(`carry-ignoring-flag`)留痕。它**只作用于这一次调用**,不是可以写进实验文件的声明——放宽携带是当场的人为决定,必须留痕且不得长期悄悄生效;真正的修法是让那个值不再出现在 `flags` 里。
+- **携带来源不要求 Run 收尾。** attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与 Run 有没有补上 `completedAt` 无关;被中断或强杀的 run 留下的未收尾 Run,其中已落盘的终态 attempt 照常携带。**重跑同一条命令就是续跑**:只花缺失 attempt 的成本——这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径,配合[实验面的启动自愈](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)与[实例面的孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底),重跑前不需要任何手工清理。
 - **并发 Invocation 靠用例锁把续跑扩展到多开。** 锁在派发时刻逐用例取:一条 Invocation 只锁自己正在跑的用例,不囤积选择集,两条选择重叠的 Invocation 因此各自认领不同用例、按各自并发上限并行推进——多开一条终端就是给同一批选择加吞吐。撞上别人持有的锁时该用例不双跑:挂起等待(不占并发位、计入独立的 `elsewhere` 计数状态,并发位转派给下一条没被锁的用例),锁释放后重新参与派发。**取到锁之后一律重做一次携带规划**:别的 Invocation 已跑完并落盘的终态,资格判据通过就携入,仍缺的 attempt 序号才自己跑——这次重判无条件发生在取锁之后,两条选择有交集的 Invocation 因此不论时序怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁)。
-- **执行模式 flag 划走两块例外。** [`--reuse-sandbox`](feature/sandbox/serial-reuse.md#与留存缓存重试的组合) 与指纹缓存**双向绝缘**:复用 run 不消费携带,计划内每个 attempt 都真实在热道上跑;复用产出也永不成为后续 run 的缓存命中。绝缘让一份快照里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。[`--keep-sandbox`](feature/sandbox/cli.md) 下,历史终态 verdict 落在**当前留存档内**的 attempt 不携带、照常派发重跑:留存要的是一次真实执行的现场,携带条目没有沙箱可留——`failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。
+- **执行模式 flag 划走两块例外。** [`--reuse-sandbox`](feature/sandbox/serial-reuse.md#与留存缓存重试的组合) 与指纹缓存**双向绝缘**:复用 run 不消费携带,计划内每个 attempt 都真实在热道上跑;复用产出也永不成为后续 run 的缓存命中。绝缘让一份 Run 里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。[`--keep-sandbox`](feature/sandbox/cli.md) 下,历史终态 verdict 落在**当前留存档内**的 attempt 不携带、照常派发重跑:留存要的是一次真实执行的现场,携带条目没有沙箱可留——`failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。
 - 改了 fixture、改了配置 → 重跑。
 - `errored`(框架/环境层面的不确定失败,如超时、沙箱挂了)和 `skipped` 不缓存,总会重试——它们的判定本身不可信,不是可复用的终态。
 - **`--rerun` 一个旋钮定「上一轮的结果哪些还算数」,三档。** 不带:`passed` 与 `failed` 都算数,本次只跑 `errored` / `skipped` 与缺失序号。`--rerun`(裸写等价 `--rerun failed`):只有 `passed` 算数,`failed` 与它们一起重跑——改了不在指纹里的东西(agent 的 prompt、被测服务)之后复验失败项走这一档,不必去结果树里挖失败的 eval id。`--rerun all`:一律不算数,选中矩阵完整重烧,用于外部世界变了(agent CLI 升级、镜像重建)时的全量重验。档位词表与 [`--keep-sandbox[=failed|all]`](feature/sandbox/cli.md) 同构,裸写都是保守的 `failed` 档;三档都只作用于本次调用,不改指纹定义(用例见[`--rerun`](feature/experiments/use-case/rerun.md))。
@@ -125,7 +125,7 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 
 外层是兜底,保证一个卡死的 case 不会挂起整批。
 
-**超时不丢证据。** 中断终止的是「继续执行」,不撤销「已经观察到的事实」:事件接收器、usage 累计与 timing recorder 都归属 attempt 的外层 Scope,不随 body fiber 一起消失——这与[结果封口发生在 Scope release 之后](feature/results/architecture.md#resultjson)是同一条纪律,从 timing 推广到全部证据通道。超时 attempt 的落盘因此与正常 errored 同构:`events.json` 保留截至中断时刻已归一化的全部事件(进行中一轮已收到的部分照常保留,不新增事件种类,中断事实由 `error` 表达)、`usage` 为已累计轮次的如实值、`sources` 照常;收尾段在 teardown 链之前照常折叠一次 `workspace.diff`——沙箱此刻仍然活着,而「agent 走到了哪」正是超时诊断最需要的证据(计时记入收尾段,不入 `durationMs` 口径)。`artifacts` 列表如实声明实际写出的文件。`show @<locator> --execution` 对超时 attempt 展示的是被打断前的真实执行过程,不是空壳。
+**超时不丢证据。** 中断终止的是「继续执行」,不撤销「已经观察到的事实」:事件接收器、usage 累计与 timing recorder 都归属 attempt 的外层 Scope,不随 body fiber 一起消失——这与[结果封口发生在 Scope release 之后](feature/record/architecture.md#resultjson)是同一条纪律,从 timing 推广到全部证据通道。超时 attempt 的落盘因此与正常 errored 同构:`events.json` 保留截至中断时刻已归一化的全部事件(进行中一轮已收到的部分照常保留,不新增事件种类,中断事实由 `error` 表达)、`usage` 为已累计轮次的如实值、`sources` 照常;收尾段在 teardown 链之前照常折叠一次 `workspace.diff`——沙箱此刻仍然活着,而「agent 走到了哪」正是超时诊断最需要的证据(计时记入收尾段,不入 `durationMs` 口径)。`artifacts` 列表如实声明实际写出的文件。`show @<locator> --execution` 对超时 attempt 展示的是被打断前的真实执行过程,不是空壳。
 
 **超时线是删失线,不是中立的公平线。** `timeoutMs` 压在耗时分布上沿时,测出的是「谁先撞线」而不是「谁做得完」:对每个 attempt 背着固定协议开销的条件(记忆检索、额外收尾轮),同一条线系统性地更早截断它们,且被截断样本从完成耗时统计中消失,让慢条件反而显得快(幸存者偏差)。超时线应显著高于全部条件的自然耗时上沿;耗时作为对比指标时按[删失口径](feature/reports/library/metrics.md#内置指标)呈现,不把线值当实测。
 
@@ -186,16 +186,16 @@ interface InvocationShape {
    *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
   maxConcurrency: number;
   /**
-   * 本次 Invocation 的快照身份锚点(ISO 时间戳),在调度任何 attempt 前确定。fresh
+   * 本次 Invocation 的 Run 身份锚点(ISO 时间戳),在调度任何 attempt 前确定。fresh
    * `EvalResult.locator` 编码进去的 `snapshotStartedAt` 与 Artifacts writer 写进
-   * `snapshot.json` 的 `startedAt` 共用同一个值——不同 experiment 在同一次 Invocation
+   * `run.json` 的 `startedAt` 共用同一个值——不同 experiment 在同一次 Invocation
    * 内共享它也不会碰撞(locator 身份还含 experimentId)。省略只出现在测试/第三方手写
    * `InvocationShape` 的直调场景。
    */
   snapshotStartedAt?: string;
 }
 
-/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 [Results · Architecture](feature/results/architecture.md)。 */
+/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 [Results · Architecture](feature/record/architecture.md)。 */
 interface InvocationSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
@@ -257,13 +257,13 @@ type ReporterEvent =
 
 ## Experiment 收尾协议
 
-一次 Invocation 可以横跨多个 Experiment,但落盘的完整性单位是 Snapshot——每个 Experiment 一份、各自独立收尾(见 [Results · snapshot.json](feature/results/architecture.md#snapshotjson))。`experiment:complete` 是比 `invocation:summary` 更早、比单个 `eval:complete` 更粗的事件,标记"这一个 Experiment 已经彻底跑完",供内建 Artifacts 精确地在那一刻封口对应的 Snapshot,而不是等整个 Invocation 结束才一次性封全部 Snapshot。
+一次 Invocation 可以横跨多个 Experiment,但落盘的完整性单位是 Run——每个 Experiment 一份、各自独立收尾(见 [Results · run.json](feature/record/architecture.md#runjson))。`experiment:complete` 是比 `invocation:summary` 更早、比单个 `eval:complete` 更粗的事件,标记"这一个 Experiment 已经彻底跑完",供内建 Artifacts 精确地在那一刻封口对应的 Run,而不是等整个 Invocation 结束才一次性封全部 Run。
 
-`experiment:complete` 在该 Experiment 的 `ExperimentDef.teardown`(若声明)完成之后、`invocation:summary` 之前触发。内建 `Artifacts` reporter 订阅这条事件,对每个 experimentId 各自调用它自己 Snapshot 的 `snap.finish({ completedAt, diagnostics, name })`(见 [Results · Library](feature/results/library.md))——不再在 `onInvocationComplete` 里一次性封全部快照。`name` 是整次 Invocation 共享的项目名(来自 `config.name`),随每个 Experiment 各自的收尾一并落盘,不必等到 `invocation:summary` 才补写。`carriedResults` 携带该 Experiment 本次携带合入(fingerprint 命中、未真实执行)的历史终态结果,随收尾一并落盘。跨 Experiment 共享的事实(用户中断、reporter 写失败、provider 级并发提示)不属于任何单个 Experiment,不通过这条事件传递,只出现在 `InvocationCompletion.reporterErrors` 或反馈流的运行级 diagnostic 里。
+`experiment:complete` 在该 Experiment 的 `ExperimentDef.teardown`(若声明)完成之后、`invocation:summary` 之前触发。内建 `Artifacts` reporter 订阅这条事件,对每个 experimentId 各自调用它自己 Run 的 `snap.finish({ completedAt, diagnostics, name })`(见 [Results · Library](feature/record/library.md))——不再在 `onInvocationComplete` 里一次性封全部 Run。`name` 是整次 Invocation 共享的项目名(来自 `config.name`),随每个 Experiment 各自的收尾一并落盘,不必等到 `invocation:summary` 才补写。`carriedResults` 携带该 Experiment 本次携带合入(fingerprint 命中、未真实执行)的历史终态结果,随收尾一并落盘。跨 Experiment 共享的事实(用户中断、reporter 写失败、provider 级并发提示)不属于任何单个 Experiment,不通过这条事件传递,只出现在 `InvocationCompletion.reporterErrors` 或反馈流的运行级 diagnostic 里。
 
 ## 实验域诊断持久化
 
-有一类操作性事实**属于某次 Snapshot 整体、但定位不到单个 Attempt**——teardown 失败、budget 不可执行、实验级钩子超时。这类事实必须落进对应 Snapshot 的 `diagnostics`(见 [Results · snapshot.json](feature/results/architecture.md#snapshotjson)),不能只出现在运行期的终端反馈里就算完——反馈是这一次运行的即时通知,`snapshot.json` 才是这次运行"发生过什么"的永久记录。
+有一类操作性事实**属于某次 Run 整体、但定位不到单个 Attempt**——teardown 失败、budget 不可执行、实验级钩子超时。这类事实必须落进对应 Run 的 `diagnostics`(见 [Results · run.json](feature/record/architecture.md#runjson)),不能只出现在运行期的终端反馈里就算完——反馈是这一次运行的即时通知,`run.json` 才是这次运行"发生过什么"的永久记录。
 
 产生处必须显式给出:
 
@@ -277,14 +277,14 @@ interface ExperimentDiagnosticInput {
   phase: LifecyclePhase;
   data?: Readonly<Record<string, JsonValue>>;
   command?: string;
-  /** 同一 Snapshot 内的折叠键;省略时以 code 折叠。 */
+  /** 同一 Run 内的折叠键;省略时以 code 折叠。 */
   dedupeKey?: string;
 }
 ```
 
-`experimentId` 只用于把这条诊断路由到正确的 Snapshot,不进入持久化的 `DiagnosticRecord`——持久化形状与 attempt 级 `DiagnosticRecord` 完全一致(见 [Results · snapshot.json](feature/results/architecture.md#snapshotjson)),因为归属已经隐含在该记录所属的 `snapshot.json` 身份里,不重复存。相同 `dedupeKey`(或省略时的 `code`)只在同一个 Snapshot 内折叠、`count` 递增;不同 Experiment、不同 Snapshot 各自独立计数,不跨来源合并。
+`experimentId` 只用于把这条诊断路由到正确的 Run,不进入持久化的 `DiagnosticRecord`——持久化形状与 attempt 级 `DiagnosticRecord` 完全一致(见 [Results · run.json](feature/record/architecture.md#runjson)),因为归属已经隐含在该记录所属的 `run.json` 身份里,不重复存。相同 `dedupeKey`(或省略时的 `code`)只在同一个 Run 内折叠、`count` 递增;不同 Experiment、不同 Run 各自独立计数,不跨来源合并。
 
-这条持久化通路与运行期的即时反馈通路(`ctx.diagnostic` → 反馈流 → 人读文本 / `--json` 展示)相互独立、互不派生:运行期反馈让操作者第一时间看到问题,持久化让读者事后从 `snapshot.json` 回顾。消费方(内建 Artifacts reporter、自定义 reporter)不得靠解析反馈流通知的 key 或 message 反推该往哪个 Snapshot 写——每个产生处直接构造上面的 `ExperimentDiagnosticInput`,由运行器在该 Experiment 域内按 Snapshot 累计,再通过 [`experiment:complete`](#experiment-收尾协议) 事件整批交给 Artifacts,由它在对应 Snapshot 封口时一次写入。
+这条持久化通路与运行期的即时反馈通路(`ctx.diagnostic` → 反馈流 → 人读文本 / `--json` 展示)相互独立、互不派生:运行期反馈让操作者第一时间看到问题,持久化让读者事后从 `run.json` 回顾。消费方(内建 Artifacts reporter、自定义 reporter)不得靠解析反馈流通知的 key 或 message 反推该往哪个 Run 写——每个产生处直接构造上面的 `ExperimentDiagnosticInput`,由运行器在该 Experiment 域内按 Run 累计,再通过 [`experiment:complete`](#experiment-收尾协议) 事件整批交给 Artifacts,由它在对应 Run 封口时一次写入。
 
 ## 完成状态
 
@@ -319,7 +319,7 @@ CI 的最终结论(退出码、`result` 事件)必须读当场的 `InvocationCom
 - `2` —— CLI / 运行器未捕获的崩溃。
 - `130` —— `status: "interrupted"`(用户或平台中断)。
 
-退出码按 eval 折叠,不按 attempt 折叠:同一个 eval 被 `runs` + `earlyExit` 重试吸收的失败(先挂一次、后来某次通过)不会让进程判红,只有该 eval 最终判定为 `failed` / `errored` 才计入。
+退出码按 eval 折叠,不按 attempt 折叠:同一个 eval 被 `attempts` + `earlyExit` 重试吸收的失败(先挂一次、后来某次通过)不会让进程判红,只有该 eval 最终判定为 `failed` / `errored` 才计入。
 
 ## 相关阅读
 

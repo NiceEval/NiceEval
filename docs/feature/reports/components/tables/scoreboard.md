@@ -112,7 +112,7 @@ type ScoreboardProps = ComponentProps<ScoreboardData, {
 
 推定分科名与某个显式 `<Subject name>` 相同时并入该科，权重仍逐题解析——权重是题目的属性，不因归到哪一科而改写。
 
-Scope 中存在题集之外的 eval 时，Scoreboard 忽略它们，把数量写进 `ignoredEvals` 并在注脚显示。零个 `<Question>`、`id` 重复、`fullMarks <= 0`、非正或非有限权重、`<Subject name>` 为空字符串，或 score 超出 `[0, 1]` 时，计算以完整用户反馈失败，不产出歧义成绩单。
+Sample 中存在题集之外的 eval 时，Scoreboard 忽略它们，把数量写进 `ignoredEvals` 并在注脚显示。零个 `<Question>`、`id` 重复、`fullMarks <= 0`、非正或非有限权重、`<Subject name>` 为空字符串，或 score 超出 `[0, 1]` 时，计算以完整用户反馈失败，不产出歧义成绩单。
 
 ## 相关阅读
 

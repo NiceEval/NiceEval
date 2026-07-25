@@ -50,7 +50,7 @@
 
 ## 边界
 
-- turn 与 session 的断言在**记录时快照**：session 断言之后再发生的轮次不会改变已记录断言的评估材料。要看「到最后为止的全部」，挂 `t`。
+- turn 与 session 的断言在**记录时 Run**：session 断言之后再发生的轮次不会改变已记录断言的评估材料。要看「到最后为止的全部」，挂 `t`。
 - `t.newSession()` 开的 session 事件**仍会汇入** `t.*` 的 attempt 级聚合断言；但不进入 `t.reply` / `t.events` 这类主 session 即时读取视图。
 - Turn 不能继续驱动会话——下一轮仍从 `t` 或对应 session 调用 `send`。
 - 评 diff、文件内容等非会话材料时，judge 用 `{ on }` 显式传值（见[裁判评质量](judge-quality.md)）。

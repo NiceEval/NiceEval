@@ -17,7 +17,7 @@ src/cli.ts              入口:parseArgs → 按 command 分派 → main() 收�
 └─ view/index.ts         只读路径:起本地 server 或 --out 静态导出(不经 run.ts)
 ```
 
-`show` 与 `view` 不依赖 `niceeval.config.ts`,不发现 eval、不跑 agent——它们直接读 `.niceeval/` 下已经落盘的快照(见 [Results](feature/results/architecture.md)),所以不进入 `run.ts` / `attempt.ts` 这条 Effect 调度链,是两条独立的同步-为主读取路径。
+`show` 与 `view` 不依赖 `niceeval.config.ts`,不发现 eval、不跑 agent——它们直接读 `.niceeval/` 下已经落盘的 Run(见 [Results](feature/record/architecture.md)),所以不进入 `run.ts` / `attempt.ts` 这条 Effect 调度链,是两条独立的同步-为主读取路径。
 
 ## 数据流:argv → 退出码
 
@@ -49,7 +49,7 @@ process.argv
                 verdict 定稿时先原子登记注册表、再移出集合,见 feature/sandbox/architecture.md)
                 → coordinator.stopDynamic() → 把 coordinator 累计的诊断
                 折成 InvocationCompletion → coordinator.finish({ summary, completion, paths, json, junit }) 打印
-                最终摘要与快照路径 → 按 CompletionStatus 与 evalLevelStats 折叠的 verdict 统一计算退出码
+                最终摘要与 Run 路径 → 按 CompletionStatus 与 evalLevelStats 折叠的 verdict 统一计算退出码
 ```
 
 `exp` 是唯一进入 Effect 调度核心(`run.ts` → `attempt.ts`)的分支;其余命令要么是一次性的同步动作,要么是只读路径,不需要结构化并发或资源生命周期管理,因而不用 Effect(见下节)。

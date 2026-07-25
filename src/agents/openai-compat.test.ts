@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // 「Usage、facts 与失败命令证据落盘」桶恒互斥归一:Chat Completions / Responses 两种形状的
 // cached_tokens 都是输入总量的子集,落 inputTokens 前扣掉;缺 cached 明细时总量原样保留。
 // bug: memory/estimatecost-openai-inclusive-cache-double-billed.md

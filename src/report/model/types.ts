@@ -376,7 +376,7 @@ export type ScoringComposition = "pass" | "points" | "mixed";
 /**
  * 一个范围的摘要:快照时间窗、experiment / eval / attempt 数、两级判定计票、端到端通过率
  * 和总成本。eval 的身份键是 experimentId + evalId;data 恒携带两级计票,渲染面显示哪一级
- * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/components/summaries/scope-summary.md)。
+ * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/components/summaries/sample-summary.md)。
  */
 export interface ScopeSummaryData {
   /** 贡献当前数据的快照时间范围;空范围为 null,不编造当前时间。 */
@@ -420,7 +420,7 @@ export interface HeroData {
 }
 
 /**
- * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/components/site/snapshot-diagnostics.md):
+ * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/components/site/run-diagnostics.md):
  * 只携带 experimentId / startedAt / DiagnosticRecord,不带 Snapshot 本体、`evals` 或
  * `AttemptHandle`,避免把文件读取能力拖进浏览器边界。
  */
@@ -744,7 +744,7 @@ export interface AttemptConversationData {
   locator: AttemptLocator;
   rounds: AttemptConversationRound[];
   /**
-   * `commands.json` 的投影(见 docs/feature/results/architecture.md#commandsjson):按关联
+   * `commands.json` 的投影(见 docs/feature/record/architecture.md#commandsjson):按关联
    * timing 节点(`timingNodeId` 对应 `PhaseTiming.children` 中 `kind === "command"` 的节点)
    * 的 `startOffsetMs` 排序;关联不到 timing 节点的排在最后,不按数组偶然顺序猜时间。没有失败
    * 命令时字段省略,不摆空数组。
@@ -766,7 +766,7 @@ export interface AttemptDiagnosticsData {
  * - `turns`/`toolCalls`:events 派生(与 `o11y.json` 行为摘要同源),只在有非空 events 时出现,
  *   哪怕派生值恰好是 0(有 events 但零轮/零工具调用是观测到的事实,不是缺失)。
  * - `usage`:落盘 `Usage` 原样,只在 `result.usage` 存在时出现。桶恒互斥,`inputTokens` 本身
- *   就是未缓存输入(契约见 docs/feature/results/architecture.md#usage);"uncached in" 标注只在
+ *   就是未缓存输入(契约见 docs/feature/record/architecture.md#usage);"uncached in" 标注只在
  *   `cacheReadTokens` 在场时由 face 层给出,不派生第二个字段。
  * - `estimatedCostUSD`:能算出成本(`usage.costUSD` 或 `result.estimatedCostUSD`)时才出现。
  *

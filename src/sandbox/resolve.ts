@@ -76,7 +76,7 @@ export function sandboxRecommendedConcurrency(opt: SandboxOption | undefined): n
 /**
  * ExperimentRunInfo.sandbox 的投影:provider 名 + 公开参数(镜像/快照/模板/runtime)+ 配置指纹。
  * 参数只经这个投影落盘——token、凭据路径永不进来;defineSandbox 自定义 provider 未实现
- * `publicConfig()` 时只落 provider 名(见 docs/feature/results/architecture.md)。
+ * `publicConfig()` 时只落 provider 名(见 docs/feature/record/architecture.md)。
  */
 export function sandboxRunInfo(
   opt: SandboxOption | undefined,

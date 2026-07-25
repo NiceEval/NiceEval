@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // 「Usage、facts 与失败命令证据落盘」桶恒互斥归一:AI SDK 的 inputTokens 是含缓存明细的
 // 输入总量,落桶前扣掉在场的 cacheRead / cacheWrite 明细。
 // bug: memory/estimatecost-openai-inclusive-cache-double-billed.md

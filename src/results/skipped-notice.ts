@@ -16,7 +16,7 @@ export interface SkippedVersionGroup {
 /**
  * 把 `skipped` 拆成「可按版本分组给出统一 npx 建议的」与「其余原样列出的」两部分。
  * 只有 reason 为 `incompatible-version` 且 `producer.name === "niceeval"`、`producer.version`
- * 存在时才分组——第三方 harness 如实报名字版本、不拼 npx(docs/feature/results/library.md 的裁决);
+ * 存在时才分组——第三方 harness 如实报名字版本、不拼 npx(docs/feature/record/library.md 的裁决);
  * 版本信息缺失时也没有可执行的统一建议,归入 `rest`。分组键是 `(producer.version, schemaVersion)`,
  * 因为同一 producer.version 理论上 schemaVersion 恒定,但落盘可能来自更旧的 patch 版本,
  * 拆开更保守。

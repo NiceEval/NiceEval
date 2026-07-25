@@ -9,7 +9,7 @@
 | 跨 eval 累积状态,状态在一个中心服务里 | 实验级 setup/teardown + `maxConcurrency: 1` | [3](#3-跨-eval-累积记忆状态在中心服务里) |
 | agent 老撞 429,只想给这个实验降速 | `maxConcurrency: N` | [4](#4-agent-老撞限额给这个实验单独降速) |
 | agent 限额按用户计并发 run 数,重试一直撞 | `maxConcurrency: N` | [4](#4-agent-老撞限额给这个实验单独降速) |
-| 想要「过了就停,没过才跑下一次」 | `runs` + `earlyExit` + `maxConcurrency: 1` | [5](#5-严格重试过了就停没过才跑下一次) |
+| 想要「过了就停,没过才跑下一次」 | `attempts` + `earlyExit` + `maxConcurrency: 1` | [5](#5-严格重试过了就停没过才跑下一次) |
 | 沙箱钩子要共享状态,但不想牺牲并发 | `WeakMap` 按 sandbox 存取 | [6](#6-并发下钩子共享状态不想串行) |
 | 在本机工作树上跑(`localSandbox`) | 什么都不配,天然串行 | [7](#7-本地工作树天然串行不用配) |
 | 整体太慢 / 整体撞限流 | `--max-concurrency` | [8](#8-全局吞吐--max-concurrency-什么时候调) |
@@ -105,14 +105,14 @@ export default defineExperiment({
 export default defineExperiment({
   agent: claudeCode({ model: "claude-sonnet-5" }),
   evals: "*",
-  runs: 3,
+  attempts: 3,
   earlyExit: true,
   maxConcurrency: 1,   // 名额只有一张,同 eval 的 attempt 被挤成一个接一个
   sandbox: dockerSandbox(),
 });
 ```
 
-**你会看到**:每条 eval 先跑第 1 次;`passed` 则第 2、3 次直接省掉,没过才派发下一次。不配 `maxConcurrency: 1` 时 `runs: 3` 会一起派发,earlyExit 只能省掉还没开跑的那部分。细节见 [Runner · 首过即停](../../../runner.md#首过即停earlyexit),`--early-exit` flag 的全流程见[输入面用例](early-exit.md)。
+**你会看到**:每条 eval 先跑第 1 次;`passed` 则第 2、3 次直接省掉,没过才派发下一次。不配 `maxConcurrency: 1` 时 `attempts: 3` 会一起派发,earlyExit 只能省掉还没开跑的那部分。细节见 [Runner · 首过即停](../../../runner.md#首过即停earlyexit),`--early-exit` flag 的全流程见[输入面用例](early-exit.md)。
 
 ## 6. 并发下钩子共享状态,不想串行
 

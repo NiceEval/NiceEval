@@ -15,12 +15,12 @@ fixture 是一个已接入 niceeval 且跑出过结果的用户项目切片：�
 | 特征 | 支撑的题面 |
 |---|---|
 | 多 experiment group | 组间隔离与「先选对 scope」 |
-| 视图由多快照组成、含 stale-verdict 警告（flagged experiments） | 警告语义与重跑建议 |
+| 视图由多 Run 组成、含 stale-verdict 警告（flagged experiments） | 警告语义与重跑建议 |
 | failed 与 errored 并存 | 断言失败与 sandbox / 运行错误是两类不同诊断 |
 | 成本、时长、通过率跨度大 | 横向对比题的区分度 |
 | attempt execution 有实质内容（thinking、工具调用、失败线索在 transcript 里） | 深挖题的答案落点 |
 
-第一份 fixture 从 coding-agent-memory-evals（多 coding agent × 多 memory 方案的对比评估项目）导出。导出裁剪规则：只收组成当前 `show` 视图的快照及其 attempt 产物（`events.json`、`trace.json`），历史快照不进 fixture；裁剪后的数据必须仍能让 `niceeval show` 完整复现出题时的视图。
+第一份 fixture 从 coding-agent-memory-evals（多 coding agent × 多 memory 方案的对比评估项目）导出。导出裁剪规则：只收组成当前 `show` 视图的 Run 及其 attempt 产物（`events.json`、`trace.json`），历史 Run 不进 fixture；裁剪后的数据必须仍能让 `niceeval show` 完整复现出题时的视图。
 
 每次运行把 fixture 复制进隔离 workspace 并注入候选 niceeval tarball（注入模型同 [E2E 的候选包注入](../testing/e2e/README.md)），agent 对结果数据只读探查。数据永不重跑，题库的标准答案在出题时由人工从这份数据核对并随 fixture 签入——数据不变，答案就不腐烂。
 

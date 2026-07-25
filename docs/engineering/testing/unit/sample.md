@@ -1,0 +1,81 @@
+# Sample 怎么测
+
+契约来源：
+
+- [Sample](../../../feature/sample/README.md)
+- [Library](../../../feature/sample/library.md)
+- [局部补跑之后，两个口径分别给出什么](../../../feature/sample/use-case/partial-rerun.md)
+
+Sample 测试分为两个选择口径、覆盖事实、时效与 `fresh`、转换算子、去重和警告全集。被测对象是**从
+一份 Record 到一批 attempt 的选择逻辑**；落盘格式与 artifact 读取归
+[record.md](record.md)。
+
+本篇不 fake：构造内存记录图或真实临时目录，直接调选择器。真实运行的端到端读面由
+[E2E 功能域 · 报告与读面](../e2e/report.md)验收。
+
+## Fixture 规范
+
+**内存记录图**是本篇的主要输入。Builder 必须要求写出会影响选择与身份的字段——`startedAt` 不由全局
+自增器偷偷生成（它是去重身份的一部分），`configHash` 不由 builder 默认填成同一个值（它是跨 Run
+拼接的唯一判据）。测试读者必须能从 case 看出两个 Run 该不该拼在一起、两条 attempt 该不该合并（规则见
+[Harness](harness.md)）：
+
+```ts
+interface RunSpec {
+  readonly experimentId: string;
+  readonly startedAt: string;
+  readonly configHash: string | undefined;
+  readonly completedAt?: string;
+  readonly knownEvalIds?: readonly string[];
+  readonly attempts: readonly AttemptSpec[];
+}
+```
+
+**区分力要求**：每条覆盖类别的 fixture 必须让被测规则与它的错误实现得到**不同**答案。「按 Run 选择」
+「逐 Eval 拼接」「平铺 attempt 后再选」在同一份 fixture 上必须三个答案互不相同，否则这份 fixture 证明
+不了任何一条。
+
+## 观察面
+
+- **选择面**：`mode`、`attempts`（已物化的口径结果）、`runs`（真实来源集合）。
+- **覆盖面**：`coverage[].knownEvalIds` / `missingEvalIds`。
+- **警告面**：`warnings[].kind` 与各自的结构化字段、`command` 有无。
+- **身份保持**：每条选中 attempt 的 `ref` 与 locator 仍指向原来源，不被选择过程改写。
+
+## 覆盖规范
+
+- **`latestRuns`**：每个 Experiment 只取最新一次 Run。不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
+  该 Run 没跑的 Eval 进 `coverage.missingEvalIds`，不从旧 Run 补。
+- **`latestPerEval`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准
+  不等的旧 Run 不贡献，该 Eval 留在缺口里；`runs` 保留全部真实来源，同一 Experiment 可以有多个；
+  不合成报告专用 Run。fixture 必须让同一 Experiment 同时有两个存活来源，且其中一个 `configHash`
+  不同——「拼了不该拼的」与「该拼的没拼」是两个方向的失败，都要有 case 抓。
+- **缺 `configHash` 的 Run**：只与自己可比，不参与任何拼接；这条与「configHash 相等」是两个分支，
+  不合并成一个 case。
+- **覆盖事实**：`knownEvalIds` 用并集分母（本地历史 ∪ 各 Run 携带的 `knownEvalIds`），不是「优先
+  字段」——fixture 要构造「本地并集比 Run 携带的更大」的情形，证明优先字段实现会让分母缩水。
+  `missingEvalIds` 与命令行范围求交。
+- **时效与 `fresh`**：`attempt.carried` 是 `artifactBase` 的读取面投影；携带条目与来自更早 Run 的
+  attempt 都属于历史执行。`fresh: true` 在两个口径下都排除历史执行，被排除的 Eval 进覆盖缺口。
+  fixture 同时含携带条目与跨 Run 拼入条目，使「只排携带」「只排旧来源」「两者都排」三种实现得到不同
+  答案。时效不产生 warning。
+- **转换算子**：`pipe` 返回新 Sample、不改原样本（原样本的四个面逐字段不变）；每个算子后
+  `runs` 移除已无 attempt 贡献的来源、`coverage` 用**原始 `knownEvalIds`** 重算 `missingEvalIds`
+  （分母不随删减缩水）、`warnings` 按真实 Run 来源修剪且非实验作用域的 kind 保留。算子清单是闭集：
+  `filterBy` / `onlyExperiments` / `dropExperiments` / `onlyEvals` / `dropEvals` / `freshOnly`
+  各有一条；多算子串联的顺序无关性只在可交换的组合上断言，不假设全部可交换。
+- **去重**：身份键 `(experimentId, evalId, attempt, startedAt)`，重复取最新 Run 里的那份且 `ref`
+  落在最新落盘上；`startedAt` 缺失时宁可不去重也不误删并出 `missing-startedAt` 警告。两个选择器都
+  已内置这条——`sample.attempts` 拿到手即去重后；`dedupeAttempts` 直调与经选择器走到的结果同值。
+- **警告全集**：`unfinished-run`、`dangling-evidence`、`unreadable-run`、`missing-startedAt`
+  四个 kind 各有一条，断言 `kind`、结构化字段齐全、`message` 以下一步收尾、该带 `command` 的带且
+  已替换真实 id。`missing-startedAt` 不透出到组件数据。未收尾 Run 不进 `unreadable`——它的 attempt
+  照常被选中，只是同批产生 `unfinished-run`。
+
+## 不这样测
+
+- 不让 builder 隐藏 `startedAt`、`configHash`、`attempt` 等影响选择与身份的字段。
+- 不用同一份 fixture 覆盖两个口径——那份 fixture 必然让两者答案相同，于是两条都证明不了。
+- 不在测试里复刻选择算法或去重算法再对答案；期望的 attempt 集合写死在 case 里。
+- 不把「缺口为空」当成默认期望；每条选择类别都要有一个缺口非空的 case。
+- 不断言渲染好的 warning 文案措辞；断言 `kind`、结构化字段与「`command` 是否存在」。

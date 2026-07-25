@@ -1,6 +1,6 @@
-// cases: docs/engineering/testing/unit/results.md
-// show / view 两宿主的 Scope 选择等价契约(docs/feature/results/architecture.md「Selection 是计算入口」;
-// docs/feature/results/library.md「选择快照」)。
+// cases: docs/engineering/testing/unit/record.md
+// show / view 两宿主的 Scope 选择等价契约(docs/feature/record/architecture.md「Selection 是计算入口」;
+// docs/feature/record/library.md「选择快照」)。
 //
 // 守护的不变量:同一结果根、同一组范围参数下,两扇门(niceeval show 的 text 面、niceeval view 的
 // web 面)传给 selectCurrentResults(results, scope) 同形的 scope({ experiment, patterns }),必须
@@ -12,7 +12,7 @@
 // docs/engineering/testing/e2e/report.md 的读面 CLI 行为(§4)与渲染面(§5)验收。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
-// 依据 docs/feature/results/architecture.md 的稳定磁盘契约(与 show.test.ts / view/data.test.ts 同一写法)。
+// 依据 docs/feature/record/architecture.md 的稳定磁盘契约(与 show.test.ts / view/data.test.ts 同一写法)。
 
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -42,7 +42,7 @@ function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}):
   return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
 }
 
-/** 实验目录名清洗:与 docs/feature/results/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
+/** 实验目录名清洗:与 docs/feature/record/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
 function cleanDirName(id: string): string {
   return id.replace(/[^\w.@-]/g, "_");
 }
@@ -150,7 +150,7 @@ function normalizeWarning(w: ScopeWarning): NormWarning {
 /**
  * Selection 的「按 experiment × eval」视图现在从 `selection.attempts` 分组重建,不再读
  * `snapshot.evals`——真实 Snapshot 各自持有完整(未按现刻水位收窄的)evals,只有物化的
- * `Scope.attempts` 才是这次选择的真正结果(docs/feature/results/library.md「官方现刻水位」)。
+ * `Scope.attempts` 才是这次选择的真正结果(docs/feature/record/library.md「官方现刻水位」)。
  */
 function normalizeSelection(selection: Scope): NormSelection {
   const byExperiment = new Map<string, Map<string, NormAttempt[]>>();

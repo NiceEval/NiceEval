@@ -63,7 +63,7 @@ Attempt 首页在错误摘要后明确提示
 ```
 
 - Agent 事件卡句柄语法是 `t<turn 序号>.c<轮内卡片序号>`，两个序号都从 1 起，由 `events.json` 的事件序确定性派生。失败 Sandbox 命令卡使用 `cmd<序号>`，按 `commands.json` 中 `timingNodeId` 对应节点的 `startOffsetMs` 稳定排序后从 1 编号。同一份 artifact 上句柄永远指同一张卡片，可以写进脚本与笔记。
-- `--expand <handle>` 与 `--execution` 组合、要求恰好一个 attempt 的范围，输出该卡片的完整落盘内容（原始换行，不再截断）。落盘时已被 [256 KiB 上限](../../results/architecture.md#大值截断)截断的值如实带 `truncated` 标注与原始字节数——展开还原的是落盘证据，不是运行时全量。
+- `--expand <handle>` 与 `--execution` 组合、要求恰好一个 attempt 的范围，输出该卡片的完整落盘内容（原始换行，不再截断）。落盘时已被 [256 KiB 上限](../../record/architecture.md#大值截断)截断的值如实带 `truncated` 标注与原始字节数——展开还原的是落盘证据，不是运行时全量。
 - 句柄未命中（turn 或卡片序号超界）按用法错误退出，并报该 attempt 实际的 turn 数与该 turn 的卡片数，不猜相邻卡片。
 - JSON 面恒为完整 resolve 产物，不受预览预算约束；`--expand` 与 `--json` 组合因此是用法错误的推论，不是特判（[形状](json.md)）。
 

@@ -155,6 +155,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [record-sample-report-three-layer-split](record-sample-report-three-layer-split.md) — 裁决(2026-07-25):`niceeval/results` 拆成 record(事实)/ sample(选择)三层 + 整套改名(Snapshot→Run、Scope→Sample、latest/current→latestRuns/latestPerEval、copySnapshots→publish、runs→attempts);configHash 合掉两张重叠清单、删掉「携带重打 fingerprint」这条改写历史字段的例外、新增 evidenceState 三态与 enhance 具名能力位;否决 Sample 加聚合算子与只改名不分层;附批量改名两次误伤(scope 多义、rglob 扫进 node_modules 改了 392 个已发布包文件)的修法
 - [theme-as-separate-artifact](theme-as-separate-artifact.md) — 裁决(2026-07-25):主题上提为与报告并列的可分发制品(四档链 `--theme`→外壳→config→内建 `basalt`,自带 CSS,令牌扩到中性面/字体/圆角),seriesPins 搬回报告外壳;否决主题 extends、跨档深合并、读者覆盖 accent、社区注册表;实现前必读令牌面对不上那一段
 - [report-components-generic-primitives-ruling](report-components-generic-primitives-ruling.md) — 裁决(2026-07-25):报告组件通用化成原语/数据源/食谱三层,卡点是单元格类型太弱(压成 string 断证据链)不是"要不要开放选列";升 Cell 判别联合 + subRows 后 31 个组件塌成 8 原语;推翻上一条的"实体列表不开放选列",放弃"组件没有旋钮"这条一致性保证
 - [report-components-unified-component-tree](report-components-unified-component-tree.md) — 裁决(2026-07-25):报告组件库整体统一为组件树(绑定与局部配置=结构子节点),MetricLine/MetricBars/MetricScatter 换成 Recharts 词汇的图表族,Scoreboard 的 subject 函数+权重前缀表换 `<Subject>`/`<Question>`,DeltaTable 换 `<Condition baseline>`;否决实体列表开放选列与组合组件用子节点覆盖装配;落点 docs/feature/reports/components/

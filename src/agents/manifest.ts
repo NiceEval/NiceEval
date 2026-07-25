@@ -1,5 +1,5 @@
 // 安装 Manifest 的落点与读写(定稿见 docs/feature/adapters/architecture/coding-agent-extensions.md
-// 「安装 Manifest」、docs/feature/results/architecture.md「agent-setup.json」)。
+// 「安装 Manifest」、docs/feature/record/architecture.md「agent-setup.json」)。
 //
 // 分工:**adapter 写**(setup 收尾,知道自己装了什么)、**运行器读**(把它抬成 attempt artifact)。
 // 中间那层只是一个双方都认的沙箱路径 —— core 不解释 manifest 内容,也不按 agent 名字分支;

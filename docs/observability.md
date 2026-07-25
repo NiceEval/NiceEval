@@ -40,7 +40,7 @@ interface O11ySummary {
 }
 ```
 
-`O11ySummary` 只承载**从标准事件流可重算的行为计数**([缓存定位](feature/results/architecture.md#o11yjson))。token 用量、估算成本与耗时不在其中:权威分别是 `result.json` 的 `Usage`、`estimatedCostUSD` 与 `durationMs` / `phases`,同一事实不落第二份。
+`O11ySummary` 只承载**从标准事件流可重算的行为计数**([缓存定位](feature/record/architecture.md#o11yjson))。token 用量、估算成本与耗时不在其中:权威分别是 `result.json` 的 `Usage`、`estimatedCostUSD` 与 `durationMs` / `phases`,同一事实不落第二份。
 
 ### 注入沙箱:让测试断言「行为」
 
@@ -159,15 +159,15 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 
 ## Artifact 落盘
 
-落盘单位是**结果快照**(一个 Experiment 的执行水位):默认 `Artifacts()` reporter 把每个实验写进独立的快照目录,当前目录结构是:
+落盘单位是**结果 Run**(一个 Experiment 的执行水位):默认 `Artifacts()` reporter 把每个实验写进独立的 Run 目录,当前目录结构是:
 
 ```text
 .niceeval/
   <experiment>/                      # 实验目录:experimentId 清洗后的名字
-    <timestamp>-<suffix>/            # 快照目录:时间戳 + 随机后缀,独占创建
-      snapshot.json                  # 快照元数据(快照开始时写入,收尾补 completedAt + 快照诊断)
+    <timestamp>-<suffix>/            # Run 目录:时间戳 + 随机后缀,独占创建
+      run.json                  # Run 元数据(Run 开始时写入,收尾补 completedAt + Run 诊断)
       <evalId>/a<attempt>/           # 单个 eval attempt 的目录
-        result.json                  # 判决、断言、结构化错误/diagnostics、用量 —— attempt 完成时一次写成
+        result.json                  # 判定、断言、结构化错误/diagnostics、用量 —— attempt 完成时一次写成
         events.json
         sources.json
         trace.json
@@ -175,7 +175,7 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
         diff.json
 ```
 
-`snapshot.json` 只放身份、版本元数据与快照级事实(`experimentId`、`agent`、`model`、`startedAt`、收尾补写的 `completedAt` 与 `diagnostics`),**不含任何逐 attempt 数据**。判决、断言、结构化执行错误与 attempt diagnostics 的权威记录住在每个 attempt 目录的 `result.json`——attempt 的 cleanup/teardown/stop 完成后一次写成,之后不再改写;瞬时 progress 不落盘。通过数、失败数、总用量、总成本这类聚合不落盘,由读取面([Results Lib](feature/results/library.md)的 `openResults`)逐条推导。每个 attempt 的重数据按需写入自己的目录,文件内容都是 JSON array/object,不是 JSONL / NDJSON。完整 schema、版本号设计、路径转义规则和 view 读取规则见 [Results Format](feature/results/architecture.md)。
+`run.json` 只放身份、版本元数据与 Run 级事实(`experimentId`、`agent`、`model`、`startedAt`、收尾补写的 `completedAt` 与 `diagnostics`),**不含任何逐 attempt 数据**。判定、断言、结构化执行错误与 attempt diagnostics 的权威记录住在每个 attempt 目录的 `result.json`——attempt 的 cleanup/teardown/stop 完成后一次写成,之后不再改写;瞬时 progress 不落盘。通过数、失败数、总用量、总成本这类聚合不落盘,由读取面([Record Lib](feature/record/library.md)的 `openRecord`)逐条推导。每个 attempt 的重数据按需写入自己的目录,文件内容都是 JSON array/object,不是 JSONL / NDJSON。完整 schema、版本号设计、路径转义规则和 view 读取规则见 [Record Format](feature/record/architecture.md)。
 
 `result.json` 形如:
 
@@ -207,19 +207,19 @@ artifact 是机器可读的,可回放、可二次分析、可喂给下游 dashbo
 
 ### 用量从哪来
 
-`Usage`(`{ inputTokens?, outputTokens?, cacheReadTokens?, cacheCreationTokens?, reasoningTokens?, requests?, costUSD? }`,字段契约见 [Results · Usage](feature/results/architecture.md#usage))按 transport 取得,作者通常**什么都不用做**:
+`Usage`(`{ inputTokens?, outputTokens?, cacheReadTokens?, cacheCreationTokens?, reasoningTokens?, requests?, costUSD? }`,字段契约见 [Results · Usage](feature/record/architecture.md#usage))按 transport 取得,作者通常**什么都不用做**:
 
 - **远程 agent** —— 你在 `send` 里把模型返回的 usage(或你服务响应里带的 usage,若它回了)一并返回。
 - **沙箱 coding agent** —— **不必手填**:agent 的 JSONL transcript 里本就逐条带 token 用量,transcript 解析器(`o11y/parsers/<agent>.ts`)抠出来。这正是 agent-eval 留下的 TODO。
 
-每轮的用量来源二选一:remote agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 attempt 用量(落进 `result.json` 的 [`Usage`](feature/results/architecture.md#usage));reporter 再跨 eval 累加 → 整个 run 的用量。
+每轮的用量来源二选一:remote agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 attempt 用量(落进 `result.json` 的 [`Usage`](feature/record/architecture.md#usage));reporter 再跨 eval 累加 → 整个 run 的用量。
 
 ### 换算成本:价格表从哪来
 
 token 数能可靠拿到;难点是 token→$ 的价格表 —— 价格会随时间、provider、网关、企业折扣、自托管而变,写死必然过期。所以成本解析是**分层的,且"实测优先于估算"**:
 
 1. **网关实测成本(最高优先)。** 不少网关(Vercel AI Gateway、OpenRouter…)每次请求直接回真实 cost。只要 agent 把它带进 `Turn.usage.costUSD`,就直接用它 —— **根本不需要价格表**。这绕开了一大半场景。
-2. **内置默认价格表 ⊕ 用户覆盖。** 没有实测时,用观测到的模型查价。niceeval 内置一份**带版本的快照**覆盖常见模型(零配置即有 $),用户在 config 里**覆盖或补充**(网关/企业折扣/自托管/自定义费率,用户赢):
+2. **内置默认价格表 ⊕ 用户覆盖。** 没有实测时,用观测到的模型查价。niceeval 内置一份**带版本的 Run**覆盖常见模型(零配置即有 $),用户在 config 里**覆盖或补充**(网关/企业折扣/自托管/自定义费率,用户赢):
 
    ```typescript
    // niceeval.config.ts —— 合并在内置默认之上,用户优先
@@ -233,9 +233,9 @@ token 数能可靠拿到;难点是 token→$ 的价格表 —— 价格会随时
    ```
 3. **未知模型 → 只报 token、不报 $,并打一行 warning** 列出没映射的模型(绝不静默瞎猜)。
 
-`estimatedCostUSD = inputTokens×in价 + outputTokens×out价 + cacheReadTokens×cacheRead价 + cacheCreationTokens×cacheWrite价`,落进每个 attempt 的 `result.json`。逐桶乘单价直接相加成立的前提是 token 桶**恒互斥**——`inputTokens` 是未缓存输入,cache 桶不在其中重复出现;把各协议五花八门的原生口径归一到互斥,是 adapter 的落值义务(契约见 [Results · Usage](feature/results/architecture.md#usage),各协议明细见各 adapter 的 cost 文档)。cache 桶缺专门单价时按 in 价计——宁可高估,不静默低估。字段名带 **estimated** 是有意的:它是估算,真实账单以 provider 发票为准 —— 这也正是「网关实测」和「用户覆盖」两条通道存在的原因。
+`estimatedCostUSD = inputTokens×in价 + outputTokens×out价 + cacheReadTokens×cacheRead价 + cacheCreationTokens×cacheWrite价`,落进每个 attempt 的 `result.json`。逐桶乘单价直接相加成立的前提是 token 桶**恒互斥**——`inputTokens` 是未缓存输入,cache 桶不在其中重复出现;把各协议五花八门的原生口径归一到互斥,是 adapter 的落值义务(契约见 [Results · Usage](feature/record/architecture.md#usage),各协议明细见各 adapter 的 cost 文档)。cache 桶缺专门单价时按 in 价计——宁可高估,不静默低估。字段名带 **estimated** 是有意的:它是估算,真实账单以 provider 发票为准 —— 这也正是「网关实测」和「用户覆盖」两条通道存在的原因。
 
-> 设计取舍:价格是**会过期的数据**,所以内置快照只为「零配置能用」,不写死进核心逻辑;准确性靠用户覆盖与网关实测兜底,未知则诚实降级。快照随版本更新,也可考虑 `pricing: "auto"` 从社区维护的价目拉取(默认仍用离线快照,保证确定性)。
+> 设计取舍:价格是**会过期的数据**,所以内置 Run 只为「零配置能用」,不写死进核心逻辑;准确性靠用户覆盖与网关实测兜底,未知则诚实降级。Run 随版本更新,也可考虑 `pricing: "auto"` 从社区维护的价目拉取(默认仍用离线 Run,保证确定性)。
 
 ### 报告里长什么样
 
@@ -259,7 +259,7 @@ Run totals:  3 evals · 142k tok · $1.12   (agent: claude-code)
 }
 ```
 
-run 级合计不落盘:总时长、总用量、总成本由消费方([Results Lib](feature/results/library.md)的 `openResults` 逐条推导,或 reporter 层现算)累加得到。这让「跨 agent 对比」从只有 pass-rate 变成 **pass-rate × 时间 × $**,也能算出 pass@$1(单位成本下的通过率)这类指标。
+run 级合计不落盘:总时长、总用量、总成本由消费方([Record Lib](feature/record/library.md)的 `openRecord` 逐条推导,或 reporter 层现算)累加得到。这让「跨 agent 对比」从只有 pass-rate 变成 **pass-rate × 时间 × $**,也能算出 pass@$1(单位成本下的通过率)这类指标。
 
 ### 时间也是一等指标(效率三件套)
 
@@ -288,7 +288,7 @@ Runner 的 turn 包络与 OTel 子树不是两份互斥的计时:前者含 adapt
 
 ## 结果可视化:`niceeval view`
 
-控制台是「当下」的;但你常常想**事后看图**:这次比上次贵了多少?哪个 agent 性价比高?所以 niceeval 提供一个本地查看器(对标 agent-eval 的 playground:一个读结果目录的 web UI),只读 `.niceeval/<experiment>/<snapshot>/` 下的 `snapshot.json` 与逐 attempt `result.json` 这些**结构化 artifact**,不连任何外部服务。结果落盘格式见 [Results Format](feature/results/architecture.md);查看器见 [View](feature/reports/view.md);对比两次运行用报告里的成对差异表([`DeltaTable`](feature/reports/components/tables/delta-table.md))按 snapshot 维度表达。
+控制台是「当下」的;但你常常想**事后看图**:这次比上次贵了多少?哪个 agent 性价比高?所以 niceeval 提供一个本地查看器(对标 agent-eval 的 playground:一个读结果目录的 web UI),只读 `.niceeval/<experiment>/<run>/` 下的 `run.json` 与逐 attempt `result.json` 这些**结构化 artifact**,不连任何外部服务。结果落盘格式见 [Record Format](feature/record/architecture.md);查看器见 [View](feature/reports/view.md);对比两次运行用报告里的成对差异表([`DeltaTable`](feature/reports/components/tables/delta-table.md))按 run 维度表达。
 
 可视化能力完全建立在「 artifact 结构化 + 带 usage/cost」之上 —— 换句话说,**只要数据采全了,图是免费的**;不想用内置查看器,同一份 artifact 也能喂给下游 dashboard。
 
@@ -309,7 +309,7 @@ interface Reporter {
 
 Reporter 只负责把完成结果送到别处,不负责终端展示——运行中的反馈(人读文本 / `--json` 事件流)由反馈 coordinator 负责,是独立于 Reporter 的另一条通道(见 [Experiments · CLI 反馈模型](feature/experiments/cli.md))。报告器在**独立串行队列**上被回调,不阻塞执行池(见 [Runner](runner.md#调度有界并发))。内置:
 
-- **`Artifacts()`** —— CLI 默认自带、视为 required(见 [CLI · required reporter](cli.md#required-reporter)):按实验写快照目录(`.niceeval/<experiment>/<snapshot>/`):`snapshot.json` 快照元数据 + 每个 attempt 的 `result.json`(判决、断言、用量,一次写成)与按需生成的 `commands.json`、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`,供 `niceeval view` 读取。具体格式见 [Results Format](feature/results/architecture.md)。
+- **`Artifacts()`** —— CLI 默认自带、视为 required(见 [CLI · required reporter](cli.md#required-reporter)):按实验写 Run 目录(`.niceeval/<experiment>/<run>/`):`run.json` Run 元数据 + 每个 attempt 的 `result.json`(判定、断言、用量,一次写成)与按需生成的 `commands.json`、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`,供 `niceeval view` 读取。具体格式见 [Record Format](feature/record/architecture.md)。
 - **`JUnit(path)`** —— JUnit XML,接 CI 测试报告 UI;CLI 显式传 `--junit <path>` 时同样视为 required,同目录临时文件 + 原子 rename 写入,不留半成品。
 - **`Json(path)`** —— 机器可读的整次 Invocation 聚合(含 `InvocationSummary`);只经 config 配置,没有对应 CLI flag——运行期机器面是 [`--json` 事件流](feature/experiments/cli.md#机器怎么读--json),运行后聚合走 `show --json`;显式配置时视为 required,写入语义同上。
 - **`Braintrust(config?)`** —— 把一次 Invocation 作为一个 Braintrust experiment 上报,每个 attempt 一行:soft 断言按名字记分,gate 断言记在 `gate:` 前缀下(实验 diff 里 gate 回归和 soft 分数回归用同一套机制看);metrics 带 start/end、token 用量与估算成本,metadata 带 agent / model / experiment / flags 身份维度与失败断言明细。`braintrust` 包是可选 peer 依赖(动态 import,没装时 `onInvocationStart` 报错并提示安装);鉴权走 `BRAINTRUST_API_KEY` 或工厂参数 `apiKey`。源码 `src/runner/reporters/braintrust.ts`。
@@ -334,6 +334,6 @@ eval 级 reporter 经作用域包装接入(`scopeReporter`,见 `src/runner/repor
 
 - [Scoring](feature/scoring/README.md) —— 作用域断言如何消费 o11y。
 - [Runner](runner.md) —— 报告队列与 artifact 落盘的调度。
-- [Results Format](feature/results/architecture.md) —— `.niceeval/<experiment>/<snapshot>/` 的目录结构与 JSON 文件契约。
+- [Record Format](feature/record/architecture.md) —— `.niceeval/<experiment>/<run>/` 的目录结构与 JSON 文件契约。
 - [编写 Adapter](feature/adapters/library/writing-an-adapter.md) / [流式协议与共享工具](feature/adapters/library/streaming.md) —— 接新 Agent 的解析器、采集和 reducer 组合方式。
 - [agent-eval 参考:采集 / 转换 / 落地三层](feature/adapters/reference/agent-eval.md) —— Vercel agent-eval 怎么写 adapter 的学习记录。

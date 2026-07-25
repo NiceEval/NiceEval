@@ -2,7 +2,7 @@
 
 `--report <名字|文件>` 替换默认 pages：带路径形的值按报告文件装载，其默认导出恒为 `defineReport` 产物（[树或配置对象形态](../library/shell.md)）；裸词查[内建视图名](../library/built-in.md)。`--history` 与 `--report` 互斥。locator 详情同样是一张 page。本页按 case 列出操作步骤；page 与外壳的字段契约见 [Library · 外壳与多页](../library/shell.md)。
 
-**索引命令携带完整上下文。** `show` 输出的每一条页索引命令都保留当前的 `--results`、`--report` 与位置参数。
+**索引命令携带完整上下文。** `show` 输出的每一条页索引命令都保留当前的 `--record`、`--report` 与位置参数。
 
 ## Case 1：单页文件——直接渲染
 
@@ -38,18 +38,18 @@ error: page "typo" not found in reports/site.tsx. Available pages: overview, exa
 
 ## Case 3：范围收窄与页选择正交
 
-位置参数（eval id 前缀）与 `--exp` 先收窄 Scope，`--page` 再选页；[全部页共享同一份收窄后的 Scope](../library/shell.md#行为约束)：
+位置参数（eval id 前缀）与 `--exp` 先收窄 Sample，`--page` 再选页；[全部页共享同一份收窄后的 Sample](../library/shell.md#行为约束)：
 
 ```sh
 $ niceeval show memory/swelancer --report reports/site.tsx --page exam
                                         # 只统计 memory/swelancer 前缀的 eval，再渲染成绩单页
-$ niceeval show --results tmp/published-results --report reports/site.tsx
-                                        # 换结果根后输出页索引；索引命令同样带 --results
+$ niceeval show --record tmp/published-results --report reports/site.tsx
+                                        # 换记录根后输出页索引；索引命令同样带 --record
 ```
 
 ## Case 5：attempt 下钻使用同一份报告定义
 
-报告声明了 attempt-input page 时，页里的 locator 命令保留 `--results` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Results evidence，不经 page content：
+报告声明了 attempt-input page 时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Results evidence，不经 page content：
 
 ```sh
 $ niceeval show --report reports/site.tsx --page exam    # 页里出现 @1qrdcfq8
@@ -85,5 +85,5 @@ error: no built-in report view named "site". Available: standard. To load a file
 
 - [Library · 外壳与多页](../library/shell.md) —— 页与外壳的字段穷尽。
 - [Library · 内建报告](../library/built-in.md) —— 裸 `show` 装载的定义本体。
-- [裸 `show` 的默认报告](default-report.md) —— 当前 Scope 的摘要、散点与实验详情。
+- [裸 `show` 的默认报告](default-report.md) —— 当前 Sample 的摘要、散点与实验详情。
 - [View](../view.md) —— 同一份文件在网页宿主的路由（`#/page/<id>`、`--page` 定初始页）。

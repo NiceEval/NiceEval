@@ -1,13 +1,13 @@
 # 裸 `show`：默认报告的 text 面
 
-没配 `config.report` 时，裸 `niceeval show` 装载[内建报告](../library/built-in.md)并渲染其首页（报告页），尾部附 Attempts、追踪两页的索引（配了就装载配置里那份，取值链见 [Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份）。页首是 `Hero`、`ScopeWarnings` 与 `SnapshotDiagnostics`，随后 `ExperimentComparison` 直接输出当前 Scope 的摘要、成本 × 主读数散点和 `ExperimentList`。散点 y 轴与榜单主列跟随 Scope 的主读数（[映射单点](../library/metrics.md#题型构成与主读数)）：本页示例都是通过制 Scope，读通过率；计分制 Scope 的同一页把 y 轴与主列换成总分、预排按总分（散点标题相应为「平均每个 eval 成本（越低越好） × 总分」）；混型 Scope 按题型并排两组散点与列表。整页组件树没有 `Section`，所以 text 面无框铺开——散点与宽表占满可用列宽；圆角面板只随 `Section` 出现（约定见 [Layout](../library/layout.md)），在 `AttemptDetail` 这类多区域详情页上。每个 experiment 的 eval 数与指标分母来自快照记录的 `selectedEvalIds`；未选择的 eval 不补成失败。实验列表保持 experiment → Eval → Attempt 层级。
+没配 `config.report` 时，裸 `niceeval show` 装载[内建报告](../library/built-in.md)并渲染其首页（报告页），尾部附 Attempts、追踪两页的索引（配了就装载配置里那份，取值链见 [Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份）。页首是 `Hero`、`SampleWarnings` 与 `RunDiagnostics`，随后 `ExperimentComparison` 直接输出当前 Sample 的摘要、成本 × 主读数散点和 `ExperimentList`。散点 y 轴与榜单主列跟随 Sample 的主读数（[映射单点](../library/metrics.md#题型构成与主读数)）：本页示例都是通过制 Sample，读通过率；计分制 Sample 的同一页把 y 轴与主列换成总分、预排按总分（散点标题相应为「平均每个 eval 成本（越低越好） × 总分」）；混型 Sample 按题型并排两组散点与列表。整页组件树没有 `Section`，所以 text 面无框铺开——散点与宽表占满可用列宽；圆角面板只随 `Section` 出现（约定见 [Layout](../library/layout.md)），在 `AttemptDetail` 这类多区域详情页上。每个 experiment 的 eval 数与指标分母来自 Run 记录的 `selectedEvalIds`；未选择的 eval 不补成失败。实验列表保持 experiment → Eval → Attempt 层级。
 
-Scope 内实验声明了 `labels: { line: … }` 时（下例每个实验声明了 `line` 与变体轴 `memory`），散点按线归类：
+Sample 内实验声明了 `labels: { line: … }` 时（下例每个实验声明了 `line` 与变体轴 `memory`），散点按线归类：
 
 ```sh
 $ niceeval show --exp memory
 Eval 运行结果
-最后运行 2026-07-12 18:08 · 由 5 份快照合成
+最后运行 2026-07-12 18:08 · 由 5 份 Run 合成
 
 平均每个 eval 成本（越低越好） × 端到端通过率 · 按 line 归类
  100% ┤
@@ -41,12 +41,12 @@ memory/codex-baseline     gpt-5.4   codex    1m 21s    25.0%   2 通过 · 6 失
 
 表下逐实验的 Eval / Attempt 层级与下面 dev-e2b 例一致，不重复。散点 x 轴是**平均每个 eval 成本**（表中成本列是实验总成本，除以题数得每题均值），`better: "lower"` 反向渲染——越右越省；标记字母按图例顺序分配：series 按显示键字典序（bub < claude < codex），series 内按 x 原始值升序，所以 claude 线是 B（baseline，$0.35/题）→ C（mempal，$0.55/题）。位移摘要的符号是原始差值：`成本 +$0.20` 表示每题贵了 $0.20，方向好坏由指标的 `better` 语义判断，摘要不替读者下结论。
 
-Scope 内没有任何 `line` 声明时按 agent 归类、不连线，图例行首是 agent 名：
+Sample 内没有任何 `line` 声明时按 agent 归类、不连线，图例行首是 agent 名：
 
 ```sh
 $ niceeval show --exp dev-e2b
 Eval 运行结果
-最后运行 2026-07-12 18:09 · 由 3 份快照合成
+最后运行 2026-07-12 18:09 · 由 3 份 Run 合成
 
 平均每个 eval 成本（越低越好） × 端到端通过率 · 按 agent 归类
  100% ┤
@@ -93,7 +93,7 @@ dev-e2b/codex-e2b
   ✓       └─ @1second2                            —                                           21.4s     $0.03
 ```
 
-携带或跨快照拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总 `↩ n/m attempts`；覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与指标分母（两条契约见 [ExperimentList](../components/entity-lists/experiment-list.md) 与[时效标注](../components/entity-lists/README.md#时效标注)）。
+携带或跨 Run 拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总 `↩ n/m attempts`；覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与指标分母（两条契约见 [ExperimentList](../components/entity-lists/experiment-list.md) 与[时效标注](../components/entity-lists/README.md#时效标注)）。
 
 locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。Result 单元格使用 [Scoring 定义的主失败断言摘要](../../scoring/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。绝不把该 attempt 的全部 assertion name 拼进表格——即使有几十条 assertions，一条 Attempt 子行也最多占两行。locator 本身就是证据入口；打开 Attempt 后再列完整断言与实际可执行的证据命令。
 

@@ -1,5 +1,5 @@
 // agent 归因 diff 的派生视图:从落盘事实(DiffWindow[])派生文件级摘要与终态读取。
-// 派生物可随时重算、不落盘——符合「聚合在消费方」铁律(docs/feature/results/architecture.md「diff.json」)。
+// 派生物可随时重算、不落盘——符合「聚合在消费方」铁律(docs/feature/record/architecture.md「diff.json」)。
 
 import type { DiffArtifact, DiffData, DiffFileSummary, DiffWindow, WindowChange } from "./types.ts";
 

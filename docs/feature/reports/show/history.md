@@ -1,14 +1,14 @@
 # `--history`：一个 eval 的执行时间轴
 
-`niceeval show <eval 前缀> --history` 回答「这道题历次跑下来发生了什么」。榜单只呈现当前 Scope 的汇总水位；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
+`niceeval show <eval 前缀> --history` 回答「这道题历次跑下来发生了什么」。榜单只呈现当前 Sample 的汇总水位；`--history` 把匹配的 eval 摊开成逐 attempt 的执行时间轴，从时间轴上任意一次执行都能继续下钻取证。
 
 ## 分节与行内字段
 
-Scope 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。节内是跨快照按 [attempt 身份键](../../results/library.md#身份键与去重)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与榜单同一[单行压缩形态](../../scoring/library/display.md#单行压缩形态)）、耗时、成本与 locator。locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
+Sample 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。节内是跨 Run 按 [attempt 身份键](../../record/library.md#身份键与去重)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与榜单同一[单行压缩形态](../../scoring/library/display.md#单行压缩形态)）、耗时、成本与 locator。locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
 
 ## 输出
 
-时间轴是有边界、可整体阅读的面板，每节按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：`experimentId · evalId` 嵌上边框左侧，执行数与通过 / 失败计数嵌上边框右侧；框外页首一行汇总 Scope 命中的范围。
+时间轴是有边界、可整体阅读的面板，每节按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：`experimentId · evalId` 嵌上边框左侧，执行数与通过 / 失败计数嵌上边框右侧；框外页首一行汇总 Sample 命中的范围。
 
 ```text
 $ niceeval show memory/swelancer --history
@@ -32,7 +32,7 @@ $ niceeval show memory/swelancer --history
 
 ## 与榜单水位的分工
 
-榜单聚合走 `current()` 的[可比性前提](../../results/library.md#官方现刻水位resultscurrent)：改过 model、flags 或 sandbox 后，旧配置快照覆盖的题不再拼入当前水位，只以覆盖占位行提示补跑。`--history` 站在这层过滤之外——时间轴不设可比性门槛，旧配置下的执行同样按时间在轴上。两个读数配合区分「时好时坏」的两种病因：红绿交替发生在同一套配置内，是 agent 行为不稳定，下钻对比失败与通过的两次执行；红绿分界正对配置改动，是快照级趋势，不归 `--history`，用报告库的[历史配方](../library/recipes.md#历史一个实验的逐次快照走势)。
+榜单聚合走 `latestPerEval()` 的[可比性前提](../../sample/library.md#两个选择器)：改过 model、flags 或 sandbox 后，旧配置 Run 覆盖的题不再拼入当前水位，只以覆盖占位行提示补跑。`--history` 站在这层过滤之外——时间轴不设可比性门槛，旧配置下的执行同样按时间在轴上。两个读数配合区分「时好时坏」的两种病因：红绿交替发生在同一套配置内，是 agent 行为不稳定，下钻对比失败与通过的两次执行；红绿分界正对配置改动，是 Run 级趋势，不归 `--history`，用报告库的[历史配方](../library/recipes.md#历史一个实验的逐次 Run 走势)。
 
 ## 边界
 

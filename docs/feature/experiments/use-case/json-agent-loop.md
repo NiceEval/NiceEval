@@ -21,7 +21,7 @@
    ```json
    {"format":"niceeval.exp","schemaVersion":1,"event":"start","total":5,"configs":5,"concurrency":4,"reused":1}
    {"event":"failure","locator":"@17m2k9pq","evalId":"memory/commit0-cachetool","experimentId":"compare/bub-e2b","severity":"gate","assertion":"cache tool is invoked","matcher":"calledTool(\"cache\")","received":"0 tool calls"}
-   {"event":"result","status":"failed","passed":4,"failed":1,"errored":0,"reused":1,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<snapshot>"]}
+   {"event":"result","status":"failed","passed":4,"failed":1,"errored":0,"reused":1,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<run>"]}
    ```
 
 3. 用 locator 只展开所需证据,不整段拉 transcript:
@@ -41,7 +41,7 @@
 
 ## 边界
 
-- 事件流不是另一份结果 schema;权威数据是快照与 attempt artifacts,批量分析走 [`show --json`](../../reports/show/json.md) 或 [Results](../../results/README.md) 读取面。
+- 事件流不是另一份结果 schema;权威数据是 Run 与 attempt artifacts,批量分析走 [`show --json`](../../reports/show/json.md) 或 [Results](../../record/README.md) 读取面。
 - 不解析运行流也完全可行:跑默认人读文本、只看退出码,失败后直接 `niceeval show`。`--json` 是需要程序化消费运行事件(计数、看板、并行编排)时的入口。
 - `failure` 事件只带主失败断言的有界字段;完整 assertions、源码、execution、diff 按需 `show` 下钻。
 

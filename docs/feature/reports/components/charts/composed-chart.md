@@ -3,7 +3,7 @@
 同一坐标系混合多种 series 的容器：接受 [`Line`](line-chart.md#line)、[`Bar`](bar-chart.md#bar)、[`Area`](area-chart.md#area)、[`Scatter`](scatter-chart.md#scatter) 的任意组合，各自 props 与绑定规则见对应文档。容器 props、轴绑定、`ChartData`、聚合与两面投影规则见[图表](README.md)。
 
 ```tsx
-<ComposedChart input={scope}>
+<ComposedChart input={sample}>
   <CartesianGrid />
   <XAxis dimension="experiment" />
   <YAxis yAxisId="cost" metric={costUSD} />

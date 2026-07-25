@@ -9,7 +9,7 @@
 - **重试中**:attempt 的 activity 行短暂显示 `turn retry 2/4 (rate_limit) — waiting 8s` 一类进度;退避中的 attempt 会让出并发槽位给别的 attempt。
 - **重试成功**:结果里零痕迹——事件流、turn 数、判定与一次成功的 send 无异。
 - **重试耗尽**:attempt 照常 `errored`,错误 message 带 `retries exhausted (4 attempts, rate_limit)` 一类摘要(以及耗尽的是单 send 封顶还是 attempt 总预算);没有摘要的 `errored` 说明该错误被判为不可重试、从未重试(为什么见[用例:读懂 errored](use-case/reading-errored.md))。
-- **落闸**:某条失败携带 `scope: "eval"` / `"experiment"` 时,反馈流出一条 error 级 `dispatch-halted` 诊断带着失败 message(人读 `✗ experiment halted (dispatch-halted): <message>` / `✗ eval halted: <message>`,`--json` 是同一条诊断的 `warning` 事件),只在首次落闸时出现一行;同 eval / 同实验还没跑的 attempt 不再派发、计入 `unstarted`,完成状态 `incomplete`;`snapshot.json` 里留同一个 `dispatch-halted` 诊断(形状见[止损执行体](architecture.md#止损执行体))。
+- **落闸**:某条失败携带 `scope: "eval"` / `"experiment"` 时,反馈流出一条 error 级 `dispatch-halted` 诊断带着失败 message(人读 `✗ experiment halted (dispatch-halted): <message>` / `✗ eval halted: <message>`,`--json` 是同一条诊断的 `warning` 事件),只在首次落闸时出现一行;同 eval / 同实验还没跑的 attempt 不再派发、计入 `unstarted`,完成状态 `incomplete`;`run.json` 里留同一个 `dispatch-halted` 诊断(形状见[止损执行体](architecture.md#止损执行体))。
 - **恢复**:`errored` 与 `unstarted` 都不进指纹缓存——修好环境后重跑同一条命令,只补跑死掉与没跑的部分。
 
 ## 实验 / eval 作者:声明死因的波及范围
@@ -65,7 +65,7 @@ export const codexNowledge = defineExperiment({
 
 要点:
 
-- **message 就是修复提示**:它会走完反馈流与 `snapshot.json` 诊断的全程,写成「现象 + 下一步」,别人(和三天后的你)照着它就能修。
+- **message 就是修复提示**:它会走完反馈流与 `run.json` 诊断的全程,写成「现象 + 下一步」,别人(和三天后的你)照着它就能修。
 - **判据是可证明性**:只有能证明「同 scope 兄弟 attempt 同因必死」才声明——共享服务、共享凭据、实验级配置属于能证明;「看起来像基建问题」不构成证明。拿不准就不声明,让它落成单条 attempt 的 `errored`:多烧的是钱,错杀的是整批覆盖数据,代价不对称(判据全文见 [README · 分类](README.md#分类))。
 - **识别不靠类身份**:框架用结构守卫(`failureClassOf`)认这些错误,`instanceof` 在依赖树里有第二份 niceeval 时会静默失效——自己代码里如需识别也用守卫。
 - **没有「可重试」糖衣类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 setup / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。setup 里想容忍抖动,自己 try 一次即可。

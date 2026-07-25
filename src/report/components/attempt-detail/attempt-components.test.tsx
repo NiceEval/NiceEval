@@ -423,7 +423,7 @@ describe("Attempt 详情组件族:非空/空证据矩阵", () => {
   });
 
   it("UsageTable:桶恒互斥,inputTokens 落盘原样透传,不派生第二个输入字段", () => {
-    // inputTokens 本身就是未缓存输入(docs/feature/results/architecture.md#usage),
+    // inputTokens 本身就是未缓存输入(docs/feature/record/architecture.md#usage),
     // "uncached in" 只是 face 层在 cacheReadTokens 在场时给的标注,data 不多一个字段。
     const both = usageTableData(evidenceOf({ result: resultOf({ usage: { inputTokens: 100, outputTokens: 1, cacheReadTokens: 40 } }) }))!;
     expect(both.usage?.inputTokens).toBe(100);

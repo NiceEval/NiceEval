@@ -17,7 +17,7 @@
 // 归 docs/engineering/testing/e2e/report.md §4/§5 对真实产物验收,不在本层断言。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
-// 依据是 docs/feature/results/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
+// 依据是 docs/feature/record/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
 
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

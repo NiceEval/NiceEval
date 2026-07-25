@@ -32,7 +32,7 @@ const KEY_SEP = "\u0000";
  * `ReportInput` 归一化:Scope 分支直接消费它已经按口径物化好的 `attempts`(不再重新
  * flatten `snapshots`——真实 Snapshot 各自持有完整、未按 Scope 口径收窄的 evals/attempts,
  * 只有 `Scope.attempts` 才是这次选择的真正结果);裸 `Snapshot[]` 分支没有挑选过程,取全部
- * (docs/feature/results/library.md「官方现刻水位」)。
+ * (docs/feature/record/library.md「官方现刻水位」)。
  */
 export function resolveInput(input: ReportInput): {
   snapshots: readonly Snapshot[];
@@ -70,7 +70,7 @@ export function evalIdOf(item: Item): string {
 }
 
 /**
- * 历史执行判定(docs/feature/results/library.md「时效:新执行与历史执行」):携带条目,或
+ * 历史执行判定(docs/feature/sample/library.md「时效:新执行与历史执行」):携带条目,或
  * 真实来源(`item.snapshot`)早于该实验在这份输入里的水位基准(`item.watermark`)——
  * latest() 口径下二者是同一个对象,比较恒假,只剩 carried 生效;current() 口径下贡献
  * 来源可能有多个,水位基准是其中 startedAt 最新的一个。

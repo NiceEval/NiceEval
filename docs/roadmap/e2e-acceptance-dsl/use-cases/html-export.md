@@ -1,4 +1,4 @@
-# Use Case · 导出 HTML:aria 快照替换字符串刮取
+# Use Case · 导出 HTML:aria Run 替换字符串刮取
 
 ## 场景
 
@@ -51,6 +51,6 @@ test("Fix prompt 折叠块默认收起,计数可见", async () => {
 
 ## 边界
 
-- **aria 快照负责**:语义结构、可见文本事实、层级与展开状态——纯文档层面,零浏览器交互。
+- **aria Run 负责**:语义结构、可见文本事实、层级与展开状态——纯文档层面,零浏览器交互。
 - **Playwright 保留**:计算样式结构事实(`font-family` 含 mono、sticky 定位)、几何(同行判定)、真点击交互、跨组件颜色一致性(rendered-to-rendered 对比)——这些断在行为层,本来就不脆,aria 树也表达不了。
 - 前提是[待裁决分歧 2](../README.md#待裁决分歧):ivya 对 happy-dom 文档的可用性 spike;不通则本层断言也进 browser mode 执行,写法不变。

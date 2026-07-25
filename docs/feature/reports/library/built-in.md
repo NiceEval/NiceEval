@@ -20,7 +20,7 @@ builtIn;  // 默认导出 === standard，宿主装载取这个值
 // niceeval/report/built-in 的 standard 视图，没有任何私有钩子
 import {
   AttemptDetail, AttemptList,
-  Col, CopyFixPrompt, ExperimentComparison, Hero, ScopeWarnings, SnapshotDiagnostics,
+  Col, CopyFixPrompt, ExperimentComparison, Hero, SampleWarnings, RunDiagnostics,
   TraceWaterfall, defineReport,
 } from "niceeval/report";
 
@@ -40,8 +40,8 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
+          <SampleWarnings />
+          <RunDiagnostics />
           <CopyFixPrompt />
           <ExperimentComparison />
         </Col>
@@ -53,8 +53,8 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
+          <SampleWarnings />
+          <RunDiagnostics />
           <AttemptList filter />
         </Col>
       ),
@@ -65,8 +65,8 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
+          <SampleWarnings />
+          <RunDiagnostics />
           <TraceWaterfall />
         </Col>
       ),
@@ -78,7 +78,7 @@ export const standard = defineReport({
 
 它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、指标、排版原语），内建视图是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是类型系统或装载逻辑里的类别。
 
-裸 `view` 页面上能看到的一切内容都在这份定义里：前三张 page 形成导航；hero、选择警告、快照诊断和批量修复 prompt 是普通组件；locator 打开第四张 attempt-input page，其中 `AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog 摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此**任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
+裸 `view` 页面上能看到的一切内容都在这份定义里：前三张 page 形成导航；hero、选择警告、Run 诊断和批量修复 prompt 是普通组件；locator 打开第四张 attempt-input page，其中 `AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog 摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此**任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
 
 ## 复用有两条路，语义不同、都显式
 
@@ -128,7 +128,7 @@ export default defineReport({
 // reports/site.tsx —— ③ 拆页：照抄内建的页，再加自己的页
 import {
   AttemptList, Col, ExperimentComparison, Hero, Question, Rows,
-  ScopeWarnings, Scoreboard, SnapshotDiagnostics,
+  SampleWarnings, Scoreboard, RunDiagnostics,
   defineReport, examScore,
 } from "niceeval/report";
 
@@ -139,15 +139,15 @@ export default defineReport({
     {
       id: "overview",
       title: { en: "Overview", "zh-CN": "总览" },
-      content: <Col><Hero /><ScopeWarnings /><SnapshotDiagnostics /><ExperimentComparison /></Col>,
+      content: <Col><Hero /><SampleWarnings /><RunDiagnostics /><ExperimentComparison /></Col>,
     },
     {
       id: "exam",
       title: { en: "Exam", "zh-CN": "成绩单" },
       content: (
         <Col>
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
+          <SampleWarnings />
+          <RunDiagnostics />
           <Scoreboard fullMarks={100} score={examScore}>
             <Rows dimension="agent" />
             <Question id="security/sql-injection" />
@@ -188,14 +188,14 @@ export default defineTheme({ ...basalt, accent: "#7C3AED" });
 
 ## 内建报告显示什么
 
-首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries/experiment-comparison.md)；`Hero` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](../components/site/README.md)；Attempts 页的本体是[带过滤的 `AttemptList`](../components/entity-lists/attempt-list.md)。
+首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries/experiment-comparison.md)；`Hero` / `SampleWarnings` / `RunDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](../components/site/README.md)；Attempts 页的本体是[带过滤的 `AttemptList`](../components/entity-lists/attempt-list.md)。
 
 ## 相关阅读
 
 - [外壳与多页](shell.md) —— 配置对象的字段穷尽、`extends` 合并语义与行为约束。
 - [主题](theme.md) —— 主题制品、装载链与令牌全集。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
-- [站点组件](../components/site/README.md) —— hero、品牌、警告、快照诊断与瀑布的组件契约。
+- [站点组件](../components/site/README.md) —— hero、品牌、警告、Run 诊断与瀑布的组件契约。
 - [Attempt 详情组件](../components/attempt-detail/README.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
 - [概览组件](../components/summaries/README.md) —— `ExperimentComparison` 的契约。
 - [Architecture](../architecture.md) —— 装载规范化：内建与 `--report` 的同一条管线。

@@ -23,7 +23,7 @@ import type { AttemptLocator } from "../results/locator.ts";
 /**
  * 解析后运行配置的**穷尽可序列化投影**——记录这次运行实际生效的值,不是原始 `ExperimentDef`
  * (函数与 hooks 无法忠实落盘,存「原样」只能存谎)。`model` 与 `agent` 只在快照顶层存在,
- * 这里不复制(见 docs/feature/results/architecture.md「snapshot.json」)。
+ * 这里不复制(见 docs/feature/record/architecture.md「snapshot.json」)。
  */
 export interface ExperimentRunInfo {
   description?: string;
@@ -53,7 +53,7 @@ export interface SandboxRunInfo {
 }
 
 /**
- * 一次 attempt 的生命周期词表——**全仓唯一一套**(见 docs/feature/results/architecture.md
+ * 一次 attempt 的生命周期词表——**全仓唯一一套**(见 docs/feature/record/architecture.md
  * 「result.json」)。计时(`phases[].name`)、错误归因(`error.phase`)、诊断归属
  * (`diagnostics[].phase`)、live 展示与 agent/ci envelope 的 `phase=` 都使用这同一个闭集,
  * 不存在第二套词表。phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter / sandbox
@@ -84,7 +84,7 @@ export type LifecyclePhase =
   | "sandbox.suspend" // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause)
   | "sandbox.stop"; // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
 
-/** TimingNode 的种类(见 docs/feature/results/architecture.md「result.json」)。 */
+/** TimingNode 的种类(见 docs/feature/record/architecture.md「result.json」)。 */
 export type TimingNodeKind = "hook" | "turn" | "command" | "provider" | "operation";
 
 /**
@@ -120,7 +120,7 @@ export interface TimingNode {
   };
 }
 
-/** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/results/architecture.md)。 */
+/** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
 export interface PhaseTiming {
   name: LifecyclePhase;
   /** 阶段耗时;失败阶段计到抛错或超时中断时。 */
@@ -132,7 +132,7 @@ export interface PhaseTiming {
 }
 
 /**
- * `commands.json` 的一条落盘记录(见 docs/feature/results/architecture.md「commandsjson」):
+ * `commands.json` 的一条落盘记录(见 docs/feature/record/architecture.md「commandsjson」):
  * 公开 `Sandbox.runCommand()` / `runShell()` 的最外层调用返回非零 `exitCode` 时,Runner 在
  * `CommandResult` 交还调用方**之前**登记的完整证据——Eval 后续即使只把 `.slice(-N)` 拼进
  * 异常消息,这份证据仍然完整。只记非零退出;成功命令的输出不进第二份 artifact,provider 内部
@@ -156,7 +156,7 @@ export interface FailedCommandEvidence {
 export type CommandsArtifact = FailedCommandEvidence[];
 
 /**
- * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/results/architecture.md 的
+ * 使 attempt 无法正常完成的唯一致命执行错误(见 docs/feature/record/architecture.md 的
  * `AttemptError`)。`message` 是人可读的一层原因(不拼整份 SDK response);完整 stack 单放
  * `stack`,`niceeval show @locator` 首页展开、终端即时反馈不整段打印。榜单只显示 `message`。
  */
@@ -174,7 +174,7 @@ export interface AttemptError {
 }
 
 /**
- * 不一定改变 verdict、但运行后仍需回顾的有界诊断(见 docs/feature/results/architecture.md 的
+ * 不一定改变 verdict、但运行后仍需回顾的有界诊断(见 docs/feature/record/architecture.md 的
  * `DiagnosticRecord`)。`level` 表达消息严重度,不是 verdict 的别名 —— passed / failed / errored
  * 任一 verdict 都可以带 cleanup / teardown 诊断。与运行级的 `DiagnosticNotice` 不同,这条挂在单个
  * attempt 结果上、随 `result.json` 落盘。
@@ -217,7 +217,7 @@ export interface EvalResult {
   /**
    * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与
    * `EvalDescriptor.scoring` 同源。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的
-   * 第三方 harness(见 docs/feature/results/architecture.md「result.json」)。
+   * 第三方 harness(见 docs/feature/record/architecture.md「result.json」)。
    */
   scoring?: EvalScoring;
   /**
@@ -234,10 +234,10 @@ export interface EvalResult {
   /**
    * sandbox hook / agent setup·send·teardown 经 `ctx.fact()` 上报的运行事实(同 attempt 内
    * 后写覆盖先写)。中性环境观测,不参与 verdict / 评分 / 指纹。见
-   * docs/feature/results/architecture.md#facts运行事实。
+   * docs/feature/record/architecture.md#facts运行事实。
    */
   facts?: Record<string, string | number | boolean>;
-  /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/results/architecture.md)。 */
+  /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
   phases?: PhaseTiming[];
   skipReason?: string;
   events?: StreamEvent[];
@@ -268,7 +268,7 @@ export interface EvalResult {
   artifactBase?: string;
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在
-   * docs/feature/results/architecture.md「证据 registry」,如 ["commands", "events", "sources"])。
+   * docs/feature/record/architecture.md「证据 registry」,如 ["commands", "events", "sources"])。
    * 省略等价于空列表;携带条目原样携带。读取面的懒加载语义(缺失返回 null)独立成立,
    * 本字段只服务「不 stat 磁盘就知道有什么」的消费方。
    */
@@ -278,7 +278,7 @@ export interface EvalResult {
 /** `snapshot.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
 export const RESULTS_FORMAT = "niceeval.results";
 /**
- * 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本。见 docs/feature/results/architecture.md。
+ * 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本。见 docs/feature/record/architecture.md。
  * `5`(见 memory 的 attempt-locator-and-source-dedup 条目)= result.json 新增 `locator` 字段;
  * `sources.json` 从逐 attempt 内联全量内容改为「attempt 级引用 + 快照级 `sources/<sha256>.json`
  * 去重仓库」,`AttemptHandle.sources()` 的公开返回形状不变(仍是 `SourceArtifact[] | null`)。
@@ -297,7 +297,7 @@ export const RESULTS_FORMAT = "niceeval.results";
  */
 export const RESULTS_SCHEMA_VERSION = 9;
 
-/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 docs/feature/results/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
+/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
@@ -498,7 +498,7 @@ export interface ExperimentHookContext extends ScopedFeedback {
    * 第三条反馈通道:上报整场实验的环境观测,与 `completedAt` 同批在快照封口补写进
    * `SnapshotMeta.facts`。key 匹配 `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,
    * 非法 key 或非标量 value 抛错。不影响判定,不参与 verdict / 评分 / 指纹。形状与归属语义见
-   * docs/feature/results/architecture.md#facts运行事实。`niceeval exp --teardown` 的独立收尾
+   * docs/feature/record/architecture.md#facts运行事实。`niceeval exp --teardown` 的独立收尾
    * 路径不派发 attempt、不落任何 Snapshot,没有 `SnapshotMeta.facts` 可写——该路径下这个方法仍然
    * 校验入参(非法 key / 非标量 value 照样抛错),校验通过后丢弃写入(no-op:诚实优于
    * 静默——非法调用照样报错、不被这条路径悄悄吞掉,但也不假装有地方落盘),见 cli.ts 的

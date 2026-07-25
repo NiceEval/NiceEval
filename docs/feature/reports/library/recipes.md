@@ -172,7 +172,7 @@ import type { CustomDimension } from "niceeval/report";
 
 const vendor: CustomDimension = {
   name: "vendor",
-  of: (a) => (a.snapshot.model?.startsWith("gpt-") ? "OpenAI" : "Anthropic"),
+  of: (a) => (a.run.model?.startsWith("gpt-") ? "OpenAI" : "Anthropic"),
 };
 
 export default defineReport(
@@ -184,9 +184,9 @@ export default defineReport(
 );
 ```
 
-## 历史：一个实验的逐次快照走势
+## 历史：一个实验的逐次 Run 走势
 
-回答「这个配置最近几次跑下来是变好还是变坏」。宿主注入的 `scope` 是现刻水位、不是完整历史；要历史就在组合组件里从 `results` 自己取 `exp.snapshots`，作为 `input` 显式交给组件：
+回答「这个配置最近几次跑下来是变好还是变坏」。宿主注入的 `sample` 是现刻水位、不是完整历史；要历史就在组合组件里从 `record` 自己取 `exp.runs`，作为 `input` 显式交给组件：
 
 ```tsx
 // reports/history.tsx
@@ -196,13 +196,13 @@ import {
 } from "niceeval/report";
 
 const History = defineComponent(async ({ experiment }: { experiment: string }, ctx) => {
-  const exp = ctx.results.experiments.find((e) => e.id === experiment);
+  const exp = ctx.record.experiments.find((e) => e.id === experiment);
   if (!exp) return <Text>experiment {experiment} has no results yet.</Text>;
 
   return (
-    <Section title={`${experiment} · 历次快照`}>
-      <MetricTable input={exp.snapshots}>
-        <Rows dimension="snapshot" />
+    <Section title={`${experiment} · 历次 Run`}>
+      <MetricTable input={exp.runs}>
+        <Rows dimension="run" />
         <Column metric={endToEndPassRate} />
         <Column metric={costUSD} />
       </MetricTable>
@@ -251,7 +251,7 @@ export default defineReport(
 
 ```tsx
 // reports/groups.tsx
-import { Col, ScopeSummary, Section, defineComponent, defineReport } from "niceeval/report";
+import { Col, SampleSummary, Section, defineComponent, defineReport } from "niceeval/report";
 
 const GroupBlocks = defineComponent((_props: {}, ctx) => {
   const prefixes = ["agents/codex/", "agents/claude/"];
@@ -260,7 +260,7 @@ const GroupBlocks = defineComponent((_props: {}, ctx) => {
     <Col>
       {prefixes.map((prefix) => (
         <Section key={prefix} title={prefix}>
-          <ScopeSummary input={ctx.scope.filter((s) => s.experimentId.startsWith(prefix))} />
+          <SampleSummary input={ctx.sample.pipe((s) => s.experimentId.startsWith(prefix))} />
         </Section>
       ))}
     </Col>
@@ -276,4 +276,4 @@ export default defineReport(<GroupBlocks />);
 - [内建报告](built-in.md) —— 不写树、只加品牌的最小形态。
 - [排版原语与自定义组件](layout.md) —— 组合组件与 `defineComponent` 的完整契约。
 - [指标与维度](metrics.md) —— 配方里指标与 `flag()` / 维度的口径契约。
-- [Results Library](../../results/library.md) —— `results.experiments`、`exp.snapshots` 与 Scope 的读取契约。
+- [Record Library](../../record/library.md) —— `record.experiments`、`exp.runs` 与 Sample 的读取契约。

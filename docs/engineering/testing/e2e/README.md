@@ -207,7 +207,7 @@ selector 可以是定位手段，但不自动成为契约；能用 role、可见
 ### 4.2 Results 读取边界
 
 仓库验收脚本只从 **CLI 公开使用面**进入：它起 `niceeval` 子进程并断言退出码与输出。它不 import
-niceeval 库代码，也不得递归扫描 `.niceeval/`、猜 `snapshot.json`
+niceeval 库代码，也不得递归扫描 `.niceeval/`、猜 `run.json`
 名称或手工拼 Attempt 路径。读取结果只用 CLI 出口：
 
 - 稳定机器摘要：`--json` 输出文件；
@@ -215,12 +215,12 @@ niceeval 库代码，也不得递归扫描 `.niceeval/`、猜 `snapshot.json`
 - 证据切面：`show @<locator> --execution` / `--timing` / `--source` / `--diff`；
 - CI 出口：显式指定的 `--junit` 文件。
 
-`openResults()` 读取库是公开使用面的一部分，它的 E2E 验收归[功能域 · 报告与读面](report.md)的
+`openRecord()` 读取库是公开使用面的一部分，它的 E2E 验收归[功能域 · 报告与读面](report.md)的
 `report` 仓库——只有那里可以断言落盘格式与读取库，其它仓库不复制格式知识、不经库面读结果。
 
 ### 4.3 CLI 读回
 
-每个仓库的验收链在 Experiment 结束后接读面 CLI：同一份新产出的快照直接交给
+每个仓库的验收链在 Experiment 结束后接读面 CLI：同一份新产出的 Run 直接交给
 `niceeval show`（及仓库关心的证据切面，如
 `show --execution`）。一次真实运行因此同时验收两个域——协议路径本身，和 CLI 读面在真实数据上的表现；模型成本只花一次。
 

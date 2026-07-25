@@ -438,7 +438,7 @@ export function lastAssistantText(events: readonly StreamEvent[]): string | unde
 
 /**
  * 每个字段只在某一轮真的带回该值时才累加,协议不提供就保持省略(见
- * docs/feature/results/architecture.md「Usage」:「每个字段只在协议真实提供该值时存在……
+ * docs/feature/record/architecture.md「Usage」:「每个字段只在协议真实提供该值时存在……
  * 不存在『默认 0』或『默认 1』的字段」)。此前 `requests` 用 `add.requests ?? 1` 累加,会让
  * 转录解析型 adapter(整个 attempt 只在末尾解析一次 transcript、天然不报每轮请求数)的一轮
  * send 被硬算成 1 个请求,一个内部发起了 21 次工具调用的 codex session 因此落盘

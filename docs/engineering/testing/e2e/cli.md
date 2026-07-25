@@ -25,7 +25,7 @@
 
 ### 缓存
 
-1. 首次带 `--rerun all` 执行并保存基线快照。
+1. 首次带 `--rerun all` 执行并保存基线 Run。
 2. 同一 Experiment 不带 `--rerun all`
    再执行，断言结果由公开读取面显示为 carry/cached，且没有产生新的 Agent 调用。
 3. 再次带 `--rerun all` 执行，断言产生真实的新 attempt。

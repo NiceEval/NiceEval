@@ -419,7 +419,7 @@ export function parseCodexTranscript(raw: string | undefined): ParsedTranscript 
   }
 
   // requests > 0 意味着至少一行真的带回了 usage;整份 transcript 没有任何 usage 行时
-  // input/output 也不该垫成 0(见 docs/feature/results/architecture.md#usage)。
+  // input/output 也不该垫成 0(见 docs/feature/record/architecture.md#usage)。
   const usage: Usage = requests > 0 ? { inputTokens, outputTokens } : {};
   if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
   if (reasoningTokens > 0) usage.reasoningTokens = reasoningTokens;

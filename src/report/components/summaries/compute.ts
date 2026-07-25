@@ -26,7 +26,7 @@ const totalCostMetric = defineMetric({
 
 /**
  * `scopeSummaryData(input)`:范围摘要——快照时间窗、experiment / eval / attempt 数、
- * 两级判定计票、端到端通过率与总成本(docs/feature/reports/components/summaries/scope-summary.md)。
+ * 两级判定计票、端到端通过率与总成本(docs/feature/reports/components/summaries/sample-summary.md)。
  * data 恒携带两级计票;通过率来自官方两级指标引擎,不从任一计票重算。
  */
 export async function scopeSummaryData(input: ReportInput): Promise<ScopeSummaryData> {

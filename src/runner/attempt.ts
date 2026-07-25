@@ -204,7 +204,7 @@ export function runAttemptEffect(
   // 非零 Sandbox 命令证据的累加器(与 diagnostics/facts 同一种「共享容器」模式):
   // withCommandTiming 在 CommandResult 交还调用方之前把每条非零退出命令 push 进来,
   // runAttemptBody 的 finally 与本函数的超时/中断兜底分支都读同一个数组引用
-  // (见 docs/feature/results/architecture.md「commandsjson」「证据在 CommandResult 返回
+  // (见 docs/feature/record/architecture.md「commandsjson」「证据在 CommandResult 返回
   // 调用方之前写入内存」)。
   const commands: FailedCommandEvidence[] = [];
   const recordDiagnostic = (input: DiagnosticInput) => {
@@ -1068,7 +1068,7 @@ async function runAttemptBody(
     const durationMs = Date.now() - t0;
     const o11y = buildO11ySummary(events);
     // 实测成本(网关带回)优先,缺则按 model + 用量查价格表估算(见 o11y/cost.ts)。
-    // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/results/architecture.md「o11y.json」)。
+    // 权威唯一在 result.json 的 estimatedCostUSD;o11y.json 只留行为计数(见 docs/feature/record/architecture.md「o11y.json」)。
     const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
 
     // 收 test 引用到的 eval 源码(按 send / 断言的 loc 去重),供 view 渲染代码视图。
@@ -1090,7 +1090,7 @@ async function runAttemptBody(
       scoring: evalDef.scoring ?? "pass",
       // 只在计分制 eval 上落 scoreEntries(t.score 直接给分记录);通过制 eval 的 t 上没有
       // t.score,collector.scoreEntries 恒为空数组,省略即等价于空数组
-      // (见 docs/feature/results/architecture.md「result.json」)。
+      // (见 docs/feature/record/architecture.md「result.json」)。
       ...(evalDef.scoring === "points" ? { scoreEntries: state.collector.scoreEntries } : {}),
       usage,
       estimatedCostUSD: cost,
@@ -1129,7 +1129,7 @@ async function runAttemptBody(
     return value;
   } finally {
     // 收尾段一律在 finally 跑(主链成败都执行),不改判定,各自兜错(diagnostic)、各自计时
-    // (不计入 durationMs 口径,见 docs/feature/results/architecture.md)。执行序与 LifecyclePhase
+    // (不计入 durationMs 口径,见 docs/feature/record/architecture.md)。执行序与 LifecyclePhase
     // 闭集声明一致:eval.teardown → agent.teardown → sandbox.teardown;各段可独立标 failed。
     // 沙箱 stop / 接收器 close 不在这里 —— 由 runAttemptEffect 的 Scope 在本函数返回后回收,
     // 并经 finalizer 计成 sandbox.stop。触发规则统一是「同层 setup 时点走到过」(setup / test
@@ -1216,7 +1216,7 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
  * (有界脱敏摘要 + exitCode;env 值与 stdout/stderr 不进入时间树)。Proxy 只拦这两个方法,
  * provider 内部 `this.runCommand(...)` 转调不经过它——不形成重复节点。非零退出的命令额外
  * 把完整 `CommandResult` 登记进 `commands` 累加器,登记发生在把结果交还调用方**之前**
- * (docs/feature/results/architecture.md「commandsjson」);登记不改变 `runCommand` 的
+ * (docs/feature/record/architecture.md「commandsjson」);登记不改变 `runCommand` 的
  * 返回/抛错语义,调用方可以处理非零退出并继续,证据仍保留。只记录成功拿到 `CommandResult`
  * 且 `exitCode !== 0` 的情形——`fn()` 本身抛错(如传输失败)不产出 `CommandResult`,不在这
  * 条证据线里,那类失败只落进时间树的 `failed` 标记。
@@ -1309,7 +1309,7 @@ async function collectSources(
   return out;
 }
 
-/** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/results/architecture.md):
+/** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/record/architecture.md):
  *  agent/model 只在快照顶层,这里不复制;sandbox 只经 provider 的公开参数投影落盘。 */
 export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox"]): EvalResult["experiment"] {
   return {

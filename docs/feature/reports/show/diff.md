@@ -35,4 +35,4 @@ M manager_decisions.json · touched in turn1, turn2
 ## 相关阅读
 
 - [`--execution`](execution.md) —— 改动发生的那一轮说了什么、调了什么工具。
-- [Results Library](../../results/library.md) —— `diff.json` 的窗口结构与脚本消费。
+- [Record Library](../../record/library.md) —— `diff.json` 的窗口结构与脚本消费。

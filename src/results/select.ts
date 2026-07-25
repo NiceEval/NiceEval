@@ -1,4 +1,4 @@
-// 快照 Scope 与 attempt 去重(定稿见 docs/feature/results/library.md「选择快照」「官方现刻水位」「身份键与去重」)。
+// 快照 Scope 与 attempt 去重(定稿见 docs/feature/record/library.md「选择快照」「官方现刻水位」「身份键与去重」)。
 //
 // 选择器长在集合上(results.latest() / results.current()),不是 DSL,只是最常用的两种口径。
 // 选择器必须诚实:残缺、落后、未收尾都被算出来,以结构化 warnings 随 Scope 走 ——
@@ -42,7 +42,7 @@ export function selectLatest(
     // fresh: true 只保留新执行的 attempt——在 latest() 口径下,选中集合永远只有这一份
     // 快照,「所属快照早于该实验在 Scope 中最新快照」这条历史出身天生不成立(只有它自己),
     // 唯一的历史出身是携带条目(attempt.carried)。只过滤显式物化的 attempts 集,不克隆/
-    // 改写来源 Snapshot 的 evals(见 docs/feature/results/library.md「选择快照」)。
+    // 改写来源 Snapshot 的 evals(见 docs/feature/record/library.md「选择快照」)。
     const picked = fresh ? raw.attempts.filter((a) => !a.carried) : raw.attempts;
     attempts.push(...picked);
 
@@ -85,7 +85,7 @@ export interface ResultScope {
 // ───────────────────────── 可比性配置 ─────────────────────────
 
 /**
- * current() 跨快照拼接的可比性前提所比较的字段集(docs/feature/results/library.md
+ * current() 跨快照拼接的可比性前提所比较的字段集(docs/feature/record/library.md
  * 「官方现刻水位」):会改变单题被测行为或判定的字段。runs / earlyExit / maxConcurrency /
  * selectedEvalIds / evalFilterFingerprint / description 是编排与选题字段,不参与比较。
  */
@@ -134,7 +134,7 @@ export function deepEqualJson(a: unknown, b: unknown): boolean {
 /**
  * 一个快照实际选中的 eval id 全集:优先读落盘的 `experiment.selectedEvalIds`(niceeval 自己的
  * 写入面必有此字段);第三方 harness 未实现该字段时退化为该快照实际写出的 `evals`,不把整份
- * 来源排除在外(见 docs/feature/results/architecture.md「selectedEvalIds」)。
+ * 来源排除在外(见 docs/feature/record/architecture.md「selectedEvalIds」)。
  */
 export function selectedEvalIdsOf(snapshot: Snapshot): readonly string[] {
   return snapshot.experiment?.selectedEvalIds ?? snapshot.evals.map((ev) => ev.id);
@@ -146,7 +146,7 @@ export function selectedEvalIdsOf(snapshot: Snapshot): readonly string[] {
  * 快照」,带 eval 前缀的局部重跑会产出残缺快照;现刻水位承诺「不会因为一次局部重跑变残缺」,
  * 所以在实验的历史快照上逐 eval 向更早的 run 补齐——但补齐只发生在 `Scope.attempts` 这份
  * 物化选择上,真正贡献过至少一道题的来源 Snapshot 原样进 `Scope.snapshots`,不重建、不
- * 合并成报告专用对象(见 docs/feature/results/library.md「官方现刻水位」)。
+ * 合并成报告专用对象(见 docs/feature/record/library.md「官方现刻水位」)。
  *
  * **可比性前提**:每个 experiment 以最新快照的可比性配置(agent / model / reasoningEffort /
  * flags / budget / timeoutMs / sandbox)为基准,只有配置与基准深相等的历史快照才参与补齐;

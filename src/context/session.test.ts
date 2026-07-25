@@ -270,7 +270,7 @@ describe("SessionManager · 多轮 Usage 累计", () => {
 
 // turn 级 usage 挂接:该轮 Turn.usage 经 onTurn 回报给 runner,由 runner 挂上 TimingNode
 // (src/runner/attempt.ts 的 onTurn → recorder.child({ usage })),show `--execution`/
-// `--timing` 的 turn 头行读 TimingNode.usage(见 docs/feature/results/architecture.md
+// `--timing` 的 turn 头行读 TimingNode.usage(见 docs/feature/record/architecture.md
 // 「result.json」TimingNode.usage,src/show/render.ts 的 turnUsageText)。这里只测
 // session.ts 这一端:onTurn 收到的 usage 与该轮 Turn.usage 同值;没有 usage 的轮不传该字段。
 describe("SessionManager · onTurn 回报的 usage(turn 挂接 TimingNode 的数据来源)", () => {

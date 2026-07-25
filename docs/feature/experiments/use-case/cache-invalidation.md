@@ -58,7 +58,7 @@ sandboxSetup(): SandboxHook {
 $ pnpm exec niceeval exp compare/codex--nowledge --carry-ignoring-flag nowledgeEndpoint
 ```
 
-**你会看到**:携带判定按抹掉该键之后的 `flags` 认账,历史终态照常携入,搬迁不赔一轮重烧;本次快照记一条 `carry-ignoring-flag` diagnostic 留痕。**只作用于这一次调用**,下一次跑不需要也不该再带——那时值已经不在 `flags` 里了。键名可以重复给多个。
+**你会看到**:携带判定按抹掉该键之后的 `flags` 认账,历史终态照常携入,搬迁不赔一轮重烧;本次 Run 记一条 `carry-ignoring-flag` diagnostic 留痕。**只作用于这一次调用**,下一次跑不需要也不该再带——那时值已经不在 `flags` 里了。键名可以重复给多个。
 
 ## 6. 提高或调低 `timeoutMs`
 
@@ -68,9 +68,9 @@ $ pnpm exec niceeval exp compare/codex--nowledge --carry-ignoring-flag nowledgeE
 
 **改之前先看清楚现在这个上限是哪一层给的**:它由 `--timeout` → experiment → eval → config 解析而来(链见 [Resolved config](../architecture.md#resolved-config一次求值处处同源)),超时报错里的 `from …` 直接写着答案。改错层的症状是「改了没生效」——experiment 里钉了 20 分钟时,去 config 上调到 40 分钟不会有任何变化。
 
-## 7. `runs` 从 3 提到 5
+## 7. `attempts` 从 3 提到 5
 
-**你会看到**:不作废。携带以 attempt 为粒度,已有的 3 条终态携入,本次只跑缺的 2 条,通过率的分母由两者凑满。同理,`runs` 调小不会删掉已有结果。
+**你会看到**:不作废。携带以 attempt 为粒度,已有的 3 条终态携入,本次只跑缺的 2 条,通过率的分母由两者凑满。同理,`attempts` 调小不会删掉已有结果。
 
 ## 8. 换沙箱模板 / 镜像,或改 sandbox 钩子
 

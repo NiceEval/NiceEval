@@ -25,7 +25,7 @@
    → commitKeepOrStop()                     # verdict 已定稿,命中时原子登记后留存;否则 sandbox.stop()(见下)
 ```
 
-这条链的阶段词表以 [Results 的 `LifecyclePhase` 闭集](../results/architecture.md#resultjson)为唯一权威,本节只描述沙箱切片。环境层钩子排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于分类账锚点跑——像镜像构建先于代码挂载——环境产物因此不进入任何归因视图。teardown 顺序对称颠倒:eval 级 cleanup 先跑,agent 级收尾其次(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。整个收尾段发生在判定之后,只能追加 diagnostic,不能反改 verdict——若某个步骤决定结果正确性,它就不是收尾,应写进 `test(t)` 主链。
+这条链的阶段词表以 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威,本节只描述沙箱切片。环境层钩子排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于分类账锚点跑——像镜像构建先于代码挂载——环境产物因此不进入任何归因视图。teardown 顺序对称颠倒:eval 级 cleanup 先跑,agent 级收尾其次(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。整个收尾段发生在判定之后,只能追加 diagnostic,不能反改 verdict——若某个步骤决定结果正确性,它就不是收尾,应写进 `test(t)` 主链。
 
 ## 变更归因:send 窗口与分类账
 
@@ -36,7 +36,7 @@
 - **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,remote agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,`EvalDef.setup` 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。清单在锚点时冻结,agent 或 fixture 写 `.gitignore` 影响不了它(项目自己的 ignore 规则也**不**参与归因判断——被项目 ignore 的文件照常记录);eval 要评分被排除目录时经 `defineEval({ diff: { include: [...] } })` 显式加回,`diff.ignore` 追加排除。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
-- **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../results/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。
+- **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB blob 证据(文本按 before/after 实际字节、二进制按尺寸计),尺寸核算先于内容传输;越界或导出命令失败时 `workspace.diff` 明确报执行错误,不得伪造成空窗口让文件断言产生假阴性。
 - **第一次 `t.send()` 之前,agent 归因增量恒为空。** 此时 `fileChanged` 如实失败——起始 fixture 制造不了假阳性,这正是分类账存在的理由。`t.send()` 之后写入的隐藏校验文件同样进不了 agent diff:「校验材料对 agent 不可见」与「校验材料不污染归因」由同一机制保证。`agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 窗口之外,不需要 exclude 一类补丁。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 窗口归因,按 provider 分支还破坏[核心中立](../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐窗口归因的引擎,这是选它的理由,不是历史惯性。
@@ -74,17 +74,17 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 
 - **Docker** —— suspend = `docker stop`:文件系统落盘持久、不占内存、跨 daemon 重启存活。创建容器时就不带 `AutoRemove`(留存意图必须在创建期传入),`stop()` 改为显式 stop + remove,行为等价;容器带 `niceeval.keep-candidate=true` 标签,正常 run 结束后该标签下只剩已登记的 kept 容器;强杀留下的未登记候选由[孤儿核对](#孤儿核对强杀路径的实例面兜底)按运行标识收回。停驻的容器不会自己消失,仍是唯一需要用户主动清理的 provider。两个否决项:`docker pause` 不用于留存(内存驻留,daemon 重启即失,反而更脆);`docker commit` 转镜像也不用(引入第二种要管理的资源面,停驻容器已给出同等持久性)。
 - **E2B** —— suspend = `pause`:文件系统与内存整体持久化,暂停期间停止计费,现场无限期保留、可 `resume` 找回;没有自然过期时刻,`expiresAt` 不写。
-- **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 自动打一次快照保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 `keptAt` 加上快照的默认保留期限——`snapshotExpiration` 默认 30 天(2,592,000,000ms,从快照最后一次使用起算),niceeval 不覆盖这个参数,默认值就是留存现场实际的保留期限。
+- **Vercel Sandbox** —— suspend = `stop`:sandbox 默认持久,stop 自动打一次 Run 保存文件系统,之后经 `Sandbox.get` / `getOrCreate` 恢复(SDK 原生能力);内存态不保留,唤醒后进程要重新启动。`expiresAt` 写 `keptAt` 加上 Run 的默认保留期限——`snapshotExpiration` 默认 30 天(2,592,000,000ms,从 Run 最后一次使用起算),niceeval 不覆盖这个参数,默认值就是留存现场实际的保留期限。
 - **Local** —— 不参与留存,`--keep-sandbox` 组合在创建前报错:本地档从不销毁,现场天然留在用户的工作树里,无需注册表纳管(见[本地执行](local.md))。
 - **`defineSandbox` 自定义 provider** —— 不参与留存。`niceeval sandbox` 刻意不加载 config / eval 模块,新进程只有序列化登记项,无法安全找回用户对象上的任意 `stopDetached` 函数;只删登记项又会违反「stop = 销毁」。因此 `--keep-sandbox` 与自定义 provider 组合在创建前报清晰错误。需要统一留存生命周期的 provider 应贡献为内置 provider;未来若引入可序列化、可审计的 detached cleanup 协议,再扩这条边界。
 
-`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 `result.json` 落 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Results](../results/architecture.md#resultjson)),`phases` 无 `sandbox.stop` 条目。
+`Sandbox` 接口不因留存扩大:没有 pause / detach / keep 方法——「留下」不是沙箱的能力,是 runner 的一次调度决定。留存的 attempt 在 `result.json` 落 `sandbox: { provider, sandboxId, kept: true }`(字段契约见 [Results](../record/architecture.md#resultjson)),`phases` 无 `sandbox.stop` 条目。
 
 ## 孤儿核对:强杀路径的实例面兜底
 
 进程内的清理集合与 Scope finalizer 覆盖不到 `SIGKILL` / 宿主断电——没有任何代码来得及执行,正在跑的沙箱就地变成 provider 侧的无主实例。这条路径的兜底不追求「杀不掉的进程也能收尾」(做不到),而是把「事后认领」做成可靠的机器动作:创建时把归属写进实例元数据,事后按归属核对与收回。
 
-- **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(快照时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的兜底是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
+- **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(Run 时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的兜底是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
 - **孤儿的判定是三条「与」**:带 niceeval 运行标识、不在留存注册表、且属主 run 已被证实死亡(标识里的 `host` 等于当前宿主机名,且 `pid` 探测不存活)。三条缺一不可:注册表里的 kept 沙箱是被管理的现场,不是孤儿;属主 run 还活着的实例属于并发运行中的另一次 run,绝不能收;`host` 不匹配或 pid 无法核对的实例标 `unverified`,列出但不自动销毁——误杀一台活实例的代价高于多留一台待人工确认,判定必须偏保守。
 - **核对与收回分成只读、破坏两个入口**:[`niceeval sandbox list --orphans`](cli.md#sandbox-list---orphans) 只读列出,[`niceeval sandbox prune`](cli.md#sandbox-prune) 销毁已核实孤儿;`unverified` 只有显式 `--force` 才销毁。两个入口与 sandbox 命令组其余成员同一契约:不读 config、不执行用户代码,销毁走各 provider 的 detached 通道。
 - 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,兜底在实验面,机制见 [Experiments · 强杀后的收尾兜底](../experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)。

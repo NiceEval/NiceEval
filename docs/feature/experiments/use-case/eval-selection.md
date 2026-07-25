@@ -14,7 +14,7 @@ export default defineExperiment({
 });
 ```
 
-**你会看到**:选择结果落进快照的 `experiment.selectedEvalIds`,报告按它读,不重跑表达式。
+**你会看到**:选择结果落进 Run 的 `experiment.selectedEvalIds`,报告按它读,不重跑表达式。
 
 ## 2. 按 tag / 环境需求过滤
 
@@ -38,7 +38,7 @@ export default defineExperiment({
 niceeval exp compare memory/agent-029        # 位置参数 = eval id 前缀,与 evals 声明取交集
 ```
 
-**你会看到**:只派发前缀命中的 attempt。注意:带位置参数跑出的快照是**部分快照**,对照报表要用不带位置参数的完整重跑。配合 `--dry` 先看计划再花钱的全流程见[选择器输入面用例](selector-narrowing.md)。
+**你会看到**:只派发前缀命中的 attempt。注意:带位置参数跑出的 Run 是**部分 Run**,对照报表要用不带位置参数的完整重跑。配合 `--dry` 先看计划再花钱的全流程见[选择器输入面用例](selector-narrowing.md)。
 
 ## 4. 一批题里混了通过制和计分制:报错要求拆开
 

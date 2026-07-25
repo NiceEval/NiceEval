@@ -74,27 +74,27 @@
 | 用量 | Usage | 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写) |
 | 成本 | Cost | 用量经价格表换算的估算金额(`estimatedCostUSD`);`--budget <usd>` 给整个 run 设上限 |
 | 报告器 | Reporter | 运行中流式消费结果的插件(控制台、JUnit、JSON…);与运行后的「报告」(Report)是两个词 |
-| Artifact | Artifact | 落盘的结构化产物,位于快照目录 `.niceeval/<experiment>/<snapshot>/`:快照级 `snapshot.json` + attempt 级 `result.json` 与各 JSON |
+| Artifact | Artifact | 落盘的结构化产物,位于 Run 目录 `.niceeval/<experiment>/<run>/`:Run 级 `run.json` + attempt 级 `result.json` 与各 JSON |
 
 ### 结果数据与报告
 
-本组词的完整契约在 [Results Lib](feature/results/library.md)、[Reports](feature/reports/README.md) 与 [View](feature/reports/view.md)。
+本组词的完整契约在 [Record Lib](feature/record/library.md)、[Reports](feature/reports/README.md) 与 [View](feature/reports/view.md)。
 
 | 中文 | English | 含义 |
 |---|---|---|
-| 结果快照 | Snapshot | 持久化结果的单位:一个 Experiment 的一次执行水位;可由多次 Invocation 通过 carry 续成,不保留跨 Experiment 的 Invocation 成员关系;与快照测试无关;沙箱侧的 microVM 快照一律写"沙箱快照(`snapshotId`)" |
-| Scope(范围) | Scope | `results.latest()` / `results.current()` 的返回物:挑好的快照 + 结构化挑选警告;唯一方法 `filter`(只删不换) |
-| Attempt 定位符 | AttemptLocator | attempt 的稳定引用,由 `{experimentId, 快照 startedAt, evalId, attempt}` 不可变元组派生的带版本、`@` 前缀短确定性字符串;不是数组下标也不是目录路径。reader 打开结果根时建一份 locator → AttemptHandle 索引,缺失 / 损坏 / 碰撞一律结构化报错,不回退"最新失败";报告页与 attempt 详情路由(`#/attempt/@<locator>` / `show @<locator>`,单段格式)共用同一个 locator 身份契约,见 [View](feature/reports/view.md) |
+| 结果 Run | Run | 持久化结果的单位:一个 Experiment 的一次执行水位;可由多次 Invocation 通过 carry 续成,不保留跨 Experiment 的 Invocation 成员关系;与一次 CLI 调用(Invocation)不是一回事:一次调用可开多个 Run,一个 Run 也可由多次调用续成 |
+| Sample(样本) | Sample | `latestRuns(record)` / `latestPerEval(record)` 的返回物:挑好的 attempt + 覆盖事实 + 结构化挑选警告;唯一方法 `pipe`(算子闭集,只删减不聚合、不替换) |
+| Attempt 定位符 | AttemptLocator | attempt 的稳定引用,由 `{experimentId, Run startedAt, evalId, attempt}` 不可变元组派生的带版本、`@` 前缀短确定性字符串;不是数组下标也不是目录路径。reader 打开记录根时建一份 locator → AttemptHandle 索引,缺失 / 损坏 / 碰撞一律结构化报错,不回退"最新失败";报告页与 attempt 详情路由(`#/attempt/@<locator>` / `show @<locator>`,单段格式)共用同一个 locator 身份契约,见 [View](feature/reports/view.md) |
 | Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合:locator、身份、`EvalResult`、标准事件流(`events: StreamEvent[] \| null`)、`AnnotatedEvalSource`、`ExecutionTree`、diff、artifact 路径与能力位(`source` / `execution` / `timing` / `diff`);`show` / `view` / 静态导出 / 报告列表共用同一份,不各自重读 artifact,也不再各自调用 `events()` |
-| 标注 Eval 源码 | AnnotatedEvalSource | 发现时捕获、按快照去重一份、SHA-256 归一化的运行时 Eval 源码;每条断言按 `SourceLoc` 标回源码行(状态 / 严重度 / 分数 / detail / evidence),没有 `SourceLoc` 的断言进"未映射断言"桶,不静默丢弃;`t.send(...)` 的调用行另标该轮 turn 头行事实(身份 / status / 墙钟,定位不到行的轮不进兜底桶——轮次全量面是 `--execution`);网页 CodeView 与 `show --source` 共用同一份 model |
+| 标注 Eval 源码 | AnnotatedEvalSource | 发现时捕获、按 Run 去重一份、SHA-256 归一化的运行时 Eval 源码;每条断言按 `SourceLoc` 标回源码行(状态 / 严重度 / 分数 / detail / evidence),没有 `SourceLoc` 的断言进"未映射断言"桶,不静默丢弃;`t.send(...)` 的调用行另标该轮 turn 头行事实(身份 / status / 墙钟,定位不到行的轮不进兜底桶——轮次全量面是 `--execution`);网页 CodeView 与 `show --source` 共用同一份 model |
 | 指标 | Metric | 「一个 attempt 算出一个值」的计算单元,经「attempt → 题,题 → 组」两级聚合;缺数据算 `null` 不算 0 |
 | 维度 | Dimension | 决定 attempt 分到哪一组的分组键(agent / experiment / evalGroup / snapshot …) |
 | 报告 | Report | `defineReport(外壳 + 内容)` 的产物:`.tsx` 报告文件的默认导出,唯一可被 `--report` 装载的单位;内容是一棵组件树或多页 |
 | 页 | Page | 报告内的宿主寻址单位:`{ id, title, content }` 字面量,给一棵树一个地址和导航名 |
 | 双面组件 | Dual-render component | `defineComponent({ resolve?, web, text })` 的产物:可选解析面取数,两个纯函数渲染面消费同一份渲染 props,同一棵树两个宿主共用 |
 | 组合组件 | Composition component | `defineComponent((props, ctx) => 树)` 的产物:只装配已有组件、不自己渲染,在 resolve 阶段展开 |
-| 宿主 | Host | 打开结果、挑 Scope、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
-| 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 都渲染 `niceeval/report/built-in` 的默认导出 `standard`——一份四张 page 的普通 `defineReport`:报告 / Attempts / 追踪三张进导航,第四张是以 locator 为输入的 attempt 详情。首页由 `Hero`、`ScopeWarnings`、`SnapshotDiagnostics`、`CopyFixPrompt` 与 `ExperimentComparison`(当前 Scope 的成本 × 成功率散点 + 逐实验明细表)组成,与用户 `--report` 文件同层,没有宿主特权 |
+| 宿主 | Host | 打开结果、挑 Sample、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
+| 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 都渲染 `niceeval/report/built-in` 的默认导出 `standard`——一份四张 page 的普通 `defineReport`:报告 / Attempts / 追踪三张进导航,第四张是以 locator 为输入的 attempt 详情。首页由 `Hero`、`SampleWarnings`、`RunDiagnostics`、`CopyFixPrompt` 与 `ExperimentComparison`(当前 Sample 的成本 × 成功率散点 + 逐实验明细表)组成,与用户 `--report` 文件同层,没有宿主特权 |
 | 报告槽 | —(内部代号) | 宿主结构里可被 `--report` 整体替换的部分:裸跑渲染内建报告,显式 `--report` 换成用户报告文件;`报告槽`不出现在公开站 |
 
 ### 报告组件
@@ -103,14 +103,14 @@
 
 | 分类 | 中文 | English | API | 主展示单位 |
 |---|---|---|---|---|
-| 汇总 | 范围摘要 | Scope summary | `ScopeSummary` | 一批 Scope;汇总其中的 experiment、Eval 和 Attempt。data 同时携带 eval 级与 attempt 级两份计票,呈现 prop `votes` 选择显示哪一级(默认 eval) |
+| 汇总 | 样本摘要 | Sample summary | `SampleSummary` | 一批 Sample;汇总其中的 experiment、Eval 和 Attempt。data 同时携带 eval 级与 attempt 级两份计票,呈现 prop `votes` 选择显示哪一级(默认 eval) |
 | 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval |
 | 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt |
 | 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 |
 | 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 |
 | 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 |
 | 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和分科计算分数 |
-| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果快照;格内是指标值及差值 |
+| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果 Run;格内是指标值及差值 |
 | 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道 Eval、每列一个条件;格内是历史全执行的判定计数 |
 | 指标图形 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一棵组件树:容器持有坐标系,`XAxis` / `YAxis` 绑定维度或指标,`Line` / `Bar` / `Area` / `Scatter` 各是一条 series |
 | 行 / 列 / 分节 / 文本 / 正文 / 样式 / 表格 | Row / column / section / text / markdown / style / table | `Row` / `Col` / `Section` / `Text` / `Markdown` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 |
@@ -173,7 +173,7 @@
 
 **Experiment** / **实验** —— 一份可签入的**运行配置**,描述「怎么跑这批 eval」:用哪个 [Agent](#评测核心词汇)、跑几次、过滤哪些、预算多少。由 `defineExperiment` 定义在 `experiments/` 下,id 从路径推导。**一文件 = 一个单一配置**；`evals` 遍历发现到的 eval 并选择这份配置要跑的集合，解析结果以 `selectedEvalIds` 落盘。它**不碰评分**——「怎么算对」是 eval 的事。详见 [Experiments](feature/experiments/README.md)。
 
-**Invocation** —— 一次 `niceeval` CLI 调用的瞬时编排边界。它可同时选中多个 Experiment,负责当场调度、反馈、退出码与 `InvocationCompletion`;不分配持久化 id,不在 `.niceeval/` 保存跨 Experiment 的成员关系。重跑可通过 carry 从旧 Snapshot 携入终态 Attempt,因此 Invocation 是可丢弃的传输与编排载体,不是 Results 实体。需要审计当次 Invocation 汇总时显式配置 `Json(path)` Reporter。
+**Invocation** —— 一次 `niceeval` CLI 调用的瞬时编排边界。它可同时选中多个 Experiment,负责当场调度、反馈、退出码与 `InvocationCompletion`;不分配持久化 id,不在 `.niceeval/` 保存跨 Experiment 的成员关系。重跑可通过 carry 从旧 Run 携入终态 Attempt,因此 Invocation 是可丢弃的传输与编排载体,不是 Results 实体。需要审计当次 Invocation 汇总时显式配置 `Json(path)` Reporter。
 
 **Attempt** —— 同一个 eval 的第 i 次重复运行(`runs > 1` 时取通过率用)。这是 runner/result 的执行单位,不是 author-facing API 层。`t` 上的作用域断言会在一个 Attempt 的范围内聚合(全部 session + 全部 turn),不跨 Attempt。
 
@@ -195,7 +195,7 @@
 
 **Reporter** / **报告器** —— 消费 Invocation 中结果的插件,可实现分阶段 `onEvent`(`invocation:start` / `eval:start` / `eval:complete` / `invocation:summary` 等),也可实现 `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`。内置控制台、JUnit、JSON;可接第三方实验跟踪平台。报告器在独立的串行队列上回调,不阻塞执行池。详见 [Reporters](observability.md#reporters)。
 
-**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果快照**(一个 experiment 的一次运行):快照目录 `.niceeval/<experiment>/<snapshot>/` 下放快照级 `snapshot.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判定、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的证据文件——完整词干、存储形态与内容职责单源在[证据 registry](feature/results/architecture.md#证据-registry)。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见「结果数据与报告」词表),不直接引用路径或数组下标。详见 [Results Format](feature/results/architecture.md)。
+**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果 Run**(一个 experiment 的一次运行):Run 目录 `.niceeval/<experiment>/<run>/` 下放 Run 级 `run.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判定、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的证据文件——完整词干、存储形态与内容职责单源在[证据 registry](feature/record/architecture.md#证据-registry)。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见「结果数据与报告」词表),不直接引用路径或数组下标。详见 [Record Format](feature/record/architecture.md)。
 
 ## 配置词汇
 
@@ -213,7 +213,7 @@
 | `sandbox` | `SandboxOption` | 项目默认 sandbox spec(`dockerSandbox()` 等工厂产出);experiment 可覆盖。两处都没设、又用了沙箱型 agent 时直接报错——没有隐式默认,也没有 `--sandbox` 这种 CLI 覆盖 |
 | `workspace` | `string` | 上传进沙箱的工作区根目录;省略则用项目根 |
 | `telemetry` | `{ host?, port? }` | OTLP 接收配置(niceeval 唯一入口,不读 `NICEEVAL_OTLP_*` 环境变量):`port` 钉住接收端口,省略则每次运行动态分配;`host` 是报给 adapter 的接收端 hostname(见 [Observability](observability.md)) |
-| `pricing` | `Record<string, PriceOverride>` | 价格表覆盖,合并在内置快照之上;key 支持精确 model 名或 `provider/*` 通配(见 [Observability](observability.md#换算成本价格表从哪来)) |
+| `pricing` | `Record<string, PriceOverride>` | 价格表覆盖,合并在内置价格表之上;key 支持精确 model 名或 `provider/*` 通配(见 [Observability](observability.md#换算成本价格表从哪来)) |
 
 agent 不在 config 里注册:每个 experiment 直接引用一个 agent adapter(见 [Experiments](feature/experiments/README.md#defineexperiment-的形状))。config 只管项目级默认与全局资源。
 

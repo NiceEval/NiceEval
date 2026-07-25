@@ -145,7 +145,7 @@ import { codexAgent } from "niceeval/adapter";
 
 export default defineExperiment({
   agent: codexAgent(),
-  runs: 5,
+  attempts: 5,
 });
 ```
 
@@ -158,13 +158,13 @@ export default defineExperiment({
   agent: codexAgent({
     skills: [{ kind: "local", path: "skills/review/SKILL.md" }],
   }),
-  runs: 5,
+  attempts: 5,
 });
 ```
 
 两个文件的路径只形成 experiment id；运行或查看时用 `--exp skills` 一起选中即可比较。每个文件只默认导出一个 `defineExperiment`；niceeval 不读取 `export const experiments = { ... }` 这种聚合导出。
 
-model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容属于 Agent 变体。`runs` 默认跑满、给出完整通过率分布,两组 A/B 天然可比。
+model、reasoning effort 和业务 flags 仍由 experiment 配置；扩展内容属于 Agent 变体。`attempts` 默认跑满、给出完整通过率分布,两组 A/B 天然可比。
 
 ## 查看安装结果
 

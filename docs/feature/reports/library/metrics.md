@@ -5,7 +5,7 @@
 ## 公开计算模型
 
 ```ts
-type ReportInput = Scope | readonly Snapshot[];
+type ReportInput = Sample | readonly Run[];
 type Aggregator = "mean" | "sum" | "min" | "max" |
   ((values: readonly number[]) => number);
 
@@ -58,7 +58,7 @@ interface MetricCell {
 }
 ```
 
-`MetricCell.refs` 跟随覆盖范围而不是只跟随有效样本：用户看到 `samples < total` 时，仍能下钻到那些“为什么测不了”的 attempt。跨快照计算在分组前先按 Results 身份键去重。聚合中的题级身份始终是 `experimentId + evalId`；按 agent 等更宽维度合并多个 experiment 时，不会把不同 experiment 的同名 eval 当成重试。
+`MetricCell.refs` 跟随覆盖范围而不是只跟随有效样本：用户看到 `samples < total` 时，仍能下钻到那些“为什么测不了”的 attempt。跨 Run 计算在分组前先按 Results 身份键去重。聚合中的题级身份始终是 `experimentId + evalId`；按 agent 等更宽维度合并多个 experiment 时，不会把不同 experiment 的同名 eval 当成重试。
 
 计算失败与缺数据严格分开：`value()` 对预期缺失返回 `null`；`where` / `value` / 自定义 aggregator / `display` 抛错时，整个 `*Data` 调用失败，错误带 metric name、attempt locator（适用时）与 cause，不把代码错误伪装成“测不了”。`value` 和 aggregator 的非 null 返回值必须是有限数，`NaN` / `Infinity` 同样报错。aggregator 只会收到去掉 `null` 后的非空数组。
 
@@ -73,7 +73,7 @@ interface MetricCell {
 | `executionReliability` | 执行可靠性：跑到可判定（passed / failed）= 1，errored = 0；回答一次运行能否形成可信判定 | 高 | `result.json` |
 | `examScore` | gate 决定能否得分，soft 断言给质量分 | 高 | `result.json` |
 | `totalScore` | 计分制（`defineScoreEval`）eval 的挣分：`assertions[].points` 之和加 `scoreEntries[].points` 之和，纯累加不声明满分；通过制 eval（`scoring` 省略或 `"pass"`）恒 `null`，不参与聚合 | 高 | `result.json` |
-| `durationMs` | attempt 判定链耗时（不含收尾段，口径见 [Results](../../results/architecture.md#resultjson)）；对超时 attempt（`error.code = "timeout"`）返回 `null`——线值是右删失点不是实测完成耗时，计入聚合会把「被砍断」当成「跑了这么久」，排除又会让慢条件显得快，删失只能显式呈现（见下） | 低 | `result.json` |
+| `durationMs` | attempt 判定链耗时（不含收尾段，口径见 [Record](../../record/architecture.md#resultjson)）；对超时 attempt（`error.code = "timeout"`）返回 `null`——线值是右删失点不是实测完成耗时，计入聚合会把「被砍断」当成「跑了这么久」，排除又会让慢条件显得快，删失只能显式呈现（见下） | 低 | `result.json` |
 | `tokens` | input + output tokens | 低 | `result.json` |
 | `costUSD` | 网关实测成本优先，否则估算成本 | 低 | `result.json` |
 | `assistantTurns` | o11y 事件流中的 assistant turn 数；与 `t.send` 的轮次（轮标签 `turn<N>`）是两个计数，名字因此带限定词 | 低 | `o11y.json` |
@@ -103,7 +103,7 @@ interface MetricCell {
 ```ts
 type ScoringComposition = "pass" | "points" | "mixed";
 
-/** input 内出现的题型构成，取自快照记录的定义期 `scoring` 事实。 */
+/** input 内出现的题型构成，取自 Run 记录的定义期 `scoring` 事实。 */
 function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 ```
 
@@ -115,7 +115,7 @@ function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 | `"points"` | `totalScore` | 同上位置全部换成总分；通过率不出现（不摆空列） |
 | `"mixed"` | 两者并排、各读各的 | 「过了 31/40 道」和「挣了 142 分」不能相加也不能互相排名：摘要两个 KPI 都显示，按题型拆组的位置各组用自己的主读数 |
 
-组件本身保持中立：图表与 `MetricTable` 只收 `Metric`，不感知题型；分支只发生在消费 `scoringComposition` 的那几处组装点——[`ScopeSummary`](../components/summaries/scope-summary.md) 的渲染面、[`ExperimentList`](../components/entity-lists/experiment-list.md) 的主列、[`ExperimentComparison`](../components/summaries/experiment-comparison.md) 的 compose。自定义报告需要同样的切换时调用同一个函数，不重新发明判据。
+组件本身保持中立：图表与 `MetricTable` 只收 `Metric`，不感知题型；分支只发生在消费 `scoringComposition` 的那几处组装点——[`SampleSummary`](../components/summaries/sample-summary.md) 的渲染面、[`ExperimentList`](../components/entity-lists/experiment-list.md) 的主列、[`ExperimentComparison`](../components/summaries/experiment-comparison.md) 的 compose。自定义报告需要同样的切换时调用同一个函数，不重新发明判据。
 
 ## 自定义指标
 
@@ -145,11 +145,11 @@ export const changedLines = defineMetric({
 
 ## 维度与数值轴
 
-可直接使用的维度有 `agent`、`model`、`experiment`、`eval`、`evalGroup` 和 `snapshot`。`evalGroup` 取 eval id 的完整父路径，没有 `/` 时取完整 id，例如 `security/sql-injection` 归 `security`，`a/b/c` 归 `a/b`。它只组织 eval，不组织 experiment。完整形状是：
+可直接使用的维度有 `agent`、`model`、`experiment`、`eval`、`evalGroup` 和 `run`。`evalGroup` 取 eval id 的完整父路径，没有 `/` 时取完整 id，例如 `security/sql-injection` 归 `security`，`a/b/c` 归 `a/b`。它只组织 eval，不组织 experiment。完整形状是：
 
 ```ts
 type BuiltInDimension =
-  | "agent" | "model" | "experiment" | "eval" | "evalGroup" | "snapshot";
+  | "agent" | "model" | "experiment" | "eval" | "evalGroup" | "run";
 
 interface CustomDimension {
   name: string;
@@ -187,7 +187,7 @@ interface NumericRunConfigAxisOptions extends NumericAxisOptions {
   map?: Readonly<Record<string, number>>;
 }
 
-/** runConfig() 的可用键：ExperimentRunInfo 字段全集，外加桥接到快照顶层权威字段的 model / agent。 */
+/** runConfig() 的可用键：ExperimentRunInfo 字段全集，外加桥接到 Run 顶层权威字段的 model / agent。 */
 type RunConfigKey = keyof ExperimentRunInfo | "model" | "agent";
 
 function flag(name: string, options?: DimensionOptions): DimensionRef;
@@ -216,20 +216,20 @@ const memory = label("memory", { label: "Memory mechanism" });
 const webResearch = flag("webResearch", { label: "Web research" });
 ```
 
-`model`、`reasoningEffort`、`budget`、`runs` 这类**顶层运行配置不在 `flags` 里**，用 `runConfig()` 读快照的 [`ExperimentRunInfo`](../../results/architecture.md#snapshotjson) 投影——名字点明读的是这次运行的落盘配置，与项目的 `niceeval.config.ts` 无关；可用键由 `RunConfigKey` 在类型层穷尽（那张接口的字段全集，外加桥接到快照顶层权威字段的 `model` / `agent`），拼错键在编译期就被拒绝：
+`model`、`reasoningEffort`、`budget`、`attempts` 这类**顶层运行配置不在 `flags` 里**，用 `runConfig()` 读 Run 的 [`ExperimentRunInfo`](../../record/architecture.md#runjson) 投影——名字点明读的是这次运行的落盘配置，与项目的 `niceeval.config.ts` 无关；可用键由 `RunConfigKey` 在类型层穷尽（那张接口的字段全集，外加桥接到 Run 顶层权威字段的 `model` / `agent`），拼错键在编译期就被拒绝：
 
 ```ts
 const reasoning = runConfig("reasoningEffort", { label: "Reasoning effort" });
 const budget = runConfig("budget", { label: "Budget", unit: "USD" });
 ```
 
-第四个构造器读的不是声明而是观测：`fact()` 读 `AttemptRecord.facts`（生命周期代码经 `ctx.fact()` 上报的运行事实，[字段契约](../../results/architecture.md#facts运行事实)），用来按「这条 attempt 实际连的是哪个实例、实际起步有多少条笔记」分组——这类值不进指纹，换了不作废任何结果，而携带条目带着**产出它那一轮**的 facts，分组因此不会张冠李戴：
+第四个构造器读的不是声明而是观测：`fact()` 读 `AttemptRecord.facts`（生命周期代码经 `ctx.fact()` 上报的运行事实，[字段契约](../../record/architecture.md#facts运行事实)），用来按「这条 attempt 实际连的是哪个实例、实际起步有多少条笔记」分组——这类值不进指纹，换了不作废任何结果，而携带条目带着**产出它那一轮**的 facts，分组因此不会张冠李戴：
 
 ```ts
 const endpoint = fact("nowledge.endpoint", { label: "Memory instance" });
 ```
 
-fact 是逐 attempt 的，同一 experiment 的 attempt 可能落在不同值上（跨轮携带、实例中途轮换）；分组按 attempt 各自的值走，不折叠到 experiment 层。experiment 作用域上报的 fact 进 `SnapshotMeta.facts`，不是 attempt 事实，`fact()` 不读它。
+fact 是逐 attempt 的，同一 experiment 的 attempt 可能落在不同值上（跨轮携带、实例中途轮换）；分组按 attempt 各自的值走，不折叠到 experiment 层。experiment 作用域上报的 fact 进 `RunMeta.facts`，不是 attempt 事实，`fact()` 不读它。
 
 `flag()` / `label()` / `runConfig()` / `fact()` 只是分组维度；它们读取的落盘值可能是字符串、数字、布尔值、数组或对象，不冒充数值轴。分组显示键按稳定 JSON 规则生成：字符串直接显示，其它值用对象键递归排序后的 JSON，缺失值显示内置文案 `(missing)`。若不同原始值生成同一个显示键，计算函数报出冲突并要求改用 `CustomDimension`，绝不静默合组。
 
@@ -254,4 +254,4 @@ const reasoning = numericRunConfig("reasoningEffort", {
 ## 相关阅读
 
 - [图表](../components/charts/README.md) / [表格与矩阵](../components/tables/README.md) —— 指标的图形与表格投影。
-- [Results Format](../../results/architecture.md) —— 指标读取的落盘字段。
+- [Record Format](../../record/architecture.md) —— 指标读取的落盘字段。

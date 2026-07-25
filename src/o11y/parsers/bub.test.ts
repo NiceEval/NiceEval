@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // 「Usage、facts 与失败命令证据落盘」桶恒互斥归一:bub tape 的 usage 是 Chat Completions
 // 形状,prompt_tokens_details.cached_tokens 是 prompt_tokens 子集,聚合前扣减;
 // 同对象的 cost 是实测计费,照常累进 costUSD。

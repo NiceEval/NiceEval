@@ -7,7 +7,7 @@
 ## 全流程
 
 1. 从 `defineReport(树)` 升级到 `defineReport({ pages })`,每页只回答一类问题。
-2. 总览页放 `Hero`、`ScopeWarnings`、`SnapshotDiagnostics`、`ExperimentComparison`;失败页放 `FailureList`;分析页放指标图。
+2. 总览页放 `Hero`、`SampleWarnings`、`RunDiagnostics`、`ExperimentComparison`;失败页放 `FailureList`;分析页放指标图。
 3. 声明一张 `input: "attempt"` 且 `navigation: false` 的参数化 page,用 `AttemptDetail` 接 locator 下钻。
 4. 用 shell 声明标题、外链、footer 和本地资产;换外观是另一件事,走[主题](theme-and-distribute.md)。
 5. 同一份定义分别用 `show --page` 和 `view` 验证 text/web 两面。
@@ -15,4 +15,4 @@
 ## 边界
 
 - Tabs 是页内的局部视角;不同受众、不同 URL 或终端需分段阅读时用 pages。
-- Attempt page 是 locator 路由的参数化详情,不是第四张固定 Scope 页。
+- Attempt page 是 locator 路由的参数化详情,不是第四张固定 Sample 页。

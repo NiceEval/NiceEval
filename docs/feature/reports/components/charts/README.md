@@ -36,7 +36,7 @@ type ChartProps =
 ```
 
 ```tsx
-<LineChart input={scope}>
+<LineChart input={sample}>
   <XAxis numeric={budget} />
   <YAxis metric={endToEndPassRate} />
   <Line metric={endToEndPassRate} by="agent" />

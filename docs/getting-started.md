@@ -184,10 +184,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 npx niceeval exp local fixtures/button
 
 # 跑 10 次测通过率(默认跑满,不提前退出)
-npx niceeval exp local fixtures/button --runs 10
+npx niceeval exp local fixtures/button --attempts 10
 
 # 只想知道能不能过、不在乎通过率:过一次就停,省下剩余次数
-npx niceeval exp local fixtures/button --runs 10 --early-exit
+npx niceeval exp local fixtures/button --attempts 10 --early-exit
 ```
 
 ## 看结果
@@ -207,7 +207,7 @@ Discovered 3 evals
 Results:  2 passed, 1 failed, 0 skipped
 ```
 
-详细 artifact 落在该实验的快照目录 `.niceeval/<experiment>/<snapshot>/`:快照级 `snapshot.json`,以及每个 attempt 目录下的 `result.json`(判决、断言、结构化错误与 diagnostics)与按需生成的 `commands.json`（非零 Sandbox 命令）、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Results Format](feature/results/architecture.md)。
+详细 artifact 落在该实验的 Run 目录 `.niceeval/<experiment>/<run>/`:Run 级 `run.json`,以及每个 attempt 目录下的 `result.json`(判定、断言、结构化错误与 diagnostics)与按需生成的 `commands.json`（非零 Sandbox 命令）、`events.json`、`sources.json`、`trace.json`、`o11y.json`、`diff.json`。结构详见 [Record Format](feature/record/architecture.md)。
 
 ## 接进 CI
 

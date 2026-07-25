@@ -159,7 +159,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   for (const run of opts.agentRuns) {
     // selectedEvalIds 已由 CLI 在构造 AgentRun 时对候选 eval 各求值一次算好(见
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
-    // 不重新调用用户谓词(见 docs/feature/results/architecture.md「selectedEvalIds」)。
+    // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
     const evals = selectedEvalsForRun(opts.evals, run);
     for (let i = 0; i < run.runs; i++) {
       for (const evalDef of evals) {
@@ -470,7 +470,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const experimentCompletedAt = new Map<string, string>();
   // experiment 作用域 ctx.fact() 的累加器(与 experimentDiagnostics 同一种「按 experimentId 分桶」
   // 模式):同一实验内后写覆盖先写,与 completedAt 同批在快照封口补写进 SnapshotMeta.facts
-  // (见 docs/feature/results/architecture.md#facts运行事实)。没有 experimentId 的裸 run 没有
+  // (见 docs/feature/record/architecture.md#facts运行事实)。没有 experimentId 的裸 run 没有
   // Snapshot 可挂,调用直接丢弃(与 recordExperimentDiagnostic 同一条纪律)。
   const experimentFacts = new Map<string, Record<string, FactValue>>();
   const recordExperimentFact = (experimentId: string | undefined, key: string, value: FactValue): void => {

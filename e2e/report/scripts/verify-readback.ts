@@ -14,7 +14,7 @@
 // Scope 警告,以及"无 phases"的 timing 场景)在本仓库这份 3-Experiment 的证据里不会自然出现,
 // 而想让它们出现又会打扰其他 domain 在共享 resultsRoot 上的断言。为此本模块手写了一份最小的、
 // 独立的 Results 格式 fixture(下面的 buildScopeWarningsFixture)——按
-// docs/feature/results/architecture.md 的 schema 手写的纯 JSON 字面量,写到它自己的 scratch
+// docs/feature/record/architecture.md 的 schema 手写的纯 JSON 字面量,写到它自己的 scratch
 // 目录里,只通过 `niceeval show/view --results <scratch>` 读回——绝不触碰
 // Evidence.resultsRoot(docs/engineering/testing/e2e/report.md 的 B2 任务,「重要操作提示」#2)。
 //
@@ -153,10 +153,10 @@ function expectServerDoesNotStart(extraArgs: string[]): Promise<{ exitCode: numb
 }
 
 // ---------------------------------------------------------------------------
-// 手写的最小 Results 格式 fixture(遵循 docs/feature/results/architecture.md 的 schema)——
+// 手写的最小 Results 格式 fixture(遵循 docs/feature/record/architecture.md 的 schema)——
 // 用来演示在本仓库真实证据中不会自然出现的那几种 Scope 警告,以及"无 phases → unavailable"
 // 与 attempt facts 的公开读回场景。schemaVersion 是签入测试仓库的独立契约 oracle，取自
-// docs/feature/results/architecture.md，不从候选 niceeval 实现导入。公开格式升版时应由
+// docs/feature/record/architecture.md，不从候选 niceeval 实现导入。公开格式升版时应由
 // 契约 diff 显式修改这里；若自动跟随候选常量，reader 与 fixture 可以一起错而测试仍然全绿。
 // ---------------------------------------------------------------------------
 

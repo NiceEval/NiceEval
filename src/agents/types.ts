@@ -75,7 +75,7 @@ export type AgentSetupSkill =
 /**
  * 一次 Agent setup 实际装了什么 —— 沙箱型 Coding Agent Adapter 在 setup 收尾写出的安装清单。
  * 沙箱内落在 `__niceeval__/agent-setup.json`,运行器把它作为 attempt artifact 存成
- * `agent-setup.json`(见 docs/feature/results/architecture.md)。不参与评分,只回答「这次实际
+ * `agent-setup.json`(见 docs/feature/record/architecture.md)。不参与评分,只回答「这次实际
  * 装了什么」;**环境变量值与 secret 不写进来**(所以 mcpServers 只记 name/command/args)。
  */
 export interface AgentSetupManifest {
@@ -322,7 +322,7 @@ export interface AgentContext {
    * 第三条反馈通道:上报本次运行的中性环境观测(如实际生效的 agent 配置、缓存命中状态)。
    * 落进 `AttemptRecord.facts` 成为一等观测量;不影响 Turn status 或 verdict,不参与
    * verdict / 评分 / 指纹。key 匹配 `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,
-   * 非法 key 或非标量 value 抛错。形状与归属语义见 docs/feature/results/architecture.md#facts运行事实。
+   * 非法 key 或非标量 value 抛错。形状与归属语义见 docs/feature/record/architecture.md#facts运行事实。
    */
   fact(key: string, value: string | number | boolean): void;
   /**

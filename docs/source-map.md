@@ -203,6 +203,27 @@
 
 ## 与设计文档的已知差异(实现取舍)
 
+- **模块名已定稿为 `niceeval/record` + `niceeval/sample`,源码目录仍是 `src/results/`**:契约把持久化事实层
+  与选择层切成两个包入口([Record](feature/record/README.md) / [Sample](feature/sample/README.md)),对应的目标
+  源码目录是 `src/record/` 与 `src/sample/`。当前实现两层都住在 `src/results/`:格式与读写在
+  `open.ts` / `format.ts` / `writer.ts`,选择与去重在 `select.ts`。本页表格里的文件列是**当前真实位置**,
+  功能文档里出现的 `src/record/…` 是目标位置;搬目录连带公开入口改名,与实现分层同批做。同名对照:
+  `openResults`→`openRecord`、`createResultsWriter`→`createWriter`、`copySnapshots`→`publish`、
+  `results.latest()`→`latestRuns()`、`results.current()`→`latestPerEval()`、`Scope`→`Sample`、
+  `Snapshot`→`Run`、`skipped`→`unreadable`。
+- **落盘键名与常量沿用 `snapshot` 词根**:契约把落盘单位定名为 Run(`run.json`、`RunMeta`、
+  `RECORD_SCHEMA_VERSION`),当前落盘仍写 `snapshot.json`,常量仍叫 `RESULTS_SCHEMA_VERSION` /
+  `RESULTS_FORMAT`,类型仍叫 `SnapshotMeta`。改名是破坏兼容的格式变更,按
+  [版本与升级设计](feature/record/architecture.md#版本与升级设计)要递增 `schemaVersion` 并让旧落盘走
+  不兼容提示路径;`format` 的取值 `"niceeval.results"` 恒不变。
+- **`configHash` 尚无落盘字段**:跨 Run 可比性的唯一判据
+  ([configHash](feature/record/library.md#confighash配置身份只算一次))
+  要求 `run.json` 记一个配置哈希,并让 `fingerprint = hash(configHash, eval 源码, …)` 嵌套派生。
+  当前 `src/runner/fingerprint.ts` 直接算逐 eval 指纹、不单独暴露配置那一半,
+  `selectLatestPerEval` 的可比性判断另有一套字段比较——两处清单分叉正是这条契约要消除的。
+- **`evidenceState` 三态尚未产出**:读取面契约要求 `local` / `borrowed` / `dangling` 可分辨,并让选择层据此
+  产出 `dangling-evidence` 警告。当前懒加载对「原 Run 被清理」与「该证据没采集」都返回 `null`,
+  而 `AttemptRecord.artifacts` 仍声明写过——两者的差值无法判断。
 - **非零 Sandbox 命令尚无独立证据 artifact**：目标契约要求公开 Sandbox wrapper 在返回非零 `CommandResult` 前登记 `commands.json`，按 timing command node id 关联，并由 `show --execution` 提供 `cmd<N>` 下钻；当前 `src/runner/timing.ts` 只在 `TimingNode.command` 保存有界 display / exitCode，不保存 stdout/stderr，`src/results/` 没有 commands artifact、`AttemptRecord.artifacts` 存在性声明、`AttemptHandle.commands()` 与 copy artifact kind，execution 也只消费 Agent events。Eval 自己 `.slice(-500)` 后丢掉的 EACCES 目前不可恢复。实现计划见 `plan/failed-command-evidence.md`，不能把更聪明的 TUI tail heuristic 当成替代。
 - **E2B coding-agent baseline 的源码契约已统一，公共制品尚未换代**：`e2bCodingAgentTemplate()` 已横切 Claude Code / Codex / Bub 三条配方，为运行用户设置 `/usr/local` npm global prefix 并准备可写的 bin / module 目录；发布构建通过 `verifyE2BNodeToolContract()` 以 `user` 身份检查 prefix、PATH 与写权限。但 `PUBLISHED_E2B_BASELINE_TAG` 与 `sandbox/e2b/published.json` 记录的仍是早于该修复的不可变制品（旧 tag `v0.6.1`）：Claude Code 默认 `/usr`、普通用户全局安装 EACCES，Codex / Bub 默认 `/usr/local` 可写。新制品完成真实安装验证、按 `<Agent 版本>-r<配方修订>` 发布并更新台账与镜像常量前，Eval workaround 仍是 `npm install -g --prefix /usr/local <pkg>`；剩余验证与发布次序见 `plan/e2b-template-runtime-contract.md`。Docker 侧的具名常量已按新版本方案派生，等 `main` 上的镜像 CI 跑完即自洽。
 - **judge 走 OpenAI 兼容 `/chat/completions`**,base 解析顺序:`judge.baseUrl` → 官方端点 `https://api.openai.com/v1`;key 解析顺序:`judge.apiKeyEnv` 指向的环境变量 → `NICEEVAL_JUDGE_KEY`(见 `src/scoring/judge.ts` 的 `resolveJudge`)。model 解析:eval/config 的 `judge.model`;**没有内置默认模型**,解析不到而用到 judge 断言时报清晰错误。端点与模型是配置、只从代码来,key 是凭据、只从环境来且不跨家族猜([边界](architecture.md#配置从代码来凭据从环境来))——接 OpenAI 兼容代理时显式写 `judge.baseUrl`。

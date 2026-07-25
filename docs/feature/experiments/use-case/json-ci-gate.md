@@ -16,15 +16,15 @@
 
 2. 日志是人读追加流,整流走单一 `stdout`——CI runner 分开缓冲两个 OS stream 也不会把失败行和结束摘要打乱序([流边界](../cli.md#输出流和落盘节奏))。需要机器解析运行事件(自建注解 adapter、实时看板)时加 [`--json`](../cli.md#机器怎么读--json) 换成 NDJSON,两种形态事实一致。
 3. 门禁只认退出码:`0` 全部通过且运行完整覆盖计划;`1` 有 `failed` / `errored`、budget 未覆盖计划或 required reporter 写失败;`2` 未捕获崩溃;`130` 中断。折叠规则见 [Runner · 退出码](../../../runner.md#退出码)。
-4. 归档产物:`--junit` 是整次运行的最终聚合,收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件,要么不存在。attempt 级快照逐个原子落盘,进程中断时已完成的照常可读(见 [CLI · 输出流和落盘节奏](../cli.md#输出流和落盘节奏))。需要 JSON 汇总交给自建看板时,运行后 `niceeval show --json > summary.json`——读结果面拿到的比任何运行期汇总文件都全。注意口径:`show --json` 读的是结果根的现刻水位(含携带与历史快照),fresh checkout 的 CI 上等于本次运行;结果根跨运行持久(nightly 缓存 `.niceeval/`)时,用 `--exp` / `--fresh` 收窄到本次条件与新执行。
-5. JUnit 交给平台做测试注解;完整记录以文件和快照为准。
+4. 归档产物:`--junit` 是整次运行的最终聚合,收尾时写临时文件并原子替换目标——CI 归档到的要么是完整文件,要么不存在。attempt 级 Run 逐个原子落盘,进程中断时已完成的照常可读(见 [CLI · 输出流和落盘节奏](../cli.md#输出流和落盘节奏))。需要 JSON 汇总交给自建看板时,运行后 `niceeval show --json > summary.json`——读结果面拿到的比任何运行期汇总文件都全。注意口径:`show --json` 读的是记录根的现刻水位(含携带与历史 Run),fresh checkout 的 CI 上等于本次运行;记录根跨运行持久(nightly 缓存 `.niceeval/`)时,用 `--exp` / `--fresh` 收窄到本次条件与新执行。
+5. JUnit 交给平台做测试注解;完整记录以文件和 Run 为准。
 
 ## 边界
 
 - `--junit` 不是终端格式开关,与输出形态正交;它是 required reporter,写失败必须判红,不降级成 warning。
 - 只有连形态都没能确定的 argv / 配置加载错误走 `stderr`(人读 `error:` + `fix:` 两行)。
 - budget 到顶时结论是 `incomplete`、退出码 `1`,不伪装全绿——流程见 [`--budget` 用例](budget.md)。
-- `--dry` 不创建快照或 JUnit。
+- `--dry` 不创建 Run 或 JUnit。
 
 ## 相关阅读
 

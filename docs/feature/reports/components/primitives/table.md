@@ -27,7 +27,7 @@ type TableProps =
   | ({ data: readonly Row[]; rows?: never } & TablePresentation);
 
 interface TablePresentation {
-  /** rows 形态的取数范围；省略时取宿主注入的 Scope。 */
+  /** rows 形态的取数范围；省略时取宿主注入的 Sample。 */
   input?: ReportInput;
   /** eval id 前缀，聚合之前收窄题集；逐实体成行的数据源不接受它。 */
   evals?: string | readonly string[];

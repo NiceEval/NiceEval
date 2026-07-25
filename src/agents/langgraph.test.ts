@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // 「Usage、facts 与失败命令证据落盘」桶恒互斥归一:LangChain usage_metadata 的 input_tokens
 // 是含缓存读写的输入总量,落桶前扣掉 input_token_details 的 cache_read / cache_creation。
 // bug: memory/estimatecost-openai-inclusive-cache-double-billed.md

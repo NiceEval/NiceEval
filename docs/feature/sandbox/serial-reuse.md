@@ -36,7 +36,7 @@
 
 「清空 repo」不引入任何新机制,直接复用分类账已经在 workdir 上维护的 git:上一题跑完、diff 折叠完之后,把工作树 `git reset --hard` 回温基线那笔 commit,再 `git clean` 掉未跟踪文件(Fixture、agent 新建的文件、构建产物),workdir 就回到「刚装完、还没碰任何题目」的状态。下一题在这张干净的工作树上重放自己的 Fixture、重取归因窗口。
 
-不发明第二套 checkpoint / 快照机制是刻意的:分类账已经是「便携、增量、带内容、能支撑逐窗口归因的 git 引擎」(见架构文里选 git 的理由),温基线只是它上面多钉一个可 reset 回去的 commit。运行时 [`createCheckpoint` / `restoreCheckpoint`](library/prebuilt-environments.md#运行时-checkpointcreatecheckpoint-restorecheckpoint) 解决的是「跨沙箱搬文件系统片段」,与「同一沙箱内回退工作树」是两件事,本文不碰它。
+不发明第二套 checkpoint / Run 机制是刻意的:分类账已经是「便携、增量、带内容、能支撑逐窗口归因的 git 引擎」(见架构文里选 git 的理由),温基线只是它上面多钉一个可 reset 回去的 commit。运行时 [`createCheckpoint` / `restoreCheckpoint`](library/prebuilt-environments.md#运行时-checkpointcreatecheckpoint-restorecheckpoint) 解决的是「跨沙箱搬文件系统片段」,与「同一沙箱内回退工作树」是两件事,本文不碰它。
 
 ### 串行是本质,不是附带限制
 
@@ -75,14 +75,14 @@ niceeval exp memory/commit0 --reuse-sandbox     # 一个热沙箱串行跑完这
 ### 与留存、缓存、重试的组合
 
 - **`--keep-sandbox` 与 `--reuse-sandbox` 互斥,组合在创建前报错。** 留存的前提是「这个失败现场属于某一条 attempt」([Sandbox · 留存与注册表](architecture.md#留存keep与注册表));复用沙箱被整组共享,而且轮到第 N 题失败时,前面题目早已在同一 workdir 上被 reset 抹掉,留下来的现场对任何单题都不忠实。这与[自定义 provider 不支持留存](architecture.md#留存keep与注册表)是同一类前置报错:不先起实例再发现无法纳管。要留失败现场就用默认模式跑那一条 eval。
-- **复用与指纹缓存双向绝缘。** 出向:[指纹](../../concepts.md)跳过的含义是「这个 `(eval + 配置)` 已经干干净净地过了一次」,复用带着上面的污染风险,给不出这个保证——复用 attempt 照常落进快照供 `show` / `view` 检查,但**打上 `reuse` 标记、永不被后续 run 的指纹跳过当成缓存命中**,它不进 CI、也不进缓存,是同一条理由的两个出口。入向:复用 run 也**不消费携带**,计划内每个 attempt 都真实在热道上跑——一份快照里只有一种出身的结果,`runs > 1` 的分布不会混进上一轮干净模式的旧 attempt。`--rerun all` 在复用 run 里因此没有作用对象(本就没有携带可关),组合冗余但合法。
+- **复用与指纹缓存双向绝缘。** 出向:[指纹](../../concepts.md)跳过的含义是「这个 `(eval + 配置)` 已经干干净净地过了一次」,复用带着上面的污染风险,给不出这个保证——复用 attempt 照常落进 Run 供 `show` / `view` 检查,但**打上 `reuse` 标记、永不被后续 run 的指纹跳过当成缓存命中**,它不进 CI、也不进缓存,是同一条理由的两个出口。入向:复用 run 也**不消费携带**,计划内每个 attempt 都真实在热道上跑——一份 Run 里只有一种出身的结果,`runs > 1` 的分布不会混进上一轮干净模式的旧 attempt。`--rerun all` 在复用 run 里因此没有作用对象(本就没有携带可关),组合冗余但合法。
 - **`runs > 1` 时 attempt 也串行。** 复用只有一条热道,同一 eval 的多次重复也在这条道上依次跑,每次先 reset 回温基线;[首过即停](../../concepts.md)语义不变。
 - **[`localSandbox()`](local.md) 不进入复用,组合在创建前报错。** 两条理由各自充分:本地档没有冷启动可省(没有容器、没有安装,复用不带来任何加速);本地档的正确性中心是「只观察、绝不动用户没提交的工作」,而复用的题间重置恰恰要对 workdir 跑 `git reset --hard && git clean`。报错指明这一点,不静默降级成默认模式。
 
 ## 非目标
 
 - **不改默认模式**:每 attempt 全新沙箱、可并发仍是缺省;复用是显式 flag 才进入的反转档。
-- **不发明新的持久化 / checkpoint 原语**:重置只用分类账已有的 git 工作树,不加第二套快照面,也不改 `createCheckpoint` / `restoreCheckpoint` 的用途。
+- **不发明新的持久化 / checkpoint 原语**:重置只用分类账已有的 git 工作树,不加第二套 Run 面,也不改 `createCheckpoint` / `restoreCheckpoint` 的用途。
 - **不改变更归因语义**:温基线就是每题的归因锚点,send 窗口、逐窗口 diff、eval / agent 归因口径一字不改。
 - **不承诺 workdir 之外的隔离**:复用模式明确不重置 `$HOME` / 全局安装 / 进程 / 环境,不试图做「深度清理」去伪装成全新。
 - **不把复用写进可签入配置**:`defineExperiment` / `niceeval.config.ts` 不新增复用字段,CI 不依赖它。

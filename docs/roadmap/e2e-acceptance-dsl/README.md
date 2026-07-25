@@ -1,6 +1,6 @@
 # E2E 验收断言 DSL 与 vitest 验收库
 
-还没定为当前契约的候选设计,见 [Roadmap 约定](../README.md)。调研来源见 [References · Playwright ARIA Snapshot](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植)、[References · trycmd / snapbox](../../references.md#trycmd--snapboxrust)、[References · CLI / TUI 测试生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等)。库的完整断言词表——语义树快照语法、匹配语义、golden scrub 规则、点查询 API 与失败反馈——见 [Library 逐词表说明](library.md);真实验收脚本逐场景的「现行断言 → 候选写法」对照见 [Use Cases](use-cases/README.md)。
+还没定为当前契约的候选设计,见 [Roadmap 约定](../README.md)。调研来源见 [References · Playwright ARIA Run](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植)、[References · trycmd / snapbox](../../references.md#trycmd--snapboxrust)、[References · CLI / TUI 测试生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等)。库的完整断言词表——语义树 Run 语法、匹配语义、golden scrub 规则、点查询 API 与失败反馈——见 [Library 逐词表说明](library.md);真实验收脚本逐场景的「现行断言 → 候选写法」对照见 [Use Cases](use-cases/README.md)。
 
 ## 问题
 
@@ -27,7 +27,7 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 
 「一次真实运行、大量确定性断言」的模型不变,落成机制:
 
-- prepare 阶段产出**证据清单**(evidence manifest,JSON):结果根路径、已提取的 locator、导出站目录、日志路径。路径经环境变量交给 vitest,测试文件从 globalSetup 拿到只读句柄。
+- prepare 阶段产出**证据清单**(evidence manifest,JSON):记录根路径、已提取的 locator、导出站目录、日志路径。路径经环境变量交给 vitest,测试文件从 globalSetup 拿到只读句柄。
 - 测试对证据只读。任何测试不再起实验、不写 `.niceeval/`;需要额外 CLI 输出的测试自己起 `niceeval show ...` 子进程(读面命令幂等)。
 - 证据存在即复用:开发回路里改断言→重跑 vitest 不花模型成本;`pnpm e2e` 全新验收总是先重新产证。
 
@@ -35,7 +35,7 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 
 逐层的完整语法、匹配语义与 API 见 [Library 逐词表说明](library.md),这里只给分工:
 
-1. **语义树快照**(核心新增)——终端输出解析成 `section` / `table` / `tree` 等排版概念的结构树,用照抄 aria-snapshot 语义的 YAML 匹配(默认有序子序列、省略即不关心、`/regex/`、`/children: equal` 显式升级)。HTML 面不发明,直接采 aria-snapshot 的现成实现(Vitest 4.1.4+ `toMatchAriaSnapshot` / ivya)对可访问性树匹配。
+1. **语义树 Run**(核心新增)——终端输出解析成 `section` / `table` / `tree` 等排版概念的结构树,用照抄 aria-snapshot 语义的 YAML 匹配(默认有序子序列、省略即不关心、`/regex/`、`/children: equal` 显式升级)。HTML 面不发明,直接采 aria-snapshot 的现成实现(Vitest 4.1.4+ `toMatchAriaSnapshot` / ivya)对可访问性树匹配。
 2. **容差 golden**(窄稳表面)——`toMatchFileSnapshot` + 比对前的声明式 scrub 归一(耗时/成本/token/路径/locator → 占位符)。只用于「每个字符都是契约」的表面:`--json` 摘要、JUnit、错误文案。
 3. **点查询**(既有风格的升格)——`term(stdout).section(...).table().rows()`、`historyRows()` 等,把各脚本手搓的提取器升格为库词表,供「只断言自有事实出现」的场景使用。
 
@@ -48,10 +48,10 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 | 场景 | 既有边界 | 用哪层 | 对照 |
 |---|---|---|---|
 | 适配器仓库读回 | 自有事实的子串级出现,不断言布局 | 第三层点查询 | [adapter-readback](use-cases/adapter-readback.md) |
-| report 仓库渲染结构 | 区块存在、相对顺序、计数、默认展开折叠 | 第一层语义树快照 | [render-structure](use-cases/render-structure.md) |
+| report 仓库渲染结构 | 区块存在、相对顺序、计数、默认展开折叠 | 第一层语义树 Run | [render-structure](use-cases/render-structure.md) |
 | report 仓库读面行为 | history / stats / locator / 收窄 | 第一层 + 第三层 | [readback](use-cases/readback.md) |
 | report 仓库视觉与交互 | 行为与几何,不锁颜色值与 class 列表 | 现有 Playwright 写法保留 | [html-export](use-cases/html-export.md) |
-| 导出 HTML 语义结构 | 语义块存在、可访问结构 | 第一层 aria 快照 | [html-export](use-cases/html-export.md) |
+| 导出 HTML 语义结构 | 语义块存在、可访问结构 | 第一层 aria Run | [html-export](use-cases/html-export.md) |
 | 机器出口与错误文案 | 逐字段格式契约 | 第二层容差 golden | [machine-exports](use-cases/machine-exports.md) |
 | 发布包消费边界 | 三种 JSX 配置下装载渲染成功 | 第一层 + 证据生命周期 | [package-consumer](use-cases/package-consumer.md) |
 | CLI 仓库 PTY smoke | 有 ANSI、有面板、到达完成态 | 现状保留,粗粒度点查询 | — |
@@ -59,7 +59,7 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 ## 待裁决分歧
 
 1. **迁移范围。** 全矩阵迁移 vitest,还是只迁 report 仓库(断言最密、脆断言最集中)、适配器仓库的 10–15 条读回断言保持线性脚本?倾向后者起步:适配器读回本来就该停在子串级,线性脚本的成本可接受;report 先迁,跑通后再决定是否推广。
-2. **ivya 的离浏览器可用性。** 对 happy-dom 装载的导出 HTML 直接跑 ivya 能否产出正确的 a11y 树需要 spike;不行则 a11y 快照走 vitest browser mode,与现有 Playwright 共存的进程模型要设计。
+2. **ivya 的离浏览器可用性。** 对 happy-dom 装载的导出 HTML 直接跑 ivya 能否产出正确的 a11y 树需要 spike;不行则 a11y Run 走 vitest browser mode,与现有 Playwright 共存的进程模型要设计。
 3. **双面同源断言。** 同一份语义期望能否同时匹配 text 结构树与 web a11y 树(替代现有的两套手写提取器互比)?词表不同(终端 `section/table` vs aria `region/table`),需要节点类别映射;表达力收益明确,但可能过度设计——留待第一层落地后按实际重复度裁决。
 4. **包的源码落点。** 独立包定了,但源码放 niceeval 仓库内(发布流程要支持第二个包)还是独立仓库,随发版机制一起裁决。
 
@@ -79,5 +79,5 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 - [E2E 总则](../../engineering/testing/e2e/README.md) —— 仓库自治、候选注入、退出码折叠;本设计在其边界内运作。
 - [功能域 · 报告与读面](../../engineering/testing/e2e/report.md) —— 渲染面断言计划;第一层词表的主要落点。
 - [测试体系总纲 · 变更预算](../../engineering/testing/README.md#变更预算无关测试变红是缺陷) —— 「化妆性变更不打红」的裁决依据。
-- [References · Playwright ARIA Snapshot](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植) / [trycmd](../../references.md#trycmd--snapboxrust) / [生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等) —— 调研原始记录:抄什么、不抄什么及理由。
+- [References · Playwright ARIA Run](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植) / [trycmd](../../references.md#trycmd--snapboxrust) / [生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等) —— 调研原始记录:抄什么、不抄什么及理由。
 - [Library · 排版原语](../../feature/reports/library/layout.md) —— 终端结构解析器的规范来源。

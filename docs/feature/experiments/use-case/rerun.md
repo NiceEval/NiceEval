@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-默认口径下,上一轮判定为终态(`passed` / `failed`)的结果都算数:指纹未变就携带合入本次快照,不重花 agent / sandbox 成本,本次只跑 `errored` / `skipped` 与计划内缺失的 attempt 序号。但有两种时刻,历史判定不该继续算数:
+默认口径下,上一轮判定为终态(`passed` / `failed`)的结果都算数:指纹未变就携带合入本次 Run,不重花 agent / sandbox 成本,本次只跑 `errored` / `skipped` 与计划内缺失的 attempt 序号。但有两种时刻,历史判定不该继续算数:
 
 - **修了被测对象,要复验失败项。** 改了 agent 的 prompt、修了被测服务的 bug——这些都不在指纹里,失败的那几条不会自动重跑,而已通过的那些没必要再花一次钱。
 - **外部世界变了,整批都不可信。** agent CLI 发了新版、沙箱镜像里的依赖被重建。这时携带的旧「绿」掩盖的可能是真实回归:你以为在验证现状,其实在复读历史。
@@ -50,7 +50,7 @@
    ```
 
 2. `--rerun all` 关闭携带:计划内每个 attempt 全新派发,没有 `reused`;本次的 tok 与 $ 是完整矩阵的真实开销,没有缓存摊薄(计数与成本口径见 [CLI · 运行中的 live 面板](../cli.md#运行中的-live-面板))。
-3. 新结果落成新快照并成为下一轮携带的来源;历史快照保留,`niceeval view` 仍可对照升级前后的两轮。
+3. 新结果落成新 Run 并成为下一轮携带的来源;历史 Run 保留,`niceeval view` 仍可对照升级前后的两轮。
 4. 确认无回归后回到默认口径:后续 run 按指纹采信这轮产出的终态,「改一个 case 重跑」继续只花那一个 case 的时间(见 [Runner · 缓存](../../../runner.md#缓存指纹去重))。
 
 ## 边界
@@ -65,4 +65,4 @@
 
 - [Runner · 缓存:指纹去重](../../../runner.md#缓存指纹去重) —— 指纹构成、携带粒度、终态定义的单源。
 - [改什么会作废缓存](cache-invalidation.md) —— 改哪些东西指纹自己会变,不必动 `--rerun`。
-- [Results · 两类条目](../../results/architecture.md#resultjson) —— 携带条目怎样落盘与回指原 artifact。
+- [Results · 两类条目](../../record/architecture.md#resultjson) —— 携带条目怎样落盘与回指原 artifact。

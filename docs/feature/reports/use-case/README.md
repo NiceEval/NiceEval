@@ -1,6 +1,6 @@
 # Reports —— 用例手册
 
-本目录把 Reports 的 CLI 与 Library 能力放回真实任务里:先说用户要回答什么问题,再串起 Scope、组件、宿主和下钻路径,最后划出何时应换另一种形态。契约单源仍在 [Show](../show.md)、[View](../view.md)、[Library](../library.md) 与各组件分篇;可直接复制的代码在[报告配方](../library/recipes.md),用例篇不重复字段全集和渲染契约。
+本目录把 Reports 的 CLI 与 Library 能力放回真实任务里:先说用户要回答什么问题,再串起 Sample、组件、宿主和下钻路径,最后划出何时应换另一种形态。契约单源仍在 [Show](../show.md)、[View](../view.md)、[Library](../library.md) 与各组件分篇;可直接复制的代码在[报告配方](../library/recipes.md),用例篇不重复字段全集和渲染契约。
 
 ## 修失败与查证据
 
@@ -17,11 +17,11 @@
 - [定位「哪道题 × 哪个配置」出问题](locate-config-eval-interactions.md) —— `MetricMatrix` / `BarChart`。
 - [比较基线与候选的成对差异](measure-ab-delta.md) —— `DeltaTable`。
 - [扫描参数档位的趋势与拐点](sweep-parameter-trend.md) —— 数值轴 `LineChart`。
-- [跟踪一个 Experiment 的历次 Snapshot](track-experiment-history.md) —— `results.experiments` + snapshot 维度。
+- [跟踪一个 Experiment 的历次 Run](track-experiment-history.md) —— `record.experiments` + run 维度。
 
 ## 完整性、定制与交付
 
-- [先证明数据范围值得相信](audit-scope-quality.md) —— `ScopeWarnings` / `SnapshotDiagnostics` / `ScopeSummary` / `ExperimentList`。
+- [先证明数据范围值得相信](audit-sample-quality.md) —— `SampleWarnings` / `RunDiagnostics` / `SampleSummary` / `ExperimentList`。
 - [用 artifact 定义业务指标](build-custom-metric.md) —— `defineMetric` / 自定义维度。
 - [从单页报告升级为多页站点](build-multipage-report.md) —— `defineReport` / pages / attempt-input page。
 - [自己写报告组件：规范与取主题色](write-custom-component.md) —— `defineComponent` 两形态 / 取色纪律 / `ctx.seriesColor`。
@@ -35,7 +35,7 @@
 
 ## show 与 view 共用
 
-- [`--results` / `--snapshot`:换结果根,或只看一份快照](results-root-and-snapshot.md)
+- [`--record` / `--run`:换记录根,或只看一份 Run](record-root-and-run.md)
 - [`--report` / `--page`:show 与 view 共用同一份自定义报告](report-shared-show-view.md)
 
 ## 组件 / API → 用例对照
@@ -49,8 +49,8 @@
 | `MetricMatrix` / `BarChart` | [配置 × Eval 定位](locate-config-eval-interactions.md) |
 | `DeltaTable` | [A/B 成对差异](measure-ab-delta.md) |
 | `LineChart` | [参数扫描](sweep-parameter-trend.md) |
-| snapshot 维度 / `ctx.results.experiments` | [Experiment 历史](track-experiment-history.md) |
-| `ScopeWarnings` / `SnapshotDiagnostics` / `ScopeSummary` / `ExperimentList` | [范围完整性](audit-scope-quality.md) |
+| run 维度 / `ctx.record.experiments` | [Experiment 历史](track-experiment-history.md) |
+| `SampleWarnings` / `RunDiagnostics` / `SampleSummary` / `ExperimentList` | [范围完整性](audit-sample-quality.md) |
 | `defineMetric` / `CustomDimension` | [业务指标](build-custom-metric.md) |
 | `defineReport({ pages })` / shell / `seriesPins` | [多页报告](build-multipage-report.md) |
 | `defineComponent` / `ctx.seriesColor` / `--nre-*` 令牌 | [自己写组件](write-custom-component.md) |
@@ -71,8 +71,8 @@
 | `--stats` | show | [跨条件归因](cli-cross-condition-attribution.md) |
 | `--exp` | show / view | [`--history` 用例](show-history-flaky-eval.md) · [裸 `view` 与收窄](view-local-narrowing.md) |
 | `--exp` ×N(对照) | show | [跨条件归因](cli-cross-condition-attribution.md) |
-| `--results` | show / view | [换结果根](results-root-and-snapshot.md) |
-| `--snapshot` | view | [换结果根](results-root-and-snapshot.md) |
+| `--record` | show / view | [换记录根](record-root-and-run.md) |
+| `--run` | view | [换记录根](record-root-and-run.md) |
 | `--no-open` / `--port` | view | [裸 `view` 与收窄](view-local-narrowing.md) |
 | `--out` | view | [静态导出](view-out-publish.md) |
 | `--report` / `--page` | show / view | [自定义报告](report-shared-show-view.md) |

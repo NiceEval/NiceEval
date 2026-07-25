@@ -24,7 +24,7 @@ value / scope / judge / sandbox / efficiency
 
 ## 断言记录（AssertionResult）
 
-`result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](architecture/severity-and-verdict.md) 判定规则的输入。字段契约单点定义在这里，[Results Format](../results/architecture.md#resultjson) 引用而不复写：
+`result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](architecture/severity-and-verdict.md) 判定规则的输入。字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
 
 ```typescript
 interface AssertionBase {

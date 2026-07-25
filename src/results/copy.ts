@@ -1,4 +1,4 @@
-// copySnapshots:把选中快照按格式感知地复制到另一个目录(定稿见 docs/feature/results/library.md「复制与瘦身」)。
+// copySnapshots:把选中快照按格式感知地复制到另一个目录(定稿见 docs/feature/record/library.md「复制与瘦身」)。
 //
 // 发布场景的原语:只带指定 artifact、只带选中快照的全部 attempt,布局知识不外泄。
 // artifact 复制忠实于源(原字节,不重新序列化、不改写);snapshot.json / result.json
@@ -20,7 +20,7 @@ import type { ArtifactKind, AttemptHandle, Scope, Snapshot, SnapshotMeta } from 
 
 /** 缺省携带的 artifact:commands / events / trace / o11y / agentSetup / sources;diff 不截断、
  *  可达百 MB,缺省不带。commands 缺省带的理由单独交代:失败命令证据是 errored attempt 的主要
- *  下钻面,不能默认发布拷贝时静默删掉(见 docs/feature/results/library.md「复制与瘦身」)。 */
+ *  下钻面,不能默认发布拷贝时静默删掉(见 docs/feature/record/library.md「复制与瘦身」)。 */
 const DEFAULT_PUBLISH_ARTIFACTS: ArtifactKind[] = ["commands", "events", "trace", "o11y", "agentSetup", "sources"];
 const VALID_ARTIFACTS: ArtifactKind[] = ["commands", "events", "trace", "o11y", "agentSetup", "diff", "sources"];
 
@@ -234,7 +234,7 @@ async function findArtifactFiles(
           break;
         }
       } catch {
-        // 缺文件跳过:某类数据为空本来就不生成对应 JSON(docs/feature/results/architecture.md)。
+        // 缺文件跳过:某类数据为空本来就不生成对应 JSON(docs/feature/record/architecture.md)。
       }
     }
   }

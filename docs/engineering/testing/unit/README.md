@@ -12,7 +12,7 @@
 运行时测试、类型契约测试和仓库守护分别由 `pnpm test`、`pnpm run typecheck` 和挂在 `pnpm test` 下的
 `test/` 守护测试承担。
 
-单元层的观察面是**数据**：输入数据到输出数据的确定性语义。渲染产物（终端排版、DOM 结构、快照、样式）、CLI 进程行为与真实协议路径不属于本层，一律归 E2E 功能仓库——边界全文见[测试体系总纲](../README.md#单元层的边界)。
+单元层的观察面是**数据**：输入数据到输出数据的确定性语义。渲染产物（终端排版、DOM 结构、Run、样式）、CLI 进程行为与真实协议路径不属于本层，一律归 E2E 功能仓库——边界全文见[测试体系总纲](../README.md#单元层的边界)。
 
 ## 核心判据
 
@@ -60,7 +60,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 
 ## Fake 边界：mock 什么，测哪一层
 
-每个 Feature 的单元测试都站在一条**缝**上：缝上面的逻辑是被测对象，缝下面用两种手段之一替代——**构造输入数据**（证据图、Scope、落盘树：没有替身，只有受控输入），或
+每个 Feature 的单元测试都站在一条**缝**上：缝上面的逻辑是被测对象，缝下面用两种手段之一替代——**构造输入数据**（证据图、记录图、落盘树：没有替身，只有受控输入），或
 **fake 自有稳定接口**（Agent、Sandbox、Reporter、judge 传输、时钟）。这条缝的选择有一条硬规则：
 
 - **fake 只发生在 niceeval 自己声明的契约接口上。**
@@ -78,8 +78,9 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [experiments-runner.md](experiments-runner.md) | 调度、缓存、budget、退出码折叠                                            | fake Agent / Sandbox / Reporter、受控时钟与 barrier                  | [e2e/cli](../e2e/cli.md)：真实进程与真实 attempt 下同一批行为                |
 | [scoring.md](scoring.md)                       | matcher、collector、scope、verdict                                        | 构造的证据图（`ScoringContext`）；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型    |
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
-| [results.md](results.md)                       | writer / reader、身份、选择、去重                                         | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的落盘与读回                         |
-| [reports.md](reports.md)                       | `*Data` 计算、装载、resolve                                               | 构造的 Scope / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染                       |
+| [record.md](record.md)                         | writer / reader、身份、`evidenceState`、publish                           | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的落盘与读回                         |
+| [sample.md](sample.md)                         | 两个选择口径、覆盖、时效、pipe 算子、去重                                 | 构造的内存记录图（区分力要求见该篇）                                 | [e2e/report](../e2e/report.md)：真实记录根上的口径与警告                     |
+| [reports.md](reports.md)                       | `*Data` 计算、装载、resolve                                               | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染                       |
 
 ## Feature 测试文档
 
@@ -96,7 +97,8 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [Experiments](../../../feature/experiments/README.md) 与 [Runner](../../../runner.md) | runs 展开、有界并发、early exit、budget、缓存与退出码折叠             | [experiments-runner.md](experiments-runner.md) |
 | [Sandbox](../../../feature/sandbox/README.md)                                         | 生命周期、路径边界、命令结果、diff 和清理语义                         | [sandbox.md](sandbox.md)                       |
 | [Scoring](../../../feature/scoring/README.md)                                         | matcher、scope、collector、evidence、severity 和 Verdict 形成一致判定 | [scoring.md](scoring.md)                       |
-| [Results](../../../feature/results/README.md)                                         | artifact round-trip、身份、选择、去重和历史合成语义                   | [results.md](results.md)                       |
+| [Record](../../../feature/record/README.md)                                          | artifact round-trip、身份、`configHash` 与携带资格、发布自包含        | [record.md](record.md)                         |
+| [Sample](../../../feature/sample/README.md)                                          | 两个口径的区分力、覆盖分母、时效、算子的四面同步重算与去重            | [sample.md](sample.md)                         |
 | [Reports](../../../feature/reports/README.md)                                         | 指标与聚合口径正确；装载、resolve 与校验反馈完整                      | [reports.md](reports.md)                       |
 
 [Adapters](../../../feature/adapters/README.md)
@@ -141,7 +143,7 @@ niceeval 是 TypeScript 库，类型推断和非法组合也是公共契约。�
 - **替第三方库证明基本能力。** 不测试 `JSON.parse`
   会解析、哈希库能返回字符串或 SDK 构造器能构造；只测试 niceeval 对它们的参数、错误和结果语义。
 - **断言渲染产物。**
-  终端排版、DOM 结构与快照锁定的是呈现而不是语义，实现每次调整都让它们变红；渲染面归
+  终端排版、DOM 结构与 Run 锁定的是呈现而不是语义，实现每次调整都让它们变红；渲染面归
   [E2E 功能域](../e2e/report.md)对真实产物验收。
 - **把类型检查当运行时证明。**
   TypeScript 不保证 JSON 没有额外字段，也不保证 parser、序列化和错误反馈正确。

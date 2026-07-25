@@ -303,7 +303,7 @@ export function attemptFixPromptData(evidence: AttemptEvidence): AttemptFixPromp
 
 // ───────────────────────── AttemptTimeline ─────────────────────────
 
-/** 收尾段的阶段名(见 docs/feature/results/architecture.md);两面渲染都把这些单列在主链之后,不计入主链总耗时。 */
+/** 收尾段的阶段名(见 docs/feature/record/architecture.md);两面渲染都把这些单列在主链之后,不计入主链总耗时。 */
 export const TIMELINE_CLOSING_PHASES: ReadonlySet<string> = new Set([
   "eval.teardown",
   "agent.teardown",
@@ -340,7 +340,7 @@ function commandStartOffsetMs(phases: readonly PhaseTiming[] | undefined, timing
 }
 
 /**
- * 失败命令按关联 timing 节点的 `startOffsetMs` 排序(docs/feature/results/architecture.md
+ * 失败命令按关联 timing 节点的 `startOffsetMs` 排序(docs/feature/record/architecture.md
  * 「commandsjson」);关联不到 timing 节点的排在最后,组内保持 `commands.json` 原始顺序作稳定
  * tie-break,不按数组偶然顺序猜时间。
  */

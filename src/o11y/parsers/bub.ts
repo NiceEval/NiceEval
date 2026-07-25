@@ -237,7 +237,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
   }
 
   // requests > 0 意味着至少一次 addUsage 真的读到了非零字段;整份 tape 没有任何 usage 时
-  // input/output 也不该垫成 0(见 docs/feature/results/architecture.md#usage)。
+  // input/output 也不该垫成 0(见 docs/feature/record/architecture.md#usage)。
   const usage: Usage = requests > 0 ? { inputTokens, outputTokens } : {};
   if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
   if (requests > 0) usage.requests = requests;

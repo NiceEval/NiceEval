@@ -37,7 +37,7 @@ interface Turn {
 
 `kind` 由 `defineAgent` / `defineSandboxAgent` 固定写入。进程内调用仍属于 remote kind，不形成第三种运行器分支。
 
-`usage` 的 token 桶按恒互斥口径落值：`inputTokens` 是未缓存输入，OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶（契约与理由见 [Results · Usage](../../results/architecture.md#usage)，各协议的原生口径与扣减明细见各 adapter 的 cost 文档）；网关实测成本只经 `usage.costUSD` 显式带回，core 从不从 token 反推。
+`usage` 的 token 桶按恒互斥口径落值：`inputTokens` 是未缓存输入，OpenAI 系协议报的「含缓存输入总量」要先扣掉缓存命中子集再落桶（契约与理由见 [Results · Usage](../../record/architecture.md#usage)，各协议的原生口径与扣减明细见各 adapter 的 cost 文档）；网关实测成本只经 `usage.costUSD` 显式带回，core 从不从 token 反推。
 
 Adapter 只负责把行为落进 `events` 单源，`send` 返回的 `Turn` 不含消息便利字段；core 在把结果交给 eval 作者前，把本轮 assistant `message` 事件的文本按序折叠成便利字段 `turn.message` 补上（作者面字段表见 [Context · 读取结果](../../eval/library/context.md#读取结果)）。`thinking`、`compaction`、`context.injected` 不获得同类便利字段，按 `type` 过滤 `events` 读取（见[标准事件模型](events.md#派生事实)）。
 
@@ -60,7 +60,7 @@ interface AgentContext {
 }
 ```
 
-`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性环境观测(如实际生效的 agent 配置、缓存命中状态),落进 `AttemptRecord.facts` 成为一等观测量;不影响 Turn status 或 verdict,形状与覆盖语义见 [Results · facts](../../results/architecture.md#facts运行事实)。
+`fact(key, value)` 是与 `progress` / `diagnostic` 并列的第三条反馈通道:上报本次运行的中性环境观测(如实际生效的 agent 配置、缓存命中状态),落进 `AttemptRecord.facts` 成为一等观测量;不影响 Turn status 或 verdict,形状与覆盖语义见 [Results · facts](../../record/architecture.md#facts运行事实)。
 
 `ctx` 是驱动 Agent 的低层上下文,eval 的 `t` 是运行器构造的断言视图。二者共享 experiment 输入、signal 与作用域反馈能力,但只有 `ctx` 暴露 Agent 会话状态,只有 `t` 暴露断言和 judge。
 

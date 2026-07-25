@@ -42,7 +42,7 @@ export default defineConfig({
 
 字段收 `defineTheme` 产物本身，不是路径字符串：配置文件是 TS，import 自己的主题即可，写错在类型检查时就暴露。填了非 `defineTheme` 产物（普通对象、CSS 字符串、报告定义）按完整用户反馈报错，出处点名配置文件的 `theme` 字段。
 
-`theme` 和 `report` 一样只影响读面：`niceeval exp` 不装载主题，主题不进快照，换主题不必重跑。
+`theme` 和 `report` 一样只影响读面：`niceeval exp` 不装载主题，主题不进 Run，换主题不必重跑。
 
 ## Library DX
 
@@ -359,7 +359,7 @@ NiceEval 官方主题 [Basalt](../themes/basalt.md) 保证官方组件的对比�
 
 - 主题只影响 web 面；`show` 不消费它。
 - 主题是整站的，不能按 page 切换；单页特例用该页树中的 `Style`。
-- 主题不进入结果根、snapshot。它是“怎么看”的配置，改色不需要重跑 eval。
+- 主题不进入记录根、Run。它是“怎么看”的配置，改色不需要重跑 eval。
 
 ## 相关阅读
 

@@ -3,11 +3,11 @@
 // ctx.fact() 的作用域归属单测在本文件末尾单独一个 describe 块:sandbox hook / eval.setup /
 // agent setup·send·teardown 上报的 fact 是否真的落进同一个 attempt 的 EvalResult.facts、
 // 同 key 后写覆盖先写、非法 key / 非标量 value 是否完整报错(见
-// docs/feature/results/architecture.md#facts运行事实)。
+// docs/feature/record/architecture.md#facts运行事实)。
 //
 // 路径提升单测:agent.setup 写进沙箱 `__niceeval__/agent-setup.json` 的安装 manifest,
 // runAttemptEffect 在 setup 之后把它读出来、原样挂到 EvalResult.agentSetup(见
-// docs/feature/results/architecture.md「agent-setup.json」、src/agents/manifest.ts 的注释)。
+// docs/feature/record/architecture.md「agent-setup.json」、src/agents/manifest.ts 的注释)。
 // 沙箱是内存 fake(记文件,不起容器)——这里要验的是运行器自己「何时读、读到什么、读不到
 // 怎么办」这段编排逻辑,不是 adapter 侧的 manifest 构造规则(那部分已在 agents/skills.test.ts
 // 覆盖)。

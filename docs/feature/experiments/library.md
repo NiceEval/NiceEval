@@ -17,7 +17,7 @@ export default defineExperiment({
   model: "opus",                                    // 模型在实验给,agent 留空
   reasoningEffort: "high",                          // → ctx.reasoningEffort / t.reasoningEffort
   flags: { webResearch: true, skill: "memory-v2" }, // → ctx.flags / t.flags
-  runs: 3,
+  attempts: 3,
 });
 ```
 
@@ -39,7 +39,7 @@ export default defineExperiment({
 
 上例对应 [Eval Library](../eval/library.md#tags-与-environment让-experiment-选择) 里声明的 `coding/fix-button` 与 `research/gpu-literature`：前者返回 `true`，后者返回 `false`。参数是发现并扇出后的只读 `EvalDescriptor`，不能叫 `eval`——`eval` 是 strict mode 下的保留绑定标识符，作为参数名会直接语法报错。`e.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。数据集扇出已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
 
-选择结果随快照保存，报告不再重跑表达式：
+选择结果随 Run 保存，报告不再重跑表达式：
 
 ```json
 {
@@ -54,7 +54,7 @@ export default defineExperiment({
 
 ## labels:声明归类坐标,不进运行时
 
-「哪些实验算一条线」写在 `labels` 上。labels 是纯报告侧事实——agent 的 `send` 和 eval 的 `test` 都看不见,也不参与[可比性配置](../results/library.md#官方现刻水位resultscurrent),改 labels 不会作废任何已有结果。值域限定 `string | number`,与 `flags` 同样在解析时校验,随快照落盘进 [`ExperimentRunInfo`](../results/architecture.md#snapshotjson)。
+「哪些实验算一条线」写在 `labels` 上。labels 是纯报告侧事实——agent 的 `send` 和 eval 的 `test` 都看不见,也不参与[可比性配置](../sample/library.md#两个选择器),改 labels 不会作废任何已有结果。值域限定 `string | number`,与 `flags` 同样在解析时校验,随 Run 落盘进 [`ExperimentRunInfo`](../record/architecture.md#runjson)。
 
 「一条线」的模型是 **lineage(族系)**:线 = 同一个基座,线上的点 = 基座上的各个变体。声明成两条轴——`line` 说这个实验属于哪条线,变体轴(如 `memory`)说它是线上哪个点:
 
@@ -81,7 +81,7 @@ export default defineExperiment({
 });
 ```
 
-`line` 是默认报告识别的归类键:当前 Scope 任一实验声明了它,散点就按线归类并连线——codex / claude 各成一色,基线 → 加 mempal 的位移直接可见。变体轴(`memory`)和其它轴名由报告侧用 [`label()`](../reports/library/metrics.md#维度与数值轴) 显式选轴:
+`line` 是默认报告识别的归类键:当前 Sample 任一实验声明了它,散点就按线归类并连线——codex / claude 各成一色,基线 → 加 mempal 的位移直接可见。变体轴(`memory`)和其它轴名由报告侧用 [`label()`](../reports/library/metrics.md#维度与数值轴) 显式选轴:
 
 - **成线**(自定义报告里等价写法):[`<Scatter by={label("line")} line />`](../reports/components/charts/scatter-chart.md#scatter)。
 - **横切**:同一份声明换个轴,`by={label("memory")}` 让 baseline 们与 mempal 们各成一类,跨 agent 比较记忆机制本身;`by={["agent", label("memory")]}` 复合归类。
@@ -99,9 +99,9 @@ export default defineExperiment({
 
 | | 谁写 | 进指纹 | 运行时可见 | 落盘 | 携带条目读到的值 |
 |---|---|---|---|---|---|
-| `flags` | 实验作者静态声明 | 整袋,无逐键豁免 | `ctx.flags` / `t.flags` | 快照级 `ExperimentRunInfo.flags` | 本轮的值 |
-| `labels` | 实验作者静态声明 | 否 | 否 | 快照级 `ExperimentRunInfo.labels` | 本轮的值 |
-| `ctx.fact()` | 生命周期代码运行时上报 | 结构上进不来 | 工厂闭包 | attempt 级 / 快照级 `facts` | 产出它那一轮的值 |
+| `flags` | 实验作者静态声明 | 整袋,无逐键豁免 | `ctx.flags` / `t.flags` | Run 级 `ExperimentRunInfo.flags` | 本轮的值 |
+| `labels` | 实验作者静态声明 | 否 | 否 | Run 级 `ExperimentRunInfo.labels` | 本轮的值 |
+| `ctx.fact()` | 生命周期代码运行时上报 | 结构上进不来 | 工厂闭包 | attempt 级 / Run 级 `facts` | 产出它那一轮的值 |
 
 ```typescript
 // experiments/shared/nowledge.ts —— 工厂闭包里那个每沙箱执行的钩子
@@ -113,10 +113,10 @@ sandboxSetup(): SandboxHook {
 }
 ```
 
-- **报在哪个作用域,决定它跟不跟着结果走。** attempt 作用域(sandbox 钩子、agent setup / teardown、adapter send)上报的进 `AttemptRecord.facts`,随携带条目**原样携带**——携带来的那条读到的仍是产出它那一轮的地址,报告按它分组不会张冠李戴。experiment 作用域(`setup` / `teardown`)上报的进 `SnapshotMeta.facts`,记的是整场观测。要按它分组、要它跟着单条结果走,就报在 attempt 作用域。
+- **报在哪个作用域,决定它跟不跟着结果走。** attempt 作用域(sandbox 钩子、agent setup / teardown、adapter send)上报的进 `AttemptRecord.facts`,随携带条目**原样携带**——携带来的那条读到的仍是产出它那一轮的地址,报告按它分组不会张冠李戴。experiment 作用域(`setup` / `teardown`)上报的进 `RunMeta.facts`,记的是整场观测。要按它分组、要它跟着单条结果走,就报在 attempt 作用域。
 - **报告按 [`fact()`](../reports/library/metrics.md#维度与数值轴) 选轴**分组,与 `flag()` / `label()` 并列。
 - **同一个事实是条件还是观测,由谁写下决定。** 实验声明「我要 0.10.39」→ `flags`,换版本作废旧结果正是想要的;跑起来问服务端「你现在是哪个版本」→ `ctx.fact()`,那是审计证据。
-- **别把实验条件写成 fact。** 「启用了哪个特性」只报 fact、不进 `flags`,条件变了旧结果会被错误携带(边界见 [Results · facts](../results/architecture.md#facts运行事实))。
+- **别把实验条件写成 fact。** 「启用了哪个特性」只报 fact、不进 `flags`,条件变了旧结果会被错误携带(边界见 [Results · facts](../record/architecture.md#facts运行事实))。
 - 已经把轮换坐标写进 `flags` 的实验,搬进 fact 会让 flags 袋变化、历史结果一次性作废;搬迁那一次用 [`--carry-ignoring-flag`](use-case/cache-invalidation.md) 保住它们。
 
 文件名与归类自此脱钩:`codex-gpt-5.4--mempal.ts` 的后缀只是给人看的命名习惯,报告不从 experiment id 字符串里猜任何语义,归类只认 `labels` 声明。
@@ -161,7 +161,7 @@ import { defineExperiment } from "niceeval";
 import { nowledgeAgent, nowledgeTunnel } from "../../agents/nowledge.ts";
 
 // setup 产出的运行时坐标放模块闭包:teardown 和同文件的 agent / sandbox 钩子
-// (后两者每 attempt 执行、晚于 setup)直接读它;runner 不做值的中介,这些值也不进快照。
+// (后两者每 attempt 执行、晚于 setup)直接读它;runner 不做值的中介,这些值也不进 Run。
 let tunnel: { url: string; apiKey: string; stop(): Promise<void> };
 
 export default defineExperiment({
@@ -357,7 +357,7 @@ interface ScopedFeedback {
 - 两个方法都不接受 `phase`、`scope`、颜色、输出流或 ANSI。runner 已经知道当前回调属于 `sandbox.setup`、`eval.run` 还是 `agent.run`,并据此决定 Human active 行显示的正式阶段。
 - 两个方法都不改变执行结论。要让 setup/attempt 进入 `errored`,抛出异常;要让 eval 判定失败,使用 `t.check` / `t.require` / gate 断言。`diagnostic({ level: "error" })` 只表示一条需要永久保留的错误诊断。
 
-各入口拿到的 scope 固定,调用方不能冒充其它生命周期;scope 的取值就是 [Results Format 的 `LifecyclePhase`](../results/architecture.md#resultjson) 闭集成员,与落盘 `phases` / `error.phase` 同一套名字:
+各入口拿到的 scope 固定,调用方不能冒充其它生命周期;scope 的取值就是 [Record Format 的 `LifecyclePhase`](../record/architecture.md#resultjson) 闭集成员,与落盘 `phases` / `error.phase` 同一套名字:
 
 | 代码入口 | 反馈入口 | runner 绑定的 phase | 典型内容 |
 |---|---|---|---|
@@ -445,14 +445,14 @@ export default defineExperiment({
 ```
 
 - 路径只生成 id，并支持 `niceeval exp agents/codex` 按目录批量选择；任意深度都按完整相对路径处理。
-- 每个 experiment 跑哪些 eval 只看自己的 `evals`；解析后的结果作为 `selectedEvalIds` 随快照落盘。
-- 默认报告直接比较当前 Scope 里的 experiments。每个 experiment 按自己的 `selectedEvalIds` 计算 eval 数与分母，不自动取交集、不把未选择的 eval 当失败。要同分母比较，就给这些 experiments 写相同的 `evals`。
+- 每个 experiment 跑哪些 eval 只看自己的 `evals`；解析后的结果作为 `selectedEvalIds` 随 Run 落盘。
+- 默认报告直接比较当前 Sample 里的 experiments。每个 experiment 按自己的 `selectedEvalIds` 计算 eval 数与分母，不自动取交集、不把未选择的 eval 当失败。要同分母比较，就给这些 experiments 写相同的 `evals`。
 
 ### 一文件一配置
 
 **一个实验文件 = 一个配置**(一个 agent × 一个 model)。要跨模型 / 跨 agent 对比,就**写多个实验文件**,各钉对照轴之外的一切(如同一 model),差异才干净归因到那一个轴。`model` 是单个字符串,不接受数组 —— 想扫多个模型,复制一份实验文件改 `model` 即可。
 
-这样每个配置独立成文件:可命名(`<agent>-<model>[-<feature>]`)、可 diff、可单独 review。报告按当前 Scope 把这些配置并排展示。
+这样每个配置独立成文件:可命名(`<agent>-<model>[-<feature>]`)、可 diff、可单独 review。报告按当前 Sample 把这些配置并排展示。
 
 ### 例子
 
@@ -462,7 +462,7 @@ export default defineExperiment({
   description: "bub · gpt-5.4(tape on)",
   agent: bubAgent(),
   model: "gpt-5.4",        // 对照配置钉同一 model,差异归因到 agent / 记忆机制
-  runs: 5,                 // earlyExit 默认关,跑满 5 次给出完整通过率分布(pass^k)
+  attempts: 5,                 // earlyExit 默认关,跑满 5 次给出完整通过率分布(pass^k)
   budget: 15,
 });
 
@@ -471,7 +471,7 @@ export default defineExperiment({
   description: "codex · gpt-5.4",
   agent: codexAgent(),
   model: "gpt-5.4",
-  runs: 5,
+  attempts: 5,
   budget: 15,
 });
 

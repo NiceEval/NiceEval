@@ -3,7 +3,7 @@
 数值参数趋势或维度折线的容器；唯一 series 是 [`Line`](#line)。容器 props、轴绑定、`ChartData`、聚合与两面投影规则见[图表](README.md)。
 
 ```tsx
-<LineChart input={scope}>
+<LineChart input={sample}>
   <XAxis numeric={budget} />
   <YAxis metric={endToEndPassRate} />
   <Line metric={endToEndPassRate} by="agent" />

@@ -192,7 +192,7 @@ export const tokens = defineMetric({
     if (a.result.verdict === "skipped") return null;
     const usage = a.result.usage;
     // input/output 缺失(协议没提供)→ null,不拿 0 冒充「实测就是 0」
-    // (docs/feature/results/architecture.md#usage)。
+    // (docs/feature/record/architecture.md#usage)。
     if (!usage || usage.inputTokens === undefined || usage.outputTokens === undefined) return null;
     // 只加 input + output:缓存读写量大但便宜,计进去会把缓存热的 agent 画成 token 大户;
     // 花钱多少本来就有 costUSD 负责。

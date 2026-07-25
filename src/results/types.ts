@@ -1,4 +1,4 @@
-// results 域类型:openResults 的分层读取契约与 Selection(定稿见 docs/feature/results/library.md、docs/feature/results/architecture.md)。
+// results 域类型:openResults 的分层读取契约与 Selection(定稿见 docs/feature/record/library.md、docs/feature/record/architecture.md)。
 //
 // 结果数据类型(EvalResult / ExperimentRunInfo / StreamEvent / …)仍住在各自的域文件里,
 // 这里只 import,不搬家 —— 「类型的家」迁移(facade 反向 re-export)是下一波,不在本次范围。
@@ -11,7 +11,7 @@ import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from 
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptLocator } from "./locator.ts";
 
-/** attempt 级 artifact 的种类;文件名见 format.ts 的 artifactFileOf,布局见 docs/feature/results/architecture.md。 */
+/** attempt 级 artifact 的种类;文件名见 format.ts 的 artifactFileOf,布局见 docs/feature/record/architecture.md。 */
 export const ARTIFACT_KINDS = ["commands", "events", "trace", "o11y", "agentSetup", "diff", "sources"] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
@@ -25,7 +25,7 @@ export interface Producer {
 /**
  * `snapshot.json` 的持久化契约:快照元数据 —— 身份、快照级字段与版本元数据,
  * 不含任何逐 attempt 数据。快照开始时写入;收尾时补写 `completedAt`。
- * 字段规则与版本判定见 docs/feature/results/architecture.md「snapshot.json」「版本与升级设计」。
+ * 字段规则与版本判定见 docs/feature/record/architecture.md「snapshot.json」「版本与升级设计」。
  */
 export interface SnapshotMeta {
   /** 恒为 "niceeval.results";和 schemaVersion、producer 一起构成持久化契约,永不移动或改名。 */
@@ -50,7 +50,7 @@ export interface SnapshotMeta {
   diagnostics?: DiagnosticRecord[];
   /**
    * experiment 作用域生命周期代码经 `ctx.fact()` 上报的运行事实;与 completedAt 同批在快照
-   * 封口补写。字段契约见 result.json 的 facts 小节(docs/feature/results/architecture.md#facts运行事实)。
+   * 封口补写。字段契约见 result.json 的 facts 小节(docs/feature/record/architecture.md#facts运行事实)。
    */
   facts?: Record<string, string | number | boolean>;
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(copySnapshots 自动补记,writer 可声明)。 */
@@ -98,7 +98,7 @@ export interface AttemptHandle {
   /**
    * 携带条目投影:true = fingerprint 未变、上一轮终态结果合入本快照(`result.artifactBase`
    * 有值);false = 本快照那次运行真实执行。`startedAt` 为原执行时刻,不因携带而改写
-   * (时效语义见 docs/feature/results/library.md「时效:新执行与历史执行」)。
+   * (时效语义见 docs/feature/sample/library.md「时效:新执行与历史执行」)。
    */
   carried: boolean;
   /** 非零 Sandbox 命令的 stdout/stderr 证据(`commands.json`);没有失败命令时 null。 */
@@ -196,7 +196,7 @@ export interface Results {
    * 每个实验取最新一次快照,返回 Scope(快照与挑选警告绑在一起走)。
    * `experiments` 是 experiment id 前缀过滤(string | string[]),同 CLI 位置参数语义。
    * `fresh: true` 只保留新执行的 attempt(排除携带条目),被排除的题按覆盖事实进入
-   * `coverage.missingEvalIds`(见 docs/feature/results/library.md「时效:新执行与历史执行」)。
+   * `coverage.missingEvalIds`(见 docs/feature/sample/library.md「时效:新执行与历史执行」)。
    */
   latest(opts?: { experiments?: string | string[]; fresh?: boolean }): Scope;
   /**
@@ -204,7 +204,7 @@ export interface Results {
    * 跨历史拼出当前判定水位。可比性前提:每个 experiment 以最新快照的可比性配置
    * (agent / model / reasoningEffort / flags / budget / timeoutMs / sandbox)为基准,
    * 配置不一致的旧快照不贡献 attempt,缺口进 `coverage.missingEvalIds`
-   * (见 docs/feature/results/library.md「官方现刻水位」)。`fresh: true` 同 `latest()`。
+   * (见 docs/feature/record/library.md「官方现刻水位」)。`fresh: true` 同 `latest()`。
    */
   current(opts?: { experiments?: string | string[]; fresh?: boolean }): Scope;
 }
@@ -212,7 +212,7 @@ export interface Results {
 /**
  * 一个实验的覆盖事实:已知 eval 并集(分母)与当前口径下没有任何 attempt 的题。
  * `missingEvalIds` 永远被算出来,不静默——渲染面把它转成榜单占位行
- * (见 docs/feature/results/library.md「选择快照」「时效:新执行与历史执行」)。
+ * (见 docs/feature/sample/library.md「选择快照」「时效:新执行与历史执行」)。
  */
 export interface ScopeCoverage {
   experimentId: string;
@@ -250,7 +250,7 @@ export interface Scope {
 /**
  * 挑选警告:每种带 kind、可判断的结构化字段和渲染好的英文 message;能用一条命令直接推进的
  * kind 同时带 `command`(已替换真实 id,复制即跑)。kind 是契约的一部分,全集与触发条件见
- * docs/feature/results/library.md「警告 kind 全集」——三种都是**定位不到任何一行**的完整性
+ * docs/feature/record/library.md「警告 kind 全集」——三种都是**定位不到任何一行**的完整性
  * 事实:覆盖缺口(行级事实,见 `ScopeCoverage`)与时效(`AttemptHandle.carried` 投影的行级
  * 属性)不在这个联合里。
  */

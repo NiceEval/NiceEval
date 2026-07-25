@@ -70,7 +70,7 @@
 //      这个宽度),所以本模块覆盖了宽度 80 下的折行(折行),但没有覆盖更窄宽度下的丢列(丢列)。
 //   7. `ScopeWarnings` 与 `SnapshotDiagnostics` 的非空渲染(计数汇总行、按实验/kind 聚合分组、
 //      折叠阈值、徽标)、以及 ScopeWarnings 消息的双面一致性,都无法用这份证据验证:警告 kind
-//      全集(docs/feature/results/library.md#警告-kind-全集)现在只剩 unfinished-snapshot /
+//      全集(docs/feature/sample/library.md#警告-kind-全集)现在只剩 unfinished-snapshot /
 //      missing-startedAt / unreadable-snapshot 三种,produceEvidence() 的 main /
 //      deliberate-fail / deliberate-error 都是正常收尾、schema 合规、带 startedAt 的完整快照,
 //      不触发任何一种——warnings 与 diagnostics 恒为空集,两个组件两面都零输出(本模块只断言
@@ -283,13 +283,13 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
 
   // --- ScopeWarnings:警告 kind 全集现在只有 unfinished-snapshot / missing-startedAt /
-  //     unreadable-snapshot 三种(docs/feature/results/library.md#警告-kind-全集)——旧的
+  //     unreadable-snapshot 三种(docs/feature/sample/library.md#警告-kind-全集)——旧的
   //     stale-snapshot(deliberate-fail/deliberate-error 比 main 旧)与 partial-coverage 已经
   //     从警告全集里删除,时效改成行级 ↩ 标注、覆盖缺口改成榜单占位行,两者都不再是页面级警告
   //     (裁决见 memory/staleness-demoted-from-warning-to-provenance.md)。produceEvidence() 的 3 个
   //     Experiment 都是正常收尾的完整快照,不触发这三种 kind 中的任何一种,所以这份证据里
   //     warnings 恒为空集——ScopeWarnings 两面零输出、不渲染空容器
-  //     (docs/feature/reports/components/site/scope-warnings.md「空警告集两面零输出,不渲染空容器」)。
+  //     (docs/feature/reports/components/site/sample-warnings.md「空警告集两面零输出,不渲染空容器」)。
   //     断言的是「不存在」,不是某个具体计数;折叠/展开阈值、徽标聚合这些行为需要一份真正触发
   //     警告的 fixture(比如强杀中断产生 unfinished-snapshot)才能验证,不属于本仓库现有证据的
   //     覆盖范围(见文件头覆盖缺口 #7)。

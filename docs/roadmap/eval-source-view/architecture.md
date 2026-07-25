@@ -42,11 +42,11 @@ interface SourceLoc extends SourceFrame {
 
 ## 捕获跟着调用链走
 
-[`sources.json`](../../feature/results/architecture.md#sourcesjson) 的引用列表收录**链上每个用户帧的文件**，不只是 eval 入口文件。落盘的两层结构不变：attempt 级列 `{path, sha256}` 引用，快照级 `sources/<sha256>.json` 按内容去重存正文。
+[`sources.json`](../../feature/record/architecture.md#sourcesjson) 的引用列表收录**链上每个用户帧的文件**，不只是 eval 入口文件。落盘的两层结构不变：attempt 级列 `{path, sha256}` 引用，Run 级 `sources/<sha256>.json` 按内容去重存正文。
 
-- **读取时机**：文件在首次被某个用户帧引用时读盘并哈希，attempt 内缓存。attempt 运行期间源码被改（agent 改到自己的题、watch 模式重存）不影响已经捕获的那份——源码是判定时刻的快照。
-- **去重收益**：五道题共用一套 `share/` helper 是常态，同一快照内这些 helper 的正文只存一份。多文件捕获因此不按文件数线性增长存储。
-- **携带与发布**：携带条目照旧走 `artifactBase` 回退，`copySnapshots` 照旧解引用后在目标快照重新去重。多文件不改这两条。
+- **读取时机**：文件在首次被某个用户帧引用时读盘并哈希，attempt 内缓存。attempt 运行期间源码被改（agent 改到自己的题、watch 模式重存）不影响已经捕获的那份——源码是判定时刻的 Run。
+- **去重收益**：五道题共用一套 `share/` helper 是常态，同一 Run 内这些 helper 的正文只存一份。多文件捕获因此不按文件数线性增长存储。
+- **携带与发布**：携带条目照旧走 `artifactBase` 回退，`publish` 照旧解引用后在目标 Run 重新去重。多文件不改这两条。
 
 ### `sources.json` 标注主干
 
@@ -129,7 +129,7 @@ interface SourceCall {
 ## 落地时要一起改的契约页
 
 - [Scoring Architecture](../../feature/scoring/architecture.md)：`loc` 的形状。
-- [Results Architecture](../../feature/results/architecture.md#sourcesjson)：`sources.json` 的捕获范围。
+- [Results Architecture](../../feature/record/architecture.md#sourcesjson)：`sources.json` 的捕获范围。
 - [Concepts](../../concepts.md)：`AnnotatedEvalSource` 的一句话定义。
 - [`--source`](../../feature/reports/show/eval-source.md)：替换为 [CLI](cli.md) 的形态。
 - [Attempt 详情组件](../../feature/reports/components/attempt-detail/README.md)：`AttemptSource` 的数据与视觉规范、兜底区的两类划分。

@@ -156,7 +156,7 @@ assert.ok(
 ## 用例七：缓存三步（`cli`）
 
 复用与新跑的区别从 `show --history`
-的 attempt 行数断言——history 跨快照按 attempt 身份去重，复用不产生新行，`--rerun all` 产生新行：
+的 attempt 行数断言——history 跨 Run 按 attempt 身份去重，复用不产生新行，`--rerun all` 产生新行：
 
 ```ts
 function attemptCount(evalId: string): number {

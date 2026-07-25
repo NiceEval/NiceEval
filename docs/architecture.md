@@ -14,7 +14,7 @@ niceeval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
                           │              │ 驱动                             │          │
                           └──────────────┼──────────────────────────────────┼──────────┘
                                          │                                  ▼
-                                         ▼  对接口分发,不按名字分支    .niceeval/<experiment>/<snapshot>/
+                                         ▼  对接口分发,不按名字分支    .niceeval/<experiment>/<run>/
                           ┌────── Agent(自实现 Adapter) ──────┐
                           │   远程 adapter    沙箱 adapter    │
                           │    (你的服务)   ┌───────────────┐ │
@@ -52,7 +52,7 @@ src/
 │
 ├─ o11y/                    # transcript 归一化 → 标准事件流;OTLP 接收与归一;派生事实与成本
 ├─ runner/                  # 调度(有界并发 / 首过即停 / 预算)、发现、指纹缓存、reporters
-├─ results/                 # Results Format 的读写面(唯一碰磁盘布局的地方)
+├─ record/                  # Record Format 的读写面(唯一碰磁盘布局的地方)
 ├─ report/                  # 报告积木:指标 × 计算函数 × 双面组件(text 面 / web 面)
 ├─ show/                    # 终端宿主      └─ view/  网页宿主(两个宿主共用 report/)
 │
@@ -92,15 +92,15 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 1. **加载配置。** CLI 合并 标志 → experiment → `niceeval.config.ts` → 默认值（[配置与凭据的边界](#配置从代码来凭据从环境来)）。
 2. **发现。** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
 3. **指纹与缓存。** 对每个 eval 算 `(eval 代码 + 配置)` 指纹;已通过且指纹未变的,标记跳过(除非 `--rerun all`)。
-4. **建 attempt 列表。** 每个 eval × `runs` 次 → 一批 attempt。为每个 eval 建一个 `AbortController`(供首过即停)。
+4. **建 attempt 列表。** 每个 eval × `attempts` 次 → 一批 attempt。为每个 eval 建一个 `AbortController`(供首过即停)。
 5. **有界并发调度。** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。可疑的"秒挂"(< 5s 且非超时)按指数退避重试。
 6. **准备环境,交给 `test(t)`。** 沙箱型:`Sandbox.create` → 若 `experiment.sandbox` 链上挂了 `.setup()`,先跑这些环境层钩子(装二进制、预热、写 hook 文件,按追加顺序;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 若这条 eval 定义了 `EvalDef.setup` 就跑它(任务 Fixture)→ 跑 agent 自己的 `SandboxAgent.setup`(装 CLI 等)。之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeFiles`/`uploadFiles`(手工写入起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流、注入 `__niceeval__/results.json`)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。** `test(t)` 跑完后从分类账折叠各 send 窗口的变更并集,供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 `diff.json` 使用——fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **评分。** `test(t)` 里记录的作用域断言、值断言、judge,连同手工校验命令的结果断言,全部折叠成 `Assertion[]`。
 9. **判定。** 断言 + 执行错误 + 跳过原因直接折叠成一个互斥的 `Verdict`(`passed`/`failed`/`errored`/`skipped`,没有中间态)。
 10. **首过即停。** 若该 attempt 通过且开了 `earlyExit`,`abort()` 掉同一 eval 的其余 attempt。
-11. **收尾与留存。** finally 里按 eval cleanup → `SandboxAgent.teardown` → 环境层 `.teardown()`(回存跨 attempt 状态的时机)的顺序收尾——收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。阶段词表以 [Results 的 `LifecyclePhase` 闭集](feature/results/architecture.md#resultjson)为唯一权威。
-12. **报告。** 每个 eval 完成即在串行报告队列上回调 `onEvalComplete`(不阻塞执行池),对应 attempt 的判决与 artifact 随之写进该实验快照目录(`.niceeval/<experiment>/<snapshot>/<evalId>/aN/result.json`);每个 Snapshot 在该 Experiment 收尾后补 `completedAt` 与快照级 diagnostics,全部结束后回调 `onInvocationComplete`。
+11. **收尾与留存。** finally 里按 eval cleanup → `SandboxAgent.teardown` → 环境层 `.teardown()`(回存跨 attempt 状态的时机)的顺序收尾——收尾只能追加 diagnostic,不改判定;随后按留存决策销毁或留存沙箱(`--keep-sandbox`,见 [Sandbox · 留存](feature/sandbox/architecture.md#留存keep与注册表))。阶段词表以 [Results 的 `LifecyclePhase` 闭集](feature/record/architecture.md#resultjson)为唯一权威。
+12. **报告。** 每个 eval 完成即在串行报告队列上回调 `onEvalComplete`(不阻塞执行池),对应 attempt 的判定与 artifact 随之写进该实验 Run 目录(`.niceeval/<experiment>/<run>/<evalId>/aN/result.json`);每个 Run 在该 Experiment 收尾后补 `completedAt` 与 Run 级 diagnostics,全部结束后回调 `onInvocationComplete`。
 13. **退出码。** 有 `verdict=failed`(含 `--strict` 下 soft 未达标而改判的)或 `verdict=errored` → 非零退出;报告里两者分开列,供 CI 判红和诊断。
 
 ## 配置从代码来,凭据从环境来
@@ -117,7 +117,7 @@ CLI 启动时仍加载项目根的 `.env`(不覆盖已有环境变量)——那�
 
 **配置是代码,所以"从环境注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。区别在于变量名由项目自己起、自己读,niceeval 不内置任何配置类变量名、也不去环境里猜——这正是这条边界要保住的东西。
 
-这条边界的理由:配置有三条来路时,「为什么本地和 CI 跑出不同结果」要靠翻环境才能回答,而环境不进快照、不进指纹、复现时也不在手边。凭据反过来——它不能进签入 git 的代码,所以只能来自环境;niceeval 能做的是不去猜它叫什么名字。
+这条边界的理由:配置有三条来路时,「为什么本地和 CI 跑出不同结果」要靠翻环境才能回答,而环境不进 Run、不进指纹、复现时也不在手边。凭据反过来——它不能进签入 git 的代码,所以只能来自环境;niceeval 能做的是不去猜它叫什么名字。
 
 ## 错误隔离
 

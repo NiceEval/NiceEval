@@ -9,7 +9,7 @@
 1. 先在本地确认要发布的范围(收窄语义见[裸 `view` 与收窄](view-local-narrowing.md)),再把同一份收窄交给 `--out`:
 
    ```bash
-   niceeval view --out site                            # 导出完整结果根
+   niceeval view --out site                            # 导出完整记录根
    niceeval view --exp agents/codex --out site      # 只发布一个 experiment 路径范围
    niceeval view weather --out site                    # 只发布匹配 eval id 前缀的部分
    ```
@@ -20,20 +20,20 @@
 
 3. 把目录交给托管。所有 HTML 都按自身相对位置生成引用,站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链;多页报告仍只用一个 `index.html`,页面是 `#/page/<id>` 路由,托管方不需要为每页配置路径。
 
-4. 需要比命令行收窄更多的控制(按证据种类瘦身、任意谓词挑快照、把发布根签进仓库)时,先用 [`copySnapshots`](../../results/library.md#复制与瘦身copysnapshots) 构建发布根,再对发布根导出:
+4. 需要比命令行收窄更多的控制(按证据种类瘦身、任意谓词挑 Run、把发布根签进仓库)时,先用 [`publish`](../../record/library.md#发布publish) 构建发布根,再对发布根导出:
 
    ```bash
-   niceeval view --results site-data/run --out site    # 对 copySnapshots 产出的发布根导出
+   niceeval view --record site-data/run --out site    # 对 publish 产出的发布根导出
    ```
 
 ## 边界
 
-- `--out` 不设确认关卡。发布给谁、内容是否适合公开,在选择收窄与构建结果根时决定;导出的产物包含收窄范围内完整的原始证据,深链一点开就是原文。
-- 导出没有档位:收窄范围内存在且前端会读取的证据文件全部随站复制,体积取舍在 `copySnapshots` 的 `artifacts` 里做;唯一永不复制的是 `o11y.json`。
+- `--out` 不设确认关卡。发布给谁、内容是否适合公开,在选择收窄与构建记录根时决定;导出的产物包含收窄范围内完整的原始证据,深链一点开就是原文。
+- 导出没有档位:收窄范围内存在且前端会读取的证据文件全部随站复制,体积取舍在 `publish` 的 `artifacts` 里做;唯一永不复制的是 `o11y.json`。
 - 不提供「单个 HTML」导出:站点仍需要 `assets/` 与 `artifact/` 等外部文件,这是结构性原因,与页面是否需要联网取数无关。
 - 零可读结果时 `--out` 不会生成空站。
 
 ## 相关阅读
 
 - [View · 静态导出](../view.md#静态导出) —— 目录结构、资产改写与证据自包含的单源契约。
-- [Results Lib · 复制与瘦身](../../results/library.md#复制与瘦身copysnapshots) —— 发布根怎么构、缺省带什么。
+- [Record Lib · 复制与瘦身](../../record/library.md#发布publish) —— 发布根怎么构、缺省带什么。

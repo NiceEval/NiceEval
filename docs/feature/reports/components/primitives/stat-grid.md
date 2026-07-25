@@ -5,7 +5,7 @@
 
 ```tsx
 // 数据源形态：格集合与顺序由数据源声明
-<Grid columns={4} source={scopeSummary} />
+<Grid columns={4} source={sampleSummary} />
 
 // 手工形态：作者自己算出终值后摆格
 <Grid columns={3} variant="boxed">

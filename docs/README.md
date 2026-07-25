@@ -23,6 +23,7 @@
 | 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
+| 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/reference/README.md)） |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
 | 写公开用户文档 | [`docs-site/AGENTS.md`](../docs-site/AGENTS.md) |
 
@@ -46,7 +47,8 @@ docs/
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级止损闸
 │   ├── sandbox/                         隔离运行环境
 │   ├── scoring/                         评分器与判定
-│   ├── results/                         .niceeval 运行产物、读写与搬运
+│   ├── record/                          .niceeval 运行记录:格式、读写、身份与发布
+│   ├── sample/                          从记录选出可比较的样本:口径、覆盖、时效与转换
 │   └── reports/                         show、view 与报告组件
 │
 ├── roadmap/                             尚未定稿的功能设计

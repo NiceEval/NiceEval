@@ -82,7 +82,7 @@ type Cell =
 ```ts
 interface RowSource<Row> {
   name: string;
-  /** 取数与聚合；input 省略时由原语传入宿主注入的 Scope。 */
+  /** 取数与聚合；input 省略时由原语传入宿主注入的 Sample。 */
   compute(input: ReportInput): Promise<readonly Row[]>;
   /** 省略 <Column> 时用的默认列。收已解析的行，所以按数据切换列的判断住在这里。 */
   columns(rows: readonly Row[]): readonly ColumnSpec[];
@@ -116,7 +116,7 @@ type PrimitiveProps<Data, Presentation> =
 ```
 
 - **source 形态**：传数据源，管线在 resolve 阶段代调它的 `compute`；`input` 省略时取宿主注入的
-  Scope。与「先手工调 `compute` 再传 `data`」严格等价。
+  Sample。与「先手工调 `compute` 再传 `data`」严格等价。
 - **data 形态**：传算好的可序列化数据，原语不再取数。此时结构子节点只按 key 选择已算好的部分
   并附加呈现，不能再出现取数字段。
 - 同时给出 `data` 与 `source` 时按完整用户反馈报错，不静默取一边。

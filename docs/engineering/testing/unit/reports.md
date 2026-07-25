@@ -3,7 +3,7 @@
 契约来源：[Reports](../../../feature/reports/README.md)、[Architecture](../../../feature/reports/architecture.md)、[Library](../../../feature/reports/library.md)、[Show](../../../feature/reports/show.md)、[View](../../../feature/reports/view.md)、[Observability](../../../observability.md)。
 
 单元层证明 Reports 的**数据语义**：`*Data`
-计算函数、指标聚合口径、resolve 管线、报告定义的装载规范化与校验反馈。观察面全部是数据——计算结果、规范化结构、错误对象与文案。本篇的缝：构造 Scope
+计算函数、指标聚合口径、resolve 管线、报告定义的装载规范化与校验反馈。观察面全部是数据——计算结果、规范化结构、错误对象与文案。本篇的缝：构造 Sample
 / evidence fixture 作输入，测其上的计算与装载逻辑；缝的真实侧（真实产物上的出口与渲染）由
 [E2E 功能域 · 报告与读面](../e2e/report.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。渲染出来的终端排版、DOM 结构、双面比对、样式与交互不在本层，归
 [E2E 功能域 · 报告与读面](../e2e/report.md)对真实运行的产物验收。渲染缺陷在单元层的 DOM 断言下仍可能逃逸，只有真实产物能拦住。先例：
@@ -52,13 +52,13 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 
 ## 覆盖规范
 
-- **指标聚合口径**：两级折叠与题目权重、默认通过率的 errored=0 口径、skipped 与 null/0 的语义分离、固定题集分母（notRun 与 unscorable 不合并）、跨快照按身份键去重、自定义指标的 where 与两级 aggregate、分组维度规则。每条口径都要有能与错误算法区分的 fixture。
+- **指标聚合口径**：两级折叠与题目权重、默认通过率的 errored=0 口径、skipped 与 null/0 的语义分离、固定题集分母（notRun 与 unscorable 不合并）、跨 Run 按身份键去重、自定义指标的 where 与两级 aggregate、分组维度规则。每条口径都要有能与错误算法区分的 fixture。
 - **`totalScore`（计分制总分）**：
   - 计算值是 `assertions[].points` 与 `scoreEntries[].points` 的总和。
   - `failed` 仍保留已经挣到的分；`errored` 与 `skipped` 返回 `null`。
   - 通过制 Eval 不参与该指标，也不拉低分母。
   - 同一 Eval 的多个 Attempt 取均值；跨 Eval 求和。Fixture 必须用不同题目分值区分“求和”和“求均值”。
-  - `scoringComposition` 分别覆盖纯通过制、纯计分制和混合 Scope。公开函数与 `ScopeSummaryData`
+  - `scoringComposition` 分别覆盖纯通过制、纯计分制和混合 Sample。公开函数与 `SampleSummaryData`
     必须同值。
   - `totalScore` 从 `niceeval/report`
     顶层导出，并与内部定义保持同一引用。只需一个代表场景，不为每个内建指标重复测试。
@@ -77,23 +77,23 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   计其余丢分得分点，挣满为 null（[丢分摘要规则](../../../feature/scoring/library/display.md#主失败断言怎样选)）；共享算法（最短唯一后缀）在消费方之间一致；`experimentListData`
   的时效字段（`historical` / `historicalAttempts` 与新执行的判定边界）与占位行数据（`missingEvalIds`
   来自 `scope.coverage`、不参与任何指标聚合）；`current()`
-  下一个 experiment 展示用的水位基准 Snapshot 选择——fixture 让同一 experiment 有多个真实贡献快照、`startedAt`
-  各不相同时，配置/agent/model 相关字段（config 列、Hero、`ScopeSummary` 标题等）只读取贡献来源中
+  下一个 experiment 展示用的水位基准 Run 选择——fixture 让同一 experiment 有多个真实贡献 Run、`startedAt`
+  各不相同时，配置/agent/model 相关字段（config 列、Hero、`SampleSummary` 标题等）只读取贡献来源中
   `startedAt`
   最新的那一个，不是任取或合并多个来源；实体列表的计分制字段——`ExperimentListItem.scoring`
   是定义期事实投影（不从 attempt 结果推断），experiment / eval / attempt 三级的 `totalScore`
   cell 在计分制下按指标口径求值（experiment 级 acrossEvals sum、eval 级 perEval
   mean）、通过制下为 null cell 且与 `endToEndPassRate` 并存不互斥。
 - **站点组件与内建报告**：`standard` 的构成与具名导出同引用、三张 scope-input page 均相邻放置
-  `ScopeWarnings` 与 `SnapshotDiagnostics`、`defineReport({ extends })`
+  `SampleWarnings` 与 `RunDiagnostics`、`defineReport({ extends })`
   的外壳叠加与页列表同引用、组合组件与手写组合严格等价；数据派生覆盖 heroData、warning 分组聚合与组排序，以及
-  `snapshotDiagnosticsData` 对 Scope / 裸 Snapshot[] 的同值投影、空诊断过滤、experiment →
+  `runDiagnosticsData` 对 Sample / 裸 Run[] 的同值投影、空诊断过滤、experiment →
   startedAt 排序、来源不合并、开放 code 原样保留、React
-  data 不携带 Snapshot/AttemptHandle。渐进增强不改数据；`ExperimentComparison`
-  的主读数解析——纯计分制 Scope 的展开树中散点 spec 的 y 与列表预排序引用 `totalScore`
+  data 不携带 Run/AttemptHandle。渐进增强不改数据；`ExperimentComparison`
+  的主读数解析——纯计分制 Sample 的展开树中散点 spec 的 y 与列表预排序引用 `totalScore`
   同一实例（纯通过制引用 `endToEndPassRate`），`"mixed"`
-  按题型拆成两组的展开树构成（每组一份散点 + 列表、`ScopeSummary`
-  整 Scope 一份）——以展开树与 data 为断言面，默认折叠、汇总严重度、text 不折叠与空集零输出归 E2E。
+  按题型拆成两组的展开树构成（每组一份散点 + 列表、`SampleSummary`
+  整 Sample 一份）——以展开树与 data 为断言面，默认折叠、汇总严重度、text 不折叠与空集零输出归 E2E。
 - **resolve 与组合组件**：spec/data 严格等价、`input` 缺省与覆盖、记忆化的等价判据、`ReportNode`
   全集与非法节点的完整反馈、`ctx` 的构成、sibling 并行但输出保序、`defineComponent` 两种形态。
 - **结构节点解析**（[组件树](../../../feature/reports/components/README.md#结构节点)）：结构子节点归一成计算规格——`<Rows>`
@@ -151,7 +151,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   `renderPanel`
   独有的框线字符与几何），不重复 panel.ts 自己的几何断言，也不断言页面级终端排版（那部分归 E2E）。
 - **宿主装载等价**：裸 `show`/`view` 与 `--report`
-  在装载边界消费同一份 definition（同引用）与同规则选出的 Scope（深等）；`--fresh`
+  在装载边界消费同一份 definition（同引用）与同规则选出的 Sample（深等）；`--fresh`
   在两宿主注入同一个 `fresh` 口径——不比较终端输出与 HTML，渲染面与进程级读面行为归 E2E。
 - **报告取值链与 `--report` 值判别**：两宿主共用的解析函数，断言面是解析出的 definition
   引用与错误对象，不经渲染。覆盖：三档取值链按 `--report` → `config.report` → 内建 `standard`
@@ -162,7 +162,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   `./site.tsx` 时 `--report site` 仍报错，证明判别只看字符串）；`config.report`
   不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；mtime cache-busting 只作用于装载入口本体——`--report
   <文件>` 改报告文件后下一次装载读到新内容，`config.report` 的入口是配置文件，断言面是传给装载器的入口路径，不测进程重启行为。
-- **view 数据装载（ViewScan）**：`resolveViewInput` 的位置参数 / `--results` / `--snapshot`
+- **view 数据装载（ViewScan）**：`resolveViewInput` 的位置参数 / `--record` / `--run`
   互斥与存在性校验，位置参数按 eval id 前缀透传、含义不随文件系统状态改变；`loadViewScan`
   的有效根收窄使证据室（`attemptsByBase` / `artifactDirs` /
   `attemptPages.locators`）与报告槽 Selection 同步收窄；`viewData`
@@ -196,12 +196,12 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   page 的校验规则。全部以装载结果或错误对象为断言面。
 - **show 终端宿主的选择、时间轴与文案**：`show`
   专属的纯函数与错误路径以返回值或文案为断言面，不依赖终端排版——`attemptHistory` 按 experimentId +
-  evalId 分节、跨快照按 attempt 身份键去重（resume 携带的复印件不占行）、startedAt 升序、单行摘要与成本派生；紧凑索引行的判定原因（`verdictReasonLine`）对多行
+  evalId 分节、跨 Run 按 attempt 身份键去重（resume 携带的复印件不占行）、startedAt 升序、单行摘要与成本派生；紧凑索引行的判定原因（`verdictReasonLine`）对多行
   `error.message` 折首行并剥控制字节收口，完整多行 message 归 attempt 详情块展开；`showCommand` /
   `otherPagesText` 按 `HostCommandContext`
   拼出可复现的页/组索引命令，只列未渲染的页且携带完整上下文；eval
   id 前缀无匹配、`--history`/`--report`/`--page` 的互斥与用法冲突、`@<locator>`
-  语法错误与索引未命中、证据切面撞多个 eval 时的紧凑索引——全部以 CLI 抛出的错误对象/文案为断言面。跨快照合成 Selection 与去重的结构化语义（`selectCurrentResults`/现刻水位）不在这里重复，归[单元测试 Results](results.md)的「现刻水位（`current()`）」类别。
+  语法错误与索引未命中、证据切面撞多个 eval 时的紧凑索引——全部以 CLI 抛出的错误对象/文案为断言面。跨 Run 合成 Selection 与去重的结构化语义（`selectLatestPerEval`/现刻水位）不在这里重复，归[单元测试 Results](record.md)的「现刻水位（`current()`）」类别。
 - **o11y 数据派生**：
   - `estimateCost` 对未知 Model 返回 `null`。缺少 Usage 时不猜零成本。
   - `buildExecutionTree` 合成标准事件流与 OTel
@@ -267,7 +267,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 ## 不这样测
 
 - 不把 Reports 整体当作"展示层"薄测；选择、去重、指标和聚合会静默给错答案。
-- 不在本层断言渲染产物——终端排版、DOM 结构与快照锁定的是呈现，归
+- 不在本层断言渲染产物——终端排版、DOM 结构与 Run 锁定的是呈现，归
   [E2E 功能域 · 报告与读面](../e2e/report.md)对真实产物验收；本层观察数据。
 - 不用相同 attempt 数的题目验证两级聚合，因为它与平铺算法可能恰好相等。
 - 不在本层断言主题的最终视觉：令牌块文本、级联结果、对比度与色觉可分辨性归 E2E 与主题验收，本层只证明装载选了哪一档、规范化出了什么数据。

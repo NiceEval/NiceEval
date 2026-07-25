@@ -203,7 +203,7 @@ export function parseOpenClawTranscript(raw: string | undefined): ParsedTranscri
   }
 
   // requests > 0 意味着至少一条消息真的带回了 usage;整份 transcript 没有任何 usage 时
-  // input/output 也不该垫成 0(见 docs/feature/results/architecture.md#usage)。
+  // input/output 也不该垫成 0(见 docs/feature/record/architecture.md#usage)。
   const usage: Usage = requests > 0 ? { inputTokens, outputTokens } : {};
   if (cacheReadTokens > 0) usage.cacheReadTokens = cacheReadTokens;
   if (cacheCreationTokens > 0) usage.cacheCreationTokens = cacheCreationTokens;

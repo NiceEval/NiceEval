@@ -2,7 +2,7 @@
 
 `@niceeval/verify`(工作名)的完整断言词表。设计定位与形态裁决见 [README](README.md);逐场景写法见 [Use Cases](use-cases/README.md)。
 
-库从一个入口导出四组能力:命令执行与证据句柄、语义树快照 matcher、容差 golden matcher、点查询。全部是普通函数与 vitest matcher,不带 runner、不带全局状态。
+库从一个入口导出四组能力:命令执行与证据句柄、语义树 Run matcher、容差 golden matcher、点查询。全部是普通函数与 vitest matcher,不带 runner、不带全局状态。
 
 ```ts
 import { cli, evidence, term, printTermTree } from "@niceeval/verify";
@@ -31,7 +31,7 @@ fail.stdout; fail.stderr; fail.combined; fail.exit;
 
 ```ts
 const ev = evidence();
-ev.resultsRoot;                 // 本次运行的结果根
+ev.resultsRoot;                 // 本次运行的记录根
 ev.locator("tool-call");        // prepare 提取好的 attempt locator,缺失即抛错并列出可用键
 ev.exportDir("branded");        // 命名导出站目录
 ev.consumerDir("react-jsx");    // prepare 搭好的临时消费方项目目录(消费边界场景)
@@ -40,7 +40,7 @@ ev.logPath;                     // 证据日志(cli() 自动追加的那份)
 
 清单的产出方是仓库自己的 `scripts/e2e.ts` prepare 步骤;库只定义清单的形状与读取面,不定义怎么跑实验。
 
-## 第一层:语义树快照 `toMatchTermSnapshot`
+## 第一层:语义树 Run `toMatchTermSnapshot`
 
 ### 结构解析器
 
@@ -131,7 +131,7 @@ await expect(fail.combined).toMatchScrubbedFileSnapshot("golden/deliberate-fail.
 | 成本(`$0.0123`) | `[COST]` |
 | token 计数(`12.3k tokens`) | `[TOKENS]` |
 | attempt locator(`@…`) | `[LOCATOR]` |
-| 结果根及其下路径 | `[ROOT]/…` |
+| 记录根及其下路径 | `[ROOT]/…` |
 | ISO 时间戳 | `[TIMESTAMP]` |
 
 - golden 文件签入仓库;更新走 `vitest -u`,diff 即 review 面。

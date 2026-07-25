@@ -22,7 +22,7 @@
 import { AttemptList, Section, attemptListData, defineComponent } from "niceeval/report";
 
 export const SlowestEvals = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
-  const all = await attemptListData(ctx.scope);
+  const all = await attemptListData(ctx.sample);
   const ranked = [...all].sort((x, y) => y.durationMs - x.durationMs);
   return (
     <Section title={{ en: "Slowest attempts", "zh-CN": "最慢的 attempt" }}>
@@ -79,7 +79,7 @@ export const CoverageBar = defineComponent<CoverageBarProps>({
 
 ### 2. 取数只在一个地方
 
-组合组件在函数体里取数，双面组件在可选的 `resolve` 里取数。两个渲染面都是纯投影——拿到什么画什么，不再读 Scope、不再排序、不再过滤。带 `resolve` 的组件在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化，两面消费同一份渲染 props，所以两面同源是结构保证的，不靠自觉。
+组合组件在函数体里取数，双面组件在可选的 `resolve` 里取数。两个渲染面都是纯投影——拿到什么画什么，不再读 Sample、不再排序、不再过滤。带 `resolve` 的组件在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化，两面消费同一份渲染 props，所以两面同源是结构保证的，不靠自觉。
 
 ### 3. 颜色只有三个来源
 

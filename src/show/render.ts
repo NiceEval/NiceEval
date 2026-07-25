@@ -514,7 +514,7 @@ interface CommandCard {
   timingNode?: TimingNode;
 }
 
-/** `commands.json` 的投影(docs/feature/results/architecture.md「commandsjson」);没有失败命令时 evidence.commands 为 null。 */
+/** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有失败命令时 evidence.commands 为 null。 */
 function failedCommandsOf(evidence: AttemptEvidence): readonly FailedCommandEvidence[] {
   return evidence.commands ?? [];
 }

@@ -9,16 +9,16 @@ niceeval 对用户说「这里有问题」的每一条消息——CLI 拒绝一�
 | 反馈面 | 例子 | 形状与消息单源 |
 |---|---|---|
 | CLI 启动期错误 | 未知 flag、`exp --model` 用法拒绝、config 不可加载、`view --out` 防呆拒绝 | 本页「CLI 启动期错误的终端形状」；具体消息随对应命令 / flag 的行为契约声明 |
-| 运行期 diagnostics | sandbox provisioning 重试耗尽、reporter 写失败、teardown 失败 | [`DiagnosticRecord`](feature/results/architecture.md) |
-| Scope 警告 | unfinished-snapshot、unreadable-snapshot | [警告 kind 全集](feature/results/library.md#警告-kind-全集) |
-| 读取分类提示 | schemaVersion 不兼容、malformed / incomplete 快照 | [View · 结果版本与错误](feature/reports/view.md#结果版本与错误) |
-| 库抛出的错误类 | `MalformedLocatorError`、`LocatorNotFoundError`、`copySnapshots` 预检失败 | 各 feature 文档声明的错误类 |
+| 运行期 diagnostics | sandbox provisioning 重试耗尽、reporter 写失败、teardown 失败 | [`DiagnosticRecord`](feature/record/architecture.md) |
+| Scope 警告 | unfinished-run、unreadable-run | [警告 kind 全集](feature/sample/library.md#警告-kind-全集) |
+| 读取分类提示 | schemaVersion 不兼容、malformed / incomplete Run | [View · 结果版本与错误](feature/reports/view.md#结果版本与错误) |
+| 库抛出的错误类 | `MalformedLocatorError`、`LocatorNotFoundError`、`publish` 预检失败 | 各 feature 文档声明的错误类 |
 
 **被测对象的失败事实不在本契约内**：断言差异、agent 崩溃形成的 `AttemptError`、failed / errored 判定，是 eval 的结果数据，不是 niceeval 在报错。它们如何变成可行动的排查路径，由 [Scoring 的显示契约](feature/scoring/library/display.md)、[Show](feature/reports/show.md) / [View](feature/reports/view.md) 的呈现契约与公开 Debug 手册负责。
 
 失败事实有一条独立的证据完整性规则：摘要可以有界，调用边界看到的失败命令证据不能等到 Eval
 拼错误字符串时才决定是否保存。目标契约由 Sandbox 包装层在返回 `CommandResult` 前自动把非零命令的
-stdout/stderr 写进 [`commands.json`](feature/results/architecture.md#commandsjson)，再让
+stdout/stderr 写进 [`commands.json`](feature/record/architecture.md#commandsjson)，再让
 `show @<locator> --execution` 下钻；`result.json` 只放一层错误摘要与明确指引。这样 Eval 后续即使
 `.slice(-N)`，也只损伤它自己的摘要，不会删掉 NiceEval 已捕获的命令证据。落盘仍受统一 256 KiB
 逐值上限约束；“完整”指 NiceEval 在持久化上限内保留调用边界原值，不是无限制保存。
@@ -31,14 +31,14 @@ stdout/stderr 写进 [`commands.json`](feature/results/architecture.md#commandsj
 2. **依据**：触发判断的数据。结构化面放字段（`startedAt`、`dir`、`reason`），文本面写进句子（snapshot started 2026-07-12 has no completedAt）。
 3. **下一步**：用户现在能做什么。必备段，三种合法形态，至少给一种：
    - **可执行命令**：完整、已替换真实 id 的命令，复制即跑（`niceeval exp midterm/bub-gpt-5.4`）。「re-run the experiment」这类还要用户自己拼命令的指示不算命令形态，算下面的定位动作。
-   - **定位动作**：没有单条命令能解决时，指出动哪里——哪个文件、哪个字段、哪一侧（"check the E2B quota for your API key"、"exclude that artifact kind from `copySnapshots({ artifacts })`"）。
+   - **定位动作**：没有单条命令能解决时，指出动哪里——哪个文件、哪个字段、哪一侧（"check the E2B quota for your API key"、"exclude that artifact kind from `publish({ artifacts })`"）。
    - **忽略条件**：警告类信号存在合法「不用管」场景时，写出判断条件（"if nothing changed between runs, the numbers remain comparable"），让用户按条件裁决，而不是猜这条警告严不严重。
 
-命令与忽略条件可以并存——「要对齐就跑 X；两次跑之间没改东西可以忽略」是合格的下一步。三段都在 `message` 一个字段里：**只打印 message 的消费方不丢失下一步**，「要展示就原样打」的承诺（见 [Results Library](feature/results/library.md#选择快照resultslatest-返回-scope)）对下一步同样成立。
+命令与忽略条件可以并存——「要对齐就跑 X；两次跑之间没改东西可以忽略」是合格的下一步。三段都在 `message` 一个字段里：**只打印 message 的消费方不丢失下一步**，「要展示就原样打」的承诺（见 [Sample Library](feature/sample/library.md#两个选择器)）对下一步同样成立。
 
 ## 结构化承载：`command`
 
-在 message 自含三段之上，已经结构化的反馈类型把可执行命令单列。[`ScopeWarning`](feature/results/library.md#警告-kind-全集) 与 [`DiagnosticRecord`](feature/results/architecture.md) 带可选字段：
+在 message 自含三段之上，已经结构化的反馈类型把可执行命令单列。[`SampleWarning`](feature/sample/library.md#警告-kind-全集) 与 [`DiagnosticRecord`](feature/record/architecture.md) 带可选字段：
 
 ```typescript
 /** 有单条能直接推进的命令时给出，已替换真实 id，复制即跑；没有单命令形态时省略，不硬造。 */
@@ -63,12 +63,12 @@ run 激活后（feedback coordinator 接管终端起）的诊断按 [CLI 反馈�
 ## 新增一条报错的义务
 
 - 消息按三段式写全；能给命令就给已替换真实 id 的命令。
-- `ScopeWarning` 新 kind 回[警告 kind 全集](feature/results/library.md#警告-kind-全集)登记，「下一步」是登记项的一部分；新的 diagnostic code 在引入它的 feature 文档声明，同样写明下一步。
+- `SampleWarning` 新 kind 回[警告 kind 全集](feature/sample/library.md#警告-kind-全集)登记，「下一步」是登记项的一部分；新的 diagnostic code 在引入它的 feature 文档声明，同样写明下一步。
 - 在对应 feature 的 `cases.md` 登记场景行时，场景必须断言下一步在场——message 以下一步收尾、`command` 在该带时带上——不能只断言现象。
 
 ## 相关阅读
 
-- [Results Library · 警告 kind 全集](feature/results/library.md#警告-kind-全集) —— Scope 警告逐 kind 的触发、字段与下一步。
-- [Results Architecture](feature/results/architecture.md) —— `DiagnosticRecord` 的完整形状。
+- [Results Library · 警告 kind 全集](feature/sample/library.md#警告-kind-全集) —— Sample 警告逐 kind 的触发、字段与下一步。
+- [Results Architecture](feature/record/architecture.md) —— `DiagnosticRecord` 的完整形状。
 - [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— run 激活后诊断如何渲染。
 - [View · 结果版本与错误](feature/reports/view.md#结果版本与错误) —— 读取分类提示。

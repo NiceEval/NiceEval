@@ -95,7 +95,7 @@ outside the eval file · lib/candidate.ts
 
 ## 尾部
 
-尾部先给一行事实（捕获的源码文件数、未通过条数），再给三条取全文路径：完整 expected / received 在 [attempt 首页](../../feature/reports/show/attempt.md)展开，`--source=full` 内联全部片段，`--source=<path>` 读某个文件全文。脚本要拿拼好的 `{path, content}` 用 `AttemptHandle.sources()`，不必自己做 [`sources.json`](../../feature/results/architecture.md#sourcesjson) 的两步解析。
+尾部先给一行事实（捕获的源码文件数、未通过条数），再给三条取全文路径：完整 expected / received 在 [attempt 首页](../../feature/reports/show/attempt.md)展开，`--source=full` 内联全部片段，`--source=<path>` 读某个文件全文。脚本要拿拼好的 `{path, content}` 用 `AttemptHandle.sources()`，不必自己做 [`sources.json`](../../feature/record/architecture.md#sourcesjson) 的两步解析。
 
 ## 相关阅读
 

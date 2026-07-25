@@ -109,14 +109,14 @@ export default defineExperiment({
 
 ## Sandbox 作为数据结构(带参数)
 
-provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱快照 ID"。和 [agent](../adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
+provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱 Run ID"。和 [agent](../adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
 
 ```typescript
 import { dockerSandbox, vercelSandbox, e2bSandbox, localSandbox } from "niceeval/sandbox";
 
 dockerSandbox()                                     // docker:用默认镜像
 dockerSandbox({ image: "niceeval-agents:node24" })  // docker:指定镜像
-vercelSandbox({ snapshotId: "snap_xxx" })            // vercel:从沙箱快照起
+vercelSandbox({ snapshotId: "snap_xxx" })            // vercel:从沙箱 Run 起
 e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 localSandbox()                                       // 宿主机本地目录(默认当前 git 仓库根,见 local.md)
 ```
@@ -219,7 +219,7 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
 
 `progress` 只更新当前 sandbox setup 的短期 activity;`diagnostic` 才进入永久输出。它们不能指定 `sandbox-setup` 等 phase——runner 从当前 hook 自动得出阶段。诊断也不会吞掉或制造失败:上例明确选择降级继续;如果环境不可用,应直接抛出原错误,让 attempt 进入 `errored`。
 
-第三条通道 `ctx.fact(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。它落进本 attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现；它用于事后审计，不参与 fingerprint。计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`fact` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../results/architecture.md#facts运行事实):
+第三条通道 `ctx.fact(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。它落进本 attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现；它用于事后审计，不参与 fingerprint。计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`fact` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
 
 ```typescript
 ctx.fact("memory.notes", noteCount);

@@ -1,5 +1,5 @@
 // attempt 级阶段计时:LifecyclePhase 主链/收尾段的耗时 + 阶段内时间树(hook / turn / command)。
-// 契约见 docs/feature/results/architecture.md「result.json」的 PhaseTiming / TimingNode:
+// 契约见 docs/feature/record/architecture.md「result.json」的 PhaseTiming / TimingNode:
 // 数组顺序即执行顺序;没执行的阶段不写 0 值条目;收尾段不计入 durationMs 口径但照常计时;
 // 结果封口发生在 Effect Scope release 完成之后(sandbox.stop 也向这个 recorder 写入)。
 

@@ -49,7 +49,7 @@ eval 文件里只有 `t.judge`、`t.calledTool` 十来条，`t.check` 一条没�
 这条设计带来三处契约变化，逐条见 [Architecture](architecture.md)：
 
 1. **`loc` 记调用链，不只记声明处。** `AssertionResult.loc` 增加从 eval 入口到声明处的用户帧链，树才有骨架可挂。
-2. **源码捕获跟着调用链走。** [`sources.json`](../../feature/results/architecture.md#sourcesjson) 收录链上每个用户帧的文件，「用户帧」有精确定义（排除 niceeval 自身与 `node_modules`）。
+2. **源码捕获跟着调用链走。** [`sources.json`](../../feature/record/architecture.md#sourcesjson) 收录链上每个用户帧的文件，「用户帧」有精确定义（排除 niceeval 自身与 `node_modules`）。
 3. **`AnnotatedEvalSource` 变成递归结构。** 一个节点是「一个文件的若干行 + 每行的标注 + 每行发出的调用子树」，text 面与 `AttemptSource` web 面共用这棵树。
 
 ## 兜底桶还在，但只接真正无处安放的
@@ -79,4 +79,4 @@ eval 文件里只有 `t.judge`、`t.calledTool` 十来条，`t.check` 一条没�
 - [Architecture](architecture.md) —— `loc` 调用链、捕获规则、递归数据模型与 web 面投影。
 - [`--source` 当前契约](../../feature/reports/show/eval-source.md) —— 被本设计替换的单文件形态。
 - [Attempt 详情组件](../../feature/reports/components/attempt-detail/README.md) —— `AttemptSource` 的组件位置与视觉规范。
-- [Results · `sources.json`](../../feature/results/architecture.md#sourcesjson) —— 源码落盘的引用 + 去重仓库两层结构。
+- [Results · `sources.json`](../../feature/record/architecture.md#sourcesjson) —— 源码落盘的引用 + 去重仓库两层结构。

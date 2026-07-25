@@ -4,7 +4,7 @@
 // (attempt 级 facts 累加器 / experiment 级 facts 累加器),归属由调用方按当前作用域
 // 决定,不是本函数的职责;本函数只管「这次调用合不合法」与「写进哪个 Record」。
 // key 词法、value 标量、同 key 后写覆盖三条规则单源
-// docs/feature/results/architecture.md#facts运行事实。
+// docs/feature/record/architecture.md#facts运行事实。
 
 /** fact() 接受的标量取值;与三处 ctx.fact() 签名、AttemptRecord.facts / SnapshotMeta.facts 同型。 */
 export type FactValue = string | number | boolean;

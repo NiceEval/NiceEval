@@ -3,7 +3,7 @@
 把 [指标](../../library/metrics.md) 投影成榜单、格子、成绩单、对照表与稳定性矩阵。每个组件的数据绑定住在结构子节点里，呈现选项是 props；组合规则见[组件树](../README.md)。
 
 ```tsx
-// spec 形态：结构子节点携带绑定，input 省略时取宿主注入的 Scope
+// spec 形态：结构子节点携带绑定，input 省略时取宿主注入的 Sample
 <MetricTable filter>
   <Rows dimension="agent" sort={endToEndPassRate} />
   <Column metric={endToEndPassRate} />
@@ -11,7 +11,7 @@
 </MetricTable>
 
 // data 形态：接收配套 *Data 函数算好的数据，子节点只按 key 选择并附加呈现
-<MetricTable data={await metricTableData(scope, options)} filter>
+<MetricTable data={await metricTableData(sample, options)} filter>
   <Column dataKey="cost-usd" name="每题成本" />
 </MetricTable>
 ```

@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // buildAnnotatedEvalSource 的单测(定稿见 docs/concepts.md「标注 Eval 源码」)。
 // 覆盖:同一行多条断言、无 loc 断言进 unmapped、loc 指向别的文件/越界行也进 unmapped
 // (never silently dropped 的边界情况)、空断言数组、summary 计数、哈希与归一化行为。

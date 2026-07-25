@@ -10,7 +10,7 @@
 
 实体列表没有结构子节点。列不是配置面，是下钻契约的一部分：
 
-- **主读数列由题型构成决定，不由作者挑。** 通过制显示通过率、计分制显示总分、混型两列并出（[主读数映射](../../library/metrics.md#题型构成与主读数)）。开放选列就要求作者自己维护这个分支，报告一旦跑到另一种题型的 Scope 就会摆出空列。
+- **主读数列由题型构成决定，不由作者挑。** 通过制显示通过率、计分制显示总分、混型两列并出（[主读数映射](../../library/metrics.md#题型构成与主读数)）。开放选列就要求作者自己维护这个分支，报告一旦跑到另一种题型的 Sample 就会摆出空列。
 - **列集合稳定，读者的迁移成本才为零。** 每份报告里的 experiment 表列序一致，读者不必重新找「成本在第几列」。
 - **要自选列的组件已经有了**：[`MetricTable`](../tables/metric-table.md) 就是「行是维度值、列是你挑的指标」。两个组件如果都开放选列，它们就塌成同一个组件，而实体列表独有的展开层级（experiment → eval → attempt）、占位行与时效标注会被稀释成表格的一种配置。
 
@@ -43,7 +43,7 @@ interface AttemptListItem {
   costUSD: number | null;
   /** 执行时刻（携带条目为原执行时刻）。时效标注的时距从这里起算。 */
   startedAt: string;
-  /** 历史执行：携带条目，或来自该实验在 Scope 中最新快照之外的快照；false = 最新一次运行实测。 */
+  /** 历史执行：携带条目，或来自该实验在 Sample 中最新 Run 之外的 Run；false = 最新一次运行实测。 */
   historical: boolean;
   locator: AttemptLocator;
 }
@@ -90,7 +90,7 @@ interface ExperimentListItem {
   attempts: number;
   /** 历史执行的 attempt 数（分母是 attempts）；时效标注「↩ n/m attempts」的数据源。 */
   historicalAttempts: number;
-  /** 已知 eval 并集里、当前口径下没有任何 attempt 的题（来自 scope.coverage）；渲染为占位行。 */
+  /** 已知 eval 并集里、当前口径下没有任何 attempt 的题（来自 sample.coverage）；渲染为占位行。 */
   missingEvalIds: string[];
   lastRunAt: string;
   evalRows: ExperimentListEvalRow[];
@@ -128,13 +128,13 @@ type AttemptListProps = ComponentProps<readonly AttemptListItem[], {
 
 ### 时效标注
 
-三个列表共用一条时效呈现规则，数据源是 `AttemptListItem.historical`（语义单点在 [Results · 时效](../../../results/library.md#时效新执行与历史执行)）：
+三个列表共用一条时效呈现规则，数据源是 `AttemptListItem.historical`（语义单点在 [Results · 时效](../../../sample/library.md#时效新执行与历史执行)）：
 
 - **Attempt 行**：历史执行的 attempt 在 locator 后标 `↩` 加人话时距（如 `↩ 3d`，自 `startedAt` 起算）；web 面 hover 显示完整执行时刻，text 面直接打。新执行不标。
 - **Eval 父行**：其**全部** attempt 均为历史执行时，在题目名后标 `↩ <最近一次执行的时距>`；新旧混合时父行不标，子行各自可见。
 - **Experiment 行**：`historicalAttempts > 0` 时在副行追加 `↩ n/m attempts`。
 
-标注是 subdued 的行内事实，不占框、不用警示色——携带是 fingerprint 担保下的正常缓存，跨快照拼接受 `current()` 可比性前提保护，时效是数字的出身属性，不是警告。要完全排除历史执行，用 [`fresh` 口径](../../../results/library.md#时效新执行与历史执行)（CLI 侧 `--fresh`），被排除的题按覆盖事实转为占位行。
+标注是 subdued 的行内事实，不占框、不用警示色——携带是 fingerprint 担保下的正常缓存，跨 Run 拼接受 `latestPerEval()` 可比性前提保护，时效是数字的出身属性，不是警告。要完全排除历史执行，用 [`fresh` 口径](../../../sample/library.md#时效新执行与历史执行)（CLI 侧 `--fresh`），被排除的题按覆盖事实转为占位行。
 
 ## 相关阅读
 

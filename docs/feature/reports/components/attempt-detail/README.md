@@ -1,6 +1,6 @@
 # Attempt 详情
 
-Attempt 详情是一张 page，不是 `ReportDefinition` 的第二个内容槽。它和其它 page 一样只有 `id`、标题、输入声明与一棵 `content: ReportNode`；区别只是 `input: "attempt"` 表示宿主必须先用 locator 装配一份 [`AttemptEvidence`](../../../results/library.md)，`navigation: false` 表示它没有 locator 时不进入导航。
+Attempt 详情是一张 page，不是 `ReportDefinition` 的第二个内容槽。它和其它 page 一样只有 `id`、标题、输入声明与一棵 `content: ReportNode`；区别只是 `input: "attempt"` 表示宿主必须先用 locator 装配一份 [`AttemptEvidence`](../../../record/library.md)，`navigation: false` 表示它没有 locator 时不进入导航。
 
 ```tsx
 import { AttemptDetail, defineReport } from "niceeval/report";
@@ -36,14 +36,14 @@ export default defineReport({
 | [`AttemptAssessment`](attempt-assessment.md) | 先放 `AttemptError`，有 source 时放 `AttemptSource`，否则放 `AttemptAssertions` | 子组件都为空时零输出 |
 | `AttemptFixPrompt` | 把当前失败的身份、简要失败原因与排查步骤(含 `--source`/`--execution`/`--timing`/`--diff` 提示命令、复跑与确认步骤)组装成单条修复 prompt;不内嵌源码或 diff 原文,由 agent 自己跑命令查看 | 没有可操作失败时零输出。计分制的丢分得分点与前置中止都算可操作失败——`passed` 但有丢分的 attempt 照常出 prompt,围绕丢分检查点组装;挣满且未中止才零输出。通过制 passed 恒零输出 |
 | `AttemptTimeline` | runner phases、hook / command / session / turn，以及按 `traceId` 关联的 agent / model / tool spans | 没有 phase 时零输出 |
-| `AttemptConversation` | 标准事件流按轮组织的 user / assistant / thinking / tool / Skill / HITL / error 条目,以及 attempt 末尾的失败 Sandbox 命令卡([`commands.json`](../../../results/architecture.md#commandsjson) 投影) | 没有 events 且没有失败命令时零输出 |
+| `AttemptConversation` | 标准事件流按轮组织的 user / assistant / thinking / tool / Skill / HITL / error 条目,以及 attempt 末尾的失败 Sandbox 命令卡([`commands.json`](../../../record/architecture.md#commandsjson) 投影) | 没有 events 且没有失败命令时零输出 |
 | `AttemptDiagnostics` | lifecycle 分组的 diagnostics(warning/error 级别的 code + message + 出现次数) | 没有 diagnostics 时零输出 |
 | [`UsageTable`](usage-table.md) | 判定、轮数、工具调用数、token 拆分与成本摊成的单行用量摘要；组装口径见 [`UsageTable` 组装口径（单源）](usage-table.md#组装口径单源) | 没有 usage 时零输出 |
 | `AttemptTrace` | 不混入 runner 节点的原始 OTel span 树 / 瀑布 | 没有 trace 时零输出 |
 | `AttemptDiff` | generated / modified / deleted 文件摘要与 patch | 没有变更时零输出 |
 | [`AttemptDetail`](attempt-detail.md) | 按内建顺序装配以上区块；有 source 时回复已在 `AttemptSource` 行内展开，不再重复 `AttemptConversation`，无 source 时保留独立分轮视图 | 随子组件 |
 
-`AttemptConversationData` 在分轮卡片之外携带 `failedCommands`——[`commands.json`](../../../results/architecture.md#commandsjson) 的投影(含关联时间树的 `timingNodeId`,按 timing `startOffsetMs` 排序);`--execution` 的失败命令卡、`cmd<N>` 句柄与 `--json` 的结构化输出消费的都是这一份字段,终端呈现细则见 [`--execution`](../../show/execution.md)。没有失败命令时字段省略,不摆空数组。
+`AttemptConversationData` 在分轮卡片之外携带 `failedCommands`——[`commands.json`](../../../record/architecture.md#commandsjson) 的投影(含关联时间树的 `timingNodeId`,按 timing `startOffsetMs` 排序);`--execution` 的失败命令卡、`cmd<N>` 句柄与 `--json` 的结构化输出消费的都是这一份字段,终端呈现细则见 [`--execution`](../../show/execution.md)。没有失败命令时字段省略,不摆空数组。
 
 区块按事实边界拆分，不按某个宿主当前的卡片拆分。`AttemptTimeline` 可以把 span 按显式 correlation 挂回 runner 时间树；`AttemptTrace` 则保留原始 OTel 视角，因此二者可以择一，也可以同时放。`AttemptSource` 与 `AttemptAssertions` 会呈现同一批 assertion 的不同视角，默认组合通过 `AttemptAssessment` 二选一，避免重复。`AttemptSource` 还把标准事件流按 `loc` 投影回 send 行，点击行可在源码上下文中展开回复；因此默认 `AttemptDetail` 有 source 时不再追加独立 `AttemptConversation`，没有 source 时才把它作为完整事件流 fallback。报告作者仍可显式同时放置两者，此时两种视角并存是作者选择。
 
@@ -55,7 +55,7 @@ attempt-input page 的 resolve context 是判别联合的一支：
 
 ```ts
 type PageContext =
-  | { id: string; input: "scope" }
+  | { id: string; input: "sample" }
   | {
       id: string;
       input: "attempt";
@@ -82,7 +82,7 @@ type AttemptSectionProps<Data> =
     };
 ```
 
-配套计算函数只接受一个 attempt，不接受 Scope：
+配套计算函数只接受一个 attempt，不接受 Sample：
 
 ```ts
 attemptSummaryData(evidence: AttemptEvidence): AttemptSummaryData;
@@ -98,7 +98,7 @@ attemptTraceData(evidence: AttemptEvidence): AttemptTraceData | null;
 attemptDiffData(evidence: AttemptEvidence): AttemptDiffData | null;
 ```
 
-`null` 的计算结果在两个面都渲染为空。组件不自己读 artifact；`loadAttemptEvidence` 已经完成一次性装配，`*Data` 只做适合展示与序列化的派生。Attempt 组件放在 scope-input page 且又没有显式 `input` 时，resolve 以完整用户反馈报错并指引移到 attempt-input page 或传入 evidence。
+`null` 的计算结果在两个面都渲染为空。组件不自己读 artifact；`loadAttemptEvidence` 已经完成一次性装配，`*Data` 只做适合展示与序列化的派生。Attempt 组件放在 sample-input page 且又没有显式 `input` 时，resolve 以完整用户反馈报错并指引移到 attempt-input page 或传入 evidence。
 
 ## 在 `show` 与 `view` 怎样渲染
 

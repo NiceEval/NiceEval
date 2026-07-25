@@ -1,4 +1,4 @@
-// AttemptLocator:Attempt 的不透明、可复制、可发布的短标识(定稿见 docs/feature/results/library.md
+// AttemptLocator:Attempt 的不透明、可复制、可发布的短标识(定稿见 docs/feature/record/library.md
 // 「按 locator 寻址一个 attempt」、docs/concepts.md「Attempt 定位符」、docs/feature/reports/view.md 的 `#/attempt/@<locator>` 路由)。
 //
 // locator 由不可变身份元组 {experimentId, 快照 startedAt, evalId, attempt 下标(0-indexed)}

@@ -37,7 +37,7 @@ const scenarios = ["no-tsconfig", "classic-jsx", "react-jsx"] as const;
 for (const scenario of scenarios) {
   test(`消费方 ${scenario}:从公开入口装载 built-in 报告并渲染真实证据`, async () => {
     const { stdout, combined } = await cli(
-      `pnpm exec niceeval show --report scatter.tsx --results ${ev.resultsRoot}`,
+      `pnpm exec niceeval show --report scatter.tsx --record ${ev.resultsRoot}`,
       { cwd: ev.consumerDir(scenario) },
     );
 

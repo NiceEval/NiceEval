@@ -1,6 +1,6 @@
 # Phase Timings 与安装基准
 
-本机制由两部分组成：写入每个 Attempt 的阶段计时契约，以及直接调用单次 Attempt 引擎的安装基准工作台。`AttemptRecord.phases` 的持久化类型单归 [Results Format](../../feature/results/architecture.md)，本篇定义阶段边界语义与基准消费方式。
+本机制由两部分组成：写入每个 Attempt 的阶段计时契约，以及直接调用单次 Attempt 引擎的安装基准工作台。`AttemptRecord.phases` 的持久化类型单归 [Record Format](../../feature/record/architecture.md)，本篇定义阶段边界语义与基准消费方式。
 
 ## 要回答的问题
 
@@ -8,7 +8,7 @@
 
 Attempt 级总 `durationMs` 无法区分沙箱创建、环境钩子、依赖安装、CLI 安装、逐轮 send 与评分，也无法指出 errored 结果终止在哪个阶段。进度 `log()` 是人读的临时反馈，不构成可持久化、可聚合的机器口径。
 
-设计分两层:**① 契约层** —— 每个 attempt 落盘 per-phase 计时(`phases` 字段),让每一次正常的 eval 运行都自动是一次采样;**② 基准层** —— `bench/` 直接调用 runner 内部单次 attempt 引擎的一组脚本,与单元测试、CI 门禁都无关,本地随手可跑:优化安装路径时改一版实现、跑一轮基准、和上一轮快照对比。
+设计分两层:**① 契约层** —— 每个 attempt 落盘 per-phase 计时(`phases` 字段),让每一次正常的 eval 运行都自动是一次采样;**② 基准层** —— `bench/` 直接调用 runner 内部单次 attempt 引擎的一组脚本,与单元测试、CI 门禁都无关,本地随手可跑:优化安装路径时改一版实现、跑一轮基准、和上一轮 Run 对比。
 
 ## 契约:`AttemptRecord.phases`
 
@@ -33,7 +33,7 @@ interface PhaseTiming {
 }
 ```
 
-`LifecyclePhase` 闭集与 `PhaseTiming` / `TimingNode` 的类型定义单归 [Results Format](../../feature/results/architecture.md#resultjson),这里不复写第二份;本篇定义各阶段的边界语义与消费方式。
+`LifecyclePhase` 闭集与 `PhaseTiming` / `TimingNode` 的类型定义单归 [Record Format](../../feature/record/architecture.md#resultjson),这里不复写第二份;本篇定义各阶段的边界语义与消费方式。
 
 ### 阶段边界
 
@@ -82,26 +82,26 @@ interface PhaseTiming {
 
 ### 消费边界
 
-普通 `niceeval exp` 由 runner 写入 `phases`，`niceeval/results` 读取面原样透传。消费面有四个:
+普通 `niceeval exp` 由 runner 写入 `phases`，`niceeval/record` 读取面原样透传。消费面有四个:
 
 - **`niceeval show`**:attempt 首页的 `timing:` 行给主链分解与收尾合计;`--timing` 切面给 phase → hook/turn → command → OTel 的统一时间树。契约见 [Show `--timing`](../../feature/reports/show/timing.md)。
 - **`niceeval view`**:Attempt 详情的阶段耗时区,同一份 phases 的图形面。契约见 [View](../../feature/reports/view.md)。
-- **结果读取 API**:`niceeval/results` 原样透传,聚合脚本按 `name` 分组。
+- **结果读取 API**:`niceeval/record` 原样透传,聚合脚本按 `name` 分组。
 - **`bench/`**:不经过 CLI,也不写 `.niceeval/result.json`;它直接调用 runner 的单次 Attempt 引擎,从内存返回值读取同一份 `phases`。与 CLI 路径共享阶段名和计时语义,只在是否经过 discover、是否持久化上不同。
 
 Runner 时间树不写入 OTel trace,也不混入独立的 Traces 瀑布图——span 仍来自被测 agent(见 [Observability](../../observability.md)),phases 是 runner 侧运行事实。`show --timing` 与 Attempt 时间详情会在读取时按 turn `traceId` 组合两条数据；这只是展示投影,两类 artifact 仍各有各的家。
 
 ## 基准:`bench/` 直接调用的内部脚本
 
-安装基准是仓库常备的**优化工作台**,与单元测试(`pnpm test`)和 CI 门禁都独立:目标读者是「正在优化冷启动 / checkpoint 缓存 / 安装脚本的人」,工作流是改一版实现 → 重跑基准 → 与上一轮快照对比,要的是「跑一次、当场看到数字」,不是「跑完再另开一步生成报告页」的两段式流程。因此 `bench/` **不是**一个 niceeval 项目——没有 `niceeval.config.ts`,没有 `evals/`/`experiments/` 走 CLI discover,也不吃 [Reports](../../feature/reports/README.md) 积木出页面。它是几个纯 TS 脚本,直接调用 runner 内部单次 attempt 的执行引擎,一条命令跑完直接把耗时表打印到终端:
+安装基准是仓库常备的**优化工作台**,与单元测试(`pnpm test`)和 CI 门禁都独立:目标读者是「正在优化冷启动 / checkpoint 缓存 / 安装脚本的人」,工作流是改一版实现 → 重跑基准 → 与上一轮 Run 对比,要的是「跑一次、当场看到数字」,不是「跑完再另开一步生成报告页」的两段式流程。因此 `bench/` **不是**一个 niceeval 项目——没有 `niceeval.config.ts`,没有 `evals/`/`experiments/` 走 CLI discover,也不吃 [Reports](../../feature/reports/README.md) 积木出页面。它是几个纯 TS 脚本,直接调用 runner 内部单次 attempt 的执行引擎,一条命令跑完直接把耗时表打印到终端:
 
 ```text
 bench/
   probes.ts        # 每个 adapter 的「装完能不能用」探测命令(codex --version / uv tool list 等)
   stats.ts         # min/median/max、首个/后续分列、三类失败计数、noise-aware 对比判据——纯函数,无 IO
-  run.ts           # 入口:tsx bench/run.ts <provider> [--runs 10],跑完直接打印
+  run.ts           # 入口:tsx bench/run.ts <provider> [--attempts 10],跑完直接打印
   compare.ts       # 入口:tsx bench/compare.ts <old.json> <new.json>,打印 regression/improvement/noise 判定
-  .snapshots/      # run.ts 写的统计快照(本地数据,不进 git)
+  .snapshots/      # run.ts 写的统计 Run(本地数据,不进 git)
   README.md        # 跑法与运行纪律
 ```
 
@@ -137,18 +137,18 @@ export const codexProbe = defineEval({
 ```sh
 npx tsx bench/run.ts docker            # 本地快速迭代,免云凭据、免钱
 npx tsx bench/run.ts e2b               # 需 E2B_API_KEY
-npx tsx bench/run.ts docker --runs 10  # 默认也是 10(见下)
+npx tsx bench/run.ts docker --attempts 10  # 默认也是 10(见下)
 ```
 
 对给定 provider 下的每个 adapter,`run.ts` 直接 `for` 循环调用 `runAttemptBody`(sandbox 由该 provider 的 `dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` 构造),串行执行、不并发——串行让排队等待恒近 0、attempt 序号与冷 / 热次序一一对应。每次调用拿到的结果里带逐阶段耗时(对齐上节「契约:`AttemptRecord.phases`」的阶段名与语义);循环跑完,`stats.ts` 里的纯函数当场算出 min/median/max、首个 / 后续 attempt 分列、三类失败计数,`console.table` 直接打到终端——没有「先跑再另开一步 show --report」这一步。
 
-默认 `--runs 10` 而不是更省事的个位数:装 CLI 零模型调用,10 次相对 5 次的沙箱开销可忽略,但对下节「新一轮中位数是否落在历史波动范围外」这类判读有实质影响——个位数样本的包络基本等于裸的 min/max,统计支撑太薄。
+默认 `--attempts 10` 而不是更省事的个位数:装 CLI 零模型调用,10 次相对 5 次的沙箱开销可忽略,但对下节「新一轮中位数是否落在历史波动范围外」这类判读有实质影响——个位数样本的包络基本等于裸的 min/max,统计支撑太薄。
 
 首个 attempt 与后续 attempt 分列打印,不报单一均值:bub 的 `ensureBub` 有进程内共享安装锁与 checkpoint 缓存回填,同一轮里只有首个 attempt 付冷装成本,`agent.setup` 呈冷 / 热双峰,均值在双峰下没有意义;分列直接读出缓存省了多少。
 
-### `compare.ts`:两份快照的 noise-aware 判据
+### `compare.ts`:两份 Run 的 noise-aware 判据
 
-`run.ts` 顺手把算好的统计量(不是完整 attempt 记录)写一份 JSON 到 `bench/.snapshots/<provider>-<agent>-<timestamp>.json`,格式是 bench 自己的私有格式,不是 `.niceeval/` 的 Results Format。`compare.ts` 读两份快照、直接打印判定,同样是"调用即打印"的脚本,不经过任何渲染层:
+`run.ts` 顺手把算好的统计量(不是完整 attempt 记录)写一份 JSON 到 `bench/.snapshots/<provider>-<agent>-<timestamp>.json`,格式是 bench 自己的私有格式,不是 `.niceeval/` 的 Results Format。`compare.ts` 读两份 Run、直接打印判定,同样是"调用即打印"的脚本,不经过任何渲染层:
 
 ```sh
 npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapshots/docker-codex-<new>.json
@@ -156,12 +156,12 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 
 判据是非参数的、按 (agent × phase × 首个/后续) 每个 cell 独立算,不假设正态分布(小样本、真实延迟分布本来就不正态):只有同时满足「效应量过阈值」(`|median_new − median_old| / median_old` ≥ 默认 10%)与「超出历史包络」(当前中位数落在 baseline 样本 `[min, max]` 之外)两条,才判定为 regression / improvement;否则打印「噪声范围内,不下结论」。两条门槛都保守偏「宁可漏报、不可误报」——`bench/` 是单人本地迭代工具,不是拦截合并的 CI 门禁,不引入 Mann-Whitney U 或其他假设检验:`min/max` 包络 + 效应量阈值这种可以口算复核的规则,比一个需要解释 p-value 含义的检验更适合这个场景。
 
-`compare.ts` 顺带打印一次**缓存卫生检查**:如果当前快照「首个 attempt」(理应走冷装)的 `agent.setup` 耗时反而落进了历史「后续 attempt」(热装)的包络内,打一行警告——这是下面「运行纪律」里「忘清宿主缓存」这条人工纪律唯一能被机器兜住的信号,不保证抓全,但把「静默污染一整轮数据」变成「至少有一行警告可看」。
+`compare.ts` 顺带打印一次**缓存卫生检查**:如果当前 Run「首个 attempt」(理应走冷装)的 `agent.setup` 耗时反而落进了历史「后续 attempt」(热装)的包络内,打一行警告——这是下面「运行纪律」里「忘清宿主缓存」这条人工纪律唯一能被机器兜住的信号,不保证抓全,但把「静默污染一整轮数据」变成「至少有一行警告可看」。
 
 ### 运行纪律
 
 - **真冷装先清宿主缓存**。bub 的 checkpoint / uv 缓存落在宿主侧,跨进程存活;不清缓存跑出的「首个 attempt」是进程冷、宿主热。清哪些路径写在 `bench/README.md`;`compare.ts` 的缓存卫生检查是这条人工纪律的机器兜底,不是替代品。基准不引入显式 cold / warm 标记；首个 / 后续分列与按需清缓存共同定义冷、热口径。
-- **`sandbox.create` 的读数只测容器起停,不测镜像拉取**。跑 bench 之前统一 `docker pull` 预热用到的基础镜像(或固定 digest,保证跨快照镜像层缓存状态一致),不把「这次要不要拉镜像」设计成第二组冷 / 热变量——那会让 `sandbox.create` 失去跨快照可比性。真要测镜像拉取速度是另一个问题,不在这份基准范围内。
+- **`sandbox.create` 的读数只测容器起停,不测镜像拉取**。跑 bench 之前统一 `docker pull` 预热用到的基础镜像(或固定 digest,保证跨 Run 镜像层缓存状态一致),不把「这次要不要拉镜像」设计成第二组冷 / 热变量——那会让 `sandbox.create` 失去跨 Run 可比性。真要测镜像拉取速度是另一个问题,不在这份基准范围内。
 - **一个矩阵一个进程**。全矩阵逐 provider 串行跑,绝不并行多个 `run.ts` 进程指向同一批 provider(避免无意义的资源争抢和难以复现的抖动)。
 - **结果不进 git**:`bench/.snapshots/` 是本地测量数据。
 - **与 e2e 的边界**:[E2E CI](../testing/e2e/README.md) 的沙箱矩阵管适配层**回归门禁**(nightly、真实任务、真模型);bench 管安装路径的**优化迭代**(本地随手跑、不调模型)。互不依赖,bench 不进任何 CI,也不进 `pnpm test`——vitest 层守护的是计时机制本身(见下节),`bench/*.ts` 本身和 e2e 一样不受这条约束。
@@ -182,6 +182,6 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 ## 相关阅读
 
 - [Sandbox · 沙箱在生命周期里的位置](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置) —— phases 阶段边界的出处,也是 `runAttemptBody` 执行序的出处。
-- [Results Format](../../feature/results/architecture.md) —— `result.json` 的权威记录契约与 `phases` 字段。
+- [Record Format](../../feature/record/architecture.md) —— `result.json` 的权威记录契约与 `phases` 字段。
 - [E2E CI](../testing/e2e/README.md) —— 回归门禁侧的沙箱矩阵,与 bench 的分工见「运行纪律」;`bench/` 触达 runner 内部函数与 e2e 触达 CLI 子进程是同一类仓库内部特权。
 - [Observability](../../observability.md) —— 为什么 phases 不走 OTel trace。

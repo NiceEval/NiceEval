@@ -38,7 +38,7 @@ export async function heroData(input: ReportInput): Promise<HeroData> {
 /**
  * `scopeWarningsData(input)`:Scope 携带的挑选警告原样透出;`input` 是裸 `Snapshot[]` 时
  * 没有挑选过程、没有警告,返回空数组,也如实
- * (docs/feature/reports/components/site/scope-warnings.md)。
+ * (docs/feature/reports/components/site/sample-warnings.md)。
  */
 export async function scopeWarningsData(input: ReportInput): Promise<readonly ScopeWarning[]> {
   return resolveInput(input).warnings;
@@ -47,7 +47,7 @@ export async function scopeWarningsData(input: ReportInput): Promise<readonly Sc
 /**
  * `snapshotDiagnosticsData(input)`:只投影 diagnostics 非空的真实 Snapshot,不携带 `evals` 或
  * `AttemptHandle`,不跨快照合并;按 experiment id 字典序排列,同一实验内按 startedAt 从新到旧
- * (docs/feature/reports/components/site/snapshot-diagnostics.md)。
+ * (docs/feature/reports/components/site/run-diagnostics.md)。
  */
 export async function snapshotDiagnosticsData(input: ReportInput): Promise<SnapshotDiagnosticsData> {
   const { snapshots } = resolveInput(input);

@@ -1,7 +1,7 @@
 // ScopeWarnings 的聚合层:把 Scope 警告按「下一步动作」组织成组,web / text 两面共用
-// (docs/feature/reports/components/site/scope-warnings.md「聚合轴是动作,不是发生顺序」)。
+// (docs/feature/reports/components/site/sample-warnings.md「聚合轴是动作,不是发生顺序」)。
 // message 是完整叙述的单源,这里只组织、不改写;徽标 / 组头文案按 kind 表登记的模板
-// (docs/feature/results/library.md「警告 kind 全集」)经 locale 词典渲染,未登记的 kind
+// (docs/feature/record/library.md「警告 kind 全集」)经 locale 词典渲染,未登记的 kind
 // 回退为单独成组、逐条 message 原样。
 
 import type { ScopeWarning } from "../../../results/types.ts";
@@ -74,7 +74,7 @@ function dedupeCommand(members: readonly AnyWarning[]): string | null {
  * 其余(含未登记 kind)按 kind 聚合。组排序:实验作用域组在前(按实验 id 字典序),
  * 非实验作用域组在后(按 kind);类别两档制(integrity / freshness)已随 stale-snapshot /
  * partial-coverage 一并删除——三种 warning kind 都是同一类完整性事实,不再需要档位区分
- * (docs/feature/reports/components/site/scope-warnings.md「聚合轴是动作,不是发生顺序」)。
+ * (docs/feature/reports/components/site/sample-warnings.md「聚合轴是动作,不是发生顺序」)。
  */
 export function groupScopeWarnings(input: readonly ScopeWarning[], locale: ReportLocale): GroupedScopeWarnings {
   const warnings = input as readonly AnyWarning[];

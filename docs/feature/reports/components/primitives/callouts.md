@@ -1,11 +1,11 @@
 # `Callouts`
 
-分级提示区：把一批带严重度、消息与下一步命令的条目按组渲染。选择警告、快照诊断、
+分级提示区：把一批带严重度、消息与下一步命令的条目按组渲染。选择警告、Run 诊断、
 attempt 级诊断与结构化错误都是这一个形状，差别在传进去的[数据源](../sources/README.md)。
 
 ```tsx
-<Callouts source={scopeWarnings} />
-<Callouts source={snapshotDiagnostics} />
+<Callouts source={sampleWarnings} />
+<Callouts source={runDiagnostics} />
 ```
 
 ## 形状
@@ -30,7 +30,7 @@ interface CalloutGroup {
   /** 组头徽标：一条事实一枚，文案由数据源给。 */
   badges?: readonly LocalizedText[];
   items: readonly CalloutItem[];
-  /** 嵌套一层来源分组（experiment → snapshot 这类）；只有一个孩子时不渲染空壳层级。 */
+  /** 嵌套一层来源分组（experiment → run 这类）；只有一个孩子时不渲染空壳层级。 */
   groups?: readonly CalloutGroup[];
 }
 
@@ -49,7 +49,7 @@ interface CalloutsProps {
 不是「全文永远展开」：
 
 - web 面整个区是一个默认折起的原生 `<details>`，`<summary>` 是恒可见的计数汇总行
-  （如「2 个实验的数字带警告 · 1 个快照被跳过」）。汇总行在任何组数下都渲染，
+  （如「2 个实验的数字带警告 · 1 个 Run 被跳过」）。汇总行在任何组数下都渲染，
   单组时就是该组的计数。汇总行至少交代涉及多少组、多少条以及最高严重度。
 - 展开后每组的逐条原始 `message` 是第二层 `<details>`——无 JavaScript 可展开，
   满足增强层「初始静态 HTML 无 JS 完整可读」的不变量；总条数 ≤ 3 时这层默认展开。

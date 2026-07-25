@@ -1,4 +1,4 @@
-// createResultsWriter:Results Format 的写入面(定稿见 docs/feature/results/library.md「写:createResultsWriter」)。
+// createResultsWriter:Results Format 的写入面(定稿见 docs/feature/record/library.md「写:createResultsWriter」)。
 //
 // writer 与 reader 是同一组类型的两半,而且是字面的两半:reader 的 attempt.result 由
 // 「snapshot() 声明的快照级字段(experimentId / agent / model / startedAt / experiment)+
@@ -83,7 +83,7 @@ export interface AttemptArtifacts {
   agentSetup?: AgentSetupManifest;
   diff?: DiffArtifact;
   sources?: SourceArtifact[];
-  /** 非零 Sandbox 命令的 stdout/stderr 证据(见 docs/feature/results/architecture.md「commandsjson」)。 */
+  /** 非零 Sandbox 命令的 stdout/stderr 证据(见 docs/feature/record/architecture.md「commandsjson」)。 */
   commands?: FailedCommandEvidence[];
 }
 
@@ -351,7 +351,7 @@ async function writeAttemptFiles(
   // 大值截断只发生在这里(序列化的那一刻):events 的事件字段、trace 的 span 属性与 commands
   // 的 stdout/stderr 里的任意字符串值按 ARTIFACT_VALUE_MAX_BYTES 截断并留结构化 truncated
   // 标记;运行时(断言 / o11y 派生)看到的始终是完整值。sources 与 diff 不截断(见
-  // docs/feature/results/architecture.md)。
+  // docs/feature/record/architecture.md)。
   if (hasCommands)
     writes.push(
       writeFile(join(attemptDir, artifactFileOf("commands")), JSON.stringify(truncateCommands(artifacts!.commands!)), "utf-8"),
@@ -456,7 +456,7 @@ async function createSnapshotDir(root: string, experimentId: string): Promise<st
 
 
 
-/** 快照目录名的时间戳段:Date#toISOString 把 : 与 . 换成 -(与 docs/feature/results/architecture.md 一致)。 */
+/** 快照目录名的时间戳段:Date#toISOString 把 : 与 . 换成 -(与 docs/feature/record/architecture.md 一致)。 */
 function safeTimestamp(d: Date): string {
   return d.toISOString().replace(/[:.]/g, "-");
 }

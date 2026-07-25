@@ -1,8 +1,8 @@
 # `ExperimentList`
 
-每项显示 experiment 身份、agent / model、flags、判定构成、官方指标和其中的 eval。组件不推断分组；默认 [`ExperimentComparison`](../summaries/experiment-comparison.md) 把当前 Scope 的全部 items 交给它。数据形状见[实体列表](README.md#数据形状)。
+每项显示 experiment 身份、agent / model、flags、判定构成、官方指标和其中的 eval。组件不推断分组；默认 [`ExperimentComparison`](../summaries/experiment-comparison.md) 把当前 Sample 的全部 items 交给它。数据形状见[实体列表](README.md#数据形状)。
 
-一行只有一套 `agent / model / flags`，这不是显示上的取舍而是输入约束：宿主注入的 [`current()` Scope 保证每个 experiment 只由可比性配置一致的快照拼成](../../../results/library.md#官方现刻水位resultscurrent)；作者自选 `Snapshot[]` 时若同一 experiment 混入不一致的可比性配置，`experimentListData` 按完整用户反馈失败并指引——看跨配置演化用 `snapshot` 维度或[数值轴折线](../charts/line-chart.md)，不把两套配置拼成一行冒充单一配置。
+一行只有一套 `agent / model / flags`，这不是显示上的取舍而是输入约束：宿主注入的 [`latestPerEval()` Sample 保证每个 experiment 只由可比性配置一致的 Run 拼成](../../../sample/library.md#两个选择器)；作者自选 `Run[]` 时若同一 experiment 混入不一致的可比性配置，`experimentListData` 按完整用户反馈失败并指引——看跨配置演化用 `run` 维度或[数值轴折线](../charts/line-chart.md)，不把两套配置拼成一行冒充单一配置。
 
 web 面是固定列的 experiment 比较表，而不是无表头的松散卡片列表。主表一行一个 experiment，列顺序固定为：
 
@@ -25,7 +25,7 @@ web 面是固定列的 experiment 比较表，而不是无表头的松散卡片�
 
 Agent 键的颜色来自[页级色分配](../README.md#系列色分配单位是页)，键是完整 agent 值而不是缩短后的显示名——同一页里图例、散点与这张表的同一个 agent 因此恒同色。
 
-text 面先输出与 web 同列口径的 experiment 比较表（列集合随主读数规则，与 web 面一致），再按 experiment 输出 Eval / Attempt 明细表。Eval 是父行，不是 Attempt 行上的重复字段；Attempt 用 `├─` / `└─` 子行显示一对多关系。明细列固定为状态、Eval / Attempt、结果、耗时、成本（计分制 Scope 在结果列前插入挣分列）；窄终端复用标准 text table renderer 折行或从右侧隐藏低优先级列，并明确报告隐藏列数：
+text 面先输出与 web 同列口径的 experiment 比较表（列集合随主读数规则，与 web 面一致），再按 experiment 输出 Eval / Attempt 明细表。Eval 是父行，不是 Attempt 行上的重复字段；Attempt 用 `├─` / `└─` 子行显示一对多关系。明细列固定为状态、Eval / Attempt、结果、耗时、成本（计分制 Sample 在结果列前插入挣分列）；窄终端复用标准 text table renderer 折行或从右侧隐藏低优先级列，并明确报告隐藏列数：
 
 ```text
 Experiment      Model          Agent   Avg. time   Pass rate   Tokens   Cost    Results
@@ -42,7 +42,7 @@ Status      Eval / Attempt       Result                       Duration   Cost
 —           weather/rerank       当前配置下无结果 · niceeval exp compare/codex
 ```
 
-计分制 Scope 的同一张表把主列换成总分，Eval / Attempt 明细行各自附挣分；Result 列遵守同一套摘要规则——中止的 attempt 显示中止前置的摘要，passed 但有丢分的显示首条丢分得分点摘要：
+计分制 Sample 的同一张表把主列换成总分，Eval / Attempt 明细行各自附挣分；Result 列遵守同一套摘要规则——中止的 attempt 显示中止前置的摘要，passed 但有丢分的显示首条丢分得分点摘要：
 
 ```text
 Experiment    Model     Agent    Avg. time   Total score   Tokens   Cost    Results
@@ -67,7 +67,7 @@ Status      Eval / Attempt              Score   Result                          
 ```tsx
 // 过滤后的列表：组合组件里手工取数，用普通 JavaScript 收窄
 export const ProdExperiments = defineComponent(async (_props: {}, ctx) => {
-  const items = await experimentListData(ctx.scope);
+  const items = await experimentListData(ctx.sample);
   return <ExperimentList data={items.filter((x) => x.experimentId.startsWith("prod/"))} filter />;
 });
 ```

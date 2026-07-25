@@ -38,7 +38,7 @@ Runner fixture 用声明式场景描述 attempt，而不是为每个测试重新
 
 ```ts
 const scenario = runnerFixture({
-  runs: 3,
+  attempts: 3,
   maxConcurrency: 2,
   attempts: [
     { evalId: "a", result: "failed", release: "a0" },
@@ -98,7 +98,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   调用不出现在结果里）；没有中止、只是丢分的 attempt（含全部得分点挂掉）`verdict` 为
   `passed`——计分制的 `failed` 只有中止一个来源。
 - **调度项优先级**：CLI flag → experiment → config
-  → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与快照投影。**这条链里没有环境变量层**（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/`
+  → 内置默认的覆盖链逐层可区分；agent/model/flags 只属 experiment，CLI 覆盖报用法错误；labels 的值域校验与 Run 投影。**这条链里没有环境变量层**（[边界](../../../architecture.md#配置从代码来凭据从环境来)）。这一条按**白名单守护**证明而不是逐个变量写负面 fixture：扫 `src/`
   下所有非测试源码实际读取的环境变量名，断言它们全部落在「凭据 + 终端环境」白名单内。加一条配置类环境变量回来就会红，不需要预先知道它叫什么名字；白名单本身是那份边界表的机器可读副本，改动它等于改契约。
 - **含 eval 层的字段解析链（`timeoutMs`）**：`--timeout` → experiment → eval → config
   → 无上限，五档逐层可区分。区分力最强的一格必测：**config 有值、experiment 没写、eval 写了自己的值时取 eval 的值**——`??` 链少写一层回落时这一格恰好是唯一会红的，其余四格照常通过。断言面取
@@ -214,7 +214,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   N**——两者不等即 min-N 被别的运行夹低，这是「声明了 3 却只跑 1 条」的唯一解释）；取锁后重查携带——取到锁即重做携带规划，**无条件**、不附加「等过锁 /
   接管过」之类前置判据（干净取锁：对方跑完并释放锁后，本进程第二波取到空锁的用例不得重跑对方已落盘的
   attempt；派发路径上按用例数各读一次收窄读取面、不走全树扫描）；重查结论与派发前的携带规划共用同一份资格判据，两处不分叉；重查后的计数迁移——指纹匹配携入且计数
-  `elsewhere` 迁 `reused`、不匹配转 `queued` 自跑、`runs`
+  `elsewhere` 迁 `reused`、不匹配转 `queued` 自跑、`attempts`
   部分携入部分补跑，三面都要有区分力场景；心跳与接管——续租与等待轮询按注入 clock 推进、过期判据（心跳落后超过阈值）、接管 rename 的互斥（两个竞争者恰一个获得执行权、输者转入等待）、接管产生去重的
   `lock-taken-over`
   warning；释放路径——正常收尾、中断、实验 setup 抛错各路径锁文件都被删除，遗留过期锁被下一次运行接管（不需要手工清理）；执行模式组合——`--rerun all`
@@ -244,7 +244,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped`
   总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs`
   不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `durationMs`
-  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数进,而 `runs` / `labels` / 调度字段 / 生命周期钩子函数体改动不作废携带；**`--carry-ignoring-flag <key>` 只作用于本次调用**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、本次落一条 `carry-ignoring-flag` 快照 diagnostic、不写进任何持久声明；**携带条目合入新快照时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾快照是合法来源；执行模式 flag 的携带豁免——`--keep-sandbox`
+  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数进,而 `attempts` / `labels` / 调度字段 / 生命周期钩子函数体改动不作废携带；**`--carry-ignoring-flag <key>` 只作用于本次调用**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、本次落一条 `carry-ignoring-flag` Run diagnostic、不写进任何持久声明；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；执行模式 flag 的携带豁免——`--keep-sandbox`
   下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed`
   一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、裸写与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式
   `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
@@ -278,7 +278,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   诊断、落闸后在飞 attempt 成功不重开派发；闸只停派发不抢占——在飞 attempt 照常跑完落账、等待集中同闸 attempt 经 interruption 中止；记账——未派发计
   `unstarted`、完成状态 `incomplete`、退出码由观察到失败的 `errored`
   attempt 判红；teardown 边界——实验级 teardown 抛声明降级普通诊断、per-attempt
-  teardown 抛声明照常落闸且不改 verdict；诊断双通路——反馈流通知与 `snapshot.json` 的
+  teardown 抛声明照常落闸且不改 verdict；诊断双通路——反馈流通知与 `run.json` 的
   `dispatch-halted`（`data.scope` / `data.evalId`）同源互不派生。
 - **沙箱内 OTLP 采集器的启动韧性**：
   - 远程沙箱在沙箱内启动采集器，并等待端口写回。这条路径没有外层重试，因此启动逻辑自己重试。

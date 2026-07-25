@@ -118,7 +118,7 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
     sourceShas.add(evalSource!.sha256);
     sharedSha = evalSource!.sha256;
 
-    // v9 起 o11y.json 是纯行为计数缓存(docs/feature/results/architecture.md#o11yjson);
+    // v9 起 o11y.json 是纯行为计数缓存(docs/feature/record/architecture.md#o11yjson);
     // token 用量的权威在 result.json 的 usage,断言面各归各的家、不落第二份。
     const o11y = readJson<{ totalToolCalls: number; usage?: unknown }>(join(attemptDir, "o11y.json"));
     assert.ok(o11y.totalToolCalls >= 1, `o11y.json.totalToolCalls should be >= 1 in ${attemptDir}, got ${o11y.totalToolCalls}`);

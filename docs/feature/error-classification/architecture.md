@@ -165,7 +165,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 
 - **重试中**:走 attempt 的 activity 行,期望形态 `turn retry 2/4 (rate_limit) — waiting 8s`——括号里的词就是分类的 `reason`,声明方自造词原样展示;不产生 diagnostic——这是正常自愈过程。重试成功后 activity 恢复常态,永久输出零痕迹。
 - **重试耗尽**:浮出的失败 message 追加重试摘要,注明耗尽的是哪层预算——send 级形态 `… · retries exhausted (4 attempts, rate_limit)`,attempt 级形态 `… · attempt retry budget exhausted (8 retries, rate_limit)`;未发生过重试的失败不加后缀。摘要只进 message、不进结构化字段——它回答的是人读 `errored` 时的「框架试过了吗」,不是程序要分支的数据。
-- **落闸**:反馈流一条 error 级通知,人读文本按[诊断体裁](../experiments/cli.md#人在终端里怎么用)给 error 符号——`✗ experiment halted (dispatch-halted): <message>` / `✗ eval halted: <message>`;`--json` 是同一条诊断的 `warning` 事件(`code: "dispatch-halted"`,`level: "error"`,eval 闸带 `evalId`)。两面都只在首次落闸时出现一行、不带折叠计数:落闸后被中止的等待集 attempt 不逐条刷屏,数量体现在完成状态的 `unstarted` 里。`snapshot.json` 诊断见[止损执行体](#止损执行体)。
+- **落闸**:反馈流一条 error 级通知,人读文本按[诊断体裁](../experiments/cli.md#人在终端里怎么用)给 error 符号——`✗ experiment halted (dispatch-halted): <message>` / `✗ eval halted: <message>`;`--json` 是同一条诊断的 `warning` 事件(`code: "dispatch-halted"`,`level: "error"`,eval 闸带 `evalId`)。两面都只在首次落闸时出现一行、不带折叠计数:落闸后被中止的等待集 attempt 不逐条刷屏,数量体现在完成状态的 `unstarted` 里。`run.json` 诊断见[止损执行体](#止损执行体)。
 
 ## 不变量
 

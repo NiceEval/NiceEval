@@ -6,7 +6,7 @@
 
 两类真实浪费,各暴露一条缺失的决策轴:
 
-1. **瞬时故障被放大成 `errored`**(时间轴)。一次 turn 失败若只拍平成不透明的 `AttemptError{code: "turn-failed"}`,限流、连接中断这类「换个时机大概率能过」的失败与同因必复现的确定性错误无法区分:没有 attempt 内重试,唯一自愈手段是重新调度整次实验(`runs` + `earlyExit`),粒度太粗;高并发批跑里限流连续撞上时,run 级 fail-fast 的 streak 判定还会把最该重试的场景当确定性错误放弃派发。真实样本(批跑时多条 attempt 同报):
+1. **瞬时故障被放大成 `errored`**(时间轴)。一次 turn 失败若只拍平成不透明的 `AttemptError{code: "turn-failed"}`,限流、连接中断这类「换个时机大概率能过」的失败与同因必复现的确定性错误无法区分:没有 attempt 内重试,唯一自愈手段是重新调度整次实验(`attempts` + `earlyExit`),粒度太粗;高并发批跑里限流连续撞上时,run 级 fail-fast 的 streak 判定还会把最该重试的场景当确定性错误放弃派发。真实样本(批跑时多条 attempt 同报):
 
    ```
    This send returned failed (turn status = failed): agent run exited with code 1 ·
@@ -14,7 +14,7 @@
    user, please retry later
    ```
 
-2. **实验级死因被逐 attempt 反复撞**(空间轴)。实验共享的基建(隧道、mock server、共享凭据)死掉时,每条 attempt 各自创建沙箱、各自撞死、各自 `errored`——批跑常态是 `runs: 1`,run 级 fail-fast 按「同一 eval 内同 code 连续复现」判定的 streak 永远凑不齐,几十条 eval 把同一个死隧道撞几十遍。作者在 setup probe 里第一时间就知道死因是实验级的,却只能看着余量烧完。同构的浪费在 eval 粒度同样存在:fixture 损坏时 `runs: 5` 的五次同因必死,作者第一次就知道。
+2. **实验级死因被逐 attempt 反复撞**(空间轴)。实验共享的基建(隧道、mock server、共享凭据)死掉时,每条 attempt 各自创建沙箱、各自撞死、各自 `errored`——批跑常态是 `attempts: 1`,run 级 fail-fast 按「同一 eval 内同 code 连续复现」判定的 streak 永远凑不齐,几十条 eval 把同一个死隧道撞几十遍。作者在 setup probe 里第一时间就知道死因是实验级的,却只能看着余量烧完。同构的浪费在 eval 粒度同样存在:fixture 损坏时 `attempts: 5` 的五次同因必死,作者第一次就知道。
 
 ## 分类
 
@@ -87,7 +87,7 @@ export type FailureClass =
 - **观察到失败的 attempt 照常 `errored`,error code 保持所属阶段的原有值**——scope 是路由标记,不是错误种类,不改写 `AttemptError` 的任何公开形状。
 - **闸只停派发,不抢占在飞**:等待集中同闸的 attempt 中止、计入 `unstarted`,完成状态 `incomplete`;已在跑的 attempt 跑完如实落账。不为没跑过的 attempt 制造 `errored` 记录。实验级 `setup` 失败的「全部 attempt 记 `errored(experiment-setup-failed)`、不派发」是另一种情形——它发生在任何派发之前、整个计划确定性全灭(契约见 [Experiments · 实验级共享服务](../experiments/library.md#实验级共享服务setup-与-teardown)),与运行中止损各自成立。
 - **闸幂等、invocation 内不可逆、不跨 invocation 持久**:并发 attempt 同时声明同一死因是常态,重复触发只折叠诊断计数;落闸后在飞 attempt 侥幸成功也不重开——作者背书的判定不被单次成功推翻,抖动的服务不该让调度来回摆。死因与修复都活在框架外(隧道、`.env`),框架无法验证「修好了没有」,不留跨次运行的止损状态、不需要解除命令;唯一持久痕迹是诊断记录,它是历史陈述,不是未来指令。
-- **message 是作者的修复提示,走完全程**:运行期反馈流即时通知 + `snapshot.json` 实验域诊断(`dispatch-halted`),双通路同源、互不派生。
+- **message 是作者的修复提示,走完全程**:运行期反馈流即时通知 + `run.json` 实验域诊断(`dispatch-halted`),双通路同源、互不派生。
 - **恢复即重跑**:`errored` 与 `unstarted` 都不进指纹缓存,已 `passed` 的照常 carry 携入——修复后重跑同一条命令,自动只补跑死掉与未跑的部分,零新机制。止损做得激进(一次命中即停),正因为恢复路径免费。
 
 ## 非目标
@@ -99,7 +99,7 @@ export type FailureClass =
 - 不抢占在飞的 attempt——已花的沙箱与 token 成本不可回收。
 - 不复用或修改 sandbox provisioning 重试的实现——那层要处理「远端资源是否已创建」的对账;两层只共享词表、退避形状与槽位接口。
 - 不在 CLI 或 `defineEval` / `defineExperiment` 加重试次数、退避参数一类配置——封顶次数与退避参数是固定值,有真实需要再考虑开放。
-- 不改 `runs` / `earlyExit` / run 级 fail-fast 的既有语义——止损闸在其旁并存,streak 推断继续兜没有声明的场景。
+- 不改 `attempts` / `earlyExit` / run 级 fail-fast 的既有语义——止损闸在其旁并存,streak 推断继续兜没有声明的场景。
 
 ## 相关阅读
 

@@ -33,6 +33,6 @@ locator      eval                                 结果    turns   tools   unca
 ## 相关阅读
 
 - [Attempt 详情组件 · `UsageTable` 组装口径（单源）](../components/attempt-detail/usage-table.md#组装口径单源) —— 组装口径与 `UsageTableData` 形状的单源。
-- [Results · Usage 与 facts](../../results/architecture.md#usage) —— 落盘字段的家。
+- [Results · Usage 与 facts](../../record/architecture.md#usage) —— 落盘字段的家。
 - [失败诊断首页](attempt.md) —— 单 attempt 的 `usage:` 行。
 - [对照矩阵](compare.md) —— 条件间的用量差。

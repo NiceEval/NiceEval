@@ -57,7 +57,7 @@ function lookupBuiltin(model: string): Price | undefined {
 
 /**
  * 按 token 桶 × 单价估算一次运行的美元成本。逐桶相加成立的前提是 Usage 桶恒互斥
- * (inputTokens 不含 cache 命中,归一义务在 adapter,见 docs/feature/results/architecture.md#usage);
+ * (inputTokens 不含 cache 命中,归一义务在 adapter,见 docs/feature/record/architecture.md#usage);
  * cache 桶缺专门单价时退回 input 价——宁可高估,不静默低估。
  * 无 model / 查不到价(用户表 + 内置快照都没有)→ undefined。
  */

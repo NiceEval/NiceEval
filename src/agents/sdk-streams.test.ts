@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // 「Usage、facts 与失败命令证据落盘」桶恒互斥归一:codex(OpenAI 口径,cached ⊂ input)扣减、
 // Anthropic / pi(互斥口径)如实转发。fixture 数值刻意让「扣与不扣」结果可区分。
 // bug: memory/estimatecost-openai-inclusive-cache-double-billed.md

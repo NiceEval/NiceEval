@@ -8,7 +8,7 @@ import type { JsonValue, SourceLoc } from "../shared/types.ts";
  * send 的 `Turn.usage` 直接返回)。每个字段只在协议真实提供该值时存在——原始协议没有 usage 时
  * 省略,不编造数值;不存在「默认 0」或「默认 1」的字段。三个输入侧桶恒互斥:相加才是送进模型的
  * 完整上下文量;把协议原生口径归一到互斥是 adapter 的落值义务——OpenAI 系报「含缓存的输入总量 +
- * 缓存命中子集」,落 inputTokens 前先扣掉子集(docs/feature/results/architecture.md#usage,
+ * 缓存命中子集」,落 inputTokens 前先扣掉子集(docs/feature/record/architecture.md#usage,
  * 各协议明细见 docs/feature/adapters/sdk/<name>/cost.md)。
  */
 export interface Usage {
@@ -64,7 +64,7 @@ export interface InputRequest {
 }
 
 /**
- * 落盘截断的结构化标记(见 docs/feature/results/architecture.md「大值截断」):
+ * 落盘截断的结构化标记(见 docs/feature/record/architecture.md「大值截断」):
  * `path` 是被截断的位置(事件里是字段名,如 "output";span 里是 attribute key,如 "output.value"),
  * `originalBytes` 是截断前的 UTF-8 字节数。view 显示「输出过大,已截断」靠它,不正则匹配 marker。
  */
@@ -188,7 +188,7 @@ export interface TraceSpan {
  * 给人 / 给 EVAL.ts 看的 o11y 摘要(注入沙箱 __niceeval__/results.json)。从 `events.json` 派生的
  * 行为计数缓存,不是权威——同一 niceeval 版本写读,删除后可从 `events.json` 重算。token 用量、
  * 成本与耗时不在这里:权威唯一在 `result.json` 的 `Usage` / `estimatedCostUSD` 与 `durationMs`
- * / `phases`(见 docs/feature/results/architecture.md「o11y.json」)。
+ * / `phases`(见 docs/feature/record/architecture.md「o11y.json」)。
  */
 export interface O11ySummary {
   totalTurns: number;

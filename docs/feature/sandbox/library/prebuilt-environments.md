@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | Docker | OCI image | `dockerSandbox({ image })` | 本地或任意 registry | 自管 |
 | E2B | template | `e2bSandbox({ template })` | team 私有,可公开发布 | 随 E2B 模板生命周期 |
-| Vercel Sandbox | sandbox snapshot | `vercelSandbox({ snapshotId })` | 仅 Team/Project 内 | 快照有效期由 Vercel 定 |
+| Vercel Sandbox | sandbox snapshot | `vercelSandbox({ snapshotId })` | 仅 Team/Project 内 | Run 有效期由 Vercel 定 |
 
 ## 按 environment 选预制产物
 
@@ -27,7 +27,7 @@ export const e2b = e2bSandbox({
 - 表是纯数据：键为 profile id，值的字段由各内置工厂类型声明（docker `{ image }`、e2b `{ template }`、vercel `{ snapshotId }`），写错字段名由类型检查拦下。`defineSandbox` 自定义 spec 没有 `environments` 表——自定义 provider 没有 NiceEval 认识的产物槽位；声明了 `environment` 的 eval 搭配自定义 spec 同样按缺表项报启动期配置错误。
 - 解析发生在调度前：选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不创建任何沙箱、不消耗预算。
 - 查表只替换这条 eval 的起点产物；`.setup()` / `.teardown()` 钩子链与其余 spec 参数对全部 eval 共享。
-- 逐 eval 的解析结果经 `publicConfig()` 投影落快照的 `sandboxByEval`，见 [Results · snapshot.json](../../results/architecture.md#snapshotjson)。
+- 逐 eval 的解析结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`，见 [Results · run.json](../../record/architecture.md#runjson)。
 
 ## 为什么没有跨 provider 构建 DSL
 
@@ -98,9 +98,9 @@ sandbox: e2bSandbox({ template: "acme-codex-evals:0.144.1-r1" })
 
 Bub 若配置 `pythonPlugins`,模板 factory 要收到同一份 package 集合:`e2bCodingAgentTemplate("bub", { bubPythonPackages: ["bub-plugin-memory==1.3.0"] })`。Factory 与 Adapter 共用规范化和 hash 代码,插件顺序、空白和重复项不会制造假差异;集合真的不同则不会误用预装环境(指纹语义见 [Bub 接入页](../../adapters/sdk/bub/README.md))。
 
-### Vercel Sandbox:从运行实例拍快照
+### Vercel Sandbox:从运行实例拍 Run
 
-Vercel 没有 template registry,也没有 Dockerfile;快照从一台跑起来的 microVM 拍出来。用 Vercel SDK 从官方 runtime(`node24`)起沙箱、装 Agent CLI、调 `.snapshot()` 拿到 `snap_...`,experiment 再引用这个 ID:
+Vercel 没有 template registry,也没有 Dockerfile;Run 从一台跑起来的 microVM 拍出来。用 Vercel SDK 从官方 runtime(`node24`)起沙箱、装 Agent CLI、调 `.snapshot()` 拿到 `snap_...`,experiment 再引用这个 ID:
 
 ```typescript
 // scripts/build-vercel-snapshot.ts
@@ -124,7 +124,7 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 | [Codex](../../adapters/sdk/codex-cli/README.md) | `correctroads-default-team/niceeval-codex` | `niceeval/codex` | E2B 侧从 provider 官方 `codex` template 派生;Codex Adapter 仍检查 `codex` |
 | [Bub](../../adapters/sdk/bub/README.md) | `correctroads-default-team/niceeval-bub` | `niceeval/bub` | 两侧都用 NiceEval 钉版本的配方(Bub 版本 + 同代 OTel 插件),并写安装规格 marker;Bub Adapter 只信任指纹完全匹配的预装环境 |
 
-Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker;Vercel 用户按上面的[快照构建流程](#vercel-sandbox从运行实例拍快照)在自己的 Project 里构建。
+Vercel 没有可公开发布的产物原语,官方基线止步于 E2B 与 Docker;Vercel 用户按上面的[Run 构建流程](#vercel-sandbox从运行实例拍 Run)在自己的 Project 里构建。
 
 ### 版本号跟着被装的 Agent 走
 

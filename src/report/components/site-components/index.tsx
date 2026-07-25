@@ -204,7 +204,7 @@ export type ScopeWarningsProps = DataProps<readonly ScopeWarning[], Record<never
  * 按「下一步动作」聚合渲染(带 experimentId 的按实验聚合、非实验作用域按 kind 聚合;
  * 实验作用域组在前、非实验作用域组在后);web 面组头带去重后的可复制命令、明细收原生
  * `<details>`(总条数 ≤ 3 默认展开),text 面同构但不折叠。空警告集与裸 `Snapshot[]` 输入
- * 两面零输出(docs/feature/reports/components/site/scope-warnings.md)。
+ * 两面零输出(docs/feature/reports/components/site/sample-warnings.md)。
  */
 export const ScopeWarnings = makeDataComponent<readonly ScopeWarning[], Record<never, never>, ChromeProps>({
   name: "ScopeWarnings",
@@ -229,7 +229,7 @@ export type SnapshotDiagnosticsProps = DataProps<SnapshotDiagnosticsData, Record
  * web 面整个区域是默认折叠的原生 `<details>`,`<summary>` 恒可见汇总涉及的 experiment 数、
  * Snapshot 数、记录数(按 count 计数)与最高严重度;单诊断快照退化成一行,不摆空壳层级;
  * text 面同构但不折叠。空诊断集两面零输出
- * (docs/feature/reports/components/site/snapshot-diagnostics.md)。
+ * (docs/feature/reports/components/site/run-diagnostics.md)。
  */
 export const SnapshotDiagnostics = makeDataComponent<SnapshotDiagnosticsData, Record<never, never>, ChromeProps>({
   name: "SnapshotDiagnostics",

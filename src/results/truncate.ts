@@ -1,4 +1,4 @@
-// 落盘大值截断(见 docs/feature/results/architecture.md「大值截断」)。
+// 落盘大值截断(见 docs/feature/record/architecture.md「大值截断」)。
 // 运行时全量,落盘截断:落点唯一在 snap.writeAttempt(writer.ts)——不在 adapter、不在 OTLP
 // 解析、不在事件归一化里做。适用范围:events.json 的事件字段与 trace.json 的 span 属性里的
 // 任意字符串值。没有 flag、没有配置项;截断永远不影响判决(落盘是证据,不是评分输入)。
@@ -90,7 +90,7 @@ export function truncateSpans(spans: readonly TraceSpan[]): TraceSpan[] {
 }
 
 /** commands.json 落盘前的截断:每条证据的 stdout / stderr 逐值截断,`truncated[].path` 固定
- *  是 "stdout" 或 "stderr"(见 docs/feature/results/architecture.md「commandsjson」）。 */
+ *  是 "stdout" 或 "stderr"(见 docs/feature/record/architecture.md「commandsjson」）。 */
 export function truncateCommands(commands: readonly FailedCommandEvidence[]): FailedCommandEvidence[] {
   return commands.map((cmd) => {
     const out: Truncation[] = [];

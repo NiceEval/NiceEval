@@ -1,6 +1,6 @@
 # Sandbox —— CLI:留存现场与清理
 
-跑完的沙箱默认销毁,debug 证据靠 artifact([Results](../results/architecture.md))。但有三类问题 artifact 结构性地回答不了,只能靠留住活现场:
+跑完的沙箱默认销毁,debug 证据靠 artifact([Results](../record/architecture.md))。但有三类问题 artifact 结构性地回答不了,只能靠留住活现场:
 
 - **环境类 `errored` 恰好证据最薄**——setup 链装包失败、agent CLI 起不来时,agent 根本没跑,`events.json` / `trace.json` 不存在,手里只有 error 摘要和 phases 计时;而这正是最需要进环境里手动重跑一遍命令的场景。
 - **agent diff 之外是盲区**——artifact 采的是 workdir 内按 send 窗口归因的变更;全局装了什么、`$HOME` 下写了什么配置、PATH 实际长什么样,采不到。
@@ -74,7 +74,7 @@ niceeval sandbox prune                                 # 销毁已核实的孤�
 
 **输出体裁**:`sandbox` 命令组是一次性读取命令——一次调用、打印、退出,没有「运行中」阶段,因此不额外提供 `--json` 之外的形态开关([`exp` 的两种输出形态](../experiments/cli.md)区分的是长时运行的反馈节奏,不是一次性输出的格式)。人读与机器读的区分由传输能力承担:stdout 是 TTY 时,`list` / `history` 这类有边界、可整体阅读的输出按[区域框](../reports/library/layout.md#区域框text-面的框线体裁)渲染为面板——标题嵌上边框左侧、规模嵌右侧、下钻命令嵌下边框;非 TTY(agent 捕获、管道、重定向)按同一契约降级为无框纯文本,内容与顺序一字不变。框只是呈现层:字段、缩进与提示行在两种形态下逐字相同,脚本不解析框字符,注册表条目文件才是程序消费的权威数据。`diff` 的 patch hunk 与 `stop` 的确认行是逐条流事件,按体裁不画框。
 
-**注册表发现**:从当前目录向上找最近的 `.niceeval/`(与结果根发现同一规则),所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表——run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用 `--results <结果根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
+**注册表发现**:从当前目录向上找最近的 `.niceeval/`(与记录根发现同一规则),所以在项目任何子目录里执行 `sandbox enter/list/stop` 都命中同一份注册表——run 摘要里打出的 enter 命令不因 `cd` 失效;在仓库外执行时用 `--record <记录根>` 显式指定,找不到注册表时报错并提示这条路径,不静默返回空列表。
 
 **条目级 lease**:`enter` 在唤醒前把 `{ holder: <pid@host>, op, acquiredAt, ttl }` 写进条目(原子 rename,与条目写入同一机制),退出并重新休眠后释放。持有 lease 期间,`stop` 与另一个 `enter` 对同一条目直接拒绝并报出 holder(「in use by pid 4242@mbp since …」),不会把别人还开着 shell 的现场 suspend 或销毁;`history` / `diff` 只读,可与 enter 并存但不改变休眠状态的归属——现场的唤醒 / 回眠始终由 lease holder 负责。进程崩溃留下的过期 lease(超 TTL)允许下一个命令强占并如实提示。`stop` 的语义与 `Sandbox.stop()` 一致:销毁——休眠不是 stop 的一种,是留存现场的常态形态。正因为事后命令不执行用户项目代码,`defineSandbox` 自定义 provider 不支持 `--keep-sandbox`;组合使用会在创建沙箱前报错。
 
@@ -190,5 +190,5 @@ pruned 2 orphan sandboxes
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 三类问题各自的全流程展示。
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
 - [Architecture](architecture.md) —— 留存决策在 attempt 收尾链里的位置、注册表、各 provider 的留存语义。
-- [Results · `result.json`](../results/architecture.md#resultjson) —— `sandbox` 字段(provider、实例 id、是否留存)。
+- [Results · `result.json`](../record/architecture.md#resultjson) —— `sandbox` 字段(provider、实例 id、是否留存)。
 - [CLI 内部架构](../../cli.md) —— 命令分派、中断路径与「不留无主沙箱」。

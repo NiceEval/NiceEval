@@ -124,7 +124,7 @@ interface TabProps extends LayoutProps {
 - **不解析 Markdown 表格。** 遇到表格语法（`|` 起首行加分隔行）按完整用户反馈报错，指引改用 [`Table`](#table)：表格的列宽要走终端显示宽度那把尺子（CJK 记 2 列、身份列下限、超宽先折行再丢列并如实标注），Markdown 表格绕过这套只会在终端撕歪。
 - **不解析证据引用。** 正文里的 `@1k2m9qrs` 就是普通文本，不会变成 attempt 深链——要证据链接就用数据组件，它们的 locator 有真正的下钻目标。
 
-折行与宽度量测和其它排版原语共用同一把尺（`stringWidth` / `wrapText`，CJK 与全角记 2 列），所以中文正文在终端不会撕歪。`Markdown` 只排版，不取数、不读 Scope：内容从哪来是普通 JavaScript 的事——字面量、`readFile` 读一份 `METHODOLOGY.md`、或组合组件里按数据拼串都可以。
+折行与宽度量测和其它排版原语共用同一把尺（`stringWidth` / `wrapText`，CJK 与全角记 2 列），所以中文正文在终端不会撕歪。`Markdown` 只排版，不取数、不读 Sample：内容从哪来是普通 JavaScript 的事——字面量、`readFile` 读一份 `METHODOLOGY.md`、或组合组件里按数据拼串都可以。
 
 需要一个标记都不解析的正文时用 `Text`：两者的分工就是「有格式的散文」与「这段字原样打」。
 
@@ -165,7 +165,7 @@ export default defineReport(
 
 ## `Grid` 与 `Stat`
 
-`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Scope、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables/README.md)或[图表](../components/charts/README.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
+`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Sample、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables/README.md)或[图表](../components/charts/README.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
 
 `Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格；`columns` 是每行的宽面上限，不要求子节点数量恰好为其倍数。一个格子里要放多个区块时，用已有 `Col` 把它们归成一个直接子节点：
 
@@ -536,9 +536,9 @@ interface SeriesColor {
 
 ```ts
 interface ComposeContext {
-  /** 宿主选择的 Scope；页组件直接消费，attempt 组合也可用来读站点范围。 */
-  scope: Scope;
-  /** 结果根完整读取面；历史视图从这里自行挑 Snapshot[]。 */
+  /** 宿主选择的 Sample；页组件直接消费，attempt 组合也可用来读站点范围。 */
+  sample: Sample;
+  /** 记录根完整读取面；历史视图从这里自行挑 Run[]。 */
   results: Results;
   /** 规范化后的报告声明，只读；见下方 ReportMeta。 */
   report: ReportMeta;
@@ -547,23 +547,23 @@ interface ComposeContext {
 }
 
 type PageContext =
-  | { id: string; input: "scope" }
+  | { id: string; input: "sample" }
   | { id: string; input: "attempt"; locator: AttemptLocator; evidence: AttemptEvidence };
 
 interface ReportMeta {
-  /** 走完回退链（声明 title → 唯一快照 name → 内置文案「Eval 运行结果」）后的标题。 */
+  /** 走完回退链（声明 title → 唯一 Run name → 内置文案「Eval 运行结果」）后的标题。 */
   title: LocalizedText;
   /** 页头外链；声明省略时为空数组。 */
   links: readonly ReportLink[];
   footer?: LocalizedText;
   /** 规范化后的 page 列表，包含不进导航的参数化 page，恒非空。 */
-  pages: readonly [{ id: string; title: LocalizedText; input: "scope" | "attempt"; navigation: boolean }, ...Array<{ id: string; title: LocalizedText; input: "scope" | "attempt"; navigation: boolean }>];
+  pages: readonly [{ id: string; title: LocalizedText; input: "sample" | "attempt"; navigation: boolean }, ...Array<{ id: string; title: LocalizedText; input: "sample" | "attempt"; navigation: boolean }>];
 }
 
 interface ResolveContext {
-  /** 宿主注入的 Scope；props 显式给出 input 时以 props 为准。 */
+  /** 宿主注入的 Sample；props 显式给出 input 时以 props 为准。 */
   input: ReportInput;
-  /** Attempt 详情组件从 attempt 分支读取 evidence；scope 组件不猜可选字段。 */
+  /** Attempt 详情组件从 attempt 分支读取 evidence；sample 组件不猜可选字段。 */
   page: PageContext;
 }
 
@@ -573,7 +573,7 @@ interface TextContext {
   render(node: ReportNode, width?: number): string;
   /** 当前定义有 attempt-input page 时存在；否则 locator 只渲染成文本。 */
   attemptCommand?: (locator: AttemptLocator) => string;
-  /** 「按实验收窄」类命令；宿主注入以携带完整 --results / --report / --page 上下文。 */
+  /** 「按实验收窄」类命令；宿主注入以携带完整 --record / --report / --page 上下文。 */
   experimentCommand(experimentIdPrefix: string): string;
 }
 
@@ -610,7 +610,7 @@ function defineComponent<Props, RenderProps = Props>(
 import { AttemptList, Section, attemptListData, defineComponent } from "niceeval/report";
 
 export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
-  const all = await attemptListData(ctx.scope);
+  const all = await attemptListData(ctx.sample);
   const ranked = [...all].sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
   return (
     <Section title="最贵的 attempt">

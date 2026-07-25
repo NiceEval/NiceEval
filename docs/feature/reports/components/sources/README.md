@@ -8,7 +8,7 @@
 
 ## 范围级数据源
 
-收 `ReportInput`（`Scope` 或 `Snapshot[]`），聚合口径见[指标与维度](../../library/metrics.md)。
+收 `ReportInput`（`Sample` 或 `Run[]`），聚合口径见[指标与维度](../../library/metrics.md)。
 
 | 数据源 | 一行/一格是什么 | 配的原语 | 形状 |
 |---|---|---|---|
@@ -19,17 +19,17 @@
 | `metricMatrix` | 两个维度的交叉格 | `Table` | [矩阵数据](../tables/README.md#共用数据形状) |
 | `scoreboard` | 固定题集上的一行成绩，含分科与权重 | `Table` | [`Scoreboard`](../tables/scoreboard.md) |
 | `deltaRows` | 同一道题在若干条件上的读数与差值 | `Table` | [`DeltaTable`](../tables/delta-table.md) |
-| `stabilityRows` | 一道题跨快照的稳定性 | `Table` | [`StabilityMatrix`](../tables/stability-matrix.md) |
-| `scopeSummary` | 范围摘要的每一格读数 | `Grid` | [`ScopeSummary`](../summaries/scope-summary.md) |
-| `scopeWarnings` | 一条选择警告 | `Callouts` | [`ScopeWarnings`](../site/scope-warnings.md) |
-| `snapshotDiagnostics` | 一条快照诊断 | `Callouts` | [`SnapshotDiagnostics`](../site/snapshot-diagnostics.md) |
+| `stabilityRows` | 一道题跨 Run 的稳定性 | `Table` | [`StabilityMatrix`](../tables/stability-matrix.md) |
+| `sampleSummary` | 范围摘要的每一格读数 | `Grid` | [`SampleSummary`](../summaries/sample-summary.md) |
+| `sampleWarnings` | 一条选择警告 | `Callouts` | [`SampleWarnings`](../site/sample-warnings.md) |
+| `runDiagnostics` | 一条 Run 诊断 | `Callouts` | [`RunDiagnostics`](../site/run-diagnostics.md) |
 | `traceRows` | 一次 attempt 的执行瀑布 | `Waterfall` | [`TraceWaterfall`](../site/trace-waterfall.md) |
 | `fixPrompt` | 范围内全部失败组装成的一段修复 prompt | `CopyBlock` | [`CopyFixPrompt`](../site/copy-fix-prompt.md) |
 
 ## attempt 级数据源
 
-只收一份 [`AttemptEvidence`](../../../results/library.md)，不收 `Scope`。省略 `input` 时取当前
-attempt-input page 注入的那一份；放在 scope-input page 且又没有显式 `input` 时，
+只收一份 [`AttemptEvidence`](../../../record/library.md)，不收 `Sample`。省略 `input` 时取当前
+attempt-input page 注入的那一份；放在 sample-input page 且又没有显式 `input` 时，
 resolve 以完整用户反馈报错并指引移到 attempt-input page 或传入 evidence。
 
 | 数据源 | 投影什么 | 配的原语 |
@@ -47,7 +47,7 @@ resolve 以完整用户反馈报错并指引移到 attempt-input page 或传入 
 | `attemptFixPrompt` | 这一次失败的修复 prompt | `CopyBlock` |
 
 每个 attempt 级数据源在没有对应事实时返回 `null`，原语两面都渲染为空。数据源不自己读
-artifact：[`loadAttemptEvidence`](../../../results/library.md) 已经完成一次性装配，
+artifact：[`loadAttemptEvidence`](../../../record/library.md) 已经完成一次性装配，
 数据源只做适合展示与序列化的派生。
 
 ## 写一个数据源
@@ -78,4 +78,4 @@ interface RowSource<Row> extends DataSource<readonly Row[]> {
 - [组件树](../README.md) —— 三层模型与单元格类型。
 - [`Table`](../primitives/table.md) —— 单元格渲染契约。
 - [指标与维度](../../library/metrics.md) —— `Metric`、`Dimension` 与聚合口径。
-- [Results](../../../results/library.md) —— `Scope`、`AttemptEvidence` 与身份键去重。
+- [Record](../../../record/library.md) —— `Sample`、`AttemptEvidence` 与身份键去重。

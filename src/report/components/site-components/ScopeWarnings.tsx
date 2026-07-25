@@ -3,7 +3,7 @@
 // 分类计数汇总行(恒可见);展开后每组组头 = 标题 + kind 徽标 + 去重后恰一条的
 // 可复制命令,逐条原始 message 收进第二层 <details>(总条数 ≤ 3 默认展开)。
 // 空警告集零输出,不渲染空容器
-// (docs/feature/reports/components/site/scope-warnings.md)。
+// (docs/feature/reports/components/site/sample-warnings.md)。
 
 import type { ReactElement } from "react";
 import type { ScopeWarning } from "../../model/types.ts";

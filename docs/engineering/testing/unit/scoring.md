@@ -6,7 +6,7 @@
 - [值断言](../../../feature/scoring/library/value-assertions.md)
 - [作用域断言](../../../feature/scoring/library/scoped-assertions.md)
 - [Judge](../../../feature/scoring/library/judge.md)
-- [Scope](../../../feature/scoring/architecture/scopes.md)
+- [Sample](../../../feature/scoring/architecture/scopes.md)
 - [证据完整性](../../../feature/scoring/architecture/evidence.md)
 - [Severity / Verdict](../../../feature/scoring/architecture/severity-and-verdict.md)
 - [断言与 Turn 的展示](../../../feature/scoring/library/display.md)
@@ -78,7 +78,7 @@ fixture 必须让三个接收者得到**不同答案**，才能发现 selector �
   数字精确匹配与谓词自定义判定两种形态，且只有数字精确形态在实测超出时才是确凿失败，谓词形态不满足时按覆盖折叠走
   `unavailable`；`remoteUrl` 字符串精确、RegExp、谓词函数三种形态；`status` 按 `ToolMatch` 四态（含
   `pending`）与 `SubagentMatch` 三态（无 `rejected`）过滤，且不带 `status` 过滤时匹配任意状态。
-- **Scope**：同名断言挂三个接收者时按各自数据范围判定；session 时点快照不被后续事件追溯；新 session 事件进
+- **Scope**：同名断言挂三个接收者时按各自数据范围判定；session 时点 Run 不被后续事件追溯；新 session 事件进
   `t.*`
   聚合但不进主 session 即时视图；子序列匹配类断言的顺序语义；互斥断言对（`succeeded`/`parked`）在同一证据上反转；接收者专属能力不下放（类型负例）。
 - **Collector 生命周期**：

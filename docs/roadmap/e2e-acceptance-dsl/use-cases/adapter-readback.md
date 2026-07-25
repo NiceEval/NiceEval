@@ -2,7 +2,7 @@
 
 ## 场景
 
-适配器仓库(`ai-sdk`、`claude-code`…)的 [CLI 读回](../../../engineering/testing/e2e/README.md#43-cli-读回)边界是刻意窄的:只断言自有事实的出现(调用节点、入参、tracing 期望),**不断言布局**——矩阵修复成本不随渲染格式微调放大。这个场景演示的是词表分级的反面:第三层点查询就是全部,语义树快照在这里是过度武装。
+适配器仓库(`ai-sdk`、`claude-code`…)的 [CLI 读回](../../../engineering/testing/e2e/README.md#43-cli-读回)边界是刻意窄的:只断言自有事实的出现(调用节点、入参、tracing 期望),**不断言布局**——矩阵修复成本不随渲染格式微调放大。这个场景演示的是词表分级的反面:第三层点查询就是全部,语义树 Run 在这里是过度武装。
 
 ## 现行断言
 
@@ -39,5 +39,5 @@ test("MCP 调用与入参穿透到执行树展示面", async () => {
 
 ## 边界
 
-- **不引入语义树快照**:读回不是渲染契约的验收面([边界声明](../../../engineering/testing/e2e/README.md#43-cli-读回)),布局断言集中在 report 仓库一处。
+- **不引入语义树 Run**:读回不是渲染契约的验收面([边界声明](../../../engineering/testing/e2e/README.md#43-cli-读回)),布局断言集中在 report 仓库一处。
 - 适配器仓库是否随 report 一起迁 vitest 是[待裁决分歧 1](../README.md#待裁决分歧);不迁时点查询与 `cli()` 同样可在线性脚本里使用——库不绑定 vitest matcher 才可用。

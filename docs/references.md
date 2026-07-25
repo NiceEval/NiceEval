@@ -16,9 +16,9 @@
 
 ### 这次新学到、值得抄的
 
-1. **`/compare`——挑两次运行对比。** playground 靠 `results/<experiment>/<ISO-timestamp>/` 天然分层的目录结构,能选任意两个时间戳的 run,对比整体通过率 / 平均耗时 / per-eval 通过率 delta。niceeval 调研时完全没有这个能力——当时的 `aggregateRows` 把所有历史 run 合并成一行,选不出"这次 vs 上次"。niceeval 把这份能力放在报告组件而不是 view 宿主:成对差异表([`DeltaTable`](feature/reports/components/tables/delta-table.md))按 `"snapshot"` 维度对比任意两份结果快照;不给 view 内建 Compare tab 的裁决见 [memory 条目](../memory/view-compare-tab-rejected.md)。
+1. **`/compare`——挑两次运行对比。** playground 靠 `results/<experiment>/<ISO-timestamp>/` 天然分层的目录结构,能选任意两个时间戳的 run,对比整体通过率 / 平均耗时 / per-eval 通过率 delta。niceeval 调研时完全没有这个能力——当时的 `aggregateRows` 把所有历史 run 合并成一行,选不出"这次 vs 上次"。niceeval 把这份能力放在报告组件而不是 view 宿主:成对差异表([`DeltaTable`](feature/reports/components/tables/delta-table.md))按 `"snapshot"` 维度对比任意两份结果 Run;不给 view 内建 Compare tab 的裁决见 [memory 条目](../memory/view-compare-tab-rejected.md)。
 2. **eval fixture 目录页(`/evals`)。** 独立于"跑过的结果",单纯浏览 `evals/` 目录下每个 fixture 的 `PROMPT.md` 和文件列表,不用先跑一次才能看"有哪些 eval、prompt 写的什么"。niceeval 的 `view` 是结果驱动的,没有这种纯浏览 eval 定义的入口——记在这里备查;不做该入口的裁决见 [memory 条目](../memory/view-compare-tab-rejected.md)。
-3. **"每次 run 是独立时间戳快照"这个数据原则。** playground 的 `getExperiment` 保留 `timestamps: string[]` 整个历史列表,`/compare` 就是靠这个地基做的。niceeval 要抄的是这个**原则**(不要在聚合时提前合并掉快照身份),不是照搬它的目录 / API 形状。
+3. **"每次 run 是独立时间戳 Run"这个数据原则。** playground 的 `getExperiment` 保留 `timestamps: string[]` 整个历史列表,`/compare` 就是靠这个地基做的。niceeval 要抄的是这个**原则**(不要在聚合时提前合并掉 Run 身份),不是照搬它的目录 / API 形状。
 
 ### 调研过、判断不值得抄的(及理由)
 
@@ -44,11 +44,11 @@
 2. **把 `recharts` 包整体接进 niceeval 报告 web 面的渲染依赖。** recharts 是纯 SVG/DOM 组件库,没有任何 text/终端投影;niceeval 的[图表组件](feature/reports/components/charts/README.md)两面必须同源,text 面的字符坐标图/趋势线无论如何都要自己写,不会因为借了 recharts 的 web 渲染而省下这块工作。被采用的是它的**组件树词汇**——容器、轴、series 与嵌套节点的父子所有权;包本身不进运行时依赖,两面渲染由 niceeval 自己实现。
 3. **动画系统、`syncId` 跨图联动 tooltip、40 余个鼠标/触摸/指针事件 prop。** 这些是浏览器交互层能力;niceeval 报告的「静态 HTML + 渐进增强」模型里,增强脚本只做排序/过滤/tooltip 这类轻量行为([不变量](feature/reports/architecture.md#静态网页)),不需要 recharts 级别的动画或跨图联动系统。
 
-## Playwright ARIA Snapshot 与 ivya / Vitest 移植
+## Playwright ARIA Run 与 ivya / Vitest 移植
 
 **来源:** [playwright.dev/docs/aria-snapshots](https://playwright.dev/docs/aria-snapshots)、[Vitest Browser Mode · ARIA snapshots](https://main.vitest.dev/guide/browser/aria-snapshots)(Vitest 4.1.4+ 实验特性,底层是独立库 ivya,见 [vitest PR #9668](https://github.com/vitest-dev/vitest/pull/9668))。
 
-**是什么:** `toMatchAriaSnapshot`——对页面**可访问性树**(不是 DOM、不是像素)做 YAML 快照断言的 DSL。节点写法 `- role "name" [attr=value]`,子节点靠缩进;`"引号"` 是空白折叠后的精确名,`/…/` 是正则,省略 name 或属性即「不关心」。匹配语义:**默认局部匹配**——模板子节点只需按序作为实际子节点的子序列出现,多出的实际节点忽略;`- /children: equal` 升级为直接子节点精确匹配,`deep-equal` 逐层精确。文本一律空白折叠(多行折成单行再比)。更新走 `--update-snapshots`(默认 patch 模式产 diff 文件)。Vitest 侧的移植 ivya 是 Playwright-independent 的 a11y 树生成 + YAML 子集解析 + 匹配三件套,输入是一个 DOM element。
+**是什么:** `toMatchAriaSnapshot`——对页面**可访问性树**(不是 DOM、不是像素)做 YAML Run 断言的 DSL。节点写法 `- role "name" [attr=value]`,子节点靠缩进;`"引号"` 是空白折叠后的精确名,`/…/` 是正则,省略 name 或属性即「不关心」。匹配语义:**默认局部匹配**——模板子节点只需按序作为实际子节点的子序列出现,多出的实际节点忽略;`- /children: equal` 升级为直接子节点精确匹配,`deep-equal` 逐层精确。文本一律空白折叠(多行折成单行再比)。更新走 `--update-snapshots`(默认 patch 模式产 diff 文件)。Vitest 侧的移植 ivya 是 Playwright-independent 的 a11y 树生成 + YAML 子集解析 + 匹配三件套,输入是一个 DOM element。
 
 ### 值得抄的
 
@@ -59,7 +59,7 @@
 ### 调研过、判断不值得抄的(及理由)
 
 1. **把 aria role 词表原样搬到终端。** 终端输出没有可访问性树,role 语义(heading level、checked、expanded)大半没有对应物;抄的是匹配语义与语法形状,节点词表要按终端排版概念(框线区块、列对齐表格、缩进树)重新定义。
-2. **快照 patch/3way 更新模式。** vitest 的 `-u` 已覆盖更新流,不需要复刻 Playwright 的三种模式。
+2. **Run patch/3way 更新模式。** vitest 的 `-u` 已覆盖更新流,不需要复刻 Playwright 的三种模式。
 
 ## trycmd / snapbox(Rust)
 
@@ -81,7 +81,7 @@
 
 **来源:** [crutchcorn/cli-testing-library](https://github.com/crutchcorn/cli-testing-library)、[@microsoft/tui-test](https://www.npmjs.com/package/@microsoft/tui-test)(仓库已重定向到 [microsoft/shell-use](https://github.com/microsoft/shell-use))、[nao1215/atago](https://github.com/nao1215/atago)、[ink-testing-library](https://github.com/vadimdemedes/ink-testing-library)、prysk/cram、shelltestrunner、bats-core、aruba。
 
-**是什么:** 对「有没有现成的 vitest 友好 CLI 验收库」的一轮横评。结论:**这个生态位是空的**——cli-testing-library 是 testing-library 查询模型移植到子进程输出缓冲(`findByText` + 每查询可选 `{stripAnsi, collapseWhitespace, normalizer}`),只有点查询、没有结构断言,单维护者;tui-test 是 Playwright-for-terminals(PTY + xterm.js 网格模型、auto-wait locator、整屏快照),但项目已整体转向 agent 工具 shell-use,且自带 runner 与 vitest 互斥;atago 是 YAML 场景 + 最完整的 scrub 词表(自动脱敏 ANSI/临时路径/UUID/时间戳/端口 + 用户声明的 regex→占位符),但生态极小;ink-testing-library 只服务 Ink 渲染的应用;prysk/shelltestrunner/bats/aruba 是 golden-transcript 或 Gherkin 一族的老前辈,没有容差与结构词表。
+**是什么:** 对「有没有现成的 vitest 友好 CLI 验收库」的一轮横评。结论:**这个生态位是空的**——cli-testing-library 是 testing-library 查询模型移植到子进程输出缓冲(`findByText` + 每查询可选 `{stripAnsi, collapseWhitespace, normalizer}`),只有点查询、没有结构断言,单维护者;tui-test 是 Playwright-for-terminals(PTY + xterm.js 网格模型、auto-wait locator、整屏 Run),但项目已整体转向 agent 工具 shell-use,且自带 runner 与 vitest 互斥;atago 是 YAML 场景 + 最完整的 scrub 词表(自动脱敏 ANSI/临时路径/UUID/时间戳/端口 + 用户声明的 regex→占位符),但生态极小;ink-testing-library 只服务 Ink 渲染的应用;prysk/shelltestrunner/bats/aruba 是 golden-transcript 或 Gherkin 一族的老前辈,没有容差与结构词表。
 
 ### 值得抄的
 
@@ -97,7 +97,7 @@
 
 ## 相关阅读
 
-- [View](feature/reports/view.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`DeltaTable`](feature/reports/components/tables/delta-table.md))按 snapshot 维度承担。
+- [View](feature/reports/view.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`DeltaTable`](feature/reports/components/tables/delta-table.md))按 run 维度承担。
 - [E2E 验收断言 DSL](roadmap/e2e-acceptance-dsl/README.md) —— 借鉴 aria-snapshot 匹配语义与 trycmd 容差词表、为 E2E 验收设计结构断言 DSL 与 vitest 验收库的候选契约。
 - [Observability](observability.md#结果可视化niceeval-view) —— `niceeval view` 现有能力全貌,对照着看这篇的"还差什么"更清楚。
 - [agent-eval 适配笔记](feature/adapters/reference/agent-eval.md) —— agent-eval 的 adapter 实现(采集 / 转换 / 落地)的源码阅读记录。

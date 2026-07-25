@@ -1,4 +1,4 @@
-// cases: docs/engineering/testing/unit/results.md
+// cases: docs/engineering/testing/unit/record.md
 // 「Usage、facts 与失败命令证据落盘」桶恒互斥归一:codex transcript 的 cached_input_tokens
 // 是 input_tokens 子集,聚合前逐请求扣减。
 // bug: memory/estimatecost-openai-inclusive-cache-double-billed.md

@@ -115,7 +115,7 @@ export function incompatibleViewCommand(run: IncompatibleRun): string | undefine
 export function incompatibleHint(run: IncompatibleRun): string {
   const command = incompatibleViewCommand(run);
   if (command === undefined) {
-    // 第三方 harness:如实报名字和版本,不拼 npx(docs/feature/results/library.md 的裁决)。
+    // 第三方 harness:如实报名字和版本,不拼 npx(docs/feature/record/library.md 的裁决)。
     return t("cli.view.incompatibleForeign", {
       dir: run.dir,
       name: run.producer?.name ?? "?",

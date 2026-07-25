@@ -10,7 +10,7 @@
 type FailureListProps = {
   /** 显示的最大条数；默认 20。 */
   limit?: number;
-  /** 默认宿主注入的 Scope。 */
+  /** 默认宿主注入的 Sample。 */
   input?: ReportInput;
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;

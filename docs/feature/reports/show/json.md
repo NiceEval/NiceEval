@@ -2,7 +2,7 @@
 
 `--json` 是 show 的第二个输出形态：同一范围、同一切片选出的同一批实体，输出成一个 JSON 文档到 stdout。text 面与 `--json` 消费同一套选择、去重与聚合规则；两面共有的派生字段必须同值——因为绝大多数切片解析为报告组件的一次装配，text 面与 `data` 字段消费的是同一次组件 resolve 的产物（[「show 的切片是组件选择」](../architecture.md#show-的切片是组件选择)），同值是构造保证，不是两套手写投影之间需要人工维持的纪律。JSON 是结构化审计面，可以保留 text 为注意力预算省略的字段、完整字符串与完整树，因此它是 text 的数据超集，不承诺两个形态包含完全相同的字段集合。
 
-脚本消费走这里，不翻 `.niceeval/` 原始文件：读取面的选择、去重、时效口径都在 show 里实现过一遍，脚本自己扫目录必然复刻出第二套不一致的口径。需要比 show 视图更自由的读取时用 [`niceeval/results` 库读取面](../../results/library.md)，仍然不直接碰磁盘布局。
+脚本消费走这里，不翻 `.niceeval/` 原始文件：读取面的选择、去重、时效口径都在 show 里实现过一遍，脚本自己扫目录必然复刻出第二套不一致的口径。需要比 show 视图更自由的读取时用 [`niceeval/record` 库读取面](../../record/library.md)，仍然不直接碰磁盘布局。
 
 ## 信封
 
@@ -14,7 +14,7 @@ interface ShowJson {
   view: "leaderboard" | "compare" | "attempt" | "source" | "execution"
       | "timing" | "usage" | "diff" | "history" | "stats";
   /** 本次调用解析后的范围回显。 */
-  scope: {
+  sample: {
     resultsRoot: string;
     evalPrefix?: string;
     /** 解析后的 experiment id 全集；对照视图下顺序即条件顺序，首个是基准。 */
@@ -26,9 +26,9 @@ interface ShowJson {
 ```
 
 - 输出是**一个**顶层 JSON 文档，不是 NDJSON；stdout 只有这个文档，人读的进度与警告走 stderr。
-- **范围含多个 attempt 时**，逐 attempt 组件的 `data` 是该组件 `*Data` 产物的数组，排序与 text 面分节同序（experimentId、evalId、attempt 序）；text 面的节头与合计行是渲染面派生，不进 `data`——消费方从数组自行聚合，聚合口径与 text 合计一致（缺失不计入、见各组件声明）。scope 级切片（leaderboard / compare / stats）的 `data` 本身就是聚合视图，恒为单个对象。
+- **范围含多个 attempt 时**，逐 attempt 组件的 `data` 是该组件 `*Data` 产物的数组，排序与 text 面分节同序（experimentId、evalId、attempt 序）；text 面的节头与合计行是渲染面派生，不进 `data`——消费方从数组自行聚合，聚合口径与 text 合计一致（缺失不计入、见各组件声明）。sample 级切片（leaderboard / compare / stats）的 `data` 本身就是聚合视图，恒为单个对象。
 - 错误路径与 text 面一致：无匹配、用法冲突、零可读结果按同样的判定非零退出，错误信息走 stderr，不输出半个 JSON。
-- 字符串值忠实转发落盘内容：终端形态的列宽截断、卡片预览预算**都不适用**；落盘时已被 [256 KiB 上限](../../results/architecture.md#大值截断)截断的值带原样的 `truncated` 标记，`--json` 不追溯还原也不二次截断。
+- 字符串值忠实转发落盘内容：终端形态的列宽截断、卡片预览预算**都不适用**；落盘时已被 [256 KiB 上限](../../record/architecture.md#大值截断)截断的值带原样的 `truncated` 标记，`--json` 不追溯还原也不二次截断。
 
 ### 通用 attempt 投影
 
@@ -38,12 +38,12 @@ interface ShowJson {
 /** attempt 的通用投影：AttemptRecord 全字段 + 归属身份。 */
 type AttemptJson = AttemptRecord & {
   experimentId: string;
-  /** 所属（或携带来源）快照的 startedAt。 */
-  snapshotStartedAt: string;
+  /** 所属（或携带来源）Run 的 startedAt。 */
+  runStartedAt: string;
 };
 ```
 
-字段名复用 [Results 落盘类型](../../results/architecture.md)，不为 JSON 输出发明第二套命名；派生量（通过率、delta 等）是显式命名字段，与落盘事实可区分——这条命名纪律由各组件的 `*Data` 声明履行，本页不重复定义。
+字段名复用 [Results 落盘类型](../../record/architecture.md)，不为 JSON 输出发明第二套命名；派生量（通过率、delta 等）是显式命名字段，与落盘事实可区分——这条命名纪律由各组件的 `*Data` 声明履行，本页不重复定义。
 
 ## `data`：按 view 找组件声明
 
@@ -51,7 +51,7 @@ type AttemptJson = AttemptRecord & {
 
 | `view` | `data` 单源 |
 |---|---|
-| `leaderboard` | `experimentListData`（[Library · 实体列表](../components/entity-lists/README.md)）+ `scopeSummaryData`（[Library · 概览组件](../components/summaries/README.md)） |
+| `leaderboard` | `experimentListData`（[Library · 实体列表](../components/entity-lists/README.md)）+ `sampleSummaryData`（[Library · 概览组件](../components/summaries/README.md)） |
 | `compare` | `deltaTableData`（[Library · Metric Views](../components/tables/README.md)） |
 | `attempt` | `AttemptDetail` 装配的区块 `*Data` 全集（[Library · Attempt 详情](../components/attempt-detail/README.md)「公开组件集」） |
 | `source` | `attemptSourceData`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
@@ -71,5 +71,5 @@ type AttemptJson = AttemptRecord & {
 ## 相关阅读
 
 - [Reports Architecture · show 的切片是组件选择](../architecture.md#show-的切片是组件选择) —— 每个 view 对应哪个组件、为什么两面同值是构造保证。
-- [Results Architecture](../../results/architecture.md) —— 被复用的落盘类型形状。
-- [Results Lib](../../results/library.md) —— 需要自由组合读取时的库入口。
+- [Record Architecture](../../record/architecture.md) —— 被复用的落盘类型形状。
+- [Record Lib](../../record/library.md) —— 需要自由组合读取时的库入口。

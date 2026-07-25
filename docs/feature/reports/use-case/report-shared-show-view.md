@@ -8,7 +8,7 @@
 
 ## 全流程
 
-1. 写报告文件,默认导出恒为 `defineReport` 产物:树形态展开为单张 scope-input page,配置对象形态声明外壳与多张 page(写法见 [Library](../library.md#交给-show-view-渲染))。
+1. 写报告文件,默认导出恒为 `defineReport` 产物:树形态展开为单张 sample-input page,配置对象形态声明外壳与多张 page(写法见 [Library](../library.md#交给-show-view-渲染))。
 2. 浏览器面:
 
    ```bash
@@ -18,14 +18,14 @@
 
    view 只把 `navigation !== false` 的 pages 列进导航,按声明顺序排列。
 
-3. 同一份文件交给终端:多页时渲染初始页(`--page` 指定的页,缺省第一页),尾部附其余页的索引与可复制命令;每一条索引命令都保留当前的 `--results`、`--report` 与位置参数:
+3. 同一份文件交给终端:多页时渲染初始页(`--page` 指定的页,缺省第一页),尾部附其余页的索引与可复制命令;每一条索引命令都保留当前的 `--record`、`--report` 与位置参数:
 
    ```bash
    niceeval show --report reports/site.tsx
    niceeval show --report reports/site.tsx --page exam
    ```
 
-4. 范围收窄与页选择正交:位置参数(eval id 前缀)与 `--exp` 先收窄 Scope,`--page` 再选页,全部页共享同一份收窄后的 Scope:
+4. 范围收窄与页选择正交:位置参数(eval id 前缀)与 `--exp` 先收窄 Sample,`--page` 再选页,全部页共享同一份收窄后的 Sample:
 
    ```bash
    niceeval show memory/swelancer --report reports/site.tsx --page exam
@@ -64,7 +64,7 @@
 
 - `--page <id>` 未命中按完整用户反馈报错并列出可用页:`error: page "typo" not found in reports/frontier.tsx. Available pages: report`。
 - `--report` 的裸词一律查内建视图名表,不回落到文件探测:想装载文件就写成带路径形(`./reports/site.tsx`),未命中的裸词按完整用户反馈报错并列出可用名字。
-- 配置里的 `report` 只影响读面:`niceeval exp` 不装载报告树,报告定义也不进快照,换报告不必重跑。
+- 配置里的 `report` 只影响读面:`niceeval exp` 不装载报告树,报告定义也不进 Run,换报告不必重跑。
 - 报告没声明 attempt-input page 时 locator 只是文本,不生成一条会悄悄落回内建详情的命令;要沿用官方详情,显式 `extends: standard`,或把 `standardAttemptPage` 放进自己的 pages([契约](../show/reports.md))。
 - `--history` 与 `--report` 互斥,两者都占据主输出。
 - 外壳的 `links`、`footer`、`theme`、`seriesPins`、`head`、`scripts`、`styles` 是 web 面属性,`show` 只消费 `title` 与 `pages`;`--theme` 同理只在 `view` 上成立。

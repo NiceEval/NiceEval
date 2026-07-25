@@ -18,7 +18,7 @@
 // src/results/host-equivalence.test.ts 直接对 Selection 对象断言,不在本文件重复覆盖。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
-// 依据是 docs/feature/results/architecture.md 的稳定磁盘契约,不经 writer 运行时 API(避免与并行重写的
+// 依据是 docs/feature/record/architecture.md 的稳定磁盘契约,不经 writer 运行时 API(避免与并行重写的
 // niceeval/results 写入面签名耦合)。
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -52,7 +52,7 @@ afterAll(() => {
   setConfiguredLocale(undefined);
 });
 
-/** 一条 attempt 的最小 fixture;字段照 docs/feature/results/architecture.md 的 AttemptRecord。 */
+/** 一条 attempt 的最小 fixture;字段照 docs/feature/record/architecture.md 的 AttemptRecord。 */
 type AttemptFixture = Pick<EvalResult, "id" | "verdict"> &
   Partial<
     Pick<
@@ -65,7 +65,7 @@ function res(id: string, verdict: Verdict, extra: Partial<AttemptFixture> = {}):
   return { id, verdict, attempt: 0, durationMs: 1000, assertions: [], ...extra };
 }
 
-/** 实验目录名的清洗:与 docs/feature/results/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
+/** 实验目录名的清洗:与 docs/feature/record/architecture.md 一致(/ 与非 [\w.@-] 换成 _)。 */
 function cleanDirName(id: string): string {
   return id.replace(/[^\w.@-]/g, "_");
 }
