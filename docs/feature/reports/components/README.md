@@ -83,6 +83,7 @@ type ComponentProps<Data, Presentation> =
 | [`Tabs`](../library/layout.md#tabs) | `Tab` | 并列视图数量可变 |
 | [`Table`](../library/layout.md#table) | `Column` | 列是同型条目列表；行是数据，仍为 `rows` prop |
 | [`Grid` / `Row` / `Col` / `Section`](../library/layout.md#排版原语) | 无（children 是普通 `ReportNode`） | 排版原语组织的是节点，不是绑定 |
+| [`Markdown` / `Text`](../library/layout.md#markdown) | 无（children 是正文字符串） | 正文的结构由 CommonMark 语法表达，不由 JSX 表达 |
 
 ## 共用呈现 props
 
@@ -135,7 +136,7 @@ type Presentation<Props, Defaults> =
 
 ## 不引入的机制
 
-- 组件树词汇同构不意味着渲染实现相同：两面渲染由 niceeval 自己实现，静态 SVG、终端字符图、证据链接与无浏览器首屏都是它的职责，不把第三方图表运行时或 React context 引入生成管线。
+- 组件树词汇同构不意味着渲染实现相同：两面渲染由 niceeval 自己实现，静态 SVG、终端字符图、证据链接与无浏览器首屏都是它的职责，不把第三方图表运行时或 React context 引入生成管线。唯一的例外是 [`Markdown`](../library/layout.md#markdown) 的 CommonMark 解析器——它产出一棵 AST 供两面各自投影，不参与渲染，也不是「借一个库的 web 面」。
 - 不引入 `ResizeObserver` 或视口测量；响应式由静态 HTML 的 CSS Grid 与 container query 承担。
 - 结构节点不独立取数：一个组件的全部读取与聚合由它的一次 resolve 完成并记忆化。
 - facet 用 JSX `map` + [`Grid`](../library/layout.md#grid-与-stat) 表达，组件树不重复实现语言已有的遍历能力。

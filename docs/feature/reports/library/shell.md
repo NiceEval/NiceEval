@@ -60,11 +60,14 @@ export default defineReport({
     {
       id: "exam",
       title: { en: "Exam", "zh-CN": "成绩单" },
-      content: <Scoreboard rows="agent" questions={[
-        "security/sql-injection",
-        "security/path-traversal",
-        "correctness/retry",
-      ]} fullMarks={100} score={examScore} />,
+      content: (
+        <Scoreboard fullMarks={100} score={examScore}>
+          <Rows dimension="agent" />
+          <Question id="security/sql-injection" />
+          <Question id="security/path-traversal" />
+          <Question id="correctness/retry" />
+        </Scoreboard>
+      ),
     },
     { id: "failures", title: { en: "Failures", "zh-CN": "待处理失败" }, content: <RecentFailures limit={20} /> },
   ],

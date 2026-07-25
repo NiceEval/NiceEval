@@ -1,6 +1,6 @@
 # 排版原语与自定义组件
 
-`Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Style`、`Tabs`、`Tab` 和 `Table` 是十个内置双面排版组件，用于组织报告树。其中 `Tab` 与 `Table` 的 `Column` 是[结构子节点](../components/README.md#结构节点)，只在各自的父组件下成立。
+`Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Markdown`、`Style`、`Tabs`、`Tab` 和 `Table` 是十一个内置双面排版组件，用于组织报告树。其中 `Tab` 与 `Table` 的 `Column` 是[结构子节点](../components/README.md#结构节点)，只在各自的父组件下成立。
 
 ## 树的节点：`ReportNode`
 
@@ -21,7 +21,7 @@ type ReportNode =
 
 ## 排版原语
 
-十个原语的公开形状是：
+十一个原语的公开形状是：
 
 ```ts
 interface LayoutProps {
@@ -59,8 +59,14 @@ interface StatProps {
 }
 
 interface TextProps {
-  /** 自由正文原样渲染，不随 locale 自动翻译。 */
-  children: string | number;
+  /** 自由正文原样渲染，一个标记都不解析。作者写下几种语言就有几种，组件不翻译。 */
+  children: LocalizedText | number;
+  className?: string;
+}
+
+interface MarkdownProps {
+  /** CommonMark 正文。作者写下几种语言就有几种，组件不翻译。 */
+  children: LocalizedText;
   className?: string;
 }
 
@@ -75,16 +81,59 @@ interface TabProps extends LayoutProps {
 }
 ```
 
-宿主语言切换只选择 `LocalizedText` 字段和官方 chrome 词典；`Text` 的自由正文是内容而不是 chrome，需要多语时由作者生成两份报告或使用自定义双面组件，不在数据层按 locale 重算指标。
+`Text` 与 `Markdown` 的正文按 [`LocalizedText`](shell.md) 的回退规则随宿主语言切换：报告站有语言切换按钮，切完一整页英文中间夹一段中文方法学说明是坏结果。收 `LocalizedText` 不等于自动翻译——作者写下几种语言就有几种，缺的语言走回退链；指标与聚合口径不因 locale 改变，`MetricCell.display` 仍是同一个 `value` 的几种格式化。
 
 `Col` 在两个面都按声明序纵向排列。`Row` 的 web 面横排；text 面在可用宽度装得下全部子块时按显示宽度并排（与下文 `columns` 工具同一把尺），装不下时整块退化为纵向堆叠——不截断、不隐藏任何子块。`Grid` 与 `Stat` 的布局和降级规则见下一节。
+
+## `Markdown`
+
+报告里的散文——方法学、口径说明、脚注、免责声明——用 `Markdown` 写，不用把每一段拆成一串 `Text`：
+
+```tsx
+<Markdown>{`
+## 方法学
+
+每个配置跑 **3 轮**，取端到端通过率。成本按网关实测优先，估算兜底。
+
+- 题集固定为 \`security/\` 下 12 题，未跑到的题按 0 分留在分母
+- 超时 attempt 的耗时记 \`null\`，不计入均值
+
+详细口径见[指标说明](https://example.com/metrics)。
+`}</Markdown>
+```
+
+正文按 [CommonMark](https://spec.commonmark.org/) 解析，另启用 GFM 的删除线、任务列表与 autolink。解析在 resolve 之前完成，产出一棵 AST；text 与 web 两面各自从**同一棵 AST** 投影，不是 web 先渲染 HTML、text 再解析第二遍。这是报告面唯一的解析依赖，也是它值得引入的理由：CommonMark 的边界情况（嵌套列表、惰性续行、行内优先级）自己实现只会得到一份似是而非的方言。
+
+两面投影：
+
+| Markdown | web 面 | text 面 |
+|---|---|---|
+| 段落 | `<p>` | 按可用宽度折行，段间空一行 |
+| `#`–`######` 标题 | `<h1>`–`<h6>`（挂 `nre-md-*` 类） | 空行 + 标题文字，支持颜色时加粗；不进导航，也不参与 `Section` 的嵌套计数 |
+| 列表（含嵌套、任务列表） | `<ul>` / `<ol>` / 复选框 | `- ` / `1. ` / `[ ]`、`[x]`，每层缩进两格 |
+| 围栏与缩进代码块 | `<pre><code>` | 缩进两格原样输出，**不折行**——折行的代码不能复制执行 |
+| 块引用 | `<blockquote>` | 每行 `> ` 前缀 |
+| 强调 / 删除线 / 行内代码 | `<strong>` / `<em>` / `<del>` / `<code>` | 支持颜色时用 ANSI，不支持时脱去标记只留文字 |
+| 链接与 autolink | `<a rel="noopener">` | `文字 (url)`；文字与 url 相同时只打一次 |
+| 图片 | `<img>` | `alt (url)`——终端画不出图，但不吞掉这条信息 |
+| 分割线 | `<hr>` | 一行 `─`，宽度取可用宽度 |
+
+三条边界：
+
+- **不透传裸 HTML。** CommonMark 允许的 HTML 块与行内 HTML 一律转义成可见文本。报告是要发布出去的静态站，正文里的字符串可能来自结果数据，解析器不给它开一条注入通道。
+- **不解析 Markdown 表格。** 遇到表格语法（`|` 起首行加分隔行）按完整用户反馈报错，指引改用 [`Table`](#table)：表格的列宽要走终端显示宽度那把尺子（CJK 记 2 列、身份列下限、超宽先折行再丢列并如实标注），Markdown 表格绕过这套只会在终端撕歪。
+- **不解析证据引用。** 正文里的 `@1k2m9qrs` 就是普通文本，不会变成 attempt 深链——要证据链接就用数据组件，它们的 locator 有真正的下钻目标。
+
+折行与宽度量测和其它排版原语共用同一把尺（`stringWidth` / `wrapText`，CJK 与全角记 2 列），所以中文正文在终端不会撕歪。`Markdown` 只排版，不取数、不读 Scope：内容从哪来是普通 JavaScript 的事——字面量、`readFile` 读一份 `METHODOLOGY.md`、或组合组件里按数据拼串都可以。
+
+需要一个标记都不解析的正文时用 `Text`：两者的分工就是「有格式的散文」与「这段字原样打」。
 
 `Style` 注入的 CSS 是页级全局的：树位置只决定声明顺序，不限定作用域；text 面零输出。它服务树形态文件与自带样式的组件——配置对象形态的报告要全站样式优先用外壳 [`styles`](shell.md)，两条通道注入同一增强层、遵守同一不变量。
 
 ```tsx
 // reports/nightly.tsx —— 排版原语组织报告树的完整文件形态
 import {
-  Col, MetricTable, Row, Section, Style, Text,
+  Col, Column, MetricTable, Row, Rows, Section, Style, Text,
   costUSD, defineReport, endToEndPassRate,
 } from "niceeval/report";
 
@@ -93,10 +142,18 @@ export default defineReport(
     <Text className="team-note">nightly benchmark · publishes at 06:00</Text>
     <Row>
       <Section title="Overall">
-        <MetricTable rows="agent" columns={[endToEndPassRate, costUSD]} sort={endToEndPassRate} />
+        <MetricTable>
+          <Rows dimension="agent" sort={endToEndPassRate} />
+          <Column metric={endToEndPassRate} />
+          <Column metric={costUSD} />
+        </MetricTable>
       </Section>
       <Section title="Cost">
-        <MetricTable rows="agent" columns={[costUSD, endToEndPassRate]} sort={costUSD} />
+        <MetricTable>
+          <Rows dimension="agent" sort={costUSD} />
+          <Column metric={costUSD} />
+          <Column metric={endToEndPassRate} />
+        </MetricTable>
       </Section>
     </Row>
     <Style>{`.nre .team-note { color: #6b7280; }`}</Style>

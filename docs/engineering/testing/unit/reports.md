@@ -104,6 +104,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   产物，与手工传同一份 options 深相等。反馈覆盖：节点放错父组件（错误同时给出收到的父类型、允许的父类型与正确嵌套示例）、必填节点缺失或重复、零个
   `<Question>` / 少于两个 `<Condition>` / 没有或多于一个 `baseline`、`<Condition>` 与
   `<FlagConditions>` 混用、data 形态下子节点仍带数据绑定字段、动态 `by` 同时给显式 `dataKey`。
+- **`Markdown` 的解析与两面投影**（[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。覆盖：每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）；裸 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出；表格语法按完整用户反馈报错并指引 `Table`；折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）；`LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
 - **页级色分配**（[系列色](../../../feature/reports/components/README.md#系列色分配单位是页)）：给定一页已解析数据里的
   `(维度, 值)` 集合产出映射——同一键在同页多个组件（图表 series 与实体列表的维度键）得到同一个色槽、撞色按显示键字典序线性探测、keyset
   超过色板才复用、缩短后的显示名不参与取键；断言面是映射本身，不断言渲染出的颜色值。

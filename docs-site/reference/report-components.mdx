@@ -25,7 +25,7 @@ The component name describes its shape; the API name is the export name in code.
 | Metric shape | Stability matrix | `StabilityMatrix` | One eval per row, one condition per column; cells hold verdict counts across all historical executions |
 | Chart | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | One coordinate system; `XAxis` / `YAxis` bind the axes and `Line` / `Bar` / `Area` / `Scatter` each draw one series |
 
-`Row`, `Col`, `Section`, `Text`, `Style`, and `Table` are layout primitives — they don't compute a result, so they don't count as one of the analysis shapes above.
+`Row`, `Col`, `Section`, `Text`, `Markdown`, `Style`, and `Table` are layout primitives — they don't compute a result, so they don't count as one of the analysis shapes above.
 
 All components share one contract, not repeated below for each:
 
@@ -57,17 +57,41 @@ Exam scorecard
   codex  78.0/100   40/50    38/50    │
 ```
 
+## Prose (`Markdown`)
+
+Prose that has to be written in paragraphs — methodology, metric definitions, footnotes — goes in `Markdown`, so you don't split every paragraph into a string of `Text`:
+
+```tsx
+<Markdown>{`
+## Methodology
+
+Every configuration runs **3 attempts**; the score is the end-to-end pass rate.
+
+- The suite is fixed at the 12 evals under \`security/\`; evals that never ran stay in the denominator at 0
+- A timed-out attempt records \`null\` for duration and is excluded from the mean
+
+See [metric definitions](https://example.com/metrics) for the full accounting.
+`}</Markdown>
+```
+
+The body is parsed as CommonMark, plus strikethrough, task lists, and autolinks. Headings, lists, code blocks, quotes, emphasis, links, and images become the matching HTML tags on the web face and indentation, prefixes, and wrapping on the terminal face — both faces read the same parse result; the terminal face is not a second parse of rendered HTML. In the terminal, code blocks print verbatim without wrapping (wrapped code can't be copied and run), images print as `alt (url)`, and links print as `text (url)`.
+
+Three things it does not do:
+
+- **It does not render HTML written in the body** — tags are escaped into visible text. A report is a static site you publish, and strings in the body may come from result data.
+- **It does not parse Markdown tables** — it fails with a full error message pointing you at `Table`. Column widths must be computed in terminal display columns (CJK counts as 2, overflow wraps first and then drops columns with a note); a Markdown table bypasses all of that and tears in the terminal.
+- **It does not turn `@1k2m9qrs` into a link** — an Attempt locator in prose is plain text. For a clickable evidence link, use a component that carries locators.
+
+Prose is localized the same way titles are: pass `{ en: "…", "zh-CN": "…" }` and the body follows the site's language switch; write one language and every locale shows that one. Where the string comes from is ordinary JavaScript — a literal, `readFile` on a `METHODOLOGY.md`, or built from data.
+
+When you want nothing parsed at all, use `Text`: one handles formatted prose, the other prints the characters as they are.
+
 ## Table (`Table`)
 
 The sixth layout primitive: the table the official components can't lay out, you lay out with this. It computes nothing — you define the columns, the cells are display values you already computed, and it only lines both faces up neatly.
 
 ```tsx
 <Table
-  columns={[
-    { key: "eval", header: "eval" },
-    { key: "pass", header: "pass rate", align: "right" },
-    { key: "cost", header: "cost", align: "right" },
-  ]}
   rows={[
     {
       key: "记忆/写缓存",
@@ -80,7 +104,11 @@ The sixth layout primitive: the table the official components can't lay out, you
       cells: { eval: "浏览/表单填写", pass: null, cost: null },
     },
   ]}
-/>
+>
+  <Column key="eval" header="eval" />
+  <Column key="pass" header="pass rate" align="right" />
+  <Column key="cost" header="cost" align="right" />
+</Table>
 ```
 
 ```text

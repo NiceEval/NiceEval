@@ -7,6 +7,7 @@
 | 想回答的问题 | 组件 |
 |---|---|
 | 自由摆放 label、主值与辅助信息组成摘要面板 | [`Grid` / `Stat`](library/layout.md#grid-与-stat) |
+| 写方法学、口径说明、脚注这类散文 | [`Markdown`](library/layout.md#markdown) |
 | 比较当前 Scope 里的 experiments | [`ExperimentComparison`](components/summaries.md#experimentcomparison) |
 | 一个范围有多大、整体是否健康（eval 级或 attempt 级计票） | [`ScopeSummary`](components/summaries.md#scopesummary) |
 | 每个 experiment / eval / attempt 发生了什么 | [`ExperimentList` / `EvalList` / `AttemptList`](components/entity-lists.md) |

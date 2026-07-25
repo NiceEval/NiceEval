@@ -312,11 +312,6 @@ export default defineReport(async ({ selection }) => {
   return (
     <Col>
       <Table
-        columns={[
-          { key: "agent", header: "Agent" },
-          { key: "pass", header: "Pass rate", align: "right" },
-          { key: "cost", header: "Cost", align: "right" },
-        ]}
         rows={board.rows.map((r) => ({
           key: r.key,
           cells: {
@@ -326,7 +321,11 @@ export default defineReport(async ({ selection }) => {
             cost: r.cells[costUSD.name].value === null ? null : r.cells[costUSD.name].display,
           },
         }))}
-      />
+      >
+        <Column key="agent" header="Agent" />
+        <Column key="pass" header="Pass rate" align="right" />
+        <Column key="cost" header="Cost" align="right" />
+      </Table>
     </Col>
   );
 });

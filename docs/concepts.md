@@ -111,7 +111,7 @@
 | 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果快照;格内是指标值及差值 |
 | 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道 Eval、每列一个条件;格内是历史全执行的判定计数 |
 | 指标图形 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一棵组件树:容器持有坐标系,`XAxis` / `YAxis` 绑定维度或指标,`Line` / `Bar` / `Area` / `Scatter` 各是一条 series |
-| 行 / 列 / 分节 / 文本 / 样式 / 表格 | Row / column / section / text / style / table | `Row` / `Col` / `Section` / `Text` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 |
+| 行 / 列 / 分节 / 文本 / 正文 / 样式 / 表格 | Row / column / section / text / markdown / style / table | `Row` / `Col` / `Section` / `Text` / `Markdown` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 |
 
 ### 配置与 CLI
 

@@ -152,11 +152,12 @@ const changedLines = defineMetric({
 });
 
 export default defineReport(
-  <MetricTable
-    rows="agent"
-    columns={[endToEndPassRate, changedLines, costUSD]}
-    sort={endToEndPassRate}
-  />,
+  <MetricTable>
+    <Rows dimension="agent" sort={endToEndPassRate} />
+    <Column metric={endToEndPassRate} />
+    <Column metric={changedLines} />
+    <Column metric={costUSD} />
+  </MetricTable>,
 );
 ```
 
@@ -175,7 +176,11 @@ const vendor: CustomDimension = {
 };
 
 export default defineReport(
-  <MetricTable rows={vendor} columns={[endToEndPassRate, costUSD]} />,
+  <MetricTable>
+    <Rows dimension={vendor} />
+    <Column metric={endToEndPassRate} />
+    <Column metric={costUSD} />
+  </MetricTable>,
 );
 ```
 

@@ -64,11 +64,11 @@ export default defineReport(
   <Col>
     <ExperimentComparison />
     <Section title="考试成绩单">
-      <Scoreboard
-        rows="agent"
-        questions={["security/sql-injection", "correctness/retry"]}
-        score={examScore}
-      />
+      <Scoreboard score={examScore}>
+        <Rows dimension="agent" />
+        <Question id="security/sql-injection" />
+        <Question id="correctness/retry" />
+      </Scoreboard>
     </Section>
   </Col>,
 );
@@ -146,8 +146,16 @@ niceeval view --report ./reports/exam.tsx   # 本次换成另一份文件
 
 ```tsx
 <Row>
-  <Scoreboard rows="agent" questions={["security/sql-injection", "correctness/retry"]} score={examScore} />
-  <MetricTable rows="agent" columns={[endToEndPassRate, costUSD]} />
+  <Scoreboard score={examScore}>
+    <Rows dimension="agent" />
+    <Question id="security/sql-injection" />
+    <Question id="correctness/retry" />
+  </Scoreboard>
+  <MetricTable>
+    <Rows dimension="agent" />
+    <Column metric={endToEndPassRate} />
+    <Column metric={costUSD} />
+  </MetricTable>
 </Row>
 ```
 
@@ -218,11 +226,12 @@ const changedLines = defineMetric({
 });
 
 export default defineReport(
-  <MetricTable
-    rows="agent"
-    columns={[endToEndPassRate, changedLines, costUSD]}
-    sort={endToEndPassRate}
-  />,
+  <MetricTable>
+    <Rows dimension="agent" sort={endToEndPassRate} />
+    <Column metric={endToEndPassRate} />
+    <Column metric={changedLines} />
+    <Column metric={costUSD} />
+  </MetricTable>,
 );
 ```
 
@@ -264,7 +273,11 @@ const vendor: CustomDimension = {
 };
 
 export default defineReport(
-  <MetricTable rows={vendor} columns={[endToEndPassRate, costUSD]} />,
+  <MetricTable>
+    <Rows dimension={vendor} />
+    <Column metric={endToEndPassRate} />
+    <Column metric={costUSD} />
+  </MetricTable>,
 );
 ```
 
@@ -333,11 +346,6 @@ const CostBoard = defineComponent(async (_props: {}, ctx) => {
   });
   return (
     <Table
-      columns={[
-        { key: "agent", header: "Agent" },
-        { key: "pass", header: "通过率", align: "right" },
-        { key: "cost", header: "成本", align: "right" },
-      ]}
       rows={board.rows.map((r) => ({
         key: r.key,
         cells: {
@@ -347,7 +355,11 @@ const CostBoard = defineComponent(async (_props: {}, ctx) => {
           cost: r.cells[costUSD.name].value === null ? null : r.cells[costUSD.name].display,
         },
       }))}
-    />
+    >
+      <Column key="agent" header="Agent" />
+      <Column key="pass" header="通过率" align="right" />
+      <Column key="cost" header="成本" align="right" />
+    </Table>
   );
 });
 
