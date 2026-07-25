@@ -1,6 +1,6 @@
 // AttemptSource:GitHub diff 式带标注 eval 源码。send / assertion 行按状态着色，点击
 // 原生 details 在调用点展开完整回复与 assertion 细节。没有 source 时零输出
-// (docs/feature/reports/library/attempt-detail.md)。
+// (docs/feature/reports/components/attempt-detail.md)。
 
 import type { ReactElement, ReactNode } from "react";
 import type { AttemptSourceData, AttemptSourceLineData, AttemptSourceTurn } from "../../model/types.ts";
@@ -192,7 +192,7 @@ function AssertionDetail({ assertion, locale }: { assertion: AssertionResult & {
 }
 
 /** `t.score(label, n)` 调用行的展开区:给分记录本体(label、挣分、分组路径),不着判定色——
- *  给分是分数面事实,不是判定(docs/feature/reports/library/attempt-detail.md「AttemptSource
+ *  给分是分数面事实,不是判定(docs/feature/reports/components/attempt-detail.md「AttemptSource
  *  web 面视觉规范」给分行)。 */
 function ScoreEntryDetail({ entry }: { entry: ScoreEntry }): ReactElement {
   return (

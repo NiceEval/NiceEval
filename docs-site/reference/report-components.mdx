@@ -20,11 +20,10 @@ The component name describes its shape; the API name is the export name in code.
 | Entity list | Attempt list | `AttemptList` | One item per attempt; shows assertions, errors, Judge remarks, and evidence |
 | Metric shape | Metric table | `MetricTable` | One configurable row dimension; each cell is one aggregated metric value |
 | Metric shape | Metric matrix | `MetricMatrix` | Two configurable dimensions crossed; each cell is one aggregated metric value |
-| Metric shape | Grouped bar chart | `MetricBars` | Two configurable dimensions forming groups and series; each bar is one aggregated metric value |
-| Metric shape | Scoreboard | `Scoreboard` | One configurable dimension value per row; scored by eval and eval group |
-| Metric shape | Metric scatter plot | `MetricScatter` | One configurable dimension value per point, usually experiment; coordinates are two aggregated metric values |
-| Metric shape | Metric line chart | `MetricLine` | One point per experiment; x is an experiment flag, y is an aggregated metric value |
-| Metric shape | Paired delta table | `DeltaTable` | One pair of experiments or result snapshots per row; cells hold metric values and their delta |
+| Metric shape | Scoreboard | `Scoreboard` | One configurable dimension value per row; scored by eval and subject |
+| Metric shape | Paired delta table | `DeltaTable` | One eval per row, one column group per condition; cells hold each condition's value and its delta against the baseline |
+| Metric shape | Stability matrix | `StabilityMatrix` | One eval per row, one condition per column; cells hold verdict counts across all historical executions |
+| Chart | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | One coordinate system; `XAxis` / `YAxis` bind the axes and `Line` / `Bar` / `Area` / `Scatter` each draw one series |
 
 `Row`, `Col`, `Section`, `Text`, `Style`, and `Table` are layout primitives — they don't compute a result, so they don't count as one of the analysis shapes above.
 
@@ -108,7 +107,7 @@ The default composite component used when `niceeval show` / `view` is called wit
 
 The group card uses the field labels `Pass rate`, `Experiments`, `Evals`, `Attempts`, `Eval results`, and `Total cost`, never repeating a generic word like "count" inside the label. Time is shown localized to the minute as `Last run` or `Run range`, never a raw ISO string; when cost data doesn't cover every attempt, it's spelled out as "cost data for 63/72 attempts," not a bare, context-free `63/72`. The six KPIs stay on one row on a wide card, wrapping into groups of three or two when space runs short, so total cost never falls onto its own line by itself.
 
-This section belongs only to the default composite component. The `MetricScatter`, `MetricTable`, and `ExperimentList` below all faithfully consume whatever data the caller passes them; a custom report handing them a cross-group selection is an explicit choice to analyze across groups.
+This section belongs only to the default composite component. The scatter chart, `MetricTable`, and `ExperimentList` below all faithfully consume whatever data the caller passes them; a custom report handing them a cross-group selection is an explicit choice to analyze across groups.
 
 ## Run overview (`RunOverview`)
 
@@ -279,16 +278,16 @@ next: niceeval show geometry/area
 
 On the web face, clicking a cell deep-links to that cell's attempt; the terminal face prints a drill-down command under the table.
 
-## Grouped bar chart (`MetricBars`)
+## Grouped bar chart (`BarChart`)
 
-Another arrangement of the same matrix data (`MetricBars.data` is an alias of `MetricMatrix.data`): grouped side by side to compare magnitude, answering "who leads on each subject, and by how much". One dimension makes a group of bars, the other makes one bar per series, and the bar length is the metric value — a benchmark-release chart (Terminal-Bench, BrowseComp each as one group, one agent per bar) is exactly this shape.
+The same data as bars: grouped side by side to compare magnitude, answering "who leads on each subject, and by how much". The x axis makes a group of bars, `by` makes one bar per value, and the bar height is the metric value — a benchmark-release chart (Terminal-Bench, BrowseComp each as one group, one agent per bar) is exactly this shape.
 
 ```tsx
-<MetricBars data={await MetricBars.data(selection, {
-  rows: "evalGroup",        // one group of bars = one subject/benchmark
-  columns: "agent",         // one bar = one agent
-  cell: endToEndPassRate,
-})} />
+<BarChart>
+  <XAxis dimension="evalGroup" />     {/* one group of bars = one subject/benchmark */}
+  <YAxis metric={endToEndPassRate} />
+  <Bar metric={endToEndPassRate} by="agent" />   {/* one bar = one agent */}
+</BarChart>
 ```
 
 ```text
@@ -321,21 +320,20 @@ bub     86.5/100   45/50          41.5/50
 codex   71.0/100   40/50          31/50 (1 missing)
 ```
 
-## Metric scatter plot (`MetricScatter`)
+## Scatter plot (`ScatterChart`)
 
-One point per configuration, one metric per axis, answering "who is both good and cheap". `series` connects points of the same agent's different tiers into a line; `better` drives axis orientation — a `lower` axis is drawn reversed, so the "good" corner is always top-right.
+One point per configuration, one metric per axis, answering "who is both good and cheap". `by` groups points of the same agent's different tiers together, and `line` connects them; `better` drives axis orientation — a `lower` axis is drawn reversed, so the "good" corner is always top-right.
 
 ```tsx
-<MetricScatter
-  selection={selection}
-  points="experiment"       // each point = one configuration's aggregate
-  series="agent"            // tiers of the same agent connect into a line
-  x={costUSD}
-  y={endToEndPassRate}
-/>
+<ScatterChart>
+  <XAxis metric={costUSD} />
+  <YAxis metric={endToEndPassRate} />
+  {/* each point = one configuration's aggregate; by = one series per agent */}
+  <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} line />
+</ScatterChart>
 ```
 
-Pass `selection` directly and the host computes the data for you before rendering. `MetricScatter` doesn't automatically group by experiment id; the default `ExperimentComparison` first narrows to one comparable group, then calls it once per group. To embed this chart in a React app you're already running, or when the data is precomputed, pass `data` instead: `<MetricScatter data={await MetricScatter.data(selection, { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate })} />`. Passing both `data` and `selection`, or neither, fails at typecheck.
+Omit `input` and the host computes the data for you before rendering. The scatter never groups by experiment id on its own; the default `ExperimentComparison` hands it the current Scope as is. To embed this chart in a React app you're already running, or when the data is precomputed, pass `data` to the container instead and select the series by `dataKey`. Passing both `data` and a binding fails with a full error message.
 
 ```text
 pass ↑                                    (good → top-right)
@@ -349,18 +347,18 @@ pass ↑                                    (good → top-right)
 A bub-high   B bub-medium   C codex-high   D codex-low
 ```
 
-The web face has hover on points (value plus `samples/total`, falling back to an in-chart tooltip with JS disabled), same-series lines connect points, and clicking deep-links to a drill-down. The terminal face labels points with letters and lists the legend below the chart; points missing x or y data are not drawn on either face, and the footnote faithfully reports "n points missing data"; when points are too dense to fit, it falls back to a coordinate table rather than crowding them. When there are zero drawable points (x or y has no measurable data at all), both faces state outright that those two metrics have no available data, instead of leaving a blank chart; a single point still renders as usual — the component never disappears outright just because there aren't enough points, leaving you not knowing why the chart is gone. Dimension slots also accept a custom dimension (`{ name, of }`, deriving a group name from data an attempt already has) and `flag()` (a variable declared by the experiment) — how to choose between them is in the "Change the grouping" section of [Custom Reports](/tutorials/custom-reports).
+The web face has hover on points (value plus `samples/total`, falling back to an in-chart tooltip with JS disabled), same-series lines connect points, and clicking deep-links to a drill-down. The terminal face labels points with letters and lists the legend below the chart; points missing x or y data are not drawn on either face, and the footnote faithfully reports "n points missing data"; when points are too dense to fit, it falls back to a coordinate table rather than crowding them. When there are zero drawable points (x or y has no measurable data at all), both faces state outright that those two metrics have no available data, instead of leaving a blank chart; a single point still renders as usual — the component never disappears outright just because there aren't enough points, leaving you not knowing why the chart is gone. `points` and `by` also accept a custom dimension (`{ name, of }`, deriving a group name from data an attempt already has) and `flag()` (a variable declared by the experiment) — how to choose between them is in the "Change the grouping" section of [Custom Reports](/tutorials/custom-reports).
 
-## Metric line chart (`MetricLine`)
+## Line chart (`LineChart`)
 
-x is an ordered variable, one line per series, answering "as the variable scales up, how does the score move" — a scaling chart like parallel agent count × simulated latency × score is exactly this. Division of labor with `MetricScatter`: both of the scatter plot's axes are measured metrics (finding the frontier), while the line chart's x is a variable you configured (watching a trend). The variable is declared in the experiment's `flags`, and the report references it directly with `flag()`, never parsed out of the experiment's name.
+x is an ordered variable, one line per series, answering "as the variable scales up, how does the score move" — a scaling chart like parallel agent count × simulated latency × score is exactly this. Division of labor with the scatter plot: both of the scatter plot's axes are measured metrics (finding the frontier), while the line chart's x is a variable you configured (watching a trend). The variable is declared in the experiment's `flags`, and the report references it directly with `numericFlag()`, never parsed out of the experiment's name.
 
 ```tsx
-<MetricLine data={await MetricLine.data(selection, {
-  x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
-  series: flag("agents", { label: (v) => `${v} agents` }),
-  y: endToEndPassRate,
-})} />
+<LineChart>
+  <XAxis numeric={numericFlag("latencyMs", { label: "Simulated latency", unit: "ms" })} />
+  <YAxis metric={endToEndPassRate} />
+  <Line metric={endToEndPassRate} by={flag("agents")} />
+</LineChart>
 ```
 
 ```text

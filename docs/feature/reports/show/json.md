@@ -51,16 +51,16 @@ type AttemptJson = AttemptRecord & {
 
 | `view` | `data` 单源 |
 |---|---|
-| `leaderboard` | `experimentListData`（[Library · 实体列表](../library/entity-lists.md)）+ `scopeSummaryData`（[Library · 概览组件](../library/summaries.md)） |
-| `compare` | `deltaTableData`（[Library · Metric Views](../library/metric-views.md)） |
-| `attempt` | `AttemptDetail` 装配的区块 `*Data` 全集（[Library · Attempt 详情](../library/attempt-detail.md)「公开组件集」） |
-| `source` | `attemptSourceData`（[Library · Attempt 详情](../library/attempt-detail.md)） |
-| `execution` | `attemptConversationData`（[Library · Attempt 详情](../library/attempt-detail.md)） |
-| `timing` | `attemptTimelineData`（[Library · Attempt 详情](../library/attempt-detail.md)） |
-| `usage` | `usageTableData`（[Library · Attempt 详情](../library/attempt-detail.md)） |
-| `diff` | `attemptDiffData`（[Library · Attempt 详情](../library/attempt-detail.md)） |
+| `leaderboard` | `experimentListData`（[Library · 实体列表](../components/entity-lists.md)）+ `scopeSummaryData`（[Library · 概览组件](../components/summaries.md)） |
+| `compare` | `deltaTableData`（[Library · Metric Views](../components/tables.md)） |
+| `attempt` | `AttemptDetail` 装配的区块 `*Data` 全集（[Library · Attempt 详情](../components/attempt-detail.md)「公开组件集」） |
+| `source` | `attemptSourceData`（[Library · Attempt 详情](../components/attempt-detail.md)） |
+| `execution` | `attemptConversationData`（[Library · Attempt 详情](../components/attempt-detail.md)） |
+| `timing` | `attemptTimelineData`（[Library · Attempt 详情](../components/attempt-detail.md)） |
+| `usage` | `usageTableData`（[Library · Attempt 详情](../components/attempt-detail.md)） |
+| `diff` | `attemptDiffData`（[Library · Attempt 详情](../components/attempt-detail.md)） |
 | `history` | [`--history`](history.md)「分节与行内字段」：这个切片不进入组件模型，直接投影 Results evidence（[切片表](../architecture.md#show-的切片是组件选择)未列出它） |
-| `stats` | `stabilityMatrixData`（[Library · Metric Views](../library/metric-views.md)） |
+| `stats` | `stabilityMatrixData`（[Library · Metric Views](../components/tables.md)） |
 
 ## 边界
 

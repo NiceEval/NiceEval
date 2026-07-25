@@ -1,5 +1,5 @@
 // AttemptTrace:不与 runner 节点混合的原始 OTel span 树。没有 trace 时零输出
-// (docs/feature/reports/library/attempt-detail.md)。
+// (docs/feature/reports/components/attempt-detail.md)。
 
 import type { ReactElement } from "react";
 import type { AttemptTraceData } from "../../model/types.ts";

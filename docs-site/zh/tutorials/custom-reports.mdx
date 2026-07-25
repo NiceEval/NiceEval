@@ -289,16 +289,23 @@ export default defineExperiment({
 });
 ```
 
-维度槽(`series` / `rows` / `columns` / `points`)用不加 `numeric` 前缀的版本按声明值分组;数值轴(`MetricLine` 的 `x`)必须用 `numericFlag()` / `numericLabel()` / `numericRunConfig()`,因为刻度要求真实数值:
+分组用不加 `numeric` 前缀的版本按声明值分类;当坐标轴用的变量(`<XAxis numeric={...} />`)必须用 `numericFlag()` / `numericLabel()` / `numericRunConfig()`,因为刻度要求真实数值:
 
 ```tsx
-import { MetricLine, defineReport, endToEndPassRate, flag, numericFlag } from "niceeval/report";
+import {
+  Line, LineChart, XAxis, YAxis,
+  defineReport, endToEndPassRate, flag, numericFlag,
+} from "niceeval/report";
 
 const agents = flag("agents", { label: "并行 agent 数" });
 const latency = numericFlag("latencyMs", { label: "Simulated latency", unit: "ms" });
 
 export default defineReport(
-  <MetricLine x={latency} series={agents} y={endToEndPassRate} />,
+  <LineChart>
+    <XAxis numeric={latency} />
+    <YAxis metric={endToEndPassRate} />
+    <Line metric={endToEndPassRate} by={agents} />
+  </LineChart>,
 );
 ```
 

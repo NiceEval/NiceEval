@@ -42,7 +42,7 @@
 - **Scope**：`results.latest()` / `results.current()` 的返回物（挑好的结果快照 + 挑选警告）。中文直接写 `Scope`，不写“范围”或“选集”。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
 - **双面组件（dual-render component）**：`defineComponent({ web, text })` 的产物。英文写 dual-render，不写 dual-face。
-- **报告组件**：正文首次出现时写“中文名（`API 名`）”，后续可只写其中一个。默认组合件是实验比较（`ExperimentComparison`）；实体列表固定为实验列表（`ExperimentList`）、Eval 列表（`EvalList`）、Attempt 列表（`AttemptList`）、失败列表（`FailureList`）；汇总组件是范围摘要（`ScopeSummary`）；站点组件是站点标题区（`Hero` / `HeroCard`）、品牌行（`PoweredBy`）、选择警告（`ScopeWarnings`）、快照诊断（`SnapshotDiagnostics`）、修复 prompt（`CopyFixPrompt`）、追踪瀑布（`TraceWaterfall`）；指标图形是指标表（`MetricTable`）、指标矩阵（`MetricMatrix`）、分组条形图（`MetricBars`）、成绩单（`Scoreboard`）、指标散点图（`MetricScatter`）、指标趋势图（`MetricLine`）、成对差异表（`DeltaTable`）。不把“榜单”“工作台”“frontier”当组件名。
+- **报告组件**：正文首次出现时写“中文名（`API 名`）”，后续可只写其中一个。默认组合件是实验比较（`ExperimentComparison`）；实体列表固定为实验列表（`ExperimentList`）、Eval 列表（`EvalList`）、Attempt 列表（`AttemptList`）、失败列表（`FailureList`）；汇总组件是范围摘要（`ScopeSummary`）；站点组件是站点标题区（`Hero` / `HeroCard`）、品牌行（`PoweredBy`）、选择警告（`ScopeWarnings`）、快照诊断（`SnapshotDiagnostics`）、修复 prompt（`CopyFixPrompt`）、追踪瀑布（`TraceWaterfall`）；指标图形是指标表（`MetricTable`）、指标矩阵（`MetricMatrix`）、成绩单（`Scoreboard`）、成对差异表（`DeltaTable`）、稳定性矩阵（`StabilityMatrix`）；图表是容器加子标签的一族（`LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart`，配 `XAxis` / `YAxis` / `Line` / `Bar` / `Area` / `Scatter`），正文写「散点图」「趋势图」「分组条形图」时括注对应容器名。不把“榜单”“工作台”“frontier”当组件名。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则

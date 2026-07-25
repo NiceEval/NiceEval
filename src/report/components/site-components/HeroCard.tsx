@@ -1,7 +1,7 @@
 // HeroCard:站点标题区的 web 面——hero 标题(h1)、运行 meta(最后运行时间按渲染 locale
 // 格式化;latestStartedAt 为 null 时内置「暂无运行」文案;snapshots > 1 时标注合成来源)
 // 与品牌行(等同 PoweredBy,恒含、无拆除 prop)。标题输入是站点声明与 Scope 的合成物,
-// 组件只收 data 形态(docs/feature/reports/library/site-components.md「HeroCard」)。
+// 组件只收 data 形态(docs/feature/reports/components/site.md「HeroCard」)。
 
 import type { ReactElement } from "react";
 import type { HeroData } from "../../model/types.ts";

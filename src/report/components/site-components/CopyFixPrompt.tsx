@@ -1,7 +1,7 @@
 // CopyFixPrompt:批量修复 prompt 的 web 面。prompt 在 resolve 阶段算好、烘进静态 HTML;
 // 无 JS 时 prompt 全文在原生 <details> 折叠块里完整可读,「复制到剪贴板」是 enhance.js 的
 // 增强行为(data-nre-copy),增强只加浏览行为、不改内容。failures 为 0 时零输出
-// (docs/feature/reports/library/site-components.md「CopyFixPrompt」)。
+// (docs/feature/reports/components/site.md「CopyFixPrompt」)。
 
 import type { ReactElement } from "react";
 import type { CopyFixPromptData } from "../../model/types.ts";

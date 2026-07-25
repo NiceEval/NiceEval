@@ -15,7 +15,7 @@ import { cx } from "../shared.ts";
 
 /**
  * 时效标注(`↩` + 紧凑时距):历史执行(携带,或跨快照拼入)才渲染,新执行不标——subdued
- * 行内事实,不占框、不用警示色(docs/feature/reports/library/entity-lists.md「时效标注」)。
+ * 行内事实,不占框、不用警示色(docs/feature/reports/components/entity-lists.md「时效标注」)。
  * web 面 hover 显示完整执行时刻;ExperimentList / EvalList / AttemptList 三处共用。
  */
 export function HistoricalMark({
@@ -35,7 +35,7 @@ export function HistoricalMark({
 
 /**
  * Eval 父行的时效标注:全部 attempt 均为历史执行时,标最近一次执行(startedAt 最大)的时距;
- * 新旧混合时父行不标,子行各自可见(docs/feature/reports/library/entity-lists.md「时效标注」)。
+ * 新旧混合时父行不标,子行各自可见(docs/feature/reports/components/entity-lists.md「时效标注」)。
  * EvalList 与 ExperimentList 的 Eval 父行共用。
  */
 export function EvalHistoricalMark({
@@ -79,7 +79,7 @@ export function AttemptLocatorBadge({
 /**
  * failureSummary + moreFailures 的展示形态:摘要原样,+N 计数由 moreFailures 驱动。计分制
  * passed attempt 的非 null 摘要只可能来自丢分得分点(规则 6)——"+N more lost points",不是
- * "+N more failures":丢分不是失败,措辞分开(docs/feature/reports/library/entity-lists.md
+ * "+N more failures":丢分不是失败,措辞分开(docs/feature/reports/components/entity-lists.md
  * `AttemptListItem.moreFailures` 字段注释)。
  */
 export function failureSummaryText(item: Pick<AttemptListItem, "failureSummary" | "moreFailures" | "verdict">, locale: ReportLocale): string | null {

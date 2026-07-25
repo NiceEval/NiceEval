@@ -93,7 +93,7 @@ const AGENT = {
   deliberateError: "results-deliberate-error",
 } as const;
 
-/** AttemptDetail 声明的区块顺序(完整出处见 docs/feature/reports/library/attempt-detail.md):
+/** AttemptDetail 声明的区块顺序(完整出处见 docs/feature/reports/components/attempt-detail.md):
  * Summary、Assessment(先 Error,再 Source-or-Assertions)、FixPrompt、Timeline、
  * Diagnostics、Usage、Conversation(仅当 source 尚未包含时才出现)、Trace、Diff。 */
 const ATTEMPT_DETAIL_ORDER = [
@@ -153,7 +153,7 @@ function assertSubsequenceOfCanonicalOrder(present: string[], context: string): 
   for (const block of present) {
     const idx = ATTEMPT_DETAIL_ORDER.indexOf(block);
     assert.ok(idx >= 0, `${context}: rendered block "${block}" isn't in AttemptDetail's canonical block set`);
-    assert.ok(idx > lastIdx, `${context}: block "${block}" rendered out of AttemptDetail's declared order (docs/feature/reports/library/attempt-detail.md), full order: ${present.join(" -> ")}`);
+    assert.ok(idx > lastIdx, `${context}: block "${block}" rendered out of AttemptDetail's declared order (docs/feature/reports/components/attempt-detail.md), full order: ${present.join(" -> ")}`);
     lastIdx = idx;
   }
 }
@@ -235,7 +235,7 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   const failHtml = attemptHtml(evidence, failLocator);
   assert.ok(
     /<details class="nre-source-line nre-tone-bad" open="">/.test(failHtml),
-    `${failLocator}'s failing source line should default-open (docs/feature/reports/library/attempt-detail.md「AttemptSource web 面视觉规范」: 首个失败或警告行默认展开)`,
+    `${failLocator}'s failing source line should default-open (docs/feature/reports/components/attempt-detail.md「AttemptSource web 面视觉规范」: 首个失败或警告行默认展开)`,
   );
   assert.ok(failHtml.includes("expected: 3") && failHtml.includes("received: 2"), `${failLocator} web face is missing the expected/received text for its equals(3) assertion`);
   assert.ok(failHtml.includes('<span class="nre-assertion-badge">failed</span>'), `${failLocator} web face is missing the failed assertion badge`);
@@ -289,7 +289,7 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   //     (裁决见 memory/staleness-demoted-from-warning-to-provenance.md)。produceEvidence() 的 3 个
   //     Experiment 都是正常收尾的完整快照,不触发这三种 kind 中的任何一种,所以这份证据里
   //     warnings 恒为空集——ScopeWarnings 两面零输出、不渲染空容器
-  //     (docs/feature/reports/library/site-components.md「空警告集两面零输出,不渲染空容器」)。
+  //     (docs/feature/reports/components/site.md「空警告集两面零输出,不渲染空容器」)。
   //     断言的是「不存在」,不是某个具体计数;折叠/展开阈值、徽标聚合这些行为需要一份真正触发
   //     警告的 fixture(比如强杀中断产生 unfinished-snapshot)才能验证,不属于本仓库现有证据的
   //     覆盖范围(见文件头覆盖缺口 #7)。
@@ -445,7 +445,7 @@ async function verifyTerminalTypography(evidence: Evidence): Promise<void> {
   // Results 单元格在某些运行里自己也可能折行到续行上(在本任务开发过程中观察到过——真实的
   // duration/token/cost 文本长度会挤占共享的 80 列预算),那样的话基于文本的匹配会悄悄地
   // 匹配不上。行的排列顺序是按通过率降序,同值时按 experiment id 升序打平(docs/feature/
-  // reports/library/metric-views.md「组件级 sort 是稳定排序,同值时仍以 key 收口」)——
+  // reports/components/tables.md「组件级 sort 是稳定排序,同值时仍以 key 收口」)——
   // main(100%)排第一,然后是 deliberate-error 排在 deliberate-fail 前面(两者都是 0%,
   // 字典序上 "deliberate-error" < "deliberate-fail")——在开发过程中经过多次真实运行确认
   // 这个顺序是稳定的。

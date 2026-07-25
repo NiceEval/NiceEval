@@ -67,7 +67,7 @@ export interface Metric<Name extends string = string> {
   /**
    * 指标值的自然边界(如通过率 0–1、成本下界 0)。图轴呼吸边距不越过声明的边界——
    * 贴边数据点如实落在框线上(如通过率 100%),那是指标的自然边界,不是裁剪
-   * (docs/feature/reports/library/metric-views.md「图轴值域」)。
+   * (docs/feature/reports/components/charts.md「值域」)。
    */
   bounds?: { min?: number; max?: number };
   /**
@@ -152,7 +152,7 @@ export interface MetricColumn {
   unit?: string;
   /** 渲染提示:排序方向、轴向、涨跌配色。 */
   better?: "higher" | "lower";
-  /** = metric.bounds,原样投影;图轴值域推定读这里(docs/feature/reports/library/metric-views.md「图轴值域」)。 */
+  /** = metric.bounds,原样投影;图轴值域推定读这里(docs/feature/reports/components/charts.md「值域」)。 */
   bounds?: { min?: number; max?: number };
 }
 
@@ -176,7 +176,7 @@ export interface MetricCell {
 }
 
 /**
- * 数据形状的字段命名规则(docs/feature/reports/library/metric-views.md「共用数据形状」):
+ * 数据形状的字段命名规则(docs/feature/reports/components/tables.md「共用数据形状」):
  * 维度名字段 = 产生它的选项名 + `Dimension` 后缀,值是解析后的维度 name;
  * 条目数组一律叫 `rows`(Matrix 的稀疏格子叫 `cells`);条目内的 key / series 是维度值,不带后缀。
  */
@@ -262,7 +262,7 @@ export interface ScoreboardData {
 }
 
 /**
- * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/library/metric-views.md
+ * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/components/tables.md
  * 「DeltaTable」)。`verdict` / `totalScore` 用与榜单同一套题目级判定口径(`totalScore` 取各
  * attempt 的均值);`totalTokens` / `totalCostUSD` 是该题在该条件下全部 attempt 的**合计**,
  * 不是均值。
@@ -377,7 +377,7 @@ export type ScoringComposition = "pass" | "points" | "mixed";
 /**
  * 一个范围的摘要:快照时间窗、experiment / eval / attempt 数、两级判定计票、端到端通过率
  * 和总成本。eval 的身份键是 experimentId + evalId;data 恒携带两级计票,渲染面显示哪一级
- * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/library/summaries.md)。
+ * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/components/summaries.md)。
  */
 export interface ScopeSummaryData {
   /** 贡献当前数据的快照时间范围;空范围为 null,不编造当前时间。 */
@@ -409,7 +409,7 @@ export interface ScopeSummaryData {
 // ───────────────────────── 站点组件(Hero / CopyFixPrompt / TraceWaterfall)─────────────────────────
 
 /**
- * `HeroCard` 的数据(docs/feature/reports/library/site-components.md):站点标题区的
+ * `HeroCard` 的数据(docs/feature/reports/components/site.md):站点标题区的
  * 运行 meta——最后运行时间与快照合成来源。标题不在 data 里,它是站点声明与 Scope 的合成物,
  * 经 `HeroCardProps.title` 传入。
  */
@@ -421,7 +421,7 @@ export interface HeroData {
 }
 
 /**
- * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/library/site-components.md):
+ * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/components/site.md):
  * 只携带 experimentId / startedAt / DiagnosticRecord,不带 Snapshot 本体、`evals` 或
  * `AttemptHandle`,避免把文件读取能力拖进浏览器边界。
  */
@@ -439,7 +439,7 @@ export type SnapshotDiagnosticsData = readonly SnapshotDiagnosticsItem[];
 
 /**
  * `CopyFixPrompt` 的数据:resolve 期算好的修复 prompt 全文与参与的失败数
- * (docs/feature/reports/library/site-components.md)。
+ * (docs/feature/reports/components/site.md)。
  */
 export interface CopyFixPromptData {
   /** 修复 prompt 全文;失败逐条含 eval id、主失败摘要与 attempt 下钻命令。 */
@@ -577,7 +577,7 @@ export interface ExperimentListItem {
 
 // ───────────────────────── Attempt 详情组件族 ─────────────────────────
 //
-// 11 个叶子组件的 data 契约(docs/feature/reports/library/attempt-detail.md)。每个都由
+// 11 个叶子组件的 data 契约(docs/feature/reports/components/attempt-detail.md)。每个都由
 // 同名 `attempt*Data(evidence: AttemptEvidence)` 同步派生,不读文件、不 fetch——
 // loadAttemptEvidence 已经一次性装配好全部证据。`AttemptSummary` 恒非空;其余在对应
 // 能力位为空时函数返回 null,两面渲染为空输出。
@@ -760,7 +760,7 @@ export interface AttemptDiagnosticsData {
 
 /**
  * `UsageTable` 的 data:判定、轮数、工具调用数、token 拆分与成本摊成的单行用量摘要;组装口径单源
- * 见 docs/feature/reports/library/attempt-detail.md#usagetable-组装口径单源。identity 字段
+ * 见 docs/feature/reports/components/attempt-detail.md#usagetable-组装口径单源。identity 字段
  * (`locator`/`experimentId`/`evalId`/`attempt`/`verdict`)恒有——它们不是「usage 有没有」的一部分,
  * 是这一行归属哪个 attempt 的身份。其余字段各自独立地只在事实真实存在时出现:
  *

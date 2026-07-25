@@ -93,7 +93,7 @@ describe("placePointLabels", () => {
 });
 
 // 分区「图轴值域」:对 paddedAxisDomain / axisScale 直接断言扩后的 [min, max],
-// 不经渲染(docs/feature/reports/library/metric-views.md「图轴值域」)。
+// 不经渲染(docs/feature/reports/components/charts.md「值域」)。
 
 describe("paddedAxisDomain", () => {
   it("两端各扩数据跨度的 20%:数据极值不落在域端点上", () => {

@@ -147,7 +147,7 @@ function defineTheme(theme: ReportTheme): Readonly<ReportTheme>;
 | `warning` | `#9A6700` | `#E8B84A` |
 | `series` | `#2A78D6`, `#1BAF7A`, `#EDA100`, `#008300`, `#E34948`, `#EB6834` | `#3987E5`, `#199E70`, `#C98500`, `#008300`, `#E66767`, `#D95926` |
 
-组件根据领域语义选 token，不读取 hex 值后反推意义。例如 `MetricScatter` 的 series 始终走 `series`，`DeltaTable` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+组件根据领域语义选 token，不读取 hex 值后反推意义。例如图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#系列色分配单位是页)），`DeltaTable` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
 
 NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从报告的 `accent` 取色。报告主题不是隐藏或伪装宿主品牌的机制。
 

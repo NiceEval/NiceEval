@@ -1,6 +1,6 @@
 // AttemptTimeline:runner phases 主链 + 收尾段,children(hook/command/turn)默认收合、
 // 失败节点带标记;turn 节点按 traceId 关联同一轮的 agent/model/tool span。没有 phase 时
-// 零输出(docs/feature/reports/library/attempt-detail.md)。
+// 零输出(docs/feature/reports/components/attempt-detail.md)。
 
 import type { ReactElement } from "react";
 import type { AttemptTimelineData } from "../../model/types.ts";

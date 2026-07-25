@@ -16,7 +16,7 @@
 //   assistantTurns(assistant-turns)                null     实测;o11y 缺失→null 同左  同左          lower
 //   repeatedFailedCommands(repeated-failed-commands) null   实测;o11y 缺失→null 同左  同左          lower
 //
-// bounds(自然边界,驱动图轴呼吸边距的钳制,见 docs/feature/reports/library/metric-views.md
+// bounds(自然边界,驱动图轴呼吸边距的钳制,见 docs/feature/reports/components/tables.md
 // 「图轴值域」):三个通过率指标与 examScore 是 { min: 0, max: 1 };其余七个(totalScore、
 // durationMs、tokens、costUSD、assistantTurns、repeatedFailedCommands)是 { min: 0 }。
 //

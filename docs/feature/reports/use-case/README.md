@@ -11,12 +11,12 @@
 ## 比较、评分与定位
 
 - [从终端做跨条件归因](cli-cross-condition-attribution.md) —— 多 `--exp` 对照矩阵 / `--usage` / `--grep` / `--json`。
-- [比较质量、成本与前沿](compare-quality-cost.md) —— `ExperimentComparison` / `MetricScatter` / `MetricTable`。
+- [比较质量、成本与前沿](compare-quality-cost.md) —— `ExperimentComparison` / `ScatterChart` / `MetricTable`。
 - [固定题集做考试成绩单](fixed-suite-scorecard.md) —— `Scoreboard`。
 - [分数低时区分任务失败与执行失败](diagnose-reliability.md) —— `MetricTable` + 三种通过率。
-- [定位「哪道题 × 哪个配置」出问题](locate-config-eval-interactions.md) —— `MetricMatrix` / `MetricBars`。
+- [定位「哪道题 × 哪个配置」出问题](locate-config-eval-interactions.md) —— `MetricMatrix` / `BarChart`。
 - [比较基线与候选的成对差异](measure-ab-delta.md) —— `DeltaTable`。
-- [扫描参数档位的趋势与拐点](sweep-parameter-trend.md) —— `MetricLine`。
+- [扫描参数档位的趋势与拐点](sweep-parameter-trend.md) —— 数值轴 `LineChart`。
 - [跟踪一个 Experiment 的历次 Snapshot](track-experiment-history.md) —— `results.experiments` + snapshot 维度。
 
 ## 完整性、定制与交付
@@ -41,12 +41,12 @@
 | 能力 | 主用例 |
 |---|---|
 | `FailureList` / `CopyFixPrompt` / `AttemptDetail` | [修失败](triage-failures.md) |
-| `ExperimentComparison` / `MetricScatter` | [质量 × 成本](compare-quality-cost.md) |
+| `ExperimentComparison` / `ScatterChart` | [质量 × 成本](compare-quality-cost.md) |
 | `Scoreboard` | [固定题集考试](fixed-suite-scorecard.md) |
 | `MetricTable` | [可靠性诊断](diagnose-reliability.md) · [质量 × 成本](compare-quality-cost.md) |
-| `MetricMatrix` / `MetricBars` | [配置 × Eval 定位](locate-config-eval-interactions.md) |
+| `MetricMatrix` / `BarChart` | [配置 × Eval 定位](locate-config-eval-interactions.md) |
 | `DeltaTable` | [A/B 成对差异](measure-ab-delta.md) |
-| `MetricLine` | [参数扫描](sweep-parameter-trend.md) |
+| `LineChart` | [参数扫描](sweep-parameter-trend.md) |
 | snapshot 维度 / `ctx.results.experiments` | [Experiment 历史](track-experiment-history.md) |
 | `ScopeWarnings` / `SnapshotDiagnostics` / `ScopeSummary` / `ExperimentList` | [范围完整性](audit-scope-quality.md) |
 | `defineMetric` / `CustomDimension` | [业务指标](build-custom-metric.md) |

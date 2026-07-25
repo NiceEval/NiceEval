@@ -1064,7 +1064,7 @@ table.nre,
 }
 
 /* Source:GitHub diff 式整块横向滚动;与产品站示例卡同一套视觉语言(整行 8% 浅染 + 2px 左缘 +
-   行号位图标,规范见 docs/feature/reports/library/attempt-detail.md)。普通行只是 div,
+   行号位图标,规范见 docs/feature/reports/components/attempt-detail.md)。普通行只是 div,
    只有有证据的行才是可点击 details。 */
 .nre-attempt-source {
   overflow: hidden;

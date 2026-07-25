@@ -20,11 +20,10 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 | 实体列表 | 失败列表 | Failure list | `FailureList` | `AttemptList` 的成品过滤：只列 failed / errored，按开始时间倒序 |
 | 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度；每格是一个聚合指标值 |
 | 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格；每格是一个聚合指标值 |
-| 指标图形 | 分组条形图 | Grouped bar chart | `MetricBars` | 两个可配置维度形成分组和系列；每根条是一个聚合指标值 |
 | 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值；按固定题集算总分和分科得分 |
-| 指标图形 | 指标散点图 | Metric scatter plot | `MetricScatter` | 每点一个可配置维度值，通常是 experiment；坐标是两个聚合指标值 |
-| 指标图形 | 指标趋势图 | Metric line chart | `MetricLine` | 每点一个 experiment；横轴是数值配置变量，纵轴是聚合指标值 |
-| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果快照；格内是指标值及差值 |
+| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一道评估用例、每组列一个条件；格内是各条件的值与对基准的差 |
+| 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道评估用例、每列一个条件；格内是历史全部执行的判定计数 |
+| 图表 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一个坐标系；`XAxis` / `YAxis` 定轴，`Line` / `Bar` / `Area` / `Scatter` 各画一组数据 |
 
 `Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Style`、`Table`、`Tabs` 和 `Tab` 是十个排版原语，不计算结果，因此不算一种分析图。它们的中文统称依次是行、列、网格、分节、摘要项、文本、样式、表格、标签页和标签；代码里始终使用 API 名。
 
@@ -42,11 +41,17 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 
 ```tsx
 // 省略 input/data：用宿主注入的当前 Scope 自动取数
-<MetricTable rows="agent" columns={[endToEndPassRate, costUSD]} filter />
+<MetricTable filter>
+  <Rows dimension="agent" sort={endToEndPassRate} />
+  <Column metric={endToEndPassRate} />
+  <Column metric={costUSD} />
+</MetricTable>
 
 // 自己先算好数据再传：中间可以插入任意 JavaScript 加工
 <MetricTable data={await metricTableData(scope, { rows: "agent", columns: [endToEndPassRate, costUSD] })} filter />
 ```
+
+要取哪些数据写在子标签里：一行一个 `<Column>`，行维度一个 `<Rows>`，图表的轴和每组数据也各是一个子标签。要加一列就加一行 JSX，不用去改一个越来越长的选项数组；每个子标签还能带自己的设置（某一列的显示名、某条数据的误差线、某根柱的强调色），不用在外层再摆一张按名字对应的表。
 
 两种写法产出完全相同；同一个组件同时给出 `data` 和取数选项会报错，两者二选一。所有计算函数的第一个参数都是 Scope（或手工挑的结果快照数组）；产出的数据都是普通可序列化 JSON，可以先存下来、传给别的进程，或者原样喂给对应组件的 `data` prop。`niceeval/report/react` 入口的同名组件只收 `data`，不做取数——那一层是纯 React 渲染，见[自定义报告](/zh/tutorials/custom-reports)。
 
@@ -80,11 +85,6 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 
 ```tsx
 <Table
-  columns={[
-    { key: "eval", header: "题目" },
-    { key: "pass", header: "通过率", align: "right" },
-    { key: "cost", header: "成本", align: "right" },
-  ]}
   rows={[
     {
       key: "记忆/写缓存",
@@ -97,7 +97,11 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
       cells: { eval: "浏览/表单填写", pass: null, cost: null },
     },
   ]}
-/>
+>
+  <Column key="eval" header="题目" />
+  <Column key="pass" header="通过率" align="right" />
+  <Column key="cost" header="成本" align="right" />
+</Table>
 ```
 
 ```text
@@ -112,7 +116,7 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 
 某一列的格子只想显示前几行时，给这一列加 `maxLines`：超出的行丢弃，最后一行按显示宽度收口成 `…`；表头不受这个限制。网页面不消费这个字段——格子的高度由你自己的样式决定。
 
-指标表、指标矩阵、成绩单和成对差异表的终端面就建在 `Table` 上，所以你的表和官方的表用的是同一把尺子。表格之外的形态要自己排字符时，用[自定义报告](/zh/tutorials/custom-reports)「换形态」一节里那套文本排版函数。
+指标表、指标矩阵、成绩单、成对差异表和稳定性矩阵的终端面就建在 `Table` 上，所以你的表和官方的表用的是同一把尺子。表格之外的形态要自己排字符时，用[自定义报告](/zh/tutorials/custom-reports)「换形态」一节里那套文本排版函数。
 
 ## 摘要格（`Grid` / `Stat`）
 
@@ -144,7 +148,7 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 
 ## 实验比较（`ExperimentComparison`）
 
-`niceeval show` / `view` 不传 `--report` 时使用的默认组合件。它把同一份 Scope 显式传给 `ScopeSummary`、成本 × 主指标的 `MetricScatter` 和 `ExperimentList` 三个组件，自己不产出数据，也不合并三者的结果：
+`niceeval show` / `view` 不传 `--report` 时使用的默认组合件。它把同一份 Scope 显式传给 `ScopeSummary`、成本 × 主指标的散点图和 `ExperimentList` 三个组件，自己不产出数据，也不合并三者的结果：
 
 ```tsx
 <ExperimentComparison />
@@ -158,13 +162,17 @@ description: "报告文件里能摆的全部官方双面组件：每个组件回
 
 组卡使用 `Pass rate / 通过率`（计分制 Scope 换成 `Total score / 总分`，两类实验同时在场时两个都显示）、`Experiments / 实验`、`Evals / Eval`、`Attempts / Attempt`、`Eval results / Eval 结果`、`Total cost / 总成本` 这套字段标签，不在标签里重复“数”“次”或“计票”。时间显示为本地化到分钟的 `Last run / 最近运行` 或 `Run range / 运行范围`，不直接暴露 ISO 字符串；成本数据覆盖不全时写明“`63/72 次有成本数据`”，不显示没有上下文的 `63/72`。六项 KPI 在宽卡片保持同一行，空间不足时按三项或两项一组换行，避免总成本单独掉到下一行。
 
-下面的 `MetricScatter`、`ScopeSummary` 和 `ExperimentList` 同样忠实消费调用方传入的数据，不推导隐藏范围。它等价于把三个组件按下面这样手工摆放——想自定义顺序或搭配其它组件时，照这个形状写（示例是通过制 Scope；计分制把 `y` 换成 `totalScore`）：
+散点图、`ScopeSummary` 和 `ExperimentList` 同样忠实消费调用方传入的数据，不推导隐藏范围。`ExperimentComparison` 等价于把三个组件按下面这样手工摆放——想自定义顺序或搭配其它组件时，直接照这个形状写，不用去改 `ExperimentComparison`（示例是通过制 Scope；计分制把纵轴换成 `totalScore`）：
 
 ```tsx
 export const MyComparison = defineComponent((_props, ctx) => (
   <Col>
     <ScopeSummary input={ctx.scope} />
-    <MetricScatter input={ctx.scope} points="experiment" x={costUSD} y={endToEndPassRate} />
+    <ScatterChart input={ctx.scope}>
+      <XAxis metric={costUSD} />
+      <YAxis metric={endToEndPassRate} />
+      <Scatter points="experiment" x={costUSD} y={endToEndPassRate} />
+    </ScatterChart>
     <ExperimentList input={ctx.scope} filter />
   </Col>
 ));
@@ -198,7 +206,7 @@ const CompareSummary = defineComponent((_props, ctx) => (
 
 每项固定代表一个 experiment。主行显示 experiment id、agent、model、flags、评估用例判定构成、主指标（通过制实验是通过率，计分制实验是总分；两类同时在场时两列都显示，不适用的格子是 `—`）、Tokens、成本和耗时。默认按主指标从高到低排序；两类实验同时在场时改按 experiment id 字典序，两个指标列仍各自可点击排序。默认 `ExperimentComparison` 把当前 Scope 的全部条目交给它；组件本身不猜边界。
 
-行标签默认缩成 experiment id 在当前列表里的最短唯一后缀——末段唯一就只显示末段，撞名的 id 各自向前多取一段直到能区分为止（与 `MetricScatter` 散点的点标签同一算法）。排序、过滤和折叠展开始终用完整 id，不受显示名影响。中文副行用“`8 个 Eval`”而不是“`8 道题`”。
+行标签默认缩成 experiment id 在当前列表里的最短唯一后缀——末段唯一就只显示末段，撞名的 id 各自向前多取一段直到能区分为止（与散点图的点标签同一算法）。排序、过滤和折叠展开始终用完整 id，不受显示名影响。agent 名的颜色按完整值取，同一页里图例、散点和这张表的同一个 agent 恒是同一种颜色。中文副行用“`8 个 Eval`”而不是“`8 道题`”。
 
 ```tsx
 <ExperimentList filter />
@@ -306,13 +314,13 @@ inspect: niceeval show @<id> [--source|--execution|--diff]
 一行一个维度值，一列一个指标，回答「谁整体更好」。行维度、指标列、排序全部可换，自定义指标（`defineMetric`）与内置指标同列。
 
 ```tsx
-<MetricTable
-  rows="agent"
-  columns={[endToEndPassRate, examScore, costUSD, durationMs]}
-  sort={endToEndPassRate}
-  evals="coding/"
-  filter
-/>
+<MetricTable evals="coding/" filter>
+  <Rows dimension="agent" sort={endToEndPassRate} />
+  <Column metric={endToEndPassRate} />
+  <Column metric={examScore} />
+  <Column metric={costUSD} />
+  <Column metric={durationMs} />
+</MetricTable>
 ```
 
 ```text
@@ -321,16 +329,20 @@ bub     87%         0.91        $0.42
 codex   80% 12/15   0.86        $0.51
 ```
 
-两面都按 `sort` 预排，基准顺序一致——要固定换一种排序，改一行重跑。`12/15` 角标表示该格 15 个 attempt 里只有 12 个测得了这个指标。`sort` 必须是 `columns` 中同一个 Metric 实例且声明了 `better`，否则报错；省略时按行 key 字典序，避免为方向不明的指标猜顺序。`filter` 只给网页面加行过滤框，不改变数据或终端输出。
+两面都按 `sort` 预排，基准顺序一致——要固定换一种排序，改一行重跑。`12/15` 角标表示该格 15 个 attempt 里只有 12 个测得了这个指标。`<Rows sort>` 必须是本表某个 `<Column>` 的指标且声明了 `better`，否则报错；省略时按行 key 字典序，避免为方向不明的指标猜顺序。`filter` 只给网页面加行过滤框，不改变数据或终端输出。
 
-`rows: "experiment"` 时每行自动带 agent 与 model 列——结果里现成的元信息，不用配置。`MetricTable` 不展开实体层级：要看 experiment、评估用例或 Attempt 的固定诊断字段，用上面三个实体列表；要自由换维度和指标列，用指标表。
+`<Rows dimension="experiment" />` 时每行自动带 agent 与 model 列——结果里现成的元信息，不用配置。`MetricTable` 不展开实体层级：要看 experiment、评估用例或 Attempt 的固定诊断字段，用上面三个实体列表；要自由换维度和指标列，用指标表。
 
 ## 指标矩阵（`MetricMatrix`）
 
 行 × 列两个维度、格子里一个指标，回答「哪道题谁挂了」。稀疏渲染：没有样本的格子空着，不编数。
 
 ```tsx
-<MetricMatrix rows="eval" columns="agent" cell={endToEndPassRate} />
+<MetricMatrix>
+  <Rows dimension="eval" />
+  <Columns dimension="agent" />
+  <Cells metric={endToEndPassRate} />
+</MetricMatrix>
 ```
 
 ```text
@@ -344,16 +356,16 @@ next: niceeval show geometry/area
 
 网页面点格子深链到该格的 attempt；终端面在表下印下钻命令。
 
-## 分组条形图（`MetricBars`）
+## 分组条形图（`BarChart`）
 
-同一份矩阵数据的另一种摆法：按组并排比大小，回答「每个科目上谁领先、差多少」。组维度一组条、系列维度一根条、条长是指标值——benchmark 发布图（Terminal-Bench、BrowseComp 各一组，每个 agent 一根柱）就是这个形状。
+同一批数据换成条形：按组并排比大小，回答「每个科目上谁领先、差多少」。横轴一组条、每条数据一根柱、柱高是指标值——benchmark 发布图（Terminal-Bench、BrowseComp 各一组，每个 agent 一根柱）就是这个形状。
 
 ```tsx
-<MetricBars
-  rows="evalGroup"        // 一组条 = 一个科目/benchmark
-  columns="agent"         // 一根条 = 一个 agent
-  cell={endToEndPassRate}
-/>
+<BarChart>
+  <XAxis dimension="evalGroup" />     {/* 一组条 = 一个科目/benchmark */}
+  <YAxis metric={endToEndPassRate} />
+  <Bar metric={endToEndPassRate} by="agent" />   {/* 一根条 = 一个 agent */}
+</BarChart>
 ```
 
 ```text
@@ -365,24 +377,23 @@ geometry
   codex   —
 ```
 
-网页面是竖向分组柱：柱顶标数值，系列颜色与其它组件的稳定配色一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。`MetricMatrix` 和 `MetricBars` 写同一份取数选项时，两个组件不会重复计算——只要 `input` 与选项相同，底层数据只算一次。
+网页面是竖向分组柱：柱顶要数值就加一个 `<LabelList position="top" />`，颜色与同页其它组件一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。同一页里矩阵和条形图用同一组维度时，底层数据只算一次。
 
 ## 成绩单（`Scoreboard`）
 
-总分 + 分科小计，回答「这套题它能得几分」。逐题分值制：权重按评估用例 id 前缀配置，分母对所有被打分者恒定，没跑到的题挣 0 分并如实报 `missing`。
+总分 + 分科小计，回答「这套题它能得几分」。逐题分值制：题目和分科逐条写在子标签里，权重挂在题目或分科上，分母对所有被打分者恒定，没跑到的题挣 0 分并如实报 `missing`。
 
 ```tsx
-<Scoreboard
-  rows="agent"
-  questions={[
-    "security/sql-injection",
-    "security/path-traversal",
-    "correctness/retry",
-  ]}
-  weights={{ "security/": 3, "correctness/": 2 }}
-  fullMarks={100}
-  score={examScore}
-/>
+<Scoreboard fullMarks={100} score={examScore}>
+  <Rows dimension="agent" />
+  <Subject name="security" weight={3}>
+    <Question id="security/sql-injection" />
+    <Question id="security/path-traversal" />
+  </Subject>
+  <Subject name="correctness" weight={2}>
+    <Question id="correctness/retry" />
+  </Subject>
+</Scoreboard>
 ```
 
 ```text
@@ -391,20 +402,28 @@ bub     86.5/100   45/50          41.5/50
 codex   71.0/100   40/50          31/50 (1 missing)
 ```
 
-`questions` 是显式固定题集，不从已观测的 Attempt 并集猜——所有配置都没跑到的题仍然留在分母里按 0 分计。分数为 `null`（跑了但测不了）与完全没跑到的题分开计数（分别是 `unscorable` 和 `unrun`），成绩单能回答「这 0 分是没去考还是考了判不了」。`score` 默认是 `examScore`，每道题必须产出 `[0, 1]`；总分是 `fullMarks × earned / possible`。
+题集是你写下的 `<Question>` 列表，不从已观测的 Attempt 并集猜——所有配置都没跑到的题仍然留在分母里按 0 分计。分数为 `null`（跑了但测不了）与完全没跑到的题分开计数（分别是 `unscorable` 和 `unrun`），成绩单能回答「这 0 分是没去考还是考了判不了」。`score` 默认是 `examScore`，每道题必须产出 `[0, 1]`；总分是 `fullMarks × earned / possible`。题目多的时候用普通 `map` 展开 `<Question>`，不用手抄一长串。不想给分科起名时，把 `<Question>` 直接放在 `<Scoreboard>` 下，分科按评估用例 id 的父路径自动归。
 
-## 指标散点图（`MetricScatter`）
+## 散点图（`ScatterChart`）
 
-每个点一个配置、两个指标各占一轴，回答「又好又便宜的是谁」。`series` 把同 agent 不同档位的点连成线；`better` 驱动轴向——`lower` 的轴反向画，「好」的角落恒在右上。
+每个点一个配置、两个指标各占一轴，回答「又好又便宜的是谁」。`by` 把同 agent 不同档位的点归成一组；`better` 驱动轴向——`lower` 的轴反向画，「好」的角落恒在右上。
 
 ```tsx
-<MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
+<ScatterChart>
+  <XAxis metric={costUSD} />
+  <YAxis metric={endToEndPassRate} />
+  <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
+</ScatterChart>
 
-// 同族变体连线：同 line 值的实验一色成线，connect 连出基线 → 变体的位移
-<MetricScatter points="experiment" series={label("line")} connect x={costUSD} y={endToEndPassRate} />
+// 同族变体连线：同 line 值的实验一色成线，line 连出基线 → 变体的位移
+<ScatterChart>
+  <XAxis metric={costUSD} />
+  <YAxis metric={endToEndPassRate} />
+  <Scatter points="experiment" by={label("line")} x={costUSD} y={endToEndPassRate} line />
+</ScatterChart>
 ```
 
-`MetricScatter` 直接消费传入的 Scope，宿主渲染前替你算好数据；默认 `ExperimentComparison` 也把当前 Scope 原样交给它。要嵌预先算好的数据，改传 `data`。
+散点直接消费传入的 Scope，宿主渲染前替你算好数据；默认 `ExperimentComparison` 也把当前 Scope 原样交给它。要嵌预先算好的数据，改传 `data`。
 
 ```text
 pass ↑                                    （好 → 右上）
@@ -418,15 +437,20 @@ pass ↑                                    （好 → 右上）
 A bub-high   B bub-medium   C codex-high   D codex-low
 ```
 
-网页面点带悬停提示（值与 `samples/total`，禁用 JS 时退化为图内提示）、同系列连线、点击深链下钻。终端面用字母标点，图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。画得出来的点是 0 个时，两个面都明说这两个指标没有可用数据，不留一片空白；1 个点也照常出图。维度槽也收自定义维度和 `flag()`（experiment 声明的变量），怎么选见[自定义报告](/zh/tutorials/custom-reports)的「换分组」一节。
+网页面点带悬停提示（值与 `samples/total`，禁用 JS 时退化为图内提示）、同系列连线、点击深链下钻。终端面用字母标点，图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。画得出来的点是 0 个时，两个面都明说这两个指标没有可用数据，不留一片空白；1 个点也照常出图。`points` 和 `by` 也收自定义维度和 `flag()`（experiment 声明的变量），怎么选见[自定义报告](/zh/tutorials/custom-reports)的「换分组」一节。想在同一张图上再叠一条平均线或一根柱，把 `<Line>` / `<Bar>` 和散点一起放进 `<ComposedChart>`。
 
-## 指标趋势图（`MetricLine`）
+## 趋势图（`LineChart`）
 
-x 是有序变量、每个系列一条线，回答「变量拧大，分数怎么走」——并行 agent 数 × 模拟延迟 × 得分这类 scaling 图就是它。与 `MetricScatter` 的分工：散点图的两轴都是测出来的指标（找优势前沿），趋势图的 x 是你配置的变量（看趋势）。变量在 experiment 的 flags 里声明，报告用 `flag()` 或数值型 flag 助手直接引用，不从 experiment 命名里解析。
+x 是有序变量、每组数据一条线，回答「变量拧大，分数怎么走」——并行 agent 数 × 模拟延迟 × 得分这类 scaling 图就是它。与散点图的分工：散点图的两轴都是测出来的指标（找优势前沿），趋势图的 x 是你配置的变量（看趋势）。变量在 experiment 的 flags 里声明，报告用 `flag()` 或数值型 flag 助手直接引用，不从 experiment 命名里解析。
 
 ```tsx
 const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
-<MetricLine x={budget} series="agent" y={endToEndPassRate} />
+
+<LineChart>
+  <XAxis numeric={budget} />
+  <YAxis metric={endToEndPassRate} />
+  <Line metric={endToEndPassRate} by="agent" />
+</LineChart>
 ```
 
 ```text
@@ -444,26 +468,27 @@ pass ↑
 A 1 agents   B 4 agents   C 16 agents
 ```
 
-每个点是一个 experiment 的聚合，与其它组件同一套指标引擎；同系列的点按 x 排序连线。网页面每个点可 hover、可深链下钻。终端面同系列共用一个字母、沿 x 排布，趋势肉眼可读；y 缺数据的点不画、注脚报数，点太密降级为坐标表。
+每个点是一个 experiment 的聚合，与其它组件同一套指标引擎；同一条线上的点按 x 排序连起来。网页面每个点可 hover、可深链下钻。终端面同系列共用一个字母、沿 x 排布，趋势肉眼可读；y 缺数据的点不画、注脚报数，点太密降级为坐标表。
 
 ## 成对差异表（`DeltaTable`）
 
-每行一对配置、每列一个指标，格子里 A、B、Δ 三个值，回答「这个开关值不值」「这次修复翻转了什么」。涨跌好坏由 `better` 判定，任一侧缺数据 Δ 显示为缺，不硬算。
+每行一道评估用例、每组列一个条件，格子里是该条件的结果与对基准的差，回答「这个开关值不值」「这次修复翻转了什么」。涨跌好坏由 `better` 判定，任一侧缺数据时差值显示为缺，不硬算。
 
 ```tsx
-// 字面形态：逐对声明，label 自定义
-<DeltaTable
-  by="experiment"
-  pairs={[{ label: "memory", a: "compare/baseline", b: "compare/with-memory" }]}
-  metrics={[endToEndPassRate, costUSD, durationMs]}
-/>
+// 逐个写下条件，其中一个是基准
+<DeltaTable>
+  <Columns dimension="experiment">
+    <Condition value="compare/baseline" baseline />
+    <Condition value="compare/with-memory" />
+  </Columns>
+</DeltaTable>
 
-// 派生形态：按 flag 机械配对，加实验不用改报告
-<DeltaTable
-  by="experiment"
-  pairs={pairsByFlag("memory")}
-  metrics={[endToEndPassRate, costUSD, durationMs]}
-/>
+// 按 flag 机械导出条件，加实验不用改报告
+<DeltaTable>
+  <Columns dimension="experiment">
+    <FlagConditions flag="memory" />
+  </Columns>
+</DeltaTable>
 ```
 
 ```text
@@ -472,7 +497,7 @@ bub     87% → 93%   +6%        $0.42 → $0.45   +$0.03
 codex   80% → 80%   ±0         $0.51 → —       —
 ```
 
-「这次 vs 上次」（同一配置的两个结果快照）也是它：`pairs` 的 `a` / `b` 除 experiment id 外也收快照键 `<experimentId> @ <startedAt>`——手挑的快照数组（比如某个实验的最新一次和上一次）配这种写法。`pairsByFlag(name)` 按一个 flag 机械导出全部 A/B 对：实验矩阵是「同配置开关某个 flag」时，配对关系本来就是 experiment 配置的推论，手抄 id 字面量等于把配置复写进报告，加实验后报告会静默缺行。
+「这次 vs 上次」（同一配置的两个结果快照）也是它：把 `<Columns dimension="snapshot">` 配上手挑的快照数组，两次运行各成一列。`<FlagConditions>` 按一个 flag 机械导出全部条件：实验矩阵是「同配置开关某个 flag」时，条件关系本来就是 experiment 配置的推论，手抄 id 字面量等于把配置复写进报告，加实验后报告会静默缺列。
 
 ## 官方组件之外
 

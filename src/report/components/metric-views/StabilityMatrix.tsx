@@ -1,6 +1,6 @@
 // StabilityMatrix:历史全执行的稳定性矩阵。行 = eval,列 = by 维度取值,格是该组合全部历史
 // 执行(跨快照按身份键去重、不设可比性门槛)的判定计数——回答「这道题历史上稳不稳」,不是
-// 现刻水位下「现在算不算过」(docs/feature/reports/library/metric-views.md「StabilityMatrix」)。
+// 现刻水位下「现在算不算过」(docs/feature/reports/components/tables.md「StabilityMatrix」)。
 // 稀疏格子:没有样本的格子不出现,不编三个 0 冒充跑过。
 
 import type { ReactElement } from "react";

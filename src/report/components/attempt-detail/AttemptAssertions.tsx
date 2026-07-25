@@ -1,5 +1,5 @@
 // AttemptAssertions:全量 assertion,非 passed 默认展开、passed 按 group 折叠计数。
-// 没有 assertion 时零输出(docs/feature/reports/library/attempt-detail.md)。
+// 没有 assertion 时零输出(docs/feature/reports/components/attempt-detail.md)。
 
 import type { ReactElement } from "react";
 import type { AttemptAssertionsData } from "../../model/types.ts";

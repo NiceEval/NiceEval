@@ -54,7 +54,7 @@ const RunOverviewGrid = defineComponent(async (_props: Record<string, never>, ct
  * 自定义 attempt-input page 的内容组件 —— 参照 src/report/built-in/standard.tsx 的
  * standardAttemptPage 写法(组合已有区块表达内建排列顺序),但不照抄它的全量区块:只保留身份、
  * 断言/源码评估、修复 prompt 与 diagnostics 四块,不带 timeline/usage/conversation/trace/diff——
- * 一张更轻量的"复核卡片",证明作者能重排 docs/feature/reports/library/attempt-detail.md
+ * 一张更轻量的"复核卡片",证明作者能重排 docs/feature/reports/components/attempt-detail.md
  * 列出的公开叶子组件,不依赖 AttemptDetail 成品。
  */
 const AttemptReviewCard = defineComponent((_props: Record<string, never>, ctx) => {

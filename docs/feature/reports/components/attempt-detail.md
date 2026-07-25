@@ -1,4 +1,4 @@
-# Attempt 详情组件
+# Attempt 详情
 
 Attempt 详情是一张 page，不是 `ReportDefinition` 的第二个内容槽。它和其它 page 一样只有 `id`、标题、输入声明与一棵 `content: ReportNode`；区别只是 `input: "attempt"` 表示宿主必须先用 locator 装配一份 [`AttemptEvidence`](../../results/library.md)，`navigation: false` 表示它没有 locator 时不进入导航。
 
@@ -21,9 +21,11 @@ export default defineReport({
 
 `AttemptDetail` 与 `ExperimentComparison` 同级：二者都是用公开叶子组件写成的普通组合组件，不拥有 page、路由或宿主特权。
 
-## 公开组件集
+**详情的弹窗形态属于宿主摆放，不是一个组件。** `view` 为每个可达 locator 物化一份完整静态文档，基线链接直接打开它；增强脚本可以拦截链接、把同一份 web 输出放进 dialog，但 dialog 内部的区块、顺序、样式和取舍全部来自这张 page 的 content。因此报告库里没有「弹窗组件」可配置——要改弹窗里有什么，改的是这张 page 的组件树；要改它怎么被打开，那是 [`view` 的机器](../architecture.md#宿主保留的只有机器)。
 
-以下组件从 `niceeval/report` 导出。`AttemptDetail` 与 `AttemptAssessment` 是组合组件；其余叶子组件都有同名词根的 `*Data` 函数与可序列化 `*Data` 类型，并从 `niceeval/report/react` 导出只接受 `data` 的纯 web renderer。
+## 公开区块集
+
+以下组件从 `niceeval/report` 导出。`AttemptDetail` 与 `AttemptAssessment` 是组合组件；其余叶子组件都有同名词根的 `*Data` 函数与可序列化 `*Data` 类型，并从 `niceeval/report/react` 导出只接受 `data` 的纯 web renderer。每个区块是一份事实的完整投影，因此都不收结构子节点——作者的取舍在放不放它、按什么顺序放。
 
 | 组件 | 只负责什么 | 空证据 |
 |---|---|---|
@@ -111,7 +113,7 @@ type PageContext =
     };
 ```
 
-每个叶子组件遵守报告库统一的 spec / data 规则：
+每个叶子组件遵守报告库统一的 spec / data 规则，绑定只有一个来源，所以这一族的 props 是两个平坦分支：
 
 ```ts
 type AttemptSectionProps<Data> =
@@ -147,7 +149,7 @@ attemptDiffData(evidence: AttemptEvidence): AttemptDiffData | null;
 
 `null` 的计算结果在两个面都渲染为空。组件不自己读 artifact；`loadAttemptEvidence` 已经完成一次性装配，`*Data` 只做适合展示与序列化的派生。Attempt 组件放在 scope-input page 且又没有显式 `input` 时，resolve 以完整用户反馈报错并指引移到 attempt-input page 或传入 evidence。
 
-## 两个普通组合组件
+## 两个组合组件
 
 `AttemptAssessment` 只表达 source / assertions fallback：
 
@@ -166,6 +168,8 @@ export const AttemptAssessment = defineComponent((_props, ctx) => {
   );
 });
 ```
+
+### `AttemptDetail`
 
 `AttemptDetail` 只表达内建排列顺序，全文是：
 
@@ -191,7 +195,7 @@ export const AttemptDetail = defineComponent((_props, ctx) => {
 });
 ```
 
-用户可以在参数化 page 中直接重排公开区块，不需要复制 view：
+它不接受结构子节点：要换顺序或删区块，就在参数化 page 里直接摆公开区块，不需要复制 view：
 
 ```tsx
 {
@@ -231,11 +235,13 @@ export const AttemptDetail = defineComponent((_props, ctx) => {
 
 text 面允许把有稳定 CLI 选择器的大块内容折成摘要加命令，但不能改变判定、计数、可用性或引用；专用 `--source` / `--execution` / `--timing` / `--diff` 仍是 Results evidence 的深度终端投影，不是另一套组件数据。
 
-view 为每个可达 locator 生成这张 page 的完整静态文档。基线链接直接打开该文档；增强脚本可以拦截链接，把同一份 web 输出放进 dialog，不能另调一份私有 renderer。show 的 `@<locator>` 则是“选择报告中唯一的 attempt-input page + 传 locator”的快捷语法；不带 `--report` 时选择内建 `standard` 里的那张 page。
+`show @<locator>` 是「选择报告中唯一的 attempt-input page + 传 locator」的快捷语法；不带 `--report` 时选择内建 `standard` 里的那张 page。
 
 ## 相关阅读
 
-- [外壳与多页](shell.md) —— 参数化 page 的字段与校验。
-- [排版原语与自定义组件](layout.md) —— page context 与双面组件协议。
-- [内建报告](built-in.md) —— `standard` 的四张 page 全文。
+- [组件树](README.md) —— 这一族为什么不收结构子节点。
+- [外壳与多页](../library/shell.md) —— 参数化 page 的字段与校验。
+- [排版原语与自定义组件](../library/layout.md) —— page context 与双面组件协议。
+- [内建报告](../library/built-in.md) —— `standard` 的四张 page 全文。
 - [Architecture](../architecture.md) —— 单一 page 模型与宿主机器边界。
+</content>

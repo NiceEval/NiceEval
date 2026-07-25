@@ -1,5 +1,5 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。ScopeSummary 的 scopeSummaryData 住在这里
-// (docs/feature/reports/library/summaries.md)。ExperimentComparison 是纯组合组件,不产生
+// (docs/feature/reports/components/summaries.md)。ExperimentComparison 是纯组合组件,不产生
 // 独立的 data,没有对应的计算函数。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
@@ -26,7 +26,7 @@ const totalCostMetric = defineMetric({
 
 /**
  * `scopeSummaryData(input)`:范围摘要——快照时间窗、experiment / eval / attempt 数、
- * 两级判定计票、端到端通过率与总成本(docs/feature/reports/library/summaries.md)。
+ * 两级判定计票、端到端通过率与总成本(docs/feature/reports/components/summaries.md)。
  * data 恒携带两级计票;通过率来自官方两级指标引擎,不从任一计票重算。
  */
 export async function scopeSummaryData(input: ReportInput): Promise<ScopeSummaryData> {

@@ -1,5 +1,5 @@
 // AttemptDiagnostics:lifecycle 分组的 diagnostics。没有 diagnostics 时零输出
-// (docs/feature/reports/library/attempt-detail.md)。
+// (docs/feature/reports/components/attempt-detail.md)。
 
 import type { ReactElement } from "react";
 import type { AttemptDiagnosticsData } from "../../model/types.ts";

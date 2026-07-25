@@ -4,7 +4,7 @@
 
 ## 修失败：待处理失败清单
 
-回答「现在有哪些失败要处理、先看哪条」。最常见的失败清单是成品组件 [`FailureList`](entity-lists.md#failurelist)，一行即可；其它筛选口径才需要组合组件加工 `attemptListData`：
+回答「现在有哪些失败要处理、先看哪条」。最常见的失败清单是成品组件 [`FailureList`](../components/entity-lists.md#failurelist)，一行即可；其它筛选口径才需要组合组件加工 `attemptListData`：
 
 ```tsx
 // reports/todo.tsx
@@ -24,20 +24,19 @@ export default defineReport(
 
 ```tsx
 // reports/exam.tsx
-import { Scoreboard, defineReport, examScore } from "niceeval/report";
+import { Question, Rows, Scoreboard, Subject, defineReport, examScore } from "niceeval/report";
 
 export default defineReport(
-  <Scoreboard
-    rows="agent"
-    questions={[
-      "security/sql-injection",
-      "security/path-traversal",
-      "correctness/retry",
-    ]}
-    weights={{ "security/": 3, "correctness/": 2 }}
-    fullMarks={100}
-    score={examScore}
-  />,
+  <Scoreboard fullMarks={100} score={examScore}>
+    <Rows dimension="agent" />
+    <Subject name="security" weight={3}>
+      <Question id="security/sql-injection" />
+      <Question id="security/path-traversal" />
+    </Subject>
+    <Subject name="correctness" weight={2}>
+      <Question id="correctness/retry" />
+    </Subject>
+  </Scoreboard>,
 );
 ```
 
@@ -48,36 +47,34 @@ export default defineReport(
 ```tsx
 // reports/reliability.tsx
 import {
-  MetricTable, defineReport,
+  Column, MetricTable, Rows, defineReport,
   endToEndPassRate, executionReliability, taskPassRate,
 } from "niceeval/report";
 
 export default defineReport(
-  <MetricTable
-    rows="experiment"
-    columns={[endToEndPassRate, taskPassRate, executionReliability]}
-    sort={endToEndPassRate}
-    filter
-  />,
+  <MetricTable filter>
+    <Rows dimension="experiment" sort={endToEndPassRate} />
+    <Column metric={endToEndPassRate} />
+    <Column metric={taskPassRate} />
+    <Column metric={executionReliability} />
+  </MetricTable>,
 );
 ```
 
 ## 对比：基线与候选相差多少
 
-回答「加了 memory / 换了配置，指标是改善还是退化」。实验矩阵是「同配置开关某个 flag」时用 `conditionsByFlag`——条件由 experiment 配置机械导出，首个是基准，加实验不用改报告；要自定义顺序或比较任意一组 id 时写字面 `conditions` 有序数组（首个是基准）。任一侧缺数据时 delta 保持缺失，不当 0：
+回答「加了 memory / 换了配置，指标是改善还是退化」。实验矩阵是「同配置开关某个 flag」时用 `<FlagConditions>`——条件由 experiment 配置机械导出，加实验不用改报告；要自定义顺序或比较任意一组 id 时逐个写 `<Condition>`，其中一个标 `baseline`。任一侧缺数据时 delta 保持缺失，不当 0：
 
 ```tsx
 // reports/ab.tsx
-import {
-  DeltaTable, conditionsByFlag, costUSD, defineReport, durationMs, endToEndPassRate,
-} from "niceeval/report";
+import { Columns, DeltaTable, FlagConditions, defineReport } from "niceeval/report";
 
 export default defineReport(
-  <DeltaTable
-    by="experiment"
-    conditions={conditionsByFlag("memory")}
-    metrics={[endToEndPassRate, costUSD, durationMs]}
-  />,
+  <DeltaTable>
+    <Columns dimension="experiment">
+      <FlagConditions flag="memory" />
+    </Columns>
+  </DeltaTable>,
 );
 ```
 
@@ -87,27 +84,45 @@ export default defineReport(
 
 ```tsx
 // reports/scaling.tsx
-import { MetricLine, defineReport, endToEndPassRate, numericFlag } from "niceeval/report";
+import {
+  Line, LineChart, XAxis, YAxis,
+  defineReport, endToEndPassRate, numericFlag,
+} from "niceeval/report";
 
 const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
 
 export default defineReport(
-  <MetricLine x={budget} series="agent" y={endToEndPassRate} />,
+  <LineChart>
+    <XAxis numeric={budget} />
+    <YAxis metric={endToEndPassRate} />
+    <Line metric={endToEndPassRate} by="agent" />
+  </LineChart>,
 );
 ```
 
 ## 定位：哪道题在哪个配置上失败
 
-回答「失败集中在哪些题 × 哪些配置」。Matrix 与 Bars 写同一份 spec，resolve 记忆化保证矩阵只算一次，摆在一起互为放大镜：
+回答「失败集中在哪些题 × 哪些配置」。矩阵查精确交叉格，同维度的分组柱看幅度差异；两者写同一组维度绑定，resolve 记忆化保证只算一次，摆在一起互为放大镜：
 
 ```tsx
 // reports/matrix.tsx
-import { Col, MetricBars, MetricMatrix, defineReport, endToEndPassRate } from "niceeval/report";
+import {
+  Bar, BarChart, Cells, Col, Columns, MetricMatrix, Rows, XAxis, YAxis,
+  defineReport, endToEndPassRate,
+} from "niceeval/report";
 
 export default defineReport(
   <Col>
-    <MetricMatrix rows="eval" columns="agent" cell={endToEndPassRate} />
-    <MetricBars rows="eval" columns="agent" cell={endToEndPassRate} />
+    <MetricMatrix>
+      <Rows dimension="eval" />
+      <Columns dimension="agent" />
+      <Cells metric={endToEndPassRate} />
+    </MetricMatrix>
+    <BarChart>
+      <XAxis dimension="eval" />
+      <YAxis metric={endToEndPassRate} />
+      <Bar metric={endToEndPassRate} by="agent" />
+    </BarChart>
   </Col>,
 );
 ```
@@ -181,7 +196,11 @@ const History = defineComponent(async ({ experiment }: { experiment: string }, c
 
   return (
     <Section title={`${experiment} · 历次快照`}>
-      <MetricTable input={exp.snapshots} rows="snapshot" columns={[endToEndPassRate, costUSD]} />
+      <MetricTable input={exp.snapshots}>
+        <Rows dimension="snapshot" />
+        <Column metric={endToEndPassRate} />
+        <Column metric={costUSD} />
+      </MetricTable>
     </Section>
   );
 });
@@ -196,25 +215,26 @@ export default defineReport(<History experiment="compare/bub-gpt-5.4" />);
 ```tsx
 // reports/dual.tsx
 import {
-  MetricScatter, Scoreboard, Tab, Tabs,
+  Question, Rows, Scatter, ScatterChart, Scoreboard, Tab, Tabs, XAxis, YAxis,
   costUSD, defineReport, endToEndPassRate, examScore,
 } from "niceeval/report";
 
 export default defineReport(
   <Tabs>
     <Tab title="质量 × 成本">
-      <MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
+      <ScatterChart>
+        <XAxis metric={costUSD} />
+        <YAxis metric={endToEndPassRate} />
+        <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
+      </ScatterChart>
     </Tab>
     <Tab title="分科得分">
-      <Scoreboard
-        rows="agent"
-        questions={[
-          "security/sql-injection",
-          "security/path-traversal",
-          "correctness/retry",
-        ]}
-        score={examScore}
-      />
+      <Scoreboard score={examScore}>
+        <Rows dimension="agent" />
+        <Question id="security/sql-injection" />
+        <Question id="security/path-traversal" />
+        <Question id="correctness/retry" />
+      </Scoreboard>
     </Tab>
   </Tabs>,
 );

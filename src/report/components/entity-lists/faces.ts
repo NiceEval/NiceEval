@@ -34,7 +34,7 @@ function locatorBadge(item: { locator: string; verdict: AttemptListItem["verdict
 /**
  * 时效标注(`↩` + 紧凑时距)的 text 面:历史执行(携带,或跨快照拼入)才输出,新执行为
  * 空串;三面(ExperimentList / EvalList / AttemptList)共用
- * (docs/feature/reports/library/entity-lists.md「时效标注」)。
+ * (docs/feature/reports/components/entity-lists.md「时效标注」)。
  */
 function historicalSuffix(item: Pick<AttemptListItem, "startedAt" | "historical">): string {
   return item.historical ? `   ↩ ${formatHistoricalGap(item.startedAt)}` : "";

@@ -28,7 +28,7 @@ export function cx(...parts: (string | undefined | false)[]): string {
 type Never<T> = { [K in keyof T]?: never };
 
 /**
- * 官方数据组件的统一 props 组合(docs/feature/reports/library/metric-views.md):
+ * 官方数据组件的统一 props 组合(docs/feature/reports/components/tables.md):
  * data 形态(接收配套 *Data 的产物)或 spec 形态(Options 平铺 + 可选 input)。
  */
 export type DataProps<Data, Options, Presentation> =

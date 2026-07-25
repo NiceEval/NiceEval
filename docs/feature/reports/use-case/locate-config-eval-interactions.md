@@ -7,7 +7,7 @@
 ## 全流程
 
 1. 用 `MetricMatrix` 把 Eval 放行、Agent 或 Experiment 放列,格子放主指标。
-2. 矩阵用于查精确交叉格;`MetricBars` 用于看同一行里的幅度差异。
+2. 矩阵用于查精确交叉格;`BarChart` 用于看同一行里的幅度差异。
 3. 两个组件可共用同一份 spec,放在一页里互相定位。
 4. 从格子的 attempt refs 下钻,确认差异是一条异常样本还是稳定模式。
 

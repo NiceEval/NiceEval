@@ -94,13 +94,17 @@ export const standard = defineReport({
 ```tsx
 // reports/mine.tsx —— ① 换树：只关心自己的图表，不要站点 chrome
 import {
-  Col, ExperimentList, MetricScatter,
+  Col, ExperimentList, Scatter, ScatterChart, XAxis, YAxis,
   costUSD, defineReport, endToEndPassRate,
 } from "niceeval/report";
 
 export default defineReport(
   <Col>
-    <MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
+    <ScatterChart>
+      <XAxis metric={costUSD} />
+      <YAxis metric={endToEndPassRate} />
+      <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
+    </ScatterChart>
     <ExperimentList filter />
   </Col>,
 );
@@ -123,8 +127,9 @@ export default defineReport({
 ```tsx
 // reports/site.tsx —— ③ 拆页：照抄内建的页，再加自己的页
 import {
-  AttemptList, Col, ExperimentComparison, Hero, ScopeWarnings, SnapshotDiagnostics,
-  Scoreboard, defineReport, examScore,
+  AttemptList, Col, ExperimentComparison, Hero, Question, Rows,
+  ScopeWarnings, Scoreboard, SnapshotDiagnostics,
+  defineReport, examScore,
 } from "niceeval/report";
 
 export default defineReport({
@@ -139,10 +144,17 @@ export default defineReport({
     {
       id: "exam",
       title: { en: "Exam", "zh-CN": "成绩单" },
-      content: <Col><ScopeWarnings /><SnapshotDiagnostics /><Scoreboard rows="agent" questions={[
-        "security/sql-injection",
-        "correctness/retry",
-      ]} fullMarks={100} score={examScore} /></Col>,
+      content: (
+        <Col>
+          <ScopeWarnings />
+          <SnapshotDiagnostics />
+          <Scoreboard fullMarks={100} score={examScore}>
+            <Rows dimension="agent" />
+            <Question id="security/sql-injection" />
+            <Question id="correctness/retry" />
+          </Scoreboard>
+        </Col>
+      ),
     },
     {
       id: "attempts",
@@ -153,16 +165,16 @@ export default defineReport({
 });
 ```
 
-② 是最小品牌化形态：`title` 进浏览器标题与 `ctx.report.title`，内建页自带的 `<Hero />` 跟随同一标题并带品牌行。③ 从引用切换到照抄，pages 归自己所有；因为列表里没有 attempt-input page，locator 不会接到隐藏详情。需要详情时把 `standardAttemptPage` 放进 pages，或声明一张相同输入、content 由[公开详情区块](attempt-detail.md)重组的 page。`content` / `pages` / `extends` 必须恰好声明一个（见[外壳与多页](shell.md)）。
+② 是最小品牌化形态：`title` 进浏览器标题与 `ctx.report.title`，内建页自带的 `<Hero />` 跟随同一标题并带品牌行。③ 从引用切换到照抄，pages 归自己所有；因为列表里没有 attempt-input page，locator 不会接到隐藏详情。需要详情时把 `standardAttemptPage` 放进 pages，或声明一张相同输入、content 由[公开详情区块](../components/attempt-detail.md)重组的 page。`content` / `pages` / `extends` 必须恰好声明一个（见[外壳与多页](shell.md)）。
 
 ## 内建报告显示什么
 
-首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](summaries.md#experimentcomparison)；`Hero` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](site-components.md)；Attempts 页的本体是[带过滤的 `AttemptList`](entity-lists.md#attemptlist)。
+首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries.md#experimentcomparison)；`Hero` / `ScopeWarnings` / `SnapshotDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](../components/site.md)；Attempts 页的本体是[带过滤的 `AttemptList`](../components/entity-lists.md#attemptlist)。
 
 ## 相关阅读
 
 - [外壳与多页](shell.md) —— 配置对象的字段穷尽、`extends` 合并语义与行为约束。
-- [站点组件](site-components.md) —— hero、品牌、警告、快照诊断与瀑布的组件契约。
-- [Attempt 详情组件](attempt-detail.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
-- [概览组件](summaries.md) —— `ExperimentComparison` 的契约。
+- [站点组件](../components/site.md) —— hero、品牌、警告、快照诊断与瀑布的组件契约。
+- [Attempt 详情组件](../components/attempt-detail.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
+- [概览组件](../components/summaries.md) —— `ExperimentComparison` 的契约。
 - [Architecture](../architecture.md) —— 装载规范化：内建与 `--report` 的同一条管线。

@@ -853,7 +853,7 @@ async function show(
     }
     // 无证据 flag:选中当前 report definition 里唯一的 attempt-input page,注入这份 evidence,
     // 走与其它 page 完全相同的 resolve → validate → render 管线(docs/feature/reports/show/attempt.md;
-    // docs/feature/reports/library/attempt-detail.md「在 show 与 view 怎样渲染」)。不带 --report
+    // docs/feature/reports/components/attempt-detail.md「在 show 与 view 怎样渲染」)。不带 --report
     // 时装载内建 standard,其中就带这张 page;--report 指向的自定义报告没有声明 attempt-input page
     // 时报完整用户反馈,不回退到内建详情(三条解决路径都在错误文案里给出)。
     const report = await loadHostReport(cwd, flags.report);

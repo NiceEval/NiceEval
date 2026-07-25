@@ -153,6 +153,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [report-components-unified-component-tree](report-components-unified-component-tree.md) — 裁决(2026-07-25):报告组件库整体统一为组件树(绑定与局部配置=结构子节点),MetricLine/MetricBars/MetricScatter 换成 Recharts 词汇的图表族,Scoreboard 的 subject 函数+权重前缀表换 `<Subject>`/`<Question>`,DeltaTable 换 `<Condition baseline>`;否决实体列表开放选列与组合组件用子节点覆盖装配;落点 docs/feature/reports/components/
+- [report-page-level-color-assignment](report-page-level-color-assignment.md) — 裁决(2026-07-25):维度值配色的分配单位从「一张图」上提到「一页」,图表图例与实体列表 agent 名读同一份映射;推翻 scatter-series-color-collision「跨块单键着色不消解」那一句(起因=首页图例蓝/绿、同页列表两个 agent 都蓝)
 - [config-report-value-not-path](config-report-value-not-path.md) — 裁决(2026-07-25):`defineConfig({ report })` 收 ReportDefinition 值(不是路径字符串),`--report` 裸词=内建视图名、带路径形=文件,取值链 `--report` → `config.report` → 内建 standard;否决路径字符串、`--no-report`、模块说明符、`built-in:` 前缀四方案
 - [group-matrix-dedicated-component-ruling](group-matrix-dedicated-component-ruling.md) — 裁决(2026-07-23,补记):得分点=组的下钻矩阵做独立组件 GroupMatrix,否决扩展 MetricMatrix 动态 Metric 方案(组是 assertion/score-entry 子实体、格读法是题型固定语义非用户可配置 Metric)
 - [show-slices-are-components-ruling](show-slices-are-components-ruling.md) — 裁决(2026-07-23):show 切片收敛为报告组件装配,--json=当前视图组件 resolve 产物信封(两面同值由构造保证);对照=DeltaTable 多条件、--stats=StabilityMatrix、--usage=UsageTable、证据切片=attempt-detail text 面(预算/--expand/--grep 是 text 渲染选项);否决「宿主证据投影」独立管线与 CompareMatrix 新名;起因=三组平行实现+--json 手写第三套形状
@@ -201,7 +203,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [attempt-source-unlocated-conversation-unstyled-and-escape-leak](attempt-source-unlocated-conversation-unstyled-and-escape-leak.md) — AttemptSource「Other conversation」兜底区文字墙 + 工具结果 `\n` 字面直出:`.nre-conv-*` 按容器限定没盖到第三容器、`compact()` 在 stringify 之后才收口;修为第三容器补 CSS + 先收口后字符串化;教训=共享 renderer 进新容器 CSS 不自动跟、自由文本收口必须在序列化前
 - 已修 [eval-header-historical-mark-shifts-grid-columns](eval-header-historical-mark-shifts-grid-columns.md) — ExperimentList Eval 父行的 `↩` 时效标注曾裸插进按位置取列的 4 轨 grid 当第 5 个子元素,全携带的题整行错位、rollup 挤进 20px 列逐字竖排;修为嵌进题目名格内(`ExperimentList.tsx` EvalAttempts);教训=固定轨数 grid 不能裸插条件子元素
 - 已修 [view-shell-nav-ignores-page-navigation-flag](view-shell-nav-ignores-page-navigation-flag.md) — scope-input page 显式声明 `navigation: false` 时,view 外壳导航仍把它渲染成 tab;修法是 `ViewReportPageMeta` 带 `navigation` 标记、`App.tsx` 只过滤 `TabsList`——**不能**改喂 `navigablePages`,那份列表同时是内容槽/`<template>` 键/深链白名单,删页会把多余 tab 换成白屏;`--page` 能否直开退出导航的页仍待裁决
-- 已修 [scatter-series-color-collision](scatter-series-color-collision.md) — 散点两个不同 series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/report/react/colors.ts` 的 colorIndicesForKeys)
+- 已修 [scatter-series-color-collision](scatter-series-color-collision.md) — 散点两个不同 series(bub/codex)散列进同一色格显示同色不可辨;修为同图键集合按图例顺序线性探测消解冲突,跨图稳定让位图内可辨(`src/report/react/colors.ts` 的 colorIndicesForKeys);作用域后被 [report-page-level-color-assignment](report-page-level-color-assignment.md) 上提到「一页」
 - 已修 [react19-dangerously-set-inner-html-identity](react19-dangerously-set-inner-html-identity.md) — React 19 对 dangerouslySetInnerHTML 只比 `{__html}` 对象身份,内联字面量让任何重渲染都整树重建报告槽(开关 attempt 弹窗丢 details/排序/过滤状态);修为 useMemo 包 `{__html}`(`src/view/app/App.tsx` 的 ReportSlot)
 - [details-ua-slot-breaks-display-contents-tabs](details-ua-slot-breaks-display-contents-tabs.md) — `<details>` 的 UA shadow slot 让 display:contents 布局失效(Chrome 下 order 失效、残留 0 宽盒);Tabs 增强改用 flex 换行方案(styles.css)
 - [view-tool-io-dropped-not-adapter-bug](view-tool-io-dropped-not-adapter-bug.md) — view 里工具出入参"看不到"是渲染层丢的,不是 adapter / SDK 的问题

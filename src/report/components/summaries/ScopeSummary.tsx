@@ -1,7 +1,7 @@
 // ScopeSummary:一个范围的摘要卡——快照时间窗、experiment / eval / attempt 数、判定计票、
 // 端到端通过率与总成本。data 恒携带 eval 级与 attempt 级两份计票;呈现 prop `votes`
 // 只选择显示哪一级(默认 "eval"),不改变 data。通过率与总成本只渲染算好的 MetricCell,
-// 不现场重算(docs/feature/reports/library/summaries.md「ScopeSummary」)。
+// 不现场重算(docs/feature/reports/components/summaries.md「ScopeSummary」)。
 
 import type { ReactElement } from "react";
 import type { ScopeSummaryData, VerdictTally } from "../../model/types.ts";
@@ -45,7 +45,7 @@ export function ScopeSummary({
     <div className={cx("nre", "nre-scope-summary", className)} data-votes={votes}>
       <dl className="nre-scope-kpis">
         {/* 计分制 Scope 隐藏通过率只显示总分;混型 Scope 两者都显示;纯通过制 Scope 只显示
-            通过率(现状不变),见 docs/feature/reports/library/summaries.md「ScopeSummary」。 */}
+            通过率(现状不变),见 docs/feature/reports/components/summaries.md「ScopeSummary」。 */}
         {data.scoringComposition !== "points" && (
           <div className="nre-scope-kpi nre-scope-kpi-rate">
             <dt>{localeText(locale, "scopeSummary.passRate")}</dt>

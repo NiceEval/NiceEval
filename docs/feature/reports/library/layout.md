@@ -1,6 +1,6 @@
 # 排版原语与自定义组件
 
-`Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Style`、`Tabs`、`Tab` 和 `Table` 是十个内置双面排版组件，用于组织报告树。
+`Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Style`、`Tabs`、`Tab` 和 `Table` 是十个内置双面排版组件，用于组织报告树。其中 `Tab` 与 `Table` 的 `Column` 是[结构子节点](../components/README.md#结构节点)，只在各自的父组件下成立。
 
 ## 树的节点：`ReportNode`
 
@@ -108,7 +108,7 @@ export default defineReport(
 
 ## `Grid` 与 `Stat`
 
-`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Scope、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[指标组件](metric-views.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
+`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Scope、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables.md)或[图表](../components/charts.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
 
 `Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格；`columns` 是每行的宽面上限，不要求子节点数量恰好为其倍数。一个格子里要放多个区块时，用已有 `Col` 把它们归成一个直接子节点：
 
@@ -311,10 +311,18 @@ export default defineReport(
 ```tsx
 <Tabs>
   <Tab title="质量 × 成本">
-    <MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />
+    <ScatterChart>
+      <XAxis metric={costUSD} />
+      <YAxis metric={endToEndPassRate} />
+      <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
+    </ScatterChart>
   </Tab>
   <Tab title="分科得分">
-    <Scoreboard rows="agent" questions={["security/sql-injection", "correctness/retry"]} score={examScore} />
+    <Scoreboard score={examScore}>
+      <Rows dimension="agent" />
+      <Question id="security/sql-injection" />
+      <Question id="correctness/retry" />
+    </Scoreboard>
   </Tab>
 </Tabs>
 ```
@@ -326,15 +334,10 @@ export default defineReport(
 
 ## `Table`
 
-自定义表格的标准件：给一份 `columns` 和 `rows`，text 面按显示宽度对齐、web 面输出 `<table>`。
+自定义表格的标准件：列是 `<Column>` 结构子节点，行是 `rows` 数据；text 面按显示宽度对齐、web 面输出 `<table>`。列是声明、行是数据，这条分工与[官方表格](../components/tables.md)一致。
 
 ```tsx
 <Table
-  columns={[
-    { key: "eval", header: "题目" },
-    { key: "pass", header: "通过率", align: "right" },
-    { key: "cost", header: "成本", align: "right" },
-  ]}
   rows={[
     {
       key: "memory/写缓存",
@@ -346,11 +349,15 @@ export default defineReport(
       cells: { eval: "memory/读缓存", pass: null, cost: null },
     },
   ]}
-/>
+>
+  <Column key="eval" header="题目" />
+  <Column key="pass" header="通过率" align="right" />
+  <Column key="cost" header="成本" align="right" />
+</Table>
 ```
 
 ```ts
-interface TableColumn {
+interface TableColumnProps {
   key: string;
   header: LocalizedText;
   align?: "left" | "right";
@@ -364,7 +371,8 @@ interface TableRow {
 }
 
 interface TableProps {
-  columns: readonly [TableColumn, ...TableColumn[]];
+  /** 至少一个 <Column>；声明顺序即渲染顺序。 */
+  children: ColumnNode | readonly ColumnNode[];
   rows: readonly TableRow[];
   locale?: ReportLocale;
   className?: string;
@@ -375,12 +383,12 @@ interface TableProps {
 
 | Prop | 类型 | 含义 |
 |---|---|---|
-| `columns` | `readonly [TableColumn, ...TableColumn[]]` | 非空列定义；数组顺序即渲染顺序 |
+| `children` | `<Column>` 子节点 | 非空列定义；声明顺序即渲染顺序 |
 | `rows` | `readonly TableRow[]` | 行数据；数组顺序即渲染顺序 |
 | `locale` | `ReportLocale` | 组件自带文案的语言；省略时随宿主 |
 | `className` | `string` | web 面挂在 `<table>` 上 |
 
-`TableColumn`：
+`Column`：
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
@@ -400,7 +408,7 @@ interface TableProps {
 渲染契约：
 
 - **列宽按显示宽度算**，CJK / 全角记 2 列。中文列不会撕歪。
-- **列 key 与行 key 都必须唯一。** `cells` 出现未声明的 key 以完整用户反馈报错；缺少已声明 key 则按 `null` 处理。空列数组由 TypeScript 拒绝，无类型 JavaScript 输入在组件创建时同样报错。
+- **列 key 与行 key 都必须唯一。** `cells` 出现未声明的 key 以完整用户反馈报错；缺少已声明 key 则按 `null` 处理。零个 `<Column>`、`<Column>` 出现在 `Table` 之外，或 key 重复，都在树校验期给出完整用户反馈。
 - **`null` 渲染成 `—`**，不补 0；`cells` 里缺这个键同样是 `—`。
 - **超宽先折行再丢列。** 总宽超过可用列宽时，先压最宽的左对齐列（按显示宽度折行）；右对齐列不折行——数字折行读不了。左对齐列压到下限仍放不下，就从右侧丢列，并在表下如实标注丢了几列。
 - **身份列压不到不可读。** eval id、experiment id 与 `locator` 是读者要复制去执行下一条命令的可操作字段，它们的下限是 24 显示列（`locator` 是它的完整长度）：其余列都压到各自下限后仍放不下，就按上一条从右侧丢列，绝不把身份列挤成几个字符。窄到连一列身份都放不下时，表格整体降级成每行一条身份的纵向清单——宁可只剩身份，不留一张读不出是谁的表。
@@ -408,7 +416,7 @@ interface TableProps {
 - **两个面各自成立。** text 面列间 3 空格、首行表头；web 面是 `<table>` + `<thead>` / `<tbody>`，右对齐落成 `nre-align-right` 类，不用内联样式。
 - **带 `locator` 的行只携带证据引用，不强造详情。** 有任一行带 `locator` 时多出一列 attempt：当前报告声明了 attempt-input page（或自有 React 页面显式传 `attemptHref`）时，web 面渲染链接、text 面渲染带完整报告上下文的命令；没有连接目标时两个面都只显示 locator 文本，宿主不追加隐藏 fallback。
 
-`MetricTable`、`MetricMatrix`、`Scoreboard` 和 `DeltaTable` 的 text 面建在 `Table` 上：自定义表和官方表用同一把尺子。
+`MetricTable`、`MetricMatrix`、`Scoreboard`、`DeltaTable` 与 `StabilityMatrix` 的 text 面建在 `Table` 上：自定义表和官方表用同一把尺子。
 
 ## 文本排版工具箱
 
@@ -517,7 +525,7 @@ export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?
 
 组合组件在管线的 resolve 阶段展开为它返回的树，随后逐节点继续解析与校验；它不需要 text / web 面，因为它不产生自己的渲染输出。React 组件或未经 `defineComponent` 的普通函数不能进报告树，展开遇到时以完整用户反馈拒绝——这个包装就是「树中每个节点两个宿主都能判读」的资格证。
 
-**双面组件**（对象形态）同时提供 `text` 与 `web`；可选的 `resolve` 让组件拥有自己的取数面，官方数据组件的 [spec 形态](metric-views.md)正是这样实现的：
+**双面组件**（对象形态）同时提供 `text` 与 `web`；可选的 `resolve` 让组件拥有自己的取数面，官方数据组件的 [spec 形态](../components/README.md#数据绑定与两种形态)正是这样实现的：
 
 ```tsx
 interface BadgeProps {
@@ -539,5 +547,5 @@ export const Badge = defineComponent<BadgeProps>({
 ## 相关阅读
 
 - [外壳与多页](shell.md) —— 树之上的导航外壳与页。
-- [指标组件](metric-views.md) —— 官方表格与图形组件的 spec / data 双形态。
+- [组件树](../components/README.md) —— 官方组件的结构子节点、spec / data 双形态与共用呈现 props。
 - [Architecture](../architecture.md) —— 报告树的 resolve / validate / render 管线。

@@ -220,7 +220,7 @@ export interface FailureListProps {
 
 /**
  * 「现在有哪些失败要处理」的成品组合件:内部就是 attemptListData → 过滤 → AttemptList
- * data 形态,与手写组合严格等价、没有私有能力(docs/feature/reports/library/entity-lists.md)。
+ * data 形态,与手写组合严格等价、没有私有能力(docs/feature/reports/components/entity-lists.md)。
  * verdict ∈ failed / errored,按 attempt 开始时间降序(同刻按 locator 字典序),
  * 截断到 limit(默认 20),total 报告截断前总数。
  */

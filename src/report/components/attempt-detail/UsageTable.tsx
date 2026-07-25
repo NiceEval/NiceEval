@@ -1,5 +1,5 @@
 // UsageTable:判定、轮数、工具调用数、token 拆分与成本摊成的用量明细。没有 usage 时零输出
-// (docs/feature/reports/library/attempt-detail.md#usagetable-组装口径单源)。web 面与 text 面
+// (docs/feature/reports/components/attempt-detail.md#usagetable-组装口径单源)。web 面与 text 面
 // 单行摘要(usageTableText)是同一份 UsageTableData 的两种呈现,不重复组装口径。
 
 import type { ReactElement } from "react";

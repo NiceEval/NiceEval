@@ -77,7 +77,7 @@ niceeval view --report reports/exam.tsx    # Web: renders the web face, attempt 
 
 The injected context is just two things, both primitives of the [Results Data API](/reference/results-data) — the host has no private channel: `results` is exactly the return value of `openResults(".niceeval")` (experiments, historical snapshots, and attempt-level `diff()` / `trace()` all live on it); `selection` is the set of results the host already picked for you. The picking rule is: for every experiment and every eval, take the latest verdict from that experiment's run history — if you reran only part of the evals by prefix, the remaining evals' verdicts are filled in from earlier runs, so one partial rerun never drops the whole thing back to a single incomplete snapshot. The default report consumes this same `selection`: the snapshots sit at `selection.snapshots`, and the picking warnings at `selection.warnings`. When the default pick doesn't match what you want, pick your own from `results` — a hand-picked `Snapshot[]` array can be fed to every component the same way.
 
-A report file works with two shapes of data. An entity list's `.data(selection)` returns a plain array: `ExperimentListItem[]`, `EvalListItem[]`, `AttemptListItem[]`. The report author uses ordinary JavaScript `.filter()` / `.slice()` to decide which entities to show, then passes the array to the list as `items`; components hide no separate filter DSL of their own. Metric charts and summary components instead take a precomputed `data`; `MetricScatter` additionally offers a `selection` shorthand that the host computes before rendering. Once a component holds its computed data, it only renders what it was handed — it never touches the results directory.
+A report file works with two shapes of data. An entity list's `.data(selection)` returns a plain array: `ExperimentListItem[]`, `EvalListItem[]`, `AttemptListItem[]`. The report author uses ordinary JavaScript `.filter()` / `.slice()` to decide which entities to show, then passes the array to the list as `items`; components hide no separate filter DSL of their own. Charts and summary components instead take a precomputed `data`, or bind their data in child tags (`<XAxis>` / `<Scatter>` / `<Column>`) and let the host compute it before rendering. Once a component holds its computed data, it only renders what it was handed — it never touches the results directory.
 
 The selection warnings component (`ScopeWarnings`) shows alerts for incomplete coverage, stale snapshots, unfinished runs, and snapshot read failures. Warnings are grouped by experiment: the group header lists the experiment name, issue tags, and a copyable rerun command; each raw message sits inside an expandable section. Every page of the default report includes this component. A custom report that needs to show warnings adds `<ScopeWarnings />` at the top of the page.
 
@@ -85,7 +85,7 @@ Command-line scope acts on the picking step first, so the report gets a `selecti
 
 Every component on the page is **dual-render**: the web face is React rendering, the terminal face is character rendering, and both faces consume the same precomputed data. The entity lists show facts by experiment → Eval → Attempt; the metric table, matrix, bar chart, scoreboard, scatter plot, line chart, and delta table show aggregate values. The full list is in [Report Components](/reference/report-components). On the web face, entities, cells, and points deep-link to the attempt detail; on the terminal face they print the matching `niceeval show <eval id>` drill-down command.
 
-The default report has no special privilege: all three of its pages are built entirely from public components, and your report is their sibling. Need the same "group by directory, compare within group" layout — write `<ExperimentComparison />` directly; need an Attempts page — write a filtered `<AttemptList />`; don't need one — don't add it. That includes the page header and the `Powered by NiceEval` brand line: they are the `Hero` and `PoweredBy` components respectively — use them and you get them, skip them and you don't; the components themselves offer no toggle. When you compose `MetricScatter` / `ExperimentList` directly yourself, the general-purpose components only consume the data you hand them and never group automatically — feeding them cross-group data is you explicitly choosing a cross-group analysis.
+The default report has no special privilege: all three of its pages are built entirely from public components, and your report is their sibling. Need the same "group by directory, compare within group" layout — write `<ExperimentComparison />` directly; need an Attempts page — write a filtered `<AttemptList />`; don't need one — don't add it. That includes the page header and the `Powered by NiceEval` brand line: they are the `Hero` and `PoweredBy` components respectively — use them and you get them, skip them and you don't; the components themselves offer no toggle. When you compose a chart or `ExperimentList` directly yourself, the general-purpose components only consume the data you hand them and never group automatically — feeding them cross-group data is you explicitly choosing a cross-group analysis.
 
 ## Set it as the project default
 
@@ -243,7 +243,7 @@ A dimension decides grouping — a table's rows, a matrix's rows and columns, a 
 - **A custom dimension**: `{ name, of }`, a pure function that takes an attempt and returns a group name. The definition lives only in the report file — no experiment file needs to change.
 - **`flag()`**: references a variable an experiment declared via `flags`.
 
-Use a custom dimension when the grouping can be **computed** from data the results already carry — the report's layout doesn't require adding configuration to the experiment just so it can be displayed differently. Declare a variable as `flags` — and reference it from the report with `flag()` — only when the variable belongs to the experiment's own configuration, such as a scaling tier or numeric axis data. `MetricLine`'s `x` axis only accepts `flag()`, because a tick mark has to come from a declared numeric value.
+Use a custom dimension when the grouping can be **computed** from data the results already carry — the report's layout doesn't require adding configuration to the experiment just so it can be displayed differently. Declare a variable as `flags` — and reference it from the report with `flag()` — only when the variable belongs to the experiment's own configuration, such as a scaling tier or numeric axis data. A numeric `XAxis` only accepts `numericFlag()` / `numericLabel()` / `numericRunConfig()`, because a tick mark has to come from a declared numeric value.
 
 ### Custom dimension: deriving a group from existing data
 
@@ -283,14 +283,14 @@ export default defineExperiment({
 On the report side, `flag()` treats a declared value directly as a dimension or an axis, parsing no name at all:
 
 ```tsx
-<MetricLine data={await MetricLine.data(selection, {
-  x: flag("latencyMs", { label: "Simulated latency", unit: "ms" }),
-  series: flag("agents", { label: (v) => `${v} agents` }),
-  y: endToEndPassRate,
-})} />
+<LineChart>
+  <XAxis numeric={numericFlag("latencyMs", { label: "Simulated latency", unit: "ms" })} />
+  <YAxis metric={endToEndPassRate} />
+  <Line metric={endToEndPassRate} by={flag("agents")} />
+</LineChart>
 ```
 
-`flag()` used in a dimension slot (`series` / `rows` / `columns` / `points`) groups by the declared value; used in an axis slot (`x`) it requires a numeric value and drives the scale. An experiment that never declared that flag falls into an "unconfigured" bucket when grouping, and as an axis point it is simply not drawn, with the footnote reporting the count. Flags are stored with the snapshot, so historical runs can also be regrouped by the variable declared at the time.
+`flag()` used for grouping (`by` / `dimension` / `points`) groups by the declared value; an axis that carries a scale takes `numericFlag()` instead, because a tick mark has to come from a declared numeric value. An experiment that never declared that flag falls into an "unconfigured" bucket when grouping, and as an axis point it is simply not drawn, with the footnote reporting the count. Flags are stored with the snapshot, so historical runs can also be regrouped by the variable declared at the time.
 
 ## Change the shape: `Table` for tables, draw the rest yourself
 

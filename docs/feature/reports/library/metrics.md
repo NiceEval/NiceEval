@@ -1,6 +1,6 @@
 # 指标与维度
 
-指标定义值与聚合口径，维度定义分组；[指标组件](metric-views.md)只是它们的投影。
+指标定义值与聚合口径，维度定义分组；[图表](../components/charts.md)与[表格](../components/tables.md)只是它们的投影。
 
 ## 公开计算模型
 
@@ -23,7 +23,7 @@ interface Metric<Name extends string = string> {
   description?: LocalizedText;
   unit?: string;
   better?: "higher" | "lower";
-  /** 指标值的自然边界（如通过率 0–1、成本下界 0）。图轴呼吸边距不越过声明的边界，见指标组件页「图轴值域」。 */
+  /** 指标值的自然边界（如通过率 0–1、成本下界 0）。图轴呼吸边距不越过声明的边界，见图表页「值域」。 */
   bounds?: { min?: number; max?: number };
   where?: (attempt: AttemptHandle) => boolean;
   value(attempt: AttemptHandle): number | null | Promise<number | null>;
@@ -84,11 +84,12 @@ interface MetricCell {
 `skipped` 对这些指标返回 `null`。`durationMs` 的超时删失同样走 `null`,但删失不允许静默:`null` 使格子的 `samples` 小于 `total`,而 `samples` / `total` / `refs` 本就是渲染层不可丢弃的字段([聚合不变量](../architecture.md#指标聚合不变量))——耗时对比里被超时截断的样本因此以覆盖率缺口的形态可见,不会让「砍掉最慢的样本」伪装成「这个条件更快」。超时线的选取纪律(远离自然耗时上沿、对固定协议开销的条件不中立)见 [Runner · 超时](../../../runner.md#超时双层保护)。`errored` 只在 `taskPassRate` 中返回 `null`，在默认 `endToEndPassRate` 与 `executionReliability` 中都返回 0。三个指标都遵守“先在同一 eval 的 attempts 内聚合，再跨 eval 聚合”的两级规则；每个 eval 只有一个 attempt 时，`endToEndPassRate` 才简化为 `passed / (passed + failed + errored)`。它的完整口径名是“End-to-end pass rate / 端到端通过率”，默认组件的可见短标签统一为“Pass rate / 通过率”；任何默认总览和任何只写这个短标签的位置都使用 `endToEndPassRate`。`taskPassRate` 必须标成“Task pass rate / 可判定任务通过率”等条件口径，不能把 `2 passed / 5 errored` 显示成无条件的 `100%`。要定位损失来自答题还是执行，可把三列并排：
 
 ```tsx
-<MetricTable
-  rows="experiment"
-  columns={[endToEndPassRate, taskPassRate, executionReliability]}
-  sort={endToEndPassRate}
-/>
+<MetricTable>
+  <Rows dimension="experiment" sort={endToEndPassRate} />
+  <Column metric={endToEndPassRate} />
+  <Column metric={taskPassRate} />
+  <Column metric={executionReliability} />
+</MetricTable>
 ```
 
 `assistantTurns` 与 `repeatedFailedCommands` 需要 `o11y.json`；发布时没复制该 artifact 就显示缺失，不会冒充 0。`endToEndPassRate` 与 Eval 最终 verdict 是两个问题：前者衡量单次实际交付成功的概率；后者为了 early-exit / 退出码按 `passed > failed > errored > skipped` 折叠多轮。Reports 可以同时展示终态判定构成和 `endToEndPassRate`，但不得用前者现场重算后者。
@@ -114,7 +115,7 @@ function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 | `"points"` | `totalScore` | 同上位置全部换成总分；通过率不出现（不摆空列） |
 | `"mixed"` | 两者并排、各读各的 | 「过了 31/40 道」和「挣了 142 分」不能相加也不能互相排名：摘要两个 KPI 都显示，按题型拆组的位置各组用自己的主读数 |
 
-组件本身保持中立：`MetricScatter` / `MetricTable` 只收 `Metric`，不感知题型；分支只发生在消费 `scoringComposition` 的那几处组装点——[`ScopeSummary`](summaries.md#scopesummary) 的渲染面、[`ExperimentList`](entity-lists.md#experimentlist) 的主列、[`ExperimentComparison`](summaries.md#experimentcomparison) 的 compose。自定义报告需要同样的切换时调用同一个函数，不重新发明判据。
+组件本身保持中立：图表与 `MetricTable` 只收 `Metric`，不感知题型；分支只发生在消费 `scoringComposition` 的那几处组装点——[`ScopeSummary`](../components/summaries.md#scopesummary) 的渲染面、[`ExperimentList`](../components/entity-lists.md#experimentlist) 的主列、[`ExperimentComparison`](../components/summaries.md#experimentcomparison) 的 compose。自定义报告需要同样的切换时调用同一个函数，不重新发明判据。
 
 ## 自定义指标
 
@@ -164,7 +165,7 @@ interface DimensionRef {
 
 type DimensionInput = BuiltInDimension | CustomDimension | DimensionRef;
 
-/** series 类选项(MetricScatter / MetricLine / ExperimentComparison)额外接受非空数组,解析为复合维度。 */
+/** series 类绑定(图表 series 的 by、ExperimentComparison 的 by)额外接受非空数组,解析为复合维度。 */
 type SeriesInput = DimensionInput | readonly [DimensionInput, ...DimensionInput[]];
 
 interface NumericAxis {
@@ -234,7 +235,7 @@ fact 是逐 attempt 的，同一 experiment 的 attempt 可能落在不同值上
 
 接受 `SeriesInput` 的选项传数组时解析为**复合维度**：维度 name 为成员 name 依声明顺序以 ` × ` 连接；每个 attempt 的维度值为各成员显示键依同一顺序以 ` · ` 连接，任一成员缺失沿用 `(missing)` 显示键参与连接；显示键冲突检测仍按成员各自执行。`["agent", label("memory")]` 即「agent × 记忆机制」各自成类。
 
-`MetricLine` 的 x 必须是 `NumericAxis`，用 `numericFlag()` / `numericLabel()` / `numericRunConfig()` / `numericFact()` 或自定义 `of` 构造：
+数值轴 `XAxis` 的绑定必须是 `NumericAxis`，用 `numericFlag()` / `numericLabel()` / `numericRunConfig()` / `numericFact()` 或自定义 `of` 构造：
 
 ```ts
 const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
@@ -250,5 +251,5 @@ const reasoning = numericRunConfig("reasoningEffort", {
 
 ## 相关阅读
 
-- [指标组件](metric-views.md) —— 指标的六种投影。
+- [图表](../components/charts.md) / [表格与矩阵](../components/tables.md) —— 指标的图形与表格投影。
 - [Results Format](../../results/architecture.md) —— 指标读取的落盘字段。

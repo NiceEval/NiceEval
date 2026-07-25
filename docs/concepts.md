@@ -107,11 +107,10 @@
 | 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 |
 | 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 |
 | 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 |
-| 指标图形 | 分组条形图 | Grouped bar chart | `MetricBars` | 两个可配置维度形成分组和系列;每根条是一个聚合指标值 |
-| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和 Eval 分组计算分数 |
-| 指标图形 | 指标散点图 | Metric scatter plot | `MetricScatter` | 每点一个可配置维度值,通常是 experiment;坐标是两个聚合指标值 |
-| 指标图形 | 指标趋势图 | Metric line chart | `MetricLine` | 每点一个 experiment;横轴是 experiment flag,纵轴是聚合指标值 |
+| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和分科计算分数 |
 | 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果快照;格内是指标值及差值 |
+| 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道 Eval、每列一个条件;格内是历史全执行的判定计数 |
+| 指标图形 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一棵组件树:容器持有坐标系,`XAxis` / `YAxis` 绑定维度或指标,`Line` / `Bar` / `Area` / `Scatter` 各是一条 series |
 | 行 / 列 / 分节 / 文本 / 样式 / 表格 | Row / column / section / text / style / table | `Row` / `Col` / `Section` / `Text` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 |
 
 ### 配置与 CLI

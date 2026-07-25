@@ -67,7 +67,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 
 - **MetricCell 与缺数据**：字段构成与序列化不丢值；`validate*Data`
   递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛裸 TypeError；缺 artifact 时返回 null 不猜值。
-- **数据计算函数（`*Data`）**：各组件 data 函数的选择、配对、排序、缺失与报错语义（selectedEvalIds 口径、conditionsByFlag 条件派生边界、FailureList 等价、稀疏矩阵、单行摘要的字段瘦身、可比性冲突的完整反馈、`durationMs`
+- **数据计算函数（`*Data`）**：各组件 data 函数的选择、配对、排序、缺失与报错语义（selectedEvalIds 口径、`<FlagConditions>` 的条件派生边界、FailureList 等价、稀疏矩阵、单行摘要的字段瘦身、可比性冲突的完整反馈、`durationMs`
   对 timeout attempt 返回 `null`
   的删失口径——fixture 要证明线值不进均值且格子 samples<total 如实呈现）；errored 的单行摘要对多行
   `error.message` 只取首行再收口——diagnose 从第二行起的 output
@@ -96,12 +96,22 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   整 Scope 一份）——以展开树与 data 为断言面，默认折叠、汇总严重度、text 不折叠与空集零输出归 E2E。
 - **resolve 与组合组件**：spec/data 严格等价、`input` 缺省与覆盖、记忆化的等价判据、`ReportNode`
   全集与非法节点的完整反馈、`ctx` 的构成、sibling 并行但输出保序、`defineComponent` 两种形态。
-- **纯函数布局算法**：MetricScatter 点标签布局是 `chart-math`
-  纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；图轴值域推定（[图轴值域](../../../feature/reports/library/metric-views.md#图轴值域)）同属这一类——直接对推定函数断言扩后的
+- **结构节点解析**（[组件树](../../../feature/reports/components/README.md#结构节点)）：结构子节点归一成计算规格——`<Rows>`
+  / `<Column>` / `<Cells>` 折成 `MetricTableOptions` / `MetricMatrixOptions`，`<Subject>`
+  / `<Question>` 折成逐题带分科与权重的固定题集（权重优先级 Question → Subject → 1、推定分科名与显式
+  `<Subject>` 同名时并入），`<Columns>` 下的 `<Condition>` / `<FlagConditions>` 折成有序条件（基准恰一个），图表的轴与
+  series 折成 `ChartSpec`；断言面是归一后的规格与 `*Data`
+  产物，与手工传同一份 options 深相等。反馈覆盖：节点放错父组件（错误同时给出收到的父类型、允许的父类型与正确嵌套示例）、必填节点缺失或重复、零个
+  `<Question>` / 少于两个 `<Condition>` / 没有或多于一个 `baseline`、`<Condition>` 与
+  `<FlagConditions>` 混用、data 形态下子节点仍带数据绑定字段、动态 `by` 同时给显式 `dataKey`。
+- **页级色分配**（[系列色](../../../feature/reports/components/README.md#系列色分配单位是页)）：给定一页已解析数据里的
+  `(维度, 值)` 集合产出映射——同一键在同页多个组件（图表 series 与实体列表的维度键）得到同一个色槽、撞色按显示键字典序线性探测、keyset
+  超过色板才复用、缩短后的显示名不参与取键；断言面是映射本身，不断言渲染出的颜色值。
+- **纯函数布局算法**：散点点标签布局是 `chart-math`
+  纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts.md#值域)）同属这一类——直接对推定函数断言扩后的
   `[min, max]`：两端各扩数据跨度 20%、零跨度 fallback（值绝对值的 20%、值为 0 取 1）、有自然
   `bounds`
-  时保证最小跨度为量程参考的 1/3 并钳到边界（贴边数据点落在框线上）、无量程参考的轴不强造最小跨度，反向轴先扩边距再反向；两面共用同一份值域，不在渲染层重算；labels 维度与 series 归类的解析规则；series 配色的稳定散列与撞色线性探测（`colorIndexForKey`
-  / `colorIndicesForKeys`）同属这一类——确定性索引计算，不断言渲染出的颜色值。
+  时保证最小跨度为量程参考的 1/3 并钳到边界（贴边数据点落在框线上）、无量程参考的轴不强造最小跨度，反向轴先扩边距再反向；两面共用同一份值域，不在渲染层重算；labels 维度与 series 归类的解析规则；[页级色分配](../../../feature/reports/components/README.md#系列色分配单位是页)同属这一类——给定一页的 `(维度, 值)` 集合，稳定散列起点与撞色线性探测产出确定性索引，不断言渲染出的颜色值。
 - **面板几何（`panel.ts`）**：区域框契约（[排版原语 · 区域框](../../../feature/reports/library/layout.md#区域框text-面的框线体裁)）的纯函数实现，与
   `chart-math`/`grid-layout` 同一类——直接对 `renderPanel`
   的返回行数组断言，不经真实终端或 HTML。覆盖：顶层 `Section` 画完整四边框、`rows` 里的 `divider`
@@ -188,10 +198,10 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - 每一种参数冲突都返回完整用法错误。
 
   用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/cli-cross-condition-attribution.md)。口径单源见
-  [Metric Views](../../../feature/reports/library/metric-views.md)。
+  [Metric Views](../../../feature/reports/components/charts.md)。
 
 - **usage 组装与 facts 投影**:usage 行/表的组装口径单源见
-  [Library · Attempt 详情 · `UsageTable` 组装口径（单源）](../../../feature/reports/library/attempt-detail.md#usagetable-组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自
+  [Library · Attempt 详情 · `UsageTable` 组装口径（单源）](../../../feature/reports/components/attempt-detail.md#usagetable-组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自
   `Usage`(桶恒互斥,`inputTokens` 即未缓存输入)、token 片段只在 `cacheReadTokens` 在场时标 "uncached
   in"(fixture 要有「cache 桶缺席」的场景证明不给无拆分的数字贴标注)、`requests`
   缺失时片段整段省略(区分「省略」与「显示 0/1」)、合计对含 `—` 的列标不完整;这些判据的断言面是

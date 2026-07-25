@@ -1,6 +1,18 @@
 # 实体列表
 
-实体列表用于从汇总下钻到事实，不允许自由配置列。固定列不等于所有渲染面使用相同排版：web 面可以用表格支持人工比较，text 面可以用紧凑列表支持终端阅读，但两面必须消费同一份可序列化 `data`。计算函数分别是 `experimentListData`、`evalListData` 与 `attemptListData`；props 组合规则 `DataProps` 见[指标组件](metric-views.md)——spec 形态列出全量实体，要过滤或截断就在[组合组件](layout.md#自定义组件)里手工取数、用普通 JavaScript 加工后以 data 形态传入。列表数据逐实体成行，事后 JavaScript 过滤与任何选项严格等价，所以列表不设过滤选项；[指标组件的 `evals`](metric-views.md) 是聚合前收窄，属于另一类。
+实体列表用于从汇总下钻到事实：一行一个 experiment / eval / attempt，列是固定的。固定列不等于所有渲染面使用相同排版——web 面用表格支持人工比较，text 面用紧凑列表支持终端阅读，两面消费同一份可序列化 `data`。计算函数分别是 `experimentListData`、`evalListData` 与 `attemptListData`，props 组合规则见[组件树](README.md#数据绑定与两种形态)。
+
+列表不设 `evals` 选项：数据逐实体成行，聚合边界就是单实体，取数后用普通 JavaScript 过滤与任何选项严格等价。要过滤或截断，就在[组合组件](../library/layout.md#自定义组件)里手工取数、加工后以 data 形态传入。
+
+## 为什么实体列表不开放列
+
+实体列表没有结构子节点。列不是配置面，是下钻契约的一部分：
+
+- **主读数列由题型构成决定，不由作者挑。** 通过制显示通过率、计分制显示总分、混型两列并出（[主读数映射](../library/metrics.md#题型构成与主读数)）。开放选列就要求作者自己维护这个分支，报告一旦跑到另一种题型的 Scope 就会摆出空列。
+- **列集合稳定，读者的迁移成本才为零。** 每份报告里的 experiment 表列序一致，读者不必重新找「成本在第几列」。
+- **要自选列的组件已经有了**：[`MetricTable`](tables.md#metrictable) 就是「行是维度值、列是你挑的指标」。两个组件如果都开放选列，它们就塌成同一个组件，而实体列表独有的展开层级（experiment → eval → attempt）、占位行与时效标注会被稀释成表格的一种配置。
+
+展开层级同理不是选项：它由实体之间的从属关系决定。要别的形态就用[排版原语](../library/layout.md)和 `MetricTable` 自己拼。
 
 ## 数据形状
 
@@ -22,7 +34,7 @@ interface AttemptListItem {
   moreFailures: number;
   /** 当前 attempt 的 examScore 与证据引用。 */
   examScore: MetricCell;
-  /** 当前 attempt 的挣分（[`totalScore` 指标](metrics.md#内置指标)）；通过制 eval 为 null cell（不适用，不是缺数据）。 */
+  /** 当前 attempt 的挣分（[`totalScore` 指标](../library/metrics.md#内置指标)）；通过制 eval 为 null cell（不适用，不是缺数据）。 */
   totalScore: MetricCell;
   durationMs: number;
   /** 缺失为 null（测不了），不伪造 0；attempt 级条目的缺失一律用 null，不用省略字段。 */
@@ -67,7 +79,7 @@ interface ExperimentListItem {
   /** eval 级最终 verdict 计票（Result 列的构成）。 */
   evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };
   endToEndPassRate: MetricCell;
-  /** 实验总分（[`totalScore` 指标](metrics.md#内置指标)：perEval mean、acrossEvals sum）；通过制实验为 null cell。 */
+  /** 实验总分（[`totalScore` 指标](../library/metrics.md#内置指标)：perEval mean、acrossEvals sum）；通过制实验为 null cell。 */
   totalScore: MetricCell;
   costUSD: MetricCell;
   durationMs: MetricCell;
@@ -88,21 +100,20 @@ function evalListData(input: ReportInput): Promise<EvalListItem[]>;
 
 function attemptListData(input: ReportInput): Promise<AttemptListItem[]>;
 
-// 实体列表没有计算选项(见开篇:过滤、截断都是取数后的普通 JavaScript),DataProps 的 Options 腿为空。
-type ExperimentListProps = DataProps<readonly ExperimentListItem[], {}, {
+type ExperimentListProps = ComponentProps<readonly ExperimentListItem[], {
   filter?: boolean;
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }>;
 
-type EvalListProps = DataProps<readonly EvalListItem[], {}, {
+type EvalListProps = ComponentProps<readonly EvalListItem[], {
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }>;
 
-type AttemptListProps = DataProps<readonly AttemptListItem[], {}, {
+type AttemptListProps = ComponentProps<readonly AttemptListItem[], {
   /** 过滤 / 截断前的总数；省略时等于 data 长度。 */
   total?: number;
   /** web 面加过滤输入框（按 experiment、eval、agent、verdict 或摘要文本收窄行）；渐进增强，不改变数据与 text 面。 */
@@ -125,9 +136,9 @@ type AttemptListProps = DataProps<readonly AttemptListItem[], {}, {
 
 ## `ExperimentList`
 
-每项显示 experiment 身份、agent / model、flags、判定构成、官方指标和其中的 eval。组件不推断分组；默认 `ExperimentComparison` 把当前 Scope 的全部 items 交给它。
+每项显示 experiment 身份、agent / model、flags、判定构成、官方指标和其中的 eval。组件不推断分组；默认 [`ExperimentComparison`](summaries.md#experimentcomparison) 把当前 Scope 的全部 items 交给它。
 
-一行只有一套 `agent / model / flags`，这不是显示上的取舍而是输入约束：宿主注入的 [`current()` Scope 保证每个 experiment 只由可比性配置一致的快照拼成](../../results/library.md#官方现刻水位resultscurrent)；作者自选 `Snapshot[]` 时若同一 experiment 混入不一致的可比性配置，`experimentListData` 按完整用户反馈失败并指引——看跨配置演化用 `snapshot` 维度或 [`MetricLine`](metric-views.md#metricline)，不把两套配置拼成一行冒充单一配置。
+一行只有一套 `agent / model / flags`，这不是显示上的取舍而是输入约束：宿主注入的 [`current()` Scope 保证每个 experiment 只由可比性配置一致的快照拼成](../../results/library.md#官方现刻水位resultscurrent)；作者自选 `Snapshot[]` 时若同一 experiment 混入不一致的可比性配置，`experimentListData` 按完整用户反馈失败并指引——看跨配置演化用 `snapshot` 维度或[数值轴折线](charts.md#容器)，不把两套配置拼成一行冒充单一配置。
 
 web 面是固定列的 experiment 比较表，而不是无表头的松散卡片列表。主表一行一个 experiment，列顺序固定为：
 
@@ -137,16 +148,18 @@ web 面是固定列的 experiment 比较表，而不是无表头的松散卡片�
 | Model | model；缺失时显示明确空值 |
 | Agent | agent |
 | Avg. time | 官方 `durationMs` 聚合值；中文列名为“平均耗时” |
-| 主读数 | 按列表内题型构成选择（[主读数映射](metrics.md#题型构成与主读数)）：全通过制为“Pass rate / 通过率”列（官方 `endToEndPassRate`）；全计分制为“Total score / 总分”列（官方 `totalScore`）；两型并存时两列都出、不适用格显示 `—`，不摆空列。默认按主读数列从高到低排序；两型并存时两种读数不能互相排名，默认改按 experiment id 字典序，两个主读数列仍各自可点击排序 |
+| 主读数 | 按列表内题型构成选择（[主读数映射](../library/metrics.md#题型构成与主读数)）：全通过制为“Pass rate / 通过率”列（官方 `endToEndPassRate`）；全计分制为“Total score / 总分”列（官方 `totalScore`）；两型并存时两列都出、不适用格显示 `—`，不摆空列。默认按主读数列从高到低排序；两型并存时两种读数不能互相排名，默认改按 experiment id 字典序，两个主读数列仍各自可点击排序 |
 | Tokens | 官方 `tokens` 聚合值 |
-| Cost | 实验总成本：官方 `costUSD` 逐 attempt 求和（每题均值口径归散点等指标组件，见[默认报告](../show/default-report.md)）；实测成本优先、估算兜底，列头不断言口径 |
+| Cost | 实验总成本：官方 `costUSD` 逐 attempt 求和（每题均值口径归图表与表格，见[默认报告](../show/default-report.md)）；实测成本优先、估算兜底，列头不断言口径 |
 | Results | passed / failed / errored / skipped 的 eval 级判定构成，各项以中点分隔，不渲染成类似按钮的胶囊 |
 
 表头支持点击排序；标签和排序箭头作为一个不换行的单元对齐，当前排序方向始终可见，其余列的排序提示只在 hover / focus 时显示。宽度不足时整表横向滚动，不把标签与箭头拆成两行。`filter` 为 web 面增加过滤输入框，可按 experiment、agent、model、flag 或 eval 文本收窄行。排序和过滤只改变浏览状态，不改变数据、指标口径或 text 面输出。每个 experiment 行使用原生 `<details>` 展开，展开区显示 flags 和 Eval 列表。Eval 父行只显示折叠判定、Attempt 数以及这个 Eval 的平均耗时 / 平均成本，计分制实验的 Eval 父行与 Attempt 子行还各自显示挣分；每个 Attempt 子行再显示该轮判定、locator、耗时 / 成本与 [Scoring 定义的主失败断言摘要](../../scoring/library/display.md#主失败断言怎样选)，可继续下钻到 Attempt 详情。父行不复述某一轮的失败原因：单轮时会与唯一子行重复，多轮时挑任一轮又会冒充 Eval 级事实。通过制 passed attempt 的 Result 是 `—`，不罗列通过的 assertions；计分制 passed attempt 有丢分得分点时 Result 显示首条丢分摘要（[丢分摘要规则](../../scoring/library/display.md#主失败断言怎样选)），挣满才显示 `—`。
 
 覆盖缺口呈现为**占位行**：`missingEvalIds` 里的每道题在展开区渲染一条 Eval 父行，状态列为 `—`，结果列为「当前配置下无结果」加可复制的补跑命令（`niceeval exp <experimentId>`），无 attempt 子行；text 面同构。占位行不参与任何指标——通过率、耗时、成本的分母仍是有 attempt 的题，缺口不冒充失败；它的职责是把分母缺口摆进读者正在看的表里，而不是藏进页面级脚注。
 
-行标签是 experiment id 在当前列表里的最短唯一后缀：末段（最后一个 `/` 之后的部分）在这批 id 里唯一就只显示末段；多个 id 末段撞名时，撞名的那几个各自向前多取一段，重复直到互相区分为止（与 [`MetricScatter`](metric-views.md#metricscatter) 散点的点标签同一算法，两处共用同一份实现）。这是纯展示层的收窄，不是身份判定——排序键、过滤匹配和折叠展开都用完整 id，视觉系列色也跟随 Agent 而不是这个显示名。组件不提供覆盖这份自动结果的开关：算法本身已经保证「唯一时最短、撞名时刚好够用的长度」，报告作者不需要手动指定要去掉的路径前缀。
+行标签是 experiment id 在当前列表里的最短唯一后缀：末段（最后一个 `/` 之后的部分）在这批 id 里唯一就只显示末段；多个 id 末段撞名时，撞名的那几个各自向前多取一段，重复直到互相区分为止（与[散点点标签](charts.md#两面投影)同一算法，两处共用同一份实现）。这是纯展示层的收窄——排序键、过滤匹配和折叠展开都用完整 id。组件不提供覆盖这份自动结果的开关：算法本身已经保证「唯一时最短、撞名时刚好够用的长度」，报告作者不需要手动指定要去掉的路径前缀。
+
+Agent 键的颜色来自[页级色分配](README.md#系列色分配单位是页)，键是完整 agent 值而不是缩短后的显示名——同一页里图例、散点与这张表的同一个 agent 因此恒同色。
 
 text 面先输出与 web 同列口径的 experiment 比较表（列集合随主读数规则，与 web 面一致），再按 experiment 输出 Eval / Attempt 明细表。Eval 是父行，不是 Attempt 行上的重复字段；Attempt 用 `├─` / `└─` 子行显示一对多关系。明细列固定为状态、Eval / Attempt、结果、耗时、成本（计分制 Scope 在结果列前插入挣分列）；窄终端复用标准 text table renderer 折行或从右侧隐藏低优先级列，并明确报告隐藏列数：
 
@@ -206,7 +219,7 @@ const items = await evalListData(ctx.scope);
 
 ## `AttemptList`
 
-每项显示一次 attempt 的判定、单行结果摘要（`failureSummary`）、`examScore` 和 locator。[内建报告的 Attempts 页](built-in.md)就是 `<AttemptList filter />`——`filter` 与 `ExperimentList` 同规则，是 web 面的渐进增强过滤框。完整 assertions（含 judge 的 evidence）、diagnostics、cause 与 stack 不进 `AttemptListItem`——列表 data 只携带按 [Scoring display 契约](../../scoring/library/display.md#主失败断言怎样选)算好的摘要；需要完整结构时经 locator 回读取面（[`resolveLocator`](../../results/library.md#按-locator-寻址一个-attemptresolvelocator) → `AttemptHandle`），列表 JSON 因此不会携带 stack、evidence 或自由文本证据。最常见的失败清单有成品 [`FailureList`](#failurelist)；`AttemptList` 服务其余自选集合。
+每项显示一次 attempt 的判定、单行结果摘要（`failureSummary`）、`examScore` 和 locator。[内建报告的 Attempts 页](../library/built-in.md)就是 `<AttemptList filter />`。完整 assertions（含 judge 的 evidence）、diagnostics、cause 与 stack 不进 `AttemptListItem`——列表 data 只携带按 [Scoring display 契约](../../scoring/library/display.md#主失败断言怎样选)算好的摘要；需要完整结构时经 locator 回读取面（[`resolveLocator`](../../results/library.md#按-locator-寻址一个-attemptresolvelocator) → `AttemptHandle`），列表 JSON 因此不会携带 stack、evidence 或自由文本证据。最常见的失败清单有成品 [`FailureList`](#failurelist)；`AttemptList` 服务其余自选集合。
 
 ```tsx
 const all = await attemptListData(ctx.scope);
@@ -239,11 +252,13 @@ type FailureListProps = {
 <FailureList limit={30} />
 ```
 
-其它筛选口径（只看某个 agent、按成本排序）不属于它——写[组合组件](layout.md#自定义组件)加工 `attemptListData` 的结果，`FailureList` 只覆盖这一种最常见的问题。
+其它筛选口径（只看某个 agent、按成本排序）不属于它——写[组合组件](../library/layout.md#自定义组件)加工 `attemptListData` 的结果，`FailureList` 只覆盖这一种最常见的问题。
 
 ## 相关阅读
 
-- [概览组件](summaries.md) —— `ExperimentComparison` 怎样逐组消费这些列表。
-- [指标组件](metric-views.md) —— 从实体切换到指标视角，及 `DataProps` 组合规则。
-- [排版原语与自定义组件](layout.md) —— 承载手工取数与数组加工的组合组件。
+- [组件树](README.md) —— 为什么这一族没有结构子节点，以及页级色分配。
+- [概览](summaries.md) —— `ExperimentComparison` 怎样逐组消费这些列表。
+- [表格与矩阵](tables.md) —— 从实体切换到指标视角。
+- [排版原语与自定义组件](../library/layout.md) —— 承载手工取数与数组加工的组合组件。
 - [Show](../show.md) —— 同一份明细在终端的展示。
+</content>

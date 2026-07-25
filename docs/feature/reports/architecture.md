@@ -59,7 +59,8 @@ report/
 │   │                            与文案惯例（缺数据/覆盖率展示、attempt 统计与筛选口径）
 │   ├── summaries/              ScopeSummary / ExperimentComparison
 │   ├── entity-lists/           Experiment / Eval / Attempt / Failure 列表
-│   ├── metric-views/           Table / Matrix / Bars / Scoreboard / Scatter / Line / Delta
+│   ├── charts/                 容器、轴、series、嵌套节点、ChartData 与两面投影
+│   ├── metric-views/           Table / Matrix / Scoreboard / Delta / Stability
 │   ├── attempt-detail/         Summary / Error / Assertions / Source / FixPrompt / Timeline /
 │   │                            Conversation / Diagnostics / Usage / Trace / Diff
 │   └── site-components/        Hero / Warnings / SnapshotDiagnostics / CopyFixPrompt / TraceWaterfall
@@ -79,7 +80,7 @@ report/
 
 一份报告至多声明一张 attempt-input page，避免 `show @<locator>` 与 locator 链接出现多个目标。报告未声明它时 locator 只是普通文本，宿主不悄悄补一张官方详情页。view 的 locator URL 与 `show @<locator>` 只是定位这张 page 并传参的宿主语法，不构成第二种内容模型。
 
-内建 `standard` 的 `pages` 因而有四项：报告、Attempts、追踪三张导航页，以及一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页。它的 `content` 是普通 [`AttemptDetail`](library/attempt-detail.md) 组合组件；`AttemptDetail` 与 `ExperimentComparison` 同级，都只用公开叶子组件装配，没有私有 renderer。用户可以直接用成品组合，也可以在该 page 的 `content` 里用 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等区块重新组装。
+内建 `standard` 的 `pages` 因而有四项：报告、Attempts、追踪三张导航页，以及一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页。它的 `content` 是普通 [`AttemptDetail`](components/attempt-detail.md) 组合组件；`AttemptDetail` 与 `ExperimentComparison` 同级，都只用公开叶子组件装配，没有私有 renderer。用户可以直接用成品组合，也可以在该 page 的 `content` 里用 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等区块重新组装。
 
 view 只保留 page 寻址、locator 历史记录与内容摆放机制。它可把已渲染的参数化 page 渐进增强成 dialog，但 dialog 内部的区块、顺序、样式和取舍全部来自 page content。本地模式与静态导出对同一 locator 物化相同字节的独立 page 文档；基线链接直接指向该文档，所以无 JavaScript 仍能打开，JavaScript 只拦截链接并把同一内容放进 dialog，不另造一份内容实现。`show @<locator>` 渲染同一 page 的 text 面；`--source` / `--execution` / `--timing` / `--diff` 选择 attempt-detail 组件族对应区块的 text 面（见下节）。
 
@@ -108,7 +109,7 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 ## Scope 是计算入口
 
-所有官方 `*Data(input, options?)` 计算函数接受 `ReportInput = Scope | readonly Snapshot[]`。Scope 同时携带真实快照、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”的信息拆开。warning 的呈现件是 [`ScopeWarnings`](library/site-components.md#scopewarnings)，快照实体上开放词表 diagnostics 的呈现件是 [`SnapshotDiagnostics`](library/site-components.md#snapshotdiagnostics)；宿主不在报告树外另设通道，[内建报告](library/built-in.md)的三张 scope-input page 都相邻放置两者（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。`SnapshotDiagnostics` 对 Scope 只投影 `scope.snapshots`，对裸 `Snapshot[]` 同样工作；它的 data 形态只携带 experimentId、startedAt 与 DiagnosticRecord[]，不把 Snapshot 拖进浏览器。覆盖缺口由 `experimentListData` 消费成占位行、时效由 attempt 行的时效标注呈现（见[实体列表](library/entity-lists.md)），指标与列表组件的数据不复制 warning 或 diagnostic。
+所有官方 `*Data(input, options?)` 计算函数接受 `ReportInput = Scope | readonly Snapshot[]`。Scope 同时携带真实快照、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”的信息拆开。warning 的呈现件是 [`ScopeWarnings`](components/site.md#scopewarnings)，快照实体上开放词表 diagnostics 的呈现件是 [`SnapshotDiagnostics`](components/site.md#snapshotdiagnostics)；宿主不在报告树外另设通道，[内建报告](library/built-in.md)的三张 scope-input page 都相邻放置两者（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。`SnapshotDiagnostics` 对 Scope 只投影 `scope.snapshots`，对裸 `Snapshot[]` 同样工作；它的 data 形态只携带 experimentId、startedAt 与 DiagnosticRecord[]，不把 Snapshot 拖进浏览器。覆盖缺口由 `experimentListData` 消费成占位行、时效由 attempt 行的时效标注呈现（见[实体列表](components/entity-lists.md)），指标与列表组件的数据不复制 warning 或 diagnostic。
 
 指标与列表组件的数据样本一律来自 `Scope.attempts`——按 `current()` / `latest()` 口径挑好的 attempt 全集，组件不各自 `flatMap` `snapshots` 重新展开，避免同一道题的历史 attempt 被不同组件用不同口径重复计入或漏算。配置（agent / model / flags / sandbox 等）、diagnostics 与快照目录这类**快照级**信息来自真实 `Scope.snapshots`。`current()` 下同一个 experiment 可能有多个贡献 Snapshot（不同 eval 取自不同历史快照，见 [Results · 官方现刻水位](../results/library.md#官方现刻水位resultscurrent)）；此时该 experiment 展示用的“水位基准 Snapshot”是这些贡献来源里 `startedAt` 最新的一个——表头、hero 与 `config()` 桥接读取的 agent / model / flags 都以这一个为准，不是任取某个来源或合并多个来源的字段。
 
@@ -124,9 +125,9 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 ## Scope 是默认报告的比较边界
 
-`experimentListData`、`scopeSummaryData` 与 `metricScatterData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Scope；每个 experiment 当前有效的 eval 集从 `Scope.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入榜单占位行，不进分母也不补成失败。这条读法不依赖任何单一快照的 `ExperimentRunInfo.selectedEvalIds`——`current()` 下一个 experiment 的有效题集由多个贡献 Snapshot 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
+`experimentListData`、`scopeSummaryData` 与 `chartData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Scope；每个 experiment 当前有效的 eval 集从 `Scope.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入榜单占位行，不进分母也不补成失败。这条读法不依赖任何单一快照的 `ExperimentRunInfo.selectedEvalIds`——`current()` 下一个 experiment 的有效题集由多个贡献 Snapshot 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
 
-`ScopeSummary`、`MetricScatter` 与 `ExperimentList` 都消费同一份 Scope。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；组件不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
+`ScopeSummary`、默认散点与 `ExperimentList` 都消费同一份 Scope。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；组件不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
 
 ## 组件模型：解析面与渲染面
 
@@ -135,19 +136,28 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 - **双面组件**（对象形态 `{ resolve?, text, web }`）：自己渲染。`resolve` 是组件唯一的异步 / IO 面，把作者写下的 props 规范化成渲染 props；`text` 与 `web` 是同步纯函数，只消费 resolve 之后的渲染 props——两面因此天然消费同一份终值。
 - **组合组件**（函数形态 `(props, ctx) => 树`）：只装配已有组件，不自己渲染，可以异步；`ctx` 携带宿主注入的 `scope`、结果根读取面 `results` 与规范化报告声明 `report`（[契约](library/shell.md#行为约束)）。心智与 React 同构：双面组件像 host component 自己落渲染，组合组件像 function component 只组合别人。
 
-官方数据组件的 props 有两种形态，以 `data` 字段判别：
+官方数据组件的 props 有两种形态，以 `data` 字段判别；数据绑定住在[结构子节点](components/README.md#结构节点)上：
 
 ```tsx
-<MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />  // spec 形态
-<MetricScatter data={await metricScatterData(scope, options)} />                    // data 形态
+// spec 形态
+<ScatterChart>
+  <XAxis metric={costUSD} />
+  <YAxis metric={endToEndPassRate} />
+  <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
+</ScatterChart>
+
+// data 形态
+<ScatterChart data={await chartData(scope, spec)}>
+  <Scatter dataKey="scatter:experiment:agent" />
+</ScatterChart>
 ```
 
-- **spec 形态**：计算选项直接作为 props，`input` 可省略、默认宿主注入的 Scope。管线在 resolve 阶段代为调用同名 `*Data` 函数——spec 形态与「先手工调 `*Data` 再传 `data`」严格等价，终值、覆盖率与 attempt 引用逐字段相同。
+- **spec 形态**：结构子节点携带计算绑定，`input` 可省略、默认宿主注入的 Scope。管线在 resolve 阶段代为调用同名 `*Data` 函数——spec 形态与「先手工调 `*Data` 再传 `data`」严格等价，终值、覆盖率与 attempt 引用逐字段相同。
 - **data 形态**：接收配套 `*Data` 函数算好的可序列化数据，跳过取数。它是显式降级口，服务三类场景：算完后用普通 JavaScript 加工（filter / slice / 排序）、把同一份数据写成 JSON 给 SPA、在没有 niceeval 解析阶段的自有 React 页面里渲染。同一组件同时给出 `data` 与 spec 字段时，按完整用户反馈报错，不静默取一边。
 
 `*Data` 计算函数与组件成对导出——它们是双面组件解析面的具名形式（`MetricTable` / `metricTableData`、`ExperimentList` / `experimentListData`），只住在 `niceeval/report`。`niceeval/report/react` 只导出纯 web 渲染面：组件只收 `data`，不含任何读盘 / artifact 计算代码；spec 形态与组合组件只在报告树里成立。
 
-resolve 在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化：声明式重复同一 spec（如 `MetricMatrix` 与 `MetricBars` 消费同一矩阵）只计算一次，声明式写法不劣于手工共享数据。深相等只递归比较可序列化值；spec 里的函数与 `Metric` / `Dimension` / `NumericAxis` 实例按引用比较——共享计算的成立条件是引用同一实例（同一次 import 天然满足），引用不同的等价定义只是各算一次，不构成错误。
+resolve 在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化：声明式重复同一 spec（如一张矩阵和一张同维度的图表消费同一份聚合）只计算一次，声明式写法不劣于手工共享数据。深相等只递归比较可序列化值；spec 里的函数与 `Metric` / `Dimension` / `NumericAxis` 实例按引用比较——共享计算的成立条件是引用同一实例（同一次 import 天然满足），引用不同的等价定义只是各算一次，不构成错误。
 
 这个模型保证四条边界：
 
@@ -163,13 +173,13 @@ resolve 在一次页渲染内按「同引用 `input` + 深相等 spec」记忆�
 ```text
 装载（规范化外壳与页列表，静态校验）
   → resolve（展开组合组件 + 执行 spec 形态取数；同层并行、保持声明顺序、按 (input, spec) 记忆化）
-  → validate（展开后的树逐节点校验渲染面资格）
-  → render（纯同步输出终端文本或静态 HTML）
+  → validate（展开后的树逐节点校验渲染面资格；结构节点在原位置校验合法父组件）
+  → render（纯同步输出终端文本或静态 HTML；先按页内维度值集合算一次色分配）
 ```
 
 - **resolve：** 页内唯一的异步 / IO 边界。递归展开组合组件（调用其函数并 await 返回树）、执行双面组件的解析面；同层 sibling 并行取数且不改变节点顺序。非法节点——React 组件、未经 `defineComponent` 的普通函数、任意 HTML intrinsic——在展开遇到时立即以完整用户反馈拒绝，不为非法节点取数。
 - **validate：** 确保展开后树中每个组件都有 text 和 web 两面。校验只看节点资格，不限定树形：根节点可以是单个组件、`Col` 或 `Tabs`，宿主不强制任何最外层容器。
-- **render：** 纯同步。text 面与 web 面消费同一棵已解析的树。
+- **render：** 纯同步。text 面与 web 面消费同一棵已解析的树。开始渲染前先收集这一页全部已解析数据里的 `(维度, 值)` 对，一次算出维度值到色槽的映射——[页级色分配](components/README.md#系列色分配单位是页)，保证图例与列表里的同一个键同色；映射是确定的纯函数，不改写任何组件 data。
 
 `defineComponent` 的对象形态要求同时给出 `text` 与 `web`，缺一面在定义时报错。因此任何可放入 `--report` 的组件都能被两个官方宿主判读；只用于用户网站的普通 React 组件不受这项约束，也不能进报告树。
 
@@ -246,7 +256,7 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 - **文档单例**：浏览器 `<title>`（消费外壳 `title` 的回退链）、`meta charset` / `viewport`。
 - **品牌位**：`view` 页头左端恒定的 NiceEval 字标（45° 方块 mark + 文字），外链官网、带 `utm_medium=brand`。它是产品品牌位，报告定义不能覆盖或移除；与页内 `PoweredBy` 品牌行同族（`utm_medium=powered-by` 区分点击来自哪个位）。报告 `title` 的落点是页内 hero 与浏览器 `<title>`，不进这个品牌位。
 
-scope-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`TraceWaterfall` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](library/site-components.md#tracewaterfall)），符合「索引终结于可执行命令」的省略规则。
+scope-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`TraceWaterfall` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/site.md#tracewaterfall)），符合「索引终结于可执行命令」的省略规则。
 
 ### text 面的省略规则
 

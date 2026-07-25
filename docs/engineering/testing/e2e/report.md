@@ -73,22 +73,22 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
   page 均紧邻 `ScopeWarnings` 放置；`PoweredBy` / `HeroCard`
   品牌行的固定链接（`utm_source=report&utm_medium=powered-by`、`rel="noopener"` 不含
   `noreferrer`）与 web 恒含、text 零输出的两面差异；同一维度键在 `MetricTable` / `MetricMatrix` /
-  `Scoreboard` / `AttemptList` / `ExperimentList` / `MetricScatter`
-  之间呈现同一种颜色，与渲染顺序无关（比较浏览器实际绘制结果，不比较内部 class 或散列函数）；`MetricScatter`
-  轴方向随指标 `better` 反向、刻度显示真实值、connect 折线与图例的一致性；`view`
+  `Scoreboard` / `AttemptList` / `ExperimentList` / 图表图例
+  之间呈现同一种颜色，与渲染顺序无关（同一页一次分配，见[页级色分配](../../../feature/reports/components/README.md#系列色分配单位是页)；比较浏览器实际绘制结果，不比较内部 class 或散列函数）；图表
+  轴方向随指标 `better` 反向、刻度显示真实值、`Scatter line` 折线与图例的一致性；`view`
   外壳（topbar）恒有 NiceEval 品牌位、无 hero 区（hero 是页内组件），导航项与顺序等于报告定义中
   `navigation !== false` 的页（不多不少、宿主不追加），`ReportLink.icon`
   的内联 SVG 渲染在 label 前。
 - **终端排版**：Table 的列宽 / 折行 / 丢列标注、Section 框线与窄宽降级、Grid 列数规划、显示宽度口径（CJK 记 2 列）——对 show 输出逐行断言，语义来源是
-  [Library · 排版原语](../../../feature/reports/library/layout.md)；`MetricScatter`
-  字符坐标图的标记分配顺序（图例字典序、series 内 x 升序）、图例文本与 `connect`
+  [Library · 排版原语](../../../feature/reports/library/layout.md)；散点
+  字符坐标图的标记分配顺序（图例字典序、series 内 x 升序）、图例文本与 `line`
   逐段位移摘要，语义来源是
-  [Library · 指标组件](../../../feature/reports/library/metric-views.md#metricscatter)。
+  [图表 · 两面投影](../../../feature/reports/components/charts.md#两面投影)。
 - **双面同源**：text 与 web 显示同一份解析终值、覆盖率、判定构成和 warning，渲染不重算不丢值；不逐字比较布局。
 - **视觉与交互**：对同一次运行执行 `niceeval view --out`
   导出静态站，用真实浏览器打开 index 与失败 attempt 的 `attempt/<locator>.html`
   文档，验收「组件 + 官方 stylesheet」在真实证据上的组合成立：详情各语义块是结构化布局而非 UA 默认排版；源码行按
-  [`AttemptSource` 视觉规范](../../../feature/reports/library/attempt-detail.md#attemptsource-web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
+  [`AttemptSource` 视觉规范](../../../feature/reports/components/attempt-detail.md#attemptsource-web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
   assertions / Other conversation）同样是结构化条目而非 UA 默认排版，分轮卡片与
   `AttemptConversation`
   同视觉语言，工具预览无 JSON 字面转义直出——共享回复 renderer 的每个新渲染容器都要在这里验收一次样式覆盖（先例：[memory/attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)，同类缺陷在单元层 DOM 断言下恒逃逸）；点击 send

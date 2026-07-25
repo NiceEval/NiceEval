@@ -8,7 +8,7 @@
 
 1. 不用宿主注入的当前 Scope 冒充历史;在组合组件里从 `ctx.results.experiments` 找到目标 Experiment。
 2. 把它的 `snapshots` 显式作为组件 `input`,行维度选 snapshot。
-3. 用 `MetricTable` 对账每次快照的成功率、成本和样本数;只有 x 轴确实是有序数值时才改用 `MetricLine`。
+3. 用 `MetricTable` 对账每次快照的成功率、成本和样本数;只有 x 轴确实是有序数值时才改用数值轴 `LineChart`。
 4. 快照内携带的 Attempt 依然按时效契约标记;历史报告不假设每个点都是当次进程全新执行。
 
 ## 边界

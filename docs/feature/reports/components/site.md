@@ -1,6 +1,8 @@
 # 站点组件
 
-构成一个「完整报告站」的组件：站点标题区（hero）、品牌行、选择警告区、快照诊断区、批量修复 prompt 与 trace 瀑布。它们与指标组件、实体列表在同一工具箱里，没有任何宿主特权——[内建报告](built-in.md)的导航 pages 由本页组件加 [`ExperimentComparison`](summaries.md#experimentcomparison) / [`AttemptList`](entity-lists.md#attemptlist) 写成，参数化详情页则用 [`AttemptDetail`](attempt-detail.md)，任何用户报告都能逐字复刻或整块丢弃。props 组合规则 `DataProps` 见[指标组件](metric-views.md)。
+构成一个「完整报告站」的组件：站点标题区（hero）、品牌行、选择警告区、快照诊断区、批量修复 prompt 与 trace 瀑布。它们与其它组件在同一工具箱里，没有任何宿主特权——[内建报告](../library/built-in.md)的导航 pages 由本页组件加 [`ExperimentComparison`](summaries.md#experimentcomparison) / [`AttemptList`](entity-lists.md#attemptlist) 写成，参数化详情页则用 [`AttemptDetail`](attempt-detail.md)，任何用户报告都能逐字复刻或整块丢弃。props 组合规则见[组件树](README.md#数据绑定与两种形态)。
+
+这一族都不收结构子节点：它们的聚合轴、折叠层级与品牌行是契约而不是配置面，作者的取舍在放不放它。
 
 ## `Hero`
 
@@ -25,7 +27,7 @@ interface HeroProps {
 <Hero title="Memory Evals" />     // 显式标题
 ```
 
-读 `ctx.report` 意味着 `Hero` 的输出跟随站点（[契约](shell.md#行为约束)）；要站点无关的标题区，直接用 `HeroCard` 显式传值。
+读 `ctx.report` 意味着 `Hero` 的输出跟随站点（[契约](../library/shell.md#行为约束)）；要站点无关的标题区，直接用 `HeroCard` 显式传值。
 
 ## `HeroCard`
 
@@ -60,12 +62,12 @@ web 面渲染 hero 标题（`<h1>`）、meta 行（最后运行时间按渲染 l
 
 ## `ScopeWarnings`
 
-选择警告区：把 Scope 携带的 [`ScopeWarning[]`](../../results/library.md#警告-kind-全集) 按「下一步动作」聚合渲染。警告只承载定位不到任何一行的完整性事实（快照未收尾、落盘不可读）；能落到行上的事实不走这里——覆盖缺口是 [`ExperimentList` 的占位行](entity-lists.md#experimentlist)，携带与跨快照拼接是实体行上的[时效标注](entity-lists.md#时效标注)。它是警告的唯一呈现组件——宿主不再在报告树外另设警告通道，报告里有没有警告区由报告文件决定；[内建报告](built-in.md)的三张 scope-input page 都放它，attempt-input page 不重复站点范围警告。警告可见性因此是作者义务，与自定义脚本的增强层不变量同一信任模型：省略它的报告，其数字可信度由作者自己负责。
+选择警告区：把 Scope 携带的 [`ScopeWarning[]`](../../results/library.md#警告-kind-全集) 按「下一步动作」聚合渲染。警告只承载定位不到任何一行的完整性事实（快照未收尾、落盘不可读）；能落到行上的事实不走这里——覆盖缺口是 [`ExperimentList` 的占位行](entity-lists.md#experimentlist)，携带与跨快照拼接是实体行上的[时效标注](entity-lists.md#时效标注)。它是警告的唯一呈现组件——宿主不再在报告树外另设警告通道，报告里有没有警告区由报告文件决定；[内建报告](../library/built-in.md)的三张 scope-input page 都放它，attempt-input page 不重复站点范围警告。警告可见性因此是作者义务，与自定义脚本的增强层不变量同一信任模型：省略它的报告，其数字可信度由作者自己负责。
 
 ```ts
 function scopeWarningsData(input: ReportInput): Promise<readonly ScopeWarning[]>;
 
-type ScopeWarningsProps = DataProps<readonly ScopeWarning[], {}, {
+type ScopeWarningsProps = ComponentProps<readonly ScopeWarning[], {
   locale?: ReportLocale;
   className?: string;
 }>;
@@ -106,7 +108,7 @@ type ScopeWarningsProps = DataProps<readonly ScopeWarning[], {}, {
 
 快照诊断区：呈现属于某次 Snapshot 整体、无法诚实定位到单个 Eval 或 Attempt 行的操作性 [`DiagnosticRecord`](../../results/architecture.md)。它与 `ScopeWarnings` 版面相邻、数据与词表分离：warnings 的 `kind` 是带模板登记的闭集，diagnostics 的 `code` 是 runner 侧开放词表；组件只按 `level`、`message`、`command` 与 `count` 通用渲染，不按 code 建注册表或拒绝未知成员。
 
-它是快照级 diagnostics 的正式呈现组件。宿主不在报告树外另设诊断通道，[内建报告](built-in.md)的三张 scope-input page 都把它放在 `ScopeWarnings` 之后，attempt-input page 不重复范围内的快照诊断。诊断可见性是报告作者义务：自定义报告可以省略，但省略后由作者自己承担未向读者交代快照操作性问题的责任。
+它是快照级 diagnostics 的正式呈现组件。宿主不在报告树外另设诊断通道，[内建报告](../library/built-in.md)的三张 scope-input page 都把它放在 `ScopeWarnings` 之后，attempt-input page 不重复范围内的快照诊断。诊断可见性是报告作者义务：自定义报告可以省略，但省略后由作者自己承担未向读者交代快照操作性问题的责任。
 
 准入判据与 warnings 的行归属铁律相同：只有“属于某次快照运行、但定位不到任何单行”的事实进入 `snapshot.diagnostics` 与本组件。能归属具体 Eval 或 Attempt 的事实必须进入相应占位行、时效标注或 Attempt 详情，不得把本组件当杂物间。
 
@@ -121,7 +123,7 @@ type SnapshotDiagnosticsData = readonly SnapshotDiagnosticsItem[];
 
 function snapshotDiagnosticsData(input: ReportInput): Promise<SnapshotDiagnosticsData>;
 
-type SnapshotDiagnosticsProps = DataProps<SnapshotDiagnosticsData, {}, {
+type SnapshotDiagnosticsProps = ComponentProps<SnapshotDiagnosticsData, {
   locale?: ReportLocale;
   className?: string;
 }>;
@@ -168,7 +170,7 @@ interface CopyFixPromptData {
 
 function copyFixPromptData(input: ReportInput): Promise<CopyFixPromptData>;
 
-type CopyFixPromptProps = DataProps<CopyFixPromptData, {}, {
+type CopyFixPromptProps = ComponentProps<CopyFixPromptData, {
   locale?: ReportLocale;
   className?: string;
 }>;
@@ -182,7 +184,7 @@ type CopyFixPromptProps = DataProps<CopyFixPromptData, {}, {
 
 ## `TraceWaterfall`
 
-每个 attempt 一行的执行时间瀑布，用 canonical OTel 字段显示被测 agent 的原始 span（agent / model / tool）。行内只画顶层 span 摘要；完整瀑布与 runner 时间树的组合视图由报告的 [`AttemptTimeline`](attempt-detail.md) 详情组件承担，本组件不复制它。
+每个 attempt 一行的执行时间瀑布，用 canonical OTel 字段显示被测 agent 的原始 span（agent / model / tool）。行内只画顶层 span 摘要；完整瀑布与 runner 时间树的组合视图由 [`AttemptTimeline`](attempt-detail.md) 详情组件承担，本组件不复制它。
 
 ```ts
 interface TraceSpanSummary {
@@ -205,7 +207,7 @@ interface TraceWaterfallRow {
 
 function traceWaterfallData(input: ReportInput): Promise<readonly TraceWaterfallRow[]>;
 
-type TraceWaterfallProps = DataProps<readonly TraceWaterfallRow[], {}, {
+type TraceWaterfallProps = ComponentProps<readonly TraceWaterfallRow[], {
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
@@ -222,8 +224,10 @@ type TraceWaterfallProps = DataProps<readonly TraceWaterfallRow[], {}, {
 
 ## 相关阅读
 
-- [内建报告](built-in.md) —— 这些组件组成默认站点的样子。
-- [外壳与多页](shell.md) —— `ctx.report.title` 的回退链与品牌契约。
+- [组件树](README.md) —— 组合规则与共用呈现 props。
+- [内建报告](../library/built-in.md) —— 这些组件组成默认站点的样子。
+- [外壳与多页](../library/shell.md) —— `ctx.report.title` 的回退链与品牌契约。
 - [实体列表](entity-lists.md) —— Attempts 页的本体 `AttemptList`。
 - [View](../view.md) —— attempt 详情路由与导航机器。
 - [Results Library](../../results/library.md#警告-kind-全集) —— `ScopeWarning` 的 kind 全集与 Snapshot diagnostics 的透传边界。
+</content>
