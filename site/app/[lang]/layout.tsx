@@ -45,7 +45,7 @@ export default async function LangLayout({ children, params }: { children: React
         <Script
           src="https://vibeloft.ai/telemetry/v1.js"
           data-vl-product-id="b5b155b2-4d7d-426e-89f8-95eaa1f61ba9"
-          data-vl-auth-key="REPLACE_WITH_NEW_WEB_AUTH_KEY"
+          data-vl-auth-key="vl_web.tNU554AVLZ9teAF7JNdkBIMn7Y38bT0j3Se4mblmnmQ"
           strategy="lazyOnload"
         />
         <Script src="https://www.googletagmanager.com/gtag/js?id=G-Q30H5WX93X" strategy="afterInteractive" />
