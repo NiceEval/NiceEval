@@ -136,7 +136,7 @@ export default defineExperiment({
 
 ## Carry：自动携带
 
-上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次 Run（带 `artifactBase` 指回原 artifact），让最新 Run 保持完整；[`--rerun`](use-case/rerun.md) 收窄「哪些还算数」(`failed` 档只采信 `passed`，`all` 档一律不采信)；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求 Run 收尾，因此被中断或强杀的 Invocation **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [缓存与携带](cache.md)，携带条目的落盘与读取语义见 [Results · 两类条目](../record/architecture.md#resultjson)。
+上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次 Run（带 `artifactBase` 指回原 artifact），让最新 Run 保持完整；[`--rerun`](use-case/重新运行/) 收窄「哪些还算数」(`failed` 档只采信 `passed`，`all` 档一律不采信)；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求 Run 收尾，因此被中断或强杀的 Invocation **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [缓存与携带](cache.md)，携带条目的落盘与读取语义见 [Results · 两类条目](../record/architecture.md#resultjson)。
 
 ## Invocation Completion 与退出
 

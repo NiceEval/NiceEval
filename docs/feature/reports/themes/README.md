@@ -14,4 +14,4 @@
 
 - [Library · 主题](../library/theme.md) —— 主题制品、四档装载链、令牌全集与 CSS 出口。
 - [Library · 内建报告](../library/built-in.md) —— 内建视图与内建主题的同一个入口。
-- [自己写报告组件](../use-case/write-custom-component.md) —— 组件怎么读令牌，才能跟随这里的任何一份主题。
+- [自己写报告组件](../use-case/构建报告/自定义组件/) —— 组件怎么读令牌，才能跟随这里的任何一份主题。

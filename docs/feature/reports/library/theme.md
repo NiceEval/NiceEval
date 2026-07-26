@@ -349,7 +349,7 @@ export default defineReport({
 });
 ```
 
-官方组件提供稳定的 `nre-*` 语义 class，这是主题与自定义组件共同的着力点；自定义组件用自己的 `className` 前缀建立边界，写法见[自己写报告组件](../use-case/write-custom-component.md)。
+官方组件提供稳定的 `nre-*` 语义 class，这是主题与自定义组件共同的着力点；自定义组件用自己的 `className` 前缀建立边界，写法见[自己写报告组件](../use-case/构建报告/自定义组件/)。
 
 CSS 可以重写排版块的视觉结构，但不得改变数据、初始 HTML 中的数值和无 JavaScript 可读性；也不得隐藏 NiceEval 固定品牌位，或用颜色作为 passed / failed、不同 series 的唯一信息载体。
 
@@ -363,8 +363,8 @@ NiceEval 官方主题 [Basalt](../themes/basalt.md) 保证官方组件的对比�
 
 ## 相关阅读
 
-- [自己写报告组件](../use-case/write-custom-component.md) —— 自定义组件怎么取色、怎么跟随任何主题。
-- [给报告换主题、做自己的主题包](../use-case/theme-and-distribute.md) —— 从换一次色到发一个主题包的全流程。
+- [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义组件怎么取色、怎么跟随任何主题。
+- [给报告换主题、做自己的主题包](../use-case/交付报告/主题/) —— 从换一次色到发一个主题包的全流程。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
 - [外壳与多页](shell.md) —— `theme` / `seriesPins` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
 - [排版原语与自定义组件](layout.md) —— 页内 `Style`、`className` 与双面组件。

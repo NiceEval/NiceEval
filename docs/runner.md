@@ -95,7 +95,7 @@ attempt 的一生
 「云的就能开大」这个直觉是错的。推荐值反映的是 **provider 侧**约束
 (daemon 容量、API 配额、session 池大小),不是你的 agent API 限额。
 后者按限额类型自己压:速率型与并发型该动哪个闸、贴线配置为什么压不住,
-见[并发用例手册 · 用例 8](feature/experiments/use-case/concurrency.md#8-全局吞吐--max-concurrency-什么时候调)。
+见[限制全局并发](feature/experiments/use-case/并发/限制全局并发.md)。
 实验文件里的 `maxConcurrency` 不参与这条全局解析,只在该实验内部限流。
 
 **独占串行(`exclusive`)**:provider 可以声明它的所有 attempt 共享同一
@@ -169,7 +169,7 @@ job」场景的标准做法。「空位给最高优先级等待者 + 低优先�
 backfill 的复杂度。
 
 快慢实验混在一次命令里跑时看到的行为,见
-[并发用例手册 · 用例 9](feature/experiments/use-case/concurrency.md#9-快慢实验混跑什么都不配)。
+[快慢实验混跑](feature/experiments/use-case/并发/快慢实验混跑.md)。
 
 ### 矩阵展开
 
@@ -235,8 +235,8 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 「探到一次能过就停,过不了才继续跑下一次」这种严格串行的重试语义,是
 `maxConcurrency: 1` 与显式 `earlyExit: true` 组合出的效果,搭配与可观察
 行为见
-[并发用例手册 · 用例 5](feature/experiments/use-case/concurrency.md#5-严格重试过了就停没过才跑下一次)。
-flag 的全流程见[`--early-exit` 用例](feature/experiments/use-case/early-exit.md)。
+[严格顺序重试](feature/experiments/use-case/并发/严格顺序重试.md)。
+flag 的全流程见[`--early-exit` 用例](feature/experiments/use-case/首过即停.md)。
 
 ## 预算护栏(budget)
 
@@ -267,7 +267,7 @@ budget 按**域**计,不是全局总闸:
 `unstarted`,让整次运行的结论落在 `incomplete`,不能在 CI 里伪装成全绿。
 
 命令行用法与面板读法见
-[`--budget` 用例](feature/experiments/use-case/budget.md)。
+[`--budget` 用例](feature/experiments/use-case/预算上限.md)。
 
 ## 预热与复用:冷启动移出关键路径
 
@@ -419,7 +419,7 @@ Hook 内部做什么全部交给对应的作者决定。调用点从外到内:
 [Sandbox · 沙箱生命周期 Hook](feature/sandbox/library.md#沙箱生命周期-hook-setup-与-teardown),
 agent 级见
 [Agent 契约](feature/adapters/architecture/agent-contract.md#生命周期不变量)。
-写在哪层容易错位,见[环境预置与收尾怎么放](feature/experiments/use-case/lifecycle.md)。
+写在哪层容易错位,见[环境预置与收尾怎么放](feature/experiments/use-case/生命周期/)。
 
 跨实验共享、生命周期长于一次 run 的外部服务(共享 DB、公司内网服务
 本体)仍然用外部编排(`docker compose` / CI 脚本)起停、经 env 传入
@@ -679,7 +679,7 @@ CI 的最终结论(退出码、`result` 事件)必须读当场的
 ## 相关阅读
 
 - [Architecture](architecture.md) —— 运行器在四段数据流里的位置与端到端时序。
-- [并发怎么配](feature/experiments/use-case/concurrency.md) —— 两级闸的
+- [并发怎么配](feature/experiments/use-case/并发/) —— 两级闸的
   搭配速查:串行 / 降速 / 严格重试 / 快慢混跑。
 - [Experiments · 缓存与携带](feature/experiments/cache.md) —— 指纹输入、携带判据与 `--rerun` 三档的单源。
 - [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— 人读文本与

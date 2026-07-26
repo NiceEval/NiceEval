@@ -22,7 +22,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - 符合 CLI 输入模型:位置参数选 experiment 路径与 eval,flag 说怎么跑。
 - 留存只跳过销毁这一步:`teardown` Hook 链照常执行(环境层回存状态不因 debug 被跳过),留下的现场是收尾完成后的状态。对应地,该 attempt 的 `phases` 以 `sandbox.suspend` 结尾而没有 `sandbox.stop` 条目——留存提交后现场转入 provider 的休眠形态(docker 停驻容器、e2b pause、vercel stop 后可恢复),不白烧资源;suspend 失败时现场保持运行并记 diagnostic,仍被注册表管理。语义见 [Architecture · 各 provider 的留存语义](architecture.md#留存keep与注册表)。
 - 被中断的 run 不留存:留存授予发生在 verdict 定稿的收尾点,Ctrl+C 时还没有 verdict 的 attempt 走正常清理;此前已完成并授予留存的沙箱不被中断收回。
-- 留存与[缓存携带](../experiments/cache.md#执行模式-flag-划走两块例外)不相容:携带条目没有本次沙箱,无从留存。所以 `--keep-sandbox` 运行里,历史终态 verdict 落在**当前留存档内**的 attempt 不参与携带、照常派发重跑拿现场——`failed` 档下上一轮的 `failed` 重跑(`errored` 本就从不缓存)、`passed` 照常携带;`all` 档下全部重跑。要现场就给一次真实执行,不需要为此再配一次 [`--rerun`](../experiments/use-case/rerun.md)——两个 flag 的档位词表同构,`--keep-sandbox` 各档自带对应口径的重跑。
+- 留存与[缓存携带](../experiments/cache.md#执行模式-flag-划走两块例外)不相容:携带条目没有本次沙箱,无从留存。所以 `--keep-sandbox` 运行里,历史终态 verdict 落在**当前留存档内**的 attempt 不参与携带、照常派发重跑拿现场——`failed` 档下上一轮的 `failed` 重跑(`errored` 本就从不缓存)、`passed` 照常携带;`all` 档下全部重跑。要现场就给一次真实执行,不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)——两个 flag 的档位词表同构,`--keep-sandbox` 各档自带对应口径的重跑。
 - `--keep-sandbox` 与 [`--reuse-sandbox`](serial-reuse.md) 互斥,组合在创建沙箱前报错——现场必须属于那一次 attempt,复用沙箱被整组共享、且前面题目早被题间 `git reset` 抹掉,留下来的现场对任何单题都不忠实;预热池行为不变(未领用的池内沙箱照常销毁)。
 
 ### run 收尾输出

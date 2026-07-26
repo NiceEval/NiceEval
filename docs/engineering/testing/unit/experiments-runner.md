@@ -118,7 +118,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   Provider 强制串行。退避睡眠释放全局槽位，实验级闸全程持有。`maxConcurrency: 1`
   时，前一 Attempt 进入退避窗口，下一 Attempt 不得启动。前一 Attempt 的 `sandbox.teardown`
   生命周期 Hook 未完成时，下一 Attempt 也不得创建沙箱或进入 `sandbox.setup`。用 `TestClock`
-  与 barrier 观察在飞峰值或分配顺序。完整的用户侧搭配见[并发怎么配](../../../feature/experiments/use-case/concurrency.md)。
+  与 barrier 观察在飞峰值或分配顺序。完整的用户侧搭配见[并发怎么配](../../../feature/experiments/use-case/并发/)。
 - **反馈协调器的事件队列纪律**：`FeedbackCoordinator`
   对每一类 durable 事件都按 clear→append→redraw 的原子顺序转发给当前活跃 renderer（不止某一种事件；renderer 方法即便是异步的也不交错）；同一去重 key 的诊断在
   `RunFeedbackState.diagnostics`
@@ -170,7 +170,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   与实验隔离，以及 teardown 在完成、中断、setup 抛错时都恰好一次。还要覆盖有界清理超时、强清登记、启动自愈与
   `--teardown`。生命周期 Hook 起止事件归约进 `experimentHooks`：`started` 建行，`done` / `failed`
   摘行，`experiment:progress` 只更新对应行。新的 `plan`
-  清空残留行。用例见[环境预置与收尾怎么放](../../../feature/experiments/use-case/lifecycle.md)。字节渲染归
+  清空残留行。用例见[环境预置与收尾怎么放](../../../feature/experiments/use-case/生命周期/)。字节渲染归
   [E2E · CLI](../e2e/cli.md)。
 - **Judge 预检的运行级行**：`precheck` 起止事件归约进 `RunFeedbackState.activePrecheck`。`started`
   建行，`done` 清行。预检发生在派发前，因此 Attempt 始终保持 `queued`，不改变计数恒等式。live 面板把它排在实验生命周期 Hook 与 Attempt 行之前。这里断言 reducer 状态与事件序；字节渲染归

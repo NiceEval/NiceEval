@@ -33,7 +33,7 @@ downshift/pr-1502                     ✓2 ✗0 !1        —               ✓1
 
 - 与 `--report` 互斥（零配置装配，不经用户显式报告树）；与 `@<locator>` 组合是用法错误——单 attempt 没有稳定性可言。
 - 要看某一格的逐次执行与失败原因，下钻 `niceeval show <eval 前缀> --history`；要看现刻水位对比，用[对照矩阵](compare.md)。
-- 发布用的可靠性报告走报告库（`StabilityMatrix` 看历史稳定性；并排 `endToEndPassRate` / `taskPassRate` / `executionReliability` 三种通过率归因损失来源，见[可靠性诊断](../use-case/diagnose-reliability.md)）；`--stats` 服务终端里的即时诊断。
+- 发布用的可靠性报告走报告库（`StabilityMatrix` 看历史稳定性；并排 `endToEndPassRate` / `taskPassRate` / `executionReliability` 三种通过率归因损失来源，见[可靠性诊断](../use-case/分析/诊断可靠性.md)）；`--stats` 服务终端里的即时诊断。
 
 ## 相关阅读
 

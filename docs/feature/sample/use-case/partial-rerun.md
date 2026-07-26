@@ -44,4 +44,4 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 - 跨 Run 拼接只在 configHash 相等时发生。
 - attempt 始终指向真实来源。Sample 不重写 locator,也不制造合成来源。
 - 要看历史趋势,不要用 `latestKnown` 代替时间序列。改用 Reports 的
-  [Experiment 历史用例](../../reports/use-case/track-experiment-history.md)。
+  [Experiment 历史用例](../../reports/use-case/分析/跟踪实验历史.md)。

@@ -117,7 +117,7 @@ sandboxSetup(): SandboxHook {
 - **报告按 [`fact()`](../reports/library/metrics.md#维度与数值轴) 选轴**分组,与 `flag()` / `label()` 并列。
 - **同一个事实是条件还是观测,由谁写下决定。** 实验声明「我要 0.10.39」→ `flags`,换版本作废旧结果正是想要的;跑起来问服务端「你现在是哪个版本」→ `ctx.fact()`,那是审计证据。
 - **别把实验条件写成 fact。** 「启用了哪个特性」只报 fact、不进 `flags`,条件变了旧结果会被错误携带(边界见 [Results · facts](../record/architecture.md#facts运行事实))。
-- 已经把轮换坐标写进 `flags` 的实验,搬进 fact 会让 flags 袋变化、历史结果一次性作废;搬迁那一次用 [`--carry-ignoring-flag`](use-case/cache-invalidation.md) 保住它们。
+- 已经把轮换坐标写进 `flags` 的实验,搬进 fact 会让 flags 袋变化、历史结果一次性作废;搬迁那一次用 [`--carry-ignoring-flag`](use-case/缓存与沿用/) 保住它们。
 
 文件名与归类自此脱钩:`codex-gpt-5.4--mempal.ts` 的后缀只是给人看的命名习惯,报告不从 experiment id 字符串里猜任何语义,归类只认 `labels` 声明。
 

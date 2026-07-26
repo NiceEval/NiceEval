@@ -4,13 +4,8 @@
 
 ## `--reuse-sandbox`(串行复用)
 
-- [本地冒烟一批 eval:N 次冷启动折成一次](reuse-sandbox-batch-smoke.md)
-- [同一题重复多次看稳定性:安装只付一次](reuse-sandbox-stability-runs.md)
-- [批次不同基线:跟着报错缩小选择](reuse-sandbox-heterogeneous-batch.md)
-- [把一批 eval 改成能进热道:拿真实 eval 仓库走一遍](reuse-sandbox-authoring.md)
+- [串行复用用例索引](串行复用/README.md)
 
 ## `--keep-sandbox`(留存现场)
 
-- [环境类 errored:进现场手动重跑 setup](keep-sandbox-env-errored.md)
-- [看 agent 在 workdir 之外做了什么](keep-sandbox-outside-workdir.md)
-- [把分钟级复现压到秒级:在现场反复验证假设](keep-sandbox-hypothesis-loop.md)
+- [留存现场用例索引](留存现场/README.md)

@@ -96,7 +96,7 @@ export const basalt = defineTheme({
 });
 ```
 
-这段 CSS 只碰官方语义 class 与令牌，不碰任何组件的内部结构，所以自定义组件按[组件取色纪律](../use-case/write-custom-component.md)写出来就自动跟随。
+这段 CSS 只碰官方语义 class 与令牌，不碰任何组件的内部结构，所以自定义组件按[组件取色纪律](../use-case/构建报告/自定义组件/)写出来就自动跟随。
 
 ## 验收
 

@@ -4,7 +4,7 @@
 它们直接**携带合入**本次 Run,本次只派发真正缺的那些 attempt。
 这篇定义「哪些结果还算数」的完整判据,是指纹输入、携带粒度与终态定义的单源。
 
-「我改的这个东西会不会让它重跑」按场景查[用例手册 · 改什么会作废缓存](use-case/cache-invalidation.md),
+「我改的这个东西会不会让它重跑」按场景查[用例手册 · 改什么会作废缓存](use-case/缓存与沿用/),
 本篇只写判据本身。
 
 ## 携带要过的门
@@ -19,7 +19,7 @@
 | 指纹 | 条目 | 该 eval 的指纹等于本次配置算出的指纹 | 这条 eval 的全部 attempt 重跑 |
 | 资格 | 条目 | `executionMs` ≤ 当前 resolved `timeoutMs` | 这一条重跑 |
 | 出身 | 条目 | 没有 `reused` 标记 | 这一条重跑 |
-| 口径 | 本次调用 | [`--rerun`](use-case/rerun.md) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
+| 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
 | 模式 | 本次调用 | 不是 `--reuse-sandbox` 运行,且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
 
 `passed` 与 `failed` 都是「跑完了、判定确定」的终态,
@@ -158,7 +158,7 @@ export default defineEval({
   这些 loader 在发现阶段的模块求值期就把文件读完了,早于解析期算指纹,所以拿得到内容。
 
 两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink
-解析过去的那些)、以及动态 `import()`。改了这些要重验用 [`--rerun all`](use-case/rerun.md)。
+解析过去的那些)、以及动态 `import()`。改了这些要重验用 [`--rerun all`](use-case/重新运行/)。
 用户自己写 `fs.readFileSync` 读进来的文件同样进不来——niceeval 不知道那次读发生过。
 
 **闭包是 1 对 N 的,依赖越集中作废面越大。** eval 文件的字节只作废它自己,
@@ -175,7 +175,7 @@ export default defineEval({
 - 同名镜像重建、`Dockerfile` 改了
 - agent 的 system prompt 改了(它不在实验文件里)
 
-这时旧的绿掩盖的可能是真实回归。要复验用 [`--rerun`](use-case/rerun.md)——
+这时旧的绿掩盖的可能是真实回归。要复验用 [`--rerun`](use-case/重新运行/)——
 改了被测对象只复验失败项走 `--rerun`,外部世界整个变了走 `--rerun all`。
 能配置化的差异(服务端版本号)就显式写进 `flags` 让指纹自然失效,比每次手动重跑可靠。
 
@@ -222,7 +222,7 @@ attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队,
 `attempts: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。
 `attempts` 因此不进指纹:调大只补跑缺的,调小不删已有结果。
 
-携带的 `passed` 与[首过即停](use-case/early-exit.md)组合遵守既有语义:
+携带的 `passed` 与[首过即停](use-case/首过即停.md)组合遵守既有语义:
 已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
 
 ## 一份 Run 里的条目共享一个指纹口径
@@ -309,7 +309,7 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 
 `failed` 档用于改了不在指纹里的东西(agent 的 prompt、被测服务)之后复验失败项,
 不必去结果树里挖失败的 eval id。`all` 档用于外部世界变了(agent CLI 升级、镜像重建)时的全量重验。
-全流程见[用例手册 · `--rerun`](use-case/rerun.md)。
+全流程见[用例手册 · `--rerun`](use-case/重新运行/)。
 
 ---
 
@@ -317,8 +317,8 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 
 ## 相关阅读
 
-- [改什么会作废缓存](use-case/cache-invalidation.md) —— 按场景查我改的这个会不会重跑。
-- [`--rerun`](use-case/rerun.md) —— 指纹没得改但就是要重跑时的一次性口径。
+- [改什么会作废缓存](use-case/缓存与沿用/) —— 按场景查我改的这个会不会重跑。
+- [`--rerun`](use-case/重新运行/) —— 指纹没得改但就是要重跑时的一次性口径。
 - [Record · configHash](../record/library.md#confighash配置身份只算一次) —— 同一个哈希在读取面怎样担保跨 Run 可比。
 - [Results · 两类条目](../record/architecture.md#resultjson) —— 携带条目怎样落盘、怎样回指原 artifact。
 - [Architecture · carry](architecture.md#carry自动携带) —— 携带在实验解析与运行规划里的位置。

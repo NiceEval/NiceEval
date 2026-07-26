@@ -30,7 +30,7 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
 
 4. **恢复路径(两分支同一条)**:`errored` 不进指纹缓存,**重跑同一条命令即是续跑**——只补跑失败的 attempt,已 `passed` / `failed` 的照常携带;新 attempt 从干净沙箱起,没有上一次半途现场的污染,这正是「重发 turn」给不了的。偶发抖动用一次续跑吸收即可。
 
-5. **频繁复现时按层对因下药**:限流反复耗尽 → 降 `--max-concurrency`(或实验级 `maxConcurrency`,路由见[并发用例手册](../../experiments/use-case/concurrency.md));流中断频繁 → 先调 agent 的原生重连配置,没有这层能力的 agent 给上游提 FR,再往下查 adapter 与网络路径。这是要修的问题,不是要重试的问题。
+5. **频繁复现时按层对因下药**:限流反复耗尽 → 降 `--max-concurrency`(或实验级 `maxConcurrency`,路由见[并发用例手册](../../experiments/use-case/并发/));流中断频繁 → 先调 agent 的原生重连配置,没有这层能力的 agent 给上游提 FR,再往下查 adapter 与网络路径。这是要修的问题,不是要重试的问题。
 
 ## 边界
 

@@ -60,4 +60,4 @@ niceeval show pr-6058 --exp A --exp B        # 收窄到单题：一行矩阵，
 - [默认报告](default-report.md) —— 单条件范围的缺省切片与折叠口径。
 - [`--usage`](usage.md) —— 用量列的组装口径。
 - [`--json`](json.md) —— 信封与逐视图指针。
-- [用例 · 跨条件归因](../use-case/cli-cross-condition-attribution.md) —— 从「哪些题翻转了」到「为什么」的全流程。
+- [用例 · 跨条件归因](../use-case/分析/终端跨条件归因.md) —— 从「哪些题翻转了」到「为什么」的全流程。

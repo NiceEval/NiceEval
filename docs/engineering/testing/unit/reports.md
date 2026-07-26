@@ -63,7 +63,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - `totalScore` 从 `niceeval/report`
     顶层导出，并与内部定义保持同一引用。只需一个代表场景，不为每个内建指标重复测试。
 
-  用户怎样读取计分报告，见[固定题集做考试成绩单](../../../feature/reports/use-case/fixed-suite-scorecard.md)。主读数规则见[题型构成与主读数](../../../feature/reports/library/metrics.md#题型构成与主读数)。
+  用户怎样读取计分报告，见[固定题集做考试成绩单](../../../feature/reports/use-case/分析/固定题集成绩单.md)。主读数规则见[题型构成与主读数](../../../feature/reports/library/metrics.md#题型构成与主读数)。
 
 - **MetricCell 与缺数据**：字段构成与序列化不丢值；`validate*Data`
   递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛裸 TypeError；缺 artifact 时返回 null 不猜值。
@@ -227,7 +227,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
     `stabilityMatrixData`。
   - 每一种参数冲突都返回完整用法错误。
 
-  用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/cli-cross-condition-attribution.md)。口径单源见
+  用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/分析/终端跨条件归因.md)。口径单源见
   [Metric Views](../../../feature/reports/components/charts/README.md)。
 
 - **usage 组装与 facts 投影**:usage 行/表的组装口径单源见
@@ -247,7 +247,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - `--grep` 搜索角色文本、工具名、input、result，以及失败命令的 display/stdout/stderr。
   - 命中卡片仍受预览预算约束。完整可见输出由 Report E2E 验收。
 
-  用户怎样从 locator 下钻，见[`@locator` 用例](../../../feature/reports/use-case/show-locator-drilldown.md)。
+  用户怎样从 locator 下钻，见[`@locator` 用例](../../../feature/reports/use-case/调试/按定位符下钻.md)。
 
 - **`--json` 投影**：
   - envelope 包含 format、schemaVersion、view 与 scope 回显。
@@ -268,7 +268,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - `show --theme` 拒绝：断言错误对象与下一步指引，不断言终端输出。
 - **`seriesPins` 在页级色分配中的作用**：钉住的键原样占位、其余键在剩余槽里探测、多个键钉同一下标不触发探测、钉了但本页未出现的键不保留槽位。分配结果是**下标**，fixture 必须证明换一份 `series` 色板不改变任何键的下标——这是「主题只管颜色、报告只管含义」在数据层的判据。校验错误指到 `seriesPins.<维度>.<值>`。
 
-  用户怎样换主题与写主题包，见[给报告换主题](../../../feature/reports/use-case/theme-and-distribute.md)；官方主题取值见 [Basalt](../../../feature/reports/themes/basalt.md)。
+  用户怎样换主题与写主题包，见[给报告换主题](../../../feature/reports/use-case/交付报告/主题/)；官方主题取值见 [Basalt](../../../feature/reports/themes/basalt.md)。
 
 ## 不这样测
 

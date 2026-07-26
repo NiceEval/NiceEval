@@ -45,4 +45,4 @@ $ niceeval show memory/swelancer --history
 - [裸 `show` 的默认报告](default-report.md) —— 现刻水位与 Result 摘要口径。
 - [失败诊断首页](attempt.md) —— 从时间轴一行的 locator 打开一次 attempt。
 - [Library · 布局](../library/layout.md#区域框text-面的框线体裁) —— 区域框的单源体裁。
-- [用例 · 时好时坏](../use-case/show-history-flaky-eval.md) —— 排查 flaky eval 的全流程叙事。
+- [用例 · 时好时坏](../use-case/调试/查看不稳定历史.md) —— 排查 flaky eval 的全流程叙事。

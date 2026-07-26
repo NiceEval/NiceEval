@@ -92,18 +92,18 @@
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 实验 | Experiment | 可签入的运行配置:Agent、model、flags、运行次数与预算;不碰评分 | [Experiments](feature/experiments/README.md) |
-| 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [Flags、labels 与 facts](feature/experiments/use-case/flags-labels-facts.md) |
-| 实验 labels | Labels | 只供报告分组的坐标;不透传、不参与可比性配置 | [Flags、labels 与 facts](feature/experiments/use-case/flags-labels-facts.md) |
-| 运行事实 | facts | 跑起来才知道的值,由 `ctx.fact()` 登记;不进配置 | [Flags、labels 与 facts](feature/experiments/use-case/flags-labels-facts.md) |
+| 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
+| 实验 labels | Labels | 只供报告分组的坐标;不透传、不参与可比性配置 | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
+| 运行时观测 | Runtime observation (`facts`) | 运行时才知道、由 `ctx.fact()` 主动上报并随结果保存的值;不进配置或指纹 | [Flags、labels 与 facts](feature/experiments/use-case/实验值归属/) |
 | 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |
 | 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位;归属与 `model` 一致 | [Experiments](feature/experiments/library.md) |
-| 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/early-exit.md) |
+| 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/首过即停.md) |
 
 ### 预算护栏
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 实验预算上限 | Per-experiment budget limit | 每个 Experiment 独立计账和封顶,不是 Invocation 的共享总预算 | [Budget](feature/experiments/use-case/budget.md) |
+| 实验预算上限 | Per-experiment budget limit | 每个 Experiment 独立计账和封顶,不是 Invocation 的共享总预算 | [Budget](feature/experiments/use-case/预算上限.md) |
 
 ### Runner 调度
 
@@ -114,7 +114,7 @@
 | Invocation | Invocation | 一次 CLI 调用的瞬时编排边界;可调度多个 Experiment,不是持久化实体 | [Runner](runner.md) |
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
-| 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 对同一实验的跨 Invocation 并发限制 | [Max concurrency](feature/experiments/use-case/max-concurrency.md) |
+| 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 对同一实验的跨 Invocation 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
 | 调度波次 | Scheduling waves | `ceil(Attempt 数 / 有效宽度)`;波次多的 Run 优先拿并发位 | [Runner](runner.md) |
 | 完成状态 | CompletionStatus | 独立于 Verdict 的 `complete` / `incomplete` / `interrupted` 结论 | [Runner](runner.md) |
 
