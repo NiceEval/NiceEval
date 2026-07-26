@@ -21,14 +21,8 @@ sample.warnings;    // 这批数据哪里可能不可靠
 它们都需要判断,而 Record 的承诺是每个返回值都能在磁盘上逐字节指出来源。把选择器长在 Record 上,
 那个承诺当场就有一半不成立,读者每读一个字段都要先想「这算事实还是算解释」。
 
-分层之后三条线各自干净:
-
-| 层 | 输入 | 输出 | 有没有判断 |
-|---|---|---|---|
-| [Record](../record/README.md) | 磁盘 | `Record` / `Run` / `AttemptHandle` | 无 |
-| **Sample** | `Record` | `Sample` | 有:口径、覆盖、时效 |
-| [Reports](../reports/README.md) | `Sample` | 组件数据 | 有:指标、折叠、排版 |
-
+分层之后三条线各自干净:Record 无判断,Sample 有口径、覆盖与时效的判断,Reports 有指标、折叠与
+排版的判断。三层的分工、跨层不变量与「一件事该放哪层」的判据见[Reading](../reading/README.md);
 这个切法学自 Vega-Lite 的 `data → transform → mark`,理由见[参考方案](reference/README.md)。
 
 ## 一份 Sample 上有什么

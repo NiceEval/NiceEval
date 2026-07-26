@@ -18,6 +18,7 @@
 | 现在要做什么 | 从哪里开始 |
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
+| 理解结果落盘后怎么被读出来 | [Reading](feature/reading/README.md) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
@@ -47,6 +48,7 @@ docs/
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级止损闸
 │   ├── sandbox/                         隔离运行环境
 │   ├── scoring/                         评分器与判定
+│   ├── reading/                         读取面总纲:三层分工、跨层不变量与跨层用例
 │   ├── record/                          .niceeval 运行记录:格式、读写、身份与发布
 │   ├── sample/                          从记录选出可比较的样本:口径、覆盖、时效与转换
 │   └── reports/                         show、view 与报告组件
@@ -63,7 +65,7 @@ docs/
 │
 └── 未归入 feature/ 的设计入口
     ├── concepts.md                      术语与心智模型
-    ├── architecture.md                  核心边界
+    ├── architecture.md                  核心边界:一次运行怎么产生结果
     ├── origin-integration.md            Origin 应用接入
     ├── observability.md                 Observability
     ├── runner.md                        执行引擎

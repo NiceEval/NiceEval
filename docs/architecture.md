@@ -129,7 +129,7 @@ CLI 启动时仍加载项目根的 `.env`(不覆盖已有环境变量)——那�
 
 ## 相关阅读
 
-- [读取面架构](reading-architecture.md) —— 第 12 步写下的 Run 目录之后:事实、选择、呈现三层。
+- [Reading](feature/reading/README.md) —— 第 12 步写下的 Run 目录之后:事实、选择、呈现三层。
 - [Runner](runner.md) —— 调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) —— 三层的契约。
 - [Scoring](feature/scoring/README.md) —— 评分与判定。
