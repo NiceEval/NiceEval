@@ -10,9 +10,8 @@
 总表之后的各「⋯词汇」分区展开每个词的完整契约;末尾的[禁用写法](#禁用写法)登记已裁决
 不许再出现的词。两个同义词并存时,**首选写法**用粗体。
 
-中文列写 `未定` 的词,含义已定稿、中文写法尚未裁决:这一批引用它时写英文列的那个名字,
-不要就地发明中文译法。裁决候选与被否决的提名记在
-[memory 的待裁决条目](../memory/INDEX.md)。
+总表里的中文名和英文名都是正文首选写法。代码标识与标准术语不同时,英文列把代码标识放在
+括号里,正文叙事使用标准术语,代码示例仍使用代码标识。
 
 ## 术语总表
 
@@ -23,18 +22,17 @@
 | 中文 | English | 含义 |
 |---|---|---|
 | NiceEval | NiceEval | 产品名。正文写 `NiceEval`;命令、包名、配置文件、代码标识写 `niceeval` |
-| 评估/评估用例 | Eval | 评测的最小单元:一个 Task 跑在一个 Agent 上,由若干 Scorer 判分;id 从文件路径推导 |
+| 评测用例 | Eval | 评测的最小单元:一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 |
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 |
 | Agent | Agent | 「一条连到 AI 的连接」的抽象,由 experiment 引用;`kind` 只有 `"remote"` 和 `"sandbox"` 两类 |
 | `send` | `send` | 运行器唯一认得的统一动词;协议、事件映射、会话续接都在 Adapter 的 `send` 里实现 |
-| 评分器 | Scorer | 把"结果"映射成分数的东西,三类:值断言、作用域断言、LLM-as-judge |
-| 断言 | Assertion | Scorer 的一次具体应用,带名字、严重度、可选阈值,产出 0–1 分数和过/挂 |
+| 断言 | Assertion | 对一次 Attempt 的结果、行为、证据或资源使用提出的一项可记录检查;由 matcher、范围查询或 LLM Judge 求分,产出 0–1 分数或 `unavailable` |
 | 判定 | Verdict | 一个 Eval 的评分判定,四态:`passed` / `failed` / `errored` / `skipped`,没有中间态 |
 | 严重度 | Severity | 断言的两档:gate 不过即 `failed`;soft 失败照实记录但默认不改判定,`--strict` 下才计入 |
-| Judge(LLM-as-judge) | Judge(LLM-as-judge) | 用一个大模型当裁判给开放式回答打分的 Scorer,默认 soft、无阈值,详见 [Scoring](feature/scoring/library/judge.md) |
-| 未定 | Scope | 一条断言的聚合范围,三档:`t.*` 看整个 Attempt、`session.*` 只看这条 session、`turn.*` 只看这一个 Turn;同一套断言挂在哪一档就只看那一档已发生的事件 |
-| 未定 | Eval kind | 一条 eval 记几分由**定义函数**声明:`defineEval` 把整题折叠成一分,`defineScoreEval` 在题内叠加挣分、不声明满分。题型是定义期事实,发现期即可知、进 `EvalDescriptor`;一个 experiment 选中的 eval 必须同型,两型混选是启动期配置错误。详见[计分粒度](feature/experiments/score-points.md) |
-| 未定 | Score point | `defineScoreEval` 的 eval 里链了 `.points(n)` 的断言:0/1 断言通过挣 `n` 分,打分断言挣 `n × score`;`t.score(label, n)` 是断言词汇装不下判定条件时的直接给分出口 |
+| Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值,每次调用记录为一条断言,详见 [LLM-as-a-judge](feature/scoring/library/judge.md) |
+| 断言范围 | Assertion scope | 一条断言的聚合范围,三档:`t.*` 看整个 Attempt、`session.*` 只看这条 session、`turn.*` 只看这一个 Turn;同一套断言挂在哪一档就只看那一档已发生的事件 |
+| 计分方式 | Scoring scheme | 一条 eval 怎样形成分数由**定义函数**声明:`defineEval` 把整题折叠成一分,`defineScoreEval` 在题内叠加计分项、不声明满分。计分方式是定义期事实,发现期即可知、进 `EvalDescriptor`;一个 experiment 选中的 eval 必须使用同一种计分方式,混选是启动期配置错误。详见[计分粒度](feature/experiments/score-points.md) |
+| 计分项 | Scoring criterion | `defineScoreEval` 里贡献分数的判定项:链了 `.points(n)` 的 0/1 断言通过得 `n` 分,打分断言得 `n × score`;`t.score(label, n)` 是断言词汇装不下判定条件时的直接计分出口 |
 
 ### 被测对象与适配器
 
@@ -50,7 +48,7 @@
 | 接入等级 | Integration tier | 按「Adapter 接到哪里、额外拿到什么观测数据」分的三级:Tier 1 只接 `send`,Tier 2 `send` + OTel,Tier 3 侵入改造 + flags |
 | 无侵入 | Non-intrusive | Tier 1 / Tier 2 的共同性质:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口。不写 `黑盒` |
 | 模型(`model` 字段) | Model | 给 agent 指定模型的标识(如 `opus`),由 experiment 的 `model` 字段指定 |
-| 推理努力 | `reasoningEffort` | 独立于 `model` 的努力档位(如 `low` / `medium` / `high`,取值由具体模型定义),归属与 `model` 一致:实验决定、agent 留空 |
+| 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位(如 `low` / `medium` / `high`,取值由具体模型定义),归属与 `model` 一致:实验决定、agent 留空 |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账,在沙箱 `setup` 链之后打锚点:只有锚点之后的改动进 agent 归因视图,环境产物不进 |
 | send 窗口 | send window | 一次 `t.send()` 从发出到返回的那段区间;`t.sandbox.diff` / `fileChanged` 只反映各 send 窗口内改动的并集,Fixture 写入永不计入 |
 | 人工介入 | HITL(human-in-the-loop) | agent 中途等待人工输入的交互;`send` 返回过 `waiting` + `input.requested` 即具备该能力 |
@@ -73,36 +71,36 @@
 | 实验 labels | Labels | experiment 的报表坐标:不透传给 agent 与 eval、不参与可比性配置(改它不作废已有结果),只投影进快照供报告分组 |
 | 运行事实 | facts | 跑起来才有的值(实际用了哪个版本、真实生效的模型),由 `ctx.fact()` 登记;写下来的值归 flags / labels,这一类不进配置 |
 | Invocation | Invocation | 一次 `niceeval` CLI 调用的瞬时编排边界;可同时调度多个 Experiment,但不是持久化领域实体 |
-| Attempt | Attempt | 同一个 eval 的第 i 次重复运行,也是作用域断言的聚合范围 |
+| Attempt | Attempt | 同一个 eval 的第 i 次重复运行,也是范围断言的默认聚合范围 |
 | Session | Session | 一条会话线;`t.newSession()` 开独立 session |
-| Turn | Turn | `t.send()` 的一次返回值,带该 Turn 的事件流片段和收窄到该 Turn 的作用域断言 |
+| Turn | Turn | `t.send()` 的一次返回值,带该 Turn 的事件流片段和收窄到该 Turn 的范围断言 |
 | 首过即停 | EarlyExit | 取通过率时先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit` |
-| 派发 | Dispatch | 把一个 attempt 交出去开始执行。排队等闸不算已派发,预算耗尽、fail-fast 与止损闸停的都是**派发**,已在飞的照常跑完 |
+| 派发 | Dispatch | 把一个 attempt 交出去开始执行。排队等待不算已派发,预算耗尽、fail-fast 与致命错误熔断停止的都是**派发**,已在飞的照常跑完 |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 attempt 真正执行时占用;退避睡眠、等实验级 `setup` 这类内部等待即让位 |
-| 实验级闸 | Experiment gate | `ExperimentDef.maxConcurrency` 的名额,与 attempt 同生命周期(中途任何等待都不释放)、名额域跨 Invocation 共享;`1` 即严格临界区 |
-| 轮次 | Rounds | 一个 run 要占几批并发位才跑完(`ceil(attempt 数 / 有效宽度)`),派发优先级的判据:轮次多的先拿位 |
-| 预算域 | Budget domain | budget 的计账单位:每个 experimentId 一个域,没有 experiment 时按 agent 名。`budget` 字段与 `--budget` 设的都是每个域各自的上限,不是 Invocation 总闸 |
-| 止损闸 | Fatal scope gate | 作者在失败上声明 `scope: "eval"` / `"experiment"`,一次命中即停对应粒度的派发;是作者背书下的第一次即停 |
+| 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 限制同一实验可同时执行的 attempt 数;名额与 attempt 同生命周期(中途任何等待都不释放),并且跨 Invocation 共享;`1` 即严格临界区 |
+| 调度波次 | Scheduling waves | 一个 Run 要占几批并发位才跑完(`ceil(attempt 数 / 有效宽度)`),派发优先级的判据:波次多的先拿位 |
+| 预算单元 | Budget unit | budget 的独立计账单位:每个 experimentId 一个单元,没有 experiment 时按 agent 名。`budget` 字段与 `--budget` 设的都是每个单元各自的上限,不是 Invocation 总上限 |
+| 致命错误熔断 | Fatal-error circuit breaker | 作者在失败上声明 `scope: "eval"` / `"experiment"`,一次命中即停止对应范围的后续派发;是作者背书下的第一次即停 |
 | fail-fast | fail-fast | 无声明时的保守兜底:预检命中、或同一 error code 在同一 eval 连续复现,即停止派发受同一配置影响的后续 attempt |
 | 完成状态 | CompletionStatus | 独立于 verdict 计数的第二个结论:`complete` / `incomplete` / `interrupted`;CI 判红必须读它,预算耗尽但零 failed 也不是全绿 |
 | 超时 | Timeout | 双层:adapter 内层是 agent CLI 自己的超时,运行器外层是 attempt deadline,从 `sandbox.create` 起算、不含等并发位的排队 |
-| 删失 | Censoring | 超时线截断样本造成的统计偏差:被截断的样本从完成耗时统计里消失,让慢条件反而显得快;耗时作对比指标时按删失口径呈现 |
-| 指纹 | Fingerprint | `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:未变且判定确定的默认携带 |
-| 未定 | Carry | 指纹与判据都过关的历史 attempt 直接合入本次 Run、不重跑,所以「改一个 case 重跑」只花那一个 case 的时间。判据与粒度见[缓存与携带](feature/experiments/cache.md) |
+| 右删失 | Right censoring | 超时线只证明真实完成耗时大于截断值,没有观测到具体完成时间;静默排除这些样本会让慢条件反而显得快,耗时作对比指标时按右删失口径呈现 |
+| 指纹 | Fingerprint | `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:未变且判定确定的结果默认沿用 |
+| 结果沿用 | Result carry-forward | 指纹与判据都过关的历史 attempt 直接合入本次 Run、不重跑,所以「改一个 case 重跑」只花那一个 case 的时间。判据与粒度见[缓存与结果沿用](feature/experiments/cache.md) |
 | 配置哈希 | `configHash` | 指纹里配置那一层,Run 级;它同时担保跨 Run 可比 |
-| 用例锁 | Eval lock | 按 `(experimentId, evalId)` 在派发时刻取的租约,让并行 Invocation 自动认领不同用例;撞锁的用例计 `elsewhere`,对方跑完按缓存规则携入 |
+| 用例锁 | Eval lock | 按 `(experimentId, evalId)` 在派发时刻取的租约,让并行 Invocation 自动认领不同用例;撞锁的用例计 `elsewhere`,对方跑完按结果沿用规则并入本次 Run |
 | 预热池 | Warm pool | 调度开始时预创建的同 spec 沙箱池;attempt 到 `sandbox.create` 先领现货,池空则回落到即时创建,不改生命周期 Hook 的调用顺序 |
 | 串行复用 | Serial reuse | `--reuse-sandbox`:整批同基线 eval 共用一个热沙箱串行跑,题间只重置 workdir。与并发互斥,与指纹缓存双向绝缘 |
-| 温基线 | Warm baseline | 串行复用里不随 eval 变的那几层装完后落下的 commit;题间 `git reset` 回它,每题只重放 Fixture |
+| 重置基线 | Reset baseline | 串行复用里不随 eval 变的那几层装完后落下的 commit;题间 `git reset` 回它,每题只重放 Fixture |
 | Transcript | Transcript | agent 一次运行的逐事件原始记录(各 agent 自己的 JSONL),归一化后供消费 |
 | 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / `context.injected` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript-标准事件流) |
 | o11y 摘要 | o11y summary | 从标准事件流可重算的行为计数(工具调用、文件、shell、思考块等),注入沙箱供行为断言;token / 成本 / 耗时权威在 `result.json` |
 | trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨;在 `ExecutionTree` 里是事件骨架之上的可选 enrichment,详见 [Observability](observability.md#otlp-traces-统一瀑布图) |
-| 执行树 | ExecutionTree | 标准事件流骨架(message / thinking / `skill.loaded` / `action.called`+`action.result` 按 call ID 合并 / `subagent.called`+`completed` / `input.requested` / `context.injected` / compaction / error)与可关联的 OTel span 合成的统一执行记录;span 只按明确 correlation ID 或 GenAI 语义属性关联到节点,关联不上就保留成单独标注的 telemetry-only 节点,不按名字/文本猜;没有 OTel 时骨架的节点、顺序、内容不变,只是时间显示不可用 |
+| Agent 执行树 | Agent execution tree (`ExecutionTree`) | 标准事件流骨架(message / thinking / `skill.loaded` / `action.called`+`action.result` 按 call ID 合并 / `subagent.called`+`completed` / `input.requested` / `context.injected` / compaction / error)与可关联的 OTel span 合成的统一执行记录;它不是 OTel trace tree,span 只按明确 correlation ID 或 GenAI 语义属性关联到节点,关联不上就保留成单独标注的 telemetry-only 节点,不按名字/文本猜;没有 OTel 时骨架的节点、顺序、内容不变,只是时间显示不可用 |
 | 用量 | Usage | 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写) |
 | 成本 | Cost | 用量经价格表换算的估算金额(`estimatedCostUSD`);`--budget <usd>` 给整个 run 设上限 |
 | 报告器 | Reporter | 运行中流式消费结果的插件(控制台、JUnit、JSON…);与运行后的「报告」(Report)是两个词 |
-| Artifact | Artifact | 落盘的结构化产物,位于 Run 目录 `.niceeval/<experiment>/<run>/`:Run 级 `run.json` + attempt 级 `result.json` 与各 JSON |
+| artifact | Artifact | 落盘的结构化产物,位于 Run 目录 `.niceeval/<experiment>/<run>/`:Run 级 `run.json` + attempt 级 `result.json` 与各 JSON |
 | 诊断 | Diagnostic | 不改判定的操作性事实。定位到 attempt 的记进 `result.json`;只属于 Run 整体的(teardown 失败、budget 不可执行、实验级 Hook 超时)按 Run 折叠进 `run.json` 的 `diagnostics` |
 | 生命周期阶段 | `LifecyclePhase` | 「出在哪一段」的闭集词表,结构化错误与诊断都只能填其中一项;唯一权威在 [result.json](feature/record/architecture.md#resultjson) |
 
@@ -129,7 +127,7 @@
 | 有效根 | Effective root | 记录根经命令行收窄(位置参数 / `--exp`)滤出的那部分:选择器、locator 寻址与出站内容都以它为界 |
 | 持续重建 | Continuous rebuild | `niceeval view` 不带 `--out` 时的固有行为:建完站点起 server,再盯着有效根内的记录、报告与主题的 import 图、项目配置,变了就整条管线重跑;`--out` 是同一条管线建一次就退出(见 [View](feature/reports/view.md#持续重建)) |
 | 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 渲染的那份内建报告,与用户报告文件同层、没有宿主特权。详见[下文](#结果数据与报告词汇) |
-| 报告槽 | —(内部代号) | 宿主结构里可被 `--report` 整体替换的部分:裸跑渲染内建报告,显式 `--report` 换成用户报告文件;`报告槽`不出现在公开站 |
+| 报告槽位 | Report slot(内部代号) | 宿主结构里可被 `--report` 整体替换的部分:裸跑渲染内建报告,显式 `--report` 换成用户报告文件;`报告槽位`不出现在公开站 |
 
 ### 报告组件
 
@@ -159,15 +157,30 @@
 
 ## 评测核心词汇
 
-**Eval** —— 评测的最小单元。一个 Eval = 一个 [Task](#评测核心词汇) 跑在一个 [Agent](#评测核心词汇) 上,由若干 [Scorer](#评测核心词汇) 判分。统一由 `defineEval` 定义——会话型和沙箱型不是两个定义函数,`test(t)` 里 `t` 要不要带 `t.sandbox`,取决于引用的 [Agent](#评测核心词汇) 是不是 `defineSandboxAgent` 构造的(`kind: "sandbox"`),不取决于用哪个 define 函数。每个 Eval 有一个从路径推导的 **id**。
+**Eval** —— 评测的最小单元。一个 Eval = 一个 [Task](#评测核心词汇) 跑在一个 [Agent](#评测核心词汇) 上,由若干 [Assertion](#评测核心词汇) 评判。统一由 `defineEval` 定义——会话型和沙箱型不是两个定义函数,`test(t)` 里 `t` 要不要带 `t.sandbox`,取决于引用的 [Agent](#评测核心词汇) 是不是 `defineSandboxAgent` 构造的(`kind: "sandbox"`),不取决于用哪个 define 函数。每个 Eval 有一个从路径推导的 **id**。
 
 **Task** —— 要让被测对象完成的"那件事"。不管会话型还是沙箱型,都是一串 `t.send(...)` 的输入——沙箱型只是 `t` 多了 `t.sandbox`,任务本身照样写在 `t.send(...)` 里。Task 描述意图,不描述如何判分。
 
 **Agent** —— "一条连到 AI 的连接"的抽象,由 experiment 引用。`Agent.kind` 只有两类:`"remote"`(按你自己服务的协议发请求,`defineAgent` 产出)、`"sandbox"`(在 [Sandbox](#被测对象与适配器词汇) 里 spawn coding agent 的 CLI,`defineSandboxAgent` 产出)。进程内直调你的函数不是独立的第三类——它只是 `kind: "remote"` 的 `send` 里选择怎么实现的一种写法,而且不是推荐写法(测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx))。运行器只认统一动词 `send`,`t` 上暴露哪些动作由 Agent 的[能力](#被测对象与适配器词汇)决定——能力不是声明出来的,是 `send` 实际做到了什么的构造证据。niceeval 不定义任何 agent 协议,所以没有 `--url`、没有通用 http target —— 连你自己的服务也是写一个 agent,URL 是它的内部配置。详见 [Agents 与 Adapters](feature/adapters/README.md)。
 
-**Scorer** / **评分器** —— 把"结果"映射成分数的东西。三类:**值断言**(`expect` 里的 `includes`/`equals`/`matches`…;`check` 记录并继续,`require` 作为前置条件立即等待并失败中止)、**作用域断言**(`t.succeeded()`/`t.calledTool()`…,在 `test` 结束后对本次 eval run 聚合评估;同一套断言挂在 [Session](#运行与结果词汇) 上则只看这条 session,挂在 [Turn](#运行与结果词汇) 上则只看这一个 Turn)、**LLM-as-judge**(用一个大模型当裁判给开放式回答打分)。沙箱型里,手工在沙箱内跑验证命令,再用 `t.check(result, commandSucceeded())` 判定,本身也是一种 Scorer。
+**Assertion** / **断言** —— 对一次 Attempt 的结果、行为、证据或资源使用提出的一项可记录检查。
+断言带名字、严重度([gate / soft](#评测核心词汇))与可选阈值,产出一个 0–1 分数或
+`unavailable`。有阈值时再据此得到过/挂。
 
-**Assertion** / **断言** —— Scorer 的一次具体应用,带名字、严重度([gate / soft](#评测核心词汇))、可选阈值,产出一个 0–1 的分数和过/挂。
+断言按求分机制分三类:
+
+- **值断言**用 matcher 检查一个显式值,例如 `t.check(value, includes(...))`。
+- **范围断言**查询 Attempt、Session 或 Turn 内累计的事件和事实,例如 `t.calledTool()`。
+- **Judge 断言**把材料和 rubric 交给裁判模型求分。
+
+沙箱中手工运行验证命令再用 `commandSucceeded()` 检查,仍是值断言。
+`maxTokens()` / `maxCost()` 这类效率约束仍是范围断言。证据来源与便捷入口不制造新的断言类别。
+
+matcher 是可复用的值求分规则,不是一次断言结果。裁判模型是 Judge 断言的求分依赖,
+也不是断言本身。
+
+`t.score(label, n)` 是独立的直接计分。它没有严重度、阈值、过/挂或 `unavailable`,
+只向分数面贡献分数,不属于 Assertion。
 
 **Verdict** / **判定** —— 一个 Eval 的评分判定,只有四态:`passed` / `failed` / `errored` / `skipped`。四态**按固定优先级折叠**,一条 attempt 同时满足多个条件时取最高的一档:**`errored`**(执行出错:超时、异常、作者错误)> **`failed`**(任一 gate 断言不过,或 `--strict` 下有 soft 断言低于阈值)> **`skipped`**(显式 `t.skip(reason)`)> **`passed`**。优先级不是可有可无的细节:`t.skip()` 之前已经记下的失败断言照样让这条判 `failed`,跳过不能掩盖已经暴露的失败;执行出错则压过一切,因为断言结果在出错的运行里不可信。**没有 `scored` 这个中间态**——soft 断言没达标,在非 `--strict` 下就是 `passed`,分数照样如实记录、供横向对比,只是不影响这四态判定。`failed` 只表示断言/评分不通过,`errored` 是环境、超时、adapter、agent runtime 等执行问题,两者互斥,报告、JUnit、CI 都按这个口径分开统计,别把 `errored` 当成 agent 任务做错了。
 
@@ -191,7 +204,7 @@
 
 **Integration tier** / **接入等级** —— 按「Adapter 接到哪里、额外拿到什么观测数据」给接入方式分的三级(和下面的 **`model` 字段**是两回事,后者说的是给 agent 指定哪个模型)。**Tier 1(只接 send)**:应用代码一行不改——adapter 适配应用现有对外接口实现 `send`,靠手写事件映射或官方转换器拿到工具断言;应用接口本身暴露模型选择的话,**模型对比**类 [Experiment](#运行与结果词汇) 也在这一档(`model` 经 `ctx.model` 透传)。**Tier 2(send + OTel)**:还是同一个 `send`,事件来源换成应用发给 niceeval 的 OTel span(应用已埋点则零代码,未埋点补一段通用 OTel 初始化)——买到的是观测质量的跃升:事件流免手写映射、负断言带完整性证明、trace 瀑布图。**Tier 3(侵入改造 + experiment flags)**:改应用内部代码,把内部可变点(prompt、工具集、feature flag)暴露成 experiment 可选的配置(经 `flags` → `ctx.flags` 透传),解锁**完整的 feature A/B test**——对照的不再只是模型,而是应用内部的功能变体。前两档都是**无侵入**的:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口,Adapter 只对着用户前端本来就在用的那个接口收发。三档递进不互斥,详见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)。
 
-**Model** / **模型(`model` 字段)** —— 给 agent 指定模型的标识(如 `opus`)。由 [Experiment](#运行与结果词汇) 的 `model` 字段指定;省略则用 agent 原生默认,不经额外的策略层决定。推理努力程度(如 `low`/`medium`/`high`,取值由具体模型定义)是独立的 `reasoningEffort` 字段,经 `ctx.reasoningEffort`/`t.reasoningEffort` 透传,归属与 `model` 一致——都是实验决定、agent 留空。
+**Model** / **模型(`model` 字段)** —— 给 agent 指定模型的标识(如 `opus`)。由 [Experiment](#运行与结果词汇) 的 `model` 字段指定;省略则用 agent 原生默认,不经额外的策略层决定。推理强度(如 `low`/`medium`/`high`,取值由具体模型定义)是独立的 `reasoningEffort` 字段,经 `ctx.reasoningEffort`/`t.reasoningEffort` 透传,归属与 `model` 一致——都是实验决定、agent 留空。
 
 ## 测试集与发现词汇
 
@@ -207,18 +220,18 @@
 
 **Experiment** / **实验** —— 一份可签入的**运行配置**,描述「怎么跑这批 eval」:用哪个 [Agent](#评测核心词汇)、跑几次、过滤哪些、预算多少。由 `defineExperiment` 定义在 `experiments/` 下,id 从路径推导。**一文件 = 一个单一配置**；`evals` 遍历发现到的 eval 并选择这份配置要跑的集合，解析结果以 `selectedEvalIds` 落盘。它**不碰评分**——「怎么算对」是 eval 的事。详见 [Experiments](feature/experiments/README.md)。
 
-**Invocation** —— 一次 `niceeval` CLI 调用的瞬时编排边界。它可同时选中多个 Experiment,负责当场调度、反馈、退出码与 `InvocationCompletion`;不分配持久化 id,不在 `.niceeval/` 保存跨 Experiment 的成员关系。重跑可通过 carry 从旧 Run 携入终态 Attempt,因此 Invocation 是可丢弃的传输与编排载体,不是 Results 实体。需要审计当次 Invocation 汇总时显式配置 `Json(path)` Reporter。
+**Invocation** —— 一次 `niceeval` CLI 调用的瞬时编排边界。它可同时选中多个 Experiment,负责当场调度、反馈、退出码与 `InvocationCompletion`;不分配持久化 id,不在 `.niceeval/` 保存跨 Experiment 的成员关系。重跑可通过结果沿用把旧 Run 的终态 Attempt 并入本次 Run,因此 Invocation 是可丢弃的传输与编排载体,不是 Results 实体。需要审计当次 Invocation 汇总时显式配置 `Json(path)` Reporter。
 
-**Attempt** —— 同一个 eval 的第 i 次重复运行(`runs > 1` 时取通过率用)。这是 runner/result 的执行单位,不是 author-facing API 层。`t` 上的作用域断言会在一个 Attempt 的范围内聚合(全部 session + 全部 turn),不跨 Attempt。
+**Attempt** —— 同一个 eval 的第 i 次重复运行(`runs > 1` 时取通过率用)。这是 runner/result 的执行单位,不是 author-facing API 层。`t` 上的范围断言会在一个 Attempt 的范围内聚合(全部 session + 全部 turn),不跨 Attempt。
 
-**Session** —— 一条会话线。`t` 驱动主 session;`t.newSession()` 返回独立 session,用于并行或隔离的多会话测试。`session.*` 作用域断言只看这条 session 已经发生的事件;这些事件仍会汇入 `t.*` Attempt 级断言。
+**Session** —— 一条会话线。`t` 驱动主 session;`t.newSession()` 返回独立 session,用于并行或隔离的多会话测试。`session.*` 范围断言只看这条 session 已经发生的事件;这些事件仍会汇入 `t.*` Attempt 级断言。
 
-**Turn** —— `t.send()` 的一次返回值,对应该 Turn 的标准事件流片段。带 `message` / `data` / `toolCalls` / `status` / `usage` / `events` 等只读字段,以及一套与 `t` 同名的作用域断言(`turn.calledTool`/`turn.succeeded`/…),作用域收窄成只看这一个 Turn,详见 [Scoring · 作用域](feature/scoring/architecture/scopes.md)。
+**Turn** —— `t.send()` 的一次返回值,对应该 Turn 的标准事件流片段。带 `message` / `data` / `toolCalls` / `status` / `usage` / `events` 等只读字段,以及一套与 `t` 同名的范围断言(`turn.calledTool`/`turn.succeeded`/…),断言范围收窄成只看这一个 Turn,详见 [Scoring · 断言范围](feature/scoring/architecture/scopes.md)。
 
 **EarlyExit** / **首过即停** —— 一个 eval 取通过率时,先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit`,CLI 上 `--early-exit` / `--no-early-exit`。
 
 **Fingerprint** / **指纹** —— `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:指纹未变且判定确定的,
-默认携带进本次 Run 而不重跑。源码闭包是 eval 文件加上它在项目根内的导入图与 loader 读入的数据文件;
+结果默认沿用到本次 Run 而不重跑。源码闭包是 eval 文件加上它在项目根内的导入图与 loader 读入的数据文件;
 配置那一层是 Run 级的 [configHash](feature/experiments/cache.md#指纹两个哈希嵌套),同时担保跨 Run 可比。
 
 **Transcript** —— agent 一次运行的逐事件记录。原始形态是各 agent 自己的 JSONL,被**归一化**成统一事件模型(message / thinking / `action.called` / `action.result` / error)后供断言和报告消费。详见 [Observability](observability.md)。
@@ -249,7 +262,7 @@
 这种选法也不在这里:「最新」先要定义粒度,而定义粒度就是看法。
 
 **Run** / **结果 Run** —— 持久化结果的单位:一个 Experiment 的一次执行水位。它
-可由多次 Invocation 通过 carry 续成,不保留跨 Experiment 的 Invocation 成员关系。
+可由多次 Invocation 通过结果沿用续成,不保留跨 Experiment 的 Invocation 成员关系。
 与一次 CLI 调用不是一回事:一次调用可开多个 Run,一个 Run 也可由多次调用续成。
 
 **AttemptLocator** / **Attempt 定位符** —— attempt 的稳定引用:由
@@ -319,7 +332,7 @@ agent 不在 config 里注册:每个 experiment 直接引用一个 agent adapter
 已裁决不许出现在 `docs/` 正文里的写法登记在
 [`writing-rules.json`](writing-rules.json) 的 `bannedTerms` 里,不写成表格——
 这份清单的用途是被脚本读:一条记录带 `term` / `use` / `why` 三个字段,
-`pnpm docs:lint` 命中时原样打印 `use` 和 `why`,改的人不必回来翻文档。
+`pnpm test:docs` 命中时原样打印 `use` 和 `why`,改的人不必回来翻文档。
 
 裁决一个新术语时同批往那份 JSON 加一条:`why` 写清为什么这个词会误导读者,不写"统一一下"。
 扫描规则、句长段长行宽的台账与收紧办法见 [`docs/README.md` · 校验与同步](README.md#校验与同步)。
@@ -328,4 +341,4 @@ agent 不在 config 里注册:每个 experiment 直接引用一个 agent adapter
 
 - [Architecture](architecture.md) —— 这些名词在模块图里各自的位置。
 - [Authoring](feature/eval/README.md) —— Eval / Task / Dataset 怎么写。
-- [Scoring](feature/scoring/README.md) —— Scorer / Assertion / Severity / Verdict 的完整手册。
+- [Scoring](feature/scoring/README.md) —— Assertion / Severity / Verdict 的完整手册。
