@@ -671,7 +671,7 @@ describe("实体列表 data", () => {
     expect(items[0]!.evalRows.map((row) => row.evalId)).toEqual(["a", "b"]); // 占位行不在 evalRows 里(占位行只在渲染面合成)
   });
 
-  it("coverage-only 实验也产生榜单占位行；--fresh 清空全部 attempt 时缺口不再静默消失", async () => {
+  it("coverage-only 实验也产生覆盖占位行；--fresh 清空全部 attempt 时缺口不再静默消失", async () => {
     const scope = scopeOf([], [], [{ experimentId: "exp/fresh", knownEvalIds: ["a", "b"], missingEvalIds: ["a", "b"] }]);
     const items = await experimentListData(scope);
     expect(items).toHaveLength(1);

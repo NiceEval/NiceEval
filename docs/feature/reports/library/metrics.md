@@ -111,7 +111,7 @@ function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 
 | 构成 | 主读数 | 官方消费面的行为 |
 |---|---|---|
-| `"pass"` | `endToEndPassRate` | 摘要主 KPI、榜单主列、默认散点 y 轴与预排序全用通过率 |
+| `"pass"` | `endToEndPassRate` | 摘要主 KPI、实验列表主列、默认散点 y 轴与预排序全用通过率 |
 | `"points"` | `totalScore` | 同上位置全部换成总分；通过率不出现（不摆空列） |
 | `"mixed"` | 两者并排、各读各的 | 「过了 31/40 道」和「挣了 142 分」不能相加也不能互相排名：摘要两个 KPI 都显示，按题型拆组的位置各组用自己的主读数 |
 
@@ -235,7 +235,7 @@ fact 是逐 attempt 的，同一 experiment 的 attempt 可能落在不同值上
 
 维度传数组时解析为**复合维度**：维度 name 为成员 name 依声明顺序以 ` × ` 连接；每个 attempt 的维度值为各成员显示键依同一顺序以 ` · ` 连接，任一成员缺失沿用 `(missing)` 显示键参与连接；显示键冲突检测仍按成员各自执行。`["agent", label("memory")]` 即「agent × 记忆机制」各自成类。
 
-复合维度在收维度的每个位置都合法，没有「只有 series 能复合」的例外：榜单的行身份天生可能是复合的——「agent 线 × 记忆机制」是一行，不是两行。所以 `<YAxis dimension={["agent", label("memory")]} sort={endToEndPassRate} />` 与 `<Rows dimension={["agent", label("memory")]} />` 与 `<Line by={["agent", label("memory")]} />` 解析出同一个维度，只是投影成轴、行还是 series 不同。
+复合维度在收维度的每个位置都合法，没有「只有 series 能复合」的例外：行身份天生可能是复合的——「agent 线 × 记忆机制」是一行，不是两行。所以 `<YAxis dimension={["agent", label("memory")]} sort={endToEndPassRate} />` 与 `<Rows dimension={["agent", label("memory")]} />` 与 `<Line by={["agent", label("memory")]} />` 解析出同一个维度，只是投影成轴、行还是 series 不同。
 
 数值轴 `XAxis` 的绑定必须是 `NumericAxis`，用 `numericFlag()` / `numericLabel()` / `numericRunConfig()` / `numericFact()` 或自定义 `of` 构造：
 

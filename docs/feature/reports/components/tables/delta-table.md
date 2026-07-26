@@ -111,7 +111,7 @@ type DeltaTableProps = ComponentProps<DeltaData, {
 两种形态共同的聚合行为：
 
 - **配对身份是 eval id**：同一 eval id 在各条件下的结果进同一行；`evals` 与 CLI 位置参数同语义收窄行集。
-- **单格折叠**：每个 cell 是该条件值 × eval 的折叠——`verdict` / `totalScore` 用与榜单同一套题目级判定口径，`totalTokens` / `totalCostUSD` 是该题在该条件下全部 attempt 的合计。同一条件值对应多个 experiment / Run 时（维度不是 `"experiment"`，或现刻水位由多个贡献 Run 撑起），cell 仍按这份折叠规则合并该组合下的全部 attempt。
+- **单格折叠**：每个 cell 是该条件值 × eval 的折叠——`verdict` / `totalScore` 用与默认报告同一套题目级判定口径，`totalTokens` / `totalCostUSD` 是该题在该条件下全部 attempt 的合计。同一条件值对应多个 experiment / Run 时（维度不是 `"experiment"`，或现刻水位由多个贡献 Run 撑起），cell 仍按这份折叠规则合并该组合下的全部 attempt。
 - **翻转标记**：`flipped` 只在该行各条件判定不一致时为 true，供渲染面叠加 `⇄`；全部一致的行不加噪声。
 - **占位与时效**：某条件没有该 eval 的结果时 `cells` 无该条件的键，渲染面显示占位 `—`，该题不计入该条件在 `totals` 里的分母；`historical` 为 true 的格来自跨 Run 携带的历史执行，渲染面叠加 `↩ <时距>`，与[实体列表的时效标注](../entity-lists/README.md#时效标注)同一条呈现规则。
 - **混型分段**：eval 集横跨通过制与计分制时，`totals[condition].scoringComposition` 为 `"mixed"`——通过制子集报 `passed / denominator`，计分制子集报 `totalScore`，两制不压成一个综合分；`totalTokens` / `totalCostUSD` 不分制，在该条件全部有结果的题上合计。

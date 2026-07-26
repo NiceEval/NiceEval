@@ -2,7 +2,7 @@
 
 同批 eval 在多个条件（baseline vs 记忆、不同 agent、不同 flags）下各跑了一遍时，核心问句是「同一道题在两个条件下各自怎样」——哪些题翻转了判定、token 与成本差在哪。`--exp` 出现两次以上时，缺省切片输出这张对照矩阵：逐 eval 一行，逐条件一组列，行尾翻转标记，尾部对基准的汇总差值。
 
-榜单回答「每个条件整体多好」，对照矩阵回答「每道题在条件间怎么变」；两者消费同一套 Sample 选择，只是投影不同。对照矩阵是报告库 [`DeltaTable`](../components/tables/delta-table.md) 在 show 上的零配置装配——`--exp` 出现顺序即 `conditions`（首个是基准），eval id 前缀即 `evals`；聚合口径、数据形状与展示语义单源在该组件小节，不在此重复声明。
+默认报告回答「每个条件整体多好」，对照矩阵回答「每道题在条件间怎么变」；两者消费同一套 Sample 选择，只是投影不同。对照矩阵是报告库 [`DeltaTable`](../components/tables/delta-table.md) 在 show 上的零配置装配——`--exp` 出现顺序即 `conditions`（首个是基准），eval id 前缀即 `evals`；聚合口径、数据形状与展示语义单源在该组件小节，不在此重复声明。
 
 ## 条件与配对
 
@@ -52,12 +52,12 @@ niceeval show pr-6058 --exp A --exp B        # 收窄到单题：一行矩阵，
 
 - 与 `--report` 互斥（缺省切片被报告树替换时，对照矩阵不再适用；自定义报告里的对比组件用 `DeltaTable`）。
 - `@<locator>` 与重复 `--exp` 互斥（[范围契约](../show.md#选择结果范围)）。
-- 只想看所有条件的整体前沿时用单个 `--exp` 收窄后的[榜单散点](default-report.md)；矩阵服务逐题归因，不服务排名。
+- 只想看所有条件的整体前沿时用单个 `--exp` 收窄后的[默认报告的散点](default-report.md)；矩阵服务逐题归因，不服务排名。
 
 ## 相关阅读
 
 - [`DeltaTable`](../components/tables/delta-table.md) —— 对照矩阵的组件单源：聚合口径、`deltaTableData` 形状与展示语义。
-- [默认榜单](default-report.md) —— 单条件范围的缺省切片与折叠口径。
+- [默认报告](default-report.md) —— 单条件范围的缺省切片与折叠口径。
 - [`--usage`](usage.md) —— 用量列的组装口径。
 - [`--json`](json.md) —— 信封与逐视图指针。
 - [用例 · 跨条件归因](../use-case/cli-cross-condition-attribution.md) —— 从「哪些题翻转了」到「为什么」的全流程。

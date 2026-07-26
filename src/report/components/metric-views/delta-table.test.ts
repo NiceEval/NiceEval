@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 「show 的范围 × 切片正交」deltaTableData 判据段。
 // deltaTableData(对照矩阵):配对身份是 eval id、翻转标记的数据面、逐行 Δ 为原始差值且缺失不为
-// 0、runs>1 的格内折叠(verdict 榜单口径、tokens/成本合计)、totals 与 pairedDelta 两个不同分母
+// 0、runs>1 的格内折叠(verdict 按默认报告口径、tokens/成本合计)、totals 与 pairedDelta 两个不同分母
 // 的口径(fixture 让两侧覆盖不同,抓出直接相减各自 totals 的错误算法)、混型分段、conditionsByFlag
 // 派生(单一可比性桶、0 候选空态、by 非 experiment 报错)。show/compare.md 示例数字复算作 fixture。
 
@@ -109,7 +109,7 @@ describe("deltaTableData", () => {
     expect(data.rows.find((r) => r.key === "condOnly")!.delta).toBeUndefined();
   });
 
-  it("runs>1 的格内折叠:verdict 按榜单口径(任一轮通过则通过),tokens/成本按全部 attempt 合计不是均值", async () => {
+  it("runs>1 的格内折叠:verdict 按默认报告口径(任一轮通过则通过),tokens/成本按全部 attempt 合计不是均值", async () => {
     const base = snap("exp/base", [
       res("retry", "failed", { attempt: 0, usage: usage(300, 0.4) }),
       res("retry", "passed", { attempt: 1, usage: usage(344, 0.47) }),

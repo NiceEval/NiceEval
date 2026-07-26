@@ -26,7 +26,7 @@ telemetry 路径的证明。
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。usage 非空这条机制事实由 `results`
   仓库承担（本仓库的 UI Message Stream 协议帧不带 token 计数，属于诚实的
   `unavailable`，不在此断言）。
-- **CLI 读回**：`show` 榜单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
+- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
   执行树出现裸工具名调用节点，节点带 span 时间注释。
 - **OTel**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`），span 发到
   `niceeval.config.ts` 的 `telemetry.port`

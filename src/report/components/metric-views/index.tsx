@@ -300,7 +300,7 @@ export type MetricTableProps = DataProps<
   }
 >;
 
-/** 榜单:一行一个维度值、一列一个指标,回答「谁整体更好」。 */
+/** 指标表:一行一个维度值、一列一个指标,回答「谁整体更好」。 */
 export const MetricTable = makeDataComponent<
   TableData,
   MetricTableOptions,

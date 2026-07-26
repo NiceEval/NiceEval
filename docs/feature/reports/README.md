@@ -6,7 +6,7 @@
 |---|---|---|
 | 在终端定位失败、看源码、对话和 diff | [`niceeval show`](show.md) | AI 自主迭代、CI、快速 debug |
 | 在浏览器浏览历史、图表和完整证据 | [`niceeval view`](view.md) | 人工复盘、分享静态报告 |
-| 定义自己的成绩单、榜单或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
+| 定义自己的成绩单、条形图或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
 
 `show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 sample-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
 
@@ -47,7 +47,7 @@ export default defineConfig({
 
 字段收 `defineReport` 产物本身，不是路径字符串：配置文件是 TS，import 自己的报告文件即可，写错在类型检查时就暴露。想在内建报告上加外壳或改页，`defineReport({ extends: standard, … })` 的产物同样直接填进来。填了非 `defineReport` 产物（普通对象、React 组件、报告树）按完整用户反馈报错，出处点名配置文件的 `report` 字段。
 
-这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进 Run。要临时回到内建榜单排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
+这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进 Run。要临时回到内建报告排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
 
 团队品牌同理，`theme` 字段收 `defineTheme` 产物：
 
@@ -78,7 +78,7 @@ export default defineConfig({
 
 ## 相关阅读
 
-- [Show](show.md) —— 终端中的榜单、attempt 诊断和证据切面。
+- [Show](show.md) —— 终端中的默认报告、attempt 诊断和证据切面。
 - [View](view.md) —— 本地网页、结果收窄和静态导出。
 - [用例手册](use-case/README.md) —— `show` / `view` 输入与 Library 组件分别在什么真实任务中使用。
 - [Library](library.md) —— 报告组件目录和常用组合配方。

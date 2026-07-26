@@ -92,7 +92,7 @@ export const zhCN = {
     "      --teardown   强杀后补收尾:只对选中的实验各执行一次 teardown(不派发\n" +
     "        attempt、不跑 setup);与 eval id 前缀组合是用法错误\n" +
     "  niceeval show [eval-id 前缀… | @<locator>]   终端读结果\n" +
-    "      不带证据 flag:命中范围的榜单(裸跑、eval id 前缀、单个 --exp 都落在这里);\n" +
+    "      不带证据 flag:命中范围的默认报告(裸跑、eval id 前缀、单个 --exp 都落在这里);\n" +
     "        两个以上 --exp 改为逐条件对照\n" +
     "      @<locator>  精确一个 attempt:无 flag → 紧凑全景;带 flag → 对应证据切面\n" +
     "      --source      该 attempt 运行时保存的 Eval 源码,断言标回源码行\n" +

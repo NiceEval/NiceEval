@@ -43,7 +43,7 @@ export async function runVerify(): Promise<void> {
 
   const board = sh("pnpm exec niceeval show");
   for (const id of EXPECTED_EVALS) {
-    assert.ok(board.includes(id), `show 榜单缺少 ${id}:\n${board}`);
+    assert.ok(board.includes(id), `show 默认报告缺少 ${id}:\n${board}`);
   }
 
   const locators: Record<string, string> = {};

@@ -3,7 +3,7 @@
 //
 // viewData 只携带壳需要的东西:skipped、项目名与 run 元信息。attempt 明细不在这里——
 // 每份 attempt/<locator>.html 是独立静态文档(site.ts),不通过 viewData 这条通道下发;
-// 统计口径(KPI / 榜单 / 挑选警告)整体住在报告槽的静态 HTML 里(ExperimentComparison 或
+// 统计口径(KPI / 实验列表 / 挑选警告)整体住在报告槽的静态 HTML 里(ExperimentComparison 或
 // --report 的报告自己算),壳与报告之间没有第二条数据通道。
 
 import type { LocalizedText } from "../../types.ts";

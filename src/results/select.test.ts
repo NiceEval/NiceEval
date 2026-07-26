@@ -375,7 +375,7 @@ describe("时效:carried 投影与 fresh 口径", () => {
     expect(fresh.attempts).toEqual([]);
     const coverage = fresh.coverage.find((c) => c.experimentId === "e")!;
     expect(coverage.missingEvalIds).toEqual(["q1"]);
-    // coverage-only 实验(零 snapshot 贡献)经 filter 后覆盖缺口不静默消失——榜单占位行的上游事实。
+    // coverage-only 实验(零 snapshot 贡献)经 filter 后覆盖缺口不静默消失——覆盖占位行的上游事实。
     expect(fresh.filter(() => true).coverage).toEqual(fresh.coverage);
   });
 });

@@ -211,7 +211,7 @@ export interface Results {
 
 /**
  * 一个实验的覆盖事实:已知 eval 并集(分母)与当前口径下没有任何 attempt 的题。
- * `missingEvalIds` 永远被算出来,不静默——渲染面把它转成榜单占位行
+ * `missingEvalIds` 永远被算出来,不静默——渲染面把它转成覆盖占位行
  * (见 docs/feature/sample/library.md「选择快照」「时效:新执行与历史执行」)。
  */
 export interface ScopeCoverage {

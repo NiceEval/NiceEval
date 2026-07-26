@@ -43,12 +43,12 @@ export async function runVerify(): Promise<void> {
   const runOutput = sh("pnpm --silent exec niceeval exp langgraph --force --json --junit junit.xml");
   writeFileSync("logs/exp-ci.log", runOutput);
 
-  // 用例二:show 榜单——应发现的 4 条 Eval 都实际运行了,少排用例不能全绿。
+  // 用例二:show 默认报告——应发现的 4 条 Eval 都实际运行了,少排用例不能全绿。
   const board = sh("pnpm exec niceeval show");
   for (const id of EXPECTED_EVALS) {
     assert.ok(
       board.includes(id),
-      `show 榜单缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp langgraph --dry 看计划`,
+      `show 默认报告缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp langgraph --dry 看计划`,
     );
   }
 

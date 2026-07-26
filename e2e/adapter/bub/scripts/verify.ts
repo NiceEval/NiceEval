@@ -8,7 +8,7 @@
 // 验收顺序:
 //   1. 真实跑 ci 实验(--force),全部 Eval 通过(退出 0),同时把组合输出写进
 //      logs/exp-ci.log 供 e2e.ts 做 infra/regression 分类。
-//   2. show 榜单——四条 Eval 都实际运行了,少排用例不能全绿。
+//   2. show 默认报告——四条 Eval 都实际运行了,少排用例不能全绿。
 //   3. show --history——逐 attempt 断言 verdict 是 passed,拿到每条 Eval 的 locator。
 //   4. show @<locator> --execution——工具调用节点、入参都穿到了展示面;本适配器声明了
 //      tracing,时间注释不应是 timing unavailable(节点级 call-id correlation 经真实运行
@@ -22,7 +22,7 @@
 //      (不是猜测),细节见本文件末尾的注记与本次任务的交付报告。
 //   6. legacy 版本线——把 version 往回钉一代(0.3.9 + 同代 OTel 插件)只跑 coding-task,证明
 //      pin 真的落到旧版本且时间轨仍在。放最后:它一跑完结果目录就变多 experiment,`show`
-//      榜单会折叠成实验汇总表(memory 的 codex-cli-show-board-collapses-multi-experiment)。
+//      默认报告会折叠成实验汇总表(memory 的 codex-cli-show-board-collapses-multi-experiment)。
 
 import "dotenv/config";
 import { spawnSync } from "node:child_process";
@@ -86,13 +86,13 @@ function runExperiment(): void {
 function showBoardListsAllEvals(): void {
   console.log("\n=== 2. show board lists every discovered eval ===");
   const board = sh("pnpm exec niceeval show");
-  // 榜单表格按列宽截断:eval id 太长会被硬拆到下一行中间(不是按词边界折行,是按字符数切,
+  // 默认报告的表格按列宽截断:eval id 太长会被硬拆到下一行中间(不是按词边界折行,是按字符数切,
   // 且同一行里其它列的内容会插在 id 的截断点之间)——本仓库的 4 个 eval id 都控制在能整行
   // 显示的长度内,不依赖任何折行重建逻辑。
   for (const id of EXPECTED_EVALS) {
     assert.ok(
       board.includes(id),
-      `show 榜单缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp ci --dry 看计划:\n${board}`,
+      `show 默认报告缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp ci --dry 看计划:\n${board}`,
     );
   }
 }
@@ -158,7 +158,7 @@ function timingShowsRealPhaseTimeline(locators: Record<string, string>): void {
  * OTel 插件 commit。只跑 coding-task 一条(版本线是覆盖维度,不是新协议行为),证明两件事:
  * 安装路径按 pin 装到了旧版本,且旧版插件在旧版 Bub 上仍产出 span(时间注释在)。
  *
- * 放在最后跑:多 experiment 的结果目录会让 `show` 榜单折叠成实验汇总表(见 memory 的
+ * 放在最后跑:多 experiment 的结果目录会让 `show` 默认报告折叠成实验汇总表(见 memory 的
  * codex-cli-show-board-collapses-multi-experiment 台账),上面 2-5 步的 show 断言必须在
  * 只有 ci 结果时完成。
  */

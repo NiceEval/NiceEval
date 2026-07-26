@@ -213,7 +213,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   /** 断言失败时给 view 看的「实际被检查了什么」,而不是重复 matcher 自己的名字。
    *  按值的形状落成人可读事实(而不是留一坨 JSON 给渲染层解析):CommandResult 的第一行是
    *  `exit N · "…输出尾部摘要"`(stdout+stderr 合并折单行,信号常收在末尾——pytest / vitest
-   *  的 failed 计数都在最后几行;榜单与 --eval 标注这类单行面只保留这一行),随后附原样保留
+   *  的 failed 计数都在最后几行;默认报告与 --eval 标注这类单行面只保留这一行),随后附原样保留
    *  换行的更长尾部——runner 不另存 eval 侧命令的输出,这条记录就是它唯一的家,attempt 首页
    *  与 result.json 靠它给出「更进一步」;文件引用带 `// path` 头;其余走通用 JSON 预览。 */
   function previewCheckedValue(value: unknown): string {

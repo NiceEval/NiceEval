@@ -110,4 +110,4 @@ diagnostic 的 level 不等于 verdict：一个 passed/failed attempt 也可以�
 ## 相关阅读
 
 - [`--source`](eval-source.md) / [`--execution`](execution.md) / [`--timing`](timing.md) / [`--diff`](diff.md) —— 四个证据切面。
-- [裸 `show` 的默认榜单](default-report.md) —— locator 从哪里来。
+- [裸 `show` 的默认报告](default-report.md) —— locator 从哪里来。

@@ -3,7 +3,7 @@
 // 两扇门判定不分叉)、快照明细注入(locator / artifactBase)、skipped 透传、报告装载与逐页渲染
 // (裸跑填充 niceeval/report/built-in 的默认导出,--report 整槽替换,en / zh-CN 双语各渲染一遍)。
 // --report 只换报告定义,注入的 Scope 与裸跑同一份。统计口径整体住在报告页里
-// (报告组件的官方计算函数),viewData 不再携带 overview / 榜单这类统计产物,
+// (报告组件的官方计算函数),viewData 不再携带 overview / 实验列表这类统计产物,
 // 见 docs/feature/reports/view.md「打开与收窄」。
 
 import { readFileSync, statSync } from "node:fs";

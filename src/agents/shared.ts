@@ -154,7 +154,7 @@ function firstJsonField(raw: string | undefined, field: string): string | undefi
  * 否则 transcript 为空时失败原因彻底丢失,用户只能干瞪眼。
  *
  * 分层:首行是一层可行动摘要(exit code · transcript 状态 · 最后一条 error 的首行),
- * output tail 从第二行起按原始换行保留——scrollback 失败行 / 榜单等单行面对 message 取
+ * output tail 从第二行起按原始换行保留——scrollback 失败行 / 默认报告等单行面对 message 取
  * 首行即得一层摘要,tail 归 `show` 的 attempt 详情展开(docs/feature/experiments/cli.md
  * 「运行反馈」:执行错误即时输出一层摘要,不把 stack 或 SDK 输出灌进 scrollback)。
  * lastErr 的完整多行文本已是 events 里的独立事件,首行截取不丢证据。

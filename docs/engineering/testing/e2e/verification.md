@@ -45,16 +45,16 @@ const EXPECTED_EVALS = ["weather/brooklyn", "weather/hitl-reject"];
 sh("pnpm exec niceeval exp weather --rerun all --json --junit junit.xml");
 ```
 
-## 用例二：`show` 榜单——应发现的 Eval 都实际运行了
+## 用例二：`show` 默认报告——应发现的 Eval 都实际运行了
 
-少排用例不能全绿。榜单断言停在自有事实的子串级出现，不断言布局：
+少排用例不能全绿。默认报告断言停在自有事实的子串级出现，不断言布局：
 
 ```ts
 const board = sh("pnpm exec niceeval show");
 for (const id of EXPECTED_EVALS) {
   assert.ok(
     board.includes(id),
-    `show 榜单缺少 ${id}——发现或选择器行为变了，先跑 pnpm exec niceeval exp weather --dry 看计划`,
+    `show 默认报告缺少 ${id}——发现或选择器行为变了，先跑 pnpm exec niceeval exp weather --dry 看计划`,
   );
 }
 ```

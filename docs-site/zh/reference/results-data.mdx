@@ -158,13 +158,13 @@ latest.coverage[0];
 // }
 ```
 
-缺口是逐题的事实，所以呈现在题的位置上：`niceeval show` / `view` 的榜单把缺的题渲染成「当前配置下无结果」占位行，旁边就是可复制的补跑命令——你在正在看的表里直接看见分母缺口。程序判断同样直接：CI 里「覆盖缩水就 fail」判 `coverage.some((c) => c.missingEvalIds.length > 0)`，不解析文本。缺口永远被算出来，不静默。
+缺口是逐题的事实，所以呈现在题的位置上：`niceeval show` / `view` 的默认报告把缺的题渲染成「当前配置下无结果」占位行，旁边就是可复制的补跑命令——你在正在看的表里直接看见分母缺口。程序判断同样直接：CI 里「覆盖缩水就 fail」判 `coverage.some((c) => c.missingEvalIds.length > 0)`，不解析文本。缺口永远被算出来，不静默。
 
 `warnings` 收的是定位不到具体某道题的完整性问题：选中的快照没收尾（进程中断）进 `unfinished-snapshot`、落盘读不了进 `unreadable-snapshot`，每种都带 `kind`、可判断的结构化字段和渲染好的英文 `message`（要展示就原样打）。
 
 `snap.diagnostics` 和 `warnings` 分工不同：warnings 讲的是「这批数据是怎么挑出来的」，`diagnostics` 讲的是「某一次实验跑的时候出了什么事」——实验级 teardown 失败、预算没法执行这类记录，落不到某道题上，就跟着它真正所属的那次结果快照一起收尾写盘。它们始终绑定自己的 `experimentId` 和 `startedAt`，不会被合并成整个 Scope 的结论，也不会复制到每条 attempt 上；展示用快照诊断（`SnapshotDiagnostics`）组件，逐条保留是哪一次跑出来的、多久以前跑的。
 
-每条结果还带**时效**：携带条目（缓存命中、上一轮的结果合入本快照）`attempt.carried` 为 true，榜单在这类行后标 `↩` 加时距（如 `↩ 3d`）——旧但有效，fingerprint 担保过没改，所以是行内标注不是警告。只想看最新一次真实跑出来的结果，用 `results.latest({ fresh: true })` 或 CLI 的 `--fresh`，被排除的题会转成占位行，不会静默消失。
+每条结果还带**时效**：携带条目（缓存命中、上一轮的结果合入本快照）`attempt.carried` 为 true，默认报告在这类行后标 `↩` 加时距（如 `↩ 3d`）——旧但有效，fingerprint 担保过没改，所以是行内标注不是警告。只想看最新一次真实跑出来的结果，用 `results.latest({ fresh: true })` 或 CLI 的 `--fresh`，被排除的题会转成占位行，不会静默消失。
 
 Scope 是[报告积木](/zh/tutorials/custom-reports)和下文 `copySnapshots` 的通用输入：收 `Scope` 时 coverage 与 warnings 随行（占位行与 `ScopeWarnings` 组件会如实展示），手工挑的 `Snapshot[]` 数组照收。`scope.snapshots` 里的每一项都是盘上那份真实结果快照，`diagnostics` 跟着它走，所以两种输入都能渲染快照诊断。微调官方口径不用降级成裸数组：`latest.filter((s) => s.experimentId !== "compare/broken")` 返回新 Scope——快照被删减，coverage 与 warnings 修剪到幸存的实验，provenance 不丢。`filter` 只做删减；「换成该实验上一个完整快照」这类**替换式**重挑不是它的事，回到 `exp.snapshots` 自己拿——手工挑的数组没有挑选过程，自然没有覆盖事实可带，也如实。
 
@@ -229,7 +229,7 @@ for (const r of convertedResults) {
 await writer.finish();                 // 给每个快照补 completedAt,没有任何收尾聚合
 ```
 
-`writer.snapshot()` 就是读取面「实验 → 快照」层次的镜像：转多个 experiment 就开多个快照目录，experimentId / agent / model / startedAt 这些快照级元数据在这里声明一次，不用塞进每条 attempt；可选的 `knownEvalIds`（该实验已知的评估用例并集）也在这里声明——它是残缺检测的分母，转换只覆盖部分题目时如实交代全集，下游的覆盖缺口（`coverage` 与榜单占位行）就能算出来（`copySnapshots` 发布时会自动补记这个字段，见下文）。转完的目录就是标准结果目录：`niceeval show` / `niceeval view` 直接能看，报告积木直接能算，不用抄格式文档；`producer` 会原样出现在读取面的 `snap.producer` 上。**每个文件恰好写入一次**是写入面的核心承诺:`snapshot.json` 开跑即写、收尾只补 `completedAt`;`result.json` 与 artifact 随 attempt 完成落盘。进程中断只丢未完成的 attempt,已完成的判定与 artifact 已经在盘上——真正「有 attempt 落盘却没有 `snapshot.json`」的极端情况才归 `skipped("incomplete")`,未收尾但元数据齐全的快照能正常读,只带一条警告。
+`writer.snapshot()` 就是读取面「实验 → 快照」层次的镜像：转多个 experiment 就开多个快照目录，experimentId / agent / model / startedAt 这些快照级元数据在这里声明一次，不用塞进每条 attempt；可选的 `knownEvalIds`（该实验已知的评估用例并集）也在这里声明——它是残缺检测的分母，转换只覆盖部分题目时如实交代全集，下游的覆盖缺口（`coverage` 与覆盖占位行）就能算出来（`copySnapshots` 发布时会自动补记这个字段，见下文）。转完的目录就是标准结果目录：`niceeval show` / `niceeval view` 直接能看，报告积木直接能算，不用抄格式文档；`producer` 会原样出现在读取面的 `snap.producer` 上。**每个文件恰好写入一次**是写入面的核心承诺:`snapshot.json` 开跑即写、收尾只补 `completedAt`;`result.json` 与 artifact 随 attempt 完成落盘。进程中断只丢未完成的 attempt,已完成的判定与 artifact 已经在盘上——真正「有 attempt 落盘却没有 `snapshot.json`」的极端情况才归 `skipped("incomplete")`,未收尾但元数据齐全的快照能正常读,只带一条警告。
 
 ## 发布：`copySnapshots`
 

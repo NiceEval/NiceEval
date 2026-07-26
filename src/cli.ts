@@ -1,6 +1,6 @@
 // niceeval CLI 入口。执行 eval 必须以 experiment 为单位;位置参数只在 exp 后筛 eval id 前缀。
 //   niceeval exp [组|配置] [pattern]  跑实验
-//   niceeval show [pattern]          终端读结果:榜单 / 单 eval / 证据切面 / 时间轴 / --report
+//   niceeval show [pattern]          终端读结果:默认报告 / 单 eval / 证据切面 / 时间轴 / --report
 //   niceeval list                    只列出发现到的 eval
 //   niceeval clean                   删除 .niceeval/ 历史运行 artifact
 
@@ -205,7 +205,7 @@ const FLAG_OPTIONS = {
   report: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
-  /** `show` / `view` 命令专用:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);被排除的题按覆盖事实转为榜单占位行,不静默消失。 */
+  /** `show` / `view` 命令专用:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);被排除的题按覆盖事实转为覆盖占位行,不静默消失。 */
   fresh: { type: "boolean" },
   /** `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 */
   teardown: { type: "boolean" },

@@ -4,7 +4,7 @@
 // 一次调用 = 范围 × 切片 × 形态(docs/feature/reports/show.md)。范围:eval id 前缀位置参数、
 // `@<locator>`(单元素范围)、`--exp`(可重复,>=2 进入对照语义)、`--results`、`--fresh`。
 // 切片(每个切片解析成一次报告组件装配,见 architecture.md「show 的切片是组件选择」):
-//   无证据 flag 且 --exp < 2   默认榜单(内建报告的 text 面;裸 show / eval 前缀 / 单个 --exp 都落在这里)
+//   无证据 flag 且 --exp < 2   默认报告(内建报告的 text 面;裸 show / eval 前缀 / 单个 --exp 都落在这里)
 //   无证据 flag 且 --exp >= 2  对照矩阵(DeltaTable,接线点见 renderCompareSlice)
 //   @<locator> 且无证据 flag   失败诊断首页(当前 report 的 attempt-input page)
 //   --source / --execution / --timing / --diff[=路径]   证据切面(宿主本体,不渲染报告槽);
@@ -1038,7 +1038,7 @@ async function show(
   }
 
   // 缺省切片选择表(docs/feature/reports/show.md「缺省切片的选择规则」):`--exp` 出现两次以上
-  // 且没有被 `--report` 接管时是对照矩阵,不是报告槽的裸榜单——与 `--report` 互斥(缺省切片被
+  // 且没有被 `--report` 接管时是对照矩阵,不是报告槽的裸默认报告——与 `--report` 互斥(缺省切片被
   // 报告树替换时对照矩阵不再适用)。
   if (flags.report === undefined && expSelectors.length >= 2) {
     const conditions = resolveCompareConditions(experimentIds, expSelectors);

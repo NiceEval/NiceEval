@@ -62,7 +62,7 @@ t.check(t.reply, includes("friendly tone").atLeast(0.7));
 
 ## 计分制:检查点没走完也要看走了几步
 
-`defineEval` 把一次运行折成一个"过"或"不过"。有些任务分步骤，走完三步比一步没走强得多——这类任务用 `defineScoreEval`，题内用给分 API 累加挣分，`niceeval show` / `view` 的榜单读总分而不是通过率：
+`defineEval` 把一次运行折成一个"过"或"不过"。有些任务分步骤，走完三步比一步没走强得多——这类任务用 `defineScoreEval`，题内用给分 API 累加挣分，`niceeval show` / `view` 的默认报告读总分而不是通过率：
 
 ```ts
 import { defineScoreEval } from "niceeval";

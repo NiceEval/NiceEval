@@ -53,7 +53,7 @@ description: "用 niceeval show 在终端按 @<locator> 查看 Attempt 的评估
 ```bash
 niceeval show                       # 默认报告：比较当前 Scope 并下钻到 Attempt
 niceeval show weather               # 前缀过滤：weather/* 下每个 eval 的判定
-niceeval show weather/brooklyn      # 收窄到一个 eval：同一份榜单，只保留它的 experiment × Attempt 展开
+niceeval show weather/brooklyn      # 收窄到一个 eval：同一份默认报告，只保留它的 experiment × Attempt 展开
 niceeval show @1k2m9qrs             # 精确到一次 Attempt：断言、执行、diff 与可用证据摘要
 niceeval show @1k2m9qrs --source      # 该 Attempt 运行时保存的 Eval 源码,断言标回源码行
 niceeval show @1k2m9qrs --execution # 该 Attempt 的消息、thinking、Skill 加载、工具调用,有 OTel 时补时间
@@ -77,7 +77,7 @@ Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存
 | `niceeval view` 里的视图 | 终端对应 |
 | --- | --- |
 | 当前结果的分组比较报告 | `niceeval show` |
-| 收窄到该 eval 前缀的榜单：各 experiment × Attempt 的判定与摘要 | `niceeval show <eval id>` |
+| 收窄到该 eval 前缀的默认报告：各 experiment × Attempt 的判定与摘要 | `niceeval show <eval id>` |
 | 单次 Attempt 摘要（断言、执行、diff 与证据可用性） | `niceeval show @<locator>` |
 | 评估用例源码标注（断言标回源码行） | `niceeval show @<locator> --source` |
 | AI 对话、thinking、Skill 加载与工具调用（有 OTel 时补时间） | `niceeval show @<locator> --execution` |
@@ -91,9 +91,9 @@ Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存
 
 实验列表先给固定列汇总，再按 experiment → 评估用例 → Attempt 展开。locator 只保留 `@<id>`；完整断言和 evidence 留在 `niceeval show @<locator>`。只有一个 experiment 时散点仍显示单点。
 
-### 用 eval 前缀收窄榜单
+### 用 eval 前缀收窄默认报告
 
-eval id 前缀不是另一套视图——它只是把当前 Scope 收窄到匹配的评估用例，渲染的仍是和裸 `niceeval show` 同一份默认榜单：散点图、固定列汇总，再按 experiment → 评估用例 → Attempt 展开，只是这里的评估用例只剩下匹配前缀的那些。同一个评估用例的多次 Attempt 全部按顺序逐条列出，不做「默认展开某一次」的取舍：
+eval id 前缀不是另一套视图——它只是把当前 Scope 收窄到匹配的评估用例，渲染的仍是和裸 `niceeval show` 同一份默认报告：散点图、固定列汇总，再按 experiment → 评估用例 → Attempt 展开，只是这里的评估用例只剩下匹配前缀的那些。同一个评估用例的多次 Attempt 全部按顺序逐条列出，不做「默认展开某一次」的取舍：
 
 ```text
 $ niceeval show weather/brooklyn
@@ -670,11 +670,11 @@ Soft 断言的分数记录在 `assertions[].score` 里；非 `--strict` 模式�
 
 ## 调试建议
 
-- 榜单里失败/错误的题每条自带下钻命令：`niceeval show <eval id>` 先看断言明细，行尾的 `@<locator>` 可以直接精确下钻到某一次 Attempt。
+- 默认报告里失败/错误的题每条自带下钻命令：`niceeval show <eval id>` 先看断言明细，行尾的 `@<locator>` 可以直接精确下钻到某一次 Attempt。
 - 检查评估用例内容和断言结果时使用 `--source`，断言标注会对应到源码行。
 - 检查 Agent 消息和调用时使用 `--execution`；关联成功的 OTel 时间会显示在同一事件旁。
 - coding-agent 失败时看 `--diff` 和 `--execution` 里的工具调用；两者结合能看出「改错了文件」还是「压根没调用该调用的工具」。
 - Sandbox 评估用例运行缓慢或超时时，先看 `--timing`。该视图分别列出排队、Sandbox 启动、setup hook 中的 shell、Agent 安装命令、每轮 `send`、可关联的 OTel model/tool 以及收尾阶段耗时。
-- 同批题在多个条件下跑过时，用多个 `--exp` 看逐题对照矩阵，不要只盯着两次单条件榜单肉眼对比。
+- 同批题在多个条件下跑过时，用多个 `--exp` 看逐题对照矩阵，不要只盯着两次单条件的默认报告肉眼对比。
 - 怀疑某道题本身有问题（不是这次条件变化导致）时，先看 `--stats` 里它是不是在所有条件、所有历史执行里都 `never passed`。
 - 定位被测程序或评估用例缺陷并完成重跑的流程见 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)。

@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
 // niceeval show 终端宿主的选择与错误反馈(「show 终端宿主的选择、时间轴与文案」与
-// 「show 的范围 × 切片正交」两个类别)。渲染产物——榜单/详情/证据切面的终端排版与结构——归
+// 「show 的范围 × 切片正交」两个类别)。渲染产物——默认报告/详情/证据切面的终端排版与结构——归
 // docs/engineering/testing/e2e/report.md §4/§5 对真实运行产物验收,不在本文件重复。覆盖:
 // - --history 时间轴计算(attemptHistory):按 experimentId + evalId 分节、跨快照按身份键去重
 //   (resume 携带的复印件不占行)、startedAt 升序、单行摘要与成本派生;
@@ -12,7 +12,7 @@
 //   (renderEvidenceSections)是同一条代码路径,不是两份实现;
 // - 多 `--exp` 的范围校验(每个必须恰好解析到一个 experiment、命中多个按用法错误列出候选)、
 //   `@<locator>` 与重复 `--exp` 互斥、缺省切片对照矩阵的占位接线点(renderCompareSlice)错误
-//   反馈;eval id 前缀命中单个 eval 时并入范围收窄后的默认榜单,不再有独立的单 eval 详情分支。
+//   反馈;eval id 前缀命中单个 eval 时并入范围收窄后的默认报告,不再有独立的单 eval 详情分支。
 //
 // 跨快照合成 Selection 与去重的结构化语义(selectCurrentResults/现刻水位)已在
 // src/results/host-equivalence.test.ts 直接对 Selection 对象断言,不在本文件重复覆盖。

@@ -90,7 +90,7 @@ show 的每个切片都解析为报告组件的装配，`--json` 输出该视图
 
 | 切片 | 组件（+ 配套 `*Data`） |
 |---|---|
-| 缺省榜单 | 内建报告首页（`ExperimentComparison` / `ExperimentList`） |
+| 默认报告 | 内建报告首页（`ExperimentComparison` / `ExperimentList`） |
 | 对照矩阵（多 `--exp`） | `DeltaTable`（多条件对照：翻转标记、各条件汇总、共同题 paired delta） |
 | `--stats` | `StabilityMatrix`（历史全执行证据面的稳定性矩阵） |
 | `--usage` | `UsageTable`（与 attempt 详情 `usage:` 行共享组装口径单源） |
@@ -125,7 +125,7 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 ## Sample 是默认报告的比较边界
 
-`experimentListData`、`sampleSummaryData` 与 `chartData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Sample；每个 experiment 当前有效的 eval 集从 `Sample.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入榜单占位行，不进分母也不补成失败。这条读法不依赖任何单一 Run 的 `ExperimentRunInfo.selectedEvalIds`——`latestPerEval()` 下一个 experiment 的有效题集由多个贡献 Run 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
+`experimentListData`、`sampleSummaryData` 与 `chartData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Sample；每个 experiment 当前有效的 eval 集从 `Sample.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入覆盖占位行，不进分母也不补成失败。这条读法不依赖任何单一 Run 的 `ExperimentRunInfo.selectedEvalIds`——`latestPerEval()` 下一个 experiment 的有效题集由多个贡献 Run 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
 
 `SampleSummary`、默认散点与 `ExperimentList` 都消费同一份 Sample。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；组件不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
 

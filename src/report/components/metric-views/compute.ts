@@ -603,7 +603,7 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
   return {
     scoring,
     verdict,
-    // totalScore 是题目级挣分(各 attempt 均值,与榜单 totalScore 指标同一套 perEval 聚合);
+    // totalScore 是题目级挣分(各 attempt 均值,与默认报告 totalScore 指标同一套 perEval 聚合);
     // totalTokens / totalCostUSD 是该题在该条件下全部 attempt 的合计,不是均值。
     ...(scoreCount > 0 ? { totalScore: scoreSum / scoreCount } : {}),
     attempts: [...refs].sort(),

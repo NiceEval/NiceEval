@@ -2,7 +2,7 @@
 
 `niceeval/report/built-in` 是内建视图的家：每个内建视图是一份普通 `defineReport` 成品，有自己的名字，按名字具名导出、一视图一个源文件；入口的**默认导出**恒等于 `standard`——[取值链](../README.md#项目默认报告)最后一档装载的那份。默认报告不是私有实现，也不是省略字段时被召唤的隐式默认，只是「取值链兜底拿哪个值」的事实。
 
-**具名导出名同时是 CLI 上的视图名。** `--report standard` 与 `--report ./reports/site.tsx` 是同一个 flag 的两种取值形态：裸词查这张名字表，带路径形按文件装载（[判别规则](../architecture.md#外壳与页装载规范化)）。名字表就是这个入口的具名导出集合，当前只有 `standard`；配了 `config.report` 之后想临时看回默认榜单，`niceeval show --report standard` 是不用改配置的那条路。
+**具名导出名同时是 CLI 上的视图名。** `--report standard` 与 `--report ./reports/site.tsx` 是同一个 flag 的两种取值形态：裸词查这张名字表，带路径形按文件装载（[判别规则](../architecture.md#外壳与页装载规范化)）。名字表就是这个入口的具名导出集合，当前只有 `standard`；配了 `config.report` 之后想临时看回默认报告，`niceeval show --report standard` 是不用改配置的那条路。
 
 ```ts
 import builtIn, { standard, standardAttemptPage } from "niceeval/report/built-in";
@@ -17,7 +17,7 @@ builtIn;  // 默认导出 === standard，宿主装载取这个值
 `standard` 的全文如下：
 
 ```tsx
-// niceeval/report/built-in 的 standard 视图，没有任何私有钩子
+// niceeval/report/built-in 的 standard 视图，没有任何私有 Hook
 import {
   AttemptDetail, AttemptList,
   Col, CopyFixPrompt, ExperimentComparison, Hero, SampleWarnings, RunDiagnostics,

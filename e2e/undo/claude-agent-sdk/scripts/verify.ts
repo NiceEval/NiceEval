@@ -10,7 +10,7 @@
 // 验收顺序:
 //   1. 真实跑 ci 实验(--force),全部 Eval 通过(退出 0),同时把组合输出写进
 //      logs/exp-ci.log 供 e2e.ts 做 infra/regression 分类。
-//   2. show 榜单——三条 Eval 都实际运行了,少排用例不能全绿。
+//   2. show 默认报告——三条 Eval 都实际运行了,少排用例不能全绿。
 //   3. show --history——逐 attempt 断言 verdict 是 passed,拿到 locator。
 //   4. show @<locator> --execution——MCP 工具调用节点、入参 Brooklyn 都穿到了展示面;
 //      本适配器不声明 tracing,时间注释应为 timing unavailable。
@@ -74,7 +74,7 @@ function showBoardListsAllEvals(): string {
   console.log("\n=== 2. show board lists every discovered eval ===");
   const board = sh("pnpm exec niceeval show");
   for (const id of EXPECTED_EVALS) {
-    assert.ok(board.includes(id), `show 榜单缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp ci --dry 看计划`);
+    assert.ok(board.includes(id), `show 默认报告缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp ci --dry 看计划`);
   }
   return board;
 }

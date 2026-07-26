@@ -262,7 +262,7 @@ export interface ScoreboardData {
 }
 
 /**
- * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/components/tables/delta-table.md)。`verdict` / `totalScore` 用与榜单同一套题目级判定口径(`totalScore` 取各
+ * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/components/tables/delta-table.md)。`verdict` / `totalScore` 用与默认报告同一套题目级判定口径(`totalScore` 取各
  * attempt 的均值);`totalTokens` / `totalCostUSD` 是该题在该条件下全部 attempt 的**合计**,
  * 不是均值。
  */

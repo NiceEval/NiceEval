@@ -58,7 +58,7 @@ export default async function runVerify(): Promise<void> {
   // (shWithLog);`pnpm --silent exec` 防止 pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
   shWithLog("pnpm --silent exec niceeval exp --force --json --junit junit.xml", "logs/exp-ci.log");
 
-  // 用例二:show 榜单——应发现的 Eval 都实际运行了(少排用例不能全绿)。本仓库有 5 个
+  // 用例二:show 默认报告——应发现的 Eval 都实际运行了(少排用例不能全绿)。本仓库有 5 个
   // experiment(baseline/mcp/plugin/skill/configfile),裸 `show` 不带位置参数时按「实验组」
   // 分区展示比较报告——5 个组时折叠成组级汇总表(每组一行「N passed」,不逐条列 Eval id),
   // 只有单一实验组时才会退化展开成本仓库这种逐 Eval 视图(真机核对过:只跑 baseline 一个

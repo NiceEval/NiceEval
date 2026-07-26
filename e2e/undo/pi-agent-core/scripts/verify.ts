@@ -29,12 +29,12 @@ function locatorOf(line: string): string {
   return match![0];
 }
 
-// ── 用例一:榜单列出本仓库每条 Eval ──────────────────────────────────────
+// ── 用例一:默认报告列出本仓库每条 Eval ──────────────────────────────────────
 const board = sh("pnpm exec niceeval show");
 for (const id of EXPECTED_EVALS) {
   assert.ok(
     board.includes(id),
-    `show 榜单缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp ci --dry 看计划`,
+    `show 默认报告缺少 ${id}——发现或选择器行为变了,先跑 pnpm exec niceeval exp ci --dry 看计划`,
   );
 }
 

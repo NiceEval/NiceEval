@@ -211,7 +211,7 @@ niceeval 库代码，也不得递归扫描 `.niceeval/`、猜 `run.json`
 名称或手工拼 Attempt 路径。读取结果只用 CLI 出口：
 
 - 稳定机器摘要：`--json` 输出文件；
-- 榜单与逐 attempt 时间线（verdict、耗时、成本、locator）：`niceeval show` / `show --history`；
+- 默认报告与逐 attempt 时间线（verdict、耗时、成本、locator）：`niceeval show` / `show --history`；
 - 证据切面：`show @<locator> --execution` / `--timing` / `--source` / `--diff`；
 - CI 出口：显式指定的 `--junit` 文件。
 

@@ -65,7 +65,7 @@ $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可
 
 ## Case 7：项目默认报告与临时回到内建
 
-配置里填了 `report` 字段后，裸 `show` 装载的就是它；`--report` 仍然按次覆盖，写内建视图名就回到默认榜单，不必改配置：
+配置里填了 `report` 字段后，裸 `show` 装载的就是它；`--report` 仍然按次覆盖，写内建视图名就回到默认报告，不必改配置：
 
 ```sh
 $ niceeval show                             # 装载 config.report

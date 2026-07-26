@@ -20,7 +20,7 @@ Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务�
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 榜单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
+- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
   执行树出现 `skill.loaded` 与 `mcp__` 调用节点，节点带 span 时间注释。
 - **OTel**：adapter 的 `tracing.env`
   注入原生 OTLP 遥测，执行树的时间注释就是记录成立的展示证明；`show --timing` 的 OTel 子树呈现

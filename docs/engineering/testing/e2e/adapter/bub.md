@@ -27,12 +27,12 @@ JSONL 行为轨与会话（契约见 [Bub 契约页](../../../../feature/adapter
 
 两代必须成对钉：Bub 0.3.10 起 vendor 了 `bub.tape`，之后的插件从那里取类型；配 0.3.9 直接 import 失败。反过来旧插件按 republic 的类型校验，配新 Bub 是 span 全被拒、时间轨静默为空（契约见 [Bub 契约页 · 装哪一版 Bub](../../../../feature/adapters/sdk/bub/README.md#装哪一版-bub)）。
 
-`legacy` 放在验收顺序最后跑：结果目录一旦有两个实验，`show` 榜单就折叠成实验汇总表，前面按 Eval id 断言榜单的步骤必须在只有 `ci` 结果时完成。
+`legacy` 放在验收顺序最后跑：结果目录一旦有两个实验，`show` 默认报告就折叠成实验汇总表，前面按 Eval id 断言它的步骤必须在只有 `ci` 结果时完成。
 
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 榜单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
+- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
   执行树出现工具调用节点，节点带 span 时间注释。
 - **OTel**：adapter 的 `tracing.env` 注入标准 `OTEL_*`
   环境变量（OTLP/protobuf），执行树的时间注释就是记录成立的展示证明；`show --timing`

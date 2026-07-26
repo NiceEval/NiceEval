@@ -5,7 +5,7 @@
 ## 修失败与查证据
 
 - [从失败清单到可修复任务](triage-failures.md) —— `FailureList` / `CopyFixPrompt` / `AttemptDetail`。
-- [`@locator`:从榜单一行下钻到一次失败的全部证据](show-locator-drilldown.md)。
+- [`@locator`:从默认报告一行下钻到一次失败的全部证据](show-locator-drilldown.md)。
 - [`--history`:一道题时好时坏,按 attempt 看历次执行](show-history-flaky-eval.md)。
 
 ## 比较、评分与定位

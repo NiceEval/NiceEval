@@ -10,7 +10,7 @@
 // 验收顺序:
 //   1. 真实跑全部 5 个 experiments(--force),全部通过(退出 0),组合输出写进
 //      logs/exp-ci.log 供 e2e.ts 做 infra/regression 分类。
-//   2. show 榜单——6 条 Eval 都实际运行了,少排用例不能全绿。
+//   2. show 默认报告——6 条 Eval 都实际运行了,少排用例不能全绿。
 //   3. show --history——逐 attempt 断言 verdict 是 passed,拿到 locator。
 //   4. show @<locator> --execution——skill-used 的 attempt 显示 skill.loaded 节点,
 //      mcp-tools 与 plugin-mcp 的 attempt 显示 mcp__ 调用节点、入参保真穿到展示面。
@@ -89,7 +89,7 @@ function showBoardListsAllEvals(): string {
   for (const id of EXPECTED_EXPERIMENTS) {
     assert.ok(
       board.includes(id),
-      `show 榜单缺少 experiment "${id}"——发现或选择器行为变了,先跑 pnpm exec niceeval exp --dry 看计划`,
+      `show 默认报告缺少 experiment "${id}"——发现或选择器行为变了,先跑 pnpm exec niceeval exp --dry 看计划`,
     );
   }
   return board;

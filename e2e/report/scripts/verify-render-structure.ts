@@ -285,7 +285,7 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   // --- ScopeWarnings:警告 kind 全集现在只有 unfinished-snapshot / missing-startedAt /
   //     unreadable-snapshot 三种(docs/feature/sample/library.md#警告-kind-全集)——旧的
   //     stale-snapshot(deliberate-fail/deliberate-error 比 main 旧)与 partial-coverage 已经
-  //     从警告全集里删除,时效改成行级 ↩ 标注、覆盖缺口改成榜单占位行,两者都不再是页面级警告
+  //     从警告全集里删除,时效改成行级 ↩ 标注、覆盖缺口改成覆盖占位行,两者都不再是页面级警告
   //     (裁决见 memory/staleness-demoted-from-warning-to-provenance.md)。produceEvidence() 的 3 个
   //     Experiment 都是正常收尾的完整快照,不触发这三种 kind 中的任何一种,所以这份证据里
   //     warnings 恒为空集——ScopeWarnings 两面零输出、不渲染空容器
