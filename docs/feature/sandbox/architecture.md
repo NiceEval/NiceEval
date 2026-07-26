@@ -235,7 +235,7 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 3. 仍有必要时再考虑预热池或串行复用。
 
 - **预热池** —— 提前起若干沙箱挂在池里,case 来了直接领,把冷启动移出关键路径。
-- **串行复用** —— `--reuse-sandbox` 让整批同基线 eval 共用一个热沙箱串行跑,不随 eval 变的层只装一次、落成温基线,题间只把 workdir 重置回温基线。显式 flag 才进入,默认仍是每 attempt 全新;完整契约见[串行复用](serial-reuse.md)。
+- **串行复用** —— `--reuse-sandbox` 让整批同基线 eval 共用一个热沙箱串行跑,不随 eval 变的层只装一次、落成复用 Sandbox 的题间重置点,题间只把 workdir 重置回这个点。显式 flag 才进入,默认仍是每 attempt 全新;完整契约见[串行复用](serial-reuse.md)。
 
 预制环境的构建与发布归项目和 provider 原生工具;NiceEval 的 typed spec 负责消费(工作流见 [Library · 预制环境](library/prebuilt-environments.md))。预热池与复用是 [Runner](../../runner.md) 的调度职责。
 

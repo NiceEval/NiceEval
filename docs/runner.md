@@ -286,12 +286,12 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
   一并销毁。
 - **串行复用(`--reuse-sandbox`)**:整批同基线 eval 共用一个热沙箱串行
   跑。不随 eval 变的层(`createSandbox`、`sandbox.setup` 链、
-  `SandboxAgent.setup`)整组只执行一次,落成温基线 commit。题间把
-  workdir 重置回温基线(`git reset --hard` + 尊重分类账排除清单的
+  `SandboxAgent.setup`)整组只执行一次,落成**复用 Sandbox 的题间重置点**。
+  题间把 workdir 重置回这个点(`git reset --hard` + 尊重分类账排除清单的
   `git clean`),每题只重放 `EvalDef.setup` / `test(t)` Fixture。
 - **复用的两条互斥**:与并发互斥(一个热沙箱 = 一条执行道,并发钉成 1,
   显式 `--max-concurrency` 组合是创建前的用法错误);与指纹缓存双向绝缘
-  (不消费携带、不产生命中)。温基线分层、诚实边界、同基线批次约束见
+  (不消费携带、不产生命中)。重置点的分层、诚实边界、同基线批次约束见
   [Sandbox · 串行复用](feature/sandbox/serial-reuse.md)。
 - **[`--keep-sandbox`](feature/sandbox/cli.md) 与 `--reuse-sandbox`
   互斥**,组合在创建沙箱前报错:留存的现场必须属于那一次 attempt,不能

@@ -19,8 +19,9 @@
    workdir-only reset between evals — $HOME / global installs persist; results excluded from cache
    ```
 
-3. 第一题开跑前付**唯一一次**安装:`createSandbox` → `sandbox.setup` 链 → `SandboxAgent.setup`,落成温基线。
-4. 之后每题只重放自己的 `EvalDef.setup` / `test(t)` Fixture;题与题之间 runner 把 workdir `git reset --hard` 回温基线再 `git clean`(尊重分类账排除清单,`node_modules` 这类目录不动),下一题近乎立即开跑。
+3. 第一题开跑前付**唯一一次**安装:`createSandbox` → `sandbox.setup` 链 →
+   `SandboxAgent.setup`,落成复用 Sandbox 的题间重置点。
+4. 之后每题只重放自己的 `EvalDef.setup` / `test(t)` Fixture。题与题之间 runner 把 workdir `git reset --hard` 回那个重置点再 `git clean`(尊重分类账排除清单,`node_modules` 这类目录不动),下一题近乎立即开跑。
 5. 结束反馈照常给判定汇总与 FAILED / NEXT;这些 attempt 落盘时带 `reuse` 标记,`show` / `view` 照常可查。
 
 ## 边界
@@ -31,5 +32,5 @@
 
 ## 相关阅读
 
-- [串行复用](../serial-reuse.md) —— 温基线分层、诚实边界、与缓存/留存的组合。
+- [串行复用](../serial-reuse.md) —— 重置点的分层、诚实边界、与缓存/留存的组合。
 - [CLI](../cli.md) —— `--keep-sandbox` 与 `sandbox` 命令组。

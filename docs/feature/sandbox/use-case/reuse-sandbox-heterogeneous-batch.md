@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-选题范围一宽,批里就可能混进解析到不同 sandbox spec 或不同 [`environment` profile](../library/prebuilt-environments.md#按-environment-选预制产物) 的 eval。复用的前提是全批共享同一温基线——一个热沙箱装不出两套环境。这个用例展示撞上异构批次时的完整处理路径:niceeval 不静默降级、不偷偷起多个沙箱,而是在创建任何沙箱之前一次性报错、列出分组,让人自己选。
+选题范围一宽,批里就可能混进解析到不同 sandbox spec 或不同 [`environment` profile](../library/prebuilt-environments.md#按-environment-选预制产物) 的 eval。复用的前提是全批共享同一个[复用 Sandbox 的题间重置点](../serial-reuse.md#复用-sandbox-的题间重置点一次装好后续只重置到这里)——一个热沙箱装不出两套环境。这个用例展示撞上异构批次时的完整处理路径:niceeval 不静默降级、不偷偷起多个沙箱,而是在创建任何沙箱之前一次性报错、列出分组,让人自己选。
 
 ## 全流程
 

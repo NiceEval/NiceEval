@@ -7,7 +7,7 @@
 - [本地冒烟一批 eval:N 次冷启动折成一次](reuse-sandbox-batch-smoke.md)
 - [同一题重复多次看稳定性:安装只付一次](reuse-sandbox-stability-runs.md)
 - [批次不同基线:跟着报错缩小选择](reuse-sandbox-heterogeneous-batch.md)
-- [怎么写 eval 才能安全进热道](reuse-sandbox-authoring.md)
+- [把一批 eval 改成能进热道:拿真实 eval 仓库走一遍](reuse-sandbox-authoring.md)
 
 ## `--keep-sandbox`(留存现场)
 

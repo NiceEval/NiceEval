@@ -367,6 +367,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ## 跨切面裁决
 
 - [guard-entries-vitest-only-not-scripts](guard-entries-vitest-only-not-scripts.md) — 裁决(2026-07-26):说红绿的一律 vitest、写产物的才是脚本,删 `docs:lint` 与 `tiers:check`、CI 里的 INIT.md `diff` 搬进 `test/unit/`;推翻自己「台账不能做 file snapshot」的第一版——棘轮断言排在快照前,`-u` 就写不进被放宽的数字;顺带查实 CI 串行 step 前一步红会掩盖后面全部检查(tier 漂移因此从未被执行到)
+- [reset-point-term-over-warm-baseline](reset-point-term-over-warm-baseline.md) — 裁决(2026-07-26):串行复用那笔 commit 定名「复用 Sandbox 的题间重置点」(句内回指写「重置点」)、「温基线」进禁词并扫掉正文 35 处、「热道」立进总表;否决反过来把总表改成短名。同一概念的描述式长名已死过一次(`重置基线` 进过 `deadTerms`),所以立长名必须同批扫正文——`deadTerms` 只查「立了没人用」,查不出「正文在用但总表没立」
 - **待裁决** [undecided-chinese-terms-carry-scope-evalkind](undecided-chinese-terms-carry-scope-evalkind.md) — 三组中文术语待定(2026-07-26):Carry / Scope / Eval kind+Score point 含义已进 `docs/concepts.md`,中文列写 `未定`;现行写法「携带 / 作用域 / 计分制轴」均被用户否决且未给替代,裁决后一次全仓替换。同批已裁决:Dataset = **测试集**(已全仓替换,遗留 ML train/test 词义撞车风险,与 `早停` 被禁同因)
 - [latest-known-rename](latest-known-rename.md) — 裁决(2026-07-26):`latestPerEval` 改名 `latestKnown`(mode 同步 `latest-known`),推翻前一天的命名——名字宣传遍历粒度、藏起真正的风险点跨 Run 缝合;否决合成 `latest({unit})`、`stitchLatest`、`currentStanding`;连带删掉「名字自解释」的宣称
 - [env-only-credentials-config-only-code](env-only-credentials-config-only-code.md) — 裁决(2026-07-25):环境变量只剩凭据 + 终端事实,配置项只从 flag/experiment/config 来;删 NICEEVAL_RUNS/TIMEOUT/BUDGET/MAX_CONCURRENCY、judge 的 MODEL/BASE 与跨家族 key 回落、NICEEVAL_LANG/LOCALE(换成 config.locale)、bub 两个 env 后门;凭据保留内置默认变量名;守护 test/unit/config-env-boundary.test.ts(正则要排除写入子进程 env 的赋值)

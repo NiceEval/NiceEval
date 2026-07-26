@@ -21,7 +21,7 @@
    niceeval exp memory/commit0 onboarding/tool-first --reuse-sandbox
    ```
 
-3. 安装只发生一次;5 个 attempt 在同一条热道上**串行**依次跑,每次开跑前 reset 回温基线([契约](../serial-reuse.md#与留存缓存重试的组合)),互相之间 workdir 级干净。
+3. 安装只发生一次;5 个 attempt 在同一条热道上**串行**依次跑,每次开跑前 reset 回复用 Sandbox 的题间重置点([契约](../serial-reuse.md#与留存缓存重试的组合)),互相之间 workdir 级干净。
 4. [首过即停](../../../concepts.md)语义不变:配了 `earlyExit: true` 且某次通过,剩余重复照常省略;默认跑满拿完整分布。
 5. 跑完 `niceeval show` 看逐 attempt 判定分布,定位是断言太脆还是 agent 不稳。
 
