@@ -95,7 +95,7 @@ Human active 行的最后一栏显示当前生命周期阶段。阶段词表全�
 |---|---|---|
 | `sandbox.queue` | queued for sandbox | 等待容器创建信号量(并发限流);remote agent 跳过 |
 | `sandbox.create` | creating sandbox | 创建 Docker / E2B / Vercel sandbox;remote agent 跳过 |
-| `sandbox.setup` | sandbox setup | 运行 `SandboxSpec.setup()` 环境预置钩子链;没有钩子就跳过 |
+| `sandbox.setup` | sandbox setup | 运行 `SandboxSpec.setup()` 环境预置 Hook 链;没有 Hook 就跳过 |
 | `workspace.baseline` | preparing workspace | 打变更分类账锚点(归因的起点);remote agent 跳过 |
 | `eval.setup` | eval setup | 运行 `EvalDef.setup`;没有 setup 就跳过 |
 | `agent.setup` | agent setup | 安装 CLI、Skill/plugin、写 agent 配置;没有 `Agent.setup` 就跳过 |
@@ -121,11 +121,11 @@ Human active 行的最后一栏显示当前生命周期阶段。阶段词表全�
 
 phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox provider 或用户 hook 能直接设置的公共字段:每一次转换都由 `attempt.ts` 沿它自己固有的执行顺序、在真正跨入该步骤时发出;没有对应 hook/配置的步骤直接跳过,不产生空阶段。各层想表达「我正在做什么」走各自作用域的 `progress()` / `diagnostic()`(sandbox provider、hook、eval、adapter 各拿各的句柄,契约见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈));`AgentContext.log(text)` 是 `progress({ message: text })` 的别名,不是第二条通道。progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与 `--json` 不展示,也不写入 results;任何一层都不能借它改写 phase 本身,或声称进入了另一个生命周期阶段。
 
-### 实验级钩子的显示
+### 实验级 Hook 的显示
 
 `ExperimentDef.setup` 与它返回的 teardown 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。起止由 runner 自己发布——一个什么都不调的 setup 也必须可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死:
 
-- **Human(TTY)**:钩子在跑期间,ACTIVE 区为每个在飞的实验钩子显示一行运行级行,排在 attempt 行前面、参与同一套稳定 slot 规则;钩子结束行即消失,成功的钩子不在 scrollback 留任何永久行。钩子里的 `ctx.progress(...)` 只更新这一行的次要文本:
+- **Human(TTY)**:Hook 在跑期间,ACTIVE 区为每个在飞的实验 Hook 显示一行运行级行,排在 attempt 行前面、参与同一套稳定 slot 规则;Hook 结束行即消失,成功的 Hook 不在 scrollback 留任何永久行。Hook 里的 `ctx.progress(...)` 只更新这一行的次要文本:
 
   ```text
   ╭─ niceeval exp compare ────────────────────────────────────────────────────────────── 1m 02s ─╮
@@ -136,7 +136,7 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
   ╰────────────────────────────────────────────────────────────────────────────────────── $0.11 ─╯
   ```
 
-- **非 TTY 文本与 `--json`**(只追加的流)没有动态区域,改为起止各追加一行永久事件——长 setup 期间只有心跳的日志无法区分「钩子在跑」和「挂死」。`status` 三值 `started` / `done` / `failed`,`done` / `failed` 带时长;`failed` 只标记钩子本身的结局,每条 attempt 的 `errored`(`experiment-setup-failed`)仍由既有 failure 事件逐条给出。非 TTY 文本用 human 文案(如 `experiment setup · compare/bub-e2b` / `experiment setup done · compare/bub-e2b (42s)`);`--json` 是同一事实的事件:
+- **非 TTY 文本与 `--json`**(只追加的流)没有动态区域,改为起止各追加一行永久事件——长 setup 期间只有心跳的日志无法区分「Hook 在跑」和「挂死」。`status` 三值 `started` / `done` / `failed`,`done` / `failed` 带时长;`failed` 只标记 Hook 本身的结局,每条 attempt 的 `errored`(`experiment-setup-failed`)仍由既有 failure 事件逐条给出。非 TTY 文本用 human 文案(如 `experiment setup · compare/bub-e2b` / `experiment setup done · compare/bub-e2b (42s)`);`--json` 是同一事实的事件:
 
   ```json
   {"event":"experiment_setup","experimentId":"compare/bub-e2b","status":"started"}
@@ -147,9 +147,9 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### judge 预检的显示
 
-`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Scoring · Judge](../scoring/library/judge.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级钩子同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级钩子共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
+`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Scoring · Judge](../scoring/library/judge.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级 Hook 同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级 Hook 共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
 
-- **Human(TTY)**:预检期间 ACTIVE 区显示一行运行级行 `● prechecking judge config   <elapsed>`,排在实验钩子行与 attempt 行之前——它发生在最前,是「为什么 attempt 还停在 `queued`」的解释;存活性由持续增长的 elapsed 证明(不做 spinner 动画,与 attempt 行同一约定)。预检结束该行即消失,不在 scrollback 留永久行。
+- **Human(TTY)**:预检期间 ACTIVE 区显示一行运行级行 `● prechecking judge config   <elapsed>`,排在实验 Hook 行与 attempt 行之前——它发生在最前,是「为什么 attempt 还停在 `queued`」的解释;存活性由持续增长的 elapsed 证明(不做 spinner 动画,与 attempt 行同一约定)。预检结束该行即消失,不在 scrollback 留永久行。
 
   ```text
   ╭─ niceeval exp install/canary ────────────────────────────────────────────────────────── 12s ─╮
@@ -170,9 +170,9 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### 等待并发 run 的显示
 
-多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级钩子、judge 预检同一套机制:
+多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook、judge 预检同一套机制:
 
-- **Human(TTY)**:每个有等待用例的实验一行运行级行,给出等待条数与持有方;存活性由持续增长的 elapsed 证明,排在实验钩子行之后、attempt 行之前,参与同一套稳定 slot 规则。等待全部解决(携入或转为自跑)该行即消失,不留 scrollback 永久行:
+- **Human(TTY)**:每个有等待用例的实验一行运行级行,给出等待条数与持有方;存活性由持续增长的 elapsed 证明,排在实验 Hook 行之后、attempt 行之前,参与同一套稳定 slot 规则。等待全部解决(携入或转为自跑)该行即消失,不留 scrollback 永久行:
 
   ```text
   │ ● waiting on another run · compare/codex        1m 02s  3 evals · pid 41267   │
@@ -263,7 +263,7 @@ live 面板只展示当前状态,不保存历史帧:
 - 上边框标题是本次命令,右侧嵌已运行时间;下边框右侧嵌本次新派发的累计成本;
 - 框内首行固定使用 `total / reused / running / elsewhere / queued / passed / failed / errored / skipped`;`total` 之后的八项是互斥状态且总和等于 `total`;四项结局(`passed` / `failed` / `errored` / `skipped`)恒显示,零值也不省略——「0 errored」是一句有价值的肯定,而「不知道错了几个」不是;`elsewhere`([别人在运行](#等待并发-run-的显示):正被并行 Invocation 持锁、本次在等待的用例的 attempt)只在非零时出现,没有并发 run 的场景首行少一项;
 - 首行是仪表不是摘要,它跟随终端全宽、不受 100 列上限约束,九项写满也只占一行:长度不构成压缩它的理由,任何一项都不因为「行太长」被折叠进上位计数。终端窄到放不下时按[面板降级规则](#框线体裁)处理——先丢弃值为零的结局项(顺序 `skipped` → `errored` → `passed`),非零结局项与 `failed` 永不丢弃,不换行撑高面板;
-- `ACTIVE` 小节使用稳定 slot:一项完成前不因为其它项更新而换位置,完成后才由下一项补位;实验级 setup / teardown 的运行级行排在 attempt 行前面(见 [实验级钩子的显示](#实验级钩子的显示)),等待 setup 的 attempt 计入 `queued`;
+- `ACTIVE` 小节使用稳定 slot:一项完成前不因为其它项更新而换位置,完成后才由下一项补位;实验级 setup / teardown 的运行级行排在 attempt 行前面(见 [实验级 Hook 的显示](#实验级-hook-的显示)),等待 setup 的 attempt 计入 `queued`;
 - active 行的列序固定为 `● eval id  experiment  elapsed  phase/detail`。身份两列(eval id、experiment)按**实际出现过的最长值**定宽——短 id 不垫空格,列宽只放宽不回缩(帧间不抖动),各自封顶内容宽的 40% / 20%,超宽截尾补 `…`;剩余宽度**全部**给行尾的 phase/detail——它是这一行存在的理由,任何一帧都不允许 detail 被挤到不可见。`elapsed` 从这条 attempt 被派发起算,阶段推进只换 phase/detail、不重置它(见 [Attempt 阶段](#attempt-阶段));
 - 行内容按面板实际内容宽排版,与外框用同一个宽度值——不允许出现「行按终端宽排、框按上限截」导致行尾被框吃掉的错位;
 - 中间 retry 只改变 active 行尾;失败、错误或 retry 耗尽先撤下整个面板,在上方追加无框流事件,再重建面板;

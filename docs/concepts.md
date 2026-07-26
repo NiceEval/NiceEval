@@ -57,7 +57,7 @@
 | 中文 | English | 含义 |
 |---|---|---|
 | 运行器 | Runner | 调度引擎:发现、有界并发、重试、首过即停、缓存,把结果交给报告器 |
-| 生命周期 Hook | Hook | 四层(实验级 / Sandbox 级 / eval 级 / agent 级)共用同一形态的成对 `setup` / `teardown` 回调;`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出。中文正文写"生命周期"(泛指机制)或"生命周期 Hook"(指具体回调),不写 `钩子` |
+| 生命周期 Hook | Hook | 四层(实验级 / Sandbox 级 / eval 级 / agent 级)共用同一形态的成对 `setup` / `teardown` 回调;`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出。中文正文写"生命周期"(泛指机制)或"生命周期 Hook"(指具体回调),不写 `Hook` |
 | 实验 | Experiment | 可签入的运行配置:用哪个 agent / model / flags、跑几次、预算多少;不碰评分 |
 | 实验 flags | Flags | experiment 的 A/B 条件键(一组 feature flag 取值),经 `ctx.flags` 给 adapter、`t.flags` 给 eval;裸词 flags 专指它 |
 | Invocation | Invocation | 一次 `niceeval` CLI 调用的瞬时编排边界;可同时调度多个 Experiment,但不是持久化领域实体 |
@@ -169,7 +169,7 @@
 
 **Runner** / **运行器** —— 调度引擎。负责发现、有界并发执行、重试、首过即停、缓存,以及把结果交给报告器。详见 [Runner](runner.md)。
 
-**Hook** / **生命周期 Hook** —— 成对的 `setup` / `teardown` 回调,`setup` 不返回值。四层共用同一种形态(实验级、Sandbox 级、eval 级、agent 级),同层多个 Hook 按注册序 `setup`、逆序 `teardown`(LIFO)。中文写"生命周期"(泛指这套机制)或"生命周期 Hook"(指某一个具体回调),不写 `钩子`。详见 [Runner · 生命周期钩子](runner.md#环境预置不进运行器但按顺序调它)。
+**Hook** / **生命周期 Hook** —— 成对的 `setup` / `teardown` 回调,`setup` 不返回值。四层共用同一种形态(实验级、Sandbox 级、eval 级、agent 级),同层多个 Hook 按注册序 `setup`、逆序 `teardown`(LIFO)。中文写"生命周期"(泛指这套机制)或"生命周期 Hook"(指某一个具体回调),不写 `Hook`。详见 [Runner · 生命周期 Hook](runner.md#环境预置不进运行器但按顺序调它)。
 
 **Experiment** / **实验** —— 一份可签入的**运行配置**,描述「怎么跑这批 eval」:用哪个 [Agent](#评测核心词汇)、跑几次、过滤哪些、预算多少。由 `defineExperiment` 定义在 `experiments/` 下,id 从路径推导。**一文件 = 一个单一配置**；`evals` 遍历发现到的 eval 并选择这份配置要跑的集合，解析结果以 `selectedEvalIds` 落盘。它**不碰评分**——「怎么算对」是 eval 的事。详见 [Experiments](feature/experiments/README.md)。
 

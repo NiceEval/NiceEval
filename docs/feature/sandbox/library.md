@@ -131,7 +131,7 @@ localSandbox()                                       // 宿主机本地目录(�
 
 各 provider 的构建工作流、官方 coding agent 起点、自己写预制环境的 DX、新 provider 的义务与运行时 checkpoint,见 [预制环境](library/prebuilt-environments.md)。
 
-## 沙箱生命周期钩子:`.setup()` / `.teardown()`
+## 沙箱生命周期 Hook: `.setup()` 与 `.teardown()`
 
 `dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` 这些工厂产出的 `SandboxSpec` 带两个链式方法:
 
@@ -153,7 +153,7 @@ type SandboxHook = (
 import type { SandboxHook, SandboxHookContext } from "niceeval/sandbox";
 ```
 
-Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic/fact`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。钩子不返回值;要把 `setup` 里创建的句柄传给 `teardown`,以 `sandbox` 实例作键存取——钩子每沙箱一次、并发 attempt 共享同一个模块,普通模块变量会互相覆写,而 sandbox 与 attempt 一一对应,是天然的 per-attempt 键(四层统一的成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它)):
+Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic/fact`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。Hook 不返回值;要把 `setup` 里创建的句柄传给 `teardown`,以 `sandbox` 实例作键存取——Hook 每沙箱一次、并发 attempt 共享同一个模块,普通模块变量会互相覆写,而 sandbox 与 attempt 一一对应,是天然的 per-attempt 键(四层统一的成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它)):
 
 ```typescript
 import type { Sandbox } from "niceeval/sandbox";
@@ -172,7 +172,7 @@ const spec = e2bSandbox({ template: "niceeval-agents" })
 
 「载入 / 回存」这类收尾不需要 setup→teardown 句柄——状态键是 `ctx.experimentId` 的外部 KV,普通代码即可(见下)。多次 `.setup()` 按追加顺序跑,多次 `.teardown()` 按追加的逆序跑(和「先进后出」的 agent/环境层顺序是同一条纪律,只是发生在环境层内部);`setup` 链中途抛错时后续 `setup` 不再执行,`teardown` 链仍完整走完——半初始化的沙箱同样要扫尾。
 
-这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。稳定的大依赖先做进 image/template/snapshot;钩子是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。
+这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。稳定的大依赖先做进 image/template/snapshot;Hook 是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。
 
 ```typescript
 export default defineExperiment({
@@ -184,13 +184,13 @@ export default defineExperiment({
 });
 ```
 
-这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,钩子不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
+这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,Hook 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
 跨 attempt 状态本身没有框架原语——没有 `persistentState` 这类东西。载入 / 回存是用户在 `setup` / `teardown` 里自己写的普通代码(读写一个外部 KV、文件、数据库,用什么都行);要用哪个键隔离不同实验的状态,靠 `ctx.experimentId`——`AgentContext` 新增的只读字段,值是路径推导的实验 id(与结果里 `experimentId` 同源),不经 experiment 跑时是 `undefined`。[载入…回存] 这段读写外部状态的代码是临界区,想让同一实验的 attempt 不并发踩踏,在 experiment 上声明 `maxConcurrency: 1` 即可串行,不需要框架另设锁。
 
-失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与钩子)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
+失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与 Hook)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
 
-remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它不参与、直接被忽略——钩子天然不会跑,不需要为此写 fail-fast 分支或额外校验。
+remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它不参与、直接被忽略——Hook 天然不会跑,不需要为此写 fail-fast 分支或额外校验。
 
 ## 向运行反馈进度与诊断
 
@@ -257,12 +257,12 @@ provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能�
 |---|---|---|
 | 所有 attempt 都相同的重依赖(系统包、CLI、二进制、大模型 cache) | provider 原生 image/template/snapshot 构建脚本;spec 只引用产物 | provider 的 image/template/snapshot 生命周期管理 |
 | **这个实验**整场一份、宿主机侧的共享服务(隧道、每实验专用 mock server、license 租约) | [`ExperimentDef.setup`](../experiments/library.md#实验级共享服务setup-与-teardown):整场一次,第一个要派发的 attempt 前跑 | `ExperimentDef.teardown`,全部 attempt 收尾后执行(中断也执行;setup 时点走到过才触发) |
-| **这次实验**才知道的沙箱内环境(小配置、预检、hook 文件、跨 attempt 状态) | [沙箱生命周期钩子](#沙箱生命周期钩子setup-teardown):`sandbox.setup()` / `.teardown()`(每沙箱一次) | `teardown` 显式回收(回存状态、清外部资源);沙箱内文件随销毁自动没了 |
-| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量);要读写 agent 安装产物的后置脚本走 factory 的 [`postSetup` 钩子](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup)(同一 `SandboxHook` 类型,跑在 agent 安装之后) | 随沙箱销毁,无需手工清;要收尾的动作挂成对的 `preTeardown`(逆序,先于 agent teardown) |
+| **这次实验**才知道的沙箱内环境(小配置、预检、hook 文件、跨 attempt 状态) | [沙箱生命周期 Hook](#沙箱生命周期-hook-setup-与-teardown):`sandbox.setup()` / `.teardown()`(每沙箱一次) | `teardown` 显式回收(回存状态、清外部资源);沙箱内文件随销毁自动没了 |
+| 连 agent、装 CLI、写 agent 自己的主配置(每 attempt 一次) | [`SandboxAgent.setup`](../adapters/architecture/agent-contract.md#生命周期不变量);要读写 agent 安装产物的后置脚本走 factory 的 [`postSetup` Hook](../adapters/library/coding-agent-extensions.md#安装后运行脚本postsetup)(同一 `SandboxHook` 类型,跑在 agent 安装之后) | 随沙箱销毁,无需手工清;要收尾的动作挂成对的 `preTeardown`(逆序,先于 agent teardown) |
 | **这条 eval** 的任务 Fixture、对跑到它的所有实验都生效的沙箱预置 | `EvalDef.setup` 或 `test(t)` 里的普通代码(`t.sandbox.writeFiles` / `runCommand`) | 随沙箱销毁;要清沙箱外的东西用 `try/finally` |
 | **跨实验共享**、这次 run 之前就该存在的外部服务(共享 DB、公司内网服务本体) | 外部编排:`docker compose up -d && niceeval exp … && docker compose down`,或 CI 脚本 | 外部编排负责,URL 经 env 传入 agent / eval |
 
-分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内):宿主机侧、每实验一份的服务进 `ExperimentDef.setup`;沙箱内、按实验变的环境(装什么、开不开预热)进沙箱钩子;任务材料按 eval 变(这条题目需要哪些起始文件)进 `EvalDef.setup` / `test(t)`;agent 怎么连自己是 agent 的私事;跨实验、生命周期长于一次 run 的资源交给外部编排。
+分工只看两个维度——**随什么变化**(实验 / eval / 都不随)与**活在哪一侧**(宿主机 / 沙箱内):宿主机侧、每实验一份的服务进 `ExperimentDef.setup`;沙箱内、按实验变的环境(装什么、开不开预热)进沙箱 Hook;任务材料按 eval 变(这条题目需要哪些起始文件)进 `EvalDef.setup` / `test(t)`;agent 怎么连自己是 agent 的私事;跨实验、生命周期长于一次 run 的资源交给外部编排。
 
 ## 自定义 provider:`defineSandbox`
 

@@ -63,7 +63,7 @@ export type FailureClass =
 
 两条轴各有固定的消费点,声明不改变消费点的位置:
 
-- **`retryable`** 只在两处被消费:context 层包住 `agent.send(...)` 的重试执行体(全仓库唯一的 send choke point),与 sandbox provisioning 重试(内部自治)。其余位置(sandbox 钩子、`EvalDef.setup`、`test(t)` 体内)的失败无论分类如何都不重试——那里没有重试执行体,分类链在这些位置也不产时间轴。
+- **`retryable`** 只在两处被消费:context 层包住 `agent.send(...)` 的重试执行体(全仓库唯一的 send choke point),与 sandbox provisioning 重试(内部自治)。其余位置(sandbox Hook、`EvalDef.setup`、`test(t)` 体内)的失败无论分类如何都不重试——那里没有重试执行体,分类链在这些位置也不产时间轴。
 - **`scope`** 在 attempt 封口时被读取:终局失败携带的 scope 决定要不要落闸(eval 闸 / experiment 闸)。所有 per-attempt 阶段可达。
 
 重试只包 send 一次调用,不重放会话记账;变更归因的 send 窗口横跨全部尝试;重试预算两层(单 send 封顶 4 次尝试、attempt 加总封顶 8 次重试)。执行体的精确契约见 [Architecture · 重试执行体](architecture.md#重试执行体);重试封顶后的失败照旧走 `expectOk()` → `TurnFailed` → `AttemptError{code: "turn-failed"}` 路径,下游契约不变。

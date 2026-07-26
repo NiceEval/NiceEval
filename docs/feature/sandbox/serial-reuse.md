@@ -19,7 +19,7 @@
 | 生命周期阶段 | 随 eval 变? | 复用模式下 |
 |---|---|---|
 | `createSandbox` | 否 | 整组 eval **一次** |
-| `sandbox.setup`(环境层钩子) | 否 | 整组 eval **一次** |
+| `sandbox.setup`(环境层 Hook) | 否 | 整组 eval **一次** |
 | `SandboxAgent.setup`(装 CLI / 写主配置) | 否 | 整组 eval **一次**,提前到 Fixture 之前 |
 | `EvalDef.setup` / `test(t)` 里的 Fixture 写入 | 是 | **每题**重置后重放 |
 | `test(t)` 的 `t.send()` agent 运行 | 是 | **每题**重跑 |

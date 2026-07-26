@@ -164,7 +164,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
     }
 
     case "experiment-hook": {
-      // 运行级行的增删:started 添加,done/failed 移除(见 cli.md「实验级钩子的显示」)。
+      // 运行级行的增删:started 添加,done/failed 移除(见 cli.md「实验级 Hook 的显示」)。
       // 不动 running/queued 计数——等待 setup 的 attempt 保持 queued,计数不变量不受钩子影响。
       const experimentHooks = new Map(state.experimentHooks);
       if (event.status === "started") {

@@ -566,7 +566,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 与 setup 串行:setup 仍在飞(极端时序:全部 attempt 在 setup 完成前被中断收尾)时等它
         // settle 再收尾;setupPromise 自带 catch(失败收进 setupFailed),这里不会 reject。
         await lc.setupPromise;
-        // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级钩子的显示」)。
+        // 起止由 runner 发布,不依赖钩子自己调 progress(见 cli.md「实验级 Hook 的显示」)。
         reportExperimentHook({ experimentId, hook: "teardown", status: "started" });
         const startedAt = Date.now();
         try {
@@ -736,7 +736,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           });
         }
         if (!run.setup) return;
-        // 起止由 runner 发布(见 cli.md「实验级钩子的显示」):一个什么都不调的 setup 也必须
+        // 起止由 runner 发布(见 cli.md「实验级 Hook 的显示」):一个什么都不调的 setup 也必须
         // 可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死。
         reportExperimentHook({ experimentId, hook: "setup", status: "started" });
         const startedAt = Date.now();

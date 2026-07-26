@@ -5,14 +5,14 @@ experiment 是**可签入的运行配置**：一个文件钉一个单一配置�
 ## 实体与生命周期
 
 ```text
-ExperimentDef(运行配置 + 实验级 setup 钩子,experiments/ 下一文件一个)
+ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一个)
   → resolved config(调度前一次求值:合并 CLI flag / env / config 兜底,evals 过滤器与 sandbox environments 查表求值)
   → attempt 矩阵(selectedEvalIds × runs,每 attempt 一个执行 fiber)
   → Run(.niceeval/<experiment>/<timestamp>-<suffix>/,含 ExperimentRunInfo 投影)
 ```
 
 - **id 从路径推导**（`experiments/agents/bub/gpt-5.4.ts` → `agents/bub/gpt-5.4`），路径只表达身份与 CLI 前缀选择，禁止手写 id。
-- **`ExperimentDef` 携带实验级生命周期钩子对 `setup` / `teardown`**——整场一次、宿主机侧(语义见下文 [实验级生命周期](#实验级生命周期setup-与-teardown))。其余生命周期各归各位:沙箱内环境预置挂 `sandbox` 字段的 `SandboxSpec` 钩子链,任务 Fixture 属于 eval,连 agent 属于 `SandboxAgent.setup`,跨实验共享服务用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。
+- **`ExperimentDef` 携带实验级生命周期 Hook 对 `setup` / `teardown`**——整场一次、宿主机侧(语义见下文 [实验级生命周期](#实验级生命周期setup-与-teardown))。其余生命周期各归各位:沙箱内环境预置挂 `sandbox` 字段的 `SandboxSpec` Hook 链,任务 Fixture 属于 eval,连 agent 属于 `SandboxAgent.setup`,跨实验共享服务用外部编排(分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪))。
 - 同一次 `niceeval exp` Invocation 可以同时跑多个实验（文件夹展开），但每个实验各自开 Run 目录，没有跨实验成员关系或聚合落盘。Invocation 是瞬时编排边界，不分配持久化 id。多条 Invocation 也可以对同一仓库并行运行：Run 互不覆盖，同一条 `(experiment, eval)` 不被双跑由[用例锁](#并发-invocation用例锁)保证。
 
 ## Resolved config：一次求值，处处同源
@@ -42,14 +42,14 @@ experiment 影响调度的字段就这五个：
 
 - **触发时机是懒的**:本实验第一个通过派发许可(首过即停 / fail-fast / budget 检查)的 attempt 触发它,后续 attempt 等同一个 memoized 结果。全部结果被 carry 携入、一个 attempt 都不派发时,`setup` 不执行——没有 attempt 要跑就没有资源要起。
 - **不占并发位,也不折损优先级**:等待 `setup` 的 attempt 不持有、不预留全局并发位,不会让一个慢启动的隧道饿死同批其它实验;它们在反馈计数里保持 `queued`。setup 完成后按[瓶颈优先](../../runner.md#派发顺序瓶颈优先追求最小总墙钟时间)的优先级参与下一次空位分配,不因回来得晚排到队尾。
-- **起止可见性由 runner 发布**:setup / teardown 的开始与结束是运行级反馈事件(Human dashboard 的运行级 active 行、`--json` 的起止事件),不依赖钩子自己调 `progress`——渲染契约见 [CLI · 实验级钩子的显示](cli.md#实验级钩子的显示)。
-- **ctx**:`experimentId`、`selectedEvalIds`、`signal`(用户中断时 abort),以及作用域反馈 `progress` / `diagnostic` / `fact`(绑定到当前钩子对应的 `experiment.setup` / `experiment.teardown`,见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈))。experiment 级钩子上报的 fact 落进 `RunMeta.facts`(Run 封口补写),记录整场实验的环境观测;语义与形状见 [Results · facts](../record/architecture.md#facts运行事实)。
+- **起止可见性由 runner 发布**:setup / teardown 的开始与结束是运行级反馈事件(Human dashboard 的运行级 active 行、`--json` 的起止事件),不依赖 Hook 自己调 `progress`——渲染契约见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)。
+- **ctx**:`experimentId`、`selectedEvalIds`、`signal`(用户中断时 abort),以及作用域反馈 `progress` / `diagnostic` / `fact`(绑定到当前 Hook 对应的 `experiment.setup` / `experiment.teardown`,见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈))。experiment 级 Hook 上报的 fact 落进 `RunMeta.facts`(Run 封口补写),记录整场实验的环境观测;语义与形状见 [Results · facts](../record/architecture.md#facts运行事实)。
 - **失败语义**:`setup` 抛错 → 本实验**所有** attempt 记 `errored`(`error.code = "experiment-setup-failed"`,`error.phase = "experiment.setup"`),逐条落 `result.json`、进报告——环境起不来是每条 eval 都没跑成的事实,不是一条一次性日志;同批其它实验不受任何影响。同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
 - **teardown 的触发**:本实验最后一个 attempt 收尾后执行,当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免(半初始化的现场同样要扫尾,teardown 对可能未赋值的闭包变量做防御),一个 attempt 都没派发则跳过;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内兜底范围,由[强杀后的收尾兜底](#强杀后的收尾兜底收尾登记与启动自愈)在磁盘上接手。
 - **teardown 的失败语义**:抛错记一条 Run 级 diagnostic(`experiment-teardown-failed`, `phase: "experiment.teardown"`),随该 Experiment 的 `completedAt` 封口落入 `run.json`,不改变任何已产出的 verdict——与 `sandbox.teardown` 的失败语义一致;执行有界(30s 清理超时,到点同样记 `experiment-teardown-failed`),不能无限拖住退出。
-- **产出的运行时值经模块闭包流动**:`setup` 拿到的 URL / 凭据写进实验文件的模块级变量,`teardown` 与同文件里 agent / sandbox 钩子(后两者每 attempt 执行,晚于 `setup`)从闭包读取。runner 不做值的中介——它们是运行时基础设施坐标,不是实验条件(实验条件进 `flags`,一并进指纹)。要把这轮实际用的坐标留进记录,在钩子里 `ctx.fact()` 上报:落 `facts` 而不是配置,因此不参与可比性,坐标轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
-- **不进 fingerprint**:钩子函数体与 `SandboxSpec` 钩子一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
-- **两个钩子都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../record/architecture.md#resultjson))与运行级反馈行的标注。
+- **产出的运行时值经模块闭包流动**:`setup` 拿到的 URL / 凭据写进实验文件的模块级变量,`teardown` 与同文件里 agent / sandbox Hook(后两者每 attempt 执行,晚于 `setup`)从闭包读取。runner 不做值的中介——它们是运行时基础设施坐标,不是实验条件(实验条件进 `flags`,一并进指纹)。要把这轮实际用的坐标留进记录,在 Hook 里 `ctx.fact()` 上报:落 `facts` 而不是配置,因此不参与可比性,坐标轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
+- **不进 fingerprint**:Hook 函数体与 `SandboxSpec` Hook 一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
+- **两个 Hook 都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../record/architecture.md#resultjson))与运行级反馈行的标注。
 
 ## 强杀后的收尾兜底:收尾登记与启动自愈
 

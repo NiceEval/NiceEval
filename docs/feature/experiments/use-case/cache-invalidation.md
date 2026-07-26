@@ -34,7 +34,7 @@ $ pnpm exec niceeval exp compare/codex--nowledge
 
 **场景**:记忆服务经 cloudflared quick tunnel 暴露,`setup` 里起隧道,每次重启拿到一个新 URL。跑批被打断,修好服务重跑,不想让已经跑完的 24 条重烧。
 
-**不要写进 `flags`**——那是实验条件,整袋进指纹,换一次 URL 作废全部结果。它是跑起来才有的坐标:经工厂闭包给 agent / sandbox 钩子用,要留在记录里就上报成 fact:
+**不要写进 `flags`**——那是实验条件,整袋进指纹,换一次 URL 作废全部结果。它是跑起来才有的坐标:经工厂闭包给 agent / sandbox Hook 用,要留在记录里就上报成 fact:
 
 ```ts
 // experiments/shared/nowledge.ts
@@ -72,11 +72,11 @@ $ pnpm exec niceeval exp compare/codex--nowledge --carry-ignoring-flag nowledgeE
 
 **你会看到**:不作废。携带以 attempt 为粒度,已有的 3 条终态携入,本次只跑缺的 2 条,通过率的分母由两者凑满。同理,`attempts` 调小不会删掉已有结果。
 
-## 8. 换沙箱模板 / 镜像,或改 sandbox 钩子
+## 8. 换沙箱模板 / 镜像,或改 sandbox Hook
 
 **场景一**:`e2bSandbox({ template: "niceeval-agents" })` 换成另一个 template。**你会看到**:该实验全部重跑——provider 与预制产物参数进指纹,起步环境变了结果就不可比。
 
-**场景二**:template 没变,但改了 sandbox spec 的 `.setup()` 钩子(多装一个二进制),或者重建了同名镜像。**你会看到**:什么都不作废——钩子函数体与镜像内容都不在指纹里。这是有意的:钩子是环境预置代码,常改且大多不影响结果。确实变了行为、要全量重验时用 [`--rerun all`](rerun.md)。
+**场景二**:template 没变,但改了 sandbox spec 的 `.setup()` Hook(多装一个二进制),或者重建了同名镜像。**你会看到**:什么都不作废——Hook 函数体与镜像内容都不在指纹里。这是有意的:Hook 是环境预置代码,常改且大多不影响结果。确实变了行为、要全量重验时用 [`--rerun all`](rerun.md)。
 
 ## 9. agent CLI 升级了,被测服务改了行为
 

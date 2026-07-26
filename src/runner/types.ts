@@ -486,7 +486,7 @@ export interface DiscoveredEval extends EvalDef {
  * active 行的次要文本(短命状态,agent/ci profile 不逐条输出),`diagnostic` 进运行级永久
  * 事件流(实验级钩子不属于任何单个 attempt,诊断不落 attempt 的 `result.json`;setup 抛错
  * 以每条 attempt 的结构化 `error` 落盘,失败仍可回顾)。钩子的起止本身由 runner 直接发布为
- * 运行级反馈,不依赖这里的 `progress`(见 docs/feature/experiments/cli.md「实验级钩子的显示」)。
+ * 运行级反馈,不依赖这里的 `progress`(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。
  */
 export interface ExperimentHookContext extends ScopedFeedback {
   readonly experimentId: string;
@@ -880,7 +880,7 @@ export type ExperimentHookName = "setup" | "teardown";
 
 /**
  * dashboard 当前可见的一个实验级钩子运行级行(见 docs/feature/experiments/cli.md
- * 「实验级钩子的显示」)。与 `ActiveAttempt` 分开建模:钩子不属于任何单个 attempt、不占并发位,
+ * 「实验级 Hook 的显示」)。与 `ActiveAttempt` 分开建模:钩子不属于任何单个 attempt、不占并发位,
  * 也不参与 `RunFeedbackState` 的计数不变量——等待 setup 的
  * attempt 保持 `queued`,这行就是「为什么它们还在排队」的解释。`detail` 来自实验级
  * `ctx.progress`,后一条覆盖前一条。
@@ -1046,7 +1046,7 @@ export interface RunFeedbackState {
    *  这行就是「为什么它们还在排队」的解释。undefined = 当前没有在飞的预检。 */
   activePrecheck?: ActivePrecheck;
   /** 在飞的实验级钩子(experimentId → 运行级行状态),由 "experiment-hook" 事件增删、
-   *  "experiment:progress" 更新 detail(见 docs/feature/experiments/cli.md「实验级钩子的显示」)。 */
+   *  "experiment:progress" 更新 detail(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。 */
   experimentHooks: ReadonlyMap<string, ActiveExperimentHook>;
   /** 在飞的用例锁等待,按 experimentId 聚合(见 `ActiveLockWait`、docs/feature/experiments/cli.md
    *  「等待并发 run 的显示」)。由 "lock-wait" 事件增删/累计;没有等待用例的实验不出现在这个 map 里。 */
@@ -1178,7 +1178,7 @@ export type DurableFeedbackEvent =
     }
   /**
    * 实验级钩子(`ExperimentDef.setup` / 它返回的 teardown)的起止,由 runner 在钩子真正
-   * 开始/结束时各发一次(见 docs/feature/experiments/cli.md「实验级钩子的显示」)。`failed`
+   * 开始/结束时各发一次(见 docs/feature/experiments/cli.md「实验级 Hook 的显示」)。`failed`
    * 只标记钩子自身的结局——setup 失败的每条 attempt 仍以 "failure" 事件逐条给出。human TTY
    * 用它维护运行级 active 行(不写 scrollback),append-only profile 起止各追加一行。
    */

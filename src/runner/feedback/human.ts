@@ -125,7 +125,7 @@ export function renderDurableLines(
       return [];
     case "experiment-hook": {
       // 只服务非 TTY 退化流(TTY dashboard 的 appendDurable 对这个事件直接返回,运行级行
-      // 由 state.experimentHooks 驱动,成功钩子不进 scrollback,见 cli.md「实验级钩子的显示」)。
+      // 由 state.experimentHooks 驱动,成功钩子不进 scrollback,见 cli.md「实验级 Hook 的显示」)。
       const label = experimentHookLabel(event.hook);
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
       const recoverySuffix = event.recovery ? ` (recovery)` : "";
@@ -558,7 +558,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     const contentWidth = panelContentWidth(capability.width, capability.mode, false);
     const rows: PanelRow[] = [{ kind: "line", text: countsText(state) }];
     // 运行级行(judge 预检 + 实验钩子 + 用例锁等待)排在 attempt 行前面(见 cli.md「judge 预检
-    // 的显示」/「实验级钩子的显示」/「等待并发 run 的显示」):它们解释了为什么后面的 attempt
+    // 的显示」/「实验级 Hook 的显示」/「等待并发 run 的显示」):它们解释了为什么后面的 attempt
     // 还停在 queued。预检排最前(发生在任何 attempt 派发之前),其次实验钩子,再是锁等待
     // (排在实验钩子行之后、attempt 行之前)。Map 按插入序迭代,天然满足稳定 slot。
     const precheck = state.activePrecheck;
@@ -659,7 +659,7 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     appendDurable(event, state) {
       // 实验级钩子起止在 TTY 下只驱动运行级 active 行(state.experimentHooks 已由 reducer
       // 更新,coordinator 紧接着的 redrawDynamic 会画出来);成功钩子不写 scrollback 永久行
-      // (见 cli.md「实验级钩子的显示」)。非 TTY 退化流才逐行追加(见 renderDurableLines)。
+      // (见 cli.md「实验级 Hook 的显示」)。非 TTY 退化流才逐行追加(见 renderDurableLines)。
       // judge 预检同理:TTY 下只驱动 state.activePrecheck 的运行级 active 行(coordinator 紧接着的
       // redrawDynamic 会画出来),不写 scrollback 永久行(见 cli.md「judge 预检的显示」)。用例锁
       // 等待同理:TTY 下由 state.lockWaits 驱动运行级 active 行(见 cli.md「等待并发 run 的显示」)。

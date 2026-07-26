@@ -13,7 +13,7 @@
 
 1. **选档**。判据是死因的归属:来自实验共享的东西(服务、凭据、实验级配置)→ `ExperimentFatalError`;只属于这一条 eval(fixture、任务前置资源)→ `EvalFatalError`。声明写在知识所在的那层代码里,任何 per-attempt 阶段可抛。
 
-2. **写声明**。每沙箱探活写在 sandbox 生命周期钩子里:
+2. **写声明**。每沙箱探活写在 sandbox 生命周期 Hook 里:
 
    ```ts
    import { ExperimentFatalError } from "niceeval";

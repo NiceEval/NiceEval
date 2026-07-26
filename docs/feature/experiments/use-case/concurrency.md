@@ -5,12 +5,12 @@
 | 你的场景 | 搭配 | 用例 |
 | --- | --- | --- |
 | eval 互相独立,想跑得快 | 什么都不配 | [1](#1-互相独立的-eval什么都不配) |
-| 跨 eval 累积状态,状态是宿主机上的文件 | 沙箱钩子 + `maxConcurrency: 1` | [2](#2-跨-eval-累积记忆状态在宿主机文件里) |
+| 跨 eval 累积状态,状态是宿主机上的文件 | 沙箱 Hook + `maxConcurrency: 1` | [2](#2-跨-eval-累积记忆状态在宿主机文件里) |
 | 跨 eval 累积状态,状态在一个中心服务里 | 实验级 setup/teardown + `maxConcurrency: 1` | [3](#3-跨-eval-累积记忆状态在中心服务里) |
 | agent 老撞 429,只想给这个实验降速 | `maxConcurrency: N` | [4](#4-agent-老撞限额给这个实验单独降速) |
 | agent 限额按用户计并发 run 数,重试一直撞 | `maxConcurrency: N` | [4](#4-agent-老撞限额给这个实验单独降速) |
 | 想要「过了就停,没过才跑下一次」 | `attempts` + `earlyExit` + `maxConcurrency: 1` | [5](#5-严格重试过了就停没过才跑下一次) |
-| 沙箱钩子要共享状态,但不想牺牲并发 | `WeakMap` 按 sandbox 存取 | [6](#6-并发下钩子共享状态不想串行) |
+| 沙箱 Hook 要共享状态,但不想牺牲并发 | `WeakMap` 按 sandbox 存取 | [6](#6-并发下-hook-共享状态不想串行) |
 | 在本机工作树上跑(`localSandbox`) | 什么都不配,天然串行 | [7](#7-本地工作树天然串行不用配) |
 | 整体太慢 / 整体撞限流 | `--max-concurrency` | [8](#8-全局吞吐--max-concurrency-什么时候调) |
 | 快慢实验想混在一次命令里跑 | 什么都不配,直接混 | [9](#9-快慢实验混跑什么都不配) |
@@ -50,9 +50,9 @@ export default defineExperiment({
 });
 ```
 
-**你会看到**:attempt 严格一个接一个跑(按 eval 顺序)。上一个 attempt 的回存钩子没跑完、沙箱没销毁,下一个 attempt 的沙箱不会创建——即使上一个 attempt 撞了限流、正在退避睡眠,下一个也不会趁机进场。所以钩子里**不需要自己加锁**,`maxConcurrency: 1` 这一行就是全部的正确性声明。多开终端跑同一个实验也不破坏它:名额域是所有并行 Invocation 共用的([Runner · 调度](../../../runner.md#调度有界并发)),两个终端各选不同 eval 子集,attempt 仍严格互斥。
+**你会看到**:attempt 严格一个接一个跑(按 eval 顺序)。上一个 attempt 的回存 Hook 没跑完、沙箱没销毁,下一个 attempt 的沙箱不会创建——即使上一个 attempt 撞了限流、正在退避睡眠,下一个也不会趁机进场。所以 Hook 里**不需要自己加锁**,`maxConcurrency: 1` 这一行就是全部的正确性声明。多开终端跑同一个实验也不破坏它:名额域是所有并行 Invocation 共用的([Runner · 调度](../../../runner.md#调度有界并发)),两个终端各选不同 eval 子集,attempt 仍严格互斥。
 
-钩子的完整写法(状态文件路径、tmp+rename 原子回存)见 [Sandbox · 沙箱生命周期钩子](../../sandbox/library.md#沙箱生命周期钩子setup-teardown)。
+Hook 的完整写法(状态文件路径、tmp+rename 原子回存)见 [Sandbox · 沙箱生命周期 Hook](../../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)。
 
 ## 3. 跨 eval 累积记忆:状态在中心服务里
 
@@ -114,9 +114,9 @@ export default defineExperiment({
 
 **你会看到**:每条 eval 先跑第 1 次;`passed` 则第 2、3 次直接省掉,没过才派发下一次。不配 `maxConcurrency: 1` 时 `attempts: 3` 会一起派发,earlyExit 只能省掉还没开跑的那部分。细节见 [Runner · 首过即停](../../../runner.md#首过即停earlyexit),`--early-exit` flag 的全流程见[输入面用例](early-exit.md)。
 
-## 6. 并发下钩子共享状态,不想串行
+## 6. 并发下 Hook 共享状态,不想串行
 
-**场景**:沙箱钩子的 `setup`/`teardown` 之间要传值(比如 setup 里记下起始时间、teardown 里算耗时),但 attempt 之间互不依赖,不想为了传值把实验压成串行。
+**场景**:沙箱 Hook 的 `setup`/`teardown` 之间要传值(比如 setup 里记下起始时间、teardown 里算耗时),但 attempt 之间互不依赖,不想为了传值把实验压成串行。
 
 ```ts
 const startedAt = new WeakMap<object, number>();

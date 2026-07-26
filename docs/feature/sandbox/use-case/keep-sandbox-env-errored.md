@@ -29,7 +29,7 @@ setup 链装包失败、agent CLI 起不来——attempt 判 `errored`,而这正
 
 4. 在现场手动重放失败的 setup 命令(`npm install …`、装 agent CLI 的那一步),看真实报错:镜像缺系统依赖?registry 不通?版本冲突?配合 `niceeval show @1x7f3q9k` 的 phases 计时对照是哪一段挂的。
 5. 退出 shell,现场自动回休眠,不烧资源;还要再看时重复 `enter`。
-6. 定位后修 spec / 钩子(比如 `dockerSandbox().setup()` 补依赖),正常重跑验证,然后清理:
+6. 定位后修 spec / Hook(比如 `dockerSandbox().setup()` 补依赖),正常重跑验证,然后清理:
 
    ```bash
    niceeval sandbox stop a3f9c2d1

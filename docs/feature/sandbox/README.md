@@ -70,7 +70,7 @@ interface CommandOptions {
 
 ## 相关阅读
 
-- [Library](library.md) —— 路径与 workdir、用户与 root、provider 选择、生命周期钩子、自定义 provider。
+- [Library](library.md) —— 路径与 workdir、用户与 root、provider 选择、生命周期 Hook、自定义 provider。
 - [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制环境](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从产物起。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。

@@ -6,7 +6,7 @@
 
 横向对比 sandbox provider 与 adapter 的**安装速度**和**安装正确率**:docker / e2b / vercel 谁起得快、起得稳;codex / claude-code / bub 在各家沙箱里装 CLI 要多久、装挂的概率多大。这既是优化冷启动的前提(测不到就没法优化),也是超时归因的前提——一个 attempt 顶到 `timeoutMs`,到底是 agent 干活慢,还是 setup / 模型预热吃掉了预算,现在的数据回答不了。
 
-Attempt 级总 `durationMs` 无法区分沙箱创建、环境钩子、依赖安装、CLI 安装、逐轮 send 与评分，也无法指出 errored 结果终止在哪个阶段。进度 `log()` 是人读的临时反馈，不构成可持久化、可聚合的机器口径。
+Attempt 级总 `durationMs` 无法区分沙箱创建、环境 Hook、依赖安装、CLI 安装、逐轮 send 与评分，也无法指出 errored 结果终止在哪个阶段。进度 `log()` 是人读的临时反馈，不构成可持久化、可聚合的机器口径。
 
 设计分两层:**① 契约层** —— 每个 attempt 落盘 per-phase 计时(`phases` 字段),让每一次正常的 eval 运行都自动是一次采样;**② 基准层** —— `bench/` 直接调用 runner 内部单次 attempt 引擎的一组脚本,与单元测试、CI 门禁都无关,本地随手可跑:优化安装路径时改一版实现、跑一轮基准、和上一轮 Run 对比。
 
@@ -43,7 +43,7 @@ interface PhaseTiming {
 | --- | --- | --- |
 | `sandbox.queue` | 等待容器创建信号量(并发限流)的排队时间 | remote agent |
 | `sandbox.create` | provider 起沙箱(`createSandbox`) | remote agent |
-| `sandbox.setup` | `SandboxSpec.setup()` 钩子链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | remote agent / 没挂钩子 |
+| `sandbox.setup` | `SandboxSpec.setup()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | remote agent / 没挂 Hook |
 | `workspace.baseline` | 变更分类账锚点(runner 私有 git ledger 首笔 commit) | remote agent |
 | `eval.setup` | `EvalDef.setup` | 没定义 |
 | `agent.setup` | `Agent.setup`(装 CLI、写主配置;**安装基准的主角**) | 没定义 |
@@ -55,18 +55,18 @@ interface PhaseTiming {
 | `telemetry.collect` | OTLP receiver settle / collect(有固定的落地等待窗口) | 没起 receiver |
 | `eval.teardown` | `EvalDef.teardown` | 未声明 `teardown` |
 | `agent.teardown` | `Agent.teardown` | 没定义 |
-| `sandbox.teardown` | `SandboxSpec.teardown()` 钩子链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | remote agent / 没挂钩子 |
+| `sandbox.teardown` | `SandboxSpec.teardown()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | remote agent / 没挂 Hook |
 | `sandbox.stop` | provider 销毁沙箱(`sandbox.stop()`) | remote agent |
 
 `sandbox.queue` 到 `telemetry.collect` 是**主链**,覆盖到判定与主证据收集完成;`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是**收尾段**,主链成败都执行,顺序与 setup 对称颠倒(eval 先收、环境层最后收)。最终 `AttemptRecord` 在两段都结束后才组装,但 `durationMs` 的计量终点仍是主链末端。语义规则:
 
-- **只记实际发生的阶段**。没跑到、不适用(remote agent 的 `sandbox.*`)、没定义(可选钩子)都不落条目——缺席本身就是信息,不用 0 占位制造二义。主链在某一步抛错时,该步之前已经执行的收尾动作照常记录(如 `sandbox.create` 失败则整个收尾段缺席——沙箱从未存在)。
+- **只记实际发生的阶段**。没跑到、不适用(remote agent 的 `sandbox.*`)、没定义(可选 Hook)都不落条目——缺席本身就是信息,不用 0 占位制造二义。主链在某一步抛错时,该步之前已经执行的收尾动作照常记录(如 `sandbox.create` 失败则整个收尾段缺席——沙箱从未存在)。
 - **顺序即执行序**,与生命周期文档的调用链一致;收尾段总排在主链条目之后。
 - **错误归因**:主链阶段抛错时,该条目以抛错时刻封口并标 `failed: true`,其后无主链条目。errored 结果「死在哪一步」= 主链最后一条 `failed` 条目,不设单独的 `failedPhase` 字段(可从数组一行推导的东西不重复落盘)。收尾阶段的 `failed` 各自独立:teardown 失败是 diagnostic、不改判定,所以一个 passed attempt 也可以带一条 `failed` 的 `sandbox.teardown`。
 - **超时归因**:计时收集器在阶段开始时即登记 open 条目,attempt 总超时(`Effect.timeoutTo`)中断整段 body 时,超时路径构造的结果同样携带已收集的 phases,in-flight 阶段以中断时刻封口并标 `failed`——「顶到 timeoutMs 的 attempt 卡在哪」直接可读。
-- **`durationMs` 口径**:`durationMs` 只覆盖主链,不含收尾——teardown 失败只是 diagnostic、不改判定,跨实验的判定耗时不该被收尾拖长。因此 ∑ 主链 phases ≤ `durationMs`(差值为阶段间粘合代码);收尾段条目在这个口径之外单独可读——「判定早已确定、进程还在等收尾」这类问题(teardown 钩子回存状态慢、provider stop 卡住)的归因数据就在这里。最终 record 虽在 Scope release 后才组装,也不把收尾反加进 `durationMs`。
+- **`durationMs` 口径**:`durationMs` 只覆盖主链,不含收尾——teardown 失败只是 diagnostic、不改判定,跨实验的判定耗时不该被收尾拖长。因此 ∑ 主链 phases ≤ `durationMs`(差值为阶段间粘合代码);收尾段条目在这个口径之外单独可读——「判定早已确定、进程还在等收尾」这类问题(teardown Hook 回存状态慢、provider stop 卡住)的归因数据就在这里。最终 record 虽在 Scope release 后才组装,也不把收尾反加进 `durationMs`。
 - **`sandbox.queue` 单列**:容器创建被信号量限流,并发下排队等待可以远大于创建本身。混进 `sandbox.create` 会让「provider 起沙箱要多久」这个被测量被实验的并发度污染;单列后 create 的口径跨实验可比。
-- **钩子链 phase 级合计、时间树逐层展开**:钩子是匿名用户代码,没有稳定标识,跨实验的聚合与对比只在 phase 层进行——`sandbox.setup` / `sandbox.teardown` 各合计一条。`children` 按链序逐 hook(具名函数用函数名,匿名用 `setup#<i>` / `teardown#<i>`),hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续成为 child。时间树只回答单 attempt「慢在哪一层」,不做跨 attempt / 跨实验聚合。
+- **Hook 链 phase 级合计、时间树逐层展开**:Hook 是匿名用户代码,没有稳定标识,跨实验的聚合与对比只在 phase 层进行——`sandbox.setup` / `sandbox.teardown` 各合计一条。`children` 按链序逐 hook(具名函数用函数名,匿名用 `setup#<i>` / `teardown#<i>`),hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续成为 child。时间树只回答单 attempt「慢在哪一层」,不做跨 attempt / 跨实验聚合。
 - **所有沙箱命令统一捕获**:Sandbox 创建成功后只包一层中性接口,因此 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run`、`workspace.diff` 与收尾阶段都能记录自己发出的公开 command。provider 内部 `runCommand`→`runShell` 的实现转调不重复记；Agent CLI 内部工具不经过该接口,仍由 events + OTel 提供。
 - **turn 是 runner 包络,OTel 是轮内细节**:`eval.run.children` 的 turn 用 runner 单调时钟量 `send` 端到端耗时,并保存 session/turn 身份、`traceId` 与归属方式。消费方按 `traceId` 从 `trace.json` 临时挂接 agent/model/tool spans；没有 OTel 时 turn 耗时仍可用。
 - **并发不可求和**:`startOffsetMs` 恢复 sibling 的先后与重叠。hook、command、turn 与 OTel span 都可能包含或并发,children duration 不可简单相加后同父节点比较。
@@ -109,7 +109,7 @@ bench/
 
 ### 复用点:直接调 runner 的单次 attempt 引擎,不重新拼装顺序
 
-单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](../testing/e2e/README.md) 的 `verify.ts` 从进程外起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
+单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` Hook 链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](../testing/e2e/README.md) 的 `verify.ts` 从进程外起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
 
 探测 eval 用 `defineEval`(公开 API)在脚本里就地内联构造,不落 `.eval.ts` 文件、不经过 discover:
 
@@ -173,8 +173,8 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 1. **全序与闭集**:成功 attempt 的 `result.json` 里 phases 顺序与生命周期一致,阶段名全部落在 `LifecyclePhase` 闭集内且不含 `agent.run`,`durationMs ≥ 0` 且 ∑ 主链 phases ≤ 总 `durationMs`;收尾段条目总排在主链之后。
 2. **错误归因**:`sandbox.setup` 抛错的 fixture,主链止于 `sandbox.setup` 且该条 `failed: true`,其后无主链条目(`agent.setup` 从未出现);已创建沙箱的收尾段照常有条目。
 3. **remote 无沙箱阶段**:remote agent 的结果不含任何 `sandbox.*` / `workspace.*` 条目。
-4. **收尾独立 failed**:teardown 钩子抛错的 fixture,`sandbox.teardown` 条目标 `failed: true`、`sandbox.stop` 照常记录,verdict 不因此改变。
-5. **时间树与命令归属**:挂多个 setup 钩子的 fixture,`sandbox.setup.children` 逐 hook 有条目、顺序与链序一致；每个 hook 发出的 `runCommand` / `runShell` 只出现一次并挂在正确 hook 下。`agent.setup`、`workspace.baseline` 与 teardown 命令同样落在各自 phase。
+4. **收尾独立 failed**:teardown Hook 抛错的 fixture,`sandbox.teardown` 条目标 `failed: true`、`sandbox.stop` 照常记录,verdict 不因此改变。
+5. **时间树与命令归属**:挂多个 setup Hook 的 fixture,`sandbox.setup.children` 逐 hook 有条目、顺序与链序一致；每个 hook 发出的 `runCommand` / `runShell` 只出现一次并挂在正确 hook 下。`agent.setup`、`workspace.baseline` 与 teardown 命令同样落在各自 phase。
 6. **并发与单调时钟**:两个并发 command 的 `startOffsetMs` 可以重叠,不能被串成虚假的顺序；wall-clock 跳变不产生负 duration。
 7. **turn 与 OTel 关联**:多 session、多 turn fixture 产生 `turn1`、`session2/turn1` 等结构化身份；有 traceparent 时保存 traceId/attribution,无 OTel 时 turn duration 仍存在。
 8. **归因与计时同词表**:构造一个 send 内抛错的 fixture,`error.phase` 为 `agent.run`、`phases` 主链止于 `eval.run`——两个字段取值都在同一个 `LifecyclePhase` 闭集内。

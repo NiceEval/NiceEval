@@ -83,7 +83,7 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 
 沙箱冷启动的优先级排序(先预制环境、再小 setup、最后才是池化)在 [Sandbox · 性能](feature/sandbox/architecture.md#性能预制环境复用与预热)——provider 侧提供"创建、重置、销毁"的能力;什么时候预创建、什么时候复用是运行器的调度决策,契约如下:
 
-- **预热池**:开启后,运行器在调度开始时按 `min(预热池大小, 计划 attempt 数)` 预先创建同 spec 沙箱挂进池里;attempt 到达 `sandbox.create` 阶段时先领池中现货,领到则该阶段只计领取耗时,池空则回落到即时创建。池只在同一次 run 内存活,run 结束时未被领用的沙箱一并销毁。预热池不改变生命周期钩子的调用顺序:领到的沙箱仍在 attempt 里按[固定调用链](feature/sandbox/architecture.md#沙箱在生命周期里的位置)走一遍 `sandbox.setup` 链与分类账锚点。
+- **预热池**:开启后,运行器在调度开始时按 `min(预热池大小, 计划 attempt 数)` 预先创建同 spec 沙箱挂进池里;attempt 到达 `sandbox.create` 阶段时先领池中现货,领到则该阶段只计领取耗时,池空则回落到即时创建。池只在同一次 run 内存活,run 结束时未被领用的沙箱一并销毁。预热池不改变生命周期 Hook 的调用顺序:领到的沙箱仍在 attempt 里按[固定调用链](feature/sandbox/architecture.md#沙箱在生命周期里的位置)走一遍 `sandbox.setup` 链与分类账锚点。
 - **串行复用**:`--reuse-sandbox` 打开后,整批同基线 eval 共用一个热沙箱串行跑:不随 eval 变的层(`createSandbox`、`sandbox.setup` 链、`SandboxAgent.setup`)整组只执行一次,落成温基线 commit;题间把 workdir 重置回温基线(`git reset --hard` + 尊重分类账排除清单的 `git clean`),每题只重放 `EvalDef.setup` / `test(t)` Fixture。复用与并发互斥(一个热沙箱 = 一条执行道,并发钉成 1,显式 `--max-concurrency` 组合是创建前的用法错误),复用与指纹缓存双向绝缘(不消费携带、不产生命中);完整契约——温基线分层、诚实边界、同基线批次约束——见 [Sandbox · 串行复用](feature/sandbox/serial-reuse.md)。
 - [`--keep-sandbox`](feature/sandbox/cli.md) 与 `--reuse-sandbox` 互斥,组合在创建沙箱前报错:留存的现场必须属于那一次 attempt,不能被题间 `git reset` 抹掉后再当现场留下。预热池不受影响——run 结束时未被领用的池内沙箱照常销毁,留存只作用于跑过 attempt 的沙箱。
 
@@ -98,7 +98,7 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 | `experimentId` | `labels`(纯报告坐标) |
 | agent 的名字 | agent 工厂的内部参数 |
 | `model`、`reasoningEffort` | 调度字段:`earlyExit`、`maxConcurrency`、`budget`、`--max-concurrency` |
-| `flags` **整袋**,无逐键豁免 | 生命周期钩子函数体:实验级 `setup` / `teardown`、sandbox spec 的钩子链 |
+| `flags` **整袋**,无逐键豁免 | 生命周期 Hook 函数体:实验级 `setup` / `teardown`、sandbox spec 的 Hook 链 |
 | 该 eval 解析到的 sandbox provider 与预制产物参数 | 运行时才产生的一切:`ctx.fact()` 上报的观测、`setup` 起出来的坐标 |
 | `strict` | 指纹看不见的外部世界:agent CLI 版本、被测服务状态、镜像重建 |
 
@@ -131,9 +131,9 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 
 ## 环境预置不进运行器,但按顺序调它
 
-运行器不承载环境预置的内容,只固定各生命周期钩子的**调用点与顺序**,钩子内部做什么全部交给对应的作者决定。
+运行器不承载环境预置的内容,只固定各生命周期 Hook 的**调用点与顺序**,Hook 内部做什么全部交给对应的作者决定。
 
-四层钩子共用同一种形态:**成对的 `setup` / `teardown`,`setup` 不返回值**——写过 Vitest / Jest 的人带着 `beforeAll` / `afterAll` 的心智直接就能写:
+四层 Hook 共用同一种形态:**成对的 `setup` / `teardown`,`setup` 不返回值**——写过 Vitest / Jest 的人带着 `beforeAll` / `afterAll` 的心智直接就能写:
 
 | 层 | 挂载点 | 签名 | 节奏 |
 |---|---|---|---|
@@ -146,21 +146,21 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 
 - **状态经闭包流动,粒度跟层的节奏走**:`teardown` 要用 `setup` 的产物时不经 runner 中介。实验级整场一次,工厂闭包 / 模块级变量即可;每沙箱、每 attempt 的层(sandbox / agent / eval)里,并发 attempt 共享同一个模块,普通模块变量会互相覆写——以 `sandbox` 实例为键存取(`WeakMap`,sandbox 与 attempt 一一对应),或先用 `maxConcurrency: 1` 串行、再用普通变量。
 - **`teardown` 当且仅当同层的 setup 时点已走到才执行**:`setup` 抛错不豁免——半初始化的现场同样要扫尾,`teardown` 对可能未赋值的闭包变量做防御(`tunnel?.stop()`);未声明 `setup` 函数不影响触发(时点走到即算);时点没走到(实验一个 attempt 都没派发、attempt 没进行到该层)则 `teardown` 同样跳过。
-- **同层多个钩子按注册序 setup、逆序 teardown(LIFO)**;`setup` 链中途抛错时后续 `setup` 不再执行,`teardown` 链仍完整走完。
+- **同层多个 Hook 按注册序 setup、逆序 teardown(LIFO)**;`setup` 链中途抛错时后续 `setup` 不再执行,`teardown` 链仍完整走完。
 
 调用点从外到内:
 
 - **实验级** —— `ExperimentDef.setup` / `.teardown`:每实验整场至多一次、宿主机侧;`setup` 在本实验第一个要派发的 attempt 前跑,`teardown` 在全部 attempt 收尾后跑(中断、强清退出也跑,执行带 30s 清理上限);管每实验一份的共享服务(隧道、mock server),语义见 [Experiments · 实验级生命周期](feature/experiments/architecture.md#实验级生命周期setup-与-teardown)。
-- **沙箱级** —— 沙箱创建后、变更分类账锚点之前,运行器调用 `experiment.sandbox` 链上挂的环境钩子(`SandboxSpec.setup()` / `.teardown()`,见 [Sandbox · 沙箱生命周期钩子](feature/sandbox/library.md#沙箱生命周期钩子setup-teardown))。
+- **沙箱级** —— 沙箱创建后、变更分类账锚点之前,运行器调用 `experiment.sandbox` 链上挂的环境 Hook(`SandboxSpec.setup()` / `.teardown()`,见 [Sandbox · 沙箱生命周期 Hook](feature/sandbox/library.md#沙箱生命周期-hook-setup-与-teardown))。
 - **eval 级 / agent 级** —— 沙箱固定段("发现 → 调度 → 沙箱起停 / 分类账锚点 / 折叠 agent diff → 评分 → 报告"这条主轴)之内,还分出这条 eval 的任务 Fixture(`EvalDef.setup` 或 `test(t)`)和 agent 自己的一次性预置([`SandboxAgent.setup`](feature/adapters/architecture/agent-contract.md#生命周期不变量))。
 
 跨实验共享、生命周期长于一次 run 的外部服务(共享 DB、公司内网服务本体)仍然用外部编排(`docker compose` / CI 脚本)起停、经 env 传入——这类资源跨进程共享,不属于任何一次 run 的生命周期。完整分工表见 [环境预置放哪](feature/sandbox/library.md#环境预置放哪)。
 
-**下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行钩子——这是从 agent-eval 的 `onRunComplete` 收敛过来的(见 [Experiments 砍字段](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么));NiceEval 自己的对应回调名是 `onInvocationComplete`。
+**下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),不另设运行 Hook——这是从 agent-eval 的 `onRunComplete` 收敛过来的(见 [Experiments 砍字段](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么));NiceEval 自己的对应回调名是 `onInvocationComplete`。
 
 ## Reporter 与运行器事件
 
-`Reporter` 是运行器与外部系统之间唯一的公开回调面:三个生命周期钩子加一条结构化事件流,跨 Experiment 的边界是当次 Invocation,不是持久化 Run。
+`Reporter` 是运行器与外部系统之间唯一的公开回调面:三个生命周期 Hook 加一条结构化事件流,跨 Experiment 的边界是当次 Invocation,不是持久化 Run。
 
 ```ts
 interface Reporter {
@@ -263,7 +263,7 @@ type ReporterEvent =
 
 ## 实验域诊断持久化
 
-有一类操作性事实**属于某次 Run 整体、但定位不到单个 Attempt**——teardown 失败、budget 不可执行、实验级钩子超时。这类事实必须落进对应 Run 的 `diagnostics`(见 [Results · run.json](feature/record/architecture.md#runjson)),不能只出现在运行期的终端反馈里就算完——反馈是这一次运行的即时通知,`run.json` 才是这次运行"发生过什么"的永久记录。
+有一类操作性事实**属于某次 Run 整体、但定位不到单个 Attempt**——teardown 失败、budget 不可执行、实验级 Hook 超时。这类事实必须落进对应 Run 的 `diagnostics`(见 [Results · run.json](feature/record/architecture.md#runjson)),不能只出现在运行期的终端反馈里就算完——反馈是这一次运行的即时通知,`run.json` 才是这次运行"发生过什么"的永久记录。
 
 产生处必须显式给出:
 

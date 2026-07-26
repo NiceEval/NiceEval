@@ -22,7 +22,7 @@
 | 行为 | 文件 |
 |---|---|
 | Agent 契约(`kind: "sandbox" | "remote"`,无能力位字段)/ 三类配置归属 | `src/agents/types.ts`(`Agent` / `AgentContext` / `AgentSession` / `SpanMapper`) |
-| `AgentContext.experimentId`(路径推导的实验 id,与结果归属同源;沙箱生命周期钩子按它隔离跨 attempt 状态) | `src/agents/types.ts`(`AgentContext.experimentId`) |
+| `AgentContext.experimentId`(路径推导的实验 id,与结果归属同源;沙箱生命周期 Hook 按它隔离跨 attempt 状态) | `src/agents/types.ts`(`AgentContext.experimentId`) |
 | 能力调用守卫(缺声明的动作第一次调用即报清晰错误;conversation gate 第二轮起) | `src/context/context.ts`(`capabilityGuard`) |
 | 逐 API 适配义务(send / newSession / respond 的运行器侧翻译) | `src/context/session.ts`(`SessionManager` / `RunSession`)、`src/context/context.ts` |
 | `defineSandboxAgent` / `defineAgent`(`kind: "sandbox" | "remote"`,无能力位字段) | `src/define.ts` |
@@ -96,7 +96,7 @@
 | Provisioning 瞬时错误分类 + 退避重试(各 provider 的 `classifyProvisionError` 认原生限流,兜底走与文件 IO 共用的瞬时分类器 → `createProvider()` 统一重试) | `src/sandbox/errors.ts`、`src/sandbox/retry.ts`;各 provider 文件的 `classifyProvisionError` |
 | `defineSandbox`(自定义 provider 逃生舱:`create()` 直接产出 `Sandbox` 实例,`resolve.ts` 里 `r.create` 优先于内置 backend switch) | `src/define.ts`、`src/sandbox/resolve.ts`(`createBackend`) |
 | 沙箱编排固定段(变更分类账锚点 / 折叠 agent diff;起始文件上传是 `test()` 里的手工调用,不属于固定段) | `src/runner/sandbox-prep.ts` |
-| 沙箱生命周期钩子(`SandboxSpec.setup()` / `.teardown()` 链式方法、多钩子顺序、失败语义；`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出) | `src/sandbox/types.ts`(`SandboxHooks<Self>`,类型定义);`src/sandbox/index.ts`(公开类型出口);`src/runner/attempt.ts`(按序调用 `sandboxSetupHooks` / 逆序调用 `sandboxTeardownHooks`) |
+| 沙箱生命周期 Hook(`SandboxSpec.setup()` / `.teardown()` 链式方法、多 Hook 顺序、失败语义；`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出) | `src/sandbox/types.ts`(`SandboxHooks<Self>`,类型定义);`src/sandbox/index.ts`(公开类型出口);`src/runner/attempt.ts`(按序调用 `sandboxSetupHooks` / 逆序调用 `sandboxTeardownHooks`) |
 | 留存(`--keep-sandbox`):suspend 路由、detached 生命周期(inspect / wake / suspend / destroy)、provider 原生 enter 命令、留存提交时的 `expiresAt` 计算(vercel 写 `keptAt` + 默认 Run 保留期,e2b/docker 不写) | `src/sandbox/keep.ts`(`computeExpiresAt`、`suspendSandbox`;provider 名分支只在 sandbox/ 域内)+ 各 provider 的 `suspend()`(`src/sandbox/{docker,e2b,vercel}.ts`);写入点在 `src/runner/attempt.ts` 提交 `writeKeptEntry` 处。`suspendSandbox` 拿到的实例经过 `src/sandbox/resolve.ts`(`createSandbox`)的 `normalizeSandboxPaths()` 包装(`src/sandbox/paths.ts`)——这层必须把 `suspend`(与 `appendLog` 同类的接口外可选能力)原样转发,否则 in-run suspend 对三家 provider 全部找不到能力、留存永远停在 `alive`——踩坑记录见 memory [keep-sandbox-suspend-wrapper-drops-capability](../memory/keep-sandbox-suspend-wrapper-drops-capability.md)。`niceeval sandbox enter/history/diff` 的 detached 唤醒/回眠走独立的 `wakeDetached`/`suspendDetached`(不经过这层包装,直接按 provider 名 + `sandboxId` 重新连接实例)。 |
 | `--keep-sandbox` 的创建前组合校验(自定义 provider、或内置但不在 `KEEPABLE_PROVIDERS` 里的 provider 如 local,统一报清晰错误) | `src/runner/attempt.ts`(`runAttemptEffect` 顶部,读 `resolveSandbox().create` / `KEEPABLE_PROVIDERS`) |
 | 留存注册表(`.niceeval/sandboxes/` 逐条目原子文件、entry id 散列、向上发现 `.niceeval/`、条目级 lease) | `src/sandbox/keep-registry.ts`(+ 同目录 `.test.ts`) |

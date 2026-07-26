@@ -9,7 +9,7 @@
 
 **修法**(2026-07-18,契约先行、同日落码):
 
-- **可见性不再依赖钩子作者**:钩子起止改为 runner 自己发布的运行级反馈事件。新增 durable 事件 `experiment-hook`(started/done/failed,done/failed 带 durationMs)与短命事件 `experiment:progress`,reducer 维护 `RunFeedbackState.experimentHooks`。契约新增在 `docs/feature/experiments/cli.md`「实验级钩子的显示」。
+- **可见性不再依赖钩子作者**:钩子起止改为 runner 自己发布的运行级反馈事件。新增 durable 事件 `experiment-hook`(started/done/failed,done/failed 带 durationMs)与短命事件 `experiment:progress`,reducer 维护 `RunFeedbackState.experimentHooks`。契约新增在 `docs/feature/experiments/cli.md`「实验级 Hook 的显示」。
 - **Human TTY**:ACTIVE 区为在飞钩子渲染运行级行 `experiment setup · <experimentId>`(排 attempt 行前),`ctx.progress` 只更新该行 detail;成功钩子不写 scrollback。**agent/ci/非 TTY human**:起止各追加一行(`NICEEVAL experiment_setup … status=…` / `niceeval: experiment_setup …` / human 文案)。
 - **activity 通道修活**:human 两个变体实现 `activity()`(TTY 落 scrollback、非 TTY 追加并重置 heartbeat),agent/ci 按契约继续不输出瞬时文本。`runner.resumeCarry`/`resumeCarryDetail` 两处调用连同 i18n key 删除——per-experiment 复用清单违反 cli.md「Reuse 只给数量」的既有裁决,plan 头行已覆盖数量。
 - 落点:`src/runner/types.ts` + `feedback/{reducer,sink,coordinator,human,agent,ci}.ts` + `run.ts` + `src/i18n/{en,zh-CN}.ts`;测试按 `docs/engineering/testing/unit/experiments-runner.md`「实验级生命周期」新登记的行落在 `reducer/human/agent/ci/run` 五个 test 文件。

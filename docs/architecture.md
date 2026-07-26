@@ -94,7 +94,7 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 3. **指纹与缓存。** 对每个 eval 算 `(eval 代码 + 配置)` 指纹;已通过且指纹未变的,标记跳过(除非 `--rerun all`)。
 4. **建 attempt 列表。** 每个 eval × `attempts` 次 → 一批 attempt。为每个 eval 建一个 `AbortController`(供首过即停)。
 5. **有界并发调度。** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。可疑的"秒挂"(< 5s 且非超时)按指数退避重试。
-6. **准备环境,交给 `test(t)`。** 沙箱型:`Sandbox.create` → 若 `experiment.sandbox` 链上挂了 `.setup()`,先跑这些环境层钩子(装二进制、预热、写 hook 文件,按追加顺序;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 若这条 eval 定义了 `EvalDef.setup` 就跑它(任务 Fixture)→ 跑 agent 自己的 `SandboxAgent.setup`(装 CLI 等)。之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeFiles`/`uploadFiles`(手工写入起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流、注入 `__niceeval__/results.json`)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
+6. **准备环境,交给 `test(t)`。** 沙箱型:`Sandbox.create` → 若 `experiment.sandbox` 链上挂了 `.setup()`,先跑这些环境层 Hook(装二进制、预热、写 hook 文件,按追加顺序;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 若这条 eval 定义了 `EvalDef.setup` 就跑它(任务 Fixture)→ 跑 agent 自己的 `SandboxAgent.setup`(装 CLI 等)。之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeFiles`/`uploadFiles`(手工写入起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流、注入 `__niceeval__/results.json`)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。** `test(t)` 跑完后从分类账折叠各 send 窗口的变更并集,供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 `diff.json` 使用——fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **评分。** `test(t)` 里记录的作用域断言、值断言、judge,连同手工校验命令的结果断言,全部折叠成 `Assertion[]`。
 9. **判定。** 断言 + 执行错误 + 跳过原因直接折叠成一个互斥的 `Verdict`(`passed`/`failed`/`errored`/`skipped`,没有中间态)。
@@ -129,6 +129,7 @@ CLI 启动时仍加载项目根的 `.env`(不覆盖已有环境变量)——那�
 
 ## 相关阅读
 
+- [读取面架构](reading-architecture.md) —— 第 12 步写下的 Run 目录之后:事实、选择、呈现三层。
 - [Runner](runner.md) —— 调度、并发、重试、首过即停、缓存的细节。
 - [Agents 与 Adapters](feature/adapters/README.md)、[Sandbox](feature/sandbox/README.md) —— 三层的契约。
 - [Scoring](feature/scoring/README.md) —— 评分与判定。

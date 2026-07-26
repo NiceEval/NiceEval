@@ -4,11 +4,11 @@
 
 ## 沙箱在生命周期里的位置
 
-一次 agent eval 中,核心固定住各个钩子**的调用顺序**,每个钩子**内部做什么**交给 sandbox spec / eval / agent 各自的作者:
+一次 agent eval 中,核心固定住各个 Hook**的调用顺序**,每个 Hook**内部做什么**交给 sandbox spec / eval / agent 各自的作者:
 
 ```text
  createSandbox(provider, timeout)
-  → sandbox.setup?.(sandbox, ctx)          # 环境层:experiment.sandbox 链上的 .setup() 钩子(可能多个,按追加顺序);没挂就跳过
+  → sandbox.setup?.(sandbox, ctx)          # 环境层:experiment.sandbox 链上的 .setup() Hook(可能多个,按追加顺序);没挂就跳过
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → EvalDef.setup?.(sandbox, ctx)          # 这条 eval 的任务 Fixture(如果定义了);ctx 绑定 eval.setup feedback
   → SandboxAgent.setup?.(sandbox, ctx)     # agent 自己的一次性预置(装 CLI / 写主配置)
@@ -25,14 +25,14 @@
    → commitKeepOrStop()                     # verdict 已定稿,命中时原子登记后留存;否则 sandbox.stop()(见下)
 ```
 
-这条链的阶段词表以 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威,本节只描述沙箱切片。环境层钩子排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于分类账锚点跑——像镜像构建先于代码挂载——环境产物因此不进入任何归因视图。teardown 顺序对称颠倒:eval 级 cleanup 先跑,agent 级收尾其次(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。整个收尾段发生在判定之后,只能追加 diagnostic,不能反改 verdict——若某个步骤决定结果正确性,它就不是收尾,应写进 `test(t)` 主链。
+这条链的阶段词表以 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威,本节只描述沙箱切片。环境层 Hook 排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于分类账锚点跑——像镜像构建先于代码挂载——环境产物因此不进入任何归因视图。teardown 顺序对称颠倒:eval 级 cleanup 先跑,agent 级收尾其次(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。整个收尾段发生在判定之后,只能追加 diagnostic,不能反改 verdict——若某个步骤决定结果正确性,它就不是收尾,应写进 `test(t)` 主链。
 
 ## 变更归因:send 窗口与分类账
 
 `t.sandbox.diff` / `fileChanged` / `fileDeleted` / `notInDiff` 回答的是「**agent** 改了什么」,不是「workspace 相对空目录变了什么」。归因由 runner 的**变更分类账**(私有 git ledger)提供:
 
 - **分类账在沙箱内、workdir 外。** ledger 的 git 目录放在 runner 控制的私有路径,以 workdir 为 work-tree。workdir 保持素净——agent 看不到 runner 的 `.git`,eval 需要真实 git repo 时自己 `git init`,agent 在 workdir 里的任何 git 操作都碰不到分类账。
-- **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,环境层钩子之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(fixture 写入、`EvalDef.setup` / `SandboxAgent.setup` 的落位、`runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**——这个 **send 窗口**内的全部 workspace 变化。
+- **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,环境层 Hook 之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(fixture 写入、`EvalDef.setup` / `SandboxAgent.setup` 的落位、`runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**——这个 **send 窗口**内的全部 workspace 变化。
 - **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,remote agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,`EvalDef.setup` 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。清单在锚点时冻结,agent 或 fixture 写 `.gitignore` 影响不了它(项目自己的 ignore 规则也**不**参与归因判断——被项目 ignore 的文件照常记录);eval 要评分被排除目录时经 `defineEval({ diff: { include: [...] } })` 显式加回,`diff.ignore` 追加排除。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
@@ -43,13 +43,13 @@
 
 agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
 
-这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、`setup` / `teardown` 钩子链逐钩子形成时间树、收尾段(agent 收尾 / 环境层收尾 / `stop`)在判定口径之外单独记录。Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经 `runCommand()` / `runShell()` 发出的公开调用自动挂到当时的 phase/hook/turn 下,所以 `eval.setup` 的依赖安装、`agent.setup` 的 CLI 安装与配置、adapter 启动 Agent CLI、workspace baseline/diff 以及 teardown 回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点;例如 `workspace.diff` 记录一次 `export workspace diff` operation,其下是一条覆盖全部窗口的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
+这条链上每个实际执行的环节都被计时并落进 `result.json` 的 `phases`——排队与创建分列、`setup` / `teardown` Hook 链逐 Hook 形成时间树、收尾段(agent 收尾 / 环境层收尾 / `stop`)在判定口径之外单独记录。Sandbox 创建成功后,core 只包装一次返回的中性 `Sandbox`:所有经 `runCommand()` / `runShell()` 发出的公开调用自动挂到当时的 phase/hook/turn 下,所以 `eval.setup` 的依赖安装、`agent.setup` 的 CLI 安装与配置、adapter 启动 Agent CLI、workspace baseline/diff 以及 teardown 回存命令都能继续展开到真实 shell。provider 内部用 `runCommand` 转调 `runShell` 只算最外层公开调用一次,不重复计时。runner 或 Sandbox 知道一段批量工作属于同一个逻辑动作时,在命令外再包一层 `operation` 语义节点;例如 `workspace.diff` 记录一次 `export workspace diff` operation,其下是一条覆盖全部窗口的批量导出 command 加一次导出文件下载,而不是每个文件各一条 `git show`。
 
 `sandbox.create` 是特殊边界:此时 Sandbox 对象尚不存在,不能靠同一个包装器看到内部步骤。内置 provider 可把真实 SDK 请求、宿主命令或创建子步骤作为 `provider` 节点写入;第三方 provider 没提供细分时只记录 `sandbox.create` 合计,不能为了树好看把 API 调用伪装成 shell 命令。Agent CLI 内部自行执行的工具命令也不经过 Sandbox 包装,它们由标准事件流记录,有 OTel 且 correlation 唯一时才在 turn 下显示耗时。
 
 时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/hook”全局值——并行 hook 或并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value、stdout/stderr 与可能含 secret 的完整长脚本不进入 timing 记录。operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer 写入;展示层不能解析命令文本猜业务分组。这样「沙箱起了多久、setup 哪个 hook/命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端的有界/full 两档入口是 [`niceeval show --timing`](../reports/show/timing.md),网页入口是 `niceeval view` 的 Attempt 详情。
 
-核心固定的是这条调用链本身(创建后先环境层钩子、再打分类账锚点、再 eval Fixture、再 agent 预置;agent 归因增量在评分前折叠完成,收尾段按 eval → agent → 环境层的顺序在判定之后执行)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
+核心固定的是这条调用链本身(创建后先环境层 Hook、再打分类账锚点、再 eval Fixture、再 agent 预置;agent 归因增量在评分前折叠完成,收尾段按 eval → agent → 环境层的顺序在判定之后执行)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
 
 ## 留存(keep)与注册表
 
@@ -213,5 +213,5 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 ## 相关阅读
 
 - [README](README.md) —— 为什么需要沙箱、provider 统一接口。
-- [Library](library.md) —— 使用侧 API:路径、root、生命周期钩子、自定义 provider。
+- [Library](library.md) —— 使用侧 API:路径、root、生命周期 Hook、自定义 provider。
 - [Runner](../../runner.md) —— 预热与复用的调度职责。

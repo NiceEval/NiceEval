@@ -8,7 +8,7 @@ Skills、MCP servers 和原生 Plugins 在 Agent setup 阶段安装。core 只�
 
 MCP 使用共享 `McpServer` 形状——stdio 形态（`command`/`args`/`env`）与 Streamable HTTP 形态（`url`/`headers`）组成按形状判别的联合，不设 kind 标签：两种形态各有唯一的必填判别字段（`command` / `url`），标签只会重复这个事实。Claude Code 与 Codex 都能原生表达两种 transport；Bub 没有该构造字段。落位由 Adapter 决定：Claude Code 写用户级 `~/.claude.json`（HTTP 形态带 `type: "http"` 与 `headers`），Codex 写 `[mcp_servers.<name>]` 表（HTTP 形态写 `url`，headers 进 `[mcp_servers.<name>.http_headers]` 子表）。同一个 server 同时给出 `command` 与 `url` 时，setup 报错点名该 server，不做静默取舍。
 
-`postSetup` 是 factory 上的过程钩子数组：Adapter 全部安装步骤（含写 manifest）完成后，在沙箱里按数组顺序运行用户代码。它复用 `SandboxHook` 类型与窄上下文——agent 安装后脚本和沙箱环境预置是同一类「在沙箱里跑一段用户代码」，区别只有相对 agent 安装的时机，不值得第二套类型。成对的 `preTeardown` 数组承载收尾:按逆序、先于 agent teardown 执行(LIFO 镜像)。它不是配置声明：factory 已有字段能表达的（MCP、Skills、Plugin）不进钩子，钩子只承载「安装产物就位后才能跑」的过程动作（如运行插件自带的 setup 脚本）。
+`postSetup` 是 factory 上的过程 Hook 数组：Adapter 全部安装步骤（含写 manifest）完成后，在沙箱里按数组顺序运行用户代码。它复用 `SandboxHook` 类型与窄上下文——agent 安装后脚本和沙箱环境预置是同一类「在沙箱里跑一段用户代码」，区别只有相对 agent 安装的时机，不值得第二套类型。成对的 `preTeardown` 数组承载收尾:按逆序、先于 agent teardown 执行(LIFO 镜像)。它不是配置声明：factory 已有字段能表达的（MCP、Skills、Plugin）不进 Hook，Hook 只承载「安装产物就位后才能跑」的过程动作（如运行插件自带的 setup 脚本）。
 
 Native Plugin 不统一：Claude Code 和 Codex 使用各自的 PluginSpec，Bub 使用 PythonPluginSpec。一个 Agent 不支持的扩展类型不出现在其 config 上。
 
@@ -29,9 +29,9 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 3. 安装 Skills。
 4. 安装供应商原生 Plugin / Python package。
 5. 写安装 manifest。
-6. 按序运行 `postSetup` 钩子。
+6. 按序运行 `postSetup` Hook。
 
-每个 attempt 只执行一次。多轮 `send` 不重复安装。`postSetup` 排在 manifest 之后：manifest 审计的是 Adapter 自身的安装事实，钩子失败也不该丢掉这份证据；钩子做了什么由 attempt 的命令时间树记录。
+每个 attempt 只执行一次。多轮 `send` 不重复安装。`postSetup` 排在 manifest 之后：manifest 审计的是 Adapter 自身的安装事实，Hook 失败也不该丢掉这份证据；Hook 做了什么由 attempt 的命令时间树记录。
 
 ## 可复现性
 
@@ -42,8 +42,8 @@ TypeScript 是结构类型系统；两个供应商 Spec 恰好同形时，类型
 
 ## 失败语义
 
-路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根，原生配置语法错误或含保留键，仓库无法拉取、Skill 选择歧义、Plugin 不存在、MCP 配置无法写入、MCP server 同时给出 `command` 与 `url`、安装命令失败或 `postSetup` 钩子抛错，都在 setup 阶段抛出并使 attempt errored。只有 Agent 已开始执行任务后的行为失败才进入 Turn status。
+路径不存在、包含 `..`、不是相对路径、使用 `~` 或经符号链接逃出项目根，原生配置语法错误或含保留键，仓库无法拉取、Skill 选择歧义、Plugin 不存在、MCP 配置无法写入、MCP server 同时给出 `command` 与 `url`、安装命令失败或 `postSetup` Hook 抛错，都在 setup 阶段抛出并使 attempt errored。只有 Agent 已开始执行任务后的行为失败才进入 Turn status。
 
 ## Manifest
 
-Adapter 通过共享 manifest writer 记录安装事实，runner 将其提升为 attempt artifact。原生配置只记录 Agent 名、项目相对来源路径和原始字节的 SHA-256，不记录配置正文；任意官方配置都可能携带敏感字符串，不能靠字段白名单证明适合原样落盘。MCP 条目同理只记非 secret 字段：stdio 形态记 `name`/`command`/`args` 不记 `env`，HTTP 形态记 `name`/`url` 不记 `headers`。`postSetup` 钩子是用户代码，不进 manifest。Manifest 是审计结果，不参与能力分发，也不能替代实际行为事件；例如 Skill 是否被模型使用仍需 `skill.loaded` 或任务结果证据。
+Adapter 通过共享 manifest writer 记录安装事实，runner 将其提升为 attempt artifact。原生配置只记录 Agent 名、项目相对来源路径和原始字节的 SHA-256，不记录配置正文；任意官方配置都可能携带敏感字符串，不能靠字段白名单证明适合原样落盘。MCP 条目同理只记非 secret 字段：stdio 形态记 `name`/`command`/`args` 不记 `env`，HTTP 形态记 `name`/`url` 不记 `headers`。`postSetup` Hook 是用户代码，不进 manifest。Manifest 是审计结果，不参与能力分发，也不能替代实际行为事件；例如 Skill 是否被模型使用仍需 `skill.loaded` 或任务结果证据。

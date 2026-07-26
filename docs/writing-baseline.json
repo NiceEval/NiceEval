@@ -246,18 +246,6 @@
     "docs/source-map.md": 15
   },
   "bannedTerms": {
-    "docs/architecture.md": {
-      "钩子": 1
-    },
-    "docs/cli.md": {
-      "钩子": 4
-    },
-    "docs/concepts.md": {
-      "钩子": 1
-    },
-    "docs/engineering/benchmark/README.md": {
-      "钩子": 12
-    },
     "docs/engineering/testing/e2e/README.md": {
       "榜单": 1
     },
@@ -291,59 +279,8 @@
     "docs/engineering/testing/e2e/verification.md": {
       "榜单": 2
     },
-    "docs/engineering/testing/unit/experiments-runner.md": {
-      "钩子": 1
-    },
-    "docs/feature/adapters/architecture/coding-agent-extensions.md": {
-      "钩子": 8
-    },
-    "docs/feature/adapters/library/coding-agent-extensions.md": {
-      "钩子": 12
-    },
-    "docs/feature/adapters/sdk/bub/README.md": {
-      "钩子": 1
-    },
-    "docs/feature/adapters/sdk/claude-code/README.md": {
-      "钩子": 1
-    },
-    "docs/feature/adapters/sdk/pi-agent-core/README.md": {
-      "钩子": 1
-    },
-    "docs/feature/error-classification/README.md": {
-      "钩子": 1
-    },
-    "docs/feature/error-classification/architecture.md": {
-      "钩子": 1
-    },
-    "docs/feature/error-classification/use-case/declare-fatal-scope.md": {
-      "钩子": 1
-    },
     "docs/feature/eval/use-case/rubric-scoring.md": {
       "榜单": 1
-    },
-    "docs/feature/experiments/README.md": {
-      "钩子": 8
-    },
-    "docs/feature/experiments/architecture.md": {
-      "钩子": 12
-    },
-    "docs/feature/experiments/cli.md": {
-      "钩子": 17
-    },
-    "docs/feature/experiments/library.md": {
-      "钩子": 25
-    },
-    "docs/feature/experiments/use-case/cache-invalidation.md": {
-      "钩子": 5
-    },
-    "docs/feature/experiments/use-case/concurrency.md": {
-      "钩子": 10
-    },
-    "docs/feature/experiments/use-case/lifecycle.md": {
-      "钩子": 5
-    },
-    "docs/feature/experiments/use-case/max-concurrency.md": {
-      "钩子": 2
     },
     "docs/feature/reports/README.md": {
       "榜单": 3
@@ -414,41 +351,11 @@
     "docs/feature/reports/use-case/write-custom-component.md": {
       "榜单": 1
     },
-    "docs/feature/sandbox/README.md": {
-      "钩子": 1
-    },
-    "docs/feature/sandbox/architecture.md": {
-      "钩子": 8
-    },
-    "docs/feature/sandbox/cli.md": {
-      "钩子": 2
-    },
-    "docs/feature/sandbox/library.md": {
-      "钩子": 11
-    },
-    "docs/feature/sandbox/library/prebuilt-environments.md": {
-      "钩子": 6
-    },
-    "docs/feature/sandbox/serial-reuse.md": {
-      "钩子": 1
-    },
-    "docs/feature/sandbox/use-case/keep-sandbox-env-errored.md": {
-      "钩子": 1
-    },
     "docs/feature/scoring/architecture/severity-and-verdict.md": {
       "榜单": 1
     },
-    "docs/origin-integration.md": {
-      "钩子": 1
-    },
     "docs/roadmap/e2e-acceptance-dsl/use-cases/machine-exports.md": {
       "榜单": 1
-    },
-    "docs/runner.md": {
-      "钩子": 13
-    },
-    "docs/source-map.md": {
-      "钩子": 3
     }
   }
 }

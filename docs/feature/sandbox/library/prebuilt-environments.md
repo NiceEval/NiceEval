@@ -26,7 +26,7 @@ export const e2b = e2bSandbox({
 
 - 表是纯数据：键为 profile id，值的字段由各内置工厂类型声明（docker `{ image }`、e2b `{ template }`、vercel `{ snapshotId }`），写错字段名由类型检查拦下。`defineSandbox` 自定义 spec 没有 `environments` 表——自定义 provider 没有 NiceEval 认识的产物槽位；声明了 `environment` 的 eval 搭配自定义 spec 同样按缺表项报启动期配置错误。
 - 解析发生在调度前：选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不创建任何沙箱、不消耗预算。
-- 查表只替换这条 eval 的起点产物；`.setup()` / `.teardown()` 钩子链与其余 spec 参数对全部 eval 共享。
+- 查表只替换这条 eval 的起点产物；`.setup()` / `.teardown()` Hook 链与其余 spec 参数对全部 eval 共享。
 - 逐 eval 的解析结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`，见 [Results · run.json](../../record/architecture.md#runjson)。
 
 ## 为什么没有跨 provider 构建 DSL
@@ -42,7 +42,7 @@ export const e2b = e2bSandbox({
 3. **重建只在环境依赖变化时发生**:改了要装的 CLI 版本、系统包或模型 cache 才跑构建脚本;日常 `niceeval exp` 直接消费既有产物。
 4. **升级 agent CLI 版本 = 构建一个新 tag**,experiment 改引用即可、回滚可逆;不要原地覆盖同一个 tag——那会让"同一配置"在不同时间指向不同环境,跑分失去可比性。
 
-进不进预制产物的判据只有一条:**这内容是不是所有 attempt 都相同、且与本次实验的参数无关。** 按实验变化的内容(装不装某二进制、开不开预热)进 [`.setup()` 钩子](../library.md#沙箱生命周期钩子setup-teardown);按 eval 变化的任务 Fixture 进 `test(t)`。
+进不进预制产物的判据只有一条:**这内容是不是所有 attempt 都相同、且与本次实验的参数无关。** 按实验变化的内容(装不装某二进制、开不开预热)进 [`.setup()` Hook](../library.md#沙箱生命周期-hook-setup-与-teardown);按 eval 变化的任务 Fixture 进 `test(t)`。
 
 ### Docker:Dockerfile 派生
 
@@ -182,7 +182,7 @@ Adapter 不自动替 experiment 选择制品:同一个 Codex Adapter 可以跑 D
 - **spec 上有一个消费字段**,语义是"从这个产物起实例"——对应 Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`。字段名用该服务的原生词汇,不翻译成统一术语。这个字段同时就是 [`environments` 表](#按-environment-选预制产物)的值类型:按 profile 覆盖的正是它。
 - **构建留在服务原生工具**:不为新 provider 发明 niceeval 构建命令,也不包一层构建 API;项目保留原生构建脚本,spec 只引用产物。
 - **共享与过期语义如实文档化**:产物是账号私有还是可公开、会不会过期、跨 team 引用要什么 namespace,写进该 provider 的接入文档,不许诺服务给不了的可见性。
-- **服务没有可发布产物原语时不伪造**:spec 不加假字段;该 provider 的用户用 [`.setup()` 钩子](../library.md#沙箱生命周期钩子setup-teardown)做运行时安装,或用下面的运行时 checkpoint 缓存安装结果。
+- **服务没有可发布产物原语时不伪造**:spec 不加假字段;该 provider 的用户用 [`.setup()` Hook](../library.md#沙箱生命周期-hook-setup-与-teardown)做运行时安装,或用下面的运行时 checkpoint 缓存安装结果。
 
 ## 运行时 checkpoint:`createCheckpoint` / `restoreCheckpoint`
 
@@ -199,6 +199,6 @@ await restoreCheckpoint(nextSandbox, checkpoint);
 
 ## 相关阅读
 
-- [Library](../library.md) —— spec 工厂、生命周期钩子、环境预置分层。
+- [Library](../library.md) —— spec 工厂、生命周期 Hook、环境预置分层。
 - [Architecture · 性能](../architecture.md#性能预制环境复用与预热) —— 预制环境在性能优先级里的位置。
 - [Architecture · 再接一个 provider](../architecture.md#再接一个-provider) —— provider 接口与接入路径。

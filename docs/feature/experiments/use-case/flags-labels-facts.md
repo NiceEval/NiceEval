@@ -45,7 +45,7 @@ export default defineExperiment({
 它不是你写下的声明——`setup` 跑完才有——所以两个配置袋都不进,上报成 fact:
 
 ```ts
-// 每沙箱执行的钩子里,attempt 作用域
+// 每沙箱执行的 Hook 里,attempt 作用域
 sandboxSetup(): SandboxHook {
   return async (sandbox, ctx) => {
     ctx.fact("nowledge.endpoint", env!.url);

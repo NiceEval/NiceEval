@@ -6,9 +6,9 @@
 | --- | --- | --- |
 | 所有 attempt 都一样的重依赖(系统包、CLI 二进制) | provider 的 image/template | [1](#1-重依赖烘进镜像不写-setup) |
 | 这条 eval 自己的起始文件 / 装依赖 | `EvalDef.setup` / `test(t)` | [2](#2-这条题目自己的任务-fixture) |
-| 按实验变的沙箱内小预置(hook 文件、预检) | `sandbox.setup()` 链式钩子 | [3](#3-按实验变的沙箱内预置) |
+| 按实验变的沙箱内小预置(hook 文件、预检) | `sandbox.setup()` 链式 Hook | [3](#3-按实验变的沙箱内预置) |
 | 整场一份的宿主机服务(隧道、mock server) | `ExperimentDef.setup` / `teardown` | [4](#4-整场一次的共享服务) |
-| 跨 attempt 载入/回存状态 | 沙箱钩子对 + 串行 | [并发手册 · 用例 2](concurrency.md#2-跨-eval-累积记忆状态在宿主机文件里) |
+| 跨 attempt 载入/回存状态 | 沙箱 Hook 对 + 串行 | [并发手册 · 用例 2](concurrency.md#2-跨-eval-累积记忆状态在宿主机文件里) |
 | 跨实验、run 之前就该存在的服务 | 外部编排(compose / CI 脚本) | [5](#5-run-之外的长命资源外部编排) |
 
 ## 1. 重依赖:烘进镜像,不写 setup
@@ -57,7 +57,7 @@ export default defineExperiment({
 });
 ```
 
-**你会看到**:钩子在沙箱创建后、git 基线锚点前跑——写入的文件进基线,不污染 agent diff。清理不用管:沙箱内文件随销毁自动消失;只有写到**沙箱外**的东西才需要配对的 `.teardown()` 显式回收。
+**你会看到**:Hook 在沙箱创建后、git 基线锚点前跑——写入的文件进基线,不污染 agent diff。清理不用管:沙箱内文件随销毁自动消失;只有写到**沙箱外**的东西才需要配对的 `.teardown()` 显式回收。
 
 ## 4. 整场一次的共享服务
 
@@ -97,5 +97,5 @@ URL 经 env 传给 agent / eval。**判据**:生命周期比一次 `niceeval exp
 
 - 把镜像级依赖写进 `sandbox.setup()` → 每个 attempt 重复装,面板长时间停在 `sandbox setup`。回用例 1。
 - 把「只有这个实验要」的预置写进 `EvalDef.setup` → 对照组实验也被注入,对比失效。回用例 3。
-- 在 `ExperimentDef.setup` 里往沙箱写文件 → 它跑在宿主机、此刻一个沙箱都不存在。沙箱内的事进用例 3 的钩子。
-- `teardown` 想用 `setup` 的产物时找 runner 要 → 不存在这个通道,状态走闭包(用例 4);并发下每沙箱一份的状态用 `WeakMap` 以 sandbox 实例为键(见[并发手册 · 用例 6](concurrency.md#6-并发下钩子共享状态不想串行))。
+- 在 `ExperimentDef.setup` 里往沙箱写文件 → 它跑在宿主机、此刻一个沙箱都不存在。沙箱内的事进用例 3 的 Hook。
+- `teardown` 想用 `setup` 的产物时找 runner 要 → 不存在这个通道,状态走闭包(用例 4);并发下每沙箱一份的状态用 `WeakMap` 以 sandbox 实例为键(见[并发手册 · 用例 6](concurrency.md#6-并发下-hook-共享状态不想串行))。
