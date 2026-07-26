@@ -137,6 +137,57 @@ export default async function EvalsPage() {
 }
 ```
 
+**形态二：构建期算好 JSON。** 产品部署在别处、运行时看不见记录根时，取数搬进构建脚本，页面只吃定版 JSON：
+
+```ts
+// scripts/build-evals-json.ts —— 与记录根同机跑（本地或 CI），产物随站点部署
+import { writeFile } from "node:fs/promises";
+import { openRecord } from "niceeval/record";
+import { latestKnown } from "niceeval/sample";
+import { costUSD, endToEndPassRate, metricTableData, sampleSummaryData } from "niceeval/report";
+
+const sample = latestKnown(await openRecord(".niceeval"), { experiments: "compare/" });
+
+await writeFile(
+  "public/evals.json",
+  JSON.stringify({
+    summary: await sampleSummaryData(sample),
+    table: await metricTableData(sample, {
+      rows: "experiment",
+      columns: [endToEndPassRate, costUSD],
+      sort: endToEndPassRate,
+    }),
+    warnings: sample.warnings,
+  }),
+);
+```
+
+```tsx
+// app/evals/page.tsx —— 部署后跑，不碰记录根
+import { MetricTable, SampleSummary, SampleWarnings } from "niceeval/report/react";
+import type { SampleSummaryData, SampleWarning, TableData } from "niceeval/report/react";
+import payload from "../../public/evals.json";
+
+const { summary, table, warnings } = payload as {
+  summary: SampleSummaryData;
+  table: TableData;
+  warnings: SampleWarning[];
+};
+
+export default function EvalsPage() {
+  return (
+    <main>
+      <SampleWarnings data={warnings} />
+      <SampleSummary data={summary} />
+      <MetricTable data={table} filter attemptHref={(locator) => `/attempts/${locator}`} />
+    </main>
+  );
+}
+```
+
+证据下钻在形态二要多一步：`attemptHref` 指向的路由同样需要证据文件，而记录根不在产品那边。
+用 [`publish()`](../record/library.md#发布publish) 把这批结果物化进产品能读到的目录，再让该路由从那里读。
+
 组件输出完整静态 HTML。网页排序、过滤和图表 tooltip 是渐进增强；需要官方样式与增强脚本时引入 `niceeval/report/react/styles.css` 和 `niceeval/report/react/enhance.js`。
 
 ## 数据计算与缓存边界

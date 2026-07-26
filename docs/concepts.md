@@ -13,147 +13,208 @@
 总表里的中文名和英文名都是正文首选写法。代码标识与标准术语不同时,英文列把代码标识放在
 括号里,正文叙事使用标准术语,代码示例仍使用代码标识。
 
+由具体功能产生的词条,含义列必须链接定义它的 Feature 契约。没有可链接 Feature 契约的概念
+不进入总表;功能删除时同批删除对应词条。
+
 ## 术语总表
 
 「中文」列是中文正文里的写法——很多词的首选写法就是英文原词,此时两列相同;有中文同义词的一并列出。「含义」只压到一句话,完整契约看本页下文各分区或所链文档。
 
-### 评测核心
+### 产品
 
-| 中文 | English | 含义 |
-|---|---|---|
-| NiceEval | NiceEval | 产品名。正文写 `NiceEval`;命令、包名、配置文件、代码标识写 `niceeval` |
-| 评测用例 | Eval | 评测的最小单元:一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 |
-| 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 |
-| Agent | Agent | 「一条连到 AI 的连接」的抽象,由 experiment 引用;`kind` 只有 `"remote"` 和 `"sandbox"` 两类 |
-| `send` | `send` | 运行器唯一认得的统一动词;协议、事件映射、会话续接都在 Adapter 的 `send` 里实现 |
-| 断言 | Assertion | 对一次 Attempt 的结果、行为、证据或资源使用提出的一项可记录检查;由 matcher、范围查询或 LLM Judge 求分,产出 0–1 分数或 `unavailable` |
-| 判定 | Verdict | 一个 Eval 的评分判定,四态:`passed` / `failed` / `errored` / `skipped`,没有中间态 |
-| 严重度 | Severity | 断言的两档:gate 不过即 `failed`;soft 失败照实记录但默认不改判定,`--strict` 下才计入 |
-| Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值,每次调用记录为一条断言,详见 [LLM-as-a-judge](feature/scoring/library/judge.md) |
-| 断言范围 | Assertion scope | 一条断言的聚合范围,三档:`t.*` 看整个 Attempt、`session.*` 只看这条 session、`turn.*` 只看这一个 Turn;同一套断言挂在哪一档就只看那一档已发生的事件 |
-| 计分方式 | Scoring scheme | 一条 eval 怎样形成分数由**定义函数**声明:`defineEval` 把整题折叠成一分,`defineScoreEval` 在题内叠加计分项、不声明满分。计分方式是定义期事实,发现期即可知、进 `EvalDescriptor`;一个 experiment 选中的 eval 必须使用同一种计分方式,混选是启动期配置错误。详见[计分粒度](feature/experiments/score-points.md) |
-| 计分项 | Scoring criterion | `defineScoreEval` 里贡献分数的判定项:链了 `.points(n)` 的 0/1 断言通过得 `n` 分,打分断言得 `n × score`;`t.score(label, n)` 是断言词汇装不下判定条件时的直接计分出口 |
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| NiceEval | NiceEval | 产品名。正文写 `NiceEval`;命令、包名、配置文件、代码标识写 `niceeval` | 本页 |
 
-### 被测对象与适配器
+### 评测用例
 
-| 中文 | English | 含义 |
-|---|---|---|
-| 适配器 | Adapter | 某个 Agent 的具体实现,由用户编写;拥有协议、认证、CLI 参数、transcript 位置等全部特殊性 |
-| Sandbox | Sandbox | 封装「在哪里、如何隔离地跑命令」的对象;实现有 Docker、Vercel Sandbox 等 |
-| Provider | Provider | 某个 Sandbox 的具体实现选择；由 `dockerSandbox()`、`vercelSandbox()`、`e2bSandbox()` 或自定义工厂显式构造 |
-| 工作目录 | workdir | 沙箱内 agent 的默认工作目录,变更分类账与 agent diff 的锚点;沙箱侧相对路径都解析到它 |
-| `t.sandbox` | `t.sandbox` | 沙箱型 eval 里 `test(t)` 拿到的沙箱操作接口:文件 IO、命令执行、断言 / diff 三类 |
-| Fixture | Fixture | `test(t)` 里显式写入沙箱的起始文件,加上 `EvalDef.setup` 准备的任务素材;两类写入都算 eval 归因,不进 agent diff |
-| 能力 | Capability | `t` 上暴露哪些动作,由 `send` 的构造证据决定,不是声明式的能力位 |
-| 接入等级 | Integration tier | 按「Adapter 接到哪里、额外拿到什么观测数据」分的三级:Tier 1 只接 `send`,Tier 2 `send` + OTel,Tier 3 侵入改造 + flags |
-| 无侵入 | Non-intrusive | Tier 1 / Tier 2 的共同性质:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口。不写 `黑盒` |
-| 模型(`model` 字段) | Model | 给 agent 指定模型的标识(如 `opus`),由 experiment 的 `model` 字段指定 |
-| 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位(如 `low` / `medium` / `high`,取值由具体模型定义),归属与 `model` 一致:实验决定、agent 留空 |
-| 变更分类账 | Change ledger | runner 私有的 git 分类账,在沙箱 `setup` 链之后打锚点:只有锚点之后的改动进 agent 归因视图,环境产物不进 |
-| send 窗口 | send window | 一次 `t.send()` 从发出到返回的那段区间;`t.sandbox.diff` / `fileChanged` 只反映各 send 窗口内改动的并集,Fixture 写入永不计入 |
-| 人工介入 | HITL(human-in-the-loop) | agent 中途等待人工输入的交互;`send` 返回过 `waiting` + `input.requested` 即具备该能力 |
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 评测用例 | Eval | 一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 | [Eval](feature/eval/README.md) |
+| 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
+| Fixture | Fixture | `test(t)` 显式写入的起始文件加 `EvalDef.setup` 准备的素材;算 eval 归因,不进 agent diff | [Eval architecture](feature/eval/architecture.md) |
+| send 窗口 | send window | 一次 `t.send()` 从发出到返回的区间;Sandbox diff 只反映各窗口内改动的并集 | [Eval architecture](feature/eval/architecture.md) |
+| 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 扇出,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
+| 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 并按路径推导 id;没有目录层面的隐式发现 | [Eval](feature/eval/README.md) |
+| Attempt | Attempt | 同一个 eval 的第 i 次重复运行,也是范围断言的默认聚合范围 | [Eval context](feature/eval/library/context.md) |
+| Session | Session | 一条会话线;`t.newSession()` 开独立 session | [Eval context](feature/eval/library/context.md) |
+| Turn | Turn | `t.send()` 的一次返回值,带事件流片段和收窄到该 Turn 的范围断言 | [Eval context](feature/eval/library/context.md) |
 
-### 测试集与发现
+### 评分与判定
 
-| 中文 | English | 含义 |
-|---|---|---|
-| 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 扇出,id 零填充编号 |
-| 发现 | Discovery | 运行器扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx`、按路径推导 id;没有目录层面的隐式发现 |
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 断言 | Assertion | 对结果、行为、证据或资源使用提出的一项可记录检查;产出 0–1 分数或 `unavailable` | [Scoring](feature/scoring/README.md) |
+| 判定 | Verdict | 一个 Eval 的四态评分判定:`passed` / `failed` / `errored` / `skipped` | [Severity 与 Verdict](feature/scoring/architecture/severity-and-verdict.md) |
+| 严重度 | Severity | gate 不过即 `failed`;soft 默认不改判定,`--strict` 下才计入 | [Severity 与 Verdict](feature/scoring/architecture/severity-and-verdict.md) |
+| Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](feature/scoring/library/judge.md) |
+| 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](feature/scoring/architecture/scopes.md) |
 
-### 运行与结果
+### 计分粒度
 
-| 中文 | English | 含义 |
-|---|---|---|
-| 运行器 | Runner | 调度引擎:发现、有界并发、重试、首过即停、缓存,把结果交给报告器 |
-| 生命周期 Hook | Hook | 四层(实验级 / Sandbox 级 / eval 级 / agent 级)共用同一形态的成对 `setup` / `teardown` 回调;`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出。中文正文写"生命周期"(泛指机制)或"生命周期 Hook"(指具体回调),不写 `Hook` |
-| 实验 | Experiment | 可签入的运行配置:用哪个 agent / model / flags、跑几次、预算多少;不碰评分 |
-| 实验 flags | Flags | experiment 的 A/B 条件键(一组 feature flag 取值),经 `ctx.flags` 给 adapter、`t.flags` 给 eval;裸词 flags 专指它 |
-| 实验 labels | Labels | experiment 的报表坐标:不透传给 agent 与 eval、不参与可比性配置(改它不作废已有结果),只投影进快照供报告分组 |
-| 运行事实 | facts | 跑起来才有的值(实际用了哪个版本、真实生效的模型),由 `ctx.fact()` 登记;写下来的值归 flags / labels,这一类不进配置 |
-| Invocation | Invocation | 一次 `niceeval` CLI 调用的瞬时编排边界;可同时调度多个 Experiment,但不是持久化领域实体 |
-| Attempt | Attempt | 同一个 eval 的第 i 次重复运行,也是范围断言的默认聚合范围 |
-| Session | Session | 一条会话线;`t.newSession()` 开独立 session |
-| Turn | Turn | `t.send()` 的一次返回值,带该 Turn 的事件流片段和收窄到该 Turn 的范围断言 |
-| 首过即停 | EarlyExit | 取通过率时先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit` |
-| 派发 | Dispatch | 把一个 attempt 交出去开始执行。排队等待不算已派发,预算耗尽、fail-fast 与致命错误熔断停止的都是**派发**,已在飞的照常跑完 |
-| 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 attempt 真正执行时占用;退避睡眠、等实验级 `setup` 这类内部等待即让位 |
-| 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 限制同一实验可同时执行的 attempt 数;名额与 attempt 同生命周期(中途任何等待都不释放),并且跨 Invocation 共享;`1` 即严格临界区 |
-| 调度波次 | Scheduling waves | 一个 Run 要占几批并发位才跑完(`ceil(attempt 数 / 有效宽度)`),派发优先级的判据:波次多的先拿位 |
-| 预算单元 | Budget unit | budget 的独立计账单位:每个 experimentId 一个单元,没有 experiment 时按 agent 名。`budget` 字段与 `--budget` 设的都是每个单元各自的上限,不是 Invocation 总上限 |
-| 致命错误熔断 | Fatal-error circuit breaker | 作者在失败上声明 `scope: "eval"` / `"experiment"`,一次命中即停止对应范围的后续派发;是作者背书下的第一次即停 |
-| fail-fast | fail-fast | 无声明时的保守兜底:预检命中、或同一 error code 在同一 eval 连续复现,即停止派发受同一配置影响的后续 attempt |
-| 完成状态 | CompletionStatus | 独立于 verdict 计数的第二个结论:`complete` / `incomplete` / `interrupted`;CI 判红必须读它,预算耗尽但零 failed 也不是全绿 |
-| 超时 | Timeout | 双层:adapter 内层是 agent CLI 自己的超时,运行器外层是 attempt deadline,从 `sandbox.create` 起算、不含等并发位的排队 |
-| 右删失 | Right censoring | 超时线只证明真实完成耗时大于截断值,没有观测到具体完成时间;静默排除这些样本会让慢条件反而显得快,耗时作对比指标时按右删失口径呈现 |
-| 指纹 | Fingerprint | `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:未变且判定确定的结果默认沿用 |
-| 结果沿用 | Result carry-forward | 指纹与判据都过关的历史 attempt 直接合入本次 Run、不重跑,所以「改一个 case 重跑」只花那一个 case 的时间。判据与粒度见[缓存与结果沿用](feature/experiments/cache.md) |
-| 配置哈希 | `configHash` | 指纹里配置那一层,Run 级;它同时担保跨 Run 可比 |
-| 用例锁 | Eval lock | 按 `(experimentId, evalId)` 在派发时刻取的租约,让并行 Invocation 自动认领不同用例;撞锁的用例计 `elsewhere`,对方跑完按结果沿用规则并入本次 Run |
-| 预热池 | Warm pool | 调度开始时预创建的同 spec 沙箱池;attempt 到 `sandbox.create` 先领现货,池空则回落到即时创建,不改生命周期 Hook 的调用顺序 |
-| 串行复用 | Serial reuse | `--reuse-sandbox`:整批同基线 eval 共用一个热沙箱串行跑,题间只重置 workdir。与并发互斥,与指纹缓存双向绝缘 |
-| 重置基线 | Reset baseline | 串行复用里不随 eval 变的那几层装完后落下的 commit;题间 `git reset` 回它,每题只重放 Fixture |
-| Transcript | Transcript | agent 一次运行的逐事件原始记录(各 agent 自己的 JSONL),归一化后供消费 |
-| 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / `context.injected` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript-标准事件流) |
-| o11y 摘要 | o11y summary | 从标准事件流可重算的行为计数(工具调用、文件、shell、思考块等),注入沙箱供行为断言;token / 成本 / 耗时权威在 `result.json` |
-| trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨;在 `ExecutionTree` 里是事件骨架之上的可选 enrichment,详见 [Observability](observability.md#otlp-traces-统一瀑布图) |
-| Agent 执行树 | Agent execution tree (`ExecutionTree`) | 标准事件流骨架(message / thinking / `skill.loaded` / `action.called`+`action.result` 按 call ID 合并 / `subagent.called`+`completed` / `input.requested` / `context.injected` / compaction / error)与可关联的 OTel span 合成的统一执行记录;它不是 OTel trace tree,span 只按明确 correlation ID 或 GenAI 语义属性关联到节点,关联不上就保留成单独标注的 telemetry-only 节点,不按名字/文本猜;没有 OTel 时骨架的节点、顺序、内容不变,只是时间显示不可用 |
-| 用量 | Usage | 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写) |
-| 成本 | Cost | 用量经价格表换算的估算金额(`estimatedCostUSD`);`--budget <usd>` 给整个 run 设上限 |
-| 报告器 | Reporter | 运行中流式消费结果的插件(控制台、JUnit、JSON…);与运行后的「报告」(Report)是两个词 |
-| artifact | Artifact | 落盘的结构化产物,位于 Run 目录 `.niceeval/<experiment>/<run>/`:Run 级 `run.json` + attempt 级 `result.json` 与各 JSON |
-| 诊断 | Diagnostic | 不改判定的操作性事实。定位到 attempt 的记进 `result.json`;只属于 Run 整体的(teardown 失败、budget 不可执行、实验级 Hook 超时)按 Run 折叠进 `run.json` 的 `diagnostics` |
-| 生命周期阶段 | `LifecyclePhase` | 「出在哪一段」的闭集词表,结构化错误与诊断都只能填其中一项;唯一权威在 [result.json](feature/record/architecture.md#resultjson) |
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 计分方式 | Scoring scheme | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](feature/experiments/score-points.md) |
+| 计分项 | Scoring criterion | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](feature/experiments/score-points.md) |
 
-### 结果数据与报告
+### Agent 与 Adapter
 
-本组词的完整契约在 [Record Lib](feature/record/library.md)、[Reports](feature/reports/README.md) 与 [View](feature/reports/view.md)。
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| Agent | Agent | 「一条连到 AI 的连接」的抽象;`kind` 只有 `"remote"` 和 `"sandbox"` | [Adapters](feature/adapters/README.md) |
+| 适配器 | Adapter | Agent 的具体实现;拥有协议、认证、CLI 参数与 transcript 位置等特殊性 | [Adapters](feature/adapters/README.md) |
+| `send` | `send` | 运行器认得的统一动词;协议、事件映射与会话续接都由 Adapter 实现 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
+| 能力 | Capability | `t` 暴露哪些动作由 `send` 的构造证据决定,不是声明式能力位 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
+| 接入等级 | Integration tier | Tier 1 只接 `send`,Tier 2 再接 OTel,Tier 3 再暴露实验 flags | [Adapters](feature/adapters/README.md) |
+| 无侵入 | Non-intrusive | Tier 1 / Tier 2 不由 eval spawn 应用进程或另开端口;不写 `黑盒` | [Adapters](feature/adapters/README.md) |
+| 人工介入 | HITL(human-in-the-loop) | agent 等待人工输入;`waiting` + `input.requested` 构成能力证据 | [Sessions 与 HITL](feature/adapters/library/sessions-and-hitl.md) |
 
-| 中文 | English | 含义 |
-|---|---|---|
-| 记录根 | Record root | 结果目录树的根,默认 `.niceeval/`;`--record` 换输入,`publish()` 物化出一个新的记录根 |
-| 记录 | Record | `openRecord()` 打开记录根得到的事实层句柄:扫目录、认版本、建懒句柄,一点判断都不许有(见[下文](#结果数据与报告词汇)) |
-| 结果 Run | Run | 持久化结果的单位:一个 Experiment 的一次执行水位。与一次 CLI 调用不是一回事,详见[下文](#结果数据与报告词汇) |
-| Sample(样本) | Sample | `latestRuns(record)` / `latestKnown(record)` 的返回物:挑好的 attempt + 覆盖事实 + 结构化挑选警告;唯一方法 `pipe`(算子闭集,只删减不聚合、不替换) |
-| Attempt 定位符 | AttemptLocator | attempt 的稳定引用:`@` 前缀的短确定性字符串,不是数组下标也不是目录路径。详见[下文](#结果数据与报告词汇) |
-| Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合,四个消费面共用同一份。详见[下文](#结果数据与报告词汇) |
-| 标注 Eval 源码 | AnnotatedEvalSource | 按 Run 去重一份的运行时 Eval 源码,每条断言标回它所在的源码行。详见[下文](#结果数据与报告词汇) |
-| 指标 | Metric | 「一个 attempt 算出一个值」的计算单元,经「attempt → 题,题 → 组」两级聚合;缺数据算 `null` 不算 0 |
-| 维度 | Dimension | 决定 attempt 分到哪一组的分组键(agent / experiment / evalGroup / snapshot …) |
-| 报告 | Report | `defineReport(外壳 + 内容)` 的产物:`.tsx` 报告文件的默认导出,唯一可被 `--report` 装载的单位;内容是一棵组件树或多页 |
-| 页 | Page | 报告内的宿主寻址单位:`{ id, title, content }` 字面量,给一棵树一个地址和导航名 |
-| 双面组件 | Dual-render component | `defineComponent({ resolve?, web, text })` 的产物:可选解析面取数,两个纯函数渲染面消费同一份渲染 props,同一棵树两个宿主共用 |
-| 组合组件 | Composition component | `defineComponent((props, ctx) => 树)` 的产物:只装配已有组件、不自己渲染,在 resolve 阶段展开 |
-| 宿主 | Host | 打开结果、挑 Sample、渲染报告的那一侧:`show` 是终端宿主,`view` 是网页宿主 |
-| 有效根 | Effective root | 记录根经命令行收窄(位置参数 / `--exp`)滤出的那部分:选择器、locator 寻址与出站内容都以它为界 |
-| 持续重建 | Continuous rebuild | `niceeval view` 不带 `--out` 时的固有行为:建完站点起 server,再盯着有效根内的记录、报告与主题的 import 图、项目配置,变了就整条管线重跑;`--out` 是同一条管线建一次就退出(见 [View](feature/reports/view.md#持续重建)) |
-| 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 渲染的那份内建报告,与用户报告文件同层、没有宿主特权。详见[下文](#结果数据与报告词汇) |
-| 报告槽位 | Report slot(内部代号) | 宿主结构里可被 `--report` 整体替换的部分:裸跑渲染内建报告,显式 `--report` 换成用户报告文件;`报告槽位`不出现在公开站 |
+### Sandbox
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| Sandbox | Sandbox | 封装「在哪里、如何隔离地跑命令」的对象 | [Sandbox](feature/sandbox/README.md) |
+| Provider | Provider | Sandbox 的具体实现选择,由内置或自定义工厂显式构造 | [Sandbox library](feature/sandbox/library.md) |
+| 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
+| `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
+| 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
+
+### Sandbox 串行复用
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 串行复用 | Serial reuse | `--reuse-sandbox` 让整批同基线 eval 共用一个热 Sandbox 串行执行 | [Serial reuse](feature/sandbox/serial-reuse.md) |
+| 热道 | Hot lane | 一个装好的 Sandbox 构成的一条串行执行道;整批同基线 Eval 在同一条热道上依次跑 | [Serial reuse](feature/sandbox/serial-reuse.md) |
+| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | 公共 setup 完成后落下的 commit;两道 Eval 之间重置回这里再重放 Fixture | [Serial reuse](feature/sandbox/serial-reuse.md) |
+
+### 实验配置
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 实验 | Experiment | 可签入的运行配置:Agent、model、flags、运行次数与预算;不碰评分 | [Experiments](feature/experiments/README.md) |
+| 实验 flags | Flags | A/B 条件键,经 `ctx.flags` 给 Adapter、`t.flags` 给 eval | [Flags、labels 与 facts](feature/experiments/use-case/flags-labels-facts.md) |
+| 实验 labels | Labels | 只供报告分组的坐标;不透传、不参与可比性配置 | [Flags、labels 与 facts](feature/experiments/use-case/flags-labels-facts.md) |
+| 运行事实 | facts | 跑起来才知道的值,由 `ctx.fact()` 登记;不进配置 | [Flags、labels 与 facts](feature/experiments/use-case/flags-labels-facts.md) |
+| 模型(`model` 字段) | Model | Experiment 为 agent 指定的模型标识;省略则用 agent 原生默认 | [Experiments](feature/experiments/library.md) |
+| 推理强度 | Reasoning effort (`reasoningEffort`) | 独立于 `model` 的推理强度档位;归属与 `model` 一致 | [Experiments](feature/experiments/library.md) |
+| 首过即停 | EarlyExit | 一个 eval 先过一次即中止其余 Attempt 的策略;配置名 `earlyExit` | [Early exit](feature/experiments/use-case/early-exit.md) |
+
+### 预算护栏
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 实验预算上限 | Per-experiment budget limit | 每个 Experiment 独立计账和封顶,不是 Invocation 的共享总预算 | [Budget](feature/experiments/use-case/budget.md) |
+
+### Runner 调度
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 运行器 | Runner | 负责发现、有界并发、重试、缓存与结果交付的调度引擎 | [Runner](runner.md) |
+| 生命周期 Hook | Hook | 实验、Sandbox、eval、agent 四层共用的成对 `setup` / `teardown` 回调 | [Runner](runner.md) |
+| Invocation | Invocation | 一次 CLI 调用的瞬时编排边界;可调度多个 Experiment,不是持久化实体 | [Runner](runner.md) |
+| 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
+| 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
+| 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 对同一实验的跨 Invocation 并发限制 | [Max concurrency](feature/experiments/use-case/max-concurrency.md) |
+| 调度波次 | Scheduling waves | `ceil(Attempt 数 / 有效宽度)`;波次多的 Run 优先拿并发位 | [Runner](runner.md) |
+| 完成状态 | CompletionStatus | 独立于 Verdict 的 `complete` / `incomplete` / `interrupted` 结论 | [Runner](runner.md) |
+
+### 执行失败分类
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 致命错误熔断 | Fatal-error circuit breaker | 作者声明失败范围;一次命中即停止对应 Eval 或 Experiment 的后续派发 | [Error classification](feature/error-classification/README.md) |
+| fail-fast | fail-fast | 无声明时按预检或同一 error code 连续复现保守停止派发 | [Runner](runner.md) |
+
+### 超时与耗时指标
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 超时 | Timeout | Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入 | [Runner](runner.md) |
+| 超时样本的耗时下界 | Duration lower bound for timed-out samples | 超时时只知道真实耗时大于超时线;统计上称为右删失 | [Metrics](feature/reports/library/metrics.md) |
+
+### 缓存与结果沿用
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 指纹 | Fingerprint | `(eval 源码闭包 + 配置)` 的哈希;未变且判定确定的结果默认沿用 | [Cache](feature/experiments/cache.md) |
+| 结果沿用 | Result carry-forward | 合格的历史 Attempt 直接并入本次 Run、不重跑 | [Cache](feature/experiments/cache.md) |
+| 配置哈希 | `configHash` | 指纹的 Run 级配置层,同时担保跨 Run 可比 | [Cache](feature/experiments/cache.md) |
+| 用例锁 | Eval lock | 按 `(experimentId, evalId)` 取的派发租约,避免并行 Invocation 重复执行 | [Experiments architecture](feature/experiments/architecture.md) |
+
+### Observability
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| Transcript | Transcript | Agent 一次运行的逐事件原始记录,归一化后供消费 | [Events](feature/adapters/architecture/events.md) |
+| 标准事件流 | StreamEvent / events | Transcript 或 `send` 返回归一化成的统一事件模型 | [Events](feature/adapters/architecture/events.md) |
+| o11y 摘要 | o11y summary | 从标准事件流可重算的行为计数,注入 Sandbox 供行为断言 | [Observability](observability.md) |
+| trace 瀑布图 | Trace waterfall | OTLP span 画出的统一时间轨 | [Observability](observability.md) |
+| Agent 执行树 | Agent execution tree (`ExecutionTree`) | 事件骨架与可关联 OTel span 合成的统一执行记录 | [Execution view](feature/reports/show/execution.md) |
+| 用量 | Usage | 一次运行的 token 计数 | [Observability](observability.md) |
+| 成本 | Cost | 用量经价格表换算的估算金额 `estimatedCostUSD` | [Observability](observability.md) |
+| 报告器 | Reporter | 运行中流式消费结果的插件;与运行后的 Report 不同 | [Observability](observability.md) |
+
+### 结果记录
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| artifact | Artifact | Run 目录里的 `run.json`、Attempt `result.json` 与证据文件 | [Record](feature/record/architecture.md) |
+| 诊断 | Diagnostic | 不改判定的操作性事实,按 Attempt 或 Run 归属落盘 | [Record](feature/record/architecture.md) |
+| 生命周期阶段 | `LifecyclePhase` | 结构化错误与诊断使用的封闭阶段词表 | [Record](feature/record/architecture.md) |
+| 记录根 | Record root | 结果目录树的根,默认 `.niceeval/` | [Record library](feature/record/library.md) |
+| 记录 | Record | `openRecord()` 打开记录根得到的事实层句柄,一点判断都不许有 | [Record library](feature/record/library.md) |
+| 结果 Run | Run | 一个 Experiment 的一次持久化执行水位,可由多次 Invocation 续成 | [Record](feature/record/architecture.md) |
+| Attempt 定位符 | AttemptLocator | `@` 前缀的稳定短引用,不是数组下标或目录路径 | [Record](feature/record/architecture.md) |
+
+### 样本选择
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| Sample(样本) | Sample | 挑好的 Attempt、覆盖事实与结构化挑选警告;`pipe` 只删减 | [Sample](feature/sample/README.md) |
+
+### 报告
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合,四个消费面共用 | [Reports architecture](feature/reports/architecture.md) |
+| 标注 Eval 源码 | AnnotatedEvalSource | 按 Run 去重的运行时 Eval 源码,每条断言标回调用行 | [Eval source](feature/reports/show/eval-source.md) |
+| 指标 | Metric | 一个 Attempt 算出一个值,再按题和组两级聚合;缺数据为 `null` | [Metrics](feature/reports/library/metrics.md) |
+| 维度 | Dimension | 决定 Attempt 分到哪一组的分组键 | [Metrics](feature/reports/library/metrics.md) |
+| 报告 | Report | `defineReport` 的产物,也是 `--report` 装载的单位 | [Reports](feature/reports/README.md) |
+| 页 | Page | 报告内带 `id`、`title` 与 `content` 的寻址和导航单位 | [Report shell](feature/reports/library/shell.md) |
+| 双面组件 | Dual-render component | 同一份解析结果由 web 与 text 两个纯渲染面消费 | [Report components](feature/reports/components/README.md) |
+| 组合组件 | Composition component | 只装配已有组件、不自行渲染的组件 | [Report components](feature/reports/components/README.md) |
+| 宿主 | Host | 打开结果、选择 Sample 并渲染 Report 的 show 或 view | [Reports architecture](feature/reports/architecture.md) |
+| 有效根 | Effective root | 记录根经位置参数或 `--exp` 收窄后的部分 | [View](feature/reports/view.md) |
+| 持续重建 | Continuous rebuild | `niceeval view` 监听输入变化并重跑整条建站管线 | [View](feature/reports/view.md) |
+| 默认报告 | —(角色名,非 API) | 不传 `--report` 时 show / view 装载的内建普通 Report | [Default report](feature/reports/show/default-report.md) |
+| 报告槽位 | Report slot(内部代号) | 宿主中可被 `--report` 整体替换的部分 | [Reports architecture](feature/reports/architecture.md) |
 
 ### 报告组件
 
 中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用 `榜单`、`工作台` 这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/reference/report-components.mdx)。
 
-| 分类 | 中文 | English | API | 主展示单位 |
-|---|---|---|---|---|
-| 汇总 | 样本摘要 | Sample summary | `SampleSummary` | 一批 Sample;汇总其中的 experiment、Eval 和 Attempt。data 同时携带 eval 级与 attempt 级两份计票,呈现 prop `votes` 选择显示哪一级(默认 eval) |
-| 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval |
-| 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt |
-| 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 |
-| 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 |
-| 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 |
-| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和分科计算分数 |
-| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果 Run;格内是指标值及差值 |
-| 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道 Eval、每列一个条件;格内是历史全执行的判定计数 |
-| 指标图形 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一棵组件树:容器持有坐标系,`XAxis` / `YAxis` 绑定维度或指标,`Line` / `Bar` / `Area` / `Scatter` 各是一条 series |
-| 行 / 列 / 分节 / 文本 / 正文 / 样式 / 表格 | Row / column / section / text / markdown / style / table | `Row` / `Col` / `Section` / `Text` / `Markdown` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 |
+| 分类 | 中文 | English | API | 主展示单位 | 契约 |
+|---|---|---|---|---|---|
+| 汇总 | 样本摘要 | Sample summary | `SampleSummary` | 一批 Sample;汇总其中的 experiment、Eval 和 Attempt。data 同时携带 eval 级与 attempt 级两份计票,呈现 prop `votes` 选择显示哪一级(默认 eval) | [Components](feature/reports/components/README.md) |
+| 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval | [Components](feature/reports/components/README.md) |
+| 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt | [Components](feature/reports/components/README.md) |
+| 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 | [Components](feature/reports/components/README.md) |
+| 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 | [Components](feature/reports/components/README.md) |
+| 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 | [Components](feature/reports/components/README.md) |
+| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和分科计算分数 | [Components](feature/reports/components/README.md) |
+| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果 Run;格内是指标值及差值 | [Components](feature/reports/components/README.md) |
+| 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道 Eval、每列一个条件;格内是历史全执行的判定计数 | [Components](feature/reports/components/README.md) |
+| 指标图形 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一棵组件树:容器持有坐标系,`XAxis` / `YAxis` 绑定维度或指标,`Line` / `Bar` / `Area` / `Scatter` 各是一条 series | [Components](feature/reports/components/README.md) |
+| 行 / 列 / 分节 / 文本 / 正文 / 样式 / 表格 | Row / column / section / text / markdown / style / table | `Row` / `Col` / `Section` / `Text` / `Markdown` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 | [Layout](feature/reports/library/layout.md) |
 
 ### 配置与 CLI
 
-| 中文 | English | 含义 |
-|---|---|---|
-| 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 |
-| 环境预置 | —(用普通代码表达) | 跑 agent 前的准备逻辑,三个家:eval 内 `t.sandbox.*`、`SandboxAgent.setup`、外部编排 |
-| CLI flag | CLI flag | 命令行开关(`--strict`、`--report`…);写作时一律带「CLI」限定或写字面 `--xxx`,不与实验 flags 混用 |
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 | [Scoring CLI](feature/scoring/cli.md) |
+| 环境预置 | —(用普通代码表达) | 跑 agent 前的准备逻辑,三个家:eval 内 `t.sandbox.*`、`SandboxAgent.setup`、外部编排 | [Sandbox library](feature/sandbox/library.md) |
+| CLI flag | CLI flag | 命令行开关(`--strict`、`--report`…);写作时一律带「CLI」限定或写字面 `--xxx`,不与实验 flags 混用 | [CLI](cli.md) |
 
 ## 评测核心词汇
 

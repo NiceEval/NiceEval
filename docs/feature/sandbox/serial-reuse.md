@@ -12,7 +12,7 @@
 
 ## 契约
 
-### 温基线:一次装好,后续只重置到这里
+### 复用 Sandbox 的题间重置点:一次装好,后续只重置到这里
 
 「不需要 setup」的精确含义,是把当前 attempt 生命周期([Sandbox 架构 · 沙箱在生命周期里的位置](architecture.md#沙箱在生命周期里的位置))里的各层按「随不随 eval 变」重新切一刀:
 
@@ -26,9 +26,9 @@
 | eval / agent 收尾 | 是 | **每题** |
 | `sandbox.teardown`(环境层收尾)+ `stop` | 否 | 整组 eval **一次**,最后一题之后 |
 
-装好上面三层「否」之后,runner 落一笔**温基线** commit——它同时就是每题的变更归因锚点(见[变更归因:send 窗口与分类账](architecture.md#变更归因send-窗口与分类账)):Fixture 写在它之后仍是 eval 归因,`t.send()` 仍是 agent 归因,逐窗口 diff 语义一字不改。
+装好上面三层「否」之后,runner 建立**复用 Sandbox 的题间重置点**——一笔同时作为每题变更归因锚点的 commit(见[变更归因:send 窗口与分类账](architecture.md#变更归因send-窗口与分类账))。Fixture 写在它之后仍是 eval 归因,`t.send()` 仍是 agent 归因,逐窗口 diff 语义一字不改。
 
-这里有一处相对默认链的**重排**:默认模式下 `SandboxAgent.setup` 排在 `EvalDef.setup` 之后(先 Fixture、后装 CLI),复用模式把 agent 安装提到温基线**之前**——因为它与本题无关,必须留在重置 floor 之下才不会被每题的 `git reset` 抹掉。
+这里有一处相对默认链的**重排**:默认模式下 `SandboxAgent.setup` 排在 `EvalDef.setup` 之后(先 Fixture、后装 CLI),复用模式把 agent 安装提到温基线**之前**——因为它与本题无关,必须留在温基线之下才不会被每题的 `git reset` 抹掉。
 
 这个提前**永远合法**,复用模式不需要为它加任何「这个 setup 是不是偷看了某条 eval」的检测:`SandboxAgent.setup`(装 CLI、写 agent 主配置)按[配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)本就只随 experiment 变、不随 eval 变——MCP / skills / model / 主配置都从 adapter factory 与 experiment 进,不从「当前是哪条 eval」进。真去偷看当前 eval 状态的 adapter 已经违反了那条不变量,该当 bug 修,而不是让复用去容忍它、退化成「这条题走全新沙箱」在复用组里挖洞。按 eval 变的东西只有一个家——`EvalDef.setup` / `test(t)` 里的 Fixture,它本来就在每题重放。
 
@@ -89,7 +89,7 @@ niceeval exp memory/commit0 --reuse-sandbox     # 一个热沙箱串行跑完这
 
 ## 单热道之外:N 条热道池
 
-本契约全部按 **N=1**(一条热道、全批同基线、串行)定稿,这一层的边界已经收口:hoist 靠[配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)保证合法、留存与缓存靠一条判据划清、异构批次直接报错。唯一**刻意不在本文定死**的方向是把它推广成 **N 条热道池**:N 个热沙箱各自内部串行、道与道之间并行,在「省冷启动」和「留一点并发」之间取中间点,顺带天然容纳异构批次(每种 spec + profile 一条道)。
+本契约全部按 **N=1**(一条热道、全批同基线、串行)定稿,这一层的边界已经收口:把 agent 安装提到温基线之前靠[配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)保证合法、留存与缓存靠一条判据划清、异构批次直接报错。唯一**刻意不在本文定死**的方向是把它推广成 **N 条热道池**:N 个热沙箱各自内部串行、道与道之间并行,在「省冷启动」和「留一点并发」之间取中间点,顺带天然容纳异构批次(每种 spec + profile 一条道)。
 
 这不是本设计漏掉的细节,而是一块独立的 [Runner 调度](../../runner.md#调度有界并发)设计:它把调度单位从「每 attempt 一个瞬时沙箱」换成「把 attempt 分配到 N 条持久道」,与现有[瓶颈优先派发](../../runner.md#派发顺序瓶颈优先追求最小总墙钟时间)怎么合、道的分配与回收、异构批次按 spec + profile 的自动分组,都要在那里单独展开。本契约只交付 N=1,并保证它的语义——温基线一次装好、题间只 reset workdir、复用结果不进 CI / 缓存——在 N>1 时逐字仍成立,多热道只是把「一条道」复制成「几条道」,不改单条道内部的语义。
 

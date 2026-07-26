@@ -73,7 +73,7 @@ interface MetricCell {
 | `executionReliability` | 执行可靠性：跑到可判定（passed / failed）= 1，errored = 0；回答一次运行能否形成可信判定 | 高 | `result.json` |
 | `examScore` | gate 决定能否得分，soft 断言给质量分 | 高 | `result.json` |
 | `totalScore` | 计分制（`defineScoreEval`）eval 的挣分：`assertions[].points` 之和加 `scoreEntries[].points` 之和，纯累加不声明满分；通过制 eval（`scoring` 省略或 `"pass"`）恒 `null`，不参与聚合 | 高 | `result.json` |
-| `durationMs` | attempt 判定链耗时（不含收尾段，口径见 [Record](../../record/architecture.md#resultjson)）；对超时 attempt（`error.code = "timeout"`）返回 `null`——线值是右删失点不是实测完成耗时，计入聚合会把「被砍断」当成「跑了这么久」，排除又会让慢条件显得快，删失只能显式呈现（见下） | 低 | `result.json` |
+| `durationMs` | attempt 判定链耗时（不含收尾段，口径见 [Record](../../record/architecture.md#resultjson)）；对超时 attempt（`error.code = "timeout"`）返回 `null`——它只留下**超时样本的耗时下界**，统计上称为右删失；线值不是实测完成耗时，计入聚合会把「被砍断」当成「跑了这么久」，静默排除又会让慢条件显得快 | 低 | `result.json` |
 | `tokens` | input + output tokens | 低 | `result.json` |
 | `costUSD` | 网关实测成本优先，否则估算成本 | 低 | `result.json` |
 | `assistantTurns` | o11y 事件流中的 assistant turn 数；与 `t.send` 的轮次（轮标签 `turn<N>`）是两个计数，名字因此带限定词 | 低 | `o11y.json` |

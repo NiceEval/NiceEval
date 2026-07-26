@@ -2,7 +2,7 @@
   "lineWidth": {
     "docs/architecture.md": 21,
     "docs/cli.md": 34,
-    "docs/concepts.md": 38,
+    "docs/concepts.md": 35,
     "docs/engineering/README.md": 1,
     "docs/engineering/_template/README.md": 2,
     "docs/engineering/agent-docs/README.md": 19,
@@ -246,7 +246,7 @@
   "sentenceLength": {
     "docs/architecture.md": 6,
     "docs/cli.md": 24,
-    "docs/concepts.md": 12,
+    "docs/concepts.md": 11,
     "docs/engineering/agent-docs/README.md": 4,
     "docs/engineering/agent-docs/agent-debug-eval.md": 1,
     "docs/engineering/agent-docs/agent-install-eval.md": 1,
@@ -351,7 +351,7 @@
     "docs/feature/sandbox/library.md": 9,
     "docs/feature/sandbox/library/operations.md": 2,
     "docs/feature/sandbox/local.md": 3,
-    "docs/feature/sandbox/serial-reuse.md": 4,
+    "docs/feature/sandbox/serial-reuse.md": 3,
     "docs/feature/scoring/architecture.md": 3,
     "docs/feature/scoring/architecture/evidence.md": 1,
     "docs/feature/scoring/architecture/severity-and-verdict.md": 1,
@@ -374,7 +374,7 @@
   "paragraphLength": {
     "docs/architecture.md": 2,
     "docs/cli.md": 10,
-    "docs/concepts.md": 5,
+    "docs/concepts.md": 4,
     "docs/engineering/agent-docs/README.md": 2,
     "docs/engineering/benchmark/README.md": 3,
     "docs/engineering/example-tier-sync/README.md": 2,
@@ -455,8 +455,6 @@
     "致命错误熔断 / Fatal-error circuit breaker",
     "计分方式 / Scoring scheme",
     "计分项 / Scoring criterion",
-    "调度波次 / Scheduling waves",
-    "重置基线 / Reset baseline",
-    "预算单元 / Budget unit"
+    "调度波次 / Scheduling waves"
   ]
 }
