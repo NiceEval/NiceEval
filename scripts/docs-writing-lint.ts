@@ -4,13 +4,12 @@
  * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json,
  * 现存命中数的台账在 docs/writing-baseline.json。
  *
- *   pnpm docs:lint              检查(有回归时退出码 1)
- *   pnpm docs:lint --update     把当前命中数写回台账(只在确实改善或新增规则后用)
- *
- * 同一份逻辑被 test/docs/docs-writing.test.ts 复用,所以 `pnpm test:docs` 也拦回归——
- * 台账里的数字只许变小:降到 0 的文件从台账里消失,新写的正文一次命中都不许有。
+ * 这里只出规则与计数,不自带命令行:判对错与更新台账都由
+ * test/docs/docs-writing.test.ts 经 `pnpm test:docs` 驱动,台账用 vitest 的
+ * 文件快照写回(`pnpm test:docs -u`)。台账里的数字只许变小——降到 0 的文件
+ * 从台账里消失,新写的正文一次命中都不许有。
  */
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -69,8 +68,6 @@ export interface LintReport {
   actual: Baseline;
   /** 相对台账的回归(数字变大或出现新条目)。 */
   regressions: string[];
-  /** 台账比实测宽松的条目——已经改好了,该收紧。 */
-  stale: string[];
 }
 
 // 东亚宽字符占两列:中日韩、全角标点、假名。行宽按列算而不是按字符数算,
@@ -291,18 +288,15 @@ export function lintDocsWriting(): LintReport {
     }
   }
 
+  // 只判「变大」。变小不在这里报:台账收紧由 actual 与 docs/writing-baseline.json
+  // 的文件快照比对负责,`pnpm test:docs -u` 一步写回。
   const regressions: string[] = [];
-  const stale: string[] = [];
 
   for (const { key, label } of LENGTH_RULES) {
     for (const file of new Set([...Object.keys(actual[key]), ...Object.keys(baseline[key] ?? {})])) {
       const now = actual[key][file] ?? 0;
       const allowed = baseline[key]?.[file] ?? 0;
-      if (now > allowed) {
-        regressions.push(`${file}: ${label} ${allowed} → ${now}`);
-      } else if (now < allowed) {
-        stale.push(`${file}: ${label} ${allowed} → ${now}`);
-      }
+      if (now > allowed) regressions.push(`${file}: ${label} ${allowed} → ${now}`);
     }
   }
 
@@ -314,11 +308,30 @@ export function lintDocsWriting(): LintReport {
       const now = nowTerms[term] ?? 0;
       const allowed = allowedTerms[term] ?? 0;
       if (now > allowed) regressions.push(`${file}: 「${term}」${allowed} → ${now}`);
-      else if (now < allowed) stale.push(`${file}: 「${term}」${allowed} → ${now}`);
     }
   }
 
-  return { hits, actual, regressions, stale };
+  return { hits, actual, regressions };
+}
+
+/**
+ * 回归的详报:哪一行、超了多少、禁词该改用什么。只打回归文件里的命中——
+ * 台账里的旧命中不是这次要改的,混进来会把该改的那几行淹掉。
+ */
+export function formatRegressionHits(report: LintReport): string {
+  if (report.regressions.length === 0) return "";
+  const files = new Set(report.regressions.map((r) => r.split(":")[0]));
+  const lines = report.hits
+    .filter((hit) => files.has(hit.file))
+    .map((hit) => `${hit.file}:${hit.line}  ${hit.message}`);
+  return [
+    ...lines,
+    "",
+    `有 ${report.regressions.length} 项超出 ${BASELINE_FILE}:`,
+    ...report.regressions.map((r) => `  - ${r}`),
+    "",
+    `改掉上面打印的那几行;台账只许变小,不要为了变绿去动 ${BASELINE_FILE}。`,
+  ].join("\n");
 }
 
 /** 规则本身的自检:三个字段都不能空,否则命中时打印不出该改成什么。 */
@@ -350,7 +363,11 @@ export function validateRules(): string[] {
   return problems;
 }
 
-export function writeBaseline(actual: Baseline): void {
+/**
+ * 台账的落盘形态。文件快照按整串比对,所以键序必须稳定——否则同一份实测
+ * 换个遍历顺序就"不一致",`-u` 会来回改写同一个文件。
+ */
+export function serializeBaseline(actual: Baseline): string {
   const sortKeys = <T>(obj: Record<string, T>): Record<string, T> =>
     Object.fromEntries(Object.keys(obj).sort().map((k) => [k, obj[k]]));
   const sorted: Baseline = {
@@ -361,55 +378,5 @@ export function writeBaseline(actual: Baseline): void {
       Object.fromEntries(Object.entries(actual.bannedTerms).map(([f, t]) => [f, sortKeys(t)])),
     ),
   };
-  writeFileSync(join(ROOT, BASELINE_FILE), `${JSON.stringify(sorted, null, 2)}\n`);
-}
-
-if (process.argv[1]?.endsWith("docs-writing-lint.ts")) {
-  const problems = validateRules();
-  if (problems.length > 0) {
-    console.error(`${RULES_FILE} 有问题:`);
-    for (const p of problems) console.error(`  - ${p}`);
-    process.exit(1);
-  }
-
-  const report = lintDocsWriting();
-
-  if (process.argv.includes("--update")) {
-    writeBaseline(report.actual);
-    const totals = LENGTH_RULES.map(
-      ({ key, label }) => `${label} ${Object.values(report.actual[key]).reduce((a, b) => a + b, 0)} 处`,
-    );
-    const termTotal = Object.values(report.actual.bannedTerms)
-      .flatMap((t) => Object.values(t))
-      .reduce((a, b) => a + b, 0);
-    console.log(`已写回 ${BASELINE_FILE}:${totals.join(",")},禁用写法 ${termTotal} 处待清理。`);
-    process.exit(0);
-  }
-
-  // 先打印回归:它们是本次必须改的。台账里的旧命中另行汇总,不淹没输出。
-  const regressionFiles = new Set(report.regressions.map((r) => r.split(":")[0]));
-  for (const hit of report.hits) {
-    if (!regressionFiles.has(hit.file)) continue;
-    console.log(`${hit.file}:${hit.line}  ${hit.message}`);
-  }
-
-  if (report.regressions.length > 0) {
-    console.error(`\n有 ${report.regressions.length} 项超出台账:`);
-    for (const r of report.regressions) console.error(`  - ${r}`);
-    console.error(`\n改掉上面打印的那几行;台账 ${BASELINE_FILE} 只许变小,不要为了变绿改它。`);
-    process.exit(1);
-  }
-
-  if (report.stale.length > 0) {
-    console.error(`台账比实际宽松 ${report.stale.length} 项——跑 pnpm docs:lint --update 收紧:`);
-    for (const s of report.stale) console.error(`  - ${s}`);
-    process.exit(1);
-  }
-
-  const remaining = report.hits.length;
-  console.log(
-    remaining === 0
-      ? "docs/ 句长、段长、行宽与用词全部通过。"
-      : `无回归。台账里还有 ${remaining} 处待清理(跑 --update 之外的清理请直接改正文)。`,
-  );
+  return `${JSON.stringify(sorted, null, 2)}\n`;
 }

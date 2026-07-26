@@ -36,13 +36,6 @@ jobs:
       - name: Test docs guards
         run: pnpm run test:docs
 
-      - name: Check example tiers are in sync
-        run: pnpm run tiers:check
-
-      - name: Check INIT.md is in sync with site/public/INIT.md
-        run: |
-          diff INIT.md site/public/INIT.md || (echo "site/public/INIT.md is a symlink to root INIT.md; if broken, restore it: ln -sf ../../INIT.md site/public/INIT.md" && exit 1)
-
       - name: Build product site
         run: pnpm run site:build
 

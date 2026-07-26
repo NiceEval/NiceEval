@@ -1,6 +1,6 @@
 # Tier Sync:examples 的 origin → tier1 → tier2 → tier3 同步维护方案
 
-`scripts/sync-tiers.mjs`、`pnpm tiers:sync`、`pnpm tiers:check` 维护 `examples/zh/.tier-sync.json` 登记的全部目录对;CI 在 `pnpm run typecheck` 之后跑 `tiers:check`。链条是 origin → tier1 → tier2 → tier3(哪个应用有哪几层见 [examples/zh/README](../../../examples/zh/origin/README.md) 与状态文件本身)。
+`scripts/sync-tiers.mjs` 与 `pnpm tiers:sync` 维护 `examples/zh/.tier-sync.json` 登记的全部目录对,只读检查由 `pnpm test` 承担。链条是 origin → tier1 → tier2 → tier3(哪个应用有哪几层见 [examples/zh/README](../../../examples/zh/origin/README.md) 与状态文件本身)。
 
 ## 问题
 
@@ -127,7 +127,7 @@ git merge-tree --write-tree --merge-base=<baseTree> <tier树> <上游树>
 - 全部干净(或冲突已收尾)后,把该 pair 的 `baseTree` 更新为上游当前(剥 lockfile 的)tree hash,写回状态文件;
 - 收尾时导出阅读件:`git diff <上游tree> <tier tree> > examples/zh/diffs/<层级>-<name>.patch`(如 `tier2-codex-sdk.patch`,同一应用的多层不撞名),这份 patch 是自动再生的**展示产物**,供快速阅读"这一层改了什么",与 `gen:diff-code` 的文档页同源同性质,永远不作为同步输入。
 
-### 检查模式(`pnpm tiers:check`,进 CI)
+### 检查模式(`pnpm test`)
 
 不做合并,只读,秒级完成,对每对做三件事:
 
@@ -138,8 +138,8 @@ git merge-tree --write-tree --merge-base=<baseTree> <tier树> <上游树>
 ### 实现载体
 
 - `scripts/sync-tiers.mjs`(约 300 行粘合代码:读写状态文件、剥 lockfile、调 `git merge-tree --write-tree`、拓扑排序、检出结果、pending 收尾、跑 `pnpm install`、导出 patch 阅读件),合并机制本身 100% 由 git 提供,不引第三方依赖;要求 git ≥ 2.38(`merge-tree --write-tree` 的最低版本);
-- `package.json` 的 `"tiers:sync"` / `"tiers:check"` 两个 script;
-- CI(现有 lint/typecheck 步骤旁)一步 `pnpm tiers:check`。
+- `package.json` 的 `"tiers:sync"` script,只负责写;
+- `test/unit/example-tiers.test.ts` 调 `tierProblems()` 判红绿,搭 `pnpm test` 的便车进 CI。
 
 ## 日常工作流(before / after)
 
@@ -168,13 +168,13 @@ git add -A examples/zh && git commit -m "sync tiers"
 
 改 tier 层的 overlay 文件(tier2 的 `niceeval.config.ts`、tier3 的 `src/backend/agent.ts` 这类"从上游复制来但本层改过"的文件):也是直接改——这些文件本来就是本层 delta 的一部分,下次上游动到同一文件时三方合并会把两边的改动合在一起,同点冲突时显式报出。
 
-在 tier1/tier2 里改"应该跟上游逐字节一致"的共享文件(比如临时改一行 `src/backend/server.ts` 去验证个问题):这不是方案要覆盖的路径——tier1/tier2 的前提就是不改应用源码。改完把改动誊回对应的 origin 文件、提交、跑 `tiers:sync` 让它"转正"成一次 origin 变更;忘了誊、直接提交,`tiers:check` 的 verbatim 校验会红(tier1),或者留给下次同步撞冲突(tier2)。
+在 tier1/tier2 里改"应该跟上游逐字节一致"的共享文件(比如临时改一行 `src/backend/server.ts` 去验证个问题):这不是方案要覆盖的路径——tier1/tier2 的前提就是不改应用源码。改完把改动誊回对应的 origin 文件、提交、跑 `tiers:sync` 让它"转正"成一次 origin 变更;忘了誊、直接提交,`pnpm test` 的 verbatim 校验会红(tier1),或者留给下次同步撞冲突(tier2)。
 
 反过来,如果是在下游先调试出的修复,想让上游也拿到:同步方向是单向的,没有 backport 命令。得手工把改动誊回上游对应文件、提交、跑 `tiers:sync` 让链条追平——不然下次同步会把这处改动误判成冲突。
 
 origin 给应用加依赖(动了 `package.json`)——三方合并把新依赖行合进 tier1 的 `package.json`(tier 自己的 `"niceeval": "file:../../../.."` 在另一行,不冲突),随后自动 `pnpm install` 更新 lockfile,tier2/tier3 同样各自重装。
 
-忘了同步就提交?CI 的 `tiers:check` 红:
+忘了同步就提交?`pnpm test` 红:
 
 ```text
 ✗ examples/zh/tier1/codex-sdk 落后于 examples/zh/origin/codex-sdk
@@ -183,11 +183,11 @@ origin 给应用加依赖(动了 `package.json`)——三方合并把新依赖�
 
 ## 验收标准
 
-1. 对现有目录初始化 base 后,`tiers:sync` 是无操作(各层已一致),`tiers:check` 绿;
+1. 对现有目录初始化 base 后,`tiers:sync` 是无操作(各层已一致),`pnpm test` 绿;
 2. 改 origin 任一 `src/` 文件 → **一次** sync 后 tier1/tier2/tier3 同文件全部跟上(tier3 该文件有 overlay 改动时做真合并),中途无需提交;`gen:diff-code` 的 origin↔tier1 页不含该文件;
 3. 改 origin `package.json`(加一个依赖)→ sync 后各层 `package.json` 同时含新依赖与本层集成行,lockfile 已重装;
-4. 上游与下游在同一文件同一区域都有改动 → sync 报冲突、留标记、记 `pending`、非零退出,该应用的下游层跳过;`tiers:check` 在标记未解前保持红;
+4. 上游与下游在同一文件同一区域都有改动 → sync 报冲突、留标记、记 `pending`、非零退出,该应用的下游层跳过;检查在标记未解前保持红;
 5. 解完标记、提交、重跑 `tiers:sync` → 直接收尾(不重报同一冲突),baseTree 前进,同一次运行里下游层继续同步;
-6. 直接改 tier1 的共享文件并提交 → `tiers:check` 的 verbatim 校验红,指出具体文件;
+6. 直接改 tier1 的共享文件并提交 → verbatim 校验红,指出具体文件;
 7. langgraph(origin 为 Python、`package.json` 为 tier 私有)全流程不误伤 tier 私有文件;
-8. `tiers:check` 在 base 落后时红、同步后绿,全程不写任何文件。
+8. 检查在 base 落后时红、同步后绿,全程不写任何文件。

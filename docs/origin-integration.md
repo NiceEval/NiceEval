@@ -4,7 +4,7 @@
 
 先记住三条铁律:
 
-1. **不改 origin 的任何文件。** 接入产物放 `examples/zh/tier1/<同名>/`:从 origin 复制整个应用,被复制的文件保持逐字节不变(除 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量),接入代码全部是**新增**文件。`pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页,"应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它;这条铁律由 CI 的 `pnpm tiers:check`(verbatim 校验)看守,见 [tier-sync](engineering/example-tier-sync/README.md)。
+1. **不改 origin 的任何文件。** 接入产物放 `examples/zh/tier1/<同名>/`:从 origin 复制整个应用,被复制的文件保持逐字节不变(除 `package.json` / `pnpm-workspace.yaml` / `tsconfig.json` 三个集成脚手架文件,以及 `.env.example`——tier 侧要补 judge 独立凭证等 eval 变量),接入代码全部是**新增**文件。`pnpm run gen:diff-code` 会 diff origin 和 tier1 两个目录生成 before/after 文档页,"应用侧零改动"是这些页面的核心卖点,改一个字节都会破坏它;这条铁律由 `pnpm test` 的 verbatim 校验看守,见 [tier-sync](engineering/example-tier-sync/README.md)。
 2. **协议以实际输出为准。** 动手写映射之前,先把应用跑起来,`curl -N` 打一轮 `/api/chat` 把 SSE 帧看一遍。本文的帧格式描述来自当前代码,但代码会演化,别背文档。
 3. **被测应用由你自己按它的方式启动,eval 不代管进程、不另开端口。** adapter 只经环境变量(如 `CODEX_SDK_URL`)指向一个已经在跑的实例——没有 `server-lifecycle.ts` 这类"eval 侧拉起子进程"的机制,这是刻意的取舍,理由见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx)同一条脉络(eval 不代管被测进程)。
 

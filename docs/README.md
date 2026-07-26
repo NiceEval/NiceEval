@@ -38,7 +38,7 @@ docs/
 ├── README.md                            本入口与写作契约
 ├── getting-started.md                   新手路径
 ├── source-map.md                        目标契约 → 源码落点
-├── writing-rules.json                   句长、段长、行宽规则与禁词库，pnpm docs:lint 读它
+├── writing-rules.json                   句长、段长、行宽规则与禁词库，pnpm test:docs 读它
 ├── writing-baseline.json                现存命中数台账，只许变小
 │
 ├── feature/                             已定稿的目标功能契约
@@ -162,16 +162,12 @@ pnpm test:docs
 - `test/docs/docs-writing.test.ts` 检查上表里能机器判定的三条——句长、段长、行宽，外加禁用写法。
   括号嵌套靠人读，没有守护。
 
-长度与用词的详细命中另有一条命令，输出每一处该怎么改：
-
-```sh
-pnpm docs:lint            # 打印文件:行号、超了多少字或多少列、命中哪个禁用写法及为什么
-pnpm docs:lint --update   # 把当前命中数写回 docs/writing-baseline.json
-```
+超标时这条命令直接打出每一处该怎么改——文件:行号、超了多少字或多少列、
+命中哪个禁用写法及为什么。没有第二条命令要记。
 
 [`writing-baseline.json`](writing-baseline.json) 是**待清理台账**，记着每个文件现存多少处。
-新写的正文一处都不许命中；台账里的数字只许变小，改小了就 `--update` 收紧。
-把台账改大来换绿灯，等于把这条规矩作废。
+新写的正文一处都不许命中；台账里的数字只许变小，改小了跑一次 `pnpm test:docs -u` 收紧。
+把台账改大来换绿灯，等于把这条规矩作废——所以有回归时 `-u` 不写台账，先红给你看。
 
 如果设计同时改变公开 API、CLI、结果格式或用户任务路径，还要沿对应入口完成同步：
 

@@ -56,24 +56,25 @@ niceeval 是 beta 软件，DX 可以随便改。做 API / CLI / 契约设计决�
 | 改动 | 验证 | 收尾（同步义务） |
 | --- | --- | --- |
 | `src/` / `bin/` | `pnpm run typecheck`；改 CLI 行为再用 `pnpm run niceeval -- <命令>` 冒烟 | 公开面（导出类型/TSDoc/flag 表）变了：跑 `pnpm docs:reference` 重新生成参考页区块。参考页文案单源在源码紧邻注释——接口/函数看 TSDoc，CLI flag 说明写在 `src/cli.ts` `FLAG_OPTIONS` 各项的 JSDoc（缺注释生成器报错），生成脚本本身不承载文案（`{/* GENERATED */}` 区块内不要手改，`pnpm test:docs-site` 的漂移守护会拦）；新增/改名 flag 顺手核对 `src/i18n/` 两份 `--help` 速查（手工体裁，只点名常用 flag，不逐条生成）；可观察行为变了（flag、断言语义、结果格式、导出面）：grep `docs/` 与 `docs-site/` 同步声明，或记为明确的阶段性差异；修了 bug 补 memory 台账 |
-| `docs/` 或根 README | `pnpm test:docs`（`test/docs/docs-consistency.test.ts` 查索引覆盖与链接真实性，`test/docs/docs-writing.test.ts` 查句长、段长、行宽与禁用写法）；有命中时用 `pnpm docs:lint` 看逐行该怎么改 | 新文档在 `docs/README.md` 挂一行索引；用词按 `docs/concepts.md` 立词，新禁用写法加进 `docs/writing-rules.json`（带 `use` / `why`）；`docs/writing-baseline.json` 只许变小 |
+| `docs/` 或根 README | `pnpm test:docs`（`test/docs/docs-consistency.test.ts` 查索引覆盖与链接真实性，`test/docs/docs-writing.test.ts` 查句长、段长、行宽与禁用写法，逐行该怎么改直接打在断言里；台账收紧跑 `pnpm test:docs -u`） | 新文档在 `docs/README.md` 挂一行索引；用词按 `docs/concepts.md` 立词，新禁用写法加进 `docs/writing-rules.json`（带 `use` / `why`）；`docs/writing-baseline.json` 只许变小 |
 | `docs-site/` | `pnpm test:docs-site`（Vitest 守护 + `docs:validate` + `docs:links`，mint 那两步需 Node 22，见下） | 中文先定稿；英文入口按中文和当前代码核对后同步；`docs-site/zh` 每页 frontmatter 必须有任务视角的 title/description（包根 `INDEX.md` 由 `prepare` 打包时据此生成，缺了 `pnpm test:docs-site` 与发版都会红灯） |
-| `examples/` 各 tier | `pnpm tiers:sync`（动之前先读 memory 的 tier-sync 条目） | 文档 / README 链接示例必须指向真实目录 |
+| `examples/` 各 tier | `pnpm test`（`test/unit/example-tiers.test.ts` 查落后、冲突标记与 verbatim 铁律）；要同步跑 `pnpm tiers:sync`（动之前先读 memory 的 tier-sync 条目） | 文档 / README 链接示例必须指向真实目录 |
 | `site/` | `pnpm run site:build` | — |
 | `memory/` | `pnpm test:docs`（`test/docs/memory-index.test.ts` 查索引覆盖） | `INDEX.md` 加一行 |
 
 测试按**验证对象**分三个入口，各对应一个 vitest project：`pnpm test`（代码，收 `src/**` 与 `test/unit/**`）、`pnpm test:docs`（`docs/` 与 `memory/`，收 `test/docs/**`）、`pnpm test:docs-site`（`docs-site/`，收 `test/docs-site/**`，再串 mint 的 `docs:validate` + `docs:links`）。归属由目录决定：新守护文件放进 `test/` 的哪个子目录就归哪个入口，不用改配置清单。边界与理由见 `docs/engineering/testing/unit/README.md`「套件边界与仓库守护」。
 
-守护一律搭这三个命令的便车：仓库约定需要机器校验时，写成 `test/` 对应子目录下的 vitest 测试，不新增脚本、package.json 命令或 hook。已批准的例外有两个。`scripts/generate-reference.ts`（`pnpm docs:reference`，2026-07 用户明确批准）——参考页区块从源码 TSDoc 生成，包根 `INDEX.md` 的随包文档树从各页 frontmatter 生成（机制见 `docs/engineering/agent-docs/`）；两者的守护同样走 vitest（`test/docs-site/reference-consistency.test.ts`、`test/docs-site/bundled-docs-index.test.ts`）。`scripts/docs-writing-lint.ts`（`pnpm docs:lint`，2026-07-25 用户明确批准）——句长、段长、行宽与禁用写法的逐处命中要连「改用什么、为什么」一起打给作者，这是 vitest 断言给不出的；守护那一半仍走 vitest（`test/docs/docs-writing.test.ts`），只报相对 `docs/writing-baseline.json` 的回归。
+守护一律搭这三个命令的便车：仓库约定需要机器校验时，写成 `test/` 对应子目录下的 vitest 测试，不新增脚本、package.json 命令或 hook。判据是**说红绿的一律是 vitest，写产物的才是脚本**——一条约束只能有一个入口说它红，同一个检查既能由脚本判又能由测试判时，两边迟早给出不同结论，而人只会记得跑其中一条。`scripts/` 里同时干这两件事的（`sync-tiers.mjs` 的 sync/check、`docs-writing-lint.ts` 的检查/更新台账），检查那一半导出成不打印不退出的纯函数交给测试调用，生成那一半保留命令行。带待清理台账的守护不自建 `--update`：先判回归再对台账做文件快照比对，收紧走 `vitest -u`（顺序不能反，回归断言在前才保证更新模式写不进放宽的数字）。
+
+已批准的例外只有一个：`scripts/generate-reference.ts`（`pnpm docs:reference`，2026-07 用户明确批准）——参考页区块从源码 TSDoc 生成，包根 `INDEX.md` 的随包文档树从各页 frontmatter 生成（机制见 `docs/engineering/agent-docs/`）；它是生成器且挂在 `prepare` 打包链上，publish 时不能靠跑测试产出产物，两者的守护仍走 vitest（`test/docs-site/reference-consistency.test.ts`、`test/docs-site/bundled-docs-index.test.ts`）。
 
 ## Build, Test, and Development Commands
 
 - `pnpm install`：安装依赖。
 - `pnpm run typecheck`：运行 TypeScript 类型检查。
-- `pnpm test`：跑代码单测（`src/**` 与 `test/unit/**`）。
-- `pnpm test:docs`：跑 `docs/` 与 `memory/` 的守护（索引覆盖、链接真实性、句长段长行宽与禁用写法、用例登记）。
+- `pnpm test`：跑代码单测与代码级仓库守护（`src/**` 与 `test/unit/**`，含 examples tier 同步、INIT.md 符号链接）。
+- `pnpm test:docs`：跑 `docs/` 与 `memory/` 的守护（索引覆盖、链接真实性、句长段长行宽与禁用写法、用例登记）；加 `-u` 收紧 `docs/writing-baseline.json`。
 - `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm test:docs-site`：跑 `docs-site/` 的守护（生成区块漂移、随包索引），再跑 Mintlify 的构建校验与断链检查。mint 那两步需 Node 22。
-- `pnpm docs:lint`：逐处打印 `docs/` 的超长句、超长段、超宽行与禁用写法命中（带改用建议与理由）；`--update` 把命中数写回 `docs/writing-baseline.json`。
 - `pnpm run niceeval -- --help`：通过本地入口冒烟 CLI。
 - `pnpm run site:dev` / `pnpm run site:build`：产品站点开发 / 构建。
 - `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm run docs:validate` / `pnpm run docs:links`：单独跑 Mintlify 的构建校验或断链检查（`test:docs-site` 已包含这两步，只想验一项时用）。

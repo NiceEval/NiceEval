@@ -3,7 +3,10 @@
 // 用法：
 //   pnpm tiers:sync [name]   —— 把 baseTree 到上游最新之间的变更重放进 tier（"tier rebase 上游"）;
 //                               name 匹配 to 目录的 basename,会带上该应用整条链
-//   pnpm tiers:check         —— 只读检查：baseTree 是否落后、冲突标记、verbatim 铁律
+//
+// 只读检查（baseTree 是否落后、冲突标记、verbatim 铁律）没有自己的命令：本文件导出
+// `tierProblems()`,由 test/unit/example-tiers.test.ts 经 `pnpm test` 判红绿。写产物的
+// 留脚本、判对错的进 vitest,仓库里就只有一处会说"tier 没同步"。
 //
 // 设计与实现细节见 docs/engineering/example-tier-sync/README.md。合并机制 100% 由 `git merge-tree --write-tree`
 // 提供（需要 git ≥ 2.38），本脚本只做状态文件读写、检出、冲突上报和 lockfile 重装的粘合。
@@ -304,53 +307,55 @@ function verbatimViolations(fromDir, toDir) {
   return violations;
 }
 
-function runCheck() {
+/**
+ * 只读检查:每条 pair 是否落后、有没有未收尾的冲突、verbatim 契约是否完好。
+ * 返回人可读的问题描述,空数组表示全部同步。全程不写任何文件。
+ * @returns {string[]}
+ */
+export function tierProblems() {
   const state = loadState();
-  let ok = true;
+  const problems = [];
   for (const pair of topoSort(state.pairs)) {
     const currentUpstreamTree = headTree(pair.from);
     if (pair.pending) {
-      console.error(
-        `✗ ${pair.to} 有一次未收尾的冲突同步\n  解完 <<<<<<< 标记、提交后运行 pnpm tiers:sync 收尾`,
+      problems.push(
+        `${pair.to} 有一次未收尾的冲突同步\n  解完 <<<<<<< 标记、提交后运行 pnpm tiers:sync 收尾`,
       );
-      ok = false;
     } else if (currentUpstreamTree !== pair.baseTree) {
-      console.error(
-        `✗ ${pair.to} 落后于 ${pair.from}\n  base ${pair.baseTree.slice(0, 8)}… ≠ 当前 ${currentUpstreamTree.slice(0, 8)}…，运行 pnpm tiers:sync 后重新提交`,
+      problems.push(
+        `${pair.to} 落后于 ${pair.from}\n  base ${pair.baseTree.slice(0, 8)}… ≠ 当前 ${currentUpstreamTree.slice(0, 8)}…，运行 pnpm tiers:sync 后重新提交`,
       );
-      ok = false;
     }
 
     const grep = git(["grep", "-l", "<<<<<<<", "--", pair.to]);
     if (grep.status === 0 && grep.stdout.trim()) {
-      console.error(`✗ ${pair.to} 中存在未解决的冲突标记:\n${grep.stdout}`);
-      ok = false;
+      problems.push(`${pair.to} 中存在未解决的冲突标记:\n${grep.stdout}`);
     }
 
     if (pair.contract === "verbatim") {
       const violations = verbatimViolations(pair.from, pair.to);
       if (violations.length > 0) {
-        console.error(`✗ ${pair.to} 违反 verbatim 契约(副本必须与 ${pair.from} 逐字节一致):`);
-        for (const v of violations) console.error(`  - ${v}`);
-        ok = false;
+        problems.push(
+          `${pair.to} 违反 verbatim 契约(副本必须与 ${pair.from} 逐字节一致):\n${violations.map((v) => `  - ${v}`).join("\n")}`,
+        );
       }
     }
   }
-  if (ok) console.log("✓ 所有 tier pair 均已同步，无冲突标记,verbatim 契约完好");
-  process.exit(ok ? 0 : 1);
+  return problems;
 }
 
-const [, , cmd, arg] = process.argv;
-try {
-  if (cmd === "sync") {
-    runSync(arg);
-  } else if (cmd === "check") {
-    runCheck();
-  } else {
-    console.error("用法: node scripts/sync-tiers.mjs <sync|check> [name]");
+// 被 import 时不跑 CLI:检查那一半住在 vitest 里,导入这个文件必须没有副作用。
+if (process.argv[1]?.endsWith("sync-tiers.mjs")) {
+  const [, , cmd, arg] = process.argv;
+  try {
+    if (cmd === "sync") {
+      runSync(arg);
+    } else {
+      console.error("用法: node scripts/sync-tiers.mjs sync [name]");
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`✗ ${err instanceof Error ? err.message : err}`);
     process.exit(1);
   }
-} catch (err) {
-  console.error(`✗ ${err instanceof Error ? err.message : err}`);
-  process.exit(1);
 }
