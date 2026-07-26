@@ -94,9 +94,12 @@ spec 形态与 data 形态的完整契约在 [Architecture · 组件模型](arch
 
 ### 嵌入自己的 React 页面
 
-自己的页面没有 niceeval 的 resolve 阶段，因此先在服务端调 `*Data` 计算普通 JSON，再把 `data` 交给 `niceeval/report/react` 的纯组件（该入口只有 data 形态）：
+自己的页面没有 niceeval 的 resolve 阶段，因此先调 `*Data` 计算普通 JSON，再把 `data` 交给 `niceeval/report/react` 的纯组件（该入口只有 data 形态与配套数据类型）。`*Data` 要在**能打开记录根的进程**里调，由此分出两种形态；两种调的是同一批函数、产出逐字段相同，区别只有什么时候算。
+
+**形态一：页面与记录根同机。** 本地看板、内网工具、`next dev` 都是这种——进程直接打开 `.niceeval/`，请求时现算：
 
 ```tsx
+// app/evals/page.tsx —— 记录根就在当前工作目录
 import { openRecord } from "niceeval/record";
 import { latestKnown } from "niceeval/sample";
 import { MetricTable, SampleSummary, SampleWarnings, RunDiagnostics } from "niceeval/report/react";
@@ -140,7 +143,7 @@ export default async function EvalsPage() {
 
 每个数据组件都有同名词根的配套 `*Data` 计算函数，例如 `MetricTable` / `metricTableData`、`ExperimentList` / `experimentListData`——它们是组件解析面的具名形式，spec 形态下由管线代调，data 形态与嵌入场景下由作者手工调。计算函数接受 `ReportInput = Sample | readonly Run[]`，返回可序列化数据；组件渲染面本身不读文件。
 
-`*Data(...)` 可能懒加载 artifact，因此只应在服务端、构建脚本或组合组件里调用。返回值是普通可序列化数据，可写成 JSON 供 SPA 使用：
+`*Data(...)` 可能懒加载 artifact，因此只应在能打开记录根的进程里调用：构建脚本、CI、与记录根同机的 Node 进程，或报告树里的组合组件。浏览器里没有记录根。返回值是普通可序列化数据，可写成 JSON 供 SPA 使用：
 
 ```ts
 const table = await metricTableData(sample, {
