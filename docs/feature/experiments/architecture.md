@@ -17,7 +17,23 @@ ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一�
 
 ## Resolved config：一次求值，处处同源
 
-配置优先级是 CLI flag → experiment 字段 → eval 字段 → `niceeval.config.ts` 兜底 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`），排在 config 之前：**config 是缺省底，不是覆盖层——项目里写了 config 不得使 eval 自己的声明失效**。一条声明 35 分钟上限的安装型 eval，在 config 写了 20 分钟的项目里仍按 35 分钟跑；要一次性把整批掐短，用运行侧的 `--timeout` 或 experiment 字段显式压过它——运行侧只以显式声明取胜，不靠 config 的缺省值遮蔽题目自己的需求。解析发生在调度任何 attempt 之前、一次完成，运行中不再重读；此后所有消费方——调度器、fingerprint、Run 投影、报告——引用同一份 resolved 值：
+配置优先级是 CLI flag → experiment 字段 → eval 字段 → `niceeval.config.ts` 兜底 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`），排在 config 之前：**config 是缺省底，不是覆盖层——项目里写了 config 不得使 eval 自己的声明失效**。一条声明 35 分钟上限的安装型 eval，在 config 写了 20 分钟的项目里仍按 35 分钟跑；要一次性把整批掐短，用运行侧的 `--timeout` 或 experiment 字段显式压过它——运行侧只以显式声明取胜，不靠 config 的缺省值遮蔽题目自己的需求。
+
+两个有 eval 层的字段各自的完整解析链写死在这里，下游不再各推一遍：
+
+| 字段 | 解析链 | 缺省 |
+|---|---|---|
+| `timeoutMs` | `--timeout` → experiment → eval → config | 无上限 |
+| `judge` | eval → config | 无内置裁判模型；解析不到而用到 judge 断言时报清晰错误 |
+
+`judge` 没有 experiment 层也没有 CLI flag——裁判配置是「怎么判分」，不是运行矩阵。
+它逐字段合并而不是整体覆盖：eval 只写 `model` 时 `baseUrl` 仍从 config 来，
+所以 config 层改一个键会波及那些没有完整声明自己裁判的 eval。
+`model` 与 `baseUrl` 是配置、进 [configHash](cache.md#指纹两个哈希嵌套)；
+`apiKeyEnv` 指向的 key 是凭据，只从环境来，不进哈希也不落盘。
+
+解析发生在调度任何 attempt 之前、一次完成，运行中不再重读；
+此后所有消费方——调度器、fingerprint、Run 投影、报告——引用同一份 resolved 值：
 
 ```typescript
 export default defineExperiment({
@@ -34,6 +50,7 @@ export default defineExperiment({
   timeoutMs: 40 * 60_000,
   //  单 attempt 外层超时,四层解析:--timeout → 这里 → eval 字段 → niceeval.config.ts
   //  不进 fingerprint 哈希,改为以携带资格判据参与 carry(见 cache.md)
+  //  例外是写在 eval 文件里的那一层:它随该文件的字节进指纹,改了照样作废那一条
 
   maxConcurrency: 2,
   //  实验级并发闸,先过它再占全局并发位;名额与 attempt 同生命周期(沙箱创建到销毁全程持有,
@@ -50,7 +67,7 @@ export default defineExperiment({
 
 `maxConcurrency` 用来串行化共享状态实验，或给撞限额的实验单独降速；它的跨 Invocation 租约机制见[并发 Invocation](#并发-invocation用例锁)。`timeoutMs` 的携带资格判据见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希)，超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)；前四个字段的调度语义单点在 [Runner](../../runner.md)。`classifyFailure` 的类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型)，写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
 
-- eval 级 fingerprint 由 eval 源码 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [缓存与携带](cache.md#指纹改哪一行会重跑)。解析期求值这一步同时划定了指纹的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
+- eval 级 fingerprint 由 eval 源码闭包 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；两层嵌套哈希与输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [缓存与携带](cache.md#指纹两个哈希嵌套)。源码闭包递归展开 eval 文件在项目根内的导入图，并含 `loadYaml` / `loadJson` 读入的数据文件——这两类内容在发现阶段的模块求值期就已读入，早于解析期算指纹。解析期求值这一步划定了配置那一层的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
 - 落盘投影 `ExperimentRunInfo` 的穷尽形状单点定义在 [Results · run.json](../record/architecture.md#runjson)；`model` / `agent` 只在 Run 顶层存在。
 
 ## 实验级生命周期：setup 与 teardown
@@ -106,7 +123,7 @@ export default defineExperiment({
 - **粒度是单条评估用例。** 锁键是 `(experimentId, evalId)`;持有者认领该用例本次计划的全部 attempt(含 attempts 补跑的缺失序号),不按 attempt 拆锁——同一用例的 attempt 分属两个进程会把 `attempts` 的通过率分母切成两半各自不完整。
 - **锁文件落在 `.niceeval/locks/`**,平铺目录、一条用例一个文件(与收尾登记同一套逐条目文件纪律)。文件名由身份 slug 加身份哈希构成,只须无碰撞、不承载解析;身份的权威在文件内容:`{ experimentId, evalId, pid, host, startedAt, heartbeatAt }`。
 - **取锁在派发时刻,逐用例、非阻塞进行。** 一条用例的锁在它第一个 attempt 真正要占并发位开跑的那一刻才原子创建(独占创建,已存在即失败),成功才放行执行。排队中的用例不持锁——一条 Invocation 任何时刻只锁自己正在跑的用例,不囤积整个选择集;因此两条选择重叠的 Invocation 会各自认领还没人锁的用例、按各自的并发上限并行推进,多开一条终端就是给同一批选择加吞吐。全部 attempt 都可携带的用例不取锁。等锁的用例不触发实验级 `setup`——选中用例全部在等锁时,本实验没有要派发的 attempt,`setup` 照例不执行。
-- **取到锁之后重做一次携带规划。** 取锁成功的那一刻,该用例重读自己在结果树上已落盘的 attempt,按[携带资格判据](cache.md#四道门)逐条重判:终态、指纹匹配且 `durationMs` 在当前上限内的直接携入(零新成本),仍缺的序号才由本进程跑。这次重判**无条件进行**——取到锁就做,不附加任何前置判据;闭合性来自 `别人落盘 → 别人释放锁 → 本进程取到锁 → 本进程读盘` 这条 happens-before 链,只有发生在取锁之后才成立。它把[「重跑同一条命令就是续跑」](#carry自动携带)从串行重跑扩展到并发多开:两条选择有交集的 Invocation,不论各自的推进节奏怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。重判的读取面收窄到单条 `(experimentId, evalId)`——只翻该实验下跑过这条 eval 的 Run,不扫结果全树,因此这次 I/O 虽然发生在握着并发位与锁的派发路径上,开销仍可忽略;它与派发前的携带规划共用同一份资格判据,两处结论不分叉。
+- **取到锁之后重做一次携带规划。** 取锁成功的那一刻,该用例重读自己在结果树上已落盘的 attempt,按[携带判据](cache.md#携带要过的门)逐条重判:每一道门都过的直接携入(零新成本),仍缺的序号才由本进程跑。这次重判**无条件进行**——取到锁就做,不附加任何前置判据;闭合性来自 `别人落盘 → 别人释放锁 → 本进程取到锁 → 本进程读盘` 这条 happens-before 链,只有发生在取锁之后才成立。它把[「重跑同一条命令就是续跑」](#carry自动携带)从串行重跑扩展到并发多开:两条选择有交集的 Invocation,不论各自的推进节奏怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。重判的读取面收窄到单条 `(experimentId, evalId)`——只翻该实验下跑过这条 eval 的 Run,不扫结果全树,因此这次 I/O 虽然发生在握着并发位与锁的派发路径上,开销仍可忽略;它与派发前的携带规划共用同一份资格判据,两处结论不分叉。
 - **心跳证明持有者活着。** 持有者每 10s 原子重写一次 `heartbeatAt`(写临时文件再 rename)。`heartbeatAt` 落后当前时间超过 30s(三个心跳周期)即视为持有者已死。判活只看心跳时间戳,不看 pid——容器与跨用户场景下 pid 判活不可靠,而心跳对任何死法(`SIGKILL`、断电、宿主蒸发)都收敛到同一个判据。
 - **撞上新鲜锁 = 该用例等待,派发轮继续。** 撞锁只挂起这一条用例:它让出刚拿到的并发位,位子立刻转派给下一条没被锁的用例——选中用例全部撞锁时本进程才真正闲下来整体等待。挂起的用例不占全局并发位,计入独立的 `elsewhere` 计数状态(别人在运行,与 `queued` 互斥——排队等的是本进程的并发位,`elsewhere` 等的是别的进程,混进同一个数字会把「资源不够」和「别人在跑」两种等待混为一谈),每个心跳周期重读一次锁文件;等待没有超时——心跳新鲜就一直等,用户中断照常退出。锁消失(正常释放)或过期(接管)后,该用例重新参与派发:取到锁即按上一条重做携带规划,对方 Invocation 落盘的终态此刻已可读、能携的携入,仍缺的 attempt 序号自己补跑。
 - **锁不含指纹。** 键只有身份,不掺 resolved 配置:两边配置不同(携带必不匹配)时,等待换到的只剩「不同时双跑」——这仍然值得,它保护有共享状态的用例不被并发踩踏,判据也因此保持「读锁文件即可判定」的简单形态,不需要在锁上再算一遍指纹。

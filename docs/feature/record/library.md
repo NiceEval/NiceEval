@@ -92,25 +92,17 @@ await attempt.sources();       // SourceArtifact[] | null
 
 ## `configHash`:配置身份只算一次
 
-跨 Run 比较有一个前提:两个 Run 得是同一套配置跑出来的。这个前提由 `run.configHash` 单点回答——
-**配置字段清单只有一张,就是[指纹输入表](../experiments/cache.md#指纹改哪一行会重跑)的配置那一半**:
+跨 Run 比较有一个前提:两个 Run 得是同一套配置跑出来的。这个前提由 `run.configHash` 单点回答。
+它与逐 eval 指纹是同一个嵌套哈希的两层,**输入清单与嵌套关系单源在
+[Experiments · 指纹](../experiments/cache.md#指纹两个哈希嵌套)**——配置身份和缓存判据用的是同一张
+清单,一个字段只在那里裁决一次。
 
-```text
-configHash  = hash(agent, model, reasoningEffort, flags, 顶层 sandbox spec, strict)
-fingerprint = hash(configHash, eval 源码, evalId / tags / environment / metadata,
-                   该 eval 解析到的 sandbox 产物)
-```
-
-两个哈希嵌套而不是并列,于是「新增一个公开配置字段」只需要裁决一次「进不进 configHash」,而不是
-分别裁决「进不进指纹」和「算不算可比性配置」。**一个字段两处裁决迟早会分叉**,而分叉的症状是
-静默的:报表把一行标成单一 agent / model / flags,底下却混着两套配置的数据。
-
-据此定下两条,理由同源:
+跨 Run 可比性据此定下两条,理由与那边同源:
 
 - **`timeoutMs` 与 `budget` 不进 configHash。** 它们决定「等不等得到、跑不跑得完」,不决定
   「跑出来的那条结果是什么」。一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟上限下是同一个
   事实。把它们塞进配置身份会让提高上限一次性切断全部历史可比性,为一个不影响结果的参数付全量
-  重跑。两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`durationMs` ≤
+  重跑。两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`executionMs` ≤
   当前上限),止损闸管覆盖缺口(被掐掉的题没有结果,如实进
   [`coverage`](../sample/library.md#覆盖是逐行的事实))。
 - **`attempts` / `earlyExit` / `maxConcurrency` / `selectedEvalIds` / `labels` 不进。** 编排与
@@ -118,7 +110,15 @@ fingerprint = hash(configHash, eval 源码, evalId / tags / environment / metada
 
 `configHash` 落在 `run.json` 上,是格式的一部分:第三方转换器写入时同样声明它,不声明的 Run 只能
 与自己比较。Sample 层跨 Run 拼接时按它相等判定,不重新推导配置——推导逻辑一旦有第二份实现,两份
-就会分叉。
+就会分叉。反过来,进 configHash 的字段必须在 `run.json` 上找得到,顶层或 `ExperimentRunInfo`
+二选一:重算配置身份是[搬迁出口](../experiments/cache.md#--carry-ignoring-flag搬迁用的一次性出口)
+的前提,少落一个字段,那条路径就只能靠猜。
+
+[`--carry-ignoring-flag`](../experiments/cache.md#--carry-ignoring-flag搬迁用的一次性出口) 是这条
+可比性担保上唯一的人为出口:它让一批历史条目按抹掉某些 `flags` 键之后的口径重锚到本 Run 的
+configHash 上。它不构成上面那个「混着两套配置的数据」的分叉,因为它只接受**已经不在本次 `flags`
+里**的键——被抹掉的那个值已经不是实验条件了。留痕跟着条目走(`carriedIgnoringFlags`),消费方要
+分辨时读得到。
 
 ## 携带条目与 `evidenceState`
 

@@ -65,7 +65,7 @@
 | Session | Session | 一条会话线;`t.newSession()` 开独立 session |
 | Turn | Turn | `t.send()` 的一次返回值,带该 Turn 的事件流片段和收窄到该 Turn 的作用域断言 |
 | 首过即停 | EarlyExit | 取通过率时先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit` |
-| 指纹 | Fingerprint | `(eval 代码 + 配置)` 的哈希,用于缓存去重:未变且已通过的默认跳过 |
+| 指纹 | Fingerprint | `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:未变且判定确定的默认携带 |
 | Transcript | Transcript | agent 一次运行的逐事件原始记录(各 agent 自己的 JSONL),归一化后供消费 |
 | 标准事件流 | StreamEvent / events | transcript 或 `send` 返回归一化成的统一事件模型(message / thinking / `action.called` / `action.result` / `context.injected` / error),断言和报告的事实来源,也是 `ExecutionTree` 的事件骨架,详见 [Observability](observability.md#transcript-标准事件流) |
 | o11y 摘要 | o11y summary | 从标准事件流可重算的行为计数(工具调用、文件、shell、思考块等),注入沙箱供行为断言;token / 成本 / 耗时权威在 `result.json` |
@@ -185,7 +185,9 @@
 
 **EarlyExit** / **首过即停** —— 一个 eval 取通过率时,先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit`,CLI 上 `--early-exit` / `--no-early-exit`。
 
-**Fingerprint** / **指纹** —— `(eval 代码 + 配置)` 的哈希,用于缓存去重:指纹未变且已通过的,默认跳过。
+**Fingerprint** / **指纹** —— `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:指纹未变且判定确定的,
+默认携带进本次 Run 而不重跑。源码闭包是 eval 文件加上它在项目根内的导入图与 loader 读入的数据文件;
+配置那一层是 Run 级的 [configHash](feature/experiments/cache.md#指纹两个哈希嵌套),同时担保跨 Run 可比。
 
 **Transcript** —— agent 一次运行的逐事件记录。原始形态是各 agent 自己的 JSONL,被**归一化**成统一事件模型(message / thinking / `action.called` / `action.result` / error)后供断言和报告消费。详见 [Observability](observability.md)。
 
@@ -231,7 +233,7 @@ agent 不在 config 里注册:每个 experiment 直接引用一个 agent adapter
 `pnpm docs:lint` 命中时原样打印 `use` 和 `why`,改的人不必回来翻文档。
 
 裁决一个新术语时同批往那份 JSON 加一条:`why` 写清为什么这个词会误导读者,不写"统一一下"。
-扫描规则、行宽台账与收紧办法见 [`docs/README.md` · 校验与同步](README.md#校验与同步)。
+扫描规则、句长段长行宽的台账与收紧办法见 [`docs/README.md` · 校验与同步](README.md#校验与同步)。
 
 ## 相关阅读
 

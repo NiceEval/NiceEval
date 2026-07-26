@@ -19,6 +19,7 @@
 |---|---|
 | 建立产品心智 | [Concepts](concepts.md) → [Architecture](architecture.md) |
 | 理解结果落盘后怎么被读出来 | [Reading](feature/reading/README.md) |
+| 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
@@ -37,7 +38,7 @@ docs/
 ├── README.md                            本入口与写作契约
 ├── getting-started.md                   新手路径
 ├── source-map.md                        目标契约 → 源码落点
-├── writing-rules.json                   行宽规则与禁词库，pnpm docs:lint 读它
+├── writing-rules.json                   句长、段长、行宽规则与禁词库，pnpm docs:lint 读它
 ├── writing-baseline.json                现存命中数台账，只许变小
 │
 ├── feature/                             已定稿的目标功能契约
@@ -112,14 +113,18 @@ Engineering 文档的组织方式由 [`engineering/README.md`](engineering/READM
 `docs/` 的读者是照着它做设计决策、写实现的人，不是只被 grep 的语料。
 契约再准确，段落读不动也等于没写：读者会转去翻源码，`docs/` 就失去唯一现状来源的地位。
 
-因此正文按下面四条排版。
+因此正文按下面四条写。
 
 | 规矩 | 上限 | 超了怎么办 |
 |---|---|---|
-| 源码行宽（中文按 2 列算） | 120 列 | 在句子或分句边界换行。Markdown 软换行不改渲染结果；表格行与代码块不受此限——表格没法换行，代码块按代码本身排版 |
-| 单句长度 | 约 60 个汉字 | 拆成两句，或把并列内容改写成列表 / 表格 |
+| 单句长度 | 140 字 | 拆成两句，或把并列内容改写成列表 / 表格 |
+| 一段长度 | 320 字 | 一段只说一件事；罗列条件、字段或状态用表格和列表，不用长句串联。列表项各算一段 |
 | 括号嵌套 | 1 层 | 第二层插入语提成独立句子，或变成表格的一列 |
-| 一段句数 | 5 句 | 一段只说一件事；罗列条件、字段或状态用表格和列表，不用长句串联 |
+| 源码行宽（中文按 2 列算） | 120 列 | 在句子或分句边界换行。表格行与代码块不受此限——表格没法换行，代码块按代码本身排版 |
+
+句长与段长量在软换行拼接之后：在句子中间敲个回车渲染结果一个字不变，不算把长句拆开。
+只有句末标点算断句，分号和破折号串起来的分句仍是同一句——长难句正是这么长起来的。
+行宽那条只管排版与 diff 粒度：一行一句地改时，diff 才落在改动的那句上，而不是整段重排。
 
 用词只有一个来源：[Concepts](concepts.md)。
 
@@ -154,12 +159,13 @@ pnpm test:docs
 
 - `test/docs/docs-consistency.test.ts` 检查索引覆盖与相对链接。
   新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
-- `test/docs/docs-writing.test.ts` 检查上面「写给人读」里能机器判定的两条：行宽和禁用写法。
+- `test/docs/docs-writing.test.ts` 检查上表里能机器判定的三条——句长、段长、行宽，外加禁用写法。
+  括号嵌套靠人读，没有守护。
 
-行宽与用词的详细命中另有一条命令，输出每一行该怎么改：
+长度与用词的详细命中另有一条命令，输出每一处该怎么改：
 
 ```sh
-pnpm docs:lint            # 打印文件:行号、超了多少列、命中哪个禁用写法及为什么
+pnpm docs:lint            # 打印文件:行号、超了多少字或多少列、命中哪个禁用写法及为什么
 pnpm docs:lint --update   # 把当前命中数写回 docs/writing-baseline.json
 ```
 

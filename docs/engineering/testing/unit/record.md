@@ -54,9 +54,18 @@ interface AttemptSpec {
   在 `attempt.result`）；reader 忠实保留携带产生的重复、不擅自去重；「缺才补」的字段拼合优先级；
   `ref` 指向条目所在落盘。去重算法本身归 [sample.md](sample.md)。
 - **`configHash` 与携带资格**：`configHash` 落在 `run.json` 上、缺失时读取面如实为
-  `undefined`；携带条目的 `fingerprint` 原样携带不重打——fixture 要让「原指纹 ≠ 本 Run 指纹」
-  （`--carry-ignoring-flag` 放宽判据后）与「两者相等」得到可区分的落盘；`schemaVersion` 不同的
-  历史 Run 不参与携带。
+  `undefined`；`schemaVersion` 不同的历史 Run 不参与携带。另外三条各自成立：
+  - **进 configHash 的每个字段都在 `run.json` 上找得到。** `agent` / `model` 在顶层，
+    `reasoningEffort` / `flags` / `strict` / `judge` / 顶层 sandbox 投影在 `ExperimentRunInfo`。
+    这条按数据面守护，拿契约里的输入清单比对投影的键集合，少落一个就红。
+    搬迁出口要靠它重算历史侧的配置身份。`judge` 只落 `model` / `baseUrl`，`apiKeyEnv` 指向的凭据不落。
+  - **携带条目的 `fingerprint` 按本 Run 口径重打**，一份 Run 里的条目因此共享一个指纹口径。
+    fixture 要让「原指纹 ≠ 本 Run 指纹」的携带条目落盘后仍等于本 Run 指纹。
+  - **`--carry-ignoring-flag` 放行的条目另落 `carriedIgnoringFlags`。**
+    它是这条差异的唯一记录，缺了消费方就无从分辨这条是在哪个口径下被采信的。
+- **执行耗时与出身两个新字段**：`executionMs` 落盘且等于 `durationMs` 减去 `sandbox.queue`
+  那一段（fixture 要有非零排队，否则两者相等、这条测试没有区分力）；`sandbox.reused` 只在复用运行的
+  attempt 上出现，与 `kept` 互不干扰、可同时缺省。两者都是可选字段，读取面对缺失的历史落盘不报错。
 - **`evidenceState` 三态**：`local` / `borrowed` / `dangling` 三态各自可达且不合并——fixture 分别
   构造同目录 artifact、`artifactBase` 指向存活原 Run、原 Run 目录已删除三种落盘树；`dangling` 时
   `artifacts` 列表仍声明写过该文件，懒加载返回 `null`，两者的差值可被消费方判断。

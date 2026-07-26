@@ -149,6 +149,10 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 `judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Scoring · Judge](../scoring/library/judge.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级 Hook 同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级 Hook 共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
 
+**全部结果被 carry 携入、一个 attempt 都不派发时,预检不执行**——没有 attempt 要跑就没有 judge 要调,
+与[实验级 `setup` 的懒触发](architecture.md#实验级生命周期setup-与-teardown)同构。
+零派发的运行因此不会因为一次探测慢下来,也不会因为判分网关不可达而报错。
+
 - **Human(TTY)**:预检期间 ACTIVE 区显示一行运行级行 `● prechecking judge config   <elapsed>`,排在实验 Hook 行与 attempt 行之前——它发生在最前,是「为什么 attempt 还停在 `queued`」的解释;存活性由持续增长的 elapsed 证明(不做 spinner 动画,与 attempt 行同一约定)。预检结束该行即消失,不在 scrollback 留永久行。
 
   ```text

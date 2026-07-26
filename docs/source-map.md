@@ -140,7 +140,7 @@
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段、LifecyclePhase 转换) | `src/runner/attempt.ts` |
 | 阶段计时树(`PhaseTiming` / `TimingNode`:enter / 失败标记 / 收尾段测量 / hook 与命令子节点) | `src/runner/timing.ts`(`TimingRecorder`;接线在 `src/runner/attempt.ts`) |
 | 变更分类账(workdir 外私有 git dir、锚点冻结排除清单、eval/agent 归因 commit、整相一条命令导出全部 send 窗口) | `src/runner/ledger.ts`(+ 同目录 `.test.ts`) |
-| 指纹缓存((eval 源码 + 运行配置) 哈希,携带以 attempt 为粒度——`planCarry` 逐条比较每个 attempt 自己的终态 + 指纹,产出 `carriedAttemptsByKey`(具体序号集合,不是整段 key 命中就携入);`run.ts` 的调度按这个具体序号集合跳过,缺失序号真实派发) | `src/runner/fingerprint.ts`(`planCarry`)、`src/runner/run.ts`(attempt 展开处按 `carriedAttemptsByKey.get(carryKey)?.has(i)` 跳过) |
+| 指纹缓存((eval 源码闭包 + 运行配置) 哈希,携带以 attempt 为粒度——`planCarry` 逐条比较每个 attempt 自己的终态 + 指纹,产出 `carriedAttemptsByKey`(具体序号集合,不是整段 key 命中就携入);`run.ts` 的调度按这个具体序号集合跳过,缺失序号真实派发) | `src/runner/fingerprint.ts`(`planCarry`)、`src/runner/run.ts`(attempt 展开处按 `carriedAttemptsByKey.get(carryKey)?.has(i)` 跳过) |
 | 强杀后的收尾登记(`.niceeval/teardowns/` 逐条目原子文件,与留存注册表同纪律)+ 启动自愈(触发 setup 前核对本实验自己的遗留登记、同宿主 pid 已死则先补执行一次 teardown 再走本次 setup、反馈标注 `recovery: true`)+ `--teardown` 独立入口 | `src/runner/teardown-registry.ts`(登记表原子写/读/删)、`src/runner/run.ts`(`recoverStaleTeardownRegistration` / `ensureExperimentSetup` / `runExperimentTeardown` 的磁盘镜像写入与删除)、`src/cli.ts`(`--teardown` 分支 + 未选中实验的遗留提醒) |
 | reporter 编排 + 运行级汇总 + eval 级 reporter 作用域(scopeReporter / filterSummary)+ required/best-effort 兜错(runReporter) | `src/runner/report.ts` |
 | remote 占位 Sandbox / eval 级本地路径视图(Proxy) | `src/runner/remote-sandbox.ts` |
@@ -157,6 +157,39 @@
 ## Record / Sample Lib 与 Reports
 
 设计文档:[feature/record/](feature/record/README.md) / [feature/reports/](feature/reports/README.md) 合流一节。实现落点(show 与 view 两个宿主共用同一套 `--report` 装载;裸 show / view 装载同一份三页内建报告(report / attempts / traces)并各选对应渲染面;两个宿主的 Sample 都由中性的 `selectLatestPerEval` 无条件产出):
+
+三层的数据形状与各层操作画在[Reading](feature/reading/README.md)的总图上,这里只给同一条链路的
+文件落点。注意 Record 与 Sample 两层当前同住 `src/results/`,包边界只在契约里存在(见下方已知差异)。
+
+```text
+磁盘  .niceeval/<experiment>/<run>/
+  │
+  │  openRecord()
+  ▼
+①  src/results/open.ts      扫描 / 导航 / 版本分流 / 懒加载
+    src/results/format.ts   目录布局与版本知识
+    src/results/types.ts    分层契约(Experiment / Run / AttemptHandle / Sample)
+    src/results/locator.ts  身份键
+    src/results/writer.ts   createWriter        ← 第三方 harness 写进来
+    src/results/copy.ts     publish             → 发布出去
+  │
+  │  latestPerEval() / latestRuns()
+  ▼
+②  src/results/select.ts    selectLatest / selectLatestPerEval / freshEvals
+                            filter / dedupeAttempts / unreadableSnapshotWarnings
+  │
+  │  sample.attempts
+  ▼
+③  src/report/model/{metrics,aggregate,flag}.ts  值怎么算、两级怎么折叠
+    src/report/model/types.ts                    数据契约(MetricCell / *Data)
+    src/report/components/*/compute.ts           各组件的 *Data
+    src/report/definition/tree.ts                resolveReportTree + 渲染前树校验
+    src/report/definition/report.ts              defineReport / 外壳与页列表
+  │
+  ├─ text 面  src/report/runtime/text.ts  →  src/show/*   宿主
+  └─ web 面   src/report/runtime/web.ts   →  src/view/*   宿主
+              两宿主共用装载 src/report/runtime/{load,host}.ts
+```
 
 | 行为 | 文件 |
 |---|---|
@@ -218,7 +251,7 @@
   不兼容提示路径;`format` 的取值 `"niceeval.results"` 恒不变。
 - **`configHash` 尚无落盘字段**:跨 Run 可比性的唯一判据
   ([configHash](feature/record/library.md#confighash配置身份只算一次))
-  要求 `run.json` 记一个配置哈希,并让 `fingerprint = hash(configHash, eval 源码, …)` 嵌套派生。
+  要求 `run.json` 记一个配置哈希,并让 `fingerprint = hash(configHash, eval 源码闭包, …)` 嵌套派生。
   当前 `src/runner/fingerprint.ts` 直接算逐 eval 指纹、不单独暴露配置那一半,
   `selectLatestPerEval` 的可比性判断另有一套字段比较——两处清单分叉正是这条契约要消除的。
 - **`evidenceState` 三态尚未产出**:读取面契约要求 `local` / `borrowed` / `dangling` 可分辨,并让选择层据此

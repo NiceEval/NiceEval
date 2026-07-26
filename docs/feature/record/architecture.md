@@ -108,8 +108,9 @@ interface RunMeta {
   model?: string;
   startedAt: string;
   /**
-   * 这次运行的配置身份 —— 跨 Run 可比性的唯一判据,输入清单单源在指纹输入表的配置那一半
-   * (见 [Library · configHash](library.md#confighash配置身份只算一次))。缺失的 Run 只与自己
+   * 这次运行的配置身份 —— 跨 Run 可比性的唯一判据,输入清单单源在
+   * [Experiments · 指纹](../experiments/cache.md#指纹两个哈希嵌套)的配置那一层
+   * (读取面怎么用见 [Library · configHash](library.md#confighash配置身份只算一次))。缺失的 Run 只与自己
    * 可比:第三方转换器不声明它时,选择层不把它与别的 Run 拼在一起。
    */
   configHash?: string;
@@ -153,6 +154,13 @@ interface ExperimentRunInfo {
   timeoutMs?: number;
   budget?: number;
   maxConcurrency?: number;
+  /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
+  strict?: boolean;
+  /**
+   * Run 级缺省的裁判配置,进 configHash 因此必须落盘;eval 自己声明的那份在它的源码闭包里,不在这。
+   * 只落这两个配置值,`apiKeyEnv` 指向的凭据不落。
+   */
+  judge?: { model?: string; baseUrl?: string };
   /** 本次运行解析后实际选中的 eval id 全集——evals 过滤器(含函数形式)的求值结果,不存过滤器本身。 */
   selectedEvalIds: string[];
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),供「配置没变」判断;与 selectedEvalIds 一起取代原过滤器。 */
@@ -170,7 +178,10 @@ interface ExperimentRunInfo {
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。`selectedEvalIds` 是这次运行实际选择的 eval 集；报告直接读取它，不从 experiment 路径推断另一层集合。
 - **sandbox 参数只经 provider 的 `publicConfig()` 投影落盘**:每个内置 provider 显式实现「哪些参数可发布」的投影(镜像名、模板名、runtime 可以;token、凭据路径永远不可以),`defineSandbox` 自定义 provider 没有提供投影时只落 provider 名。「params 不含 secret」由投影保证,不靠注释承诺。
 - **按 eval 解析预制产物时保存逐 eval 结果。** 顶层 `sandbox` 始终是 spec 基础参数的投影；`sandboxByEval` 只记录本 Run 选中且声明了 `environment` 的 eval 各自解析到的产物投影，供审计与逐 eval fingerprint 对账。未声明 environment 的 eval 以顶层 `sandbox` 为准，未选中的 eval 不查表、不伪造映射项；spec 的 `environments` 表不整张落盘——落的是每条 eval 的解析结果。
-- 新增公开运行配置字段时必须同步进这张投影,不允许「Run 里有一半配置」。
+- 新增公开运行配置字段时必须同步进这张投影,不允许「Run 里有一半配置」。**进
+  [configHash](../experiments/cache.md#指纹两个哈希嵌套) 的字段这条是硬约束**:配置身份的每一个输入
+  都要在 `run.json` 上找得到,顶层或本投影二选一。`agent` / `model` 住顶层,其余住这里。
+  少落一个,就无法拿历史 Run 重算配置身份,搬迁出口那条路径直接失效。
 
 通过数、失败数、总用量、总成本这类聚合**不落盘**:它们由 `result.json` 逐条推导,聚合永远发生在消费方(`openRecord` 分层之上的计算函数或你的脚本)——这与读取面「忠实磁盘,不合并不聚合」是同一条铁律。
 
@@ -188,6 +199,14 @@ interface AttemptRecord {
   fingerprint?: string;
   /** 判定链耗时:从 sandbox.queue 到 telemetry.collect 的主链,不含收尾段(show 以 `teardown +N` 单列;全仓引用这个字段时用「判定链耗时」措辞,不叫墙钟)。 */
   durationMs: number;
+  /**
+   * 执行耗时:`durationMs` 减去 `sandbox.queue` 那一段,即从 sandbox.create 起算的主链耗时。
+   * 与 attempt deadline 同起点、同不含收尾段(见 [Runner · 超时](../../runner.md#超时双层保护)),
+   * 因此它是[携带资格判据](../experiments/cache.md#携带资格timeoutms-不进哈希)唯一能与
+   * `timeoutMs` 直接比较的量——拿含排队的 `durationMs` 去比会把等过并发位的结果误判成撞过线。
+   * 缺失时资格判据回落到 `durationMs`,方向是多跑,不会误采信。
+   */
+  executionMs?: number;
   /** Runner 阶段计时，按执行顺序；只记录实际发生的阶段。 */
   phases?: PhaseTiming[];
   /** 记录态断言;元素字段契约单独定义在 [Scoring · 断言记录](../scoring/architecture.md#断言记录assertionresult)。 */
@@ -213,9 +232,11 @@ interface AttemptRecord {
    * 沙箱型 attempt 的执行环境标识:provider 名与实例 id(如 Docker 容器 ID 前缀),用于关联
    * provider 侧日志与[留存现场](../sandbox/cli.md);remote 型 agent 无此字段。`kept` 表示
    * 运行收尾时按 `--keep-sandbox` 留存了沙箱;之后的存活状态归 `niceeval sandbox list` 回答,
-   * 本记录一次写成、不回写。
+   * 本记录一次写成、不回写。`reused` 表示这条跑在 `--reuse-sandbox` 的热道上,基线由前面的
+   * attempt 用过——[出身门](../experiments/cache.md#携带要过的门)读它,让复用产出永不成为
+   * 后续 run 的缓存命中(理由见 [Sandbox · 串行复用](../sandbox/serial-reuse.md#与留存缓存重试的组合))。
    */
-  sandbox?: { provider: string; sandboxId: string; kept?: true };
+  sandbox?: { provider: string; sandboxId: string; kept?: true; reused?: true };
   /**
    * 不透明的 Attempt 定位符:`@` + 1 位 scheme 字符 + 7 位 base36 body(如 `@1x7f3q9k`)。
    * 由 `{experimentId, Run startedAt, evalId, attempt}` 这个不可变身份元组确定性派生——
@@ -228,6 +249,13 @@ interface AttemptRecord {
   locator?: string;
   /** 携带条目专用: artifact 目录(相对记录根目录),指向原 Run 里的落盘。 */
   artifactBase?: string;
+  /**
+   * 携带条目专用:这条被携入时,携带判定抹掉了哪些 `flags` 键
+   * (见 [Experiments · 搬迁出口](../experiments/cache.md#--carry-ignoring-flag搬迁用的一次性出口))。
+   * 条目已按本 Run 口径重打指纹,这个字段是它与本 Run configHash 之间那点差异的唯一记录,
+   * 跟着结果走而不是跟着 Run 走;省略等价于「按本 Run 的完整 `flags` 认账」。
+   */
+  carriedIgnoringFlags?: string[];
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在[证据 registry](#证据-registry),
    * 如 ["commands", "events", "sources"])。省略等价于空列表;携带条目原样携带。读取面的懒加载语义

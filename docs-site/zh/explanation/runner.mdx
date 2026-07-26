@@ -54,7 +54,14 @@ npx niceeval exp local fixtures/button --runs 5 --early-exit
 
 ## 缓存
 
-[NiceEval](https://niceeval.com/) 可以根据输入、配置和相关文件 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、Sandbox 异常等框架/环境层面的不确定失败）永远重试。缓存适合加速迭代，但如果你在调试非确定性行为，应该明确关闭（`--rerun all`）或清理相关缓存。
+[NiceEval](https://niceeval.com/) 按 fingerprint 跳过已判定为 `passed` 或 `failed` 的结果——两者都是判定确定的终态。`errored`（超时、Sandbox 异常等框架/环境层面的不确定失败）永远重试。
+
+fingerprint 由两部分组成：
+
+- **评估用例的源码**：`.eval.ts` 文件本身，加上它 import 的项目内模块，以及用 `loadYaml` / `loadJson` 读进来的数据文件。断言抽在公共 helper 里时，改那个 helper 会让引用它的评估用例全部重跑。
+- **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。超时上限不在里面——它决定等不等得到，不决定跑出来的结果是什么。
+
+被测程序自己的源码、Agent CLI 的版本、Sandbox 镜像的内容都不在 fingerprint 里。改了这些要复验，用 `--rerun`（只重跑失败项）或 `--rerun all`（全部重跑）。调试非确定性行为时同样用 `--rerun all`。
 
 ## 并行开多个终端
 

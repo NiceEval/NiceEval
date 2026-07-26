@@ -103,7 +103,13 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **含 eval 层的字段解析链（`timeoutMs`）**：`--timeout` → experiment → eval → config
   → 无上限，五档逐层可区分。区分力最强的一格必测：**config 有值、experiment 没写、eval 写了自己的值时取 eval 的值**——`??` 链少写一层回落时这一格恰好是唯一会红的，其余四格照常通过。断言面取
   attempt 实际生效的 deadline 与超时消息里的来源标注（`from eval` / `from config`…），不是解析函数的中间返回值；同一份 resolved 值同时喂给
-  carry 的资格判据（`durationMs` ≤ 当前上限），两处不分叉。
+  carry 的资格判据（`executionMs` ≤ 当前上限），两处不分叉。
+- **`judge` 的解析链（eval → config）**：两档逐层可区分。
+  区分力最强的一格必测——**config 写了 `judge`、eval 也写了自己的 `judge` 时取 eval 的值**。
+  再加一格证明它**逐字段合并而不是整体覆盖**：eval 只声明 `model` 时 `baseUrl` 仍从 config 来。
+  这条链没有 experiment 层也没有 CLI flag，多出一层就是回归。
+  断言面取 judge 断言实际请求到的 model 与端点。
+  `judge` 的 `model` / `baseUrl` 进 configHash、`apiKeyEnv` 不进，归下面的指纹输入类别。
 - **界面语言的取值链**：`config.locale` → 系统 locale（`LC_ALL` → `LC_MESSAGES` → `LANG`）→
   `zh-CN`。断言面是 `detectLocale(env)` 的返回值：`config.locale` 在场时压过任何系统变量；未声明或无法归一（`C`
   / `POSIX` / 空串）时逐级回落而不是报错；niceeval 自己的旧变量（`NICEEVAL_LANG` /
@@ -243,11 +249,18 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **超时、缓存与指纹**：外层超时兜底为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase`
   是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped`
   总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs`
-  不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `durationMs`
-  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体改动不作废携带；**`--carry-ignoring-flag <key>` 只作用于本次调用**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、本次落一条 `carry-ignoring-flag` Run diagnostic、不写进任何持久声明；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；执行模式 flag 的携带豁免——`--keep-sandbox`
+  不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs`
+  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`--carry-ignoring-flag <key>` 的三道约束各要一条**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、键仍在本次 resolved `flags` 里时报启动期用法错误、键在候选历史条目的 `flags` 里也不存在时同样报错(打错键名不静默放过);留痕两处都要断言——被携入条目的 `carriedIgnoringFlags` 与本次 Run 的 `carry-ignoring-flag` diagnostic,且下一次不带该 flag 的运行照常命中(证明重锚生效,不需要长期挂着)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox`
   下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed`
   一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、裸写与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式
   `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
+- **eval 源码闭包的构成与确定性**：闭包含三样东西——eval 文件字节、项目根内导入图的递归展开、
+  `loadYaml` / `loadJson` 读入的数据文件内容。
+  进 / 不进两侧各要区分力场景：改被引用 helper 的一行使**引用它的那些 eval** 重跑而未引用的照常携带；
+  改数据集一行只作废对应那条 eval；`node_modules` 下的包与动态 `import()` 改动不作废。
+  **确定性单独一条**：同一份源码在两种不同的目录遍历顺序下算出同一个哈希。
+  它靠两件事成立——按项目根相对路径排序、循环导入按解析后绝对路径去重。
+  任缺一条哈希都会随环境漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
 - **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)`
   最终判定折叠、完整退出码矩阵（0/1/130、strict、required reporter）；分组通过率的分母口径。
 - **启动期错误格式**：coordinator 激活前的错误恒为 `error:` + `fix:`

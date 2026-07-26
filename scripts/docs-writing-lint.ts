@@ -1,5 +1,5 @@
 /**
- * docs/ 正文的可读性检查:行宽与禁词库。
+ * docs/ 正文的可读性检查:句长、段长、行宽与禁词库。
  *
  * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json,
  * 现存命中数的台账在 docs/writing-baseline.json。
@@ -35,20 +35,30 @@ export interface BannedTerm {
 
 interface WritingRules {
   lineWidth: { max: number; cjkColumns: number };
+  sentenceLength: { max: number };
+  paragraphLength: { max: number };
   bannedTerms: BannedTerm[];
 }
 
-/** 台账:文件 → 命中数。行宽一个数字,禁词按词分开记。 */
-export interface Baseline {
-  lineWidth: Record<string, number>;
+/** 按文件计数的三条长度规则。禁词另记,因为要按词分开。 */
+const LENGTH_RULES = [
+  { key: "lineWidth", label: "超宽行" },
+  { key: "sentenceLength", label: "超长句" },
+  { key: "paragraphLength", label: "超长段" },
+] as const;
+
+type LengthRule = (typeof LENGTH_RULES)[number]["key"];
+
+/** 台账:文件 → 命中数。三条长度规则各一个数字,禁词按词分开记。 */
+export type Baseline = Record<LengthRule, Record<string, number>> & {
   bannedTerms: Record<string, Record<string, number>>;
-}
+};
 
 /** 一条命中,带上打印所需的全部信息——调用方不必再回查规则。 */
 export interface Hit {
   file: string;
   line: number;
-  /** 行宽命中写 `"lineWidth"`,禁词命中写那个词。 */
+  /** 长度命中写规则名(`"sentenceLength"` 等),禁词命中写那个词。 */
   rule: string;
   message: string;
 }
@@ -101,6 +111,80 @@ function hasUnbreakableToken(line: string, limit: number, cjkColumns: number): b
     .some((token) => !WIDE_CHAR.test(token) && visualWidth(token, cjkColumns) > limit);
 }
 
+/** 列表项的项目符号:`- ` `* ` `+ ` `1. ` `1) `。 */
+const LIST_MARKER = /^([-*+]|\d+[.)])\s+/;
+
+/** 一段连续正文:软换行已经拼回去了,`line` 是它在文件里的起始行。 */
+interface ProseBlock {
+  line: number;
+  text: string;
+}
+
+/**
+ * 把软换行拼回一段——句长与段长必须量在拼接之后。按单行量的话,
+ * 在句子中间敲个回车就能把长难句拆过检查,而渲染出来一个字没变。
+ * 空行、表格、标题、引用各自是边界;列表项各算一段,项目符号不计入长度。
+ */
+export function proseBlocks(lines: string[]): ProseBlock[] {
+  const blocks: ProseBlock[] = [];
+  let buffer: string[] = [];
+  let start = 0;
+  let inFence = false;
+
+  const flush = () => {
+    if (buffer.length > 0) blocks.push({ line: start, text: buffer.join(" ") });
+    buffer = [];
+  };
+
+  for (const [index, raw] of lines.entries()) {
+    if (raw.trimStart().startsWith("```")) {
+      inFence = !inFence;
+      flush();
+      continue;
+    }
+    if (inFence) continue;
+
+    const line = raw.trim();
+    if (line === "" || line.startsWith("|") || line.startsWith("#") || line.startsWith(">")) {
+      flush();
+      continue;
+    }
+    if (LIST_MARKER.test(line)) {
+      flush();
+      start = index + 1;
+      buffer.push(line.replace(LIST_MARKER, ""));
+      continue;
+    }
+    if (buffer.length === 0) start = index + 1;
+    buffer.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+/**
+ * 量的是读者要读的字:图片不读,链接只读链接文本(URL 不算读者的负担),
+ * 反引号与强调星号是标记不是字——但被它们包住的内容照算,标识符也要读。
+ */
+export function proseText(text: string): string {
+  return text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[`*]/g, "")
+    .trim();
+}
+
+/**
+ * 只有句末标点算断句。分号、破折号、顿号串起来的分句仍算同一句:
+ * 长难句正是这么长起来的,把它们算作断句等于让这条规则放过要治的对象。
+ */
+export function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[。！？!?])/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
 function termMatcher(term: string): RegExp {
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // 纯 ASCII 的词(dual-face、TODO)按词边界匹配,免得 `TODOS` 之类误伤;
@@ -135,10 +219,37 @@ export function lintDocsWriting(): LintReport {
   const matchers = rules.bannedTerms.map((t) => ({ ...t, re: termMatcher(t.term) }));
 
   const hits: Hit[] = [];
-  const actual: Baseline = { lineWidth: {}, bannedTerms: {} };
+  const actual: Baseline = { lineWidth: {}, sentenceLength: {}, paragraphLength: {}, bannedTerms: {} };
+  const count = (rule: LengthRule, file: string) => {
+    actual[rule][file] = (actual[rule][file] ?? 0) + 1;
+  };
 
   for (const file of walkMarkdown("docs")) {
     const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
+
+    for (const block of proseBlocks(lines)) {
+      const text = proseText(block.text);
+      if (text.length > rules.paragraphLength.max) {
+        count("paragraphLength", file);
+        hits.push({
+          file,
+          line: block.line,
+          rule: "paragraphLength",
+          message: `一段 ${text.length} 字,超出 ${rules.paragraphLength.max} 字——一段只说一件事,罗列改用列表或表格`,
+        });
+      }
+      for (const [order, sentence] of splitSentences(text).entries()) {
+        if (sentence.length <= rules.sentenceLength.max) continue;
+        count("sentenceLength", file);
+        hits.push({
+          file,
+          line: block.line,
+          rule: "sentenceLength",
+          message: `第 ${order + 1} 句 ${sentence.length} 字,超出 ${rules.sentenceLength.max} 字——拆成两句,或把并列内容改写成列表 / 表格`,
+        });
+      }
+    }
+
     let inFence = false;
     for (const [index, raw] of lines.entries()) {
       if (raw.trimStart().startsWith("```")) {
@@ -154,7 +265,7 @@ export function lintDocsWriting(): LintReport {
         !isTableRow(raw) &&
         !hasUnbreakableToken(raw, rules.lineWidth.max, rules.lineWidth.cjkColumns)
       ) {
-        actual.lineWidth[file] = (actual.lineWidth[file] ?? 0) + 1;
+        count("lineWidth", file);
         hits.push({
           file,
           line: lineNumber,
@@ -183,13 +294,15 @@ export function lintDocsWriting(): LintReport {
   const regressions: string[] = [];
   const stale: string[] = [];
 
-  for (const file of new Set([...Object.keys(actual.lineWidth), ...Object.keys(baseline.lineWidth)])) {
-    const now = actual.lineWidth[file] ?? 0;
-    const allowed = baseline.lineWidth[file] ?? 0;
-    if (now > allowed) {
-      regressions.push(`${file}: 超宽行 ${allowed} → ${now}`);
-    } else if (now < allowed) {
-      stale.push(`${file}: 超宽行 ${allowed} → ${now}`);
+  for (const { key, label } of LENGTH_RULES) {
+    for (const file of new Set([...Object.keys(actual[key]), ...Object.keys(baseline[key] ?? {})])) {
+      const now = actual[key][file] ?? 0;
+      const allowed = baseline[key]?.[file] ?? 0;
+      if (now > allowed) {
+        regressions.push(`${file}: ${label} ${allowed} → ${now}`);
+      } else if (now < allowed) {
+        stale.push(`${file}: ${label} ${allowed} → ${now}`);
+      }
     }
   }
 
@@ -227,8 +340,12 @@ export function validateRules(): string[] {
       }
     }
   }
-  if (typeof rules.lineWidth?.max !== "number" || rules.lineWidth.max <= 0) {
-    problems.push("lineWidth.max 缺失或不是正数");
+  for (const { key } of LENGTH_RULES) {
+    const max = (rules as unknown as Record<string, { max?: number }>)[key]?.max;
+    if (typeof max !== "number" || max <= 0) problems.push(`${key}.max 缺失或不是正数`);
+  }
+  if (rules.paragraphLength?.max < rules.sentenceLength?.max) {
+    problems.push("paragraphLength.max 小于 sentenceLength.max——合法的单句会被段长规则判死,没法改");
   }
   return problems;
 }
@@ -238,6 +355,8 @@ export function writeBaseline(actual: Baseline): void {
     Object.fromEntries(Object.keys(obj).sort().map((k) => [k, obj[k]]));
   const sorted: Baseline = {
     lineWidth: sortKeys(actual.lineWidth),
+    sentenceLength: sortKeys(actual.sentenceLength),
+    paragraphLength: sortKeys(actual.paragraphLength),
     bannedTerms: sortKeys(
       Object.fromEntries(Object.entries(actual.bannedTerms).map(([f, t]) => [f, sortKeys(t)])),
     ),
@@ -257,11 +376,13 @@ if (process.argv[1]?.endsWith("docs-writing-lint.ts")) {
 
   if (process.argv.includes("--update")) {
     writeBaseline(report.actual);
-    const lineWidthTotal = Object.values(report.actual.lineWidth).reduce((a, b) => a + b, 0);
+    const totals = LENGTH_RULES.map(
+      ({ key, label }) => `${label} ${Object.values(report.actual[key]).reduce((a, b) => a + b, 0)} 处`,
+    );
     const termTotal = Object.values(report.actual.bannedTerms)
       .flatMap((t) => Object.values(t))
       .reduce((a, b) => a + b, 0);
-    console.log(`已写回 ${BASELINE_FILE}:超宽行 ${lineWidthTotal} 处,禁用写法 ${termTotal} 处待清理。`);
+    console.log(`已写回 ${BASELINE_FILE}:${totals.join(",")},禁用写法 ${termTotal} 处待清理。`);
     process.exit(0);
   }
 
@@ -288,7 +409,7 @@ if (process.argv[1]?.endsWith("docs-writing-lint.ts")) {
   const remaining = report.hits.length;
   console.log(
     remaining === 0
-      ? "docs/ 行宽与用词全部通过。"
+      ? "docs/ 句长、段长、行宽与用词全部通过。"
       : `无回归。台账里还有 ${remaining} 处待清理(跑 --update 之外的清理请直接改正文)。`,
   );
 }

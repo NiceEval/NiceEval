@@ -8,26 +8,65 @@
 [用例手册](use-case/README.md) 里一个读取任务从头走到尾的路径。各层自己的契约仍单源在各层目录,
 这里不复制。
 
+下面这张图按层给出三样东西:数据长什么样、这一层做了什么、下一层从哪个调用开始。
+
 ```text
-  .niceeval/<experiment>/<run>/               执行链路写下的字节
-              │
-              │  openRecord()
-              ▼
-  ┌───────────────────────┐   Record / Run / AttemptHandle
-  │    niceeval/record    │   格式、读写、身份、发布
-  └───────────┬───────────┘
-              │  latestRuns() / latestPerEval() / sample.pipe()
-              ▼
-  ┌───────────────────────┐   Sample:attempts + coverage + warnings
-  │    niceeval/sample    │   口径、覆盖、时效、转换
-  └───────────┬───────────┘
-              │  计算函数 + 组件树
-              ▼
-  ┌───────────────────────┐   可序列化组件数据
-  │    niceeval/report    │   指标、组件、两个渲染面
-  └─────┬───────────┬─────┘
-        ▼           ▼
-      show        view                        两个宿主,同一棵报告树
+.niceeval/midterm/bub-gpt-5.4/2026-07-26T10-03-11/        执行链路写下的字节
+  ├── run.json            { agent, model, flags, configHash, knownEvalIds }
+  └── algebra/quadratic/a0/
+      ├── result.json     { verdict: "passed", assertions[], scoreEntries[] }
+      ├── events.json  sources.json  trace.json  diff.json       大,按需读
+      └── o11y.json       派生缓存,可从 events.json 重算
+                  │
+                  │  openRecord(".niceeval")
+                  ▼
+──── niceeval/record ──── 扫目录、认版本、建懒句柄;一个 attempt 大文件都不读 ────
+
+Record
+└─ experiments[]                  id 由目录路径推出
+   └─ runs[]                      一次 niceeval exp = 一个 run
+      └─ evals[].attempts[]  →  AttemptHandle {
+                                  locator: "@1x7f3q9k"  全局身份,报告靠它回溯
+                                  verdict, assertions
+                                  run, ref              指回来源
+                                  events() sources() diff()  调用时才读盘
+                                }
+                  │
+                  │  latestPerEval(record, { experiments: "midterm/" })
+                  ▼
+──── niceeval/sample ──── 挑一批、数出缺口、记警告 ─────────────────────────────
+
+  ① 每个 experiment × eval,跨该实验全部历史 Run 取最新那条 attempt
+  ② knownEvalIds(分母) − ① 挑中的题   →  missingEvalIds
+  ③ 扫未封口 / 不可读的 Run           →  warnings
+
+Sample {
+  mode:     "latest-per-eval"         口径字面写在数据上
+  attempts: AttemptHandle[]           引用上一层的句柄;消费它就自动正确
+  runs:     Run[]                     贡献过至少一条 attempt 的真实 Run
+  coverage: [{ experimentId:   "midterm/bub-gpt-5.4",
+               knownEvalIds:   [10 道],
+               missingEvalIds: ["geometry/area"] }]      这一层新造的信息
+  warnings: [{ kind: "unfinished-run", … }]              这一层新造的信息
+  pipe(dropExperiments(…), filterBy(…))                  只删减,不替换、不重挑
+}
+                  │
+                  ▼
+──── niceeval/report ──── 算值、两级折叠、装进组件树、两个面各渲一遍 ───────────
+
+sample.attempts
+   │  逐 attempt 求值  →  perEval 折叠  →  acrossEvals 折叠
+   ▼
+MetricCell { value: 0.9, display: "90%", refs: AttemptLocator[] }  每格带回证据
+   │  各组件的 *Data 计算
+   ▼
+TableData / ScatterData / SampleSummaryData / ExperimentListItem[] …  可序列化
+   │  resolve:spec 形态的节点换成 data 形态 props
+   ▼
+<Report><Page><Hero/><SampleWarnings/><ExperimentComparison/></Page></Report>
+   │
+   ├─ text 面 → niceeval show   终端一屏
+   └─ web 面  → niceeval view   静态站点        两个宿主,同一棵报告树
 ```
 
 ## 三层与那条分界线

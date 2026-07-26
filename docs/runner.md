@@ -93,9 +93,9 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 据此决定哪些已落盘的 attempt 直接携带合入本次 Run、哪些要真派发。
 派发的只是过不了判据的那些,所以「改一个 case 重跑」只花那一个 case 的时间,而不是全量。
 
-指纹的输入清单、携带的四道门(终态 / 指纹 / `timeoutMs` 资格 / `--rerun` 口径)、
-attempt 粒度、并发多开下的重规划与执行模式例外,完整契约单源在
-[Experiments · 缓存与携带](feature/experiments/cache.md)。
+指纹的输入清单、携带要过的门(条目侧的终态 / 指纹 / `timeoutMs` 资格 / 出身,
+调用侧的 `--rerun` 口径与执行模式)、attempt 粒度与并发多开下的重规划,
+完整契约单源在 [Experiments · 缓存与携带](feature/experiments/cache.md)。
 
 ## 超时:双层保护
 
@@ -103,6 +103,14 @@ attempt 粒度、并发多开下的重规划与执行模式例外,完整契约�
 - **运行器外层超时** —— attempt deadline 用 Effect 的 interruption 中断 Scope 里的 verdict-producing 工作 fiber,把超时转换成 `errored`(`error.code = "timeout"`,`error.phase` = 中断时已打开的生命周期阶段)draft;外层 Scope 不关闭,有界收尾(teardown 链、留存决策)仍在同一个 Scope 的 release 里照常完成——与 [Sandbox 的 Scope / finalizer 模型](feature/sandbox/architecture.md#留存keep与注册表)同一套语义,即使 agent 卡死也能强行收尾。
 
 外层是兜底,保证一个卡死的 case 不会挂起整批。
+
+**deadline 从 `sandbox.create` 起算,不含等并发位的排队。** 一条 eval 拿到的执行预算因此
+只由 `timeoutMs` 决定,不随本次开了多大并发、队列排多长而缩水。
+把排队算进去,同一条命令在 `--max-concurrency 2` 和 `20` 下就会产出不同的 `errored` 集合,
+还会加剧下面那条删失偏差——排得久的条件被系统性更早截断。
+落盘侧按同一口径记 `executionMs`(见 [Results · result.json](feature/record/architecture.md#resultjson)),
+[携带资格判据](feature/experiments/cache.md#携带资格timeoutms-不进哈希)拿它跟 `timeoutMs` 比,
+两侧量的是同一段时间。
 
 **超时不丢证据。** 中断终止的是「继续执行」,不撤销「已经观察到的事实」:事件接收器、usage 累计与 timing recorder 都归属 attempt 的外层 Scope,不随 body fiber 一起消失——这与[结果封口发生在 Scope release 之后](feature/record/architecture.md#resultjson)是同一条纪律,从 timing 推广到全部证据通道。超时 attempt 的落盘因此与正常 errored 同构:`events.json` 保留截至中断时刻已归一化的全部事件(进行中一轮已收到的部分照常保留,不新增事件种类,中断事实由 `error` 表达)、`usage` 为已累计轮次的如实值、`sources` 照常;收尾段在 teardown 链之前照常折叠一次 `workspace.diff`——沙箱此刻仍然活着,而「agent 走到了哪」正是超时诊断最需要的证据(计时记入收尾段,不入 `durationMs` 口径)。`artifacts` 列表如实声明实际写出的文件。`show @<locator> --execution` 对超时 attempt 展示的是被打断前的真实执行过程,不是空壳。
 
