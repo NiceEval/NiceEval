@@ -21,7 +21,7 @@ ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一�
 
 - `evals` 过滤器在解析时遍历发现后的 `EvalDescriptor` 全集（数据集已扇出），产出 `selectedEvalIds`；函数必须同步返回 boolean。落盘的是求值结果与过滤器指纹，不是函数本身。
 - `sandbox` 是本实验唯一的固定 `SandboxSpec`。spec 携带 `environments` 表时，解析期按每条选中 eval 的 `environment` 查表得出该 eval 的有效产物参数：选中 eval 声明的 profile 缺表项属于启动期配置错误，一次穷举列出全部缺项，不创建任何沙箱。逐 eval 的解析结果进入该 eval 的 fingerprint、provider 并发推荐值与 `ExperimentRunInfo.sandboxByEval`；remote Agent 不创建 sandbox，不参与查表。
-- eval 级 fingerprint 由 eval 源码 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [Runner · 缓存](../../runner.md#缓存指纹去重)。解析期求值这一步同时划定了指纹的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
+- eval 级 fingerprint 由 eval 源码 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [缓存与携带](cache.md#指纹改哪一行会重跑)。解析期求值这一步同时划定了指纹的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
 - 落盘投影 `ExperimentRunInfo` 的穷尽形状单点定义在 [Results · run.json](../record/architecture.md#runjson)；`model` / `agent` 只在 Run 顶层存在。
 
 ## 调度接口
@@ -31,7 +31,7 @@ experiment 影响调度的字段就这五个：
 - `maxConcurrency` —— 实验级并发闸，先过它再占全局并发位；名额与 attempt 同生命周期（沙箱创建到销毁全程持有，turn 退避等内部等待不释放），串行化共享状态实验或给撞限额的实验单独降速。名额域是该实验所有并行 Invocation 共用的（租约机制见[并发 Invocation](#并发-invocation用例锁)），多开不叠加 N。
 - `earlyExit` —— 只由 `passed` 触发的首过即停；`errored` 不中止其余样本，确定性错误走 run 级 fail-fast（见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)）。
 - `budget` —— 按已完成 attempt 实测花费停止派发的安全网。
-- `timeoutMs` —— 单 attempt 外层超时。四层来源按 [Resolved config](#resolved-config一次求值处处同源) 的链解析(`--timeout` → experiment → eval → config),此后一切消费方用的都是这份 resolved 值。不进 eval fingerprint 哈希,以携带资格判据参与 carry(`durationMs` ≤ 当前 resolved 值才可携带,见 [Runner · 缓存](../../runner.md#缓存指纹去重));超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
+- `timeoutMs` —— 单 attempt 外层超时。四层来源按 [Resolved config](#resolved-config一次求值处处同源) 的链解析(`--timeout` → experiment → eval → config),此后一切消费方用的都是这份 resolved 值。不进 eval fingerprint 哈希,以携带资格判据参与 carry(`durationMs` ≤ 当前 resolved 值才可携带,见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希));超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
 - `classifyFailure` —— 实验级失败分类器:识别以第三方错误形态浮出的自家共享基建死因(对共享隧道 host 的拒连),命中的 `scope` 触发止损闸停止派发。类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型),写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
 
 前四个字段的调度语义单点在 [Runner](../../runner.md)。
@@ -68,7 +68,7 @@ experiment 影响调度的字段就这五个：
 - **粒度是单条评估用例。** 锁键是 `(experimentId, evalId)`;持有者认领该用例本次计划的全部 attempt(含 attempts 补跑的缺失序号),不按 attempt 拆锁——同一用例的 attempt 分属两个进程会把 `attempts` 的通过率分母切成两半各自不完整。
 - **锁文件落在 `.niceeval/locks/`**,平铺目录、一条用例一个文件(与收尾登记同一套逐条目文件纪律)。文件名由身份 slug 加身份哈希构成,只须无碰撞、不承载解析;身份的权威在文件内容:`{ experimentId, evalId, pid, host, startedAt, heartbeatAt }`。
 - **取锁在派发时刻,逐用例、非阻塞进行。** 一条用例的锁在它第一个 attempt 真正要占并发位开跑的那一刻才原子创建(独占创建,已存在即失败),成功才放行执行。排队中的用例不持锁——一条 Invocation 任何时刻只锁自己正在跑的用例,不囤积整个选择集;因此两条选择重叠的 Invocation 会各自认领还没人锁的用例、按各自的并发上限并行推进,多开一条终端就是给同一批选择加吞吐。全部 attempt 都可携带的用例不取锁。等锁的用例不触发实验级 `setup`——选中用例全部在等锁时,本实验没有要派发的 attempt,`setup` 照例不执行。
-- **取到锁之后重做一次携带规划。** 取锁成功的那一刻,该用例重读自己在结果树上已落盘的 attempt,按[携带资格判据](../../runner.md#缓存指纹去重)逐条重判:终态、指纹匹配且 `durationMs` 在当前上限内的直接携入(零新成本),仍缺的序号才由本进程跑。这次重判**无条件进行**——取到锁就做,不附加任何前置判据;闭合性来自 `别人落盘 → 别人释放锁 → 本进程取到锁 → 本进程读盘` 这条 happens-before 链,只有发生在取锁之后才成立。它把[「重跑同一条命令就是续跑」](#carry自动携带)从串行重跑扩展到并发多开:两条选择有交集的 Invocation,不论各自的推进节奏怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。重判的读取面收窄到单条 `(experimentId, evalId)`——只翻该实验下跑过这条 eval 的 Run,不扫结果全树,因此这次 I/O 虽然发生在握着并发位与锁的派发路径上,开销仍可忽略;它与派发前的携带规划共用同一份资格判据,两处结论不分叉。
+- **取到锁之后重做一次携带规划。** 取锁成功的那一刻,该用例重读自己在结果树上已落盘的 attempt,按[携带资格判据](cache.md#四道门)逐条重判:终态、指纹匹配且 `durationMs` 在当前上限内的直接携入(零新成本),仍缺的序号才由本进程跑。这次重判**无条件进行**——取到锁就做,不附加任何前置判据;闭合性来自 `别人落盘 → 别人释放锁 → 本进程取到锁 → 本进程读盘` 这条 happens-before 链,只有发生在取锁之后才成立。它把[「重跑同一条命令就是续跑」](#carry自动携带)从串行重跑扩展到并发多开:两条选择有交集的 Invocation,不论各自的推进节奏怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。重判的读取面收窄到单条 `(experimentId, evalId)`——只翻该实验下跑过这条 eval 的 Run,不扫结果全树,因此这次 I/O 虽然发生在握着并发位与锁的派发路径上,开销仍可忽略;它与派发前的携带规划共用同一份资格判据,两处结论不分叉。
 - **心跳证明持有者活着。** 持有者每 10s 原子重写一次 `heartbeatAt`(写临时文件再 rename)。`heartbeatAt` 落后当前时间超过 30s(三个心跳周期)即视为持有者已死。判活只看心跳时间戳,不看 pid——容器与跨用户场景下 pid 判活不可靠,而心跳对任何死法(`SIGKILL`、断电、宿主蒸发)都收敛到同一个判据。
 - **撞上新鲜锁 = 该用例等待,派发轮继续。** 撞锁只挂起这一条用例:它让出刚拿到的并发位,位子立刻转派给下一条没被锁的用例——选中用例全部撞锁时本进程才真正闲下来整体等待。挂起的用例不占全局并发位,计入独立的 `elsewhere` 计数状态(别人在运行,与 `queued` 互斥——排队等的是本进程的并发位,`elsewhere` 等的是别的进程,混进同一个数字会把「资源不够」和「别人在跑」两种等待混为一谈),每个心跳周期重读一次锁文件;等待没有超时——心跳新鲜就一直等,用户中断照常退出。锁消失(正常释放)或过期(接管)后,该用例重新参与派发:取到锁即按上一条重做携带规划,对方 Invocation 落盘的终态此刻已可读、能携的携入,仍缺的 attempt 序号自己补跑。
 - **锁不含指纹。** 键只有身份,不掺 resolved 配置:两边配置不同(携带必不匹配)时,等待换到的只剩「不同时双跑」——这仍然值得,它保护有共享状态的用例不被并发踩踏,判据也因此保持「读锁文件即可判定」的简单形态,不需要在锁上再算一遍指纹。
@@ -81,7 +81,7 @@ experiment 影响调度的字段就这五个：
 
 ## Carry：自动携带
 
-上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次 Run（带 `artifactBase` 指回原 artifact），让最新 Run 保持完整；[`--rerun`](use-case/rerun.md) 收窄「哪些还算数」(`failed` 档只采信 `passed`，`all` 档一律不采信)；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求 Run 收尾，因此被中断或强杀的 Invocation **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [Runner · 缓存](../../runner.md#缓存指纹去重)，携带条目的落盘与读取语义见 [Results · 两类条目](../record/architecture.md#resultjson)。
+上一轮 fingerprint 匹配、判定为终态（passed / failed）的结果默认不重跑，**携带合入**本次 Run（带 `artifactBase` 指回原 artifact），让最新 Run 保持完整；[`--rerun`](use-case/rerun.md) 收窄「哪些还算数」(`failed` 档只采信 `passed`，`all` 档一律不采信)；`errored` / `skipped` 判定不可信，永不携带。携带以 attempt 为粒度、来源不要求 Run 收尾，因此被中断或强杀的 Invocation **重跑同一条命令就是续跑**——只补缺失的 attempt。粒度与来源的完整规则见 [缓存与携带](cache.md)，携带条目的落盘与读取语义见 [Results · 两类条目](../record/architecture.md#resultjson)。
 
 ## Invocation Completion 与退出
 

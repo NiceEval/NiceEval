@@ -23,7 +23,7 @@
    `running` 稳定顶在上限、`queued` 逐步消化,说明并发位是瓶颈;`running` 长期不满则瓶颈在别处(实验级闸、provider 独占串行或等待实验级 setup)。
 
    `running` 计的是进行中的 attempt,不是持位数。turn 退避睡眠中的 attempt(ACTIVE 行形如 `turn retry 2/4 (rate_limit) — waiting 3s`)让出了并发位但仍计 `running`,让出的位派给新 attempt——所以撞限流时 `running` 会**超过**上限,超出的行数恰等于正在退避的行数,任一瞬间真正持位执行的仍 ≤ 上限。这不是并发上限失效,是[退避让位](../../error-classification/architecture.md#退避与槽位)的正常样子。
-5. 还在撞限流时(active 行反复出现 provisioning retry、最终 `errored · sandbox.create`),降一档重跑同一条命令:已完成的终态 attempt 按指纹携带,只重试挂掉的(见 [Runner · 缓存](../../../runner.md#缓存指纹去重))。
+5. 还在撞限流时(active 行反复出现 provisioning retry、最终 `errored · sandbox.create`),降一档重跑同一条命令:已完成的终态 attempt 按指纹携带,只重试挂掉的(见 [缓存与携带](../cache.md))。
 
 ## 边界
 

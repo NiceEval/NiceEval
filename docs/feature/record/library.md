@@ -93,7 +93,7 @@ await attempt.sources();       // SourceArtifact[] | null
 ## `configHash`:配置身份只算一次
 
 跨 Run 比较有一个前提:两个 Run 得是同一套配置跑出来的。这个前提由 `run.configHash` 单点回答——
-**配置字段清单只有一张,就是[指纹输入表](../../runner.md#缓存指纹去重)的配置那一半**:
+**配置字段清单只有一张,就是[指纹输入表](../experiments/cache.md#指纹改哪一行会重跑)的配置那一半**:
 
 ```text
 configHash  = hash(agent, model, reasoningEffort, flags, 顶层 sandbox spec, strict)
@@ -110,7 +110,7 @@ fingerprint = hash(configHash, eval 源码, evalId / tags / environment / metada
 - **`timeoutMs` 与 `budget` 不进 configHash。** 它们决定「等不等得到、跑不跑得完」,不决定
   「跑出来的那条结果是什么」。一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟上限下是同一个
   事实。把它们塞进配置身份会让提高上限一次性切断全部历史可比性,为一个不影响结果的参数付全量
-  重跑。两者各有正交判据:超时上限管[携带资格](../../runner.md#缓存指纹去重)(`durationMs` ≤
+  重跑。两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`durationMs` ≤
   当前上限),止损闸管覆盖缺口(被掐掉的题没有结果,如实进
   [`coverage`](../sample/library.md#覆盖是逐行的事实))。
 - **`attempts` / `earlyExit` / `maxConcurrency` / `selectedEvalIds` / `labels` 不进。** 编排与
@@ -123,7 +123,7 @@ fingerprint = hash(configHash, eval 源码, evalId / tags / environment / metada
 ## 携带条目与 `evidenceState`
 
 运行器默认把上一轮 fingerprint 匹配、判定为终态的结果**携带合入**新 Run(语义见
-[Runner · 缓存](../../runner.md#缓存指纹去重)),让最新 Run 天然完整。携带条目在新 Run 里也是
+[Experiments · 缓存与携带](../experiments/cache.md)),让最新 Run 天然完整。携带条目在新 Run 里也是
 一条 `result.json`,带原条目的 `startedAt`、`artifactBase`(相对记录根,指向原 Run 的 attempt
 目录)与 `artifacts` 词干列表。读取面把它投影成 `attempt.carried`,消费方不自己探测 artifactBase。
 

@@ -364,7 +364,7 @@ Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这�
 - **本 Run 跑出的条目**:artifact 与 `result.json` 同目录,不需要任何路径引用字段。
 - **携带条目**(运行器默认把上一轮 fingerprint 匹配、判定为终态——passed 或 failed——的结果自动
   携带合入本 Run,让最新 Run 保持完整;`--rerun all` 关闭携带全部重跑,语义见
-  [Runner · 缓存](../../runner.md#缓存指纹去重)):`startedAt` 保留原条目的时刻,另带
+  [Experiments · 缓存与携带](../experiments/cache.md)):`startedAt` 保留原条目的时刻,另带
   `artifactBase`(相对记录根,指向原 Run 的 attempt 目录),`artifacts` 列表、`facts`、判定、
   `fingerprint` 与证据指向**一律原样携带,没有例外**——携带来的是那一轮真实发生过的事,不按本轮
   改写。一个被改写的历史字段没有任何读者能正确解释:它既不是当初发生的事,也不是本轮观察到的事。
@@ -372,7 +372,8 @@ Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这�
   「条目与配置怎么对上号」不靠 fingerprint 承担:`attempt.run.configHash` 直接给出该条目所在 Run
   的配置身份,读取面不必翻更早的 Run,也不必从指纹反推。常规携带下条目的 `fingerprint` 本就等于
   本 Run 算出的指纹——相等正是携带判据;
-  [`--carry-ignoring-flag`](../../runner.md#缓存指纹去重) 放宽判据时两者不等,那时如实保留原值,
+  [`--carry-ignoring-flag`](../experiments/cache.md#--carry-ignoring-flag搬迁用的一次性出口)
+  放宽判据时两者不等,那时如实保留原值,
   差异本身就是「这条是在别的 flags 下跑出来的」这个事实。
 
   `artifactBase` 是事实上的「携带」标记,读取面把它连同目标目录是否仍在一起投影成

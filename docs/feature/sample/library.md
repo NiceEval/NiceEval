@@ -101,7 +101,7 @@ knownEvalIds)**,`publish()` 复制时补记这个字段,发布目录因此仍算
 机制差异(携带 vs 拼接)只在数据字段上可分辨,供脚本按需区分。
 
 历史执行不是异常:携带是 fingerprint 担保下的正常缓存(「旧但有效」,语义见
-[Runner · 缓存](../../runner.md#缓存指纹去重)),跨 Run 拼接受 configHash 前提保护。所以它不进
+[Experiments · 缓存与携带](../experiments/cache.md)),跨 Run 拼接受 configHash 前提保护。所以它不进
 warnings——时效是每行数字的出身属性,跟着数字走,不是页面级警告。
 
 **只看新执行:`fresh` 选项。** 两个选择器都接受 `fresh: true`,物化 attempts 时排除全部历史执行:

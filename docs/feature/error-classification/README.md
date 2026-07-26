@@ -74,7 +74,7 @@ export type FailureClass =
 
 1. **agent 内层自愈**(能力因 agent 而异):被测 CLI / SDK 自己的重连与续传——codex 断连会带着会话现场自动重试,bub 没有这层。这是唯一能「从断点续传」的层,因为会话状态在它手里。adapter 不代偿这层能力,不在 `send` 里自己整段重发;`send` 浮出的失败视为 agent 侧自愈的最终结果。
 2. **turn 级重试**:对受理前的失败整段重发同一段 `TurnInput`。只兜「输入还没进 agent」的窗口——断点续传只有内层做得到,对「已进 agent」的失败重发只会让 agent 重做已做过的操作。
-3. **重跑 eval**(最外层恢复路径):重试耗尽或不可重试的失败落成 `errored`;`errored` 不进指纹缓存,重跑同一条命令即是续跑,只补跑失败的 attempt(见 [Runner · 缓存](../../runner.md#缓存指纹去重))。
+3. **重跑 eval**(最外层恢复路径):重试耗尽或不可重试的失败落成 `errored`;`errored` 不进指纹缓存,重跑同一条命令即是续跑,只补跑失败的 attempt(见 [Experiments · 缓存与携带](../experiments/cache.md))。
 
 **止损**(空间轴,由小到大,声明精确、推断兜底):
 

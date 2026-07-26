@@ -87,36 +87,15 @@ budget 按**域**计,不是全局总闸:每个 experimentId 一个域(没有 exp
 - **串行复用**:`--reuse-sandbox` 打开后,整批同基线 eval 共用一个热沙箱串行跑:不随 eval 变的层(`createSandbox`、`sandbox.setup` 链、`SandboxAgent.setup`)整组只执行一次,落成温基线 commit;题间把 workdir 重置回温基线(`git reset --hard` + 尊重分类账排除清单的 `git clean`),每题只重放 `EvalDef.setup` / `test(t)` Fixture。复用与并发互斥(一个热沙箱 = 一条执行道,并发钉成 1,显式 `--max-concurrency` 组合是创建前的用法错误),复用与指纹缓存双向绝缘(不消费携带、不产生命中);完整契约——温基线分层、诚实边界、同基线批次约束——见 [Sandbox · 串行复用](feature/sandbox/serial-reuse.md)。
 - [`--keep-sandbox`](feature/sandbox/cli.md) 与 `--reuse-sandbox` 互斥,组合在创建沙箱前报错:留存的现场必须属于那一次 attempt,不能被题间 `git reset` 抹掉后再当现场留下。预热池不受影响——run 结束时未被领用的池内沙箱照常销毁,留存只作用于跑过 attempt 的沙箱。
 
-## 缓存:指纹去重
+## 缓存:携带上一轮的结果
 
-`runner/fingerprint.ts` 对每个 eval 算 `(eval 代码 + 相关配置)` 的哈希。输入是穷尽的,进与不进都是契约,不逐处另立清单——「改了这个会不会重跑」按场景查[用例手册 · 改什么会作废缓存](feature/experiments/use-case/cache-invalidation.md):
+规划阶段,运行器对每条 eval 算 `(eval 代码 + 相关配置)` 的指纹(`runner/fingerprint.ts`),
+据此决定哪些已落盘的 attempt 直接携带合入本次 Run、哪些要真派发。
+派发的只是过不了判据的那些,所以「改一个 case 重跑」只花那一个 case 的时间,而不是全量。
 
-| 进指纹 | 不进指纹 |
-|---|---|
-| eval 源码文件全文 | `timeoutMs`(改用携带资格判据,见下) |
-| eval 声明的 `id` / `tags` / `environment` / `metadata` | `attempts`(改用缺失序号补跑,见下) |
-| `experimentId` | `labels`(纯报告坐标) |
-| agent 的名字 | agent 工厂的内部参数 |
-| `model`、`reasoningEffort` | 调度字段:`earlyExit`、`maxConcurrency`、`budget`、`--max-concurrency` |
-| `flags` **整袋**,无逐键豁免 | 生命周期 Hook 函数体:实验级 `setup` / `teardown`、sandbox spec 的 Hook 链 |
-| 该 eval 解析到的 sandbox provider 与预制产物参数 | 运行时才产生的一切:`ctx.fact()` 上报的观测、`setup` 起出来的坐标 |
-| `strict` | 指纹看不见的外部世界:agent CLI 版本、被测服务状态、镜像重建 |
-
-两条边界值得单说。**agent 工厂的内部参数不进指纹**——`codexAgent({ webSearch: true })` 改成 `false` 不作废任何结果,因为指纹只认 agent 的名字;要让一个开关参与可比性,把它声明进 `flags` 再由工厂从 `ctx.flags` 读。**运行时产生的值结构上进不来**——携带决策发生在任何 `setup` 执行之前,那时这些值还不存在;它们的家是 [`ctx.fact()`](feature/record/architecture.md#facts运行事实),连接坐标(隧道 URL、实例地址)因此换多少次都不作废已完成结果(三个家的判据见 [Experiments · 运行时坐标不进配置](feature/experiments/library.md#运行时坐标不进配置三个家))。
-
-- 上次判定是 `passed` 或 `failed`、且指纹未变 → 默认**跳过**,结果**携带合入**本次 Run(带 `artifactBase` 指回原 artifact,落盘语义见 [Results · 两类条目](feature/record/architecture.md#resultjson)),最新 Run 因此保持完整。两者都是"跑完了、判定确定"的终态,没理由重花一次 agent/sandbox 成本去复现同一个已知结果。
-- **携带以 attempt 为粒度,缺失序号补跑。** 指纹未变时,上一轮已落盘的终态 attempt 逐条携带,本轮只派发计划内缺失的 attempt 序号——`attempts: 5` 已有 3 条终态就只补跑 2 条,通过率的分母由携带与新跑共同凑满。携带的 `passed` 与首过即停组合遵守既有语义:已携入通过且 `earlyExit` 开时,缺失序号不再派发,计入 `earlyExitUnstarted`。
-- **`timeoutMs` 不进指纹哈希,是携带的资格判据。** 超时上限不改变「结果是什么」,只决定「等不等得到」:一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟的上限下是同一个事实,把 `timeoutMs` 掺进哈希会让提高上限作废全部已完成结果——为一个不影响它们的参数付全量重跑。因此指纹不含 `timeoutMs`;携带在指纹匹配之外追加一条判据:**终态 attempt 可携带,当且仅当其 `durationMs` ≤ 当前 resolved `timeoutMs`**(未设上限视为无穷;四层来源的解析顺序单源在 [Experiments · Resolved config](feature/experiments/architecture.md#resolved-config一次求值处处同源))。提高上限时全部已完成结果照常携带,只有当初撞线的 `errored`(本就不携带)重跑;调低上限时,耗时超过新线的旧结果不可在新配置下复现,如实重跑。
-- **一份 Run 里的条目共享一个指纹口径。** 携带的含义是「这条已落盘的结果对本次规划的输入依然成立」,携带的判据又正是指纹相等,两者合起来落成一条不变量:**Run 里每个条目的 fingerprint 都等于本 Run 配置算出的指纹**,携带条目不背着产出它那一轮的旧指纹漂下去。读取面因此不必翻更早的 Run 就能把条目与 Run 记下的配置对上号,`flags` 与条目指纹恒同源。合入只重打指纹一个字段:`locator`、`artifactBase`、判定、`facts` 与证据指向照旧原样携带(见 [Results · 两类条目](feature/record/architecture.md#resultjson))。
-- **`--carry-ignoring-flag <key>` 是搬迁用的一次性出口。** 把误当成实验条件写进 `flags` 的连接坐标搬进 [`ctx.fact()`](feature/record/architecture.md#facts运行事实) 时,`flags` 袋子变了、指纹随之全变,历史结果会一次性作废。这一次调用带上该键名(可重复),携带判定按抹掉这些键之后的 flags 认账,搬迁不必赔上一轮重烧;本次调用记一条 Run diagnostic(`carry-ignoring-flag`)留痕。它**只作用于这一次调用**,不是可以写进实验文件的声明——放宽携带是当场的人为决定,必须留痕且不得长期悄悄生效;真正的修法是让那个值不再出现在 `flags` 里。
-- **携带来源不要求 Run 收尾。** attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否与 Run 有没有补上 `completedAt` 无关;被中断或强杀的 run 留下的未收尾 Run,其中已落盘的终态 attempt 照常携带。**重跑同一条命令就是续跑**:只花缺失 attempt 的成本——这也是长 run 撞上外部看门狗(CI 时限、宿主超时强杀)后的恢复路径,配合[实验面的启动自愈](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈)与[实例面的孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底),重跑前不需要任何手工清理。
-- **并发 Invocation 靠用例锁把续跑扩展到多开。** 锁在派发时刻逐用例取:一条 Invocation 只锁自己正在跑的用例,不囤积选择集,两条选择重叠的 Invocation 因此各自认领不同用例、按各自并发上限并行推进——多开一条终端就是给同一批选择加吞吐。撞上别人持有的锁时该用例不双跑:挂起等待(不占并发位、计入独立的 `elsewhere` 计数状态,并发位转派给下一条没被锁的用例),锁释放后重新参与派发。**取到锁之后一律重做一次携带规划**:别的 Invocation 已跑完并落盘的终态,资格判据通过就携入,仍缺的 attempt 序号才自己跑——这次重判无条件发生在取锁之后,两条选择有交集的 Invocation 因此不论时序怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。锁文件、心跳、接管与非目标的完整契约单源在 [Experiments · 并发 Invocation](feature/experiments/architecture.md#并发-invocation用例锁)。
-- **执行模式 flag 划走两块例外。** [`--reuse-sandbox`](feature/sandbox/serial-reuse.md#与留存缓存重试的组合) 与指纹缓存**双向绝缘**:复用 run 不消费携带,计划内每个 attempt 都真实在热道上跑;复用产出也永不成为后续 run 的缓存命中。绝缘让一份 Run 里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。[`--keep-sandbox`](feature/sandbox/cli.md) 下,历史终态 verdict 落在**当前留存档内**的 attempt 不携带、照常派发重跑:留存要的是一次真实执行的现场,携带条目没有沙箱可留——`failed` 档下 `failed` 重跑、`passed` 照常携带,`all` 档下全部重跑。
-- 改了 fixture、改了配置 → 重跑。
-- `errored`(框架/环境层面的不确定失败,如超时、沙箱挂了)和 `skipped` 不缓存,总会重试——它们的判定本身不可信,不是可复用的终态。
-- **`--rerun` 一个旋钮定「上一轮的结果哪些还算数」,三档。** 不带:`passed` 与 `failed` 都算数,本次只跑 `errored` / `skipped` 与缺失序号。`--rerun`(裸写等价 `--rerun failed`):只有 `passed` 算数,`failed` 与它们一起重跑——改了不在指纹里的东西(agent 的 prompt、被测服务)之后复验失败项走这一档,不必去结果树里挖失败的 eval id。`--rerun all`:一律不算数,选中矩阵完整重烧,用于外部世界变了(agent CLI 升级、镜像重建)时的全量重验。档位词表与 [`--keep-sandbox[=failed|all]`](feature/sandbox/cli.md) 同构,裸写都是保守的 `failed` 档;三档都只作用于本次调用,不改指纹定义(用例见[`--rerun`](feature/experiments/use-case/rerun.md))。
-
-让"改一个 case 重跑"只花那一个 case 的时间,而不是全量。
+指纹的输入清单、携带的四道门(终态 / 指纹 / `timeoutMs` 资格 / `--rerun` 口径)、
+attempt 粒度、并发多开下的重规划与执行模式例外,完整契约单源在
+[Experiments · 缓存与携带](feature/experiments/cache.md)。
 
 ## 超时:双层保护
 
@@ -324,6 +303,7 @@ CI 的最终结论(退出码、`result` 事件)必须读当场的 `InvocationCom
 ## 相关阅读
 
 - [Architecture](architecture.md) —— 运行器在四段数据流里的位置与端到端时序。
+- [Experiments · 缓存与携带](feature/experiments/cache.md) —— 指纹输入、携带判据与 `--rerun` 三档的单源。
 - [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— 人读文本与 `--json` 两种输出形态怎样展示这篇讲的调度、预算与完成状态。
 - [CLI](cli.md) —— `exp` 怎么把这些调度行为接进 Effect 核心与反馈 coordinator。
 - [Sandbox](feature/sandbox/README.md) —— 预热与复用的 provider 支持,以及环境预置放哪。

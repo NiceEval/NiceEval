@@ -21,7 +21,7 @@
    ```
 
 4. 未派发的 attempt 计入完成状态的 `unstarted`,整次运行结论落在 `incomplete`、退出码 `1`——即使零 `failed` / `errored` 也不伪装全绿(见 [Runner · 完成状态](../../../runner.md#完成状态))。
-5. 想补完分母时提高预算重跑同一条命令:已落盘的终态 attempt 按指纹携带、不重付,本次只派发缺失的序号(见 [Runner · 缓存](../../../runner.md#缓存指纹去重)):
+5. 想补完分母时提高预算重跑同一条命令:已落盘的终态 attempt 按指纹携带、不重付,本次只派发缺失的序号(见 [缓存与携带](../cache.md#携带粒度以-attempt-为单位)):
 
    ```sh
    niceeval exp regression --strict --budget 40 --junit .niceeval/regression.xml
