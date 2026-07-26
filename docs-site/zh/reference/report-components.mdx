@@ -385,9 +385,9 @@ next: niceeval show geometry/area
 
 网页面点格子深链到该格的 attempt；终端面在表下印下钻命令。
 
-## 分组条形图（`BarChart`）
+## 分组柱状图（`BarChart`）
 
-同一批数据换成条形：按组并排比大小，回答「每个科目上谁领先、差多少」。横轴一组条、每条数据一根柱、柱高是指标值——benchmark 发布图（Terminal-Bench、BrowseComp 各一组，每个 agent 一根柱）就是这个形状。
+同一批数据换成柱状：按组并排比大小，回答「每个科目上谁领先、差多少」。横轴一组柱、每条数据一根柱、柱高是指标值——benchmark 发布图（Terminal-Bench、BrowseComp 各一组，每个 agent 一根柱）就是这个形状。
 
 ```tsx
 <BarChart>
@@ -406,11 +406,11 @@ geometry
   codex   —
 ```
 
-网页面是竖向分组柱：柱顶要数值就加一个 `<LabelList position="top" />`，颜色与同页其它组件一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。同一页里矩阵和条形图用同一组维度时，底层数据只算一次。
+网页面是竖向分组柱：柱顶要数值就加一个 `<LabelList position="top" />`，颜色与同页其它组件一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。同一页里矩阵和柱状图用同一组维度时，底层数据只算一次。
 
-### benchmark 站首屏的那张排行条形图
+### benchmark 站首屏的那张排行柱状图
 
-换成横向、一行一名、按值排序，就是 benchmark 站首屏那块排行条形图：
+换成横向、一行一名、按值排序，就是 benchmark 站首屏那块排行柱状图：
 
 ```tsx
 <BarChart layout="vertical">

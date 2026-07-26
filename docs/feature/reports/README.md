@@ -6,7 +6,7 @@
 |---|---|---|
 | 在终端定位失败、看源码、对话和 diff | [`niceeval show`](show.md) | AI 自主迭代、CI、快速 debug |
 | 在浏览器浏览历史、图表和完整证据 | [`niceeval view`](view.md) | 人工复盘、分享静态报告 |
-| 定义自己的成绩单、条形图或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
+| 定义自己的成绩单、柱状图或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
 
 `show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 sample-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
 

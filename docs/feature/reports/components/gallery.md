@@ -4,7 +4,7 @@
 
 ## 图 1：单指标排行与置信区间
 
-![按单一指标排行的横向条形图,每条带置信区间须线与行尾数值](assets/pass-at-1-ranked-bars.png)
+![按单一指标排行的横向柱状图,每条带置信区间须线与行尾数值](assets/pass-at-1-ranked-bars.png)
 
 一个模型维度按通过率排序，每个模型一根条；误差线只属于该通过率 series，数值标签也是该 series 的子节点：
 
@@ -24,7 +24,7 @@
 
 ## 图 2：多题集小面板
 
-![八个题集各一块条形小面板,同一组模型,其中一个模型全程强调](assets/per-eval-bar-panels.jpg)
+![八个题集各一块柱状小面板,同一组模型,其中一个模型全程强调](assets/per-eval-bar-panels.jpg)
 
 面板展开属于 TSX 和排版层。每个面板用相同的 `BarChart` 结构，`Cell` 在父 `Bar` 已知的 agent 横轴中选择一个值进行强调：
 
@@ -45,7 +45,7 @@
 
 不增加 facet 容器：JSX `map` 已经完整表达展开。跨面板同键同色由[页级色分配](README.md#系列色分配单位是页)保证；不提供跨图集中图例。
 
-## 图 3：成本构成堆叠条形
+## 图 3：成本构成堆叠柱状
 
 ![每个模型组合一根柱,柱内按 Planner/Worker 成本构成堆叠,柱顶显示总成本](assets/stacked-cost-bars.webp)
 

@@ -340,7 +340,7 @@ function chartData(input: ReportInput, spec: ChartSpec): Promise<ChartData>;
 
 ## `ChartData`
 
-排行条形、维度柱线图、数值趋势和散点共用一份真正覆盖 category × series 的数据模型。维度 key 与数值 x 不压成同一个 `string` 字段，排行也不伪造列维度：
+排行柱状、维度柱线图、数值趋势和散点共用一份真正覆盖 category × series 的数据模型。维度 key 与数值 x 不压成同一个 `string` 字段，排行也不伪造列维度：
 
 ```ts
 type AxisId = string | number;

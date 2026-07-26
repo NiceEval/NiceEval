@@ -349,7 +349,7 @@ export const MetricMatrix = makeDataComponent<
   text: (props, ctx) => matrixText(props.data, ctx),
 }) as unknown as ReportComponent<MetricMatrixProps>;
 
-/** 分组条形:同一份矩阵数据的另一种摆法;与 MetricMatrix 写同一份 spec 时只计算一次。 */
+/** 分组柱状:同一份矩阵数据的另一种摆法;与 MetricMatrix 写同一份 spec 时只计算一次。 */
 export const MetricBars = makeDataComponent<
   MatrixData,
   MetricMatrixOptions,

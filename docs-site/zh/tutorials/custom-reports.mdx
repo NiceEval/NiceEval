@@ -101,7 +101,7 @@ const ProdSummary = defineComponent((_props: {}, ctx) => (
 
 快照诊断(`SnapshotDiagnostics`)组件挨着选择警告摆,显示的是另一类事情:某一次实验跑的时候出了问题、但落不到具体某道题上,比如实验级 teardown 失败或者预算没法执行。它按实验和结果快照分组,每条保留是哪一次跑出来的、多久以前跑的、严重程度、原文和可复制的下一步命令。网页面整块默认折起,`<summary>` 那行恒定可见,一眼能看到涉及几次运行、共几条、最高严重到什么程度;终端面不折叠,顺序打完。这批数据为空时组件不输出任何东西。默认报告的每一页也都包含它;自定义报告需要显示时,在 `<ScopeWarnings />` 旁边加 `<SnapshotDiagnostics />`。
 
-页面里的每个组件都是**双面**的:网页面是 React 渲染,终端面是字符渲染,两面吃同一份算好的数据。实体列表按 experiment → Eval → Attempt 展示事实;指标表、矩阵、条形图、成绩单、散点图、趋势图和差异表展示聚合值。完整清单见[报告组件](/zh/reference/report-components)。网页面的实体、格子和点深链到 Attempt 详情,终端面印出对应的 `niceeval show <eval id>` 下钻命令。
+页面里的每个组件都是**双面**的:网页面是 React 渲染,终端面是字符渲染,两面吃同一份算好的数据。实体列表按 experiment → Eval → Attempt 展示事实;指标表、矩阵、柱状图、成绩单、散点图、趋势图和差异表展示聚合值。完整清单见[报告组件](/zh/reference/report-components)。网页面的实体、格子和点深链到 Attempt 详情,终端面印出对应的 `niceeval show <eval id>` 下钻命令。
 
 默认报告没有特权:它的四个页面全部由公开组件搭成。需要同样的当前 Scope 比较就写 `<ExperimentComparison />`;要子集就在报告里先 `filter`,或从 CLI 用 `--exp` 收窄。
 
@@ -326,7 +326,7 @@ export default defineReport(
 
 ## 换形态:表格用 Table,摘要卡片用 Grid/Stat,其余自己画
 
-内置组件未覆盖的展示分三类:表格使用排版原语 `<Table>`;label-value 的自由摘要卡片使用 `<Grid>` / `<Stat>`;通过率条形图、预算燃尽图和项目徽章这类真正需要自己画的展示,才用 `defineComponent` 编写双面组件。
+内置组件未覆盖的展示分三类:表格使用排版原语 `<Table>`;label-value 的自由摘要卡片使用 `<Grid>` / `<Stat>`;通过率柱状图、预算燃尽图和项目徽章这类真正需要自己画的展示,才用 `defineComponent` 编写双面组件。
 
 ### 一张表:`<Table>`
 

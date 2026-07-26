@@ -1,4 +1,4 @@
-// MetricBars:分组条形——同一份矩阵数据的另一种摆法(MetricBars.data = MetricMatrix.data)。
+// MetricBars:分组柱状——同一份矩阵数据的另一种摆法(MetricBars.data = MetricMatrix.data)。
 // 组维度一组条、系列维度一根条、条长是指标值;竖向分组柱,柱顶标数值,系列颜色与
 // 其它组件的稳定配色一致(类名 nre-series-cN 由 CSS 上色,深色主题跟随),图例自动生成。
 // 组内按值排序,方向随 better;缺数据的系列不画柱、不编 0(与 text 面的 — 同口径)。
