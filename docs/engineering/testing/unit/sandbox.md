@@ -69,7 +69,7 @@ suite。
   `suspend()`，找不到时抛出的是「没有 suspend 能力」而不是「转发时误吞成 undefined」。`suspendSandbox`
   自身两条路径都要证明：底层实例有 `suspend()` 时原样调用、没有时抛出带 `sandboxId`
   的清晰错误（不是静默跳过）。
-- **命令执行**：argv 传参不经 shell（含分号/美元符的参数原样送达——参数透传能发现错误的 shell 拼接，断言 mock 被调一次不能）；非零退出返回 CommandResult 而非抛异常；env 叠加不清空；root 的映射与不支持时报错；命令级超时；可选能力未实现时的 no-op 语义；执行入口永不被隐式重试。
+- **命令执行**：argv 传参不经 shell（含分号/美元符的参数原样送达——参数透传能发现错误的 shell 拼接，断言 mock 被调一次不能）；非零退出返回 CommandResult 而非抛异常；env 叠加不清空；root 的映射与不支持时报错；命令级超时；可选能力缺席时的 no-op 语义；执行入口永不被隐式重试。
 - **失败命令证据包装**：公开 `runCommand` / `runShell` 最外层调用非零退出时，在把 `CommandResult`
   交还调用方前登记一次 `FailedCommandEvidence`，并与同一次 timing command
   node 共用 id；成功命令不登记输出；provider 内部 `runCommand → runShell`
@@ -153,5 +153,5 @@ suite。
 - 不在 Context 测试里重新实现一个会执行真实 shell 的 fake Sandbox。
 - 不断言 Docker SDK、Vercel SDK 或 E2B SDK 的构造器本身工作。
 - 不只测 happy path；资源泄漏通常出现在失败和中断。
-- 不允许未实现的 fake 方法静默返回空字符串、空数组或成功结果。
+- 不允许没写实现体的 fake 方法静默返回空字符串、空数组或成功结果。
 - 不在单测里连真实容器验证连通性；真实 provider 行为归 E2E 沙箱仓库。

@@ -250,23 +250,13 @@
       "钩子": 1
     },
     "docs/cli.md": {
-      "不再": 1,
       "钩子": 4
     },
     "docs/concepts.md": {
-      "不再": 2,
       "钩子": 1
     },
     "docs/engineering/benchmark/README.md": {
-      "工作台": 2,
-      "钩子": 12,
-      "黑盒": 1
-    },
-    "docs/engineering/testing/README.md": {
-      "现已": 1
-    },
-    "docs/engineering/testing/churn.md": {
-      "不再": 1
+      "钩子": 12
     },
     "docs/engineering/testing/e2e/README.md": {
       "榜单": 1
@@ -302,45 +292,13 @@
       "榜单": 2
     },
     "docs/engineering/testing/unit/experiments-runner.md": {
-      "不再": 1,
-      "选集": 1,
       "钩子": 1
-    },
-    "docs/engineering/testing/unit/registry.md": {
-      "现已": 1
-    },
-    "docs/engineering/testing/unit/reports.md": {
-      "不再": 1
-    },
-    "docs/engineering/testing/unit/sandbox.md": {
-      "未实现": 2
-    },
-    "docs/engineering/testing/unit/scoring.md": {
-      "不再": 1
-    },
-    "docs/error-feedback.md": {
-      "不再": 1
-    },
-    "docs/feature/adapters/architecture/agent-contract.md": {
-      "不再": 1
     },
     "docs/feature/adapters/architecture/coding-agent-extensions.md": {
       "钩子": 8
     },
     "docs/feature/adapters/library/coding-agent-extensions.md": {
       "钩子": 12
-    },
-    "docs/feature/adapters/reference/agent-loop-apis.md": {
-      "未实现": 1
-    },
-    "docs/feature/adapters/reference/claude-code-otel-telemetry.md": {
-      "目前": 1
-    },
-    "docs/feature/adapters/reference/eve-protocol.md": {
-      "目前": 2
-    },
-    "docs/feature/adapters/reference/otel-instrumentation.md": {
-      "新版": 1
     },
     "docs/feature/adapters/sdk/bub/README.md": {
       "钩子": 1
@@ -355,20 +313,10 @@
       "钩子": 1
     },
     "docs/feature/error-classification/architecture.md": {
-      "不再": 4,
       "钩子": 1
-    },
-    "docs/feature/error-classification/library.md": {
-      "不再": 2
     },
     "docs/feature/error-classification/use-case/declare-fatal-scope.md": {
       "钩子": 1
-    },
-    "docs/feature/error-classification/use-case/write-a-classifier.md": {
-      "不再": 1
-    },
-    "docs/feature/eval/use-case/first-single-turn.md": {
-      "目前": 1
     },
     "docs/feature/eval/use-case/rubric-scoring.md": {
       "榜单": 1
@@ -377,15 +325,12 @@
       "钩子": 8
     },
     "docs/feature/experiments/architecture.md": {
-      "不再": 1,
       "钩子": 12
     },
     "docs/feature/experiments/cli.md": {
-      "不再": 3,
       "钩子": 17
     },
     "docs/feature/experiments/library.md": {
-      "不再": 1,
       "钩子": 25
     },
     "docs/feature/experiments/use-case/cache-invalidation.md": {
@@ -394,53 +339,29 @@
     "docs/feature/experiments/use-case/concurrency.md": {
       "钩子": 10
     },
-    "docs/feature/experiments/use-case/early-exit.md": {
-      "不再": 1
-    },
-    "docs/feature/experiments/use-case/flags-labels-facts.md": {
-      "不再": 1
-    },
     "docs/feature/experiments/use-case/lifecycle.md": {
-      "不再": 1,
       "钩子": 5
     },
     "docs/feature/experiments/use-case/max-concurrency.md": {
       "钩子": 2
     },
-    "docs/feature/experiments/use-case/rerun.md": {
-      "新版": 1
-    },
     "docs/feature/reports/README.md": {
       "榜单": 3
     },
     "docs/feature/reports/architecture.md": {
-      "不再": 2,
       "榜单": 2
     },
-    "docs/feature/reports/components/README.md": {
-      "不再": 1
-    },
-    "docs/feature/reports/components/attempt-detail/README.md": {
-      "不再": 2
-    },
     "docs/feature/reports/components/charts/README.md": {
-      "不再": 1,
       "榜单": 1
     },
     "docs/feature/reports/components/charts/bar-chart.md": {
       "榜单": 1
-    },
-    "docs/feature/reports/components/entity-lists/attempt-list.md": {
-      "选集": 1
     },
     "docs/feature/reports/components/tables/README.md": {
       "榜单": 1
     },
     "docs/feature/reports/components/tables/delta-table.md": {
       "榜单": 1
-    },
-    "docs/feature/reports/library.md": {
-      "不再": 1
     },
     "docs/feature/reports/library/built-in.md": {
       "榜单": 1
@@ -458,17 +379,12 @@
       "榜单": 1
     },
     "docs/feature/reports/show/compare.md": {
-      "不再": 1,
       "榜单": 3
     },
     "docs/feature/reports/show/default-report.md": {
       "榜单": 3
     },
-    "docs/feature/reports/show/execution.md": {
-      "不再": 1
-    },
     "docs/feature/reports/show/history.md": {
-      "不再": 1,
       "榜单": 6
     },
     "docs/feature/reports/show/reports.md": {
@@ -496,26 +412,22 @@
       "榜单": 1
     },
     "docs/feature/reports/use-case/write-custom-component.md": {
-      "不再": 3,
       "榜单": 1
     },
     "docs/feature/sandbox/README.md": {
       "钩子": 1
     },
     "docs/feature/sandbox/architecture.md": {
-      "不再": 1,
       "钩子": 8
     },
     "docs/feature/sandbox/cli.md": {
       "钩子": 2
     },
     "docs/feature/sandbox/library.md": {
-      "不再": 1,
       "钩子": 11
     },
     "docs/feature/sandbox/library/prebuilt-environments.md": {
-      "钩子": 6,
-      "黑盒": 1
+      "钩子": 6
     },
     "docs/feature/sandbox/serial-reuse.md": {
       "钩子": 1
@@ -523,63 +435,19 @@
     "docs/feature/sandbox/use-case/keep-sandbox-env-errored.md": {
       "钩子": 1
     },
-    "docs/feature/sandbox/use-case/keep-sandbox-hypothesis-loop.md": {
-      "不再": 1
-    },
-    "docs/feature/scoring/architecture.md": {
-      "不再": 1
-    },
     "docs/feature/scoring/architecture/severity-and-verdict.md": {
       "榜单": 1
-    },
-    "docs/feature/scoring/library/display.md": {
-      "不再": 1,
-      "严重级": 1
-    },
-    "docs/feature/scoring/use-case/judge-not-scoring.md": {
-      "不再": 1
-    },
-    "docs/observability.md": {
-      "TODO": 2,
-      "不再": 1
     },
     "docs/origin-integration.md": {
       "钩子": 1
     },
-    "docs/roadmap/README.md": {
-      "未实现": 1,
-      "现已": 1
-    },
-    "docs/roadmap/e2e-acceptance-dsl/README.md": {
-      "不再": 1
-    },
-    "docs/roadmap/e2e-acceptance-dsl/use-cases/adapter-readback.md": {
-      "不再": 1
-    },
-    "docs/roadmap/e2e-acceptance-dsl/use-cases/html-export.md": {
-      "不再": 1
-    },
     "docs/roadmap/e2e-acceptance-dsl/use-cases/machine-exports.md": {
-      "不再": 1,
       "榜单": 1
     },
-    "docs/roadmap/e2e-acceptance-dsl/use-cases/package-consumer.md": {
-      "不再": 2
-    },
-    "docs/roadmap/e2e-acceptance-dsl/use-cases/render-structure.md": {
-      "不再": 2
-    },
-    "docs/roadmap/eval-source-view/display.md": {
-      "不再": 1
-    },
     "docs/runner.md": {
-      "不再": 5,
       "钩子": 13
     },
     "docs/source-map.md": {
-      "不再": 2,
-      "新版": 1,
-      "目前": 1,
       "钩子": 3
     }
   }

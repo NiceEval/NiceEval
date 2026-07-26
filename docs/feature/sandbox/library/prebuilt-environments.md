@@ -66,7 +66,7 @@ sandbox: dockerSandbox({ image: "acme-codex-evals:0.144.1-r1" })
 
 ### E2B:TemplateBuilder 派生
 
-`niceeval/sandbox/e2b-template` 提供一个很薄的 **E2B 专属** factory `e2bCodingAgentTemplate(agent)`,从官方 coding agent 起点派生并返回原生 `TemplateBuilder`。用户可以继续链 E2B API,所以"官方基线"不会成为不能修改的黑盒:
+`niceeval/sandbox/e2b-template` 提供一个很薄的 **E2B 专属** factory `e2bCodingAgentTemplate(agent)`,从官方 coding agent 起点派生并返回原生 `TemplateBuilder`。用户可以继续链 E2B API,所以"官方基线"不会成为改不动的封闭件:
 
 Factory 同时收敛三条基线的 Node 工具安装面：运行用户的 `npm prefix -g` 是 `/usr/local`，`/usr/local/bin` 已在 PATH，`/usr/local/bin` 与 `/usr/local/lib/node_modules` 对运行用户可写。E2B 官方 `claude` 与 `codex` 起点的 Node 路径和默认 prefix 不同，这层规范化是 NiceEval 派生 baseline 的职责；否则同一条 eval 的 `npm install -g` 会只因换 Agent 而成片失败。因此项目追加全局 Node 工具用普通 `npm install -g <pkg>`，不需要按 Agent 分支，也不需要 sudo。`verifyE2BNodeToolContract(template)` 把这三条断言链进 build，任一项漂移时模板在写入 registry 前构建失败——这也是[官方公共基线](#官方-coding-agent-起点)的发布门槛。
 

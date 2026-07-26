@@ -26,6 +26,11 @@ export interface BannedTerm {
   why: string;
   /** 可选:豁免的路径前缀(如 `docs/roadmap/`)。 */
   exempt?: string[];
+  /**
+   * 可选:包含该词但语义无关的更长词(如「选集」之于「候选集合」)。中文没有词边界,
+   * 短词会被更长的合法词整段命中;落在这些词里的匹配不计。每一项都必须含 `term` 本身。
+   */
+  allowIn?: string[];
 }
 
 interface WritingRules {
@@ -105,6 +110,25 @@ function termMatcher(term: string): RegExp {
     : new RegExp(escaped, "g");
 }
 
+/** 数命中,跳过落在 allowIn 更长词里的那些。allowIn 为空时就是普通计数。 */
+function countTermHits(prose: string, re: RegExp, allowIn?: string[]): number {
+  re.lastIndex = 0;
+  const allowed: Array<[number, number]> = [];
+  for (const word of allowIn ?? []) {
+    for (let at = prose.indexOf(word); at !== -1; at = prose.indexOf(word, at + 1)) {
+      allowed.push([at, at + word.length]);
+    }
+  }
+  let count = 0;
+  for (const m of prose.matchAll(re)) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (allowed.some(([s, e]) => start >= s && end <= e)) continue;
+    count += 1;
+  }
+  return count;
+}
+
 export function lintDocsWriting(): LintReport {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
   const baseline: Baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_FILE), "utf8"));
@@ -142,8 +166,7 @@ export function lintDocsWriting(): LintReport {
       const prose = stripInlineCode(raw);
       for (const term of matchers) {
         if (term.exempt?.some((prefix) => file.startsWith(prefix))) continue;
-        term.re.lastIndex = 0;
-        const count = (prose.match(term.re) ?? []).length;
+        const count = countTermHits(prose, term.re, term.allowIn);
         if (count === 0) continue;
         const perFile = (actual.bannedTerms[file] ??= {});
         perFile[term.term] = (perFile[term.term] ?? 0) + count;
@@ -197,6 +220,12 @@ export function validateRules(): string[] {
     if (!term.why?.trim()) problems.push(`「${label}」没写 why——没有理由的禁词会被当成洁癖绕过`);
     if (seen.has(term.term)) problems.push(`「${label}」重复登记`);
     seen.add(term.term);
+    // allowIn 写错字时不会报错、只会静默失效(该豁免的仍然命中),所以在这里拦。
+    for (const word of term.allowIn ?? []) {
+      if (!word.includes(term.term)) {
+        problems.push(`「${label}」的 allowIn 里「${word}」不含这个词——写错了就豁免不掉`);
+      }
+    }
   }
   if (typeof rules.lineWidth?.max !== "number" || rules.lineWidth.max <= 0) {
     problems.push("lineWidth.max 缺失或不是正数");

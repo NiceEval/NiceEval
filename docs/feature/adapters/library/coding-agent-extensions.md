@@ -132,7 +132,7 @@ my-evals/
 
 Adapter 先从本地读取原始字节，再上传到 Sandbox 的隔离 Agent 配置目录。它不继承宿主机的 `~/.claude/settings.json` 或 `~/.codex/config.toml`；传入文件原样替换 Sandbox 中原本为空的用户配置层，不做字符串拼接、deep merge 或重新序列化。仓库自己的项目级配置仍由被测 CLI 按官方优先级读取。
 
-model、鉴权、MCP 和 OTel 导出由 experiment 与 Adapter 通过独立配置层或 CLI 参数叠加，对应的键不允许出现在原生配置文件里，冲突在 setup 阶段报错，不做静默覆盖。配置文件内容的 SHA-256 进入安装 checkpoint key；secret 走环境变量，不写进配置文件。每个 Agent 的保留键清单见页尾链接的各 Agent 页。
+model、鉴权、MCP 和 OTel 导出由 experiment 与 Adapter 通过独立配置层或 CLI 参数叠加，对应的键不允许出现在原生配置文件里，冲突在 setup 阶段报错，不做静默覆盖。配置文件内容的 SHA-256 进入安装 checkpoint key；secret 走环境变量，不写进配置文件。例外只有 Hermes——它的凭据面只认 `~/.hermes` 下的文件，落盘范围与理由见 [Hermes 页](../sdk/hermes/README.md)。每个 Agent 的保留键清单见页尾链接的各 Agent 页。
 
 上例两边都关掉内置联网检索：评测答案能被搜到时，联网会污染通过率。注意原生配置只能关掉 Agent 的检索工具，挡不住它用 shell 命令访问网络；更强的网络隔离属于 Sandbox 层。
 

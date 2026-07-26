@@ -63,7 +63,7 @@ gate: Catalog reads use use-cache directive and products cache tag
 <标题> · <检查方式> · expected <值> · received <值>
 ```
 
-- 分隔一律 ` · `，关键词后不带冒号；字段有则出现，检查方式与标题相同时省略（同两行排版）。不带 `gate:` 前缀——行首的 verdict 图标已表达严重级。
+- 分隔一律 ` · `，关键词后不带冒号；字段有则出现，检查方式与标题相同时省略（同两行排版）。不带 `gate:` 前缀——行首的 verdict 图标已表达严重度。
 - 检查方式的参数已写出期望条件时（`equals(4)`、`includes("Brooklyn")`、`calledTool("get_weather")`、`maxCost(0.5)` 这类 matcher 即条件的断言）省 `expected`——重复一遍只挤占宽度；自定义断言给了独立 `expected` 的保留。`received` 连同关键词永不省，它是单行里唯一的新事实：`equals(4) · received 3`、`calledTool("get_weather") · received 0 tool calls`、`commandSucceeded() · received exit 1 · "… 2 failed, 14 passed"`。
 - soft 促成判定时以 `<score> / <threshold>` 占值位（`similarity("布鲁克林今天晴。") · 0.71 / 0.90`）；unavailable 促成 `errored` 时以 reason 占值位（`closedQA("修改是否聚焦问题?") · judge-model-unresolved`）；结构化执行 error 显示 error 的一层摘要，不套断言语法。
 - 计分制的挣分标注是单行的最后一个尾缀（`commandSucceeded() · received exit 1 · +0 pts`）；`+N more lost points` 与 `+N more failures` 同规则：独立成尾，不参与截断也不拼进被截断的值。

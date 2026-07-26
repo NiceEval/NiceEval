@@ -203,14 +203,14 @@ artifact 是机器可读的,可回放、可二次分析、可喂给下游 dashbo
 
 评测很贵 —— 每个 case 可能是几十次模型调用。**「花了多少 token / 多少钱」是一等公民**,因为评 coding agent 时最值钱的对比维度是**质量 × 成本**:同一批 eval 跑 claude-code / codex / bub,谁的通过率高、谁更省钱,一目了然。
 
-参考项目这块都是空的:eve 在模型层有 token 数但 eval 不聚合成本;agent-eval 连抠都没抠(opencode 解析器里只留了句 "could extract token usage if needed" 的 TODO)。niceeval 把它补齐。
+参考项目这块都是空的:eve 在模型层有 token 数但 eval 不聚合成本;agent-eval 连抠都没抠(opencode 解析器里只留了句 "could extract token usage if needed" 的 `TODO` 注释)。niceeval 把它补齐。
 
 ### 用量从哪来
 
 `Usage`(`{ inputTokens?, outputTokens?, cacheReadTokens?, cacheCreationTokens?, reasoningTokens?, requests?, costUSD? }`,字段契约见 [Results · Usage](feature/record/architecture.md#usage))按 transport 取得,作者通常**什么都不用做**:
 
 - **远程 agent** —— 你在 `send` 里把模型返回的 usage(或你服务响应里带的 usage,若它回了)一并返回。
-- **沙箱 coding agent** —— **不必手填**:agent 的 JSONL transcript 里本就逐条带 token 用量,transcript 解析器(`o11y/parsers/<agent>.ts`)抠出来。这正是 agent-eval 留下的 TODO。
+- **沙箱 coding agent** —— **不必手填**:agent 的 JSONL transcript 里本就逐条带 token 用量,transcript 解析器(`o11y/parsers/<agent>.ts`)抠出来。这正是 agent-eval 留下的 `TODO`。
 
 每轮的用量来源二选一:remote agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 attempt 用量(落进 `result.json` 的 [`Usage`](feature/record/architecture.md#usage));reporter 再跨 eval 累加 → 整个 run 的用量。
 

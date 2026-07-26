@@ -173,7 +173,7 @@
 | `flag()`(experiment flags 当维度 / 轴) | `src/report/model/flag.ts` |
 | 两级聚合引擎 / 维度 / MetricCell 计算 / 聚合前去重接线 | `src/report/model/aggregate.ts` |
 | 数据契约(Metric 字面量键泛型、TableData / MatrixData / ScatterData / LineData / ScoreboardData / DeltaData / SampleSummaryData … ExperimentListItem / EvalListItem / AttemptListItem;`MetricCell.refs: AttemptLocator[]` 必填) | `src/report/model/types.ts` |
-| 报告 chrome 文案的 locale 字典(`ReportLocale` 是开放的 BCP 47 字符串,不再是字面量联合;内置文案与 `MetricCell.display` 生成面当前覆盖 `DISPLAY_LOCALES = ["en", "zh-CN"]`,其它 locale 走 `LocalizedText` 回退规则;渲染入口 options 收 `locale`,经 `WebContext` / `TextContext` 携带) | `src/report/model/locale.ts` |
+| 报告 chrome 文案的 locale 字典(`ReportLocale` 是开放的 BCP 47 字符串;内置文案与 `MetricCell.display` 生成面当前覆盖 `DISPLAY_LOCALES = ["en", "zh-CN"]`,其它 locale 走 `LocalizedText` 回退规则;渲染入口 options 收 `locale`,经 `WebContext` / `TextContext` 携带) | `src/report/model/locale.ts` |
 | 元素树 / `defineComponent`(双面)/ 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
 | 组件数据解析 pass(`resolveReportTree`:装载规范化产物之后、render 之前递归遍历树;遇到 spec 形态组件就调它自己的解析面(代调配套 `*Data` 计算函数)并换成 data 形态 props,同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页两种粒度的四个渲染入口都先跑它,报告作者因此不用手写取数) | `src/report/definition/tree.ts`(`resolveReportTree`;被 `src/report/runtime/text.ts` 与 `src/report/runtime/web.ts` 调用) |
 | 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table（十个内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`、官方表状组件共用；`Tab` 只能直接放在 `<Tabs>` 下，不参与路由、没有 id） | `src/report/definition/primitives.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平校验、`planTextGrid` 的 text 面排版算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |

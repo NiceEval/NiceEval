@@ -1,6 +1,6 @@
 # Phase Timings 与安装基准
 
-本机制由两部分组成：写入每个 Attempt 的阶段计时契约，以及直接调用单次 Attempt 引擎的安装基准工作台。`AttemptRecord.phases` 的持久化类型单归 [Record Format](../../feature/record/architecture.md)，本篇定义阶段边界语义与基准消费方式。
+本机制由两部分组成：写入每个 Attempt 的阶段计时契约，以及直接调用单次 Attempt 引擎的安装基准台。`AttemptRecord.phases` 的持久化类型单归 [Record Format](../../feature/record/architecture.md)，本篇定义阶段边界语义与基准消费方式。
 
 ## 要回答的问题
 
@@ -93,7 +93,7 @@ Runner 时间树不写入 OTel trace,也不混入独立的 Traces 瀑布图—�
 
 ## 基准:`bench/` 直接调用的内部脚本
 
-安装基准是仓库常备的**优化工作台**,与单元测试(`pnpm test`)和 CI 门禁都独立:目标读者是「正在优化冷启动 / checkpoint 缓存 / 安装脚本的人」,工作流是改一版实现 → 重跑基准 → 与上一轮 Run 对比,要的是「跑一次、当场看到数字」,不是「跑完再另开一步生成报告页」的两段式流程。因此 `bench/` **不是**一个 niceeval 项目——没有 `niceeval.config.ts`,没有 `evals/`/`experiments/` 走 CLI discover,也不吃 [Reports](../../feature/reports/README.md) 积木出页面。它是几个纯 TS 脚本,直接调用 runner 内部单次 attempt 的执行引擎,一条命令跑完直接把耗时表打印到终端:
+安装基准是仓库常备的**优化工具**,与单元测试(`pnpm test`)和 CI 门禁都独立:目标读者是「正在优化冷启动 / checkpoint 缓存 / 安装脚本的人」,工作流是改一版实现 → 重跑基准 → 与上一轮 Run 对比,要的是「跑一次、当场看到数字」,不是「跑完再另开一步生成报告页」的两段式流程。因此 `bench/` **不是**一个 niceeval 项目——没有 `niceeval.config.ts`,没有 `evals/`/`experiments/` 走 CLI discover,也不吃 [Reports](../../feature/reports/README.md) 积木出页面。它是几个纯 TS 脚本,直接调用 runner 内部单次 attempt 的执行引擎,一条命令跑完直接把耗时表打印到终端:
 
 ```text
 bench/
@@ -109,7 +109,7 @@ bench/
 
 ### 复用点:直接调 runner 的单次 attempt 引擎,不重新拼装顺序
 
-单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](../testing/e2e/README.md) 的 `verify.ts` 黑盒起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
+单次 attempt 的执行序——沙箱就绪 → `sandbox.setup` 钩子链 → git baseline → `eval.setup` → `agent.setup` → `tracing.configure` → `send`(见[沙箱生命周期](../../feature/sandbox/architecture.md#沙箱在生命周期里的位置))——已经封在 `runAttemptBody`(`src/runner/attempt.ts`)里,包括错误处理、超时中断、teardown-on-error 这些容易漏的细节。`bench/` 与其在脚本里重新手搭 `AgentContext`(`session`/`log`/`signal`/`flags` 这些字段漏一个就是隐蔽 bug),不如直接从 `../src/runner/attempt.ts` 相对导入调用它——这和 `e2e/` 允许自己触达 niceeval 内部机制、不受制于对外发布的包边界是同一类「仓库内部工程工具的特权」:[E2E CI](../testing/e2e/README.md) 的 `verify.ts` 从进程外起 CLI 子进程验证外部可观察行为,`bench/` 反过来直接调用内部函数拿第一手耗时——两者都不是"包外用户能做的事",都只在同一个仓库、同一次提交里和 runner 保持同步,`pnpm run typecheck` 天然守住调用签名不漂移。
 
 探测 eval 用 `defineEval`(公开 API)在脚本里就地内联构造,不落 `.eval.ts` 文件、不经过 discover:
 

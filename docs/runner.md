@@ -52,7 +52,7 @@ onSlotFree():   # 初始 globalMaxConcurrency 个并发位视为同样多次空�
 
 `priority` 只在建 attempt 列表时算一次(用规划阶段已知的「每个 run 有多少 attempt」),不随运行中 earlyExit / fail-fast / budget 实际提前收尾而重算——那是动态优先级调整,复杂度不值得为一个尽力而为的启发式引入。实验级闸(`ExperimentDef.maxConcurrency`)不参与这条纪律,先来后到即可:同一 run 的 attempt 优先级相同,它们内部谁先谁后不影响总墙钟。等待中的 attempt 被中止(earlyExit、fail-fast、用户中断)时退出等待集,不占用后续分配。
 
-一次 `exp` 运行把按路径选中的多个单一配置展成 attempt，再 × `eval × attempts`；每个配置先用自己的 `evals` 谓词遍历发现结果。比如 2 个实验配置 × `attempts: 5` × 3 个 eval = 30 个 attempt。汇总按 `(agent, model, eval)` 分组,不再是单一判定,而是**通过率** + 平均耗时 / token / 成本:
+一次 `exp` 运行把按路径选中的多个单一配置展成 attempt，再 × `eval × attempts`；每个配置先用自己的 `evals` 谓词遍历发现结果。比如 2 个实验配置 × `attempts: 5` × 3 个 eval = 30 个 attempt。汇总按 `(agent, model, eval)` 分组,给出**通过率** + 平均耗时 / token / 成本:
 
 ```text
 fixtures/button   claude-code   pass@5 = 4/5 (80%)   mean 34s · 58k tok · $0.44
