@@ -20,7 +20,7 @@ $ pnpm exec niceeval exp compare/codex--nowledge
 
 断言抽进了公共 helper 时作废面跟着变大,见下面第 2 条。
 
-## 2. 改了公用 helper,或改了数据集里的一行
+## 2. 改了公用 helper,或改了测试集里的一行
 
 **场景一**:断言抽在 `evals/share/assert-memory.ts` 里,改了其中一条的判定逻辑。
 

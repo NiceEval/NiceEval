@@ -366,6 +366,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- **待裁决** [undecided-chinese-terms-carry-scope-evalkind](undecided-chinese-terms-carry-scope-evalkind.md) — 三组中文术语待定(2026-07-26):Carry / Scope / Eval kind+Score point 含义已进 `docs/concepts.md`,中文列写 `未定`;现行写法「携带 / 作用域 / 计分制轴」均被用户否决且未给替代,裁决后一次全仓替换。同批已裁决:Dataset = **测试集**(已全仓替换,遗留 ML train/test 词义撞车风险,与 `早停` 被禁同因)
 - [latest-known-rename](latest-known-rename.md) — 裁决(2026-07-26):`latestPerEval` 改名 `latestKnown`(mode 同步 `latest-known`),推翻前一天的命名——名字宣传遍历粒度、藏起真正的风险点跨 Run 缝合;否决合成 `latest({unit})`、`stitchLatest`、`currentStanding`;连带删掉「名字自解释」的宣称
 - [env-only-credentials-config-only-code](env-only-credentials-config-only-code.md) — 裁决(2026-07-25):环境变量只剩凭据 + 终端事实,配置项只从 flag/experiment/config 来;删 NICEEVAL_RUNS/TIMEOUT/BUDGET/MAX_CONCURRENCY、judge 的 MODEL/BASE 与跨家族 key 回落、NICEEVAL_LANG/LOCALE(换成 config.locale)、bub 两个 env 后门;凭据保留内置默认变量名;守护 test/unit/config-env-boundary.test.ts(正则要排除写入子进程 env 的赋值)
 - [index-classification-by-subsystem](index-classification-by-subsystem.md) — 裁决(2026-07-21):memory 索引按「子系统」单一主轴归档(分区=动手前扫哪块),溶解「设计决定」分区、报告拆出独立、大区内拆裁决(≈DX 反馈)/台账(≈bug);否决把 bug/DX 反馈当顶层主轴(类型轴切顶层=同一块工作扫两处,正是原问题根因)与分离已修条目(违反不归档规则);commit 05a040e

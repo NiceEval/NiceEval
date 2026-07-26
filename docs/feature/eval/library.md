@@ -40,12 +40,12 @@ export default defineEval({
 
 `tags` 是分类标签，供 CLI `--tag` 与 experiment 谓词过滤，未声明时是空数组。`environment` 是 provider-neutral 的环境 profile id，experiment 只读取这个 id，具体 image / template 由 sandbox spec 的 `environments` 映射（完整语义见 [README](README.md#defineeval-的形状)）。eval 本身保持 agent-neutral，只描述「测什么」和「怎么算对」；对着哪个 agent 跑、跑几次，由 `experiments/` 里的 `defineExperiment` 决定（见 [Experiments](../experiments/README.md)）。
 
-## 数据集扇出
+## 测试集扇出
 
 共享同一套逻辑的一批 case，从同一文件默认导出**数组**或 **keyed record**，不复制薄 wrapper 文件：
 
 - **数组**：位置就是身份。按位置生成零填充 4 位的稳定 id：`evals/sql.eval.ts` 导出数组 → `sql/0000`、`sql/0001`……
-- **Keyed record**：业务 key 就是身份。`Record<string, EvalDef>` 的 key 原样接到文件 id 后：`swelancer.eval.ts` 的 key `15193` → `swelancer/15193`。key 必须是一个非空路径片段——不含 `/`、`\\`，不是 `.` / `..`，不含控制字符。发现结果按 key 字典序排列，数据源换行或构造顺序变化不影响运行与展示顺序。空 record 合法，表示这份数据集当前没有 case。
+- **Keyed record**：业务 key 就是身份。`Record<string, EvalDef>` 的 key 原样接到文件 id 后：`swelancer.eval.ts` 的 key `15193` → `swelancer/15193`。key 必须是一个非空路径片段——不含 `/`、`\\`，不是 `.` / `..`，不含控制字符。发现结果按 key 字典序排列，数据源换行或构造顺序变化不影响运行与展示顺序。空 record 合法，表示这份测试集当前没有 case。
 
 选择规则：位置本身有意义且稳定用数组；外部系统已给出稳定身份用 keyed record。两种形状共享同一份 eval 源码捕获，区别只在 id 的最后一段。数据加载（`loadYaml` / `loadJson`）与完整写法见[用例篇](use-case/dataset-fanout.md)。
 
@@ -53,7 +53,7 @@ export default defineEval({
 
 - 文件名以 `.eval.ts` 或 `.eval.tsx` 结尾才会被发现（eval 里要写 JSX 时用 `.tsx`，发现规则与 id 推导相同）。
 - 目录只形成 id 前缀：`evals/billing/refund.eval.ts` → `billing/refund`；运行选择仍由 experiment 的 `evals` 决定。
-- 数据集放 `evals/data/`；沙箱型 eval 的起始文件素材可以放 `evals/fixtures/`（纯目录命名约定，运行器不扫描不自动加载，仍要在 `test()` 里显式写入沙箱）。
+- 测试集放 `evals/data/`；沙箱型 eval 的起始文件素材可以放 `evals/fixtures/`（纯目录命名约定，运行器不扫描不自动加载，仍要在 `test()` 里显式写入沙箱）。
 - `description` 写给人看，id 给机器引用。**禁止**手写 `id` / `name`——从文件路径推导，改名即改 id，不会腐烂。
 - `t.group` 的组名是跨 eval 的对比维度，按字面对齐：同类检查抽成共享函数（如 `evals/*/share/`），组名在函数里写一次，跨 eval 天然一致（[计分粒度 · 组名对齐](../experiments/score-points.md#得分点-组对比读取的下钻粒度)）。
 

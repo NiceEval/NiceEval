@@ -222,6 +222,6 @@ Results:  2 passed, 1 failed, 0 skipped
 
 ## 接着读
 
-- [Authoring](feature/eval/README.md) —— 多轮、数据集扇出、fixture 进阶。
+- [Authoring](feature/eval/README.md) —— 多轮、测试集扇出、fixture 进阶。
 - [Scoring](feature/scoring/README.md) —— 全部评分手段。
 - [CLI 参考](../docs-site/zh/reference/cli.mdx) —— 全部命令与标志。

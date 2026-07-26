@@ -1,7 +1,7 @@
 ---
 title: "数据驱动测试（dataset fan-out）：用多份数据运行同一套评估用例"
 sidebarTitle: "数据驱动测试"
-description: "从 .eval.ts 文件导出数组或 keyed record，将一套评估逻辑展开为多个 case。用 loadYaml 或 loadJson 读取外部数据集，并获得稳定 ID。"
+description: "从 .eval.ts 文件导出数组或 keyed record，将一套评估逻辑展开为多个 case。用 loadYaml 或 loadJson 读取外部测试集，并获得稳定 ID。"
 ---
 
 数据驱动测试（dataset fan-out）适合大量结构相同、输入不同的测试。例如 SQL 生成、意图分类、检索问答和工具选择。
@@ -76,10 +76,10 @@ cases:
     sql: SELECT COUNT(*) FROM users;
 ```
 
-## 过滤数据集评估用例
+## 过滤测试集评估用例
 
 ```bash
-# 运行整个数据集
+# 运行整个测试集
 npx niceeval exp local sql
 
 # 只运行第一个数组 case
@@ -89,10 +89,10 @@ npx niceeval exp local sql/0000
 npx niceeval exp local swelancer/15193
 ```
 
-## 数据集 vs 独立文件
+## 测试集 vs 独立文件
 
 <Tabs>
-  <Tab title="使用数据集">
+  <Tab title="使用测试集">
     case 结构完全一致，主要差异是输入和预期输出。
   </Tab>
   <Tab title="使用独立文件">
@@ -101,5 +101,5 @@ npx niceeval exp local swelancer/15193
 </Tabs>
 
 <Tip>
-  数据集适合”横向覆盖”，独立评估用例文件适合”行为复杂”的场景。
+  测试集适合”横向覆盖”，独立评估用例文件适合”行为复杂”的场景。
 </Tip>

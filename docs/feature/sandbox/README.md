@@ -64,7 +64,7 @@ interface CommandOptions {
 
 `runCommand` 按 argv 数组传参,不经过 shell 解析——参数原样传给进程,天然不怕参数里带引号、`$`、`;`、反引号等特殊字符,也没有 shell 注入风险。`runShell` 接受一整段脚本交给 shell 解释,专门给需要管道、`&&`、通配符这类 shell 语义的场景用。
 
-这不是两个方法碰巧长得像,是故意保留的两种不同意图:eval 里的命令参数经常来自数据集字段或 agent 生成的输出,内容不可控——比如 `runCommand("./verify.sh", [row.filename])`,`row.filename` 就算是 `"a; rm -rf /workspace"` 这种字符串,argv 形式下也只是一个普通参数值,不会被解释成两条命令。如果合并成一个走 shell 的 `run(cmd: string)`,调用者就必须自己把每个动态值转义成安全的 shell 字符串才能拼进去,一旦漏转义就是真实的命令注入。
+这不是两个方法碰巧长得像,是故意保留的两种不同意图:eval 里的命令参数经常来自测试集字段或 agent 生成的输出,内容不可控——比如 `runCommand("./verify.sh", [row.filename])`,`row.filename` 就算是 `"a; rm -rf /workspace"` 这种字符串,argv 形式下也只是一个普通参数值,不会被解释成两条命令。如果合并成一个走 shell 的 `run(cmd: string)`,调用者就必须自己把每个动态值转义成安全的 shell 字符串才能拼进去,一旦漏转义就是真实的命令注入。
 
 参考过 eve.dev 的 `sandbox.run({ command })`(它下面所有 provider 都固定走 `bash -lc`,靠调用者自己用 `shellQuote()` 转义)——那套设计合理,是因为 eve 的调用方几乎都是 AI agent 自己的 bash 工具或内部工具核心,生成一整段 shell 命令本来就是它们的原生表达方式,shell 语义是刚需。niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["test"])`)根本不需要 shell 语义,不该为了少数需要管道/`&&`的场景让所有调用都背上手动转义的心智负担。
 

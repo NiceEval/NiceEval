@@ -131,7 +131,7 @@ export default defineScoreEval({
 
 ## 怎么选题型
 
-1. 这些检查点是**独立可跑的题目**还是**同一次运行内的检查**？独立可跑 → 拆成多个 eval（[数据集扇出](../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
+1. 这些检查点是**独立可跑的题目**还是**同一次运行内的检查**？独立可跑 → 拆成多个 eval（[测试集扇出](../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
 2. 同一道题内，「做对」是二值的 → `defineEval`：一票否决写 gate，观测指标写 soft。
 3. 同一道题内，「做到几成」有意义（长链条、rubric 大题）→ `defineScoreEval`：检查点 `.points(n)`，自算分数 `t.score`，前置条件 `.gate()`。
 

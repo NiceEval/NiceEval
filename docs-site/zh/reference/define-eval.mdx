@@ -1,7 +1,7 @@
 ---
 title: "defineEval：声明、配置并运行 NiceEval 评估用例"
 sidebarTitle: "defineEval"
-description: "defineEval 参考：选项、test context t、Turn 返回值、Sandbox helper，以及数组和 keyed record 数据集导出。"
+description: "defineEval 参考：选项、test context t、Turn 返回值、Sandbox helper，以及数组和 keyed record 测试集导出。"
 ---
 
 `defineEval` 是编写评估用例的主要入口。每个评估用例文件调用一次，传入描述和 `test(t)`，并默认导出结果。
@@ -729,7 +729,7 @@ readonly judge: JudgeNamespace<H>;
 
 {/* GENERATED:END turn-handle */}
 
-## 数据集导出
+## 测试集导出
 
 ```ts
 export default rows.map((row) =>

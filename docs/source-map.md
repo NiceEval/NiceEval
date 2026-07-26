@@ -152,7 +152,7 @@
 | `EvalResult.scoring`(取 `evalDef.scoring` 兜底 `"pass"`)与 `scoreEntries`(仅 `scoring: "points"` 时落,取 `collector.scoreEntries`)的落盘接线 | `src/runner/attempt.ts`(`runAttemptEffect` 组装 `EvalResult` 处) |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态解析;调度项没有环境变量层,见[配置与凭据边界](architecture.md#配置从代码来凭据从环境来)) | `src/cli.ts` |
 | `niceeval show` 终端宿主(Sample 合成「现刻水位」、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--diff) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
-| 数据集加载器(loadJson / loadYaml) | `src/loaders/index.ts` |
+| 测试集加载器(loadJson / loadYaml) | `src/loaders/index.ts` |
 
 ## Record / Sample Lib 与 Reports
 

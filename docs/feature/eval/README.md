@@ -1,6 +1,6 @@
 # Eval —— 编写 eval
 
-写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。共享同一套逻辑的数据集可以从同一文件默认导出数组或 keyed record；数组按稳定序号生成 id，record 按稳定业务 key 生成 id。
+写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。共享同一套逻辑的测试集可以从同一文件默认导出数组或 keyed record；数组按稳定序号生成 id，record 按稳定业务 key 生成 id。
 
 ## `defineEval` 的形状
 
@@ -41,7 +41,7 @@ export default defineEval({
 
 `timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的缺省底，压不掉 eval 写下的值（`judge` 的模型另有单次 `{ model }` 出口，见 [LLM-as-judge](../scoring/library/judge.md#模型与鉴权)）。完整的四层链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
 
-`environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。数据集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；remote Agent 不创建沙箱，此字段只参与指纹。
+`environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；remote Agent 不创建沙箱，此字段只参与指纹。
 
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
@@ -73,12 +73,12 @@ export default defineScoreEval({
 
 题型是定义期事实,进 `EvalDescriptor.scoring`(`"pass" | "points"`)供 experiment 的 `evals` 谓词过滤;一个 experiment 选中的 eval 必须同型,混型是启动期配置错误。计分语义(叠加不扣分、无满分声明、中止挣 0 与 errored 得 null 的分界、丢分不产生 failed)的单源契约见[计分粒度](../experiments/score-points.md#计分制叠加给分没有上限声明),完整写法见[计分制用例](use-case/rubric-scoring.md)。
 
-API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、数据集扇出、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。评分手段(judge、匹配器、gate/soft)单独成篇,见 [Scoring](../scoring/README.md)。
+API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集扇出、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。评分手段(judge、匹配器、gate/soft)单独成篇,见 [Scoring](../scoring/README.md)。
 
 ## 相关阅读
 
-- [Library](library.md) —— API 全景、数据集扇出契约与命名组织约定。
-- [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、数据集、沙箱、 Fixture,一篇一个场景。
+- [Library](library.md) —— API 全景、测试集扇出契约与命名组织约定。
+- [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。
 - [Architecture](architecture.md) —— 为什么作用域断言按接收者(`t` / `session` / `turn`)分层,对齐 eve 的设计依据。
 - [Scoring](../scoring/README.md) —— 值断言、作用域断言、judge、严重度与判定规则。

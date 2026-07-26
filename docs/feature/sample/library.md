@@ -19,7 +19,7 @@ const b = latestKnown(record, { experiments: "compare/" });  // 每道题已知�
 
 | 选择器 | 单位 | 回答 | 什么时候用 |
 |---|---|---|---|
-| `latestRuns` | Run | 最近一次执行实际产出了什么 | 对外发布自包含数据集、归档 |
+| `latestRuns` | Run | 最近一次执行实际产出了什么 | 对外发布自包含测试集、归档 |
 | `latestKnown` | experiment × eval | 每道题已知的最新判定,可能取自旧 Run | 看当前水平、连续开发中对数 |
 
 `niceeval show` / `view` 的默认首页用 `latestKnown`;自定义报告要与官方入口对上数字,从它出发。

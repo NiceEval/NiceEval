@@ -19,7 +19,7 @@
 
 ## 规模与环境
 
-- [数据集扇出：一套逻辑跑一批 case](dataset-fanout.md)
+- [测试集扇出：一套逻辑跑一批 case](dataset-fanout.md)
 - [沙箱 coding 任务：从放文件到评 diff](sandbox-coding.md)
 - [Fixture 与反馈：setup / teardown 与长步骤报告](fixtures-lifecycle.md)
 
@@ -35,7 +35,7 @@
 | [计分制](rubric-scoring.md) | **计分制的典型场景**：检查点 `.points(1)` 各挣各的、`.gate()` 前置中止、rubric 按分值给分 |
 | [沙箱 coding 任务](sandbox-coding.md) | 两制都常见：整题过/不过用 `defineEval`；要部分分时改用 `defineScoreEval` 按步骤给分 |
 | [裁判评质量](judge-quality.md) | judge 默认 `.soft()` 进质量分；计分制里 `.points(n)` 按连续分比例挣 |
-| [数据集扇出](dataset-fanout.md) | **通过制 × N**：独立可跑的 case 拆成多个 eval——粒度来自更多的题，不是更细的分 |
+| [测试集扇出](dataset-fanout.md) | **通过制 × N**：独立可跑的 case 拆成多个 eval——粒度来自更多的题，不是更细的分 |
 | [Fixture 与反馈](fixtures-lifecycle.md) | 与计分正交 |
 
 选择规则一句话：**独立可跑的题目拆 eval；「做对」二值的题用通过制；「做到几成」有意义的题用计分制给分**。
@@ -54,7 +54,7 @@
 | `t.check` / `t.require` / `niceeval/expect` matcher | [单轮](first-single-turn.md) · [沙箱](sandbox-coding.md) |
 | `t.judge` / `session.judge` / `turn.judge` / `autoevals.*` / `{ on }` / `.atLeast(x)` | [裁判评质量](judge-quality.md) |
 | `.points(n)` / `t.score` / `.gate()`（计分制的前置中止） | [计分制](rubric-scoring.md) |
-| 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [数据集扇出](dataset-fanout.md) |
+| 数组导出 / keyed record 导出 / `loadYaml` / `loadJson` | [测试集扇出](dataset-fanout.md) |
 | `t.sandbox.writeFiles` / `uploadDirectory` / `downloadDirectory` / `runCommand` / `runShell` | [沙箱 coding 任务](sandbox-coding.md) |
 | `t.sandbox.diff` / `file` / `fileChanged` / `fileDeleted` / `notInDiff` | [沙箱 coding 任务](sandbox-coding.md) |
 | `setup` / `teardown` / `t.progress` / `t.diagnostic` / `t.skip` | [Fixture 与反馈](fixtures-lifecycle.md) |

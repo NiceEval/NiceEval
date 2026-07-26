@@ -38,7 +38,7 @@ ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一�
 ```typescript
 export default defineExperiment({
   evals: (e) => e.tags.includes("memory"),
-  //  解析期遍历发现后的 EvalDescriptor 全集(数据集已扇出)求值一次,产出 selectedEvalIds
+  //  解析期遍历发现后的 EvalDescriptor 全集(测试集已扇出)求值一次,产出 selectedEvalIds
   //  必须同步返回 boolean;落盘的是求值结果与过滤器指纹,不是函数本身
 
   sandbox: e2bSandbox({ template: "base", environments: { "python-3.9": { template: "py39" } } }),

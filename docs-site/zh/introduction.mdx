@@ -45,7 +45,7 @@ pnpm exec niceeval view                      # 在网页中浏览
 
 ## 为什么有了 DeepEval、LangFuse、BrainTrust 还需要 NiceEval
 
-NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「构建 Input 与 Expected Output」的模式，并不适合真实的 Agent 评估——现在的 Agent 要在多轮对话、多 agent 协作、工具调用、Skill 加载等细粒度场景下被检查，NiceEval 就是为这类场景设计的：断言直接落在工具调用、消息内容、结构化输出和用量上，而不是要求你先手工准备一份 golden 数据集。
+NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「构建 Input 与 Expected Output」的模式，并不适合真实的 Agent 评估——现在的 Agent 要在多轮对话、多 agent 协作、工具调用、Skill 加载等细粒度场景下被检查，NiceEval 就是为这类场景设计的：断言直接落在工具调用、消息内容、结构化输出和用量上，而不是要求你先手工准备一份 golden 测试集。
 
 像 LangFuse、BrainTrust 这类工具更偏 tracing 和监控，对「写评估用例、跑评估用例、看结果」这条路径来说太重；NiceEval 从一开始就针对这条路径做了友好的开发体验。两者也不冲突：NiceEval 能与 LangFuse、BrainTrust 共存——可以用它们做 tracing，或者把评估结果上传到两者。
 

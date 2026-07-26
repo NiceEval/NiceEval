@@ -28,7 +28,7 @@ export default defineExperiment({
 });
 ```
 
-**你会看到**:谓词参数是只读的 `EvalDescriptor`(数据集扇出已完成,拿到的是最终 id)。参数名不能叫 `eval`——strict mode 保留字,会直接语法报错。谓词返回非布尔值时启动期完整报错,不静默当 false。
+**你会看到**:谓词参数是只读的 `EvalDescriptor`(测试集扇出已完成,拿到的是最终 id)。参数名不能叫 `eval`——strict mode 保留字,会直接语法报错。谓词返回非布尔值时启动期完整报错,不静默当 false。
 
 ## 3. 命令行临时收窄:调一条题
 
