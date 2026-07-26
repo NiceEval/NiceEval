@@ -241,7 +241,6 @@
     "docs/roadmap/multi-agent/README.md": 6,
     "docs/roadmap/multi-agent/architecture.md": 7,
     "docs/roadmap/multi-agent/cli.md": 1,
-    "docs/runner.md": 61,
     "docs/source-map.md": 15
   },
   "sentenceLength": {
@@ -306,7 +305,7 @@
     "docs/feature/experiments/use-case/lifecycle.md": 1,
     "docs/feature/experiments/use-case/max-concurrency.md": 3,
     "docs/feature/record/architecture.md": 17,
-    "docs/feature/record/library.md": 11,
+    "docs/feature/record/library.md": 10,
     "docs/feature/record/reference/README.md": 1,
     "docs/feature/reports/README.md": 1,
     "docs/feature/reports/architecture.md": 13,
@@ -370,7 +369,6 @@
     "docs/roadmap/e2e-acceptance-dsl/use-cases/package-consumer.md": 1,
     "docs/roadmap/eval-source-view/display.md": 1,
     "docs/roadmap/multi-agent/architecture.md": 2,
-    "docs/runner.md": 29,
     "docs/source-map.md": 13
   },
   "paragraphLength": {
@@ -445,7 +443,6 @@
     "docs/observability.md": 4,
     "docs/origin-integration.md": 2,
     "docs/references.md": 4,
-    "docs/runner.md": 9,
     "docs/source-map.md": 6
   },
   "bannedTerms": {}

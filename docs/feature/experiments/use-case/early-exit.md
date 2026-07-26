@@ -24,7 +24,7 @@
 
 ## 边界
 
-- early-exit 不改变派发节奏,只减少已派发的浪费:`runs: N` 的多个 attempt 按并发位一起进等待集,能省下的只是还在排队的那些。要「过了就停、没过才跑下一次」的严格串行重试,配实验级 `maxConcurrency: 1`(见 [Runner · 首过即停](../../../runner.md#首过即停earlyexit))。
+- early-exit 不改变派发节奏,只减少已派发的浪费:`attempts: N` 的多个 attempt 按并发位一起进等待集,能省下的只是还在排队的那些。要「过了就停、没过才跑下一次」的严格串行重试,配实验级 `maxConcurrency: 1`(见 [Runner · 首过即停](../../../runner.md#首过即停earlyexit))。
 - 做通过率对比时别开:分母被截断,pass@k 失真;实验里签入了 `earlyExit: true` 而本次要完整分布时,用 `--no-early-exit` 关回跑满。
 - 携带的 `passed` 与它组合遵守同一语义:缓存已携入通过时,缺失序号不再派发(见 [缓存与携带](../cache.md#携带粒度以-attempt-为单位))。
 - 退出码按 eval 折叠,不按 attempt 折叠:先挂一次、后来某次通过的 eval 不让进程判红(见 [Runner · 退出码](../../../runner.md#退出码))。
