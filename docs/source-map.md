@@ -173,7 +173,7 @@
     src/results/writer.ts   createWriter        ← 第三方 harness 写进来
     src/results/copy.ts     publish             → 发布出去
   │
-  │  latestPerEval() / latestRuns()
+  │  latestKnown() / latestRuns()
   ▼
 ②  src/results/select.ts    selectLatest / selectLatestPerEval / freshEvals
                             filter / dedupeAttempts / unreadableSnapshotWarnings
@@ -195,7 +195,7 @@
 |---|---|
 | `openRecord`:实验/结果 Run/eval 分层、版本分流(skipped 三种原因)、懒加载(attempt 目录→artifactBase 携带条目回退) | `src/results/open.ts` |
 | 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/results/format.ts` |
-| `latestRuns(record)`(= `selectLatest`,每实验取最新一次 Run + 范围内 `SampleWarning` + `SampleCoverage`,kind 全集三种:unfinished-run / missing-startedAt / unreadable-run,见[警告 kind 全集](feature/sample/library.md#警告-kind-全集);Run 本身是 `exp.snapshots` 里的真实条目,`filter()` 按 Run 删减能正确同步修剪 attempts/coverage/warnings)/ `latestPerEval(record)`(= `selectLatestPerEval`,目标契约是现刻水位投影:对每个 experiment × eval 跨该实验全部历史 Run 取最新判定并物化 `Sample.attempts`,`Sample.snapshots` 保留贡献数据的真实 Run 实体;当前实现与该目标不符,见[已知差异](#与设计文档的已知差异实现取舍)「`current()` 仍合成报告用 Run」)/ 两者都接受 `fresh?: boolean`(排除历史执行 attempt,`freshEvals`/`withFreshEvals` 实现,被排除的题进 `coverage.missingEvalIds`)/ `unreadableSnapshotWarnings`(扫描不可读 Run——incompatible / malformed / incomplete——产出 `unreadable-run` warning,接线进 `selectLatest` 与 `selectLatestPerEval`;类型在 `src/results/types.ts`)/ `Sample.filter`(`makeScope` 内的闭包,按 Run 删减重新 flatten `attempts`、按 experimentId 存在性修剪 `coverage`/`warnings`;对 `current()` 产出的 Sample 见上述已知差异)/ `dedupeAttempts`(身份键去重;缺 `startedAt` 的身份键不去重,记 `missing-startedAt` 警告;当前未在 `selectLatestPerEval`/`selectLatest` 内部调用)/ `ResultScope`(`{ experiment?, patterns?, fresh? }` 范围输入) | `src/results/select.ts` |
+| `latestRuns(record)`(= `selectLatest`,每实验取最新一次 Run + 范围内 `SampleWarning` + `SampleCoverage`,kind 全集三种:unfinished-run / missing-startedAt / unreadable-run,见[警告 kind 全集](feature/sample/library.md#警告-kind-全集);Run 本身是 `exp.snapshots` 里的真实条目,`filter()` 按 Run 删减能正确同步修剪 attempts/coverage/warnings)/ `latestKnown(record)`(= `selectLatestPerEval`,目标契约是现刻水位投影:对每个 experiment × eval 跨该实验全部历史 Run 取最新判定并物化 `Sample.attempts`,`Sample.snapshots` 保留贡献数据的真实 Run 实体;当前实现与该目标不符,见[已知差异](#与设计文档的已知差异实现取舍)「`current()` 仍合成报告用 Run」)/ 两者都接受 `fresh?: boolean`(排除历史执行 attempt,`freshEvals`/`withFreshEvals` 实现,被排除的题进 `coverage.missingEvalIds`)/ `unreadableSnapshotWarnings`(扫描不可读 Run——incompatible / malformed / incomplete——产出 `unreadable-run` warning,接线进 `selectLatest` 与 `selectLatestPerEval`;类型在 `src/results/types.ts`)/ `Sample.filter`(`makeScope` 内的闭包,按 Run 删减重新 flatten `attempts`、按 experimentId 存在性修剪 `coverage`/`warnings`;对 `current()` 产出的 Sample 见上述已知差异)/ `dedupeAttempts`(身份键去重;缺 `startedAt` 的身份键不去重,记 `missing-startedAt` 警告;当前未在 `selectLatestPerEval`/`selectLatest` 内部调用)/ `ResultScope`(`{ experiment?, patterns?, fresh? }` 范围输入) | `src/results/select.ts` |
 | `createWriter`(Run 目录独占创建、Run 级元数据落盘、attempt 记录与 artifact 增量落盘、`finish()` 补 `completedAt`) | `src/results/writer.ts` |
 | `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记) | `src/results/copy.ts` |
 | 发布预算常量(50 MiB 单文件预检上限) | `src/results/publish.ts` |
@@ -242,7 +242,7 @@
   `open.ts` / `format.ts` / `writer.ts`,选择与去重在 `select.ts`。本页表格里的文件列是**当前真实位置**,
   功能文档里出现的 `src/record/…` 是目标位置;搬目录连带公开入口改名,与实现分层同批做。同名对照:
   `openResults`→`openRecord`、`createResultsWriter`→`createWriter`、`copySnapshots`→`publish`、
-  `results.latest()`→`latestRuns()`、`results.current()`→`latestPerEval()`、`Scope`→`Sample`、
+  `results.latest()`→`latestRuns()`、`results.current()`→`latestKnown()`、`Scope`→`Sample`、
   `Snapshot`→`Run`、`skipped`→`unreadable`。
 - **落盘键名与常量沿用 `snapshot` 词根**:契约把落盘单位定名为 Run(`run.json`、`RunMeta`、
   `RECORD_SCHEMA_VERSION`),当前落盘仍写 `snapshot.json`,常量仍叫 `RESULTS_SCHEMA_VERSION` /

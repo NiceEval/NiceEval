@@ -46,7 +46,7 @@ interface RunSpec {
 
 - **`latestRuns`**：每个 Experiment 只取最新一次 Run。不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
   该 Run 没跑的 Eval 进 `coverage.missingEvalIds`，不从旧 Run 补。
-- **`latestPerEval`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准
+- **`latestKnown`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准
   不等的旧 Run 不贡献，该 Eval 留在缺口里；`runs` 保留全部真实来源，同一 Experiment 可以有多个；
   不合成报告专用 Run。fixture 必须让同一 Experiment 同时有两个存活来源，且其中一个 `configHash`
   不同——「拼了不该拼的」与「该拼的没拼」是两个方向的失败，都要有 case 抓。

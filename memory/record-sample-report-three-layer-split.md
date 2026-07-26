@@ -19,7 +19,7 @@
 | `results` / `niceeval/results` | `record` / `niceeval/record` | 「the record」= 可援引的记录,正对「每个数字能回到证据」的核心承诺;`results` 太泛,而且要专门写一段辩护「这个词不在层级里重复」——需要辩护就是名字弱的证据 |
 | `Snapshot` | `Run` | snapshot 意为「某一刻的完整拷贝」,而它由 carry 跨时间续成、内容可来自三个月前,名不副实;且仓库里 snapshot 已被 Vercel/E2B 的 provider 产物与「快照测试」占用 |
 | `Scope` | `Sample` | 仓库里 `Scope` 同时指 Effect 资源作用域、`FailureScope`、结果选择范围——三件事一个词;`sample.coverage`(样本覆盖总体多少)在统计学隐喻下自洽,`scope.coverage`(范围的覆盖)是同义反复 |
-| `results.latest()` / `.current()` | `latestRuns()` / `latestPerEval()` | 旧名在英语里近义、语义差别大(Run 粒度 vs eval 粒度跨历史拼接),要靠一篇 use-case 教人选——需要文档教选择的名字对没承担区分工作 |
+| `results.latest()` / `.current()` | `latestRuns()` / `latestPerEval()` | 旧名在英语里近义、语义差别大(Run 粒度 vs eval 粒度跨历史拼接),要靠一篇 use-case 教人选——需要文档教选择的名字对没承担区分工作。**`latestPerEval` 已于 2026-07-26 被 `latestKnown` 取代**,见 [latest-known-rename](latest-known-rename.md) |
 | `copySnapshots()` | `publish()` | 它做解引用、重去重、补分母、50 MiB 预检、拒绝非空目录;叫 `copy*` 把它讲成 cp,与文档全篇「发布拷贝/发布边界」的用词脱节 |
 | `ExperimentRunInfo.runs` / `--runs` | `attempts` / `--attempts` | 腾出 `run` 作层级名;而且本来更对——它产出的就是 `a0..a4` 与 `AttemptHandle` |
 | `record.skipped` | `record.unreadable` | `skipped` 已是一个 verdict 取值,同一份数据里一词两义会让 `.filter()` 写错 |

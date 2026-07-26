@@ -83,7 +83,7 @@
 | 中文 | English | 含义 |
 |---|---|---|
 | 结果 Run | Run | 持久化结果的单位:一个 Experiment 的一次执行水位;可由多次 Invocation 通过 carry 续成,不保留跨 Experiment 的 Invocation 成员关系;与一次 CLI 调用(Invocation)不是一回事:一次调用可开多个 Run,一个 Run 也可由多次调用续成 |
-| Sample(样本) | Sample | `latestRuns(record)` / `latestPerEval(record)` 的返回物:挑好的 attempt + 覆盖事实 + 结构化挑选警告;唯一方法 `pipe`(算子闭集,只删减不聚合、不替换) |
+| Sample(样本) | Sample | `latestRuns(record)` / `latestKnown(record)` 的返回物:挑好的 attempt + 覆盖事实 + 结构化挑选警告;唯一方法 `pipe`(算子闭集,只删减不聚合、不替换) |
 | Attempt 定位符 | AttemptLocator | attempt 的稳定引用,由 `{experimentId, Run startedAt, evalId, attempt}` 不可变元组派生的带版本、`@` 前缀短确定性字符串;不是数组下标也不是目录路径。reader 打开记录根时建一份 locator → AttemptHandle 索引,缺失 / 损坏 / 碰撞一律结构化报错,不回退"最新失败";报告页与 attempt 详情路由(`#/attempt/@<locator>` / `show @<locator>`,单段格式)共用同一个 locator 身份契约,见 [View](feature/reports/view.md) |
 | Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合:locator、身份、`EvalResult`、标准事件流(`events: StreamEvent[] \| null`)、`AnnotatedEvalSource`、`ExecutionTree`、diff、artifact 路径与能力位(`source` / `execution` / `timing` / `diff`);`show` / `view` / 静态导出 / 报告列表共用同一份,不各自重读 artifact,也不再各自调用 `events()` |
 | 标注 Eval 源码 | AnnotatedEvalSource | 发现时捕获、按 Run 去重一份、SHA-256 归一化的运行时 Eval 源码;每条断言按 `SourceLoc` 标回源码行(状态 / 严重度 / 分数 / detail / evidence),没有 `SourceLoc` 的断言进"未映射断言"桶,不静默丢弃;`t.send(...)` 的调用行另标该轮 turn 头行事实(身份 / status / 墙钟,定位不到行的轮不进兜底桶——轮次全量面是 `--execution`);网页 CodeView 与 `show --source` 共用同一份 model |

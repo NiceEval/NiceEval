@@ -318,6 +318,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## docs · docs-site · reference
 
+- [overview-diagram-copies-field-shapes](overview-diagram-copies-field-shapes.md) — 已修:三层总纲图复制字段级形状,五处全漂移(locator/verdict 搬错层、flags 提到 run.json 顶层、目录名违反清洗规则、MetricCell 丢 samples/total);修法=图只留类型名与层间调用
 - 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句,行宽降级为只管排版与 diff 粒度
 - 已修 [docs-line-width-cjk-token-exemption](docs-line-width-cjk-token-exemption.md) — 行宽检查的「长 token 豁免」按空格切 token,中文整段就是一个巨长 token,三百多行中文被静默放过;豁免只认不含宽字符的 token
 - 已修 [design-status-from-docs-not-src](design-status-from-docs-not-src.md) — 设计讨论时 agent 两次从源码反推现状被推翻;修法=查询纪律与穷尽形状约定升格为 CLAUDE.md / docs 规则,architecture.md 职责纳入数据建模
@@ -365,6 +366,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- [latest-known-rename](latest-known-rename.md) — 裁决(2026-07-26):`latestPerEval` 改名 `latestKnown`(mode 同步 `latest-known`),推翻前一天的命名——名字宣传遍历粒度、藏起真正的风险点跨 Run 缝合;否决合成 `latest({unit})`、`stitchLatest`、`currentStanding`;连带删掉「名字自解释」的宣称
 - [env-only-credentials-config-only-code](env-only-credentials-config-only-code.md) — 裁决(2026-07-25):环境变量只剩凭据 + 终端事实,配置项只从 flag/experiment/config 来;删 NICEEVAL_RUNS/TIMEOUT/BUDGET/MAX_CONCURRENCY、judge 的 MODEL/BASE 与跨家族 key 回落、NICEEVAL_LANG/LOCALE(换成 config.locale)、bub 两个 env 后门;凭据保留内置默认变量名;守护 test/unit/config-env-boundary.test.ts(正则要排除写入子进程 env 的赋值)
 - [index-classification-by-subsystem](index-classification-by-subsystem.md) — 裁决(2026-07-21):memory 索引按「子系统」单一主轴归档(分区=动手前扫哪块),溶解「设计决定」分区、报告拆出独立、大区内拆裁决(≈DX 反馈)/台账(≈bug);否决把 bug/DX 反馈当顶层主轴(类型轴切顶层=同一块工作扫两处,正是原问题根因)与分离已修条目(违反不归档规则);commit 05a040e
 - [turn-label-plain-words](turn-label-plain-words.md) — 裁决(2026-07-21):轮/窗口标签从 `s<session>/t<turn>` 改为自描述词——主会话 `turn<N>`、`t.newSession()` 会话 `session<K>/turn<N>`(从 2 起),全证据面同一枚 token、`--window` 等值匹配;否决全局连号(并行 session 竞态)与恒带 session 前缀(主线噪音);标签不透明不解析,schemaVersion 不递增、旧快照不迁移

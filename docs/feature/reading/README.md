@@ -8,14 +8,15 @@
 [用例手册](use-case/README.md) 里一个读取任务从头走到尾的路径。各层自己的契约仍单源在各层目录,
 这里不复制。
 
-下面这张图按层给出三样东西:数据长什么样、这一层做了什么、下一层从哪个调用开始。
+下面这张图按层给出三样东西:数据长什么样、这一层做了什么、下一层从哪个调用开始。图上只出现类型名
+与层间调用,字段级形状看各层文档。
 
 ```text
-.niceeval/midterm/bub-gpt-5.4/2026-07-26T10-03-11/        执行链路写下的字节
-  ├── run.json            { agent, model, flags, configHash, knownEvalIds }
+.niceeval/midterm_bub-gpt-5.4/2026-07-26T10-03-11-873Z-x1f2/   执行链路写下的字节
+  ├── run.json            Run 元数据:身份、配置投影、knownEvalIds
   └── algebra/quadratic/a0/
-      ├── result.json     { verdict: "passed", assertions[], scoreEntries[] }
-      ├── events.json  sources.json  trace.json  diff.json       大,按需读
+      ├── result.json     单个 attempt 的权威判定记录
+      ├── events.json  commands.json  sources.json  trace.json  diff.json …  大,按需读
       └── o11y.json       派生缓存,可从 events.json 重算
                   │
                   │  openRecord(".niceeval")
@@ -23,25 +24,24 @@
 ──── niceeval/record ──── 扫目录、认版本、建懒句柄;一个 attempt 大文件都不读 ────
 
 Record
-└─ experiments[]                  id 由目录路径推出
-   └─ runs[]                      一次 niceeval exp = 一个 run
+└─ experiments[]                  按 run.json 的 experimentId 归组
+   └─ runs[]                      一个实验跑一次 = 一个 Run
       └─ evals[].attempts[]  →  AttemptHandle {
-                                  locator: "@1x7f3q9k"  全局身份,报告靠它回溯
-                                  verdict, assertions
+                                  result: EvalResult    判定、断言、locator 在这里
                                   run, ref              指回来源
                                   events() sources() diff()  调用时才读盘
                                 }
                   │
-                  │  latestPerEval(record, { experiments: "midterm/" })
+                  │  latestKnown(record, { experiments: "midterm/" })
                   ▼
 ──── niceeval/sample ──── 挑一批、数出缺口、记警告 ─────────────────────────────
 
-  ① 每个 experiment × eval,跨该实验全部历史 Run 取最新那条 attempt
-  ② knownEvalIds(分母) − ① 挑中的题   →  missingEvalIds
-  ③ 扫未封口 / 不可读的 Run           →  warnings
+  ① 每个 experiment × eval,跨该实验全部可比历史 Run 取最新那条 attempt
+  ② knownEvalIds(分母,交命令行范围) − ① 挑中的题   →  missingEvalIds
+  ③ 未封口 / 不可读的 Run,以及悬空证据             →  warnings
 
 Sample {
-  mode:     "latest-per-eval"         口径字面写在数据上
+  mode:     "latest-known"         口径字面写在数据上
   attempts: AttemptHandle[]           引用上一层的句柄;消费它就自动正确
   runs:     Run[]                     贡献过至少一条 attempt 的真实 Run
   coverage: [{ experimentId:   "midterm/bub-gpt-5.4",
@@ -57,7 +57,7 @@ Sample {
 sample.attempts
    │  逐 attempt 求值  →  perEval 折叠  →  acrossEvals 折叠
    ▼
-MetricCell { value: 0.9, display: "90%", refs: AttemptLocator[] }  每格带回证据
+MetricCell { value, display, samples, total, refs }  每格带回覆盖率与证据
    │  各组件的 *Data 计算
    ▼
 TableData / ScatterData / SampleSummaryData / ExperimentListItem[] …  可序列化

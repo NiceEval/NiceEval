@@ -2,7 +2,7 @@
 
 每项显示 experiment 身份、agent / model、flags、判定构成、官方指标和其中的 eval。组件不推断分组；默认 [`ExperimentComparison`](../summaries/experiment-comparison.md) 把当前 Sample 的全部 items 交给它。数据形状见[实体列表](README.md#数据形状)。
 
-一行只有一套 `agent / model / flags`，这不是显示上的取舍而是输入约束：宿主注入的 [`latestPerEval()` Sample 保证每个 experiment 只由可比性配置一致的 Run 拼成](../../../sample/library.md#两个选择器)；作者自选 `Run[]` 时若同一 experiment 混入不一致的可比性配置，`experimentListData` 按完整用户反馈失败并指引——看跨配置演化用 `run` 维度或[数值轴折线](../charts/line-chart.md)，不把两套配置拼成一行冒充单一配置。
+一行只有一套 `agent / model / flags`，这不是显示上的取舍而是输入约束：宿主注入的 [`latestKnown()` Sample 保证每个 experiment 只由可比性配置一致的 Run 拼成](../../../sample/library.md#两个选择器)；作者自选 `Run[]` 时若同一 experiment 混入不一致的可比性配置，`experimentListData` 按完整用户反馈失败并指引——看跨配置演化用 `run` 维度或[数值轴折线](../charts/line-chart.md)，不把两套配置拼成一行冒充单一配置。
 
 web 面是固定列的 experiment 比较表，而不是无表头的松散卡片列表。主表一行一个 experiment，列顺序固定为：
 

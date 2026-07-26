@@ -6,7 +6,7 @@
 
 ## 全流程
 
-1. 在服务端用 `openRecord()` 选 Sample,明确使用 `latestRuns()` 还是 `latestPerEval()`。
+1. 在服务端用 `openRecord()` 选 Sample,明确使用 `latestRuns()` 还是 `latestKnown()`。
 2. 用 `Promise.all` 调 `sampleSummaryData`、`metricTableData` 等 `*Data` 函数,产出可序列化 JSON。
 3. 把 data 传给 `niceeval/report/react` 的纯 web 组件;该入口不读文件,也不运行 report resolve。
 4. 传入产品自己的 `attemptHref`,让 locator 下钻进入你的路由。

@@ -6,4 +6,4 @@
 ## 选择结果范围
 
 - [局部补跑之后,两个口径分别给出什么](partial-rerun.md) —— 用三次 Run 理解 `latestRuns`、
-  `latestPerEval`、覆盖缺口与 `fresh`。
+  `latestKnown`、覆盖缺口与 `fresh`。

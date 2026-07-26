@@ -98,7 +98,7 @@ spec 形态与 data 形态的完整契约在 [Architecture · 组件模型](arch
 
 ```tsx
 import { openRecord } from "niceeval/record";
-import { latestPerEval } from "niceeval/sample";
+import { latestKnown } from "niceeval/sample";
 import { MetricTable, SampleSummary, SampleWarnings, RunDiagnostics } from "niceeval/report/react";
 import {
   costUSD, durationMs, endToEndPassRate,
@@ -107,7 +107,7 @@ import {
 
 export default async function EvalsPage() {
   const record = await openRecord(".niceeval");
-  const sample = latestPerEval(record, { experiments: "compare/" });
+  const sample = latestKnown(record, { experiments: "compare/" });
 
   const [diagnostics, summary, table] = await Promise.all([
     runDiagnosticsData(sample),

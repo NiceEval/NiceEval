@@ -22,12 +22,12 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 1. **看最近一次执行。** `latestRuns(record)`。`baseline` 只返回 `R3` 里的 `a`,并通过
    `coverage.missingEvalIds` 报告 `b` 缺失。它不会从旧 Run 拼入 `b`——这个口径的单位就是 Run。
 
-2. **看当前判定水位。** `latestPerEval(record)`。`a` 来自 `R3`,`b` 来自 `R2`。两条 attempt 的
+2. **看当前判定水位。** `latestKnown(record)`。`a` 来自 `R3`,`b` 来自 `R2`。两条 attempt 的
    `run.configHash` 与基准(`R3`)一致,因此可以组成当前样本。`sample.runs` 保留 `R2`、`R3` 两个
    真实来源,不制造一份合成 Run。
 
 3. **拒绝不可比的旧结果。** `R1` 里也有 `b`,但配置是 `model: old`,configHash 与基准不等。
-   `latestPerEval` 不用它填补缺口。若 `R2` 不存在,`b` 留在 `coverage.missingEvalIds`——缺数据比
+   `latestKnown` 不用它填补缺口。若 `R2` 不存在,`b` 留在 `coverage.missingEvalIds`——缺数据比
    混入错误条件更诚实。
 
 4. **只看本次新执行。** 任一口径加 `fresh: true`,排除携带条目与从旧 Run 拼入的 attempt。被排除
@@ -40,8 +40,8 @@ Experiment `baseline` 选择 Eval `a` 和 `b`,先后产生三次 Run:
 ## 边界
 
 - `latestRuns` 的单位是 Run,不是逐 Eval 找最新。
-- `latestPerEval` 可以保留同一 Experiment 的多个来源 Run。
+- `latestKnown` 可以保留同一 Experiment 的多个来源 Run。
 - 跨 Run 拼接只在 configHash 相等时发生。
 - attempt 始终指向真实来源。Sample 不重写 locator,也不制造合成来源。
-- 要看历史趋势,不要用 `latestPerEval` 代替时间序列。改用 Reports 的
+- 要看历史趋势,不要用 `latestKnown` 代替时间序列。改用 Reports 的
   [Experiment 历史用例](../../reports/use-case/track-experiment-history.md)。

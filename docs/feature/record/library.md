@@ -41,8 +41,8 @@ const attempt = run.evals[0].attempts[0];
 attempt.evalId;                // 属于哪道题 —— 直达字段,不绕 result
 attempt.experimentId;          // 属于哪个实验
 attempt.result;                // EvalResult 瘦身条目:判定、断言、用量、成本(Run 级字段已拼合)
-attempt.ref;                   // { run, attempt }:证据引用(根相对 run 目录 + run 相对 attempt 目录),
-                               // 报告的 MetricCell.refs 与 view 深链 #/attempt/... 同一身份
+attempt.ref;                   // { run, attempt }:证据路径引用(根相对 run 目录 + run 相对 attempt 目录),
+                               // 站点 artifact/ 证据树按它布局;寻址一个 attempt 用 result.locator
 attempt.run;                   // 所属 Run(比较新旧、读配置靠它)
 attempt.carried;               // true = 携带条目:fingerprint 未变、上一轮终态结果合入本 Run,
                                // startedAt 是原执行时刻
@@ -61,9 +61,15 @@ await attempt.sources();       // SourceArtifact[] | null
 同名方法即可,不另造别名。
 
 命名约定:`Experiment` / `Run` / `Eval` 是纯数据,不带 `Handle` 后缀;唯一叫 `AttemptHandle`
-的是 attempt——它的方法真的会碰磁盘,后缀标记的就是这件事。`AttemptRef` 的字段名(`run` /
-`attempt`)是 view 深链 `#/attempt/<run>/<attempt>` 的持久化路由契约,不随句柄改名;`run` 恒为
-两段(`<实验目录>/<run 目录>`),`attempt` 是 `<evalId 路径>/a<n>`,路由按「前两段 = run」解析。
+的是 attempt——它的方法真的会碰磁盘,后缀标记的就是这件事。
+
+`AttemptRef` 的字段名(`run` / `attempt`)是证据文件的持久化路径契约,不随句柄改名:`run` 恒为
+两段(`<实验目录>/<run 目录>`),`attempt` 是 `<evalId 路径>/a<n>`,
+[导出站的 `artifact/` 树](../reports/view.md#静态导出)按这两段拼路径。
+
+**寻址一个 attempt 是另一回事。** 报告的 `MetricCell.refs`、`show @<locator>` 与 view 深链
+`#/attempt/@<locator>` 用的都是不透明的
+[`AttemptLocator`](#按-locator-寻址一个-attemptresolvelocator),不走磁盘路径。
 
 要点:
 

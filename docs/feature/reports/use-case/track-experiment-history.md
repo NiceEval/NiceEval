@@ -13,5 +13,5 @@
 
 ## 边界
 
-- `latestPerEval(record)` 是现刻水位,可跨 Run 拼题;它不是时间序列。
+- `latestKnown(record)` 是现刻水位,可跨 Run 拼题;它不是时间序列。
 - `show --history` 是单个 Experiment + Eval 的 Attempt 时间线;跨 Run 指标趋势用本用例。

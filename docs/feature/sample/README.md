@@ -5,10 +5,10 @@
 
 ```typescript
 import { openRecord } from "niceeval/record";
-import { latestPerEval } from "niceeval/sample";
+import { latestKnown } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
-const sample = latestPerEval(record, { experiments: "compare/" });
+const sample = latestKnown(record, { experiments: "compare/" });
 
 sample.attempts;    // 按口径挑好的 attempt 全集 —— 消费这个就自动正确
 sample.coverage;    // 这批数据覆盖了多少题,缺哪几道
@@ -40,7 +40,7 @@ sample.warnings;    // 这批数据哪里可能不可靠
 | 用途 | API |
 |---|---|
 | 看每个实验最近一次跑出了什么 | `latestRuns(record)` |
-| 看每道题当前的判定水位 | `latestPerEval(record)` |
+| 看每道题当前的判定水位 | `latestKnown(record)` |
 | 只看最新一次真实执行的 | 任一选择器 + `{ fresh: true }` |
 | 排掉一个已知坏掉的实验 | `sample.pipe(dropExperiments(…))` |
 | 按自己的条件删减样本 | `sample.pipe(filterBy(…))` |
