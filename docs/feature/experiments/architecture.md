@@ -19,35 +19,73 @@ ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一�
 
 配置优先级是 CLI flag → experiment 字段 → eval 字段 → `niceeval.config.ts` 兜底 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`），排在 config 之前：**config 是缺省底，不是覆盖层——项目里写了 config 不得使 eval 自己的声明失效**。一条声明 35 分钟上限的安装型 eval，在 config 写了 20 分钟的项目里仍按 35 分钟跑；要一次性把整批掐短，用运行侧的 `--timeout` 或 experiment 字段显式压过它——运行侧只以显式声明取胜，不靠 config 的缺省值遮蔽题目自己的需求。解析发生在调度任何 attempt 之前、一次完成，运行中不再重读；此后所有消费方——调度器、fingerprint、Run 投影、报告——引用同一份 resolved 值：
 
-- `evals` 过滤器在解析时遍历发现后的 `EvalDescriptor` 全集（数据集已扇出），产出 `selectedEvalIds`；函数必须同步返回 boolean。落盘的是求值结果与过滤器指纹，不是函数本身。
-- `sandbox` 是本实验唯一的固定 `SandboxSpec`。spec 携带 `environments` 表时，解析期按每条选中 eval 的 `environment` 查表得出该 eval 的有效产物参数：选中 eval 声明的 profile 缺表项属于启动期配置错误，一次穷举列出全部缺项，不创建任何沙箱。逐 eval 的解析结果进入该 eval 的 fingerprint、provider 并发推荐值与 `ExperimentRunInfo.sandboxByEval`；remote Agent 不创建 sandbox，不参与查表。
+```typescript
+export default defineExperiment({
+  evals: (e) => e.tags.includes("memory"),
+  //  解析期遍历发现后的 EvalDescriptor 全集(数据集已扇出)求值一次,产出 selectedEvalIds
+  //  必须同步返回 boolean;落盘的是求值结果与过滤器指纹,不是函数本身
+
+  sandbox: e2bSandbox({ template: "base", environments: { "python-3.9": { template: "py39" } } }),
+  //  本实验唯一的固定 SandboxSpec。带 environments 表时,解析期按每条选中 eval 的 environment 查表
+  //  选中 eval 声明的 profile 缺表项 → 启动期配置错误:一次穷举列出全部缺项,不创建任何沙箱
+  //  逐 eval 的解析结果进该 eval 的 fingerprint、provider 并发推荐值与 ExperimentRunInfo.sandboxByEval
+  //  remote Agent 不创建 sandbox,不参与查表
+
+  timeoutMs: 40 * 60_000,
+  //  单 attempt 外层超时,四层解析:--timeout → 这里 → eval 字段 → niceeval.config.ts
+  //  不进 fingerprint 哈希,改为以携带资格判据参与 carry(见 cache.md)
+
+  maxConcurrency: 2,
+  //  实验级并发闸,先过它再占全局并发位;名额与 attempt 同生命周期(沙箱创建到销毁全程持有,
+  //  turn 退避等内部等待不释放)。名额域是该实验所有并行 Invocation 共用的,多开不叠加 N
+
+  earlyExit: true,   // 只由 passed 触发的首过即停;errored 不中止其余样本,走 run 级 fail-fast
+  budget: 50,        // 按已完成 attempt 的实测花费停止派发的安全网
+
+  classifyFailure({ text }) { /* … */ },
+  //  识别以第三方错误形态浮出的自家共享基建死因(对共享隧道 host 的拒连)
+  //  命中的 scope 触发止损闸停止派发
+});
+```
+
+`maxConcurrency` 用来串行化共享状态实验，或给撞限额的实验单独降速；它的跨 Invocation 租约机制见[并发 Invocation](#并发-invocation用例锁)。`timeoutMs` 的携带资格判据见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希)，超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)；前四个字段的调度语义单点在 [Runner](../../runner.md)。`classifyFailure` 的类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型)，写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
+
 - eval 级 fingerprint 由 eval 源码 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [缓存与携带](cache.md#指纹改哪一行会重跑)。解析期求值这一步同时划定了指纹的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
 - 落盘投影 `ExperimentRunInfo` 的穷尽形状单点定义在 [Results · run.json](../record/architecture.md#runjson)；`model` / `agent` 只在 Run 顶层存在。
 
-## 调度接口
-
-experiment 影响调度的字段就这五个：
-
-- `maxConcurrency` —— 实验级并发闸，先过它再占全局并发位；名额与 attempt 同生命周期（沙箱创建到销毁全程持有，turn 退避等内部等待不释放），串行化共享状态实验或给撞限额的实验单独降速。名额域是该实验所有并行 Invocation 共用的（租约机制见[并发 Invocation](#并发-invocation用例锁)），多开不叠加 N。
-- `earlyExit` —— 只由 `passed` 触发的首过即停；`errored` 不中止其余样本，确定性错误走 run 级 fail-fast（见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)）。
-- `budget` —— 按已完成 attempt 实测花费停止派发的安全网。
-- `timeoutMs` —— 单 attempt 外层超时。四层来源按 [Resolved config](#resolved-config一次求值处处同源) 的链解析(`--timeout` → experiment → eval → config),此后一切消费方用的都是这份 resolved 值。不进 eval fingerprint 哈希,以携带资格判据参与 carry(`durationMs` ≤ 当前 resolved 值才可携带,见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希));超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
-- `classifyFailure` —— 实验级失败分类器:识别以第三方错误形态浮出的自家共享基建死因(对共享隧道 host 的拒连),命中的 `scope` 触发止损闸停止派发。类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型),写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
-
-前四个字段的调度语义单点在 [Runner](../../runner.md)。
-
 ## 实验级生命周期：setup 与 teardown
 
-`setup(ctx)` / `teardown(ctx)` 在**宿主机**上、对每个实验**整场恰好至多一次**执行,与 attempt 生命周期(沙箱内 / 每 attempt 一次)分属两个节奏;成对形态与触发规则和其余三层一致(见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它)):
+`setup(ctx)` / `teardown(ctx)` 在**宿主机**上、对每个实验**整场恰好至多一次**执行,与 attempt 生命周期(沙箱内 / 每 attempt 一次)分属两个节奏;成对形态与触发规则和其余三层一致(见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
+
+```typescript
+let tunnel: Tunnel | undefined;
+
+export default defineExperiment({
+  setup: async (ctx) => {
+    tunnel = await startTunnel();     // 产出的坐标写进模块级变量,靠闭包流给下面的 teardown 与每 attempt 的 Hook
+    ctx.fact("tunnel", tunnel.url);   // 要把这轮实际用的坐标留进记录就上报 fact,落 RunMeta.facts
+  },
+  //  抛错 → 本实验所有 attempt 记 errored,逐条落 result.json、进报告
+  //  (error.code = "experiment-setup-failed",error.phase = "experiment.setup")
+  //  环境起不来是每条 eval 都没跑成的事实,不是一条一次性日志;同批其它实验不受任何影响
+
+  teardown: async (ctx) => {
+    await tunnel?.stop();             // ?. 是必需的防御:半初始化的现场同样要扫尾,强杀后的补执行更是读不到闭包
+  },
+  //  当且仅当 setup 的时点走到过才执行——setup 抛错不豁免,一个 attempt 都没派发则跳过
+  //  抛错 → 记一条 Run 级 diagnostic(experiment-teardown-failed,phase: "experiment.teardown"),
+  //  随该 Experiment 的 completedAt 封口落入 run.json,不改变任何已产出的 verdict
+  //  执行有界:30s 清理超时,到点同样记这条,不能无限拖住退出
+});
+```
 
 - **触发时机是懒的**:本实验第一个通过派发许可(首过即停 / fail-fast / budget 检查)的 attempt 触发它,后续 attempt 等同一个 memoized 结果。全部结果被 carry 携入、一个 attempt 都不派发时,`setup` 不执行——没有 attempt 要跑就没有资源要起。
 - **不占并发位,也不折损优先级**:等待 `setup` 的 attempt 不持有、不预留全局并发位,不会让一个慢启动的隧道饿死同批其它实验;它们在反馈计数里保持 `queued`。setup 完成后按[瓶颈优先](../../runner.md#派发顺序瓶颈优先追求最小总墙钟时间)的优先级参与下一次空位分配,不因回来得晚排到队尾。
 - **起止可见性由 runner 发布**:setup / teardown 的开始与结束是运行级反馈事件(Human dashboard 的运行级 active 行、`--json` 的起止事件),不依赖 Hook 自己调 `progress`——渲染契约见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)。
 - **ctx**:`experimentId`、`selectedEvalIds`、`signal`(用户中断时 abort),以及作用域反馈 `progress` / `diagnostic` / `fact`(绑定到当前 Hook 对应的 `experiment.setup` / `experiment.teardown`,见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈))。experiment 级 Hook 上报的 fact 落进 `RunMeta.facts`(Run 封口补写),记录整场实验的环境观测;语义与形状见 [Results · facts](../record/architecture.md#facts运行事实)。
-- **失败语义**:`setup` 抛错 → 本实验**所有** attempt 记 `errored`(`error.code = "experiment-setup-failed"`,`error.phase = "experiment.setup"`),逐条落 `result.json`、进报告——环境起不来是每条 eval 都没跑成的事实,不是一条一次性日志;同批其它实验不受任何影响。同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
-- **teardown 的触发**:本实验最后一个 attempt 收尾后执行,当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免(半初始化的现场同样要扫尾,teardown 对可能未赋值的闭包变量做防御),一个 attempt 都没派发则跳过;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内兜底范围,由[强杀后的收尾兜底](#强杀后的收尾兜底收尾登记与启动自愈)在磁盘上接手。
-- **teardown 的失败语义**:抛错记一条 Run 级 diagnostic(`experiment-teardown-failed`, `phase: "experiment.teardown"`),随该 Experiment 的 `completedAt` 封口落入 `run.json`,不改变任何已产出的 verdict——与 `sandbox.teardown` 的失败语义一致;执行有界(30s 清理超时,到点同样记 `experiment-teardown-failed`),不能无限拖住退出。
-- **产出的运行时值经模块闭包流动**:`setup` 拿到的 URL / 凭据写进实验文件的模块级变量,`teardown` 与同文件里 agent / sandbox Hook(后两者每 attempt 执行,晚于 `setup`)从闭包读取。runner 不做值的中介——它们是运行时基础设施坐标,不是实验条件(实验条件进 `flags`,一并进指纹)。要把这轮实际用的坐标留进记录,在 Hook 里 `ctx.fact()` 上报:落 `facts` 而不是配置,因此不参与可比性,坐标轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
+- **`setup` 失败不刷屏**:同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
+- **teardown 的触发时点**:本实验最后一个 attempt 收尾后执行;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内兜底范围,由[强杀后的收尾兜底](#强杀后的收尾兜底收尾登记与启动自愈)在磁盘上接手。失败语义与 `sandbox.teardown` 一致。
+- **runner 不做运行时值的中介**:`setup` 拿到的 URL / 凭据经模块闭包流给 `teardown` 与同文件里的 agent / sandbox Hook(后两者每 attempt 执行,晚于 `setup`)。它们是运行时基础设施坐标,不是实验条件——实验条件进 `flags`,一并进指纹;坐标进 `facts`,不参与可比性,轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
 - **不进 fingerprint**:Hook 函数体与 `SandboxSpec` Hook 一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
 - **两个 Hook 都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../record/architecture.md#resultjson))与运行级反馈行的标注。
 

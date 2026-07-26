@@ -32,13 +32,42 @@
 `t.sandbox.diff` / `fileChanged` / `fileDeleted` / `notInDiff` 回答的是「**agent** 改了什么」,不是「workspace 相对空目录变了什么」。归因由 runner 的**变更分类账**(私有 git ledger)提供:
 
 - **分类账在沙箱内、workdir 外。** ledger 的 git 目录放在 runner 控制的私有路径,以 workdir 为 work-tree。workdir 保持素净——agent 看不到 runner 的 `.git`,eval 需要真实 git repo 时自己 `git init`,agent 在 workdir 里的任何 git 操作都碰不到分类账。
-- **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,环境层 Hook 之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(fixture 写入、`EvalDef.setup` / `SandboxAgent.setup` 的落位、`runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**——这个 **send 窗口**内的全部 workspace 变化。
+下面这条 eval 把每一行写入落到哪本账上标在原地:
+
+```typescript
+export default defineEval({
+  diff: { ignore: ["fixtures/**"], include: ["node_modules/some-pkg/**"] },
+  //  合成顺序固定:默认清单 ∪ ignore,再被 include 打洞
+  //  → agent 改 fixtures/ 下的文件不进 agent diff;node_modules/some-pkg 里被 patch 的文件进
+  //  清单在锚点时冻结:agent 或 fixture 事后写 .gitignore 影响不了它
+
+  async test(t) {
+    await t.sandbox.writeFiles({ "src/app.ts": SEED });
+    //  写在 send 之前 → 下一次 t.send() 进入前落一笔 eval 归因
+
+    t.sandbox.fileChanged("src/app.ts");
+    //  第一次 t.send() 之前 agent 归因增量恒为空 → 这条如实失败
+    //  起始 fixture 制造不了假阳性,这正是分类账存在的理由
+
+    await t.send("把 src/app.ts 改成 async/await。");
+    //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
+
+    await t.sandbox.writeFiles({ "expected.json": ANSWER });
+    //  写在 send 之后的隐藏校验材料:agent 天然看不到,也进不了 agent diff
+    //  两个保证来自同一机制,不需要作者做任何标记
+
+    t.check(t.sandbox.diff.get("src/app.ts"), excludes(/callback/));
+    //  读的是最后触及该文件那个窗口的终态;窗口之间夹着的 eval 写入不会被算进 agent 的账
+  },
+});
+```
+
+- **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,环境层 Hook 之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(fixture 写入、`EvalDef.setup` / `SandboxAgent.setup` 的落位、`runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**。`agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 窗口之外,不需要 exclude 一类补丁。
 - **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,remote agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
-- **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,`EvalDef.setup` 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。清单在锚点时冻结,agent 或 fixture 写 `.gitignore` 影响不了它(项目自己的 ignore 规则也**不**参与归因判断——被项目 ignore 的文件照常记录);eval 要评分被排除目录时经 `defineEval({ diff: { include: [...] } })` 显式加回,`diff.ignore` 追加排除。
+- **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,`EvalDef.setup` 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常记录。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
 - **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。
 - **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB blob 证据(文本按 before/after 实际字节、二进制按尺寸计),尺寸核算先于内容传输;越界或导出命令失败时 `workspace.diff` 明确报执行错误,不得伪造成空窗口让文件断言产生假阴性。
-- **第一次 `t.send()` 之前,agent 归因增量恒为空。** 此时 `fileChanged` 如实失败——起始 fixture 制造不了假阳性,这正是分类账存在的理由。`t.send()` 之后写入的隐藏校验文件同样进不了 agent diff:「校验材料对 agent 不可见」与「校验材料不污染归因」由同一机制保证。`agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 窗口之外,不需要 exclude 一类补丁。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 窗口归因,按 provider 分支还破坏[核心中立](../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐窗口归因的引擎,这是选它的理由,不是历史惯性。
 
 agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。

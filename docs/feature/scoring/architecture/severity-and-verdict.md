@@ -1,31 +1,97 @@
 # Severity 与 Verdict
 
+一条断言链上什么词，决定它挂了怎样向上传播。本篇是**判定面**的单源：两种题型各一段
+标注代码，每个词旁边写「挂了会怎样」。分数怎么算、每个词落到哪个读数见
+[计分粒度](../../experiments/score-points.md)，matcher 自带的通过线见
+[值断言](../library/value-assertions.md#内置-matcher)。
+
 ## Severity
 
-- **gate**：硬要求，通过线默认 1（matcher 自身的及格线），不过即 failed。
-- **soft**：质量指标。**无通过线＝纯记录**，分数如实落盘、永不 fail；**有通过线**＝低于线记该条 failed，默认不改 Verdict，strict 模式下才计入。
+`defineEval` 的 `t` 上，严重度既可以链在 matcher 上，也可以链在作用域断言的句柄上。
+不链词就用 matcher 自带的默认严重度。
 
-严重度句柄三个词、三种互不重叠的行为（对齐 eve）：
+```typescript
+export default defineEval({
+  async test(t) {
+    await t.send("查一下布鲁克林今天的天气。");
 
-- `.gate(x?)` —— 升级为硬要求。省略 `x` 用默认通过线 1；打分断言可给 `x` 指定硬阈值。
-- `.atLeast(x)` —— 降级为带通过线的 soft。`x` 是**分数线**：0/1 断言写 `.atLeast(1)`（挂了照实记 failed，`--strict` 才拖垮 Verdict），打分断言写 `.atLeast(0.7)`。
-- `.soft()` —— 降级为纯记录的 soft，不设线（judge 的默认严重度就是它）。**无参数**——要设线用 `.atLeast(x)`，不提供同义的 `soft(x)`。
+    t.check(t.reply, includes("Brooklyn"));
+    //  不链词 → 用 matcher 自带的严重度，includes 默认 gate：没命中 → 这次 attempt failed
 
-`.atLeast` 的参数是分数线，不是调用次数——「至少调用 n 次」在匹配条件的 `count` 里表达（数字恰好、谓词自定，见[作用域断言](../library/scoped-assertions.md#匹配条件的字段全集)）。
+    t.check(t.reply, similarity(expected).gate(0.8));
+    //  .gate(x) → 硬要求：分数低于 0.8 → failed
+    //  省略 x 用默认通过线 1，也就是 matcher 自身的及格线（0/1 断言即「命中」）
 
-severity 只管**判定面**：它声明一条断言的失败怎么向上传播，同一语义沿组、eval、experiment 逐层作用，不按层另设规则，`--strict` 是作用于所有层的同一个旋钮——它把带线 soft 翻成 gate，只改判定传播，分数照记。质量分（soft 断言的均值）与分数面（计分制的给分）是另外两个读数，折叠规则见[计分粒度](../../experiments/score-points.md)。
+    t.check(t.reply, similarity(expected).atLeast(0.7));
+    //  .atLeast(x) → 降级为带通过线的 soft：低于 0.7 照实记 failed，verdict 不动
+    //  --strict 下这条线翻成 gate → failed
+    //  x 是分数线：0/1 断言写 .atLeast(1)，打分断言写 .atLeast(0.7)
+
+    t.calledTool("get_weather", { count: 2 }).atLeast(1);
+    //  作用域断言默认 gate，降级同样链这三个词
+    //  「至少调用 2 次」是匹配条件，写在 count 里，不写成严重度的参数
+
+    t.judge.autoevals.closedQA("回答准不准？").optional();
+    //  judge 的默认严重度是无线的 .soft()：分数如实落盘、永不 fail
+    //  .soft() 无参数——要设线用 .atLeast(x)，不提供同义的 soft(x)
+    //  .optional() 与上面三个词正交：它管证据允不允许缺席，不管判定怎么传播（见下）
+  },
+});
+```
+
+`.atLeast` 的参数是分数线，不是调用次数——次数与其余匹配条件都在
+[`ToolMatch`](../library/scoped-assertions.md#匹配条件的字段全集) 里表达。
+
+severity 只管**判定面**：它声明一条断言的失败怎么向上传播，同一语义沿组、eval、experiment
+逐层作用，不按层另设规则。`--strict` 是作用于所有层的同一个旋钮——它把带线 soft 翻成 gate，
+只改判定传播，分数照记。质量分（soft 断言的均值）与分数面（计分制的给分）是另外两个读数，
+折叠规则见[计分粒度](../../experiments/score-points.md#折叠树判定面分数面质量分)。
 
 ## 计分制里的 `.gate()`：前置中止
 
-上面三个词描述的是通过制（`defineEval`）的 `t`。计分制（`defineScoreEval`）的 `t` 是另一套类型，句柄上的词各有各的定义：
+计分制（`defineScoreEval`）的 `t` 是另一套类型，同样这几个词各有各的定义：判定面只认
+**前置中止**，丢分不产生 failed。每个词落到哪个读数见
+[角色表](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
 
-- **`.gate(x?)` = 前置**。挂了**就地结束 `test()`**，后面的给分代码不执行；它是计分制里 `failed` 的唯一来源。与通过制的 gate 不同：通过制的 gate 不中止执行（继续收集其余断言作为诊断证据），把 verdict 翻成 failed；计分制不需要「翻 verdict」这一层——丢分已经由分数表达——需要的是「后面跑了也白跑，别浪费沙箱时间」。
-- **`.points(n)` = 得分点**，不参与判定、不进质量分；链过 `.points()` 的句柄上只剩 `.gate()` 与 `.optional()`。
-- **`.atLeast(x)` 只是观测的通过线**：低于线如实记 failed，**永不影响判定**——在通过制它还兼着「`--strict` 下翻成 gate」，那半边在计分制不存在。
-- **不链词就是观测**：进质量分、不参与判定；matcher 的通过线照常生效，没做到如实记 `failed`。显式 `.soft()` 再把线也去掉（纯记录一个分数、永不 failed）。
-- **没有 `--strict`**：判定面只认前置中止，带线的观测在任何模式下都不翻 verdict。计分制实验上传这个 flag 是启动期用法错误，见[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
+```typescript
+export default defineScoreEval({
+  async test(t) {
+    await t.send("把 DB-GPT 装起来并通过健康检查。");
 
-前置断言在**写下的位置立即求值**（普通断言延迟到收尾才求值）——之后发生的事不改变它的结论，这正是「前置」的含义。matcher 自带或链上的严重度在计分制只贡献通过线，不使一条断言成为前置：前置是题目结构的声明，必须写在断言句柄上。完整的角色表见[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
+    await t.check(await t.sandbox.fileExists("db-gpt/README.md"), isTrue()).gate();
+    //  .gate(x?) = 前置：挂了就地结束 test()，后面的给分代码不执行
+    //  它是计分制里 failed 的唯一来源，本身不进任何折叠读数
+    //  与通过制的 gate 不同：那边不中止执行（继续收集其余断言作为诊断证据），把 verdict 翻成 failed
+    //  这边不需要「翻 verdict」这一层——丢分已经由分数表达——需要的是「后面跑了也白跑」
+
+    t.sandbox.fileChanged("db-gpt/.env").points(1);
+    //  .points(n) = 得分点：通过挣 n 分、不过挣 0 分，继续往下跑
+    //  链过 .points() 的句柄上只剩 .gate() 与 .optional()
+
+    await t.calledTool("shell", { input: { command: /pip install/ } }).points(1).gate();
+    //  .points(n).gate() = 得分点兼前置：丢这 1 分，并且就地结束 test()
+
+    t.judge.autoevals.closedQA("说明讲清动机没有？").atLeast(0.6);
+    //  .atLeast(x) = 观测的通过线：低于线如实记 failed，永不影响判定
+    //  在通过制它还兼着「--strict 下翻成 gate」，那半边在计分制不存在
+
+    t.check(t.reply, includes("healthy"));
+    //  不链词 = 观测：进质量分；matcher 自带的通过线照常生效，没做到如实记 failed
+    //  .soft() 再把这条线也去掉——纯记录一个分数、永不 failed
+  },
+});
+```
+
+前置断言在**写下的位置立即求值**，普通断言延迟到收尾才求值——之后发生的事不改变它的结论，
+这正是「前置」的含义。挂了之后收集器进入中止态，下一次任何 `t.*` 调用或 `test()` 返回时
+抛出中止信号；收集器在每个 `t.*` 入口先结算待决前置，所以作者写不写 `await` 都不会漏掉中止
+（文档例子统一写 `await`）。
+
+matcher 自带的严重度与链在 matcher 上的严重度（`similarity(...).gate(0.8)`）在计分制只贡献
+**通过线**，不使一条断言成为前置：前置是题目结构的声明，必须写在断言句柄上、一眼可见。
+计分制也没有 `--strict`——判定面只认前置中止，带线的观测在任何模式下都不翻 verdict；
+计分制实验上传这个 flag 是启动期用法错误，见
+[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
 
 ## Verdict
 

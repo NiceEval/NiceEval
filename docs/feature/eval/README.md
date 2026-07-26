@@ -8,27 +8,44 @@
 import { defineEval } from "niceeval";
 
 export default defineEval({
-  description?: string;            // 人读的描述,出现在报告里
-  tags?: string[];                 // 供 --tag 与 ExperimentDef.evals 谓词过滤
-  judge?: JudgeConfig;             // 覆盖默认裁判模型
-  reporters?: Reporter[];          // 这个 eval 专用的报告器
-  timeoutMs?: number;              // 这条 eval 需要多久才跑得完
-  environment?: string;            // 这条 eval 需要的环境 profile id；也可由 ExperimentDef.evals 谓词读取
-  diff?: { include?: string[]; ignore?: string[] };   // 调整 agent diff 的归因排除清单(仅沙箱型;见下)
-  metadata?: Record<string, unknown>;
-  async setup(sandbox, ctx) { /* 这条 eval 的沙箱预置;ctx 可报告 progress/diagnostic */ },
-  async teardown(sandbox, ctx) { /* 回收 setup 的 fixture;setup 时点走到过才触发 */ },
+  description?: string;   // 人读的描述,出现在报告里;不参与任何判定
+  tags?: string[];        // 供 --tag 与 ExperimentDef.evals 谓词过滤
+
+  judge?: JudgeConfig;    // 这道题要多强的裁判
+  timeoutMs?: number;     // 这道题跑得完要多久
+  //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
+  //    要按次压过它,用 --timeout / --judge-model 或 experiment 字段,不靠改 config
+
+  environment?: string;   // 这道题要哪种环境 profile,例如 "python-3.9-astropy-4.2"
+  //  所用 sandbox spec 的 environments 表里没有这一项 → 启动期配置错误,一个沙箱都不创建
+  //  省略 → 从 spec 的基础产物起步
+
+  diff?: { include?: string[]; ignore?: string[] };
+  //  只改变「哪些路径算进 agent 归因」,不改变沙箱里实际有什么;仅沙箱型有意义
+
+  reporters?: Reporter[];               // 这个 eval 专用的报告器
+  metadata?: Record<string, unknown>;   // 原样落进记录,给报告和事后分析读
+
+  async setup(sandbox, ctx) { /* 这道题的任务素材 */ },
+  //  拿到完整 Sandbox(不是 test 里那个受限的 t.sandbox 视图);写入算 eval 归因,永不进 agent diff
+  //  ctx 是绑定到 eval.setup 的窄上下文:ctx.progress(...) 报短期 activity,ctx.diagnostic(...) 报永久 warning/error
+
+  async teardown(sandbox, ctx) { /* 回收 setup 的 fixture */ },
+  //  收尾链的第一段(eval.teardown → agent.teardown → sandbox.teardown)
+  //  当且仅当 setup 的时点走到过才执行;setup 抛错、test 抛错都不豁免
+
   async test(t) { /* 交互 + 断言 */ },
+  //  t.send() 之后写进沙箱的校验材料,agent 天然看不到,也进不了 agent diff
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。两者都排在 `niceeval.config.ts` 之前——项目级配置是没写时的缺省底，压不掉 eval 写下的值；要按次覆盖，用运行侧的 `--timeout` 或 experiment 字段（`judge` 的模型另有单次 `{ model }` 出口，见 [LLM-as-judge](../scoring/library/judge.md#模型与鉴权)）。完整的四层链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的缺省底，压不掉 eval 写下的值（`judge` 的模型另有单次 `{ model }` 出口，见 [LLM-as-judge](../scoring/library/judge.md#模型与鉴权)）。完整的四层链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
 
-`environment` 声明这条 eval 需要哪种**环境 profile**，例如 `"python-3.9-astropy-4.2"`。它是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。省略此字段的 eval 从 spec 的基础产物起步；数据集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。选中 eval 声明的 profile 在所用 spec 里缺表项是启动期配置错误。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；remote Agent 不创建沙箱，此字段只参与指纹。
+`environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。数据集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；remote Agent 不创建沙箱，此字段只参与指纹。
 
-`diff` 调整[变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账)的排除清单,两个数组都是 **gitignore 风格 glob**(workdir 相对):默认排除 `.git/`、`node_modules/`、常见构建产物与包管理器缓存目录;`ignore` 在默认清单上追加排除;`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。合成规则固定为「默认 ∪ ignore,再被 include 打洞」,清单在分类账锚点时冻结,运行中不可变。
+`diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
-`setup` 是**这条 eval 的任务层预置**:拿到的是完整 `Sandbox`(不是 `test` 里那个受限的 `t.sandbox` 视图),在环境层 Hook 与变更分类账锚点之后、`agent.setup` 与 `test(t)` 之前跑,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖);它的写入是 eval 归因,不会进 agent diff。第二个参数是绑定到 `eval.setup` 的窄上下文,可用 `ctx.progress(...)` 报告短期 activity、用 `ctx.diagnostic(...)` 报告永久 warning/error。`teardown` 是它的成对收尾:attempt 收尾链的第一段(`eval.teardown` → `agent.teardown` → `sandbox.teardown`),当且仅当 `setup` 的时点走到过才执行(`setup` 抛错、`test` 抛错都不豁免);要把 `setup` 的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
+`setup` 在环境层 Hook 与变更分类账锚点之后、`agent.setup` 与 `test(t)` 之前跑,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖)。要把它的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
 
 **禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。改名即改 id,不会腐烂。
 

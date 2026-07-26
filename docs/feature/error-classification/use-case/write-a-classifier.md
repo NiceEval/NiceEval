@@ -28,8 +28,8 @@
 3. **挂分类器**。实验定义上只认自家坐标:
 
    ```ts
-   export const codexNowledge = defineExperiment({
-     id: "codex-nowledge",
+   // experiments/compare/codex-nowledge.ts —— id 从路径推导,不手写
+   export default defineExperiment({
      // ... sandbox / setup ...
      classifyFailure({ text }) {
        // serverHost 是本实验共享隧道的 host——对它的连接失败即实验级死因

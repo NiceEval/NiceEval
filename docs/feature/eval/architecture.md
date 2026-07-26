@@ -10,15 +10,7 @@
 
 ## 接收者模型：位置决定作用域
 
-同一套作用域断言词汇（`succeeded` / `messageIncludes` / `calledTool` / `event` / `maxTokens` …）绑定在三个接收者上，绑定位置决定读哪份数据：
-
-| 接收者 | 作用域 | 求值时机 |
-|---|---|---|
-| `t` | 整个 attempt：全部 session（含 `t.newSession()` 开的）的全部轮次 | finalize 时对聚合结果求值 |
-| `session`（`t.newSession()` 返回值） | 该 session 到断言记录时已发生的事件 | 记录时 Run |
-| `turn`（`t.send()` 返回值） | 这一轮自己的事件与用量；独有 `outputEquals` / `outputMatches`（只对单轮结果有意义） | 记录时 Run |
-
-`t.*` 的聚合是有意设计，不是要消除的黑箱——「对整个 run 断言」是真实需求，把它做成一等作用域比让用户手工拼接每轮回复更诚实。`Attempt` 只作为 runner / results 的执行单位存在，不是 authoring 层的接收者。完整作用域规则见 [Scoring · 作用域](../scoring/architecture/scopes.md)。
+同一套作用域断言词汇（`succeeded` / `messageIncludes` / `calledTool` / `event` / `maxTokens` …）绑定在 `t`、session、turn 三个接收者上，绑定位置决定读哪份数据、什么时候求值。三者的 selector 与求值时机逐行标注在 [Scoring · 作用域绑定](../scoring/architecture/scopes.md)，`outputEquals` / `outputMatches` 这类只对单轮结果有意义的能力不下放给其它接收者。
 
 ## Fixture 与 send 窗口
 

@@ -19,8 +19,8 @@
 ```ts
 import { ExperimentFatalError } from "niceeval";
 
-export const codexNowledge = defineExperiment({
-  id: "codex-nowledge",
+// experiments/compare/codex-nowledge.ts —— id 从路径推导,不手写
+export default defineExperiment({
   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(async (sandbox, ctx) => {
     // 探活实验共享的服务端隧道:挂了则本实验每条 attempt 同因必死
     const probe = await sandbox.exec(`curl -sf ${serverUrl}/health`);
@@ -50,8 +50,8 @@ setup: async (ctx) => {
 服务在 run **中途**死掉时,死因会以第三方错误的形态浮出(对隧道 host 的拒连、turn 层连接错误),probe 看不见它;实验分类器认得自家 host:
 
 ```ts
-export const codexNowledge = defineExperiment({
-  id: "codex-nowledge",
+// experiments/compare/codex-nowledge.ts
+export default defineExperiment({
   // ...
   classifyFailure({ text }) {
     // 只有实验作者知道这个 host 是全实验共享的隧道

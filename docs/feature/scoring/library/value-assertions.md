@@ -51,21 +51,23 @@ t.check(turn.data, satisfies((v) => Array.isArray(v) && v.length <= 5, "最多 5
 
 ## 改严重度与阈值
 
-每个 matcher 都可以链 `.gate(threshold?)`、`.atLeast(threshold)`、`.soft()` 或 `.optional()`，返回新的不可变 matcher，原实例不变、可复用：
-
-- `.gate(t?)`：变硬门槛，不及格即整条 eval 不通过。省略阈值用默认通过线 1（0/1 即「命中」），给了阈值按「分数 ≥ 阈值」。
-- `.atLeast(t)`：降级为带通过线的 soft——低于 `t` 照实记 failed，默认不影响 verdict，`--strict` 下才计入。`t` 是分数线：0/1 matcher 写 `.atLeast(1)`，打分 matcher（`similarity` 这类 0..1 的）写 `.atLeast(0.7)`。
-- `.soft()`：降级为纯记录的 soft，不设线，分数落盘、永不 fail；无参数，要设线用 `.atLeast(t)`。
-- `.optional()`：允许这条断言证据缺席——评不了时只记录 `unavailable`，不把 attempt 拖成 `errored`；与 severity 正交，主要用在依赖证据通道的作用域断言和 judge 上（[折叠规则](../architecture/severity-and-verdict.md#证据不可用unavailable不折叠成通过)）。
+每个 matcher 都可以链 `.gate(threshold?)`、`.atLeast(threshold)`、`.soft()` 或 `.optional()`，
+返回新的不可变 matcher，原实例不变、可复用：
 
 ```ts
-t.check(t.reply, similarity("布鲁克林今天晴。").atLeast(0.9)); // 收紧默认的 0.6
-t.check(t.reply, similarity("布鲁克林今天晴。").gate(0.8));    // 相似度不足直接挂
+const nearEnough = similarity("布鲁克林今天晴。");
+t.check(t.reply, nearEnough.atLeast(0.9));   // 收紧默认的 0.6；nearEnough 本身不变
+t.check(reply2, nearEnough.gate(0.8));       // 同一个 matcher 换一档严重度复用
 ```
 
-这四个词描述的是通过制的 `t`。计分制（`defineScoreEval`）里 matcher 上链的严重度只贡献**通过线**，角色由断言句柄上的 `.points(n)` / `.gate(x?)` 决定，见 [Severity 与 Verdict · 计分制里的 `.gate()`](../architecture/severity-and-verdict.md#计分制里的-gate前置中止)。
+写下这四个词各会怎样向上传播——`.gate` 是硬要求、`.atLeast` 的参数是分数线、`.soft()`
+不设线、`.optional()` 允许证据缺席——逐行标注在
+[Severity 与 Verdict](../architecture/severity-and-verdict.md#severity)。
+计分制（`defineScoreEval`）里 matcher 上链的严重度只贡献**通过线**，角色由断言句柄上的
+`.points(n)` / `.gate(x?)` 决定，见
+[计分制里的 `.gate()`](../architecture/severity-and-verdict.md#计分制里的-gate前置中止)。
 
-Severity 折叠成 Verdict 的完整规则见 [Severity 与 Verdict](../architecture/severity-and-verdict.md)；每个 matcher 失败时在 show / view 里显示什么，见 [断言与 Turn 的展示](display.md)。
+每个 matcher 失败时在 show / view 里显示什么，见 [断言与 Turn 的展示](display.md)。
 
 ## 分组
 

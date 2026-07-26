@@ -41,16 +41,17 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 | `.atLeast(x)` | 观测（带通过线） | 质量分（soft 均值） | 低于 `x` 记 failed，不影响判定 |
 | `.soft()` | 观测（纯记录） | 质量分（soft 均值） | 无（不设线，永不 failed） |
 
-配套语义：
+表里「挂了的后果」这一列怎样落到代码的每一行，逐行标注在
+[Severity 与 Verdict · 计分制里的 `.gate()`](../scoring/architecture/severity-and-verdict.md#计分制里的-gate前置中止)——
+前置的就地求值、matcher 上链的严重度为什么只贡献通过线，都在那一篇的判定面单源里。
+分数面这边配套的语义：
 
 - **`.points(n)` 与 severity 互斥**：链过 `.points()` 的句柄上只剩 `.gate()` 与 `.optional()`，`.soft()` / `.atLeast()` 在类型层不存在（形状见 [Eval · defineScoreEval](../eval/README.md#definescoreeval计分制题型)）。得分点已经用分数表达了它的分量：再让它进质量分是同一条证据被读两遍，再给它设一条通过线是拿两个标准评同一件事。
-- **`.atLeast(x)` 只是观测的通过线**：低于线如实记 failed，**永不影响判定**（计分制的判定面只认前置中止，`--strict` 也不翻）。judge 这类默认没有线的打分断言靠它把「装好了但质量差」显示成失败行；0/1 断言不需要它——matcher 自带的线在计分制照常生效。
-- **角色只从句柄读**：matcher 自带的默认严重度（`includes` 默认 gate）与 matcher 上链的严重度（`similarity(...).gate(0.8)`）在计分制只贡献**通过线**，不使一条断言成为前置。前置是题目结构的声明，必须写在断言句柄上、一眼可见。通过线照常生效：没做到的检查点如实记 `failed` 挣 0 分，只是不参与判定——要连线都不要（纯记录一个分数）就显式链 `.soft()`。
-- **计分制没有 `--strict`**：这个旋钮的全部作用是「把带线 soft 翻成 gate」，而计分制的判定面只认前置中止——带线的观测在任何模式下都不翻 verdict，丢分更不会。选中的 eval 全是计分制时传 `--strict` 是**启动期用法错误**（与混型选择同一风格：报错列出这个 flag 对哪些 eval 无效、建议去掉），不静默接受一个什么都不做的 flag。
-- **`.gate()` 就地求值**：普通断言延迟到 finalize 才求值，前置断言在**写下的位置立即求值**——之后发生的事不改变它的结论，这正是「前置」的含义。挂了之后收集器进入中止态，下一次任何 `t.*` 调用或 `test()` 返回时抛出中止信号；收集器在每个 `t.*` 入口先结算待决前置，所以作者写不写 `await` 都不会漏掉中止（文档例子统一写 `await`）。
+- **观测的通过线只改那一行的显示**：judge 这类默认没有线的打分断言靠 `.atLeast(x)` 把「装好了但质量差」显示成失败行；0/1 断言不需要它——matcher 自带的线在计分制照常生效，没做到的检查点如实记 `failed` 挣 0 分。
+- **计分制不接受 `--strict`**：这个旋钮的全部作用是「把带线 soft 翻成 gate」，而计分制的判定面只认前置中止。选中的 eval 全是计分制时传它是**启动期用法错误**（与混型选择同一风格：报错列出这个 flag 对哪些 eval 无效、建议去掉），不静默接受一个什么都不做的 flag。
 - **计分制的 `t` 上没有 `t.require`**：`t.check(value, matcher).gate()` 覆盖 `t.require(value, matcher)` 的全部能力，还能同时挣分，前置在计分制里只有 `.gate()` 一种写法。`t.require` 仍是通过制的前置词（[值断言](../scoring/library/value-assertions.md#check-与-require)）。
 - **中止挣 0，基础设施得 null，严格分开**：前置挂了强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、judge 没 key 是 `errored`，整题分数为 `null`、不折成 0——评不了不是 agent 差。带 `.points` 的断言 `unavailable`（仅 `.optional()` 情形，否则整题已 errored）不挣分、在报告里如实标注。
-- **Verdict 回答「这次的分数完不完整」**：四态照旧，但计分制的 `failed` 只有一个来源——前置 `.gate()` 中止。**丢分不是失败**：五步走完三步的 attempt 是 `passed` 且挣 3 分，「做到几成」由分数面回答，不借判定面表达。`errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
+- **丢分不是失败**：五步走完三步的 attempt 是 `passed` 且挣 3 分，「做到几成」由分数面回答，不借判定面表达；verdict 回答的是「这次的分数完不完整」（[四态与优先级](../scoring/architecture/severity-and-verdict.md#verdict)）。`errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
 - **`runs > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
 
 两种题内写法（完整用例见[计分制用例](../eval/use-case/rubric-scoring.md)）：
