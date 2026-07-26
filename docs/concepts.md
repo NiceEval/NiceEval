@@ -6,19 +6,19 @@
 - 你在写文档 / 代码,想跟现有用法保持一致;
 - 你需要一页纸把整套词汇过一遍。
 
-这是一份术语表,分三层:先用「术语总表」对齐每个词的中文写法、英文写法和一句话含义;
-总表之后的各「⋯词汇」分区展开每个词的完整契约;末尾的[禁用写法](#禁用写法)登记已裁决
-不许再出现的词。两个同义词并存时,**首选写法**用粗体。
+这是一份按功能分组的术语表:每张表对齐中文写法、英文写法、一句话含义和唯一契约;
+完整语义只写在契约列所链文档,不在本页重复展开。末尾的[禁用写法](#禁用写法)登记
+已裁决不许再出现的词。两个同义词并存时,**首选写法**用粗体。
 
 总表里的中文名和英文名都是正文首选写法。代码标识与标准术语不同时,英文列把代码标识放在
 括号里,正文叙事使用标准术语,代码示例仍使用代码标识。
 
-由具体功能产生的词条,含义列必须链接定义它的 Feature 契约。没有可链接 Feature 契约的概念
+由具体功能产生的词条,契约列必须链接定义它的 Feature 契约。没有可链接 Feature 契约的概念
 不进入总表;功能删除时同批删除对应词条。
 
 ## 术语总表
 
-「中文」列是中文正文里的写法——很多词的首选写法就是英文原词,此时两列相同;有中文同义词的一并列出。「含义」只压到一句话,完整契约看本页下文各分区或所链文档。
+「中文」列是中文正文里的写法——很多词的首选写法就是英文原词,此时两列相同;有中文同义词的一并列出。「含义」只压到一句话,完整契约只看「契约」列所链文档。
 
 ### 产品
 
@@ -215,178 +215,6 @@
 | 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 | [Scoring CLI](feature/scoring/cli.md) |
 | 环境预置 | —(用普通代码表达) | 跑 agent 前的准备逻辑,三个家:eval 内 `t.sandbox.*`、`SandboxAgent.setup`、外部编排 | [Sandbox library](feature/sandbox/library.md) |
 | CLI flag | CLI flag | 命令行开关(`--strict`、`--report`…);写作时一律带「CLI」限定或写字面 `--xxx`,不与实验 flags 混用 | [CLI](cli.md) |
-
-## 评测核心词汇
-
-**Eval** —— 评测的最小单元。一个 Eval = 一个 [Task](#评测核心词汇) 跑在一个 [Agent](#评测核心词汇) 上,由若干 [Assertion](#评测核心词汇) 评判。统一由 `defineEval` 定义——会话型和沙箱型不是两个定义函数,`test(t)` 里 `t` 要不要带 `t.sandbox`,取决于引用的 [Agent](#评测核心词汇) 是不是 `defineSandboxAgent` 构造的(`kind: "sandbox"`),不取决于用哪个 define 函数。每个 Eval 有一个从路径推导的 **id**。
-
-**Task** —— 要让被测对象完成的"那件事"。不管会话型还是沙箱型,都是一串 `t.send(...)` 的输入——沙箱型只是 `t` 多了 `t.sandbox`,任务本身照样写在 `t.send(...)` 里。Task 描述意图,不描述如何判分。
-
-**Agent** —— "一条连到 AI 的连接"的抽象,由 experiment 引用。`Agent.kind` 只有两类:`"remote"`(按你自己服务的协议发请求,`defineAgent` 产出)、`"sandbox"`(在 [Sandbox](#被测对象与适配器词汇) 里 spawn coding agent 的 CLI,`defineSandboxAgent` 产出)。进程内直调你的函数不是独立的第三类——它只是 `kind: "remote"` 的 `send` 里选择怎么实现的一种写法,而且不是推荐写法(测函数不等于测生产路径,详见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx))。运行器只认统一动词 `send`,`t` 上暴露哪些动作由 Agent 的[能力](#被测对象与适配器词汇)决定——能力不是声明出来的,是 `send` 实际做到了什么的构造证据。niceeval 不定义任何 agent 协议,所以没有 `--url`、没有通用 http target —— 连你自己的服务也是写一个 agent,URL 是它的内部配置。详见 [Agents 与 Adapters](feature/adapters/README.md)。
-
-**Assertion** / **断言** —— 对一次 Attempt 的结果、行为、证据或资源使用提出的一项可记录检查。
-断言带名字、严重度([gate / soft](#评测核心词汇))与可选阈值,产出一个 0–1 分数或
-`unavailable`。有阈值时再据此得到过/挂。
-
-断言按求分机制分三类:
-
-- **值断言**用 matcher 检查一个显式值,例如 `t.check(value, includes(...))`。
-- **范围断言**查询 Attempt、Session 或 Turn 内累计的事件和事实,例如 `t.calledTool()`。
-- **Judge 断言**把材料和 rubric 交给裁判模型求分。
-
-沙箱中手工运行验证命令再用 `commandSucceeded()` 检查,仍是值断言。
-`maxTokens()` / `maxCost()` 这类效率约束仍是范围断言。证据来源与便捷入口不制造新的断言类别。
-
-matcher 是可复用的值求分规则,不是一次断言结果。裁判模型是 Judge 断言的求分依赖,
-也不是断言本身。
-
-`t.score(label, n)` 是独立的直接计分。它没有严重度、阈值、过/挂或 `unavailable`,
-只向分数面贡献分数,不属于 Assertion。
-
-**Verdict** / **判定** —— 一个 Eval 的评分判定,只有四态:`passed` / `failed` / `errored` / `skipped`。四态**按固定优先级折叠**,一条 attempt 同时满足多个条件时取最高的一档:**`errored`**(执行出错:超时、异常、作者错误)> **`failed`**(任一 gate 断言不过,或 `--strict` 下有 soft 断言低于阈值)> **`skipped`**(显式 `t.skip(reason)`)> **`passed`**。优先级不是可有可无的细节:`t.skip()` 之前已经记下的失败断言照样让这条判 `failed`,跳过不能掩盖已经暴露的失败;执行出错则压过一切,因为断言结果在出错的运行里不可信。**没有 `scored` 这个中间态**——soft 断言没达标,在非 `--strict` 下就是 `passed`,分数照样如实记录、供横向对比,只是不影响这四态判定。`failed` 只表示断言/评分不通过,`errored` 是环境、超时、adapter、agent runtime 等执行问题,两者互斥,报告、JUnit、CI 都按这个口径分开统计,别把 `errored` 当成 agent 任务做错了。
-
-**Severity** / **严重度** —— 断言的两档。**gate**:硬性要求,通过线默认 1,不过即判 `failed`,任何时候都生效。**soft**:质量指标——无通过线纯记录、永不 fail(judge 默认档);有通过线时低于线照实记 failed,默认不改 Verdict,`--strict` 下才计入。句柄三个词互不重叠:`.gate(x?)` 升硬、`.atLeast(x)` 降软并设分数线(0/1 断言写 `.atLeast(1)`,打分断言写 `.atLeast(0.7)`)、无参 `.soft()` 纯记录。`.atLeast` 的参数是分数线不是调用次数——次数在匹配条件的 `count` 里表达。裁决见 [Severity 与 Verdict](feature/scoring/architecture/severity-and-verdict.md)。
-
-## 被测对象与适配器词汇
-
-**Adapter** / **适配器** —— 某个 [Agent](#评测核心词汇) 的具体实现,**由用户编写**(niceeval 也内置几个常用 coding agent 的 adapter)。一个 Adapter 实现一个 Agent:远程型(`kind: "remote"`)按你服务的协议发请求,沙箱型(`kind: "sandbox"`)则拥有该 agent 的 CLI 参数、认证方式、默认模型、transcript 位置等全部特殊性。接新 agent = 加一个 Adapter,不动核心。同一个 agent 可有多个变体(如直连 API vs 经网关)。
-
-**Sandbox** / **沙箱** —— 封装"在哪里、如何隔离地跑命令"的对象。统一接口:`workdir` / `runCommand` / `readFile` / `writeFiles` / `uploadDirectory` / `stop`。实现包括 Docker、Vercel Sandbox、其它三方。命令工作目录通过 `runCommand` / `runShell` 的 `cwd` option 表达,不提供可变的 working directory。
-
-**workdir** —— 沙箱内 agent 的默认工作目录,也是变更分类账和 agent diff 的锚点;绝对值随 provider 不同(docker `/home/sandbox/workspace`、e2b `/home/user/workspace`、vercel `/vercel/sandbox`)。API 里所有沙箱侧相对路径、省略的 `targetDir` / `cwd` 都解析到它;eval 作者用相对路径写完整条 eval,必须要绝对路径时读 `t.sandbox.workdir`。详见 [Sandbox · 路径与 workdir](feature/sandbox/library.md#路径与-workdir一个坐标系)。
-
-**`t.sandbox`** —— 沙箱型 eval 里暴露给 `test(t)` 的沙箱操作接口。它分三类:文件 IO(`writeFiles` / `readFile`)、命令执行(`runCommand` / `runShell`)和结果断言 / diff(`fileChanged` / `diff` / `file`)。沙箱生命周期由 runner 管,`stop()` 不暴露给 eval 作者。
-
-**Fixture** —— `test(t)` 里显式写入沙箱的起始文件(`writeFiles` / `uploadFiles` / `uploadDirectory`),加上 `EvalDef.setup` 准备的任务素材,合起来是这条 eval 的 Fixture。两类写入都算**eval 归因**:`t.sandbox.diff` / `fileChanged` 只反映 agent 在 send 窗口内的改动,Fixture 写入永不计入其中。详见 [Eval Architecture · Fixture 与 send 窗口](feature/eval/architecture.md#fixture-与-send-窗口)。
-
-**Provider** —— 某个 Sandbox 的具体实现选择。沙箱型 Agent 必须从 experiment 或项目级 config 获得工厂函数产出的 `SandboxSpec`；NiceEval 不根据云 token、本机 Docker 状态或其它环境条件猜测 Provider。
-
-**Capability** / **能力** —— `t` 上暴露哪些动作(会话续接、工具调用观测、文件 diff、trace…),完全由**构造证据**决定,不是声明式的能力位:`send` 里接了 `ctx.session` 的续接存取器就有多轮,返回过 `waiting` + `input.requested` 就有 HITL,用官方转换器就带完整性证明(负断言可信),`defineSandboxAgent` 构造就有 `t.sandbox`。`Agent` 接口上不存在 `capabilities` 字段。核心**按构造证据分发**,不按名字分支。模块边界见 [Architecture](architecture.md#一个授权面能力决定形状);逐能力的精确义务见[能力参考](../docs-site/zh/reference/capabilities.mdx)与[Agent 数据契约](feature/adapters/architecture/agent-contract.md#能力由构造证明)。
-
-**Integration tier** / **接入等级** —— 按「Adapter 接到哪里、额外拿到什么观测数据」给接入方式分的三级(和下面的 **`model` 字段**是两回事,后者说的是给 agent 指定哪个模型)。**Tier 1(只接 send)**:应用代码一行不改——adapter 适配应用现有对外接口实现 `send`,靠手写事件映射或官方转换器拿到工具断言;应用接口本身暴露模型选择的话,**模型对比**类 [Experiment](#运行与结果词汇) 也在这一档(`model` 经 `ctx.model` 透传)。**Tier 2(send + OTel)**:还是同一个 `send`,事件来源换成应用发给 niceeval 的 OTel span(应用已埋点则零代码,未埋点补一段通用 OTel 初始化)——买到的是观测质量的跃升:事件流免手写映射、负断言带完整性证明、trace 瀑布图。**Tier 3(侵入改造 + experiment flags)**:改应用内部代码,把内部可变点(prompt、工具集、feature flag)暴露成 experiment 可选的配置(经 `flags` → `ctx.flags` 透传),解锁**完整的 feature A/B test**——对照的不再只是模型,而是应用内部的功能变体。前两档都是**无侵入**的:应用按自己的方式启动,eval 侧不 spawn 应用进程、不另开端口,Adapter 只对着用户前端本来就在用的那个接口收发。三档递进不互斥,详见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)。
-
-**Model** / **模型(`model` 字段)** —— 给 agent 指定模型的标识(如 `opus`)。由 [Experiment](#运行与结果词汇) 的 `model` 字段指定;省略则用 agent 原生默认,不经额外的策略层决定。推理强度(如 `low`/`medium`/`high`,取值由具体模型定义)是独立的 `reasoningEffort` 字段,经 `ctx.reasoningEffort`/`t.reasoningEffort` 透传,归属与 `model` 一致——都是实验决定、agent 留空。
-
-## 测试集与发现词汇
-
-**Dataset** / **测试集** —— 一组共享同一 `test` 逻辑、只有输入不同的 case。用 `loadYaml`/`loadJson` 读进来；没有业务身份的行导出 eval 数组，生成 `sql/0000`、`sql/0001`；已有稳定外部身份的行导出 keyed record，生成 `swelancer/15193` 这类 id。两者都由文件路径决定 id 前缀，不允许在 `defineEval` 内手写 id。
-
-**Discovery** / **发现** —— 运行器扫 `evals/` 找 `*.eval.ts` 与 `*.eval.tsx` 文件(要在 eval 里写 JSX 时用 `.tsx`,发现规则与 id 推导完全相同),据路径推导 id 并排序。没有目录层面的隐式发现——沙箱型 eval 和会话型 eval 一样,必须有一个 eval 文件;起始文件靠 `test()` 里手工 `t.sandbox.writeFiles` / `uploadFiles` 放进沙箱(见 [Eval 用例 · 沙箱 coding 任务](feature/eval/use-case/sandbox-coding.md)),不靠运行器扫目录。
-
-## 运行与结果词汇
-
-**Runner** / **运行器** —— 调度引擎。负责发现、有界并发执行、重试、首过即停、缓存,以及把结果交给报告器。详见 [Runner](runner.md)。
-
-**Hook** / **生命周期 Hook** —— 成对的 `setup` / `teardown` 回调,`setup` 不返回值。四层共用同一种形态(实验级、Sandbox 级、eval 级、agent 级),同层多个 Hook 按注册序 `setup`、逆序 `teardown`(LIFO)。中文写"生命周期"(泛指这套机制)或"生命周期 Hook"(指某一个具体回调),不写 `Hook`。详见 [Runner · 生命周期 Hook](runner.md#环境预置不进运行器但按顺序调它)。
-
-**Experiment** / **实验** —— 一份可签入的**运行配置**,描述「怎么跑这批 eval」:用哪个 [Agent](#评测核心词汇)、跑几次、过滤哪些、预算多少。由 `defineExperiment` 定义在 `experiments/` 下,id 从路径推导。**一文件 = 一个单一配置**；`evals` 遍历发现到的 eval 并选择这份配置要跑的集合，解析结果以 `selectedEvalIds` 落盘。它**不碰评分**——「怎么算对」是 eval 的事。详见 [Experiments](feature/experiments/README.md)。
-
-**Invocation** —— 一次 `niceeval` CLI 调用的瞬时编排边界。它可同时选中多个 Experiment,负责当场调度、反馈、退出码与 `InvocationCompletion`;不分配持久化 id,不在 `.niceeval/` 保存跨 Experiment 的成员关系。重跑可通过结果沿用把旧 Run 的终态 Attempt 并入本次 Run,因此 Invocation 是可丢弃的传输与编排载体,不是 Results 实体。需要审计当次 Invocation 汇总时显式配置 `Json(path)` Reporter。
-
-**Attempt** —— 同一个 eval 的第 i 次重复运行(`runs > 1` 时取通过率用)。这是 runner/result 的执行单位,不是 author-facing API 层。`t` 上的范围断言会在一个 Attempt 的范围内聚合(全部 session + 全部 turn),不跨 Attempt。
-
-**Session** —— 一条会话线。`t` 驱动主 session;`t.newSession()` 返回独立 session,用于并行或隔离的多会话测试。`session.*` 范围断言只看这条 session 已经发生的事件;这些事件仍会汇入 `t.*` Attempt 级断言。
-
-**Turn** —— `t.send()` 的一次返回值,对应该 Turn 的标准事件流片段。带 `message` / `data` / `toolCalls` / `status` / `usage` / `events` 等只读字段,以及一套与 `t` 同名的范围断言(`turn.calledTool`/`turn.succeeded`/…),断言范围收窄成只看这一个 Turn,详见 [Scoring · 断言范围](feature/scoring/architecture/scopes.md)。
-
-**EarlyExit** / **首过即停** —— 一个 eval 取通过率时,先过一次即中止其余 attempt 的策略(可关);配置名 `earlyExit`,CLI 上 `--early-exit` / `--no-early-exit`。
-
-**Fingerprint** / **指纹** —— `(eval 源码闭包 + 配置)` 的哈希,用于缓存去重:指纹未变且判定确定的,
-结果默认沿用到本次 Run 而不重跑。源码闭包是 eval 文件加上它在项目根内的导入图与 loader 读入的数据文件;
-配置那一层是 Run 级的 [configHash](feature/experiments/cache.md#指纹两个哈希嵌套),同时担保跨 Run 可比。
-
-**Transcript** —— agent 一次运行的逐事件记录。原始形态是各 agent 自己的 JSONL,被**归一化**成统一事件模型(message / thinking / `action.called` / `action.result` / error)后供断言和报告消费。详见 [Observability](observability.md)。
-
-**o11y summary** —— 从**标准事件流**(见 [Observability](observability.md))派生的行为计数:工具调用计数、读/改的文件、shell 命令、web 请求、思考块数等;token 用量、估算成本与耗时的权威在 `result.json`(`Usage` / `estimatedCostUSD` / `durationMs`),不在这里。会注入沙箱(`__niceeval__/results.json`),让你在沙箱内手工跑的验证测试能断言 agent 的**行为**而不只是结果。
-
-**Usage** / **用量** —— 一次运行的 token 计数(`inputTokens` / `outputTokens` / 可选 cache 读写)。随结果带回:remote agent 由 `send` 返回,沙箱型由 transcript 解析器从 agent 的 JSONL 抠出累加。可经 `t.usage` 读、`t.maxTokens()` 断言。
-
-**Cost** / **成本** —— 用量经配置的价格表(模型 → 每百万 token 单价)换算的估算金额(`estimatedCostUSD`)。让跨 agent 对比从 pass-rate 升级为**质量 × 成本**。`--budget <usd>` 给每个选中 Experiment 的 budget 域各设一份上限,不是 Invocation 总闸。详见 [Observability](observability.md#用量与成本token-计费)。
-
-**Reporter** / **报告器** —— 消费 Invocation 中结果的插件,可实现分阶段 `onEvent`(`invocation:start` / `eval:start` / `eval:complete` / `invocation:summary` 等),也可实现 `onInvocationStart` / `onEvalComplete` / `onInvocationComplete`。内置控制台、JUnit、JSON;可接第三方实验跟踪平台。报告器在独立的串行队列上回调,不阻塞执行池。详见 [Reporters](observability.md#reporters)。
-
-**Artifact** / **artifact** —— 落盘的结构化产物。落盘单位是**结果 Run**(一个 experiment 的一次运行):Run 目录 `.niceeval/<experiment>/<run>/` 下放 Run 级 `run.json`(身份与版本元数据),每个 attempt 目录(`<evalId>/a<attempt>/`)下放判定、断言、结构化错误与 diagnostics 的权威记录 `result.json`,以及按需生成的证据文件——完整词干、存储形态与内容职责单源在[证据 registry](feature/record/architecture.md#证据-registry)。瞬时 progress 不落盘。每个文件都是 JSON,不是 JSONL / NDJSON。attempt 目录路径是磁盘存储细节;report / CLI 层寻址同一个 Attempt 用的是 `AttemptLocator`(见[下一节](#结果数据与报告词汇)),不直接引用路径或数组下标。详见 [Record Format](feature/record/architecture.md)。
-
-## 结果数据与报告词汇
-
-读取面拆成事实、选择、呈现三层,分界线是**判断**:哪一层允许有看法、允许到
-什么程度。三层的分工与跨层不变量见 [Reading](feature/reading/README.md)。
-
-**Record root** / **记录根** —— 结果目录树的根,默认项目下的 `.niceeval/`。
-`--record` 换成别的根,[`publish()`](feature/record/library.md#发布publish) 物化出
-一个新的根。根经命令行收窄后的那部分叫[有效根](#结果数据与报告),选择器、locator
-寻址与出站内容都以它为界。
-
-**Record** / **记录** —— `openRecord()` 打开记录根得到的事实层句柄:扫目录、认
-版本、建懒句柄,一个 attempt 的大文件都不读。它**一点判断都不许有**——每个返回值
-都要能在磁盘上逐字节指出来源。所以通过数、成本合计这类聚合不落在这里,「最新一次」
-这种选法也不在这里:「最新」先要定义粒度,而定义粒度就是看法。
-
-**Run** / **结果 Run** —— 持久化结果的单位:一个 Experiment 的一次执行水位。它
-可由多次 Invocation 通过结果沿用续成,不保留跨 Experiment 的 Invocation 成员关系。
-与一次 CLI 调用不是一回事:一次调用可开多个 Run,一个 Run 也可由多次调用续成。
-
-**AttemptLocator** / **Attempt 定位符** —— attempt 的稳定引用:由
-`{experimentId, Run startedAt, evalId, attempt}` 这个不可变元组派生的带版本、`@`
-前缀短确定性字符串。它不是数组下标,也不是目录路径。
-
-reader 打开记录根时建一份 locator → AttemptHandle 索引;缺失、损坏、碰撞一律
-结构化报错,不回退成「最新失败」。报告页与 attempt 详情路由
-(`#/attempt/@<locator>` 与 `show @<locator>`,单段格式)共用同一个身份契约,见
-[View](feature/reports/view.md)。
-
-**AttemptEvidence** / **Attempt 证据** —— 每个 Attempt 只装配一次的中性证据聚合,
-装三类东西:
-
-- 身份:locator 与 `EvalResult`;
-- 证据:标准事件流(`events`)、`AnnotatedEvalSource`、`ExecutionTree`、diff、
-  artifact 路径;
-- 能力位:`source` / `execution` / `timing` / `diff` 四个。
-
-`show`、`view`、静态导出与报告列表共用同一份,不各自重读 artifact,也不各自调用
-`events()`。
-
-**AnnotatedEvalSource** / **标注 Eval 源码** —— 发现时捕获、按 Run 去重一份、
-SHA-256 归一化的运行时 Eval 源码。每条断言按 `SourceLoc` 标回它所在的源码行,带
-状态、严重度、分数、detail 与 evidence;没有 `SourceLoc` 的断言进「未映射断言」
-桶,不静默丢弃。
-
-`t.send(...)` 的调用行另标该轮的 turn 头行事实(身份、status、墙钟)。定位不到行
-的轮次不进兜底桶——轮次的全量面是 `--execution`。网页 CodeView 与 `show --source`
-共用同一份 model。
-
-**默认报告** —— 不传 `--report` 时 show / view 都渲染的那份:
-`niceeval/report/built-in` 的默认导出 `standard`,一份四张 page 的普通
-`defineReport`。报告 / Attempts / 追踪三张进导航,第四张是以 locator 为输入的
-attempt 详情。
-
-首页由 `Hero`、`SampleWarnings`、`RunDiagnostics`、`CopyFixPrompt` 与
-`ExperimentComparison`(当前 Sample 的成本 × 成功率散点加逐实验明细表)组成。它与
-用户的 `--report` 文件同层,没有宿主特权。
-
-## 配置与 CLI 词汇
-
-**`niceeval.config.ts`** —— 项目级配置,`defineConfig` 默认导出。完整字段:
-
-| 字段 | 类型 | 作用 |
-|---|---|---|
-| `name` | `LocalizedText` | 项目名,显示在 `niceeval view` 顶部;可给字符串,或按 locale 给多语言(`{ en, "zh-CN" }`) |
-| `locale` | `string` | CLI 与运行时文案的界面语言(BCP 47,如 `"en"` / `"zh-CN"`);省略则按系统 locale(`LC_ALL` / `LC_MESSAGES` / `LANG`)判定,都没有时用 `zh-CN` |
-| `judge` | `JudgeConfig` | 默认 Judge(裁判模型,见 [Scoring](feature/scoring/library/judge.md)) |
-| `reporters` | `Reporter[]` | 全局报告器(见 [Observability](observability.md#reporters)) |
-| `report` | `ReportDefinition` | 项目默认报告定义(`defineReport` 产物,直接 import 自己的报告文件);`show` / `view` 不带 `--report` 时装载它,省略则装载内建 `standard`(见 [Reports](feature/reports/README.md)) |
-| `maxConcurrency` | `number` | 并发上限(见 [Runner](runner.md#调度有界并发)) |
-| `timeoutMs` | `number` | 单 eval 超时 |
-| `sandbox` | `SandboxOption` | 项目默认 sandbox spec(`dockerSandbox()` 等工厂产出);experiment 可覆盖。两处都没设、又用了沙箱型 agent 时直接报错——没有隐式默认,也没有 `--sandbox` 这种 CLI 覆盖 |
-| `workspace` | `string` | 上传进沙箱的工作区根目录;省略则用项目根 |
-| `telemetry` | `{ host?, port? }` | OTLP 接收配置(niceeval 唯一入口,不读 `NICEEVAL_OTLP_*` 环境变量):`port` 钉住接收端口,省略则每次运行动态分配;`host` 是报给 adapter 的接收端 hostname(见 [Observability](observability.md)) |
-| `pricing` | `Record<string, PriceOverride>` | 价格表覆盖,合并在内置价格表之上;key 支持精确 model 名或 `provider/*` 通配(见 [Observability](observability.md#换算成本价格表从哪来)) |
-
-agent 不在 config 里注册:每个 experiment 直接引用一个 agent adapter(见 [Experiments](feature/experiments/README.md#defineexperiment-的形状))。config 只管项目级默认与全局资源。
-
-**Strict mode** / **严格模式** —— 默认情况下 soft 断言低于阈值仍判 `passed`;`--strict` 下同样的情况改判 `failed`。用于 CI 把质量回归当成红灯。
-
-**环境预置** —— niceeval 把准备逻辑放在普通代码里。要在跑 agent 前准备环境,放三处之一:这条 eval 的沙箱预置写在 `test(t)` 里(手工 `t.sandbox.writeFiles` / `runCommand`),连 agent / 装 CLI 写在 [`SandboxAgent.setup`](feature/adapters/architecture/agent-contract.md#生命周期不变量),整个 run 共享的外部服务(mock API、DB)用外部编排(`docker compose` / CI 脚本)起停、经 env 传入。详见 [Sandbox · 环境预置放哪](feature/sandbox/library.md#环境预置放哪)。
 
 ## 禁用写法
 
