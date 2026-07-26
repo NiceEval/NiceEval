@@ -1,110 +1,214 @@
 # `--reuse-sandbox`:把一批 eval 改成能进热道
 
-拿一个真实的 eval 仓库走一遍:MemoryBench(用 niceeval 评 coding agent 记忆条件的仓库)
-的 `evals/toggl-cli/` 链——6 道题,同一个 repo、同一个 base commit、同一套 Rust 工具链。
-它是最该吃到串行复用的形状,而按现在的写法进不了热道。本篇按它的四处写法讲怎么改,
-以及改完之后省下的是哪一段。
+拿一个真实 eval 仓库改:MemoryBench 的 `evals/toggl-cli/` 链,6 道题、同一个 repo、
+同一个 base commit、同一套 Rust 工具链。它是最该吃到串行复用的形状,按现在的写法进不了
+热道。先看改完之后代码长什么样——注释标的就是每一块落在哪一层、那一层只能放什么、
+在复用档下跑几次。
 
-契约在[串行复用](../serial-reuse.md),机器判的硬门在[另外三篇](README.md#--reuse-sandbox串行复用)。
-本篇只讲作者侧:同一批 eval 怎么写才能共享一个
-[复用 Sandbox 的题间重置点](../serial-reuse.md#复用-sandbox-的题间重置点一次装好后续只重置到这里)。
-
-## 1. clone 到 workdir 根:第二题会撞上活下来的 `.git`
-
-`evals/toggl-cli/harness.ts` 的 `prepareRepo(t)` 在 `test(t)` 里把真实仓库 clone 到
-workdir 根:
+## 沙箱层与 agent 层:`experiments/compare/claude-dp-v4.ts`
 
 ```ts
-`git clone -q -o origin ${REPO_URL} .toggl-clone`,
-"mv .toggl-clone/.git .git",
-"rm -rf .toggl-clone",
-`git reset -q --hard ${BASE_COMMIT}`,
+import { defineExperiment } from "niceeval";
+import { claudeCodeAgent } from "niceeval/adapter";
+import { e2bSandbox } from "niceeval/sandbox";
+import { NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE } from "niceeval/sandbox/e2b-template";
+
+import { cloneTogglAtBaseCommit, installRustToolchain } from "../../evals/toggl-cli/harness.ts";
+
+export default defineExperiment({
+  evals: ["toggl-cli/"],
+
+  // ── agent 层(Agent.setup / .teardown,写在 adapter 内部)────────────────────
+  // 只能放:怎么连上这个 agent——装 agent CLI、写鉴权、写 agent 主配置、MCP、skills。
+  // 不许放:任何读「当前是哪条 eval」的分支。这条不是建议,是配置归属不变量。
+  // 复用档下:整批一次,而且被提到重置点【之前】——正因为它不随 eval 变才允许提前。
+  agent: claudeCodeAgent({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseUrl: process.env.DEEPSEEK_BASE_URL,
+  }),
+  model: "deepseek-v4-flash",
+
+  sandbox: e2bSandbox({ template: NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE })
+    // ── 构建期(provider 的 image / template)──────────────────────────────────
+    // 只能放:所有实验、所有 eval 都要的重依赖。装一次进模板,不进任何 setup。
+    // 复用档下:与复用无关——它在跑之前就已经装好了。
+
+    // ── 沙箱层(SandboxSpec.setup 链)────────────────────────────────────────
+    // 只能放:不知道跑哪条 eval 也能做完的环境准备——装二进制、预热、写 hook 文件、
+    //         载入跨 attempt 状态。
+    // 复用档下:整批一次,落在重置点【之下】,所以它写出的东西题间重置抹不掉。
+    .setup(installRustToolchain)
+
+    // 整批共用同一个 checkout,所以 clone 也属于这一层。它跑在重置点之前,checkout
+    // 因此成为重置点的一部分:每题的 git reset 直接回到 base commit 的干净状态,
+    // 一次 clone、一次冷 cargo build 都不用重放。
+    .setup(cloneTogglAtBaseCommit),
+
+  flags: { memory: "baseline" },
+  runs: 1,
+  timeoutMs: 1_800_000,
+});
 ```
 
-题间重置清不掉这个 `.git`:分类账的排除清单在任意深度排除 `.git`,而 `git clean`
-尊重这份清单(见[变更归因](../architecture.md#变更归因send-窗口与分类账))。所以第二题
-的 `mv` 会把新 clone 的 `.git` 塞进上一题留下的那个目录里,接着 `git reset --hard` 作用
-在旧库上。同 repo 同 commit 时它碰巧不报错,换个 repo 就是找不到 commit——两种都是坏的。
+## 沙箱层 Hook 长什么样:`evals/toggl-cli/harness.ts`
 
-MemoryBench 里 31 道 eval 是这个 clone 形状,所以整批都卡在这一条上。两条改法:
-
-- **各题自己幂等**:clone 前 `rm -rf .git`。改一行,任何批次组合都能进热道。
-- **整批共享一个 checkout**(toggl-cli 该选这条):clone 搬进 `sandbox.setup()` 链。它跑在
-  重置点**之前**,checkout 因此成为重置点的一部分——每题的 `git reset --hard` 直接把仓库
-  还原成 base commit 的干净状态,一次 clone 都不用重放。
-
-## 2. 与本题无关的安装写在 `EvalDef.setup`:每题都要重放一遍
-
-`harness.ts` 的 `installRustToolchain` 装 apt 依赖、rustup、cargo,再写
-`/etc/profile.d/rust.sh` 与各 `$HOME/.cargo/config.toml`。它被 6 道题里的 5 道挂成
-`setup: installRustToolchain`——同一个函数、同一份参数,一个字都不随 eval 变。
-
-按分工它属于沙箱层:
+沙箱层 Hook 的签名是 `(sandbox, ctx)`,不是 eval 的 `t`——它拿不到断言和
+`t.send()`,因为这一层还不知道要跑哪条 eval。
 
 ```ts
-// 之前:每道 eval 各自声明,复用档下每题重放
-export default defineEval({ setup: installRustToolchain, async test(t) { … } });
+import type { Sandbox, SandboxHook, SandboxHookContext } from "niceeval/sandbox";
 
-// 之后:整批一次,落在重置点之下
-sandbox: e2bSandbox({ template: "…" }).setup(installRustToolchain),
+const REPO_URL = "https://github.com/CorrectRoadH/toggl-cli.git";
+export const BASE_COMMIT = "8646f29c87242b06eab974793a999d35b5a85b5e";
+
+// 沙箱层:apt 依赖 + rustup + cargo,以 root 装进 /usr/local。装在 workdir 之外是
+// 刻意的——workdir 之外的东西永不进 agent diff,题间重置也碰不到它。
+export const installRustToolchain: SandboxHook = async (sandbox, ctx) => {
+  ctx.progress({ message: "installing build deps + rust toolchain" });
+  //          ↑ 沙箱层用 ctx.progress / ctx.diagnostic,不是 t.progress
+  const installed = await sandbox.runCommand("bash", ["-lc", SCRIPT], { root: true });
+  if (installed.exitCode !== 0) {
+    // 沙箱层抛错 = 这条 attempt errored,phase 记成 sandbox.setup。
+    throw new Error(`rust toolchain setup failed: ${installed.stderr.trim().slice(-500)}`);
+  }
+};
+
+// 沙箱层:把仓库 clone 到 workdir 根,退到 base commit,抹掉之后的历史。
+// checkout 必须落在 workdir 根——嵌套子目录会被分类账记成 gitlink,agent 的改动
+// 就从证据里消失了。
+export const cloneTogglAtBaseCommit: SandboxHook = async (sandbox, ctx) => {
+  ctx.progress({ message: "cloning toggl-cli @ base commit" });
+  const cloned = await sandbox.runShell(
+    [
+      "set -euo pipefail",
+      // 幂等:这一层在复用档下只跑一次,但默认档下每 attempt 一次,而且以后有人把它
+      // 搬回 eval 层也不该炸。上一次留下的 .git 活得过 git clean(分类账在任意深度
+      // 排除 .git),所以先删。
+      "rm -rf .git .toggl-clone",
+      `git clone -q -o origin ${REPO_URL} .toggl-clone`,
+      "mv .toggl-clone/.git .git",
+      "rm -rf .toggl-clone",
+      `git reset -q --hard ${BASE_COMMIT}`,
+      "git remote remove origin",
+      "git tag -l | xargs -r git tag -d >/dev/null",
+      "git reflog expire --expire=now --all",
+      "git gc -q --prune=now",
+    ].join("\n"),
+  );
+  if (cloned.exitCode !== 0) throw new Error(`checkout failed: ${cloned.stderr.trim().slice(-500)}`);
+
+  // 冷依赖构建也搬到这一层:不预热的话 agent 要从自己的时间预算里付一次数分钟的
+  // cargo build。构建树落在 /opt/cargo-target(workdir 之外),复用档下整批只付一次。
+  ctx.progress({ message: "warming cargo build cache" });
+  const built = await sandbox.runShell('export PATH="/usr/local/cargo/bin:$PATH"\ncargo build --tests --quiet');
+  if (built.exitCode !== 0) throw new Error(`baseline build failed: ${built.stderr.trim().slice(-800)}`);
+};
 ```
 
-这段脚本自带 `if ! command -v cargo` 一类幂等判断,所以留在 eval 层也不会跑坏——重复付的
-只是探测开销。真正的理由是分层:**这段准备换一条 eval 还成立吗?成立就不属于 eval 层。**
-判据见[环境预置与收尾怎么放](../../experiments/use-case/lifecycle.md)。
+## eval 层与 `test(t)`:`evals/toggl-cli/01-entry-stats.eval.ts`
 
-再往前一步是烘进 e2b 模板(MemoryBench 已经为 mempal 条件这么做了,见
-`scripts/build-mempal-e2b-template.ts`):所有实验都要的重依赖不进任何 `setup`。
+```ts
+import { defineEval } from "niceeval";
+import { commandSucceeded, equals } from "niceeval/expect";
 
-## 3. workdir 之外的共享状态:想留的和不想留的都会留
+import { orderedLines, runProbe } from "./harness.ts";
 
-题间重置只作用于 workdir,而且被排除的路径也不清。`installRustToolchain` 写出的东西全在
-workdir 之外,所以复用档下它们跨题持久:
+export default defineEval({
+  description: "toggl-cli 01: add `toggl entry stats` (per-project totals)",
+  tags: ["toggl-cli", "chain"],
+  timeoutMs: 1_800_000,
+  diff: { ignore: ["target"] },
+  // ↑ 以上都是定义期数据,不是生命周期回调:发现阶段就读得到,不在沙箱里执行。
 
-| 它写的位置 | 跨题持久意味着 |
-|---|---|
-| `/opt/cargo-target`(约 1 GB 构建树) | 想要:第二题的 `cargo build --tests` 命中第一题的产物 |
-| `/usr/local/{rustup,cargo}`、`/etc/profile.d/rust.sh` | 想要:装一次够整批用 |
-| `$HOME/.cargo/config.toml` | 想要:所有 shell 看到同一个 target-dir |
+  // ── eval 层(EvalDef.setup)────────────────────────────────────────────────
+  // 只能放:只有这条 eval 要的任务素材——它自己的起始文件、它自己那份数据、
+  //         只为这一题装的依赖。
+  // 复用档下:每题重置之后重放一次。所以放这里的东西必须是「重放一遍还对」的。
+  // 这条 eval 现在【不声明 setup】:6 道题的准备一模一样,一行都不该留在这一层。
+  // 留在这里的症状:每题重复付一次,而且对照组实验也会被注入同一份东西。
 
-`prepareRepo` 里那次预热构建(`cargo build --tests`,冷跑数分钟)之所以存在,是为了不让
-agent 从自己的时间预算里付冷构建。它落在 `/opt/cargo-target`,于是复用档下也只付一次。
-把第 1 节的 clone 一起搬到沙箱层之后,这道链的每题固定开销就从「clone + 冷构建」压到
-一次 `git reset`。
+  async test(t) {
+    // ── test(t) ─────────────────────────────────────────────────────────────
+    // 作者的代码,顺序与次数核心不插手。复用档下每题重跑,进来时 workdir 就是刚
+    // reset 回重置点的样子:base commit 的干净 checkout,依赖已装好。
 
-反过来的例子在 `experiments/shared/mempal.ts`:`mempalSetup` 把宿主机上的记忆状态恢复到
-`$HOME/.mempal`,`mempalTeardown` 再打包回宿主机。两个都是沙箱层 Hook,复用档下各跑一次
-——一批题共用一份不断累积的记忆库,收尾只存最后那一份。默认档是每 attempt 恢复、每 attempt
-回存。对记忆条件来说这不是加速,是换了被测对象,所以那些实验不该带 `--reuse-sandbox` 跑。
+    // send 之前写的文件 = eval 归因(Fixture),永不进 agent diff。
+    // send 窗口内的 workdir 变化 = agent 归因。
+    await t.send("…add `toggl entry stats`…").then((turn) => turn.expectOk());
+    await t.send("…now give it `--json`…").then((turn) => turn.expectOk());
 
-## 4. 挂在沙箱层的 teardown 会从「每题一次」变成「整批一次」
+    // send 之后写的判分材料:agent 天然看不到,也进不了 agent diff。
+    // 两个保证来自同一机制(send 窗口),不需要作者做任何标记。
+    const probe = await runProbe(t, { cases: [{ name: "human", args: ["entry", "stats"] }] });
 
-`experiments/shared/nowledge.ts` 的 `nowledgeVerifyRemoteAlive()` 挂在沙箱层。
-`experiments/compare/claude-dp-v4--nowledge.ts` 里写成 `.teardown(nowledgeVerifyRemoteAlive())`。
-它要做的是:attempt 跑完、沙箱销毁前,再探一次这条 attempt 在 setup 时连上的那个隧道 URL。
-理由很具体——cloudflare quick tunnel 的地址随进程重连就换,setup 时的探活只证明开跑那一刻
-是通的。
+    // 断言读的是 agent 归因增量,不是「这个路径存不存在」——后者在热道上会被上一题
+    // 的残留喂成假阳性。
+    t.check(await t.sandbox.runShell("git diff --quiet -- Cargo.toml"), commandSucceeded());
+    t.check(probe.human.exit, equals(0));
+  },
 
-默认档下每 attempt 一套沙箱,所以这个探针每题都跑。复用档下沙箱层收尾只在最后一题之后跑
-一次,前面每一题都失去了自己的收尾探针:隧道中途挂掉,坏结果会记在挂之前那几题上。
+  // ── eval 层收尾(EvalDef.teardown)─────────────────────────────────────────
+  // 只能放:这一条 attempt 自己的收尾与「这一条 attempt 怎么样」的核对。
+  // 复用档下:每题一次。所以按 attempt 判定的检查只能放这里,不能挂沙箱层。
+  // 收尾发生在判定之后:只能追加 diagnostic,改不了 verdict。
+  // 这条 eval 不需要收尾,写在这里只为标清位置:起了后台进程或占了端口的 eval 要在这
+  // 一层自己收掉,题间的 git reset 不杀进程。
+  async teardown(sandbox, ctx) {
+    await sandbox.runShell("pkill -f 'toggl serve' || true");
+  },
+});
+```
 
-修法是把按 attempt 判定的检查放到按 attempt 执行的层:`EvalDef.teardown` 或 agent 级
-teardown 在复用档下仍是每题一次(见[分层表](../serial-reuse.md#复用-sandbox-的题间重置点一次装好后续只重置到这里))。
-判据一句话:**这个 teardown 检查的是「这一条 attempt 怎么样」还是「这个环境怎么样」?**
-前者不该挂在沙箱层。
+## 改之前坏在哪
 
-## 5. 改完之后
+现在的 `harness.ts` 把 clone 和冷构建放在 `prepareRepo(t)`、由每条 eval 在 `test(t)`
+里调用,`installRustToolchain` 则挂成 `setup: installRustToolchain`(6 道题里 5 道)。
+三处后果:
+
+- **第二题撞库。** `mv .toggl-clone/.git .git` 遇到上一题留下的 `.git`——分类账在任意
+  深度排除 `.git`,`git clean` 尊重这份清单,所以它活过题间重置。`mv` 把新 `.git` 塞进
+  旧目录里,接着 `git reset --hard` 作用在旧库上。同 repo 同 commit 碰巧不报错,换个
+  repo 就是找不到 commit。MemoryBench 里 31 道 eval 是这个 clone 形状。
+- **省不下冷启动。** clone 与冷 `cargo build` 留在 `test(t)` 里就是每题重放,而它们正是
+  这条链最贵的两段。复用只省掉了沙箱创建那一次。
+- **分层错位。** `installRustToolchain` 同一个函数、同一份参数被 5 道题各自声明,一个字
+  不随 eval 变。它自带 `if ! command -v cargo` 一类幂等判断所以不会跑坏,但重复付探测
+  开销,而且写在 eval 层意味着对照组实验也会拿到它。
+
+## 一页速查:哪一层只能放什么
+
+| 层 | 只能放 | 复用档下跑几次 | 放错的症状 |
+|---|---|---|---|
+| 构建期(image / template) | 所有实验都要的重依赖 | 跑之前就装好了 | 写进 `setup` 就每 attempt 重装 |
+| 沙箱层 `.setup()` | 不知道跑哪条 eval 也能做完的环境准备 | 整批一次,落在重置点之下 | 放了随 eval 变的素材 → 整批都带着它 |
+| agent 层 `Agent.setup` | 怎么连上这个 agent | 整批一次,提到重置点之前 | 读了「当前是哪条 eval」→ 第一题的配置被整批共用 |
+| eval 层 `EvalDef.setup` | 只有这条 eval 要的任务素材 | 每题重置后重放 | 放了公共安装 → 每题重复付、对照组被注入 |
+| `test(t)` | 任务、判分材料、断言 | 每题重跑 | 放了公共安装 → 省不下冷启动 |
+| eval 层 `teardown` | 这一条 attempt 的收尾与核对 | 每题一次 | —— |
+| 沙箱层 `.teardown()` | 环境级收尾、回存跨 attempt 状态 | 整批一次,最后一题之后 | 放了按 attempt 判定的检查 → 静默降成整批一次 |
+
+最后一行是 MemoryBench 里现存的一处。`experiments/shared/nowledge.ts` 的
+`nowledgeVerifyRemoteAlive()` 挂成沙箱层 `.teardown()`。它要做的是每 attempt 收尾探
+一次隧道还活着——cloudflare quick tunnel 的地址随进程重连就换。复用档下前面每一题都
+失去自己的探针,隧道中途挂掉,坏结果会记在挂之前那几题上。判据一句话:**这个 teardown
+检查的是「这一条 attempt 怎么样」还是「这个环境怎么样」?** 前者归 eval 层。
+
+## 改完之后
 
 ```bash
 niceeval exp toggl --reuse-sandbox
 ```
 
-一次 e2b 沙箱创建、一次 apt + rustup、一次 clone、一次冷构建,之后 6 道题各自
-`git reset --hard` 回重置点再重放自己的 fixture。省掉的是 5 次冷启动加 5 次冷构建;
-结果照常进 Run 供 `show` / `view` 看,但带 `sandbox.reused` 标记,不进 CI、不进缓存
-(见[诚实边界](../serial-reuse.md#诚实边界git-reset-只清-workdir))。
+一次 e2b 沙箱创建、一次 apt + rustup、一次 clone、一次冷构建;之后 6 道题各自
+`git reset --hard` 回重置点、重放自己的判分材料。结果照常进 Run 供 `show` / `view` 看,
+带 `sandbox.reused` 标记,不进 CI、不进缓存(见[诚实边界](../serial-reuse.md#诚实边界git-reset-只清-workdir))。
 
-要在 CI 里出可引用的通过率,去掉 flag 用默认档跑。
+## 什么时候别开这个 flag
+
+`experiments/shared/mempal.ts` 的 `mempalSetup` / `mempalTeardown` 是一对沙箱层 Hook:
+setup 把宿主机上的记忆状态恢复到 `$HOME/.mempal`,teardown 打包回宿主机。复用档下两个
+各跑一次——一批题共用一份不断累积的记忆库,收尾只存最后那一份;默认档是每 attempt 恢复、
+每 attempt 回存。对记忆条件来说这不是加速,是换了被测对象,所以那些实验不带这个 flag 跑。
 
 ## 相关阅读
 
