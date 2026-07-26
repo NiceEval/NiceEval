@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   formatRegressionHits,
   lintDocsWriting,
+  parseConcepts,
   proseBlocks,
   proseText,
   serializeBaseline,
   splitSentences,
+  synonymBans,
   validateRules,
 } from "../../scripts/docs-writing-lint.js";
 
@@ -60,6 +62,50 @@ describe("docs 可读性守护", () => {
       "- 列表乙",
     ]);
     expect(blocks.map((b) => b.text)).toEqual(["正文甲。", "列表甲", "列表乙"]);
+  });
+
+  it("概念表按表头认列,不按位置——表格加一列不会让词条静默错位", () => {
+    // 总表是三列、报告组件表是五列,写死列号的解析器在第二张表上会把「含义」当成词。
+    const five = parseConcepts(
+      ["| 分类 | 中文 | English | API | 主展示单位 |", "|---|---|---|---|---|", "| 汇总 | 样本摘要 | Sample summary | `SampleSummary` | 一批 Sample |"].join("\n"),
+    );
+    expect(five[0].writings).toEqual(["样本摘要", "Sample summary", "SampleSummary"]);
+  });
+
+  it("一格里多个写法:恰好一个加粗才是同义词组,粗体那个是首选", () => {
+    // 报告组件表把七个组件挤在一行(行 / 列 / 分节…),它们互不同义;
+    // 把「多写法」一律当同义词会把六个正当词条判成该改用第七个。
+    const [synonyms, siblings] = [
+      "| **首过即停** / 早停 | EarlyExit | 取通过率时先过一次即中止 |",
+      "| 行 / 列 / 分节 | Row / Col / Section | 版面组件 |",
+    ].map((row) => parseConcepts(["| 中文 | English | 含义 |", "|---|---|---|", row].join("\n"))[0]);
+
+    expect(synonyms.preferred).toBe("首过即停");
+    expect(synonyms.deprecated).toEqual(["早停"]);
+    expect(siblings.preferred).toBeUndefined();
+    expect(siblings.deprecated).toEqual([]);
+  });
+
+  it("首选裁决翻译成禁词条目,概念表自己豁免", () => {
+    // 术语只在概念表裁决一次,writing-rules.json 不再手抄一份同义词对照。
+    const terms = parseConcepts(
+      ["| 中文 | English | 含义 |", "|---|---|---|", "| **首过即停** / 早停 | EarlyExit | 取通过率时先过一次即中止 |"].join("\n"),
+    );
+    const [ban] = synonymBans(terms);
+    expect(ban.term).toBe("早停");
+    expect(ban.use).toContain("首过即停");
+    expect(ban.why).toBeTruthy();
+    expect(ban.exempt).toEqual(["docs/concepts.md"]);
+  });
+
+  it("英文列括号里的代码标识算一种写法", () => {
+    // 表头声明「代码标识与标准术语不同时,英文列把代码标识放在括号里」。
+    // 不拆开的话,正文明明在用 ExecutionTree,这一行仍会被判成死词。
+    const [term] = parseConcepts(
+      ["| 中文 | English | 含义 |", "|---|---|---|", "| Agent 执行树 | Agent execution tree (`ExecutionTree`) | 统一执行记录 |"].join("\n"),
+    );
+    expect(term.writings).toContain("ExecutionTree");
+    expect(term.writings).toContain("Agent execution tree");
   });
 
   it("长度只算读者要读的字:链接算文本不算 URL,行内代码算内容不算反引号", () => {

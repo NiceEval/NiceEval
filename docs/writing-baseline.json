@@ -445,5 +445,18 @@
     "docs/references.md": 4,
     "docs/source-map.md": 6
   },
-  "bannedTerms": {}
+  "bannedTerms": {},
+  "deadTerms": [
+    "严格模式 / Strict mode",
+    "实验并发限制 / Experiment concurrency limit",
+    "报告槽位 / Report slot(内部代号) / Report slot / 内部代号",
+    "断言范围 / Assertion scope",
+    "结果沿用 / Result carry-forward",
+    "致命错误熔断 / Fatal-error circuit breaker",
+    "计分方式 / Scoring scheme",
+    "计分项 / Scoring criterion",
+    "调度波次 / Scheduling waves",
+    "重置基线 / Reset baseline",
+    "预算单元 / Budget unit"
+  ]
 }

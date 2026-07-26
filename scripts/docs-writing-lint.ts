@@ -15,6 +15,10 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 const RULES_FILE = "docs/writing-rules.json";
 const BASELINE_FILE = "docs/writing-baseline.json";
+const CONCEPTS_FILE = "docs/concepts.md";
+// 判「这个词有没有人用」要连中文站一起看:词在 docs-site/zh 用着、只是设计文档里没提,
+// 那不是死词。反过来两边都不出现,才说明立了词没人用。
+const USAGE_DIRS = ["docs", "docs-site"];
 
 export interface BannedTerm {
   /** 禁用的字面写法。纯 ASCII 的词按词边界、忽略大小写匹配。 */
@@ -48,9 +52,14 @@ const LENGTH_RULES = [
 
 type LengthRule = (typeof LENGTH_RULES)[number]["key"];
 
-/** 台账:文件 → 命中数。三条长度规则各一个数字,禁词按词分开记。 */
+/**
+ * 台账:文件 → 命中数。三条长度规则各一个数字,禁词按词分开记。
+ * 死词记成词表而不是数字——换一个词死掉、原来的活过来,数字不变但问题换了一个,
+ * 计数拦不住这种等量替换。
+ */
 export type Baseline = Record<LengthRule, Record<string, number>> & {
   bannedTerms: Record<string, Record<string, number>>;
+  deadTerms: string[];
 };
 
 /** 一条命中,带上打印所需的全部信息——调用方不必再回查规则。 */
@@ -68,6 +77,118 @@ export interface LintReport {
   actual: Baseline;
   /** 相对台账的回归(数字变大或出现新条目)。 */
   regressions: string[];
+  /**
+   * 有行级回归的文件。死词回归不落在具体某一行,不进这里——否则详报会把
+   * 概念表已入账的旧命中全倒出来,把真正要改的那几行淹掉。
+   */
+  regressionFiles: string[];
+  /** 概念表里立了、正文一次没用过的词条。 */
+  deadTerms: string[];
+}
+
+/** 概念表的一行:一个词条的全部写法,以及并列同义词里的首选裁决。 */
+export interface ConceptTerm {
+  line: number;
+  /** 这一行声明的全部写法——中文名、English 名、API 标识都算。 */
+  writings: string[];
+  /** 同一格里并列的同义写法中用粗体标出的那个;没有并列同义词时为空。 */
+  preferred?: string;
+  /** 被首选写法压过的其它写法,正文里出现即提示改用首选。 */
+  deprecated: string[];
+}
+
+/** 概念表里承载「写法」的列。其余列(分类、含义、主展示单位)是说明,不是词。 */
+const NAME_COLUMNS = new Set(["中文", "English", "API"]);
+
+const tableCells = (row: string): string[] =>
+  row.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+
+const cleanWriting = (raw: string): string => raw.replace(/\*\*/g, "").replace(/`/g, "").trim();
+
+/**
+ * 解析 docs/concepts.md 的术语总表。表格列数不固定(三列的总表、五列的报告组件表),
+ * 所以按表头认列而不是按位置认列——加一列不会让这里静默错位。
+ */
+export function parseConcepts(content?: string): ConceptTerm[] {
+  const lines = (content ?? readFileSync(join(ROOT, CONCEPTS_FILE), "utf8")).split("\n");
+  const terms: ConceptTerm[] = [];
+  let columns: (string | null)[] | null = null;
+
+  for (const [index, line] of lines.entries()) {
+    if (!line.trimStart().startsWith("|")) {
+      // 标题结束一张表:下一张表要重新认表头,不能沿用上一张的列。
+      if (line.startsWith("#")) columns = null;
+      continue;
+    }
+    const cells = tableCells(line);
+    if (cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
+    if (!columns) {
+      columns = cells.map((head) => (NAME_COLUMNS.has(head) ? head : null));
+      continue;
+    }
+
+    const writings: string[] = [];
+    const deprecated: string[] = [];
+    let preferred: string | undefined;
+    for (const [column, kind] of columns.entries()) {
+      const cell = cells[column];
+      if (!kind || !cell || cell === "—" || cell === "-") continue;
+      const parts = cell.split(/\s*\/\s*/).filter(Boolean);
+      const bold = parts.filter((part) => part.trim().startsWith("**"));
+      for (const part of parts) {
+        const writing = cleanWriting(part);
+        if (!writing) continue;
+        writings.push(writing);
+        // 表头声明「代码标识与标准术语不同时,英文列把代码标识放在括号里」——
+        // 括号里那个是独立的一种写法,正文用它同样算这个词有人在用。
+        const parenthesized = writing.match(/^(.+?)\s*\((.+)\)$/);
+        if (parenthesized) writings.push(parenthesized[1].trim(), parenthesized[2].trim());
+        // 一格里并列多个写法、其中恰好一个加粗 = 这是同义词组,粗体那个是首选。
+        // 没有粗体的多写法格(报告组件表把七个组件挤在一行)不是同义词,不产生裁决。
+        if (parts.length > 1 && bold.length === 1) {
+          if (part === bold[0]) preferred = writing;
+          else deprecated.push(writing);
+        }
+      }
+    }
+    if (writings.length > 0) terms.push({ line: index + 1, writings, preferred, deprecated });
+  }
+  return terms;
+}
+
+/**
+ * 把概念表的首选裁决翻译成禁词条目——术语只在概念表里裁决一次,
+ * `writing-rules.json` 不再手抄一份同义词对照,两处不会各说各话。
+ */
+export function synonymBans(terms: ConceptTerm[]): BannedTerm[] {
+  return terms.flatMap((term) =>
+    term.preferred
+      ? term.deprecated.map((writing) => ({
+          term: writing,
+          use: `「${term.preferred}」`,
+          why: `${CONCEPTS_FILE} 的术语总表把「${term.preferred}」定为首选写法(第 ${term.line} 行)`,
+          // 概念表自己要并列列出同义词,不算命中。
+          exempt: [CONCEPTS_FILE],
+        }))
+      : [],
+  );
+}
+
+/** 正文语料:判一个词有没有人用。概念表自己不算——它只负责立词。 */
+function usageCorpus(): string {
+  return USAGE_DIRS.flatMap((dir) => walkDocs(dir, [".md", ".mdx"]))
+    .filter((file) => file !== CONCEPTS_FILE)
+    .map((file) => readFileSync(join(ROOT, file), "utf8"))
+    .join("\n");
+}
+
+/** 立了词、正文一次没用过:要么删掉这一行,要么正文该有人用它。 */
+export function deadConceptTerms(terms: ConceptTerm[]): string[] {
+  const corpus = usageCorpus();
+  return terms
+    .filter((term) => !term.writings.some((writing) => corpus.includes(writing)))
+    .map((term) => term.writings.join(" / "))
+    .sort();
 }
 
 // 东亚宽字符占两列:中日韩、全角标点、假名。行宽按列算而不是按字符数算,
@@ -81,11 +202,11 @@ export function visualWidth(line: string, cjkColumns: number): number {
   return width;
 }
 
-function walkMarkdown(dir: string): string[] {
+function walkDocs(dir: string, extensions: string[] = [".md"]): string[] {
   return readdirSync(join(ROOT, dir)).flatMap((name) => {
     const rel = join(dir, name);
-    if (statSync(join(ROOT, rel)).isDirectory()) return walkMarkdown(rel);
-    return name.endsWith(".md") ? [rel] : [];
+    if (statSync(join(ROOT, rel)).isDirectory()) return walkDocs(rel, extensions);
+    return extensions.some((ext) => name.endsWith(ext)) ? [rel] : [];
   });
 }
 
@@ -213,15 +334,25 @@ function countTermHits(prose: string, re: RegExp, allowIn?: string[]): number {
 export function lintDocsWriting(): LintReport {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
   const baseline: Baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_FILE), "utf8"));
-  const matchers = rules.bannedTerms.map((t) => ({ ...t, re: termMatcher(t.term) }));
+  // 手写禁词 + 概念表首选裁决自动生成的那批,走同一条计数与台账路径。
+  const concepts = parseConcepts();
+  const banned = [...rules.bannedTerms, ...synonymBans(concepts)];
+  const matchers = banned.map((t) => ({ ...t, re: termMatcher(t.term) }));
 
   const hits: Hit[] = [];
-  const actual: Baseline = { lineWidth: {}, sentenceLength: {}, paragraphLength: {}, bannedTerms: {} };
+  const deadTerms = deadConceptTerms(concepts);
+  const actual: Baseline = {
+    lineWidth: {},
+    sentenceLength: {},
+    paragraphLength: {},
+    bannedTerms: {},
+    deadTerms,
+  };
   const count = (rule: LengthRule, file: string) => {
     actual[rule][file] = (actual[rule][file] ?? 0) + 1;
   };
 
-  for (const file of walkMarkdown("docs")) {
+  for (const file of walkDocs("docs")) {
     const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
 
     for (const block of proseBlocks(lines)) {
@@ -311,7 +442,19 @@ export function lintDocsWriting(): LintReport {
     }
   }
 
-  return { hits, actual, regressions };
+  const regressionFiles = [...new Set(regressions.map((r) => r.split(":")[0]))];
+
+  // 死词按词判,不按数量判:台账里没有的死词就是新死的,哪怕总数没变。
+  const known = new Set(baseline.deadTerms ?? []);
+  for (const term of deadTerms) {
+    if (!known.has(term)) {
+      regressions.push(
+        `${CONCEPTS_FILE}: 「${term}」立了词但 docs/ 与 docs-site/ 正文一次没用过——删掉这一行,或者正文该改用它`,
+      );
+    }
+  }
+
+  return { hits, actual, regressions, regressionFiles, deadTerms };
 }
 
 /**
@@ -320,7 +463,7 @@ export function lintDocsWriting(): LintReport {
  */
 export function formatRegressionHits(report: LintReport): string {
   if (report.regressions.length === 0) return "";
-  const files = new Set(report.regressions.map((r) => r.split(":")[0]));
+  const files = new Set(report.regressionFiles);
   const lines = report.hits
     .filter((hit) => files.has(hit.file))
     .map((hit) => `${hit.file}:${hit.line}  ${hit.message}`);
@@ -377,6 +520,7 @@ export function serializeBaseline(actual: Baseline): string {
     bannedTerms: sortKeys(
       Object.fromEntries(Object.entries(actual.bannedTerms).map(([f, t]) => [f, sortKeys(t)])),
     ),
+    deadTerms: [...actual.deadTerms].sort(),
   };
   return `${JSON.stringify(sorted, null, 2)}\n`;
 }
