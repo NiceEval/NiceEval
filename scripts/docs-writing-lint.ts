@@ -7,7 +7,7 @@
  *   pnpm docs:lint              检查(有回归时退出码 1)
  *   pnpm docs:lint --update     把当前命中数写回台账(只在确实改善或新增规则后用)
  *
- * 同一份逻辑被 test/docs-writing.test.ts 复用,所以 `pnpm test` 也拦回归——
+ * 同一份逻辑被 test/docs/docs-writing.test.ts 复用,所以 `pnpm test:docs` 也拦回归——
  * 台账里的数字只许变小:降到 0 的文件从台账里消失,新写的正文一次命中都不许有。
  */
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";

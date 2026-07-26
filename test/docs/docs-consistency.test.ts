@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 //    (doc-drift 是 memory 里被记录最多的一类事故,链接失效是其中机器可查的部分);
 // 3. 代码注释里写下的 docs/….md 也必须真实存在——文档重组会把 docs/ 下的单文件拆进
 //    子目录,注释里的旧路径不会跟着动。指错路径比不指更糟:照着找的人会以为文档没了。
-const ROOT = resolve(import.meta.dirname, "..");
+const ROOT = resolve(import.meta.dirname, "../..");
 
 function walk(dir: string, ext: string): string[] {
   return readdirSync(join(ROOT, dir)).flatMap((name) => {

@@ -6,7 +6,7 @@
 2. `e2e/` 物理布局平铺、目录名即验收域：`adapter/`（原 `repos/`，官方适配器协议验收）、`cli/`、`report/`（原 `mechanism/results`，含内建与自定义报告的用户操作回归）。`mechanism` collection 与 group 值取消，group 改为 `sdk|sandbox|cli|report`。
 3. 层边界重划：单元层只测**数据语义**（判定、调度、聚合、装载校验、纯函数派生）；渲染产物（终端排版、DOM、快照、样式）、CLI 进程行为、协议归一整体归 E2E 功能/适配器仓库，对一次真实运行的产物做确定性断言。
 4. adapters 单元测试维度整体取消：22 个 wire-fixture 协议归一测试与 `unit/adapters/` 登记表删除，协议正确性唯一验收面 = `e2e/adapter/` 真实运行；`cost.test.ts`、`execution-tree.test.ts` 属协议无关数据派生，改挂 reports 登记表保留。
-5. 「对测试的测试」按一条判据取舍：**流程守护留**（`test/cases-registry.test.ts` 登记表挂钩、索引/链接/生成区块守护——没有别的执行路径会报警）；**结构复检删**（`test/e2e-structure.test.ts` 整文件删除——仓库形状由编排器每次隔离运行 + 发现器 fail-fast 证明，离线复检是第二份会漂移的口径）。
+5. 「对测试的测试」按一条判据取舍：**流程守护留**（`test/docs/cases-registry.test.ts` 登记表挂钩、索引/链接/生成区块守护——没有别的执行路径会报警）；**结构复检删**（`test/e2e-structure.test.ts` 整文件删除——仓库形状由编排器每次隔离运行 + 发现器 fail-fast 证明，离线复检是第二份会漂移的口径）。
 6. unit 测试文档去列举化：每 Feature 的 README+cases 两页（逐场景表格）合并成单篇 `unit/<feature>.md`（观察面 / Fixture 规范 / 覆盖规范 / 反模式）——docs 只写体系与规范，**具体场景由测试代码枚举、测试名就是场景清单**。登记单位从「场景行」上升为「覆盖类别」（registry.md 重写为覆盖登记），`// cases:` 头注与守护改指单篇文档。
 
 **曾选方案 / 否决理由**

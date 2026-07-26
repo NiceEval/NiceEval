@@ -3,7 +3,7 @@
 // `{/* GENERATED:BEGIN <region-id> */}...{/* GENERATED:END <region-id> */}` 标记区块。
 //
 // 设计:提取 + 渲染 + 区块替换是纯函数(输入文件内容字符串,输出新内容字符串),
-// 不碰文件系统 —— 这样 test/reference-consistency.test.ts 能在内存里复用同一套逻辑
+// 不碰文件系统 —— 这样 test/docs-site/reference-consistency.test.ts 能在内存里复用同一套逻辑
 // 做漂移检测。CLI 入口(main())只负责读写文件。
 //
 // 不新增依赖:只用仓库已有的 devDependencies 里的 `typescript` 包的 compiler API。

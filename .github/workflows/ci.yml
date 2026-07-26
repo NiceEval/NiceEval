@@ -33,6 +33,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Test docs guards
+        run: pnpm run test:docs
+
       - name: Check example tiers are in sync
         run: pnpm run tiers:check
 
@@ -43,22 +46,28 @@ jobs:
       - name: Build product site
         run: pnpm run site:build
 
-  docs:
-    name: Mintlify docs
+  docs-site:
+    name: docs-site
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # mint CLI 要 LTS Node；这个 job 与 package job 并行，慢在拉 mint@latest 上，
+      # 不拖住代码侧反馈。
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
-      - name: Validate docs
-        working-directory: docs-site
-        run: npx --yes mint@latest validate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Check docs links
-        working-directory: docs-site
-        run: npx --yes mint@latest broken-links --check-anchors --check-redirects
+      - name: Test docs-site guards and validate with mint
+        run: pnpm run test:docs-site

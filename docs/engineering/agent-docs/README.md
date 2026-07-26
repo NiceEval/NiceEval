@@ -18,7 +18,7 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 不随包的文档面，及不随包的理由：
 
-- `INIT.zh.md` / `INIT.md`：安装自举文件。它们工作的阶段包还不在 `node_modules`，从官网 / GitHub raw 读取，因此内容收敛到安装前就能定稿的三件事——心智模型、前置条件、安装命令，装完立即交接给随包 `INDEX.md`。自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关；接入流程正文住在随包页面 [`docs-site/zh/tutorials/agent-onboarding.mdx`](../../../docs-site/zh/tutorials/agent-onboarding.mdx)，`test/bundled-docs-index.test.ts` 拦截向导里出现的线上文档链接。
+- `INIT.zh.md` / `INIT.md`：安装自举文件。它们工作的阶段包还不在 `node_modules`，从官网 / GitHub raw 读取，因此内容收敛到安装前就能定稿的三件事——心智模型、前置条件、安装命令，装完立即交接给随包 `INDEX.md`。自举文件**不含任何线上文档链接**：线上 URL 既没有守护（页面改名即静默断链），版本也与将要装到的包无关；接入流程正文住在随包页面 [`docs-site/zh/tutorials/agent-onboarding.mdx`](../../../docs-site/zh/tutorials/agent-onboarding.mdx)，`test/docs-site/bundled-docs-index.test.ts` 拦截向导里出现的线上文档链接。
 - `docs-site/` 英文入口与站点配置（`docs.json` 等）：服务网站构建，不服务包内读者。
 - `docs/`、`memory/`：内部设计契约与过程记录，读者是维护 niceeval 仓库的人，不是用户项目里的 agent。
 
@@ -50,9 +50,9 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 | 守护 | 落点 | 校验内容 |
 | --- | --- | --- |
-| 可生成 | `test/bundled-docs-index.test.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在产物里——与发版时 `prepare` 同一条失败路径，提前到 `pnpm test` |
+| 可生成 | `test/docs-site/bundled-docs-index.test.ts` | 复用生成器的纯函数，从模板 + 全部 zh 页面在内存生成一次：缺 `title` / `description`、模板缺区块标记时红灯，并校验每个非入口页都出现在产物里——与发版时 `prepare` 同一条失败路径，提前到 `pnpm test:docs-site` |
 | 完整 | 生成器自身 | 树由文件系统枚举构造，存在与覆盖天然成立；缺 `title` / `description` 的页面在生成时报错并指明落点，发布被挡下 |
-| 单点入口与打包链 | `test/bundled-docs-index.test.ts` | `package.json` `files`、`INIT.zh.md`、`src/cli.ts` 托管指引三处指向的都是包根 `INDEX.md`；`prepare` 链包含 `build:index`，缺了发出去的包就没有索引 |
+| 单点入口与打包链 | `test/docs-site/bundled-docs-index.test.ts` | `package.json` `files`、`INIT.zh.md`、`src/cli.ts` 托管指引三处指向的都是包根 `INDEX.md`；`prepare` 链包含 `build:index`，缺了发出去的包就没有索引 |
 
 ## 生成与打包的时机链
 
@@ -66,4 +66,4 @@ Coding agent 在用户项目里接入 niceeval、编写配置和 Eval 时，如�
 
 - 增删、移动、重命名 `docs-site/zh` 页面，或修改任何页面的 `title` / `description`：索引零手动动作，下一次安装 / 发版自动反映；本地想预览产物运行 `pnpm run build:index`（`pnpm docs:reference` 也会顺带产出）。`docs-site/AGENTS.md` 规定的 `docs.json` 与 redirect 义务照旧。
 - 修改导语或分区说明：改 `INDEX.template.md`。
-- 验收：`pnpm test` 绿；发版前抽查 `pnpm pack --dry-run`（或 `npm pack --dry-run`）的文件清单包含 `INDEX.md`、`docs-site/zh/**` 与 `docs-site/images/**`。
+- 验收：`pnpm test:docs-site` 绿；发版前抽查 `pnpm pack --dry-run`（或 `npm pack --dry-run`）的文件清单包含 `INDEX.md`、`docs-site/zh/**` 与 `docs-site/images/**`。

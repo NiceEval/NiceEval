@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 // docs/cli.md「装载用户 .ts」,覆盖类别见 docs/engineering/testing/unit/experiments-runner.md
 // 「用户 .ts 装载与宿主模块形态」。这里守护两条数据面不变量,两者缺一 CJS 宿主必崩:
 // bug: memory/tsx-dynamic-import-require-cycle.md
-const ROOT = resolve(import.meta.dirname, "..");
+const ROOT = resolve(import.meta.dirname, "../..");
 
 describe("装载用户 .ts 的宿主模块形态无关性", () => {
   it("exports 每个带 import 条件的出口同时带 require 条件,且两者指向真实文件", () => {

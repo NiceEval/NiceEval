@@ -26,6 +26,6 @@
 
 废弃 worktree 本身用 `git worktree prune` + 删目录清掉，但**不能只做这一步**——下次 agent 再开 worktree 问题就回来了。配置里的 exclude 才是根治。
 
-一条可复用的对账判据，已升格进 [`docs/engineering/testing/unit/README.md`](../docs/engineering/testing/unit/README.md)「套件边界」：**`pnpm test` 报出的文件数应当等于 `src/` + `test/` 下测试文件的实际数量，对不上就是收进了不该收的东西。**
+一条可复用的对账判据，已升格进 [`docs/engineering/testing/unit/README.md`](../docs/engineering/testing/unit/README.md)「套件边界」：**每个测试入口报出的文件数应当等于它那几个 include 目录下测试文件的实际数量，对不上就是收进了不该收的东西。**（写下这条时套件只有 `pnpm test` 一个入口，现已按验证对象分成三个。）
 
 发现于 2026-07-13 的测试套件审计，见 [[test-budget-inverted-pyramid]]。

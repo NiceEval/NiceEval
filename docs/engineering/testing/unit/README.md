@@ -9,8 +9,9 @@
 - 本篇定义怎样把契约变成测试，以及怎样选择最小而稳定的测试边界。
 - 真实安装、进程、网络、模型和 Sandbox 的全链路验证属于 [E2E CI](../e2e/README.md)。
 
-运行时测试、类型契约测试和仓库守护分别由 `pnpm test`、`pnpm run typecheck` 和挂在 `pnpm test` 下的
-`test/` 守护测试承担。
+运行时测试和类型契约测试由 `pnpm test`、`pnpm run typecheck` 承担；仓库守护由 `test/` 下的守护测试
+承担，按验证对象分挂在 `pnpm test`、`pnpm test:docs`、`pnpm test:docs-site` 三个入口
+（见[套件边界与仓库守护](#套件边界与仓库守护)）。
 
 单元层的观察面是**数据**：输入数据到输出数据的确定性语义。渲染产物（终端排版、DOM 结构、Run、样式）、CLI 进程行为与真实协议路径不属于本层，一律归 E2E 功能仓库——边界全文见[测试体系总纲](../README.md#单元层的边界)。
 
@@ -153,7 +154,19 @@ niceeval 是 TypeScript 库，类型推断和非法组合也是公共契约。�
 
 ## 套件边界与仓库守护
 
-Vitest 只收本仓库自己的测试。`vitest.config.ts` 的 `exclude` 必须排除：
+套件按**验证对象**分成三个 Vitest project，每个 project 一个入口命令，成员资格由目录决定：
+
+| project     | 验证对象        | 入口                 | 收哪些文件                                  |
+| ----------- | --------------- | -------------------- | ------------------------------------------- |
+| `unit`      | 代码            | `pnpm test`          | `src/**/*.test.ts(x)` 与 `test/unit/**`      |
+| `docs`      | `docs/`、`memory/` | `pnpm test:docs`     | `test/docs/**`                              |
+| `docs-site` | `docs-site/`    | `pnpm test:docs-site` | `test/docs-site/**`，命令里再串 mint 两步校验 |
+
+三个 include 互不重叠且按仓库根锚定，新增守护文件放进哪个目录就归哪个入口——不存在「三个 project
+谁都没收它、于是永远不跑」的静默失效。`docs-site` 入口把 `docs:validate`、`docs:links` 串在 Vitest
+之后：mint CLI 要 LTS Node 且每次拉 `mint@latest`，放进代码侧入口会给全部单测强加网络依赖。
+
+Vitest 只收本仓库自己的测试。`vitest.config.ts` 的 `exclude` 保留为第二道闸，排除：
 
 - `.repos/**`：vendored 外部仓库。
 - `.claude/**`：Agent 临时 worktree 中的源码和测试副本。
@@ -161,11 +174,11 @@ Vitest 只收本仓库自己的测试。`vitest.config.ts` 的 `exclude` 必须�
 - `e2e/undo/**`：尚无完整官方 Agent 工厂、暂停执行的 E2E fixture。
 
 临时 worktree 副本会使用过期源码产生与当前提交无关的结果，详见
-[`vitest-collects-agent-worktree-copies`](../../../../memory/vitest-collects-agent-worktree-copies.md)。`pnpm test`
-收集到的文件数应等于 `src/` 和 `test/` 下测试文件的实际数量。
+[`vitest-collects-agent-worktree-copies`](../../../../memory/vitest-collects-agent-worktree-copies.md)。每个入口
+收集到的文件数应等于它那几个 include 目录下测试文件的实际数量。
 
-索引覆盖、链接真实性、生成区块漂移和其它仓库约束写成 `test/` 下的 Vitest 测试，复用
-`pnpm test`，不新增命令或 hook。这些测试同样必须指出自己守护的具体约束，以及删除后会发生的静默腐坏。
+索引覆盖、链接真实性、生成区块漂移和其它仓库约束写成 `test/` 下的 Vitest 测试，复用上面三个入口，
+不新增脚本或 hook。这些测试同样必须指出自己守护的具体约束，以及删除后会发生的静默腐坏。
 
 测试文档归属也在守护范围内：`src/`
 下每个测试文件头部用一行注释声明所属文档（`// cases: docs/engineering/testing/unit/<feature>.md`），`test/`

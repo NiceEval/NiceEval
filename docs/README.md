@@ -145,14 +145,14 @@ Engineering 文档的组织方式由 [`engineering/README.md`](engineering/READM
 修改 `docs/` 或根 README 后运行：
 
 ```sh
-pnpm test
+pnpm test:docs
 ```
 
 两组守护都挂在这一条命令上：
 
-- `test/docs-consistency.test.ts` 检查索引覆盖与相对链接。
+- `test/docs/docs-consistency.test.ts` 检查索引覆盖与相对链接。
   新增设计页必须从本索引或所属二级目录的 `README.md` 可发现。
-- `test/docs-writing.test.ts` 检查上面「写给人读」里能机器判定的两条：行宽和禁用写法。
+- `test/docs/docs-writing.test.ts` 检查上面「写给人读」里能机器判定的两条：行宽和禁用写法。
 
 行宽与用词的详细命中另有一条命令，输出每一行该怎么改：
 

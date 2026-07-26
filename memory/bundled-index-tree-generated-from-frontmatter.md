@@ -4,7 +4,7 @@
 
 ## 裁决
 
-包根 `INDEX.md` 是**构建产物**（gitignore，不签入）：`prepare`（`pnpm run build:index`）在本地安装与发版 CI 的 install 时，读签入的 `INDEX.template.md`（手写导语 + 空 `bundled-docs-tree` 区块），把 `docs-site/zh` 各页 frontmatter `title`/`description` 拼成的文档树填进区块后写出——与 `dist/report/**`、发版时 runner 本地写 `package.json` 版本号同一个「源签入、产物现场生成」模型。守护是「可生成」而非「没漂移」：`test/bundled-docs-index.test.ts` 用生成器纯函数在内存生成一次（缺 description 红灯、逐页校验非入口页不漏），prepare 在发布路径上是最后闸门。
+包根 `INDEX.md` 是**构建产物**（gitignore，不签入）：`prepare`（`pnpm run build:index`）在本地安装与发版 CI 的 install 时，读签入的 `INDEX.template.md`（手写导语 + 空 `bundled-docs-tree` 区块），把 `docs-site/zh` 各页 frontmatter `title`/`description` 拼成的文档树填进区块后写出——与 `dist/report/**`、发版时 runner 本地写 `package.json` 版本号同一个「源签入、产物现场生成」模型。守护是「可生成」而非「没漂移」：`test/docs-site/bundled-docs-index.test.ts` 用生成器纯函数在内存生成一次（缺 description 红灯、逐页校验非入口页不漏），prepare 在发布路径上是最后闸门。
 
 ## 曾选方案与否决理由（按翻案顺序）
 

@@ -4,7 +4,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 - **按子系统主轴归档**:分区就是"动手前扫哪块"——沙箱/Agent、Runner·CLI、报告·view、o11y 采集、写 eval·scoring·judge、examples、docs、环境。动手涉及某块前先扫该块;命中一行才读正文,大多数条目停在一行即可。
 - **大区内再分「裁决 / 台账」**:沙箱、Runner、报告三块条目多,内部拆两个子标题——**裁决**(设计决定/否决方案:一条 = 裁决 / 曾选方案 / 否决理由 / 日期)、**台账**(踩坑/bug:现象 / 根因 / 修法)。小区不分。设计裁决归到它约束的子系统,不再单列"设计决定"分区;真正跨切面的(术语、测试预算、错误反馈契约等)才进 **跨切面裁决**。
-- **写完即索引**:新增 memory 文件必须同步在这里加一行,格式 `- [条目名](条目文件名.md) — 一句现象+结论`,归到对应子系统(大区里再判裁决/台账)。`test/memory-index.test.ts` 随 `pnpm test` 校验每个条目都有索引行。
+- **写完即索引**:新增 memory 文件必须同步在这里加一行,格式 `- [条目名](条目文件名.md) — 一句现象+结论`,归到对应子系统(大区里再判裁决/台账)。`test/docs/memory-index.test.ts` 随 `pnpm test:docs` 校验每个条目都有索引行。
 - **修好标注,不删除**:bug 修好后行首标「已修」,并在条目正文补修法落点(文件/commit)。已修条目是后续复盘"这个修法合理不合理"的材料,不归档不删除。
 - **复盘出口**:修法复盘后被确认为长期约束的,升格为 CLAUDE.md 或 docs/ 里的一句规则(原条目保留作出处);被推翻的,更新原条目记录新判断。
 - **历史条目里的 `plan/` 引用照原样保留**:设计不再单独写执行计划(规则在 CLAUDE.md「设计Agent」),`plan/` 目录已移除。旧条目提到某份计划文件是当时真实发生过的过程,改写它等于篡改记录;要找那份内容去 git 历史。
@@ -362,7 +362,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
-- [env-only-credentials-config-only-code](env-only-credentials-config-only-code.md) — 裁决(2026-07-25):环境变量只剩凭据 + 终端事实,配置项只从 flag/experiment/config 来;删 NICEEVAL_RUNS/TIMEOUT/BUDGET/MAX_CONCURRENCY、judge 的 MODEL/BASE 与跨家族 key 回落、NICEEVAL_LANG/LOCALE(换成 config.locale)、bub 两个 env 后门;凭据保留内置默认变量名;守护 test/config-env-boundary.test.ts(正则要排除写入子进程 env 的赋值)
+- [env-only-credentials-config-only-code](env-only-credentials-config-only-code.md) — 裁决(2026-07-25):环境变量只剩凭据 + 终端事实,配置项只从 flag/experiment/config 来;删 NICEEVAL_RUNS/TIMEOUT/BUDGET/MAX_CONCURRENCY、judge 的 MODEL/BASE 与跨家族 key 回落、NICEEVAL_LANG/LOCALE(换成 config.locale)、bub 两个 env 后门;凭据保留内置默认变量名;守护 test/unit/config-env-boundary.test.ts(正则要排除写入子进程 env 的赋值)
 - [index-classification-by-subsystem](index-classification-by-subsystem.md) — 裁决(2026-07-21):memory 索引按「子系统」单一主轴归档(分区=动手前扫哪块),溶解「设计决定」分区、报告拆出独立、大区内拆裁决(≈DX 反馈)/台账(≈bug);否决把 bug/DX 反馈当顶层主轴(类型轴切顶层=同一块工作扫两处,正是原问题根因)与分离已修条目(违反不归档规则);commit 05a040e
 - [turn-label-plain-words](turn-label-plain-words.md) — 裁决(2026-07-21):轮/窗口标签从 `s<session>/t<turn>` 改为自描述词——主会话 `turn<N>`、`t.newSession()` 会话 `session<K>/turn<N>`(从 2 起),全证据面同一枚 token、`--window` 等值匹配;否决全局连号(并行 session 竞态)与恒带 session 前缀(主线噪音);标签不透明不解析,schemaVersion 不递增、旧快照不迁移
 - [unit-audit-2026-07-meaningless-test-verdicts](unit-audit-2026-07-meaningless-test-verdicts.md) — 全量单测审查裁决(2026-07-23):21k 行仅 5 条直接删除级(恒真占位/协议归一越层/语言能力/跨家族重复四类病因),2 条唯一覆盖搬家、2 处类型检查空转迁编译期;跟改率高 ≠ 该删,头部跟改文件恰是质量最好的;遗留改写候选与 6 处覆盖登记缺口清单在正文

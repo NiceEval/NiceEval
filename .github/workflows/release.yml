@@ -55,8 +55,14 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      # 发版闸门只看包自身对不对:代码单测 + docs/memory 守护。docs-site 的 mint 校验
+      # (test:docs-site)不进这条链——文档站单独部署,一条断链不该拦住 npm publish;
+      # 随包 INDEX.md 的生成失败由 prepare 里的 build:index 直接报错。
       - name: Test
         run: pnpm test
+
+      - name: Test docs guards
+        run: pnpm run test:docs
 
       - name: Publish
         run: |

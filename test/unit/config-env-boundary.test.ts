@@ -8,7 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SRC = new URL("../src/", import.meta.url).pathname;
+const SRC = new URL("../../src/", import.meta.url).pathname;
 
 /**
  * 允许被读取的环境变量。每一条都能在边界表里指到自己那一行:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { lintDocsWriting, validateRules } from "../scripts/docs-writing-lint.js";
+import { lintDocsWriting, validateRules } from "../../scripts/docs-writing-lint.js";
 
 // docs/ 的可读性规矩(行宽、禁用写法)由 docs/writing-rules.json 声明,
 // 规矩本身写在 docs/README.md「写给人读」与 docs/concepts.md「禁用写法」。

@@ -2,7 +2,7 @@
 
 ## 裁决（2026-07-18）
 
-`INIT.zh.md` / `INIT.md` 只做安装前就能定稿的三件事：心智模型、前置条件、安装命令，装完立即交接 `node_modules/niceeval/INDEX.md`。接入流程正文（探索项目、Tier 推荐、按形态选文档、judge、三件套、跑通、往深接菜单）整体搬进随包页面 `docs-site/zh/tutorials/agent-onboarding.mdx`。顺序从「先探索项目再安装」翻为「先安装再探索」：装 dev 依赖廉价可逆，不需要探明项目作为前置，而探索发生在装完之后就能拿版本对齐的随包文档做判断。守护：`test/bundled-docs-index.test.ts` 拦 INIT 里的 `niceeval.com/docs` 与 GitHub raw 链接。
+`INIT.zh.md` / `INIT.md` 只做安装前就能定稿的三件事：心智模型、前置条件、安装命令，装完立即交接 `node_modules/niceeval/INDEX.md`。接入流程正文（探索项目、Tier 推荐、按形态选文档、judge、三件套、跑通、往深接菜单）整体搬进随包页面 `docs-site/zh/tutorials/agent-onboarding.mdx`。顺序从「先探索项目再安装」翻为「先安装再探索」：装 dev 依赖廉价可逆，不需要探明项目作为前置，而探索发生在装完之后就能拿版本对齐的随包文档做判断。守护：`test/docs-site/bundled-docs-index.test.ts` 拦 INIT 里的 `niceeval.com/docs` 与 GitHub raw 链接。
 
 ## 曾选方案
 

@@ -13,4 +13,4 @@
 - `bin/niceeval.js` 同时注册 `tsx/esm/api` + `tsx/cjs/api` 两个 hook;
 - `package.json` exports 全部出口补 `"require"` 条件指向同一文件(`.ts` 由 tsx CJS hook 转译)。
 
-复现方法(scratchpad symlink 本仓库为安装包):CJS 宿主 `init`+`list` 走通、eval 文件 import `niceeval/expect` 子路径走通、ESM 宿主行为不变。另有体验兜底:`init` 检测最近 `package.json` 非 ESM 时输出一行建议(`cli.init.esmHint`,只提示不改文件,CJS 编译面用不了顶层 await 所以 ESM 仍是推荐形态);INIT.md 教 agent 新建 `package.json` 时写 `"type": "module"`。契约落在 docs/cli.md「装载用户 .ts:宿主模块形态无关」,守护测试 `test/package-exports.test.ts`(exports require 条件 + bin 双 hook 两条不变量)。
+复现方法(scratchpad symlink 本仓库为安装包):CJS 宿主 `init`+`list` 走通、eval 文件 import `niceeval/expect` 子路径走通、ESM 宿主行为不变。另有体验兜底:`init` 检测最近 `package.json` 非 ESM 时输出一行建议(`cli.init.esmHint`,只提示不改文件,CJS 编译面用不了顶层 await 所以 ESM 仍是推荐形态);INIT.md 教 agent 新建 `package.json` 时写 `"type": "module"`。契约落在 docs/cli.md「装载用户 .ts:宿主模块形态无关」,守护测试 `test/unit/package-exports.test.ts`(exports require 条件 + bin 双 hook 两条不变量)。

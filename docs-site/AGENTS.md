@@ -54,7 +54,7 @@
 - 链接示例必须指向真实存在的 `examples/` 目录；当前完整示例主要在 `examples/zh/`。
 - 第一次成功路径和现实任务都写进 `zh/tutorials/`；前者按 Tutorial 写，后者按 How-to 写。概念边界写进 `zh/explanation/`，字段全集写进 `zh/reference/`，按症状修复写进 `zh/troubleshooting/`。不要把一个页面同时写成教程、设计文档和 API 字典。
 - 命令、路径、flag、文件名、包名、代码标识用反引号。
-- `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm docs:reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取 `src/cli.ts` 里 `FLAG_OPTIONS` 各项的 JSDoc；region 与源码的映射见 `scripts/generate-reference.ts`）。要改这些文案，改源码注释后从仓库根跑 `pnpm docs:reference`；手改会被 `pnpm test` 的漂移守护拦下。
+- `zh/reference/` 页里 `{/* GENERATED:BEGIN … */}` 到 `{/* GENERATED:END … */}` 之间的内容不要手改：它由 `pnpm docs:reference` 从源码紧邻注释生成（接口/函数取 TSDoc，CLI flag 取 `src/cli.ts` 里 `FLAG_OPTIONS` 各项的 JSDoc；region 与源码的映射见 `scripts/generate-reference.ts`）。要改这些文案，改源码注释后从仓库根跑 `pnpm docs:reference`；手改会被 `pnpm test:docs-site` 的漂移守护拦下。
 - 文案使用主动语态和短句。错误信息、限制和前置条件要直接说清楚下一步。
 - 教程正文和标题使用陈述句或祈使句，不用设问带出内容。Eval 输入、Judge 标准、终端输出等需要展示真实问句的示例不受此限制。
 - 写作指南: docs-site/docs-ref/00-index.md
@@ -64,6 +64,9 @@
 改 `docs-site/` 后，从仓库根目录运行：
 
 ```sh
-PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm run docs:validate
-PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm run docs:links
+PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm test:docs-site
 ```
+
+这一条串了三步：`test/docs-site/` 下的 Vitest 守护（参考页生成区块漂移、随包 `INDEX.md`
+能否生成）、Mintlify 构建校验、Mintlify 断链检查。后两步调 mint CLI，需要 LTS Node，所以要带
+`PATH` 前缀。只想单独验其中一项时用 `pnpm run docs:validate` 或 `pnpm run docs:links`。

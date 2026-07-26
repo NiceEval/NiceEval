@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 // memory/ 的召回全靠 INDEX.md:漏索引的条目等于不存在,所以覆盖率由测试保证,
 // 不引入生成脚本——写 memory 的人(通常是 agent)顺手加一行索引即可。
-const MEMORY_DIR = join(import.meta.dirname, "..", "memory");
+const MEMORY_DIR = join(import.meta.dirname, "../..", "memory");
 
 describe("memory/INDEX.md", () => {
   it("每个 memory 条目都有索引行", () => {
