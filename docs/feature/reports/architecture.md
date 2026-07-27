@@ -9,23 +9,29 @@ Reports 把同一份结果事实呈现到三个位置：Agent 使用的终端宿
 
 ## 核心模型
 
-报告作者先理解两个概念就够了：
+报告作者的完整模型是三个概念：
 
 | 概念 | 形态 | 职责 |
 |---|---|---|
-| Source | `Source<Input extends SourceInput, Content>` | 从 `.niceeval` 的 Sample 或 AttemptEvidence 计算可序列化事实投影 |
-| Component | `Table`、`Chart` 或 `defineComponent(...)` | 把 Content 投影到 text 与 web |
+| Source | `Source<Input extends SourceInput, Content>` | 从 Sample 或 AttemptEvidence 计算可复用的事实投影 |
+| Composition | `defineComposition(...)` | 拿到运行期 page input，编排多个 Source、加工 Content、返回组件树 |
+| Component | `Table`、`Chart` 或 `defineComponent(...)` | 把一份 Content 同步投影到 text 与 web |
 
 ```text
-Source.compute(input) → Content → Component → text / web
+Source.compute(input) ─┐
+                       ├─ Composition 编排 → Content → Component → text / web
+外部准备好的数据 ──────┘
 ```
 
-Component 只接受互斥的 `source` 与 `data` 两种形态。renderer 永远看不到 Source、Sample、Record，
-也不能再次取数。组合组件、page、报告外壳和页级呈现分配属于进阶装配能力，不进入第一层心智模型。
+简单报告只碰 Source 与 Component：把 Source 交给 Component 的 `source` 形态就出一页。需要
+拿运行期输入、协调多个 Source、跨来源 join 或动态生成组件树时进入 Composition。三者的边界在
+[加一个能力时选哪个](components/README.md#加一个能力时选哪个)。
 
-`defineSource` 保留传入对象引用；`defineComponent` 产出可进入报告树的双面组件。Source 不是通用
-异步 loader：外部 API 或任意业务对象由用户先准备好，再走 Component 的 `data` 形态。两者只提供类型推导
-与定义期反馈，不建立注册表。只排列已有组件时才使用进阶的 `defineComposition`；页仍是纯绑定记录，
+Component 只接受互斥的 `source` 与 `data` 两种形态。renderer 永远看不到 Source、Sample、Record，
+也不能再次取数。page、报告外壳和页级呈现分配是宿主装配层，不属于作者模型。
+
+`defineSource` 保留传入对象引用；`defineComponent` 产出可进入报告树的双面组件；`defineComposition`
+产出在 resolve 阶段展开的编排节点。三者只提供类型推导与定义期反馈，不建立注册表；页仍是纯绑定记录，
 不机械增加 `definePage`。
 
 ## 共享内核与两个宿主的代码边界
@@ -141,10 +147,10 @@ Run 实体上持久化的 structured diagnostics 由 `sources.run.diagnostics` �
 4. 局部补跑、过旧或未完成 Run 形成结构化 Issue。
 5. 同一份 Sample 交给各宿主默认首页或 `--report`。
 
-宿主把打开的 Record 暴露为 `ctx.record`，并把选出的 Sample 注入每张 sample-input page。
-原语 source 形态的默认 `input` 是这份 Sample，组合组件直接读 `ctx.sample`。attempt-input page
-的默认输入是 `ctx.page.evidence`，两者由 page input 判别，不靠猜测。报告若需要历史趋势，读取
-`ctx.sample.historyAttempts`；宿主仍只做一次 Sample 选择，不开放第二条 Record 旁路。
+宿主把选出的 Sample 注入每张 sample-input page，把 locator 解析出的 `AttemptEvidence` 注入
+attempt-input page。原语 source 形态的默认 `input` 与 Composition 的 `ctx.input` 都是这份注入值，
+由 page 的 `input` 声明判别，不靠猜测。报告若需要历史趋势，读取 `ctx.input.historyAttempts`；
+宿主仍只做一次 Sample 选择，不开放第二条 Record 旁路。
 
 ## Sample 是默认报告的比较边界
 
@@ -159,9 +165,9 @@ Source，与经 `SampleOverview` 展开后的调用深相等。
 
 `SampleSummary`、默认散点与 `sources.entity.experiments` 都消费同一份 Sample；前者在组合层选择 snapshot 与 Measure 中哪些字段作为默认 KPI。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；Component 不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
 
-## Source、Component 与进阶装配
+## Source、Composition 与 Component
 
-数据源是异步计算的唯一公开单位：
+Source 是可复用数据计算的唯一公开单位：
 
 ```ts
 type SourceInput = Sample | AttemptEvidence;
@@ -181,15 +187,14 @@ Measure 与投影已记录 diagnostics。它不能请求外部 API、生成本�
 生成 label 或决定布局。
 
 表格的默认字段身份与 rows 一起进入 `TableContent`，由同一次 `compute()` 返回。字段描述只带
-key、unit、better 等事实与数值语义，本地化表头由 Component 负责。协议没有 `RowSource`、
-`columns(rows)` 或第二个定义入口。Source 不注册、不缓存；缓存只属于一次 page resolve。
+key、unit、better 等事实与数值语义，本地化表头由 Component 负责。字段与行由同一次 `compute()`
+返回，没有第二个定义入口。Source 不注册、不缓存；缓存只属于一次 page resolve。
 
 原语只接受两种互斥形态：
 
 ```tsx
 <Table source={sources.entity.experiments} />
 
-const content = await sources.entity.experiments.compute(sample);
 <Table data={content} />
 ```
 
@@ -197,22 +202,115 @@ const content = await sources.entity.experiments.compute(sample);
 - **data 形态**：作者传入已计算的可序列化 Content；原语不再取数或聚合。
 - 同时给 `source` 与 `data` 按完整用户反馈失败，不静默取一边。
 
-作者用 `defineComponent({ dimensions, enhance, text, web })` 定义新的显示形状。可选的 `dimensions(data)`
-声明组件使用哪些维度值，让管线在 renderer 执行前完成页级名称与颜色消解；`text` 与 `web` 都是必填的
-同步纯 renderer，共同消费同一份 Content。Component 没有 `resolve`：需要异步计算时定义 Source，
-否则“Source 算数据、Component 显示数据”的边界就不存在。
+`data` 形态的 Content 有两个合法产地：Composition 的展开回调，或报告管线之外的独立库程序
+（调用方自带 `sample`）。报告文件顶层没有 page input，不在那里取数。
 
-组合组件由 `defineComposition((props, ctx) => ReportNode)` 定义，可以选择 Source、并行计算、用普通
-JavaScript 加工 Content，再返回组件树。它是进阶装配能力，不实现 renderer，也不产生另一套 Content。
+### Composition：运行期编排
+
+Composition 拿到当前 page 的输入，编排 Source、加工 Content，再返回组件树：
+
+```ts
+type MaybePromise<T> = T | Promise<T>;
+
+interface CompositionContext<Input extends SourceInput> {
+  readonly input: Input;
+  /** 运行前冻结的外部数据快照；缺省是空对象。 */
+  readonly data: Readonly<Record<string, JsonValue>>;
+  readonly page: NormalizedPage;
+  readonly signal: AbortSignal;
+  resolve<Content>(source: Source<Input, Content>): Promise<Content>;
+}
+
+function defineComposition<Props, Input extends SourceInput = Sample>(
+  expand: (props: Readonly<Props>, ctx: CompositionContext<Input>) => MaybePromise<ReportNode>,
+): Composition<Props, Input>;
+```
+
+`ctx.input` 是当前 page 的输入：sample-input page 上是 `Sample`，attempt-input page 上是
+`AttemptEvidence`。输入只有这一个入口，不按种类分裂成两个平行字段。
+
+Composition 内取 Source 必须写 `await ctx.resolve(source)`，不写 `source.compute(ctx.input)`——
+后者绕开下面的 page 级缓存，同一份计算会做两遍。`source.compute()` 仍供报告管线之外的独立库
+代码使用，那里没有 page 也就没有缓存。
+
+`ctx` 不携带主题、`dimensionPins` 或任何颜色。页级呈现分配必须是纯函数，主题必须能独立分发；
+能读钉色的 Composition 可以按颜色改变返回的树，这两条就都保不住。
+
+`ctx.resolve` 只收与本 page 同类型的 Source。**attempt 级 Source 因此只能出现在 attempt-input
+page**：sample-input page 上没有 `AttemptEvidence` 可传。
+另一条路是给 Composition 开一个 `ctx.record` 让它自行装配 evidence，代价是 Composition 能绕过
+Source 任意读盘，「Source 是 `.niceeval` 唯一查询接口」当场失效。
+要在总览页展示某条 attempt 的证据，用 locator 链到 attempt-input page。
+
+**输入类型不匹配在装载期拦。** `Composition<Props, Input>` 的 `Input` 记在节点品牌上，装载校验
+页列表时就比对 page 的 `input` 声明，按完整用户反馈报错。不能等到 resolve——那时 `expand` 已经
+拿着错类型的 `ctx.input` 跑起来了，错误会从作者代码内部冒出来而不是指向那次错误的装配。
+
+Composition 不实现 renderer，也不产生另一套 Content——它展开成的树里，显示仍然全部由 Component
+承担。
+
+### 外部数据走冻结快照
+
+NiceEval 读数 join 外部业务数据（工单、预算、人工标注）是 Composition 的正当用途，但**取数不在
+报告里发生**。外部数据在跑报告之前落成一份可序列化快照，`ctx.data` 只读它：
+
+```tsx
+const BudgetReport = defineComposition(async (_props: {}, ctx) => {
+  const performance = await ctx.resolve(sources.measure.rows({
+    dimensions: ["experiment"],
+    measures: [passRate, costUSD],
+  }));
+  const budgets = ctx.data.budgets as BudgetSnapshot;
+
+  return <Table data={joinBudgets(performance, budgets)} />;
+});
+```
+
+快照有两个入口，与报告装载链同形：`--data <file>` 本次运行显式指定，`config.reportData` 是项目
+配置里的缺省。两者都收一份 JSON 可序列化值，装载失败与报告装载失败同级。
+
+**这条边界不是给外部 IO 单独设的。** `expand` 是普通异步回调，它同样能读 `Date.now()`、
+`Math.random()`、环境变量与文件系统。报告树的承诺是「同输入同字节」，对这几样一视同仁：
+
+- **`SitePlan` 的字节恒等保住**——快照是输入的一部分，本地 server 与 `--out` 对同一份快照产出
+  相同字节。
+- **`writeSite` 的全或无保住**——失败源仍是确定性的，一次远端 502 不会让整份站点导不出来。
+- **`show` 不打网络**——Agent 入口的耗时与结果可预期，不会被一个挂住的 HTTP 请求拖死。
+- **时钟与随机数同样禁止**——要时间戳就放进快照。这条能被测试守护：同一份输入跑两次，
+  产出必须逐字节相同。
+
+代价照实说：多一个准备步骤，快照的新鲜度归报告作者。这与 `--record` 已经确立的形状一致——
+报告读的始终是一份冻结的数据，不是一个活的服务。
+
+### Component：同步双面显示
+
+作者用 `defineComponent({ dimensions, enhance, text, web })` 定义新的显示形状。三个 renderer 面
+都必填：`dimensions(data, options)` 声明这份 data 会消费哪些维度值，让管线在 renderer 执行前完成
+页级名称与视觉编码分配；`text` 与 `web` 是同步纯 renderer，共同消费同一份 Content。
+
+Component 没有 `resolve`：**可复用的 NiceEval 数据计算定义为 Source；依赖当前 page input 的
+编排与跨来源 join 定义为 Composition**，否则"谁算数据、谁显示数据"的边界就不存在。
 
 `niceeval/report` 导出数据源、内建原语、渲染组件协议与组合组件；`niceeval/report/react` 只导出
 内建原语及其 Content 类型，而且只接受 data 形态。浏览器包因此不含 Record、Sample、artifact
 或任何磁盘读取能力。作者定义的组件直接随报告文件装载，不需要在第二个入口注册。
 
-resolve 在一次 page 实例内按「同一个数据源对象 + 同一个 input 引用」记忆化。同一页的多个原语
-直接引用同一个 TypeScript source 值即可共享计算。多页也直接 import 或引用这个值，但每个 page
-实例独立 resolve；报告外壳没有 source 注册表，原语也不接受字符串绑定。两个配置相同但分别创建的
-数据源可以各算一次，管线不靠不透明的深相等猜测。
+### 一次 page resolve 的缓存
+
+resolve 在一次 page 实例内按「同一个 Source 对象身份 + 同一个 input 对象身份」记忆化。
+`ctx.resolve(source)` 与 `<Table source={source}>` 命中同一份缓存，所以组合组件先算一遍、
+下面的原语再引用同一个值，只发生一次计算。
+
+**缓存的是 Promise 而不是完成后的值。** 并发请求因此也只计算一次，成功与失败都由同一个 Promise
+广播给本页全部消费者；缓存生命周期止于 page resolve 结束。
+
+同一页的多个原语直接引用同一个 TypeScript source 值即可共享计算。多页也直接 import 或引用这个值，
+但每个 page 实例独立 resolve；报告外壳没有 source 注册表，原语也不接受字符串绑定。两个配置相同
+但分别创建的 Source 可以各算一次，管线不靠不透明的深相等猜测。
+
+**Composition 自己不进这份缓存。** 一个 Composition 节点在一次 page resolve 里展开一次，
+text 与 web 共用同一次展开结果；同一个 Composition 用在两处就是两个节点，各展开一次。它们内部的
+`ctx.resolve(source)` 仍然共享上面那份 Source 缓存。
 
 这个模型保证四条边界：
 
@@ -227,23 +325,29 @@ resolve 在一次 page 实例内按「同一个数据源对象 + 同一个 input
 形状单点定义在 [Library · `ReportNode`](library/layout.md#树的节点reportnode)。宿主管线固定为：
 
 ```text
-装载（规范化外壳与页列表，静态校验）
-  → resolve（展开组合组件 + 执行 source.compute；同层并行、保持声明顺序）
+装载（规范化外壳与页列表，静态校验；不调用 Composition）
+  → resolve（展开 Composition + 执行 source.compute；同层并行、保持声明顺序）
   → validate（逐节点校验双面资格、data 形状与结构节点父子关系）
-  → collect dimensions（收集整页维度值，按维度一次完成名称与色槽分配）
+  → collect dimensions（收集整页维度声明，算最短唯一标签；web 面另算视觉编码）
   → render（纯同步输出终端文本或静态 HTML）
 ```
 
-- **resolve：** 页内唯一的异步 / IO 边界。递归展开组合组件，并行执行同层 Source；
-  同一个 source 与 input 组合只计算一次。未经定义的普通函数和报告树里的 HTML intrinsic 立即拒绝。
-- **validate：** 确保每个渲染组件都有 text / web 两面，data 可序列化且符合组件声明。
-- **collect dimensions：** 调用每个组件的纯 `dimensions(data)`，按维度汇总整页全集后一次计算唯一标签与色槽。
-- **render：** 纯同步。两面消费同一次 resolve 的 data；web renderer 只读页级颜色映射，
-  text renderer 不消费颜色，映射也不改写 data。
+- **装载：** 只规范化并校验外壳、页列表与节点品牌，不执行任何 Composition 的展开回调。
+- **resolve：** 页内唯一的异步边界。调用 Composition 的 `expand(props, ctx)` 并 await 其结果，
+  递归展开返回的子树，并行执行其中同层的 Source；同一个 Source 与 input 组合只计算一次。
+  未经定义的普通函数和报告树里的 HTML intrinsic 立即拒绝。
+- **validate：** 作用在展开后的完整树上，确保每个渲染组件都有 text / web 两面，data 可序列化
+  且符合组件声明。
+- **collect dimensions：** 调用每个组件的纯 `dimensions(data, options)`，汇总整页声明。
+  这一格分两半，语义见[页级呈现分配](components/README.md#维度呈现分配单位是页)：label keyset
+  两面共享，视觉编码规划是 web 面专有。
+- **render：** 纯同步。两面消费同一次 resolve 的 data；映射不改写 data。
 
-renderer 经 `ctx.present(dimension, value)` 同时读取完整身份、唯一标签和页级颜色。自有 React 页面
-没有报告管线，改用 `presentDimension(dimension, values)` 一次传入该维度在页面里的完整值集合。
-不公开单键入口，因为标签去重与颜色撞色消解都需要先知道全集。
+renderer 经 `ctx.dimension(handle)` 按 `dimensions()` 声明的句柄取回这份维度已经算好的呈现，
+再用 `.at(index)` 按数据项位置读单个身份。自有 React 页面没有报告管线，改用
+`presentDimension(declaration)` 一次传入同形状的声明。两处都不公开「传一个值查一个结果」的入口：
+标签去重与视觉编码消解都要先知道全集，而复合键（`` `${agentId}/${model}` ``）只在 `dimensions()`
+里派生一次，renderer 不重新拼。
 
 ### 只有一面能做的事：具名 `enhance` 位
 
@@ -354,7 +458,11 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 
 主题不参与 resolve：它不进 `ctx`，不改变组件树、数据源声明、Content 或任何数值。这条约束是主题能独立分发的根据，也划清了两处容易混淆的分工：
 
-- **页级色分配只产出下标，不产出颜色。** 分配算法读报告外壳的 `dimensionPins` 与页内 keyset，输出每个键的色槽下标；颜色由 `--niceeval-color-series-N` 令牌在 CSS 层给出。换主题因此不触发任何重算，也不改变哪个实验对应哪个槽。
+- **页级视觉编码只产出槽位，不产出颜色。**
+  分配算法读报告外壳的 `dimensionPins` 与页内 visual keyset，输出每个键的 `seriesSlot`
+  （1..24，见[视觉编码容量](components/README.md#视觉编码容量24-个身份)）。
+  颜色由 `--niceeval-color-series-N` 令牌在 CSS 层给出，线型与 pattern 由官方 stylesheet
+  按同一槽位给出。换主题因此不触发任何重算，也不改变哪个实验对应哪个槽。
 - **`appearance` 只决定文档根的 `color-scheme` 与页头是否渲染浅 / 深切换控件。** 选色发生在样式层（`light-dark()`），初始 HTML 无 JavaScript 即为声明的外观；切换控件属增强层，与自定义脚本受同一条不变量约束。
 
 `show` 不装载主题：text 面没有颜色令牌这一层，`--theme` 因此不是它的 flag（[反馈契约](show/reports.md)）。

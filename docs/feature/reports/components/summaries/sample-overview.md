@@ -50,7 +50,7 @@ Experiment 按主读数从高到低预排：通过制按通过率，计分制按
 
 ```tsx
 export const SampleOverview = defineComposition(async (props, ctx) => {
-  const input = props.input ?? ctx.sample;
+  const input = props.input ?? ctx.input;
   const { by, line } = resolveComparisonSeries(input, props);
   const byField = typeof by === "string" ? by : by.name;
   const composition = await scoringComposition(input);

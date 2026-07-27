@@ -6,7 +6,7 @@
 const Hero = defineComposition(async ({ title, className }: HeroProps, ctx) => (
   <HeroCard
     title={title ?? ctx.report.title}
-    data={(await sources.sample.snapshot.compute(ctx.sample)).provenance}
+    data={(await ctx.resolve(sources.sample.snapshot)).provenance}
     className={className}
   />
 ));

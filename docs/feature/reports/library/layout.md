@@ -511,66 +511,145 @@ interface TableProps {
 
 ## 维度呈现
 
-名称与颜色是一份维度呈现结果，不公开两套让作者自己拼接的 helper：
+名称与视觉编码是一份维度呈现结果，不公开两套让作者自己拼接的 helper。分配规则、两个 keyset 与
+24 个身份的容量上界单点声明在[页级呈现分配](../components/README.md#维度呈现分配单位是页)，
+这里只给类型与用法。
+
+组件先声明，再按句柄取回结果：
 
 ```ts
-interface DimensionPresentation {
+type DimensionEncoding =
+  | { readonly kind: "label" }
+  | { readonly kind: "color" }
+  | { readonly kind: "series"; readonly mark: "line" | "scatter" | "bar" | "area" };
+
+interface DimensionDeclaration<E extends DimensionEncoding> {
+  readonly dimension: string;
+  readonly encoding: E;
+  /** 顺序与 renderer 使用的数据项顺序一致；允许重复值。 */
+  readonly values: readonly string[];
+}
+
+type DimensionDeclarations = Readonly<Record<string, DimensionDeclaration<DimensionEncoding>>>;
+```
+
+取回的呈现按声明的编码判别，三种状态各是一支，不用可选的 `color` 把它们混在一起：
+
+```ts
+interface PresentationIdentity {
   /** 完整维度值，作为排序、筛选、React key 与证据身份。 */
-  value: string;
-  /** 当前页 keyset 内生成的显示名。 */
-  label: string;
-  color: {
-    slot: 1 | 2 | 3 | 4 | 5 | 6;
-    /** `var(--niceeval-color-series-N)`。 */
-    css: string;
+  readonly value: string;
+  /** 当前页完整 label keyset 内生成的显示名。 */
+  readonly label: string;
+}
+
+interface LabelPresentation extends PresentationIdentity {
+  readonly kind: "label";
+}
+
+interface ColorPresentation extends PresentationIdentity {
+  readonly kind: "color";
+  /** `var(--niceeval-color-series-N)`。 */
+  readonly color: string;
+}
+
+interface LineSeriesPresentation extends PresentationIdentity {
+  readonly kind: "series";
+  readonly mark: "line";
+  readonly stroke: string;
+  readonly strokeDasharray: string;
+  readonly marker: {
+    readonly path: string;
+    readonly viewBox: string;
+    readonly fill: string;
+    readonly stroke: string;
   };
 }
 
-interface PresentationContext {
-  locale: ReportLocale;
-  present(dimension: string, value: string): DimensionPresentation;
+interface ScatterSeriesPresentation extends PresentationIdentity {
+  readonly kind: "series";
+  readonly mark: "scatter";
+  readonly marker: LineSeriesPresentation["marker"];
 }
 
-function presentDimension(
-  dimension: string,
-  values: readonly string[],
-): ReadonlyMap<string, DimensionPresentation>;
+interface FillSeriesPresentation extends PresentationIdentity {
+  readonly kind: "series";
+  readonly mark: "bar" | "area";
+  /** 颜色，或可直接使用的 `url(#pattern-id)`。 */
+  readonly fill: string;
+  readonly stroke: string;
+  readonly strokeDasharray: string;
+}
+
+type DimensionPresentation =
+  | LabelPresentation
+  | ColorPresentation
+  | LineSeriesPresentation
+  | ScatterSeriesPresentation
+  | FillSeriesPresentation;
+
+type PresentationFor<E extends DimensionEncoding> =
+  E extends { kind: "label" } ? LabelPresentation :
+  E extends { kind: "color" } ? ColorPresentation :
+  LineSeriesPresentation | ScatterSeriesPresentation | FillSeriesPresentation;
+
+interface ResolvedDimension<P> {
+  readonly length: number;
+  at(index: number): P;
+}
+
+interface RenderContext<D extends DimensionDeclarations> {
+  locale: ReportLocale;
+  dimension<K extends keyof D>(handle: K): ResolvedDimension<PresentationFor<D[K]["encoding"]>>;
+}
+
+function presentDimension<E extends DimensionEncoding>(
+  declaration: DimensionDeclaration<E>,
+): ResolvedDimension<PresentationFor<E>>;
 ```
 
-报告管线按 page 收集每个维度的完整值集合后统一生成 label 与 color。`experiment` 的 label 是集合内
-唯一的最短 `/` 路径后缀；其它内建维度使用自己的稳定标签规则，自定义维度缺少专用规则时原样显示
-完整 value。颜色以稳定散列为起点，在同一维度 keyset 内线性探测消解撞色，超过六个值才复用。
+**呈现值可以直接用。** `strokeDasharray`、`marker.path`、`fill` 都是能原样交给 SVG / CSS 属性的值；
+pattern definitions 由运行时注入文档。自定义组件不手写 pattern，也不把枚举名翻译成 SVG——
+否则「声明了 series 却没实现 variant」就会让 7–12 号身份看起来和 1–6 号一模一样。
 
-renderer 只能对自己在 `dimensions(data)` 中声明过的值调用 `ctx.present()`；漏声明时按完整用户反馈
-报错，而不是临时分配。自有 React 页面没有 page 管线，调用 `presentDimension(dimension, values)`
-一次传入该维度的全集。两条入口返回同一种结果；不再公开 `experimentLabels()`、`seriesColors()`、
-单键 hash、颜色 class 或浅色 hex。
+**renderer 按句柄与下标取，不按值查。** 复合键（`` `${agentId}/${model}` ``）只在 `dimensions()`
+里派生一次，renderer 不重新拼，两处派生逻辑因此不可能分叉。`values` 的顺序与 renderer 遍历数据项的
+顺序一致，允许重复值。
+
+`experiment` 的 label 是完整 label keyset 内唯一的最短 `/` 路径后缀；其它内建维度使用自己的稳定
+标签规则，自定义维度缺少专用规则时原样显示完整 value。
+
+未声明的句柄、越界的下标或与声明编码不符的用法按完整用户反馈报错，而不是临时分配。text renderer
+的 `ctx.dimension()` 恒返回 label 面：text 面不上 ANSI 色，拿不到颜色、线型或 pattern。
+
+自有 React 页面没有 page 管线，调用 `presentDimension(declaration)` 传入同一形状的声明。
+两条入口返回同一种结果；不公开 `experimentLabels()`、`seriesColors()`、单键 hash、颜色 class
+或浅色 hex。
 
 ## 自定义渲染组件
 
-`defineComponent` 定义新的双面渲染形状。它不读取输入事实，也没有 `resolve`；所有异步计算都属于
-Source。管线先把 `source` 形态解析成 Content，再把同一份 Content 交给 `dimensions` 与两个 renderer：
+`defineComponent` 定义新的双面渲染形状。它不读取输入事实，也没有 `resolve`：可复用的数据计算属于
+Source，依赖运行期 page input 的编排属于 Composition。管线先把 `source` 形态解析成 Content，
+再把同一份 Content 交给 `dimensions` 与两个 renderer：
 
 ```ts
-interface TextRenderContext extends PresentationContext {
+interface TextRenderContext<D extends DimensionDeclarations> extends RenderContext<D> {
   width: number;
   render(node: ReportNode, width?: number): string;
   attemptCommand?(locator: AttemptLocator): string;
 }
 
-interface WebRenderContext extends PresentationContext {
+interface WebRenderContext<D extends DimensionDeclarations> extends RenderContext<D> {
   attemptHref?(locator: AttemptLocator): string;
 }
 
-type DimensionValues = Readonly<Record<string, readonly string[]>>;
-
-interface ComponentDefinition<Content, Options> {
-  /** 在 render 前声明这份 Content 消费的维度值；不返回 label 或 color。 */
-  dimensions?(data: Content, options: Readonly<Options>): DimensionValues;
+interface ComponentDefinition<Content, Options, D extends DimensionDeclarations> {
+  /** 必填。在 render 前声明这份 Content 消费的维度值与编码；不返回 label 或颜色。 */
+  dimensions(data: Content, options: Readonly<Options>): D;
   /** web 专属交互使用的具名能力；text renderer 必须实现该能力规定的降级。 */
   enhance?: readonly EnhanceCapability[];
-  text(data: Content, options: Readonly<Options>, ctx: TextRenderContext): string;
-  web(data: Content, options: Readonly<Options>, ctx: WebRenderContext): ReactNode;
+  text(data: Content, options: Readonly<Options>, ctx: TextRenderContext<D>): string;
+  web(data: Content, options: Readonly<Options>, ctx: WebRenderContext<D>): ReactNode;
   /** 组件基础样式；在主题 styles 之前加载并按内容 hash 去重。 */
   styles?: readonly ComponentStyle[];
 }
@@ -587,8 +666,8 @@ interface DataComponent<Content, Options> {
   <Input extends SourceInput>(props: DataProps<Input, Content> & Options): ReportElement;
 }
 
-function defineComponent<Content, Options = {}>(
-  definition: ComponentDefinition<Content, Options>,
+function defineComponent<Content, Options, D extends DimensionDeclarations>(
+  definition: ComponentDefinition<Content, Options, D>,
 ): DataComponent<Content, Options>;
 ```
 
@@ -596,21 +675,31 @@ function defineComponent<Content, Options = {}>(
 对象也不进入 context，普通语义色始终从 CSS 令牌读取。
 
 ```tsx
-export const Heatmap = defineComponent<HeatmapContent, { className?: string }>({
+export const Heatmap = defineComponent<HeatmapContent, { className?: string }, HeatmapDimensions>({
   dimensions: (data) => ({
-    agent: data.columns.map((column) => column.agentId),
-  }),
-  text: (data, _options, ctx) => data.columns
-    .map((column) => `${ctx.present("agent", column.agentId).label}: ${column.display}`)
-    .join("\n"),
-  web: (data, options, ctx) => (
-    <div className={options.className ?? "acme-heatmap"}>
-      {data.columns.map((column) => {
-        const agent = ctx.present("agent", column.agentId);
-        return <div key={agent.value} style={{ color: agent.color.css }}>{agent.label}</div>;
-      })}
-    </div>
-  ),
+    columns: {
+      dimension: "agent",
+      encoding: { kind: "color" },
+      values: data.columns.map((column) => column.agentId),
+    },
+  }) as const,
+  text: (data, _options, ctx) => {
+    const agents = ctx.dimension("columns");
+    return data.columns
+      .map((column, index) => `${agents.at(index).label}: ${column.display}`)
+      .join("\n");
+  },
+  web: (data, options, ctx) => {
+    const agents = ctx.dimension("columns");
+    return (
+      <div className={options.className ?? "acme-heatmap"}>
+        {data.columns.map((_column, index) => {
+          const agent = agents.at(index);
+          return <div key={agent.value} style={{ color: agent.color }}>{agent.label}</div>;
+        })}
+      </div>
+    );
+  },
   styles: [{ src: new URL("./heatmap.css", import.meta.url) }],
 });
 
@@ -618,23 +707,27 @@ export const Heatmap = defineComponent<HeatmapContent, { className?: string }>({
 <Heatmap data={content} className="benchmark-heatmap" />
 ```
 
+`dimensions` 的键 `columns` 是句柄名，`dimension` 字段才是页级 keyset 的维度名。两者分开，
+所以同一个组件可以按两个不同句柄消费同一个维度的两组值。
+
 组件自己的 class 使用自己的前缀；`niceeval-*` 保留给官方宿主和组件。组件样式读取公开
 `--niceeval-*` 令牌，不复制主题 hex。`src` 使用 URL 而不是相对字符串，使 npm 包里的组件样式
 始终相对组件模块解析。
 
-缺任一 renderer、renderer 返回 Promise、`dimensions` 返回空维度名或空值、Content 不可序列化，
-都按完整用户反馈拒绝。web renderer 可以返回 HTML intrinsic；报告树顶层仍不能直接放 `<div>`，
+缺 `dimensions` 或任一 renderer、renderer 返回 Promise、`dimensions` 返回空维度名或空值、
+Content 不可序列化，都按完整用户反馈拒绝。不消费维度的组件显式写 `dimensions: () => ({})`，
+省略不是一种合法取值。web renderer 可以返回 HTML intrinsic；报告树顶层仍不能直接放 `<div>`，
 因为那样没有 text 面。
 
-## 自定义组合组件
+## Composition
 
-只计算、加工并排列已有组件时使用 `defineComposition`：
+`defineComposition` 拿到当前 page 的输入，编排 Source、加工 Content，再返回组件树：
 
 ```tsx
 import { Section, Table, defineComposition, sources } from "niceeval/report";
 
 export const CostliestAttempts = defineComposition(async ({ limit = 10 }: { limit?: number }, ctx) => {
-  const content = await sources.entity.attempts.compute(ctx.sample);
+  const content = await ctx.resolve(sources.entity.attempts);
   const ranked = [...content.rows]
     .sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
   return (
@@ -648,9 +741,22 @@ export const CostliestAttempts = defineComposition(async ({ limit = 10 }: { limi
 <CostliestAttempts limit={10} />
 ```
 
-组合组件在 resolve 阶段展开为它返回的树；它不需要 renderer，因为它不产生新的视觉形状。
-`ComposeContext` 携带 `sample`、`record`、规范化后的 `report` 与当前 `page`，但不携带主题或颜色。
-名称与颜色都由最终 renderer 通过 `ctx.present()` 读取。
+展开回调可以是同步或 `async`，返回值类型是 `MaybePromise<ReportNode>`；管线在 resolve 阶段
+await 它，再递归展开返回的树。Composition 不需要 renderer，因为它不产生新的视觉形状。
+
+`CompositionContext` 只携带 `input`、`data`、`page`、`signal` 与 `resolve()`——**不携带主题、
+`dimensionPins` 或任何颜色**。能读钉色的 Composition 可以按颜色改变返回的树，页级呈现分配
+就失去纯函数性质。
+
+`ctx.data` 是运行前冻结的外部数据快照，由 `--data <file>` 或 `config.reportData` 提供。
+展开回调里不发起外部请求，也不读时钟、随机数或文件系统：报告树承诺同输入同字节，
+要外部事实就先把它冻进快照（见
+[Architecture · 外部数据走冻结快照](../architecture.md#外部数据走冻结快照)）。
+名称与视觉编码都由最终 renderer 通过 `ctx.dimension()` 读取。
+
+取 Source 写 `await ctx.resolve(source)`，不写 `source.compute(ctx.input)`——后者绕开 page 级
+缓存，同一份计算会做两遍。完整签名与缓存语义见
+[Architecture · Composition](../architecture.md#composition运行期编排)。
 
 ## 相关阅读
 

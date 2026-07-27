@@ -44,6 +44,17 @@ interface RunSpec {
 
 ## 覆盖规范
 
+- **Notice 解释单源**（[Present: Notice](../../../error-feedback.md#present-notice)）：
+  `NoticeCatalog` 对内建 code 穷尽登记——**缺一条要编译不过**，这一格靠映射类型而不是运行时断言。
+  再覆盖：
+
+  - `NiceEvalError.message` 与同一条 catalog 条目**同源**：改 catalog 文案，`message` 跟着变。
+    区分力场景是两处不能各写一份——断言 `message` 不是手写常量。
+  - `NoticeAction` 是闭集，每个 kind 在 CLI 与 web 各有一个投影；投影函数按 kind 而不是按 code
+    分支（新增一个 code 不需要动任何宿主投影，这是这条的区分力）。
+  - 未知第三方 code 走 fallback 时，输出仍带一条保守下一步，不是只有 code 与 detail。
+  - Issue 与 observation 都不带 message / severity / action——断言这些字段在数据形状上不存在。
+
 - **`latestRunSample`**：每个 Experiment 只取最新一次 Run。不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
   该 Run 没跑的 Eval 进 `coverage.missingEvalIds`，不从旧 Run 补。
 - **`currentSample`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准

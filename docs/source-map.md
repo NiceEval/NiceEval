@@ -271,7 +271,7 @@
   函数及 `ExperimentList`、`MetricTable`、`ScopeSummary` 为主。Table 原语是迁移路径的局部基础。
 - **Reports 目标公开面是 Source 与 Component。** 它包含 `defineMeasure` / `Measure`、受限的
   `Source<Input extends SourceInput, Content>`、通用 Content、Chart / Callouts 与 `SampleOverview`。
-  页级呈现统一为 `dimensions(data)`、`ctx.present(...)` 与 `presentDimension(...)`。
+  页级呈现统一为 `dimensions(data)`、`ctx.dimension(...)` 与 `presentDimension(...)`。
 - **Eval source 调用树待补齐。** `SourceLoc` 只有单帧位置，`captureLoc()` 找到第一帧即返回；
   helper 源码仍在 Attempt 收尾批量读取，读取失败直接跳过。`SourceArtifact` 没有唯一
   `role: "entry"`，spine / detached / unavailable 树与 `projectSourceView()` 均缺失。

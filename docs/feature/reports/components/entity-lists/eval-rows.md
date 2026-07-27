@@ -4,7 +4,7 @@
 父行显示折叠判定、Attempt 数、聚合分数、平均耗时与平均成本,但不复述任一轮的失败内容。
 
 ```tsx
-const content = await sources.entity.evals.compute(ctx.sample);
+const content = await ctx.resolve(sources.entity.evals);
 const rows = content.rows.filter((row) => row.cells.verdict.verdict !== "passed");
 <Table data={{ ...content, rows }} />
 ```

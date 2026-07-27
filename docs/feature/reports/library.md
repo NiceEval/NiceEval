@@ -1,11 +1,12 @@
 # Reports —— 库用法
 
-`niceeval/report` 的第一层公开模型只有两类对象：
+`niceeval/report` 的公开模型有三类对象：
 
-- `sources.*` 与 `defineSource(...)` 负责计算 Content；
-- `Table`、`Chart` 与 `defineComponent(...)` 负责把 Content 显示成 text / web。
+- `sources.*` 与 `defineSource(...)` 负责计算可复用的 Content；
+- `defineComposition(...)` 拿到运行期 page input，编排多个 Source 并加工 Content；
+- `Table`、`Chart` 与 `defineComponent(...)` 负责把一份 Content 显示成 text / web。
 
-`SampleOverview`、`AttemptDetail` 等 `defineComposition` 组合组件负责进阶装配，不是新的数据或显示协议。
+`SampleOverview`、`AttemptDetail` 等官方 Composition 兼任裸跑时的具名默认装配。
 
 `niceeval/report/react` 只导出原语的纯 web renderer 与可序列化 Content 类型。它不导出数据源、
 组合组件或任何会读取 Record 与 artifact 的代码。
@@ -130,7 +131,7 @@ import { Table, defineComposition, sources } from "niceeval/report";
 
 export const CostliestAttempts = defineComposition(
   async ({ limit = 10 }: { limit?: number }, ctx) => {
-    const content = await sources.entity.attempts.compute(ctx.sample);
+    const content = await ctx.resolve(sources.entity.attempts);
     const rows = [...content.rows]
       .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
       .slice(0, limit);
@@ -144,9 +145,11 @@ export const CostliestAttempts = defineComposition(
 收窄 Eval 时，在 Source options 或显式 input 中声明，Component props 不承担计算筛选。
 
 需要内建原语表达不了的新形状时，使用 `defineComponent({ dimensions, enhance, text, web })`。
-两个 renderer 消费同一份 Content；只排列已有组件时继续使用 `defineComposition`，不重复写 renderer。
-报告树内用 `ctx.present("experiment", experimentId)` 同时读取身份、页内唯一标签与颜色；自有 React
-页面用 `presentDimension("experiment", experimentIds)` 一次传入全集。完整规则见[呈现算法](library/layout.md#呈现算法)。
+两个 renderer 消费同一份 Content；要编排多个 Source 时用 `defineComposition`，不在组件里重新取数。
+报告树内先在 `dimensions()` 里声明维度与编码，renderer 用 `ctx.dimension(handle).at(index)`
+取回身份、页内唯一标签与视觉编码。
+自有 React 页面用 `presentDimension(declaration)` 传入同形状的声明。
+完整规则见[维度呈现](library/layout.md#维度呈现)。
 
 ## 嵌入自己的 React 页面
 

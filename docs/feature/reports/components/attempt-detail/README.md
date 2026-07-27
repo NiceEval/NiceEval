@@ -118,8 +118,8 @@ interface AttemptSources {
 ```tsx
 export const AttemptNotices = defineComposition(async (_props, ctx) => {
   const [snapshot, diagnostics] = await Promise.all([
-    sources.attempt.snapshot.compute(ctx.page.evidence),
-    sources.attempt.diagnostics.compute(ctx.page.evidence),
+    ctx.resolve(sources.attempt.snapshot),
+    ctx.resolve(sources.attempt.diagnostics),
   ]);
   return <Callouts data={classifyAttemptIssues(snapshot, diagnostics)} />;
 });

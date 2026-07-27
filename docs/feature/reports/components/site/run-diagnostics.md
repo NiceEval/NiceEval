@@ -24,8 +24,8 @@ experiment id 字典序排列，同一实验内按 `startedAt` 从新到旧排�
 ```tsx
 export const RunNotices = defineComposition(async (_props, ctx) => {
   const [snapshot, diagnostics] = await Promise.all([
-    sources.sample.snapshot.compute(ctx.sample),
-    sources.run.diagnostics.compute(ctx.sample),
+    ctx.resolve(sources.sample.snapshot),
+    ctx.resolve(sources.run.diagnostics),
   ]);
 
   return <Callouts data={classifyRunIssues(snapshot, diagnostics)} />;

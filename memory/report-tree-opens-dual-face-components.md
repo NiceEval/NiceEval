@@ -1,15 +1,18 @@
-# Reports 收敛为 Source 与 Component；公共 CSS 使用完整 NiceEval 前缀
+# Reports 收敛为受限 Source 与双面 Component；公共 CSS 使用完整 NiceEval 前缀
 
 **日期**：2026-07-27
 
+> **本条的模型计数已被 [[report-authoring-three-concept-model]] 推翻**（同日拷问）：
+> 「第一层公开模型只有 Source 与 Component」「`defineComposition` 是装配宏」两句不再成立。
+> 本条其余裁决（Source 受限输入、双面必填、Issue / Notice 分层、Chart 共用 Dataset、
+> CSS 前缀）继续有效。
+
 ## 裁决
 
-Reports 的第一层公开模型只有 Source 与 Component。`Source<Input extends SourceInput, Content>` 只查询
-`.niceeval` 的 Sample / AttemptEvidence，并通过 `compute()` 负责全部异步计算；外部业务数据走 Component
-的 `data` 形态。Summary 与 Notice 是对 snapshot / Measure / persisted diagnostics 的产品解释，不是 Source。
+`Source<Input extends SourceInput, Content>` 只查询 `.niceeval` 的 Sample / AttemptEvidence。
+Summary 与 Notice 是对 snapshot / Measure / persisted diagnostics 的产品解释，不是 Source。
 `defineComponent` 定义的新渲染形状只消费可序列化 Content，必须提供同步的 `text`
 与 `web` renderer，不能另设 `resolve`。Component 只接受互斥的 `source` / `data` 两种形态。
-只计算、加工并装配已有组件的宏使用进阶的 `defineComposition`，不实现 renderer。
 
 写入、读取与呈现进一步拆开：`.niceeval` 只持久化 Error / Diagnostic observation；Sample 在读取与
 选择时产生可重算的 `SampleIssue`；Notice policy 才生成 locale 文案、严重度和 action。Issue 与

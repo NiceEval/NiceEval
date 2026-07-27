@@ -177,14 +177,19 @@ export const budgets = defineSource<Sample, TableContent<BudgetRow>>({
 </Table>
 ```
 
-需要加工时显式计算，再走 `data` 形态；默认列仍随 Content 保留：
+需要加工时在 Composition 里算，再走 `data` 形态；默认列仍随 Content 保留：
 
 ```tsx
-const content = await budgets.compute(sample);
-const rows = content.rows.filter((row) => row.cells.spend.measure.value !== null);
+export const MeasuredBudgets = defineComposition(async (_props: {}, ctx) => {
+  const content = await ctx.resolve(budgets);
+  const rows = content.rows.filter((row) => row.cells.spend.measure.value !== null);
 
-return <Table data={{ ...content, rows }} />;
+  return <Table data={{ ...content, rows }} />;
+});
 ```
+
+报告文件顶层没有 page input，不在那里取数。报告管线之外的独立库程序自带 `sample`，那里直接
+`await budgets.compute(sample)`——只是没有 page 也就没有那份缓存。
 
 三条纪律：
 

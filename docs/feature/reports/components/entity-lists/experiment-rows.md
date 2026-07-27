@@ -101,7 +101,7 @@ Status      Eval / Attempt              Score   Result                          
 ```tsx
 // 过滤后的层级行：组合组件里手工计算，再用普通 JavaScript 收窄
 export const ProdExperiments = defineComposition(async (_props: {}, ctx) => {
-  const content = await sources.entity.experiments.compute(ctx.sample);
+  const content = await ctx.resolve(sources.entity.experiments);
   return <Table data={{
     ...content,
     rows: content.rows.filter((row) => row.key.startsWith("prod/")),

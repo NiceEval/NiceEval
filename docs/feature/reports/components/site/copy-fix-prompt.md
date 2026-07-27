@@ -5,7 +5,7 @@
 
 ```tsx
 export const SampleFixPrompt = defineComposition(async (_props, ctx) => {
-  const attempts = await sources.entity.attempts.compute(ctx.sample);
+  const attempts = await ctx.resolve(sources.entity.attempts);
   const failures = attempts.rows.filter(isActionableFailure);
   if (failures.length === 0) return null;
 

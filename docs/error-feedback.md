@@ -15,6 +15,9 @@ user-facing Notice
 这条边界让同一份记录可以在 CLI、静态网页、CI 和自有产品中重新解释,而不会把某个
 版本的英文文案、严重度 policy 或修复命令冻结在 `.niceeval` 里。
 
+**分开的是「事实」与「解释」,不是把解释也分散。** 解释有唯一产地 `NoticeCatalog`,
+宿主只投影,不各写一份文案(见[Present: Notice](#present-notice))。
+
 ## 三层契约
 
 ### Write: observation
@@ -46,39 +49,81 @@ code 和结构化字段分支,不从人话里正则提取事实。Sample 的公�
 
 ### Present: Notice
 
-Notice policy 消费 Issue 与已经投影好的其它事实,产生读者可见的:
+**解释有唯一产地:`NoticeCatalog`。** 事实单源和解释单源是同一条原则——文案散在 N 个宿主 policy
+里各写一份,CLI 说的下一步和网页说的下一步迟早不一致,和「各 page 自己算数字」是同一种病。
 
-- 本地化 title 与 detail;
-- `info | warning | error` 严重度;
-- 分组、去重与可见性;
-- 适用于当前宿主的 action,包括可复制 command、定位动作或忽略条件。
+```ts
+interface NoticeDefinition<I extends Issue> {
+  severity(issue: I): "info" | "warning" | "error";
+  title(issue: I, locale: Locale): string;
+  detail(issue: I, locale: Locale): string;
+  action(issue: I): NoticeAction;
+}
 
-用户可见的 Notice 必须说清现象、依据与下一步。这是 Notice policy 的责任,不是 writer 或
-Issue 数据形状的责任。同一个 Issue 在 CLI 可以给出一条命令,在嵌入式产品中可以映射为
-链接或按钮;两者不改变底层 Issue。
+type NoticeCatalog = { readonly [C in KnownIssueCode]: NoticeDefinition<IssueFor<C>> };
+```
+
+Catalog 拥有语义、文案与下一步;宿主 policy 只决定**可见性、分组、去重**和**怎样把 action 投影
+成自己的交互**。内建 code 必须穷尽登记——`NoticeCatalog` 的映射类型让漏一条编译不过,
+不靠自觉。
+
+**action 是结构化闭集,不是命令字符串。**
+
+```ts
+type NoticeAction =
+  | { kind: "rerun"; experimentId: string; evalIds?: readonly string[] }
+  | { kind: "edit"; file: string; field?: string }
+  | { kind: "external"; url: string }
+  | { kind: "ignorable"; when: LocalizedText };
+```
+
+CLI 把 `rerun` 投成 `niceeval exp <id>` 一行可复制命令,web 投成按钮,嵌入式产品投成自己的路由。
+**宿主写的是每类 action 一个投影函数,不是每个 code 一个适配器**——N×M 因此塌成 N+M。
+新增 action kind 要回这张表登记;找不到诚实投影形态的能力不该做成 action,和
+[`enhance` 能力位](feature/reports/architecture.md#只有一面能做的事具名-enhance-位)同一条纪律。
+
+**未知 code 的 fallback 也必须带下一步。** 第三方 producer 写的 code 不在 catalog 里时,
+显示原始 `detail` 与 `context`,并给出一条保守的下一步:检查产生这条记录的组件版本。
+只打印 code 和 detail 不算合格——「给不出下一步的报错是缺陷,与算错数字同级」对 fallback 同样成立。
+
+## 库错误类
+
+`catch (error) { console.error(error.message) }` 是 niceeval 作为 library 的主要用法,所以
+`message` 必须自足、带下一步。它同时不能变成第二个文案产地:
+
+```ts
+class NiceEvalError extends Error {
+  readonly code: KnownIssueCode;
+  readonly context: IssueContext;
+}
+```
+
+**`message` 由 catalog 在构造时用默认 locale 渲染,不手写。** 作者只在 catalog 写一次三段式,
+`err.message` 是它的投影,CLI 与产品宿主走 `code` + `context` 本地化——两条路一个产地。
+CLI 不从 `Error.message` 正则抠命令,但这不等于 `message` 可以没有下一步。
 
 ## 即时 CLI 错误
 
 argv 解析、config 加载、记录根打开和报告装载失败时没有 `.niceeval` observation 可写。CLI 仍先构造
-一个瞬时结构化 Issue,再由 CLI policy 渲染两行反馈:
+一个瞬时结构化 Issue,再经同一份 catalog 渲染两行反馈:
 
 ```text
 error: unknown option '--agnet'
   fix: use --agent <name>; run `niceeval --help` for the flag list
 ```
 
-第一行说现象与依据,第二行给当前 CLI 可执行的下一步。瞬时 Issue 同样不带文案或 action;
-两行文本都由 CLI policy 产生。库错误类保留稳定 code 与结构化 context,CLI 不从 `Error.message`
-解析修复命令。
+第一行说现象与依据,第二行是 catalog 里那条 action 的 CLI 投影。瞬时 Issue 同样不带文案,
+它和落盘 Issue 走同一条解释链,不另开一套。
 
 ## 新增问题的义务
 
 1. 在事实拥有者处定义稳定 code 和最小结构化证据,并说明它是 persisted observation 还是
    read/select Issue。
 2. observation 只记录 detail/context,不写操作建议;Issue 只投影事实,不写渲染文案。
-3. 在需要呈现它的每个 Notice policy 中登记本地化文案、严重度和下一步;未知 code 必须有保守 fallback。
+3. 在 `NoticeCatalog` 登记这条 code 的严重度、文案与 action——**只登记一次**,
+   宿主不重复写文案。action 用不上现有 kind 时先回闭集登记新 kind 并给出各宿主投影。
 4. 测试分层证明:写入测试断言 observation 事实,读取测试断言 Issue 投影,呈现测试断言
-   Notice 文案与动作。
+   catalog 文案与 action 投影;并断言 `NiceEvalError.message` 与同一条 catalog 条目同源。
 
 ## 相关阅读
 

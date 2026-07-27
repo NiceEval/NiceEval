@@ -32,7 +32,7 @@ interface SampleSummaryProps {
 
 ```tsx
 export const SampleSummary = defineComposition(async (props, ctx) => {
-  const input = props.input ?? ctx.sample;
+  const input = props.input ?? ctx.input;
   const snapshot = await sources.sample.snapshot.compute(input);
   const composition = await scoringComposition(input);
   const measures = composition === "pass"

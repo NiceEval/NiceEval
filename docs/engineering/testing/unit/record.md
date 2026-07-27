@@ -46,8 +46,22 @@ interface AttemptSpec {
   与 Run 级 diagnostics；`result.json` 只含 attempt 级事实（Run 级字段以「不存在」断言）；不落
   `runId` / `invocationId` / Run
   Manifest 或跨实验成员关系；目录独占创建与撞名重试；artifact 缺省不生成、`null` 与 `[]`
-  语义分离；截断唯一落点与 UTF-8 字符边界；源码两层落盘按内容哈希去重；locator 确定性派生与携带条目原样复制不重算；目录名只是清洗投影、权威身份在字段；轮标签在
+  语义分离；截断唯一落点与 UTF-8 字符边界；源码两层落盘按内容哈希去重；locator 确定性派生与携带条目原样复制不重算；目录名只是可逆编码投影、权威身份在字段；轮标签在
   `diff.json`/时间树/send 标注三处逐字相等。
+
+- **身份与编码**（[locator 的唯一性](../../../feature/record/architecture.md#locator-的唯一性)）：
+
+  - `runId` 在一份已持久化 Run 内恒定，目录改名 / 移动后读回同值；同一 experimentId + startedAt
+    重跑得到**不同**的 runId——区分力场景要证明它不可从业务身份重建。
+  - 目录名编码可逆：`encode` 后 `decode` 回完整 `experimentId`；两个只在非安全字符上不同的 id
+    编码后**不撞**同一目录名（旧的有损清洗会撞，这是这条的区分力）；`.` / `..` 整段编码后
+    不具路径语义。
+  - locator 形态是 `@` + scheme + 12 位 Crockford base32，共 14 字符；由 `{runId, evalId, attempt}`
+    派生，同元组恒同值。
+  - **碰撞两侧**：写入侧登记时命中已存在且身份元组不同，抛 `LocatorCollisionError` 并中止该
+    attempt，不覆盖也不换值；读取侧 `resolveLocator` 命中多条抛 `AmbiguousLocatorError`
+    并列出候选，不返回其中任意一条。三种失败（`Malformed` / `NotFound` / `Ambiguous`）
+    各自可分辨。
 - **读取分类**：schemaVersion 不匹配（不论新旧）、坏 JSON、缺 run.json、legacy 启发式各归各的 skipped
   reason 且携带诊断字段；无关 JSON 静默忽略；未知可选字段与未知 artifact 被接受；未收尾 Run 不是 skipped、attempt 照常可读。每类坏数据用形成该分类的最小文件构造。
 - **身份**：身份键四字段全部可从数据读到（`experimentId` / `evalId` 直达，`attempt` / `startedAt`

@@ -8,22 +8,28 @@
 
 ## 结论
 
-采纳 [PLAN-2](PLAN-2.md) 的取数结论，并把作者面进一步收敛成两个核心概念：
-**Source 负责计算 Content，Component 负责显示 Content**。不引入 SQL，也不引入按视图命名的专用组件。
+采纳 [PLAN-2](PLAN-2.md) 的取数结论，作者面是三个核心概念：
+**Source 计算可复用 Content，Composition 在运行期编排，Component 显示 Content**。
+不引入 SQL，也不引入按视图命名的专用组件。
 
-两条轴各得到一个答案：
+三个概念各得到一个答案：
 
 - **Source 只有一种协议。** `Source<Input extends SourceInput, Content>` 与 `defineSource(...)` 是唯一
-  `.niceeval` 查询接口；输入只允许 Sample / AttemptEvidence，外部业务数据直接走 Component `data`。表格默认字段
-  与 rows 由同一次 `compute()` 返回，但字段描述不含本地化 label 或布局；不存在 `DataSource` / `RowSource` 两套平行抽象。
+  `.niceeval` 查询接口；输入只允许 Sample / AttemptEvidence。表格默认字段
+  与 rows 由同一次 `compute()` 返回，但字段描述不含本地化 label 或布局；只有这一个定义入口。
+- **Composition 是运行期编排概念。** `defineComposition((props, ctx) => MaybePromise<ReportNode>)`
+  拿到当前 page 的 `ctx.input`，用 `ctx.resolve(source)` 取多个 Source，再返回组件树。
+  它是作者模型的第三个概念，不是只能排列已有组件的宏。
+  `await` 在报告树里只有这一个合法产地，降级成装配宏就没有地方写「取两个 Source 再 join」。
 - **Component 只有 source / data 两种用法。** 管线把 source 计算成 Content 后才进入 renderer；
   renderer 看不到 Source、Sample、Record，也没有自己的 `resolve` 取数面。
 - **数据由类型化声明提供。** 读数、维度与聚合方向写在 TypeScript 里，
   作者面不出现查询语言。
 - **报告树对双面 Component 开放。** 作者可以用 `defineComponent` 增加新的视觉形状，
-  但必须同时实现 text 与 web renderer；只装配已有组件的宏使用 `defineComposition`。
-- **名称与颜色是一份维度呈现。** `dimensions(data)` 让管线提前收集全集，renderer 通过
-  `ctx.present(dimension, value)` 同时取得身份、页内唯一标签和颜色；自有页面使用 `presentDimension(...)`。
+  但必须同时实现 text 与 web renderer。
+- **名称与视觉编码是一份维度呈现。** `dimensions(data)` 让管线提前收集全集并按句柄命名，renderer 通过
+  `ctx.dimension(handle).at(index)` 取得身份、页内唯一标签和视觉编码；自有页面使用 `presentDimension(...)`。
+  编码容量是 6 色 × 4 形状变体共 24 个身份，超出即拒绝该页，不静默复用。
 - **Summary 与 Notice 不属于 Source。** `sample.snapshot` / `attempt.snapshot` 返回中性事实；默认 KPI、
   本地化解释、严重度与动作由 Component / Composition 决定。读取 / 选择层产生可重算的
   `SampleIssue`，不把 message / command 写入 `.niceeval`；persisted diagnostics 只保存 observation。
@@ -73,8 +79,14 @@ PLAN-1 唯一真正的优势是一行出一页。这个优势被组合组件接�
 作者从「一行」走到「逐块改」不换心智模型，
 [PLAN-2 的五级改法](PLAN-2.md#五级改法一级比一级深)每一级都不需要库先加一个 prop。
 
-组合组件由 `defineComposition` 定义。`defineComponent` 留给真正产生新渲染形状、同时实现两面的组件，
+组合由 `defineComposition` 定义。`defineComponent` 留给真正产生新渲染形状、同时实现两面的组件，
 避免一个叫 component 的 API 实际只能返回其它组件。
+
+**为什么 Composition 是概念而不是装饰能力。** 报告树在 render 阶段是纯同步的，resolve 是唯一的
+异步格位，而 Component 没有 `resolve`。于是「取两个 Source 再 join」「按运行期输入决定画哪几块」
+这类写法在 Source 与 Component 之外没有落点：Source 只看得见自己那一份输入，Component 只看得见
+算好的 Content。把它记成两个概念要求作者先在文档里读到「组合组件」才知道 `await` 写在哪，而那是
+第一个非玩具报告就会撞上的问题。三个概念是如实计数，不是加了一层。
 
 ### 灵活提问由普通 JavaScript 承担
 

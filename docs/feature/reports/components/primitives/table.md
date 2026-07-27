@@ -60,10 +60,47 @@ interface ColumnProps {
 而默认列序会随数据源演进，插入位置无法稳定表达。要在默认基础上增删，
 读取 `TableContent.columns` 自己拼，那是普通 JavaScript。
 
+## 单元格类型
+
+`Table` 的一格、`Grid` / `Stat` 的一个主值都是同一个判别联合。它是**官方表格数据协议**的标准
+值封装：官方 Source 负责把领域事实折成这几种格子之一，数据型内建原语按 `kind` 渲染。自定义
+Source 配自定义 Component 时不必经过它（[全局协议只有 Content](../README.md#全局协议只有-content)），
+但自定义数据要交给 `Table` / `Chart` / `Stat` 就必须适配成这个形状。
+
+```ts
+type Cell =
+  /** 官方读数格：value + format 由 renderer 格式化，samples / total / refs 保住覆盖率与下钻。 */
+  | { kind: "measure"; measure: MeasureCell }
+  /** 判定：单个 verdict，或 passed / failed / errored / skipped 的计票。 */
+  | { kind: "verdict"; verdict?: Verdict; counts?: VerdictCounts }
+  /** 挣分：earned 恒有；possible 只有固定题集这类有分母的读数才给。 */
+  | { kind: "score"; earned: number; possible?: number }
+  /** 单行结果摘要，more 是「还有几条没显示」。 */
+  | { kind: "summary"; text: string; more?: number }
+  /** attempt 身份；staleSinceMs 存在即历史执行，渲染成时距标注。 */
+  | { kind: "locator"; locator: AttemptLocator; staleSinceMs?: number }
+  /** 身份或自由文本，detail 是副行。 */
+  | { kind: "text"; text: string; detail?: string }
+  /** 这一格不适用（通过制行的总分格）：与「测不了」严格分开。 */
+  | { kind: "notApplicable" }
+  /** 覆盖缺口：结构化原因；renderer 的 Notice policy 决定文案与补跑 action。 */
+  | { kind: "missing"; code: string; data?: JsonValue };
+```
+
+三条不变量跨原语成立：
+
+- **`measure` 格永远带证据。** Source 不得把 `MeasureCell` 压成字符串塞进 `text` 格——
+  压了就丢掉 `samples` / `total` / `refs`，读者看到一个数却点不开它是从哪几条 attempt 来的。
+- **`notApplicable` 与 `missing` 不合并。** 前者是「这个读数对这一行没有意义」，
+  后者是「本该有却没跑到」；合成一个空格子，覆盖缺口就从表里消失了。
+- **`summary` 的文本已经折好。** 摘要在 Source 里按
+  [Assertion display 契约](../../../assertions/library/display.md#主失败断言怎样选)
+  算完，渲染面只做宽度截断，不重算。
+
 ## 单元格渲染
 
-这一节是[单元格类型](../README.md#单元格类型)在两个面的渲染契约，全部原语照抄同一份。
-数据源只决定一格是哪个 `kind`，不决定它长什么样。
+下面是上一节每个 `kind` 在两个面的渲染契约，全部数据型原语照抄同一份。
+Source 只决定一格是哪个 `kind`，不决定它长什么样。
 
 | `kind` | web 面 | text 面 |
 |---|---|---|
@@ -131,7 +168,7 @@ text 面按显示宽度对齐（CJK 与全角记 2 列），身份列有宽度�
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 四层模型、单元格类型与结构节点规则。
+- [组件树](../README.md) —— 三概念模型、全局 Content 协议与结构节点规则。
 - [数据源目录](../sources/README.md) —— 官方数据源的行形状与默认列。
 - [`Grid` / `Stat`](stat-grid.md) —— 同一套单元格类型的读数网格投影。
 - [读数与维度](../../library/measures.md) —— `MeasureCell` 与聚合口径。

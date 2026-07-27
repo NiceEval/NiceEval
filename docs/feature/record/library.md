@@ -170,16 +170,16 @@ Sample 层据此产出 [`dangling-evidence`](../sample/library.md#issue-code-全
 
 ## 按 locator 寻址一个 attempt:`resolveLocator`
 
-`AttemptLocator` 是 attempt 的不透明短标识(`@` + 1 位 scheme 字符 + 7 位 base36 body,如
-`@1x7f3q9k`),由 `{experimentId, Run 的 startedAt, evalId, attempt}` 这个不可变身份元组确定性
-派生——不是数组下标,也不编码磁盘路径。用户从 `niceeval show` 的输出、报告或 view 深链里复制到
+`AttemptLocator` 是 attempt 的不透明短标识,不是数组下标,也不编码磁盘路径。它的字符形态与派生
+元组单点声明在 [Architecture · `AttemptRecord`](architecture.md#attemptrecord),本页不复述——
+两处各写一份,迟早给出两个互斥的格式。用户从 `niceeval show` 的输出、报告或 view 深链里复制到
 一个 locator,拿它回到库里定位同一个 attempt:
 
 ```typescript
 import { openRecord, resolveLocator, LocatorNotFoundError, MalformedLocatorError } from "niceeval/record";
 
 const record = await openRecord(".niceeval");
-const attempt = resolveLocator(record, "@1x7f3q9k");   // → AttemptHandle
+const attempt = resolveLocator(record, locatorFromShowOutput);   // → AttemptHandle
 console.log(attempt.evalId, attempt.result.verdict);
 ```
 

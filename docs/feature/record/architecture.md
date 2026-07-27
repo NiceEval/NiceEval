@@ -105,7 +105,11 @@ interface RunMeta {
   format: "niceeval.results";
   schemaVersion: number;
   producer: { name: string; version?: string; commit?: string };
-  /** Run 的权威身份；创建时生成 UUID v4，复制、发布和目录改名都不改变。 */
+  /**
+   * Run 的权威身份;创建时生成 UUID v4。它在一份已持久化 Run 内恒定,复制、发布、目录改名与
+   * 同毫秒并发创建都不改变它——但它**不可从业务身份重建**:同一个 experimentId + startedAt
+   * 重跑一次得到的是另一个 runId,只有 `run.json` 里存着这一个权威值。
+   */
   runId: string;
   /** 权威的实验身份;实验目录名是它的清洗投影。 */
   experimentId: string;
@@ -260,12 +264,13 @@ interface AttemptRecord {
     reuseOrdinal?: number;
   };
   /**
-   * 不透明的 Attempt 定位符:`@` + 1 位 scheme 字符 + 20 位 Crockford base32 body。
-   * 由 `{runId, evalId, attempt}` 的 SHA-256 前 100 bit 确定性派生——
-   * 不是数组下标、不是磁盘路径。fresh 条目在 attempt 调度前由 runner 算出并贯穿执行、留存登记与落盘;
+   * 不透明的 Attempt 定位符:`@` + 1 位 scheme 字符 + 12 位 Crockford base32 body(共 14 字符)。
+   * 由 `{runId, evalId, attempt}` 的 SHA-256 前 60 bit 派生——不是数组下标、不是磁盘路径。
+   * fresh 条目在 attempt 调度前由 runner 算出并贯穿执行、留存登记与落盘;
    * 携带条目(见下)原样复制上一轮的值，从不按承载它的新 Run 重算。
    * `niceeval show @<locator>` 与报告 / view 的 attempt 深链都靠它寻址,详见
    * [Library · 按 locator 寻址一个 attempt](library.md#按-locator-寻址一个-attemptresolvelocator)。
+   * 唯一性作用域与碰撞语义见下方[locator 的唯一性](#locator-的唯一性)。
    */
   locator?: string;
   /** 携带条目专用: artifact 目录(相对记录根目录),指向原 Run 里的落盘。 */
@@ -731,6 +736,29 @@ view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则
 `truncated` 是新增可选字段,按[版本规则](#版本与升级设计)不递增 `schemaVersion`——老读取器读到的仍然是字符串。截断只对新写入生效:`publish` 不改 artifact 内容,历史上落下的超大文件不会被追溯截断;它会在发布预检中被明确拒绝,而不是原样进入一个注定无法 push 的目录。
 
 这条规则只约束 niceeval 的**持久化边界**。Agent runtime 在把工具结果发给模型前仍需自己的字节预算:如果一个工具层先把 50 MB 输出完整送进模型请求并收到 413,`writeAttempt` 只能阻止这 50 MB 随后把 `events.json` / `trace.json` 撑爆,不能让已经失败的请求恢复成功。运行时 transport 限流与结果落盘截断是两个独立护栏,不能拿其中一个替代另一个。
+
+## locator 的唯一性
+
+**作用域是一个记录根。** `resolveLocator` 在一个打开的 Record 里寻址,所以「不能撞」的范围就是
+这个记录根扫到的全部 attempt——不是一个 Run,也不是全局。60 bit 在 10⁶ 条 attempt 下的碰撞概率
+约 `4.3 × 10⁻⁷`,10⁵ 条约 `4.3 × 10⁻⁹`。
+
+**locator 是派生值,撞了不能靠重算躲开。** 输入是 `{runId, evalId, attempt}` 这个不可变元组,
+同样的输入永远得到同样的 body。所以碰撞不是「换个随机数再试」,而是必须有定义的两侧行为:
+
+- **写入侧**:runner 在 attempt 登记时查当前记录根的 locator 索引。已存在且身份元组不同,
+  抛 `LocatorCollisionError` 并中止该 attempt——不静默覆盖,也不悄悄换一个值,
+  否则同一条 attempt 在不同进程里会有两个 locator。
+- **读取侧**:`resolveLocator` 命中多于一条时抛 `AmbiguousLocatorError`,列出候选的 experimentId /
+  evalId / attempt,不返回其中任意一条。返回一条会让用户看着别人的 attempt 却以为是自己那条,
+  比报错严重。
+
+三种失败因此各自可分辨:语法不合法是 `MalformedLocatorError`,索引里没有是 `LocatorNotFoundError`,
+索引里有多条是 `AmbiguousLocatorError`。
+
+**位宽是可辨认性与手输成本的折中。** locator 要被人从终端复制、粘进 URL、肉眼比对,
+所以它的长度是 DX 成本而不只是编码细节。14 字符(`@` + scheme + 12 位 body)在上面的碰撞量级下
+已经远离危险区;继续加宽只是把一个已经可忽略的概率变得更小,代价是每次下钻都多打几个字符。
 
 ## 读取规则
 

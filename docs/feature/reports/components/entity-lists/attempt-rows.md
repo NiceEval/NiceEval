@@ -5,7 +5,7 @@ locator。完整 assertions、diagnostics、cause、stack 与自由文本证据�
 结构时经 locator 调 [`resolveLocator`](../../../record/library.md#按-locator-寻址一个-attemptresolvelocator)。
 
 ```tsx
-const content = await sources.entity.attempts.compute(ctx.sample);
+const content = await ctx.resolve(sources.entity.attempts);
 const rows = content.rows
   .filter((row) => ["failed", "errored"].includes(row.cells.verdict.verdict ?? ""))
   .slice(0, 20);

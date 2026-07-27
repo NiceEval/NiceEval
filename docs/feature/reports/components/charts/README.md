@@ -137,16 +137,18 @@ measure 字段 `better: "lower"` 的数值轴反向，`better: "higher"` 正向�
 - web 面输出真实 SVG/DOM、图例、tooltip 与证据链接；无 JavaScript 时标签与数值仍可读。
 - text 面从同一 Dataset 与同一映射画字符坐标图；空间不足时保留轴、series 名与精确值表，不删除
   series。
-- 页级色分配以 `(dimension, value)` 为键，同一个 agent 在 Chart 与 Table 中恒同色。
+- 页级视觉编码以 `(dimension, value)` 为键，同一个 agent 在 Chart 与 Table 中恒同身份。
 
 ## 实验呈现
 
-Chart 保留完整 experiment id 作为点、series、排序与下钻身份。报告树先从 Dataset 的 dimension 字段
-收集完整 id 集合，renderer 再调用 `ctx.present("experiment", experimentId)`，一次取得完整身份、当前
-页内最短唯一标签和已经消解撞色的颜色。不能逐个截路径末段，也不能按数组下标自行配色。
+Chart 保留完整 experiment id 作为点、series、排序与下钻身份。组件在 `dimensions()` 里以
+`encoding: { kind: "series", mark }` 声明完整 id 集合。
+renderer 再用 `ctx.dimension(handle).at(index)` 取得完整身份、页内最短唯一标签，
+以及已经消解撞槽的颜色加线型 / 形状 / pattern。
+不能逐个截路径末段，也不能按数组下标自行配色。
 
-自有 React 页面没有报告管线，调用 `presentDimension("experiment", experimentIds)` 一次传入全集，
-再用返回集合的 `get(id)` 读取同一种 `DimensionPresentation`。
+自有 React 页面没有报告管线，调用 `presentDimension(declaration)` 传入同形状的声明，
+再按下标读取同一种 `DimensionPresentation`。
 
 ## Mark 指南
 

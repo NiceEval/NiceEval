@@ -29,8 +29,10 @@
 
 - [用 artifact 定义业务读数](构建报告/定义业务读数.md) —— `defineMeasure` / 自定义维度。
 - [从单页报告升级为多页站点](构建报告/构建多页报告.md) —— `defineReport` / pages / attempt-input page。
+- [把 NiceEval 读数和外部业务数据放进同一张表](构建报告/接入外部业务数据.md) —— `--data` 快照 /
+  `defineComposition` / `ctx.data`。
 - [自己写报告组件：规范与取主题色](构建报告/自定义组件/) —— `defineComponent` 双面协议 /
-  `defineComposition` / `ctx.present`。
+  `defineComposition` / `ctx.dimension`。
 
 ## [交付报告](交付报告/README.md)
 

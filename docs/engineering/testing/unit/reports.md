@@ -2,7 +2,7 @@
 
 契约来源：[Reports](../../../feature/reports/README.md)、[Architecture](../../../feature/reports/architecture.md)、[Library](../../../feature/reports/library.md)、[Show](../../../feature/reports/show.md)、[View](../../../feature/reports/view.md)、[Observability](../../../observability.md)。
 
-单元层证明 Reports 的**数据语义**：`DataSource.compute()`、读数聚合口径、resolve 管线、
+单元层证明 Reports 的**数据语义**：`Source.compute()`、读数聚合口径、resolve 管线、
 报告定义的装载规范化与校验反馈。观察面全部是 Content、规范化结构、错误对象与文案。本篇的缝：构造 Sample
 / evidence fixture 作输入，测其上的计算与装载逻辑；缝的真实侧（真实产物上的出口与渲染）由
 [E2E 功能域 · 报告与读面](../e2e/report.md)验收（[Fake 边界](README.md#fake-边界mock-什么测哪一层)）。渲染出来的终端排版、DOM 结构、双面比对、样式与交互不在本层，归
@@ -85,7 +85,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   最新的那一个，不是任取或合并多个来源；实体行的计分制字段——`ExperimentRow.scoring`
   是定义期事实投影（不从 attempt 结果推断），experiment / eval / attempt 三级的 `totalScore`
   cell 在计分制下按读数口径求值（experiment 级 acrossEvals sum、eval 级 perEval
-  mean）、通过制下为 null cell 且与 `endToEndPassRate` 并存不互斥。
+  mean）、通过制下为 null cell 且与 `passRate` 并存不互斥。
 - **站点组件与内建报告**：`standard` 的构成与具名导出同引用、三张 scope-input page 均相邻放置
   `sampleWarnings` 与 `runDiagnostics`、`defineReport({ extends })`
   的外壳叠加与页列表同引用、组合组件与手写组合严格等价；数据派生覆盖 hero、warning 分组聚合与组排序，以及
@@ -93,7 +93,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   startedAt 排序、来源不合并、开放 code 原样保留、React
   Content 不携带 Run/AttemptHandle。渐进增强不改数据；`SampleOverview`
   的主读数解析——纯计分制 Sample 的展开树中 `chart()` 的 y 与列表预排序引用 `totalScore`
-  同一实例（纯通过制引用 `endToEndPassRate`），`"mixed"`
+  同一实例（纯通过制引用 `passRate`），`"mixed"`
   按题型拆成两组的展开树构成（每组一份 Chart + Table、`sampleSummary`
   整 Sample 一份）——以展开树与 Content 为断言面。
 - **resolve 与组合组件**：source/data 严格等价、`input` 缺省与覆盖、同 source + input 只计算一次、
@@ -114,15 +114,48 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **Chart 呈现覆盖**：`Chart.series` 只能覆盖已有 series key 的线型、点形、标签与可见性，
   不能改变 mark、绑定或聚合；未知 key 给出完整用户反馈。
 - **`Markdown` 的解析与两面投影**（[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。覆盖：每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）；裸 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出；表格语法按完整用户反馈报错并指引 `Table`；折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）；`LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
-- **页级色分配**（[系列色](../../../feature/reports/components/README.md#系列色分配单位是页)）：给定一页已解析数据里的
-  `(维度, 值)` 集合产出映射——同一键在同页多个组件（图表 series 与实体列表的维度键）得到同一个色槽、撞色按显示键字典序线性探测、keyset
-  超过色板才复用、缩短后的显示名不参与取键；断言面是映射本身，不断言渲染出的颜色值。
-- **公开呈现 helper**：`shortestUniqueLabels` 与 `seriesColors` 从 `niceeval/report` 顶层导出，
-  并与内部定义同一引用。`experimentLabels` 是前者的同引用实验入口。`seriesColors` 按
-  `(dimension, values)` 分配，并与报告树内 `ctx.seriesColor` 对同一键集返回相同色槽。
-- **数据源定义入口**：`defineDataSource` / `defineRowSource` 保留传入对象引用与泛型形状，不建立
-  注册表或跨 page 缓存；缺 name / compute / columns 的输入给出完整用户反馈。运行期 Content
+- **页级呈现分配**（[分配单位是页](../../../feature/reports/components/README.md#维度呈现分配单位是页)）：
+  给定一页 `dimensions()` 声明的集合产出映射，断言面是映射本身，不断言渲染出的颜色值。逐项覆盖：
+
+  - 两个 keyset 分开——label keyset 收全部编码的值，visual keyset 只收 `color` / `series` 的值。
+  - 区分力场景是「同页一张 27 值的 label-only 表加一张 3 值的图」：三个值仍落 1–3 槽，
+    而它们的标签按 27 值的 keyset 算最短唯一后缀。
+  - 同一键在同页多个组件得到同一个槽；撞槽按显示键字典序线性探测；缩短后的显示名不参与取键。
+  - 24 槽序列的 `(色, variant)` 两两不同。
+  - visual keyset 超过 24 按完整用户反馈拒绝该页，且 fix 行不提 `dimensionPins`。
+
+- **`dimensions` 必填与查询封闭性**：缺 `dimensions` 的组件定义按完整用户反馈拒绝，
+  `dimensions: () => ({})` 合法。renderer 查询未声明的句柄、越界下标或与声明编码不符的用法，
+  抛 `UndeclaredDimensionValueError`，不临时分配。
+  **每个自定义组件 fixture 必须同时执行 text 与 web 两个 renderer**，并各自断言未声明查询会失败。
+  只跑 text 面抓不到 web renderer 用了未声明的值——text 面不消费颜色，可能根本不发起查询。
+
+- **text 面的呈现降级**：text renderer 的 `ctx.dimension()` 恒返回 label 面，拿不到颜色、
+  `strokeDasharray` 或 pattern。容量拒绝只发生在 web 编码规划，
+  同一份超容量报告的 text 面照常输出。
+
+- **公开呈现 helper**：`shortestUniqueLabels` 与 `presentDimension` 从 `niceeval/report` 顶层导出，
+  并与内部定义同一引用。`presentDimension(declaration)` 与报告树内 `ctx.dimension(handle)`
+  对同一份声明返回相同槽位。
+
+- **定义入口**：`defineSource` / `defineComponent` / `defineComposition` 保留传入对象引用与泛型形状，
+  不建立注册表或跨 page 缓存；缺 name / compute / renderer 的输入给出完整用户反馈。运行期 Content
   可序列化、row key 与 column key 的校验仍走 resolve / validate，不在定义期重复一份规则。
+
+- **外部数据快照与确定性**（[外部数据走冻结快照](../../../feature/reports/architecture.md#外部数据走冻结快照)）：
+  `ctx.data` 来自 `--data <file>` 或 `config.reportData`，取值链与报告装载链同形，装载失败同级。
+  区分力场景是**同一份输入跑两次产出逐字节相同**——快照进了输入，所以恒等成立。
+  展开回调读时钟、随机数或文件系统时按完整用户反馈拒绝；缺省 `ctx.data` 是空对象而不是
+  `undefined`。
+
+- **Composition 的展开与缓存**：`expand` 同步与 `async` 两种返回都在 resolve 阶段被 await。
+  逐项覆盖：
+
+  - `ctx.resolve(source)` 与同页 `<Table source={source}>` 命中同一份缓存只计算一次。
+    区分力场景是一个计数 fake Source 被 Composition 与原语同时引用，计数必须是 1。
+  - 缓存的是 Promise：两个并发消费者同时请求仍只计算一次，失败由同一个 Promise 广播给两者。
+  - 同一个 Composition 用在两处是两个节点、各展开一次，内部的 `ctx.resolve` 仍共享 Source 缓存。
+  - Composition 的 `Input` 与 page 的 `input` 声明不匹配时，装载期按完整用户反馈报错。
 - **纯函数布局算法**：散点点标签布局是 `chart-math`
   纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts/README.md#值域)）同属这一类——直接对推定函数断言扩后的
   `[min, max]`：两端各扩数据跨度 20%、零跨度 fallback（值绝对值的 20%、值为 0 取 1）、有自然

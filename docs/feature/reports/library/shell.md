@@ -118,7 +118,7 @@ interface ReportShell {
    */
   theme?: ThemeDefinition;
   /**
-   * 「哪个维度值恒占哪个色槽」的作者判断，是关于数据含义的声明，跨页一致且不随主题走；
+   * 「哪个维度值恒占哪个视觉槽」的作者判断，是关于数据含义的声明，跨页一致且不随主题走；
    * 色板本身归主题的 `series`。见下方钉色。
    */
   dimensionPins?: DimensionPins;
@@ -235,30 +235,31 @@ type ReportAsset =
 
 ## 钉色
 
-[页级色分配](../components/README.md#维度呈现分配单位是页)不需要配置就能保证一页内同键同色，但它不知道作者的语义：发布图上「baseline 恒中性、我们的方案恒蓝」是作者对数据的判断，不是散列能推出来的。`dimensionPins` 就是写下这个判断的地方：
+[页级视觉编码](../components/README.md#维度呈现分配单位是页)不需要配置就能保证一页内同键同身份，但它不知道作者的语义：发布图上「baseline 恒中性、我们的方案恒蓝」是作者对数据的判断，不是散列能推出来的。跨周、跨页的稳定同样只能由作者声明——visual keyset 变了，未钉住的槽位就可能重排。`dimensionPins` 就是写下这个判断的地方：
 
 ```ts
 export default defineReport({
   extends: standard,
   dimensionPins: {
-    memory: { baseline: 3, mempal: 1, nowledge: 5 },
+    memory: { baseline: 4, mempal: 1, nowledge: 6 },
   },
 });
 ```
 
 ```ts
-/** 外层键是维度 name，内层键是维度值显示键，值是 [0, 6) 的色板下标。 */
+/** 外层键是维度 name，内层键是维度值显示键，值是 [1, 24] 的 seriesSlot。 */
 type DimensionPins = Readonly<Record<string, Readonly<Record<string, number>>>>;
 ```
 
-- **钉的是色板下标，不是颜色。** 颜色仍然来自生效主题的 `series` 六色，因此深浅外观、对比度与换主题全都照常跟随。钉色住在报告而不是主题里，正因为它说的是数据含义：换一套配色不该让 baseline 和候选方案对调身份。要改颜色本身，改主题。
+- **钉的是 `seriesSlot`，不是颜色。** 一个槽同时决定颜色与形状变体（[24 个身份](../components/README.md#视觉编码容量24-个身份)），所以钉住它等于钉住完整视觉身份。颜色仍然来自生效主题的 `series` 六色，因此深浅外观、对比度与换主题全都照常跟随。钉色住在报告而不是主题里，正因为它说的是数据含义：换一套配色不该让 baseline 和候选方案对调身份。要改颜色本身，改主题。
+- **钉不能突破 24。** pin 只固定映射，不增加编码容量；visual keyset 超过 24 仍然拒绝该页。
 - **外层键是维度的 `name`**——内置维度就是 `"agent"` / `"experiment"`，`label("memory")` 的 name 是 `"memory"`，复合维度的 name 是成员 name 以 ` × ` 连接。这与 Dataset / `TableContent` 中 dimension 字段的身份是同一个字符串。
 - **内层键是维度值显示键**，与分组显示键同一套规则（非字符串值走稳定 JSON，缺失值是 `(missing)`）。
 - **钉住的键原样占位，自动分配只在剩下的槽里探测。** 多个值钉同一个下标是合法的——作者显式要求它们同色（例如两条基线都走中性色）；这不触发探测。
 - **钉了但这一页没出现的键什么都不做**，不为它保留槽位。
-- 维度 name 或值键不是非空字符串、下标不是 `[0, 6)` 内的整数时，`defineReport` 按完整用户反馈拒绝并指到 `dimensionPins.<维度>.<值>`。
+- 维度 name 或值键不是非空字符串、槽位不是 `[1, 24]` 内的整数时，`defineReport` 按完整用户反馈拒绝并指到 `dimensionPins.<维度>.<值>`。
 
-钉色是整站字段，所以同一个维度值在总览页与分科页恒同色。这正是它住在外壳而不是某个组件上的原因——写在一棵树里的声明管不到另一张页。
+钉色是整站字段，所以同一个维度值在总览页与分科页恒同身份。这正是它住在外壳而不是某个组件上的原因——写在一棵树里的声明管不到另一张页。
 
 导航的组成只有一条规则：pages 中 `navigation !== false` 的项按声明序排列，宿主不追加任何项。裸宿主导航里的报告、Attempts、Traces 与 locator 详情都是[内建报告](built-in.md)声明的 page；最后一张因为 `navigation: false` 不显示。换 `--report` 后要不要它们全部由报告文件决定。见 [View · 页面构成](../view.md#页面构成) 与 [Architecture](../architecture.md#外壳与页装载规范化)。
 

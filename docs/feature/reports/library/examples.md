@@ -187,7 +187,7 @@ const historyRows = sources.measure.rows({
 });
 
 const History = defineComposition(async ({ experiment }: { experiment: string }, ctx) => {
-  const input = ctx.sample.pipe(filterAttempts(
+  const input = ctx.input.pipe(filterAttempts(
     (attempt) => attempt.experimentId === experiment,
   ));
 
@@ -211,7 +211,7 @@ const GroupBlocks = defineComposition((_props: {}, ctx) => (
     {["agents/codex/", "agents/claude/"].map((prefix) => (
       <Section key={prefix} title={prefix}>
         <SampleSummary
-          input={ctx.sample.pipe(filterAttempts(
+          input={ctx.input.pipe(filterAttempts(
             (attempt) => attempt.experimentId.startsWith(prefix),
           ))}
         />

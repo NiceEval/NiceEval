@@ -219,7 +219,10 @@ function themeStylesheet(theme: ThemeDefinition): string;
 - **颜色**只接受 `#RRGGBB`，不接受短 hex、alpha、CSS 颜色名、`var()`、`light-dark()` 或任意 CSS 片段。宿主要把单值展开成两个外观分支、要保证令牌块可解析，所以这一类必须是它能读懂的值。
 - **`font` / `fontSize` / `radius`** 的值本身就是 CSS，收非空字符串，宿主不解析语义——写错了浏览器怎么表现是作者义务。它们原样落进令牌块，因此值里出现 `;` 或 `}` 时按完整用户反馈拒绝，并指引改用 `styles`：那是写完整 CSS 规则的地方。
 
-`series` 固定为六色，因为官方图表用稳定 key 散列到六个分类槽；换 palette 不改变散列、图例顺序或 series 身份。
+`series` 固定为六色，主题只提供视觉身份的颜色一维。
+完整身份是「六色 × 四个形状变体」的 24 个槽，容量与分配序列见
+[视觉编码容量](../components/README.md#视觉编码容量24-个身份)。
+换 palette 不改变散列、图例顺序或 series 身份。
 
 字段未知、pair 缺任一分支、数组长度不是六、颜色格式非法或资产路径违规时，`defineTheme` / `defineReport` 按完整用户反馈拒绝，并指到具体字段路径，例如 `theme.series[3].dark`。
 
@@ -234,7 +237,7 @@ function themeStylesheet(theme: ThemeDefinition): string;
 | `series` | experiment / agent / label 等名义分类身份 | 质量大小或判定好坏 |
 | 中性面令牌 | 页面、卡片、分隔与三级文字层次 | 任何状态含义 |
 
-组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#维度呈现分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`dimensionPins`](shell.md#钉色) 声明），`sources.measure.delta` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级呈现分配](../components/README.md#维度呈现分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`dimensionPins`](shell.md#钉色) 声明），`sources.measure.delta` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
 
 未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子：
 

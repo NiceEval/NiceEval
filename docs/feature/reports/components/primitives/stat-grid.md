@@ -42,7 +42,7 @@ interface StatProps {
 }
 ```
 
-`value` 收 [`Cell`](../README.md#单元格类型) 是这个原语与官方数据源之间的接口：`measure` 格带着
+`value` 收 [`Cell`](table.md#单元格类型) 是这个原语与官方 Source 之间的接口：`measure` 格带着
 `samples` / `total` / `refs`，所以一个读数下方能写明覆盖范围、点开能下钻到具体 attempt。
 作者自己算的终值传标量即可——标量与 `text` 格等价，两者都没有证据可下钻，这是如实的。
 
