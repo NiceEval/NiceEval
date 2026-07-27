@@ -13,10 +13,24 @@
 
 - 盒子默认不带颜色：`#0b0b0b` 的面加 `#262626` 的 1px 边，仅此而已。
 - 一张图里带语义色的元素不超过 3 个，系列图除外。
+- 一律直角。圆角是软化，这里不需要软化。
 - 不用渐变、阴影、发光、彩色描边、彩色盒底、左侧色条。
 - 区域用一条 1px 边表达，不用色块铺出来。
 - 要强调就提亮到 `#ededed` 或换字重 600，不放大字号，也不加粗描边。
 - 图标手绘不进图。要画的是关系，不是插画。
+
+## 适例
+
+![复用前后的 Attempt 时间线](assets/svg-design-example-lanes.svg)
+
+这张图里用到的全部手段：一张 `.canvas`、三个系列色配 `.soft` 的 16% 色面、
+`.dash` 的参照线、`.good-s` 的括号、`.note` 的图例。
+除了"复用省下的"那一段，没有第二处颜色在做装饰。
+
+盒子之间不画箭头：并排本身就是时间顺序。
+两个状态放两条泳道，共用同一条横轴，因此"哪一段被省掉了"是量出来的，不是写出来的。
+
+源码在 `docs/assets/svg-design-example-lanes.svg`，新画一张图从它改比从零起手快。
 
 ## 共用样式：整段抄进每张图
 
@@ -67,7 +81,7 @@
     </style>
   </defs>
 
-  <rect x="0.5" y="0.5" width="1239" height="479" rx="12" class="canvas" />
+  <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
 </svg>
 ```
 
@@ -75,8 +89,8 @@
 
 | class | 用在 | 约束 |
 |---|---|---|
-| `.canvas` | 铺满 viewBox 的那一个 `rect` | 一张图一个，`rx="12"`，坐标取 `.5` |
-| `.box` | 节点、泳道、图例框 | `rx="8"`，比画布亮一档 |
+| `.canvas` | 铺满 viewBox 的那一个 `rect` | 一张图一个，坐标取 `.5` |
+| `.box` | 节点、泳道、图例框 | 比画布亮一档 |
 | `.box-2` | 盒内还要再分一块 | 只允许再套这一层 |
 | `.title` | 图左上角那一句 | 一张图一句，写清它回答什么 |
 | `.label` | 盒标题、泳道名 | 是标识符时叠 `.mono` |
@@ -139,7 +153,7 @@
 | 标签贴附距 | 8 | 标签到它指的那个元素 |
 | 列间距 | 24 | 表格状排列的列 |
 | 行距 | 字号 × 1.5，取偶数 | 16px 文字用 24 |
-| 圆角 | 画布 12 / 盒 8 / 药丸 6 | 半径不随尺寸变大 |
+| 圆角 | 0 | 一律直角，任何 `rect` 都不写 `rx` |
 | 描边 | 1，强调也是 1 | 靠颜色分层，不靠粗细 |
 
 SVG 的文字按基线定位，盒内第一行的基线这样算：
@@ -187,28 +201,31 @@ SVG 的文字按基线定位，盒内第一行的基线这样算：
 
 ## 一张最小的图
 
-复制上面那段 `<defs>` 之后，正文长这样。安全区 32、盒间距 48、
-基线 `盒顶 + 30` 都能在坐标里认出来。
+![一条 Attempt 的三段](assets/svg-design-example.svg)
+
+复制上面那段 `<defs>` 之后，正文就是下面这些。安全区 32、盒间距 48、
+基线 `盒顶 + 30` 都能在坐标里认出来。整份源码在
+`docs/assets/svg-design-example.svg`。
 
 ```svg
-  <rect x="0.5" y="0.5" width="1239" height="271" rx="12" class="canvas" />
+  <rect x="0.5" y="0.5" width="1239" height="271" class="canvas" />
   <text x="32" y="48" class="title">一条 Attempt 的三段</text>
 
-  <rect x="32.5" y="88.5" width="359" height="104" rx="8" class="box" />
+  <rect x="32.5" y="88.5" width="359" height="104" class="box" />
   <text x="52" y="118" class="label mono">sandbox.setup</text>
   <text x="52" y="142">每个 Sandbox 一次</text>
   <text x="52" y="166" class="note">Runner 自动调度</text>
 
   <path d="M400 140 H432" class="arrow" />
 
-  <rect x="440.5" y="88.5" width="359" height="104" rx="8" class="box" />
+  <rect x="440.5" y="88.5" width="359" height="104" class="box" />
   <text x="460" y="118" class="label mono">test(t)</text>
   <text x="460" y="142">作者的代码</text>
   <text x="460" y="166" class="note">t.send、断言、判分材料</text>
 
   <path d="M808 140 H840" class="arrow" />
 
-  <rect x="848.5" y="88.5" width="359" height="104" rx="8" class="box" />
+  <rect x="848.5" y="88.5" width="359" height="104" class="box" />
   <text x="868" y="118" class="label">判定</text>
   <text x="868" y="142"><tspan class="good">passed</tspan> / <tspan class="bad">failed</tspan></text>
   <text x="868" y="166" class="note">四态折叠后写进 Run</text>

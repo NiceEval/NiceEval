@@ -1,139 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 870" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1136" role="img" aria-labelledby="title desc">
   <title id="title">复用 Sandbox 的生命周期</title>
-  <desc id="desc">Sandbox 只准备一次，题间重置 workdir，只重复 Attempt 生命周期。</desc>
+  <desc id="desc">Sandbox 只准备一次并留下题间重置点，之后每条 Attempt 从重置点起跑，只重复 Attempt 生命周期。</desc>
   <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
     <style>
-      :root {
-        --bg: #f8fafc;
-        --surface: #ffffff;
-        --surface-2: #f1f5f9;
-        --text: #172033;
-        --muted: #526079;
-        --line: #64748b;
-        --blue: #2563eb;
-        --blue-soft: #dbeafe;
-        --teal: #0f766e;
-        --teal-soft: #ccfbf1;
-        --amber: #b45309;
-        --amber-soft: #fef3c7;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #0d1117;
-          --surface: #161b22;
-          --surface-2: #21262d;
-          --text: #e6edf3;
-          --muted: #9da7b5;
-          --line: #7d8898;
-          --blue: #79a8ff;
-          --blue-soft: #172a46;
-          --teal: #5eead4;
-          --teal-soft: #123b38;
-          --amber: #fbbf24;
-          --amber-soft: #493413;
-        }
-      }
-      text { fill: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .title { font-size: 28px; font-weight: 750; }
-      .subtitle { fill: var(--muted); font-size: 16px; }
-      .section { font-size: 19px; font-weight: 700; }
-      .body { font-size: 16px; }
-      .small { fill: var(--muted); font-size: 14px; }
-      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
-      .badge { font-size: 13px; font-weight: 700; letter-spacing: 0; }
-      .panel { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
-      .card { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
-      .soft { fill: var(--surface-2); }
-      .loop { fill: none; stroke: var(--blue); stroke-width: 2; stroke-dasharray: 7 6; }
-      .arrow { fill: none; stroke: var(--line); stroke-width: 2; marker-end: url(#arrow); }
-      .loopArrow { fill: none; stroke: var(--blue); stroke-width: 2.5; marker-end: url(#arrowBlue); }
-      .timeline { stroke: var(--line); stroke-width: 2; }
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
     </style>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0 0 10 5 0 10Z" fill="var(--line)" />
-    </marker>
-    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0 0 10 5 0 10Z" fill="var(--blue)" />
-    </marker>
   </defs>
 
-  <rect x="1" y="1" width="718" height="868" rx="8" class="panel" />
+  <rect x="0.5" y="0.5" width="719" height="1135" class="canvas" />
   <text x="36" y="48" class="title">复用</text>
-  <text x="36" y="75" class="subtitle">Sandbox 准备一次，只循环 Attempt 生命周期</text>
+  <text x="36" y="75" class="note">Sandbox 准备一次，只循环 Attempt 生命周期</text>
 
-  <rect x="36" y="101" width="648" height="58" rx="6" fill="var(--amber-soft)" stroke="var(--amber)" />
-  <text x="56" y="126" class="badge" fill="var(--amber)">运行前</text>
-  <text x="150" y="126" class="body">预制 Agent CLI</text>
-  <text x="150" y="148" class="code">npm install -g @openai/codex@&lt;version&gt;</text>
+  <rect x="36.5" y="101.5" width="647" height="57" class="c2 c2-s soft" />
+  <text x="56" y="126" class="note c2">运行前</text>
+  <text x="150" y="126">预制 Agent CLI</text>
+  <text x="150" y="148" class="note mono">npm install -g @openai/codex@&lt;version&gt;</text>
 
   <path d="M360 159V184" class="arrow" />
-  <rect x="160" y="185" width="400" height="54" rx="6" class="card" />
-  <text x="180" y="208" class="section">Experiment.setup</text>
-  <text x="180" y="229" class="small">启动 Invocation 级共享资源（可选）</text>
+  <rect x="160.5" y="185.5" width="399" height="53" class="box" />
+  <text x="180" y="208" class="label">Experiment.setup</text>
+  <text x="180" y="229" class="note">启动 Invocation 级共享资源（可选）</text>
 
-  <path d="M360 239V255" class="arrow" />
-  <rect x="64" y="256" width="592" height="158" rx="6" class="card" />
-  <rect x="64" y="256" width="12" height="158" rx="6" fill="var(--teal)" />
-  <line x1="104" y1="278" x2="104" y2="380" class="timeline" />
-  <circle cx="104" cy="278" r="5" fill="var(--teal)" />
-  <text x="128" y="284" class="body">createSandbox</text>
-  <text x="128" y="302" class="small">Runner 自动</text>
-  <circle cx="104" cy="326" r="5" fill="var(--teal)" />
-  <text x="128" y="332" class="body">SandboxSpec.setup</text>
-  <text x="128" y="350" class="small">只准备公共环境</text>
-  <text x="128" y="368" class="code">apt-get install ... / corepack enable / warm-cache</text>
-  <circle cx="104" cy="380" r="5" fill="var(--teal)" />
-  <text x="128" y="386" class="body">建立题间重置点</text>
-  <text x="128" y="404" class="small">Runner 自动</text>
+  <path d="M360 239V263" class="arrow" />
+  <rect x="36.5" y="264.5" width="647" height="195" class="box" />
+  <text x="68" y="294" class="label">Sandbox 准备 · 每 Sandbox 一次</text>
+  <line x1="104" y1="312" x2="104" y2="416" class="rule" />
+  <circle cx="104" cy="312" r="5" class="c1" />
+  <text x="128" y="318" class="mono">createSandbox</text>
+  <text x="128" y="336" class="note">Runner 自动</text>
+  <circle cx="104" cy="356" r="5" class="c1" />
+  <text x="128" y="362" class="mono">SandboxSpec.setup</text>
+  <text x="128" y="380" class="note">只准备公共环境，不 clone 任何题目仓库</text>
+  <text x="128" y="398" class="note mono">apt-get install ... / corepack enable / warm-cache</text>
+  <circle cx="104" cy="416" r="5" class="c1" />
+  <text x="128" y="422">建立题间重置点</text>
+  <text x="128" y="440" class="note">Runner 自动</text>
 
-  <rect x="28" y="439" width="664" height="317" rx="8" class="loop" />
-  <rect x="48" y="423" width="190" height="32" rx="6" fill="var(--blue-soft)" stroke="var(--blue)" />
-  <text x="64" y="444" class="badge" fill="var(--blue)">循环 · 每 ATTEMPT 一次</text>
+  <text x="64" y="531" class="note c0">循环 · 每 Attempt 一次</text>
 
-  <path d="M360 414V465" class="arrow" />
-  <rect x="64" y="466" width="592" height="274" rx="6" class="card" />
-  <rect x="64" y="466" width="12" height="274" rx="6" fill="var(--blue)" />
-  <line x1="104" y1="486" x2="104" y2="710" class="timeline" />
-  <circle cx="104" cy="486" r="5" fill="var(--amber)" />
-  <text x="128" y="492" class="body">ensureLifetime</text>
-  <text x="128" y="508" class="small">Provider 确认寿命</text>
-  <circle cx="104" cy="518" r="5" fill="var(--amber)" />
-  <text x="128" y="524" class="body">reset</text>
-  <text x="128" y="540" class="code">git reset --hard / git clean</text>
-  <circle cx="104" cy="542" r="5" fill="var(--teal)" />
-  <text x="128" y="548" class="body">Eval.setup</text>
-  <text x="128" y="564" class="code">rm -rf .git .clone; git clone &lt;eval-repo-url&gt; .clone</text>
-  <text x="128" y="580" class="code">mv .clone/.git .; rm -rf .clone; git reset &lt;commit&gt;; pnpm i</text>
-  <circle cx="104" cy="590" r="5" fill="var(--blue)" />
-  <text x="128" y="596" class="body">Agent.setup</text>
-  <text x="128" y="612" class="small">鉴权、MCP、skills</text>
-  <circle cx="104" cy="622" r="5" fill="var(--amber)" />
-  <text x="128" y="628" class="body">test(t)</text>
-  <text x="128" y="644" class="code">t.send(...) / pnpm test</text>
-  <circle cx="104" cy="654" r="5" fill="var(--amber)" />
-  <text x="128" y="660" class="body">评分与证据收集</text>
-  <text x="128" y="676" class="small">Runner 自动</text>
-  <circle cx="104" cy="686" r="5" fill="var(--line)" />
-  <text x="128" y="692" class="body">Eval.teardown</text>
-  <text x="128" y="708" class="code">pkill ...</text>
-  <circle cx="104" cy="716" r="5" fill="var(--line)" />
-  <text x="128" y="722" class="body">Agent.teardown</text>
-  <text x="128" y="738" class="small">Adapter 收尾</text>
+  <path d="M360 460V537" class="arrow" />
+  <rect x="64.5" y="539.5" width="591" height="406" class="box" />
+  <text x="692" y="531" class="note c0" text-anchor="end">还有 Attempt：reset</text>
 
-  <path d="M656 724H680V486H658" class="loopArrow" />
-  <rect x="506" y="447" width="156" height="27" rx="5" fill="var(--blue-soft)" />
-  <text x="518" y="466" class="small" fill="var(--blue)">还有 Attempt：reset</text>
+  <line x1="104" y1="555" x2="104" y2="881" class="rule" />
+  <circle cx="104" cy="555" r="5" class="c0" />
+  <text x="128" y="561" class="mono">ensureLifetime</text>
+  <text x="128" y="579" class="note">Provider 确认寿命</text>
+  <circle cx="104" cy="599" r="5" class="c1" />
+  <text x="128" y="605" class="mono">reset</text>
+  <text x="128" y="623" class="note mono">git reset --hard / git clean</text>
+  <circle cx="104" cy="643" r="5" class="c0" />
+  <text x="128" y="649" class="mono">Eval.setup</text>
+  <text x="128" y="667" class="note mono">rm -rf .git .clone</text>
+  <text x="128" y="685" class="note mono">git clone &lt;eval-repo-url&gt; .clone &amp;&amp; mv .clone/.git .</text>
+  <text x="128" y="703" class="note mono">rm -rf .clone &amp;&amp; git reset &lt;commit&gt; &amp;&amp; pnpm install</text>
+  <circle cx="104" cy="729" r="5" class="c0" />
+  <text x="128" y="735" class="mono">Agent.setup</text>
+  <text x="128" y="753" class="note">鉴权、MCP、skills</text>
+  <circle cx="104" cy="773" r="5" class="c2" />
+  <text x="128" y="779" class="mono">test(t)</text>
+  <text x="128" y="797" class="note mono">t.send(...) / pnpm test</text>
+  <circle cx="104" cy="817" r="5" class="c2" />
+  <text x="128" y="823">评分与证据收集</text>
+  <text x="128" y="841" class="note">Runner 自动</text>
+  <circle cx="104" cy="861" r="5" class="dim" />
+  <text x="128" y="867" class="mono">Eval.teardown</text>
+  <text x="128" y="885" class="note mono">pkill ...</text>
+  <circle cx="104" cy="905" r="5" class="dim" />
+  <text x="128" y="911" class="mono">Agent.teardown</text>
+  <text x="128" y="929" class="note">Adapter 收尾</text>
 
-  <path d="M360 756V766" class="arrow" />
-  <rect x="120" y="767" width="480" height="96" rx="6" class="card" />
-  <line x1="150" y1="779" x2="150" y2="841" class="timeline" />
-  <circle cx="150" cy="779" r="5" fill="var(--line)" />
-  <text x="174" y="785" class="body">SandboxSpec.teardown</text>
-  <text x="174" y="801" class="small">环境级收尾</text>
-  <circle cx="150" cy="811" r="5" fill="var(--line)" />
-  <text x="174" y="817" class="body">stop</text>
-  <text x="174" y="833" class="small">Runner 自动</text>
-  <circle cx="150" cy="841" r="5" fill="var(--line)" />
-  <text x="174" y="847" class="body">Experiment.teardown</text>
-  <text x="174" y="861" class="small">停止 Invocation 级共享资源（可选）</text>
+  <path d="M656 937H680V555H658" class="arrow c0-s" />
+
+  <path d="M360 946V990" class="arrow" />
+  <rect x="108.5" y="991.5" width="503" height="53" class="box-2" />
+  <text x="132" y="1014" class="mono">SandboxSpec.teardown</text>
+  <text x="132" y="1035" class="note">环境级收尾</text>
+  <text x="448" y="1014" class="mono">stop</text>
+  <text x="448" y="1035" class="note">Runner 自动</text>
+
+  <path d="M360 1045V1049" class="arrow" />
+  <rect x="160.5" y="1050.5" width="399" height="53" class="box" />
+  <text x="180" y="1073" class="label">Experiment.teardown</text>
+  <text x="180" y="1094" class="note">停止 Invocation 级共享资源（可选）</text>
 </svg>

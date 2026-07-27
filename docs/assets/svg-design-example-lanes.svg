@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 392"
+     role="img" aria-labelledby="laneTitle laneDesc">
+  <title id="laneTitle">复用前后的 Attempt 时间线</title>
+  <desc id="laneDesc">不复用时每条 Attempt 重放一整套沙箱层准备；复用时沙箱层只跑一次，之后每条 Attempt 从题间重置点起跑，省下的是重复的准备时间。</desc>
+  <defs>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1239" height="391" class="canvas" />
+
+  <text x="32" y="48" class="title">复用前后：同一批 3 条 Attempt</text>
+  <text x="1208" y="48" class="note" text-anchor="end">宽度是示意，不是实测耗时</text>
+
+  <text x="416" y="88" class="note" text-anchor="middle">Attempt 1</text>
+  <text x="696" y="88" class="note" text-anchor="middle">Attempt 2</text>
+  <text x="976" y="88" class="note" text-anchor="middle">Attempt 3</text>
+
+  <text x="32" y="122" class="label">不复用</text>
+  <text x="32" y="146" class="note">每 Attempt 一整套</text>
+
+  <rect x="280.5" y="104.5" width="95" height="47" class="c2 c2-s soft" />
+  <rect x="376.5" y="104.5" width="31" height="47" class="c0 c0-s soft" />
+  <rect x="408.5" y="104.5" width="87" height="47" class="c1 c1-s soft" />
+  <rect x="496.5" y="104.5" width="23" height="47" class="c0 c0-s soft" />
+  <rect x="520.5" y="104.5" width="31" height="47" class="c2 c2-s soft" />
+
+  <rect x="560.5" y="104.5" width="95" height="47" class="c2 c2-s soft" />
+  <rect x="656.5" y="104.5" width="31" height="47" class="c0 c0-s soft" />
+  <rect x="688.5" y="104.5" width="87" height="47" class="c1 c1-s soft" />
+  <rect x="776.5" y="104.5" width="23" height="47" class="c0 c0-s soft" />
+  <rect x="800.5" y="104.5" width="31" height="47" class="c2 c2-s soft" />
+
+  <rect x="840.5" y="104.5" width="95" height="47" class="c2 c2-s soft" />
+  <rect x="936.5" y="104.5" width="31" height="47" class="c0 c0-s soft" />
+  <rect x="968.5" y="104.5" width="87" height="47" class="c1 c1-s soft" />
+  <rect x="1056.5" y="104.5" width="23" height="47" class="c0 c0-s soft" />
+  <rect x="1080.5" y="104.5" width="31" height="47" class="c2 c2-s soft" />
+
+  <text x="376" y="192" text-anchor="middle">题间重置点</text>
+  <path d="M376 200 V216" class="rule" />
+
+  <text x="32" y="234" class="label">复用</text>
+  <text x="32" y="258" class="note">一次准备，3 题共用</text>
+
+  <rect x="280.5" y="216.5" width="95" height="47" class="c2 c2-s soft" />
+
+  <rect x="384.5" y="216.5" width="7" height="47" class="c2 c2-s soft" />
+  <rect x="392.5" y="216.5" width="31" height="47" class="c0 c0-s soft" />
+  <rect x="424.5" y="216.5" width="87" height="47" class="c1 c1-s soft" />
+  <rect x="512.5" y="216.5" width="23" height="47" class="c0 c0-s soft" />
+
+  <rect x="544.5" y="216.5" width="7" height="47" class="c2 c2-s soft" />
+  <rect x="552.5" y="216.5" width="31" height="47" class="c0 c0-s soft" />
+  <rect x="584.5" y="216.5" width="87" height="47" class="c1 c1-s soft" />
+  <rect x="672.5" y="216.5" width="23" height="47" class="c0 c0-s soft" />
+
+  <rect x="704.5" y="216.5" width="7" height="47" class="c2 c2-s soft" />
+  <rect x="712.5" y="216.5" width="31" height="47" class="c0 c0-s soft" />
+  <rect x="744.5" y="216.5" width="87" height="47" class="c1 c1-s soft" />
+  <rect x="832.5" y="216.5" width="23" height="47" class="c0 c0-s soft" />
+
+  <rect x="864.5" y="216.5" width="31" height="47" class="c2 c2-s soft" />
+
+  <path d="M896.5 264 V296" class="dash" />
+  <path d="M1112.5 152 V296" class="dash" />
+  <path d="M896 288 V296 M896 296 H1112 M1112 296 V288" class="rule good-s" />
+  <text x="1004" y="320" class="note good" text-anchor="middle">复用省下的</text>
+
+  <rect x="32.5" y="344.5" width="15" height="15" class="c2 c2-s soft" />
+  <text x="56" y="357" class="note">沙箱层 · 每 Sandbox 一次</text>
+  <rect x="304.5" y="344.5" width="15" height="15" class="c0 c0-s soft" />
+  <text x="328" y="357" class="note">Attempt 层 · Eval / Agent 生命周期</text>
+  <rect x="656.5" y="344.5" width="15" height="15" class="c1 c1-s soft" />
+  <text x="680" y="357" class="note">test(t) 与判分</text>
+  <rect x="880.5" y="344.5" width="7" height="15" class="c2 c2-s soft" />
+  <text x="904" y="357" class="note">题间重置 · git reset --hard</text>
+</svg>
