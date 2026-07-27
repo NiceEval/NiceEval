@@ -19,8 +19,8 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    ```
 
    **接兼容网关时 `baseUrl` 必须显式写。** 只配 key 不配 `baseUrl`,niceeval 打的是官方端点
-   `https://api.openai.com/v1`——拿着网关的凭据敲 OpenAI 的门,回来的是 OpenAI 的「Incorrect API key
-   provided」,看上去像 key 过期,实际是端点选错了。
+   `https://api.openai.com/v1`。此时网关凭据会被发到 OpenAI，返回「Incorrect API key provided」。
+   这看上去像 key 过期，实际是端点选错了。
 
 2. 跑一次。派发任何 attempt 之前先过 judge 预检——端点不通就地停下,不会先烧完一批 agent 成本再告诉你:
 

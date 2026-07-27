@@ -33,11 +33,13 @@ t.calledTool("get_weather", { count: 2 }); // 全 attempt
 | `eventsSatisfy(label, predicate)` | 用谓词检查事件流 |
 | `maxTokens(max)` / `maxCost(usd)` | token（`inputTokens + outputTokens`，cache 桶不计——护栏花钱用 `maxCost`）或估算成本不超上限 |
 
-负断言和上限断言依赖完整证据；所需通道非 complete 时这些断言记为 `unavailable`（非 `.optional()`
-断言评不了使 attempt `errored`），不会按空证据静默通过；正断言在非 complete 通道上没找到匹配同样记
-`unavailable` 而不是 failed。`count` 为精确数字且实测已超出时是确凿失败（partial 通道只会少采，
-超出不可能是采集造成的）；`count` 为谓词且不满足时，非 complete 通道上一律记
-`unavailable`——缺证据的计数没有可信的判定。覆盖声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
+负断言和上限断言依赖完整证据。所需通道非 complete 时，这些断言记为 `unavailable`，
+不会按空证据静默通过；非 `.optional()` 断言评不了会使 Attempt `errored`。
+正断言在非 complete 通道上没找到匹配时，同样记 `unavailable` 而不是 failed。
+
+`count` 为精确数字且实测已超出时是确凿失败。partial 通道只会少采，超出不可能由采集造成。
+`count` 为谓词且不满足时，非 complete 通道上一律记 `unavailable`。缺证据的计数没有可信判定。
+覆盖声明与消费规则见 [证据与完整性](../architecture/evidence.md)。
 
 Sandbox 专属结果断言见 [断言 Sandbox 结果](../../sandbox/library/asserting-results.md)。
 
@@ -55,7 +57,19 @@ output」也算命中的读法：
 | `output?` | 输出匹配，值语义同 `input` 的值位置：`RegExp` 对字符串输出测试（非字符串先序列化再测）；谓词拿原始输出自行判断；对象深度部分匹配；其余值严格相等 |
 | `status?: "pending" \| "completed" \| "failed" \| "rejected"` | 只匹配处于该状态的调用。`pending` 是已发起、尚无结果的调用——典型是 HITL 停在审批上的那一笔 |
 
-`calledSubagent` 的 `match` 是 `SubagentMatch`，语义同 `ToolMatch`：`{ count?: number | ((n: number) => boolean); status?: "pending" | "completed" | "failed"; remoteUrl?: string | RegExp | ((url: string) => boolean); output? }`——`remoteUrl` 只匹配指向该远程地址的子 Agent 委派，`output` 匹配子 Agent 的返回。`event(type, opts?)` 的 `opts` 是 `{ count?: number | ((n: number) => boolean) }`，语义同上。
+`calledSubagent` 的 `match` 是 `SubagentMatch`，语义同 `ToolMatch`：
+
+```ts
+interface SubagentMatch {
+  count?: number | ((n: number) => boolean);
+  status?: "pending" | "completed" | "failed";
+  remoteUrl?: string | RegExp | ((url: string) => boolean);
+  output?: unknown;
+}
+```
+
+`remoteUrl` 只匹配指向该远程地址的子 Agent 委派，`output` 匹配子 Agent 返回。
+`event(type, opts?)` 的 `opts` 是 `{ count?: number | ((n: number) => boolean) }`，计数语义相同。
 
 ```ts
 t.calledTool("get_weather", { input: { city: "Brooklyn" }, count: 1 });

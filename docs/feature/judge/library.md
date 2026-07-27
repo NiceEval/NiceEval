@@ -96,7 +96,9 @@ t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许
 
 重试耗尽或不可重试的预检失败中止本次运行，按[错误反馈契约](../../error-feedback.md#消息三段式)给出 `fix:`。
 鉴权失败（401 / 403）的下一步要同时点名两处解析口径：省略 `baseUrl` 时打的是官方端点
-`https://api.openai.com/v1`，key 读的是 `judge.apiKeyEnv` 指定的变量或 `NICEEVAL_JUDGE_KEY`——接兼容网关却只配了 key，症状正是拿着网关的凭据打官方端点，而 OpenAI 回的「Incorrect API key provided」不会告诉你端点选错了。
+`https://api.openai.com/v1`，key 读的是 `judge.apiKeyEnv` 指定的变量或 `NICEEVAL_JUDGE_KEY`。
+接兼容网关却只配 key，会导致网关凭据被发到官方端点。OpenAI 返回的「Incorrect API key provided」
+不会提示端点选错，因此 `fix:` 必须同时点名这两处解析结果。
 
 **预检失败不降级成 warning，也不读取断言级 `.optional()`。** 预检验证的是作者已经配置给本次 Invocation
 的共享 Judge 基础设施，不是某一条 Assertion 的运行结果；断言链只有进入 `test(t)` 后才构造，

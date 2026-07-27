@@ -26,6 +26,7 @@
 | 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
 | 对比多个候选方案、给出架构 / 技术选型结论 | [Design](design/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
+| 给文档画一张 SVG | [SVG 图示的视觉契约](SVG-DESIGN.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/reference/README.md)） |
 | 查过去的坑或被否决方案 | [`memory/INDEX.md`](../memory/INDEX.md) |
@@ -41,6 +42,7 @@ docs/
 ├── api-design.md                        公开 API 的调用点、命名与评审契约
 ├── getting-started.md                   新手路径
 ├── source-map.md                        目标契约 → 源码落点
+├── SVG-DESIGN.md                        手绘 SVG 的配色、间距与共用样式
 ├── writing-rules.json                   句长、段长、行宽规则与禁词库，pnpm test:docs 读它
 ├── writing-baseline.json                现存命中数台账，只许变小
 │

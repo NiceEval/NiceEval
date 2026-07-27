@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 870" role="img" aria-labelledby="title desc">
+  <title id="title">不复用 Sandbox 的生命周期</title>
+  <desc id="desc">每条 Attempt 都创建、准备和停止一个全新 Sandbox。</desc>
+  <defs>
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --surface-2: #f1f5f9;
+        --text: #172033;
+        --muted: #526079;
+        --line: #64748b;
+        --blue: #2563eb;
+        --blue-soft: #dbeafe;
+        --teal: #0f766e;
+        --teal-soft: #ccfbf1;
+        --amber: #b45309;
+        --amber-soft: #fef3c7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1117;
+          --surface: #161b22;
+          --surface-2: #21262d;
+          --text: #e6edf3;
+          --muted: #9da7b5;
+          --line: #7d8898;
+          --blue: #79a8ff;
+          --blue-soft: #172a46;
+          --teal: #5eead4;
+          --teal-soft: #123b38;
+          --amber: #fbbf24;
+          --amber-soft: #493413;
+        }
+      }
+      text { fill: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .title { font-size: 28px; font-weight: 750; }
+      .subtitle { fill: var(--muted); font-size: 16px; }
+      .section { font-size: 19px; font-weight: 700; }
+      .body { font-size: 16px; }
+      .small { fill: var(--muted); font-size: 14px; }
+      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+      .badge { font-size: 13px; font-weight: 700; letter-spacing: 0; }
+      .panel { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+      .card { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+      .soft { fill: var(--surface-2); }
+      .loop { fill: none; stroke: var(--blue); stroke-width: 2; stroke-dasharray: 7 6; }
+      .arrow { fill: none; stroke: var(--line); stroke-width: 2; marker-end: url(#arrow); }
+      .loopArrow { fill: none; stroke: var(--blue); stroke-width: 2.5; marker-end: url(#arrowBlue); }
+      .timeline { stroke: var(--line); stroke-width: 2; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10Z" fill="var(--line)" />
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10Z" fill="var(--blue)" />
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="718" height="868" rx="8" class="panel" />
+  <text x="36" y="48" class="title">不复用</text>
+  <text x="36" y="75" class="subtitle">每条 Attempt 走完一套 Sandbox 生命周期</text>
+
+  <rect x="36" y="101" width="648" height="58" rx="6" fill="var(--amber-soft)" stroke="var(--amber)" />
+  <text x="56" y="126" class="badge" fill="var(--amber)">运行前</text>
+  <text x="150" y="126" class="body">预制 Agent CLI</text>
+  <text x="150" y="148" class="code">npm install -g @openai/codex@&lt;version&gt;</text>
+
+  <path d="M360 159V184" class="arrow" />
+  <rect x="160" y="185" width="400" height="54" rx="6" class="card" />
+  <text x="180" y="208" class="section">Experiment.setup</text>
+  <text x="180" y="229" class="small">启动 Invocation 级共享资源（可选）</text>
+
+  <rect x="28" y="263" width="664" height="476" rx="8" class="loop" />
+  <rect x="48" y="247" width="190" height="32" rx="6" fill="var(--blue-soft)" stroke="var(--blue)" />
+  <text x="64" y="268" class="badge" fill="var(--blue)">循环 · 每 ATTEMPT 一次</text>
+
+  <path d="M360 239V289" class="arrow" />
+  <rect x="64" y="290" width="592" height="440" rx="6" class="card" />
+  <rect x="64" y="290" width="12" height="440" rx="6" fill="var(--blue)" />
+  <line x1="104" y1="306" x2="104" y2="704" class="timeline" />
+  <circle cx="104" cy="306" r="5" fill="var(--teal)" />
+  <text x="128" y="312" class="body">createSandbox</text>
+  <text x="128" y="330" class="small">Runner 自动</text>
+  <circle cx="104" cy="350" r="5" fill="var(--teal)" />
+  <text x="128" y="356" class="body">SandboxSpec.setup</text>
+  <text x="128" y="375" class="code">git clone &lt;repo-url&gt; . &amp;&amp; git checkout &lt;commit&gt;</text>
+  <text x="128" y="393" class="code">pnpm install --frozen-lockfile</text>
+  <circle cx="104" cy="416" r="5" fill="var(--blue)" />
+  <text x="128" y="422" class="body">Eval.setup</text>
+  <text x="128" y="440" class="small">uploadDirectory / writeFiles</text>
+  <circle cx="104" cy="460" r="5" fill="var(--blue)" />
+  <text x="128" y="466" class="body">Agent.setup</text>
+  <text x="128" y="484" class="small">鉴权、MCP、skills</text>
+  <circle cx="104" cy="504" r="5" fill="var(--amber)" />
+  <text x="128" y="510" class="body">test(t)</text>
+  <text x="128" y="528" class="code">t.send(...) / pnpm test</text>
+  <circle cx="104" cy="548" r="5" fill="var(--amber)" />
+  <text x="128" y="554" class="body">评分与证据收集</text>
+  <text x="128" y="572" class="small">Runner 自动</text>
+  <circle cx="104" cy="592" r="5" fill="var(--line)" />
+  <text x="128" y="598" class="body">Eval.teardown</text>
+  <text x="128" y="616" class="code">pkill ...</text>
+  <circle cx="104" cy="636" r="5" fill="var(--line)" />
+  <text x="128" y="642" class="body">Agent.teardown</text>
+  <text x="128" y="660" class="small">Adapter 收尾</text>
+  <circle cx="104" cy="670" r="5" fill="var(--line)" />
+  <text x="128" y="676" class="body">SandboxSpec.teardown</text>
+  <text x="128" y="692" class="small">环境级收尾</text>
+  <circle cx="104" cy="704" r="5" fill="var(--line)" />
+  <text x="128" y="710" class="body">stop</text>
+  <text x="128" y="726" class="small">Runner 自动</text>
+
+  <path d="M656 704H680V306H658" class="loopArrow" />
+  <rect x="498" y="277" width="164" height="27" rx="5" fill="var(--blue-soft)" />
+  <text x="510" y="296" class="small" fill="var(--blue)">还有 Attempt：新 Sandbox</text>
+
+  <path d="M360 739V776" class="arrow" />
+  <rect x="160" y="777" width="400" height="54" rx="6" class="card" />
+  <text x="180" y="800" class="section">Experiment.teardown</text>
+  <text x="180" y="821" class="small">停止 Invocation 级共享资源（可选）</text>
+</svg>

@@ -115,8 +115,10 @@ failed。所以计分制的 verdict 回答的是「这次的分数完不完整�
 一条断言评不了和它通过、失败都是两回事。以下情况把该条 `AssertionResult` 记为
 `outcome: "unavailable"`（带机器可读 `reason`），绝不静默丢弃、绝不按空证据判通过：
 
-- **负断言与上限断言的证据通道不完整**——`notEvent` / `usedNoTools` 这类「确认没发生」的断言，以及 token
-  / cost 上限断言，依赖完整采集；所需通道非 complete 时（含 unknown，见[证据与完整性](../assertions/architecture/evidence.md)），空流不能证明「没发生」，缺 usage 不能按零聚合。
+- **负断言与上限断言的证据通道不完整**——`notEvent` / `usedNoTools` 这类「确认没发生」的断言，
+  以及 token / cost 上限断言，都依赖完整采集。所需通道非 complete 时，空流不能证明「没发生」，
+  缺 usage 不能按零聚合；unknown 也属于这种情况，见
+  [证据与完整性](../assertions/architecture/evidence.md)。
 - **正断言在非 complete 通道上没找到匹配**——「没采到」不能算成「Agent 没做」；
   找到匹配则照常通过（证据存在就是证据），complete 通道上没找到才是 failed。
 - **judge 没有解析到模型或 API key**——rubric 写了就必须留下记录（见 [LLM-as-judge](../judge/library.md)）。

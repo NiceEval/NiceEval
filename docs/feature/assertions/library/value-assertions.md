@@ -16,8 +16,8 @@ t.check(turn.data, matches(MySchema));
 - `await t.require(value, matcher)` 立即等待；不通过就按 gate 中止依赖它的后续代码，通过后返回原 value。
 
 只有后续逻辑依赖这个值时才使用 `require`。`require` 是**通过制**（`defineEval`）的前置词；
-计分制（`defineScoreEval`）的 `t` 上没有它，前置写成 `t.check(value, matcher).gate()`——同一件事，
-还能顺带挣分（见 [Severity 与 Verdict · 计分制里的 `.gate()`](../../verdict/architecture.md#计分制里的-gate前置中止)）。
+计分制（`defineScoreEval`）的 `t` 上没有它。前置写成 `t.check(value, matcher).gate()`，还能顺带挣分。
+完整语义见 [Severity 与 Verdict · 计分制里的 `.gate()`](../../verdict/architecture.md#计分制里的-gate前置中止)。
 
 ## 内置 matcher
 
@@ -51,7 +51,10 @@ t.check(turn.data, satisfies((v) => Array.isArray(v) && v.length <= 5, "最多 5
 `similarity(expected)` 是归一化编辑距离（1 − Levenshtein ÷ 较长串长度），不是语义相似度——同义改写、
 语序调整会得低分，适合期望输出接近逐字稳定的场景；语义评价用 [LLM-as-judge](../../judge/library.md)。
 
-`includesUrl(min?)` / `hasSections(min?)` 是**内容形状断言**：不判语义，只判回答具不具备预期产出的形状（带来源链接、有小节结构）。它们的定位是没有 Judge key 时的兜底——比「断言输入里本来就有的词」强一个量级（复读题目糊弄不过去），但判不了内容真伪；有 Judge 时语义质量仍交给 [LLM-as-judge](../../judge/library.md)。URL 按去重后的完整链接计数；标题按行首 `#` 到 `######` 计数。
+`includesUrl(min?)` / `hasSections(min?)` 是**内容形状断言**。它们不判语义，只检查回答是否带来源链接
+或小节结构。没有 Judge key 时，它们比检查输入中已有的词更可靠，但仍判不了内容真伪。
+有 Judge 时，语义质量交给 [LLM-as-judge](../../judge/library.md)。URL 按去重后的完整链接计数；
+标题按行首 `#` 到 `######` 计数。
 
 ## 改严重度与阈值
 
