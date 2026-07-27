@@ -9,7 +9,8 @@ Library 用法、CLI 反馈和架构。正文写产品最终要满足的契约�
 新开一个功能子目录，从 [`_template/`](_template/README.md) 起步：
 
 - `README.md`：用户为什么需要它、核心心智和入口。
-- `library.md`：用户怎样 import、调用和组合，覆盖主要场景。
+- `library.md`：用户怎样 import、调用和组合，覆盖主要场景；公开形状遵守
+  [API 设计](../api-design.md)。
 - `cli.md`：命令怎样调用，各种 case 的期望输出与错误反馈。
 - `use-case/`：CLI 的每个位置参数与 flag——或 Library 的每组公开 API——配一组用例文档。
 

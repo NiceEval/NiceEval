@@ -4,6 +4,37 @@
 
 每次调研一个外部项目开一个二级标题,格式固定:是什么 → 已经借鉴的 → 这次新学到、值得抄的 → 调研过但不打算抄的(及理由)。
 
+## API 设计准则
+
+**来源：** [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)、
+[Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)、
+[Rust API Guidelines · Naming](https://rust-lang.github.io/api-guidelines/naming.html) 与
+[Google Go Style Best Practices · Naming](https://google.github.io/styleguide/go/best-practices.html)。
+
+**是什么：** 四套语言生态的公开 API 命名与调用约定。Swift 以调用点清晰为首要目标；
+Google TypeScript 规定 TypeScript 标识符的 casing、描述性与缩写纪律；Rust 为转换等动作建立稳定词族；
+Google Go 区分返回值的名词性名字与产生动作的动词性名字。
+
+### 已经借鉴的
+
+1. **先写调用点再定名。** API 会被调用远多于被声明，评审必须把名字、参数与返回类型放进真实 use case。
+2. **清晰优先于简短。** 消除相邻 API 的实质歧义值得增加必要词，类型和模块已经表达的信息则不重复。
+3. **同类动作形成词族。** `defineX`、`createX`、`openX`、`fromX` 各自只表达一种稳定动作。
+4. **查询与动作不套同一语法。** 产生副作用的函数用动词短语；返回逻辑视图的纯查询可以按结果命名。
+
+这些原则落成 niceeval 的正式契约见 [API 设计](api-design.md)。
+
+### 调研过但不照搬的
+
+1. **不照搬 Swift 的变形词规则。** `-ed` / `-ing` 与 mutating 对偶依赖 Swift 语法，不适合
+   TypeScript 自由函数。
+2. **不照搬 Rust 的 `as_` / `to_` / `into_` 拼写。** niceeval 学习的是按成本与所有权建立稳定词族，
+   不是把 snake_case 名字搬进 TypeScript。
+3. **不照搬 Go 的无 `get` 规则。** TypeScript 调用点可能没有 receiver 或包名前缀，是否省略领域名
+   由完整调用是否清楚决定。
+4. **不制定“所有函数都是动词 + 名词”。** 查询、组件、定义器、转换和副作用动作承担不同角色，
+   机械统一会牺牲调用点语义。
+
 ## Vercel agent-eval —— `packages/playground`
 
 **来源路径:** `/Users/ctrdh/Code/agent-eval/packages/playground`(本机另一个项目,不在这个仓库里,记路径方便下次再核对实现有没有变)。

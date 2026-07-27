@@ -22,6 +22,7 @@
 | 查什么改动会重跑,或两个 Run 凭什么可比 | [缓存与携带](feature/experiments/cache.md)(指纹与 configHash 同一张输入清单) |
 | 从零理解使用路径 | [Getting Started](getting-started.md) |
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
+| 设计或评审公开 API | [API 设计](api-design.md) |
 | 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
@@ -36,6 +37,7 @@
 ```text
 docs/
 ├── README.md                            本入口与写作契约
+├── api-design.md                        公开 API 的调用点、命名与评审契约
 ├── getting-started.md                   新手路径
 ├── source-map.md                        目标契约 → 源码落点
 ├── writing-rules.json                   句长、段长、行宽规则与禁词库，pnpm test:docs 读它
