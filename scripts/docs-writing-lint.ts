@@ -27,7 +27,11 @@ export interface BannedTerm {
   use: string;
   /** 为什么禁——命中时原样打印,作者不必回来翻文档。 */
   why: string;
-  /** 可选:豁免的路径前缀(如 `docs/roadmap/`)。 */
+  /**
+   * 可选:豁免的路径前缀。留给「立词的那一页自己要写出被淘汰的写法」这一种情形——
+   * 概念表并列列出同义词是它的职责。正文里的命中一律改文字,不加路径豁免:
+   * 豁免一加就是整个目录长期免检,而它挡住的往往正是该改的那几句。
+   */
   exempt?: string[];
   /**
    * 可选:包含该词但语义无关的更长词(如「选集」之于「候选集合」)。中文没有词边界,
@@ -217,18 +221,6 @@ function stripInlineCode(line: string): string {
 
 const isTableRow = (line: string) => line.trimStart().startsWith("|");
 
-/**
- * 行宽豁免:行里有一个塞不下的 token(长 URL、长路径、长标识符)时,换行也救不了。
- * 中文没有空格,一整段中文会被 split 当成一个巨长 token——含宽字符的 token 不算豁免,
- * 否则这条规矩对中文正文完全失效,而中文正文正是它要治的对象。
- */
-function hasUnbreakableToken(line: string, limit: number, cjkColumns: number): boolean {
-  return line
-    .trim()
-    .split(/\s+/)
-    .some((token) => !WIDE_CHAR.test(token) && visualWidth(token, cjkColumns) > limit);
-}
-
 /** 列表项的项目符号:`- ` `* ` `+ ` `1. ` `1) `。 */
 const LIST_MARKER = /^([-*+]|\d+[.)])\s+/;
 
@@ -388,11 +380,7 @@ export function lintDocsWriting(): LintReport {
       const lineNumber = index + 1;
 
       const width = visualWidth(raw, rules.lineWidth.cjkColumns);
-      if (
-        width > rules.lineWidth.max &&
-        !isTableRow(raw) &&
-        !hasUnbreakableToken(raw, rules.lineWidth.max, rules.lineWidth.cjkColumns)
-      ) {
+      if (width > rules.lineWidth.max && !isTableRow(raw)) {
         count("lineWidth", file);
         hits.push({
           file,

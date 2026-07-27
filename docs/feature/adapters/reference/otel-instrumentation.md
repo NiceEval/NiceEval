@@ -55,7 +55,7 @@
 ## 对 niceeval 的印证与启发
 
 1. **mixin 的数据可得性成立,但按生态分层。** 被测应用用的是 AI SDK telemetry / OpenLLMetry / OpenInference 之一(TS/Python AI 应用的大多数)→ 工具入出参和消息文本**默认就在 span 里**,「从 spans 派生 `StreamEvent[]`」有米下锅;用的是 OTel 官方 instrumentation → 默认只有骨架 + token,mixin 要提示用户开 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` 才能解锁内容断言。
-2. **方言表是接收侧的固定成本,Langfuse 已趟过路。** 四套词汇(gen_ai 新版 / OpenLLMetry 旧式索引 / OpenInference / `ai.*`)各自的工具调用字段都不同,但每套内部结构清楚、有显式 call id——一方言一个薄解析器,与 niceeval 既有的「每 agent 一个薄 mapper」是同一个形状。
+2. **方言表是接收侧的固定成本,Langfuse 已趟过路。** 四套词汇(gen_ai semconv 的 `input/output.messages` / OpenLLMetry 的索引式 `gen_ai.prompt.{i}.*` / OpenInference / `ai.*`)各自的工具调用字段都不同,但每套内部结构清楚、有显式 call id——一方言一个薄解析器,与 niceeval 既有的「每 agent 一个薄 mapper」是同一个形状。
 3. **接收器不用动。** 现有 receiver 已满足 OTLP/HTTP 双编码 + gzip + 正确响应契约;它现在只服务 trace 瀑布图,见 [Observability](../../../observability.md#otlp-traces-统一瀑布图)。
 
 ## 相关阅读

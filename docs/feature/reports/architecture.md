@@ -111,6 +111,17 @@ Record 保存事实：判定、断言、runner 时间树、事件、trace、diff
 `Input = readonly Run[]`；attempt 详情数据源显式声明 `Input = AttemptEvidence`。输入差异进入类型，
 不压进一个含混的 `ReportInput` 后靠运行时猜。
 
+Record 与 Sample 都不提供 DataSource。Record 是持久化事实读取面，Sample 是从 Record 选出的可比较
+视图；DataSource 属于 report 层，把其中一种明确输入计算成原语需要的 Content。依赖方向固定为：
+
+```text
+Record ── currentSample / latestRunSample ──▶ Sample ── DataSource.compute ──▶ Content
+   └──────────────────────────────▶ Run[] ── DataSource.compute ─────────────▶ Content
+```
+
+这个方向保证 `niceeval/record` 与 `niceeval/sample` 不依赖报告的 `Cell`、`Row`、`ColumnSpec`
+或任何 text / web 形状。官方 DataSource 从 `niceeval/report` 导出；自定义 DataSource 实现同一接口。
+
 Sample 同时携带真实 Run、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”
 的信息拆开。warning 的数据源是 [`sampleWarnings`](components/site/sample-warnings.md)，Run 实体上
 开放词表 diagnostics 的数据源是 [`runDiagnostics`](components/site/run-diagnostics.md)；它们都
@@ -127,10 +138,10 @@ attempt 行呈现；读数与列表 Content 不复制 warning 或 diagnostic。
 4. 局部补跑、过旧或未完成 Run 形成结构化 warning。
 5. 同一份 Sample 交给各宿主默认首页或 `--report`。
 
-宿主把这份 Sample 注入每张 sample-input page：原语 source 形态的默认 `input` 就是它，组合组件从
-ctx 拿到它。attempt-input page 的默认输入是 `ctx.page.evidence`，两者由 page input 判别，不靠猜测。
-报告若需要历史趋势，可从组合组件 ctx 的 `record` 自行选择 `Run[]`；不能把宿主注入的当前 Sample
-当成完整历史。
+宿主把打开的 Record 暴露为 `ctx.record`，并把选出的 Sample 注入每张 sample-input page。
+原语 source 形态的默认 `input` 是这份 Sample，组合组件直接读 `ctx.sample`。attempt-input page
+的默认输入是 `ctx.page.evidence`，两者由 page input 判别，不靠猜测。报告若需要历史趋势，
+从 `ctx.record` 显式选择 `Run[]` 并传给对应 DataSource；不能把当前 Sample 当成完整历史。
 
 ## Sample 是默认报告的比较边界
 
@@ -168,9 +179,10 @@ JavaScript 加工 Content，再返回原语树。它不实现 text/web renderer�
 `niceeval/report` 导出数据源、原语与组合组件；`niceeval/report/react` 只导出原语及其 Content
 类型，而且只接受 data 形态。浏览器包因此不含 Record、Sample、artifact 或任何磁盘读取能力。
 
-resolve 在一次 page 实例内按「同一个数据源对象 + 同一个 input 引用」记忆化。同一数据源要被多页
-或多个原语共享时，在报告外壳的 `sources` 字段具名；两个配置相同但分别创建的数据源可以各算一次，
-不依赖不透明的深相等猜测。
+resolve 在一次 page 实例内按「同一个数据源对象 + 同一个 input 引用」记忆化。同一页的多个原语
+直接引用同一个 TypeScript source 值即可共享计算。多页也直接 import 或引用这个值，但每个 page
+实例独立 resolve；报告外壳没有 source 注册表，原语也不接受字符串绑定。两个配置相同但分别创建的
+数据源可以各算一次，管线不靠不透明的深相等猜测。
 
 这个模型保证四条边界：
 

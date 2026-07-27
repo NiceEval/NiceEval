@@ -101,10 +101,7 @@
     {
       "term": "未实现",
       "use": "删掉,或把这篇设计整体放进 docs/roadmap/",
-      "why": "写进正文的「未实现」几周后就是错的,而且没人回来删",
-      "exempt": [
-        "docs/feature/adapters/reference/"
-      ]
+      "why": "写进正文的「未实现」几周后就是错的,而且没人回来删"
     },
     {
       "term": "目前",
@@ -112,10 +109,6 @@
       "why": "「目前」把当前实现当契约,读者分不清哪句是该照着做的",
       "allowIn": [
         "到目前为止"
-      ],
-      "exempt": [
-        "docs/feature/adapters/reference/",
-        "docs/source-map.md"
       ]
     },
     {
@@ -142,9 +135,6 @@
       "why": "「新版」相对谁不明确,发一次版就过期",
       "allowIn": [
         "新版本"
-      ],
-      "exempt": [
-        "docs/feature/adapters/reference/"
       ]
     },
     {

@@ -77,7 +77,12 @@ niceeval view --report reports/quality-cost.tsx
 
 ## 数据源与计算结果
 
-数据源是计算前的声明,`data` 是计算后的内容:
+数据源是计算前的声明，`data` 是计算后的内容。Record 和 Sample 不提供 DataSource；
+`niceeval/report` 导出的 DataSource 消费它们提供的明确输入：
+
+```text
+Record ── currentSample / latestRunSample ──▶ Sample ── DataSource.compute ──▶ Content
+```
 
 ```ts
 interface DataSource<Content, Input = Sample> {
@@ -105,8 +110,10 @@ const byAgent = measureRows({
 const content = await byAgent.compute(sample);
 ```
 
-工厂只建立声明,不读 Record。`compute()` 才可能懒加载 artifact,因此只在构建脚本、CI、报告 resolve
-阶段或能打开记录根的 Node 进程中调用。
+工厂只建立声明，不读 Record。`compute()` 才可能经 Sample 中的 `AttemptHandle` 懒加载 artifact，
+因此只在构建脚本、CI、报告 resolve 阶段或能打开记录根的 Node 进程中调用。需要完整历史的数据源
+显式接收 `readonly Run[]`；组合组件从 `ctx.record` 选择后用 `input` 传入。Table 专用的
+`RowSource`、keyed rows 与完整自定义示例见[数据源目录](components/sources/README.md#写一个数据源)。
 
 ## 用普通 JavaScript 加工
 
@@ -120,7 +127,7 @@ export const CostliestAttempts = defineComponent(
   async ({ limit = 10 }: { limit?: number }, ctx) => {
     const content = await attemptRows.compute(ctx.sample);
     const rows = [...content.rows]
-      .sort((a, b) => Number(b.cells.cost.value) - Number(a.cells.cost.value))
+      .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
       .slice(0, limit);
 
     return <Table data={{ ...content, rows }} filter />;
@@ -182,8 +189,8 @@ export default async function EvalsPage() {
 
 ## 复用同一份数据源
 
-同一份声明被多个 page 消费时,在报告外壳的 `sources` 字段命名。字段名使用 `sources`,因为值仍未
-计算;`data` 只指已经计算完成的 Content:
+同一份声明被多个 page 消费时，直接复用同一个 TypeScript source 值。报告外壳没有 source 注册表，
+原语也不接受字符串绑定：
 
 ```tsx
 const byAgent = measureRows({
@@ -192,16 +199,15 @@ const byAgent = measureRows({
 });
 
 export default defineReport({
-  sources: { byAgent },
   pages: [
-    page("overview", <Table source="byAgent" />),
-    page("detail", <Table source="byAgent" filter />),
+    { id: "overview", title: "Overview", content: <Table source={byAgent} /> },
+    { id: "detail", title: "Detail", content: <Table source={byAgent} filter /> },
   ],
 });
 ```
 
-同名 source 在整份 Report 中只计算一次。名字不存在、绑定到不兼容原语或 Content 校验失败时,
-解析阶段给出来源名与可执行修法,不等到 renderer 静默失败。
+同一 page 实例内，相同 source 对象与相同 input 引用只计算一次。不同 page 独立 resolve，
+所以一页失败不会污染另一页。需要跨文件复用时具名导出 `byAgent` 再 import，不增加第二套注册协议。
 
 ## 相关阅读
 
@@ -209,5 +215,5 @@ export default defineReport({
 - [数据源目录](components/sources/README.md) —— 官方数据源全集。
 - [读数与维度](library/measures.md) —— `Measure`、`Dimension` 与聚合口径。
 - [完整示例](library/examples.md) —— 按场景组织的可复制报告。
-- [外壳与多页](library/shell.md) —— page、导航、sources 与静态资产。
+- [外壳与多页](library/shell.md) —— page、导航与静态资产。
 - [主题](library/theme.md) —— web 呈现令牌与 CSS 出口。

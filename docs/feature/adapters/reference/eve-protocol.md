@@ -103,7 +103,7 @@ interface RuntimeIdentity {
 
 具体字段层面,值得记进 `StreamEvent` 的演进候选(都不是现在就加,是"需要时有先例"):
 
-1. **坐标系(`sequence` / `turnId` / `stepIndex`)。** niceeval 单轮内的 step 边界(一次 CLI 运行内多次模型调用)目前丢失;claude-code transcript 里其实带这个信息。要支持"第几步做了什么"级别的断言或 view 分组时,eve 的三级坐标是现成方案。
+1. **坐标系(`sequence` / `turnId` / `stepIndex`)。** niceeval 单轮内的 step 边界(一次 CLI 运行内多次模型调用)在 `StreamEvent` 里没有对应字段;claude-code transcript 里其实带这个信息。要支持"第几步做了什么"级别的断言或 view 分组时,eve 的三级坐标是现成方案。
 2. **`action.result.error: { code, message }`。** niceeval 只有 `status`,失败原因埋在 `output` 字符串里;"消费方不该解析工具私有输出来判断失败"这个理由对 view 和断言同样成立。
 3. **usage 按 step 记。** niceeval 的 `usage` 挂在 `Turn`(整轮聚合);eve 挂在 `step.completed`(每次模型调用一份)。transcript 里常有 per-step 用量,聚合前丢掉了瀑布图想要的粒度。
 4. **agent 自报元数据(`RuntimeIdentity`)。** `Turn` 或 `session.started` 级的可选 `runtime?: { modelId, version, … }`,让"实际用的模型"从抠磁盘变成契约字段——网关场景的成本核算靠它才准。
@@ -114,7 +114,7 @@ interface RuntimeIdentity {
    await t.respond({ requestId: req.requestId, optionId: "approve" });  // eve 形状:id 字符串定位
    ```
 
-6. **`authorization.*` 与 `input.requested` 分开。** 授权(OAuth / 连接)和 HITL 问答是两种"停",eve 分成两组事件、各带 verdict;niceeval 目前只有一种。评测带三方连接的 agent 时会需要。
+6. **`authorization.*` 与 `input.requested` 分开。** 授权(OAuth / 连接)和 HITL 问答是两种"停",eve 分成两组事件、各带 verdict;niceeval 只有 `input.requested` 一种。评测带三方连接的 agent 时会需要。
 7. **落盘 artifact 带 schema 版本。** `StreamEvent` 是进程内模型可以不带版本,但 `.niceeval/<experiment>/<run>/` 的事件流 JSON 文件是跨版本读的;eve 的 `x-eve-stream-version` 头是先例。niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../record/architecture.md#版本与升级设计):版本号放在 Run 级 `run.json` 顶层,整个 Run(元数据 + 全部 attempt 文件)共用同一个 `schemaVersion`,attempt 文件继续保持裸 JSON array/object。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](otel-genai.md#ag-ui-和-niceeval-streamevent-同形态的扁平事件流))。要做"实时看 agent 跑"的 view 时再回头看。

@@ -552,7 +552,7 @@ interface ComposeContext {
   /** 宿主选择的 Sample；页组件直接消费，attempt 组合也可用来读站点范围。 */
   sample: Sample;
   /** 记录根完整读取面；历史视图从这里自行挑 Run[]。 */
-  results: Record;
+  record: Record;
   /** 规范化后的报告声明，只读；见下方 ReportMeta。 */
   report: ReportMeta;
   /** 当前 page 及其输入；非法组合由判别联合排除。 */

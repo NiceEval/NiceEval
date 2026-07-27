@@ -8,7 +8,7 @@
 再把它作为 `input` 传入：
 
 ```tsx
-const history = await ctx.record.runs();
+const history = ctx.record.experiments.flatMap((experiment) => experiment.runs);
 
 return (
   <Table

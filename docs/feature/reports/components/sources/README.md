@@ -7,9 +7,15 @@
 无需配置的数据源直接导出值；需要选择维度或读数的数据源导出同名工厂。作者自己写一个数据源与使用
 官方数据源没有形态差别。
 
+Record 与 Sample 不提供数据源。它们分别是事实读取面与选择结果；数据源属于 `niceeval/report`，
+消费其中一种明确输入并产出 Content。完整注入流程见
+[Architecture · Sample 是计算入口](../../architecture.md#sample-是计算入口)。
+
 ## 范围级数据源
 
-收 `ReportInput`（`Sample` 或 `Run[]`），聚合口径见[读数与维度](../../library/measures.md)。
+多数范围级数据源收 `Sample`。需要完整历史的能力把 `readonly Run[]` 写进自己的 `Input`，
+不从 Sample 猜历史，也不让一个含混的联合类型推迟到运行时判别。聚合口径见
+[读数与维度](../../library/measures.md)。
 
 | 数据源 | 一行/一格是什么 | 配的原语 | 形状 |
 |---|---|---|---|
@@ -55,17 +61,89 @@ artifact：[`loadAttemptEvidence`](../../../record/library.md) 已经完成一�
 
 ## 写一个数据源
 
+`DataSource` 是「一种输入怎样变成一种可序列化 Content」的协议，不是二维数组：
+
 ```ts
 interface DataSource<Content, Input = Sample> {
   name: string;
   compute(input: Input): Promise<Content>;
 }
 
-interface RowSource<RowValue extends Row, Input = ReportInput>
+interface RowSource<RowValue extends Row, Input = Sample>
   extends DataSource<TableContent<RowValue>, Input> {
   /** 省略 <Column> 时用的默认列；收已解析的行，所以随数据切换列的判断住在这里。 */
   columns(rows: readonly RowValue[]): readonly ColumnSpec[];
 }
+
+interface TableContent<RowValue extends Row = Row> {
+  rows: readonly RowValue[];
+}
+
+interface Row {
+  /** 稳定行身份，不是数组位置。 */
+  key: string;
+  /** Column.dataKey 按这里的键取格子。 */
+  cells: Readonly<Record<string, Cell>>;
+  subRows?: readonly Row[];
+  variant?: "normal" | "placeholder";
+}
+```
+
+`TableContent` 是带身份的二维键值数据：第一维是 `rows[]`，第二维是 `row.cells[dataKey]`。
+它不用 `Cell[][]`，因为列顺序属于投影，不能成为数据身份；增删或重排 `<Column>` 不改变任何 row。
+
+下面的完整例子按 agent 产生一行。`spend` 已经是聚合数字，所以使用 `measure` Cell 保留有效样本数、
+覆盖总数与全部 attempt 引用：
+
+```tsx
+import type { MeasureCell, Row, RowSource } from "niceeval/report";
+
+interface BudgetRow extends Row {
+  cells: {
+    agent: { kind: "text"; text: string };
+    spend: { kind: "measure"; measure: MeasureCell };
+  };
+}
+
+export const budgetRows: RowSource<BudgetRow> = {
+  name: "budget-rows",
+  async compute(sample) {
+    const budgets = await computeBudgetByAgent(sample);
+    return {
+      rows: budgets.map(({ agent, spend }) => ({
+        key: agent,
+        cells: {
+          agent: { kind: "text", text: agent },
+          spend: { kind: "measure", measure: spend },
+        },
+      })),
+    };
+  },
+  columns: (_rows) => [
+    { key: "agent", label: { en: "Agent", "zh-CN": "Agent" } },
+    { key: "spend", label: { en: "Spend", "zh-CN": "花费" }, unit: "USD" },
+  ],
+};
+```
+
+默认使用 source 的列投影；写 `<Column>` 时整体覆盖列选择、顺序与呈现，不改变 source 产生的 rows：
+
+```tsx
+<Table source={budgetRows} />
+
+<Table source={budgetRows}>
+  <Column dataKey="agent" />
+  <Column dataKey="spend" header={{ en: "Budget used", "zh-CN": "已用预算" }} />
+</Table>
+```
+
+需要加工时显式计算，再走 `data` 形态。source 与 data 互斥，`Table` 不重新取数或聚合：
+
+```tsx
+const content = await budgetRows.compute(ctx.sample);
+const rows = content.rows.filter((row) => row.cells.spend.measure.value !== null);
+
+return <Table data={{ ...content, rows }} />;
 ```
 
 三条纪律：

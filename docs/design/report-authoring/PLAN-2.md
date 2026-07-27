@@ -128,7 +128,7 @@ interface DataSource<Content, Input = Sample> {
   compute(input: Input): Promise<Content>;
 }
 
-interface RowSource<RowValue extends Row, Input = ReportInput>
+interface RowSource<RowValue extends Row, Input = Sample>
   extends DataSource<TableContent<RowValue>, Input> {
   columns(rows: readonly RowValue[]): readonly ColumnSpec[];
 }
@@ -149,7 +149,7 @@ interface Row {
 `measure` Cell，而不是压成字符串：
 
 ```tsx
-import type { Row, RowSource } from "niceeval/report";
+import type { MeasureCell, Row, RowSource } from "niceeval/report";
 
 interface BudgetRow extends Row {
   cells: {
@@ -209,7 +209,7 @@ export const CostliestAttempts = defineComponent(
   async ({ limit = 10 }: { limit?: number }, ctx) => {
     const content = await attemptRows.compute(ctx.sample);
     const rows = [...content.rows]
-      .sort((a, b) => Number(b.cells.cost.value) - Number(a.cells.cost.value))
+      .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
       .slice(0, limit);
 
     return <Table data={{ ...content, rows }} filter />;

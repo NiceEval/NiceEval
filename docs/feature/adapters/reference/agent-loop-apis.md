@@ -40,7 +40,7 @@
 - **事件流**:词汇闭集,层级清晰——`agent_start/end`、`turn_start/end`(**turn 概念显式**)、`message_start/update/end`(内嵌 text/thinking delta)、`tool_execution_start/update/end`(**均带显式 `toolCallId`** + args,end 带 result + isError)、`compaction_start/end`、`auto_retry_start/end`。工具结果双通道:`content` 给 LLM、`details` 给 UI(如 edit 工具的 `details.diff` 是标准 unified patch)。
 - **会话**:JSONL **树**结构(首行 SessionHeader v3,条目带 `id` + `parentId`,同文件内原地分支),存 `~/.pi/agent/sessions/`;`AssistantMessage` **自带 usage(含 cache 细分)+ 分项 cost + stopReason + provider + model**——对 eval 采集是四家里最友好的 transcript。SDK 侧 `SessionManager.inMemory()` 可不落盘;`fork()` / `importFromJsonl()` 齐全。
 - **HITL**:**无内置工具审批**(哲学是 YOLO + 可观测)。要拦得用 extension:`pi.on("tool_call", handler)` 返回 `{ block: true }`,`ctx.ui.confirm/select/input` 与人交互;RPC 模式有 extension UI 协议转发对话框。
-- **遥测**:**今天没有**。`packages/agent/docs/observability.md` 有设计稿(自发结构化生命周期事件、不依赖 OTel、外部监听者自行转 span),但源码搜索确认未实现。现实遥测面 = 事件流 + AssistantMessage 自带的 usage/cost。
+- **遥测**:**今天没有**。`packages/agent/docs/observability.md` 有设计稿(自发结构化生命周期事件、不依赖 OTel、外部监听者自行转 span),但源码里搜不到对应代码。现实遥测面 = 事件流 + AssistantMessage 自带的 usage/cost。
 - 来源:https://github.com/earendil-works/pi (README + packages/coding-agent/docs/{sdk,json,rpc,session-format,extensions}.md + packages/agent/docs/observability.md)、https://mariozechner.at/posts/2025-11-30-pi-coding-agent/
 
 ## 汇总对照(含 AI SDK 作参照)
