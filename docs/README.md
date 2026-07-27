@@ -24,6 +24,7 @@
 | 设计或修改一个用户功能 | [Feature](feature/README.md) → 对应功能目录 |
 | 设计或评审公开 API | [API 设计](api-design.md) |
 | 讨论尚未定稿的方向 | [Roadmap](roadmap/README.md) |
+| 对比多个候选方案、给出架构 / 技术选型结论 | [Design](design/README.md) |
 | 设计仓库自身的测试、维护或 benchmark | [Engineering](engineering/README.md) |
 | 从契约找到实现 | [Source Map](source-map.md) |
 | 查一处设计从哪个系统学来 | 该功能目录下的 `reference/`（[record](feature/record/reference/README.md) / [sample](feature/sample/reference/README.md) / [reports](feature/reports/reference/README.md)） |
@@ -59,6 +60,9 @@ docs/
 ├── roadmap/                             尚未定稿的功能设计
 │   └── multi-agent/                     多 Agent Eval 场景
 │
+├── design/                              需要对比候选方案的架构 / 技术决策
+│   └── _template/                       新决策主题模板
+│
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
 │   ├── agent-docs/                      随包 AI 文档:打包、发现与索引守护
@@ -85,6 +89,7 @@ docs/
 |---|---|
 | 已裁决的目标功能、API、CLI、语义与架构理由 | `docs/feature/` 或 `docs/` 对应设计页 |
 | 尚未裁决、仍存在开放分歧的候选设计 | `docs/roadmap/` |
+| 需要对比多个候选方案的架构 / 技术选型决策 | `docs/design/` |
 | 仓库自身如何测试、维护、同步或 benchmark | `docs/engineering/` |
 | 用户如何完成任务 | `docs-site/zh/` |
 | 设计翻案、被否决方案、踩坑与反直觉修法 | `memory/` |
@@ -109,6 +114,7 @@ docs/
 Feature 文档具体怎样拆成 `README.md`、`library.md`、`cli.md` 与 `architecture.md`，
 由 [`feature/README.md`](feature/README.md) 和模板定义。
 Engineering 文档的组织方式由 [`engineering/README.md`](engineering/README.md) 定义。
+Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 ## 写给人读
 
