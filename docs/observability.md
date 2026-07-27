@@ -148,6 +148,8 @@ otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别�
 
 spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。接收器的**粒度**跟**被测进程**走,不是跟 attempt 走:
 
+![并发 send 的 span 归属](assets/observability-span-ownership.svg)
+
 - **沙箱型 agent**:每沙箱一个接收器。每个沙箱是独立进程,env 注入各自端点,attempt 之间端口天然隔离。
 - **direct agent**:整个 run **共享一个接收器**(`defineConfig({ telemetry })` 钉住的固定端口)。被测应用只有一条全局 OTel 管线、一个导出目标,做不到"给每条并行 eval 发不同端点"——并行 attempts 的 span 混在同一条流里,这是共享被测对象的物理事实,不是实现选择。
 

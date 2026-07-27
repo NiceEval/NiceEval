@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 520" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">评分证据的四层折叠树</title>
+  <desc id="figDesc">Assertion 先折叠进 Group，再折叠进 Eval，最后折叠进 Experiment；verdict 沿边传播，points 求和，tracked 逐层做无权均值。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="519" class="canvas" />
+  <text x="32" y="48" class="title">四层折叠：同一棵树，三种读数各守自己的运算</text>
+  <rect x="440.5" y="80.5" width="359" height="72" class="box" /><text x="460" y="110" class="label mono">Experiment</text><text x="460" y="134">verdict · Σ points · mean tracked</text>
+  <path d="M620 152 V200 H304 M620 200 H936" class="arrow" />
+  <rect x="128.5" y="216.5" width="351" height="72" class="box" /><text x="148" y="246" class="label mono">Eval A</text><text x="148" y="270">判定 / 得分 / 质量分</text>
+  <rect x="760.5" y="216.5" width="351" height="72" class="box" /><text x="780" y="246" class="label mono">Eval B</text><text x="780" y="270">同构折叠</text>
+  <path d="M304 288 V336 H176 M304 336 H432 M936 288 V336 H808 M936 336 H1064" class="arrow" />
+  <rect x="64.5" y="352.5" width="239" height="64" class="box" /><text x="84" y="382" class="label mono">Group 1</text><text x="84" y="406" class="note">语义分块</text>
+  <rect x="320.5" y="352.5" width="239" height="64" class="box" /><text x="340" y="382" class="label mono">Group 2</text><text x="340" y="406" class="note">隐式根组亦同</text>
+  <rect x="696.5" y="352.5" width="239" height="64" class="box" /><text x="716" y="382" class="label mono">Group 1</text><text x="716" y="406" class="note">groupPath 对齐</text>
+  <rect x="952.5" y="352.5" width="239" height="64" class="box" /><text x="972" y="382" class="label mono">Group 2</text><text x="972" y="406" class="note">逐层同构</text>
+  <path d="M184 416 V456 M440 416 V456 M816 416 V456 M1072 416 V456" class="arrow" /><text x="64" y="488" class="mono">Assertion → verdict edge / points / tracked</text><text x="64" y="512" class="note">unavailable 在每一层按 null 传播，不折成 0</text>
+</svg>

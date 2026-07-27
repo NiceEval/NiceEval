@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">Ctrl+C 的三级中断时序</title>
+  <desc id="figDesc">第一次 Ctrl+C 请求优雅收尾并启动看门狗，第二次先强停 Sandbox 再等待 Attempt 收尾链与 Experiment teardown 同时收口，第三次直接退出。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
+  <text x="32" y="48" class="title">Ctrl+C：逐级放弃等待，不跳过可达收尾</text>
+  <text x="32" y="104" class="label">信号</text><text x="192" y="104" class="label">Runner</text><text x="536" y="104" class="label">Attempt Scope</text><text x="920" y="104" class="label">Experiment</text>
+  <path d="M176 120 V440 M520 120 V440 M904 120 V440" class="dash" />
+  <text x="32" y="160" class="mono">Ctrl+C #1</text><path d="M144 156 H504" class="arrow" /><text x="192" y="184">abort + 看门狗</text><path d="M520 200 H888" class="arrow" /><text x="536" y="224">Eval → Agent → Sandbox teardown</text><path d="M904 240 H1160" class="arrow" /><text x="920" y="264">Experiment teardown</text>
+  <text x="32" y="312" class="mono">Ctrl+C #2</text><path d="M144 308 H504" class="arrow" /><text x="192" y="336" class="warn">强停全部 Sandbox</text><path d="M520 352 H888" class="arrow" /><text x="536" y="376">等待在飞收尾 settle</text><path d="M904 352 H1160" class="arrow" /><text x="920" y="376">drain 注册表</text>
+  <text x="32" y="424" class="mono">Ctrl+C #3</text><path d="M144 420 H504" class="arrow" /><text x="536" y="426" class="bad">process.exit：放弃未完成收尾</text>
+</svg>

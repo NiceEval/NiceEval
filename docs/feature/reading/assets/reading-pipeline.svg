@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 600" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">从磁盘事实到两个报告宿主</title>
+  <desc id="figDesc">磁盘字节经 Record 懒句柄进入 Sample，再逐 Attempt 求值并做 perEval 与 acrossEvals 两级折叠，最后同一报告树进入 show 与 view。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="599" class="canvas" />
+  <text x="32" y="48" class="title">读取面：事实被包住，选择被物化，聚合留在消费方</text>
+  <rect x="32.5" y="80.5" width="199" height="128" class="box" /><text x="52" y="110" class="label mono">.niceeval/</text><text x="52" y="142">run.json</text><text x="52" y="166">result.json</text><text x="52" y="190" class="note">大证据按需读</text>
+  <path d="M232 144 H280" class="arrow" />
+  <rect x="288.5" y="80.5" width="247" height="128" class="box" /><text x="308" y="110" class="label mono">Record</text><rect x="308.5" y="128.5" width="207" height="56" class="box-2" /><text x="328" y="158" class="mono">AttemptHandle</text><text x="328" y="178" class="note">来源 + 懒读函数</text>
+  <path d="M536 144 H584" class="arrow" />
+  <rect x="592.5" y="80.5" width="247" height="128" class="box" /><text x="612" y="110" class="label mono">Sample</text><text x="612" y="142">口径 · 覆盖 · 时效</text><text x="612" y="166">仍持有句柄</text><text x="612" y="190" class="note">选择被写在数据上</text>
+  <path d="M840 144 H888" class="arrow" />
+  <rect x="896.5" y="80.5" width="311" height="128" class="box" /><text x="916" y="110" class="label mono">sample.attempts</text><text x="916" y="142">逐 Attempt 求值</text><text x="916" y="166" class="note">每个数字保留 refs</text>
+  <path d="M1052 208 V248" class="arrow" />
+  <rect x="816.5" y="256.5" width="391" height="104" class="box" /><text x="836" y="286" class="label">两级折叠</text><rect x="836.5" y="304.5" width="159" height="40" class="box-2" /><text x="856" y="330" class="mono">perEval</text><rect x="1012.5" y="304.5" width="175" height="40" class="box-2" /><text x="1032" y="330" class="mono">acrossEvals</text>
+  <path d="M816 312 H744" class="arrow" />
+  <rect x="400.5" y="256.5" width="295" height="104" class="box" /><text x="420" y="286" class="label mono">MeasureCell</text><text x="420" y="318">value · coverage · refs</text><text x="420" y="342" class="note">可序列化数据</text>
+  <path d="M400 312 H328" class="arrow" />
+  <rect x="32.5" y="256.5" width="247" height="104" class="box" /><text x="52" y="286" class="label">报告树</text><text x="52" y="318" class="mono">Page → components</text><text x="52" y="342" class="note">同一份业务口径</text>
+  <path d="M156 360 V416 H344 M156 416 H968" class="arrow" />
+  <rect x="216.5" y="432.5" width="287" height="104" class="box" /><text x="236" y="462" class="label mono">niceeval show</text><text x="236" y="494">text 面</text><text x="236" y="518" class="note">终端一屏</text>
+  <rect x="824.5" y="432.5" width="287" height="104" class="box" /><text x="844" y="462" class="label mono">niceeval view</text><text x="844" y="494">web 面</text><text x="844" y="518" class="note">静态站点</text>
+</svg>

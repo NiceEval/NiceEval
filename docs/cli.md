@@ -202,15 +202,7 @@ const exit = await Effect.runPromiseExit(
 
 ## 中断:三级响应
 
-```text
-第 1 次 Ctrl+C   → ctrl.abort() → Effect 收到中断信号 → 各 attempt 的 Scope 跑完整收尾链
-                   (eval/agent/sandbox teardown → 停容器),runner 随后收尾实验级 teardown
-                   同时起看门狗:到点若仍有存活沙箱(优雅停容器卡住的信号),转强清
-第 2 次 Ctrl+C   → 强清:先强停全部沙箱(带超时),然后事件驱动收口——并发等待「在飞收尾链
-                   settle」与「实验级 teardown 注册表排空(启动全部未启动、等到全部 settle)」,
-                   两者都 settle 即退;派生的兜底上限只拦收尾链自身失守的病态情形
-第 3 次 Ctrl+C   → 硬退(process.exit),放弃一切未完成的收尾
-```
+![Ctrl+C 的三级中断时序](assets/cli-interrupt-sequence.svg)
 
 **强清不是绕过收尾,而是加速它。** 中断路径上每一层 teardown 都要跑:attempt 级收尾链(`eval.teardown` → `agent.teardown` → `sandbox.teardown`)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的收尾立刻失败返回——随后的退出条件是**事件驱动的 settle,不是时钟**:并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
 

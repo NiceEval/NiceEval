@@ -5,14 +5,7 @@ Reports 把同一份结果事实呈现到三个位置：Agent 使用的终端宿
 显式选择 `currentSample(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用，
 让人和 Agent 读取同一套业务口径；两面共享事实与证据，不要求共享几何布局。
 
-```text
-.niceeval/ ── openRecord / Sample ── resolve（DataSource 计算）── 可序列化数据
-                                                        │
-                         ┌──────────────────────────────┼────────────────────┐
-                         ▼                              ▼                    ▼
-                  report tree text 面          report tree web 面       React 组件
-                  niceeval show                  niceeval view            用户页面
-```
+![共享报告内核扇出三个宿主](assets/shared-kernel-three-hosts.svg)
 
 ## 概念分层
 
@@ -33,10 +26,8 @@ Reports 把同一份结果事实呈现到三个位置：Agent 使用的终端宿
 
 `Reports` 是功能总称，包含 `show`、`view` 和可编程的 `niceeval/report`；单数的 `report` 不是 `show` 或 `view` 的别名，而是两个宿主共用的报告内核。报告的内容单位只有 page，page 的内容单位只有组件树。view 没有一套 page 之外的“attempt 证据面”：attempt 的事实由 Record 提供，详情只是以 locator 为输入的一张参数化 page。
 
-```text
-niceeval/record ──▶ niceeval/sample ── Sample ──▶ niceeval/report ──┬── text 面 ──▶ show
-       └──────── AttemptEvidence ──────────────────────────────────└── web 面  ──▶ view
-```
+上图中的 `niceeval/report` 是两个官方宿主与用户 React 页面共享的内核；
+`AttemptEvidence` 也由 `niceeval/record` 直接装配后注入这条内核边界。
 
 | 所有者 | 责任 |
 |---|---|

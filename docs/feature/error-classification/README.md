@@ -2,6 +2,8 @@
 
 一套统一的失败分类词表,回答两个正交的决策问题:**换个时机重做,能不能过**(时间轴 `retryable`,驱动 attempt 内的有界重试),以及**这个死因波及多远**(空间轴 `scope`,驱动 eval / experiment 粒度的止损闸)。turn 失败、生命周期各阶段的失败、[sandbox 层的 provisioning 失败](../sandbox/architecture.md#provisioning-失败与重试)说同一种语言;声明通道随知识所在地分布,消费策略单点在框架。
 
+![失败分类的两轴与两个执行体](assets/two-axes-executors.svg)
+
 ## 动机
 
 两类真实浪费,各暴露一条缺失的决策轴:

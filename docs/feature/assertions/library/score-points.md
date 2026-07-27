@@ -123,6 +123,8 @@ export default defineScoreEval({
 
 评分证据是一棵四层折叠树（assertion → group → eval → experiment），每层最多折叠出三个读数：
 
+![评分证据的四层折叠树](assets/score-fold-tree.svg)
+
 - **判定面（verdict，两种题型都有）**：通过制里由 severity 决定，severity 是折叠树的**边属性**：gate
   边一票否决；`atLeast` 边挂了记 failed、默认不传播、`--strict` 下翻成 gate 边；`soft()` 边永不传播。
   `--strict` 是作用于所有层的同一个旋钮，组层、eval 层不另设规则。计分制里判定面只由前置中止决定，

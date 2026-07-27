@@ -41,19 +41,7 @@
 每个 attempt 立刻有自己的 fiber,执行体要先过实验级闸、再拿到全局并发
 位,才真正开跑。两级闸按**持有期**分工,这也是各自的用途边界:
 
-```text
-attempt 的一生
-  进入 ─ 等实验 setup ─ 等并发位 ─ create·setup·test·断言求值 ─ teardown·销毁 ─ 完成
-  │                                                                          │
-  ●══════════════════════════════════════════════════════════════════════════●
-  ① 实验级闸  ExperimentDef.maxConcurrency(可选,先来后到)
-     持有期 = 整个 attempt。中途任何等待都不释放 → 严格临界区
-
-                                   ●════════════════════●
-                                   ② 全局并发位  maxConcurrency(瓶颈优先分配)
-                                      持有期 = 只在真正执行时。等待就让位
-                                      → 纯吞吐参数
-```
+![双级闸的持有期](assets/runner-two-gates.svg)
 
 | | ① 实验级闸 | ② 全局并发位 |
 |---|---|---|
@@ -199,21 +187,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 
 三条停止派发的机制各管一类结果,互不混用:
 
-```text
-一个 attempt 出了结果
-  │
-  ├─ passed ─── earlyExit 开? ─▶ abort 同 eval 其余 attempt,不计入分母
-  │                              只在实际省了至少一个轮次时发 invocation:earlyExit
-  │
-  ├─ errored,瞬态(超时、限流、沙箱挂掉)
-  │      └─▶ 什么都不停。下一个 attempt 完全可能自愈
-  │
-  └─ errored,确定性(凭据缺失、模板不存在、作者代码必现抛错)
-         ├─ 作者声明了 scope: "eval" / "experiment"
-         │     └─▶ 止损闸:一次命中即停对应粒度的派发
-         └─ 无声明
-               └─▶ run 级 fail-fast:预检命中,或同 code 在同一 eval 连续复现
-```
+![Attempt 结果的停派发三叉](assets/runner-dispatch-outcomes.svg)
 
 - **只有 `passed` 触发首过即停。** 每个 eval 配一个 `AbortController`,
   某 attempt 通过且 `earlyExit` 开就 `abort()` 同 eval 其余 attempt。
@@ -368,23 +342,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 运行器不承载环境预置的内容,只固定各生命周期 Hook 的**调用点与顺序**,
 Hook 内部做什么全部交给对应的作者决定。调用点从外到内:
 
-```text
-实验级 setup                    宿主机侧,每实验整场至多一次
-  ├─ attempt ──────────────────────────────────────────────────────────
-  │  Sandbox.create
-  │  SandboxSpec.setup 链       环境层:装二进制、预热、写 hook 文件
-  │  变更分类账锚点              锚点之后的改动才进归因视图
-  │  EvalDef.setup              这条 eval 的任务 Fixture
-  │  SandboxAgent.setup         agent 自己的一次性预置(装 CLI 等)
-  │  test(t)                    作者的代码,顺序与次数核心不插手
-  │  折叠 agent 归因增量 → 评分 → 判定
-  │  EvalDef.teardown           ┐
-  │  SandboxAgent.teardown      │ 固定收尾顺序,不声称跨层 LIFO
-  │  SandboxSpec.teardown 链    ┘ 回存跨 attempt 状态的时机
-  │  沙箱销毁或留存
-  └─────────────────────────────────────────────────────────────────────
-实验级 teardown                 全部 attempt 收尾后。中断、强清退出也跑
-```
+![Sandbox 复用下的 Hook 节奏](assets/sandbox-reuse-lanes.svg)
 
 四层 Hook 共用同一种形态:**成对的 `setup` / `teardown`,`setup` 不返回
 值**——写过 Vitest / Jest 的人带着 `beforeAll` / `afterAll` 的心智直接

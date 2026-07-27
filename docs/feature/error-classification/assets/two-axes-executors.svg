@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 560" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">失败分类的两轴与两个执行体</title>
+  <desc id="figDesc">send 与 provisioning 各自在自己的重试执行体消费 retryable，只有最终失败才携带 scope 进入 eval 或 experiment 止损闸。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="559" class="canvas" />
+  <text x="32" y="48" class="title">两条决策轴，两个重试执行体，一个终局止损点</text>
+  <text x="32" y="88" class="label">时间轴 retryable</text>
+  <rect x="32.5" y="112.5" width="359" height="168" class="box" /><text x="52" y="142" class="label mono">agent.send</text><text x="52" y="174">失败 → 分类 → 受理证据门</text><rect x="52.5" y="200.5" width="319" height="48" class="box-2 warn-s" /><text x="72" y="230" class="warn">可重试：退避后重发</text>
+  <rect x="440.5" y="112.5" width="359" height="168" class="box" /><text x="460" y="142" class="label mono">provisioning</text><text x="460" y="174">性质 + 后果：沙箱内部分类</text><rect x="460.5" y="200.5" width="319" height="48" class="box-2 warn-s" /><text x="480" y="230" class="warn">可重试：重建 Sandbox</text>
+  <rect x="848.5" y="112.5" width="359" height="168" class="box" /><text x="868" y="142" class="label">其它生命周期阶段</text><text x="868" y="174">Hook / Eval.setup / test</text><text x="868" y="222" class="note">没有重试执行体</text>
+  <path d="M212 280 V336 H620 M620 280 V336 M1028 280 V336 H620" class="arrow" />
+  <rect x="440.5" y="352.5" width="359" height="72" class="box bad-s" /><text x="460" y="382" class="label">终局失败</text><text x="460" y="406">重试耗尽或不可重试</text>
+  <text x="32" y="472" class="label">空间轴 scope</text>
+  <path d="M620 424 V472 H304 V488 M620 472 H936 V488" class="arrow" />
+  <rect x="128.5" y="488.5" width="351" height="48" class="box" /><text x="148" y="518" class="mono">eval → 停同题余量</text>
+  <rect x="760.5" y="488.5" width="351" height="48" class="box" /><text x="780" y="518" class="mono">experiment → 停全实验余量</text>
+</svg>

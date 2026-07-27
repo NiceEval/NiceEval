@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">双级闸的持有期不同</title>
+  <desc id="figDesc">实验级闸从 Attempt 进入到收尾始终持有，而全局并发位只在执行时持有，退避等待会释放给其它 Attempt。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
+  <text x="32" y="48" class="title">双级闸：实验闸守临界区，全局位保吞吐</text>
+  <text x="32" y="80" class="note">时间 →</text>
+  <path d="M160 88 H1192" class="rule-strong" />
+  <text x="32" y="128" class="label mono">Attempt A</text>
+  <rect x="160.5" y="104.5" width="1031" height="136" class="box" />
+  <text x="176" y="134" class="label">实验级闸：全程持有</text>
+  <rect x="192.5" y="160.5" width="191" height="48" class="box-2" /><text x="212" y="190">等 setup</text>
+  <rect x="400.5" y="160.5" width="239" height="48" class="box-2 c0-s" /><text x="420" y="190" class="mono">send 1</text>
+  <rect x="656.5" y="160.5" width="191" height="48" class="box-2 warn-s" /><text x="676" y="190" class="warn">退避：让位</text>
+  <rect x="864.5" y="160.5" width="239" height="48" class="box-2 c0-s" /><text x="884" y="190" class="mono">send 2</text>
+  <text x="1112" y="190" class="note">收尾</text>
+  <text x="32" y="296" class="label mono">Attempt B</text>
+  <rect x="160.5" y="264.5" width="1031" height="104" class="box" />
+  <text x="176" y="294">同实验：仍被实验闸挡住</text>
+  <rect x="656.5" y="312.5" width="191" height="40" class="box-2 c1-s" /><text x="676" y="338" class="mono">其它实验执行</text>
+  <path d="M400 224 V416 M640 224 V416 M864 224 V416 M1104 224 V416" class="dash" />
+  <path d="M400 416 H640 M864 416 H1104" class="c0-s rule-strong" />
+  <path d="M656 432 H848" class="c1-s rule-strong" />
+  <text x="400" y="456" class="note">全局位只覆盖真正执行段；A 等待时，位交给其它实验</text>
+</svg>

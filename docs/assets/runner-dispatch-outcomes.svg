@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">Attempt 结果如何停止派发</title>
+  <desc id="figDesc">passed 只在 earlyExit 开启时停止同 Eval，瞬态 errored 不停止，确定性 errored 由声明 scope 一次落闸或由同码连续复现触发 fail-fast。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
+  <text x="32" y="48" class="title">停派发三叉：成功省样本，瞬态继续，确定性止损</text>
+  <rect x="32.5" y="88.5" width="255" height="72" class="box" /><text x="52" y="118" class="label mono">Attempt result</text><text x="52" y="142" class="note">封口后的互斥结果</text>
+  <path d="M288 124 H344 V216 M344 124 H600 V216 M344 124 H984 V216" class="arrow" />
+  <rect x="176.5" y="232.5" width="335" height="144" class="box good-s" /><text x="196" y="262" class="label good">passed</text><text x="196" y="294">earlyExit 开启</text><text x="196" y="326" class="mono">停同 eval 等待集</text><text x="196" y="350" class="note">已在飞照常落账</text>
+  <rect x="536.5" y="232.5" width="287" height="144" class="box" /><text x="556" y="262" class="label">errored · 瞬态</text><text x="556" y="294">超时 / 基建抖动</text><text x="556" y="326" class="mono">继续派发</text><text x="556" y="350" class="note">下一次可能自愈</text>
+  <rect x="848.5" y="232.5" width="359" height="144" class="box bad-s" /><text x="868" y="262" class="label bad">errored · 确定性</text><text x="868" y="294">scope：一次落 eval / experiment 闸</text><text x="868" y="326">无声明：同 code streak 推断</text><text x="868" y="350" class="note">只停派发，不抢占在飞</text>
+  <text x="32" y="432" class="note">未派发计入 unstarted；不为没跑过的 Attempt 制造 errored 记录。</text>
+</svg>

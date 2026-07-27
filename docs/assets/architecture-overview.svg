@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 544" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">niceeval 的产品架构总览</title>
+  <desc id="figDesc">Eval 由 Discovery 发现，Runner 通过统一 Agent 接口驱动 Direct 或 Sandbox Adapter，Assertions 与 Verdict 共享，最后由 Reporters 写入 niceeval 记录。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="543" class="canvas" />
+  <text x="32" y="48" class="title">一次评测：核心只认接口，差异留在边界</text>
+  <rect x="32.5" y="88.5" width="159" height="72" class="box" /><text x="52" y="118" class="label mono">Eval</text><text x="52" y="142" class="note">*.eval.ts</text>
+  <path d="M192 124 H240" class="arrow" />
+  <rect x="248.5" y="88.5" width="943" height="144" class="box" /><text x="268" y="118" class="label">core</text>
+  <rect x="268.5" y="144.5" width="159" height="56" class="box-2" /><text x="288" y="178">Discovery</text>
+  <path d="M428 172 H460" class="arrow" /><rect x="468.5" y="144.5" width="159" height="56" class="box-2" /><text x="488" y="178">Runner</text>
+  <path d="M628 172 H660" class="arrow" /><rect x="668.5" y="144.5" width="159" height="56" class="box-2" /><text x="688" y="178">Assertions</text>
+  <path d="M828 172 H860" class="arrow" /><rect x="868.5" y="144.5" width="135" height="56" class="box-2" /><text x="888" y="178">Verdict</text>
+  <path d="M1004 172 H1036" class="arrow" /><rect x="1044.5" y="144.5" width="127" height="56" class="box-2" /><text x="1064" y="178">Report</text>
+  <path d="M548 232 V280 H312 M548 280 H920" class="arrow" />
+  <rect x="112.5" y="296.5" width="399" height="152" class="box" /><text x="132" y="326" class="label">Direct Agent</text><text x="132" y="358">Adapter → 你的服务 / SDK</text><text x="132" y="390" class="note">同一 send → Turn 契约</text><text x="132" y="422" class="mono">kind: direct</text>
+  <rect x="728.5" y="296.5" width="399" height="152" class="box" /><text x="748" y="326" class="label">Sandbox Agent</text><text x="748" y="358">Adapter → coding-agent CLI</text><rect x="748.5" y="376.5" width="359" height="48" class="box-2" /><text x="768" y="406">Sandbox provider</text>
+  <path d="M1108 172 H1192 V480 H920" class="arrow" />
+  <rect x="728.5" y="464.5" width="399" height="48" class="box" /><text x="748" y="494" class="mono">.niceeval/&lt;experiment&gt;/&lt;run&gt;/</text>
+</svg>

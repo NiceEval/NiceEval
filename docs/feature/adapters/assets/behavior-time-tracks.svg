@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 400" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">行为轨与时间轨保持独立</title>
+  <desc id="figDesc">同一次 Agent 执行分别从 SDK 或 transcript 产生 StreamEvent 供断言，从 OTLP span 产生 canonical trace 供瀑布图；两轨不互相补写。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="399" class="canvas" />
+  <text x="32" y="48" class="title">两条采集轨：同源执行，独立证据责任</text>
+  <rect x="32.5" y="96.5" width="215" height="200" class="box" /><text x="52" y="126" class="label">Agent 执行</text><text x="52" y="158">SDK frames</text><text x="52" y="182">structured stdout</text><text x="52" y="206">transcript</text><text x="52" y="246">OTLP spans</text><text x="52" y="278" class="note">同一被测对象</text>
+  <path d="M248 160 H328 M248 248 H328" class="arrow" />
+  <rect x="336.5" y="96.5" width="335" height="112" class="box c0-s" /><text x="356" y="126" class="label">行为轨</text><text x="356" y="158" class="mono">reducer → StreamEvent[]</text><text x="356" y="182" class="note">内容与顺序的权威</text>
+  <rect x="336.5" y="232.5" width="335" height="112" class="box c1-s" /><text x="356" y="262" class="label">时间轨</text><text x="356" y="294" class="mono">mapper → canonical spans</text><text x="356" y="318" class="note">结构与计时，可降级</text>
+  <path d="M672 152 H752 M672 288 H752" class="arrow" />
+  <rect x="760.5" y="96.5" width="447" height="112" class="box" /><text x="780" y="126" class="label mono">assertions</text><text x="780" y="158">只读 Turn.events</text><text x="780" y="182" class="note">不完整会影响结论可信度</text>
+  <rect x="760.5" y="232.5" width="447" height="112" class="box" /><text x="780" y="262" class="label mono">trace waterfall</text><text x="780" y="294">只读 canonical spans</text><text x="780" y="318" class="note">缺失只使报告降级</text>
+  <path d="M704 88 V352" class="rule-strong" /><text x="688" y="376" class="note">不互补</text>
+</svg>

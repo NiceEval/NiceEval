@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 560" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">复用 Sandbox 的并行与生命周期</title>
+  <desc id="figDesc">两个 Sandbox 可以并行，每个 Sandbox 内的 Attempt 严格串行；SandboxSpec setup 每个 Sandbox 一次，Eval 与 Agent Hook 每个 Attempt 一次。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="559" class="canvas" />
+  <text x="32" y="48" class="title">Sandbox 复用：多沙箱并行，单沙箱串行</text>
+  <text x="32" y="80" class="note">Experiment setup 一次　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　Experiment teardown 一次</text>
+  <path d="M176 88 H1192" class="rule-strong" />
+  <text x="32" y="144" class="label mono">Sandbox A</text>
+  <rect x="176.5" y="104.5" width="1015" height="144" class="box" />
+  <rect x="192.5" y="128.5" width="175" height="96" class="box-2 good-s" /><text x="212" y="158" class="mono">SandboxSpec</text><text x="212" y="182">setup × 1</text><text x="212" y="206" class="note">建立重置点</text>
+  <rect x="384.5" y="128.5" width="239" height="96" class="box-2" /><text x="404" y="158" class="label mono">Attempt 1</text><text x="404" y="182">Eval → Agent → test</text><text x="404" y="206" class="note">teardown → reset</text>
+  <rect x="640.5" y="128.5" width="239" height="96" class="box-2" /><text x="660" y="158" class="label mono">Attempt 3</text><text x="660" y="182">Eval → Agent → test</text><text x="660" y="206" class="note">teardown → reset</text>
+  <text x="912" y="158" class="mono">SandboxSpec</text><text x="912" y="182">teardown × 1</text><text x="912" y="206" class="note">stop</text>
+  <text x="32" y="320" class="label mono">Sandbox B</text>
+  <rect x="176.5" y="280.5" width="1015" height="144" class="box" />
+  <rect x="192.5" y="304.5" width="175" height="96" class="box-2 good-s" /><text x="212" y="334" class="mono">SandboxSpec</text><text x="212" y="358">setup × 1</text><text x="212" y="382" class="note">只付一次</text>
+  <rect x="384.5" y="304.5" width="239" height="96" class="box-2" /><text x="404" y="334" class="label mono">Attempt 2</text><text x="404" y="358">Eval → Agent → test</text><text x="404" y="382" class="note">三层逐次执行</text>
+  <rect x="640.5" y="304.5" width="239" height="96" class="box-2" /><text x="660" y="334" class="label mono">Attempt 4</text><text x="660" y="358">Eval → Agent → test</text><text x="660" y="382" class="note">同沙箱不重叠</text>
+  <text x="912" y="334" class="mono">SandboxSpec</text><text x="912" y="358">teardown × 1</text><text x="912" y="382" class="note">stop</text>
+  <path d="M384 456 V496 H880 V456" class="good-s rule-strong" />
+  <text x="400" y="528" class="note">Eval / Agent Hook 每 Attempt 一次；SandboxSpec Hook 每条 lane 一次</text>
+</svg>

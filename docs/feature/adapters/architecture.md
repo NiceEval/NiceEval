@@ -28,10 +28,7 @@ transport ──► raw frames / transcript
 
 ## 行为轨与时间轨
 
-```text
-行为轨  SDK / transcript ─► StreamEvent[] ─► assertions
-时间轨  OTLP spans       ─► canonical mapper ─► trace waterfall
-```
+![行为轨与时间轨](assets/behavior-time-tracks.svg)
 
 OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`。行为轨不完整是契约缺失；时间轨缺失只是报告降级。
 

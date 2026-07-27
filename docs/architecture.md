@@ -6,28 +6,7 @@ niceeval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
 
 ## 系统总览
 
-```text
-                          ┌─────────────────────────── core ───────────────────────────┐
-  evals/                  │                                                            │
-  └─ *.eval.ts ──────────►│ Discovery ──► Runner ──► Assertions ──► Verdict ──► Reporters │
-                          │  (发现)       (调度)     (断言)      (判定)       (报告)   │
-                          │              │ 驱动                             │          │
-                          └──────────────┼──────────────────────────────────┼──────────┘
-                                         │                                  ▼
-                                         ▼  对接口分发,不按名字分支    .niceeval/<experiment>/<run>/
-                          ┌────── Agent(自实现 Adapter) ──────┐
-                          │  Direct adapter  Sandbox adapter  │
-                          │    (你的服务)   ┌───────────────┐ │
-                          │                 │  claude-code  │ │
-                          │                 │  codex / bub  │ │
-                          │                 └───────────────┘ │
-                          │                         ▼         │
-                          │                 ┌─── Sandbox ───┐ │
-                          │                 │    docker     │ │
-                          │                 │ vercel / 三方 │ │
-                          │                 └───────────────┘ │
-                          └───────────────────────────────────┘
-```
+![niceeval 产品架构总览](assets/architecture-overview.svg)
 
 四段职责是**单向数据流**。发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，
 Assertion collector 把检查结果收成 `Assertion[]`。判定规则把执行状态与全部断言折叠成一个互斥的

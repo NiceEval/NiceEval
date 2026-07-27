@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480" role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">并发 send 的 span 归属</title>
+  <desc id="figDesc">两个 Attempt 的 send 窗口大面积重叠，按时间窗口会把重叠区 span 混入两边；traceparent 通过 traceId 精确分组，不受窗口重叠影响。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1239" height="479" class="canvas" />
+  <text x="32" y="48" class="title">span 归属：窗口重叠会混流，traceparent 不会</text>
+  <text x="32" y="80" class="note">时间 →</text><path d="M176 88 H1192" class="rule-strong" />
+  <text x="32" y="136" class="label mono">Attempt A</text><rect x="176.5" y="104.5" width="735" height="72" class="box c0-s" /><text x="196" y="134">send window A</text><circle cx="288" cy="156" r="6" class="c0" /><circle cx="568" cy="156" r="6" class="c0" /><circle cx="824" cy="156" r="6" class="c0" />
+  <text x="32" y="232" class="label mono">Attempt B</text><rect x="448.5" y="200.5" width="743" height="72" class="box c1-s" /><text x="468" y="230">send window B</text><circle cx="520" cy="252" r="6" class="c1" /><circle cx="736" cy="252" r="6" class="c1" /><circle cx="1080" cy="252" r="6" class="c1" />
+  <rect x="448.5" y="296.5" width="463" height="48" class="box-2 bad-s" /><text x="468" y="326" class="bad">窗口法：重叠区同时命中 A 与 B</text>
+  <path d="M448 96 V360 M912 96 V360" class="dash" />
+  <rect x="176.5" y="376.5" width="431" height="64" class="box" /><circle cx="204" cy="408" r="6" class="c0" /><text x="224" y="414" class="mono">traceId A → 只归 A</text>
+  <rect x="760.5" y="376.5" width="431" height="64" class="box" /><circle cx="788" cy="408" r="6" class="c1" /><text x="808" y="414" class="mono">traceId B → 只归 B</text>
+</svg>

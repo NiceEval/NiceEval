@@ -39,28 +39,7 @@ export default defineExperiment({
 
 一次 Invocation 中，一个声明复用的 Experiment 按以下顺序运行：
 
-```text
-Experiment.setup
-  → 为可派发 Attempt 按需创建 Sandbox
-      → createSandbox
-      → SandboxSpec.setup
-      → 建立题间重置点
-      → 检查 Sandbox 复用寿命
-      → ready
-  → Attempt
-      → reset 到题间重置点
-      → Eval.setup，准备该 Eval 的 Fixture
-      → Agent.setup
-      → test(t)，继续准备 Fixture 并执行 Agent Turn
-      → 断言求值与证据收集
-      → Eval.teardown
-      → Agent.teardown
-      → reset 或停止承接 Attempt
-  → 最后一条 Attempt 完成
-      → SandboxSpec.teardown
-      → stop
-  → Experiment.teardown
-```
+![复用 Sandbox 的并行与生命周期](../../assets/sandbox-reuse-lanes.svg)
 
 每个 Sandbox 同时只承接一条 Attempt。
 不同 Sandbox 可以并行；同时执行数仍受全局并发位和 Experiment `maxConcurrency` 限制。
