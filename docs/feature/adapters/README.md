@@ -47,5 +47,5 @@ adapters/
 
 - [Experiments](../experiments/README.md) —— Agent、model 与 flags 怎样进入一次运行。
 - [Sandbox](../sandbox/README.md) —— sandbox provider 与生命周期。
-- [Scoring](../scoring/README.md) —— 标准事件流之上的断言与 judge。
+- [Assertions](../assertions/README.md) —— 标准事件流之上的断言与 judge。
 - [Observability](../../observability.md) —— 事件归一与 OTLP trace。

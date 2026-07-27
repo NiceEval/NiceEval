@@ -77,7 +77,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | ---------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [eval.md](eval.md)                             | Context、session、HITL、能力边界                                          | scripted Agent 与 recording Sandbox（自有 `Agent` / `Sandbox` 接口） | [e2e/adapter](../e2e/adapter/README.md)：真实 Agent 走同一条 Context 链      |
 | [experiments-runner.md](experiments-runner.md) | 调度、缓存、budget、退出码折叠                                            | fake Agent / Sandbox / Reporter、受控时钟与 barrier                  | [e2e/cli](../e2e/cli.md)：真实进程与真实 attempt 下同一批行为                |
-| [scoring.md](scoring.md)                       | matcher、collector、scope、verdict                                        | 构造的证据图（`ScoringContext`）；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型    |
+| [scoring.md](scoring.md) | matcher、collector、scope、judge、verdict | 构造的证据图（`ScoringContext`）；judge 只 fake 传输层（截获 fetch） | [e2e/adapter](../e2e/adapter/README.md)：真实证据上判定一致、真实裁判模型 |
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [record.md](record.md)                         | writer / reader、身份、`evidenceState`、publish                           | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的落盘与读回                         |
 | [sample.md](sample.md)                         | 两个选择口径、覆盖、时效、pipe 算子、去重                                 | 构造的内存记录图（区分力要求见该篇）                                 | [e2e/report](../e2e/report.md)：真实记录根上的口径与警告                     |
@@ -97,7 +97,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [Eval](../../../feature/eval/README.md)                                               | `defineEval`、context、session 和 turn 的用户语义；能力不可用时的反馈 | [eval.md](eval.md)                             |
 | [Experiments](../../../feature/experiments/README.md) 与 [Runner](../../../runner.md) | runs 展开、有界并发、early exit、budget、缓存与退出码折叠             | [experiments-runner.md](experiments-runner.md) |
 | [Sandbox](../../../feature/sandbox/README.md)                                         | 生命周期、路径边界、命令结果、diff 和清理语义                         | [sandbox.md](sandbox.md)                       |
-| [Scoring](../../../feature/scoring/README.md)                                         | matcher、scope、collector、evidence、severity 和 Verdict 形成一致判定 | [scoring.md](scoring.md)                       |
+| [Assertions](../../../feature/assertions/README.md) | matcher、scope、collector、evidence、severity 和 Verdict 形成一致判定 | [scoring.md](scoring.md) |
 | [Record](../../../feature/record/README.md)                                          | artifact round-trip、身份、`configHash` 与携带资格、发布自包含        | [record.md](record.md)                         |
 | [Sample](../../../feature/sample/README.md)                                          | 两个口径的区分力、覆盖分母、时效、算子的四面同步重算与去重            | [sample.md](sample.md)                         |
 | [Reports](../../../feature/reports/README.md)                                         | 读数与聚合口径正确；装载、resolve 与校验反馈完整                      | [reports.md](reports.md)                       |

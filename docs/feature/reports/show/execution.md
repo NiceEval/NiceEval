@@ -1,6 +1,6 @@
 # `--execution`：看执行中做了什么
 
-`--execution` 是 attempt-detail 组件族对应区块的 text 面：对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../scoring/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Scoring · 断言与 Turn 的展示](../../scoring/library/display.md#turntsend的展示)：
+`--execution` 是 attempt-detail 组件族对应区块的 text 面：对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../assertions/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Assertions · 断言与 Turn 的展示](../../assertions/library/display.md#turntsend的展示)：
 
 ```text
 turn1 · completed · 22.4s · 12.4k tok · $0.02

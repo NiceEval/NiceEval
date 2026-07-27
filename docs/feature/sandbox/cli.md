@@ -114,7 +114,7 @@ A notes/decision-log.md · window turn2
 +…
 ```
 
-窗口标签与 `show --timing` / `--execution` / `diff.json` 的[轮标签](../scoring/library/display.md#turntsend的展示)是同一枚 token,`--window` 按字符串等值匹配打印出的标签;`--window` 省略时输出全部窗口的串联视图,`--path` 省略时输出该窗口的全部文件。
+窗口标签与 `show --timing` / `--execution` / `diff.json` 的[轮标签](../assertions/library/display.md#turntsend的展示)是同一枚 token,`--window` 按字符串等值匹配打印出的标签;`--window` 省略时输出全部窗口的串联视图,`--path` 省略时输出该窗口的全部文件。
 
 ### `sandbox list`
 

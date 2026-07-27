@@ -43,7 +43,7 @@
 
 ```text
 attempt 的一生
-  进入 ─ 等实验 setup ─ 等并发位 ─ create·setup·test·评分 ─ teardown·销毁 ─ 完成
+  进入 ─ 等实验 setup ─ 等并发位 ─ create·setup·test·断言求值 ─ teardown·销毁 ─ 完成
   │                                                                          │
   ●══════════════════════════════════════════════════════════════════════════●
   ① 实验级闸  ExperimentDef.maxConcurrency(可选,先来后到)

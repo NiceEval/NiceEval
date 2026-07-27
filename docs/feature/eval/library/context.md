@@ -59,4 +59,4 @@ async test(t) {
 
 `t.events` 是主 session 的即时读取视图；最终的 `t.*` 作用域断言会聚合本 attempt 的全部 session。`turn.status` 为 `completed`、`failed` 或 `waiting`；`turn.usage` 是否存在取决于 Adapter 能否提供。
 
-怎样对这些结果评分，见 [Scoring](../../scoring/library.md)；内部作用域绑定见 [Scoring Architecture](../../scoring/architecture/scopes.md)。
+怎样对这些结果评分，见 [Assertions](../../assertions/library.md)；内部作用域绑定见 [Assertions Architecture](../../assertions/architecture/scopes.md)。

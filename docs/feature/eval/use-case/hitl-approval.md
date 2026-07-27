@@ -57,4 +57,4 @@
 ## 相关阅读
 
 - [Context · 驱动 API](../library/context.md#驱动-api) —— `requireInputRequest` filter 的字段全集。
-- [作用域断言](../../scoring/library/scoped-assertions.md) —— `parked` 与 `status: "rejected"` 的语义。
+- [作用域断言](../../assertions/library/scoped-assertions.md) —— `parked` 与 `status: "rejected"` 的语义。

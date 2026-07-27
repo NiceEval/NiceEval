@@ -1,4 +1,4 @@
-# 自定义断言
+# 自定义 Assertion
 
 内置 matcher 无法表达规则时，用 `makeAssertion` 创建同步或异步 matcher。
 
@@ -46,8 +46,10 @@ function passesTypecheck(): Assertion {
 }
 ```
 
-产出的 matcher 与内置 matcher 一样可以链 `.gate(threshold?)` / `.atLeast(threshold)` / `.soft()` 调级（见 [值断言 · 改严重度与阈值](value-assertions.md#改严重度与阈值)）。
+产出的 matcher 与内置 matcher 一样可以链 `.gate(threshold?)` / `.atLeast(threshold)` / `.soft()` 调级（见
+[值断言 · 改严重度与阈值](value-assertions.md#改严重度与阈值)）。
 
-Assertion 适合评价一个值或一个 scope。跨 attempts 的 pass@k、均值和趋势属于 reporter metric，不应在单 attempt Assertion 中自行读取历史结果。
+Assertion 适合评价一个值或一个 scope。跨 attempts 的 pass@k、均值和趋势属于 reporter metric，不应在单
+attempt Assertion 中自行读取历史结果。
 
 优先组合已有 matcher；只有新的评分语义才创建新 Assertion，不为业务字段包装一层只转发参数的别名。

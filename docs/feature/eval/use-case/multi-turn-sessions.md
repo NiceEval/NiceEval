@@ -57,6 +57,6 @@
 
 ## 相关阅读
 
-- [Scoring · 作用域](../../scoring/architecture/scopes.md) —— 每条断言看哪一轮的完整规则。
+- [Assertions · 作用域](../../assertions/architecture/scopes.md) —— 每条断言看哪一轮的完整规则。
 - [Context](../library/context.md) —— session 与 turn 的字段全集。
 - [Architecture](../architecture.md) —— 为什么作用域由接收者决定。

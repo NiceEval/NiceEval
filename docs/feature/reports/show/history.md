@@ -4,7 +4,7 @@
 
 ## 分节与行内字段
 
-Sample 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。节内是跨 Run 按 [attempt 身份键](../../record/library.md#身份键与去重)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与默认报告同一[单行压缩形态](../../scoring/library/display.md#单行压缩形态)）、耗时、成本与 locator。locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
+Sample 中匹配的每个 `experimentId + evalId` 组合各成一节，分节按 experimentId、evalId 排序依次堆叠。节内是跨 Run 按 [attempt 身份键](../../record/library.md#身份键与去重)去重后的历次 attempt，按 startedAt 升序，一次执行一行，行内字段依次为：开始时间、verdict、单行结果摘要（主失败断言或结构化 error 的一层摘要，与默认报告同一[单行压缩形态](../../assertions/library/display.md#单行压缩形态)）、耗时、成本与 locator。locator 固定收尾：它是从这一行继续下钻的入口，贴在行尾最容易整段复制。
 
 ## 输出
 

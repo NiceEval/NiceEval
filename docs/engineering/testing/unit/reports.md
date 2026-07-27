@@ -76,7 +76,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   tail（含被测 CLI 的 traceback 框线）不得折进 Result 单元格，与单行 message 原样保留两面都要有区分力场景；`failureSummary`
   的计分制口径——failed 取中止前置的摘要，passed 有丢分得分点取首条丢分摘要（含 `+0 pts`
   挣分尾缀）、`moreFailures`
-  计其余丢分得分点，挣满为 null（[丢分摘要规则](../../../feature/scoring/library/display.md#主失败断言怎样选)）；共享算法（最短唯一后缀）在消费方之间一致；`experimentRows`
+  计其余丢分得分点，挣满为 null（[丢分摘要规则](../../../feature/assertions/library/display.md#主失败断言怎样选)）；共享算法（最短唯一后缀）在消费方之间一致；`experimentRows`
   的时效字段（`historical` / `historicalAttempts` 与新执行的判定边界）与占位行数据（`missingEvalIds`
   来自 `sample.coverage`、不参与任何读数聚合）；`currentSample()`
   下一个 experiment 展示用的水位基准 Run 选择——fixture 让同一 experiment 有多个真实贡献 Run、`startedAt`
@@ -176,7 +176,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **`attemptAssertions` 的计分制字段**：`.points` 挣分随所在 `AssertionResult`
   一起出现（不需要单独投影，字段本就在断言记录上，包括「挂了的检查点挣 0 分」这种如实不隐藏的场景）；**得分点不参与 passed 收纳**——passed 的得分点逐条进平铺列表、不折进
   `passedGroups` 计数，收纳只作用于不带 `.points`
-  的观测断言（[收纳豁免](../../../feature/scoring/library/display.md#计分制points-与给分记录)）；得分点挣满计数（`2/5 得分点挣满`，连续打分不足
+  的观测断言（[收纳豁免](../../../feature/assertions/library/display.md#计分制points-与给分记录)）；得分点挣满计数（`2/5 得分点挣满`，连续打分不足
   `n × 1.0` 不算挣满）是 data 层字段；`t.score(label, n)` 的给分记录与断言分属两个数组，按
   `groupPath.join(" > ")` 分组（与 `passedGroups`
   同一套算法，无分组归到空键）；没有 assertion 但存在给分记录时 `attemptAssertions` 不是

@@ -50,7 +50,7 @@ interface EvidenceCoverage {
 - unknown 在消费侧与 `unavailable` 同样保守处理；区别只在展示（unknown = 「Adapter 没说」，unavailable = 「Adapter 说了拿不到」）。
 - attempt 级聚合取各 turn 的最差值（unknown/unavailable < partial < complete），随判定落进 `result.json` 的 `coverage` 字段（见 [Record](../../record/architecture.md#resultjson)），报告据此展示证据覆盖。
 
-消费规则单点定义在 [Severity 与 Verdict](../../scoring/architecture/severity-and-verdict.md)，核心是**三值逻辑对正负断言都成立**：
+消费规则单点定义在 [Severity 与 Verdict](../../verdict/architecture.md)，核心是**三值逻辑对正负断言都成立**：
 
 - 正断言在非 complete 通道上**找到匹配即通过**（证据存在就是证据）；**没找到记 `unavailable`**，不判失败——「没采到」不能算成「Agent 没做」。complete 通道上没找到才是失败。
 - 负断言与上限断言在所需通道非 complete 时一律 `unavailable`——空流证明不了「没发生」，缺 usage 不能按零聚合。

@@ -16,7 +16,7 @@
    ID 配对、HITL 产生
    `input.requested`、usage 逐轮到位。工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`——名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch`
    的深度部分匹配见
-   [Scoring · 作用域断言](../../../../feature/scoring/library/scoped-assertions.md#匹配条件的字段全集)）。支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
+   [Assertions · 作用域断言](../../../../feature/assertions/library/scoped-assertions.md#匹配条件的字段全集)）。支持负断言的协议同时验证反例（`notCalledTool`）；证据不完整的协议在文档里写明负断言边界，不从最终文本猜测过程。
 3. **经 CLI 展示核验接收完整性**：仓库验收脚本把同一份新结果交给读面 CLI——`niceeval show`
    退出 0、默认报告列出本仓库每条 Eval 的 id 与 verdict、与 `--json` 口径一致；对一个通过的 attempt 跑
    `show --execution`，执行树就是「适配器收到了什么」的用户可见投影，第 2 步断言过的那批调用应全部以节点出现，TOOL 卡片的

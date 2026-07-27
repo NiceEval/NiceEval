@@ -107,4 +107,4 @@ text 面不倾倒整份源码：打印有状态行的位置与 expected / receiv
 - [组件树](../README.md) —— 三层模型与双面投影边界。
 - [`Conversation`](conversation.md) —— 兜底区与展开区共用的回复渲染。
 - [源码调用树](../../eval-source/README.md) —— 完整证据、调用片段与降级规则。
-- [断言与 Turn 的展示](../../../scoring/library/display.md#计分制points-与给分记录) —— 证据的折叠与分组契约。
+- [断言与 Turn 的展示](../../../assertions/library/display.md#计分制points-与给分记录) —— 证据的折叠与分组契约。

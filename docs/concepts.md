@@ -40,22 +40,22 @@
 | Session | Session | 一条会话线;`t.newSession()` 开独立 session | [Eval context](feature/eval/library/context.md) |
 | Turn | Turn | `t.send()` 的一次返回值,带事件流片段和收窄到该 Turn 的范围断言 | [Eval context](feature/eval/library/context.md) |
 
-### 评分与判定
+### Assertions、Judge 与 Verdict
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 断言 | Assertion | 对结果、行为、证据或资源使用提出的一项可记录检查;产出 0–1 分数或 `unavailable` | [Scoring](feature/scoring/README.md) |
-| 判定 | Verdict | 一个 Eval 的四态评分判定:`passed` / `failed` / `errored` / `skipped` | [Severity 与 Verdict](feature/scoring/architecture/severity-and-verdict.md) |
-| 严重度 | Severity | gate 不过即 `failed`;soft 默认不改判定,`--strict` 下才计入 | [Severity 与 Verdict](feature/scoring/architecture/severity-and-verdict.md) |
-| Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](feature/scoring/library/judge.md) |
-| 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](feature/scoring/architecture/scopes.md) |
+| 断言 | Assertion | 对结果、行为、证据或资源使用提出的一项可记录检查;产出 0–1 分数或 `unavailable` | [Assertions](./feature/assertions/README.md) |
+| 判定 | Verdict | 一个 Attempt 的四态终态:`passed` / `failed` / `errored` / `skipped` | [Severity 与 Verdict](./feature/verdict/architecture.md) |
+| 严重度 | Severity | gate 不过即 `failed`;soft 默认不改判定,`--strict` 下才计入 | [Severity 与 Verdict](./feature/verdict/architecture.md) |
+| Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](./feature/judge/library.md) |
+| 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](./feature/assertions/architecture/scopes.md) |
 
 ### 计分粒度
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 计分方式 | Scoring scheme | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](feature/scoring/library/score-points.md) |
-| 计分项 | Scoring criterion | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](feature/scoring/library/score-points.md) |
+| 计分方式 | Evaluation mode | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](./feature/assertions/library/score-points.md) |
+| 计分项 | — | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](./feature/assertions/library/score-points.md) |
 
 ### Agent 与 Adapter
 
@@ -220,7 +220,7 @@
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 | [Scoring CLI](feature/scoring/cli.md) |
+| 严格模式 | Strict mode | `--strict` 下 soft 断言低于阈值改判 `failed`,用于 CI 把质量回归当红灯 | [Verdict CLI](./feature/verdict/cli.md) |
 | 环境预置 | —(用普通代码表达) | 跑 agent 前的准备逻辑,三个家:eval 内 `t.sandbox.*`、`SandboxAgent.setup`、外部编排 | [Sandbox library](feature/sandbox/library.md) |
 | CLI flag | CLI flag | 命令行开关(`--strict`、`--report`…);写作时一律带「CLI」限定或写字面 `--xxx`,不与实验 flags 混用 | [CLI](cli.md) |
 
@@ -238,4 +238,6 @@
 
 - [Architecture](architecture.md) —— 这些名词在模块图里各自的位置。
 - [Authoring](feature/eval/README.md) —— Eval / Task / Dataset 怎么写。
-- [Scoring](feature/scoring/README.md) —— Assertion / Severity / Verdict 的完整手册。
+- [Assertions](./feature/assertions/README.md) —— 检查、作用域与证据。
+- [Judge](./feature/judge/README.md) —— 裁判模型调用与不可用语义。
+- [Verdict](./feature/verdict/README.md) —— Severity、严格模式与四态折叠。

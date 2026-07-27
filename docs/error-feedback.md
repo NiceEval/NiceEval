@@ -14,7 +14,7 @@ niceeval 对用户说「这里有问题」的每一条消息——CLI 拒绝一�
 | 读取分类提示 | schemaVersion 不兼容、malformed / incomplete Run | [View · 结果版本与错误](feature/reports/view.md#结果版本与错误) |
 | 库抛出的错误类 | `MalformedLocatorError`、`LocatorNotFoundError`、`publish` 预检失败 | 各 feature 文档声明的错误类 |
 
-**被测对象的失败事实不在本契约内**：断言差异、agent 崩溃形成的 `AttemptError`、failed / errored 判定，是 eval 的结果数据，不是 niceeval 在报错。它们如何变成可行动的排查路径，由 [Scoring 的显示契约](feature/scoring/library/display.md)、[Show](feature/reports/show.md) / [View](feature/reports/view.md) 的呈现契约与公开 Debug 手册负责。
+**被测对象的失败事实不在本契约内**：断言差异、agent 崩溃形成的 `AttemptError`、failed / errored 判定，是 eval 的结果数据，不是 niceeval 在报错。它们如何变成可行动的排查路径，由 [Assertions 的显示契约](./feature/assertions/library/display.md)、[Show](feature/reports/show.md) / [View](feature/reports/view.md) 的呈现契约与公开 Debug 手册负责。
 
 失败事实有一条独立的证据完整性规则：摘要可以有界，调用边界看到的失败命令证据不能等到 Eval
 拼错误字符串时才决定是否保存。目标契约由 Sandbox 包装层在返回 `CommandResult` 前自动把非零命令的

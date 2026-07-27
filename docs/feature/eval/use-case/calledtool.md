@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-`calledTool` / `notCalledTool` 的 `match` 对象是过程断言的核心表达面：入参、次数、输出、状态四个字段，每个字段又有多种取值形态。契约单源是[匹配条件的字段全集](../../scoring/library/scoped-assertions.md#匹配条件的字段全集)；本篇按「想断什么」把每个字段的每种形态遍历一遍，一条意图一段写法——实现或修改这套 API 时，本篇就是行为核对清单。
+`calledTool` / `notCalledTool` 的 `match` 对象是过程断言的核心表达面：入参、次数、输出、状态四个字段，每个字段又有多种取值形态。契约单源是[匹配条件的字段全集](../../assertions/library/scoped-assertions.md#匹配条件的字段全集)；本篇按「想断什么」把每个字段的每种形态遍历一遍，一条意图一段写法——实现或修改这套 API 时，本篇就是行为核对清单。
 
 统一语义先钉住：**`match` 描述单条调用要同时满足的条件**（`input` / `output` / `status` 之间是 AND，作用在同一笔调用上），**`count` 数的是满足这些条件的调用笔数**。不存在「一笔调用满足 input、另一笔满足 output」也算命中的读法。
 
@@ -50,7 +50,7 @@ t.calledTool("file_read", { count: (n) => n >= 2 }); // 谓词 = 自定,"至少�
 t.calledTool("retry", { count: (n) => n <= 3 });   // "至多三次"也是 count 谓词
 ```
 
-「次数」永远在 `count` 里表达，不在严重度句柄里——`.atLeast(1)` 的参数是**分数线**，读作「这条断言至少及格」（[裁决](../../scoring/architecture/severity-and-verdict.md#severity)）。全 attempt 的调用总量上限用 `maxToolCalls(n)`，不用 `count` 逐工具凑。
+「次数」永远在 `count` 里表达，不在严重度句柄里——`.atLeast(1)` 的参数是**分数线**，读作「这条断言至少及格」（[裁决](../../verdict/architecture.md#severity)）。全 attempt 的调用总量上限用 `maxToolCalls(n)`，不用 `count` 逐工具凑。
 
 ## output：断这笔调用返回了什么
 
@@ -97,17 +97,17 @@ t.notCalledTool("shell", { input: { command: /\.niceeval\/.*\.json/ } }); // 只
 t.notCalledTool("send_email", { status: "completed" });            // 可以发起,不许发成
 ```
 
-负断言依赖完整证据：所需通道非 complete 时记 `unavailable`，不按空证据静默通过（[证据与完整性](../../scoring/architecture/evidence.md)）。
+负断言依赖完整证据：所需通道非 complete 时记 `unavailable`，不按空证据静默通过（[证据与完整性](../../assertions/architecture/evidence.md)）。
 
 ## 边界
 
 - **`count` 数字超出是确凿失败**：partial 通道只会少采不会多采，实测已超出的「恰好 n 次」不可能是采集造成的；`count` 谓词不满足时在非 complete 通道上记 `unavailable`——缺证据的计数没有可信判定。
 - **谓词（`input` / `output` / `count` 谓词）对报告不透明**，失败时只有 label 和计数可读——能用字面量或 RegExp 表达的不要写谓词。
 - 严重度与 match 正交：默认 gate，降软指标链 `.atLeast(1)`，只记录链 `.soft()`；证据允许缺席另链 `.optional()`。
-- `calledSubagent(name, match?)` 的 `SubagentMatch` 语义同源（`count` / `status` / `output` 同义，另有 `remoteUrl` 匹配委派地址）；`event(type, opts?)` 只有 `count`。字段全集见[契约单源](../../scoring/library/scoped-assertions.md#匹配条件的字段全集)。
+- `calledSubagent(name, match?)` 的 `SubagentMatch` 语义同源（`count` / `status` / `output` 同义，另有 `remoteUrl` 匹配委派地址）；`event(type, opts?)` 只有 `count`。字段全集见[契约单源](../../assertions/library/scoped-assertions.md#匹配条件的字段全集)。
 
 ## 相关阅读
 
-- [Scoring · 作用域断言](../../scoring/library/scoped-assertions.md) —— 词汇全表与匹配条件的字段全集（契约单源）。
+- [Assertions · 作用域断言](../../assertions/library/scoped-assertions.md) —— 词汇全表与匹配条件的字段全集（契约单源）。
 - [过程与成本](process-and-cost.md) —— calledTool 在真实反作弊 / 成本纪律场景里的组合用法。
 - [HITL 审批](hitl-approval.md) —— `pending` / `rejected` 状态所属的完整审批流。

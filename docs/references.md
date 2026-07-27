@@ -1,6 +1,6 @@
 # References —— 从其它项目学到什么
 
-已经落地的借鉴大多分散记在各篇文档自己的"来源"脚注里(比如 [README](README.md) 的整体形状借鉴、[Scoring 来源](feature/scoring/reference/provenance.md) 里的评分设计来源、[experiments/architecture.md](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`)。这篇文档不重复那些,专门记录**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
+已经落地的借鉴大多分散记在各篇文档自己的"来源"脚注里(比如 [README](README.md) 的整体形状借鉴、[Assertions 来源](./feature/assertions/reference/provenance.md) 里的评分设计来源、[experiments/architecture.md](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`)。这篇文档不重复那些,专门记录**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
 
 每次调研一个外部项目开一个二级标题,格式固定:是什么 → 已经借鉴的 → 这次新学到、值得抄的 → 调研过但不打算抄的(及理由)。
 

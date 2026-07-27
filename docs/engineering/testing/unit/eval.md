@@ -84,7 +84,7 @@ guard。
   `t.*` 聚合——隔离与聚合两面都要有区分力场景。
 - **作用域断言的接收者行为**：`t.*` 全量聚合 + final timing、`session.*` 时点 Run、`turn.*`
   本轮独占；接收者专属 API 的类型边界。判定语义的完整矩阵归
-  [Scoring](scoring.md)，这里只测接收者行为。
+  [Assertions、Judge 与 Verdict](scoring.md)，这里只测接收者行为。
 - **HITL**：`requireInputRequest`
   的恰好一个语义（0 个、多个都报错）；filter 的匹配与不匹配；无法对位时**先报错且不向 agent 发送任何响应**——错误反馈正确但响应已发出仍违反契约，`agent.received`
   长度必须一并断言；`respond`/`respondAll` 的续接与跨 session 隔离。
@@ -93,7 +93,7 @@ guard。
   面不含生命周期动作。路径、命令与生命周期契约归 [Sandbox](sandbox.md)。
 - **judge 作用域与诊断**：判卷材料随接收者分层、`{ on }` 覆盖；`diagnostic`
   不改变 verdict、scope 不可伪装；`progress` 不进最终输出。judge 的评分与模型解析归
-  [Scoring](scoring.md)。
+  [Assertions、Judge 与 Verdict](scoring.md)。
 - **turn 瞬时错误与重试**：兜底分类器按重试安全性给出可重试/不可重试与内建 reason（rate_limit /
   network），`thrown` 与 `turn-failed` 两种 `TurnFailure`
   形态都要有区分力场景；adapter 分类器的覆盖、自定义 reason 原样透出、返回 `undefined` 与抛错同样按

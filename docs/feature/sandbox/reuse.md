@@ -52,7 +52,7 @@ Experiment.setup
       → Eval.setup，准备该 Eval 的 Fixture
       → Agent.setup
       → test(t)，继续准备 Fixture 并执行 Agent Turn
-      → 评分与证据收集
+      → 断言求值与证据收集
       → Eval.teardown
       → Agent.teardown
       → reset 或停止承接 Attempt
@@ -75,7 +75,7 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 | SandboxSpec `setup` / `teardown` | 每个 Sandbox 成对一次 |
 | Eval `setup` / `teardown` | 每 Attempt 成对一次 |
 | Agent `setup` / `teardown` | 每 Attempt 成对一次 |
-| `test(t)`、评分与证据收集 | 每 Attempt 一次 |
+| `test(t)`、断言求值与证据收集 | 每 Attempt 一次 |
 
 “成对”沿用四层 Hook 的统一规则：
 

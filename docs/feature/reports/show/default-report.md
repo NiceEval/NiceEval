@@ -95,9 +95,9 @@ dev-e2b/codex-e2b
 
 携带或跨 Run 拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总 `↩ n/m attempts`；覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与读数分母（两条契约见 [experimentRows](../components/entity-lists/experiment-rows.md) 与[时效标注](../components/entity-lists/README.md#时效标注)）。
 
-locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。Result 单元格使用 [Scoring 定义的主失败断言摘要](../../scoring/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。绝不把该 attempt 的全部 assertion name 拼进表格——即使有几十条 assertions，一条 Attempt 子行也最多占两行。locator 本身就是证据入口；打开 Attempt 后再列完整断言与实际可执行的证据命令。
+locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。Result 单元格使用 [Assertions 定义的主失败断言摘要](../../assertions/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。绝不把该 attempt 的全部 assertion name 拼进表格——即使有几十条 assertions，一条 Attempt 子行也最多占两行。locator 本身就是证据入口；打开 Attempt 后再列完整断言与实际可执行的证据命令。
 
-Result 单元格的值一律按 [display 的单行压缩形态](../../scoring/library/display.md#单行压缩形态)拼装：先折成单行、再按宽度截断，`received` 携带整段命令输出时也不例外——一条 `commandSucceeded()` 失败塌成 `received exit 1 · "…尾部"`，而不是把几百行 stdout 逐行铺进表。落盘的 256 KiB 上限保护 artifact 体积，不替代这层单元格截断——单元格要的是能一眼扫读的预览：
+Result 单元格的值一律按 [display 的单行压缩形态](../../assertions/library/display.md#单行压缩形态)拼装：先折成单行、再按宽度截断，`received` 携带整段命令输出时也不例外——一条 `commandSucceeded()` 失败塌成 `received exit 1 · "…尾部"`，而不是把几百行 stdout 逐行铺进表。落盘的 256 KiB 上限保护 artifact 体积，不替代这层单元格截断——单元格要的是能一眼扫读的预览：
 
 ```text
 ✗ 失败    memory/terminal-pypi-server

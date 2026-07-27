@@ -283,7 +283,7 @@ Runner 的 turn 包络与 OTel 子树不是两份互斥的计时:前者含 adapt
 
 ### 把成本变成可断言 / 可护栏的维度
 
-- **断言效率**(见 [Scoring · 作用域断言](feature/scoring/library/scoped-assertions.md)):`t.maxTokens(50_000)` / `t.maxCost(0.5)` —— agent 答对了但烧太多,也判失败。
+- **断言效率**(见 [Assertions · 作用域断言](./feature/assertions/library/scoped-assertions.md)):`t.maxTokens(50_000)` / `t.maxCost(0.5)` —— agent 答对了但烧太多,也判失败。
 - **预算护栏**:`--budget <usd>` 给整个 run 设上限,累计花费超了就停止派发新 attempt(借鉴 crabbox 的 spend cap),避免一次跑爆账单。
 
 ## 结果可视化:`niceeval view`
@@ -332,7 +332,7 @@ eval 级 reporter 经作用域包装接入(`scopeReporter`,见 `src/runner/repor
 
 ## 相关阅读
 
-- [Scoring](feature/scoring/README.md) —— 作用域断言如何消费 o11y。
+- [Assertions](./feature/assertions/README.md) —— 作用域断言如何消费 o11y。
 - [Runner](runner.md) —— 报告队列与 artifact 落盘的调度。
 - [Record Format](feature/record/architecture.md) —— `.niceeval/<experiment>/<run>/` 的目录结构与 JSON 文件契约。
 - [编写 Adapter](feature/adapters/library/writing-an-adapter.md) / [流式协议与共享工具](feature/adapters/library/streaming.md) —— 接新 Agent 的解析器、采集和 reducer 组合方式。

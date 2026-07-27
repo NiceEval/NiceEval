@@ -30,7 +30,7 @@ interface AttemptRow extends Row {
   agent: string;
   verdict: "passed" | "failed" | "errored" | "skipped";
   /**
-   * 该轮的单行结果摘要，已按 Scoring display 契约折好：failed 取主失败断言摘要，
+   * 该轮的单行结果摘要，已按 Assertion display 契约折好：failed 取主失败断言摘要，
    * errored 取结构化 error 的一层摘要（phase · code · message）；计分制 passed 有丢分
    * 得分点时取首条丢分得分点摘要（含挣分尾缀），其余 passed / skipped 为 null。
    * 渲染面只做宽度截断，不重算摘要。

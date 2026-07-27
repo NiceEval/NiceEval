@@ -1,16 +1,16 @@
-# Scoring 与断言怎么测
+# Assertions、Judge 与 Verdict 怎么测
 
 契约来源：
 
-- [Scoring](../../../feature/scoring/README.md)
-- [值断言](../../../feature/scoring/library/value-assertions.md)
-- [作用域断言](../../../feature/scoring/library/scoped-assertions.md)
-- [Judge](../../../feature/scoring/library/judge.md)
-- [Sample](../../../feature/scoring/architecture/scopes.md)
-- [证据完整性](../../../feature/scoring/architecture/evidence.md)
-- [Severity / Verdict](../../../feature/scoring/architecture/severity-and-verdict.md)
-- [断言与 Turn 的展示](../../../feature/scoring/library/display.md)
-- [Scoring CLI](../../../feature/scoring/cli.md)
+- [Assertions](../../../feature/assertions/README.md)
+- [值断言](../../../feature/assertions/library/value-assertions.md)
+- [作用域断言](../../../feature/assertions/library/scoped-assertions.md)
+- [Judge](../../../feature/judge/library.md)
+- [Sample](../../../feature/assertions/architecture/scopes.md)
+- [证据完整性](../../../feature/assertions/architecture/evidence.md)
+- [Severity / Verdict](../../../feature/verdict/architecture.md)
+- [断言与 Turn 的展示](../../../feature/assertions/library/display.md)
+- [Verdict CLI](../../../feature/verdict/cli.md)
 
 判定层给出“看似合理但错误的答案”的代价最高，因此测试预算也最高。裁决出处见
 [test-budget-inverted-pyramid](../../../../memory/test-budget-inverted-pyramid.md)。

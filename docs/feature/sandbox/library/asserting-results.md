@@ -25,4 +25,4 @@ t.check(t.sandbox.file("package.json"), matches(PackageSchema));
 
 - `noFailedShellCommands` 只看 Agent 自己发起的 shell 工具，不看 eval 的验证命令。
 
-值 matcher、Severity 与 Verdict 见 [Scoring](../../scoring/README.md)。
+值 matcher、Severity 与 Verdict 见 [Assertions](../../assertions/README.md)。

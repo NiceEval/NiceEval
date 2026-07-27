@@ -1,30 +1,37 @@
-# Scoring —— 架构
+# Assertions —— 架构
 
-Scoring 将执行状态、记录的 Assertions 与 skip 信号折叠成 Verdict。matcher、作用域断言和 judge 最终都进入同一个 Assertion collector。
+值 matcher、作用域检查与 Judge 最终都进入同一个 Assertion collector。collector 只产出
+`AssertionResult[]`；执行状态与断言怎样折叠成 Verdict 由 [Verdict](../verdict/README.md) 定义。
 
 ```text
 value / scope / judge / sandbox / efficiency
                     │
                     ▼
-              Assertion[]
-                    │
-        execution error + skip + strict
+           Assertion collector
                     │
                     ▼
-                 Verdict
+           AssertionResult[] ─────┐
+                                  ├──► Verdict
+Runner execution state + strict ──┘
 ```
 
 ## 设计主题
 
 - [作用域绑定](architecture/scopes.md)
-- [Severity 与 Verdict](architecture/severity-and-verdict.md)
 - [证据与完整性](architecture/evidence.md)
 
-命名边界：**Assertion（输入态）** 是 matcher / 作用域断言 / judge 这些「怎么查」的表达（如 [`custom-assertions`](library/custom-assertions.md) 里 `function jsonValid(): Assertion`）；collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（记录态）**。`Verdict` 表达整个 attempt 的互斥结果。多个 Attempt 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
+Severity 与四态折叠不属于本层，见 [Verdict](../verdict/architecture.md)。
+
+**Assertion（输入态）** 是 matcher、作用域断言与 Judge 这些「怎么查」的表达。例如
+[`custom-assertions`](library/custom-assertions.md) 里的 `function jsonValid(): Assertion`。
+collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（记录态）**。
+`Verdict` 表达整个 Attempt 的互斥结果。
+多个 Attempt 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
 
 ## 断言记录（AssertionResult）
 
-`result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](architecture/severity-and-verdict.md) 判定规则的输入。字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
+`result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](../verdict/architecture.md)
+判定规则的输入。字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
 
 ```typescript
 interface ProjectSourceFrame {
@@ -117,8 +124,19 @@ interface ScoreEntry {
 `callers` 就是必选数组；单文件 eval 与调用链缺失都写空数组，避免多个构造点各自解释“没填”含义。
 `package` 帧只保存包名，不把第三方源码纳入 Record。
 
-判别键是 `outcome`——`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败、`score: 0` 但又不许聚合」的非法组合：普通聚合代码按 `outcome` 分支就不可能把证据缺口算成零分。这份字段全集是穷尽的：show / view / 报告需要的每个展示字段都在表内，不存在「塞进 `name` 再拆」的隐式约定。`expected` / `received` / `evidence` 是有界预览而不是原始值——原始证据在 `events.json` / `diff.json` 等 artifact 里；判定只消费 `severity` / `outcome` / `optional` / `score` / `threshold`,`points` 不参与判定。
+判别键是 `outcome`。`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败」
+或「`score: 0` 但又不许聚合」的非法组合。普通聚合代码按 `outcome` 分支，不会把证据缺口算成零分。
 
-`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。两者共用同一套 `groupPath` 折叠约定,分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
+这份字段全集是穷尽的。show、view 与报告需要的每个展示字段都在表内，不存在「塞进 `name` 再拆」
+的隐式约定。`expected`、`received` 与 `evidence` 是有界预览，而不是原始值。原始证据保存在
+`events.json`、`diff.json` 等 artifact 里。判定只消费 `severity`、`outcome`、`optional`、`score`
+与 `threshold`；`points` 不参与判定。
 
-计分制记录里 `severity` 与 `points` 的组合就是那条断言的角色,不需要第三个字段:得分点是 `severity: "soft"` + 有 `points`(不传播判定),前置是 `severity: "gate"`(中止,`points` 视有没有链 `.points()` 而定),观测是 `severity: "soft"` + 无 `points`。质量分因此按「soft 且没有 `points`」取子集聚合——得分点已经在分数面被读过一次,不再进质量分。
+`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult`
+永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。两者共用同一套 `groupPath` 折叠约定,
+分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
+
+计分制记录里 `severity` 与 `points` 的组合就是那条断言的角色,不需要第三个字段:得分点是 `severity: "soft"`
++ 有 `points`(不传播判定),前置是 `severity: "gate"`(中止,`points` 视有没有链 `.points()` 而定),观测是
+`severity: "soft"` + 无 `points`。质量分因此按「soft 且没有 `points`」取子集聚合。
+得分点已经在分数面被读过一次，不再进入质量分。

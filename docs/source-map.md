@@ -105,7 +105,10 @@
 | 创建期运行标识元数据(host/pid/startedAt;docker label / e2b metadata,与 `niceeval.keep-candidate` / provision token 同通道)、孤儿三条件判定(`classifyRunIdentity`:同宿主+pid 存活→整个排除、同宿主+pid 不存活→orphan、异宿主→unverified) | `src/sandbox/run-identity.ts` |
 | `sandbox list --orphans` / `sandbox prune`(docker 按 label 查本地 daemon、e2b 按 metadata 过滤 SDK 列表,排除留存注册表条目;prune 幂等 + `--force` 语义,单台失败列出继续处理其余) | `src/sandbox/orphans.ts`(判定与销毁)+ `src/sandbox/cli-commands.ts`(`listOrphansCommand` / `pruneCommand` / `orphanReminder` 输出编排) |
 
-## Scoring([feature/scoring/](feature/scoring/README.md))
+## Assertions / Judge / Verdict
+
+契约分别见 [Assertions](./feature/assertions/README.md)、[Judge](./feature/judge/README.md) 与
+[Verdict](./feature/verdict/README.md)。当前实现仍集中在 `src/scoring/`，源码目录名不定义产品概念边界。
 
 | 行为 | 文件 |
 |---|---|
@@ -296,4 +299,4 @@
 - `current()` 已保留真实贡献 Snapshot，并直接使用这些事实实体。
 - feedback 的 agent / ci 机器面已合并为 `json.ts`。
 - 宽 `TestContext` + runtime guard 已与目标契约一致。
-- hooks、keep-sandbox、orphans、error-classification 与 scoring 主折叠没有新的结构性 gap。
+- hooks、keep-sandbox、orphans、error-classification 与 Verdict 主折叠没有新的结构性 gap。

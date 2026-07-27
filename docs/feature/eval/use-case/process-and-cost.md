@@ -6,7 +6,7 @@
 
 ## 全流程
 
-1. 用 `calledTool` 的匹配小语言断关键动作。`input` 深度部分匹配（值位置放 RegExp 或谓词）；`count` 数字＝恰好、谓词＝自定，省略＝至少一次；`output` 断这次调用的返回；`status` 过滤调用状态（[字段全集](../../scoring/library/scoped-assertions.md#匹配条件的字段全集)）：
+1. 用 `calledTool` 的匹配小语言断关键动作。`input` 深度部分匹配（值位置放 RegExp 或谓词）；`count` 数字＝恰好、谓词＝自定，省略＝至少一次；`output` 断这次调用的返回；`status` 过滤调用状态（[字段全集](../../assertions/library/scoped-assertions.md#匹配条件的字段全集)）：
 
    ```typescript
    t.calledTool("shell", { input: { command: /\bniceeval\s+exp\b/ } });    // 至少跑过一次 exp
@@ -48,15 +48,15 @@
 
 ## 边界
 
-- **次数语义全在 `count` 里**：数字恰好、谓词自定、省略至少一次。`.atLeast(x)` 的参数是**分数线**不是次数——`.atLeast(1)` 读作「这条断言至少及格」，不是「至少调用一次」；「至少调用 2 次」写 `{ count: (n) => n >= 2 }`（[裁决](../../scoring/architecture/severity-and-verdict.md#severity)）。
-- 负断言（`notCalledTool` / `notEvent`）和上限断言依赖完整证据：所需通道非 complete 时记 `unavailable`，不会按空证据静默通过；谓词 `count` 不满足时同理（[证据与完整性](../../scoring/architecture/evidence.md)）。
+- **次数语义全在 `count` 里**：数字恰好、谓词自定、省略至少一次。`.atLeast(x)` 的参数是**分数线**不是次数——`.atLeast(1)` 读作「这条断言至少及格」，不是「至少调用一次」；「至少调用 2 次」写 `{ count: (n) => n >= 2 }`（[裁决](../../verdict/architecture.md#severity)）。
+- 负断言（`notCalledTool` / `notEvent`）和上限断言依赖完整证据：所需通道非 complete 时记 `unavailable`，不会按空证据静默通过；谓词 `count` 不满足时同理（[证据与完整性](../../assertions/architecture/evidence.md)）。
 - 谓词（`count` 谓词、`eventsSatisfy`、`satisfies`）对报告不透明，失败时只有 label 和计数可读——能用字面量表达的不要写谓词。
 - `output` 断的是工具返回给 agent 的内容，不是 agent 之后说了什么——断回复文本用 `messageIncludes` 或值断言。
 
 ## 相关阅读
 
-- [作用域断言](../../scoring/library/scoped-assertions.md) —— 词汇全表与匹配条件的字段全集。
+- [作用域断言](../../assertions/library/scoped-assertions.md) —— 词汇全表与匹配条件的字段全集。
 - [calledTool 匹配全参数](calledtool.md) —— `input` / `count` / `output` / `status` 每个字段每种形态的逐条用例。
-- [Scoring · 计分粒度](../../scoring/library/score-points.md) —— 通过制一个 eval 一分，要按检查点挣分改用 `defineScoreEval`；`t.group` 的组名是跨 eval 的得分点维度，同类检查在不同 eval 里保持组名一致。
-- [Severity 与 Verdict](../../scoring/architecture/severity-and-verdict.md) —— `.gate(x?)` / `.atLeast(x)` / `.soft()` 的分工与折叠规则。
-- [自定义断言](../../scoring/library/custom-assertions.md) —— 词汇表不够用时的扩展方式。
+- [Assertions · 计分粒度](../../assertions/library/score-points.md) —— 通过制一个 eval 一分，要按检查点挣分改用 `defineScoreEval`；`t.group` 的组名是跨 eval 的得分点维度，同类检查在不同 eval 里保持组名一致。
+- [Severity 与 Verdict](../../verdict/architecture.md) —— `.gate(x?)` / `.atLeast(x)` / `.soft()` 的分工与折叠规则。
+- [自定义断言](../../assertions/library/custom-assertions.md) —— 词汇表不够用时的扩展方式。

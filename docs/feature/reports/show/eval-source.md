@@ -95,4 +95,4 @@ outside the eval entry · lib/candidate.ts
 
 - [源码调用树](../eval-source/README.md) —— 多文件源码的心智模型与降级下限。
 - [`attemptSource`](../components/attempt-detail/attempt-source.md) —— 同一份证据的 web 投影。
-- [Scoring 展示](../../scoring/library/display.md) —— 每条标注的判定语义。
+- [Assertions 展示](../../assertions/library/display.md) —— 每条标注的判定语义。

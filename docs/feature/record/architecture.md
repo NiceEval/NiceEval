@@ -212,11 +212,11 @@ interface AttemptRecord {
   executionMs?: number;
   /** Runner 阶段计时，按执行顺序；只记录实际发生的阶段。 */
   phases?: PhaseTiming[];
-  /** 记录态断言;元素字段契约单独定义在 [Scoring · 断言记录](../scoring/architecture.md#断言记录assertionresult)。 */
+  /** 记录态断言;元素字段契约单独定义在 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。 */
   assertions: AssertionResult[];
   /** 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与 `EvalDescriptor.scoring` 同源(见 [Experiments](../experiments/README.md#defineexperiment-的形状))。省略等价于 `"pass"`——兼容此字段引入前写入的落盘与未声明它的第三方 harness。 */
   scoring?: "pass" | "points";
-  /** `t.score(label, n)` 的直接给分记录;元素字段契约见 [Scoring · 断言记录](../scoring/architecture.md#断言记录assertionresult)。只在 `scoring: "points"` 时出现,省略等价于空数组。 */
+  /** `t.score(label, n)` 的直接给分记录;元素字段契约见 [Assertions · 断言记录](../assertions/architecture.md#断言记录assertionresult)。只在 `scoring: "points"` 时出现,省略等价于空数组。 */
   scoreEntries?: ScoreEntry[];
   /** 证据覆盖聚合:Agent 声明经各 turn 降级后的最差值,字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md);省略 = 全通道 unknown(Adapter 未声明),消费侧按保守处理。 */
   coverage?: EvidenceCoverage;
@@ -324,7 +324,7 @@ interface TimingNode {
   kind: TimingNodeKind;
   /**
    * 采集端写入的有界人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用轮标签
-   * (主会话 turn<N>,t.newSession() 会话 session<K>/turn<N>,语法单点见 Scoring · Turn 的展示);
+   * (主会话 turn<N>,t.newSession() 会话 session<K>/turn<N>,语法单点见 Assertions · Turn 的展示);
    * operation 写逻辑工作及可安全公开的规模摘要。展示层不解析 command 文本来重造 label。
    */
   label: string;

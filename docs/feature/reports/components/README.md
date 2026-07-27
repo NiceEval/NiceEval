@@ -116,7 +116,7 @@ type Cell =
   压了就丢掉 `samples` / `total` / `refs`，读者看到一个数却点不开它是从哪几条 attempt 来的。
 - **`notApplicable` 与 `missing` 不合并。** 前者是「这个读数对这一行没有意义」，
   后者是「本该有却没跑到」；合成一个空格子，覆盖缺口就从表里消失了。
-- **`summary` 的文本已经折好。** 摘要按 [Scoring display 契约](../../scoring/library/display.md#主失败断言怎样选)
+- **`summary` 的文本已经折好。** 摘要按 [Assertion display 契约](../../assertions/library/display.md#主失败断言怎样选)
   在数据源里算完，渲染面只做宽度截断，不重算。
 
 ## 数据源

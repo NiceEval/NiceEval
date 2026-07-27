@@ -36,4 +36,4 @@
 
 ## 对比怎么计分
 
-一个实验选中的 eval 必须同一题型:通过制实验(`defineEval`)读通过率,一题一分、`attempts > 1` 按通过率折叠;计分制实验(`defineScoreEval`)读总分,题内叠加挣分;混型选择是启动期配置错误。「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../scoring/library/score-points.md)。
+一个实验选中的 eval 必须同一题型:通过制实验(`defineEval`)读通过率,一题一分、`attempts > 1` 按通过率折叠;计分制实验(`defineScoreEval`)读总分,题内叠加挣分;混型选择是启动期配置错误。「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../assertions/library/score-points.md)。

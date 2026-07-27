@@ -34,7 +34,7 @@ web 面是固定列的 experiment 比较表，而不是无表头的松散卡片�
 - 计分制下该 Eval 的挣分。
 
 Attempt 子行显示本轮判定、locator、耗时、成本与
-[主失败断言摘要](../../../scoring/library/display.md#主失败断言怎样选)，并可下钻到详情。
+[主失败断言摘要](../../../assertions/library/display.md#主失败断言怎样选)，并可下钻到详情。
 父行不复述某一轮失败原因：单轮会重复，多轮则会把任一轮冒充成 Eval 事实。
 
 通过制 passed attempt 的 Result 为 `—`，不罗列通过的 assertions。计分制 passed attempt

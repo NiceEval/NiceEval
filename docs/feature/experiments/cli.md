@@ -147,7 +147,7 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### judge 预检的显示
 
-`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Scoring · Judge](../scoring/library/judge.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级 Hook 同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级 Hook 共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
+`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Judge](../judge/library.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级 Hook 同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级 Hook 共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Judge · 派发前预检](../judge/library.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
 
 **全部结果被 carry 携入、一个 attempt 都不派发时,预检不执行**——没有 attempt 要跑就没有 judge 要调,
 与[实验级 `setup` 的懒触发](architecture.md#实验级生命周期setup-与-teardown)同构。
@@ -170,7 +170,7 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
   {"event":"judge_precheck","status":"done","durationMs":12000}
   ```
 
-- 预检失败(缺 key、端点不通、鉴权失败、20s 无响应超时)不是这条通道的事:它以既有错误路径中止本次运行、逐条给出可行动的 `fix:`(各类失败的 `fix:` 口径见 [Scoring · 派发前预检](../scoring/library/judge.md#派发前预检)),不折进上面的起止事件。
+- 预检失败(缺 key、端点不通、鉴权失败、20s 无响应超时)不是这条通道的事:它以既有错误路径中止本次运行、逐条给出可行动的 `fix:`(各类失败的 `fix:` 口径见 [Judge · 派发前预检](../judge/library.md#派发前预检)),不折进上面的起止事件。
 
 ### 等待并发 run 的显示
 
@@ -282,11 +282,11 @@ live 面板只展示当前状态,不保存历史帧:
 | Attempt verdict | 运行中永久行 | 结束反馈(`FAILURES` 面板 / `RESULT` block) |
 |---|---|---|
 | `passed` | 不逐条打印；只更新 live 面板计数 | 只进 passed 汇总，不进入 failures |
-| `failed` | locator / eval / experiment + [Scoring 定义的主失败断言摘要](../scoring/library/display.md#契约一结果摘要) | failures 中重复同一摘要，并给 `show @locator` / `--source` 下钻 |
+| `failed` | locator / eval / experiment + [Assertions 定义的主失败断言摘要](../assertions/library/display.md#契约一结果摘要) | failures 中重复同一摘要，并给 `show @locator` / `--source` 下钻 |
 | `errored` | locator / eval / experiment + `error.phase` / code / message | failures 中给同一层错误摘要；cause / stack / diagnostics 下钻 |
 | `skipped` | 不冒充失败；只有需要用户行动的 skip 才以 diagnostic 留痕 | 只进 skipped / completion 汇总 |
 
-`received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、裸退格等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。剥控制字节与折单行、截断同属摘要投影，规则单源在 [Scoring · 一条摘要怎样排版](../scoring/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
+`received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、裸退格等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。剥控制字节与折单行、截断同属摘要投影，规则单源在 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
 
 ```text
 ✗ @1czntzel memory/agent-029-use-cache-directive [codex-gpt-5.6-luna--mempal]
@@ -296,7 +296,7 @@ live 面板只展示当前状态,不保存历史帧:
 +2 more failures
 ```
 
-只展示一条主失败，其余全部折进这条独立尾行；不得把全部 assertion name 逐条拼进 scrollback。源码不在这里内联，结束反馈给 `show @locator --source`。排版细则见 [Scoring · 一条摘要怎样排版](../scoring/library/display.md#一条摘要怎样排版)。
+只展示一条主失败，其余全部折进这条独立尾行；不得把全部 assertion name 逐条拼进 scrollback。源码不在这里内联，结束反馈给 `show @locator --source`。排版细则见 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)。
 
 执行错误即时输出一层可行动摘要,不把 stack 或 provider SDK response 全部灌进 scrollback。摘要固定包含 locator、eval/experiment、正式 phase、稳定 code 和 message:
 
