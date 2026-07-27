@@ -106,10 +106,10 @@ provider 级串行闸,显式 `--max-concurrency` 或实验级 `maxConcurrency`
 这是正确性约束,不是调度参数。声明是中性的 provider 元数据,核心不按
 provider 名分支(契约见 [Sandbox · 本地执行](feature/sandbox/local.md))。
 
-## 派发顺序:瓶颈优先,追求最小总墙钟时间
+## 派发顺序:瓶颈优先,追求最小总耗时
 
-attempt 的**派发**顺序(全局并发位分配给谁的顺序)按**整批跑完的总墙钟
-时间最短**这个目标排,不是发现顺序,也不是请求先后。这一层不影响结果
+attempt 的**派发**顺序(全局并发位分配给谁的顺序)按**整批跑完的总耗时
+最短**这个目标排,不是发现顺序,也不是请求先后。这一层不影响结果
 排序——结果仍按发现顺序输出。
 
 **瓶颈由轮次数判定,不由 `maxConcurrency` 判定。**`maxConcurrency: 1`
@@ -144,7 +144,7 @@ onSlotFree():   # 初始 globalMaxConcurrency 个并发位视为同样多次空�
 引入。
 
 实验级闸不参与这条纪律,先来后到即可:同一 run 的 attempt 优先级相同,
-它们内部谁先谁后不影响总墙钟。等待中的 attempt 被中止(earlyExit、
+它们内部谁先谁后不影响总耗时。等待中的 attempt 被中止(earlyExit、
 fail-fast、用户中断)时退出等待集,不占用后续分配。
 
 **与实验级 setup 的组合是工作保全(work-conserving)的。**等待 setup
@@ -269,34 +269,34 @@ budget 按**域**计,不是全局总闸:
 命令行用法与面板读法见
 [`--budget` 用例](feature/experiments/use-case/预算上限.md)。
 
-## 预热与复用:冷启动移出关键路径
+## Sandbox 预热与 Sandbox 复用:冷启动移出关键路径
 
 沙箱冷启动的优先级排序(先预制环境、再小 setup、最后才是池化)在
 [Sandbox · 性能](feature/sandbox/architecture.md#性能预制环境复用与预热)。
 provider 侧提供「创建、重置、销毁」的能力;什么时候预创建、什么时候
 复用是运行器的调度决策,契约如下:
 
-- **预热池**:开启后,运行器在调度开始时按
-  `min(预热池大小, 计划 attempt 数)` 预先创建同 spec 沙箱挂进池里。
-  attempt 到达 `sandbox.create` 阶段时先领池中现货,领到则该阶段只计
-  领取耗时,池空则回落到即时创建。
-- **预热池不改生命周期 Hook 的调用顺序**:领到的沙箱仍在 attempt 里按
+- **Sandbox 预热**:开启后,运行器在调度开始时按近期可派发量预先创建同 spec Sandbox。
+  Attempt 到达 `sandbox.create` 阶段时先领取预创建实例,领到则该阶段只计领取耗时,
+  没有可领取实例时回落到即时创建。
+- **Sandbox 预热不改生命周期 Hook 的调用顺序**:领到的 Sandbox 仍在 Attempt 里按
   [固定调用链](#环境预置不进运行器但按顺序调它)走一遍 `sandbox.setup`
-  链与分类账锚点。池只在同一次 run 内存活,run 结束时未被领用的沙箱
+  链与分类账锚点。预创建实例只在同一次 Run 内存活,Run 结束时未被领用的 Sandbox
   一并销毁。
-- **串行复用(`--reuse-sandbox`)**:整批同基线 eval 共用一个热沙箱串行
-  跑。不随 eval 变的层(`createSandbox`、`sandbox.setup` 链、
-  `SandboxAgent.setup`)整组只执行一次,落成**复用 Sandbox 的题间重置点**。
-  题间把 workdir 重置回这个点(`git reset --hard` + 尊重分类账排除清单的
-  `git clean`),每题只重放 `EvalDef.setup` / `test(t)` Fixture。
-- **复用的两条互斥**:与并发互斥(一个热沙箱 = 一条执行道,并发钉成 1,
-  显式 `--max-concurrency` 组合是创建前的用法错误);与指纹缓存双向绝缘
-  (不消费携带、不产生命中)。重置点的分层、诚实边界、同基线批次约束见
-  [Sandbox · 串行复用](feature/sandbox/serial-reuse.md)。
+- **Sandbox 复用(`--reuse-sandbox[=<n>]`)**:同一 sandbox spec 与 environment profile
+  的 Attempt 共用最多 N 个 Sandbox。每个 Sandbox 内部串行,Sandbox 之间并行;
+  裸 CLI flag 等价于 N=1。SandboxSpec 生命周期每个 Sandbox 一次,
+  Agent 与 Eval 生命周期逐 Attempt 成对执行。
+- **复用派发**:有效宽度不超过复用的 Sandbox 数、全局并发位和实验并发限制的最小值。
+  每次派发前确认 Sandbox 复用寿命覆盖 Attempt deadline 与收尾预留时间；
+  不足时续期,不能续期时停止旧 Sandbox 并创建替代 Sandbox。题间 reset、
+  `SandboxReuseCapability` 与故障淘汰见
+  [Sandbox 复用](feature/sandbox/serial-reuse.md)。
+- **复用与指纹缓存双向绝缘**:不消费携带，也不产生命中。
 - **[`--keep-sandbox`](feature/sandbox/cli.md) 与 `--reuse-sandbox`
-  互斥**,组合在创建沙箱前报错:留存的现场必须属于那一次 attempt,不能
-  被题间 `git reset` 抹掉后再当现场留下。预热池不受影响——run 结束时未
-  被领用的池内沙箱照常销毁,留存只作用于跑过 attempt 的沙箱。
+  互斥**,组合在创建沙箱前报错:留存的现场必须属于那一次 Attempt,不能
+  被题间 `git reset` 抹掉后再当现场留下。Sandbox 预热不受影响——Run 结束时未
+  被领用的预创建 Sandbox 照常销毁,留存只作用于跑过 Attempt 的 Sandbox。
 
 ## 缓存:携带上一轮的结果
 

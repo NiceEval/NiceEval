@@ -64,7 +64,8 @@ localSandbox({ dir: "/path/to/repo" })  // 或显式指定任意本地目录
 
 - **不新增 `Agent.kind`**:本地执行是 `sandbox` 型的一个 provider,不是第三类 agent。
 - **不做隐式本地兜底**:没配 sandbox 仍然报错,不因缺配置就悄悄落到本地档。
-- **不在本地档做题间 reset**:只观察不还原;题间清空属于[串行复用](serial-reuse.md),它与本地档互斥、组合在创建前报错。
+- **不在本地档做题间 reset**:只观察不还原；题间清空属于
+  [Sandbox 复用](serial-reuse.md),它与本地档互斥,组合在创建前报错。
 - **不做 `--local` 运行期覆盖**:provider 选择保持书面配置。
 - **不承诺隔离**:本地档明确没有容器的安全 / 可复现 / 并发隔离;要隔离就用容器 provider,这是明码标价的取舍。
 

@@ -62,6 +62,7 @@ docs/
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策
 │   └── _template/                       新决策主题模板
+│   └── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板

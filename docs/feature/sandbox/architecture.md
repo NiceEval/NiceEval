@@ -226,18 +226,24 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 
 不要硬编码 `/workspace`——它不是任何 provider 的真实 workdir,按它写的文件会落在 agent cwd 和变更分类账之外(agent 看不见、diff 采不到)。写法是省略 `targetDir` / `cwd`,需要绝对路径时用 `sandbox.workdir`。
 
-## 性能:预制环境、复用与预热
+## 性能:预制环境、Sandbox 复用与 Sandbox 预热
 
 沙箱冷启动和重复安装是关键路径上的大头。优先级如下:
 
 1. 把稳定重依赖做进 Docker image、E2B template 或 Vercel snapshot;每次 attempt 只从这个起点创建。
 2. `sandbox.setup` 只做按 experiment 变化的小配置、状态恢复与预检。
-3. 仍有必要时再考虑预热池或串行复用。
+3. 仍有必要时再考虑 Sandbox 预热或 Sandbox 复用。
 
-- **预热池** —— 提前起若干沙箱挂在池里,case 来了直接领,把冷启动移出关键路径。
-- **串行复用** —— `--reuse-sandbox` 让整批同基线 eval 共用一个热沙箱串行跑,不随 eval 变的层只装一次、落成复用 Sandbox 的题间重置点,题间只把 workdir 重置回这个点。显式 flag 才进入,默认仍是每 attempt 全新;完整契约见[串行复用](serial-reuse.md)。
+- **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,
+  把创建移出 Attempt 路径。
+- **Sandbox 复用** —— `--reuse-sandbox[=<n>]` 让多条 Attempt 共用一个或多个 Sandbox。
+  SandboxSpec 生命周期每个 Sandbox 一次,Agent 与 Eval 生命周期仍逐 Attempt 成对执行。
+  派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。完整契约见
+  [Sandbox 复用](serial-reuse.md)。
 
-预制环境的构建与发布归项目和 provider 原生工具;NiceEval 的 typed spec 负责消费(工作流见 [Library · 预制环境](library/prebuilt-environments.md))。预热池与复用是 [Runner](../../runner.md) 的调度职责。
+预制环境的构建与发布归项目和 Provider 原生工具；NiceEval 的 typed spec 负责消费
+（工作流见 [Library · 预制环境](library/prebuilt-environments.md)）。
+Sandbox 预热与 Sandbox 复用是 [Runner](../../runner.md) 的调度职责。
 
 ## 相关阅读
 

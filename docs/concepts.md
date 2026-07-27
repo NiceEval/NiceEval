@@ -79,13 +79,16 @@
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
 
-### Sandbox 串行复用
+### Sandbox 复用
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 串行复用 | Serial reuse | `--reuse-sandbox` 让整批同基线 eval 共用一个热 Sandbox 串行执行 | [Serial reuse](feature/sandbox/serial-reuse.md) |
-| 热道 | Hot lane | 一个装好的 Sandbox 构成的一条串行执行道;整批同基线 Eval 在同一条热道上依次跑 | [Serial reuse](feature/sandbox/serial-reuse.md) |
-| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | 公共 setup 完成后落下的 commit;两道 Eval 之间重置回这里再重放 Fixture | [Serial reuse](feature/sandbox/serial-reuse.md) |
+| 预制环境 | Prebuilt environment | 把稳定依赖做进 image、template 或 snapshot，供全新 Sandbox 直接使用 | [Prebuilt environments](feature/sandbox/library/prebuilt-environments.md) |
+| Sandbox 预热 | Sandbox prewarming | 计划确定后提前创建即将使用的全新 Sandbox，不改变每 Attempt 的生命周期 | [Runner](runner.md) |
+| Sandbox 复用 | Sandbox reuse | `--reuse-sandbox[=<n>]` 让同基线 Attempt 共用一个或多个 Sandbox | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
+| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | SandboxSpec `setup` 后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
+| Sandbox 复用寿命 | Sandbox reuse lifetime | Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifetime` 确认或续期 | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
+| 收尾预留时间 | Cleanup reserve | 在 Attempt deadline 之外为 Hook 收尾与 Sandbox 销毁保留的内部安全时间 | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
 
 ### 实验配置
 
@@ -115,6 +118,7 @@
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
 | 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 对同一实验的跨 Invocation 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
+| 有效宽度 | Effective width | 复用的 Sandbox 数、全局并发位和实验并发限制共同允许的同时执行数 | [Runner](runner.md) |
 | 调度波次 | Scheduling waves | `ceil(Attempt 数 / 有效宽度)`;波次多的 Run 优先拿并发位 | [Runner](runner.md) |
 | 完成状态 | CompletionStatus | 独立于 Verdict 的 `complete` / `incomplete` / `interrupted` 结论 | [Runner](runner.md) |
 
@@ -125,11 +129,13 @@
 | 致命错误熔断 | Fatal-error circuit breaker | 作者声明失败范围;一次命中即停止对应 Eval 或 Experiment 的后续派发 | [Error classification](feature/error-classification/README.md) |
 | fail-fast | fail-fast | 无声明时按预检或同一 error code 连续复现保守停止派发 | [Runner](runner.md) |
 
-### 超时与耗时指标
+### 超时与耗时读数
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 超时 | Timeout | Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入 | [Runner](runner.md) |
+| 总耗时 | Elapsed time | 一次 Invocation 从开始到结束经过的时间，包含并行重叠和排队 | [Runner](runner.md) |
+| 阶段耗时 | Phase duration | 一个生命周期阶段实际经过的时间，由 Attempt 时间树记录 | [Benchmark](engineering/benchmark/README.md) |
 | 超时样本的耗时下界 | Duration lower bound for timed-out samples | 超时时只知道真实耗时大于超时线;统计上称为右删失 | [Metrics](feature/reports/library/metrics.md) |
 
 ### 缓存与结果沿用

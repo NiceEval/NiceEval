@@ -74,8 +74,8 @@ interface CommandOptions {
 - [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制环境](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从产物起。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
-- [串行复用](serial-reuse.md) —— `--reuse-sandbox` 用一个热沙箱串行跑一批,
-  题间只把 workdir 重置回公共 setup 之后的重置点。
+- [Sandbox 复用](serial-reuse.md) —— `--reuse-sandbox[=<n>]` 用一个或多个 Sandbox 分摊
+  Sandbox 创建与 SandboxSpec `setup`,派发前确认 Sandbox 复用寿命,不足时更换 Sandbox。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` / `--reuse-sandbox` 各自的用户用例全流程。
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。
 - [断言 Sandbox 结果](library/asserting-results.md) —— 怎样判断 diff、文件和 shell 行为。

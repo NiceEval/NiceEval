@@ -781,7 +781,7 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
 | 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;裸写 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/重新运行/)) |
 | 缓存 | `--carry-ignoring-flag <key>` | 整次调用(可重复) | 携带判定忽略这些 `flags` 键;把误当条件写进 `flags` 的连接坐标搬进 `ctx.fact()` 的那一次用,记 `carry-ignoring-flag` diagnostic 留痕(见[改什么会作废缓存](use-case/缓存与沿用/)) |
-| 执行模式 | [`--keep-sandbox`](../sandbox/cli.md)、[`--reuse-sandbox`](../sandbox/serial-reuse.md) | 整次调用(两者互斥;与缓存携带的交互见 [缓存与携带](cache.md#执行模式-flag-划走两块例外)) | 留存现场 / 单热道串行复用 |
+| 执行模式 | [`--keep-sandbox`](../sandbox/cli.md)、[`--reuse-sandbox[=<n>]`](../sandbox/serial-reuse.md) | 整次调用(两者互斥;与缓存携带的交互见 [缓存与携带](cache.md#执行模式-flag-划走两块例外)) | 留存现场 / Sandbox 复用 |
 | 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
 | 预览 | `--dry` | 整次调用 | 只打印计划(人读文本或 `--json` 单文档),不运行、不落盘 |
 | 机器出口 | `--junit <path>` | 整次调用 | 额外写 JUnit 聚合文件,不改变形态;JSON 聚合归 `show --json` 或事件流重定向 |
