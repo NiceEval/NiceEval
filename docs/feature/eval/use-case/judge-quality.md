@@ -47,4 +47,4 @@
 - [Scoring · Judge](../../scoring/library/judge.md) —— 三个入口、模型解析与 unavailable 语义的单源契约。
 - [Severity 与 Verdict](../../scoring/architecture/severity-and-verdict.md) —— soft 阈值怎样在 `--strict` 下收紧。
 - [Scoring · 作用域](../../scoring/architecture/scopes.md) —— 各接收者 judge 的默认材料。
-- [Experiments · 计分粒度](../../experiments/score-points.md) —— judge 分数进质量分列，两个都通过的模型质量差可比；计分制里链 `.points(n)` 按连续分比例挣分。
+- [Scoring · 计分粒度](../../scoring/library/score-points.md) —— Judge 分数进质量分列，两个都通过的模型质量差可比；计分制里链 `.points(n)` 按连续分比例挣分。

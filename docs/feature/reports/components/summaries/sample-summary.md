@@ -5,7 +5,7 @@
 
 web 面使用短标签 `Pass rate / 通过率`、`Total score / 总分`、`Experiments / 实验`、`Evals / Eval`、`Attempts / Attempt`、`Eval results / Eval 结果`（`votes="attempt"` 时为 `Attempt results / Attempt 结果`）和 `Total cost / 总成本`。这些是字段名，不在标签里重复“数”“次”或“计票”；数量由值本身表达。时间不直接暴露 ISO 字符串：单点写成 `Last run / 最近运行`，范围写成 `Run range / 运行范围`，时间值按当前 locale 格式化到分钟；同日范围不重复右端日期，同年跨日范围不重复右端年份。成本覆盖不全时，在金额下方用 `Cost available for 63/72 attempts / 63/72 次有成本数据` 解释覆盖范围，不能只放一个无语义的 `63/72` 角标。
 
-主读数按 Sample 内出现的题型（`scoringComposition`，判据与公开函数单点在[主读数映射](../../library/measures.md#题型构成与主读数)）切换：纯通过制（`"pass"`）只显示通过率，`totalScore` 省略；纯计分制（`"points"`）隐藏通过率、只显示总分（[`totalScore` 读数](../../library/measures.md#内置读数)：`assertions[].points` 之和加 `scoreEntries[].points` 之和，errored/skipped 记 `null`）；混型（`"mixed"`，一个 Sample 并排通过制与计分制两个 experiment，见[计分粒度](../../../experiments/score-points.md)）两者都显示——不摆空列，只在相关时才出现对应的读数。
+主读数按 Sample 内出现的题型（`scoringComposition`，判据与公开函数单点在[主读数映射](../../library/measures.md#题型构成与主读数)）切换：纯通过制（`"pass"`）只显示通过率，`totalScore` 省略；纯计分制（`"points"`）隐藏通过率、只显示总分（[`totalScore` 读数](../../library/measures.md#内置读数)：`assertions[].points` 之和加 `scoreEntries[].points` 之和，errored/skipped 记 `null`）；混型（`"mixed"`，一个 Sample 并排通过制与计分制两个 experiment，见[计分粒度](../../../scoring/library/score-points.md)）两者都显示——不摆空列，只在相关时才出现对应的读数。
 
 data 恒携带两级计票，两份序列化 JSON 摆在一起时口径自明；渲染面显示哪一级由呈现 prop `votes` 决定：
 

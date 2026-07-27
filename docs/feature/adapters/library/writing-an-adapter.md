@@ -60,6 +60,6 @@ export default defineExperiment({ agent, attempts: 3 });
 
 ## 下一步
 
-- 被测对象是服务或 SDK endpoint：[Remote Agent](remote-agent.md)
+- 被测对象是服务或 SDK endpoint：[Direct Agent](direct-agent.md)
 - 被测对象是隔离环境里的 CLI：[Sandbox Agent](sandbox-agent.md)
 - 需要消费 SSE、delta 或 transcript：[流式协议与共享工具](streaming.md)

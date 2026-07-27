@@ -1,7 +1,7 @@
 // 会话驱动:把 t.send(text) 翻成 agent.send(input, ctx),在同一沙箱里多轮 resume /
 // newSession,并把每轮的标准事件流与用量累加进整次运行(供作用域断言 / o11y)。
 
-import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, StreamEvent, Telemetry, TraceSpan, Turn, Usage } from "../types.ts";
+import type { Agent, AgentContext, AgentSession, InputFile, InputRequest, InputResponse, Sandbox, SandboxAgentContext, StreamEvent, Telemetry, TraceSpan, Turn, TurnInput, Usage } from "../types.ts";
 import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { downgradeCoverage, resolveAgentCoverage, worstCoverage, type ResolvedCoverage } from "../scoring/coverage.ts";
 import { captureLoc } from "../source-loc.ts";
@@ -243,7 +243,6 @@ export class SessionManager {
       reasoningEffort: this.deps.reasoningEffort,
       flags: this.deps.flags,
       experimentId: this.deps.experimentId,
-      sandbox: this.deps.sandbox,
       session,
       telemetry: this.deps.telemetry,
       progress: (u) =>
@@ -315,7 +314,7 @@ export class SessionManager {
         sentAttribution = r.attribution;
       } else {
         turn = await sendWithTurnRetry(
-          () => this.deps.agent.send({ text, files, responses }, ctx),
+          () => this.sendAgent({ text, files, responses }, ctx),
           { get: (v) => v, set: (_v, t) => t },
           retryDeps,
         );
@@ -390,7 +389,7 @@ export class SessionManager {
       const turnCtx: AgentContext = ctx.telemetry
         ? { ...ctx, telemetry: { ...ctx.telemetry, headers } }
         : ctx;
-      return this.deps.agent.send(input, turnCtx);
+      return this.sendAgent(input, turnCtx);
     });
     this.otelSpans.push(...r.spans);
     this.otelTraceIds.add(r.traceId);
@@ -404,6 +403,15 @@ export class SessionManager {
       this.deps.log(t("otel.noSpans"));
     }
     return { turn: r.result, traceId: r.traceId, attribution: r.spans.length === 0 ? "none" : r.attribution };
+  }
+
+  private sendAgent(input: TurnInput, ctx: AgentContext): Promise<Turn> {
+    const agent = this.deps.agent;
+    if (agent.kind === "sandbox") {
+      const sandboxCtx: SandboxAgentContext = { ...ctx, sandbox: this.deps.sandbox };
+      return agent.send(input, sandboxCtx);
+    }
+    return agent.send(input, ctx);
   }
 }
 

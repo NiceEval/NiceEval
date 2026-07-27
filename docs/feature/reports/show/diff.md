@@ -30,7 +30,7 @@ M manager_decisions.json · touched in turn1, turn2
 +  "15201": { "selected_proposal_id": 2 },
 ```
 
-`--diff=<path>` 必须用 `=` 连写，空格后的 token 会按 eval id 位置参数解析。二进制文件在摘要里显示字节数变化，不输出 patch。`diff.json` 缺失（remote agent、或发布时未带 `diff`）时如实输出 `diff unavailable` 并说明原因，不猜。
+`--diff=<path>` 必须用 `=` 连写，空格后的 token 会按 eval id 位置参数解析。二进制文件在摘要里显示字节数变化，不输出 patch。`diff.json` 缺失（direct agent、或发布时未带 `diff`）时如实输出 `diff unavailable` 并说明原因，不猜。
 
 ## 相关阅读
 

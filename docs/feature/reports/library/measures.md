@@ -96,7 +96,7 @@ interface MeasureCell {
 
 三个通过率读数与 `examScore` 的 `bounds` 是 `{ min: 0, max: 1 }`；质量分是 soft 断言的均值。
 其余内置读数是 `{ min: 0 }`。计分制分值非负，规则见
-[计分粒度](../../experiments/score-points.md)；耗时、tokens、成本与计数也天然非负。
+[计分粒度](../../scoring/library/score-points.md)；耗时、tokens、成本与计数也天然非负。
 
 `skipped` 对这些读数返回 `null`。`durationMs` 的超时删失也返回 `null`，但删失不能静默。
 它会使格子的 `samples` 小于 `total`；渲染层必须保留 `samples`、`total` 与 `refs`，详见
@@ -139,7 +139,7 @@ Reports 可以同时展示两者，但不得用终态判定构成现场重算通
 ## 题型构成与主读数
 
 一个范围的对比主读数由其中出现的题型决定，裁决见
-[计分粒度](../../experiments/score-points.md#横截面聚合同型实验各读各的)。
+[计分粒度](../../scoring/library/score-points.md#横截面聚合同型实验各读各的)。
 通过制读通过率，计分制读总分。
 
 题型是定义期事实；单个 experiment 内由启动期强制同型。这个选择不依赖任何 attempt 结果，

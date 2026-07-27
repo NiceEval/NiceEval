@@ -81,7 +81,7 @@ type AssertionResult =
        * `.points(n)` 挂在这条断言上的挣分:`n × score`(0/1 断言通过挣 n、不过挣 0;打分断言按
        * 连续分比例挣)。只在计分制 eval 里链过 `.points()` 时出现;省略表示这条断言不参与计分
        * (通过制 eval 的全部断言,或计分制 eval 里没链 `.points()` 的断言)。与 `score` 是两个读数——
-       * `score` 判定用,`points` 计分用,互不派生(见[计分粒度](../experiments/score-points.md))。
+       * `score` 判定用,`points` 计分用,互不派生(见[计分粒度](library/score-points.md))。
        */
       points?: number;
     })
@@ -104,7 +104,7 @@ type AssertionResult =
 interface ScoreEntry {
   /** 作者传入的 label,原样进报告。 */
   label: string;
-  /** 直接给分,n >= 0(见[计分粒度](../experiments/score-points.md))。 */
+  /** 直接给分,n >= 0(见[计分粒度](library/score-points.md))。 */
   points: number;
   /** 所属分组路径,同 AssertionBase.groupPath;规则一致(外层在前的 t.group 标题数组)。 */
   groupPath?: string[];
@@ -119,6 +119,6 @@ interface ScoreEntry {
 
 判别键是 `outcome`——`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败、`score: 0` 但又不许聚合」的非法组合：普通聚合代码按 `outcome` 分支就不可能把证据缺口算成零分。这份字段全集是穷尽的：show / view / 报告需要的每个展示字段都在表内，不存在「塞进 `name` 再拆」的隐式约定。`expected` / `received` / `evidence` 是有界预览而不是原始值——原始证据在 `events.json` / `diff.json` 等 artifact 里；判定只消费 `severity` / `outcome` / `optional` / `score` / `threshold`,`points` 不参与判定。
 
-`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。两者共用同一套 `groupPath` 折叠约定,分数面的逐层求和规则见[计分粒度](../experiments/score-points.md#折叠树判定面分数面质量分)。
+`points` 与 `ScoreEntry` 是计分制(`defineScoreEval`)才会出现的分数面数据;通过制 eval 的 `AssertionResult` 永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。两者共用同一套 `groupPath` 折叠约定,分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
 
 计分制记录里 `severity` 与 `points` 的组合就是那条断言的角色,不需要第三个字段:得分点是 `severity: "soft"` + 有 `points`(不传播判定),前置是 `severity: "gate"`(中止,`points` 视有没有链 `.points()` 而定),观测是 `severity: "soft"` + 无 `points`。质量分因此按「soft 且没有 `points`」取子集聚合——得分点已经在分数面被读过一次,不再进质量分。

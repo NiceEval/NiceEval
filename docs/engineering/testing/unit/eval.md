@@ -36,7 +36,7 @@ function scriptedAgent(turns: readonly Turn[]): ScriptedAgent {
 
   return {
     name: "scripted",
-    kind: "remote",
+    kind: "direct",
     received,
     async send(input) {
       received.push(input);

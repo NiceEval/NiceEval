@@ -210,9 +210,10 @@ t.maxTokens(80_000).atLeast(0.7);     // soft 变体——照样跟踪，只有 
 t.check(t.usage.outputTokens, satisfies((n) => n < 10_000, "not verbose"));
 ```
 
-`t.usage` 在 `test(t)` 里随处可用，暴露 `{ inputTokens, outputTokens, cacheReadTokens?, … }`。Sandbox 型 agent 的 token 数由 adapter 从 transcript 里抠出；远程 agent 直接在 `Turn.usage` 里返回。
+`t.usage` 在 `test(t)` 里随处可用，暴露 `{ inputTokens, outputTokens, cacheReadTokens?, … }`。
+Sandbox Agent 的 token 数由 Adapter 从 transcript 里提取；Direct Agent 直接在 `Turn.usage` 里返回。
 
-## 自定义评分器
+## 自定义 Assertion
 
 值断言就是一个函数 `(value) => number | Promise<number>`，用 `makeAssertion` 自己写：
 

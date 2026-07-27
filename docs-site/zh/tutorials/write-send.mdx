@@ -149,7 +149,7 @@ export default defineAgent({
 
 `Usage` 的完整字段还有可选的 `cacheReadTokens` / `cacheCreationTokens`、推理 token 数 `reasoningTokens`、请求次数 `requests`，以及 `costUSD`——网关回了实测成本就填它，优先于价格表估算。每个字段只在接口真实提供时填，接口不回用量就整个不填 `usage`，其它断言不受影响。这段照抄也是过渡：下一步的官方转换器会连 `usage` 一起填好。
 
-**这一步支持**：`t.maxTokens()` / `t.maxCost()` 评分器（`maxCost` 用 `costUSD` 或配置里的价格表估算），以及报告和 `niceeval view` 里的用量。
+**这一步支持**：`t.maxTokens()` / `t.maxCost()` 断言（`maxCost` 用 `costUSD` 或配置里的价格表估算），以及报告和 `niceeval view` 里的用量。
 
 ## 第四步：把工具解析成事件
 

@@ -71,7 +71,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 
 糖衣类的契约是 `_tag` 与 `class` 两个数据字段,识别一律走 `failureClassOf` 的结构检查,不用 `instanceof`——依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。`failureClassOf` 沿 `cause` 链逐层查找、取最外层携带分类的错误——作者的糖衣类被上层库包装再抛时声明不丢失。糖衣类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。糖衣类只覆盖空间轴的两个非缺省档;缺省档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给缺省行为发明类型是噪音。
 
-`Agent` 上的挂载面是可选字段 `classifyTurnError?: TurnErrorClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn));`completed` 与 `waiting` 的 Turn 不是失败(HITL 挂起是成功形态),不进分类。`kind: "remote"` 与 `kind: "sandbox"` 的 agent 走同一条链,契约不分身份。
+`Agent` 上的挂载面是可选字段 `classifyTurnError?: TurnErrorClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn));`completed` 与 `waiting` 的 Turn 不是失败(HITL 挂起是成功形态),不进分类。`kind: "direct"` 与 `kind: "sandbox"` 的 agent 走同一条链,契约不分身份。
 
 ### 分类链
 

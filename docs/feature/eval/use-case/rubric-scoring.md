@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-通过制回答「做没做对」，但有一类题的答案是「做到了几成」：安装五步走完三步，不该和一步没走同为 0 分——模型间的真实差距全藏在这里。这类题用 **`defineScoreEval`** 定义，用给分词汇叠加挣分：分从 0 往上累加、分值非负、不声明满分。同一条 eval 的代码对每个 experiment 是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，结论不需要分母。契约单源见[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
+通过制回答「做没做对」，但有一类题的答案是「做到了几成」：安装五步走完三步，不该和一步没走同为 0 分——模型间的真实差距全藏在这里。这类题用 **`defineScoreEval`** 定义，用给分词汇叠加挣分：分从 0 往上累加、分值非负、不声明满分。同一条 eval 的代码对每个 experiment 是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，结论不需要分母。契约单源见[计分粒度](../../scoring/library/score-points.md#计分制叠加给分没有上限声明)。
 
 ## 全流程
 
@@ -88,7 +88,7 @@ export default defineScoreEval({
 
 ## 相关阅读
 
-- [计分粒度](../../experiments/score-points.md) —— 通过制 / 计分制的完整契约与横截面聚合规则（契约单源）。
+- [计分粒度](../../scoring/library/score-points.md) —— 通过制 / 计分制的完整契约与横截面聚合规则（契约单源）。
 - [过程与成本](process-and-cost.md) —— 检查点断言本身的匹配写法。
 - [裁判评质量](judge-quality.md) —— judge 入口与阈值语义。
 - [沙箱 coding 任务](sandbox-coding.md) —— rubric 大题依赖的 diff 归因与验证命令。

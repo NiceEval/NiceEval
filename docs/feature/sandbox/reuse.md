@@ -53,8 +53,8 @@ Experiment.setup
       → Agent.setup
       → test(t)，继续准备 Fixture 并执行 Agent Turn
       → 评分与证据收集
-      → Agent.teardown
       → Eval.teardown
+      → Agent.teardown
       → reset 或停止承接 Attempt
   → 最后一条 Attempt 完成
       → SandboxSpec.teardown

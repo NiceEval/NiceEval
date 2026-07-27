@@ -83,6 +83,10 @@ TableContent / ChartContent / GridContent … 可序列化
 **Record 一点判断都不许有。** 它的承诺是每个返回值都能在磁盘上逐字节指出来源。所以通过数、成本
 合计这类聚合不落盘,「最新一次」这种选法也不在这里 —— 「最新」先要定义粒度,而定义粒度就是看法。
 
+Record reader 可以把残缺目录投影为 `skipped("incomplete")`，供上层用同一形状保守处理。
+这个值描述“无法读出完整事实”，不是 runner 产生的 Verdict。未派发 Attempt 则只存在于 Invocation
+的 `unstarted` 计数中，不创建 `result.json`，两者不能互相替代。
+
 **Sample 有判断,但判断必须物化。** 「每个实验取最新一次」是一种选法,「这批数据缺了三道题」是一次
 推断。两者都写在返回值的字面字段上:`mode` 说口径,`coverage` 说覆盖,`warnings` 说哪里不可靠。
 

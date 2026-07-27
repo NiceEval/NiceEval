@@ -9,7 +9,7 @@
 | | 内容 |
 |---|---|
 | **做** | 发现 eval、算指纹决定跳过、建 attempt 列表、有界并发调度、首过即停、把结果交给报告器、落盘 artifact、定退出码 |
-| **不做** | 怎么驱动 agent(Agent / Adapter)、怎么打分(Scorer)、结果存成什么格式(Reporter) |
+| **不做** | 怎么驱动 agent(Agent / Adapter)、怎么声明 Assertion 或调用 Judge、结果存成什么格式(Record writer / Reporter) |
 
 它是协调者,不是执行者。
 
@@ -379,7 +379,7 @@ Hook 内部做什么全部交给对应的作者决定。调用点从外到内:
   │  test(t)                    作者的代码,顺序与次数核心不插手
   │  折叠 agent 归因增量 → 评分 → 判定
   │  EvalDef.teardown           ┐
-  │  SandboxAgent.teardown      │ 与上面的 setup 逆序
+  │  SandboxAgent.teardown      │ 固定收尾顺序,不声称跨层 LIFO
   │  SandboxSpec.teardown 链    ┘ 回存跨 attempt 状态的时机
   │  沙箱销毁或留存
   └─────────────────────────────────────────────────────────────────────

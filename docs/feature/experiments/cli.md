@@ -93,15 +93,15 @@ Human active 行的最后一栏显示当前生命周期阶段。阶段词表全�
 
 | Phase | Human 展示 | 什么时候出现 |
 |---|---|---|
-| `sandbox.queue` | queued for sandbox | 等待容器创建信号量(并发限流);remote agent 跳过 |
-| `sandbox.create` | creating sandbox | 创建 Docker / E2B / Vercel sandbox;remote agent 跳过 |
+| `sandbox.queue` | queued for sandbox | 等待容器创建信号量(并发限流);direct agent 跳过 |
+| `sandbox.create` | creating sandbox | 创建 Docker / E2B / Vercel sandbox;direct agent 跳过 |
 | `sandbox.setup` | sandbox setup | 运行 `SandboxSpec.setup()` 环境预置 Hook 链;没有 Hook 就跳过 |
-| `workspace.baseline` | preparing workspace | 打变更分类账锚点(归因的起点);remote agent 跳过 |
+| `workspace.baseline` | preparing workspace | 打变更分类账锚点(归因的起点);direct agent 跳过 |
 | `eval.setup` | eval setup | 运行 `EvalDef.setup`;没有 setup 就跳过 |
 | `agent.setup` | agent setup | 安装 CLI、Skill/plugin、写 agent 配置;没有 `Agent.setup` 就跳过 |
 | `telemetry.configure` | configuring telemetry | 创建/配置本次 tracing 出口;没有 tracing 就跳过 |
 | `eval.run` | running eval | 执行 `EvalDef.test` 并驱动 agent;这是所有 attempt 都有的主阶段 |
-| `workspace.diff` | capturing diff | 读取 sandbox 工作区变化;remote / skipped attempt 跳过 |
+| `workspace.diff` | capturing diff | 读取 Sandbox 工作区变化；Direct / skipped Attempt 跳过 |
 | `scoring.evaluate` | scoring | 收集断言并运行可用的 judge;skipped attempt 跳过 |
 | `telemetry.collect` | collecting trace | 等待并筛选迟到的 OTel spans;没有 tracing 就跳过 |
 | `eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` | cleaning up | 收尾段:Human 合并显示为一档,机器面(`phase=` 与落盘)保留精确名 |

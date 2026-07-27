@@ -150,7 +150,7 @@ export default defineExperiment({ agent: codexAgent(), sandbox: e2b });
 - `environment` 是非空、不透明的稳定 id，不是一组由 NiceEval 解释的包版本约束。
 - `environments` 是纯数据：键为 profile id，值为该 provider「预制产物槽位」的覆盖参数（docker 的 `image`、e2b 的 `template`、vercel 的 `snapshotId`），字段类型由各内置工厂声明；`defineSandbox` 自定义 spec 没有这张表。详见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。
 - NiceEval 在创建任何沙箱、计算 carry 或选择全局并发前，对每条**选中** eval 完成查表；选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不消耗 provider / Agent 预算。未选中 eval 的 profile 不影响本次运行。
-- 查表只决定这条 attempt 从哪个预制产物起步；spec 上的 `.setup()` / `.teardown()` Hook 链与其余参数对全部 eval 共享，`EvalDef.setup` 继续只负责分类账锚点之后的任务 fixture。remote Agent 不创建 sandbox，不参与查表，`environment` 只作为 eval fingerprint 的一部分保留。
+- 查表只决定这条 attempt 从哪个预制产物起步；spec 上的 `.setup()` / `.teardown()` Hook 链与其余参数对全部 eval 共享，`EvalDef.setup` 继续只负责分类账锚点之后的任务 fixture。Direct Agent 不创建 Sandbox，不参与查表，`environment` 只作为 eval fingerprint 的一部分保留。
 
 翻译表放在 spec 上而不是 experiment 上，是因为它的真实维度是 **profile × provider**，与具体实验无关：表随 spec 被多个实验共享（模块常量或 `Config.sandbox` 兜底），新增环境只改一处，experiment 保持「一行 diff」的形态，一个实验覆盖全集、对比横截面完整。
 
@@ -486,7 +486,10 @@ export default defineExperiment({
 - **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`、`sandbox`。`Config.sandbox` 必须是工厂函数产出的显式 `SandboxSpec`（可携带 `environments` 表）；experiment 的 `sandbox` 可以覆盖它。两处都没配置时，沙箱型 Agent 直接报错，不探测环境或选择内置 Provider 默认值。
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
-调度项覆盖优先级(高 → 低):**CLI flag → experiment → config → 内置默认**。这条链里没有环境变量:配置项的家是代码(experiment / config)与本次命令(flag),环境变量只承担凭据和终端环境事实([边界](../../architecture.md#配置从代码来凭据从环境来))。agent、model、flags 属于 experiment,不由 CLI 覆盖。
+配置解析以 [Architecture · Resolved config](architecture.md#resolved-config一次求值处处同源) 为单源。
+`timeoutMs` 与 Judge 支持 Eval 覆盖，按 CLI flag → experiment → eval → config → 内置默认解析；
+其它字段只经过各自声明的层级。环境变量只承担凭据和终端环境事实，不进入配置覆盖链。
+agent、model、flags 属于 experiment，不由 CLI 覆盖。
 
 ## 相关阅读
 

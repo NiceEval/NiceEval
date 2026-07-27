@@ -104,6 +104,10 @@ export { AGENT_SETUP_MANIFEST_PATH } from "./manifest.ts";
 export type {
   Agent,
   AgentContext,
+  DirectAgent,
+  DirectAgentDef,
+  DirectAgentSetup,
+  DirectAgentTeardown,
   AgentSession,
   AgentSetup,
   AgentSetupManifest,
@@ -113,7 +117,8 @@ export type {
   SpanMapper,
   Telemetry,
   SandboxAgentDef,
-  RemoteAgentDef,
+  SandboxAgent,
+  SandboxAgentContext,
   McpServer,
   SkillSpec,
 } from "../types.ts";

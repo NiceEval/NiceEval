@@ -8,7 +8,7 @@
 
 - Claude Code 的 OTel 导出是**定时批量导出**(OTel SDK 标准的 BatchProcessor 行为),不是每条事件产生就立刻 POST 一次。间隔可调,metrics 默认 60s、logs/traces 默认 5s,**最低可以调到 1000ms**(见下表),进程退出时也会把剩余缓冲区强制 flush 一次。
 - 所以"增量"是相对的:比起 niceeval 现在的 claude-code adapter(`src/agents/claude-code.ts`)—— `runCommand` 等整个 `claude --print` 进程退出,再一次性读回整份 transcript JSONL —— 这条路径能在**进程运行过程中**分批收到 span,粒度是秒级,不是"跑完才有"。
-- 但也不是 eve / 自建 remote agent 那种"事件发生即推"的上限:批量间隔就是延迟下限,想要更低延迟只能继续调小间隔(有性能/开销代价,官方文档明确说"debug 用完记得调回去")。
+- 但也不是 eve / 自建 direct agent 那种"事件发生即推"的上限:批量间隔就是延迟下限,想要更低延迟只能继续调小间隔(有性能/开销代价,官方文档明确说"debug 用完记得调回去")。
 
 结论细化到"该不该接"见文末[结论](#结论这条路径值不值得接)。
 
@@ -62,7 +62,7 @@ niceeval 的 `src/agents/claude-code.ts` 一直是拿 `--print`(即 `-p`)跑的�
 
 ## 跟 niceeval 现有 OTLP 接收器天然兼容
 
-niceeval 已经有一套本机 OTLP 接收器(`src/o11y/otlp/receiver.ts`),给 remote agent 的 `capabilities.tracing` 用:每个沙箱起一个临时端口,只认 `POST .../v1/traces`,`src/o11y/otlp/parse.ts` 同时吃 **OTLP/JSON** 和 **OTLP/protobuf** 两种线编码(手写了一个够用的 protobuf reader,没有额外依赖)。
+niceeval 已经有一套本机 OTLP 接收器(`src/o11y/otlp/receiver.ts`),给 direct agent 的 `capabilities.tracing` 用:每个沙箱起一个临时端口,只认 `POST .../v1/traces`,`src/o11y/otlp/parse.ts` 同时吃 **OTLP/JSON** 和 **OTLP/protobuf** 两种线编码(手写了一个够用的 protobuf reader,没有额外依赖)。
 
 Claude Code 的 traces 导出器支持的协议是 `grpc` / `http/json` / `http/protobuf` 三选一(`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`)。**只要选 `http/json` 或 `http/protobuf`,不选 `grpc`**(现有接收器是个普通 `http.createServer`,不认 gRPC 的 HTTP/2 帧),Claude Code 就能把 span 直接导出到现有接收器,格式层面**不需要新写解析代码**——`parseOtlpTraces` 已经覆盖。
 
@@ -88,7 +88,7 @@ OTEL_TRACES_EXPORT_INTERVAL=1000                      # 拉到近实时,eval 场
 **值得作为时间轨(`TraceSpan[]`)的可选升级路径考虑,分两档:**
 
 1. **保底档(不用动 adapter 代码):** 什么都不接,继续用 transcript 时间戳合成 span——这是现状,降级安全,`view` 少一些真实的 span 层级细节(比如工具"等权限"和"真正执行"分不开),但断言不受影响。
-2. **升级档(可选,给需要更真实瀑布图的用户):** `claudeCodeAgent` 配置里加一个开关,setup 阶段给沙箱里跑 `claude` 的进程注入上面那组 env(复用沙箱已经有的 `TraceReceiver`,跟 remote agent 的 tracing 走同一个接收器/同一个 `o11y/otlp/mappers/` 归一管线),用户自己决定要不要为了更真实的瀑布图打开内容脱敏(`OTEL_LOG_TOOL_DETAILS` 等)。这是**加法**,不影响现有行为轨,失败也只是"没拿到 trace",不影响断言——符合[采集设计](../architecture/collection.md)里"时间轨缺数据是降级,不是契约问题"的既有原则。
+2. **升级档(可选,给需要更真实瀑布图的用户):** `claudeCodeAgent` 配置里加一个开关,setup 阶段给沙箱里跑 `claude` 的进程注入上面那组 env(复用沙箱已经有的 `TraceReceiver`,跟 direct agent 的 tracing 走同一个接收器/同一个 `o11y/otlp/mappers/` 归一管线),用户自己决定要不要为了更真实的瀑布图打开内容脱敏(`OTEL_LOG_TOOL_DETAILS` 等)。这是**加法**,不影响现有行为轨,失败也只是"没拿到 trace",不影响断言——符合[采集设计](../architecture/collection.md)里"时间轨缺数据是降级,不是契约问题"的既有原则。
 
 **不建议**因为这个能力去改变现有"等 `runCommand` 返回再读 transcript"的行为轨轮询模型:近实时的是 span(计时结构),不是行为数据本身——`StreamEvent[]` 需要的完整内容(尤其是断言要读的工具参数/输出/助手文本)能免费给的只有磁盘旁读的完整 transcript,OTel 版本要么没内容要么要额外开脱敏 flag 且不保证字段稳定性。
 

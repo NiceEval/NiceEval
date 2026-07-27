@@ -4,7 +4,7 @@ Adapter 把一个被测对象接入 niceeval。niceeval 不要求被测对象实
 
 - **Agent** 是 experiment 引用的被测对象。
 - **Adapter** 是 Agent 的实现，知道怎样发送输入、续接会话以及转换原始事件。
-- **Remote Agent** 通过 `defineAgent` 连接应用或 SDK 服务。
+- **Direct Agent** 通过 `defineAgent` 连接应用或 SDK 服务。
 - **Sandbox Agent** 通过 `defineSandboxAgent` 在 Sandbox 中运行 coding-agent CLI。
 
 两类 Agent 使用相同的 `send(input, ctx) → Turn` 契约。区别只在 Adapter 内部怎样驱动被测对象；core 不按 Agent 名称或供应商分支。
@@ -21,7 +21,7 @@ Adapter 把一个被测对象接入 niceeval。niceeval 不要求被测对象实
 | 目的 | 入口 |
 |---|---|
 | 从零编写 Adapter | [编写 Adapter](library/writing-an-adapter.md) |
-| 编写 remote / sandbox Adapter | [Remote](library/remote-agent.md) / [Sandbox](library/sandbox-agent.md) |
+| 编写 Direct / Sandbox Adapter | [Direct](library/direct-agent.md) / [Sandbox](library/sandbox-agent.md) |
 | 理解边界、数据流与采集纪律 | [架构](architecture.md) |
 | 接入某个 SDK 或 coding agent | [SDK 与 Agent 索引](sdk/README.md) |
 | 查看 import、调用与组合示例 | [Library](library.md) |

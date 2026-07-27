@@ -4,7 +4,7 @@
 `useChat` 后端 HTTP 服务——覆盖
 [AI SDK 契约页](../../../../feature/adapters/sdk/ai-sdk/README.md)声明的官方 HTTP Agent 工厂
 `uiMessageStreamAgent`。应用接入官方 `@ai-sdk/otel`
-集成，把 span 发到 niceeval 固定端口收的 OTLP 接收器，同时承担矩阵中 remote-agent
+集成，把 span 发到 niceeval 固定端口收的 OTLP 接收器，同时承担矩阵中 direct-agent
 telemetry 路径的证明。
 
 ## 被测面
@@ -30,6 +30,6 @@ telemetry 路径的证明。
   执行树出现裸工具名调用节点，节点带 span 时间注释。
 - **OTel**：被测应用接入官方 `@ai-sdk/otel` 集成（`src/backend/otel.ts`），span 发到
   `niceeval.config.ts` 的 `telemetry.port`
-  固定端口——执行树的时间注释就是记录成立的展示证明；本仓库承担矩阵中 remote-agent
+  固定端口——执行树的时间注释就是记录成立的展示证明；本仓库承担矩阵中 direct-agent
   telemetry 路径的证明。`show --timing` 的 per-turn
   OTel 子树是已知缺口（`memory/ai-sdk-agent-otel-timing-subtree-unlinked.md`），验收脚本非 gating。OTel 只生成 trace，不成为事件来源；判分断言仍只读事件流。

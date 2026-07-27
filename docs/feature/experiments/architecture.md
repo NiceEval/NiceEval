@@ -45,7 +45,7 @@ export default defineExperiment({
   //  本实验唯一的固定 SandboxSpec。带 environments 表时,解析期按每条选中 eval 的 environment 查表
   //  选中 eval 声明的 profile 缺表项 → 启动期配置错误:一次穷举列出全部缺项,不创建任何沙箱
   //  逐 eval 的解析结果进该 eval 的 fingerprint、provider 并发推荐值与 ExperimentRunInfo.sandboxByEval
-  //  remote Agent 不创建 sandbox,不参与查表
+  //  Direct Agent 不创建 Sandbox,不参与查表
 
   timeoutMs: 40 * 60_000,
   //  单 attempt 外层超时,四层解析:--timeout → 这里 → eval 字段 → niceeval.config.ts

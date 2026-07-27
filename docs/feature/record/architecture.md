@@ -233,7 +233,7 @@ interface AttemptRecord {
   startedAt?: string;
   /**
    * 沙箱型 attempt 的执行环境标识:provider 名与实例 id(如 Docker 容器 ID 前缀),用于关联
-   * provider 侧日志与[留存现场](../sandbox/cli.md);remote 型 agent 无此字段。`kept` 表示
+   * provider 侧日志与[留存现场](../sandbox/cli.md);Direct Agent 无此字段。`kept` 表示
    * 运行收尾时按 `--keep-sandbox` 留存了沙箱;之后的存活状态归 `niceeval sandbox list` 回答,
    * 本记录一次写成、不回写。`reused` 表示所属 Experiment 声明了 `sandboxReuse: true`，
    * 且这条 Attempt 跑在共用的 Sandbox 上；
@@ -377,7 +377,9 @@ interface DiagnosticRecord {
 }
 ```
 
-`sandbox` 是新增的可选字段(remote attempt 与旧 producer 都可以没有),老读取器按未知字段忽略,这类新增本身按本页版本规则不递增 `schemaVersion`。词表新增成员(如实验级两员)同理:消费方把 `phase` 当归因标签渲染,不得假设穷尽后拒绝未知成员,所以扩充词表不递增版本。`scoring` / `scoreEntries` 同属这类新增:省略 `scoring` 按 `"pass"` 处理,省略 `scoreEntries` 按空数组处理,读取器不因这两个字段缺席而拒绝落盘。
+`sandbox` 是可选字段，Direct Attempt 与旧 producer 都可以没有。老读取器按未知字段忽略，
+这类新增本身按本页版本规则不递增 `schemaVersion`。词表新增成员同理：消费方把 `phase`
+当归因标签渲染，不得因未知成员拒绝记录。
 
 `phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。结果封口必须发生在 Effect Scope 的 release 完成之后：`sandbox.stop` 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
@@ -387,6 +389,10 @@ interface DiagnosticRecord {
 
 `agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为 `error.phase` / `diagnostics[].phase` 的归因值出现，不在 `phases` 里单列。每次 send 由 runner 产生一个 `turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。`trace.json` 中的 agent/model/tool spans 不复制进 `children`，消费方按 `traceId` 把它们临时挂到对应 turn 下。这样没有 OTel 时仍有可靠的轮次总耗时，有 OTel 时才展开轮内模型、工具与子 agent 细节。
 
+Experiment `setup` / `teardown` 属于 Run 级生命周期，反馈 phase 可以使用 `experiment.setup` /
+`experiment.teardown`，但它们不进入任何单条 Attempt 的 `phases[]`。Run 级 diagnostics 与 facts
+在 `run.json` 封口时保存；Attempt timing 不借入整场只执行一次的耗时。
+
 `sandbox.create` 早于 Sandbox 对象存在，不能由 `runCommand` / `runShell` 包装捕获。内置 provider 可以把真实的 SDK 请求、宿主命令或创建步骤写成 `provider` children；第三方 provider 没有提供细分时只保留 `sandbox.create` 合计，不能把 API 调用伪装成 shell 命令。Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来自 `events.json`，耗时只在 OTel span 能唯一关联时提供。
 
 所有 runner duration 使用单调时钟；`startedAt` 单独保留 ISO 墙钟。`startOffsetMs` 只用于同一 attempt 内恢复顺序和重叠，不能拿远端 OTel 的绝对时间与 runner 墙钟硬对齐。父子节点允许嵌套与并发，子节点 duration 不可直接求和后与父节点比较。`result.json` 永远保存完整 runner 时间树；终端默认视图的节点预算只是读取投影，不得回写、裁剪或聚合 artifact。阶段边界、主链 / 收尾两段的 failed 语义、时间树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端的有界/full 两档见 [Show `--timing`](../reports/show/timing.md)，网页入口见 [View](../reports/view.md) 的 Attempt 详情。
@@ -395,7 +401,7 @@ interface DiagnosticRecord {
 
 `progress` 文本不写入任何 artifact。它是运行时可覆盖状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。事后回顾依靠 `phases`、`error`、`diagnostics` 与可选的 `events.json` / `trace.json`。trace 不是必需兜底:沙箱创建发生在 telemetry 之前,teardown 发生在 trace collect 之后,没有 tracing 的 provider 也必须留下同样完整的错误摘要。
 
-attempt 的结果封口发生在 teardown 链与 sandbox stop 之后;随后 `result.json` 与其它 attempt artifacts 原子写入。这样 teardown diagnostic 不会因为主 test 已经返回而丢失。进程在封口前被强杀时,该 attempt 仍属于未完成,不会留下一个伪装完整的 `result.json`。
+attempt 的结果封口发生在 Effect Scope release 完成之后：teardown 链与 `commitKeepOrStop()` 已结束，销毁路径完成 `sandbox.stop`，留存路径完成 `sandbox.suspend`。随后 `result.json` 与其它 attempt artifacts 原子写入。这样 teardown diagnostic 不会因为主 test 已经返回而丢失。进程在封口前被强杀时,该 attempt 仍属于未完成,不会留下一个伪装完整的 `result.json`。
 
 Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份兜底算一份。
 
@@ -647,7 +653,9 @@ interface DiffFileSummary {
 }
 ```
 
-断言语义按这两层各取所需:`fileChanged(path)` 断「任一窗口触及」(行为证据,净效果为 none 也算发生过);`net` 供只关心最终结果的消费方;单文件 patch(`show --diff=<path>`)按窗口逐段渲染,不产出跨窗口合成 patch。它只存在于沙箱型运行;remote / in-process agent 没有 workspace,没有 diff。
+断言语义按这两层各取所需：`fileChanged(path)` 断「任一窗口触及」，`net` 供只关心最终结果的
+消费方；单文件 patch 按窗口逐段渲染。它只存在于 Sandbox Attempt；Direct Agent 没有由
+NiceEval 管理的 workspace，因此没有 diff。
 
 ## 大值截断
 
@@ -702,7 +710,9 @@ view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则
 两种非正常落盘的判定:
 
 - **未收尾 Run**:`run.json` 缺 `completedAt`——进程中断,已落盘的 attempt 全部可读,只是集合可能不完整;读取面如实读出并给出结构化警告。
-- **incomplete 目录**:有 attempt 落盘、没有 `run.json`——只可能出现在「目录建好、元数据还没写完」的极小窗口里进程死亡,或人为删文件;读取面归入 `skipped("incomplete")`。
+- **incomplete 目录**：有 Attempt 落盘、没有 `run.json`。读取面把它投影成
+  `skipped("incomplete")` 以便 Sample 与 Report 保守处理；这是 reader projection，
+  不是运行器产出的第五种 Verdict。
 
 `niceeval view` 的本地 server 只暴露 `.json` artifact,并把请求路径限制在 view 输入根目录内。`--out` 导出时 Run 聚合数据烘焙进 `index.html`,查看器要 fetch 的 artifact 复制到 `artifact/` 下同布局路径。
 

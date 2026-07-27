@@ -47,7 +47,8 @@ Subject under test / Sandbox Provider
   `Agent` 是 [NiceEval](https://niceeval.com/) 看到的抽象；`Adapter` 是你写的具体实现。[NiceEval](https://niceeval.com/) 不知道你的 agent 私有协议、CLI 参数或鉴权方式。
 </Note>
 
-这条边界让 [NiceEval](https://niceeval.com/) 保持通用。评估你自己的 AI agent、Claude Code、Codex 或自定义 agent 时，runner 和 scorers 的逻辑不需要改变。
+这条边界让 [NiceEval](https://niceeval.com/) 保持通用。评估自己的 AI Agent、Claude Code、Codex
+或自定义 Agent 时，Runner、Assertion、Judge 与 Verdict 规则都不需要改变。
 
 ## Sandbox
 

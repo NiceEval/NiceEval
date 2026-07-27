@@ -186,7 +186,10 @@ const spec = e2bSandbox({ template: "niceeval-agents" })
   });
 ```
 
-「载入 / 回存」这类收尾不需要 setup→teardown 句柄——状态键是 `ctx.experimentId` 的外部 KV,普通代码即可(见下)。多次 `.setup()` 按追加顺序跑,多次 `.teardown()` 按追加的逆序跑(和「先进后出」的 agent/环境层顺序是同一条纪律,只是发生在环境层内部);`setup` 链中途抛错时后续 `setup` 不再执行,`teardown` 链仍完整走完——半初始化的沙箱同样要扫尾。
+「载入 / 回存」这类收尾不需要 setup→teardown 句柄，状态键是 `ctx.experimentId` 的外部 KV。
+同一 SandboxSpec 内，多次 `.setup()` 按追加顺序执行，多次 `.teardown()` 按追加的逆序执行。
+这个 LIFO 规则只描述同层 Hook 列表，不推导跨层 teardown 顺序。`setup` 链中途抛错时，
+后续 setup 不再执行，teardown 链仍完整走完。
 
 这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。稳定的大依赖先做进 image/template/snapshot;Hook 是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。
 
@@ -206,7 +209,8 @@ export default defineExperiment({
 
 失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与 Hook)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
 
-remote 型 agent(`kind: "remote"`)没有真实沙箱,`experiment.sandbox` 对它不参与、直接被忽略——Hook 天然不会跑,不需要为此写 fail-fast 分支或额外校验。
+Direct Agent(`kind: "direct"`)没有真实 Sandbox，`experiment.sandbox` 对它不参与并直接忽略。
+Sandbox Hook 因而不会执行，不需要额外的 fail-fast 分支。
 
 ## 向运行反馈进度与诊断
 

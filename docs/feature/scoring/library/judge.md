@@ -47,7 +47,7 @@ export default defineConfig({
 });
 ```
 
-judge 评不出可信分数时，该条断言记录为 `outcome: "unavailable"`（带机器可读 `reason` 与一层人读 `evidence`），绝不静默消失、也绝不落成 0 分的通过记录：模型或 API key 没解析到是 `judge-model-unresolved`；请求发出去却失败（HTTP 非 2xx、连接中断、调用超时），或响应回来了但取不出分数（不合协议、分数缺失），是 `judge-call-failed`，状态码与异常摘要进 `evidence`。写下的 rubric 默认要求可评估——无论 soft 还是 gate，unavailable 都使 attempt `errored`（评不了的结论不可信，不能算通过，也不该算 agent 答错）；确实允许这条 rubric 缺席时显式链 `.optional()`，它的 unavailable 只保留在记录里，不影响判定。折叠规则见 [Severity 与 Verdict](../architecture/severity-and-verdict.md)。CI 不需要从报告里是否有分数反推 judge 是否真的跑了：缺 key 直接红，判分网关抽风也直接红，optional 的 unavailable 在记录里可查。
+judge 评不出可信分数时，该条断言记录为 `outcome: "unavailable"`（带机器可读 `reason` 与一层人读 `evidence`），绝不静默消失、也绝不落成 0 分的通过记录：运行期没有解析到模型是 `judge-model-unresolved`；请求发出去却失败（HTTP 非 2xx、连接中断、调用超时），或响应回来了但取不出分数（不合协议、分数缺失），是 `judge-call-failed`，状态码与异常摘要进 `evidence`。写下的 rubric 默认要求可评估——无论 soft 还是 gate，unavailable 都使 attempt `errored`；`.optional()` 只允许这条运行期判分证据缺席，其 unavailable 只保留在记录里、不影响判定。它不能放宽已配置 Judge 的启动期完整性：配置声明了模型后，缺 key 或端点预检失败仍在派发前中止 Invocation。折叠规则见 [Severity 与 Verdict](../architecture/severity-and-verdict.md)。
 
 Judge 默认 soft、无阈值，只记录分数；`.atLeast(x)` 添加 soft 阈值，`.gate(x?)` 变成硬要求；`.optional()` 声明允许缺席。severity（影不影响判定）与 optional（证据允许不允许缺席）是两个正交维度：
 
@@ -70,6 +70,6 @@ t.judge.autoevals.closedQA("文风是否友好?").optional();          // 允许
 
 重试耗尽或不可重试的预检失败中止本次运行，按[错误反馈契约](../../../error-feedback.md#消息三段式)给出 `fix:`。鉴权失败（401 / 403）的下一步要同时点名两处解析口径：省略 `baseUrl` 时打的是官方端点 `https://api.openai.com/v1`，key 读的是 `judge.apiKeyEnv` 指定的变量或 `NICEEVAL_JUDGE_KEY`——接兼容网关却只配了 key，症状正是拿着网关的凭据打官方端点，而 OpenAI 回的「Incorrect API key provided」不会告诉你端点选错了。
 
-**预检失败不降级成 warning。** 「判分端点连不上就把 judge 断言当没配、静默跳过」会重新制造没有测量的绿，与上面 unavailable 的折叠规则直接冲突：要允许缺席，出口是作者在那条断言上显式写 `.optional()`，不是框架替他决定。
+**预检失败不降级成 warning，也不读取断言级 `.optional()`。** 预检验证的是作者已经配置给本次 Invocation 的共享 Judge 基础设施，不是某一条 Assertion 的运行结果；断言链只有进入 `test(t)` 后才构造，不能反向改变派发前配置是否完整。要容忍单条运行期调用失败，在该断言上写 `.optional()`；要让整批在 Judge 基础设施不可用时仍执行，就不要为这次 Invocation 配置 Judge。
 
 从配置到确认分数真的评出来的完整走法，见用例[接上一个兼容网关，并确认它真的在打分](../use-case/judge-not-scoring.md)。

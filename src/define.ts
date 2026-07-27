@@ -2,7 +2,8 @@
 // 由发现阶段从文件路径推导(见 runner/discover.ts)。
 
 import type {
-  Agent,
+  DirectAgent,
+  DirectAgentDef,
   Config,
   CustomSandboxSpec,
   DockerSandboxSpec,
@@ -10,7 +11,7 @@ import type {
   EvalDef,
   ExperimentDef,
   LocalSandboxSpec,
-  RemoteAgentDef,
+  SandboxAgent,
   SandboxAgentDef,
   SandboxHook,
   SandboxHooks,
@@ -29,7 +30,7 @@ export function isDefinedScoreEval(value: EvalDef): boolean {
 }
 
 /** 沙箱型 agent:在沙箱里 spawn 一个 coding agent 的 CLI,跑完读回 transcript。 */
-export function defineSandboxAgent(def: SandboxAgentDef): Agent {
+export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
   if (!def.name) throw new Error(t("define.sandboxAgentNameRequired"));
   return {
     name: def.name,
@@ -44,12 +45,12 @@ export function defineSandboxAgent(def: SandboxAgentDef): Agent {
   };
 }
 
-/** 远程 / 进程内 agent:在 send 里直接驱动你的函数 / 服务。 */
-export function defineAgent(def: RemoteAgentDef): Agent {
+/** Direct Agent:在 send 里直接驱动函数、SDK 或服务端点。 */
+export function defineAgent(def: DirectAgentDef): DirectAgent {
   if (!def.name) throw new Error(t("define.agentNameRequired"));
   return {
     name: def.name,
-    kind: "remote",
+    kind: "direct",
     coverage: def.coverage,
     setup: def.setup,
     tracing: def.tracing,

@@ -38,6 +38,7 @@ import {
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type {
   AgentContext,
+  SandboxAgentContext,
   AgentSetupManifest,
   Config,
   DiagnosticInput,
@@ -736,14 +737,13 @@ async function runAttemptBody(
   const sandbox = usesSandbox ? withCommandTiming(rawSandbox, recorder, getPhase, commands) : rawSandbox;
   // 在两个 return 前赋值,好让 finally 把 diagnostics 挂到即将返回的同一个对象上(见 finally 末尾)。
   let result: EvalResult | undefined;
-  // 整个 attempt 共用一份 agent ctx(sandbox 钩子 / agent setup / tracing configure / teardown 都用它)。
+  // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
   const attemptCtx: AgentContext = {
     signal,
     model: run.model,
     reasoningEffort: run.reasoningEffort,
     flags: run.flags,
     experimentId: run.experimentId,
-    sandbox,
     session: createAgentSession(),
     telemetry,
     progress: feedback.progress,
@@ -752,6 +752,7 @@ async function runAttemptBody(
     // log 是 progress({ message }) 的别名,不是第二条通道(见 AgentContext.log 注释)。
     log,
   };
+  const sandboxAttemptCtx: SandboxAgentContext = { ...attemptCtx, sandbox };
   // Sandbox hook / eval.setup 的窄上下文:experimentId + signal + 作用域反馈,不借用完整 AgentContext
   // (hook 拿不到 session / model / telemetry,见 docs/feature/sandbox/library.md)。
   const hookCtx: SandboxHookContext = {
@@ -846,7 +847,9 @@ async function runAttemptBody(
       enterPhase("agent.setup");
       log(t("runner.startAgentSetup"));
       agentDidSetup = true;
-      const returned = (await run.agent.setup(sandbox, attemptCtx)) as unknown;
+      const returned = (await (run.agent.kind === "sandbox"
+        ? run.agent.setup(sandbox, sandboxAttemptCtx)
+        : run.agent.setup(attemptCtx))) as unknown;
       if (typeof returned === "function") {
         throw new Error(
           t("runner.setupReturnedCleanup", {
@@ -864,10 +867,10 @@ async function runAttemptBody(
 
     // OTLP 导出配置(file-based,如 codex 的 config.toml [otel] 块):与 setup 分开,
     // 在主配置写完后追加。仅当 tracing 开 + 有 endpoint 时调一次(env-based 的不实现 configure)。
-    if (telemetry && run.agent.tracing?.configure) {
+    if (telemetry && run.agent.kind === "sandbox" && run.agent.tracing?.configure) {
       enterPhase("telemetry.configure");
       log(t("runner.startAgentTracing"));
-      await run.agent.tracing.configure(sandbox, attemptCtx);
+      await run.agent.tracing.configure(sandbox, sandboxAttemptCtx);
     }
 
     // 构造 t,跑 test
@@ -1159,7 +1162,11 @@ async function runAttemptBody(
       await recorder
         .measureClosing("agent.teardown", async () => {
           try {
-            await withCleanupTimeout(() => run.agent.teardown!(sandbox, attemptCtx));
+            if (run.agent.kind === "sandbox") {
+              await withCleanupTimeout(() => run.agent.teardown!(sandbox, sandboxAttemptCtx));
+            } else {
+              await withCleanupTimeout(() => run.agent.teardown!(attemptCtx));
+            }
           } catch (e) {
             declareFailure("agent.teardown", e);
             diagnostics.push(teardownDiagnostic("agent.teardown", e));

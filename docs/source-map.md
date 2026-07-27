@@ -47,7 +47,7 @@
 |---|---|
 | 两轴词表(`FailureScope` / `FailureClass` / `AttemptFailureInfo` / `AttemptFailureClassifier`)、糖衣类(`ExperimentFatalError` / `EvalFatalError`)、结构守卫 `failureClassOf`、生命周期分类链(`resolveAttemptFailureClass` / `attemptFailureInfo`) | `src/shared/failure-class.ts`(全仓单源,零 effect 依赖;sandbox provisioning 分类共享这份词表) |
 | turn 链决议 `resolveTurnFailureClass`、保守兜底分类器 `classifyTurnError`、受理证据门 `hasAgentEvidence`、`turnErrorText` / `turnFailureText`、`TurnFailure` / `TurnErrorClassifier` | `src/context/turn-errors.ts` |
-| `Agent.classifyTurnError` 挂载面(`SandboxAgentDef` / `RemoteAgentDef` / `Agent`) | `src/agents/types.ts`;经 `src/define.ts` 的 `defineSandboxAgent` / `defineAgent` 透传 |
+| `Agent.classifyTurnError` 挂载面(`SandboxAgentDef` / `DirectAgentDef` / `Agent`) | `src/agents/types.ts`;经 `src/define.ts` 的 `defineSandboxAgent` / `defineAgent` 透传 |
 | 重试执行体 `sendWithTurnRetry`(两层预算、指数全抖动退避、`ConcurrencySlot` 槽位释放、activity 与耗尽摘要) | `src/context/send-retry.ts` |
 | 挂载点:包住 `agent.send(...)` 的那一次调用(非 otel / otel 两条路径) | `src/context/session.ts`(`SessionManager.sendSerialized` / `sendWithOtel`) |
 | `concurrencySlot`(globalSem / 实验级 runSem 的临时释放/收回)从 run 级信号量到 context 的透传 | `src/runner/run.ts` → `src/runner/attempt.ts`(`runAttemptEffect` / `AttemptResources`)→ `src/context/context.ts`(`ContextDeps.concurrencySlot`) |
@@ -97,7 +97,7 @@
 | Provisioning 瞬时错误分类 + 退避重试(各 provider 的 `classifyProvisionError` 认原生限流,兜底走与文件 IO 共用的瞬时分类器 → `createProvider()` 统一重试) | `src/sandbox/errors.ts`、`src/sandbox/retry.ts`;各 provider 文件的 `classifyProvisionError` |
 | `defineSandbox`(自定义 provider 逃生舱:`create()` 直接产出 `Sandbox` 实例,`resolve.ts` 里 `r.create` 优先于内置 backend switch) | `src/define.ts`、`src/sandbox/resolve.ts`(`createBackend`) |
 | 沙箱编排固定段(变更分类账锚点 / 折叠 agent diff;起始文件上传是 `test()` 里的手工调用,不属于固定段) | `src/runner/sandbox-prep.ts` |
-| 沙箱生命周期 Hook(`SandboxSpec.setup()` / `.teardown()` 链式方法、多 Hook 顺序、失败语义；`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出) | `src/sandbox/types.ts`(`SandboxHooks<Self>`,类型定义);`src/sandbox/index.ts`(公开类型出口);`src/runner/attempt.ts`(按序调用 `sandboxSetupHooks` / 逆序调用 `sandboxTeardownHooks`) |
+| 沙箱生命周期 Hook(`SandboxSpec.setup()` / `.teardown()` 链式方法、多 Hook 顺序、失败语义；`SandboxHook` / `SandboxHookContext` 从 `niceeval/sandbox` 公开导出) | `src/sandbox/types.ts`(`SandboxHooks<Self>`,类型定义);`src/sandbox/index.ts`(公开类型出口);`src/runner/attempt.ts`(setup 按注册序、同层 teardown 按 LIFO 调用) |
 | 留存(`--keep-sandbox`):suspend 路由、detached 生命周期(inspect / wake / suspend / destroy)、provider 原生 enter 命令、留存提交时的 `expiresAt` 计算(vercel 写 `keptAt` + 默认 Run 保留期,e2b/docker 不写) | `src/sandbox/keep.ts`(`computeExpiresAt`、`suspendSandbox`;provider 名分支只在 sandbox/ 域内)+ 各 provider 的 `suspend()`(`src/sandbox/{docker,e2b,vercel}.ts`);写入点在 `src/runner/attempt.ts` 提交 `writeKeptEntry` 处。`suspendSandbox` 拿到的实例经过 `src/sandbox/resolve.ts`(`createSandbox`)的 `normalizeSandboxPaths()` 包装(`src/sandbox/paths.ts`)——这层必须把 `suspend`(与 `appendLog` 同类的接口外可选能力)原样转发,否则 in-run suspend 对三家 provider 全部找不到能力、留存永远停在 `alive`——踩坑记录见 memory [keep-sandbox-suspend-wrapper-drops-capability](../memory/keep-sandbox-suspend-wrapper-drops-capability.md)。`niceeval sandbox enter/history/diff` 的 detached 唤醒/回眠走独立的 `wakeDetached`/`suspendDetached`(不经过这层包装,直接按 provider 名 + `sandboxId` 重新连接实例)。 |
 | `--keep-sandbox` 的创建前组合校验(自定义 provider、或内置但不在 `KEEPABLE_PROVIDERS` 里的 provider 如 local,统一报清晰错误) | `src/runner/attempt.ts`(`runAttemptEffect` 顶部,读 `resolveSandbox().create` / `KEEPABLE_PROVIDERS`) |
 | 留存注册表(`.niceeval/sandboxes/` 逐条目原子文件、entry id 散列、向上发现 `.niceeval/`、条目级 lease) | `src/sandbox/keep-registry.ts`(+ 同目录 `.test.ts`) |
@@ -145,7 +145,7 @@
 | 强杀后的收尾登记(`.niceeval/teardowns/` 逐条目原子文件,与留存注册表同纪律)+ 启动自愈(触发 setup 前核对本实验自己的遗留登记、同宿主 pid 已死则先补执行一次 teardown 再走本次 setup、反馈标注 `recovery: true`)+ `--teardown` 独立入口 | `src/runner/teardown-registry.ts`(登记表原子写/读/删)、`src/runner/run.ts`(`recoverStaleTeardownRegistration` / `ensureExperimentSetup` / `runExperimentTeardown` 的磁盘镜像写入与删除)、`src/cli.ts`(`--teardown` 分支 + 未选中实验的遗留提醒) |
 | reporter 编排 + 运行级汇总 + eval 级 reporter 作用域(scopeReporter / filterSummary)+ required/best-effort 兜错(runReporter) | `src/runner/report.ts` |
 | remote 占位 Sandbox / eval 级本地路径视图(Proxy) | `src/runner/remote-sandbox.ts` |
-| 反馈 coordinator(形态解析、纯 reducer、human/json renderer、终端 sink、可注入 FeedbackIO;当前实现机器面对应 agent+ci 两文件,合并成一份机器面是目标形态) | `src/runner/feedback/{profile,reducer,renderer,human,agent,ci,sink,coordinator,io,testing,index}.ts` |
+| 反馈 coordinator(形态解析、纯 reducer、human/json renderer、终端 sink、可注入 FeedbackIO) | `src/runner/feedback/{profile,reducer,renderer,human,json,sink,coordinator,io,testing,index}.ts` |
 | 终端框线渲染件(区域框契约的唯一物理实现:宽度上限 100、边框嵌字与「先保标题后保 meta」截断次序、嵌套 Section 降横隔、非 TTY/窄终端降级为无框文本;同步纯函数,不做 IO)+ 三处消费方 | `src/report/model/panel.ts`(`renderPanel` + `encodeDividerLine`/`decodeDividerLine`/`rowsFromBodyText` 的嵌套桥接);消费方:`src/report/definition/primitives.tsx`(`Section` text 面,`panelMode` 经 `TextContext`/`HostTextRenderOptions` 从 `niceeval show` 的真实 TTY/`NO_COLOR` 探测注入)、`src/runner/feedback/human.ts`(PLAN/live 面板/`FAILED`·`PASSED`/`FAILURES`/`KEPT SANDBOXES`/`NEXT`,`panelCapabilityOf(io)` 按 `io.stderr.isTTY` + `io.env.NO_COLOR` 判定)、`src/sandbox/cli-commands.ts`(`list`/`history`,启动时探测一次) |
 | 机器 / 平台 reporter(Artifacts / Json / JUnit(同目录 temp→rename 原子写)/ Braintrust) | `src/runner/reporters/{artifacts,json,braintrust,index}.ts` |
 | eval 级折叠 / 计票口径(CLI 退出码与 view 共用) | `src/shared/verdict.ts` |
@@ -235,49 +235,65 @@
 | view 报告槽与导航(裸跑装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `selectLatestPerEval` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 styles/scripts 按声明序注入、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`;渲染出的导航结构与外壳 chrome 归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
 | **Roadmap(未定落点)** | memory-evals 静态导出流水线(reports.md 场景三) |
 
-## 与设计文档的已知差异(实现取舍)
+## 与目标契约的已知实现差异
 
-- **模块名已定稿为 `niceeval/record` + `niceeval/sample`,源码目录仍是 `src/results/`**:契约把持久化事实层
-  与选择层切成两个包入口([Record](feature/record/README.md) / [Sample](feature/sample/README.md)),对应的目标
-  源码目录是 `src/record/` 与 `src/sample/`。当前实现两层都住在 `src/results/`:格式与读写在
-  `open.ts` / `format.ts` / `writer.ts`,选择与去重在 `select.ts`。本页表格里的文件列是**当前真实位置**,
-  功能文档里出现的 `src/record/…` 是目标位置;搬目录连带公开入口改名,与实现分层同批做。同名对照:
-  `openResults`→`openRecord`、`createResultsWriter`→`createWriter`、`copySnapshots`→`publish`、
-  `results.latest()`→`latestRunSample()`、`results.current()`→`currentSample()`、`Scope`→`Sample`、
-  `Snapshot`→`Run`、`skipped`→`unreadable`。
-- **Reports 目标公开面已改为“数据源 + 原语 + 组合组件”，实现仍是专用组件 + `*Data` 函数**：
-  目标数据源是 `experimentRows` / `measureRows` / `sampleSummary` / `attemptTimeline` 等，通过
-  `.compute(input)` 产出通用 `TableContent` / `GridContent` / `WaterfallContent`。
+本节只记录实现差异。Feature 文档仍是目标契约；这里的当前名称和路径用于定位源码，
+不反向限制目标 API。
 
-  当前实现仍导出 `ExperimentList` / `MetricTable` / `ScopeSummary` / `AttemptTimeline`，以及对应
-  `*Data` 函数。落地时先建立通用 Content 与原语 renderer，再迁移数据源和组合组件。
-  不能只改 export 名而保留每个领域组件一套 renderer。
+### P0：身份、缓存与运行语义
 
-  完整目标名见 [Reports Library](feature/reports/library.md)。
-- **源码视图仍是单文件模型**：目标 `SourceLoc.callers` 保存项目帧与 package 段。`sources.json`
-  标记唯一 entry，并在首次引用 helper 时保存正文。`AnnotatedEvalSource` 是面无关的完整调用树，
-  CLI 与 web 再各自投影。
+- **Record / Sample 与 Run 格式尚未迁移。** 公开入口仍集中在 `src/results/`，公开命名仍以
+  Results、Scope、Snapshot 为主；落盘仍是 `snapshot.json`、`SnapshotMeta` 与
+  `RESULTS_SCHEMA_VERSION`。CLI 仍以 `--results` / `--snapshot` 为主。目标是
+  `niceeval/record`、`niceeval/sample`、Run、`openRecord`、`createWriter` 与 `publish`。
+- **Sample 目标算子未齐。** `mode`、`fresh`、`runs`、`pipe()`，以及 `filterAttempts`、
+  `onlyEvals`、`dropExperiments` 等闭集算子尚未形成公开面。当前主要入口仍是
+  `src/results/types.ts` 的 `Scope.filter()`。
+- **`configHash` 与嵌套 fingerprint 待补齐。** `SnapshotMeta` 没有 `configHash`；
+  `src/runner/fingerprint.ts` 仍直接哈希配置与单个 `sourcePath`，没有递归项目内 import 图，
+  也没有追踪 `loadJson` / `loadYaml` 数据内容。Sample 可比性仍使用字段深比较，并包含目标契约
+  明确排除的 budget 与 `timeoutMs`。
+- **缓存控制仍是旧模型。** CLI 只有布尔 `--force`，尚不能表达
+  `--rerun[=failed|all]`。`provenanceFlags` 仍允许逐键排除 fingerprint；目标要求 flags 整袋进入
+  身份。一次性迁移出口 `--carry-ignoring-flag`、`carriedIgnoringFlags` 与 Run diagnostic 尚不存在。
+- **Sandbox reuse 待补齐。** `ExperimentDef` 没有 `sandboxReuse`；Provider 能力、题间 reset、
+  寿命轮换、reset 失败替换，以及与 carry、`--keep-sandbox`、`localSandbox()` 的互斥校验均缺失。
+  当前入口仍在 `src/runner/attempt.ts` 中逐 Attempt 创建和释放 Sandbox。
 
-  当前 `src/source-loc.ts` 只返回第一帧。`src/runner/attempt.ts::collectSources` 在 attempt 收尾读取
-  helper；`src/results/attempt-source.ts` 按断言命中数挑主文件。`src/results/annotated-source.ts` 把
-  其它文件归入 unmapped。目标规则见[源码调用树](feature/reports/eval-source/README.md)。
-- **落盘键名与常量沿用 `snapshot` 词根**:契约把落盘单位定名为 Run(`run.json`、`RunMeta`、
-  `RECORD_SCHEMA_VERSION`),当前落盘仍写 `snapshot.json`,常量仍叫 `RESULTS_SCHEMA_VERSION` /
-  `RESULTS_FORMAT`,类型仍叫 `SnapshotMeta`。改名是破坏兼容的格式变更,按
-  [版本与升级设计](feature/record/architecture.md#版本与升级设计)要递增 `schemaVersion` 并让旧落盘走
-  不兼容提示路径;`format` 的取值 `"niceeval.results"` 恒不变。
-- **`configHash` 尚无落盘字段**:跨 Run 可比性的唯一判据
-  ([configHash](feature/record/library.md#confighash配置身份只算一次))
-  要求 `run.json` 记一个配置哈希,并让 `fingerprint = hash(configHash, eval 源码闭包, …)` 嵌套派生。
-  当前 `src/runner/fingerprint.ts` 直接算逐 eval 指纹、不单独暴露配置那一半,
-  `selectLatestPerEval` 的可比性判断另有一套字段比较——两处清单分叉正是这条契约要消除的。
-- **`evidenceState` 三态尚未产出**:读取面契约要求 `local` / `borrowed` / `dangling` 可分辨,并让选择层据此
-  产出 `dangling-evidence` 警告。当前懒加载对「原 Run 被清理」与「该证据没采集」都返回 `null`,
-  而 `AttemptRecord.artifacts` 仍声明写过——两者的差值无法判断。
-- **非零 Sandbox 命令尚无独立证据 artifact**：目标契约要求公开 Sandbox wrapper 在返回非零 `CommandResult` 前登记 `commands.json`，按 timing command node id 关联，并由 `show --execution` 提供 `cmd<N>` 下钻；当前 `src/runner/timing.ts` 只在 `TimingNode.command` 保存有界 display / exitCode，不保存 stdout/stderr，`src/results/` 没有 commands artifact、`AttemptRecord.artifacts` 存在性声明、`AttemptHandle.commands()` 与 copy artifact kind，execution 也只消费 Agent events。Eval 自己 `.slice(-500)` 后丢掉的 EACCES 不可恢复。不能把更聪明的 TUI tail heuristic 当成替代。
-- **E2B coding-agent baseline 的源码契约已统一，公共制品尚未换代**：`e2bCodingAgentTemplate()` 已横切 Claude Code / Codex / Bub 三条配方，为运行用户设置 `/usr/local` npm global prefix 并准备可写的 bin / module 目录；发布构建通过 `verifyE2BNodeToolContract()` 以 `user` 身份检查 prefix、PATH 与写权限。但 `PUBLISHED_E2B_BASELINE_TAG` 与 `sandbox/e2b/published.json` 记录的仍是早于该修复的不可变制品（旧 tag `v0.6.1`）：Claude Code 默认 `/usr`、普通用户全局安装 EACCES，Codex / Bub 默认 `/usr/local` 可写。新制品完成真实安装验证、按 `<Agent 版本>-r<配方修订>` 发布并更新台账与镜像常量前，Eval workaround 仍是 `npm install -g --prefix /usr/local <pkg>`；新制品要先以 `user` 身份通过真实安装验证,再更新台账与镜像常量。Docker 侧的具名常量已按新版本方案派生，等 `main` 上的镜像 CI 跑完即自洽。
-- **judge 走 OpenAI 兼容 `/chat/completions`**,base 解析顺序:`judge.baseUrl` → 官方端点 `https://api.openai.com/v1`;key 解析顺序:`judge.apiKeyEnv` 指向的环境变量 → `NICEEVAL_JUDGE_KEY`(见 `src/scoring/judge.ts` 的 `resolveJudge`)。model 解析:eval/config 的 `judge.model`;**没有内置默认模型**,解析不到而用到 judge 断言时报清晰错误。端点与模型是配置、只从代码来,key 是凭据、只从环境来且不跨家族猜([边界](architecture.md#配置从代码来凭据从环境来))——接 OpenAI 兼容代理时显式写 `judge.baseUrl`。
-- **能力归属**:`niceeval view` 是本地 web 查看器。运行器支持 remote `defineAgent` 的会话型 eval；文件写入、diff、验证命令只属于沙箱型 agent。
-- **TestContext 类型**:用一个宽接口承载全部动作(运行时按 capability 守卫),而非文档设想的 TS 条件类型 —— 因为被测项目经 `tsx` 运行(不做类型检查),宽接口更省心且不影响运行时正确性。
-- **接收者与评分 API**:作用域断言对齐 eve 的接收者模型(`t` = run 级聚合视图、`session` = 单 session snapshot、`turn` = 单 Turn snapshot,同一套作用域断言词汇);会话驱动 API 为 eve 形状(`t.send(input)` / `t.sendFile(path, text?)` / `t.requireInputRequest` / `t.respond` / `t.respondAll` / `t.newSession()`);结果读取字段按接收者分开;judge 按接收者决定默认材料;判定类型是单一 `Verdict`;链式断言是 `.atLeast(x)` / `.gate(x?)` / 无参 `.soft()`;没有 `defineEval.workspace`;`t.sandbox` 是 eval 内唯一的沙箱操作接口且不暴露 `stop()`;验证命令写成 `t.sandbox.runCommand` + `t.check(result, commandSucceeded())`;judge 是固定的 `autoevals.{closedQA,factuality,summarizes}`;没有 `t.transcript` 命名空间。
-- **`__niceeval__/results.json` 沙箱注入尚无 writer**:`docs/observability.md`、`docs/concepts.md`(o11y 摘要词条「注入沙箱供行为断言」)与 `docs/getting-started.md` 都描述了把 o11y 摘要注入沙箱、供沙箱内验证脚本断言的能力,但全仓只有 `src/o11y/derive.ts` 的 `buildO11ySummary` 产出摘要对象并被 `src/runner/attempt.ts`(`const o11y = buildO11ySummary(events)`)写进落盘 `o11y.json`,没有任何一处把它写回沙箱文件系统——沙箱内当前唯一被写入的 `__niceeval__/*.json` 是 `src/agents/manifest.ts` 的 `AGENT_SETUP_MANIFEST_PATH`(`__niceeval__/agent-setup.json`,agent 安装 manifest,与 o11y 摘要无关)。暂无 plan 落点,排期或降级为 roadmap 待定。
+### P1：报告、源码与宿主
+
+- **Reports 仍是 Metric 与专用组件模型。** 当前公开面仍以 `defineMetric` / `Metric`、`*Data`
+  函数及 `ExperimentList`、`MetricTable`、`ScopeSummary` 等专用 renderer 为主。目标
+  `defineMeasure` / `Measure`、`.compute()` 数据源、通用 Content、Chart / Callouts 与
+  `SampleOverview` 尚未整体迁移；已有 Table 原语只完成了局部基础。
+- **Eval source 调用树待补齐。** `SourceLoc` 只有单帧位置，`captureLoc()` 找到第一帧即返回；
+  helper 源码仍在 Attempt 收尾批量读取，读取失败直接跳过。`SourceArtifact` 没有唯一
+  `role: "entry"`，spine / detached / unavailable 树与 `projectSourceView()` 均缺失。
+- **View 宿主仍有四组差异。** 缺文件监听、推送重建与保留旧站点；缺 `--theme`、
+  `defineTheme` 及 config 的 report/theme 取值链；`--report standard` 会被当作文件路径；
+  Attempt 路由会清空范围条件后回扫完整根。静态导出还缺 `commands.json`，源码布局也尚未迁到
+  Run 级 `sources/<sha256>.json`。
+
+### P2：局部语义与制品
+
+- **证据完整性尚未闭合。** 缺 `evidenceState: local | borrowed | dangling`、
+  `dangling-evidence` warning、选择器内置去重与 `missing-startedAt` warning。`publish()` 因而不能完整
+  执行悬空证据整体失败的契约。
+- **Adapter 转换器仍用旧命名。** `fromAiSdk`、`fromChatCompletion`、
+  `fromClaudeSdkMessages` 等仍在公开导出，目标 `turnFrom*` / `create*EventStream` 尚未落地。
+- **Judge unavailable 只迁移了一半。** 缺 model / key 已产生 `unavailable`；HTTP、超时、解析等
+  调用异常仍由通用 collector 折成 `score: 0` 的 failed。`judge-call-failed` reason、evidence 与
+  预检最多两次传输层重试也待补齐。
+- **`__niceeval__/results.json` 沙箱注入缺失。** `buildO11ySummary()` 只写 Record 的
+  `o11y.json`；沙箱内只有 `__niceeval__/agent-setup.json`，行为断言需要的 results 注入没有 writer。
+- **E2B 公共 baseline 尚未换代。** 配方和构建校验已修，但公开常量与
+  `sandbox/e2b/published.json` 仍指向旧 `v0.6.1`。需要真实构建、以运行用户验证、发布新 tag，
+  再同步台账与常量。
+
+### 已从差异清单删除
+
+- `commands.json` 的核心采集、落盘、读取、publish 与 Attempt 展示已经存在；只剩 View 静态导出漏复制。
+- `current()` 已保留真实贡献 Snapshot，并直接使用这些事实实体。
+- feedback 的 agent / ci 机器面已合并为 `json.ts`。
+- 宽 `TestContext` + runtime guard 已与目标契约一致。
+- hooks、keep-sandbox、orphans、error-classification 与 scoring 主折叠没有新的结构性 gap。

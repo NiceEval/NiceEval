@@ -17,6 +17,7 @@ Scoring 回答“一次 eval attempt 算不算通过”。eval 通过值断言�
 | 目的 | 入口 |
 |---|---|
 | 写值断言、作用域断言、judge 或自定义 matcher | [Library](library.md) |
+| 理解通过制、计分制与题内给分 | [计分粒度](library/score-points.md) |
 | 理解 scope、Severity、Verdict 与证据折叠 | [Architecture](architecture.md) |
 | 理解 `--strict` 和 CLI 结果 | [CLI](cli.md) |
 | 照着一个真实场景走一遍全流程 | [用例](use-case/README.md) |
@@ -33,6 +34,7 @@ scoring/
 │   ├── value-assertions.md
 │   ├── scoped-assertions.md
 │   ├── judge.md
+│   ├── score-points.md
 │   └── custom-assertions.md
 ├── architecture/
 │   ├── scopes.md

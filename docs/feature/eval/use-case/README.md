@@ -25,7 +25,7 @@
 
 ## 通过制还是计分制
 
-一条 eval 怎么计分由定义函数声明：**`defineEval` = 通过制**，整题折叠成一分；**`defineScoreEval` = 计分制**，题内叠加挣分、不声明满分。一个 experiment 选中的 eval 必须同型——契约见[计分粒度](../../experiments/score-points.md)。各用例的计分形态：
+一条 eval 怎么计分由定义函数声明：**`defineEval` = 通过制**，整题折叠成一分；**`defineScoreEval` = 计分制**，题内叠加挣分、不声明满分。一个 experiment 选中的 eval 必须同型——契约见[计分粒度](../../scoring/library/score-points.md)。各用例的计分形态：
 
 | 用例 | 计分形态 |
 |---|---|

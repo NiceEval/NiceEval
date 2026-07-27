@@ -2,7 +2,7 @@
 
 一条断言链上什么词，决定它挂了怎样向上传播。本篇是**判定面**的单源：两种题型各一段
 标注代码，每个词旁边写「挂了会怎样」。分数怎么算、每个词落到哪个读数见
-[计分粒度](../../experiments/score-points.md)，matcher 自带的通过线见
+[计分粒度](../library/score-points.md)，matcher 自带的通过线见
 [值断言](../library/value-assertions.md#内置-matcher)。
 
 ## Severity
@@ -45,13 +45,13 @@ export default defineEval({
 severity 只管**判定面**：它声明一条断言的失败怎么向上传播，同一语义沿组、eval、experiment
 逐层作用，不按层另设规则。`--strict` 是作用于所有层的同一个旋钮——它把带线 soft 翻成 gate，
 只改判定传播，分数照记。质量分（soft 断言的均值）与分数面（计分制的给分）是另外两个读数，
-折叠规则见[计分粒度](../../experiments/score-points.md#折叠树判定面分数面质量分)。
+折叠规则见[计分粒度](../library/score-points.md#折叠树判定面分数面质量分)。
 
 ## 计分制里的 `.gate()`：前置中止
 
 计分制（`defineScoreEval`）的 `t` 是另一套类型，同样这几个词各有各的定义：判定面只认
 **前置中止**，丢分不产生 failed。每个词落到哪个读数见
-[角色表](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
+[角色表](../library/score-points.md#计分制叠加给分没有上限声明)。
 
 ```typescript
 export default defineScoreEval({
@@ -91,7 +91,7 @@ matcher 自带的严重度与链在 matcher 上的严重度（`similarity(...).g
 **通过线**，不使一条断言成为前置：前置是题目结构的声明，必须写在断言句柄上、一眼可见。
 计分制也没有 `--strict`——判定面只认前置中止，带线的观测在任何模式下都不翻 verdict；
 计分制实验上传这个 flag 是启动期用法错误，见
-[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)。
+[计分粒度](../library/score-points.md#计分制叠加给分没有上限声明)。
 
 ## Verdict
 

@@ -210,7 +210,10 @@ interface AgentContext {
   readonly flags: Readonly<Record<string, unknown>>;  // Tier 3 的 feature A/B：experiment.flags 透传；没配时是 {}
   readonly experimentId?: string;  // 路径推导的实验 id，与结果里的 experimentId 同源；不经 experiment 跑时是 undefined
 
-  readonly sandbox: Sandbox;       // 非 sandbox 型 Agent 也会拿到一个 Sandbox（remote agent 是无操作的 stub）
+}
+
+interface SandboxAgentContext extends AgentContext {
+  readonly sandbox: Sandbox;       // 只有 defineSandboxAgent 构造的 Agent 能拿到
 }
 
 interface AgentSession {
@@ -279,12 +282,16 @@ turn.data.amount;   // 类型是 number——不是 unknown，不用手动收窄
 |---|---|---|
 | `events` | 追加进本会话线的事件流，`deriveRunFacts` 折叠成事实（`toolCalls`、`parked`、`messageCount`…）；最后一条 assistant `message` 同时更新 `t.reply` | 全部作用域断言：`t.calledTool()`、`t.messageIncludes()`…；`t.events` 可直接查 |
 | `status` | 记录本轮终态；`"waiting"` 时把本轮的 `input.requested` 收进待答列表 | `t.succeeded()` / `t.parked()`；`"waiting"` 之后用 `t.respond()` 接 |
-| `usage` | 逐轮累加到会话线与整次运行 | `maxTokens` / `maxCost` 评分器、报告里的用量 |
+| `usage` | 逐轮累加到会话线与整次运行 | `maxTokens` / `maxCost` 断言、报告里的用量 |
 | `data` | 按 send 上声明的 `output` schema 校验——不匹配本轮直接 `failed`；通过才保存 | `turn.data`（按声明强类型）、`outputEquals` |
 
 `await t.send()` 拿到的句柄就是对这一轮 Turn 的视角：turn 级断言（`draft.parked()` 这类）只看这一轮的 `events`，`t` 级断言看整条会话线累计的。所以 Adapter 不需要"配合"任何断言——把这四个字段填对，断言、评分、报告全部在下游自动发生。
 
 ## 能力从哪来：构造证明，不是问卷
+
+`defineAgent` 构造 Direct Agent：runner 直接调用函数、SDK 或服务端点，目标可以在本地或远端。
+Direct Agent 的 `setup`、`send` 与 `teardown` 都拿不到 Sandbox。`defineSandboxAgent` 构造
+Sandbox Agent，只有它的回调拿到带真实 `sandbox` 的 `SandboxAgentContext`。
 
 
 | `t` 上解锁什么 | 证据是什么 | 你写什么 |

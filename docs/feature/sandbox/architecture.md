@@ -18,14 +18,30 @@
   │    t.sandbox.runCommand(...)             #   手工跑校验命令,cwd 默认 workdir(最后一次 send 后运行才对 agent 隐藏)
   │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量 / t.check(commandSucceeded)
   → workspace.diff                         # 从分类账折叠 agent 归因增量(见下节)
-  → scoring.evaluate → telemetry.collect   # 断言 finalize + 判定(judge 调用在此)、trace 收口
-  → EvalDef.setup 的 cleanup               # finally:eval 级收尾先跑
+  → scoring.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
+  → EvalDef.teardown?.(sandbox, ctx)        # finally:eval 级收尾先跑
   → SandboxAgent.teardown?.(sandbox, ctx)   # finally:agent 级收尾
   → sandbox.teardown?.(sandbox, ctx)        # finally:环境层收尾最后跑,销毁前——回存跨 attempt 状态用这个时机
-   → commitKeepOrStop()                     # verdict 已定稿,命中时原子登记后留存;否则 sandbox.stop()(见下)
+  → commitKeepOrStop()                      # 决定 Scope release 时 stop 还是 suspend
+  → Scope release                           # 释放或留存完成后才能封口 result.json
 ```
 
-这条链的阶段词表以 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威,本节只描述沙箱切片。环境层 Hook 排在最前、也收在最后,不是任意选择:它准备的是**环境**(装二进制、预热模型、写 hook 文件),不是这条 eval 的任务材料,必须先于分类账锚点跑——像镜像构建先于代码挂载——环境产物因此不进入任何归因视图。teardown 顺序对称颠倒:eval 级 cleanup 先跑,agent 级收尾其次(它可能还要用沙箱做收尾动作,比如导出 transcript),环境层收尾最后跑、销毁前一刻——这个位置正好用来把状态回存到沙箱外部。整个收尾段发生在判定之后,只能追加 diagnostic,不能反改 verdict——若某个步骤决定结果正确性,它就不是收尾,应写进 `test(t)` 主链。
+这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威。
+跨层收尾顺序固定为 Eval、Agent、SandboxSpec；同一层注册多个 Hook 时才按 LIFO 执行。
+收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。`result.json` 的物理封口
+则必须等 Scope release 完成；两者不是同一个“定稿”时点。
+
+### 中断与留存矩阵
+
+| 路径 | Attempt 收尾 | keep 决策 | Scope release | `result.json` | Experiment teardown |
+|---|---|---|---|---|---|
+| 正常完成 | Eval → Agent → SandboxSpec | 按 `--keep-sandbox` 提交 | stop 或 suspend | release 后封口 | 全部 Attempt 收尾后执行 |
+| Attempt timeout | 同上，逐段有界 | `errored` 可命中 keep 档位 | stop 或 suspend | release 后封口为 `errored` | 全部 Attempt 收尾后执行 |
+| Ctrl+C | 已进入的收尾与 finalizer 有界执行 | 不新提交 keep | disposition 保持 stop | 仅已走到封口点的 Attempt 存在 | 执行有界 teardown |
+| SIGKILL / 断电 | 无法执行 | 无法提交 | 无法执行 | 在飞 Attempt 不封口 | 无法执行；由 orphan 对账事后回收 |
+
+Ctrl+C 是可处理的中断，SIGKILL 不是。已封口 Attempt 在两种路径下都保持可读；reader 不为在飞
+Attempt 伪造 `errored`。强杀遗留实例只通过创建期标识与 orphan 对账处理。
 
 ## 变更归因:send 窗口与分类账
 
@@ -63,7 +79,7 @@ export default defineEval({
 ```
 
 - **三类 commit 时点。** 锚点一笔(`workspace.baseline` 阶段,环境层 Hook 之后);每次 `t.send()` 进入前,workdir 有未记录变化就落一笔 **eval 归因**(fixture 写入、`EvalDef.setup` / `SandboxAgent.setup` 的落位、`runCommand` 副作用都在这类);`t.send()` 返回后落一笔 **agent 归因**。`agent.setup` 往 workspace 写 AGENTS.md / skill 也在 send 窗口之外,不需要 exclude 一类补丁。
-- **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,remote agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
+- **沙箱型 send 串行,窗口不重叠。** 同一 workdir 上重叠的 send 本身就是写入竞争,合并窗口只会掩盖归因不确定性——sandbox 型 session 的 send 经 workspace 信号量串行执行,direct agent 的 send 不受此限。配套的 Adapter 义务:`send()` 返回时,Agent 侧可能写 workdir 的进程必须已退出、或已进入**可证明不再写 workspace 的静止态**(HITL waiting 的典型形态:CLI 进程还挂着等输入,但已停在请求点、不会再动文件)——后台残留写入会落在窗口外、被错记成 eval 归因。
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,`EvalDef.setup` 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常记录。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
 - **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。

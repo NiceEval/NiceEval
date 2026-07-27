@@ -237,7 +237,7 @@ export interface AgentTracing {
    * 注:codex 的 [otel.trace_exporter.otlp-http] 是子表,configure 在 setup 写完主配置后
    * 追加到 config.toml 末尾,天然满足「子表在所有上层表之后」。
    */
-  configure?(sandbox: Sandbox, ctx: AgentContext): Promise<void> | void;
+  configure?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
 }
 
 /**
@@ -270,7 +270,7 @@ export interface AgentContext {
    * `Effect.timeoutTo` 兜底强制收尾(停 Sandbox 容器)。
    */
   readonly signal: AbortSignal;
-  /** 本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 setup 里用它写配置,remote 型通常在 send 里用它选模型。 */
+  /** 本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 setup 里用它写配置,direct 型通常在 send 里用它选模型。 */
   readonly model?: string;
   /** 模型推理努力程度;归属同 model——实验决定,省略时不覆盖 agent 原生默认。 */
   readonly reasoningEffort?: string;
@@ -289,12 +289,6 @@ export interface AgentContext {
    * 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
    */
   readonly experimentId?: string;
-  /**
-   * 所有 agent 都有:Sandbox 型是运行器按项目/experiment 配置备好的真实 Sandbox 句柄,remote 型是
-   * `createRemoteSandbox()` 产出的 stub(仅含 `workdir`/`sandboxId`/`otlpHost`/`stop` 等
-   * 元信息,其余方法调用即抛错)。
-   */
-  readonly sandbox: Sandbox;
   readonly session: AgentSession;
   /**
    * 仅当配置了 OTel 接入时有(agent 的 `tracing` 块 / config 的 telemetry 存在):
@@ -332,6 +326,11 @@ export interface AgentContext {
   log(msg: string): void;
 }
 
+/** 仅 Sandbox Agent 可见的上下文；Direct Agent 不接收也不伪造 Sandbox。 */
+export interface SandboxAgentContext extends AgentContext {
+  readonly sandbox: Sandbox;
+}
+
 /**
  * agent 自己的沙箱生命周期(每个沙箱一次,与「每轮 send」分开):
  * `setup` 装 CLI、写配置(model/base/auth 等本轮内不变的东西),`send` 只管把一轮 prompt
@@ -341,8 +340,10 @@ export interface AgentContext {
  * 的现场同样要扫尾),在 finally 里跑。要把 `setup` 里创建的句柄传给 `teardown`,以
  * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
  */
-export type AgentSetup = (sandbox: Sandbox, ctx: AgentContext) => Promise<void> | void;
-export type AgentTeardown = (sandbox: Sandbox, ctx: AgentContext) => Promise<void> | void;
+export type AgentSetup = (sandbox: Sandbox, ctx: SandboxAgentContext) => Promise<void> | void;
+export type AgentTeardown = (sandbox: Sandbox, ctx: SandboxAgentContext) => Promise<void> | void;
+export type DirectAgentSetup = (ctx: AgentContext) => Promise<void> | void;
+export type DirectAgentTeardown = (ctx: AgentContext) => Promise<void> | void;
 
 /**
  * 本 agent 的原生 OTLP span → canonical GenAI semconv 的薄 mapper。
@@ -351,23 +352,12 @@ export type AgentTeardown = (sandbox: Sandbox, ctx: AgentContext) => Promise<voi
  */
 export type SpanMapper = (spans: TraceSpan[]) => TraceSpan[];
 
-/** 注册表里的 agent(defineAgent / defineSandboxAgent 产出)。 */
-export interface Agent {
+interface AgentBase {
   readonly name: string;
-  /**
-   * 内部判别字段(用户不声明):`defineSandboxAgent` 恒设 "sandbox",`defineAgent` 恒设
-   * "remote"。t 上的能力不再是问卷式声明,而是构造证据——sandbox 型才解锁
-   * `t.sandbox`/`t.sandbox.fileChanged()` 等文件系统断言,见 docs-site「能力从哪来」一节。
-   */
-  readonly kind: "sandbox" | "remote";
   /** 该 Adapter 的常态证据覆盖声明;省略 = 全通道 unknown(见 EvidenceCoverage)。 */
   coverage?: EvidenceCoverage;
-  setup?: AgentSetup;
-  /** OTLP 导出配置(仅当此字段存在时运行器才为该 agent 开 OTLP 接收);与 setup 分开,见 AgentTracing。 */
-  tracing?: AgentTracing;
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
-  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   /**
    * 可选 turn 失败分类器:归类一次 send 失败(抛出或返回 `status: "failed"` 的 Turn),
    * 返回 `undefined` 表示不认识、回落保守兜底。链上排在实验的 `classifyFailure` 之后,
@@ -376,8 +366,28 @@ export interface Agent {
    * 执行体时序见 docs/feature/error-classification/architecture.md。
    */
   classifyTurnError?: TurnErrorClassifier;
+}
+
+/** 在 NiceEval 管理的 Sandbox 内驱动 CLI 的 Agent。 */
+export interface SandboxAgent extends AgentBase {
+  readonly kind: "sandbox";
+  setup?: AgentSetup;
+  tracing?: AgentTracing;
+  send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
   teardown?: AgentTeardown;
 }
+
+/** 由 runner 直接调用函数、SDK 或服务端点的 Agent；目标进程可以在本地或远端。 */
+export interface DirectAgent extends AgentBase {
+  readonly kind: "direct";
+  setup?: DirectAgentSetup;
+  tracing?: Omit<AgentTracing, "configure">;
+  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+  teardown?: DirectAgentTeardown;
+}
+
+/** 注册表里的 Agent；判别值描述驱动拓扑，不描述目标所在位置。 */
+export type Agent = SandboxAgent | DirectAgent;
 
 /** `defineSandboxAgent()` 的入参形状(见 src/define.ts)——`kind: "sandbox"` 由 define 固定填入,不由用户声明。 */
 export interface SandboxAgentDef {
@@ -396,7 +406,7 @@ export interface SandboxAgentDef {
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
   /** 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。 */
-  send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+  send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
   /** 可选 turn 失败分类器:见 `Agent.classifyTurnError`。 */
   classifyTurnError?: TurnErrorClassifier;
   /** Sandbox 销毁前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
@@ -404,27 +414,25 @@ export interface SandboxAgentDef {
   teardown?: AgentTeardown;
 }
 
-/** `defineAgent()` 的入参形状(见 src/define.ts)——`kind: "remote"` 由 define 固定填入,不由用户声明。 */
-export interface RemoteAgentDef {
+/** `defineAgent()` 的入参形状(见 src/define.ts)——`kind: "direct"` 由 define 固定填入,不由用户声明。 */
+export interface DirectAgentDef {
   /** agent 的显示名/标识,原样进入 `Agent.name`——不是注册表查找 key,只用于展示、结果归属与去重指纹。 */
   name: string;
   /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
   coverage?: EvidenceCoverage;
   /**
-   * 每个 attempt 一次(remote agent 没有真实 Sandbox,运行器会传入一个仅含 `workdir`/`sandboxId`/
-   * `otlpHost`/`stop` 等元信息的 stub `Sandbox`,其余方法调用即抛错——不要在这里调用
-   * 文件/命令类 Sandbox 方法)。常用于建立连接、鉴权等一次性准备,不返回值。
+   * 每个 attempt 一次。Direct Agent 不接收 Sandbox；常用于建立连接、鉴权等一次性准备。
    */
-  setup?: AgentSetup;
-  /** OTLP 导出配置:远程被测对象怎么把 trace 发到 endpoint(env-based 注入 / file-based 配置)。 */
-  tracing?: AgentTracing;
+  setup?: DirectAgentSetup;
+  /** OTLP 导出配置:被测对象怎么把 trace 发到 endpoint(env-based 注入)。 */
+  tracing?: Omit<AgentTracing, "configure">;
   /** 原生 span → canonical 的薄 mapper;省略走通用 heuristic。只影响瀑布图。 */
   spanMapper?: SpanMapper;
-  /** 每轮一次:把一轮 prompt 发给远程被测对象(HTTP/SDK 等),解析响应成 events。 */
+  /** 每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。 */
   send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
   /** 可选 turn 失败分类器:见 `Agent.classifyTurnError`。 */
   classifyTurnError?: TurnErrorClassifier;
   /** 运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
    * 在 finally 里跑一次。 */
-  teardown?: AgentTeardown;
+  teardown?: DirectAgentTeardown;
 }

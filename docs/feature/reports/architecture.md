@@ -31,8 +31,8 @@ Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、�
 `Reports` 是功能总称，包含 `show`、`view` 和可编程的 `niceeval/report`；单数的 `report` 不是 `show` 或 `view` 的别名，而是两个宿主共用的报告内核。报告的内容单位只有 page，page 的内容单位只有组件树。view 没有一套 page 之外的“attempt 证据面”：attempt 的事实由 Record 提供，详情只是以 locator 为输入的一张参数化 page。
 
 ```text
-niceeval/record ── Sample / AttemptEvidence ──▶ niceeval/report ──┬── text 面 ──▶ show
-                                                               └── web 面  ──▶ view
+niceeval/record ──▶ niceeval/sample ── Sample ──▶ niceeval/report ──┬── text 面 ──▶ show
+       └──────── AttemptEvidence ──────────────────────────────────└── web 面  ──▶ view
 ```
 
 | 所有者 | 责任 |
@@ -40,9 +40,10 @@ niceeval/record ── Sample / AttemptEvidence ──▶ niceeval/report ──
 | `niceeval/report` | `ReportDefinition` / page / 报告树的唯一模型；静态页与参数化页的装载、规范化与 resolve；Sample / AttemptEvidence 注入；读数、维度和可序列化组件数据；text / web 两个渲染面；内建报告；官方样式与渐进增强资产。 |
 | `show` | 终端宿主：范围 / 切片 / 形态的 CLI 输入组合、page / locator 寻址与 text 输出。切片不是宿主内容——每个切片都解析为报告组件的装配（见[「show 的切片是组件选择」](#show-的切片是组件选择)），show 保留的是 flag 解析、逐 attempt 分节映射与 text 渲染的机器。`show @<locator>` 是选择 attempt-input page 并传入 locator 的快捷语法。 |
 | `view` | 网页宿主：站点产物清单、本地服务与静态导出、page 路由、导航、语言切换与 artifact 交付。所有 HTML 都是 `niceeval/report` 的 page 输出；view 可把参数化详情页渐进增强成 modal，但不拥有固定 modal 内容。 |
-| `niceeval/record` | 持久化事实、Sample 选择、locator 解析与中性 `AttemptEvidence` 装配。两宿主与 report 组件共用同一份证据模型，不各自重读 artifact 或重建时间树。 |
+| `niceeval/record` | 持久化事实、locator 解析与中性 `AttemptEvidence` 装配。两宿主与 report 组件共用同一份证据模型，不各自重读 artifact 或重建时间树。 |
+| `niceeval/sample` | 从 Record 选择 Sample，并物化口径、覆盖、时效与警告；Record 不承担任何选择判断。 |
 
-依赖方向只能从宿主指向 `niceeval/report` 和 `niceeval/record`。`show` 与 `view` 之间不互相 import；两者都需要的报告装载、规范化、标题回退、静态 / 参数化 page 解析或渲染适配属于 report，共用的结果事实与证据投影属于 Record。“先放在某个宿主里、另一宿主反向 import”不是共用机制。
+依赖方向只能从宿主指向 `niceeval/report`、`niceeval/sample` 和 `niceeval/record`。`show` 与 `view` 之间不互相 import；两者都需要的 Sample 选择属于 sample，报告装载、规范化、标题回退、静态 / 参数化 page 解析或渲染适配属于 report，共用的结果事实与证据投影属于 Record。“先放在某个宿主里、另一宿主反向 import”不是共用机制。
 
 ### 单一 report runtime 身份
 

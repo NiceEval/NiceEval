@@ -249,7 +249,7 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
     +0 pts
 ```
 
-得分点的 severity 是 `soft`——丢分不改 verdict（[计分粒度](../../experiments/score-points.md#计分制叠加给分没有上限声明)），失败行照常展开证据。
+得分点的 severity 是 `soft`——丢分不改 verdict（[计分粒度](score-points.md#计分制叠加给分没有上限声明)），失败行照常展开证据。
 
 **得分点不参与 passed 收纳**：`✓ passed · 装了依赖 · +1 pt` 是分数面的证据，挣到的分和丢掉的分同样要能逐条核对——把它折进 `✓ passed · <group> · <count>` 计数行，等于让判定面的收纳规则吞掉分数面的明细。收纳只作用于不带 `.points` 的观测断言。契约二的顶部计数在计分制 attempt 加一项**得分点挣满计数**（`2/5 得分点挣满`，挣满 = 挣到全部声明分值，连续打分断言不足 `n × 1.0` 即不算挣满）；**本轮挣分总和只在 attempt 头行出现一次**（`AttemptSummary` 的总分位，见 [Attempt 详情组件](../../reports/components/attempt-detail/README.md#公开区块集)），计数行与给分记录区块不重复这个总数。
 

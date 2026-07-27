@@ -16,7 +16,7 @@ niceeval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
                                          │                                  ▼
                                          ▼  对接口分发,不按名字分支    .niceeval/<experiment>/<run>/
                           ┌────── Agent(自实现 Adapter) ──────┐
-                          │   远程 adapter    沙箱 adapter    │
+                          │  Direct adapter  Sandbox adapter  │
                           │    (你的服务)   ┌───────────────┐ │
                           │                 │  claude-code  │ │
                           │                 │  codex / bub  │ │
@@ -29,7 +29,10 @@ niceeval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱�
                           └───────────────────────────────────┘
 ```
 
-四段职责是**单向数据流**:发现产出一批 `Eval`,运行器逐个对 Agent `send` 得到 `Turn`,评分器把 `Turn` 折叠成 `Assertion[]`,再把全部断言折叠成一个互斥的 `Verdict`;报告器消费 `Verdict` + artifact。没有反向耦合 —— 评分器不知道 agent 的 transport 是 HTTP 还是沙箱 CLI,它只看 `Turn`。
+四段职责是**单向数据流**。发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`，
+Assertion collector 把检查结果收成 `Assertion[]`。判定规则把执行状态与全部断言折叠成一个互斥的
+`Verdict`，Reporter 再消费 `Verdict` 与 artifact。Assertion 和 Judge 不知道 transport 是 HTTP
+还是沙箱 CLI，只消费 `Turn` 与显式材料。
 
 ## 模块分层
 
@@ -63,21 +66,23 @@ src/
 
 边界规则一句话:**`agents/` 和 `sandbox/` 之外的任何文件,都不应出现 agent 名字或 sandbox 名字的行为分支。** 核心拿到的是接口,不是名字。
 
-## 一个授权面,能力决定形状
+## 一个授权面，宽接口与能力守卫
 
-niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱型不是两个函数,而是**同一个入口,`t` 的形状随引用的 Agent 能力变化**:
+NiceEval 只有一个写 eval 的入口 `defineEval`。Direct 与 Sandbox 不是两个 Eval 函数；同一份 Eval
+可以被两类 Agent 运行，因此 `test(t)` 始终收到同一个宽 `TestContext`。只有 `t.sandbox`
+需要运行时能力守卫：
 
-| | 会话型 | 沙箱型 |
+| | Direct Agent | Sandbox Agent |
 |---|---|---|
-| 典型 Agent | 远程 agent | 沙箱 agent(coding agent + Sandbox) |
+| 典型目标 | 进程内函数、SDK、HTTP / RPC 服务 | coding-agent CLI + Sandbox |
 | Task 形态 | `t.send(...)` 序列 | 同左——沙箱型的任务照样写在 `t.send(...)` 里,没有另一种任务格式 |
-| `t` 暴露什么 | `send`/`reply`/`calledTool`/`judge` | 上述 + `t.sandbox`(文件 IO / 命令执行 / 结果断言 / diff) |
+| `t` 可用什么 | `send`/`reply`/`calledTool`/`judge`;调用 `t.sandbox` 立即报能力错误 | 同一宽接口,且 `t.sandbox` 可用(文件 IO / 命令执行 / 结果断言 / diff) |
 | 评分手段 | expect + 作用域断言 + judge | 上述 + 手工在沙箱里跑命令,再用 `t.check(result, commandSucceeded())` 判定 |
-| 共享 | **Scorer、Verdict、Runner、Reporter、Config、 artifact 格式全部共享** | 同 → |
+| 共享 | **Assertion、Judge、Verdict、Runner、Reporter、Config、artifact 格式全部共享** | 同 → |
 
 这张表是整个架构的中心论点:**两种范式只在"Agent 的构造证据(`kind` 与 `send` 实际做到了什么)"上不同,在"如何判分、如何调度、如何记录"上完全一致。** 所以它们能住在同一个入口、同一个库里,而不是两个入口或两个库。
 
-## `t` 上下文:构造证据决定形状
+## `t` 上下文：宽接口与构造证据
 
 `test(t)` 收到的 `t` 对每个 Agent 都暴露同一套宽接口(`TestContext`),但每个方法**实际能不能读到数据**由 Agent 的构造证据决定,不是声明式的能力位——这是唯一的运行时守卫例外:
 
@@ -87,13 +92,14 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 
 ## 一次 Invocation,端到端
 
-以一个沙箱型 agent eval 为例(会话型是它的子集:第 6 步没有 `Sandbox.create` / 变更分类账,直接跑 `test(t)`;跳过第 7 步,没有沙箱 diff 可折叠):
+以 Sandbox Agent 的 Eval 为例。Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 
-1. **加载配置。** CLI 合并 标志 → experiment → `niceeval.config.ts` → 默认值（[配置与凭据的边界](#配置从代码来凭据从环境来)）。
+1. **加载配置。** 对支持 Eval 覆盖的字段按 CLI → experiment → eval → `niceeval.config.ts` → 默认值解析。
+   不支持 Eval 覆盖的字段按各自专题声明的层级解析；见[配置与凭据的边界](#配置从代码来凭据从环境来)。
 2. **发现。** 扫 `evals/`,收集 `*.eval.ts` 与 `*.eval.tsx`;据路径推导 id,排序;按过滤器(id 前缀 / `--tag`)筛。
-3. **指纹与缓存。** 对每个 eval 算 `(eval 代码 + 配置)` 指纹;已通过且指纹未变的,标记跳过(除非 `--rerun all`)。
+3. **指纹与结果沿用。** 对每个 eval 算 `(eval 源码闭包 + resolved 配置)` 指纹；`passed` / `failed` 终态逐条通过携带资格门后合入本次 Run，`errored` / `skipped` 永不携带。完整判据只见[缓存与携带](feature/experiments/cache.md)。
 4. **建 attempt 列表。** 每个 eval × `attempts` 次 → 一批 attempt。为每个 eval 建一个 `AbortController`(供首过即停)。
-5. **有界并发调度。** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。可疑的"秒挂"(< 5s 且非超时)按指数退避重试。
+5. **有界并发调度。** 全局至多 `maxConcurrency` 个 attempt 在飞(全局信号量);设了 `maxConcurrency` 的实验另有一道实验级信号量,自己排队、不影响同批其它实验(见 [Runner](runner.md#调度有界并发))。重试不是 attempt 级耗时启发式：turn 重试只包 `agent.send` 且受受理证据门约束，Sandbox provisioning 与幂等文件 IO 各守自己的执行体；完整边界见[执行失败分类](feature/error-classification/architecture.md)与[Sandbox](feature/sandbox/architecture.md#provisioning-失败与重试)。
 6. **准备环境,交给 `test(t)`。** 沙箱型:`Sandbox.create` → 若 `experiment.sandbox` 链上挂了 `.setup()`,先跑这些环境层 Hook(装二进制、预热、写 hook 文件,按追加顺序;这一步在变更分类账锚点之前,环境产物不进入任何归因视图)→ 打变更分类账锚点(runner 私有 git ledger,见 [Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账))→ 若这条 eval 定义了 `EvalDef.setup` 就跑它(任务 Fixture)→ 跑 agent 自己的 `SandboxAgent.setup`(装 CLI 等)。之后全部交给这条 eval 自己的 `test(t)`:作者按自己的顺序调 `t.sandbox.writeFiles`/`uploadFiles`(手工写入起始文件)、`t.send()`(驱动 agent——adapter 在沙箱里跑 CLI、抓 transcript、解析成标准事件流、注入 `__niceeval__/results.json`)、`t.sandbox.runCommand(..., { cwd })`(手工跑校验命令)——顺序、次数、要不要对 agent 隐藏某些文件,全部是 `test(t)` 里的普通代码决定,核心不插手,也不预设"先上传什么、后上传什么"这种固定编排。
 7. **折叠 agent 归因增量。** `test(t)` 跑完后从分类账折叠各 send 窗口的变更并集,供 `t.sandbox.diff` / `t.sandbox.fileChanged` 的 finalize 与 `diff.json` 使用——fixture 写入和 agent 跑完后手工写入的校验材料都不在其中。
 8. **评分。** `test(t)` 里记录的作用域断言、值断言、judge,连同手工校验命令的结果断言,全部折叠成 `Assertion[]`。
@@ -109,7 +115,8 @@ niceeval 只有一个写 eval 的入口——`defineEval`。会话型和沙箱�
 
 | 类别 | 从哪来 | 说明 |
 |---|---|---|
-| **配置**(跑几次、超时、并发、预算、judge 模型与端点、默认报告、界面语言、adapter 与 sandbox 的行为参数) | CLI flag → experiment → `niceeval.config.ts` → 内置默认 | 没有环境变量层。同一个值不存在第三条来路,`--dry` 打印的 resolved 值就是真正生效的值 |
+| **Attempt 配置**(`timeoutMs`、Judge) | CLI flag → experiment → eval → `niceeval.config.ts` → 内置默认 | eval 可以声明自己的完成条件；config 只是缺省底 |
+| **其它运行配置**(attempts、并发、预算、报告、界面语言、Adapter 与 Sandbox 参数) | 按所属专题声明的层级解析 | 没有环境变量层；`--dry` 打印的 resolved 值就是真正生效的值 |
 | **凭据**(API key、provider token) | 环境变量,变量名由代码声明 | adapter / sandbox 工厂各自声明自己那一个官方变量名(`ANTHROPIC_API_KEY`、`CODEX_API_KEY`、`BUB_API_KEY` + `BUB_API_BASE`、`E2B_API_KEY`、`VERCEL_API_TOKEN`);judge 用 `judge.apiKeyEnv` 指定变量名,不指定时读 `NICEEVAL_JUDGE_KEY`。**只读自己家族那一个名字**,不跨家族回落、不做"环境里有哪个 key 就用哪个"的探测 |
 | **终端环境事实**(`NO_COLOR`、TTY、系统 locale) | 环境 | 这些描述的是"输出到哪个终端",不是 niceeval 的配置。`config.locale` 优先于系统 locale |
 

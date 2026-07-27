@@ -47,7 +47,7 @@
     {
       "term": "值级断言",
       "use": "值断言",
-      "why": "Scorer 三分类的名字要与 docs/feature/scoring/ 逐字一致,多一个词读者会去找第四类"
+      "why": "断言分类的名字要与 docs/feature/scoring/ 逐字一致,多一个词读者会去找不存在的类别"
     },
     {
       "term": "夹具",

@@ -76,4 +76,4 @@ Sandbox stop 和销毁属于 runner 生命周期，不暴露给 eval 作者。
 
 ## Agent 没有 Sandbox 时
 
-Eval 不另写 `requires`。在 remote agent 上第一次调用 `t.sandbox.*` 时，运行器应指出具体 API 和 agent，并提示改用 sandbox agent 或移除该调用。能力错误出现在实际误用的位置，不靠一份可能漂移的声明提前猜测。
+Eval 不另写 `requires`。在 direct agent 上第一次调用 `t.sandbox.*` 时，运行器应指出具体 API 和 agent，并提示改用 sandbox agent 或移除该调用。能力错误出现在实际误用的位置，不靠一份可能漂移的声明提前猜测。

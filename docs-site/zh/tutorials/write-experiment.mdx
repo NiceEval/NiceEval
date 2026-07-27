@@ -380,6 +380,6 @@ export default defineExperiment({
 });
 ```
 
-`environment` 是非空的稳定字符串，不是包版本约束。`environments` 表的值就是该 provider 预制产物字段的覆盖（Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`）。NiceEval 在启动任何 Sandbox 前对所有选中的评估用例完成查表；某条评估用例声明的 profile 缺表项会在启动时一次性报出全部缺项。remote Agent 不创建 Sandbox，不参与查表。因为映射是随 spec 复用的数据，同一个实验能覆盖全部评估用例——分数和对比表不会因为环境不同被拆成多个实验。
+`environment` 是非空的稳定字符串，不是包版本约束。`environments` 表的值就是该 Provider 预制产物字段的覆盖（Docker 的 `image`、E2B 的 `template`、Vercel 的 `snapshotId`）。NiceEval 在启动任何 Sandbox 前对所有选中的评估用例完成查表；某条评估用例声明的 profile 缺表项会在启动时一次性报出全部缺项。Direct Agent 不创建 Sandbox，不参与查表。因为映射是随 spec 复用的数据，同一个实验能覆盖全部评估用例——分数和对比表不会因为环境不同被拆成多个实验。
 
 跨配置比较的设计建议见[实验矩阵](/zh/tutorials/experiments)。Adapter 对 `ctx.model` 和 `ctx.flags` 的用法见 [Adapter](/zh/explanation/adapter)。

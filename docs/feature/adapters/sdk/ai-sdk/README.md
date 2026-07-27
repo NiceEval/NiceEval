@@ -17,4 +17,4 @@ AI SDK 应用按被测边界接入：应用部署为 HTTP 服务时用 `uiMessag
 
 ## 不提供进程内 Agent 工厂
 
-`aiSdkAgent({ generate })` 仍作为 `niceeval/adapter` 的导出存在，但不是 AI SDK 应用的推荐接入方式——它测的是函数边界，不是应用真实部署的 HTTP 边界，属于[进程内调用](../../library/remote-agent.md#进程内调用)那条窄例外（被测循环本身就是目标边界、应用从未以 HTTP 形式部署时才用）。AI SDK 应用只要部署为 HTTP 服务，就应该用 `uiMessageStreamAgent` 对着真实 endpoint 测，而不是把应用的 `generateText` 循环包一层直接调用。
+`aiSdkAgent({ generate })` 仍作为 `niceeval/adapter` 的导出存在，但不是 AI SDK 应用的推荐接入方式——它测的是函数边界，不是应用真实部署的 HTTP 边界，属于[进程内调用](../../library/direct-agent.md#进程内调用)那条窄例外（被测循环本身就是目标边界、应用从未以 HTTP 形式部署时才用）。AI SDK 应用只要部署为 HTTP 服务，就应该用 `uiMessageStreamAgent` 对着真实 endpoint 测，而不是把应用的 `generateText` 循环包一层直接调用。

@@ -99,7 +99,7 @@ interface RuntimeIdentity {
 
 ## 对 niceeval 适配器设计的启发
 
-**先泼冷水:eve 是上限,不是榜样。** 它不需要采集 / 转换,是因为它拥有运行时;niceeval 面对未接管理层的 coding agent CLI 永远做不到。但有一个例外方向:**remote agent(用户自己的 agent)里,用户就是运行时的主人**——`toStreamEvents` 理论上可以做到 eve 级保真。分档表的 T1 对 remote agent 的天花板,比 sandbox agent 高得多。
+**先泼冷水:eve 是上限,不是榜样。** 它不需要采集 / 转换,是因为它拥有运行时;niceeval 面对未接管理层的 coding agent CLI 永远做不到。但有一个例外方向:**Direct Agent(用户自己的 Agent)里,用户就是运行时的主人**——`toStreamEvents` 理论上可以做到 eve 级保真。分档表的 T1 对 Direct Agent 的天花板,比 Sandbox Agent 高得多。
 
 具体字段层面,值得记进 `StreamEvent` 的演进候选(都不是现在就加,是"需要时有先例"):
 

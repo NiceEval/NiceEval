@@ -51,7 +51,7 @@ docs/
 │   ├── experiments/                     组织运行配置：defineExperiment
 │   ├── error-classification/            失败分类两轴词表:turn 级有界重试与 eval/experiment 级止损闸
 │   ├── sandbox/                         隔离运行环境
-│   ├── scoring/                         评分器与判定
+│   ├── scoring/                         Assertion、Judge、Severity 与 Verdict
 │   ├── reading/                         读取面总纲:三层分工、跨层不变量与跨层用例
 │   ├── record/                          .niceeval 运行记录:格式、读写、身份与发布
 │   ├── sample/                          从记录选出可比较的样本:口径、覆盖、时效与转换

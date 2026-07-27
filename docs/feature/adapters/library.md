@@ -2,7 +2,7 @@
 
 Adapter 作者从 `niceeval/adapter` 导入构造器、转换器与流式组合件。这一页从可运行代码开始；内部数据结构和不变量见 [Architecture](architecture.md)。
 
-## Remote Agent
+## Direct Agent
 
 被测对象通过 HTTP、RPC 或其它进程外协议提供服务时，使用 `defineAgent`：
 
@@ -108,7 +108,7 @@ export default defineSandboxAgent({
 | 现在要做什么 | 阅读 |
 |---|---|
 | 从最小 `send` 开始逐步补能力 | [编写 Adapter](library/writing-an-adapter.md) |
-| 连接 HTTP / RPC / SDK 服务 | [Remote Agent](library/remote-agent.md) |
+| 连接 HTTP / RPC / SDK 服务 | [Direct Agent](library/direct-agent.md) |
 | 在 Sandbox 中运行 coding-agent CLI | [Sandbox Agent](library/sandbox-agent.md) |
 | 消费 SSE、SDK frames 或 delta | [流式协议与共享工具](library/streaming.md) |
 | 实现多轮和审批恢复 | [使用会话与 HITL](library/sessions-and-hitl.md) |

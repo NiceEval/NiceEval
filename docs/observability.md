@@ -61,7 +61,7 @@ expect(o11y.totalToolCalls).toBeLessThan(50);
 
 ## OTLP traces → 统一瀑布图
 
-`StreamEvent` 回答「做了什么」;**trace 回答「各花了多久、谁套谁」**。配了 OTel 接入的 agent(沙箱型声明 `tracing` 块;remote agent 配 `defineConfig({ telemetry })`)经 OpenTelemetry 把 OTLP traces 导出到运行器(沙箱型每个沙箱起一个本机 OTLP/HTTP 接收器,remote agent 共享一个固定端口接收器,端点经 `ctx.telemetry.endpoint` 交给 agent),跑完归一成 `TraceSpan[]` 挂到 `EvalResult.trace`,`niceeval view` 画成瀑布图。
+`StreamEvent` 回答「做了什么」;**trace 回答「各花了多久、谁套谁」**。配了 OTel 接入的 agent(沙箱型声明 `tracing` 块;direct agent 配 `defineConfig({ telemetry })`)经 OpenTelemetry 把 OTLP traces 导出到运行器(沙箱型每个沙箱起一个本机 OTLP/HTTP 接收器,direct agent 共享一个固定端口接收器,端点经 `ctx.telemetry.endpoint` 交给 agent),跑完归一成 `TraceSpan[]` 挂到 `EvalResult.trace`,`niceeval view` 画成瀑布图。
 
 **断言永远只读事件流,从不读 span。** `send` 返回的 `Turn.events` 是断言唯一的数据源——有 trace 也不给断言开后门。理由是 span 关联是脆弱的:一旦断言读 span,span 归属判错就会直接污染判分。所以 **span 从不产出、也从不改写任何 `StreamEvent`**。
 
@@ -149,7 +149,7 @@ otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别�
 spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。接收器的**粒度**跟**被测进程**走,不是跟 attempt 走:
 
 - **沙箱型 agent**:每沙箱一个接收器。每个沙箱是独立进程,env 注入各自端点,attempt 之间端口天然隔离。
-- **remote agent**:整个 run **共享一个接收器**(`defineConfig({ telemetry })` 钉住的固定端口)。被测应用只有一条全局 OTel 管线、一个导出目标,做不到"给每条并行 eval 发不同端点"——并行 attempts 的 span 混在同一条流里,这是共享被测对象的物理事实,不是实现选择。
+- **direct agent**:整个 run **共享一个接收器**(`defineConfig({ telemetry })` 钉住的固定端口)。被测应用只有一条全局 OTel 管线、一个导出目标,做不到"给每条并行 eval 发不同端点"——并行 attempts 的 span 混在同一条流里,这是共享被测对象的物理事实,不是实现选择。
 
 共享流之下的归属阶梯:
 
@@ -212,7 +212,7 @@ artifact 是机器可读的,可回放、可二次分析、可喂给下游 dashbo
 - **远程 agent** —— 你在 `send` 里把模型返回的 usage(或你服务响应里带的 usage,若它回了)一并返回。
 - **沙箱 coding agent** —— **不必手填**:agent 的 JSONL transcript 里本就逐条带 token 用量,transcript 解析器(`o11y/parsers/<agent>.ts`)抠出来。这正是 agent-eval 留下的 `TODO`。
 
-每轮的用量来源二选一:remote agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 attempt 用量(落进 `result.json` 的 [`Usage`](feature/record/architecture.md#usage));reporter 再跨 eval 累加 → 整个 run 的用量。
+每轮的用量来源二选一:direct agent 由 `Turn.usage` 直接给,sandbox agent 由解析器从该轮 transcript 抠出。运行器把每轮累加 → 单 attempt 用量(落进 `result.json` 的 [`Usage`](feature/record/architecture.md#usage));reporter 再跨 eval 累加 → 整个 run 的用量。
 
 ### 换算成本:价格表从哪来
 

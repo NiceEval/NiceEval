@@ -41,26 +41,26 @@ interface PhaseTiming {
 
 | name | 覆盖 | 何时缺席 |
 | --- | --- | --- |
-| `sandbox.queue` | 等待容器创建信号量(并发限流)的排队时间 | remote agent |
-| `sandbox.create` | provider 起沙箱(`createSandbox`) | remote agent |
-| `sandbox.setup` | `SandboxSpec.setup()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | remote agent / 没挂 Hook |
-| `workspace.baseline` | 变更分类账锚点(runner 私有 git ledger 首笔 commit) | remote agent |
+| `sandbox.queue` | 等待容器创建信号量(并发限流)的排队时间 | direct agent |
+| `sandbox.create` | provider 起沙箱(`createSandbox`) | direct agent |
+| `sandbox.setup` | `SandboxSpec.setup()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | direct agent / 没挂 Hook |
+| `workspace.baseline` | 变更分类账锚点(runner 私有 git ledger 首笔 commit) | direct agent |
 | `eval.setup` | `EvalDef.setup` | 没定义 |
 | `agent.setup` | `Agent.setup`(装 CLI、写主配置;**安装基准的主角**) | 没定义 |
 | `telemetry.configure` | tracing 出口配置(file-based OTLP) | 没配 tracing |
 | `eval.run` | 整段 `test(t)`,含所有 `send` 与手工命令;`children` 保存手工命令与逐 session/turn 包络 | 从不缺席 |
 | `agent.run` | 嵌套在 `eval.run` 内的 adapter send 窗口;只作错误/诊断归因,不单列计时条目 | (不出现在 `phases`) |
-| `workspace.diff` | 采 `git diff`(`captureGeneratedFiles`) | remote agent / skipped |
+| `workspace.diff` | 采 `git diff`(`captureGeneratedFiles`) | direct agent / skipped |
 | `scoring.evaluate` | 断言 finalize + 判定,含 judge 调用 | skipped 时为空集但仍记 |
 | `telemetry.collect` | OTLP receiver settle / collect(有固定的落地等待窗口) | 没起 receiver |
 | `eval.teardown` | `EvalDef.teardown` | 未声明 `teardown` |
 | `agent.teardown` | `Agent.teardown` | 没定义 |
-| `sandbox.teardown` | `SandboxSpec.teardown()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | remote agent / 没挂 Hook |
-| `sandbox.stop` | provider 销毁沙箱(`sandbox.stop()`) | remote agent |
+| `sandbox.teardown` | `SandboxSpec.teardown()` Hook 链,phase 级合计一条,`children` 逐 hook 并继续展开沙箱命令 | direct agent / 没挂 Hook |
+| `sandbox.stop` | provider 销毁沙箱(`sandbox.stop()`) | direct agent |
 
 `sandbox.queue` 到 `telemetry.collect` 是**主链**,覆盖到判定与主证据收集完成;`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是**收尾段**,主链成败都执行,顺序与 setup 对称颠倒(eval 先收、环境层最后收)。最终 `AttemptRecord` 在两段都结束后才组装,但 `durationMs` 的计量终点仍是主链末端。语义规则:
 
-- **只记实际发生的阶段**。没跑到、不适用(remote agent 的 `sandbox.*`)、没定义(可选 Hook)都不落条目——缺席本身就是信息,不用 0 占位制造二义。主链在某一步抛错时,该步之前已经执行的收尾动作照常记录(如 `sandbox.create` 失败则整个收尾段缺席——沙箱从未存在)。
+- **只记实际发生的阶段**。没跑到、不适用(direct agent 的 `sandbox.*`)、没定义(可选 Hook)都不落条目——缺席本身就是信息,不用 0 占位制造二义。主链在某一步抛错时,该步之前已经执行的收尾动作照常记录(如 `sandbox.create` 失败则整个收尾段缺席——沙箱从未存在)。
 - **顺序即执行序**,与生命周期文档的调用链一致;收尾段总排在主链条目之后。
 - **错误归因**:主链阶段抛错时,该条目以抛错时刻封口并标 `failed: true`,其后无主链条目。errored 结果「死在哪一步」= 主链最后一条 `failed` 条目,不设单独的 `failedPhase` 字段(可从数组一行推导的东西不重复落盘)。收尾阶段的 `failed` 各自独立:teardown 失败是 diagnostic、不改判定,所以一个 passed attempt 也可以带一条 `failed` 的 `sandbox.teardown`。
 - **超时归因**:计时收集器在阶段开始时即登记 open 条目,attempt 总超时(`Effect.timeoutTo`)中断整段 body 时,超时路径构造的结果同样携带已收集的 phases,in-flight 阶段以中断时刻封口并标 `failed`——「顶到 timeoutMs 的 attempt 卡在哪」直接可读。
@@ -172,7 +172,7 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 
 1. **全序与闭集**:成功 attempt 的 `result.json` 里 phases 顺序与生命周期一致,阶段名全部落在 `LifecyclePhase` 闭集内且不含 `agent.run`,`durationMs ≥ 0` 且 ∑ 主链 phases ≤ 总 `durationMs`;收尾段条目总排在主链之后。
 2. **错误归因**:`sandbox.setup` 抛错的 fixture,主链止于 `sandbox.setup` 且该条 `failed: true`,其后无主链条目(`agent.setup` 从未出现);已创建沙箱的收尾段照常有条目。
-3. **remote 无沙箱阶段**:remote agent 的结果不含任何 `sandbox.*` / `workspace.*` 条目。
+3. **remote 无沙箱阶段**:direct agent 的结果不含任何 `sandbox.*` / `workspace.*` 条目。
 4. **收尾独立 failed**:teardown Hook 抛错的 fixture,`sandbox.teardown` 条目标 `failed: true`、`sandbox.stop` 照常记录,verdict 不因此改变。
 5. **时间树与命令归属**:挂多个 setup Hook 的 fixture,`sandbox.setup.children` 逐 hook 有条目、顺序与链序一致；每个 hook 发出的 `runCommand` / `runShell` 只出现一次并挂在正确 hook 下。`agent.setup`、`workspace.baseline` 与 teardown 命令同样落在各自 phase。
 6. **并发与单调时钟**:两个并发 command 的 `startOffsetMs` 可以重叠,不能被串成虚假的顺序；wall-clock 跳变不产生负 duration。

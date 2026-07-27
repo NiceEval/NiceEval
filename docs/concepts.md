@@ -54,14 +54,16 @@
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 计分方式 | Scoring scheme | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](feature/experiments/score-points.md) |
-| 计分项 | Scoring criterion | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](feature/experiments/score-points.md) |
+| 计分方式 | Scoring scheme | `defineEval` 把整题折叠成一分;`defineScoreEval` 在题内叠加计分项、不声明满分 | [计分粒度](feature/scoring/library/score-points.md) |
+| 计分项 | Scoring criterion | `.points(n)` 让断言贡献分数;`t.score(label, n)` 是直接计分出口 | [计分粒度](feature/scoring/library/score-points.md) |
 
 ### Agent 与 Adapter
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Agent | Agent | 「一条连到 AI 的连接」的抽象;`kind` 只有 `"remote"` 和 `"sandbox"` | [Adapters](feature/adapters/README.md) |
+| Agent | Agent | 「一条连到 AI 的连接」的抽象；`kind` 只有 `"direct"` 和 `"sandbox"` | [Adapters](feature/adapters/README.md) |
+| Direct Agent | Direct Agent | runner 直接调用函数、SDK 或服务端点；不创建也不伪造 Sandbox | [Direct Agent](feature/adapters/library/direct-agent.md) |
+| Sandbox Agent | Sandbox Agent | runner 创建 Sandbox，并把真实 Sandbox 交给 Adapter 驱动 CLI | [Sandbox Agent](feature/adapters/library/sandbox-agent.md) |
 | 适配器 | Adapter | Agent 的具体实现;拥有协议、认证、CLI 参数与 transcript 位置等特殊性 | [Adapters](feature/adapters/README.md) |
 | `send` | `send` | 运行器认得的统一动词;协议、事件映射与会话续接都由 Adapter 实现 | [Agent contract](feature/adapters/architecture/agent-contract.md) |
 | 能力 | Capability | `t` 暴露哪些动作由 `send` 的构造证据决定,不是声明式能力位 | [Agent contract](feature/adapters/architecture/agent-contract.md) |

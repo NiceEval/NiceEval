@@ -53,7 +53,7 @@ export default defineExperiment({
 });
 ```
 
-`evals` 选中的 eval 必须**同一题型**（`EvalDescriptor.scoring`，`defineEval` 的通过制或 `defineScoreEval` 的计分制）：通过率和总分是两种不能相加的读数，一个实验只回答一种。混型选择是启动期配置错误，报错列出两类 eval id 并建议按 tags / 前缀 / `scoring` 谓词收窄，或拆成两个实验文件（计分语义见[计分粒度](score-points.md)）。
+`evals` 选中的 eval 必须**同一题型**（`EvalDescriptor.scoring`，`defineEval` 的通过制或 `defineScoreEval` 的计分制）：通过率和总分是两种不能相加的读数，一个实验只回答一种。混型选择是启动期配置错误，报错列出两类 eval id 并建议按 tags / 前缀 / `scoring` 谓词收窄，或拆成两个实验文件（计分语义见[计分粒度](../scoring/library/score-points.md)）。
 
 `flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
 
@@ -91,7 +91,8 @@ id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/code
 - [用例手册](use-case/README.md) —— 规则难懂先查这里:并发怎么配、预置放哪层、flags 还是 labels、选哪些 eval,以及各 CLI 输入面的全流程用例。
 - [Library](library.md) —— model/flags 怎么透传、怎样选择 eval、路径怎样形成 id、与 config 的关系。
 - [缓存与携带](cache.md) —— 上一轮的结果哪些还算数:指纹算什么、携带要过哪几道门、`--rerun` 三档。
-- [计分粒度](score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读总分),实验内不混型。
+- [计分粒度](../scoring/library/score-points.md) —— 对比里一个 eval 记几分:通过制(`defineEval`,一题一分,读通过率)与计分制(`defineScoreEval`,题内叠加挣分,读总分),实验内不混型。
+- [计分粒度的 Experiments 边界](score-points.md) —— 旧路径只保留同型选择约束，并链接 Scoring 单源。
 - [Architecture](architecture.md) —— 对照 agent-eval 的 `ExperimentConfig`,砍了什么、为什么。
 - [CLI](cli.md) —— `niceeval exp` 命令。
 - [Authoring](../eval/README.md) —— eval 怎么写(experiment 跑的就是它们)。

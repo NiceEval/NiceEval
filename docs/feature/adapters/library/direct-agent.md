@@ -1,6 +1,7 @@
-# Remote Agent
+# Direct Agent
 
-应用通过 HTTP、RPC 或其它进程外边界提供服务时，使用 `defineAgent`。Adapter 知道应用协议，niceeval 不定义通用 URL、鉴权或消息格式。
+runner 直接调用函数、SDK 或服务端点时，使用 `defineAgent`。目标可以在当前进程，也可以是远程服务；
+Direct 描述调用拓扑，不描述部署位置。Adapter 知道应用协议，NiceEval 不定义通用 URL、鉴权或消息格式。
 
 ```ts
 import { defineAgent } from "niceeval/adapter";
@@ -58,4 +59,4 @@ export default defineAgent({
 
 ## 文件输入
 
-`TurnInput.files` 是可选附件。Remote Adapter 可以编码到应用请求体；应用不支持多模态时允许忽略文件并继续处理文本，但不能返回伪造的文件理解事件。
+`TurnInput.files` 是可选附件。Direct Adapter 可以编码到应用请求体；应用不支持多模态时允许忽略文件并继续处理文本，但不能返回伪造的文件理解事件。
