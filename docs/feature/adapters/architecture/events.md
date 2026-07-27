@@ -7,13 +7,12 @@
 ```ts
 type StreamEvent =
   | { type: "message"; role: "assistant" | "user"; text: string; loc?: SourceLoc }
-  | { type: "action.called"; callId: string; name: string; input: JsonValue; tool?: ToolName }
-  | { type: "action.result"; callId: string; output?: JsonValue;
-      status: "completed" | "failed" | "rejected" }
-  | { type: "skill.loaded"; skill: string; callId?: string }
-  | { type: "subagent.called"; callId: string; name: string; remoteUrl?: string }
-  | { type: "subagent.completed"; callId: string; output?: JsonValue;
-      status: "completed" | "failed" }
+  | { type: "operation.started"; operationId: string; operation:
+      | { kind: "tool"; name: string; input: JsonValue; tool?: ToolName }
+      | { kind: "subagent"; name: string; remoteUrl?: string } }
+  | { type: "operation.finished"; operationId: string; kind: "tool" | "subagent";
+      output?: JsonValue; status: "completed" | "failed" | "rejected" }
+  | { type: "skill.loaded"; skill: string; operationId?: string }
   | { type: "input.requested"; request: InputRequest }
   | { type: "thinking"; text: string }
   | { type: "context.injected"; text: string; source?: string }
@@ -24,8 +23,9 @@ type StreamEvent =
 ## 不变量
 
 1. 保持原始发生顺序，不按事件类型重排。
-2. action called/result 与 subagent called/completed 使用稳定 call ID 配对。call ID 只需在**一个 called→result 配对内**稳定,不要求跨轮唯一——adapter 按各轮各自编号(OpenAI 兼容协议、transcript 归一常复用 `c1`/`c2`…)是允许的。同一个 call ID 在它的 result 之后再次以 called 出现时,是新的一次调用,core 起一条新记录而非覆盖前一条(否则跨轮聚合会把前几轮的调用抹成「只剩最后一轮」)。
-3. `name` 保留原始工具名，`tool` 保存跨 Agent 规范名。
+2. tool 与 subagent 共用 `operation.started` / `operation.finished`，用稳定 operation ID 配对。ID 只需在**一次 started→finished 配对内**稳定,不要求跨轮唯一。同一个 ID 在 finished 后再次 started 是新操作,core 新建记录而非覆盖。
+3. tool operation 的 `name` 保留原始工具名，`tool` 保存跨 Agent 规范名。
+   `operation.finished.kind` 必须与对应 started 的 `operation.kind` 相同。
 4. 人工拒绝是 `rejected`，执行故障是 `failed`。
 5. Skill 加载只产 `skill.loaded`，不重复计入工具调用。
 6. 原始协议没有 usage 时省略，不编造数值。
@@ -50,6 +50,6 @@ interface InputRequest {
 
 ## 派生事实
 
-`deriveRunFacts(events)` 统一折叠工具调用、subagent 调用、待输入请求、parked、消息数、压缩次数与 `context.injected` 次数（`contextInjections`）。Adapter 不预计算断言结果。折叠按 `callId` 把 called 与 result 对成一条调用：配上 result 的取 result 的状态（`completed` / `failed` / `rejected`）；只有 called、尚未等到 result 的调用状态是 **`pending`**——HITL 停在审批上的调用就以这个状态被断言（`calledTool(name, { status: "pending" })`），不是容错分支。只有 result、没配上 called 的情况才属于 core 容错，不是正常映射契约。
+`deriveRunFacts(events)` 统一折叠工具调用、subagent 调用、待输入请求、parked、消息数、压缩次数与 `context.injected` 次数（`contextInjections`）。Adapter 不预计算断言结果。折叠按 `operationId` 把 started 与 finished 对成一条操作：配上 finished 的取其状态；只有 started、尚未等到 finished 的操作状态是 **`pending`**——HITL 停在审批上的工具调用就以这个状态被断言，不是容错分支。只有 finished、没配上 started 才属于 core 容错，不是正常映射契约。
 
 `context.injected` 不获得专属的 `Turn` 便利字段（不像 `message` 有 `Turn.message`）——它和 `thinking`、`compaction` 同一档次，通过 `Turn.events` / 跨轮 `events` 数组按 `type` 过滤读取；`contextInjections` 计数只回答「这一轮有没有发生过注入」这种存在性问题，不替代逐条读取原文用 `text`。

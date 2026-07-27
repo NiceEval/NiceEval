@@ -358,14 +358,14 @@ diff / 事件视图同源，view 里可点进对应文件 diff：
 [Attempt 详情组件](../../reports/components/attempt-detail/README.md#公开区块集)。计数行与给分记录区块
 不重复这个总数。
 
-**前置中止**：计分制里链了 `.gate()` 的断言挂掉会就地结束 `test()`，它按 `✗ gate` 展开，
+**前置中止**：两种题型里链了 `.stopOnFailure()` 的断言挂掉会就地结束 `test()`；若同时是 gate，按 `✗ gate` 展开，
 行尾追加一个中止标注，其后不再有任何断言或给分记录——详情里「后面是空的」和「后面全挂了」因此一眼可分：
 
 ```text
 ✗ gate · db-gpt cloned
     expected: true
     received: false
-    ⤓ 前置未过,test() 就地结束
+    ⤓ stopOnFailure: test() 就地结束
 ```
 
 **`t.score(label, n)` 的直接给分记录**与断言分属两个数组，见

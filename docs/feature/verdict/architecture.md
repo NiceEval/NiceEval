@@ -47,33 +47,29 @@ severity 只管**判定面**：它声明一条断言的失败怎么向上传播�
 只改判定传播，分数照记。质量分（soft 断言的均值）与分数面（计分制的给分）是另外两个读数，
 折叠规则见[计分粒度](../assertions/library/score-points.md#折叠树判定面分数面质量分)。
 
-## 计分制里的 `.gate()`：前置中止
+## 控制流与严重度正交
 
-计分制（`defineScoreEval`）的 `t` 是另一套类型，同样这几个词各有各的定义：判定面只认
-**前置中止**，丢分不产生 failed。每个词落到哪个读数见
-[角色表](../assertions/library/score-points.md#计分制叠加给分没有上限声明)。
+`.gate()` 在 `defineEval` 与 `defineScoreEval` 中始终表示同一件事：断言不通过使 Attempt
+`failed`。它不改变 `test()` 控制流。后续代码依赖这条断言时，显式链 `.stopOnFailure()`；
+值断言可用两种题型都有的 `t.require()` 糖衣。
 
 ```typescript
 export default defineScoreEval({
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
 
-    await t.check(await t.sandbox.fileExists("db-gpt/README.md"), isTrue()).gate();
-    //  .gate(x?) = 前置：挂了就地结束 test()，后面的给分代码不执行
-    //  它是计分制里 failed 的唯一来源，本身不进任何折叠读数
-    //  与通过制的 gate 不同：那边不中止执行（继续收集其余断言作为诊断证据），把 verdict 翻成 failed
-    //  这边不需要「翻 verdict」这一层——丢分已经由分数表达——需要的是「后面跑了也白跑」
+    await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue());
+    //  等价于 t.check(...).gate().stopOnFailure()：记硬失败，并停止依赖它的后续代码
 
     t.sandbox.fileChanged("db-gpt/.env").points(1);
     //  .points(n) = 得分点：通过挣 n 分、不过挣 0 分，继续往下跑
-    //  链过 .points() 的句柄上只剩 .gate() 与 .optional()
 
-    await t.calledTool("shell", { input: { command: /pip install/ } }).points(1).gate();
-    //  .points(n).gate() = 得分点兼前置：丢这 1 分，并且就地结束 test()
+    await t.calledTool("shell", { input: { command: /pip install/ } })
+      .points(1).gate().stopOnFailure();
+    //  得分点兼硬要求：丢 1 分、Attempt failed，并停止后续代码
 
     t.judge.autoevals.closedQA("说明讲清动机没有？").atLeast(0.6);
-    //  .atLeast(x) = 观测的通过线：低于线如实记 failed，永不影响判定
-    //  在通过制它还兼着「--strict 下翻成 gate」，那半边在计分制不存在
+    //  .atLeast(x) = soft 通过线；低于线如实记 failed，--strict 下升级为 gate
 
     t.check(t.reply, includes("healthy"));
     //  不链词 = 观测：进质量分；matcher 自带的通过线照常生效，没做到如实记 failed
@@ -82,16 +78,12 @@ export default defineScoreEval({
 });
 ```
 
-前置断言在**写下的位置立即求值**，普通断言延迟到收尾才求值——之后发生的事不改变它的结论，
-这正是「前置」的含义。挂了之后收集器进入中止态，下一次任何 `t.*` 调用或 `test()` 返回时
-抛出中止信号；收集器在每个 `t.*` 入口先结算待决前置，所以作者写不写 `await` 都不会漏掉中止
-（文档例子统一写 `await`）。
+`.stopOnFailure()` 在写下的位置立即结算断言；通过时返回原值或句柄，失败时记录既定 AssertionResult
+并中止 `test()`。它不能单独出现，必须跟在带通过线的 `.gate()` / `.atLeast()` 或使用 matcher
+默认通过线的断言之后。`.gate().stopOnFailure()` 是硬前置；`.atLeast(x).stopOnFailure()` 只停止
+后续代码，仍保持 soft 严重度。控制流不再借 severity 一词表达。
 
-matcher 自带的严重度与链在 matcher 上的严重度（`similarity(...).gate(0.8)`）在计分制只贡献
-**通过线**，不使一条断言成为前置：前置是题目结构的声明，必须写在断言句柄上、一眼可见。
-计分制也没有 `--strict`——判定面只认前置中止，带线的观测在任何模式下都不翻 verdict；
-计分制实验上传这个 flag 是启动期用法错误，见
-[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)。
+`--strict` 对两种题型同义：带线 soft 升级为 gate，但不自行添加 `.stopOnFailure()`。
 
 ## Verdict
 
@@ -106,9 +98,8 @@ Verdict 只有 passed、failed、errored、skipped，按固定优先级取第一
 
 Errored 压过一切，因为执行证据已经不可信。Failed 压过 skipped，避免 `t.skip()` 掩盖此前记录的硬失败。
 
-计分制（`defineScoreEval`）用同一张表，只是 `failed` 那一行换成**前置 `.gate()` 中止**——得分点丢分不产生
-failed。所以计分制的 verdict 回答的是「这次的分数完不完整」：跑完了是 `passed`（哪怕只挣 1 分），
-断在前置是 `failed`，评不了是 `errored`（分数 `null`）。「做到几成」由分数面回答，不借判定面表达。
+计分制（`defineScoreEval`）使用同一张表。得分点丢分本身不产生 failed；显式 gate 不通过仍产生
+failed。`.stopOnFailure()` 只决定是否继续执行，不新增第五种 Verdict。
 
 ## 证据不可用（unavailable）不折叠成通过
 

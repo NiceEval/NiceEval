@@ -22,20 +22,27 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    `https://api.openai.com/v1`。此时网关凭据会被发到 OpenAI，返回「Incorrect API key provided」。
    这看上去像 key 过期，实际是端点选错了。
 
-2. 跑一次。派发任何 attempt 之前先过 judge 预检——端点不通就地停下,不会先烧完一批 agent 成本再告诉你:
+2. 先跑一个只评固定文本的轻量验证 eval。配置 Judge 本身不会联网；真正执行 judge assertion 才验证
+   模型、key 与端点，因此验证用例不需要先调用被测 agent：
 
-   ```bash
-   niceeval exp compare
+   ```ts
+   export default defineEval({
+     async test(t) {
+       t.judge.autoevals.closedQA("这段文本是否表达成功?", {
+         on: "operation completed successfully",
+       }).gate(0.8);
+     },
+   });
    ```
 
-   **你会看到**:预检期间面板顶上一行 `● prechecking judge config <elapsed>`(非 TTY 是起止两行),
-   这一行在解释「为什么 attempt 还都是 `queued`」;网络抖一下不会失败,传输层错误会退避重试,那一行的 elapsed
-   继续走。
+   ```bash
+   niceeval exp judge-smoke
+   ```
 
-3. 预检失败的话,`fix:` 就是下一步,按它改配置重跑:
+3. 调用失败会落成 `judge-call-failed`，`evidence` 与 `fix:` 同时写出实际解析的端点和 key 变量名：
 
    ```text
-   error: judge precheck failed: 401 from https://api.openai.com/v1 (Incorrect API key provided)
+   unavailable: judge-call-failed: 401 from https://api.openai.com/v1 (Incorrect API key provided)
      fix: baseUrl 省略时用官方端点;接兼容网关请在 judge.baseUrl 显式写出地址,key 走 judge.apiKeyEnv 指定的变量(默认 NICEEVAL_JUDGE_KEY)
    ```
 
@@ -61,17 +68,14 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
 
 ## 边界
 
-- 允许缺席是**逐条断言的作者决定**,不是框架的降级策略:预检失败不会自动退化成 warning 让 judge
-  断言静默跳过——那会造出「一条都没评却全绿」的报告。
+- 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable
+  仍使 Attempt `errored`，不会造出「一条都没评却全绿」的报告。
 - `--strict` 不改变这条路径上的任何判定:unavailable 走 `errored`,与 soft 阈值是两回事(见
   [`--strict`](../../verdict/use-case/strict-quality-gate.md))。
-- 有 HTTP 状态码回来的失败(401 / 404 / 400)不重试,只有传输层错误重试:配置错了重试三次还是错,徒增等待。
 - 模型解析不到是另一个 reason(`judge-model-unresolved`),判定后果相同——judge 没有内置默认模型,三层(单次
   `{ model }` → eval → config)都没配就是配置错误。
 
 ## 相关阅读
 
-- [LLM-as-judge](../library.md) —— 入口、默认材料、鉴权与派发前预检的契约单源。
+- [LLM-as-judge](../library.md) —— 入口、默认材料、鉴权与校验时点的契约单源。
 - [Severity 与 Verdict](../../verdict/architecture.md) —— unavailable 为什么不折叠成通过。
-- [Experiments · judge 预检的显示](../../experiments/cli.md#judge-预检的显示) —— 预检在 live 面板与
-  `--json` 里各长什么样。

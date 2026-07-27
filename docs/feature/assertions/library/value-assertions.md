@@ -13,11 +13,12 @@ t.check(turn.data, matches(MySchema));
 ## `check` 与 `require`
 
 - `t.check(value, matcher)` 同步记录断言并继续执行，适合一次收集多条结果。
-- `await t.require(value, matcher)` 立即等待；不通过就按 gate 中止依赖它的后续代码，通过后返回原 value。
+- `await t.require(value, matcher)` 等价于 `await t.check(value, matcher).gate().stopOnFailure()`；
+  不通过时记录硬失败并中止依赖它的后续代码，通过后返回原 value。
 
-只有后续逻辑依赖这个值时才使用 `require`。`require` 是**通过制**（`defineEval`）的前置词；
-计分制（`defineScoreEval`）的 `t` 上没有它。前置写成 `t.check(value, matcher).gate()`，还能顺带挣分。
-完整语义见 [Severity 与 Verdict · 计分制里的 `.gate()`](../../verdict/architecture.md#计分制里的-gate前置中止)。
+只有后续逻辑依赖这个值时才使用 `require`。两种题型都有它；作用域断言或需要保留 soft 严重度时，
+在断言句柄上显式链 `.stopOnFailure()`。完整语义见
+[Severity 与 Verdict · 控制流与严重度正交](../../verdict/architecture.md#控制流与严重度正交)。
 
 ## 内置 matcher
 
@@ -70,9 +71,7 @@ t.check(reply2, nearEnough.gate(0.8));       // 同一个 matcher 换一档严�
 写下这四个词各会怎样向上传播——`.gate` 是硬要求、`.atLeast` 的参数是分数线、`.soft()`
 不设线、`.optional()` 允许证据缺席——逐行标注在
 [Severity 与 Verdict](../../verdict/architecture.md#severity)。
-计分制（`defineScoreEval`）里 matcher 上链的严重度只贡献**通过线**，角色由断言句柄上的
-`.points(n)` / `.gate(x?)` 决定，见
-[计分制里的 `.gate()`](../../verdict/architecture.md#计分制里的-gate前置中止)。
+两种题型里的严重度完全同义；是否停止后续代码只由断言句柄的 `.stopOnFailure()` 决定。
 
 每个 matcher 失败时在 show / view 里显示什么，见 [断言与 Turn 的展示](display.md)。
 

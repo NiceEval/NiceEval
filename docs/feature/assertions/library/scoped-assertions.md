@@ -101,7 +101,7 @@ Verdict](../../verdict/architecture.md#severity)）。
 
 ```ts
 t.toolOrder(["read_file", "write_file"]);          // 先读后写;中间调了别的工具也通过
-t.eventOrder(["action.called", "action.result"]);
+t.eventOrder(["operation.started", "operation.finished"]);
 ```
 
 规则超出既有词汇时，用 `eventsSatisfy(label, predicate)` 对作用域的整段事件流写谓词。`label` 必填、

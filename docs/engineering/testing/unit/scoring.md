@@ -129,14 +129,10 @@ fixture 必须让三个接收者得到**不同答案**，才能发现 selector �
 - **judge 调用失败不落成 0 分**：判分请求非 2xx、连接中途断开、调用超时，以及 2xx 但响应取不出分数（不合协议、分数字段缺失）——四种形态各一条，断言记的是
   `outcome: "unavailable"` + `reason: "judge-call-failed"` + `evidence` 带状态码/异常摘要，**不是 `outcome: "passed"` + `score: 0`**。区分力场景：同一条 rubric 在「网关回
   400」与「agent 答得完全跑题」两份 fixture 下，落盘记录必须不同——这正是分数面上分不出「裁判挂了」和「答错了」的那一格。非 optional 时同样使 attempt errored。
-- **`probeJudge` 派发前预检的错误分类**：缺 model
-  / 缺 key 前置返回各自的可行动错误；探测有 20s 上限，网关「接受连接却不回」触发超时（`TimeoutError`）时报专门的「无响应」错误（指路 baseUrl
-  / 网关），而不是把通用 abort 甩给用户，也不与其它探测失败（如连接被拒）混为一类；鉴权失败（401
-  / 403）的 `fix:` 同时点名端点与 key 两处解析口径；2xx 可达返回
-  `undefined`。各需一条区分力场景——超时错误、鉴权错误与通用 `probeFailed`
-  必须给出不同文案。真实网关的慢/挂行为归 E2E。
-- **预检的传输层重试**：连接建立失败 / 中途断开在第 2 次探测成功时预检整体通过（断言探测被调用的次数，不是睡了多久）；重试耗尽后才中止本次运行；**有状态码的失败一次都不重试**——401
-  的 fixture 必须只看到一次请求，否则一个配置错误会被放大成三次。区分力在「传输错误重试、HTTP 错误不重试」这条边界上，两侧各一条。
+- **Judge 静态配置校验与调用期 unavailable**：非法 `baseUrl` / `apiKeyEnv` 在解析期失败，且仅配置
+  Judge 不发请求；缺 model / 缺 key 分别记录 `judge-model-unresolved` / `judge-key-unresolved`，
+  鉴权、连接、超时和响应解析失败记录 `judge-call-failed`。每类都覆盖 optional 与非 optional，证明
+  前者保留 unavailable 但不改 verdict，后者使 attempt errored。真实网关行为归 E2E。
 
 ## 不这样测
 

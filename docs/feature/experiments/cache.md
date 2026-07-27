@@ -54,8 +54,8 @@ fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / 
   [`--carry-ignoring-flag`](#--carry-ignoring-flag搬迁用的一次性出口)这个出口也就无从落地。
 - **`configHash` 不逐 eval、不逐题型分叉。** 代价是配置改动会波及证明上不受它影响的 eval:
   一条 eval 自己完整声明了 `judge` 时,config 层换裁判模型照样让它重跑。
-  `--strict` 也一样——全选计分制时传它是启动期用法错误,混型选择下它被接受,
-  计分制那半跟着一起烧,尽管[丢分不翻判定](../assertions/library/score-points.md#折叠树判定面分数面质量分)。
+  `--strict` 也一样——它对两种题型的 soft 断言统一提级为 gate；计分制的 points 仍只影响分数面，
+  不因 strict 翻判定（见[判定与分数正交](../assertions/library/score-points.md#折叠树判定面分数面质量分)）。
   换来的是一个字段只裁决一次,不必维护一张「哪个字段对哪类 eval 有效」的表。
 - **凭据不进。** `judge` 进的是 `model` 与 `baseUrl` 两个配置值;
   `judge.apiKeyEnv` 选的是凭据从哪来,不改变「判定怎么算」,不进哈希也不落盘。

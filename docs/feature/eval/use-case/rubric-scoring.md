@@ -21,7 +21,7 @@ export default defineScoreEval({
     // 纯前置:repo 都没 clone 下来,后面的步骤无从谈起——存在性检查用 fileExists(布尔),
     // 不是取内容的 file()(那个留给 t.check 配 matches/includes 这类内容断言)。
     const cloned = await t.sandbox.fileExists("db-gpt/README.md");
-    await t.check(cloned, isTrue("db-gpt cloned")).gate();
+    t.require(cloned, isTrue("db-gpt cloned"));
 
     // 五个检查点各值 1 分,互相独立:挂一条照记 0 分,不连坐后面
     t.sandbox.fileChanged("db-gpt/.env").points(1);                          // ① 配置了环境
@@ -38,7 +38,7 @@ export default defineScoreEval({
 逐块读：
 
 1. **检查点给分用 `.points(n)`**：挂在任何断言上的条件给分，通过挣 `n` 分、不过挣 0。五个检查点各自独立——只配好环境、装好依赖的模型挣 2 分，全走通的挣 5 分，「做到几成」直接落在分上。
-2. **前置条件用 `.gate()`**：挂了就地结束，后面的给分代码不执行，那些分**自然没挣到**。clone 都失败的模型这题挣 0 分——中止挣 0 是 agent 的责任，成立；这和基础设施故障是两回事（见边界）。得分点本身也能当前置：`t.calledTool(...).points(1).gate()` 读作「值 1 分，且没做到就别往下跑了」。
+2. **前置条件用 `t.require()`**：挂了就地结束，后面的给分代码不执行，那些分**自然没挣到**。clone 都失败的模型这题挣 0 分——中止挣 0 是 agent 的责任，成立；这和基础设施故障是两回事（见边界）。得分点本身也能当前置：`t.calledTool(...).points(1).gate().stopOnFailure()` 读作「值 1 分，同时是硬要求，没做到就别往下跑」。
 3. **丢分不是失败**：得分点不影响判定，挂三条只是少挣三分，verdict 仍是 `passed`。计分制的 `failed` 只有前置中止一个来源，它回答的是「这次的分数完不完整」；默认报告读的是分（3 vs 1），attempt 详情里逐条红绿照常可看，「死在第几步」在那里下钻。
 
 ## 分值不等权时：rubric 大题
@@ -74,16 +74,16 @@ export default defineScoreEval({
 });
 ```
 
-- **一条断言只扮演一个角色**：`.points(n)` 是得分点、`.gate(x?)` 是前置、什么都不链或 `.soft()` / `.atLeast(x)` 是观测（进质量分）。链了 `.points()` 之后句柄上只剩 `.gate()` 与 `.optional()`，`.soft()` / `.atLeast()` 是类型错误——得分点已经用分数表达了分量，再进质量分是同一条证据被读两遍，再设通过线是拿两个标准评同一件事。不给分的 judge 要把「装好了但质量差」显示成失败行就链 `.atLeast(0.7)`：它只决定这条记 passed 还是 failed，永不影响判定。
+- **一条断言只扮演一个角色**：`.points(n)` 是得分点、`.gate(x?)` 是硬判定、什么都不链或 `.soft()` / `.atLeast(x)` 是观测（进质量分）。控制流独立：需要失败后立即停止时用 `t.require(...)`，或链 `.stopOnFailure()`。链了 `.points()` 后不再链 `.soft()` / `.atLeast()`——得分点已经用分数表达了分量，再进质量分是同一条证据被读两遍。
 - **`t.score(label, n)`** 是判定条件复杂到断言词汇装不下时的出口：作者算好条件和分数后直接累加，`label` 进报告。
 - **`t.group` 给分数命名维度**：组内挣分聚成对比里的得分点——报告里「正确性挣 60/挣 0」「代码质量挣 36/挣 12」按组横向可比，跨 eval 组名一致就能聚成同一维度。
 
 ## 边界
 
-- **叠加不扣分**：分值非负（`.points(n)` 要求 `n > 0`，`t.score` 要求 `n ≥ 0`）。「做了坏事」不用负分——要「到这一步不成立就别往下跑了」写前置 `.gate()`，要「没做坏事算得分项」写正向检查点（`t.notCalledTool(...).points(1)`）。
-- **前置就地求值**：`.gate()` 的断言在写下的位置立即求值（普通断言延迟到收尾才求值），之后发生的事不改变它的结论——这正是「前置」的含义。写不写 `await` 都不会漏掉中止，例子里统一写 `await`。
+- **叠加不扣分**：分值非负（`.points(n)` 要求 `n > 0`，`t.score` 要求 `n ≥ 0`）。「做了坏事」不用负分——要「到这一步不成立就别往下跑了」写 `t.require(...)`，要「没做坏事算得分项」写正向检查点（`t.notCalledTool(...).points(1)`）。
+- **硬判定与中止正交**：`.gate()` 只决定 Verdict，不隐式改变执行顺序；`.stopOnFailure()` 才在该断言失败时停止后续代码。`t.require(x)` 是 `t.check(x).gate().stopOnFailure()` 的值断言快捷方式，两种题型一致。
 - **中止的 0 和基础设施的 `null` 严格分开**：前置挂了后面挣 0 分是 agent 的责任；沙箱炸了、judge 没 key 是 `errored`，整题分数 `null`、不折成 0——评不了不是 agent 差。
-- **题型即定义函数**：`defineScoreEval` 的 `t` 才有 `.points` / `t.score`，在 `defineEval` 里写给分是类型错误；反过来计分制的 `t` 上没有 `t.require`，前置只有 `.gate()` 一种写法。一个 experiment 选中的 eval 必须同型——通过率和总分不能相加，混型是启动期配置错误，两类都要跑就写两个实验文件。
+- **题型即定义函数**：`defineScoreEval` 的 `t` 才有 `.points` / `t.score`，在 `defineEval` 里写给分是类型错误；`t.require` 与 `.stopOnFailure()` 两种题型都有。同一 experiment 可以混合题型，但通过率与总分始终分列，不相加。
 - 检查点是**独立可跑的题目**时不要用计分制，拆成多个 eval（[测试集扇出](dataset-fanout.md)）——粒度来自更多的题，不是更细的分。
 
 ## 相关阅读

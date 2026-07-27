@@ -3,22 +3,28 @@
 每条 eval session 持有独立 `AgentSession`，生命周期与 attempt 绑定。
 
 ```ts
+interface SessionSlot<T> {
+  readonly key: symbol;
+}
+
+function createSessionSlot<T>(name: string): SessionSlot<T>;
+
 interface AgentSession {
   readonly id?: string;
   capture(id: string | undefined): void;
-  history<T>(): { get(): T[]; commit(messages: T[]): void };
-  hold<T>(state: T): void;
-  take<T>(): T | undefined;
-  readonly state: Record<string, unknown>;
+  get<T>(slot: SessionSlot<T>): T | undefined;
+  set<T>(slot: SessionSlot<T>, value: T): void;
+  take<T>(slot: SessionSlot<T>): T | undefined;
 }
 ```
 
 ## 状态不变量
 
-- 服务端历史模式使用 `id` / `capture()`；客户端历史模式使用 `history()`，不维护两份会话真相。
+- 服务端历史模式使用 `id` / `capture()`；客户端历史模式由 adapter 定义一个 typed slot 保存消息数组，不维护两份会话真相。
 - `capture()` first-writer-wins，resume 轮不能替换原 ID。
-- 新 session 的 ID 为 undefined、历史为空，因此 `newSession()` 不需要供应商分支。
-- `hold()` / `take()` 保存未消费流的暂停现场；`take()` 一次消费。
+- 新 session 的 ID 为 undefined、所有 slot 为空，因此 `newSession()` 不需要供应商分支。
+- HITL adapter 用自己的 typed slot 保存未消费流的暂停现场；`take(slot)` 一次消费。
+- slot 的 symbol 身份隔离不同 adapter / 能力的状态；core 不解释 slot 内值，也不开放易碰撞的字符串字典。
 - 会话状态不得放在模块级 Map，避免并发 attempt 和新 session 串线。
 
 ## HITL 握手不变量

@@ -70,7 +70,6 @@ Run `niceeval exp <path> --dry` to preview a plan.
 | elapsed、成本、running / elsewhere / queued / passed / failed / errored / skipped | live 面板内动态覆盖;非 TTY 走空闲心跳 | 无其它输出满 30 秒才追加 `progress` 事件 |
 | 当前 attempt 阶段、最近进度 | 只在可见 active slot 内动态覆盖 | 不输出 |
 | 实验级 setup / teardown 起止 | ACTIVE 区运行级行(TTY);非 TTY 起止各追加一行 | `experiment_setup` / `experiment_teardown` 事件 |
-| judge 预检起止 | ACTIVE 区运行级行(TTY);非 TTY 起止各追加一行 | `judge_precheck` 事件 |
 | 用例锁等待起止 | ACTIVE 区运行级行(TTY);非 TTY 按实验聚合追加起止行 | `lock_wait` 事件 |
 | 运行级瞬时通知(provider 一次性通知……) | 永久追加一行 | 不输出 |
 | waiting 队列 | 只显示数量,不逐项追加 | `progress` 事件里给数量 |
@@ -145,36 +144,9 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 - 实验级 `ctx.progress` 与 attempt 级同规则:非 TTY 文本与 `--json` 不逐条输出,也不写入 results。
 
-### judge 预检的显示
-
-`judge` 配置的预检(验证 model + key 存在、并发一个最小请求确认端点可达,见 [Judge](../judge/library.md))发生在任何 attempt 派发之前、作用于整次 invocation,不属于任何单个 attempt。它和实验级 Hook 同属**运行级生命周期行**:预检是一次真实网络往返,可能慢(判分网关响应慢);只留一行「prechecking judge config」在 scrollback、让下面的面板停在 `0 running · N queued` 会看起来像调度卡死,所以按运行级行显示,和实验级 Hook 共用同一套「解释为什么 attempt 还在 `queued`」的机制。探测的时间预算与重试纪律(单次 20s 上限、传输层错误退避重试至多两次、有状态码的失败不重试)单源在 [Judge · 派发前预检](../judge/library.md#派发前预检);对显示面的要求只有一条:**重试也在这一行里**——退避期间预检行不消失、elapsed 继续增长,不闪断成「预检结束了但 attempt 还是 queued」的假象。
-
-**全部结果被 carry 携入、一个 attempt 都不派发时,预检不执行**——没有 attempt 要跑就没有 judge 要调,
-与[实验级 `setup` 的懒触发](architecture.md#实验级生命周期setup-与-teardown)同构。
-零派发的运行因此不会因为一次探测慢下来,也不会因为判分网关不可达而报错。
-
-- **Human(TTY)**:预检期间 ACTIVE 区显示一行运行级行 `● prechecking judge config   <elapsed>`,排在实验 Hook 行与 attempt 行之前——它发生在最前,是「为什么 attempt 还停在 `queued`」的解释;存活性由持续增长的 elapsed 证明(不做 spinner 动画,与 attempt 行同一约定)。预检结束该行即消失,不在 scrollback 留永久行。
-
-  ```text
-  ╭─ niceeval exp install/canary ────────────────────────────────────────────────────────── 12s ─╮
-  │ 1 total · 0 reused · 0 running · 1 queued · 0 passed · 0 failed · 0 errored · 0 skipped      │
-  ├─ ACTIVE ─────────────────────────────────────────────────────────────────────────────────────┤
-  │ ● prechecking judge config                          12s                                      │
-  ╰────────────────────────────────────────────────────────────────────────────────────── $0.00 ─╯
-  ```
-
-- **非 TTY 文本与 `--json`**(只追加的流)没有动态区域,改为起止各追加一行永久事件——长预检期间只有心跳的日志无法区分「预检在跑」和「挂死」。`status` 两值 `started` / `done`,`done` 带时长。非 TTY 文本用 human 文案(`prechecking judge config` / `judge config ok (12s)`);`--json` 是同一事实的事件:
-
-  ```json
-  {"event":"judge_precheck","status":"started"}
-  {"event":"judge_precheck","status":"done","durationMs":12000}
-  ```
-
-- 预检失败(缺 key、端点不通、鉴权失败、20s 无响应超时)不是这条通道的事:它以既有错误路径中止本次运行、逐条给出可行动的 `fix:`(各类失败的 `fix:` 口径见 [Judge · 派发前预检](../judge/library.md#派发前预检)),不折进上面的起止事件。
-
 ### 等待并发 run 的显示
 
-多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook、judge 预检同一套机制:
+多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook 共用同一套机制:
 
 - **Human(TTY)**:每个有等待用例的实验一行运行级行,给出等待条数与持有方;存活性由持续增长的 elapsed 证明,排在实验 Hook 行之后、attempt 行之前,参与同一套稳定 slot 规则。等待全部解决(携入或转为自跑)该行即消失,不留 scrollback 永久行:
 

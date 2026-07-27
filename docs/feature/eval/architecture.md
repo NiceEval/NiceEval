@@ -26,7 +26,7 @@
 
 - eval 在 attempt 生命周期里占三个主链阶段：`eval.setup`（任务 Fixture）→ `eval.run`（整段 `test(t)`，含全部 send 与手工命令）→ `scoring.evaluate`（断言 finalize 与判定）；`EvalDef.teardown` 在收尾段执行，只能追加 diagnostic，不改判定。阶段词表的唯一权威是 [Results 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)。
 - 作者写下的每条断言默认要求可评估：证据缺口使 attempt `errored`，显式 `.optional()` 才允许缺席；判定四态互斥（[Severity 与 Verdict](../verdict/architecture.md)）。
-- eval id 从文件路径推导（路径即身份，禁止手写 id）；数组测试集生成稳定的零填充序号 id（`sql/0000`），keyed record 测试集生成稳定的业务 key id（`swelancer/15193`）。key 是单一路径片段，发现顺序按 key 字典序固定。
+- eval id 从文件路径推导（路径即身份，禁止手写 id）；数组测试集按位置生成零填充序号 id（`sql/0000`，插删或重排会改变后续 id），keyed record 生成稳定的业务 key id（`swelancer/15193`）。key 是单一路径片段，发现顺序按 key 字典序固定。
 
 ## 相关阅读
 

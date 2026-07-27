@@ -64,6 +64,8 @@ interface AssertionBase {
   /** 所属分组路径:外层在前的 t.group 标题数组;无分组省略。报告分块与对比得分点的维度键,不影响判定。 */
   groupPath?: string[];
   severity: "gate" | "soft";
+  /** 作者链过 .stopOnFailure();仅在本条 failed 时停止后续 test 代码,与 severity 正交。 */
+  stopOnFailure?: true;
   /** 作者用 .optional() 显式允许该断言缺席;只改变 unavailable 的折叠方式(见 Severity 与 Verdict),不改变 severity 语义。 */
   optional?: true;
   /** matcher / judge 摘要,如 `equals(4)`、`closedQA("…")`;与 name 分开,供 show/view 同时展示分组标题与检查方式。 */
@@ -136,7 +138,8 @@ interface ScoreEntry {
 永不带 `points`,其 attempt 记录也永不携带 `ScoreEntry`。两者共用同一套 `groupPath` 折叠约定,
 分数面的逐层求和规则见[计分粒度](library/score-points.md#折叠树判定面分数面质量分)。
 
-计分制记录里 `severity` 与 `points` 的组合就是那条断言的角色,不需要第三个字段:得分点是 `severity: "soft"`
-+ 有 `points`(不传播判定),前置是 `severity: "gate"`(中止,`points` 视有没有链 `.points()` 而定),观测是
-`severity: "soft"` + 无 `points`。质量分因此按「soft 且没有 `points`」取子集聚合。
+计分制记录里 `severity`、`points` 与 `stopOnFailure` 分别回答硬不硬、挣不挣分、停不停：得分点是
+`severity: "soft"` + 有 `points`，硬要求是 `severity: "gate"`，前置再显式带
+`stopOnFailure: true`。观测是 `severity: "soft"` + 无 `points`。质量分因此按「soft 且没有
+`points`」取子集聚合。
 得分点已经在分数面被读过一次，不再进入质量分。

@@ -104,7 +104,9 @@ interface RuntimeIdentity {
 具体字段层面,值得记进 `StreamEvent` 的演进候选(都不是现在就加,是"需要时有先例"):
 
 1. **坐标系(`sequence` / `turnId` / `stepIndex`)。** niceeval 单轮内的 step 边界(一次 CLI 运行内多次模型调用)在 `StreamEvent` 里没有对应字段;claude-code transcript 里其实带这个信息。要支持"第几步做了什么"级别的断言或 view 分组时,eve 的三级坐标是现成方案。
-2. **`action.result.error: { code, message }`。** niceeval 只有 `status`,失败原因埋在 `output` 字符串里;"消费方不该解析工具私有输出来判断失败"这个理由对 view 和断言同样成立。
+2. **operation 失败的结构化错误。** eve 的 `action.result.error: { code, message }` 不把失败原因埋在
+   output 字符串里；niceeval 的 `operation.finished` 只有 `status` 与 `output`。消费方不该解析
+   工具私有输出来判断失败,这个理由对 view 和断言同样成立。
 3. **usage 按 step 记。** niceeval 的 `usage` 挂在 `Turn`(整轮聚合);eve 挂在 `step.completed`(每次模型调用一份)。transcript 里常有 per-step 用量,聚合前丢掉了瀑布图想要的粒度。
 4. **agent 自报元数据(`RuntimeIdentity`)。** `Turn` 或 `session.started` 级的可选 `runtime?: { modelId, version, … }`,让"实际用的模型"从抠磁盘变成契约字段——网关场景的成本核算靠它才准。
 5. **逐请求回答的键形状。** eve 的回答是 `{ requestId, optionId?, text? }`,以 id 字符串定位;niceeval 的 `t.respond({ request, optionId | text })` 同样逐请求定位,键是 `requireInputRequest` 返回的请求对象(`respondAll(optionId)` 全选同一 option)。两边能力等价,差异只剩键的形状——要不要额外接受裸 `requestId` 字符串是人体工学取舍,不是功能缺口:

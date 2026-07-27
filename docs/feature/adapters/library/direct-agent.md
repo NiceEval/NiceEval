@@ -45,7 +45,7 @@ export default defineAgent({
 
 ## 会话
 
-服务端保存历史时，将 `ctx.session.id` 发给应用，并把响应中的稳定 ID 传给 `capture()`。无状态服务需要重发完整历史时，使用 `ctx.session.history<T>()`。两种模式不应同时各自维护一份会话真相。
+服务端保存历史时，将 `ctx.session.id` 发给应用，并把响应中的稳定 ID 传给 `capture()`。无状态服务需要重发完整历史时，用 adapter 私有的 typed session slot 保存消息数组。两种模式不应同时各自维护一份会话真相。
 
 ## 结构化转换
 

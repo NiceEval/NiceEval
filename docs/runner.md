@@ -342,7 +342,24 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
 运行器不承载环境预置的内容,只固定各生命周期 Hook 的**调用点与顺序**,
 Hook 内部做什么全部交给对应的作者决定。调用点从外到内:
 
-![Sandbox 复用下的 Hook 节奏](assets/sandbox-reuse-lanes.svg)
+| 层 / 步骤 | 调用点 | 紧邻的前后步 |
+|---|---|---|
+| 实验级 setup | `ExperimentDef.setup` | 第一个可派发 Attempt 之前；全部 Attempt 共用 |
+| Sandbox 创建 | `Sandbox.create` | 实验级 setup 之后，SandboxSpec setup 之前 |
+| 沙箱级 setup | `SandboxSpec.setup` 链 | 创建之后；变更分类账锚点之前 |
+| 变更分类账锚点 | `workspace.baseline` | SandboxSpec setup 之后；EvalDef setup 之前。锚点之后的写入才进入归因视图 |
+| eval 级 setup | `EvalDef.setup` | 锚点之后；Agent setup 之前 |
+| agent 级 setup | `SandboxAgent.setup` | EvalDef setup 之后；`test(t)` 之前 |
+| Eval 主体 | `test(t)` | 作者决定 send 与检查的顺序；结束后折叠 diff、评分并定稿 Verdict |
+| eval 级 teardown | `EvalDef.teardown` | Verdict 定稿后的第一段收尾 |
+| agent 级 teardown | `SandboxAgent.teardown` | EvalDef teardown 之后 |
+| 沙箱级 teardown | `SandboxSpec.teardown` 链 | Agent teardown 之后；Sandbox 销毁或留存之前 |
+| 实验级 teardown | `ExperimentDef.teardown` | 全部 Attempt 与 Sandbox 收尾之后；中断和强清退出也执行 |
+
+跨层收尾顺序固定为 `EvalDef.teardown → SandboxAgent.teardown → SandboxSpec.teardown`。
+这不是跨层 LIFO 声明；只有同一层内注册的多个 Hook 才按 setup 注册序、teardown 逆序执行。
+Sandbox 复用下多个实例怎样交错属于另一问题，见
+[复用 Sandbox 的并行与生命周期](feature/sandbox/reuse.md#完整生命周期)。
 
 四层 Hook 共用同一种形态:**成对的 `setup` / `teardown`,`setup` 不返回
 值**——写过 Vitest / Jest 的人带着 `beforeAll` / `afterAll` 的心智直接
@@ -422,13 +439,7 @@ interface InvocationShape {
   /** 本次运行实际生效的全局并发数(flag/env/config/sandbox 默认值解析后的结果);
    *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
   maxConcurrency: number;
-  /**
-   * 本次 Invocation 的 Run 身份锚点(ISO 时间戳),在调度任何 attempt 前确定。fresh
-   * `EvalResult.locator` 编码进去的 `snapshotStartedAt` 与 Artifacts writer 写进
-   * `run.json` 的 `startedAt` 共用同一个值——不同 experiment 在同一次 Invocation
-   * 内共享它也不会碰撞(locator 身份还含 experimentId)。省略只出现在测试/第三方手写
-   * `InvocationShape` 的直调场景。
-   */
+  /** 本次 Invocation 的展示时间锚点；不承担 Run 或 Attempt 身份。 */
   snapshotStartedAt?: string;
 }
 

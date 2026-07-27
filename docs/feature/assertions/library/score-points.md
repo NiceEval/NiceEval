@@ -1,14 +1,14 @@
 # 计分粒度：对比里一个 Eval 记几分
 
-一条 eval 怎么计分由它的**定义函数**声明，两种题型：**`defineEval` = 通过制**——整题折叠成一分，gate 硬、
+一条 eval 的**计分方式**由定义函数声明，两种题型：**`defineEval` = 通过制**——整题折叠成一分，gate 硬、
 soft 软；**`defineScoreEval` = 计分制**——题内用给分 API 叠加挣分，五步走完三步挣 3 分，rubric
 大题按分值给分。
 
 题型是定义期事实：发现期就可知、进 `EvalDescriptor`，不靠执行 `test()`
-推断——实验列表的主列形态、errored 时分数显示 `null` 还是不参与，都在题目一行代码没跑时就有答案。**一个
-experiment 选中的 eval 必须同型**：通过制实验读通过率、计分制实验读总分。混型选择是启动期配置错误，
-报错会列出两类 eval id 并给收窄建议。两类都要跑就写两个实验文件，报告并排两个实验组。
-experiment 不得改变计分语义——「怎么算分」是题目的契约，不是跑法的参数。
+推断——实验列表的主列形态、errored 时分数显示 `null` 还是不参与，都在题目一行代码没跑时就有答案。
+同一个 Experiment 可以选择两种题型：通过制 eval 进入通过率，计分制 eval 进入总分。
+两个读数分别聚合、并排展示，不把百分比与分值相加。Experiment 不得改变计分语义；
+「怎么算分」是题目的契约，不是跑法的参数。
 
 ## 通过制（`defineEval`，默认）：一个 eval 一分
 
@@ -36,7 +36,8 @@ experiment 不得改变计分语义——「怎么算分」是题目的契约，
 计分是**叠加制不是扣分制**：分从 0 往上挣、分值非负、给一次加一次，**不声明满分**。对比是相对的——同一条
 eval 的代码对每个 experiment 是同一把尺子，模型 A 挣 3 分、模型 B 挣 1 分，结论不需要分母；
 不存在「满分声明」，也就不需要守护声明与实际给分是否一致。「做了坏事」不用负分表达。
-要表达「到这一步不成立就别往下跑了」，写前置 `.gate()`；要给「没做坏事」计分，就写成正向检查点。
+要表达「到这一步不成立就别往下跑了」，写 `.gate().stopOnFailure()` 或值断言的 `t.require()`；
+要给「没做坏事」计分，就写成正向检查点。
 
 ```
 eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
@@ -55,30 +56,24 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 | 链的词 | 角色 | 落到哪个读数 | 挂了的后果 |
 |---|---|---|---|
 | `.points(n)` | 得分点 | 分数面：挣 `n × score` | 丢这 n 分，继续往下跑 |
-| `.points(n).gate(x?)` | 得分点兼前置 | 分数面 | 丢这 n 分 **+ 就地结束 `test()`** |
-| `.gate(x?)` | 纯前置 | 不进任何折叠读数 | 就地结束 `test()` |
+| `.points(n).gate(x?)` | 得分点兼硬要求 | 分数面 + 判定面 | 丢这 n 分，Attempt failed，继续执行 |
+| `.gate(x?)` | 硬要求 | 判定面 | Attempt failed，继续执行 |
+| `.gate(x?).stopOnFailure()` | 硬前置 | 判定面 | Attempt failed，并就地结束 `test()` |
 | 不链 | 观测 | 质量分（soft 均值） | 照记 failed（用 matcher 自带的线），不影响判定 |
 | `.atLeast(x)` | 观测（带通过线） | 质量分（soft 均值） | 低于 `x` 记 failed，不影响判定 |
 | `.soft()` | 观测（纯记录） | 质量分（soft 均值） | 无（不设线，永不 failed） |
 
 表里「挂了的后果」这一列怎样落到代码的每一行，逐行标注在
-[Severity 与 Verdict · 计分制里的 `.gate()`](../../verdict/architecture.md#计分制里的-gate前置中止)——
-前置的就地求值、matcher 上链的严重度为什么只贡献通过线，都在那一篇的判定面单源里。
+[Severity 与 Verdict · 控制流与严重度正交](../../verdict/architecture.md#控制流与严重度正交)。
 分数面这边配套的语义：
 
-- **`.points(n)` 与 severity 互斥**：链过 `.points()` 的句柄上只剩 `.gate()` 与 `.optional()`，`.soft()` /
-  `.atLeast()` 在类型层不存在（形状见
-  [Eval · defineScoreEval](../../eval/README.md#definescoreeval计分制题型)）。得分点已经用分数表达了它的分量：
-  再让它进质量分是同一条证据被读两遍，再给它设通过线是拿两个标准评同一件事。
+- **分数与严重度正交**：`.points(n)` 决定挣分，`.gate()` / `.atLeast()` / `.soft()` 决定判定面。
+  带 points 的断言不进入质量分，避免同一证据重复计入两个连续读数。
 - **观测的通过线只改那一行的显示**：judge 这类默认没有线的打分断言靠 `.atLeast(x)`
   把「装好了但质量差」显示成失败行；0/1 断言不需要它——matcher 自带的线在计分制照常生效，
   没做到的检查点如实记 `failed` 挣 0 分。
-- **计分制不接受 `--strict`**：这个旋钮的全部作用是「把带线 soft 翻成 gate」，而计分制的判定面只认前置中止。
-  选中的 eval 全是计分制时传它是**启动期用法错误**（与混型选择同一风格：报错列出这个 flag 对哪些 eval 无效、
-  建议去掉），不静默接受一个什么都不做的 flag。
-- **计分制的 `t` 上没有 `t.require`**：`t.check(value, matcher).gate()` 覆盖 `t.require(value, matcher)`
-  的全部能力，还能同时挣分，前置在计分制里只有 `.gate()` 一种写法。`t.require`
-  仍是通过制的前置词（[值断言](./value-assertions.md#check-与-require)）。
+- **`--strict` 两种题型同义**：带线 soft 升级为 gate；它不添加 `.stopOnFailure()`。
+- **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言糖衣。
 - **中止挣 0，基础设施得 null，严格分开**：前置挂了强制结束，后面的给分代码不执行、
   那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、judge 没 key 是 `errored`，整题分数为
   `null`、不折成 0——评不了不是 agent 差。带 `.points` 的断言 `unavailable`（仅 `.optional()` 情形，
@@ -98,10 +93,11 @@ export default defineScoreEval({
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
     // 纯前置:挂了就地结束,后面自然 0 分——存在性检查用 fileExists(布尔) + isTrue
-    await t.check(await t.sandbox.fileExists("db-gpt/README.md"), isTrue("db-gpt cloned")).gate();
+    await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue("db-gpt cloned"));
     t.sandbox.fileChanged("db-gpt/.env").points(1);
     // 值 1 分,且没装依赖后面全白跑——得分点兼前置
-    await t.calledTool("shell", { input: { command: /pip install/ } }).points(1).gate();
+    await t.calledTool("shell", { input: { command: /pip install/ } })
+      .points(1).gate().stopOnFailure();
     // ……每个检查点 1 分,互相独立
   },
 });
@@ -127,29 +123,29 @@ export default defineScoreEval({
 
 - **判定面（verdict，两种题型都有）**：通过制里由 severity 决定，severity 是折叠树的**边属性**：gate
   边一票否决；`atLeast` 边挂了记 failed、默认不传播、`--strict` 下翻成 gate 边；`soft()` 边永不传播。
-  `--strict` 是作用于所有层的同一个旋钮，组层、eval 层不另设规则。计分制里判定面只由前置中止决定，
-  丢分不向上传播——它回答「这次的分数完不完整」，「做到几成」由分数面回答。
+  `--strict` 是作用于所有层和两种题型的同一个旋钮，组层、eval 层不另设规则。计分制里的 points
+  只进入分数面；只有 gate 进入判定面。
 - **分数面（挣分，计分制才有）**：由给分项构成，逐层求和；组的分数读数 = 组内给分项挣分之和（「正确性挣 45
   分」）。
-- **质量分（tracked，两种题型都有）**：soft 断言（`.atLeast(x)` / `.soft()`）
-  分数的**无权均值**（组内直接子项均值，逐层同构），eve 式 tracked-only 读数。gate 不进质量分——10
-  条全过的 gate 加一个 0.6 的 judge 均值 0.96，质量差被淹没；计分制里带 `.points()`
-  的断言同样不进质量分（它属于分数面），不链词或链 `.soft()` 的观测断言照常进。选无权均值：对 0/1 型 soft
-  断言，均值就是过线比例（过线比例是均值的退化情形）；对打分断言保留连续信息；
-  引入默认权重则是替作者发明没有原则化取值的参数——**权重只在作者显式给分时存在**。
+- **质量分（tracked，两种题型都有）**：soft 叶子断言（`.atLeast(x)` / `.soft()`）分数的无权均值。
+  组质量分取该组后代叶子；eval 质量分取该 eval 全部 soft 叶子，不对组均值再次求均值。改变分组结构
+  因此不会改变 eval 质量分。Experiment 再对各 eval 的质量分取均值，每道 eval 一票。
+
+gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值抬到 0.96，掩盖质量差。
+带 `.points()` 的断言属于分数面，同样不进质量分；普通观测断言照常进入。对 0/1 型 soft 断言，
+无权均值就是过线比例；对打分断言则保留连续信息。默认权重没有原则化取值，因此权重只在作者显式
+给分时存在。
 
 通用规则：**`unavailable` 在每一层都是 `null` 传播**、不折成 0，无 soft 内容或子项全 `null` 的节点质量分为
 `null`（[Measure 的缺数据语义](../../reports/library/measures.md)）；**无组断言与无组给分归属隐式根组**。
 
-## 横截面聚合：同型实验，各读各的
+## 横截面聚合：两种题型各读各的
 
 - **通过制实验**：主读数是**通过率**（Σ passed / Σ 题数，每题一票），回答「它做对了几道题」。
 - **计分制实验**：主读数是**总分**（Σ 各 eval 挣分），回答「它一共挣了多少分」。
   分值多的题分量就大——这是作者用分值声明的题目分量；同一实验内全部题都在同一套分值语境里，总分才可比。
-- **混型选择是启动期配置错误**。「过了 31/40 道」和「挣了 142 分」是两种不能相加的读数，一个实验只回答一种；
-  报错信息列出两类 eval id，建议按 tags / 前缀 / `scoring` 字段收窄，或拆成两个实验文件。
-  `EvalDescriptor.scoring`（`"pass" | "points"`）供 `evals` 谓词过滤（见 [Experiments ·
-  defineExperiment](../../experiments/README.md#defineexperiment-的形状)）。
+- **混型 Experiment 同时给出两个读数**。「过了 31/40 道」和「挣了 142 分」不能相加，
+  因此报告按 `EvalDescriptor.scoring` 拆开分母与聚合，缺少某一题型时不摆空列。
 
 ## 得分点 = 组：对比读取的下钻粒度
 
@@ -192,7 +188,7 @@ export default defineScoreEval({
    eval（[测试集扇出](../../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
 2. 同一道题内，「做对」是二值的 → `defineEval`：一票否决写 gate，观测指标写 soft。
 3. 同一道题内，「做到几成」有意义（长链条、rubric 大题）→ `defineScoreEval`：检查点 `.points(n)`，
-   自算分数 `t.score`，前置条件 `.gate()`。
+   自算分数 `t.score`，硬要求 `.gate()`，需要中止时再链 `.stopOnFailure()`。
 
 各用例的题型对照见[用例目录](../../eval/use-case/README.md#通过制还是计分制)。
 

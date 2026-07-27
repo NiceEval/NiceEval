@@ -8,7 +8,7 @@
 |---|---|---|
 | 收发消息 | 返回真实 `status`、`data` 与空事件数组 | 单轮发送、结构化输出、`succeeded` |
 | 标准事件流 | 完整转换消息、工具、结果与 usage | 消息、工具和事件断言 |
-| 多轮会话 | 使用 `ctx.session.history()` 或 `id` / `capture()` | 连续发送和 `newSession()` |
+| 多轮会话 | 使用 typed session slot 或 `id` / `capture()` | 连续发送和 `newSession()` |
 | HITL | waiting、`input.requested`、按 request ID 恢复 | `parked`、`requireInputRequest`、`respond` |
 | tracing | exporter 配置与 span mapper | trace artifact 和 view 瀑布图 |
 

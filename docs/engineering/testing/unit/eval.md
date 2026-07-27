@@ -99,7 +99,8 @@ guard。
   形态都要有区分力场景；adapter 分类器的覆盖、自定义 reason 原样透出、返回 `undefined` 与抛错同样按
   `undefined`
   回落（继续问后续通道，不掩盖原始失败）；受理证据门对带 agent 产出事件的失败 Turn 的否决——文本像限流也不重试；重试只包
-  `agent.send`、会话记账不重放、被吸收尝试的事件不落账；send 级与 attempt 级两层预算各自封顶——多轮 send 里 send 级预算重置而 attempt 级预算持续扣减必须有区分力场景；耗尽后错误码不变与 message 重试摘要注明耗尽层（未重试的失败无后缀）；退避可被中断干净打断。
+  `agent.send`、会话记账不重放；被吸收尝试不进入逻辑事件流，但按顺序完整写入
+  `retryAttempts`（失败形态、分类、events、usage、耗时），顶层 usage / cost 包含这些物理尝试；send 级与 attempt 级两层预算各自封顶——多轮 send 里 send 级预算重置而 attempt 级预算持续扣减必须有区分力场景；耗尽后错误码不变与 message 重试摘要注明耗尽层（未重试的失败无后缀）；退避可被中断干净打断。
 - **失败分类链的两轴扩展**：抛出点糖衣类经 `failureClassOf` 结构识别——含 `cause`
   链穿透（被包装再抛不丢声明）与不依赖类身份（结构相同的手工对象同样命中）；turn 链的决议序（抛出点 → 实验分类器 →
   adapter → 兜底，先非 `undefined`

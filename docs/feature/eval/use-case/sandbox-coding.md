@@ -80,4 +80,5 @@ await t.sandbox.downloadDirectory("./out/attempt-final", "src");
 - [Sandbox · 文件与命令](../../sandbox/library/operations.md) —— IO 与命令 API 的单源契约。
 - [Sandbox · 断言结果](../../sandbox/library/asserting-results.md) —— diff 视图与延迟断言。
 - [Sandbox · 变更归因](../../sandbox/architecture.md#变更归因send-窗口与分类账) —— send 窗口与分类账契约。
-- [计分制](rubric-scoring.md) —— 长链条要部分分：检查点 `.points(n)` 叠加挣分，前置 `.gate()` 中止。
+- [计分制](rubric-scoring.md) —— 长链条要部分分：检查点 `.points(n)` 叠加挣分，前置用
+  `t.require()` 或 `.stopOnFailure()`。

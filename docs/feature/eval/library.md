@@ -31,7 +31,7 @@ export default defineEval({
 | `t.group` | 分组断言：报告区块，组名同时是对比的得分点维度 | [Assertions · 值断言 · 分组](../assertions/library/value-assertions.md#分组) | [过程与成本](use-case/process-and-cost.md) |
 | `.points(n)` / `t.score(label, n)` | 计分制给分（仅 `defineScoreEval` 的 `t`）：断言条件给分 / 直接累加给分 | [Assertions · 计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明) | [计分制](use-case/rubric-scoring.md) |
 | `t.check` / `t.require` + `niceeval/expect` matcher | 值断言：断某个具体值（`t.require` 是通过制的前置词，计分制的 `t` 上没有） | [Assertions · 值断言](../assertions/library/value-assertions.md) | [单轮](use-case/first-single-turn.md) · [沙箱](use-case/sandbox-coding.md) |
-| `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` | 改一条断言的严重度 / 通过线 / 缺席策略；计分制的 `.gate(x?)` 是前置中止、`.atLeast(x)` 只设观测通过线 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
+| `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` / `.stopOnFailure()` | 严重度、通过线、缺席策略与控制流；两种题型同义 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
 | `setup` / `teardown` / `t.progress` / `t.diagnostic` / `t.skip` | 任务 Fixture 与运行反馈 | [README](README.md) · [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
@@ -44,10 +44,11 @@ export default defineEval({
 
 共享同一套逻辑的一批 case，从同一文件默认导出**数组**或 **keyed record**，不复制薄 wrapper 文件：
 
-- **数组**：位置就是身份。按位置生成零填充 4 位的稳定 id：`evals/sql.eval.ts` 导出数组 → `sql/0000`、`sql/0001`……
+- **数组**：位置就是身份。按位置生成零填充 4 位的 id：`evals/sql.eval.ts` 导出数组 →
+  `sql/0000`、`sql/0001`……；在中间插入、删除或重排会改变后续 id，并使对应缓存失效。
 - **Keyed record**：业务 key 就是身份。`Record<string, EvalDef>` 的 key 原样接到文件 id 后：`swelancer.eval.ts` 的 key `15193` → `swelancer/15193`。key 必须是一个非空路径片段——不含 `/`、`\\`，不是 `.` / `..`，不含控制字符。发现结果按 key 字典序排列，数据源换行或构造顺序变化不影响运行与展示顺序。空 record 合法，表示这份测试集当前没有 case。
 
-选择规则：位置本身有意义且稳定用数组；外部系统已给出稳定身份用 keyed record。两种形状共享同一份 eval 源码捕获，区别只在 id 的最后一段。数据加载（`loadYaml` / `loadJson`）与完整写法见[用例篇](use-case/dataset-fanout.md)。
+选择规则：固定、只追加且位置本身有意义的数据才用数组；会插入、删除、重排，或已有业务身份的数据默认用 keyed record。两种形状共享同一份 eval 源码捕获，区别只在 id 的最后一段。数据加载（`loadYaml` / `loadJson`）与完整写法见[用例篇](use-case/dataset-fanout.md)。
 
 ## 命名与组织约定
 

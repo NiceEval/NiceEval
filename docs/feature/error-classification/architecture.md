@@ -83,7 +83,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 2. **实验分类器**(可选):识别以协议错误形态浮出的共享基建死因(对自家隧道 host 的拒连)。排在 adapter 之前:它按自家坐标(host、路径)过滤,特异性高于协议通用形状;两者同时认领的失败恰是 scope 必须赢的场景——adapter 只有时间轴答案,先问它会把实验级死因留在 `"attempt"` 档,止损闸永远落不下。
 3. **adapter 分类器**(可选):最懂自家协议的错误形状,返回 `FailureClass` 或 `undefined` 回落。
 4. **保守兜底分类器**:对失败文本做正则匹配——限流关键字、明示 "retry later" → `{ retryable: true, reason: "rate_limit" }`;连接建立层错误 → `{ retryable: true, reason: "network" }`;其余 → `{ retryable: false }`。兜底永不给出超出 `"attempt"` 的 scope:框架无法从文案证明兄弟必死。失败文本与报错文案同源(`thrown` 取错误链 message 串接,`turn-failed` 取 `turnErrorText(turn)`)——同一段文本既给人读也给分类器看,不出现「报错说 A、分类看 B」。
-5. **受理证据门**(执行体的否决权,只裁时间轴):失败 Turn 的 `events` 里已出现任何 agent 侧产出(message / thinking / `action.called` / `action.result`)即证明 agent 已受理,`retryable` 强制降为 `false`——文本再像限流也不重发。这道门把「只有能证明未受理才重试」从判据文字变成机器不变量,不信任何分类器。它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。`thrown` 形态没有事件可查,由前四道的判据独自把关。
+5. **受理证据门**(执行体的否决权,只裁时间轴):失败 Turn 的 `events` 里已出现任何 agent 侧产出(message / thinking / `operation.started` / `operation.finished`)即证明 agent 已受理,`retryable` 强制降为 `false`——文本再像限流也不重发。这道门把「只有能证明未受理才重试」从判据文字变成机器不变量,不信任何分类器。它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。`thrown` 形态没有事件可查,由前四道的判据独自把关。
 
 **生命周期阶段失败**(sandbox Hook、`EvalDef.setup`、`test(t)` 体内、per-attempt teardown),三道:
 
@@ -104,7 +104,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 3. 失败(抛出或 `failed` Turn)→ 走分类链。`retryable: false`,或两层重试预算任一耗尽 → 循环结束,失败携带其 `FailureClass` 向下浮出。
 4. `retryable: true` → 退避睡眠 → 回到 2,原样重发同一个 `TurnInput`。
 
-`scope` 不影响重试行为:执行体只读时间轴。被吸收的失败尝试不留痕:失败 Turn 的事件不进会话事件流、不进结果,只有最终一次尝试的 Turn 落账——重试后成功的 attempt 与一次成功的 send 在结果里不可区分;被吸收的失败也永远到不了止损闸([组合规则](README.md#分类))。
+`scope` 不影响重试行为:执行体只读时间轴。被吸收的失败不进入逻辑会话事件流,避免重发产生的半截消息参与行为断言；但每次物理尝试都追加到 Attempt 的 `retryAttempts`,保留失败形态、分类、events、usage 与耗时。顶层 usage / cost 汇总所有物理尝试，最终成功不会抹掉前面已经花掉的 token 与钱。被吸收的失败仍不到止损闸；它是可观测证据，不是终局失败([组合规则](README.md#分类))。
 
 ### 退避与槽位
 
