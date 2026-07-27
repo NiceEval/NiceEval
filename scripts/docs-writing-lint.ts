@@ -186,6 +186,13 @@ function usageCorpus(): string {
     .join("\n");
 }
 
+/** 判「图里这个词有没有出处」的语料:正文加概念表——在概念表立过的词就是有出处。 */
+function termCorpus(): string {
+  return USAGE_DIRS.flatMap((dir) => walkDocs(dir, [".md", ".mdx"]))
+    .map((file) => readFileSync(join(ROOT, file), "utf8"))
+    .join("\n");
+}
+
 /** 立了词、正文一次没用过:要么删掉这一行,要么正文该有人用它。 */
 export function deadConceptTerms(terms: ConceptTerm[]): string[] {
   const corpus = usageCorpus();
@@ -323,13 +330,19 @@ function countTermHits(prose: string, re: RegExp, allowIn?: string[]): number {
   return count;
 }
 
+/** 手写禁词 + 概念表首选裁决自动生成的那批,正文与图共用同一份。 */
+function bannedMatchers(rules: WritingRules): Array<BannedTerm & { re: RegExp }> {
+  return [...rules.bannedTerms, ...synonymBans(parseConcepts())].map((t) => ({
+    ...t,
+    re: termMatcher(t.term),
+  }));
+}
+
 export function lintDocsWriting(): LintReport {
   const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
   const baseline: Baseline = JSON.parse(readFileSync(join(ROOT, BASELINE_FILE), "utf8"));
-  // 手写禁词 + 概念表首选裁决自动生成的那批,走同一条计数与台账路径。
   const concepts = parseConcepts();
-  const banned = [...rules.bannedTerms, ...synonymBans(concepts)];
-  const matchers = banned.map((t) => ({ ...t, re: termMatcher(t.term) }));
+  const matchers = bannedMatchers(rules);
 
   const hits: Hit[] = [];
   const deadTerms = deadConceptTerms(concepts);
@@ -443,6 +456,101 @@ export function lintDocsWriting(): LintReport {
   }
 
   return { hits, actual, regressions, regressionFiles, deadTerms };
+}
+
+/** 图里的一个文本节点:`<text>` / `<tspan>` 拼平之后的一句,连同它挂的 class。 */
+export interface SvgText {
+  line: number;
+  classes: string[];
+  text: string;
+}
+
+/**
+ * SVG 里承载「名字」的槽位(见 docs/SVG-DESIGN.md 的 class 表:盒标题、泳道名)。
+ * 只有这一格按词判。`.title` 是一句话、`.note` 与无 class 的 `text` 是说明句,
+ * 它们本来就是为这张图现写的句子,拿「正文里出现过」去量会把每一句都判红。
+ */
+const TERM_SLOT = "label";
+
+/** 图里的中文词按连续汉字段切——中文标点、空格、英文标识符都是边界。 */
+const HAN_RUN = /[㐀-䶿一-鿿]+/g;
+
+const XML_ENTITIES: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+};
+
+/**
+ * 取出图里全部可读文本。`<tspan>` 拼进父节点:一行里用 tspan 分色的
+ * 「passed / failed」是同一句话,拆开会把词切断。`<title>` / `<desc>` 也算——
+ * 读屏用户只拿得到它们,禁用写法藏在那里同样要报。
+ */
+export function svgTexts(svg: string): SvgText[] {
+  const texts: SvgText[] = [];
+  for (const match of svg.matchAll(/<(text|title|desc)\b([^>]*)>([\s\S]*?)<\/\1>/g)) {
+    const [, tag, attributes, inner] = match;
+    const classes = (/class="([^"]*)"/.exec(attributes)?.[1] ?? "").split(/\s+/).filter(Boolean);
+    const text = inner
+      // 不带定位的 tspan 只是同一行里换个颜色,直接拼:「已<tspan>受理</tspan>」是一个词,
+      // 中间塞个空格两个半截都不成词,查不到出处就成了假命中。带 x / dy 的 tspan 是
+      // 另起一行或移位,那才是词的边界。
+      .replace(/<tspan\b(?![^>]*\s(?:x|y|dx|dy)=)[^>]*>|<\/tspan>/g, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => XML_ENTITIES[e])
+      .replace(/\s+/g, " ")
+      .trim();
+    texts.push({
+      line: svg.slice(0, match.index).split("\n").length,
+      classes: tag === "text" ? classes : [tag],
+      text,
+    });
+  }
+  return texts;
+}
+
+/**
+ * 图里的用语检查。两条,都不设台账——图是新的,一次命中都不许有:
+ *
+ * 1. **不立新词。** `.label` 里的每个中文词都要在 `docs/` 或 `docs-site/` 正文
+ *    (含概念表)里出现过。图最容易长出只此一处的自造词:画的人为了摆得下
+ *    造个简称,读的人在正文里查不到它,而正文与图从此各说各话。
+ * 2. **禁用写法照样管。** 正文那份禁词库与概念表的首选裁决,对图里的每个字同样生效。
+ */
+export function lintSvgTerms(): Hit[] {
+  const rules: WritingRules = JSON.parse(readFileSync(join(ROOT, RULES_FILE), "utf8"));
+  const matchers = bannedMatchers(rules);
+  const corpus = termCorpus();
+  const hits: Hit[] = [];
+
+  for (const file of walkDocs("docs", [".svg"])) {
+    for (const node of svgTexts(readFileSync(join(ROOT, file), "utf8"))) {
+      for (const term of matchers) {
+        if (countTermHits(node.text, term.re, term.allowIn) === 0) continue;
+        hits.push({
+          file,
+          line: node.line,
+          rule: term.term,
+          message: `图里的禁用写法「${term.term}」——改用${term.use};${term.why}`,
+        });
+      }
+      if (!node.classes.includes(TERM_SLOT)) continue;
+      for (const run of node.text.match(HAN_RUN) ?? []) {
+        if (corpus.includes(run)) continue;
+        hits.push({
+          file,
+          line: node.line,
+          rule: "svgTerm",
+          message:
+            `图里的「${run}」在 docs/ 与 docs-site/ 正文里一次没出现——` +
+            `图不立新词:改用正文已有的说法,或者这个词该先在正文里立起来`,
+        });
+      }
+    }
+  }
+  return hits;
 }
 
 /**

@@ -12,7 +12,7 @@ niceeval 是一个 TypeScript evals 库。CLI 入口在 `bin/niceeval.mjs`，运
 - **把设计行为定位到源码**（仅实现与核对阶段用；讨论设计时现状以 docs 声明为准，docs 未声明视为未定稿、先补契约，不从源码反推） → `docs/source-map.md`。
 - **动手前查踩坑** → `memory/INDEX.md` 对应分区，命中一行才读正文（见「记录问题的规范」）。
 - **改 `docs-site/`** → 必须先读 `docs-site/AGENTS.md`（公开站的写作指南、术语表和校验规则）。
-- **画图或改任何 SVG** → 必须先读 `docs/SVG-DESIGN.md`（底色、语义色、间距网格与共用样式）。样式整段抄 `docs/assets/_style.css`，不在单张图里发明 hex，`pnpm test:docs` 会逐字比对。
+- **画图或改任何 SVG** → 必须先读 `docs/SVG-DESIGN.md`（底色、语义色、间距网格与共用样式）。样式整段抄 `docs/assets/_style.css`，不在单张图里发明 hex；盒标题与泳道名只能用正文已有的词，不在图里造简称。两条都由 `pnpm test:docs` 逐张图比对。
 
 ## 开发工作流
 ### 设计Agent
@@ -57,7 +57,7 @@ niceeval 是 beta 软件，DX 可以随便改。做 API / CLI / 契约设计决�
 | 改动 | 验证 | 收尾（同步义务） |
 | --- | --- | --- |
 | `src/` / `bin/` | `pnpm run typecheck`；改 CLI 行为再用 `pnpm run niceeval -- <命令>` 冒烟 | 公开面（导出类型/TSDoc/flag 表）变了：跑 `pnpm docs:reference` 重新生成参考页区块。参考页文案单源在源码紧邻注释——接口/函数看 TSDoc，CLI flag 说明写在 `src/cli.ts` `FLAG_OPTIONS` 各项的 JSDoc（缺注释生成器报错），生成脚本本身不承载文案（`{/* GENERATED */}` 区块内不要手改，`pnpm test:docs-site` 的漂移守护会拦）；新增/改名 flag 顺手核对 `src/i18n/` 两份 `--help` 速查（手工体裁，只点名常用 flag，不逐条生成）；可观察行为变了（flag、断言语义、结果格式、导出面）：grep `docs/` 与 `docs-site/` 同步声明，或记为明确的阶段性差异；修了 bug 补 memory 台账 |
-| `docs/` 或根 README | `pnpm test:docs`（`test/docs/docs-consistency.test.ts` 查索引覆盖与链接真实性，`test/docs/docs-writing.test.ts` 查句长、段长、行宽与禁用写法，逐行该怎么改直接打在断言里；台账收紧跑 `pnpm test:docs -u`） | 新文档在 `docs/README.md` 挂一行索引；用词按 `docs/concepts.md` 立词，新禁用写法加进 `docs/writing-rules.json`（带 `use` / `why`）；`docs/writing-baseline.json` 只许变小 |
+| `docs/` 或根 README | `pnpm test:docs`（`test/docs/docs-consistency.test.ts` 查索引覆盖与链接真实性，`test/docs/docs-writing.test.ts` 查句长、段长、行宽、禁用写法与图里的用语，逐行该怎么改直接打在断言里；台账收紧跑 `pnpm test:docs -u`） | 新文档在 `docs/README.md` 挂一行索引；用词按 `docs/concepts.md` 立词，新禁用写法加进 `docs/writing-rules.json`（带 `use` / `why`）；`docs/writing-baseline.json` 只许变小 |
 | `docs-site/` | `pnpm test:docs-site`（Vitest 守护 + `docs:validate` + `docs:links`，mint 那两步需 Node 22，见下） | 中文先定稿；英文入口按中文和当前代码核对后同步；`docs-site/zh` 每页 frontmatter 必须有任务视角的 title/description（包根 `INDEX.md` 由 `prepare` 打包时据此生成，缺了 `pnpm test:docs-site` 与发版都会红灯） |
 | `examples/` 各 tier | `pnpm test`（`test/unit/example-tiers.test.ts` 查落后、冲突标记与 verbatim 铁律）；要同步跑 `pnpm tiers:sync`（动之前先读 memory 的 tier-sync 条目） | 文档 / README 链接示例必须指向真实目录 |
 | `site/` | `pnpm run site:build` | — |

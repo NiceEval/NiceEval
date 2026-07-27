@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   formatRegressionHits,
   lintDocsWriting,
+  lintSvgTerms,
   parseConcepts,
   proseBlocks,
   proseText,
   serializeBaseline,
   splitSentences,
+  svgTexts,
   synonymBans,
   validateRules,
 } from "../../scripts/docs-writing-lint.js";
@@ -112,5 +114,35 @@ describe("docs 可读性守护", () => {
     expect(proseText("见 [运行器](feature/runner/README.md) 的 `--concurrency`。")).toBe(
       "见 运行器 的 --concurrency。",
     );
+  });
+});
+
+// 图和正文各说各话是这么开始的:画的人为了摆得下造个简称,读的人在正文里查不到它。
+// 规矩写在 docs/SVG-DESIGN.md「用语:图里不立新词」,没有台账——一次命中都不许有。
+describe("docs/ 手绘 SVG 的用语", () => {
+  it("盒标题与泳道名用的词在正文里都有出处,禁用写法也不许藏进图里", () => {
+    const hits = lintSvgTerms();
+    expect(hits, hits.map((h) => `${h.file}:${h.line}  ${h.message}`).join("\n")).toEqual([]);
+  });
+
+  it("tspan 拼进父节点,不按 tspan 切词", () => {
+    // 一行里用 tspan 分色的「已<tspan>受理</tspan>」是同一个词,拆开两边都不成词,
+    // 于是两个半截都在正文里查不到——按节点切会把这种图逐个判红。
+    const [node] = svgTexts(`<text class="label">已<tspan class="good">受理</tspan></text>`);
+    expect(node.text).toBe("已受理");
+    expect(node.classes).toEqual(["label"]);
+  });
+
+  it("说明句与图标题不按词判,只有盒标题与泳道名判", () => {
+    // 这两格是为这张图现写的句子,拿「正文里出现过」去量,每一句都会红。
+    const nodes = svgTexts(
+      [
+        `<text x="32" y="48" class="title">两条决策轴</text>`,
+        `<text x="32" y="88">失败之后如何取舍</text>`,
+        `<text x="32" y="120" class="label mono">agent.send</text>`,
+      ].join("\n"),
+    );
+    expect(nodes.map((n) => n.classes)).toEqual([["title"], [], ["label", "mono"]]);
+    expect(nodes.map((n) => n.line)).toEqual([1, 2, 3]);
   });
 });
