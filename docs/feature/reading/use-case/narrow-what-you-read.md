@@ -34,7 +34,7 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 里留下 `missingEvalIds`,在实验列表上呈现为占位行。所以一屏上的通过率永远配着一个说得清的分母,
 不会出现「筛着筛着只剩一道题,分数还是 100%」。
 
-跨历史拼题另有前提:`latestKnown` 只把 `configHash` 相同的 Run 拼进来。改过 model 或 flags 之后
+跨历史拼题另有前提:`currentSample` 只把 `configHash` 相同的 Run 拼进来。改过 model 或 flags 之后
 只补跑了一部分题,旧配置那些题不冒充新配置的水位,直接进缺口。
 
 ## 两个 `--exp` 是对照,不是并集
@@ -51,7 +51,7 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 
 | 目的 | 用什么 |
 |---|---|
-| 临时看一眼 | `sample.pipe(dropExperiments(…) / filterBy(…))`,在脚本或报告文件里 |
+| 临时看一眼 | `sample.pipe(dropExperiments(…) / filterAttempts(…))`,在脚本或报告文件里 |
 | 构一份要发出去、要签进仓库的数据 | [`publish()`](../../record/library.md#发布publish) 构发布根,再让宿主读它 |
 
 不给 CLI 加谓词语法,理由在[跨层不变量](../README.md#跨三层的不变量)第四条:自由度必须是闭集,

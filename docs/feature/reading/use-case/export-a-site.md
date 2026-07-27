@@ -30,7 +30,7 @@ niceeval view --exp compare/codex --out site
 
 ```ts
 const record = await openRecord(".niceeval");
-await publish(latestRuns(record), "site-data/run", {
+await publish(latestRunSample(record), "site-data/run", {
   artifacts: ["commands", "sources", "events", "trace"],   // 瘦身:不带 diff
 });
 ```

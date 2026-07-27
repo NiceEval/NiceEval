@@ -37,16 +37,16 @@ interface RunSpec {
 
 ## 观察面
 
-- **选择面**：`mode`、`attempts`（已物化的口径结果）、`runs`（真实来源集合）。
+- **选择面**：`mode`、`fresh`、`attempts`（已物化的口径结果）、`runs`（真实来源集合）。
 - **覆盖面**：`coverage[].knownEvalIds` / `missingEvalIds`。
 - **警告面**：`warnings[].kind` 与各自的结构化字段、`command` 有无。
 - **身份保持**：每条选中 attempt 的 `ref` 与 locator 仍指向原来源，不被选择过程改写。
 
 ## 覆盖规范
 
-- **`latestRuns`**：每个 Experiment 只取最新一次 Run。不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
+- **`latestRunSample`**：每个 Experiment 只取最新一次 Run。不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
   该 Run 没跑的 Eval 进 `coverage.missingEvalIds`，不从旧 Run 补。
-- **`latestKnown`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准
+- **`currentSample`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准
   不等的旧 Run 不贡献，该 Eval 留在缺口里；`runs` 保留全部真实来源，同一 Experiment 可以有多个；
   不合成报告专用 Run。fixture 必须让同一 Experiment 同时有两个存活来源，且其中一个 `configHash`
   不同——「拼了不该拼的」与「该拼的没拼」是两个方向的失败，都要有 case 抓。
@@ -59,14 +59,15 @@ interface RunSpec {
   attempt 都属于历史执行。`fresh: true` 在两个口径下都排除历史执行，被排除的 Eval 进覆盖缺口。
   fixture 同时含携带条目与跨 Run 拼入条目，使「只排携带」「只排旧来源」「两者都排」三种实现得到不同
   答案。时效不产生 warning。
-- **转换算子**：`pipe` 返回新 Sample、不改原样本（原样本的四个面逐字段不变）；每个算子后
-  `runs` 移除已无 attempt 贡献的来源、`coverage` 用**原始 `knownEvalIds`** 重算 `missingEvalIds`
-  （分母不随删减缩水）、`warnings` 按真实 Run 来源修剪且非实验作用域的 kind 保留。算子清单是闭集：
-  `filterBy` / `onlyExperiments` / `dropExperiments` / `onlyEvals` / `dropEvals` / `freshOnly`
+- **转换算子**：`pipe` 返回新 Sample，不改原样本；原样本的四个面逐字段不变。每个算子都移除已无
+  attempt 贡献的 Run，并用**原始 `knownEvalIds`** 重算 `missingEvalIds`，分母不随删减缩水。
+  `warnings` 按真实 Run 来源修剪，非实验作用域的 kind 保留。算子清单是闭集：
+  `filterAttempts` / `onlyExperiments` / `dropExperiments` / `onlyEvals` / `dropEvals` / `onlyFreshAttempts`
   各有一条；多算子串联的顺序无关性只在可交换的组合上断言，不假设全部可交换。
 - **去重**：身份键 `(experimentId, evalId, attempt, startedAt)`，重复取最新 Run 里的那份且 `ref`
   落在最新落盘上；`startedAt` 缺失时宁可不去重也不误删并出 `missing-startedAt` 警告。两个选择器都
-  已内置这条——`sample.attempts` 拿到手即去重后；`dedupeAttempts` 直调与经选择器走到的结果同值。
+  已内置这条——`sample.attempts` 拿到手即去重后。去重是选择器内部不变量，不为内部 helper 单独写
+  公开 API 测试。
 - **警告全集**：`unfinished-run`、`dangling-evidence`、`unreadable-run`、`missing-startedAt`
   四个 kind 各有一条，断言 `kind`、结构化字段齐全、`message` 以下一步收尾、该带 `command` 的带且
   已替换真实 id。`missing-startedAt` 不透出到组件数据。未收尾 Run 不进 `unreadable`——它的 attempt

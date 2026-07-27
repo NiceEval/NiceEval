@@ -173,7 +173,7 @@
     src/results/writer.ts   createWriter        ← 第三方 harness 写进来
     src/results/copy.ts     publish             → 发布出去
   │
-  │  latestKnown() / latestRuns()
+  │  currentSample() / latestRunSample()
   ▼
 ②  src/results/select.ts    selectLatest / selectLatestPerEval / freshEvals
                             filter / dedupeAttempts / unreadableSnapshotWarnings
@@ -195,7 +195,7 @@
 |---|---|
 | `openRecord`:实验/结果 Run/eval 分层、版本分流(skipped 三种原因)、懒加载(attempt 目录→artifactBase 携带条目回退) | `src/results/open.ts` |
 | 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/results/format.ts` |
-| `latestRuns(record)`(= `selectLatest`,每实验取最新一次 Run + 范围内 `SampleWarning` + `SampleCoverage`,kind 全集三种:unfinished-run / missing-startedAt / unreadable-run,见[警告 kind 全集](feature/sample/library.md#警告-kind-全集);Run 本身是 `exp.snapshots` 里的真实条目,`filter()` 按 Run 删减能正确同步修剪 attempts/coverage/warnings)/ `latestKnown(record)`(= `selectLatestPerEval`,目标契约是现刻水位投影:对每个 experiment × eval 跨该实验全部历史 Run 取最新判定并物化 `Sample.attempts`,`Sample.snapshots` 保留贡献数据的真实 Run 实体;当前实现与该目标不符,见[已知差异](#与设计文档的已知差异实现取舍)「`current()` 仍合成报告用 Run」)/ 两者都接受 `fresh?: boolean`(排除历史执行 attempt,`freshEvals`/`withFreshEvals` 实现,被排除的题进 `coverage.missingEvalIds`)/ `unreadableSnapshotWarnings`(扫描不可读 Run——incompatible / malformed / incomplete——产出 `unreadable-run` warning,接线进 `selectLatest` 与 `selectLatestPerEval`;类型在 `src/results/types.ts`)/ `Sample.filter`(`makeScope` 内的闭包,按 Run 删减重新 flatten `attempts`、按 experimentId 存在性修剪 `coverage`/`warnings`;对 `current()` 产出的 Sample 见上述已知差异)/ `dedupeAttempts`(身份键去重;缺 `startedAt` 的身份键不去重,记 `missing-startedAt` 警告;当前未在 `selectLatestPerEval`/`selectLatest` 内部调用)/ `ResultScope`(`{ experiment?, patterns?, fresh? }` 范围输入) | `src/results/select.ts` |
+| `latestRunSample(record)`(= `selectLatest`,每实验取最新一次 Run + 范围内 `SampleWarning` + `SampleCoverage`,kind 全集三种:unfinished-run / missing-startedAt / unreadable-run,见[警告 kind 全集](feature/sample/library.md#警告-kind-全集);Run 本身是 `exp.snapshots` 里的真实条目,`filter()` 按 Run 删减能正确同步修剪 attempts/coverage/warnings)/ `currentSample(record)`(= `selectLatestPerEval`,目标契约是现刻水位投影:对每个 experiment × eval 跨该实验全部历史 Run 取最新判定并物化 `Sample.attempts`,`Sample.snapshots` 保留贡献数据的真实 Run 实体;当前实现与该目标不符,见[已知差异](#与设计文档的已知差异实现取舍)「`current()` 仍合成报告用 Run」)/ 两者都接受 `fresh?: boolean`(排除历史执行 attempt,`freshEvals`/`withFreshEvals` 实现,被排除的题进 `coverage.missingEvalIds`)/ `unreadableSnapshotWarnings`(扫描不可读 Run——incompatible / malformed / incomplete——产出 `unreadable-run` warning,接线进 `selectLatest` 与 `selectLatestPerEval`;类型在 `src/results/types.ts`)/ `Sample.filter`(`makeScope` 内的闭包,按 Run 删减重新 flatten `attempts`、按 experimentId 存在性修剪 `coverage`/`warnings`;对 `current()` 产出的 Sample 见上述已知差异)/ `dedupeAttempts`(身份键去重;缺 `startedAt` 的身份键不去重,记 `missing-startedAt` 警告;当前未在 `selectLatestPerEval`/`selectLatest` 内部调用)/ `ResultScope`(`{ experiment?, patterns?, fresh? }` 范围输入) | `src/results/select.ts` |
 | `createWriter`(Run 目录独占创建、Run 级元数据落盘、attempt 记录与 artifact 增量落盘、`finish()` 补 `completedAt`) | `src/results/writer.ts` |
 | `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记) | `src/results/copy.ts` |
 | 发布预算常量(50 MiB 单文件预检上限) | `src/results/publish.ts` |
@@ -230,7 +230,7 @@
 | 渐进增强 runtime(表头排序 / 行过滤 / hover tooltip,只作用于 `.nre` 与 `data-nre-*`;宿主内联) | `src/report/assets/enhance.js` |
 | 双面验收(renderToStaticMarkup + text Run,两面同口径) | `src/report/runtime/dual-render.test.tsx` |
 | view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-dialog.ts`(hash ↔ locator 互转、`attempt/<locator>.html` 链接拦截与 dialog 内容抠取)、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/record` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/results/locator.ts`) |
-| view 数据层(openRecord;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:Run 明细 + skipped + 壳元信息(含报告外壳/页导航的 `ViewReportMeta`),统计住报告页)。`latestRuns(record)` 结果(命名为 `latestPerExperiment`)只用于给证据室 Run 打「latest」标记,与报告槽 Sample 是两条独立通道,不参与报告计算;`viewData.snapshots` 是完整记录根的全量通道,只服务 attempt 详情路由(`#/attempt/@<locator>`)的解析,不随报告 Sample 收窄 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
+| view 数据层(openRecord;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:Run 明细 + skipped + 壳元信息(含报告外壳/页导航的 `ViewReportMeta`),统计住报告页)。`latestRunSample(record)` 结果(命名为 `latestPerExperiment`)只用于给证据室 Run 打「latest」标记,与报告槽 Sample 是两条独立通道,不参与报告计算;`viewData.snapshots` 是完整记录根的全量通道,只服务 attempt 详情路由(`#/attempt/@<locator>`)的解析,不随报告 Sample 收窄 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
 | view 报告槽与导航(裸跑装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `selectLatestPerEval` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 styles/scripts 按声明序注入、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`;渲染出的导航结构与外壳 chrome 归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
 | **Roadmap(未定落点)** | memory-evals 静态导出流水线(reports.md 场景三) |
 
@@ -242,7 +242,7 @@
   `open.ts` / `format.ts` / `writer.ts`,选择与去重在 `select.ts`。本页表格里的文件列是**当前真实位置**,
   功能文档里出现的 `src/record/…` 是目标位置;搬目录连带公开入口改名,与实现分层同批做。同名对照:
   `openResults`→`openRecord`、`createResultsWriter`→`createWriter`、`copySnapshots`→`publish`、
-  `results.latest()`→`latestRuns()`、`results.current()`→`latestKnown()`、`Scope`→`Sample`、
+  `results.latest()`→`latestRunSample()`、`results.current()`→`currentSample()`、`Scope`→`Sample`、
   `Snapshot`→`Run`、`skipped`→`unreadable`。
 - **落盘键名与常量沿用 `snapshot` 词根**:契约把落盘单位定名为 Run(`run.json`、`RunMeta`、
   `RECORD_SCHEMA_VERSION`),当前落盘仍写 `snapshot.json`,常量仍叫 `RESULTS_SCHEMA_VERSION` /

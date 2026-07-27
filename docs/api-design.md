@@ -49,7 +49,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
 | 判断条件 | `isX` / `hasX` / `canX` | `isDefined`、`hasSections` |
 | 转换表示 | `toX` / `fromX` | 词根写明目标或来源表示 |
-| 收窄不可变集合 | `filterX` / `onlyX` / `dropX` | `filterBy`、`dropExperiments` |
+| 收窄不可变集合 | `filterX` / `onlyX` / `dropX` | `filterAttempts`、`dropExperiments` |
 | 类型、组件与值对象 | 名词 | `Record`、`Sample`、`AttemptEvidence` |
 | 事件回调 | `onX` | `onEvalComplete` |
 
@@ -155,7 +155,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 | 公开函数 | 调用者怎样得到这类对象 |
 | 判别字段 | 序列化后怎样识别基础选择方式 |
 | 返回对象 | 词根指向哪个领域对象 |
-| 正交选项 | 哪些约束不属于基础方式，不进入 discriminant |
+| 正交选项 | 哪些约束不属于基础方式，不进入判别字段 |
 
 `mode` 不得使用函数名里没有的近义词，也不得沿用已删除的历史名字。函数若为了语法带有领域对象后缀，
 `mode` 可以省略该后缀；除此之外不另造缩写或同义词。

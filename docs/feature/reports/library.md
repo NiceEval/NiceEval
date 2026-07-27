@@ -101,7 +101,7 @@ spec 形态与 data 形态的完整契约在 [Architecture · 组件模型](arch
 ```tsx
 // app/evals/page.tsx —— 记录根就在当前工作目录
 import { openRecord } from "niceeval/record";
-import { latestKnown } from "niceeval/sample";
+import { currentSample } from "niceeval/sample";
 import { MetricTable, SampleSummary, SampleWarnings, RunDiagnostics } from "niceeval/report/react";
 import {
   costUSD, durationMs, endToEndPassRate,
@@ -110,7 +110,7 @@ import {
 
 export default async function EvalsPage() {
   const record = await openRecord(".niceeval");
-  const sample = latestKnown(record, { experiments: "compare/" });
+  const sample = currentSample(record, { experiments: "compare/" });
 
   const [diagnostics, summary, table] = await Promise.all([
     runDiagnosticsData(sample),
@@ -143,10 +143,10 @@ export default async function EvalsPage() {
 // scripts/build-evals-json.ts —— 与记录根同机跑（本地或 CI），产物随站点部署
 import { writeFile } from "node:fs/promises";
 import { openRecord } from "niceeval/record";
-import { latestKnown } from "niceeval/sample";
+import { currentSample } from "niceeval/sample";
 import { costUSD, endToEndPassRate, metricTableData, sampleSummaryData } from "niceeval/report";
 
-const sample = latestKnown(await openRecord(".niceeval"), { experiments: "compare/" });
+const sample = currentSample(await openRecord(".niceeval"), { experiments: "compare/" });
 
 await writeFile(
   "public/evals.json",

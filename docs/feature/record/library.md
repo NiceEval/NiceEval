@@ -258,10 +258,10 @@ trace / 源码在新根里静默变成 `dangling`,没有任何报错。整根搬
 
 ```typescript
 import { openRecord, publish } from "niceeval/record";
-import { latestRuns } from "niceeval/sample";
+import { latestRunSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
-await publish(latestRuns(record), "site/data/run", {
+await publish(latestRunSample(record), "site/data/run", {
   artifacts: ["commands", "sources", "events", "trace", "o11y", "agentSetup"], // diff 缺省不带
 });   // 所有待发布文件还会经过 50 MiB 单文件预检
 ```

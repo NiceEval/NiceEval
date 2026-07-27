@@ -32,7 +32,7 @@ Record
                                   events() sources() diff()  调用时才读盘
                                 }
                   │
-                  │  latestKnown(record, { experiments: "midterm/" })
+                  │  currentSample(record, { experiments: "midterm/" })
                   ▼
 ──── niceeval/sample ──── 挑一批、数出缺口、记警告 ─────────────────────────────
 
@@ -41,14 +41,15 @@ Record
   ③ 未封口 / 不可读的 Run,以及悬空证据             →  warnings
 
 Sample {
-  mode:     "latest-known"         口径字面写在数据上
+  mode:     "current"                 基础选择方式
+  fresh:    false                     是否只含新执行
   attempts: AttemptHandle[]           引用上一层的句柄;消费它就自动正确
   runs:     Run[]                     贡献过至少一条 attempt 的真实 Run
   coverage: [{ experimentId:   "midterm/bub-gpt-5.4",
                knownEvalIds:   [10 道],
                missingEvalIds: ["geometry/area"] }]      这一层新造的信息
   warnings: [{ kind: "unfinished-run", … }]              这一层新造的信息
-  pipe(dropExperiments(…), filterBy(…))                  只删减,不替换、不重挑
+  pipe(dropExperiments(…), filterAttempts(…))            只删减,不替换、不重挑
 }
                   │
                   ▼
@@ -105,7 +106,7 @@ TableData / ScatterData / SampleSummaryData / ExperimentListItem[] …  可序�
 **三、每个数字都能回到证据。** 样本成员是 `AttemptHandle` 而不是行,`AttemptLocator` 让报告里的
 一格能寻址回一个 attempt。这条排除了「把结果压成宽表」这类看着更通用的中间表示。
 
-**四、给用户的自由度是闭集。** Sample 的算子可以逐条列举,`filterBy` 是唯一的函数出口;报告树是
+**四、给用户的自由度是闭集。** Sample 的算子可以逐条列举,`filterAttempts` 是唯一的函数出口;报告树是
 声明式结构,不是能求值的表达式。失败模式不是积木不够,是积木长成了半门语言。
 
 **五、派生物明确标为缓存。** 落盘的派生物只有 [`o11y.json`](../record/architecture.md#o11yjson)

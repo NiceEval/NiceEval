@@ -5,10 +5,10 @@
 
 ```typescript
 import { openRecord } from "niceeval/record";
-import { latestKnown } from "niceeval/sample";
+import { currentSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
-const sample = latestKnown(record, { experiments: "compare/" });
+const sample = currentSample(record, { experiments: "compare/" });
 
 sample.attempts;    // 按口径挑好的 attempt 全集 —— 消费这个就自动正确
 sample.coverage;    // 这批数据覆盖了多少题,缺哪几道
@@ -27,9 +27,9 @@ sample.warnings;    // 这批数据哪里可能不可靠
 
 ## 一份 Sample 上有什么
 
-**口径是物化的数据,不是隐藏语义。** `mode` 字面写出这份样本怎么选的,`attempts` 是按该口径挑好
-的全集——自定义脚本消费 `attempts` 就自动正确,不需要知道口径怎么展开,也就不可能因为自己
-`flatMap` 一遍 `runs` 而把同一道题的历史 attempt 重复计入。
+**口径是物化的数据,不是隐藏语义。** `mode` 写出基础选择方式,`fresh` 写出是否只含新执行。
+`attempts` 是按完整口径挑好的全集——自定义脚本消费它就自动正确,不需要知道口径怎么展开,也不会
+因为自己 `flatMap` 一遍 `runs` 而把同一道题的历史 attempt 重复计入。
 
 覆盖与警告跟着样本走,不散在别处:一份 Sample 交给谁,「这批数据缺什么、哪里不可靠」就跟到谁手上。
 [`publish()`](../record/library.md#发布publish) 与 Reports 的全部计算函数都收
@@ -39,11 +39,11 @@ sample.warnings;    // 这批数据哪里可能不可靠
 
 | 用途 | API |
 |---|---|
-| 看每个实验最近一次跑出了什么 | `latestRuns(record)` |
-| 看每道题当前的判定水位 | `latestKnown(record)` |
+| 看每个实验最近一次跑出了什么 | `latestRunSample(record)` |
+| 看每道题当前的判定水位 | `currentSample(record)` |
 | 只看最新一次真实执行的 | 任一选择器 + `{ fresh: true }` |
 | 排掉一个已知坏掉的实验 | `sample.pipe(dropExperiments(…))` |
-| 按自己的条件删减样本 | `sample.pipe(filterBy(…))` |
+| 按自己的条件删减样本 | `sample.pipe(filterAttempts(…))` |
 | 发布这批数据 | `publish(sample, dir)` |
 
 **这一层只删减,不聚合。** 「按 agent 分组算 p90 耗时」不在这里——值怎么算、两级怎么折叠由

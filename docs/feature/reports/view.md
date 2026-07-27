@@ -125,7 +125,7 @@ site/
 
 ```ts
 const results = await openRecord(".niceeval");
-await publish(latestRuns(record), "site-data/run", {
+await publish(latestRunSample(record), "site-data/run", {
   artifacts: ["commands", "sources", "events", "trace"],   // 瘦身：不带 diff
 });
 // 然后：niceeval view --record site-data/run --out site

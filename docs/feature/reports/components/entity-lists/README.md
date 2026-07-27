@@ -134,7 +134,7 @@ type AttemptListProps = ComponentProps<readonly AttemptListItem[], {
 - **Eval 父行**：其**全部** attempt 均为历史执行时，在题目名后标 `↩ <最近一次执行的时距>`；新旧混合时父行不标，子行各自可见。
 - **Experiment 行**：`historicalAttempts > 0` 时在副行追加 `↩ n/m attempts`。
 
-标注是 subdued 的行内事实，不占框、不用警示色——携带是 fingerprint 担保下的正常缓存，跨 Run 拼接受 `latestKnown()` 可比性前提保护，时效是数字的出身属性，不是警告。要完全排除历史执行，用 [`fresh` 口径](../../../sample/library.md#时效新执行与历史执行)（CLI 侧 `--fresh`），被排除的题按覆盖事实转为占位行。
+标注是 subdued 的行内事实，不占框、不用警示色——携带是 fingerprint 担保下的正常缓存，跨 Run 拼接受 `currentSample()` 可比性前提保护，时效是数字的出身属性，不是警告。要完全排除历史执行，用 [`fresh` 口径](../../../sample/library.md#时效新执行与历史执行)（CLI 侧 `--fresh`），被排除的题按覆盖事实转为占位行。
 
 ## 相关阅读
 

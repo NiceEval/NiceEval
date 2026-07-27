@@ -7,15 +7,15 @@
 
 ```typescript
 import { openRecord } from "niceeval/record";
-import { latestKnown } from "niceeval/sample";
+import { currentSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
-const sample = latestKnown(record, { experiments: "compare/" });
+const sample = currentSample(record, { experiments: "compare/" });
 ```
 
 | 你要什么 | 从哪进 |
 |---|---|
-| 官方口径的一批 attempt,连覆盖与警告一起 | `latestRuns` / `latestKnown` |
+| 官方口径的一批 attempt,连覆盖与警告一起 | `latestRunSample` / `currentSample` |
 | 官方口径的折叠数字(表格、矩阵、散点) | [Reports 的计算函数](../../reports/library.md) |
 | 连口径都自定义(例如全历史的分布) | 直接遍历 `record.experiments` |
 

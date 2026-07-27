@@ -1,6 +1,6 @@
 # Reports —— 架构
 
-Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、网页宿主 `view`、用户自己的 React 页面。三个入口共用指标与数据计算；两个官方宿主共用 Sample 规则，自有 React 页面显式选择 `latestKnown(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用。
+Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、网页宿主 `view`、用户自己的 React 页面。三个入口共用指标与数据计算；两个官方宿主共用 Sample 规则，自有 React 页面显式选择 `currentSample(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用。
 
 ```text
 .niceeval/ ── openRecord / Sample ── resolve（*Data 计算）── 可序列化数据
@@ -111,13 +111,13 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 所有官方 `*Data(input, options?)` 计算函数接受 `ReportInput = Sample | readonly Run[]`。Sample 同时携带真实 Run、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”的信息拆开。warning 的呈现件是 [`SampleWarnings`](components/site/sample-warnings.md)，Run 实体上开放词表 diagnostics 的呈现件是 [`RunDiagnostics`](components/site/run-diagnostics.md)；宿主不在报告树外另设通道，[内建报告](library/built-in.md)的三张 sample-input page 都相邻放置两者（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。`RunDiagnostics` 对 Sample 只投影 `sample.runs`，对裸 `Run[]` 同样工作；它的 data 形态只携带 experimentId、startedAt 与 DiagnosticRecord[]，不把 Run 拖进浏览器。覆盖缺口由 `experimentListData` 消费成占位行、时效由 attempt 行的时效标注呈现（见[实体列表](components/entity-lists/README.md)），指标与列表组件的数据不复制 warning 或 diagnostic。
 
-指标与列表组件的数据样本一律来自 `Sample.attempts`——按 `latestKnown()` / `latestRuns()` 口径挑好的 attempt 全集，组件不各自 `flatMap` `runs` 重新展开，避免同一道题的历史 attempt 被不同组件用不同口径重复计入或漏算。配置（agent / model / flags / sandbox 等）、diagnostics 与 Run 目录这类**Run 级**信息来自真实 `Sample.runs`。`latestKnown()` 下同一个 experiment 可能有多个贡献 Run（不同 eval 取自不同历史 Run，见 [Sample · 两个选择器](../sample/library.md#两个选择器)）；此时该 experiment 展示用的“水位基准 Run”是这些贡献来源里 `startedAt` 最新的一个——表头、hero 与 `config()` 桥接读取的 agent / model / flags 都以这一个为准，不是任取某个来源或合并多个来源的字段。
+指标与列表组件的数据样本一律来自 `Sample.attempts`——按 `currentSample()` / `latestRunSample()` 口径挑好的 attempt 全集，组件不各自 `flatMap` `runs` 重新展开，避免同一道题的历史 attempt 被不同组件用不同口径重复计入或漏算。配置（agent / model / flags / sandbox 等）、diagnostics 与 Run 目录这类**Run 级**信息来自真实 `Sample.runs`。`currentSample()` 下同一个 experiment 可能有多个贡献 Run（不同 eval 取自不同历史 Run，见 [Sample · 两个选择器](../sample/library.md#两个选择器)）；此时该 experiment 展示用的“水位基准 Run”是这些贡献来源里 `startedAt` 最新的一个——表头、hero 与 `config()` 桥接读取的 agent / model / flags 都以这一个为准，不是任取某个来源或合并多个来源的字段。
 
 `show` 与 `view` 对命令行范围使用同一套选择规则：
 
 1. `--record` 确定记录根。
 2. `--exp` 和 eval id 位置参数收窄范围。
-3. 宿主调用 `latestKnown(record)`——官方现刻水位口径（每个 experiment × eval 取「包含该 eval 的最新 Run」里的 attempt），单点定义在 [Sample · 两个选择器](../sample/library.md#两个选择器)，宿主不自带第二套选择规则。
+3. 宿主调用 `currentSample(record)`——官方现刻水位口径（每个 experiment × eval 取「包含该 eval 的最新 Run」里的 attempt），单点定义在 [Sample · 两个选择器](../sample/library.md#两个选择器)，宿主不自带第二套选择规则。
 4. 局部补跑、过旧或未完成 Run 形成结构化 warning。
 5. 同一份 Sample 交给各宿主默认首页或 `--report`。
 
@@ -125,7 +125,7 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 
 ## Sample 是默认报告的比较边界
 
-`experimentListData`、`sampleSummaryData` 与 `chartData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Sample；每个 experiment 当前有效的 eval 集从 `Sample.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入覆盖占位行，不进分母也不补成失败。这条读法不依赖任何单一 Run 的 `ExperimentRunInfo.selectedEvalIds`——`latestKnown()` 下一个 experiment 的有效题集由多个贡献 Run 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
+`experimentListData`、`sampleSummaryData` 与 `chartData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Sample；每个 experiment 当前有效的 eval 集从 `Sample.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入覆盖占位行，不进分母也不补成失败。这条读法不依赖任何单一 Run 的 `ExperimentRunInfo.selectedEvalIds`——`currentSample()` 下一个 experiment 的有效题集由多个贡献 Run 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
 
 `SampleSummary`、默认散点与 `ExperimentList` 都消费同一份 Sample。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；组件不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
 

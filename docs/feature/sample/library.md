@@ -5,35 +5,36 @@
 
 ## 两个选择器
 
-多数消费场景先回答「现在什么水平」。官方口径有两个,区别不在粒度,在**要不要跨 Run 缝合**:
+多数消费场景先回答「现在什么水平」。官方口径有两个,区别是要看最新一次 Run 的执行事实,还是看
+由可比历史共同形成的当前状态:
 
 ```typescript
 import { openRecord } from "niceeval/record";
-import { latestRuns, latestKnown } from "niceeval/sample";
+import { latestRunSample, currentSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
 
-const a = latestRuns(record, { experiments: "compare/" });   // 每个实验最新一次 Run,不缝合
-const b = latestKnown(record, { experiments: "compare/" });  // 每道题已知的最新判定
+const executed = latestRunSample(record, { experiments: "compare/" });
+const current = currentSample(record, { experiments: "compare/" });
 ```
 
 | 选择器 | 单位 | 回答 | 什么时候用 |
 |---|---|---|---|
-| `latestRuns` | Run | 最近一次执行实际产出了什么 | 对外发布自包含测试集、归档 |
-| `latestKnown` | experiment × eval | 每道题已知的最新判定,可能取自旧 Run | 看当前水平、连续开发中对数 |
+| `latestRunSample` | 每个 Experiment 的最新 Run | 最近一次执行实际产出了什么 | 发布自包含测试集、归档 |
+| `currentSample` | Experiment × Eval | 每道题当前可用的判定,可能取自可比旧 Run | 看当前水平、连续开发中对数 |
 
-`niceeval show` / `view` 的默认首页用 `latestKnown`;自定义报告要与官方入口对上数字,从它出发。
+`niceeval show` / `view` 的默认首页用 `currentSample`;自定义报告要与官方入口对上数字,从它出发。
 `experiments` 收 experiment id 前缀(`string | string[]`,与 CLI 位置参数同一套前缀匹配机制)。
 
 **为什么是两个而不是一个。** 位置参数允许只重跑一道题(`niceeval exp midterm algebra/quadratic`
 是正常的 debug 姿势)。这时「最近一次 Run」只有一道题,而「每道题当前水位」要跨历史把其余题拼
 回来。两种都是正当需求,而且**谁也不能替谁**:发布要的是一次执行的自包含产物,看水位要的是完整
-分母。`Known` 指的是**记录里已经知道的**——一道题的判定可能不是这次跑出来的,而是从可比的
-旧 Run 里缝进来的。这一步有前提,紧接着一节说清。
+分母。`current` 指观察时刻成立的状态,不等于时间最大的 Run。一道题的判定可能不是这次跑出来的,
+而是来自可比的旧 Run。这一步有前提,紧接着一节说清。
 
 ### 缝合的前提:configHash 相等
 
-`latestKnown` 会从旧 Run 里拼入当前 Run 没跑的题,所以必须先回答「这两个 Run 可比吗」。判据只有
+`currentSample` 会从旧 Run 里拼入当前 Run 没跑的题,所以必须先回答「这两个 Run 可比吗」。判据只有
 一条:**[`run.configHash`](../record/library.md#confighash配置身份只算一次) 相等**。每个 experiment
 以其最新 Run 的 configHash 为基准,只有基准一致的历史 Run 参与该实验的逐题选择。
 
@@ -46,7 +47,8 @@ Run 缺 `configHash`(第三方转换器没声明)时只与自己可比,不与任
 ## 一份 Sample 上有什么
 
 ```typescript
-sample.mode;         // "latest-runs" | "latest-known":这份样本的口径,字面写在数据上
+sample.mode;         // "latest-run" | "current":基础选择方式
+sample.fresh;        // boolean:是否只保留相对各 Experiment 锚点的新执行
 sample.attempts;     // AttemptHandle[]:按口径挑好的 attempt 全集,已物化
 sample.runs;         // Run[]:贡献了至少一条 attempt 的真实 Run,各自保留 diagnostics
 sample.coverage;     // SampleCoverage[]:逐实验的覆盖事实
@@ -54,13 +56,14 @@ sample.warnings;     // SampleWarning[]:结构化,不是渲染好的文本
 sample.pipe(...ops); // 转换,见下
 ```
 
-**口径是物化的数据,不是隐藏语义。** `mode` 字面声明口径,`attempts` 是按口径挑好的全集——消费
-`attempts` 就自动正确,不需要知道两种口径怎么展开,也不可能因为自己 `flatMap` 一遍 `runs` 而把
-旧 Run 里同一道题的历史 attempt 重复计入。官方计算函数同样只消费 `attempts`。
+**口径是物化的数据,不是隐藏语义。** `mode` 与两个选择函数共享词根:`latestRunSample()` 返回
+`"latest-run"`,`currentSample()` 返回 `"current"`。`fresh` 是正交的来源约束,不扩成四种 mode。
+`attempts` 是按完整口径挑好的全集;消费它不需要重新展开 `runs`,也不会把同一道题的历史 attempt
+重复计入。官方计算函数同样只消费 `attempts`。
 
 `runs` 保留给需要 Run 级信息(配置、producer、目录、diagnostics)的消费方;其中每个成员都是
 持久化的真实 Run,Sample 不合成报告专用 Run,attempt 仍以 `attempt.run` 与 `attempt.ref` 指回
-来源。`latestKnown` 下同一个 experiment 可能有多个贡献 Run(不同 eval 取自不同历史),`runs`
+来源。`currentSample` 下同一个 experiment 可能有多个贡献 Run(不同 eval 取自不同历史),`runs`
 因此不是「每 experiment 一个」,而是「每个真正贡献过至少一条 attempt 的 Run 各一份」。
 
 ## 覆盖是逐行的事实
@@ -94,7 +97,7 @@ knownEvalIds)**,`publish()` 复制时补记这个字段,发布目录因此仍算
 
 - **新执行**:属于该实验在样本中最新 Run、且非携带的 attempt——最新一次运行里真实跑出来的。
 - **历史执行**:其余两种出身——携带条目(`attempt.carried === true`,fingerprint 未变、上一轮
-  终态合入本 Run),与 `latestKnown` 从旧 Run 拼入的 attempt(所属 Run 早于该实验在样本中的
+  终态合入本 Run),与 `currentSample` 从旧 Run 拼入的 attempt(所属 Run 早于该实验在样本中的
   最新 Run)。
 
 两种历史出身对读者是同一个事实——「这条不是最新一次跑出来的」——报告用同一种时效标注呈现(实体名
@@ -108,7 +111,9 @@ warnings——时效是每行数字的出身属性,跟着数字走,不是页面�
 **只看新执行:`fresh` 选项。** 两个选择器都接受 `fresh: true`,物化 attempts 时排除全部历史执行:
 
 ```typescript
-const fresh = latestKnown(record, { experiments: "compare/", fresh: true });
+const fresh = currentSample(record, { experiments: "compare/", fresh: true });
+fresh.mode;   // "current"
+fresh.fresh;  // true
 ```
 
 分母随之如实缩水:被排除的题按覆盖事实进入 `coverage.missingEvalIds`、在实验列表上呈现为占位行,
@@ -121,11 +126,11 @@ const fresh = latestKnown(record, { experiments: "compare/", fresh: true });
 的实验」。若一次删减就降级成裸 `AttemptHandle[]`,幸存数据本该有的覆盖事实与警告全丢。
 
 ```typescript
-import { latestKnown, dropExperiments, filterBy, freshOnly } from "niceeval/sample";
+import { currentSample, dropExperiments, filterAttempts } from "niceeval/sample";
 
-const s = latestKnown(record, { experiments: "compare/" }).pipe(
+const s = currentSample(record, { experiments: "compare/" }).pipe(
   dropExperiments("compare/known-broken"),
-  filterBy((a) => a.result.verdict !== "skipped"),
+  filterAttempts((attempt) => attempt.result.verdict !== "skipped"),
 );
 ```
 
@@ -134,10 +139,10 @@ const s = latestKnown(record, { experiments: "compare/" }).pipe(
 
 | 算子 | 作用 |
 |---|---|
-| `filterBy(predicate)` | 按 attempt 谓词删减 |
+| `filterAttempts(predicate)` | 按 Attempt 谓词删减 |
 | `onlyExperiments(...prefixes)` / `dropExperiments(...prefixes)` | 按 experiment id 前缀保留 / 剔除 |
 | `onlyEvals(...prefixes)` / `dropEvals(...prefixes)` | 按 eval id 前缀保留 / 剔除 |
-| `freshOnly()` | 排除历史执行,等价于选择器的 `fresh: true` |
+| `onlyFreshAttempts()` | 排除历史执行,等价于选择器的 `fresh: true` |
 
 每个算子应用后四个面同步重算,规则统一:
 
@@ -155,8 +160,9 @@ const s = latestKnown(record, { experiments: "compare/" }).pipe(
   数。这也是转换算子清单里没有 `groupBy` / `reduce` 的原因。
 - **只删减,不替换。** 「换成该实验上一个完整 Run」这类**替换式**重挑不给算子(那是 DSL 的开端)。
   回 `exp.runs` 自己挑,挑出来的裸数组没有挑选过程、没有 coverage 也没有 warnings,也如实。
-- **`filterBy` 是唯一的函数出口。** 其余算子全部是可序列化的声明,一条 pipe 里除了它以外没有用户
-  代码——这让 pipe 可以被记录、比较与缓存。这条纪律学自 Vega-Lite,见[参考方案](reference/README.md)。
+- **`filterAttempts` 是唯一的函数出口。** 其余算子全部是可序列化的声明,一条 pipe 里除了它以外
+  没有用户代码——这让 pipe 可以被记录、比较与缓存。这条纪律学自 Vega-Lite,见
+  [参考方案](reference/README.md)。
 
 ## 去重:身份键与最新落盘
 
@@ -167,8 +173,8 @@ const s = latestKnown(record, { experiments: "compare/" }).pipe(
   相同,取新 Run 的副本让 ref 落在最新落盘上);
 - `startedAt` 缺失时宁可不去重也不误删,并记入 warnings(kind `missing-startedAt`)。
 
-两个选择器都已内置这一条,`sample.attempts` 拿到手就是去重后的。要自己实现,四个字段全在数据上。
-`dedupeAttempts(attempts)` 单独导出,供直接吃 Record 的脚本复用同一份实现。
+两个选择器都已内置这一条,`sample.attempts` 拿到手就是去重后的。直接读取 Record 的脚本若要实现
+其它口径,四个身份字段都在数据上;去重步骤不是独立公开 API。
 
 ## 警告 kind 全集
 
@@ -193,7 +199,7 @@ warnings 只收**定位不到任何一行**的完整性事实;能定位到行的
 公开面的全集由参考页承载(`pnpm docs:reference` 从 TSDoc 生成),guide 只举例并声明「不止一种」。
 `missing-startedAt` **不透出到组件数据**:`writer.run()` 的 `startedAt` 必填,官方产出与走写入面
 的转换永不缺,缺失只可能来自携带条目缺锚的极端情况;计算函数对这类条目不去重、如实保留重复,
-`dedupeAttempts` 直调时警告随返回值走。
+选择器则把警告随 Sample 返回。
 
 警告的呈现件是 [`SampleWarnings` 组件](../reports/components/site/sample-warnings.md)——内建报告
 每页都放它,自定义报告与自有 React 页面同样显式摆放(React 页面用 data 形态传 `sample.warnings`),
