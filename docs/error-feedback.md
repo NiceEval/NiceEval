@@ -1,74 +1,87 @@
-# 错误与警告反馈
+# Issue 与用户反馈
 
-niceeval 对用户说「这里有问题」的每一条消息——CLI 拒绝一次调用、运行中降级、选择器发现数据残缺、库抛出错误——都必须自带下一步。用户读完一条报错，不需要翻源码、翻文档或再问一轮就知道现在做什么；给不出下一步的报错是缺陷，与算错数字同级。
+niceeval 把「发生了什么」与「应该怎样告诉用户」分开。写入时只记录可追溯的 error /
+diagnostic observation;读取与选择时产生结构化 Issue;宿主或 Reports 的 policy 最后把 Issue
+映射为面向当前读者的 Notice。
 
-## 适用范围
-
-本契约覆盖 niceeval 自身发出的**操作性反馈**——判据：一条消息在要求用户改变对 niceeval 的使用方式或数据状态，它就是操作性反馈，受本页约束。
-
-| 反馈面 | 例子 | 形状与消息单源 |
-|---|---|---|
-| CLI 启动期错误 | 未知 flag、`exp --model` 用法拒绝、config 不可加载、`view --out` 防呆拒绝 | 本页「CLI 启动期错误的终端形状」；具体消息随对应命令 / flag 的行为契约声明 |
-| 运行期 diagnostics | sandbox provisioning 重试耗尽、reporter 写失败、teardown 失败 | [`DiagnosticRecord`](feature/record/architecture.md) |
-| Scope 警告 | unfinished-run、unreadable-run | [警告 kind 全集](feature/sample/library.md#警告-kind-全集) |
-| 读取分类提示 | schemaVersion 不兼容、malformed / incomplete Run | [View · 结果版本与错误](feature/reports/view.md#结果版本与错误) |
-| 库抛出的错误类 | `MalformedLocatorError`、`LocatorNotFoundError`、`publish` 预检失败 | 各 feature 文档声明的错误类 |
-
-**被测对象的失败事实不在本契约内**：断言差异、agent 崩溃形成的 `AttemptError`、failed / errored 判定，是 eval 的结果数据，不是 niceeval 在报错。它们如何变成可行动的排查路径，由 [Assertions 的显示契约](./feature/assertions/library/display.md)、[Show](feature/reports/show.md) / [View](feature/reports/view.md) 的呈现契约与公开 Debug 手册负责。
-
-失败事实有一条独立的证据完整性规则：摘要可以有界，调用边界看到的失败命令证据不能等到 Eval
-拼错误字符串时才决定是否保存。目标契约由 Sandbox 包装层在返回 `CommandResult` 前自动把非零命令的
-stdout/stderr 写进 [`commands.json`](feature/record/architecture.md#commandsjson)，再让
-`show @<locator> --execution` 下钻；`result.json` 只放一层错误摘要与明确指引。这样 Eval 后续即使
-`.slice(-N)`，也只损伤它自己的摘要，不会删掉 NiceEval 已捕获的命令证据。落盘仍受统一 256 KiB
-逐值上限约束；“完整”指 NiceEval 在持久化上限内保留调用边界原值，不是无限制保存。
-
-## 消息三段式
-
-一条操作性反馈由三段组成，顺序固定：
-
-1. **现象**：出了什么事。具体实体名——experiment id、flag 名、文件路径、provider 名——写进消息，不用「some experiments」「the snapshot」这类要用户自己回查的指代。
-2. **依据**：触发判断的数据。结构化面放字段（`startedAt`、`dir`、`reason`），文本面写进句子（snapshot started 2026-07-12 has no completedAt）。
-3. **下一步**：用户现在能做什么。必备段，三种合法形态，至少给一种：
-   - **可执行命令**：完整、已替换真实 id 的命令，复制即跑（`niceeval exp midterm/bub-gpt-5.4`）。「re-run the experiment」这类还要用户自己拼命令的指示不算命令形态，算下面的定位动作。
-   - **定位动作**：没有单条命令能解决时，指出动哪里——哪个文件、哪个字段、哪一侧（"check the E2B quota for your API key"、"exclude that artifact kind from `publish({ artifacts })`"）。
-   - **忽略条件**：警告类信号存在合法「不用管」场景时，写出判断条件（"if nothing changed between runs, the numbers remain comparable"），让用户按条件裁决，而不是猜这条警告严不严重。
-
-命令与忽略条件可以并存——「要对齐就跑 X；两次跑之间没改东西可以忽略」是合格的下一步。三段都在 `message` 一个字段里：**只打印 message 的消费方不丢失下一步**，「要展示就原样打」的承诺（见 [Sample Library](feature/sample/library.md#两个选择器)）对下一步同样成立。
-
-## 结构化承载：`command`
-
-在 message 自含三段之上，已经结构化的反馈类型把可执行命令单列。[`SampleWarning`](feature/sample/library.md#警告-kind-全集) 与 [`DiagnosticRecord`](feature/record/architecture.md) 带可选字段：
-
-```typescript
-/** 有单条能直接推进的命令时给出，已替换真实 id，复制即跑；没有单命令形态时省略，不硬造。 */
-command?: string;
+```text
+.niceeval observation
+        ↓ read / select
+structured Issue
+        ↓ Notice policy(locale, host, context)
+user-facing Notice
 ```
 
-渲染面的义务随之确定：web 面（view 的警告条与 diagnostics 区）把 `command` 呈现为可复制动作；text 面不重复打印它——同一条命令已内嵌在 message 里。程序消费方（CI 脚本）可以直接取 `command` 执行或转发，不从 message 里正则抠命令。
+这条边界让同一份记录可以在 CLI、静态网页、CI 和自有产品中重新解释,而不会把某个
+版本的英文文案、严重度 policy 或修复命令冻结在 `.niceeval` 里。
 
-## CLI 启动期错误的终端形状
+## 三层契约
 
-run 尚未激活时（argv 解析、config 加载、eval 发现、`show` / `view` 输入解析）的错误统一为两行：
+### Write: observation
+
+Record 只持久化运行时真正观察到的内容:
+
+- `AttemptError` 是让 attempt 进入 `errored` 的唯一致命失败证据;`message` 保留为原始原因摘要。
+- `DiagnosticRecord` 是不必改变 verdict 的运行 observation;只带 `code`、`level`、`phase`、
+  `detail`、`context` 与 `count`。
+- `detail` 只描述当时观察到的现象,`context` 保存支撑 code 的结构化依据。
+- observation 不带本地化文案、修复建议、忽略条件或 `command`。
+
+`DiagnosticRecord.level` 是写入方当时观察到的运行影响,不是最终 Notice 严重度,也不是
+verdict 的别名。读取 policy 可以结合宿主、范围和其它事实上调或下调 Notice。
+
+### Read: Issue
+
+Issue 是从记录、artifact 可达性、诊断 observation 与 Sample 选择结果中派生的可重算结构。
+它用稳定 code 表达类别,并携带定位与判断所需的原始事实。例如:
+
+- `unfinished-run`:experiment id、startedAt 与目录;
+- `unreadable-run`:目录、reason 与可用的 producer 身份;
+- `dangling-evidence`:attempt 身份、artifactBase 与原声明的 artifacts;
+- persisted diagnostic 的 Issue:observation code、phase、observed level、detail、context 与 count。
+
+Issue 不写回 `.niceeval`,也不带呈现 message、Notice severity、action 或 command。程序消费方按
+code 和结构化字段分支,不从人话里正则提取事实。Sample 的公开形状与 code 全集见
+[`SampleIssue`](feature/sample/library.md#issue-code-全集)。
+
+### Present: Notice
+
+Notice policy 消费 Issue 与已经投影好的其它事实,产生读者可见的:
+
+- 本地化 title 与 detail;
+- `info | warning | error` 严重度;
+- 分组、去重与可见性;
+- 适用于当前宿主的 action,包括可复制 command、定位动作或忽略条件。
+
+用户可见的 Notice 必须说清现象、依据与下一步。这是 Notice policy 的责任,不是 writer 或
+Issue 数据形状的责任。同一个 Issue 在 CLI 可以给出一条命令,在嵌入式产品中可以映射为
+链接或按钮;两者不改变底层 Issue。
+
+## 即时 CLI 错误
+
+argv 解析、config 加载、记录根打开和报告装载失败时没有 `.niceeval` observation 可写。CLI 仍先构造
+一个瞬时结构化 Issue,再由 CLI policy 渲染两行反馈:
 
 ```text
 error: unknown option '--agnet'
   fix: use --agent <name>; run `niceeval --help` for the flag list
 ```
 
-第一行 `error:` 前缀 + 现象与依据；第二行缩进两格、`fix:` 前缀 + 下一步。纯 ASCII；不论人读文本还是 `--json`，启动期错误恒以这两行形态写 `stderr`（机器此时靠非零退出码），与 bootstrap stderr 出口同形。库抛出的错误类（`MalformedLocatorError` 等）的 `message` 同样按三段式携带下一步，CLI 捕获后套用这个形状，`fix:` 行直接使用错误对象自带的下一步，不在 CLI 层另行编写。
+第一行说现象与依据,第二行给当前 CLI 可执行的下一步。瞬时 Issue 同样不带文案或 action;
+两行文本都由 CLI policy 产生。库错误类保留稳定 code 与结构化 context,CLI 不从 `Error.message`
+解析修复命令。
 
-run 激活后（feedback coordinator 接管终端起）的诊断按 [CLI 反馈模型](feature/experiments/cli.md)渲染，message 自含三段，不再套 `error:` / `fix:` 外壳。
+## 新增问题的义务
 
-## 新增一条报错的义务
-
-- 消息按三段式写全；能给命令就给已替换真实 id 的命令。
-- `SampleWarning` 新 kind 回[警告 kind 全集](feature/sample/library.md#警告-kind-全集)登记，「下一步」是登记项的一部分；新的 diagnostic code 在引入它的 feature 文档声明，同样写明下一步。
-- 在对应 feature 的 `cases.md` 登记场景行时，场景必须断言下一步在场——message 以下一步收尾、`command` 在该带时带上——不能只断言现象。
+1. 在事实拥有者处定义稳定 code 和最小结构化证据,并说明它是 persisted observation 还是
+   read/select Issue。
+2. observation 只记录 detail/context,不写操作建议;Issue 只投影事实,不写渲染文案。
+3. 在需要呈现它的每个 Notice policy 中登记本地化文案、严重度和下一步;未知 code 必须有保守 fallback。
+4. 测试分层证明:写入测试断言 observation 事实,读取测试断言 Issue 投影,呈现测试断言
+   Notice 文案与动作。
 
 ## 相关阅读
 
-- [Results Library · 警告 kind 全集](feature/sample/library.md#警告-kind-全集) —— Sample 警告逐 kind 的触发、字段与下一步。
-- [Results Architecture](feature/record/architecture.md) —— `DiagnosticRecord` 的完整形状。
-- [Experiments · CLI 反馈模型](feature/experiments/cli.md) —— run 激活后诊断如何渲染。
-- [View · 结果版本与错误](feature/reports/view.md#结果版本与错误) —— 读取分类提示。
+- [Sample · Issue code 全集](feature/sample/library.md#issue-code-全集) —— 读取与选择层的结构化问题。
+- [Record · Error 与 diagnostics](feature/record/architecture.md) —— 持久化 observation 的完整形状。
+- [Reports · Notice 组件](feature/reports/components/site/README.md) —— Issue 怎样变成可替换的产品解释。

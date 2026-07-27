@@ -4,40 +4,41 @@
 计算，`Table` 负责呈现；组合规则见[组件树](../README.md)。
 
 ```tsx
-<Table source={measureRows({
-  rows: "agent",
-  measures: [endToEndPassRate, costUSD],
-  sort: endToEndPassRate,
+<Table source={sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, costUSD],
+  sort: passRate,
 })} filter />
 
-const content = await measureRows(options).compute(sample);
+const content = await sources.measure.rows(options).compute(sample);
 <Table data={content} filter />
 ```
 
 这一篇是表格数据源的共用机制。各数据源的选项与用法在各自文件：
-[`measureRows`](measure-table.md)、[`measureMatrix`](measure-matrix.md)、[`scoreboard`](scoreboard.md)、
-[`deltaRows`](delta-table.md)、[`stabilityRows`](stability-matrix.md)。
+[`sources.measure.rows`](measure-table.md)、[`sources.measure.matrix`](measure-matrix.md)、
+[`sources.measure.scoreboard`](scoreboard.md)、
+[`sources.measure.delta`](delta-table.md)、[`sources.measure.stability`](stability-matrix.md)。
 
 ## 共用数据形状
 
-数据形状的字段命名只有一条规则：**维度名字段 = 产生它的节点名 + `Dimension` 后缀**（`Rows` → `rowDimension`、`Columns` → `columnDimension`）；条目数组一律叫 `rows`，稀疏格子叫 `cells`。条目内的 `key` 是维度**值**，不带后缀。
+数据形状的字段命名只有一条规则：**维度名字段 = 产生它的节点名 + `Dimension` 后缀**。
+例如 `Rows` 产生 `rowDimension`，`Columns` 产生 `columnDimension`。条目数组一律叫 `rows`，
+稀疏格子叫 `cells`；条目内的 `key` 是维度**值**，不带后缀。
+
+所有表格 Source 都返回 [`TableContent<Row>`](../sources/README.md#tablecontent)，没有第二套矩阵协议。
+专用 Content 可以扩展它，附加配对覆盖、权重或 totals 等审计事实；`columns` 与 `rows[].cells` 始终是
+`Table` 直接消费的统一投影。矩阵的动态条件也物化成 `columns`，稀疏组合通过缺失 cell 表达。
 
 ```ts
-interface TableContent {
-  rowDimension: string;
-  columns: MeasureColumn[];
-  rows: Array<{
-    key: string;
-    cells: Record<string, MeasureCell>;
-  }>;
-}
-
-interface MatrixContent {
+interface MatrixContent extends TableContent<MatrixRow> {
   rowDimension: string;
   columnDimension: string;
-  measure: MeasureColumn;
-  /** 稀疏格子：没有 attempt 的组合不生成格子。 */
-  cells: Array<{ row: string; column: string; cell: MeasureCell }>;
+  measure: DatasetField;
+}
+
+interface MatrixRow extends Row {
+  /** key 是行维度值；cells 的 key 是列维度值。 */
+  cells: Readonly<Record<string, { kind: "measure"; measure: MeasureCell }>>;
 }
 ```
 
@@ -57,7 +58,7 @@ interface DimensionBindingProps {
 }
 ```
 
-`sort` 的方向跟随 Measure 的 `better`，同值以维度 key 收口；省略时按 key 字典序，不为「更好」方向不明的读数猜顺序。`limit` / `rest` 的语义与[图表维度轴的排序与截断](../charts/README.md#排序与截断)逐条相同——`rest` 是在合并后的 keyset 上重新聚合，不是把截掉的几行平均，因此它必须住在计算函数里。行列头的颜色来自[页级色分配](../README.md#系列色分配单位是页)。
+`sort` 的方向跟随 Measure 的 `better`，同值以维度 key 收口；省略时按 key 字典序，不为「更好」方向不明的读数猜顺序。`limit` / `rest` 的语义与[图表维度轴的排序与截断](../charts/README.md#排序与截断)逐条相同——`rest` 是在合并后的 keyset 上重新聚合，不是把截掉的几行平均，因此它必须住在计算函数里。行列头的颜色来自[页级色分配](../README.md#维度呈现分配单位是页)。
 
 `dimension` 传数组即[复合维度](../../library/measures.md#维度与数值轴)：`["agent", label("memory")]` 的一个取值是一行，不是两行。
 

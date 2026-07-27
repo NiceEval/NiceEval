@@ -10,8 +10,6 @@ interface HeroContent {
   runs: number;
 }
 
-declare const sampleProvenance: DataSource<HeroContent, Sample>;
-
 interface HeroCardProps {
   title: LocalizedText;
   data: HeroContent;

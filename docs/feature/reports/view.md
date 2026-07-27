@@ -48,7 +48,7 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 | 主题文件与它的 import 图 | 改 `--theme` 指向的主题或它 import 的令牌模块 |
 | 项目配置 | `niceeval.config.ts` |
 
-**改组件代码同样重建。** 报告是一棵组件树，`defineComponent` 写在哪个文件里都算报告的一部分——
+**改组件代码同样重建。** 报告是一棵组件树，`defineComponent` 或 `defineComposition` 写在哪个文件里都算报告的一部分——
 盯的是报告文件的整棵项目内 import 图，不是那一个入口文件。所以「改一个组件的 web 面 → 存盘 →
 浏览器里看到新样子」是本地模式的常规写法，与改报告文件本身没有区别。
 
@@ -73,19 +73,33 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 
 与正在运行的实验的关系由记录格式担保，不靠 view 自己防抖：`result.json` 一次原子写成，
 站点只会看到已封口的 attempt，读不到半份记录。Run 尚未补写 `completedAt` 是这个场景的常态，
-按[未收尾 Run](../record/architecture.md#读取规则) 如实读出并保留结构化警告，不等收尾才显示。
+按[未收尾 Run](../record/architecture.md#读取规则) 如实读出并产生读取期 Issue，不等收尾才显示。
 
 **没有关掉持续重建的 flag。** 本地模式的存在理由就是盯着看；要一份静止不动的快照，
 那就是 `--out` 的产物，用浏览器直接打开即可。
 
 ## 页面构成
 
-- **导航机器与品牌位：** 页头左端是报告改不动的恒定 NiceEval 字标（外链官网），右侧是 page 导航、外部链接与语言切换。导航只列报告中 `navigation !== false` 的 pages，按声明顺序排列——裸 `view` 的「报告 / Attempts / 追踪」三个 tab 是内建四张 pages 中的前三张，参数化详情页不进导航。宿主不追加导航项。浏览器标题、外壳链接、页脚与资产仍按[外壳契约](library/shell.md#行为约束)消费；hero、品牌行、警告区和 Run 诊断区都是 page 内[站点组件](components/site/README.md)。
-- **默认报告页（内建首页）：** 页首是 `Hero`、`sampleWarnings`、`runDiagnostics` 与 `fixPrompt`，随后 `SampleOverview` 直接展示当前 Sample 的摘要、成本 × 端到端通过率散点和 experiment 比较表。每个 experiment 的 eval 集来自 Run 记录的 `selectedEvalIds`；未选择的 eval 不进入该 experiment 的分母。散点 series 有 label `line` 时按线归类并绘制折线，否则按 agent 归类、不连线。实验表一行一个 experiment，可展开查看 eval 与 attempt 证据。`--report` 用自定义报告替换整份页面声明；配置的 `report` 字段把同一份替换设成项目默认。
-- **Attempts 页（内建）：** `Hero` + `sampleWarnings` + `runDiagnostics` + 带过滤的 [`attemptRows`](components/entity-lists/attempt-rows.md)，把范围内所有 attempt 展成可筛选列表；页名与全库的 attempt 术语一致。
-- **追踪页（内建）：** `Hero` + `sampleWarnings` + `runDiagnostics` + [`traceRows`](components/site/trace-waterfall.md)，用 canonical OTel 字段显示每个 attempt 的执行瀑布行。
-- **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、`navigation: false` 的 page，content 是普通 [`AttemptDetail`](components/attempt-detail/README.md) 组合组件。它再用 `attemptSummary`、`AttemptAssessment`、`attemptFixPrompt`、`attemptTimeline`、`attemptDiagnostics`、`attemptUsage`、`attemptConversation`、`attemptTrace`、`attemptDiff` 组装判定、断言、修复 prompt、时间树、diagnostics、usage、对话、trace 和 diff。以下是这些组件的 web 面契约，不是 view 硬编码布局：`AttemptAssessment` 有源码时用 `attemptSource`，否则用 `attemptAssertions`；`attemptTimeline` 组合 runner phase 与显式关联的 spans；`attemptTrace` 保留原始 OTel 视角；`attemptConversation` 按标准事件流分轮。用户可把 page content 换成任意公开组件组合。
-- **Copy fix prompt：** 全部失败的批量修复 prompt 由内建报告页里的 [`fixPrompt`](components/site/copy-fix-prompt.md) 组件提供；attempt 详情里保留单条失败的复制入口。
+- **导航机器与品牌位：** 页头左端是恒定的 NiceEval 字标，右侧是 page 导航、外部链接与语言切换。
+  导航只列 `navigation !== false` 的 pages，并按声明顺序排列；参数化详情页不进导航，宿主不追加项。
+  浏览器标题、外壳链接、页脚与资产按
+  [外壳契约](library/shell.md#行为约束)消费；hero、Notice 和 Run 诊断都是 page 内的
+  [站点组件](components/site/README.md)。
+- **默认报告页（内建首页）：** 页首是 `Hero`、`SampleNotices`、`RunNotices` 与 `SampleFixPrompt`。
+  `SampleOverview` 展示摘要、成本 × 主读数散点和 experiment 比较表。实验表可展开查看 eval 与
+  attempt 证据。每个 experiment 的 eval 集取 Run 记录的 `selectedEvalIds`，未选择项不进入分母。
+  散点有 `line` label 时按线归类并连线，否则按 agent 归类且不连线。`--report` 用自定义报告替换
+  整份页面声明，配置的 `report` 字段把同一替换设为项目默认。
+- **Attempts 页（内建）：** 站点组件加带过滤的
+  [`sources.entity.attempts`](components/entity-lists/attempt-rows.md)，把范围内所有 attempt 展成列表。
+- **追踪页（内建）：** 站点组件加
+  [`sources.sample.traces`](components/site/trace-waterfall.md)，用 canonical OTel 字段显示执行瀑布。
+- **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、
+  `navigation: false` 的 [`AttemptDetail`](components/attempt-detail/README.md) page。它用公开组件装配
+  判定、断言、修复 prompt、时间树、usage、对话、trace 和 diff。`AttemptAssessment` 内的
+  `AttemptNotices` 统一解释 snapshot error 与 persisted diagnostics。用户可把 content 换成任意公开组合。
+- **Copy fix prompt：** 批量修复 prompt 由
+  [`SampleFixPrompt`](components/site/copy-fix-prompt.md) 提供；attempt 详情保留单条失败的复制入口。
 
 ## 静态导出
 
@@ -115,7 +129,7 @@ site/
             └── diff.json        # 根里有才出现；缺时证据位置如实显示缺失
 ```
 
-站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同 Run 的 `sources/<sha256>.json`，读取这份导出目录的下游消费方（下载后用 `niceeval/record` 重新打开、或另行编写的查看器）按这条引用取源码正文；携带条目（`artifactBase` 指向原 Run）的源码正文由复制管线归拢进本 Run 的 `sources/`，静态站不需要原 Run 在场。这是 `artifact/` 自身的存储去重机制，与页面渲染路径无关——`attemptSource` 消费的标注源码已经在 `AttemptEvidence.evalSource` 里解引用好，构建期直接写进对应 attempt 页面的初始 HTML，不依赖浏览器再去读这份引用。
+站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同 Run 的 `sources/<sha256>.json`，读取这份导出目录的下游消费方（下载后用 `niceeval/record` 重新打开、或另行编写的查看器）按这条引用取源码正文；携带条目（`artifactBase` 指向原 Run）的源码正文由复制管线归拢进本 Run 的 `sources/`，静态站不需要原 Run 在场。这是 `artifact/` 自身的存储去重机制，与页面渲染路径无关——`sources.attempt.source` 消费的标注源码已经在 `AttemptEvidence.evalSource` 里解引用好，构建期直接写进对应 attempt 页面的初始 HTML，不依赖浏览器再去读这份引用。
 
 多页报告仍只用一个 `index.html`：页面是 `#/page/<id>` 路由，托管方不需要为每页配置路径。attempt 不同：基线 locator 链接直接指向 `attempt/<locator>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/attempt/@<locator>`。所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。托管方把站点根暴露成无尾斜杠路径（`/showcase/memory` 直接服务 `index.html`，且带斜杠形态被 308 回无斜杠）时，浏览器按文档 URL 的**目录**解析相对引用会少一层——`index.html` 因此在 `<head>` 最前面落一个 `<base>`，把站点根写成目录形态，后续所有相对引用（attempt 链接、证据 fetch、head 资产标签）都按它解析：路径已是目录形态（`/`、`/sub/`）时不插入，末段带扩展名（`/out/index.html`、`file://` 直接打开）时取其目录。`index.html` 按构造恒是站点根，这条判定不需要托管方配置。attempt 文档住在真实的 `attempt/` 目录下，相对引用天然对齐，不参与这套归一。`assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。`head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。attempt 页面的基线内容——判定、断言、时间树、对话、diagnostics、usage、trace、diff 摘要与可展开细节——已经在构建期写进该 locator 的静态 HTML，不依赖浏览器再去 fetch；`artifact/` 是与 HTML 平行的独立证据树，只服务下载、外部程序读取与渐进增强的补充链接，不是页面基线内容的数据来源。因此不提供“单个 HTML”导出：站点仍需要 `assets/`（样式 / 脚本）与 `artifact/`（独立证据文件）等外部文件，这是站点由多个物理文件构成的结构性原因，与页面是否需要联网取数无关。
 
@@ -137,7 +151,9 @@ await publish(latestRunSample(record), "site-data/run", {
 
 ## 结果版本与错误
 
-扫描整个记录根时，单个不可读 Run 不会挡住其它结果；每个被跳过的 Run 形成一条 `unreadable-run` [Sample warning](../sample/library.md#警告-kind-全集)（含目录与原因），由页内的 `sampleWarnings` 组件与其它选择警告一起显示。用 `--run` 明确指定单个 Run 文件时，该文件不可读会让命令失败。
+扫描整个记录根时，单个不可读 Run 不会挡住其它结果；每个被跳过的 Run 形成一条
+`unreadable-run` [Sample Issue](../sample/library.md#issue-code-全集)（含目录与原因），由页内
+`SampleNotices` 显示。用 `--run` 明确指定单个 Run 文件时，该文件不可读会让命令失败。
 
 | 场景 | 行为 |
 |---|---|

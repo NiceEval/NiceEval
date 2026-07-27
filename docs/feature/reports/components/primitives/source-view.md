@@ -5,7 +5,7 @@ GitHub diff 式带标注源码：轻量语法高亮，行按状态整行着色�
 发生了什么」。
 
 ```tsx
-<SourceView source={attemptSource} />
+<SourceView source={sources.attempt.source} />
 ```
 
 ## 形状
@@ -50,6 +50,11 @@ interface SourceContent {
   /** 真正没有源码位置的证据，列在全部源码块之后。 */
   unmapped?: readonly ReportNode[];
 }
+
+type SourceViewProps = DataProps<AttemptEvidence, SourceContent | null> & {
+  locale?: ReportLocale;
+  className?: string;
+};
 ```
 
 `SourceContent` 是[完整源码调用树](../../eval-source/architecture.md)的面相关投影。`SourceView` 不读取
@@ -104,7 +109,7 @@ text 面不倾倒整份源码：打印有状态行的位置与 expected / receiv
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与双面投影边界。
+- [组件树](../README.md) —— 四层模型与双面投影边界。
 - [`Conversation`](conversation.md) —— 兜底区与展开区共用的回复渲染。
 - [源码调用树](../../eval-source/README.md) —— 完整证据、调用片段与降级规则。
 - [断言与 Turn 的展示](../../../assertions/library/display.md#计分制points-与给分记录) —— 证据的折叠与分组契约。

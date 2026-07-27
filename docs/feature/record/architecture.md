@@ -8,12 +8,12 @@
 
 ## 目录结构
 
-默认输出根目录是 `.niceeval/`。**落盘单位是 Run**(Run = 一个 Experiment 的一次执行水位):实验目录在外层,run 目录在实验目录下。一次 CLI Invocation 可同时打开多个 Run,但它不是持久化实体:格式不保存 `runId` / `invocationId` / Run Manifest,也不保存跨实验成员关系。
+默认输出根目录是 `.niceeval/`。**落盘单位是 Run**(Run = 一个 Experiment 的一次执行水位):实验目录在外层,run 目录在实验目录下。每个 Run 创建时生成一个 UUID v4 `runId`，它是移动、发布或重命名目录后仍不变的权威身份。一次 CLI Invocation 可同时打开多个 Run，但 Invocation 不是持久化实体：格式不保存 `invocationId` 或跨实验成员关系。
 
 ```text
 .niceeval/
   <experiment>/                      # 实验目录:experimentId 清洗后的名字
-    <timestamp>-<suffix>/            # run 目录:时间戳 + 随机后缀,独占创建
+    <timestamp>-<suffix>/            # run 目录:人读定位名,权威身份在 run.json 的 runId
       run.json                  # Run 元数据(Run 开始时写入,收尾补 completedAt + Run 诊断)
       sources/                       # Run 级 eval 源码去重仓库,按内容 SHA-256 建档
         <sha256>.json                # { content }:一份源码文本,Run 内多少 attempt 引用它都只存一份
@@ -28,11 +28,11 @@
         diff.json
 ```
 
-命名与清洗规则:
+命名与编码规则:
 
-- **实验目录名**:`experimentId` 里的 `/` 与其它非 `[\w.@-]` 字符替换成 `_`(如 `dev-e2b/codex-e2b` → `dev-e2b_codex-e2b`)。目录名只表达身份与定位;权威的 experimentId 在 `run.json` 的 `experimentId` 字段里,两个不同 id 清洗后撞同一目录名也不影响解析(reader 按字段归组)。
+- **实验目录名**：把完整 `experimentId` 的 UTF-8 字节做 percent-encoding。安全字符仅为 `A-Z a-z 0-9 . _ @ -`，`%` 与 `/` 一律编码，因此投影可逆且不同 id 不会撞目录名。权威值仍是 `run.json.experimentId`。
 - **run 目录名**:`Date#toISOString()` 把 `:` 与 `.` 换成 `-`,再接 `-<4 位随机后缀>`(如 `2026-07-11T07-29-54-873Z-x1f2`)。
-- **attempt 目录**:`evalId` 里的 `/` 保留为目录层级,其它不适合路径的字符替换成 `_`;`a<attempt>` 是第几轮重试。agent、model、实验参数都由所属 Run 钉死,attempt 路径里不出现。
+- **attempt 目录**：`evalId` 的 `/` 保留为层级，每个路径片段使用同一套可逆 percent-encoding；`.` / `..` 整段额外编码，不能取得路径语义。`a<attempt>` 是第几轮运行。agent、model、实验参数都由所属 Run 钉死，attempt 路径里不出现。
 
 **唯一性由创建方式保证**:run 目录用独占 `mkdir` 创建(目录已存在即失败),撞名时换随机后缀重试。多个 niceeval 进程同时开跑——哪怕同一毫秒、同一个实验——各自拿到各自的 run 目录,任何文件都不会被另一个进程触碰。
 
@@ -45,18 +45,19 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 10,
+  "schemaVersion": 11,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
   },
+  "runId": "9dcf6f83-4468-42f1-b0e1-a410f49cf58e",
   "experimentId": "dev-e2b/codex-e2b",
   "agent": "codex",
   "startedAt": "2026-07-11T07:29:54.871Z"
 }
 ```
 
-当前 `schemaVersion` 是 `10`。历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的
+当前 `schemaVersion` 是 `11`。历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的
 results-schema-version-history 条目。读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个 Run(run.json + 全部 attempt 文件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份结果的 niceeval 版本查看:
@@ -90,7 +91,10 @@ npx niceeval@0.5.4 view .niceeval/2026-07-10T08-00-00-000Z
   单文件模式 `niceeval view <path>` 指向版本不同的元数据文件时输出同样的提示后退出,而不是报「不是 niceeval 结果」。
 - **不能识别**(没有 `format`,也不满足 legacy 的 `results[]` + `startedAt` 启发式):当作无关 JSON 忽略。
 
-实现入口:版本判定只有一份,在 `src/record/format.ts` 的 `classifyRun`(view 经 `openRecord` 消费);目录扫描的占位数据经 `viewData.unreadableRuns` 进前端,由 `src/view/app/App.tsx` 的 incompatible-banner 渲染(三种原因:incompatible-version / malformed / incomplete);单文件模式在 `src/view/data.ts` 抛 `IncompatibleRecordError`,`src/cli.ts` 的 `exitOnViewUserError` 打印提示退出;提示文案是 i18n key `cli.view.incompatible`(niceeval 落盘)与 `cli.view.incompatibleForeign`(第三方 harness,不拼 npx)。
+实现入口:版本判定只有一份,在 `src/record/format.ts` 的 `classifyRun`(view 经 `openRecord` 消费);
+目录扫描把 incompatible-version / malformed / incomplete 投影为结构化 `unreadable-run` Issue。view 与 CLI
+各自的 Notice policy 再产生 banner 或终端错误,包括是否根据 producer 给出版本命令;读取分类层不写
+i18n 文案或 action。
 
 ## `run.json`
 
@@ -101,6 +105,8 @@ interface RunMeta {
   format: "niceeval.results";
   schemaVersion: number;
   producer: { name: string; version?: string; commit?: string };
+  /** Run 的权威身份；创建时生成 UUID v4，复制、发布和目录改名都不改变。 */
+  runId: string;
   /** 权威的实验身份;实验目录名是它的清洗投影。 */
   experimentId: string;
   /** 实验运行配置的可序列化投影,Run 内全部 attempt 共享;字段全集见下方 ExperimentRunInfo。 */
@@ -118,7 +124,7 @@ interface RunMeta {
   /** Run 封口时补写;缺失 = Run 未收尾(进程中断),已落盘的 attempt 照常可读。 */
   completedAt?: string;
   /**
-   * 属于整个 Experiment Run、无法诚实挂到单个 Attempt 的操作性诊断。
+   * 属于整个 Experiment Run、无法诚实挂到单个 Attempt 的运行诊断 observation。
    * 与 completedAt 在同一次 Run 封口补写;例如 experiment-teardown-failed、
    * budget-unenforceable。不得放入跨 Experiment 的 Invocation 汇总。
    */
@@ -221,6 +227,9 @@ interface AttemptRecord {
   scoreEntries?: ScoreEntry[];
   /** 证据覆盖聚合:Agent 声明经各 turn 降级后的最差值,字段契约见 [Adapters · 证据与完整性](../adapters/architecture/evidence.md);省略 = 全通道 unknown(Adapter 未声明),消费侧按保守处理。 */
   coverage?: EvidenceCoverage;
+  /** 自动重试吸收的物理 send 失败,按发生顺序完整保留；最终一次逻辑 Turn 不重复放这里。 */
+  retryAttempts?: RetryAttemptRecord[];
+  /** 全部物理 send（含 retryAttempts）与其它模型调用的聚合用量。 */
   usage?: Usage;
   /** attempt 作用域生命周期代码经 `ctx.fact()` 上报的运行事实;字段契约见下方 facts 小节。 */
   facts?: Record<string, string | number | boolean>;
@@ -251,11 +260,10 @@ interface AttemptRecord {
     reuseOrdinal?: number;
   };
   /**
-   * 不透明的 Attempt 定位符:`@` + 1 位 scheme 字符 + 7 位 base36 body(如 `@1x7f3q9k`)。
-   * 由 `{experimentId, Run startedAt, evalId, attempt}` 这个不可变身份元组确定性派生——
+   * 不透明的 Attempt 定位符:`@` + 1 位 scheme 字符 + 20 位 Crockford base32 body。
+   * 由 `{runId, evalId, attempt}` 的 SHA-256 前 100 bit 确定性派生——
    * 不是数组下标、不是磁盘路径。fresh 条目在 attempt 调度前由 runner 算出并贯穿执行、留存登记与落盘;
-   * 携带条目(见下)原样复制上一轮的值,从不重算(原 Run 的 startedAt 已经不在本轮 Run 里,
-   * 重算会算出不同的字符串)。
+   * 携带条目(见下)原样复制上一轮的值，从不按承载它的新 Run 重算。
    * `niceeval show @<locator>` 与报告 / view 的 attempt 深链都靠它寻址,详见
    * [Library · 按 locator 寻址一个 attempt](library.md#按-locator-寻址一个-attemptresolvelocator)。
    */
@@ -364,15 +372,34 @@ interface AttemptError {
   cause?: { name?: string; code?: string; message: string };
 }
 
+interface RetryAttemptRecord {
+  sessionIndex: number;
+  turnIndex: number;
+  /** 同一逻辑 send 内从 0 开始的物理尝试序号；0 是首次发送。 */
+  sendAttempt: number;
+  startedAt: string;
+  durationMs: number;
+  failure:
+    | { type: "thrown"; error: AttemptError }
+    | { type: "turn-failed"; message: string };
+  classification: {
+    retryable: true;
+    scope: "attempt" | "eval" | "experiment";
+    reason?: string;
+  };
+  events: StreamEvent[];
+  usage?: Usage;
+}
+
 interface DiagnosticRecord {
   code: string;
+  /** 写入方观察到的运行影响;不是最终 Notice 严重度。 */
   level: "warning" | "error";
-  /** 现象 + 依据 + 下一步,以下一步收尾;三段式契约见 docs/error-feedback.md。 */
-  message: string;
   phase: LifecyclePhase;
-  data?: Readonly<Record<string, JsonValue>>;
-  /** 有单条能直接推进的命令时给出(已替换真实 id);web 渲染面呈现为可复制动作。 */
-  command?: string;
+  /** 写入时观察到的原始有界描述;不包含修复动作或呈现文案。 */
+  detail: string;
+  /** 支撑 code 的结构化原始上下文。 */
+  context?: Readonly<Record<string, JsonValue>>;
   /** 相同 dedupeKey 折叠后的出现次数;省略等于 1。 */
   count?: number;
 }
@@ -390,7 +417,7 @@ interface DiagnosticRecord {
 
 `agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为 `error.phase` / `diagnostics[].phase` 的归因值出现，不在 `phases` 里单列。每次 send 由 runner 产生一个 `turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。`trace.json` 中的 agent/model/tool spans 不复制进 `children`，消费方按 `traceId` 把它们临时挂到对应 turn 下。这样没有 OTel 时仍有可靠的轮次总耗时，有 OTel 时才展开轮内模型、工具与子 agent 细节。
 
-Experiment `setup` / `teardown` 属于 Run 级生命周期，反馈 phase 可以使用 `experiment.setup` /
+Experiment `setup` / `teardown` 属于 Run 级生命周期，diagnostic 归因 phase 可以使用 `experiment.setup` /
 `experiment.teardown`，但它们不进入任何单条 Attempt 的 `phases[]`。Run 级 diagnostics 与 facts
 在 `run.json` 封口时保存；Attempt timing 不借入整场只执行一次的耗时。
 
@@ -398,7 +425,12 @@ Experiment `setup` / `teardown` 属于 Run 级生命周期，反馈 phase 可以
 
 所有 runner duration 使用单调时钟；`startedAt` 单独保留 ISO 墙钟。`startOffsetMs` 只用于同一 attempt 内恢复顺序和重叠，不能拿远端 OTel 的绝对时间与 runner 墙钟硬对齐。父子节点允许嵌套与并发，子节点 duration 不可直接求和后与父节点比较。`result.json` 永远保存完整 runner 时间树；终端默认视图的节点预算只是读取投影，不得回写、裁剪或聚合 artifact。阶段边界、主链 / 收尾两段的 failed 语义、时间树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端的有界/full 两档见 [Show `--timing`](../reports/show/timing.md)，网页入口见 [View](../reports/view.md) 的 Attempt 详情。
 
-`error` 与 `diagnostics` 的 `phase` 都由 runner 在错误 / 诊断发生时按已打开的生命周期阶段绑定,调用方不能自行填写。两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。`diagnostic.level` 表达消息严重度,不是 verdict 的别名。diagnostic 是 niceeval 的操作性反馈,`message` 与 `command` 遵循[错误与警告反馈](../../error-feedback.md)——message 以下一步收尾,单命令可推进时 `command` 携带该命令;`error` 是被测对象的失败事实,不受该契约约束。
+`error` 与 `diagnostics` 的 `phase` 都由 runner 在错误 / 诊断发生时按已打开的生命周期阶段绑定,调用方不能自行填写。两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。`diagnostic.level` 表达写入方观察到的运行影响,不是 verdict 的别名,也不决定报告 Notice 的严重度。
+
+`DiagnosticRecord` 是持久化 observation:只保存 code、phase、level、去重次数与当时观察到的
+`detail` / `context`。它不存本地化文案、修复建议或命令。读取层把 observation 投影成结构化 Issue,
+Reports 的 Notice policy 再决定给当前读者显示什么、用什么严重度与提供什么动作。`AttemptError.message`
+例外地保留:它是被测对象的失败证据,不是 niceeval 的操作性文案。
 
 `progress` 文本不写入任何 artifact。它是运行时可覆盖状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。事后回顾依靠 `phases`、`error`、`diagnostics` 与可选的 `events.json` / `trace.json`。trace 不是必需兜底:沙箱创建发生在 telemetry 之前,teardown 发生在 trace collect 之后,没有 tracing 的 provider 也必须留下同样完整的错误摘要。
 
@@ -459,7 +491,7 @@ interface Usage {
 
 `facts` 记录生命周期代码主动上报的**运行环境观测**:键值标量,回答「这次实际看到了什么」——记忆库起步有多少条笔记、恢复自哪份 checkpoint、远端服务返回了哪个版本。它是运行后的审计证据，不是配置入口，也不是缓存键。
 
-- **上报通道**:各作用域上下文的 `fact(key, value)`,与 `progress` / `diagnostic` 并列的第三条反馈通道(声明见 [Sandbox hooks](../sandbox/library.md)、[Experiment hooks](../experiments/architecture.md)、[AgentContext](../adapters/architecture/agent-contract.md#agentcontext))。三条通道语义互斥:`progress` 是不落盘的短期状态,`diagnostic` 是需要回顾的异常,`fact` 是中性的环境事实。
+- **上报通道**:各作用域上下文的 `fact(key, value)`,与 `progress` / `diagnostic` 并列的第三条观察通道(声明见 [Sandbox hooks](../sandbox/library.md)、[Experiment hooks](../experiments/architecture.md)、[AgentContext](../adapters/architecture/agent-contract.md#agentcontext))。三条通道语义互斥:`progress` 是不落盘的短期状态,`diagnostic` 是需要回顾的异常 observation,`fact` 是中性的环境事实。
 - **归属跟随作用域**:sandbox hook、agent setup/teardown、adapter send 上报的进 `AttemptRecord.facts`;experiment setup/teardown 上报的进 `RunMeta.facts`。runner 自动归属,调用方不能指定层级。
 - **形状**:key 匹配 `[a-z0-9._-]{1,64}`,value 是 `string | number | boolean` 标量。同一作用域内同 key 后写覆盖先写——fact 是现刻观测,不是追加日志;需要留痕迹的过程用 `diagnostic`。
 - **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment / sandbox setup 尚未运行时，runner 已经决定哪些 attempt 可以携带。计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--rerun all` 重跑，再用 facts 审计实际状态。把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
@@ -526,15 +558,15 @@ type CommandsArtifact = FailedCommandEvidence[];
 常见事件包括:
 
 - `message`: assistant / user 文本;
-- `action.called` / `action.result`: 工具调用与结果;
+- `operation.started` / `operation.finished`: 工具或子 agent 操作的开始与结果,按 operation ID 配对;
 - `skill.loaded`: Skill 加载;
-- `subagent.called` / `subagent.completed`: 子 agent 调用;
 - `input.requested`: HITL 输入请求;
 - `thinking`: 思考块;
 - `compaction`: 上下文压缩;
 - `error`: 运行时或采集错误。
 
-文件内容是一个 JSON array,不是 JSONL / NDJSON。
+文件内容是一个 JSON array,不是 JSONL / NDJSON。这里是最终逻辑会话的事件流；被自动重试吸收的
+物理失败事件保存在 `result.json` 的 `retryAttempts[].events`，不混进本数组。
 
 ### `sources.json`
 
@@ -689,7 +721,7 @@ interface Truncation {
 }
 ```
 
-view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方正则解析」与 [Scope 警告](library.md#警告-kind-全集) 是同一条原则。
+view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则匹配 marker:「只给文本等于逼消费方正则解析」与 [Sample Issue](../sample/library.md#issue-code-全集) 是同一条原则。
 
 两条明确不做:
 
@@ -710,10 +742,10 @@ view 显示「输出过大,已截断(原始 51.5 MB)」靠的是它,不是正则
 
 两种非正常落盘的判定:
 
-- **未收尾 Run**:`run.json` 缺 `completedAt`——进程中断,已落盘的 attempt 全部可读,只是集合可能不完整;读取面如实读出并给出结构化警告。
-- **incomplete 目录**：有 Attempt 落盘、没有 `run.json`。读取面把它投影成
-  `skipped("incomplete")` 以便 Sample 与 Report 保守处理；这是 reader projection，
-  不是运行器产出的第五种 Verdict。
+- **未收尾 Run**:`run.json` 缺 `completedAt`——进程中断,已落盘的 attempt 全部可读,只是集合可能不完整;读取/选择面如实读出并产生结构化 `unfinished-run` Issue。
+- **incomplete 目录**：有 Attempt 文件、没有 `run.json`。读取面不能证明这些文件属于哪次 Run，
+  因而不合成 Attempt 或 Verdict；它把整目录列入 `record.unreadable`（reason `"incomplete"`），
+  Sample 再投影成 `unreadable-run` Issue。原始文件留在盘上供修复与取证。
 
 `niceeval view` 的本地 server 只暴露 `.json` artifact,并把请求路径限制在 view 输入根目录内。`--out` 导出时 Run 聚合数据烘焙进 `index.html`,查看器要 fetch 的 artifact 复制到 `artifact/` 下同布局路径。
 

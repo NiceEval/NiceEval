@@ -6,28 +6,41 @@
 ## 排行柱
 
 ```tsx
-const ranking = chart({
-  x: { measure: endToEndPassRate },
-  y: { dimension: "agent", sort: endToEndPassRate },
-  series: [{
-    key: "pass-rate",
-    mark: "bar",
-    measure: endToEndPassRate,
-  }],
+const ranking = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate],
 });
 
-<Chart source={ranking} layout="vertical" />
+<Chart
+  source={ranking}
+  x="passRate"
+  y={{ field: "agent", sort: "passRate" }}
+  layout="vertical"
+>
+  <Series id="pass-rate" mark="bar" />
+</Chart>
 ```
 
 ## 按 Eval 前缀分面
 
-分面属于普通 TSX 组合；每个面板复用同一份声明，只改变 `evals`：
+分面属于普通 TSX 组合；每个面板生成自己的 Dataset Source，题集选择不进入 Chart props：
 
 ```tsx
 <Grid columns={2}>
   {["coding/", "research/"].map((prefix) => (
     <Section key={prefix} title={prefix}>
-      <Chart source={ranking} evals={prefix} layout="vertical" />
+      <Chart
+        source={sources.measure.rows({
+          evals: prefix,
+          dimensions: ["agent"],
+          measures: [passRate],
+        })}
+        x="passRate"
+        y={{ field: "agent", sort: "passRate" }}
+        layout="vertical"
+      >
+        <Series id="pass-rate" mark="bar" />
+      </Chart>
     </Section>
   ))}
 </Grid>
@@ -36,68 +49,52 @@ const ranking = chart({
 ## 堆叠成本
 
 ```tsx
-const costBreakdown = chart({
-  x: { dimension: "experiment" },
-  y: { measure: costUSD },
-  series: [
-    {
-      key: "planner",
-      mark: "bar",
-      measure: plannerCostUSD,
-      stack: "cost",
-    },
-    {
-      key: "worker",
-      mark: "bar",
-      measure: workerCostUSD,
-      stack: "cost",
-    },
-  ],
+const costBreakdown = sources.measure.rows({
+  dimensions: ["experiment"],
+  measures: [plannerCostUSD, workerCostUSD],
 });
 
-<Chart source={costBreakdown} legend tooltip />
+<Chart source={costBreakdown} x="experiment" y="plannerCostUSD" legend tooltip>
+  <Series id="planner" mark="bar" y="plannerCostUSD" stack="cost" />
+  <Series id="worker" mark="bar" y="workerCostUSD" stack="cost" />
+</Chart>
 ```
 
 ## 质量 × 成本前沿
 
 ```tsx
-const frontier = chart({
-  x: { measure: costUSD },
-  y: { measure: endToEndPassRate },
-  series: [{
-    key: "frontier",
-    mark: "scatter",
-    points: "experiment",
-    by: "agent",
-    x: costUSD,
-    y: endToEndPassRate,
-  }],
+const frontier = sources.measure.rows({
+  dimensions: ["experiment", "agent"],
+  measures: [costUSD, passRate],
 });
 
-<Chart source={frontier} legend tooltip />
+<Chart source={frontier} x="costUSD" y="passRate" legend tooltip>
+  <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+</Chart>
 ```
 
 ## 混合 mark
 
 ```tsx
-const qualityAndCost = chart({
-  x: { dimension: "experiment" },
-  y: [
-    { id: "cost", measure: costUSD },
-    { id: "quality", measure: endToEndPassRate },
-  ],
-  series: [
-    { key: "cost", mark: "bar", measure: costUSD, yAxis: "cost" },
-    {
-      key: "quality",
-      mark: "line",
-      measure: endToEndPassRate,
-      yAxis: "quality",
-    },
-  ],
+const qualityAndCost = sources.measure.rows({
+  dimensions: ["experiment"],
+  measures: [costUSD, passRate],
 });
 
-<Chart source={qualityAndCost} legend tooltip grid />
+<Chart
+  source={qualityAndCost}
+  x="experiment"
+  y={[
+    { id: "cost", field: "costUSD" },
+    { id: "quality", field: "passRate" },
+  ]}
+  legend
+  tooltip
+  grid
+>
+  <Series id="cost" mark="bar" y="costUSD" yAxis="cost" />
+  <Series id="quality" mark="line" y="passRate" yAxis="quality" />
+</Chart>
 ```
 
 ## 同数据的精确表
@@ -106,10 +103,9 @@ const qualityAndCost = chart({
 
 ```tsx
 <Col>
-  <Chart source={frontier} legend tooltip />
-  <Table source={measureRows({
-    rows: "experiment",
-    measures: [endToEndPassRate, costUSD],
-  })} filter />
+  <Chart source={frontier} x="costUSD" y="passRate" legend tooltip>
+    <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+  </Chart>
+  <Table source={frontier} filter />
 </Col>
 ```

@@ -1,12 +1,12 @@
-# `deltaRows`
+# `sources.measure.delta`
 
-`deltaRows(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源：每行是一道 eval，每组列是
+`sources.measure.delta(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源：每行是一道 eval，每组列是
 一个条件。`by` 明确条件取值所在的维度，`conditions` 明确有序条件与基准，因此 `"baseline"`
 不会被猜成 experiment、agent、flag 或 Run 中的某一种。
 
 ```tsx
 <Table
-  source={deltaRows({
+  source={sources.measure.delta({
     by: "experiment",
     conditions: [
       { value: "compare/baseline", baseline: true },
@@ -20,7 +20,7 @@
 
 ```tsx
 <Table
-  source={deltaRows({
+  source={sources.measure.delta({
     by: "experiment",
     conditions: { flag: "memory" },
   })}
@@ -46,18 +46,19 @@ interface FlagConditions {
 
 interface DeltaRowsOptions {
   by: DimensionInput;
+  evals?: string | readonly string[];
   conditions:
     | readonly [DeltaCondition, DeltaCondition, ...DeltaCondition[]]
     | FlagConditions;
 }
 
-function deltaRows(
+function delta(
   options: DeltaRowsOptions,
-): RowSource<DeltaRow>;
+): Source<Sample, DeltaContent>;
 ```
 
 ```ts
-interface DeltaContent {
+interface DeltaContent extends TableContent<DeltaRow> {
   byDimension: string;
   /** 有序条件值，首个是基准。 */
   conditions: string[];
@@ -84,7 +85,8 @@ interface DeltaRow extends Row {
   /** 配对身份：eval id。 */
   key: string;
   flipped: boolean;
-  cells: Record<string, {
+  cells: Readonly<Record<string, Cell>>;
+  conditions: Record<string, {
     scoring: "pass" | "points";
     verdict: AttemptRecord["verdict"];
     totalScore?: number;
@@ -107,10 +109,10 @@ interface DeltaRow extends Row {
 都存在结果的 eval 交集上计算。通过制与计分制混合时分别汇总，不压成一个综合分。`score` 越高越好，
 `tokens` 与 `costUSD` 越低越好；数据源只计算带符号差值，不替读者下结论。
 
-`evals` 属于 `Table` 的 source 选项。手工计算写 `await deltaRows(options).compute(input)`。
+`evals` 属于 Source options。手工计算写 `await sources.measure.delta(options).compute(input)`。
 
 ## 相关阅读
 
 - [表格与矩阵](README.md) —— 共用数据形状与两面规则。
-- [`measureRows`](measure-table.md) / [`measureMatrix`](measure-matrix.md) /
-  [`scoreboard`](scoreboard.md) / [`stabilityRows`](stability-matrix.md) —— 其它表格数据源。
+- [`sources.measure.rows`](measure-table.md) / [`sources.measure.matrix`](measure-matrix.md) /
+  [`sources.measure.scoreboard`](scoreboard.md) / [`sources.measure.stability`](stability-matrix.md) —— 其它表格数据源。

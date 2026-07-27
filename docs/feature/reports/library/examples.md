@@ -20,15 +20,15 @@ export default defineReport(
 
 ## 考试：固定题集成绩单
 
-题集写进 `scoreboard(...)` 的配置；`Table` 只负责呈现：
+题集写进 `sources.measure.scoreboard(...)` 的配置；`Table` 只负责呈现：
 
 ```tsx
-import { Table, defineReport, examScore, scoreboard } from "niceeval/report";
+import { Table, defineReport, passRate, sources } from "niceeval/report";
 
-const exam = scoreboard({
-  rows: "agent",
+const exam = sources.measure.scoreboard({
+  dimensions: ["agent"],
   fullMarks: 100,
-  score: examScore,
+  score: passRate,
   groups: [
     {
       name: "security",
@@ -50,14 +50,13 @@ export default defineReport(<Table source={exam} />);
 
 ```tsx
 import {
-  Table, defineReport, endToEndPassRate, executionReliability, measureRows,
-  taskPassRate,
+  Table, defineReport, executionReliability, passRate, sources, taskPassRate,
 } from "niceeval/report";
 
-const reliability = measureRows({
-  rows: "experiment",
-  measures: [endToEndPassRate, taskPassRate, executionReliability],
-  sort: endToEndPassRate,
+const reliability = sources.measure.rows({
+  dimensions: ["experiment"],
+  measures: [passRate, taskPassRate, executionReliability],
+  sort: passRate,
 });
 
 export default defineReport(<Table source={reliability} filter />);
@@ -66,9 +65,9 @@ export default defineReport(<Table source={reliability} filter />);
 ## 对比：基线与候选相差多少
 
 ```tsx
-import { Table, defineReport, deltaRows } from "niceeval/report";
+import { Table, defineReport, sources } from "niceeval/report";
 
-const memoryDelta = deltaRows({
+const memoryDelta = sources.measure.delta({
   by: "experiment",
   conditions: { flag: "memory" },
 });
@@ -81,55 +80,46 @@ export default defineReport(<Table source={memoryDelta} />);
 
 ## 扫描：参数档位趋势
 
-`chart(...)` 声明坐标与 series；它与表格数据源使用同一组 `Measure` / `Dimension`：
+先用 `sources.measure.rows(...)` 计算 Dataset，再由 `Chart` 把字段映射到坐标与 series。同一份数据
+也能直接交给 `Table`，图表没有第二套 Source：
 
 ```tsx
-import {
-  Chart, chart, defineReport, endToEndPassRate, numericFlag,
-} from "niceeval/report";
+import { Chart, Series, defineReport, numericFlag, passRate, sources } from "niceeval/report";
 
-const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
-const trend = chart({
-  x: { numeric: budget },
-  y: { measure: endToEndPassRate },
-  series: [{
-    key: "pass-rate",
-    mark: "line",
-    measure: endToEndPassRate,
-    by: "agent",
-  }],
+const budget = numericFlag("budget", { unit: "tokens" });
+const trend = sources.measure.rows({
+  dimensions: [budget, "agent"],
+  measures: [passRate],
 });
 
-export default defineReport(<Chart source={trend} legend />);
+export default defineReport(
+  <Chart source={trend} x="budget" y="passRate" legend>
+    <Series id="pass-rate" mark="line" by="agent" />
+  </Chart>,
+);
 ```
 
 ## 定位：哪道题在哪个配置上失败
 
 ```tsx
-import {
-  Chart, Col, Table, chart, defineReport, endToEndPassRate, measureMatrix,
-} from "niceeval/report";
+import { Chart, Col, Series, Table, defineReport, passRate, sources } from "niceeval/report";
 
-const matrix = measureMatrix({
+const matrix = sources.measure.matrix({
   rows: "eval",
   columns: "agent",
-  measure: endToEndPassRate,
+  measure: passRate,
 });
-const grouped = chart({
-  x: { dimension: "eval" },
-  y: { measure: endToEndPassRate },
-  series: [{
-    key: "pass-rate",
-    mark: "bar",
-    measure: endToEndPassRate,
-    by: "agent",
-  }],
+const grouped = sources.measure.rows({
+  dimensions: ["eval", "agent"],
+  measures: [passRate],
 });
 
 export default defineReport(
   <Col>
     <Table source={matrix} />
-    <Chart source={grouped} legend />
+    <Chart source={grouped} x="eval" y="passRate" legend>
+      <Series id="pass-rate" mark="bar" by="agent" />
+    </Chart>
   </Col>,
 );
 ```
@@ -137,13 +127,10 @@ export default defineReport(
 ## 自定义读数
 
 ```tsx
-import {
-  Table, costUSD, defineMeasure, defineReport, endToEndPassRate, measureRows,
-} from "niceeval/report";
+import { Table, costUSD, defineMeasure, defineReport, passRate, sources } from "niceeval/report";
 
 const changedLines = defineMeasure({
   name: "changed-lines",
-  label: { en: "Changed lines", "zh-CN": "改动行数" },
   unit: "lines",
   better: "lower",
   where: (attempt) => attempt.result.verdict === "passed",
@@ -155,10 +142,10 @@ const changedLines = defineMeasure({
   },
 });
 
-const golf = measureRows({
-  rows: "agent",
-  measures: [endToEndPassRate, changedLines, costUSD],
-  sort: endToEndPassRate,
+const golf = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, changedLines, costUSD],
+  sort: passRate,
 });
 
 export default defineReport(<Table source={golf} />);
@@ -167,9 +154,7 @@ export default defineReport(<Table source={golf} />);
 ## 自定义维度
 
 ```tsx
-import {
-  Table, costUSD, defineReport, endToEndPassRate, measureRows,
-} from "niceeval/report";
+import { Table, costUSD, defineReport, passRate, sources } from "niceeval/report";
 import type { CustomDimension } from "niceeval/report";
 
 const vendor: CustomDimension = {
@@ -178,35 +163,37 @@ const vendor: CustomDimension = {
 };
 
 export default defineReport(
-  <Table source={measureRows({
-    rows: vendor,
-    measures: [endToEndPassRate, costUSD],
+  <Table source={sources.measure.rows({
+    dimensions: [vendor],
+    measures: [passRate, costUSD],
   })} />,
 );
 ```
 
 ## 历史：一个实验的逐次 Run
 
-宿主默认注入的是 Sample，不是完整历史。组合组件先从 Record 选择 Runs，再把它显式交给数据源：
+历史 Source 仍只接受 Sample，并从 `sample.historyAttempts` 读取完整历史。组合组件通过 Sample 过滤器
+收窄 experiment，不把任意 Runs 数组伪装成 Source input：
 
 ```tsx
 import {
-  Section, Table, Text, costUSD, defineComponent, defineReport,
-  endToEndPassRate, measureRows,
+  Section, Table, costUSD, defineComposition, defineReport,
+  filterAttempts, passRate, sources,
 } from "niceeval/report";
 
-const historyRows = measureRows({
-  rows: "run",
-  measures: [endToEndPassRate, costUSD],
+const historyRows = sources.measure.rows({
+  dimensions: ["run"],
+  measures: [passRate, costUSD],
 });
 
-const History = defineComponent(async ({ experiment }: { experiment: string }, ctx) => {
-  const exp = ctx.record.experiments.find((item) => item.id === experiment);
-  if (!exp) return <Text>experiment {experiment} has no results yet.</Text>;
+const History = defineComposition(async ({ experiment }: { experiment: string }, ctx) => {
+  const input = ctx.sample.pipe(filterAttempts(
+    (attempt) => attempt.experimentId === experiment,
+  ));
 
   return (
     <Section title={`${experiment} · 历次 Run`}>
-      <Table source={historyRows} input={exp.runs} />
+      <Table source={historyRows} input={input} />
     </Section>
   );
 });
@@ -217,16 +204,13 @@ export default defineReport(<History experiment="compare/bub-gpt-5.4" />);
 ## 自定义子集：按路径前缀分块
 
 ```tsx
-import {
-  Col, Grid, Section, defineComponent, defineReport, filterAttempts, sampleSummary,
-} from "niceeval/report";
+import { Col, SampleSummary, Section, defineComposition, defineReport, filterAttempts } from "niceeval/report";
 
-const GroupBlocks = defineComponent((_props: {}, ctx) => (
+const GroupBlocks = defineComposition((_props: {}, ctx) => (
   <Col>
     {["agents/codex/", "agents/claude/"].map((prefix) => (
       <Section key={prefix} title={prefix}>
-        <Grid
-          source={sampleSummary()}
+        <SampleSummary
           input={ctx.sample.pipe(filterAttempts(
             (attempt) => attempt.experimentId.startsWith(prefix),
           ))}
@@ -243,5 +227,5 @@ export default defineReport(<GroupBlocks />);
 
 - [外壳与多页](shell.md) —— 给示例加标题、链接或拆页。
 - [内建报告](built-in.md) —— 从默认装配开始改。
-- [排版原语与自定义组件](layout.md) —— `defineComponent` 的契约。
+- [排版原语与自定义组件](layout.md) —— `defineComposition` 的契约。
 - [读数与维度](measures.md) —— `Measure`、`Dimension` 与聚合口径。

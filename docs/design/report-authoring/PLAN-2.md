@@ -1,5 +1,11 @@
 # 方案 2：通用原语 + 类型化数据源（推荐）
 
+> 后续收敛：最终协议以 [DECISION](DECISION.md) 为准。`DataSource` / `RowSource` 已合并为
+> `Source<Input extends SourceInput, Content>`，表格默认列进入 `TableContent`；Component 不再提供
+> `resolve`，页级系列声明
+> 改为通用的 `dimensions(data)` 与 `ctx.present(...)`。Source Content 的字段描述只带身份与数值语义，
+> 不再携带本地化 label 或布局。本篇其余内容保留候选方案形成时的推导过程。
+
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
 [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
@@ -23,9 +29,9 @@
 
 ```tsx
 <Col>
-  <Grid source={sampleSummary()} />
+  <SampleSummary />
   <Chart source={qualityCost} legend tooltip />
-  <Table source={experimentRows} filter />
+  <Table source={sources.entity.experiments} filter />
 </Col>
 ```
 
@@ -39,31 +45,32 @@
 
 ```tsx
 <Table
-  source={measureRows({
-    rows: "experiment",
-    measures: [endToEndPassRate, costUSD],
+  source={sources.measure.rows({
+    dimensions: ["experiment"],
+    measures: [passRate, costUSD],
+    evals: "security/",
   })}
-  evals="security/"
   filter
 />
 ```
 
 `evals` 在聚合**之前**收窄题集，所以它必须是选项：
 聚合发生在 `compute()` 内部，事后用普通 JavaScript 无法从聚合值还原题级过滤。
-逐实体成行的 `experimentRows` 不消费这个选项；需要自选读数与题集时使用 `measureRows()`。
+逐实体成行的 `sources.entity.experiments` 不消费这个选项；需要自选读数与题集时使用
+`sources.measure.rows(...)`。
 
 ### 二级：换列
 
 ```tsx
-const byAgent = measureRows({
-  rows: "agent",
-  measures: [endToEndPassRate, costUSD],
+const byAgent = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, costUSD],
 });
 
 <Table source={byAgent} filter>
   <Column dataKey="agent" />
-  <Column dataKey="cost-usd" header={{ en: "Spend", "zh-CN": "花费" }} />
-  <Column dataKey="pass-rate" />
+  <Column dataKey="costUSD" header={{ en: "Spend", "zh-CN": "花费" }} />
+  <Column dataKey="passRate" />
 </Table>
 ```
 
@@ -80,10 +87,10 @@ const byAgent = measureRows({
 ### 三级：换维度与读数
 
 ```tsx
-const byMemory = measureRows({
-  rows: ["agent", label("memory")],
-  measures: [endToEndPassRate, taskPassRate, costUSD],
-  sort: endToEndPassRate,
+const byMemory = sources.measure.rows({
+  dimensions: [["agent", label("memory")]],
+  measures: [passRate, taskPassRate, costUSD],
+  sort: passRate,
 });
 
 <Table source={byMemory} filter />
@@ -98,7 +105,6 @@ const byMemory = measureRows({
 ```ts
 export const changedLines = defineMeasure({
   name: "changed-lines",
-  label: { en: "Changed lines", "zh-CN": "改动行数" },
   unit: "lines",
   better: "lower",
   where: (attempt) => attempt.result.verdict === "passed",
@@ -108,7 +114,8 @@ export const changedLines = defineMeasure({
     return Object.keys(diff.files)
       .reduce((sum, path) => sum + (diff.get(path) ?? "").split("\n").length, 0);
   },
-  aggregate: { perEval: "min", acrossEvals: "mean" },
+  perEval: "min",
+  acrossEvals: "mean",
 });
 ```
 
@@ -119,21 +126,17 @@ export const changedLines = defineMeasure({
 ### 五级：自己写一个数据源
 
 `source` 不是二维数组，也不是一个只有 key 的索引。它是「输入怎样变成可序列化 Content」的
-类型化协议；不同原语要求不同的 Content。`Table` 使用的 `RowSource` 返回带稳定行身份的
-`TableContent`，一行的 `cells` 再按列 key 索引：
+类型化协议；不同 Component 要求不同的 Content。最终只保留一种 Source，`TableContent` 同时携带
+默认列与稳定行身份，一行的 `cells` 再按列 key 索引：
 
 ```ts
-interface DataSource<Content, Input = Sample> {
+interface Source<Input extends SourceInput, Content> {
   name: string;
   compute(input: Input): Promise<Content>;
 }
 
-interface RowSource<RowValue extends Row, Input = Sample>
-  extends DataSource<TableContent<RowValue>, Input> {
-  columns(rows: readonly RowValue[]): readonly ColumnSpec[];
-}
-
 interface TableContent<RowValue extends Row = Row> {
+  columns: readonly ColumnSpec[];
   rows: readonly RowValue[];
 }
 
@@ -149,7 +152,7 @@ interface Row {
 `measure` Cell，而不是压成字符串：
 
 ```tsx
-import type { MeasureCell, Row, RowSource } from "niceeval/report";
+import { defineSource, type MeasureCell, type Row, type TableContent } from "niceeval/report";
 
 interface BudgetRow extends Row {
   cells: {
@@ -158,11 +161,15 @@ interface BudgetRow extends Row {
   };
 }
 
-export const budgetRows: RowSource<BudgetRow> = {
+export const budgetRows = defineSource<Sample, TableContent<BudgetRow>>({
   name: "budget-rows",
   async compute(sample) {
     const budgets = await computeBudgetByAgent(sample);
     return {
+      columns: [
+        { key: "agent" },
+        { key: "spend", unit: "USD", better: "lower" },
+      ],
       rows: budgets.map(({ agent, spend }) => ({
         key: agent,
         cells: {
@@ -172,17 +179,16 @@ export const budgetRows: RowSource<BudgetRow> = {
       })),
     };
   },
-  columns: (_rows) => [
-    { key: "agent", label: { en: "Agent", "zh-CN": "Agent" } },
-    { key: "spend", label: { en: "Spend", "zh-CN": "花费" }, unit: "USD" },
-  ],
-};
+});
 ```
 
-默认投影直接使用 `columns()`；写 `<Column>` 时只覆盖列选择、顺序与呈现，不改变 rows：
+默认投影直接使用 `TableContent.columns`；写 `<Column>` 时只覆盖列选择、顺序与呈现，不改变 rows：
 
 ```tsx
-<Table source={budgetRows} />
+<Table source={budgetRows}>
+  <Column dataKey="agent" header={{ en: "Agent", "zh-CN": "Agent" }} />
+  <Column dataKey="spend" header={{ en: "Spend", "zh-CN": "花费" }} />
+</Table>
 
 <Table source={budgetRows}>
   <Column dataKey="agent" />
@@ -205,9 +211,9 @@ export const budgetRows: RowSource<BudgetRow> = {
 需要过滤、截断或自定义排序时，先 `compute()` 再把结果交给原语的 `data` 形态：
 
 ```tsx
-export const CostliestAttempts = defineComponent(
+export const CostliestAttempts = defineComposition(
   async ({ limit = 10 }: { limit?: number }, ctx) => {
-    const content = await attemptRows.compute(ctx.sample);
+    const content = await sources.entity.attempts.compute(ctx.sample);
     const rows = [...content.rows]
       .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
       .slice(0, limit);
@@ -232,15 +238,16 @@ export default defineReport({
 });
 ```
 
-自有 React 页面吃同一批数据源，只是自己调 `compute()`：
+自有 React 页面吃同一批 Source，只是自己调 `compute()`。Summary 是产品组合，不作为 JSON data；
+页面从 snapshot 与所需 Dataset 选择自己的 Stat：
 
 ```tsx
-const [summary, table] = await Promise.all([
-  sampleSummary().compute(sample),
+const [snapshot, table] = await Promise.all([
+  sources.sample.snapshot.compute(sample),
   byAgent.compute(sample),
 ]);
 
-return <><Grid data={summary} /><Table data={table} filter /></>;
+return <><Stat label="Attempts" value={snapshot.scope.attempts} /><Table data={table} filter /></>;
 ```
 
 浏览器包因此只需要 `niceeval/report/react` 的纯渲染面，不含记录根与磁盘读取。
@@ -268,13 +275,13 @@ return <><Grid data={summary} /><Table data={table} filter /></>;
 
 ## 优势
 
-- **需求 1 到 4 由数据形状强制。** 两级聚合写在 `Measure.aggregate`，
+- **需求 1 到 4 由数据形状强制。** 两级聚合写在 `Measure.perEval` / `acrossEvals`，
   覆盖率与证据写在 `MeasureCell` 的必填字段。作者少写什么都不会得到错数字。
 - **需求 5 到 7 有承重结构。** 「哪些 attempt 落进这一格」是数据源的领域判断，
   跟随格子而不是有效样本。
-- **需求 11、12 由单源保证。** 图、表与摘要消费同一个 `Measure`，
-  单位、方向与双语显示只声明一次。
-- **需求 14 由公开接口保证。** `RowSource` 就是官方数据源用的那个类型。
+- **需求 11、12 由单源保证。** 图、表与摘要消费同一个 `Measure`。单位、方向与 format 随 Measure
+  声明；双语 label 由 Component 呈现词典或显式 props 声明。
+- **需求 14 由公开接口保证。** `Source<Input extends SourceInput, Content>` 就是官方 Source 使用的同一个类型。
 - **需求 16、17 由分层保证。** 异步只在 `compute()` 里发生，
   渲染面吃普通可序列化数据，大 artifact 懒加载。
 - **需求 9 由五级改法保证。** 每一级都不需要库先加一个 prop。
@@ -314,7 +321,8 @@ Sample ──▶ 数据源 compute() ──▶ 可序列化 Content ──┬─
 1. **加一列自定义读数**：`defineMeasure` 加进 `measures` 数组，不改库。
 2. **两处同值**：摘要与散点消费同一个 `Measure`，
    删掉报告缓存后从原始结果重算得到同一个数。
-3. **换分组维度**：`rows: "agent"` 改成 `rows: ["agent", label("memory")]`，
+3. **换分组维度**：`dimensions: ["agent"]` 改成
+   `dimensions: [["agent", label("memory")]]`，
    组件不变。
 4. **证据可达**：任一读数格能列出它覆盖的全部 attempt，
    包括读数为 `null` 的那几条。

@@ -5,7 +5,7 @@
 增强只加浏览行为，不改内容。
 
 ```tsx
-<CopyBlock source={fixPrompt} />
+<CopyBlock data={{ title: "Fix prompt", text: prompt }} />
 ```
 
 ## 形状
@@ -18,13 +18,10 @@ interface CopyBlockContent {
   title: LocalizedText;
 }
 
-interface CopyBlockProps {
-  source?: DataSource<CopyBlockContent | null>;
-  input?: ReportInput | AttemptEvidence;
-  data?: CopyBlockContent | null;
+type CopyBlockProps<Input extends SourceInput> = DataProps<Input, CopyBlockContent | null> & {
   locale?: ReportLocale;
   className?: string;
-}
+};
 ```
 
 ## 渲染
@@ -36,5 +33,5 @@ interface CopyBlockProps {
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与双面投影边界。
+- [组件树](../README.md) —— 四层模型与双面投影边界。
 - [数据源目录](../sources/README.md) —— 修复 prompt 的组装口径。

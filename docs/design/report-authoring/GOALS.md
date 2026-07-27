@@ -57,7 +57,8 @@
 ### 一致性
 
 11. 同一个读数在图、表与摘要里同值。
-12. 列的单位、越高越好还是越低越好、格式化与双语显示只声明一次。
+12. 单位、优化方向与格式化等数值语义只随 Measure 声明一次；双语 label 只在 Component 的
+    呈现面声明一次，不进入 Source Content。
 13. 同一个维度值在一页里恒定一个颜色。
 
 ### 扩展性
@@ -75,7 +76,7 @@
 
 ## 不是本 doc 的目标
 
-- **读数口径本身。** `endToEndPassRate` 怎么算、超时怎么记删失，
+- **读数口径本身。** `passRate` 怎么算、超时怎么记删失，
   归 [读数与维度](../../feature/reports/library/measures.md)。
 - **Sample 选择。** 哪些 attempt 进入这次比较，
   归 [Sample](../../feature/sample/README.md)。

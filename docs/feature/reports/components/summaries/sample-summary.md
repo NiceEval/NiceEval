@@ -1,76 +1,72 @@
-# `sampleSummary`
+# `SampleSummary`
 
-`sampleSummary(options?)` 返回供 `Grid` 使用的数据源,显示 Run 时间窗、Experiment / Eval / Attempt
-数量、判定构成、主读数与总成本。Eval 的身份键是 `experimentId + evalId`。
+`SampleSummary` 是 NiceEval 默认报告对 Sample 的一种阅读方式，不是 Source。它选择首页要展示的范围、
+判定构成、主读数和成本；这些选择是产品意见，不进入 `sources.sample.snapshot`。
 
-web 面使用短标签 `Pass rate / 通过率`、`Total score / 总分`、`Experiments / 实验`、`Evals / Eval`、`Attempts / Attempt`、`Eval results / Eval 结果`（`votes="attempt"` 时为 `Attempt results / Attempt 结果`）和 `Total cost / 总成本`。这些是字段名，不在标签里重复“数”“次”或“计票”；数量由值本身表达。时间不直接暴露 ISO 字符串：单点写成 `Last run / 最近运行`，范围写成 `Run range / 运行范围`，时间值按当前 locale 格式化到分钟；同日范围不重复右端日期，同年跨日范围不重复右端年份。成本覆盖不全时，在金额下方用 `Cost available for 63/72 attempts / 63/72 次有成本数据` 解释覆盖范围，不能只放一个无语义的 `63/72` 角标。
+事实来自两处：
 
-主读数按 Sample 内出现的题型（`scoringComposition`，判据与公开函数单点在[主读数映射](../../library/measures.md#题型构成与主读数)）切换：纯通过制（`"pass"`）只显示通过率，`totalScore` 省略；纯计分制（`"points"`）隐藏通过率、只显示总分（[`totalScore` 读数](../../library/measures.md#内置读数)：`assertions[].points` 之和加 `scoreEntries[].points` 之和，errored/skipped 记 `null`）；混型（`"mixed"`，一个 Sample 并排通过制与计分制两个 experiment，见[计分粒度](../../../assertions/library/score-points.md)）两者都显示——不摆空列，只在相关时才出现对应的读数。
+- `sources.sample.snapshot` 提供 scope、verdicts、coverage 与 provenance；
+- `sources.measure.rows({ dimensions: [], measures })` 只计算本次摘要选择的 Measure。
 
-data 恒携带两级计票，两份序列化 JSON 摆在一起时口径自明；渲染面显示哪一级由呈现 prop `votes` 决定：
+默认可见短标签是 `Pass rate / 通过率`、`Total score / 总分`、`Experiments / 实验`、
+`Evals / Eval`、`Attempts / Attempt` 与 `Total cost / 总成本`。时间按 locale 格式化到分钟；成本覆盖
+不全时明确写出 `63/72 次有成本数据`，不只放无语义角标。
 
-- `evalVerdicts`（`votes: "eval"`，默认）：每个 experimentId + evalId 先按「任一轮 passed 即 passed，否则 `failed > errored > skipped`」折成最终 verdict 后计票，回答「多少个 Eval 最终通过」。
-- `attemptVerdicts`（`votes: "attempt"`）：attempt 原始计票，不折叠，回答「实际跑的每一轮各是什么结果」。
+主读数按 Sample 的题型构成选择：
 
-两级计票与 `endToEndPassRate` 互不反推。Sample warning 与 Run diagnostic 都不进
-`SampleSummaryContent`;它们分别由 `sampleWarnings` 与 `runDiagnostics` 数据源计算,同一事实不复制。
+- `"pass"`：只展示 `passRate`；
+- `"points"`：只展示 `totalScore`；
+- `"mixed"`：两者并排，各自保持自己的适用范围。
 
 ```ts
-interface SampleSummaryContent {
-  /** 贡献当前数据的 Run 时间范围；空范围为 null，不编造当前时间。 */
-  range: { earliestStartedAt: string | null; latestStartedAt: string | null };
-  experiments: number;
-  /** experimentId + evalId 的去重计数。 */
-  evals: number;
-  attempts: number;
-  /** 每个 experimentId + evalId 先折成最终 verdict 后计票。 */
-  evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };
-  /** attempt 原始计票，不折叠。 */
-  attemptVerdicts: { passed: number; failed: number; errored: number; skipped: number };
-  /** 官方两级 endToEndPassRate，不从任一计票重算。 */
-  endToEndPassRate: MeasureCell;
-  /**
-   * 该 Sample 内出现的题型：`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
-   * （一个 Sample 可以并排多个 experiment，题型只在单个 experiment 内被强制统一）。渲染面据此
-   * 决定主 KPI：`"points"` 隐藏通过率只显示 `totalScore`；`"mixed"` 两者都显示；`"pass"` 只
-   * 显示通过率、`totalScore` 省略。
-   */
-  scoringComposition: "pass" | "points" | "mixed";
-  /** 计分制总分（`totalScore` 读数）。仅 `scoringComposition` 为 `"points"` 或 `"mixed"` 时出现。 */
-  totalScore?: MeasureCell;
-  /** costUSD 按 attempt 求和；缺失成本不伪造为 0。 */
-  totalCostUSD: MeasureCell;
-}
-
-interface SampleSummaryOptions {
-  /** 显示哪一级计票；默认 "eval"。data 恒携带两级，votes 只选择呈现。 */
+interface SampleSummaryProps {
+  input?: Sample;
+  /** 默认显示按 experimentId + evalId 折叠后的 verdict；也可查看 attempt 原始构成。 */
   votes?: "eval" | "attempt";
+  locale?: ReportLocale;
+  className?: string;
 }
+```
 
-function sampleSummary(
-  options?: SampleSummaryOptions,
-): DataSource<SampleSummaryContent>;
+它由组合层实现，因为一次装配需要多个 Source：
+
+```tsx
+export const SampleSummary = defineComposition(async (props, ctx) => {
+  const input = props.input ?? ctx.sample;
+  const snapshot = await sources.sample.snapshot.compute(input);
+  const composition = await scoringComposition(input);
+  const measures = composition === "pass"
+    ? [passRate, costUSD]
+    : composition === "points"
+      ? [totalScore, costUSD]
+      : [passRate, totalScore, costUSD];
+  const dataset = await sources.measure.rows({
+    dimensions: [],
+    measures,
+  }).compute(input);
+
+  return (
+    <Grid locale={props.locale} className={props.className}>
+      <Stat label="Experiments" value={snapshot.scope.experiments} />
+      <Stat label="Evals" value={snapshot.scope.evals} />
+      <Stat label="Attempts" value={snapshot.scope.attempts} />
+      {summaryMeasureStats(dataset)}
+      {verdictStats(snapshot.verdicts[props.votes ?? "eval"])}
+    </Grid>
+  );
+});
 ```
 
 ```tsx
-<Grid source={sampleSummary()} />
-<Grid source={sampleSummary({ votes: "attempt" })} />
+<SampleSummary />
+<SampleSummary votes="attempt" />
 ```
 
-字段集由 Sample 的题型构成决定，所以它没有结构子节点：作者能决定的是放不放它、看哪一级计票。收窄范围时在[组合组件](../../library/layout.md#自定义组件)里显式传 `input`：
-
-```tsx
-const CompareSummary = defineComponent((_props: {}, ctx) => (
-  <Grid
-    source={sampleSummary()}
-    input={ctx.sample.pipe(filterAttempts(
-      (attempt) => attempt.experimentId.startsWith("compare/"),
-    ))}
-  />
-));
-```
+想选择另一组 KPI 时，不给 `SampleSummary` 增加任意字段开关；直接计算 snapshot 与所需 Measure，
+再用 `Grid` / `Stat` 装自己的摘要。外部 React 页面同样先计算 Content，再走组件的 `data` 形态。
 
 ## 相关阅读
 
-- [概览](README.md) —— `SampleOverview` 与本组件的关系。
-- [`SampleOverview`](sample-overview.md) —— 把本数据源摆进默认首页的组合组件。
+- [Source · Snapshot](../sources/README.md#snapshot) —— 中性的 SampleSnapshot / AttemptSnapshot。
+- [`SampleOverview`](sample-overview.md) —— 默认首页如何装配摘要、图表与实体表。
+- [读数与维度](../../library/measures.md) —— `passRate`、诊断率与按需 Dataset。

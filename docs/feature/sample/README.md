@@ -11,8 +11,9 @@ const record = await openRecord(".niceeval");
 const sample = currentSample(record, { experiments: "compare/" });
 
 sample.attempts;    // 按口径挑好的 attempt 全集 —— 消费这个就自动正确
+sample.historyAttempts; // 同一总体内的去重历史,供趋势与稳定性读数使用
 sample.coverage;    // 这批数据覆盖了多少题,缺哪几道
-sample.warnings;    // 这批数据哪里可能不可靠
+sample.issues;      // 读取与选择时发现的结构化问题
 ```
 
 ## 为什么是独立的一层
@@ -31,9 +32,10 @@ sample.warnings;    // 这批数据哪里可能不可靠
 `attempts` 是按完整口径挑好的全集——自定义脚本消费它就自动正确,不需要知道口径怎么展开,也不会
 因为自己 `flatMap` 一遍 `runs` 而把同一道题的历史 attempt 重复计入。
 
-覆盖与警告跟着样本走,不散在别处:一份 Sample 交给谁,「这批数据缺什么、哪里不可靠」就跟到谁手上。
-[`publish()`](../record/library.md#发布publish) 与 Reports 的全部计算函数都收
-`Sample | readonly Run[]`。
+覆盖与 Issue 跟着样本走,不散在别处:一份 Sample 交给谁,「这批数据缺什么、读取或选择时发现了什么问题」就跟到谁手上。
+`SampleIssue` 是可重算的读取结果,不写入 `.niceeval`,也不携带渲染文案、严重度或修复命令。
+[`publish()`](../record/library.md#发布publish) 与 Reports 的范围级计算函数都收 `Sample`。需要历史的
+读数读取 `sample.historyAttempts`,不绕回 Record 建立第二套选择与完整性规则。
 
 ## 常见用途
 
@@ -42,8 +44,8 @@ sample.warnings;    // 这批数据哪里可能不可靠
 | 看每个实验最近一次跑出了什么 | `latestRunSample(record)` |
 | 看每道题当前的判定水位 | `currentSample(record)` |
 | 只看最新一次真实执行的 | 任一选择器 + `{ fresh: true }` |
-| 排掉一个已知坏掉的实验 | `sample.pipe(dropExperiments(…))` |
-| 按自己的条件删减样本 | `sample.pipe(filterAttempts(…))` |
+| 只比较一部分实验或题目 | `sample.scope({ experiments: …, evals: … })` |
+| 按数据质量条件删减观测 | `sample.filter(…)` |
 | 发布这批数据 | `publish(sample, dir)` |
 
 **这一层只删减,不聚合。** 「按 agent 分组算 p90 耗时」不在这里——值怎么算、两级怎么折叠由
@@ -52,7 +54,7 @@ sample.warnings;    // 这批数据哪里可能不可靠
 
 ## 相关阅读
 
-- [Library](library.md) —— 选择器、Sample 形状、转换算子与警告全集。
+- [Library](library.md) —— 选择器、Sample 形状、转换算子与 Issue 全集。
 - [参考方案](reference/README.md) —— 转换算子与口径物化从哪里学。
 - [用例手册](use-case/README.md) —— 按实际读取任务选择 API。
 - [Record](../record/README.md) —— 被选择的那份事实。

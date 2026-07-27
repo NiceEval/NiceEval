@@ -18,15 +18,15 @@
 ## 产品特性
 
 原语只认[单元格类型](../../feature/reports/components/README.md#单元格类型)与结构，
-不认领域概念；数据源把「怎么取数、怎么聚合、默认摆成什么样」打成一个具名 TS 值。
+不认领域概念；Source 把「怎么从 `.niceeval` 取数、聚合并投影事实」打成一个具名 TS 值。
 作者要么把数据源交给原语，要么先 `compute()` 再把结果交给原语。
 
 ## 当前支持
 
 - 一个 `Table` 同时画实验对比、成绩单与稳定性矩阵，换的只是数据源。
 - 两级聚合、覆盖率、证据引用由 `Measure` 与 `MeasureCell` 的形状强制携带。
-- 列的单位、方向、格式化与双语显示随 `Measure` 一次声明，各处消费同一份。
-- 作者写的数据源与官方数据源同形态，`RowSource` 是公开接口。
+- 单位、方向与格式化随 `Measure` 一次声明；双语 label 由 Component 的内建字段词典或显式呈现声明负责。
+- 作者写的 Source 与官方 Source 同形态，唯一公开接口是 `Source<Input extends SourceInput, Content>`。
 - `compute()` 产物是普通可序列化数据，用普通 JavaScript 就能过滤、截断、重排。
 
 ## 当前不支持
@@ -152,5 +152,5 @@ eval 文件、`niceeval.config.ts` 与报告文件都是 TS。
 
 ## 双语显示
 
-标签、单位与摘要都要按 locale 选择显示，而数值本身不能分裂。
-承载这件事的位置只有一个：读数与列的声明。
+标签与摘要要按 locale 选择显示，而数值本身不能分裂。Source Content 只带字段身份和数值语义；
+内建字段的本地化文案由 Component 词典承载，自定义字段在 `<Column header>` 或自定义 Component 中声明。

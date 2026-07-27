@@ -39,7 +39,7 @@
   <text x="32" y="48" class="title">共享内核：同一份读数与证据，三个呈现位置</text>
   <rect x="32.5" y="96.5" width="191" height="80" class="box" /><text x="52" y="126" class="label mono">Record</text><text x="52" y="150" class="note">事实与证据</text>
   <path d="M224 136 H272" class="arrow" /><rect x="280.5" y="96.5" width="191" height="80" class="box" /><text x="300" y="126" class="label mono">Sample</text><text x="300" y="150" class="note">选择与覆盖</text>
-  <path d="M472 136 H520" class="arrow" /><rect x="528.5" y="80.5" width="679" height="112" class="box" /><text x="548" y="110" class="label mono">niceeval/report</text><text x="548" y="142">DataSource compute → resolve → 可序列化 Content</text><text x="548" y="166" class="note">ReportDefinition · pages · 读数 · 证据模型</text>
+  <path d="M472 136 H520" class="arrow" /><rect x="528.5" y="80.5" width="679" height="112" class="box" /><text x="548" y="110" class="label mono">niceeval/report</text><text x="548" y="142">Source.compute → Content → Component</text><text x="548" y="166" class="note">ReportDefinition · pages · 读数 · 证据模型</text>
   <path d="M868 192 V240 H232 M868 240 H620 M868 240 H1032" class="arrow" />
   <rect x="64.5" y="256.5" width="335" height="144" class="box" /><text x="84" y="286" class="label mono">niceeval show</text><text x="84" y="318">report tree · text 面</text><text x="84" y="350" class="note">Agent 使用的终端宿主</text>
   <rect x="452.5" y="256.5" width="335" height="144" class="box" /><text x="472" y="286" class="label mono">niceeval view</text><text x="472" y="318">report tree · web 面</text><text x="472" y="350" class="note">人使用的网页宿主</text>

@@ -1,8 +1,8 @@
-# `traceRows`
+# `sources.sample.traces`
 
-`traceRows` 把每个 attempt 的 canonical OTel span 投影成
+`sources.sample.traces` 把每个 attempt 的 canonical OTel span 投影成
 [`Waterfall`](../primitives/waterfall.md) 可消费的行。每行只带顶层 span 摘要；完整瀑布与 runner
-时间树的组合视图由 `attemptTimeline` 数据源承担。
+时间树的组合视图由 `sources.attempt.timeline` 数据源承担。
 
 ```ts
 interface TraceSpanSummary {
@@ -23,7 +23,7 @@ interface TraceWaterfallRow {
   spans: readonly TraceSpanSummary[];
 }
 
-declare const traceRows: DataSource<WaterfallContent, Sample>;
+declare const traces: Source<Sample, WaterfallContent>;
 ```
 
 - web 面：一行一个 attempt，静态渲染顶层 span 分解条（失败 span 带失败标记），行链接到 attempt 详情；排序、缩放是渐进增强。
@@ -31,7 +31,7 @@ declare const traceRows: DataSource<WaterfallContent, Sample>;
 - 只画被测 agent 的原始 span；runner 生命周期节点不进 trace 事实（[Architecture · 事实与看法](../../architecture.md#事实与看法)），组合视图归 attempt 详情。
 
 ```tsx
-<Waterfall source={traceRows} />
+<Waterfall source={sources.sample.traces} />
 ```
 
 ## 相关阅读

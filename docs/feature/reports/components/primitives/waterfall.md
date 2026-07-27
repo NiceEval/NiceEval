@@ -4,9 +4,9 @@
 与逐 attempt 的执行瀑布都是这一个形状，差别在传进去的[数据源](../sources/README.md)。
 
 ```tsx
-<Waterfall source={attemptTimeline} />   // runner phases + 关联 spans
-<Waterfall source={attemptTrace} />      // 不混入 runner 节点的原始 span 树
-<Waterfall source={traceRows} />         // 一行一个 attempt 的范围级瀑布
+<Waterfall source={sources.attempt.timeline} />   // runner phases + 关联 spans
+<Waterfall source={sources.attempt.trace} />      // 不混入 runner 节点的原始 span 树
+<Waterfall source={sources.sample.traces} />         // 一行一个 attempt 的范围级瀑布
 ```
 
 ## 形状
@@ -31,18 +31,16 @@ interface WaterfallRow {
   durationMs: number | null;
   nodes: readonly WaterfallNode[];
   locator?: AttemptLocator;
-  /** text 面折叠成摘要时给出的下钻命令。 */
-  command?: string;
 }
 
-interface WaterfallProps {
-  source?: WaterfallSource;
-  input?: ReportInput;
-  data?: readonly WaterfallRow[];
-  attemptHref?: (locator: AttemptLocator) => string;
-  locale?: ReportLocale;
-  className?: string;
-}
+type WaterfallContent = readonly WaterfallRow[];
+
+type WaterfallProps<Input extends SourceInput> =
+  DataProps<Input, WaterfallContent | null> & {
+    attemptHref?: (locator: AttemptLocator) => string;
+    locale?: ReportLocale;
+    className?: string;
+  };
 ```
 
 ## 渲染
@@ -50,9 +48,8 @@ interface WaterfallProps {
 - web 面：一行一个 `WaterfallRow`，行内按 `startOffsetMs` / `durationMs` 静态渲染分解条，
   失败节点带失败标记；有 `children` 的节点用原生 `<details>` 逐层展开，静态文档零 JS 成立。
   有 `locator` 时行链接到 attempt 详情。排序与缩放是渐进增强。
-- text 面：一行一个 `WaterfallRow`——身份、总耗时、节点计数与失败标记，行尾给出 `command`。
-  有稳定 CLI 选择器的大块内容折成带命令的索引，不倾倒逐节点明细；折不折由数据源给
-  `command` 决定，原语不自行判断。
+- text 面：一行一个 `WaterfallRow`——身份、总耗时、节点计数与失败标记。存在 locator 时，renderer
+  用 `ctx.attemptCommand(locator)` 生成下钻命令；Source Content 不携带呈现 action。
 - `durationMs` 为 `null` 的行与节点如实标注缺失，不折成 0，也不从相邻节点推算。
 
 ## 一个原语，三种视角
@@ -66,6 +63,6 @@ runner 生命周期节点不进 trace 事实（[Architecture · 事实与看法]
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与结构节点规则。
+- [组件树](../README.md) —— 四层模型与结构节点规则。
 - [数据源目录](../sources/README.md) —— 官方时间树数据源。
 - [Observability](../../../../observability.md) —— span 字段与采集边界。

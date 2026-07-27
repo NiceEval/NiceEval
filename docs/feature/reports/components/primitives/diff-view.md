@@ -3,7 +3,7 @@
 文件清单与可展开 patch：一行一个文件，展开看这个文件的改动。
 
 ```tsx
-<DiffView source={attemptDiff} />
+<DiffView source={sources.attempt.diff} />
 ```
 
 ## 形状
@@ -18,13 +18,12 @@ interface DiffFile {
   patch?: string;
 }
 
-interface DiffViewProps {
-  source?: DataSource<readonly DiffFile[]>;
-  input?: AttemptEvidence;
-  data?: readonly DiffFile[];
+type DiffContent = readonly DiffFile[];
+
+type DiffViewProps = DataProps<AttemptEvidence, DiffContent | null> & {
   locale?: ReportLocale;
   className?: string;
-}
+};
 ```
 
 ## 渲染
@@ -36,5 +35,5 @@ interface DiffViewProps {
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与双面投影边界。
+- [组件树](../README.md) —— 四层模型与双面投影边界。
 - [数据源目录](../sources/README.md) —— 变更事实的数据源。

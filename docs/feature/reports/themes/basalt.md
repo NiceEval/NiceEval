@@ -1,6 +1,6 @@
 # Basalt —— NiceEval 官方主题
 
-`basalt` 是 `niceeval view` 不指定 `--theme` 时生效的那一份，也是官方样式在每个 `var(--nre-*, <default>)` 使用点写下的兜底值。所以把报告嵌进自己的页面、不声明任何令牌时，看到的就是 Basalt——一份主题两条交付路径，不存在「view 里一个样、嵌进来另一个样」。
+`basalt` 是 `niceeval view` 不指定 `--theme` 时生效的那一份，也是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值。所以把报告嵌进自己的页面、不声明任何令牌时，看到的就是 Basalt——一份主题两条交付路径，不存在「view 里一个样、嵌进来另一个样」。
 
 玄武岩是冷却得足够慢的黑色岩浆，凝出笔直的柱状节理。这份主题按同一个主张做：**黑色系、零圆角、发丝分隔线、去装饰**。屏幕上不该有一件东西是为了好看而存在的——边框只用来分隔，颜色只用来编码含义，其余交给排版与留白。
 
@@ -25,8 +25,8 @@
 | `border` | `#E1E3E5` | `#22262A` |
 | `borderStrong` | `#C4C8CC` | `#333A40` |
 | `text` | `#16191B` | `#E6E9EB` |
-| `textMuted` | `#5C6469` | `#9AA2A8` |
-| `textSoft` | `#8A9298` | `#6A7278` |
+| `textSecondary` | `#5C6469` | `#9AA2A8` |
+| `textTertiary` | `#8A9298` | `#6A7278` |
 
 三级文字是刻意的：正文、标签与单位、占位与轴刻度各占一级，把「这行字有多重要」交给明度而不是字重。
 
@@ -79,18 +79,18 @@ export const basalt = defineTheme({
   radius: "0",
   styles: [{
     inline: `
-      .nre, .nre * { box-shadow: none; }
-      .nre .nre-section-title,
-      .nre thead th {
+      .niceeval-report, .niceeval-report * { box-shadow: none; }
+      .niceeval-report .niceeval-section-title,
+      .niceeval-report thead th {
         font-size: 11px;
         font-weight: 500;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: var(--nre-text-muted);
+        color: var(--niceeval-color-text-secondary);
       }
-      .nre td, .nre .nre-stat-value { font-variant-numeric: tabular-nums; }
-      .nre a { text-decoration: underline; text-underline-offset: 2px; }
-      .nre :focus-visible { outline: 1px solid var(--nre-focus); outline-offset: 0; }
+      .niceeval-report td, .niceeval-report .niceeval-stat-value { font-variant-numeric: tabular-nums; }
+      .niceeval-report a { text-decoration: underline; text-underline-offset: 2px; }
+      .niceeval-report :focus-visible { outline: 1px solid var(--niceeval-color-focus); outline-offset: 0; }
     `,
   }],
 });
@@ -102,7 +102,7 @@ export const basalt = defineTheme({
 
 Basalt 是官方主题，可读性由 NiceEval 负责，验收至少覆盖：
 
-- 两个分支各自的正文、`textMuted`、`textSoft` 对各自表面色达到 WCAG AA（正文 4.5:1，大字与非文本 3:1）。
+- 两个分支各自的正文、`textSecondary`、`textTertiary` 对各自表面色达到 WCAG AA（正文 4.5:1，大字与非文本 3:1）。
 - 四种 verdict 在两个分支上互不混淆，且不依赖颜色单独表意——判定符号与文字同时在场。
 - 同一张图里六条 series 在正常色觉、三种色觉缺陷模拟与灰度四种条件下都可区分。
 - 键盘 focus 环在两个分支、在 `surface` 与 `surfaceSubtle` 上都可见。

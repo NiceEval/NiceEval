@@ -1,10 +1,11 @@
 # Reports —— 库用法
 
-`niceeval/report` 导出三类公开对象:
+`niceeval/report` 的第一层公开模型只有两类对象：
 
-- `Table`、`Grid`、`Callouts`、图表等双面原语,负责内容形状;
-- `experimentRows`、`measureRows(...)`、`sampleSummary(...)` 等数据源,负责领域计算;
-- `SampleOverview`、`AttemptDetail` 等组合组件,负责默认装配。
+- `sources.*` 与 `defineSource(...)` 负责计算 Content；
+- `Table`、`Chart` 与 `defineComponent(...)` 负责把 Content 显示成 text / web。
+
+`SampleOverview`、`AttemptDetail` 等 `defineComposition` 组合组件负责进阶装配，不是新的数据或显示协议。
 
 `niceeval/report/react` 只导出原语的纯 web renderer 与可序列化 Content 类型。它不导出数据源、
 组合组件或任何会读取 Record 与 artifact 的代码。
@@ -14,14 +15,14 @@
 | 想回答的问题 | 数据源或组合组件 | 原语 |
 |---|---|---|
 | 当前 Sample 整体怎样 | `SampleOverview` | 组合组件自行装配 |
-| 每个 Experiment、Eval 或 Attempt 发生了什么 | `experimentRows` / `evalRows` / `attemptRows` | `Table` |
-| 多个读数怎样随一个维度变化 | `measureRows(...)` | `Table` |
-| 哪道 Eval 在哪个条件上异常 | `measureMatrix(...)` | `Table` |
-| 固定题集的总分与分科得分 | `scoreboard(...)` | `Table` |
-| A 与 B 的成对差异是多少 | `deltaRows(...)` | `Table` |
-| 哪些 Eval 的历史从未稳定 | `stabilityRows(...)` | `Table` |
-| Sample 有多大、判定构成怎样 | `sampleSummary(...)` | `Grid` |
-| Sample 选择与 Run 诊断有什么问题 | `sampleWarnings` / `runDiagnostics` | `Callouts` |
+| 每个 Experiment、Eval 或 Attempt 发生了什么 | `sources.entity.experiments / evals / attempts` | `Table` |
+| 多个读数怎样随一个维度变化 | `sources.measure.rows(...)` | `Table` |
+| 哪道 Eval 在哪个条件上异常 | `sources.measure.matrix(...)` | `Table` |
+| 固定题集的总分与分科得分 | `sources.measure.scoreboard(...)` | `Table` |
+| A 与 B 的成对差异是多少 | `sources.measure.delta(...)` | `Table` |
+| 哪些 Eval 的历史从未稳定 | `sources.measure.stability(...)` | `Table` |
+| Sample 有多大、判定构成怎样 | `SampleSummary`（组合 snapshot 与 Measure） | `Grid` / `Stat` |
+| Sample 选择与 Run 诊断有什么问题 | `SampleNotices` / `RunNotices` | `Callouts` |
 | 一次 Attempt 的完整证据 | `AttemptDetail` | 组合组件自行装配 |
 
 完整数据源目录见[数据源](components/sources/README.md),原语边界见[组件树](components/README.md)。
@@ -35,34 +36,28 @@
 import {
   Chart,
   Col,
+  Series,
   Section,
   Table,
-  chart,
   costUSD,
   defineReport,
-  endToEndPassRate,
-  experimentRows,
+  passRate,
+  sources,
 } from "niceeval/report";
 
-const qualityCost = chart({
-  x: { measure: costUSD },
-  y: { measure: endToEndPassRate },
-  series: [{
-    key: "frontier",
-    mark: "scatter",
-    points: "experiment",
-    by: "agent",
-    x: costUSD,
-    y: endToEndPassRate,
-  }],
+const qualityCost = sources.measure.rows({
+  dimensions: ["experiment", "agent"],
+  measures: [costUSD, passRate],
 });
 
 export default defineReport(
   <Col>
     <Section title="质量与成本">
-      <Chart source={qualityCost} legend tooltip />
+      <Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
+        <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+      </Chart>
     </Section>
-    <Table source={experimentRows} filter />
+    <Table source={sources.entity.experiments} filter />
   </Col>,
 );
 ```
@@ -77,34 +72,44 @@ niceeval view --report reports/quality-cost.tsx
 
 ## 数据源与计算结果
 
-数据源是计算前的声明，`data` 是计算后的内容。Record 和 Sample 不提供 DataSource；
-`niceeval/report` 导出的 DataSource 消费它们提供的明确输入：
+Source 是计算前的声明，`data` 是计算后的 Content。Record 和 Sample 不提供 Source；
+`niceeval/report` 导出的 Source 消费它们提供的明确输入：
 
 ```text
-Record ── currentSample / latestRunSample ──▶ Sample ── DataSource.compute ──▶ Content
+Record ── currentSample / latestRunSample ──▶ Sample ── Source.compute ──▶ Content
 ```
 
 ```ts
-interface DataSource<Content, Input = Sample> {
+type SourceInput = Sample | AttemptEvidence;
+
+interface Source<Input extends SourceInput, Content> {
   readonly name: string;
   compute(input: Input): Promise<Content>;
 }
+
+function defineSource<Input extends SourceInput, Content>(
+  definition: Source<Input, Content>,
+): Source<Input, Content>;
 ```
+
+只有这一种协议，而且 Source 只查询 `.niceeval`：输入限定为 Sample / AttemptEvidence，不能请求外部 API
+或接收任意业务对象。表格 Source 把默认 columns 与 rows 一起放进 `TableContent`；`defineSource(...)`
+保留传入对象引用，只提供类型推导与定义期反馈，不注册 Source，也不改变 page 级缓存边界。
 
 无需配置的数据源直接导出值:
 
 ```ts
-await experimentRows.compute(sample);
-await sampleSummary().compute(sample);
+await sources.entity.experiments.compute(sample);
+await sources.sample.snapshot.compute(sample);
 ```
 
 需要维度或读数的数据源导出同名工厂:
 
 ```ts
-const byAgent = measureRows({
-  rows: "agent",
-  measures: [endToEndPassRate, costUSD],
-  sort: endToEndPassRate,
+const byAgent = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, costUSD],
+  sort: passRate,
 });
 
 const content = await byAgent.compute(sample);
@@ -112,8 +117,8 @@ const content = await byAgent.compute(sample);
 
 工厂只建立声明，不读 Record。`compute()` 才可能经 Sample 中的 `AttemptHandle` 懒加载 artifact，
 因此只在构建脚本、CI、报告 resolve 阶段或能打开记录根的 Node 进程中调用。需要完整历史的数据源
-显式接收 `readonly Run[]`；组合组件从 `ctx.record` 选择后用 `input` 传入。Table 专用的
-`RowSource`、keyed rows 与完整自定义示例见[数据源目录](components/sources/README.md#写一个数据源)。
+仍接收 Sample，并读取其 `historyAttempts`；组件不会从 `ctx.record` 再做一次选择。`TableContent`、
+keyed rows 与完整自定义示例见[Source 目录](components/sources/README.md#写一个-source)。
 
 ## 用普通 JavaScript 加工
 
@@ -121,11 +126,11 @@ const content = await byAgent.compute(sample);
 `data` 形态:
 
 ```tsx
-import { Table, attemptRows, defineComponent } from "niceeval/report";
+import { Table, defineComposition, sources } from "niceeval/report";
 
-export const CostliestAttempts = defineComponent(
+export const CostliestAttempts = defineComposition(
   async ({ limit = 10 }: { limit?: number }, ctx) => {
-    const content = await attemptRows.compute(ctx.sample);
+    const content = await sources.entity.attempts.compute(ctx.sample);
     const rows = [...content.rows]
       .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
       .slice(0, limit);
@@ -135,8 +140,13 @@ export const CostliestAttempts = defineComponent(
 );
 ```
 
-原始 Content 与派生 Content 都是普通可序列化值。修改 rows 不会重新定义读数口径;需要在聚合前收窄
-Eval 时,使用原语 source 形态的 `evals` 选项。
+原始 Content 与派生 Content 都是普通可序列化值。修改 rows 不会重新定义读数口径；需要在聚合前
+收窄 Eval 时，在 Source options 或显式 input 中声明，Component props 不承担计算筛选。
+
+需要内建原语表达不了的新形状时，使用 `defineComponent({ dimensions, enhance, text, web })`。
+两个 renderer 消费同一份 Content；只排列已有组件时继续使用 `defineComposition`，不重复写 renderer。
+报告树内用 `ctx.present("experiment", experimentId)` 同时读取身份、页内唯一标签与颜色；自有 React
+页面用 `presentDimension("experiment", experimentIds)` 一次传入全集。完整规则见[呈现算法](library/layout.md#呈现算法)。
 
 ## 嵌入自己的 React 页面
 
@@ -148,35 +158,32 @@ import { openRecord } from "niceeval/record";
 import { currentSample } from "niceeval/sample";
 import {
   costUSD,
-  endToEndPassRate,
-  measureRows,
-  runDiagnostics,
-  sampleSummary,
-  sampleWarnings,
+  passRate,
+  sources,
 } from "niceeval/report";
-import { Callouts, Grid, Table } from "niceeval/report/react";
+import { Grid, SampleNotices, Stat, Table } from "niceeval/report/react";
 
 export default async function EvalsPage() {
   const record = await openRecord(".niceeval");
   const sample = currentSample(record, { experiments: "compare/" });
-  const rows = measureRows({
-    rows: "experiment",
-    measures: [endToEndPassRate, costUSD],
-    sort: endToEndPassRate,
+  const rows = sources.measure.rows({
+    dimensions: ["experiment"],
+    measures: [passRate, costUSD],
+    sort: passRate,
   });
 
-  const [summary, warnings, diagnostics, table] = await Promise.all([
-    sampleSummary().compute(sample),
-    sampleWarnings.compute(sample),
-    runDiagnostics.compute(sample),
+  const [snapshot, table] = await Promise.all([
+    sources.sample.snapshot.compute(sample),
     rows.compute(sample),
   ]);
 
   return (
     <main>
-      <Grid data={summary} />
-      <Callouts data={warnings} />
-      <Callouts data={diagnostics} />
+      <Grid>
+        <Stat label="Experiments" value={snapshot.scope.experiments} />
+        <Stat label="Attempts" value={snapshot.scope.attempts} />
+      </Grid>
+      <SampleNotices data={snapshot} />
       <Table data={table} filter />
     </main>
   );
@@ -193,9 +200,9 @@ export default async function EvalsPage() {
 原语也不接受字符串绑定：
 
 ```tsx
-const byAgent = measureRows({
-  rows: "agent",
-  measures: [endToEndPassRate, costUSD],
+const byAgent = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, costUSD],
 });
 
 export default defineReport({
@@ -211,7 +218,7 @@ export default defineReport({
 
 ## 相关阅读
 
-- [组件树](components/README.md) —— 原语、数据源、管线与组合组件。
+- [组件树](components/README.md) —— 数据源、渲染组件、管线与组合组件。
 - [数据源目录](components/sources/README.md) —— 官方数据源全集。
 - [读数与维度](library/measures.md) —— `Measure`、`Dimension` 与聚合口径。
 - [完整示例](library/examples.md) —— 按场景组织的可复制报告。

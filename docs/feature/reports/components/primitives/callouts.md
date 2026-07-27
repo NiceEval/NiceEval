@@ -1,11 +1,10 @@
 # `Callouts`
 
-分级提示区：把一批带严重度、消息与下一步命令的条目按组渲染。选择警告、Run 诊断、
-attempt 级诊断与结构化错误都是这一个形状，差别在传进去的[数据源](../sources/README.md)。
+分级提示区：把一批已经解释好的 Notice 按组渲染。它不读取 snapshot 或 diagnostics，也不决定
+严重度与下一步动作；这些由 `SampleNotices` / `RunNotices` / `AttemptNotices` 在上层完成。
 
 ```tsx
-<Callouts source={sampleWarnings} />
-<Callouts source={runDiagnostics} />
+<Callouts data={notices} />
 ```
 
 ## 形状
@@ -35,9 +34,7 @@ interface CalloutGroup {
 }
 
 interface CalloutsProps {
-  source?: CalloutSource;
-  input?: ReportInput;
-  data?: readonly CalloutGroup[];
+  data: readonly CalloutGroup[];
   locale?: ReportLocale;
   className?: string;
 }
@@ -61,8 +58,8 @@ interface CalloutsProps {
 
 ## 聚合轴是动作，不是发生顺序
 
-分组由数据源决定，判据统一为「用户接下来要做什么」。逐条平铺会把一件事写成几条长句
-加重复命令。原语只负责按数据源给定的分组渲染，并遵守两条：
+分组由上层 Notice policy 决定，判据统一为「用户接下来要做什么」。逐条平铺会把一件事写成几条
+长句加重复命令。原语只负责按 data 给定的分组渲染，并遵守两条：
 
 - 组内命令去重后仍多于一条时，组头不放命令、命令随明细逐条走——组头命令的含义永远是
   「复制即推进整组」，不摆一排让用户猜。
@@ -77,6 +74,6 @@ interface CalloutsProps {
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与结构节点规则。
+- [组件树](../README.md) —— 四层模型与结构节点规则。
 - [数据源目录](../sources/README.md) —— 官方提示数据源与它们的准入判据。
 - [错误反馈](../../../../error-feedback.md#消息三段式) —— `message` 的三段式契约。

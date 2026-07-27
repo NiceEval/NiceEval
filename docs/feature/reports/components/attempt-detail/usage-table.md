@@ -1,4 +1,4 @@
-# `attemptUsage`
+# `AttemptUsage`
 
 把一个 attempt 的用量摊成一行：判定、轮数、工具调用数、token 拆分与成本。没有 usage 时零输出。区块在整体装配里的位置见[公开区块集](README.md#公开区块集)。
 
@@ -18,23 +18,27 @@ usage: 6 turns · 21 tool calls · 62.3k uncached in + 942.6k cache read / 6.7k 
 
 某段事实缺失时对应片段整段省略，剩余片段保持顺序；全部缺失时整行不出现，与组件表「没有 usage 时零输出」同一条规则。
 
-`attemptUsage` 的可序列化形状，字段名与落盘 `Usage`、事件派生量、attempt 身份字段保持一致，不为展示发明第二套命名：
+`AttemptUsage` 消费 `AttemptSnapshot`，字段名与落盘 `Usage`、事件派生量、attempt 身份字段保持一致，
+不为展示发明第二套命名：
 
 ```ts
-interface UsageTableContent {
-  locator: string;
-  experimentId: string;
-  evalId: string;
-  attempt: number;
-  verdict: AttemptRecord["verdict"];
+interface AttemptSnapshot {
+  locator: AttemptLocator;        // 内含 experimentId / evalId / attempt 身份
+  verdict: Verdict;
+  points?: number;
+  possiblePoints?: number;
+  durationMs?: number;
   turns?: number;                // 事件流派生；无 events 时省略
   toolCalls?: number;
   usage?: Usage;                 // 落盘原样，字段契约见 Record · Usage
-  estimatedCostUSD?: number;
+  costUSD?: number;
+  error?: AttemptError;
 }
 ```
 
-`show --usage` 的多行用量表是同一组件按 attempt 逐条映射后的宿主装配：范围内每个 attempt 各贡献一份 `UsageTableContent`，分节、排序、合计行与占位规则属于宿主机器，装配细节见 [`--usage`](../../show/usage.md)。
+`show --usage` 的多行用量表是同一事实投影按 attempt 逐条映射后的宿主装配：范围内每个 attempt
+各贡献一份 `AttemptSnapshot`，分节、排序、合计行与占位规则属于宿主机器，装配细节见
+[`--usage`](../../show/usage.md)。
 
 ## 相关阅读
 

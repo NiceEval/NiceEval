@@ -7,7 +7,7 @@
 - **令牌**是类型化的高频入口——外观分支、强调色、状态色、六色图表色板、中性表面、字体与圆角。
 - **`styles`** 是主题自带的完整 CSS 出口，用来改令牌表达不了的东西：组件外观、密度、装饰、字体加载。
 
-主题只作用于 web 面：`view` 宿主 chrome 与页内 `.nre` 组件读同一份令牌，本地查看与 `view --out` 静态导出使用同一份主题。`show` 是 text 面，不消费主题；主题不改变判定文字、读数口径或任何数值。
+主题只作用于 web 面：`view` 宿主 chrome 与页内 `.niceeval-report` 组件读同一份令牌，本地查看与 `view --out` 静态导出使用同一份主题。`show` 是 text 面，不消费主题；主题不改变判定文字、读数口径或任何数值。
 
 ## 装载链
 
@@ -95,7 +95,7 @@ export default defineTheme({
   radius: "2px",
   styles: [
     { src: "./acme.css" },
-    { inline: `.nre .nre-hero-title { letter-spacing: -0.035em; text-transform: uppercase; }` },
+    { inline: `.niceeval-report .niceeval-hero-title { letter-spacing: -0.035em; text-transform: uppercase; }` },
   ],
 });
 ```
@@ -119,7 +119,7 @@ import base from "@acme/niceeval-theme";
 export default defineTheme({
   ...base,
   accent: { light: "#0F766E", dark: "#5EEAD4" },
-  styles: [...(base.styles ?? []), { inline: ".nre .nre-hero { padding-block: 48px; }" }],
+  styles: [...(base.styles ?? []), { inline: ".niceeval-report .niceeval-hero { padding-block: 48px; }" }],
 });
 ```
 
@@ -183,9 +183,9 @@ interface ReportTheme {
   /** 正文色。 */
   text?: ThemeColor;
   /** 次要文字：标签、单位、说明。 */
-  textMuted?: ThemeColor;
+  textSecondary?: ThemeColor;
   /** 最弱文字：占位、缺失标记、轴刻度。 */
-  textSoft?: ThemeColor;
+  textTertiary?: ThemeColor;
   /** 键盘 focus 环。默认取 accent 的值。 */
   focus?: ThemeColor;
 
@@ -234,9 +234,9 @@ function themeStylesheet(theme: ThemeDefinition): string;
 | `series` | experiment / agent / label 等名义分类身份 | 质量大小或判定好坏 |
 | 中性面令牌 | 页面、卡片、分隔与三级文字层次 | 任何状态含义 |
 
-组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#系列色分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`seriesPins`](shell.md#钉色) 声明），`deltaRows` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#维度呈现分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`dimensionPins`](shell.md#钉色) 声明），`sources.measure.delta` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
 
-未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--nre-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子：
+未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子：
 
 | 令牌 | light | dark |
 |---|---|---|
@@ -251,8 +251,8 @@ function themeStylesheet(theme: ThemeDefinition): string;
 | `border` | `#E1E3E5` | `#22262A` |
 | `borderStrong` | `#C4C8CC` | `#333A40` |
 | `text` | `#16191B` | `#E6E9EB` |
-| `textMuted` | `#5C6469` | `#9AA2A8` |
-| `textSoft` | `#8A9298` | `#6A7278` |
+| `textSecondary` | `#5C6469` | `#9AA2A8` |
+| `textTertiary` | `#8A9298` | `#6A7278` |
 | `focus` | 同 `accent` | 同 `accent` |
 
 非颜色令牌：
@@ -279,7 +279,7 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主
 
 ## 在 view 中怎样生效
 
-装载期先把 `ReportTheme` 规范化为完整令牌表：未声明的令牌取官方值，单色展开成相同的 light / dark 值，pair 保留两个分支。站点管线再把一个纯 CSS 令牌块挂到 view 文档根；页内 `.nre` 报告边界继承这些令牌。report 官方样式只在每个 `var(--nre-*, <default>)` 使用点保留同源默认值，使它脱离 view 嵌入用户页面时仍零配置可读，而不在 `.nre` 上重新声明一套会遮住宿主主题的变量。宿主 chrome 与报告组件因此读同一份值，不在 `src/view` 与 `niceeval/report` 各复制一份色板。
+装载期先把 `ReportTheme` 规范化为完整令牌表：未声明的令牌取官方值，单色展开成相同的 light / dark 值，pair 保留两个分支。站点管线再把一个纯 CSS 令牌块挂到 view 文档根；页内 `.niceeval-report` 报告边界继承这些令牌。report 官方样式只在每个 `var(--niceeval-*, <default>)` 使用点保留同源默认值，使它脱离 view 嵌入用户页面时仍零配置可读，而不在 `.niceeval-report` 上重新声明一套会遮住宿主主题的变量。宿主 chrome 与报告组件因此读同一份值，不在 `src/view` 与 `niceeval/report` 各复制一份色板。
 
 主题的 `styles` 与外壳 `styles` 走同一套资产纪律：`{src}` 只收本地路径（允许 `./` 前缀，不允许 `..` 路径段、绝对路径或 `~`），本地 `view` 与静态导出都按内容哈希物化为 `assets/<sha256><ext>` 并改写引用，同内容去重。区别只在解析基准——主题的资产相对主题文件，外壳的资产相对报告文件。文件缺失时在启动或导出时报错并给出解析后的路径。
 
@@ -287,7 +287,7 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主
 
 样式级联顺序固定为：
 
-1. view 与 report 官方样式及默认令牌；
+1. view、report 官方样式与作者渲染组件的基础样式；
 2. 生效主题的令牌块；
 3. 生效主题的 `styles`，按声明顺序；
 4. 报告外壳 `styles`，按声明顺序；
@@ -298,7 +298,7 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主
 
 ## CSS 覆盖与完整重写
 
-公开 CSS 令牌全部使用 `--nre-` 前缀，由 view 根节点向 `.nre` 继承。把 report React 组件嵌进自己的页面时，在包住 `.nre` 的容器上声明同一组令牌即可；已经有 `defineTheme` 产物时直接注入它的令牌块：
+公开 CSS 令牌全部使用 `--niceeval-` 前缀，由 view 根节点向 `.niceeval-report` 继承。把 report React 组件嵌进自己的页面时，在包住 `.niceeval-report` 的容器上声明同一组令牌即可；已经有 `defineTheme` 产物时直接注入它的令牌块：
 
 ```tsx
 import { themeStylesheet } from "niceeval/report";
@@ -310,29 +310,29 @@ import acme from "@acme/niceeval-theme";
 完整令牌表：
 
 ```css
---nre-accent
---nre-positive
---nre-negative
---nre-warning
---nre-series-1
---nre-series-2
---nre-series-3
---nre-series-4
---nre-series-5
---nre-series-6
---nre-page
---nre-surface
---nre-surface-subtle
---nre-border
---nre-border-strong
---nre-text
---nre-text-muted
---nre-text-soft
---nre-focus
---nre-font-sans
---nre-font-mono
---nre-font-size
---nre-radius
+--niceeval-color-accent
+--niceeval-color-positive
+--niceeval-color-negative
+--niceeval-color-warning
+--niceeval-color-series-1
+--niceeval-color-series-2
+--niceeval-color-series-3
+--niceeval-color-series-4
+--niceeval-color-series-5
+--niceeval-color-series-6
+--niceeval-color-page
+--niceeval-color-surface
+--niceeval-color-surface-subtle
+--niceeval-color-border
+--niceeval-color-border-strong
+--niceeval-color-text
+--niceeval-color-text-secondary
+--niceeval-color-text-tertiary
+--niceeval-color-focus
+--niceeval-font-sans
+--niceeval-font-mono
+--niceeval-font-size
+--niceeval-radius
 ```
 
 令牌表不到的地方用 CSS。主题自己的 `styles` 是主题作者的出口，报告外壳 `styles` 是报告作者的出口，单页特例放在页树的 `Style`：
@@ -342,14 +342,15 @@ export default defineReport({
   extends: standard,
   styles: [{
     inline: `
-      .nre .nre-hero-title { letter-spacing: -0.035em; }
-      .nre .nre-scoreboard td { font-variant-numeric: tabular-nums; }
+      .niceeval-report .niceeval-hero-title { letter-spacing: -0.035em; }
+      .niceeval-report .niceeval-scoreboard td { font-variant-numeric: tabular-nums; }
     `,
   }],
 });
 ```
 
-官方组件提供稳定的 `nre-*` 语义 class，这是主题与自定义组件共同的着力点；自定义组件用自己的 `className` 前缀建立边界，写法见[自己写报告组件](../use-case/构建报告/自定义组件/)。
+`.niceeval-report` 是公开主题边界，官方组件在其中提供稳定的 `niceeval-*` 语义 class。
+`niceeval-*` 由 NiceEval 保留；自定义组件用自己的 class 前缀建立边界，并读取同一组 CSS 令牌。
 
 CSS 可以重写排版块的视觉结构，但不得改变数据、初始 HTML 中的数值和无 JavaScript 可读性；也不得隐藏 NiceEval 固定品牌位，或用颜色作为 passed / failed、不同 series 的唯一信息载体。
 
@@ -366,6 +367,6 @@ NiceEval 官方主题 [Basalt](../themes/basalt.md) 保证官方组件的对比�
 - [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义组件怎么取色、怎么跟随任何主题。
 - [给报告换主题、做自己的主题包](../use-case/交付报告/主题/) —— 从换一次色到发一个主题包的全流程。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
-- [外壳与多页](shell.md) —— `theme` / `seriesPins` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
+- [外壳与多页](shell.md) —— `theme` / `dimensionPins` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
 - [排版原语与自定义组件](layout.md) —— 页内 `Style`、`className` 与组合组件。
 - [View](../view.md) —— 本地查看与静态导出怎样消费同一份主题。

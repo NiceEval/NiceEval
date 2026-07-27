@@ -50,7 +50,8 @@ SourceContent
 
 1. 有声明位置和源码，但链不经过主干：进入 `detached`，按最外层项目帧所在文件分组。
 2. 有声明位置但源码不可用：保留路径与行号，在相邻可用节点下显示不可展开的缺口。
-3. 没有声明位置：断言与给分记录进入 `unmapped`，按 [`attemptAssertions`](../components/attempt-detail/README.md)
+3. 没有声明位置：断言与给分记录进入 `unmapped`，按
+   [`sources.attempt.assertions`](../components/attempt-detail/README.md)
    的条目形态平铺。
 
 没有位置的 Turn 不进入 `unmapped`。Turn 的完整诊断面始终是
@@ -59,7 +60,7 @@ SourceContent
 ## 边界
 
 - 源码树只承载断言、给分记录和 `t.send` 的归属，不展示任意运行时栈。
-- 用户代码直接抛出的错误由 `attemptError` 展示，不伪造成源码标注。
+- 用户代码直接抛出的错误由 `AttemptNotices` 展示，不伪造成源码标注。
 - `node_modules` 中的帧只保留包名标记，不捕获包内源码。
 - 树只描述一个 attempt，不负责跨 attempt 源码对照。
 - 调用帧没有 invocation 身份，因此同一行循环调用同一 helper 时合并标注，不报告无法证明的调用次数。
@@ -69,5 +70,4 @@ SourceContent
 - [Architecture](architecture.md) —— 调用链采集、源码快照与完整树的数据形状。
 - [Display](display.md) —— 归属、建树和面相关投影。
 - [`show --source`](../show/eval-source.md) —— 终端命令、输出和展开入口。
-- [`attemptSource`](../components/attempt-detail/attempt-source.md) —— web 面交互与视觉规范。
-
+- [`sources.attempt.source`](../components/attempt-detail/attempt-source.md) —— web 面交互与视觉规范。

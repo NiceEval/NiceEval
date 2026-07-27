@@ -29,7 +29,7 @@ niceeval show memory/retention --page failures
 niceeval show memory/retention --page failures --json
 ```
 
-三种输出共享宿主选出的 Sample 和同一次 DataSource resolve。质量分、成本、覆盖缺口与 locator 引用
+三种输出共享宿主选出的 Sample 和同一次 Source compute。质量分、成本、覆盖缺口与 locator 引用
 因此同值；Agent 根据终端结果修代码后，人刷新浏览器看到的是同一口径下的新 Run。
 
 ## 两面相同的是事实，不是布局
@@ -38,7 +38,7 @@ web 面可以使用排序、过滤框、tooltip、折叠区和 dialog。text 面
 降级形态表达同一份事实：输出既定行序或过滤后的行集，把 hover 内容写成括注，把折叠内容展开或按
 预算给出 `--expand` 入口。
 
-自定义 DataSource 和组合组件不分别实现两面 renderer。作者声明一次 Content 与组件树，官方原语负责
+自定义 Source 和组合组件不分别实现两面 renderer。作者声明一次 Content 与组件树，官方原语负责
 text/web 投影；这保证浏览器能看到的信息不会因为 Agent 只能访问终端而静默消失。
 
 ## 下钻
@@ -64,5 +64,5 @@ web 面可以把它放进 dialog，text 面按区块输出判定、断言、对�
 ## 相关阅读
 
 - [共用自定义报告](共用自定义报告.md) —— `--report`、`--page` 与项目默认报告的完整流程。
-- [Reports 架构](../../architecture.md) —— DataSource、双面原语与宿主管线。
+- [Reports 架构](../../architecture.md) —— Source、双面 Component与宿主管线。
 - [终端排版与本地化](../构建报告/自定义组件/终端排版与本地化.md) —— text 面的排版责任。

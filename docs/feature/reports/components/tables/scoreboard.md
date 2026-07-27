@@ -1,16 +1,16 @@
-# `scoreboard`
+# `sources.measure.scoreboard`
 
-`scoreboard(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源。它接收一份显式固定题集，
+`sources.measure.scoreboard(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源。它接收一份显式固定题集，
 再把每个行维度在每道题上的分数折成总分和分组得分。数据源不从已观测 attempt 的并集猜题集，因此
 「所有配置都没跑到的题」仍留在分母中并按 0 分计。
 
 配置是普通可序列化数据，不是一棵专用 JSX 子树：
 
 ```tsx
-const securityScore = scoreboard({
-  rows: "agent",
+const securityScore = sources.measure.scoreboard({
+  dimensions: ["agent"],
   fullMarks: 100,
-  score: examScore,
+  score: passRate,
   groups: [
     {
       name: "security",
@@ -31,8 +31,8 @@ const securityScore = scoreboard({
 每道题需要不同权重时，使用展开形态：
 
 ```ts
-const score = scoreboard({
-  rows: "agent",
+const score = sources.measure.scoreboard({
+  dimensions: ["agent"],
   questions: [
     { evalId: "security/sql-injection", group: "security", weight: 3 },
     { evalId: "security/path-traversal", group: "security", weight: 2 },
@@ -59,7 +59,7 @@ interface ScoreQuestion {
 }
 
 type ScoreboardOptions = {
-  rows: DimensionInput;
+  dimensions: readonly DimensionInput[];
   fullMarks?: number;
   score?: Measure;
 } & (
@@ -67,25 +67,29 @@ type ScoreboardOptions = {
   | { questions: readonly [ScoreQuestion, ...ScoreQuestion[]]; groups?: never }
 );
 
-function scoreboard(
-  options: ScoreboardOptions,
-): DataSource<ScoreboardContent>;
+interface MeasureSources {
+  scoreboard(options: ScoreboardOptions): Source<Sample, ScoreboardContent>;
+}
 ```
 
 ```ts
-interface ScoreboardContent {
+interface ScoreboardContent extends TableContent<ScoreboardRow> {
   rowDimension: string;
   questions: string[];
   fullMarks: number;
   /** 逐题解析后的权重，按题集声明顺序。 */
   weights: Array<{ evalId: string; group: string; weight: number }>;
   ignoredEvals: number;
-  rows: Array<{
-    key: string;
+  rows: ScoreboardRow[];
+}
+
+interface ScoreboardRow extends Row {
+  /** total 与各 group 都同时物化进统一 cells，供 Table 直接消费。 */
+  cells: Readonly<Record<string, { kind: "measure"; measure: MeasureCell }>>;
+  facts: {
     total: {
       /** fullMarks × earned / possible。 */
       value: number;
-      display: LocalizedText;
       notRun: number;
       unscorable: number;
       refs: AttemptLocator[];
@@ -97,14 +101,13 @@ interface ScoreboardContent {
       questions: number;
       notRun: number;
       unscorable: number;
-      display: LocalizedText;
       refs: AttemptLocator[];
     }>;
-  }>;
+  };
 }
 ```
 
-`score` 默认 `examScore`，每道题必须产出 `[0, 1]`。读数为 `null`（跑了但测不了）与完全未运行都按
+`score` 默认 `passRate`，每道题必须产出 `[0, 1]`。读数为 `null`（跑了但测不了）与完全未运行都按
 该题 0 分，但分别计入 `unscorable` 与 `notRun`。题目得分乘各自权重；总分是
 `fullMarks × earned / possible`，`fullMarks` 默认 100。
 
@@ -115,5 +118,5 @@ Sample 中存在题集之外的 eval 时，数据源忽略它们，把数量写�
 ## 相关阅读
 
 - [表格与矩阵](README.md) —— 共用数据形状与两面规则。
-- [`measureRows`](measure-table.md) / [`measureMatrix`](measure-matrix.md) /
-  [`deltaRows`](delta-table.md) / [`stabilityRows`](stability-matrix.md) —— 其它表格数据源。
+- [`sources.measure.rows`](measure-table.md) / [`sources.measure.matrix`](measure-matrix.md) /
+  [`sources.measure.delta`](delta-table.md) / [`sources.measure.stability`](stability-matrix.md) —— 其它表格数据源。

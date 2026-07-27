@@ -8,15 +8,32 @@
 
 ## 结论
 
-采纳 [PLAN-2](PLAN-2.md)：**通用原语加类型化数据源，再加一层具名组合组件**。
-不引入 SQL，也不引入按视图命名的专用组件。
+采纳 [PLAN-2](PLAN-2.md) 的取数结论，并把作者面进一步收敛成两个核心概念：
+**Source 负责计算 Content，Component 负责显示 Content**。不引入 SQL，也不引入按视图命名的专用组件。
 
 两条轴各得到一个答案：
 
-- **组件尽量通用，专用性住在数据源。** 原语只认单元格类型与结构，
-  集合封闭；「这是实验对比还是成绩单」由数据源回答。
+- **Source 只有一种协议。** `Source<Input extends SourceInput, Content>` 与 `defineSource(...)` 是唯一
+  `.niceeval` 查询接口；输入只允许 Sample / AttemptEvidence，外部业务数据直接走 Component `data`。表格默认字段
+  与 rows 由同一次 `compute()` 返回，但字段描述不含本地化 label 或布局；不存在 `DataSource` / `RowSource` 两套平行抽象。
+- **Component 只有 source / data 两种用法。** 管线把 source 计算成 Content 后才进入 renderer；
+  renderer 看不到 Source、Sample、Record，也没有自己的 `resolve` 取数面。
 - **数据由类型化声明提供。** 读数、维度与聚合方向写在 TypeScript 里，
   作者面不出现查询语言。
+- **报告树对双面 Component 开放。** 作者可以用 `defineComponent` 增加新的视觉形状，
+  但必须同时实现 text 与 web renderer；只装配已有组件的宏使用 `defineComposition`。
+- **名称与颜色是一份维度呈现。** `dimensions(data)` 让管线提前收集全集，renderer 通过
+  `ctx.present(dimension, value)` 同时取得身份、页内唯一标签和颜色；自有页面使用 `presentDimension(...)`。
+- **Summary 与 Notice 不属于 Source。** `sample.snapshot` / `attempt.snapshot` 返回中性事实；默认 KPI、
+  本地化解释、严重度与动作由 Component / Composition 决定。读取 / 选择层产生可重算的
+  `SampleIssue`，不把 message / command 写入 `.niceeval`；persisted diagnostics 只保存 observation。
+- **格式化属于 renderer。** Measure 把可序列化 `format` 与数值语义带进 Content，不接受 locale
+  formatter 回调，也不预生成 `LocalizedText`。renderer 用 `ctx.locale` 格式化同一个 value。
+- **Chart 消费通用 Dataset。** `sources.measure.rows(...)` 负责维度、读数与聚合；Chart 的 x / y 与
+  `<Series mark>` 负责显示。没有把 mark、axis、series 塞回 Source 的 `sources.chart(...)`。
+
+这里封闭的是 NiceEval 承诺维护的**内建原语目录**，不是用户报告树可接受的组件集合。
+新领域名词不能成为增加官方原语的理由，但作者不必为了新的视觉形状离开 `show` / `view`。
 
 ---
 
@@ -28,7 +45,7 @@
 两级聚合的权重、`null` 与覆盖缺口的区别、每个数字覆盖了哪些 attempt，
 读者不会去检查，作者也不会每次都想起来。
 
-PLAN-2 把这几条压进数据形状：`Measure.aggregate` 决定聚合层数，
+PLAN-2 把这几条压进数据形状：`Measure.perEval` / `acrossEvals` 决定聚合层数，
 `MeasureCell` 的必填字段决定证据与覆盖率。
 作者少写什么都不会得到一个错的数字，最多得到一个不好看的表。
 
@@ -39,8 +56,11 @@ PLAN-2 把这几条压进数据形状：`Measure.aggregate` 决定聚合层数�
 ### 通用原语的可维护性靠判据，不靠克制
 
 需求 15 要的是「新增形状有判据」。PLAN-2 的三问判据给了这个判据：
-要读磁盘或认识领域概念的进数据源，要看整页数据的进管线，两个都不要的才是原语。
+要读磁盘或认识领域概念的进数据源，要看整页数据的进管线，两个都不要的才可能成为内建原语。
 「某个数据源画出来长得不一样」因此不构成加原语的理由。
+
+作者定义的渲染组件不进入内建原语目录，也不把维护义务转给 NiceEval。它通过公开双面协议进入报告树，
+与官方原语走同一条 resolve、dimensions 收集、validate 与 render 管线。
 
 [PLAN-1](PLAN-1.md) 没有这样的判据。组件按提问方式增长，
 而提问方式是维度与读数的乘积，没有收敛点。
@@ -52,6 +72,9 @@ PLAN-1 唯一真正的优势是一行出一页。这个优势被组合组件接�
 区别是它们只装配公开原语、不接受结构子节点、并给出可照抄的等价全文。
 作者从「一行」走到「逐块改」不换心智模型，
 [PLAN-2 的五级改法](PLAN-2.md#五级改法一级比一级深)每一级都不需要库先加一个 prop。
+
+组合组件由 `defineComposition` 定义。`defineComponent` 留给真正产生新渲染形状、同时实现两面的组件，
+避免一个叫 component 的 API 实际只能返回其它组件。
 
 ### 灵活提问由普通 JavaScript 承担
 
@@ -75,8 +98,8 @@ SQL 在这条上的优势是语法更短，代价是引擎依赖与第二条口�
 
 - 违反需求 1：直觉写法是摊平的 `avg`，重试多的题拿到更大权重。
 - 违反需求 5、6：证据引用与覆盖率降级成作者可选的列。
-- 违反需求 12：列的单位、方向与双语标签只能散在查询旁边，
-  同一个读数在两页上要抄两遍。
+- 违反需求 12：列的单位、方向等数值语义只能散在查询旁边。字段身份也无法成为 Component
+  呈现词典稳定匹配的类型化值。
 - 撞上 [artifact 摊不平](LIMITS.md#record-不是数据库)：
   全量物化违反需求 17，UDF 等于给 `Measure.value` 包一层语法还丢掉 `null` 语义。
 
@@ -95,8 +118,8 @@ SQL 在这条上的优势是语法更短，代价是引擎依赖与第二条口�
 
 决策本身到此为止，产品要满足的契约写在功能文档里：
 
-- 三层模型、三问判据与单元格类型：[组件树](../../feature/reports/components/README.md)。
-- 数据源的公开接口与三条纪律：[数据源目录](../../feature/reports/components/sources/README.md)。
+- Source / Component 核心模型、进阶组合与单元格类型：[组件树](../../feature/reports/components/README.md)。
+- Source 的唯一公开接口、领域目录与三条纪律：[Source 目录](../../feature/reports/components/sources/README.md)。
 - 读数、维度与两级聚合：[读数与维度](../../feature/reports/library/measures.md)。
 - 作者的五级改法与嵌入自有页面：[Library](../../feature/reports/library.md)。
 - 管线、可序列化边界与两面同源：[Architecture](../../feature/reports/architecture.md)。

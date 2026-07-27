@@ -4,16 +4,16 @@
 共用这一个原语，差别全在传进去的[数据源](../sources/README.md)。
 
 ```tsx
-// 默认列：数据源自己声明列集合与列序
-<Table source={experimentRows} filter />
+// 默认字段：Source 声明字段集合与列序，Table 负责表头呈现
+<Table source={sources.entity.experiments} filter />
 
 // 自选列：写 <Column> 就整体替换默认列，列序即声明序
-<Table source={measureRows({
-  rows: "experiment",
-  measures: [endToEndPassRate, costUSD],
+<Table source={sources.measure.rows({
+  dimensions: ["experiment"],
+  measures: [passRate, costUSD],
 })}>
-  <Column dataKey="pass-rate" />
-  <Column dataKey="cost-usd" align="right" />
+  <Column dataKey="passRate" />
+  <Column dataKey="costUSD" align="right" />
 </Table>
 
 // data 形态：接收算好的行，子节点只选择并附加呈现
@@ -25,16 +25,11 @@
 ## 形状
 
 ```ts
-type TableProps =
-  | ({ source: DataSource<TableContent>; data?: never } & TablePresentation)
-  | ({ data: TableContent; source?: never } & TablePresentation);
+type TableProps<Input extends SourceInput> =
+  DataProps<Input, TableContent | Dataset | null> & TablePresentation;
 
 interface TablePresentation {
-  /** source 形态的取数范围；省略时取宿主注入的 Sample。 */
-  input?: ReportInput;
-  /** eval id 前缀，聚合之前收窄题集；逐实体成行的数据源不接受它。 */
-  evals?: string | readonly string[];
-  /** 至少一个 <Column>；省略时用数据源的默认列。 */
+  /** 至少一个 <Column>；省略时用 Content 的默认列。 */
   children?: ColumnNode | readonly ColumnNode[];
   /** 初始排序的列 key；方向跟随该列的 better，省略时用数据源声明的默认排序。 */
   sort?: string;
@@ -48,7 +43,7 @@ interface TablePresentation {
 interface ColumnProps {
   /** 对应 Row.cells 的键。 */
   dataKey: string;
-  /** 省略时取数据源声明的列头。 */
+  /** 省略时取内建字段词典；未命中时显示原始 dataKey。 */
   header?: LocalizedText;
   align?: "left" | "right";
   /** 越高/低越好；决定点击排序的方向。省略时该列不可排序。 */
@@ -58,10 +53,12 @@ interface ColumnProps {
 }
 ```
 
-`<Column>` 的存在与否是二选一：一个都不写就整套用数据源的默认列，写了就整体替换。
+`<Column>` 的存在与否是二选一：一个都不写时，`TableContent` 使用自己的 `columns`，`Dataset` 使用
+`fields` 的声明顺序；Table 再按「内建字段词典 → 原始 key」生成表头。写了 `<Column>` 就整体替换，
+其中 `header` 只覆盖呈现，不成为 Content 的一部分。
 没有「在默认列上加一列」这种半覆盖——半覆盖要求作者知道默认列序里该插在哪，
 而默认列序会随数据源演进，插入位置无法稳定表达。要在默认基础上增删，
-把数据源的 `columns()` 结果取出来自己拼，那是普通 JavaScript。
+读取 `TableContent.columns` 自己拼，那是普通 JavaScript。
 
 ## 单元格渲染
 
@@ -70,14 +67,14 @@ interface ColumnProps {
 
 | `kind` | web 面 | text 面 |
 |---|---|---|
-| `measure` | `display`；`samples < total` 时在值下方写明覆盖范围（`63/72 次有成本数据`），不放无语义角标；`refs` 单条时值本身是链接，多条时进 tooltip 逐条列出 | `display`；覆盖缺口写进列脚注，不省略 |
+| `measure` | renderer 按 `value + format + ctx.locale` 格式化；`samples < total` 时写明覆盖范围；`refs` 单条时值本身是链接，多条时进 tooltip | 同一格式化结果；覆盖缺口写进列脚注，不省略 |
 | `verdict` | 单个 verdict 显示状态图标加词；计票各项以中点分隔，不渲染成类似按钮的胶囊 | `✓ passed` / `1 passed · 1 failed` |
 | `score` | `earned`；有 `possible` 时写 `earned / possible` 并附同尺度百分比 | 同 web，百分比在括号内 |
 | `summary` | 单行，宽度不足按显示宽度截断；`more > 0` 时尾缀 `+N more failures`，计分制为 `+N more lost points` | 同 web |
 | `locator` | 链到 `attemptHref`；`staleSinceMs` 存在时后缀 `↩` 加人话时距，hover 显示完整执行时刻 | locator 加 `↩ 3d`，时距直接打 |
 | `text` | 主文；`detail` 作为 subdued 副行，省略时不留空行 | 主文换行后缩进打副行 |
 | `notApplicable` | `—` | `—` |
-| `missing` | `reason` 加可复制的 `command` | `reason · command` |
+| `missing` | 按 `code + data` 映射本地化原因与可复制 action；未知 code 显示结构化 detail | 同一 policy 的 text 投影 |
 
 三条渲染纪律：
 
@@ -134,7 +131,7 @@ text 面按显示宽度对齐（CJK 与全角记 2 列），身份列有宽度�
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型、单元格类型与结构节点规则。
+- [组件树](../README.md) —— 四层模型、单元格类型与结构节点规则。
 - [数据源目录](../sources/README.md) —— 官方数据源的行形状与默认列。
 - [`Grid` / `Stat`](stat-grid.md) —— 同一套单元格类型的读数网格投影。
 - [读数与维度](../../library/measures.md) —— `MeasureCell` 与聚合口径。

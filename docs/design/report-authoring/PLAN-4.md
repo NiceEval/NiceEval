@@ -13,7 +13,7 @@
 
 ```tsx
 // 日常：走数据源，口径与默认报告同源
-<Table source={measureRows({ rows: "agent", measures: [endToEndPassRate, costUSD] })} />
+<Table source={measureRows({ rows: "agent", measures: [passRate, costUSD] })} />
 
 // 逃生：官方目录里没有的提问
 <Table source={sql`
@@ -44,7 +44,7 @@
 把 SQL 限制成对数据源产物的二次投影，口径仍住在 `Measure` 里：
 
 ```tsx
-const byAgent = measureRows({ rows: "agent", measures: [endToEndPassRate, costUSD] });
+const byAgent = measureRows({ rows: "agent", measures: [passRate, costUSD] });
 
 <Table source={sql`select * from ${byAgent} where cost > 5 order by pass_rate desc`} />
 ```
@@ -77,7 +77,7 @@ JavaScript 版本多两行，换来类型检查、编辑器补全与断点。
 
 ## 缺点
 
-- **两条口径入口同时存在。** 同一页上一个数来自 `endToEndPassRate`，
+- **两条口径入口同时存在。** 同一页上一个数来自 `passRate`，
   另一个来自作者的 `avg(passed)`，两个数不一致时读者无从判断谁对。
   需求 11 从结构保证降级成「取决于作者选了哪条路」。
 - **不变量降级成建议。** 「数字能回到证据」在数据源侧是必然，

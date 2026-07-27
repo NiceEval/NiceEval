@@ -19,8 +19,8 @@ builtIn;  // 默认导出 === standard，宿主装载取这个值
 ```tsx
 // niceeval/report/built-in 的 standard 视图，没有任何私有 Hook
 import {
-  AttemptDetail, Callouts, Col, CopyBlock, Hero, SampleOverview, Table, Waterfall,
-  attemptRows, defineReport, fixPrompt, runDiagnostics, sampleWarnings, traceRows,
+  AttemptDetail, Col, Hero, RunNotices, SampleFixPrompt, SampleNotices,
+  SampleOverview, Table, Waterfall, defineReport, sources,
 } from "niceeval/report";
 
 export const standardAttemptPage = {
@@ -39,9 +39,9 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <Callouts source={sampleWarnings} />
-          <Callouts source={runDiagnostics} />
-          <CopyBlock source={fixPrompt} />
+          <SampleNotices source={sources.sample.snapshot} />
+          <RunNotices />
+          <SampleFixPrompt />
           <SampleOverview />
         </Col>
       ),
@@ -52,9 +52,9 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <Callouts source={sampleWarnings} />
-          <Callouts source={runDiagnostics} />
-          <Table source={attemptRows} filter />
+          <SampleNotices source={sources.sample.snapshot} />
+          <RunNotices />
+          <Table source={sources.entity.attempts} filter />
         </Col>
       ),
     },
@@ -64,9 +64,9 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <Callouts source={sampleWarnings} />
-          <Callouts source={runDiagnostics} />
-          <Waterfall source={traceRows} />
+          <SampleNotices source={sources.sample.snapshot} />
+          <RunNotices />
+          <Waterfall source={sources.sample.traces} />
         </Col>
       ),
     },
@@ -77,7 +77,11 @@ export const standard = defineReport({
 
 它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、读数、排版原语），内建视图是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是类型系统或装载逻辑里的类别。
 
-裸 `view` 页面上能看到的一切内容都在这份定义里：前三张 page 形成导航；hero、选择警告、Run 诊断和批量修复 prompt 是普通组件；locator 打开第四张 attempt-input page，其中 `AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog 摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此**任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
+裸 `view` 页面上能看到的一切内容都在这份定义里。前三张 page 形成导航；hero、Sample Notice、
+Run Notice 和批量修复 prompt 是普通组件。locator 打开第四张 attempt-input page，其中
+`AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog
+摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此
+**任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
 
 ## 复用有两条路，语义不同、都显式
 
@@ -92,33 +96,25 @@ export const standard = defineReport({
 
 ```tsx
 // reports/mine.tsx —— ① 换树：只关心自己的图表，不要站点 chrome
-import {
-  Chart, Col, Table, chart, costUSD, defineReport, endToEndPassRate,
-  experimentRows,
-} from "niceeval/report";
+import { Chart, Col, Series, Table, costUSD, defineReport, passRate, sources } from "niceeval/report";
 
-const qualityCost = chart({
-  x: { measure: costUSD },
-  y: { measure: endToEndPassRate },
-  series: [{
-    key: "frontier",
-    mark: "scatter",
-    points: "experiment",
-    by: "agent",
-    x: costUSD,
-    y: endToEndPassRate,
-  }],
+const qualityCost = sources.measure.rows({
+  dimensions: ["experiment", "agent"],
+  measures: [costUSD, passRate],
 });
 
 export default defineReport(
   <Col>
-    <Chart source={qualityCost} legend tooltip />
-    <Table source={experimentRows} filter />
+    <Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
+      <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+    </Chart>
+    <Table source={sources.entity.experiments} filter />
   </Col>,
 );
 ```
 
-树入参渲染的就是那棵树：没有附赠的 hero、警告区或证据页——读文件的人必须能看出会渲染什么，宿主不给任何页面加料。
+树入参渲染的就是那棵树：没有附赠的 hero、Notice 区或证据页。读文件的人必须能看出会渲染什么，
+宿主不给任何页面加料。
 
 ```tsx
 // reports/branded.tsx —— ② 内建整站 + 品牌外壳：extends 引用
@@ -135,14 +131,14 @@ export default defineReport({
 ```tsx
 // reports/site.tsx —— ③ 拆页：照抄内建的页，再加自己的页
 import {
-  Callouts, Col, Hero, SampleOverview, Table,
-  attemptRows, defineReport, examScore, runDiagnostics, sampleWarnings, scoreboard,
+  Col, Hero, RunNotices, SampleNotices, SampleOverview, Table,
+  defineReport, passRate, sources,
 } from "niceeval/report";
 
-const exam = scoreboard({
-  rows: "agent",
+const exam = sources.measure.scoreboard({
+  dimensions: ["agent"],
   fullMarks: 100,
-  score: examScore,
+  score: passRate,
   questions: [
     { evalId: "security/sql-injection" },
     { evalId: "correctness/retry" },
@@ -159,8 +155,8 @@ export default defineReport({
       content: (
         <Col>
           <Hero />
-          <Callouts source={sampleWarnings} />
-          <Callouts source={runDiagnostics} />
+          <SampleNotices source={sources.sample.snapshot} />
+          <RunNotices />
           <SampleOverview />
         </Col>
       ),
@@ -170,8 +166,8 @@ export default defineReport({
       title: { en: "Exam", "zh-CN": "成绩单" },
       content: (
         <Col>
-          <Callouts source={sampleWarnings} />
-          <Callouts source={runDiagnostics} />
+          <SampleNotices source={sources.sample.snapshot} />
+          <RunNotices />
           <Table source={exam} />
         </Col>
       ),
@@ -179,7 +175,7 @@ export default defineReport({
     {
       id: "attempts",
       title: "Attempts",
-      content: <Col><Table source={attemptRows} filter /></Col>,
+      content: <Col><Table source={sources.entity.attempts} filter /></Col>,
     },
   ],
 });
@@ -208,14 +204,18 @@ export default defineTheme({ ...basalt, accent: "#7C3AED" });
 
 ## 内建报告显示什么
 
-首页用 `SampleOverview` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries/sample-overview.md)；`Hero` / `sampleWarnings` / `runDiagnostics` / `fixPrompt` / `traceRows` 的契约在[站点组件](../components/site/README.md)；Attempts 页的本体是[带过滤的 `attemptRows`](../components/entity-lists/attempt-rows.md)。
+首页用 `SampleOverview` 展示实验整体主读数，行为契约单点定义在
+[概览组件](../components/summaries/sample-overview.md)。`Hero` / `SampleNotices` / `RunNotices` /
+`SampleFixPrompt` / `sources.sample.traces` 的契约在[站点组件](../components/site/README.md)。
+Attempts 页的本体是带过滤的
+[`sources.entity.attempts`](../components/entity-lists/attempt-rows.md)。
 
 ## 相关阅读
 
 - [外壳与多页](shell.md) —— 配置对象的字段穷尽、`extends` 合并语义与行为约束。
 - [主题](theme.md) —— 主题制品、装载链与令牌全集。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
-- [站点组件](../components/site/README.md) —— hero、品牌、警告、Run 诊断与瀑布的组件契约。
+- [站点组件](../components/site/README.md) —— hero、品牌、Notice、Run 诊断与瀑布的组件契约。
 - [Attempt 详情组件](../components/attempt-detail/README.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
 - [概览组件](../components/summaries/README.md) —— `SampleOverview` 的契约。
 - [Architecture](../architecture.md) —— 装载规范化：内建与 `--report` 的同一条管线。

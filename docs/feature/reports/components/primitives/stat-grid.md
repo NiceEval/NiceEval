@@ -4,8 +4,8 @@
 都是这一个形状，差别在传进去的[数据源](../sources/README.md)。
 
 ```tsx
-// 数据源形态：格集合与顺序由数据源声明
-<Grid columns={4} source={sampleSummary()} />
+// 默认摘要是组合组件，负责选择 snapshot 与 Measure 中的 KPI
+<SampleSummary />
 
 // 手工形态：作者自己算出终值后摆格
 <Grid columns={3} variant="boxed">
@@ -24,10 +24,7 @@ interface GridProps {
   variant?: "plain" | "boxed";
   /** 改变格内留白，并调整主值字号；不改变内容和分组。默认 regular。 */
   density?: "regular" | "compact";
-  /** 数据源形态：格集合与顺序由它声明。 */
-  source?: StatSource;
-  input?: ReportInput;
-  /** 手工形态：每个直接子节点是一格。 */
+  /** 每个直接子节点是一格；数据装配属于 Summary / Composition。 */
   children?: ReportNode;
   locale?: ReportLocale;
   className?: string;
@@ -69,6 +66,6 @@ interface StatProps {
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与单元格类型。
+- [组件树](../README.md) —— 四层模型与单元格类型。
 - [`Table`](table.md) —— 单元格渲染契约的落点。
 - [数据源目录](../sources/README.md) —— 官方读数网格数据源。

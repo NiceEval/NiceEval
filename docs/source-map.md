@@ -160,7 +160,9 @@
 
 ## Record / Sample Lib 与 Reports
 
-设计文档:[feature/record/](feature/record/README.md) / [feature/reports/](feature/reports/README.md) 合流一节。实现落点(show 与 view 两个宿主共用同一套 `--report` 装载;裸 show / view 装载同一份三页内建报告(report / attempts / traces)并各选对应渲染面;两个宿主的 Sample 都由中性的 `selectLatestPerEval` 无条件产出):
+设计文档：[feature/record/](feature/record/README.md) / [feature/reports/](feature/reports/README.md) 合流一节。
+实现落点中，show 与 view 共用 `--report` 装载；裸宿主装载同一份内建报告，并各选对应渲染面。
+两个宿主的 Sample 都由中性的 `selectLatestPerEval` 产出：
 
 三层的数据形状与各层操作画在[Reading](feature/reading/README.md)的总图上,这里只给同一条链路的
 文件落点。注意 Record 与 Sample 两层当前同住 `src/results/`,包边界只在契约里存在(见下方已知差异)。
@@ -199,7 +201,7 @@
 |---|---|
 | `openRecord`:实验/结果 Run/eval 分层、版本分流(skipped 三种原因)、懒加载(attempt 目录→artifactBase 携带条目回退) | `src/results/open.ts` |
 | 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/results/format.ts` |
-| `latestRunSample(record)`(= `selectLatest`,每实验取最新一次 Run + 范围内 `SampleWarning` + `SampleCoverage`,kind 全集三种:unfinished-run / missing-startedAt / unreadable-run,见[警告 kind 全集](feature/sample/library.md#警告-kind-全集);Run 本身是 `exp.snapshots` 里的真实条目,`filter()` 按 Run 删减能正确同步修剪 attempts/coverage/warnings)/ `currentSample(record)`(= `selectLatestPerEval`,目标契约是现刻水位投影:对每个 experiment × eval 跨该实验全部历史 Run 取最新判定并物化 `Sample.attempts`,`Sample.snapshots` 保留贡献数据的真实 Run 实体;当前实现与该目标不符,见[已知差异](#与设计文档的已知差异实现取舍)「`current()` 仍合成报告用 Run」)/ 两者都接受 `fresh?: boolean`(排除历史执行 attempt,`freshEvals`/`withFreshEvals` 实现,被排除的题进 `coverage.missingEvalIds`)/ `unreadableSnapshotWarnings`(扫描不可读 Run——incompatible / malformed / incomplete——产出 `unreadable-run` warning,接线进 `selectLatest` 与 `selectLatestPerEval`;类型在 `src/results/types.ts`)/ `Sample.filter`(`makeScope` 内的闭包,按 Run 删减重新 flatten `attempts`、按 experimentId 存在性修剪 `coverage`/`warnings`;对 `current()` 产出的 Sample 见上述已知差异)/ `dedupeAttempts`(身份键去重;缺 `startedAt` 的身份键不去重,记 `missing-startedAt` 警告;当前未在 `selectLatestPerEval`/`selectLatest` 内部调用)/ `ResultScope`(`{ experiment?, patterns?, fresh? }` 范围输入) | `src/results/select.ts` |
+| `latestRunSample(record)` / `currentSample(record)`、`freshEvals` / `withFreshEvals`、`Sample.filter`、`dedupeAttempts`；当前实现仍使用 `SampleWarning` / `warnings` / `unreadableSnapshotWarnings` 旧命名，目标契约改为可重算且不落盘的 [`SampleIssue`](feature/sample/library.md#issue-code-全集) / `issues`；`current()` 的 Run 投影差异见[已知差异](#与设计文档的已知差异实现取舍) | `src/results/select.ts` |
 | `createWriter`(Run 目录独占创建、Run 级元数据落盘、attempt 记录与 artifact 增量落盘、`finish()` 补 `completedAt`) | `src/results/writer.ts` |
 | `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记) | `src/results/copy.ts` |
 | 发布预算常量(50 MiB 单文件预检上限) | `src/results/publish.ts` |
@@ -265,10 +267,11 @@
 
 ### P1：报告、源码与宿主
 
-- **Reports 仍是 Metric 与专用组件模型。** 当前公开面仍以 `defineMetric` / `Metric`、`*Data`
-  函数及 `ExperimentList`、`MetricTable`、`ScopeSummary` 等专用 renderer 为主。目标
-  `defineMeasure` / `Measure`、`.compute()` 数据源、通用 Content、Chart / Callouts 与
-  `SampleOverview` 尚未整体迁移；已有 Table 原语只完成了局部基础。
+- **Reports 当前代码仍是 Metric 与专用 renderer。** 公开面以 `defineMetric` / `Metric`、`*Data`
+  函数及 `ExperimentList`、`MetricTable`、`ScopeSummary` 为主。Table 原语是迁移路径的局部基础。
+- **Reports 目标公开面是 Source 与 Component。** 它包含 `defineMeasure` / `Measure`、受限的
+  `Source<Input extends SourceInput, Content>`、通用 Content、Chart / Callouts 与 `SampleOverview`。
+  页级呈现统一为 `dimensions(data)`、`ctx.present(...)` 与 `presentDimension(...)`。
 - **Eval source 调用树待补齐。** `SourceLoc` 只有单帧位置，`captureLoc()` 找到第一帧即返回；
   helper 源码仍在 Attempt 收尾批量读取，读取失败直接跳过。`SourceArtifact` 没有唯一
   `role: "entry"`，spine / detached / unavailable 树与 `projectSourceView()` 均缺失。

@@ -9,9 +9,9 @@ Sample 内任一实验声明了 [`labels`](../../../experiments/library.md#label
 
 主读数与归类维度一样在 compose 阶段解析：
 
-- `"pass"`：图表 y 轴与 Experiment 行预排序使用 `endToEndPassRate`。
+- `"pass"`：图表 y 轴与 Experiment 行预排序使用 `passRate`。
 - `"points"`：两处都改用 `totalScore`。
-- `"mixed"`：按题型拆成两个子 Sample，每组各生成图表和 `experimentRows`。
+- `"mixed"`：按题型拆成两个子 Sample，每组各生成图表和 `sources.entity.experiments`。
 
 `scoringComposition(input)` 给出上述分类。完整判据见
 [主读数映射](../../library/measures.md#题型构成与主读数)。
@@ -49,36 +49,44 @@ Experiment 按主读数从高到低预排：通过制按通过率，计分制按
 示例是单一题型；`"mixed"` 时按题型拆成两个子 Sample，每组各有图表与实体行。
 
 ```tsx
-export const SampleOverview = defineComponent(async (props, ctx) => {
+export const SampleOverview = defineComposition(async (props, ctx) => {
   const input = props.input ?? ctx.sample;
   const { by, line } = resolveComparisonSeries(input, props);
+  const byField = typeof by === "string" ? by : by.name;
   const composition = await scoringComposition(input);
-  const primary = composition === "points" ? totalScore : endToEndPassRate;
-  const frontier = chart({
-    x: { measure: costUSD },
-    y: { measure: primary },
-    series: [{
-      key: "frontier",
-      mark: "scatter",
-      points: "experiment",
-      by,
-      x: costUSD,
-      y: primary,
-      connect: line,
-    }],
+  const primary = composition === "points" ? totalScore : passRate;
+  const frontier = sources.measure.rows({
+    dimensions: ["experiment", by],
+    measures: [costUSD, primary],
   });
   return (
     <Col className={props.className}>
-      <Grid source={sampleSummary()} input={input} locale={props.locale} />
-      <Chart source={frontier} input={input} locale={props.locale} legend tooltip />
-      <Table source={experimentRows} input={input} filter locale={props.locale} />
+      <SampleSummary input={input} locale={props.locale} />
+      <Chart
+        source={frontier}
+        input={input}
+        x="costUSD"
+        y={primary.name}
+        locale={props.locale}
+        legend
+        tooltip
+      >
+        <Series
+          id="frontier"
+          mark="scatter"
+          points="experiment"
+          by={byField}
+          connect={line}
+        />
+      </Chart>
+      <Table source={sources.entity.experiments} input={input} filter locale={props.locale} />
     </Col>
   );
 });
 ```
 
 Experiment 行标签默认缩成 id 在当前 Sample 里的最短唯一后缀,完整 id 仍是排序、过滤与展开的
-身份键。同一个 agent 在散点图例和表格里同色,由[页级色分配](../README.md#系列色分配单位是页)
+身份键。同一个 agent 在散点图例和表格里同色,由[页级色分配](../README.md#维度呈现分配单位是页)
 保证。
 
 `SampleOverview` 只从 `niceeval/report` 导出,不从 `niceeval/report/react` 导出。自有 React 页面
@@ -86,5 +94,5 @@ Experiment 行标签默认缩成 id 在当前 Sample 里的最短唯一后缀,�
 
 ## 相关阅读
 
-- [概览](README.md) —— `sampleSummary` 与本组合组件的关系。
-- [`sampleSummary`](sample-summary.md) —— 摘要数据源。
+- [概览](README.md) —— `SampleSummary` 与本组合组件的关系。
+- [`SampleSummary`](sample-summary.md) —— 默认 KPI 是怎样在组合层选择的。

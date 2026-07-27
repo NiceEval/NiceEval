@@ -82,7 +82,7 @@ JSON,`allure generate` 是完全独立的进程,读这些 JSON 产出 HTML 站�
 静态文件;页面只 `FileAttachment("x.json")` 读,渲染时不碰数据源。
 
 **学了什么。** `niceeval view --out` 的静态导出是同一个模型:artifact 复制成静态文件,查看器只
-fetch,不需要任何服务端。`publish()` 与它的输入约定(收 Sample 或 `Run[]`)就是为这条路径设计的。
+fetch,不需要任何服务端。`publish()` 收 Sample，就是为这条带完整性上下文的路径设计的。
 
 **没跟什么。** Observable 的 loader 每次构建重跑,Record 的事实是 `niceeval exp` 一次写成、之后
 不可变。这不是取舍不同,是两种数据的性质不同:eval 跑一次要花真金白银,不能当成可以随时重算的

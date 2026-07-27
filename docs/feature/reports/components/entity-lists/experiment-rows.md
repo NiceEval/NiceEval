@@ -1,13 +1,13 @@
-# `experimentRows`
+# `sources.entity.experiments`
 
-`experimentRows` 是 [`Table`](../primitives/table.md) 的数据源。每个顶层 Row 对应一个 Experiment,
+`sources.entity.experiments` 是 [`Table`](../primitives/table.md) 的数据源。每个顶层 Row 对应一个 Experiment,
 并下钻到 Eval 与 Attempt;固定列包含身份、agent、model、flags、判定构成、官方读数与覆盖缺口。
 默认 [`SampleOverview`](../summaries/sample-overview.md) 使用它呈现当前 Sample。
 
 一行只有一套 `agent / model / flags`。这不是显示取舍，而是输入约束：
 [`currentSample()`](../../../sample/library.md#两个选择器) 保证每个 experiment 只组合可比配置一致的 Run。
 
-作者自选 `Run[]` 时，若同一 experiment 混入不一致配置，`experimentRows` 必须失败并给出修法。
+Sample 选择器保证同一 experiment 的当前口径只对应一套可比配置；组件不接受裸 `Run[]`。
 跨配置演化应使用 `run` 维度或[折线 mark](../charts/line-chart.md)，不能把两套配置冒充成一行。
 
 web 面是固定列的 experiment 比较表，而不是无表头的松散卡片列表。主表一行一个 experiment，列顺序固定为：
@@ -18,7 +18,7 @@ web 面是固定列的 experiment 比较表，而不是无表头的松散卡片�
 | Model | model；缺失时显示明确空值 |
 | Agent | agent |
 | Avg. time | 官方 `durationMs` 聚合值；中文列名为“平均耗时” |
-| 主读数 | 按列表内题型构成选择（[主读数映射](../../library/measures.md#题型构成与主读数)）：全通过制为“Pass rate / 通过率”列（官方 `endToEndPassRate`）；全计分制为“Total score / 总分”列（官方 `totalScore`）；两型并存时两列都出、不适用格显示 `—`，不摆空列。默认按主读数列从高到低排序；两型并存时两种读数不能互相排名，默认改按 experiment id 字典序，两个主读数列仍各自可点击排序 |
+| 主读数 | 按列表内题型构成选择（[主读数映射](../../library/measures.md#题型构成与主读数)）：全通过制为“Pass rate / 通过率”列（官方 `passRate`）；全计分制为“Total score / 总分”列（官方 `totalScore`）；两型并存时两列都出、不适用格显示 `—`，不摆空列。默认按主读数列从高到低排序；两型并存时两种读数不能互相排名，默认改按 experiment id 字典序，两个主读数列仍各自可点击排序 |
 | Tokens | 官方 `tokens` 聚合值 |
 | Cost | 实验总成本：官方 `costUSD` 逐 attempt 求和（每题均值口径归图表与表格，见[默认报告](../../show/default-report.md)）；实测成本优先、估算兜底，列头不断言口径 |
 | Record | passed / failed / errored / skipped 的 eval 级判定构成，各项以中点分隔，不渲染成类似按钮的胶囊 |
@@ -52,7 +52,7 @@ Attempt 子行显示本轮判定、locator、耗时、成本与
 这只是展示收窄：排序、过滤与展开仍使用完整 id。算法已经保证“唯一时最短、冲突时刚好够用”，
 所以不提供手工路径前缀开关。
 
-Agent 颜色来自[页级色分配](../README.md#系列色分配单位是页)，其键是完整 agent 值。
+Agent 颜色来自[页级色分配](../README.md#维度呈现分配单位是页)，其键是完整 agent 值。
 同一页的图例、图表与表格因此使用相同颜色。
 
 text 面先输出与 web 同列口径的 experiment 表，再按 experiment 输出 Eval / Attempt 明细。
@@ -95,13 +95,13 @@ Status      Eval / Attempt              Score   Result                          
 窄屏允许表格横向滚动，不能为了适应宽度删除列、把多个无标签数值挤成一串，或退化成无法判断各数字含义的无表头布局。
 
 ```tsx
-<Table source={experimentRows} filter />
+<Table source={sources.entity.experiments} filter />
 ```
 
 ```tsx
 // 过滤后的层级行：组合组件里手工计算，再用普通 JavaScript 收窄
-export const ProdExperiments = defineComponent(async (_props: {}, ctx) => {
-  const content = await experimentRows.compute(ctx.sample);
+export const ProdExperiments = defineComposition(async (_props: {}, ctx) => {
+  const content = await sources.entity.experiments.compute(ctx.sample);
   return <Table data={{
     ...content,
     rows: content.rows.filter((row) => row.key.startsWith("prod/")),
@@ -112,5 +112,6 @@ export const ProdExperiments = defineComponent(async (_props: {}, ctx) => {
 ## 相关阅读
 
 - [实体列表](README.md) —— 数据形状与时效标注。
-- [`evalRows`](eval-rows.md) / [`attemptRows`](attempt-rows.md) / [`FailureList`](failure-list.md) ——
+- [`sources.entity.evals`](eval-rows.md) / [`sources.entity.attempts`](attempt-rows.md) /
+  [`FailureList`](failure-list.md) ——
   其它实体数据源与失败组合组件。

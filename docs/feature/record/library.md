@@ -3,7 +3,7 @@
 磁盘记录格式的 TS 读写 API(`niceeval/record`)。层的分工见 [README](README.md),磁盘上的格式
 规范见 [Architecture](architecture.md),选口径与算覆盖见 [Sample](../sample/README.md)。
 
-这一层只有事实。没有选择器、没有覆盖判断、没有警告——`openRecord()` 返回的每个值都能在磁盘上
+这一层只有事实。没有选择器、没有覆盖判断、没有 Sample Issue——`openRecord()` 返回的每个值都能在磁盘上
 逐字节指出来源。
 
 ## 读:`openRecord`
@@ -90,7 +90,7 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
   verdict 取值,同一个词在同一份数据里指两件事会让 `.filter()` 写错。
 - **未收尾 Run 不是数据黑洞。** `run.json` 在、缺 `completedAt` 是进程中断的常态:判定与 artifact
   同级落盘、随 attempt 完成即写,中断只丢未完成的 attempt,已完成的照常读出。它不进 `unreadable`;
-  「这批数据可能不完整」是选择层的警告,见 [Sample](../sample/library.md#警告-kind-全集)。
+  「这批数据可能不完整」是选择层产生的 Issue,见 [Sample](../sample/library.md#issue-code-全集)。
 - **分组是切片,不是看法。** 实验归组、eval 分组都是确定性切片(不合并、不聚合、不去重)。
 - **同一进程内按 handle 记忆化。** 两个都要读 diff 的消费方不会把「可达百 MB」的 `diff.json`
   读两遍;扫全部历史仍然可能慢,但要慢得线性、可预期。
@@ -145,7 +145,7 @@ artifact 因此有三种去处,`attempt.evidenceState` 如实说出是哪一种:
 `artifacts: ["events", "trace"]` 仍然声明有,而 `events()` 返回 `null`——两个契约当场互相打脸,
 而 `artifacts` 存在的唯一理由正是「不 stat 磁盘就知道有什么」。把它和「这类证据本来就没采集」
 混成同一个 `null`,消费方无法区分「没有」与「丢了」。`openRecord()` 扫描时逐条判定这个状态,
-Sample 层据此产出 [`dangling-evidence`](../sample/library.md#警告-kind-全集) 警告。这条借用与
+Sample 层据此产出 [`dangling-evidence`](../sample/library.md#issue-code-全集) Issue。这条借用与
 悬空的形状抄自 Git 的 alternates,连修法都同源,见[参考方案](reference/README.md#git-object-alternates)。
 
 避免 dangling 的正确动作是清理历史 Run 前先 `publish()` 物化要保留的结果,见下。
@@ -247,7 +247,7 @@ configHash 这些 Run 级身份在这里声明一次,不塞进每条 attempt—�
 ## 发布:`publish`
 
 把选中的 Run 按格式感知地复制到另一个目录——只带指定 artifact、只带选中的 attempt,布局知识不
-外泄。输入收 `Sample` 或手工挑的 `Run[]`,产出一个**记录根目录**(实验目录在外层的同一布局,
+外泄。输入只收 `Sample`,产出一个**记录根目录**(实验目录在外层的同一布局,
 `openRecord` 直接能开);与 Reports 组件的 `data` 函数同一输入约定。
 
 **这个原语不叫 `copy`,因为它做的事不是 cp。** 一个 Run 通常**不自包含**:携带条目的 artifact

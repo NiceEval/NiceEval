@@ -8,12 +8,13 @@
 
 ```ts
 type ReportNode =
-  | ReportElement                 // 原语或组合组件经 JSX 产生的元素
+  | ReportElement                 // 内建原语、渲染组件或组合组件经 JSX 产生的元素
   | readonly ReportNode[]         // 节点列表；Fragment（<>…</>）等价于列表
   | null | undefined | boolean;   // 条件渲染的空分支，渲染为空
 ```
 
-- **元素**只有一类来源：`defineComponent` 产物或内置原语。React 组件、未经 `defineComponent` 的普通函数、任意 HTML intrinsic 都不是节点，resolve 展开遇到时按完整用户反馈拒绝。
+- **元素**来自内建原语、`defineComponent` 渲染组件或 `defineComposition` 组合组件。未经定义的普通
+  React 函数与 HTML intrinsic 不是报告树节点；HTML 只能出现在组件的 web renderer 内。
 - **数组与 Fragment** 展平后按声明顺序渲染，两个渲染面一致；`groups.map(...)` 这类列表产物因此直接可用。
 - **`null` / `undefined` / `boolean` 渲染为空**，让 `cond && <X />` 的条件渲染习惯直接可用。
 - **裸字符串与数字不是节点**：自由文本必须经 `Text` 携带——text 面的折行宽度与 web 面的转义都需要显式载体。树校验遇到裸字符串或数字时按完整用户反馈拒绝，并指引包 `Text`。
@@ -81,7 +82,10 @@ interface TabProps extends LayoutProps {
 }
 ```
 
-`Text` 与 `Markdown` 的正文按 [`LocalizedText`](shell.md) 的回退规则随宿主语言切换：报告站有语言切换按钮，切完一整页英文中间夹一段中文方法学说明是坏结果。收 `LocalizedText` 不等于自动翻译——作者写下几种语言就有几种，缺的语言走回退链；读数与聚合口径不因 locale 改变，`MeasureCell.display` 仍是同一个 `value` 的几种格式化。
+`Text` 与 `Markdown` 的正文按 [`LocalizedText`](shell.md) 的回退规则随宿主语言切换：报告站有语言
+切换按钮，切完一整页英文中间夹一段中文方法学说明是坏结果。收 `LocalizedText` 不等于自动翻译，
+作者写下几种语言就有几种，缺的语言走回退链。读数与聚合口径不因 locale 改变；renderer 使用
+`MeasureCell.value + format` 和当前 `ctx.locale` 生成显示字符串。
 
 `Col` 在两个面都按声明序纵向排列。`Row` 的 web 面横排；text 面在可用宽度装得下全部子块时按显示宽度并排（与下文 `columns` 工具同一把尺），装不下时整块退化为纵向堆叠——不截断、不隐藏任何子块。`Grid` 与 `Stat` 的布局和降级规则见下一节。
 
@@ -109,7 +113,7 @@ interface TabProps extends LayoutProps {
 | Markdown | web 面 | text 面 |
 |---|---|---|
 | 段落 | `<p>` | 按可用宽度折行，段间空一行 |
-| `#`–`######` 标题 | `<h1>`–`<h6>`（挂 `nre-md-*` 类） | 空行 + 标题文字，支持颜色时加粗；不进导航，也不参与 `Section` 的嵌套计数 |
+| `#`–`######` 标题 | `<h1>`–`<h6>`（挂 `niceeval-md-*` 类） | 空行 + 标题文字，支持颜色时加粗；不进导航，也不参与 `Section` 的嵌套计数 |
 | 列表（含嵌套、任务列表） | `<ul>` / `<ol>` / 复选框 | `- ` / `1. ` / `[ ]`、`[x]`，每层缩进两格 |
 | 围栏与缩进代码块 | `<pre><code>` | 缩进两格原样输出，**不折行**——折行的代码不能复制执行 |
 | 块引用 | `<blockquote>` | 每行 `> ` 前缀 |
@@ -134,8 +138,8 @@ interface TabProps extends LayoutProps {
 ```tsx
 // reports/nightly.tsx —— 排版原语组织报告树的完整文件形态
 import {
-  Col, Row, Section, Style, Table, Text, measureRows,
-  costUSD, defineReport, endToEndPassRate,
+  Col, Row, Section, Style, Table, Text,
+  costUSD, defineReport, passRate, sources,
 } from "niceeval/report";
 
 export default defineReport(
@@ -143,21 +147,21 @@ export default defineReport(
     <Text className="team-note">nightly benchmark · publishes at 06:00</Text>
     <Row>
       <Section title="Overall">
-        <Table source={measureRows({
-          rows: "agent",
-          measures: [endToEndPassRate, costUSD],
-          sort: endToEndPassRate,
+        <Table source={sources.measure.rows({
+          dimensions: ["agent"],
+          measures: [passRate, costUSD],
+          sort: passRate,
         })} />
       </Section>
       <Section title="Cost">
-        <Table source={measureRows({
-          rows: "agent",
-          measures: [costUSD, endToEndPassRate],
+        <Table source={sources.measure.rows({
+          dimensions: ["agent"],
+          measures: [costUSD, passRate],
           sort: costUSD,
         })} />
       </Section>
     </Row>
-    <Style>{`.nre .team-note { color: #6b7280; }`}</Style>
+    <Style>{`.niceeval-report .team-note { color: #6b7280; }`}</Style>
   </Col>,
 );
 ```
@@ -239,7 +243,9 @@ export default defineReport(
 - `columns` 必须是有限正整数；TypeScript 的 `number` 不能排除 0、负数、小数、`NaN` 或 `Infinity`，因此组件创建时统一做运行时校验并给完整用户反馈。`variant` 默认 `"plain"`，`density` 默认 `"regular"`。
 - `density` 只控制当前 Grid 的 cell padding、gutter，以及其中内置 `Stat` 的既定字号档；它不向任意自定义组件注入样式或改写子节点 props。
 - `Stat.label`、字符串形态的 `value` 与 `detail` 都按 `LocalizedText` 回退规则选择语言并转义输出；number 形态按当前 locale 格式化。`null` 与数字 `0` 严格区分，前者显示 `—`，后者正常显示为零。
-- `tone` 是作者给主值的语义判断：`positive` / `negative` / `warning` 分别使用官方 success / danger / warning token，`neutral` 使用正文 token；组件不看正负号、单位、verdict 或 `Measure.better` 自动猜 tone。
+- `tone` 是作者给主值的语义判断。`positive` / `negative` / `warning` 分别使用官方 success / danger /
+  warning token，`neutral` 使用正文 token。组件不看正负号、单位、verdict 或 `Measure.better`
+  自动猜 tone。
 - `Stat` 不接受格式串、HTML、`ReportNode` detail 或 locator。长正文、链接和证据下钻属于其它组件；Measure 值应先由读数引擎产生完整 `MeasureCell`，不能把这个纯样式件当成另一条聚合捷径。
 
 `Section.meta` 是标题的短补充，不是第二个正文槽：web 面在标题行右对齐；text 面嵌进区域框的上边框右侧（见下）。它不接受 `ReportNode`，长说明仍放进 Section 的 `children`。
@@ -280,33 +286,33 @@ export default defineReport(
 上例的初始 HTML 结构如下；省略号只省略重复的 cell，不代表运行时省略内容：
 
 ```html
-<section class="nre nre-section">
-  <header class="nre-section-header">
-    <h2 class="nre-section-title">运行总览</h2>
-    <p class="nre-section-meta">6/6 完成 · 31 笔完整交易</p>
+<section class="niceeval-report niceeval-section">
+  <header class="niceeval-section-header">
+    <h2 class="niceeval-section-title">运行总览</h2>
+    <p class="niceeval-section-meta">6/6 完成 · 31 笔完整交易</p>
   </header>
 
-  <div class="nre nre-grid nre-grid--boxed nre-grid--regular"
-       style="--nre-grid-max-columns: 6">
-    <div class="nre-grid-cell">
-      <div class="nre nre-col">
-        <div class="nre nre-stat nre-stat--positive">
-          <div class="nre-stat-label">平均净 R / case</div>
-          <div class="nre-stat-value">+0.479 R</div>
-          <div class="nre-stat-detail">累计 +2.877 R</div>
+  <div class="niceeval-report niceeval-grid niceeval-grid--boxed niceeval-grid--regular"
+       style="--niceeval-grid-max-columns: 6">
+    <div class="niceeval-grid-cell">
+      <div class="niceeval-report niceeval-col">
+        <div class="niceeval-report niceeval-stat niceeval-stat--positive">
+          <div class="niceeval-stat-label">平均净 R / case</div>
+          <div class="niceeval-stat-value">+0.479 R</div>
+          <div class="niceeval-stat-detail">累计 +2.877 R</div>
         </div>
-        <div class="nre nre-stat nre-stat--positive">…单笔期望…</div>
+        <div class="niceeval-report niceeval-stat niceeval-stat--positive">…单笔期望…</div>
       </div>
     </div>
-    <div class="nre-grid-cell">…Episode 胜率 / MFE / MAE…</div>
-    <div class="nre-grid-cell">…交易胜率 / 持有 / 回撤…</div>
-    <div class="nre-grid-cell">…方向命中 / 完成率…</div>
-    <div class="nre-grid-cell">…Profit Factor / 执行成本…</div>
-    <div class="nre-grid-cell">…参与 / 成交 / 耗时 / 首次决策…</div>
+    <div class="niceeval-grid-cell">…Episode 胜率 / MFE / MAE…</div>
+    <div class="niceeval-grid-cell">…交易胜率 / 持有 / 回撤…</div>
+    <div class="niceeval-grid-cell">…方向命中 / 完成率…</div>
+    <div class="niceeval-grid-cell">…Profit Factor / 执行成本…</div>
+    <div class="niceeval-grid-cell">…参与 / 成交 / 耗时 / 首次决策…</div>
   </div>
 
-  <div class="nre nre-grid nre-grid--boxed nre-grid--compact"
-       style="--nre-grid-max-columns: 9">…9 个完整 cell…</div>
+  <div class="niceeval-report niceeval-grid niceeval-grid--boxed niceeval-grid--compact"
+       style="--niceeval-grid-max-columns: 9">…9 个完整 cell…</div>
 </section>
 ```
 
@@ -370,23 +376,23 @@ export default defineReport(
 ```tsx
 <Tabs>
   <Tab title="质量 × 成本">
-    <Chart source={chart({
-      x: { measure: costUSD },
-      y: { measure: endToEndPassRate },
-      series: [{
-        key: "frontier",
-        mark: "scatter",
-        points: "experiment",
-        by: "agent",
-        x: costUSD,
-        y: endToEndPassRate,
-      }],
-    })} legend tooltip />
+    <Chart
+      source={sources.measure.rows({
+        dimensions: ["experiment", "agent"],
+        measures: [costUSD, passRate],
+      })}
+      x="costUSD"
+      y="passRate"
+      legend
+      tooltip
+    >
+      <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+    </Chart>
   </Tab>
   <Tab title="分科得分">
-    <Table source={scoreboard({
-      rows: "agent",
-      score: examScore,
+    <Table source={sources.measure.scoreboard({
+      dimensions: ["agent"],
+      score: passRate,
       questions: [
         { evalId: "security/sql-injection" },
         { evalId: "correctness/retry" },
@@ -482,10 +488,12 @@ interface TableProps {
 - **超宽先折行再丢列。** 总宽超过可用列宽时，先压最宽的左对齐列（按显示宽度折行）；右对齐列不折行——数字折行读不了。左对齐列压到下限仍放不下，就从右侧丢列，并在表下如实标注丢了几列。
 - **身份列压不到不可读。** eval id、experiment id 与 `locator` 是读者要复制去执行下一条命令的可操作字段，它们的下限是 24 显示列（`locator` 是它的完整长度）：其余列都压到各自下限后仍放不下，就按上一条从右侧丢列，绝不把身份列挤成几个字符。窄到连一列身份都放不下时，表格整体降级成每行一条身份的纵向清单——宁可只剩身份，不留一张读不出是谁的表。
 - **`maxLines` 只收口数据格的物理行数。** 折行后超出 `maxLines` 的行丢弃，末行按显示宽度以 `…` 收口；表头不受约束，省略 `maxLines` 的列不收口。web 面不消费这个字段——网页里格子的高度是组件自己的 CSS 决定，不是 `Table` 的职责。
-- **两个面各自成立。** text 面列间 3 空格、首行表头；web 面是 `<table>` + `<thead>` / `<tbody>`，右对齐落成 `nre-align-right` 类，不用内联样式。
+- **两个面各自成立。** text 面列间 3 空格、首行表头；web 面是 `<table>` + `<thead>` / `<tbody>`，右对齐落成 `niceeval-align-right` 类，不用内联样式。
 - **带 `locator` 的行只携带证据引用，不强造详情。** 有任一行带 `locator` 时多出一列 attempt：当前报告声明了 attempt-input page（或自有 React 页面显式传 `attemptHref`）时，web 面渲染链接、text 面渲染带完整报告上下文的命令；没有连接目标时两个面都只显示 locator 文本，宿主不追加隐藏 fallback。
 
-`measureRows`、`measureMatrix`、`scoreboard`、`deltaRows` 与 `stabilityRows` 的 text 面建在 `Table` 上：自定义表和官方表用同一把尺子。
+`sources.measure.rows`、`sources.measure.matrix`、`sources.measure.scoreboard`、
+`sources.measure.delta` 与 `sources.measure.stability` 的 text 面建在 `Table` 上。
+自定义表和官方表用同一把尺子。
 
 ## 文本排版工具箱
 
@@ -501,91 +509,132 @@ interface TableProps {
 | `bar` | `(ratio: number, width: number) => string` | 字符条：`█` 填充、`░` 补齐到 `width` |
 | `columns` | `(blocks: string[], widths: number[], separator?: string) => string` | 多块并排 |
 
-## 呈现算法
+## 维度呈现
 
-官方组件把长 id 缩成短标签、把维度值映射成颜色时用的是确定算法，两者都在公开面上——自定义组件复现的是同一份结果，同一个 experiment 不会在官方默认报告里叫一个名字、在自写组件里叫另一个。
-
-### 标签缩写
+名称与颜色是一份维度呈现结果，不公开两套让作者自己拼接的 helper：
 
 ```ts
-/** 一组 id → 各自在这组内唯一的最短路径后缀。 */
-function shortestUniqueLabels(ids: readonly string[]): Map<string, string>;
+interface DimensionPresentation {
+  /** 完整维度值，作为排序、筛选、React key 与证据身份。 */
+  value: string;
+  /** 当前页 keyset 内生成的显示名。 */
+  label: string;
+  color: {
+    slot: 1 | 2 | 3 | 4 | 5 | 6;
+    /** `var(--niceeval-color-series-N)`。 */
+    css: string;
+  };
+}
+
+interface PresentationContext {
+  locale: ReportLocale;
+  present(dimension: string, value: string): DimensionPresentation;
+}
+
+function presentDimension(
+  dimension: string,
+  values: readonly string[],
+): ReadonlyMap<string, DimensionPresentation>;
 ```
 
-每个 id 缩成最短的唯一 `/` 分段后缀，重名的逐段加长到能区分为止；组内只有一个 id 时也缩到最后一段。缩写只产出**显示名**：排序、过滤、折叠与颜色分配的身份键始终是完整 id。传入的 id 集合决定结果——同一个 id 在不同集合里可能缩成不同长度，所以一处呈现只调一次，把整组 id 一起传进去，不要逐个调用。
+报告管线按 page 收集每个维度的完整值集合后统一生成 label 与 color。`experiment` 的 label 是集合内
+唯一的最短 `/` 路径后缀；其它内建维度使用自己的稳定标签规则，自定义维度缺少专用规则时原样显示
+完整 value。颜色以稳定散列为起点，在同一维度 keyset 内线性探测消解撞色，超过六个值才复用。
 
-### 系列色
+renderer 只能对自己在 `dimensions(data)` 中声明过的值调用 `ctx.present()`；漏声明时按完整用户反馈
+报错，而不是临时分配。自有 React 页面没有 page 管线，调用 `presentDimension(dimension, values)`
+一次传入该维度的全集。两条入口返回同一种结果；不再公开 `experimentLabels()`、`seriesColors()`、
+单键 hash、颜色 class 或浅色 hex。
 
-颜色的分配单位是页（规则见[组件树 · 系列色](../components/README.md#系列色分配单位是页)），公开面因此是**读取**，不是计算：
+## 自定义渲染组件
+
+`defineComponent` 定义新的双面渲染形状。它不读取输入事实，也没有 `resolve`；所有异步计算都属于
+Source。管线先把 `source` 形态解析成 Content，再把同一份 Content 交给 `dimensions` 与两个 renderer：
 
 ```ts
-interface SeriesColor {
-  /** 色板下标。 */
-  index: number;
-  /** 文字与色点的类名（`nre-c3`）。 */
-  className: string;
-  /** SVG 图形的系列类名（`nre-series-c3`）；由 CSS 变量上色，深色主题随之切换。 */
-  seriesClassName: string;
-  /** 浅色主题的十六进制值；只给不经 CSS 的消费方。 */
-  hex: string;
+interface TextRenderContext extends PresentationContext {
+  width: number;
+  render(node: ReportNode, width?: number): string;
+  attemptCommand?(locator: AttemptLocator): string;
 }
+
+interface WebRenderContext extends PresentationContext {
+  attemptHref?(locator: AttemptLocator): string;
+}
+
+type DimensionValues = Readonly<Record<string, readonly string[]>>;
+
+interface ComponentDefinition<Content, Options> {
+  /** 在 render 前声明这份 Content 消费的维度值；不返回 label 或 color。 */
+  dimensions?(data: Content, options: Readonly<Options>): DimensionValues;
+  /** web 专属交互使用的具名能力；text renderer 必须实现该能力规定的降级。 */
+  enhance?: readonly EnhanceCapability[];
+  text(data: Content, options: Readonly<Options>, ctx: TextRenderContext): string;
+  web(data: Content, options: Readonly<Options>, ctx: WebRenderContext): ReactNode;
+  /** 组件基础样式；在主题 styles 之前加载并按内容 hash 去重。 */
+  styles?: readonly ComponentStyle[];
+}
+
+type ComponentStyle =
+  | { inline: string; src?: never }
+  | { src: URL; inline?: never };
+
+type DataProps<Input extends SourceInput, Content> =
+  | { source: Source<Input, Content>; input?: Input; data?: never }
+  | { data: Content; source?: never; input?: never };
+
+interface DataComponent<Content, Options> {
+  <Input extends SourceInput>(props: DataProps<Input, Content> & Options): ReportElement;
+}
+
+function defineComponent<Content, Options = {}>(
+  definition: ComponentDefinition<Content, Options>,
+): DataComponent<Content, Options>;
 ```
 
-- **报告树内**：原语从页级呈现上下文读取色槽。传入的是维度与维度**值**
-  （`("agent", "codex")`），不是显示名。text 面不消费颜色。
-- **自有 React 页面**：没有 niceeval 的页级阶段，作者自己拥有页。把这一页要着色的全部键**一次**交给 `seriesColors`，得到的映射再分给各组件：
-
-  ```ts
-  function seriesColors(keys: readonly string[]): ReadonlyMap<string, SeriesColor>;
-  ```
-
-  一次传全集是这个函数的使用契约：它在集合内消解撞色，逐键调用得不到消解结果。渲染面优先挂 `className` / `seriesClassName` 由 CSS 上色，`hex` 留给导出图片这类不经 CSS 的消费方。
-
-单键散列不在公开面上：它按单个键算，天然给不出集合内消解后的结果，两处消费同一个键会各自算出不同的颜色。
-
-## 自定义组件
-
-`defineComponent` 定义可入报告树的组件，两种入参形态产出同一种报告组件（模型定义在 [Architecture · 组件模型](../architecture.md#组件模型解析面与渲染面)）：
-
-```ts
-interface ComposeContext {
-  /** 宿主选择的 Sample；页组件直接消费，attempt 组合也可用来读站点范围。 */
-  sample: Sample;
-  /** 记录根完整读取面；历史视图从这里自行挑 Run[]。 */
-  record: Record;
-  /** 规范化后的报告声明，只读；见下方 ReportMeta。 */
-  report: ReportMeta;
-  /** 当前 page 及其输入；非法组合由判别联合排除。 */
-  page: PageContext;
-}
-
-type PageContext =
-  | { id: string; input: "sample" }
-  | { id: string; input: "attempt"; locator: AttemptLocator; evidence: AttemptEvidence };
-
-interface ReportMeta {
-  /** 走完回退链（声明 title → 唯一 Run name → 内置文案「Eval 运行结果」）后的标题。 */
-  title: LocalizedText;
-  /** 页头外链；声明省略时为空数组。 */
-  links: readonly ReportLink[];
-  footer?: LocalizedText;
-  /** 规范化后的 page 列表，包含不进导航的参数化 page，恒非空。 */
-  pages: readonly [{ id: string; title: LocalizedText; input: "sample" | "attempt"; navigation: boolean }, ...Array<{ id: string; title: LocalizedText; input: "sample" | "attempt"; navigation: boolean }>];
-}
-
-/** 组合组件只装配已有原语与数据源，可以异步。 */
-function defineComponent<Props>(
-  compose: (props: Props, context: ComposeContext) => ReportNode | Promise<ReportNode>,
-): ReportComponent<Props>;
-```
-
-组合组件覆盖「取数后用普通 JavaScript 加工再摆进现有原语」的场景，手感与 React 函数组件相同：
+`Options` 不能声明保留字段 `source`、`data` 或 `input`。renderer 永远看不到 Source 与 input；主题
+对象也不进入 context，普通语义色始终从 CSS 令牌读取。
 
 ```tsx
-import { Section, Table, attemptRows, defineComponent } from "niceeval/report";
+export const Heatmap = defineComponent<HeatmapContent, { className?: string }>({
+  dimensions: (data) => ({
+    agent: data.columns.map((column) => column.agentId),
+  }),
+  text: (data, _options, ctx) => data.columns
+    .map((column) => `${ctx.present("agent", column.agentId).label}: ${column.display}`)
+    .join("\n"),
+  web: (data, options, ctx) => (
+    <div className={options.className ?? "acme-heatmap"}>
+      {data.columns.map((column) => {
+        const agent = ctx.present("agent", column.agentId);
+        return <div key={agent.value} style={{ color: agent.color.css }}>{agent.label}</div>;
+      })}
+    </div>
+  ),
+  styles: [{ src: new URL("./heatmap.css", import.meta.url) }],
+});
 
-export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
-  const content = await attemptRows.compute(ctx.sample);
+<Heatmap source={heatmapSource} />
+<Heatmap data={content} className="benchmark-heatmap" />
+```
+
+组件自己的 class 使用自己的前缀；`niceeval-*` 保留给官方宿主和组件。组件样式读取公开
+`--niceeval-*` 令牌，不复制主题 hex。`src` 使用 URL 而不是相对字符串，使 npm 包里的组件样式
+始终相对组件模块解析。
+
+缺任一 renderer、renderer 返回 Promise、`dimensions` 返回空维度名或空值、Content 不可序列化，
+都按完整用户反馈拒绝。web renderer 可以返回 HTML intrinsic；报告树顶层仍不能直接放 `<div>`，
+因为那样没有 text 面。
+
+## 自定义组合组件
+
+只计算、加工并排列已有组件时使用 `defineComposition`：
+
+```tsx
+import { Section, Table, defineComposition, sources } from "niceeval/report";
+
+export const CostliestAttempts = defineComposition(async ({ limit = 10 }: { limit?: number }, ctx) => {
+  const content = await sources.entity.attempts.compute(ctx.sample);
   const ranked = [...content.rows]
     .sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
   return (
@@ -599,14 +648,14 @@ export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?
 <CostliestAttempts limit={10} />
 ```
 
-组合组件在 resolve 阶段展开为它返回的树；它不需要 text / web 面，因为它不产生新的渲染形状。
-React 组件或未经 `defineComponent` 的普通函数不能进报告树。需要库里没有的视觉形状时，在自己的
-React 页面中使用普通 React 组件；`show` / `view` 共用报告树的公开原语集合保持封闭。
+组合组件在 resolve 阶段展开为它返回的树；它不需要 renderer，因为它不产生新的视觉形状。
+`ComposeContext` 携带 `sample`、`record`、规范化后的 `report` 与当前 `page`，但不携带主题或颜色。
+名称与颜色都由最终 renderer 通过 `ctx.present()` 读取。
 
 ## 相关阅读
 
-- [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义数据源与组合组件。
+- [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义数据源、渲染组件与组合组件。
 - [主题](theme.md) —— 自定义组件要读的令牌与语义 class。
 - [外壳与多页](shell.md) —— 树之上的导航外壳与页。
-- [组件树](../components/README.md) —— 数据源、原语与组合组件。
-- [Architecture](../architecture.md) —— 报告树的 resolve / validate / render 管线。
+- [组件树](../components/README.md) —— Source、Component 与进阶呈现管线。
+- [Architecture](../architecture.md) —— 报告树的 resolve / validate / collect dimensions / render 管线。

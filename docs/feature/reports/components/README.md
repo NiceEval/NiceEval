@@ -1,32 +1,34 @@
-# 组件树：原语、数据源与组合组件
+# 组件树：Source 与 Component
 
-报告组件分三层，每层回答一个问题。三层的名字与边界是契约：加一个能力时先判断它属于哪一层，
-不在任何一层之外新造具名组件。
+第一层心智模型只有两个概念：**Source 负责算数据，Component 负责显示数据**。
 
-| 层 | 回答什么 | 数量 | 谁定义 |
-|---|---|---|---|
-| **原语** | 这份数据画成什么形状 | 少数几个，见下表 | niceeval，形状封闭 |
-| **数据源** | 这份数据怎么算、默认怎么摆 | 一个能力一个 | niceeval 与报告作者都可以写 |
-| **组合组件** | 裸跑时默认装配成什么样 | 每个宿主入口一份 | niceeval，作者照抄即可改 |
+```text
+Source<Input extends SourceInput, Content>.compute(input)
+  → Content
+  → Component 的 text / web renderer
+```
 
-领域知识全部住在数据源里。原语只认[单元格类型](#单元格类型)与结构，不认「实验」「得分点」
+官方内建原语与作者定义的新形状都是 Component。组合组件、页级名称与颜色分配属于进阶能力，
+不改变这条主链，也不让 renderer 重新接触 Source 或输入事实。
+
+领域计算全部住在 Source 里。原语只认[单元格类型](#单元格类型)与结构，不认「实验」「得分点」
 「时效」这些概念——所以同一个 `Table` 既画实验对比，也画成绩单和稳定性矩阵。
 
 ## 谁认识 niceeval
 
-三层之外还有一个不产出内容的角色:**管线**。它做的是任何单个组件都做不到的事——跨组件对齐。
-四个角色各自认识什么,是这套分层的全部承重:
+进阶模型里还有组合组件与不产出内容的管线。各角色认识什么，是这套分层的承重：
 
 | 角色 | 认识 | 不认识 |
 |---|---|---|
-| 报告树 / page | 选哪个口径的 [Sample](../../sample/README.md)、要哪些数据源 | 格子形状、列宽、颜色 |
-| 数据源 | niceeval 的全部领域概念:Sample、`AttemptHandle`、读数、时效、覆盖 | 排版、宽度、颜色 |
-| 管线 | `Row` / `Cell`、这一页**全部**已解析数据 | 领域概念、磁盘 |
-| 原语 | `Row` / `Cell`、自己的结构子节点 | 领域概念、磁盘、别的组件 |
+| 报告树 / page | 选哪个口径的 [Sample](../../sample/README.md)、要哪些 Source | 格子形状、列宽、颜色 |
+| Source | 输入事实、读数、时效、覆盖 | 排版、宽度、颜色 |
+| 管线 | 这一页全部已解析 Content 与维度值 | 领域概念、磁盘 |
+| Component | 自己的可序列化 Content、呈现 context | Source、Sample、Record、磁盘、别的组件 |
+| 组合组件 | compose context、自己装配的组件树 | renderer、主题值 |
 
-**原语零领域逻辑是可达的,而且已经达到**:`niceeval/report/react` 只导出原语的纯 web
-renderer 与数据类型,吃可序列化 `data`,不碰磁盘、不认识 `AttemptHandle`。同一批原语换一个
-数据源就画另一件事。
+**Component 零领域取数是硬边界**：`niceeval/report/react` 只导出纯 web renderer 与 Content
+类型，吃可序列化 `data`，不碰磁盘、不认识 `AttemptHandle`。同一个 Component 换一个 Source
+就显示另一类领域内容。
 
 **领域逻辑挪不进报告树。** 「让 page 自己算完、原语只剩样式」这条两层方案不成立,三个各自
 独立的原因:
@@ -39,34 +41,36 @@ renderer 与数据类型,吃可序列化 `data`,不碰磁盘、不认识 `Attemp
 - **耦合不会消失,只会搬家。** 数据源产出的 `Row` / `Cell` 形状与原语一一对应;page 自己拼
   这个形状,耦合就从库内搬进每个 page,还失去类型背书。
 
-**跨组件逻辑挪不进数据源。** 数据源只看得见自己那份数据,所以下面这三件必须住在管线里:
-[页级色分配](#系列色分配单位是页)(图例里的 `codex` 与列表里的 `codex` 同色)、标签缩写互斥
+**跨组件逻辑挪不进 Source。** Source 只看得见自己那份输入,所以下面这三件必须住在管线里:
+[页级呈现分配](#维度呈现分配单位是页)(图例里的 `codex` 与列表里的 `codex` 同名同色)、标签缩写互斥
 (同页两个 experiment id 不能缩成一样)、text 面宽度自适应(先按可用宽度定列数,再以各格内容
 宽度调 `ctx.render`)。它们都要求「先看完这一页的全部数据」,任何单个组件都拿不到这个视野。
 
-### 加一个能力时,三问定位它属于哪层
+### 加一个能力时，先问 Source 还是 Component
 
-1. **它要读磁盘,或要认识 `AttemptHandle` / 读数 / 时效 / 覆盖吗** → 数据源。
+1. **它要读磁盘,或要认识 `AttemptHandle` / 读数 / 时效 / 覆盖吗** → Source。
 2. **它要看这一页**其它**组件的数据吗** → 管线。别的都不是管线的活。
-3. **两个都不要** → 原语,而且大概率是已有原语的一个 `Column` 或 `Cell` kind。
+3. **它只是在排列已有组件吗** → `defineComposition` 组合组件。
+4. **它确实产生新的视觉形状吗** → 先找内建原语；无法表达时用 `defineComponent` 写双面渲染组件。
 
 判据的用处是拦住两类提案:「给原语加一个领域字段」(第 1 问命中,该进数据源)与「让数据源读
 主题色或终端宽度」(第 2 问命中,该进管线)。
 
-图表族不走 `Row` / `Cell`——它的通用词汇是 series / axis / point。`chart(...)` 是数据源，
-`Chart` 是唯一原语，mark 住在 Content；系列色仍由管线按页分配。
+图表与表格共用 `sources.measure.rows(...)` 的 Dataset。`Chart` 用 x / y props 与 `<Series>` 结构节点
+选择字段、mark 和 series；显示决定不进入 Source Content。系列色仍由管线按页分配。
 
 ```tsx
-<Table source={experimentRows} filter />
+<Table source={sources.entity.experiments} filter />
 ```
 
-这一行拿到的是完整的实验对比表：列、列序、题型切换、三级下钻、覆盖缺口占位行与时效标注
-全部来自 `experimentRows` 这个数据源。要改列就写 `<Column>` 子节点覆盖默认列，不换组件。
+这一行拿到的是完整的实验事实投影：字段、字段序、题型切换、三级下钻、覆盖缺口占位行与时效事实
+全部来自 `sources.entity.experiments` 的 Content。表头、宽度与对齐由 `Table` 决定；要覆盖就写
+`<Column>` 子节点，不换 Source。
 
-## 原语总表
+## 内建原语总表
 
-这张表是「有哪些渲染形状」的单点声明。原语的集合是封闭的：新能力先找已有原语，
-找不到才提新原语，并说明它渲染的是哪一类既有原语表达不了的形状。
+这张表是 NiceEval 承诺维护哪些通用渲染形状的单点声明。作者不为领域名词向这里加原语；
+库里没有的形状用[自定义渲染组件](../library/layout.md#自定义渲染组件)实现。
 
 | 原语 | 渲染什么 | 结构子节点 |
 |---|---|---|
@@ -91,22 +95,22 @@ renderer 与数据类型,吃可序列化 `data`,不碰磁盘、不认识 `Attemp
 
 ```ts
 type Cell =
-  /** 官方读数格：display 是格式化结果，samples / total / refs 保住覆盖率与下钻。 */
+  /** 官方读数格：value + format 由 renderer 格式化，samples / total / refs 保住覆盖率与下钻。 */
   | { kind: "measure"; measure: MeasureCell }
   /** 判定：单个 verdict，或 passed / failed / errored / skipped 的计票。 */
   | { kind: "verdict"; verdict?: Verdict; counts?: VerdictCounts }
   /** 挣分：earned 恒有；possible 只有固定题集这类有分母的读数才给。 */
   | { kind: "score"; earned: number; possible?: number }
   /** 单行结果摘要，more 是「还有几条没显示」。 */
-  | { kind: "summary"; text: LocalizedText; more?: number }
+  | { kind: "summary"; text: string; more?: number }
   /** attempt 身份；staleSinceMs 存在即历史执行，渲染成时距标注。 */
   | { kind: "locator"; locator: AttemptLocator; staleSinceMs?: number }
   /** 身份或自由文本，detail 是副行。 */
-  | { kind: "text"; text: LocalizedText; detail?: LocalizedText }
+  | { kind: "text"; text: string; detail?: string }
   /** 这一格不适用（通过制行的总分格）：与「测不了」严格分开。 */
   | { kind: "notApplicable" }
-  /** 覆盖缺口：没有任何 attempt，command 是可复制的补跑命令。 */
-  | { kind: "missing"; reason: LocalizedText; command?: string };
+  /** 覆盖缺口：结构化原因；renderer 的 Notice policy 决定文案与补跑 action。 */
+  | { kind: "missing"; code: string; data?: JsonValue };
 ```
 
 每个 `kind` 的两面渲染在[`Table` 的单元格渲染契约](primitives/table.md#单元格渲染)一处声明，
@@ -119,20 +123,22 @@ type Cell =
 - **`summary` 的文本已经折好。** 摘要按 [Assertion display 契约](../../assertions/library/display.md#主失败断言怎样选)
   在数据源里算完，渲染面只做宽度截断，不重算。
 
-## 数据源
+## Source
 
-数据源把「怎么取数、怎么聚合、默认摆成什么样」打成一个具名值。原语收它，或收它算好的数据。
+Source 把「怎么从 NiceEval 记录取数、聚合并投影事实」打成一个具名值。Component 收它，或收它
+算好的 Content。
 
 ```ts
-interface TableContent<Row extends Row = Row> {
-  rows: readonly Row[];
+interface TableContent<RowValue extends Row = Row> {
+  columns: readonly ColumnSpec[];
+  rows: readonly RowValue[];
 }
 
-interface RowSource<Row extends Row, Input = Sample>
-  extends DataSource<TableContent<Row>, Input> {
-  name: string;
-  /** 省略 <Column> 时用的默认列。收已解析的行，所以按数据切换列的判断住在这里。 */
-  columns(rows: readonly Row[]): readonly ColumnSpec[];
+type SourceInput = Sample | AttemptEvidence;
+
+interface Source<Input extends SourceInput, Content> {
+  readonly name: string;
+  compute(input: Input): Promise<Content>;
 }
 
 interface Row {
@@ -145,21 +151,21 @@ interface Row {
 }
 ```
 
-`columns()` 收已解析的行，是因为列集合可以随数据变：实验对比表的主读数列按
-[题型构成](../library/measures.md#题型构成与主读数)在通过率与总分之间切换，两型并存时两列都出。
-这个判断在数据源里做一次，原语与作者都不重复它。
+字段集合可以随数据变，所以 Table Source 在 `compute()` 里把 `columns` 与 `rows` 一起返回。
+实验对比表按[题型构成](../library/measures.md#题型构成与主读数)选择通过率或总分列时，判断只做一次。
+`columns` 不带本地化表头或布局；它只保留字段 key、默认顺序与 unit / better 等数值语义。
 
-官方数据源与它们各自的形状见[数据源目录](sources/README.md)。作者自己写一个数据源与用官方的
-没有形态差别——`RowSource` 是公开接口，不是内部约定。
+官方 Source 按领域组织在 [`sources`](sources/README.md)。作者通过 `defineSource` 写的 Source 与
+官方值遵守同一个接口，没有 Table 专属的第二套协议。
 
 ## 数据绑定与两种形态
 
 数据来源二选一，以传进去的是数据源还是数据判别：
 
 ```ts
-type PrimitiveProps<Content, Input, Presentation> =
-  | ({ source: DataSource<Content, Input>; input?: Input; evals?: string | readonly string[] } & Presentation)
-  | ({ data: Content; source?: never; input?: never; evals?: never } & Presentation);
+type DataProps<Input extends SourceInput, Content> =
+  | { source: Source<Input, Content>; input?: Input; data?: never }
+  | { data: Content; source?: never; input?: never };
 ```
 
 - **source 形态**：传数据源，管线在 resolve 阶段代调它的 `compute`；`input` 省略时取当前 page
@@ -168,13 +174,12 @@ type PrimitiveProps<Content, Input, Presentation> =
   并附加呈现，不能再出现取数字段。
 - 同时给出 `data` 与 `source` 时按完整用户反馈报错，不静默取一边。
 
-`niceeval/report` 导出原语、数据源与组合组件；`niceeval/report/react` 只导出纯 web 渲染面，
-那里的同名原语只有 data 形态。完整模型见 [Architecture · 组件模型](../architecture.md#组件模型解析面与渲染面)。
+`niceeval/report` 导出 Source、Component 与组合组件；`niceeval/report/react` 只导出纯 web 渲染面，
+那里的同名原语只有 data 形态。完整模型见
+[Architecture · Source、Component 与进阶装配](../architecture.md#sourcecomponent-与进阶装配)。
 
-`evals` 是 source 形态唯一的数据过滤选项：eval id 前缀，与 CLI 位置参数同语义，
-在聚合**之前**收窄题集。聚合发生在 `compute` 内部，事后 JavaScript 无法从聚合值还原题级过滤，
-所以它必须是选项。逐实体成行的数据源不消费它：那种数据的聚合边界就是单实体，
-取数后用普通 JavaScript 过滤与任何选项严格等价。
+聚合前过滤属于 Source 配置或显式 `input`，不作为 Component 的第三种取数入口。聚合后的普通排序、
+截断与筛选可以先手工 `compute()`，加工 Content 后走 `data` 形态。
 
 ## 结构节点
 
@@ -194,8 +199,8 @@ type PrimitiveProps<Content, Input, Presentation> =
 `{ids.map((id) => <Column key={id} … />)}` 与 `{showCost && <Column dataKey="cost" />}` 都直接可用，
 一组列不需要另一套批量语法。展平在校验父子关系之前完成——数组不构成一层父级。
 
-每类结构节点显式声明**合法直接父原语集合**。当前数据原语里只有 `<Column>` 绑定
-`TableContent` 的列 key；图表绑定已经进入 `chart(...)` 数据源声明。
+每类结构节点显式声明**合法直接父原语集合**。`<Column>` 绑定 `TableContent` 的列 key；
+`<Series>` 绑定 Dataset 字段，并且只能直接放在 `Chart` 下。
 
 三条判据决定什么成为结构子节点，命中任一条就是子节点，都不命中就是 props：
 
@@ -206,15 +211,49 @@ type PrimitiveProps<Content, Input, Presentation> =
    读的人必须在两处之间跳着看才知道谁配了谁。
 3. **可变的嵌套关系**——条目自己还要分组。
 
-留在 props 的是：整个原语唯一的标量口径（`evals`、`sort`、`limit`）、呈现开关
+留在 Component props 的是整个显示面的标量口径（`sort`、`limit`）与呈现开关
 （`filter`、`locale`、`className`、`attemptHref`），以及**契约固定、没有选择余地的部分**。
+`evals` 会改变聚合输入，必须进入 Source options 或显式 Source input。
+
+## 自定义渲染组件
+
+`defineComponent` 是内建原语与作者组件共用的双面协议。它只显示 Content，不提供异步取数面；
+`text` 与 `web` renderer 都必填、都同步、都只消费同一份 data。
+
+```ts
+interface ComponentFaces<Data, Options> {
+  dimensions?(data: Data, options: Readonly<Options>): Readonly<Record<string, readonly string[]>>;
+  enhance?: readonly EnhanceCapability[];
+  text(data: Data, options: Readonly<Options>, ctx: TextRenderContext): string;
+  web(data: Data, options: Readonly<Options>, ctx: WebRenderContext): ReactNode;
+  styles?: readonly ComponentStyle[];
+}
+
+type ComponentStyle =
+  | { inline: string; src?: never }
+  | { src: URL; inline?: never };
+
+function defineComponent<Data, Options = {}>(
+  definition: ComponentFaces<Data, Options>,
+): DataComponent<Data, Options>;
+```
+
+`dimensions(data)` 不是 renderer：它在整页呈现分配之前声明这份 data 会消费的维度全集，不返回
+标签或颜色，也不改变 data。组件样式里的 `src` 必须写成 `new URL("./component.css", import.meta.url)`，让组件从
+npm 包或项目子目录加载时仍以自己的模块为基准；宿主按内容 hash 去重，在主题自带样式之前加载。
+
+主题对象不进入 text 或 web context，换主题只能通过 CSS 改变呈现，不能改变 data 或组件树。
+
+作者组件的 web renderer 可以返回 HTML intrinsic，因为这已经进入 web 面；报告树本身仍不能直接
+放 `<div>`，否则没有 text 面。缺任一 renderer、renderer 返回 Promise、`dimensions` 返回非法值或
+Content 不可序列化时，组件定义或页校验按完整用户反馈失败。
 
 ## 组合组件
 
 组合组件是具名的默认装配：`niceeval show` 与 `niceeval view` 裸跑时，`pages[].content` 必须指向
 一个具体值，「照抄这棵树」不能作为一个值，所以它得有名字。
 
-组合组件只装配已有原语，自己不渲染任何东西，也**不接受结构子节点**——覆盖的方式是不用它，
+组合组件由 `defineComposition` 定义，只装配已有组件，自己不渲染任何东西，也**不接受结构子节点**——覆盖的方式是不用它，
 直接把那棵树写进 `Col` 并逐块增删。每份组合组件的文档给出等价全文，照抄即可改。
 这样「这份组合组件会渲染什么」永远只有一个答案，不存在「给了子节点走一套、不给走另一套」
 的两份语义。
@@ -222,8 +261,13 @@ type PrimitiveProps<Content, Input, Presentation> =
 | 组合组件 | 装配成什么 |
 |---|---|
 | [`SampleOverview`](summaries/sample-overview.md) | 范围摘要 + 成本 × 主读数散点 + 实验对比表 |
+| [`SampleSummary`](summaries/sample-summary.md) | snapshot + 本次选择的 Measure Dataset → 默认 KPI |
+| [`RunNotices`](site/run-diagnostics.md) | snapshot + persisted Run diagnostics → 产品解释 |
+| [`SampleFixPrompt`](site/copy-fix-prompt.md) | 失败事实 → 可复制的批量修复 prompt |
 | [`AttemptDetail`](attempt-detail/attempt-detail.md) | 一次 attempt 的全部区块，按内建顺序 |
-| [`AttemptAssessment`](attempt-detail/attempt-assessment.md) | 错误 → 源码 → 断言，三选一的判定视图 |
+| [`AttemptAssessment`](attempt-detail/attempt-assessment.md) | `AttemptNotices` + source / assertions fallback |
+| `AttemptNotices` | snapshot error + persisted attempt diagnostics → 产品解释 |
+| `AttemptFixPrompt` | attempt snapshot 与证据 → 单条修复 prompt |
 | [`FailureList`](entity-lists/failure-list.md) | 取数 → 过滤出失败 → attempt 表 |
 
 组合组件可以自带 compose 阶段的解析——按题型选主读数、按 `labels` 推散点归类维度、
@@ -248,14 +292,15 @@ type PrimitiveProps<Content, Input, Presentation> =
 字典序。原语级排序是稳定排序，同值时仍以 key 收口。这个规则适用于 text、web 和写出的 JSON，
 不让文件扫描顺序渗进报告。
 
-## 系列色：分配单位是页
+## 维度呈现：分配单位是页
 
 同一个维度值在一页里恒定一个颜色。读者在同一页上先看图例、再看表格里的同名键，
 两处颜色必须是同一个——所以颜色的分配单位不是原语，是**页**。
 
 - **色只按 `(维度, 维度值)` 分配**，不按原语、不按显示名。实验对比表的行标签缩成最短唯一后缀
   不影响颜色：键仍是完整值。
-- **分配在 resolve 之后、render 之前一次完成**：收集这一页已解析数据里出现的全部 `(维度, 值)` 对，
+- **分配在 validate 之后、render 之前一次完成**：管线调用每个渲染组件的 `dimensions(data)`，
+  收集这一页的全部 `(维度, 值)` 对，
   得到每个维度的页内 keyset；[外壳钉住](../library/shell.md#钉色)的键先原样占位，
   其余键以稳定散列为起点，同一 keyset 内撞色时按显示键字典序线性探测下一个空色格，
   keyset 超过色板容量才复用。它是确定的纯函数，不改变任何数据源，不进入序列化数据。
@@ -264,7 +309,7 @@ type PrimitiveProps<Content, Input, Presentation> =
   因此与页上任何按同一维度取色的地方一致。
 - **页内全部消费者读同一份映射**：图表 series 与图例、表里的 agent 键、矩阵的行列头，
   同一个键在这一页恒同色。所有原语都读这一份——渲染面的
-  [`ctx.seriesColor(dimension, value)`](../library/layout.md#系列色) 是它唯一的入口，
+  [`ctx.present(dimension, value)`](../library/layout.md#呈现算法) 是它唯一的入口，
   自己按键算色会绕开页内消解，与官方原语对不上。
 - **跨页与跨报告让位给页内可辨**：稳定散列保证 keyset 不冲突时跨页同色；发生冲突时以页内可辨为准。
   读者跨页比较靠的是标签，页内比较靠的才是颜色。
@@ -302,7 +347,7 @@ text 面允许把有稳定 CLI 选择器的大块内容折成摘要加命令，�
 
 ## 不引入的机制
 
-- 原语词汇同构不意味着渲染实现相同：两面渲染由 niceeval 自己实现，静态 SVG、终端字符图、
+- 原语词汇同构不意味着渲染实现相同：两面渲染各自实现，静态 SVG、终端字符图、
   证据链接与无浏览器首屏都是它的职责，不把第三方图表运行时或 React context 引入生成管线。
   唯一的例外是 [`Markdown`](../library/layout.md#markdown) 的 CommonMark 解析器——
   它产出一棵 AST 供两面各自投影，不参与渲染。
@@ -320,6 +365,6 @@ text 面允许把有稳定 CLI 选择器的大块内容折成摘要加命令，�
 - [组合组件](summaries/README.md) —— 裸跑默认装配的等价全文。
 - [图表](charts/README.md) —— 容器、轴、series 与嵌套节点。
 - [Gallery](gallery.md) —— 真实报告图的结构验证。
-- [读数与维度](../library/measures.md) —— 数据源消费的 Measure、Dimension 与 NumericAxis。
-- [排版原语与自定义组件](../library/layout.md) —— 原语之间的组织件与 `defineComponent`。
+- [读数与维度](../library/measures.md) —— Source 消费的 Measure、Dimension 与 NumericDimension。
+- [排版原语与自定义组件](../library/layout.md) —— `defineComponent`、`defineComposition` 与排版原语。
 - [Architecture](../architecture.md) —— resolve / validate / render 管线与两面同源不变量。

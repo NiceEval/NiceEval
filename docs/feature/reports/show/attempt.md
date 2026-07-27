@@ -1,6 +1,20 @@
 # 失败诊断首页
 
-不带 `--report` 且无证据 flag 打开 attempt 时，选择内建 `standard` 中的 [attempt-input page](../components/attempt-detail/README.md)，注入 locator 并渲染其 `<AttemptDetail />` text 面；这张普通 page 就是本页所说的“诊断首页”，不是 show 宿主另藏的一套 renderer。区块按内建顺序堆叠——`attemptSummary`（身份与判定，恒非空）、`AttemptAssessment`（`attemptError` 加 `attemptSource`，源码不可用时换成 `attemptAssertions`）、`attemptFixPrompt`（文本面零输出）、`attemptTimeline`、`attemptDiagnostics`、`attemptUsage`、`attemptConversation`、`attemptTrace`、`attemptDiff`——每个区块各自决定是否有内容：没有对应证据时那一块直接不出现，不留空标题。带 `--report <file>` 时，选择该定义自己的 attempt-input page，content 与顺序可以不同：
+不带 `--report` 且无证据 flag 打开 attempt 时，show 选择内建 `standard` 中的
+[attempt-input page](../components/attempt-detail/README.md)。它注入 locator，并渲染 `<AttemptDetail />`
+的 text 面。这张普通 page 就是“诊断首页”，不是 show 宿主另藏的一套 renderer。
+
+区块按内建顺序堆叠：
+
+- `AttemptSummary`：身份与判定，恒非空；
+- `AttemptAssessment`：`AttemptNotices` 组合 snapshot error 与 persisted diagnostics，再选择
+  `sources.attempt.source` 或 fallback `sources.attempt.assertions`；
+- `AttemptFixPrompt`：文本面零输出；
+- `sources.attempt.timeline`、`AttemptUsage`、`sources.attempt.conversation`、
+  `sources.attempt.trace` 与 `sources.attempt.diff`。
+
+每个区块各自决定是否有内容；没有对应证据时整块不出现，不留空标题。带 `--report <file>` 时，
+选择该定义自己的 attempt-input page，content 与顺序可以不同：
 
 ```text
 $ niceeval show @1qrdcfq8
@@ -54,11 +68,11 @@ trace: 3 spans · niceeval show @1qrdcfq8 --timing
 ╰─────────────────────────────────────────────── niceeval show @1qrdcfq8 --diff ─╯
 ```
 
-这页应当足以判断“为什么失败”。每块证据是一个 `Section`，按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：块名嵌上边框左侧，规模或判定嵌右侧，下钻命令嵌下边框——命令因此总是紧贴它能展开的那块证据，而不是散落在正文行尾。没有捕获某类证据时，那一整块（连同框和命令）一起省略，不留光秃的标题。单个事实的摘要（`usage:`、`facts:`、`trace:`）本来就不是 `Section`，仍是无框单行，不为一个标量套一个框。`usage:` 行是 `attemptUsage` 的单行装配形态，按[组装口径单源](../components/attempt-detail/usage-table.md#组装口径单源)拼装；某段事实缺失时对应片段整段省略（与本页「没有证据的块不出现」同一条规则）。`facts:` 行列出生命周期代码经 `ctx.fact()` 上报的运行观测（[字段契约](../../record/architecture.md#facts运行事实)），例如记忆库实际起步有多少条笔记；它帮助审计条件是否如预期生效，但不参与缓存指纹，没有 facts 时该行不出现。只有在需要理解断言上下文、agent 为什么给出这个结果、或具体改了什么时，才继续打开证据切面：[`--source`](eval-source.md)、[`--execution`](execution.md)、[`--timing`](timing.md)、[`--diff`](diff.md)。
+这页应当足以判断“为什么失败”。每块证据是一个 `Section`，按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：块名嵌上边框左侧，规模或判定嵌右侧，下钻命令嵌下边框——命令因此总是紧贴它能展开的那块证据，而不是散落在正文行尾。没有捕获某类证据时，那一整块（连同框和命令）一起省略，不留光秃的标题。单个事实的摘要（`usage:`、`facts:`、`trace:`）本来就不是 `Section`，仍是无框单行，不为一个标量套一个框。`usage:` 行是 `AttemptUsage` 的单行装配形态，按[组装口径单源](../components/attempt-detail/usage-table.md#组装口径单源)拼装；某段事实缺失时对应片段整段省略（与本页「没有证据的块不出现」同一条规则）。`facts:` 行列出生命周期代码经 `ctx.fact()` 上报的运行观测（[字段契约](../../record/architecture.md#facts运行事实)），例如记忆库实际起步有多少条笔记；它帮助审计条件是否如预期生效，但不参与缓存指纹，没有 facts 时该行不出现。只有在需要理解断言上下文、agent 为什么给出这个结果、或具体改了什么时，才继续打开证据切面：[`--source`](eval-source.md)、[`--execution`](execution.md)、[`--timing`](timing.md)、[`--diff`](diff.md)。
 
-有 eval 源码时，`attemptSource` 把文件路径放在框内首行、被标注的行数放上边框右侧、`--source` 命令放下边框，随后按原始声明顺序平铺列出全部非 passed 断言（`✗ gate`/`✗ soft`/`◌ unavailable` 混排，不分四段；无阈值 judge 的纯打分行不带判定图标，按声明位置列出分数），每行带分组、matcher、期望值、实际值与 `file:line:col` 源码锚（逐条格式的单源在[断言展示契约](../../assertions/library/display.md#通用渲染规则)）；全通过的断言只在没有失败可看时才会出现，且只按 group 折成 `✓ passed · <group> · <count>` 一行，不逐条展开——计分制的得分点例外：它们带着挣分标注，无论 passed 与否都逐条出现（[得分点不参与 passed 收纳](../../assertions/library/display.md#计分制points-与给分记录)）。源码不可用时换成 `attemptAssertions`，规则完全一致，只是没有文件路径与逐行标注。
+有 eval 源码时，`sources.attempt.source` 把文件路径放在框内首行、被标注的行数放上边框右侧、`--source` 命令放下边框，随后按原始声明顺序平铺列出全部非 passed 断言（`✗ gate`/`✗ soft`/`◌ unavailable` 混排，不分四段；无阈值 judge 的纯打分行不带判定图标，按声明位置列出分数），每行带分组、matcher、期望值、实际值与 `file:line:col` 源码锚（逐条格式的单源在[断言展示契约](../../assertions/library/display.md#通用渲染规则)）；全通过的断言只在没有失败可看时才会出现，且只按 group 折成 `✓ passed · <group> · <count>` 一行，不逐条展开——计分制的得分点例外：它们带着挣分标注，无论 passed 与否都逐条出现（[得分点不参与 passed 收纳](../../assertions/library/display.md#计分制points-与给分记录)）。源码不可用时换成 `sources.attempt.assertions`，规则完全一致，只是没有文件路径与逐行标注。
 
-计分制（`defineScoreEval`）attempt 的同一页：头行 verdict 后跟本轮挣分——这是 `attemptSummary` 的总分位，也是全页唯一的总分出现处；assertions 框内得分点逐条列出（含 passed，行尾挣分标注右对齐）、`t.score` 给分记录按 group 成块、前置中止行带 `⤓`（逐条格式单源在[计分制展示](../../assertions/library/display.md#计分制points-与给分记录)）；框上边框右侧在行数标注前加得分点挣满计数：
+计分制（`defineScoreEval`）attempt 的同一页：头行 verdict 后跟本轮挣分——这是 `AttemptSummary` 的总分位，也是全页唯一的总分出现处；assertions 框内得分点逐条列出（含 passed，行尾挣分标注右对齐）、`t.score` 给分记录按 group 成块、前置中止行带 `⤓`（逐条格式单源在[计分制展示](../../assertions/library/display.md#计分制points-与给分记录)）；框上边框右侧在行数标注前加得分点挣满计数：
 
 ```text
 $ niceeval show @1dbgpt001
@@ -75,11 +89,13 @@ $ niceeval show @1dbgpt001
 │          calledTool("shell", { input: { command: /pip install/ } })            │
 │          ⤓ 前置未过, test() 就地结束                                           │
 ╰──────────────────────────────────────────── niceeval show @1dbgpt001 --source ─╯
-````attemptFixPrompt` 的文本面固定为空——终端已经有本页顶部的 locator，直接跑 `niceeval show @<locator>` 就是给 agent 的下一步，不需要在这里再拼一份 prompt 正文；prompt 全文只在 web 面的复制按钮里。
+```
 
-`timing` 是 `attemptTimeline` 的紧凑摘要：主链每个 `LifecyclePhase` 各占一行，有子节点的阶段在行尾标 `(N children collapsed)`（完整分解见 [`--timing`](timing.md)）；收尾阶段是一个嵌套 `Section`，按只画最外层的规则降为 `├─ teardown ─┤` 隔条，不计入上边框右侧的总耗时。这里不筛选“大头”——只要 phase 存在就列一行，多余的只是折叠子节点，不是丢弃阶段。落盘没有 `phases`（旧结果或第三方 harness 写入）时这一整块省略，不猜一个假总耗时。
+`AttemptFixPrompt` 的文本面固定为空——终端已经有本页顶部的 locator，直接跑 `niceeval show @<locator>` 就是给 agent 的下一步，不需要在这里再拼一份 prompt 正文；prompt 全文只在 web 面的复制按钮里。
 
-`errored` attempt 的首页不用 trace 也必须能解释基础设施错误。`attemptError` 先给结构化 error 的 phase、code、message 与有限 cause，再由 `attemptDiagnostics` 列本 attempt 的诊断记录；stack（如果有）放在最后并保持原始换行。error 的 `phase`、diagnostics 的 phase 与 `timing:` 行用的是同一套 `LifecyclePhase` 名字，同一次失败在各处叫同一个名：
+`timing` 是 `sources.attempt.timeline` 的紧凑摘要：主链每个 `LifecyclePhase` 各占一行，有子节点的阶段在行尾标 `(N children collapsed)`（完整分解见 [`--timing`](timing.md)）；收尾阶段是一个嵌套 `Section`，按只画最外层的规则降为 `├─ teardown ─┤` 隔条，不计入上边框右侧的总耗时。这里不筛选“大头”——只要 phase 存在就列一行，多余的只是折叠子节点，不是丢弃阶段。落盘没有 `phases`（旧结果或第三方 harness 写入）时这一整块省略，不猜一个假总耗时。
+
+`errored` attempt 的首页不用 trace 也必须能解释基础设施错误。`AttemptNotices` 把 snapshot 中结构化 error 的 phase、code、message 与有限 cause，同 `sources.attempt.diagnostics` 的诊断记录一起解释；stack（如果有）放在最后并保持原始换行。error 的 `phase`、diagnostics 的 phase 与 `timing:` 行用的是同一套 `LifecyclePhase` 名字，同一次失败在各处叫同一个名：
 
 ```text
 $ niceeval show @12h8m4k1
@@ -105,7 +121,7 @@ $ niceeval show @12h8m4k1
 
 execution 与 usage 在这个例子里整块不出现——attempt 死在 `sandbox.create`，事件流和 token 用量都还没产生，不是省略了内容，是那部分证据本来就不存在。
 
-diagnostic 的 level 不等于 verdict：一个 passed/failed attempt 也可以带 cleanup warning，那条诊断照样会出现在 `attemptDiagnostics` 里。
+diagnostic 的 level 不等于 verdict：一个 passed/failed attempt 也可以带 cleanup warning，那条诊断照样会出现在 `sources.attempt.diagnostics` 里。
 
 ## 相关阅读
 

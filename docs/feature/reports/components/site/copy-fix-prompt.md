@@ -1,26 +1,24 @@
-# `fixPrompt`
+# `SampleFixPrompt`
 
-`fixPrompt` 把当前 Sample 的全部失败（verdict 为 `failed` / `errored` 的 attempt）整理成
-[`CopyBlock`](../primitives/copy-block.md) 可消费的修复 prompt。prompt 在 resolve 阶段算好；
-「复制到剪贴板」只是一项渐进增强。
-
-```ts
-interface CopyFixPromptContent {
-  /** 修复 prompt 全文；失败逐条含 eval id、主失败摘要与 attempt 下钻命令。 */
-  prompt: string;
-  /** 参与 prompt 的失败 attempt 数。 */
-  failures: number;
-}
-
-declare const fixPrompt: DataSource<CopyBlockContent, Sample>;
-```
-
-`failures` 为 0 时两面零输出。text 面零输出——终端里的等价能力是 `show` 的 attempt 下钻命令本身，不打印整段 prompt。
+`SampleFixPrompt` 把当前 Sample 中可行动的失败整理成可复制 prompt。它是组合组件，不是 Source：
+“选择哪些失败、怎样措辞、给 coding agent 哪些下一步”属于产品阅读方式，不是 `.niceeval` 事实。
 
 ```tsx
-<CopyBlock source={fixPrompt} />
+export const SampleFixPrompt = defineComposition(async (_props, ctx) => {
+  const attempts = await sources.entity.attempts.compute(ctx.sample);
+  const failures = attempts.rows.filter(isActionableFailure);
+  if (failures.length === 0) return null;
+
+  return <CopyBlock data={{ title: "Fix prompt", text: buildFixPrompt(failures) }} />;
+});
 ```
+
+`buildFixPrompt()` 是纯函数，只消费已经投影好的 locator、eval id 与失败摘要，不重读 artifact。
+text 面零输出；终端已有 `niceeval show @<locator>` 作为等价入口。web 面输出完整 prompt 与复制增强。
+
+单次 Attempt 的 `AttemptFixPrompt` 遵守同一边界，只是在组合层同时读取 snapshot 与需要的证据 Source。
 
 ## 相关阅读
 
-- [`CopyBlock`](../primitives/copy-block.md) —— 通用可复制文本原语。
+- [`CopyBlock`](../primitives/copy-block.md) —— 通用可复制文本 Component。
+- [Attempt 详情](../attempt-detail/README.md) —— `AttemptFixPrompt` 的装配位置。

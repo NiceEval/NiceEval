@@ -46,10 +46,10 @@ PLAN-2，通用 `Table` 加一个声明维度与读数的数据源：
 ```tsx
 export default defineReport(
   <Table
-    source={measureRows({
-      rows: "agent",
-      measures: [endToEndPassRate, costUSD],
-      sort: endToEndPassRate,
+    source={sources.measure.rows({
+      dimensions: ["agent"],
+      measures: [passRate, costUSD],
+      sort: passRate,
     })}
   />,
 );
@@ -77,16 +77,16 @@ export default defineReport(
 PLAN-4，默认写法同 PLAN-2，官方数据源答不了时才落到 SQL：
 
 ```tsx
-<Table source={measureRows({ rows: "agent", measures: [endToEndPassRate, costUSD] })} />
+<Table source={sources.measure.rows({ dimensions: ["agent"], measures: [passRate, costUSD] })} />
 <Table source={sql`select … from attempts …`} />
 ```
 
 四段代码的差别不在长度，在于**谁承担了容易写错的那部分**。
 
-| 写法 | 谁决定两级聚合 | 谁保住证据下钻 | 谁给列的单位与双语 |
+| 写法 | 谁决定两级聚合 | 谁保住证据下钻 | 谁给数值语义与显示文案 |
 |---|---|---|---|
 | PLAN-1 | 组件 | 组件 | 组件 |
-| PLAN-2 | 读数的 `aggregate` | 数据源折 `Cell` 时 | `Measure` 声明 |
+| PLAN-2 | `Measure.perEval` / `acrossEvals` | Source 折 `Cell` 时 | Measure 声明数值语义，Component 声明文案 |
 | PLAN-3 | 作者的 `group by` 层数 | 作者的 `array_agg` | 查询旁边的第二张表 |
 | PLAN-4 | 两者各一份 | 数据源必然、SQL 可选 | 两者各一份 |
 

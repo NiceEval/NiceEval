@@ -117,8 +117,12 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **页级色分配**（[系列色](../../../feature/reports/components/README.md#系列色分配单位是页)）：给定一页已解析数据里的
   `(维度, 值)` 集合产出映射——同一键在同页多个组件（图表 series 与实体列表的维度键）得到同一个色槽、撞色按显示键字典序线性探测、keyset
   超过色板才复用、缩短后的显示名不参与取键；断言面是映射本身，不断言渲染出的颜色值。
-  `shortestUniqueLabels` 与 `seriesColors` 从 `niceeval/report`
-  顶层导出并与内部定义同一引用——官方组件与自定义组件复现同一份显示名和同一个色槽。
+- **公开呈现 helper**：`shortestUniqueLabels` 与 `seriesColors` 从 `niceeval/report` 顶层导出，
+  并与内部定义同一引用。`experimentLabels` 是前者的同引用实验入口。`seriesColors` 按
+  `(dimension, values)` 分配，并与报告树内 `ctx.seriesColor` 对同一键集返回相同色槽。
+- **数据源定义入口**：`defineDataSource` / `defineRowSource` 保留传入对象引用与泛型形状，不建立
+  注册表或跨 page 缓存；缺 name / compute / columns 的输入给出完整用户反馈。运行期 Content
+  可序列化、row key 与 column key 的校验仍走 resolve / validate，不在定义期重复一份规则。
 - **纯函数布局算法**：散点点标签布局是 `chart-math`
   纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts/README.md#值域)）同属这一类——直接对推定函数断言扩后的
   `[min, max]`：两端各扩数据跨度 20%、零跨度 fallback（值绝对值的 20%、值为 0 取 1）、有自然

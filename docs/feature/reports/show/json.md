@@ -49,21 +49,22 @@ type AttemptJson = AttemptRecord & {
 
 ## `data`：按 view 找组件声明
 
-`data` 字段不是 show 另起的第二套形状：多数 view 输出对应数据源计算后的 Content，text 面消费
-同一份 Content。本页只维护「view → Content 声明位置」的指针：
+`data` 字段不是 show 另起的第二套形状：它只输出 Source 计算后的事实 Content，不序列化
+`SampleSummary` / `AttemptDetail` 这类产品组合树。text 面消费同一批 Content，再由 Component 决定
+摘要、Notice 与排版。本页只维护「view → Content 声明位置」的指针：
 
 | `view` | `data` 单源 |
 |---|---|
-| `leaderboard` | `experimentRows`（[Library · 实体列表](../components/entity-lists/README.md)）+ `sampleSummary`（[Library · 概览组件](../components/summaries/README.md)） |
-| `compare` | `deltaRows`（[Library · Measure Views](../components/tables/README.md)） |
-| `attempt` | `AttemptDetail` 装配的数据源 Content 全集（[Attempt 详情](../components/attempt-detail/README.md)） |
-| `source` | `attemptSource`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `execution` | `attemptConversation`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `timing` | `attemptTimeline`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `usage` | `attemptUsage`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `diff` | `attemptDiff`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
+| `leaderboard` | `sources.sample.snapshot` + 默认选择的 Measure Dataset + `sources.entity.experiments`；`SampleSummary` 只消费前两者，不进入 JSON |
+| `compare` | `sources.measure.delta`（[Library · Measure Views](../components/tables/README.md)） |
+| `attempt` | `sources.attempt.snapshot` 与当前详情所需的 evidence Content 集合（[Attempt 详情](../components/attempt-detail/README.md)）；不包含组合树 |
+| `source` | `sources.attempt.source`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
+| `execution` | `sources.attempt.conversation`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
+| `timing` | `sources.attempt.timeline`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
+| `usage` | `sources.attempt.snapshot` 的数组；`AttemptUsage` 只是它的阅读组件 |
+| `diff` | `sources.attempt.diff`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
 | `history` | [`--history`](history.md)「分节与行内字段」：这个切片不进入组件模型，直接投影 Record evidence（[切片表](../architecture.md#show-的切片是组件选择)未列出它） |
-| `stats` | `stabilityRows`（[Library · Measure Views](../components/tables/README.md)） |
+| `stats` | `sources.measure.stability`（[Library · Measure Views](../components/tables/README.md)） |
 
 ## 边界
 

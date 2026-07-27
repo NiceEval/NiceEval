@@ -31,7 +31,7 @@
 布局用 TCSS。
 
 **没跟什么。** Textual 的 web 面是**终端渲染的远程投影**——浏览器里跑的仍是终端画面。这条路便宜
-得多(一份渲染代码),但 `experimentRows` 在 view 上要可排序、可过滤、能点开 attempt 详情,那是原生
+得多(一份渲染代码),但 `sources.entity.experiments` 在 view 上要可排序、可过滤、能点开 attempt 详情,那是原生
 DOM 语义,投影给不了。所以这里选了更贵的「两个原生渲染面」,代价就是上面 Rich 那条的取舍与本页
 `enhance` 契约的全部复杂度。这是一次明确的取舍,不是漏做。
 
@@ -44,13 +44,13 @@ builder 的 visitor。这是「用户可编程组件 + 多渲染面」最老牌�
 **学了什么。** 语义树与渲染面分离。
 
 **它的病,以及这里怎么防。** Sphinx 的第三方 directive 常常只实现 html visitor,text builder 上
-就报错或输出空白。这是「双面 × 用户可编程组件」这一格的固有失败模式,而这一格恰好是所有参考物里
-**没有先例覆盖过**的交叉点。两道防线:
+就报错或输出空白。这是「双面 × 用户可编程组件」的固有失败模式。NiceEval 不以封闭报告树回避它，
+而是在 `defineComponent` 协议上设三道防线：
 
-1. **原语集合封闭**：用户扩展数据源与组合，不注册只有一个 renderer 的新原语。
-2. **[具名 `enhance` 位](../architecture.md#只有一面能做的事具名-enhance-位)** 挡住更隐蔽的一半：
-   两面都写了,但 web 面能看到的信息在 text 面悄悄少了。每个能力位的 text 降级形态是规定的,不由
-   各组件自行发明。
+1. `text` 与 `web` renderer 都是必填字段，缺一面时组件定义失败。
+2. 两面只能消费同一份可序列化 resolve data，renderer 同步且不能重新取数。
+3. **[具名 `enhance` 位](../architecture.md#只有一面能做的事具名-enhance-位)** 挡住更隐蔽的一半：
+   两面都写了,但 web 面能看到的信息在 text 面悄悄少了。每个能力位的 text 降级形态有明确约束。
 
 ## Evidence.dev —— 命名查询与构建时取数
 
@@ -84,8 +84,8 @@ builder 的 visitor。这是「用户可编程组件 + 多渲染面」最老牌�
 
 **是什么。** panel 插件 + datasource + transformations + dashboard JSON。
 
-**学了什么。** panel 与数据源解耦的价值；不同数据源用 `Input` 类型明确声明自己消费 `Sample`、
-`Run[]` 还是 `AttemptEvidence`，原语只看 Content。
+**学了什么。** panel 与数据源解耦的价值；范围级数据源统一消费 `Sample`，attempt 详情显式消费
+`AttemptEvidence`，原语只看 Content。
 
 **没跟什么。** Grafana 的模板变量(`$var` / repeat / 嵌套)逐渐长成需要独立求值规则文档的半个
 语言。这是「搭积木」的失败模式:失败不在积木不够,在积木变成了编程语言。这里的对策是所有扩展点
@@ -108,7 +108,7 @@ JSON,纯 renderer 吃 fixture,**报告组件可以做视觉回归测试,完全�
 
 **学了什么。** resolve 阶段并行计算数据源、作者不写取数管道,就是 loader 模型;
 `niceeval/report` 与 `niceeval/report/react` 的切分就是 server/client 边界——`Run` 类型进不了
-浏览器,`runDiagnostics` 的 data 形态只带 experimentId / startedAt / DiagnosticRecord[]。
+浏览器,`sources.run.diagnostics` 的 data 形态只带 experimentId / startedAt / DiagnosticRecord[]。
 
 **没跟什么(暂时)。** Remix 后来演进出的 `defer` + streaming 还没有对应物:现在是全部数据源
 并行完成才渲染。`diff.json` 可达百 MB,view 上迟早要「先出实验列表,重证据后到」——那时抄的就是这条。

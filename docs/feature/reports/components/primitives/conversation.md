@@ -4,7 +4,7 @@
 [`SourceView`](source-view.md) 的行内展开区与兜底区复用这一套渲染，不写第二份实现。
 
 ```tsx
-<Conversation source={attemptConversation} />
+<Conversation source={sources.attempt.conversation} />
 ```
 
 ## 形状
@@ -27,6 +27,16 @@ interface ConversationTurn {
   verdict?: "passed" | "failed" | "errored" | "skipped";
   entries: readonly ConversationEntry[];
 }
+
+interface ConversationContent {
+  turns: readonly ConversationTurn[];
+  failedCommands?: readonly FailedCommandContent[];
+}
+
+type ConversationProps = DataProps<AttemptEvidence, ConversationContent | null> & {
+  locale?: ReportLocale;
+  className?: string;
+};
 ```
 
 ## 渲染
@@ -40,6 +50,6 @@ interface ConversationTurn {
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三层模型与双面投影边界。
+- [组件树](../README.md) —— 四层模型与双面投影边界。
 - [`SourceView`](source-view.md) —— 复用本原语的两个位置。
 - [数据源目录](../sources/README.md) —— 事件流数据源与失败命令卡。

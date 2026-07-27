@@ -1,103 +1,63 @@
 # `Chart`
 
-`Chart` 是唯一图表原语。它只消费 `ChartContent`；`chart(options)` 数据源负责把 `Measure`、
-`Dimension` 与 `NumericAxis` 聚合成轴和 series。折线、柱、面积与散点是 series 的 `mark`，
-不是四套容器；同一坐标系混合 mark 也不需要另一种混合容器。
+`Chart` 是唯一图表原语。它消费 `sources.measure.rows(...)` 返回的通用 `Dataset`，再由组件 props
+把字段映射到坐标、series 与 mark。Source 只选择 Dimension、计算 Measure 和聚合事实；x / y、
+`mark`、`by`、`points`、`stack` 与 `connect` 都是显示决定，不另设图表 Source 或图表专用 Content。
 
 ```tsx
-const qualityCost = chart({
-  x: { measure: costUSD },
-  y: { measure: endToEndPassRate },
-  series: [{
-    key: "frontier",
-    mark: "scatter",
-    points: "experiment",
-    by: "agent",
-    x: costUSD,
-    y: endToEndPassRate,
-  }],
+const qualityCost = sources.measure.rows({
+  dimensions: ["experiment", "agent"],
+  measures: [costUSD, passRate],
 });
 
-<Chart source={qualityCost} legend tooltip />
+<Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
+  <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+</Chart>
 ```
 
 手工计算与其它原语完全同形：
 
 ```tsx
-const content = await qualityCost.compute(sample);
-<Chart data={content} legend tooltip />
+const data = await qualityCost.compute(sample);
+
+<Chart data={data} x="costUSD" y="passRate" legend tooltip>
+  <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+</Chart>
 ```
 
-## 数据源
+同一份 Dataset 也可以直接交给 `Table`。从表改成图或在两个视图间切换，不会触发第二套聚合协议。
+
+## Dataset
+
+Chart 只按稳定字段名绑定 Dataset：
 
 ```ts
-type AxisBinding =
-  | {
-      id?: string;
-      dimension: DimensionInput;
-      sort?: Measure;
-      limit?: number;
-      rest?: LocalizedText;
-    }
-  | { id?: string; numeric: NumericAxis }
-  | { id?: string; measure: Measure };
+type FieldName = string;
 
-interface MeasureSeries {
-  key: string;
-  mark: "line" | "bar" | "area";
-  measure: Measure;
-  /** 省略时一条 series；声明后每个维度值一条。 */
-  by?: DimensionInput;
-  /** 只保留这个维度值；与 by 互斥。 */
-  value?: string;
-  yAxis?: string;
-  stack?: string;
+interface ChartFieldBinding {
+  id?: string;
+  field: FieldName;
+  sort?: FieldName;
+  limit?: number;
 }
 
-interface ScatterSeries {
-  key: string;
-  mark: "scatter";
-  points: DimensionInput;
-  x: Measure;
-  y: Measure;
-  by?: DimensionInput;
-  value?: string;
-  xAxis?: string;
-  yAxis?: string;
-  /** 只对同族有序变体连线。 */
-  connect?: boolean;
-}
-
-type ChartSeries = MeasureSeries | ScatterSeries;
-
-interface ChartOptions {
-  x: AxisBinding | readonly [AxisBinding, ...AxisBinding[]];
-  y: AxisBinding | readonly [AxisBinding, ...AxisBinding[]];
-  series: readonly [ChartSeries, ...ChartSeries[]];
-}
-
-function chart(
-  options: ChartOptions,
-): DataSource<ChartContent, Sample | readonly Run[]>;
+type ChartAxisBinding = FieldName | ChartFieldBinding;
 ```
 
-`chart()` 只建立声明，不读取 Record。series `key` 在一张图内唯一，是 Content 与呈现覆盖的稳定身份，
-不是对象属性路径。动态 `by` 解析成多条可见 series，但仍归属同一个声明 key。
+`field` 必须出现在 `Dataset.fields` 中。dimension 字段提供离散类别或数值条件，measure 字段提供
+`MeasureCell`；Chart 不接受 `Measure`、`DimensionInput` 或 `NumericDimension` 对象，也不重新读取 Record。
+数值 flag / label 先作为 Dimension 交给 `sources.measure.rows(...)`，Dataset 的字段描述保存其数值语义，
+Chart 再按字段名把它绑定到轴。
 
-`evals` 属于 `Chart` 的 source 形态，在聚合前收窄题集，不进入 `ChartOptions`。
+聚合前的题集选择、Dimension 和 Measure 属于 Source options 或显式 input，不进入 Chart props。
 
 ## 原语
 
 ```ts
-type ChartProps =
-  | ({ source: DataSource<ChartContent, Sample | readonly Run[]>; data?: never }
-      & ChartPresentation)
-  | ({ data: ChartContent; source?: never; input?: never; evals?: never }
-      & ChartPresentation);
-
-interface ChartPresentation {
-  input?: Sample | readonly Run[];
-  evals?: string | readonly string[];
+type ChartProps<Input extends SourceInput> = DataProps<Input, Dataset> & {
+  x: ChartAxisBinding | readonly [ChartAxisBinding, ...ChartAxisBinding[]];
+  y: ChartAxisBinding | readonly [ChartAxisBinding, ...ChartAxisBinding[]];
+  children: SeriesNode | readonly SeriesNode[];
   width?: number | `${number}%`;
   height?: number;
   aspect?: number;
@@ -108,54 +68,85 @@ interface ChartPresentation {
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
-  series?: Readonly<Record<string, SeriesPresentation>>;
+};
+
+interface SeriesProps {
+  id: string;
+  mark: "line" | "bar" | "area" | "scatter";
+  /** 默认继承 Chart 的 x / y；混合轴时可逐 series 覆盖。 */
+  x?: FieldName;
+  y?: FieldName;
+  /** Dataset 中定义点身份的 dimension 字段。 */
+  points?: FieldName;
+  /** Dataset 中拆分可见 series 的 dimension 字段。 */
+  by?: FieldName;
+  /** 只保留 by 字段的一个完整值。 */
+  value?: string;
+  xAxis?: string;
+  yAxis?: string;
+  stack?: string;
+  connect?: boolean;
+  connectNulls?: boolean;
+  hidden?: boolean;
+  label?: LocalizedText;
+  color?: string;
+  line?: "solid" | "dashed" | "dotted";
+  point?: "circle" | "square" | "diamond";
 }
 ```
 
-`series` 只覆盖颜色、线型、点形、标签与是否显示，不改变绑定、聚合或 mark。数据不存在的 key
-按完整用户反馈报错；要增加或删除 series，改 `chart()` 声明。
+`Series` 是 Chart 的结构节点，不取数、不聚合，也不单独渲染。`id` 在一张图内唯一，是呈现覆盖与
+错误定位的稳定身份，不是 Dataset 属性路径。`by` 会把一个声明展开成多条可见 series，但仍归属同一
+`id`。
 
-## Content
+字段不存在、字段类型不适用于当前 mark，或 Dataset 中出现同名字段时，Chart 按完整用户反馈报错。
+要增加、删除或改变 series，只改 `<Series>`；Dataset 仍是可被其它组件复用的事实投影。
 
-```ts
-interface ChartContent {
-  axes: readonly ChartAxis[];
-  series: readonly ChartSeriesContent[];
-  points: readonly ChartPoint[];
-}
+## 映射与证据
 
-interface ChartPoint {
-  key: string;
-  series: string;
-  x: DimensionValue | MeasureCell;
-  y: DimensionValue | MeasureCell;
-  refs: readonly AttemptLocator[];
-}
-```
+Chart 在渲染前同步把 Dataset 行映射成内部点集合。这个内部模型不是 Source Content，也不进入公开的
+序列化协议：
 
-Content 保留每个点的 `MeasureCell.samples`、`total` 与 `refs`。原语不从显示字符串重算数值，也不在
-tooltip 打开时读取 artifact。
+- dimension cell 保留完整值作为点、series、排序与下钻身份；
+- measure cell 原样保留 `value`、`format`、`samples`、`total` 与 `refs`；
+- tooltip 和证据链接只读取已有 cell，不在交互时访问 artifact；
+- 显示字符串只由 renderer 按当前 locale 生成，不反向参与数值或身份计算。
+
+同一 Dataset 可以配不同 Chart 映射。例如相同的 `experiment + agent + costUSD + passRate`，既可以画
+质量成本散点，也可以按 agent 画成本柱状图；两者不需要复制或重算数据。
 
 ## 聚合与缺失
 
-- 读数仍先按 experiment × eval 做 `perEval`，再跨题做 `acrossEvals`。
+- 聚合完全由 `sources.measure.rows(...)` 完成：先按 experiment × eval 做 `perEval`，再跨题做
+  `acrossEvals`。
 - `null` 不参与聚合；缺点不伪造为 0。
-- 维度轴的 `sort` 跟随 Measure 的 `better`；`limit` 要求同时给 `sort`。
-- `rest` 对被截掉的原始成员重新聚合，不平均已经聚合好的点。
-- 同一 stack 必须绑定同一对轴，而且 Measure 可相加。
-- `scatter.connect` 只在每条解析后 series 内按 x 原值连线；默认 `false`。
+- 维度轴的 `sort` 绑定 Dataset 中的 measure 字段，并跟随其 `better`；`limit` 要求同时给 `sort`。
+- `limit` 只隐藏排序后的多余类别，不生成“其他”聚合桶。需要合并类别时，把分桶规则定义成
+  Dimension，让 Source 按原始 Attempt 重新聚合；Chart 不从已经聚合好的 Dataset 行二次算数。
+- 同一 stack 必须绑定同一对轴，而且 measure 可相加。
+- `connect` 只在每条解析后的 series 内按 x 原值连线；默认 `false`。
 
 ## 轴方向与值域
 
-`better: "lower"` 的数值轴反向，`better: "higher"` 正向，使“更好”恒朝右或上。未声明
-`better` 时不猜方向。值域在数据极值外留呼吸边距，并受 Measure `bounds` 限制；通过率等有自然量程
-的读数还使用最小可见跨度，避免把微小噪声撑满整图。
+measure 字段 `better: "lower"` 的数值轴反向，`better: "higher"` 正向，使“更好”恒朝右或上。
+未声明 `better` 时不猜方向。值域在数据极值外留呼吸边距，并受字段 `bounds` 限制；通过率等有自然
+量程的读数还使用最小可见跨度，避免把微小噪声撑满整图。
 
 ## 两面
 
 - web 面输出真实 SVG/DOM、图例、tooltip 与证据链接；无 JavaScript 时标签与数值仍可读。
-- text 面按同一 Content 画字符坐标图；空间不足时保留轴、series 名与精确值表，不删除 series。
+- text 面从同一 Dataset 与同一映射画字符坐标图；空间不足时保留轴、series 名与精确值表，不删除
+  series。
 - 页级色分配以 `(dimension, value)` 为键，同一个 agent 在 Chart 与 Table 中恒同色。
+
+## 实验呈现
+
+Chart 保留完整 experiment id 作为点、series、排序与下钻身份。报告树先从 Dataset 的 dimension 字段
+收集完整 id 集合，renderer 再调用 `ctx.present("experiment", experimentId)`，一次取得完整身份、当前
+页内最短唯一标签和已经消解撞色的颜色。不能逐个截路径末段，也不能按数组下标自行配色。
+
+自有 React 页面没有报告管线，调用 `presentDimension("experiment", experimentIds)` 一次传入全集，
+再用返回集合的 `get(id)` 读取同一种 `DimensionPresentation`。
 
 ## Mark 指南
 
@@ -167,5 +158,5 @@ tooltip 打开时读取 artifact。
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 数据源、原语与组合组件的边界。
-- [读数与维度](../../library/measures.md) —— Measure、Dimension 与 NumericAxis。
+- [组件树](../README.md) —— Source、Component 与组合组件的边界。
+- [读数与维度](../../library/measures.md) —— Dataset、Measure 与 Dimension。

@@ -3,10 +3,10 @@
 页首的站点标题区：标题、最后运行时间、Run 合成来源，恒含品牌行。它是官方组合组件（与 [`FailureList`](../entity-lists/failure-list.md) 同族的成品，没有私有能力）：标题缺省取 `ctx.report.title`——规范化声明里走完回退链（`def.title` → 唯一 Run `name` → 内置文案）的站点标题，与浏览器标题同源；运行 meta 取自宿主注入的 Sample。内部严格等价于手写组合：
 
 ```tsx
-const Hero = defineComponent(async ({ title, className }: HeroProps, ctx) => (
+const Hero = defineComposition(async ({ title, className }: HeroProps, ctx) => (
   <HeroCard
     title={title ?? ctx.report.title}
-    data={await sampleProvenance.compute(ctx.sample)}
+    data={(await sources.sample.snapshot.compute(ctx.sample)).provenance}
     className={className}
   />
 ));

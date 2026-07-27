@@ -1,41 +1,44 @@
-# `measureRows`
+# `sources.measure.rows`
 
-`measureRows(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源：一行一个维度值，
+`sources.measure.rows(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源：一行一个维度值，
 一列一个读数。列按声明顺序排列。共用 Content 形状与两面规则见[表格与矩阵](README.md)。
 
 ```tsx
 <Table
-  source={measureRows({
-    rows: "agent",
-    measures: [endToEndPassRate, examScore, costUSD, durationMs],
-    sort: endToEndPassRate,
+  source={sources.measure.rows({
+    dimensions: ["agent"],
+    measures: [passRate, costUSD, durationMs],
+    sort: passRate,
+    evals: "coding/",
   })}
-  evals="coding/"
   filter
 />
 ```
 
 ```ts
 interface MeasureRowsOptions {
-  rows: DimensionInput;
+  /** 空数组表示整个 Sample 只产生一行聚合结果。 */
+  dimensions: readonly DimensionInput[];
   measures: readonly [Measure, ...Measure[]];
   sort?: Measure;
+  evals?: string | readonly string[];
 }
 
-function measureRows(
+function rows(
   options: MeasureRowsOptions,
-): RowSource<TableRow>;
+): Source<Sample, Dataset>;
 ```
 
 - `measures` 至少一个，Measure name 在同一张表内唯一。
 - `sort` 必须引用 `measures` 中已声明 `better` 的 Measure，否则计算以完整用户反馈失败。
-- `evals` 是 `Table` source 形态的共用选项，不重复进入 `MeasureRowsOptions`。
+- `evals` 在聚合前收窄题集，因此属于 Source options，不属于 Table props。
 - `filter` 只给 web 面增加行过滤框；排序与过滤是浏览状态，不改变数据与 text 面。
-- 手工计算写 `await measureRows(options).compute(input)`，所得 `TableContent` 可直接交给
+- 手工计算写 `await sources.measure.rows(options).compute(input)`，所得 `Dataset` 可直接交给
   `<Table data={content}>`。
 
 ## 相关阅读
 
 - [表格与矩阵](README.md) —— 共用数据形状、维度绑定节点与两面规则。
-- [`measureMatrix`](measure-matrix.md) / [`scoreboard`](scoreboard.md) / [`deltaRows`](delta-table.md) /
-  [`stabilityRows`](stability-matrix.md) —— 其它表格数据源。
+- [`sources.measure.matrix`](measure-matrix.md) / [`sources.measure.scoreboard`](scoreboard.md) /
+  [`sources.measure.delta`](delta-table.md) /
+  [`sources.measure.stability`](stability-matrix.md) —— 其它表格数据源。

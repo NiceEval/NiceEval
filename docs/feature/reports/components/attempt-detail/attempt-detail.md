@@ -3,24 +3,23 @@
 `AttemptDetail` 只表达内建排列顺序，全文是：
 
 ```tsx
-export const AttemptDetail = defineComponent((_props, ctx) => {
+export const AttemptDetail = defineComposition((_props, ctx) => {
   const conversationLivesInSource =
     ctx.page.input === "attempt" &&
     ctx.page.evidence.capabilities.source &&
     ctx.page.evidence.evalSource !== null;
   return (
     <Col>
-      <Grid source={attemptSummary} />
+      <AttemptSummary source={sources.attempt.snapshot} />
       <AttemptAssessment />
-      <CopyBlock source={attemptFixPrompt} />
-      <Waterfall source={attemptTimeline} />
-      <Callouts source={attemptDiagnostics} />
-      <Grid source={attemptUsage} />
+      <AttemptFixPrompt />
+      <Waterfall source={sources.attempt.timeline} />
+      <AttemptUsage source={sources.attempt.snapshot} />
       {conversationLivesInSource
         ? null
-        : <Conversation source={attemptConversation} />}
-      <Waterfall source={attemptTrace} />
-      <DiffView source={attemptDiff} />
+        : <Conversation source={sources.attempt.conversation} />}
+      <Waterfall source={sources.attempt.trace} />
+      <DiffView source={sources.attempt.diff} />
     </Col>
   );
 });
@@ -36,10 +35,10 @@ export const AttemptDetail = defineComponent((_props, ctx) => {
   navigation: false,
   content: (
     <Col>
-      <Grid source={attemptSummary} />
+      <AttemptSummary source={sources.attempt.snapshot} />
       <AttemptAssessment />
-      <DiffView source={attemptDiff} />
-      <Conversation source={attemptConversation} />
+      <DiffView source={sources.attempt.diff} />
+      <Conversation source={sources.attempt.conversation} />
     </Col>
   ),
 }

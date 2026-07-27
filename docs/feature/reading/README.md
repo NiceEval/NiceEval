@@ -26,9 +26,9 @@
 **Record 一点判断都不许有。** 它的承诺是每个返回值都能在磁盘上逐字节指出来源。所以通过数、成本
 合计这类聚合不落盘,「最新一次」这种选法也不在这里 —— 「最新」先要定义粒度,而定义粒度就是看法。
 
-Record reader 可以把残缺目录投影为 `skipped("incomplete")`，供上层用同一形状保守处理。
-这个值描述“无法读出完整事实”，不是 runner 产生的 Verdict。未派发 Attempt 则只存在于 Invocation
-的 `unstarted` 计数中，不创建 `result.json`，两者不能互相替代。
+Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdict；它把目录列入
+`record.unreadable`，Sample 将其呈现为 `unreadable-run` warning。未派发 Attempt 只存在于
+Invocation 的 `unstarted` 计数中，不创建 `result.json`；两者都不能冒充 `skipped`。
 
 **Sample 有判断,但判断必须物化。** 「每个实验取最新一次」是一种选法,「这批数据缺了三道题」是一次
 推断。两者都写在返回值的字面字段上:`mode` 说口径,`coverage` 说覆盖,`warnings` 说哪里不可靠。
@@ -53,8 +53,8 @@ Record reader 可以把残缺目录投影为 `skipped("incomplete")`，供上层
 **三、每个数字都能回到证据。** 样本成员是 `AttemptHandle` 而不是行,`AttemptLocator` 让报告里的
 一格能寻址回一个 attempt。这条排除了「把结果压成宽表」这类看着更通用的中间表示。
 
-**四、给用户的自由度是闭集。** Sample 的算子可以逐条列举,`filterAttempts` 是唯一的函数出口;报告树是
-声明式结构,不是能求值的表达式。失败模式不是积木不够,是积木长成了半门语言。
+**四、给用户的自由度有清楚的语义边界。** Sample 用 `scope()` 重定义总体、用 `filter()` 删观测；
+报告树是声明式结构,不是能求值的表达式。失败模式不是积木不够,是近义算子长成了半门语言。
 
 **五、派生物明确标为缓存。** 落盘的派生物只有 [`o11y.json`](../record/architecture.md#o11yjson)
 一份,定位写死为缓存不是权威,删掉能从 `events.json` 重算,不一致时以事实为准。
