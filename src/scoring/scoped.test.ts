@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/scoring.md
 // ToolMatch/SubagentMatch 的 match 小语言单测(定稿见
-// docs/feature/scoring/library/scoped-assertions.md「匹配条件的字段全集」)。覆盖:
+// docs/feature/assertions/library/scoped-assertions.md「匹配条件的字段全集」)。覆盖:
 // input/output/count/remoteUrl/status 各字段的独立形态与命中语义,以及旧「RegExp input
 // 落入深比对分支、枚举其自身空可枚举属性、静默匹配一切调用」的回归锁定。
 

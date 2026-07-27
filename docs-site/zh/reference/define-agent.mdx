@@ -76,13 +76,14 @@ export default defineExperiment({
 
 ## Agent 与 Adapter Context 字段
 
-`defineAgent`(`RemoteAgentDef`)、`defineSandboxAgent`(`SandboxAgentDef`)的构造参数，以及两者的 `send(input, ctx)` 都会拿到的 `ctx`(`AgentContext`)：
+`defineAgent`（`DirectAgentDef`）、`defineSandboxAgent`（`SandboxAgentDef`）的构造参数，
+以及两者的 `send(input, ctx)` 都会拿到的 `ctx`（`AgentContext`）：
 
 {/* GENERATED:BEGIN agent-def */}
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
-### `RemoteAgentDef`
+### `DirectAgentDef`
 
 #### `name`
 
@@ -103,20 +104,18 @@ coverage?: EvidenceCoverage;
 #### `setup`
 
 ```ts
-setup?: AgentSetup;
+setup?: DirectAgentSetup;
 ```
 
-每个 attempt 一次(remote agent 没有真实 Sandbox,运行器会传入一个仅含 `workdir`/`sandboxId`/
-`otlpHost`/`stop` 等元信息的 stub `Sandbox`,其余方法调用即抛错——不要在这里调用
-文件/命令类 Sandbox 方法)。常用于建立连接、鉴权等一次性准备,不返回值。
+每个 attempt 一次。Direct Agent 不接收 Sandbox；常用于建立连接、鉴权等一次性准备。
 
 #### `tracing`
 
 ```ts
-tracing?: AgentTracing;
+tracing?: Omit<AgentTracing, "configure">;
 ```
 
-OTLP 导出配置:远程被测对象怎么把 trace 发到 endpoint(env-based 注入 / file-based 配置)。
+OTLP 导出配置:被测对象怎么把 trace 发到 endpoint(env-based 注入)。
 
 #### `spanMapper`
 
@@ -132,7 +131,7 @@ spanMapper?: SpanMapper;
 send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
 ```
 
-每轮一次:把一轮 prompt 发给远程被测对象(HTTP/SDK 等),解析响应成 events。
+每轮一次:把一轮 prompt 直接发给函数、SDK 或服务端点,解析响应成 events。
 
 #### `classifyTurnError`
 
@@ -145,7 +144,7 @@ classifyTurnError?: TurnErrorClassifier;
 #### `teardown`
 
 ```ts
-teardown?: AgentTeardown;
+teardown?: DirectAgentTeardown;
 ```
 
 运行结束前的清理,当且仅当本 attempt 走到过 `setup` 时点才执行(`setup` 抛错不豁免),
@@ -198,7 +197,7 @@ spanMapper?: SpanMapper;
 #### `send`
 
 ```ts
-send(input: TurnInput, ctx: AgentContext): Promise<Turn>;
+send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
 ```
 
 每轮一次:跑 prompt(fresh / resume)+ 解析成 events。
@@ -239,7 +238,7 @@ readonly signal: AbortSignal;
 readonly model?: string;
 ```
 
-本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 setup 里用它写配置,remote 型通常在 send 里用它选模型。
+本次 attempt 用的模型名,透传自 experiment 的 `model` 字段。sandbox 型 agent 通常在 setup 里用它写配置,direct 型通常在 send 里用它选模型。
 
 #### `reasoningEffort`
 
@@ -271,16 +270,6 @@ experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefine
 `SandboxSpec.setup` Hook 按实验隔离跨 attempt 的状态(缓存目录名、快照 tag 等按
 `ctx.experimentId` 分区),或 adapter 按实验切换鉴权 / 路由。与 `flags`(实验条件的
 具体取值)是两个维度——这里只是「跑的是哪个实验」的稳定标识,不携带条件内容。
-
-#### `sandbox`
-
-```ts
-readonly sandbox: Sandbox;
-```
-
-所有 agent 都有:Sandbox 型是运行器按项目/experiment 配置备好的真实 Sandbox 句柄,remote 型是
-`createRemoteSandbox()` 产出的 stub(仅含 `workdir`/`sandboxId`/`otlpHost`/`stop` 等
-元信息,其余方法调用即抛错)。
 
 #### `session`
 

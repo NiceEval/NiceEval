@@ -97,10 +97,10 @@ function assertionLine(a: AssertionResult & { aborted?: true }, ctx: TextContext
   ].filter((part): part is string => part !== undefined);
   const evidenceSuffix = evidence.length > 0 ? ` · ${evidence.join(" · ")}` : "";
   // 计分制(defineScoreEval)才有:.points(n) 挣到的分,0 分也如实显示,不隐藏
-  // (docs/feature/scoring/library/display.md「计分制:.points 与给分记录」)。
+  // (docs/feature/assertions/library/display.md「计分制:.points 与给分记录」)。
   const pointsSuffix = a.points !== undefined ? ` · ${formatPointsSuffix(a.points)}` : "";
   // 前置中止:这条断言让 test() 就地结束,其后不再有任何断言或给分记录
-  // (docs/feature/scoring/library/display.md「前置中止」)。
+  // (docs/feature/assertions/library/display.md「前置中止」)。
   const abortSuffix = a.aborted ? ` · ⤓ ${localeText(ctx.locale, "attemptSource.abortReason")}` : "";
   return `${mark} ${a.severity} · ${group}${a.name}${detail}${evidenceSuffix}${pointsSuffix}${abortSuffix}`;
 }
@@ -121,7 +121,7 @@ function scoreEntryLine(group: string, entry: ScoreEntry): string {
 export function attemptAssertionsText(data: AttemptAssertionsData | null, ctx: TextContext): string {
   if (data === null) return "";
   const lines: string[] = [];
-  // 顶层计数:计分制 attempt 加一项得分点挣满计数(docs/feature/scoring/library/display.md「计分制」)。
+  // 顶层计数:计分制 attempt 加一项得分点挣满计数(docs/feature/assertions/library/display.md「计分制」)。
   if (data.scorePointsEarned) {
     lines.push(localeText(ctx.locale, "attemptAssertions.scorePointsEarned", data.scorePointsEarned));
   }
@@ -158,7 +158,7 @@ export function attemptSourceText(data: AttemptSourceData | null, ctx: TextConte
   if (executionCommand) headerParts.push(executionCommand);
   // 源码锚由 assertionLine 自己按 a.loc 拼(与 AttemptAssertions 共用同一份逻辑);这里只负责挑出
   // 要展开的条目——得分点(带 .points)豁免 passed 收纳,即使 passed 也逐条列出(与
-  // attemptAssertionsData 同一条规则,docs/feature/scoring/library/display.md「得分点不参与
+  // attemptAssertionsData 同一条规则,docs/feature/assertions/library/display.md「得分点不参与
   // passed 收纳」)。
   const isAttention = (a: AssertionResult & { aborted?: true }) => a.outcome !== "passed" || a.points !== undefined;
   const attention = data.lines.flatMap((line) => line.assertions.filter(isAttention));
@@ -171,7 +171,7 @@ export function attemptSourceText(data: AttemptSourceData | null, ctx: TextConte
       ? attention.map((a) => `  ${assertionLine(a, ctx)}`)
       : data.passedGroups.map(({ group, items }) => `  ✓ passed · ${group || "(ungrouped)"} · ${items.length}`);
   // t.score(...) 给分记录:行内映射的按行序收集,unmapped 的按既有分组顺序接在后面
-  // (docs/feature/scoring/library/display.md「源码面同样承载给分证据」)。
+  // (docs/feature/assertions/library/display.md「源码面同样承载给分证据」)。
   const scoreEntries: { group: string; entry: ScoreEntry }[] = [
     ...data.lines.flatMap((line) => line.scoreEntries.map((entry) => ({ group: entry.groupPath?.join(" > ") ?? "", entry }))),
     ...(data.unmappedScoreEntries ?? []).flatMap((g) => g.items.map((entry) => ({ group: g.group, entry }))),

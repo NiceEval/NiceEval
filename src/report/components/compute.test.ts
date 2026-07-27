@@ -569,7 +569,7 @@ describe("实体列表 data", () => {
       ],
     });
     // 中止:记录顺序最后一条、唯一 failed 的 gate——既有规则 1 自然选中,计分制不改选择逻辑
-    // (docs/feature/scoring/library/display.md「主失败断言怎样选」规则 5)。
+    // (docs/feature/assertions/library/display.md「主失败断言怎样选」规则 5)。
     const aborted = res("exam/aborted", "failed", {
       scoring: "points",
       assertions: [

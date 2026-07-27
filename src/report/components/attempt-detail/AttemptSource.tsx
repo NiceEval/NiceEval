@@ -72,8 +72,8 @@ function isLineInteractive(line: AttemptSourceLineData): boolean {
 
 /**
  * 一行的挣分 pill 总额:`.points` 断言挣到的分(排除 unavailable)+ `t.score(...)` 给分记录之和;
- * 两者都不存在时 undefined(该行不是分数面证据),0 分照实显示(docs/feature/scoring/library/
- * display.md「计分制」)。
+ * 两者都不存在时 undefined(该行不是分数面证据),0 分照实显示
+ * (docs/feature/assertions/library/display.md「计分制」)。
  */
 function linePointsTotal(line: AttemptSourceLineData): number | undefined {
   const hasScorePoint = line.assertions.some((a) => a.outcome !== "unavailable" && a.points !== undefined);
@@ -185,7 +185,7 @@ function AssertionDetail({ assertion, locale }: { assertion: AssertionResult & {
         </div>
       ) : null}
       {/* 前置中止:这条断言让 test() 就地结束,其后不再有任何断言或给分记录
-          (docs/feature/scoring/library/display.md「前置中止」)。 */}
+          (docs/feature/assertions/library/display.md「前置中止」)。 */}
       {assertion.aborted ? <div className="nre-assertion-abort">⤓ {localeText(locale, "attemptSource.abortReason")}</div> : null}
     </div>
   );
@@ -238,7 +238,7 @@ export function AttemptSource({
             tone ? `nre-tone-${tone}` : undefined,
             line.sends.length > 0 || line.turns.length > 0 ? "nre-source-line-send" : undefined,
             // 前置中止行之后整体降灰(未到达——那些行没有任何断言或给分记录,不是因为没写,
-            // 是因为没跑到),行号照常显示(docs/feature/scoring/library/display.md「前置中止」)。
+            // 是因为没跑到),行号照常显示(docs/feature/assertions/library/display.md「前置中止」)。
             line.unreached ? "nre-source-line-unreached" : undefined,
           );
           if (!interactive) {

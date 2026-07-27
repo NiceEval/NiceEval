@@ -42,7 +42,7 @@ export interface ValueAssertion {
 }
 
 /**
- * 断言记录的公共字段(见 docs/feature/scoring/architecture.md「断言记录」——字段契约的单点定义)。
+ * 断言记录的公共字段(见 docs/feature/assertions/architecture.md「断言记录」——字段契约的单点定义)。
  */
 export interface AssertionBase {
   /** 断言标题:t.group 内是该断言自己的摘要,组外是 matcher 摘要或 judge 问题;show/view 失败行的标题。 */
@@ -89,7 +89,7 @@ export type AssertionResult =
     });
 
 /**
- * `t.score(label, n)` 的直接给分记录(见 docs/feature/scoring/architecture.md「断言记录」)。
+ * `t.score(label, n)` 的直接给分记录(见 docs/feature/assertions/architecture.md「断言记录」)。
  * 与 `AssertionResult` 分属两个数组——它不是一条被评估的断言,没有 severity、没有 outcome,
  * 不参与判定或质量分,只贡献分数面。
  */
@@ -122,7 +122,7 @@ export interface PrimaryAssertionSummary {
   /** unavailable 断言的结构化原因。 */
   reason?: string;
   /** 计分制 `.points(n)` 挣到的分（`n × score`）；单行摘要的尾缀，见
-   *  docs/feature/scoring/library/display.md「计分制」。 */
+   *  docs/feature/assertions/library/display.md「计分制」。 */
   points?: number;
   /** 同类因果失败（或计分制 passed 分支下：其余丢分得分点）中除主失败外的条数。 */
   additionalFailures: number;

@@ -6,7 +6,7 @@ import { excludes, includes } from "niceeval/expect";
 // t.newSession() 造出的新会话线不共享历史;message finish 上的 usage_metadata 累加进
 // Turn.usage——maxTokens 给一个宽松上限,只为证明这个数字是真的从协议里聚合出来的,
 // 不是编造的(usage 缺失时 maxTokens 记 unavailable 而不是静默通过,见
-// docs/feature/scoring/architecture/evidence.md)。
+// docs/feature/assertions/architecture/evidence.md)。
 export default defineEval({
   description: "会话续接:同一 thread_id 记住上一轮事实,newSession() 隔离,usage 从 message finish 聚合",
 

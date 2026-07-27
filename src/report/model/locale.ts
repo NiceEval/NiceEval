@@ -207,7 +207,7 @@ const en = {
   /** AttemptList 的 web 面过滤框占位符(filter 渐进增强)。 */
   "attemptList.filterPlaceholder": "Filter attempts…",
 
-  /** 计分制 attempt 详情的 chrome(docs/feature/scoring/library/display.md「计分制」)。 */
+  /** 计分制 attempt 详情的 chrome(docs/feature/assertions/library/display.md「计分制」)。 */
   "attemptAssertions.scorePointsEarned": "{earned}/{total} score points earned in full",
   "attemptAssertions.scoreEntries": "Score entries",
   "attemptSource.abortReason": "prerequisite failed, test() ended here",

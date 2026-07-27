@@ -1,7 +1,7 @@
 // 作用域断言:读标准事件流的派生事实(toolCalls / parked …)、diff、脚本结果。
 // 每个 builder 产一个延迟 Spec,context 负责 record。规则覆盖不到的奇怪断言可直接落 events。
 //
-// 证据覆盖的三值折叠(见 docs/feature/scoring/architecture/evidence.md):
+// 证据覆盖的三值折叠(见 docs/feature/assertions/architecture/evidence.md):
 // - 正断言:找到匹配即通过(证据存在就是证据);没找到且所需通道非 complete(含 unknown)
 //   记 unavailable——「没采到」不能算成「Agent 没做」;complete 通道上没找到才是 failed。
 // - 负断言:找到反例即 failed(反例是确凿证据);没找到反例且通道非 complete 记 unavailable——

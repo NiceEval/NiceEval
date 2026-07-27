@@ -321,7 +321,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   }
 
   function makeSessionHandle(session: RunSession): SessionHandle {
-    // session 作用域 = 记录断言时快照(见 docs/feature/scoring/architecture/scopes.md):
+    // session 作用域 = 记录断言时快照(见 docs/feature/assertions/architecture/scopes.md):
     // 之后该 session 再发生的轮次不改变这条断言的评估材料;只看最后一轮用 send() 的 TurnHandle。
     const scoped = (spec: Spec) => {
       const events = session.events.slice();
@@ -404,7 +404,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   const primary = makeSessionHandle(manager.primary);
 
   // t 作用域 = 整个 attempt:全部 session(含 t.newSession() 开的)的全部轮次,finalize 时对
-  // 聚合结果求值(见 docs/feature/scoring/architecture/scopes.md)。newSession 的事件进入这里,
+  // 聚合结果求值(见 docs/feature/assertions/architecture/scopes.md)。newSession 的事件进入这里,
   // 但不进入主 session 的即时 t.reply / t.events 读取视图;t.judge 默认材料仍是主 session 对话。
   const aggregateScoped = (spec: Spec) =>
     recordScoped(spec, () => manager.allEvents, () => manager.lastStatus, () => manager.usage, () => manager.coverage);

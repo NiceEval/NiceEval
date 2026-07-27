@@ -190,7 +190,8 @@ interface ExperimentRunInfo {
 
 ## `result.json`
 
-单个 attempt 的**权威记录**:判定、断言、结构化执行错误与 diagnostics 只住在这里。attempt 的 teardown 链与 sandbox stop 完成后一次写成,之后没有任何环节会改写它。
+单个 attempt 的**权威记录**：判定、断言、结构化执行错误与 diagnostics 只住在这里。
+attempt 的 teardown 链与 Scope release 完成后一次写成，之后没有任何环节会改写它。
 
 ```typescript
 interface AttemptRecord {
@@ -381,7 +382,7 @@ interface DiagnosticRecord {
 这类新增本身按本页版本规则不递增 `schemaVersion`。词表新增成员同理：消费方把 `phase`
 当归因标签渲染，不得因未知成员拒绝记录。
 
-`phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。`eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。结果封口必须发生在 Effect Scope 的 release 完成之后：`sandbox.stop` 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
+`phases` 缺失表示结果不是由带阶段计时的 runner 产出。数组顺序就是执行顺序；不适用、未定义或没有执行的阶段不写 0 值条目。`eval.teardown` / `agent.teardown` / `sandbox.teardown` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
 `children` 是 runner 直接观察到的时间树。`sandbox.setup` / `sandbox.teardown` 先按 hook 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run` 中 eval 手工命令与 adapter 启动 CLI 的命令、`workspace.diff` 以及各收尾阶段。包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。命令摘要截断并脱敏，env 只允许保留 key；非零退出命令的 stdout/stderr 由同一包装写进 `commands.json`，按 `timingNodeId` 与这里的 command 节点关联。成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。
 

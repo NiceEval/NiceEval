@@ -1,5 +1,5 @@
 // 判定:把执行结果 + 断言 + 跳过原因折叠成一个 Verdict
-// (见 docs/feature/scoring/architecture/severity-and-verdict.md)。固定优先级取第一个成立项:
+// (见 docs/feature/verdict/architecture.md)。固定优先级取第一个成立项:
 //   执行异常 / 任一非 optional 断言 unavailable → errored
 //   任一 gate 不通过,或 strict 下 soft 低于阈值 → failed
 //   显式 t.skip(reason)                         → skipped

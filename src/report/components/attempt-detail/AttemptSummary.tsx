@@ -45,7 +45,7 @@ export function AttemptSummary({
           <dd>{data.identity.attempt + 1}</dd>
         </div>
         {/* 计分制 attempt 本轮挣分:详情页总分位的唯一出现处,其它区块不重复这个总数
-            (docs/feature/scoring/library/display.md「计分制」)。通过制 eval 恒省略。 */}
+            (docs/feature/assertions/library/display.md「计分制」)。通过制 eval 恒省略。 */}
         {data.totalScore !== undefined ? (
           <div>
             <dt>Score</dt>

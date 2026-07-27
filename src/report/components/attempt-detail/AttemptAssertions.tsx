@@ -33,12 +33,12 @@ function AssertionRow({ a, locale }: { a: AssertionResult & { aborted?: true }; 
         {a.outcome !== "unavailable" && a.expected !== undefined ? <div>expected: {stripControl(a.expected)}</div> : null}
         {a.outcome !== "unavailable" && a.received !== undefined ? <div>received: {stripControl(a.received)}</div> : null}
         {/* 计分制(defineScoreEval)才有:.points(n) 挣到的分,0 分也如实显示(见
-            docs/feature/scoring/library/display.md「计分制:.points 与给分记录」)。 */}
+            docs/feature/assertions/library/display.md「计分制:.points 与给分记录」)。 */}
         {a.outcome !== "unavailable" && a.points !== undefined ? (
           <div className="nre-assertion-points">{formatPointsSuffix(a.points)}</div>
         ) : null}
         {/* 前置中止:这条断言让 test() 就地结束,其后不再有任何断言或给分记录
-            (docs/feature/scoring/library/display.md「前置中止」)。 */}
+            (docs/feature/assertions/library/display.md「前置中止」)。 */}
         {a.aborted ? <div className="nre-assertion-abort">⤓ {localeText(locale, "attemptSource.abortReason")}</div> : null}
       </div>
     </details>
@@ -67,7 +67,7 @@ export function AttemptAssertions({
   if (data === null) return null;
   return (
     <div className={cx("nre", "nre-attempt-assertions", className)}>
-      {/* 顶层计数:计分制 attempt 加一项得分点挣满计数(docs/feature/scoring/library/display.md「计分制」)。 */}
+      {/* 顶层计数:计分制 attempt 加一项得分点挣满计数(docs/feature/assertions/library/display.md「计分制」)。 */}
       {data.scorePointsEarned ? (
         <p className="nre-assertions-score-points">{localeText(locale, "attemptAssertions.scorePointsEarned", data.scorePointsEarned)}</p>
       ) : null}

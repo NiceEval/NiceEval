@@ -27,7 +27,7 @@ export interface Member {
   doc?: string;
 }
 
-/** 一组成员,可选带一个小节标题(用于一个 region 里合并多个接口,如 RemoteAgentDef/SandboxAgentDef/AgentContext)。 */
+/** 一组成员,可选带一个小节标题(用于一个 region 里合并多个接口,如 DirectAgentDef/SandboxAgentDef/AgentContext)。 */
 export interface MemberGroup {
   heading?: string;
   members: Member[];
@@ -370,7 +370,7 @@ export function renderMemberList(members: Member[], headingLevel = 4): string {
   return members.map((m) => renderMember(m, headingLevel)).join("\n\n");
 }
 
-/** 渲染多个具名分组(如 agent-def region 里的 RemoteAgentDef / SandboxAgentDef / AgentContext)。 */
+/** 渲染多个具名分组(如 agent-def region 里的 DirectAgentDef / SandboxAgentDef / AgentContext)。 */
 export function renderMemberGroups(groups: MemberGroup[], groupHeadingLevel = 3, memberHeadingLevel = 4): string {
   return groups
     .map((g) => {
@@ -466,8 +466,8 @@ function computeRegionBody(regionId: string, sources: SourceMap): string {
     case "agent-def":
       return renderMemberGroups([
         {
-          heading: "RemoteAgentDef",
-          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "RemoteAgentDef"),
+          heading: "DirectAgentDef",
+          members: extractInterfaceMembers(sources["src/agents/types.ts"], "src/agents/types.ts", "DirectAgentDef"),
         },
         {
           heading: "SandboxAgentDef",

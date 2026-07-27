@@ -593,7 +593,7 @@ export interface AttemptSummaryData {
   /**
    * 计分制(`scoring: "points"`)attempt 本轮挣分:`assertions[].points` 之和(排除 unavailable)
    * 加 `scoreEntries[].points` 之和;详情页总分位的唯一出现处,其它区块不重复这个总数
-   * (docs/feature/scoring/library/display.md「计分制」)。通过制 eval 恒省略,不是 0——
+   * (docs/feature/assertions/library/display.md「计分制」)。通过制 eval 恒省略,不是 0——
    * 题型判定读定义期 `result.scoring`,不从结果推断。
    */
   totalScore?: number;
@@ -617,13 +617,13 @@ export interface AttemptErrorData extends AttemptError {
  * 且没有给分记录时 null。计分制(`scoring: "points"`)eval 的 `.points` 挣分随所在
  * `AssertionResult` 一起出现在 `attention` / `passedGroups` 里(字段本就在 `AssertionResult` 上,
  * 不需要额外投影);`t.score(label, n)` 的直接给分记录另成一个分组数组,见 `scoreEntries`
- * (docs/feature/scoring/library/display.md「计分制:.points 与给分记录」)。
+ * (docs/feature/assertions/library/display.md「计分制:.points 与给分记录」)。
  */
 export interface AttemptAssertionsData {
   /**
    * failed / unavailable / soft 全部非 passed 条目,按原始声明顺序;计分制的得分点(带
    * `.points`)豁免 passed 收纳——即使 outcome 是 passed 也进这个平铺列表,不折进
-   * `passedGroups`(docs/feature/scoring/library/display.md「得分点不参与 passed 收纳」)。
+   * `passedGroups`(docs/feature/assertions/library/display.md「得分点不参与 passed 收纳」)。
    * 计分制前置中止时,中止断言(记录顺序最后一条,必为 failed gate)带 `aborted: true`——
    * 其后不再有任何断言或给分记录,展示时紧跟一个中止标注(`⤓`,见「计分制」)。
    */
@@ -658,7 +658,7 @@ export interface AttemptSourceTurn {
 
 /**
  * AnnotatedSourceLine 加上 web 源码视图需要的行内执行轮与计分制给分投影
- * (docs/feature/scoring/library/display.md「源码面同样承载给分证据」)。
+ * (docs/feature/assertions/library/display.md「源码面同样承载给分证据」)。
  */
 export interface AttemptSourceLineData extends AnnotatedSourceLine {
   /** 覆盖基类字段:中止断言(若映射到这一行)带 `aborted: true`,与 AttemptAssertionsData.attention 同一份标注。 */

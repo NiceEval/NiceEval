@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/scoring.md
 // computePassed 的 gate 默认通过线单测(契约见
-// docs/feature/scoring/architecture/severity-and-verdict.md「Severity」与
-// docs/feature/scoring/library/value-assertions.md「改严重度与阈值」):
+// docs/feature/verdict/architecture.md「Severity」与
+// docs/feature/assertions/library/value-assertions.md「改严重度与阈值」):
 // 省略阈值时 gate 的判定线是满分(score >= 1),不是「任意正分即过」。
 
 import { describe, expect, it } from "vitest";

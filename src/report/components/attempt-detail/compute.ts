@@ -90,7 +90,7 @@ export function attemptErrorData(evidence: AttemptEvidence): AttemptErrorData | 
 // ───────────────────────── AttemptAssertions ─────────────────────────
 
 /** 按 `groupPath.join(" > ")` 分组(无分组归到空键 ""),组内保持传入顺序;passedGroups 与
- *  scoreEntries 共用同一套算法(docs/feature/scoring/library/display.md「计分制」)。 */
+ *  scoreEntries 共用同一套算法(docs/feature/assertions/library/display.md「计分制」)。 */
 function groupByPath<T extends { groupPath?: string[] }>(items: readonly T[]): { group: string; items: T[] }[] {
   const groups = new Map<string, T[]>();
   for (const item of items) {
@@ -105,7 +105,7 @@ function groupByPath<T extends { groupPath?: string[] }>(items: readonly T[]): {
 /**
  * 得分点挣满计数("2/5 得分点挣满"):分母是全部带 `.points` 的断言(unavailable 结构上不携带
  * `points`,天然不计入);挣满 = `score === 1`——连续打分断言(如 judge)挣到 `n × 0.8` 时
- * `score` 恰是 0.8,不算挣满(docs/feature/scoring/library/display.md「计分制」)。
+ * `score` 恰是 0.8,不算挣满(docs/feature/assertions/library/display.md「计分制」)。
  */
 function scorePointsEarnedOf(assertions: readonly AssertionResult[]): { earned: number; total: number } | undefined {
   const scorePoints = assertions.filter((a) => a.outcome !== "unavailable" && a.points !== undefined);
@@ -126,7 +126,7 @@ function abortAssertionOf(result: EvalResult): AssertionResult | undefined {
     : undefined;
 }
 
-/** 中止断言追加 `aborted` 标注(⤓ 前置未过,详情见 docs/feature/scoring/library/display.md「前置中止」);其余原样返回。 */
+/** 中止断言追加 `aborted` 标注(⤓ 前置未过,详情见 docs/feature/assertions/library/display.md「前置中止」);其余原样返回。 */
 function markAborted<T extends AssertionResult>(items: readonly T[], abortAssertion: AssertionResult | undefined): (T & { aborted?: true })[] {
   if (abortAssertion === undefined) return items.slice();
   return items.map((a) => (a === abortAssertion ? { ...a, aborted: true as const } : a));
@@ -136,11 +136,11 @@ export function attemptAssertionsData(evidence: AttemptEvidence): AttemptAsserti
   const { result } = evidence;
   const assertions = result.assertions ?? [];
   // t.score(label, n) 直接给分记录:与 assertions 分属两个数组,只在计分制 eval 上出现
-  // (见 docs/feature/scoring/architecture.md「断言记录」)。
+  // (见 docs/feature/assertions/architecture.md「断言记录」)。
   const scoreEntries: readonly ScoreEntry[] = result.scoreEntries ?? [];
   if (assertions.length === 0 && scoreEntries.length === 0) return null;
   // 得分点(带 .points)豁免 passed 收纳:即使 passed 也进平铺列表,不折进 passedGroups 计数——
-  // 收纳只作用于不带 .points 的观测断言(docs/feature/scoring/library/display.md「得分点不参与
+  // 收纳只作用于不带 .points 的观测断言(docs/feature/assertions/library/display.md「得分点不参与
   // passed 收纳」)。中止断言(若存在)恒是 failed,天然落在这个平铺列表里,不需要额外分支。
   const attentionBase = assertions.filter((a) => a.outcome !== "passed" || a.points !== undefined);
   const passed = assertions.filter((a) => a.outcome === "passed" && a.points === undefined);
@@ -168,7 +168,7 @@ export function attemptSourceData(evidence: AttemptEvidence): AttemptSourceData 
 
   // t.score(...) 给分记录按 loc 投影到源码行,原位标注给分;不在展示源码内的落
   // unmappedScoreEntries——与断言的 unmapped 桶同一条「不映射就进末尾分组」规则
-  // (docs/feature/scoring/library/display.md「源码面同样承载给分证据」)。
+  // (docs/feature/assertions/library/display.md「源码面同样承载给分证据」)。
   const scoreEntriesByLine = new Map<number, ScoreEntry[]>();
   const unmappedScoreEntries: ScoreEntry[] = [];
   for (const entry of result.scoreEntries ?? []) {
