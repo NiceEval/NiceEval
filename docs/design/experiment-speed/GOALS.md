@@ -17,7 +17,8 @@
 ## 设计原则
 
 - 默认运行保持 Attempt 间隔离，并允许结果进入结果沿用、CI 和正式报告。
-- Sandbox 复用必须显式开启，结果不得进入结果沿用或 CI。
+- Sandbox 复用必须由 Experiment 显式声明，并进入配置哈希。
+  结果不得进入结果沿用，但可以按该 Experiment 的声明进入 CI。
 - Experiment 的 `maxConcurrency` 表达业务正确性时，任何加速方式都不能绕开它。
 - 可以并行的 Attempt 不应因为 Sandbox 复用被强制改成整批串行。
 - Runner 只依赖 Provider 能力，不按 Docker、E2B 或 Vercel 的名字分支。
@@ -30,7 +31,7 @@
 1. 默认模式继续为每个 Attempt 使用全新 Sandbox。
 2. 同一个 Sandbox 在同一时刻最多承接一条 Attempt。
 3. Sandbox 复用只重置明确覆盖的 workdir 状态，不宣称等同于全新 Sandbox。
-4. Sandbox 复用的结果不参与结果沿用，也不成为 CI 输入。
+4. Sandbox 复用的结果不参与结果沿用；CI 按签入的 Experiment 生命周期运行。
 5. Agent 与 Eval `setup` / `teardown` 每 Attempt 成对执行。
 
 ### 效率

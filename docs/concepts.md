@@ -85,10 +85,10 @@
 |---|---|---|---|
 | 预制环境 | Prebuilt environment | 把稳定依赖做进 image、template 或 snapshot，供全新 Sandbox 直接使用 | [Prebuilt environments](feature/sandbox/library/prebuilt-environments.md) |
 | Sandbox 预热 | Sandbox prewarming | 计划确定后提前创建即将使用的全新 Sandbox，不改变每 Attempt 的生命周期 | [Runner](runner.md) |
-| Sandbox 复用 | Sandbox reuse | `--reuse-sandbox[=<n>]` 让同基线 Attempt 共用一个或多个 Sandbox | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
-| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | SandboxSpec `setup` 后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
-| Sandbox 复用寿命 | Sandbox reuse lifetime | Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifetime` 确认或续期 | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
-| 收尾预留时间 | Cleanup reserve | 在 Attempt deadline 之外为 Hook 收尾与 Sandbox 销毁保留的内部安全时间 | [Sandbox reuse](feature/sandbox/serial-reuse.md) |
+| Sandbox 复用 | Sandbox reuse | Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox | [Sandbox reuse](feature/sandbox/reuse.md) |
+| 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | SandboxSpec `setup` 后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/reuse.md) |
+| Sandbox 复用寿命 | Sandbox reuse lifetime | Provider 能保证一个 Sandbox 继续运行的剩余时间，由 `ensureLifetime` 确认或续期 | [Sandbox reuse](feature/sandbox/reuse.md) |
+| 收尾预留时间 | Cleanup reserve | 在 Attempt deadline 之外为 Hook 收尾与 Sandbox 销毁保留的内部安全时间 | [Sandbox reuse](feature/sandbox/reuse.md) |
 
 ### 实验配置
 
@@ -118,7 +118,7 @@
 | 派发 | Dispatch | 把一个 Attempt 交出去开始执行;排队等待不算派发,停止派发不抢占在飞项 | [Runner](runner.md) |
 | 并发位 | Concurrency slot | 全局 `maxConcurrency` 的一个名额,只在 Attempt 真正执行时占用 | [Runner](runner.md) |
 | 实验并发限制 | Experiment concurrency limit | `ExperimentDef.maxConcurrency` 对同一实验的跨 Invocation 并发限制 | [Max concurrency](feature/experiments/use-case/并发/限制全局并发.md) |
-| 有效宽度 | Effective width | 复用的 Sandbox 数、全局并发位和实验并发限制共同允许的同时执行数 | [Runner](runner.md) |
+| 有效宽度 | Effective width | 全局并发位和实验并发限制共同允许的同时执行数 | [Runner](runner.md) |
 | 调度波次 | Scheduling waves | `ceil(Attempt 数 / 有效宽度)`;波次多的 Run 优先拿并发位 | [Runner](runner.md) |
 | 完成状态 | CompletionStatus | 独立于 Verdict 的 `complete` / `incomplete` / `interrupted` 结论 | [Runner](runner.md) |
 

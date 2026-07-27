@@ -15,10 +15,11 @@
    每 Attempt 使用全新 Sandbox。
 3. Sandbox 预热可以移动创建时间，但真实记录中 `sandbox.create` 只占约 0.5%–0.6%，
    因此不作为第一优先级。
-4. 需要快速反馈时，显式使用[方案 3](PLAN-3.md)：
-   `--reuse-sandbox[=<n>]` 让 Attempt 共用一个或多个 Sandbox。
+4. Experiment 作者确认题间状态边界后，显式使用[方案 3](PLAN-3.md)：
+   `sandboxReuse: true` 让 Attempt 共用 Sandbox。
 5. [方案 2](PLAN-2.md)不是独立 Feature；
-   裸 `--reuse-sandbox` 等价于 `--reuse-sandbox=1`。
+   对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1`
+   表达一次只运行一个可复用 Sandbox。
 
 这不是一种机制承接所有提速需求。
 默认路径优先保证隔离与并行，Sandbox 复用只分摊准备工作。
@@ -45,16 +46,16 @@ MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 
 
 ## Feature 形状
 
-入口为 `--reuse-sandbox[=<n>]`：
+入口是 Experiment 字段 `sandboxReuse: true`：
 
-- 裸 CLI flag 等价于 `--reuse-sandbox=1`。
-- N 是本次 Invocation 最多同时维护的 Sandbox 数，必须是正整数。
+- 省略时，每 Attempt 使用全新 Sandbox。
 - 每个 Sandbox 内串行，多个 Sandbox 之间可以并行。
-- 实际同时执行数取 N、全局并发位和 Experiment `maxConcurrency` 的最小值。
+- 同时执行数继续由全局并发位和 Experiment `maxConcurrency` 限制。
+- `maxConcurrency: 1` 表达本次 Invocation 同时最多运行一个 Sandbox。
 - Runner 按需创建 Sandbox，不预先创建不会使用的数量。
 
-选中的 Eval 必须共享同一个 sandbox spec 与 environment profile。
-不满足时，在创建 Sandbox 前列出分组并报错。
+Experiment 仍只有一个 sandbox spec；Runner 按每条 Eval 解析后的 environment profile
+分组。同一个 Sandbox 只承接同组 Attempt，各组共同受 Experiment `maxConcurrency` 限制。
 
 ## 生命周期
 
@@ -65,26 +66,28 @@ MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 
 - 每次派发前确认 Sandbox 能覆盖 Attempt deadline 与收尾；
 - 不能续期时停止旧 Sandbox，创建并准备替代 Sandbox。
 
-Provider 通过 `SandboxReuseCapability.ensureLifetime(minRemainingMs)` 提供中立能力。
+Provider 配置用 `lifetimeMs` 声明希望保持 Sandbox 的时间，
+并通过 `SandboxReuseCapability.ensureLifetime(minRemainingMs)` 提供中立能力。
 Runner 不按 Provider 名字或固定分钟数分支。
 
 Sandbox 在 Attempt 中途消失时，该 Attempt 记为 `errored`，不得静默重跑。
 
 ## 结果边界
 
-Sandbox 复用只用于快速反馈：
+Sandbox 复用是签入的实验语义：
 
 - 不消费结果沿用；
-- 复用结果不供后续 Run 沿用，也不进入 CI；
+- 复用结果不供后续 Run 沿用；
+- 结果可以进入 CI，因为 `sandboxReuse` 与 Provider 配置进入配置哈希；
 - workdir reset 不等同于全新 Sandbox；
 - 与 `--keep-sandbox` 和 `localSandbox()` 互斥。
 
-需要正式结果时，去掉 `--reuse-sandbox`，按默认路径复验。
+需要全新 Sandbox 的对照时，定义不带 `sandboxReuse` 的另一个 Experiment。
 
 ## 实施顺序
 
 1. 先把稳定安装迁入预制环境或 SandboxSpec `setup`。
 2. 为内置 Provider 增加 Sandbox 复用寿命能力。
 3. 让一个 Sandbox 完成复用、reset、续期与更换流程。
-4. 扩展到 N 个 Sandbox，并接入现有并发限制。
+4. 扩展到多个 Sandbox，并接入现有并发限制。
 5. 最后评估 Sandbox 预热；只有在创建较慢的 Provider 上证明总耗时收益后才实现。

@@ -154,6 +154,8 @@ interface ExperimentRunInfo {
   timeoutMs?: number;
   budget?: number;
   maxConcurrency?: number;
+  /** 是否允许多条 Attempt 共用 Sandbox；进 configHash，省略等价于 false。 */
+  sandboxReuse?: boolean;
   /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
   strict?: boolean;
   /**
@@ -232,7 +234,8 @@ interface AttemptRecord {
    * 沙箱型 attempt 的执行环境标识:provider 名与实例 id(如 Docker 容器 ID 前缀),用于关联
    * provider 侧日志与[留存现场](../sandbox/cli.md);remote 型 agent 无此字段。`kept` 表示
    * 运行收尾时按 `--keep-sandbox` 留存了沙箱;之后的存活状态归 `niceeval sandbox list` 回答,
-   * 本记录一次写成、不回写。`reused` 表示这条跑在 `--reuse-sandbox` 共用的 Sandbox 上；
+   * 本记录一次写成、不回写。`reused` 表示所属 Experiment 声明了 `sandboxReuse: true`，
+   * 且这条 Attempt 跑在共用的 Sandbox 上；
    * `reuseSandbox` 是本次 Run 内从 1 开始的 Sandbox 编号，
    * `reuseOrdinal` 是该 Sandbox 承接的 Attempt 序号。
    * [出身门](../experiments/cache.md#携带要过的门)读取 `reused`，让复用产出永不成为后续命中。

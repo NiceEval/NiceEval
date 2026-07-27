@@ -28,7 +28,7 @@ localSandbox({ dir: "/path/to/repo" })  // 或显式指定任意本地目录
 
 「把 agent 改了什么收下来」不需要新机制。[变更分类账](architecture.md#变更归因send-窗口与分类账)本来就把自己的 git 目录放在 runner 控制的私有路径、以 workdir 为 work-tree,好让 agent 看不到 runner 的 `.git`。本地档把这条设计兑现成关键性质:**你仓库自己的 `.git` 是你的,分类账另用一个私有 GIT_DIR(宿主侧 runner 自有路径,不在 workdir 内)观察同一棵工作树**——打锚点、折 send 窗口、出 agent diff 全在私有 GIT_DIR 上完成,你真实的 `.git`、HEAD、暂存区、未提交改动一概不碰(`.git` 本就在[归因排除清单](architecture.md#变更归因send-窗口与分类账)里)。
 
-语义因此收敛成四个字:**只观察**。`t.send()` 让 agent CLI 直接在你的目录里跑,改动真实落在你的工作树上,分类账如实采下 diff 供 `t.sandbox.fileChanged` / `diff` 断言,评分、出报告,结束。niceeval 不在你的仓库上跑任何 `git reset` / `git clean`——跑完工作树就是 agent 改过的样子,要留要弃是你的事,不是框架替你做的破坏性决定。这是本地档的正确性中心:**绝不动用户没提交的工作**。题间「清空 repo 再跑下一题」不属于本地档;[`--reuse-sandbox`](serial-reuse.md) 与本地档组合在创建前报错,理由在那篇的组合小节。
+语义因此收敛成四个字:**只观察**。`t.send()` 让 agent CLI 直接在你的目录里跑,改动真实落在你的工作树上,分类账如实采下 diff 供 `t.sandbox.fileChanged` / `diff` 断言,评分、出报告,结束。niceeval 不在你的仓库上跑任何 `git reset` / `git clean`——跑完工作树就是 agent 改过的样子,要留要弃是你的事,不是框架替你做的破坏性决定。这是本地档的正确性中心:**绝不动用户没提交的工作**。题间“清空 repo 再跑下一题”不属于本地档；Experiment 的 [`sandboxReuse: true`](reuse.md) 与本地档组合时在创建前报错。
 
 只观察的直接推论:一次批跑多条 eval 时,前一条的改动留在工作树上,成为后一条的起点。本地档天然适合单题、小批的本地迭代;要每题干净基线,用容器 provider。
 
@@ -65,7 +65,7 @@ localSandbox({ dir: "/path/to/repo" })  // 或显式指定任意本地目录
 - **不新增 `Agent.kind`**:本地执行是 `sandbox` 型的一个 provider,不是第三类 agent。
 - **不做隐式本地兜底**:没配 sandbox 仍然报错,不因缺配置就悄悄落到本地档。
 - **不在本地档做题间 reset**:只观察不还原；题间清空属于
-  [Sandbox 复用](serial-reuse.md),它与本地档互斥,组合在创建前报错。
+  [Sandbox 复用](reuse.md)，它与本地档互斥，组合在创建前报错。
 - **不做 `--local` 运行期覆盖**:provider 选择保持书面配置。
 - **不承诺隔离**:本地档明确没有容器的安全 / 可复现 / 并发隔离;要隔离就用容器 provider,这是明码标价的取舍。
 

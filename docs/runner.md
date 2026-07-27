@@ -283,18 +283,18 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
   [固定调用链](#环境预置不进运行器但按顺序调它)走一遍 `sandbox.setup`
   链与分类账锚点。预创建实例只在同一次 Run 内存活,Run 结束时未被领用的 Sandbox
   一并销毁。
-- **Sandbox 复用(`--reuse-sandbox[=<n>]`)**:同一 sandbox spec 与 environment profile
-  的 Attempt 共用最多 N 个 Sandbox。每个 Sandbox 内部串行,Sandbox 之间并行;
-  裸 CLI flag 等价于 N=1。SandboxSpec 生命周期每个 Sandbox 一次,
-  Agent 与 Eval 生命周期逐 Attempt 成对执行。
-- **复用派发**:有效宽度不超过复用的 Sandbox 数、全局并发位和实验并发限制的最小值。
+- **Sandbox 复用(`sandboxReuse: true`)**：Experiment 作者声明多条 Attempt 可以共用 Sandbox。
+  每个 Sandbox 内部串行，Sandbox 之间可以并行。
+  SandboxSpec 生命周期每个 Sandbox 一次，Agent 与 Eval 生命周期逐 Attempt 成对执行。
+- **复用派发**：同时执行数不超过全局并发位和实验并发限制的最小值。
+  `maxConcurrency: 1` 时本次 Invocation 同时最多运行一个 Sandbox。
   每次派发前确认 Sandbox 复用寿命覆盖 Attempt deadline 与收尾预留时间；
   不足时续期,不能续期时停止旧 Sandbox 并创建替代 Sandbox。题间 reset、
   `SandboxReuseCapability` 与故障淘汰见
-  [Sandbox 复用](feature/sandbox/serial-reuse.md)。
+  [Sandbox 复用](feature/sandbox/reuse.md)。
 - **复用与指纹缓存双向绝缘**:不消费携带，也不产生命中。
-- **[`--keep-sandbox`](feature/sandbox/cli.md) 与 `--reuse-sandbox`
-  互斥**,组合在创建沙箱前报错:留存的现场必须属于那一次 Attempt,不能
+- **[`--keep-sandbox`](feature/sandbox/cli.md) 与 `sandboxReuse: true`
+  互斥**，组合在创建 Sandbox 前报错：留存的现场必须属于那一次 Attempt，不能
   被题间 `git reset` 抹掉后再当现场留下。Sandbox 预热不受影响——Run 结束时未
   被领用的预创建 Sandbox 照常销毁,留存只作用于跑过 Attempt 的 Sandbox。
 

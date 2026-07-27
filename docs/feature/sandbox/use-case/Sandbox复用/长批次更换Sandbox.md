@@ -1,12 +1,22 @@
-# `--reuse-sandbox`：长批次在派发前更换 Sandbox
+# Sandbox 复用：长批次在派发前更换 Sandbox
 
 一批短 Attempt 的总时长可能超过云 Sandbox 的连续运行上限。等待实例在 Agent 执行中途消失，
 会浪费本条成本，也会留下证据不完整的 `errored`。
 
-## 运行
+## 定义实验
 
-```bash
-niceeval exp memory --reuse-sandbox=2
+```ts
+export default defineExperiment({
+  evals: ["memory/"],
+  sandboxReuse: true,
+  maxConcurrency: 2,
+  timeoutMs: 1_800_000,
+  sandbox: e2bSandbox({
+    template: "niceeval-agents",
+    lifetimeMs: 3_600_000,
+  }),
+  // ...
+});
 ```
 
 Runner 为每个 Sandbox 确认 Sandbox 复用寿命。
@@ -29,10 +39,10 @@ Sandbox reuse: replacing sandbox 1 before memory/commit-18
 
 - 实例在 Attempt 已开始后异常消失时，本条仍记 `errored`，不会静默重跑。
 - reset、续期或替代 Sandbox 的 SandboxSpec `setup` 失败时，该 Sandbox 不再承接 Attempt。
-- Provider 没有`SandboxReuseCapability`时，命令在创建前报错，并提示改用默认全新 Sandbox。
-- 复用结果仍不进入结果沿用或 CI；轮换只能管理寿命，不能消除题间污染。
+- Provider 没有 `SandboxReuseCapability` 时，实验在创建前报错，并提示去掉 `sandboxReuse`。
+- 复用实验可以进入 CI，但结果不参与沿用；轮换只能管理寿命，不能消除题间污染。
 
 ## 什么时候改用默认模式
 
-需要正式成绩、跨题隔离或保留失败现场时，去掉 `--reuse-sandbox`。稳定依赖应先进入
+需要每条 Attempt 都从全新环境开始或需要保留失败现场时，去掉 `sandboxReuse`。稳定依赖应先进入
 [预制环境](../../library/prebuilt-environments.md)，避免每个全新实例重复安装。

@@ -20,7 +20,7 @@
 | 资格 | 条目 | `executionMs` ≤ 当前 resolved `timeoutMs` | 这一条重跑 |
 | 出身 | 条目 | 没有 `reused` 标记 | 这一条重跑 |
 | 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
-| 模式 | 本次调用 | 不是 `--reuse-sandbox` 运行,且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
+| 模式 | Experiment 与本次调用 | 没有 `sandboxReuse: true`，且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
 
 `passed` 与 `failed` 都是「跑完了、判定确定」的终态,
 没理由重花一次钱去复现同一个已知结果。
@@ -34,7 +34,7 @@
 指纹按**每条 eval** 各算一份(`runner/fingerprint.ts`),由两层嵌套构成:
 
 ```text
-configHash  = hash(agent, model, reasoningEffort, flags, 顶层 sandbox spec, strict, judge)
+configHash  = hash(agent, model, reasoningEffort, flags, sandboxReuse, 顶层 sandbox spec, strict, judge)
 fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / metadata,
                    该 eval 解析到的 sandbox 产物, loader 读入的数据文件内容)
 ```
@@ -57,6 +57,8 @@ fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / 
   换来的是一个字段只裁决一次,不必维护一张「哪个字段对哪类 eval 有效」的表。
 - **凭据不进。** `judge` 进的是 `model` 与 `baseUrl` 两个配置值;
   `judge.apiKeyEnv` 选的是凭据从哪来,不改变「判定怎么算」,不进哈希也不落盘。
+- **`sandboxReuse` 进。** 它改变 SandboxSpec Hook 次数、题间状态边界与 Attempt 是否能被
+  独立沿用；省略等价于 `false`。
 
 下面三块把每一行改动的后果标在原地。设定:这个实验选中 36 条 eval,上一轮全绿。
 
@@ -286,12 +288,12 @@ attempt 的 `result.json` 在收尾链完成后一次写成,判定可信与否�
 
 ## 执行模式划走的两块
 
-[`--reuse-sandbox`](../sandbox/serial-reuse.md#与留存缓存重试的组合) 与缓存**双向绝缘**:
-复用 Run 不消费结果沿用,计划内每个 Attempt 都在共用的 Sandbox 上真实执行;
+声明 [`sandboxReuse: true`](../sandbox/reuse.md#结果与结果沿用) 的 Experiment
+与结果沿用**双向绝缘**：每次都真实执行计划内的 Attempt，
 复用产出也永不成为后续 Run 的结果沿用来源。
 绝缘让一份 Run 里的结果只有一种出身,不会混出「一半干净携带、一半污染复用」的分布。
 出向那一半靠条目自己带的标记落地:复用 attempt 落盘时记 `sandbox.reused`,
-[出身门](#携带要过的门)读它,与本次是不是复用运行无关。
+[出身门](#携带要过的门)读它，与当前 Experiment 是否声明复用无关。
 
 [`--keep-sandbox`](../sandbox/cli.md) 下,历史终态判定落在**当前留存档内**的 attempt 不携带、照常派发重跑:
 留存要的是一次真实执行的现场,携带条目没有沙箱可留。

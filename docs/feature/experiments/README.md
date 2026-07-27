@@ -44,6 +44,7 @@ export default defineExperiment({
   evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean); // 跑哪些 eval(默认 "*")
   timeoutMs?: number;                        // 单次运行超时
   sandbox?: SandboxSpec;                     // 沙箱型 Agent 在哪跑；省略时只能由 Config.sandbox 显式兜底
+  sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验
   setup?: (ctx: ExperimentHookContext) => void | Promise<void>;     // 实验级生命周期:整场一次、宿主机侧(见下)
@@ -62,6 +63,20 @@ export default defineExperiment({
 生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式 Hook(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务 Fixture 放 `EvalDef.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、沙箱 Hook 的链式写法见 [Sandbox · 沙箱生命周期 Hook](../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)。
 
 `sandbox` 是整个 experiment 的单一固定 spec。一批 eval 需要不同预制环境时，eval 用 `environment` 声明需求 profile，spec 的 `environments` 表把 profile 翻译成该 provider 的具体产物——experiment 仍只有一个 spec、覆盖全部选中 eval，Run 与对比横截面不因此拆分。写法见 [Library · 不同 eval 起自不同预制环境](library.md#不同-eval-起自不同预制环境)。
+
+`sandboxReuse: true` 是实验作者对 Sandbox 生命周期的声明，不是一次运行的提速开关。
+它表示选中的 Eval 可以在题间重置 workdir 后共用 Sandbox。
+SandboxSpec Hook 每个 Sandbox 成对执行一次，Agent 与 Eval Hook 仍逐 Attempt 成对执行。
+省略时，每个 Attempt 使用全新 Sandbox。
+
+同时活跃的 Sandbox 数由现有并发限制决定：
+同一个 Sandbox 一次只执行一条 Attempt；Experiment 的 `maxConcurrency` 与全局并发位共同限制
+同时运行数。需要严格串行时声明 `maxConcurrency: 1`。
+完整顺序、Provider 能力与结果沿用边界见 [Sandbox 复用](../sandbox/reuse.md)。
+
+`timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。
+需要更长 Sandbox 复用寿命时，在 `sandbox` Provider 上声明 `lifetimeMs`。
+两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/reuse.md#两种时间不能混用)。
 
 id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/codex/gpt-5.4`(禁止手写 id)。任意深度目录都只形成 id 前缀，见 [Library · 路径只表达身份](library.md#路径只表达身份与选择)。
 

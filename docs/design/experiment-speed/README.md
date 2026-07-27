@@ -47,10 +47,10 @@ MemoryBench 的 467 条 Attempt 中有 237 条 `errored`，177 条停在 `sandbo
 上表同时列出非 `errored` Attempt，避免早期失败压低 Agent 执行占比。
 
 本目录重新评估如何缩短实验总耗时，并把原
-[Sandbox 复用](../../feature/sandbox/serial-reuse.md)设计放回候选方案比较。
+[Sandbox 复用](../../feature/sandbox/reuse.md)设计放回候选方案比较。
 最终选择不是把所有实验改成串行复用，而是分层提速：
-默认运行先少跑、保留并行并使用预制环境；需要快速反馈时，
-`--reuse-sandbox[=<n>]` 允许 Attempt 共用一个或多个 Sandbox。
+默认运行先少跑、保留并行并使用预制环境；能接受题间状态边界的 Experiment
+用 `sandboxReuse: true` 声明 Attempt 共用 Sandbox。
 完整边界见 [DECISION](DECISION.md)。
 
 **相关文档**：

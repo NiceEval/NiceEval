@@ -53,6 +53,7 @@ export default defineExperiment({
   //  例外是写在 eval 文件里的那一层:它随该文件的字节进指纹,改了照样作废那一条
 
   maxConcurrency: 2,
+  sandboxReuse: true,
   //  实验级并发闸,先过它再占全局并发位;名额与 attempt 同生命周期(沙箱创建到销毁全程持有,
   //  turn 退避等内部等待不释放)。名额域是该实验所有并行 Invocation 共用的,多开不叠加 N
 
@@ -65,7 +66,16 @@ export default defineExperiment({
 });
 ```
 
-`maxConcurrency` 用来串行化共享状态实验，或给撞限额的实验单独降速；它的跨 Invocation 租约机制见[并发 Invocation](#并发-invocation用例锁)。`timeoutMs` 的携带资格判据见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希)，超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)；前四个字段的调度语义单点在 [Runner](../../runner.md)。`classifyFailure` 的类型、分类链与止损语义单源在[执行失败分类](../error-classification/architecture.md#类型)，写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
+`maxConcurrency` 用来串行化共享状态实验，或给撞限额的实验单独降速；
+它的跨 Invocation 租约机制见[并发 Invocation](#并发-invocation用例锁)。
+`sandboxReuse` 决定 SandboxSpec 生命周期是逐 Attempt 还是逐 Sandbox，
+并进入配置哈希；完整顺序见 [Sandbox 复用](../sandbox/reuse.md)。
+`timeoutMs` 的携带资格判据见 [缓存与携带](cache.md#携带资格timeoutms-不进哈希)，
+超时的证据保全与删失语义见 [Runner · 超时](../../runner.md#超时双层保护)。
+这些字段的调度语义单点在 [Runner](../../runner.md)。
+`classifyFailure` 的类型、分类链与止损语义单源在
+[执行失败分类](../error-classification/architecture.md#类型)，
+写法见其 [Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
 
 - eval 级 fingerprint 由 eval 源码闭包 + 影响该 eval 的 resolved 配置构成，是 [carry](#carry自动携带) 的判断依据；两层嵌套哈希与输入的穷尽清单(含 `flags` 整袋无逐键豁免、以及哪些配置有意不进)单源在 [缓存与携带](cache.md#指纹两个哈希嵌套)。源码闭包递归展开 eval 文件在项目根内的导入图，并含 `loadYaml` / `loadJson` 读入的数据文件——这两类内容在发现阶段的模块求值期就已读入，早于解析期算指纹。解析期求值这一步划定了配置那一层的边界：**进指纹的只可能是 resolved 配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
 - 落盘投影 `ExperimentRunInfo` 的穷尽形状单点定义在 [Results · run.json](../record/architecture.md#runjson)；`model` / `agent` 只在 Run 顶层存在。
@@ -129,7 +139,12 @@ export default defineExperiment({
 - **锁不含指纹。** 键只有身份,不掺 resolved 配置:两边配置不同(携带必不匹配)时,等待换到的只剩「不同时双跑」——这仍然值得,它保护有共享状态的用例不被并发踩踏,判据也因此保持「读锁文件即可判定」的简单形态,不需要在锁上再算一遍指纹。
 - **过期锁经原子 rename 接管。** 竞争者把过期锁文件 rename 成自己的接管标记,rename 成功者获得执行权、随后写入自己的新锁;输者按撞锁处理,转入等待。与收尾登记的「删登记是互斥点」同构:同一把过期锁不会被两个进程双接管。接管记一条 warning 级运行 diagnostic(code `lock-taken-over`,按 dedupeKey 折叠)——它意味着某次 run 死得没来得及清锁,值得让操作者看见,但不值得中止任何事。
 - **释放与兜底。** 用例的全部 attempt 收尾(含沙箱销毁)后删除自己的锁;中断与强清退出路径由既有的宿主机侧兜底排空;`SIGKILL` / 断电不释放,由心跳过期接管兜底。锁目录不需要手工清理,也没有对应的清理命令。
-- **执行模式组合。** `--rerun` 不豁免锁:等待照旧,等完按本次口径判携带(`all` 档全部自跑)——它关掉的是缓存,不是「别双跑」。[`--reuse-sandbox`](../sandbox/serial-reuse.md) 与携带双向绝缘,等完同样自跑。[`--keep-sandbox`](../sandbox/cli.md) 的携带豁免规则照常作用于等待后的那次携带规划。`--dry` 不取锁、不等待,只读锁目录把撞锁用例如实标进计划(见 [CLI · 计划文档](cli.md#事件与计划文档的-typescript-形状))。
+- **执行模式组合。** `--rerun` 不豁免锁：等待照旧，等完按本次口径判携带
+  （`all` 档全部自跑）。它关掉的是缓存，不是“别双跑”。
+  声明 `sandboxReuse: true` 的 Experiment 不消费结果沿用，等待结束后仍全量执行。
+  [`--keep-sandbox`](../sandbox/cli.md) 的携带豁免规则照常作用于其它 Experiment。
+  `--dry` 不取锁、不等待，只读锁目录把撞锁用例如实标进计划
+  （见 [CLI · 计划文档](cli.md#事件与计划文档的-typescript-形状)）。
 - **实验级 `maxConcurrency` 的名额域跨 Invocation。** 声明了 `maxConcurrency` 的实验,其 N 个名额是**该实验所有并行 Invocation 共用的**:名额落成 `.niceeval/locks/` 下按 `(experimentId, slot)` 逐条目的租约文件,心跳、过期判据与 rename 接管和用例锁同一套纪律;名额与 attempt 同生命周期的持有规则不变(见 [Runner · 调度](../../runner.md#调度有界并发))。这让 `maxConcurrency: 1` 作为共享状态实验的正确性声明在多开下依然成立——两条 Invocation 各选同一实验不同 eval 子集时,attempt 仍严格互斥;给撞限额实验降速的 N 也不因多开叠加对 agent 的压力。未声明 `maxConcurrency` 的实验没有名额域,不产生任何跨进程协调。两边 resolved 的 N 不一致(配置漂移)时,取在场声明中的最小值——正确性从紧。
 
 **非目标**:用例锁与实验闸不把**全局**并发位扩展到跨进程——`--max-concurrency` 是每条 Invocation 自己的吞吐旋钮,两条并行 Invocation 对 provider 与模型接口的总压力是各自之和,配额分配归用户(各自调低 `--max-concurrency`)。同一实验被两条 Invocation 选中时,实验级 `setup` 在每条 Invocation 各执行一次,跨进程共享服务的互斥仍归外部编排。它也不是跨机分布式锁:判据依赖同一份文件系统与同一只时钟,不同工作副本各有各的 `.niceeval`,天然不共享锁域。
@@ -150,6 +165,7 @@ agent-eval 的 `ExperimentConfig` 字段一半是它自己业务的耦合或可�
 |---|---|---|---|
 | `agent` | `agent` | 保留,但一文件一个 agent | 沿用 agent；报告直接比较当前 Sample 中的 experiments |
 | `model` / `attempts` / `earlyExit` / `evals` / `timeout` / `sandbox` | 同(`timeout`→`timeoutMs`) | 保留 | 运行矩阵的本体 |
+| — | `sandboxReuse` | **加** | 实验作者声明多条 Attempt 可以共用 Sandbox；进入配置哈希 |
 | `setup` | `setup` | **重造** | 保留字段名,语义收窄成「实验级整场一次、宿主机侧」:管每实验一份的共享服务(隧道、mock server、license),与 `teardown` 成对(见上文 [实验级生命周期](#实验级生命周期setup-与-teardown))。沙箱内按实验变化的环境挂 `sandbox` 字段的 `SandboxSpec.setup()` / `.teardown()`,任务 Fixture 写 `EvalDef.setup` / `test()`,连 agent 写 `SandboxAgent.setup`(见 [环境预置放哪](../sandbox/library.md#环境预置放哪)) |
 | `validation` | — | **删** | 「怎么算对」是 eval 自己的事(`test()` 里手工跑校验命令),不该由 experiment 决定 |
 | `scripts` | — | **删** | 同上,属于 eval / fixture 的评分,不是运行配置 |

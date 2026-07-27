@@ -8,7 +8,7 @@
 - [操作](../../../feature/sandbox/library/operations.md)
 - [结果断言](../../../feature/sandbox/library/asserting-results.md)
 - [本地执行](../../../feature/sandbox/local.md)
-- [串行复用](../../../feature/sandbox/serial-reuse.md)
+- [Sandbox 复用](../../../feature/sandbox/reuse.md)
 - [CLI](../../../feature/sandbox/cli.md)
 
 单元测试证明 Provider 共同契约、路径规则、重试分类和生命周期。内存 Provider 实现自有 `Sandbox`
@@ -116,11 +116,14 @@ suite。
 - **Checkpoint**：打包/解压失败直接抛错不冒充成功，临时归档按 finally 清理。
 - **Local
   provider**：仓库根解析与仓库外报错；只观察不还原（用户 git 状态不被触碰、stop 不删工作树）；不提权；与 keep 组合创建前报错。
-- **Sandbox 复用**：SandboxSpec Hook 每个 Sandbox 成对一次，Agent 与 Eval Hook 每 Attempt
-  成对一次；题间 reset 尊重排除清单，重置点仍是归因锚点。覆盖一个与多个 Sandbox 的
-  有效宽度、按需创建、派发前续期、Sandbox 复用寿命不足时更换 Sandbox、
-  reset 失败淘汰和中途消失不静默重跑。
-  互斥与异构批次在创建前报错；复用 Attempt 不作结果沿用来源，复用 run 也不消费结果沿用。
+- **Sandbox 复用**：
+  - 配置：`sandboxReuse: true` 进入配置哈希，省略时每 Attempt 全新 Sandbox。
+  - Hook：SandboxSpec Hook 每个 Sandbox 成对一次；Agent 与 Eval Hook 每 Attempt 成对一次。
+  - 重置：题间 reset 尊重排除清单，重置点仍是归因锚点。
+  - 调度：覆盖 `maxConcurrency: 1`、并行复用、按需创建和派发前续期。
+  - 寿命：覆盖 `lifetimeMs` 不足时更换、reset 失败淘汰和中途消失不静默重跑。
+  - 组合：`--keep-sandbox` 与 `localSandbox()` 的互斥在创建前报错。
+  - 结果：复用 Attempt 不作结果沿用来源，复用 Experiment 也不消费结果沿用。
 - **孤儿核对与 prune**：创建期运行标识元数据的写入边界；孤儿三条件与 unverified 的保守判定；prune 的幂等、`--force`
   语义与失败退出码。
 - **留存(keep)登记项的 `expiresAt`**：按 provider 声明的保留期限计算——vercel 写 `keptAt`

@@ -121,7 +121,23 @@ e2bSandbox({ template: "niceeval-agents" })          // e2b:指定模板
 localSandbox()                                       // 宿主机本地目录(默认当前 git 仓库根,见 local.md)
 ```
 
-`sandbox/resolve.ts` 把 spec 归一化成 `{ provider, image?, snapshotId?, template?, runtime? }`,再按 `provider` 派发到各 provider 的 `create()` —— **核心仍不按 provider 名分支**,参数只在对应 provider 的 `create()` 里消费。
+云 Provider 和 Docker 还接受 `lifetimeMs`，它声明一个 Sandbox 最长需要存活多久：
+
+```typescript
+e2bSandbox({
+  template: "niceeval-agents",
+  lifetimeMs: 4 * 60 * 60_000,
+})
+```
+
+`lifetimeMs` 属于 Sandbox Provider 配置，与 Experiment `timeoutMs` 不同。前者控制一个
+Sandbox 的生命周期，后者限制一条 Attempt；复用时 Runner 还会在派发前确认现有 Sandbox
+能否覆盖下一条 Attempt。完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
+
+`sandbox/resolve.ts` 把 spec 归一化成
+`{ provider, image?, snapshotId?, template?, runtime?, lifetimeMs? }`，再按 `provider`
+派发到各 provider 的 `create()` —— **核心仍不按 provider 名分支**，参数只在对应
+provider 的 `create()` 里消费。
 
 参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 

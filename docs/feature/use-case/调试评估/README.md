@@ -12,5 +12,5 @@
 | 一个失败有多个假设，冷启动太慢 | [在同一现场反复验证](../../sandbox/use-case/留存现场/现场验证假设.md) |
 | 让 coding agent 自动跑、读、改、复验 | [使用 JSON 运行流](../../experiments/use-case/机器输出/AI修复循环.md) |
 
-`--keep-sandbox` 保留的是一次真实 Attempt 的现场；它不替代落盘证据，也不与
-`--reuse-sandbox` 同时使用。
+`--keep-sandbox` 保留的是一次真实 Attempt 的现场；它不替代落盘证据，也不能用于
+声明了 `sandboxReuse: true` 的 Experiment。

@@ -224,7 +224,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   部分携入部分补跑，三面都要有区分力场景；心跳与接管——续租与等待轮询按注入 clock 推进、过期判据（心跳落后超过阈值）、接管 rename 的互斥（两个竞争者恰一个获得执行权、输者转入等待）、接管产生去重的
   `lock-taken-over`
   warning；释放路径——正常收尾、中断、实验 setup 抛错各路径锁文件都被删除，遗留过期锁被下一次运行接管（不需要手工清理）；执行模式组合——`--rerun all`
-  等待后全部自跑、`--reuse-sandbox` 等待后不消费携带；`lock_wait` 起止事件与 `elsewhere`
+  等待后全部自跑、`sandboxReuse: true` 的 Experiment 等待后不消费携带；
+  `lock_wait` 起止事件与 `elsewhere`
   计数归约进反馈状态，字节渲染归 [E2E · CLI](../e2e/cli.md)「反馈输出格式」。锁文件走隔离
   `niceevalRoot` 下的真实文件系统（每例独立临时根，不许写进真实仓库的 `.niceeval/`），时间推进用
   `TestClock`，不做真实等待。逐条目原子文件原语（命名、tmp→fsync→rename→fsync 目录写、损坏跳过的全目录扫描、rename 墓碑认领互斥）抽在

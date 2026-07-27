@@ -236,10 +236,10 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 
 - **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,
   把创建移出 Attempt 路径。
-- **Sandbox 复用** —— `--reuse-sandbox[=<n>]` 让多条 Attempt 共用一个或多个 Sandbox。
+- **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
   SandboxSpec 生命周期每个 Sandbox 一次,Agent 与 Eval 生命周期仍逐 Attempt 成对执行。
   派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。完整契约见
-  [Sandbox 复用](serial-reuse.md)。
+  [Sandbox 复用](reuse.md)。
 
 预制环境的构建与发布归项目和 Provider 原生工具；NiceEval 的 typed spec 负责消费
 （工作流见 [Library · 预制环境](library/prebuilt-environments.md)）。
