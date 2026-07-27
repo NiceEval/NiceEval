@@ -15,7 +15,7 @@
   → test(t)                                # ← 交给 eval 作者,顺序由它自己决定:
   │    t.sandbox.writeFiles(...) / uploadFiles(...) / uploadDirectory(...)  # 默认落到 workdir;eval 归因
   │    t.send()                              #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events);send 窗口内的变化归因给 agent
-  │    t.sandbox.runCommand(...)             #   手工跑校验命令,cwd 默认 workdir(可以晚于 t.send(),agent 天然看不到,也不进 agent diff)
+  │    t.sandbox.runCommand(...)             #   手工跑校验命令,cwd 默认 workdir(最后一次 send 后运行才对 agent 隐藏)
   │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量 / t.check(commandSucceeded)
   → workspace.diff                         # 从分类账折叠 agent 归因增量(见下节)
   → scoring.evaluate → telemetry.collect   # 断言 finalize + 判定(judge 调用在此)、trace 收口
@@ -53,8 +53,8 @@ export default defineEval({
     //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
 
     await t.sandbox.writeFiles({ "expected.json": ANSWER });
-    //  写在 send 之后的隐藏校验材料:agent 天然看不到,也进不了 agent diff
-    //  两个保证来自同一机制,不需要作者做任何标记
+    //  写在最后一次 send 之后,且此后不再 send:agent 看不到,也进不了 agent diff
+    //  多轮之间写入的文件会被下一轮看到,不能当隐藏校验材料
 
     t.check(t.sandbox.diff.get("src/app.ts"), excludes(/callback/));
     //  读的是最后触及该文件那个窗口的终态;窗口之间夹着的 eval 写入不会被算进 agent 的账

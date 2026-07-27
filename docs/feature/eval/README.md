@@ -14,7 +14,7 @@ export default defineEval({
   judge?: JudgeConfig;    // 这道题要多强的裁判
   timeoutMs?: number;     // 这道题跑得完要多久
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
-  //    要按次压过它,用 --timeout / --judge-model 或 experiment 字段,不靠改 config
+  //    timeout 要按次压过时用 --timeout 或 experiment 字段;judge 单条换模型用断言的 { model }
 
   environment?: string;   // 这道题要哪种环境 profile,例如 "python-3.9-astropy-4.2"
   //  所用 sandbox spec 的 environments 表里没有这一项 → 启动期配置错误,一个沙箱都不创建
@@ -35,11 +35,11 @@ export default defineEval({
   //  当且仅当 setup 的时点走到过才执行;setup 抛错、test 抛错都不豁免
 
   async test(t) { /* 交互 + 断言 */ },
-  //  t.send() 之后写进沙箱的校验材料,agent 天然看不到,也进不了 agent diff
+  //  最后一次 t.send() 返回后、且不再发起 send 时写校验材料,agent 看不到,也进不了 agent diff
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的缺省底，压不掉 eval 写下的值（`judge` 的模型另有单次 `{ model }` 出口，见 [LLM-as-judge](../scoring/library/judge.md#模型与鉴权)）。完整的四层链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的缺省底，压不掉 eval 写下的值。`timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../scoring/library/judge.md#模型与鉴权)。完整解析链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
 
 `environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；remote Agent 不创建沙箱，此字段只参与指纹。
 

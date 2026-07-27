@@ -279,7 +279,7 @@ await publish(latestRunSample(record), "site/data/run", {
 源码全在里面;任何要**跨出可信边界**的拷贝(进 Git、静态托管、对外分享)是**发布拷贝**,经
 `publish()` 这一条管线产出(`niceeval view --out` 的 artifact 复制走同一管线)。可信边界内搬运
 事实根不是发布——把整个 `.niceeval/` 作为 CI job artifact 在 job 间传递或取回本机,就是搬一个
-普通目录,搬到哪里那里就是记录根,`--results` 直接打开。没有更细的档位:体积取舍由 `artifacts`
+普通目录,搬到哪里那里就是记录根,`--record` 直接打开。没有更细的档位:体积取舍由 `artifacts`
 字段声明,导出层不做二次裁剪。发布内容的保密边界由格式在**采集侧**划定,不在发布侧设关卡:运行环境
 注入的 env 值不落盘,命令 display 脱敏;但失败进程主动写到 stdout/stderr 的内容会进入
 `commands.json`,与 Agent transcript 同属待发布作者审核的证据。复制忠实于源:artifact 原字节

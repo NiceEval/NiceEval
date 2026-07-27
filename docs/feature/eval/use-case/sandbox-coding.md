@@ -37,7 +37,8 @@
 
 3. diff 断言读的是 **agent 归因增量**：变更分类账只把 `t.send()` 窗口内的 workspace 变化归给 agent。你写入的 fixture、send 之后写入的校验文件都不在 `t.sandbox.diff` 里——`fileChanged` 断的是「agent 改了它」，不是「它相对空目录变了」。除 `fileChanged` / `fileDeleted` 外还有 `notInDiff(re)` 断 agent 没碰某类路径（[断言结果](../../sandbox/library/asserting-results.md)）。
 
-4. **防作弊靠调用顺序，不靠框架黑箱**：隐藏校验材料在 `t.send(...)` 之后才写入、才运行——agent 那一轮已结束，天然看不到，也天然不污染归因：
+4. **防作弊靠调用顺序，不靠框架黑箱**：隐藏校验材料在最后一次 `t.send(...)` 返回后才写入、
+   才运行，而且此后不再发起 `send`。这样 agent 看不到，材料也不进入 agent diff：
 
    ```typescript
    await t.send("在 src/components/Button.tsx 导出一个 Button 组件。");

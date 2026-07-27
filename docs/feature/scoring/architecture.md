@@ -20,7 +20,7 @@ value / scope / judge / sandbox / efficiency
 - [Severity 与 Verdict](architecture/severity-and-verdict.md)
 - [证据与完整性](architecture/evidence.md)
 
-命名边界：**Assertion（输入态）** 是 matcher / 作用域断言 / judge 这些「怎么查」的表达（如 [`custom-assertions`](library/custom-assertions.md) 里 `function jsonValid(): Assertion`）；collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（记录态）**。`Verdict` 表达整个 attempt 的互斥结果。多次 runs 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
+命名边界：**Assertion（输入态）** 是 matcher / 作用域断言 / judge 这些「怎么查」的表达（如 [`custom-assertions`](library/custom-assertions.md) 里 `function jsonValid(): Assertion`）；collector 把每次检查折叠成的「查出了什么」是 **`AssertionResult`（记录态）**。`Verdict` 表达整个 attempt 的互斥结果。多个 Attempt 的报告聚合通过率和平均耗时，不制造第五种 Verdict。
 
 ## 断言记录（AssertionResult）
 

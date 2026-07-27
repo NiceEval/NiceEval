@@ -178,7 +178,7 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 ## 与其它能力组合
 
 - **`--rerun`**：合法，但没有结果沿用可关闭。
-- **`runs > 1`**：每次运行仍是一条 Attempt，开始前重置 workdir。
+- **`attempts > 1`**：每次运行仍是一条 Attempt，开始前重置 workdir。
 - **首过即停**：语义不变，取消的 Attempt 不触发新 Sandbox 创建。
 - **`--keep-sandbox`**：与 `sandboxReuse: true` 互斥；最终现场不只属于某一条 Attempt。
 - **`localSandbox()`**：与 `sandboxReuse: true` 互斥；Runner 不重置用户工作树。

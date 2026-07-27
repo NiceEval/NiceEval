@@ -4,7 +4,7 @@
 
 ```
 evals/        # 测什么 —— agent 无关,评分逻辑都在各自的 test() 里
-experiments/  # 怎么跑 —— 运行矩阵:agent × model × runs over 选定 evals
+experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over 选定 evals
 ```
 
 > 参考:eve **没有**实验概念(运行配置靠 `defineEvalConfig` + CLI flag,"experiment" 只是 Braintrust 上报名);experiment 这层参考的是 Vercel agent-eval 的 `ExperimentConfig`,但砍掉了一半字段,见 [Architecture](architecture.md)。
@@ -39,14 +39,15 @@ export default defineExperiment({
                                             // 实验是可签入可复现的配置,函数/类实例装不进 Run;解析时校验,非 JSON 值直接报错
   labels?: Record<string, string | number>; // 报告归类标注:实验在各对比轴上的坐标(如 { line: "codex", memory: "mempal" })。
                                             // 不透传 ctx / t;报告用 label() / numericLabel() 按它归类(见 Library)
-  runs?: number;                             // 每个 (agent × model × eval) 跑几次(默认 1)
-  earlyExit?: boolean;                        // 先过一次即停其余(默认 false,runs 默认跑满测完整通过率)
+  attempts?: number;                         // 每个 (agent × model × eval) 跑几次(默认 1)
+  earlyExit?: boolean;                       // 先过一次即停其余(默认 false,attempts 默认跑满测完整通过率)
   evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean); // 跑哪些 eval(默认 "*")
   timeoutMs?: number;                        // 单次运行超时
   sandbox?: SandboxSpec;                     // 沙箱型 Agent 在哪跑；省略时只能由 Config.sandbox 显式兜底
   sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验
+  classifyFailure?: AttemptFailureClassifier; // 识别本实验共享基建的失败形态,为止损闸声明波及范围
   setup?: (ctx: ExperimentHookContext) => void | Promise<void>;     // 实验级生命周期:整场一次、宿主机侧(见下)
   teardown?: (ctx: ExperimentHookContext) => void | Promise<void>;  // 全部 attempt 收尾后执行;setup 时点走到过才触发
 });
@@ -57,6 +58,11 @@ export default defineExperiment({
 `flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
 
 `maxConcurrency` 是**实验自己的并发闸**:只限流本实验的 attempt,同批其它实验照常按全局并发跑。名额从沙箱创建前一直握到 `teardown` 与沙箱销毁完成,中途不松手——所以 `maxConcurrency: 1` 的实验里,上一个 attempt 的回存 Hook 没跑完,下一个 attempt 的载入不会开始,共享状态的正确性只靠这一行声明,Hook 里不需要自己加锁。什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);闸的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
+
+`classifyFailure` 是实验作者识别共享基建死因的纯分类器。它只声明失败是否可重试、以及死因波及
+attempt、eval 还是整个 experiment，不配置重试次数或退避策略，也不参与 fingerprint。输入形状、
+分类链和止损语义见[执行失败分类](../error-classification/architecture.md#类型)，真实写法见其
+[Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
 
 `setup` / `teardown` 是**实验级生命周期 Hook 对**:整场至多一次、跑在宿主机上。`setup` 在本实验第一个真正要派发的 attempt 之前执行;`teardown` 在本实验全部 attempt 收尾后执行(失败、中断也执行),当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免,半路失败的现场同样要扫尾;一个 attempt 都不派发时两者都不跑。它们管「每个实验一份、所有 attempt 共享」的宿主机侧资源:起一条到内网服务的隧道、拉起本实验专用的 mock server、租一个 license。`setup` 的产物写模块级变量,`teardown` 与同文件的 agent / sandbox Hook 从闭包读——runner 不做值的中介。四层生命周期(experiment / sandbox / agent / eval)共用「成对 `setup` / `teardown`、闭包传状态」这一种形态,统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它);用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
 

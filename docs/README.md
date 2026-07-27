@@ -61,8 +61,9 @@ docs/
 │   └── multi-agent/                     多 Agent Eval 场景
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策
-│   └── _template/                       新决策主题模板
-│   └── experiment-speed/                实验加速:默认路径与 Sandbox 复用
+│   ├── _template/                       新决策主题模板
+│   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
+│   └── report-authoring/                报告作者面:组件粒度与取数形态
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板

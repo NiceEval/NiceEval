@@ -8,7 +8,7 @@ niceeval exp agents/codex/gpt           # 按文件名前缀跑一族实验
 niceeval exp agents/codex memory/retention # 再按 eval id 前缀收窄
 ```
 
-不写 experiment 不能运行 eval。experiment 决定 agent、model、flags、runs、sandbox 与预算;CLI 只负责选择已签入的运行配置和覆盖通用调度参数。
+不写 experiment 不能运行 eval。experiment 决定 agent、model、flags、attempts、sandbox 与预算;CLI 只负责选择已签入的运行配置和覆盖通用调度参数。
 
 ### 实验选择器怎样解析
 
@@ -24,7 +24,7 @@ niceeval exp compare/codex --dry
 ```
 
 ```text
-plan: 4 attempts · 1 eval × 4 configs · runs 1
+plan: 4 attempts · 1 eval × 4 configs · attempts 1
 compare/codex-gpt-5.6-luna              memory/commit0-cachetool
 compare/codex-gpt-5.6-luna--agents-md   memory/commit0-cachetool
 compare/codex-gpt-5.6-luna--mempal      memory/commit0-cachetool
@@ -323,7 +323,7 @@ live 面板只展示当前状态,不保存历史帧:
 
 `total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt;`passed` / `failed` / `errored` / `skipped` 是本次派发并已了结的 attempt 按 verdict 的划分。任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`,不能出现没有解释的 `Running 39 ... 8/45 done`。
 
-已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止挂了几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#runs-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
+已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止挂了几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#attempts-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
 
 计数口径与成本口径要一致地区分「本次派发」和「缓存携入」。首行的四项结局因此是**本次派发**的口径:携入结果的 verdict 留在 `reused` 里,不摊进 `passed` / `failed`——两个口径混在一行,`reused` 就会同时既是状态又是来源,恒等式失去意义。整套结果集(含携入)的通过 / 失败数是结束反馈的事:结论面板的 `44 passed · 1 failed · 0 errored   (6 reused)` 覆盖全部 45 条,携入的失败照常进 `FAILURES` 面板并给下钻命令。携入的失败不在运行中逐条追加进 scrollback——它们不是本次发生的事,流事件承载的是「刚刚发生了什么」。
 
@@ -680,11 +680,11 @@ type ExpEvent =
 interface ExpPlanDocument {
   format: "niceeval.exp-plan";
   schemaVersion: number;
-  /** matrix 行数 × runs。 */
+  /** matrix 行数 × attempts。 */
   total: number;
   evals: number;
   configs: number;
-  runs: number;
+  attempts: number;
   /** matrix 逐行 reused 之和。 */
   reused: number;
   matrix: ExpPlanRow[];
@@ -788,7 +788,7 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 
 `--junit` 不是终端格式开关,与形态正交——人读文本也可以同时写 JUnit 文件。`--dry` 不创建 Run 或 JUnit。
 
-### runs 与首过即停怎样展示
+### attempts 与首过即停怎样展示
 
 `human` 把未派发原因收进动态计数和最终结论,不能留下永久 running 状态;通过本身不追加到 scrollback。未派发的轮次直接从 `queued` 迁进 `skipped`——它们没跑出 verdict,不冒充 `passed` 也不冒充 `failed`,live 面板的计数行(框内首行)因此始终自洽,而且省了多少轮直接读得出来:
 

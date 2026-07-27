@@ -14,9 +14,13 @@
 
 ## Fixture 与 send 窗口
 
-- 起始文件只有一种来源：`test(t)` 里的显式写入；`EvalDef.setup` 是任务 Fixture 层（依赖安装这类"准备任务素材"的动作），在分类账锚点之后、`test(t)` 之前跑。
+- Fixture 有两个显式来源。普通起始文件在 `test(t)` 里用 `writeFiles` / `uploadDirectory`
+  写入。需要提前准备、耗时较长或带外部资源收尾的任务素材放 `EvalDef.setup`。
+  两者都在分类账锚点之后、第一次 `send` 之前完成。
 - 这两类写入都是 **eval 归因**，永不进入 agent diff——`fileChanged` / `diff` 只反映 agent 在 send 窗口内的改动（归因契约见 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账)）。
-- 隐藏校验材料写在 `t.send()` 之后：agent 天然看不到，也天然不污染归因，两个保证来自同一机制，不需要作者做任何标记。
+- 隐藏校验材料写在**最后一次** `t.send()` 返回后，且此后不得再发起 `send`。
+  这样 agent 看不到，材料也不进入 agent diff。多轮之间写入的文件会被下一轮看到，
+  不能当隐藏材料。
 
 ## 生命周期与不变量
 

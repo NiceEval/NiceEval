@@ -193,7 +193,7 @@ warnings 只收**定位不到任何一行**的完整性事实;能定位到行的
 |---|---|---|---|---|
 | `unfinished-run` | 选中 Run 缺 `completedAt`(进程中断,未收尾);已落盘 attempt 照常读出,警告提示集合可能不完整 | `experimentId`, `startedAt`, `dir` | 徽标 `unfinished` | 重跑该实验产出收尾完整的 Run;`command` = `niceeval exp <experimentId>` |
 | `dangling-evidence` | 样本里有 attempt 的 [`evidenceState`](../record/library.md#携带条目与-evidencestate) 为 `"dangling"`——携带条目指向的原 Run 已被清理,`artifacts` 声明写过的文件读不到了 | `experimentId`, `evalId`, `attempt`, `artifactBase`, `artifacts` | 组头 `{n} attempts lost evidence` | 判定仍可信,证据不可下钻;下次清理历史前先 `publish()` 物化。无单条命令,不带 `command` |
-| `unreadable-run` | 扫描记录根遇到不可读 Run——schema 不兼容、JSON 损坏 / 必需字段错误(malformed)、attempt 已写入但缺 `run.json`(incomplete);该 Run 被跳过,不挡其余结果(非 niceeval JSON 静默忽略,不触发) | `dir`, `reason` | 组头 `{n} runs skipped`(非实验作用域,按 kind 聚合) | schema 不兼容时建议用产出它的版本打开,`command` = `npx niceeval@<producer.version> show --results <root>`;其余 reason 给出定位动作,不带 `command`。非实验作用域,pipe 修剪时保留 |
+| `unreadable-run` | 扫描记录根遇到不可读 Run——schema 不兼容、JSON 损坏 / 必需字段错误(malformed)、attempt 已写入但缺 `run.json`(incomplete);该 Run 被跳过,不挡其余结果(非 niceeval JSON 静默忽略,不触发) | `dir`, `reason` | 组头 `{n} runs skipped`(非实验作用域,按 kind 聚合) | schema 不兼容时建议用产出它的版本打开,`command` = `npx niceeval@<producer.version> show --record <root>`;其余 reason 给出定位动作,不带 `command`。非实验作用域,pipe 修剪时保留 |
 | `missing-startedAt` | 去重时身份键缺 `startedAt`,宁可不去重也不误删 | `experimentId`, `evalId` | — | 定位动作:核对产出该条目的写入方(第三方 harness)是否写 `startedAt`;无单条命令,不带 `command` |
 
 公开面的全集由参考页承载(`pnpm docs:reference` 从 TSDoc 生成),guide 只举例并声明「不止一种」。

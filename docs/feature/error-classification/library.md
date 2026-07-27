@@ -23,7 +23,7 @@ import { ExperimentFatalError } from "niceeval";
 export default defineExperiment({
   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(async (sandbox, ctx) => {
     // 探活实验共享的服务端隧道:挂了则本实验每条 attempt 同因必死
-    const probe = await sandbox.exec(`curl -sf ${serverUrl}/health`);
+    const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
     if (probe.exitCode !== 0) {
       throw new ExperimentFatalError(
         `server probe(${serverUrl}) failed — 服务端/隧道已死,修好后更新 .env 重跑`,
@@ -40,9 +40,9 @@ fixture 级的死因用 `EvalFatalError`,只停本 eval 的剩余 attempt:
 ```ts
 import { EvalFatalError } from "niceeval";
 
-setup: async (ctx) => {
+setup: async (_sandbox, _ctx) => {
   if (!existsSync(fixturePath)) {
-    throw new EvalFatalError(`fixture ${fixturePath} 缺失,runs 全部同因必死——先跑 pnpm fixtures:sync`);
+    throw new EvalFatalError(`fixture ${fixturePath} 缺失,所有 Attempt 同因必死——先跑 pnpm fixtures:sync`);
   }
 },
 ```

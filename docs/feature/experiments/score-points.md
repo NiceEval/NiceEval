@@ -5,7 +5,7 @@
 ## 通过制（`defineEval`，默认）：一个 eval 一分
 
 - 一条 eval 的一次 attempt 折叠成四态 [Verdict](../scoring/architecture/severity-and-verdict.md)，`passed` 记 1、其余记 0；
-  `runs > 1` 时按通过率。这个数就是内置指标 [`endToEndPassRate`](../reports/library/measures.md#内置读数)，
+  `attempts > 1` 时按通过率。这个数就是内置指标 [`endToEndPassRate`](../reports/library/measures.md#内置读数)，
   通过制的对比主读数读的是它。
 - 断言只是 verdict 的**内部构成**：一条 eval 写 3 条还是 20 条 gate，对比里都是一分。这与 eve 的模型一致：一个 eval 就是一分，soft 分数 tracked-only。
 
@@ -52,7 +52,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 - **计分制的 `t` 上没有 `t.require`**：`t.check(value, matcher).gate()` 覆盖 `t.require(value, matcher)` 的全部能力，还能同时挣分，前置在计分制里只有 `.gate()` 一种写法。`t.require` 仍是通过制的前置词（[值断言](../scoring/library/value-assertions.md#check-与-require)）。
 - **中止挣 0，基础设施得 null，严格分开**：前置挂了强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、judge 没 key 是 `errored`，整题分数为 `null`、不折成 0——评不了不是 agent 差。带 `.points` 的断言 `unavailable`（仅 `.optional()` 情形，否则整题已 errored）不挣分、在报告里如实标注。
 - **丢分不是失败**：五步走完三步的 attempt 是 `passed` 且挣 3 分，「做到几成」由分数面回答，不借判定面表达；verdict 回答的是「这次的分数完不完整」（[四态与优先级](../scoring/architecture/severity-and-verdict.md#verdict)）。`errored` / `skipped` 与通过制同义，缓存、重试、发现单位照旧。
-- **`runs > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
+- **`attempts > 1`**：eval 得分取各 attempt 的均值（`null` 跳过，全 `null` 为 `null`），与通过制按通过率聚合同构。
 
 两种题内写法（完整用例见[计分制用例](../eval/use-case/rubric-scoring.md)）：
 

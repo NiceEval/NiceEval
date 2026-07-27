@@ -109,6 +109,11 @@ export default defineExperiment({
   evals: (e) => e.tags.includes("memory"),
   //  改谓词 → 只改变选中谁。上一轮跑过、这一轮仍被选中的照常携带
 
+  classifyFailure: ({ text }) => text.includes(tunnelHost)
+    ? { retryable: false, scope: "experiment" }
+    : undefined,
+  //  改分类器 → 一条不动。它只改变终局失败怎样止损,不改变已完成 Attempt 的结果身份
+
   setup: async (ctx) => { tunnel = await startTunnel(); },
   //  改函数体 → 一条不动
   //  tunnel.url 这种跑起来才有的值也进不了指纹:携带决策发生在任何 setup 执行之前,那时它还不存在

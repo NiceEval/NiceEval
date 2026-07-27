@@ -73,7 +73,7 @@ runner 为 `setup`、每次 `send` 与 `teardown` 分别构造上下文,所以�
 | 鉴权、base URL、CLI 参数、transcript 位置 | Adapter |
 | Skills、MCP、原生 Plugin、官方原生配置文件 | 用户经 Agent factory 声明，Adapter 安装、落位与校验 |
 | model、reasoning effort、flags | Experiment，经 `ctx` 透传 |
-| runs、early exit、evals、sandbox、budget | Experiment / runner |
+| attempts、early exit、evals、sandbox、budget | Experiment / runner |
 
 Agent 只配置怎样连接自己；运行条件不固化在 Agent 中。被测 CLI 的原生行为开关直接写进该 CLI 的官方配置文件（见[扩展边界](coding-agent-extensions.md)），core 不为单个行为需求在 factory 上铸语义字段。
 

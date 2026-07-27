@@ -6,8 +6,8 @@ experiment 是**可签入的运行配置**：一个文件钉一个单一配置�
 
 ```text
 ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一个)
-  → resolved config(调度前一次求值:合并 CLI flag / env / config 兜底,evals 过滤器与 sandbox environments 查表求值)
-  → attempt 矩阵(selectedEvalIds × runs,每 attempt 一个执行 fiber)
+  → resolved config(调度前一次求值:合并 CLI flag / experiment / eval / config 兜底,evals 过滤器与 sandbox environments 查表求值)
+  → attempt 矩阵(selectedEvalIds × attempts,每 attempt 一个执行 fiber)
   → Run(.niceeval/<experiment>/<timestamp>-<suffix>/,含 ExperimentRunInfo 投影)
 ```
 
