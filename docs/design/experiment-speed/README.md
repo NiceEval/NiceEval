@@ -10,7 +10,7 @@
 | 累积记忆要求 Eval 顺序确定 | 并发写入会改变后续 Eval 看到的历史 | 整个 Experiment 串行 | MemoryBench `claude-2.0-flash--nowledge.ts` |
 | 共享服务允许并发读写 | 服务自身处理冲突，实验接受并发写入顺序 | 保留 Experiment 已声明的并行 | MemoryBench `codex-2.0-flash--nowledge.ts` |
 | Attempt 相互独立 | 只有 Provider 与本机容量限制同时执行数 | 使用有界并发，不应为了复用 Sandbox 强制串行 | NiceEval-Eval 的安装实验 |
-| 多条短 Attempt 重复相同 Sandbox 准备 | Sandbox 创建与 SandboxSpec `setup` 可能高于实际任务时间 | 候选方案需要分摊准备，同时说明失去多少并行 | 本地冒烟与重复运行 |
+| 多条 Attempt 重复相同的动态安装 | 当前 lockfile 或实验配置决定依赖，不适合为每次变化重建 template | 用 Sandbox 复用按实际 Sandbox 数分摊 SandboxSpec `setup` | `pnpm install`、clone 与冷构建 |
 | 批次长于一个 Sandbox 能保证的存活时间 | Sandbox 可能在 Agent 执行中途停止 | 派发前确认下一条 Attempt 能跑完，不能确认时停止或更换 Sandbox | 云 Sandbox 长批次 |
 
 因此，“只复用一个 Sandbox”是 Sandbox 复用的一种运行方式，不是所有实验的默认答案。
@@ -37,7 +37,8 @@ MemoryBench 的命令记录能直接识别 441 次 Node 包安装，共占全部
 中位数为 4.8 秒，75 分位数为 18.9 秒，最长约 130 秒。
 Rust build 或 fetch 占 4.2%，中位数为 82.2 秒。
 这些工作多数发生在 `eval.run` 内，不会因为只复用 Sandbox 就自动变成一次。
-稳定依赖进入预制环境或 SandboxSpec `setup`，才会直接减少重复安装。
+跨项目稳定的依赖适合进入预制环境；由当前 checkout、lockfile 或实验配置决定的动态安装适合移到
+SandboxSpec `setup`，再由 Sandbox 复用按实际 Sandbox 数分摊。
 
 NiceEval-Eval 的时间树看不到 Agent CLI 内部执行的所有 shell 命令，
 不能算出其中 `pnpm install` 的准确占比。因此，MemoryBench 的 8.2%不外推到该仓库。

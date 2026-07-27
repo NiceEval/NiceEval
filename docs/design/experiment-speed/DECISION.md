@@ -32,11 +32,15 @@ MemoryBench 和 NiceEval-Eval 的 Agent 执行占总耗时约 68.8%–87.6%，
 Sandbox 创建只占约 0.5%–0.6%。
 对可以并行的 Attempt，强制串行很可能损失更多 Agent 执行的并行收益。
 
-### 先移动稳定安装
+### 先把安装移动到正确层
 
 MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 fetch 占 4.2%。
-这些工作多数发生在 `eval.run`，只复用 Sandbox 不会自动省掉。
-稳定依赖进入预制环境或 SandboxSpec `setup`，才能直接减少重复安装。
+这些工作多数发生在 `eval.run`，只复用 Sandbox 不会自动省掉。跨项目稳定的工具链进入预制环境；
+由当前 checkout、lockfile、实验 flags 或临时凭据决定的安装不能合理烘成每个 commit 一份 template，
+应进入 SandboxSpec `setup`，再由 Sandbox 复用按实际 Sandbox 数分摊。
+
+因此，`sandbox.create` 只占 0.5%–0.6% 只否定“为了创建本身复用”。它不否定动态准备的复用收益；
+是否声明 `sandboxReuse` 要看能移入 SandboxSpec `setup` 的阶段占比，而不是只看创建耗时。
 
 ### 同时保留串行与并行场景
 

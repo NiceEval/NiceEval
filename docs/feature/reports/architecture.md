@@ -1,6 +1,9 @@
 # Reports —— 架构
 
-Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、网页宿主 `view`、用户自己的 React 页面。三个入口共用读数与数据计算；两个官方宿主共用 Sample 规则，自有 React 页面显式选择 `currentSample(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用。
+Reports 把同一份结果事实呈现到三个位置：Agent 使用的终端宿主 `show`、人使用的网页宿主 `view`、
+用户自己的 React 页面。三个入口共用读数与数据计算；两个官方宿主共用 Sample 规则，自有 React 页面
+显式选择 `currentSample(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用，
+让人和 Agent 读取同一套业务口径；两面共享事实与证据，不要求共享几何布局。
 
 ```text
 .niceeval/ ── openRecord / Sample ── resolve（DataSource 计算）── 可序列化数据

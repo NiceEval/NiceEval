@@ -6,6 +6,7 @@ Experiment 声明 `sandboxReuse: true` 后，仍会真实执行每条 Attempt，
 
 | 目标 | 用例 |
 |---|---|
+| 当前 lockfile 的依赖每题都要安装 | [每个复用 Sandbox 只安装一次](共享动态依赖安装.md) |
 | 本地快速冒烟一批 Eval | [把 N 次冷启动折成一次](批量冒烟.md) |
 | 保留有限并发 | [用多个 Sandbox 分摊一批 Attempt](批量冒烟.md) |
 | 批次超过一个 Sandbox 的寿命 | [在派发前更换 Sandbox](长批次更换Sandbox.md) |
