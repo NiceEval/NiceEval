@@ -83,7 +83,7 @@ sample.coverage[0];
 
 缺的是具体哪几道题,所以呈现在行的位置上:报告把 `missingEvalIds` 渲染成实验列表里的占位行
 (「当前配置下无结果」+ 可复制的补跑命令,契约见
-[ExperimentList · 占位行](../reports/components/entity-lists/experiment-list.md)),读者在正在看的
+[`experimentRows` · 占位行](../reports/components/entity-lists/experiment-rows.md)),读者在正在看的
 表里直接看见分母缺口。程序消费同样直接:CI 里「覆盖缩水就 fail」判
 `coverage.some((c) => c.missingEvalIds.length > 0)`。缺口永远被算出来,不静默。
 
@@ -155,7 +155,7 @@ const s = currentSample(record, { experiments: "compare/" }).pipe(
 
 三条边界,都是显式立场:
 
-- **只删减,不聚合。** 值怎么算、两级怎么折叠由 [Reports 的指标](../reports/library/metrics.md)
+- **只删减,不聚合。** 值怎么算、两级怎么折叠由 [Reports 的读数](../reports/library/measures.md)
   回答——它已经有 `perEval` / `acrossEvals` 与维度选轴。同一件事两个地方能做,两边迟早给出不同的
   数。这也是转换算子清单里没有 `groupBy` / `reduce` 的原因。
 - **只删减,不替换。** 「换成该实验上一个完整 Run」这类**替换式**重挑不给算子(那是 DSL 的开端)。
@@ -185,7 +185,7 @@ warnings 只收**定位不到任何一行**的完整性事实;能定位到行的
 每种警告都带 `kind`、可判断的结构化字段和渲染好的英文 `message`;message 以「下一步」列声明的
 动作收尾([三段式契约](../../error-feedback.md#消息三段式)),能用一条命令推进的 kind 同时带
 `command`(已替换真实 id,复制即跑)。kind 同批登记**徽标 / 组头模板**,供
-[`SampleWarnings`](../reports/components/site/sample-warnings.md) 组件聚合呈现:模板是 en 文案、
+[`sampleWarnings`](../reports/components/site/sample-warnings.md) 数据源聚合呈现:模板是 en 文案、
 占位符取结构化字段,zh 等 locale 由组件 chrome 词典对应,`message` 不经模板、始终是完整叙述的
 单源。新增 kind 要回这张表登记:
 
@@ -201,9 +201,9 @@ warnings 只收**定位不到任何一行**的完整性事实;能定位到行的
 的转换永不缺,缺失只可能来自携带条目缺锚的极端情况;计算函数对这类条目不去重、如实保留重复,
 选择器则把警告随 Sample 返回。
 
-警告的呈现件是 [`SampleWarnings` 组件](../reports/components/site/sample-warnings.md)——内建报告
-每页都放它,自定义报告与自有 React 页面同样显式摆放(React 页面用 data 形态传 `sample.warnings`),
-警告可见性是作者义务。指标与摘要数据不复制警告,同一份事实不会因放了 `SampleSummary` 而重复。
+警告由 [`sampleWarnings`](../reports/components/site/sample-warnings.md) 算成 `CalloutsContent`——内建报告
+每页都放对应 `Callouts`,自定义报告与自有 React 页面也要显式摆放，警告可见性是作者义务。
+读数与摘要 Content 不复制警告，同一份事实不会因放了 `sampleSummary()` 而重复。
 手工挑的 `Run[]` 没有挑选过程,自然没有 coverage 与 warnings 可带,也如实。
 
 ## 相关阅读
@@ -212,4 +212,4 @@ warnings 只收**定位不到任何一行**的完整性事实;能定位到行的
 - [参考方案](reference/README.md) —— 转换算子与口径物化从哪里学。
 - [用例手册](use-case/README.md) —— 局部补跑之后两个口径分别给出什么。
 - [Record](../record/library.md) —— 被选择的那份事实与身份键。
-- [Reports](../reports/library.md) —— 消费 Sample 的指标与组件。
+- [Reports](../reports/library.md) —— 消费 Sample 的数据源、读数与原语。

@@ -2,7 +2,7 @@
 
 仓库 ID `langgraph`，group
 `sdk`。被测应用是仓库自带的 LangGraph 图（含工具节点、interrupt 节点与 subgraph），自选 transport 部署，adapter 用官方事件流转换器
-`fromLangGraphEvents()` 接入（契约见
+`createLangGraphEventStream()` 接入（契约见
 [LangGraph 契约页](../../../../feature/adapters/sdk/langgraph/README.md)）。
 
 ## Eval 闭环

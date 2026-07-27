@@ -7,7 +7,7 @@
 show 的输入沿三条正交轴组合。三条轴各自独立取值，组合语义由各轴自己的规则决定，不为特定组合发明特例命令：
 
 - **范围**选出一批 attempt。eval id 前缀位置参数、`@<locator>` 位置参数、`--exp`（可重复）、`--fresh` 与 `--record` 都是范围输入；`@<locator>` 是恰好命中一个 attempt 的最小范围，不是某些切片的专属入口。
-- **切片**选择装配哪个报告组件：每个切片解析为一次报告组件的装配（[「show 的切片是组件选择」](architecture.md#show-的切片是组件选择)）。缺省切片按范围形态选择（规则见下）：[默认报告](show/default-report.md) 装配内建报告首页，[对照矩阵](show/compare.md) 装配 `DeltaTable`，[失败诊断首页](show/attempt.md) 装配 `AttemptDetail`；显式 flag 里 [`--source`](show/eval-source.md)、[`--execution`](show/execution.md)、[`--timing`](show/timing.md)、[`--diff`](show/diff.md) 各装配 attempt-detail 组件族的一处区块，[`--usage`](show/usage.md) 装配 `UsageTable`，[`--stats`](show/stats.md) 装配 `StabilityMatrix`；[`--history`](show/history.md) 直接投影 Results evidence，不经组件模型。**每个切片接受任意范围**：范围含多个 attempt 时，宿主机器把同一组件逐 attempt 分节映射，节头带 locator——分节是宿主机器，节内内容仍由组件拥有；单 attempt 范围只是省掉了分节。
+- **切片**选择装配哪个报告组件：每个切片解析为一次报告组件的装配（[「show 的切片是组件选择」](architecture.md#show-的切片是组件选择)）。缺省切片按范围形态选择（规则见下）：[默认报告](show/default-report.md) 装配内建报告首页，[对照矩阵](show/compare.md) 装配 `deltaRows`，[失败诊断首页](show/attempt.md) 装配 `AttemptDetail`；显式 flag 里 [`--source`](show/eval-source.md)、[`--execution`](show/execution.md)、[`--timing`](show/timing.md)、[`--diff`](show/diff.md) 各装配 attempt-detail 组件族的一处区块，[`--usage`](show/usage.md) 装配 `attemptUsage`，[`--stats`](show/stats.md) 装配 `stabilityRows`；[`--history`](show/history.md) 直接投影 Record evidence，不经组件模型。**每个切片接受任意范围**：范围含多个 attempt 时，宿主机器把同一组件逐 attempt 分节映射，节头带 locator——分节是宿主机器，节内内容仍由组件拥有；单 attempt 范围只是省掉了分节。
 - **形态**选择输出给谁：缺省 text 面给人和终端里的 agent；[`--json`](show/json.md) 把同一范围、同一切片选出的实体输出成结构化文档给脚本。两个形态消费同一套选择、去重与聚合规则，共有派生字段同值；JSON 可保留 text 注意力预算省略的字段，是数据超集。
 
 ```sh
@@ -76,7 +76,7 @@ niceeval show --report reports/site.tsx --page exam
 niceeval show --report standard        # 内建视图名，回到默认报告
 ```
 
-`--record` 改变记录根；`--exp` 按 experiment id 路径段匹配，eval id 位置参数按裸前缀过滤。`--fresh` 把口径收窄成只含新执行的 attempt——排除携带条目与跨 Run 拼入的历史执行，被排除的题按覆盖事实转为覆盖占位行，不静默消失（语义见 [Results · 时效](../sample/library.md#时效新执行与历史执行)）。`--fresh` 与其它范围输入作用于所有切片与两个形态，不是默认报告专属。
+`--record` 改变记录根；`--exp` 按 experiment id 路径段匹配，eval id 位置参数按裸前缀过滤。`--fresh` 把口径收窄成只含新执行的 attempt——排除携带条目与跨 Run 拼入的历史执行，被排除的题按覆盖事实转为覆盖占位行，不静默消失（语义见 [Record · 时效](../sample/library.md#时效新执行与历史执行)）。`--fresh` 与其它范围输入作用于所有切片与两个形态，不是默认报告专属。
 
 `--exp` 出现两次以上时进入对照语义：每个 `--exp` 是一个对照条件，必须恰好解析到一个 experiment；某个 `--exp` 前缀匹配到多个 experiment 时按用法错误退出并列出全部候选 id，不猜测意图（契约见[对照矩阵](show/compare.md)）。`@<locator>` 位置参数与重复 `--exp` 互斥——locator 已经唯一确定了 experiment，再给对照条件没有可执行的语义。
 

@@ -127,7 +127,7 @@ function filterInputBySnapshot(input: ReportInput, predicate: (snapshot: Snapsho
  * 「同引用 input + 深相等 spec」记忆化保证。主读数按 scoringComposition(input) 切换:
  * "pass" 用 endToEndPassRate、"points" 用 totalScore;"mixed" 按题型把 input 拆成两个
  * 子 Scope,散点与 ExperimentList 每组各一份、各用各的主读数,ScopeSummary 始终是整个
- * input 一份(docs/feature/reports/components/summaries/experiment-comparison.md)。
+ * input 一份(docs/feature/reports/components/summaries/sample-overview.md)。
  */
 export const ExperimentComparison = defineComponent<ExperimentComparisonProps>(async (props, ctx) => {
   const input = props.input ?? ctx.scope;

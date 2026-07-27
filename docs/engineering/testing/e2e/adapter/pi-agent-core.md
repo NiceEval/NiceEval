@@ -1,7 +1,7 @@
 # pi-agent-core 仓库
 
 仓库 ID `pi-agent-core`，group `sdk`。被测应用是仓库自带的 pi-agent-core 循环：`AgentEvent` 流经
-`fromPiAgentEvents()` 归一，历史保存在客户端，审批经 `beforeToolCall` 生命周期 Hook 暴露（契约见
+`createPiAgentEventStream()` 归一，历史保存在客户端，审批经 `beforeToolCall` 生命周期 Hook 暴露（契约见
 [pi-agent-core 契约页](../../../../feature/adapters/sdk/pi-agent-core/README.md)）。
 
 ## Eval 闭环

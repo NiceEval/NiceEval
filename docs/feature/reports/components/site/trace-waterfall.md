@@ -1,6 +1,8 @@
-# `TraceWaterfall`
+# `traceRows`
 
-每个 attempt 一行的执行时间瀑布，用 canonical OTel 字段显示被测 agent 的原始 span（agent / model / tool）。行内只画顶层 span 摘要；完整瀑布与 runner 时间树的组合视图由 [`AttemptTimeline`](../attempt-detail/README.md#公开区块集) 详情组件承担，本组件不复制它。
+`traceRows` 把每个 attempt 的 canonical OTel span 投影成
+[`Waterfall`](../primitives/waterfall.md) 可消费的行。每行只带顶层 span 摘要；完整瀑布与 runner
+时间树的组合视图由 `attemptTimeline` 数据源承担。
 
 ```ts
 interface TraceSpanSummary {
@@ -21,13 +23,7 @@ interface TraceWaterfallRow {
   spans: readonly TraceSpanSummary[];
 }
 
-function traceWaterfallData(input: ReportInput): Promise<readonly TraceWaterfallRow[]>;
-
-type TraceWaterfallProps = ComponentProps<readonly TraceWaterfallRow[], {
-  attemptHref?: (locator: AttemptLocator) => string;
-  locale?: ReportLocale;
-  className?: string;
-}>;
+declare const traceRows: DataSource<WaterfallContent, Sample>;
 ```
 
 - web 面：一行一个 attempt，静态渲染顶层 span 分解条（失败 span 带失败标记），行链接到 attempt 详情；排序、缩放是渐进增强。
@@ -35,9 +31,9 @@ type TraceWaterfallProps = ComponentProps<readonly TraceWaterfallRow[], {
 - 只画被测 agent 的原始 span；runner 生命周期节点不进 trace 事实（[Architecture · 事实与看法](../../architecture.md#事实与看法)），组合视图归 attempt 详情。
 
 ```tsx
-<TraceWaterfall />
+<Waterfall source={traceRows} />
 ```
 
 ## 相关阅读
 
-- [站点组件](README.md) —— 这一族为什么不收结构子节点。
+- [`Waterfall`](../primitives/waterfall.md) —— 通用时间树与瀑布原语。

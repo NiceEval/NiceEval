@@ -136,7 +136,7 @@
 | 超时 | Timeout | Adapter 内层超时加 Runner 外层 Attempt deadline;排队不计入 | [Runner](runner.md) |
 | 总耗时 | Elapsed time | 一次 Invocation 从开始到结束经过的时间，包含并行重叠和排队 | [Runner](runner.md) |
 | 阶段耗时 | Phase duration | 一个生命周期阶段实际经过的时间，由 Attempt 时间树记录 | [Benchmark](engineering/benchmark/README.md) |
-| 超时样本的耗时下界 | Duration lower bound for timed-out samples | 超时时只知道真实耗时大于超时线;统计上称为右删失 | [Metrics](feature/reports/library/metrics.md) |
+| 超时样本的耗时下界 | Duration lower bound for timed-out samples | 超时时只知道真实耗时大于超时线;统计上称为右删失 | [Measures](feature/reports/library/measures.md) |
 
 ### 缓存与结果沿用
 
@@ -184,12 +184,13 @@
 |---|---|---|---|
 | Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合,四个消费面共用 | [Reports architecture](feature/reports/architecture.md) |
 | 标注 Eval 源码 | AnnotatedEvalSource | 按 Run 去重的运行时 Eval 源码,每条断言标回调用行 | [Eval source](feature/reports/show/eval-source.md) |
-| 指标 | Metric | 一个 Attempt 算出一个值,再按题和组两级聚合;缺数据为 `null` | [Metrics](feature/reports/library/metrics.md) |
-| 维度 | Dimension | 决定 Attempt 分到哪一组的分组键 | [Metrics](feature/reports/library/metrics.md) |
+| 读数 | Measure | 一个 Attempt 算出一个值,再按题和组两级聚合;缺数据为 `null` | [Measures](feature/reports/library/measures.md) |
+| 维度 | Dimension | 决定 Attempt 分到哪一组的分组键 | [Measures](feature/reports/library/measures.md) |
 | 报告 | Report | `defineReport` 的产物,也是 `--report` 装载的单位 | [Reports](feature/reports/README.md) |
 | 页 | Page | 报告内带 `id`、`title` 与 `content` 的寻址和导航单位 | [Report shell](feature/reports/library/shell.md) |
-| 双面组件 | Dual-render component | 同一份解析结果由 web 与 text 两个纯渲染面消费 | [Report components](feature/reports/components/README.md) |
-| 组合组件 | Composition component | 只装配已有组件、不自行渲染的组件 | [Report components](feature/reports/components/README.md) |
+| 原语 | Primitive | 只负责一种稳定 Content 形状、不认识 NiceEval 领域对象，并提供 text / web 两面 | [Report components](feature/reports/components/README.md) |
+| 数据源 | Data source | 把 Sample、Run 或 AttemptEvidence 计算成某个原语可消费的可序列化 Content | [Report components](feature/reports/components/README.md) |
+| 组合组件 | Composition component | 只装配原语与数据源、不自行实现渲染面的组件 | [Report components](feature/reports/components/README.md) |
 | 宿主 | Host | 打开结果、选择 Sample 并渲染 Report 的 show 或 view | [Reports architecture](feature/reports/architecture.md) |
 | 有效根 | Effective root | 记录根经位置参数或 `--exp` 收窄后的部分 | [View](feature/reports/view.md) |
 | 持续重建 | Continuous rebuild | `niceeval view` 监听输入变化并重跑整条建站管线 | [View](feature/reports/view.md) |
@@ -198,21 +199,20 @@
 
 ### 报告组件
 
-中文正文首次提到组件时写“中文名（`API 名`）”，后续可只写中文名或 `API 名`。组件分成实体列表、汇总和指标图形：实体列表固定展示 experiment、Eval、Attempt 三级事实，指标图形展示聚合值。这里的中文名描述组件的稳定形态，不用 `榜单`、`工作台` 这类会随页面语境变化的别名。完整用法和终端输出见[报告组件一览](../docs-site/zh/reference/report-components.mdx)。
+公开面按角色分成原语、数据源与组合组件。原语名描述稳定形状,数据源名描述算出的 Content,
+组合组件名描述读者得到的完整区块。
 
-| 分类 | 中文 | English | API | 主展示单位 | 契约 |
-|---|---|---|---|---|---|
-| 汇总 | 样本摘要 | Sample summary | `SampleSummary` | 一批 Sample;汇总其中的 experiment、Eval 和 Attempt。data 同时携带 eval 级与 attempt 级两份计票,呈现 prop `votes` 选择显示哪一级(默认 eval) | [Components](feature/reports/components/README.md) |
-| 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment;展开到该 experiment 的 Eval | [Components](feature/reports/components/README.md) |
-| 实体列表 | Eval 列表 | Eval list | `EvalList` | 每项一个 experiment × Eval;展开到该 Eval 的 Attempt | [Components](feature/reports/components/README.md) |
-| 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt;展示断言、错误、Judge 评语与证据 | [Components](feature/reports/components/README.md) |
-| 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度;每格是一个聚合指标值 | [Components](feature/reports/components/README.md) |
-| 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格;每格是一个聚合指标值 | [Components](feature/reports/components/README.md) |
-| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值;按 Eval 和分科计算分数 | [Components](feature/reports/components/README.md) |
-| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一对 experiment 或结果 Run;格内是指标值及差值 | [Components](feature/reports/components/README.md) |
-| 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道 Eval、每列一个条件;格内是历史全执行的判定计数 | [Components](feature/reports/components/README.md) |
-| 指标图形 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一棵组件树:容器持有坐标系,`XAxis` / `YAxis` 绑定维度或指标,`Line` / `Bar` / `Area` / `Scatter` 各是一条 series | [Components](feature/reports/components/README.md) |
-| 行 / 列 / 分节 / 文本 / 正文 / 样式 / 表格 | Row / column / section / text / markdown / style / table | `Row` / `Col` / `Section` / `Text` / `Markdown` / `Style` / `Table` | 如何组织报告版面和补充说明;它们不计算结果 | [Layout](feature/reports/library/layout.md) |
+| 角色 | API | 回答或呈现什么 | 契约 |
+|---|---|---|---|
+| 原语 | `Table` / `Grid` / `Callouts` / `Waterfall` | 表格、读数网格、提示组与时间树 | [Components](feature/reports/components/README.md) |
+| 图表原语与数据源 | `Chart` + `chart(...)` | 折线、柱、面积、散点或混合 mark 的坐标系 | [Charts](feature/reports/components/charts/README.md) |
+| 实体数据源 | `experimentRows` / `evalRows` / `attemptRows` | 以对应实体为顶层的层级行 | [Sources](feature/reports/components/sources/README.md) |
+| 读数数据源 | `measureRows(...)` / `measureMatrix(...)` | 一个维度的读数行或两个维度的交叉格 | [Sources](feature/reports/components/sources/README.md) |
+| 专用数据源 | `scoreboard(...)` / `deltaRows(...)` / `stabilityRows(...)` | 固定题集成绩、成对差异与历史稳定性 | [Sources](feature/reports/components/sources/README.md) |
+| 摘要数据源 | `sampleSummary(...)` | Sample 的范围、数量、判定构成与主读数 | [Summary](feature/reports/components/summaries/sample-summary.md) |
+| 证据数据源 | `attemptSummary` / `attemptTimeline` / `attemptDiff` 等 | AttemptEvidence 的各类可呈现投影 | [Attempt detail](feature/reports/components/attempt-detail/README.md) |
+| 组合组件 | `SampleOverview` | 当前 Sample 的默认总览 | [Overview](feature/reports/components/summaries/sample-overview.md) |
+| 组合组件 | `AttemptDetail` / `FailureList` | Attempt 完整证据或当前失败集合 | [Components](feature/reports/components/README.md) |
 
 ### 配置与 CLI
 

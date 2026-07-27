@@ -58,13 +58,13 @@ Sample {
 sample.attempts
    │  逐 attempt 求值  →  perEval 折叠  →  acrossEvals 折叠
    ▼
-MetricCell { value, display, samples, total, refs }  每格带回覆盖率与证据
-   │  各组件的 *Data 计算
+MeasureCell { value, display, samples, total, refs } 每格带回覆盖率与证据
+   │  数据源的 compute()
    ▼
-TableData / ScatterData / SampleSummaryData / ExperimentListItem[] …  可序列化
-   │  resolve:spec 形态的节点换成 data 形态 props
+TableContent / ChartContent / GridContent … 可序列化
+   │  resolve：source 形态计算成 data 形态
    ▼
-<Report><Page><Hero/><SampleWarnings/><ExperimentComparison/></Page></Report>
+<Report><Page><Chart/><Table/><SampleOverview/></Page></Report>
    │
    ├─ text 面 → niceeval show   终端一屏
    └─ web 面  → niceeval view   静态站点        两个宿主,同一棵报告树
@@ -86,7 +86,7 @@ TableData / ScatterData / SampleSummaryData / ExperimentListItem[] …  可序�
 **Sample 有判断,但判断必须物化。** 「每个实验取最新一次」是一种选法,「这批数据缺了三道题」是一次
 推断。两者都写在返回值的字面字段上:`mode` 说口径,`coverage` 说覆盖,`warnings` 说哪里不可靠。
 
-**Reports 的判断是呈现判断。** 值怎么算归[指标](../reports/library/metrics.md),两级折叠归
+**Reports 的判断是呈现判断。** 值怎么算归[读数](../reports/library/measures.md),两级折叠归
 `perEval` / `acrossEvals`,长什么样归组件与主题。
 
 把选择器长在 Record 上,那条「逐字节可指出来源」的承诺当场垮一半:读者每读一个字段都要先想

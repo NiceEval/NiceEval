@@ -4,7 +4,11 @@
 
 ```tsx
 const Hero = defineComponent(async ({ title, className }: HeroProps, ctx) => (
-  <HeroCard title={title ?? ctx.report.title} data={await heroData(ctx.sample)} className={className} />
+  <HeroCard
+    title={title ?? ctx.report.title}
+    data={await sampleProvenance.compute(ctx.sample)}
+    className={className}
+  />
 ));
 ```
 

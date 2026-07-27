@@ -67,7 +67,7 @@ await attempt.sources();       // SourceArtifact[] | null
 两段(`<实验目录>/<run 目录>`),`attempt` 是 `<evalId 路径>/a<n>`,
 [导出站的 `artifact/` 树](../reports/view.md#静态导出)按这两段拼路径。
 
-**寻址一个 attempt 是另一回事。** 报告的 `MetricCell.refs`、`show @<locator>` 与 view 深链
+**寻址一个 attempt 是另一回事。** 报告的 `MeasureCell.refs`、`show @<locator>` 与 view 深链
 `#/attempt/@<locator>` 用的都是不透明的
 [`AttemptLocator`](#按-locator-寻址一个-attemptresolvelocator),不走磁盘路径。
 
@@ -267,7 +267,7 @@ await publish(latestRunSample(record), "site/data/run", {
 ```
 
 `o11y` 在缺省携带之列。「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做
-不了消费它的内置指标;`assistantTurns`(见 [Reports 的内置指标](../reports/library/metrics.md#内置指标))
+不了消费它的内置指标;`assistantTurns`(见 [Reports 的内置读数](../reports/library/measures.md#内置读数))
 就是它的消费者,且 `o11y.json` 实测几 KB 一个。
 
 逐值[截断](architecture.md#大值截断)与整文件发布预算解决不同问题:`commands` / `events` /

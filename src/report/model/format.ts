@@ -266,7 +266,7 @@ export function fitFailureSummary(summary: string, maxChars: number): string {
 
 /**
  * 一份 `ExperimentList` data 的题型构成:主读数列该显示 Pass rate、Total score,还是两者
- * 并存(docs/feature/reports/components/entity-lists/experiment-list.md 主读数列)。与
+ * 并存(docs/feature/reports/components/entity-lists/experiment-rows.md 主读数列)。与
  * `entity-lists/compute.ts` 里 `experimentListData` 默认排序专用的 `listScoringComposition`
  * 同一套判据——跳过 `attempts === 0` 的行(coverage-only 占位,`scoring` 是占位默认值不是
  * 读到的事实,一屏占位行不该把纯计分制列表误判成 mixed)。web 面与 text 面在这里读同一份

@@ -11,7 +11,7 @@
 ## 形状
 
 ```ts
-interface CopyBlockData {
+interface CopyBlockContent {
   /** 整块文本全文。 */
   text: string;
   /** 折叠块的标题，含条数这类规模信息。 */
@@ -19,9 +19,9 @@ interface CopyBlockData {
 }
 
 interface CopyBlockProps {
-  source?: DataSource<CopyBlockData | null>;
+  source?: DataSource<CopyBlockContent | null>;
   input?: ReportInput | AttemptEvidence;
-  data?: CopyBlockData | null;
+  data?: CopyBlockContent | null;
   locale?: ReportLocale;
   className?: string;
 }

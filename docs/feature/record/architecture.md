@@ -174,7 +174,7 @@ interface ExperimentRunInfo {
 
 几条纪律:
 
-- **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `config()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/metrics.md#维度与数值轴))。
+- **`model` 与 `agent` 只在 Run 顶层存在**(`run.model` / `run.agent`),`ExperimentRunInfo` 不复制——同一事实两处落盘不是冗余就是漂移;报告的 `runConfig()` 对 `model` / `agent` 两个键桥接到顶层字段,消费方无感(见 [Reports · 维度与数值轴](../reports/library/measures.md#维度与数值轴))。
 - **`labels` 是报告元数据**,不进 fingerprint,也不进 `configHash`。`selectedEvalIds` 是这次运行实际选择的 eval 集；报告直接读取它，不从 experiment 路径推断另一层集合。
 - **sandbox 参数只经 provider 的 `publicConfig()` 投影落盘**:每个内置 provider 显式实现「哪些参数可发布」的投影(镜像名、模板名、runtime 可以;token、凭据路径永远不可以),`defineSandbox` 自定义 provider 没有提供投影时只落 provider 名。「params 不含 secret」由投影保证,不靠注释承诺。
 - **按 eval 解析预制产物时保存逐 eval 结果。** 顶层 `sandbox` 始终是 spec 基础参数的投影；`sandboxByEval` 只记录本 Run 选中且声明了 `environment` 的 eval 各自解析到的产物投影，供审计与逐 eval fingerprint 对账。未声明 environment 的 eval 以顶层 `sandbox` 为准，未选中的 eval 不查表、不伪造映射项；spec 的 `environments` 表不整张落盘——落的是每条 eval 的解析结果。
@@ -435,7 +435,7 @@ interface Usage {
   reasoningTokens?: number;
   /** 真实发生的模型请求数。协议不提供请求计数就省略,绝不写 1 凑数——一个 20 轮 session 报 `requests: 1` 比缺失更有害。 */
   requests?: number;
-  /** 网关/协议实测的计费金额(如实转发,不换算)。与顶层 `estimatedCostUSD`(价目表估算)是两个事实:实测存在时消费方优先它(口径见 [Reports 内置指标](../reports/library/metrics.md#内置指标) costUSD 行)。 */
+  /** 网关/协议实测的计费金额(如实转发,不换算)。与顶层 `estimatedCostUSD`(价目表估算)是两个事实:实测存在时消费方优先它(口径见 [Reports 内置读数](../reports/library/measures.md#内置读数) costUSD 行)。 */
   costUSD?: number;
 }
 ```
@@ -454,7 +454,7 @@ interface Usage {
 - **不影响判定与复用**:facts 不参与 verdict、评分或指纹，也不能在携带决策前取得——experiment / sandbox setup 尚未运行时，runner 已经决定哪些 attempt 可以携带。计划内实验条件必须声明在 `flags`、model、agent、sandbox 配置或其它已有 fingerprint 输入中；依赖外部可变状态且无法配置化时用 `--rerun all` 重跑，再用 facts 审计实际状态。把「启用了哪个特性」只写成 fact 会让旧结果在条件变化后被错误携带。
 - **运行时坐标的家就是这里**:隧道 / 反向代理 URL、服务端实例地址这类「每次跑都可能换、换了不改变 attempt 里发生什么」的连接坐标,是运行起来才存在的观测,报成 fact——写进 `flags` 会让每一次轮换作废全部已完成结果(整袋 `flags` 进指纹,没有逐键豁免)。与上一条不矛盾:**条件是你写下的,坐标是跑出来的**,判据与三个家的分工见 [Experiments · 运行时坐标不进配置](../experiments/library.md#运行时坐标不进配置三个家)。
 - **要它跟着单条结果走就报在 attempt 作用域**:`AttemptRecord.facts` 随[携带条目](#resultjson)原样携带,携带来的那条读到的仍是产出它那一轮的观测,不被本轮的新值冒名顶替;`RunMeta.facts` 记的是本次运行整场的观测,携带条目不继承它。按 fact 分组的报告因此只读 attempt 级。
-- **读取面原样转发**:facts 在 show 的 `facts:` 行、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/metrics.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
+- **读取面原样转发**:facts 在 show 的 `facts:` 行、对照矩阵与 `--json` 中呈现，报告可按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴分组；它能帮助确认两次执行实际处于什么环境，但不能反过来证明携带结果仍与当前外部状态相容。
 
 ## 证据 registry
 

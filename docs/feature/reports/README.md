@@ -6,7 +6,7 @@
 |---|---|---|
 | 在终端定位失败、看源码、对话和 diff | [`niceeval show`](show.md) | AI 自主迭代、CI、快速 debug |
 | 在浏览器浏览历史、图表和完整证据 | [`niceeval view`](view.md) | 人工复盘、分享静态报告 |
-| 定义自己的成绩单、柱状图或趋势图 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
+| 定义自己的成绩单、图表或趋势页 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
 
 `show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 sample-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
 
@@ -69,10 +69,10 @@ export default defineConfig({
 
 - 正在修一个失败的 eval：从 [`show`](show.md) 开始。
 - 想浏览或发布完整结果站：看 [`view`](view.md)。
-- 想写自己的报告：看 [Library](library.md)，先按“选择组件”表挑形状，再进对应分篇复制配方。
+- 想写自己的报告：看 [Library](library.md)，先按问题选择数据源与原语，再参考完整示例。
 - 想把结果发布成带品牌、外链和多页导航的站点：看 [Library · 外壳与多页](library/shell.md)。
 - 想改整站强调色、状态色、图表色板、字体或进一步覆盖 CSS：看 [Library · 主题](library/theme.md)。
-- 想自己写一个报告组件，并让它跟随任何主题：看[自己写报告组件](use-case/构建报告/自定义组件/)。
+- 想自己写数据源或组合组件：看[扩展报告](use-case/构建报告/自定义组件/)。
 - 想知道默认报告本身怎么写、怎么逐步改造：看 [Library · 内建报告](library/built-in.md)。
 - 想知道字段从哪个文件来：看 [Record Architecture](../record/architecture.md)。
 
@@ -81,7 +81,7 @@ export default defineConfig({
 - [Show](show.md) —— 终端中的默认报告、attempt 诊断和证据切面。
 - [View](view.md) —— 本地网页、结果收窄和静态导出。
 - [用例手册](use-case/README.md) —— `show` / `view` 输入与 Library 组件分别在什么真实任务中使用。
-- [Library](library.md) —— 报告组件目录和常用组合配方。
+- [Library](library.md) —— 数据源、原语、组合组件与常用示例。
 - [Theme](library/theme.md) —— 主题制品、四档装载链、令牌全集与完整 CSS 出口。
 - [主题目录](themes/README.md) —— 内建主题一览；官方主题 [Basalt](themes/basalt.md) 的取值与主张。
 - [Architecture](architecture.md) —— 两个宿主、报告树和可序列化边界。

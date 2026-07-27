@@ -1,7 +1,7 @@
 # claude-agent-sdk 仓库
 
 仓库 ID `claude-agent-sdk`，group `sdk`。被测应用是仓库自带的 Claude Agent SDK 服务：`query()`
-驱动、带 MCP demo 工具与 `canUseTool` 审批接口，adapter 用 `fromClaudeSdkMessages()`
+驱动、带 MCP demo 工具与 `canUseTool` 审批接口，adapter 用 `createClaudeSdkEventStream()`
 加 transport 粘合接入（契约见
 [Claude Agent SDK 契约页](../../../../feature/adapters/sdk/claude-agent-sdk/README.md)）。
 

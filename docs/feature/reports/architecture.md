@@ -1,9 +1,9 @@
 # Reports —— 架构
 
-Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、网页宿主 `view`、用户自己的 React 页面。三个入口共用指标与数据计算；两个官方宿主共用 Sample 规则，自有 React 页面显式选择 `currentSample(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用。
+Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、网页宿主 `view`、用户自己的 React 页面。三个入口共用读数与数据计算；两个官方宿主共用 Sample 规则，自有 React 页面显式选择 `currentSample(record)` 或历史 `Run[]`。`--report` 的自定义报告树可在两个官方宿主间复用。
 
 ```text
-.niceeval/ ── openRecord / Sample ── resolve（*Data 计算）── 可序列化数据
+.niceeval/ ── openRecord / Sample ── resolve（DataSource 计算）── 可序列化数据
                                                         │
                          ┌──────────────────────────────┼────────────────────┐
                          ▼                              ▼                    ▼
@@ -13,19 +13,22 @@ Reports 把同一份结果事实呈现到三个位置：终端宿主 `show`、�
 
 ## 概念分层
 
-可装载的分层只有三个概念，每个概念一句话，每个词只出现在一层：
+公开模型有五个角色。它们不是同一对象的五种后缀，而是五个不同职责：
 
-| 概念 | 形态 | 职责 |
+| 角色 | 形态 | 职责 |
 |---|---|---|
-| 组件 | `defineComponent`（双面或组合） | 唯一的取数与渲染单位 |
-| 页 | `{ id, title, content }` 字面量 | 给一棵树一个地址和导航名 |
+| 数据源 | `DataSource<Content, Input>` | 从 Sample、Run 或 AttemptEvidence 计算可序列化 Content |
+| 原语 | `Table`、`Grid`、`Callouts`、图表等 | 把一种通用 Content 形状投影到 text 与 web |
+| 组合组件 | `defineComponent((props, ctx) => ReportNode)` | 装配已有数据源与原语，不实现第三套 renderer |
+| 页 | `{ id, title, content }` 字面量 | 给一棵报告树一个地址和导航名 |
 | 报告 | `defineReport(外壳 + 内容)` | 唯一可被宿主装载的产物 |
 
-`define*` 只出现在有契约需要在定义时强制的两处：组件的渲染面资格与外壳/页列表的形状。页没有这种契约——它是纯绑定记录，id 在装载期校验即可——所以页是字面量，不设 `definePage`。
+`define*` 只用于确实产生定义期制品的对象。数据源工厂是纯声明，原语是库内封闭集合，页是纯绑定
+记录，因此都不机械套 `define`。
 
 ## 共享内核与两个宿主的代码边界
 
-`Reports` 是功能总称，包含 `show`、`view` 和可编程的 `niceeval/report`；单数的 `report` 不是 `show` 或 `view` 的别名，而是两个宿主共用的报告内核。报告的内容单位只有 page，page 的内容单位只有组件树。view 没有一套 page 之外的“attempt 证据面”：attempt 的事实由 Results 提供，详情只是以 locator 为输入的一张参数化 page。
+`Reports` 是功能总称，包含 `show`、`view` 和可编程的 `niceeval/report`；单数的 `report` 不是 `show` 或 `view` 的别名，而是两个宿主共用的报告内核。报告的内容单位只有 page，page 的内容单位只有组件树。view 没有一套 page 之外的“attempt 证据面”：attempt 的事实由 Record 提供，详情只是以 locator 为输入的一张参数化 page。
 
 ```text
 niceeval/record ── Sample / AttemptEvidence ──▶ niceeval/report ──┬── text 面 ──▶ show
@@ -34,12 +37,12 @@ niceeval/record ── Sample / AttemptEvidence ──▶ niceeval/report ──
 
 | 所有者 | 责任 |
 |---|---|
-| `niceeval/report` | `ReportDefinition` / page / 报告树的唯一模型；静态页与参数化页的装载、规范化与 resolve；Sample / AttemptEvidence 注入；指标、维度和可序列化组件数据；text / web 两个渲染面；内建报告；官方样式与渐进增强资产。 |
+| `niceeval/report` | `ReportDefinition` / page / 报告树的唯一模型；静态页与参数化页的装载、规范化与 resolve；Sample / AttemptEvidence 注入；读数、维度和可序列化组件数据；text / web 两个渲染面；内建报告；官方样式与渐进增强资产。 |
 | `show` | 终端宿主：范围 / 切片 / 形态的 CLI 输入组合、page / locator 寻址与 text 输出。切片不是宿主内容——每个切片都解析为报告组件的装配（见[「show 的切片是组件选择」](#show-的切片是组件选择)），show 保留的是 flag 解析、逐 attempt 分节映射与 text 渲染的机器。`show @<locator>` 是选择 attempt-input page 并传入 locator 的快捷语法。 |
 | `view` | 网页宿主：站点产物清单、本地服务与静态导出、page 路由、导航、语言切换与 artifact 交付。所有 HTML 都是 `niceeval/report` 的 page 输出；view 可把参数化详情页渐进增强成 modal，但不拥有固定 modal 内容。 |
 | `niceeval/record` | 持久化事实、Sample 选择、locator 解析与中性 `AttemptEvidence` 装配。两宿主与 report 组件共用同一份证据模型，不各自重读 artifact 或重建时间树。 |
 
-依赖方向只能从宿主指向 `niceeval/report` 和 `niceeval/record`。`show` 与 `view` 之间不互相 import；两者都需要的报告装载、规范化、标题回退、静态 / 参数化 page 解析或渲染适配属于 report，共用的结果事实与证据投影属于 Results。“先放在某个宿主里、另一宿主反向 import”不是共用机制。
+依赖方向只能从宿主指向 `niceeval/report` 和 `niceeval/record`。`show` 与 `view` 之间不互相 import；两者都需要的报告装载、规范化、标题回退、静态 / 参数化 page 解析或渲染适配属于 report，共用的结果事实与证据投影属于 Record。“先放在某个宿主里、另一宿主反向 import”不是共用机制。
 
 ### 单一 report runtime 身份
 
@@ -53,34 +56,29 @@ niceeval/record ── Sample / AttemptEvidence ──▶ niceeval/report ──
 
 ```text
 report/
-├── definition/                 ReportDefinition、页、外壳、报告树与组件协议
-├── model/                      跨组件共用的 Metric、Dimension、聚合与格式化原语
-├── components/                 跨组件族共用的数据组件协议（spec/data 校验、构造、hrefOf/ChromeProps）
-│   │                            与文案惯例（缺数据/覆盖率展示、attempt 统计与筛选口径）
-│   ├── summaries/              SampleSummary / ExperimentComparison
-│   ├── entity-lists/           Experiment / Eval / Attempt / Failure 列表
-│   ├── charts/                 容器、轴、series、嵌套节点、ChartData 与两面投影
-│   ├── metric-views/           Table / Matrix / Scoreboard / Delta / Stability
-│   ├── attempt-detail/         Summary / Error / Assertions / Source / FixPrompt / Timeline /
-│   │                            Conversation / Diagnostics / Usage / Trace / Diff
-│   └── site-components/        Hero / Warnings / RunDiagnostics / CopyFixPrompt / TraceWaterfall
-├── runtime/                    装载、resolve、validate、text/web 渲染与 host facade
-├── built-in/                   只用公开组件装配的内建报告
+├── definition/                 ReportDefinition、页、外壳与报告树协议
+├── model/                      Measure、Dimension、聚合与格式化
+├── sources/                    官方数据源；按 summary / entity / measure / evidence 分组
+├── primitives/                 Table / Grid / Callouts / Waterfall / charts 与两面 renderer
+├── compositions/               SampleOverview / AttemptDetail / FailureList
+├── runtime/                    装载、compute、validate、text/web 渲染与 host facade
+├── built-in/                   只用公开数据源、原语与组合组件装配的内建报告
 └── assets/                     官方样式、渐进增强与共享设计令牌入口
 ```
 
-每个组件族在自己的边界内完成“数据契约 → `*Data` 计算 → spec/data 装配 → text 面 → web 面 → 样式”。与数据模型无关、但被两个以上组件族复用的组件层原语（数据组件构造协议、文案惯例、统计口径）留在 `components/` 根目录，不归属某一族；真正与组件形态无关的计算与格式化原语才下沉到 `model` / `definition`。`runtime` 可以依赖 definition、model 和 components；组件计算与渲染面不反向依赖宿主或 runtime 的 IO 编排。
+依赖方向是 `sources → model`、`compositions → sources + primitives`、`runtime → definition +
+sources + primitives + compositions`。原语不反向依赖数据源，数据源不读取主题、终端宽度或浏览器状态。
 
 ### Attempt 详情是一张参数化 page
 
 `ReportDefinition` 只有一个非空 `pages` 列表，不再在旁边增加 `attempt`、`modal` 或其它内容槽。page 按输入分两种形态，但仍是同一个类型族、走同一条 `resolve → validate → render` 管线：
 
 - `input` 省略或为 `"sample"`：静态 page，消费宿主选择的 Sample；默认进入导航。
-- `input: "attempt"`：以 locator 为参数的 page，消费 Results 装配的一份 `AttemptEvidence`；必须 `navigation: false`，因为没有 locator 时不能打开，也不应出现在全局导航。
+- `input: "attempt"`：以 locator 为参数的 page，消费 Record 装配的一份 `AttemptEvidence`；必须 `navigation: false`，因为没有 locator 时不能打开，也不应出现在全局导航。
 
 一份报告至多声明一张 attempt-input page，避免 `show @<locator>` 与 locator 链接出现多个目标。报告未声明它时 locator 只是普通文本，宿主不悄悄补一张官方详情页。view 的 locator URL 与 `show @<locator>` 只是定位这张 page 并传参的宿主语法，不构成第二种内容模型。
 
-内建 `standard` 的 `pages` 因而有四项：报告、Attempts、追踪三张导航页，以及一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页。它的 `content` 是普通 [`AttemptDetail`](components/attempt-detail/README.md) 组合组件；`AttemptDetail` 与 `ExperimentComparison` 同级，都只用公开叶子组件装配，没有私有 renderer。用户可以直接用成品组合，也可以在该 page 的 `content` 里用 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等区块重新组装。
+内建 `standard` 的 `pages` 因而有四项：报告、Attempts、追踪三张导航页，以及一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页。它的 `content` 是普通 [`AttemptDetail`](components/attempt-detail/README.md) 组合组件；`AttemptDetail` 与 `SampleOverview` 同级，都只用公开叶子组件装配，没有私有 renderer。用户可以直接用成品组合，也可以在该 page 的 `content` 里用 `attemptSummary`、`AttemptAssessment`、`attemptTimeline` 等区块重新组装。
 
 view 只保留 page 寻址、locator 历史记录与内容摆放机制。它可把已渲染的参数化 page 渐进增强成 dialog，但 dialog 内部的区块、顺序、样式和取舍全部来自 page content。本地模式与静态导出对同一 locator 物化相同字节的独立 page 文档；基线链接直接指向该文档，所以无 JavaScript 仍能打开，JavaScript 只拦截链接并把同一内容放进 dialog，不另造一份内容实现。`show @<locator>` 渲染同一 page 的 text 面；`--source` / `--execution` / `--timing` / `--diff` 选择 attempt-detail 组件族对应区块的 text 面（见下节）。
 
@@ -88,30 +86,38 @@ view 只保留 page 寻址、locator 历史记录与内容摆放机制。它可�
 
 show 的每个切片都解析为报告组件的装配，`--json` 输出该视图组件 resolve 产物的信封包装——「text 面与 JSON 共有派生字段同值」因此由构造保证（同一次 resolve 的产物），不是两套手写投影之间的纪律：
 
-| 切片 | 组件（+ 配套 `*Data`） |
+| 切片 | 数据源或组合组件 |
 |---|---|
-| 默认报告 | 内建报告首页（`ExperimentComparison` / `ExperimentList`） |
-| 对照矩阵（多 `--exp`） | `DeltaTable`（多条件对照：翻转标记、各条件汇总、共同题 paired delta） |
-| `--stats` | `StabilityMatrix`（历史全执行证据面的稳定性矩阵） |
-| `--usage` | `UsageTable`（与 attempt 详情 `usage:` 行共享组装口径单源） |
+| 默认报告 | 内建报告首页（`SampleOverview` / `experimentRows`） |
+| 对照矩阵（多 `--exp`） | `deltaRows`（多条件对照：翻转标记、各条件汇总、共同题 paired delta） |
+| `--stats` | `stabilityRows`（历史全执行证据面的稳定性矩阵） |
+| `--usage` | `attemptUsage`（与 attempt 详情 `usage:` 行共享组装口径单源） |
 | 缺省 attempt 首页与 `--source` / `--execution` / `--timing` / `--diff` | attempt-detail 组件族（`AttemptDetail` 及其区块） |
 
 - sample 级切片消费宿主注入的 Sample；证据切片消费 locator 解析出的 `AttemptEvidence`。范围含多个 attempt 时，宿主机器把同一组件逐 attempt 映射并分节——分节是宿主机器，节内内容仍由组件拥有。
 - 终端专属行为——卡片预览预算、`--expand` 句柄、`--grep`——是这些组件 **text 渲染面的选项**，不是事实过滤器；JSON 面恒为完整 resolve 产物。「`--json` 不受 text 预算约束」「`--expand` 与 `--json` 组合是用法错误」由此成为推论而非特判。
-- `--json` 的信封见 [Show `--json`](show/json.md)；逐视图 data 形状单源在各组件分篇的 `*Data` 声明，json 页只保留信封与指针，不手写第二套形状。
+- `--json` 的信封见 [Show `--json`](show/json.md)；逐视图 Content 形状单源在各数据源分篇的类型声明，json 页只保留信封与指针，不手写第二套形状。
 - CLI 缺省切片与报告库组件因此不是两套实现：终端矩阵与报告页矩阵是同一组件的两处装配，语义与数字必然一致。
 
 ## 事实与看法
 
-Results 保存事实：判定、断言、runner 时间树、事件、trace、diff 和运行元数据。`loadAttemptEvidence` 把一个 attempt 的 locator、身份、主记录、标注源码、执行树、trace、diff、artifact 路径与能力位一次装成中性 `AttemptEvidence`；report 组件和宿主不各自重读 artifact。Reports 只派生看法：指标、聚合、排序、图表、列表和 attempt 详情布局。Attempt 的统一时间视图以 `phases` 作为生命周期/hook/command/turn 骨架，按 turn 的 `traceId` 临时挂接同一份 evidence 中的 spans；组合结果不写回任一 artifact。
+Record 保存事实：判定、断言、runner 时间树、事件、trace、diff 和运行元数据。`loadAttemptEvidence` 把一个 attempt 的 locator、身份、主记录、标注源码、执行树、trace、diff、artifact 路径与能力位一次装成中性 `AttemptEvidence`；report 组件和宿主不各自重读 artifact。Reports 只派生看法：读数、聚合、排序、图表、列表和 attempt 详情布局。Attempt 的统一时间视图以 `phases` 作为生命周期/hook/command/turn 骨架，按 turn 的 `traceId` 临时挂接同一份 evidence 中的 spans；组合结果不写回任一 artifact。
 
 派生数据不写回记录根，不带独立 schemaVersion——支持口径是同一 niceeval 版本写读，删除报告缓存后可从原始结果重新计算。渲染面消费 `data` 时校验结构，不符合当前版本的形状按完整用户反馈报错并提示可能的版本漂移；漂移因此以显式错误浮出，不静默错渲染。
 
 ## Sample 是计算入口
 
-所有官方 `*Data(input, options?)` 计算函数接受 `ReportInput = Sample | readonly Run[]`。Sample 同时携带真实 Run、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”的信息拆开。warning 的呈现件是 [`SampleWarnings`](components/site/sample-warnings.md)，Run 实体上开放词表 diagnostics 的呈现件是 [`RunDiagnostics`](components/site/run-diagnostics.md)；宿主不在报告树外另设通道，[内建报告](library/built-in.md)的三张 sample-input page 都相邻放置两者（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。`RunDiagnostics` 对 Sample 只投影 `sample.runs`，对裸 `Run[]` 同样工作；它的 data 形态只携带 experimentId、startedAt 与 DiagnosticRecord[]，不把 Run 拖进浏览器。覆盖缺口由 `experimentListData` 消费成占位行、时效由 attempt 行的时效标注呈现（见[实体列表](components/entity-lists/README.md)），指标与列表组件的数据不复制 warning 或 diagnostic。
+多数官方数据源的 `Input` 是 `Sample`。确实需要完整历史的 `stabilityRows` 等数据源显式声明
+`Input = readonly Run[]`；attempt 详情数据源显式声明 `Input = AttemptEvidence`。输入差异进入类型，
+不压进一个含混的 `ReportInput` 后靠运行时猜。
 
-指标与列表组件的数据样本一律来自 `Sample.attempts`——按 `currentSample()` / `latestRunSample()` 口径挑好的 attempt 全集，组件不各自 `flatMap` `runs` 重新展开，避免同一道题的历史 attempt 被不同组件用不同口径重复计入或漏算。配置（agent / model / flags / sandbox 等）、diagnostics 与 Run 目录这类**Run 级**信息来自真实 `Sample.runs`。`currentSample()` 下同一个 experiment 可能有多个贡献 Run（不同 eval 取自不同历史 Run，见 [Sample · 两个选择器](../sample/library.md#两个选择器)）；此时该 experiment 展示用的“水位基准 Run”是这些贡献来源里 `startedAt` 最新的一个——表头、hero 与 `config()` 桥接读取的 agent / model / flags 都以这一个为准，不是任取某个来源或合并多个来源的字段。
+Sample 同时携带真实 Run、覆盖事实（coverage）和选择警告，避免报告把数据与“这批数据是否完整”
+的信息拆开。warning 的数据源是 [`sampleWarnings`](components/site/sample-warnings.md)，Run 实体上
+开放词表 diagnostics 的数据源是 [`runDiagnostics`](components/site/run-diagnostics.md)；它们都
+交给 `Callouts`，宿主不在报告树外另设通道。覆盖缺口由 `experimentRows` 消费成占位行，时效由
+attempt 行呈现；读数与列表 Content 不复制 warning 或 diagnostic。
+
+读数与实体数据源的样本一律来自 `Sample.attempts`——按 `currentSample()` / `latestRunSample()` 口径挑好的 attempt 全集，数据源不各自 `flatMap` `runs` 重新展开，避免同一道题的历史 attempt 被不同数据源用不同口径重复计入或漏算。配置（agent / model / flags / sandbox 等）、diagnostics 与 Run 目录这类**Run 级**信息来自真实 `Sample.runs`。`currentSample()` 下同一个 experiment 可能有多个贡献 Run（不同 eval 取自不同历史 Run，见 [Sample · 两个选择器](../sample/library.md#两个选择器)）；此时该 experiment 展示用的“水位基准 Run”是这些贡献来源里 `startedAt` 最新的一个——表头、hero 与 `config()` 桥接读取的 agent / model / flags 都以这一个为准，不是任取某个来源或合并多个来源的字段。
 
 `show` 与 `view` 对命令行范围使用同一套选择规则：
 
@@ -121,43 +127,50 @@ Results 保存事实：判定、断言、runner 时间树、事件、trace、dif
 4. 局部补跑、过旧或未完成 Run 形成结构化 warning。
 5. 同一份 Sample 交给各宿主默认首页或 `--report`。
 
-宿主把这份 Sample 注入每张 sample-input page：其中数据组件的 `input` 默认就是它，组合组件从 ctx 拿到它。attempt-input page 仍可从 ctx 读取站点 Sample，但详情叶子的默认输入是 `ctx.page.evidence`，两者由 page input 判别，不靠猜测。报告若需要历史趋势，可从组合组件 ctx 的 `record` 自行选择 `Run[]`；不能把宿主注入的现刻水位 Sample 当成完整历史。
+宿主把这份 Sample 注入每张 sample-input page：原语 source 形态的默认 `input` 就是它，组合组件从
+ctx 拿到它。attempt-input page 的默认输入是 `ctx.page.evidence`，两者由 page input 判别，不靠猜测。
+报告若需要历史趋势，可从组合组件 ctx 的 `record` 自行选择 `Run[]`；不能把宿主注入的当前 Sample
+当成完整历史。
 
 ## Sample 是默认报告的比较边界
 
-`experimentListData`、`sampleSummaryData` 与 `chartData` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Sample；每个 experiment 当前有效的 eval 集从 `Sample.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入覆盖占位行，不进分母也不补成失败。这条读法不依赖任何单一 Run 的 `ExperimentRunInfo.selectedEvalIds`——`currentSample()` 下一个 experiment 的有效题集由多个贡献 Run 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `ExperimentComparison` 展开后走到的调用深相等。
+`experimentRows`、`sampleSummary` 与 `chart` 不推导第二层实验组，直接消费宿主已经收窄并完成现刻水位选择的 Sample；每个 experiment 当前有效的 eval 集从 `Sample.coverage` 读取——该 experiment 的 `knownEvalIds` 去掉 `missingEvalIds` 就是当前口径下真正有判定的分母（已经过 `--exp` / 位置参数范围收窄）；`missingEvalIds` 本身进入覆盖占位行，不进分母也不补成失败。这条读法不依赖任何单一 Run 的 `ExperimentRunInfo.selectedEvalIds`——`currentSample()` 下一个 experiment 的有效题集由多个贡献 Run 共同撑起，没有哪一个来源的 `selectedEvalIds` 能单独代表它。这是三个函数自己的契约：直接调用与经 `SampleOverview` 展开后走到的调用深相等。
 
-`SampleSummary`、默认散点与 `ExperimentList` 都消费同一份 Sample。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；组件不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
+`sampleSummary`、默认散点与 `experimentRows` 都消费同一份 Sample。用户用 `--exp` 按 experiment id 路径收窄，或在自定义报告里显式 `filter`；组件不从路径、文件名、agent、model、flags 或 labels 猜比较边界。
 
-## 组件模型：解析面与渲染面
+## 计算面、渲染面与组合面
 
-组件由 `defineComponent` 定义，两种入参形态产出同一种可入树的报告组件：
+数据源是异步计算的唯一公开单位：
 
-- **双面组件**（对象形态 `{ resolve?, text, web }`）：自己渲染。`resolve` 是组件唯一的异步 / IO 面，把作者写下的 props 规范化成渲染 props；`text` 与 `web` 是同步纯函数，只消费 resolve 之后的渲染 props——两面因此天然消费同一份终值。
-- **组合组件**（函数形态 `(props, ctx) => 树`）：只装配已有组件，不自己渲染，可以异步；`ctx` 携带宿主注入的 `sample`、记录根读取面 `record` 与规范化报告声明 `report`（[契约](library/shell.md#行为约束)）。心智与 React 同构：双面组件像 host component 自己落渲染，组合组件像 function component 只组合别人。
-
-官方数据组件的 props 有两种形态，以 `data` 字段判别；数据绑定住在[结构子节点](components/README.md#结构节点)上：
-
-```tsx
-// spec 形态
-<ScatterChart>
-  <XAxis metric={costUSD} />
-  <YAxis metric={endToEndPassRate} />
-  <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
-</ScatterChart>
-
-// data 形态
-<ScatterChart data={await chartData(sample, spec)}>
-  <Scatter dataKey="scatter:experiment:agent" />
-</ScatterChart>
+```ts
+interface DataSource<Content, Input = Sample> {
+  readonly name: string;
+  compute(input: Input): Promise<Content>;
+}
 ```
 
-- **spec 形态**：结构子节点携带计算绑定，`input` 可省略、默认宿主注入的 Sample。管线在 resolve 阶段代为调用同名 `*Data` 函数——spec 形态与「先手工调 `*Data` 再传 `data`」严格等价，终值、覆盖率与 attempt 引用逐字段相同。
-- **data 形态**：接收配套 `*Data` 函数算好的可序列化数据，跳过取数。它是显式降级口，服务三类场景：算完后用普通 JavaScript 加工（filter / slice / 排序）、把同一份数据写成 JSON 给 SPA、在没有 niceeval 解析阶段的自有 React 页面里渲染。同一组件同时给出 `data` 与 spec 字段时，按完整用户反馈报错，不静默取一边。
+原语只接受两种互斥形态：
 
-`*Data` 计算函数与组件成对导出——它们是双面组件解析面的具名形式（`MetricTable` / `metricTableData`、`ExperimentList` / `experimentListData`），只住在 `niceeval/report`。`niceeval/report/react` 只导出纯 web 渲染面：组件只收 `data`，不含任何读盘 / artifact 计算代码；spec 形态与组合组件只在报告树里成立。
+```tsx
+<Table source={experimentRows} />
 
-resolve 在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化：声明式重复同一 spec（如一张矩阵和一张同维度的图表消费同一份聚合）只计算一次，声明式写法不劣于手工共享数据。深相等只递归比较可序列化值；spec 里的函数与 `Metric` / `Dimension` / `NumericAxis` 实例按引用比较——共享计算的成立条件是引用同一实例（同一次 import 天然满足），引用不同的等价定义只是各算一次，不构成错误。
+const content = await experimentRows.compute(sample);
+<Table data={content} />
+```
+
+- **source 形态**：管线在 resolve 阶段调用 `source.compute(input)`；`input` 省略时注入 page 的默认输入。
+- **data 形态**：作者传入已计算的可序列化 Content；原语不再取数或聚合。
+- 同时给 `source` 与 `data` 按完整用户反馈失败，不静默取一边。
+
+组合组件由 `defineComponent((props, ctx) => ReportNode)` 定义，可以选择输入、并行计算、用普通
+JavaScript 加工 Content，再返回原语树。它不实现 text/web renderer，也不产生另一套 Content。
+
+`niceeval/report` 导出数据源、原语与组合组件；`niceeval/report/react` 只导出原语及其 Content
+类型，而且只接受 data 形态。浏览器包因此不含 Record、Sample、artifact 或任何磁盘读取能力。
+
+resolve 在一次 page 实例内按「同一个数据源对象 + 同一个 input 引用」记忆化。同一数据源要被多页
+或多个原语共享时，在报告外壳的 `sources` 字段具名；两个配置相同但分别创建的数据源可以各算一次，
+不依赖不透明的深相等猜测。
 
 这个模型保证四条边界：
 
@@ -168,35 +181,27 @@ resolve 在一次页渲染内按「同引用 `input` + 深相等 spec」记忆�
 
 ## 报告树与两个宿主
 
-报告树由 `Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Style`、`Tabs`、`Tab`、`Table` 等排版原语与双面组件、组合组件的节点组成；节点的穷尽形状（数组、Fragment、空分支的资格与裸字符串的拒绝）单点定义在 [Library · `ReportNode`](library/layout.md#树的节点reportnode)。宿主管线固定为：
+报告树由原语与组合组件组成；数据源作为原语的 `source` 属性出现，不单独成为树节点。节点的穷尽
+形状单点定义在 [Library · `ReportNode`](library/layout.md#树的节点reportnode)。宿主管线固定为：
 
 ```text
 装载（规范化外壳与页列表，静态校验）
-  → resolve（展开组合组件 + 执行 spec 形态取数；同层并行、保持声明顺序、按 (input, spec) 记忆化）
-  → validate（展开后的树逐节点校验渲染面资格；结构节点在原位置校验合法父组件）
+  → resolve（展开组合组件 + 执行 source.compute；同层并行、保持声明顺序）
+  → validate（逐节点校验原语资格、Content 形状与结构节点父子关系）
   → render（纯同步输出终端文本或静态 HTML；先按页内维度值集合算一次色分配）
 ```
 
-- **resolve：** 页内唯一的异步 / IO 边界。递归展开组合组件（调用其函数并 await 返回树）、执行双面组件的解析面；同层 sibling 并行取数且不改变节点顺序。非法节点——React 组件、未经 `defineComponent` 的普通函数、任意 HTML intrinsic——在展开遇到时立即以完整用户反馈拒绝，不为非法节点取数。
-- **validate：** 确保展开后树中每个组件都有 text 和 web 两面。校验只看节点资格，不限定树形：根节点可以是单个组件、`Col` 或 `Tabs`，宿主不强制任何最外层容器。
-- **render：** 纯同步。text 面与 web 面消费同一棵已解析的树。开始渲染前先收集这一页全部已解析数据里的 `(维度, 值)` 对，一次算出维度值到色槽的映射——[页级色分配](components/README.md#系列色分配单位是页)，保证图例与列表里的同一个键同色；映射是确定的纯函数，不改写任何组件 data。
-
-`defineComponent` 的对象形态要求同时给出 `text` 与 `web`，缺一面在定义时报错。因此任何可放入 `--report` 的组件都能被两个官方宿主判读；只用于用户网站的普通 React 组件不受这项约束，也不能进报告树。
+- **resolve：** 页内唯一的异步 / IO 边界。递归展开组合组件，并行执行同层数据源；同一个 source
+  与 input 组合只计算一次。非法 React 组件、未经 `defineComponent` 的普通函数和 HTML intrinsic
+  在展开遇到时立即拒绝，不为非法节点取数。
+- **validate：** 确保每个原语都能被 text 与 web 两面判读，Content 与原语兼容。
+- **render：** 纯同步。两面消费同一次计算得到的 Content；页级颜色映射不改写 Content。
 
 ### 只有一面能做的事：具名 `enhance` 位
 
-有些能力只在 web 面成立——列头点击排序、过滤框、图表 tooltip、hover 展开。组件不用 `if (host === "web")`
-表达这件事：**宿主判别不进组件实现**。每种此类能力是一个具名 `enhance` 位，组件声明它要哪几个，
-text 面的降级形态由该能力位统一规定，不由各组件自行发明：
-
-```tsx
-defineComponent({
-  data: (input, spec) => …,
-  enhance: ["sortable", "filterable"],   // 闭集,见下表
-  text: (data) => …,                     // 拿不到 enhance,只渲染当前序与全集
-  web: (data, { enhance }) => …,         // enhance 携带已授予的能力位
-});
-```
+有些能力只在 web 面成立——列头点击排序、过滤框、图表 tooltip、hover 展开。原语不用
+`if (host === "web")` 表达这件事；每项能力是一个内部具名 `enhance` 位，text 面的降级形态由
+原语统一规定，不由数据源或组合组件自行发明：
 
 | 能力位 | web 面 | text 面的规定降级 |
 |---|---|---|
@@ -234,7 +239,9 @@ resolved ReportNode children
        └─ web：稳定 root / cell 语义结构 → CSS Grid 按 container width 自动排轨
 ```
 
-`NormalizedGrid` 不是公开 data shape，也不进入结果或 artifact；它只是两个渲染面共享的同步排版中间值。每个展开后的直接子节点是一格，格内节点对 Grid 是不透明块：`Col` 内的多个 `Stat` 始终跟着该格移动，响应式减列不能拆开；任意自定义双面组件也不需要实现 Grid 私有协议。Grid 不探测领域字段、不读取 Sample，也不根据内容类型改写子节点 props。
+`NormalizedGrid` 不是公开 Content，也不进入 Record 或 artifact；它只是两个渲染面共享的同步排版
+中间值。每个展开后的直接子节点是一格，格内节点对 Grid 是不透明块。Grid 不探测领域字段、
+不读取 Sample，也不根据内容类型改写子节点 props。
 
 text 面的 `TextGridPlan` 是确定的纯值，至少携带实际列数、各 cell 的外框 / 内容显示宽度、row-major 的 cell 索引和 gutter。规划器只依赖 `availableWidth`、cell 数和规范化 Grid props：先预留 `boxed` 的四边框、左右 padding 与格间 gutter，再从 `min(columns, cellCount)` 向一列尝试，选择每格达到契约最小可读内容宽度的最大列数；一列是无条件 fallback。余下的显示列从左向右分配，因整除产生的一列宽差不会累积到行尾。确定计划后才以各格的内容宽度调用 `ctx.render`，随后按显示宽度补齐并顶对齐多行块；renderer 不为试探列数重复 resolve 或执行组件计算。`boxed` 把每个 cell 各自包成完整 `┌─┐ / │ │ / └─┘`，同行 box 只用 gutter 相隔，换排重新起 box；`plain` 复用同一计划，只去掉边框与内边距。
 
@@ -297,7 +304,7 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 
 装载后的规范化产物是两样东西：一张完整令牌表（单色展开成相同的 light / dark 值，pair 保留两支）与一份有序资产清单。令牌表生成一个纯 CSS 令牌块挂到文档根，`.nre` 报告边界继承它；资产清单与外壳 `styles` 走同一套内容哈希物化规则，只是路径基准是主题文件而不是报告文件。因此本地 server 与 `--out` 对同一份主题产出逐字节相同的样式资产。
 
-主题不参与 resolve：它不进 `ctx`，不改变组件树、`*Data` 或任何数值。这条约束是主题能独立分发的根据，也划清了两处容易混淆的分工：
+主题不参与 resolve：它不进 `ctx`，不改变组件树、数据源声明、Content 或任何数值。这条约束是主题能独立分发的根据，也划清了两处容易混淆的分工：
 
 - **页级色分配只产出下标，不产出颜色。** 分配算法读报告外壳的 `seriesPins` 与页内 keyset，输出每个键的色槽下标；颜色由 `--nre-series-N` 令牌在 CSS 层给出。换主题因此不触发任何重算，也不改变哪个实验对应哪个槽。
 - **`appearance` 只决定文档根的 `color-scheme` 与页头是否渲染浅 / 深切换控件。** 选色发生在样式层（`light-dark()`），初始 HTML 无 JavaScript 即为声明的外观；切换控件属增强层，与自定义脚本受同一条不变量约束。
@@ -313,11 +320,13 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 - **文档单例**：浏览器 `<title>`（消费外壳 `title` 的回退链）、`meta charset` / `viewport`。
 - **品牌位**：`view` 页头左端恒定的 NiceEval 字标（45° 方块 mark + 文字），外链官网、带 `utm_medium=brand`。它是产品品牌位，报告定义不能覆盖或移除；与页内 `PoweredBy` 品牌行同族（`utm_medium=powered-by` 区分点击来自哪个位）。报告 `title` 的落点是页内 hero 与浏览器 `<title>`，不进这个品牌位。
 
-sample-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`TraceWaterfall` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/site/trace-waterfall.md)），符合「索引终结于可执行命令」的省略规则。
+sample-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`traceRows` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/site/trace-waterfall.md)），符合「索引终结于可执行命令」的省略规则。
 
 ### text 面的省略规则
 
-两面同源不等于两面同长。数据组件在两个面输出同一份终值；web 的浏览增强（tab 切换、排序、过滤）在 text 面没有交互，但其覆盖的内容全量可读；纯视觉与纯 web 操作件在 text 面零输出。text 面只把页与 `TraceWaterfall` 的 attempt 行折成带命令的索引；tab 没有选择器，所以不索引也不省略。
+两面同源不等于两面同长。原语在两个面消费同一份 Content；web 的浏览增强（tab 切换、排序、过滤）
+在 text 面没有交互，但其覆盖的内容全量可读。text 面只把页与 `traceRows` 的 attempt 行折成带命令
+的索引；tab 没有选择器，所以不索引也不省略。
 
 ## `show` 与 `view` 的职责
 
@@ -326,7 +335,7 @@ sample-input page 与 attempt-input page 是 page 协议的两个明确输入分
 | 层 | `show` | `view` |
 |---|---|---|
 | 报告槽 | text 面 | static HTML web 面 |
-| 默认填充 | `config.report`，未声明时是[内建报告](library/built-in.md)首页：`ExperimentComparison` 输出当前 Sample 的摘要、成本 × 主读数散点（通过制通过率 / 计分制总分，[映射单点](library/metrics.md#题型构成与主读数)）与 `ExperimentList`；尾部附 Attempts / Traces 页索引 | 同一内建报告：`ExperimentComparison` 输出同一份摘要、散点与可排序、可过滤的 `ExperimentList` |
+| 默认填充 | `config.report`，未声明时是[内建报告](library/built-in.md)首页：`SampleOverview` 输出当前 Sample 的摘要、成本 × 主读数散点（通过制通过率 / 计分制总分，[映射单点](library/measures.md#题型构成与主读数)）与 `experimentRows`；尾部附 Attempts / Traces 页索引 | 同一内建报告：`SampleOverview` 输出同一份摘要、散点与可排序、可过滤的 `experimentRows` |
 | attempt 下钻 | `niceeval show @<locator>` | `#/attempt/@<locator>` |
 | attempt 内容 | 同一 report definition 中 attempt-input page 的 text 面；显式 flag 选择 attempt-detail 组件区块的 text 面 | 同一 page 的 web 面；可渐进增强为 dialog |
 | 自定义 | `--report <file>` 替换整份 page 声明 | `--report <file>` 替换整份 page 声明 |
@@ -334,15 +343,15 @@ sample-input page 与 attempt-input page 是 page 协议的两个明确输入分
 
 裸 `show` 与裸 `view` 只是在同一默认 definition 上选择不同渲染面；显式 `--report` 替换同一个 page 列表。`view` 的导航条、locator 寻址和 dialog 摆放是机器不是内容（[边界清单](#宿主保留的只有机器)）；组件中的证据引用只在当前定义声明了 attempt-input page 或显式 `attemptHref` 时成为 web 链接。
 
-## 指标聚合不变量
+## 读数聚合不变量
 
 - `null` 表示测不了，不参与聚合；`0` 表示测得为零，正常参与。
-- 一般指标先把同一 experiment × eval 的多个 attempt 折成题级值，再跨 experiment × eval 聚合，避免重试次数改变题目权重，也避免不同 experiment 的同名 eval 被误当成重试。
-- 无限定词的“Pass rate / 通过率”和所有默认总览统一指 `endToEndPassRate`：`passed = 1`，`failed / errored = 0`，`skipped = null`，同一 experiment × eval 多轮先求均值，再跨 experiment × eval 求均值。完整口径名是“End-to-end pass rate / 端到端通过率”，默认组件使用前述短标签。多轮 attempt 的最终 Eval verdict 另按 `passed > failed > errored > skipped` 折叠（任一轮 passed 即 Eval passed），只用于判定构成和运行器结论，不从它反推通过率。`taskPassRate` 是条件于已形成可信判定的诊断指标，必须带限定名称展示，不能作为默认排名或被简称为通过率。
-- Scoreboard 的 `questions` 是必填固定题集；未跑题按 0 分并计入 `notRun`，跑了但指标为 `null` 的题同样按 0 分并计入 `unscorable`，两个计数不合并。组件不从已观测 attempt 的并集猜分母。
+- 一般读数先把同一 experiment × eval 的多个 attempt 折成题级值，再跨 experiment × eval 聚合，避免重试次数改变题目权重，也避免不同 experiment 的同名 eval 被误当成重试。
+- 无限定词的“Pass rate / 通过率”和所有默认总览统一指 `endToEndPassRate`：`passed = 1`，`failed / errored = 0`，`skipped = null`，同一 experiment × eval 多轮先求均值，再跨 experiment × eval 求均值。完整口径名是“End-to-end pass rate / 端到端通过率”，默认组件使用前述短标签。多轮 attempt 的最终 Eval verdict 另按 `passed > failed > errored > skipped` 折叠（任一轮 passed 即 Eval passed），只用于判定构成和运行器结论，不从它反推通过率。`taskPassRate` 是条件于已形成可信判定的诊断读数，必须带限定名称展示，不能作为默认排名或被简称为通过率。
+- scoreboard 的 `questions` 是必填固定题集；未跑题按 0 分并计入 `notRun`，跑了但读数为 `null` 的题同样按 0 分并计入 `unscorable`，两个计数不合并。组件不从已观测 attempt 的并集猜分母。
 - 报告消费落盘 verdict，不重新判卷。
-- 跨 Run 计算先按 Results 的 attempt 身份键去重。
-- 每个 `MetricCell` 保留 `samples`、`total` 和完整 `refs`，覆盖率与证据链不可被渲染层丢弃。
+- 跨 Run 计算先按 Record 的 attempt 身份键去重。
+- 每个 `MeasureCell` 保留 `samples`、`total` 和完整 `refs`，覆盖率与证据链不可被渲染层丢弃。
 
 ## 静态网页
 
@@ -352,13 +361,13 @@ CSS 的作者工具是内部实现选择：可以手写 CSS，也可以用 Tailw
 
 report 组件与 view 宿主使用同一份设计令牌源，不在两份样式表里手工复制颜色、线条、字体或状态值。生成的 report stylesheet 在每个 `var(--nre-*, <default>)` 使用点携带同源默认值，因此仍能独立嵌入任意宿主；view 把规范化 `theme` token 挂到站点根，由 `.nre` 报告边界继承，只为导航、路由与 dialog 摆放增加宿主样式，不复制 report 组件规则。官方 stylesheet 与增强 runtime 作为 report 构建单元的资产产出，宿主不从 raw 源码路径读取它们。公开 `--nre-*` token 与覆盖层次见[主题与 CSS](library/theme.md)。
 
-组件的实体边界不限制其视觉形态。`ExperimentList` 保持“一项一个 experiment、展开到 eval”的实体语义，web 面渲染为带列头的固定比较表，text 面采用紧凑列表。两面共享数据、指标、排序基准和证据引用。
+组件的实体边界不限制其视觉形态。`experimentRows` 保持“一项一个 experiment、展开到 eval”的实体语义，web 面渲染为带列头的固定比较表，text 面采用紧凑列表。两面共享数据、读数、排序基准和证据引用。
 
 `view --out` 把报告页、报告定义为每个可达 attempt 渲染的独立详情文档和前端会读取的 artifact 一起导出。报告 HTML 不是结果格式，`__NICEEVAL_VIEW_DATA__` 也不是编程读取契约；程序消费结果应使用 `niceeval/record`。
 
 ## 相关阅读
 
 - [README](README.md) —— 三种查看入口怎么选。
-- [Library](library.md) —— 组件与组合配方。
+- [Library](library.md) —— 组件与组合示例。
 - [Show](show.md) / [View](view.md) —— 两个官方宿主。
 - [Record](../record/README.md) —— 持久化事实与 attempt 身份。

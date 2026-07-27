@@ -26,7 +26,7 @@ send 行的定位来自事件流里用户消息的源码位置，标注在能定
 
 被收口的值必须有「更进一步」：有未通过断言时，`--source` 末尾在 `full eval source` 之前给出 `full failure detail: niceeval show @<locator>`——[attempt 首页](attempt.md)把每条失败落盘的 expected / received 预览按原始换行展开（含 `commandSucceeded()` 的 `output tail:` 段），再往下是 `result.json` / `events.json` 里的原始证据。收口只压缩展示面，不切断取证链。
 
-长行会截断，末尾的 `full eval source` 给出取全文的两步路径：attempt 级 `sources.json` 是 `{path, sha256}` 引用列表，正文按哈希存在 Run 级 `sources/<sha256>.json`（见 [Results · sources.json](../../record/architecture.md#sourcesjson)）；脚本消费直接用 `AttemptHandle.sources()` 拿拼好的 `{path, content}`，不用自己做两步解析。
+长行会截断，末尾的 `full eval source` 给出取全文的两步路径：attempt 级 `sources.json` 是 `{path, sha256}` 引用列表，正文按哈希存在 Run 级 `sources/<sha256>.json`（见 [Record · sources.json](../../record/architecture.md#sourcesjson)）；脚本消费直接用 `AttemptHandle.sources()` 拿拼好的 `{path, content}`，不用自己做两步解析。
 
 ## 相关阅读
 

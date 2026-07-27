@@ -1,20 +1,21 @@
 # OpenAI 兼容（Chat Completions / Responses）
 
-`fromChatCompletion(res)` 与 `fromResponses(res)` 是 OpenAI 两种响应形状的官方结果转换器，把一次 HTTP 响应零映射成 `Turn`：
+`turnFromChatCompletion(res)` 与 `turnFromResponses(res)` 把 OpenAI 两种响应形状转换成 `Turn`。
+目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；单写 `fromResponses` 无法说明返回什么：
 
 ```ts
-import { fromChatCompletion, fromResponses } from "niceeval/adapter";
+import { turnFromChatCompletion, turnFromResponses } from "niceeval/adapter";
 
 // Chat Completions 形状
 const agent = defineAgent({
   async send({ message }) {
     const res = await client.chat.completions.create({ model, messages: [...history, { role: "user", content: message }] });
-    return fromChatCompletion(res);
+    return turnFromChatCompletion(res);
   },
 });
 
 // Responses 形状
-return fromResponses(await client.responses.create({ model, input: message }));
+return turnFromResponses(await client.responses.create({ model, input: message }));
 ```
 
 两个转换器接受结构化的 `*Like` 类型，不依赖 `openai` 包——任何声明自己走这两种协议形状的服务（网关、代理、兼容实现）都能用。`tool_calls` / `function_call` 变成 `action.called`，`content` / `output_text` 变成 `message`，`usage` 按恒互斥桶落值（cached 子集从输入总量里扣出，口径见 [cost](cost.md)）。

@@ -133,7 +133,7 @@ export async function evalListData(input: ReportInput): Promise<EvalListItem[]> 
 
 /**
  * `experimentListData` 默认排序专用的题型构成判据——列表自己的、只看这份 data 的局部决定,
- * 不是 `scoringComposition()`(那是 Scope 级公开判据,见 metrics.md「题型构成与主读数」)的
+ * 不是 `scoringComposition()`(那是 Sample 级目标判据,见 measures.md「题型构成与主读数」)的
  * 第二份实现。跳过 attempts === 0 的行:这类行只可能来自 coverage-only 占位(真实 experiment
  * 分组恒 attempts >= 1),它们的 `scoring` 是占位默认值而非读到的事实,一屏占位行不该把纯
  * 计分制列表误判成 mixed。
@@ -172,7 +172,7 @@ function byMetricDescThenId(
  * `experimentListData(input)`:每个 experiment 一项,展开到每道 Eval;初始排序按这份列表
  * 自身的题型构成选择主读数——纯通过制沿用端到端通过率降序,纯计分制改按总分降序(缺数据
  * 沉底,同值按 id 收口);两者都出现时两种读数不能互相排名,退回 experiment id 字典序
- * (metrics.md「题型构成与主读数」)。一行只有一套 agent / model / flags 是输入约束:
+ * (measures.md「题型构成与主读数」)。一行只有一套 agent / model / flags 是输入约束:
  * 宿主注入的 current() Scope 保证每个 experiment 只由可比性配置一致的快照拼成;作者自选
  * Snapshot[] 时若同一 experiment 混入不一致的可比性配置,按完整用户反馈失败并指引——
  * 看跨配置演化用 snapshot 维度或 MetricLine,不把两套配置拼成一行冒充单一配置。

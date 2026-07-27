@@ -1,14 +1,15 @@
-# `SampleWarnings`
+# `sampleWarnings`
 
-选择警告区：把 Sample 携带的 [`SampleWarning[]`](../../../sample/library.md#警告-kind-全集) 按「下一步动作」聚合渲染。警告只承载定位不到任何一行的完整性事实（Run 未收尾、落盘不可读）；能落到行上的事实不走这里——覆盖缺口是 [`ExperimentList` 的占位行](../entity-lists/experiment-list.md)，携带与跨 Run 拼接是实体行上的[时效标注](../entity-lists/README.md#时效标注)。它是警告的唯一呈现组件——宿主不在报告树外另设警告通道，报告里有没有警告区由报告文件决定；[内建报告](../../library/built-in.md)的三张 sample-input page 都放它，attempt-input page 不重复站点范围警告。警告可见性因此是作者义务，与自定义脚本的增强层不变量同一信任模型：省略它的报告，其数字可信度由作者自己负责。
+`sampleWarnings` 把 Sample 携带的
+[`SampleWarning[]`](../../../sample/library.md#警告-kind-全集) 按「下一步动作」折成
+[`Callouts`](../primitives/callouts.md) 可消费的内容。它是数据源，不是警告的另一套渲染组件。
+
+警告只承载定位不到任何一行的完整性事实（Run 未收尾、落盘不可读）；能落到行上的事实不走这里——
+覆盖缺口是 [`experimentRows` 的占位行](../entity-lists/experiment-rows.md)，携带与跨 Run 拼接是
+实体行上的[时效标注](../entity-lists/README.md#时效标注)。
 
 ```ts
-function sampleWarningsData(input: ReportInput): Promise<readonly SampleWarning[]>;
-
-type SampleWarningsProps = ComponentProps<readonly SampleWarning[], {
-  locale?: ReportLocale;
-  className?: string;
-}>;
+declare const sampleWarnings: DataSource<CalloutsContent, Sample>;
 ```
 
 ## 聚合轴是动作，不是发生顺序
@@ -34,15 +35,16 @@ type SampleWarningsProps = ComponentProps<readonly SampleWarning[], {
 
 - text 面同构但不折叠：多组时首行汇总，每组一行组头（标题、徽标、命令），其下缩进逐条原样打印 `message`、不截断掉尾段——终端天然可滚动，截断只会害调试。
 - web 面把组头与明细中带 `command` 的警告渲染为可复制命令；无 `command` 的只显示 message，不硬造动作。
-- spec 形态 `<SampleWarnings />` 取宿主注入 Sample 的 `warnings`；`input` 是裸 `Run[]` 时没有挑选过程、没有警告，渲染为空，也如实。
+- source 形态 `<Callouts source={sampleWarnings} />` 取宿主注入 Sample 的 `warnings`。
 - 空警告集两面零输出，不渲染空容器。
-- 嵌入自有 React 页面时用 data 形态：`<SampleWarnings data={sample.warnings} />`。
+- 嵌入自有 React 页面时先 `await sampleWarnings.compute(sample)`，再把结果交给
+  `niceeval/report/react` 的 `<Callouts data={warnings} />`。
 
 ```tsx
-<SampleWarnings />
+<Callouts source={sampleWarnings} />
 ```
 
 ## 相关阅读
 
-- [站点组件](README.md) —— 这一族为什么不收结构子节点。
-- [`RunDiagnostics`](run-diagnostics.md) —— 版面相邻的 Run 诊断区。
+- [`Callouts`](../primitives/callouts.md) —— 警告与诊断共用的纯呈现形状。
+- [`runDiagnostics`](run-diagnostics.md) —— 版面相邻的 Run 诊断区。

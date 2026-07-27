@@ -5,7 +5,7 @@
 
 ```tsx
 // 数据源形态：格集合与顺序由数据源声明
-<Grid columns={4} source={sampleSummary} />
+<Grid columns={4} source={sampleSummary()} />
 
 // 手工形态：作者自己算出终值后摆格
 <Grid columns={3} variant="boxed">
@@ -39,13 +39,13 @@ interface StatProps {
   value: Cell | LocalizedText | number | null;
   /** 主值下面的短解释；省略时不留空行。 */
   detail?: LocalizedText;
-  /** 主值的语义色；不从正负号、单位或 Metric.better 猜。默认 neutral。 */
+  /** 主值的语义色；不从正负号、单位或 Measure.better 猜。默认 neutral。 */
   tone?: "neutral" | "positive" | "negative" | "warning";
   className?: string;
 }
 ```
 
-`value` 收 [`Cell`](../README.md#单元格类型) 是这个原语与官方数据源之间的接口：`metric` 格带着
+`value` 收 [`Cell`](../README.md#单元格类型) 是这个原语与官方数据源之间的接口：`measure` 格带着
 `samples` / `total` / `refs`，所以一个读数下方能写明覆盖范围、点开能下钻到具体 attempt。
 作者自己算的终值传标量即可——标量与 `text` 格等价，两者都没有证据可下钻，这是如实的。
 
@@ -56,7 +56,7 @@ interface StatProps {
 ## 渲染
 
 - 每格的主值按 [`Cell` 渲染契约](table.md#单元格渲染)投影，与表格里同类格子字字相同。
-- `metric` 格覆盖不全时在金额或数值下方用整句解释覆盖范围，不放无语义的比值角标。
+- `measure` 格覆盖不全时在金额或数值下方用整句解释覆盖范围，不放无语义的比值角标。
 - 时间值不直接暴露 ISO 字符串：单点写成「最近运行」，范围写成「运行范围」，
   按当前 locale 格式化到分钟；同日范围不重复右端日期，同年跨日范围不重复右端年份。
 - 标签是字段名，不在标签里重复「数」「次」或「计票」；数量由值本身表达。

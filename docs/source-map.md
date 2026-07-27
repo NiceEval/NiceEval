@@ -31,12 +31,13 @@
 | `fromAiSdk`(AI SDK 结果 → 标准事件流,v4/v5/v7 字段漂移兜底;v7 tool approval → `input.requested` + `status: "waiting"`) | `src/agents/ai-sdk.ts`(+ 同目录 `.test.ts`) |
 | 内置 adapter(claude-code / codex / bub) | **由被测项目自带**(`agents/*.ts`),niceeval 提供 `shared` + 解析器 |
 | `uiMessageStreamAgent`(AI SDK UI Message Stream 协议的内置无侵入 adapter) | `src/agents/ui-message-stream.ts` |
-| SDK 原生事件流转换器(`fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents`) | `src/agents/sdk-streams.ts`(+ 同目录 `.test.ts`);逐 SDK 契约见 `docs/feature/adapters/sdk/` |
-| LangGraph 官方事件流转换器(`fromLangGraphEvents`) | `src/agents/langgraph.ts`;契约见 `docs/feature/adapters/sdk/langgraph/README.md` |
+| SDK 原生事件流转换器；目标 `createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`，当前 `fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents` | `src/agents/sdk-streams.ts`(+ 同目录 `.test.ts`);逐 SDK 契约见 `docs/feature/adapters/sdk/` |
+| LangGraph 官方事件流转换器；目标 `createLangGraphEventStream`，当前 `fromLangGraphEvents` | `src/agents/langgraph.ts`;契约见 `docs/feature/adapters/sdk/langgraph/README.md` |
 | OpenCode sandbox Agent(`openCodeAgent`) | `src/agents/opencode.ts` + `src/o11y/parsers/opencode.ts`;契约见 `docs/feature/adapters/sdk/opencode/README.md` |
 | Hermes Agent sandbox Agent(`hermesAgent`) | `src/agents/hermes.ts` + `src/o11y/parsers/hermes.ts`;契约见 `docs/feature/adapters/sdk/hermes/README.md` |
 | OpenClaw sandbox Agent(`openClawAgent`) | `src/agents/openclaw.ts` + `src/o11y/parsers/openclaw.ts`;契约见 `docs/feature/adapters/sdk/openclaw/README.md` |
-| OpenAI 兼容结果转换器(`fromChatCompletion` / `fromResponses`) | `src/agents/openai-compat.ts`;契约见 `docs/feature/adapters/sdk/openai-compat/README.md` |
+| OpenAI 兼容结果转换器；目标 `turnFromChatCompletion` / `turnFromResponses`，当前 `fromChatCompletion` / `fromResponses` | `src/agents/openai-compat.ts`;契约见 `docs/feature/adapters/sdk/openai-compat/README.md` |
+| AI SDK 结果转换器；目标 `turnFromAiSdk`，当前 `fromAiSdk` | `src/agents/ai-sdk.ts`;契约见 `docs/feature/adapters/sdk/ai-sdk/README.md` |
 | 原生配置文件替换(`settingsFile` / `configFile`:项目根内路径校验、上传替换、保留键冲突检测、SHA-256 进 checkpoint key) | `src/agents/native-config.ts`(共享层)+ `src/agents/{claude-code,codex}.ts`(各自保留键表) |
 | Marketplace 注册名回读校验(`marketplace add` 后回读列表,配置名对不上立刻报错) | `src/agents/marketplace.ts`(claude-code / codex 共用,回读命令由 adapter 传入) |
 
@@ -181,8 +182,8 @@
   │  sample.attempts
   ▼
 ③  src/report/model/{metrics,aggregate,flag}.ts  值怎么算、两级怎么折叠
-    src/report/model/types.ts                    数据契约(MetricCell / *Data)
-    src/report/components/*/compute.ts           各组件的 *Data
+    src/report/model/types.ts                    当前数据契约(MetricCell / *Data)
+    src/report/components/*/compute.ts           当前组件计算函数
     src/report/definition/tree.ts                resolveReportTree + 渲染前树校验
     src/report/definition/report.ts              defineReport / 外壳与页列表
   │
@@ -201,12 +202,12 @@
 | 发布预算常量(50 MiB 单文件预检上限) | `src/results/publish.ts` |
 | 落盘截断(单值 256 KiB 上限,events / spans 写入前截断并标记) | `src/results/truncate.ts` |
 | 分层契约(Experiment / Run / Eval / AttemptHandle(含 `carried` 携带条目投影)/ AttemptRef / Sample(含 `coverage: SampleCoverage[]`)/ 警告类型) | `src/results/types.ts` |
-| `defineMetric` 与内置指标(verdict 逐项表态;`totalScore` 是例外——`errored`/`skipped` 都记 `null`、`acrossEvals` 用 `sum` 不是默认 `mean`,且从 `niceeval/report` 顶层导出,与 `examScore` 等其它指标同一张导出表) | `src/report/model/metrics.ts`(定义)、`src/report/index.ts`(公开导出) |
-| `SampleSummaryData.scoringComposition`(`"pass"`/`"points"`/`"mixed"` 三态)与 `totalScore?`(仅 points/mixed 时出现)的计算、web/text 面按题型切换主 KPI | `src/report/components/summaries/compute.ts`(`scopeSummaryData`)、`summaries/{SampleSummary.tsx,faces.ts}` |
+| 目标 `defineMeasure` 与内置读数；当前名 `defineMetric` / `Metric` | `src/report/model/metrics.ts`(定义)、`src/report/index.ts`(公开导出) |
+| 目标 `sampleSummary()` / `SampleSummaryContent`；当前 `scopeSummaryData` / `ScopeSummaryData` | `src/report/components/summaries/compute.ts`、`summaries/{ScopeSummary.tsx,faces.ts}` |
 | `flag()`(experiment flags 当维度 / 轴) | `src/report/model/flag.ts` |
-| 两级聚合引擎 / 维度 / MetricCell 计算 / 聚合前去重接线 | `src/report/model/aggregate.ts` |
-| 数据契约(Metric 字面量键泛型、TableData / MatrixData / ScatterData / LineData / ScoreboardData / DeltaData / SampleSummaryData … ExperimentListItem / EvalListItem / AttemptListItem;`MetricCell.refs: AttemptLocator[]` 必填) | `src/report/model/types.ts` |
-| 报告 chrome 文案的 locale 字典(`ReportLocale` 是开放的 BCP 47 字符串;内置文案与 `MetricCell.display` 生成面当前覆盖 `DISPLAY_LOCALES = ["en", "zh-CN"]`,其它 locale 走 `LocalizedText` 回退规则;渲染入口 options 收 `locale`,经 `WebContext` / `TextContext` 携带) | `src/report/model/locale.ts` |
+| 两级聚合引擎 / 维度 / 当前 `MetricCell` 计算 / 聚合前去重接线 | `src/report/model/aggregate.ts` |
+| 当前数据契约(`Metric`、`TableData` / `MatrixData` / `ScatterData` / `LineData` / `ScoreboardData` / `DeltaData` / `ScopeSummaryData` 等)；目标改成 `Measure` 与按真实形状命名的 `*Content` / `*Row` / `*Cell` | `src/report/model/types.ts` |
+| 报告 chrome 文案的 locale 字典；当前 `MetricCell.display` 生成面 | `src/report/model/locale.ts` |
 | 元素树 / `defineComponent`(双面)/ 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
 | 组件数据解析 pass(`resolveReportTree`:装载规范化产物之后、render 之前递归遍历树;遇到 spec 形态组件就调它自己的解析面(代调配套 `*Data` 计算函数)并换成 data 形态 props,同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页两种粒度的四个渲染入口都先跑它,报告作者因此不用手写取数) | `src/report/definition/tree.ts`(`resolveReportTree`;被 `src/report/runtime/text.ts` 与 `src/report/runtime/web.ts` 调用) |
 | 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table（十个内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`、官方表状组件共用；`Tab` 只能直接放在 `<Tabs>` 下，不参与路由、没有 id） | `src/report/definition/primitives.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平校验、`planTextGrid` 的 text 面排版算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |
@@ -216,17 +217,17 @@
 | `--report` 装载(两宿主共用:存在性/默认导出判别、dev server 的 mtime cache-busting) | `src/report/runtime/load.ts` |
 | show 宿主接线(无条件调 `selectLatestPerEval` 产出 Sample、裸跑装载 `niceeval/report/built-in` 默认导出的 text 面、`--report`/`--page` 经 `report/runtime/host.ts` 装载自定义 text 报告、attempt locator 下钻;多页时选初始页——`--page` 指定或缺省第一页——的逻辑在 `src/show/index.ts`,渲染完初始页后由 `src/show/render.ts` 的 `otherPagesText` 在尾部追加「其余页」索引与可复制命令) | `src/show/index.ts`(现刻水位选择器在中性的 `src/results/select.ts`;单 Eval、Attempt 详情与证据切面渲染在 `src/show/render.ts`;`src/show/compose.ts` 只留 `--history` 逐 attempt 执行时间轴口径;两宿主共用的报告装载规范化/标题回退在 `src/report/runtime/host.ts`;show 专属的可复制命令拼装 `showCommand` 在 `src/show/command.ts`;测试 `src/show/show.test.ts`、`src/show/command.test.ts`、`src/report/runtime/host.test.ts`) |
 | web 宿主装载入口 `renderReportToStaticHtml`(唯一 import react-dom 的一侧;同样选页 → `resolveReportTree` → 校验 → web 渲染,同样不设树外警告前置块)/ 逐页 web 入口 `renderReportTreeToStaticHtml` | `src/report/runtime/web.ts` |
-| show / view 内置默认报告(三页普通 `defineReport`:`report` 页 = `Hero` + `SampleWarnings` + `RunDiagnostics` + `CopyFixPrompt` + `ExperimentComparison`,`attempts` 页 = `Hero` + `SampleWarnings` + `RunDiagnostics` + `AttemptList filter`,`traces` 页 = `Hero` + `SampleWarnings` + `RunDiagnostics` + `TraceWaterfall`;外加一张 `id: "attempt"`、`input: "attempt"`、`navigation: false` 的参数化页,`content` 是 `AttemptDetail` 组合组件;页内容全部是公开组件,与 `--report` 同内容文件完全等价;入口是内建视图集合,视图按名字具名导出——当前只有 `standard`,默认导出恒等于它,用户报告经 `defineReport({ extends: standard, … })` 整站复用) | `src/report/built-in/`(一视图一文件:`standard.tsx` 具名导出 `standard`,`index.tsx` 汇总具名导出并把 `standard` 作默认导出;`extends` 折叠在 `src/report/definition/report.ts` 的 `defineReport`;结构与等价性测试在 `src/report/runtime/dual-render.test.tsx`「内建报告」) |
-| 跨组件族共用的组件层原语:数据组件构造协议(`DataProps` / `isCell` / `isTally` / `dataShapeError` / `makeDataComponent` / `hrefOf` / `ChromeProps` / `cx`)、缺数据与覆盖率文案惯例(`missingText` / `cellText` / `verdictTallyText` / `MISSING_MARK`)、跨族选择与统计口径(`selectedEvalsOnly` / `tallyOf` / `summarizeItems`)、单元格 web 部件 `MetricCellView`(供 `ExperimentList` / `DeltaTable` / `MetricMatrix` / `MetricTable` / `SampleSummary` 复用) | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
-`SampleSummary`(身兼概览卡与逐组摘要,`votes?: "eval" | "attempt"` 只选显示、data 恒携带 `attemptVerdicts` + `evalVerdicts` 两份计票)的 `scopeSummaryData` | `src/report/components/summaries/compute.ts`(定义与 web/text 面在 `summaries/index.tsx`、`faces.ts`) |
-| `ExperimentComparison`(与其它官方组件同层的普通组合组件,没有渲染器特权、也不导出自己的 `*Data`;把同一个 `input`——缺省 `ctx.scope`——原样透传给 `SampleSummary`、成本 × 端到端通过率的 `ScatterChart` 与 `ExperimentList`,共享计算由 resolve 的「同引用 input + 深相等 spec」记忆化保证,不二次计算或过滤) | `src/report/components/summaries/index.tsx` |
-| `experimentListData` / `evalListData` / `attemptListData`(`FailureList` 组件复用 `attemptListData` 过滤,没有自己的 `*Data`) | `src/report/components/entity-lists/compute.ts`(定义在 `entity-lists/index.tsx`;text 面在 `entity-lists/faces.ts`) |
-| `metricTableData` / `metricMatrixData` / `scoreboardData`(题集逐题带分科与权重,来自 `<Subject>` / `<Question>` 子节点)/ `deltaTableData`(列维度 + 有序条件,恰一个基准,逐 eval 一行的对照矩阵;`totals` 按各条件自身覆盖面、`pairedDelta` 只在共同 eval 交集上归因,两者不互相替代)/ `stabilityMatrixData`(历史全执行的稳定性矩阵,行 eval、列维度取值,不设可比性门槛) | `src/report/components/metric-views/compute.ts`(定义在 `metric-views/index.tsx`;text 面在 `metric-views/faces.ts`;`DeltaTable`/`StabilityMatrix` 的 web 面各自成文件) |
-| 图表族:结构树解析(容器 → 轴 / series → `ErrorBar`/`LabelList`/`Cell`,逐节点校验合法父组件)、`chartData(input, spec)` 与 `ChartData`、轴值域推定、字符坐标图 text 面 | `src/report/components/metric-views/`(`compute.ts` / `chart-math.ts` / `plot.ts` / `faces.ts`,web 面各自成文件) |
+| 当前内建报告；目标将专用叶子改成 `Callouts source={sampleWarnings}`、`Table source={attemptRows}` 等原语 + 数据源，并把 `ExperimentComparison` 改为 `SampleOverview` | `src/report/built-in/standard.tsx`、`src/report/built-in/index.tsx` |
+| 当前跨组件共享辅助与 `MetricCellView`；目标原语只消费通用 Cell / Content | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
+| 目标 `sampleSummary()`；当前 `scopeSummaryData` + `ScopeSummary` | `src/report/components/summaries/compute.ts`、`summaries/{index.tsx,ScopeSummary.tsx,faces.ts}` |
+| 目标 `SampleOverview`；当前 `ExperimentComparison` | `src/report/components/summaries/index.tsx` |
+| 目标 `experimentRows` / `evalRows` / `attemptRows` 数据源；当前 `experimentListData` / `evalListData` / `attemptListData` 与专用组件 | `src/report/components/entity-lists/{compute.ts,index.tsx,faces.ts}` |
+| 目标 `measureRows` / `measureMatrix` / `scoreboard` / `deltaRows` / `stabilityRows` 数据源 + `Table` 原语；当前 `metricTableData` / `metricMatrixData` / `scoreboardData` / `deltaTableData` / `stabilityMatrixData` 与专用组件 | `src/report/components/metric-views/{compute.ts,index.tsx,faces.ts}` |
+| 图表族当前结构树解析、`chartData(input, spec)` 与 `ChartData`、轴值域推定、字符坐标图 text 面 | `src/report/components/metric-views/`(`compute.ts` / `chart-math.ts` / `plot.ts` / `faces.ts`) |
 | Attempt 详情组件族:11 个叶子(`AttemptSummary` / `AttemptError` / `AttemptAssertions` / `AttemptSource` / `AttemptFixPrompt` / `AttemptTimeline` / `AttemptConversation` / `AttemptDiagnostics` / `UsageTable` / `AttemptTrace` / `AttemptDiff`,均以 `AttemptEvidence` 为输入的双面组件)+ 2 个组合(`AttemptAssessment`、`AttemptDetail`,只用公开叶子装配、没有私有 renderer) | `src/report/components/attempt-detail/index.tsx`(计算在 `compute.ts`,每叶子一个 `attempt*Data(evidence)`/`usageTableData(evidence)`;text 面在 `faces.ts`;测试 `attempt-components.test.tsx`) |
-| `AttemptAssertions` 的计分制字段:`.points` 挣分随 `AssertionResult` 一起出现(不单独投影);`AttemptAssertionsData.scoreEntries`(`t.score` 记录按 `groupPath` 分组,与 `passedGroups` 共用 `groupByPath` 算法)、`formatPointsSuffix`(`+N pt`/`pts`,0 分不隐藏) | `src/report/components/attempt-detail/compute.ts`(`attemptAssertionsData`、`groupByPath`)、`AttemptAssertions.tsx`(web 面)、`faces.ts`(text 面)、`src/report/model/format.ts`(`formatPointsSuffix`) |
+| `AttemptAssertions` 的计分制字段；目标由 `attemptAssertions` 数据源产出 `TableContent` | `src/report/components/attempt-detail/compute.ts`(`attemptAssertionsData`、`groupByPath`)、`AttemptAssertions.tsx`、`faces.ts`、`src/report/model/format.ts` |
 | 站点组件(`Hero` / `HeroCard` / `PoweredBy` / `SampleWarnings` / `CopyFixPrompt` / `TraceWaterfall`;品牌、hero、警告区、批量修复 prompt、trace 瀑布都是页内组件,宿主不渲染任何对应 chrome) | `src/report/components/site-components/index.tsx`(定义;计算在 `compute.ts`;text 面在 `faces.ts`;警告按动作聚合在 `scope-warnings.ts`,两面共用;测试 `site-components.test.tsx`) |
-| 官方组件(`SampleSummary` / `ExperimentList` / `EvalList` / `AttemptList` / `MetricTable` / `MetricMatrix` / `Scoreboard` / `DeltaTable` / `StabilityMatrix` / 图表族容器)的 web 面文件 + 页级色分配(维度值 → 色槽,一页一次,图例与列表共用) + styles.css(令牌与 view 同源,`.nre` 作用域自带;locator 与判定符的共用渲染在 `entity-lists/AttemptList.tsx` 的 `AttemptLocatorBadge`/`AttemptRow`) | 各组件族目录下的同名 `.tsx`(`src/report/components/{summaries,entity-lists,metric-views}/*.tsx`)+ `src/report/assets/colors.ts` + `styles.css`;公开零件复用入口 `src/report/react/index.tsx`(按族 re-export 的薄封装);演示 `scripts/report-react-demo.tsx` |
+| 当前官方专用组件 web 面 + 页级色分配；目标收敛为通用原语 renderer | `src/report/components/{summaries,entity-lists,metric-views}/*.tsx` + `src/report/assets/colors.ts` + `styles.css`；公开入口 `src/report/react/index.tsx` |
 | 渐进增强 runtime(表头排序 / 行过滤 / hover tooltip,只作用于 `.nre` 与 `data-nre-*`;宿主内联) | `src/report/assets/enhance.js` |
 | 双面验收(renderToStaticMarkup + text Run,两面同口径) | `src/report/runtime/dual-render.test.tsx` |
 | view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-dialog.ts`(hash ↔ locator 互转、`attempt/<locator>.html` 链接拦截与 dialog 内容抠取)、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/record` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/results/locator.ts`) |
@@ -244,6 +245,15 @@
   `openResults`→`openRecord`、`createResultsWriter`→`createWriter`、`copySnapshots`→`publish`、
   `results.latest()`→`latestRunSample()`、`results.current()`→`currentSample()`、`Scope`→`Sample`、
   `Snapshot`→`Run`、`skipped`→`unreadable`。
+- **Reports 目标公开面已改为“数据源 + 原语 + 组合组件”，实现仍是专用组件 + `*Data` 函数**：
+  目标数据源是 `experimentRows` / `measureRows` / `sampleSummary` / `attemptTimeline` 等，通过
+  `.compute(input)` 产出通用 `TableContent` / `GridContent` / `WaterfallContent`。
+
+  当前实现仍导出 `ExperimentList` / `MetricTable` / `ScopeSummary` / `AttemptTimeline`，以及对应
+  `*Data` 函数。落地时先建立通用 Content 与原语 renderer，再迁移数据源和组合组件。
+  不能只改 export 名而保留每个领域组件一套 renderer。
+
+  完整目标名见 [Reports Library](feature/reports/library.md)。
 - **落盘键名与常量沿用 `snapshot` 词根**:契约把落盘单位定名为 Run(`run.json`、`RunMeta`、
   `RECORD_SCHEMA_VERSION`),当前落盘仍写 `snapshot.json`,常量仍叫 `RESULTS_SCHEMA_VERSION` /
   `RESULTS_FORMAT`,类型仍叫 `SnapshotMeta`。改名是破坏兼容的格式变更,按

@@ -1,26 +1,43 @@
-# `ComposedChart`
+# 混合 mark
 
-同一坐标系混合多种 series 的容器：接受 [`Line`](line-chart.md#line)、[`Bar`](bar-chart.md#bar)、[`Area`](area-chart.md#area)、[`Scatter`](scatter-chart.md#scatter) 的任意组合，各自 props 与绑定规则见对应文档。容器 props、轴绑定、`ChartData`、聚合与两面投影规则见[图表](README.md)。
+`Chart` 天然接受多种 mark，不另设混合容器：
 
 ```tsx
-<ComposedChart input={sample}>
-  <CartesianGrid />
-  <XAxis dimension="experiment" />
-  <YAxis yAxisId="cost" metric={costUSD} />
-  <YAxis yAxisId="quality" metric={endToEndPassRate} orientation="right" />
-  <Tooltip />
-  <Legend />
+const qualityAndCost = chart({
+  x: { dimension: "experiment" },
+  y: [
+    { id: "cost", measure: costUSD },
+    { id: "quality", measure: endToEndPassRate },
+  ],
+  series: [
+    {
+      key: "planner-cost",
+      mark: "bar",
+      measure: plannerCostUSD,
+      yAxis: "cost",
+      stack: "cost",
+    },
+    {
+      key: "worker-cost",
+      mark: "bar",
+      measure: workerCostUSD,
+      yAxis: "cost",
+      stack: "cost",
+    },
+    {
+      key: "quality",
+      mark: "line",
+      measure: endToEndPassRate,
+      yAxis: "quality",
+    },
+  ],
+});
 
-  <Bar metric={plannerCostUSD} stackId="cost" yAxisId="cost">
-    <ErrorBar kind="ci95" />
-  </Bar>
-  <Bar metric={workerCostUSD} stackId="cost" yAxisId="cost" />
-  <Line metric={endToEndPassRate} yAxisId="quality" dot={false} />
-  <ReferenceLine y={0.8} yAxisId="quality" label="目标" />
-</ComposedChart>
+<Chart source={qualityAndCost} legend tooltip grid />
 ```
+
+多个轴必须具名；每条 series 显式绑定轴。省略绑定只在对应方向恰好一个轴时合法，不按单位猜轴。
 
 ## 相关阅读
 
-- [图表](README.md) —— 容器、轴、计算规格、`ChartData` 与两面投影。
-- [`LineChart`](line-chart.md) / [`BarChart`](bar-chart.md) / [`AreaChart`](area-chart.md) / [`ScatterChart`](scatter-chart.md) —— 单一 series 类型的容器。
+- [`Chart`](README.md) —— 数据源、Content、轴与两面契约。

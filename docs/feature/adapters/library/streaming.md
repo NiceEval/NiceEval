@@ -15,9 +15,9 @@ const frame = await cursor.next();
 
 完整单元事件优先交给 [`sdk/`](../sdk/README.md) 对应转换器，例如：
 
-- `fromClaudeSdkMessages()`
-- `fromCodexThreadEvents()`
-- `fromPiAgentEvents()`
+- `createClaudeSdkEventStream()`
+- `createCodexThreadEventStream()`
+- `createPiAgentEventStream()`
 
 这些 reducer 持有一轮内的配对与 usage 聚合状态，但不持有 endpoint、鉴权或 Agent session。
 

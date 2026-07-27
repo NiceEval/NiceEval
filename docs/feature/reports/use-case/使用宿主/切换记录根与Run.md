@@ -21,7 +21,7 @@
    niceeval view --run .niceeval/dev-e2b_codex-e2b/2026-07-12T10-08/run.json
    ```
 
-3. 扫描整个记录根时容错:单个不可读 Run 不会挡住其它结果,每个被跳过的 Run 形成一条 `unreadable-run` Sample warning(含目录与原因),由页内的 `SampleWarnings` 组件与其它选择警告一起显示;非 niceeval JSON 直接忽略,schemaVersion 不兼容的跳过并建议用产出它的版本打开,损坏的标为 malformed([逐场景行为表](../../view.md#结果版本与错误))。
+3. 扫描整个记录根时容错:单个不可读 Run 不会挡住其它结果,每个被跳过的 Run 形成一条 `unreadable-run` Sample warning(含目录与原因),由页内的 `sampleWarnings` 组件与其它选择警告一起显示;非 niceeval JSON 直接忽略,schemaVersion 不兼容的跳过并建议用产出它的版本打开,损坏的标为 malformed([逐场景行为表](../../view.md#结果版本与错误))。
 
 4. `show` 侧完全没有可读结果时命令非零退出,并对带 `producer.version` 的旧格式给出对应版本的 `npx niceeval@<version> show --record <root>` 建议([契约](../../show.md#无匹配与不可读结果))。
 

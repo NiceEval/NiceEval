@@ -1,35 +1,35 @@
 # Reports —— 用例手册
 
-本目录把 Reports 的 CLI 与 Library 能力放回真实任务里:先说用户要回答什么问题,再串起 Sample、组件、宿主和下钻路径,最后划出何时应换另一种形态。契约单源仍在 [Show](../show.md)、[View](../view.md)、[Library](../library.md) 与各组件分篇;可直接复制的代码在[报告配方](../library/recipes.md),用例篇不重复字段全集和渲染契约。
+本目录把 Reports 的 CLI 与 Library 能力放回真实任务里:先说用户要回答什么问题,再串起 Sample、组件、宿主和下钻路径,最后划出何时应换另一种形态。契约单源仍在 [Show](../show.md)、[View](../view.md)、[Library](../library.md) 与各组件分篇;可直接复制的代码在[完整示例](../library/examples.md),用例篇不重复字段全集和渲染契约。
 
 ## [调试](调试/README.md)
 
-- [从失败清单到可修复任务](调试/整理失败清单.md) —— `FailureList` / `CopyFixPrompt` / `AttemptDetail`。
+- [从失败清单到可修复任务](调试/整理失败清单.md) —— `FailureList` / `fixPrompt` / `AttemptDetail`。
 - [`@locator`:从默认报告一行下钻到一次失败的全部证据](调试/按定位符下钻.md)。
 - [`--history`:一道题时好时坏,按 attempt 看历次执行](调试/查看不稳定历史.md)。
 
 ## [分析](分析/README.md)
 
-- [先证明数据范围值得相信](分析/核对样本完整性.md) —— `SampleWarnings` / `RunDiagnostics` / `SampleSummary` / `ExperimentList`。
+- [先证明数据范围值得相信](分析/核对样本完整性.md) —— `sampleWarnings` / `runDiagnostics` / `sampleSummary` / `experimentRows`。
 - [从终端做跨条件归因](分析/终端跨条件归因.md) —— 多 `--exp` 对照矩阵 / `--usage` / `--grep` / `--json`。
-- [比较质量、成本与前沿](分析/比较质量与成本.md) —— `ExperimentComparison` / `ScatterChart` / `MetricTable`。
-- [固定题集做考试成绩单](分析/固定题集成绩单.md) —— `Scoreboard`。
-- [分数低时区分任务失败与执行失败](分析/诊断可靠性.md) —— `MetricTable` + 三种通过率。
-- [定位「哪道题 × 哪个配置」出问题](分析/定位配置与评测交互.md) —— `MetricMatrix` / `BarChart`。
-- [比较基线与候选的成对差异](分析/测量成对差异.md) —— `DeltaTable`。
-- [扫描参数档位的趋势与拐点](分析/扫描参数趋势.md) —— 数值轴 `LineChart`。
+- [比较质量、成本与前沿](分析/比较质量与成本.md) —— `SampleOverview` / `Chart` 的 scatter mark / `measureRows`。
+- [固定题集做考试成绩单](分析/固定题集成绩单.md) —— `scoreboard`。
+- [分数低时区分任务失败与执行失败](分析/诊断可靠性.md) —— `measureRows` + 三种通过率。
+- [定位「哪道题 × 哪个配置」出问题](分析/定位配置与评测交互.md) —— `measureMatrix` / `Chart` 的 bar mark。
+- [比较基线与候选的成对差异](分析/测量成对差异.md) —— `deltaRows`。
+- [扫描参数档位的趋势与拐点](分析/扫描参数趋势.md) —— 数值轴 `Chart` 的 line mark。
 - [跟踪一个 Experiment 的历次 Run](分析/跟踪实验历史.md) —— `record.experiments` + run 维度。
 
 ## [构建报告](构建报告/README.md)
 
-- [用 artifact 定义业务指标](构建报告/定义业务指标.md) —— `defineMetric` / 自定义维度。
+- [用 artifact 定义业务读数](构建报告/定义业务读数.md) —— `defineMeasure` / 自定义维度。
 - [从单页报告升级为多页站点](构建报告/构建多页报告.md) —— `defineReport` / pages / attempt-input page。
 - [自己写报告组件：规范与取主题色](构建报告/自定义组件/) —— `defineComponent` 两形态 / 取色纪律 / `ctx.seriesColor`。
 
 ## [交付报告](交付报告/README.md)
 
 - [给报告换主题，或做一份自己的主题包](交付报告/主题/) —— `--theme` / `defineTheme` / 令牌 / 分发。
-- [把报告嵌入自己的产品页](交付报告/嵌入产品.md) —— `*Data` + `niceeval/report/react`。
+- [把报告嵌入自己的产品页](交付报告/嵌入产品.md) —— 数据源 + `niceeval/report/react`。
 - [`--out`:把结果导出成静态站发布](交付报告/导出静态站.md)
 
 ## [使用宿主](使用宿主/README.md)
@@ -42,20 +42,20 @@
 
 | 能力 | 主用例 |
 |---|---|
-| `FailureList` / `CopyFixPrompt` / `AttemptDetail` | [修失败](调试/整理失败清单.md) |
-| `ExperimentComparison` / `ScatterChart` | [质量 × 成本](分析/比较质量与成本.md) |
-| `Scoreboard` | [固定题集考试](分析/固定题集成绩单.md) |
-| `MetricTable` | [可靠性诊断](分析/诊断可靠性.md) · [质量 × 成本](分析/比较质量与成本.md) |
-| `MetricMatrix` / `BarChart` | [配置 × Eval 定位](分析/定位配置与评测交互.md) |
-| `DeltaTable` | [A/B 成对差异](分析/测量成对差异.md) |
-| `LineChart` | [参数扫描](分析/扫描参数趋势.md) |
+| `FailureList` / `fixPrompt` / `AttemptDetail` | [修失败](调试/整理失败清单.md) |
+| `SampleOverview` / `Chart` 的 scatter mark | [质量 × 成本](分析/比较质量与成本.md) |
+| `scoreboard` | [固定题集考试](分析/固定题集成绩单.md) |
+| `measureRows` | [可靠性诊断](分析/诊断可靠性.md) · [质量 × 成本](分析/比较质量与成本.md) |
+| `measureMatrix` / `Chart` 的 bar mark | [配置 × Eval 定位](分析/定位配置与评测交互.md) |
+| `deltaRows` | [A/B 成对差异](分析/测量成对差异.md) |
+| `Chart` 的 line mark | [参数扫描](分析/扫描参数趋势.md) |
 | run 维度 / `ctx.record.experiments` | [Experiment 历史](分析/跟踪实验历史.md) |
-| `SampleWarnings` / `RunDiagnostics` / `SampleSummary` / `ExperimentList` | [范围完整性](分析/核对样本完整性.md) |
-| `defineMetric` / `CustomDimension` | [业务指标](构建报告/定义业务指标.md) |
+| `sampleWarnings` / `runDiagnostics` / `sampleSummary` / `experimentRows` | [范围完整性](分析/核对样本完整性.md) |
+| `defineMeasure` / `CustomDimension` | [业务读数](构建报告/定义业务读数.md) |
 | `defineReport({ pages })` / shell / `seriesPins` | [多页报告](构建报告/构建多页报告.md) |
 | `defineComponent` / `ctx.seriesColor` / `--nre-*` 令牌 | [自己写组件](构建报告/自定义组件/) |
 | `defineTheme` / `--theme` / `themeStylesheet` | [换主题与主题包](交付报告/主题/) |
-| `*Data` / `niceeval/report/react` | [嵌入产品页](交付报告/嵌入产品.md) |
+| 数据源 / `niceeval/report/react` | [嵌入产品页](交付报告/嵌入产品.md) |
 | `Grid` / `Stat` / `Row` / `Col` / `Section` / `Tabs` | 所有 Library 用例的布局层;内容过多时看[多页报告](构建报告/构建多页报告.md) |
 
 ## CLI 输入 → 篇目对照

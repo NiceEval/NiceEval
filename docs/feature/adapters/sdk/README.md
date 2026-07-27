@@ -6,12 +6,12 @@
 
 | 对象 | 入口 | 形态 |
 |---|---|---|
-| [AI SDK](ai-sdk/README.md) | `fromAiSdk`、`uiMessageStreamAgent` | 结果转换器、HTTP 协议 Adapter |
-| [OpenAI 兼容](openai-compat/README.md) | `fromChatCompletion`、`fromResponses` | 结果转换器（协议形状，不限 OpenAI 官方） |
-| [Claude Agent SDK](claude-agent-sdk/README.md) | `fromClaudeSdkMessages` | SDK 事件转换器 |
-| [Codex SDK](codex-sdk/README.md) | `fromCodexThreadEvents` | SDK 事件转换器 |
-| [pi-agent-core](pi-agent-core/README.md) | `fromPiAgentEvents` | SDK 事件转换器 |
-| [LangGraph](langgraph/README.md) | `fromLangGraphEvents` | 官方事件流转换器（不提供绑定部署方式的 Agent 工厂） |
+| [AI SDK](ai-sdk/README.md) | `turnFromAiSdk`、`uiMessageStreamAgent` | 结果转换器、HTTP 协议 Adapter |
+| [OpenAI 兼容](openai-compat/README.md) | `turnFromChatCompletion`、`turnFromResponses` | 结果转换器（协议形状，不限 OpenAI 官方） |
+| [Claude Agent SDK](claude-agent-sdk/README.md) | `createClaudeSdkEventStream` | SDK 事件转换器 |
+| [Codex SDK](codex-sdk/README.md) | `createCodexThreadEventStream` | SDK 事件转换器 |
+| [pi-agent-core](pi-agent-core/README.md) | `createPiAgentEventStream` | SDK 事件转换器 |
+| [LangGraph](langgraph/README.md) | `createLangGraphEventStream` | 官方事件流转换器（不提供绑定部署方式的 Agent 工厂） |
 | [Claude Code](claude-code/README.md) | `claudeCodeAgent` | Sandbox coding-agent Adapter |
 | [Codex CLI](codex-cli/README.md) | `codexAgent` | Sandbox coding-agent Adapter |
 | [Bub](bub/README.md) | `bubAgent` | Sandbox coding-agent Adapter |

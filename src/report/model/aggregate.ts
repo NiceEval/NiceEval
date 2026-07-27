@@ -1,6 +1,6 @@
 // 两级聚合引擎:去重 → 按维度分组 → 组内按 (experiment × eval) 折叠(perEval)→ 跨题折叠
 // (acrossEvals)→ MetricCell(docs/feature/reports/architecture.md「指标聚合不变量」、
-// docs/feature/reports/library/metrics.md「公开计算模型」)。
+// docs/feature/reports/library/measures.md「公开计算模型」)。
 //
 // 为什么是两级:earlyExit 默认开,失败的题天然比通过的题样本多;平铺求均值会把分数
 // 和重试策略纠缠在一起(eval A=[1]、eval B=[0,0,0] 平铺 = 0.25,两级宏平均 = 0.5)。

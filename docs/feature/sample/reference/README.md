@@ -21,7 +21,7 @@
 **没跟什么。**
 
 - **`aggregate` 那一支没抄。** Vega-Lite 的 transform 含聚合,而 Reports 的
-  [指标](../../reports/library/metrics.md)已经有 `perEval` / `acrossEvals` 两级聚合与维度选轴,
+  [指标](../../reports/library/measures.md)已经有 `perEval` / `acrossEvals` 两级聚合与维度选轴,
   比通用 `groupBy` + `reduce` 更贴 eval 的语义(题级折叠与跨题折叠本来就是两回事)。同一件事两个
   地方能做,两边迟早给出不同的数,所以 Sample 只删减、不聚合。
 

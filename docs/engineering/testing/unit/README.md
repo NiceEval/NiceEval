@@ -56,7 +56,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | **结果与计算口径** | 选择、去重、聚合、格式化与装载校验的数据语义                | 数据级断言、宿主装载等价测试                |
 | **仓库守护**       | 索引、链接、生成区块和测试收集范围等仓库约束                | `test/` 下的 Vitest 守护                    |
 
-测试预算由静默错误的影响和发现难度决定，而不是按层平均分配。判定、证据归一、缓存、调度、结果选择和指标聚合都可能给出看似合理但错误的答案，应得到更强的组合与边界覆盖。渲染产物不在本层断言（归
+测试预算由静默错误的影响和发现难度决定，而不是按层平均分配。判定、证据归一、缓存、调度、结果选择和读数聚合都可能给出看似合理但错误的答案，应得到更强的组合与边界覆盖。渲染产物不在本层断言（归
 [E2E 功能域](../e2e/report.md)），但 Reports 的计算口径与装载语义仍是高风险面，不因"展示层"标签薄测。
 
 ## Fake 边界：mock 什么，测哪一层
@@ -81,7 +81,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [record.md](record.md)                         | writer / reader、身份、`evidenceState`、publish                           | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的落盘与读回                         |
 | [sample.md](sample.md)                         | 两个选择口径、覆盖、时效、pipe 算子、去重                                 | 构造的内存记录图（区分力要求见该篇）                                 | [e2e/report](../e2e/report.md)：真实记录根上的口径与警告                     |
-| [reports.md](reports.md)                       | `*Data` 计算、装载、resolve                                               | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染                       |
+| [reports.md](reports.md)                       | 数据源 `compute()`、装载、resolve                                          | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染                       |
 
 ## Feature 测试文档
 
@@ -100,7 +100,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [Scoring](../../../feature/scoring/README.md)                                         | matcher、scope、collector、evidence、severity 和 Verdict 形成一致判定 | [scoring.md](scoring.md)                       |
 | [Record](../../../feature/record/README.md)                                          | artifact round-trip、身份、`configHash` 与携带资格、发布自包含        | [record.md](record.md)                         |
 | [Sample](../../../feature/sample/README.md)                                          | 两个口径的区分力、覆盖分母、时效、算子的四面同步重算与去重            | [sample.md](sample.md)                         |
-| [Reports](../../../feature/reports/README.md)                                         | 指标与聚合口径正确；装载、resolve 与校验反馈完整                      | [reports.md](reports.md)                       |
+| [Reports](../../../feature/reports/README.md)                                         | 读数与聚合口径正确；装载、resolve 与校验反馈完整                      | [reports.md](reports.md)                       |
 
 [Adapters](../../../feature/adapters/README.md)
 不在此表：SDK 事件转换与协议归一没有单元层测试维度——协议的真身只有真实调用，wire

@@ -114,7 +114,7 @@ export type DimensionInput = BuiltInDimension | CustomDimension | DimensionRef;
 /**
  * series 类选项(MetricScatter / MetricLine / ExperimentComparison)的输入:单维度,或
  * 非空数组解析为复合维度——name 依声明顺序以 ` × ` 连接,每个 attempt 的值为各成员显示键
- * 以 ` · ` 连接,任一成员缺失沿用 `(missing)` 显示键参与连接(docs/feature/reports/library/metrics.md)。
+ * 以 ` · ` 连接,任一成员缺失沿用 `(missing)` 显示键参与连接(docs/feature/reports/library/measures.md)。
  */
 export type SeriesInput = DimensionInput | readonly [DimensionInput, ...DimensionInput[]];
 
@@ -368,7 +368,7 @@ export interface VerdictTally {
 /**
  * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
  * (一个 Scope 可以并排多个 experiment;题型只在单个 experiment 内被强制统一)。是定义期事实
- * (`EvalDescriptor.scoring`),不依赖 attempt 执行结果(docs/feature/reports/library/metrics.md
+ * (`EvalDescriptor.scoring`),不依赖 attempt 执行结果(docs/feature/reports/library/measures.md
  * 「题型构成与主读数」)。
  */
 export type ScoringComposition = "pass" | "points" | "mixed";

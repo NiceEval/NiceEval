@@ -4,19 +4,19 @@
 
 ```tsx
 // reports/frontier.tsx —— ① 一棵树：树入参，等价于 { content: 树 }
-import { ExperimentComparison, defineReport } from "niceeval/report";
+import { SampleOverview, defineReport } from "niceeval/report";
 
-export default defineReport(<ExperimentComparison />);
+export default defineReport(<SampleOverview />);
 ```
 
 ```tsx
 // reports/branded.tsx —— ② 同一棵树 + 品牌外壳：配置对象，content 装树
-import { ExperimentComparison, defineReport } from "niceeval/report";
+import { SampleOverview, defineReport } from "niceeval/report";
 
 export default defineReport({
   title: { en: "Memory Evals", "zh-CN": "记忆能力评测" },
   links: [{ label: "GitHub", href: "https://github.com/you/coding-agent-memory-evals" }],
-  content: <ExperimentComparison />,
+  content: <SampleOverview />,
 });
 ```
 
@@ -37,7 +37,7 @@ export default defineReport({
 ```tsx
 // reports/site.tsx —— ③ 多页：页是字面量，content 装树
 import {
-  ExperimentComparison, Scoreboard, defineReport, examScore,
+  SampleOverview, Table, defineReport, examScore, scoreboard,
 } from "niceeval/report";
 import { RecentFailures } from "./components/recent-failures.tsx";
 
@@ -56,17 +56,21 @@ export default defineReport({
   scripts: [{ src: "./assets/annotate.js" }],
   styles: [{ inline: ".nre .nre-hero { letter-spacing: 0.02em; }" }],
   pages: [
-    { id: "overview", title: { en: "Overview", "zh-CN": "总览" }, content: <ExperimentComparison /> },
+    { id: "overview", title: { en: "Overview", "zh-CN": "总览" }, content: <SampleOverview /> },
     {
       id: "exam",
       title: { en: "Exam", "zh-CN": "成绩单" },
       content: (
-        <Scoreboard fullMarks={100} score={examScore}>
-          <Rows dimension="agent" />
-          <Question id="security/sql-injection" />
-          <Question id="security/path-traversal" />
-          <Question id="correctness/retry" />
-        </Scoreboard>
+        <Table source={scoreboard({
+          rows: "agent",
+          fullMarks: 100,
+          score: examScore,
+          questions: [
+            { evalId: "security/sql-injection" },
+            { evalId: "security/path-traversal" },
+            { evalId: "correctness/retry" },
+          ],
+        })} />
       ),
     },
     { id: "failures", title: { en: "Failures", "zh-CN": "待处理失败" }, content: <RecentFailures limit={20} /> },
@@ -219,10 +223,12 @@ type ReportAsset =
 - **规范化声明经 `ctx.report` 只读可见，当前输入经 `ctx.page` 可见。** 组合组件的 ctx 携带 [`report`](layout.md#自定义组件)——走完回退链的 `title`、`links`、`footer` 与完整 pages 元数据；`ctx.page` 是 `{ id, input: "sample" } | { id, input: "attempt", locator, evidence }`。注入资产与视觉配置（`theme` / `seriesPins` / `head` / `scripts` / `styles`）不进 `ctx.report`，组件靠稳定语义 class 和 CSS 令牌取色、靠 `ctx.seriesColor` 读页级色分配，不按主题改变数据或树。宿主 chrome 消费的每一份声明组件都能读，没有数据秘密，也没有保留内容——hero、警告区、attempt 列表、trace 瀑布与 attempt 详情区块都是 page 内的普通组件。宿主保留的是机器加一个固定品牌位：装载与 resolve 管线、page 路由与导航渲染、locator 解析与 dialog 摆放、文档单例、语言切换，以及页头左端的 NiceEval 字标（[边界清单](../architecture.md#宿主保留的只有机器)）。
 - **`head` 是元数据与第三方脚本的注入口。** 标签按声明顺序渲染进每页 `<head>`，落在官方与外壳样式之后。`tag` 白名单是 `meta`、`link`、`script`、`style` 四种，白名单外装载报错；宿主自有的文档单例不接受声明——`<title>` 不在白名单里（标题走 `title` 字段的回退链），`meta charset` 与 `meta name="viewport"` 由宿主拥有，声明它们装载报错并指回对应契约。`script` / `style` 的 `children` 原样落进标签，其中出现 `</script>` / `</style>` 时装载报错（该上下文无法转义，报错给出拆分或转移建议）。GA4、data-* 驱动的 tracker、og:image、favicon、字体、JSON-LD 都是 vendor 文档的逐字段直译，不需要 DOM 自举样板。head 里的脚本与 `scripts` 同受增强层不变量约束。
 - **除 `title` 外的外壳字段是 web 面属性。** `links`、`footer`、`theme`、`seriesPins`、`head`、`scripts`、`styles` 只被 `view` 与静态导出消费；`show` 读同一文件时消费 `pages`，并把 `title` 用作页索引的标题行。外壳文案是 `LocalizedText`，随外壳的语言切换取值。
-- **`title` 的落点是浏览器标题、`show` 页索引标题行与 `ctx.report.title`。** 页面里的 hero 标题不是外壳渲染的——它由 [`Hero` 组件](../components/site/hero.md)承担，`Hero` 缺省消费 `ctx.report.title`，同一取值链因此贯通浏览器标题与页内 hero。标题回退必须确定：取值链是 `def.title` → Sample 中唯一且相同的非空 Run `name` → 内置文案「Eval 运行结果 / Eval Results」。Run 中没有 name 或存在多个不同 name 时都落到内置文案，不按数组顺序随机挑一个。`LocalizedText` 按字段值深相等比较，对象键顺序不影响结果。浏览器 `<title>` 与 `meta charset` / `viewport` 同族，是宿主拥有的文档单例——这是「宿主只剩机器」里机器的一部分，不是内容特权。
-- **`LocalizedText` 的回退确定。** 取当前 locale；缺失时取 `en`；仍缺失时取按 locale 键字典序的第一个非空值。对象没有任何非空值时装载报错，不渲染空导航项。这条规则同时适用于外壳、page / tab / section 标题、表头和指标 label。
-- **报告能声明的品牌是组件，不是外壳属性；宿主页头另有一个报告改不动的固定品牌位。** `view` 页头左端恒定渲染 NiceEval 字标（45° 方块 mark + 文字），外链官网 `https://niceeval.com/?utm_source=report&utm_medium=brand`，是产品品牌位、属宿主 chrome（[边界清单](../architecture.md#宿主保留的只有机器)），报告定义与外壳字段都不能覆盖或移除它。报告作者能声明的品牌只有一件:[`PoweredBy`](../components/site/powered-by.md)——无 props、无关闭配置的双面组件，web 面渲染指向 niceeval 官网 `https://niceeval.com/?utm_source=report&utm_medium=powered-by`（`utm_medium` 区分点击来自页头字标还是页内品牌行）的一行品牌色小字，text 面零输出。链接不抑制 Referer（`rel` 只声明 `noopener`），报告站点的来源域由浏览器默认 Referer 策略带给官网统计，不进 URL 参数——静态导出在构建期不知道自己最终托管在哪个域名。`Hero` / `HeroCard` 恒含品牌行，组件本身不给拆除配置；不想要品牌的站点不用这几个组件、自己写双面组件——品牌跟着组件走，用组件就带上它的完整行为。`footer` 文案单独渲染在页面底部，省略 `footer` 时不渲染页脚，与品牌无关。
-- **自定义脚本是增强层，不变量是作者义务。** 与官方增强脚本同一不变量：初始静态 HTML 无 JS 时完整可读，脚本只添加浏览行为，不改变数据、指标口径或初始 HTML 中的数值。宿主不校验也无法校验脚本内容——脚本在读者浏览器里能做任何事，这条约定靠作者履行，违反它的站点其数字可信度由作者自己负责。典型用途是站点分析与埋点——只观察浏览行为的第三方脚本天然满足不变量。要改数据口径，改的是报告树或指标定义，不是脚本。
+- **`title` 的落点是浏览器标题、`show` 页索引标题行与 `ctx.report.title`。** 页面里的 hero 标题不是外壳渲染的——它由 [`Hero` 组件](../components/site/hero.md)承担，`Hero` 缺省消费 `ctx.report.title`，同一取值链因此贯通浏览器标题与页内 hero。标题回退必须确定：取值链是 `def.title` → Sample 中唯一且相同的非空 Run `name` → 内置文案「Eval 运行结果 / Eval Record」。Run 中没有 name 或存在多个不同 name 时都落到内置文案，不按数组顺序随机挑一个。`LocalizedText` 按字段值深相等比较，对象键顺序不影响结果。浏览器 `<title>` 与 `meta charset` / `viewport` 同族，是宿主拥有的文档单例——这是「宿主只剩机器」里机器的一部分，不是内容特权。
+- **`LocalizedText` 的回退确定。** 取当前 locale；缺失时取 `en`；仍缺失时取按 locale 键字典序的第一个非空值。对象没有任何非空值时装载报错，不渲染空导航项。这条规则同时适用于外壳、page / tab / section 标题、表头和读数 label。
+- **报告能声明的品牌是身份件，不是外壳属性；宿主页头另有一个报告改不动的固定品牌位。**
+  `PoweredBy` 无 props、无关闭配置，web 面输出官网链接，text 面零输出。`Hero` / `HeroCard`
+  恒含品牌行；不想要品牌就不用这些身份件，用排版原语自行组合标题区。
+- **自定义脚本是增强层，不变量是作者义务。** 与官方增强脚本同一不变量：初始静态 HTML 无 JS 时完整可读，脚本只添加浏览行为，不改变数据、读数口径或初始 HTML 中的数值。宿主不校验也无法校验脚本内容——脚本在读者浏览器里能做任何事，这条约定靠作者履行，违反它的站点其数字可信度由作者自己负责。典型用途是站点分析与埋点——只观察浏览行为的第三方脚本天然满足不变量。要改数据口径，改的是报告树或读数定义，不是脚本。
 - **本地资产按路径纪律解析，外链只住 `head`。** `scripts` / `styles` 的 `{src}` 只收本地路径——允许普通相对路径和 `./` 前缀，不允许 `..` 路径段、绝对路径或 `~`，相对顶层报告文件解析；外链声明在 `{src}` 里装载报错并指引改写成 `head` 条目。`head` 标签 `attrs` 里的 `src` / `href` 按 scheme 分流：`http(s)://` 开头视为外链，原样落进最终标签，宿主不 vendored、不校验可达性（加载失败是浏览器行为，作者义务）；protocol-relative `//` 与其它 scheme 装载报错；其余值当本地路径，走上面同一条路径纪律。本地资产在本地 `view` 与静态导出都按内容哈希物化为 `assets/<sha256><ext>` 并改写 HTML 引用，同内容去重，同名文件不冲突；文件缺失时在启动或导出时报错并给出解析后的路径。
 - **校验分两期。** `defineReport({...})` 与宿主装载期校验外壳形状、非空页列表、重复 / 非法 page id、资产路径和 `head` 标签结构（白名单、宿主自有单例、children 上下文）；`content` / `pages` 互斥与外壳嵌套已由类型拒绝，运行期仍对无类型 JS 输入做同样校验。页内树在 [resolve 展开](../architecture.md#报告树与两个宿主)时逐节点校验资格；缺任一渲染面或包含任意 HTML intrinsic 时，按该页的失败规则反馈。
 - **脚本随导出发布。** 静态导出会原样携带并在读者浏览器执行 `scripts` 与 `head` 里的脚本，导出不检查脚本内容，脚本里别嵌密钥。
@@ -246,7 +252,7 @@ type SeriesPins = Readonly<Record<string, Readonly<Record<string, number>>>>;
 ```
 
 - **钉的是色板下标，不是颜色。** 颜色仍然来自生效主题的 `series` 六色，因此深浅外观、对比度与换主题全都照常跟随。钉色住在报告而不是主题里，正因为它说的是数据含义：换一套配色不该让 baseline 和候选方案对调身份。要改颜色本身，改主题。
-- **外层键是维度的 `name`**——内置维度就是 `"agent"` / `"experiment"`，`label("memory")` 的 name 是 `"memory"`，复合维度的 name 是成员 name 以 ` × ` 连接。这与 `ChartData` / `TableData` 里 `*Dimension` 字段的值是同一个字符串。
+- **外层键是维度的 `name`**——内置维度就是 `"agent"` / `"experiment"`，`label("memory")` 的 name 是 `"memory"`，复合维度的 name 是成员 name 以 ` × ` 连接。这与 `ChartContent` / `TableContent` 里 `*Dimension` 字段的值是同一个字符串。
 - **内层键是维度值显示键**，与分组显示键同一套规则（非字符串值走稳定 JSON，缺失值是 `(missing)`）。
 - **钉住的键原样占位，自动分配只在剩下的槽里探测。** 多个值钉同一个下标是合法的——作者显式要求它们同色（例如两条基线都走中性色）；这不触发探测。
 - **钉了但这一页没出现的键什么都不做**，不为它保留槽位。

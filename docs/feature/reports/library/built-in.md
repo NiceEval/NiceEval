@@ -19,9 +19,8 @@ builtIn;  // 默认导出 === standard，宿主装载取这个值
 ```tsx
 // niceeval/report/built-in 的 standard 视图，没有任何私有 Hook
 import {
-  AttemptDetail, AttemptList,
-  Col, CopyFixPrompt, ExperimentComparison, Hero, SampleWarnings, RunDiagnostics,
-  TraceWaterfall, defineReport,
+  AttemptDetail, Callouts, Col, CopyBlock, Hero, SampleOverview, Table, Waterfall,
+  attemptRows, defineReport, fixPrompt, runDiagnostics, sampleWarnings, traceRows,
 } from "niceeval/report";
 
 export const standardAttemptPage = {
@@ -40,10 +39,10 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleWarnings />
-          <RunDiagnostics />
-          <CopyFixPrompt />
-          <ExperimentComparison />
+          <Callouts source={sampleWarnings} />
+          <Callouts source={runDiagnostics} />
+          <CopyBlock source={fixPrompt} />
+          <SampleOverview />
         </Col>
       ),
     },
@@ -53,9 +52,9 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleWarnings />
-          <RunDiagnostics />
-          <AttemptList filter />
+          <Callouts source={sampleWarnings} />
+          <Callouts source={runDiagnostics} />
+          <Table source={attemptRows} filter />
         </Col>
       ),
     },
@@ -65,9 +64,9 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleWarnings />
-          <RunDiagnostics />
-          <TraceWaterfall />
+          <Callouts source={sampleWarnings} />
+          <Callouts source={runDiagnostics} />
+          <Waterfall source={traceRows} />
         </Col>
       ),
     },
@@ -76,7 +75,7 @@ export const standard = defineReport({
 });
 ```
 
-它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、指标、排版原语），内建视图是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是类型系统或装载逻辑里的类别。
+它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、读数、排版原语），内建视图是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是类型系统或装载逻辑里的类别。
 
 裸 `view` 页面上能看到的一切内容都在这份定义里：前三张 page 形成导航；hero、选择警告、Run 诊断和批量修复 prompt 是普通组件；locator 打开第四张 attempt-input page，其中 `AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog 摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此**任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
 
@@ -94,18 +93,27 @@ export const standard = defineReport({
 ```tsx
 // reports/mine.tsx —— ① 换树：只关心自己的图表，不要站点 chrome
 import {
-  Col, ExperimentList, Scatter, ScatterChart, XAxis, YAxis,
-  costUSD, defineReport, endToEndPassRate,
+  Chart, Col, Table, chart, costUSD, defineReport, endToEndPassRate,
+  experimentRows,
 } from "niceeval/report";
+
+const qualityCost = chart({
+  x: { measure: costUSD },
+  y: { measure: endToEndPassRate },
+  series: [{
+    key: "frontier",
+    mark: "scatter",
+    points: "experiment",
+    by: "agent",
+    x: costUSD,
+    y: endToEndPassRate,
+  }],
+});
 
 export default defineReport(
   <Col>
-    <ScatterChart>
-      <XAxis metric={costUSD} />
-      <YAxis metric={endToEndPassRate} />
-      <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
-    </ScatterChart>
-    <ExperimentList filter />
+    <Chart source={qualityCost} legend tooltip />
+    <Table source={experimentRows} filter />
   </Col>,
 );
 ```
@@ -127,10 +135,19 @@ export default defineReport({
 ```tsx
 // reports/site.tsx —— ③ 拆页：照抄内建的页，再加自己的页
 import {
-  AttemptList, Col, ExperimentComparison, Hero, Question, Rows,
-  SampleWarnings, Scoreboard, RunDiagnostics,
-  defineReport, examScore,
+  Callouts, Col, Hero, SampleOverview, Table,
+  attemptRows, defineReport, examScore, runDiagnostics, sampleWarnings, scoreboard,
 } from "niceeval/report";
+
+const exam = scoreboard({
+  rows: "agent",
+  fullMarks: 100,
+  score: examScore,
+  questions: [
+    { evalId: "security/sql-injection" },
+    { evalId: "correctness/retry" },
+  ],
+});
 
 export default defineReport({
   title: "Memory Evals",
@@ -139,27 +156,30 @@ export default defineReport({
     {
       id: "overview",
       title: { en: "Overview", "zh-CN": "总览" },
-      content: <Col><Hero /><SampleWarnings /><RunDiagnostics /><ExperimentComparison /></Col>,
+      content: (
+        <Col>
+          <Hero />
+          <Callouts source={sampleWarnings} />
+          <Callouts source={runDiagnostics} />
+          <SampleOverview />
+        </Col>
+      ),
     },
     {
       id: "exam",
       title: { en: "Exam", "zh-CN": "成绩单" },
       content: (
         <Col>
-          <SampleWarnings />
-          <RunDiagnostics />
-          <Scoreboard fullMarks={100} score={examScore}>
-            <Rows dimension="agent" />
-            <Question id="security/sql-injection" />
-            <Question id="correctness/retry" />
-          </Scoreboard>
+          <Callouts source={sampleWarnings} />
+          <Callouts source={runDiagnostics} />
+          <Table source={exam} />
         </Col>
       ),
     },
     {
       id: "attempts",
       title: "Attempts",
-      content: <Col><AttemptList filter /></Col>,
+      content: <Col><Table source={attemptRows} filter /></Col>,
     },
   ],
 });
@@ -188,7 +208,7 @@ export default defineTheme({ ...basalt, accent: "#7C3AED" });
 
 ## 内建报告显示什么
 
-首页用 `ExperimentComparison` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries/experiment-comparison.md)；`Hero` / `SampleWarnings` / `RunDiagnostics` / `CopyFixPrompt` / `TraceWaterfall` 的契约在[站点组件](../components/site/README.md)；Attempts 页的本体是[带过滤的 `AttemptList`](../components/entity-lists/attempt-list.md)。
+首页用 `SampleOverview` 展示实验整体主读数，其行为契约单点定义在[概览组件](../components/summaries/sample-overview.md)；`Hero` / `sampleWarnings` / `runDiagnostics` / `fixPrompt` / `traceRows` 的契约在[站点组件](../components/site/README.md)；Attempts 页的本体是[带过滤的 `attemptRows`](../components/entity-lists/attempt-rows.md)。
 
 ## 相关阅读
 
@@ -197,5 +217,5 @@ export default defineTheme({ ...basalt, accent: "#7C3AED" });
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
 - [站点组件](../components/site/README.md) —— hero、品牌、警告、Run 诊断与瀑布的组件契约。
 - [Attempt 详情组件](../components/attempt-detail/README.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
-- [概览组件](../components/summaries/README.md) —— `ExperimentComparison` 的契约。
+- [概览组件](../components/summaries/README.md) —— `SampleOverview` 的契约。
 - [Architecture](../architecture.md) —— 装载规范化：内建与 `--report` 的同一条管线。

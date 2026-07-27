@@ -1,7 +1,7 @@
 # codex-sdk 仓库
 
 仓库 ID `codex-sdk`，group `sdk`。被测应用是仓库自带的 Codex SDK 服务：`thread.runStreamed()`
-驱动、带工作区与 MCP 工具，adapter 用 `fromCodexThreadEvents()` 接入（契约见
+驱动、带工作区与 MCP 工具，adapter 用 `createCodexThreadEventStream()` 接入（契约见
 [Codex SDK 契约页](../../../../feature/adapters/sdk/codex-sdk/README.md)）。
 
 ## Eval 闭环

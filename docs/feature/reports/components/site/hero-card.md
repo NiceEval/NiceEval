@@ -1,20 +1,20 @@
 # `HeroCard`
 
-[`Hero`](hero.md) 的渲染件，双面组件，只收 data 形态——它的标题输入是站点声明与 Sample 的合成物，没有单独的 spec 等价形，所以不设 spec 形态：
+[`Hero`](hero.md) 使用的站点身份原语。它只收已经算好的 Sample 来源摘要；标题由调用者显式传入。
 
 ```ts
-interface HeroData {
+interface HeroContent {
   /** Sample 中最新 Run 的开始时间；空 Sample 为 null，不编造当前时间。 */
   latestStartedAt: string | null;
   /** 贡献当前水位的 Run 数；大于 1 时 web 面标注「由 N 次运行合成」。 */
   runs: number;
 }
 
-function heroData(input: ReportInput): Promise<HeroData>;
+declare const sampleProvenance: DataSource<HeroContent, Sample>;
 
 interface HeroCardProps {
   title: LocalizedText;
-  data: HeroData;
+  data: HeroContent;
   className?: string;
 }
 ```

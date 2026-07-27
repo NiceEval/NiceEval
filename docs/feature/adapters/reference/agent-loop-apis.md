@@ -55,7 +55,7 @@
 
 ## 对 niceeval 的印证与启发
 
-1. **五档契约的原语每家都有对应物,写 converter 是机械工作。** 显式 call id 配对(全员)、原生 session id(全员)、HITL 停轮-恢复(pi 之外全员)——niceeval 的 `Turn` / `StreamEvent` / `waiting + input.requested` / `ctx.session` 在每家都能一一映射,没有语义鸿沟。真正贵的不是"能不能写",是 **N 家 × 版本漂移的维护**:内建 `fromAiSdk` 530 行里,近半是 v4/v5/v7 字段漂移兜底和 approval 形状适配,每家都这样写一份不可持续。
+1. **五档契约的原语每家都有对应物,写 converter 是机械工作。** 显式 call id 配对(全员)、原生 session id(全员)、HITL 停轮-恢复(pi 之外全员)——niceeval 的 `Turn` / `StreamEvent` / `waiting + input.requested` / `ctx.session` 在每家都能一一映射,没有语义鸿沟。真正贵的不是"能不能写",是 **N 家 × 版本漂移的维护**:内建 `turnFromAiSdk` 530 行里,近半是 v4/v5/v7 字段漂移兜底和 approval 形状适配,每家都这样写一份不可持续。
 2. **HITL 有三种形态,niceeval 的握手能表达全部,但回调型要搭桥。** 停轮返回型(AI SDK / OpenAI Agents:结果里带 interruptions,天然对应 `waiting` + 下轮 resume)最好接;**回调挂起型**(Claude `canUseTool`、pi extension)是"execution 停在 await 上",adapter 要把回调转成 promise 桥——本轮 send 存住 pending resolver 返回 `waiting`,下轮 send 拿 `t.respond` 的回答去 resolve 它,进程内可行但要小心超时;异常-重放型(LangGraph `interrupt`)注意 **resume 后节点从头重跑**,事件流会出现中断前动作的重复,转换层要按 interrupt id 去重。
 3. **会话义务通常是一行透传,fork 是意外之喜。** `thread_id` / `resume <session_id>` / Sessions 直接对接 `ctx.session.id`;Claude 的 `forkSession` 和 pi 的树形 session 还支持"同起点分支"——将来 niceeval 若做同 prompt 多分支对比,这两家有原生原语。
 4. **遥测面四家四样,"等一个统一标准"不现实。** 私有 schema(OpenAI Agents)、私有掺 gen_ai(Claude)、三方言混合(LangGraph)、没有(pi)。但共性是**都能把 span 说到任意 OTLP 端点**(原生 env / 官方 instrumentation / 第三方埋点),而且第三方埋点生态的内容默认全采(见 [otel-instrumentation.md](otel-instrumentation.md))——归一的活落在接收侧,这正是 niceeval 已有的 canonical mapper 结构(每方言一个薄 mapper)能吃下的形状。

@@ -5,7 +5,7 @@
 ## 通过制（`defineEval`，默认）：一个 eval 一分
 
 - 一条 eval 的一次 attempt 折叠成四态 [Verdict](../scoring/architecture/severity-and-verdict.md)，`passed` 记 1、其余记 0；
-  `runs > 1` 时按通过率。这个数就是内置指标 [`endToEndPassRate`](../reports/library/metrics.md#内置指标)，
+  `runs > 1` 时按通过率。这个数就是内置指标 [`endToEndPassRate`](../reports/library/measures.md#内置读数)，
   通过制的对比主读数读的是它。
 - 断言只是 verdict 的**内部构成**：一条 eval 写 3 条还是 20 条 gate，对比里都是一分。这与 eve 的模型一致：一个 eval 就是一分，soft 分数 tracked-only。
 
@@ -92,7 +92,7 @@ export default defineScoreEval({
 - **分数面（挣分，计分制才有）**：由给分项构成，逐层求和；组的分数读数 = 组内给分项挣分之和（「正确性挣 45 分」）。
 - **质量分（tracked，两种题型都有）**：soft 断言（`.atLeast(x)` / `.soft()`）分数的**无权均值**（组内直接子项均值，逐层同构），eve 式 tracked-only 读数。gate 不进质量分——10 条全过的 gate 加一个 0.6 的 judge 均值 0.96，质量差被淹没；计分制里带 `.points()` 的断言同样不进质量分（它属于分数面），不链词或链 `.soft()` 的观测断言照常进。选无权均值：对 0/1 型 soft 断言，均值就是过线比例（过线比例是均值的退化情形）；对打分断言保留连续信息；引入默认权重则是替作者发明没有原则化取值的参数——**权重只在作者显式给分时存在**。
 
-通用规则：**`unavailable` 在每一层都是 `null` 传播**、不折成 0，无 soft 内容或子项全 `null` 的节点质量分为 `null`（[Metric 的缺数据语义](../reports/library/metrics.md)）；**无组断言与无组给分归属隐式根组**。
+通用规则：**`unavailable` 在每一层都是 `null` 传播**、不折成 0，无 soft 内容或子项全 `null` 的节点质量分为 `null`（[Measure 的缺数据语义](../reports/library/measures.md)）；**无组断言与无组给分归属隐式根组**。
 
 ## 横截面聚合：同型实验，各读各的
 
@@ -123,8 +123,8 @@ export default defineScoreEval({
 `show` 与 `view` 共用同一份 page 声明（[Reports](../reports/README.md)），读取面在内建 `standard` 报告一处声明、两个宿主同时生效：
 
 - **实验列表按题型选主列**：通过制实验出通过率列，计分制实验出总分列，两型并存时两列都出、不适用的格显示 `—`。
-  判据是[主读数映射](../reports/library/metrics.md#题型构成与主读数)这一条单点规则，
-  列集合的完整契约在 [`ExperimentList`](../reports/components/entity-lists/experiment-list.md)。
+  判据是[主读数映射](../reports/library/measures.md#题型构成与主读数)这一条单点规则，
+  列集合的完整契约在 [`ExperimentList`](../reports/components/entity-lists/experiment-rows.md)。
 - **组级读数在 attempt 详情下钻**：非 passed 断言按声明顺序平铺、标题即分组路径，passed 断言按组折成计数行，
   `t.score` 给分记录单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](../scoring/library/display.md)）。
   「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。

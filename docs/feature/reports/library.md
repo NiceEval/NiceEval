@@ -1,71 +1,68 @@
 # Reports —— 库用法
 
-`niceeval/report` 导出 `defineReport`、`defineComponent`、可交给 `show` / `view` 的双面叶子组件与配套 `*Data` 计算函数，以及 `ExperimentComparison`、`AttemptDetail` 这类只装配叶子的普通组合组件；`niceeval/report/react` 只导出叶子的纯 web renderer 和数据类型，不导出取数代码或 report-only 组合。两个入口的同名叶子组件接收同一份 `data`。`defineReport` 的内容只有 pages：page 可以消费 Sample，也可以声明为按 locator 消费 `AttemptEvidence` 的参数化 page，见[外壳与多页](library/shell.md)和 [Attempt 详情](components/attempt-detail/README.md)。
+`niceeval/report` 导出三类公开对象:
 
-组件的数据绑定与局部配置写成结构子节点，组合规则单源在[组件树](components/README.md)。最快的选择方式：先确定想回答的问题，再选组件。
+- `Table`、`Grid`、`Callouts`、图表等双面原语,负责内容形状;
+- `experimentRows`、`measureRows(...)`、`sampleSummary(...)` 等数据源,负责领域计算;
+- `SampleOverview`、`AttemptDetail` 等组合组件,负责默认装配。
 
-| 想回答的问题 | 组件 |
-|---|---|
-| 自由摆放 label、主值与辅助信息组成摘要面板 | [`Grid` / `Stat`](library/layout.md#grid-与-stat) |
-| 写方法学、口径说明、脚注这类散文 | [`Markdown`](library/layout.md#markdown) |
-| 比较当前 Sample 里的 experiments | [`ExperimentComparison`](components/summaries/experiment-comparison.md) |
-| 一个范围有多大、整体是否健康（eval 级或 attempt 级计票） | [`SampleSummary`](components/summaries/sample-summary.md) |
-| 每个 experiment / eval / attempt 发生了什么 | [`ExperimentList` / `EvalList` / `AttemptList`](components/entity-lists/README.md) |
-| 现在有哪些失败要处理、先看哪条 | [`FailureList`](components/entity-lists/failure-list.md) |
-| 谁整体更好，多个指标并排比较 | [`MetricTable`](components/tables/metric-table.md) |
-| 哪道题在哪个配置上失败 | [`MetricMatrix`](components/tables/metric-matrix.md) |
-| 固定题集的总分与分科得分 | [`Scoreboard`](components/tables/scoreboard.md) |
-| A 与 B 相差多少 | [`DeltaTable`](components/tables/delta-table.md) |
-| 哪些题历史上从来没稳过 | [`StabilityMatrix`](components/tables/stability-matrix.md) |
-| 两个指标之间的取舍、参数变化时指标怎样变化、排行与堆叠构成 | [图表](components/charts/README.md) |
-| 页首放站点标题、最后运行时间与品牌行 | [`Hero`](components/site/hero.md) |
-| 这批数据的选择警告（Run 未收尾、落盘被跳过） | [`SampleWarnings`](components/site/sample-warnings.md) |
-| 哪些真实 Run 发生过无法归属单行的运行诊断 | [`RunDiagnostics`](components/site/run-diagnostics.md) |
-| 把全部失败打包成可交给 coding agent 的修复 prompt | [`CopyFixPrompt`](components/site/copy-fix-prompt.md) |
-| 每个 attempt 的执行时间瀑布 | [`TraceWaterfall`](components/site/trace-waterfall.md) |
-| 自定义 locator 打开的参数化 page | [`AttemptDetail`，或 `AttemptSummary`、`AttemptAssessment`、`AttemptTimeline` 等详情组件](components/attempt-detail/README.md) |
+`niceeval/report/react` 只导出原语的纯 web renderer 与可序列化 Content 类型。它不导出数据源、
+组合组件或任何会读取 Record 与 artifact 的代码。
 
-组件之外按任务读分篇：
+## 按问题选择
 
-| 任务 | 页面 |
-|---|---|
-| 弄清一个组件收哪些子节点、颜色怎么分配 | [组件树](components/README.md) |
-| 按场景抄一份完整报告文件改起 | [配方](library/recipes.md) |
-| 选内置指标、定义自己的指标或分组维度 | [指标与维度](library/metrics.md) |
-| 组织报告树、拼自由摘要格、写组合组件或双面组件 | [排版原语与自定义组件](library/layout.md) |
-| 让自定义组件复现官方的标签缩写与系列色 | [呈现算法](library/layout.md#呈现算法) |
-| 加标题、GitHub 链接、页脚，或拆成多页 | [外壳与多页](library/shell.md) |
-| 改强调色、状态色、图表色板、字体或完整覆盖 CSS | [主题](library/theme.md) |
-| 自己写一个报告组件，并让它跟随任何主题 | [自己写报告组件](use-case/构建报告/自定义组件/) |
-| 摆 hero、品牌行、警告区、Run 诊断区、修复 prompt 或 trace 瀑布 | [站点组件](components/site/README.md) |
-| 声明、删减或重排 attempt-input page | [Attempt 详情](components/attempt-detail/README.md) |
-| 看裸 `show` / `view` 装载的默认定义怎么写 | [内建报告](library/built-in.md) |
+| 想回答的问题 | 数据源或组合组件 | 原语 |
+|---|---|---|
+| 当前 Sample 整体怎样 | `SampleOverview` | 组合组件自行装配 |
+| 每个 Experiment、Eval 或 Attempt 发生了什么 | `experimentRows` / `evalRows` / `attemptRows` | `Table` |
+| 多个读数怎样随一个维度变化 | `measureRows(...)` | `Table` |
+| 哪道 Eval 在哪个条件上异常 | `measureMatrix(...)` | `Table` |
+| 固定题集的总分与分科得分 | `scoreboard(...)` | `Table` |
+| A 与 B 的成对差异是多少 | `deltaRows(...)` | `Table` |
+| 哪些 Eval 的历史从未稳定 | `stabilityRows(...)` | `Table` |
+| Sample 有多大、判定构成怎样 | `sampleSummary(...)` | `Grid` |
+| Sample 选择与 Run 诊断有什么问题 | `sampleWarnings` / `runDiagnostics` | `Callouts` |
+| 一次 Attempt 的完整证据 | `AttemptDetail` | 组合组件自行装配 |
 
-## 两种使用方式
+完整数据源目录见[数据源](components/sources/README.md),原语边界见[组件树](components/README.md)。
 
-### 交给 `show` / `view` 渲染
+## 在 `show` 与 `view` 中使用
 
-报告文件默认导出 `defineReport(报告树)`。树里的官方组件写 **spec 形态**——数据绑定写在结构子节点上，数据来源默认宿主注入的 Sample；组件同时实现 text 和 web 两个面，一份定义可用于两个宿主：
+报告文件默认导出 `defineReport(...)`。原语的 `source` 形态接收数据源;`input` 省略时,解析管线注入
+宿主已经选择好的 Sample:
 
 ```tsx
-// reports/quality-cost.tsx
 import {
-  Col, ExperimentList, Legend, Scatter, ScatterChart, Section, Tooltip, XAxis, YAxis,
-  costUSD, defineReport, endToEndPassRate,
+  Chart,
+  Col,
+  Section,
+  Table,
+  chart,
+  costUSD,
+  defineReport,
+  endToEndPassRate,
+  experimentRows,
 } from "niceeval/report";
+
+const qualityCost = chart({
+  x: { measure: costUSD },
+  y: { measure: endToEndPassRate },
+  series: [{
+    key: "frontier",
+    mark: "scatter",
+    points: "experiment",
+    by: "agent",
+    x: costUSD,
+    y: endToEndPassRate,
+  }],
+});
 
 export default defineReport(
   <Col>
     <Section title="质量与成本">
-      <ScatterChart>
-        <XAxis metric={costUSD} />
-        <YAxis metric={endToEndPassRate} />
-        <Tooltip />
-        <Legend />
-        <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
-      </ScatterChart>
+      <Chart source={qualityCost} legend tooltip />
     </Section>
-    <ExperimentList filter />
+    <Table source={experimentRows} filter />
   </Col>,
 );
 ```
@@ -75,185 +72,142 @@ niceeval show --report reports/quality-cost.tsx
 niceeval view --report reports/quality-cost.tsx
 ```
 
-宿主先按位置参数、`--record`、`--exp` 和 `--fresh` 选择数据，再把 Sample 注入报告；管线在 [resolve 阶段](architecture.md#报告树与两个宿主)并行完成所有组件的取数，作者不写任何取数管道。Run 未收尾、落盘不可读等选择警告由 [`SampleWarnings`](components/site/sample-warnings.md) 呈现；属于真实 Run、但无法归属单行的运行诊断由 [`RunDiagnostics`](components/site/run-diagnostics.md) 呈现。宿主不在报告树外为两者另设通道，[内建报告](library/built-in.md)的三张 sample-input page 都相邻放置它们（attempt-input page 不重复站点范围信息），自定义报告放不放是作者义务。能定位到行的事实不进任一面板：覆盖缺口是 [`ExperimentList` 的占位行](components/entity-lists/experiment-list.md)，携带与跨 Run 拼接是行上的[时效标注](components/entity-lists/README.md#时效标注)，Attempt 事实进入详情。`SampleSummaryData` 等指标数据不复制警告或诊断。`SampleWarnings` 按下一步动作聚合闭集 kind；`RunDiagnostics` 按真实 experiment → Run 来源组织开放 code，两者各自的聚合、排序与折叠规则见[组件契约](components/site/README.md)。
+宿主先按 `--record`、`--exp`、Eval 位置参数与 `--fresh` 选择 Sample,再解析报告。数据源并行计算,
+原语的 text 与 web 两面消费同一份 Content。
 
-取数之后要用普通 JavaScript 加工（filter / slice / 自定义排序）时，写一个[组合组件](library/layout.md#自定义组件)：在里面调 `*Data` 函数、加工数组，再以 **data 形态** 把结果递给组件：
+## 数据源与计算结果
 
-```tsx
-// reports/components/costliest-attempts.tsx
-import { AttemptList, attemptListData, defineComponent } from "niceeval/report";
+数据源是计算前的声明,`data` 是计算后的内容:
 
-export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
-  const all = await attemptListData(ctx.sample);
-  const ranked = [...all].sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
-  return <AttemptList data={ranked.slice(0, limit)} total={all.length} />;
-});
+```ts
+interface DataSource<Content, Input = Sample> {
+  readonly name: string;
+  compute(input: Input): Promise<Content>;
+}
 ```
 
-spec 形态与 data 形态的完整契约在 [Architecture · 组件模型](architecture.md#组件模型解析面与渲染面)：spec 形态等价于管线代调同名 `*Data`；data 形态是显式降级口，同一组件同时给出 `data` 与 spec 字段按完整用户反馈报错。
+无需配置的数据源直接导出值:
 
-### 嵌入自己的 React 页面
+```ts
+await experimentRows.compute(sample);
+await sampleSummary().compute(sample);
+```
 
-自己的页面没有 niceeval 的 resolve 阶段，因此先调 `*Data` 计算普通 JSON，再把 `data` 交给 `niceeval/report/react` 的纯组件（该入口只有 data 形态与配套数据类型）。`*Data` 要在**能打开记录根的进程**里调，由此分出两种形态；两种调的是同一批函数、产出逐字段相同，区别只有什么时候算。
+需要维度或读数的数据源导出同名工厂:
 
-**形态一：页面与记录根同机。** 本地看板、内网工具、`next dev` 都是这种——进程直接打开 `.niceeval/`，请求时现算：
+```ts
+const byAgent = measureRows({
+  rows: "agent",
+  measures: [endToEndPassRate, costUSD],
+  sort: endToEndPassRate,
+});
+
+const content = await byAgent.compute(sample);
+```
+
+工厂只建立声明,不读 Record。`compute()` 才可能懒加载 artifact,因此只在构建脚本、CI、报告 resolve
+阶段或能打开记录根的 Node 进程中调用。
+
+## 用普通 JavaScript 加工
+
+需要过滤、截断或自定义排序时,先调用数据源的 `compute()`,再把修改后的 Content 交给原语的
+`data` 形态:
 
 ```tsx
-// app/evals/page.tsx —— 记录根就在当前工作目录
+import { Table, attemptRows, defineComponent } from "niceeval/report";
+
+export const CostliestAttempts = defineComponent(
+  async ({ limit = 10 }: { limit?: number }, ctx) => {
+    const content = await attemptRows.compute(ctx.sample);
+    const rows = [...content.rows]
+      .sort((a, b) => Number(b.cells.cost.value) - Number(a.cells.cost.value))
+      .slice(0, limit);
+
+    return <Table data={{ ...content, rows }} filter />;
+  },
+);
+```
+
+原始 Content 与派生 Content 都是普通可序列化值。修改 rows 不会重新定义读数口径;需要在聚合前收窄
+Eval 时,使用原语 source 形态的 `evals` 选项。
+
+## 嵌入自己的 React 页面
+
+自己的页面没有 niceeval resolve 阶段。先在服务端计算 Content,再交给
+`niceeval/report/react` 的纯原语:
+
+```tsx
 import { openRecord } from "niceeval/record";
 import { currentSample } from "niceeval/sample";
-import { MetricTable, SampleSummary, SampleWarnings, RunDiagnostics } from "niceeval/report/react";
 import {
-  costUSD, durationMs, endToEndPassRate,
-  metricTableData, sampleSummaryData, runDiagnosticsData,
+  costUSD,
+  endToEndPassRate,
+  measureRows,
+  runDiagnostics,
+  sampleSummary,
+  sampleWarnings,
 } from "niceeval/report";
+import { Callouts, Grid, Table } from "niceeval/report/react";
 
 export default async function EvalsPage() {
   const record = await openRecord(".niceeval");
   const sample = currentSample(record, { experiments: "compare/" });
+  const rows = measureRows({
+    rows: "experiment",
+    measures: [endToEndPassRate, costUSD],
+    sort: endToEndPassRate,
+  });
 
-  const [diagnostics, summary, table] = await Promise.all([
-    runDiagnosticsData(sample),
-    sampleSummaryData(sample),
-    metricTableData(sample, {
-      rows: "experiment",
-      columns: [endToEndPassRate, costUSD, durationMs],
-      sort: endToEndPassRate,
-    }),
+  const [summary, warnings, diagnostics, table] = await Promise.all([
+    sampleSummary().compute(sample),
+    sampleWarnings.compute(sample),
+    runDiagnostics.compute(sample),
+    rows.compute(sample),
   ]);
 
   return (
     <main>
-      <SampleWarnings data={sample.warnings} />
-      <RunDiagnostics data={diagnostics} />
-      <SampleSummary data={summary} />
-      <MetricTable
-        data={table}
-        filter
-        attemptHref={(locator) => `/attempts/${locator}`}
-      />
+      <Grid data={summary} />
+      <Callouts data={warnings} />
+      <Callouts data={diagnostics} />
+      <Table data={table} filter />
     </main>
   );
 }
 ```
 
-**形态二：构建期算好 JSON。** 产品部署在别处、运行时看不见记录根时，取数搬进构建脚本，页面只吃定版 JSON：
+产品运行时看不见记录根时,在构建脚本中把 Content 写成 JSON。部署后的页面只 import
+`niceeval/report/react`;证据下钻需要同时用 [`publish()`](../record/library.md#发布publish)
+发布对应 Record 子集。
 
-```ts
-// scripts/build-evals-json.ts —— 与记录根同机跑（本地或 CI），产物随站点部署
-import { writeFile } from "node:fs/promises";
-import { openRecord } from "niceeval/record";
-import { currentSample } from "niceeval/sample";
-import { costUSD, endToEndPassRate, metricTableData, sampleSummaryData } from "niceeval/report";
+## 复用同一份数据源
 
-const sample = currentSample(await openRecord(".niceeval"), { experiments: "compare/" });
-
-await writeFile(
-  "public/evals.json",
-  JSON.stringify({
-    summary: await sampleSummaryData(sample),
-    table: await metricTableData(sample, {
-      rows: "experiment",
-      columns: [endToEndPassRate, costUSD],
-      sort: endToEndPassRate,
-    }),
-    warnings: sample.warnings,
-  }),
-);
-```
+同一份声明被多个 page 消费时,在报告外壳的 `sources` 字段命名。字段名使用 `sources`,因为值仍未
+计算;`data` 只指已经计算完成的 Content:
 
 ```tsx
-// app/evals/page.tsx —— 部署后跑，不碰记录根
-import { MetricTable, SampleSummary, SampleWarnings } from "niceeval/report/react";
-import type { SampleSummaryData, SampleWarning, TableData } from "niceeval/report/react";
-import payload from "../../public/evals.json";
-
-const { summary, table, warnings } = payload as {
-  summary: SampleSummaryData;
-  table: TableData;
-  warnings: SampleWarning[];
-};
-
-export default function EvalsPage() {
-  return (
-    <main>
-      <SampleWarnings data={warnings} />
-      <SampleSummary data={summary} />
-      <MetricTable data={table} filter attemptHref={(locator) => `/attempts/${locator}`} />
-    </main>
-  );
-}
-```
-
-证据下钻在形态二要多一步：`attemptHref` 指向的路由同样需要证据文件，而记录根不在产品那边。
-用 [`publish()`](../record/library.md#发布publish) 把这批结果物化进产品能读到的目录，再让该路由从那里读。
-
-组件输出完整静态 HTML。网页排序、过滤和图表 tooltip 是渐进增强；需要官方样式与增强脚本时引入 `niceeval/report/react/styles.css` 和 `niceeval/report/react/enhance.js`。
-
-## 数据计算与缓存边界
-
-每个数据组件都有同名词根的配套 `*Data` 计算函数，例如 `MetricTable` / `metricTableData`、`ExperimentList` / `experimentListData`——它们是组件解析面的具名形式，spec 形态下由管线代调，data 形态与嵌入场景下由作者手工调。计算函数接受 `ReportInput = Sample | readonly Run[]`，返回可序列化数据；组件渲染面本身不读文件。
-
-`*Data(...)` 可能懒加载 artifact，因此只应在能打开记录根的进程里调用：构建脚本、CI、与记录根同机的 Node 进程，或报告树里的组合组件。浏览器里没有记录根。返回值是普通可序列化数据，可写成 JSON 供 SPA 使用：
-
-```ts
-const table = await metricTableData(sample, {
-  rows: "experiment",
-  columns: [endToEndPassRate, costUSD],
+const byAgent = measureRows({
+  rows: "agent",
+  measures: [endToEndPassRate, costUSD],
 });
-await writeFile("public/evals.json", JSON.stringify(table));
-```
 
-计算产物只代表当时的 Sample。记录根变化后要重新调用对应 `*Data(...)`；纯 React 组件渲染同一份 data 时不再读取磁盘。报告树内的并行由管线保证：同层 spec 形态组件并行取数，自有页面里的多个 `*Data` 调用用 `Promise.all` 并行。
-
-### 一份计算给多处用：`data` 块
-
-同一份计算被两个 page 或两个组件消费是常态——实验列表在首页出现一次，明细页再出现一次。内联 spec 各写
-一遍时，「这两处是同一份计算吗」只能靠结构深相等去猜；猜中了省一次取数，猜不中默默算两遍，作者
-看不出差别。把它**命名**掉，问题就不存在了：
-
-```tsx
 export default defineReport({
-  data: {
-    byAgent: metricTable({ rows: "agent", columns: [endToEndPassRate, costUSD] }),
-    quality: scatter({ x: costUSD, y: endToEndPassRate, points: "experiment" }),
-  },
+  sources: { byAgent },
   pages: [
-    page("overview", <Col><Scatter from="quality" /><MetricTable from="byAgent" /></Col>),
-    page("detail", <Col><MetricTable from="byAgent" /></Col>),
+    page("overview", <Table source="byAgent" />),
+    page("detail", <Table source="byAgent" filter />),
   ],
 });
 ```
 
-`data` 的键是名字，值是与内联 spec 同一组构造函数；组件用 `from="<名字>"` 引用。**同一个名字保证
-只算一次**，跨 page 也是一次——这是声明出来的，不是推断出来的。名字不存在时在装载期报错，不等到
-渲染。
-
-三种取数形态严格等价，终值、覆盖率与 attempt 引用逐字段相同，按「这份计算给几处用」选：
-
-| 形态 | 写法 | 什么时候用 |
-|---|---|---|
-| 内联 spec | `<MetricTable rows="agent" … />` | 只此一处 |
-| 命名 `data` | `data: { byAgent: … }` + `from="byAgent"` | 多处消费同一份 |
-| 手工 data | `await metricTableData(sample, …)` → `data={…}` | 取数后要用普通 JS 加工 |
-
-命名 `data` 的键同时是缓存键与调试锚点:`--json` 输出与错误信息按名字点出是哪份计算失败,不用让
-作者从一棵树里数第几个组件。这套「命名查询 + 组件按名引用」抄自 Evidence.dev,见
-[参考方案](reference/README.md#evidencedev--命名查询与构建时取数)。
-
-所有指标格子都携带 `samples`、`total` 和完整 attempt `refs`。缺数据不会被填成 0，覆盖率与证据引用也不会因序列化而丢失。用于持久化的组件 data 不带独立 schemaVersion，支持口径是同一 niceeval 版本写读；组件消费 `data` 时校验结构，不符合当前形状按完整用户反馈报错并提示可能的版本漂移——漂移以显式错误浮出，不静默错渲染。
+同名 source 在整份 Report 中只计算一次。名字不存在、绑定到不兼容原语或 Content 校验失败时,
+解析阶段给出来源名与可执行修法,不等到 renderer 静默失败。
 
 ## 相关阅读
 
-- [用例手册](use-case/README.md) —— 按用户问题选报告能力,并划出何时换另一种组件或宿主。
-- [配方](library/recipes.md) —— 按场景可整份复制的完整报告文件。
-- [组件树](components/README.md) —— 组合模型、子节点资格总表与页级色分配。
-- [图表](components/charts/README.md) / [表格与矩阵](components/tables/README.md) / [实体列表](components/entity-lists/README.md) / [概览](components/summaries/README.md) / [Attempt 详情](components/attempt-detail/README.md) / [站点组件](components/site/README.md) —— 组件契约分篇。
-- [指标与维度](library/metrics.md) —— 内置指标口径与自定义指标。
-- [排版原语与自定义组件](library/layout.md) —— 报告树的组织件、组合组件与 text 排版工具。
-- [外壳与多页](library/shell.md) —— 标题、外链、页脚、脚本与 `pages`。
-- [内建报告](library/built-in.md) —— 裸宿主装载的定义与升级路径。
-- [Show](show.md) —— 终端宿主与证据切面。
-- [View](view.md) —— web 宿主与静态导出。
-- [Architecture](architecture.md) —— 组件模型、resolve 管线和宿主边界。
-- [Record Library](../record/library.md) —— `openRecord`、Sample 与 artifact 句柄。
+- [组件树](components/README.md) —— 原语、数据源、管线与组合组件。
+- [数据源目录](components/sources/README.md) —— 官方数据源全集。
+- [读数与维度](library/measures.md) —— `Measure`、`Dimension` 与聚合口径。
+- [完整示例](library/examples.md) —— 按场景组织的可复制报告。
+- [外壳与多页](library/shell.md) —— page、导航、sources 与静态资产。
+- [主题](library/theme.md) —— web 呈现令牌与 CSS 出口。

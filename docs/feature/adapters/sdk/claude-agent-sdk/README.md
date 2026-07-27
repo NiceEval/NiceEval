@@ -1,6 +1,6 @@
 # Claude Agent SDK
 
-`fromClaudeSdkMessages()` 把 Claude Agent SDK `query()` 返回的 `SDKMessage` 流转换成标准事件。Adapter 使用 `sseJsonFrames` 和 `driveFrameStream` 时只需保留 endpoint、请求体与审批接口等 transport 粘合。
+`createClaudeSdkEventStream()` 把 Claude Agent SDK `query()` 返回的 `SDKMessage` 流转换成标准事件。Adapter 使用 `sseJsonFrames` 和 `driveFrameStream` 时只需保留 endpoint、请求体与审批接口等 transport 粘合。
 
 转换器负责：
 

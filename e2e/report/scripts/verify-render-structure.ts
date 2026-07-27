@@ -381,7 +381,7 @@ async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
   assert.ok(figureMatch, "report page is missing the MetricScatter figure");
   const scatter = figureMatch![1]!;
 
-  // --- 坐标轴方向遵循 `better`(docs/feature/reports/library/metrics.md:costUSD 的
+  // --- 坐标轴方向遵循 `better`(docs/feature/reports/library/measures.md:costUSD 的
   //     better=lower,endToEndPassRate 的 better=higher)。刻度上真实的美元/百分比数值每次
   //     运行都会变化——这里断言的是方向规则,不是任何具体数字。
   assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "nre-scatter-axis-x"), "cost axis (better=lower, further right = cheaper)");

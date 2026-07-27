@@ -11,8 +11,8 @@
 
 **学了什么。**
 
-- **双面协议化,而不是两套组件。** 一个可渲染件不知道自己要去哪个面,这正是
-  [`defineComponent`](../architecture.md#报告树与两个宿主) 的双面对象形态。
+- **两面共享 Content，而不是共享终端画面。** 原语的 text / web renderer 消费同一份
+  可序列化 Content。
 - **共享层在布局决策之前。** Rich 把「排多宽」放在共享层、把「怎么涂色」放在面里。
 
 **没跟什么,而且是有意的。**
@@ -31,7 +31,7 @@
 布局用 TCSS。
 
 **没跟什么。** Textual 的 web 面是**终端渲染的远程投影**——浏览器里跑的仍是终端画面。这条路便宜
-得多(一份渲染代码),但 `ExperimentList` 在 view 上要可排序、可过滤、能点开 attempt 详情,那是原生
+得多(一份渲染代码),但 `experimentRows` 在 view 上要可排序、可过滤、能点开 attempt 详情,那是原生
 DOM 语义,投影给不了。所以这里选了更贵的「两个原生渲染面」,代价就是上面 Rich 那条的取舍与本页
 `enhance` 契约的全部复杂度。这是一次明确的取舍,不是漏做。
 
@@ -41,15 +41,14 @@ DOM 语义,投影给不了。所以这里选了更贵的「两个原生渲染面
 `latex` 等 builder 各自渲染;directive 是用户可注册的组件,extension 给自己的 directive 写各
 builder 的 visitor。这是「用户可编程组件 + 多渲染面」最老牌的真例。
 
-**学了什么。** 语义树与渲染面分离、第三方可注册组件——整体形状就是这个。
+**学了什么。** 语义树与渲染面分离。
 
 **它的病,以及这里怎么防。** Sphinx 的第三方 directive 常常只实现 html visitor,text builder 上
 就报错或输出空白。这是「双面 × 用户可编程组件」这一格的固有失败模式,而这一格恰好是所有参考物里
 **没有先例覆盖过**的交叉点。两道防线:
 
-1. **双面必填**,缺一面在 `defineComponent` 定义时就报错——Sphinx 靠运行时查找 visitor 再失败,
-   这里靠类型。
-2. **[具名 `enhance` 位](../architecture.md#只有一面能做的事具名-enhance-位)**,挡住更隐蔽的一半:
+1. **原语集合封闭**：用户扩展数据源与组合，不注册只有一个 renderer 的新原语。
+2. **[具名 `enhance` 位](../architecture.md#只有一面能做的事具名-enhance-位)** 挡住更隐蔽的一半：
    两面都写了,但 web 面能看到的信息在 text 面悄悄少了。每个能力位的 text 降级形态是规定的,不由
    各组件自行发明。
 
@@ -61,12 +60,11 @@ builder 的 visitor。这是「用户可编程组件 + 多渲染面」最老牌�
 
 **学了什么。**
 
-- **命名计算,一次算多处用。** [`data` 块](../library.md#一份计算给多处用data-块) 就是它:键是
-  名字,组件 `from="<名字>"` 引用,同一个名字保证只算一次。原本靠「同引用 input + 深相等 spec」
-  推断复用——猜中省一次取数,猜不中默默算两遍,作者看不出差别。命名把推断换成声明。
+- **命名计算,一次算多处用。** 报告外壳的 [`sources`](../library.md#复用同一份数据源) 用字段名绑定
+  数据源；同名 source 在一份报告中只计算一次。
 - **取数与渲染在管线上分离。** 组件渲染面不读文件,这条两边一致。
 
-**没跟什么。** Evidence 的查询语言是 SQL,数据源是数据库。这里的计算是 TS 函数(`*Data`),因为
+**没跟什么。** Evidence 的查询语言是 SQL,数据源是数据库。这里的数据源用 TS 声明,因为
 输入是 `AttemptHandle` 这种带懒加载方法的对象,不是行集——把 eval 结果压成 SQL 表会丢掉「下钻到
 证据」这条主线。
 
@@ -79,15 +77,15 @@ builder 的 visitor。这是「用户可编程组件 + 多渲染面」最老牌�
 结构,不是能求值的表达式。
 
 **没跟什么。** `aggregate` 那一支没抄成 Sample 的算子,而是留在 Reports 的
-[指标](../library/metrics.md):`perEval` / `acrossEvals` 两级聚合比通用 `groupBy` 更贴 eval 语义
+[读数](../library/measures.md):`perEval` / `acrossEvals` 两级聚合比通用 `groupBy` 更贴 eval 语义
 (题级折叠与跨题折叠本来就是两回事)。
 
 ## Grafana —— 面板生态的反面教材
 
 **是什么。** panel 插件 + datasource + transformations + dashboard JSON。
 
-**学了什么。** panel 与数据源解耦的价值;`ReportInput = Sample | readonly Run[]` 让组件不关心数据
-是官方口径选的还是作者手挑的。
+**学了什么。** panel 与数据源解耦的价值；不同数据源用 `Input` 类型明确声明自己消费 `Sample`、
+`Run[]` 还是 `AttemptEvidence`，原语只看 Content。
 
 **没跟什么。** Grafana 的模板变量(`$var` / repeat / 嵌套)逐渐长成需要独立求值规则文档的半个
 语言。这是「搭积木」的失败模式:失败不在积木不够,在积木变成了编程语言。这里的对策是所有扩展点
@@ -98,9 +96,9 @@ builder 的 visitor。这是「用户可编程组件 + 多渲染面」最老牌�
 **是什么。** 组件与其数据样例同处一文件,组件可脱离真实数据源独立渲染。
 
 **这里的对应物。** [data 形态](../library.md#数据计算与缓存边界)与
-`niceeval/report/react`(只导出纯 renderer、不含取数)合起来意味着:把 `*Data` 的输出存成 fixture
+`niceeval/report/react`(只导出纯 renderer、不含取数)合起来意味着:把数据源算出的 Content 存成 fixture
 JSON,纯 renderer 吃 fixture,**报告组件可以做视觉回归测试,完全不跑 eval、不碰磁盘**。
-`architecture.md` 里「spec 形态与手工调 `*Data` 再传 `data` 严格等价、逐字段相同」这条契约正是
+`architecture.md` 里「source 形态与手工调 `compute()` 再传 `data` 严格等价」这条契约正是
 这套测试成立的前提。同一批 fixture 还能当组件文档的活例子。
 
 ## Remix / RSC —— loader 与 server/client 边界
@@ -108,11 +106,11 @@ JSON,纯 renderer 吃 fixture,**报告组件可以做视觉回归测试,完全�
 **是什么。** route 声明 loader,框架并行调用后把序列化数据交给组件;RSC 用 server/client 组件边界
 表达「哪些代码不进浏览器」。
 
-**学了什么。** resolve 阶段并行取数、作者不写取数管道,就是 loader 模型;
+**学了什么。** resolve 阶段并行计算数据源、作者不写取数管道,就是 loader 模型;
 `niceeval/report` 与 `niceeval/report/react` 的切分就是 server/client 边界——`Run` 类型进不了
-浏览器,`RunDiagnostics` 的 data 形态只带 experimentId / startedAt / DiagnosticRecord[]。
+浏览器,`runDiagnostics` 的 data 形态只带 experimentId / startedAt / DiagnosticRecord[]。
 
-**没跟什么(暂时)。** Remix 后来演进出的 `defer` + streaming 还没有对应物:现在是全部 `*Data`
+**没跟什么(暂时)。** Remix 后来演进出的 `defer` + streaming 还没有对应物:现在是全部数据源
 并行完成才渲染。`diff.json` 可达百 MB,view 上迟早要「先出实验列表,重证据后到」——那时抄的就是这条。
 
 ## 相关阅读

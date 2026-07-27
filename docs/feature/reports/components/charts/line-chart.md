@@ -1,36 +1,25 @@
-# `LineChart`
+# `mark: "line"`
 
-数值参数趋势或维度折线的容器；唯一 series 是 [`Line`](#line)。容器 props、轴绑定、`ChartData`、聚合与两面投影规则见[图表](README.md)。
+折线用于数值参数趋势或确有顺序的维度，不用于给无关类别虚构连续关系。
 
 ```tsx
-<LineChart input={sample}>
-  <XAxis numeric={budget} />
-  <YAxis metric={endToEndPassRate} />
-  <Line metric={endToEndPassRate} by="agent" />
-</LineChart>
+const trend = chart({
+  x: { numeric: budget },
+  y: { measure: endToEndPassRate },
+  series: [{
+    key: "pass-rate",
+    mark: "line",
+    measure: endToEndPassRate,
+    by: "agent",
+  }],
+});
+
+<Chart source={trend} legend tooltip />
 ```
 
-## `Line`
-
-```ts
-type LineProps = MetricSeriesBinding & {
-  name?: LocalizedText;
-  type?: "linear" | "monotone" | "step";
-  stroke?: string;
-  strokeWidth?: number;
-  strokeDasharray?: string;
-  dot?: DotPresentation;
-  activeDot?: DotPresentation;
-  label?: LabelPresentation;
-  connectNulls?: boolean;
-};
-```
-
-`connectNulls` 默认 `false`；开启时只跨缺失值连线，不会为缺失点制造 `MetricCell`。
-
-`Line` 的绑定形态（`by` / `value`）、`dataKey` 规则见[共用选择模型](README.md#共用选择模型)；`ErrorBar`、`LabelList`、`Cell`、`Label` 等子节点见[嵌套节点](README.md#嵌套节点)。
+缺点默认断线。需要跨缺失点连线时在 `Chart` 的 `series["pass-rate"]` 呈现覆盖中显式声明
+`connectNulls: true`；它只改变线段，不制造 MeasureCell。
 
 ## 相关阅读
 
-- [图表](README.md) —— 容器、轴、计算规格、`ChartData` 与两面投影。
-- [`BarChart`](bar-chart.md) / [`AreaChart`](area-chart.md) / [`ScatterChart`](scatter-chart.md) / [`ComposedChart`](composed-chart.md) —— 其它容器与 series。
+- [`Chart`](README.md) —— 数据源、Content、轴与两面契约。

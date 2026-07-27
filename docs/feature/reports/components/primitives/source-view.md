@@ -24,7 +24,7 @@ interface SourceLine {
   details?: readonly ReportNode[];
 }
 
-interface SourceViewData {
+interface SourceViewContent {
   /** 展示的源码文件路径。 */
   path: string;
   lines: readonly SourceLine[];

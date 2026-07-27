@@ -48,7 +48,7 @@ interface EvidenceCoverage {
 - **Agent 级默认**：`defineAgent` / `defineSandboxAgent` 的 `coverage` 字段声明该 Adapter 的常态覆盖。官方 SDK 适配器显式声明全通道 complete（可用 `completeCoverage` 常量）；手写映射按实际情况声明。整个 Agent 不声明时，全部通道视为 **unknown**。
 - **Turn 级降级**：`Turn.coverage` 只用于相对 Agent 默认值**降级**（这一轮流断了、这一轮拿不到 usage）；不能在 Turn 上把 Agent 未声明的通道升格成 complete。
 - unknown 在消费侧与 `unavailable` 同样保守处理；区别只在展示（unknown = 「Adapter 没说」，unavailable = 「Adapter 说了拿不到」）。
-- attempt 级聚合取各 turn 的最差值（unknown/unavailable < partial < complete），随判定落进 `result.json` 的 `coverage` 字段（见 [Results](../../record/architecture.md#resultjson)），报告据此展示证据覆盖。
+- attempt 级聚合取各 turn 的最差值（unknown/unavailable < partial < complete），随判定落进 `result.json` 的 `coverage` 字段（见 [Record](../../record/architecture.md#resultjson)），报告据此展示证据覆盖。
 
 消费规则单点定义在 [Severity 与 Verdict](../../scoring/architecture/severity-and-verdict.md)，核心是**三值逻辑对正负断言都成立**：
 

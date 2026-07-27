@@ -2,7 +2,7 @@
 
 本域回答一个问题：**一次真实运行落盘的结果、对外的机器出口，以及用户在 show /
 view 里看到的读面与渲染，是否符合公开契约。** 它由 `e2e/report/` 仓库承担（group
-`report`）。适配器仓库不复制格式知识，读结果只走公开读取面（见[总则 · Results 读取边界](README.md#42-results-读取边界)）。
+`report`）。适配器仓库不复制格式知识，读结果只走公开 Record 读取面。
 
 仓库使用真实 Agent 与真实模型产生结果——真实优先没有例外。稳定性来自断言对象：只对这次运行的产物做确定性断言（文件集合、字段形状、口径一致性、渲染结构与排版），不断言模型输出质量。一次真实运行产出的证据被下面全部验收组共用，断言条数不增加模型成本。
 
@@ -64,18 +64,18 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 
 - **零配置用户切片**：从公开 CLI 验收多 `--exp`
   对照、`--stats`、`--usage`、attempt 首页 facts、`--grep` 命中/空结果，以及 `--source`
-  对全通过断言的收纳和对失败断言的展开。预期来自本仓库签入的 Eval、公开 Results
-  fixture 与真实运行证据，不 import show renderer、报告组件或 `*Data` 生成答案。
+  对全通过断言的收纳和对失败断言的展开。预期来自本仓库签入的 Eval、公开 Record
+  fixture 与真实运行证据，不 import show renderer、报告原语或数据源生成答案。
 
 - **结构**：区块存在与相对顺序、默认展开 / 折叠（原生 `<details>` 的 `open` 标记）、计数、expected /
-  received 文本、失败断言的默认可见性、locator 链接与下钻命令；空证据位的组件零输出，不留空占位；`RunDiagnostics`
+  received 文本、失败断言的默认可见性、locator 链接与下钻命令；空证据位的组件零输出，不留空占位；`runDiagnostics`
   的摘要恒可见且暴露最高严重度、web 默认折叠、text 不折叠、单诊断 Run 不摆空壳层级、三张内建 scope-input
-  page 均紧邻 `SampleWarnings` 放置；`PoweredBy` / `HeroCard`
+  page 均紧邻 `sampleWarnings` 放置；`PoweredBy` / `HeroCard`
   品牌行的固定链接（`utm_source=report&utm_medium=powered-by`、`rel="noopener"` 不含
-  `noreferrer`）与 web 恒含、text 零输出的两面差异；同一维度键在 `MetricTable` / `MetricMatrix` /
-  `Scoreboard` / `AttemptList` / `ExperimentList` / 图表图例
+  `noreferrer`）与 web 恒含、text 零输出的两面差异；同一维度键在 `measureRows` / `measureMatrix` /
+  `scoreboard` / `attemptRows` / `experimentRows` / 图表图例
   之间呈现同一种颜色，与渲染顺序无关（同一页一次分配，见[页级色分配](../../../feature/reports/components/README.md#系列色分配单位是页)；比较浏览器实际绘制结果，不比较内部 class 或散列函数）；图表
-  轴方向随指标 `better` 反向、刻度显示真实值、`Scatter line` 折线与图例的一致性；`view`
+  轴方向随读数 `better` 反向、刻度显示真实值、scatter mark 连线与图例的一致性；`view`
   外壳（topbar）恒有 NiceEval 品牌位、无 hero 区（hero 是页内组件），导航项与顺序等于报告定义中
   `navigation !== false` 的页（不多不少、宿主不追加），`ReportLink.icon`
   的内联 SVG 渲染在 label 前。
@@ -88,9 +88,9 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 - **视觉与交互**：对同一次运行执行 `niceeval view --out`
   导出静态站，用真实浏览器打开 index 与失败 attempt 的 `attempt/<locator>.html`
   文档，验收「组件 + 官方 stylesheet」在真实证据上的组合成立：详情各语义块是结构化布局而非 UA 默认排版；源码行按
-  [`AttemptSource` 视觉规范](../../../feature/reports/components/attempt-detail/attempt-source.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
+  [`attemptSource` 视觉规范](../../../feature/reports/components/attempt-detail/attempt-source.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
   assertions / Other conversation）同样是结构化条目而非 UA 默认排版，分轮卡片与
-  `AttemptConversation`
+  `attemptConversation`
   同视觉语言，工具预览无 JSON 字面转义直出——共享回复 renderer 的每个新渲染容器都要在这里验收一次样式覆盖（先例：[memory/attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)，同类缺陷在单元层 DOM 断言下恒逃逸）；点击 send
   / assertion 行由原生 `<details>`
   展开行内回复与断言细节，普通行不可展开；文档零 JS 依赖（禁 JS 后上述内容仍完整可读）。
@@ -101,7 +101,7 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
   索引、折叠展开、过滤框、locator 深链与下钻命令在真实浏览器里逐项操作可达。用户改一份报告文件就能踩到的路径，回归也要踩到。
 - **候选包的外部消费边界**：把编排器注入的候选 `niceeval`
   tarball 链接进临时消费方项目，以独立 Node 进程从该项目 cwd 执行
-  `niceeval show --report`，对同一份真实 Results 分别覆盖消费方无 `tsconfig.json`、classic JSX 与
+  `niceeval show --report`，对同一份真实 Record 分别覆盖消费方无 `tsconfig.json`、classic JSX 与
   `react-jsx` 三种配置。三种场景都必须从 `niceeval/report/built-in`
   成功装载 package-owned 预编译 ESM 并渲染真实证据，不得受消费方 JSX 配置影响或依赖全局
   `React`；这个 case 证明的是发布包模块边界，不重复组件渲染断言。
@@ -116,8 +116,8 @@ selector 只是找到元素的手段，除非公开文档把它声明成 DOM、�
 
 ## 边界
 
-判定、聚合、计算口径、装载校验与错误反馈这些**数据语义**归[单元测试 Reports](../unit/reports.md)——`*Data`
-函数与 resolve 管线在 fixture 上证明，不需要真实运行。本仓库承接从数据到呈现的一切：渲染出来的结构、排版、样式与交互，以及 CLI 读面的进程级行为。
+判定、聚合、计算口径、装载校验与错误反馈这些**数据语义**归[单元测试 Reports](../unit/reports.md)——数据源的
+`compute()` 与 resolve 管线在 fixture 上证明，不需要真实运行。本仓库承接从数据到呈现的一切：渲染出来的结构、排版、样式与交互，以及 CLI 读面的进程级行为。
 
 每个仓库验收链尾的
 [CLI 读回](README.md#43-cli-读回)会在真实数据上驱动 show 的读取与渲染路径，但断言停在自有事实的出现与口径一致；逐字段的格式、出口与渲染契约只在本仓库验收一次。

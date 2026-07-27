@@ -10,15 +10,17 @@ export const AttemptDetail = defineComponent((_props, ctx) => {
     ctx.page.evidence.evalSource !== null;
   return (
     <Col>
-      <AttemptSummary />
+      <Grid source={attemptSummary} />
       <AttemptAssessment />
-      <AttemptFixPrompt />
-      <AttemptTimeline />
-      <AttemptDiagnostics />
-      <UsageTable />
-      {conversationLivesInSource ? null : <AttemptConversation />}
-      <AttemptTrace />
-      <AttemptDiff />
+      <CopyBlock source={attemptFixPrompt} />
+      <Waterfall source={attemptTimeline} />
+      <Callouts source={attemptDiagnostics} />
+      <Grid source={attemptUsage} />
+      {conversationLivesInSource
+        ? null
+        : <Conversation source={attemptConversation} />}
+      <Waterfall source={attemptTrace} />
+      <DiffView source={attemptDiff} />
     </Col>
   );
 });
@@ -34,10 +36,10 @@ export const AttemptDetail = defineComponent((_props, ctx) => {
   navigation: false,
   content: (
     <Col>
-      <AttemptSummary />
+      <Grid source={attemptSummary} />
       <AttemptAssessment />
-      <AttemptDiff />
-      <AttemptConversation />
+      <DiffView source={attemptDiff} />
+      <Conversation source={attemptConversation} />
     </Col>
   ),
 }

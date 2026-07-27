@@ -7,7 +7,7 @@
 - **令牌**是类型化的高频入口——外观分支、强调色、状态色、六色图表色板、中性表面、字体与圆角。
 - **`styles`** 是主题自带的完整 CSS 出口，用来改令牌表达不了的东西：组件外观、密度、装饰、字体加载。
 
-主题只作用于 web 面：`view` 宿主 chrome 与页内 `.nre` 组件读同一份令牌，本地查看与 `view --out` 静态导出使用同一份主题。`show` 是 text 面，不消费主题；主题不改变判定文字、指标口径或任何数值。
+主题只作用于 web 面：`view` 宿主 chrome 与页内 `.nre` 组件读同一份令牌，本地查看与 `view --out` 静态导出使用同一份主题。`show` 是 text 面，不消费主题；主题不改变判定文字、读数口径或任何数值。
 
 ## 装载链
 
@@ -234,7 +234,7 @@ function themeStylesheet(theme: ThemeDefinition): string;
 | `series` | experiment / agent / label 等名义分类身份 | 质量大小或判定好坏 |
 | 中性面令牌 | 页面、卡片、分隔与三级文字层次 | 任何状态含义 |
 
-组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#系列色分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`seriesPins`](shell.md#钉色) 声明），`DeltaTable` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级色分配](../components/README.md#系列色分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`seriesPins`](shell.md#钉色) 声明），`deltaRows` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
 
 未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--nre-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子：
 
@@ -275,7 +275,7 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主
 - **`system`（默认）**：初始跟随浏览器 / OS，`view` 页头渲染一个浅 / 深切换控件。读者的选择按站点作用域记在浏览器本地，下次打开同一个站保持。
 - **`light` / `dark`**：全站锁定该分支，不渲染切换控件。主题的 CSS 只为一种背景写过时用这一档。
 
-无 JavaScript 时初始 HTML 就是声明的外观——`color-scheme` 与 `light-dark()` 在样式层完成选色，导出站在直接打开、静态托管与本地 server 中规则相同。切换控件属于增强层，与自定义脚本受同一条不变量约束：只改变浏览的样子，不改变数据、指标口径或初始 HTML 里的任何数值。
+无 JavaScript 时初始 HTML 就是声明的外观——`color-scheme` 与 `light-dark()` 在样式层完成选色，导出站在直接打开、静态托管与本地 server 中规则相同。切换控件属于增强层，与自定义脚本受同一条不变量约束：只改变浏览的样子，不改变数据、读数口径或初始 HTML 里的任何数值。
 
 ## 在 view 中怎样生效
 
@@ -283,7 +283,7 @@ NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主
 
 主题的 `styles` 与外壳 `styles` 走同一套资产纪律：`{src}` 只收本地路径（允许 `./` 前缀，不允许 `..` 路径段、绝对路径或 `~`），本地 `view` 与静态导出都按内容哈希物化为 `assets/<sha256><ext>` 并改写引用，同内容去重。区别只在解析基准——主题的资产相对主题文件，外壳的资产相对报告文件。文件缺失时在启动或导出时报错并给出解析后的路径。
 
-主题不进 `ctx.report`。组件输出稳定的语义 class，再由 CSS 令牌取色；组件不能在 resolve 阶段读主题后改变组件树或数据。因此换主题只改 CSS，不会导致指标重算、HTML 内容分叉或证据链改变——这也是主题可以独立分发的根据：一份主题装到任何报告上都不可能改动那份报告的数字。
+主题不进 `ctx.report`。组件输出稳定的语义 class，再由 CSS 令牌取色；组件不能在 resolve 阶段读主题后改变组件树或数据。因此换主题只改 CSS，不会导致读数重算、HTML 内容分叉或证据链改变——这也是主题可以独立分发的根据：一份主题装到任何报告上都不可能改动那份报告的数字。
 
 样式级联顺序固定为：
 
@@ -367,5 +367,5 @@ NiceEval 官方主题 [Basalt](../themes/basalt.md) 保证官方组件的对比�
 - [给报告换主题、做自己的主题包](../use-case/交付报告/主题/) —— 从换一次色到发一个主题包的全流程。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
 - [外壳与多页](shell.md) —— `theme` / `seriesPins` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
-- [排版原语与自定义组件](layout.md) —— 页内 `Style`、`className` 与双面组件。
+- [排版原语与自定义组件](layout.md) —— 页内 `Style`、`className` 与组合组件。
 - [View](../view.md) —— 本地查看与静态导出怎样消费同一份主题。

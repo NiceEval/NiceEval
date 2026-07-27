@@ -8,7 +8,7 @@
 
 ```ts
 type ReportNode =
-  | ReportElement                 // 双面组件、组合组件或排版原语经 JSX 产生的元素
+  | ReportElement                 // 原语或组合组件经 JSX 产生的元素
   | readonly ReportNode[]         // 节点列表；Fragment（<>…</>）等价于列表
   | null | undefined | boolean;   // 条件渲染的空分支，渲染为空
 ```
@@ -53,7 +53,7 @@ interface StatProps {
   value: LocalizedText | number | null;
   /** 主值下面的短解释；省略时不留空行。 */
   detail?: LocalizedText;
-  /** 主值的语义色；不从正负号、单位或 Metric.better 猜。默认 neutral。 */
+  /** 主值的语义色；不从正负号、单位或 Measure.better 猜。默认 neutral。 */
   tone?: "neutral" | "positive" | "negative" | "warning";
   className?: string;
 }
@@ -81,7 +81,7 @@ interface TabProps extends LayoutProps {
 }
 ```
 
-`Text` 与 `Markdown` 的正文按 [`LocalizedText`](shell.md) 的回退规则随宿主语言切换：报告站有语言切换按钮，切完一整页英文中间夹一段中文方法学说明是坏结果。收 `LocalizedText` 不等于自动翻译——作者写下几种语言就有几种，缺的语言走回退链；指标与聚合口径不因 locale 改变，`MetricCell.display` 仍是同一个 `value` 的几种格式化。
+`Text` 与 `Markdown` 的正文按 [`LocalizedText`](shell.md) 的回退规则随宿主语言切换：报告站有语言切换按钮，切完一整页英文中间夹一段中文方法学说明是坏结果。收 `LocalizedText` 不等于自动翻译——作者写下几种语言就有几种，缺的语言走回退链；读数与聚合口径不因 locale 改变，`MeasureCell.display` 仍是同一个 `value` 的几种格式化。
 
 `Col` 在两个面都按声明序纵向排列。`Row` 的 web 面横排；text 面在可用宽度装得下全部子块时按显示宽度并排（与下文 `columns` 工具同一把尺），装不下时整块退化为纵向堆叠——不截断、不隐藏任何子块。`Grid` 与 `Stat` 的布局和降级规则见下一节。
 
@@ -98,7 +98,7 @@ interface TabProps extends LayoutProps {
 - 题集固定为 \`security/\` 下 12 题，未跑到的题按 0 分留在分母
 - 超时 attempt 的耗时记 \`null\`，不计入均值
 
-详细口径见[指标说明](https://example.com/metrics)。
+详细口径见[读数说明](https://example.com/measures)。
 `}</Markdown>
 ```
 
@@ -122,7 +122,8 @@ interface TabProps extends LayoutProps {
 
 - **不透传裸 HTML。** CommonMark 允许的 HTML 块与行内 HTML 一律转义成可见文本。报告是要发布出去的静态站，正文里的字符串可能来自结果数据，解析器不给它开一条注入通道。
 - **不解析 Markdown 表格。** 遇到表格语法（`|` 起首行加分隔行）按完整用户反馈报错，指引改用 [`Table`](#table)：表格的列宽要走终端显示宽度那把尺子（CJK 记 2 列、身份列下限、超宽先折行再丢列并如实标注），Markdown 表格绕过这套只会在终端撕歪。
-- **不解析证据引用。** 正文里的 `@1k2m9qrs` 就是普通文本，不会变成 attempt 深链——要证据链接就用数据组件，它们的 locator 有真正的下钻目标。
+- **不解析证据引用。** 正文里的 `@1k2m9qrs` 就是普通文本，不会变成 attempt 深链——要证据链接
+  就用带 `locator` Cell 的数据源和原语。
 
 折行与宽度量测和其它排版原语共用同一把尺（`stringWidth` / `wrapText`，CJK 与全角记 2 列），所以中文正文在终端不会撕歪。`Markdown` 只排版，不取数、不读 Sample：内容从哪来是普通 JavaScript 的事——字面量、`readFile` 读一份 `METHODOLOGY.md`、或组合组件里按数据拼串都可以。
 
@@ -133,7 +134,7 @@ interface TabProps extends LayoutProps {
 ```tsx
 // reports/nightly.tsx —— 排版原语组织报告树的完整文件形态
 import {
-  Col, Column, MetricTable, Row, Rows, Section, Style, Text,
+  Col, Row, Section, Style, Table, Text, measureRows,
   costUSD, defineReport, endToEndPassRate,
 } from "niceeval/report";
 
@@ -142,18 +143,18 @@ export default defineReport(
     <Text className="team-note">nightly benchmark · publishes at 06:00</Text>
     <Row>
       <Section title="Overall">
-        <MetricTable>
-          <Rows dimension="agent" sort={endToEndPassRate} />
-          <Column metric={endToEndPassRate} />
-          <Column metric={costUSD} />
-        </MetricTable>
+        <Table source={measureRows({
+          rows: "agent",
+          measures: [endToEndPassRate, costUSD],
+          sort: endToEndPassRate,
+        })} />
       </Section>
       <Section title="Cost">
-        <MetricTable>
-          <Rows dimension="agent" sort={costUSD} />
-          <Column metric={costUSD} />
-          <Column metric={endToEndPassRate} />
-        </MetricTable>
+        <Table source={measureRows({
+          rows: "agent",
+          measures: [costUSD, endToEndPassRate],
+          sort: costUSD,
+        })} />
       </Section>
     </Row>
     <Style>{`.nre .team-note { color: #6b7280; }`}</Style>
@@ -161,11 +162,11 @@ export default defineReport(
 );
 ```
 
-本页其余示例都是这样一棵报告树中的片段；更多完整文件按场景收在[配方](recipes.md)。
+本页其余示例都是这样一棵报告树中的片段；更多完整文件按场景收在[完整示例](examples.md)。
 
 ## `Grid` 与 `Stat`
 
-`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Sample、不聚合 Metric，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算指标、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables/README.md)或[图表](../components/charts/README.md)，不能为了得到这种外观把 `MetricCell` 降成几段丢失证据的字符串。
+`Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Sample、不聚合 Measure，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算读数、保留 `samples` / `total` / `refs` 时继续使用[表格与矩阵](../components/tables/README.md)或[图表](../components/charts/README.md)，不能为了得到这种外观把 `MeasureCell` 降成几段丢失证据的字符串。
 
 `Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格；`columns` 是每行的宽面上限，不要求子节点数量恰好为其倍数。一个格子里要放多个区块时，用已有 `Col` 把它们归成一个直接子节点：
 
@@ -238,8 +239,8 @@ export default defineReport(
 - `columns` 必须是有限正整数；TypeScript 的 `number` 不能排除 0、负数、小数、`NaN` 或 `Infinity`，因此组件创建时统一做运行时校验并给完整用户反馈。`variant` 默认 `"plain"`，`density` 默认 `"regular"`。
 - `density` 只控制当前 Grid 的 cell padding、gutter，以及其中内置 `Stat` 的既定字号档；它不向任意自定义组件注入样式或改写子节点 props。
 - `Stat.label`、字符串形态的 `value` 与 `detail` 都按 `LocalizedText` 回退规则选择语言并转义输出；number 形态按当前 locale 格式化。`null` 与数字 `0` 严格区分，前者显示 `—`，后者正常显示为零。
-- `tone` 是作者给主值的语义判断：`positive` / `negative` / `warning` 分别使用官方 success / danger / warning token，`neutral` 使用正文 token；组件不看正负号、单位、verdict 或 `Metric.better` 自动猜 tone。
-- `Stat` 不接受格式串、HTML、`ReportNode` detail 或 locator。长正文、链接和证据下钻属于其它组件；Metric 值应先由指标引擎产生完整 `MetricCell`，不能把这个纯样式件当成另一条聚合捷径。
+- `tone` 是作者给主值的语义判断：`positive` / `negative` / `warning` 分别使用官方 success / danger / warning token，`neutral` 使用正文 token；组件不看正负号、单位、verdict 或 `Measure.better` 自动猜 tone。
+- `Stat` 不接受格式串、HTML、`ReportNode` detail 或 locator。长正文、链接和证据下钻属于其它组件；Measure 值应先由读数引擎产生完整 `MeasureCell`，不能把这个纯样式件当成另一条聚合捷径。
 
 `Section.meta` 是标题的短补充，不是第二个正文槽：web 面在标题行右对齐；text 面嵌进区域框的上边框右侧（见下）。它不接受 `ReportNode`，长说明仍放进 Section 的 `children`。
 
@@ -269,7 +270,8 @@ export default defineReport(
 
 **量测。** 行宽按显示列而不是码点数计算，统一走 `stringWidth`；CJK / 全角记 2 列，East-Asian-Ambiguous（`·` `●` `…` `×` `✓` `✗`）一律记 1 列。渲染与量测必须用同一张宽度表，否则同一份输出在 ambiguous=wide 的 locale 下会把每一条右边框顶歪。
 
-**圆角框标区域，直角框标数据格。** `Grid` 的 `variant="boxed"` 给每个 cell 的 `┌─┐` 是直角（见下），与区域框的圆角区分开：一眼能看出哪一层是结构、哪一层是数据。框只由这两个排版原语产生——数据组件（指标表、散点、列表、瀑布）自身永不画框，页面上有没有面板完全由组件树里有没有 `Section` 决定，要面板就把组件包进 `Section`。包不包框的判据是成本收益：框的收益是分隔并列的异质区域、给参差不齐的正文（断言列表、时间树、live 重绘的进度）一条稳定边界；成本是 4 列可用宽度、行首行尾的框字符污染整行复制、与内容自带的结构线叠成双重线。表格的列对齐、散点的坐标轴本身就是边界，独占整页时包框只有成本——[内建报告](built-in.md)的三张导航页因此整树无 `Section`、text 面无框铺开；`AttemptDetail` 这类页面正文参差且多区域并列，面板在那里才买得到东西。
+**圆角框标区域，直角框标数据格。** `Grid` 的 `variant="boxed"` 给每个 cell 的 `┌─┐` 是直角（见下），
+与区域框的圆角区分开。数据原语自身永不额外画区域框；页面有没有面板由树里有没有 `Section` 决定。
 
 ### `view` 输出
 
@@ -368,23 +370,33 @@ export default defineReport(
 ```tsx
 <Tabs>
   <Tab title="质量 × 成本">
-    <ScatterChart>
-      <XAxis metric={costUSD} />
-      <YAxis metric={endToEndPassRate} />
-      <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
-    </ScatterChart>
+    <Chart source={chart({
+      x: { measure: costUSD },
+      y: { measure: endToEndPassRate },
+      series: [{
+        key: "frontier",
+        mark: "scatter",
+        points: "experiment",
+        by: "agent",
+        x: costUSD,
+        y: endToEndPassRate,
+      }],
+    })} legend tooltip />
   </Tab>
   <Tab title="分科得分">
-    <Scoreboard score={examScore}>
-      <Rows dimension="agent" />
-      <Question id="security/sql-injection" />
-      <Question id="correctness/retry" />
-    </Scoreboard>
+    <Table source={scoreboard({
+      rows: "agent",
+      score: examScore,
+      questions: [
+        { evalId: "security/sql-injection" },
+        { evalId: "correctness/retry" },
+      ],
+    })} />
   </Tab>
 </Tabs>
 ```
 
-- 两个渲染面都输出全部 tab 的完整内容。web 面静态 HTML 把每个 tab 渲染为独立 `<details>`，第一个默认展开；渐进增强把它们变成单选 tab 条。切换是纯浏览状态，不改变数据、指标口径或初始 HTML 中的数值。text 面按声明顺序把每个 tab 输出为带标题的分节。
+- 两个渲染面都输出全部 tab 的完整内容。web 面静态 HTML 把每个 tab 渲染为独立 `<details>`，第一个默认展开；渐进增强把它们变成单选 tab 条。切换是纯浏览状态，不改变数据、读数口径或初始 HTML 中的数值。text 面按声明顺序把每个 tab 输出为带标题的分节。
 - `Tabs` 必须至少含一个直接 `Tab` 子节点，`Tab` 也只能直接放在 `Tabs` 下；空 Tabs、普通组件混作直接子节点或游离 Tab 在树校验期给出完整用户反馈。tab 内容内部仍可放任意 `ReportNode`。
 - `Tab` 除通用 `children` / `className` 外只有 `title: LocalizedText`。tab 不参与路由，没有 id，也没有 CLI 选择器。
 - **text 面不给 tab 做索引，也不隐藏任何 tab。** 页能用命令下钻，tab 没有选择器，索引只能是死路，所以 `show` 全量输出。多 tab 报告在终端长到读不动，是把这些 tab 升级成[页](shell.md)的信号。
@@ -473,7 +485,7 @@ interface TableProps {
 - **两个面各自成立。** text 面列间 3 空格、首行表头；web 面是 `<table>` + `<thead>` / `<tbody>`，右对齐落成 `nre-align-right` 类，不用内联样式。
 - **带 `locator` 的行只携带证据引用，不强造详情。** 有任一行带 `locator` 时多出一列 attempt：当前报告声明了 attempt-input page（或自有 React 页面显式传 `attemptHref`）时，web 面渲染链接、text 面渲染带完整报告上下文的命令；没有连接目标时两个面都只显示 locator 文本，宿主不追加隐藏 fallback。
 
-`MetricTable`、`MetricMatrix`、`Scoreboard`、`DeltaTable` 与 `StabilityMatrix` 的 text 面建在 `Table` 上：自定义表和官方表用同一把尺子。
+`measureRows`、`measureMatrix`、`scoreboard`、`deltaRows` 与 `stabilityRows` 的 text 面建在 `Table` 上：自定义表和官方表用同一把尺子。
 
 ## 文本排版工具箱
 
@@ -519,7 +531,8 @@ interface SeriesColor {
 }
 ```
 
-- **报告树内**：双面组件从 `WebContext.seriesColor(dimension, value)` 读，返回这一页已分配好的结果。传入的是维度与维度**值**（`("agent", "codex")`），不是显示名——缩写过的标签、加了前缀的图例文案都不是键。这一页的已解析数据里没出现过的值按稳定散列回落，不占用页内色格。text 面不消费颜色，`TextContext` 没有这个方法。
+- **报告树内**：原语从页级呈现上下文读取色槽。传入的是维度与维度**值**
+  （`("agent", "codex")`），不是显示名。text 面不消费颜色。
 - **自有 React 页面**：没有 niceeval 的页级阶段，作者自己拥有页。把这一页要着色的全部键**一次**交给 `seriesColors`，得到的映射再分给各组件：
 
   ```ts
@@ -539,7 +552,7 @@ interface ComposeContext {
   /** 宿主选择的 Sample；页组件直接消费，attempt 组合也可用来读站点范围。 */
   sample: Sample;
   /** 记录根完整读取面；历史视图从这里自行挑 Run[]。 */
-  results: Results;
+  results: Record;
   /** 规范化后的报告声明，只读；见下方 ReportMeta。 */
   report: ReportMeta;
   /** 当前 page 及其输入；非法组合由判别联合排除。 */
@@ -560,61 +573,24 @@ interface ReportMeta {
   pages: readonly [{ id: string; title: LocalizedText; input: "sample" | "attempt"; navigation: boolean }, ...Array<{ id: string; title: LocalizedText; input: "sample" | "attempt"; navigation: boolean }>];
 }
 
-interface ResolveContext {
-  /** 宿主注入的 Sample；props 显式给出 input 时以 props 为准。 */
-  input: ReportInput;
-  /** Attempt 详情组件从 attempt 分支读取 evidence；sample 组件不猜可选字段。 */
-  page: PageContext;
-}
-
-interface TextContext {
-  width: number;
-  locale: ReportLocale;
-  render(node: ReportNode, width?: number): string;
-  /** 当前定义有 attempt-input page 时存在；否则 locator 只渲染成文本。 */
-  attemptCommand?: (locator: AttemptLocator) => string;
-  /** 「按实验收窄」类命令；宿主注入以携带完整 --record / --report / --page 上下文。 */
-  experimentCommand(experimentIdPrefix: string): string;
-}
-
-interface WebContext {
-  locale: ReportLocale;
-  /** 当前定义有 attempt-input page 或嵌入方显式接外部路由时存在。 */
-  attemptHref?: (locator: AttemptLocator) => string;
-  /** 读这一页已分配好的系列色；见[呈现算法](#呈现算法)。 */
-  seriesColor(dimension: string, value: string): SeriesColor;
-}
-
-interface ComponentFaces<Props, RenderProps = Props> {
-  /** 组件唯一的异步 / IO 面：把作者写下的 props 规范化成渲染 props。 */
-  resolve?(props: Props, context: ResolveContext): RenderProps | Promise<RenderProps>;
-  web(props: RenderProps, context: WebContext): ReactNode;
-  text(props: RenderProps, context: TextContext): string;
-}
-
-/** 函数形态：组合组件，只装配已有组件，可以异步。 */
+/** 组合组件只装配已有原语与数据源，可以异步。 */
 function defineComponent<Props>(
   compose: (props: Props, context: ComposeContext) => ReportNode | Promise<ReportNode>,
 ): ReportComponent<Props>;
-/** 对象形态：双面组件，自己渲染。 */
-function defineComponent<Props, RenderProps = Props>(
-  faces: ComponentFaces<Props, RenderProps>,
-): ReportComponent<Props>;
 ```
 
-选择很简单：**只装配别人就写函数，要自己落渲染就写对象。**
-
-**组合组件**（函数形态）覆盖「取数后用普通 JavaScript 加工再摆进现有组件」的全部场景，手感与 React 函数组件相同：
+组合组件覆盖「取数后用普通 JavaScript 加工再摆进现有原语」的场景，手感与 React 函数组件相同：
 
 ```tsx
-import { AttemptList, Section, attemptListData, defineComponent } from "niceeval/report";
+import { Section, Table, attemptRows, defineComponent } from "niceeval/report";
 
 export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?: number }, ctx) => {
-  const all = await attemptListData(ctx.sample);
-  const ranked = [...all].sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
+  const content = await attemptRows.compute(ctx.sample);
+  const ranked = [...content.rows]
+    .sort((x, y) => (y.costUSD ?? 0) - (x.costUSD ?? 0));
   return (
     <Section title="最贵的 attempt">
-      <AttemptList data={ranked.slice(0, limit)} total={all.length} />
+      <Table data={{ ...content, rows: ranked.slice(0, limit) }} />
     </Section>
   );
 });
@@ -623,31 +599,14 @@ export const CostliestAttempts = defineComponent(async ({ limit = 10 }: { limit?
 <CostliestAttempts limit={10} />
 ```
 
-组合组件在管线的 resolve 阶段展开为它返回的树，随后逐节点继续解析与校验；它不需要 text / web 面，因为它不产生自己的渲染输出。React 组件或未经 `defineComponent` 的普通函数不能进报告树，展开遇到时以完整用户反馈拒绝——这个包装就是「树中每个节点两个宿主都能判读」的资格证。
-
-**双面组件**（对象形态）同时提供 `text` 与 `web`；可选的 `resolve` 让组件拥有自己的取数面，官方数据组件的 [spec 形态](../components/README.md#数据绑定与两种形态)正是这样实现的：
-
-```tsx
-interface BadgeProps {
-  label: LocalizedText;
-  value: string;
-}
-
-export const Badge = defineComponent<BadgeProps>({
-  web: ({ label, value }, ctx) => (
-    <span className="nre-badge">{resolveLocalizedText(label, ctx.locale)}: {value}</span>
-  ),
-  text: ({ label, value }, ctx) =>
-    `${resolveLocalizedText(label, ctx.locale)}: ${value}`,
-});
-```
-
-缺 `web` 或 `text` 在 TypeScript 中直接报错；无类型 JavaScript 输入仍在 `defineComponent` 调用时校验。双面组件的 web 面要跟随任何主题：颜色只能来自 `ctx.seriesColor`、官方语义 class 与 `var(--nre-*)` 令牌，不写死 hex（纪律全表见[自己写报告组件](../use-case/构建报告/自定义组件/)）。带 `resolve` 的组件在一次页渲染内按「同引用 `input` + 深相等 spec」记忆化，且 `resolve` 之后两面消费同一份渲染 props——两面同源由结构保证，不靠作者自觉。只服务自己网页的组件直接写普通 React 组件即可，但它只能住在你的页面里，进不了报告树。
+组合组件在 resolve 阶段展开为它返回的树；它不需要 text / web 面，因为它不产生新的渲染形状。
+React 组件或未经 `defineComponent` 的普通函数不能进报告树。需要库里没有的视觉形状时，在自己的
+React 页面中使用普通 React 组件；`show` / `view` 共用报告树的公开原语集合保持封闭。
 
 ## 相关阅读
 
-- [自己写报告组件](../use-case/构建报告/自定义组件/) —— 从一个真实需求走完两种形态、取色纪律与验收清单。
+- [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义数据源与组合组件。
 - [主题](theme.md) —— 自定义组件要读的令牌与语义 class。
 - [外壳与多页](shell.md) —— 树之上的导航外壳与页。
-- [组件树](../components/README.md) —— 官方组件的结构子节点、spec / data 双形态与共用呈现 props。
+- [组件树](../components/README.md) —— 数据源、原语与组合组件。
 - [Architecture](../architecture.md) —— 报告树的 resolve / validate / render 管线。

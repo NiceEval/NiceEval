@@ -45,7 +45,7 @@ export async function scopeSummaryData(input: ReportInput): Promise<ScopeSummary
   for (const item of items) attemptVerdicts[item.attempt.result.verdict] += 1;
 
   // 题型构成:决定渲染面的主 KPI 是通过率、总分,还是两者都显示。单点判据见
-  // scoringComposition()(docs/feature/reports/library/metrics.md「题型构成与主读数」)——
+  // scoringComposition()(docs/feature/reports/library/measures.md「题型构成与主读数」)——
   // 不在这里另设一份 hasPoints/hasPass 判断。
   const composition = await scoringComposition(input);
 

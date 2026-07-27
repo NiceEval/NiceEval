@@ -48,7 +48,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 | 声明并校验定义 | `defineX` | `defineEval`、`defineExperiment` |
 | 返回逻辑视图或派生值 | 结果名或准确的计算动词 | `estimateCost` |
 | 判断条件 | `isX` / `hasX` / `canX` | `isDefined`、`hasSections` |
-| 转换表示 | `toX` / `fromX` | 词根写明目标或来源表示 |
+| 转换表示 | `toX` / `fromX` / `targetFromSource` | 词根写明目标与来源表示 |
 | 收窄不可变集合 | `filterX` / `onlyX` / `dropX` | `filterAttempts`、`dropExperiments` |
 | 类型、组件与值对象 | 名词 | `Record`、`Sample`、`AttemptEvidence` |
 | 事件回调 | `onX` | `onEvalComplete` |
@@ -64,6 +64,72 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 纯查询可以使用名词性结果名，但“纯”不自动推出“名词性”。结果名必须准确指向返回对象，并足以区分
 相邻查询；否则使用能说明计算或选择语义的准确动词。不要默认补一个含义空泛的 `get`、`select`、
 `process`、`handle` 或 `make`。
+
+转换器只有在模块已经明确目标对象时，才可只写 `fromX`。扁平入口同时导出多种产物时，名字要写成
+`targetFromSource`，例如 `turnFromResponses`。孤立的 `fromResponses` 只说了输入协议，看不出返回
+`Turn`、事件还是 usage；`responsesToTurn` 虽然方向明确，但把来源放在调用点主位，不如一组
+`turnFromChatCompletion` / `turnFromResponses` 先按共同产物聚类。
+
+## 声明、计算结果与呈现角色分开命名
+
+同一能力经过多个阶段时，不用一个词根加机械后缀制造一组假 API。先区分对象角色：
+
+| 角色 | 命名 | 例子 |
+|---|---|---|
+| 计算前的数据源声明 | 小驼峰结果名；需要配置时用同名工厂 | `experimentRows`、`measureRows(...)` |
+| 执行数据源 | 统一方法 `source.compute(input)` | `experimentRows.compute(sample)` |
+| 计算后的可序列化内容 | 原语的 `data` 属性；类型按实际形状命名 | `TableContent`、`MatrixContent` |
+| 通用呈现原语 | PascalCase 形状名 | `Table`、`Grid`、`Callouts` |
+| 默认装配的组合组件 | PascalCase 读者任务名 | `SampleOverview`、`AttemptDetail` |
+
+`source` 恒指尚未计算的声明，`data` 恒指已经计算完成的 Content。`compute()` 是明确的执行边界：
+它可能懒加载 artifact；原语和 renderer 不得在渲染过程中再次计算。
+
+不建立 `Component` / `componentData` / `ComponentData` 三件套。`*Data` 只说明“某种数据”，没有说明
+它是声明、计算函数、表格行、矩阵格还是渲染输入，也会诱导每新增一个组件就复制一套专用 renderer。
+类型后缀使用真实形状 `Content`、`Row`、`Cell`，而不是把所有返回值统一叫 `Data`。
+
+数据源允许名词性纯查询，因为变量本身是一个声明值，不是在调用时执行动作：
+
+```tsx
+<Table source={experimentRows} />
+<Table source={measureRows({ rows: "agent", measures: [costUSD] })} />
+```
+
+无配置的数据源导出值；需要配置的数据源导出同名工厂。工厂只建立声明，不读取 Record。不要为了让
+函数看起来像函数而改成 `getExperimentRows()` 或 `createMeasureRows()`。
+
+### 数据源名按输出形状定单复数
+
+数据源名指向它算出的 Content，而不是内部遍历过程：
+
+| 输出 | 形式 | 例子 |
+|---|---|---|
+| 多个同粒度行 | 复数成员 + `Rows` | `experimentRows`、`deltaRows` |
+| 一个矩阵、摘要或成绩单 Content | 单数结果名 | `measureMatrix`、`sampleSummary`、`scoreboard` |
+| 一个完整领域对象 | 单数领域对象 | `currentSample`、`latestRunSample` |
+
+`experimentList` 是差名：实际输出包含 experiment → eval → attempt 的层级行，并不承诺 List 的交互或
+容器语义。`experimentRows` 直接说明交给 `Table` 的内容粒度。
+
+组合组件按读者拿到的完整区块命名，不按内部实体或并不存在的分析动作命名。只展示一个 Sample 的摘要、
+散点与实验行时，`SampleOverview` 比 `ExperimentComparison` 准确：后者暗示至少两个 Experiment、
+基线与差值；真正的成对比较由 `deltaRows(...)` 承担。
+
+### 正反例
+
+```ts
+experimentRows;             // 好：未计算的层级行数据源
+experimentRows.compute(s);  // 好：动作只出现在真正执行计算的位置
+measureRows({ ... });       // 好：结果形状 + 必要配置
+sampleSummary();            // 好：返回一个摘要数据源
+
+experimentList;             // 差：List 没说明层级行形状
+metricTableData(...);       // 差：领域词、呈现形状和机械 Data 后缀绑死
+experimentListData(...);    // 差：既像执行函数，又像已算好的值
+getSampleSummary(...);      // 差：get 没增加可观察语义
+ExperimentComparison;       // 差：没有基线、配对与 delta，却承诺 comparison
+```
 
 ## 单复数跟随指代对象
 

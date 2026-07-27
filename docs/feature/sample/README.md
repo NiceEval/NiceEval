@@ -47,7 +47,7 @@ sample.warnings;    // 这批数据哪里可能不可靠
 | 发布这批数据 | `publish(sample, dir)` |
 
 **这一层只删减,不聚合。** 「按 agent 分组算 p90 耗时」不在这里——值怎么算、两级怎么折叠由
-[Reports 的指标](../reports/library/metrics.md)回答,它已经有 `perEval` / `acrossEvals` 两级
+[Reports 的指标](../reports/library/measures.md)回答,它已经有 `perEval` / `acrossEvals` 两级
 聚合与维度选轴。同一件事有两个地方能做,两边迟早给出不同的数。
 
 ## 相关阅读

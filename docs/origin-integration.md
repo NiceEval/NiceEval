@@ -69,7 +69,7 @@ export default defineAgent({
 });
 ```
 
-`driveFrameStream` / `sseJsonFrames` 从 `niceeval/adapter` 导出,是逐帧驱动循环的官方件,五个 adapter 共用思路(langgraph/pi 的自定义帧、claude 的 SDKMessage、codex 的 ThreadEvent 都是这一种传输)。有官方转换器的用官方转换器(`fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents`),没有的手写一张"帧类型 → StreamEvent"映射表。
+`driveFrameStream` / `sseJsonFrames` 从 `niceeval/adapter` 导出,是逐帧驱动循环的官方件,五个 adapter 共用思路(langgraph/pi 的自定义帧、claude 的 SDKMessage、codex 的 ThreadEvent 都是这一种传输)。有官方转换器的用官方转换器(`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`),没有的手写一张"帧类型 → StreamEvent"映射表。
 
 事件词汇表(`message` / `action.called` / `action.result` / `input.requested` …)见 [docs-site 事件流参考](../docs-site/zh/reference/events.mdx)。映射三要点:按真实顺序、`callId` 配对、不漏帧——漏帧只是让这条 eval 的负断言不可信,不是运行时错误。
 
@@ -121,21 +121,21 @@ adapter 要这样做:
 
 ### claude-sdk
 
-- 帧是原生 `SDKMessage`,官方转换器 `fromClaudeSdkMessages`(`niceeval/adapter` 导出)直接映射:`system`(带 `session_id`,写回 `ctx.session.capture()`)→ `assistant`(content blocks)→ `user`(`tool_result` 按 `tool_use_id` 配对)→ `result`(usage/cost)。逐帧驱动是官方件 `driveFrameStream`。
+- 帧是原生 `SDKMessage`,官方转换器 `createClaudeSdkEventStream`(`niceeval/adapter` 导出)直接映射:`system`(带 `session_id`,写回 `ctx.session.capture()`)→ `assistant`(content blocks)→ `user`(`tool_result` 按 `tool_use_id` 配对)→ `result`(usage/cost)。逐帧驱动是官方件 `driveFrameStream`。
 - **HITL 没有显式的"等审批"帧**——`canUseTool` 把流卡住,`driveFrameStream` 的 `onFrame` Hook 扫 derived 事件,认出被门控的工具(`mcp__demo-tools__calculate`,写死在 adapter 里,必须和应用 `agent.ts` 里的 `GATED_TOOL_NAME` 完全一致)就返回 `{ pause }`。approve 端点偶发 404(SDK 内部注册 resolver 有竞态)时短退避重试几次,不是真的没有这次审批。
 - 无 trace spans(CLI 原生遥测只有 metrics+logs,niceeval 不消费),不声明 `spanMapper`,瀑布图这个应用没有——写进 eval README,不是失误。
 - 模型:`AGENT_MODEL` 注入子进程(代码默认 `deepseek-v4-flash`,`.env.example` 是 `claude-sonnet-5`,以 `.env.example` 为准)。
 
 ### codex-sdk
 
-- 帧是原生 `ThreadEvent`,官方转换器 `fromCodexThreadEvents`(`niceeval/adapter` 导出)映射:`thread.started`(带 `thread_id`,写回 session)→ `item.*` 系列(`agent_message` → `message`;`command_execution` / `file_change` / `mcp_tool_call` → 配对的 `action.called`/`action.result`)→ `turn.completed`(usage)/ `turn.failed` / `error`。
+- 帧是原生 `ThreadEvent`,官方转换器 `createCodexThreadEventStream`(`niceeval/adapter` 导出)映射:`thread.started`(带 `thread_id`,写回 session)→ `item.*` 系列(`agent_message` → `message`;`command_execution` / `file_change` / `mcp_tool_call` → 配对的 `action.called`/`action.result`)→ `turn.completed`(usage)/ `turn.failed` / `error`。
 - 无 HITL,永不返回 `waiting`。它是编码 agent,eval 测「在工作目录里写文件、跑命令」这类真实任务,用 `node:fs` 直接核实磁盘上的真实内容,不只信模型自述。
 - OTel:codex CLI 原生 OTLP,长驻服务必须 run 级共享接收器(固定端口模式)。span 是 codex 自家命名,声明 `spanMapper: mapCodexSpans`(`niceeval/adapter` 公开导出)归一后瀑布图和内置 `codexAgent` 一致——**事件断言的数据来源始终是 `ThreadEvent` 流,和 span 无关**。
 - 模型:`AGENT_MODEL`(默认 `gpt-5.4`),自定义 provider 走 `CODEX_BASE_URL`。
 
 ### pi-sdk
 
-- 手写映射路线最完整的示范:无 OTel、有 HITL、服务端内存 session。帧 = 原生 `AgentEvent`(官方转换器 `fromPiAgentEvents` 映射)+ 三种自定义传输帧:`{type:"session", sessionId}`(写回 session)、`{type:"approval_request", toolCallId, toolName, args}`(→ `input.requested` + `waiting`,`driveFrameStream` 的 `onFrame` 里返回 `{ pause }`)、`{type:"server_error", message}`(→ `failed`)。
+- 手写映射路线最完整的示范:无 OTel、有 HITL、服务端内存 session。帧 = 原生 `AgentEvent`(官方转换器 `createPiAgentEventStream` 映射)+ 三种自定义传输帧:`{type:"session", sessionId}`(写回 session)、`{type:"approval_request", toolCallId, toolName, args}`(→ `input.requested` + `waiting`,`driveFrameStream` 的 `onFrame` 里返回 `{ pause }`)、`{type:"server_error", message}`(→ `failed`)。
 - HITL 走标准配方,approve 端点字段 `toolUseId`。
 - session 在服务端内存里,**跑多轮 eval 时不要重启应用**,重启即丢会话。
 - 无 OTel。模型:`AGENT_MODEL`,只有 `deepseek-v4-flash` / `deepseek-v4-pro` 两个可选。
@@ -182,7 +182,7 @@ experiment 侧用 `flags` → `ctx.flags` 透传,写法见 [Experiments](feature
 ## 接入沉淀的官方件
 
 - **`uiMessageStreamAgent`**(`src/agents/ui-message-stream.ts`,从 `niceeval/adapter` 导出):AI SDK UI Message Stream 协议的内置无侵入 adapter,`tier1/ai-sdk-v7` 的 adapter 因此缩成纯配置。
-- **`fromCodexThreadEvents`**:ThreadEvent 的工具项(`command_execution` / `mcp_tool_call` / `file_change` → 配对的 `action.*`)与 `turn.completed` 的 usage 聚合,是 `tier1/codex-sdk` 事件断言的唯一数据来源(不依赖任何 span 派生)。
+- **`createCodexThreadEventStream`**:ThreadEvent 的工具项(`command_execution` / `mcp_tool_call` / `file_change` → 配对的 `action.*`)与 `turn.completed` 的 usage 聚合,是 `tier1/codex-sdk` 事件断言的唯一数据来源(不依赖任何 span 派生)。
 - **`mapCodexSpans`**(`src/o11y/otlp/mappers/codex.ts`,从 `niceeval/adapter` 导出):把 codex 自家 span 命名归一成 canonical GenAI 语义,只用来让瀑布图和内置 `codexAgent` 保持一致。
 
 五个应用各有一个 before/after 文档页(`gen:diff-code` 生成),挂在 `docs-site/docs.json` 导航。

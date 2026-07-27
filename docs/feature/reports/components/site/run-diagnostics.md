@@ -1,8 +1,14 @@
-# `RunDiagnostics`
+# `runDiagnostics`
 
-Run 诊断区：呈现属于某次 Run 整体、无法诚实定位到单个 Eval 或 Attempt 行的操作性 [`DiagnosticRecord`](../../../record/architecture.md)。它与 [`SampleWarnings`](sample-warnings.md) 版面相邻、数据与词表分离：warnings 的 `kind` 是带模板登记的闭集，diagnostics 的 `code` 是 runner 侧开放词表；组件只按 `level`、`message`、`command` 与 `count` 通用渲染，不按 code 建注册表或拒绝未知成员。
+`runDiagnostics` 把属于某次 Run 整体、无法诚实定位到单个 Eval 或 Attempt 行的操作性
+[`DiagnosticRecord`](../../../record/architecture.md) 折成
+[`Callouts`](../primitives/callouts.md) 可消费的内容。它与 [`sampleWarnings`](sample-warnings.md)
+版面相邻、数据与词表分离：warnings 的 `kind` 是带模板登记的闭集，diagnostics 的 `code`
+是 runner 侧开放词表。
 
-它是 Run 级 diagnostics 的正式呈现组件。宿主不在报告树外另设诊断通道，[内建报告](../../library/built-in.md)的三张 sample-input page 都把它放在 `SampleWarnings` 之后，attempt-input page 不重复范围内的 Run 诊断。诊断可见性是报告作者义务：自定义报告可以省略，但省略后由作者自己承担未向读者交代 Run 操作性问题的责任。
+它是 Run 级 diagnostics 的正式数据源。宿主不在报告树外另设诊断通道，
+[内建报告](../../library/built-in.md)的三张 sample-input page 都把对应 `Callouts` 放在
+`sampleWarnings` 之后。诊断可见性是报告作者义务。
 
 准入判据与 warnings 的行归属铁律相同：只有“属于某次 Run 运行、但定位不到任何单行”的事实进入 `run.diagnostics` 与本组件。能归属具体 Eval 或 Attempt 的事实必须进入相应占位行、时效标注或 Attempt 详情，不得把本组件当杂物间。
 
@@ -13,17 +19,13 @@ interface RunDiagnosticsItem {
   diagnostics: readonly DiagnosticRecord[];
 }
 
-type RunDiagnosticsData = readonly RunDiagnosticsItem[];
+type RunDiagnosticsContent = readonly RunDiagnosticsItem[];
 
-function runDiagnosticsData(input: ReportInput): Promise<RunDiagnosticsData>;
-
-type RunDiagnosticsProps = ComponentProps<RunDiagnosticsData, {
-  locale?: ReportLocale;
-  className?: string;
-}>;
+declare const runDiagnostics:
+  DataSource<RunDiagnosticsContent, Sample | readonly Run[]>;
 ```
 
-`runDiagnosticsData` 只投影 diagnostics 非空的真实 Run，不携带 `evals` 或 `AttemptHandle`，也不跨 Run 合并 DiagnosticRecord。输出按 experiment id 字典序排列，同一实验内按 `startedAt` 从新到旧排列。
+`runDiagnostics` 只投影 diagnostics 非空的真实 Run，不携带 `evals` 或 `AttemptHandle`，也不跨 Run 合并 DiagnosticRecord。输出按 experiment id 字典序排列，同一实验内按 `startedAt` 从新到旧排列。
 
 ## 按来源分组，按记录给动作
 
@@ -41,16 +43,17 @@ type RunDiagnosticsProps = ComponentProps<RunDiagnosticsData, {
 - 空集两面零输出，不渲染空容器。
 - 折叠层级不设 props 开关；报告作者只决定是否放置整个组件。
 
-## 两种输入形态
+## 两种使用形态
 
-- spec 形态 `<RunDiagnostics />` 从宿主注入的 `Sample | Run[]` 计算投影。Sample 只通过 `sample.runs` 透传真实 Run，不合并 diagnostics；裸 `Run[]` 同样拥有实体上的 diagnostics，因此照常渲染。
-- 嵌入自有 React 页面时先调用 `runDiagnosticsData(input)`，再传纯数据：`<RunDiagnostics data={diagnostics} />`。data 形态不接受 Run，避免把 `evals`、`AttemptHandle` 和文件读取能力拖进浏览器边界。
+- `<Callouts source={runDiagnostics} />` 从宿主注入的 `Sample | Run[]` 计算投影。
+- 嵌入自有 React 页面时先调用 `runDiagnostics.compute(input)`，再传纯内容：
+  `<Callouts data={diagnostics} />`。
 
 ```tsx
-<RunDiagnostics />
+<Callouts source={runDiagnostics} />
 ```
 
 ## 相关阅读
 
-- [站点组件](README.md) —— 这一族为什么不收结构子节点。
-- [`SampleWarnings`](sample-warnings.md) —— 版面相邻的选择警告区。
+- [`Callouts`](../primitives/callouts.md) —— 警告与诊断共用的纯呈现形状。
+- [`sampleWarnings`](sample-warnings.md) —— 版面相邻的选择警告区。

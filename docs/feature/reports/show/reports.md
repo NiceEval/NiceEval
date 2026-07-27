@@ -49,7 +49,7 @@ $ niceeval show --record tmp/published-results --report reports/site.tsx
 
 ## Case 5：attempt 下钻使用同一份报告定义
 
-报告声明了 attempt-input page 时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Results evidence，不经 page content：
+报告声明了 attempt-input page 时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Record evidence，不经 page content：
 
 ```sh
 $ niceeval show --report reports/site.tsx --page exam    # 页里出现 @1qrdcfq8
@@ -79,7 +79,7 @@ error: no built-in report view named "site". Available: standard. To load a file
 
 ## 外壳字段在终端
 
-配置对象形态的外壳里，`show` 只消费 `title`（页索引的标题行）与 `pages`；`links`、`footer`、`theme`、`seriesPins`、`head`、`scripts`、`styles` 是 web 面属性，`show` 不打印。同理 `--theme` 不是 `show` 的 flag：`niceeval show --theme …` 按完整用户反馈报错，说明主题只作用于 web 面，下一步是把同一份报告交给 `niceeval view --theme`。页内组件按各自 text 面输出：`Hero` 打印标题与运行 meta，[`PoweredBy` 品牌行与 `CopyFixPrompt` 的 text 面零输出](../components/site/README.md)。页内的 `Tabs` 在 text 面按声明序全量输出、不折成索引——tab 没有选择器，索引是死路；内容长到终端读不动，是把 tab 升级成页的信号（见 [Library · Tabs](../library/layout.md#tabs)）。
+配置对象形态的外壳里，`show` 只消费 `title`（页索引的标题行）与 `pages`；`links`、`footer`、`theme`、`seriesPins`、`head`、`scripts`、`styles` 是 web 面属性，`show` 不打印。同理 `--theme` 不是 `show` 的 flag：`niceeval show --theme …` 按完整用户反馈报错，说明主题只作用于 web 面，下一步是把同一份报告交给 `niceeval view --theme`。页内组件按各自 text 面输出：`Hero` 打印标题与运行 meta，[`PoweredBy` 品牌行与 `fixPrompt` 的 text 面零输出](../components/site/README.md)。页内的 `Tabs` 在 text 面按声明序全量输出、不折成索引——tab 没有选择器，索引是死路；内容长到终端读不动，是把 tab 升级成页的信号（见 [Library · Tabs](../library/layout.md#tabs)）。
 
 ## 相关阅读
 

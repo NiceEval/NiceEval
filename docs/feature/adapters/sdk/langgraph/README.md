@@ -3,7 +3,7 @@
 LangGraph 的接入面是官方 event streaming 协议转换器：
 
 ```ts
-fromLangGraphEvents()
+createLangGraphEventStream()
 ```
 
 不提供 `langGraphAgent()` 工厂。LangGraph 可以进程内运行，也可以部署在自建 HTTP 服务或 Agent Server 后；niceeval 不绑定其中一种 transport。
