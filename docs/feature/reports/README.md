@@ -75,6 +75,7 @@ export default defineConfig({
 - 想自己写数据源或组合组件：看[扩展报告](use-case/构建报告/自定义组件/)。
 - 想知道默认报告本身怎么写、怎么逐步改造：看 [Library · 内建报告](library/built-in.md)。
 - 想知道字段从哪个文件来：看 [Record Architecture](../record/architecture.md)。
+- 想理解共享 helper 中的断言怎样回到入口调用行：看[源码调用树](eval-source/README.md)。
 
 ## 相关阅读
 

@@ -254,6 +254,13 @@
   不能只改 export 名而保留每个领域组件一套 renderer。
 
   完整目标名见 [Reports Library](feature/reports/library.md)。
+- **源码视图仍是单文件模型**：目标 `SourceLoc.callers` 保存项目帧与 package 段。`sources.json`
+  标记唯一 entry，并在首次引用 helper 时保存正文。`AnnotatedEvalSource` 是面无关的完整调用树，
+  CLI 与 web 再各自投影。
+
+  当前 `src/source-loc.ts` 只返回第一帧。`src/runner/attempt.ts::collectSources` 在 attempt 收尾读取
+  helper；`src/results/attempt-source.ts` 按断言命中数挑主文件。`src/results/annotated-source.ts` 把
+  其它文件归入 unmapped。目标规则见[源码调用树](feature/reports/eval-source/README.md)。
 - **落盘键名与常量沿用 `snapshot` 词根**:契约把落盘单位定名为 Run(`run.json`、`RunMeta`、
   `RECORD_SCHEMA_VERSION`),当前落盘仍写 `snapshot.json`,常量仍叫 `RESULTS_SCHEMA_VERSION` /
   `RESULTS_FORMAT`,类型仍叫 `SnapshotMeta`。改名是破坏兼容的格式变更,按

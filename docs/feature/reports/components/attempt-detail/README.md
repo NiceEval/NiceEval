@@ -47,7 +47,14 @@ export default defineReport({
 
 区块按事实边界拆分，不按某个宿主当前的卡片拆分。`attemptTimeline` 可以把 span 按显式 correlation 挂回 runner 时间树；`attemptTrace` 则保留原始 OTel 视角，因此二者可以择一，也可以同时放。`attemptSource` 与 `attemptAssertions` 会呈现同一批 assertion 的不同视角，默认组合通过 `AttemptAssessment` 二选一，避免重复。`attemptSource` 还把标准事件流按 `loc` 投影回 send 行，点击行可在源码上下文中展开回复；因此默认 `AttemptDetail` 有 source 时不再追加独立 `attemptConversation`，没有 source 时才把它作为完整事件流 fallback。报告作者仍可显式同时放置两者，此时两种视角并存是作者选择。
 
-按 `loc` 投影盖不住的事实不丢弃，列在源码块之后的两个**兜底区**：「Other assertions」收 `loc` 缺失或不在展示源码内的断言，逐条平铺、判定语义与 `attemptAssertions` 的条目一致；「Other conversation」收没有 `loc` 的轮次（动态构造的 send、`loc` 指向其它文件或越界）——有 source 时页面不放独立 `attemptConversation`，这个兜底区因此是无 `loc` 轮次在页面上唯一的出现处，按 `attemptConversation` 同形态呈现：分轮卡片带轮标签与状态，内部 user / assistant / thinking / tool / error 条目复用同一套回复渲染，不写第二份实现。工具出入参的单行预览在字符串化**之前**收口自由文本（剥控制字节、折空白）——结构化值先逐字段收口再 `JSON.stringify`，事后处理收不到已经变成字面转义文本的换行与控制字节。
+按 `loc` 投影盖不住的事实不丢弃。其它项目文件进入源码调用树的调用片段或 detached block，越界行与
+缺少正文的项目帧显示 unavailable 缺口。只有没有 `loc` 的断言与给分记录进入「Other assertions」，
+逐条平铺，判定语义与 `attemptAssertions` 一致。
+
+「Other conversation」收没有 `loc` 的轮次。有 source 时页面不放独立 `attemptConversation`，这个
+兜底区是无位置轮次在页面上唯一的出现处。它按 `attemptConversation` 同形态呈现：分轮卡片带轮标签
+与状态，内部 user / assistant / thinking / tool / error 条目复用同一套回复渲染。工具出入参的单行
+预览在字符串化之前收口自由文本；结构化值先逐字段收口再 `JSON.stringify`。
 
 ## page 输入与数据源
 

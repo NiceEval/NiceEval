@@ -1,34 +1,98 @@
-# `--source`：把断言放回源码
+# `--source`：把判定放回源码调用树
 
-`--source` 是 attempt-detail 组件族对应区块的 text 面，显示运行时保存的 eval 源码，而不是工作树中可能已经修改过的文件。两类调用行有标注：
-
-- **断言行**：通过与失败断言标在对应行；失败行紧跟分组、matcher、期望值和实际值。期望值与实际值经摘要收口（折单行、设上限）——标注是源码页里的一行事实。落盘的 `expected` / `received` 本身是[有界预览](../../scoring/architecture.md)，attempt 首页按原始换行展开这份预览，原始证据在 `events.json` / `diff.json` 等 artifact（存在时才可回溯，不是每条断言都有）。
-- **send 行**：`t.send(...)` 的调用行标注它产生的 turn 的头行事实——[轮标签](../../scoring/library/display.md#turntsend的展示)（与 [`--execution`](execution.md) 的 turn 头行、[`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token）、status、该轮墙钟与该轮 usage（有记录才出现），失败轮标 `✗`。一行源码触发多轮（循环里 send）时逐轮标注。回复全文与轮内工具卡片不内联——源码视图回答「这行代码对应哪一轮、这一轮成了没成」，「这一轮做了什么」归 [`--execution`](execution.md)。
+`--source` 是 attempt-detail 源码区块的深度 text 投影。它显示本次 Attempt 首次引用各文件时保存的
+源码，不读取工作树里可能已经改过的版本。入口文件构成主干；共享 helper 中的断言、给分记录和
+send 按运行时调用路径挂到主干或上一层 helper 的调用行下。
 
 ```sh
 niceeval show @1qrdcfq8 --source
 ```
 
 ```text
-26      await t
-27✓       .send(
-    turn1 · completed · 3m 11s
-38      for (const [issue, label] of Object.entries(expected)) {
-39        await t.group(`Issue ${issue}: selected proposal matches the accepted proposal`, async () => {
-40✗         t.check(Number(decisions[issue]?.selected_proposal_id), equals(label.selected_proposal_id));
-    gate · Issue 15193: selected proposal matches the accepted proposal ·
-    equals(4) · expected 4 · received 3
-41        });
-42      }
+evals/install/gpt-researcher.eval.ts
+ 75    async test(t) {
+ ... 12 lines
+ 89✓     const turn = await t.send(
+       turn1 · completed · 12m 04s
+ ... 6 lines
+ 97      await evalInteraction(t, { clarify: CLARIFY, turn });
+       ↳ evals/install/share/eval-install.ts · 6 checks · 6 ✓ · 4/4 pts
+ 98      await evalInstall(t, { version, standaloneWorkspace: true });
+       ↳ evals/install/share/eval-install.ts · 11 checks · 9 ✓ 2 ✗ · 7/11 pts
+       │ 243    await t.group("评估安装", async () => {
+       │ 245✓     t.check(root !== null, isTrue("niceeval.config.ts 存在"));
+       │ 246✗     t.check(
+       │        gate · 评估安装 · satisfies(依赖解析到候选包 niceeval@0.11.0)
+       │        expected 依赖解析到候选包 niceeval@0.11.0 · received "0.10.3"
+       │ ... 60 lines
+       │ 312✗     t.check(
+       │        soft · 独立 workspace · isTrue(独立子目录有自己的 package.json)
+       │        received false · 0/1 pts
+ 99      await evalExperiment(t);
+       ↳ evals/install/share/eval-experiment.ts · 4 checks · 4 ✓ · 3/3 pts
+ ... 10 lines
+
+unmapped assertions (1) · 没有 loc，不属于任何源码行
+  ◌ soft · adapter 未上报 tracing 能力 · reason: 事件流里没有 trace 关联
+
+8 source files · 2 of 43 checks failed
+full failure detail:  niceeval show @1qrdcfq8
+inline every callee:  niceeval show @1qrdcfq8 --source=full
+one file in full:     niceeval show @1qrdcfq8 --source=evals/install/share/eval-install.ts
 ```
 
-send 行的定位来自事件流里用户消息的源码位置，标注在能定位到行的轮上尽力而为：attempt 在事件记录建立前失败、或 send 发生在别的源码文件里时，该轮没有这条标注，断言标注照常；轮次全量清单永远在 [`--execution`](execution.md)。断言的 never-drop 契约（unmapped 桶）不适用于 send 标注——断言的诊断面就是 `--source`，轮次的诊断面是 `--execution`，源码页上的 turn 标注只是跨面指针。
+## 行与调用片段
 
-被收口的值必须有「更进一步」：有未通过断言时，`--source` 末尾在 `full eval source` 之前给出 `full failure detail: niceeval show @<locator>`——[attempt 首页](attempt.md)把每条失败落盘的 expected / received 预览按原始换行展开（含 `commandSucceeded()` 的 `output tail:` 段），再往下是 `result.json` / `events.json` 里的原始证据。收口只压缩展示面，不切断取证链。
+- **断言行**在行号后标 `✓` / `✗` / `◌`，下面按发生顺序列分组、matcher、期望值、实际值与挣分。
+- **send 行**显示轮标签、status、墙钟和已有 usage。轮次全量内容仍在
+  [`--execution`](execution.md)。
+- **调用行**下面显示一条 `↳` 汇总。全通过路径默认只显示汇总；有未通过、unavailable、丢分或
+  前置中止时默认内联调用片段。
 
-长行会截断，末尾的 `full eval source` 给出取全文的两步路径：attempt 级 `sources.json` 是 `{path, sha256}` 引用列表，正文按哈希存在 Run 级 `sources/<sha256>.json`（见 [Record · sources.json](../../record/architecture.md#sourcesjson)）；脚本消费直接用 `AttemptHandle.sources()` 拿拼好的 `{path, content}`，不用自己做两步解析。
+调用片段使用被调文件自己的行号，每层增加一个 `│` 缩进。同一调用行循环进入同一个 helper 时，
+各次标注按发生顺序合并；运行时帧没有 invocation 身份，因此输出不声称调用了多少次。
+
+默认投影折叠连续的无关源码行，并在 400 个源码行预算内优先展开严重失败。主干行、调用汇总和
+完整证据树不受预算影响；收起的路径在当前投影只留汇总，并提示 `--source=full`。完整规则见
+[源码树投影](../eval-source/display.md)。
+
+## 展开入口
+
+```sh
+niceeval show @1qrdcfq8 --source=full
+niceeval show @1qrdcfq8 --source=evals/install/share/eval-install.ts
+```
+
+`--source=full` 内联全部调用路径，包括全通过路径；每个节点内部仍折叠连续的无关行。
+
+`--source=<path>` 切换到单文件模式：指定文件全文显示，本次 Attempt 落在它上面的标注全部标出。
+能回到主干的标注附主干调用行；detached 标注附完整项目帧路径。参数按捕获路径的后缀匹配，命中
+多个文件时按用法错误退出并列出候选；`full` 是保留字。
+
+## 不完整调用链
+
+调用链不经过主干时，源码片段按最外层项目帧的文件分组，排在主干之后：
+
+```text
+outside the eval entry · lib/candidate.ts
+ 41✗     t.check(pages.length, greaterThan(0));
+      gate · 候选包里存在合格落点 · greaterThan(0) · received 0
+```
+
+链中缺少源码时保留 `source unavailable: <path>`；经过第三方包时保留不可展开的
+`package: <name>`。更深的项目源码仍挂在缺口下面。只有真正没有 `loc` 的断言和给分记录进入
+`unmapped`。
+
+没有任何源码时命令非零退出并报告 unavailable，不伪造空文档。
+
+## 尾部取证
+
+失败视图尾部给出三条路径：Attempt 首页展开完整 expected / received 预览，`--source=full` 内联全部
+调用路径，`--source=<path>` 读取一个文件全文。脚本使用 `AttemptHandle.sources()` 获取带入口角色的
+`SourceArtifact[]`，不需要自行解引用 `sources.json`。
 
 ## 相关阅读
 
-- [失败诊断首页](attempt.md) —— 完整 expected / received 的展开处。
-- [Scoring · 断言与 Turn 的展示](../../scoring/library/display.md) —— 标注语法的单点定义。
+- [源码调用树](../eval-source/README.md) —— 多文件源码的心智模型与降级下限。
+- [`attemptSource`](../components/attempt-detail/attempt-source.md) —— 同一份证据的 web 投影。
+- [Scoring 展示](../../scoring/library/display.md) —— 每条标注的判定语义。

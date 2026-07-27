@@ -45,7 +45,7 @@
 ```json
 {
   "format": "niceeval.results",
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "producer": {
     "name": "niceeval",
     "version": "0.12.0"
@@ -56,7 +56,8 @@
 }
 ```
 
-当前 `schemaVersion` 是 `9`。历史各版本的字段差异与升版原因不在正文维护,记录在 memory 的 results-schema-version-history 条目;读取器不需要这份历史——版本不同一律按下节的不兼容路径处理。
+当前 `schemaVersion` 是 `10`。历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的
+results-schema-version-history 条目。读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个 Run(run.json + 全部 attempt 文件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份结果的 niceeval 版本查看:
 
@@ -535,10 +536,17 @@ type CommandsArtifact = FailedCommandEvidence[];
 - **attempt 级 `sources.json`**:一份引用列表,不内联源码内容——
 
   ```typescript
-  type SourcesRef = { path: string; sha256: string }[];
+  type SourcesRef = {
+    path: string;
+    sha256: string;
+    /** 恰好一项是 entry，其余是运行时引用到的项目文件。 */
+    role: "entry" | "referenced";
+  }[];
   ```
 
-  它只列出本次 test / 断言经 `loc` 引用到的文件(path)与其归一化后内容的 SHA-256。
+  入口文件在 discovery 时登记，始终存在且标为 `entry`。其它项目文件在断言、给分记录或 `t.send`
+  的运行时帧首次引用时读取，标为 `referenced`。读取失败只在帧路径保留 unavailable 缺口，不制造
+  没有正文的哈希引用。一个 attempt 恰好有一个 `entry`；读取面不按断言命中数猜主文件。
 - **Run 级 `sources/<sha256>.json`**:去重仓库,内容按哈希建档——
 
   ```typescript
@@ -552,9 +560,13 @@ type CommandsArtifact = FailedCommandEvidence[];
   (不是按路径)去重;哈希撞见即复用,不重写。
 
 `niceeval view` 与 `AttemptHandle.sources()`(见 [Library](library.md))把两者拼回
-`SourceArtifact[]`(`{path, content}[]`,与 schemaVersion 4 及更早版本的语义一致)供上层消费——
+`SourceArtifact[]`(`{path, content, role}[]`)供上层消费——
 消费方不需要知道落盘拆成了两层,只有直接读盘的脚本(`jq` / 手写工具)需要知道这个引用 + 仓库的
 两步解析。`niceeval view` 用它把 `t.send`、断言和运行结果叠回源码行。
+
+源码正文在每个 attempt 的 `SourceRegistry` 中按路径缓存。入口正文来自 discovery；其它文件在第一条
+运行时帧引用它时同步读取一次。收尾只写缓存，不重新读文件，因此运行期间修改 eval helper 不会让
+已记录行号对应到后来版本的正文。项目路径必须经过真实路径规范化并确认仍在 config 所在根目录内。
 
 携带条目不在新 Run 里重写 `sources.json` 或 `sources/`——沿用其它 artifact
 同样的 `artifactBase` 回退:读取面按 `artifactBase` 定位到原 Run,原 Run 的 `sources.json`

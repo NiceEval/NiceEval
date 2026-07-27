@@ -271,7 +271,11 @@ judge 没有解析到模型 / key 时记 `unavailable`（[判定规则](../archi
     重构说明 · +16 pts
 ```
 
-**源码面同样承载给分证据**：有源码时（`show @locator --source`、view 的 `AttemptSource`）给分证据不换家也不消失——得分点的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后的源码行整体降灰，「没写断言的行」和「没跑到的行」在源码面同样一眼可分；`loc` 不在展示源码内的得分点与给分记录落在源码块后的 unmapped 区，给分记录仍按 `groupPath` 分组。视觉细则单点在 [Attempt 详情组件 · `AttemptSource` 视觉规范](../../reports/components/attempt-detail/attempt-source.md#web-面视觉规范)。
+**源码面同样承载给分证据**：有源码时（`show @locator --source`、view 的 `AttemptSource`），得分点
+的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后
+源码行整体降灰。共享 helper 中的给分证据进入源码调用片段；有位置但缺正文时显示 unavailable 缺口。
+只有没有 `loc` 的得分点与给分记录进入 unmapped，给分记录仍按 `groupPath` 分组。视觉细则单点在
+[Attempt 详情组件 · `AttemptSource` 视觉规范](../../reports/components/attempt-detail/attempt-source.md#web-面视觉规范)。
 
 通过制（`scoring` 省略或 `"pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt 上零输出，不摆空区块；计分制 eval 没有 `t.score` 调用时同样不渲染「给分记录」区块。
 

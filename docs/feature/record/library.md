@@ -53,7 +53,7 @@ await attempt.trace();         // TraceSpan[] | null(span 属性同样受 256 Ki
 await attempt.o11y();          // O11ySummary | null
 await attempt.agentSetup();    // AgentSetupManifest | null
 await attempt.diff();          // DiffData | null(不截断,可达百 MB,所以必须懒)
-await attempt.sources();       // SourceArtifact[] | null
+await attempt.sources();       // SourceArtifact[] | null：{ path, content, role }，恰好一个 entry
 ```
 
 以上懒加载方法名与[证据 registry](architecture.md#证据-registry)的词干一一对应(`events` →

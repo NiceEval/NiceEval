@@ -27,6 +27,30 @@ value / scope / judge / sandbox / efficiency
 `result.json` 的 `assertions` 数组元素，也是 [Severity 与 Verdict](architecture/severity-and-verdict.md) 判定规则的输入。字段契约单点定义在这里，[Record Format](../record/architecture.md#resultjson) 引用而不复写：
 
 ```typescript
+interface ProjectSourceFrame {
+  kind: "project";
+  /** 相对项目根的路径。 */
+  file: string;
+  line: number;
+  column?: number;
+}
+
+interface PackageSourceFrame {
+  kind: "package";
+  package: string;
+}
+
+type SourcePathFrame = ProjectSourceFrame | PackageSourceFrame;
+
+interface SourceLoc {
+  /** 声明位置，相对项目根。 */
+  file: string;
+  line: number;
+  column?: number;
+  /** 从 eval 入口到声明处，由外到内；不含声明处自身，无可用链时为空数组。 */
+  callers: SourcePathFrame[];
+}
+
 interface AssertionBase {
   /** 断言标题:t.group 内是该断言自己的摘要,组外是 matcher 摘要或 judge 问题;show/view 失败行的标题。 */
   name: string;
@@ -37,8 +61,8 @@ interface AssertionBase {
   optional?: true;
   /** matcher / judge 摘要,如 `equals(4)`、`closedQA("…")`;与 name 分开,供 show/view 同时展示分组标题与检查方式。 */
   detail?: string;
-  /** 断言在 eval 源码中的调用点,`--source` 把结果标回源码行的锚。 */
-  loc?: { file: string; line: number; column?: number };
+  /** 断言在 eval 源码中的声明位置与调用路径，`--source` 据此装配源码调用树。 */
+  loc?: SourceLoc;
 }
 
 type AssertionResult =
@@ -84,10 +108,14 @@ interface ScoreEntry {
   points: number;
   /** 所属分组路径,同 AssertionBase.groupPath;规则一致(外层在前的 t.group 标题数组)。 */
   groupPath?: string[];
-  /** 调用点,同 AssertionBase.loc。 */
-  loc?: { file: string; line: number; column?: number };
+  /** 调用点，同 AssertionBase.loc。 */
+  loc?: SourceLoc;
 }
 ```
+
+`loc` 整体仍可省略：运行时无法取得栈时，记录进入源码视图的 unmapped 区。只要 `loc` 存在，
+`callers` 就是必选数组；单文件 eval 与调用链缺失都写空数组，避免多个构造点各自解释“没填”含义。
+`package` 帧只保存包名，不把第三方源码纳入 Record。
 
 判别键是 `outcome`——`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败、`score: 0` 但又不许聚合」的非法组合：普通聚合代码按 `outcome` 分支就不可能把证据缺口算成零分。这份字段全集是穷尽的：show / view / 报告需要的每个展示字段都在表内，不存在「塞进 `name` 再拆」的隐式约定。`expected` / `received` / `evidence` 是有界预览而不是原始值——原始证据在 `events.json` / `diff.json` 等 artifact 里；判定只消费 `severity` / `outcome` / `optional` / `score` / `threshold`,`points` 不参与判定。
 

@@ -22,16 +22,39 @@ interface SourceLine {
   aborted?: boolean;
   /** 点击展开的证据；空数组即该行不可展开。 */
   details?: readonly ReportNode[];
+  /** 从这一行发出的调用路径，按运行时路径首次出现顺序。 */
+  calls?: readonly SourceCallContent[];
 }
 
-interface SourceViewContent {
-  /** 展示的源码文件路径。 */
+interface SourceBlockContent {
   path: string;
   lines: readonly SourceLine[];
-  /** loc 落不进展示源码的证据，列在源码块之后。 */
+}
+
+interface SourceCallContent {
+  /** 数据源已经格式化好的检查计票与挣分摘要。 */
+  summary: LocalizedText;
+  tone?: "passed" | "gate-fail" | "soft-fail" | "unavailable";
+  /** web 面的初始展开态。 */
+  open: boolean;
+  target:
+    | { kind: "source"; block: SourceBlockContent }
+    | { kind: "opaque"; label: LocalizedText; calls?: readonly SourceCallContent[] };
+}
+
+interface SourceContent {
+  /** eval 入口文件的投影。 */
+  spine: SourceBlockContent;
+  /** 调用链不经过入口文件的项目源码片段。 */
+  detached: readonly SourceBlockContent[];
+  /** 真正没有源码位置的证据，列在全部源码块之后。 */
   unmapped?: readonly ReportNode[];
 }
 ```
+
+`SourceContent` 是[完整源码调用树](../../eval-source/architecture.md)的面相关投影。`SourceView` 不读取
+源码、不按位置分桶，也不决定上下文半径；数据源已经完成这些领域计算。`opaque` 同时承载第三方包
+和正文不可用的项目帧，原语只显示 label 并继续渲染其下可用调用，不解释缺口原因。
 
 ## web 面视觉规范
 
@@ -63,10 +86,10 @@ interface SourceViewContent {
 - **语法高亮**：零依赖逐行 TypeScript token（comment / string / keyword / number / function
   五类语义 class）；暗色 token 取 VS Code Dark+ 系（与示例卡的 prism vsDark 主题同源），
   浅色为等价可读色。
-- **兜底区**：`unmapped` 接在源码块之后、与源码块同宽。其中的分轮卡片带 verdict 色左缘与
-  轮标签头行——这里没有可依附的 send 行，轮标签是该轮唯一的身份锚；卡片内部条目与
-  [`Conversation`](conversation.md) 同视觉语言。回复条目在每个渲染容器里都必须有完整样式覆盖：
-  `.nre-conv-*` 规则按容器限定，新容器不会自动继承。
+- **调用片段**：调用行右缘显示汇总 pill，后接原生 `<details>`。源码 block 左缘增加层级线；
+  package 与 unavailable 的 opaque 段显示 label，更深的可用 block 继续嵌套。detached block 排在
+  主干之后，并显示完整项目相对路径。
+- **兜底区**：`unmapped` 接在全部源码块之后、与源码块同宽，只承载没有源码位置的断言和给分记录。
 - **交互载体**：展开一律是原生 `<details>`，静态文档零 JS 成立。
 
 这份规范与官方 stylesheet 组合后的实际观感（染色、布局、滚动、展开交互）由
@@ -83,4 +106,5 @@ text 面不倾倒整份源码：打印有状态行的位置与 expected / receiv
 
 - [组件树](../README.md) —— 三层模型与双面投影边界。
 - [`Conversation`](conversation.md) —— 兜底区与展开区共用的回复渲染。
+- [源码调用树](../../eval-source/README.md) —— 完整证据、调用片段与降级规则。
 - [断言与 Turn 的展示](../../../scoring/library/display.md#计分制points-与给分记录) —— 证据的折叠与分组契约。

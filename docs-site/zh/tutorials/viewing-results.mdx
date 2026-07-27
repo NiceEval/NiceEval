@@ -179,7 +179,9 @@ available:
 
 四个证据 flag 既可以加在 `@<locator>` 后面（精确到一次 Attempt），也可以加在任意收窄出结果的范围后面——eval id 前缀、`--exp` 都可以。范围里有不止一次 Attempt 时，输出按 Attempt 逐条分节，每节开头一行 `@<locator> · <评估用例 id> · <experiment id> · <判定>` 标出这一节是哪次 Attempt。可以同时传多个证据 flag，一次输出全部要看的切面。
 
-`--source` 是运行时保存的评估用例源码，按行标注每条断言、gate 失败与 soft 分数直接排在对应源码行下面，源码里没能对应到具体行的断言（没有位置信息，或位置指向另一个文件）单独成一段，永不丢弃：
+`--source` 显示运行时保存的评估用例源码调用树。入口文件是主干；断言写在项目内共享 helper 时，
+NiceEval 把 helper 片段挂在入口调用行下面。全通过的 helper 默认只留检查计票，失败、丢分或前置
+中止的路径默认展开。只有没有源码位置的断言才单独进入 unmapped 段，永不丢弃：
 
 ```text
 $ niceeval show @1k2m9qrs --source
@@ -204,7 +206,13 @@ assertions: 1 passed · 1 gate failed · 1 soft below target
 full eval source: .niceeval/compare_codex-gpt-5.4/2026-07-09T10-00-00-000Z-x1f2/weather/brooklyn/a2/sources.json
 ```
 
-它展示的是**这次 Attempt 运行当时保存的源码**，不是当前工作区里同名文件的最新内容——评估用例改过之后再看旧 Attempt，看到的仍是它跑的那一版。没有捕获到源码时如实说明「eval source unavailable for this attempt」，不伪造一份空文档。
+每个项目内文件在本次 Attempt 第一次引用它时保存。它不是当前工作区里同名文件的最新内容；评估
+用例或共享 helper 改过之后再看旧 Attempt，看到的仍是当时那一版。调用链缺失时，helper 片段按文件
+列在主干后面；缺少某份正文时保留路径和行号。没有捕获到任何源码时如实说明
+`eval source unavailable for this attempt`，不伪造空文档。
+
+需要展开全通过路径时运行 `niceeval show @<locator> --source=full`。只读一个文件的完整正文时运行
+`niceeval show @<locator> --source=<项目相对路径>`；路径支持唯一后缀匹配，重名时会列出候选。
 
 `--execution` 把标准事件流（消息、thinking、Skill 加载、工具调用/结果、subagent、错误）排成一棵执行树；这次 Attempt 接入过 OTel 时，同一节点能关联到的 span 会补上相对时间与耗时。无法关联到 Agent 事件的 SDK / runtime span 不逐行混入执行记录，只在结尾报告省略数量并指向完整 `trace.json`。没接入 OTel 时骨架、顺序和内容不变，只去掉时间列并标 `timing unavailable`：
 

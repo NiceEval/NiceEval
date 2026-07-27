@@ -169,6 +169,10 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   组合组件的展开树构成与二选一规则；source 缺省取 page 注入 evidence、错位使用的完整反馈；
   对话数据的分轮与容错。渲染出的 DOM、默认展开标记、染色与交互归 E2E；改动这些组件后需要
   `pnpm run build:report`，改动 view 壳 / dialog 摆放后需要 `pnpm run view:build`。
+- **源码调用树的数据语义**：源码证据按 entry 角色确定主干，不按断言命中数猜测。跨文件 `loc`
+  在没有 callers 时进入 detached，有 callers 时挂回最内层主干帧。package 与 unavailable 中间段
+  不吞掉更深节点；只有没有 `loc` 的记录进入 unmapped。完整树不受展示预算影响。default、full、
+  file 与 web 的行选择只在投影函数发生。
 - **`attemptAssertions` 的计分制字段**：`.points` 挣分随所在 `AssertionResult`
   一起出现（不需要单独投影，字段本就在断言记录上，包括「挂了的检查点挣 0 分」这种如实不隐藏的场景）；**得分点不参与 passed 收纳**——passed 的得分点逐条进平铺列表、不折进
   `passedGroups` 计数，收纳只作用于不带 `.points`
@@ -182,10 +186,11 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **计分制的 attempt 详情数据**：`attemptSummary`
   的本轮挣分字段（计分制 attempt 才出现，通过制省略——它是详情页总分的唯一出现处）；`attemptSource`
   的给分投影——得分点行的挣分标注、`t.score` 调用行的给分标注、前置中止行的 `⤓`
-  与其后源码行的未到达标记、`loc` 不在展示源码内的得分点与给分记录落 unmapped 区（给分记录按
-  `groupPath` 分组，与 `attemptAssertions` 同一套算法）；`attemptFixPrompt`
+  与其后源码行的未到达标记；`attemptFixPrompt`
   把丢分得分点与前置中止都算可操作失败（计分制 `passed` 有丢分不是 `null`，挣满且未中止才是
   `null`，通过制 passed 恒 `null`）。染色、降灰、pill 与右缘 sticky 的呈现归 E2E 报告域。
+- **计分制的跨文件源码投影**：跨文件给分进入调用片段或 detached block。没有 `loc` 的得分点与
+  给分记录进入 unmapped，并按 `groupPath` 分组；分组算法与 `attemptAssertions` 相同。
 - **外壳与页面装载**：三种声明形态归一到同一规范化产物、`content`/`pages`/`extends`
   恰好其一、标题取值链、资产路径纪律与 head 白名单/转义/scheme 分流、page id 与 attempt-input
   page 的校验规则。全部以装载结果或错误对象为断言面。

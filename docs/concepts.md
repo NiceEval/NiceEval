@@ -183,7 +183,7 @@
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合,四个消费面共用 | [Reports architecture](feature/reports/architecture.md) |
-| 标注 Eval 源码 | AnnotatedEvalSource | 按 Run 去重的运行时 Eval 源码,每条断言标回调用行 | [Eval source](feature/reports/show/eval-source.md) |
+| 标注 Eval 源码 | AnnotatedEvalSource | 一个 Attempt 的完整源码调用树；主干、调用片段与未映射记录共用一份面无关证据 | [Eval source](feature/reports/eval-source/README.md) |
 | 读数 | Measure | 一个 Attempt 算出一个值,再按题和组两级聚合;缺数据为 `null` | [Measures](feature/reports/library/measures.md) |
 | 维度 | Dimension | 决定 Attempt 分到哪一组的分组键 | [Measures](feature/reports/library/measures.md) |
 | 报告 | Report | `defineReport` 的产物,也是 `--report` 装载的单位 | [Reports](feature/reports/README.md) |
