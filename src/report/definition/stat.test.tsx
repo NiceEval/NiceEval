@@ -20,7 +20,7 @@ describe("Stat Cell", () => {
       },
     };
     const text = renderNodeToText(
-      <Grid columns={2}>
+      <Grid>
         <Stat label="Pass" value={measure} />
         <Stat label="N/A" value={{ kind: "notApplicable" }} />
       </Grid>,

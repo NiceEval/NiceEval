@@ -14,7 +14,13 @@ import { indentBlock, joinColumns, padDisplay, stringWidth, wrapDisplay } from "
 import type { ColumnAlign } from "../model/text-layout.ts";
 import { panelContentWidth, renderPanel, type PanelRow } from "../model/panel.ts";
 import { renderTableText } from "./table-text.ts";
-import { normalizeGrid, planTextGrid, type GridDensity, type GridVariant } from "./grid-layout.ts";
+import {
+  gridContainerRules,
+  normalizeGrid,
+  planTextGrid,
+  type GridDensity,
+  type GridVariant,
+} from "./grid-layout.ts";
 import type { Source, SourceInput } from "../source.ts";
 import type { Dataset } from "../model/types.ts";
 import { datasetToTableContent, isDataset } from "../model/dataset.ts";
@@ -102,11 +108,9 @@ Row.displayName = "Row";
 // ───────────────────────── Grid / Stat ─────────────────────────
 
 export interface GridProps extends LayoutProps {
-  /** 宽面最多摆几列;必须是有限正整数,运行时校验(docs/feature/reports/library/layout.md「Grid 与 Stat」)。 */
-  columns: number;
   /** plain 无框;boxed 给每个 cell 完整四边框。默认 plain。 */
   variant?: GridVariant;
-  /** 改变格内留白,并调整内置 Stat 的主值字号;不改变内容和分组。默认 regular。 */
+  /** 格子体量:最小格宽、格内留白与内置 Stat 的主值字号;不改变内容和分组。默认 regular。 */
   density?: GridDensity;
 }
 
@@ -133,41 +137,59 @@ function renderGridRow(blocks: string[], contentWidths: number[], gutter: number
 /**
  * 自由摘要面板的格子容器:只负责呈现,不读取 Sample、不聚合 Metric。每个直接子节点
  * (数组 / Fragment 先按 ReportNode 规则展平,空分支不占格)是一格;`Col` 把多个区块
- * 归成一格。展平与 text 面排版的算术在 ./grid-layout.ts,这里只做两面结构适配。
+ * 归成一格。列数由格数 × 可用宽度算出(./grid-layout.ts),这里只做两面结构适配。
  */
 export const Grid = defineComponent<GridProps>({
   dimensions: () => ({}),
-  web({ children, columns, variant, density, className }) {
-    const normalized = normalizeGrid({ children, columns, variant, density });
-    const style: CSSProperties = { "--niceeval-grid-max-columns": normalized.columns } as CSSProperties;
+  web({ children, variant, density, className }) {
+    const normalized = normalizeGrid({ children, variant, density });
+    const cellCount = normalized.cells.length;
+    const rules = gridContainerRules(cellCount, normalized.density);
     return (
-      <div
-        className={cx("niceeval-report", "niceeval-grid", `niceeval-grid--${normalized.variant}`, `niceeval-grid--${normalized.density}`, className)}
-        style={style}
-      >
-        {normalized.cells.map((cell) => (
-          <div className="niceeval-grid-cell" key={cell.key}>
-            {cell.node as ReactNode}
-          </div>
-        ))}
+      <div className="niceeval-report niceeval-grid-fit">
+        {rules ? <style>{rules}</style> : null}
+        <div
+          className={cx(
+            "niceeval-report",
+            "niceeval-grid",
+            `niceeval-grid--${normalized.variant}`,
+            `niceeval-grid--${normalized.density}`,
+            className,
+          )}
+          data-cells={cellCount}
+        >
+          {normalized.cells.map((cell) => (
+            <div className="niceeval-grid-cell" key={cell.key}>
+              {cell.node as ReactNode}
+            </div>
+          ))}
+        </div>
       </div>
     );
   },
-  text({ children, columns, variant, density }, ctx) {
-    const normalized = normalizeGrid({ children, columns, variant, density });
+  text({ children, variant, density }, ctx) {
+    const normalized = normalizeGrid({ children, variant, density });
     if (normalized.cells.length === 0) return "";
     const plan = planTextGrid({
       availableWidth: ctx.width,
       cellCount: normalized.cells.length,
-      columns: normalized.columns,
       density: normalized.density,
     });
     // 确定计划后才对每个 cell 调用一次 ctx.render——不为试探列数重复渲染。
-    const blocks = normalized.cells.map((cell, i) => ctx.render(cell.node, plan.contentWidths[i % plan.columns]));
+    // 孤格铺满整行:末行只剩一格时用 fullRowContentWidth,其余短末行按各列宽左对齐不拉伸。
+    const cellWidths = normalized.cells.map((_, i) => {
+      const col = i % plan.columns;
+      const isLastRowLone =
+        plan.columns > 1 &&
+        i === normalized.cells.length - 1 &&
+        normalized.cells.length % plan.columns === 1;
+      return isLastRowLone ? plan.fullRowContentWidth : plan.contentWidths[col];
+    });
+    const blocks = normalized.cells.map((cell, i) => ctx.render(cell.node, cellWidths[i]));
     const rows: string[] = [];
     for (let start = 0; start < blocks.length; start += plan.columns) {
       const rowBlocks = blocks.slice(start, start + plan.columns);
-      const rowWidths = plan.contentWidths.slice(0, rowBlocks.length);
+      const rowWidths = cellWidths.slice(start, start + rowBlocks.length);
       rows.push(renderGridRow(rowBlocks, rowWidths, plan.gutter, normalized.variant));
     }
     return rows.join("\n\n");

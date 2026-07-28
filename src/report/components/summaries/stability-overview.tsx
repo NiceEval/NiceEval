@@ -86,7 +86,7 @@ export const StabilityOverview = defineComposition<StabilityOverviewProps, Sampl
 
   return (
     <Col className={props.className}>
-      <Grid columns={3} variant="boxed">
+      <Grid variant="boxed">
         <Stat label={localeText(locale, "stabilityOverview.executions")} value={executions} />
         <Stat label={localeText(locale, "stabilityOverview.neverPassed")} value={neverPassed} />
         <Stat label={localeText(locale, "stabilityOverview.flaky")} value={flaky} />

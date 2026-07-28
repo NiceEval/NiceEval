@@ -67,7 +67,7 @@ describe("Section text 面 — 接线到 panel.ts", () => {
         <Row>
           <Section title="In row"><Text>{"x".repeat(78)}</Text></Section>
         </Row>
-        <Grid columns={1}>
+        <Grid>
           <Section title="In grid"><Text>{"y".repeat(78)}</Text></Section>
         </Grid>
       </Section>,
