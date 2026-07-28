@@ -5,14 +5,15 @@
 
 事实来自两处：
 
-- `sources.sample.snapshot` 提供 scope、verdicts、coverage 与 provenance；
+- `sources.sample.snapshot` 提供 scope、题型构成、verdicts、coverage 与 provenance；
 - `sources.measure.rows({ dimensions: [], measures })` 只计算本次摘要选择的 Measure。
 
 默认可见短标签是 `Pass rate / 通过率`、`Total score / 总分`、`Experiments / 实验`、
 `Evals / Eval`、`Attempts / Attempt` 与 `Total cost / 总成本`。时间按 locale 格式化到分钟；成本覆盖
-不全时明确写出 `63/72 次有成本数据`，不只放无语义角标。
+不全时明确写出 `63/72 次有成本数据`，不只放无语义角标——这句覆盖解释由
+[`Stat` 的 measure 格渲染契约](../primitives/stat-grid.md#渲染)承担，不是本组件的私有逻辑。
 
-主读数按 Sample 的题型构成选择：
+主读数按 `snapshot.scoringComposition` 选择：
 
 - `"pass"`：只展示 `passRate`；
 - `"points"`：只展示 `totalScore`；
@@ -28,31 +29,43 @@ interface SampleSummaryProps {
 }
 ```
 
-它由组合层实现，因为一次装配需要多个 Source：
+它由组合层实现，因为一次装配需要多个 Source。标签与格的摆放是装配，直接写在全文里，
+不藏进私有 helper：
 
 ```tsx
+const KPI_LABELS: Record<string, LocalizedText> = {
+  passRate: { en: "Pass rate", "zh-CN": "通过率" },
+  totalScore: { en: "Total score", "zh-CN": "总分" },
+  costUSD: { en: "Total cost", "zh-CN": "总成本" },
+};
+
 export const SampleSummary = defineComposition(async (props, ctx) => {
   const input = props.input ?? ctx.input;
   const snapshot = await ctx.resolve(sources.sample.snapshot, input);
-  const composition = await scoringComposition(input);
-  const measures = composition === "pass"
+  const measures = snapshot.scoringComposition === "pass"
     ? [passRate, costUSD]
-    : composition === "points"
+    : snapshot.scoringComposition === "points"
       ? [totalScore, costUSD]
       : [passRate, totalScore, costUSD];
-  const summaryRows = sources.measure.rows({
-    dimensions: [],
-    measures,
-  });
-  const dataset = await ctx.resolve(summaryRows, input);
+  const summaryRows = sources.measure.rows({ dimensions: [], measures });
+  const kpi = (await ctx.resolve(summaryRows, input)).rows[0];
+  const verdicts = snapshot.verdicts[props.votes ?? "eval"];
 
   return (
-    <Grid locale={props.locale} className={props.className}>
-      <Stat label="Experiments" value={snapshot.scope.experiments} />
-      <Stat label="Evals" value={snapshot.scope.evals} />
-      <Stat label="Attempts" value={snapshot.scope.attempts} />
-      {summaryMeasureStats(dataset)}
-      {verdictStats(snapshot.verdicts[props.votes ?? "eval"])}
+    <Grid columns={4} locale={props.locale} className={props.className}>
+      <Stat label={{ en: "Experiments", "zh-CN": "实验" }} value={snapshot.scope.experiments} />
+      <Stat label={{ en: "Evals", "zh-CN": "Eval" }} value={snapshot.scope.evals} />
+      <Stat label={{ en: "Attempts", "zh-CN": "Attempt" }} value={snapshot.scope.attempts} />
+      {measures.map((measure) => (
+        <Stat
+          key={measure.name}
+          label={KPI_LABELS[measure.name]}
+          value={{ kind: "measure", measure: kpi.values[measure.name] as MeasureCell }}
+        />
+      ))}
+      {(["passed", "failed", "errored", "skipped"] as const).map((verdict) => (
+        <Stat key={verdict} label={verdict} value={verdicts[verdict]} />
+      ))}
     </Grid>
   );
 });
@@ -69,5 +82,6 @@ export const SampleSummary = defineComposition(async (props, ctx) => {
 ## 相关阅读
 
 - [Source · Snapshot](../sources/README.md#snapshot) —— 中性的 SampleSnapshot / AttemptSnapshot。
+- [`Grid` 与 `Stat`](../primitives/stat-grid.md) —— measure 格的覆盖解释与渲染契约。
 - [`SampleOverview`](sample-overview.md) —— 默认首页如何装配摘要、图表与实体表。
 - [读数与维度](../../library/measures.md) —— `passRate`、诊断率与按需 Dataset。

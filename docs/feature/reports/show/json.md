@@ -56,7 +56,7 @@ type AttemptJson = AttemptRecord & {
 | `view` | `data` 单源 |
 |---|---|
 | `leaderboard` | `sources.sample.snapshot` + 默认选择的 Measure Dataset + `sources.entity.experiments`；`SampleSummary` 只消费前两者，不进入 JSON |
-| `compare` | `sources.measure.delta`（[Library · Measure Views](../components/tables/README.md)） |
+| `compare` | `sources.measure.delta`（[Measure 数据源](../components/sources/measure.md)） |
 | `attempt` | `sources.attempt.snapshot` 与当前详情所需的 evidence Content 集合（[Attempt 详情](../components/attempt-detail/README.md)）；不包含组合树 |
 | `source` | `sources.attempt.source`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
 | `execution` | `sources.attempt.conversation`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
@@ -64,7 +64,7 @@ type AttemptJson = AttemptRecord & {
 | `usage` | `sources.attempt.snapshot` 的数组；`AttemptUsage` 只是它的阅读组件 |
 | `diff` | `sources.attempt.diff`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
 | `history` | [`--history`](history.md)「分节与行内字段」：这个切片不进入组件模型，直接投影 Record evidence（[切片表](../architecture.md#show-的切片是组件选择)未列出它） |
-| `stats` | `sources.measure.stability`（[Library · Measure Views](../components/tables/README.md)） |
+| `stats` | `sources.measure.stability`（[Measure 数据源](../components/sources/measure.md)） |
 
 ## 边界
 

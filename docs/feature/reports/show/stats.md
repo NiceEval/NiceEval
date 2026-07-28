@@ -2,7 +2,7 @@
 
 「哪几道题从来没通过过」是判断题目质量的第一诊断：一道在所有条件、所有历史执行里零通过的题，先怀疑题目（prompt 缺公开契约、隐藏测试断言过强），再怀疑 agent。`--stats` 把范围内每个 eval 摊成一行、每个 experiment 一组列，格内是该组合**全部历史执行**的判定计数——一条命令回答稳定性，不需要脚本遍历落盘文件。
 
-`--stats` 是报告库 [`sources.measure.stability`](../components/tables/stability-matrix.md) 在 show 上的零配置装配——范围内的 experiment 即 `by="experiment"` 的取值，eval 前缀即 `evals`；聚合口径、数据形状与展示语义单源在该组件小节，不在此重复声明。
+`--stats` 是报告库 [`sources.measure.stability`](../components/sources/measure-stability.md) 在 show 上的零配置装配——范围内的 experiment 即 `by="experiment"` 的取值，eval 前缀即 `evals`；聚合口径、数据形状与展示语义单源在该组件小节，不在此重复声明。
 
 ## 口径
 
@@ -27,7 +27,7 @@ downshift/pr-1502                     ✓2 ✗0 !1        —               ✓1
 汇总                                  ✓48 ✗22 !2      ✓55 ✗17 !0      ✓41 ✗19 !12
 ```
 
-聚合口径——行序、`never ✓` 判定、格内三计数固定顺序与分列理由、汇总行——单源在 [`sources.measure.stability`](../components/tables/stability-matrix.md)；本页只保留 CLI 呈现的行为与示例。终端宽内容照常横向滚动，不合并列。
+聚合口径——行序、`never ✓` 判定、格内三计数固定顺序与分列理由、汇总行——单源在 [`sources.measure.stability`](../components/sources/measure-stability.md)；本页只保留 CLI 呈现的行为与示例。终端宽内容照常横向滚动，不合并列。
 
 ## 边界
 
@@ -37,7 +37,7 @@ downshift/pr-1502                     ✓2 ✗0 !1        —               ✓1
 
 ## 相关阅读
 
-- [`sources.measure.stability`](../components/tables/stability-matrix.md) —— `--stats` 的组件单源：聚合口径、`sources.measure.stability` 形状与展示语义。
+- [`sources.measure.stability`](../components/sources/measure-stability.md) —— `--stats` 的组件单源：聚合口径、`sources.measure.stability` 形状与展示语义。
 - [`--history`](history.md) —— 同一证据面的逐次执行时间轴。
 - [对照矩阵](compare.md) —— 现刻水位的逐题对照。
 - [`--json`](json.md) —— 信封与逐视图指针。

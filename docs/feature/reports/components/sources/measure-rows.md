@@ -1,7 +1,7 @@
 # `sources.measure.rows`
 
 `sources.measure.rows(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源：一行一个维度值，
-一列一个读数。列按声明顺序排列。共用 Content 形状与两面规则见[表格与矩阵](README.md)。
+一列一个读数。列按声明顺序排列。共用 Content 形状与两面规则见 [Measure 数据源](measure.md)。
 
 ```tsx
 <Table
@@ -38,7 +38,7 @@ function rows(
 
 ## 相关阅读
 
-- [表格与矩阵](README.md) —— 共用数据形状、维度绑定节点与两面规则。
-- [`sources.measure.matrix`](measure-matrix.md) / [`sources.measure.scoreboard`](scoreboard.md) /
-  [`sources.measure.delta`](delta-table.md) /
-  [`sources.measure.stability`](stability-matrix.md) —— 其它表格数据源。
+- [Measure 数据源](measure.md) —— 共用数据形状、维度绑定节点与两面规则。
+- [`sources.measure.matrix`](measure-matrix.md) / [`sources.measure.scoreboard`](measure-scoreboard.md) /
+  [`sources.measure.delta`](measure-delta.md) /
+  [`sources.measure.stability`](measure-stability.md) —— 其它表格数据源。

@@ -70,4 +70,4 @@ SourceContent
 - [Architecture](architecture.md) —— 调用链采集、源码快照与完整树的数据形状。
 - [Display](display.md) —— 归属、建树和面相关投影。
 - [`show --source`](../show/eval-source.md) —— 终端命令、输出和展开入口。
-- [`sources.attempt.source`](../components/attempt-detail/attempt-source.md) —— web 面交互与视觉规范。
+- [`sources.attempt.source`](../components/sources/attempt-source.md) —— web 面交互与视觉规范。

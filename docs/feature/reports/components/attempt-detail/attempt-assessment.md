@@ -22,5 +22,5 @@ export const AttemptAssessment = defineComposition((_props, ctx) => {
 ## 相关阅读
 
 - [Attempt 详情](README.md) —— 公开区块集与 page 输入形态。
-- [`sources.attempt.source`](attempt-source.md) —— 有 source 时使用的区块，含 web 面视觉规范。
+- [`sources.attempt.source`](../sources/attempt-source.md) —— 有 source 时使用的区块，含 web 面视觉规范。
 - [`AttemptDetail`](attempt-detail.md) —— 把本组件摆进内建排列顺序的组合件。

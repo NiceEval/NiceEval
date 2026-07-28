@@ -2,7 +2,7 @@
 
 `sources.measure.matrix(options)` 返回供 [`Table`](../primitives/table.md) 使用的数据源：行、列各取一个维度，
 每个交叉格计算一个读数。它适合看「题 × 配置」的判定分布；要比较每行的相对大小，使用图表原语绑定
-同一组维度与读数。共用 Content 形状与两面规则见[表格与矩阵](README.md)。
+同一组维度与读数。共用 Content 形状与两面规则见 [Measure 数据源](measure.md)。
 
 ```tsx
 <Table
@@ -45,6 +45,6 @@ interface MatrixContent extends TableContent<MatrixRow> {
 
 ## 相关阅读
 
-- [表格与矩阵](README.md) —— 共用数据形状、维度绑定选项与两面规则。
-- [`sources.measure.rows`](measure-table.md) / [`sources.measure.scoreboard`](scoreboard.md) /
-  [`sources.measure.delta`](delta-table.md) / [`sources.measure.stability`](stability-matrix.md) —— 其它表格数据源。
+- [Measure 数据源](measure.md) —— 共用数据形状、维度绑定选项与两面规则。
+- [`sources.measure.rows`](measure-rows.md) / [`sources.measure.scoreboard`](measure-scoreboard.md) /
+  [`sources.measure.delta`](measure-delta.md) / [`sources.measure.stability`](measure-stability.md) —— 其它表格数据源。

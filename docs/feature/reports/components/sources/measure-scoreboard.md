@@ -117,6 +117,6 @@ Sample 中存在题集之外的 eval 时，数据源忽略它们，把数量写�
 
 ## 相关阅读
 
-- [表格与矩阵](README.md) —— 共用数据形状与两面规则。
-- [`sources.measure.rows`](measure-table.md) / [`sources.measure.matrix`](measure-matrix.md) /
-  [`sources.measure.delta`](delta-table.md) / [`sources.measure.stability`](stability-matrix.md) —— 其它表格数据源。
+- [Measure 数据源](measure.md) —— 共用数据形状与两面规则。
+- [`sources.measure.rows`](measure-rows.md) / [`sources.measure.matrix`](measure-matrix.md) /
+  [`sources.measure.delta`](measure-delta.md) / [`sources.measure.stability`](measure-stability.md) —— 其它表格数据源。

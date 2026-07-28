@@ -89,4 +89,4 @@ web 模式保留全部路径，用原生 `<details>` 表达展开。含未通过
 - web 面只负责 `<details>`、汇总 pill、行状态和源码横向滚动。
 
 两个面都消费 `SourceContent`，不重新分桶、汇总或选择上下文行。web 视觉细节见
-[`sources.attempt.source`](../components/attempt-detail/attempt-source.md)。
+[`sources.attempt.source`](../components/sources/attempt-source.md)。

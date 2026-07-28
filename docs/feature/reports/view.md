@@ -91,15 +91,38 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
   散点有 `line` label 时按线归类并连线，否则按 agent 归类且不连线。`--report` 用自定义报告替换
   整份页面声明，配置的 `report` 字段把同一替换设为项目默认。
 - **Attempts 页（内建）：** 站点组件加带过滤的
-  [`sources.entity.attempts`](components/entity-lists/attempt-rows.md)，把范围内所有 attempt 展成列表。
+  [`sources.entity.attempts`](components/sources/entity.md#evals-与-attempts)，把范围内所有 attempt 展成列表。
 - **追踪页（内建）：** 站点组件加
-  [`sources.sample.traces`](components/site/trace-waterfall.md)，用 canonical OTel 字段显示执行瀑布。
+  [`sources.sample.traces`](components/sources/sample-traces.md)，用 canonical OTel 字段显示执行瀑布。
 - **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、
   `navigation: false` 的 [`AttemptDetail`](components/attempt-detail/README.md) page。它用公开组件装配
   判定、断言、修复 prompt、时间树、usage、对话、trace 和 diff。`AttemptAssessment` 内的
   `AttemptNotices` 统一解释 snapshot error 与 persisted diagnostics。用户可把 content 换成任意公开组合。
 - **Copy fix prompt：** 批量修复 prompt 由
-  [`SampleFixPrompt`](components/site/copy-fix-prompt.md) 提供；attempt 详情保留单条失败的复制入口。
+  [`SampleFixPrompt`](components/summaries/sample-fix-prompt.md) 提供；attempt 详情保留单条失败的复制入口。
+
+## attempt 详情的 dialog 摆放
+
+locator 链接在浏览器里打开的是同一张 attempt-input page 的同一份 web 输出：
+基线链接直达 `attempt/<locator>.html`，增强脚本拦截后把那份内容放进 dialog，
+并把浏览状态写成 `#/attempt/@<locator>`。dialog 是摆放，不是第二套内容
+（区块与字段见 [详情的呈现](components/attempt-detail/presentation.md)）。
+
+宿主在这层只负责下面这些机器：
+
+| 行为 | 契约 |
+|---|---|
+| 打开 | 点击 locator 链接，或直接落在 `#/attempt/@<locator>` 深链上 |
+| 关闭 | 关闭按钮、`Esc`、点击遮罩三条等价 |
+| 关闭后的地址 | 点链接打开的走一次后退，深链落地的原地抹掉 hash，不把读者弹出站外 |
+| 焦点 | 打开时焦点进入 dialog 并留在内部，关闭后回到原处 |
+| 滚动 | 宿主只给纵向滚动，且锁住背景页；横向滚动归组件自己（源码块整块横滚） |
+| 取不到内容 | 不开空 dialog；控制台说明哪个 locator 取不到 |
+| 修饰键点击 | 放行浏览器原生行为，在新标签页打开那份独立文档 |
+
+内容宽度与最大高度由壳给定，页面内容不为弹窗换一套排版：同一个 locator
+在独立文档里与在 dialog 里是同一份字节。无 JavaScript 时链接照常导航到独立文档，
+详情完整可读。
 
 ## 静态导出
 

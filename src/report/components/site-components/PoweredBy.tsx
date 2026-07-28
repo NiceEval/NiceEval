@@ -11,7 +11,7 @@ export const POWERED_BY_HREF = "https://niceeval.com/?utm_source=report&utm_medi
 /** 一行品牌色小字 `Powered by NiceEval`,链接官网;HeroCard 的品牌行与它同一渲染。 */
 export function PoweredBy(): ReactElement {
   return (
-    <p className="nre nre-powered-by">
+    <p className="niceeval-report niceeval-powered-by">
       <a href={POWERED_BY_HREF} target="_blank" rel="noopener">
         Powered by NiceEval
       </a>

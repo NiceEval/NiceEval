@@ -1,4 +1,4 @@
-# 实体列表
+# 实体数据源
 
 实体行用于从汇总下钻到事实。`sources.entity.experiments`、`sources.entity.evals` 与
 `sources.entity.attempts` 分别返回以对应实体为
@@ -9,8 +9,9 @@
 任何选项严格等价。要过滤或截断，就在[组合组件](../../library/layout.md#自定义组件)里手工取数，
 加工后以 data 形态传入。
 
-各数据源的专属语义见 [`sources.entity.experiments`](experiment-rows.md)、[`sources.entity.evals`](eval-rows.md) 与
-[`sources.entity.attempts`](attempt-rows.md);[`FailureList`](failure-list.md) 是筛选失败 Attempt 的组合组件。
+呈现语义最重的 [`sources.entity.experiments`](entity-experiments.md) 单独成篇；`sources.entity.evals`
+与 `sources.entity.attempts` 的专属语义在本篇[下文](#evals-与-attempts)。
+[`FailureList`](../summaries/failure-list.md) 是筛选失败 Attempt 的组合组件。
 
 ## 为什么实体列表不开放列
 
@@ -20,7 +21,7 @@
   （[主读数映射](../../library/measures.md#题型构成与主读数)）。开放选列就要求作者自己维护这个
   分支，报告一旦跑到另一种题型的 Sample 就会摆出空列。
 - **列集合稳定，读者的迁移成本才为零。** 每份报告里的 experiment 表列序一致，读者不必重新找「成本在第几列」。
-- **自选列使用 [`sources.measure.rows`](../tables/measure-table.md)。** 实体行独有的展开层级、占位行与时效
+- **自选列使用 [`sources.measure.rows`](measure-rows.md)。** 实体行独有的展开层级、占位行与时效
   标注不是通用读数表的一组选项。
 
 展开层级由实体从属关系决定。要别的形态,使用 `Table` 与其它数据源组合。
@@ -125,10 +126,33 @@ interface EntitySources {
 用 [`fresh` 口径](../../../sample/library.md#时效新执行与历史执行)（CLI 侧 `--fresh`）。被排除的题
 按覆盖事实转为占位行。
 
+## evals 与 attempts
+
+`sources.entity.evals` 的顶层 Row 表示 `experimentId + evalId`，子行是一轮 Attempt。父行显示
+折叠判定、Attempt 数、聚合分数、平均耗时与平均成本，但不复述任一轮的失败内容：
+
+```tsx
+const content = await ctx.resolve(sources.entity.evals);
+const rows = content.rows.filter((row) => row.cells.verdict.verdict !== "passed");
+<Table data={{ ...content, rows }} />
+```
+
+`sources.entity.attempts` 的每个 Row 显示一次 Attempt 的判定、单行结果摘要、`totalScore` 与
+locator。完整 assertions、diagnostics、cause、stack 与自由文本证据不进入表格 Content；需要完整
+结构时经 locator 调 [`resolveLocator`](../../../record/library.md#按-locator-寻址一个-attemptresolvelocator)：
+
+```tsx
+const content = await ctx.resolve(sources.entity.attempts);
+const rows = content.rows
+  .filter((row) => ["failed", "errored"].includes(row.cells.verdict.verdict ?? ""))
+  .slice(0, 20);
+<Table data={{ ...content, rows }} />
+```
+
 ## 相关阅读
 
 - [组件树](../README.md) —— 为什么这一族没有结构子节点，以及页级色分配。
 - [概览](../summaries/README.md) —— `SampleOverview` 怎样逐组消费这些列表。
-- [表格与矩阵](../tables/README.md) —— 从实体切换到读数视角。
+- [Measure 数据源](measure.md) —— 从实体切换到读数视角。
 - [排版原语与自定义组件](../../library/layout.md) —— 承载手工取数与数组加工的组合组件。
 - [Show](../../show.md) —— 同一份明细在终端的展示。

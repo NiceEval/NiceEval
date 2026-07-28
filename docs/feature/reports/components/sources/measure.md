@@ -1,7 +1,7 @@
-# 表格与矩阵
+# Measure 数据源
 
-把[读数](../../library/measures.md)投影成表格行、交叉格、成绩单、对照行与稳定性行。数据源负责领域
-计算，`Table` 负责呈现；组合规则见[组件树](../README.md)。
+`sources.measure.*` 把[读数](../../library/measures.md)投影成表格行、交叉格、成绩单、对照行与
+稳定性行。数据源负责领域计算，`Table` 负责呈现；组合规则见[组件树](../README.md)。
 
 ```tsx
 <Table source={sources.measure.rows({
@@ -15,9 +15,9 @@ const content = await sources.measure.rows(options).compute(sample);
 ```
 
 这一篇是表格数据源的共用机制。各数据源的选项与用法在各自文件：
-[`sources.measure.rows`](measure-table.md)、[`sources.measure.matrix`](measure-matrix.md)、
-[`sources.measure.scoreboard`](scoreboard.md)、
-[`sources.measure.delta`](delta-table.md)、[`sources.measure.stability`](stability-matrix.md)。
+[`sources.measure.rows`](measure-rows.md)、[`sources.measure.matrix`](measure-matrix.md)、
+[`sources.measure.scoreboard`](measure-scoreboard.md)、
+[`sources.measure.delta`](measure-delta.md)、[`sources.measure.stability`](measure-stability.md)。
 
 ## 共用数据形状
 
@@ -25,7 +25,7 @@ const content = await sources.measure.rows(options).compute(sample);
 例如 `Rows` 产生 `rowDimension`，`Columns` 产生 `columnDimension`。条目数组一律叫 `rows`，
 稀疏格子叫 `cells`；条目内的 `key` 是维度**值**，不带后缀。
 
-所有表格 Source 都返回 [`TableContent<Row>`](../sources/README.md#tablecontent)，没有第二套矩阵协议。
+所有表格 Source 都返回 [`TableContent<Row>`](README.md#tablecontent)，没有第二套矩阵协议。
 专用 Content 可以扩展它，附加配对覆盖、权重或 totals 等审计事实；`columns` 与 `rows[].cells` 始终是
 `Table` 直接消费的统一投影。矩阵的动态条件也物化成 `columns`，稀疏组合通过缺失 cell 表达。
 
@@ -58,9 +58,14 @@ interface DimensionBindingProps {
 }
 ```
 
-`sort` 的方向跟随 Measure 的 `better`，同值以维度 key 收口；省略时按 key 字典序，不为「更好」方向不明的读数猜顺序。`limit` / `rest` 的语义与[图表维度轴的排序与截断](../charts/README.md#排序与截断)逐条相同——`rest` 是在合并后的 keyset 上重新聚合，不是把截掉的几行平均，因此它必须住在计算函数里。行列头的颜色来自[页级色分配](../README.md#维度呈现分配单位是页)。
+`sort` 的方向跟随 Measure 的 `better`，同值以维度 key 收口；省略时按 key 字典序，
+不为「更好」方向不明的读数猜顺序。`limit` / `rest` 的语义与
+[图表维度轴的排序与截断](../charts/README.md#排序与截断)逐条相同——`rest` 是在合并后的
+keyset 上重新聚合，不是把截掉的几行平均，因此它必须住在计算函数里。行列头的颜色来自
+[页级色分配](../README.md#维度呈现分配单位是页)。
 
-`dimension` 传数组即[复合维度](../../library/measures.md#维度与数值轴)：`["agent", label("memory")]` 的一个取值是一行，不是两行。
+`dimension` 传数组即[复合维度](../../library/measures.md#维度与数值轴)：
+`["agent", label("memory")]` 的一个取值是一行，不是两行。
 
 ## 两面
 
@@ -72,4 +77,4 @@ interface DimensionBindingProps {
 - [组件树](../README.md) —— 结构节点规则与共用呈现 props。
 - [图表](../charts/README.md) —— 同一份读数的图形投影。
 - [读数与维度](../../library/measures.md) —— Measure、Dimension 与聚合口径。
-- [实体列表](../entity-lists/README.md) —— 从聚合下钻到逐实体事实。
+- [实体数据源](entity.md) —— 从聚合下钻到逐实体事实。

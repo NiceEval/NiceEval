@@ -6,15 +6,16 @@
 
 Sample 内任一实验声明了 [`labels`](../../../experiments/library.md#labels声明归类坐标不进运行时)
 的 `line` 键，散点就按 `label("line")` 归类并连线；否则按 `"agent"` 归类、不连线。
+判断读 `snapshot.labelKeys`——范围内声明过的 labels 键并集是
+[snapshot 的事实字段](../sources/README.md#snapshot)。
 
-主读数与归类维度一样在 compose 阶段解析：
+主读数同样在 compose 阶段读 `snapshot.scoringComposition`：
 
 - `"pass"`：图表 y 轴与 Experiment 行预排序使用 `passRate`。
 - `"points"`：两处都改用 `totalScore`。
 - `"mixed"`：按题型拆成两个子 Sample，每组各生成图表和 `sources.entity.experiments`。
 
-`scoringComposition(input)` 给出上述分类。完整判据见
-[主读数映射](../../library/measures.md#题型构成与主读数)。
+完整判据见[主读数映射](../../library/measures.md#题型构成与主读数)。
 
 端到端通过率先聚合同一 experiment × eval 的 attempts，再跨题聚合。
 `failed` 与 `errored` 为 0，`skipped` 为 `null`。
@@ -51,10 +52,12 @@ Experiment 按主读数从高到低预排：通过制按通过率，计分制按
 ```tsx
 export const SampleOverview = defineComposition(async (props, ctx) => {
   const input = props.input ?? ctx.input;
-  const { by, line } = resolveComparisonSeries(input, props);
+  const snapshot = await ctx.resolve(sources.sample.snapshot, input);
+  const hasLine = snapshot.labelKeys.includes("line");
+  const by = props.by ?? (hasLine ? label("line") : "agent");
+  const line = props.line ?? hasLine;
   const byField = typeof by === "string" ? by : by.name;
-  const composition = await scoringComposition(input);
-  const primary = composition === "points" ? totalScore : passRate;
+  const primary = snapshot.scoringComposition === "points" ? totalScore : passRate;
   const frontier = sources.measure.rows({
     dimensions: ["experiment", by],
     measures: [costUSD, primary],
@@ -94,5 +97,5 @@ Experiment 行标签默认缩成 id 在当前 Sample 里的最短唯一后缀,�
 
 ## 相关阅读
 
-- [概览](README.md) —— `SampleSummary` 与本组合组件的关系。
+- [Sample 页区块](README.md) —— `SampleSummary` 与本组合组件的关系。
 - [`SampleSummary`](sample-summary.md) —— 默认 KPI 是怎样在组合层选择的。

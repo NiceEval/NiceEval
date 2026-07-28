@@ -32,15 +32,16 @@ export default defineReport({
 
 ## 公开区块集
 
-[`AttemptDetail`](attempt-detail.md)、[`AttemptAssessment`](attempt-assessment.md)、`AttemptNotices` 与
-`AttemptFixPrompt` 是组合组件；`AttemptSummary` / `AttemptUsage` 是消费 AttemptSnapshot 的 Component。
-只有中性事实投影留在 `sources.attempt`。
+[`AttemptDetail`](attempt-detail.md)、[`AttemptAssessment`](attempt-assessment.md)、
+[`AttemptNotices`](attempt-notices.md) 与 [`AttemptFixPrompt`](attempt-fix-prompt.md) 是组合组件；
+[`AttemptSummary`](attempt-summary.md) / [`AttemptUsage`](attempt-usage.md) 是消费 AttemptSnapshot
+的 Component。只有中性事实投影留在 `sources.attempt`。
 
 | 数据源 | 原语 | 只负责什么 | 空证据 |
 |---|---|---|---|
 | `sources.attempt.snapshot` | `AttemptSummary` / `AttemptUsage` | 身份、verdict、挣分、时间、用量、成本与 error 事实 | 恒有 |
 | `sources.attempt.assertions` | `Table` | assertion 与给分记录 | 无记录时 `null` |
-| [`sources.attempt.source`](attempt-source.md) | `SourceView` | 带标注源码、回复、断言与给分证据 | 无 source 时 `null` |
+| [`sources.attempt.source`](../sources/attempt-source.md) | `SourceView` | 带标注源码、回复、断言与给分证据 | 无 source 时 `null` |
 | `sources.attempt.timeline` | `Waterfall` | runner phases 与关联 spans | 无 phase 时 `null` |
 | `sources.attempt.conversation` | `Conversation` | 分轮事件流与失败命令卡 | 无事件与命令时 `null` |
 | `sources.attempt.diagnostics` | `AttemptNotices` | 已持久化的 lifecycle diagnostics | 无 diagnostics 时 `null` |
@@ -106,27 +107,16 @@ interface AttemptSources {
 
 ## Snapshot 的阅读组件
 
-`AttemptSummary` 与 `AttemptUsage` 都是普通 Component，接受同一个 `sources.attempt.snapshot`；page resolve
-会复用这次计算。`AttemptNotices` 是组合组件，它把 snapshot 中的 error 与 persisted diagnostics
-一起分类。`AttemptFixPrompt` 也在组合层从 snapshot、assertions、conversation 与 diff 选择可行动证据。
+[`AttemptSummary`](attempt-summary.md) 与 [`AttemptUsage`](attempt-usage.md) 都是普通 Component，
+接受同一个 `sources.attempt.snapshot`；page resolve 会复用这次计算。
+[`AttemptNotices`](attempt-notices.md) 是组合组件，把 snapshot 中的 error 与 persisted
+diagnostics 一起分类。[`AttemptFixPrompt`](attempt-fix-prompt.md) 在组合层从 snapshot、
+assertions、conversation 与 diff 选择可行动证据。
 
 ```tsx
 <AttemptSummary source={sources.attempt.snapshot} />
 <AttemptUsage source={sources.attempt.snapshot} />
 ```
-
-```tsx
-export const AttemptNotices = defineComposition(async (_props, ctx) => {
-  const [snapshot, diagnostics] = await Promise.all([
-    ctx.resolve(sources.attempt.snapshot),
-    ctx.resolve(sources.attempt.diagnostics),
-  ]);
-  return <Callouts data={classifyAttemptIssues(snapshot, diagnostics)} />;
-});
-```
-
-分类函数同步、确定，不读取 evidence，也不改写 diagnostic。Snapshot error 与 persisted diagnostic
-是事实；Notice 决定分组、可见性、本地化文案与 action。未知 diagnostic code 回退显示原始 detail。
 
 ## 在 `show` 与 `view` 怎样渲染
 
@@ -154,9 +144,10 @@ text 面允许把有稳定 CLI 选择器的大块内容折成摘要加命令，�
 
 ## 相关阅读
 
+- [详情的呈现](presentation.md) —— 逐块的字段、形态与 DOM 骨架。
 - [组件树](../README.md) —— 这一族为什么不收结构子节点。
-- [`sources.attempt.source`](attempt-source.md) —— web 面视觉规范。
-- [`AttemptUsage`](usage-table.md) —— snapshot usage 的双面呈现。
+- [`sources.attempt.source`](../sources/attempt-source.md) —— web 面视觉规范。
+- [`AttemptUsage`](attempt-usage.md) —— snapshot usage 的双面呈现。
 - [`AttemptAssessment`](attempt-assessment.md) / [`AttemptDetail`](attempt-detail.md) —— 两个组合组件。
 - [外壳与多页](../../library/shell.md) —— 参数化 page 的字段与校验。
 - [排版原语与自定义组件](../../library/layout.md) —— page context 与组合组件协议。

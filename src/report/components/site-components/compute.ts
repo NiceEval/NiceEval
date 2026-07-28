@@ -38,7 +38,7 @@ export async function heroData(input: ReportInput): Promise<HeroData> {
 /**
  * `scopeWarningsData(input)`:Sample 携带的挑选警告原样透出;`input` 是裸 `Run[]` 时
  * 没有挑选过程、没有警告,返回空数组,也如实
- * (docs/feature/reports/components/site/sample-warnings.md)。
+ * (docs/feature/reports/components/summaries/sample-notices.md)。
  */
 export async function scopeWarningsData(input: ReportInput): Promise<readonly SampleIssue[]> {
   return resolveInput(input).issues;
@@ -47,7 +47,7 @@ export async function scopeWarningsData(input: ReportInput): Promise<readonly Sa
 /**
  * `snapshotDiagnosticsData(input)`:只投影 diagnostics 非空的真实 Run,不携带 `evals` 或
  * `AttemptHandle`,不跨快照合并;按 experiment id 字典序排列,同一实验内按 startedAt 从新到旧
- * (docs/feature/reports/components/site/run-diagnostics.md)。
+ * (docs/feature/reports/components/sources/run-diagnostics.md)。
  */
 export async function snapshotDiagnosticsData(input: ReportInput): Promise<SnapshotDiagnosticsData> {
   const { runs } = resolveInput(input);
@@ -61,7 +61,7 @@ export async function snapshotDiagnosticsData(input: ReportInput): Promise<Snaps
  * `copyFixPromptData(input)`:把范围内全部失败(verdict 为 failed / errored 的 attempt)
  * 整理成一段可交给 coding agent 的修复 prompt——逐失败含 eval id、主失败摘要与 attempt
  * 下钻命令(`niceeval show @<locator>`)。prompt 面向 agent,固定英文
- * (docs/feature/reports/components/site/copy-fix-prompt.md)。
+ * (docs/feature/reports/components/summaries/sample-fix-prompt.md)。
  */
 export async function copyFixPromptData(input: ReportInput): Promise<CopyFixPromptData> {
   const items = await attemptListData(input);
@@ -121,7 +121,7 @@ function waterfallKindOf(kind: TraceSpan["kind"]): TraceSpanSummary["kind"] {
  * trace artifact(经 AttemptHandle 懒加载的 canonical OTel span);runner 生命周期节点
  * (`result.phases`)不进瀑布。行内只汇总顶层 span(parentSpanId 缺失或不在本 trace 内),
  * 按 startOffsetMs 升序;trace 缺失或为空时 `durationMs` 为 null、行照常出现
- * (docs/feature/reports/components/site/trace-waterfall.md)。
+ * (docs/feature/reports/components/sources/sample-traces.md)。
  */
 export async function traceWaterfallData(input: ReportInput): Promise<readonly TraceWaterfallRow[]> {
   const { runs, attempts } = resolveInput(input);

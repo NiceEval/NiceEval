@@ -1,7 +1,7 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。跑在 Node 侧,产物是算好的、可序列化的
 // 普通 JSON(终值 + 渲染提示,不含公式);渲染面(web/text)只做展示。指标图形族
 // (MetricTable / MetricMatrix / MetricBars / Scoreboard / MetricScatter / MetricLine /
-// DeltaTable)的 *Data 与配套 Options 都住在这里(docs/feature/reports/components/tables/README.md)。
+// DeltaTable)的 *Data 与配套 Options 都住在这里(docs/feature/reports/components/sources/measure.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
 // - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
@@ -519,7 +519,7 @@ export async function metricLineData(input: ReportInput, options: MetricLineOpti
 // ───────────────────────── deltaTableData 与 conditionsByFlag ─────────────────────────
 
 /**
- * 按 flag 机械导出全部有序条件(docs/feature/reports/components/tables/delta-table.md):
+ * 按 flag 机械导出全部有序条件(docs/feature/reports/components/sources/measure-delta.md):
  * 条件域 = input Sample 内 `by: "experiment"` 的全部取值,删除该 flag 后必须可比性配置深相等
  * (不额外按 experiment id 的目录前缀分组——architecture.md「Sample 是默认报告的比较边界」同一条
  * 契约);基准取 `baseline` 声明的值(缺省 = 未声明该 flag),候选是该 flag 每个其它取值各一个
@@ -896,7 +896,7 @@ export interface StabilityMatrixOptions {
 
 /**
  * 历史全执行的稳定性矩阵:行是 eval,列是 by 维度上的取值,格是该组合全部历史执行(跨快照按
- * 身份键去重、不设可比性门槛)的判定计数(docs/feature/reports/components/tables/stability-matrix.md)。消费的是调用方传入的 input 本身——传 current() Sample 只看得到现刻
+ * 身份键去重、不设可比性门槛)的判定计数(docs/feature/reports/components/sources/measure-stability.md)。消费的是调用方传入的 input 本身——传 current() Sample 只看得到现刻
  * 水位,要看完整历史需由调用方从 ctx.results 显式选择 Run[] 传入。
  */
 export async function stabilityMatrixData(

@@ -39,7 +39,7 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleNotices source={sources.sample.snapshot} />
+          <SampleNotices />
           <RunNotices />
           <SampleFixPrompt />
           <SampleOverview />
@@ -52,7 +52,7 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleNotices source={sources.sample.snapshot} />
+          <SampleNotices />
           <RunNotices />
           <Table source={sources.entity.attempts} filter />
         </Col>
@@ -64,7 +64,7 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleNotices source={sources.sample.snapshot} />
+          <SampleNotices />
           <RunNotices />
           <Waterfall source={sources.sample.traces} />
         </Col>
@@ -155,7 +155,7 @@ export default defineReport({
       content: (
         <Col>
           <Hero />
-          <SampleNotices source={sources.sample.snapshot} />
+          <SampleNotices />
           <RunNotices />
           <SampleOverview />
         </Col>
@@ -166,7 +166,7 @@ export default defineReport({
       title: { en: "Exam", "zh-CN": "成绩单" },
       content: (
         <Col>
-          <SampleNotices source={sources.sample.snapshot} />
+          <SampleNotices />
           <RunNotices />
           <Table source={exam} />
         </Col>
@@ -208,7 +208,7 @@ export default defineTheme({ ...basalt, accent: "#7C3AED" });
 [概览组件](../components/summaries/sample-overview.md)。`Hero` / `SampleNotices` / `RunNotices` /
 `SampleFixPrompt` / `sources.sample.traces` 的契约在[站点组件](../components/site/README.md)。
 Attempts 页的本体是带过滤的
-[`sources.entity.attempts`](../components/entity-lists/attempt-rows.md)。
+[`sources.entity.attempts`](../components/sources/entity.md#evals-与-attempts)。
 
 ## 相关阅读
 

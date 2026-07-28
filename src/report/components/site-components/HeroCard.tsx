@@ -49,9 +49,9 @@ export function HeroCard({
           ...(data.runs > 1 ? [localeText(locale, "hero.composedRuns", { n: data.runs })] : []),
         ].join(" · ");
   return (
-    <header className={cx("nre", "nre-hero", className)}>
-      <h1 className="nre-hero-title">{resolveLocalizedText(title, locale)}</h1>
-      <p className="nre-hero-meta">{meta}</p>
+    <header className={cx("niceeval-report", "niceeval-hero", className)}>
+      <h1 className="niceeval-hero-title">{resolveLocalizedText(title, locale)}</h1>
+      <p className="niceeval-hero-meta">{meta}</p>
       {/* 品牌行与 PoweredBy 同一渲染:品牌跟着组件走,不区分官方宿主与嵌入页面 */}
       <PoweredBy />
     </header>

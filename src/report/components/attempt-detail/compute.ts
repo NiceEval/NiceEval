@@ -482,7 +482,7 @@ export function attemptDiagnosticsData(evidence: AttemptEvidence): AttemptDiagno
 // ───────────────────────── UsageTable ─────────────────────────
 
 /**
- * 组装口径单源:docs/feature/reports/components/attempt-detail/usage-table.md#组装口径单源。
+ * 组装口径单源:docs/feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源。
  * identity 字段(locator/experimentId/evalId/attempt/verdict)恒有;turns/toolCalls 是 events
  * 派生(与 o11y.json 行为摘要同源,buildO11ySummary 与 o11y.json 落盘走同一份纯函数),没有
  * events 就整对省略——不因为其中一个恰好是 0 就当作"缺失"处理,0 是观测到的事实。

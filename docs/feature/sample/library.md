@@ -90,7 +90,7 @@ sample.coverage[0];
 
 缺的是具体哪几道题,所以呈现在行的位置上:报告把 `missingEvalIds` 渲染成实验列表里的占位行
 (「当前配置下无结果」+ 可复制的补跑命令,契约见
-[`experimentRows` · 占位行](../reports/components/entity-lists/experiment-rows.md)),读者在正在看的
+[`sources.entity.experiments` · 占位行](../reports/components/sources/entity-experiments.md)),读者在正在看的
 表里直接看见分母缺口。程序消费同样直接:CI 里「覆盖缩水就 fail」判
 `coverage.some((c) => c.missingEvalIds.length > 0)`。缺口永远被算出来,不静默。
 
@@ -108,7 +108,7 @@ knownEvalIds)**,`publish()` 复制时补记这个字段,发布目录因此仍算
   最新 Run)。
 
 两种历史出身对读者是同一个事实——「这条不是最新一次跑出来的」——报告用同一种时效标注呈现(实体名
-后 `↩` + 人话时距,契约见[实体列表 · 时效标注](../reports/components/entity-lists/README.md#时效标注));
+后 `↩` + 人话时距,契约见[实体数据源 · 时效标注](../reports/components/sources/entity.md#时效标注));
 机制差异(携带 vs 拼接)只在数据字段上可分辨,供脚本按需区分。
 
 历史执行不是异常:携带是 fingerprint 担保下的正常缓存(「旧但有效」,语义见

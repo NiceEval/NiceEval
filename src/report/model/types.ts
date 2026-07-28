@@ -223,7 +223,7 @@ export interface Dataset<Row extends DatasetRow = DatasetRow> {
 export type MeasureRowsContent = Dataset;
 
 /**
- * 数据形状的字段命名规则(docs/feature/reports/components/tables/README.md「共用数据形状」):
+ * 数据形状的字段命名规则(docs/feature/reports/components/sources/measure.md「共用数据形状」):
  * 维度名字段 = 产生它的选项名 + `Dimension` 后缀,值是解析后的维度 name;
  * 条目数组一律叫 `rows`(Matrix 的稀疏格子叫 `cells`);条目内的 key / series 是维度值,不带后缀。
  */
@@ -309,7 +309,7 @@ export interface ScoreboardData {
 }
 
 /**
- * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/components/tables/delta-table.md)。`verdict` / `totalScore` 用与默认报告同一套题目级判定口径(`totalScore` 取各
+ * `DeltaTable` 的一格:同一条件值 × eval 的折叠(docs/feature/reports/components/sources/measure-delta.md)。`verdict` / `totalScore` 用与默认报告同一套题目级判定口径(`totalScore` 取各
  * attempt 的均值);`totalTokens` / `totalCostUSD` 是该题在该条件下全部 attempt 的**合计**,
  * 不是均值。
  */
@@ -470,7 +470,7 @@ export interface HeroData {
 }
 
 /**
- * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/components/site/run-diagnostics.md):
+ * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/components/sources/run-diagnostics.md):
  * 只携带 experimentId / startedAt / DiagnosticRecord,不带 Run 本体、`evals` 或
  * `AttemptHandle`,避免把文件读取能力拖进浏览器边界。
  */
@@ -488,7 +488,7 @@ export type SnapshotDiagnosticsData = readonly SnapshotDiagnosticsItem[];
 
 /**
  * `CopyFixPrompt` 的数据:resolve 期算好的修复 prompt 全文与参与的失败数
- * (docs/feature/reports/components/site/copy-fix-prompt.md)。
+ * (docs/feature/reports/components/summaries/sample-fix-prompt.md)。
  */
 export interface CopyFixPromptData {
   /** 修复 prompt 全文;失败逐条含 eval id、主失败摘要与 attempt 下钻命令。 */
@@ -809,7 +809,7 @@ export interface AttemptDiagnosticsData {
 
 /**
  * `UsageTable` 的 data:判定、轮数、工具调用数、token 拆分与成本摊成的单行用量摘要;组装口径单源
- * 见 docs/feature/reports/components/attempt-detail/usage-table.md#组装口径单源。identity 字段
+ * 见 docs/feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源。identity 字段
  * (`locator`/`experimentId`/`evalId`/`attempt`/`verdict`)恒有——它们不是「usage 有没有」的一部分,
  * 是这一行归属哪个 attempt 的身份。其余字段各自独立地只在事实真实存在时出现:
  *

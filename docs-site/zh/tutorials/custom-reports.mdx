@@ -154,7 +154,7 @@ const PrefixSummary = defineComposition(
   async ({ input }: { input?: Sample }, ctx) => {
     const selected = input ?? ctx.input;
     const snapshot = await ctx.resolve(sources.sample.snapshot, selected);
-    return <SampleNotices data={snapshot} />;
+    return <Callouts data={notices.sample(snapshot)} />;
   },
 );
 ```

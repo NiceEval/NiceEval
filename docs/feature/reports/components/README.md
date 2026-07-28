@@ -247,22 +247,45 @@ Composition 由 `defineComposition` 定义，拿到 `ctx.input` 后编排 Source
 
 Composition **不接受结构子节点**——覆盖的方式是不用它，直接把那棵树写进 `Col` 并逐块增删。
 每份官方 Composition 的文档给出等价全文，照抄即可改。这样「这份 Composition 会渲染什么」
-永远只有一个答案，不存在「给了子节点走一套、不给走另一套」的两份语义。
+永远只有一个答案，不存在「给了子节点走一套、不给走另一套」的两份语义。全文只引用官方目录
+（`sources.*` 与[下面的口径目录](#口径目录noticesfixprompts)）与字面装配代码，不引用散落的
+私有 helper——照抄因此真的可以编译，而口径留在 fork 碰不到的地方。
 
 | Composition | 装配成什么 |
 |---|---|
 | [`SampleOverview`](summaries/sample-overview.md) | 范围摘要 + 成本 × 主读数散点 + 实验对比表 |
 | [`SampleSummary`](summaries/sample-summary.md) | snapshot + 本次选择的 Measure Dataset → 默认 KPI |
-| [`RunNotices`](site/run-diagnostics.md) | snapshot + persisted Run diagnostics → 产品解释 |
-| [`SampleFixPrompt`](site/copy-fix-prompt.md) | 失败事实 → 可复制的批量修复 prompt |
+| [`SampleNotices`](summaries/sample-notices.md) | snapshot 读取期 Issue → 产品解释 |
+| [`RunNotices`](summaries/run-notices.md) | snapshot + persisted Run diagnostics → 产品解释 |
+| [`SampleFixPrompt`](summaries/sample-fix-prompt.md) | 失败事实 → 可复制的批量修复 prompt |
+| [`FailureList`](summaries/failure-list.md) | 取数 → 过滤出失败 → attempt 表 |
+| [`Hero`](site/hero.md) | `ctx.report.title` + Sample 来源 → 站点标题区 |
 | [`AttemptDetail`](attempt-detail/attempt-detail.md) | 一次 attempt 的全部区块，按内建顺序 |
 | [`AttemptAssessment`](attempt-detail/attempt-assessment.md) | `AttemptNotices` + source / assertions fallback |
-| `AttemptNotices` | snapshot error + persisted attempt diagnostics → 产品解释 |
-| `AttemptFixPrompt` | attempt snapshot 与证据 → 单条修复 prompt |
-| [`FailureList`](entity-lists/failure-list.md) | 取数 → 过滤出失败 → attempt 表 |
+| [`AttemptNotices`](attempt-detail/attempt-notices.md) | snapshot error + persisted attempt diagnostics → 产品解释 |
+| [`AttemptFixPrompt`](attempt-detail/attempt-fix-prompt.md) | attempt snapshot 与证据 → 单条修复 prompt |
 
 Composition 可以自带展开阶段的解析——按题型选主读数、按 `labels` 推散点归类维度、
-混型时把范围拆成两组各出一份。这类解析属于「默认装配怎么定」，与原语的渲染面无关。
+混型时把范围拆成两组各出一份。这类解析属于「默认装配怎么定」，与原语的渲染面无关；
+它读的题型构成与 labels 键都是 [snapshot 的事实字段](sources/README.md#snapshot)。
+
+### 口径目录（notices、fixPrompts）
+
+装配可以 fork，口径不该随 fork 复印。Composition 全文里的领域解释因此收在两个具名目录后面，
+与 `sources.*` 同一种发现方式；fork 全文的人改装配，数字与措辞仍回到同一份实现：
+
+| 入口 | 产出 | 签名所在 |
+|---|---|---|
+| `notices.sample(snapshot)` | Sample 读取期 Issue 的分组 Notice | [`SampleNotices`](summaries/sample-notices.md) |
+| `notices.run(snapshot, diagnostics)` | Run diagnostics 的分组 Notice | [`RunNotices`](summaries/run-notices.md) |
+| `notices.attempt(snapshot, diagnostics)` | attempt error 与 diagnostics 的分组 Notice | [`AttemptNotices`](attempt-detail/attempt-notices.md) |
+| `fixPrompts.sample(rows)` | 批量修复 prompt；无可行动失败为 `null` | [`SampleFixPrompt`](summaries/sample-fix-prompt.md) |
+| `fixPrompts.attempt(snapshot, …)` | 单条修复 prompt；无可行动失败为 `null` | [`AttemptFixPrompt`](attempt-detail/attempt-fix-prompt.md) |
+
+目录成员都是同步纯函数：吃 Source 算好的 Content 或 snapshot，不取数、不请求外部服务。
+「事实还是解释」的分界在 Source 与这里之间——落盘与读数归 Source，可见性、分组、文案与
+action 归口径目录；题型构成、labels 键这类事实不进目录，它们是 snapshot 的字段。
+只服务单一全文的排格、选标签是装配，直接写成全文里的字面代码，不进目录也不成为公开导出。
 
 ## 共用呈现 props
 

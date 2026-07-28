@@ -58,8 +58,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - `failed` 仍保留已经挣到的分；`errored` 与 `skipped` 返回 `null`。
   - 通过制 Eval 不参与该读数，也不拉低分母。
   - 同一 Eval 的多个 Attempt 取均值；跨 Eval 求和。Fixture 必须用不同题目分值区分“求和”和“求均值”。
-  - `scoringComposition` 分别覆盖纯通过制、纯计分制和混合 Sample。公开函数与 `SampleSummaryContent`
-    必须同值。
+  - `snapshot.scoringComposition` 分别覆盖纯通过制、纯计分制和混合 Sample。
   - `totalScore` 从 `niceeval/report`
     顶层导出，并与内部定义保持同一引用。只需一个代表场景，不为每个内建读数重复测试。
 
@@ -160,14 +159,14 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 
   - `ctx.resolve(source)` 与同页 `<Table source={source}>` 命中同一份缓存只计算一次。
     区分力场景是一个计数 fake Source 被 Composition 与原语同时引用，计数必须是 1。
-  - `ctx.resolve(source, input)` 与同页 `<Table source={source} input={input}>` 命中同一份缓存；
+  - `ctx.resolve(source, input)` 与同页 `<Table source={source} input={input}>` 命中同一份缓存。
     省略 input 时与 `ctx.resolve(source)`、组件省略 `input` 共用 page 默认 input 的缓存键。
   - 缓存的是 Promise：两个并发消费者同时请求仍只计算一次，失败由同一个 Promise 广播给两者。
   - 同一个 Composition 用在两处是两个节点、各展开一次，内部的 `ctx.resolve` 仍共享 Source 缓存。
   - Composition 的 `Input` 与 page 的 `input` 声明不匹配时，装载期按完整用户反馈报错。
-- **ResolvedPage 单次 resolve 多面投影**：`resolvePage` 一次产出可序列化组件树后，
+- **ResolvedPage 单次 resolve 多面投影**：`resolvePage` 一次产出可序列化组件树。之后
   `renderResolvedPageText` / `renderResolvedPageWeb(en)` / `renderResolvedPageWeb(zh-CN)` 都从同一
-  `ResolvedPage` 同步投影；断言面是 Source `compute` 调用计数仍为 1（含并发渲染）。
+  `ResolvedPage` 同步投影。断言面是 Source `compute` 调用计数仍为 1（含并发渲染）。
   view 对每个 page / locator 只调用一次 `resolvePage`。
 - **Component 公共协议收紧**：`defineComponent` 只接受 `{ dimensions, text, web, enhance?, styles? }`；
   携带 `resolve` 或函数形态定义时按完整用户反馈拒绝。renderer 参数是 Content、options 与呈现
@@ -280,7 +279,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   [Measure Views](../../../feature/reports/components/charts/README.md)。
 
 - **usage 组装与 facts 投影**:usage 行/表的组装口径单源见
-  [Library · Attempt 详情 · `attemptUsage` 组装口径（单源）](../../../feature/reports/components/attempt-detail/usage-table.md#组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自
+  [Library · Attempt 详情 · `attemptUsage` 组装口径（单源）](../../../feature/reports/components/attempt-detail/attempt-usage.md#组装口径单源)——行为计数(turns/toolCalls)来自事件流、token 来自
   `Usage`(桶恒互斥,`inputTokens` 即未缓存输入)、token 片段只在 `cacheReadTokens` 在场时标 "uncached
   in"(fixture 要有「cache 桶缺席」的场景证明不给无拆分的数字贴标注)、`requests`
   缺失时片段整段省略(区分「省略」与「显示 0/1」)、合计对含 `—` 的列标不完整;这些判据的断言面是
@@ -309,7 +308,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   设计理由见[show 的切片是组件选择](../../../feature/reports/architecture.md#show-的切片是组件选择)。
 
 - **主题装载与规范化**：
-  - `defineTheme` 的校验按规则类别取代表场景，不逐字段枚举：颜色 hex 语法、`ThemeColorPair` 缺分支、`series` 长度不是六、`font` / `fontSize` / `radius` 里出现 `;` 或 `}`、资产路径违规（`..` / 绝对路径 / `~`）各一条，报错必须指到具体字段路径（`theme.series[3].dark`）。
+  - `defineTheme` 的校验按规则类别取代表场景，不逐字段枚举：颜色 hex 语法、`ThemeColorPair` 缺分支、`series` 长度不是六、`font` / `fontSize` / `radius` 里出现 `;` 或 `}`、资产路径违规（`..` / 绝对路径 / `~`）各一条。报错必须指到具体字段路径（`theme.series[3].dark`）。
   - **四档取值链的区分力**：`--theme` / 报告外壳 `theme` / `config.theme` / 内建 `basalt` 四档要用**互不相同**的令牌值构造，断言生效的是预期那一档；至少一条 fixture 同时配两档以上，证明高档整份取代低档而不是合并。
   - **不跨档合并**：生效主题未声明的令牌取 Basalt 的值，不取下一档同名令牌。这一格是唯一能区分「取代」与「合并」两种实现的场景。
   - 规范化产物是数据级断言：完整令牌表（单值展开成相同的 light / dark，pair 保留两支）与有序资产清单，路径相对**主题文件**解析。不断言生成的 CSS 文本。

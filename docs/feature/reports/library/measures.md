@@ -1,7 +1,7 @@
 # 读数与维度
 
 读数定义值与聚合口径，维度定义分组。
-[图表](../components/charts/README.md)与[表格](../components/tables/README.md)只是它们的投影。
+[图表](../components/charts/README.md)与[表格](../components/sources/measure.md)只是它们的投影。
 
 ## 基础事实与按需字段
 
@@ -205,10 +205,10 @@ Reports 可以同时展示两者，但不得用终态判定构成现场重算通
 
 ```ts
 type ScoringComposition = "pass" | "points" | "mixed";
-
-/** input 内出现的题型构成，取自 Run 记录的定义期 `scoring` 事实。 */
-function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 ```
+
+这个事实由 [`sources.sample.snapshot`](../components/sources/README.md#snapshot) 的
+`scoringComposition` 字段携带，取自 Run 记录的定义期 `scoring`。
 
 **主读数映射是单点规则**，官方消费者都引用这一条，不各自另设判据：
 
@@ -219,8 +219,8 @@ function scoringComposition(input: ReportInput): Promise<ScoringComposition>;
 | `"mixed"` | 两者并排、各读各的 | 两个 KPI 都显示；按题型拆组后各用自己的主读数 |
 
 Component 保持中立：`Table` 与图表不感知题型。分支只发生在 `SampleSummary`、
-`sources.entity.experiments` 与 `SampleOverview` 这些消费 `scoringComposition` 的 Source 或组合组件中。
-自定义报告需要同样切换时，调用同一个函数，不重新发明判据。
+`sources.entity.experiments` 与 `SampleOverview` 这些消费该字段的 Source 或组合组件中。
+自定义报告需要同样切换时，读同一个字段，不重新发明判据。
 
 ## 自定义读数
 
@@ -381,5 +381,5 @@ const reasoning = numericRunConfig("reasoningEffort", {
 
 ## 相关阅读
 
-- [图表](../components/charts/README.md) / [表格与矩阵](../components/tables/README.md) —— 读数的图形与表格投影。
+- [图表](../components/charts/README.md) / [Measure 数据源](../components/sources/measure.md) —— 读数的图形与表格投影。
 - [Record Format](../../record/architecture.md) —— 读数读取的落盘字段。

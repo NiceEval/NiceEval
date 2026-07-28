@@ -14,7 +14,7 @@ web 面是固定列的 experiment 比较表，而不是无表头的松散卡片�
 
 | 列 | 内容 |
 |---|---|
-| Experiment | experiment id 在当前列表里的最短唯一后缀（见下）；副行以“`8 evals` / `8 个 Eval`”显示 eval 数——存在覆盖缺口时写成 `6/8 evals`（分母是已知并集），attempt 数多于 eval 数时再显示 attempt 数，最后跟最后运行时间；`historicalAttempts > 0` 时追加时效标注 `↩ n/m attempts`（见[时效标注](README.md#时效标注)）；不把 Eval 翻成“题”。完整 id 仍用于排序键、过滤和折叠展开 |
+| Experiment | experiment id 在当前列表里的最短唯一后缀（见下）；副行以“`8 evals` / `8 个 Eval`”显示 eval 数——存在覆盖缺口时写成 `6/8 evals`（分母是已知并集），attempt 数多于 eval 数时再显示 attempt 数，最后跟最后运行时间；`historicalAttempts > 0` 时追加时效标注 `↩ n/m attempts`（见[时效标注](entity.md#时效标注)）；不把 Eval 翻成“题”。完整 id 仍用于排序键、过滤和折叠展开 |
 | Model | model；缺失时显示明确空值 |
 | Agent | agent |
 | Avg. time | 官方 `durationMs` 聚合值；中文列名为“平均耗时” |
@@ -111,7 +111,5 @@ export const ProdExperiments = defineComposition(async (_props: {}, ctx) => {
 
 ## 相关阅读
 
-- [实体列表](README.md) —— 数据形状与时效标注。
-- [`sources.entity.evals`](eval-rows.md) / [`sources.entity.attempts`](attempt-rows.md) /
-  [`FailureList`](failure-list.md) ——
-  其它实体数据源与失败组合组件。
+- [实体数据源](entity.md) —— 数据形状、时效标注与 `sources.entity.evals` / `sources.entity.attempts`。
+- [`FailureList`](../summaries/failure-list.md) —— 筛选失败 Attempt 的组合组件。

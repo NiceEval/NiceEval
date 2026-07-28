@@ -29,28 +29,30 @@ Source 可以读取 Record 与 artifact、计算 Measure、聚合 Dataset、投�
 
 | 入口 | 产出 | 常用 Component |
 |---|---|---|
-| `sources.entity.experiments` | experiment 行，下钻到 eval 与 attempt | `Table` |
-| `sources.entity.evals` | eval 行，下钻到 attempt | `Table` |
-| `sources.entity.attempts` | attempt 行 | `Table` |
-| `sources.measure.rows(...)` | 本次选择的 Dimension + Measure 组成的 Dataset | `Table` / `Chart` / 自定义 Component |
-| `sources.measure.matrix(...)` | 两个维度的交叉格 | `Table` |
-| `sources.measure.scoreboard(...)` | 固定题集的成绩与分科 | `Table` |
-| `sources.measure.delta(...)` | 同一道题在若干条件上的读数与差值 | `Table` |
-| `sources.measure.stability(...)` | 一道题跨 Run 的稳定性 | `Table` |
-| `sources.sample.snapshot` | 范围、判定、覆盖、来源与读取期 Issue | `SampleSummary` / `SampleNotices` |
-| `sources.sample.traces` | Sample 中各 attempt 的执行瀑布 | `Waterfall` |
-| `sources.run.diagnostics` | 已持久化的 Run 诊断事实 | `RunNotices` |
+| [`sources.entity.experiments`](entity-experiments.md) | experiment 行，下钻到 eval 与 attempt | `Table` |
+| [`sources.entity.evals`](entity.md#evals-与-attempts) | eval 行，下钻到 attempt | `Table` |
+| [`sources.entity.attempts`](entity.md#evals-与-attempts) | attempt 行 | `Table` |
+| [`sources.measure.rows(...)`](measure-rows.md) | 本次选择的 Dimension + Measure 组成的 Dataset | `Table` / `Chart` / 自定义 Component |
+| [`sources.measure.matrix(...)`](measure-matrix.md) | 两个维度的交叉格 | `Table` |
+| [`sources.measure.scoreboard(...)`](measure-scoreboard.md) | 固定题集的成绩与分科 | `Table` |
+| [`sources.measure.delta(...)`](measure-delta.md) | 同一道题在若干条件上的读数与差值 | `Table` |
+| [`sources.measure.stability(...)`](measure-stability.md) | 一道题跨 Run 的稳定性 | `Table` |
+| [`sources.sample.snapshot`](#snapshot) | 范围、判定、覆盖、来源与读取期 Issue | `SampleSummary` / `SampleNotices` |
+| [`sources.sample.traces`](sample-traces.md) | Sample 中各 attempt 的执行瀑布 | `Waterfall` |
+| [`sources.run.diagnostics`](run-diagnostics.md) | 已持久化的 Run 诊断事实 | `RunNotices` |
 | `sources.attempt.snapshot` | attempt 身份、判定、得分、耗时、用量、成本与错误事实 | `AttemptSummary` / `AttemptNotices` |
 | `sources.attempt.diagnostics` | 已持久化的 lifecycle 诊断事实 | `AttemptNotices` |
 | `sources.attempt.assertions` | 断言条目与给分记录 | `Table` |
-| `sources.attempt.source` | 带证据标注的 eval 源码 | `SourceView` |
+| [`sources.attempt.source`](attempt-source.md) | 带证据标注的 eval 源码 | `SourceView` |
 | `sources.attempt.conversation` | 分轮事件流与失败命令 | `Conversation` |
 | `sources.attempt.timeline` | runner phases 与关联 spans | `Waterfall` |
 | `sources.attempt.trace` | 原始 OTel span 树 | `Waterfall` |
 | `sources.attempt.diff` | 文件变化与 patch | `DiffView` |
 
 使用者先选领域目录，再在该目录里发现 Source。目录只组织导出，不改变 Source 的值身份；
-`sources.entity.experiments` 可以直接复用、比较引用或传给多个 page。
+`sources.entity.experiments` 可以直接复用、比较引用或传给多个 page。实体行与 Measure 表格
+两族的共用机制各有一篇：[实体数据源](entity.md)与 [Measure 数据源](measure.md)。attempt 目录
+未单列的数据源，输入形态与空态契约见 [Attempt 详情](../attempt-detail/README.md#公开区块集)。
 
 范围级 Source 统一输入 `Sample`，历史 Source 读取 `sample.historyAttempts`；attempt 目录显式输入
 `AttemptEvidence`。attempt-input page 省略组件 `input` 时，管线注入当前 evidence；输入种类与 page
@@ -69,6 +71,10 @@ interface SampleSnapshot {
     attempts: number;
     runs: number;
   };
+  /** 题型构成：范围内 experiment 定义期 `scoring` 事实的并集。 */
+  scoringComposition: "pass" | "points" | "mixed";
+  /** 范围内实验声明过的 labels 键并集，字典序。 */
+  labelKeys: readonly string[];
   verdicts: {
     evals: VerdictCounts;
     attempts: VerdictCounts;

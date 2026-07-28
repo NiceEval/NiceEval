@@ -48,7 +48,7 @@ export type {
   ReportPageBase,
   ReportShell,
 } from "./definition/report.ts";
-export { basalt, defineTheme, isThemeDefinition, themeStylesheet } from "./theme.ts";
+export { basalt, chalk, defineTheme, isThemeDefinition, themeStylesheet } from "./theme.ts";
 export type { ReportTheme, ThemeColor, ThemeDefinition, ThemeHex, ThemeSeries } from "./theme.ts";
 export {
   pickReportPage,

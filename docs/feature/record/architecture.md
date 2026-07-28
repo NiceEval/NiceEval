@@ -490,7 +490,7 @@ interface Usage {
 
 三个输入侧 token 桶**恒互斥**:`inputTokens + cacheReadTokens + cacheCreationTokens` 相加才是送进模型的完整上下文量。互斥是 adapter 的归一化义务,不是协议的自然属性——Anthropic 系协议原生按互斥计量,如实转发即可;OpenAI 系协议报的是「含缓存命中的输入总量 + 缓存命中子集」,adapter 落值前必须先从输入总量里扣掉子集,扣减结果不小于 0(各协议原生口径与扣减落点见各 adapter 的 cost 文档,索引在 [Adapters SDK](../adapters/sdk/README.md))。选恒互斥而不是「报什么记什么」,因为桶语义只有全局一致,逐桶乘单价相加的[成本估算](../../observability.md#换算成本价格表从哪来)、跨 agent 的用量对比、`t.maxTokens` 的上限判定才是同一个口径:coding agent 会话的缓存命中率常在九成以上,「含缓存总量」与「未缓存量」差一个数量级,两种口径混进同一个公式会把估算成本放大数倍。
 
-「上下文总量」(三个输入桶相加)是消费端派生量,不落盘;`inputTokens` 本身就是未缓存输入。轮数与工具调用数不属于 `Usage`——它们是 `events.json` 的行为派生(与 `o11y.json` 同源),show 的 usage 展示从两处组装(口径单源见 [`UsageTable` 组装口径](../reports/components/attempt-detail/usage-table.md#组装口径单源))。
+「上下文总量」(三个输入桶相加)是消费端派生量,不落盘;`inputTokens` 本身就是未缓存输入。轮数与工具调用数不属于 `Usage`——它们是 `events.json` 的行为派生(与 `o11y.json` 同源),show 的 usage 展示从两处组装(口径单源见 [`AttemptUsage` 组装口径](../reports/components/attempt-detail/attempt-usage.md#组装口径单源))。
 
 ### facts：运行事实
 

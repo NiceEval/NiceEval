@@ -130,7 +130,7 @@ Record ── currentSample / latestRunSample ──▶ Sample ── Source.com
 或任何 text / web 形状。官方 Source 从 `niceeval/report` 的 `sources` 目录导出；自定义 Source 实现同一接口。
 
 Sample 同时携带真实 Run、覆盖事实和读取期 `SampleIssue`。Issue 由读取 / 选择过程检测，不落盘。
-`sources.sample.snapshot` 把这些投影为中性事实；[`SampleNotices`](components/site/sample-warnings.md)
+`sources.sample.snapshot` 把这些投影为中性事实；[`SampleNotices`](components/summaries/sample-notices.md)
 再同步生成本地化 Notice 与 action。
 
 Run 实体上持久化的 structured diagnostics 由 `sources.run.diagnostics` 返回。`RunNotices` 决定
@@ -480,7 +480,7 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 - **文档单例**：浏览器 `<title>`（消费外壳 `title` 的回退链）、`meta charset` / `viewport`。
 - **品牌位**：`view` 页头左端恒定的 NiceEval 字标（45° 方块 mark + 文字），外链官网、带 `utm_medium=brand`。它是产品品牌位，报告定义不能覆盖或移除；与页内 `PoweredBy` 品牌行同族（`utm_medium=powered-by` 区分点击来自哪个位）。报告 `title` 的落点是页内 hero 与浏览器 `<title>`，不进这个品牌位。
 
-sample-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`sources.sample.traces` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/site/trace-waterfall.md)），符合「索引终结于可执行命令」的省略规则。
+sample-input page 与 attempt-input page 是 page 协议的两个明确输入分支，不靠宿主内容特例调和。Traces 的 text 面同样不是特例——`sources.sample.traces` 的 text 面是带 `--timing` 下钻命令的 attempt 索引（[契约](components/sources/sample-traces.md)），符合「索引终结于可执行命令」的省略规则。
 
 ### text 面的省略规则
 

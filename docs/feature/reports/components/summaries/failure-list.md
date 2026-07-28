@@ -29,7 +29,5 @@ type FailureListProps = {
 
 ## 相关阅读
 
-- [实体列表](README.md) —— 数据形状与时效标注。
-- [`sources.entity.experiments`](experiment-rows.md) / [`sources.entity.evals`](eval-rows.md) /
-  [`sources.entity.attempts`](attempt-rows.md)
-  —— 其它实体数据源。
+- [实体数据源](../sources/entity.md) —— 数据形状与时效标注。
+- [`sources.entity.experiments`](../sources/entity-experiments.md) —— 呈现语义最重的实体数据源。

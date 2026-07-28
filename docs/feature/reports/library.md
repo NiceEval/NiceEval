@@ -161,10 +161,11 @@ import { openRecord } from "niceeval/record";
 import { currentSample } from "niceeval/sample";
 import {
   costUSD,
+  notices,
   passRate,
   sources,
 } from "niceeval/report";
-import { Grid, SampleNotices, Stat, Table } from "niceeval/report/react";
+import { Callouts, Grid, Stat, Table } from "niceeval/report/react";
 
 export default async function EvalsPage() {
   const record = await openRecord(".niceeval");
@@ -186,7 +187,7 @@ export default async function EvalsPage() {
         <Stat label="Experiments" value={snapshot.scope.experiments} />
         <Stat label="Attempts" value={snapshot.scope.attempts} />
       </Grid>
-      <SampleNotices data={snapshot} />
+      <Callouts data={notices.sample(snapshot)} />
       <Table data={table} filter />
     </main>
   );
