@@ -58,11 +58,7 @@
       "from": "examples/zh/tier2/codex-sdk",
       "to": "examples/zh/tier3/codex-sdk",
       "contract": "overlay",
-      "baseTree": "05bfe77468ef7d504823369a2957c619c79bc92a",
-      "pending": {
-        "upstreamTree": "7df60f08acbdf147d24406cea319882fa3908423",
-        "needsInstall": false
-      }
+      "baseTree": "7df60f08acbdf147d24406cea319882fa3908423"
     },
     {
       "from": "examples/zh/tier2/langgraph",
