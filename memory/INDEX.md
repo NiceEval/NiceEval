@@ -158,6 +158,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [waterfall-presentation-rulings](waterfall-presentation-rulings.md) — 裁决(2026-07-28):Waterfall 五条——kind 由字面散列到分类色五槽(跳过离 negative 最近的槽;否决硬编码配色、否决同日的四档明度全灰方案)、清单类别列不着色改定宽文字 + 原语自绘 `▸`/`▾`(flex 行吃掉浏览器默认标记)、分解条画叶子(否决画顶层与画全部,父段盖子段)、收敛加两条门槛(短摘要 ≥2、重复摘要 ≥3)、DiffView 折叠态增删数各自着色;起因=真机时间轴色块标签 + 一整条灰带 + 几十行同名 span
 - [report-display-single-formatter-decision](report-display-single-formatter-decision.md) — 裁决(2026-07-28):读数显示值定稿为计算侧一次生成(`unit` 驱动 + `measureDisplay()` 唯一入口,渲染面只读 `display`),否决全仓零消费者的 `MeasureFormat`;同场把取实验色收口到 `ctx.dimension()`/`presentDimension()`,色板与取色 helper 退回内部;起因=组行 tokens 显示成裸 46500
 - [official-themes-basalt-chalk-lockup](official-themes-basalt-chalk-lockup.md) — 裁决(2026-07-28):官方主题两套单支锁定,basalt(暗·直角,与 SVG-DESIGN 同色板)与 chalk(浅·圆角);官方样式零写死,兜底=basalt+守护;类名让步 docs 改 `.niceeval-report`/`niceeval-*`;否决 basalt.md 初稿的 system 双分支自立色板;总纲在根 `DESIGN.md`
 - [record-sample-report-three-layer-split](record-sample-report-three-layer-split.md) — 裁决(2026-07-25):`niceeval/results` 拆成 record(事实)/ sample(选择)三层 + 整套改名(Snapshot→Run、Scope→Sample、latest/current→latestRuns/latestPerEval、copySnapshots→publish、runs→attempts);configHash 合掉两张重叠清单、删掉「携带重打 fingerprint」这条改写历史字段的例外、新增 evidenceState 三态与 enhance 具名能力位;否决 Sample 加聚合算子与只改名不分层;附批量改名两次误伤(scope 多义、rglob 扫进 node_modules 改了 392 个已发布包文件)的修法

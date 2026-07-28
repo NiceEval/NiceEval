@@ -30,6 +30,8 @@ type DiffViewProps = DataProps<AttemptEvidence, DiffContent | null> & {
 
 - web 面：文件清单按 `change` 分组，组内按路径字典序；每个文件用原生 `<details>` 展开 patch，
   增删行分色，行号两栏。
+- 文件摘要行的 `+N` 与 `-M` 各自着色，与展开后 patch 里增行、删行的颜色同一套：
+  同一件事在折叠态和展开态是一个颜色，不是收起来就变灰。数字本身恒可读，颜色不承载额外信息。
 - text 面：文件摘要（路径、类别、`+N / -M`）加 `--diff` 命令，不倾倒 patch 正文。
 - 没有变更事实时两面零输出，不渲染空容器。
 

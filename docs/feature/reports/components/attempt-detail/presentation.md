@@ -16,7 +16,7 @@
 | `AttemptAssessment` | 挂在哪条断言 | 有标注源码时是 `sources.attempt.source`，否则是 `sources.attempt.assertions` 的判定表 | 二选一，不并排 |
 | `AttemptNotices` | 有没有基础设施问题 | snapshot error 的 phase / code / message / cause，加已持久化 diagnostics | 按级别分组的 Callouts |
 | `AttemptFixPrompt` | 拿什么去修 | 单条失败的完整 prompt | 可复制块 |
-| `Waterfall`（timeline） | 时间花在哪 | runner phases、hook、command、turn，以及按 `traceId` 挂上的 spans | 标题「执行时间轴」，可逐层展开的时间树。phase 沿主链累计偏移并着色成分段色带；turn 的 spans 挂在该轮之下，关联不上的落 `eval.run` 层。`eval.run` 与 turn 带 `open` 默认展开，第一眼即 agent 活动 |
+| `Waterfall`（timeline） | 时间花在哪 | runner phases、hook、command、turn，以及按 `traceId` 挂上的 spans | 标题「执行时间轴」，可逐层展开的时间树。phase 沿主链累计偏移；turn 的 spans 挂在该轮之下，关联不上的落 `eval.run` 层。`eval.run` 与 turn 带 `open` 默认展开，第一眼即 agent 活动 |
 | `AttemptUsage` | 花了多少 | turns、tool calls、token 用量、成本 | 数值表 |
 | `Conversation` | agent 说了什么做了什么 | 分轮事件流与失败命令卡 | 分轮卡片；有标注源码时轮次已投影回源码行，这块不出现 |
 | `DiffView` | 改了哪些文件 | 文件清单、增删行数、patch | 文件列表 + 可展开 patch |

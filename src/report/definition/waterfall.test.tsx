@@ -111,7 +111,7 @@ describe("Waterfall", () => {
     expect(html).toContain("Attempt A");
     expect(html).toContain('href="attempt/exp%2Fa%2F0.html"');
     expect(html).toContain("niceeval-waterfall-track");
-    expect(html).toContain("niceeval-span-agent");
+    expect(html).toContain("niceeval-span-kind-");
     expect(html).toContain("niceeval-waterfall-node--failed");
     expect(html).toContain("<details");
   });
@@ -182,24 +182,43 @@ describe("Waterfall", () => {
     expect(list.indexOf("tool ×2")).toBeLessThan(list.indexOf("stream"));
     expect(html).toContain("call-a");
     expect(html).toContain("call-b");
-    // 色带分解条仍含全部节点
+    // 折叠只作用于清单:条上的叶子一段不少
     expect(html.match(/niceeval-waterfall-bar/g)).toHaveLength(4);
   });
 
   it("区分力:把一个短节点抬到行总时长 1% 以上,只有它离开摘要", async () => {
+    const withShort = (aMs: number) =>
+      foldRow([
+        { key: "big", label: "sample", kind: "model", startOffsetMs: 0, durationMs: 22_000 },
+        { key: "s1", label: "call-a", kind: "tool", startOffsetMs: 22_000, durationMs: aMs },
+        { key: "s2", label: "call-b", kind: "tool", startOffsetMs: 23_100, durationMs: 300 },
+        { key: "s3", label: "call-c", kind: "tool", startOffsetMs: 23_400, durationMs: 300 },
+      ]);
+    const below = await resolve(<Waterfall data={withShort(500)} />);
+    expect(runWithWebContext(webCtx, () => renderToStaticMarkup(below as never))).toContain("tool ×3");
+
+    const above = await resolve(<Waterfall data={withShort(1_100)} />);
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(above as never));
+    // 1_100ms ≥ 1% × 100_000ms,call-a 直接列出;call-b / call-c 仍在摘要里
+    expect(html).toContain("tool ×2");
+    expect(html).not.toContain("tool ×3");
+    expect(html).toContain("call-a");
+  });
+
+  it("短节点摘要只收得到一条时不折,直接列出那个节点", async () => {
     const tree = await resolve(
       <Waterfall
         data={foldRow([
-          { key: "big", label: "sample", kind: "model", startOffsetMs: 0, durationMs: 22_000 },
-          { key: "s1", label: "call-a", kind: "tool", startOffsetMs: 22_000, durationMs: 1_100 },
-          { key: "s2", label: "call-b", kind: "tool", startOffsetMs: 23_100, durationMs: 300 },
+          { key: "big1", label: "sample", kind: "model", startOffsetMs: 0, durationMs: 22_000 },
+          { key: "lone", label: "corepack", kind: "command", startOffsetMs: 22_000, durationMs: 300 },
+          { key: "big2", label: "stream", kind: "model", startOffsetMs: 22_300, durationMs: 10_000 },
         ])}
       />,
     );
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    // 1_100ms ≥ 1% × 100_000ms,call-a 直接列出;call-b 仍在摘要里
-    expect(html).toContain("tool ×1");
-    expect(html).not.toContain("tool ×2");
+    expect(html).not.toContain("command ×1");
+    expect(html).not.toContain("niceeval-waterfall-fold");
+    expect(html).toContain("corepack");
   });
 
   it("failed 与 durationMs null 的节点不折;行总时长 null 整行不折", async () => {
@@ -246,13 +265,14 @@ describe("Waterfall", () => {
         durationMs: 400,
         children: [{ key: "sc", label: "inner", kind: "tool", startOffsetMs: 50_000, durationMs: 100 }],
       },
+      { key: "s2", label: "call-b", kind: "tool", startOffsetMs: 50_400, durationMs: 400 },
     ]);
     const tree = await resolve(<Waterfall data={data} />);
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toContain("niceeval-waterfall-fold");
     expect(html).toContain("inner");
     const text = renderNodeToText(tree, createTextContext({ width: 100 }));
-    expect(text).toContain("3 nodes");
+    expect(text).toContain("4 nodes");
   });
 
   it("open 标记的节点默认展开且不参与折叠", async () => {
@@ -311,6 +331,239 @@ describe("Waterfall", () => {
     const diffHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(diff as never));
     expect(diffHtml).toContain("niceeval-waterfall-label");
     expect(diffHtml).toContain("exp/eval");
+  });
+
+  // 「Waterfall 的重复折叠」类别:连续、同 kind、label 同文的显著节点满三条起折。
+  // 显著阈值仍是 1%,下面每个节点都是 5s / 100s,全部显著——收不住它们的是长度,不是短。
+  const repeated = (n: number, label: string, from: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      key: `${label}-${from + i}`,
+      label,
+      kind: "model",
+      startOffsetMs: (from + i) * 5_000,
+      durationMs: 5_000,
+    }));
+
+  it("连续同名的显著节点满三条折成一条,展开后逐条还原", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={foldRow([
+          ...repeated(2, "stream", 0),
+          { key: "cut", label: "patch", kind: "tool", startOffsetMs: 10_000, durationMs: 5_000 },
+          ...repeated(3, "stream", 3),
+        ])}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    // 异名节点切断连续段:前两条摊开,后三条折成一条
+    expect(html).toContain("stream ×3");
+    expect(html).not.toContain("stream ×5");
+    expect(html).toContain("niceeval-waterfall-fold");
+    // 展开后逐条还原:6 个节点行(2 摊开 + 1 切断 + 3 在摘要里)
+    expect(html.match(/niceeval-waterfall-node-name/g)).toHaveLength(7); // 6 节点 + 1 摘要行
+  });
+
+  it("区分力:同一批同名节点从三条减到两条就不折", async () => {
+    const three = await resolve(<Waterfall data={foldRow(repeated(3, "stream", 0))} />);
+    const threeHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(three as never));
+    expect(threeHtml).toContain("stream ×3");
+
+    const two = await resolve(<Waterfall data={foldRow(repeated(2, "stream", 0))} />);
+    const twoHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(two as never));
+    expect(twoHtml).not.toContain("niceeval-waterfall-fold");
+    expect(twoHtml).not.toContain("stream ×2");
+  });
+
+  it("failed 与 open 的节点不参与重复折叠,即使与相邻节点同名", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={foldRow([
+          ...repeated(3, "stream", 0).map((node, i) =>
+            i === 1 ? { ...node, failed: true } : i === 2 ? { ...node, open: true } : node,
+          ),
+        ])}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    expect(html).not.toContain("niceeval-waterfall-fold");
+    expect(html).not.toContain("stream ×");
+  });
+
+  it("短节点摘要与重复摘要各自成行,不合并成一条", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={foldRow([
+          { key: "t1", label: "tiny-a", kind: "tool", startOffsetMs: 0, durationMs: 100 },
+          { key: "t2", label: "tiny-b", kind: "tool", startOffsetMs: 100, durationMs: 100 },
+          ...repeated(3, "stream", 1),
+        ])}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    expect(html).toContain("tool ×2");
+    expect(html).toContain("stream ×3");
+    expect(html.match(/niceeval-waterfall-fold&quot;|class="niceeval-waterfall-fold"/g)).toHaveLength(2);
+  });
+
+  // 「Waterfall 的分解条取叶子」类别:条画树里没有 children 的节点,递归取。
+  const bars = (html: string) => [...html.matchAll(/niceeval-waterfall-bar[^>]*title="([^"]*)"/g)].map((m) => m[1]!);
+
+  it("条上的段数等于叶子数,父节点不出段", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={foldRow([
+          {
+            key: "parent",
+            label: "eval.run",
+            kind: "phase",
+            startOffsetMs: 0,
+            durationMs: 100_000,
+            open: true,
+            children: [
+              { key: "l1", label: "leaf-a", kind: "model", startOffsetMs: 0, durationMs: 40_000 },
+              {
+                key: "mid",
+                label: "turn",
+                kind: "turn",
+                startOffsetMs: 40_000,
+                durationMs: 60_000,
+                open: true,
+                children: [{ key: "l2", label: "leaf-b", kind: "tool", startOffsetMs: 40_000, durationMs: 60_000 }],
+              },
+            ],
+          },
+        ])}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    // 4 个节点里只有两个叶子;占满全行的 eval.run 不出段,否则整条是一块实心
+    expect(bars(html).map((t) => t.split(" ·")[0])).toEqual(["leaf-a", "leaf-b"]);
+  });
+
+  it("区分力:给叶子挂上子节点,段数不变而段换成子节点", async () => {
+    const leaf = { key: "l", label: "leaf-a", kind: "model", startOffsetMs: 0, durationMs: 40_000 };
+    const flat = await resolve(<Waterfall data={foldRow([leaf])} />);
+    expect(bars(runWithWebContext(webCtx, () => renderToStaticMarkup(flat as never))).map((t) => t.split(" ·")[0])).toEqual(
+      ["leaf-a"],
+    );
+
+    const nested = await resolve(
+      <Waterfall
+        data={foldRow([
+          {
+            ...leaf,
+            open: true,
+            children: [{ key: "inner", label: "leaf-inner", kind: "model", startOffsetMs: 0, durationMs: 40_000 }],
+          },
+        ])}
+      />,
+    );
+    const nestedHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(nested as never));
+    // 取的是叶子,不是顶层也不是全部节点:段数仍是 1,身份换成了子节点
+    expect(bars(nestedHtml).map((t) => t.split(" ·")[0])).toEqual(["leaf-inner"]);
+  });
+
+  it("测不出时长的叶子不出段;全部叶子都缺时长时整条不画", async () => {
+    const partial = await resolve(
+      <Waterfall
+        data={foldRow([
+          { key: "ok", label: "leaf-a", kind: "model", startOffsetMs: 0, durationMs: 40_000 },
+          { key: "lost", label: "leaf-b", kind: "model", startOffsetMs: 40_000, durationMs: null },
+        ])}
+      />,
+    );
+    const partialHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(partial as never));
+    expect(bars(partialHtml).map((t) => t.split(" ·")[0])).toEqual(["leaf-a"]);
+    expect(partialHtml).toContain("leaf-b"); // 清单里照常列,只是条上没有段
+
+    const none = await resolve(
+      <Waterfall
+        data={foldRow([{ key: "lost", label: "leaf-b", kind: "model", startOffsetMs: 0, durationMs: null }])}
+      />,
+    );
+    const noneHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(none as never));
+    expect(noneHtml).not.toContain("niceeval-waterfall-track");
+    expect(noneHtml).toContain("leaf-b");
+  });
+
+  it("失败叶子的段带 negative 类,与它落的分类色槽无关", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={foldRow([
+          { key: "f", label: "apply_patch", kind: "tool", startOffsetMs: 0, durationMs: 40_000, failed: true },
+        ])}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    expect(html).toMatch(/niceeval-waterfall-bar niceeval-span-kind-\d niceeval-span-failed/);
+  });
+
+  // 「Waterfall 的类别着色不认词表」类别:色槽由 kind 字面稳定散列出来。
+  const slotOf = (html: string, title: string): string => {
+    const m = html.match(new RegExp(`niceeval-span-kind-(\\d)[^>]*title="${title} `));
+    return m?.[1] ?? "none";
+  };
+
+  it("同一个 kind 恒落同一槽,与顺序、行和层级无关", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={[
+          {
+            key: "r1",
+            label: "Row 1",
+            durationMs: 100_000,
+            nodes: [
+              { key: "a", label: "top", kind: "model", startOffsetMs: 0, durationMs: 10_000 },
+              { key: "b", label: "other", kind: "tool", startOffsetMs: 10_000, durationMs: 10_000 },
+              {
+                key: "c",
+                label: "wrap",
+                kind: "phase",
+                startOffsetMs: 20_000,
+                durationMs: 10_000,
+                open: true,
+                children: [{ key: "c1", label: "nested", kind: "model", startOffsetMs: 20_000, durationMs: 10_000 }],
+              },
+            ],
+          },
+          {
+            key: "r2",
+            label: "Row 2",
+            durationMs: 100_000,
+            nodes: [{ key: "d", label: "second-row", kind: "model", startOffsetMs: 0, durationMs: 10_000 }],
+          },
+        ]}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    const top = slotOf(html, "top");
+    expect(top).not.toBe("none");
+    expect(slotOf(html, "nested")).toBe(top);
+    expect(slotOf(html, "second-row")).toBe(top);
+  });
+
+  it("区分力:没见过的 kind 照样落到五槽之一", async () => {
+    const tree = await resolve(
+      <Waterfall
+        data={foldRow([
+          { key: "u", label: "unknown-kind", kind: "sandbox.snapshot", startOffsetMs: 0, durationMs: 10_000 },
+        ])}
+      />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    // 色槽是散列出来的,不是查表查出来的:词表换一套,呈现不失效
+    expect(["0", "1", "2", "3", "4"]).toContain(slotOf(html, "unknown-kind"));
+  });
+
+  it("清单里的类别列不带着色类", async () => {
+    const tree = await resolve(
+      <Waterfall data={foldRow([{ key: "a", label: "top", kind: "model", startOffsetMs: 0, durationMs: 10_000 }])} />,
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    expect(html).toContain('<span class="niceeval-waterfall-node-kind">model</span>');
+    // 着色只在条上:清单区段里一个色类都没有
+    const list = html.slice(html.indexOf("niceeval-waterfall-nodes"));
+    expect(list).not.toContain("niceeval-span-");
   });
 
   it("source 与 data 等价", async () => {

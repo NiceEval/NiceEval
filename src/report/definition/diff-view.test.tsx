@@ -94,6 +94,19 @@ describe("DiffView", () => {
     expect(html).toContain("<details");
   });
 
+  it("摘要行的增删数各自着色,text 面仍是一段纯文本", async () => {
+    const tree = await resolve(
+      <DiffView data={content} />,
+      { id: "attempt", input: "attempt", locator: "@loc1" as AttemptLocator, evidence: {} as AttemptEvidence },
+    );
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    // 折叠态的两个数字与展开后的增删行同一套颜色,各自成 span 才染得上
+    expect(html).toContain('<span class="niceeval-diff-lines-added">+2</span>');
+    expect(html).toContain('<span class="niceeval-diff-lines-removed">-1</span>');
+    // 着色不改数字本身:text 面照旧是 `+N/-M`
+    expect(renderNodeToText(tree, createTextContext({ width: 100 }))).toContain("(+2/-1)");
+  });
+
   it("空数组与 null Content 零输出", async () => {
     const emptyTree = await resolve(<DiffView data={[]} />);
     expect(renderNodeToText(emptyTree, createTextContext({ width: 40 }))).toBe("");

@@ -158,14 +158,18 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   每个原语各一条类别。断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，
   以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与
   「`dimensions` 必填与查询封闭性」同一判据，落在各原语 fixture 上）。
-- **`Waterfall` 的显著性折叠与区块头**（[契约](../../../feature/reports/components/primitives/waterfall.md)）：
+- **`DiffView` 摘要行的增删着色**（[契约](../../../feature/reports/components/primitives/diff-view.md#渲染)）：
+  web 面 `+N` 与 `-M` 各自成元素并各带自己的类，才染得上与 patch 增删行同一套颜色；
+  text 面不受影响，仍是 `(+N/-M)` 一段纯文本。
+- **`Waterfall` 的清单收敛与区块头**（[契约](../../../feature/reports/components/primitives/waterfall.md)）：
   web 面输出字符串为断言面。逐项覆盖：
 
   - 时长占比低于 1% 的连续短节点折成摘要，带 `kind` 计数与合计时长，留在原时间位置。
   - `failed` 与 `durationMs` 为 `null` 的节点不折；行总时长为 `null` 时整行不折。
-  - 被折节点的 `children` 展开后原样还原；色带分解条仍含全部节点。
+  - 被折节点的 `children` 展开后原样还原。
   - text 面不列节点，行上的节点计数仍计全部节点。
   - 区分力场景是「把一个短节点抬到行总时长 1% 以上」——只有这一格改变清单构成，
+  - 摘要只收得到一条节点时不折，那个节点直接列出。
     证明判据是占比而不是绝对时长或节点序数。
   - `title` 在两面渲染为区块头；Content 为 `null` 或空时整块不出现，标题也不出现。
   - 行头 `label` 与 `locator` 同文时只渲染 locator 一次，不同文时两者都在。
@@ -174,6 +178,32 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   给定一页 `dimensions()` 声明的集合产出映射，断言面是映射本身，不断言渲染出的颜色值。逐项覆盖：
 
   - 两个 keyset 分开——label keyset 收全部编码的值，visual keyset 只收 `color` / `series` 的值。
+- **`Waterfall` 的重复折叠**（[契约](../../../feature/reports/components/primitives/waterfall.md#重复节点折成一条)）：
+  web 面输出字符串为断言面。逐项覆盖：
+
+  - 连续、同 `kind`、`label` 同文的三个及以上显著节点折成一条带计数与合计时长的摘要，
+    展开后逐条还原；被同名节点夹住的异名节点切断连续段。
+  - 区分力场景是「同一批节点从三个减到两个」——两个时逐条列出，三个时才出摘要，
+    证明判据是连续计数而不是「出现过重复就折」。
+  - 带 `failed` 或 `open` 的节点不参与重复折叠，即使与相邻节点同名。
+  - 短节点摘要与重复摘要各自成行，不合并成一条。
+- **`Waterfall` 的分解条取叶子**
+  （[契约](../../../feature/reports/components/primitives/waterfall.md#分解条画哪些节点)）：
+  web 面输出字符串为断言面。逐项覆盖：
+
+  - 条上的段数等于树里的叶子数，递归取；带 `children` 的父节点不出段。
+  - 区分力场景是「把一个叶子挂上一个子节点」——段数不变而位置换成子节点的，
+    证明取的是叶子而不是顶层或全部节点。
+  - `durationMs` 为 `null` 的叶子不出段；全部叶子都缺时长时整条不画，清单照常列。
+  - 失败叶子的段带 negative 类，与它落的分类色槽无关。
+- **`Waterfall` 的类别着色不认词表**（[契约](../../../feature/reports/components/primitives/waterfall.md#类别与着色)）：
+  web 面输出字符串为断言面。逐项覆盖：
+
+  - 同一个 `kind` 字面在同一份报告里恒落同一个分类色槽，槽号只由字面决定，与节点顺序、
+    所在行、所在层级无关。
+  - 区分力场景是「把 `model` 换成一个从没出现过的词」——它照样落到五槽之一，
+    证明色槽是散列出来的而不是查表查出来的。
+  - 清单里的类别列不带任何着色类，条上的段才带。
   - 区分力场景是「同页一张 27 值的 label-only 表加一张 3 值的图」：三个值仍落 1–3 槽，
     而它们的标签按 27 值的 keyset 算最短唯一后缀。
   - 同一键在同页多个组件得到同一个槽；撞槽按显示键字典序线性探测；缩短后的显示名不参与取键。

@@ -41,7 +41,6 @@ const ATTEMPT_DETAIL_FAMILIES = [
 const STRUCTURAL_HOOKS_WITHOUT_RULES: Record<string, string> = {
   "niceeval-conversation-entry-summary": "布局由 .niceeval-conversation-entry > summary 给,这里只留挂钩",
   "niceeval-copy-block-summary": "布局由 .niceeval-copy-block > summary 给,这里只留挂钩",
-  "niceeval-waterfall-node-failed": "✗ 记号从 .niceeval-waterfall-node--failed 继承颜色",
   "niceeval-diff-group": "组间距由 .niceeval-diff-view 的 flex gap 给",
   "niceeval-diff-patch-ln-old": "两列排版与配色都由 .niceeval-diff-patch-ln 给,左右侧只留挂钩",
   "niceeval-diff-patch-ln-new": "同 niceeval-diff-patch-ln-old",
@@ -139,6 +138,15 @@ describe("官方 stylesheet 与组件类名对齐", () => {
 
   it("SourceView 的每一档行状态都有染色规则", () => {
     // tone 由 SourceLineTone 穷尽(source-view.tsx),每档都要有整行浅染 + 左缘
+  it("Waterfall 的每一个分类色槽都有条段规则", () => {
+    // 槽数由 KIND_SLOTS 穷尽(primitives/waterfall.tsx),kind 散列进来的每一槽都要有背景
+    // (docs/feature/reports/components/primitives/waterfall.md「类别与着色」)。缺一槽时
+    // 落到那槽的类别在条上没有颜色,而 typecheck 与全部单测仍是绿的。
+    for (const slot of [0, 1, 2, 3, 4]) {
+      expect(referenced, `缺 .niceeval-span-kind-${slot} 的规则`).toContain(`niceeval-span-kind-${slot}`);
+    }
+  });
+
     // (docs/feature/reports/components/sources/attempt-source.md「行状态」)。
     for (const tone of ["send", "passed", "gate-fail", "soft-fail", "unavailable"]) {
       expect(referenced, `缺 .niceeval-source-line--${tone} 的规则`).toContain(`niceeval-source-line--${tone}`);

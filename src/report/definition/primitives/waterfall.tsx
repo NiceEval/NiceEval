@@ -19,6 +19,7 @@ const MISSING_MARK = "—";
 export interface WaterfallNode {
   key: string;
   label: LocalizedText;
+  /** 节点类别;清单里占一列,条上决定分类色。词表由数据源给,原语不建注册表。 */
   kind: string;
   startOffsetMs: number;
   durationMs: number | null;
@@ -73,6 +74,29 @@ function countNodes(nodes: readonly WaterfallNode[]): number {
   return nodes.reduce((sum, node) => sum + 1 + countNodes(node.children ?? []), 0);
 }
 
+/** 分解条画的那一批:树里没有 children 的节点,递归取
+ *  (docs/feature/reports/components/primitives/waterfall.md「分解条画哪些节点」)。
+ *  父节点在时间上包住子节点,一起画只会盖住子段。 */
+function leafNodes(nodes: readonly WaterfallNode[], out: WaterfallNode[] = []): WaterfallNode[] {
+  for (const node of nodes) {
+    const kids = node.children ?? [];
+    if (kids.length === 0) out.push(node);
+    else leafNodes(kids, out);
+  }
+  return out;
+}
+
+/** 条上分类色的槽数:分类色板六槽里避开与 negative 最近的那一槽,失败段才分得出来
+ *  (docs/feature/reports/components/primitives/waterfall.md「类别与着色」)。 */
+const KIND_SLOTS = 5;
+
+/** kind 字面稳定散列到分类色槽:原语不认词表,新词也有槽,同一个词恒同槽。 */
+function kindSlot(kind: string): number {
+  let hash = 0;
+  for (let i = 0; i < kind.length; i++) hash = (Math.imul(hash, 31) + kind.charCodeAt(i)) >>> 0;
+  return hash % KIND_SLOTS;
+}
+
 function countFailed(nodes: readonly WaterfallNode[]): number {
   return nodes.reduce((sum, node) => sum + (node.failed ? 1 : 0) + countFailed(node.children ?? []), 0);
 }
@@ -81,9 +105,16 @@ function countFailed(nodes: readonly WaterfallNode[]): number {
  *  (docs/feature/reports/components/primitives/waterfall.md「显著性折叠」)。 */
 const FOLD_SHARE = 0.01;
 
+/** 重复摘要的起折条数:两条相邻的同名节点摊开读得动,摘要行反而多要一次展开。 */
+const REPEAT_MIN = 3;
+
+/** 短节点摘要的起折条数:只折一条时摘要与节点各占一行,省不下高度却把名字换成了计数。 */
+const SHORT_MIN = 2;
+
 type WaterfallListItem =
   | { kind: "node"; node: WaterfallNode }
-  | { kind: "fold"; nodes: WaterfallNode[] };
+  | { kind: "fold"; nodes: WaterfallNode[] }
+  | { kind: "repeat"; nodes: WaterfallNode[] };
 
 function isSalient(node: WaterfallNode, rowDurationMs: number): boolean {
   return (
@@ -94,8 +125,13 @@ function isSalient(node: WaterfallNode, rowDurationMs: number): boolean {
   );
 }
 
-/** 同层兄弟清单按显著性折叠;行总时长缺失时没有占比基准,整层不折。 */
-function foldSiblings(nodes: readonly WaterfallNode[], rowDurationMs: number | null): WaterfallListItem[] {
+/** 短节点与重复节点两条判据共用的豁免:失败、主干与测不出时长的节点恒逐条列出。 */
+function isFoldable(node: WaterfallNode): boolean {
+  return !node.failed && !node.open && node.durationMs !== null;
+}
+
+/** 显著性折叠:连续的非显著节点进一条摘要;行总时长缺失时没有占比基准,整层不折。 */
+function foldShort(nodes: readonly WaterfallNode[], rowDurationMs: number | null): WaterfallListItem[] {
   if (rowDurationMs === null || rowDurationMs <= 0) {
     return nodes.map((node) => ({ kind: "node", node }));
   }
@@ -109,16 +145,64 @@ function foldSiblings(nodes: readonly WaterfallNode[], rowDurationMs: number | n
     if (last !== undefined && last.kind === "fold") last.nodes.push(node);
     else items.push({ kind: "fold", nodes: [node] });
   }
-  return items;
+  return items.map((item) =>
+    item.kind === "fold" && item.nodes.length < SHORT_MIN ? { kind: "node", node: item.nodes[0]! } : item,
+  );
 }
 
-/** 摘要行文案:`tool ×5 · 合计 218ms`;被折节点时长恒非 null(null 是显著判据)。 */
-function foldLabel(nodes: readonly WaterfallNode[], locale: ReportLocale): string {
+/** 重复折叠:连续、同 kind、label 同文的节点满 REPEAT_MIN 条起折成一条。
+ *  短节点那条规则收不住它们——它们不短,只是同一句话说了几十遍。 */
+function foldRepeats(items: readonly WaterfallListItem[], locale: ReportLocale): WaterfallListItem[] {
+  const out: WaterfallListItem[] = [];
+  let run: WaterfallNode[] = [];
+  let runKey: string | null = null;
+  const flush = (): void => {
+    if (run.length >= REPEAT_MIN) out.push({ kind: "repeat", nodes: run });
+    else for (const node of run) out.push({ kind: "node", node });
+    run = [];
+    runKey = null;
+  };
+  for (const item of items) {
+    if (item.kind === "node" && isFoldable(item.node)) {
+      const key = `${item.node.kind}\u0000${resolveLocalizedText(item.node.label, locale)}`;
+      if (key !== runKey) flush();
+      runKey = key;
+      run.push(item.node);
+      continue;
+    }
+    // 异名节点(与短节点摘要)切断连续段:两种摘要各自成行,不合并。
+    flush();
+    out.push(item);
+  }
+  flush();
+  return out;
+}
+
+/** 同层兄弟清单依次过两条收敛规则。 */
+function foldSiblings(
+  nodes: readonly WaterfallNode[],
+  rowDurationMs: number | null,
+  locale: ReportLocale,
+): WaterfallListItem[] {
+  return foldRepeats(foldShort(nodes, rowDurationMs), locale);
+}
+
+/** 短节点摘要的名字列:`tool ×4 · model ×1`。 */
+function shortFoldLabel(nodes: readonly WaterfallNode[]): string {
   const counts = new Map<string, number>();
   for (const node of nodes) counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
-  const kinds = [...counts.entries()].map(([kind, n]) => `${kind} ×${n}`).join(" · ");
+  return [...counts.entries()].map(([kind, n]) => `${kind} ×${n}`).join(" · ");
+}
+
+/** 重复摘要的名字列:`model_client.stream_responses ×24`。 */
+function repeatFoldLabel(nodes: readonly WaterfallNode[], locale: ReportLocale): string {
+  return `${resolveLocalizedText(nodes[0]!.label, locale)} ×${nodes.length}`;
+}
+
+/** 两种摘要共用的时长列:`合计 4m 3s`;被折节点时长恒非 null(缺失是豁免判据)。 */
+function foldTotal(nodes: readonly WaterfallNode[], locale: ReportLocale): string {
   const totalMs = nodes.reduce((sum, node) => sum + (node.durationMs ?? 0), 0);
-  return `${kinds} · ${localeText(locale, "waterfall.foldTotal", { t: formatDurationMs(totalMs) })}`;
+  return localeText(locale, "waterfall.foldTotal", { t: formatDurationMs(totalMs) });
 }
 
 function WaterfallNodeList({
@@ -134,14 +218,17 @@ function WaterfallNodeList({
 }): ReactElement {
   return (
     <ul className={className}>
-      {foldSiblings(nodes, rowDurationMs).map((item) =>
+      {foldSiblings(nodes, rowDurationMs, locale).map((item) =>
         item.kind === "node" ? (
           <WaterfallNodeRow key={item.node.key} node={item.node} locale={locale} rowDurationMs={rowDurationMs} />
         ) : (
-          <li key={`fold:${item.nodes[0]!.key}`}>
+          <li key={`${item.kind}:${item.nodes[0]!.key}`}>
             <details className="niceeval-waterfall-fold">
               <summary className="niceeval-waterfall-node niceeval-waterfall-fold-summary">
-                {foldLabel(item.nodes, locale)}
+                <span className="niceeval-waterfall-node-name">
+                  {item.kind === "fold" ? shortFoldLabel(item.nodes) : repeatFoldLabel(item.nodes, locale)}
+                </span>
+                <span className="niceeval-waterfall-node-dur">{foldTotal(item.nodes, locale)}</span>
               </summary>
               <ul className="niceeval-waterfall-node-children">
                 {item.nodes.map((node) => (
@@ -167,12 +254,15 @@ function WaterfallNodeRow({
 }): ReactElement {
   const label = resolveLocalizedText(node.label, locale);
   const kids = node.children ?? [];
+  // 三列:类别、名字、时长。类别列不着色——着色是条上的事(waterfall.md「类别与着色」)。
   const body = (
     <>
-      <span className={cx("niceeval-waterfall-node-kind", `niceeval-span-${node.kind}`)}>{node.kind}</span>
-      <span title={label}>{label}</span>
+      <span className="niceeval-waterfall-node-kind">{node.kind}</span>
+      <span className="niceeval-waterfall-node-name" title={label}>
+        {label}
+      </span>
+      {node.failed ? <span className="niceeval-waterfall-node-failed">✗</span> : null}
       <span className="niceeval-waterfall-node-dur">{formatDurationOrMissing(node.durationMs)}</span>
-      {node.failed ? <span className="niceeval-waterfall-node-failed"> ✗</span> : null}
     </>
   );
   if (kids.length === 0) {
@@ -211,6 +301,7 @@ function renderWaterfallWeb(
         {rows.map((row) => {
           const totalNodes = countNodes(row.nodes);
           const failedNodes = countFailed(row.nodes);
+          const leaves = leafNodes(row.nodes);
           const label = resolveLocalizedText(row.label, locale);
           // label 与 locator 同文时只画 locator 一次(waterfall.md「渲染」)。
           const labelRepeatsLocator = row.locator !== undefined && label === String(row.locator);
@@ -235,20 +326,21 @@ function renderWaterfallWeb(
                   </span>
                 ) : null}
               </div>
-              {row.durationMs !== null && row.nodes.some((node) => node.durationMs !== null) ? (
+              {row.durationMs !== null && leaves.some((node) => node.durationMs !== null) ? (
                 <div className="niceeval-waterfall-track">
-                  {row.nodes.map((node) =>
+                  {leaves.map((node) =>
                     node.durationMs === null ? null : (
                       <span
                         key={node.key}
                         className={cx(
                           "niceeval-waterfall-bar",
-                          `niceeval-span-${node.kind}`,
+                          `niceeval-span-kind-${kindSlot(node.kind)}`,
                           node.failed && "niceeval-span-failed",
                         )}
                         style={{
                           left: pct(node.startOffsetMs, row.durationMs!),
-                          width: `max(${pct(node.durationMs, row.durationMs!)}, 0.5%)`,
+                          // 下限取像素不取百分比:几百个百分比下限段叠起来会把整条铺满。
+                          width: `max(${pct(node.durationMs, row.durationMs!)}, 1px)`,
                         }}
                         title={`${resolveLocalizedText(node.label, locale)} · ${formatDurationMs(node.durationMs)}${node.failed ? " · ✗" : ""}`}
                       />

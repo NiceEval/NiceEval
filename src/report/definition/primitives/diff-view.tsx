@@ -171,8 +171,11 @@ function FileRow({ file }: { file: DiffFile }): ReactElement {
         <summary className="niceeval-diff-file-summary">
           <span className="niceeval-diff-change">{CHANGE_LABEL[file.change]}</span>
           <span className="niceeval-diff-path">{file.path}</span>
+          {/* 折叠态的增删数与展开后 patch 里的增行、删行同一套颜色(diff-view.md「渲染」)。 */}
           <span className="niceeval-diff-lines">
-            +{file.added} / -{file.removed}
+            <span className="niceeval-diff-lines-added">+{file.added}</span>
+            {" / "}
+            <span className="niceeval-diff-lines-removed">-{file.removed}</span>
           </span>
         </summary>
         <PatchBody patch={file.patch} />
