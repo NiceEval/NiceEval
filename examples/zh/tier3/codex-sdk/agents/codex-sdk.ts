@@ -10,8 +10,7 @@
 // 这是 Tier 3(侵入改造 + experiment params):比 ../../tier2/codex-sdk 多一层——应用侧把
 // threadOptions 的 sandbox mode 提升为请求体可选字段(src/backend/{agent,server}.ts),
 // 本文件把 experiment 的 `params.sandboxMode` 经 ctx.params 随请求体透传过去,
-// feature A/B 见 experiments/compare-sandbox/。OTel 部分(spanMapper + telemetry)与 Tier 2 相同。
-import { defineAgent, mapCodexSpans, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
+// feature A/B 见 experiments/compare-sandbox/。OTel 部分(spanMapper + telemetry)与 Tier 2 相同。import { defineAgent, mapCodexSpans, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { ThreadEvent } from "@openai/codex-sdk";

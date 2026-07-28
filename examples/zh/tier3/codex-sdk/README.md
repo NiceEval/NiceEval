@@ -31,7 +31,6 @@ src/backend/agent.ts                       →  threadOptions.sandboxMode
 evals 一条没改——feature A/B 的判读就是**同一批 eval 在不同变体下的红绿对照**:
 read-only 变体下 `create-file`(要写盘)预期变红,沙箱拦下写操作正是这个 flag 的行为差异;
 基础问答、会话隔离不受影响。
-
 ## 跑起来
 
 ```sh
