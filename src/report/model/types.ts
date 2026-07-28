@@ -593,6 +593,8 @@ export interface ExperimentListEvalRow {
   totalScore: MeasureCell;
   durationMs: MeasureCell;
   costUSD: MeasureCell;
+  /** 该题 tokens;供 Content 投影组行聚合(组内 acrossEvals mean)。 */
+  tokens: MeasureCell;
   attempts: AttemptListItem[];
 }
 

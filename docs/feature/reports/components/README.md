@@ -76,6 +76,10 @@ Composition 在需要运行期输入、多个来源或动态树时出现，它�
 这张表是 NiceEval 承诺维护哪些通用渲染形状的单点声明。作者不为领域名词向这里加原语；
 库里没有的形状用[自定义渲染组件](../library/layout.md#自定义渲染组件)实现。
 
+每篇原语文档先回答「渲染出来长什么样」：用一段实例数据给出渲染示意（ASCII 即可，标注
+指回规则正文），Content 的 TS 形状跟在其后。示意图是读者判断「该不该用这个原语」的
+第一眼；形状声明是给数据源作者的喂数契约，两者都要有，顺序不倒置。
+
 | 原语 | 渲染什么 | 结构子节点 |
 |---|---|---|
 | [`Table`](primitives/table.md) | 行 × 列，行可递归下钻 | `Column` |
@@ -130,8 +134,11 @@ interface Row {
   cells: Readonly<Record<string, Cell>>;
   /** 下钻子行；层数由数据源决定，原语只按声明渲染。 */
   subRows?: readonly Row[];
-  /** placeholder 是覆盖缺口占位行：渲染成行，但不参与任何列的聚合读数。 */
-  variant?: "normal" | "placeholder";
+  /**
+   * placeholder 是覆盖缺口占位行：渲染成行，但不参与任何列的聚合读数。
+   * group 是分组行：它的读数是自己 subRows 的聚合，不是一条独立事实。
+   */
+  variant?: "normal" | "placeholder" | "group";
 }
 ```
 

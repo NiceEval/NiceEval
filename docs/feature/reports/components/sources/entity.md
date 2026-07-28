@@ -24,7 +24,9 @@
 - **自选列使用 [`sources.measure.rows`](measure-rows.md)。** 实体行独有的展开层级、占位行与时效
   标注不是通用读数表的一组选项。
 
-展开层级由实体从属关系决定。要别的形态,使用 `Table` 与其它数据源组合。
+展开层级由实体从属关系决定，唯一的例外是 `sources.entity.experiments` 的
+[Eval 分组层](entity-experiments.md#eval-分组层)——它的分组键来自 evalId 的目录前缀，
+即 eval 作者已经用文件路径声明过的组织方式，不是新造的分类维度。要别的形态,使用 `Table` 与其它数据源组合。
 
 ## 数据形状
 
@@ -70,12 +72,43 @@ interface EvalRow extends Row {
 
 interface ExperimentEvalRow extends Row {
   evalId: string;
+  /**
+   * 行标签：有父组行时是去掉组前缀的剩余段（`downshift/pr-1484` 在 `downshift` 组下为
+   * `pr-1484`），分组层收起时是完整 evalId。排序、过滤与展开始终用 `evalId`。
+   */
+  label: string;
   verdict: "passed" | "failed" | "errored" | "skipped";
   /** 该题挣分；通过制 eval 为 null cell。 */
   totalScore: MeasureCell;
   durationMs: MeasureCell;
   costUSD: MeasureCell;
   attempts: AttemptRow[];
+}
+
+/**
+ * Eval 分组行（`variant: "group"`）。分组键是 evalId 的目录前缀；
+ * 出现条件、组行列内容与排序过滤行为见
+ * [Eval 分组层](entity-experiments.md#eval-分组层)。
+ */
+interface ExperimentEvalGroupRow extends Row {
+  variant: "group";
+  /** evalId 第一个 `/` 之前的段，同时是行标签与展开身份。 */
+  groupKey: string;
+  /** 组内 eval 级最终 verdict 计票（Record 列的构成）。 */
+  evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };
+  /** 分母只数有 attempt 的题；占位行不参与。 */
+  passRate: MeasureCell;
+  /** 组内挣分之和；通过制为 null cell。 */
+  totalScore: MeasureCell;
+  durationMs: MeasureCell;
+  costUSD: MeasureCell;
+  tokens: MeasureCell;
+  /** 有 attempt 的题数。 */
+  evals: number;
+  /** 组内已知 eval 并集大小（含占位行）；等于 evals 时副行不写分数形式。 */
+  knownEvals: number;
+  attempts: number;
+  evalRows: ExperimentEvalRow[];
 }
 
 interface ExperimentRow extends Row {
@@ -100,7 +133,12 @@ interface ExperimentRow extends Row {
   /** 已知 eval 并集里、当前口径下没有任何 attempt 的题（来自 sample.coverage）；渲染为占位行。 */
   missingEvalIds: string[];
   lastRunAt: string;
-  evalRows: ExperimentEvalRow[];
+  /**
+   * 子行。分组层生效时是 `ExperimentEvalGroupRow[]`，外加 evalId 不含 `/` 的题（与组行同级）；
+   * [无信息时整层收起](entity-experiments.md#无信息时整层收起)，退回纯 `ExperimentEvalRow[]`。
+   * 按 `variant === "group"` 判别，与占位行的 `variant` 判别同一套机制。
+   */
+  evalRows: (ExperimentEvalGroupRow | ExperimentEvalRow)[];
 }
 
 interface EntitySources {

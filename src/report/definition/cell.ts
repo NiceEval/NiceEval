@@ -45,12 +45,14 @@ export interface ColumnSpec {
 /**
  * 表行 Content。与布局原语 `Row` 组件不同名。
  * placeholder 行照常渲染,但不进任何列的聚合读数。
+ * group 行的读数由自己的 subRows 聚合而来,不是一条独立事实。
  */
 export interface TableContentRow {
   readonly key: string;
   readonly cells: Readonly<Record<string, Cell>>;
   readonly subRows?: readonly TableContentRow[];
-  readonly variant?: "normal" | "placeholder";
+  /** group 行的读数由自己的 subRows 聚合而来，不是一条独立事实。 */
+  readonly variant?: "normal" | "placeholder" | "group";
 }
 
 export interface TableContent {

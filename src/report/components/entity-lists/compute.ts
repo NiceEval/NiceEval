@@ -221,6 +221,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
         totalScore: await computeCell(totalScore, sorted),
         durationMs: await computeCell(durationMs, sorted),
         costUSD: await computeCell(costUSD, sorted),
+        tokens: await computeCell(tokens, sorted),
         attempts,
       });
     }

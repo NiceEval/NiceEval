@@ -89,7 +89,10 @@ export const SampleOverview = defineComposition(async (props, ctx) => {
 ```
 
 Experiment 行标签默认缩成 id 在当前 Sample 里的最短唯一后缀,完整 id 仍是排序、过滤与展开的
-身份键。同一个 agent 在散点图例和表格里同色,由[页级色分配](../README.md#维度呈现分配单位是页)
+身份键。展开层级是 Experiment → [Eval 组](../sources/entity-experiments.md#eval-分组层) → Eval →
+Attempt;分组层由数据源按 evalId 的目录前缀生成,无信息时整层收起,`SampleOverview` 不为它开配置项。
+
+同一个 agent 在散点图例和表格里同色,由[页级色分配](../README.md#维度呈现分配单位是页)
 保证。
 
 `SampleOverview` 只从 `niceeval/report` 导出,不从 `niceeval/report/react` 导出。自有 React 页面

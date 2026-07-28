@@ -766,6 +766,7 @@ function renderHierarchyRowsWeb(
     const className = cx(
       "niceeval-table-hierarchy-row",
       row.variant === "placeholder" ? "niceeval-row-placeholder" : undefined,
+      row.variant === "group" ? "niceeval-row-group" : undefined,
     );
     if (!row.subRows?.length) {
       return (
@@ -791,7 +792,13 @@ function renderFlatContentRowsWeb(
   ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale },
 ): ReactNode[] {
   return rows.map((row) => (
-    <tr key={row.key} className={row.variant === "placeholder" ? "niceeval-row-placeholder" : undefined}>
+    <tr
+      key={row.key}
+      className={cx(
+        row.variant === "placeholder" ? "niceeval-row-placeholder" : undefined,
+        row.variant === "group" ? "niceeval-row-group" : undefined,
+      )}
+    >
       {columns.map((column) => (
         <td key={column.key} className={column.align === "right" ? "niceeval-align-right" : undefined}>
           {renderCellWeb(row.cells[column.key], ctx)}

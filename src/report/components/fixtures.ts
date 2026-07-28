@@ -380,6 +380,7 @@ export const experimentListItems: ExperimentListItem[] = [
         totalScore: { value: null, display: "—", samples: 0, total: 1, refs: [failedAttempt.locator] },
         durationMs: { value: 32_000, display: "32.0s", samples: 1, total: 1, refs: [failedAttempt.locator] },
         costUSD: { value: 0.12, display: "$0.12", samples: 1, total: 1, refs: [failedAttempt.locator] },
+        tokens: { value: null, display: "—", samples: 0, total: 1, refs: [failedAttempt.locator] },
         attempts: [failedAttempt, failedRetryAttempt],
       },
       {
@@ -388,6 +389,7 @@ export const experimentListItems: ExperimentListItem[] = [
         totalScore: { value: null, display: "—", samples: 0, total: 1, refs: [] },
         durationMs: { value: 5_000, display: "5.0s", samples: 1, total: 1, refs: [] },
         costUSD: { value: 0.02, display: "$0.02", samples: 1, total: 1, refs: [] },
+        tokens: { value: null, display: "—", samples: 0, total: 1, refs: [] },
         attempts: [passedAttempt],
       },
     ],
@@ -414,6 +416,7 @@ export const experimentListItems: ExperimentListItem[] = [
         totalScore: { value: null, display: "—", samples: 0, total: 1, refs: [] },
         durationMs: { value: 4_500, display: "4.5s", samples: 1, total: 1, refs: [erroredAttempt.locator] },
         costUSD: { value: null, display: "—", samples: 0, total: 1, refs: [] },
+        tokens: { value: null, display: "—", samples: 0, total: 1, refs: [erroredAttempt.locator] },
         attempts: [erroredAttempt],
       },
     ],

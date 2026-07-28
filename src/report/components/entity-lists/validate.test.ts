@@ -88,6 +88,7 @@ describe("validateExperimentListData", () => {
     totalScore: validCell,
     durationMs: validCell,
     costUSD: validCell,
+    tokens: validCell,
     attempts: [validAttemptItem],
   };
   const valid = [

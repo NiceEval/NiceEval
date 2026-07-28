@@ -67,6 +67,8 @@ export const validateExperimentListData: Validator = (data) =>
       if (rowDurationProblem !== null) return rowDurationProblem;
       const rowCostProblem = cellProblem(row.costUSD, `${rowPath}.costUSD`);
       if (rowCostProblem !== null) return rowCostProblem;
+      const rowTokensProblem = cellProblem(row.tokens, `${rowPath}.tokens`);
+      if (rowTokensProblem !== null) return rowTokensProblem;
       return arrayProblem(row.attempts, `${rowPath}.attempts`, attemptListItemProblem);
     });
   });

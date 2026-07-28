@@ -127,7 +127,7 @@ interface Row {
   /** Column.dataKey 按这里的键取格子。 */
   cells: Readonly<Record<string, Cell>>;
   subRows?: readonly Row[];
-  variant?: "normal" | "placeholder";
+  variant?: "normal" | "placeholder" | "group";
 }
 ```
 

@@ -77,7 +77,13 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   挣分尾缀）、`moreFailures`
   计其余丢分得分点，挣满为 null（[丢分摘要规则](../../../feature/assertions/library/display.md#主失败断言怎样选)）；共享算法（最短唯一后缀）在消费方之间一致；`experimentRows`
   的时效字段（`historical` / `historicalAttempts` 与新执行的判定边界）与占位行数据（`missingEvalIds`
-  来自 `sample.coverage`、不参与任何读数聚合）；`currentSample()`
+  来自 `sample.coverage`、不参与任何读数聚合）；`experimentRows` 的
+  [Eval 分组层](../../../feature/reports/components/sources/entity-experiments.md#eval-分组层)——按 evalId
+  目录前缀分区，两条收起条件（只有一个组、每组只有一道题）各自让层消失且 Eval 行标签退回完整
+  evalId，不含 `/`
+  的题与组行同级且不进假组，组行读数是 subRows 聚合而占位行不进分母（fixture 让某组全部题缺失，
+  证明组行读数格是 `missing` 而非 `notApplicable`），子行标签去掉父组前缀但 `evalId`
+  仍是排序/过滤/展开身份；`currentSample()`
   下一个 experiment 展示用的水位基准 Run 选择——fixture 让同一 experiment 有多个真实贡献 Run、`startedAt`
   各不相同时，配置/agent/model 相关字段（config 列、Hero、`sampleSummary` 标题等）只读取贡献来源中
   `startedAt`
@@ -127,6 +133,18 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   每个原语各一条类别。断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，
   以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与
   「`dimensions` 必填与查询封闭性」同一判据，落在各原语 fixture 上）。
+- **`Waterfall` 的显著性折叠与区块头**（[契约](../../../feature/reports/components/primitives/waterfall.md)）：
+  web 面输出字符串为断言面。逐项覆盖：
+
+  - 时长占比低于 1% 的连续短节点折成摘要，带 `kind` 计数与合计时长，留在原时间位置。
+  - `failed` 与 `durationMs` 为 `null` 的节点不折；行总时长为 `null` 时整行不折。
+  - 被折节点的 `children` 展开后原样还原；色带分解条仍含全部节点。
+  - text 面不列节点，行上的节点计数仍计全部节点。
+  - 区分力场景是「把一个短节点抬到行总时长 1% 以上」——只有这一格改变清单构成，
+    证明判据是占比而不是绝对时长或节点序数。
+  - `title` 在两面渲染为区块头；Content 为 `null` 或空时整块不出现，标题也不出现。
+  - 行头 `label` 与 `locator` 同文时只渲染 locator 一次，不同文时两者都在。
+  - 带 `open` 的节点默认展开（`<details open>`）且不参与折叠。
 - **页级呈现分配**（[分配单位是页](../../../feature/reports/components/README.md#维度呈现分配单位是页)）：
   给定一页 `dimensions()` 声明的集合产出映射，断言面是映射本身，不断言渲染出的颜色值。逐项覆盖：
 
@@ -225,6 +243,15 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   下同样的错误按非零退出。断言面是重建调度器的调用序列与产出结构，不是浏览器行为。
 - **站点根归一（`index.html` 的 `<base>` 引导脚本）**：脚本对 `location.pathname` 的站点根判定——无尾斜杠的索引路径（cleanUrls 托管）补出目录形态、已是目录形态（`/`、`/sub/`）不插入 `<base>`、末段带扩展名（`/out/index.html`）按其目录取根。断言面是把导出产物里那段脚本原样喂给 fake `location` /
   `document` 后落下的 `base.href`，不是整页 HTML；无尾斜杠那一格是唯一能把「按文档目录解析」与「按站点根解析」区分开的输入，缺了它相对引用少一层的错误算法照样全绿。
+- **timeline / trace 投影的时间树语义**：
+  - phase 沿主链累计 `startOffsetMs`，不全为 0；`PhaseTiming.failed` 与 `TimingNode`
+    子树原样进节点。
+  - 带 `traceId` 的 turn 节点把同 trace 的 spans 收为 children，锚在该轮起点，
+    轮内相对时序保留；关联不上任何 turn 的 span 落在 `eval.run` 层，不丢弃。
+  - `eval.run` phase 与 turn 节点带 `open` 展开标记；默认 `AttemptDetail` 只放
+    timeline 一张 `Waterfall`，trace 数据源仍公开导出。
+  - trace 投影按 `parentSpanId` 建树，子 span 是 children 而不是被过滤掉。
+    区分力 fixture 要有「父子两个 span」——只保留根的错误实现会丢节点数。
 - **Attempt 证据数据源**：`attemptSummary.compute(evidence)` 等纯派生零 IO、evidence 装配恰好一次；
   组合组件的展开树构成与二选一规则；source 缺省取 page 注入 evidence、错位使用的完整反馈；
   对话数据的分轮与容错。渲染出的 DOM、默认展开标记、染色与交互归 E2E；改动这些组件后需要
