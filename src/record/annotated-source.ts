@@ -13,7 +13,7 @@
 // 本模块不 import react/jsx,纯数据 + 纯函数,可以在任何 Node 语境(CLI 的 show、
 // view 的 server 端数据准备)调用。
 
-import type { AssertionResult, PhaseTiming, SourceLoc, StreamEvent } from "../types.ts";
+import type { AssertionResult, PhaseTiming, ScoreEntry, SourceArtifact, SourceLoc, StreamEvent } from "../types.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 
 /**
@@ -183,4 +183,180 @@ export function buildAnnotatedEvalSource(
       annotatedLines: lines.reduce((n, l) => n + (l.assertions.length > 0 ? 1 : 0), 0),
     },
   };
+}
+
+/** 调用树的面无关投影。旧的 buildAnnotatedEvalSource 仍保留给兼容消费方。 */
+export interface SourceTreeLine {
+  line: number;
+  text: string;
+  annotations: (AssertionResult | ScoreEntry | SendAnnotation)[];
+  calls: SourceCall[];
+  aborted?: true;
+}
+export interface SourceNode {
+  file: string;
+  sha256: string;
+  lines: SourceTreeLine[];
+}
+export interface SourceCall {
+  summary: SourceCallSummary;
+  target:
+    | { kind: "source"; node: SourceNode }
+    | { kind: "package"; package: string; calls: SourceCall[] }
+    | { kind: "unavailable"; file: string; calls: SourceCall[] };
+}
+export interface SourceCallSummary {
+  checks: number;
+  passed: number;
+  failed: number;
+  unavailable: number;
+  points?: { earned: number; available: number };
+  aborted: boolean;
+}
+export interface AnnotatedSourceTree {
+  spine: SourceNode;
+  detached: SourceNode[];
+  unmapped: { assertions: AssertionResult[]; scores: ScoreEntry[] };
+  summary: { checks: number; passed: number; failed: number; unavailable: number };
+}
+export interface SourceContentNode extends Omit<SourceNode, "lines"> {
+  lines: SourceTreeLine[];
+  calls: (SourceCall & { open: boolean })[];
+}
+export interface SourceContent extends Omit<AnnotatedSourceTree, "spine" | "detached"> {
+  spine: SourceContentNode;
+  detached: SourceContentNode[];
+}
+
+/** 用 entry role 决定主干，绝不按命中数猜入口。 */
+export function assembleSourceTree(input: {
+  entry: SourceArtifact;
+  sources: SourceArtifact[];
+  assertions: AssertionResult[];
+  scoreEntries: ScoreEntry[];
+  sends: SendAnnotation[];
+  abort?: SourceLoc;
+}): AnnotatedSourceTree {
+  const artifacts = new Map(input.sources.map((s) => [s.path, s]));
+  artifacts.set(input.entry.path, { ...input.entry, role: "entry" });
+  const nodes = new Map<string, SourceNode>();
+  const node = (file: string): SourceNode | undefined => {
+    const hit = nodes.get(file);
+    if (hit) return hit;
+    const source = artifacts.get(file);
+    if (!source) return undefined;
+    const body = normalizeEvalSource(source.content).replace(/\n$/, "");
+    const made: SourceNode = {
+      file,
+      sha256: hashEvalSource(normalizeEvalSource(source.content)),
+      lines: (body === "" ? [""] : body.split("\n")).map((text, i) => ({ line: i + 1, text, annotations: [], calls: [] })),
+    };
+    nodes.set(file, made);
+    return made;
+  };
+  const spine = node(input.entry.path)!;
+  const detached: SourceNode[] = [];
+  const unmapped = { assertions: [] as AssertionResult[], scores: [] as ScoreEntry[] };
+  const add = (fact: AssertionResult | ScoreEntry | SendAnnotation, loc: SourceLoc | undefined, kind: "assertion" | "score" | "send") => {
+    if (!loc) {
+      if (kind === "assertion") unmapped.assertions.push(fact as AssertionResult);
+      if (kind === "score") unmapped.scores.push(fact as ScoreEntry);
+      return;
+    }
+    const projectFrames = [...(loc.callers ?? []).filter((f) => f.kind === "project"), { kind: "project" as const, file: loc.file, line: loc.line, column: loc.column }];
+    const spineAt = projectFrames.map((f) => f.file).lastIndexOf(spine.file);
+    const anchorIndex = spineAt >= 0 ? spineAt : 0;
+    const anchor = spineAt >= 0 ? spine : node(projectFrames[0]!.file);
+    if (!anchor) return; // 缺源码仍由下面的 unavailable 边承载；没有可挂项目节点不伪造。
+    if (spineAt < 0 && !detached.includes(anchor)) detached.push(anchor);
+    let current = anchor;
+    const packages = (loc.callers ?? []).filter((frame): frame is { kind: "package"; package: string } => frame.kind === "package");
+    for (let i = anchorIndex + 1; i < projectFrames.length; i++) {
+      const frame = projectFrames[i]!;
+      const previous = projectFrames[i - 1]!;
+      const line = current.lines[previous.line - 1];
+      if (!line) break;
+      const targetNode = node(frame.file);
+      // package 段是不可展开边界，但不能吞掉包回调到项目源码的更深节点。
+      if (i === anchorIndex + 1 && packages.length > 0) {
+        const packageName = packages[0]!.package;
+        let opaque = line.calls.find((c) => c.target.kind === "package" && c.target.package === packageName);
+        if (!opaque) {
+          opaque = { summary: emptySummary(), target: { kind: "package", package: packageName, calls: [] } };
+          line.calls.push(opaque);
+        }
+        const packageTarget = opaque.target;
+        if (packageTarget.kind !== "package") continue;
+        const targetNode = node(frame.file);
+        let nested = packageTarget.calls.find((c) => c.target.kind === "source" && c.target.node.file === frame.file);
+        if (!nested) {
+          nested = { summary: emptySummary(), target: targetNode ? { kind: "source", node: targetNode } : { kind: "unavailable", file: frame.file, calls: [] } };
+          packageTarget.calls.push(nested);
+        }
+        if (nested.target.kind === "source") current = nested.target.node;
+        else break;
+        continue;
+      }
+      let call = line.calls.find((c) => c.target.kind === "source" && c.target.node.file === frame.file);
+      if (!call) {
+        call = { summary: emptySummary(), target: targetNode ? { kind: "source", node: targetNode } : { kind: "unavailable", file: frame.file, calls: [] } };
+        line.calls.push(call);
+      }
+      if (call.target.kind === "source") current = call.target.node;
+      else break;
+    }
+    const leaf = current.file === loc.file ? current.lines[loc.line - 1] : undefined;
+    if (leaf) leaf.annotations.push(fact);
+    else if (kind === "assertion") unmapped.assertions.push(fact as AssertionResult);
+    else if (kind === "score") unmapped.scores.push(fact as ScoreEntry);
+  };
+  for (const a of input.assertions) add(a, a.loc, "assertion");
+  for (const s of input.scoreEntries) add(s, s.loc, "score");
+  for (const send of input.sends) add(send, send.loc, "send");
+  const summary = summarize(spine);
+  return { spine, detached, unmapped, summary };
+}
+
+/** 唯一的裁行入口；full/file/default/web 不会改变完整树或事实顺序。 */
+export function projectSourceView(
+  source: AnnotatedSourceTree,
+  options: { mode: "default" | "full" | "file" | "web"; file?: string; budgetLines?: number },
+): SourceContent {
+  const project = (node: SourceNode, isSpine: boolean): SourceContentNode => {
+    const selected =
+      options.mode === "file" && options.file === node.file
+        ? node.lines
+        : node.lines.filter((line) => options.mode === "full" || line.annotations.length > 0 || line.calls.length > 0 || line.aborted);
+    return {
+      ...node,
+      lines: selected,
+      calls: selected.flatMap((line) =>
+        line.calls.map((call) => ({
+          ...call,
+          open:
+            options.mode === "full" ||
+            options.mode === "web"
+              ? call.summary.failed > 0 || call.summary.unavailable > 0 || call.summary.aborted
+              : false,
+        })),
+      ),
+    };
+  };
+  return { ...source, spine: project(source.spine, true), detached: source.detached.map((n) => project(n, false)) };
+}
+
+function emptySummary(): SourceCallSummary {
+  return { checks: 0, passed: 0, failed: 0, unavailable: 0, aborted: false };
+}
+function summarize(node: SourceNode): { checks: number; passed: number; failed: number; unavailable: number } {
+  const out = { checks: 0, passed: 0, failed: 0, unavailable: 0 };
+  for (const line of node.lines) {
+    for (const item of line.annotations) {
+      if ("outcome" in item) {
+        out.checks++;
+        item.outcome === "passed" ? out.passed++ : out.failed++;
+      }
+    }
+  }
+  return out;
 }

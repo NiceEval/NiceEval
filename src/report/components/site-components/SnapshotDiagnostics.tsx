@@ -1,6 +1,6 @@
-// SnapshotDiagnostics:快照诊断区的 web 面。按来源 experiment → Snapshot 分组
+// SnapshotDiagnostics:快照诊断区的 web 面。按来源 experiment → Run 分组
 // (../snapshot-diagnostics.ts,与 text 面共用同一聚合层):整个区域是默认折叠的原生
-// <details>,<summary> 是恒可见的计数汇总行(涉及多少个 experiment、多少个 Snapshot、
+// <details>,<summary> 是恒可见的计数汇总行(涉及多少个 experiment、多少个 Run、
 // 多少条记录与最高严重度)。单个快照只有一条诊断时退化成一行,不摆只有一个孩子的空壳
 // 层级。空诊断集零输出,不渲染空容器
 // (docs/feature/reports/components/site/run-diagnostics.md)。
@@ -62,7 +62,7 @@ export function SnapshotDiagnostics({
   if (data.length === 0) return null;
   const { summary, groups, severity } = groupSnapshotDiagnostics(data, locale);
   return (
-    <div className={cx("nre", "nre-snapshot-diagnostics", className)}>
+    <div className={cx("nre", "nre-run-diagnostics", className)}>
       <details className="nre-snap-diag">
         <summary className="nre-snap-diag-summary" data-severity={severity}>
           {summary}
@@ -71,16 +71,16 @@ export function SnapshotDiagnostics({
           {groups.map((group) => (
             <li key={group.experimentId} className="nre-snap-diag-group">
               <div className="nre-snap-diag-exp">{group.experimentId}</div>
-              <ul className="nre-snap-diag-snapshots">
+              <ul className="nre-snap-diag-runs">
                 {group.items.map((item, i) =>
                   item.diagnostics.length === 1 ? (
                     // 单诊断快照退化成一行:时距与该条记录合并展示,不另起 <ul> 空壳层级。
-                    <li key={i} className="nre-snap-diag-snapshot nre-snap-diag-collapsed">
+                    <li key={i} className="nre-snap-diag-run nre-snap-diag-collapsed">
                       <TimeBadge startedAt={item.startedAt} locale={locale} />
                       <RecordBody record={item.diagnostics[0]!} />
                     </li>
                   ) : (
-                    <li key={i} className="nre-snap-diag-snapshot">
+                    <li key={i} className="nre-snap-diag-run">
                       <TimeBadge startedAt={item.startedAt} locale={locale} />
                       <ul className="nre-snap-diag-records">
                         {item.diagnostics.map((record, j) => (

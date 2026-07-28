@@ -49,7 +49,7 @@
 .nre .nre-locator.nre-verdict-passed .nre-locator-mark { color:var(--good); }
 .nre .nre-locator.nre-verdict-failed .nre-locator-mark,
 .nre .nre-locator.nre-verdict-errored .nre-locator-mark { color:var(--bad); }
-.nre .nre-locator.nre-verdict-skipped .nre-locator-mark { color:var(--soft); }
+.nre .nre-locator.nre-verdict-unreadable .nre-locator-mark { color:var(--soft); }
 /* 时效标注(↩ + 紧凑时距):subdued 行内事实,不占框、不用警示色——携带是正常缓存,
    跨快照拼接受可比性前提保护,不是警告(见 entity-lists.md「时效标注」)。 */
 .nre .nre-historical { color:var(--soft); font-size:.92em; white-space:nowrap; }
@@ -149,7 +149,7 @@
 .nre .nre-eval-verdict.nre-verdict-passed { color:var(--good); }
 .nre .nre-eval-verdict.nre-verdict-failed,
 .nre .nre-eval-verdict.nre-verdict-errored { color:var(--bad); }
-.nre .nre-eval-verdict.nre-verdict-skipped { color:var(--soft); }
+.nre .nre-eval-verdict.nre-verdict-unreadable { color:var(--soft); }
 
 /* ---- 维度键上色:同一个 key 在任何块里同色(文字) ---- */
 .nre .nre-c0 { color: var(--nre-c0); }
@@ -201,7 +201,7 @@ table.nre,
 .nre tbody tr:last-child td {
   border-bottom: 0;
 }
-.nre tbody th[scope="row"] {
+.nre tbody th[sample="row"] {
   font-weight: 610;
 }
 .nre td {
@@ -297,7 +297,7 @@ table.nre,
 .nre .nre-verdict-passed { color: var(--good); }
 .nre .nre-verdict-failed { color: var(--bad); }
 .nre .nre-verdict-errored { color: var(--warn); }
-.nre .nre-verdict-skipped { color: var(--soft); }
+.nre .nre-verdict-unreadable { color: var(--soft); }
 .nre .nre-verdict-tally {
   display: inline-flex;
   flex-wrap: wrap;
@@ -320,7 +320,7 @@ table.nre,
 
 /* ---- ScopeSummary:范围摘要卡,满宽 KPI 条(对齐 view 的 .summary/.metric 密度);
         嵌进 ExperimentComparison 组卡时降为紧凑行(规则在上面的比较块里) ---- */
-.nre-scope-summary .nre-scope-kpis {
+.nre-sample-summary .nre-sample-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   border: 1px solid var(--line);
@@ -329,18 +329,18 @@ table.nre,
   margin: 0 0 10px;
   background: var(--panel);
 }
-.nre-scope-summary .nre-scope-kpi {
+.nre-sample-summary .nre-sample-kpi {
   padding: 12px 16px 13px;
   border-right: 1px solid var(--line);
   min-width: 0;
 }
-.nre-scope-summary .nre-scope-kpi:last-child { border-right: 0; }
-.nre-scope-summary .nre-scope-kpi dt {
+.nre-sample-summary .nre-sample-kpi:last-child { border-right: 0; }
+.nre-sample-summary .nre-sample-kpi dt {
   color: var(--soft);
   font-size: 12px;
   font-weight: 550;
 }
-.nre-scope-summary .nre-scope-kpi dd {
+.nre-sample-summary .nre-sample-kpi dd {
   margin: 6px 0 0;
   font-size: 20px;
   line-height: 1;
@@ -348,7 +348,7 @@ table.nre,
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.nre-scope-summary .nre-scope-kpi-note {
+.nre-sample-summary .nre-sample-kpi-note {
   display:block;
   margin-top:5px;
   color:var(--soft);
@@ -358,25 +358,25 @@ table.nre,
   white-space:nowrap;
 }
 /* 计票格装的是 pill 组:允许换行,行高回到常规 */
-.nre-scope-summary .nre-scope-kpi-verdicts dd {
+.nre-sample-summary .nre-sample-kpi-verdicts dd {
   white-space: normal;
   line-height: 1.4;
 }
-.nre .nre-scope-summary-range {
+.nre .nre-sample-summary-range {
   color: var(--soft);
   font-size: 0.85em;
   margin: 0.25rem 0 0;
 }
 
-/* ---- 宿主警告块:.nre-warnings 是默认折叠的 <details>,<summary> 汇总行恒可见。
+/* ---- 宿主警告块:.nre-issues 是默认折叠的 <details>,<summary> 汇总行恒可见。
    不占框:无边框、无底色、不缩进,警示色只落在汇总行文字与徽标上。 ---- */
-.nre .nre-warnings {
+.nre .nre-issues {
   margin: 0;
   color: var(--text);
   font-size: 13px;
 }
 /* 外层 <details> 的 <summary>:分类计数汇总行,原生无 JS 可展开。 */
-.nre .nre-warnings > .nre-warnings-summary {
+.nre .nre-issues > .nre-issues-summary {
   font-weight: 650;
   color: var(--warn);
   cursor: pointer;
@@ -442,7 +442,7 @@ table.nre,
 }
 
 /* ---- 快照诊断区:.nre-snap-diag 是默认折叠的 <details>,<summary> 汇总行恒可见,
-   最高严重度含 error 时汇总行换色区别于纯 warning。来源分组按 experiment → Snapshot 两层,
+   最高严重度含 error 时汇总行换色区别于纯 warning。来源分组按 experiment → Run 两层,
    单诊断快照退化成一行(不摆只有一个孩子的空壳层级)。 ---- */
 .nre .nre-snap-diag {
   margin: 0;
@@ -466,13 +466,13 @@ table.nre,
   border-top: 1px solid var(--line);
 }
 .nre .nre-snap-diag-exp { font-weight: 650; }
-.nre .nre-snap-diag-snapshots {
+.nre .nre-snap-diag-runs {
   list-style: none;
   margin: 6px 0 0;
   padding: 0 0 0 12px;
   border-left: 2px solid var(--line);
 }
-.nre .nre-snap-diag-snapshot + .nre-snap-diag-snapshot { margin-top: 8px; }
+.nre .nre-snap-diag-run + .nre-snap-diag-run { margin-top: 8px; }
 .nre .nre-snap-diag-time {
   display: block;
   color: var(--soft);

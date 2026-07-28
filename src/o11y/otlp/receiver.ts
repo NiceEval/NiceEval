@@ -20,7 +20,7 @@ export interface TraceReceiver {
 }
 
 /**
- * 创建 OTLP 接收器,并把 close() 注册为 Scope 回收动作(免端口泄漏)。
+ * 创建 OTLP 接收器,并把 close() 注册为 Sample 回收动作(免端口泄漏)。
  * 在 Effect.scoped / Effect.gen 里 yield* 即可。
  */
 export function createTraceReceiver() {

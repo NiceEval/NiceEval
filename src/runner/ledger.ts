@@ -108,6 +108,8 @@ export interface ChangeLedger {
   commitAgentWindow(label: string): Promise<void>;
   /** workspace.diff 阶段:从分类账导出每个 send 窗口自己的 before/after,按时序。 */
   exportWindows(): Promise<DiffArtifact>;
+  /** 回到创建时的题间锚点，并保留归因排除清单排除的动态环境。 */
+  resetToAnchor(): Promise<void>;
 }
 
 interface LedgerOptions {
@@ -117,7 +119,7 @@ interface LedgerOptions {
 }
 
 /** 每条 git 命令都带上私有 GIT_DIR + workdir work-tree;项目/全局 gitignore 一律不参与。 */
-function gitEnv(sandbox: Sandbox, gitDir: string): Record<string, string> {
+function gitEnv(sandbox: Sandbox, gitDir: string): globalThis.Record<string, string> {
   return {
     GIT_DIR: gitDir,
     GIT_WORK_TREE: sandbox.workdir,
@@ -174,9 +176,12 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
     ' && if [ -n "$nested" ]; then printf \'%s\\n\' "niceeval ledger cannot track nested Git repository $nested as file-level evidence; move the checkout to sandbox.workdir root, or add the whole path to defineEval({ diff: { ignore: [...] } }) when it is intentionally out of scope" >&2; exit 2; fi';
   const addAll = `git -c advice.addEmbeddedRepo=false add -A -f -- . ${excludeSpecs}${includeAdd}${rejectGitlinks}`;
 
-  const anchor = await sandbox.runShell(`git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor"`, {
+  const anchor = await sandbox.runShell(
+    `git init -q "${gitDir}" && ${addAll} && git commit -q --allow-empty -m "anchor" && (git rev-parse -q --verify niceeval-reuse-anchor >/dev/null || git tag niceeval-reuse-anchor)`,
+    {
     env,
-  });
+    },
+  );
   ensureCommandSucceeded(anchor, "create change ledger anchor");
 
   return {
@@ -195,10 +200,19 @@ export async function createChangeLedger(sandbox: Sandbox, opts?: LedgerOptions)
     async exportWindows(): Promise<DiffArtifact> {
       return exportAgentWindows(sandbox, env, exportDir);
     },
+    async resetToAnchor(): Promise<void> {
+      // `git reset --hard` 恢复被分类账追踪的 workdir；随后只清理不在排除清单内的未追踪项。
+      // exclude pathspec 与 anchor 使用同一份编译结果，动态依赖/缓存不会被题间重置误删。
+      const result = await sandbox.runShell(
+        `git reset -q --hard niceeval-reuse-anchor && git clean -fd ${excludes.map((pattern) => `-e ${shellQuote(pattern)}`).join(" ")}`,
+        { env },
+      );
+      ensureCommandSucceeded(result, "reset reusable sandbox to anchor");
+    },
   };
 }
 
-async function exportAgentWindows(sandbox: Sandbox, env: Record<string, string>, exportDir: string): Promise<DiffArtifact> {
+async function exportAgentWindows(sandbox: Sandbox, env: globalThis.Record<string, string>, exportDir: string): Promise<DiffArtifact> {
   const result = await sandbox.runShell(buildExportScript(exportDir), { env });
   ensureCommandSucceeded(result, "export agent windows");
   const payload = await sandbox.downloadFile(`${exportDir}/export.bin`);
@@ -252,7 +266,7 @@ function parseExportPayload(payload: Buffer): DiffArtifact {
     const sizeBySha = parseSizes(readSection("sizes"), label);
     const contentBySha = parseBlobBatch(readSection("blobs"), label);
 
-    const changes: Record<string, WindowChange> = {};
+    const changes: globalThis.Record<string, WindowChange> = {};
     for (const entry of entries) {
       const change: WindowChange = { status: entry.status };
       if (binaryPaths.has(entry.path)) {

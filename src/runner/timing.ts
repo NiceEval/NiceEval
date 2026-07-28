@@ -1,7 +1,7 @@
 // attempt 级阶段计时:LifecyclePhase 主链/收尾段的耗时 + 阶段内时间树(hook / turn / command)。
 // 契约见 docs/feature/record/architecture.md「result.json」的 PhaseTiming / TimingNode:
 // 数组顺序即执行顺序;没执行的阶段不写 0 值条目;收尾段不计入 durationMs 口径但照常计时;
-// 结果封口发生在 Effect Scope release 完成之后(sandbox.stop 也向这个 recorder 写入)。
+// 结果封口发生在 Effect Sample release 完成之后(sandbox.stop 也向这个 recorder 写入)。
 
 import type { LifecyclePhase, PhaseTiming, TimingNode, TimingNodeKind } from "./types.ts";
 
@@ -31,7 +31,7 @@ export interface TimingRecorder {
   /** 把后续 child() 的挂载点压到 parent 下(hook 执行期间);与 popParent 成对。 */
   pushParent(parent: TimingNode): void;
   popParent(): void;
-  /** 直接补记一个已测好耗时的阶段条目(sandbox.stop 这类 Scope release 段用)。 */
+  /** 直接补记一个已测好耗时的阶段条目(sandbox.stop 这类 Sample release 段用)。 */
   record(phase: LifecyclePhase, durationMs: number, failed?: boolean): void;
   /** 相对 attempt 单调时钟起点的当前偏移(ms)。 */
   offsetNow(): number;

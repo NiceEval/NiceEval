@@ -6,18 +6,18 @@ import { describe, expect, it } from "vitest";
 
 import { defineExperiment } from "../define.ts";
 import { experimentRunInfo } from "./attempt.ts";
-import { comparabilityConfigOf, deepEqualJson } from "../results/select.ts";
-import type { Snapshot } from "../results/types.ts";
+import { comparabilityConfigOf, deepEqualJson } from "../sample/index.ts";
+import type { Run } from "../record/types.ts";
 import type { Agent } from "../agents/types.ts";
 import type { AgentRun } from "./types.ts";
 
 const fakeAgent = { name: "fake" } as unknown as Agent;
 
-function runWith(labels?: Record<string, string | number>): AgentRun {
+function runWith(labels?: globalThis.Record<string, string | number>): AgentRun {
   return {
     agent: fakeAgent,
     flags: {},
-    runs: 1,
+    attempts: 1,
     earlyExit: true,
     selectedEvalIds: [],
     ...(labels !== undefined ? { labels } : {}),
@@ -49,19 +49,19 @@ describe("ExperimentDef.labels", () => {
   });
 
   it("不参与可比性配置:仅 labels 不同的两快照仍互相可比", () => {
-    const snapshotWith = (labels?: Record<string, string | number>): Snapshot =>
+    const snapshotWith = (labels?: globalThis.Record<string, string | number>): Run =>
       ({
         experimentId: "mem/codex",
         agent: "codex",
         model: "gpt-5.4",
         experiment: {
-          runs: 1,
+          attempts: 1,
           earlyExit: true,
           selectedEvalIds: [],
           flags: { web: true },
           ...(labels !== undefined ? { labels } : {}),
         },
-      }) as unknown as Snapshot;
+      }) as unknown as Run;
     const a = comparabilityConfigOf(snapshotWith({ line: "codex" }));
     const b = comparabilityConfigOf(snapshotWith({ line: "renamed", memory: "mempal" }));
     const c = comparabilityConfigOf(snapshotWith());

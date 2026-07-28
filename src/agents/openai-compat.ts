@@ -1,5 +1,5 @@
 // OpenAI 两种响应形状(Chat Completions / Responses)的官方转换器 —— 写 send 指南「零映射」
-// 表格里的 fromChatCompletion(res) / fromResponses(res)。和 fromAiSdk 同一先例:结构化
+// 表格里的 turnFromChatCompletion(res) / turnFromResponses(res)。和 turnFromAiSdk 同一先例:结构化
 // *Like 类型,不依赖 openai 包,兼容任何声明自己走这两种协议形状的服务(不止 OpenAI 官方)。
 //
 // 两种形状对负断言的可信度不同(见 docs-site/zh/tutorials/write-send.mdx):
@@ -66,7 +66,7 @@ function chatCompletionUsage(usage: ChatCompletionUsageLike | undefined): Usage 
  * Chat Completions 形状的响应 → `Turn`。零映射:`res.choices[0].message` 的
  * `tool_calls` / `content` 直接变成 `action.called` / `message`,`usage` 顺手带上。
  */
-export function fromChatCompletion(res: ChatCompletionLike): Turn {
+export function turnFromChatCompletion(res: ChatCompletionLike): Turn {
   const message = res.choices[0]?.message;
   const events: StreamEvent[] = [];
   for (const call of message?.tool_calls ?? []) {
@@ -147,7 +147,7 @@ function responsesUsage(usage: ResponseUsageLike | undefined): Usage | undefined
  * Responses 形状的响应 → `Turn`。零映射:`res.output` 逐项翻译——
  * `message`(`content` 里的 `output_text`)变成 `message`,`function_call` 变成 `action.called`。
  */
-export function fromResponses(res: ResponseLike): Turn {
+export function turnFromResponses(res: ResponseLike): Turn {
   const events: StreamEvent[] = [];
   for (const item of res.output ?? []) {
     if (isMessageItem(item)) {

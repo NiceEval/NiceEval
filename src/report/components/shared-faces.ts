@@ -23,7 +23,7 @@ export function cellText(cell: MetricCell, locale: ReportLocale): string {
 /** verdict 计票的紧凑文案("3 passed · 1 failed"):非零判定逐个列,全部为零如实 —。 */
 export function verdictTallyText(tally: VerdictTally, locale: ReportLocale): string {
   const parts: string[] = [];
-  for (const kind of ["passed", "failed", "errored", "skipped"] as const) {
+  for (const kind of ["passed", "failed", "errored", "unreadable"] as const) {
     if (tally[kind] > 0) parts.push(`${tally[kind]} ${localeText(locale, `verdict.${kind}`)}`);
   }
   return parts.length > 0 ? parts.join(" · ") : MISSING_MARK;

@@ -5,11 +5,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { fromLangGraphEvents } from "./langgraph.ts";
+import { createLangGraphEventStream } from "./langgraph.ts";
 
-describe("fromLangGraphEvents usage 归一(含明细口径)", () => {
+describe("createLangGraphEventStream usage 归一(含明细口径)", () => {
   it("cache_read 与 cache_creation 都从 input_tokens 里扣出", () => {
-    const stream = fromLangGraphEvents();
+    const stream = createLangGraphEventStream();
     stream.add({
       channel: "messages",
       event: "finish",

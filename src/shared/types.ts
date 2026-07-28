@@ -22,12 +22,20 @@ export interface SourceLoc {
   file: string;
   line: number;
   column?: number;
+  /** 从 eval 入口到声明位置的调用路径；声明位置本身不在数组中。 */
+  callers?: SourcePathFrame[];
 }
+
+export type SourcePathFrame =
+  | { kind: "project"; file: string; line: number; column?: number }
+  | { kind: "package"; package: string };
 
 /** 随结果回传的一份 eval 源码(相对项目根的路径 + 文本),供 view 渲染代码视图。 */
 export interface SourceArtifact {
   path: string;
   content: string;
+  /** 入口 eval 源码或运行时引用的项目文件。 */
+  role?: "entry" | "referenced";
 }
 
 /**
@@ -50,7 +58,7 @@ export interface DiagnosticInput {
   code: string;
   level: "warning" | "error";
   message: string;
-  data?: Readonly<Record<string, JsonValue>>;
+  data?: Readonly<globalThis.Record<string, JsonValue>>;
   /** 并发 attempt 产生同一问题时的去重键;相同 key 折叠成一条并累计次数。 */
   dedupeKey?: string;
 }
@@ -73,4 +81,4 @@ export interface ScopedFeedback {
  * 可本地化文案:纯字符串,或按 locale 代码(如 "en"、"zh-CN")映射多语言。
  * view 按当前界面语言挑一条,挑不到回退到 en / 第一条。
  */
-export type LocalizedText = string | Record<string, string>;
+export type LocalizedText = string | globalThis.Record<string, string>;

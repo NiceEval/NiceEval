@@ -1,4 +1,4 @@
-import { decodeAttemptLocator, type AttemptLocator } from "../../results/locator.ts";
+import { decodeAttemptLocator, type AttemptLocator } from "../../record/locator.ts";
 import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../../scoring/display.ts";
 import type { EvalResult } from "../../types.ts";
 import { firstLine } from "../../util.ts";

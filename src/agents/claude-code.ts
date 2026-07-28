@@ -159,7 +159,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
 
       if (config?.mcpServers?.length) {
         assertMcpServers(config.mcpServers);
-        const servers: Record<string, object> = {};
+        const servers: globalThis.Record<string, object> = {};
         for (const s of config.mcpServers) {
           servers[s.name] = isHttpMcp(s)
             ? {
@@ -223,7 +223,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       if (ctx.session.id) args.push("--resume", ctx.session.id);
       args.push(input.text);
 
-      const env: Record<string, string> = {
+      const env: globalThis.Record<string, string> = {
         ANTHROPIC_API_KEY: getApiKey(),
         // Eval runs must not silently change CLI version after the sandbox artifact was built.
         DISABLE_AUTOUPDATER: "1",

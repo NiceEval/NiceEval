@@ -10,10 +10,10 @@
 // 用法(以 SSE transport 为例):
 //
 // ```typescript
-// import { sseJsonFrames, fromLangGraphEvents } from "niceeval/adapter";
+// import { sseJsonFrames, createLangGraphEventStream } from "niceeval/adapter";
 //
 // const frames = sseJsonFrames<LangGraphEventLike>(res.body);
-// const stream = fromLangGraphEvents();
+// const stream = createLangGraphEventStream();
 // for (;;) {
 //   const frame = await frames.next();
 //   if (frame === null) break;
@@ -45,7 +45,7 @@ export interface LangGraphContentBlockLike {
  * LangGraph 事件流协议帧(只声明转换器要读的字段;真实协议帧直接喂进来即可)。
  * `channel` 是事件通道(messages / tools / input / lifecycle,其余通道无对应标准事件),
  * `event` 是通道内事件名,`namespace` 是 subgraph / subagent 层级(自外向内;缺省或空数组
- * = 根图),`seq` 是协议全序号(见 {@link fromLangGraphEvents} 的顺序恢复语义)。
+ * = 根图),`seq` 是协议全序号(见 {@link createLangGraphEventStream} 的顺序恢复语义)。
  */
 export interface LangGraphEventLike {
   /** 协议全序号。乱序到达按它恢复顺序;已消费过的 seq(重连补发)按重复丢弃。 */
@@ -60,11 +60,11 @@ export interface LangGraphEventLike {
   /** subgraph / subagent 层级(自外向内),如 `["research", "web"]`;段内 `:` 后缀(checkpoint id)不进展示名。 */
   namespace?: readonly string[];
   /** 通道载荷。 */
-  data?: Record<string, unknown> | null;
+  data?: globalThis.Record<string, unknown> | null;
   [key: string]: unknown;
 }
 
-/** {@link fromLangGraphEvents} 返回的流句柄。 */
+/** {@link createLangGraphEventStream} 返回的流句柄。 */
 export interface LangGraphStream {
   /**
    * 逐帧喂协议事件,返回这一帧派生的标准事件。带 seq 且超前于当前水位的帧被暂存,
@@ -87,7 +87,7 @@ export interface LangGraphStream {
   markRejected(toolCallId: string): void;
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+function isRecord(v: unknown): v is globalThis.Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
@@ -122,9 +122,9 @@ function segmentName(segment: string): string {
  *   流结束调 {@link LangGraphStream.end} 放出仍压着的乱序帧。
  *
  * 工具名多为应用域内自定义名(canonical 落 "unknown" 即可),只认通用别名基表,
- * 不 opt-in 裸动词别名(同 fromAiSdk 的裁决,见 src/o11y/tool-names.ts)。
+ * 不 opt-in 裸动词别名(同 turnFromAiSdk 的裁决,见 src/o11y/tool-names.ts)。
  */
-export function fromLangGraphEvents(): LangGraphStream {
+export function createLangGraphEventStream(): LangGraphStream {
   let usage: Usage | undefined;
   let status: "completed" | "failed" | "waiting" | undefined;
 
@@ -215,7 +215,7 @@ export function fromLangGraphEvents(): LangGraphStream {
   };
 
   /** interrupt / input 载荷 → input.requested(同一 interrupt id 只发一条)。 */
-  const emitInputRequested = (events: StreamEvent[], payload: Record<string, unknown>): void => {
+  const emitInputRequested = (events: StreamEvent[], payload: globalThis.Record<string, unknown>): void => {
     const id = str(payload.id) ?? str(payload.interrupt_id);
     if (id) {
       if (requestedInputIds.has(id)) return;
@@ -273,7 +273,7 @@ export function fromLangGraphEvents(): LangGraphStream {
     events.push({ type: "input.requested", request: request as InputRequest });
   };
 
-  const emitInterrupts = (events: StreamEvent[], data: Record<string, unknown>): void => {
+  const emitInterrupts = (events: StreamEvent[], data: globalThis.Record<string, unknown>): void => {
     const interrupts = Array.isArray(data.interrupts)
       ? data.interrupts
       : data.interrupt !== undefined
@@ -330,7 +330,7 @@ export function fromLangGraphEvents(): LangGraphStream {
   };
 
   const handleMessages = (events: StreamEvent[], frame: LangGraphEventLike): void => {
-    // 逐 token 增量帧整个忽略:finish 帧带完整 content blocks(同 fromClaudeSdkMessages
+    // 逐 token 增量帧整个忽略:finish 帧带完整 content blocks(同 createClaudeSdkEventStream
     // 忽略 stream_event 的先例)。
     if (frame.event === "partial" || frame.event === "delta") return;
     const data = isRecord(frame.data) ? frame.data : {};

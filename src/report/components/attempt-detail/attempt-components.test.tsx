@@ -9,11 +9,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, StreamEvent, Verdict } from "../../../types.ts";
-import type { Results, Scope } from "../../../results/index.ts";
+import type { Record, Sample } from "../../../record/index.ts";
 import { emptyScopeAndResults } from "../scope.harness.ts";
-import type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../../results/attempt-evidence.ts";
-import { encodeAttemptLocator, type AttemptIdentity } from "../../../results/locator.ts";
-import { buildAnnotatedEvalSource } from "../../../results/annotated-source.ts";
+import type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../../record/attempt-evidence.ts";
+import { encodeAttemptLocator, type AttemptIdentity } from "../../../record/locator.ts";
+import { buildAnnotatedEvalSource } from "../../../record/annotated-source.ts";
 import { composeOf, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
 import {

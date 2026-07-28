@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/record.md
 // loadAttemptEvidence 单测(定稿契约见 plan/attempt-evidence-feedback-loop.md「中性数据准备」、
-// src/results/attempt-evidence.ts 的头注)。用真实 createResultsWriter → openResults 的读写链路
+// src/record/attempt-evidence.ts 的头注)。用真实 createWriter → openRecord 的读写链路
 // 落一份最小 fixture(不手写 JSON 文件,理由同 loadAnnotatedEvalSource 的既有端到端测试:
 // 这条链路本身就是被测对象的一部分),覆盖四种 capability 组合与 identity 正确性。
 
@@ -10,9 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DiffArtifact } from "../types.ts";
 import {
-  createResultsWriter,
+  createWriter,
   loadAttemptEvidence,
-  openResults,
+  openRecord,
   type AttemptArtifacts,
   type AttemptEntry,
   type AttemptHandle,
@@ -52,21 +52,21 @@ const TRACE: TraceSpan[] = [
 const NONEMPTY_DIFF: DiffArtifact = [{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "hello" } } }];
 const EMPTY_DIFF: DiffArtifact = [{ window: "s1/t1", changes: {} }];
 
-/** 起一个 writer,写一条 attempt,finish,再从头 openResults 读回它的 AttemptHandle。 */
+/** 起一个 writer,写一条 attempt,finish,再从头 openRecord 读回它的 AttemptHandle。 */
 async function seedAttempt(
   root: string,
   entry: Partial<AttemptEntry> & { id: string },
   artifacts?: AttemptArtifacts,
 ): Promise<AttemptHandle> {
-  const writer = createResultsWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
-  const snap = await writer.snapshot({ experimentId: "compare/bub", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
+  const writer = createWriter(root, { producer: { name: "niceeval", version: "1.0.0" } });
+  const snap = await writer.run({ experimentId: "compare/bub", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" });
   await snap.writeAttempt(
     { verdict: "passed", attempt: 0, durationMs: 1000, assertions: [], ...entry },
     artifacts,
   );
   await snap.finish();
-  const results = await openResults(root);
-  return results.experiments[0]!.latest.evals.find((e) => e.id === entry.id)!.attempts[0]!;
+  const results = await openRecord(root);
+  return results.experiments[0]!.latestRun.evals.find((e) => e.id === entry.id)!.attempts[0]!;
 }
 
 describe("loadAttemptEvidence", () => {
@@ -143,7 +143,7 @@ describe("loadAttemptEvidence", () => {
     expect(evidence.identity.experimentId).toBe(attempt.experimentId);
     expect(evidence.identity.evalId).toBe(attempt.evalId);
     expect(evidence.identity.attempt).toBe(attempt.result.attempt);
-    expect(evidence.identity.snapshotStartedAt).toBe(attempt.snapshot.startedAt);
+    expect(evidence.identity.snapshotStartedAt).toBe(attempt.run.startedAt);
     // 真实读取路径:locator 恒有值,且与 attempt.locator 原样一致(不重算)。
     expect(attempt.locator).toBeDefined();
     expect(evidence.locator).toBe(attempt.locator);
@@ -155,6 +155,6 @@ describe("loadAttemptEvidence", () => {
 
     const evidence = await loadAttemptEvidence(attempt);
 
-    expect(evidence.artifactPaths.dir).toBe(join(attempt.snapshot.dir, attempt.ref.attempt));
+    expect(evidence.artifactPaths.dir).toBe(join(attempt.run.dir, attempt.ref.attempt));
   });
 });

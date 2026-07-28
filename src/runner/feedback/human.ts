@@ -481,7 +481,7 @@ function countsText(state: RunFeedbackState): string {
     passed: state.passed,
     failed: state.failed,
     errored: state.errored,
-    skipped: state.skipped,
+    unreadable: state.unreadable,
   };
   return state.elsewhere > 0
     ? t("feedback.human.countsWithElsewhere", {
@@ -842,7 +842,7 @@ export interface HumanDryPlanInput {
    *  不是 discover 到的 eval 总数)。 */
   evals: number;
   configs: number;
-  runs: number;
+  attempts: number;
   /** 携带预测的复用 attempt 数;省略或 `0` 时不追加复用摘要行(docs 契约首行示例展示的是
    *  全新派发场景,没有第二行)。 */
   reused?: number;
@@ -861,7 +861,7 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
       attempts: pluralUnit(input.totalAttempts, "cli.dry.unit.attempt", "cli.dry.unit.attempts"),
       evals: pluralUnit(input.evals, "cli.dry.unit.eval", "cli.dry.unit.evals"),
       configs: pluralUnit(input.configs, "cli.dry.unit.config", "cli.dry.unit.configs"),
-      runs: input.runs,
+      attemptCount: input.attempts,
     }),
   ];
   if (input.reused) {

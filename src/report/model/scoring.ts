@@ -18,18 +18,18 @@ import { selectedAttemptsOnly } from "../components/shared-compute.ts";
  * 报告需要同样的切换时也应该调用它,而不是重新读 `attempt.result.scoring` 另写一份等价逻辑。
  *
  * 判据只看题目的定义期事实,不看执行是否发生——一个 eval 一行代码没跑时,它的 `scoring`
- * 依然是已知的,题型构成因此不依赖任何 attempt 结果(`errored` / `skipped` 的 attempt 不
+ * 依然是已知的,题型构成因此不依赖任何 attempt 结果(`errored` / `unreadable` 的 attempt 不
  * 改变所属 eval 的题型归属)。
  *
- * @param input Scope,或手工挑选的快照数组。
+ * @param input Sample,或手工挑选的快照数组。
  * @returns `"pass"`:范围内全部通过制;`"points"`:全部计分制;`"mixed"`:同一范围内并排
- *   出现两种题型——题型只在单个 experiment 内被启动期强制统一,一个 Scope 可以并排多个
+ *   出现两种题型——题型只在单个 experiment 内被启动期强制统一,一个 Sample 可以并排多个
  *   experiment,不同 experiment 之间允许不同题型(docs/feature/experiments/score-points.md
  *   「横截面聚合」)。
  */
 export async function scoringComposition(input: ReportInput): Promise<ScoringComposition> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = collectItems(snapshots, selectedAttemptsOnly(attempts));
+  const { runs, attempts } = resolveInput(input);
+  const items = collectItems(runs, selectedAttemptsOnly(attempts));
   const hasPoints = items.some((item) => item.attempt.result.scoring === "points");
   const hasPass = items.some((item) => item.attempt.result.scoring !== "points");
   return hasPoints && hasPass ? "mixed" : hasPoints ? "points" : "pass";

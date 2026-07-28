@@ -113,8 +113,8 @@
   document.addEventListener("input", function (e) {
     var input = closest(e.target, "input[data-nre-filter]");
     if (!input) return;
-    var scope = input.parentElement;
-    var table = scope ? scope.querySelector("table") : null;
+    var sample = input.parentElement;
+    var table = sample ? sample.querySelector("table") : null;
     if (!table || !table.tBodies[0]) return;
     var query = input.value.trim().toLowerCase();
     var rows = table.tBodies[0].rows;
@@ -137,7 +137,7 @@
     var controls = board.querySelectorAll("[data-nre-experiment-sort]");
     for (var i = 0; i < controls.length; i++) controls[i].classList.remove("nre-sort-asc", "nre-sort-desc");
     control.classList.add(dir === "asc" ? "nre-sort-asc" : "nre-sort-desc");
-    var entries = Array.prototype.slice.call(board.querySelectorAll(":scope > .nre-experiment-entry"));
+    var entries = Array.prototype.slice.call(board.querySelectorAll(":sample > .nre-experiment-entry"));
     entries.sort(function (a, b) {
       var ac = a.querySelector(".nre-experiment-summary").children[index];
       var bc = b.querySelector(".nre-experiment-summary").children[index];
@@ -156,8 +156,8 @@
   document.addEventListener("input", function (e) {
     var input = closest(e.target, "input[data-nre-experiment-filter]");
     if (!input) return;
-    var scope = input.parentElement;
-    var entries = scope ? scope.querySelectorAll(".nre-experiment-entry") : [];
+    var sample = input.parentElement;
+    var entries = sample ? sample.querySelectorAll(".nre-experiment-entry") : [];
     var query = input.value.trim().toLowerCase();
     for (var i = 0; i < entries.length; i++) {
       entries[i].classList.toggle("nre-row-hidden", query !== "" && entries[i].textContent.toLowerCase().indexOf(query) === -1);
@@ -169,8 +169,8 @@
   document.addEventListener("input", function (e) {
     var input = closest(e.target, "input[data-nre-attempt-filter]");
     if (!input) return;
-    var scope = input.parentElement;
-    var rows = scope ? scope.querySelectorAll(".nre-attempt") : [];
+    var sample = input.parentElement;
+    var rows = sample ? sample.querySelectorAll(".nre-attempt") : [];
     var query = input.value.trim().toLowerCase();
     for (var i = 0; i < rows.length; i++) {
       var haystack = rows[i].textContent + " " + (rows[i].getAttribute("data-nre-verdict") || "");

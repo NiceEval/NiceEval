@@ -2,7 +2,7 @@
 // AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/components/entity-lists/README.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
-// - 第一参收 ReportInput = Scope | readonly Snapshot[];warnings 不进组件数据(宿主统一显示);
+// - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
 // - 聚合前按身份键去重(dedupeAttempts;missing-startedAt 不去重、如实保留、不透出警告);
 // - null ≠ 0:缺数据不编数,覆盖率经 samples/total 如实暴露;
 // - core 中立:只认 Metric / Dimension 接口,不出现具体 agent 名的分支。
@@ -15,8 +15,8 @@ import type {
   ReportInput,
 } from "../../model/types.ts";
 import type { EvalResult } from "../../../types.ts";
-import type { Snapshot } from "../../../results/types.ts";
-import { comparabilityConfigOf, deepEqualJson } from "../../../results/select.ts";
+import type { Run } from "../../../record/types.ts";
+import { comparabilityConfigOf, deepEqualJson } from "../../../sample/index.ts";
 import { foldEvalVerdict } from "../../../shared/verdict.ts";
 import {
   collectItems,
@@ -39,7 +39,7 @@ import { selectedAttemptsOnly, summarizeItems } from "../shared-compute.ts";
  * 一次 attempt 的单行结果摘要(Scoring display 契约):failed 取主失败断言摘要(不含
  * "+N more",N 单独进 moreFailures),errored 取结构化 error 的一层摘要
  * (phase · code · message);计分制(`scoring: "points"`)passed 存在丢分得分点时取首条丢分
- * 摘要(规则 6,含 points 挣分尾缀);其余 passed / skipped 为 null。
+ * 摘要(规则 6,含 points 挣分尾缀);其余 passed / unreadable 为 null。
  */
 export function failureSummaryOf(result: EvalResult): { summary: string | null; more: number } {
   if (result.verdict === "errored" && result.error !== undefined) {
@@ -87,23 +87,23 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     // 缺 startedAt(legacy / 第三方落盘)时退化到所属快照的 startedAt——时效标注宁可粗一档
     // 时距,不留空字段(与 dedupeAttempts「缺才不去重」同一条「不伪造」纪律,这里伪造的只是
     // 展示粒度,不影响身份判定)。
-    startedAt: result.startedAt ?? item.snapshot.startedAt,
+    startedAt: result.startedAt ?? item.run.startedAt,
     historical: historicalOf(item),
     locator: locatorOf(item),
   };
 }
 
-/** `attemptListData(input)`:每个 Attempt 一项,顺序取自 Scope 展平顺序(不重排)。 */
+/** `attemptListData(input)`:每个 Attempt 一项,顺序取自 Sample 展平顺序(不重排)。 */
 export async function attemptListData(input: ReportInput): Promise<AttemptListItem[]> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = collectItems(snapshots, attempts);
+  const { runs, attempts } = resolveInput(input);
+  const items = collectItems(runs, attempts);
   return Promise.all(items.map((item) => attemptListItemOf(item)));
 }
 
 /** `evalListData(input)`:每个 `experimentId + evalId` 一项,按 evalId 再按 experimentId 升序。 */
 export async function evalListData(input: ReportInput): Promise<EvalListItem[]> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = collectItems(snapshots, attempts);
+  const { runs, attempts } = resolveInput(input);
+  const items = collectItems(runs, attempts);
   const groups = new Map<string, Item[]>();
   for (const item of items) {
     const key = fullEvalKey(item);
@@ -173,42 +173,42 @@ function byMetricDescThenId(
  * 自身的题型构成选择主读数——纯通过制沿用端到端通过率降序,纯计分制改按总分降序(缺数据
  * 沉底,同值按 id 收口);两者都出现时两种读数不能互相排名,退回 experiment id 字典序
  * (measures.md「题型构成与主读数」)。一行只有一套 agent / model / flags 是输入约束:
- * 宿主注入的 current() Scope 保证每个 experiment 只由可比性配置一致的快照拼成;作者自选
- * Snapshot[] 时若同一 experiment 混入不一致的可比性配置,按完整用户反馈失败并指引——
- * 看跨配置演化用 snapshot 维度或 MetricLine,不把两套配置拼成一行冒充单一配置。
+ * 宿主注入的 current() Sample 保证每个 experiment 只由可比性配置一致的快照拼成;作者自选
+ * Run[] 时若同一 experiment 混入不一致的可比性配置,按完整用户反馈失败并指引——
+ * 看跨配置演化用 run 维度或 MetricLine,不把两套配置拼成一行冒充单一配置。
  */
 export async function experimentListData(input: ReportInput): Promise<ExperimentListItem[]> {
-  const { snapshots, attempts, coverage } = resolveInput(input);
+  const { runs, attempts, coverage } = resolveInput(input);
   const coverageByExperiment = new Map(coverage.map((c) => [c.experimentId, c]));
 
   // 可比性配置单义检查:同一 experiment 的输入快照必须共享一套可比性配置。
-  const configByExperiment = new Map<string, { snapshot: Snapshot; config: unknown }>();
-  for (const snapshot of snapshots) {
-    const config = comparabilityConfigOf(snapshot);
-    const existing = configByExperiment.get(snapshot.experimentId);
+  const configByExperiment = new Map<string, { run: Run; config: unknown }>();
+  for (const run of runs) {
+    const config = comparabilityConfigOf(run);
+    const existing = configByExperiment.get(run.experimentId);
     if (existing === undefined) {
-      configByExperiment.set(snapshot.experimentId, { snapshot, config });
+      configByExperiment.set(run.experimentId, { run, config });
     } else if (!deepEqualJson(existing.config, config)) {
       throw new Error(
-        `experimentListData got inconsistent comparability configs for experiment "${snapshot.experimentId}" ` +
-          `(snapshots ${existing.snapshot.startedAt} and ${snapshot.startedAt} differ in agent/model/reasoningEffort/flags/budget/timeoutMs/sandbox). ` +
+        `experimentListData got inconsistent comparability configs for experiment "${run.experimentId}" ` +
+          `(runs ${existing.run.startedAt} and ${run.startedAt} differ in agent/model/reasoningEffort/flags/budget/timeoutMs/sandbox). ` +
           "One row shows one configuration — it cannot honestly merge two. To chart evolution across configs, " +
-          'use the "snapshot" dimension or MetricLine; to show the current level, pass results.current() which selects a single config per experiment.',
+          'use the "run" dimension or MetricLine; to show the current level, pass results.current() which selects a single config per experiment.',
       );
     }
   }
 
-  const items = collectItems(snapshots, selectedAttemptsOnly(attempts));
+  const items = collectItems(runs, selectedAttemptsOnly(attempts));
   const groups = groupItems(items, "experiment");
   const out: ExperimentListItem[] = [];
   for (const [experimentId, group] of groups) {
     const stats = summarizeItems(group);
-    // 这一行显示的 agent/model/flags 读水位基准 Snapshot(贡献来源中 startedAt 最新者),
-    // 不是任取某个真实来源(docs/feature/reports/architecture.md「Scope 是计算入口」)——
+    // 这一行显示的 agent/model/flags 读水位基准 Run(贡献来源中 startedAt 最新者),
+    // 不是任取某个真实来源(docs/feature/reports/architecture.md「Sample 是计算入口」)——
     // 组内每个 item 的 watermark 是同一个对象,取任一个即可;优先找真实来源恰好等于水位
     // 基准的 item,好让下面混读的 attempt 级字段(model/scoring 等)也来自同一份数据。
     const watermark = group[0]!.watermark;
-    const newest = group.find((item) => item.snapshot === watermark) ?? group[0]!;
+    const newest = group.find((item) => item.run === watermark) ?? group[0]!;
     const evalGroups = groupItems(group, "eval");
     const evalRows: ExperimentListEvalRow[] = [];
     for (const [evalId, evalItems] of evalGroups) {
@@ -224,11 +224,11 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
         attempts,
       });
     }
-    const experiment = newest.snapshot.experiment ?? newest.attempt.result.experiment;
-    const model = newest.attempt.result.model ?? newest.snapshot.model;
+    const experiment = newest.run.experiment ?? newest.attempt.result.experiment;
+    const model = newest.attempt.result.model ?? newest.run.model;
     out.push({
       experimentId,
-      agent: newest.snapshot.agent || newest.attempt.result.agent,
+      agent: newest.run.agent || newest.attempt.result.agent,
       ...(model !== undefined ? { model } : {}),
       ...(experiment?.flags ? { flags: experiment.flags } : {}),
       // 定义期事实,单个 experiment 内由启动期强制同型:newest 里任一 attempt 都能代表整组。
@@ -254,13 +254,13 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
     const emptyItems: Item[] = [];
     out.push({
       experimentId: coverageEntry.experimentId,
-      // ScopeCoverage 是结果选择层的覆盖事实，不伪造不存在的运行配置。这里的空值只让
+      // SampleCoverage 是结果选择层的覆盖事实，不伪造不存在的运行配置。这里的空值只让
       // 实体行保持既有 data 形状；渲染面会以 missingEvalIds 的占位行表达真实状态。
       agent: "",
-      // ScopeCoverage 不携带题型事实(没有 attempt 可读);"pass" 是同一条「占位默认值」
+      // SampleCoverage 不携带题型事实(没有 attempt 可读);"pass" 是同一条「占位默认值」
       // 纪律下的默认,不是从任何真实数据推断出来的。
       scoring: "pass",
-      evalVerdicts: { passed: 0, failed: 0, errored: 0, skipped: 0 },
+      evalVerdicts: { passed: 0, failed: 0, errored: 0, unreadable: 0 },
       endToEndPassRate: await computeCell(endToEndPassRate, emptyItems),
       totalScore: await computeCell(totalScore, emptyItems),
       costUSD: await computeCell(costUSD, emptyItems),

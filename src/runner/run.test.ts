@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // 因此对其余用例完全透明。工厂是惰性的——没有任何模块导入被 mock 的模块时它根本不执行,
 // 于是「派发路径上一次全树扫描都不做」这条断言的成本恒为零。
 const readSurfaceCalls = vi.hoisted(() => ({ forCase: 0, perEval: 0 }));
-vi.mock("../results/open.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../results/open.ts")>();
+vi.mock("../record/open.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../record/open.ts")>();
   return {
     ...actual,
     loadLatestResultsForCase: (...args: Parameters<typeof actual.loadLatestResultsForCase>) => {
@@ -32,8 +32,8 @@ import { fileURLToPath } from "node:url";
 import { judgeProbeTargets, runEvals } from "./run.ts";
 import { defineSandbox, defineSandboxAgent } from "../define.ts";
 import { Artifacts } from "./reporters/artifacts.ts";
-import { openResults } from "../results/open.ts";
-import { encodeAttemptLocator } from "../results/locator.ts";
+import { openRecord } from "../record/open.ts";
+import { encodeAttemptLocator } from "../record/locator.ts";
 import { equals } from "../expect/index.ts";
 import { createFeedbackCoordinator, type FeedbackCoordinator } from "./feedback/coordinator.ts";
 import { createFakeFeedbackIO } from "./feedback/testing.ts";
@@ -134,7 +134,7 @@ class FakeSandbox implements Partial<Sandbox> {
   async runCommand(): Promise<CommandResult> {
     return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
+  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
     for (const [path, content] of Object.entries(files)) {
       this.files.set(targetDir ? `${targetDir}/${path}` : path, content);
     }
@@ -201,7 +201,7 @@ function resultKey(r: { experimentId?: string; id: string; attempt: number }): s
 /**
  * 跑一次完整 runEvals():自带一个捕获 reporter(记录 onEvalComplete / eval:complete 事件
  * 观察到的 locator,按 `experimentId|evalId|attempt` 建索引)与真实 Artifacts reporter
- * (落盘到临时目录,供事后用 openResults() 核对与 reporter 观察到的值是否一致)。
+ * (落盘到临时目录,供事后用 openRecord() 核对与 reporter 观察到的值是否一致)。
  */
 async function run(
   evals: DiscoveredEval[],
@@ -256,10 +256,10 @@ async function run(
 }
 
 async function diskSnapshotStartedAt(root: string, experimentId: string): Promise<string> {
-  const results = await openResults(root);
+  const results = await openRecord(root);
   const exp = results.experiments.find((e) => e.id === experimentId);
-  if (!exp) throw new Error(`no snapshot written for experiment ${experimentId}`);
-  return exp.latest.startedAt;
+  if (!exp) throw new Error(`no run written for experiment ${experimentId}`);
+  return exp.latestRun.startedAt;
 }
 
 async function diskLocator(
@@ -268,9 +268,9 @@ async function diskLocator(
   evalId: string,
   attempt: number,
 ): Promise<string | undefined> {
-  const results = await openResults(root);
+  const results = await openRecord(root);
   const exp = results.experiments.find((e) => e.id === experimentId);
-  const ev = exp?.latest.evals.find((e) => e.id === evalId);
+  const ev = exp?.latestRun.evals.find((e) => e.id === evalId);
   return ev?.attempts.find((a) => a.result.attempt === attempt)?.locator;
 }
 
@@ -285,7 +285,7 @@ describe("runEvals · Reporter 的 Invocation 回调面(onInvocationStart / onIn
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -327,8 +327,8 @@ describe("runEvals · Reporter 的 Invocation 回调面(onInvocationStart / onIn
 });
 
 // runner 只是「展开、调度、串行化 reporter 回调」——locator 的确定性完全来自
-// encodeAttemptLocator 自己(已有 src/results/locator.test.ts 与
-// src/results/results.test.ts 的 AttemptLocator 套件覆盖)。这里要守的不变量是编排层的:
+// encodeAttemptLocator 自己(已有 src/record/locator.test.ts 与
+// src/record/results.test.ts 的 AttemptLocator 套件覆盖)。这里要守的不变量是编排层的:
 // fresh result 的 locator 必须在任何 reporter 看到它之前就已经"是最终值",且与落盘
 // result.json 完全相同;carry result 必须原样透传,不能被本次 invocation 的
 // snapshotStartedAt 悄悄重算成另一个身份。
@@ -342,7 +342,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -372,7 +372,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     const runFor = (experimentId: string): AgentRun => ({
       agent: makeAgent(experimentId),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -401,7 +401,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     const agentRun: AgentRun = {
       agent: makeAgent("agent-retry"),
       flags: {},
-      runs: 2,
+      attempts: 2,
       earlyExit: false, // 两次都要真的跑,不能被首过即停吞掉其中一次
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -439,17 +439,17 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       durationMs: 1,
       assertions: [],
       locator: staleLocator,
-      artifactBase: `${experimentId}/some-old-snapshot/${evalId}/a0`,
+      artifactBase: `${experimentId}/some-old-run/${evalId}/a0`,
     };
     // eval 的 test() 会抛错——如果携带 / 首过即停判断漏了这条、真的调度了一次新 attempt,
     // 这里会产出一条 errored 的重复结果,而不是静默漏测。
     const evalDef = makeEval(evalId, () => {
-      throw new Error("carried result should have skipped scheduling a fresh attempt");
+      throw new Error("carried result should have unreadable scheduling a fresh attempt");
     });
     const agentRun: AgentRun = {
       agent: makeAgent("agent-carried"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -502,7 +502,7 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
     const agentRun: AgentRun = {
       agent: makeAgent("agent-concurrent"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -555,7 +555,7 @@ async function withCoordinator<T>(
     return await fn(coordinator);
   } finally {
     await coordinator.finish({
-      summary: { startedAt: "", completedAt: "", passed: 0, failed: 0, skipped: 0, errored: 0, durationMs: 0, results: [] },
+      summary: { startedAt: "", completedAt: "", passed: 0, failed: 0, unreadable: 0, errored: 0, durationMs: 0, results: [] },
       completion: { status: "complete", unstarted: 0, earlyExitUnstarted: 0, reporterErrors: [] },
       paths: [],
     });
@@ -579,7 +579,7 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -647,7 +647,7 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
     const agentRun: AgentRun = {
       agent: makeAgent("agent-budget"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -671,10 +671,10 @@ describe("runEvals · budget-exhausted 永久事件按每个被跳过的 attempt
       expect(diag?.count).toBe(3); // 三个 attempt 各发一次,去重折成同一个 key、count 累加到 3
       expect(diag?.data).toMatchObject({ experimentId, spent: 0, unstarted: 3 });
 
-      // reducer 不变量:每条 budget-exhausted 把一个 attempt 从 queued 挪进 skipped —— 没派发就
+      // reducer 不变量:每条 budget-exhausted 把一个 attempt 从 queued 挪进 unreadable —— 没派发就
       // 没有 verdict,不冒充 passed/failed(与 assembleInvocationCompletion() 读取 count 折算
       // InvocationCompletion.unstarted 的口径一致)。
-      expect(coordinator.state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, skipped: 3 });
+      expect(coordinator.state).toMatchObject({ total: 3, reused: 0, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, unreadable: 3 });
     });
   });
 });
@@ -697,7 +697,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
     const agentRun: AgentRun = {
       agent: makeAgent("agent-budget"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: missingTemplate,
       timeoutMs: 5_000,
@@ -730,7 +730,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
     const agentRun: AgentRun = {
       agent: makeAgent("agent-budget"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -758,7 +758,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
   });
 });
 
-// 携入数量不足以覆盖本次请求的 runs(典型触发:上次 runs:1 落了 1 条终态结果,这次把 runs
+// 携入数量不足以覆盖本次请求的 runs(典型触发:上次 attempts: 1 落了 1 条终态结果,这次把 runs
 // 调大到 3、没有 --force)时,差额必须真正计入调度,不能因为这个组合"有过携入"就把没有实际
 // 携入的序号也整段跳过——那会让 pass@N 的 N 被携入悄悄砍短,运行还照样报 PASSED/exit 0(见
 // docs/runner.md「不能在 CI 里伪装成全绿」)。
@@ -786,7 +786,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       durationMs: 1,
       assertions: [],
       locator: staleLocator,
-      artifactBase: `${experimentId}/some-old-snapshot/${evalId}/a0`,
+      artifactBase: `${experimentId}/some-old-run/${evalId}/a0`,
     };
     // 差额 attempt 如果真的被调度执行,这里会抛错——用它检测「有没有因为回填而多花一次 agent
     // 成本」。earlyExit 下携入的 passed 应该让回填直接早退,不应该走到这里。
@@ -796,7 +796,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const agentRun: AgentRun = {
       agent: makeAgent("agent-grow"),
       flags: {},
-      runs: 3, // 上次只留 1 条(runs:1 时代的携入),这次调大
+      attempts: 3, // 上次只留 1 条(attempts: 1 时代的携入),这次调大
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -824,9 +824,9 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       expect(matches[0]!.verdict).toBe("passed");
       expect(matches[0]!.locator).toBe(staleLocator); // 携入结果原样透传
 
-      // 不变量:携入 1 + early-exit 回填 2 == 本次请求的 runs:3,不留没有解释的差额
-      // (queued 必须真正归零,不能停在「还差 2 个不知道去哪」)。回填的两轮没真跑,进 skipped。
-      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, skipped: 2 });
+      // 不变量:携入 1 + early-exit 回填 2 == 本次请求的 attempts: 3,不留没有解释的差额
+      // (queued 必须真正归零,不能停在「还差 2 个不知道去哪」)。回填的两轮没真跑,进 unreadable。
+      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 0, errored: 0, unreadable: 2 });
     });
   });
 
@@ -849,7 +849,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       durationMs: 1,
       assertions: [],
       locator: staleLocator,
-      artifactBase: `${experimentId}/some-old-snapshot/${evalId}/a0`,
+      artifactBase: `${experimentId}/some-old-run/${evalId}/a0`,
     };
     let calls = 0;
     // 恒定 gate 失败(而不是恒定通过):避免回填的第一次真的跑出 passed 后,靠"这次跑出来的
@@ -861,7 +861,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     const agentRun: AgentRun = {
       agent: makeAgent("agent-grow-failed"),
       flags: {},
-      runs: 3,
+      attempts: 3,
       earlyExit: true, // failed 不触发 earlyExit(只有 passed/errored 会),回填的两次应该真的跑
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -892,12 +892,12 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
 
       expect(calls).toBe(2); // 差额的两次真的执行了 agent,不是被携入悄悄吞掉
       const matches = summary.results.filter((r) => r.id === evalId);
-      expect(matches).toHaveLength(3); // 1 携入 + 2 新跑,凑满本次请求的 runs:3
+      expect(matches).toHaveLength(3); // 1 携入 + 2 新跑,凑满本次请求的 attempts: 3
       expect(matches.map((r) => r.attempt).sort()).toEqual([0, 1, 2]);
       expect(matches.every((r) => r.verdict === "failed")).toBe(true);
 
       // 差额两次真的跑了,各自落进 failed —— 携入那条的 verdict 留在 reused,不摊进结局项。
-      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 2, errored: 0, skipped: 0 });
+      expect(coordinator.state).toMatchObject({ total: 3, reused: 1, running: 0, queued: 0, passed: 0, failed: 2, errored: 0, unreadable: 0 });
       // InvocationSummary 的三条 failed（1 carry + 2 fresh）与终局 handoff 的 FailureNotice 清单同口径。
       // carry 不能只进 summary 计数而从 FAILURES / agent handoff 消失。
       expect(coordinator.state.failures).toHaveLength(3);
@@ -906,7 +906,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
   });
 
   it("携带的具体序号不连续(carry 序号 1,不是序号 0)时,只补跑真正缺失的 0 和 2,不是无脑跳过前 N 个", async () => {
-    // 受控模拟"runs:3 且中间那次(序号 1)恰好是上一轮唯一的终态结果、序号 0/2 从未落盘"这个
+    // 受控模拟"attempts: 3 且中间那次(序号 1)恰好是上一轮唯一的终态结果、序号 0/2 从未落盘"这个
     // 非连续场景——直接验证 run.ts 的调度是按 carriedAttemptsByKey 里的具体序号跳过,不是按
     // "这个组合携带过 N 条就跳过前 N 个"这种旧的、错误的计数式跳过。
     const experimentId = "carry-noncontig-exp";
@@ -928,12 +928,12 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       durationMs: 1,
       assertions: [],
       locator: staleLocator,
-      artifactBase: `${experimentId}/some-old-snapshot/${evalId}/a1`,
+      artifactBase: `${experimentId}/some-old-run/${evalId}/a1`,
     };
     const agentRun: AgentRun = {
       agent: makeAgent("agent-noncontig"),
       flags: {},
-      runs: 3,
+      attempts: 3,
       earlyExit: false, // 关掉 earlyExit:避免序号 0 先跑出 passed 把序号 2 提前吞掉,专注验证"跑了哪些序号"
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -951,7 +951,7 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
     });
 
     const matches = summary.results.filter((r) => r.id === evalId).sort((a, b) => a.attempt - b.attempt);
-    expect(matches.map((r) => r.attempt)).toEqual([0, 1, 2]); // 携带的 1 + 真正派发的 0、2,凑满 runs:3
+    expect(matches.map((r) => r.attempt)).toEqual([0, 1, 2]); // 携带的 1 + 真正派发的 0、2,凑满 attempts: 3
     expect(matches[0]!.locator).not.toBe(staleLocator); // 序号 0 是真跑的新 attempt,不是携带
     expect(matches[1]!.locator).toBe(staleLocator); // 序号 1 原样透传携带条目(原封不动的旧 locator)
     expect(matches[2]!.locator).not.toBe(staleLocator); // 序号 2 同样是真跑的新 attempt
@@ -974,7 +974,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
     return {
       agent: makeAgent(`agent-${experimentId}`),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1007,7 +1007,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
         teardownCalls += 1;
         completedAtTeardown = completed;
       },
-      { runs: 2, selectedEvalIds: ["a", "b", "c"] },
+      { attempts: 2, selectedEvalIds: ["a", "b", "c"] },
     );
 
     const { summary } = await run(evals, [agentRun], { maxConcurrency: 4 });
@@ -1016,7 +1016,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
     expect(teardownCalls).toBe(1);
     expect(summary.results).toHaveLength(6);
     expect(summary.results.every((r) => r.verdict === "passed")).toBe(true);
-    // teardown 必须晚于本实验全部 attempt 的执行(runs:2 但 earlyExit 会省略第二轮,
+    // teardown 必须晚于本实验全部 attempt 的执行(attempts: 2 但 earlyExit 会省略第二轮,
     // 至少 3 条 eval 各完成一次)
     expect(completedAtTeardown).toBeGreaterThanOrEqual(3);
   });
@@ -1092,7 +1092,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
         throw new Error("tunnel refused to start");
       },
       undefined,
-      { runs: 2, earlyExit: false, selectedEvalIds: ["m1", "m2"] },
+      { attempts: 2, earlyExit: false, selectedEvalIds: ["m1", "m2"] },
     );
     const healthy = runWithHooks("healthy-exp", () => {}, undefined, { selectedEvalIds: ["m1", "m2"] });
 
@@ -1123,7 +1123,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
       () => {
         teardownCalls += 1;
       },
-      { runs: 2, earlyExit: false, selectedEvalIds: ["m1", "m2"] },
+      { attempts: 2, earlyExit: false, selectedEvalIds: ["m1", "m2"] },
     );
 
     const { summary } = await run(evals, [broken], { maxConcurrency: 4 });
@@ -1258,7 +1258,7 @@ describe("runEvals · 实验级 teardown 失败只作运行级诊断", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-registry"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1284,7 +1284,7 @@ describe("runEvals · 实验级 teardown 失败只作运行级诊断", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-leaky"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1315,18 +1315,18 @@ describe("runEvals · 实验级 teardown 失败只作运行级诊断", () => {
 });
 
 // cases: docs/engineering/testing/unit/experiments-runner.md「实验域诊断持久化」
-// docs/runner.md「实验域诊断持久化」的折叠不变量:相同 dedupeKey 只在同一个 Snapshot(即同一个
+// docs/runner.md「实验域诊断持久化」的折叠不变量:相同 dedupeKey 只在同一个 Run(即同一个
 // experimentId)内折叠 count;不同 Experiment 各自独立累计,不跨来源合并。live 反馈流(coordinator)
 // 已有覆盖(见上面 budget-unenforceable / teardown-failed 两个 describe),这里单独守持久化
-// 到 snapshot.json 的那份累积器——它是独立状态,不能只测 live 反馈就当作两条通路都验证过了。
-describe("runEvals · 实验域诊断持久化到 Snapshot", () => {
+// 到 run.json 的那份累积器——它是独立状态,不能只测 live 反馈就当作两条通路都验证过了。
+describe("runEvals · 实验域诊断持久化到 Run", () => {
   it("相同 dedupeKey 在同一 Experiment 内折叠 count,不同 Experiment 各自独立、不跨来源合并", async () => {
     const evalA = makeEval("a", () => {});
     const evalB = makeEval("b", () => {});
     const agentA: AgentRun = {
       agent: makeAgent("agent-diag-a"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1340,7 +1340,7 @@ describe("runEvals · 实验域诊断持久化到 Snapshot", () => {
     const agentB: AgentRun = {
       agent: makeAgent("agent-diag-b"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1353,33 +1353,33 @@ describe("runEvals · 实验域诊断持久化到 Snapshot", () => {
 
     const { root } = await run([evalA, evalB], [agentA, agentB], { maxConcurrency: 4 });
 
-    const results = await openResults(root);
+    const results = await openRecord(root);
     const expA = results.experiments.find((e) => e.id === "diag-exp-a");
     const expB = results.experiments.find((e) => e.id === "diag-exp-b");
     expect(expA).toBeDefined();
     expect(expB).toBeDefined();
 
     // 同一个 Experiment 内两次相同 dedupeKey 折叠成一条,count 累计到 2。
-    expect(expA!.latest.diagnostics).toHaveLength(1);
-    expect(expA!.latest.diagnostics![0]).toMatchObject({ code: "tunnel-flaky", count: 2 });
+    expect(expA!.latestRun.diagnostics).toHaveLength(1);
+    expect(expA!.latestRun.diagnostics![0]).toMatchObject({ code: "tunnel-flaky", count: 2 });
 
     // 另一个 Experiment 独立计数:同样的 dedupeKey/code 只出现过一次,不从 exp-a 借位、
     // 也不把两边加总。
-    expect(expB!.latest.diagnostics).toHaveLength(1);
-    expect(expB!.latest.diagnostics![0]).toMatchObject({ code: "tunnel-flaky" });
-    expect(expB!.latest.diagnostics![0]!.count).toBeUndefined();
+    expect(expB!.latestRun.diagnostics).toHaveLength(1);
+    expect(expB!.latestRun.diagnostics![0]).toMatchObject({ code: "tunnel-flaky" });
+    expect(expB!.latestRun.diagnostics![0]!.count).toBeUndefined();
   });
 });
 
 // cases: docs/engineering/testing/unit/experiments-runner.md「ctx.fact() 的作用域归属」
-describe("runEvals · experiment.setup/.teardown 的 ctx.fact() 累积进 Snapshot.facts", () => {
+describe("runEvals · experiment.setup/.teardown 的 ctx.fact() 累积进 Run.facts", () => {
   it("同一 Experiment 内 setup 与 teardown 上报的 fact 合并,同 key 后写覆盖先写;不同 Experiment 各自独立、不串桶", async () => {
     const evalA = makeEval("a", () => {});
     const evalB = makeEval("b", () => {});
     const agentA: AgentRun = {
       agent: makeAgent("agent-fact-a"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1396,7 +1396,7 @@ describe("runEvals · experiment.setup/.teardown 的 ctx.fact() 累积进 Snapsh
     const agentB: AgentRun = {
       agent: makeAgent("agent-fact-b"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1407,12 +1407,12 @@ describe("runEvals · experiment.setup/.teardown 的 ctx.fact() 累积进 Snapsh
 
     const { root } = await run([evalA, evalB], [agentA, agentB], { maxConcurrency: 4 });
 
-    const results = await openResults(root);
+    const results = await openRecord(root);
     const expA = results.experiments.find((e) => e.id === "fact-exp-a");
     const expB = results.experiments.find((e) => e.id === "fact-exp-b");
 
-    expect(expA!.latest.facts).toEqual({ "service.version": "2026.7.0", "shared.key": "from-teardown" });
-    expect(expB!.latest.facts).toBeUndefined();
+    expect(expA!.latestRun.facts).toEqual({ "service.version": "2026.7.0", "shared.key": "from-teardown" });
+    expect(expB!.latestRun.facts).toBeUndefined();
   });
 });
 
@@ -1463,7 +1463,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
     const agentRun: AgentRun = {
       agent: makeAgent(`agent-${experimentId}`),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1531,7 +1531,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       {
         agent: makeAgent(`agent-${experimentId}`),
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: true,
         timeoutMs: 5_000,
         selectedEvalIds: ["carried-eval"],
@@ -1586,7 +1586,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
     const agentRun: AgentRun = {
       agent: makeAgent(`agent-${experimentId}`),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1648,7 +1648,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
     const agentRun: AgentRun = {
       agent: makeAgent(`agent-${experimentId}`),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -1676,7 +1676,7 @@ describe("computeFingerprint · 实验级钩子不进 fingerprint", () => {
     const base: AgentRun = {
       agent: makeAgent("agent-fp"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       timeoutMs: 5_000,
       selectedEvalIds: ["fp"],
@@ -1717,7 +1717,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-exclusive"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: exclusiveSpec,
       timeoutMs: 5_000,
@@ -1764,7 +1764,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
     const exclusiveRun: AgentRun = {
       agent: makeAgent("agent-excl"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: exclusiveSpec,
       timeoutMs: 5_000,
@@ -1774,7 +1774,7 @@ describe("runEvals · exclusive provider 强制串行", () => {
     const normalRun: AgentRun = {
       agent: makeAgent("agent-normal"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: normalSpec,
       timeoutMs: 5_000,
@@ -1837,7 +1837,7 @@ describe("runEvals · 退避的槽位持有期差:实验级闸全程持有,全�
       const agentRun: AgentRun = {
         agent,
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         sandbox: sandboxSpec,
         maxConcurrency: 1,
@@ -1894,7 +1894,7 @@ describe("runEvals · 实验级闸覆盖沙箱收尾", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-teardown-barrier"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: sandboxSpec,
       maxConcurrency: 1,
@@ -1975,7 +1975,7 @@ describe("runEvals · 全局并发位在退避期间确实让给别的实验", (
       const runR: AgentRun = {
         agent: agentR,
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         sandbox: fakeSandboxSpec(),
         timeoutMs: 30_000,
@@ -1985,7 +1985,7 @@ describe("runEvals · 全局并发位在退避期间确实让给别的实验", (
       const runW: AgentRun = {
         agent: agentW,
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         sandbox: fakeSandboxSpec(),
         timeoutMs: 30_000,
@@ -2061,7 +2061,13 @@ function staleLockRecord(experimentId: string, evalId: string, overrides: Partia
 async function runWithPriorResults(
   evals: DiscoveredEval[],
   agentRuns: AgentRun[],
-  opts: { priorResults?: EvalResult[]; root?: string; signal?: AbortSignal; maxConcurrency?: number } = {},
+  opts: {
+    priorResults?: EvalResult[];
+    root?: string;
+    signal?: AbortSignal;
+    maxConcurrency?: number;
+    carryIgnoringFlags?: string[];
+  } = {},
 ): Promise<{ summary: InvocationSummary; root: string }> {
   const root = opts.root ?? (await makeRoot());
   const config: Config = {};
@@ -2073,6 +2079,7 @@ async function runWithPriorResults(
     maxConcurrency: opts.maxConcurrency ?? 3,
     niceevalRoot: root,
     ...(opts.priorResults !== undefined ? { priorResults: opts.priorResults } : {}),
+    ...(opts.carryIgnoringFlags !== undefined ? { carryIgnoringFlags: opts.carryIgnoringFlags } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   };
   const summary = await runEvals(runOpts);
@@ -2170,7 +2177,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-lock-timing-carry"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -2210,17 +2217,17 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     });
     const base = {
       agent: makeAgent("agent-carry-restamp"),
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
     };
-    // 上一轮的 endpoint 与本轮不同,但它声明成 provenance flag:结果照常携带,
+    // 上一轮的 endpoint 已从本轮 flags 移走;调用方显式声明本次携带忽略该旧 flag,
     // 而它落盘的指纹是**整袋 flags**(含旧 endpoint)算的,与本轮规划的那个不相等。
     const oldFlags = { endpoint: "https://old.example" };
-    const agentRun: AgentRun = { ...base, flags: { endpoint: "https://new.example" }, provenanceFlags: ["endpoint"] };
+    const agentRun: AgentRun = { ...base, flags: {} };
     const oldFingerprint = await computeFingerprint(evalDef, { ...base, flags: oldFlags });
     const plannedFingerprint = await computeFingerprint(evalDef, agentRun);
     expect(oldFingerprint).not.toBe(plannedFingerprint);
@@ -2232,13 +2239,16 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       verdict: "passed",
       attempt: 0,
       fingerprint: oldFingerprint,
-      experiment: { flags: oldFlags, runs: 1, earlyExit: false, selectedEvalIds: [evalId] },
+      experiment: { flags: oldFlags, attempts: 1, earlyExit: false, selectedEvalIds: [evalId] },
       startedAt: new Date().toISOString(),
       durationMs: 1,
       assertions: [],
     };
 
-    const { summary } = await runWithPriorResults([evalDef], [agentRun], { priorResults: [prior] });
+    const { summary } = await runWithPriorResults([evalDef], [agentRun], {
+      priorResults: [prior],
+      carryIgnoringFlags: ["endpoint"],
+    });
 
     expect(summary.results).toHaveLength(1);
     expect(summary.results[0]!.verdict).toBe("passed");
@@ -2261,7 +2271,7 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       const agentRun: AgentRun = {
         agent: makeAgent("agent-lock-timing-setup"),
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         sandbox: fakeSandboxSpec(),
         timeoutMs: 30_000,
@@ -2324,7 +2334,7 @@ describe("runEvals · 用例锁: 等待语义", () => {
       const agentRun: AgentRun = {
         agent: makeAgent("agent-lock-wait"),
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         sandbox: fakeSandboxSpec(),
         timeoutMs: 30_000,
@@ -2386,7 +2396,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
     const producerRun: AgentRun = {
       agent: makeAgent("agent-lock-release-carry"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -2438,7 +2448,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-lock-release-dispatch"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -2454,14 +2464,14 @@ describe("runEvals · 用例锁: 释放后续接", () => {
     expect(await lockFilesRemaining(root)).toEqual([]);
   });
 
-  it("runs 部分携入部分补跑:已有 1 条终态时,续接方 runs:2 只补差额序号,不重跑已携入的序号", async () => {
+  it("runs 部分携入部分补跑:已有 1 条终态时,续接方 attempts: 2 只补差额序号,不重跑已携入的序号", async () => {
     const root = await makeRoot();
     const experimentId = "lock-release-partial-exp";
     const evalId = "partial-release-eval";
     const producerRun: AgentRun = {
       agent: makeAgent("agent-lock-release-partial"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: false,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -2481,7 +2491,7 @@ describe("runEvals · 用例锁: 释放后续接", () => {
     // earlyExit: false —— 携入的 passed 会预置进 passedKeys(见 run.ts 对 lateCarriedResults
     // 的处理),开着 earlyExit 会让差额序号也被当成"已知会通过"提前省略,测不出"差额真的被
     // 重新派发"这件事本身。
-    const subjectRun: AgentRun = { ...producerRun, runs: 2, earlyExit: false };
+    const subjectRun: AgentRun = { ...producerRun, attempts: 2, earlyExit: false };
 
     const { summary } = await runWithPriorResults([subjectEval], [subjectRun], { priorResults: [], root });
 
@@ -2506,7 +2516,7 @@ describe("runEvals · 用例锁: 执行模式组合", () => {
     const producerRun: AgentRun = {
       agent: makeAgent("agent-lock-force"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -2548,7 +2558,7 @@ describe("runEvals · 用例锁: 释放路径", () => {
     const agentRun: AgentRun = {
       agent: makeAgent("agent-lock-setup-fail"),
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: fakeSandboxSpec(),
       timeoutMs: 5_000,
@@ -2620,7 +2630,7 @@ function probeRun(
   return {
     agent,
     flags: {},
-    runs: 1,
+    attempts: 1,
     earlyExit: false,
     sandbox: fakeSandboxSpec(),
     timeoutMs: 600_000,
@@ -2747,7 +2757,7 @@ describe("runEvals · 用例锁: 多开分工", () => {
   // 这条用例会绿得毫无意义(见 memory/multi-open-residual-window-closed-by-narrow-read.md)。
   //
   // 顺带钉住「携带来源不要求快照收尾」:A 的第二波携入 B 的结果时,B 整批还没跑完(它的两条
-  // 正挂在 A 的锁上等),快照 snapshot.json 尚无 completedAt。
+  // 正挂在 A 的锁上等),快照 run.json 尚无 completedAt。
   it("两条 runEvals 同 root、选择集完全相同:真实派发的用例集不相交、并集覆盖选择集、全局在飞峰值达到两边上限之和,每条用例全局只被真实派发一次", async () => {
     vi.useFakeTimers();
     try {
@@ -3084,13 +3094,13 @@ describe("runEvals · 用例锁: runs > 1 的兄弟 attempt 共享同一把锁",
     expect(pendingHeldCaseLockCount()).toBe(0);
   });
 
-  it("自己已持有的直接放行:runs: 3 三条 attempt 同时在飞,锁目录仍只有一条(锁是逐用例的,不是逐 attempt)", async () => {
+  it("自己已持有的直接放行:attempts: 3 三条 attempt 同时在飞,锁目录仍只有一条(锁是逐用例的,不是逐 attempt)", async () => {
     const root = await makeRoot();
     const experimentId = "lock-sibling-hold-exp";
     const evalId = "sibling-hold-eval";
     const { barrier, release } = makeBarrier();
     const probe = newDispatchProbe();
-    const agentRun = probeRun(makeAgent("agent-lock-sibling-hold"), experimentId, [evalId], { runs: 3 });
+    const agentRun = probeRun(makeAgent("agent-lock-sibling-hold"), experimentId, [evalId], { attempts: 3 });
 
     const runPromise = runWithPriorResults([gatedEval(evalId, barrier, probe)], [agentRun], {
       priorResults: [],
@@ -3121,7 +3131,7 @@ describe("runEvals · 用例锁: runs > 1 的兄弟 attempt 共享同一把锁",
       const evalDef = makeEval(evalId, () => {
         calls += 1;
       });
-      const agentRun = probeRun(makeAgent("agent-lock-sibling-wait"), experimentId, [evalId], { runs: 3 });
+      const agentRun = probeRun(makeAgent("agent-lock-sibling-wait"), experimentId, [evalId], { attempts: 3 });
       const plan: RunFeedbackPlan = {
         shape: { evals: 1, configs: 1, totalAttempts: 3, maxConcurrency: 3 },
         reused: 0,
@@ -3196,7 +3206,7 @@ describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () =>
       const subjectEval = makeEval(evalId, () => {
         calls += 1;
       });
-      const subjectRun = probeRun(agent, experimentId, [evalId], { sandbox, runs: 2 });
+      const subjectRun = probeRun(agent, experimentId, [evalId], { sandbox, attempts: 2 });
       const plan: RunFeedbackPlan = {
         shape: { evals: 1, configs: 1, totalAttempts: 2, maxConcurrency: 2 },
         reused: 0,
@@ -3253,7 +3263,7 @@ describe("runEvals · 用例锁: 释放后重查携带逐 attempt 判定", () =>
 
     // A 要两轮;对方只跑了 p-2 的序号 0。
     const evalsA = [gatedEval(gatedId, barrier, sideA, all), gatedEval(sharedId, barrier, sideA, all)];
-    const runA = probeRun(agent, experimentId, [gatedId, sharedId], { sandbox, runs: 2 });
+    const runA = probeRun(agent, experimentId, [gatedId, sharedId], { sandbox, attempts: 2 });
     const evalsPeer = [gatedEval(sharedId, Promise.resolve(), all)];
     const runPeer = probeRun(agent, experimentId, [sharedId], { sandbox });
 
@@ -3322,7 +3332,7 @@ describe("runEvals · 用例锁: 取锁后重查携带的读取面", () => {
         calls += 1;
       }),
     );
-    const subjectRun = probeRun(makeAgent("agent-read-surface"), experimentId, ids, { sandbox, runs: 2 });
+    const subjectRun = probeRun(makeAgent("agent-read-surface"), experimentId, ids, { sandbox, attempts: 2 });
 
     readSurfaceCalls.forCase = 0;
     readSurfaceCalls.perEval = 0;
@@ -3341,7 +3351,7 @@ describe("runEvals · 用例锁: 取锁后重查携带的读取面", () => {
 // 契约:docs/feature/error-classification/README.md「止损语义」、architecture.md「止损执行体」
 //
 // 断言面全部是可观察的调度事实:test() 被真实调用了几次(启动集合)、`summary.results` 有几条、
-// 反馈状态的五项计数与诊断、`snapshot.json` 的实验域诊断。闸的内部形态(latch / AbortController /
+// 反馈状态的五项计数与诊断、`run.json` 的实验域诊断。闸的内部形态(latch / AbortController /
 // 检查点次数)不进断言 —— 覆盖规范「观察面与边界」明确不锁内部信号量与 Promise 图。
 
 /** 两条通路共用的折叠键(run.ts 的 haltGateKey);反馈流按 key 取,持久化侧按 code 过滤。 */
@@ -3349,11 +3359,11 @@ const experimentHaltKey = (experimentId: string): string => `dispatch-halted:exp
 const evalHaltKey = (experimentId: string, evalId: string): string =>
   `dispatch-halted:eval:${experimentId}|${evalId}`;
 
-/** 持久化通路:snapshot.json 里该 Experiment 的 dispatch-halted 诊断(可能一条都没有)。 */
+/** 持久化通路:run.json 里该 Experiment 的 dispatch-halted 诊断(可能一条都没有)。 */
 async function snapshotHaltDiagnostics(root: string, experimentId: string): Promise<DiagnosticRecord[]> {
-  const results = await openResults(root);
+  const results = await openRecord(root);
   const exp = results.experiments.find((e) => e.id === experimentId);
-  return (exp?.latest.diagnostics ?? []).filter((d) => d.code === "dispatch-halted");
+  return (exp?.latestRun.diagnostics ?? []).filter((d) => d.code === "dispatch-halted");
 }
 
 /** 八项计数恒等式(docs/feature/experiments/cli.md):任何一帧都必须成立。 */
@@ -3366,7 +3376,7 @@ function expectCountIdentity(state: RunFeedbackState): void {
       state.passed +
       state.failed +
       state.errored +
-      state.skipped,
+      state.unreadable,
   );
 }
 
@@ -3439,14 +3449,14 @@ describe("runEvals · 止损闸: 触发", () => {
       expect(coordinator.state.queued).toBe(0);
       expect(coordinator.state.elsewhere).toBe(0);
 
-      // 同批其它实验的 snapshot 上不留任何 dispatch-halted。
+      // 同批其它实验的 run 上不留任何 dispatch-halted。
       expect(await snapshotHaltDiagnostics(root, bystanderExp)).toEqual([]);
       expect(await lockFilesRemaining(root)).toEqual([]);
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
 
-  // 触发(eval 档)+ 诊断双通路:runs: 3 下只停本 eval 剩余的两个 attempt,同实验另一个 eval 的
-  // 三个 attempt 一个不少;两条通路(反馈流通知 / snapshot.json)各自带齐 scope、evalId 与 phase。
+  // 触发(eval 档)+ 诊断双通路:attempts: 3 下只停本 eval 剩余的两个 attempt,同实验另一个 eval 的
+  // 三个 attempt 一个不少;两条通路(反馈流通知 / run.json)各自带齐 scope、evalId 与 phase。
   it("EvalFatalError:只停本 eval 剩余 attempt(同实验另一个 eval 的 3 个 attempt 照跑);双通路的 scope/evalId/phase 同源", async () => {
     const experimentId = "halt-eval-scope-exp";
     const message = "fixture corrupted: regenerate data/fixtures";
@@ -3459,7 +3469,7 @@ describe("runEvals · 止损闸: 触发", () => {
     const evalOk = makeEval("f-ok", () => {
       okCalls += 1;
     });
-    const agentRun = probeRun(makeAgent("agent-halt-eval-scope"), experimentId, ["f-fatal", "f-ok"], { runs: 3 });
+    const agentRun = probeRun(makeAgent("agent-halt-eval-scope"), experimentId, ["f-fatal", "f-ok"], { attempts: 3 });
     const plan: RunFeedbackPlan = {
       shape: { evals: 2, configs: 1, totalAttempts: 6, maxConcurrency: 1 },
       reused: 0,
@@ -3488,7 +3498,7 @@ describe("runEvals · 止损闸: 触发", () => {
       expect(coordinator.state.diagnostics.some((d) => d.key === experimentHaltKey(experimentId))).toBe(false);
       expectCountIdentity(coordinator.state);
 
-      // 通路二:snapshot.json 的实验域诊断。同源(同一份 message/phase/scope),但各自累计 ——
+      // 通路二:run.json 的实验域诊断。同源(同一份 message/phase/scope),但各自累计 ——
       // 反馈流那条含未派发记账刷新的 count,持久化这条只按声明次数折叠(这里只声明过一次)。
       const persisted = await snapshotHaltDiagnostics(root, experimentId);
       expect(persisted).toHaveLength(1);
@@ -3965,7 +3975,7 @@ describe("runEvals · 用例锁: 等待窗口的 elsewhere 收支平账", () => 
 
   // 报进 elsewhere 的条数必须原数报回:等待期间被中断而提前 settle 的 attempt 会让「本组还剩
   // 几条没收尾」缩水,收尾时拿当下的剩余条数当迁移数,差额就永远挂在 elsewhere 上。
-  it("挂起期间用户中断:runs: 2 整组报进 elsewhere 的两条被原数报回,elsewhere 归零、恒等式成立", async () => {
+  it("挂起期间用户中断:attempts: 2 整组报进 elsewhere 的两条被原数报回,elsewhere 归零、恒等式成立", async () => {
     const root = await makeRoot();
     const experimentId = "elsewhere-interrupt-exp";
     const evalId = "elsewhere-interrupt-eval";
@@ -3975,7 +3985,7 @@ describe("runEvals · 用例锁: 等待窗口的 elsewhere 收支平账", () => 
     const evalDef = makeEval(evalId, () => {
       calls += 1;
     });
-    const agentRun = probeRun(makeAgent("agent-elsewhere-interrupt"), experimentId, [evalId], { runs: 2 });
+    const agentRun = probeRun(makeAgent("agent-elsewhere-interrupt"), experimentId, [evalId], { attempts: 2 });
     const plan: RunFeedbackPlan = {
       shape: { evals: 1, configs: 1, totalAttempts: 2, maxConcurrency: 2 },
       reused: 0,
@@ -4022,7 +4032,7 @@ describe("runEvals · 用例锁: 等待窗口的 elsewhere 收支平账", () => 
 
     const { barrier, release } = makeBarrier();
     const probe = newDispatchProbe();
-    const subjectRun = probeRun(agent, experimentId, [evalId], { sandbox, runs: 2 });
+    const subjectRun = probeRun(agent, experimentId, [evalId], { sandbox, attempts: 2 });
     const plan: RunFeedbackPlan = {
       shape: { evals: 1, configs: 1, totalAttempts: 2, maxConcurrency: 2 },
       reused: 0,

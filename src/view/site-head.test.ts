@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { loadViewScan } from "./data.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION } from "../types.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {
@@ -29,10 +29,10 @@ async function seedRoot(): Promise<string> {
   const dir = join(root, "compare_bub", "2026-07-08T10-00-00-000Z");
   await mkdir(dir, { recursive: true });
   await writeFile(
-    join(dir, "snapshot.json"),
+    join(dir, "run.json"),
     JSON.stringify({
-      format: RESULTS_FORMAT,
-      schemaVersion: RESULTS_SCHEMA_VERSION,
+      format: RECORD_FORMAT,
+      schemaVersion: RECORD_SCHEMA_VERSION,
       producer: { name: "niceeval", version: "0.4.6" },
       experimentId: "compare/bub",
       agent: "bub",

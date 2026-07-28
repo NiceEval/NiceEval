@@ -129,12 +129,6 @@ export function defineExperiment(def: ExperimentDef): ExperimentDef {
       }
     }
   }
-  // provenanceFlags 只接受字符串键名数组:写错形状(误传对象、误传 flags 本身)在解析时就报,
-  // 不等到携带判定悄悄按「没声明」处理——那会表现成缓存莫名其妙全失效,极难查。
-  if (def.provenanceFlags !== undefined) {
-    const ok = Array.isArray(def.provenanceFlags) && def.provenanceFlags.every((k) => typeof k === "string" && k.length > 0);
-    if (!ok) throw new Error(t("define.experimentProvenanceFlagsInvalid"));
-  }
   // labels 是报告归类坐标(进 ExperimentRunInfo.labels,不透传 ctx/t):值域 string | number,
   // 解析时即校验,布尔 / 对象 / NaN 直接报错,不等到落盘或报告分组才炸。
   if (def.labels !== undefined) {
@@ -150,7 +144,7 @@ function isJsonValue(v: unknown): boolean {
   if (v === null || typeof v === "string" || typeof v === "boolean") return true;
   if (typeof v === "number") return Number.isFinite(v);
   if (Array.isArray(v)) return v.every(isJsonValue);
-  if (typeof v === "object") return Object.values(v as Record<string, unknown>).every(isJsonValue);
+  if (typeof v === "object") return Object.values(v as globalThis.Record<string, unknown>).every(isJsonValue);
   return false;
 }
 

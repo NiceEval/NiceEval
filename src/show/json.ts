@@ -3,7 +3,7 @@
 // 分篇(docs/feature/reports/architecture.md「show 的切片是组件选择」)。本文件只装配信封、
 // 通用 attempt 投影与 stdout 单文档序列化,不重复声明任何组件的字段形状。
 
-import type { AttemptHandle } from "../results/index.ts";
+import type { AttemptHandle } from "../record/index.ts";
 import type { EvalResult } from "../types.ts";
 
 /** 信封 `view` 的穷尽集合,与 docs/feature/reports/show/json.md「data:按 view 找组件声明」的表逐行对应。 */
@@ -39,7 +39,7 @@ export interface ShowJson {
 /**
  * attempt 的通用投影(docs/feature/reports/show/json.md「通用 attempt 投影」):落盘
  * `AttemptRecord` 全字段 + 归属身份。运行时对应类型是 `EvalResult`——`AttemptHandle.result` 已
- * 把快照级字段拼合成的瘦身条目(见 `src/results/types.ts` 的 `AttemptHandle` 字段注释);
+ * 把快照级字段拼合成的瘦身条目(见 `src/record/types.ts` 的 `AttemptHandle` 字段注释);
  * `experimentId` 与 `snapshotStartedAt` 补足「归属身份」,与组件自己的 `*Data` 声明共用同一条
  * 「字段名复用落盘类型、不发明第二套命名」纪律。只有 [`history`](../../docs/feature/reports/show/history.md)
  * 这个不进组件模型的切片直接消费它——其余 view 的 `data` 字段单源在各自组件的 `*Data` 声明,
@@ -52,7 +52,7 @@ export type AttemptJson = EvalResult & {
 };
 
 export function attemptJsonOf(attempt: AttemptHandle): AttemptJson {
-  return { ...attempt.result, experimentId: attempt.experimentId, snapshotStartedAt: attempt.snapshot.startedAt };
+  return { ...attempt.result, experimentId: attempt.experimentId, snapshotStartedAt: attempt.run.startedAt };
 }
 
 /** 信封的 `scope` 字段;`patterns` 为空时省略 `evalPrefix`(与「省略不是一种有含义的取值」同一条纪律)。 */

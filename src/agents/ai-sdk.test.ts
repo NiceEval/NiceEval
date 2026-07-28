@@ -5,11 +5,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { fromAiSdk } from "./ai-sdk.ts";
+import { turnFromAiSdk } from "./ai-sdk.ts";
 
-describe("fromAiSdk usage 归一(含明细口径)", () => {
+describe("turnFromAiSdk usage 归一(含明细口径)", () => {
   it("v5 形状:cachedInputTokens 从 inputTokens 里扣出", () => {
-    const turn = fromAiSdk({
+    const turn = turnFromAiSdk({
       text: "ok",
       usage: { inputTokens: 1000, outputTokens: 20, cachedInputTokens: 900 },
     });
@@ -17,7 +17,7 @@ describe("fromAiSdk usage 归一(含明细口径)", () => {
   });
 
   it("v7 形状:inputTokenDetails 的 cacheRead 与 cacheWrite 都从总量里扣出", () => {
-    const turn = fromAiSdk({
+    const turn = turnFromAiSdk({
       text: "ok",
       usage: { inputTokens: 1000, outputTokens: 20, inputTokenDetails: { cacheReadTokens: 800, cacheWriteTokens: 100 } },
     });

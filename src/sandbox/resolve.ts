@@ -6,7 +6,15 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { Effect } from "effect";
-import type { CustomSandboxSpec, JsonValue, Sandbox, SandboxOption, SandboxRuntime, ScopedFeedback } from "../types.ts";
+import type {
+  CustomSandboxSpec,
+  JsonValue,
+  Sandbox,
+  SandboxOption,
+  SandboxReuseCapability,
+  SandboxRuntime,
+  ScopedFeedback,
+} from "../types.ts";
 import { registerSandbox, stopSandbox } from "./registry.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { t } from "../i18n/index.ts";
@@ -24,6 +32,7 @@ import {
 export interface ResolvedSandbox {
   provider: string;
   runtime?: SandboxRuntime;
+  lifetimeMs?: number;
   /** docker */
   image?: string;
   /** vercel */
@@ -80,20 +89,21 @@ export function sandboxRecommendedConcurrency(opt: SandboxOption | undefined): n
  */
 export function sandboxRunInfo(
   opt: SandboxOption | undefined,
-): { provider: string; params?: Record<string, JsonValue>; fingerprint?: string } | undefined {
+): { provider: string; params?: globalThis.Record<string, JsonValue>; fingerprint?: string } | undefined {
   if (!opt) return undefined;
   const r = resolveSandbox(opt);
-  let params: Record<string, JsonValue> | undefined;
+  let params: globalThis.Record<string, JsonValue> | undefined;
   if (r.create) {
     // 自定义 provider:只有显式实现了 publicConfig() 投影才落参数。
     params = (opt as CustomSandboxSpec).publicConfig?.();
   } else {
-    const p: Record<string, JsonValue> = {};
+    const p: globalThis.Record<string, JsonValue> = {};
     if (r.image !== undefined) p.image = r.image;
     if (r.snapshotId !== undefined) p.snapshotId = r.snapshotId;
     if (r.template !== undefined) p.template = r.template;
     if (r.dir !== undefined) p.dir = r.dir;
     if (r.runtime !== undefined) p.runtime = r.runtime;
+    if (r.lifetimeMs !== undefined) p.lifetimeMs = r.lifetimeMs;
     params = Object.keys(p).length > 0 ? p : undefined;
   }
   if (params === undefined) return { provider: r.provider };
@@ -112,7 +122,7 @@ export function sandboxLabel(opt: SandboxOption | undefined): string {
 }
 
 /**
- * 按解析出的 provider + 参数创建沙箱,并把 stop() 注册为 Scope 回收动作。
+ * 按解析出的 provider + 参数创建沙箱,并把 stop() 注册为 Sample 回收动作。
  * 在 Effect.scoped / Effect.gen 里 yield* 即可;成功/失败/中断都保证 stop。
  */
 /** 没有 runner 绑定 feedback 时(测试直调等)的兜底:退回全局 sink,行为与旧接线一致。 */
@@ -136,7 +146,7 @@ export function createSandbox(opts: {
   /** runner 绑定到 `sandbox.create` 阶段的反馈句柄;provider 的进度/诊断都走它。 */
   feedback?: ScopedFeedback;
   /**
-   * release 覆写(留存路径用):Scope 关闭时按调用方的 disposition 决定 stop 还是 suspend。
+   * release 覆写(留存路径用):Sample 关闭时按调用方的 disposition 决定 stop 还是 suspend。
    * 省略 = 恒 stopSandbox(默认销毁)。
    */
   release?: (sb: Sandbox) => Promise<void>;
@@ -154,6 +164,43 @@ export function createSandbox(opts: {
     // release:成功 / 失败 / 中断都跑。带超时 + 失败不静默(stopSandbox 内做),并把它移出登记表。
     (sb) => Effect.promise(() => (opts.release ? opts.release(sb) : stopSandbox(sb))),
   );
+}
+
+/** 创建并登记一个可由复用池显式接管的实例；调用方必须用 stopSandbox 收尾。 */
+export async function createSandboxInstance(opts: {
+  sandbox?: SandboxOption;
+  timeout?: number;
+  runtime?: SandboxRuntime;
+  provisionSlot?: ProvisionSlot;
+  feedback?: ScopedFeedback;
+}): Promise<Sandbox & Partial<SandboxReuseCapability>> {
+  const r = resolveSandbox(opts.sandbox, opts.runtime);
+  const feedback = opts.feedback ?? fallbackFeedback();
+  const sandbox = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot));
+  registerSandbox(sandbox);
+  if (r.create !== undefined) return sandbox;
+
+  // 内置 provider 统一接受 lifetimeMs。当前 provider 无法续期时，如实报告剩余寿命不足，
+  // 由 runner 轮换实例；绝不静默压短作者声明的时间。
+  const lifetimeMs = r.lifetimeMs;
+  if (lifetimeMs === undefined) {
+    return Object.assign(sandbox, {
+      ensureLifetime: async () => ({
+        ready: false as const,
+        reason: `the ${r.provider} sandbox needs lifetimeMs when sandboxReuse is enabled`,
+      }),
+    });
+  }
+  const expiresAt = Date.now() + lifetimeMs;
+  return Object.assign(sandbox, {
+    ensureLifetime: async (minRemainingMs: number) =>
+      Date.now() + minRemainingMs <= expiresAt
+        ? { ready: true as const, expiresAt: new Date(expiresAt).toISOString() }
+        : {
+            ready: false as const,
+            reason: `${r.provider} sandbox expires before the next attempt can finish`,
+          },
+  });
 }
 
 /**
@@ -215,6 +262,7 @@ async function createProvider(
             () =>
               DockerSandbox.create({
                 timeout,
+                lifetimeMs: r.lifetimeMs,
                 runtime: r.runtime,
                 image: r.image,
                 feedback,

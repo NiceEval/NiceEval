@@ -7,7 +7,7 @@
 
 import type { ReactElement } from "react";
 import type { AttemptListItem } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, countText, localeText, type ReportLocale } from "../../model/locale.ts";
 import { colorClassForKey } from "../../assets/colors.ts";
 import { formatDurationMs, formatHistoricalGap, formatReportDateTime, formatUSD, verdictMark } from "../../model/format.ts";

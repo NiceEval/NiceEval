@@ -7,7 +7,7 @@ import type { FailedCommandEvidence, JsonValue, ToolName } from "../../../types.
 import { stripControl } from "../../../scoring/display.ts";
 import { cx } from "../shared.ts";
 
-const TOOL_VERB: Partial<Record<ToolName, string>> = {
+const TOOL_VERB: Partial<globalThis.Record<ToolName, string>> = {
   shell: "Bash",
   file_read: "Read",
   file_write: "Write",

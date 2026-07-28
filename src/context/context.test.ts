@@ -4,7 +4,8 @@ import { createEvalContext, type ContextState } from "./context.ts";
 import { commandSucceeded, includes } from "../expect/index.ts";
 import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
 import { SEND_MAX_ATTEMPTS } from "./send-retry.ts";
-import type { Agent, AgentContext, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+import type { Agent, AgentContext, DiagnosticInput, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+import { SANDBOX_O11Y_RESULTS_PATH } from "../o11y/sandbox-results.ts";
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
 // 但 t.check(t.reply, includes("2")) 却失败。
@@ -68,6 +69,36 @@ function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string
     judge: undefined,
     evalBaseDir,
   });
+}
+
+function summarySandbox({ failWrite = false }: { failWrite?: boolean } = {}) {
+  const files = new Map<string, string>();
+  let commandSaw: unknown;
+  const sandbox = {
+    ...fakeSandbox(),
+    async writeFiles(next: globalThis.Record<string, string>): Promise<void> {
+      if (failWrite) throw new Error("disk full");
+      for (const [path, content] of Object.entries(next)) files.set(path, content);
+    },
+    async runShell(script: string) {
+      if (script.startsWith("mv -f ")) {
+        const [, , temp, target] = script.split(" ");
+        const content = files.get(temp!);
+        if (content === undefined) return { stdout: "", stderr: "missing temp", exitCode: 1 };
+        files.delete(temp!);
+        files.set(target!, content);
+      } else if (script.startsWith("rm -f ")) {
+        for (const path of script.split(" ").slice(2)) files.delete(path);
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    async runCommand() {
+      const content = files.get(SANDBOX_O11Y_RESULTS_PATH);
+      commandSaw = content ? JSON.parse(content) : undefined;
+      return { stdout: "", stderr: "", exitCode: content ? 0 : 1 };
+    },
+  } as FakeSandbox;
+  return { sandbox, files, commandSaw: () => commandSaw };
 }
 
 describe("createEvalContext / TestContext live state", () => {
@@ -146,11 +177,55 @@ describe("createEvalContext / TestContext live state", () => {
     expect(result.evidence).toBe("npm run test");
   });
 
-  it("t.events reflects the turn's events after send(), not an empty snapshot", async () => {
+  it("t.events reflects the turn's events after send(), not an empty run", async () => {
     const { context } = makeContext(calculatorAgent());
     await context.send("1+1=?");
     expect(context.events.length).toBeGreaterThan(0);
     expect(context.events.some((e) => e.type === "message" && e.role === "assistant")).toBe(true);
+  });
+
+  it("在 Sandbox 验证命令前重写累计摘要，命令看到的不是被篡改的旧内容", async () => {
+    const fixture = summarySandbox();
+    const { context } = makeContext(calculatorAgent(), fixture.sandbox);
+    await context.send("1+1=?");
+    fixture.files.set(SANDBOX_O11Y_RESULTS_PATH, JSON.stringify({ o11y: { totalToolCalls: 999 } }));
+
+    const result = await context.sandbox.runCommand("verify");
+
+    expect(result.exitCode).toBe(0);
+    expect(fixture.commandSaw()).toMatchObject({ o11y: { totalToolCalls: 1, toolCalls: { unknown: 1 } } });
+  });
+
+  it("摘要写入失败时记录 diagnostic 并让验证命令以缺文件失败", async () => {
+    const fixture = summarySandbox({ failWrite: true });
+    const diagnostics: DiagnosticInput[] = [];
+    const { context } = createEvalContext({
+      agent: calculatorAgent(),
+      sandbox: fixture.sandbox,
+      flags: {},
+      signal: new AbortController().signal,
+      log: () => {},
+      judge: undefined,
+      feedback: { progress: () => {}, diagnostic: (input) => diagnostics.push(input) },
+    });
+    await context.send("1+1=?");
+
+    const result = await context.sandbox.runCommand("verify");
+
+    expect(result.exitCode).toBe(1);
+    expect(fixture.commandSaw()).toBeUndefined();
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: "sandbox-o11y-results-write-failed", level: "warning" }));
+  });
+
+  it("direct Agent 即使完成 send 也不创建沙箱行为摘要", async () => {
+    const fixture = summarySandbox();
+    const calculator = calculatorAgent();
+    const agent: Agent = { name: calculator.name, kind: "direct", send: calculator.send };
+    const { context } = makeContext(agent, fixture.sandbox);
+
+    await context.send("1+1=?");
+
+    expect(fixture.files.has(SANDBOX_O11Y_RESULTS_PATH)).toBe(false);
   });
 
   it("t.sessionId reflects the id the agent assigned during send()", async () => {
@@ -194,7 +269,7 @@ function scriptedAgent(turns: Turn[]): Agent & { received: TurnInput[] } {
   let i = 0;
   const agent: Agent = {
     name: "scripted",
-    kind: "remote",
+    kind: "direct",
     coverage: completeCoverage,
     async send(input: TurnInput) {
       received.push(input);
@@ -480,7 +555,7 @@ describe("t.send(...).expectOk() · turn 级重试耗尽", () => {
     let calls = 0;
     const agent: Agent = {
       name: "always-rate-limited",
-      kind: "remote",
+      kind: "direct",
       async send(): Promise<Turn> {
         calls++;
         return { status: "failed", events: [{ type: "error", message: "rate limited, please retry later" }] };
@@ -507,7 +582,7 @@ describe("t.send(...).expectOk() · turn 级重试耗尽", () => {
     let calls = 0;
     const agent: Agent = {
       name: "stream-drop",
-      kind: "remote",
+      kind: "direct",
       async send(): Promise<Turn> {
         calls++;
         return { status: "failed", events: [{ type: "error", message: "stream reset mid-response after 3 tool calls" }] };

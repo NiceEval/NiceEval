@@ -79,7 +79,7 @@ export class VercelSandbox implements Sandbox {
     const credParams = token && teamId ? { token, teamId, projectId } : {};
 
     // 给了 snapshotId 就从快照起 microVM(预制模板:烘焙好 agent CLI 的快照)。
-    const sourceParams = opts.snapshotId ? { source: { type: "snapshot", snapshotId: opts.snapshotId } } : {};
+    const sourceParams = opts.snapshotId ? { source: { type: "run", snapshotId: opts.snapshotId } } : {};
 
     // session timeout 固定为 1200000ms (20 min)。不随 commandTimeoutMs 放大:
     // 实测发现超大的 timeout 值(>1200s)会导致 Vercel 返回实际更短的 session。
@@ -189,7 +189,7 @@ export class VercelSandbox implements Sandbox {
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
   // 只是对直接使用 provider 实例(未包 normalize)的幂等防御,提到 map 外只算一次。
-  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
+  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
     const base = resolveSandboxPath(this.workdir, targetDir);
     const entries = Object.entries(files).map(([p, content]) => ({
       path: resolveSandboxPath(base, p),

@@ -75,7 +75,7 @@ export async function runSandboxCommand(
   const root = await resolveRegistryRoot(cwd, flags.run);
   if (root === undefined) {
     io.err(
-      `No .niceeval directory found from ${cwd} upward. Run this inside the project, or pass --results <results-root> to point at it.\n`,
+      `No .niceeval directory found from ${cwd} upward. Run this inside the project, or pass --record <record-root> to point at it.\n`,
     );
     return 1;
   }
@@ -160,7 +160,7 @@ export async function orphanReminder(cwd: string): Promise<string | undefined> {
 async function resolveRegistryRoot(cwd: string, runFlag: string | undefined): Promise<string | undefined> {
   if (runFlag !== undefined) {
     const base = resolve(cwd, runFlag);
-    // --results 可以指 .niceeval 本身或它的父目录。
+    // --record 可以指 .niceeval 本身或它的父目录。
     return base.endsWith(".niceeval") ? base : `${base}/.niceeval`;
   }
   return findNiceevalRoot(cwd);

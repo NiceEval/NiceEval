@@ -11,7 +11,7 @@ import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../t
 // ───────────────────────── 工具名归一 ─────────────────────────
 
 /** Codex 特有别名 + 裸动词(codex transcript 的工具名由 CLI 控制,裸动词安全);通用别名走基表。 */
-export const CODEX_TOOL_ALIASES: Record<string, ToolName> = {
+export const CODEX_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
   file_change: "file_edit",
   update_plan: "agent_task",
@@ -25,7 +25,7 @@ function normalizeToolName(name: string): ToolName {
 
 /** 宽松取一个对象字段(原始 JSON 是 any,这里只做存在性收口)。 */
 function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
 
 /** 字符串则尝试 JSON.parse,失败原样返回;对象原样返回。 */
@@ -72,7 +72,7 @@ function extractReasoning(item: unknown): string {
 /** 从一个 usage-like 对象读出增量(支持 input/output_tokens 与 prompt/completion_tokens 两套命名)。 */
 function readUsage(u: unknown): { input: number; output: number; cacheRead: number; reasoning: number } | null {
   if (!u || typeof u !== "object") return null;
-  const o = u as Record<string, unknown>;
+  const o = u as globalThis.Record<string, unknown>;
   const num = (...keys: string[]): number => {
     for (const k of keys) {
       const v = o[k];

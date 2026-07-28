@@ -55,7 +55,7 @@ function jsonAnyValue(v: JsonAnyValue | undefined): JsonValue {
   if (v.bytesValue !== undefined) return v.bytesValue;
   if (v.arrayValue) return (v.arrayValue.values ?? []).map(jsonAnyValue);
   if (v.kvlistValue) {
-    const obj: Record<string, JsonValue> = {};
+    const obj: globalThis.Record<string, JsonValue> = {};
     for (const kv of v.kvlistValue.values ?? []) if (kv.key) obj[kv.key] = jsonAnyValue(kv.value);
     return obj;
   }
@@ -88,7 +88,7 @@ interface JsonSpan {
 }
 
 function jsonSpan(s: JsonSpan): TraceSpan {
-  const attributes: Record<string, JsonValue> = {};
+  const attributes: globalThis.Record<string, JsonValue> = {};
   for (const a of s.attributes ?? []) if (a.key) attributes[a.key] = jsonAnyValue(a.value);
   return {
     traceId: s.traceId ?? "",
@@ -198,7 +198,7 @@ function protoSpan(buf: Buffer): TraceSpan {
   let startNano = 0n;
   let endNano = 0n;
   let status: TraceSpan["status"] = "unset";
-  const attributes: Record<string, JsonValue> = {};
+  const attributes: globalThis.Record<string, JsonValue> = {};
   // Span { 1:trace_id 2:span_id 4:parent_span_id 5:name 7:start(fixed64)
   //        8:end(fixed64) 9:repeated KeyValue attrs 15:Status }
   eachField(buf, (field, wire, r) => {
@@ -318,7 +318,7 @@ function protoArray(buf: Buffer): JsonValue {
 }
 
 function protoKvList(buf: Buffer): JsonValue {
-  const obj: Record<string, JsonValue> = {};
+  const obj: globalThis.Record<string, JsonValue> = {};
   // KeyValueList { 1:repeated KeyValue }
   eachField(buf, (field, wire, r) => {
     if (field === 1 && wire === 2) {

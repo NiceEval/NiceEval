@@ -2,10 +2,10 @@
 
 import { t } from "../i18n/index.ts";
 
-/** t.skip(reason):该 eval 不构成有效测试,记 skipped(不计入,不算 agent 挂)。 */
+/** t.skip(reason):该 eval 不构成有效测试,记 unreadable(不计入,不算 agent 挂)。 */
 export class EvalSkipped extends Error {
   constructor(public readonly reason: string) {
-    super(`eval skipped: ${reason}`);
+    super(`eval unreadable: ${reason}`);
     this.name = "EvalSkipped";
   }
 }

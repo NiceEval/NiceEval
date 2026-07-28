@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
-// "validate*Data 递归覆盖到嵌套字段" 行:site-components 五个 validate*Data 的表驱动字段突变覆盖,重点是 ScopeWarning 三个已登记
-// kind(unfinished-snapshot / missing-startedAt / unreadable-snapshot)各自的必填字段,以及未登记 kind 的前向兼容放行路径(与 ScopeWarnings 组件的「未知 kind
+// "validate*Data 递归覆盖到嵌套字段" 行:site-components 五个 validate*Data 的表驱动字段突变覆盖,重点是 SampleIssue 三个已登记
+// kind(unfinished-run / missing-startedAt / unreadable-run)各自的必填字段,以及未登记 kind 的前向兼容放行路径(与 ScopeWarnings 组件的「未知 kind
 // 单独成组」渲染回退是同一条契约,结构校验不能比渲染逻辑更严);以及 SnapshotDiagnostics 的 SnapshotDiagnosticsItem/DiagnosticRecord 嵌套字段。
 
 import { describe, expect, it } from "vitest";
@@ -14,47 +14,41 @@ import {
 
 describe("validateHeroData", () => {
   it("合规 literal 通过,latestStartedAt 为 null 合法(空范围不编造当前时间)", () => {
-    expect(validateHeroData({ latestStartedAt: null, snapshots: 0 })).toBeNull();
+    expect(validateHeroData({ latestStartedAt: null, runs: 0 })).toBeNull();
   });
 
-  it("snapshots 非数字报错", () => {
-    expect(validateHeroData({ latestStartedAt: null, snapshots: "0" })).toMatch(/"snapshots"/);
+  it("runs 非数字报错", () => {
+    expect(validateHeroData({ latestStartedAt: null, runs: "0" })).toMatch(/"runs"/);
   });
 });
 
-describe("validateScopeWarningsData — ScopeWarning 判别联合", () => {
-  it("missing-startedAt 缺 evalId 报错(不带 command 恒合法,无单条命令能解决)", () => {
-    const bad = [{ kind: "missing-startedAt", experimentId: "exp/a", message: "m" }];
+describe("validateScopeWarningsData — SampleIssue 判别联合", () => {
+  it("dangling-evidence 缺 evalId 报错", () => {
+    const bad = [{ code: "dangling-evidence", experimentId: "exp/a", attempt: 1, artifactBase: "result", artifacts: [] }];
     expect(validateScopeWarningsData(bad)).toMatch(/"data\[0\]\.evalId"/);
-    const ok = [{ kind: "missing-startedAt", experimentId: "exp/a", evalId: "q1", message: "m" }];
+    const ok = [{ code: "dangling-evidence", experimentId: "exp/a", evalId: "q1", attempt: 1, artifactBase: "result", artifacts: [] }];
     expect(validateScopeWarningsData(ok)).toBeNull();
   });
 
-  it("unfinished-snapshot 缺 dir 报错", () => {
-    const bad = [{ kind: "unfinished-snapshot", experimentId: "exp/a", startedAt: "t1", message: "m", command: "c" }];
+  it("unfinished-run 缺 dir 报错", () => {
+    const bad = [{ code: "unfinished-run", experimentId: "exp/a", startedAt: "t1" }];
     expect(validateScopeWarningsData(bad)).toMatch(/"data\[0\]\.dir"/);
   });
 
-  it("unreadable-snapshot 的 reason 不在三态枚举内报错;没有 experimentId 字段本身合法(非实验作用域)", () => {
-    const bad = [{ kind: "unreadable-snapshot", dir: "/r/snap", reason: "corrupted", message: "m" }];
+  it("unreadable-run 的 reason 不在三态枚举内报错;没有 experimentId 字段本身合法(非实验作用域)", () => {
+    const bad = [{ code: "unreadable-run", dir: "/r/snap", reason: "corrupted" }];
     expect(validateScopeWarningsData(bad)).toMatch(/"data\[0\]\.reason"/);
-    const ok = [{ kind: "unreadable-snapshot", dir: "/r/snap", reason: "malformed", message: "m" }];
+    const ok = [{ code: "unreadable-run", dir: "/r/snap", reason: "malformed" }];
     expect(validateScopeWarningsData(ok)).toBeNull();
   });
 
-  it("unreadable-snapshot 省略 command 合法(不是每个 reason 都有单条命令)", () => {
-    const ok = [{ kind: "unreadable-snapshot", dir: "/r/snap", reason: "incomplete", message: "m" }];
+  it("Issue 不带渲染 message 或 command 仍合法", () => {
+    const ok = [{ code: "unreadable-run", dir: "/r/snap", reason: "incomplete" }];
     expect(validateScopeWarningsData(ok)).toBeNull();
   });
 
-  it("未登记的 kind 只要有 kind/message 就放行——前向兼容,不拒绝未来版本产出的新 kind", () => {
-    const future = [{ kind: "future-kind", message: "something new happened" }];
-    expect(validateScopeWarningsData(future)).toBeNull();
-  });
-
-  it("未登记的 kind 缺 message 仍报错(两族共用的最小形状)", () => {
-    const bad = [{ kind: "future-kind" }];
-    expect(validateScopeWarningsData(bad)).toMatch(/"data\[0\]\.message"/);
+  it("未知 code 报错", () => {
+    expect(validateScopeWarningsData([{ code: "future-kind" }])).toMatch(/"data\[0\]\.code"/);
   });
 });
 

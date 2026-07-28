@@ -16,7 +16,7 @@ import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 
 /** Bub 特有别名(fs.* / web.* 命名空间与裸 read/write/edit)+ 裸动词;通用别名走基表。 */
-export const BUB_TOOL_ALIASES: Record<string, ToolName> = {
+export const BUB_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
   "fs.read": "file_read", fs_read: "file_read", read: "file_read",
   "fs.write": "file_write", fs_write: "file_write", write: "file_write",
@@ -31,7 +31,7 @@ function normalizeToolName(name: string): ToolName {
 }
 
 function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
 
 function num(obj: unknown, ...keys: string[]): number {
@@ -185,7 +185,7 @@ export function parseBubTranscript(raw: string | undefined): ParsedTranscript {
           const list = Array.isArray(results) ? results : [get(payload, "result") ?? payload];
           // republic:results 与上一条 tool_call.calls 按位对齐。
           list.forEach((r, i) => {
-            const isError = typeof r === "object" && r !== null && "error" in (r as Record<string, unknown>);
+            const isError = typeof r === "object" && r !== null && "error" in (r as globalThis.Record<string, unknown>);
             const explicitId = get(r, "tool_call_id") ?? get(r, "id") ?? lastCallIds[i];
             emitResult(get(r, "output") ?? get(r, "result") ?? get(r, "content") ?? r, !isError, explicitId);
           });

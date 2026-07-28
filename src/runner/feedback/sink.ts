@@ -19,7 +19,7 @@ import { t } from "../../i18n/index.ts";
 import type { AttemptLifecycleEvent, AttemptRef, ExperimentHookName, FailureDetail } from "../types.ts";
 import type { Verdict } from "../../scoring/types.ts";
 import type { JsonValue } from "../../shared/types.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 
 /** `sink.diagnostic()` 的输入 —— 与 `DurableFeedbackEvent` 的 "diagnostic" 变体字段一致,
  *  只是省略 `type`/`at`(由 coordinator 补上)。 */
@@ -37,7 +37,7 @@ export interface DiagnosticInput {
   /** 一句话人类可读摘要;renderer 的 appendDurable 直接展示,不需要再解析。 */
   message: string;
   identity?: AttemptRef;
-  data?: Readonly<Record<string, JsonValue>>;
+  data?: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
 /** `sink.failure()` 的输入 —— 与 `DurableFeedbackEvent` 的 "failure" 变体字段一致,只省略

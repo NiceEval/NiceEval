@@ -310,18 +310,18 @@ function codexProgressReporter(ctx: import("../types.ts").AgentContext): (chunk:
 }
 
 function codexProgressDetail(line: string): string | undefined {
-  let event: Record<string, unknown>;
+  let event: globalThis.Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(line);
     if (!parsed || typeof parsed !== "object") return undefined;
-    event = parsed as Record<string, unknown>;
+    event = parsed as globalThis.Record<string, unknown>;
   } catch {
     return undefined;
   }
 
   const item = event.item;
   if (!item || typeof item !== "object") return undefined;
-  const data = item as Record<string, unknown>;
+  const data = item as globalThis.Record<string, unknown>;
   const type = typeof data.type === "string" ? data.type : "";
   const completed = event.type === "item.completed";
   const preview = (value: unknown, limit = 96): string | undefined => {

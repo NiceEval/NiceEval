@@ -4,7 +4,7 @@
 // 同一份渲染逻辑),失败原因只在各 Attempt 子行出现。
 
 import type { ReactElement } from "react";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import type { EvalListItem } from "../../model/types.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, resolveLocalizedText, type ReportLocale } from "../../model/locale.ts";
 import { AttemptRow, EvalHistoricalMark } from "./AttemptList.tsx";

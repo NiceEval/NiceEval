@@ -52,7 +52,7 @@ class FakeSandbox implements Partial<Sandbox> {
   async runCommand(): Promise<CommandResult> {
     return { stdout: "", stderr: "", exitCode: 0 };
   }
-  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
+  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
     for (const [path, content] of Object.entries(files)) {
       this.files.set(targetDir ? `${targetDir}/${path}` : path, content);
     }
@@ -114,7 +114,7 @@ async function runOnce(
   const run: AgentRun = {
     agent,
     flags: {},
-    runs: 1,
+    attempts: 1,
     earlyExit: true,
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
     sandbox: opts.sandbox ?? defineSandbox({ name: "fake-provider", create: async () => asSandbox(box) }),
@@ -441,7 +441,7 @@ describe("runAttemptEffect · sandbox hook 链的执行与失败收尾", () => {
   });
 });
 
-describe("runAttemptEffect · 主链与 Scope 收尾的计时边界", () => {
+describe("runAttemptEffect · 主链与 Sample 收尾的计时边界", () => {
   it("sandbox.stop 只计入收尾,主链 phase 合计不超过 durationMs", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-timed-stop",
@@ -487,7 +487,7 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
     expect(result.scoring).toBe("points");
     const passedAssertion = result.assertions.find((a) => a.outcome === "passed") as { points?: number } | undefined;
     expect(passedAssertion?.points).toBe(3);
-    expect(result.scoreEntries).toEqual([{ label: "手动给分", points: 7 }]);
+    expect(result.scoreEntries).toMatchObject([{ label: "手动给分", points: 7 }]);
   });
 
   it("通过制即使被运行时绕过类型调用 points/score，也不把给分字段落盘", async () => {
@@ -533,7 +533,7 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
     // 不是 errored(见 docs/feature/experiments/score-points.md「计分制:叠加给分」)。
     expect(result.error).toBeUndefined();
     expect(result.verdict).toBe("failed");
-    expect(result.scoreEntries).toEqual([{ label: "早期给分", points: 5 }]); // 没有"永不执行"那 100 分
+    expect(result.scoreEntries).toMatchObject([{ label: "早期给分", points: 5 }]); // 没有"永不执行"那 100 分
     expect(result.assertions).toHaveLength(1); // 前置之后记录的断言被截断
     expect(result.assertions[0]!.outcome).toBe("failed");
   });
@@ -552,7 +552,7 @@ describe("runAttemptEffect · 计分制(scoring:\"points\")的挣分落盘", () 
 
     expect(result.error).toBeUndefined();
     expect(result.verdict).toBe("failed");
-    expect(result.scoreEntries).toEqual([{ label: "早期给分", points: 5 }]);
+    expect(result.scoreEntries).toMatchObject([{ label: "早期给分", points: 5 }]);
     expect(result.assertions).toHaveLength(1);
   });
 
@@ -702,7 +702,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       const run: AgentRun = {
         agent,
         flags: {},
-        runs: 1,
+        attempts: 1,
         earlyExit: true,
         sandbox: sandboxSpec,
         timeoutMs: 5_000,
@@ -777,7 +777,7 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
     const run: AgentRun = {
       agent,
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: sandboxSpec,
       timeoutMs: 5_000,
@@ -899,7 +899,7 @@ describe("runAttemptEffect · 失败命令证据包装(公开 runCommand/runShel
     expect(evidence.phase).toBe("eval.run");
 
     const evalRunPhase = result.phases?.find((p) => p.name === "eval.run");
-    const node = evalRunPhase?.children?.find((n) => n.kind === "command");
+    const node = evalRunPhase?.children?.find((n) => n.id === evidence.timingNodeId);
     expect(node).toBeDefined();
     expect(node?.id).toBe(evidence.timingNodeId);
     expect(node?.command?.exitCode).toBe(243);

@@ -1,11 +1,11 @@
 // ExperimentList:实体列表的第一级。web 面是一行一个 experiment 的固定列比较表
-// (Experiment / Model / Agent / Avg. time / 主读数 / Tokens / Cost / Results);主读数列
+// (Experiment / Model / Agent / Avg. time / 主读数 / Tokens / Cost / Record);主读数列
 // 按列表内题型构成选择——纯通过制是 Pass rate,纯计分制是 Total score,两型并存时两列并排
 // (entity-lists.md「ExperimentList」)。每行用原生 <details> 展开到 Eval 与 Attempt locator。
 // 数据完全来自 experimentListData(),组件不重算、不推断组边界。
 
 import type { ReactElement } from "react";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem } from "../../model/types.ts";
 import { experimentListScoringComposition, shortestUniqueLabels } from "../../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, resolveLocalizedText, type ReportLocale } from "../../model/locale.ts";
@@ -15,7 +15,7 @@ import { colorClassForKey } from "../../assets/colors.ts";
 import { formatDurationMs, formatUSD, verdictMark } from "../../model/format.ts";
 import { cx } from "../shared.ts";
 
-const verdictOrder = ["passed", "failed", "errored", "skipped"] as const;
+const verdictOrder = ["passed", "failed", "errored", "unreadable"] as const;
 
 function passRateTone(value: number | null): string | undefined {
   if (value === null) return undefined;
@@ -161,7 +161,7 @@ function MissingEvalRow({
   );
 }
 
-function Flags({ flags, locale }: { flags: Record<string, unknown> | undefined; locale: ReportLocale }): ReactElement | null {
+function Flags({ flags, locale }: { flags: globalThis.Record<string, unknown> | undefined; locale: ReportLocale }): ReactElement | null {
   if (!flags || Object.keys(flags).length === 0) return null;
   return (
     <div className="nre-experiment-flags">

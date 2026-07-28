@@ -20,7 +20,7 @@ export interface BraintrustConfig {
   /** true = 更新同名既有实验,而不是新建一个。 */
   update?: boolean;
   /** 实验级附加 metadata;与 niceeval 自动写入的字段合并,同名以这里为准。 */
-  metadata?: Record<string, unknown>;
+  metadata?: globalThis.Record<string, unknown>;
   /** API key;省略时 SDK 读 BRAINTRUST_API_KEY 环境变量。 */
   apiKey?: string;
 }
@@ -39,7 +39,7 @@ interface BraintrustSdk {
     baseExperimentId?: string;
     update?: boolean;
     apiKey?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: globalThis.Record<string, unknown>;
     setCurrent?: boolean;
   }): BraintrustExperiment | Promise<BraintrustExperiment>;
   flush(): Promise<void>;
@@ -55,9 +55,9 @@ export interface BraintrustLogEvent {
   input?: unknown;
   output?: unknown;
   error?: unknown;
-  scores?: Record<string, number>;
-  metadata?: Record<string, unknown>;
-  metrics?: Record<string, number>;
+  scores?: globalThis.Record<string, number>;
+  metadata?: globalThis.Record<string, unknown>;
+  metrics?: globalThis.Record<string, number>;
 }
 
 /**
@@ -121,7 +121,7 @@ export function Braintrust(config: BraintrustConfig = {}): Reporter {
  * - metadata:身份维度(agent / model / experiment / attempt / flags)+ 失败断言明细。
  */
 export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
-  const scores: Record<string, number> = {};
+  const scores: globalThis.Record<string, number> = {};
   for (const a of result.assertions) {
     // unavailable 是没有分数的独立态:不写 0 分(评不了 ≠ 0 分),缺口进 metadata。
     if (a.outcome === "unavailable") continue;
@@ -132,7 +132,7 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
     scores[key] = Math.min(1, Math.max(0, a.score));
   }
 
-  const metrics: Record<string, number> = {};
+  const metrics: globalThis.Record<string, number> = {};
   if (result.startedAt) {
     const start = Date.parse(result.startedAt) / 1000;
     if (Number.isFinite(start)) {
@@ -152,7 +152,7 @@ export function toBraintrustEvent(result: EvalResult): BraintrustLogEvent {
   }
   if (result.estimatedCostUSD !== undefined) metrics.estimated_cost_usd = result.estimatedCostUSD;
 
-  const metadata: Record<string, unknown> = {
+  const metadata: globalThis.Record<string, unknown> = {
     eval: result.id,
     agent: result.agent,
     attempt: result.attempt,

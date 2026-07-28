@@ -49,13 +49,13 @@ const DOCKER_AGENTS = [
 
 const E2B_AGENTS = ["claude-code", "codex", "bub"] as const satisfies readonly E2BCodingAgent[];
 
-const e2bTemplates: Record<E2BCodingAgent, string> = {
+const e2bTemplates: globalThis.Record<E2BCodingAgent, string> = {
   "claude-code": NICEEVAL_CLAUDE_CODE_E2B_TEMPLATE,
   codex: NICEEVAL_CODEX_E2B_TEMPLATE,
   bub: NICEEVAL_BUB_E2B_TEMPLATE,
 };
 
-const dockerImages: Record<CodingAgentBaseline, string> = {
+const dockerImages: globalThis.Record<CodingAgentBaseline, string> = {
   "claude-code": NICEEVAL_CLAUDE_CODE_DOCKER_IMAGE,
   codex: NICEEVAL_CODEX_DOCKER_IMAGE,
   bub: NICEEVAL_BUB_DOCKER_IMAGE,
@@ -77,7 +77,7 @@ interface PublishedTemplate {
 
 const ledger = JSON.parse(
   await readFile(new URL("../../sandbox/e2b/published.json", import.meta.url), "utf8"),
-) as { templates: Record<E2BCodingAgent, PublishedTemplate> };
+) as { templates: globalThis.Record<E2BCodingAgent, PublishedTemplate> };
 
 const dockerfile = await readFile(
   new URL("../../sandbox/docker/Dockerfile", import.meta.url),

@@ -2,7 +2,8 @@
 // 上次 passed 且指纹未变的 (experimentId, evalId) 组合可以直接携入,不再重跑。
 
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { dirname, extname, relative, resolve } from "node:path";
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import type { DiscoveredEval, EvalResult, JsonValue, SandboxOption } from "../types.ts";
 import type { AgentRun } from "./types.ts";
@@ -13,41 +14,34 @@ export function cacheKey(run: AgentRun, evalId: string): string {
   return `${run.experimentId ?? ""}|${evalId}`;
 }
 
-/**
- * 指纹口径里的 flags:去掉实验声明为出处记录的键(`ExperimentDef.provenanceFlags`)。
- * 这些键照常落盘、照常透传 `ctx.flags` / `t.flags`,只是不参与可比性——隧道 URL、跑批时刻
- * 这类连接坐标每次都变,把它们算进指纹会让每一次坐标轮换作废全部已完成结果。
- */
-function fingerprintFlags(flags: Record<string, JsonValue>, provenanceFlags: readonly string[] | undefined): Record<string, JsonValue> {
-  if (!provenanceFlags?.length) return flags;
-  const drop = new Set(provenanceFlags);
-  const out: Record<string, JsonValue> = {};
-  for (const [k, v] of Object.entries(flags)) if (!drop.has(k)) out[k] = v;
-  return out;
+/** Run 级配置身份。所有会改变结果解释口径的实验配置只在这里裁决一次。 */
+export function computeConfigHash(run: AgentRun, configSandbox?: SandboxOption): string {
+  const judge = run.judge;
+  return hash({
+    agent: run.agent.name,
+    model: run.model,
+    reasoningEffort: run.reasoningEffort,
+    flags: run.flags,
+    sandboxReuse: run.sandboxReuse ?? false,
+    sandbox: sandboxRunInfo(run.sandbox ?? configSandbox),
+    strict: run.strict ?? false,
+    judge: judge ? { model: judge.model, baseUrl: judge.baseUrl } : undefined,
+  });
 }
 
-/**
- * @param sourceCache 按 sourcePath 缓存文件内容:一个矩阵(实验 × eval)会对同一批源文件
- * 反复算指纹,不带缓存会在任何 attempt 起跑前做 E×N 次重复文件读。
- * @param flagsOverride 用这份 flags 代替 `run.flags` 的指纹口径算一遍。只有一个用途:
- * 对已落盘结果做**反事实重算**——「把 flags 换成它当时那份,指纹还相等吗」等价于问
- * 「除 flags 外的一切是否都没变」,`acceptableFingerprints` 用它判定某条历史结果与本次
- * 规划的差异是否完全落在 provenance flag 上。
- */
 export async function computeFingerprint(
   evalDef: DiscoveredEval,
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  flagsOverride?: Record<string, JsonValue>,
 ): Promise<string> {
-  let sourcePromise = sourceCache?.get(evalDef.sourcePath);
-  if (!sourcePromise) {
-    sourcePromise = readFile(evalDef.sourcePath, "utf-8");
-    sourceCache?.set(evalDef.sourcePath, sourcePromise);
-  }
-  const source = await sourcePromise;
+  const configHash = computeConfigHash(run, configSandbox);
+  const source = await sourceClosure(evalDef, sourceCache);
+  const loaderData = await Promise.all(
+    [...(evalDef.loaderDataPaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedRead(path, sourceCache)]),
+  );
   const payload = {
+    configHash,
     source,
     eval: {
       id: evalDef.id,
@@ -55,23 +49,63 @@ export async function computeFingerprint(
       environment: evalDef.environment,
       metadata: evalDef.metadata ?? {},
     },
-    run: {
-      experimentId: run.experimentId,
-      agent: run.agent.name,
-      model: run.model,
-      flags: flagsOverride ?? fingerprintFlags(run.flags, run.provenanceFlags),
-      sandbox: sandboxRunInfo(sandboxForEval(run, evalDef, configSandbox)),
-      strict: run.strict,
-    },
+    sandbox: sandboxRunInfo(sandboxForEval(run, evalDef, configSandbox)),
+    loaderData,
   };
   // timeoutMs(evalDef / run 两处来源)刻意不入哈希:超时上限不改变「结果是什么」,只决定
   // 「等不等得到」,把它掺进指纹会让单纯调高上限也作废全部已完成结果。它改用 planCarry 里的
   // 携带资格判据(durationMs ≤ 当前 resolved timeoutMs)参与,而不是指纹相等性
   // (见 docs/runner.md「缓存:指纹去重」)。
-  return createHash("sha256").update(stableJson(payload)).digest("hex");
+  return hash(payload);
+}
+
+async function cachedRead(path: string, cache?: Map<string, Promise<string>>): Promise<string> {
+  let pending = cache?.get(path);
+  if (!pending) {
+    pending = readFile(path, "utf8");
+    cache?.set(path, pending);
+  }
+  return pending;
+}
+
+/** 项目内静态 import 图；外部包和动态 import 有意不进入闭包。 */
+async function sourceClosure(evalDef: DiscoveredEval, cache?: Map<string, Promise<string>>): Promise<Array<[string, string]>> {
+  const root = process.cwd();
+  const visited = new Set<string>();
+  const files: Array<[string, string]> = [];
+  const visit = async (path: string): Promise<void> => {
+    const absolute = resolve(path);
+    if (visited.has(absolute) || !absolute.startsWith(`${root}/`) && absolute !== root) return;
+    visited.add(absolute);
+    const content = await cachedRead(absolute, cache);
+    files.push([relative(root, absolute), content]);
+    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]!);
+    for (const spec of specs) {
+      if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
+      const resolved = await resolveModule(dirname(absolute), spec);
+      if (resolved) await visit(resolved);
+    }
+  };
+  await visit(evalDef.sourcePath);
+  return files.sort(([a], [b]) => a.localeCompare(b));
+}
+
+async function resolveModule(from: string, specifier: string): Promise<string | undefined> {
+  const raw = resolve(from, specifier);
+  const candidates = extname(raw) ? [raw] : [raw, ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx"].map((ext) => `${raw}${ext}`), ...["index.ts", "index.tsx", "index.js"].map((name) => resolve(raw, name))];
+  for (const candidate of candidates) {
+    try {
+      if ((await stat(candidate)).isFile()) return candidate;
+    } catch {
+      // 尝试下一个扩展名。
+    }
+  }
+  return undefined;
 }
 
 export interface CarryPlan {
+  /** `cacheKey(run, evalId)` → Run 级配置身份。 */
+  plannedConfigHashes?: Map<string, string>;
   /** `cacheKey(run, evalId)` → 本次规划出的指纹,供调用方按同一口径判断"这条要不要携入"。 */
   plannedFingerprints: Map<string, string>;
   /**
@@ -91,6 +125,8 @@ export interface CarryPlan {
   carriedAttemptsByKey: Map<string, Set<number>>;
   /** carriedAttemptsByKey 对应的完整结果对象,供 run.ts 直接并入 summary、cli.ts 直接取 verdict 展示。 */
   carriedResults: EvalResult[];
+  /** 仅迁移出口放行的历史条目及其审计键。 */
+  carriedIgnoringFlagsByResult?: Map<EvalResult, readonly string[]>;
 }
 
 /**
@@ -109,7 +145,7 @@ export function resolvedTimeoutMsForCarry(run: AgentRun, evalDef: DiscoveredEval
  * 可以携入(跳过重跑)的 attempt。三条判据逐条 attempt 独立成立才算命中——
  *
  * 1. 该 attempt 自己是终态(`passed` / `failed`)。`errored` 是框架/环境层面的不确定失败,
- *    判定本身不可信;`skipped` 根本没跑。同一 eval 的别的序号命中不能连带把它捎上
+ *    判定本身不可信;`unreadable` 根本没跑。同一 eval 的别的序号命中不能连带把它捎上
  *    (反例与修法见 memory 的 carry-must-be-per-attempt-not-whole-eval-key)。
  * 2. 该 attempt 落盘的 `fingerprint` 落在本次的可携带指纹集合里(`CarryPlan.acceptableFingerprints`
  *    的那一条,通常只有本次规划出的那一个;声明了 provenance flag 时还含「只在这些键上与本次
@@ -123,20 +159,38 @@ export function resolvedTimeoutMsForCarry(run: AgentRun, evalDef: DiscoveredEval
 export function carriableAttempts(
   priorResults: EvalResult[] | undefined,
   key: string,
+  configHash: string | undefined,
   fingerprints: ReadonlySet<string> | undefined,
   timeoutMs: number,
+  options: { rerun?: "failed" | "all"; keepSandbox?: "failed" | "all"; sandboxReuse?: boolean; carryIgnoringFlags?: readonly string[] } = {},
 ): EvalResult[] {
   if (!priorResults?.length || fingerprints === undefined || fingerprints.size === 0) return [];
   const out: EvalResult[] = [];
   for (const r of priorResults) {
     if (!r.experimentId || `${r.experimentId}|${r.id}` !== key) continue;
     const isTerminalVerdict = r.verdict === "passed" || r.verdict === "failed";
-    if (!isTerminalVerdict || r.fingerprint === undefined || !fingerprints.has(r.fingerprint)) continue;
+    if (
+      !isTerminalVerdict ||
+      (r.configHash !== undefined && r.configHash !== configHash && !options.carryIgnoringFlags?.length) ||
+      r.fingerprint === undefined ||
+      !fingerprints.has(r.fingerprint) ||
+      r.sandbox?.reused === true ||
+      options.sandboxReuse === true ||
+      options.rerun === "all" ||
+      (options.rerun === "failed" && r.verdict === "failed") ||
+      options.keepSandbox === "all" ||
+      (options.keepSandbox === "failed" && r.verdict === "failed")
+    ) continue;
     // `durationMs` 在 `EvalResult` 上是必填字段,正常落盘不会缺失;这里的 `typeof` 防御只处理
     // 磁盘数据损坏等异常情形——保守地判不可携带,而不是当 0 处理(当 0 会让所有旧记录都通过
     // 判据,把「数据缺失」悄悄伪装成「跑得很快」)。
-    const durationMs = typeof r.durationMs === "number" && Number.isFinite(r.durationMs) ? r.durationMs : undefined;
-    if (durationMs === undefined || durationMs > timeoutMs) continue;
+    const executionMs =
+      typeof r.executionMs === "number" && Number.isFinite(r.executionMs)
+        ? r.executionMs
+        : typeof r.durationMs === "number" && Number.isFinite(r.durationMs)
+          ? r.durationMs
+          : undefined;
+    if (executionMs === undefined || executionMs > timeoutMs) continue;
     out.push(r);
   }
   return out;
@@ -163,11 +217,12 @@ export async function planCarry(
   priorResults: EvalResult[] | undefined,
   configSandbox?: SandboxOption,
   configTimeoutMs?: number,
-  flagBagsByExperiment?: Map<string, Record<string, JsonValue>[]>,
+  options: { rerun?: "failed" | "all"; keepSandbox?: "failed" | "all"; carryIgnoringFlags?: readonly string[] } = {},
 ): Promise<CarryPlan> {
   prepareRunSandboxes(evals, agentRuns, configSandbox);
   const sourceCache = new Map<string, Promise<string>>();
   const plannedFingerprints = new Map<string, string>();
+  const plannedConfigHashes = new Map<string, string>();
   // 与 plannedFingerprints 同一批 (run × evalDef) 循环里顺带算好,供下面按 key 查「这个组合
   // 这次的携带资格线是多少」——同一个 key 在同一次 planCarry 调用里只对应一个 (run, evalDef)
   // 组合,与 plannedFingerprints 的 key 语义一致。
@@ -177,110 +232,79 @@ export async function planCarry(
   for (const run of agentRuns) {
     for (const evalDef of selectedEvalsForRun(evals, run)) {
       const key = cacheKey(run, evalDef.id);
+      const configHash = computeConfigHash(run, configSandbox);
+      run.configHash = configHash;
+      plannedConfigHashes.set(key, configHash);
       plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
       jobs.push(
         (async () => {
           const fp = await computeFingerprint(evalDef, run, sourceCache, configSandbox);
           plannedFingerprints.set(key, fp);
-          acceptable.set(
-            key,
-            await acceptableFingerprints({
-              evalDef,
-              run,
-              key,
-              priorResults,
-              primary: fp,
-              sourceCache,
-              configSandbox,
-              ...(run.experimentId !== undefined && flagBagsByExperiment?.has(run.experimentId)
-                ? { historicalFlagBags: flagBagsByExperiment.get(run.experimentId)! }
-                : {}),
-            }),
-          );
+          acceptable.set(key, new Set([fp]));
         })(),
       );
     }
   }
   await Promise.all(jobs);
 
+  // 搬迁出口只允许忽略已从本次 flags 移走的键。历史条目仍按它落盘时的整袋 flags
+  // 重算指纹；只有删去这些键后其余 flags 与本次完全一致，才把那份旧口径加入候选。
+  const ignored = options.carryIgnoringFlags ?? [];
+  if (ignored.length > 0) {
+    for (const prior of priorResults ?? []) {
+      const key = prior.experimentId === undefined ? undefined : `${prior.experimentId}|${prior.id}`;
+      const historicalFlags = prior.experiment?.flags;
+      if (key === undefined || historicalFlags === undefined || !acceptable.has(key)) continue;
+      const run = agentRuns.find((candidate) => cacheKey(candidate, prior.id) === key);
+      const evalDef = evals.find((candidate) => candidate.id === prior.id);
+      if (run === undefined || evalDef === undefined || !ignored.every((flag) => Object.hasOwn(historicalFlags, flag))) continue;
+      const withoutIgnored = Object.fromEntries(Object.entries(historicalFlags).filter(([flag]) => !ignored.includes(flag)));
+      if (stableJson(withoutIgnored) !== stableJson(run.flags)) continue;
+      acceptable.get(key)!.add(await computeFingerprint(evalDef, { ...run, flags: historicalFlags }, sourceCache, configSandbox));
+    }
+  }
+
   // 判据本身在 carriableAttempts 里,这里只按 key 逐组调它——静态规划与派发时刻的重查因此
   // 不可能对「哪些携入」得出不同结论。
   const carriedAttemptsByKey = new Map<string, Set<number>>();
+  const carriedIgnoringFlagsByResult = new Map<EvalResult, readonly string[]>();
   const hit = new Set<EvalResult>();
-  for (const key of plannedFingerprints.keys()) {
-    const carried = carriableAttempts(priorResults, key, acceptable.get(key), plannedTimeoutMs.get(key) ?? Infinity);
+  for (const [key] of plannedFingerprints) {
+    const evalId = key.slice(key.indexOf("|") + 1);
+    const run = agentRuns.find((candidate) => cacheKey(candidate, evalId) === key);
+    const carried = carriableAttempts(
+      priorResults,
+      key,
+      plannedConfigHashes.get(key),
+      acceptable.get(key),
+      plannedTimeoutMs.get(key) ?? Infinity,
+      { ...options, sandboxReuse: run?.sandboxReuse },
+    );
     if (carried.length === 0) continue;
     const indices = new Set<number>();
     for (const r of carried) {
       indices.add(r.attempt);
       hit.add(r);
+      if (ignored.length > 0 && r.fingerprint !== plannedFingerprints.get(key)) {
+        carriedIgnoringFlagsByResult.set(r, ignored);
+      }
     }
     carriedAttemptsByKey.set(key, indices);
   }
   // 按 priorResults 的原始顺序输出(调用方的展示顺序不因分组而抖动)。
   const carriedResults = (priorResults ?? []).filter((r) => hit.has(r));
-  return { plannedFingerprints, acceptableFingerprints: acceptable, carriedAttemptsByKey, carriedResults };
+  return { plannedConfigHashes, plannedFingerprints, acceptableFingerprints: acceptable, carriedAttemptsByKey, carriedResults, carriedIgnoringFlagsByResult };
 }
 
-/**
- * 这条 `(experimentId, evalId)` 本次可以携带的指纹全集。
- *
- * 没声明 provenance flag 时就是 `{ primary }`——判据与「指纹相等」逐字等价,一条历史结果都
- * 不会因此多携入。声明了之后多出一类:**只在 provenance flag 上与本次不同**的历史口径。
- *
- * 判定不靠比对两串哈希的差异(哈希不可差分),而是**反事实重算**:取该历史结果所属快照记下的
- * `ExperimentRunInfo.flags`(整袋原样,`applySnapshotDefaults` 已把它挂在 `EvalResult.experiment`
- * 上),用它替换本次的 flags 口径重算一遍指纹——算出来等于历史那一串,就证明「除 flags 外的
- * 一切(eval 源码、agent、model、sandbox、strict…)都没变」。再要求两袋 flags 抹掉 provenance
- * 键之后逐字相等,才把这串历史指纹计入可携带集合:真改了某个影响行为的 flag(`webResearch`
- * 从 true 改成 false)照旧作废,不会被这条通道放行。
- *
- * 历史结果落盘时的指纹口径是「整袋 flags」(provenance 概念引入之前),所以两个口径都要试:
- * 整袋(老结果)与抹掉 provenance 键的那袋(声明之后跑出来的结果,与 primary 相同则自然去重)。
- */
-export async function acceptableFingerprints(args: {
-  evalDef: DiscoveredEval;
-  run: AgentRun;
-  key: string;
-  priorResults: EvalResult[] | undefined;
-  /** 本次规划出的指纹(新跑的 attempt 用它落盘打戳)。 */
-  primary: string;
-  /**
-   * 该实验历史快照记下过的 flags(见 `loadCarryInputs`)。候选假设的来源之一,与结果自带的那袋
-   * 并列——携带条目带着**产出它那一轮**的指纹合入新快照,那一轮的 flags 只在更早的快照里留着。
-   */
-  historicalFlagBags?: readonly Record<string, JsonValue>[];
-  sourceCache?: Map<string, Promise<string>>;
-  configSandbox?: SandboxOption;
-}): Promise<Set<string>> {
-  const { evalDef, run, key, priorResults, primary, historicalFlagBags, sourceCache, configSandbox } = args;
-  const out = new Set([primary]);
-  if (!run.provenanceFlags?.length) return out;
-  const currentStripped = stableJson(fingerprintFlags(run.flags, run.provenanceFlags));
-  const candidates: Record<string, JsonValue>[] = [];
-  for (const r of priorResults ?? []) {
-    if (!r.experimentId || `${r.experimentId}|${r.id}` !== key) continue;
-    // 第三方落盘 / 缺 ExperimentRunInfo 时这里没有袋子可试,只能靠 historicalFlagBags。
-    if (r.experiment?.flags !== undefined) candidates.push(r.experiment.flags);
-  }
-  candidates.push(...(historicalFlagBags ?? []));
-  const seen = new Set<string>();
-  for (const bag of candidates) {
-    const bagJson = stableJson(bag);
-    if (seen.has(bagJson)) continue;
-    seen.add(bagJson);
-    // 抹掉 provenance 键之后必须逐字相等:差异只准落在这些键上。
-    if (stableJson(fingerprintFlags(bag, run.provenanceFlags)) !== currentStripped) continue;
-    out.add(await computeFingerprint(evalDef, run, sourceCache, configSandbox, bag));
-  }
-  return out;
+function hash(value: unknown): string {
+  return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
 /** 键序稳定的 JSON 序列化(对象键排序),保证同一 payload 永远同一指纹。 */
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  const obj = value as Record<string, unknown>;
+  const obj = value as globalThis.Record<string, unknown>;
   return `{${Object.keys(obj)
     .sort()
     .map((key) => `${JSON.stringify(key)}:${stableJson(obj[key])}`)

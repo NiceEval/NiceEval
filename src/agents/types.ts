@@ -19,7 +19,7 @@ export interface McpStdioServer {
   /** 传给命令的参数。 */
   args?: string[];
   /** 注入服务器进程的环境变量(可能含 secret,不进 manifest)。 */
-  env?: Record<string, string>;
+  env?: globalThis.Record<string, string>;
 }
 
 /**
@@ -32,7 +32,7 @@ export interface McpHttpServer {
   /** Streamable HTTP 端点(如 https://mem.example.com/mcp/)。 */
   url: string;
   /** 逐字写进每个请求的 HTTP 头(常用于 Authorization;可能含 secret,不进 manifest)。 */
-  headers?: Record<string, string>;
+  headers?: globalThis.Record<string, string>;
 }
 
 /**
@@ -194,13 +194,13 @@ export interface Telemetry {
    * env-based 导出的 env(= AgentTracing.env(endpoint) 的结果),ready-to-spread。
    * adapter 的 send 直接 `{ ...ctx.telemetry?.env }` 注入,不必手搓 OTEL_* 拼装。
    */
-  readonly env?: Readonly<Record<string, string>>;
+  readonly env?: Readonly<globalThis.Record<string, string>>;
   /**
    * 本轮的 W3C trace context(traceparent),每轮一个新值。send 把它 spread 进 HTTP 请求头
    * (或注入子进程 env)——应用埋点支持 context 传播时,本轮 span 挂到我们给的 trace 下,
    * 并发跑 eval 的 span 归属才精确;不带则回退时间窗口归属(该 agent 自动降为串行)。
    */
-  readonly headers?: Readonly<Record<string, string>>;
+  readonly headers?: Readonly<globalThis.Record<string, string>>;
 }
 
 /**
@@ -230,7 +230,7 @@ export interface AgentTracing {
    * env-based 导出:给 endpoint → 返回要注入每轮 send 的 env(纯函数)。运行器把结果
    * 放进 ctx.telemetry.env,send 直接 spread。
    */
-  env?(endpoint: string): Record<string, string>;
+  env?(endpoint: string): globalThis.Record<string, string>;
   /**
    * file-based 导出:给 sandbox + ctx(ctx.telemetry.endpoint 必有),自己写 / 追加配置文件。
    * 运行器在 agent.setup 之后、首次 send 之前调一次(仅当 tracing 开 + 有 endpoint)。
@@ -259,7 +259,7 @@ export interface AgentSession {
   /** HITL 停轮现场:取,取到即清除(一次消费)。 */
   take<T>(): T | undefined;
   /** 逃生舱:自由状态槽,起始 `{}`,框架从不写入。 */
-  readonly state: Record<string, unknown>;
+  readonly state: globalThis.Record<string, unknown>;
 }
 
 export interface AgentContext {
@@ -280,7 +280,7 @@ export interface AgentContext {
    * 读取其中的字段;框架本身不解释、不校验它的内容。命名特意避开 CLI 解析出的
    * `flag`(跑法层面的 --timeout/--budget 等),两者是不相关的概念。
    */
-  readonly flags: Readonly<Record<string, unknown>>;
+  readonly flags: Readonly<globalThis.Record<string, unknown>>;
   /**
    * 路径推导出的实验 id(与结果归属 `runWho` / `AgentRun.experimentId` 同源);不经
    * experiment 跑(如脱离 CLI、直接构造 `AgentRun` 的场景)时为 undefined。典型用途:

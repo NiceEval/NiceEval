@@ -52,7 +52,7 @@ export const en = {
     "  - [cd] Run from the project root that contains niceeval.config.ts\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/quickstart.mdx",
   "cli.config.noDefault": "niceeval.config.ts must default export defineConfig(...).",
-  "cli.dry.header": "plan: {{attempts}} · {{evals}} × {{configs}} · runs {{runs}}",
+  "cli.dry.header": "plan: {{attempts}} · {{evals}} × {{configs}} · attempts {{attemptCount}}",
   "cli.dry.unit.attempt": "attempt",
   "cli.dry.unit.attempts": "attempts",
   "cli.dry.unit.eval": "eval",
@@ -66,12 +66,12 @@ export const en = {
   "runner.budgetUnenforceable":
     "budget for {{budgetKey}}: several attempts completed without any cost data (agent reports no usage and the model is not in the price table) — the budget cannot be enforced for this agent; continuing without the guard.\n",
   "runner.experimentTeardownFailed":
-    "teardown for experiment {{experimentId}} failed: {{message}}. Results are unaffected, but host-side resources started by this experiment may not have been released; check manually.\n",
+    "teardown for experiment {{experimentId}} failed: {{message}}. Record are unaffected, but host-side resources started by this experiment may not have been released; check manually.\n",
   "runner.cleanupTimeout": "cleanup timed out after {{timeoutMs}}ms\n",
   "runner.setupReturnedCleanup":
     "{{layer}} returned a function. setup does not carry cleanup and the returned value will not be executed — put the cleanup in the paired teardown of the same layer ({{hint}}); see the experiments tutorial on docs-site or docs/runner.md.\n",
   "runner.experimentTeardownLate":
-    "experiment {{experimentId}}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Results are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.\n",
+    "experiment {{experimentId}}'s teardown was not triggered by the normal countdown path; it has been executed by the end-of-run sweep instead. Record are unaffected; seeing this line means an unlocated intermittent scheduling issue fired — please record this run in the memory ledger.\n",
   "runner.teardownRegistrationWriteFailed":
     "writing the crash-recovery teardown registration for experiment {{experimentId}} failed: {{message}}. The run continues normally, but a SIGKILL during this run cannot be recovered via `niceeval exp --teardown` or the startup self-heal — check disk space/permissions under .niceeval/teardowns/.\n",
   "runner.lockTakenOver":
@@ -117,7 +117,7 @@ export const en = {
     "        (mutually exclusive with @<locator> and --report)\n" +
     "      --json      structured form of any slice: one JSON document on stdout, same\n" +
     "        selection as the text form (mutually exclusive with --report and --expand)\n" +
-    "      --results <dir>   pin a results root    --exp <id>   repeatable; 2+ compares conditions\n" +
+    "      --record <dir>    pin a record root     --exp <id>   repeatable; 2+ compares conditions\n" +
     "      --report <file>   custom report    --page <id>   pick the initial page (multi-page\n" +
     "        reports render it, then list the rest as a page index with copyable commands)\n" +
     "      --fresh   only count freshly executed attempts (excludes carried-over and\n" +
@@ -126,8 +126,8 @@ export const en = {
     "  niceeval view [eval-id-prefix…] [--out dir] [--port n] [--no-open]\n" +
     "      report pages + evidence rooms; --report <file> swaps in your report\n" +
     "      (same file as show); --page <id> picks the initial page;\n" +
-    "      --results <dir> pins a results root; --snapshot <file> opens exactly\n" +
-    "      one snapshot; --exp <id> (repeatable) narrows to those experiments;\n" +
+    "      --record <dir> pins a record root; --run <file> opens exactly\n" +
+    "      one run; --exp <id> (repeatable) narrows to those experiments;\n" +
     "      --fresh only new executions\n" +
     "      --out <dir> exports a static site: index.html plus the viewer\n" +
     "      artifacts, ready for any static host\n" +
@@ -137,7 +137,7 @@ export const en = {
     "  niceeval init                                       scaffold config + evals/\n\n" +
     "Flags:\n" +
     "  --runs n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --force  --dry\n" +
+    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --carry-ignoring-flag key  --dry\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
@@ -145,8 +145,8 @@ export const en = {
     "niceeval.config.ts > built-in default. Configuration has no environment layer;\n" +
     "environment variables hold credentials such as API keys.\n",
   "cli.show.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval show`.\n",
-  "cli.show.runDirMissing": "Results directory not found: {{dir}}\n",
-  "cli.show.noEvalMatch": "No results matched: {{patterns}}. Evals with results: {{evals}}\n",
+  "cli.show.runDirMissing": "Record directory not found: {{dir}}\n",
+  "cli.show.noEvalMatch": "No results matched: {{pattern}}. Evals with results: {{evals}}\n",
   "cli.show.noExperimentMatch": "No experiment matched --exp {{arg}}. Experiments with results: {{experiments}}\n",
   "cli.show.expAmbiguous":
     "error: --exp {{arg}} matched {{matched}} experiments: {{candidates}}\n  fix: use one of the exact ids above, or a longer prefix — each --exp in a compare must resolve to exactly one experiment\n",
@@ -168,7 +168,7 @@ export const en = {
     "error: --expand requires the range to resolve to exactly one attempt, got {{count}}\n  fix: narrow the range to a single attempt — an eval id prefix matching one eval, or @<locator>\n",
   "cli.show.expandNotFound": "error: {{message}}\n  fix: use a handle from a truncated card's own hint (t<turn>.c<card> or cmd<n>), or drop --expand to see the whole attempt\n",
   "cli.show.historyReportConflict":
-    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for snapshot-level trends, compose exp.snapshots inside your report file instead.\n",
+    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for run-level trends, compose exp.runs inside your report file instead.\n",
   "cli.show.jsonReportConflict":
     "error: --json cannot combine with --report ({{report}}) — a report tree says how to look at the data, --json says what the data is\n  fix: drop --report to use --json, or drop --json and read the report tree as text/HTML\n",
   "cli.show.jsonExpandConflict":
@@ -213,7 +213,7 @@ export const en = {
   "cli.noAgent": "No agent specified (use --agent <name>).\n",
   "cli.none": "(none)",
   "cli.pressCtrlC": "Press Ctrl+C to exit.\n",
-  "cli.resultsPath": "Structured results: {{path}} (snapshot.json + per-attempt result.json / events.json / trace.json / diff.json)\n",
+  "cli.resultsPath": "Structured results: {{path}} (run.json + per-attempt result.json / events.json / trace.json / diff.json)\n",
   "cli.run.experimentRequired":
     "Run evals through an experiment: use `niceeval exp [path|config] [eval id prefix]`.\n" +
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/write-experiment.mdx\n",
@@ -241,9 +241,8 @@ export const en = {
   "define.scoreEvalTestRequired": "defineScoreEval requires an async test(t) function.",
   "define.scoreEvalScoringRejected": "defineScoreEval does not accept scoring; it is always set to \"points\" (points-scoring eval type). Use defineEval for the pass-scoring type.",
   "define.experimentAgentRequired": "defineExperiment requires agent.",
-  "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result snapshots and must be plain JSON.",
-  "define.experimentLabelInvalid": "experiment.labels.{{key}} must be a string or a finite number; labels are report-side grouping coordinates persisted verbatim into result snapshots.",
-  "define.experimentProvenanceFlagsInvalid": "experiment.provenanceFlags must be an array of flag key names (strings); it lists the flags recorded for provenance only, which stay out of the cache fingerprint.",
+  "define.experimentFlagNotJson": "experiment.flags.{{key}} is not JSON-serializable (functions / undefined / cycles / bigint are not allowed); flags are persisted verbatim into result runs and must be plain JSON.",
+  "define.experimentLabelInvalid": "experiment.labels.{{key}} must be a string or a finite number; labels are report-side grouping coordinates persisted verbatim into result runs.",
   "define.experimentSetupNotFunction": "experiment.setup must be a function ((ctx) => void); use experiment.teardown for cleanup; to prepare the in-sandbox environment per experiment, chain .setup() hooks on the sandbox spec instead.",
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure must be a function ((failure) => FailureClass | undefined); it classifies failures that surface as third-party errors and must return undefined for anything it does not recognize.",
   "define.experimentIdRejected": "defineExperiment does not accept id; ids are derived from file paths.",
@@ -260,7 +259,7 @@ export const en = {
   "feedback.human.budgetExhausted": "budget exhausted for {{experimentId}} (spent {{spent}}, unstarted {{unstarted}})",
   "feedback.human.compare": "Compare: niceeval view",
   "feedback.human.counts":
-    "{{total}} total · {{reused}} reused · {{running}} running · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{skipped}} skipped",
+    "{{total}} total · {{reused}} reused · {{running}} running · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{unreadable}} unreadable",
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
   "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.failuresHeader": "FAILURES",
@@ -294,7 +293,7 @@ export const en = {
   "feedback.human.precheckJudge": "prechecking judge config",
   "feedback.human.precheckJudgeDone": "judge config ok",
   "feedback.human.countsWithElsewhere":
-    "{{total}} total · {{reused}} reused · {{running}} running · {{elsewhere}} elsewhere · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{skipped}} skipped",
+    "{{total}} total · {{reused}} reused · {{running}} running · {{elsewhere}} elsewhere · {{queued}} queued · {{passed}} passed · {{failed}} failed · {{errored}} errored · {{unreadable}} unreadable",
   "feedback.human.waitingOnAnotherRun": "waiting on another run",
   "feedback.human.lockWaitDetail": "{{count}} evals · pid {{pid}}",
   "feedback.human.lockWaitStarted": "waiting on another run · {{experimentId}} ({{count}} evals, pid {{pid}})",
@@ -344,19 +343,19 @@ export const en = {
   "report.runStart": "\nRunning {{count}} evals{{extra}} (concurrency {{concurrency}})\n\n",
   "report.runStartExtra": " × {{configs}} configs = {{totalRuns}} runs",
   "report.viewHint": "Run `pnpm exec niceeval view` to see the results in the graphical viewer.\n",
-  "report.skipped": "skipped",
+  "report.unreadable": "unreadable",
   "report.soft": "soft",
   "report.summary.errored": "{{count}} errored",
   "report.summary.failed": "{{count}} failed",
   "report.summary.passed": "{{count}} passed",
-  "report.summary.skipped": "{{count}} skipped",
+  "report.summary.unreadable": "{{count}} unreadable",
   "report.table.agent": "Agent",
   "report.table.avgDuration": "Avg Duration",
   "report.table.cost": "Cost",
   "report.table.default": "default",
   "report.table.duration": "Duration",
   "report.table.eval": "Eval",
-  "report.table.evalTitle": "Eval Results:",
+  "report.table.evalTitle": "Eval Record:",
   "report.table.experiment": "Experiment",
   "report.table.experimentsTitle": "Experiments",
   "report.table.model": "Model",

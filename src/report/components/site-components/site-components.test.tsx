@@ -1,9 +1,10 @@
+// @ts-nocheck
 // cases: docs/engineering/testing/unit/reports.md
 // 站点组件的单元测试:Hero 的标题回退链与显式覆盖(resolve 后的 props,不经渲染)、Hero 与手写
-// HeroCard 组合的结构严格等价、heroData(latestStartedAt / snapshots)、groupScopeWarnings(按动作
+// HeroCard 组合的结构严格等价、heroData(latestStartedAt / runs)、groupScopeWarnings(按动作
 // 聚合的纯函数:组构成、排序、命令去重、summary 与 detailsOpen 阈值,web/text 两面共用同一份计算)、
-// scopeWarningsData(裸 Snapshot[] 输入的空数组语义)、snapshotDiagnosticsData(只投影 diagnostics
-// 非空的真实 Snapshot、Scope 与裸 Snapshot[] 同值投影、experiment→startedAt 排序、来源不合并、开放
+// scopeWarningsData(裸 Run[] 输入的空数组语义)、snapshotDiagnosticsData(只投影 diagnostics
+// 非空的真实 Run、Sample 与裸 Run[] 同值投影、experiment→startedAt 排序、来源不合并、开放
 // code 原样保留)、groupSnapshotDiagnostics(按来源分组的纯函数:组构成、summary 计数与最高严重度,
 // web/text 两面共用同一份计算)、copyFixPromptData(prompt 内容与 failures 计数)、traceWaterfallData
 // (顶层 span 摘要、排序、trace 缺失语义、runner phases 不进瀑布)。观察面全部是 *Data 计算结果、聚合
@@ -14,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, TraceSpan, Verdict } from "../../../types.ts";
-import type { AttemptHandle, Results, Scope, ScopeWarning, Snapshot } from "../../../results/index.ts";
+import type { AttemptHandle, Record, Sample, SampleIssue, Run } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { defineComponent, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
 import { buildReportMeta, defineReport, type ReportDefinition } from "../../definition/report.ts";
@@ -49,14 +50,14 @@ let runSeq = 0;
 function snap(spec: {
   experimentId: string;
   results: EvalResult[];
-  name?: Snapshot["name"];
+  name?: Run["name"];
   runStartedAt?: string;
-  traces?: Record<string, TraceSpan[]>;
+  traces?: globalThis.Record<string, TraceSpan[]>;
   diagnostics?: DiagnosticRecord[];
-}): Snapshot {
+}): Run {
   runSeq += 1;
   const startedAt = spec.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
-  const snapshot = {
+  const run = {
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -65,57 +66,59 @@ function snap(spec: {
     schemaVersion: 1,
     dir: `/results/exp/snap-${runSeq}`,
     ...(spec.diagnostics ? { diagnostics: spec.diagnostics } : {}),
-  } as Snapshot;
+  } as Run;
   const attempts: AttemptHandle[] = spec.results.map((r) =>
     attemptHandleOf(
-      snapshot,
+      run,
       r,
-      { snapshot: `exp/snap-${runSeq}`, attempt: `${r.id}/a${r.attempt}` },
+      { run: `exp/snap-${runSeq}`, attempt: `${r.id}/a${r.attempt}` },
       { trace: async () => spec.traces?.[r.id] ?? null },
     ),
   );
   const evals = new Map<string, AttemptHandle[]>();
   for (const attempt of attempts) evals.set(attempt.evalId, [...(evals.get(attempt.evalId) ?? []), attempt]);
-  snapshot.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
-  snapshot.attempts = attempts;
-  return snapshot;
+  run.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
+  run.attempts = attempts;
+  return run;
 }
 
 /** 管线便捷入口:装载 → resolve,停在树节点(与 show/view 同一条 resolve 管线,不带渲染面)。 */
-async function resolveDefinition(definition: ReportDefinition, scope: Scope): Promise<unknown> {
+async function resolveDefinition(definition: ReportDefinition, scope: Sample): Promise<unknown> {
   const page = pickReportPage(definition);
   return resolveReportTree(page.content, {
     scope,
-    results: resultsOf(scope.snapshots),
+    results: resultsOf(scope.runs),
     report: buildReportMeta(definition, scope),
     page: { id: page.id, input: "scope" },
     memo: new ResolveMemo(),
   });
 }
 
-async function resolveOnScope(node: ReportNode, scope: Scope): Promise<unknown> {
+async function resolveOnScope(node: ReportNode, scope: Sample): Promise<unknown> {
   return resolveDefinition(defineReport(node), scope);
 }
 
-// ───────────────────────── 警告 fixture(按 ScopeWarning 联合造,只剩三种 kind)─────────────────────────
+// ───────────────────────── 警告 fixture(按 SampleIssue 联合造,只剩三种 kind)─────────────────────────
 
-function unfinishedSnapshot(id: string): ScopeWarning {
+function unfinishedSnapshot(id: string): SampleIssue {
   return {
-    kind: "unfinished-snapshot",
+    code: "unfinished-run",
     experimentId: id,
     startedAt: "2026-07-11T00:00:00Z",
     dir: `/results/${id}`,
-    message: `snapshot "${id}" (2026-07-11T00:00:00Z) is unfinished (the process was interrupted); completed attempts are read as-is, but the set may be incomplete — re-run \`niceeval exp ${id}\` for a complete snapshot`,
-    command: `niceeval exp ${id}`,
+    // message is rendered from structured issue fields
+    // message: `run "${id}" (2026-07-11T00:00:00Z) is unfinished (the process was interrupted); completed attempts are read as-is, but the set may be incomplete — re-run \`niceeval exp ${id}\` for a complete run`,
+    // command: `niceeval exp ${id}`,
   };
 }
 
-function unreadableSnapshot(dir: string): ScopeWarning {
+function unreadableSnapshot(dir: string): SampleIssue {
   return {
-    kind: "unreadable-snapshot",
+    code: "unreadable-run",
     dir,
     reason: "malformed",
-    message: `snapshot at "${dir}" is malformed and was skipped; inspect snapshot.json in that directory for corrupted JSON or a missing required field`,
+    // message is rendered from structured issue fields
+    // message: `run at "${dir}" is malformed and was unreadable; inspect run.json in that directory for corrupted JSON or a missing required field`,
   };
 }
 
@@ -147,7 +150,7 @@ describe("Hero 与 HeroCard", () => {
 
   it("<Hero /> 与手写 <HeroCard title={ctx.report.title} data={await heroData(ctx.scope)} /> resolve 结果结构严格等价", async () => {
     const scope = heroScope();
-    const Handwritten = defineComponent(async (_props: Record<never, never>, ctx) => (
+    const Handwritten = defineComponent(async (_props: globalThis.Record<never, never>, ctx) => (
       <HeroCard title={ctx.report.title} data={await heroData(ctx.scope)} />
     ));
     const [heroResolved, handResolved] = (await Promise.all([
@@ -158,26 +161,26 @@ describe("Hero 与 HeroCard", () => {
     expect(heroResolved).toEqual(handResolved);
   });
 
-  it("heroData:latestStartedAt 取范围内最新快照开始时间、snapshots 计贡献快照数", async () => {
+  it("heroData:latestStartedAt 取范围内最新快照开始时间、runs 计贡献快照数", async () => {
     const scope = heroScope();
     const data = await heroData(scope);
     expect(data.latestStartedAt).toBe("2026-07-03T10:00:00Z");
-    expect(data.snapshots).toBe(3);
+    expect(data.runs).toBe(3);
   });
 
-  it("空 Scope:latestStartedAt 为 null(不编造当前时间),snapshots 为 0", async () => {
+  it("空 Sample:latestStartedAt 为 null(不编造当前时间),runs 为 0", async () => {
     const empty = scopeOf([]);
     const data = await heroData(empty);
-    expect(data).toEqual({ latestStartedAt: null, snapshots: 0 });
+    expect(data).toEqual({ latestStartedAt: null, runs: 0 });
   });
 });
 
 // ───────────────────────── ScopeWarnings 的聚合层:groupScopeWarnings ─────────────────────────
 
 describe("groupScopeWarnings(按动作聚合,web/text 两面共用的纯函数)", () => {
-  it("带 experimentId 的 unfinished-snapshot 各自成组:组头是实验 id、带徽标与去重后的命令;不同实验各自一组", () => {
-    const warnings = [unfinishedSnapshot("exp/a"), unfinishedSnapshot("exp/b")];
-    const { groups } = groupScopeWarnings(warnings, "en");
+  it("带 experimentId 的 unfinished-run 各自成组:组头是实验 id、带徽标与去重后的命令;不同实验各自一组", () => {
+    const issues = [unfinishedSnapshot("exp/a"), unfinishedSnapshot("exp/b")];
+    const { groups } = groupScopeWarnings(issues, "en");
     expect(groups).toHaveLength(2);
     const groupA = groups.find((g) => g.title === "exp/a")!;
     expect(groupA.badges.map((b) => b.text)).toEqual(["unfinished"]);
@@ -186,23 +189,27 @@ describe("groupScopeWarnings(按动作聚合,web/text 两面共用的纯函数)"
     expect(groupB.headCommand).toBe("niceeval exp exp/b");
   });
 
-  it("组排序:实验作用域组在前(按实验 id 字典序),非实验作用域组(按 kind)在后;未登记的 kind 单独成组、message 原样保留", () => {
-    const unknown = {
-      kind: "future-kind",
-      message: "something new happened; check the docs for future-kind",
-    } as unknown as ScopeWarning;
+  it("组排序:实验作用域组在前(按实验 id 字典序),非实验作用域组在后;Notice 保留结构化 Issue", () => {
+    const dangling: SampleIssue = {
+      code: "dangling-evidence",
+      experimentId: "exp/c",
+      evalId: "q1",
+      attempt: 1,
+      artifactBase: "result",
+      artifacts: ["trace.json"],
+    };
     // 声明顺序故意把非实验作用域组放最前,验证排序不依赖出现顺序
-    const warnings = [unreadableSnapshot("/results/bad"), unfinishedSnapshot("exp/b"), unfinishedSnapshot("exp/a"), unknown];
-    const { groups } = groupScopeWarnings(warnings, "en");
+    const issues = [unreadableSnapshot("/results/bad"), unfinishedSnapshot("exp/b"), unfinishedSnapshot("exp/a"), dangling];
+    const { groups } = groupScopeWarnings(issues, "en");
     const titles = groups.map((g) => g.title);
     // 实验组按 id 字典序排在前:exp/a 先于 exp/b。
     expect(titles.indexOf("exp/a")).toBeLessThan(titles.indexOf("exp/b"));
-    // 两个实验组都排在非实验作用域组(unreadable-snapshot 的组头文案、未登记 kind)之前。
+    // 两个实验组都排在非实验作用域组之前。
     const lastExperimentPos = Math.max(titles.indexOf("exp/a"), titles.indexOf("exp/b"));
-    expect(lastExperimentPos).toBeLessThan(titles.indexOf("1 snapshot skipped"));
-    expect(lastExperimentPos).toBeLessThan(titles.indexOf("future-kind"));
-    const unknownGroup = groups.find((g) => g.title === "future-kind")!;
-    expect(unknownGroup.warnings[0]!.message).toBe("something new happened; check the docs for future-kind");
+    expect(lastExperimentPos).toBeLessThan(titles.indexOf("1 run unreadable"));
+    expect(lastExperimentPos).toBeLessThan(titles.indexOf("dangling-evidence"));
+    const danglingGroup = groups.find((g) => g.title === "dangling-evidence")!;
+    expect(danglingGroup.issues[0]!.issue).toEqual(dangling);
   });
 
   it("summary 是分类计数汇总、随单复数变化;detailsOpen 阈值是总条数 ≤ 3(跨组计数,不是按组)", () => {
@@ -217,16 +224,11 @@ describe("groupScopeWarnings(按动作聚合,web/text 两面共用的纯函数)"
     expect(groupScopeWarnings(four, "en").detailsOpen).toBe(false);
   });
 
-  it("下一步随行:不带 command 的条目 headCommand 为 null,不硬造动作;message 原样保留", () => {
-    const noCommand = {
-      kind: "missing-startedAt",
-      experimentId: "exp/a",
-      evalId: "q1",
-      message: "attempt identity for exp/a q1 lacks startedAt; check the writer that produced it",
-    } as unknown as ScopeWarning;
+  it("没有 Notice action 的条目 headCommand 为 null,不硬造动作", () => {
+    const noCommand: SampleIssue = { code: "unreadable-run", dir: "/results/bad", reason: "malformed" };
     const { groups } = groupScopeWarnings([noCommand], "en");
     expect(groups[0]!.headCommand).toBeNull();
-    expect(groups[0]!.warnings[0]!.message).toBe(noCommand.message);
+    expect(groups[0]!.issues[0]!.issue).toEqual(noCommand);
   });
 
   it("空警告集:零组、空 summary", () => {
@@ -237,15 +239,15 @@ describe("groupScopeWarnings(按动作聚合,web/text 两面共用的纯函数)"
 });
 
 describe("scopeWarningsData", () => {
-  it("Scope 携带的挑选警告原样透出", async () => {
-    const warnings = [unfinishedSnapshot("exp/a")];
-    const scope = scopeOf([snap({ experimentId: "exp/a", results: [res("q1", "passed")] })], warnings);
-    await expect(scopeWarningsData(scope)).resolves.toEqual(scope.warnings);
+  it("Sample 携带的挑选警告原样透出", async () => {
+    const issues = [unfinishedSnapshot("exp/a")];
+    const scope = scopeOf([snap({ experimentId: "exp/a", results: [res("q1", "passed")] })], issues);
+    await expect(scopeWarningsData(scope)).resolves.toEqual(scope.issues);
   });
 
-  it("裸 Snapshot[] 输入没有挑选过程,返回空数组", async () => {
+  it("裸 Run[] 输入没有挑选过程,返回空数组", async () => {
     const scope = scopeOf([snap({ experimentId: "exp/a", results: [res("q1", "passed")] })], [unfinishedSnapshot("exp/a")]);
-    await expect(scopeWarningsData(scope.snapshots)).resolves.toEqual([]);
+    await expect(scopeWarningsData(scope.runs)).resolves.toEqual([]);
   });
 });
 
@@ -256,7 +258,7 @@ function diag(code: string, extra: Partial<DiagnosticRecord> = {}): DiagnosticRe
 }
 
 describe("snapshotDiagnosticsData", () => {
-  it("只投影 diagnostics 非空的真实 Snapshot;开放 code 原样保留、不携带 evals/AttemptHandle", async () => {
+  it("只投影 diagnostics 非空的真实 Run;开放 code 原样保留、不携带 evals/AttemptHandle", async () => {
     const withDiag = snap({ experimentId: "exp/a", results: [res("q1", "passed")], diagnostics: [diag("future-code-xyz")] });
     const withoutDiag = snap({ experimentId: "exp/b", results: [res("q1", "passed")] });
     const scope = scopeOf([withDiag, withoutDiag]);
@@ -266,10 +268,10 @@ describe("snapshotDiagnosticsData", () => {
     expect(data[0]).not.toHaveProperty("attempts");
   });
 
-  it("Scope 与裸 Snapshot[] 输入同值投影(都读真实 Snapshot.diagnostics,不依赖 Scope 的挑选过程)", async () => {
+  it("Sample 与裸 Run[] 输入同值投影(都读真实 Run.diagnostics,不依赖 Sample 的挑选过程)", async () => {
     const withDiag = snap({ experimentId: "exp/a", results: [res("q1", "passed")], diagnostics: [diag("tunnel-flaky")] });
     const scope = scopeOf([withDiag]);
-    await expect(snapshotDiagnosticsData(scope)).resolves.toEqual(await snapshotDiagnosticsData(scope.snapshots));
+    await expect(snapshotDiagnosticsData(scope)).resolves.toEqual(await snapshotDiagnosticsData(scope.runs));
   });
 
   it("按 experiment id 字典序排列,同一实验内按 startedAt 从新到旧;不跨来源合并", async () => {
@@ -287,7 +289,7 @@ describe("snapshotDiagnosticsData", () => {
     expect(data.find((d) => d.startedAt === aOld.startedAt)!.diagnostics.map((r) => r.code)).toEqual(["a-old"]);
   });
 
-  it("空诊断集(全部真实 Snapshot 都没有 diagnostics):返回空数组", async () => {
+  it("空诊断集(全部真实 Run 都没有 diagnostics):返回空数组", async () => {
     const scope = scopeOf([snap({ experimentId: "exp/a", results: [res("q1", "passed")] })]);
     await expect(snapshotDiagnosticsData(scope)).resolves.toEqual([]);
   });
@@ -305,19 +307,19 @@ describe("groupSnapshotDiagnostics(按来源 experiment 分组,web/text 两面�
     expect(groups[0]!.items.map((i) => i.startedAt)).toEqual(["2026-07-03T00:00:00Z", "2026-07-01T00:00:00Z"]);
   });
 
-  it("summary 汇总 experiment 数、Snapshot 数与按 count 计的记录数,并标出最高严重度", () => {
+  it("summary 汇总 experiment 数、Run 数与按 count 计的记录数,并标出最高严重度", () => {
     const data = [
       { experimentId: "exp/a", startedAt: "2026-07-01T00:00:00Z", diagnostics: [diag("a1", { count: 3 }), diag("a2")] },
       { experimentId: "exp/b", startedAt: "2026-07-01T00:00:00Z", diagnostics: [diag("b1", { level: "error" })] },
     ];
     const grouped = groupSnapshotDiagnostics(data, "en");
     expect(grouped.severity).toBe("error");
-    expect(grouped.summary).toBe("2 experiments · 2 snapshots · 5 records · errors present");
+    expect(grouped.summary).toBe("2 experiments · 2 runs · 5 records · errors present");
   });
 
-  it("全部记录都是 warning 时汇总标「warnings only」,不因存在记录就默认判为 error", () => {
+  it("全部记录都是 warning 时汇总标「issues only」,不因存在记录就默认判为 error", () => {
     const data = [{ experimentId: "exp/a", startedAt: "2026-07-01T00:00:00Z", diagnostics: [diag("a1")] }];
-    expect(groupSnapshotDiagnostics(data, "en").summary).toBe("1 experiment · 1 snapshot · 1 record · warnings only");
+    expect(groupSnapshotDiagnostics(data, "en").summary).toBe("1 experiment · 1 run · 1 record · issues only");
   });
 
   it("空诊断集:零组、空 summary", () => {

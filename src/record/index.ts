@@ -1,14 +1,14 @@
-// niceeval/results —— 实验结果数据的读写库(定稿见 docs/feature/record/library.md、docs/feature/record/architecture.md)。
+// niceeval/record —— 实验结果数据的读写库(定稿见 docs/feature/record/library.md、docs/feature/record/architecture.md)。
 //
-// 读:openResults(实验 → 快照 → eval → attempt 分层、skipped、latest() / current() Scope);
-// 写:createResultsWriter(快照声明 + attempt 增量落盘 + finish 补 completedAt);
-// 发布:copySnapshots(格式感知复制 + knownEvalIds 补记);
+// 读:openRecord(实验 → 快照 → eval → attempt 分层、unreadable、latest() / current() Sample);
+// 写:createWriter(快照声明 + attempt 增量落盘 + finish 补 completedAt);
+// 发布:publish(格式感知复制 + knownEvalIds 补记);
 // 身份:dedupeAttempts(跨快照聚合前按 (experimentId, evalId, attempt, startedAt) 去重)、isNewerSnapshot。
 // 布局知识(路径、清洗、拆分、版本)全宇宙只有这一份实现;
-// src/runner/reporters/artifacts.ts 是写入面的薄壳,view 的读取经 openResults 消费。
+// src/runner/reporters/artifacts.ts 是写入面的薄壳,view 的读取经 openRecord 消费。
 
 export {
-  openResults,
+  openRecord,
   loadLatestResultsForCase,
   withArtifactBase,
   experimentOfSnapshot,
@@ -31,13 +31,18 @@ export {
 } from "./locator.ts";
 export {
   buildAnnotatedEvalSource,
+  assembleSourceTree,
+  projectSourceView,
   deriveSendAnnotations,
   type AnnotatedEvalSource,
   type AnnotatedEvalSourceSummary,
   type AnnotatedSourceLine,
   type SendAnnotation,
+  type AnnotatedSourceTree,
+  type SourceContent,
+  type SourceNode,
 } from "./annotated-source.ts";
-export { loadAnnotatedEvalSource } from "./attempt-source.ts";
+export { loadAnnotatedEvalSource, loadAttemptSourceTree } from "./attempt-source.ts";
 export {
   loadAttemptEvidence,
   type AttemptEvidence,
@@ -52,25 +57,25 @@ export {
   deepEqualJson,
   isNewerSnapshot,
   type ComparabilityConfig,
-} from "./select.ts";
-export { copySnapshots, type CopySnapshotsOptions, type CopySnapshotsResult } from "./copy.ts";
+} from "../sample/index.ts";
+export { publish, type CopySnapshotsOptions, type CopySnapshotsResult } from "./copy.ts";
 export {
-  createResultsWriter,
+  createWriter,
   type AttemptArtifacts,
   type AttemptEntry,
-  type ResultsWriter,
-  type ResultsWriterOptions,
-  type SnapshotDeclaration,
-  type SnapshotWriter,
+  type Writer,
+  type WriterOptions,
+  type RunDeclaration,
+  type RunWriter,
 } from "./writer.ts";
 export {
   RESULT_FILE,
-  SNAPSHOT_FILE,
+  RUN_FILE,
   attemptDirOf,
   artifactFileOf,
-  classifySnapshot,
+  classifyRun,
   experimentDirOf,
-  type SnapshotClassification,
+  type RunClassification,
 } from "./format.ts";
 export {
   ARTIFACT_KINDS,
@@ -80,18 +85,18 @@ export {
   type DedupeWarning,
   type Eval,
   type Experiment,
-  type Results,
-  type Scope,
-  type ScopeCoverage,
-  type ScopeWarning,
-  type SkippedDir,
-  type Snapshot,
-  type SnapshotMeta,
-} from "./types.ts";
+  type Record,
+  type Sample,
+  type SampleCoverage,
+  type SampleIssue,
+  type UnreadableRun,
+  type Run,
+  type RunMeta,
+} from "../record/types.ts";
 
 // 结果数据类型的家还没搬(facade 迁移是下一波);先从这里 re-export,
 // 让消费方从一个入口拿全「分层句柄 + 数据类型 + 格式常量」。
-export { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION } from "../types.ts";
+export { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 export type { DiagnosticRecord, EvalResult, ExperimentRunInfo, FailedCommandEvidence, InvocationSummary } from "../types.ts";
 export type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../types.ts";
 export type { AgentSetupManifest, AgentSetupSkill, DiffData, SourceArtifact } from "../types.ts";

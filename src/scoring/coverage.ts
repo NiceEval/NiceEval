@@ -22,7 +22,7 @@ export interface ResolvedCoverageChannel {
 }
 
 /** 全通道解析后的覆盖:每个通道必有一个状态(缺省 unknown)。 */
-export type ResolvedCoverage = Readonly<Record<CoverageChannel, ResolvedCoverageChannel>>;
+export type ResolvedCoverage = Readonly<globalThis.Record<CoverageChannel, ResolvedCoverageChannel>>;
 
 /**
  * 官方 SDK 适配器用的「全通道 complete」常量:完整事件流、完整 steps/output、经过生命周期
@@ -39,7 +39,7 @@ export const completeCoverage: EvidenceCoverage = Object.freeze<EvidenceCoverage
 
 // 状态序:折叠一律取最差。unknown 与 unavailable 保守程度相同,并列最差;
 // 并列时取「有声明的那一个」(unavailable 带 reason,信息量更大)。
-const RANK: Record<ResolvedCoverageStatus, number> = {
+const RANK: globalThis.Record<ResolvedCoverageStatus, number> = {
   complete: 3,
   partial: 2,
   unavailable: 1,
@@ -59,7 +59,7 @@ function worseOf(a: ResolvedCoverageChannel, b: ResolvedCoverageChannel): Resolv
 
 /** Agent 级声明 → 全通道解析(未声明通道 = unknown)。 */
 export function resolveAgentCoverage(declared: EvidenceCoverage | undefined): ResolvedCoverage {
-  const out = {} as Record<CoverageChannel, ResolvedCoverageChannel>;
+  const out = {} as globalThis.Record<CoverageChannel, ResolvedCoverageChannel>;
   for (const ch of COVERAGE_CHANNELS) {
     const d: CoverageDeclaration | undefined = declared?.[ch];
     out[ch] = d ? { status: d.status, ...(d.reason !== undefined ? { reason: d.reason } : {}) } : { status: "unknown" };
@@ -73,7 +73,7 @@ export function resolveAgentCoverage(declared: EvidenceCoverage | undefined): Re
  */
 export function downgradeCoverage(base: ResolvedCoverage, turn: EvidenceCoverage | undefined): ResolvedCoverage {
   if (!turn) return base;
-  const out = {} as Record<CoverageChannel, ResolvedCoverageChannel>;
+  const out = {} as globalThis.Record<CoverageChannel, ResolvedCoverageChannel>;
   for (const ch of COVERAGE_CHANNELS) {
     const d = turn[ch];
     out[ch] = d ? worseOf(base[ch], { status: d.status, ...(d.reason !== undefined ? { reason: d.reason } : {}) }) : base[ch];
@@ -87,7 +87,7 @@ export function worstCoverage(list: readonly ResolvedCoverage[]): ResolvedCovera
   let acc = list[0]!;
   for (let i = 1; i < list.length; i++) {
     const next = list[i]!;
-    const out = {} as Record<CoverageChannel, ResolvedCoverageChannel>;
+    const out = {} as globalThis.Record<CoverageChannel, ResolvedCoverageChannel>;
     for (const ch of COVERAGE_CHANNELS) out[ch] = worseOf(acc[ch], next[ch]);
     acc = out;
   }

@@ -19,7 +19,7 @@ function summary(overrides: Partial<InvocationSummary> = {}): InvocationSummary 
     completedAt: "2026-07-13T00:03:21.000Z",
     passed: 1,
     failed: 0,
-    skipped: 0,
+    unreadable: 0,
     errored: 0,
     durationMs: 60_000,
     results: [],
@@ -81,7 +81,7 @@ describe("computeExitCode:CompletionStatus 驱动退出码,不只看 failed/erro
 
 /** 依次喂进 reducer 再交给 json renderer(与生产的 coordinator 同序:先 reduce 后 render),
  *  返回逐行解析出的事件对象。 */
-function emitDurable(events: readonly DurableFeedbackEvent[]): Record<string, unknown>[] {
+function emitDurable(events: readonly DurableFeedbackEvent[]): globalThis.Record<string, unknown>[] {
   const { io, stdout } = createFakeFeedbackIO();
   const renderer = createJsonRenderer({ io });
   let state = createInitialRunFeedbackState();
@@ -93,7 +93,7 @@ function emitDurable(events: readonly DurableFeedbackEvent[]): Record<string, un
     .join("")
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line) => JSON.parse(line) as globalThis.Record<string, unknown>);
 }
 
 describe("warning 事件:code 是稳定词法,折叠身份走具名字段", () => {
@@ -192,7 +192,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       total: 4,
       evals: 1,
       configs: 4,
-      runs: 1,
+      attempts: 1,
       matrix: [
         { experimentId: "compare/bub-e2b", evalId: "memory/commit0-cachetool", reused: false },
         { experimentId: "compare/codex", evalId: "memory/commit0-cachetool", reused: true },
@@ -206,7 +206,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(doc.total).toBe(4);
     expect(doc.evals).toBe(1);
     expect(doc.configs).toBe(4);
-    expect(doc.runs).toBe(1);
+    expect(doc.attempts).toBe(1);
     expect(doc.matrix).toHaveLength(2);
   });
 
@@ -215,7 +215,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       total: 2,
       evals: 2,
       configs: 1,
-      runs: 1,
+      attempts: 1,
       matrix: [
         { experimentId: "compare/codex", evalId: "memory/a", reused: false, locked: true },
         { experimentId: "compare/codex", evalId: "memory/b", reused: false },
@@ -231,7 +231,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       total: 3,
       evals: 3,
       configs: 1,
-      runs: 1,
+      attempts: 1,
       matrix: [
         { experimentId: "e", evalId: "a", reused: true },
         { experimentId: "e", evalId: "b", reused: true },
@@ -247,7 +247,7 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
       total: 1,
       evals: 1,
       configs: 1,
-      runs: 1,
+      attempts: 1,
       matrix: [{ experimentId: "e", evalId: "a", reused: false }],
     });
     expect(JSON.parse(text.trim()).reused).toBe(0);

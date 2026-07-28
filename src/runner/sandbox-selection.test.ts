@@ -43,7 +43,7 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
   return {
     agent: agent("sandbox"),
     flags: {},
-    runs: 1,
+    attempts: 1,
     earlyExit: true,
     selectedEvalIds: [],
     experimentId: "profiles/run",

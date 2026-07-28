@@ -5,7 +5,7 @@ import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 
-export const OPENCODE_TOOL_ALIASES: Record<string, ToolName> = {
+export const OPENCODE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
   read: "file_read",
   write: "file_write",
@@ -23,8 +23,8 @@ export const OPENCODE_TOOL_ALIASES: Record<string, ToolName> = {
 /** 从 apply_patch 的 patchText 抠 path,并把 Add File 升成 file_write。 */
 function enrichApplyPatchInput(input: JsonValue): { input: JsonValue; tool: ToolName } {
   const obj = input && typeof input === "object" && !Array.isArray(input)
-    ? { ...(input as Record<string, unknown>) }
-    : ({ patchText: input } as Record<string, unknown>);
+    ? { ...(input as globalThis.Record<string, unknown>) }
+    : ({ patchText: input } as globalThis.Record<string, unknown>);
   const patchText = typeof obj.patchText === "string" ? obj.patchText : typeof obj.patch === "string" ? obj.patch : "";
   const add = patchText.match(/\*\*\*\s*Add File:\s*(.+)/);
   const update = patchText.match(/\*\*\*\s*(?:Update|Delete) File:\s*(.+)/);
@@ -41,7 +41,7 @@ function normalizeToolName(name: string): ToolName {
 }
 
 function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
 
 function str(v: unknown): string | undefined {
@@ -87,7 +87,7 @@ export function sessionIdFromOpenCodeTranscript(raw: string | undefined): string
     const t = line.trim();
     if (!t) continue;
     try {
-      const obj = JSON.parse(t) as Record<string, unknown>;
+      const obj = JSON.parse(t) as globalThis.Record<string, unknown>;
       const id = str(obj.sessionID) ?? str(obj.sessionId) ?? str(get(obj, "session_id"));
       if (id) return id;
     } catch {
@@ -141,9 +141,9 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
   for (const line of jsonl.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let data: Record<string, unknown>;
+    let data: globalThis.Record<string, unknown>;
     try {
-      data = JSON.parse(trimmed) as Record<string, unknown>;
+      data = JSON.parse(trimmed) as globalThis.Record<string, unknown>;
     } catch {
       parseSuccess = false;
       continue;
@@ -151,8 +151,8 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
 
     try {
       const eventType = str(data.type) ?? str(data.kind) ?? str(data.event);
-      const part = get(data, "part") as Record<string, unknown> | undefined;
-      const state = part ? (get(part, "state") as Record<string, unknown> | undefined) : undefined;
+      const part = get(data, "part") as globalThis.Record<string, unknown> | undefined;
+      const state = part ? (get(part, "state") as globalThis.Record<string, unknown> | undefined) : undefined;
 
       if (eventType === "tool_use" && part && str(get(part, "tool"))) {
         const name = str(get(part, "tool"))!;
@@ -182,7 +182,7 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         const status = str(get(state, "status"));
         if (status === "completed" || status === "error" || get(state, "output") !== undefined) {
           const output = (get(state, "output") ?? get(state, "error") ?? null) as JsonValue;
-          const metadata = get(state, "metadata") as Record<string, unknown> | undefined;
+          const metadata = get(state, "metadata") as globalThis.Record<string, unknown> | undefined;
           const exitCode = typeof get(metadata, "exit") === "number" ? (get(metadata, "exit") as number) : undefined;
           const isShell = ["bash", "shell", "exec"].includes(name.toLowerCase());
           const success = isShell
@@ -209,7 +209,7 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
         const tokens = get(part, "tokens") ?? get(data, "tokens");
         if (tokens && typeof tokens === "object") {
           addUsage({
-            ...(tokens as Record<string, unknown>),
+            ...(tokens as globalThis.Record<string, unknown>),
             cost: get(part, "cost") ?? get(data, "cost"),
           });
         } else {
@@ -237,7 +237,7 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
       const messages = get(data, "messages");
       if (Array.isArray(messages)) {
         for (const msg of messages) {
-          const info = get(msg, "info") as Record<string, unknown> | undefined;
+          const info = get(msg, "info") as globalThis.Record<string, unknown> | undefined;
           const role = str(get(info, "role")) ?? str(get(msg, "role"));
           const parts = get(msg, "parts");
           if (Array.isArray(parts)) {
@@ -258,7 +258,7 @@ export function parseOpenCodeTranscript(raw: string | undefined): ParsedTranscri
                   input: coerceArgs(get(get(p, "state"), "input") ?? get(p, "input")),
                   tool: normalizeToolName(name),
                 });
-                const st = get(p, "state") as Record<string, unknown> | undefined;
+                const st = get(p, "state") as globalThis.Record<string, unknown> | undefined;
                 if (st && (str(get(st, "status")) === "completed" || get(st, "output") !== undefined)) {
                   events.push({
                     type: "action.result",

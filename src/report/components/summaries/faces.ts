@@ -17,7 +17,7 @@ export function scopeSummaryText(data: ScopeSummaryData, votes: "eval" | "attemp
   const locale = ctx.locale;
   const tally = votes === "attempt" ? data.attemptVerdicts : data.evalVerdicts;
   const head = [
-    // 计分制 Scope 隐藏通过率只显示总分;混型 Scope 两者都显示;纯通过制 Scope 只显示通过率
+    // 计分制 Sample 隐藏通过率只显示总分;混型 Sample 两者都显示;纯通过制 Sample 只显示通过率
     // (现状不变),见 docs/feature/reports/components/summaries/sample-summary.md。
     ...(data.scoringComposition !== "points"
       ? [`${localeText(locale, "scopeSummary.passRate")} ${cellText(data.endToEndPassRate, locale)}`]

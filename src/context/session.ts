@@ -6,6 +6,7 @@ import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { downgradeCoverage, resolveAgentCoverage, worstCoverage, type ResolvedCoverage } from "../scoring/coverage.ts";
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
+import { SANDBOX_O11Y_RESULTS_PATH, writeSandboxO11yResults } from "../o11y/sandbox-results.ts";
 import {
   createAttemptRetryBudget,
   sendWithTurnRetry,
@@ -25,7 +26,7 @@ export function createAgentSession(): AgentSession {
   let historyLine: unknown[] = [];
   let held: unknown;
   let hasHeld = false;
-  const state: Record<string, unknown> = {};
+  const state: globalThis.Record<string, unknown> = {};
 
   return {
     get id() {
@@ -80,7 +81,7 @@ export class RunSession implements AgentSession {
   take<T>(): T | undefined {
     return this.session.take<T>();
   }
-  get state(): Record<string, unknown> {
+  get state(): globalThis.Record<string, unknown> {
     return this.session.state;
   }
 
@@ -102,7 +103,7 @@ export interface SessionDeps {
   sandbox: Sandbox;
   model?: string;
   reasoningEffort?: string;
-  flags: Record<string, unknown>;
+  flags: globalThis.Record<string, unknown>;
   signal: AbortSignal;
   log(msg: string): void;
   /** runner 绑定的作用域反馈(adapter ctx.progress/diagnostic);省略时 progress 退回 log。 */
@@ -199,6 +200,24 @@ export class SessionManager {
   /** 一轮的解析后覆盖:Agent 默认按 Turn.coverage 降级(只降不升)。 */
   resolveTurnCoverage(turn: Turn): ResolvedCoverage {
     return downgradeCoverage(this.agentCoverage, turn.coverage);
+  }
+
+  /**
+   * sandbox Agent 的验证脚本读取这份摘要。失败只记 diagnostic：把旧目标删掉后继续执行，
+   * 让脚本因缺文件失败，而不是让一次辅助写入掩盖 agent/eval 本身的结果。
+   */
+  async refreshSandboxO11y(): Promise<void> {
+    if (this.deps.agent.kind !== "sandbox") return;
+    try {
+      await writeSandboxO11yResults(this.deps.sandbox, this.allEvents);
+    } catch {
+      this.deps.feedback?.diagnostic({
+        code: "sandbox-o11y-results-write-failed",
+        level: "warning",
+        message: `could not refresh ${SANDBOX_O11Y_RESULTS_PATH}; behavior checks must treat it as unavailable`,
+        dedupeKey: "sandbox-o11y-results-write-failed",
+      });
+    }
   }
 
   /**
@@ -348,6 +367,7 @@ export class SessionManager {
 
     this.allEvents.push(...turn.events);
     session.events.push(...turn.events);
+    await this.refreshSandboxO11y();
     session.pendingInputRequests.push(
       ...turn.events
         .filter((e): e is Extract<StreamEvent, { type: "input.requested" }> => e.type === "input.requested")

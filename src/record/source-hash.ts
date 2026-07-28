@@ -6,7 +6,7 @@
 // 是"环境无关、vite 前端直接打包"(见 shared/verdict.ts、shared/aggregate.ts 的注释),
 // node:crypto 在浏览器打包下不成立;results/ 已经是纯 Node 库(writer.ts / open.ts 也用
 // node:fs),多一个 node:crypto 不破坏任何边界。runner 已经单向依赖 results(reporters/
-// artifacts.ts 用 createResultsWriter),所以 src/runner/eval-source.ts 反过来 import 这里
+// artifacts.ts 用 createWriter),所以 src/runner/eval-source.ts 反过来 import 这里
 // 不新增循环依赖。
 
 import { createHash } from "node:crypto";

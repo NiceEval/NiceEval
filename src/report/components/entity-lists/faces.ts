@@ -194,7 +194,7 @@ function experimentDetailTable(item: ExperimentListItem, ctx: TextContext, label
         status: `  ${verdictMark(attempt.verdict)}`,
         entity: `${index === row.attempts.length - 1 ? "└─" : "├─"} ${attempt.locator}${historicalSuffix(attempt)}`,
         result: attemptReasonText(attempt, locale, resultBudget) ?? MISSING_MARK,
-        duration: attempt.verdict === "skipped" && attempt.durationMs === 0 ? null : formatDurationMs(attempt.durationMs),
+        duration: attempt.verdict === "unreadable" && attempt.durationMs === 0 ? null : formatDurationMs(attempt.durationMs),
         cost: attempt.costUSD === null ? null : formatUSD(attempt.costUSD),
         ...(showScore ? { score: cellText(attempt.totalScore, locale) } : {}),
       },

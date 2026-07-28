@@ -34,7 +34,7 @@ export type CodingAgentBaseline =
   | "openclaw";
 
 /** 每个官方基线制品里装的那个 Agent 的版本——制品版本号的版本位。 */
-export const AGENT_BASELINE_VERSION: Record<CodingAgentBaseline, string> = {
+export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, string> = {
   "claude-code": DEFAULT_CLAUDE_CODE_CLI_VERSION,
   codex: DEFAULT_CODEX_CLI_VERSION,
   bub: DEFAULT_BUB_VERSION,
@@ -50,7 +50,7 @@ export const AGENT_BASELINE_VERSION: Record<CodingAgentBaseline, string> = {
  * Agent 版本一变归 1。已发布的 tag 不可原地覆盖，配方变更必须在版本里有位置表达。
  * 一个 Agent 的 E2B 与 Docker 制品共用这个号：一个版本号 = 一套基线配方，两侧同步重建。
  */
-export const AGENT_BASELINE_RECIPE_REVISION: Record<CodingAgentBaseline, number> = {
+export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseline, number> = {
   "claude-code": 2,
   codex: 2,
   bub: 1,

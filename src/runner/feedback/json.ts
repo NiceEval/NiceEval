@@ -11,7 +11,7 @@
 // - 失败/错误立即逐条追加,不做展开上限 suppression(机器逐事件消费,截断反而是信息损失,
 //   见 cli.md「'立即追加'也必须有上限」表:上限只约束人读文本)。
 // - 连续 30 秒没有永久事件才追加一条 `progress` 心跳;任意永久事件重置这个时钟。
-// - 事件形状按 `ExpEvent` 判别联合(判别字段 `event`)逐个实现,字段名复用 Results 词表
+// - 事件形状按 `ExpEvent` 判别联合(判别字段 `event`)逐个实现,字段名复用 Record 词表
 //   (locator/evalId/experimentId/phase/verdict),不为事件流发明第二套命名。
 //
 // 不实现 `clearDynamic`/`redrawDynamic`/`activity`/`onLifecycle`:JSON 流没有「动态区域」概念,
@@ -49,10 +49,10 @@ export interface JsonRendererOptions {
   io: FeedbackIO;
 }
 
-/** JSON 值:与 Results snapshot.json 的 `JsonValue` 同一定义(见 cli.md)。 */
+/** JSON 值:与 Record run.json 的 `JsonValue` 同一定义(见 cli.md)。 */
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-function writeEvent(io: FeedbackIO, event: Record<string, JsonValue | undefined>): void {
+function writeEvent(io: FeedbackIO, event: globalThis.Record<string, JsonValue | undefined>): void {
   io.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
@@ -246,7 +246,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
         passed: state.passed,
         failed: state.failed,
         errored: state.errored,
-        skipped: state.skipped,
+        unreadable: state.unreadable,
       });
     },
 
@@ -301,7 +301,7 @@ function writeFailureOrError(io: FeedbackIO, event: DurableFeedbackEvent & { typ
 /** 一条 `eval` 事件(cli.md「runs 与首过即停怎样展示」):字段随 earlyExit 是否触发在
  *  planned/unstarted/reason 与 passed 两组间二选一,不同时出现两组字段。`rate` 是
  *  `EvalConclusionRow` 派生出的额外读数,不在 `ExpEvent` 的 `EvalEvent` 形状里,这里不透出。 */
-function evalConclusionEvent(row: EvalConclusionRow): Record<string, JsonValue | undefined> {
+function evalConclusionEvent(row: EvalConclusionRow): globalThis.Record<string, JsonValue | undefined> {
   return {
     event: "eval",
     ...(row.locator !== undefined ? { locator: row.locator } : {}),
@@ -357,7 +357,7 @@ function writeResultEvent(
     ...(reused > 0 ? { reused } : {}),
     ...(completion.unstarted > 0 ? { unstarted: completion.unstarted } : {}),
     completion: completion.status,
-    snapshots: [...event.paths],
+    runs: [...event.paths],
     ...(event.junit !== undefined ? { junit: event.junit } : {}),
   });
 }
@@ -405,7 +405,7 @@ export interface JsonPlanInput {
   configs: number;
   /** 代表性的 `--runs` 值(多个实验取值不同时,展示层不逐配置拆分——见 cli.md 未声明混合 runs
    *  场景的展示规则,这里与 human/agent 既有的 dry 预览取同一个近似口径:最大值)。 */
-  runs: number;
+  attempts: number;
   matrix: readonly JsonPlanRow[];
 }
 
@@ -421,7 +421,7 @@ export function renderJsonPlanDocument(input: JsonPlanInput): string {
     total: input.total,
     evals: input.evals,
     configs: input.configs,
-    runs: input.runs,
+    attempts: input.attempts,
     reused,
     matrix: input.matrix,
   })}\n`;

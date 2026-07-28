@@ -52,7 +52,7 @@ function scriptedSandbox(startOutputs: string[], log = "") {
   const shells: string[] = [];
   const written: string[] = [];
   const sandbox = baseSandbox({
-    writeFiles: async (files: Record<string, string>) => {
+    writeFiles: async (files: globalThis.Record<string, string>) => {
       written.push(...Object.keys(files));
     },
     runShell: async (script: string): Promise<CommandResult> => {
@@ -64,7 +64,7 @@ function scriptedSandbox(startOutputs: string[], log = "") {
   return { sandbox, shells, written };
 }
 
-/** 在 Scope 内取端点,并把「此刻为止发过的命令」快照出来——release 阶段的收尾 kill 不混进来。 */
+/** 在 Sample 内取端点,并把「此刻为止发过的命令」快照出来——release 阶段的收尾 kill 不混进来。 */
 async function receiverExit(sandbox: Sandbox, shells: string[] = []) {
   return Effect.runPromiseExit(
     Effect.scoped(
@@ -141,7 +141,7 @@ describe("沙箱内 OTLP 采集器启动:真实 /bin/sh 执行", () => {
   /** runShell 真的交给 /bin/sh 跑,writeFiles 真的落盘——生成的脚本语法错误在这里现形。 */
   function shellSandbox(pathPrefix?: string) {
     return baseSandbox({
-      writeFiles: async (files: Record<string, string>) => {
+      writeFiles: async (files: globalThis.Record<string, string>) => {
         for (const [path, content] of Object.entries(files)) await writeFile(path, content);
       },
       runShell: (script: string) =>

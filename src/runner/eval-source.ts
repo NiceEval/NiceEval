@@ -9,12 +9,12 @@
 //
 // 归一化 + 哈希算法住在 results/source-hash.ts,不在这里重新实现一遍——discovery 侧捕获的
 // 哈希与证据重建侧(annotated-source.ts)重算的哈希必须逐字节一致,唯一的办法是共用同一个
-// 函数。runner 已经单向依赖 results(reporters/artifacts.ts 用 createResultsWriter),这里
+// 函数。runner 已经单向依赖 results(reporters/artifacts.ts 用 createWriter),这里
 // 反向引用不新增循环。
 
 import { readFile } from "node:fs/promises";
 import { relative, sep } from "node:path";
-import { hashEvalSource, normalizeEvalSource } from "../results/source-hash.ts";
+import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
 
 export interface CapturedEvalSource {
   /** 项目相对路径(正斜杠),与 SourceArtifact.path / SourceLoc.file 同一约定。 */

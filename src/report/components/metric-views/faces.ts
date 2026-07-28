@@ -35,7 +35,7 @@ export function tableText(data: TableData, ctx: TextContext): string {
     ...data.columns.map((c, i) => ({ key: `metric${i}`, header: resolveMetricLabel(c.label, locale, c.key) })),
   ];
   const rows: TableRow[] = data.rows.map((row) => {
-    const cells: Record<string, string | null> = { dimension: row.key };
+    const cells: globalThis.Record<string, string | null> = { dimension: row.key };
     data.columns.forEach((col, i) => {
       const cell = row.cells[col.key];
       cells[`metric${i}`] = cell ? cellText(cell, locale) : null;
@@ -63,7 +63,7 @@ export function matrixText(data: MatrixData, ctx: TextContext): string {
     ...columnKeys.map((column, i) => ({ key: `column${i}`, header: column })),
   ];
   const rows: TableRow[] = rowKeys.map((row) => {
-    const cells: Record<string, string | null> = { dimension: row };
+    const cells: globalThis.Record<string, string | null> = { dimension: row };
     columnKeys.forEach((column, i) => {
       const cell = byPosition.get(JSON.stringify([row, column]));
       cells[`column${i}`] = cell ? cellText(cell, locale) : null; // 稀疏格子在文本里以 — 呈现,不编数
@@ -168,7 +168,7 @@ export function scoreboardText(data: ScoreboardData, ctx: TextContext): string {
       ...(row.total.notRun > 0 ? [localeText(locale, "scoreboard.notRunText", { n: row.total.notRun })] : []),
       ...(row.total.unscorable > 0 ? [localeText(locale, "scoreboard.unscorableText", { n: row.total.unscorable })] : []),
     ];
-    const cells: Record<string, string | null> = {
+    const cells: globalThis.Record<string, string | null> = {
       dimension: row.key,
       total: `${resolveLocalizedText(row.total.display, locale)}/${data.fullMarks}${totalNotes.length > 0 ? ` ${totalNotes.join(" ")}` : ""}`,
     };
@@ -467,7 +467,7 @@ export function deltaText(data: DeltaData, ctx: TextContext): string {
   ];
 
   const rows: TableRow[] = data.rows.map((row) => {
-    const cells: Record<string, string | null> = { eval: row.flipped ? `${row.key}  ⇄` : row.key };
+    const cells: globalThis.Record<string, string | null> = { eval: row.flipped ? `${row.key}  ⇄` : row.key };
     data.conditions.forEach((condition, i) => {
       cells[`cond${i}`] = deltaConditionCellText(row.cells[condition], locale);
     });
@@ -477,7 +477,7 @@ export function deltaText(data: DeltaData, ctx: TextContext): string {
     return { key: row.key, cells };
   });
 
-  const totalsCells: Record<string, string | null> = { eval: localeText(locale, "delta.totalsRow") };
+  const totalsCells: globalThis.Record<string, string | null> = { eval: localeText(locale, "delta.totalsRow") };
   data.conditions.forEach((condition, i) => {
     totalsCells[`cond${i}`] = deltaTotalsCellText(data.totals[condition], locale);
   });
@@ -523,7 +523,7 @@ export function stabilityMatrixText(data: StabilityMatrixData, ctx: TextContext)
     ...data.columns.map((column, i) => ({ key: `col${i}`, header: column })),
   ];
   const rows: TableRow[] = data.rows.map((row) => {
-    const cells: Record<string, string | null> = {
+    const cells: globalThis.Record<string, string | null> = {
       eval: row.neverPassed ? `${row.evalId}   ${localeText(locale, "stability.neverPassed")}` : row.evalId,
     };
     data.columns.forEach((column, i) => {
@@ -534,7 +534,7 @@ export function stabilityMatrixText(data: StabilityMatrixData, ctx: TextContext)
     return { key: row.evalId, cells };
   });
 
-  const totalsCells: Record<string, string | null> = { eval: localeText(locale, "delta.totalsRow") };
+  const totalsCells: globalThis.Record<string, string | null> = { eval: localeText(locale, "delta.totalsRow") };
   data.columns.forEach((column, i) => {
     const total = data.totals[column];
     totalsCells[`col${i}`] = total ? stabilityCellText(total) : null;

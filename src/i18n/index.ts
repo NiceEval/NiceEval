@@ -9,7 +9,7 @@ import { interpolate, normalizeLocale, type Locale, type Vars } from "./core.ts"
 
 export type { Locale, Vars } from "./core.ts";
 
-const dictionaries: Record<Locale, Messages> = {
+const dictionaries: globalThis.Record<Locale, Messages> = {
   "zh-CN": zhCN,
   en,
 };

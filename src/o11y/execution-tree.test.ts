@@ -336,7 +336,7 @@ describe("buildExecutionTree", () => {
     expect(withSpans.nodes).toHaveLength(8);
 
     const stripSpan = (n: (typeof withoutSpans.nodes)[number]): unknown => {
-      const { span: _span, ...rest } = n as unknown as { span?: unknown } & Record<string, unknown>;
+      const { span: _span, ...rest } = n as unknown as { span?: unknown } & globalThis.Record<string, unknown>;
       return rest;
     };
 

@@ -1,4 +1,4 @@
-// 单个 attempt 的完整生命周期:资源(沙箱 / OTLP 接收器)经 Effect.Scope 的
+// 单个 attempt 的完整生命周期:资源(沙箱 / OTLP 接收器)经 Effect.Sample 的
 // acquireRelease 接管,无论 body 成功 / 抛错 / 被中断,stop() / close() 都保证执行。
 // 沙箱编排的固定段在 runAttemptBody(基线→setup→驱动 test→采 diff→评分→判定→收 trace),
 // adapter 只填「把 agent 跑起来」一段。
@@ -30,6 +30,7 @@ import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 import { deriveDiffData, emptyDiffData } from "../scoring/diff.ts";
 import { createRemoteSandbox, withEvalLocalPaths } from "./remote-sandbox.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
+import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from "../source-loc.ts";
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
@@ -103,13 +104,15 @@ export interface RunAttemptEffectOptions {
    * 分类照常决议、只是无人消费。回调必须不抛错:它跑在 attempt 的失败路径上,不得掩盖原始失败。
    */
   onFailureClass?: (declaration: AttemptFailureDeclaration) => void;
+  /** 由复用池独占借出的实例；池负责 SandboxSpec 生命周期与最终 stop。 */
+  reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
 }
 
 export function runAttemptEffect(
   a: Attempt,
   opts: RunOptions,
   sandboxSem: Effect.Semaphore,
-  { parentSignal, onPhase, concurrencySlot, onFailureClass }: RunAttemptEffectOptions = {},
+  { parentSignal, onPhase, concurrencySlot, onFailureClass, reusedSandbox }: RunAttemptEffectOptions = {},
 ): Effect.Effect<EvalResult> {
   const config = opts.config;
   const { evalDef, run, attempt } = a;
@@ -125,6 +128,7 @@ export function runAttemptEffect(
     model: run.model,
     verdict: "errored",
     fingerprint: a.fingerprint,
+    configHash: a.configHash,
     attempt,
     startedAt: new Date(t0).toISOString(),
     durationMs: 0,
@@ -138,7 +142,7 @@ export function runAttemptEffect(
   const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? config.timeoutMs ?? 600_000;
   // timeoutSignal:给协作式 adapter / docker 命令的「软」截止信号(到点 abort,让能看 signal 的
   // 提前优雅停)。但它【不是】attempt 总超时的硬保证 —— 真正的硬边界是下面的 Effect.timeoutTo:
-  // 它中断整段 body,触发 Scope release(停容器),从而即便 adapter 完全无视 signal 也能停掉(P1)。
+  // 它中断整段 body,触发 Sample release(停容器),从而即便 adapter 完全无视 signal 也能停掉(P1)。
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = parentSignal ? AbortSignal.any([parentSignal, timeoutSignal]) : timeoutSignal;
 
@@ -161,13 +165,13 @@ export function runAttemptEffect(
   let sendActive = false;
   // 超时证据保全的外层句柄:与 recorder 同一模式,runAttemptBody 内部一建好 SessionManager /
   // ChangeLedger 就经 AttemptResources.registerEvidence/registerLedger 登记回这里——中断后由
-  // Scope 外层直接读它们组装结果,不随被 Effect 中断放弃的 body fiber 一起消失(见
+  // Sample 外层直接读它们组装结果,不随被 Effect 中断放弃的 body fiber 一起消失(见
   // docs/runner.md「超时:双层保护」超时不丢证据)。
   let liveEvents: (() => readonly StreamEvent[]) | undefined;
   let liveUsage: (() => Usage) | undefined;
   let liveLedger: ChangeLedger | undefined;
   // Effect.timeoutTo 的 onTimeout 是同步回调,在中断真正下发给 body fiber(从而触发下面的
-  // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Scope
+  // finalizer 链)之前就已经跑完并同步置位这个标记——下面新增的 finalizer 靠它判断本次 Sample
   // release 是不是超时触发的,只在超时路径补折叠证据,正常收尾路径不重复做(见文件顶部
   // Effect.timeoutTo 调用点的注释)。
   let timedOut = false;
@@ -197,7 +201,7 @@ export function runAttemptEffect(
   // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):sandbox hook / eval.setup·teardown /
   // agent setup·send·teardown 经 ctx.fact() 上报的都落这里(同一 attempt 内后写覆盖先写),
   // 收尾时并入结果的 facts 字段(见 finally 末尾,与 diagnostics 同一种「累加器 + finally 并入」模式)。
-  const facts: Record<string, FactValue> = {};
+  const facts: globalThis.Record<string, FactValue> = {};
   // 本 attempt 累计的诊断(与 verdict 独立):ScopedFeedback.diagnostic 与 teardown 失败都落这里,
   // 收尾时并入结果;dedupeKey 相同的并发诊断折叠成一条并累计 count。
   const diagnostics: DiagnosticRecord[] = [];
@@ -291,7 +295,7 @@ export function runAttemptEffect(
         }
       }
       // 留存 disposition:只在本 attempt 内可变,初始 stop;只有留存提交成功才改成 keep
-      // (Ctrl+C 中断外层 Scope 时仍是 stop,照常清理)。
+      // (Ctrl+C 中断外层 Sample 时仍是 stop,照常清理)。
       let disposition: "stop" | "keep" = "stop";
       // 退避重试(resolve.ts → retry.ts)期间临时归还这个名额:被限流的 provider 只是在
       // setTimeout 里睡觉,不该攥着 sandboxSem 的槽位陪跑,不然一批 429 能把整体并发拖成个位数。
@@ -299,11 +303,11 @@ export function runAttemptEffect(
         release: () => Effect.runPromise(sandboxSem.release(1)).then(() => {}),
         reacquire: () => Effect.runPromise(sandboxSem.take(1)).then(() => {}),
       };
-      // Scope release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
+      // Sample release(receiver close + provider stop)整段计成 sandbox.stop:先加的 finalizer
       // 后跑(LIFO),所以「先加的」在 release 链末尾打终点戳、「后加的」在 release 开始前打起点戳;
-      // 结果封口(附 phases)发生在 Scope release 完成之后(见下方 Effect.map)。
+      // 结果封口(附 phases)发生在 Sample release 完成之后(见下方 Effect.map)。
       let releaseStartedAt = 0;
-      if (run.agent.kind === "sandbox") {
+      if (run.agent.kind === "sandbox" && !reusedSandbox) {
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
             // 留存路径的 phases 以 sandbox.suspend 结尾,没有 sandbox.stop 条目(见 release)。
@@ -314,7 +318,8 @@ export function runAttemptEffect(
         );
       }
       const sandbox =
-        run.agent.kind === "sandbox"
+        reusedSandbox?.sandbox ??
+        (run.agent.kind === "sandbox"
           ? yield* Effect.gen(function* () {
               // ── 沙箱:acquire=起,release=stop(成功 / 失败 / 中断都跑)──
               // sandboxSem 只覆盖「容器创建」阶段;容器起好后立即释放,后续 npm install / agent 不占位。
@@ -329,7 +334,7 @@ export function runAttemptEffect(
                     timeout: timeoutMs,
                     runtime: "node24",
                     feedback: scopedFeedback,
-                    // Scope release 按 disposition 收尾:stop = 销毁(默认);keep = provider
+                    // Sample release 按 disposition 收尾:stop = 销毁(默认);keep = provider
                     // suspend(sandbox.suspend 阶段,有界计时),成功把登记项转 dormant,
                     // 失败保持 alive 并追加 diagnostic——不销毁、不冒充 dormant。
                     release: async (sb) => {
@@ -360,7 +365,7 @@ export function runAttemptEffect(
                 }),
               );
             })
-          : createRemoteSandbox();
+          : createRemoteSandbox());
       if (run.agent.kind !== "sandbox") log(t("runner.useRemoteAgent"));
 
       // ── tracing ──────────────────────────────────────────────────────────────────
@@ -418,7 +423,7 @@ export function runAttemptEffect(
         }
       }
 
-      if (run.agent.kind === "sandbox") {
+      if (run.agent.kind === "sandbox" && !reusedSandbox) {
         // 后加先跑:release 链开始时打起点戳(与上面的终点戳配对,测出整段 sandbox.stop)。
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -458,12 +463,13 @@ export function runAttemptEffect(
 
       // body 是 Promise(adapter 边界)。Effect.promise 给的 AbortSignal 在本 fiber 被中断
       //(用户 Ctrl+C / 下面 timeoutTo 到点)时 abort —— 并进 signal,让真正观察 signal 的
-      // adapter / docker 命令随中断一起停,而不只靠 Scope release 兜底。
+      // adapter / docker 命令随中断一起停,而不只靠 Sample release 兜底。
       const bodyResult = yield* Effect.promise((interruptSignal) =>
         runAttemptBody(a, config, t0, base, {
           sandbox,
-          sandboxSetupHooks: sandboxSpec?.setupHooks ?? [],
-          sandboxTeardownHooks: sandboxSpec?.teardownHooks ?? [],
+          // 复用池在实例创建/销毁时运行 SandboxSpec hooks；Attempt 只跑 Eval 与 Agent 生命周期。
+          sandboxSetupHooks: reusedSandbox ? [] : (sandboxSpec?.setupHooks ?? []),
+          sandboxTeardownHooks: reusedSandbox ? [] : (sandboxSpec?.teardownHooks ?? []),
           receiver,
           telemetry,
           otel: otelChannel,
@@ -483,6 +489,7 @@ export function runAttemptEffect(
           commands,
           concurrencySlot,
           declareFailure,
+          reusedSandbox,
           registerEvidence: (getEvents, getUsage) => {
             liveEvents = getEvents;
             liveUsage = getUsage;
@@ -554,7 +561,7 @@ export function runAttemptEffect(
   ).pipe(
     // ── attempt 总超时的硬边界(P1)──
     // timeoutMs 是「整个 attempt(setup+agent+脚本+评分)」的上限,不是 docker 单条命令的。
-    // 到点 → 中断整段 body → Scope 跑 release(停容器、关接收器)→ 产出一条 errored 结果。
+    // 到点 → 中断整段 body → Sample 跑 release(停容器、关接收器)→ 产出一条 errored 结果。
     // 即便 adapter / test 完全无视 signal 挂死,这一层也能把它停下来并回收资源。
     Effect.timeoutTo({
       duration: Duration.millis(timeoutMs),
@@ -572,7 +579,7 @@ export function runAttemptEffect(
           ...(rest.trim() !== "" ? { stack: rest } : {}),
         };
         recorder.failCurrent();
-        // 置位给下面新增的 finalizer 用(它在 Scope release 里跑,LIFO 早于 sandbox stop,
+        // 置位给下面新增的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
         // 补折叠 workspace.diff / sources——见该 finalizer 的注释)。events/usage 不必等它:
         // SessionManager 是外层已经登记过的活引用(见 liveEvents/liveUsage),截至这一刻已经
         // 归一化的事件与已累计的用量此刻就能直接读出,不随放弃的 body fiber 一起消失。
@@ -591,14 +598,14 @@ export function runAttemptEffect(
         };
       },
     }),
-    // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Scope 层的意外(起沙箱失败等)。
-    // 中断【不】吞:此时 Scope 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
+    // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
+    // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
     Effect.catchAllCause((cause) =>
       Cause.isInterrupted(cause)
         ? Effect.failCause(cause)
         : Effect.suspend(() => {
-            // 资源获取 / Scope 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
+            // 资源获取 / Sample 层的意外(起沙箱失败、provisioning 的确定性配置死因)同样是终局
             // 失败:先读空间轴回执,再折成纯数据 AttemptError(顺序不可换,见 declareFailure)。
             const raw = Cause.squash(cause);
             const phase = (sendActive ? "agent.run" : lastPhase) ?? "eval.run";
@@ -611,14 +618,16 @@ export function runAttemptEffect(
             });
           }),
     ),
-    // 结果封口在 Scope release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
+    // 结果封口在 Sample release 完成之后:sandbox.stop 已由 finalizer 写进 recorder,
     // 这里把完整的阶段计时挂到即将交还的结果上(timeout / scope 兜底分支同样带上)。超时路径
     // 额外把上面那个 finalizer 折叠出的 workspace.diff / sources 并进来——它俩是异步产出,
-    // 必须等 Scope release(本 map 之前的所有 finalizer)跑完才有值,不能在 onTimeout 的同步
+    // 必须等 Sample release(本 map 之前的所有 finalizer)跑完才有值,不能在 onTimeout 的同步
     // 回调里就地给,原理与 phases 完全一致(见该 finalizer 与 onTimeout 的注释)。
     Effect.map((r: EvalResult): EvalResult => {
       const phases = recorder.finalize();
-      const withPhases = phases ? { ...r, phases } : r;
+      // 现有阶段计时尚未把 sandbox.create 起点单独持久化；在它可用前落同口径的保守值，
+      // 读取旧记录也按 durationMs 回退，绝不因缺值错误携带。
+      const withPhases = { ...(phases ? { ...r, phases } : r), executionMs: r.executionMs ?? r.durationMs };
       if (!timedOut) return withPhases;
       return {
         ...withPhases,
@@ -629,7 +638,7 @@ export function runAttemptEffect(
   );
 }
 
-/** 把 catch 到的 e(body 里 test()/setup 抛错,或 Scope 层 squash 出来的原始错误)折成
+/** 把 catch 到的 e(body 里 test()/setup 抛错,或 Sample 层 squash 出来的原始错误)折成
  *  `AttemptError`。message/stack/cause 由 `describeError` 拆分;phase 取失败那一刻打开的
  *  生命周期阶段(极早期就挂、还没跨进任何阶段时兜底 `eval.run`——phase 是必填字段,不留空);
  *  code 目前只对确定已知的类别赋稳定码,其余走 `"unexpected-error"`——provider 专属的限流码
@@ -676,7 +685,7 @@ interface AttemptResources {
    * 「共享可变容器」模式):runAttemptBody 用它构造 ctx.fact() 闭包,并在 finally 里原样
    * 挂到即将返回的结果上(见 diagnostics 的并入点)。
    */
-  facts: Record<string, FactValue>;
+  facts: globalThis.Record<string, FactValue>;
   /**
    * attempt 级非零 Sandbox 命令证据累加(runAttemptEffect 持有的同一个数组引用,与
    * diagnostics/facts 同一种「共享容器」模式):`withCommandTiming` 往这里 push,
@@ -688,6 +697,8 @@ interface AttemptResources {
   /** 终局失败的空间轴回执(runAttemptEffect 持有的同一个闭包):body 的失败路径与 finally 里的
    *  per-attempt teardown 失败都经它上报,止损闸据此落闸(见 runAttemptEffect 的 declareFailure)。 */
   declareFailure: (phase: LifecyclePhase, e: unknown) => void;
+  /** 复用池借出的实例标识，用于结果落盘。 */
+  reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
   /** SessionManager 一建好就登记事件/用量的读取句柄回外层(超时证据保全用,见
    *  runAttemptEffect 顶部 liveEvents/liveUsage 的注释与 docs/runner.md「超时:双层保护」)。 */
   registerEvidence: (getEvents: () => readonly StreamEvent[], getUsage: () => Usage) => void;
@@ -696,7 +707,7 @@ interface AttemptResources {
 }
 
 // attempt 的固定段(上传→基线→setup→驱动 agent→采 diff→脚本→评分→判定)。
-// 资源已由 runAttemptEffect 的 Scope 持有;这里只在 finally 跑 agent 自己的 cleanup/teardown。
+// 资源已由 runAttemptEffect 的 Sample 持有;这里只在 finally 跑 agent 自己的 cleanup/teardown。
 async function runAttemptBody(
   a: Attempt,
   config: Config,
@@ -725,6 +736,7 @@ async function runAttemptBody(
     commands,
     concurrencySlot,
     declareFailure,
+    reusedSandbox,
     registerEvidence,
     registerLedger,
   } = res;
@@ -771,6 +783,8 @@ async function runAttemptBody(
   let evalSetupReached = false;
   // 变更分类账(仅沙箱型;workspace.baseline 阶段建立)。
   let ledger: ChangeLedger | undefined;
+  // discovery 的 entry 快照加上调用发生时首次读取的 helper 快照；不在 attempt 收尾重读。
+  const sourceRegistry = createSourceRegistry(process.cwd());
   try {
     if (usesSandbox) {
       // 沙箱级生命周期钩子(SandboxSpec.setup):环境预置层,先于 workspace 上传 / git 基线 /
@@ -934,7 +948,7 @@ async function runAttemptBody(
     let error: AttemptError | undefined;
     let skipReason: string | undefined;
     try {
-      await evalDef.test(context);
+      await withSourceRegistry(sourceRegistry, () => evalDef.test(context));
       // test() 正常返回也要结算待决前置:最后一条前置挂了而后面没有 t.* 调用时,
       // 中止信号在这里抛出(判定与写了 await 完全一致)。
       const aborted = await state.collector.settlePrerequisites();
@@ -1000,7 +1014,7 @@ async function runAttemptBody(
       }));
     }
 
-    const scripts: Record<string, ScriptResult> = {};
+    const scripts: globalThis.Record<string, ScriptResult> = {};
     state.late.scripts = scripts;
 
     // 评分
@@ -1064,9 +1078,9 @@ async function runAttemptBody(
       }
     }
 
-    // 主链到 telemetry.collect 为止。必须在 Effect Scope release 之前显式封口；否则最后一个
+    // 主链到 telemetry.collect 为止。必须在 Effect Sample release 之前显式封口；否则最后一个
     // 主链 phase 会一直开到 sandbox.stop 完成，既把收尾时间重复算进主链，也会让 phases
-    // 主链合计大于 durationMs。Scope finalizer 只负责另记 sandbox.stop / sandbox.suspend。
+    // 主链合计大于 durationMs。Sample finalizer 只负责另记 sandbox.stop / sandbox.suspend。
     recorder.closeCurrent();
     const durationMs = Date.now() - t0;
     const o11y = buildO11ySummary(events);
@@ -1075,7 +1089,7 @@ async function runAttemptBody(
     const cost = usage.costUSD ?? estimateCost(run.model, usage, config.pricing);
 
     // 收 test 引用到的 eval 源码(按 send / 断言的 loc 去重),供 view 渲染代码视图。
-    const sources = await collectSources(events, assertions, evalDef.source);
+    const sources = await collectSources(events, assertions, evalDef.source, sourceRegistry);
 
     const value: EvalResult = {
       id: evalDef.id,
@@ -1086,6 +1100,7 @@ async function runAttemptBody(
       model: run.model,
       verdict,
       fingerprint: a.fingerprint,
+      configHash: a.configHash,
       attempt,
       startedAt: new Date(t0).toISOString(),
       durationMs,
@@ -1111,6 +1126,13 @@ async function runAttemptBody(
             sandbox: {
               provider: resolveSandbox(a.sandboxSpec ?? sandboxForEval(run, evalDef, config.sandbox)).provider,
               sandboxId: sandbox.sandboxId,
+              ...(reusedSandbox
+                ? {
+                    reused: true as const,
+                    reuseSandbox: reusedSandbox.reuseSandbox,
+                    reuseOrdinal: reusedSandbox.reuseOrdinal,
+                  }
+                : {}),
             },
           }
         : {}),
@@ -1134,7 +1156,7 @@ async function runAttemptBody(
     // 收尾段一律在 finally 跑(主链成败都执行),不改判定,各自兜错(diagnostic)、各自计时
     // (不计入 durationMs 口径,见 docs/feature/record/architecture.md)。执行序与 LifecyclePhase
     // 闭集声明一致:eval.teardown → agent.teardown → sandbox.teardown;各段可独立标 failed。
-    // 沙箱 stop / 接收器 close 不在这里 —— 由 runAttemptEffect 的 Scope 在本函数返回后回收,
+    // 沙箱 stop / 接收器 close 不在这里 —— 由 runAttemptEffect 的 Sample 在本函数返回后回收,
     // 并经 finalizer 计成 sandbox.stop。触发规则统一是「同层 setup 时点走到过」(setup / test
     // 抛错不豁免,见 docs/runner.md「环境预置不进运行器,但按顺序调它」);没有对应 teardown
     // 的段直接跳过,不产生空阶段。
@@ -1162,10 +1184,14 @@ async function runAttemptBody(
       await recorder
         .measureClosing("agent.teardown", async () => {
           try {
+            // 先按 kind 收窄 Agent 联合,再取 teardown —— 否则可选属性访问会把
+            // AgentTeardown | DirectAgentTeardown 混成无法调用的签名。
             if (run.agent.kind === "sandbox") {
-              await withCleanupTimeout(() => run.agent.teardown!(sandbox, sandboxAttemptCtx));
+              const teardown = run.agent.teardown;
+              if (teardown) await withCleanupTimeout(() => teardown(sandbox, sandboxAttemptCtx));
             } else {
-              await withCleanupTimeout(() => run.agent.teardown!(attemptCtx));
+              const teardown = run.agent.teardown;
+              if (teardown) await withCleanupTimeout(() => teardown(attemptCtx));
             }
           } catch (e) {
             declareFailure("agent.teardown", e);
@@ -1290,27 +1316,33 @@ function withCommandTiming(
  * 收集 test 引用到的 eval 源码:从 send(user message)与断言的 loc 去重出文件集。
  * 命中 eval 自己的定义文件(绝大多数情况——send / 断言几乎总在 eval 主体里直接调用)时,
  * 直接用 discovery 时已经读好、归一化、算过哈希的 `evalSource`,不重新读盘;loc 指向
- * 其它文件(共享 helper 里包装 t.send / 断言的少见情形)才现读现取,读不到就跳过
- * (路径在沙箱内 / 已删 / 权限),view 用 loc 也能降级显示行号。
+ * 其它文件(包括 callers 链中的 helper)在首次引用后由 registry 冻结；这里仅把已知路径
+ * 补成 artifact。读取失败不能删掉 loc，投影会将该路径表示为 unavailable。
  */
 async function collectSources(
   events: readonly StreamEvent[],
   assertions: readonly EvalResult["assertions"][number][],
   evalSource: CapturedEvalSource,
+  registry?: SourceRegistry,
 ): Promise<SourceArtifact[]> {
+  if (registry) return registry.artifacts({ path: evalSource.path, content: evalSource.content, role: "entry" });
   const paths = new Set<string>();
-  for (const e of events) if (e.type === "message" && e.loc) paths.add(e.loc.file);
-  for (const a of assertions) if (a.loc) paths.add(a.loc.file);
-  const out: SourceArtifact[] = [];
+  const add = (loc: import("../types.ts").SourceLoc | undefined) => {
+    if (!loc) return;
+    paths.add(loc.file);
+    for (const frame of loc.callers ?? []) if (frame.kind === "project") paths.add(frame.file);
+  };
+  for (const e of events) if (e.type === "message") add(e.loc);
+  for (const a of assertions) add(a.loc);
+  const out: SourceArtifact[] = [{ path: evalSource.path, content: evalSource.content, role: "entry" }];
   for (const path of paths) {
     if (path === evalSource.path) {
-      out.push({ path, content: evalSource.content });
       continue;
     }
     try {
-      out.push({ path, content: await readSourceFile(resolvePath(process.cwd(), path), "utf-8") });
+      out.push({ path, content: await readSourceFile(resolvePath(process.cwd(), path), "utf-8"), role: "referenced" });
     } catch {
-      // 源码读不到(路径在沙箱内 / 已删 / 权限)——跳过,view 用 loc 也能降级显示行号。
+      // 缺内容仍保留在 callers 内，assembleSourceTree 会输出 unavailable 段。
     }
   }
   return out;
@@ -1322,9 +1354,10 @@ export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
+    ...(run.configHash !== undefined ? { configHash: run.configHash } : {}),
     ...(Object.keys(run.flags).length > 0 ? { flags: run.flags } : {}),
     ...(run.labels !== undefined && Object.keys(run.labels).length > 0 ? { labels: run.labels } : {}),
-    runs: run.runs,
+    attempts: run.attempts,
     earlyExit: run.earlyExit,
     ...(run.timeoutMs !== undefined ? { timeoutMs: run.timeoutMs } : {}),
     ...(run.budget !== undefined ? { budget: run.budget } : {}),
@@ -1332,6 +1365,9 @@ export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox
     selectedEvalIds: [...run.selectedEvalIds],
     ...(run.evalFilterFingerprint !== undefined ? { evalFilterFingerprint: run.evalFilterFingerprint } : {}),
     ...sandboxProjection(run, configSandbox),
+    ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
+    ...(run.strict ? { strict: true } : {}),
+    ...(run.judge ? { judge: { model: run.judge.model, baseUrl: run.judge.baseUrl } } : {}),
   };
 }
 

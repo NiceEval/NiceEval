@@ -86,6 +86,8 @@ export type AssertionResult =
       outcome: "unavailable";
       /** 机器可读原因,如 "judge-model-unresolved"、"coverage:actions=partial"。 */
       reason: string;
+      /** 证据通道的状态或异常摘要；judge 调用失败时用于说明 HTTP 状态或异常。 */
+      evidence?: string;
     });
 
 /**
@@ -186,7 +188,7 @@ export interface ScoringContext {
   readonly events: readonly StreamEvent[];
   readonly facts: DerivedFacts;
   readonly diff: DiffData;
-  readonly scripts: Record<string, ScriptResult>;
+  readonly scripts: globalThis.Record<string, ScriptResult>;
   readonly usage: Usage;
   readonly status: "completed" | "failed" | "waiting";
   /** 当前作用域(turn / session / attempt)解析后的证据覆盖;断言按它做三值折叠(见 scoped.ts)。 */
@@ -210,7 +212,7 @@ export interface DiffWindow {
   /** send 窗口标签,与时间树 turn 节点、--execution 轮次同源(如 "s1/t2")。 */
   window: string;
   /** 该窗口内 agent 改动的文件;窗口内没有 workspace 变化时窗口仍落一条、changes 为空对象。 */
-  changes: Record<string, WindowChange>;
+  changes: globalThis.Record<string, WindowChange>;
 }
 
 export interface WindowChange {
@@ -237,12 +239,12 @@ export interface DiffData {
   /** 落盘事实,原样。 */
   windows: DiffWindow[];
   /** 派生:每个被 agent 触及的文件一条。 */
-  files: Record<string, DiffFileSummary>;
+  files: globalThis.Record<string, DiffFileSummary>;
   /** 该文件最后一个触及窗口结束时的内容;净删除或从未触及返回 undefined。t.sandbox.diff.get 同一语义。 */
   get(path: string): string | undefined;
 }
 
-export type Verdict = "passed" | "failed" | "errored" | "skipped";
+export type Verdict = "passed" | "failed" | "errored" | "unreadable";
 
 export interface JudgeConfig {
   model: string;

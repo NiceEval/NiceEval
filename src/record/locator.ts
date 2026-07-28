@@ -18,7 +18,7 @@ export type AttemptLocator = string & { readonly __brand: "AttemptLocator" };
 /** locator 派生自的不可变身份元组;attempt 是 EvalResult.attempt 的 0-indexed 值,不是展示用的 1-indexed 序号。 */
 export interface AttemptIdentity {
   experimentId: string;
-  /** SnapshotMeta.startedAt 字段(不是快照目录名——两者通常但不总是相等,见 writer.ts 的说明)。 */
+  /** RunMeta.startedAt 字段(不是快照目录名——两者通常但不总是相等,见 writer.ts 的说明)。 */
   snapshotStartedAt: string;
   evalId: string;
   /** 0-indexed;展示层(CLI/show)在边界处 +1,身份本身永远用内部下标。 */

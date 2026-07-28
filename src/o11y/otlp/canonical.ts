@@ -56,7 +56,7 @@ export interface SpanTag {
  */
 export function tagSpan(span: TraceSpan, tag: SpanTag): TraceSpan {
   if (!tag.op) return { ...span, kind: tag.kind };
-  const attributes: Record<string, JsonValue> = { ...span.attributes, [GENAI_OP]: tag.op };
+  const attributes: globalThis.Record<string, JsonValue> = { ...span.attributes, [GENAI_OP]: tag.op };
   return { ...span, kind: tag.kind, attributes };
 }
 

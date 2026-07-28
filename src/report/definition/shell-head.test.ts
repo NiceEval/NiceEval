@@ -5,10 +5,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { Scope } from "../../results/index.ts";
+import type { Sample } from "../../record/index.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 
-const emptyScope = { snapshots: [] } as unknown as Scope;
+const emptyScope = { runs: [] } as unknown as Sample;
 
 describe("defineReport head 通道(装载校验)", () => {
   it("tag 白名单是 meta/link/script/style,白名单外装载报错;title 指引到 title 字段", () => {

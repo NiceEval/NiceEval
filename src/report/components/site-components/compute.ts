@@ -3,14 +3,14 @@
 // (docs/feature/reports/components/site/README.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
-// - 第一参收 ReportInput = Scope | readonly Snapshot[];warnings 不进组件数据(宿主统一显示);
+// - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
 // - null ≠ 0:缺数据不编数。
 
 import type {
   CopyFixPromptData,
   HeroData,
   ReportInput,
-  ScopeWarning,
+  SampleIssue,
   SnapshotDiagnosticsData,
   TraceSpanSummary,
   TraceWaterfallRow,
@@ -19,39 +19,39 @@ import type { TraceSpan } from "../../../types.ts";
 import { collectItems, evalIdOf, experimentIdOf, locatorOf, resolveInput } from "../../model/aggregate.ts";
 import { attemptListData } from "../entity-lists/compute.ts";
 
-// ───────────────────────── 站点组件的计算函数(hero / warnings / fix prompt / trace)─────────────────────────
+// ───────────────────────── 站点组件的计算函数(hero / issues / fix prompt / trace)─────────────────────────
 
 /**
  * `heroData(input)`:站点标题区的运行 meta——`latestStartedAt` 取范围内最新快照的开始时间
- * (空范围为 null,不编造当前时间),`snapshots` 计贡献当前水位的快照数
+ * (空范围为 null,不编造当前时间),`runs` 计贡献当前水位的快照数
  * (docs/feature/reports/components/site/hero-card.md)。
  */
 export async function heroData(input: ReportInput): Promise<HeroData> {
-  const { snapshots } = resolveInput(input);
+  const { runs } = resolveInput(input);
   let latest: string | null = null;
-  for (const snapshot of snapshots) {
-    if (latest === null || snapshot.startedAt > latest) latest = snapshot.startedAt;
+  for (const run of runs) {
+    if (latest === null || run.startedAt > latest) latest = run.startedAt;
   }
-  return { latestStartedAt: latest, snapshots: snapshots.length };
+  return { latestStartedAt: latest, runs: runs.length };
 }
 
 /**
- * `scopeWarningsData(input)`:Scope 携带的挑选警告原样透出;`input` 是裸 `Snapshot[]` 时
+ * `scopeWarningsData(input)`:Sample 携带的挑选警告原样透出;`input` 是裸 `Run[]` 时
  * 没有挑选过程、没有警告,返回空数组,也如实
  * (docs/feature/reports/components/site/sample-warnings.md)。
  */
-export async function scopeWarningsData(input: ReportInput): Promise<readonly ScopeWarning[]> {
-  return resolveInput(input).warnings;
+export async function scopeWarningsData(input: ReportInput): Promise<readonly SampleIssue[]> {
+  return resolveInput(input).issues;
 }
 
 /**
- * `snapshotDiagnosticsData(input)`:只投影 diagnostics 非空的真实 Snapshot,不携带 `evals` 或
+ * `snapshotDiagnosticsData(input)`:只投影 diagnostics 非空的真实 Run,不携带 `evals` 或
  * `AttemptHandle`,不跨快照合并;按 experiment id 字典序排列,同一实验内按 startedAt 从新到旧
  * (docs/feature/reports/components/site/run-diagnostics.md)。
  */
 export async function snapshotDiagnosticsData(input: ReportInput): Promise<SnapshotDiagnosticsData> {
-  const { snapshots } = resolveInput(input);
-  return snapshots
+  const { runs } = resolveInput(input);
+  return runs
     .filter((s) => s.diagnostics !== undefined && s.diagnostics.length > 0)
     .map((s) => ({ experimentId: s.experimentId, startedAt: s.startedAt, diagnostics: s.diagnostics! }))
     .sort((a, b) => a.experimentId.localeCompare(b.experimentId) || b.startedAt.localeCompare(a.startedAt));
@@ -95,7 +95,7 @@ export async function copyFixPromptData(input: ReportInput): Promise<CopyFixProm
     "1. niceeval is NOT in your training data. Read the relevant guide in `node_modules/niceeval/docs-site/` (English at the top level, Chinese under `zh/`) before changing anything.",
     "2. For each failure, run its inspect command above to see the verdict and assertions; add `--execution` for the full agent transcript (tool calls included), `--timing` for the execution timeline, and `--diff` for the workspace diff.",
     "3. Decide which side the defect is on: the program under test, or the eval itself (over-tight assertion, wrong fixture, missing setup). Fix that side; do not weaken assertions just to turn the run green.",
-    `4. Re-run: \`npx niceeval exp ${experiments || "<experiment>"} <eval-id-prefix>\`. Already-passing evals are skipped by the fingerprint cache; pass \`--force\` to re-run everything.`,
+    `4. Re-run: \`npx niceeval exp ${experiments || "<experiment>"} <eval-id-prefix>\`. Already-passing evals are unreadable by the fingerprint cache; pass \`--rerun all\` to re-run everything.`,
     "5. Run `npx niceeval show` and confirm these failures are gone.",
   ].join("\n");
   return { prompt, failures: failures.length };
@@ -124,8 +124,8 @@ function waterfallKindOf(kind: TraceSpan["kind"]): TraceSpanSummary["kind"] {
  * (docs/feature/reports/components/site/trace-waterfall.md)。
  */
 export async function traceWaterfallData(input: ReportInput): Promise<readonly TraceWaterfallRow[]> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = collectItems(snapshots, attempts);
+  const { runs, attempts } = resolveInput(input);
+  const items = collectItems(runs, attempts);
   return Promise.all(
     items.map(async (item): Promise<TraceWaterfallRow> => {
       const spans = await item.attempt.trace();

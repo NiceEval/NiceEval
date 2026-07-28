@@ -3,9 +3,9 @@
 // 不产生自己的 data;PoweredBy 无 props,没有对应的计算函数或 validate。
 
 import { defineComponent, type ReportComponent } from "../../definition/tree.ts";
-import type { CopyFixPromptData, HeroData, ScopeWarning, SnapshotDiagnosticsData, TraceWaterfallRow } from "../../model/types.ts";
+import type { CopyFixPromptData, HeroData, SampleIssue, SnapshotDiagnosticsData, TraceWaterfallRow } from "../../model/types.ts";
 import type { LocalizedText } from "../../model/locale.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import {
   arrayProblem,
   dataShapeError,
@@ -30,47 +30,42 @@ export const validateHeroData: Validator = (data) => {
   if (!(data.latestStartedAt === null || typeof data.latestStartedAt === "string")) {
     return '"latestStartedAt" must be a string or null';
   }
-  if (typeof data.snapshots !== "number") return '"snapshots" must be a number';
+  if (typeof data.runs !== "number") return '"runs" must be a number';
   return null;
 };
 
-const UNREADABLE_SNAPSHOT_REASONS = ["incompatible-version", "malformed", "incomplete"];
+const UNREADABLE_SNAPSHOT_REASONS = ["incompatible", "malformed", "incomplete"];
 
 /**
- * ScopeWarning(src/results/types.ts「警告 kind 全集」):按 `kind` 判别的联合(三种,只承载
- * 定位不到任何一行的完整性事实),已登记 kind 各自的必填字段单独校验——`missing-startedAt`
- * 没有 `command`(无单条命令能解决)、`unreadable-snapshot` 没有 experimentId(非实验作用域)、
- * `command` 恒可选。未登记的 `kind`(如未来版本新增的 warning)只要求 `kind` / `message`
- * 这份两族共用的最小形状,不拒绝——`ScopeWarnings` 的分组渲染对未识别 kind 有专门的
- * 单独成组回退(message 原样),这条前向兼容路径本身就是契约的一部分,
- * 结构校验不能比渲染逻辑更严。
+ * SampleIssue(src/record/types.ts「Issue code 全集」):按 `code` 判别的结构化事实联合。
+ * 文案与动作由 Reports 的 NoticeCatalog 解释，不能要求或接收 `message` / `command`。
  */
 function scopeWarningProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a ScopeWarning object`;
-  if (typeof value.kind !== "string") return `"${path}.kind" must be a string`;
-  if (typeof value.message !== "string") return `"${path}.message" must be a string`;
-  switch (value.kind) {
-    case "unfinished-snapshot":
+  if (!isObject(value)) return `"${path}" must be a SampleIssue object`;
+  if (typeof value.code !== "string") return `"${path}.code" must be a string`;
+  switch (value.code) {
+    case "unfinished-run":
       if (typeof value.experimentId !== "string") return `"${path}.experimentId" must be a string`;
       if (typeof value.startedAt !== "string") return `"${path}.startedAt" must be a string`;
       if (typeof value.dir !== "string") return `"${path}.dir" must be a string`;
-      if (typeof value.command !== "string") return `"${path}.command" must be a string`;
       return null;
-    case "missing-startedAt":
+    case "dangling-evidence":
       if (typeof value.experimentId !== "string") return `"${path}.experimentId" must be a string`;
       if (typeof value.evalId !== "string") return `"${path}.evalId" must be a string`;
+      if (typeof value.attempt !== "number") return `"${path}.attempt" must be a number`;
+      if (typeof value.artifactBase !== "string") return `"${path}.artifactBase" must be a string`;
+      if (!Array.isArray(value.artifacts) || !value.artifacts.every((artifact) => typeof artifact === "string")) {
+        return `"${path}.artifacts" must be an array of strings`;
+      }
       return null;
-    case "unreadable-snapshot":
+    case "unreadable-run":
       if (typeof value.dir !== "string") return `"${path}.dir" must be a string`;
       if (typeof value.reason !== "string" || !UNREADABLE_SNAPSHOT_REASONS.includes(value.reason)) {
         return `"${path}.reason" must be one of ${JSON.stringify(UNREADABLE_SNAPSHOT_REASONS)}`;
       }
-      if (value.command !== undefined && typeof value.command !== "string") {
-        return `"${path}.command" must be a string when present`;
-      }
       return null;
     default:
-      return null;
+      return `"${path}.code" is not a supported SampleIssue code`;
   }
 }
 
@@ -148,7 +143,7 @@ const assertHeroData = (data: unknown): HeroData => {
 };
 
 /**
- * `HeroCard`:Hero 的渲染件,双面组件,只收 data 形态——标题输入是站点声明与 Scope 的
+ * `HeroCard`:Hero 的渲染件,双面组件,只收 data 形态——标题输入是站点声明与 Sample 的
  * 合成物,没有单独的 spec 等价形。web 面渲染 hero 标题(h1)、按渲染 locale 格式化的运行
  * meta(latestStartedAt 为 null 时内置「暂无运行」文案)与品牌行(等同 PoweredBy,恒含、
  * 无拆除 prop);text 面输出标题行与 meta 行,不含品牌行
@@ -190,26 +185,26 @@ Hero.displayName = "Hero";
  * text 面零输出。没有任何配置——品牌契约是「提供一个组件,不给开关」:不想要品牌就不用
  * 这些组件、自己写替代组件(docs/feature/reports/components/site/powered-by.md)。
  */
-export const PoweredBy = defineComponent<Record<never, never>>({
+export const PoweredBy = defineComponent<globalThis.Record<never, never>>({
   web: () => <PoweredByWeb />,
   text: () => "",
 });
 PoweredBy.displayName = "PoweredBy";
 
-/** `ScopeWarnings` 的 props:spec 形态取宿主 Scope 的 warnings,data 形态收 `ScopeWarning[]`。 */
-export type ScopeWarningsProps = DataProps<readonly ScopeWarning[], Record<never, never>, ChromeProps>;
+/** `ScopeWarnings` 的 props:spec 形态取宿主 Sample 的 issues,data 形态收 `SampleIssue[]`。 */
+export type ScopeWarningsProps = DataProps<readonly SampleIssue[], globalThis.Record<never, never>, ChromeProps>;
 
 /**
- * `ScopeWarnings`:选择警告区,警告的唯一呈现组件。把 Scope 携带的 `ScopeWarning[]`
+ * `ScopeWarnings`:选择警告区,警告的唯一呈现组件。把 Sample 携带的 `SampleIssue[]`
  * 按「下一步动作」聚合渲染(带 experimentId 的按实验聚合、非实验作用域按 kind 聚合;
  * 实验作用域组在前、非实验作用域组在后);web 面组头带去重后的可复制命令、明细收原生
- * `<details>`(总条数 ≤ 3 默认展开),text 面同构但不折叠。空警告集与裸 `Snapshot[]` 输入
+ * `<details>`(总条数 ≤ 3 默认展开),text 面同构但不折叠。空警告集与裸 `Run[]` 输入
  * 两面零输出(docs/feature/reports/components/site/sample-warnings.md)。
  */
-export const ScopeWarnings = makeDataComponent<readonly ScopeWarning[], Record<never, never>, ChromeProps>({
+export const ScopeWarnings = makeDataComponent<readonly SampleIssue[], globalThis.Record<never, never>, ChromeProps>({
   name: "ScopeWarnings",
   dataFnName: "scopeWarningsData",
-  shapeName: "ScopeWarning[]",
+  shapeName: "SampleIssue[]",
   dataFn: (input) => scopeWarningsData(input),
   specKeys: [],
   validate: validateScopeWarningsData,
@@ -220,18 +215,18 @@ export const ScopeWarnings = makeDataComponent<readonly ScopeWarning[], Record<n
   text: (props, ctx) => scopeWarningsText(props.data, ctx),
 }) as unknown as ReportComponent<ScopeWarningsProps>;
 
-/** `SnapshotDiagnostics` 的 props:spec 形态从宿主 `Scope | Snapshot[]` 投影,data 形态收 `SnapshotDiagnosticsData`。 */
-export type SnapshotDiagnosticsProps = DataProps<SnapshotDiagnosticsData, Record<never, never>, ChromeProps>;
+/** `SnapshotDiagnostics` 的 props:spec 形态从宿主 `Sample | Run[]` 投影,data 形态收 `SnapshotDiagnosticsData`。 */
+export type SnapshotDiagnosticsProps = DataProps<SnapshotDiagnosticsData, globalThis.Record<never, never>, ChromeProps>;
 
 /**
- * `SnapshotDiagnostics`:快照诊断区,`Snapshot.diagnostics` 的唯一呈现组件。按来源
- * experiment → Snapshot 分组(实验 id 字典序、同实验内 startedAt 新到旧,不跨快照合并);
+ * `SnapshotDiagnostics`:快照诊断区,`Run.diagnostics` 的唯一呈现组件。按来源
+ * experiment → Run 分组(实验 id 字典序、同实验内 startedAt 新到旧,不跨快照合并);
  * web 面整个区域是默认折叠的原生 `<details>`,`<summary>` 恒可见汇总涉及的 experiment 数、
- * Snapshot 数、记录数(按 count 计数)与最高严重度;单诊断快照退化成一行,不摆空壳层级;
+ * Run 数、记录数(按 count 计数)与最高严重度;单诊断快照退化成一行,不摆空壳层级;
  * text 面同构但不折叠。空诊断集两面零输出
  * (docs/feature/reports/components/site/run-diagnostics.md)。
  */
-export const SnapshotDiagnostics = makeDataComponent<SnapshotDiagnosticsData, Record<never, never>, ChromeProps>({
+export const SnapshotDiagnostics = makeDataComponent<SnapshotDiagnosticsData, globalThis.Record<never, never>, ChromeProps>({
   name: "SnapshotDiagnostics",
   dataFnName: "snapshotDiagnosticsData",
   shapeName: "SnapshotDiagnosticsData",
@@ -246,7 +241,7 @@ export const SnapshotDiagnostics = makeDataComponent<SnapshotDiagnosticsData, Re
 }) as unknown as ReportComponent<SnapshotDiagnosticsProps>;
 
 /** `CopyFixPrompt` 的 props:spec 形态无选项,data 形态收 `copyFixPromptData()` 的产物。 */
-export type CopyFixPromptProps = DataProps<CopyFixPromptData, Record<never, never>, ChromeProps>;
+export type CopyFixPromptProps = DataProps<CopyFixPromptData, globalThis.Record<never, never>, ChromeProps>;
 
 /**
  * `CopyFixPrompt`:把当前范围的全部失败整理成一段可交给 coding agent 的修复 prompt。
@@ -254,7 +249,7 @@ export type CopyFixPromptProps = DataProps<CopyFixPromptData, Record<never, neve
  * 行为;`failures` 为 0 时两面零输出;text 面恒零输出——终端里的等价能力是 `show` 的
  * attempt 下钻命令本身(docs/feature/reports/components/site/copy-fix-prompt.md)。
  */
-export const CopyFixPrompt = makeDataComponent<CopyFixPromptData, Record<never, never>, ChromeProps>({
+export const CopyFixPrompt = makeDataComponent<CopyFixPromptData, globalThis.Record<never, never>, ChromeProps>({
   name: "CopyFixPrompt",
   dataFnName: "copyFixPromptData",
   shapeName: "CopyFixPromptData",
@@ -271,7 +266,7 @@ export const CopyFixPrompt = makeDataComponent<CopyFixPromptData, Record<never, 
 /** `TraceWaterfall` 的 props:spec 形态无选项,data 形态收 `traceWaterfallData()` 的产物。 */
 export type TraceWaterfallProps = DataProps<
   readonly TraceWaterfallRow[],
-  Record<never, never>,
+  globalThis.Record<never, never>,
   ChromeProps & { attemptHref?: (locator: AttemptLocator) => string }
 >;
 
@@ -284,7 +279,7 @@ export type TraceWaterfallProps = DataProps<
  */
 export const TraceWaterfall = makeDataComponent<
   readonly TraceWaterfallRow[],
-  Record<never, never>,
+  globalThis.Record<never, never>,
   ChromeProps & { attemptHref?: (locator: AttemptLocator) => string }
 >({
   name: "TraceWaterfall",

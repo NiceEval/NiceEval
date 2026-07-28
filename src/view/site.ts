@@ -9,8 +9,9 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { loadViewScan, type ResolvedHeadTag, type ViewScan, type ViewScanOptions } from "./data.ts";
 import { localizeText } from "../report/runtime/host.ts";
-import type { AttemptHandle } from "../results/index.ts";
-import type { AttemptLocator } from "../results/locator.ts";
+import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
+import type { AttemptHandle } from "../record/index.ts";
+import type { AttemptLocator } from "../record/locator.ts";
 
 /**
  * 站点产物清单里的一个文件:现算内容(content)、指向结果根内的原文件(file),或延迟到
@@ -38,7 +39,7 @@ const HTML_TYPE = "text/html; charset=utf-8";
 
 // 前端会 fetch 的原字节证据文件(docs/feature/reports/view.md「静态导出」:有就带,缺时前端
 // 在证据位置如实显示缺失;o11y.json 永不进产物——报告数字已烘进 HTML,浏览器不读它)。
-const RAW_COPY_ARTIFACTS = ["events.json", "trace.json", "diff.json"];
+const RAW_COPY_ARTIFACTS = ["commands.json", "events.json", "trace.json", "diff.json"];
 
 /**
  * 把结果根物化成站点产物清单。sources.json 是唯一的格式例外——盘上是去重后的引用
@@ -68,7 +69,22 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}): Prom
       const attempt = scan.attemptsByBase.get(base);
       const sources = attempt ? await attempt.sources() : null;
       const path = `artifact/${base}/sources.json`;
-      files.set(path, { path, contentType: JSON_TYPE, source: { kind: "content", body: JSON.stringify(sources ?? []) } });
+      const refs: { path: string; sha256: string }[] = [];
+      for (const source of sources ?? []) {
+        const sha256 = hashEvalSource(normalizeEvalSource(source.content));
+        refs.push({ path: source.path, sha256 });
+        // 携带 attempt 的正文已由读取面归拢；静态站沿用 Record 的 Run 级去重布局。
+        const runBase = base.split("/").slice(0, 2).join("/");
+        const sourcePath = `artifact/${runBase}/sources/${sha256}.json`;
+        if (!files.has(sourcePath)) {
+          files.set(sourcePath, {
+            path: sourcePath,
+            contentType: JSON_TYPE,
+            source: { kind: "content", body: JSON.stringify({ content: source.content }) },
+          });
+        }
+      }
+      files.set(path, { path, contentType: JSON_TYPE, source: { kind: "content", body: JSON.stringify(refs) } });
     }
   }
 
@@ -140,7 +156,7 @@ export async function readSiteFile(file: SiteFile): Promise<string | Buffer | un
 }
 
 /** head 资产的响应 content-type;命不中的按二进制下发(写盘路径不受影响)。 */
-const ASSET_CONTENT_TYPES: Record<string, string> = {
+const ASSET_CONTENT_TYPES: globalThis.Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -161,7 +177,7 @@ function escapeAttrValue(value: string): string {
 }
 
 /** 单个 head 标签 → HTML:attrs 值 true 渲染裸布尔属性,字符串转义后渲染 `key="value"`;script/style 的 children 原样落进标签(闭合序列已在装载期拒绝)。 */
-function renderHeadTagHtml(tag: ResolvedHeadTag, attrs: Record<string, string | true>): string {
+function renderHeadTagHtml(tag: ResolvedHeadTag, attrs: globalThis.Record<string, string | true>): string {
   const attrHtml = Object.entries(attrs)
     .map(([name, value]) => (value === true ? ` ${name}` : ` ${name}="${escapeAttrValue(value)}"`))
     .join("");
@@ -217,6 +233,7 @@ const TEMPLATE_PLACEHOLDERS = {
   viewData: "__NICEEVAL_VIEW_DATA_JSON__",
   reportSlot: "<!-- __NICEEVAL_REPORT_SLOT__ -->",
 } as const;
+const VIEW_RELOAD_SCRIPT = `<script>(function(){try{var s=new EventSource("/__niceeval_reload");s.addEventListener("reload",function(){location.reload()});s.addEventListener("error",function(e){if(!e.data)return;var n=document.getElementById("niceeval-view-error");if(!n){n=document.createElement("pre");n.id="niceeval-view-error";n.style.cssText="position:fixed;z-index:9999;right:12px;bottom:12px;max-width:50vw;margin:0;padding:10px;border:1px solid #A33A30;background:#fff;color:#A33A30;white-space:pre-wrap";document.body.appendChild(n)}n.textContent="View rebuild failed; serving the previous site.\\n"+e.data})}catch(e){}})();</script>`;
 
 /**
  * 把 viewData(只含原始值与相对路径,不含宿主机绝对路径)和前端产物烘焙进单个 HTML。
@@ -250,8 +267,8 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
     .join("\n");
 
   // 初始 <title> 与 hero 同源:走完回退链的报告标题(viewData.report.title;终点是内置文案
-  // 「Eval 运行结果 / Eval Results」)。模板 lang="en",初始按 en 解析;前端按界面语言更新。
-  const title = localizeText(scan.viewData.report?.title, "en") ?? "Eval Results";
+  // 「Eval 运行结果 / Eval Record」)。模板 lang="en",初始按 en 解析;前端按界面语言更新。
+  const title = localizeText(scan.viewData.report?.title, "en") ?? "Eval Record";
 
   return template
     .replace(TEMPLATE_PLACEHOLDERS.siteBase, () => SITE_BASE_SCRIPT)
@@ -266,7 +283,7 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
     .replace(TEMPLATE_PLACEHOLDERS.reportSlot, () => pageTemplates)
     .replace(TEMPLATE_PLACEHOLDERS.viewData, () => JSON.stringify(scan.viewData).replace(/</g, "\\u003c"))
     .replace(TEMPLATE_PLACEHOLDERS.appCode, () => JSON.stringify(app).replace(/</g, "\\u003c"))
-    .replace("</body>", () => `${shellScripts}</body>`);
+    .replace("</body>", () => `${shellScripts}${VIEW_RELOAD_SCRIPT}</body>`);
 }
 
 function escapeText(value: string): string {

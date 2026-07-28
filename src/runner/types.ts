@@ -16,22 +16,25 @@ import type {
 } from "../scoring/types.ts";
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
-import type { AttemptLocator } from "../results/locator.ts";
+import type { AttemptLocator } from "../record/locator.ts";
+import type { ReportDefinition } from "../report/definition/report.ts";
+import type { ThemeDefinition } from "../report/theme.ts";
 
 // ───────────────────────── 结果 / 报告 ─────────────────────────
 
 /**
  * 解析后运行配置的**穷尽可序列化投影**——记录这次运行实际生效的值,不是原始 `ExperimentDef`
  * (函数与 hooks 无法忠实落盘,存「原样」只能存谎)。`model` 与 `agent` 只在快照顶层存在,
- * 这里不复制(见 docs/feature/record/architecture.md「snapshot.json」)。
+ * 这里不复制(见 docs/feature/record/architecture.md「run.json」)。
  */
 export interface ExperimentRunInfo {
   description?: string;
   reasoningEffort?: string;
-  flags?: Record<string, JsonValue>;
+  flags?: globalThis.Record<string, JsonValue>;
+  configHash?: string;
   /** 报告归类标注(ExperimentDef.labels 原样投影);不透传运行时,不参与可比性配置。 */
-  labels?: Record<string, string | number>;
-  runs: number;
+  labels?: globalThis.Record<string, string | number>;
+  attempts: number;
   earlyExit: boolean;
   timeoutMs?: number;
   budget?: number;
@@ -43,12 +46,17 @@ export interface ExperimentRunInfo {
   /** provider 名、provider 的公开参数投影与配置 fingerprint;参数只经投影落盘,token/凭据永不进来。 */
   sandbox?: SandboxRunInfo;
   /** spec 携带 environments 表时:声明了 environment 的选中 eval 各自解析到的产物投影,按 eval id 留审计映射;其余 eval 以 `sandbox` 为准。 */
-  sandboxByEval?: Record<string, SandboxRunInfo>;
+  sandboxByEval?: globalThis.Record<string, SandboxRunInfo>;
+  /** Sandbox 是否在同一次 Run 内复用。 */
+  sandboxReuse?: boolean;
+  /** strict 与 judge 是配置身份的一部分，供历史结果重算 configHash。 */
+  strict?: boolean;
+  judge?: Pick<JudgeConfig, "model" | "baseUrl">;
 }
 
 export interface SandboxRunInfo {
   provider: string;
-  params?: Record<string, JsonValue>;
+  params?: globalThis.Record<string, JsonValue>;
   fingerprint?: string;
 }
 
@@ -185,7 +193,7 @@ export interface DiagnosticRecord {
   /** 现象 + 依据 + 下一步,以下一步收尾;三段式契约见 docs/error-feedback.md。 */
   message: string;
   phase: LifecyclePhase;
-  data?: Readonly<Record<string, JsonValue>>;
+  data?: Readonly<globalThis.Record<string, JsonValue>>;
   /** 有单条能直接推进的命令时给出(已替换真实 id);web 渲染面呈现为可复制动作。 */
   command?: string;
   /** 相同 dedupeKey 折叠后的出现次数;省略等于 1。 */
@@ -201,11 +209,13 @@ export interface EvalResult {
   model?: string;
   verdict: Verdict;
   fingerprint?: string;
+  /** 产出该结果时的 Run 级配置身份。 */
+  configHash?: string;
   attempt: number;
   /** 本 attempt 开始的墙钟时刻(ISO);view 按 eval 粒度展示「何时跑的」。 */
   startedAt?: string;
   /**
-   * 不透明的 Attempt 定位符(`@` 前缀短确定性编码,见 `src/results/locator.ts` 的 AttemptLocator),
+   * 不透明的 Attempt 定位符(`@` 前缀短确定性编码,见 `src/record/locator.ts` 的 AttemptLocator),
    * 由 {experimentId, 快照 startedAt, evalId, attempt} 身份元组派生。非携带条目由 writer 在落盘时
    * 算出;携带条目(`--resume` 合入)原样复制上一轮的值,从不重算——原快照的 startedAt 已经不在
    * 当前快照里,重算会算出不同的字符串,详见 writer.ts 对携带分支的说明。省略时读取面按当前
@@ -213,6 +223,8 @@ export interface EvalResult {
    */
   locator?: string;
   durationMs: number;
+  /** 自 sandbox.create 起、排除并发排队和收尾的执行耗时；旧记录缺失时携带保守回退 durationMs。 */
+  executionMs?: number;
   assertions: AssertionResult[];
   /**
    * 题型:`defineEval` → `"pass"`,`defineScoreEval` → `"points"`,定义期事实,与
@@ -236,7 +248,7 @@ export interface EvalResult {
    * 后写覆盖先写)。中性环境观测,不参与 verdict / 评分 / 指纹。见
    * docs/feature/record/architecture.md#facts运行事实。
    */
-  facts?: Record<string, string | number | boolean>;
+  facts?: globalThis.Record<string, string | number | boolean>;
   /** Runner 阶段计时,按执行顺序;只记录实际发生的阶段(见 docs/feature/record/architecture.md)。 */
   phases?: PhaseTiming[];
   skipReason?: string;
@@ -258,7 +270,17 @@ export interface EvalResult {
    * remote 型 agent 无此字段。`kept` 表示运行收尾时按 --keep-sandbox 留存了沙箱;之后的存活
    * 状态归 `niceeval sandbox list` 回答,本记录一次写成、不回写。
    */
-  sandbox?: { provider: string; sandboxId: string; kept?: true };
+  sandbox?: {
+    provider: string;
+    sandboxId: string;
+    kept?: true;
+    /** 本次 Attempt 使用了同一 Invocation 中已创建的 Sandbox。 */
+    reused?: true;
+    /** 本次 Invocation 内该 Sandbox 的稳定编号（从 1 开始）。 */
+    reuseSandbox?: number;
+    /** 此 Sandbox 承接的 Attempt 序号（从 1 开始）。 */
+    reuseOrdinal?: number;
+  };
   /** agent 归因增量:逐 send 窗口的 delta 序列(落盘为 diff.json;文件级视图由读取面派生)。 */
   diff?: DiffArtifact;
   /** 非零 Sandbox 命令的 stdout/stderr 证据(落盘为 commands.json);只记非零退出,见 `FailedCommandEvidence`。 */
@@ -266,6 +288,8 @@ export interface EvalResult {
   rawTranscript?: string;
   /** 携带条目(--resume 合入)专用:artifact 目录(相对结果根目录),指向原快照里的落盘。 */
   artifactBase?: string;
+  /** 仅本次通过 --carry-ignoring-flag 迁移携带时留下的审计痕迹。 */
+  carriedIgnoringFlags?: string[];
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在
    * docs/feature/record/architecture.md「证据 registry」,如 ["commands", "events", "sources"])。
@@ -275,8 +299,8 @@ export interface EvalResult {
   artifacts?: string[];
 }
 
-/** `snapshot.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
-export const RESULTS_FORMAT = "niceeval.results";
+/** `run.json` 的格式标记;把 niceeval 报告和其它工具的同名文件区分开。 */
+export const RECORD_FORMAT = "niceeval.results";
 /**
  * 结果格式版本,只在破坏兼容读取时递增;读取器只认相同版本。见 docs/feature/record/architecture.md。
  * `5`(见 memory 的 attempt-locator-and-source-dedup 条目)= result.json 新增 `locator` 字段;
@@ -288,16 +312,16 @@ export const RESULTS_FORMAT = "niceeval.results";
  * 新增 `phases`(阶段计时)、`coverage`(证据覆盖聚合)、`sandbox`(执行环境标识)字段;
  * `ExperimentRunInfo` 改为解析后运行配置的穷尽投影(sandbox 从字符串改结构化投影对象);
  * `diff.json` 落逐窗口 delta 序列(DiffWindow[]);events/trace 的字符串值统一 256 KiB 截断
- * (结构化 `truncated` 标记);snapshot.json 新增发布拷贝的 `publish` 标记。
+ * (结构化 `truncated` 标记);run.json 新增发布拷贝的 `publish` 标记。
  * `9` = `hasEvents`/`hasTrace`/`hasSources` 三个布尔删除,统一为 `artifacts`(writer 实际写出的
  * 按需 artifact 词干列表,单源在证据 registry);`O11ySummary` 删除 `usage`/`estimatedCostUSD`/
  * `durationMs`,正名为纯行为计数缓存,权威唯一在 `result.json` 的 `Usage`/`estimatedCostUSD`/
  * `durationMs`(见 memory 的 results-evidence-registry-ruling 条目)。
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  */
-export const RESULTS_SCHEMA_VERSION = 9;
+export const RECORD_SCHEMA_VERSION = 11;
 
-/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/results 的 SnapshotMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
+/** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
@@ -306,7 +330,7 @@ export interface InvocationSummary {
   passed: number;
   /** 断言不通过的数量;不包含 errored。 */
   failed: number;
-  skipped: number;
+  unreadable: number;
   /** 环境、超时、adapter、agent runtime 等执行错误数量;与 failed 互斥。 */
   errored: number;
   durationMs: number;
@@ -321,7 +345,7 @@ export interface InvocationShape {
   evals: number;
   /** (agent, model, flags) 配置组合数;compare 多 agent 时 > 1。 */
   configs: number;
-  /** 总 attempt 数(evals × configs × runs);逐行输出与汇总计数都按它。 */
+  /** 总 attempt 数(evals × configs × attempts);逐行输出与汇总计数都按它。 */
   totalAttempts: number;
   /** 本次运行实际生效的全局并发数(flag/config/sandbox 默认值解析后的结果);
    *  实验级 maxConcurrency 只在该实验内部限流,不改这个全局值。 */
@@ -329,7 +353,7 @@ export interface InvocationShape {
   /**
    * 本次 Invocation 的快照身份锚点(ISO 时间戳),在调度任何 attempt 前确定。fresh
    * `EvalResult.locator` 编码进去的 `snapshotStartedAt`(见 `results/locator.ts` 的
-   * `AttemptIdentity`)与 Artifacts writer 写进 `snapshot.json` 的 `startedAt` 共用
+   * `AttemptIdentity`)与 Artifacts writer 写进 `run.json` 的 `startedAt` 共用
    * 同一个值 —— 不同 experiment 在同一次 Invocation 内共享它也不会碰撞(locator 身份
    * 还含 experimentId)。`runEvals()` 恒在 `onInvocationStart` 触发前把它填进这里,这是它
    * 从 run.ts 传给 Artifacts 等 reporter 的唯一途径;省略只出现在测试/第三方手写
@@ -381,19 +405,19 @@ export type ReporterEvent =
   | {
       /**
        * 该 Experiment 的 teardown(若声明)完成之后、invocation:summary 之前触发,标记它
-       * 已经彻底跑完;供内建 Artifacts 精确地在这一刻封口对应的 Snapshot,不必等到整个
+       * 已经彻底跑完;供内建 Artifacts 精确地在这一刻封口对应的 Run,不必等到整个
        * Invocation 结束才一次性封全部快照(见 docs/runner.md「Experiment 收尾协议」)。
        */
       type: "experiment:complete";
       experimentId: string;
-      /** 该 Experiment 封口时刻,即它的 Snapshot completedAt。 */
+      /** 该 Experiment 封口时刻,即它的 Run completedAt。 */
       completedAt: string;
       /** 本次携带合入(fingerprint 命中、未真实执行)的历史终态结果,收尾时一并落盘。 */
       carriedResults: EvalResult[];
       /** 该 Experiment 域产生的全部诊断;空集合传空数组,不省略字段。 */
       diagnostics: readonly DiagnosticRecord[];
       /** 该 Experiment 域经 `ctx.fact()` 累计的运行事实(experiment.setup / .teardown,含收尾自愈路径);省略 = 没有上报过。 */
-      facts?: Readonly<Record<string, string | number | boolean>>;
+      facts?: Readonly<globalThis.Record<string, string | number | boolean>>;
       /** 项目名(来自 config.name),整次 Invocation 内所有 Experiment 共享同一个值。 */
       name?: LocalizedText;
     };
@@ -418,12 +442,14 @@ export interface EvalDef {
   environment?: string;
   /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
   judge?: JudgeConfig;
+  /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
+  configHash?: string;
   /** 覆盖 / 追加项目级 Config.reporters,只对这一条评估用例生效。 */
   reporters?: Reporter[];
   /** 覆盖项目级 / CLI 的单次 attempt 超时(毫秒),只对这一条评估用例生效。 */
   timeoutMs?: number;
   /** 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。 */
-  metadata?: Record<string, unknown>;
+  metadata?: globalThis.Record<string, unknown>;
   /**
    * 调整 agent diff 的归因排除清单(仅 Sandbox 型;见 docs/feature/eval/README.md):两个数组都是
    * gitignore 风格 glob(workdir 相对)。默认排除 .git/node_modules/构建产物/包管理器缓存;
@@ -474,6 +500,8 @@ export interface DiscoveredEval extends EvalDef {
   baseDir: string;
   /** 定义文件绝对路径,用于内容指纹缓存。 */
   sourcePath: string;
+  /** 发现期经 loadJson/loadYaml 读取的项目内数据文件。 */
+  loaderDataPaths?: readonly string[];
   /**
    * discovery 时捕获的规范化源码(归一化文本 + 项目相对路径 + SHA-256),见 `eval-source.ts`。
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
@@ -496,10 +524,10 @@ export interface ExperimentHookContext extends ScopedFeedback {
   readonly signal?: AbortSignal;
   /**
    * 第三条反馈通道:上报整场实验的环境观测,与 `completedAt` 同批在快照封口补写进
-   * `SnapshotMeta.facts`。key 匹配 `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,
+   * `RunMeta.facts`。key 匹配 `[a-z0-9._-]{1,64}`,value 是标量;同 key 后写覆盖先写,
    * 非法 key 或非标量 value 抛错。不影响判定,不参与 verdict / 评分 / 指纹。形状与归属语义见
    * docs/feature/record/architecture.md#facts运行事实。`niceeval exp --teardown` 的独立收尾
-   * 路径不派发 attempt、不落任何 Snapshot,没有 `SnapshotMeta.facts` 可写——该路径下这个方法仍然
+   * 路径不派发 attempt、不落任何 Run,没有 `RunMeta.facts` 可写——该路径下这个方法仍然
    * 校验入参(非法 key / 非标量 value 照样抛错),校验通过后丢弃写入(no-op:诚实优于
    * 静默——非法调用照样报错、不被这条路径悄悄吞掉,但也不假装有地方落盘),见 cli.ts 的
    * `--teardown` 构造点。
@@ -524,22 +552,7 @@ export interface ExperimentDef {
   /** 实验条件(A/B 里的 feature flag),由实验文件声明;必须是可 JSON 序列化的值
    *  (defineExperiment 解析时校验,非 JSON 直接报错),经 ctx.flags 透传给 adapter、
    *  t.flags 暴露给 eval,并原样进入结果快照的 ExperimentRunInfo.flags。 */
-  flags?: Record<string, JsonValue>;
-  /**
-   * `flags` 里只作为**出处记录**的键名:照常落盘、照常透给 `ctx.flags` / `t.flags`,但不参与
-   * 可比性配置——值变了不作废任何已有结果,已跑完的照常携带(carry)。
-   *
-   * 给的是「每次跑都可能换、但换了不改变 attempt 里发生什么」的坐标:隧道 / 反向代理 URL、
-   * 服务端实例地址、跑批时刻这类。它们要留在 `flags` 里(报告要按 `flag()` 看这轮连的是哪个,
-   * eval 或 adapter 也可能要读),又不该像 `webResearch: true → false` 那样让缓存全部失效。
-   *
-   * 声明前跑出来的结果同样携带得到:携带判定按快照记下的历史 flags 做一次反事实重算,
-   * 确认差异完全落在这些键上(见 `runner/fingerprint.ts` 的 `acceptableFingerprints`)。
-   * 键不必存在于 `flags` 里——把一个键从 `flags` 移走时留着这条声明,历史结果照样不作废。
-   *
-   * 完全不需要在运行时被看见的事实用 `labels`,那是报告侧坐标(本来就不进指纹)。
-   */
-  provenanceFlags?: readonly string[];
+  flags?: globalThis.Record<string, JsonValue>;
   /**
    * 报告归类标注:实验在各对比轴上的坐标(如 `{ line: "codex", memory: "mempal" }`)。
    * 值域 string | number(解析时校验)。与 `flags` 的分界是「会不会改变 attempt 里发生的事」:
@@ -548,10 +561,10 @@ export interface ExperimentDef {
    * 分组。`line` 键被默认报告识别:组内任一实验声明了它,散点按线归类并连线。
    * 见 docs/feature/experiments/library.md「labels」。
    */
-  labels?: Record<string, string | number>;
+  labels?: globalThis.Record<string, string | number>;
   /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--runs` 覆盖时默认 1。 */
-  runs?: number;
-  /** 一次重复(runs > 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`runs` 跑满、测完整通过率),
+  attempts?: number;
+  /** 一次重复(attempts > 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`runs` 跑满、测完整通过率),
    *  显式打开用于「只想知道能不能过」的省钱场景。 */
   earlyExit?: boolean;
   /**
@@ -569,6 +582,8 @@ export interface ExperimentDef {
    * spec 可携带 `environments` 表,按 eval 的 `environment` profile 换预制产物。
    */
   sandbox?: SandboxOption;
+  /** 同一 Run 内复用沙箱；这种运行与历史携带双向隔离。 */
+  sandboxReuse?: boolean;
   /**
    * 本实验的花费上限(USD)。调度器按「已完成 attempt 的实测花费」累计,到顶后跳过这个实验
    * 剩下未起飞的 attempt 并上报一次 `run:budgetExceeded`(已在飞的 attempt 仍会跑完)。
@@ -634,10 +649,14 @@ export interface EvalDescriptor {
    */
   readonly scoring: EvalScoring;
   readonly environment?: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
+  readonly metadata?: Readonly<globalThis.Record<string, unknown>>;
 }
 
 export interface Config {
+  /** view/show 的项目默认报告。 */
+  report?: ReportDefinition;
+  /** view 的项目默认主题。 */
+  theme?: ThemeDefinition;
   /**
    * 项目名,显示在 `niceeval view` 顶部 hero(`<h1>`),省略则回退到通用标题。
    * 可传字符串,或按 locale 提供多语言(如 `{ en: "...", "zh-CN": "..." }`),随 view 语言切换。
@@ -676,7 +695,7 @@ export interface Config {
    * · 用量与成本)。key 支持精确 model 名或 `provider/*` 通配(自托管/网关折扣按 provider 批量覆盖);
    * 精确 key 优先于通配。只在没有网关实测成本(`usage.costUSD`)时才会用到——实测优先于估算恒成立。
    */
-  pricing?: Record<string, PriceOverride>;
+  pricing?: globalThis.Record<string, PriceOverride>;
 }
 
 /** 每百万 token 的美元单价;省略的桶退回 `inputPerMTok`(cache token 本质也是 input)。 */
@@ -717,12 +736,15 @@ export interface AgentRun {
   agent: Agent;
   model?: string;
   reasoningEffort?: string;
-  flags: Record<string, JsonValue>;
-  /** 只作为出处记录、不进指纹的 flag 键(来自 ExperimentDef.provenanceFlags);见该字段说明。 */
-  provenanceFlags?: readonly string[];
-  runs: number;
+  flags: globalThis.Record<string, JsonValue>;
+  attempts: number;
   earlyExit: boolean;
   sandbox?: SandboxOption;
+  sandboxReuse?: boolean;
+  /** 配置身份里的 judge 投影来源；apiKeyEnv 不进入哈希也不落盘。 */
+  judge?: JudgeConfig;
+  /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
+  configHash?: string;
   /** environments 查表的规划期缓存(只含声明了 environment 的 selected eval);每条只派生一次。 */
   resolvedSandboxes?: Map<string, SandboxOption>;
   timeoutMs?: number;
@@ -731,7 +753,7 @@ export interface AgentRun {
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
   description?: string;
   /** 报告归类标注(ExperimentDef.labels),原样进 ExperimentRunInfo.labels;不透传 ctx / t。 */
-  labels?: Record<string, string | number>;
+  labels?: globalThis.Record<string, string | number>;
   /** evals 过滤器的指纹(数组内容 / 函数体哈希),进 ExperimentRunInfo.evalFilterFingerprint。 */
   evalFilterFingerprint?: string;
   /**
@@ -765,6 +787,10 @@ export interface RunOptions {
    * 见 docs/feature/sandbox/architecture.md「留存(keep)与注册表」。
    */
   keepSandbox?: "failed" | "all";
+  /** --rerun 的本次调用携带口径。 */
+  rerun?: "failed" | "all";
+  /** --carry-ignoring-flag 的一次性迁移键。 */
+  carryIgnoringFlags?: readonly string[];
   /** 结果根目录(.niceeval;留存注册表 `.niceeval/sandboxes/` 挂在它下面)。省略 = cwd/.niceeval。 */
   niceevalRoot?: string;
   /**
@@ -801,6 +827,7 @@ export interface Attempt {
   /** agent+model+evalId,用于首过即停。 */
   key: string;
   fingerprint: string;
+  configHash?: string;
   /** 规划期按 eval 的 environment 查表派生的具体 spec；attempt 生命周期不再重新查表。 */
   sandboxSpec?: SandboxOption;
   /**
@@ -953,7 +980,7 @@ export interface FailureNotice extends FailureDetail {
  * 不解析 `message`(`message` 只是 human 展示用的一句话)。
  */
 /**
- * 止损闸落闸诊断的稳定词法(`--json` 的 `warning.code`、`snapshot.json` 的诊断 `code`,契约见
+ * 止损闸落闸诊断的稳定词法(`--json` 的 `warning.code`、`run.json` 的诊断 `code`,契约见
  * docs/feature/error-classification/architecture.md「止损执行体」)。emitter(run.ts)与两种
  * profile 的 renderer 共用这一个常量,谁都不在自己这边再写一遍字面量。
  */
@@ -970,7 +997,7 @@ export interface DiagnosticNotice {
   /** 相同 key 累计出现的次数,由 reducer 去重时递增。 */
   count: number;
   identity?: AttemptRef;
-  data?: Readonly<Record<string, JsonValue>>;
+  data?: Readonly<globalThis.Record<string, JsonValue>>;
 }
 
 /** 运行完整性结论,独立于 verdict 计数。CI 退出码不能只看 failed/errored ——
@@ -998,7 +1025,7 @@ export interface InvocationCompletion {
  * cost 累计、failure/diagnostic 去重都只在 reducer 里算一次;三种 profile 的 renderer 只读取
  * 这份状态,不各自维护第二份推导。
  *
- * `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
+ * `total = reused + running + elsewhere + queued + passed + failed + errored + unreadable`
  * (八项恒等式,见 docs/feature/experiments/cli.md「等待并发 run 的显示」)在处理完每一个事件
  * 之后都成立,是 reducer 的不变量:任何一次迁移都是「从一项减 x、往另一项加 x」,不存在两项
  * 同时计数或都不计数的中间态(见 reducer.test.ts 的表驱动用例,每一步都断言,不只在流程末尾
@@ -1023,7 +1050,7 @@ export interface RunFeedbackState {
   errored: number;
   /** 本次不产生 verdict 的了结:eval 自身 skip、首过即停省略的轮次、budget 未派发。
    *  它们不冒充 `passed`/`failed`;三者彼此的区别由结束结论与题目级 `eval` 事件给出。 */
-  skipped: number;
+  unreadable: number;
   /** attempt:early-exit 事件的累计次数(首过即停省略 + fail-fast 未派发;后者由 fail-fast
    *  diagnostic 的 count 单独区分,见 cli.ts 的 assembleRunCompletion)。 */
   earlyExitSkipped: number;
@@ -1084,7 +1111,7 @@ export interface RunFeedbackPlan {
  * 只影响 dashboard 当前帧、reducer 不为它保留历史的事件:新值使旧值失去意义,所以覆盖而不是
  * 追加(见 docs/feature/experiments/cli.md「什么动态更新,什么逐条追加」的判断标准)。
  * `attempt:early-exit` 同样折进这一组 —— 它不打印永久行,只把已知 verdict 的省略次数收进
- * `skipped`(见 reducer 实现)。
+ * `unreadable`(见 reducer 实现)。
  */
 export type AttemptLifecycleEvent =
   | { type: "attempt:queued"; at: number; identity: AttemptRef; who: string }
@@ -1155,7 +1182,7 @@ export type DurableFeedbackEvent =
        *  事实)不许伪造 identity——它们的 experimentId / evalId 走 `data` 的同名字段,
        *  `--json` 的 `warning` 事件两处都读、identity 优先。 */
       identity?: AttemptRef;
-      data?: Readonly<Record<string, JsonValue>>;
+      data?: Readonly<globalThis.Record<string, JsonValue>>;
     }
   /**
    * emitter 对每一个因 budget 到顶而不派发的 attempt 各发一次(与 `attempt:early-exit` 同构,

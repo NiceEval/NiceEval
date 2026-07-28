@@ -29,7 +29,7 @@ import { completeCoverage } from "../scoring/coverage.ts";
 import type { Agent, AgentContext, AgentTracing, EvidenceCoverage, InputResponse, JsonValue, SpanMapper, StreamEvent, TurnInput } from "../types.ts";
 
 // UI Message Stream 帧里没有 usage(协议本身不带 token 计数,见 docs/engineering/testing/e2e/README.md
-// 第 2 节);events/actions/messages/status 都直接来自完整归约的协议帧,和 fromAiSdk/aiSdkAgent
+// 第 2 节);events/actions/messages/status 都直接来自完整归约的协议帧,和 turnFromAiSdk/aiSdkAgent
 // 同等完整——官方 SDK 适配器应声明全通道 complete(docs/feature/adapters/architecture/evidence.md),
 // 这里唯一的例外是协议本身没有的 usage 通道,如实标 unavailable 而不是留成 unknown。
 const COVERAGE: EvidenceCoverage = Object.freeze({
@@ -214,9 +214,9 @@ export interface UiMessageStreamAgentOptions {
   /** 被测应用的 chat 端点(完整 URL,应用在哪部署就指哪);函数形式每轮解析。 */
   url: string | ((ctx: AgentContext) => string | Promise<string>);
   /** 附加请求头(鉴权等);`ctx.telemetry.headers`(traceparent)总会自动并入。 */
-  headers?: Record<string, string> | ((ctx: AgentContext) => Record<string, string>);
+  headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>);
   /** 除 `messages` 外并入请求体的字段,如 `(ctx) => ({ model: ctx.model })`(undefined 字段序列化时自动丢弃)。 */
-  body?: (ctx: AgentContext) => Record<string, JsonValue | undefined>;
+  body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
   /**
    * 拒绝审批时随 `approval-responded` 带出的理由。应用/SDK 会把它作为模型看到的工具结果
    * 文本 —— 写清楚「不要重试」能明显降低模型原样重发同一调用的概率(实测)。

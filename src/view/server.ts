@@ -5,19 +5,11 @@
 // (pageFailure: "embed")。位置参数 / --exp 收窄是管线输入,不是宿主语义——两宿主同义。
 
 import { createServer, type Server } from "node:http";
-import { loadViewScan, type ViewScanOptions } from "./data.ts";
-import { planSite, readSiteFile, renderStandaloneAttemptDocument, type SitePlan } from "./site.ts";
+import { watch, type FSWatcher } from "node:fs";
+import { relative, resolve, sep } from "node:path";
+import { type ViewScanOptions } from "./data.ts";
+import { planSite, readSiteFile, type SitePlan } from "./site.ts";
 import { formatThrown } from "../util.ts";
-import type { AttemptLocator } from "../results/locator.ts";
-
-const HTML_TYPE = "text/html; charset=utf-8";
-
-/** `attempt/<locator>.html` 站点路径 → 磁盘/清单键用的原始 locator(未编码,含字面 `@`;
- *  见 site.ts「站点管线」对编码边界的说明)。不是这个形状返回 undefined。 */
-function attemptLocatorFromSitePath(sitePath: string): AttemptLocator | undefined {
-  if (!sitePath.startsWith("attempt/") || !sitePath.endsWith(".html")) return undefined;
-  return sitePath.slice("attempt/".length, -".html".length) as AttemptLocator;
-}
 
 export interface ViewOptions {
   input?: string;
@@ -25,11 +17,41 @@ export interface ViewOptions {
   port?: number;
   /** 站点管线的组合语义(位置前缀 / --exp 收窄有效根,--report 换报告槽),透传给管线。 */
   scan?: ViewScanOptions;
+  /** 本地模式观察的项目根；静态导出忽略。 */
+  watchRoot?: string;
 }
 
 export interface ViewServer {
   url: string;
   close(): Promise<void>;
+}
+
+/** 去抖且单飞：构建期间的任意事件只请求结束后再跑一次。 */
+export class ViewRebuildScheduler {
+  private timer: NodeJS.Timeout | undefined;
+  private running = false;
+  private pending = false;
+  constructor(private readonly rebuild: () => Promise<void>, private readonly delayMs = 80) {}
+  notify(): void {
+    if (this.running) { this.pending = true; return; }
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.run(), this.delayMs);
+  }
+  private async run(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    try { await this.rebuild(); } finally {
+      this.running = false;
+      if (this.pending) { this.pending = false; this.notify(); }
+    }
+  }
+  close(): void { clearTimeout(this.timer); }
+}
+
+function isWatchedChange(root: string, filename: string | null): boolean {
+  if (!filename) return true;
+  const path = filename.toString();
+  return !path.includes(`${sep}node_modules${sep}`) && !/(?:~$|\.swp$|\.tmp$|\.temp$|^\.#)/.test(path);
 }
 
 export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServer> {
@@ -39,14 +61,40 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
 
   // 产物重建的单飞通道:首页请求整份重建;并发请求共享同一次构建,不重复扫描。
   let current: Promise<SitePlan>;
-  const rebuild = (): Promise<SitePlan> => {
-    current = planSite(input, scanOptions);
-    return current;
+  const reloadClients = new Set<import("node:http").ServerResponse>();
+  let lastError: string | undefined;
+  const rebuild = async (): Promise<SitePlan> => {
+    try {
+      const next = await planSite(input, scanOptions);
+      current = Promise.resolve(next);
+      lastError = undefined;
+      for (const client of reloadClients) client.write("event: reload\ndata: ok\n\n");
+      return next;
+    } catch (error) {
+      lastError = formatThrown(error);
+      process.stderr.write(`view rebuild failed: ${lastError}\n`);
+      for (const client of reloadClients) client.write(`event: error\ndata: ${JSON.stringify(lastError)}\n\n`);
+      throw error;
+    }
   };
 
-  // 启动前先构建一遍:--snapshot 指向读不了的快照、--report 装载失败、前缀匹配不到,
+  // 启动前先构建一遍:--run 指向读不了的快照、--report 装载失败、前缀匹配不到,
   // 都要在起 server 前就失败并给出提示。
-  await rebuild();
+  try { await rebuild(); } catch (error) { throw error; }
+
+  const scheduler = new ViewRebuildScheduler(async () => {
+    try { await rebuild(); } catch { /* keep serving the preceding SitePlan */ }
+  });
+  const watchRoots = [...new Set([resolve(input ?? ".niceeval"), resolve(opts.watchRoot ?? process.cwd())])];
+  const watchers: FSWatcher[] = watchRoots.map((root) => {
+    try {
+      return watch(root, { recursive: true }, (_event, filename) => {
+        if (isWatchedChange(root, filename)) scheduler.notify();
+      });
+    } catch {
+      return watch(root, (_event, filename) => { if (isWatchedChange(root, filename)) scheduler.notify(); });
+    }
+  });
 
   const server = createServer(async (req, res) => {
     try {
@@ -56,6 +104,13 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         res.end("ok");
         return;
       }
+      if (url.pathname === "/__niceeval_reload") {
+        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
+        res.write(lastError ? `event: error\ndata: ${JSON.stringify(lastError)}\n\n` : "event: ready\ndata: ok\n\n");
+        reloadClients.add(res);
+        req.on("close", () => reloadClients.delete(res));
+        return;
+      }
 
       // 站点相对路径:`/` 即 index.html;兼容旧的 /artifact?p= query 形式
       // (0.2.x 前端烘焙的 HTML 可能还开着)。
@@ -63,7 +118,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       if (url.pathname === "/") {
         // 每次打开首页整份重建,永远是盘上最新数据;--report 的报告文件变更同样在
         // 下次请求整页重算(装载走 mtime cache-busting,见 report/load.ts)。
-        await rebuild();
+        await rebuild().catch(() => current);
         sitePath = "index.html";
       } else if (url.pathname === "/artifact") {
         sitePath = `artifact/${url.searchParams.get("p") ?? ""}`;
@@ -76,25 +131,10 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       if (!file && sitePath.startsWith("artifact/")) {
         // 未命中最近一次构建的产物清单:管线重建一次再查——server 运行期间
         // 新落盘的证据(新快照、补跑)不需要重启。
-        plan = await rebuild();
+        plan = await rebuild().catch(() => current);
         file = plan.files.get(sitePath);
       }
       if (!file) {
-        // 本地宿主的 attempt 详情路由越过收窄,对完整结果根解析(docs/engineering/testing/unit/
-        // reports/cases.md 第 198/220 行;与 `show @<locator>` 同一套「各自结果根语义寻址」,
-        // 不是 SitePlan 清单之外的旁路取数——这条路由本来就不该受 --exp/eval 前缀收窄限制,
-        // 与「server 不提供清单之外的路径」的奇偶保证不冲突,那条保证只约束收窄之内的路径)。
-        const locator = attemptLocatorFromSitePath(sitePath);
-        if (locator !== undefined) {
-          const fullScan = await loadViewScan(input, { ...scanOptions, experiment: undefined, patterns: [] }).catch(() => undefined);
-          const handle = fullScan?.attemptPages?.locators.get(locator);
-          if (fullScan && handle) {
-            const body = await renderStandaloneAttemptDocument(fullScan, locator, handle);
-            res.writeHead(200, { "content-type": HTML_TYPE, "cache-control": "no-store" });
-            res.end(body);
-            return;
-          }
-        }
         res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
         res.end("not found");
         return;
@@ -123,6 +163,9 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
     url: `http://127.0.0.1:${port}/`,
     close: () =>
       new Promise((resolveClose, reject) => {
+        scheduler.close();
+        watchers.forEach((watcher) => watcher.close());
+        reloadClients.forEach((client) => client.end());
         server.close((err) => (err ? reject(err) : resolveClose()));
       }),
   };

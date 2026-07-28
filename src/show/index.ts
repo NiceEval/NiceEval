@@ -1,8 +1,8 @@
 // niceeval show —— 终端宿主(行为规范:docs/feature/reports/show.md 与分篇;
-// 宿主组合语义:docs/feature/reports/architecture.md「Scope 是计算入口」)。
+// 宿主组合语义:docs/feature/reports/architecture.md「Sample 是计算入口」)。
 //
 // 一次调用 = 范围 × 切片 × 形态(docs/feature/reports/show.md)。范围:eval id 前缀位置参数、
-// `@<locator>`(单元素范围)、`--exp`(可重复,>=2 进入对照语义)、`--results`、`--fresh`。
+// `@<locator>`(单元素范围)、`--exp`(可重复,>=2 进入对照语义)、`--record`、`--fresh`。
 // 切片(每个切片解析成一次报告组件装配,见 architecture.md「show 的切片是组件选择」):
 //   无证据 flag 且 --exp < 2   默认报告(内建报告的 text 面;裸 show / eval 前缀 / 单个 --exp 都落在这里)
 //   无证据 flag 且 --exp >= 2  对照矩阵(DeltaTable,接线点见 renderCompareSlice)
@@ -11,22 +11,22 @@
 //     接受任意范围,范围含多个 attempt 时按 experimentId、evalId、attempt 序逐 attempt 分节
 //     (renderEvidenceSections),单 attempt 范围只是省掉分节
 //   --history        执行时间轴(逐 experimentId + evalId 分节),与 --report 互斥
-//   --report <文件>  整槽换成用户报告;位置前缀 / --results / --exp 先收窄 Scope 再注入
+//   --report <文件>  整槽换成用户报告;位置前缀 / --record / --exp 先收窄 Sample 再注入
 //   --page <id>      多页报告选页;未命中列出可用页 id 按用法错误退出
 //
-// 数据全部走 niceeval/results 的读取面(openResults + 合成 Scope + loadAttemptEvidence),
+// 数据全部走 niceeval/record 的读取面(openRecord + 合成 Sample + loadAttemptEvidence),
 // 不自己爬目录;证据可用性只由 loadAttemptEvidence 在单 Attempt 页面计算。
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
-  openResults,
+  openRecord,
   resolveLocator,
   loadAttemptEvidence,
   ATTEMPT_LOCATOR_PREFIX,
   LocatorNotFoundError,
   MalformedLocatorError,
-} from "../results/index.ts";
+} from "../record/index.ts";
 // ReportLoadError must come from the SAME module instance the report runtime is built
 // against — `instanceof` is keyed by declaration site, so a raw src copy and the compiled
 // dist copy of "the same" class are two different types. The package-owned report runtime
@@ -34,7 +34,7 @@ import {
 // loading/rendering goes through ../report/runtime/host.ts (the shared contact surface).
 import { ReportLoadError } from "../../dist/report/runtime/load.js";
 import { detectLocale, t } from "../i18n/index.ts";
-import { selectCurrentResults, filterExperiments } from "../results/select.ts";
+import { currentSample, filterExperiments } from "../sample/index.ts";
 import { evalPrefixPredicate, matchExperimentSelector } from "../shared/aggregate.ts";
 import { panelCapabilityOf } from "../report/model/panel.ts";
 import { formatMetricValue, formatUSD, verdictMark } from "../report/model/format.ts";
@@ -60,7 +60,8 @@ import {
   timingText,
   skippedRunsText,
 } from "./render.ts";
-import type { AttemptEvidence, AttemptHandle, Results, Scope } from "../results/index.ts";
+import type { AttemptEvidence, AttemptHandle, Record, Sample } from "../record/index.ts";
+import type { ReportDefinition } from "../report/runtime/host.ts";
 import type { DeltaData, StabilityMatrixData, UsageTableData } from "../report/model/types.ts";
 
 export interface ShowFlags {
@@ -93,9 +94,10 @@ export interface ShowFlags {
    * (docs/feature/reports/show.md「选择结果范围」)。
    */
   experiment?: string[];
-  /** --results:结果根目录(某次快照根或 `copySnapshots` 产物)。 */
-  results?: string;
+  /** --record:记录根目录(某次 Run 根或 `publish` 产物)。 */
+  record?: string;
   report?: string;
+  configReport?: ReportDefinition;
   /** --page:多页报告选页;未命中按用法错误退出并列出可用页 id。 */
   page?: string;
   /** --fresh:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行)。 */
@@ -318,7 +320,7 @@ function compareCoverageText(data: DeltaData): string {
 /**
  * 缺省切片选择表第二行(`--exp` 出现两次以上 → 对照矩阵):`DeltaTable` 在 show 上的零配置
  * 装配(docs/feature/reports/show/compare.md)。`--exp` 出现顺序即 `conditions`(首个是
- * 基准),已解析成实际 experiment id;数据源是调用方已经按 `selection`(现刻水位 Scope)
+ * 基准),已解析成实际 experiment id;数据源是调用方已经按 `selection`(现刻水位 Sample)
  * narrow 好的范围,不重复传 `evals`(eval id 前缀已经收进 `selection` 里)。
  *
  * 头两行(条件数、配对身份、基准、共同/仅某条件覆盖)是 CLI 呈现的行为,不是组件内容——
@@ -328,12 +330,15 @@ function compareCoverageText(data: DeltaData): string {
  */
 async function renderCompareSlice(
   cwd: string,
-  results: Results,
-  selection: Scope,
+  results: Record,
+  selection: Sample,
   conditions: readonly [string, string, ...string[]],
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
-  const { DeltaTable, deltaTableData } = await import("../../dist/report/index.js");
+  const [{ DeltaTable }, { deltaTableData }] = await Promise.all([
+    import("../../dist/report/components/metric-views/index.js"),
+    import("../../dist/report/components/metric-views/compute.js"),
+  ]);
   const data = await deltaTableData(selection, { by: "experiment", conditions });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, selection);
@@ -349,8 +354,8 @@ async function renderCompareSlice(
 
 /**
  * `--stats`:`StabilityMatrix` 在 show 上的零配置装配(docs/feature/reports/show/stats.md)。
- * 证据面与 `--history` 相同——全部历史执行,不设可比性门槛,所以传原始 `Snapshot[]`(不是
- * `current()` 现刻水位 Scope);渲染管线要求的 `ctx.scope`/`ctx.report` 只是占位上下文,
+ * 证据面与 `--history` 相同——全部历史执行,不设可比性门槛,所以传原始 `Run[]`(不是
+ * `current()` 现刻水位 Sample);渲染管线要求的 `ctx.scope`/`ctx.report` 只是占位上下文,
  * 实际矩阵数据已经由 `data` 形态算好,不再消费它们(与 compare 分支同一条纪律)。
  *
  * 头行(eval × experiment 计数、证据面说明)是 CLI 呈现的行为,不是组件内容——表格本体复用
@@ -358,21 +363,24 @@ async function renderCompareSlice(
  */
 async function renderStatsSlice(
   cwd: string,
-  results: Results,
+  results: Record,
   experimentFilter: readonly string[] | undefined,
   patterns: readonly string[],
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
   const experiments = filterExperiments(results.experiments, experimentFilter as string[] | undefined);
-  const snapshots = experiments.flatMap((exp) => exp.snapshots);
-  const { StabilityMatrix, stabilityMatrixData } = await import("../../dist/report/index.js");
-  const data = await stabilityMatrixData(snapshots, {
+  const runs = experiments.flatMap((exp) => exp.runs);
+  const [{ StabilityMatrix }, { stabilityMatrixData }] = await Promise.all([
+    import("../../dist/report/components/metric-views/index.js"),
+    import("../../dist/report/components/metric-views/compute.js"),
+  ]);
+  const data = await stabilityMatrixData(runs, {
     by: "experiment",
     ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
   });
-  // 只给渲染管线占位用的 Scope——StabilityMatrix 走 data 形态,不重新消费它;单独调用
-  // selectCurrentResults 避免借用「现刻水位」口径当稳定性矩阵的真实数据源(上面已用 snapshots)。
-  const scope = selectCurrentResults(results, { experiment: experimentFilter as string[] | undefined, patterns: [...patterns] });
+  // 只给渲染管线占位用的 Sample——StabilityMatrix 走 data 形态,不重新消费它;单独调用
+  // currentSample 避免借用「现刻水位」口径当稳定性矩阵的真实数据源(上面已用 runs)。
+  const scope = currentSample(results, { experiments: experimentFilter as string[] | undefined, evals: [...patterns] });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, scope);
   const page: ReportPage = { id: "stats", title: "Stability", content: { type: StabilityMatrix, props: { data } } };
@@ -542,10 +550,10 @@ function usageMatrixCellText(cell: UsageMatrixCell, historical: boolean): string
  * 条件整组落 `—`。
  */
 async function renderUsageCompareSlice(
-  selection: Scope,
+  selection: Sample,
   conditions: readonly [string, string, ...string[]],
 ): Promise<string> {
-  const { deltaTableData } = await import("../../dist/report/index.js");
+  const { deltaTableData } = await import("../../dist/report/components/metric-views/compute.js");
   const data: DeltaData = await deltaTableData(selection, { by: "experiment", conditions });
   const head = `usage · ${conditions.length} conditions · paired by eval id · baseline ${conditions[0]}`;
   if (data.rows.length === 0) return `${head} · no attempts matched this range`;
@@ -586,7 +594,7 @@ async function renderUsageCompareSlice(
  * 不在时追加到页尾),保持 AttemptDetail 声明顺序(Timeline → Diagnostics → UsageTable →
  * Conversation → Trace → Diff)里 facts 应处的相对位置。
  */
-function insertFactsLine(pageText: string, facts: Record<string, string | number | boolean> | undefined): string {
+function insertFactsLine(pageText: string, facts: globalThis.Record<string, string | number | boolean> | undefined): string {
   if (!facts) return pageText;
   const entries = Object.entries(facts);
   if (entries.length === 0) return pageText;
@@ -747,21 +755,21 @@ async function show(
     throw new ShowError(t("cli.show.jsonMultiEvidenceConflict"));
   }
 
-  const root = flags.results !== undefined ? resolve(cwd, flags.results) : join(cwd, ".niceeval");
-  if (flags.results !== undefined && !existsSync(root)) {
+  const root = flags.record !== undefined ? resolve(cwd, flags.record) : join(cwd, ".niceeval");
+  if (flags.record !== undefined && !existsSync(root)) {
     throw new ShowError(t("cli.show.runDirMissing", { dir: root }));
   }
 
-  const results = await openResults(root);
+  const results = await openRecord(root);
   if (results.experiments.length === 0) {
-    const skipped = results.skipped.length > 0 ? `\n${skippedRunsText(results.skipped, root, cwd)}\n` : "";
-    throw new ShowError(t("cli.show.noResults", { root }) + skipped);
+    const unreadable = results.unreadable.length > 0 ? `\n${skippedRunsText(results.unreadable, root, cwd)}\n` : "";
+    throw new ShowError(t("cli.show.noResults", { root }) + unreadable);
   }
 
   // `@<locator>` 位置参数:身份直达单个 attempt,与 eval id 前缀匹配完全不同的语义
   // (`@` 打头对 eval id 天然无歧义,见 locator.ts),必须在下面的前缀匹配逻辑之前分流掉,
   // 不然 "@1x7f3q" 会被当成一个谁都匹配不到的 eval id 前缀,报「no eval match」这种文不对题的
-  // 错误。(mutex 校验已在 openResults 之前用 locatorArgForMutex 做过,这里复用同一个值。)
+  // 错误。(mutex 校验已在 openRecord 之前用 locatorArgForMutex 做过,这里复用同一个值。)
   const locatorArg = locatorArgForMutex;
   if (locatorArg !== undefined) {
     if (patterns.length !== 1) {
@@ -776,6 +784,15 @@ async function show(
       if (e instanceof MalformedLocatorError) throw new ShowError(t("cli.show.locatorMalformed", { message: e.message }));
       if (e instanceof LocatorNotFoundError) throw new ShowError(t("cli.show.locatorNotFound", { message: e.message }));
       throw e;
+    }
+    // locator 只能命中已经由 --exp / --fresh 构造出的有效根；不能因为它是直接寻址
+    // 就绕过收窄回扫完整记录根。历史 attempt 仍在有效根的 attempts 集中，因此可达。
+    const effectiveAttempts = currentSample(results, {
+      experiments: flags.experiment,
+      fresh: flags.fresh,
+    }).attempts;
+    if (!effectiveAttempts.some((candidate) => candidate.locator === attempt.locator)) {
+      throw new ShowError(t("cli.show.locatorNotFound", { message: `Locator ${locatorArg} is outside the selected record scope.` }));
     }
     if (flags.usage) {
       if (flags.json) {
@@ -856,7 +873,7 @@ async function show(
     // docs/feature/reports/components/attempt-detail/README.md「在 show 与 view 怎样渲染」)。不带 --report
     // 时装载内建 standard,其中就带这张 page;--report 指向的自定义报告没有声明 attempt-input page
     // 时报完整用户反馈,不回退到内建详情(三条解决路径都在错误文案里给出)。
-    const report = await loadHostReport(cwd, flags.report);
+    const report = await loadHostReport(cwd, flags.report, flags.configReport);
     const attemptPage = report.pages.find((p) => p.input === "attempt");
     if (attemptPage === undefined) {
       const sourceLabel = flags.report ?? "the built-in report";
@@ -867,7 +884,7 @@ async function show(
       );
     }
     const locale = detectLocale();
-    const selection = selectCurrentResults(results, { fresh: flags.fresh });
+    const selection = currentSample(results, { fresh: flags.fresh });
     const meta = await buildHostReportMeta(report, selection);
     const text = await renderHostPageText(
       attemptPage,
@@ -904,9 +921,9 @@ async function show(
   if (flags.stats) {
     if (flags.json) {
       const experiments = filterExperiments(results.experiments, experimentFilter);
-      const snapshots = experiments.flatMap((exp) => exp.snapshots);
-      const { stabilityMatrixData } = await import("../../dist/report/index.js");
-      const data = await stabilityMatrixData(snapshots, {
+      const runs = experiments.flatMap((exp) => exp.runs);
+      const { stabilityMatrixData } = await import("../../dist/report/components/metric-views/compute.js");
+      const data = await stabilityMatrixData(runs, {
         by: "experiment",
         ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
       });
@@ -931,15 +948,15 @@ async function show(
     return;
   }
 
-  const selection = selectCurrentResults(results, { experiment: experimentFilter, patterns, fresh: flags.fresh });
+  const selection = currentSample(results, { experiments: experimentFilter, evals: patterns, fresh: flags.fresh });
   const matchedEvalIds = [...new Set(selection.attempts.map((a) => a.evalId))].sort();
 
   if (patterns.length > 0 && matchedEvalIds.length === 0) {
     const known = [
-      ...new Set(filterExperiments(results.experiments, experimentFilter).flatMap((e) => e.evalIds)),
+      ...new Set(filterExperiments(results.experiments, experimentFilter).flatMap((e) => e.knownEvalIds)),
     ].sort();
     throw new ShowError(
-      t("cli.show.noEvalMatch", { patterns: patterns.join(", "), evals: known.join(", ") || "(none)" }),
+      t("cli.show.noEvalMatch", { pattern: patterns.join(", "), evals: known.join(", ") || "(none)" }),
     );
   }
 
@@ -993,21 +1010,21 @@ async function show(
   }
 
   // --history:执行时间轴(docs/feature/reports/show.md「--history:一个 eval 的执行时间轴」)。
-  // 对 Scope 中匹配的每个 experimentId + evalId 分节,逐 attempt 而非逐快照;时间轴只列
+  // 对 Sample 中匹配的每个 experimentId + evalId 分节,逐 attempt 而非逐快照;时间轴只列
   // 真实执行 —— resume 携带的复印件按 attempt 身份键去重后不占行。与重复 `--exp` 正交且不
   // 变形:时间轴本来就按 experimentId 分节,条件只是收窄节集合。
   if (flags.history) {
     const experiments = filterExperiments(results.experiments, experimentFilter);
-    // eval 位置参数与 Scope 选择用同一个前缀谓词(单点在 shared/aggregate.ts),不另立口径。
+    // eval 位置参数与 Sample 选择用同一个前缀谓词(单点在 shared/aggregate.ts),不另立口径。
     const matchesPattern = patterns.length > 0 ? evalPrefixPredicate(patterns) : () => true;
     if (flags.json) {
-      // `history` 不进组件模型,直接投影 Results evidence(docs/feature/reports/show/json.md
+      // `history` 不进组件模型,直接投影 Record evidence(docs/feature/reports/show/json.md
       // 「data:按 view 找组件声明」)——每节携带 `AttemptJson`(完整落盘字段 + 归属身份),
       // 不是 text 面的单行摘要。
       const sections: { experimentId: string; evalId: string; attempts: unknown[] }[] = [];
       for (const exp of experiments) {
-        const evalIds = [...exp.evalIds].filter(matchesPattern).sort();
-        for (const evalId of evalIds) {
+        const knownEvalIds = [...exp.knownEvalIds].filter(matchesPattern).sort();
+        for (const evalId of knownEvalIds) {
           const handles = attemptHistoryHandles(exp, evalId);
           if (handles.length === 0) continue;
           sections.push({ experimentId: exp.id, evalId, attempts: handles.map(attemptJsonOf) });
@@ -1026,8 +1043,8 @@ async function show(
     }
     const blocks: string[] = [];
     for (const exp of experiments) {
-      const evalIds = [...exp.evalIds].filter(matchesPattern).sort();
-      for (const evalId of evalIds) {
+      const knownEvalIds = [...exp.knownEvalIds].filter(matchesPattern).sort();
+      for (const evalId of knownEvalIds) {
         const rows = attemptHistory(exp, evalId);
         if (rows.length === 0) continue;
         blocks.push(attemptHistoryText({ experimentId: exp.id, evalId, rows }));
@@ -1043,7 +1060,7 @@ async function show(
   if (flags.report === undefined && expSelectors.length >= 2) {
     const conditions = resolveCompareConditions(experimentIds, expSelectors);
     if (flags.json) {
-      const { deltaTableData } = await import("../../dist/report/index.js");
+      const { deltaTableData } = await import("../../dist/report/components/metric-views/compute.js");
       const data = await deltaTableData(selection, { by: "experiment", conditions });
       io.out(
         renderShowJson({
@@ -1070,8 +1087,11 @@ async function show(
     // 缺省切片(leaderboard):内建报告首页的 `ExperimentComparison`/`ExperimentList` 对应的两个
     // 计算函数(docs/feature/reports/show/json.md「data:按 view 找组件声明」)。`--report` 已经
     // 与 `--json` 互斥,不需要装载报告就能直接算数据。
-    const { experimentListData, scopeSummaryData } = await import("../../dist/report/index.js");
-    const data = { experiments: await experimentListData(selection), summary: await scopeSummaryData(selection) };
+    const [{ experimentListData }, { sampleSummary }] = await Promise.all([
+      import("../../dist/report/components/entity-lists/compute.js"),
+      import("../../dist/report/components/summaries/compute.js"),
+    ]);
+    const data = { experiments: await experimentListData(selection), summary: await sampleSummary(selection) };
     io.out(
       renderShowJson({
         format: "niceeval.show",
@@ -1088,20 +1108,20 @@ async function show(
   // 的默认导出,--report 整槽替换——同一条
   // 「装载 → 规范化(外壳 + 非空页列表)→ 逐页渲染」管线(docs/feature/reports/library/shell.md)。
   // locale = CLI 界面语言(config.locale,回落到 LC_* / LANG):报告 chrome 文案跟随它。
-  const report = await loadHostReport(cwd, flags.report);
+  const report = await loadHostReport(cwd, flags.report, flags.configReport);
   const locale = detectLocale();
   const commandContext: HostCommandContext = {
     patterns,
-    ...(flags.results !== undefined ? { results: flags.results } : {}),
+    ...(flags.record !== undefined ? { record: flags.record } : {}),
     ...(flags.report !== undefined ? { report: flags.report } : {}),
-    ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
+    ...(flags.experiment !== undefined ? { experiments: flags.experiment } : {}),
   };
   const sourceLabel = flags.report ?? "the built-in report";
 
   // 初始页 = --page 指定的页,缺省第一张可导航页(docs/feature/reports/show/reports.md
   // Case 2);本地宿主只 resolve 被打开的这一页——其余页只留 id / title,不触发取数(见
   // shell.md「行为约束」「本地宿主只 resolve 被打开的页」)。navigation:false 的页(参数化
-  // attempt 详情)不参与缺省选择,也不能被 --page 直接打开——没有 locator 不能拿 Scope 强行
+  // attempt 详情)不参与缺省选择,也不能被 --page 直接打开——没有 locator 不能拿 Sample 强行
   // resolve(architecture.md「Attempt 详情是一张参数化 page」)。
   let page = report.pages.find((p) => p.navigation !== false) ?? report.pages[0];
   if (flags.page !== undefined) {

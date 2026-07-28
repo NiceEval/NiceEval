@@ -4,7 +4,7 @@
 
 import type { ReactElement } from "react";
 import type { MetricCell } from "../model/types.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, resolveLocalizedText, type ReportLocale } from "../model/locale.ts";
 
 export function MetricCellView({

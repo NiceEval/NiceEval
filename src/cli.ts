@@ -82,12 +82,14 @@ function exitOnViewUserError(e: unknown): never {
 interface Flags {
   agent?: string;
   model?: string;
-  runs?: number;
+  attempts?: number;
   maxConcurrency?: number;
   timeout?: number;
   earlyExit?: boolean;
   dry: boolean;
   force: boolean;
+  rerun?: "failed" | "all";
+  carryIgnoringFlags?: string[];
   strict: boolean;
   budget?: number;
   tag?: string;
@@ -120,10 +122,11 @@ interface Flags {
   stats: boolean;
   /** `show` / `view` 命令专用:`--exp` 可重复出现;每次出现是一个数组元素,顺序即用户输入顺序。 */
   experiment?: string[];
-  results?: string;
-  snapshot?: string;
+  record?: string;
+  run?: string;
   report?: string;
   page?: string;
+  theme?: string;
   fresh: boolean;
   /** `sandbox list` 专用:核对强杀路径留下的无主实例。 */
   orphans: boolean;
@@ -143,7 +146,7 @@ const FLAG_OPTIONS = {
   /** experiment 运行不支持该 flag。要换模型,请新增或复制一个 experiment 文件并修改 `model`。 */
   model: { type: "string" },
   /** 每个 eval 运行多少次,常用于 pass@N。 */
-  runs: { type: "string" },
+  attempts: { type: "string" },
   /** 设置同时运行的 eval 数量。 */
   "max-concurrency": { type: "string" },
   /** 单个 attempt 的超时时间,单位毫秒。 */
@@ -197,12 +200,14 @@ const FLAG_OPTIONS = {
   stats: { type: "boolean" },
   /** `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 */
   exp: { type: "string", multiple: true },
-  /** `show` / `view` / `sandbox enter|list|stop` 共用:结果根目录(`.niceeval` 之外的另一个根,如 `copySnapshots` 产出的发布根)。 */
-  results: { type: "string" },
-  /** `view` 命令专用:只打开这一份快照文件(`snapshot.json`);文件不可读时命令失败(扫描模式只跳过)。 */
-  snapshot: { type: "string" },
+  /** `show` / `view` / `sandbox enter|list|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 */
+  record: { type: "string" },
+  /** `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 */
+  run: { type: "string" },
   /** `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 */
   report: { type: "string" },
+  /** `view` 命令专用:内建主题名或显式主题文件路径。 */
+  theme: { type: "string" },
   /** `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 */
   page: { type: "string" },
   /** `show` / `view` 命令专用:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);被排除的题按覆盖事实转为覆盖占位行,不静默消失。 */
@@ -213,6 +218,10 @@ const FLAG_OPTIONS = {
   dry: { type: "boolean" },
   /** 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 */
   force: { type: "boolean" },
+  /** `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 */
+  rerun: { type: "boolean" },
+  /** `exp` 命令专用:一次性忽略已从 flags 迁走的键,可重复。 */
+  "carry-ignoring-flag": { type: "string", multiple: true },
   /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
   strict: { type: "boolean" },
   /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`runs` 默认跑满、测完整通过率)。 */
@@ -249,6 +258,22 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
   // --timing[=summary|full] 预扫:node:util 的单个 option 不支持 boolean|string 联合，
   // 所以 mode 在严格 parseArgs 前提取，再把两种形式统一成布尔 --timing。
   let timingMode: "summary" | "full" | undefined;
+  let rerunMode: "failed" | "all" | undefined;
+  // boolean|string 联合 flag 的空格写法先归一：--rerun all → --rerun=all。
+  {
+    const normalized: string[] = [];
+    for (let index = 0; index < argv.length; index += 1) {
+      const arg = argv[index]!;
+      const next = argv[index + 1];
+      if (arg === "--rerun" && (next === "failed" || next === "all")) {
+        normalized.push(`--rerun=${next}`);
+        index += 1;
+      } else {
+        normalized.push(arg);
+      }
+    }
+    argv = normalized;
+  }
   argv = argv.map((arg) => {
     if (arg.startsWith("--diff=")) {
       const path = arg.slice("--diff=".length);
@@ -273,6 +298,15 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
       timingMode = mode;
       return "--timing";
     }
+    if (arg.startsWith("--rerun=")) {
+      const mode = arg.slice("--rerun=".length);
+      if (mode !== "failed" && mode !== "all") {
+        process.stderr.write(`--rerun only accepts "failed" (default) or "all", got "${mode}".\n`);
+        process.exit(1);
+      }
+      rerunMode = mode;
+      return "--rerun";
+    }
     // `--output` 整个删除(见 docs/feature/experiments/cli.md 与 memory/exp-output-two-forms-ruling.md):
     // beta 不留别名,任何取值(裸 flag 或 `--output=value`)都按用法错误拒绝,不静默吞掉、也不
     // 落到 node:util parseArgs 的通用「unknown option」文案——给出专门的 error:/fix: 两行,
@@ -284,11 +318,11 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     return arg;
   });
 
-  let values: Record<string, string | boolean | undefined>;
+  let values: globalThis.Record<string, string | boolean | undefined>;
   let rawPositionals: string[];
   try {
     const parsed = nodeParseArgs({ args: argv, options: FLAG_OPTIONS, allowPositionals: true, strict: true });
-    values = parsed.values as Record<string, string | boolean | undefined>;
+    values = parsed.values as globalThis.Record<string, string | boolean | undefined>;
     rawPositionals = parsed.positionals;
   } catch (e) {
     process.stderr.write(t("cli.flag.parseError", { message: e instanceof Error ? e.message : String(e) }));
@@ -307,7 +341,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
   const flags: Flags = {
     agent: values.agent as string | undefined,
     model: values.model as string | undefined,
-    runs: numberFlag("runs", values.runs as string | undefined),
+    attempts: numberFlag("attempts", values.attempts as string | undefined),
     maxConcurrency: numberFlag("max-concurrency", values["max-concurrency"] as string | undefined),
     timeout: numberFlag("timeout", values.timeout as string | undefined),
     budget: numberFlag("budget", values.budget as string | undefined),
@@ -318,6 +352,8 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     port: numberFlag("port", values.port as string | undefined),
     dry: values.dry === true,
     force: values.force === true,
+    rerun: values.rerun === true ? (rerunMode ?? "failed") : undefined,
+    carryIgnoringFlags: values["carry-ignoring-flag"] as string[] | undefined,
     strict: values.strict === true,
     earlyExit: values["no-early-exit"] === true ? false : values["early-exit"] === true ? true : undefined,
     open: values["no-open"] === true ? false : values.open === true ? true : undefined,
@@ -339,10 +375,11 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     usage: values.usage === true,
     stats: values.stats === true,
     experiment: values.exp as string[] | undefined,
-    results: values.results as string | undefined,
-    snapshot: values.snapshot as string | undefined,
+    record: values.record as string | undefined,
+    run: values.run as string | undefined,
     report: values.report as string | undefined,
     page: values.page as string | undefined,
+    theme: values.theme as string | undefined,
     fresh: values.fresh === true,
     orphans: values.orphans === true,
     teardown: values.teardown === true,
@@ -353,8 +390,8 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
 /**
  * exp 只接受两类输入:位置参数选「跑哪些 eval」+ 调度/输出/机器出口 flag 选「对着哪个 agent、
  * 怎么跑」。show / view 专属的证据切面(`--source`/`--execution`/`--diff`)、时间轴(`--history`)、
- * Scope 收窄(`--exp`/`--results`)、报告装载(`--report`/`--page`)、查看器
- * (`--snapshot`/`--out`/`--port`/`--open`)不能被 exp 静默忽略(见 docs/feature/experiments/
+ * Sample 收窄(`--exp`/`--record`)、报告装载(`--report`/`--page`)、查看器
+ * (`--run`/`--out`/`--port`/`--open`)不能被 exp 静默忽略(见 docs/feature/experiments/
  * cli.md「用法错误」)。返回第一个被误用的 flag 及其归属命令(用于报错),没有误用返回 undefined。
  */
 function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | undefined {
@@ -371,11 +408,12 @@ function firstViewerOnlyFlag(flags: Flags): { flag: string; command: string } | 
   if (flags.usage) return { flag: "--usage", command: SHOW };
   if (flags.stats) return { flag: "--stats", command: SHOW };
   if (flags.experiment !== undefined) return { flag: "--exp", command: BOTH };
-  if (flags.results !== undefined) return { flag: "--results", command: BOTH };
+  if (flags.record !== undefined) return { flag: "--record", command: BOTH };
   if (flags.report !== undefined) return { flag: "--report", command: BOTH };
+  if (flags.theme !== undefined) return { flag: "--theme", command: VIEW };
   if (flags.page !== undefined) return { flag: "--page", command: BOTH };
   if (flags.fresh) return { flag: "--fresh", command: BOTH };
-  if (flags.snapshot !== undefined) return { flag: "--snapshot", command: VIEW };
+  if (flags.run !== undefined) return { flag: "--run", command: VIEW };
   if (flags.out !== undefined) return { flag: "--out", command: VIEW };
   if (flags.port !== undefined) return { flag: "--port", command: VIEW };
   if (flags.open !== undefined) return { flag: "--open", command: VIEW };
@@ -442,8 +480,8 @@ const AGENT_RULES_CONTENT = [
   "the bundled Chinese docs are the authoritative version matching this installation.",
   "After a run, drill into failures with `niceeval show` — pick an `@<locator>` from the",
   "compact index it prints, then `niceeval show @<locator>` for a compact overview, or add",
-  "`--source` / `--execution` / `--diff` for evidence; the snapshot directories the CLI prints",
-  "are the structured source of truth: `snapshot.json` holds the run's metadata and each",
+  "`--source` / `--execution` / `--diff` for evidence; the run directories the CLI prints",
+  "are the structured source of truth: `run.json` holds the run's metadata and each",
   "`<evalId>/a<attempt>/result.json` holds that attempt's verdict and assertions, next to",
   "its artifact files (`events.json` / `trace.json` / `diff.json`).",
 ].join("\n");
@@ -495,7 +533,7 @@ async function initProject(cwd: string): Promise<void> {
         "export default defineConfig({",
         "  // Add experiments/ with defineExperiment(...) to run evals.",
         "  //",
-        "  // TODO(judge): semantic assertions (t.judge.*) are silently skipped until a judge",
+        "  // TODO(judge): semantic assertions (t.judge.*) are silently unreadable until a judge",
         "  // model is configured — an all-green run does not mean the judge ran. Any",
         "  // OpenAI-compatible /chat/completions service works; the key is read from",
         "  // OPENAI_API_KEY unless apiKeyEnv says otherwise.",
@@ -626,16 +664,22 @@ async function main(): Promise<void> {
   }
 
   if (command === "view") {
-    // 位置参数只有一种含义:eval id 前缀(收窄有效根)。结果根经 --results 递入,
-    // 单开一份快照经 --snapshot 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件),
+    // 位置参数只有一种含义:eval id 前缀(收窄有效根)。记录根经 --record 递入,
+    // 单开一份快照经 --run 递入;--report 整槽替换报告槽(与 show --report 吃同一个文件),
     // --page 定初始页。文件与目录都不进位置参数(docs/feature/reports/view.md「打开与收窄」)。
     // --out 接受同一收窄:出站内容即收窄后的有效根(docs/feature/reports/view.md「静态导出」)。
     let viewInput: { input?: string; patterns: string[] };
     try {
       viewInput = resolveViewInput(cwd, positionals, {
-        ...(flags.results !== undefined ? { results: flags.results } : {}),
-        ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+        ...(flags.record !== undefined ? { record: flags.record } : {}),
+        ...(flags.run !== undefined ? { run: flags.run } : {}),
       });
+    } catch (e) {
+      exitOnViewUserError(e);
+    }
+    let config: Config | undefined;
+    try {
+      config = existsSync(join(cwd, "niceeval.config.ts")) ? await loadConfig(cwd) : undefined;
     } catch (e) {
       exitOnViewUserError(e);
     }
@@ -643,6 +687,8 @@ async function main(): Promise<void> {
       patterns: viewInput.patterns,
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
+      ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
+      ...(config ? { config: { report: config.report, theme: config.theme } } : {}),
       ...(flags.page !== undefined ? { page: flags.page } : {}),
       ...(flags.fresh ? { fresh: true } : {}),
     };
@@ -651,7 +697,7 @@ async function main(): Promise<void> {
       process.stdout.write(t("cli.view.exportedDir", { out }));
       process.exit(0);
     }
-    const server = await startViewServer({ input: viewInput.input, port: flags.port, scan }).catch(
+    const server = await startViewServer({ input: viewInput.input, port: flags.port, scan, watchRoot: cwd }).catch(
       exitOnViewUserError,
     );
     process.stdout.write(t("cli.view.url", { url: server.url }));
@@ -672,8 +718,8 @@ async function main(): Promise<void> {
       window: flags.window,
       path: flags.sandboxPath,
       leaveRunning: flags.leaveRunning,
-      // CLI flag 是 --results(结果根);sandbox 命令组的内部选项名保持 run,值语义相同。
-      run: flags.results,
+      // CLI flag 是 --record(记录根);sandbox 命令组的内部选项名保持 run,值语义相同。
+      run: flags.record,
       orphans: flags.orphans,
       force: flags.force,
     });
@@ -681,7 +727,20 @@ async function main(): Promise<void> {
   }
 
   if (command === "show") {
-    // show 不依赖 niceeval.config.ts:读的是 .niceeval/(或 --results 指定的结果根)的落盘结果。
+    if (flags.theme !== undefined) {
+      process.stderr.write("--theme only affects the web view. Use `niceeval view --theme …` instead.\n");
+      process.exit(1);
+    }
+    // show 不依赖 niceeval.config.ts:读的是 .niceeval/(或 --record 指定的记录根)的落盘结果。
+    let configReport: Config["report"] | undefined;
+    if (existsSync(join(cwd, "niceeval.config.ts"))) {
+      try {
+        configReport = (await loadConfig(cwd)).report;
+      } catch (e) {
+        process.stderr.write(`${formatThrown(e)}\n`);
+        process.exit(1);
+      }
+    }
     const code = await runShow(cwd, positionals, {
       source: flags.source,
       execution: flags.execution,
@@ -694,8 +753,9 @@ async function main(): Promise<void> {
       usage: flags.usage,
       stats: flags.stats,
       experiment: flags.experiment,
-      results: flags.results,
+      record: flags.record,
       report: flags.report,
+      configReport,
       page: flags.page,
       fresh: flags.fresh,
       json: flags.json,
@@ -738,6 +798,10 @@ async function main(): Promise<void> {
   if (command === "exp") {
     if (flags.agent || flags.model) {
       process.stderr.write(t("cli.exp.agentModelFlagUnsupported"));
+      process.exit(1);
+    }
+    if (flags.force) {
+      process.stderr.write("experiment 运行不支持 --force；请使用 --rerun all。\n");
       process.exit(1);
     }
     const viewerFlag = firstViewerOnlyFlag(flags);
@@ -811,7 +875,7 @@ async function main(): Promise<void> {
           signal: new AbortController().signal,
           progress: () => {},
           diagnostic: (input) => process.stderr.write(`${input.message}\n`),
-          // 独立 `--teardown` 路径不派发任何 attempt、不打开快照,没有 `SnapshotMeta.facts`
+          // 独立 `--teardown` 路径不派发任何 attempt、不打开快照,没有 `RunMeta.facts`
           // 这条落盘去处可写(见 runner/types.ts 的 ExperimentHookContext.fact 注释)。仍然复用
           // 共享校验(非法 key / 非标量 value 照样抛错——诚实优于静默),校验通过后丢弃写入:
           // 这是有意的 no-op,不是遗漏。
@@ -880,10 +944,11 @@ async function main(): Promise<void> {
         model: exp.model,
         reasoningEffort: exp.reasoningEffort,
         flags: exp.flags ?? {},
-        ...(exp.provenanceFlags !== undefined ? { provenanceFlags: exp.provenanceFlags } : {}),
-        runs: flags.runs ?? exp.runs ?? 1,
+        attempts: flags.attempts ?? exp.attempts ?? 1,
         earlyExit: flags.earlyExit ?? exp.earlyExit ?? false,
         sandbox: exp.sandbox ?? config.sandbox,
+        sandboxReuse: exp.sandboxReuse,
+        judge: config.judge,
         timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
         budget: flags.budget ?? exp.budget,
         selectedEvalIds,
@@ -930,7 +995,7 @@ async function main(): Promise<void> {
   // matchedByRun[i] 对应 agentRuns[i] 匹配到的 eval 集合;--dry 预览与真正开跑时的
   // RunFeedbackPlan(总量、去重 eval 数)共用同一份计算,不重复过滤一遍。
   const matchedByRun = agentRuns.map((run) => selectedEvalsForRun(evals, run));
-  const totalAttempts = agentRuns.reduce((sum, run, i) => sum + matchedByRun[i]!.length * run.runs, 0);
+  const totalAttempts = agentRuns.reduce((sum, run, i) => sum + matchedByRun[i]!.length * run.attempts, 0);
   const uniqueEvalIds = new Set(matchedByRun.flat().map((e) => e.id));
 
   if (totalAttempts === 0) {
@@ -950,23 +1015,39 @@ async function main(): Promise<void> {
   // `--dry`(两种形态)都需要这份计算:`--dry --json` 的 `ExpPlanDocument.matrix[].reused`,
   // 人读 `--dry` 首行的携入摘要(见 docs/feature/experiments/cli.md 开头示例与「事件与计划
   // 文档的 TypeScript 形状」),口径必须与真正开跑时一致。
-  const carryInputs = flags.force ? undefined : await loadCarryInputs(join(cwd, ".niceeval"));
+  const carryInputs = await loadCarryInputs(join(cwd, ".niceeval"));
   const priorResults = carryInputs?.results;
+  if (flags.carryIgnoringFlags?.length) {
+    for (const key of flags.carryIgnoringFlags) {
+      if (agentRuns.some((run) => Object.hasOwn(run.flags, key))) {
+        process.stderr.write(`--carry-ignoring-flag ${JSON.stringify(key)} is still present in this run's flags; move it out of flags before carrying.\n`);
+        process.exit(1);
+      }
+      if (!(priorResults ?? []).some((result) => Object.hasOwn(result.experiment?.flags ?? {}, key))) {
+        process.stderr.write(`--carry-ignoring-flag ${JSON.stringify(key)} was not found in candidate historical flags.\n`);
+        process.exit(1);
+      }
+    }
+  }
   const carryPlan = priorResults?.length
-    ? await planCarry(evals, agentRuns, priorResults, config.sandbox, config.timeoutMs, carryInputs?.flagBagsByExperiment)
+    ? await planCarry(evals, agentRuns, priorResults, config.sandbox, config.timeoutMs, {
+        rerun: flags.rerun,
+        keepSandbox: flags.keepSandbox,
+        carryIgnoringFlags: flags.carryIgnoringFlags,
+      })
     : undefined;
 
   if (flags.dry) {
     // --dry 只按所选形态打印计划,不运行、不落盘——一次完成的读取,不是事件流
     // (见 docs/feature/experiments/cli.md「机器怎么读:--json」)。两种形态共用同一份摊平
     // 矩阵——(experimentId, evalId) 逐行,携带同一口径的 reused 预测——不是各自重算一遍。
-    const dryRuns = Math.max(1, ...agentRuns.map((r) => r.runs));
+    const dryRuns = Math.max(1, ...agentRuns.map((r) => r.attempts));
     const rowInputs: { experimentId: string; evalId: string; reused: boolean }[] = [];
     for (let i = 0; i < agentRuns.length; i++) {
       const run = agentRuns[i]!;
       for (const e of matchedByRun[i]!) {
         const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? 0;
-        rowInputs.push({ experimentId: run.experimentId ?? "", evalId: e.id, reused: carriedCount >= run.runs });
+        rowInputs.push({ experimentId: run.experimentId ?? "", evalId: e.id, reused: carriedCount >= run.attempts });
       }
     }
     // 只读锁目录,不取锁、不等待(见 docs/feature/experiments/architecture.md「并发
@@ -988,7 +1069,7 @@ async function main(): Promise<void> {
           total: totalAttempts,
           evals: uniqueEvalIds.size,
           configs: agentRuns.length,
-          runs: dryRuns,
+          attempts: dryRuns,
           matrix,
         }),
       );
@@ -998,7 +1079,7 @@ async function main(): Promise<void> {
           totalAttempts,
           evals: uniqueEvalIds.size,
           configs: agentRuns.length,
-          runs: dryRuns,
+          attempts: dryRuns,
           reused: carryPlan?.carriedResults.length ?? 0,
           rows: matrix.map((row) => ({ experimentId: row.experimentId, evalId: row.evalId, locked: row.locked })),
         }),
@@ -1038,7 +1119,7 @@ async function main(): Promise<void> {
   coordinator.start(plan);
 
   // Ctrl+C / kill 的三级响应,核心目标:任何情况下都不留下孤儿沙箱。
-  //   1 次:abort controller → runEvals 把它喂给 Effect signal → 各 attempt 的 Scope 跑 release
+  //   1 次:abort controller → runEvals 把它喂给 Effect signal → 各 attempt 的 Sample 跑 release
   //         停容器(graceful)。同时起一个看门狗:graceful 若迟迟不收口(如 vsb.stop() 挂),
   //         到点直接走兜底强清,不干等。
   //   2 次:用户等不及 —— 立刻兜底强清(带超时)再退,而不是裸 process.exit 把进程连同
@@ -1130,6 +1211,8 @@ async function main(): Promise<void> {
       priorResults,
       carryPlan,
       keepSandbox: flags.keepSandbox,
+      rerun: flags.rerun,
+      carryIgnoringFlags: flags.carryIgnoringFlags,
       niceevalRoot: resolvePath(cwd, ".niceeval"),
     });
     // 交给强清路径一个可等待的收尾句柄:二次中断/看门狗强清时先有界等它收口,让在飞的
@@ -1142,7 +1225,7 @@ async function main(): Promise<void> {
     throw e;
   }
 
-  // 正常返回(含被中断后走部分汇总)后再兜一刀:Scope finalizer 没停掉的残留沙箱、没被运行
+  // 正常返回(含被中断后走部分汇总)后再兜一刀:Sample finalizer 没停掉的残留沙箱、没被运行
   // 路径消费的实验级 cleanup、没被 per-attempt Effect.ensuring 释放的用例锁与实验闸租约在这里
   // 强清。跑顺利时四份登记表都已空,是 no-op。
   await stopAllSandboxes();
@@ -1161,7 +1244,7 @@ async function main(): Promise<void> {
   const junitPath =
     flags.junit && !completion.reporterErrors.some((e) => e.reporter === "junit") ? flags.junit : undefined;
 
-  // 机器反馈闭环的入口:跑完直接给出每个已创建快照的目录,agent/CI 读 snapshot.json 与各
+  // 机器反馈闭环的入口:跑完直接给出每个已创建快照的目录,agent/CI 读 run.json 与各
   // attempt 的 result.json / artifact(events/trace/diff),不必解析人类向的流式输出。相对 cwd
   // 的路径更友好;结果落在 cwd 外时(relative 路径以 .. 开头)原样打印绝对路径。打印本身由
   // renderer 的 "saved" 处理完成,这里只负责把路径交给 coordinator。

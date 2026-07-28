@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { EvalResult, ScoreEntry, Usage, Verdict } from "../../../types.ts";
-import type { AttemptHandle, Snapshot } from "../../../results/index.ts";
+import type { AttemptHandle, Run } from "../../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "../scope.harness.ts";
 import { conditionsByFlag, deltaTableData } from "./compute.ts";
 import { validateDeltaData } from "./index.tsx";
@@ -39,11 +39,11 @@ let runSeq = 0;
 function snap(
   experimentId: string,
   results: EvalResult[],
-  opts: { runStartedAt?: string; flags?: Record<string, string>; model?: string } = {},
-): Snapshot {
+  opts: { runStartedAt?: string; flags?: globalThis.Record<string, string>; model?: string } = {},
+): Run {
   runSeq += 1;
   const startedAt = opts.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
-  const snapshot = {
+  const run = {
     experimentId,
     startedAt,
     completedAt: startedAt,
@@ -51,19 +51,19 @@ function snap(
     model: opts.model,
     schemaVersion: 1,
     dir: `/results/${experimentId}/snap-${runSeq}`,
-    ...(opts.flags ? { experiment: { runs: 1, earlyExit: false, selectedEvalIds: [], flags: opts.flags } } : {}),
-  } as Snapshot;
+    ...(opts.flags ? { experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: opts.flags } } : {}),
+  } as Run;
   const attempts: AttemptHandle[] = results.map((r) =>
-    attemptHandleOf(snapshot, r, {
-      snapshot: `${experimentId}/snap-${runSeq}`,
+    attemptHandleOf(run, r, {
+      run: `${experimentId}/snap-${runSeq}`,
       attempt: `${r.id}/a${r.attempt}`,
     }),
   );
   const evals = new Map<string, AttemptHandle[]>();
   for (const a of attempts) evals.set(a.evalId, [...(evals.get(a.evalId) ?? []), a]);
-  snapshot.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
-  snapshot.attempts = attempts;
-  return snapshot;
+  run.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
+  run.attempts = attempts;
+  return run;
 }
 
 describe("deltaTableData", () => {
@@ -169,8 +169,8 @@ describe("deltaTableData", () => {
     expect(data.totals["exp/cond"]).toMatchObject({ passed: 0, denominator: 1, totalScore: 7 });
 
     const pd = data.pairedDelta["exp/cond"]!;
-    expect(pd.pass!.evalIds).toEqual(["passEval"]);
-    expect(pd.points!.evalIds).toEqual(["scoreEval"]);
+    expect(pd.pass!.knownEvalIds).toEqual(["passEval"]);
+    expect(pd.points!.knownEvalIds).toEqual(["scoreEval"]);
     expect(pd.pass!.passRatePoints).toBeCloseTo(-100, 5);
     expect(pd.points!.totalScore).toBe(4);
 
@@ -183,7 +183,7 @@ describe("deltaTableData", () => {
     const older = snap("exp/cond", [res("q", "passed", { usage: usage(100, 0.1) })], { runStartedAt: "2026-01-01T00:00:00.000Z" });
     const newer = snap("exp/cond", [res("q2", "passed")], { runStartedAt: "2026-02-01T00:00:00.000Z" });
     const base = snap("exp/base", [res("q", "passed", { usage: usage(90, 0.09) })]);
-    // 裸 Snapshot[] 输入:watermark 取该 experiment 在 snapshots 里 startedAt 最新者(newer)。
+    // 裸 Run[] 输入:watermark 取该 experiment 在 runs 里 startedAt 最新者(newer)。
     const data = await deltaTableData([base, older, newer], { by: "experiment", conditions: ["exp/base", "exp/cond"] });
 
     expect(data.rows.find((r) => r.key === "q")!.cells["exp/cond"]!.historical).toBe(true);

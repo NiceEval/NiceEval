@@ -9,9 +9,10 @@
 // (text.ts / web.ts);这里只有 ReportDefinition 的类型体系、装载规范化与元数据折叠
 // (buildReportMeta / resolveReportTitle),不做任何渲染。
 
-import type { Scope } from "../../results/types.ts";
+import type { Sample } from "../../record/types.ts";
 import type { ReportNode } from "./tree.ts";
 import { localizedTextEquals, type LocalizedText } from "../model/locale.ts";
+import type { ThemeDefinition } from "../theme.ts";
 
 // ───────────────────────── 公开形状 ─────────────────────────
 
@@ -36,11 +37,13 @@ export type ReportAsset = { src: string; inline?: never } | { inline: string; sr
  * meta / link 无子内容由类型表达;script / style 的 children 是原样文本,不转义。
  */
 export type HeadTag =
-  | { tag: "meta" | "link"; attrs: Record<string, string | true>; children?: never }
-  | { tag: "script" | "style"; attrs?: Record<string, string | true>; children?: string };
+  | { tag: "meta" | "link"; attrs: globalThis.Record<string, string | true>; children?: never }
+  | { tag: "script" | "style"; attrs?: globalThis.Record<string, string | true>; children?: string };
 
 export interface ReportShell {
-  /** 站点标题:浏览器标题、show 页索引标题行与 `ctx.report.title` 的取值源;`Hero` 组件缺省消费它。回退链 def.title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Results」。 */
+  /** 报告自带的整站主题；view 的 --theme 与项目配置可覆盖它。 */
+  theme?: ThemeDefinition;
+  /** 站点标题:浏览器标题、show 页索引标题行与 `ctx.report.title` 的取值源;`Hero` 组件缺省消费它。回退链 def.title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」。 */
   title?: LocalizedText;
   /** 页头右侧的外部链接,如 GitHub、文档、CI。 */
   links?: ReportLink[];
@@ -72,7 +75,7 @@ export interface ReportPageBase {
 /**
  * 页按输入分两种形态,仍是同一个类型族,走同一条 resolve → validate → render 管线
  * (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」):
- * - `input` 省略或为 `"scope"`:消费宿主选择的 Scope;省略时规范化为 `navigation: true`。
+ * - `input` 省略或为 `"scope"`:消费宿主选择的 Sample;省略时规范化为 `navigation: true`。
  * - `input: "attempt"`:以 locator 为参数,消费一份 AttemptEvidence;没有 locator 时不能打开,
  *   必须显式 `navigation: false`,不进导航。
  * 一份报告至多声明一张 attempt-input page。
@@ -119,6 +122,7 @@ const REPORT_DEFINITION: unique symbol = Symbol.for("niceeval.report.definition"
 export interface ReportDefinition {
   readonly kind: "report";
   readonly title?: LocalizedText;
+  readonly theme?: ThemeDefinition;
   readonly links: readonly ReportLink[];
   readonly footer?: LocalizedText;
   readonly head: readonly HeadTag[];
@@ -141,7 +145,7 @@ export interface ReportMetaPage {
  * (docs/feature/reports/library/shell.md「行为约束」)。
  */
 export interface ReportMeta {
-  /** 走完回退链(声明 title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Results」)后的标题。 */
+  /** 走完回退链(声明 title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」)后的标题。 */
   title: LocalizedText;
   /** 页头外链;声明省略时为空数组。 */
   links: readonly ReportLink[];
@@ -176,7 +180,7 @@ function assertNotDefinition(value: unknown, where: string): void {
     typeof value === "object" &&
     value !== null &&
     (value as { kind?: unknown }).kind === "report" &&
-    (value as Record<symbol, unknown>)[REPORT_DEFINITION] === true
+    (value as globalThis.Record<symbol, unknown>)[REPORT_DEFINITION] === true
   ) {
     throw new Error(
       `${where} received a defineReport(...) product, but a report definition is not a report node — the shell cannot nest. ` +
@@ -194,7 +198,7 @@ function assertLocalizedText(value: unknown, where: string): asserts value is Lo
     return;
   }
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    const hasNonEmpty = Object.values(value as Record<string, unknown>).some(
+    const hasNonEmpty = Object.values(value as globalThis.Record<string, unknown>).some(
       (v) => typeof v === "string" && v.length > 0,
     );
     if (!hasNonEmpty) {
@@ -226,7 +230,7 @@ function assertAssets(assets: unknown, field: "scripts" | "styles"): ReportAsset
   if (!Array.isArray(assets)) {
     throw new Error(`defineReport ${field} must be an array of { src } or { inline } entries.`);
   }
-  for (const asset of assets as Array<Record<string, unknown>>) {
+  for (const asset of assets as Array<globalThis.Record<string, unknown>>) {
     const hasSrc = typeof asset?.src === "string";
     const hasInline = typeof asset?.inline === "string";
     if (hasSrc === hasInline) {
@@ -258,7 +262,7 @@ function assertHeadTags(tags: unknown): HeadTag[] {
       'defineReport head must be an array of { tag, attrs?, children? } entries (tag: "meta" | "link" | "script" | "style").',
     );
   }
-  for (const entry of tags as Array<Record<string, unknown>>) {
+  for (const entry of tags as Array<globalThis.Record<string, unknown>>) {
     const tag = entry?.tag;
     // 白名单闭集:head 是元数据与第三方脚本的注入口,不是 HTML 后门;标题走 title 字段回退链。
     if (typeof tag !== "string" || !HEAD_TAG_NAMES.has(tag)) {
@@ -277,7 +281,7 @@ function assertHeadTags(tags: unknown): HeadTag[] {
         `defineReport head <${tag}> needs attrs — a bare <${tag}> renders nothing. Declare e.g. { tag: "${tag}", attrs: { ${tag === "meta" ? 'name: "…", content: "…"' : 'rel: "…", href: "…"'} } }.`,
       );
     }
-    const attrRecord = (attrs ?? {}) as Record<string, unknown>;
+    const attrRecord = (attrs ?? {}) as globalThis.Record<string, unknown>;
     for (const [name, value] of Object.entries(attrRecord)) {
       if (!HEAD_ATTR_NAME_PATTERN.test(name)) {
         throw new Error(
@@ -346,7 +350,7 @@ function assertHeadTags(tags: unknown): HeadTag[] {
  * `input: "scope"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`——
  * 没有 locator 时不可打开,不能悄悄挤进导航,省略或传 true 都在装载期报错。
  */
-function normalizePageInputAndNavigation(page: Record<string, unknown>): ReportPage {
+function normalizePageInputAndNavigation(page: globalThis.Record<string, unknown>): ReportPage {
   const input = page.input;
   if (input === undefined || input === "scope") {
     return {
@@ -447,7 +451,7 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     }
     const seen = new Set<string>();
     const normalized: ReportPage[] = [];
-    for (const page of raw as Array<Record<string, unknown>>) {
+    for (const page of raw as Array<globalThis.Record<string, unknown>>) {
       if (typeof page?.id !== "string" || !PAGE_ID_PATTERN.test(page.id)) {
         throw new Error(
           `Report page id ${JSON.stringify(page?.id)} is invalid: ids are lowercase letters, digits and hyphens (they become --page values and #/page/<id> routes). Rename it, e.g. "overview".`,
@@ -497,11 +501,13 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     links = base?.links ?? [];
   }
   const title = def.title !== undefined ? def.title : base?.title;
+  const theme = def.theme !== undefined ? def.theme : base?.theme;
   const footer = def.footer !== undefined ? def.footer : base?.footer;
 
   const definition = {
     kind: "report" as const,
     ...(title !== undefined ? { title } : {}),
+    ...(theme !== undefined ? { theme } : {}),
     links: [...links],
     ...(footer !== undefined ? { footer } : {}),
     head: def.head !== undefined ? assertHeadTags(def.head) : [...(base?.head ?? [])],
@@ -519,23 +525,23 @@ export function isReportDefinition(value: unknown): value is ReportDefinition {
     typeof value === "object" &&
     value !== null &&
     (value as { kind?: unknown }).kind === "report" &&
-    (value as Record<symbol, unknown>)[REPORT_DEFINITION] === true
+    (value as globalThis.Record<symbol, unknown>)[REPORT_DEFINITION] === true
   );
 }
 
 // ───────────────────────── ReportMeta(标题回退单点)─────────────────────────
 
-/** 标题回退链的终点:内置文案「Eval 运行结果 / Eval Results」(shell.md「行为约束」)。 */
-export const FALLBACK_REPORT_TITLE: LocalizedText = { en: "Eval Results", "zh-CN": "Eval 运行结果" };
+/** 标题回退链的终点:内置文案「Eval 运行结果 / Eval Record」(shell.md「行为约束」)。 */
+export const FALLBACK_REPORT_TITLE: LocalizedText = { en: "Eval Record", "zh-CN": "Eval 运行结果" };
 
 /**
- * 标题回退链的单点实现:def.title → Scope 中唯一且相同(LocalizedText 深相等)的非空快照
- * name → 内置文案「Eval 运行结果 / Eval Results」。快照中没有 name 或存在多个不同 name 时
+ * 标题回退链的单点实现:def.title → Sample 中唯一且相同(LocalizedText 深相等)的非空快照
+ * name → 内置文案「Eval 运行结果 / Eval Record」。快照中没有 name 或存在多个不同 name 时
  * 都落到内置文案,不按数组顺序挑。
  */
-export function resolveReportTitle(definition: ReportDefinition, scope: Scope): LocalizedText {
+export function resolveReportTitle(definition: ReportDefinition, scope: Sample): LocalizedText {
   if (definition.title !== undefined) return definition.title;
-  const names = scope.snapshots
+  const names = scope.runs
     .map((s) => s.name)
     .filter((name): name is LocalizedText => name !== undefined && name !== "");
   if (names.length === 0) return FALLBACK_REPORT_TITLE;
@@ -544,7 +550,7 @@ export function resolveReportTitle(definition: ReportDefinition, scope: Scope): 
 }
 
 /** 规范化声明 → 组合组件可见的 ReportMeta(scripts / styles 是注入资产,不进;不携带当前页)。 */
-export function buildReportMeta(definition: ReportDefinition, scope: Scope): ReportMeta {
+export function buildReportMeta(definition: ReportDefinition, scope: Sample): ReportMeta {
   return {
     title: resolveReportTitle(definition, scope),
     links: definition.links,

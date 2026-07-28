@@ -10,16 +10,20 @@
 export {
   assistantTurns,
   costUSD,
-  defineMetric,
+  defineMeasure,
   durationMs,
-  endToEndPassRate,
-  examScore,
   executionReliability,
   repeatedFailedCommands,
+  passRate,
   taskPassRate,
   tokens,
   totalScore,
 } from "./model/metrics.ts";
+export { defineComposition, defineSource } from "./source.ts";
+export { sources } from "./sources.ts";
+export type { Composition, CompositionContext, Source, SourceInput } from "./source.ts";
+export { presentDimension, shortestUniqueLabels } from "./presentation.ts";
+export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "./presentation.ts";
 export { flag, label, numericFlag, numericLabel, numericRunConfig, runConfig } from "./model/flag.ts";
 export { scoringComposition } from "./model/scoring.ts";
 
@@ -44,6 +48,8 @@ export type {
   ReportPageBase,
   ReportShell,
 } from "./definition/report.ts";
+export { basalt, defineTheme, isThemeDefinition, themeStylesheet } from "./theme.ts";
+export type { ReportTheme, ThemeColor, ThemeDefinition, ThemeHex, ThemeSeries } from "./theme.ts";
 export {
   pickReportPage,
   renderReportToText,
@@ -60,7 +66,7 @@ export type {
   ReportHostContext,
 } from "./runtime/text.ts";
 export { defineComponent, createTextContext, renderNodeToText, resolveReportTree, validateReportTree, ResolveMemo } from "./definition/tree.ts";
-export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../results/attempt-evidence.ts";
+export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../record/attempt-evidence.ts";
 export type {
   AttemptPageContext,
   ComponentFaces,
@@ -114,17 +120,34 @@ export type { ColumnAlign } from "./model/text-layout.ts";
 export { DEFAULT_REPORT_LOCALE, localizedTextEquals, resolveLocalizedText, resolveMetricLabel } from "./model/locale.ts";
 export type { LocalizedText, ReportLocale } from "./model/locale.ts";
 
-// 官方双面组件(spec / data 双形态;配套 *Data 计算函数在下面成对导出)
-// 与站点组件(Hero / HeroCard / PoweredBy / ScopeWarnings / CopyFixPrompt / TraceWaterfall)
-export { ScopeSummary, ExperimentComparison } from "./components/summaries/index.tsx";
-export type { ScopeSummaryProps, ExperimentComparisonProps } from "./components/summaries/index.tsx";
-export { AttemptList, EvalList, ExperimentList, FailureList } from "./components/entity-lists/index.tsx";
+// 官方组合组件与站点组件。
+export { SampleOverview, SampleSummary } from "./components/summaries/index.tsx";
+export type { SampleOverviewProps, SampleSummaryProps } from "./components/summaries/index.tsx";
+export {
+  CopyFixPrompt,
+  Hero,
+  HeroCard,
+  PoweredBy,
+  ScopeWarnings,
+  SnapshotDiagnostics,
+  TraceWaterfall,
+} from "./components/site-components/index.tsx";
+export {
+  ScopeWarnings as SampleNotices,
+  SnapshotDiagnostics as RunNotices,
+  CopyFixPrompt as SampleFixPrompt,
+} from "./components/site-components/index.tsx";
 export type {
-  AttemptListProps,
-  EvalListProps,
-  ExperimentListProps,
-  FailureListProps,
-} from "./components/entity-lists/index.tsx";
+  CopyFixPromptProps,
+  HeroCardProps,
+  HeroProps,
+  ScopeWarningsProps,
+  SnapshotDiagnosticsProps,
+  TraceWaterfallProps,
+} from "./components/site-components/index.tsx";
+
+// 实体列表与指标视图。
+export { AttemptList, EvalList, ExperimentList, FailureList } from "./components/entity-lists/index.tsx";
 export {
   DeltaTable,
   MetricBars,
@@ -135,33 +158,6 @@ export {
   Scoreboard,
   StabilityMatrix,
 } from "./components/metric-views/index.tsx";
-export type {
-  DeltaTableProps,
-  MetricBarsProps,
-  MetricLineProps,
-  MetricMatrixProps,
-  MetricScatterProps,
-  MetricTableProps,
-  ScoreboardProps,
-  StabilityMatrixProps,
-} from "./components/metric-views/index.tsx";
-export {
-  CopyFixPrompt,
-  Hero,
-  HeroCard,
-  PoweredBy,
-  ScopeWarnings,
-  SnapshotDiagnostics,
-  TraceWaterfall,
-} from "./components/site-components/index.tsx";
-export type {
-  CopyFixPromptProps,
-  HeroCardProps,
-  HeroProps,
-  ScopeWarningsProps,
-  SnapshotDiagnosticsProps,
-  TraceWaterfallProps,
-} from "./components/site-components/index.tsx";
 
 // Attempt 详情组件族(docs/feature/reports/components/attempt-detail/README.md):11 个叶子 + 2 个
 // 只装配叶子的组合组件(AttemptAssessment / AttemptDetail),都从 niceeval/report 导出。
@@ -184,27 +180,6 @@ export type { AttemptSectionProps } from "./components/attempt-detail/index.tsx"
 
 // 计算函数(组件解析面的具名形式,与组件成对;spec 形态下由管线代调,data 形态与
 // 嵌入场景下由作者手工调)
-export { scopeSummaryData } from "./components/summaries/compute.ts";
-export { attemptListData, evalListData, experimentListData } from "./components/entity-lists/compute.ts";
-export {
-  conditionsByFlag,
-  deltaTableData,
-  metricLineData,
-  metricMatrixData,
-  metricScatterData,
-  metricTableData,
-  scoreboardData,
-  stabilityMatrixData,
-} from "./components/metric-views/compute.ts";
-export type {
-  DeltaTableOptions,
-  MetricLineOptions,
-  MetricMatrixOptions,
-  MetricScatterOptions,
-  MetricTableOptions,
-  ScoreboardOptions,
-  StabilityMatrixOptions,
-} from "./components/metric-views/compute.ts";
 export {
   copyFixPromptData,
   heroData,
@@ -248,18 +223,19 @@ export type {
   HeroData,
   LineData,
   MatrixData,
-  Metric,
-  MetricAggregate,
-  MetricCell,
-  MetricColumn,
+  Measure,
+  MeasureAggregate,
   NumericAxis,
   NumericAxisOptions,
   NumericRunConfigAxisOptions,
   ReportInput,
   RunConfigKey,
   ScatterData,
-  ScopeSummaryData,
-  ScopeWarning,
+  MeasureCell,
+  MeasureColumn,
+  MeasureRowsContent,
+  SampleSummaryContent,
+  SampleIssue,
   ScoreboardData,
   ScoringComposition,
   SeriesInput,
@@ -293,5 +269,5 @@ export type {
   UsageTableData,
 } from "./model/types.ts";
 
-// 数据层输入的类型(家在 niceeval/results,这里 re-export 方便写指标 / 报告)
-export type { AttemptHandle, Results, Scope, Snapshot } from "../results/types.ts";
+// 数据层输入的类型(家在 niceeval/record,这里 re-export 方便写指标 / 报告)
+export type { AttemptHandle, Record, Sample, Run } from "../record/types.ts";

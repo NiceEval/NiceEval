@@ -58,14 +58,14 @@ function deepPartial(actual: unknown, expected: unknown): boolean {
   if (isPlainObject(expected)) {
     if (actual === null || typeof actual !== "object") return false;
     for (const [k, v] of Object.entries(expected)) {
-      if (!valueMatches((actual as Record<string, unknown>)[k], v, actual)) return false;
+      if (!valueMatches((actual as globalThis.Record<string, unknown>)[k], v, actual)) return false;
     }
     return true;
   }
   return Object.is(actual, expected);
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+function isPlainObject(value: unknown): value is globalThis.Record<string, unknown> {
   if (value === null || typeof value !== "object") return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
@@ -89,7 +89,7 @@ function matchTopLevelInput(actual: JsonValue, expected: NonNullable<ToolMatch["
     return Boolean((expected as (input: unknown) => unknown)(actual));
   }
   for (const [k, v] of Object.entries(expected)) {
-    const field = (actual as Record<string, unknown> | null | undefined)?.[k];
+    const field = (actual as globalThis.Record<string, unknown> | null | undefined)?.[k];
     if (!valueMatches(field, v, actual)) return false;
   }
   return true;

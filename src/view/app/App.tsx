@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.t
 
 // 导航组成只有一条规则(docs/feature/reports/view.md「页面构成」):导航项 = 报告定义声明的页,
 // 按声明顺序排列(路由 `#/page/<id>`,`--page <id>` 定初始页)。宿主不追加、不保留任何导航项——
-// 裸 view 的「报告 / Attempts / 追踪」三个 tab 就是内建报告的三页。页面里的 hero、Scope 警告
+// 裸 view 的「报告 / Attempts / 追踪」三个 tab 就是内建报告的三页。页面里的 hero、Sample 警告
 // 都不是宿主渲染的:它们是页内的站点组件(Hero / ScopeWarnings)。宿主保留的是机器
 // 加一个恒定的品牌位:管线与路由、attempt 详情路由、文档单例(<title>)、语言切换,以及
 // 页头左端的 NiceEval 字标(docs/feature/reports/architecture.md「宿主保留的只有机器」)。
@@ -74,7 +74,7 @@ function hashForTab(tab: Tab): string {
   return `#/page/${tab.slice("page:".length)}`;
 }
 
-export function App({ data, reportPages }: { data: ViewData; reportPages: Record<string, ReportSlotHtml> }) {
+export function App({ data, reportPages }: { data: ViewData; reportPages: globalThis.Record<string, ReportSlotHtml> }) {
   const [locale, setLocale] = useState<Locale>(() => detectLocale());
   const t = useMemo(() => makeTranslator(locale), [locale]);
 
@@ -106,7 +106,7 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: Record
   }, [locale]);
 
   // 浏览器标题是宿主文档单例:跟随外壳标题(回退链在 server 侧走完:def.title →
-  // 唯一快照 name → 内置文案「Eval 运行结果 / Eval Results」);缺声明(旧数据)时按内置文案兜底。
+  // 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」);缺声明(旧数据)时按内置文案兜底。
   // 页面里的 hero 标题不归宿主——它是页内 Hero 组件,同一取值链经 ctx.report.title 贯通。
   const shellTitle = localizedText(data.report?.title, locale) ?? t("hero.title");
   useEffect(() => {
@@ -258,7 +258,7 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: Record
         {pages.map((page) => (
           <TabsContent key={`page:${page.id}`} value={`page:${page.id}`} id={`tab-page-${page.id}`}>
             {/* 报告槽:server 侧逐页渲染好的静态 HTML(含 <Style> 产物),按当前页与界面语言
-                摆放对应块;hero、品牌行、Scope 警告、批量修复 prompt 都是页内组件,壳不再渲染。
+                摆放对应块;hero、品牌行、Sample 警告、批量修复 prompt 都是页内组件,壳不再渲染。
                 attempt 深链是普通 <a href="attempt/…html">,经上面的点击拦截打开 dialog。 */}
             <ReportSlot html={reportPages[page.id]?.[locale] || reportPages[page.id]?.en || ""} />
           </TabsContent>

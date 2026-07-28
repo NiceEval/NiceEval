@@ -16,7 +16,7 @@ import { normalizeToolName as normalizeShared } from "../tool-names.ts";
  * 裸名 read/write/edit/webfetch/websearch/task 必须在这里:它们是 Claude Code 的核心工具
  * (Read/Write/Edit/WebFetch/WebSearch/Task),基表刻意不收裸动词。
  */
-export const CLAUDE_TOOL_ALIASES: Record<string, ToolName> = {
+export const CLAUDE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   read: "file_read",
   readfile: "file_read",
   write: "file_write",
@@ -61,7 +61,7 @@ function extractSkillName(name: string, input: JsonValue): string | undefined {
 // ───────────────────────── 小工具 ─────────────────────────
 
 function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
 
 /** content 既可能是 string,也可能挂在 data.message.content;统一取数组。 */
@@ -112,7 +112,7 @@ function extractThinking(data: unknown): string {
 
 function readUsage(u: unknown): { input: number; output: number; cacheRead: number; cacheCreation: number } | null {
   if (!u || typeof u !== "object") return null;
-  const o = u as Record<string, unknown>;
+  const o = u as globalThis.Record<string, unknown>;
   const num = (...keys: string[]): number => {
     for (const k of keys) {
       const v = o[k];
@@ -133,12 +133,12 @@ function readUsage(u: unknown): { input: number; output: number; cacheRead: numb
  * `cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens` 两档 ttl 明细,
  * 顶层字段存在时已经是二者之和,不重复相加。
  */
-function readCacheCreation(o: Record<string, unknown>): number {
+function readCacheCreation(o: globalThis.Record<string, unknown>): number {
   const top = o["cache_creation_input_tokens"];
   if (typeof top === "number" && Number.isFinite(top)) return top;
   const detail = o["cache_creation"];
   if (detail && typeof detail === "object") {
-    const d = detail as Record<string, unknown>;
+    const d = detail as globalThis.Record<string, unknown>;
     const five = typeof d["ephemeral_5m_input_tokens"] === "number" ? (d["ephemeral_5m_input_tokens"] as number) : 0;
     const hour = typeof d["ephemeral_1h_input_tokens"] === "number" ? (d["ephemeral_1h_input_tokens"] as number) : 0;
     return five + hour;

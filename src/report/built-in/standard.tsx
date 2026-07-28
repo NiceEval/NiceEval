@@ -12,13 +12,12 @@
 
 import {
   AttemptDetail,
-  AttemptList,
   Col,
-  CopyFixPrompt,
-  ExperimentComparison,
   Hero,
-  ScopeWarnings,
-  SnapshotDiagnostics,
+  RunNotices,
+  SampleFixPrompt,
+  SampleNotices,
+  SampleOverview,
   TraceWaterfall,
   defineReport,
 } from "../index.ts";
@@ -39,10 +38,10 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
-          <CopyFixPrompt />
-          <ExperimentComparison />
+          <SampleNotices />
+          <RunNotices />
+          <SampleFixPrompt />
+          <SampleOverview />
         </Col>
       ),
     },
@@ -52,9 +51,9 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
-          <AttemptList filter />
+          <SampleNotices />
+          <RunNotices />
+          <SampleOverview />
         </Col>
       ),
     },
@@ -64,8 +63,8 @@ export const standard = defineReport({
       content: (
         <Col>
           <Hero />
-          <ScopeWarnings />
-          <SnapshotDiagnostics />
+          <SampleNotices />
+          <RunNotices />
           <TraceWaterfall />
         </Col>
       ),

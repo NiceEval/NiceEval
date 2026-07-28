@@ -51,7 +51,7 @@ export class FileRef {
 /** 运行器在 test 跑完后填进来的「迟到结果」(diff / 脚本),供 finalize 用。 */
 export interface LateResult {
   diff: DiffData;
-  scripts: Record<string, ScriptResult>;
+  scripts: globalThis.Record<string, ScriptResult>;
 }
 
 export interface ContextState {
@@ -66,7 +66,7 @@ export interface ContextDeps {
   sandbox: Sandbox;
   model?: string;
   reasoningEffort?: string;
-  flags: Record<string, unknown>;
+  flags: globalThis.Record<string, unknown>;
   /** 路径推导出的实验 id(经 send ctx 透给 adapter,见 AgentContext.experimentId)。 */
   experimentId?: string;
   signal: AbortSignal;
@@ -270,8 +270,14 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       return diffView;
     },
     // 沙箱动作都先结算待决前置:前置没过时后面这些活儿一件都不该干(白跑沙箱时间)。
-    runCommand: guardAsync((cmd, args, opts) => deps.sandbox.runCommand(cmd, args, opts)),
-    runShell: guardAsync((script, opts) => deps.sandbox.runShell(script, opts)),
+    runCommand: guardAsync(async (cmd, args, opts) => {
+      await manager.refreshSandboxO11y();
+      return deps.sandbox.runCommand(cmd, args, opts);
+    }),
+    runShell: guardAsync(async (script, opts) => {
+      await manager.refreshSandboxO11y();
+      return deps.sandbox.runShell(script, opts);
+    }),
     readFile: guardAsync((path) => deps.sandbox.readFile(path)),
     fileExists: guardAsync((path) => deps.sandbox.fileExists(path)),
     writeFiles: guardAsync((files, targetDir) => deps.sandbox.writeFiles(files, targetDir)),
@@ -413,7 +419,7 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   // 其余能力(多轮对话、工具断言……)不再问卷式声明——没接 ctx.session 续接存取器的 agent
   // 每轮各是新对话,没吐 action.* 事件的 agent 上正断言自然不命中,负断言按事件完整性证明
   // 提示可信度,都不需要在这里拦。
-  const guards: Record<string, unknown> = {};
+  const guards: globalThis.Record<string, unknown> = {};
   if (deps.agent.kind !== "sandbox") {
     Object.defineProperty(guards, "sandbox", {
       get: capabilityGuard(deps.agent.name, "sandbox", "sandbox"),
@@ -765,9 +771,9 @@ function stringMatches(actual: string, expected: string | RegExp): boolean {
   return expected instanceof RegExp ? expected.test(actual) : actual === expected;
 }
 
-function partialObjectMatches(actual: unknown, expected: Record<string, unknown>): boolean {
+function partialObjectMatches(actual: unknown, expected: globalThis.Record<string, unknown>): boolean {
   if (actual === null || typeof actual !== "object") return false;
-  const obj = actual as Record<string, unknown>;
+  const obj = actual as globalThis.Record<string, unknown>;
   for (const [key, value] of Object.entries(expected)) {
     if (!deepEqual(obj[key], value)) return false;
   }

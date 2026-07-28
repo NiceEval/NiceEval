@@ -50,7 +50,7 @@ export const zhCN = {
     "  - [cd] 切到包含 niceeval.config.ts 的项目根再运行\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/quickstart.mdx",
   "cli.config.noDefault": "niceeval.config.ts 需要 default export(defineConfig(...))。",
-  "cli.dry.header": "plan: {{attempts}} · {{evals}} × {{configs}} · runs {{runs}}",
+  "cli.dry.header": "plan: {{attempts}} · {{evals}} × {{configs}} · attempts {{attemptCount}}",
   "cli.dry.unit.attempt": "个 attempt",
   "cli.dry.unit.attempts": "个 attempt",
   "cli.dry.unit.eval": "个 eval",
@@ -111,7 +111,7 @@ export const zhCN = {
     "        (与 @<locator>、--report 互斥)\n" +
     "      --json      任何切片的结构化形态:一个 JSON 文档到 stdout,选择与 text 面同一批\n" +
     "        (与 --report、--expand 互斥)\n" +
-    "      --results <目录> 钉死结果根   --exp <id> 可重复,两个以上进入对照\n" +
+    "      --record <目录>  钉死记录根   --exp <id> 可重复,两个以上进入对照\n" +
     "      --report <文件> 自定义报告   --page <id> 定初始页(多页报告渲染该页,\n" +
     "        尾部再附其余页索引)\n" +
     "      --fresh   只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);\n" +
@@ -119,8 +119,8 @@ export const zhCN = {
     "  niceeval list                            列出发现到的 eval\n" +
     "  niceeval view [eval-id 前缀…] [--out 目录] [--port n] [--no-open]\n" +
     "      报告页 + 证据室;--report <文件> 整槽换成自定义报告(与 show 同一文件)\n" +
-    "      --page <id> 定初始页   --results <目录> 钉死结果根\n" +
-    "      --snapshot <文件> 只打开这一份快照   --exp <id>(可重复)收窄到这些实验;\n" +
+    "      --page <id> 定初始页   --record <目录> 钉死记录根\n" +
+    "      --run <文件> 只打开这一份快照   --exp <id>(可重复)收窄到这些实验;\n" +
     "      --fresh 只看新执行\n" +
     "      --out <目录> 静态导出:index.html 连同查看器 artifact,可直接静态托管\n" +
     "  niceeval sandbox list|enter|history|diff|stop  查看与销毁 --keep-sandbox 留下的现场\n" +
@@ -129,7 +129,7 @@ export const zhCN = {
     "  niceeval init                            脚手架 config + evals/\n\n" +
     "标志:\n" +
     "  --runs n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --force  --dry  --keep-sandbox[=failed|all]\n" +
+    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --carry-ignoring-flag key  --dry  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
@@ -137,8 +137,8 @@ export const zhCN = {
     "环境变量层,环境变量只放 API key 这类凭据。\n",
   // show 的错误文案保持英文(错误文案英文的仓库约定);noResults 是提示,翻译。
   "cli.show.noResults": "{{root}} 下没有结果。先 `niceeval exp` 跑一轮,再 `niceeval show`。\n",
-  "cli.show.runDirMissing": "Results directory not found: {{dir}}\n",
-  "cli.show.noEvalMatch": "No results matched: {{patterns}}. Evals with results: {{evals}}\n",
+  "cli.show.runDirMissing": "Record directory not found: {{dir}}\n",
+  "cli.show.noEvalMatch": "No results matched: {{pattern}}. Evals with results: {{evals}}\n",
   "cli.show.noExperimentMatch": "No experiment matched --exp {{arg}}. Experiments with results: {{experiments}}\n",
   "cli.show.expAmbiguous":
     "error: --exp {{arg}} matched {{matched}} experiments: {{candidates}}\n  fix: use one of the exact ids above, or a longer prefix — each --exp in a compare must resolve to exactly one experiment\n",
@@ -160,7 +160,7 @@ export const zhCN = {
     "error: --expand requires the range to resolve to exactly one attempt, got {{count}}\n  fix: narrow the range to a single attempt — an eval id prefix matching one eval, or @<locator>\n",
   "cli.show.expandNotFound": "error: {{message}}\n  fix: use a handle from a truncated card's own hint (t<turn>.c<card> or cmd<n>), or drop --expand to see the whole attempt\n",
   "cli.show.historyReportConflict":
-    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for snapshot-level trends, compose exp.snapshots inside your report file instead.\n",
+    "`--history` and `--report` are mutually exclusive: both take over the main output. --history is the host's per-attempt execution timeline; for run-level trends, compose exp.runs inside your report file instead.\n",
   "cli.show.jsonReportConflict":
     "error: --json cannot combine with --report ({{report}}) — a report tree says how to look at the data, --json says what the data is\n  fix: drop --report to use --json, or drop --json and read the report tree as text/HTML\n",
   "cli.show.jsonExpandConflict":
@@ -205,7 +205,7 @@ export const zhCN = {
   "cli.noAgent": "未指定 agent(用 --agent <name>)。\n",
   "cli.none": "(无)",
   "cli.pressCtrlC": "按 Ctrl+C 退出。\n",
-  "cli.resultsPath": "结构化结果:{{path}}(snapshot.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)\n",
+  "cli.resultsPath": "结构化结果:{{path}}(run.json + 每 attempt 的 result.json / events.json / trace.json / diff.json)\n",
   "cli.run.experimentRequired":
     "运行 eval 必须通过 experiment:用 `niceeval exp [路径|配置] [eval id 前缀]`。\n" +
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/write-experiment.mdx\n",
@@ -235,7 +235,6 @@ export const zhCN = {
   "define.experimentAgentRequired": "defineExperiment 需要 agent。",
   "define.experimentFlagNotJson": "experiment.flags.{{key}} 不是可 JSON 序列化的值(函数 / undefined / 循环引用 / bigint 不允许);flags 会原样进入结果快照,必须是纯 JSON。",
   "define.experimentLabelInvalid": "experiment.labels.{{key}} 必须是字符串或有限数字;labels 是报告侧的归类坐标,会原样进入结果快照。",
-  "define.experimentProvenanceFlagsInvalid": "experiment.provenanceFlags 必须是 flag 键名(字符串)数组;它列出只作为出处记录、不进缓存指纹的那些 flag。",
   "define.experimentSetupNotFunction": "experiment.setup 必须是函数((ctx) => void);要清理请挂 experiment.teardown;要按实验准备沙箱内环境请挂 sandbox spec 的 .setup() 钩子链。",
   "define.experimentClassifyFailureNotFunction": "experiment.classifyFailure 必须是函数((failure) => FailureClass | undefined):它识别以第三方错误形态浮出的失败,认不出的一律返回 undefined 交给后续链路。",
   "define.experimentIdRejected": "defineExperiment 不接受 id —— id 由文件路径推导。",
@@ -252,7 +251,7 @@ export const zhCN = {
   "feedback.human.budgetExhausted": "{{experimentId}} 预算已耗尽(已花 {{spent}},未跑 {{unstarted}})",
   "feedback.human.compare": "Compare: niceeval view",
   "feedback.human.counts":
-    "共 {{total}} · 复用 {{reused}} · 运行中 {{running}} · 排队 {{queued}} · 通过 {{passed}} · 失败 {{failed}} · 出错 {{errored}} · 跳过 {{skipped}}",
+    "共 {{total}} · 复用 {{reused}} · 运行中 {{running}} · 排队 {{queued}} · 通过 {{passed}} · 失败 {{failed}} · 出错 {{errored}} · 跳过 {{unreadable}}",
   "feedback.human.diffHint": "Diff:    niceeval show {{locator}} --diff",
   "feedback.human.evalHint": "Eval:    niceeval show {{locator}} --source",
   "feedback.human.failuresHeader": "FAILURES",
@@ -286,7 +285,7 @@ export const zhCN = {
   "feedback.human.precheckJudge": "预检 judge 配置",
   "feedback.human.precheckJudgeDone": "judge 配置就绪",
   "feedback.human.countsWithElsewhere":
-    "共 {{total}} · 复用 {{reused}} · 运行中 {{running}} · 等待中 {{elsewhere}} · 排队 {{queued}} · 通过 {{passed}} · 失败 {{failed}} · 出错 {{errored}} · 跳过 {{skipped}}",
+    "共 {{total}} · 复用 {{reused}} · 运行中 {{running}} · 等待中 {{elsewhere}} · 排队 {{queued}} · 通过 {{passed}} · 失败 {{failed}} · 出错 {{errored}} · 跳过 {{unreadable}}",
   "feedback.human.waitingOnAnotherRun": "等待另一个并行 run",
   "feedback.human.lockWaitDetail": "{{count}} 条用例 · pid {{pid}}",
   "feedback.human.lockWaitStarted": "等待另一个并行 run · {{experimentId}}({{count}} 条用例,pid {{pid}})",
@@ -334,12 +333,12 @@ export const zhCN = {
   "report.runStart": "\n本次运行 {{count}} 个 eval{{extra}}(并发 {{concurrency}})\n\n",
   "report.runStartExtra": " × {{configs}} 配置 = {{totalRuns}} 次运行",
   "report.viewHint": "运行 `pnpm exec niceeval view` 以图形化查看结果。\n",
-  "report.skipped": "跳过",
+  "report.unreadable": "跳过",
   "report.soft": "soft",
   "report.summary.errored": "{{count}} 错误",
   "report.summary.failed": "{{count}} 失败",
   "report.summary.passed": "{{count}} 通过",
-  "report.summary.skipped": "{{count}} 跳过",
+  "report.summary.unreadable": "{{count}} 跳过",
   "report.table.agent": "Agent",
   "report.table.avgDuration": "平均耗时",
   "report.table.cost": "预估成本",
@@ -411,4 +410,4 @@ export const zhCN = {
 } as const;
 
 export type MessageKey = keyof typeof zhCN;
-export type Messages = Record<MessageKey, string>;
+export type Messages = globalThis.Record<MessageKey, string>;

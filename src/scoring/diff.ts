@@ -19,7 +19,7 @@ export function deriveDiffData(windows: DiffArtifact): DiffData {
     }
   }
 
-  const files: Record<string, DiffFileSummary> = {};
+  const files: globalThis.Record<string, DiffFileSummary> = {};
   for (const [path, entry] of touched) {
     files[path] = {
       net: computeNet(entry.first, entry.last),
@@ -73,7 +73,7 @@ export function diffMatches(diff: DiffData, re: RegExp): boolean {
   return false;
 }
 
-/** 空 diff(remote / skipped attempt)。 */
+/** 空 diff(remote / unreadable attempt)。 */
 export function emptyDiffData(): DiffData {
   return deriveDiffData([]);
 }

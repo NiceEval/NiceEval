@@ -17,10 +17,10 @@ interface Price {
   cacheWrite?: number;
 }
 
-const PRICES: Record<string, Price> = (() => {
+const PRICES: globalThis.Record<string, Price> = (() => {
   try {
     const raw = readFileSync(fileURLToPath(new URL("./prices.json", import.meta.url)), "utf-8");
-    return (JSON.parse(raw) as { prices?: Record<string, Price> }).prices ?? {};
+    return (JSON.parse(raw) as { prices?: globalThis.Record<string, Price> }).prices ?? {};
   } catch {
     return {};
   }
@@ -34,7 +34,7 @@ function toPrice(o: PriceOverride): Price {
  * 用户覆盖表:精确 model key 优先,再退而查 `provider/*` 通配
  *(`anthropic/*` 命中 `anthropic/claude-…`,批量覆盖自托管 / 网关折扣场景)。
  */
-function lookupOverride(model: string, overrides: Record<string, PriceOverride> | undefined): Price | undefined {
+function lookupOverride(model: string, overrides: globalThis.Record<string, PriceOverride> | undefined): Price | undefined {
   if (!overrides) return undefined;
   if (overrides[model]) return toPrice(overrides[model]);
   const provider = model.includes("/") ? model.slice(0, model.indexOf("/")) : undefined;
@@ -64,7 +64,7 @@ function lookupBuiltin(model: string): Price | undefined {
 export function estimateCost(
   model: string | undefined,
   usage: Usage,
-  overrides?: Record<string, PriceOverride>,
+  overrides?: globalThis.Record<string, PriceOverride>,
 ): number | undefined {
   if (!model) return undefined;
   const p = lookupOverride(model, overrides) ?? lookupBuiltin(model);

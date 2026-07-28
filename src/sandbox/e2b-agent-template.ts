@@ -35,7 +35,7 @@ export const E2B_OFFICIAL_AGENT_TEMPLATES = {
 export const NICEEVAL_E2B_TEAM = "correctroads-default-team";
 
 /** 每个 Agent 的公共 E2B template 名字（不含 tag）。 */
-export const NICEEVAL_E2B_TEMPLATE_NAME: Record<E2BCodingAgent, string> = {
+export const NICEEVAL_E2B_TEMPLATE_NAME: globalThis.Record<E2BCodingAgent, string> = {
   "claude-code": `${NICEEVAL_E2B_TEAM}/niceeval-claude-code`,
   codex: `${NICEEVAL_E2B_TEAM}/niceeval-codex`,
   bub: `${NICEEVAL_E2B_TEAM}/niceeval-bub`,
@@ -49,7 +49,7 @@ export const NICEEVAL_E2B_TEMPLATE_NAME: Record<E2BCodingAgent, string> = {
  * 同一批改动更新这张表与 `sandbox/e2b/published.json`。两者与源码版本常量的一致性由
  * `e2b-agent-template.test.ts` 守护——版本常量走在发布前面时测试红，常量不会先指向不存在的制品。
  */
-const PUBLISHED_E2B_BASELINE_TAG: Record<E2BCodingAgent, string> = {
+const PUBLISHED_E2B_BASELINE_TAG: globalThis.Record<E2BCodingAgent, string> = {
   "claude-code": "v0.6.1",
   codex: "v0.6.1",
   bub: "v0.6.1",

@@ -6,10 +6,10 @@
 
 import { join, relative } from "node:path";
 import type { AssertionResult, DiffData, EvalResult, FailedCommandEvidence, LocalizedText, TimingNode, TraceSpan, Verdict } from "../types.ts";
-import type { AttemptEvidence, AttemptHandle } from "../results/index.ts";
-import type { AnnotatedSourceLine, SendAnnotation } from "../results/index.ts";
-import { groupIncompatibleVersionSkips } from "../results/index.ts";
-import type { SkippedDir } from "../results/index.ts";
+import type { AttemptEvidence, AttemptHandle } from "../record/index.ts";
+import type { AnnotatedSourceLine, SendAnnotation } from "../record/index.ts";
+import { groupIncompatibleVersionSkips } from "../record/index.ts";
+import type { UnreadableRun } from "../record/index.ts";
 import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
 import { summaryText } from "../scoring/display.ts";
 import { firstLine } from "../util.ts";
@@ -44,7 +44,7 @@ export function timelineStamp(iso: string): string {
 
 function verdictMark(verdict: Verdict): string {
   if (verdict === "passed") return "✓";
-  if (verdict === "skipped") return "-";
+  if (verdict === "unreadable") return "-";
   return "✗";
 }
 
@@ -54,42 +54,42 @@ function attemptsLabel(n: number): string {
 
 /**
  * attempt artifact 目录的展示路径:尽量给相对 cwd 的短路径,出了 cwd 给绝对路径。
- * 本快照跑出的条目:artifact 与 result.json 同目录,= `<snapshot.dir>/<ref.attempt>`。
- * 携带条目(--resume 合入):落盘的 artifactBase 相对结果根(= snapshot.dir 的上两级,
- * 即 `<experiment-dir>/<snapshot-dir>` 的上一层),指向原快照的 attempt 目录。
+ * 本快照跑出的条目:artifact 与 result.json 同目录,= `<run.dir>/<ref.attempt>`。
+ * 携带条目(--resume 合入):落盘的 artifactBase 相对结果根(= run.dir 的上两级,
+ * 即 `<experiment-dir>/<run-dir>` 的上一层),指向原快照的 attempt 目录。
  */
 export function attemptArtifactsPath(attempt: AttemptHandle, cwd: string): string {
   const r = attempt.result;
   const abs = r.artifactBase
-    ? join(attempt.snapshot.dir, "..", "..", r.artifactBase)
-    : join(attempt.snapshot.dir, attempt.ref.attempt);
+    ? join(attempt.run.dir, "..", "..", r.artifactBase)
+    : join(attempt.run.dir, attempt.ref.attempt);
   const rel = relative(cwd, abs);
   return rel.startsWith("..") ? abs : rel;
 }
 
 /**
- * 裸 `show` 零可读结果时,skipped 目录的展示文案。niceeval 自己写的、schemaVersion 不兼容的
- * 落盘按 producer 版本分组,一条 `npx niceeval@<version> show --results <结果根>` 覆盖同版本全部
- * 快照——show 没有 view 的单快照直读模式,`--results` 认的是结果根(其下可以有多个 experiment),
+ * 裸 `show` 零可读结果时,unreadable 目录的展示文案。niceeval 自己写的、schemaVersion 不兼容的
+ * 落盘按 producer 版本分组,一条 `npx niceeval@<version> show --record <记录根>` 覆盖同版本全部
+ * Run——show 没有 view 的单 Run 直读模式,`--record` 认的是记录根(其下可以有多个 experiment),
  * 不是单个快照目录,所以不对每个目录重复拼一条各自的命令(那条命令用同一个 root 跑起来
  * 结果完全一样,重复只会刷屏)。其余(第三方 harness、版本信息缺失、malformed、incomplete)
  * 没有可执行的统一建议,原样逐条列出。
  */
-export function skippedRunsText(skipped: readonly SkippedDir[], root: string, cwd: string): string {
-  const { groups, rest } = groupIncompatibleVersionSkips(skipped);
+export function skippedRunsText(unreadable: readonly UnreadableRun[], root: string, cwd: string): string {
+  const { groups, rest } = groupIncompatibleVersionSkips(unreadable);
   const rootDisplay = relative(cwd, root) || ".";
   const lines: string[] = [];
   for (const g of groups) {
     const count = g.dirs.length;
     const version = g.producer.version;
     const schema = g.schemaVersion !== undefined ? ` (schemaVersion ${g.schemaVersion})` : "";
-    const cmd = `npx niceeval@${version} show --results ${rootDisplay}`;
+    const cmd = `npx niceeval@${version} show --record ${rootDisplay}`;
     lines.push(
-      `  ${count} snapshot${count === 1 ? "" : "s"} written by niceeval ${version}${schema} — run \`${cmd}\` to view`,
+      `  ${count} run${count === 1 ? "" : "s"} written by niceeval ${version}${schema} — run \`${cmd}\` to view`,
     );
   }
   for (const s of rest) {
-    lines.push(`  skipped ${s.dir} (${s.reason})`);
+    lines.push(`  unreadable ${s.dir} (${s.reason})`);
   }
   return lines.join("\n");
 }
@@ -221,7 +221,7 @@ export function attemptHistoryText(opts: {
 /**
  * 渲染初始页之后追加的「其余页」索引(docs/feature/reports/show/reports.md Case 2):
  * 只列未渲染的页 —— 每行 id / 本 locale 页名 / 可复制的 `--page` 命令,索引命令携带完整上下文
- * (--results / --report / 位置参数),复制即可精确复现下一层视图。调用方只在页数大于一时
+ * (--record / --report / 位置参数),复制即可精确复现下一层视图。调用方只在页数大于一时
  * 拼接这段(单页定义没有「其余页」段);`otherPages` 不含被渲染的那一页。
  */
 export function otherPagesText(opts: {
@@ -261,8 +261,8 @@ function jsonPreview(value: unknown, max = 200): string {
   return clip(text, max);
 }
 
-function recordOf(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+function recordOf(value: unknown): globalThis.Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as globalThis.Record<string, unknown> : undefined;
 }
 
 function indentedText(text: string, width: number, indent = 4, maxLines = 18): string[] {

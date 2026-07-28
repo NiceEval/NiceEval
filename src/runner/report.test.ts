@@ -22,7 +22,7 @@ function summary(results: EvalResult[]): InvocationSummary {
     completedAt: "2026-07-07T00:01:00.000Z",
     passed: results.filter((r) => r.verdict === "passed").length,
     failed: results.filter((r) => r.verdict === "failed").length,
-    skipped: 0,
+    unreadable: 0,
     errored: 0,
     durationMs: 60_000,
     results,

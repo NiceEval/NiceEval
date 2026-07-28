@@ -11,7 +11,7 @@ import type { ToolName } from "../types.ts";
  * 词汇的 parser 显式 opt-in —— 否则 AI SDK 应用里一个叫 `search` 的商品搜索工具
  * 会被误归成 web_search,负断言语义被悄悄改写。
  */
-const BASE_TOOL_ALIASES: Record<string, ToolName> = {
+const BASE_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   // 文件
   read_file: "file_read",
   write_file: "file_write",
@@ -51,7 +51,7 @@ const BASE_TOOL_ALIASES: Record<string, ToolName> = {
  * 裸动词别名:coding-agent CLI 自己的 transcript 词汇(codex/bub/claude 的工具名
  * 由 CLI 控制,不会和用户域名冲突)。对被测应用(如 AI SDK 的自定义工具)不适用。
  */
-export const GENERIC_VERB_ALIASES: Record<string, ToolName> = {
+export const GENERIC_VERB_ALIASES: globalThis.Record<string, ToolName> = {
   exec: "shell",
   execute: "shell",
   run: "shell",
@@ -68,7 +68,7 @@ export const GENERIC_VERB_ALIASES: Record<string, ToolName> = {
  * 原始工具名 → 规范 ToolName。先查 agent 特有别名(overrides),再查通用基表,
  * 都没有则 "unknown"。键匹配不区分大小写(Claude Code 的 PascalCase 名靠这里兜住)。
  */
-export function normalizeToolName(name: string, overrides?: Record<string, ToolName>): ToolName {
+export function normalizeToolName(name: string, overrides?: globalThis.Record<string, ToolName>): ToolName {
   const key = name.toLowerCase();
   return overrides?.[key] ?? BASE_TOOL_ALIASES[key] ?? "unknown";
 }

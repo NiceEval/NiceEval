@@ -46,7 +46,7 @@ function truncateJsonValue(value: unknown, path: string, out: Truncation[]): unk
   }
   if (value !== null && typeof value === "object") {
     let changed = false;
-    const next: Record<string, unknown> = {};
+    const next: globalThis.Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
       const r = truncateJsonValue(v, path ? `${path}.${k}` : k, out);
       if (r !== v) changed = true;
@@ -61,7 +61,7 @@ function truncateJsonValue(value: unknown, path: string, out: Truncation[]): unk
 export function truncateEvents(events: readonly StreamEvent[]): StreamEvent[] {
   return events.map((event) => {
     const out: Truncation[] = [];
-    const next: Record<string, unknown> = {};
+    const next: globalThis.Record<string, unknown> = {};
     let changed = false;
     for (const [k, v] of Object.entries(event)) {
       if (k === "type" || k === "truncated") {

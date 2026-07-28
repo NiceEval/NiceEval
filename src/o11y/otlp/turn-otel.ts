@@ -41,7 +41,7 @@ export class AgentOtelChannel {
    * 跑一轮:fn 拿到本轮的 W3C trace context headers(spread 进请求头 / 注入子进程 env),
    * 返回后 settle 接收器、归属本轮 span。未确认 traceparent 前整段(含 fn)串行。
    */
-  async runTurn<T>(fn: (headers: Readonly<Record<string, string>>) => Promise<T>): Promise<{ result: T } & TurnSpans> {
+  async runTurn<T>(fn: (headers: Readonly<globalThis.Record<string, string>>) => Promise<T>): Promise<{ result: T } & TurnSpans> {
     const traceId = randomBytes(16).toString("hex");
     const headers = { traceparent: `00-${traceId}-${randomBytes(8).toString("hex")}-01` };
 

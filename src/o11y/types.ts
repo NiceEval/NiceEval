@@ -179,7 +179,7 @@ export interface TraceSpan {
    */
   kind?: SpanKind;
   /** OTLP span 属性(gen_ai.* / tool 名 / token 等),按 key 摊平。raw 属性始终保留供下钻。 */
-  attributes?: Record<string, JsonValue>;
+  attributes?: globalThis.Record<string, JsonValue>;
   /** 落盘截断标记(只由 results writer 在序列化时写入,运行时全量;见 Truncation)。 */
   truncated?: Truncation[];
 }
@@ -193,7 +193,7 @@ export interface TraceSpan {
 export interface O11ySummary {
   totalTurns: number;
   /** 只有跑之前调用过的 canonical 工具名才有 key,不是全量出现;省略的 ToolName 视为 0。 */
-  toolCalls: Partial<Record<ToolName, number>>;
+  toolCalls: Partial<globalThis.Record<ToolName, number>>;
   totalToolCalls: number;
   filesRead: string[];
   filesModified: string[];

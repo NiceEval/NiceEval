@@ -221,4 +221,68 @@ describe("probeJudge 探测的错误分类", () => {
     vi.stubGlobal("fetch", async (): Promise<Response> => new Response("{}", { status: 200 }));
     expect(await probeJudge(judge)).toBeUndefined();
   });
+
+  it("传输失败最多探测两次，HTTP 响应失败不重试", async () => {
+    withKey();
+    const transport = vi.fn(async (): Promise<Response> => {
+      throw new Error("ECONNRESET");
+    });
+    vi.stubGlobal("fetch", transport);
+    await probeJudge(judge);
+    expect(transport).toHaveBeenCalledTimes(2);
+
+    const http = vi.fn(async (): Promise<Response> => new Response("bad gateway", { status: 502 }));
+    vi.stubGlobal("fetch", http);
+    await probeJudge(judge);
+    expect(http).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("judge 调用失败保留 unavailable", () => {
+  const judge: JudgeConfig = { model: "fixture-model", baseUrl: "http://judge.fixture.internal/v1" };
+
+  async function expectUnavailable(
+    fetchImpl: () => Promise<Response>,
+    evidence: RegExp,
+  ): Promise<void> {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    const fetchMock = vi.fn(fetchImpl);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const required = judgeWith(judge);
+    required.ns.autoevals.closedQA("是否切题?").gate(0.8);
+    const [requiredResult] = await required.collector.finalize(ctx());
+    expect(requiredResult).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
+    expect(requiredResult?.outcome === "unavailable" && requiredResult.evidence).toMatch(evidence);
+    expect(computeVerdict({ assertions: [requiredResult!] })).toBe("errored");
+
+    const optional = judgeWith(judge);
+    optional.ns.autoevals.closedQA("是否切题?").optional();
+    const [optionalResult] = await optional.collector.finalize(ctx());
+    expect(optionalResult).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed", optional: true });
+    expect(computeVerdict({ assertions: [optionalResult!] })).toBe("passed");
+
+    // 每条实际判分请求恰好一次；不能由 SDK 在失败后自动重放并重复收费。
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }
+
+  it("HTTP 非 2xx 不伪装成 0 分", async () => {
+    await expectUnavailable(async () => new Response("gateway down", { status: 502 }), /HTTP 502/);
+  });
+
+  it("连接中断不伪装成 0 分", async () => {
+    await expectUnavailable(async () => {
+      throw new TypeError("socket hang up");
+    }, /Connection error/);
+  });
+
+  it("调用超时不伪装成 0 分", async () => {
+    await expectUnavailable(async () => {
+      throw Object.assign(new Error("request timed out"), { name: "TimeoutError" });
+    }, /Request timed out/);
+  });
+
+  it("2xx 但响应协议不符或取不出分数不伪装成 0 分", async () => {
+    await expectUnavailable(async () => new Response(JSON.stringify({ choices: [] }), { status: 200 }), /Cannot read properties/);
+  });
 });

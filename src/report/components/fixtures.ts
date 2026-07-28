@@ -15,7 +15,7 @@ import type {
   ScoreboardData,
   TableData,
 } from "../model/types.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 
 const locator = (s: string): AttemptLocator => s as AttemptLocator;
 
@@ -29,8 +29,8 @@ export const scopeSummaryData: ScopeSummaryData = {
   experiments: 2,
   evals: 6,
   attempts: 9,
-  evalVerdicts: { passed: 3, failed: 1, errored: 1, skipped: 1 },
-  attemptVerdicts: { passed: 4, failed: 3, errored: 1, skipped: 1 },
+  evalVerdicts: { passed: 3, failed: 1, errored: 1, unreadable: 1 },
+  attemptVerdicts: { passed: 4, failed: 3, errored: 1, unreadable: 1 },
   // 两级聚合口径,刻意不等于任一计票的比例:组件必须原样渲染,不重算
   endToEndPassRate: { value: 0.6, display: "60%", samples: 8, total: 9, refs: [] },
   scoringComposition: "pass",
@@ -282,7 +282,7 @@ export const deltaData: DeltaData = {
   pairedDelta: {
     "compare/agents-md": {
       commonEvalIds: ["algebra/quadratic", "algebra/systems"],
-      pass: { evalIds: ["algebra/quadratic", "algebra/systems"], passRatePoints: 50 },
+      pass: { knownEvalIds: ["algebra/quadratic", "algebra/systems"], passRatePoints: 50 },
       tokens: -529800,
       costUSD: -0.69,
     },
@@ -362,7 +362,7 @@ export const experimentListItems: ExperimentListItem[] = [
     model: "gpt-5.4",
     flags: { memory: true },
     scoring: "pass",
-    evalVerdicts: { passed: 1, failed: 1, errored: 0, skipped: 0 },
+    evalVerdicts: { passed: 1, failed: 1, errored: 0, unreadable: 0 },
     endToEndPassRate: { value: 0.5, display: "50%", samples: 2, total: 2, refs: [] },
     totalScore: { value: null, display: "—", samples: 0, total: 2, refs: [] },
     costUSD: { value: 0.12, display: "$0.12", samples: 1, total: 2, refs: [failedAttempt.locator] },
@@ -396,7 +396,7 @@ export const experimentListItems: ExperimentListItem[] = [
     experimentId: "compare/codex",
     agent: "codex",
     scoring: "pass",
-    evalVerdicts: { passed: 0, failed: 0, errored: 1, skipped: 0 },
+    evalVerdicts: { passed: 0, failed: 0, errored: 1, unreadable: 0 },
     endToEndPassRate: { value: 0, display: "0%", samples: 1, total: 1, refs: [] },
     totalScore: { value: null, display: "—", samples: 0, total: 1, refs: [] },
     costUSD: { value: null, display: "—", samples: 0, total: 1, refs: [] },

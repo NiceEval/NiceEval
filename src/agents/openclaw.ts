@@ -170,7 +170,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       if (model) args.push("--model", model);
 
       const apiKey = resolveApiKey(config);
-      const env: Record<string, string> = {
+      const env: globalThis.Record<string, string> = {
         OPENCLAW_API_KEY: apiKey,
         ANTHROPIC_API_KEY: apiKey,
         OPENAI_API_KEY: apiKey,

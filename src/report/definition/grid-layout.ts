@@ -2,7 +2,7 @@
 // docs/feature/reports/library/layout.md「Grid 与 Stat」)。只放同步纯函数与中间类型:
 // normalizeGrid 把 resolved ReportNode children 校验并展平成有序 cell 列表;planTextGrid
 // 只依赖 availableWidth / cell 数 / 规范化 Grid props,规划 text 面的列数与每列宽度。
-// 不 import show / view、Results IO 或 stylesheet;primitives.tsx 消费本文件产出两面适配。
+// 不 import show / view、Record IO 或 stylesheet;primitives.tsx 消费本文件产出两面适配。
 
 import type { ReportNode } from "./tree.ts";
 
@@ -13,7 +13,7 @@ export type GridDensity = "regular" | "compact";
 // Symbol.for 全局注册表保证同一符号,不产生耦合)。
 const REACT_FRAGMENT = Symbol.for("react.fragment");
 
-function isElementNode(node: unknown): node is { type: unknown; props: Record<string, unknown>; key?: unknown } {
+function isElementNode(node: unknown): node is { type: unknown; props: globalThis.Record<string, unknown>; key?: unknown } {
   return typeof node === "object" && node !== null && !Array.isArray(node) && "type" in node && "props" in node;
 }
 

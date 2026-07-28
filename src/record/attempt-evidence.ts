@@ -104,14 +104,14 @@ export interface AttemptEvidence {
  * annotated-source.ts / execution-tree.ts / attempt.diff() 自身,这里只调用与判定"够不够
  * 亮起对应的证据切面"。
  *
- * `attempt.locator` 在真实读取路径(openResults() 产出的 handle)恒有值;缺失时按当前身份
+ * `attempt.locator` 在真实读取路径(openRecord() 产出的 handle)恒有值;缺失时按当前身份
  * 元组按 encodeAttemptLocator 兜底算一份,同 open.ts 给 record.locator 做的兜底同一口径——
  * 只服务手工构造 AttemptHandle 的测试场景,不改变真实读取路径的行为。
  */
 export async function loadAttemptEvidence(attempt: AttemptHandle): Promise<AttemptEvidence> {
   const identity: AttemptIdentity = {
     experimentId: attempt.experimentId,
-    snapshotStartedAt: attempt.snapshot.startedAt,
+    snapshotStartedAt: attempt.run.startedAt,
     evalId: attempt.evalId,
     attempt: attempt.result.attempt,
   };
@@ -168,6 +168,6 @@ export async function loadAttemptEvidence(attempt: AttemptHandle): Promise<Attem
 function attemptArtifactDir(attempt: AttemptHandle): string {
   const r = attempt.result;
   return r.artifactBase
-    ? join(attempt.snapshot.dir, "..", "..", r.artifactBase)
-    : join(attempt.snapshot.dir, attempt.ref.attempt);
+    ? join(attempt.run.dir, "..", "..", r.artifactBase)
+    : join(attempt.run.dir, attempt.ref.attempt);
 }

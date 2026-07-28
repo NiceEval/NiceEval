@@ -1,22 +1,22 @@
-// copySnapshots:把选中快照按格式感知地复制到另一个目录(定稿见 docs/feature/record/library.md「复制与瘦身」)。
+// publish:把选中快照按格式感知地复制到另一个目录(定稿见 docs/feature/record/library.md「复制与瘦身」)。
 //
 // 发布场景的原语:只带指定 artifact、只带选中快照的全部 attempt,布局知识不外泄。
-// artifact 复制忠实于源(原字节,不重新序列化、不改写);snapshot.json / result.json
-// 按选中条目重建,版本元数据保留。产物是一个标准结果根目录(同布局),openResults /
+// artifact 复制忠实于源(原字节,不重新序列化、不改写);run.json / result.json
+// 按选中条目重建,版本元数据保留。产物是一个标准结果根目录(同布局),openRecord /
 // `niceeval view` 直接能读。唯一随行补记的是挑选时的覆盖事实:每个复制出的快照带上
-// knownEvalIds(复制时刻该实验已知的 eval 并集),发布目录上重新 openResults().latest(),
+// knownEvalIds(复制时刻该实验已知的 eval 并集),发布目录上重新 openRecord().latest(),
 // 残缺警告被同一套机制重新算出来,不靠发布者转述。
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { EvalResult } from "../types.ts";
-import { RESULTS_FORMAT } from "../types.ts";
-import { RESULT_FILE, SNAPSHOT_FILE, artifactFileOf, experimentDirOf } from "./format.ts";
+import { RECORD_FORMAT } from "../types.ts";
+import { RESULT_FILE, RUN_FILE, artifactFileOf, experimentDirOf } from "./format.ts";
 import { experimentOfSnapshot } from "./open.ts";
-import { isNewerSnapshot } from "./select.ts";
+import { isNewerSnapshot } from "../sample/index.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { PUBLISH_FILE_MAX_BYTES } from "./publish.ts";
-import type { ArtifactKind, AttemptHandle, Scope, Snapshot, SnapshotMeta } from "./types.ts";
+import type { ArtifactKind, AttemptHandle, Sample, Run, RunMeta } from "./types.ts";
 
 /** 缺省携带的 artifact:commands / events / trace / o11y / agentSetup / sources;diff 不截断、
  *  可达百 MB,缺省不带。commands 缺省带的理由单独交代:失败命令证据是 errored attempt 的主要
@@ -33,30 +33,30 @@ export interface CopySnapshotsResult {
   /** 目标结果根目录的绝对路径。 */
   dir: string;
   /** 复制过程中的警告(如同一实验选中多个快照);不静默。 */
-  warnings: string[];
+  issues: string[];
 }
 
 /**
  * 把选中快照复制成 `destDir` 下的一个标准结果根目录(`<experiment-dir>/<源快照目录名>/`,
- * 快照目录名原样保留,身份不变)。输入收 Scope 或手工挑的 Snapshot[]
+ * 快照目录名原样保留,身份不变)。输入收 Sample 或手工挑的 Run[]
  * (与 Reports 计算函数同一输入约定)。目标目录非空即报错,不静默覆盖、不合并。
  */
-export async function copySnapshots(
-  scope: Scope | readonly Snapshot[],
+export async function publish(
+  scope: Sample | readonly Run[],
   destDir: string,
   opts: CopySnapshotsOptions = {},
 ): Promise<CopySnapshotsResult> {
-  const selected = Array.isArray(scope) ? (scope as readonly Snapshot[]) : (scope as Scope).snapshots;
+  const selected = Array.isArray(scope) ? (scope as readonly Run[]) : (scope as Sample).runs;
   if (selected.length === 0) {
     throw new Error(
-      "copySnapshots got no snapshots to copy. Check the experiments filter, or pass snapshots from openResults().latest().",
+      "publish got no runs to copy. Check the experiments filter, or pass runs from openRecord().latest().",
     );
   }
   const kinds = opts.artifacts ?? [...DEFAULT_PUBLISH_ARTIFACTS];
   for (const kind of kinds) {
     if (!VALID_ARTIFACTS.includes(kind)) {
       throw new Error(
-        `Unknown artifact kind "${String(kind)}" in copySnapshots options. Valid kinds: ${VALID_ARTIFACTS.join(", ")}.`,
+        `Unknown artifact kind "${String(kind)}" in publish options. Valid kinds: ${VALID_ARTIFACTS.join(", ")}.`,
       );
     }
   }
@@ -65,25 +65,25 @@ export async function copySnapshots(
 
   // 同一 experiment 选中多个快照 → 只带最新的那个,记 warning(无胜者逻辑:一旦落到单快照,
   // 快照内 evalId+attempt 天然唯一)。
-  const byExperiment = new Map<string, Snapshot>();
-  const warnings: string[] = [];
-  for (const snapshot of selected) {
-    const existing = byExperiment.get(snapshot.experimentId);
+  const byExperiment = new Map<string, Run>();
+  const issues: string[] = [];
+  for (const run of selected) {
+    const existing = byExperiment.get(run.experimentId);
     if (!existing) {
-      byExperiment.set(snapshot.experimentId, snapshot);
+      byExperiment.set(run.experimentId, run);
       continue;
     }
-    warnings.push(
-      `warning: multiple snapshots selected for experiment "${snapshot.experimentId}"; kept the newest one, dropped the rest. Dedupe with Scope.filter() or pick a single snapshot per experiment before copySnapshots to avoid this.`,
+    issues.push(
+      `warning: multiple runs selected for experiment "${run.experimentId}"; kept the newest one, dropped the rest. Dedupe with Sample.filter() or pick a single run per experiment before publish to avoid this.`,
     );
-    if (isNewerSnapshot(snapshot, existing)) byExperiment.set(snapshot.experimentId, snapshot);
+    if (isNewerSnapshot(run, existing)) byExperiment.set(run.experimentId, run);
   }
 
   // 发布前整文件预检:先规划并序列化全部目标文件,任一文件超过 PUBLISH_FILE_MAX_BYTES
   // 就整体失败,不留半成品目标目录。
   const planned: PlannedFile[] = [];
-  for (const snapshot of byExperiment.values()) {
-    planned.push(...(await planOneSnapshot(snapshot, [...selected], dest, kinds)));
+  for (const run of byExperiment.values()) {
+    planned.push(...(await planOneSnapshot(run, [...selected], dest, kinds)));
   }
   const oversized = planned.filter((f) => f.bytes.byteLength > PUBLISH_FILE_MAX_BYTES);
   if (oversized.length > 0) {
@@ -91,7 +91,7 @@ export async function copySnapshots(
       (f) =>
         `  ${f.source ?? f.path}: ${f.bytes.byteLength} bytes (limit ${PUBLISH_FILE_MAX_BYTES}). Exclude that artifact kind from "artifacts", or regenerate the history with the current writer.`,
     );
-    throw new Error(`copySnapshots publish precheck failed; ${oversized.length} file(s) exceed the 50 MiB publish budget:\n${lines.join("\n")}`);
+    throw new Error(`publish publish precheck failed; ${oversized.length} file(s) exceed the 50 MiB publish budget:\n${lines.join("\n")}`);
   }
 
   await mkdir(dest, { recursive: true });
@@ -100,7 +100,7 @@ export async function copySnapshots(
     await writeFile(file.path, file.bytes);
   }
 
-  return { dir: dest, warnings };
+  return { dir: dest, issues };
 }
 
 interface PlannedFile {
@@ -113,38 +113,40 @@ interface PlannedFile {
 }
 
 async function planOneSnapshot(
-  snapshot: Snapshot,
-  selected: Snapshot[],
+  run: Run,
+  selected: Run[],
   destRoot: string,
   kinds: ArtifactKind[],
 ): Promise<PlannedFile[]> {
-  const destSnapDir = join(destRoot, experimentDirOf(snapshot.experimentId), basename(snapshot.dir));
+  const destSnapDir = join(destRoot, experimentDirOf(run.experimentId), basename(run.dir));
   const planned: PlannedFile[] = [];
 
   // sources 的去重仓库(sources/<sha256>.json)是快照级的:同一份源码被多个 attempt 引用时,
   // 复制到目的地也只应该有一份——这个 Set 记录本快照已经规划过的 hash,整快照的 attempt 共享。
   const plannedSourceHashes = new Set<string>();
-  for (const attempt of snapshot.attempts) {
+  for (const attempt of run.attempts) {
     planned.push(...(await planOneAttempt(attempt, destSnapDir, kinds, plannedSourceHashes)));
   }
 
-  const knownEvalIds = experimentOfSnapshot(snapshot)?.evalIds ?? fallbackUnion(selected, snapshot.experimentId);
-  const meta: SnapshotMeta = {
-    format: RESULTS_FORMAT,
-    schemaVersion: snapshot.schemaVersion,
-    producer: snapshot.producer,
-    experimentId: snapshot.experimentId,
-    ...(snapshot.experiment !== undefined ? { experiment: snapshot.experiment } : {}),
-    agent: snapshot.agent,
-    ...(snapshot.model !== undefined ? { model: snapshot.model } : {}),
-    startedAt: snapshot.startedAt,
-    ...(snapshot.completedAt !== undefined ? { completedAt: snapshot.completedAt } : {}),
-    ...(snapshot.diagnostics?.length ? { diagnostics: snapshot.diagnostics } : {}),
-    ...(snapshot.facts && Object.keys(snapshot.facts).length ? { facts: snapshot.facts } : {}),
+  const knownEvalIds = experimentOfSnapshot(run)?.knownEvalIds ?? fallbackUnion(selected, run.experimentId);
+  const meta: RunMeta = {
+    format: RECORD_FORMAT,
+    schemaVersion: run.schemaVersion,
+    producer: run.producer,
+    runId: run.runId,
+    experimentId: run.experimentId,
+    ...(run.experiment !== undefined ? { experiment: run.experiment } : {}),
+    agent: run.agent,
+    ...(run.model !== undefined ? { model: run.model } : {}),
+    startedAt: run.startedAt,
+    ...(run.configHash !== undefined ? { configHash: run.configHash } : {}),
+    ...(run.completedAt !== undefined ? { completedAt: run.completedAt } : {}),
+    ...(run.diagnostics?.length ? { diagnostics: run.diagnostics } : {}),
+    ...(run.facts && Object.keys(run.facts).length ? { facts: run.facts } : {}),
     ...(knownEvalIds.length ? { knownEvalIds } : {}),
-    ...(snapshot.name !== undefined ? { name: snapshot.name } : {}),
+    ...(run.name !== undefined ? { name: run.name } : {}),
   };
-  planned.push({ path: join(destSnapDir, SNAPSHOT_FILE), bytes: Buffer.from(JSON.stringify(meta, null, 2), "utf-8") });
+  planned.push({ path: join(destSnapDir, RUN_FILE), bytes: Buffer.from(JSON.stringify(meta, null, 2), "utf-8") });
   return planned;
 }
 
@@ -209,7 +211,7 @@ async function assertEmptyDestination(dest: string): Promise<void> {
   }
   if (entries.length > 0) {
     throw new Error(
-      `Destination directory "${dest}" is not empty. copySnapshots never overwrites or merges; delete the directory first if you want to replace it.`,
+      `Destination directory "${dest}" is not empty. publish never overwrites or merges; delete the directory first if you want to replace it.`,
     );
   }
 }
@@ -219,9 +221,9 @@ async function findArtifactFiles(
   attempt: AttemptHandle,
   kinds: ArtifactKind[],
 ): Promise<{ kind: ArtifactKind; source: string }[]> {
-  const candidates: string[] = [join(attempt.snapshot.dir, attempt.ref.attempt)];
+  const candidates: string[] = [join(attempt.run.dir, attempt.ref.attempt)];
   if (attempt.result.artifactBase) {
-    candidates.push(resolve(dirname(dirname(attempt.snapshot.dir)), attempt.result.artifactBase));
+    candidates.push(resolve(dirname(dirname(attempt.run.dir)), attempt.result.artifactBase));
   }
 
   const found: { kind: ArtifactKind; source: string }[] = [];
@@ -242,12 +244,12 @@ async function findArtifactFiles(
 }
 
 /**
- * 重建 attempt 记录:去掉快照级字段(agent/model/experimentId/experiment,目标 snapshot.json
+ * 重建 attempt 记录:去掉快照级字段(agent/model/experimentId/experiment,目标 run.json
  * 已经带了)与 artifactBase(artifact 已本地化,不再需要回退指针);artifacts 词干列表按目标目录
  * 实际复制到的种类重算(不沿用源条目的旧列表)。startedAt 是 attempt 级事实(身份键与「何时跑的」
  * 都靠它),原样保留。
  */
-function slimForCopy(r: EvalResult, copied: Set<ArtifactKind>): Record<string, unknown> {
+function slimForCopy(r: EvalResult, copied: Set<ArtifactKind>): globalThis.Record<string, unknown> {
   const {
     agent,
     model,
@@ -287,13 +289,13 @@ function slimForCopy(r: EvalResult, copied: Set<ArtifactKind>): Record<string, u
   };
 }
 
-/** experimentOfSnapshot 查不到归属(手工构造的 Snapshot[])时的兜底:同 id 输入快照的覆盖 ∪ 携带值。 */
-function fallbackUnion(selected: Snapshot[], experimentId: string): string[] {
+/** experimentOfSnapshot 查不到归属(手工构造的 Run[])时的兜底:同 id 输入快照的覆盖 ∪ 携带值。 */
+function fallbackUnion(selected: Run[], experimentId: string): string[] {
   const ids = new Set<string>();
-  for (const snapshot of selected) {
-    if (snapshot.experimentId !== experimentId) continue;
-    for (const ev of snapshot.evals) ids.add(ev.id);
-    for (const known of snapshot.knownEvalIds ?? []) ids.add(known);
+  for (const run of selected) {
+    if (run.experimentId !== experimentId) continue;
+    for (const ev of run.evals) ids.add(ev.id);
+    for (const known of run.knownEvalIds ?? []) ids.add(known);
   }
   return [...ids].sort();
 }

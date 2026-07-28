@@ -8,10 +8,10 @@ import type { DiscoveredEval, SandboxOption, SandboxRunInfo } from "../types.ts"
 import type { AgentRun } from "./types.ts";
 
 /** environments 表是内置 provider spec 的数据字段;这里只做查表,不认 provider 名。 */
-function specEnvironments(spec: SandboxOption): Readonly<Record<string, Record<string, unknown>>> | undefined {
+function specEnvironments(spec: SandboxOption): Readonly<globalThis.Record<string, globalThis.Record<string, unknown>>> | undefined {
   const environments = (spec as { environments?: unknown }).environments;
   if (typeof environments !== "object" || environments === null) return undefined;
-  return environments as Readonly<Record<string, Record<string, unknown>>>;
+  return environments as Readonly<globalThis.Record<string, globalThis.Record<string, unknown>>>;
 }
 
 /** 按 profile 派生该 eval 的具体 spec(浅覆盖预制产物槽位,hooks 与其余参数共享);缺表项返回 undefined。 */
@@ -75,14 +75,14 @@ export function prepareRunSandboxes(evals: DiscoveredEval[], runs: AgentRun[], f
 /** ExperimentRunInfo 的 sandbox 投影:顶层恒为基础 spec;sandboxByEval 只含声明了 environment 的选中 eval。 */
 export function sandboxProjection(run: AgentRun, fallback?: SandboxOption): {
   sandbox?: SandboxRunInfo;
-  sandboxByEval?: Record<string, SandboxRunInfo>;
+  sandboxByEval?: globalThis.Record<string, SandboxRunInfo>;
 } {
   if (run.agent.kind !== "sandbox") return {};
   const sandbox = sandboxRunInfo(run.sandbox ?? fallback);
   const entries = [...(run.resolvedSandboxes ?? new Map<string, SandboxOption>()).entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   );
-  const sandboxByEval: Record<string, SandboxRunInfo> = {};
+  const sandboxByEval: globalThis.Record<string, SandboxRunInfo> = {};
   for (const [evalId, derived] of entries) {
     const info = sandboxRunInfo(derived);
     if (info !== undefined) sandboxByEval[evalId] = info;

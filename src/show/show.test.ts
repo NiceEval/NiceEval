@@ -14,19 +14,19 @@
 //   `@<locator>` 与重复 `--exp` 互斥、缺省切片对照矩阵的占位接线点(renderCompareSlice)错误
 //   反馈;eval id 前缀命中单个 eval 时并入范围收窄后的默认报告,不再有独立的单 eval 详情分支。
 //
-// 跨快照合成 Selection 与去重的结构化语义(selectCurrentResults/现刻水位)已在
-// src/results/host-equivalence.test.ts 直接对 Selection 对象断言,不在本文件重复覆盖。
+// 跨快照合成 Selection 与去重的结构化语义(currentSample/现刻水位)已在
+// src/record/host-equivalence.test.ts 直接对 Selection 对象断言,不在本文件重复覆盖。
 //
-// fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
+// fixture 直接写新布局(<expDir>/<snapDir>/run.json + <evalId>/a<n>/result.json),
 // 依据是 docs/feature/record/architecture.md 的稳定磁盘契约,不经 writer 运行时 API(避免与并行重写的
-// niceeval/results 写入面签名耦合)。
+// niceeval/record 写入面签名耦合)。
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openResults } from "../results/index.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type StreamEvent, type Verdict } from "../types.ts";
+import { openRecord } from "../record/index.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type StreamEvent, type Verdict } from "../types.ts";
 import { attemptHistory } from "./compose.ts";
 import { runShow, type ShowFlags } from "./index.ts";
 import { setConfiguredLocale } from "../i18n/index.ts";
@@ -77,9 +77,10 @@ interface SnapshotOpts {
   startedAt: string;
   completedAt?: string;
   knownEvalIds?: string[];
+  configHash?: string;
 }
 
-/** 写一份新布局快照:snapshot.json + 各 attempt 的 result.json。返回快照目录绝对路径。 */
+/** 写一份新布局快照:run.json + 各 attempt 的 result.json。返回快照目录绝对路径。 */
 async function writeSnapshot(
   root: string,
   snapDirName: string,
@@ -89,17 +90,19 @@ async function writeSnapshot(
   const dir = join(root, cleanDirName(opts.experimentId), snapDirName);
   await mkdir(dir, { recursive: true });
   const meta = {
-    format: RESULTS_FORMAT,
-    schemaVersion: RESULTS_SCHEMA_VERSION,
+    format: RECORD_FORMAT,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     producer: { name: "niceeval", version: "0.4.6" },
+    runId: `${snapDirName}-0000-4000-8000-000000000000`,
     experimentId: opts.experimentId,
     agent: opts.agent ?? "bub",
     ...(opts.model !== undefined ? { model: opts.model } : {}),
     startedAt: opts.startedAt,
+    configHash: opts.configHash ?? "fixture-config",
     completedAt: opts.completedAt ?? opts.startedAt,
     ...(opts.knownEvalIds ? { knownEvalIds: opts.knownEvalIds } : {}),
   };
-  await writeFile(join(dir, "snapshot.json"), JSON.stringify(meta, null, 2), "utf-8");
+  await writeFile(join(dir, "run.json"), JSON.stringify(meta, null, 2), "utf-8");
   for (const r of results) {
     const attemptDir = join(dir, r.id, `a${r.attempt ?? 0}`);
     await mkdir(attemptDir, { recursive: true });
@@ -172,7 +175,7 @@ interface Captured {
 async function show(root: string, patterns: string[], flags: ShowFlags = {}, width = 100): Promise<Captured> {
   let out = "";
   let err = "";
-  const code = await runShow(root, patterns, { results: root, ...flags }, {
+  const code = await runShow(root, patterns, { record: root, ...flags }, {
     out: (s) => (out += s),
     err: (s) => (err += s),
     width,
@@ -251,7 +254,7 @@ describe("--history 时间轴", () => {
 
   it("attemptHistory:复印件按身份键去重不占行,startedAt 升序,行带摘要 / 成本 / locator", async () => {
     const root = await seedHistoryRoot();
-    const results = await openResults(root);
+    const results = await openRecord(root);
     const exp = results.experiments.find((e) => e.id === "compare/bub")!;
     const rows = attemptHistory(exp, "weather/brooklyn");
     // 快照2 里复印件被识别(与快照1 的真实执行同身份键),历次 attempt = 快照1 的 passed +
@@ -344,8 +347,8 @@ describe("--report 装载", () => {
   it("自定义报告没有 attempt-input page 时,裸 show @<locator> --report <file> 报完整用户反馈,指引三种解决路径,不回退到内建详情", async () => {
     const root = await seedComposedRoot();
     const report = await writeReportFileNoAttemptPage(root);
-    const results = await openResults(root);
-    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
 
     const { err, code } = await show(root, [locator], { report });
     expect(code).toBe(1);
@@ -355,7 +358,7 @@ describe("--report 装载", () => {
     expect(err).toContain("standardAttemptPage");
     expect(err).toContain('input: "attempt"');
     // 不静默回退渲染内建 standard 的详情页(那会让用户以为自定义报告本来就有这页)
-    expect(err).not.toContain("Eval Results");
+    expect(err).not.toContain("Eval Record");
   });
 });
 
@@ -394,8 +397,8 @@ describe("证据切面:范围 × 分节", () => {
     await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
       res("weather/brooklyn", "passed"),
     ]);
-    const results = await openResults(root);
-    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
     const byLocator = await show(root, [locator], { execution: true });
     const byPrefix = await show(root, ["weather/brooklyn"], { execution: true });
     expect(byLocator.code).toBe(0);
@@ -431,8 +434,8 @@ describe("show @<locator>", () => {
     await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "compare/bub", startedAt: "2026-07-08T10:00:00.000Z" }, [
       res("weather/brooklyn", "passed"),
     ]);
-    const results = await openResults(root);
-    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
 
     const { err, code } = await show(root, [locator, "weather/brooklyn"]);
     expect(code).toBe(1);
@@ -496,8 +499,8 @@ describe("多 --exp:范围校验与用法冲突", () => {
 
   it("@<locator> 与重复 --exp 互斥:先于任何 IO 报错,不去读结果根", async () => {
     const root = await seedTwoExperimentsRoot();
-    const results = await openResults(root);
-    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
     const { err, code } = await show(root, [locator], { experiment: ["compare/bub-baseline", "compare/bub-mempal"] });
     expect(code).toBe(1);
     expect(err).toContain("error:");
@@ -508,8 +511,8 @@ describe("多 --exp:范围校验与用法冲突", () => {
 
   it("locator 与单个 --exp 不互斥(只有重复 --exp 才冲突)", async () => {
     const root = await seedTwoExperimentsRoot();
-    const results = await openResults(root);
-    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
     // 无证据 flag 的 @<locator> 走 attempt-input page(内建 standard),同样间接依赖
     // dist/report/built-in;带一个证据 flag 绕开报告槽,只验证 mutex 没有误伤单个 --exp。
     const { code } = await show(root, [locator], { experiment: ["compare/bub-baseline"], execution: true });
@@ -519,7 +522,7 @@ describe("多 --exp:范围校验与用法冲突", () => {
 
 // ───────────────────────── --stats:稳定性矩阵 ─────────────────────────
 // cases: docs/engineering/testing/unit/reports.md「show 的范围 × 切片正交」——`--stats` 与
-// `@<locator>`/`--report` 的用法冲突;深层聚合判据(failed/errored 分列、skipped 不计、
+// `@<locator>`/`--report` 的用法冲突;深层聚合判据(failed/errored 分列、unreadable 不计、
 // neverPassed……)的断言面是 stabilityMatrixData 本身(见
 // src/report/components/metric-views/stability-matrix.test.ts)；可见头行与矩阵由 Report E2E
 // 验收，这里只保留公开 flag 的组合校验。
@@ -539,8 +542,8 @@ describe("--stats", () => {
 
   it("与 @<locator> 互斥:单 attempt 没有稳定性可言", async () => {
     const root = await seedStatsRoot();
-    const results = await openResults(root);
-    const locator = results.experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
     const { err, code } = await show(root, [locator], { stats: true });
     expect(code).toBe(1);
     expect(err).toContain("error:");

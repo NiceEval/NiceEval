@@ -6,7 +6,7 @@
 
 import type { ReactElement } from "react";
 import type { MatrixData } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, resolveMetricLabel, type ReportLocale } from "../../model/locale.ts";
 import { MetricCellView } from "../cell.tsx";
 import { colorClassForKey } from "../../assets/colors.ts";

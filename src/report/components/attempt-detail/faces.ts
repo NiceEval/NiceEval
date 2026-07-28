@@ -18,7 +18,7 @@ import type {
   UsageTableData,
 } from "../../model/types.ts";
 import type { AssertionResult, FailedCommandEvidence, ScoreEntry, TimingNode } from "../../../types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import type { TextContext } from "../../definition/tree.ts";
 import { localeText } from "../../model/locale.ts";
 import { formatDurationMs, formatMetricValue, formatPoints, formatPointsSuffix, formatReportDateTime, formatUSD, verdictMark } from "../../model/format.ts";

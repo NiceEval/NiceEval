@@ -21,7 +21,7 @@ import type {
 /** 把 JsonValue 当对象取字段;非对象返回 undefined。 */
 function field(input: JsonValue | undefined, key: string): JsonValue | undefined {
   if (input && typeof input === "object" && !Array.isArray(input)) {
-    return (input as Record<string, JsonValue>)[key];
+    return (input as globalThis.Record<string, JsonValue>)[key];
   }
   return undefined;
 }
@@ -210,7 +210,7 @@ export function extractUsageFromSpans(spans: readonly TraceSpan[]): Usage | unde
   return u;
 }
 
-function numAttr(attrs: Record<string, JsonValue>, ...keys: string[]): number {
+function numAttr(attrs: globalThis.Record<string, JsonValue>, ...keys: string[]): number {
   for (const k of keys) {
     const v = attrs[k];
     if (typeof v === "number" && v > 0) return v;
@@ -221,7 +221,7 @@ function numAttr(attrs: Record<string, JsonValue>, ...keys: string[]): number {
 // ───────────────────────── buildO11ySummary ─────────────────────────
 
 export function buildO11ySummary(events: readonly StreamEvent[]): O11ySummary {
-  const toolCalls: Partial<Record<ToolName, number>> = {};
+  const toolCalls: Partial<globalThis.Record<ToolName, number>> = {};
   let totalToolCalls = 0;
   const filesRead = new Set<string>();
   const filesModified = new Set<string>();

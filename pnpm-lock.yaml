@@ -26,6 +26,9 @@ importers:
       mermaid:
         specifier: ^11.16.0
         version: 11.16.0
+      openai:
+        specifier: ^6.49.0
+        version: 6.49.0(zod@4.4.3)
       react:
         specifier: ^19.0.0
         version: 19.2.7
@@ -3021,8 +3024,8 @@ packages:
   oniguruma-to-es@4.3.6:
     resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
 
-  openai@6.45.0:
-    resolution: {integrity: sha512-5DQVNErssk0afNpTTHUm/qZPU4iKR9OYdNid8Ib4puq4gHNNvGWZht2zY4h9a8JMF949Ik6m8gQutllVPbjdnw==}
+  openai@6.49.0:
+    resolution: {integrity: sha512-aYCc0C6L864eR6WSYIwQGyXriw/nIyZx0ObvhzOEVuk0zoBDpynjSbrionWI7q65B5H8jJX0DXR9snEzM6bfPg==}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
@@ -5211,7 +5214,7 @@ snapshots:
       js-yaml: 4.3.0
       linear-sum-assignment: 1.0.9
       mustache: 4.2.0
-      openai: 6.45.0(zod@3.25.76)
+      openai: 6.49.0(zod@3.25.76)
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
@@ -6401,9 +6404,13 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
-  openai@6.45.0(zod@3.25.76):
+  openai@6.49.0(zod@3.25.76):
     optionalDependencies:
       zod: 3.25.76
+
+  openai@6.49.0(zod@4.4.3):
+    optionalDependencies:
+      zod: 4.4.3
 
   openapi-fetch@0.14.1:
     dependencies:

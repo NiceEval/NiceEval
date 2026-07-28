@@ -6,7 +6,7 @@ import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../mode
 import { formatPoints } from "../../model/format.ts";
 import { cx } from "../shared.ts";
 
-const CAPABILITY_LABEL: Record<keyof AttemptSummaryData["capabilities"], string> = {
+const CAPABILITY_LABEL: globalThis.Record<keyof AttemptSummaryData["capabilities"], string> = {
   source: "source",
   execution: "execution",
   timing: "timing",

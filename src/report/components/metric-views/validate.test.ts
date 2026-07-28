@@ -195,7 +195,7 @@ describe("validateDeltaData", () => {
       },
     ],
     totals: { baseline: { scoringComposition: "pass", passed: 1, denominator: 1 } },
-    pairedDelta: { "agents-md": { commonEvalIds: ["coding/a"], pass: { evalIds: ["coding/a"], passRatePoints: 0 } } },
+    pairedDelta: { "agents-md": { commonEvalIds: ["coding/a"], pass: { knownEvalIds: ["coding/a"], passRatePoints: 0 } } },
   };
 
   it("合规 literal 通过", () => {

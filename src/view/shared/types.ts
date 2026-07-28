@@ -1,14 +1,14 @@
 // server(data.ts)与前端(app/)共用的 view 数据形状。
 // viewData 会被序列化进静态 HTML,两边必须对同一份声明编程;只允许 type import。
 //
-// viewData 只携带壳需要的东西:skipped、项目名与 run 元信息。attempt 明细不在这里——
+// viewData 只携带壳需要的东西:unreadable、项目名与 run 元信息。attempt 明细不在这里——
 // 每份 attempt/<locator>.html 是独立静态文档(site.ts),不通过 viewData 这条通道下发;
 // 统计口径(KPI / 实验列表 / 挑选警告)整体住在报告槽的静态 HTML 里(ExperimentComparison 或
 // --report 的报告自己算),壳与报告之间没有第二条数据通道。
 
 import type { LocalizedText } from "../../types.ts";
 import type { ReportLocale } from "../../report/model/locale.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 
 export type { AttemptLocator };
 
@@ -17,7 +17,7 @@ export type { AttemptLocator };
  * <template id="niceeval-report-<pageId>-<locale>"> 静态块,前端按当前页与界面语言摆放
  * 对应块,切语言 / 切页不重算数据。
  */
-export type ReportSlotHtml = Record<ReportLocale, string>;
+export type ReportSlotHtml = globalThis.Record<ReportLocale, string>;
 
 /** 服务端渲染好的一页报告(HTML 本体不进 viewData,烘成 <template> 静态块)。 */
 export interface ViewReportPageHtml {
@@ -40,7 +40,7 @@ export interface ViewReportPageMeta {
 /**
  * 规范化后的报告外壳声明(docs/feature/reports/library/shell.md):壳(导航 / 页脚)由前端
  * 渲染,页内容消费 <template> 静态块。title 已走完回退链(def.title → 唯一且相同的快照 name →
- * 内置文案「Eval 运行结果 / Eval Results」),宿主落点只有浏览器 <title>(文档单例);
+ * 内置文案「Eval 运行结果 / Eval Record」),宿主落点只有浏览器 <title>(文档单例);
  * 页内 hero 标题由 Hero 组件消费同一取值链,品牌是组件、宿主页头不渲染任何品牌位。
  * scripts / styles 是注入资产,不进 viewData。
  * link 的 icon 是内联 SVG 字符串(原样透传、原样内联),不收组件——viewData 就是序列化边界。
@@ -55,19 +55,19 @@ export interface ViewReportMeta {
 }
 
 /**
- * 目录扫描里被跳过的 run 的结构化条目;三种原因与 niceeval/results 的 skipped 一致。
- * 页面上的呈现不走它:不可读快照已形成 `unreadable-snapshot` Scope warning,由报告页内的
+ * 目录扫描里被跳过的 run 的结构化条目;三种原因与 niceeval/record 的 unreadable 一致。
+ * 页面上的呈现不走它:不可读快照已形成 `unreadable-run` Sample warning,由报告页内的
  * `ScopeWarnings` 组件显示;这里只随 viewData 携带原始事实。
  */
 export interface SkippedRunNotice {
   /** run 目录,相对 cwd。 */
   dir: string;
-  reason: "incompatible-version" | "malformed" | "incomplete";
+  reason: "incompatible" | "malformed" | "incomplete";
   schemaVersion?: number;
   /** 完整 producer:只有 name === "niceeval" 才配得出 npx 命令,第三方 harness 如实报名字。 */
   producerName?: string;
   producerVersion?: string;
-  /** incompatible-version 且 producer 是 niceeval:服务端拼好的查看命令。 */
+  /** incompatible 且 producer 是 niceeval:服务端拼好的查看命令。 */
   command?: string;
   /** malformed:一句诊断(invalid JSON / results 不是数组 …)。 */
   detail?: string;
@@ -82,7 +82,7 @@ export interface ViewData {
   lastRunAt?: string;
   /** 报告槽 Selection 合成自几个物理 run。 */
   composedRuns: number;
-  /** 读不了的落盘(三种原因);呈现走报告页内的 ScopeWarnings(unreadable-snapshot warning)。 */
+  /** 读不了的落盘(三种原因);呈现走报告页内的 ScopeWarnings(unreadable-run warning)。 */
   skippedRuns?: SkippedRunNotice[];
   /** 报告外壳与页导航的声明(规范化后);缺省时前端按单页 `report` 兜底。 */
   report?: ViewReportMeta;

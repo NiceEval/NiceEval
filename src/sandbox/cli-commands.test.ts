@@ -451,7 +451,7 @@ describe("sandbox list/history — 一次性面板接线到 panel.ts", () => {
       { hash: "h3", at: anchorAt + 3, subject: "eval s1" },
       { hash: "h4", at: anchorAt + 4, subject: "agent turn2" },
     ];
-    const diffs: Record<string, string> = {
+    const diffs: globalThis.Record<string, string> = {
       h1: "A\tfixture-a.json\nA\tfixture-b.json\nA\tfixture-c.json",
       h2: "M\tmanager_decisions.json",
       h3: "M\tnotes/status.md",

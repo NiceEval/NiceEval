@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { executionText, verdictReasonLine } from "./render.ts";
 import type { EvalResult, PhaseTiming, StreamEvent, TimingNode, Verdict } from "../types.ts";
 import { buildExecutionTree } from "../o11y/execution-tree.ts";
-import { encodeAttemptLocator, type AttemptEvidence, type AttemptIdentity } from "../results/index.ts";
+import { encodeAttemptLocator, type AttemptEvidence, type AttemptIdentity } from "../record/index.ts";
 
 function erroredResult(message: string): EvalResult {
   return {

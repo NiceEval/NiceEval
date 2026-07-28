@@ -5,7 +5,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { AssertionResult, PhaseTiming, StreamEvent } from "../types.ts";
-import { buildAnnotatedEvalSource, deriveSendAnnotations, type SendAnnotation } from "./annotated-source.ts";
+import {
+  assembleSourceTree,
+  buildAnnotatedEvalSource,
+  deriveSendAnnotations,
+  projectSourceView,
+  type SendAnnotation,
+} from "./annotated-source.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 
 const SOURCE_PATH = "evals/weather.eval.ts";
@@ -195,5 +201,43 @@ describe("deriveSendAnnotations", () => {
     ]);
     expect(deriveSendAnnotations(null, undefined)).toEqual([]);
     expect(deriveSendAnnotations([], undefined)).toEqual([]);
+  });
+});
+
+describe("assembleSourceTree / projectSourceView", () => {
+  it("以 entry 建主干、沿 callers 下钻 helper，并把无 loc 证据留在 unmapped", () => {
+    const entry = { path: "evals/main.ts", content: "await helper();\n", role: "entry" as const };
+    const helper = { path: "evals/helper.ts", content: "t.expect(true);\n", role: "referenced" as const };
+    const mapped = assertion({
+      name: "helper-check",
+      loc: {
+        file: "evals/helper.ts",
+        line: 1,
+        callers: [{ kind: "project", file: "evals/main.ts", line: 1 }],
+      },
+    });
+    const unmapped = assertion({ name: "no-location" });
+    const tree = assembleSourceTree({ entry, sources: [entry, helper], assertions: [mapped, unmapped], scoreEntries: [], sends: [] });
+
+    expect(tree.spine.file).toBe(entry.path);
+    expect(tree.spine.lines[0]!.calls[0]!.target).toMatchObject({ kind: "source", node: { file: helper.path } });
+    expect((tree.spine.lines[0]!.calls[0]!.target as { node: { lines: { annotations: AssertionResult[] }[] } }).node.lines[0]!.annotations).toEqual([mapped]);
+    expect(tree.unmapped.assertions).toEqual([unmapped]);
+    expect(projectSourceView(tree, { mode: "default" }).spine.lines.map((line) => line.line)).toEqual([1]);
+  });
+
+  it("缺少 callers 路径中的源码时保留 unavailable block，不吞掉证据", () => {
+    const entry = { path: "evals/main.ts", content: "await missing();\n", role: "entry" as const };
+    const result = assertion({
+      name: "lost-helper",
+      loc: {
+        file: "evals/missing.ts",
+        line: 1,
+        callers: [{ kind: "project", file: "evals/main.ts", line: 1 }],
+      },
+    });
+    const tree = assembleSourceTree({ entry, sources: [entry], assertions: [result], scoreEntries: [], sends: [] });
+    expect(tree.spine.lines[0]!.calls[0]!.target).toMatchObject({ kind: "unavailable", file: "evals/missing.ts" });
+    expect(tree.unmapped.assertions).toEqual([result]);
   });
 });

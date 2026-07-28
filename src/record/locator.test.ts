@@ -114,11 +114,11 @@ describe("buildLocatorIndex", () => {
   it("相同身份重复出现不算撞车(--resume 携带条目跨快照复现同一身份);索引仍只有一条,后者覆盖前者", () => {
     const identity = id();
     const index = buildLocatorIndex([
-      { identity, handle: "old-snapshot-handle" },
-      { identity, handle: "new-snapshot-handle" },
+      { identity, handle: "old-run-handle" },
+      { identity, handle: "new-run-handle" },
     ]);
     expect(index.size).toBe(1);
-    expect(index.get(encodeAttemptLocator(identity))).toBe("new-snapshot-handle");
+    expect(index.get(encodeAttemptLocator(identity))).toBe("new-run-handle");
   });
 
   it("两个不同身份撞车时抛出 LocatorCollisionError,携带 locator 与两个身份", () => {

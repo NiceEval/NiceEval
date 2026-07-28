@@ -8,7 +8,7 @@ import type { ReportElement } from "./tree.ts";
 
 const FRAGMENT = Symbol.for("react.fragment");
 
-function el(type: string, props: Record<string, unknown> = {}): ReportElement {
+function el(type: string, props: globalThis.Record<string, unknown> = {}): ReportElement {
   return { type, props };
 }
 

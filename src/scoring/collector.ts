@@ -22,11 +22,13 @@ export interface EvalUnavailable {
   unavailable: true;
   /** 机器可读原因,如 "judge-model-unresolved"、"coverage:actions=partial"。 */
   reason: string;
+  /** 证据通道的状态或异常摘要；没有可用分数时仍保留排障线索。 */
+  evidence?: string;
 }
 
 /** 构造 EvalUnavailable 的便捷工厂(scoped / judge 断言用)。 */
-export function unavailable(reason: string): EvalUnavailable {
-  return { unavailable: true, reason };
+export function unavailable(reason: string, evidence?: string): EvalUnavailable {
+  return { unavailable: true, reason, ...(evidence !== undefined ? { evidence } : {}) };
 }
 
 function isUnavailable(v: unknown): v is EvalUnavailable {
@@ -262,7 +264,12 @@ export class AssertionCollector {
         // 前置断言已在写下的位置就地求值过,直接用那份快照——之后发生的事不改变它的结论。
         const raw = spec.settled ?? (await spec.evaluate(ctx));
         if (isUnavailable(raw)) {
-          out.push({ ...base, outcome: "unavailable", reason: raw.reason });
+          out.push({
+            ...base,
+            outcome: "unavailable",
+            reason: raw.reason,
+            ...(raw.evidence !== undefined ? { evidence: raw.evidence } : {}),
+          });
           continue;
         }
         if (typeof raw === "number") {

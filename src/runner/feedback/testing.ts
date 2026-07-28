@@ -52,7 +52,7 @@ export function createFakeFeedbackIO(
   opts: {
     stdout?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">>;
     stderr?: Partial<Pick<FakeFeedbackStream, "isTTY" | "columns" | "rows">>;
-    env?: Readonly<Record<string, string | undefined>>;
+    env?: Readonly<globalThis.Record<string, string | undefined>>;
     startAt?: number;
   } = {},
 ): FakeFeedbackIO {

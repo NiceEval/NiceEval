@@ -4,10 +4,10 @@
 
 export type Locale = "zh-CN" | "en";
 
-export type Vars = Record<string, string | number | boolean | undefined>;
+export type Vars = globalThis.Record<string, string | number | boolean | undefined>;
 
 /** 一份字典:消息 key → 文案(可含 {{var}} 占位)。 */
-export type Dictionary<K extends string = string> = Record<K, string>;
+export type Dictionary<K extends string = string> = globalThis.Record<K, string>;
 
 /** 把 {{var}} 占位替换成 vars 里的值;缺失的变量替换成空串而不是保留占位。 */
 export function interpolate(message: string, vars: Vars = {}): string {

@@ -5,7 +5,7 @@ import type { StreamEvent, Usage, ToolName, JsonValue } from "../../types.ts";
 import type { ParsedTranscript } from "./index.ts";
 import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../tool-names.ts";
 
-export const HERMES_TOOL_ALIASES: Record<string, ToolName> = {
+export const HERMES_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
   terminal: "shell",
   read_file: "file_read",
@@ -19,7 +19,7 @@ function normalizeToolName(name: string): ToolName {
 }
 
 function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
 
 function str(v: unknown): string | undefined {
@@ -73,7 +73,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
     return { events, usage: {}, compactions: 0, parseSuccess: true };
   }
 
-  const ingestSessionMeta = (obj: Record<string, unknown>): void => {
+  const ingestSessionMeta = (obj: globalThis.Record<string, unknown>): void => {
     inputTokens += num(obj, "input_tokens", "inputTokens");
     outputTokens += num(obj, "output_tokens", "outputTokens");
     cacheReadTokens += num(obj, "cache_read_tokens", "cacheReadTokens");
@@ -85,7 +85,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
     if (apiCalls) requests += apiCalls;
   };
 
-  const ingestMessage = (msg: Record<string, unknown>): void => {
+  const ingestMessage = (msg: globalThis.Record<string, unknown>): void => {
     const role = str(msg.role) ?? "assistant";
     const content = str(msg.content);
 
@@ -104,7 +104,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
     const toolCallsRaw = parseJsonField(msg.tool_calls ?? msg.toolCalls);
     if (Array.isArray(toolCallsRaw)) {
       for (const call of toolCallsRaw) {
-        const fn = get(call, "function") as Record<string, unknown> | undefined;
+        const fn = get(call, "function") as globalThis.Record<string, unknown> | undefined;
         const name =
           str(get(fn, "name")) ?? str(get(call, "name")) ?? str(msg.tool_name) ?? "unknown";
         const callId = str(get(call, "id")) ?? nextSynthId();
@@ -132,9 +132,9 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj: Record<string, unknown>;
+    let obj: globalThis.Record<string, unknown>;
     try {
-      obj = JSON.parse(trimmed) as Record<string, unknown>;
+      obj = JSON.parse(trimmed) as globalThis.Record<string, unknown>;
     } catch {
       parseSuccess = false;
       continue;
@@ -145,7 +145,7 @@ export function parseHermesTranscript(raw: string | undefined): ParsedTranscript
       if (Array.isArray(obj.messages)) {
         ingestSessionMeta(obj);
         for (const m of obj.messages) {
-          if (m && typeof m === "object") ingestMessage(m as Record<string, unknown>);
+          if (m && typeof m === "object") ingestMessage(m as globalThis.Record<string, unknown>);
         }
         continue;
       }
@@ -187,7 +187,7 @@ export function sessionIdFromHermesOutput(raw: string | undefined): string | und
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) continue;
     try {
-      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      const obj = JSON.parse(trimmed) as globalThis.Record<string, unknown>;
       const id = str(obj.id) ?? str(obj.session_id) ?? str(obj.sessionId);
       if (id && (Array.isArray(obj.messages) || str(obj.source))) return id;
     } catch {

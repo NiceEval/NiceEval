@@ -13,9 +13,9 @@
 // react-dom/server);同一进程也不能混用 raw src/report/** 与 dist/report/** 的同一状态模块,
 // 所以值和类型都从同一批 dist 模块拿,不从本文件的兄弟源码拿。
 
-import type { Results, Scope } from "../../results/index.ts";
+import type { Record, Sample } from "../../record/index.ts";
 import type { LocalizedText } from "../../types.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import type { PageContext } from "../../../dist/report/definition/tree.js";
 import type {
   ReportDefinition,
@@ -32,6 +32,7 @@ export type {
   ReportMetaPage,
   ReportPage,
 } from "../../../dist/report/definition/report.js";
+export type { ThemeDefinition } from "../../../dist/report/theme.js";
 
 /** 可预期的装载用户错误(与 ReportLoadError 同待遇:打一句直说问题与下一步,不抛堆栈)。 */
 export class HostReportError extends Error {}
@@ -46,20 +47,41 @@ export class HostReportError extends Error {}
 export async function loadHostReport(
   cwd: string,
   reportPath: string | undefined,
+  configuredReport?: ReportDefinition,
   options?: { freshImport?: boolean },
 ): Promise<ReportDefinition> {
   if (reportPath !== undefined) {
-    const { loadReportFile } = await import("../../../dist/report/runtime/load.js");
-    return loadReportFile(cwd, reportPath, options) as Promise<ReportDefinition>;
+    const { isExplicitModulePath, loadBuiltInReport, loadReportFile } = await import("../../../dist/report/runtime/load.js");
+    return (isExplicitModulePath(reportPath) ? loadReportFile(cwd, reportPath, options) : loadBuiltInReport(reportPath)) as Promise<ReportDefinition>;
   }
+  if (configuredReport !== undefined) return configuredReport;
   const { standard } = await import("../../../dist/report/built-in/index.js");
   return standard as ReportDefinition;
 }
 
 /** ctx.report 的构建(不携带当前页——那是 HostRenderContext.page 的事)。 */
-export async function buildHostReportMeta(definition: ReportDefinition, scope: Scope): Promise<ReportMeta> {
+export async function buildHostReportMeta(definition: ReportDefinition, scope: Sample): Promise<ReportMeta> {
   const { buildReportMeta } = await import("../../../dist/report/definition/report.js");
   return buildReportMeta(definition, scope);
+}
+
+export async function resolveHostTheme(
+  cwd: string,
+  cliTheme: string | undefined,
+  reportTheme: import("../../../dist/report/theme.js").ThemeDefinition | undefined,
+  configTheme: import("../../../dist/report/theme.js").ThemeDefinition | undefined,
+  options?: { freshImport?: boolean },
+): Promise<import("../../../dist/report/theme.js").ThemeDefinition> {
+  const { isExplicitModulePath, loadBuiltInTheme, loadThemeFile } = await import("../../../dist/report/runtime/load.js");
+  if (cliTheme !== undefined) return (isExplicitModulePath(cliTheme) ? loadThemeFile(cwd, cliTheme, options) : loadBuiltInTheme(cliTheme)) as Promise<import("../../../dist/report/theme.js").ThemeDefinition>;
+  if (reportTheme !== undefined) return reportTheme;
+  if (configTheme !== undefined) return configTheme;
+  return loadBuiltInTheme("basalt") as Promise<import("../../../dist/report/theme.js").ThemeDefinition>;
+}
+
+export async function hostThemeStylesheet(theme: import("../../../dist/report/theme.js").ThemeDefinition): Promise<string> {
+  const { themeStylesheet } = await import("../../../dist/report/theme.js");
+  return themeStylesheet(theme);
 }
 
 /**
@@ -89,7 +111,7 @@ export function localizeText(text: LocalizedText | undefined, locale: string): s
  */
 export interface HostCommandContext {
   patterns: string[];
-  results?: string;
+  record?: string;
   /** `--exp`;可重复,顺序即用户输入顺序(对照条件顺序)。 */
   experiment?: string | string[];
   report?: string;
@@ -98,10 +120,10 @@ export interface HostCommandContext {
 
 // ───────────────────────── 逐页渲染 ─────────────────────────
 
-/** 逐页渲染的宿主上下文:官方口径的 Scope、结果根读取面、规范化声明与当前页判别。 */
+/** 逐页渲染的宿主上下文:官方口径的 Sample、结果根读取面、规范化声明与当前页判别。 */
 export interface HostRenderContext {
-  scope: Scope;
-  results: Results;
+  scope: Sample;
+  results: Record;
   report: ReportMeta;
   page: PageContext;
 }

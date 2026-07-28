@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 import { defineComponent, type ReportComponent, type ResolveContext, type TextContext, type WebContext } from "../../definition/tree.ts";
 import { Col } from "../../definition/primitives.tsx";
-import type { AttemptEvidence } from "../../../results/attempt-evidence.ts";
+import type { AttemptEvidence } from "../../../record/attempt-evidence.ts";
 import { arrayProblem, dataShapeError, isObject } from "../shared.ts";
 import type {
   AttemptAssertionsData,
@@ -85,7 +85,7 @@ interface AttemptComponentDef<Data> {
 function makeAttemptComponent<Data>(
   def: AttemptComponentDef<Data>,
 ): ReportComponent<AttemptSectionProps<Data>> {
-  type Props = Record<string, unknown>;
+  type Props = globalThis.Record<string, unknown>;
   type Resolved = { data: Data | null; className?: string };
 
   const assertData = (data: unknown): Data | null => {
@@ -171,7 +171,7 @@ function traceSpanProblem(value: unknown, path: string): string | null {
 
 // ───────────────────────── AttemptSummary(恒非空) ─────────────────────────
 
-/** AttemptIdentity(src/results/locator.ts):locator 派生自的不可变身份元组。 */
+/** AttemptIdentity(src/record/locator.ts):locator 派生自的不可变身份元组。 */
 function attemptIdentityProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) {
     return `"${path}" must be an AttemptIdentity { experimentId, snapshotStartedAt, evalId, attempt }`;
@@ -183,7 +183,7 @@ function attemptIdentityProblem(value: unknown, path: string): string | null {
   return null;
 }
 
-/** AttemptEvidenceCapabilities(src/results/attempt-evidence.ts):四个证据切面开关。 */
+/** AttemptEvidenceCapabilities(src/record/attempt-evidence.ts):四个证据切面开关。 */
 function capabilitiesProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { source, execution, timing, diff }`;
   for (const key of ["source", "execution", "timing", "diff"] as const) {
@@ -305,7 +305,7 @@ export const AttemptAssertions = makeAttemptComponent<AttemptAssertionsData>({
 
 // ───────────────────────── AttemptSource ─────────────────────────
 
-/** AnnotatedSourceLine(src/results/annotated-source.ts):一行源码 + 映射到这一行的断言 / send 标注。 */
+/** AnnotatedSourceLine(src/record/annotated-source.ts):一行源码 + 映射到这一行的断言 / send 标注。 */
 function annotatedSourceLineProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an AttemptSourceLineData { line, text, assertions, sends, turns }`;
   if (typeof value.line !== "number") return `"${path}.line" must be a number`;
@@ -333,7 +333,7 @@ function sourceTurnProblem(value: unknown, path: string): string | null {
   return arrayProblem(value.replies, `${path}.replies`, conversationReplyProblem);
 }
 
-/** AnnotatedEvalSourceSummary(src/results/annotated-source.ts):全是计数字段。 */
+/** AnnotatedEvalSourceSummary(src/record/annotated-source.ts):全是计数字段。 */
 function sourceSummaryProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an AnnotatedEvalSourceSummary`;
   for (const key of [
@@ -665,7 +665,7 @@ export const AttemptDiff = makeAttemptComponent<AttemptDiffData>({
 // ───────────────────────── 两个普通组合组件 ─────────────────────────
 
 /** source / assertions fallback:有 source 放 AttemptSource,否则放 AttemptAssertions。 */
-export const AttemptAssessment = defineComponent((_props: Record<string, never>, ctx) => {
+export const AttemptAssessment = defineComponent((_props: globalThis.Record<string, never>, ctx) => {
   if (ctx.page.input !== "attempt") {
     throw new Error(
       "AttemptAssessment requires an attempt-input page (input: \"attempt\") — it reads ctx.page.evidence to choose between AttemptSource and AttemptAssertions.",
@@ -681,7 +681,7 @@ export const AttemptAssessment = defineComponent((_props: Record<string, never>,
 AttemptAssessment.displayName = "AttemptAssessment";
 
 /** 内建排列顺序;有 source 时回复已按 loc 展开在 AttemptSource 行内，不再重复一份 round 卡。 */
-export const AttemptDetail = defineComponent((_props: Record<string, never>, ctx) => {
+export const AttemptDetail = defineComponent((_props: globalThis.Record<string, never>, ctx) => {
   const conversationLivesInSource =
     ctx.page.input === "attempt" && ctx.page.evidence.capabilities.source && ctx.page.evidence.evalSource !== null;
   return (

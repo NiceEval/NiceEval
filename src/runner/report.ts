@@ -101,7 +101,7 @@ export function summarize(
   durationMs: number,
   name?: LocalizedText,
 ): InvocationSummary {
-  const counts = { passed: 0, failed: 0, skipped: 0, errored: 0 };
+  const counts = { passed: 0, failed: 0, unreadable: 0, errored: 0 };
   let inTok = 0;
   let outTok = 0;
   let cost = 0;
@@ -117,7 +117,7 @@ export function summarize(
     completedAt: new Date().toISOString(),
     passed: counts.passed,
     failed: counts.failed,
-    skipped: counts.skipped,
+    unreadable: counts.unreadable,
     errored: counts.errored,
     durationMs,
     usage: { inputTokens: inTok, outputTokens: outTok },

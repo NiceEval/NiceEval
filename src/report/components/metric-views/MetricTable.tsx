@@ -9,7 +9,7 @@
 
 import type { ReactElement } from "react";
 import type { TableData } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, resolveMetricLabel, type ReportLocale } from "../../model/locale.ts";
 import { MetricCellView } from "../cell.tsx";
 import { colorClassForKey } from "../../assets/colors.ts";

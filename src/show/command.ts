@@ -10,7 +10,7 @@ export function showCommand(ctx: HostCommandContext, extra: string[] = []): stri
   if (ctx.experiment !== undefined) {
     for (const exp of Array.isArray(ctx.experiment) ? ctx.experiment : [ctx.experiment]) parts.push(`--exp ${exp}`);
   }
-  if (ctx.results !== undefined) parts.push(`--results ${ctx.results}`);
+  if (ctx.record !== undefined) parts.push(`--record ${ctx.record}`);
   if (ctx.report !== undefined) parts.push(`--report ${ctx.report}`);
   if (ctx.page !== undefined) parts.push(`--page ${ctx.page}`);
   parts.push(...extra);

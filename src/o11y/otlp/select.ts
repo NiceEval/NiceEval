@@ -33,7 +33,7 @@ export function selectTraceSpans(spans: TraceSpan[]): TraceSpan[] {
 
   // 兜底:没 mapper / 全没识别(kind 全空或 "other")—— 退回按 span 名频率丢 firehose。
   if (kept.length === 0) {
-    const freq: Record<string, number> = {};
+    const freq: globalThis.Record<string, number> = {};
     for (const sp of spans) freq[sp.name] = (freq[sp.name] ?? 0) + 1;
     kept = spans.filter((sp) => freq[sp.name] <= FIREHOSE_FREQ);
     if (kept.length === 0) kept = spans;
@@ -76,7 +76,7 @@ export function enrichTraceWithIO(spans: TraceSpan[], toolCalls: readonly ToolCa
     const cid = sp.attributes?.call_id;
     const tc = typeof cid === "string" ? byCall.get(cid) : undefined;
     if (!tc) return sp;
-    const attributes: Record<string, JsonValue> = { ...sp.attributes };
+    const attributes: globalThis.Record<string, JsonValue> = { ...sp.attributes };
     if (tc.originalName) attributes["io.tool"] = tc.originalName;
     if (tc.input !== undefined && tc.input !== null) attributes["io.input"] = ioText(tc.input);
     if (tc.output !== undefined && tc.output !== null) attributes["io.output"] = ioText(tc.output);

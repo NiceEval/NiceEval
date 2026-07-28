@@ -14,7 +14,7 @@ export interface SnapshotDiagnosticsGroup {
 }
 
 export interface GroupedSnapshotDiagnostics {
-  /** 汇总行:涉及多少个 experiment、多少个 Snapshot、多少条记录(按 count 计数)与最高严重度。 */
+  /** 汇总行:涉及多少个 experiment、多少个 Run、多少条记录(按 count 计数)与最高严重度。 */
   summary: string;
   groups: readonly SnapshotDiagnosticsGroup[];
   /** 全部记录里的最高严重度;没有 error 记录时为 warning。空集合时也是 warning(不参与渲染)。 */
@@ -23,7 +23,7 @@ export interface GroupedSnapshotDiagnostics {
 
 function pluralText(
   locale: ReportLocale,
-  base: "snapshotDiagnostics.summary.experiments" | "snapshotDiagnostics.summary.snapshots" | "snapshotDiagnostics.summary.records",
+  base: "snapshotDiagnostics.summary.experiments" | "snapshotDiagnostics.summary.runs" | "snapshotDiagnostics.summary.records",
   n: number,
 ): string {
   return localeText(locale, `${base}.${n === 1 ? "one" : "other"}` as ReportMessageKey, { n });
@@ -60,7 +60,7 @@ export function groupSnapshotDiagnostics(data: SnapshotDiagnosticsData, locale: 
       ? ""
       : [
           pluralText(locale, "snapshotDiagnostics.summary.experiments", byExperiment.size),
-          pluralText(locale, "snapshotDiagnostics.summary.snapshots", data.length),
+          pluralText(locale, "snapshotDiagnostics.summary.runs", data.length),
           pluralText(locale, "snapshotDiagnostics.summary.records", records),
           localeText(locale, severity === "error" ? "snapshotDiagnostics.severity.error" : "snapshotDiagnostics.severity.warning"),
         ].join(" · ");

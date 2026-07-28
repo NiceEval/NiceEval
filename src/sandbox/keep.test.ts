@@ -80,7 +80,7 @@ import {
 import type { Sandbox } from "../types.ts";
 
 const CLOUD_ENV_KEYS = ["VERCEL_API_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID", "E2B_API_KEY"] as const;
-let savedEnv: Record<string, string | undefined> = {};
+let savedEnv: globalThis.Record<string, string | undefined> = {};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -515,10 +515,10 @@ function buildDockerLogStream(text: string): NodeJS.ReadableStream {
 
 /** 一个可控的 fake ChildProcess:记录 on() 注册的回调,供测试手动触发 exit/error。 */
 function fakeChildProcess(): {
-  handlers: Record<string, (...a: unknown[]) => void>;
+  handlers: globalThis.Record<string, (...a: unknown[]) => void>;
   on: (e: string, cb: (...a: unknown[]) => void) => unknown;
 } {
-  const handlers: Record<string, (...a: unknown[]) => void> = {};
+  const handlers: globalThis.Record<string, (...a: unknown[]) => void> = {};
   const child = {
     handlers,
     on(event: string, cb: (...a: unknown[]) => void) {

@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
 // view 数据层(data.ts)的单测(「view 数据装载(ViewScan)」类别,见 unit/reports.md
-// 覆盖规范):守护三件事——skipped 三种原因如实进 viewData(producer 感知的 npx 提示)、
-// 报告槽是现刻水位口径(裸跑经 selectCurrentResults 跨快照合成每 experiment × eval 的
+// 覆盖规范):守护三件事——unreadable 三种原因如实进 viewData(producer 感知的 npx 提示)、
+// 报告槽是现刻水位口径(裸跑经 currentSample 跨快照合成每 experiment × eval 的
 // 最新判定,与 show 同一函数,composedRuns 反映跨快照合成)、跨快照去重让证据室索引不被
 // --resume 复印件灌票。viewData 不携带 overview / table / overall 统计产物。
 // 另含 loadLatestResultsPerEval 的续跑携带语义(从旧 loader.test.ts 移植,口径不变)。
@@ -9,7 +9,7 @@
 // 报告槽渲染出的 HTML 内容(通过率数字、locator 深链文本)归
 // docs/engineering/testing/e2e/report.md 对真实产物验收,不在本层断言。
 //
-// fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
+// fixture 直接写新布局(<expDir>/<snapDir>/run.json + <evalId>/a<n>/result.json),
 // 依据是 docs/feature/record/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -17,9 +17,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { IncompatibleResultsError, ViewInputError, loadLatestResultsPerEval, loadViewScan, type ViewScan } from "./data.ts";
-import type { AttemptHandle } from "../results/index.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
-import { encodeAttemptLocator } from "../results/locator.ts";
+import type { AttemptHandle } from "../record/index.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
+import { encodeAttemptLocator } from "../record/locator.ts";
 
 /** scan.attemptsByBase 按 base 建索引;测试按 eval id 找回单个 attempt(该 eval 在本 fixture 里唯一时用)。 */
 function attemptByEvalId(scan: ViewScan, evalId: string): AttemptHandle {
@@ -61,7 +61,7 @@ interface SnapshotOpts {
   producer?: { name: string; version?: string };
 }
 
-/** 写一份新布局快照:snapshot.json + 各 attempt 的 result.json。返回快照目录绝对路径。 */
+/** 写一份新布局快照:run.json + 各 attempt 的 result.json。返回快照目录绝对路径。 */
 async function writeSnapshot(
   root: string,
   expDirName: string,
@@ -72,16 +72,18 @@ async function writeSnapshot(
   const dir = join(root, expDirName, snapDirName);
   await mkdir(dir, { recursive: true });
   const meta = {
-    format: RESULTS_FORMAT,
-    schemaVersion: opts.schemaVersion ?? RESULTS_SCHEMA_VERSION,
+    format: RECORD_FORMAT,
+    schemaVersion: opts.schemaVersion ?? RECORD_SCHEMA_VERSION,
     producer: opts.producer ?? { name: "niceeval", version: "0.4.0" },
+    runId: `${snapDirName}-0000-4000-8000-000000000000`,
     experimentId: opts.experimentId,
     agent: opts.agent ?? "agent",
     ...(opts.model !== undefined ? { model: opts.model } : {}),
     startedAt: opts.startedAt,
+    configHash: "fixture-config",
     ...(opts.completedAt !== undefined ? { completedAt: opts.completedAt } : {}),
   };
-  await writeFile(join(dir, "snapshot.json"), JSON.stringify(meta, null, 2), "utf-8");
+  await writeFile(join(dir, "run.json"), JSON.stringify(meta, null, 2), "utf-8");
   for (const r of results) {
     const attemptDir = join(dir, r.id, `a${r.attempt ?? 0}`);
     await mkdir(attemptDir, { recursive: true });
@@ -90,8 +92,8 @@ async function writeSnapshot(
   return dir;
 }
 
-describe("loadViewScan · skipped 三种原因进 viewData", () => {
-  it("incompatible-version / malformed / incomplete 都进 skippedRuns;niceeval 落盘拼 npx 命令,第三方如实报名字不拼", async () => {
+describe("loadViewScan · unreadable 三种原因进 viewData", () => {
+  it("incompatible / malformed / incomplete 都进 skippedRuns;niceeval 落盘拼 npx 命令,第三方如实报名字不拼", async () => {
     const root = await makeRoot();
     // 正常快照,页面照常渲染。
     await writeSnapshot(root, "exp_a", "2026-07-01T08-00-00-000Z", { experimentId: "exp/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" }, [
@@ -116,8 +118,8 @@ describe("loadViewScan · skipped 三种原因进 viewData", () => {
     // 坏 JSON。
     const malformedDir = join(root, "exp_d", "2026-07-04T08-00-00-000Z");
     await mkdir(malformedDir, { recursive: true });
-    await writeFile(join(malformedDir, "snapshot.json"), "{not json", "utf-8");
-    // incomplete:有 attempt 落盘、没有 snapshot.json(快照目录建好、元数据没写完的极窄窗口)。
+    await writeFile(join(malformedDir, "run.json"), "{not json", "utf-8");
+    // incomplete:有 attempt 落盘、没有 run.json(快照目录建好、元数据没写完的极窄窗口)。
     const incompleteDir = join(root, "exp_e", "2026-07-05T08-00-00-000Z");
     await mkdir(join(incompleteDir, "q1", "a0"), { recursive: true });
     await writeFile(join(incompleteDir, "q1", "a0", "events.json"), "[]", "utf-8");
@@ -127,12 +129,12 @@ describe("loadViewScan · skipped 三种原因进 viewData", () => {
     const byReason = new Map(viewData.skippedRuns!.map((s) => [s.dir, s]));
     expect(viewData.skippedRuns).toHaveLength(4);
 
-    const niceevalSkip = [...byReason.values()].find((s) => s.producerName === "niceeval" && s.reason === "incompatible-version")!;
+    const niceevalSkip = [...byReason.values()].find((s) => s.producerName === "niceeval" && s.reason === "incompatible")!;
     expect(niceevalSkip.schemaVersion).toBe(999);
     expect(niceevalSkip.command).toContain("npx niceeval@9.9.9 view ");
 
     const foreignSkip = [...byReason.values()].find((s) => s.producerName === "otherharness")!;
-    expect(foreignSkip.reason).toBe("incompatible-version");
+    expect(foreignSkip.reason).toBe("incompatible");
     expect(foreignSkip.producerVersion).toBe("1.2.3");
     expect(foreignSkip.command).toBeUndefined(); // 第三方版本号拼 npx 是一句错误提示,不拼
 
@@ -155,7 +157,7 @@ describe("loadViewScan · skipped 三种原因进 viewData", () => {
       { experimentId: "exp/b", startedAt: "2026-07-02T08:00:00.000Z", schemaVersion: 999, producer: { name: "niceeval", version: "9.9.9" } },
       [],
     );
-    await expect(loadViewScan(join(dir, "snapshot.json"))).rejects.toBeInstanceOf(IncompatibleResultsError);
+    await expect(loadViewScan(join(dir, "run.json"))).rejects.toBeInstanceOf(IncompatibleResultsError);
   });
 });
 
@@ -260,17 +262,17 @@ describe("loadViewScan · 新布局落盘直接可读(写入面 / 读取面同�
 
     const scan = await loadViewScan(root);
     const attempts = [...scan.attemptsByBase.values()];
-    expect(attempts.every((a) => a.snapshot.agent === "bub")).toBe(true);
-    expect(attempts.every((a) => a.snapshot.startedAt === "2026-07-03T08:00:00.000Z")).toBe(true);
+    expect(attempts.every((a) => a.run.agent === "bub")).toBe(true);
+    expect(attempts.every((a) => a.run.startedAt === "2026-07-03T08:00:00.000Z")).toBe(true);
     // 每条结果的 locator 都能由身份元组(experimentId/快照 startedAt/evalId/attempt 下标)独立复算,
-    // 证明它不是随手塞的占位值,而是真从落盘产物(snapshot.json + result.json)算出来的。
+    // 证明它不是随手塞的占位值,而是真从落盘产物(run.json + result.json)算出来的。
     expect(attempts.every((a) => a.locator === encodeAttemptLocator({
       experimentId: a.experimentId,
-      snapshotStartedAt: a.snapshot.startedAt,
+      snapshotStartedAt: a.run.startedAt,
       evalId: a.evalId,
       attempt: a.result.attempt,
     }))).toBe(true);
-    // 本快照跑出的条目落盘没有 artifactBase 字段:读取面按 `${ref.snapshot}/${ref.attempt}` 现算——
+    // 本快照跑出的条目落盘没有 artifactBase 字段:读取面按 `${ref.run}/${ref.attempt}` 现算——
     // scan.attemptsByBase 正是按这份现算出的 base 建的索引,q1 应恰好落在这个 key 上。
     const q1Base = "compare_bub/2026-07-03T08-00-00-000Z/q1/a0";
     const q1 = scan.attemptsByBase.get(q1Base)!;
@@ -339,15 +341,15 @@ describe("loadViewScan · 零可读结果直说,不渲染空页面", () => {
     );
     const malformedDir = join(root, "exp_d", "2026-07-04T08-00-00-000Z");
     await mkdir(malformedDir, { recursive: true });
-    await writeFile(join(malformedDir, "snapshot.json"), "{not json", "utf-8");
+    await writeFile(join(malformedDir, "run.json"), "{not json", "utf-8");
 
     const err = await loadViewScan(root).then(
       () => { throw new Error("expected ViewInputError"); },
       (e) => e as Error,
     );
     expect(err).toBeInstanceOf(ViewInputError);
-    expect(err.message).toContain("2 snapshot directories were skipped");
-    expect(err.message).toContain("incompatible-version, schemaVersion 999");
+    expect(err.message).toContain("2 run directories were unreadable");
+    expect(err.message).toContain("incompatible, schemaVersion 999");
     expect(err.message).toContain("npx niceeval@9.9.9 view ");
     expect(err.message).toContain("malformed");
   });

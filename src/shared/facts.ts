@@ -6,7 +6,7 @@
 // key 词法、value 标量、同 key 后写覆盖三条规则单源
 // docs/feature/record/architecture.md#facts运行事实。
 
-/** fact() 接受的标量取值;与三处 ctx.fact() 签名、AttemptRecord.facts / SnapshotMeta.facts 同型。 */
+/** fact() 接受的标量取值;与三处 ctx.fact() 签名、AttemptRecord.facts / RunMeta.facts 同型。 */
 export type FactValue = string | number | boolean;
 
 const FACT_KEY_PATTERN = /^[a-z0-9._-]{1,64}$/;
@@ -15,7 +15,7 @@ const FACT_KEY_PATTERN = /^[a-z0-9._-]{1,64}$/;
  * 校验一次 `fact(key, value)` 调用并写入 `target`(同一作用域内同 key 后写覆盖先写)。
  * 校验失败按三段式抛错(现象/依据/下一步,见 docs/error-feedback.md)。
  */
-export function recordFact(target: Record<string, FactValue>, key: string, value: FactValue): void {
+export function recordFact(target: globalThis.Record<string, FactValue>, key: string, value: FactValue): void {
   if (!FACT_KEY_PATTERN.test(key)) {
     throw new Error(
       `fact() rejected key ${JSON.stringify(key)}: fact keys must match /^[a-z0-9._-]{1,64}$/ ` +

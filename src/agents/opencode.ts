@@ -78,7 +78,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       );
 
       const baseUrl = resolveBaseUrl(config);
-      const provider: Record<string, unknown> = {};
+      const provider: globalThis.Record<string, unknown> = {};
       if (baseUrl) {
         // OpenAI 兼容网关必须走 openai-compatible npm 包 + 显式 models 表,
         // 否则 OpenCode 不会把自定义 baseURL 接到请求上。
@@ -133,7 +133,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       if (ctx.session.id) args.push("--session", ctx.session.id);
 
       const apiKey = resolveApiKey(config);
-      const env: Record<string, string> = {
+      const env: globalThis.Record<string, string> = {
         OPENCODE_API_KEY: apiKey,
         OPENAI_API_KEY: apiKey,
         ANTHROPIC_API_KEY: apiKey,

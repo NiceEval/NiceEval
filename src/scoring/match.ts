@@ -32,8 +32,8 @@ export function deepEqual(a: unknown, b: unknown): boolean {
     return true;
   }
 
-  const ao = a as Record<string, unknown>;
-  const bo = b as Record<string, unknown>;
+  const ao = a as globalThis.Record<string, unknown>;
+  const bo = b as globalThis.Record<string, unknown>;
   const ak = Object.keys(ao);
   const bk = Object.keys(bo);
   if (ak.length !== bk.length) return false;

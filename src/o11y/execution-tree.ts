@@ -199,7 +199,7 @@ function spanCallId(span: TraceSpan): string | undefined {
  * 展示的调试视图)一份和旧 enrichTraceWithIO 输出完全一致的键。不修改传入的 span 对象。
  */
 function withIoAttributes(span: TraceSpan, node: ExecutionActionNode): TraceSpan {
-  const attributes: Record<string, JsonValue> = { ...span.attributes };
+  const attributes: globalThis.Record<string, JsonValue> = { ...span.attributes };
   if (node.name) attributes["io.tool"] = node.name;
   if (node.input !== undefined && node.input !== null) attributes["io.input"] = ioText(node.input);
   if (node.output !== undefined && node.output !== null) attributes["io.output"] = ioText(node.output);

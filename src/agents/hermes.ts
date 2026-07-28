@@ -53,7 +53,7 @@ function resolveBaseUrl(config?: HermesConfig): string | undefined {
 async function hermesShell(
   sb: Sandbox,
   args: string[],
-  env: Record<string, string>,
+  env: globalThis.Record<string, string>,
   opts?: { stream?: boolean },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   // HERMES 变量本身不要 quote,以便 shell 展开 $HOME。
@@ -61,7 +61,7 @@ async function hermesShell(
   return sb.runShell(script, { env, stream: opts?.stream });
 }
 
-async function exportSession(sb: Sandbox, sessionId: string, env: Record<string, string>): Promise<string | undefined> {
+async function exportSession(sb: Sandbox, sessionId: string, env: globalThis.Record<string, string>): Promise<string | undefined> {
   const outPath = `/tmp/niceeval-hermes-${sessionId}.jsonl`;
   const res = await hermesShell(sb, ["sessions", "export", outPath, "--session-id", sessionId], env);
   if (res.exitCode !== 0) return undefined;
@@ -161,7 +161,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
       if (ctx.session.id) args.push("--resume", ctx.session.id);
 
       const apiKey = resolveApiKey(config);
-      const env: Record<string, string> = {
+      const env: globalThis.Record<string, string> = {
         HERMES_API_KEY: apiKey,
         ANTHROPIC_API_KEY: apiKey,
         OPENROUTER_API_KEY: apiKey,

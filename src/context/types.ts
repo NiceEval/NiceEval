@@ -107,7 +107,7 @@ export interface ToolMatch {
    * 顶层给谓词函数 `(input) => boolean` 拿原始输入值自行判断。三种顶层形态互斥,不会退化
    * 成深比对——RegExp / 函数不是"键值对象",不会被当成 plain object 逐键枚举。
    */
-  input?: Record<string, unknown> | RegExp | ((input: unknown) => boolean);
+  input?: globalThis.Record<string, unknown> | RegExp | ((input: unknown) => boolean);
   /** 数字精确匹配调用次数;谓词对命中次数自行判定(如 `(n) => n >= 2`);省略则只要求「至少一次」。 */
   count?: number | ((n: number) => boolean);
   /**
@@ -137,7 +137,7 @@ export interface InputRequestFilter {
   prompt?: string | RegExp;
   display?: string | RegExp;
   action?: string | RegExp;
-  input?: Record<string, unknown>;
+  input?: globalThis.Record<string, unknown>;
   /** 请求的可选项 id 集合必须与此完全一致(顺序无关)。 */
   optionIds?: readonly string[];
 }
@@ -166,7 +166,7 @@ export interface SandboxHandle<H extends BaseAssertionHandle = AssertionHandle> 
   /** Sandbox 内某路径此刻是否存在。 */
   fileExists(path: string): Promise<boolean>;
   /** 把一组内容写进 Sandbox(路径相对 targetDir,默认 workdir)。 */
-  writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;
+  writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void>;
   /** 把一批内存中的文件上传进 Sandbox。 */
   uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
   /** 把本地目录整体上传进 Sandbox;`opts.ignore` 排除指定路径。 */
@@ -304,7 +304,7 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   /** 本次 attempt 的推理努力程度(如 "low"/"medium"/"high",取值由 adapter/模型决定)。 */
   readonly reasoningEffort?: string;
   /** 本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。 */
-  readonly flags: Readonly<Record<string, unknown>>;
+  readonly flags: Readonly<globalThis.Record<string, unknown>>;
   /**
    * 作用域反馈:报告评估用例自己执行的长步骤(上传 Fixture、跑构建……)。短命状态,scope 固定
    * 为 `eval.run`;只报告不断言(见 docs/feature/eval/library/context.md「向运行反馈长步骤」)。
@@ -317,7 +317,7 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   diagnostic(input: DiagnosticInput): void;
   /** `progress({ message: msg })` 的别名(调试日志),不出现在最终结果里。 */
   log(msg: string): void;
-  /** 立即中止本评估用例并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。 */
+  /** 立即中止本评估用例并标记为 unreadable(verdict / EvalResult.skipReason),reason 不能为空。 */
   skip(reason: string): never;
 
   // 值断言

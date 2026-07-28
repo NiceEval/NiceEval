@@ -1,45 +1,47 @@
-// createResultsWriter:Results Format 的写入面(定稿见 docs/feature/record/library.md「写:createResultsWriter」)。
+// createWriter:Record Format 的写入面(定稿见 docs/feature/record/library.md「写:createWriter」)。
 //
 // writer 与 reader 是同一组类型的两半,而且是字面的两半:reader 的 attempt.result 由
-// 「snapshot() 声明的快照级字段(experimentId / agent / model / startedAt / experiment)+
+// 「run() 声明的快照级字段(experimentId / agent / model / startedAt / experiment)+
 // writeAttempt 第一参」拼成,快照级字段不在 attempt 参数类型里(AttemptEntry 的 Omit),
 // 不存在「谁的值为准」。布局知识(快照目录独占创建、attempt 路径清洗、大字段拆 artifact、
 // has* 回填、空数据不落文件)全在这里;src/runner/reporters/artifacts.ts 是本文件的薄壳。
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { AgentSetupManifest, DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText } from "../types.ts";
 import type { DiffArtifact, FailedCommandEvidence, O11ySummary, SourceArtifact, StreamEvent, TraceSpan } from "../types.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION } from "../types.ts";
-import { RESULT_FILE, SNAPSHOT_FILE, artifactFileOf, attemptDirOf, experimentDirOf } from "./format.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
+import { RESULT_FILE, RUN_FILE, artifactFileOf, attemptDirOf, experimentDirOf } from "./format.ts";
 import { encodeAttemptLocator } from "./locator.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { truncateCommands, truncateEvents, truncateSpans } from "./truncate.ts";
-import type { Producer, SnapshotMeta } from "./types.ts";
+import type { Producer, RunMeta } from "./types.ts";
 
-export interface ResultsWriterOptions {
+export interface WriterOptions {
   /** 谁在写这份结果:niceeval 自己,或第三方 harness(name 如实写,别冒充 "niceeval")。 */
   producer: Producer;
   /**
    * 本次 invocation 的快照身份锚点(ISO 时间戳,即 runner 的 `InvocationShape.snapshotStartedAt`)。
-   * `writeAttemptFor()` 的隐式 snapshot 声明统一用它做 `startedAt`,不再按「该 experiment
+   * `writeAttemptFor()` 的隐式 run 声明统一用它做 `startedAt`,不再按「该 experiment
    * 第一条落盘 result 的 attempt startedAt」猜 —— 那个锚点依赖并发完成顺序,不确定;
    * 同一 writer 处理多个 experiment 时也共享这同一个值(locator 身份还含 experimentId,
    * 不会碰撞)。省略时退回旧行为:每次隐式声明按 `result.startedAt ?? now()` 各自取锚,
    * 供未提供该值的直调场景使用(测试、结果转换脚本、第三方 harness 直接调
-   * `createResultsWriter()` 而不经过 niceeval 自己的 runner)。显式调用 `writer.snapshot()`
-   * 声明快照的调用方不受这个选项影响,必须自己传 `SnapshotDeclaration.startedAt`。
+   * `createWriter()` 而不经过 niceeval 自己的 runner)。显式调用 `writer.run()`
+   * 声明快照的调用方不受这个选项影响,必须自己传 `RunDeclaration.startedAt`。
    */
   snapshotStartedAt?: string;
 }
 
 /** 快照级声明:一个 experiment 声明一次,这些字段不塞进每条 attempt。 */
-export interface SnapshotDeclaration {
+export interface RunDeclaration {
   experimentId: string;
   agent: string;
   model?: string;
   /** 必填:身份键与去重以它为锚,官方产出永不缺。 */
   startedAt: string;
+  configHash?: string;
   /** 转换历史数据时如实交代收尾时刻;省略则 finish() 用当前时刻。 */
   completedAt?: string;
   /** 实验运行配置(flags / runs / earlyExit / sandbox / timeoutMs / budget),快照内全部 attempt 共享。 */
@@ -87,77 +89,79 @@ export interface AttemptArtifacts {
   commands?: FailedCommandEvidence[];
 }
 
-export interface SnapshotWriter {
+export interface RunWriter {
   /** 本快照的目录(绝对路径)。 */
   readonly dir: string;
   /** 增量落盘一条 attempt:拆 artifact 文件、回填 has* 引用、写 result.json;空数据不落文件。 */
   writeAttempt(entry: AttemptEntry, artifacts?: AttemptArtifacts): Promise<void>;
   /**
-   * 封口这一个 Snapshot:唯一一次补 `completedAt`(省略则取当前时刻)、快照级 `diagnostics`
+   * 封口这一个 Run:唯一一次补 `completedAt`(省略则取当前时刻)、快照级 `diagnostics`
    * (省略则不写该字段,不摆空数组)与快照级 `facts`(experiment 作用域 `ctx.fact()` 累计的
-   * 运行事实,同样省略则不写该字段);`name` 未在 `snapshot()` 声明过时可以在这里补。每个
-   * Snapshot 只能封一次,重复调用抛错。不做跨 Experiment 聚合——一次 Invocation 里的每个
-   * Snapshot 各自独立封口,不必等其它 Snapshot(见 docs/runner.md「Experiment 收尾协议」)。
+   * 运行事实,同样省略则不写该字段);`name` 未在 `run()` 声明过时可以在这里补。每个
+   * Run 只能封一次,重复调用抛错。不做跨 Experiment 聚合——一次 Invocation 里的每个
+   * Run 各自独立封口,不必等其它 Run(见 docs/runner.md「Experiment 收尾协议」)。
    */
   finish(opts?: {
     diagnostics?: DiagnosticRecord[];
     completedAt?: string;
-    facts?: Record<string, string | number | boolean>;
+    facts?: globalThis.Record<string, string | number | boolean>;
     name?: LocalizedText;
   }): Promise<void>;
 }
 
-export interface ResultsWriter {
+export interface Writer {
   /**
-   * 建快照目录(独占创建,撞名换随机后缀重试)+ 立即写 snapshot.json(不含 completedAt)。
-   * 同一 writer 内同 experimentId 重复声明 → 返回同一个 SnapshotWriter(懒建语义;
+   * 建快照目录(独占创建,撞名换随机后缀重试)+ 立即写 run.json(不含 completedAt)。
+   * 同一 writer 内同 experimentId 重复声明 → 返回同一个 RunWriter(懒建语义;
    * knownEvalIds 取并集,completedAt / name 以最后一次声明为准,finish() 时才落盘)。
    */
-  snapshot(decl: SnapshotDeclaration): Promise<SnapshotWriter>;
+  run(decl: RunDeclaration): Promise<RunWriter>;
   /** @internal runner 薄壳入口:按 EvalResult 的 experimentId 懒建快照并落盘一条 attempt。 */
   writeAttemptFor(result: EvalResult): Promise<void>;
   /** @internal 已创建快照清单(CLI 收尾打印)。 */
   snapshotDirs(): { experimentId: string; dir: string }[];
   /**
-   * @internal 已创建的全部 SnapshotWriter 句柄。Artifacts reporter 据此在每个 Experiment
-   * 收尾(`experiment:complete`)时找到对应快照的 `finish()`,不必自己重新走 `snapshot()`
+   * @internal 已创建的全部 RunWriter 句柄。Artifacts reporter 据此在每个 Experiment
+   * 收尾(`experiment:complete`)时找到对应快照的 `finish()`,不必自己重新走 `run()`
    * 的懒建语义。
    */
-  snapshotWriters(): Promise<{ experimentId: string; writer: SnapshotWriter }[]>;
+  snapshotWriters(): Promise<{ experimentId: string; writer: RunWriter }[]>;
 }
 
 interface SnapshotState {
   /** 快照的权威 meta(不含 completedAt;knownEvalIds 随重复声明累加)。 */
-  meta: SnapshotMeta;
+  meta: RunMeta;
   dir: string;
-  writer: SnapshotWriter;
+  writer: RunWriter;
   declCompletedAt?: string;
   declName?: LocalizedText;
-  /** 这个 Snapshot 是否已经封口;`finish()` 只能对每个 Snapshot 生效一次。 */
+  /** 这个 Run 是否已经封口;`finish()` 只能对每个 Run 生效一次。 */
   finished: boolean;
 }
 
-/** 同步:不建目录、不碰磁盘。目录创建发生在第一次 snapshot() 调用里。 */
-export function createResultsWriter(root: string, opts: ResultsWriterOptions): ResultsWriter {
+/** 同步:不建目录、不碰磁盘。目录创建发生在第一次 run() 调用里。 */
+export function createWriter(root: string, opts: WriterOptions): Writer {
   const pending = new Map<string, Promise<SnapshotState>>();
   const created: { experimentId: string; dir: string }[] = [];
 
-  async function buildSnapshot(decl: SnapshotDeclaration): Promise<SnapshotState> {
-    const meta: SnapshotMeta = {
-      format: RESULTS_FORMAT,
-      schemaVersion: RESULTS_SCHEMA_VERSION,
+  async function buildSnapshot(decl: RunDeclaration): Promise<SnapshotState> {
+    const meta: RunMeta = {
+      format: RECORD_FORMAT,
+      schemaVersion: RECORD_SCHEMA_VERSION,
       producer: opts.producer,
+      runId: randomUUID(),
       experimentId: decl.experimentId,
       // 运行配置不带 id:身份的家是顶层 experimentId,重复一份只会引出「以谁为准」。
       ...(decl.experiment !== undefined ? { experiment: (decl.experiment) } : {}),
       agent: decl.agent,
       ...(decl.model !== undefined ? { model: decl.model } : {}),
       startedAt: decl.startedAt,
+      ...(decl.configHash !== undefined ? { configHash: decl.configHash } : {}),
       ...(decl.knownEvalIds?.length ? { knownEvalIds: [...new Set(decl.knownEvalIds)] } : {}),
       ...(decl.name !== undefined ? { name: decl.name } : {}),
     };
     const dir = await createSnapshotDir(root, decl.experimentId);
-    await writeFile(join(dir, SNAPSHOT_FILE), JSON.stringify(meta, null, 2), "utf-8");
+    await writeFile(join(dir, RUN_FILE), JSON.stringify(meta, null, 2), "utf-8");
     created.push({ experimentId: decl.experimentId, dir });
     // 快照级源码去重仓库:sha256 → 落盘 Promise,同一快照内并发/重复的 writeAttempt 共享同一次写入
     // (Map 的 has/set 之间没有 await,JS 单线程语义下不会重复起两次写)。
@@ -169,7 +173,7 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
       declCompletedAt: decl.completedAt,
       declName: decl.name,
       finished: false,
-      writer: undefined as unknown as SnapshotWriter, // 下面立即补上,writer.finish 需要闭包引用 state 本身
+      writer: undefined as unknown as RunWriter, // 下面立即补上,writer.finish 需要闭包引用 state 本身
     };
     state.writer = {
       dir,
@@ -183,15 +187,17 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
         state.finished = true;
         const completedAt = finishOpts?.completedAt ?? state.declCompletedAt ?? new Date().toISOString();
         const name = finishOpts?.name ?? state.declName;
-        const finalMeta: SnapshotMeta = {
+        const finalMeta: RunMeta = {
           format: state.meta.format,
           schemaVersion: state.meta.schemaVersion,
           producer: state.meta.producer,
+          runId: state.meta.runId,
           experimentId: state.meta.experimentId,
           ...(state.meta.experiment !== undefined ? { experiment: state.meta.experiment } : {}),
           agent: state.meta.agent,
           ...(state.meta.model !== undefined ? { model: state.meta.model } : {}),
           startedAt: state.meta.startedAt,
+          ...(state.meta.configHash !== undefined ? { configHash: state.meta.configHash } : {}),
           completedAt,
           ...(finishOpts?.diagnostics?.length ? { diagnostics: finishOpts.diagnostics } : {}),
           ...(finishOpts?.facts && Object.keys(finishOpts.facts).length ? { facts: finishOpts.facts } : {}),
@@ -199,16 +205,16 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
           ...(name !== undefined ? { name } : {}),
         };
         state.meta = finalMeta;
-        await writeFile(join(dir, SNAPSHOT_FILE), JSON.stringify(finalMeta, null, 2), "utf-8");
+        await writeFile(join(dir, RUN_FILE), JSON.stringify(finalMeta, null, 2), "utf-8");
       },
     };
     return state;
   }
 
-  async function snapshotImpl(decl: SnapshotDeclaration): Promise<SnapshotWriter> {
+  async function snapshotImpl(decl: RunDeclaration): Promise<RunWriter> {
     if (!decl.experimentId || !decl.agent || !decl.startedAt) {
       throw new Error(
-        "writer.snapshot() requires experimentId, agent and startedAt. They are snapshot-level identity: declare them once here instead of on each attempt.",
+        "writer.run() requires experimentId, agent and startedAt. They are run-level identity: declare them once here instead of on each attempt.",
       );
     }
     const existing = pending.get(decl.experimentId);
@@ -230,16 +236,16 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
   async function writeAttemptForImpl(result: EvalResult): Promise<void> {
     if (!result.experimentId) {
       throw new Error(
-        `writeAttemptFor() requires EvalResult.experimentId (results schemaVersion ${RESULTS_SCHEMA_VERSION} lays out one directory per experiment); eval "${result.id}" has none.`,
+        `writeAttemptFor() requires EvalResult.experimentId (results schemaVersion ${RECORD_SCHEMA_VERSION} lays out one directory per experiment); eval "${result.id}" has none.`,
       );
     }
     const snap = await snapshotImpl({
       experimentId: result.experimentId,
       agent: result.agent,
       model: result.model,
-      // 快照 startedAt 优先用 writer 级的 invocation 锚点(见 ResultsWriterOptions.snapshotStartedAt)——
+      // 快照 startedAt 优先用 writer 级的 invocation 锚点(见 WriterOptions.snapshotStartedAt)——
       // niceeval 自己的 runner 恒会提供,多个 experiment 共享同一个值。省略时(第三方直调
-      // createResultsWriter() 未传该选项)退回旧行为:以本次调用这个 result 自己的 attempt
+      // createWriter() 未传该选项)退回旧行为:以本次调用这个 result 自己的 attempt
       // startedAt 为锚,首条落盘的 result 决定了这个 experiment 快照的身份锚点。
       startedAt: opts.snapshotStartedAt ?? result.startedAt ?? new Date().toISOString(),
       experiment: result.experiment,
@@ -248,9 +254,9 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
     if (result.artifactBase) {
       // 携带条目(--resume 合入):本轮没有任何新数据,不写 artifact、不重算 artifacts 词干列表,
       // startedAt(身份锚)与 artifactBase 原样保留。locator 同理原样保留(在 ...rest 里,
-      // 没被解构掉)、从不重算——`result` 是上一轮 openResults() 读回的记录,原快照的
+      // 没被解构掉)、从不重算——`result` 是上一轮 openRecord() 读回的记录,原快照的
       // startedAt 已经不在本轮快照里了,重算会用错的 snapshotStartedAt 算出不同的字符串,
-      // 让已经发布/引用过的 locator 失效。真缺失(没经过 openResults 的手工构造)时如实留空,
+      // 让已经发布/引用过的 locator 失效。真缺失(没经过 openRecord 的手工构造)时如实留空,
       // 交给读取面按当前身份兜底算(见 open.ts 的 locator 回填),不在这里瞎猜。
       const {
         agent,
@@ -316,12 +322,12 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
   }
 
   return {
-    snapshot: snapshotImpl,
+    run: snapshotImpl,
     writeAttemptFor: writeAttemptForImpl,
     snapshotDirs(): { experimentId: string; dir: string }[] {
       return [...created];
     },
-    async snapshotWriters(): Promise<{ experimentId: string; writer: SnapshotWriter }[]> {
+    async snapshotWriters(): Promise<{ experimentId: string; writer: RunWriter }[]> {
       const states = await Promise.all([...pending.values()]);
       return states.map((state) => ({ experimentId: state.meta.experimentId, writer: state.writer }));
     },
@@ -331,7 +337,7 @@ export function createResultsWriter(root: string, opts: ResultsWriterOptions): R
 /** 一条 attempt 的落盘:拆 artifact 文件、算 artifacts 词干列表、写 result.json;空数据不落文件。 */
 async function writeAttemptFiles(
   snapDir: string,
-  snapshot: { experimentId: string; startedAt: string },
+  run: { experimentId: string; startedAt: string },
   entry: AttemptEntry,
   artifacts: AttemptArtifacts | undefined,
   sourceStore: Map<string, Promise<void>>,
@@ -370,17 +376,17 @@ async function writeAttemptFiles(
   if (artifacts?.diff) writes.push(writeFile(join(attemptDir, "diff.json"), JSON.stringify(artifacts.diff), "utf-8"));
   await Promise.all(writes);
 
-  // locator:caller(如第三方 harness 直接调 SnapshotWriter.writeAttempt)已经带了就尊重,
+  // locator:caller(如第三方 harness 直接调 RunWriter.writeAttempt)已经带了就尊重,
   // 否则按当前身份元组算一份 —— 这条路径只服务「非携带」的新写入,携带条目走
   // writeAttemptForImpl 的 artifactBase 分支,原样透传 result.locator,从不落到这里重算。
   // niceeval 自己的 runner(src/runner/run.ts)在 fresh attempt 完成时已经把 locator 写进
-  // entry.locator(用的正是同一个 snapshot.startedAt),所以这条 encodeAttemptLocator 兜底
+  // entry.locator(用的正是同一个 run.startedAt),所以这条 encodeAttemptLocator 兜底
   // 对 niceeval 自身运行永不触发,只在第三方 harness 未预先算好 locator 时才会走到。
   const locator =
     entry.locator ??
     encodeAttemptLocator({
-      experimentId: snapshot.experimentId,
-      snapshotStartedAt: snapshot.startedAt,
+      experimentId: run.experimentId,
+      snapshotStartedAt: run.startedAt,
       evalId: entry.id,
       attempt: entry.attempt,
     });
@@ -418,10 +424,10 @@ async function writeSourcesRef(
   sourceStore: Map<string, Promise<void>>,
 ): Promise<void> {
   const storeDir = join(snapDir, "sources");
-  const refs: { path: string; sha256: string }[] = [];
+  const refs: { path: string; sha256: string; role: SourceArtifact["role"] }[] = [];
   for (const src of sources) {
     const sha256 = hashEvalSource(normalizeEvalSource(src.content));
-    refs.push({ path: src.path, sha256 });
+    refs.push({ path: src.path, sha256, role: src.role });
     if (!sourceStore.has(sha256)) {
       sourceStore.set(
         sha256,
@@ -451,7 +457,7 @@ async function createSnapshotDir(root: string, experimentId: string): Promise<st
       lastError = e;
     }
   }
-  throw new Error(`Could not create a unique snapshot directory under "${parent}" after 5 attempts (${String(lastError)}).`);
+  throw new Error(`Could not create a unique run directory under "${parent}" after 5 attempts (${String(lastError)}).`);
 }
 
 

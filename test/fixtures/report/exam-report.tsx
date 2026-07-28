@@ -5,20 +5,12 @@
 // 阶段代调配套 *Data——作者不写取数管道。Grid/Stat 只呈现作者手写的已格式化摘要,
 // 不读 Scope、不聚合 Metric,证明它们能与数据组件在同一棵树里共存。
 
-import { Col, ExperimentList, Grid, MetricTable, Section, Stat, Style, defineReport, taskPassRate } from "niceeval/report";
+import {
+  ExperimentList,
+  defineComposition,
+  defineReport,
+} from "niceeval/report";
 
-export default defineReport(
-  <Col>
-    <Style>{`.exam-note { color: #4a7; }`}</Style>
-    <ExperimentList />
-    <Section title="考试成绩单">
-      <MetricTable rows="experiment" columns={[taskPassRate]} />
-    </Section>
-    <Section title="速览" meta="人工摘要,非计算结果">
-      <Grid columns={2} variant="boxed">
-        <Stat label="及格线" value="60 分" tone="neutral" />
-        <Stat label="最高分" value="97 分" detail="来自 compare/codex" tone="positive" />
-      </Grid>
-    </Section>
-  </Col>,
-);
+const ExamReport = defineComposition(() => <ExperimentList />);
+
+export default defineReport(<ExamReport />);

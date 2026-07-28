@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { validateScopeSummaryData } from "./index.tsx";
 
 const validCell = { value: 1, display: "1", samples: 1, total: 1, refs: [] };
-const validTally = { passed: 1, failed: 0, errored: 0, skipped: 0 };
+const validTally = { passed: 1, failed: 0, errored: 0, unreadable: 0 };
 
 const valid = {
   range: { earliestStartedAt: "2026-07-01T00:00:00Z", latestStartedAt: "2026-07-02T00:00:00Z" },
@@ -34,8 +34,8 @@ describe("validateScopeSummaryData", () => {
   });
 
   it("evalVerdicts 与 attemptVerdicts 分别校验:错的那个才报错", () => {
-    const bad = { ...valid, attemptVerdicts: { passed: 1, failed: 0, errored: 0, skipped: "0" } };
-    expect(validateScopeSummaryData(bad)).toMatch(/"attemptVerdicts\.skipped"/);
+    const bad = { ...valid, attemptVerdicts: { passed: 1, failed: 0, errored: 0, unreadable: "0" } };
+    expect(validateScopeSummaryData(bad)).toMatch(/"attemptVerdicts\.unreadable"/);
   });
 
   it("endToEndPassRate 结构错误定位到嵌套 MetricCell", () => {

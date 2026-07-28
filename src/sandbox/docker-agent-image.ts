@@ -4,7 +4,7 @@ import {
 } from "../agents/coding-cli-versions.ts";
 
 /** 每个 Agent 的 NiceEval 公共 Docker Hub repository（不含 tag）。 */
-export const NICEEVAL_DOCKER_IMAGE_NAME: Record<CodingAgentBaseline, string> = {
+export const NICEEVAL_DOCKER_IMAGE_NAME: globalThis.Record<CodingAgentBaseline, string> = {
   "claude-code": "niceeval/claude-code",
   codex: "niceeval/codex",
   bub: "niceeval/bub",

@@ -16,7 +16,7 @@ export function mapClaudeCodeSpans(spans: TraceSpan[]): TraceSpan[] {
       s.name === "claude_code.interaction" ? tagSpan(s, { kind: "turn" }) : tagSpan(s, heuristicTag(s));
     const tuid = tagged.attributes?.["tool_use_id"];
     if (typeof tuid === "string" && tagged.attributes?.["call_id"] === undefined) {
-      const attributes: Record<string, JsonValue> = { ...tagged.attributes, call_id: tuid };
+      const attributes: globalThis.Record<string, JsonValue> = { ...tagged.attributes, call_id: tuid };
       return { ...tagged, attributes };
     }
     return tagged;

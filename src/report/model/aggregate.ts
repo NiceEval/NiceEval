@@ -6,16 +6,16 @@
 // 和重试策略纠缠在一起(eval A=[1]、eval B=[0,0,0] 平铺 = 0.25,两级宏平均 = 0.5)。
 // 自定义维度把同一道题的 attempt 分进不同组时,第一级折叠发生在各组内部。
 
-import { dedupeAttempts } from "../../results/select.ts";
-import type { AttemptHandle, Scope, ScopeCoverage, ScopeWarning, Snapshot } from "../../results/types.ts";
-import { encodeAttemptLocator, type AttemptLocator } from "../../results/locator.ts";
+import { dedupeAttempts } from "../../sample/index.ts";
+import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, Run } from "../../record/types.ts";
+import { encodeAttemptLocator, type AttemptLocator } from "../../record/locator.ts";
 import type {
   Aggregator,
   DimensionInput,
   DimensionRef,
-  Metric,
-  MetricCell,
-  MetricColumn,
+  Measure,
+  MeasureCell,
+  MeasureColumn,
   NumericAxis,
   ReportInput,
   SeriesInput,
@@ -29,40 +29,40 @@ import { evalPrefixPredicate } from "../../shared/aggregate.ts";
 const KEY_SEP = "\u0000";
 
 /**
- * `ReportInput` 归一化:Scope 分支直接消费它已经按口径物化好的 `attempts`(不再重新
- * flatten `snapshots`——真实 Snapshot 各自持有完整、未按 Scope 口径收窄的 evals/attempts,
- * 只有 `Scope.attempts` 才是这次选择的真正结果);裸 `Snapshot[]` 分支没有挑选过程,取全部
+ * `ReportInput` 归一化:Sample 分支直接消费它已经按口径物化好的 `attempts`(不再重新
+ * flatten `runs`——真实 Run 各自持有完整、未按 Sample 口径收窄的 evals/attempts,
+ * 只有 `Sample.attempts` 才是这次选择的真正结果);裸 `Run[]` 分支没有挑选过程,取全部
  * (docs/feature/record/library.md「官方现刻水位」)。
  */
 export function resolveInput(input: ReportInput): {
-  snapshots: readonly Snapshot[];
+  runs: readonly Run[];
   attempts: readonly AttemptHandle[];
-  warnings: readonly ScopeWarning[];
-  coverage: readonly ScopeCoverage[];
+  issues: readonly SampleIssue[];
+  coverage: readonly SampleCoverage[];
 } {
   if (Array.isArray(input)) {
-    const snapshots = input as readonly Snapshot[];
-    return { snapshots, attempts: snapshots.flatMap((s) => s.attempts), warnings: [], coverage: [] };
+    const runs = input as readonly Run[];
+    return { runs, attempts: runs.flatMap((s) => s.attempts), issues: [], coverage: [] };
   }
-  const scope = input as Scope;
-  return { snapshots: scope.snapshots, attempts: scope.attempts, warnings: scope.warnings, coverage: scope.coverage };
+  const scope = input as Sample;
+  return { runs: scope.runs, attempts: scope.attempts, issues: scope.issues, coverage: scope.coverage };
 }
 
 /**
- * 展平后的一条样本:`snapshot` 始终是 attempt 的真实来源(= `attempt.snapshot`,快照维度/
+ * 展平后的一条样本:`run` 始终是 attempt 的真实来源(= `attempt.run`,快照维度/
  * refs/locator 都读它);`watermark` 是该 attempt 所属 experiment 在这份输入里的水位基准
- * Snapshot(贡献来源中 startedAt 最新者,latest() 口径下与 `snapshot` 是同一个对象)——
+ * Run(贡献来源中 startedAt 最新者,latest() 口径下与 `run` 是同一个对象)——
  * `historicalOf` 拿它跟真实来源比较,读取「这一行该显示哪个 agent/model/flags」等整组
- * 代表性字段时也读它(docs/feature/reports/architecture.md「Scope 是计算入口」)。
+ * 代表性字段时也读它(docs/feature/reports/architecture.md「Sample 是计算入口」)。
  */
 export interface Item {
-  snapshot: Snapshot;
+  run: Run;
   attempt: AttemptHandle;
-  watermark: Snapshot;
+  watermark: Run;
 }
 
 export function experimentIdOf(item: Item): string {
-  return item.attempt.experimentId || item.snapshot.experimentId;
+  return item.attempt.experimentId || item.run.experimentId;
 }
 
 export function evalIdOf(item: Item): string {
@@ -71,17 +71,17 @@ export function evalIdOf(item: Item): string {
 
 /**
  * 历史执行判定(docs/feature/sample/library.md「时效:新执行与历史执行」):携带条目,或
- * 真实来源(`item.snapshot`)早于该实验在这份输入里的水位基准(`item.watermark`)——
+ * 真实来源(`item.run`)早于该实验在这份输入里的水位基准(`item.watermark`)——
  * latest() 口径下二者是同一个对象,比较恒假,只剩 carried 生效;current() 口径下贡献
  * 来源可能有多个,水位基准是其中 startedAt 最新的一个。
  */
 export function historicalOf(item: Item): boolean {
-  return item.attempt.carried || item.snapshot.startedAt < item.watermark.startedAt;
+  return item.attempt.carried || item.run.startedAt < item.watermark.startedAt;
 }
 
-/** 快照键:"<experimentId> @ <startedAt>"("snapshot" 维度与手挑快照数组的对比用)。 */
-export function snapshotKeyOf(snapshot: Snapshot): string {
-  return `${snapshot.experimentId} @ ${snapshot.startedAt}`;
+/** 快照键:"<experimentId> @ <startedAt>"("run" 维度与手挑快照数组的对比用)。 */
+export function snapshotKeyOf(run: Run): string {
+  return `${run.experimentId} @ ${run.startedAt}`;
 }
 
 /** 一组 Item 的 eval 全身份键:experimentId + eval id(聚合中的题级身份始终是这一对)。 */
@@ -90,7 +90,7 @@ export function fullEvalKey(item: Item): string {
 }
 
 /**
- * 一条 Item 的 AttemptLocator:真实读取路径(openResults() 产出的 handle)恒有
+ * 一条 Item 的 AttemptLocator:真实读取路径(openRecord() 产出的 handle)恒有
  * `attempt.locator`;手工构造的测试 fixture 若省略它,按当前身份元组兜底算一份。
  */
 export function locatorOf(item: Item): AttemptLocator {
@@ -98,7 +98,7 @@ export function locatorOf(item: Item): AttemptLocator {
     item.attempt.locator ??
     encodeAttemptLocator({
       experimentId: experimentIdOf(item),
-      snapshotStartedAt: item.snapshot.startedAt,
+      snapshotStartedAt: item.run.startedAt,
       evalId: evalIdOf(item),
       attempt: item.attempt.result.attempt,
     })
@@ -106,23 +106,23 @@ export function locatorOf(item: Item): AttemptLocator {
 }
 
 /**
- * 聚合前去重(niceeval/results 的 dedupeAttempts,身份键
+ * 聚合前去重(niceeval/record 的 dedupeAttempts,身份键
  * (experimentId, evalId, attempt, startedAt))并按 experiment 补上水位基准。
  * missing-startedAt 的警告不透出:官方产出永不缺 startedAt,缺失只可能来自 legacy 落盘,
  * 「不去重、如实保留重复」即终稿。`attempts` 是 `resolveInput(input).attempts`(已经按口径
- * 物化好,不是从 `snapshots` 反推 flatten);`snapshots` 只用来算每个 experiment 的水位基准。
+ * 物化好,不是从 `runs` 反推 flatten);`runs` 只用来算每个 experiment 的水位基准。
  */
-export function collectItems(snapshots: readonly Snapshot[], attempts: readonly AttemptHandle[]): Item[] {
-  const watermarkByExperiment = new Map<string, Snapshot>();
-  for (const snapshot of snapshots) {
-    const current = watermarkByExperiment.get(snapshot.experimentId);
-    if (!current || snapshot.startedAt > current.startedAt) watermarkByExperiment.set(snapshot.experimentId, snapshot);
+export function collectItems(runs: readonly Run[], attempts: readonly AttemptHandle[]): Item[] {
+  const watermarkByExperiment = new Map<string, Run>();
+  for (const run of runs) {
+    const current = watermarkByExperiment.get(run.experimentId);
+    if (!current || run.startedAt > current.startedAt) watermarkByExperiment.set(run.experimentId, run);
   }
   const { attempts: deduped } = dedupeAttempts([...attempts]);
   return deduped.map((attempt) => ({
     attempt,
-    snapshot: attempt.snapshot,
-    watermark: watermarkByExperiment.get(attempt.experimentId) ?? attempt.snapshot,
+    run: attempt.run,
+    watermark: watermarkByExperiment.get(attempt.experimentId) ?? attempt.run,
   }));
 }
 
@@ -163,8 +163,8 @@ export const MISSING_GROUP_KEY = localeText("en", "cell.missingValue");
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (typeof value === "object" && value !== null) {
-    const keys = Object.keys(value as Record<string, unknown>).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, unknown>)[k])}`).join(",")}}`;
+    const keys = Object.keys(value as globalThis.Record<string, unknown>).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson((value as globalThis.Record<string, unknown>)[k])}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -195,15 +195,15 @@ export function dimensionKey(dimension: DimensionInput, item: Item): string {
     case "agent":
       return result.agent;
     case "model":
-      return result.model ?? item.snapshot.model ?? "(none)";
+      return result.model ?? item.run.model ?? "(none)";
     case "experiment":
       return experimentIdOf(item);
     case "eval":
       return evalIdOf(item);
     case "evalGroup":
       return evalGroupOf(evalIdOf(item));
-    case "snapshot":
-      return snapshotKeyOf(item.snapshot);
+    case "run":
+      return snapshotKeyOf(item.run);
     default: {
       // 穷尽检查:新增内置维度而漏改这里时编译期报错
       const exhausted: never = dimension;
@@ -280,7 +280,7 @@ export function applyAggregator(aggregator: Aggregator, values: readonly number[
   }
 }
 
-function metricError(metric: Metric, step: string, cause: unknown, locator?: AttemptLocator): Error {
+function metricError(metric: Measure, step: string, cause: unknown, locator?: AttemptLocator): Error {
   const at = locator === undefined ? "" : ` at attempt ${locator}`;
   return new Error(
     `Metric "${metric.name}" ${step} failed${at}: ${cause instanceof Error ? cause.message : String(cause)}. ` +
@@ -290,7 +290,7 @@ function metricError(metric: Metric, step: string, cause: unknown, locator?: Att
 }
 
 /** where 不满足 → null,语义等价于 value 开头 return null;抛错与非有限数按完整用户反馈失败。 */
-export async function evaluateMetric(metric: Metric, attempt: AttemptHandle): Promise<number | null> {
+export async function evaluateMetric(metric: Measure, attempt: AttemptHandle): Promise<number | null> {
   const locator = attempt.locator;
   if (metric.where) {
     let pass: boolean;
@@ -314,7 +314,7 @@ export async function evaluateMetric(metric: Metric, attempt: AttemptHandle): Pr
 }
 
 /** 单值 → LocalizedText display:metric.display 覆盖内置 unit 格式化;null 的兜底归渲染面。 */
-export function displayValue(metric: Metric, value: number | null): LocalizedText {
+export function displayValue(metric: Measure, value: number | null): LocalizedText {
   // null 的纯文本兜底;组件把 null 渲染成「缺数据」,绝不画 0
   if (value === null) return "—";
   if (metric.display) {
@@ -330,8 +330,8 @@ export function displayValue(metric: Metric, value: number | null): LocalizedTex
   return formatMetricValue(value, metric.unit);
 }
 
-function foldAggregator(metric: Metric, step: "perEval" | "acrossEvals", values: readonly number[]): number {
-  const aggregator = metric.aggregate?.[step] ?? "mean";
+function foldAggregator(metric: Measure, step: "perEval" | "acrossEvals", values: readonly number[]): number {
+  const aggregator = metric[step] ?? "mean";
   let folded: number;
   try {
     folded = applyAggregator(aggregator, values);
@@ -349,7 +349,7 @@ function foldAggregator(metric: Metric, step: "perEval" | "acrossEvals", values:
  * null 值不进聚合但计入 total(覆盖率经 samples/total 如实暴露);全 null → value null。
  * refs 跟随覆盖范围(含值为 null 的 attempt),去重后按 locator 字典序。
  */
-export async function computeCell(metric: Metric, items: Item[]): Promise<MetricCell> {
+export async function computeCell(metric: Measure, items: Item[]): Promise<MeasureCell> {
   // 第一级桶:同一 (experiment × eval × 快照) 的 attempt 折成一个题级值
   const buckets = new Map<string, number[]>();
   const refs = new Set<AttemptLocator>();
@@ -359,7 +359,7 @@ export async function computeCell(metric: Metric, items: Item[]): Promise<Metric
     const value = await evaluateMetric(metric, item.attempt);
     if (value === null) continue;
     samples += 1;
-    const bucketKey = `${fullEvalKey(item)}${KEY_SEP}${snapshotKeyOf(item.snapshot)}`;
+    const bucketKey = `${fullEvalKey(item)}${KEY_SEP}${snapshotKeyOf(item.run)}`;
     const bucket = buckets.get(bucketKey);
     if (bucket) bucket.push(value);
     else buckets.set(bucketKey, [value]);
@@ -375,7 +375,7 @@ export async function computeCell(metric: Metric, items: Item[]): Promise<Metric
   };
 }
 
-export function toColumn(metric: Metric): MetricColumn {
+export function toColumn(metric: Measure): MeasureColumn {
   return {
     key: metric.name,
     label: metric.label ?? metric.name,
@@ -386,12 +386,12 @@ export function toColumn(metric: Metric): MetricColumn {
   };
 }
 
-export function assertUniqueMetricNames(metrics: readonly Metric[], where: string): void {
+export function assertUniqueMetricNames(metrics: readonly Measure[], where: string): void {
   const seen = new Set<string>();
   for (const metric of metrics) {
     if (seen.has(metric.name)) {
       throw new Error(
-        `Duplicate metric name "${metric.name}" in ${where}. Metric names must be unique within one computation; rename one via defineMetric.`,
+        `Duplicate measure name "${metric.name}" in ${where}. Measure names must be unique within one computation; rename one via defineMeasure.`,
       );
     }
     seen.add(metric.name);

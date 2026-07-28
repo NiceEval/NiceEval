@@ -39,7 +39,7 @@ export function isRetryableProvisionError(kind: SandboxProvisionErrorKind): bool
 export function classifyProvisionErrorFallback(error: unknown): SandboxProvisionErrorKind {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current != null; depth += 1) {
-    const record = typeof current === "object" ? (current as Record<string, unknown>) : undefined;
+    const record = typeof current === "object" ? (current as globalThis.Record<string, unknown>) : undefined;
     const message = current instanceof Error ? current.message : String(current);
     const status = provisionStatus(record);
     if (status === 429) return "rate_limit";
@@ -59,13 +59,13 @@ export function classifyProvisionErrorFallback(error: unknown): SandboxProvision
   return "unknown";
 }
 
-function provisionStatus(record: Record<string, unknown> | undefined): number | undefined {
+function provisionStatus(record: globalThis.Record<string, unknown> | undefined): number | undefined {
   if (!record) return undefined;
   if (typeof record.status === "number") return record.status;
   if (typeof record.statusCode === "number") return record.statusCode;
   const response = record.response;
   if (response && typeof response === "object") {
-    const status = (response as Record<string, unknown>).status;
+    const status = (response as globalThis.Record<string, unknown>).status;
     if (typeof status === "number") return status;
   }
   return undefined;
@@ -88,7 +88,7 @@ export function isRetryableSandboxIoError(kind: SandboxIoErrorKind): boolean {
 export function classifySandboxIoError(error: unknown): SandboxIoErrorKind {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current != null; depth += 1) {
-    const record = typeof current === "object" ? current as Record<string, unknown> : undefined;
+    const record = typeof current === "object" ? current as globalThis.Record<string, unknown> : undefined;
     const name = record && typeof record.name === "string" ? record.name : "";
     const message = current instanceof Error ? current.message : String(current);
 
@@ -113,13 +113,13 @@ export function classifySandboxIoError(error: unknown): SandboxIoErrorKind {
   return "unknown";
 }
 
-function numericStatus(record: Record<string, unknown> | undefined): number | undefined {
+function numericStatus(record: globalThis.Record<string, unknown> | undefined): number | undefined {
   if (!record) return undefined;
   if (typeof record.status === "number") return record.status;
   if (typeof record.statusCode === "number") return record.statusCode;
   const response = record.response;
   if (response && typeof response === "object") {
-    const status = (response as Record<string, unknown>).status;
+    const status = (response as globalThis.Record<string, unknown>).status;
     if (typeof status === "number") return status;
   }
   return undefined;
@@ -144,12 +144,12 @@ const PERMISSION_PATTERN = /forbidden|permission denied|access denied|pull acces
 // 模板 / 镜像 / 快照不存在:404/410 响应、vercel `snapshot_not_found` 错误码、docker 拉取
 // 未知镜像的 message 形态(dockerode 对拉取失败通常不带 statusCode,只能靠文案识别)。
 const TEMPLATE_NOT_FOUND_PATTERN =
-  /(template|image|snapshot).{0,40}(not found|does not exist|unknown|invalid)|no such image|manifest unknown|repository does not exist/i;
+  /(template|image|run).{0,40}(not found|does not exist|unknown|invalid)|no such image|manifest unknown|repository does not exist/i;
 
 export function classifyProvisionConfigCause(error: unknown): ProvisionConfigCause | undefined {
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current != null; depth += 1) {
-    const record = typeof current === "object" ? (current as Record<string, unknown>) : undefined;
+    const record = typeof current === "object" ? (current as globalThis.Record<string, unknown>) : undefined;
     const name = record && typeof record.name === "string" ? record.name : "";
     const message = current instanceof Error ? current.message : String(current);
     const haystack = `${name} ${message}`;
@@ -167,12 +167,12 @@ export function classifyProvisionConfigCause(error: unknown): ProvisionConfigCau
 }
 
 /** vercel `APIError` 的 `snapshot_not_found` 落在 `err.json.error.code`,不是顶层字段。 */
-function provisionJsonErrorCode(record: Record<string, unknown> | undefined): string | undefined {
+function provisionJsonErrorCode(record: globalThis.Record<string, unknown> | undefined): string | undefined {
   const json = record?.json;
   if (!json || typeof json !== "object") return undefined;
-  const err = (json as Record<string, unknown>).error;
+  const err = (json as globalThis.Record<string, unknown>).error;
   if (!err || typeof err !== "object") return undefined;
-  const code = (err as Record<string, unknown>).code;
+  const code = (err as globalThis.Record<string, unknown>).code;
   return typeof code === "string" ? code : undefined;
 }
 

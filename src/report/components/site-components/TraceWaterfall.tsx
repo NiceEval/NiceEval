@@ -5,7 +5,7 @@
 
 import type { ReactElement } from "react";
 import type { TraceWaterfallRow } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, countText, localeText, type ReportLocale } from "../../model/locale.ts";
 import { formatDurationMs } from "../../model/format.ts";
 import { cx } from "../shared.ts";

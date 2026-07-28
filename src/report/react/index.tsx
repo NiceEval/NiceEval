@@ -8,18 +8,8 @@
 //   - 渐进增强脚本 ./enhance.js 可选加载,初始静态 HTML 无 JS 完整可读;
 //   - 跨块配色一致:维度键 → 稳定散列 → 固定调色板下标(../assets/colors.ts)。
 
-export { AttemptList } from "../components/entity-lists/AttemptList.tsx";
-export { EvalList } from "../components/entity-lists/EvalList.tsx";
-export { ExperimentList } from "../components/entity-lists/ExperimentList.tsx";
-export { ScopeSummary } from "../components/summaries/ScopeSummary.tsx";
-export { MetricTable } from "../components/metric-views/MetricTable.tsx";
-export { MetricMatrix } from "../components/metric-views/MetricMatrix.tsx";
-export { MetricBars } from "../components/metric-views/MetricBars.tsx";
-export { MetricScatter } from "../components/metric-views/MetricScatter.tsx";
-export { MetricLine } from "../components/metric-views/MetricLine.tsx";
-export { DeltaTable } from "../components/metric-views/DeltaTable.tsx";
-export { StabilityMatrix } from "../components/metric-views/StabilityMatrix.tsx";
-export { Scoreboard } from "../components/metric-views/Scoreboard.tsx";
+export { Col, Grid, Row, Section, Stat, Style, Tab, Table, Tabs, Text } from "../definition/primitives.tsx";
+export { SampleSummary } from "../components/summaries/ScopeSummary.tsx";
 
 // 站点组件的纯 web 面(data 形态;Hero 是组合组件,只住 niceeval/report)
 export { HeroCard } from "../components/site-components/HeroCard.tsx";
@@ -70,11 +60,12 @@ export type {
   HeroData,
   LineData,
   MatrixData,
-  MetricCell,
-  MetricColumn,
   ScatterData,
-  ScopeSummaryData,
-  ScopeWarning,
+  MeasureCell,
+  MeasureColumn,
+  MeasureRowsContent,
+  SampleSummaryContent,
+  SampleIssue,
   ScoreboardData,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
@@ -86,7 +77,7 @@ export type {
   UsageTableData,
   VerdictTally,
 } from "../model/types.ts";
-export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../results/attempt-evidence.ts";
+export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 
 // locale(官方组件 chrome 文案的语言;LocalizedText 的按 locale 解析也用它)
 export { DEFAULT_REPORT_LOCALE, resolveLocalizedText, resolveMetricLabel } from "../model/locale.ts";

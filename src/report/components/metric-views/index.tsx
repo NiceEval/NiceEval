@@ -12,7 +12,7 @@ import type {
   StabilityMatrixData,
   TableData,
 } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import {
   arrayProblem,
   cellProblem,
@@ -165,7 +165,7 @@ export const validateScoreboardData: Validator = (data) => {
     });
   });
 };
-const VERDICTS = ["passed", "failed", "errored", "skipped"];
+const VERDICTS = ["passed", "failed", "errored", "unreadable"];
 /** DeltaCell:同 MetricCell 家族但字段不同(verdict/totalScore/attempts/totalTokens/totalCostUSD/historical)。 */
 function deltaCellProblem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object { scoring, verdict, attempts, historical }`;
@@ -201,13 +201,13 @@ function pairedDeltaProblem(value: unknown, path: string): string | null {
     return `"${path}.commonEvalIds" must be an array of strings`;
   }
   if (value.pass !== undefined) {
-    if (!isObject(value.pass) || !Array.isArray(value.pass.evalIds) || typeof value.pass.passRatePoints !== "number") {
-      return `"${path}.pass" must be an object { evalIds, passRatePoints }`;
+    if (!isObject(value.pass) || !Array.isArray(value.pass.knownEvalIds) || typeof value.pass.passRatePoints !== "number") {
+      return `"${path}.pass" must be an object { knownEvalIds, passRatePoints }`;
     }
   }
   if (value.points !== undefined) {
-    if (!isObject(value.points) || !Array.isArray(value.points.evalIds) || typeof value.points.totalScore !== "number") {
-      return `"${path}.points" must be an object { evalIds, totalScore }`;
+    if (!isObject(value.points) || !Array.isArray(value.points.knownEvalIds) || typeof value.points.totalScore !== "number") {
+      return `"${path}.points" must be an object { knownEvalIds, totalScore }`;
     }
   }
   if (value.tokens !== undefined && typeof value.tokens !== "number") return `"${path}.tokens" must be a number`;

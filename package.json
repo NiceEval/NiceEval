@@ -56,10 +56,15 @@
       "import": "./src/loaders/index.ts",
       "require": "./src/loaders/index.ts"
     },
-    "./results": {
-      "types": "./src/results/index.ts",
-      "import": "./src/results/index.ts",
-      "require": "./src/results/index.ts"
+    "./record": {
+      "types": "./src/record/index.ts",
+      "import": "./src/record/index.ts",
+      "require": "./src/record/index.ts"
+    },
+    "./sample": {
+      "types": "./src/sample/index.ts",
+      "import": "./src/sample/index.ts",
+      "require": "./src/sample/index.ts"
     },
     "./report": {
       "types": "./dist/report/index.d.ts",
@@ -114,6 +119,7 @@
     "autoevals": "0.0.132",
     "effect": "^3.21.4",
     "mermaid": "^11.16.0",
+    "openai": "^6.49.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tar-stream": "^3.1.7",

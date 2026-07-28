@@ -100,26 +100,32 @@ export type SandboxHook = (
  */
 export interface DockerSandboxSpec extends SandboxHooks<DockerSandboxSpec> {
   readonly provider: "docker";
+  /** 实例可存活的最长时间；复用调度据此在到期前轮换。 */
+  readonly lifetimeMs?: number;
   /** 覆盖默认镜像;默认按 runtime 选 `node:*-slim`。预制模板:传烘焙好 agent CLI 的镜像名。 */
   readonly image?: string;
   /** 按 eval 的 `environment` profile 覆盖预制镜像:键为 profile id,值为该 profile 起步的镜像。未声明 environment 的 eval 用 `image`。 */
-  readonly environments?: Readonly<Record<string, { readonly image: string }>>;
+  readonly environments?: Readonly<globalThis.Record<string, { readonly image: string }>>;
   readonly runtime?: SandboxRuntime;
 }
 export interface VercelSandboxSpec extends SandboxHooks<VercelSandboxSpec> {
   readonly provider: "vercel";
+  /** 实例可存活的最长时间；复用调度据此在到期前轮换。 */
+  readonly lifetimeMs?: number;
   /** 从已有快照起 microVM。预制模板:烘焙好 agent CLI 的 snapshotId。 */
   readonly snapshotId?: string;
   /** 按 eval 的 `environment` profile 覆盖预制快照:键为 profile id,值为该 profile 起步的 snapshotId。未声明 environment 的 eval 用 `snapshotId`。 */
-  readonly environments?: Readonly<Record<string, { readonly snapshotId: string }>>;
+  readonly environments?: Readonly<globalThis.Record<string, { readonly snapshotId: string }>>;
   readonly runtime?: SandboxRuntime;
 }
 export interface E2BSandboxSpec extends SandboxHooks<E2BSandboxSpec> {
   readonly provider: "e2b";
+  /** 实例可存活的最长时间；复用调度据此在到期前轮换。 */
+  readonly lifetimeMs?: number;
   /** e2b 模板名/ID。预制模板:烘焙好 agent CLI 的模板(如 `"niceeval-agents"`)。省略用 e2b 默认 `"base"`。 */
   readonly template?: string;
   /** 按 eval 的 `environment` profile 覆盖预制模板:键为 profile id,值为该 profile 起步的模板。未声明 environment 的 eval 用 `template`。 */
-  readonly environments?: Readonly<Record<string, { readonly template: string }>>;
+  readonly environments?: Readonly<globalThis.Record<string, { readonly template: string }>>;
   /** 仅作记录;e2b 的 node 版本由模板决定,不在创建时选。 */
   readonly runtime?: SandboxRuntime;
 }
@@ -149,13 +155,13 @@ export interface CustomSandboxSpec extends SandboxHooks<CustomSandboxSpec> {
    * (见 docs/runner.md「调度:有界并发」)。中性的 provider 声明,省略即不独占。
    */
   readonly exclusive?: boolean;
-  /** `feedback` 绑定到 `sandbox.create` 阶段:分配实例 / 拉镜像 / 恢复 snapshot 的进度与诊断走它。 */
+  /** `feedback` 绑定到 `sandbox.create` 阶段:分配实例 / 拉镜像 / 恢复 run 的进度与诊断走它。 */
   readonly create: (opts: { timeout?: number; runtime?: SandboxRuntime; feedback: ScopedFeedback }) => Promise<Sandbox>;
   /**
    * 「哪些参数可发布」的投影,进结果快照的 ExperimentRunInfo.sandbox.params;
    * 未实现时只落 provider 名。token、凭据路径永远不该出现在返回值里。
    */
-  readonly publicConfig?: () => Record<string, import("../shared/types.ts").JsonValue>;
+  readonly publicConfig?: () => globalThis.Record<string, import("../shared/types.ts").JsonValue>;
 }
 
 export type SandboxSpec = DockerSandboxSpec | VercelSandboxSpec | E2BSandboxSpec | LocalSandboxSpec | CustomSandboxSpec;
@@ -165,7 +171,7 @@ export type SandboxOption = SandboxSpec;
 
 export interface CommandOptions {
   /** 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。 */
-  env?: Record<string, string>;
+  env?: globalThis.Record<string, string>;
   /** 本命令的工作目录;省略时落到 `Sandbox.workdir`。相对路径按 workdir 解析,绝对路径原样使用。 */
   cwd?: string;
   /**
@@ -213,7 +219,7 @@ export interface Sandbox {
   /** 检查 Sandbox 内路径是否存在。跨 provider 语义不完全一致:仅保证对普通文件可靠,对目录路径的行为不同 provider 不保证一致。 */
   fileExists(path: string): Promise<boolean>;
   /** 写入若干文本文件(内容已在内存里的字符串);是 `uploadFiles` 的文本特化,省略 `targetDir` 落到 workdir。 */
-  writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;
+  writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void>;
   /** 批量写入若干文件,内容可以是文本或二进制 Buffer;省略 `targetDir` 落到 workdir。 */
   uploadFiles(files: SandboxFile[], targetDir?: string): Promise<void>;
   /** 把本地磁盘上的一个目录整体上传进 Sandbox(递归读取本地文件后按 `uploadFiles` 写入);`opts.ignore` 是排除规则,省略 `targetDir` 落到 workdir。 */
@@ -255,4 +261,12 @@ export interface Sandbox {
    * `uploadDirectory` 同名同义——按 basename 排除路径,省略即不过滤。
    */
   downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string[] }): Promise<void>;
+}
+
+/** 复用调度需要的中立寿命确认能力。 */
+export interface SandboxReuseCapability {
+  ensureLifetime(minRemainingMs: number): Promise<
+    | { ready: true; expiresAt?: string }
+    | { ready: false; reason: string }
+  >;
 }

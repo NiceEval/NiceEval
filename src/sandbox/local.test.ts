@@ -154,7 +154,7 @@ describe("runAttemptEffect · --keep-sandbox 与 local provider 组合在创建�
     const run: AgentRun = {
       agent,
       flags: {},
-      runs: 1,
+      attempts: 1,
       earlyExit: true,
       sandbox: localSandbox(),
       timeoutMs: 5_000,

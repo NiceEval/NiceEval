@@ -43,7 +43,7 @@ function summary(): InvocationSummary {
     completedAt: "2026-07-13T00:00:01.000Z",
     passed: 1,
     failed: 0,
-    skipped: 0,
+    unreadable: 0,
     errored: 0,
     durationMs: 1000,
     results: [],

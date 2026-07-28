@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, Verdict } from "../../types.ts";
-import type { AttemptHandle, Results, Scope, Snapshot } from "../../results/index.ts";
+import type { AttemptHandle, Record, Sample, Run } from "../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../components/scope.harness.ts";
 import {
   createTextContext,
@@ -29,14 +29,14 @@ import { buildReportMeta, defineReport, FALLBACK_REPORT_TITLE, resolveReportTitl
 import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } from "./text.ts";
 import { AttemptList, ExperimentList, FailureList } from "../components/entity-lists/index.tsx";
 import { CopyFixPrompt, Hero, ScopeWarnings, SnapshotDiagnostics, TraceWaterfall } from "../components/site-components/index.tsx";
-import { ExperimentComparison, ScopeSummary } from "../components/summaries/index.tsx";
+import { ExperimentComparison, SampleOverview, ScopeSummary } from "../components/summaries/index.tsx";
 import { MetricBars, MetricMatrix, MetricScatter, MetricTable } from "../components/metric-views/index.tsx";
 import { AttemptDetail } from "../components/attempt-detail/index.tsx";
 import { Col, Section, Tab, Table, Tabs, Text } from "../definition/primitives.tsx";
 import { attemptListData, experimentListData } from "../components/entity-lists/compute.ts";
 import { metricScatterData } from "../components/metric-views/compute.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
-import { costUSD, defineMetric, endToEndPassRate, totalScore } from "../model/metrics.ts";
+import { costUSD, defineMeasure, endToEndPassRate, totalScore } from "../model/metrics.ts";
 import { label } from "../model/flag.ts";
 import builtInReport, { standard, standardAttemptPage } from "../built-in/index.tsx";
 
@@ -65,12 +65,12 @@ function snap(spec: {
   results: EvalResult[];
   agent?: string;
   model?: string;
-  name?: Snapshot["name"];
+  name?: Run["name"];
   runStartedAt?: string;
-}): Snapshot {
+}): Run {
   runSeq += 1;
   const startedAt = spec.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
-  const snapshot = {
+  const run = {
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -79,18 +79,18 @@ function snap(spec: {
     name: spec.name,
     schemaVersion: 1,
     dir: `/results/exp/snap-${runSeq}`,
-  } as Snapshot;
+  } as Run;
   const attempts: AttemptHandle[] = spec.results.map((r) =>
-    attemptHandleOf(snapshot, r, {
-      snapshot: `exp/snap-${runSeq}`,
+    attemptHandleOf(run, r, {
+      run: `exp/snap-${runSeq}`,
       attempt: `${r.id}/a${r.attempt}`,
     }),
   );
   const evals = new Map<string, AttemptHandle[]>();
   for (const attempt of attempts) evals.set(attempt.evalId, [...(evals.get(attempt.evalId) ?? []), attempt]);
-  snapshot.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
-  snapshot.attempts = attempts;
-  return snapshot;
+  run.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
+  run.attempts = attempts;
+  return run;
 }
 
 /**
@@ -98,12 +98,12 @@ function snap(spec: {
  * (元素 type / props)或抛出的错误对象。裸字符串 / 非法节点这类只在 validate 阶段
  * 才拒绝的输入,同样会在这里抛出(validateReportTree 紧跟 resolve 之后调用)。
  */
-async function resolveTree(node: ReportNode, scope: Scope): Promise<ReportNode> {
+async function resolveTree(node: ReportNode, scope: Sample): Promise<ReportNode> {
   const definition = defineReport(node);
   const page = pickReportPage(definition);
   const resolved = await resolveReportTree(page.content, {
     scope,
-    results: resultsOf(scope.snapshots),
+    results: resultsOf(scope.runs),
     report: buildReportMeta(definition, scope),
     page: { id: page.id, input: "scope" },
     memo: new ResolveMemo(),
@@ -149,7 +149,7 @@ describe("spec 形态与 data 形态", () => {
     ).rejects.toThrow(/both `data` and spec/);
   });
 
-  it("input 省略时取宿主注入的 Scope;显式 input 覆盖数据来源", async () => {
+  it("input 省略时取宿主注入的 Sample;显式 input 覆盖数据来源", async () => {
     const a = snap({ experimentId: "in/a", results: [res("q", "passed")] });
     const b = snap({ experimentId: "in/b", results: [res("q", "failed")] });
     const scope = scopeOf([a, b]);
@@ -161,8 +161,8 @@ describe("spec 形态与 data 形态", () => {
     const narrowedResolved = await resolveTree(<ScopeSummary input={narrowed} />, scope);
     expect((narrowedResolved as unknown as { props: { data: unknown } }).props.data).toEqual(await scopeSummaryData(narrowed));
 
-    // input 也可以是手挑的 Snapshot[](按快照出行)
-    const tableResolved = await resolveTree(<MetricTable input={[a]} rows="snapshot" columns={[endToEndPassRate]} />, scope);
+    // input 也可以是手挑的 Run[](按快照出行)
+    const tableResolved = await resolveTree(<MetricTable input={[a]} rows="run" columns={[endToEndPassRate]} />, scope);
     const rows = (tableResolved as unknown as { props: { data: { rows: Array<{ key: string }> } } }).props.data.rows;
     expect(rows.some((r) => r.key.startsWith("in/a"))).toBe(true);
     expect(rows.some((r) => r.key.startsWith("in/b"))).toBe(false);
@@ -187,7 +187,7 @@ describe("spec 形态与 data 形态", () => {
 describe("resolve 记忆化", () => {
   it("Matrix 与 Bars 同 spec 时计算只发生一次;不同 spec 各自计算", async () => {
     let calls = 0;
-    const counted = defineMetric({
+    const counted = defineMeasure({
       name: "counted",
       value: () => {
         calls += 1;
@@ -221,8 +221,8 @@ describe("resolve 记忆化", () => {
       calls += 1;
       return 1;
     };
-    const m1 = defineMetric({ name: "twin", value });
-    const m2 = defineMetric({ name: "twin", value: (attempt) => value.call(null) }); // 引用不同的等价定义
+    const m1 = defineMeasure({ name: "twin", value });
+    const m2 = defineMeasure({ name: "twin", value: (attempt) => value.call(null) }); // 引用不同的等价定义
     const a = snap({ experimentId: "memo/in-a", results: [res("q", "passed")] });
     const b = snap({ experimentId: "memo/in-b", results: [res("q", "passed")] });
     const scope = scopeOf([a, b]);
@@ -243,7 +243,7 @@ describe("resolve 记忆化", () => {
 describe("组合组件(函数形态)", () => {
   it("resolve 阶段以 (props, ctx) 调用并递归展开;与手写等价树解析出同一棵树;async 可用", async () => {
     const scope = scopeOf([snap({ experimentId: "compose/a", results: [res("q", "passed")] })]);
-    const Composed = defineComponent(async (_props: Record<never, never>, ctx) => (
+    const Composed = defineComponent(async (_props: globalThis.Record<never, never>, ctx) => (
       <Section title="wrapped">
         <ScopeSummary input={ctx.scope} />
       </Section>
@@ -258,11 +258,11 @@ describe("组合组件(函数形态)", () => {
     expect(composed).toEqual(manual);
   });
 
-  it("ctx.results 可自行挑 Snapshot[] 喂 input;ctx.report 携带走完回退链的 title,ctx.page 携带当前页 id", async () => {
+  it("ctx.results 可自行挑 Run[] 喂 input;ctx.report 携带走完回退链的 title,ctx.page 携带当前页 id", async () => {
     const named = snap({ experimentId: "hist/a", name: "Memory Evals", results: [res("q", "passed")] });
     const scope = scopeOf([named]);
-    const Meta = defineComponent((_props: Record<never, never>, ctx) => {
-      const history = ctx.results.experiments[0]!.snapshots;
+    const Meta = defineComponent((_props: globalThis.Record<never, never>, ctx) => {
+      const history = ctx.results.experiments[0]!.runs;
       return (
         <Col>
           <Text>{`title=${typeof ctx.report.title === "string" ? ctx.report.title : "?"} page=${ctx.page.id}`}</Text>
@@ -607,7 +607,7 @@ describe("defineReport 装载规范化", () => {
     expect(() => pickReportPage(definition, "attempt")).toThrow(ReportPageNeedsLocatorError);
   });
 
-  it("标题回退链:def.title → 唯一且相同的快照 name → 内置文案「Eval 运行结果 / Eval Results」;en 相同 zh 不同也落内置文案", () => {
+  it("标题回退链:def.title → 唯一且相同的快照 name → 内置文案「Eval 运行结果 / Eval Record」;en 相同 zh 不同也落内置文案", () => {
     const named = snap({ experimentId: "t/a", name: "Memory Evals", results: [res("q", "passed")] });
     const definition = defineReport(<ScopeSummary />);
     expect(resolveReportTitle(defineReport({ title: "Custom", content: null }), scopeOf([named]))).toBe("Custom");
@@ -618,7 +618,7 @@ describe("defineReport 装载规范化", () => {
     const zhA = snap({ experimentId: "t/c", name: { en: "Same", "zh-CN": "一" }, results: [] });
     const zhB = snap({ experimentId: "t/d", name: { en: "Same", "zh-CN": "二" }, results: [] });
     expect(resolveReportTitle(definition, scopeOf([zhA, zhB]))).toEqual(FALLBACK_REPORT_TITLE);
-    expect(FALLBACK_REPORT_TITLE).toEqual({ en: "Eval Results", "zh-CN": "Eval 运行结果" });
+    expect(FALLBACK_REPORT_TITLE).toEqual({ en: "Eval Record", "zh-CN": "Eval 运行结果" });
   });
 
   it("ReportLink.icon 是 { svg: string }:defineReport 接受合法形状;无类型 JS 传其它形状定义时报完整用户反馈", () => {
@@ -655,7 +655,7 @@ describe("内建报告", () => {
     ]);
     // 逐页组件构成:每页一个 Col,children 按 built-in.md 全文的声明序,全部是公开组件。
     const childTypes = (content: unknown) => {
-      const col = content as { type: unknown; props: { children: Array<{ type: unknown; props: Record<string, unknown> }> } };
+      const col = content as { type: unknown; props: { children: Array<{ type: unknown; props: globalThis.Record<string, unknown> }> } };
       expect(col.type).toBe(Col);
       return col.props.children;
     };
@@ -668,8 +668,7 @@ describe("内建报告", () => {
       ExperimentComparison,
     ]);
     const attemptsChildren = childTypes(attemptsPage!.content);
-    expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, ScopeWarnings, SnapshotDiagnostics, AttemptList]);
-    expect(attemptsChildren[3]!.props.filter).toBe(true);
+    expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, ScopeWarnings, SnapshotDiagnostics, SampleOverview]);
     expect(childTypes(tracesPage!.content).map((c) => c.type)).toEqual([Hero, ScopeWarnings, SnapshotDiagnostics, TraceWaterfall]);
     // 第四页是参数化详情页:content 就是裸 AttemptDetail(不套 Col),input/navigation 与文档一致。
     // defineReport 规范化会重建页对象(id/title/content 逐字段拷贝),所以整页对象不可能与
@@ -690,14 +689,14 @@ describe("ExperimentComparison(组合组件)", () => {
   /** 展开树里 [ScopeSummary, MetricScatter, ExperimentList] 三个已解析元素。 */
   async function resolveComparisonChildren(
     node: ReportNode,
-    snapshots: Snapshot[],
+    runs: Run[],
   ): Promise<Array<{ props: { data: unknown } }>> {
-    const scope = scopeOf(snapshots);
+    const scope = scopeOf(runs);
     const definition = defineReport(node);
     const page = pickReportPage(definition);
     const resolved = (await resolveReportTree(page.content, {
       scope,
-      results: resultsOf(snapshots),
+      results: resultsOf(runs),
       report: buildReportMeta(definition, scope),
       page: { id: page.id, input: "scope" },
       memo: new ResolveMemo(),
@@ -717,15 +716,15 @@ describe("ExperimentComparison(组合组件)", () => {
   function collectElementsByType(
     node: unknown,
     target: unknown,
-    out: Array<{ props: Record<string, unknown> }> = [],
-  ): Array<{ props: Record<string, unknown> }> {
+    out: Array<{ props: globalThis.Record<string, unknown> }> = [],
+  ): Array<{ props: globalThis.Record<string, unknown> }> {
     if (node === null || node === undefined || typeof node !== "object") return out;
     if (Array.isArray(node)) {
       for (const child of node) collectElementsByType(child, target, out);
       return out;
     }
     const el = node as { type?: unknown; props?: { children?: unknown } };
-    if (el.type === target) out.push(el as { props: Record<string, unknown> });
+    if (el.type === target) out.push(el as { props: globalThis.Record<string, unknown> });
     if (el.props && "children" in el.props) collectElementsByType(el.props.children, target, out);
     return out;
   }
@@ -744,10 +743,10 @@ describe("ExperimentComparison(组合组件)", () => {
     );
   });
 
-  it("series 缺省解析:Scope 内任一 experiment 声明 labels.line 时全图 line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
+  it("series 缺省解析:Sample 内任一 experiment 声明 labels.line 时全图 line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const withLine = snap({ experimentId: "series/with-line", results: [res("q", "passed", withCost)] });
-    withLine.experiment = { runs: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
+    withLine.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
     const withoutLine = snap({ experimentId: "series/plain", results: [res("q", "passed", withCost)] });
 
     const [, scatterWithLine] = await resolveComparisonChildren(<ExperimentComparison />, [withLine, withoutLine]);
@@ -763,9 +762,9 @@ describe("ExperimentComparison(组合组件)", () => {
   it("connect 缺省跟随 series 解析:默认 line 时同 series 两点连线,默认 agent 时不连线", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const lineA = snap({ experimentId: "connect/a", agent: "codex", results: [res("q", "passed", withCost)] });
-    lineA.experiment = { runs: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
+    lineA.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
     const lineB = snap({ experimentId: "connect/b", agent: "codex", results: [res("q", "failed", withCost)] });
-    lineB.experiment = { runs: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
+    lineB.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
     const [, connectedScatter] = await resolveComparisonChildren(<ExperimentComparison />, [lineA, lineB]);
     expect((connectedScatter.props as unknown as { connect?: boolean }).connect).toBe(true);
 
@@ -775,11 +774,11 @@ describe("ExperimentComparison(组合组件)", () => {
     expect((unconnectedScatter.props as unknown as { connect?: boolean }).connect).toBe(false);
   });
 
-  it("line 缺省对整个 Scope 生效:混入一个声明 line 的实验后,没声明的实验落 (missing) 而非回退 agent;显式 series 覆盖全部", async () => {
+  it("line 缺省对整个 Sample 生效:混入一个声明 line 的实验后,没声明的实验落 (missing) 而非回退 agent;显式 series 覆盖全部", async () => {
     const lineA = snap({ experimentId: "mem/codex-baseline", agent: "codex", results: [res("q", "passed")] });
-    lineA.experiment = { runs: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "baseline" } };
+    lineA.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "baseline" } };
     const lineB = snap({ experimentId: "mem/codex-mempal", agent: "codex", results: [res("q", "failed")] });
-    lineB.experiment = { runs: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "mempal" } };
+    lineB.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex", memory: "mempal" } };
     const plain = snap({ experimentId: "dev/one", agent: "codex", results: [res("q", "passed")] });
     const all = [lineA, lineB, plain];
 
@@ -794,7 +793,7 @@ describe("ExperimentComparison(组合组件)", () => {
     expect((explicitScatterEl.props.data as { seriesDimension?: string }).seriesDimension).toBe("memory");
   });
 
-  it("纯计分制 Scope:展开树仍是扁平三元素形状,散点 y 与列表预排序引用 totalScore 同一实例(不是 endToEndPassRate)", async () => {
+  it("纯计分制 Sample:展开树仍是扁平三元素形状,散点 y 与列表预排序引用 totalScore 同一实例(不是 endToEndPassRate)", async () => {
     const g1a = snap({
       experimentId: "score/a",
       agent: "bub",

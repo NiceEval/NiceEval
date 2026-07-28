@@ -99,7 +99,7 @@ async function writeFile(sandbox: Sandbox, path: string, content: string): Promi
  */
 function scanJsonl(
   raw: string | undefined,
-  pick: (obj: Record<string, unknown>) => string | undefined,
+  pick: (obj: globalThis.Record<string, unknown>) => string | undefined,
   mode: "first" | "last" = "first",
 ): string | undefined {
   if (!raw) return undefined;
@@ -108,7 +108,7 @@ function scanJsonl(
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      const v = pick(JSON.parse(trimmed) as Record<string, unknown>);
+      const v = pick(JSON.parse(trimmed) as globalThis.Record<string, unknown>);
       if (typeof v === "string" && v) {
         if (mode === "first") return v;
         hit = v;

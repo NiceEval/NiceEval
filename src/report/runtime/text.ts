@@ -3,8 +3,8 @@
 // import react-dom)。管线以页为单位执行;defineReport 本身与 ReportDefinition 的类型体系在
 // ../definition/report.ts,这里只做渲染编排与宿主联系面(页选择、索引命令拼装)。
 
-import type { Results, Scope } from "../../results/types.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { Record, Sample } from "../../record/types.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import {
   createTextContext,
   renderNodeToText,
@@ -56,7 +56,7 @@ export class ReportPageNeedsLocatorError extends Error {
 /**
  * 挑选要渲染的 page:省略 pageId 时挑第一张 `navigation !== false` 的页(跳过参数化详情页,
  * 它没有 locator 就不可打开);显式 pageId 命中 attempt-input page 时报
- * ReportPageNeedsLocatorError——这个入口没有 locator,不能拿 Scope 强行 resolve。
+ * ReportPageNeedsLocatorError——这个入口没有 locator,不能拿 Sample 强行 resolve。
  */
 export function pickReportPage(definition: ReportDefinition, pageId?: string): ReportPage {
   if (pageId === undefined) {
@@ -73,11 +73,11 @@ export function pickReportPage(definition: ReportDefinition, pageId?: string): R
   return page;
 }
 
-/** 宿主注入的渲染上下文:官方口径挑好的 Scope 与结果根完整读取面。 */
+/** 宿主注入的渲染上下文:官方口径挑好的 Sample 与结果根完整读取面。 */
 export interface ReportHostContext {
-  scope: Scope;
-  /** 组合组件 ctx.results 的来源;历史视图从这里自行挑 Snapshot[]。 */
-  results: Results;
+  scope: Sample;
+  /** 组合组件 ctx.results 的来源;历史视图从这里自行挑 Run[]。 */
+  results: Record;
 }
 
 export interface RenderReportTextOptions extends TextRenderOptions {
@@ -89,7 +89,7 @@ export interface RenderReportTextOptions extends TextRenderOptions {
  * text 宿主的装载语义:选页(只能是 scope-input page,见 pickReportPage)→ resolve(组合展开 +
  * spec 取数,唯一的 await 边界)→ 树校验 → 遍历渲染 text 面。不需要 react-dom。宿主不在报告树外
  * 另设警告通道——挑选警告的呈现件是 `ScopeWarnings` 组件,内建报告每页都放它,自定义报告放不放
- * 是作者义务(docs/feature/reports/architecture.md「Scope 是计算入口」)。
+ * 是作者义务(docs/feature/reports/architecture.md「Sample 是计算入口」)。
  */
 export async function renderReportToText(
   definition: ReportDefinition,
@@ -117,7 +117,7 @@ export async function renderReportToText(
 }
 
 /** 页索引标题行(show 多页索引 / view 导航共用的解析结果):按 locale 解析的标题字符串。 */
-export function reportTitleText(definition: ReportDefinition, scope: Scope, locale: ReportLocale): string {
+export function reportTitleText(definition: ReportDefinition, scope: Sample, locale: ReportLocale): string {
   return resolveLocalizedText(resolveReportTitle(definition, scope), locale);
 }
 
@@ -126,7 +126,7 @@ export function reportTitleText(definition: ReportDefinition, scope: Scope, loca
 /** 宿主索引命令的完整上下文(docs/feature/reports/show/reports.md「索引命令携带完整上下文」)。 */
 export interface HostCommandContext {
   patterns: string[];
-  results?: string;
+  record?: string;
   /** `--exp`;可重复,顺序即用户输入顺序(对照条件顺序)。组索引命令按单个 experiment id
    *  前缀拼 `--exp`(experimentCommandFor),不读这个字段——它只用于跨宿主边界的结构透传。 */
   experiment?: string | string[];
@@ -138,21 +138,21 @@ function quoteArg(value: string): string {
   return /^[A-Za-z0-9._/@-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-/** 按上下文拼组索引的可复制命令:`niceeval show <patterns> --exp <id> [--results/--report/--page]`。 */
+/** 按上下文拼组索引的可复制命令:`niceeval show <patterns> --exp <id> [--record/--report/--page]`。 */
 function experimentCommandFor(ctx: HostCommandContext): (experimentIdPrefix: string) => string {
   return (prefix) => {
     const parts = ["niceeval show", ...ctx.patterns.map(quoteArg), `--exp ${quoteArg(prefix)}`];
-    if (ctx.results !== undefined) parts.push(`--results ${quoteArg(ctx.results)}`);
+    if (ctx.record !== undefined) parts.push(`--record ${quoteArg(ctx.record)}`);
     if (ctx.report !== undefined) parts.push(`--report ${quoteArg(ctx.report)}`);
     if (ctx.page !== undefined) parts.push(`--page ${quoteArg(ctx.page)}`);
     return parts.join(" ");
   };
 }
 
-/** 逐页渲染的宿主上下文:官方口径的 Scope、结果根读取面、规范化声明(ctx.report)与当前页判别。 */
+/** 逐页渲染的宿主上下文:官方口径的 Sample、结果根读取面、规范化声明(ctx.report)与当前页判别。 */
 export interface ReportTreeHostContext {
-  scope: Scope;
-  results: Results;
+  scope: Sample;
+  results: Record;
   report: ReportMeta;
   /** 当前渲染的页:scope 分支只有 id;attempt 分支带 locator + evidence(宿主已完成寻址与装配)。 */
   page: PageContext;

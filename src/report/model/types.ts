@@ -1,12 +1,12 @@
-// niceeval/report 的公开类型:指标(Metric)、维度(Dimension / flag() / runConfig())与
+// niceeval/report 的公开类型:读数(Measure)、维度(Dimension / flag() / runConfig())与
 // 计算函数产物(即组件的 data)。数据契约照 docs/feature/reports/library/ 各分篇;
 // 这些不是持久化格式,没有 format / schemaVersion 信封,兼容性跟随 npm 版本
 // (组件消费 data 时校验结构,不符按完整用户反馈报错并提示版本漂移)。
 
-import type { AttemptHandle, Scope, ScopeCoverage, ScopeWarning, Snapshot } from "../../results/types.ts";
-import type { AttemptIdentity, AttemptLocator } from "../../results/locator.ts";
-import type { AttemptEvidenceCapabilities } from "../../results/attempt-evidence.ts";
-import type { AnnotatedEvalSourceSummary, AnnotatedSourceLine } from "../../results/annotated-source.ts";
+import type { AttemptHandle, Sample, SampleCoverage, SampleIssue, Run } from "../../record/types.ts";
+import type { AttemptIdentity, AttemptLocator } from "../../record/locator.ts";
+import type { AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
+import type { AnnotatedEvalSourceSummary, AnnotatedSourceLine } from "../../record/annotated-source.ts";
 import type {
   AssertionResult,
   AttemptError,
@@ -25,12 +25,12 @@ import type {
 } from "../../types.ts";
 import type { LocalizedText, ReportLocale } from "./locale.ts";
 
-export type { ScopeWarning, ScopeCoverage };
+export type { SampleIssue, SampleCoverage };
 export type { AttemptLocator };
 export type { LocalizedText, ReportLocale };
 
-/** 所有官方计算函数的第一参:Scope(warnings 随行)或手工挑的快照数组(没有挑选过程,自然无警告)。 */
-export type ReportInput = Scope | readonly Snapshot[];
+/** 所有官方计算函数的第一参:Sample(issues 随行)或手工挑的快照数组(没有挑选过程,自然无警告)。 */
+export type ReportInput = Sample | readonly Run[];
 
 // ───────────────────────── 指标与聚合 ─────────────────────────
 
@@ -41,7 +41,7 @@ export type Aggregator = "mean" | "sum" | "min" | "max" | ((values: readonly num
  * 两级聚合:「每格 attempt 数相等」是幻觉(earlyExit 让失败的题天然比通过的题样本多),
  * 平铺求均值会让分数和重试策略纠缠;所以先题内折叠、再跨题折叠,默认宏平均。
  */
-export interface MetricAggregate {
+export interface MeasureAggregate {
   /** 第一级:同一 experiment × eval 的多个 attempt 先折成题级值;默认 "mean"。 */
   perEval?: Aggregator;
   /** 第二级:题级值再跨 experiment × eval 折成终值;默认 "mean"。 */
@@ -54,8 +54,8 @@ export interface MetricAggregate {
  * 内置指标与自定义指标是同一个类型,没有特权。name 走字面量泛型:列键锚在指标
  * 对象上(`row.cells[taskPassRate.name]`),拼错列名编译不过。
  */
-export interface Metric<Name extends string = string> {
-  /** MetricColumn.key 与列头的来源;同一次计算里重名是错误。 */
+export interface Measure<Name extends string = string> {
+  /** MeasureColumn.key 与列头的来源;同一次计算里重名是错误。 */
   name: Name;
   /** 列头;省略时用 name。渲染面按 locale 解析,缺项走 LocalizedText 回退规则。 */
   label?: LocalizedText;
@@ -76,7 +76,10 @@ export interface Metric<Name extends string = string> {
    */
   where?: (attempt: AttemptHandle) => boolean;
   value(attempt: AttemptHandle): number | null | Promise<number | null>;
-  aggregate?: MetricAggregate;
+  /** 同一 experiment × eval 的多个 attempt 先折成题级值；默认 mean。 */
+  perEval?: Aggregator;
+  /** 题级值再跨 experiment × eval 折成终值；默认 mean。 */
+  acrossEvals?: Aggregator;
   /** 覆盖 unit 驱动的内置格式化;只格式化同一个终值,不按 locale 分裂计算口径。 */
   display?: (value: number, locale: ReportLocale) => string;
 }
@@ -86,9 +89,9 @@ export interface Metric<Name extends string = string> {
 /**
  * 内置维度就是结果已有的身份字段。
  * - "evalGroup" = eval id 的完整父路径("a/b/c" → "a/b";无 "/" 取完整 id,与可比组同一条派生规则)
- * - "snapshot"  = "<experimentId> @ <startedAt>",把两次快照并排成行
+ * - "run"  = "<experimentId> @ <startedAt>",把两次快照并排成行
  */
-export type BuiltInDimension = "agent" | "model" | "experiment" | "eval" | "evalGroup" | "snapshot";
+export type BuiltInDimension = "agent" | "model" | "experiment" | "eval" | "evalGroup" | "run";
 
 /** 自定义维度:一个函数把 attempt 分到组。 */
 export interface CustomDimension {
@@ -135,7 +138,7 @@ export interface NumericAxisOptions extends DimensionOptions {}
 
 export interface NumericRunConfigAxisOptions extends NumericAxisOptions {
   /** 字符串配置到数值轴的显式映射;数值配置不需要。 */
-  map?: Readonly<Record<string, number>>;
+  map?: Readonly<globalThis.Record<string, number>>;
 }
 
 /** runConfig() 的可用键:ExperimentRunInfo 字段全集,外加桥接到快照顶层权威字段的 model / agent。 */
@@ -143,7 +146,7 @@ export type RunConfigKey = keyof ExperimentRunInfo | "model" | "agent";
 
 // ───────────────────────── 计算产物(组件 data)─────────────────────────
 
-export interface MetricColumn {
+export interface MeasureColumn {
   /** = metric.name,与 cells 的键对应。 */
   key: string;
   /** 数据层原样携带 metric.label(可本地化);渲染面按 locale 解析。 */
@@ -156,7 +159,7 @@ export interface MetricColumn {
   bounds?: { min?: number; max?: number };
 }
 
-export interface MetricCell {
+export interface MeasureCell {
   /** 聚合后的值;null = 该组没有任何有效样本。 */
   value: number | null;
   /**
@@ -175,6 +178,17 @@ export interface MetricCell {
   refs: AttemptLocator[];
 }
 
+/** @internal 供尚未迁移的报告实现与测试过渡使用；不从 niceeval/report 导出。 */
+export type Metric<Name extends string = string> = Measure<Name>;
+/** @internal */
+export type MetricAggregate = MeasureAggregate;
+/** @internal */
+export type MetricColumn = MeasureColumn;
+/** @internal */
+export type MetricCell = MeasureCell;
+
+export type MeasureRowsContent = TableData;
+
 /**
  * 数据形状的字段命名规则(docs/feature/reports/components/tables/README.md「共用数据形状」):
  * 维度名字段 = 产生它的选项名 + `Dimension` 后缀,值是解析后的维度 name;
@@ -182,47 +196,47 @@ export interface MetricCell {
  */
 export interface TableData {
   rowDimension: string;
-  columns: MetricColumn[];
+  columns: MeasureColumn[];
   rows: Array<{
     key: string;
-    cells: Record<string, MetricCell>;
+    cells: globalThis.Record<string, MeasureCell>;
   }>;
 }
 
 export interface MatrixData {
   rowDimension: string;
   columnDimension: string;
-  metric: MetricColumn;
+  metric: MeasureColumn;
   /** 稀疏格子:没有 attempt 的组合不生成格子。 */
-  cells: Array<{ row: string; column: string; cell: MetricCell }>;
+  cells: Array<{ row: string; column: string; cell: MeasureCell }>;
 }
 
 export interface ScatterData {
   pointDimension: string;
   seriesDimension?: string;
   /** 轴方向跟随 better:lower 反向渲染(值大在左/下),「更好」恒指向右上;刻度显示真实值。 */
-  x: MetricColumn;
-  y: MetricColumn;
+  x: MeasureColumn;
+  y: MeasureColumn;
   rows: Array<{
     key: string;
     series?: string;
-    x: MetricCell;
+    x: MeasureCell;
     /** 任一为 null 的点组件不画,注脚如实报数(点仍留在 rows 里,可数)。 */
-    y: MetricCell;
+    y: MeasureCell;
   }>;
 }
 
 export interface LineData {
   x: { key: string; label: LocalizedText; unit?: string };
   seriesDimension?: string;
-  y: MetricColumn;
+  y: MeasureColumn;
   rows: Array<{
     /** 点身份 = (series, x):x 值的稳定十进制字符串,同一 series 内唯一。 */
     key: string;
     series?: string;
     x: number | null;
     xDisplay: LocalizedText;
-    y: MetricCell;
+    y: MeasureCell;
   }>;
 }
 
@@ -232,7 +246,7 @@ export interface ScoreboardData {
   fullMarks: number;
   /** 实际生效的权重表(最长前缀在前)—— 成绩单可审计。 */
   weights: Array<{ prefix: string; weight: number }>;
-  /** Scope 中存在但不在题集内、被忽略的 eval 数(注脚显示)。 */
+  /** Sample 中存在但不在题集内、被忽略的 eval 数(注脚显示)。 */
   ignoredEvals: number;
   rows: Array<{
     key: string;
@@ -268,7 +282,7 @@ export interface ScoreboardData {
  */
 export interface DeltaCell {
   scoring: "pass" | "points";
-  /** 复用 Results 的判定枚举,不为组件发明第二套。 */
+  /** 复用 Record 的判定枚举,不为组件发明第二套。 */
   verdict: Verdict;
   /** 计分制的题目级挣分;通过制省略——计分制没有满分分母。 */
   totalScore?: number;
@@ -291,12 +305,12 @@ export interface DeltaData {
     /** 各条件判定不一致时 true——翻转标记 ⇄ 的数据面。 */
     flipped: boolean;
     /** 键是条件值;该条件没有这道题的结果时无键,渲染为占位 —。 */
-    cells: Record<string, DeltaCell>;
+    cells: globalThis.Record<string, DeltaCell>;
     /** 键是非基准条件值;任一侧缺数据时无键——delta 不把缺失当 0。 */
-    delta?: Record<string, { score?: number; tokens?: number; costUSD?: number }>;
+    delta?: globalThis.Record<string, { score?: number; tokens?: number; costUSD?: number }>;
   }>;
   /** 各条件自身覆盖面的描述,分母是该条件有结果的 eval 数;不用于跨条件直接归因。 */
-  totals: Record<
+  totals: globalThis.Record<
     string,
     {
       scoringComposition: "pass" | "points" | "mixed";
@@ -308,13 +322,13 @@ export interface DeltaData {
     }
   >;
   /** 只在每个条件与基准的共同 eval 集上计算;键是非基准条件值。 */
-  pairedDelta: Record<
+  pairedDelta: globalThis.Record<
     string,
     {
       commonEvalIds: string[];
       /** mixed 时各自在对应题型子集配对,不共用一个含混分母。 */
-      pass?: { evalIds: string[]; passRatePoints: number };
-      points?: { evalIds: string[]; totalScore: number };
+      pass?: { knownEvalIds: string[]; passRatePoints: number };
+      points?: { knownEvalIds: string[]; totalScore: number };
       tokens?: number;
       costUSD?: number;
     }
@@ -336,7 +350,7 @@ export interface StabilityMatrixCell {
   passed: number;
   failed: number;
   errored: number;
-  /** passed + failed + errored 之和;skipped 不计。 */
+  /** passed + failed + errored 之和;unreadable 不计。 */
   executions: number;
 }
 
@@ -353,7 +367,7 @@ export interface StabilityMatrixData {
   /** 稀疏格子:该 (eval, column) 组合没有任何历史执行时不生成格子,渲染面显示占位 —,不编三个 0 冒充跑过。 */
   cells: ReadonlyArray<{ row: string; column: string; cell: StabilityMatrixCell }>;
   /** 各列的合计。 */
-  totals: Record<string, StabilityMatrixCell>;
+  totals: globalThis.Record<string, StabilityMatrixCell>;
 }
 
 // ───────────────────────── 概览(ScopeSummary / ExperimentComparison)─────────────────────────
@@ -362,12 +376,12 @@ export interface VerdictTally {
   passed: number;
   failed: number;
   errored: number;
-  skipped: number;
+  unreadable: number;
 }
 
 /**
  * 一个范围内出现的题型构成:`"pass"` 全部通过制、`"points"` 全部计分制、`"mixed"` 两者都有
- * (一个 Scope 可以并排多个 experiment;题型只在单个 experiment 内被强制统一)。是定义期事实
+ * (一个 Sample 可以并排多个 experiment;题型只在单个 experiment 内被强制统一)。是定义期事实
  * (`EvalDescriptor.scoring`),不依赖 attempt 执行结果(docs/feature/reports/library/measures.md
  * 「题型构成与主读数」)。
  */
@@ -378,7 +392,7 @@ export type ScoringComposition = "pass" | "points" | "mixed";
  * 和总成本。eval 的身份键是 experimentId + evalId;data 恒携带两级计票,渲染面显示哪一级
  * 由呈现 prop `votes` 决定,不改变 data(docs/feature/reports/components/summaries/sample-summary.md)。
  */
-export interface ScopeSummaryData {
+export interface SampleSummaryContent {
   /** 贡献当前数据的快照时间范围;空范围为 null,不编造当前时间。 */
   range: { earliestStartedAt: string | null; latestStartedAt: string | null };
   experiments: number;
@@ -390,38 +404,41 @@ export interface ScopeSummaryData {
   /** attempt 原始计票,不折叠。 */
   attemptVerdicts: VerdictTally;
   /** 官方两级 endToEndPassRate,不从任一计票重算。 */
-  endToEndPassRate: MetricCell;
+  endToEndPassRate: MeasureCell;
   /**
-   * 该 Scope 内出现的题型:`"pass"` 全部通过制(默认,与此字段引入前行为一致)、`"points"`
-   * 全部计分制、`"mixed"` 两者都有(一个 Scope 可以并排多个 experiment,题型只在单个
+   * 该 Sample 内出现的题型:`"pass"` 全部通过制(默认,与此字段引入前行为一致)、`"points"`
+   * 全部计分制、`"mixed"` 两者都有(一个 Sample 可以并排多个 experiment,题型只在单个
    * experiment 内被强制统一,见 docs/feature/experiments/score-points.md「横截面聚合」)。
    * 渲染面据此决定主 KPI:`"points"` 隐藏通过率只显示 `totalScore`;`"mixed"` 两者都显示;
    * `"pass"` 只显示通过率、`totalScore` 省略——不摆空列。
    */
   scoringComposition: ScoringComposition;
   /** 计分制总分(totalScore 指标)。仅 `scoringComposition` 为 `"points"` 或 `"mixed"` 时出现。 */
-  totalScore?: MetricCell;
+  totalScore?: MeasureCell;
   /** costUSD 按 attempt 求和;缺失成本不伪造为 0。 */
-  totalCostUSD: MetricCell;
+  totalCostUSD: MeasureCell;
 }
+
+/** @internal 供尚未迁移的报告实现与测试过渡使用；不从 niceeval/report 导出。 */
+export type ScopeSummaryData = SampleSummaryContent;
 
 // ───────────────────────── 站点组件(Hero / CopyFixPrompt / TraceWaterfall)─────────────────────────
 
 /**
  * `HeroCard` 的数据(docs/feature/reports/components/site/hero-card.md):站点标题区的
- * 运行 meta——最后运行时间与快照合成来源。标题不在 data 里,它是站点声明与 Scope 的合成物,
+ * 运行 meta——最后运行时间与快照合成来源。标题不在 data 里,它是站点声明与 Sample 的合成物,
  * 经 `HeroCardProps.title` 传入。
  */
 export interface HeroData {
-  /** Scope 中最新快照的开始时间;空 Scope 为 null,不编造当前时间。 */
+  /** Sample 中最新快照的开始时间;空 Sample 为 null,不编造当前时间。 */
   latestStartedAt: string | null;
   /** 贡献当前水位的快照数;大于 1 时 web 面标注「由 N 次运行合成」。 */
-  snapshots: number;
+  runs: number;
 }
 
 /**
  * `SnapshotDiagnostics` 一条来源快照的诊断投影(docs/feature/reports/components/site/run-diagnostics.md):
- * 只携带 experimentId / startedAt / DiagnosticRecord,不带 Snapshot 本体、`evals` 或
+ * 只携带 experimentId / startedAt / DiagnosticRecord,不带 Run 本体、`evals` 或
  * `AttemptHandle`,避免把文件读取能力拖进浏览器边界。
  */
 export interface SnapshotDiagnosticsItem {
@@ -431,7 +448,7 @@ export interface SnapshotDiagnosticsItem {
 }
 
 /**
- * `SnapshotDiagnostics` 的数据:只投影 diagnostics 非空的真实 Snapshot,按 experiment id
+ * `SnapshotDiagnostics` 的数据:只投影 diagnostics 非空的真实 Run,按 experiment id
  * 字典序排列,同一实验内按 startedAt 从新到旧排列;不跨快照合并 DiagnosticRecord。
  */
 export type SnapshotDiagnosticsData = readonly SnapshotDiagnosticsItem[];
@@ -492,22 +509,22 @@ export interface AttemptListItem {
   verdict: Verdict;
   /**
    * 该轮的单行结果摘要,已按 Scoring display 契约折好:failed 取主失败断言摘要,
-   * errored 取结构化 error 的一层摘要(phase · code · message),passed / skipped 为 null。
+   * errored 取结构化 error 的一层摘要(phase · code · message),passed / unreadable 为 null。
    * 渲染面只做宽度截断,不重算摘要。
    */
   failureSummary: string | null;
   /** 主失败之外还有几条失败断言("+N more failures" 的 N);无失败为 0。 */
   moreFailures: number;
   /** 当前 attempt 的 examScore 与证据引用。 */
-  examScore: MetricCell;
+  examScore: MeasureCell;
   /** 当前 attempt 的挣分(totalScore 指标);通过制 eval 为 null cell(不适用,不是缺数据)。 */
-  totalScore: MetricCell;
+  totalScore: MeasureCell;
   durationMs: number;
   /** 缺失为 null(测不了),不伪造 0;attempt 级条目的缺失一律用 null,不用省略字段。 */
   costUSD: number | null;
   /** 执行时刻(携带条目为原执行时刻)。时效标注的时距从这里起算。 */
   startedAt: string;
-  /** 历史执行:携带条目,或来自该实验在 Scope 中最新快照之外的快照;false = 最新一次运行实测。 */
+  /** 历史执行:携带条目,或来自该实验在 Sample 中最新快照之外的快照;false = 最新一次运行实测。 */
   historical: boolean;
   locator: AttemptLocator;
 }
@@ -519,13 +536,13 @@ export interface AttemptListItem {
 export interface EvalListItem {
   experimentId: string;
   evalId: string;
-  /** 任一轮 passed 即 passed,否则 failed > errored > skipped。 */
+  /** 任一轮 passed 即 passed,否则 failed > errored > unreadable。 */
   verdict: Verdict;
-  examScore: MetricCell;
+  examScore: MeasureCell;
   /** 该题挣分(totalScore 指标,多轮按 perEval mean 折叠);通过制 eval 为 null cell。 */
-  totalScore: MetricCell;
-  durationMs: MetricCell;
-  costUSD: MetricCell;
+  totalScore: MeasureCell;
+  durationMs: MeasureCell;
+  costUSD: MeasureCell;
   attempts: AttemptListItem[];
 }
 
@@ -534,9 +551,9 @@ export interface ExperimentListEvalRow {
   evalId: string;
   verdict: Verdict;
   /** 该题挣分;通过制 eval 为 null cell。 */
-  totalScore: MetricCell;
-  durationMs: MetricCell;
-  costUSD: MetricCell;
+  totalScore: MeasureCell;
+  durationMs: MeasureCell;
+  costUSD: MeasureCell;
   attempts: AttemptListItem[];
 }
 
@@ -550,17 +567,17 @@ export interface ExperimentListItem {
   experimentId: string;
   agent: string;
   model?: string;
-  flags?: Record<string, JsonValue>;
+  flags?: globalThis.Record<string, JsonValue>;
   /** 该 experiment 的题型(定义期事实,单个 experiment 内由启动期强制同型)。主读数列据此选择。 */
   scoring: "pass" | "points";
   /** eval 级最终 verdict 计票(Result 列的构成)。 */
   evalVerdicts: VerdictTally;
-  endToEndPassRate: MetricCell;
+  endToEndPassRate: MeasureCell;
   /** 实验总分(totalScore 指标:perEval mean、acrossEvals sum);通过制实验为 null cell。 */
-  totalScore: MetricCell;
-  costUSD: MetricCell;
-  durationMs: MetricCell;
-  tokens: MetricCell;
+  totalScore: MeasureCell;
+  costUSD: MeasureCell;
+  durationMs: MeasureCell;
+  tokens: MeasureCell;
   /** 这个 experiment 覆盖的 eval 数(去重后,与 evalVerdicts 四项之和一致)。 */
   evals: number;
   /** 这个 experiment 覆盖的 attempt 总数(原始计数,含多轮重试)。 */
@@ -705,7 +722,7 @@ export interface AttemptSourceData {
   summary: AnnotatedEvalSourceSummary;
 }
 
-/** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/skipped 或无可操作失败时 null。 */
+/** `AttemptFixPrompt` 的 data:单条 attempt 的复制修复 prompt;passed/unreadable 或无可操作失败时 null。 */
 export interface AttemptFixPromptData {
   prompt: string;
 }

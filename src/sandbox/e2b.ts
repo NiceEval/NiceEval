@@ -121,7 +121,7 @@ export class E2BSandbox implements Sandbox {
     // provision token 与运行标识都经 metadata 打进实例(同一通道):歧义类失败(fetch failed ·
     // other side closed)重试前按 token 检索远端、销毁可能已创建的实例(见 reconcileProvision);
     // 运行标识供 `sandbox list --orphans` 按 metadata 过滤事后核对。
-    const metadata: Record<string, string> = {
+    const metadata: globalThis.Record<string, string> = {
       ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
       ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
     };
@@ -196,7 +196,7 @@ export class E2BSandbox implements Sandbox {
 
   // targetDir 已由 paths.ts 的 normalizeSandboxPaths 解析成绝对路径;这里再解析一次
   // 只是对直接使用 provider 实例(未包 normalize)的幂等防御,提到 map 外只算一次。
-  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
+  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
     const base = resolveSandboxPath(this.workdir, targetDir);
     const entries = Object.entries(files).map(([p, data]) => ({ path: resolveSandboxPath(base, p), data }));
     if (entries.length === 0) return;

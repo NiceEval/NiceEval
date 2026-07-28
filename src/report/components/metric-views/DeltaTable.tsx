@@ -4,7 +4,7 @@
 
 import type { ReactElement } from "react";
 import type { DeltaData } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
 import { formatMetricValue, formatPoints, verdictMark } from "../../model/format.ts";
 import { colorClassForKey } from "../../assets/colors.ts";

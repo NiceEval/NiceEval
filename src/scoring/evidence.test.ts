@@ -144,7 +144,7 @@ describe("判定折叠:非 optional unavailable → errored", () => {
     expect(computeVerdict({ assertions: [passedGate, optional] })).toBe("passed");
   });
 
-  it("errored 压过 failed;failed 压过 skipped", () => {
+  it("errored 压过 failed;failed 压过 unreadable", () => {
     const failedGate: AssertionResult = { name: "x", severity: "gate", outcome: "failed", score: 0 };
     expect(computeVerdict({ assertions: [failedGate, unavailableGate] })).toBe("errored");
     expect(computeVerdict({ assertions: [failedGate], skipReason: "later" })).toBe("failed");

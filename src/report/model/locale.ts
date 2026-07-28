@@ -2,7 +2,7 @@
 // ReportLocale 是开放的 BCP 47 标签(数据协议不封语言上限);官方内置文案与
 // MetricCell.display 生成面当前覆盖 en / zh-CN,其它 locale 走 LocalizedText 回退规则。
 // 只覆盖组件自带的固定文案(verdict 词、缺数据、覆盖率角标、注脚、占位符等);
-// 维度键、warnings 的 message 不经这里。
+// 维度键、issues 的 message 不经这里。
 // 刻意不 import src/i18n/(CLI 专用字典,locale 来源与 key 面完全不同)。
 
 import type { LocalizedText } from "../../types.ts";
@@ -50,7 +50,7 @@ const en = {
   "verdict.passed": "passed",
   "verdict.failed": "failed",
   "verdict.errored": "errored",
-  "verdict.skipped": "skipped",
+  "verdict.unreadable": "unreadable",
 
   /** AttemptSummary 的重试序号(0 起的 identity.attempt 显示前 +1)。 */
   "attemptSummary.attempt": "attempt {n}",
@@ -81,7 +81,7 @@ const en = {
   "experimentList.totalScoreDescription": "Total score: sum of points earned across evals",
   "experimentList.tokens": "Tokens",
   "experimentList.cost": "Cost",
-  "experimentList.result": "Results",
+  "experimentList.result": "Record",
   "experimentList.status": "Status",
   "experimentList.evalAttempt": "Eval / Attempt",
   "experimentList.duration": "Duration",
@@ -160,13 +160,13 @@ const en = {
   "stability.neverPassed": "never passed",
 
   /** ScopeWarnings 聚合层的 chrome:汇总行、kind 徽标、组头与明细折叠标签;message 本体不经字典。 */
-  "warnings.summary.experiments.one": "{n} experiment flagged",
-  "warnings.summary.experiments.other": "{n} experiments flagged",
-  "warnings.group.unreadableSnapshot.one": "{n} snapshot skipped",
-  "warnings.group.unreadableSnapshot.other": "{n} snapshots skipped",
-  "warnings.details.one": "{n} warning",
-  "warnings.details.other": "{n} warnings",
-  "warnings.badge.unfinishedSnapshot": "unfinished",
+  "issues.summary.experiments.one": "{n} experiment flagged",
+  "issues.summary.experiments.other": "{n} experiments flagged",
+  "issues.group.unreadableSnapshot.one": "{n} run unreadable",
+  "issues.group.unreadableSnapshot.other": "{n} runs unreadable",
+  "issues.details.one": "{n} warning",
+  "issues.details.other": "{n} issues",
+  "issues.badge.unfinishedSnapshot": "unfinished",
 
   /** 覆盖缺口(scope.coverage)与时效标注(见 entity-lists.md「时效标注」「ExperimentList」)。 */
   "overview.evalsCountPartial": "{covered}/{total} evals",
@@ -176,10 +176,10 @@ const en = {
   /** Hero / HeroCard 的运行 meta(hero.noRuns 是 latestStartedAt 为 null 时的内置文案)。 */
   "hero.lastRun": "Last run {time}",
   "hero.noRuns": "No runs yet",
-  /** web 面的合成来源标注(仅 snapshots > 1 时显示)。 */
+  /** web 面的合成来源标注(仅 runs > 1 时显示)。 */
   "hero.composedRuns": "composed from {n} runs",
-  /** text 面的合成来源标注(show 页首 meta 行,仅 snapshots > 1 时显示)。 */
-  "hero.composedSnapshots": "composed from {n} snapshots",
+  /** text 面的合成来源标注(show 页首 meta 行,仅 runs > 1 时显示)。 */
+  "hero.composedSnapshots": "composed from {n} runs",
 
   /** CopyFixPrompt 的 web 面 chrome(prompt 本身面向 agent、固定英文,不经词典)。 */
   "copyFixPrompt.summary.one": "Fix prompt · {n} failure",
@@ -197,11 +197,11 @@ const en = {
   /** SnapshotDiagnostics 聚合层的 chrome:汇总行三段计数与最高严重度;message/command 本体不经字典。 */
   "snapshotDiagnostics.summary.experiments.one": "{n} experiment",
   "snapshotDiagnostics.summary.experiments.other": "{n} experiments",
-  "snapshotDiagnostics.summary.snapshots.one": "{n} snapshot",
-  "snapshotDiagnostics.summary.snapshots.other": "{n} snapshots",
+  "snapshotDiagnostics.summary.runs.one": "{n} run",
+  "snapshotDiagnostics.summary.runs.other": "{n} runs",
   "snapshotDiagnostics.summary.records.one": "{n} record",
   "snapshotDiagnostics.summary.records.other": "{n} records",
-  "snapshotDiagnostics.severity.warning": "warnings only",
+  "snapshotDiagnostics.severity.warning": "issues only",
   "snapshotDiagnostics.severity.error": "errors present",
 
   /** AttemptList 的 web 面过滤框占位符(filter 渐进增强)。 */
@@ -217,11 +217,11 @@ const en = {
 
 export type ReportMessageKey = keyof typeof en;
 
-const zhCN: Record<ReportMessageKey, string> = {
+const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "verdict.passed": "通过",
   "verdict.failed": "失败",
   "verdict.errored": "错误",
-  "verdict.skipped": "跳过",
+  "verdict.unreadable": "跳过",
 
   "attemptSummary.attempt": "第 {n} 次",
 
@@ -320,13 +320,13 @@ const zhCN: Record<ReportMessageKey, string> = {
 
   "stability.neverPassed": "从未通过",
 
-  "warnings.summary.experiments.one": "{n} 个实验的数字带警告",
-  "warnings.summary.experiments.other": "{n} 个实验的数字带警告",
-  "warnings.group.unreadableSnapshot.one": "{n} 个快照被跳过",
-  "warnings.group.unreadableSnapshot.other": "{n} 个快照被跳过",
-  "warnings.details.one": "{n} 条原始警告",
-  "warnings.details.other": "{n} 条原始警告",
-  "warnings.badge.unfinishedSnapshot": "未收尾",
+  "issues.summary.experiments.one": "{n} 个实验的数字带警告",
+  "issues.summary.experiments.other": "{n} 个实验的数字带警告",
+  "issues.group.unreadableSnapshot.one": "{n} 个快照被跳过",
+  "issues.group.unreadableSnapshot.other": "{n} 个快照被跳过",
+  "issues.details.one": "{n} 条原始警告",
+  "issues.details.other": "{n} 条原始警告",
+  "issues.badge.unfinishedSnapshot": "未收尾",
 
   "overview.evalsCountPartial": "{covered}/{total} 个 Eval",
   "experimentList.historicalAttempts": "↩ {n}/{m} attempts",
@@ -350,8 +350,8 @@ const zhCN: Record<ReportMessageKey, string> = {
 
   "snapshotDiagnostics.summary.experiments.one": "{n} 个实验",
   "snapshotDiagnostics.summary.experiments.other": "{n} 个实验",
-  "snapshotDiagnostics.summary.snapshots.one": "{n} 个快照",
-  "snapshotDiagnostics.summary.snapshots.other": "{n} 个快照",
+  "snapshotDiagnostics.summary.runs.one": "{n} 个快照",
+  "snapshotDiagnostics.summary.runs.other": "{n} 个快照",
   "snapshotDiagnostics.summary.records.one": "{n} 条记录",
   "snapshotDiagnostics.summary.records.other": "{n} 条记录",
   "snapshotDiagnostics.severity.warning": "仅警告",
@@ -366,7 +366,7 @@ const zhCN: Record<ReportMessageKey, string> = {
   "tabs.tab": "Tab",
 };
 
-const dictionaries: Record<string, Record<ReportMessageKey, string>> = {
+const dictionaries: globalThis.Record<string, globalThis.Record<ReportMessageKey, string>> = {
   en,
   "zh-CN": zhCN,
 };
@@ -375,7 +375,7 @@ const dictionaries: Record<string, Record<ReportMessageKey, string>> = {
 export function localeText(
   locale: ReportLocale,
   key: ReportMessageKey,
-  vars?: Record<string, string | number>,
+  vars?: globalThis.Record<string, string | number>,
 ): string {
   const template = dictionaries[locale]?.[key] ?? dictionaries.en[key];
   if (!vars) return template;

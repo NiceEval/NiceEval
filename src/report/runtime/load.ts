@@ -8,6 +8,7 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isReportDefinition, type ReportDefinition } from "../definition/report.ts";
+import { isThemeDefinition, type ThemeDefinition } from "../theme.ts";
 
 /** 可预期的装载错误:宿主打一句英文直说问题与下一步,不抛堆栈。 */
 export class ReportLoadError extends Error {}
@@ -65,4 +66,39 @@ export async function loadReportFile(
     );
   }
   return mod.default;
+}
+
+export function isExplicitModulePath(value: string): boolean {
+  return value.includes("/") || value.startsWith(".") || /\.(?:[cm]?[jt]sx?)$/i.test(value);
+}
+
+export async function loadBuiltInReport(name: string): Promise<ReportDefinition> {
+  if (name === "standard") {
+    const { standard } = await import("../built-in/index.tsx");
+    return standard;
+  }
+  throw new ReportLoadError(`Unknown built-in report "${name}". Available built-in reports: standard. To load a file, pass an explicit path such as ./reports/site.tsx.`);
+}
+
+export async function loadThemeFile(cwd: string, path: string, options?: LoadReportOptions): Promise<ThemeDefinition> {
+  const abs = resolve(cwd, path);
+  if (!existsSync(abs)) throw new ReportLoadError(`Theme file not found: ${abs}. Pass --theme an explicit path to a module whose default export is defineTheme(...).`);
+  const url = new URL(pathToFileURL(abs).href);
+  if (options?.freshImport) url.searchParams.set("mtime", String(statSync(abs).mtimeMs));
+  let mod: { default?: unknown };
+  try {
+    mod = (await import(url.href)) as { default?: unknown };
+  } catch (e) {
+    throw new ReportLoadError(`Cannot load theme file ${abs}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!isThemeDefinition(mod.default)) throw new ReportLoadError(`${path} does not default-export a theme. Export defineTheme(...) from "niceeval/report" as the default export.`);
+  return mod.default;
+}
+
+export async function loadBuiltInTheme(name: string): Promise<ThemeDefinition> {
+  if (name === "basalt") {
+    const { basalt } = await import("../theme.ts");
+    return basalt;
+  }
+  throw new ReportLoadError(`Unknown built-in theme "${name}". Available built-in themes: basalt. To load a file, pass an explicit path such as ./themes/acme.ts.`);
 }

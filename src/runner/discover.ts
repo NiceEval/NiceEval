@@ -8,6 +8,7 @@ import { pad4 } from "../util.ts";
 import { captureEvalSource } from "./eval-source.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import { isDefinedScoreEval } from "../define.ts";
+import { captureLoadedFiles } from "../loaders/index.ts";
 import type { DiscoveredEval, DiscoveredExperiment, EvalDef, ExperimentDef } from "../types.ts";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".niceeval", "dist", ".next"]);
@@ -58,9 +59,9 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
   const files = (await walkFiles(dir, (n) => n.endsWith(".eval.ts") || n.endsWith(".eval.tsx"))).sort();
   const out: DiscoveredEval[] = [];
   for (const file of files) {
-    const mod = await importDiscovered<{
-      default?: EvalDef | EvalDef[] | Record<string, EvalDef>;
-    }>(file, root, "eval");
+    const { value: mod, paths: loaderDataPaths } = await captureLoadedFiles(() => importDiscovered<{
+      default?: EvalDef | EvalDef[] | globalThis.Record<string, EvalDef>;
+    }>(file, root, "eval"));
     const def = mod.default;
     if (!def) continue;
     const baseId = relative(dir, file).replace(/\.eval\.tsx?$/, "").split(sep).join("/");
@@ -71,7 +72,7 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
     if (Array.isArray(def)) {
       def.forEach((d, i) => {
         assertScoreEvalOrigin(d, file);
-        out.push({ ...d, id: `${baseId}/${pad4(i)}`, baseDir, sourcePath: file, source });
+        out.push({ ...d, id: `${baseId}/${pad4(i)}`, baseDir, sourcePath: file, source, loaderDataPaths });
       });
     } else if (!isEvalDef(def)) {
       const dataset = def;
@@ -84,11 +85,11 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
           );
         }
         assertScoreEvalOrigin(d, file);
-        out.push({ ...d, id: `${baseId}/${key}`, baseDir, sourcePath: file, source });
+        out.push({ ...d, id: `${baseId}/${key}`, baseDir, sourcePath: file, source, loaderDataPaths });
       }
     } else {
       assertScoreEvalOrigin(def, file);
-      out.push({ ...def, id: baseId, baseDir, sourcePath: file, source });
+      out.push({ ...def, id: baseId, baseDir, sourcePath: file, source, loaderDataPaths });
     }
   }
   return out;
@@ -100,7 +101,7 @@ function assertScoreEvalOrigin(def: EvalDef, file: string): void {
   }
 }
 
-function isEvalDef(value: EvalDef | Record<string, EvalDef>): value is EvalDef {
+function isEvalDef(value: EvalDef | globalThis.Record<string, EvalDef>): value is EvalDef {
   return typeof (value as EvalDef).test === "function";
 }
 

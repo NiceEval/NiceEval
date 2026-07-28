@@ -6,7 +6,7 @@
 // (docs/feature/reports/components/site/sample-warnings.md)。
 
 import type { ReactElement } from "react";
-import type { ScopeWarning } from "../../model/types.ts";
+import type { SampleIssue } from "../../model/types.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../../model/locale.ts";
 import { groupScopeWarnings, warningDetailsLabel } from "./scope-warnings.ts";
 import { cx } from "../shared.ts";
@@ -22,23 +22,23 @@ function CommandBlock({ command }: { command: string }): ReactElement {
 
 /**
  * 选择警告区(纯 web 渲染面):按动作聚合的警告组。嵌入自有 React 页面时传
- * `data={scope.warnings}`;空集返回 null,不渲染空容器。
+ * `data={scope.issues}`;空集返回 null,不渲染空容器。
  */
 export function ScopeWarnings({
   data,
   className,
   locale = DEFAULT_REPORT_LOCALE,
 }: {
-  data: readonly ScopeWarning[];
+  data: readonly SampleIssue[];
   className?: string;
   locale?: ReportLocale;
 }): ReactElement | null {
   if (data.length === 0) return null;
   const { summary, groups, detailsOpen } = groupScopeWarnings(data, locale);
   return (
-    <div className={cx("nre", "nre-scope-warnings", className)}>
-      <details className="nre-warnings">
-        <summary className="nre-warnings-summary">{summary}</summary>
+    <div className={cx("nre", "nre-scope-issues", className)}>
+      <details className="nre-issues">
+        <summary className="nre-issues-summary">{summary}</summary>
         <ul className="nre-warning-groups">
           {groups.map((group, i) => (
             <li key={i} className="nre-warning-group">
@@ -52,15 +52,11 @@ export function ScopeWarnings({
                 {group.headCommand !== null && <CommandBlock command={group.headCommand} />}
               </div>
               <details className="nre-warning-details" open={detailsOpen || undefined}>
-                <summary>{warningDetailsLabel(locale, group.warnings.length)}</summary>
+                <summary>{warningDetailsLabel(locale, group.issues.length)}</summary>
                 <ul>
-                  {group.warnings.map((w, j) => (
-                    <li key={j} className="nre-warning" data-kind={w.kind}>
-                      {w.message}
-                      {/* 组头命令的含义是「复制即推进整组」;去重后多于一条时命令随明细逐条走 */}
-                      {group.headCommand === null && "command" in w && w.command !== undefined && (
-                        <CommandBlock command={w.command} />
-                      )}
+                  {group.issues.map((w, j) => (
+                    <li key={j} className="nre-warning" data-kind={w.code}>
+                  {w.detail}
                     </li>
                   ))}
                 </ul>

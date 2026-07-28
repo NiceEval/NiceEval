@@ -30,7 +30,7 @@ function fakeSandbox(): Sandbox {
 function agentReturning(turn: Turn): Agent {
   return {
     name: "fake-agent",
-    kind: "remote",
+    kind: "direct",
     async send(_input: TurnInput): Promise<Turn> {
       return turn;
     },
@@ -57,7 +57,7 @@ function scriptedRetryAgent(turns: Turn[], classifyTurnError?: Agent["classifyTu
   let i = 0;
   const agent: Agent = {
     name: "scripted-retry",
-    kind: "remote",
+    kind: "direct",
     async send(input: TurnInput): Promise<Turn> {
       calls.push(input);
       const turn = turns[Math.min(i, turns.length - 1)] as Turn;
@@ -201,7 +201,7 @@ function sequentialAgent(turns: Turn[]): Agent {
   let i = 0;
   return {
     name: "sequential-agent",
-    kind: "remote",
+    kind: "direct",
     async send(): Promise<Turn> {
       const turn = turns[Math.min(i, turns.length - 1)] as Turn;
       i++;
@@ -286,7 +286,7 @@ describe("SessionManager · onTurn 回报的 usage(turn 挂接 TimingNode 的数
 
   it("轮没有 usage 时,onTurn 的 info.usage 是 undefined(不拿空对象或 0 值凑数)", async () => {
     const turn: Turn = { status: "completed", events: [] };
-    const reported: Array<Record<string, unknown>> = [];
+    const reported: Array<globalThis.Record<string, unknown>> = [];
     const manager = makeManagerWithTurns([turn], { onTurn: (info) => reported.push(info) });
     await manager.send(manager.primary, "hi");
 

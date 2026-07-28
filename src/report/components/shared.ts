@@ -16,7 +16,7 @@ import {
 } from "../definition/tree.ts";
 import type { ReportInput } from "../model/types.ts";
 import type { ReportLocale } from "../model/locale.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 
 /** 拼 class 名:过滤空值,末尾接使用者透传的 className。 */
 export function cx(...parts: (string | undefined | false)[]): string {
@@ -37,11 +37,11 @@ export type DataProps<Data, Options, Presentation> =
 
 // ───────────────────────── data 结构校验(版本漂移防线)─────────────────────────
 
-export function isObject(value: unknown): value is Record<string, unknown> {
+export function isObject(value: unknown): value is globalThis.Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** LocalizedText = string | Record<string, string>(src/shared/types.ts)。 */
+/** LocalizedText = string | globalThis.Record<string, string>(src/shared/types.ts)。 */
 export function isLocalizedText(value: unknown): boolean {
   if (typeof value === "string") return true;
   return isObject(value) && Object.values(value).every((entry) => typeof entry === "string");
@@ -68,10 +68,10 @@ export function isCell(value: unknown): boolean {
   return cellProblem(value, "cell") === null;
 }
 
-/** 四态 tally { passed, failed, errored, skipped } 的字段路径前缀校验。 */
+/** 四态 tally { passed, failed, errored, unreadable } 的字段路径前缀校验。 */
 export function tallyProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a tally { passed, failed, errored, skipped }`;
-  for (const key of ["passed", "failed", "errored", "skipped"] as const) {
+  if (!isObject(value)) return `"${path}" must be a tally { passed, failed, errored, unreadable }`;
+  for (const key of ["passed", "failed", "errored", "unreadable"] as const) {
     if (typeof value[key] !== "number") return `"${path}.${key}" must be a number`;
   }
   return null;
@@ -122,7 +122,7 @@ export interface DataComponentDef<Data, Options, Presentation> {
 export function makeDataComponent<Data, Options, Presentation>(
   def: DataComponentDef<Data, Options, Presentation>,
 ): ReportComponent<DataProps<Data, Options, Presentation>> {
-  type Props = Record<string, unknown>;
+  type Props = globalThis.Record<string, unknown>;
   type Resolved = { data: Data } & Presentation;
 
   const assertData = (data: unknown): Data => {
@@ -144,13 +144,13 @@ export function makeDataComponent<Data, Options, Presentation>(
       assertData(props.data);
       return props as unknown as Resolved;
     }
-    const options: Record<string, unknown> = {};
+    const options: globalThis.Record<string, unknown> = {};
     for (const key of givenSpec) options[key] = props[key];
     const input = (props.input as ReportInput | undefined) ?? ctx.input;
     const data = await memoFetchOf(ctx)(def.dataFn, input, options, () =>
       def.dataFn(input, options as Options),
     );
-    const rest: Record<string, unknown> = { ...props };
+    const rest: globalThis.Record<string, unknown> = { ...props };
     delete rest.input;
     for (const key of def.specKeys) delete rest[key];
     return { ...rest, data } as unknown as Resolved;

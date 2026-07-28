@@ -4,7 +4,7 @@
 // flag() 只读 `ExperimentDef.flags` 里显式声明的 KV;model / reasoningEffort / budget / runs
 // 这类顶层运行配置不在 flags 里,用 runConfig() 读快照的 ExperimentRunInfo 投影。
 
-import type { AttemptHandle } from "../../results/types.ts";
+import type { AttemptHandle } from "../../record/types.ts";
 import type {
   DimensionOptions,
   DimensionRef,
@@ -16,13 +16,13 @@ import type {
 
 /** experiment 声明的 flags(快照级投影优先;第三方落盘只拼在条目上时回退 result.experiment)。 */
 export function flagValueOf(attempt: AttemptHandle, name: string): unknown {
-  const info = attempt.snapshot?.experiment ?? attempt.result.experiment;
+  const info = attempt.run?.experiment ?? attempt.result.experiment;
   return info?.flags?.[name];
 }
 
 /** experiment 声明的报告归类标注 labels(同 flags 的读取回退链;值域 string | number)。 */
 export function labelValueOf(attempt: AttemptHandle, name: string): unknown {
-  const info = attempt.snapshot?.experiment ?? attempt.result.experiment;
+  const info = attempt.run?.experiment ?? attempt.result.experiment;
   return info?.labels?.[name];
 }
 
@@ -32,11 +32,11 @@ export function labelValueOf(attempt: AttemptHandle, name: string): unknown {
  * 未投影 → undefined。
  */
 export function runConfigValueOf(attempt: AttemptHandle, name: RunConfigKey): unknown {
-  if (name === "model") return attempt.result.model ?? attempt.snapshot?.model;
-  if (name === "agent") return attempt.result.agent || attempt.snapshot?.agent;
-  const info = attempt.snapshot?.experiment ?? attempt.result.experiment;
+  if (name === "model") return attempt.result.model ?? attempt.run?.model;
+  if (name === "agent") return attempt.result.agent || attempt.run?.agent;
+  const info = attempt.run?.experiment ?? attempt.result.experiment;
   // ExperimentRunInfo 是穷尽可序列化投影;按字段名取值,新增投影字段无需改这里
-  return (info as Record<string, unknown> | undefined)?.[name];
+  return (info as globalThis.Record<string, unknown> | undefined)?.[name];
 }
 
 function assertName(name: unknown, fn: string, hint: string): asserts name is string {

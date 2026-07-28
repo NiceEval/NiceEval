@@ -1,6 +1,6 @@
 // HeroCard:站点标题区的 web 面——hero 标题(h1)、运行 meta(最后运行时间按渲染 locale
-// 格式化;latestStartedAt 为 null 时内置「暂无运行」文案;snapshots > 1 时标注合成来源)
-// 与品牌行(等同 PoweredBy,恒含、无拆除 prop)。标题输入是站点声明与 Scope 的合成物,
+// 格式化;latestStartedAt 为 null 时内置「暂无运行」文案;runs > 1 时标注合成来源)
+// 与品牌行(等同 PoweredBy,恒含、无拆除 prop)。标题输入是站点声明与 Sample 的合成物,
 // 组件只收 data 形态(docs/feature/reports/components/site/hero-card.md)。
 
 import type { ReactElement } from "react";
@@ -46,7 +46,7 @@ export function HeroCard({
       ? localeText(locale, "hero.noRuns")
       : [
           localeText(locale, "hero.lastRun", { time: formatLastRun(data.latestStartedAt, locale) }),
-          ...(data.snapshots > 1 ? [localeText(locale, "hero.composedRuns", { n: data.snapshots })] : []),
+          ...(data.runs > 1 ? [localeText(locale, "hero.composedRuns", { n: data.runs })] : []),
         ].join(" · ");
   return (
     <header className={cx("nre", "nre-hero", className)}>

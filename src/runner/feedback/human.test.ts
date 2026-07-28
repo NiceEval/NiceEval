@@ -11,7 +11,7 @@ import { createInitialRunFeedbackState, reduceRunFeedback } from "./reducer.ts";
 import { encodeAttemptKey, HALT_DIAGNOSTIC_CODE } from "../types.ts";
 import { stringWidth } from "../../report/model/text-layout.ts";
 import type { DurableFeedbackEvent, InvocationCompletion, InvocationSummary, RunFeedbackPlan, RunFeedbackState } from "../types.ts";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 
 function locator(raw: string): AttemptLocator {
   return raw as AttemptLocator;
@@ -32,7 +32,7 @@ function summary(overrides: Partial<InvocationSummary> = {}): InvocationSummary 
     completedAt: "2026-07-13T00:03:48.000Z",
     passed: 44,
     failed: 1,
-    skipped: 0,
+    unreadable: 0,
     errored: 0,
     durationMs: 228_000,
     results: [],
@@ -254,7 +254,7 @@ describe("live dashboard — 宽终端下 ACTIVE 行与身份列分配", () => {
     const key = encodeAttemptKey(identity);
     // 98 个字符:比旧 bug 里实际生效的框内容宽(100 列上限下约 96 列)更长,只有两处宽度
     // 计算(contentWidth 与 renderPanel 内部 boxWidth)真的用同一个豁免声明时才会整段可见。
-    const longDetail = "pnpm vitest run --coverage --reporter=verbose src/runner/feedback/human.test.ts --update-snapshots";
+    const longDetail = "pnpm vitest run --coverage --reporter=verbose src/runner/feedback/human.test.ts --update-runs";
     const state: RunFeedbackState = {
       ...createInitialRunFeedbackState(),
       total: 45,
@@ -730,7 +730,7 @@ describe("renderHumanDryPlan: locked 标注", () => {
       totalAttempts: 2,
       evals: 2,
       configs: 1,
-      runs: 1,
+      attempts: 1,
       rows: [
         { experimentId: "compare/codex", evalId: "memory/a", locked: true },
         { experimentId: "compare/codex", evalId: "memory/b" },

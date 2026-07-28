@@ -106,12 +106,12 @@ export interface AiSdkResultLike {
   usage?: AiSdkUsageLike;
   /**
    * 本次调用新产生的消息(v7)。tool approval 批准 / 拒绝后,被拦工具的执行结果只出现在
-   * 这里的 tool 消息里(不进 steps),fromAiSdk 从中补齐 `action.result`。
+   * 这里的 tool 消息里(不进 steps),turnFromAiSdk 从中补齐 `action.result`。
    */
   responseMessages?: readonly AiSdkResponseMessageLike[];
 }
 
-/** fromAiSdk 的返回:铺进 `Turn` 即可(data 仍归调用方 —— 结构化输出是应用自己的语义)。 */
+/** turnFromAiSdk 的返回:铺进 `Turn` 即可(data 仍归调用方 —— 结构化输出是应用自己的语义)。 */
 export interface AiSdkTurn {
   events: StreamEvent[];
   usage?: Usage;
@@ -126,7 +126,7 @@ export interface AiSdkTurn {
  *
  * ```typescript
  * const result = await generateText({ model, tools, prompt: input.text });
- * return { ...fromAiSdk(result), data: result.text };
+ * return { ...turnFromAiSdk(result), data: result.text };
  * ```
  *
  * `callId` 用 AI SDK 原生的 `toolCallId`(显式配对,不合成);工具名保留原名进 `name`,
@@ -137,9 +137,9 @@ export interface AiSdkTurn {
  * v7 tool approval:`needsApproval` 工具被拦下时返回 `status: "waiting"` + 每个待批准
  * 调用一条 `input.requested`(`id` = approvalId、`action` = 工具原名、`options` =
  * approve / deny)。resume(把 `tool-approval-response` 塞回 messages 再跑一次)后的结果
- * 再交给 fromAiSdk,会从 `responseMessages` 里补出执行 / 拒绝的 `action.result`。
+ * 再交给 turnFromAiSdk,会从 `responseMessages` 里补出执行 / 拒绝的 `action.result`。
  */
-export function fromAiSdk(result: AiSdkResultLike): AiSdkTurn {
+export function turnFromAiSdk(result: AiSdkResultLike): AiSdkTurn {
   const stepEvents: StreamEvent[] = [];
   const steps: readonly AiSdkStepLike[] =
     result.steps && result.steps.length > 0
@@ -375,7 +375,7 @@ export interface AiSdkGenerateContext<M = unknown> {
   /** 实验钉的推理努力程度(ctx.reasoningEffort);省略 → 用应用自己的默认。应用自己决定怎么塞进 providerOptions(如 OpenAI 的 reasoningEffort)。 */
   readonly reasoningEffort?: string;
   readonly signal: AbortSignal;
-  readonly flags: Readonly<Record<string, unknown>>;
+  readonly flags: Readonly<globalThis.Record<string, unknown>>;
   /**
    * 配了 `tracing`(如 `aiSdkOtel()`)才有:直接放进 generateText / streamText 的
    * `telemetry` 选项。OTel provider、per-attempt 端点绑定和轮末 flush 都由工厂做,
@@ -441,7 +441,7 @@ export interface AiSdkAgentOptions<M = unknown> {
  *
  *   · 多轮会话:ctx.session.id 未记录时开新会话线并 capture 回写,同一 id 续接同一份
  *     messages 历史;
- *   · 事件流:结果经 {@link fromAiSdk} 直构(toolCallId 配对、时序保真、usage);
+ *   · 事件流:结果经 {@link turnFromAiSdk} 直构(toolCallId 配对、时序保真、usage);
  *   · HITL:`needsApproval` 工具停轮 → `waiting` + `input.requested`;下一轮输入按行翻译成
  *     tool-approval-response(以 approve / yes / 同意 / 批准 开头 = 批准,其余一律拒绝)塞回
  *     messages 再召 `generate`,SDK 才会执行(或跳过)被拦的工具;
@@ -530,7 +530,7 @@ export function aiSdkAgent<M = unknown>(options: AiSdkAgentOptions<M>): Agent {
       state.messages.push(...((result.responseMessages ?? []) as M[]));
       state.pendingApprovals = collectPendingApprovals(result);
 
-      const turn = fromAiSdk(result);
+      const turn = turnFromAiSdk(result);
       // 上游偶尔退化返回完全空的结果;当正常回复会把故障伪装成通过,按失败处理。
       if (turn.events.length === 0) {
         return { status: "failed", events: [{ type: "error", message: "AI SDK returned an empty result (no text, no tool calls)" }] };

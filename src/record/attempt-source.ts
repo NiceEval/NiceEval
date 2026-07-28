@@ -8,7 +8,13 @@
 // 或参照。
 
 import type { AttemptHandle } from "./types.ts";
-import { buildAnnotatedEvalSource, type AnnotatedEvalSource, type SendAnnotation } from "./annotated-source.ts";
+import {
+  assembleSourceTree,
+  buildAnnotatedEvalSource,
+  type AnnotatedEvalSource,
+  type AnnotatedSourceTree,
+  type SendAnnotation,
+} from "./annotated-source.ts";
 
 /**
  * 给定一个 attempt,取回它的 eval 源码(经 sources() 解引用,可能来自本快照或
@@ -48,4 +54,22 @@ export async function loadAnnotatedEvalSource(
   }
 
   return buildAnnotatedEvalSource(primary, assertions, sends);
+}
+
+/** AttemptSource 与计分明细共用同一棵证据树，而非各自按 loc 再分桶。 */
+export async function loadAttemptSourceTree(
+  attempt: AttemptHandle,
+  sends: readonly SendAnnotation[] = [],
+): Promise<AnnotatedSourceTree | null> {
+  const sources = await attempt.sources();
+  if (!sources?.length) return null;
+  const entry = sources.find((source) => source.role === "entry");
+  if (!entry) return null;
+  return assembleSourceTree({
+    entry,
+    sources,
+    assertions: attempt.result.assertions,
+    scoreEntries: attempt.result.scoreEntries ?? [],
+    sends: [...sends],
+  });
 }

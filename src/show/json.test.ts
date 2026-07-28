@@ -12,8 +12,8 @@ import { afterEach, beforeAll, afterAll, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openResults } from "../results/index.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
+import { openRecord } from "../record/index.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 import { runShow, type ShowFlags } from "./index.ts";
 import type { ShowJson } from "./json.ts";
 import { setConfiguredLocale } from "../i18n/index.ts";
@@ -58,15 +58,17 @@ async function writeSnapshot(root: string, snapDirName: string, opts: SnapshotOp
   const dir = join(root, cleanDirName(opts.experimentId), snapDirName);
   await mkdir(dir, { recursive: true });
   const meta = {
-    format: RESULTS_FORMAT,
-    schemaVersion: RESULTS_SCHEMA_VERSION,
+    format: RECORD_FORMAT,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     producer: { name: "niceeval", version: "0.4.6" },
+    runId: `${snapDirName}-0000-4000-8000-000000000000`,
     experimentId: opts.experimentId,
     agent: opts.agent ?? "bub",
     startedAt: opts.startedAt,
+    configHash: "fixture-config",
     completedAt: opts.startedAt,
   };
-  await writeFile(join(dir, "snapshot.json"), JSON.stringify(meta, null, 2), "utf-8");
+  await writeFile(join(dir, "run.json"), JSON.stringify(meta, null, 2), "utf-8");
   for (const r of results) {
     const attemptDir = join(dir, r.id, `a${r.attempt ?? 0}`);
     await mkdir(attemptDir, { recursive: true });
@@ -83,7 +85,7 @@ interface Captured {
 async function show(root: string, patterns: string[], flags: ShowFlags = {}): Promise<Captured> {
   let out = "";
   let err = "";
-  const code = await runShow(root, patterns, { results: root, ...flags }, {
+  const code = await runShow(root, patterns, { record: root, ...flags }, {
     out: (s) => (out += s),
     err: (s) => (err += s),
     width: 100,
@@ -159,8 +161,8 @@ describe("--json envelope 形状", () => {
 
   it("@<locator> 默认首页:view 为 attempt", async () => {
     const root = await seedTwoExperimentsRoot();
-    const results = await openResults(root);
-    const locator = results.experiments.find((e) => e.id === "dev-e2b/codex")!.latest.evals[0]!.attempts[0]!.locator!;
+    const results = await openRecord(root);
+    const locator = results.experiments.find((e) => e.id === "dev-e2b/codex")!.latestRun.evals[0]!.attempts[0]!.locator!;
     const { doc } = await showJson(root, [locator]);
     expect(doc.view).toBe("attempt");
     expect(doc.scope.experiments).toEqual(["dev-e2b/codex"]);
@@ -199,7 +201,7 @@ describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
     ]);
     const text = await show(root, [], { experiment: ["dev/e2b"], usage: true });
     const { doc } = await showJson(root, [], { experiment: ["dev/e2b"], usage: true });
-    const row = (doc.data as Record<string, unknown>[])[0]!;
+    const row = (doc.data as globalThis.Record<string, unknown>[])[0]!;
     const queensLine = text.out.split("\n").find((l) => l.includes("weather/queens"))!;
     expect(queensLine.trim().endsWith("—")).toBe(true);
     expect("usage" in row).toBe(false);
@@ -213,7 +215,7 @@ describe("--json 与 text 面同值(同一次组件 resolve 产物)", () => {
       res("weather/brooklyn", "passed"),
     ]);
     const { doc } = await showJson(root, [], { experiment: ["dev/e2b"], usage: true });
-    const row = (doc.data as Record<string, unknown>[])[0]!;
+    const row = (doc.data as globalThis.Record<string, unknown>[])[0]!;
     expect(Object.keys(row).sort()).toEqual(["attempt", "evalId", "experimentId", "locator", "verdict"].sort());
   });
 });
@@ -232,7 +234,7 @@ describe("--timing 的 --json 面恒为完整树", () => {
         ],
       }),
     ]);
-    const locator = (await openResults(root)).experiments[0]!.latest.evals[0]!.attempts[0]!.locator!;
+    const locator = (await openRecord(root)).experiments[0]!.latestRun.evals[0]!.attempts[0]!.locator!;
     const summaryDoc = await showJson(root, [locator], { timing: true });
     const fullDoc = await showJson(root, [locator], { timing: "full" });
     expect(summaryDoc.doc.data).toEqual(fullDoc.doc.data);
@@ -249,7 +251,7 @@ describe("--history 的 --json 面:直接投影 AttemptJson,不是 text 面的�
       res("weather/brooklyn", "passed", { assertions: [], durationMs: 1234 }),
     ]);
     const { doc } = await showJson(root, [], { history: true });
-    const sections = doc.data as { experimentId: string; evalId: string; attempts: Record<string, unknown>[] }[];
+    const sections = doc.data as { experimentId: string; evalId: string; attempts: globalThis.Record<string, unknown>[] }[];
     expect(sections).toHaveLength(1);
     expect(sections[0]!.experimentId).toBe("dev/e2b");
     expect(sections[0]!.evalId).toBe("weather/brooklyn");

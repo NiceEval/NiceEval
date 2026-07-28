@@ -10,6 +10,7 @@
 // closedQA / factuality / summarizes 直接用 autoevals 库(braintrust)。
 
 import { ClosedQA, Factuality, Summary } from "autoevals";
+import OpenAI from "openai";
 import { unavailable, type EvalScore, type EvalUnavailable } from "./collector.ts";
 import type { AssertionHandle, AutoevalsNamespace, JudgeConfig, JudgeNamespace, ScoringContext } from "../types.ts";
 import { getEnv } from "../util.ts";
@@ -51,6 +52,35 @@ export interface JudgeDeps {
  *  judge-precheck-run-level-line-not-transient),没有上限会让整次运行在派发前永久挂。
  *  20s 足够慢但能用的网关回一个最小请求,又不至于让真挂死拖成无限等待。 */
 const PROBE_TIMEOUT_MS = 20_000;
+const PROBE_MAX_ATTEMPTS = 2;
+
+function errorSummary(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/\s+/g, " ").slice(0, 300);
+}
+
+/** autoevals/OpenAI 的 HTTP 错误在不同运行时有不同类名，只依赖稳定的 status 字段。 */
+function judgeFailureEvidence(error: unknown): string {
+  const status = typeof error === "object" && error !== null ? (error as { status?: unknown }).status : undefined;
+  const prefix = typeof status === "number" ? `HTTP ${status}: ` : "";
+  return `${prefix}${errorSummary(error)}`;
+}
+
+function judgeClient(apiKey: string, baseURL: string, signal?: AbortSignal): OpenAI {
+  return new OpenAI({
+    apiKey,
+    baseURL,
+    // 判分请求不是幂等的计费读取；禁止 SDK 在连接、超时或 5xx 后暗中重放。
+    maxRetries: 0,
+    fetch: signal
+      ? (input, init) =>
+          fetch(input, {
+            ...init,
+            signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
+          })
+      : undefined,
+  });
+}
 
 /** 预检显式配置的 judge:验证 model + API key 存在,并发最小请求确认端点可达(有 20s 上限)。
  *  返回错误描述字符串,可达则返回 undefined。*/
@@ -65,36 +95,46 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
   // TimeoutError,下面据此把「网关不回」与其它失败分开报,给出可行动的下一步。
   const timeoutSignal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
   const probeSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  try {
-    // 只确认可达 + 鉴权通过,不关心回复内容(真实评分走 autoevals)。
-    // 不带 max_tokens 等采样参数:新款模型(o 系 / gpt-5.x)会 400 拒掉 max_tokens,
-    // probe 的职责只是「端点通、key 对、model 认识」,参数越少越不误伤。
-    const url = `${resolved.baseUrl.replace(/\/$/, "")}/chat/completions`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${resolved.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: resolved.model,
-        messages: [{ role: "user", content: "Reply with the single word: ok" }],
-      }),
-      signal: probeSignal,
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(t("judge.httpError", { status: res.status, body: body.slice(0, 300) }));
+  // probe 只对尚未收到 HTTP 响应的传输失败重试一次。实际评分绝不走这个重试，
+  // 避免一个 rubric 因隐式重放产生第二笔模型费用。
+  for (let attempt = 1; attempt <= PROBE_MAX_ATTEMPTS; attempt++) {
+    try {
+      // 只确认可达 + 鉴权通过,不关心回复内容(真实评分走 autoevals)。
+      // 不带 max_tokens 等采样参数:新款模型(o 系 / gpt-5.x)会 400 拒掉 max_tokens,
+      // probe 的职责只是「端点通、key 对、model 认识」,参数越少越不误伤。
+      const url = `${resolved.baseUrl.replace(/\/$/, "")}/chat/completions`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${resolved.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: resolved.model,
+          messages: [{ role: "user", content: "Reply with the single word: ok" }],
+        }),
+        signal: probeSignal,
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return t("judge.probeFailed", {
+          model: resolved.model,
+          error: t("judge.httpError", { status: res.status, body: body.slice(0, 300) }),
+        });
+      }
+      return undefined;
+    } catch (e) {
+      // 用户中断不重试。TimeoutError、断连和 DNS / TLS 等 fetch 拒绝都属于传输失败，
+      // 在第二次仍失败时按原有可行动错误反馈。
+      if (signal?.aborted || attempt === PROBE_MAX_ATTEMPTS) {
+        if (e instanceof Error && e.name === "TimeoutError") {
+          return t("judge.probeTimeout", { model: resolved.model, seconds: PROBE_TIMEOUT_MS / 1000 });
+        }
+        return t("judge.probeFailed", { model: resolved.model, error: errorSummary(e) });
+      }
     }
-  } catch (e) {
-    // 网关接受连接却不回:超时源触发,报可行动的「无响应」错误(而不是一句 "aborted")。
-    // 外层 signal(用户中断)导致的 abort 不算网关问题,走通用 probeFailed。
-    if (e instanceof Error && e.name === "TimeoutError") {
-      return t("judge.probeTimeout", { model: resolved.model, seconds: PROBE_TIMEOUT_MS / 1000 });
-    }
-    return t("judge.probeFailed", { model: resolved.model, error: e instanceof Error ? e.message : String(e) });
   }
-  return undefined;
+  return undefined; // 循环已在成功或最终失败时返回；保留给 TypeScript 的完整性检查。
 }
 
 /** 构造 t.judge 命名空间。每个方法 record 一条延迟 soft 断言。
@@ -119,7 +159,7 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
     return deps.getOutput();
   };
 
-  type Scorer = (args: Record<string, unknown>) => Promise<{ score?: number | null }>;
+  type Scorer = (args: globalThis.Record<string, unknown>) => Promise<{ score?: number | null }>;
 
   // 三个 autoevals 方法只差评分器和材料字段名,共享行为(record spec / 材料构造 /
   // 分数归一 / evidence)单一出处。model 解析:单次 { model } → judge config;
@@ -141,17 +181,26 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
             return unavailable(`judge-key-unresolved (${envHint} unset)`);
           }
           const output = await materialFor(ctx, opts?.on);
-          const result = await scorer({
-            input: deps.getInput(),
-            output,
-            [payloadKey]: reference,
-            model,
-            openAiBaseUrl: resolved.baseUrl,
-            openAiApiKey: resolved.apiKey,
-          });
+          let result: { score?: number | null; rationale?: string };
+          try {
+            // autoevals 覆盖 HTTP、连接、调用超时与响应解析；这些边界上的任何异常都不能
+            // 漏到 collector 的「求值异常 = 0 分」回退，必须成为没有可信分数的 unavailable。
+            result = await scorer({
+              input: deps.getInput(),
+              output,
+              [payloadKey]: reference,
+              model,
+              client: judgeClient(resolved.apiKey, resolved.baseUrl, deps.signal),
+            });
+          } catch (error) {
+            return unavailable("judge-call-failed", judgeFailureEvidence(error));
+          }
+          if (typeof result.score !== "number" || !Number.isFinite(result.score)) {
+            return unavailable("judge-call-failed", "response did not contain a finite numeric score");
+          }
           return {
-            score: clamp01(result.score ?? 0),
-            detail: (result as { rationale?: string }).rationale || undefined,
+            score: clamp01(result.score),
+            detail: result.rationale || undefined,
             evidence: output,
           };
         },

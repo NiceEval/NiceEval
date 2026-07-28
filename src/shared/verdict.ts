@@ -11,14 +11,14 @@ export interface VerdictLike {
 
 /**
  * 把同一个 eval 的多轮 attempt 折叠成单一判定:任一轮通过 → 该 eval 通过(对齐 earlyExit
- * 「先过一次即停」语义),否则按 failed > errored > skipped 取最严重的一个。
+ * 「先过一次即停」语义),否则按 failed > errored > unreadable 取最严重的一个。
  */
 export function foldEvalVerdict(attempts: VerdictLike[]): Verdict {
   const verdicts = attempts.map((a) => a.verdict);
   if (verdicts.some((o) => o === "passed")) return "passed";
   if (verdicts.some((o) => o === "failed")) return "failed";
   if (verdicts.some((o) => o === "errored")) return "errored";
-  return "skipped";
+  return "unreadable";
 }
 
 export interface EvalLevelStats {
@@ -27,7 +27,7 @@ export interface EvalLevelStats {
   passed: number;
   failed: number;
   errored: number;
-  skipped: number;
+  unreadable: number;
   passRate: number;
 }
 
@@ -41,8 +41,8 @@ export interface EvalLevelStats {
 export function evalLevelStats<T extends VerdictLike>(results: T[], keyOf: (r: T) => string): EvalLevelStats {
   const byEval = new Map<string, T[]>();
   for (const r of results) byEval.set(keyOf(r), [...(byEval.get(keyOf(r)) ?? []), r]);
-  const counts = { passed: 0, failed: 0, errored: 0, skipped: 0 };
+  const counts = { passed: 0, failed: 0, errored: 0, unreadable: 0 };
   for (const group of byEval.values()) counts[foldEvalVerdict(group)] += 1;
-  const ran = counts.passed + counts.failed + counts.errored; // skipped 不进分母
+  const ran = counts.passed + counts.failed + counts.errored; // unreadable 不进分母
   return { evals: byEval.size, ...counts, passRate: ran ? counts.passed / ran : 0 };
 }

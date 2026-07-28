@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import type { AttemptDiffData, AttemptDiffFileEntry } from "../../model/types.ts";
 import { cx } from "../shared.ts";
 
-const NET_LABEL: Record<AttemptDiffFileEntry["net"], string> = { added: "generated", modified: "modified", deleted: "deleted" };
+const NET_LABEL: globalThis.Record<AttemptDiffFileEntry["net"], string> = { added: "generated", modified: "modified", deleted: "deleted" };
 
 function FileRow({ file }: { file: AttemptDiffFileEntry }): ReactElement {
   return (

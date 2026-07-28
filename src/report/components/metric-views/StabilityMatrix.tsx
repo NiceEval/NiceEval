@@ -5,7 +5,7 @@
 
 import type { ReactElement } from "react";
 import type { StabilityMatrixCell, StabilityMatrixData } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
 import { colorClassForKey } from "../../assets/colors.ts";
 import { cx } from "../shared.ts";

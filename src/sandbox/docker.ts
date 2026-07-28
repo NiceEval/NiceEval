@@ -55,7 +55,7 @@ export async function reconcileProvision(token: string): Promise<void> {
 }
 
 // 各 Node 运行时对应的镜像。用 -slim 变体下载更快、兼容性够用。
-const DOCKER_IMAGES: Record<string, string> = {
+const DOCKER_IMAGES: globalThis.Record<string, string> = {
   node20: "node:20-slim",
   node24: "node:24-slim",
 };
@@ -95,6 +95,8 @@ const SANDBOX_PATH = `${NPM_GLOBAL_DIR}/bin:/usr/local/sbin:/usr/local/bin:/usr/
 export interface DockerSandboxOptions {
   /** 单条命令超时(毫秒)。 */
   timeout?: number;
+  /** 容器实例寿命；与单条命令 timeout 分离。 */
+  lifetimeMs?: number;
   /** Node 运行时。 */
   runtime?: "node20" | "node24";
   /** 覆盖默认镜像(默认按 runtime 选 `node:*-slim`)。预制模板:烘焙好 agent CLI 的镜像名。 */
@@ -122,6 +124,7 @@ export class DockerSandbox implements Sandbox {
   private container: Docker.Container | null = null;
   private _containerId = "";
   private timeout: number;
+  private lifetimeMs?: number;
   private runtime: string;
   private image?: string;
   private feedback?: import("../types.ts").ScopedFeedback;
@@ -131,6 +134,7 @@ export class DockerSandbox implements Sandbox {
   constructor(options: DockerSandboxOptions = {}) {
     this.docker = new Docker();
     this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.lifetimeMs = options.lifetimeMs;
     this.runtime = options.runtime ?? "node24";
     this.image = options.image;
     this.feedback = options.feedback;
@@ -170,7 +174,7 @@ export class DockerSandbox implements Sandbox {
     // 文件先 touch + chmod 666,好让之后以 1000 用户跑的 exec 也能往里 append。
     // 外层 `timeout <TTL>` 是 dead-man switch:宿主异常退出(kill -9 / 崩溃)留下的孤儿容器,
     // 到 TTL 后 PID1 自动退出 → 容器停止 → AutoRemove 清理(见 TTL_* 常量)。
-    const ttlSec = Math.ceil(Math.max(this.timeout * TTL_MULTIPLIER, TTL_FLOOR_MS) / 1000);
+    const ttlSec = Math.ceil(Math.max(this.lifetimeMs ?? this.timeout * TTL_MULTIPLIER, TTL_FLOOR_MS) / 1000);
     this.container = await this.docker.createContainer({
       Image: imageName,
       Cmd: [
@@ -336,7 +340,7 @@ export class DockerSandbox implements Sandbox {
     cmd: string,
     args: string[] = [],
     opts: {
-      env?: Record<string, string>;
+      env?: globalThis.Record<string, string>;
       cwd?: string;
       user?: string;
       onStdout?: (chunk: string) => void | Promise<void>;
@@ -450,7 +454,7 @@ export class DockerSandbox implements Sandbox {
   }
 
   /** 批量写文件(路径 -> 文本内容)。 */
-  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
+  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
     const sandboxFiles: SandboxFile[] = Object.entries(files).map(([path, content]) => ({
       path,
       content: Buffer.from(content, "utf-8"),

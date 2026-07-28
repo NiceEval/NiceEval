@@ -15,7 +15,7 @@ const initialData: ViewData = window.__NICEEVAL_VIEW_DATA__ ?? emptyViewData;
 // 切页 / 切语言即换块;不解析、不 hydrate。页 id 来自 viewData.report.pages;
 // 旧数据 / 缺声明时按单页 `report` 兜底。
 const pageIds = initialData.report?.pages?.length ? initialData.report.pages.map((p) => p.id) : ["report"];
-const reportPages: Record<string, ReportSlotHtml> = {};
+const reportPages: globalThis.Record<string, ReportSlotHtml> = {};
 for (const id of pageIds) {
   reportPages[id] = {
     en: document.getElementById(`niceeval-report-${id}-en`)?.innerHTML ?? "",

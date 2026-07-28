@@ -25,7 +25,7 @@ export const E2B_HOST_METADATA = "niceeval-host";
 export const E2B_PID_METADATA = "niceeval-pid";
 export const E2B_STARTED_AT_METADATA = "niceeval-started-at";
 
-export function dockerRunIdentityLabels(identity: RunIdentity): Record<string, string> {
+export function dockerRunIdentityLabels(identity: RunIdentity): globalThis.Record<string, string> {
   return {
     [DOCKER_HOST_LABEL]: identity.host,
     [DOCKER_PID_LABEL]: String(identity.pid),
@@ -33,7 +33,7 @@ export function dockerRunIdentityLabels(identity: RunIdentity): Record<string, s
   };
 }
 
-export function e2bRunIdentityMetadata(identity: RunIdentity): Record<string, string> {
+export function e2bRunIdentityMetadata(identity: RunIdentity): globalThis.Record<string, string> {
   return {
     [E2B_HOST_METADATA]: identity.host,
     [E2B_PID_METADATA]: String(identity.pid),
@@ -42,13 +42,13 @@ export function e2bRunIdentityMetadata(identity: RunIdentity): Record<string, st
 }
 
 /** 从 docker label 集合解出运行标识;缺任何一个字段视为没有标识(非 niceeval 容器)。 */
-export function parseDockerRunIdentity(labels: Record<string, string> | undefined): RunIdentity | undefined {
+export function parseDockerRunIdentity(labels: globalThis.Record<string, string> | undefined): RunIdentity | undefined {
   if (!labels) return undefined;
   return parseRunIdentityFields(labels[DOCKER_HOST_LABEL], labels[DOCKER_PID_LABEL], labels[DOCKER_STARTED_AT_LABEL]);
 }
 
 /** 从 e2b SDK 返回的 metadata 解出运行标识;缺任何一个字段视为没有标识。 */
-export function parseE2BRunIdentity(metadata: Record<string, string> | undefined): RunIdentity | undefined {
+export function parseE2BRunIdentity(metadata: globalThis.Record<string, string> | undefined): RunIdentity | undefined {
   if (!metadata) return undefined;
   return parseRunIdentityFields(
     metadata[E2B_HOST_METADATA],

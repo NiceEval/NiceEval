@@ -4,7 +4,7 @@
 // DeltaTable)的 *Data 与配套 Options 都住在这里(docs/feature/reports/components/tables/README.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
-// - 第一参收 ReportInput = Scope | readonly Snapshot[];warnings 不进组件数据(宿主统一显示);
+// - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
 // - 聚合前按身份键去重(dedupeAttempts;missing-startedAt 不去重、如实保留、不透出警告);
 // - null ≠ 0:缺数据不编数,覆盖率经 samples/total 如实暴露;
 // - 显式传入的列表(questions / pairs / metrics)保留声明顺序,从数据发现的维度 domain
@@ -18,8 +18,8 @@ import type {
   FlagConditions,
   LineData,
   MatrixData,
-  Metric,
-  MetricCell,
+  Measure,
+  MeasureCell,
   NumericAxis,
   ReportInput,
   ScatterData,
@@ -29,9 +29,9 @@ import type {
   TableData,
 } from "../../model/types.ts";
 import type { JsonValue, Verdict } from "../../../types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
-import type { Snapshot } from "../../../results/types.ts";
-import { comparabilityConfigOf, deepEqualJson } from "../../../results/select.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
+import type { Run } from "../../../record/types.ts";
+import { comparabilityConfigOf, deepEqualJson } from "../../../sample/index.ts";
 import { foldEvalVerdict } from "../../../shared/verdict.ts";
 import {
   assertUniqueMetricNames,
@@ -67,12 +67,12 @@ export interface MetricTableOptions {
   /** 行维度(内置 / 自定义 / flag() / runConfig())。 */
   rows: DimensionInput;
   /** 每列一个指标;非空元组,元素是静态 import 的 Metric 实例。 */
-  columns: readonly [Metric, ...Metric[]];
+  columns: readonly [Measure, ...Measure[]];
   /**
    * 初始行序:必须是 columns 中同一个 Metric 实例且声明了 better,方向随 better
    * (「好」的一头在上),缺数据行沉底;省略时按行 key 字典序。
    */
-  sort?: Metric;
+  sort?: Measure;
   /** eval id 前缀过滤,同 CLI 位置参数语义;在聚合之前收窄题集。 */
   evals?: string | readonly string[];
 }
@@ -93,12 +93,12 @@ export async function metricTableData(input: ReportInput, options: MetricTableOp
       );
     }
   }
-  const { snapshots, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(snapshots, attempts), options.evals);
+  const { runs, attempts } = resolveInput(input);
+  const items = filterItems(collectItems(runs, attempts), options.evals);
   const groups = groupItems(items, options.rows);
   const rows: TableData["rows"] = [];
   for (const [key, group] of groups) {
-    const cells: Record<string, MetricCell> = {};
+    const cells: globalThis.Record<string, MeasureCell> = {};
     for (const metric of options.columns) cells[metric.name] = await computeCell(metric, group);
     rows.push({ key, cells });
   }
@@ -128,14 +128,14 @@ export async function metricTableData(input: ReportInput, options: MetricTableOp
 export interface MetricMatrixOptions {
   rows: DimensionInput;
   columns: DimensionInput;
-  cell: Metric;
+  cell: Measure;
   /** eval id 前缀过滤,同 CLI 位置参数语义。 */
   evals?: string | readonly string[];
 }
 
 export async function metricMatrixData(input: ReportInput, options: MetricMatrixOptions): Promise<MatrixData> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(snapshots, attempts), options.evals);
+  const { runs, attempts } = resolveInput(input);
+  const items = filterItems(collectItems(runs, attempts), options.evals);
   // 稀疏分组:只有真有 attempt 的 (row, column) 组合成格;没有样本的格子不出现
   const groups = new Map<string, { row: string; column: string; items: Item[] }>();
   for (const item of items) {
@@ -168,15 +168,15 @@ export interface ScoreboardOptions {
   /** 分科函数;默认与 evalGroup 维度同一条规则:取 eval id 的完整父路径,无 `/` 取完整 id。 */
   subject?: (evalId: string) => string;
   /** 权重按 eval id 前缀匹配,多个命中时最长前缀生效;默认 1。 */
-  weights?: Readonly<Record<string, number>>;
+  weights?: Readonly<globalThis.Record<string, number>>;
   fullMarks?: number;
-  score?: Metric;
+  score?: Measure;
 }
 
 /**
  * 固定题集分母:未跑题按 0 分计入 `notRun`,跑了但指标为 null 的题按 0 分计入 `unscorable`,
  * 两个计数不合并——成绩单能回答「这 0 分是没去考还是考了判不了」。组件不从已观测 attempt
- * 的并集猜分母;Scope 中题集之外的 eval 被忽略并计入 `ignoredEvals`。
+ * 的并集猜分母;Sample 中题集之外的 eval 被忽略并计入 `ignoredEvals`。
  */
 export async function scoreboardData(input: ReportInput, options: ScoreboardOptions): Promise<ScoreboardData> {
   const questions = options.questions;
@@ -213,8 +213,8 @@ export async function scoreboardData(input: ReportInput, options: ScoreboardOpti
   const scoreMetric = options.score ?? examScore;
   const subjectOf = options.subject ?? evalGroupOf;
 
-  const { snapshots, attempts } = resolveInput(input);
-  const allItems = collectItems(snapshots, attempts);
+  const { runs, attempts } = resolveInput(input);
+  const allItems = collectItems(runs, attempts);
   const questionSet = new Set(questions);
   const items = allItems.filter((item) => questionSet.has(evalIdOf(item)));
   const ignored = new Set<string>();
@@ -353,15 +353,15 @@ export interface MetricScatterOptions {
   points: DimensionInput;
   /** 决定颜色和图例归类,默认不连线(连线是呈现 prop `connect`);数组形态解析为复合维度。 */
   series?: SeriesInput;
-  x: Metric;
-  y: Metric;
+  x: Measure;
+  y: Measure;
   /** eval id 前缀过滤,同 CLI 位置参数语义。 */
   evals?: string | readonly string[];
 }
 
 export async function metricScatterData(input: ReportInput, options: MetricScatterOptions): Promise<ScatterData> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(snapshots, selectedAttemptsOnly(attempts)), options.evals);
+  const { runs, attempts } = resolveInput(input);
+  const items = filterItems(collectItems(runs, selectedAttemptsOnly(attempts)), options.evals);
   const groups = groupItems(items, options.points);
   const rows: ScatterData["rows"] = [];
   for (const [key, group] of groups) {
@@ -387,7 +387,7 @@ export interface MetricLineOptions {
   x: NumericAxis;
   /** 数组形态解析为复合维度。 */
   series?: SeriesInput;
-  y: Metric;
+  y: Measure;
   /** eval id 前缀过滤,同 CLI 位置参数语义。 */
   evals?: string | readonly string[];
 }
@@ -400,8 +400,8 @@ export interface MetricLineOptions {
  * x 为 null 的 attempt 不伪造 x 值,归入该 series 的未绘制行,组件报告未绘制数量。
  */
 export async function metricLineData(input: ReportInput, options: MetricLineOptions): Promise<LineData> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(snapshots, attempts), options.evals);
+  const { runs, attempts } = resolveInput(input);
+  const items = filterItems(collectItems(runs, attempts), options.evals);
 
   // x 恒定性检查:同一 experiment × eval 内的全部 attempt 必须得到同一个 x。
   const xByEvalKey = new Map<string, { x: number | null; item: Item }>();
@@ -463,8 +463,8 @@ export async function metricLineData(input: ReportInput, options: MetricLineOpti
 
 /**
  * 按 flag 机械导出全部有序条件(docs/feature/reports/components/tables/delta-table.md):
- * 条件域 = input Scope 内 `by: "experiment"` 的全部取值,删除该 flag 后必须可比性配置深相等
- * (不额外按 experiment id 的目录前缀分组——architecture.md「Scope 是默认报告的比较边界」同一条
+ * 条件域 = input Sample 内 `by: "experiment"` 的全部取值,删除该 flag 后必须可比性配置深相等
+ * (不额外按 experiment id 的目录前缀分组——architecture.md「Sample 是默认报告的比较边界」同一条
  * 契约);基准取 `baseline` 声明的值(缺省 = 未声明该 flag),候选是该 flag 每个其它取值各一个
  * 条件,按显示键字典序排在基准之后。
  */
@@ -480,7 +480,7 @@ export function conditionsByFlag(name: string, options?: { baseline?: JsonValue 
 }
 
 export interface DeltaTableOptions {
-  /** 显式维度,必填——"baseline" 不会被猜成 experiment、agent、flag 或 snapshot 中的某一种。 */
+  /** 显式维度,必填——"baseline" 不会被猜成 experiment、agent、flag 或 run 中的某一种。 */
   by: DimensionInput;
   /** 有序条件值,取自 by 维度;长度 ≥ 2,首个是基准。空数组、单元素或重复值在计算时按完整用户反馈报错。 */
   conditions: readonly [string, string, ...string[]] | FlagConditions;
@@ -501,9 +501,9 @@ function isFlagConditions(conditions: DeltaTableOptions["conditions"]): conditio
 function sortedJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortedJson);
   if (typeof value === "object" && value !== null) {
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-      const v = (value as Record<string, unknown>)[key];
+    const out: globalThis.Record<string, unknown> = {};
+    for (const key of Object.keys(value as globalThis.Record<string, unknown>).sort()) {
+      const v = (value as globalThis.Record<string, unknown>)[key];
       if (v !== undefined) out[key] = sortedJson(v);
     }
     return out;
@@ -512,22 +512,22 @@ function sortedJson(value: unknown): unknown {
 }
 
 /**
- * 派生有序条件:input Scope 内全部实验删除该 flag 后必须落在同一个可比性配置桶——它们是同一组
+ * 派生有序条件:input Sample 内全部实验删除该 flag 后必须落在同一个可比性配置桶——它们是同一组
  * 配置的不同 flag 取值,不是互不相关的两批实验;不满足时按完整用户反馈报错,提示按 evals 或
  * 输入范围收窄成单一组。返回条件值列表(首个是基准)、配对域实验数,与 experimentId → 条件值
  * 的映射(供 deltaTableData 按 experiment 成员关系而非字面维度键取回 items——同一条件值可能
  * 对应多个 experiment)。
  */
 function deriveConditionsByFlag(
-  snapshots: readonly Snapshot[],
+  runs: readonly Run[],
   spec: FlagConditions,
 ): { conditions: string[]; experiments: number; experimentToCondition: Map<string, string> } {
-  // 每个 experiment 取最新快照的配置(current() Scope 天然一实验一快照)。
-  const byExperiment = new Map<string, Snapshot>();
-  for (const snapshot of snapshots) {
-    const existing = byExperiment.get(snapshot.experimentId);
-    if (existing === undefined || snapshot.startedAt > existing.startedAt) {
-      byExperiment.set(snapshot.experimentId, snapshot);
+  // 每个 experiment 取最新快照的配置(current() Sample 天然一实验一快照)。
+  const byExperiment = new Map<string, Run>();
+  for (const run of runs) {
+    const existing = byExperiment.get(run.experimentId);
+    if (existing === undefined || run.startedAt > existing.startedAt) {
+      byExperiment.set(run.experimentId, run);
     }
   }
   interface Entry {
@@ -537,8 +537,8 @@ function deriveConditionsByFlag(
     displayKey: string;
   }
   const entries: Entry[] = [];
-  for (const [id, snapshot] of byExperiment) {
-    const config = comparabilityConfigOf(snapshot) as { flags?: Record<string, JsonValue> };
+  for (const [id, run] of byExperiment) {
+    const config = comparabilityConfigOf(run) as { flags?: globalThis.Record<string, JsonValue> };
     const flagValue = config.flags?.[spec.flag];
     const reduced = { ...config, flags: { ...config.flags } };
     delete reduced.flags[spec.flag];
@@ -550,7 +550,7 @@ function deriveConditionsByFlag(
     throw new Error(
       `deltaTableData conditionsByFlag("${spec.flag}") found experiments whose configuration differs beyond "${spec.flag}" — ` +
         "derived conditions only make sense when every candidate experiment shares the same configuration with just this flag toggled. " +
-        "Narrow to a single configuration group with `evals` or the input Scope, or write literal conditions instead.",
+        "Narrow to a single configuration group with `evals` or the input Sample, or write literal conditions instead.",
     );
   }
 
@@ -614,8 +614,8 @@ async function buildDeltaCell(items: readonly Item[]): Promise<DeltaCell> {
 }
 
 export async function deltaTableData(input: ReportInput, options: DeltaTableOptions): Promise<DeltaData> {
-  const { snapshots, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(snapshots, attempts), options.evals);
+  const { runs, attempts } = resolveInput(input);
+  const items = filterItems(collectItems(runs, attempts), options.evals);
 
   let conditions: string[];
   let experiments: number | undefined;
@@ -629,7 +629,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
           'Set by: "experiment", or write literal conditions for other dimensions.',
       );
     }
-    const derived = deriveConditionsByFlag(snapshots, options.conditions);
+    const derived = deriveConditionsByFlag(runs, options.conditions);
     conditions = derived.conditions;
     experiments = derived.experiments;
     if (derived.conditions.length < 2) {
@@ -679,11 +679,11 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
   }
   const evalIdsSet = new Set<string>();
   for (const byEval of byConditionByEval.values()) for (const evalId of byEval.keys()) evalIdsSet.add(evalId);
-  const evalIds = [...evalIdsSet].sort();
+  const knownEvalIds = [...evalIdsSet].sort();
 
   const baseline = conditions[0];
   const rows: DeltaData["rows"] = [];
-  for (const evalId of evalIds) {
+  for (const evalId of knownEvalIds) {
     const cells: DeltaData["rows"][number]["cells"] = {};
     for (const condition of conditions) {
       const conditionItems = byConditionByEval.get(condition)?.get(evalId);
@@ -770,7 +770,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
         const passedBase = passRows.filter((r) => r.cells[baseline]!.verdict === "passed").length;
         const passedCond = passRows.filter((r) => r.cells[condition]!.verdict === "passed").length;
         entry.pass = {
-          evalIds: passRows.map((r) => r.key),
+          knownEvalIds: passRows.map((r) => r.key),
           passRatePoints: (passedCond / passRows.length - passedBase / passRows.length) * 100,
         };
       }
@@ -788,7 +788,7 @@ export async function deltaTableData(input: ReportInput, options: DeltaTableOpti
           sumBase += row.cells[baseline]!.totalScore!;
           sumCond += row.cells[condition]!.totalScore!;
         }
-        entry.points = { evalIds: pointsRows.map((r) => r.key), totalScore: sumCond - sumBase };
+        entry.points = { knownEvalIds: pointsRows.map((r) => r.key), totalScore: sumCond - sumBase };
       }
 
       let tokensBase = 0;
@@ -839,8 +839,8 @@ export interface StabilityMatrixOptions {
 
 /**
  * 历史全执行的稳定性矩阵:行是 eval,列是 by 维度上的取值,格是该组合全部历史执行(跨快照按
- * 身份键去重、不设可比性门槛)的判定计数(docs/feature/reports/components/tables/stability-matrix.md)。消费的是调用方传入的 input 本身——传 current() Scope 只看得到现刻
- * 水位,要看完整历史需由调用方从 ctx.results 显式选择 Snapshot[] 传入。
+ * 身份键去重、不设可比性门槛)的判定计数(docs/feature/reports/components/tables/stability-matrix.md)。消费的是调用方传入的 input 本身——传 current() Sample 只看得到现刻
+ * 水位,要看完整历史需由调用方从 ctx.results 显式选择 Run[] 传入。
  */
 export async function stabilityMatrixData(
   input: ReportInput,
@@ -849,8 +849,8 @@ export async function stabilityMatrixData(
   if (!options || options.by === undefined) {
     throw new Error('stabilityMatrixData requires options.by (the dimension whose values become matrix columns, e.g. "experiment").');
   }
-  const { snapshots, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(snapshots, attempts), options.evals);
+  const { runs, attempts } = resolveInput(input);
+  const items = filterItems(collectItems(runs, attempts), options.evals);
 
   const cellsByKey = new Map<string, { row: string; column: string; passed: number; failed: number; errored: number }>();
   for (const item of items) {
@@ -863,10 +863,10 @@ export async function stabilityMatrixData(
     if (verdict === "passed") cell.passed += 1;
     else if (verdict === "failed") cell.failed += 1;
     else if (verdict === "errored") cell.errored += 1;
-    // skipped 不计入任何列
+    // unreadable 不计入任何列
   }
 
-  // 稀疏格子:全 skipped(没有任何历史执行)的组合不生成格子,不编三个 0 冒充跑过。
+  // 稀疏格子:全 unreadable(没有任何历史执行)的组合不生成格子,不编三个 0 冒充跑过。
   const realCells = [...cellsByKey.values()].filter((c) => c.passed + c.failed + c.errored > 0);
 
   const columnsSet = new Set<string>();
@@ -885,13 +885,13 @@ export async function stabilityMatrixData(
 
   // 行按历史最高通过率(各列分别算通过率,取最高值)升序排列,零通过的题排最前;
   // 同序值再按 evalId 字典序收口。
-  const evalIds = [...statsByEval.keys()].sort((a, b) => {
+  const knownEvalIds = [...statsByEval.keys()].sort((a, b) => {
     const ra = bestRateByEval.get(a) ?? 0;
     const rb = bestRateByEval.get(b) ?? 0;
     if (ra !== rb) return ra - rb;
     return a < b ? -1 : a > b ? 1 : 0;
   });
-  const rows: StabilityMatrixData["rows"] = evalIds.map((evalId) => {
+  const rows: StabilityMatrixData["rows"] = knownEvalIds.map((evalId) => {
     const stats = statsByEval.get(evalId)!;
     return { evalId, neverPassed: stats.passed === 0 && stats.total > 0 };
   });

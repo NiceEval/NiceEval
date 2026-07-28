@@ -26,7 +26,7 @@ function hostSandbox(
   // 把 ledger 的固定 /tmp 路径前缀重定向到本测试的私有目录,测试之间互不污染
   // (导出目录 /tmp/.niceeval-ledger-export 共享同一前缀,一条规则同时覆盖)。
   const patchPath = (s: string) => s.replaceAll("/tmp/.niceeval-ledger", ledgerDir);
-  const runShell = async (script: string, opts?: { env?: Record<string, string> }): Promise<CommandResult> => {
+  const runShell = async (script: string, opts?: { env?: globalThis.Record<string, string> }): Promise<CommandResult> => {
     counters?.shells?.push(script);
     const env = { ...process.env, ...opts?.env };
     if (env.GIT_DIR === "/tmp/.niceeval-ledger") env.GIT_DIR = ledgerDir;
@@ -123,6 +123,23 @@ describe("createChangeLedger", () => {
     expect(diff.files["start.txt"]).toEqual({ net: "modified", windows: ["s1/t1"] });
     expect(diff.get("start.txt")).toBe("changed by agent\n");
     expect(diff.get("out.txt")).toBeUndefined();
+  });
+
+  it("复用 reset 回到锚点，保留默认排除的动态依赖", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    await writeFile(join(workdir, "app.ts"), "export const value = 1;\n");
+    await mkdir(join(workdir, "node_modules", "pkg"), { recursive: true });
+    await writeFile(join(workdir, "node_modules", "pkg", "cache.js"), "cached\n");
+    const ledger = await createChangeLedger(hostSandbox(workdir, ledgerDir));
+
+    await writeFile(join(workdir, "app.ts"), "export const value = 2;\n");
+    await writeFile(join(workdir, "attempt-only.txt"), "remove me\n");
+    await ledger.commitAgentWindow("s1/t1");
+    await ledger.resetToAnchor();
+
+    await expect(readFile(join(workdir, "app.ts"), "utf8")).resolves.toBe("export const value = 1;\n");
+    await expect(readFile(join(workdir, "attempt-only.txt"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(workdir, "node_modules", "pkg", "cache.js"), "utf8")).resolves.toBe("cached\n");
   });
 
   it("eval 可以在 workdir 自己 git init,不与分类账冲突;agent 的 .git 不进归因", async () => {

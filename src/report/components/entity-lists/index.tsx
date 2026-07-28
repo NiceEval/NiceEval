@@ -5,7 +5,7 @@
 
 import { defineComponent, type ReportComponent } from "../../definition/tree.ts";
 import type { AttemptListItem, EvalListItem, ExperimentListItem, ReportInput } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../results/locator.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { collectItems, locatorOf, resolveInput } from "../../model/aggregate.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import {
@@ -114,7 +114,7 @@ interface EntityListChrome extends ChromeProps {
 
 export type ExperimentListProps = DataProps<
   readonly ExperimentListItem[],
-  Record<never, never>,
+  globalThis.Record<never, never>,
   EntityListChrome & {
     /** web 面在比较表前显示实验过滤框;text 面忽略。 */
     filter?: boolean;
@@ -128,7 +128,7 @@ export type ExperimentListProps = DataProps<
  */
 export const ExperimentList = makeDataComponent<
   readonly ExperimentListItem[],
-  Record<never, never>,
+  globalThis.Record<never, never>,
   EntityListChrome & { filter?: boolean }
 >({
   name: "ExperimentList",
@@ -149,10 +149,10 @@ export const ExperimentList = makeDataComponent<
   text: (props, ctx) => experimentListText(props.data, ctx),
 }) as unknown as ReportComponent<ExperimentListProps>;
 
-export type EvalListProps = DataProps<readonly EvalListItem[], Record<never, never>, EntityListChrome>;
+export type EvalListProps = DataProps<readonly EvalListItem[], globalThis.Record<never, never>, EntityListChrome>;
 
 /** Eval 列表:每项一个 experimentId + evalId,展开到这道题的 Attempt。 */
-export const EvalList = makeDataComponent<readonly EvalListItem[], Record<never, never>, EntityListChrome>({
+export const EvalList = makeDataComponent<readonly EvalListItem[], globalThis.Record<never, never>, EntityListChrome>({
   name: "EvalList",
   dataFnName: "evalListData",
   shapeName: "EvalListItem[]",
@@ -172,7 +172,7 @@ export const EvalList = makeDataComponent<readonly EvalListItem[], Record<never,
 
 export type AttemptListProps = DataProps<
   readonly AttemptListItem[],
-  Record<never, never>,
+  globalThis.Record<never, never>,
   EntityListChrome & {
     /** 过滤 / 截断前的总数;省略时等于 data 长度。 */
     total?: number;
@@ -184,7 +184,7 @@ export type AttemptListProps = DataProps<
 /** Attempt 列表:实体列表的叶子层,每项一次 attempt 的判定、单行摘要与 locator。 */
 export const AttemptList = makeDataComponent<
   readonly AttemptListItem[],
-  Record<never, never>,
+  globalThis.Record<never, never>,
   EntityListChrome & { total?: number; filter?: boolean }
 >({
   name: "AttemptList",
@@ -211,7 +211,7 @@ export const AttemptList = makeDataComponent<
 export interface FailureListProps {
   /** 显示的最大条数;默认 20。 */
   limit?: number;
-  /** 默认宿主注入的 Scope。 */
+  /** 默认宿主注入的 Sample。 */
   input?: ReportInput;
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
@@ -229,8 +229,8 @@ export const FailureList = defineComponent<FailureListProps>(async (props, ctx) 
   const all = await attemptListData(input);
   // attempt 开始时间不在列表条目里(它不是列表展示字段);从同一 input 的读取面按 locator 对回。
   const startedAtByLocator = new Map<string, string>();
-  const { snapshots, attempts } = resolveInput(input);
-  for (const item of collectItems(snapshots, attempts)) {
+  const { runs, attempts } = resolveInput(input);
+  for (const item of collectItems(runs, attempts)) {
     startedAtByLocator.set(locatorOf(item), item.attempt.result.startedAt ?? "");
   }
   const failures = all

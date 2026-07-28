@@ -3,7 +3,7 @@
 // metric.display 可整体覆盖;这里只负责默认。
 
 import type { Verdict } from "../../types.ts";
-import { gapParts } from "../../results/select.ts";
+import { gapParts } from "../../sample/index.ts";
 import { DISPLAY_LOCALES, type LocalizedText, type ReportLocale } from "./locale.ts";
 
 /**
@@ -229,7 +229,7 @@ export function formatReportDateTimeRange(
 
 /**
  * 历史执行的紧凑时距("3d" / "2h" / "5m" / "10s"):自 `startedAt` 起算,渲染时刻由调用方
- * 传入(`nowIso` 缺省当前时刻)——粒度阈值复用 `gapParts`(与曾经的 stale-snapshot message
+ * 传入(`nowIso` 缺省当前时刻)——粒度阈值复用 `gapParts`(与曾经的 stale-run message
  * 同一套单源,见 `results/select.ts`),只是这里的呈现是紧凑单字母,不是完整单词
  * (docs/feature/reports/components/entity-lists/README.md「时效标注」)。
  */
@@ -240,7 +240,7 @@ export function formatHistoricalGap(startedAtIso: string, nowIso: string = new D
 
 // ── 实体列表(ExperimentList / EvalList / AttemptList)共用的判定符 ──
 
-/** passed / failed / errored / skipped 的判定符。 */
+/** passed / failed / errored / unreadable 的判定符。 */
 export function verdictMark(verdict: Verdict): string {
   switch (verdict) {
     case "passed":
@@ -249,7 +249,7 @@ export function verdictMark(verdict: Verdict): string {
       return "✗";
     case "errored":
       return "!";
-    case "skipped":
+    case "unreadable":
       return "–";
   }
 }

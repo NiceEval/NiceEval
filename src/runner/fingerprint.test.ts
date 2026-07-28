@@ -1,8 +1,8 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // 覆盖「缓存」分区新增两行:携带以 attempt 为粒度、未收尾快照是合法来源(见 docs/runner.md
-// 「缓存:指纹去重」)。受控模拟代替真实 `runs:5` + `kill -9`——直接构造"跑到一半"的
+// 「缓存:指纹去重」)。受控模拟代替真实 `attempts: 5` + `kill -9`——直接构造"跑到一半"的
 // priorResults fixture(部分终态 attempt + 缺失序号),断言 planCarry 只把逐条确实终态匹配的
-// 序号规划为携带,缺失的序号必须留给调度真正派发;errored/skipped 永不携带,即使同一个 eval
+// 序号规划为携带,缺失的序号必须留给调度真正派发;errored/unreadable 永不携带,即使同一个 eval
 // 的其它序号是终态——不能因为"这个 (experiment, eval) 组合有过携带"就把它也捎带进去。
 
 import { describe, expect, it } from "vitest";
@@ -22,11 +22,11 @@ function makeEval(id: string): DiscoveredEval {
   return { id, baseDir: "/project", sourcePath, source, test: () => {} };
 }
 
-function makeRun(experimentId: string, selectedEvalIds: string[], runs: number, timeoutMs?: number): AgentRun {
+function makeRun(experimentId: string, selectedEvalIds: string[], attempts: number, timeoutMs?: number): AgentRun {
   return {
     agent: defineAgent({ name: `agent-${experimentId}`, send: async () => ({ events: [], status: "completed" }) }),
     flags: {},
-    runs,
+    attempts,
     earlyExit: false,
     selectedEvalIds,
     experimentId,
@@ -45,7 +45,7 @@ function result(over: Partial<EvalResult> & Pick<EvalResult, "id" | "attempt" | 
 }
 
 describe("planCarry · 携带以 attempt 为粒度", () => {
-  it("runs:5、上一轮只落盘 3 条终态 attempt(序号 1/2/4):只把这 3 个具体序号规划为携带,缺失的 0/3 必须真正派发", async () => {
+  it("attempts: 5、上一轮只落盘 3 条终态 attempt(序号 1/2/4):只把这 3 个具体序号规划为携带,缺失的 0/3 必须真正派发", async () => {
     const evals = [makeEval("e")];
     const run = makeRun("exp", ["e"], 5);
     const fingerprint = await computeFingerprint(evals[0]!, run);
@@ -61,7 +61,7 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([1, 2, 4]));
     expect(plan.carriedResults.map((r) => r.attempt).sort()).toEqual([1, 2, 4]);
-    // 分母 = 携带(3) + 新跑(缺失的 0、3,共 2 个)= 5,与 runs:5 请求的总量一致。
+    // 分母 = 携带(3) + 新跑(缺失的 0、3,共 2 个)= 5,与 attempts: 5 请求的总量一致。
     expect(plan.carriedResults.length + 2).toBe(5);
   });
 
@@ -82,12 +82,12 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
     expect(plan.carriedResults.map((r) => r.attempt)).toEqual([0]);
   });
 
-  it("skipped 判定同样永不携带", async () => {
+  it("unreadable 判定同样永不携带", async () => {
     const evals = [makeEval("e")];
     const run = makeRun("exp", ["e"], 2);
     const fingerprint = await computeFingerprint(evals[0]!, run);
 
-    const priorResults: EvalResult[] = [result({ id: "e", attempt: 0, verdict: "skipped", fingerprint })];
+    const priorResults: EvalResult[] = [result({ id: "e", attempt: 0, verdict: "unreadable", fingerprint })];
 
     const plan = await planCarry(evals, [run], priorResults);
 
@@ -116,7 +116,7 @@ describe("planCarry · 携带以 attempt 为粒度", () => {
     const fingerprint = await computeFingerprint(evals[0]!, run);
 
     // priorResults 的形状与"完整收尾的快照"和"被强杀、缺 completedAt 的未收尾快照"完全相同——
-    // loadLatestResultsPerEval 按落盘的 result.json 逐条读,不检查 snapshot.json 的
+    // loadLatestResultsPerEval 按落盘的 result.json 逐条读,不检查 run.json 的
     // completedAt(见 view/data.ts)。这里直接验证 planCarry 这一侧对这类结果一视同仁。
     const priorResults: EvalResult[] = [result({ id: "e", attempt: 0, verdict: "passed", fingerprint })];
 
@@ -239,68 +239,66 @@ describe("planCarry · timeoutMs 是携带资格判据,不进指纹哈希", () =
   });
 });
 
-// 覆盖「缓存」分区的 provenanceFlags 行:声明为出处记录的 flag 不进指纹,只有这些键取值不同的
-// 历史终态照常携带。fixture 里的历史结果一律按**整袋 flags** 算指纹——那正是声明之前落盘的口径,
-// 这条通道要能把它们救回来(现实反例:隧道 URL 每次重启就换,换一次全部已完成结果作废重跑)。
-describe("planCarry · provenanceFlags 不进指纹", () => {
+describe("planCarry · carry-ignoring-flag", () => {
   const OLD_FLAGS = { memory: "nowledge", endpoint: "https://old.example" };
-  const NEW_FLAGS = { memory: "nowledge", endpoint: "https://new.example" };
+  const NEW_FLAGS = { memory: "nowledge" };
 
-  function runWith(flags: Record<string, string>, provenanceFlags?: string[]): AgentRun {
+  function runWith(flags: globalThis.Record<string, string>): AgentRun {
     return {
       ...makeRun("exp", ["e"], 1),
       flags,
-      ...(provenanceFlags !== undefined ? { provenanceFlags } : {}),
     };
   }
 
-  /** 声明之前的落盘:指纹按整袋 flags 算,快照记下当时那袋 flags。 */
-  async function priorFrom(evalDef: DiscoveredEval, flags: Record<string, string>): Promise<EvalResult> {
+  /** 搬迁前的落盘:指纹按整袋 flags 算,快照记下当时那袋 flags。 */
+  async function priorFrom(evalDef: DiscoveredEval, flags: globalThis.Record<string, string>): Promise<EvalResult> {
     return result({
       id: "e",
       attempt: 0,
       verdict: "passed",
       fingerprint: await computeFingerprint(evalDef, runWith(flags)),
-      experiment: { flags, runs: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
     });
   }
 
-  it("只有 provenance flag 的取值不同时,历史终态照常携带", async () => {
+  it("只差已迁走的 flag 时携带,并留下迁移审计字段", async () => {
     const evals = [makeEval("e")];
     const prior = await priorFrom(evals[0]!, OLD_FLAGS);
 
-    // 没声明:endpoint 变了就是配置变了,全部作废重跑(修改前的行为)。
+    // 不带搬迁出口时，flags 袋子变化会作废历史结果。
     const without = await planCarry(evals, [runWith(NEW_FLAGS)], [prior]);
     expect(without.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
 
-    // 声明之后:同一份历史结果照常携带,不需要重跑一轮来"洗"它,也不动已落盘的文件。
-    const with_ = await planCarry(evals, [runWith(NEW_FLAGS, ["endpoint"])], [prior]);
+    const with_ = await planCarry(evals, [runWith(NEW_FLAGS)], [prior], undefined, undefined, {
+      carryIgnoringFlags: ["endpoint"],
+    });
     expect(with_.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    expect(with_.carriedIgnoringFlagsByResult!.get(prior)).toEqual(["endpoint"]);
   });
 
   it("其余 flag 有任一不同则照旧作废——放行只限声明过的键", async () => {
     const evals = [makeEval("e")];
     const prior = await priorFrom(evals[0]!, OLD_FLAGS);
     // endpoint 声明为 provenance,但 memory 这个真影响行为的 flag 也变了:不能携带。
-    const run = runWith({ memory: "baseline", endpoint: "https://new.example" }, ["endpoint"]);
+    const run = runWith({ memory: "baseline" });
 
-    const plan = await planCarry(evals, [run], [prior]);
+    const plan = await planCarry(evals, [run], [prior], undefined, undefined, { carryIgnoringFlags: ["endpoint"] });
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
   });
 
-  it("声明之后落盘的结果(指纹已按抹掉 provenance 的口径算)在下一次换值后照常携带", async () => {
+  it("迁移携带后重打本次指纹,下一次无需再带出口也会命中", async () => {
     const evals = [makeEval("e")];
-    // 上一轮已经带着声明跑:落盘指纹 = 抹掉 endpoint 之后算的那个。
+    // 上一轮迁移携带后，结果已按 endpoint 移走后的本次口径重打指纹。
     const prior = result({
       id: "e",
       attempt: 0,
       verdict: "passed",
-      fingerprint: await computeFingerprint(evals[0]!, runWith(OLD_FLAGS, ["endpoint"])),
-      experiment: { flags: OLD_FLAGS, runs: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      fingerprint: await computeFingerprint(evals[0]!, runWith(NEW_FLAGS)),
+      experiment: { flags: NEW_FLAGS, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
     });
 
-    const plan = await planCarry(evals, [runWith(NEW_FLAGS, ["endpoint"])], [prior]);
+    const plan = await planCarry(evals, [runWith(NEW_FLAGS)], [prior]);
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
   });
@@ -315,34 +313,34 @@ describe("planCarry · provenanceFlags 不进指纹", () => {
       attempt: 0,
       verdict: "passed",
       fingerprint: await computeFingerprint(evals[0]!, runWith(OLD_FLAGS)),
-      experiment: { flags: MID_FLAGS, runs: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { flags: MID_FLAGS, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
     });
-    const run = runWith(NEW_FLAGS, ["endpoint"]);
+    const run = runWith(NEW_FLAGS);
 
     const withoutHistory = await planCarry(evals, [run], [prior]);
     expect(withoutHistory.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
 
-    const withHistory = await planCarry(evals, [run], [prior], undefined, undefined, new Map([["exp", [OLD_FLAGS]]]));
-    expect(withHistory.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
+    const withHistory = await planCarry(evals, [run], [prior]);
+    expect(withHistory.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
   });
 
-  it("历史候选袋子同样只放行 provenance 键上的差异", async () => {
+  it("历史 flags 除迁移键外仍有差异时不放行", async () => {
     const evals = [makeEval("e")];
     const prior = result({
       id: "e",
       attempt: 0,
       verdict: "passed",
       fingerprint: await computeFingerprint(evals[0]!, runWith({ memory: "baseline", endpoint: "https://old.example" })),
-      experiment: { flags: { memory: "baseline", endpoint: "https://old.example" }, runs: 1, earlyExit: false, selectedEvalIds: ["e"] },
+      experiment: { flags: { memory: "baseline", endpoint: "https://old.example" }, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
     });
     // 历史袋子里 memory=baseline,本次 memory=nowledge:抹掉 endpoint 后仍不相等,不放行。
     const plan = await planCarry(
       evals,
-      [runWith(NEW_FLAGS, ["endpoint"])],
+      [runWith(NEW_FLAGS)],
       [prior],
       undefined,
       undefined,
-      new Map([["exp", [{ memory: "baseline", endpoint: "https://old.example" }]]]),
+      { carryIgnoringFlags: ["endpoint"] },
     );
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
@@ -357,7 +355,9 @@ describe("planCarry · provenanceFlags 不进指纹", () => {
       fingerprint: await computeFingerprint(evals[0]!, runWith(OLD_FLAGS)),
     });
 
-    const plan = await planCarry(evals, [runWith(NEW_FLAGS, ["endpoint"])], [prior]);
+    const plan = await planCarry(evals, [runWith(NEW_FLAGS)], [prior], undefined, undefined, {
+      carryIgnoringFlags: ["endpoint"],
+    });
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toBeUndefined();
   });

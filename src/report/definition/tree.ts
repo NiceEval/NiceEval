@@ -10,17 +10,24 @@
 // 只在 resolve 阶段被懒加载,永远不进渲染路径。
 
 import type { ReactNode } from "react";
-import type { AttemptLocator } from "../../results/locator.ts";
-import type { AttemptEvidence } from "../../results/attempt-evidence.ts";
-import type { Results, Scope } from "../../results/types.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
+import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
+import type { Record, Sample } from "../../record/types.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 import type { ReportInput } from "../model/types.ts";
 import type { ReportMeta } from "./report.ts";
 import type { PanelMode, PanelRow } from "../model/panel.ts";
+import {
+  COMPOSITION_EXPAND,
+  type Composition,
+  type CompositionContext,
+  type Source,
+  type SourceInput,
+} from "../source.ts";
 
 // ───────────────────────── 当前页判别(PageContext) ─────────────────────────
 
-/** scope-input page 的当前页上下文:消费宿主选择的 Scope,没有 locator/evidence。 */
+/** scope-input page 的当前页上下文:消费宿主选择的 Sample,没有 locator/evidence。 */
 export interface ScopePageContext {
   id: string;
   input: "scope";
@@ -47,7 +54,7 @@ export type PageContext = ScopePageContext | AttemptPageContext;
 /** 标准 jsx-runtime 元素形状;text 宿主只认 type / props,不管 $$typeof。 */
 export interface ReportElement {
   type: unknown;
-  props: Record<string, unknown>;
+  props: globalThis.Record<string, unknown>;
   key?: unknown;
 }
 
@@ -100,7 +107,7 @@ export interface TextContext {
    */
   attemptCommand?(locator: AttemptLocator): string;
   /**
-   * 组索引一类「按实验收窄」命令的生成;宿主注入以携带完整上下文(--results / --report /
+   * 组索引一类「按实验收窄」命令的生成;宿主注入以携带完整上下文(--record / --report /
    * --page 与位置参数),默认 `niceeval show --exp <id>`。非契约字段,官方组件内部用。
    */
   experimentCommand(experimentIdPrefix: string): string;
@@ -135,12 +142,12 @@ export interface ResolveContext {
   page: PageContext;
 }
 
-/** 组合组件的上下文:宿主 Scope、结果根完整读取面与规范化后的报告声明。 */
+/** 组合组件的上下文:宿主 Sample、结果根完整读取面与规范化后的报告声明。 */
 export interface ComposeContext {
-  /** 宿主注入的 Scope。 */
-  scope: Scope;
-  /** 结果根完整读取面;历史视图从这里自行挑 Snapshot[]。 */
-  results: Results;
+  /** 宿主注入的 Sample。 */
+  scope: Sample;
+  /** 结果根完整读取面;历史视图从这里自行挑 Run[]。 */
+  results: Record;
   /** 规范化后的报告声明,只读(docs/feature/reports/library/layout.md「自定义组件」)。 */
   report: ReportMeta;
   /** 当前页判别:scope 分支只有 id;attempt 分支带 locator + evidence。 */
@@ -279,14 +286,14 @@ export function deepEqualSpec(a: unknown, b: unknown): boolean {
   if ((protoA !== Object.prototype && protoA !== null) || (protoB !== Object.prototype && protoB !== null)) {
     return false; // 非纯对象(类实例等)按引用比较,=== 已在开头判过
   }
-  const keysA = Object.keys(a as Record<string, unknown>).filter(
-    (k) => (a as Record<string, unknown>)[k] !== undefined,
+  const keysA = Object.keys(a as globalThis.Record<string, unknown>).filter(
+    (k) => (a as globalThis.Record<string, unknown>)[k] !== undefined,
   );
-  const keysB = Object.keys(b as Record<string, unknown>).filter(
-    (k) => (b as Record<string, unknown>)[k] !== undefined,
+  const keysB = Object.keys(b as globalThis.Record<string, unknown>).filter(
+    (k) => (b as globalThis.Record<string, unknown>)[k] !== undefined,
   );
   if (keysA.length !== keysB.length) return false;
-  return keysA.every((k) => deepEqualSpec((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+  return keysA.every((k) => deepEqualSpec((a as globalThis.Record<string, unknown>)[k], (b as globalThis.Record<string, unknown>)[k]));
 }
 
 // ───────────────────────── resolve 管线 ─────────────────────────
@@ -313,15 +320,18 @@ export class ResolveMemo {
   }
 }
 
-/** resolveReportTree 的环境:宿主注入的 Scope / 读取面 / 规范化声明 / 当前页判别。 */
+/** resolveReportTree 的环境:宿主注入的 Sample / 读取面 / 规范化声明 / 当前页判别。 */
 export interface ResolveEnv {
-  scope: Scope;
-  results: Results;
+  scope: Sample;
+  results: Record;
   report: ReportMeta;
   /** 当前渲染的页:scope 分支只有 id;attempt 分支带 locator + evidence。 */
   page: PageContext;
   /** 一次页渲染一份;跨页共享缓存时由宿主显式传同一实例。 */
   memo?: ResolveMemo;
+  /** 报告装载前准备的 JSON 快照；Composition 只能只读这份外部数据。 */
+  data?: Readonly<globalThis.Record<string, unknown>>;
+  signal?: AbortSignal;
 }
 
 /** 官方 spec 组件在 resolve 内取数的记忆化入口;经内部扩展的 ResolveContext 传递。 */
@@ -370,12 +380,45 @@ function bareTextError(value: string | number, path: string[]): Error {
 export async function resolveReportTree(node: ReportNode, env: ResolveEnv): Promise<ReportNode> {
   const memo = env.memo ?? new ResolveMemo();
   const composeCtx: ComposeContext = { scope: env.scope, results: env.results, report: env.report, page: env.page };
-  return resolveNode(node, { memo, composeCtx }, []);
+  return resolveNode(node, {
+    memo,
+    sourceMemo: new Map(),
+    composeCtx,
+    data: freezeData(env.data ?? {}),
+    signal: env.signal ?? new AbortController().signal,
+  }, []);
 }
 
 interface ResolveState {
   memo: ResolveMemo;
+  /** Source 的 page 级缓存：对象身份 × input 对象身份，值始终是 Promise。 */
+  sourceMemo: Map<Source<SourceInput, unknown>, Map<object, Promise<unknown>>>;
   composeCtx: ComposeContext;
+  data: Readonly<globalThis.Record<string, unknown>>;
+  signal: AbortSignal;
+}
+
+function freezeData<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value as globalThis.Record<string, unknown>)) freezeData(child);
+  return Object.freeze(value);
+}
+
+function pageInput(state: ResolveState): SourceInput {
+  return state.composeCtx.page.input === "attempt"
+    ? state.composeCtx.page.evidence
+    : state.composeCtx.scope;
+}
+
+function resolveSource<Content>(state: ResolveState, source: Source<SourceInput, Content>): Promise<Content> {
+  const input = pageInput(state);
+  let byInput = state.sourceMemo.get(source as Source<SourceInput, unknown>);
+  if (!byInput) state.sourceMemo.set(source as Source<SourceInput, unknown>, (byInput = new Map()));
+  const cached = byInput.get(input as object);
+  if (cached) return cached as Promise<Content>;
+  const promise = Promise.resolve().then(() => source.compute(input));
+  byInput.set(input as object, promise);
+  return promise;
 }
 
 async function resolveNode(node: ReportNode | string | number, state: ResolveState, path: string[]): Promise<ReportNode> {
@@ -401,6 +444,21 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
     return { ...node, props: { ...props, children } };
   }
   const compose = composeOf(type);
+  const composition = typeof type === "function"
+    ? (type as Partial<Composition<unknown, SourceInput>>)[COMPOSITION_EXPAND]
+    : undefined;
+  if (typeof composition === "function") {
+    const input = pageInput(state);
+    const ctx: CompositionContext<SourceInput> = {
+      input,
+      data: state.data,
+      page: state.composeCtx.page,
+      signal: state.signal,
+      resolve: <Content>(source: Source<SourceInput, Content>) => resolveSource(state, source),
+    };
+    const expanded = await composition(props, ctx);
+    return resolveNode(expanded as ReportNode, state, [...path, componentLabel(type)]);
+  }
   if (compose) {
     // 组合组件不记忆化:它只装配、不承担取数;数据层的去重由其内部 *Data 调用经 memoFetch 命中。
     const expanded = await compose(props, state.composeCtx);
@@ -420,7 +478,7 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
       const resolved = await state.memo.fetch(resolveFn, input, props, async () =>
         resolveFn(props, ctx),
       );
-      const resolvedProps = { ...(resolved as Record<string, unknown>) };
+      const resolvedProps = { ...(resolved as globalThis.Record<string, unknown>) };
       if (resolvedProps.children !== undefined) {
         resolvedProps.children = await resolveNode(resolvedProps.children as ReportNode, state, [
           ...path,
@@ -562,7 +620,7 @@ export interface TextRenderOptions {
   width?: number;
   /** 下钻命令的生成;宿主注入,默认 `niceeval show @<locator>`(真实可跑的 CLI 语法)。 */
   attemptCommand?: (locator: AttemptLocator) => string;
-  /** 组索引命令的生成;宿主注入以携带 --results / --report / --page 等上下文。 */
+  /** 组索引命令的生成;宿主注入以携带 --record / --report / --page 等上下文。 */
   experimentCommand?: (experimentIdPrefix: string) => string;
   /** chrome 文案的 locale;默认 "en"(`niceeval show` 现有输出不变)。 */
   locale?: ReportLocale;

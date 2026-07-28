@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hashEvalSource, normalizeEvalSource } from "../results/source-hash.ts";
+import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
 import { captureEvalSource } from "./eval-source.ts";
 
 const roots: string[] = [];

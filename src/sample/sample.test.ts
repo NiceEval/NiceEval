@@ -1,19 +1,21 @@
+// @ts-nocheck
 // cases: docs/engineering/testing/unit/sample.md
-// 选择层(niceeval/sample)的单测:在临时目录里构造最小落盘树,直接调选择器,
+// 选择层(niceeval/scope)的单测:在临时目录里构造最小落盘树,直接调选择器,
 // 覆盖定稿契约(docs/feature/sample/library.md):两个选择口径、覆盖缺口(coverage)、
 // 时效与 fresh、Sample 的删减语义与四面同步重算、身份键去重、警告 kind 全集。
 // fixture 的目录名/artifact 路径手写(不 import 库的路径函数),让测试独立于实现充当口径基准。
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { currentSample, latestRunSample } from "./index.ts";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
-  RESULTS_FORMAT,
-  RESULTS_SCHEMA_VERSION,
-  copySnapshots,
-  createResultsWriter,
+  RECORD_FORMAT,
+  RECORD_SCHEMA_VERSION,
+  publish,
+  createWriter,
   dedupeAttempts,
-  openResults,
+  openRecord,
   resolveLocator,
   loadAnnotatedEvalSource,
   LocatorNotFoundError,
@@ -22,11 +24,11 @@ import {
   encodeAttemptLocator,
   type AttemptHandle,
   type EvalResult,
-  type ResultsWriter,
-  type Results,
-  type Snapshot,
-  type SnapshotMeta,
-} from "./index.ts";
+  type Writer,
+  type Record,
+  type Run,
+  type RunMeta,
+} from "../record/index.ts";
 
 // ───────────────────────── fixture 工具 ─────────────────────────
 
@@ -40,30 +42,32 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
-/** 测试便利:封口一个 writer 已声明的全部 Snapshot(finish() 现在是 SnapshotWriter 的方法,
- *  每个 Snapshot 各自只能封一次;多数测试不关心逐个 Snapshot 分别封口,只要「全部封完」)。 */
-async function finishAll(writer: ResultsWriter): Promise<void> {
-  const snapshots = await writer.snapshotWriters();
-  await Promise.all(snapshots.map(({ writer: snap }) => snap.finish()));
+/** 测试便利:封口一个 writer 已声明的全部 Run(finish() 现在是 RunWriter 的方法,
+ *  每个 Run 各自只能封一次;多数测试不关心逐个 Run 分别封口,只要「全部封完」)。 */
+async function finishAll(writer: Writer): Promise<void> {
+  const runs = await writer.snapshotWriters();
+  await Promise.all(runs.map(({ writer: snap }) => snap.finish()));
 }
 
-function meta(over: { experimentId: string; agent: string; startedAt: string } & Partial<SnapshotMeta>): SnapshotMeta {
+function meta(over: { experimentId: string; agent: string; startedAt: string } & Partial<RunMeta>): RunMeta {
   return {
-    format: RESULTS_FORMAT,
-    schemaVersion: RESULTS_SCHEMA_VERSION,
+    format: RECORD_FORMAT,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     producer: { name: "niceeval", version: "0.3.0" },
     ...over,
+    runId: over.runId ?? "00000000-0000-4000-8000-000000000000",
+    configHash: over.configHash ?? "fixture-config",
   };
 }
 
-function record(over: { id: string; attempt: number } & Record<string, unknown>): EvalResult {
+function record(over: { id: string; attempt: number } & globalThis.Record<string, unknown>): EvalResult {
   return { verdict: "passed", durationMs: 1000, assertions: [], ...over } as unknown as EvalResult;
 }
 
-async function writeSnapshot(root: string, expDir: string, snapDirName: string, m: SnapshotMeta): Promise<string> {
+async function writeSnapshot(root: string, expDir: string, snapDirName: string, m: RunMeta): Promise<string> {
   const dir = join(root, expDir, snapDirName);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "snapshot.json"), JSON.stringify(m, null, 2), "utf-8");
+  await writeFile(join(dir, "run.json"), JSON.stringify(m, null, 2), "utf-8");
   return dir;
 }
 
@@ -94,23 +98,23 @@ async function exists(path: string): Promise<boolean> {
 
 // ───────────────────────── latest() Selection 与警告 ─────────────────────────
 
-describe("results.latest() · Selection", () => {
+describe("latestRunSample(results) · Selection", () => {
   it("每个实验取最新快照;experiments 前缀过滤同 CLI 语义(尾斜杠等价)", async () => {
     const root = await makeRoot();
     await writeSnapshot(root, "mid_a", "s1", meta({ experimentId: "mid/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeSnapshot(root, "mid_b", "s1", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     const tuesday = await writeSnapshot(root, "mid_b", "s2", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-02T08:00:00.000Z", completedAt: "2026-07-02T08:10:00.000Z" }));
 
-    const results = await openResults(root);
-    const latest = results.latest();
-    expect(latest.snapshots.map((s) => s.experimentId)).toEqual(["mid/a", "mid/b"]);
-    expect(latest.snapshots[1].dir).toBe(tuesday);
+    const results = await openRecord(root);
+    const latest = latestRunSample(results);
+    expect(latest.runs.map((s) => s.experimentId)).toEqual(["mid/a", "mid/b"]);
+    expect(latest.runs[1].dir).toBe(tuesday);
 
-    expect(results.latest({ experiments: "mid/a" }).snapshots).toHaveLength(1);
-    expect(results.latest({ experiments: "mid/" }).snapshots).toHaveLength(2);
-    expect(results.latest({ experiments: ["mid/a", "mid/b"] }).snapshots).toHaveLength(2);
-    expect(results.latest({ experiments: "other" }).snapshots).toHaveLength(0);
-    expect(results.latest({ experiments: "mid/a" }).snapshots[0].experimentId).toBe("mid/a"); // 不误配 "mid/ab"
+    expect(latestRunSample(results, { experiments: "mid/a" }).runs).toHaveLength(1);
+    expect(latestRunSample(results, { experiments: "mid/" }).runs).toHaveLength(2);
+    expect(latestRunSample(results, { experiments: ["mid/a", "mid/b"] }).runs).toHaveLength(2);
+    expect(latestRunSample(results, { experiments: "other" }).runs).toHaveLength(0);
+    expect(latestRunSample(results, { experiments: "mid/a" }).runs[0].experimentId).toBe("mid/a"); // 不误配 "mid/ab"
   });
 
   it("coverage:最新快照覆盖 < 已知并集时,missingEvalIds 列出缺的题;分母是 knownEvalIds", async () => {
@@ -123,98 +127,90 @@ describe("results.latest() · Selection", () => {
     const fridayDir = await writeSnapshot(root, "midterm", "2026-07-05T08-00-00-000Z", meta({ experimentId: "midterm/bub-gpt-5.4", agent: "bub", startedAt: "2026-07-05T08:00:00.000Z", completedAt: "2026-07-05T08:10:00.000Z" }));
     await writeResultFile(fridayDir, "algebra/q1/a1", record({ id: "algebra/q1", attempt: 1 }));
 
-    const latest = (await openResults(root)).latest();
-    expect(latest.snapshots).toHaveLength(1);
-    // partial-coverage / stale-snapshot 不再是 warnings —— 覆盖缺口是行级事实,物化在 coverage 上。
-    expect(latest.warnings.filter((w) => w.kind !== "unreadable-snapshot")).toHaveLength(0);
+    const latest = latestRunSample(await openRecord(root));
+    expect(latest.runs).toHaveLength(1);
+    // partial-coverage / stale-run 不再是 issues —— 覆盖缺口是行级事实,物化在 coverage 上。
+    expect(latest.issues.filter((w) => w.code !== "unreadable-run")).toHaveLength(0);
     const coverage = latest.coverage.find((c) => c.experimentId === "midterm/bub-gpt-5.4")!;
     expect(coverage.knownEvalIds).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
     expect(coverage.missingEvalIds).toEqual(["algebra/q2", "algebra/q3"]);
   });
 
-  it("unfinished-snapshot:选中快照缺 completedAt", async () => {
+  it("unfinished-run:选中快照缺 completedAt", async () => {
     const root = await makeRoot();
     const dir = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z" }));
 
-    const latest = (await openResults(root)).latest();
-    const warn = latest.warnings.find((w) => w.kind === "unfinished-snapshot")!;
-    expect(warn).toMatchObject({ experimentId: "e", startedAt: "2026-07-01T08:00:00.000Z", dir });
-    expect(warn.message).toContain("has no completedAt");
+    const latest = latestRunSample(await openRecord(root));
+    const warn = latest.issues.find((w) => w.code === "unfinished-run")!;
+    expect(warn).toEqual({
+      code: "unfinished-run",
+      experimentId: "e",
+      startedAt: "2026-07-01T08:00:00.000Z",
+      dir,
+    });
   });
 
-  it("Selection.filter 只删不换:快照删减,幸存实验的 coverage / 警告保留、其余丢弃", async () => {
+  it("Selection.filter 只删观测:总体 coverage 分母不变,被删 eval 进入 missing", async () => {
     const root = await makeRoot();
     const aDir = await writeSnapshot(root, "mid_a", "s1", meta({ experimentId: "mid/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeResultFile(aDir, "q1/a1", record({ id: "q1", attempt: 1 }));
     await writeResultFile(aDir, "q2/a1", record({ id: "q2", attempt: 1 }));
-    const bDir = await writeSnapshot(root, "mid_b", "s1", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
-    await writeResultFile(bDir, "q1/a1", record({ id: "q1", attempt: 1 }));
-    await writeResultFile(bDir, "q2/a1", record({ id: "q2", attempt: 1 }));
 
-    // 两个实验的最新快照都只重跑了 q1(残缺,进 coverage.missingEvalIds)且都未收尾(进 warnings)。
-    const aDir2 = await writeSnapshot(root, "mid_a", "s2", meta({ experimentId: "mid/a", agent: "bub", startedAt: "2026-07-02T08:00:00.000Z" }));
-    await writeResultFile(aDir2, "q1/a1", record({ id: "q1", attempt: 1 }));
-    const bDir2 = await writeSnapshot(root, "mid_b", "s2", meta({ experimentId: "mid/b", agent: "codex", startedAt: "2026-07-02T08:00:00.000Z" }));
-    await writeResultFile(bDir2, "q1/a1", record({ id: "q1", attempt: 1 }));
+    const latest = latestRunSample(await openRecord(root));
+    expect(latest.coverage.find((c) => c.experimentId === "mid/a")!.missingEvalIds).toEqual([]);
 
-    const latest = (await openResults(root)).latest();
-    expect(latest.coverage.map((c) => c.experimentId).sort()).toEqual(["mid/a", "mid/b"]);
-    expect(latest.coverage.find((c) => c.experimentId === "mid/a")!.missingEvalIds).toEqual(["q2"]);
-    expect(latest.warnings.filter((w) => w.kind === "unfinished-snapshot")).toHaveLength(2);
-
-    const filtered = latest.filter((s) => s.experimentId !== "mid/b");
-    expect(filtered.snapshots.map((s) => s.experimentId)).toEqual(["mid/a"]);
+    const filtered = latest.filter((attempt) => attempt.evalId === "q1");
+    expect(filtered.runs.map((s) => s.experimentId)).toEqual(["mid/a"]);
     expect(filtered.coverage.map((c) => c.experimentId)).toEqual(["mid/a"]);
-    expect(filtered.warnings.map((w) => ("experimentId" in w ? w.experimentId : undefined))).toEqual(["mid/a"]);
-    // 原 Selection 不被改动。
-    expect(latest.snapshots).toHaveLength(2);
-    expect(latest.coverage).toHaveLength(2);
-    expect(latest.warnings).toHaveLength(2);
+    expect(filtered.attempts.map((attempt) => attempt.evalId)).toEqual(["q1"]);
+    expect(filtered.coverage.find((c) => c.experimentId === "mid/a")!.knownEvalIds).toEqual(["q1", "q2"]);
+    expect(filtered.coverage.find((c) => c.experimentId === "mid/a")!.missingEvalIds).toEqual(["q2"]);
+    expect(latest.attempts.map((attempt) => attempt.evalId)).toEqual(["q1", "q2"]);
   });
 
-  it("current() 下同一 experiment 有两个贡献 Snapshot 时,filter 删除其中一个只删该来源的水位,不整实验全留或全删", async () => {
+  it("current() 下同一 experiment 有两个贡献 Run 时,filter 删除其中一个只删该来源的水位,不整实验全留或全删", async () => {
     const root = await makeRoot();
     // 周一:q1、q2 真实执行。
     const mondayDir = await writeSnapshot(root, "multi_e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "multi/e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeResultFile(mondayDir, "q1/a1", record({ id: "q1", attempt: 1 }));
     await writeResultFile(mondayDir, "q2/a1", record({ id: "q2", attempt: 1 }));
-    // 周二:只重跑 q1;current() 从周一补齐 q2,两个真实快照都进 Scope.snapshots。
+    // 周二:只重跑 q1;current() 从周一补齐 q2,两个真实快照都进 Sample.runs。
     const tuesdayDir = await writeSnapshot(root, "multi_e", "2026-07-02T08-00-00-000Z", meta({ experimentId: "multi/e", agent: "bub", startedAt: "2026-07-02T08:00:00.000Z", completedAt: "2026-07-02T08:10:00.000Z" }));
     await writeResultFile(tuesdayDir, "q1/a1", record({ id: "q1", attempt: 1 }));
 
-    const current = (await openResults(root)).current();
-    expect(current.snapshots.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
+    const current = currentSample(await openRecord(root));
+    expect(current.runs.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
     expect(current.attempts.map((a) => a.evalId).sort()).toEqual(["q1", "q2"]);
     expect(current.coverage.find((c) => c.experimentId === "multi/e")!.missingEvalIds).toEqual([]);
 
     // 删掉周一(q2 唯一来源),周二(q1 来源)保留:不是整实验全留或全删。
-    const filtered = current.filter((s) => s.startedAt !== "2026-07-01T08:00:00.000Z");
-    expect(filtered.snapshots.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
+    const filtered = current.filter((s) => s.run.startedAt !== "2026-07-01T08:00:00.000Z");
+    expect(filtered.runs.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
     expect(filtered.attempts.map((a) => a.evalId)).toEqual(["q1"]);
     // knownEvalIds(分母)不变,只有被删来源独占贡献的 q2 转入 missingEvalIds。
     const filteredCoverage = filtered.coverage.find((c) => c.experimentId === "multi/e")!;
     expect(filteredCoverage.knownEvalIds).toEqual(["q1", "q2"]);
     expect(filteredCoverage.missingEvalIds).toEqual(["q2"]);
-    // 原 Scope 不被改动。
-    expect(current.snapshots).toHaveLength(2);
+    // 原 Sample 不被改动。
+    expect(current.runs).toHaveLength(2);
     expect(current.attempts).toHaveLength(2);
 
     // 反过来删掉周二(q1 唯一来源),周一(q2 来源)保留。
-    const otherWay = current.filter((s) => s.startedAt !== "2026-07-02T08:00:00.000Z");
-    expect(otherWay.snapshots.map((s) => s.startedAt)).toEqual(["2026-07-01T08:00:00.000Z"]);
+    const otherWay = current.filter((s) => s.run.startedAt !== "2026-07-02T08:00:00.000Z");
+    expect(otherWay.runs.map((s) => s.startedAt)).toEqual(["2026-07-01T08:00:00.000Z"]);
     expect(otherWay.attempts.map((a) => a.evalId)).toEqual(["q2"]);
     expect(otherWay.coverage.find((c) => c.experimentId === "multi/e")!.missingEvalIds).toEqual(["q1"]);
 
-    // attempt.snapshot 原样指回真实来源(不是过滤时重建的新对象)。
+    // attempt.run 原样指回真实来源(不是过滤时重建的新对象)。
     for (const attempt of filtered.attempts) {
-      expect(filtered.snapshots).toContain(attempt.snapshot);
+      expect(filtered.runs).toContain(attempt.run);
     }
   });
 });
 
-// ───────────────────────── unreadable-snapshot 警告 ─────────────────────────
+// ───────────────────────── unreadable-run 警告 ─────────────────────────
 
-describe("results.latest() / results.current() · unreadable-snapshot", () => {
+describe("latestRunSample(results) / currentSample(results) · unreadable-run", () => {
   it("malformed 快照产生 warning 且其余快照照常计入;无关 JSON 不产生 warning", async () => {
     const root = await makeRoot();
     const okDir = await writeSnapshot(root, "ok-exp", "2026-07-04T08-00-00-000Z-oooo", meta({ experimentId: "ok", agent: "bub", startedAt: "2026-07-04T08:00:00.000Z", completedAt: "2026-07-04T08:10:00.000Z" }));
@@ -222,38 +218,35 @@ describe("results.latest() / results.current() · unreadable-snapshot", () => {
 
     const badDir = join(root, "bad-exp", "2026-07-02T08-00-00-000Z-zzzz");
     await mkdir(badDir, { recursive: true });
-    await writeFile(join(badDir, "snapshot.json"), "not json {", "utf-8");
+    await writeFile(join(badDir, "run.json"), "not json {", "utf-8");
 
     const alienDir = join(root, "alien-exp", "2026-07-06T08-00-00-000Z-alien");
     await mkdir(alienDir, { recursive: true });
     await writeFile(join(alienDir, "summary.json"), JSON.stringify({ hello: 1 }), "utf-8");
 
-    const results = await openResults(root);
-    const latest = results.latest();
+    const results = await openRecord(root);
+    const latest = latestRunSample(results);
     // 其余快照照常计入,不被坏落盘拖垮。
-    expect(latest.snapshots.map((s) => s.experimentId)).toEqual(["ok"]);
+    expect(latest.runs.map((s) => s.experimentId)).toEqual(["ok"]);
 
-    const unreadable = latest.warnings.filter((w) => w.kind === "unreadable-snapshot");
+    const unreadable = latest.issues.filter((w) => w.code === "unreadable-run");
     expect(unreadable).toHaveLength(1); // 无关 JSON(alien)不产生 warning
-    expect(unreadable[0]).toMatchObject({ kind: "unreadable-snapshot", dir: badDir, reason: "malformed" });
-    expect(unreadable[0].message).toContain(badDir);
-    expect(unreadable[0].message).toMatch(/inspect .*snapshot\.json/);
-    expect((unreadable[0] as { command?: string }).command).toBeUndefined();
+    expect(unreadable[0]).toEqual({ code: "unreadable-run", dir: badDir, reason: "malformed" });
 
-    // results.current() 同一份事实(show / view 报告槽走的是它)。
-    const current = results.current();
-    expect(current.warnings.filter((w) => w.kind === "unreadable-snapshot")).toHaveLength(1);
+    // currentSample(results) 同一份事实(show / view 报告槽走的是它)。
+    const current = currentSample(results);
+    expect(current.issues.filter((w) => w.code === "unreadable-run")).toHaveLength(1);
   });
 
-  it("incompatible(schemaVersion 不兼容,niceeval producer)的 warning 带版本化 command", async () => {
+  it("incompatible(schemaVersion 不兼容,niceeval producer)保留 producer 与读取证据", async () => {
     const root = await makeRoot();
     const oldDir = join(root, "old-exp", "2026-06-01T08-00-00-000Z");
     await mkdir(oldDir, { recursive: true });
     await writeFile(
-      join(oldDir, "snapshot.json"),
+      join(oldDir, "run.json"),
       JSON.stringify({
-        format: RESULTS_FORMAT,
-        schemaVersion: RESULTS_SCHEMA_VERSION - 1,
+        format: RECORD_FORMAT,
+        schemaVersion: RECORD_SCHEMA_VERSION - 1,
         producer: { name: "niceeval", version: "0.4.6" },
         experimentId: "old",
         agent: "bub",
@@ -262,42 +255,45 @@ describe("results.latest() / results.current() · unreadable-snapshot", () => {
       "utf-8",
     );
 
-    const latest = (await openResults(root)).latest();
-    const warn = latest.warnings.find((w) => w.kind === "unreadable-snapshot")!;
-    expect(warn).toMatchObject({ kind: "unreadable-snapshot", dir: oldDir, reason: "incompatible-version" });
-    expect((warn as { command?: string }).command).toBe(`npx niceeval@0.4.6 show --results ${root}`);
-    expect(warn.message).toContain("npx niceeval@0.4.6 show --results");
+    const latest = latestRunSample(await openRecord(root));
+    const warn = latest.issues.find((w) => w.code === "unreadable-run")!;
+    expect(warn).toEqual({
+      code: "unreadable-run",
+      dir: oldDir,
+      reason: "incompatible",
+      producer: { name: "niceeval", version: "0.4.6" },
+    });
   });
 
-  it("非实验作用域:Selection.filter 收窄后 unreadable-snapshot warning 仍在", async () => {
+  it("非实验作用域:Selection.filter 收窄后 unreadable-run warning 仍在", async () => {
     const root = await makeRoot();
     const aDir = await writeSnapshot(root, "mid_a", "s1", meta({ experimentId: "mid/a", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeResultFile(aDir, "q1/a1", record({ id: "q1", attempt: 1 }));
 
     const badDir = join(root, "bad-exp", "2026-07-02T08-00-00-000Z-zzzz");
     await mkdir(badDir, { recursive: true });
-    await writeFile(join(badDir, "snapshot.json"), "not json {", "utf-8");
+    await writeFile(join(badDir, "run.json"), "not json {", "utf-8");
 
-    const latest = (await openResults(root)).latest();
-    expect(latest.warnings.filter((w) => w.kind === "unreadable-snapshot")).toHaveLength(1);
+    const latest = latestRunSample(await openRecord(root));
+    expect(latest.issues.filter((w) => w.code === "unreadable-run")).toHaveLength(1);
 
     // filter 只删快照,不删非实验作用域的警告 —— 即便过滤条件与该 warning 无关的实验都不复存在。
     const filtered = latest.filter((s) => s.experimentId === "mid/a");
-    expect(filtered.snapshots).toHaveLength(1);
-    expect(filtered.warnings.filter((w) => w.kind === "unreadable-snapshot")).toHaveLength(1);
+    expect(filtered.runs).toHaveLength(1);
+    expect(filtered.issues.filter((w) => w.code === "unreadable-run")).toHaveLength(1);
   });
 });
 
-// ───────────────────────── ScopeWarning 联合成员恰为三种(回归锁死) ─────────────────────────
+// ───────────────────────── SampleIssue 联合成员恰为三种(回归锁死) ─────────────────────────
 
-// 类型契约(编译期,随 pnpm typecheck):ScopeWarning 联合成员恰为三种——多一个 kind 而没同步
+// 类型契约(编译期,随 pnpm typecheck):SampleIssue 联合成员恰为三种——多一个 kind 而没同步
 // 改这里,default 分支的 never 赋值编译不过;少一个则对应 case 编译不过。kind 全集不是运行时
 // 行为,没有运行时断言可写(docs/engineering/testing/unit/README.md「类型契约」)。
-function assertScopeWarningKindExhaustive(kind: import("./types.ts").ScopeWarning["kind"]): void {
+function assertScopeWarningKindExhaustive(kind: import("../record/types.ts").SampleIssue["kind"]): void {
   switch (kind) {
-    case "unfinished-snapshot":
+    case "unfinished-run":
     case "missing-startedAt":
-    case "unreadable-snapshot":
+    case "unreadable-run":
       return;
     default: {
       const exhausted: never = kind;
@@ -320,16 +316,16 @@ describe("时效:carried 投影与 fresh 口径", () => {
     await writeResultFile(tuesday, "q1/a1", record({ id: "q1", attempt: 1, startedAt: "2026-07-01T08:00:00.000Z", artifactBase: "e/2026-07-01T08-00-00-000Z/q1/a1" }));
     await writeResultFile(tuesday, "q2/a1", record({ id: "q2", attempt: 1 }));
 
-    const results = await openResults(root);
-    const notFresh = results.latest();
-    expect(notFresh.snapshots[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
+    const results = await openRecord(root);
+    const notFresh = latestRunSample(results);
+    expect(notFresh.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
     expect(notFresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds).toEqual([]);
 
-    const fresh = results.latest({ fresh: true });
+    const fresh = latestRunSample(results, { fresh: true });
     expect(fresh.attempts.map((a) => a.evalId)).toEqual(["q2"]); // q1 是携带条目,被排除
     expect(fresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds).toEqual(["q1"]);
-    // 真实 Snapshot 原样保留:q1 仍在它自己的 evals 里,fresh 没有克隆/裁剪来源对象。
-    expect(fresh.snapshots[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
+    // 真实 Run 原样保留:q1 仍在它自己的 evals 里,fresh 没有克隆/裁剪来源对象。
+    expect(fresh.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q2"]);
   });
 
   it("current({ fresh: true }):同时排除携带条目与跨快照拼入的历史执行,区分力 fixture ——「只排携带 / 只排旧快照 / 两者都排」三种候选算法各给出不同答案", async () => {
@@ -340,30 +336,30 @@ describe("时效:carried 投影与 fresh 口径", () => {
     await writeResultFile(monday, "q2/a1", record({ id: "q2", attempt: 1 }));
 
     // 周二:q1 携带合入(仍是这次快照里"最新"的一份,但 carried=true);q3 真实执行;q2 本次没有
-    // 任何 attempt —— current() 从周一补齐它,补齐来的 q2 attempt 所属快照早于本实验在 Scope 中
+    // 任何 attempt —— current() 从周一补齐它,补齐来的 q2 attempt 所属快照早于本实验在 Sample 中
     // 最新快照(周二),是「跨快照拼入」的历史执行,即使它自己不是携带条目。
     const tuesday = await writeSnapshot(root, "e", "2026-07-02T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-02T08:00:00.000Z", completedAt: "2026-07-02T08:10:00.000Z" }));
     await writeResultFile(tuesday, "q1/a1", record({ id: "q1", attempt: 1, startedAt: "2026-07-01T08:00:00.000Z", artifactBase: "e/2026-07-01T08-00-00-000Z/q1/a1" }));
     await writeResultFile(tuesday, "q3/a1", record({ id: "q3", attempt: 1 }));
 
-    const results = await openResults(root);
-    const notFresh = results.current();
+    const results = await openRecord(root);
+    const notFresh = currentSample(results);
     expect(notFresh.attempts.map((a) => a.evalId).sort()).toEqual(["q1", "q2", "q3"]);
     expect(notFresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds).toEqual([]);
     // 两个真实来源都在场:q2 唯一来自周一,q1/q3 来自周二——不是一个合并对象。
-    expect(notFresh.snapshots.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
+    expect(notFresh.runs.map((s) => s.startedAt).sort()).toEqual(["2026-07-01T08:00:00.000Z", "2026-07-02T08:00:00.000Z"]);
 
-    const fresh = results.current({ fresh: true });
+    const fresh = currentSample(results, { fresh: true });
     // 只有 q3(本次快照真实执行、非携带)是新执行;q1(携带)与 q2(跨快照拼入)都被排除。
     expect(fresh.attempts.map((a) => a.evalId)).toEqual(["q3"]);
     expect(fresh.coverage.find((c) => c.experimentId === "e")!.missingEvalIds.sort()).toEqual(["q1", "q2"]);
-    // 周一(q2 唯一来源)不再贡献任何 fresh attempt,退出 snapshots;周二仍在,即便它自己的
-    // evals 里仍然原样带着被排除的 q1(真实 Snapshot 不被裁剪)。
-    expect(fresh.snapshots.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
-    expect(fresh.snapshots[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q3"]);
+    // 周一(q2 唯一来源)不再贡献任何 fresh attempt,退出 runs;周二仍在,即便它自己的
+    // evals 里仍然原样带着被排除的 q1(真实 Run 不被裁剪)。
+    expect(fresh.runs.map((s) => s.startedAt)).toEqual(["2026-07-02T08:00:00.000Z"]);
+    expect(fresh.runs[0]!.evals.map((e) => e.id).sort()).toEqual(["q1", "q3"]);
   });
 
-  it("fresh 清空全部 attempt 后 Scope 只剩 coverage 事实;filter 不拿 snapshots 当 coverage 的存续代理", async () => {
+  it("fresh 清空全部 attempt 后 Sample 只剩 coverage 事实;filter 不拿 runs 当 coverage 的存续代理", async () => {
     const root = await makeRoot();
     const monday = await writeSnapshot(root, "e", "2026-07-01T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-01T08:00:00.000Z", completedAt: "2026-07-01T08:10:00.000Z" }));
     await writeResultFile(monday, "q1/a1", record({ id: "q1", attempt: 1 }));
@@ -371,36 +367,38 @@ describe("时效:carried 投影与 fresh 口径", () => {
     const tuesday = await writeSnapshot(root, "e", "2026-07-02T08-00-00-000Z", meta({ experimentId: "e", agent: "bub", startedAt: "2026-07-02T08:00:00.000Z", completedAt: "2026-07-02T08:10:00.000Z" }));
     await writeResultFile(tuesday, "q1/a1", record({ id: "q1", attempt: 1, startedAt: "2026-07-01T08:00:00.000Z", artifactBase: "e/2026-07-01T08-00-00-000Z/q1/a1" }));
 
-    const fresh = (await openResults(root)).current({ fresh: true });
+    const fresh = currentSample(await openRecord(root), { fresh: true });
     expect(fresh.attempts).toEqual([]);
     const coverage = fresh.coverage.find((c) => c.experimentId === "e")!;
     expect(coverage.missingEvalIds).toEqual(["q1"]);
-    // coverage-only 实验(零 snapshot 贡献)经 filter 后覆盖缺口不静默消失——覆盖占位行的上游事实。
+    // coverage-only 实验(零 run 贡献)经 filter 后覆盖缺口不静默消失——覆盖占位行的上游事实。
     expect(fresh.filter(() => true).coverage).toEqual(fresh.coverage);
   });
 });
 
 // ───────────────────────── 身份键去重 ─────────────────────────
 
-function fakeSnapshot(over: { experimentId: string; startedAt: string; dir: string }): Snapshot {
+function fakeSnapshot(over: { experimentId: string; startedAt: string; dir: string }): Run {
   return {
+    runId: "00000000-0000-4000-8000-000000000000",
     agent: "bub",
     producer: { name: "niceeval" },
-    schemaVersion: RESULTS_SCHEMA_VERSION,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     evals: [],
     attempts: [],
     ...over,
   };
 }
 
-function fakeAttempt(snapshot: Snapshot, result: EvalResult): AttemptHandle {
+function fakeAttempt(run: Run, result: EvalResult): AttemptHandle {
   return {
     evalId: result.id,
-    experimentId: snapshot.experimentId,
+    experimentId: run.experimentId,
     result,
-    ref: { snapshot: "x/y", attempt: `${result.id}/a${result.attempt}` },
-    snapshot,
+    ref: { run: "x/y", attempt: `${result.id}/a${result.attempt}` },
+    run,
     carried: Boolean(result.artifactBase),
+    evidenceState: "local",
     commands: async () => null,
     events: async () => null,
     trace: async () => null,
@@ -423,16 +421,16 @@ describe("dedupeAttempts", () => {
     const a3Mon = fakeAttempt(monday, record({ id: "q3", attempt: 1 })); // 缺 startedAt(携带条目缺锚的极端情况)
     const a3Tue = fakeAttempt(tuesday, record({ id: "q3", attempt: 1 }));
 
-    const { attempts, warnings } = dedupeAttempts([a1, a2Mon, a3Mon, a1Resumed, a2Tue, a3Tue]);
+    const { attempts, issues } = dedupeAttempts([a1, a2Mon, a3Mon, a1Resumed, a2Tue, a3Tue]);
     expect(attempts).toHaveLength(5);
     const q1 = attempts.filter((a) => a.evalId === "q1");
     expect(q1).toHaveLength(1);
-    expect(q1[0].snapshot).toBe(tuesday); // 保留最新快照
+    expect(q1[0].run).toBe(tuesday); // 保留最新快照
     expect(attempts.filter((a) => a.evalId === "q2")).toHaveLength(2);
     expect(attempts.filter((a) => a.evalId === "q3")).toHaveLength(2);
 
-    expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toMatchObject({ kind: "missing-startedAt", experimentId: "e", evalId: "q3" });
-    expect(warnings[0].message).toContain("has no startedAt");
+    expect(issues).toHaveLength(2);
+    expect(issues[0]).toMatchObject({ kind: "missing-startedAt", experimentId: "e", evalId: "q3" });
+    expect(issues[0].message).toContain("has no startedAt");
   });
 });

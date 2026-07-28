@@ -30,7 +30,7 @@ export type { UiMessageStreamAgentOptions, UIMessageLike, UIMessagePartLike } fr
 
 // 两种 OpenAI 响应形状(不限于 OpenAI 官方,任何声明兼容这两种协议形状的服务都能用)的
 // 官方转换器:整段响应 → Turn,零映射。
-export { fromChatCompletion, fromResponses } from "./openai-compat.ts";
+export { turnFromChatCompletion, turnFromResponses } from "./openai-compat.ts";
 export type {
   ChatCompletionLike,
   ChatCompletionMessageLike,
@@ -45,7 +45,7 @@ export type {
 } from "./openai-compat.ts";
 
 // SDK 原生事件流 → 标准事件的官方转换器(无侵入 adapter 只剩传输粘合)+ 通用 SSE 读帧器。
-export { sseJsonFrames, fromClaudeSdkMessages, fromPiAgentEvents, fromCodexThreadEvents } from "./sdk-streams.ts";
+export { sseJsonFrames, createClaudeSdkEventStream, createPiAgentEventStream, createCodexThreadEventStream } from "./sdk-streams.ts";
 export type {
   SseFrameCursor,
   ClaudeSdkMessageLike,
@@ -57,7 +57,7 @@ export type {
 } from "./sdk-streams.ts";
 
 // LangGraph 官方事件流转换器(不绑定 transport,不提供 langGraphAgent 工厂)。
-export { fromLangGraphEvents } from "./langgraph.ts";
+export { createLangGraphEventStream } from "./langgraph.ts";
 export type { LangGraphEventLike, LangGraphContentBlockLike, LangGraphStream } from "./langgraph.ts";
 
 // 通用「拼装方式」件:逐帧驱动循环、逐 token/参数增量累加器。见 docs-site/zh/tutorials/write-send.mdx——
@@ -69,7 +69,7 @@ export type { FrameReducer, FrameHook, DeltaOp, DeltaStreamSpec } from "./stream
 
 // tracing 管线的内置实现 aiSdkOtel() 在 `niceeval/adapter/otel`(独立子路径,不从这里
 // re-export):OTel 三件套是可选 peer 依赖,只有 import 那个入口的项目才需要安装。
-export { fromAiSdk, aiSdkAgent } from "./ai-sdk.ts";
+export { turnFromAiSdk, aiSdkAgent } from "./ai-sdk.ts";
 export type {
   AiSdkAgentOptions,
   AiSdkGenerateContext,

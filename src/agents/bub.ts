@@ -338,7 +338,7 @@ export function bubAgent(config?: BubConfig): Agent {
       const sessionId = ctx.session.id ?? `fe-${sb.sandboxId}-${randomUUID().slice(0, 8)}`;
       ctx.session.capture(sessionId);
 
-      const env: Record<string, string> = {
+      const env: globalThis.Record<string, string> = {
         BUB_API_KEY: getApiKey(),
         BUB_API_BASE: getApiBase(),
         BUB_HOME: bubHome,

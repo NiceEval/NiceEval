@@ -1,7 +1,7 @@
 // 站点组件族(HeroCard / ScopeWarnings / TraceWaterfall)的 text 面:同一份算好的数据,
 // 渲染成终端字符(niceeval show 的形态)。零 react、零 IO、纯同步。
 
-import type { HeroData, ScopeWarning, SnapshotDiagnosticsData, TraceWaterfallRow } from "../../model/types.ts";
+import type { HeroData, SampleIssue, SnapshotDiagnosticsData, TraceWaterfallRow } from "../../model/types.ts";
 import type { LocalizedText } from "../../model/locale.ts";
 import type { TextContext } from "../../definition/tree.ts";
 import { countText, localeText, resolveLocalizedText } from "../../model/locale.ts";
@@ -30,7 +30,7 @@ export function heroCardText(title: LocalizedText, data: HeroData, ctx: TextCont
       ? localeText(locale, "hero.noRuns")
       : [
           localeText(locale, "hero.lastRun", { time: formatDateTimeMinute(data.latestStartedAt) }),
-          ...(data.snapshots > 1 ? [localeText(locale, "hero.composedSnapshots", { n: data.snapshots })] : []),
+          ...(data.runs > 1 ? [localeText(locale, "hero.composedSnapshots", { n: data.runs })] : []),
         ].join(" · ");
   return `${resolveLocalizedText(title, locale)}\n${meta}`;
 }
@@ -40,9 +40,9 @@ export function heroCardText(title: LocalizedText, data: HeroData, ctx: TextCont
  * 多组时首行 "! <分类计数汇总>";每组一行组头 "! <标题> — <徽标> → <组头命令>",其下缩进
  * 逐条原样打印 message(已以下一步收尾,不截断掉尾段)。空警告集零输出。
  */
-export function scopeWarningsText(warnings: readonly ScopeWarning[], ctx: TextContext): string {
-  if (warnings.length === 0) return "";
-  const { summary, groups } = groupScopeWarnings(warnings, ctx.locale);
+export function scopeWarningsText(issues: readonly SampleIssue[], ctx: TextContext): string {
+  if (issues.length === 0) return "";
+  const { summary, groups } = groupScopeWarnings(issues, ctx.locale);
   const lines: string[] = [];
   // 汇总行只在多组时打印;单组时组头即汇总,不另起一行(web 面则恒以汇总行作外层 <summary>)。
   if (groups.length > 1) lines.push(`! ${summary}`);
@@ -50,14 +50,14 @@ export function scopeWarningsText(warnings: readonly ScopeWarning[], ctx: TextCo
     const badges = group.badges.length > 0 ? ` — ${group.badges.map((b) => b.text).join(" · ")}` : "";
     const command = group.headCommand !== null ? ` → ${group.headCommand}` : "";
     lines.push(`! ${group.title}${badges}${command}`);
-    for (const w of group.warnings) lines.push(`!   ${w.message}`);
+    for (const notice of group.issues) lines.push(`!   ${notice.detail}`);
   }
   return lines.join("\n");
 }
 
 /**
  * SnapshotDiagnostics 的 text 面:按来源分组(../snapshot-diagnostics.ts,与 web 面共用),
- * 同构但不折叠——先打印汇总,再按 experiment → Snapshot 打印来源、时距、每条记录的 level、
+ * 同构但不折叠——先打印汇总,再按 experiment → Run 打印来源、时距、每条记录的 level、
  * message、count 与 command。单诊断快照退化成一行,与 web 面同一份聚合层保证行为一致。
  * 空诊断集零输出。
  */

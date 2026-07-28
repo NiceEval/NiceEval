@@ -1,5 +1,5 @@
 // 本地结果查看器入口:只做编排与对外导出。
-// 站点管线(planSite/writeSite,server 与 --out 的唯一联系面)在 site.ts,读取(openResults)
+// 站点管线(planSite/writeSite,server 与 --out 的唯一联系面)在 site.ts,读取(openRecord)
 // 与统计(官方计算函数)在 data.ts,HTTP 宿主在 server.ts,server/前端共用的数据契约在
 // shared/types.ts。
 
@@ -27,29 +27,29 @@ export {
 /**
  * view 的输入语义(docs/feature/reports/view.md「打开与收窄」):位置参数只有一种含义——
  * eval id 前缀,与 show 一致,含义不随文件系统状态改变(路径样子的位置参数只会按前缀报无匹配)。
- * 结果根经 `--results <dir>` 递入;单开一份快照经 `--snapshot <file>` 递入,文件不可读时
+ * 记录根经 `--record <dir>` 递入;单开一份 Run 经 `--run <file>` 递入,文件不可读时
  * 命令失败(扫描模式对坏快照只跳过)。两个来源互斥。
  */
 export function resolveViewInput(
   cwd: string,
   positionals: string[],
-  opts: { results?: string; snapshot?: string } = {},
+  opts: { record?: string; run?: string } = {},
 ): { input?: string; patterns: string[] } {
-  const { results, snapshot } = opts;
-  if (results !== undefined && snapshot !== undefined) {
+  const { record, run } = opts;
+  if (record !== undefined && run !== undefined) {
     throw new ViewInputError(
-      "--results and --snapshot are mutually exclusive: --results scans a results root, --snapshot opens exactly one snapshot file.",
+      "--record and --run are mutually exclusive: --record scans a record root, --run opens exactly one run file.",
     );
   }
-  if (results !== undefined) {
-    const dir = resolve(cwd, results);
+  if (record !== undefined) {
+    const dir = resolve(cwd, record);
     if (!existsSync(dir)) {
-      throw new ViewInputError(`Results directory not found: ${dir}`);
+      throw new ViewInputError(`Record directory not found: ${dir}`);
     }
     return { input: dir, patterns: positionals };
   }
-  if (snapshot !== undefined) {
-    const file = resolve(cwd, snapshot);
+  if (run !== undefined) {
+    const file = resolve(cwd, run);
     let isFile = false;
     try {
       isFile = statSync(file).isFile();
@@ -58,7 +58,7 @@ export function resolveViewInput(
     }
     if (!isFile) {
       throw new ViewInputError(
-        `--snapshot expects a readable snapshot file, got: ${file}. Pass the snapshot.json of one run, or scan a results root with --results <dir>.`,
+        `--run expects a readable run file, got: ${file}. Pass the run.json of one run, or scan a record root with --record <dir>.`,
       );
     }
     return { input: file, patterns: positionals };

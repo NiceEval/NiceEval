@@ -2,8 +2,8 @@
 // niceeval view 的报告槽装载语义(docs/feature/reports/architecture.md「Selection 是计算入口」
 // 与裁决记录 6;公开行为准绳 docs-site/zh/tutorials/viewing-results.mdx / custom-reports.mdx)。
 // 覆盖(「view 数据装载(ViewScan)」类别,见 unit/reports.md 覆盖规范):
-// - 输入语义:位置参数只表示 eval id 前缀(不随文件系统状态改变),结果根走 --results,
-//   单开一份快照走 --snapshot(文件不可读时失败),--results/--snapshot 互斥;
+// - 输入语义:位置参数只表示 eval id 前缀(不随文件系统状态改变),记录根走 --record,
+//   单开一份 Run 走 --run(文件不可读时失败),--record/--run 互斥;
 // - 组合语义:位置前缀收窄证据室(attemptsByBase/artifactDirs/attemptPages.locators),
 //   不收窄时的对照;前缀/实验匹配不到直说;
 // - 报告槽恒在:裸跑填充内建报告(三页声明序),--report 整槽替换不影响证据室索引,
@@ -16,7 +16,7 @@
 // 渲染出的 HTML 结构、终端/web 双面逐字比对、--out 导出产物与本地 server 的进程级行为
 // 归 docs/engineering/testing/e2e/report.md §4/§5 对真实产物验收,不在本层断言。
 //
-// fixture 直接写新布局(<expDir>/<snapDir>/snapshot.json + <evalId>/a<n>/result.json),
+// fixture 直接写新布局(<expDir>/<snapDir>/run.json + <evalId>/a<n>/result.json),
 // 依据是 docs/feature/record/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
 
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
@@ -29,7 +29,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ReportLoadError } from "../../dist/report/runtime/load.js";
 import { ViewInputError, loadViewScan } from "./data.ts";
 import { resolveViewInput } from "./index.ts";
-import { RESULTS_FORMAT, RESULTS_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
+import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 
 const EXAM_REPORT = resolve(__dirname, "../../test/fixtures/report/exam-report.tsx");
 
@@ -55,7 +55,7 @@ interface SnapshotOpts {
   startedAt: string;
 }
 
-/** 写一份新布局快照:snapshot.json + 各 attempt 的 result.json。返回快照目录绝对路径。 */
+/** 写一份新布局快照:run.json + 各 attempt 的 result.json。返回快照目录绝对路径。 */
 async function writeSnapshot(
   root: string,
   expDirName: string,
@@ -66,15 +66,17 @@ async function writeSnapshot(
   const dir = join(root, expDirName, snapDirName);
   await mkdir(dir, { recursive: true });
   const meta = {
-    format: RESULTS_FORMAT,
-    schemaVersion: RESULTS_SCHEMA_VERSION,
+    format: RECORD_FORMAT,
+    schemaVersion: RECORD_SCHEMA_VERSION,
     producer: { name: "niceeval", version: "0.4.6" },
+    runId: `${snapDirName}-0000-4000-8000-000000000000`,
     experimentId: opts.experimentId,
     agent: opts.agent ?? "bub",
     startedAt: opts.startedAt,
+    configHash: "fixture-config",
     completedAt: opts.startedAt,
   };
-  await writeFile(join(dir, "snapshot.json"), JSON.stringify(meta, null, 2), "utf-8");
+  await writeFile(join(dir, "run.json"), JSON.stringify(meta, null, 2), "utf-8");
   for (const r of results) {
     const attemptDir = join(dir, r.id, `a${r.attempt ?? 0}`);
     await mkdir(attemptDir, { recursive: true });
@@ -103,7 +105,7 @@ async function seedRoot(): Promise<string> {
 describe("resolveViewInput · 输入语义", () => {
   it("位置参数只表示 eval id 前缀:文件与目录路径不改变含义", async () => {
     const root = await seedRoot();
-    const file = join(root, "compare_bub", "2026-07-08T10-00-00-000Z", "snapshot.json");
+    const file = join(root, "compare_bub", "2026-07-08T10-00-00-000Z", "run.json");
     // 恰好是存在文件/目录的位置参数也照常当前缀(后续按「无匹配」报错,不做模糊猜测)。
     expect(resolveViewInput(root, [file])).toEqual({ patterns: [file] });
     expect(resolveViewInput(root, ["compare_bub"])).toEqual({ patterns: ["compare_bub"] });
@@ -113,30 +115,30 @@ describe("resolveViewInput · 输入语义", () => {
     expect(resolveViewInput(root, [])).toEqual({ patterns: [] });
   });
 
-  it("--snapshot 单开一份快照文件;文件不可读时失败(与扫描模式的跳过相反)", async () => {
+  it("--run 单开一份快照文件;文件不可读时失败(与扫描模式的跳过相反)", async () => {
     const root = await seedRoot();
-    const file = join(root, "compare_bub", "2026-07-08T10-00-00-000Z", "snapshot.json");
-    expect(resolveViewInput(root, [], { snapshot: file })).toEqual({ input: file, patterns: [] });
-    expect(() => resolveViewInput(root, [], { snapshot: join(root, "nope.json") })).toThrow(ViewInputError);
-    expect(() => resolveViewInput(root, [], { snapshot: join(root, "nope.json") })).toThrow(/--snapshot/);
+    const file = join(root, "compare_bub", "2026-07-08T10-00-00-000Z", "run.json");
+    expect(resolveViewInput(root, [], { run: file })).toEqual({ input: file, patterns: [] });
+    expect(() => resolveViewInput(root, [], { run: join(root, "nope.json") })).toThrow(ViewInputError);
+    expect(() => resolveViewInput(root, [], { run: join(root, "nope.json") })).toThrow(/--run/);
     // 目录不是快照文件。
-    expect(() => resolveViewInput(root, [], { snapshot: join(root, "compare_bub") })).toThrow(/--snapshot/);
+    expect(() => resolveViewInput(root, [], { run: join(root, "compare_bub") })).toThrow(/--run/);
   });
 
-  it("--results 指向不存在的目录:直说", async () => {
+  it("--record 指向不存在的目录:直说", async () => {
     const root = await seedRoot();
-    expect(() => resolveViewInput(root, [], { results: join(root, "nope") })).toThrow(/Results directory not found/);
+    expect(() => resolveViewInput(root, [], { record: join(root, "nope") })).toThrow(/Record directory not found/);
   });
 
-  it("--results 换结果根,位置参数仍是前缀", async () => {
+  it("--record 换记录根,位置参数仍是前缀", async () => {
     const root = await seedRoot();
-    expect(resolveViewInput("/elsewhere", ["weather"], { results: root })).toEqual({ input: root, patterns: ["weather"] });
+    expect(resolveViewInput("/elsewhere", ["weather"], { record: root })).toEqual({ input: root, patterns: ["weather"] });
   });
 
-  it("--results 与 --snapshot 互斥:报错直说", async () => {
+  it("--record 与 --run 互斥:报错直说", async () => {
     const root = await seedRoot();
-    const file = join(root, "compare_bub", "2026-07-08T10-00-00-000Z", "snapshot.json");
-    expect(() => resolveViewInput(root, [], { results: root, snapshot: file })).toThrow(/mutually exclusive/);
+    const file = join(root, "compare_bub", "2026-07-08T10-00-00-000Z", "run.json");
+    expect(() => resolveViewInput(root, [], { record: root, run: file })).toThrow(/mutually exclusive/);
   });
 });
 
@@ -259,10 +261,10 @@ describe("loadViewScan · 外壳标题与 ReportLink.icon", () => {
     ]);
   });
 
-  it("无 def.title 且快照无 name:标题落内置文案「Eval 运行结果 / Eval Results」,不再是产品名", async () => {
+  it("无 def.title 且快照无 name:标题落内置文案「Eval 运行结果 / Eval Record」,不再是产品名", async () => {
     const root = await seedRoot(); // seedRoot 的快照都没有 name
     const scan = await loadViewScan(root);
-    expect(scan.viewData.report?.title).toEqual({ en: "Eval Results", "zh-CN": "Eval 运行结果" });
+    expect(scan.viewData.report?.title).toEqual({ en: "Eval Record", "zh-CN": "Eval 运行结果" });
   });
 });
 

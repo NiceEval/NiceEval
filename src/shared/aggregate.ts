@@ -6,11 +6,11 @@ import type { Usage } from "../o11y/types.ts";
 import type { EvalResult, ExperimentRunInfo } from "../runner/types.ts";
 import type { Verdict } from "../scoring/types.ts";
 
-/** 明细行排序:失败最靠前(failed > errored > skipped > passed 的紧急程度)。 */
-export const VERDICT_ORDER: Record<Verdict, number> = {
+/** 明细行排序:失败最靠前(failed > errored > unreadable > passed 的紧急程度)。 */
+export const VERDICT_ORDER: globalThis.Record<Verdict, number> = {
   failed: 0,
   errored: 1,
-  skipped: 2,
+  unreadable: 2,
   passed: 3,
 };
 

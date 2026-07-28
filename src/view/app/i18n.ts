@@ -7,14 +7,14 @@ import { interpolate, normalizeLocale, type Locale, type Vars } from "../../i18n
 
 export type MessageKey = "nav.label" | "hero.title" | "action.close" | "dialog.attemptTitle";
 
-type Dictionary = Record<MessageKey, string>;
+type Dictionary = globalThis.Record<MessageKey, string>;
 
-const dictionaries: Record<Locale, Dictionary> = {
+const dictionaries: globalThis.Record<Locale, Dictionary> = {
   en: {
     "nav.label": "Report",
-    // 标题回退链终点的内置文案(shell.md:「Eval 运行结果 / Eval Results」);
+    // 标题回退链终点的内置文案(shell.md:「Eval 运行结果 / Eval Record」);
     // 正常路径 server 侧已走完回退链,这里只兜旧数据 / 缺声明。
-    "hero.title": "Eval Results",
+    "hero.title": "Eval Record",
     "action.close": "Close",
     // 屏幕阅读器专用(Radix Dialog 的可访问标题),视觉上不出现——内容本身的身份 / verdict
     // 已经在 dialog 里可见。

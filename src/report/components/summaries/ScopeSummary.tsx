@@ -4,14 +4,14 @@
 // 不现场重算(docs/feature/reports/components/summaries/sample-summary.md)。
 
 import type { ReactElement } from "react";
-import type { ScopeSummaryData, VerdictTally } from "../../model/types.ts";
+import type { SampleSummaryContent, VerdictTally } from "../../model/types.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
 import { formatReportDateTime, formatReportDateTimeRange } from "../../model/format.ts";
 import { MetricCellView } from "../cell.tsx";
 import { cx } from "../shared.ts";
 
 function VerdictTallyView({ tally, locale }: { tally: VerdictTally; locale: ReportLocale }): ReactElement {
-  const kinds = (["passed", "failed", "errored", "skipped"] as const).filter((k) => tally[k] > 0);
+  const kinds = (["passed", "failed", "errored", "unreadable"] as const).filter((k) => tally[k] > 0);
   return (
     <span className="nre-verdict-tally">
       {kinds.map((kind) => (
@@ -24,13 +24,13 @@ function VerdictTallyView({ tally, locale }: { tally: VerdictTally; locale: Repo
   );
 }
 
-export function ScopeSummary({
+export function SampleSummary({
   data,
   votes = "eval",
   className,
   locale = DEFAULT_REPORT_LOCALE,
 }: {
-  data: ScopeSummaryData;
+  data: SampleSummaryContent;
   /** 显示哪一级计票;默认 "eval"。data 恒携带两级,votes 只选择呈现。 */
   votes?: "eval" | "attempt";
   className?: string;
@@ -44,7 +44,7 @@ export function ScopeSummary({
   return (
     <div className={cx("nre", "nre-scope-summary", className)} data-votes={votes}>
       <dl className="nre-scope-kpis">
-        {/* 计分制 Scope 隐藏通过率只显示总分;混型 Scope 两者都显示;纯通过制 Scope 只显示
+        {/* 计分制 Sample 隐藏通过率只显示总分;混型 Sample 两者都显示;纯通过制 Sample 只显示
             通过率(现状不变),见 docs/feature/reports/components/summaries/sample-summary.md。 */}
         {data.scoringComposition !== "points" && (
           <div className="nre-scope-kpi nre-scope-kpi-rate">

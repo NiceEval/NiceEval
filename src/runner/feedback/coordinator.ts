@@ -136,7 +136,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     // 让「这次投递该不该有动态区域包裹」在入队瞬间就已经确定,不受后续 phase 变化影响。
     const bracket = phase === "active";
     state = reduceRunFeedback(state, event);
-    const snapshot = state;
+    const run = state;
     switch (event.type) {
       case "attempt:queued":
       case "attempt:start":
@@ -144,14 +144,14 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       case "attempt:progress":
       case "attempt:complete":
       case "attempt:early-exit":
-        queue.push(() => renderer.onLifecycle?.(event, snapshot));
+        queue.push(() => renderer.onLifecycle?.(event, run));
         return;
       case "experiment:progress":
         // 短命状态,只进 reducer(上面已更新 state.experimentHooks 的 detail);下一次 tick 的
         // 重画会读到新值,不为每条 progress 单独排一次渲染任务。
         return;
       case "tick":
-        queue.push(() => renderer.onTick?.(event, snapshot));
+        queue.push(() => renderer.onTick?.(event, run));
         return;
       default: {
         // 穷尽性检查:剩下的只能是 DurableFeedbackEvent 的某个变体。新增 lifecycle/tick 事件
@@ -159,7 +159,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
         // 并因此错误地触发 clearDynamic/redrawDynamic。反过来,新增 DurableFeedbackEvent
         // 的变体不需要动这个 switch(default 分支天然覆盖)。
         const durable: DurableFeedbackEvent = event;
-        queue.push(() => deliverDurable(durable, snapshot, bracket));
+        queue.push(() => deliverDurable(durable, run, bracket));
         return;
       }
     }
@@ -167,13 +167,13 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
 
   async function deliverDurable(
     event: DurableFeedbackEvent,
-    snapshot: RunFeedbackState,
+    run: RunFeedbackState,
     bracket: boolean,
   ): Promise<void> {
     try {
       if (bracket) await renderer.clearDynamic?.();
-      await renderer.appendDurable(event, snapshot);
-      if (bracket) await renderer.redrawDynamic?.(snapshot);
+      await renderer.appendDurable(event, run);
+      if (bracket) await renderer.redrawDynamic?.(run);
     } catch (e) {
       onRendererError(e, event.type, fallbackTextFor(event));
     }
@@ -182,12 +182,12 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
   function activity(text: string): void {
     if (!guardWritable()) return;
     const bracket = phase === "active"; // 同上,入队瞬间捕获。
-    const snapshot = state;
+    const run = state;
     queue.push(async () => {
       try {
         if (bracket) await renderer.clearDynamic?.();
-        await renderer.activity?.(text, snapshot);
-        if (bracket) await renderer.redrawDynamic?.(snapshot);
+        await renderer.activity?.(text, run);
+        if (bracket) await renderer.redrawDynamic?.(run);
       } catch (e) {
         onRendererError(e, "activity", text);
       }

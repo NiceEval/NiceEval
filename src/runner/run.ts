@@ -31,9 +31,10 @@ import {
   reportPrecheck,
 } from "./feedback/sink.ts";
 import { failureDetailFromResult } from "./feedback/failure.ts";
-import { encodeAttemptLocator, type AttemptLocator } from "../results/locator.ts";
+import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
+import { ReusableSandboxPool } from "./sandbox-pool.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
@@ -54,7 +55,7 @@ import {
   type CaseLockRecord,
 } from "./lock.ts";
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
-import { loadLatestResultsForCase } from "../results/open.ts";
+import { loadLatestResultsForCase } from "../record/open.ts";
 import type {
   DiagnosticRecord,
   EvalResult,
@@ -106,7 +107,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const startedAt = new Date().toISOString();
   // 本次 invocation 的快照身份锚点:在展开/调度任何 attempt 之前确定一次,不同 experiment
   // 共享它(locator 身份还含 experimentId,不会碰撞)。fresh EvalResult 的 locator(见下方
-  // attempt 完成处)与 Artifacts writer 写进 snapshot.json 的 startedAt 必须用同一个值——
+  // attempt 完成处)与 Artifacts writer 写进 run.json 的 startedAt 必须用同一个值——
   // 复用刚建立的 startedAt,不是另起一次 new Date(),避免两者出现毫秒级漂移
   // (docs/feature/experiments/cli.md「Locator 必须在 result 发布前确定」)。经 InvocationShape
   // 传给 reporter(见下方 shape 构造),run.ts 之外没有第二个入口能改这份身份。
@@ -114,6 +115,20 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const t0 = Date.now();
 
   prepareRunSandboxes(opts.evals, opts.agentRuns, opts.config.sandbox);
+  for (const run of opts.agentRuns) {
+    if (!run.sandboxReuse || run.agent.kind !== "sandbox") continue;
+    if (opts.keepSandbox !== undefined) {
+      throw new Error("sandboxReuse cannot be combined with --keep-sandbox: a final sandbox does not belong to one attempt");
+    }
+    const spec = run.sandbox ?? opts.config.sandbox;
+    const resolved = resolveSandbox(spec);
+    if (resolved.provider === "local") {
+      throw new Error("sandboxReuse cannot be combined with localSandbox(): runner never resets the user's working tree");
+    }
+    if (resolved.create !== undefined) {
+      throw new Error(`sandboxReuse is not supported with defineSandbox custom provider "${resolved.provider}": it cannot declare the required reset and lifetime capabilities`);
+    }
+  }
 
   // 按 sourcePath 缓存文件内容,fingerprint 与 judge 预检共用:
   // 矩阵大时(实验 × eval)规划阶段不做串行重复文件读。
@@ -133,9 +148,20 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 等),判定本身不可信,必须重跑。跳过/fingerprint 不匹配同样重跑。--force 跳过此逻辑
   // (cli.ts 在 --force 时不传 priorResults,也不算 carryPlan)。
   // carryPlan 优先用调用方(cli.ts,为了 live 表格)已经算好的那份,不重算一遍。
-  const { plannedFingerprints, acceptableFingerprints, carriedAttemptsByKey, carriedResults: planCarriedResults } =
+  const {
+    plannedConfigHashes,
+    plannedFingerprints,
+    acceptableFingerprints,
+    carriedAttemptsByKey,
+    carriedResults: planCarriedResults,
+    carriedIgnoringFlagsByResult,
+  } =
     opts.carryPlan ??
-    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox, opts.config.timeoutMs));
+    (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox, opts.config.timeoutMs, {
+      rerun: opts.rerun,
+      keepSandbox: opts.keepSandbox,
+      carryIgnoringFlags: opts.carryIgnoringFlags,
+    }));
 
   /**
    * 携带条目合入本次快照时,指纹按**本次**口径重新打戳。携带的含义就是「这条已落盘的结果对
@@ -145,8 +171,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
    * 才能对上号。判定面不受影响:能走到这里,说明这条已经过了携带资格判据。
    */
   const restampCarried = (r: EvalResult): EvalResult => {
-    const fp = plannedFingerprints.get(`${r.experimentId ?? ""}|${r.id}`);
-    return fp === undefined || fp === r.fingerprint ? r : { ...r, fingerprint: fp };
+    const key = `${r.experimentId ?? ""}|${r.id}`;
+    const fp = plannedFingerprints.get(key);
+    const configHash = plannedConfigHashes?.get(key);
+    return fp === undefined
+      ? r
+      : {
+          ...r,
+          fingerprint: fp,
+          configHash,
+          ...(carriedIgnoringFlagsByResult?.has(r) ? { carriedIgnoringFlags: [...carriedIgnoringFlagsByResult.get(r)!] } : {}),
+        };
   };
   const carriedResults = planCarriedResults.map(restampCarried);
 
@@ -161,7 +196,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     // eval-selection.ts 的 resolveExperimentEvals());这里只按 resolved id 取 eval,
     // 不重新调用用户谓词(见 docs/feature/record/architecture.md「selectedEvalIds」)。
     const evals = selectedEvalsForRun(opts.evals, run);
-    for (let i = 0; i < run.runs; i++) {
+    for (let i = 0; i < run.attempts; i++) {
       for (const evalDef of evals) {
         const carryKey = `${run.experimentId ?? ""}|${evalDef.id}`;
         // 携带以 attempt 为粒度:只跳过这个具体序号确实被携入的那些(见 fingerprint.ts 的
@@ -179,6 +214,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           attempt: i,
           key,
           fingerprint: plannedFingerprints.get(cacheKey(run, evalDef.id)) ?? "",
+          configHash: plannedConfigHashes?.get(cacheKey(run, evalDef.id)) ?? "",
           sandboxSpec: sandboxForEval(run, evalDef, opts.config.sandbox),
           // locator 在构造 fresh attempt plan 时即算好并作为身份贯穿执行、留存登记与落盘
           // (不是完成后写回,见 docs/cli.md);裸 run(无 experimentId)不产出。
@@ -317,8 +353,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 即判定确定性错误,停止派发受同一配置影响的后续 attempt(如实报 errored 的结果保留;
   // 这是止损,不是「首过即停」,两个机制互不混用)。
   const lastErrorCode = new Map<string, { code: string; streak: number }>();
-  const failFastKeys = new Map<string, { code: string; skipped: number }>();
-  // 携入的 passed 结果预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.runs
+  const failFastKeys = new Map<string, { code: string; unreadable: number }>();
+  // 携入的 passed 结果预置进 passedKeys:上面按序号回填的差额 attempt(carriedCount < run.attempts
   // 那部分)如果不预置这个,会在明明已经拿到过 passed 结果的情况下真的再调度一次 agent——
   // earlyExit 的语义是「已知会通过就不用再跑」,携入的 passed 同样是「已知会通过」,理应同等对待
   // (下面 preflight/body 的 earlyExit 判断本来就只在 a.run.earlyExit 为真时读这两个 Set,所以
@@ -366,6 +402,29 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 沙箱启动单独限流:与 agent 并发(maxConcurrency)解耦,防高并发下 daemon/API 过载。
   // 未显式指定时跟 maxConcurrency 走——各 provider 的推荐值已在 cli 层写进 maxConcurrency 默认值。
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(opts.maxConcurrency));
+  // 每个解析后的 spec（environment profile 已在 Attempt 上展开）各有一个按需池；不提前创建。
+  const reusePools = new Map<object, ReusableSandboxPool>();
+  const reusePoolFor = (a: Attempt): ReusableSandboxPool | undefined => {
+    if (!a.run.sandboxReuse || a.run.agent.kind !== "sandbox" || !a.sandboxSpec) return undefined;
+    const key = a.sandboxSpec as object;
+    let pool = reusePools.get(key);
+    if (!pool) {
+      const setupContext = {
+        experimentId: a.run.experimentId,
+        signal: opts.signal ?? new AbortController().signal,
+        progress: () => {},
+        diagnostic: () => {},
+        fact: () => {},
+      };
+      const capacity = Math.max(1, Math.min(opts.maxConcurrency, a.run.maxConcurrency ?? opts.maxConcurrency));
+      pool = new ReusableSandboxPool(a.sandboxSpec, capacity, {
+        progress: () => {},
+        diagnostic: () => {},
+      }, setupContext);
+      reusePools.set(key, pool);
+    }
+    return pool;
+  };
 
   // 两级并发闸:全局(opts.maxConcurrency)+ 实验级(AgentRun.maxConcurrency,可选)。
   // 实验级闸让「有共享状态、必须串行」的实验(如跨 eval 累积记忆,maxConcurrency: 1)只在
@@ -462,17 +521,17 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 实验域诊断累积器(docs/runner.md「实验域诊断持久化」):只接无法归属单 Attempt 的实验
   // 事实——ctx.diagnostic、teardown failed/late、budget-unenforceable。相同 dedupeKey 只在
   // 同一个 experimentId 桶内折叠 count;不同 Experiment 各自独立累计,不跨来源合并。裸 run
-  // (没有 experimentId)没有 Snapshot 可挂,直接丢弃不进这个累积器——只留 reportDiagnostic
+  // (没有 experimentId)没有 Run 可挂,直接丢弃不进这个累积器——只留 reportDiagnostic
   // 的运行期反馈。与之配套的收尾时刻(捕捉每个 Experiment 真正完成的那一刻,不是整个
   // Invocation 收尾的那一刻,才诚实)。
   const experimentDiagnostics = new Map<string, DiagnosticRecord[]>();
   const experimentDedupeIndex = new Map<string, Map<string, DiagnosticRecord>>();
   const experimentCompletedAt = new Map<string, string>();
   // experiment 作用域 ctx.fact() 的累加器(与 experimentDiagnostics 同一种「按 experimentId 分桶」
-  // 模式):同一实验内后写覆盖先写,与 completedAt 同批在快照封口补写进 SnapshotMeta.facts
+  // 模式):同一实验内后写覆盖先写,与 completedAt 同批在快照封口补写进 RunMeta.facts
   // (见 docs/feature/record/architecture.md#facts运行事实)。没有 experimentId 的裸 run 没有
-  // Snapshot 可挂,调用直接丢弃(与 recordExperimentDiagnostic 同一条纪律)。
-  const experimentFacts = new Map<string, Record<string, FactValue>>();
+  // Run 可挂,调用直接丢弃(与 recordExperimentDiagnostic 同一条纪律)。
+  const experimentFacts = new Map<string, globalThis.Record<string, FactValue>>();
   const recordExperimentFact = (experimentId: string | undefined, key: string, value: FactValue): void => {
     if (!experimentId) return;
     const facts = experimentFacts.get(experimentId) ?? {};
@@ -485,7 +544,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     level: "warning" | "error";
     message: string;
     phase: LifecyclePhase;
-    data?: Readonly<Record<string, JsonValue>>;
+    data?: Readonly<globalThis.Record<string, JsonValue>>;
     command?: string;
     dedupeKey?: string;
   }): void => {
@@ -512,6 +571,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
+  if (carriedIgnoringFlagsByResult !== undefined) {
+    for (const [result, flags] of carriedIgnoringFlagsByResult) {
+      recordExperimentDiagnostic({
+        experimentId: result.experimentId,
+        code: "carry-ignoring-flag",
+        level: "warning",
+        message: "Carried a prior result while ignoring migrated flags.",
+        phase: "experiment.setup",
+        data: { flags: [...flags] },
+        dedupeKey: `carry-ignoring-flag:${flags.join(",")}`,
+      });
+    }
+  }
   // 强杀后的收尾兜底(docs/feature/experiments/architecture.md「强杀后的收尾兜底」)的磁盘登记
   // 挂在结果根下,与留存注册表 `.niceeval/sandboxes/` 同一个根(省略时退回 cwd/.niceeval,
   // 与 attempt.ts 的 niceevalRoot 兜底同一口径)。
@@ -529,7 +601,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         reportExperimentProgress({ experimentId, detail: `${u.message}${suffix}` });
       },
       // diagnostic 双落:运行级永久事件流(即时反馈,人/agent/ci 都能看到)+ 实验域诊断累积器
-      // (持久化,该 Experiment 的 Snapshot 封口时一次写入)——两条通路相互独立,互不派生
+      // (持久化,该 Experiment 的 Run 封口时一次写入)——两条通路相互独立,互不派生
       // (docs/runner.md「实验域诊断持久化」)。实验级钩子的事实不属于任何单个 Attempt,不落
       // result.json。
       diagnostic: (input) => {
@@ -579,7 +651,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           reportExperimentHook({ experimentId, hook: "teardown", status: "failed", durationMs: Date.now() - startedAt });
           // teardown 失败只作运行级诊断,不改任何已产出的 verdict(与 sandbox.teardown 的
           // teardown-failed 同一语义);资源可能泄漏,所以要说出来。同时进实验域诊断累积器,
-          // 供该 Experiment 的 Snapshot 封口时持久化(docs/runner.md「实验域诊断持久化」)。
+          // 供该 Experiment 的 Run 封口时持久化(docs/runner.md「实验域诊断持久化」)。
           // 止损闸边界:实验级 teardown 里抛糖衣类**不落闸**,降级为这条普通 teardown 诊断
           // (docs/feature/error-classification/architecture.md「生命周期边界」)——这个时点
           // 本实验已无可保护的派发余量,且止损状态不跨 invocation,声明无处生效。所以这里
@@ -597,7 +669,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             phase: "experiment.teardown",
           });
         }
-        // 这个 Experiment 真正走完了 teardown(不论成败)的时刻——诚实的 Snapshot completedAt,
+        // 这个 Experiment 真正走完了 teardown(不论成败)的时刻——诚实的 Run completedAt,
         // 不是整个 Invocation 收尾那一刻(见下方 experiment:complete 事件的发送处)。
         experimentCompletedAt.set(experimentId, new Date().toISOString());
       } finally {
@@ -808,7 +880,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     readonly scope: "eval" | "experiment";
     /** 展示与折叠用的实验身份(裸 run 退回 agent 名,与 budgetKey / teardown 诊断同一口径)。 */
     readonly experimentId: string;
-    /** 持久化用的真实 experimentId;裸 run 没有 Snapshot 可挂,为 undefined。 */
+    /** 持久化用的真实 experimentId;裸 run 没有 Run 可挂,为 undefined。 */
     readonly persistedExperimentId: string | undefined;
     /** eval 闸才有。 */
     readonly evalId: string | undefined;
@@ -933,7 +1005,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const gate = haltGateOf(a.run, scope === "experiment" ? undefined : a.evalDef.id);
     const message = firstLine(declaration.text);
     // 持久化通路:按 dedupeKey 折叠成一条 dispatch-halted(docs 的形状),落进该 Experiment 的
-    // snapshot.json。裸 run 没有 Snapshot 可挂,recordExperimentDiagnostic 自己丢弃。
+    // run.json。裸 run 没有 Run 可挂,recordExperimentDiagnostic 自己丢弃。
     recordExperimentDiagnostic({
       experimentId: gate.persistedExperimentId,
       code: HALT_DIAGNOSTIC_CODE,
@@ -1089,8 +1161,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       const carried = carriableAttempts(
         freshPrior,
         key,
+        plannedConfigHashes?.get(key),
         acceptableFingerprints.get(key),
         resolvedTimeoutMsForCarry(a0.run, a0.evalDef, opts.config.timeoutMs),
+        {
+          rerun: opts.rerun,
+          keepSandbox: opts.keepSandbox,
+          sandboxReuse: a0.run.sandboxReuse,
+          carryIgnoringFlags: opts.carryIgnoringFlags,
+        },
       );
       for (const r of carried) {
         if (!st.pending.has(r.attempt)) continue; // 已经跑过 / 上一轮已经携入过的序号不重复计
@@ -1454,7 +1533,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 但中断(Ctrl+C / kill)照常向上传播 —— 所以一条挂掉不会中断其它 attempt,而中断能停掉全部。
   //
   // signal:把 opts.signal 喂给 run → abort 触发根 fiber 中断 → forEach 中断所有子 fiber
-  //         → 每个 attempt 的 Scope 跑 release(sb.stop)→ 容器全部停掉(治孤儿)。Effect 保证
+  //         → 每个 attempt 的 Sample 跑 release(sb.stop)→ 容器全部停掉(治孤儿)。Effect 保证
   //         所有 finalizer 跑完后才结算,所以下面 summarize 时容器已清理干净。
   //
   // 用 runPromiseExit 而非 runPromise:{ signal } 触发的中断会让整个 Exit 标记为 interrupted,
@@ -1498,7 +1577,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 未派发计入 unstarted(结论落 incomplete,不伪装成全绿;与首过即停互不混用)。
             const failFast = failFastKeys.get(a.key);
             if (failFast !== undefined) {
-              failFast.skipped += 1;
+              failFast.unreadable += 1;
               reportAttemptLifecycle({
                 type: "attempt:early-exit",
                 at: Date.now(),
@@ -1613,6 +1692,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // 的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
             // architecture.md「实验级生命周期」)。
             const expLc = expLifecycles.get(a.run);
+            const pool = expLc?.setupFailed ? undefined : reusePoolFor(a);
+            const lease = pool
+              ? yield* Effect.promise(() =>
+                  pool.acquire((a.run.timeoutMs ?? a.evalDef.timeoutMs ?? opts.config.timeoutMs ?? 600_000)),
+                )
+              : undefined;
             const result = expLc?.setupFailed
               ? ({
                   id: a.evalDef.id,
@@ -1632,15 +1717,29 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               : yield* runAttemptEffect(a, opts, sandboxSem, {
                   parentSignal: attemptSignal,
                   concurrencySlot,
+                  ...(lease
+                    ? {
+                        reusedSandbox: {
+                          sandbox: lease.sandbox,
+                          reuseSandbox: lease.reuseSandbox,
+                          reuseOrdinal: lease.reuseOrdinal,
+                        },
+                      }
+                    : {}),
                   // 止损闸的消费点:attempt 封口读终局失败的空间轴。scope 经这条**封口回执**
                   // 到达调度器,不走错误通道向上传播——attempt fiber 的 E 保持 never,`errored`
                   // 仍是 eval runner 的合法结果而不是调度失败(architecture.md「Effect 边界」)。
                   onFailureClass: (declaration) => closeHaltGate(a, declaration),
                 });
+            if (lease) {
+              // Attempt 的 Eval/Agent 收尾已在 runAttemptEffect 内完成；reset 失败会淘汰实例，
+              // 本条结果如实保留，后续派发创建替代实例。
+              yield* Effect.promise(() => lease.release(true));
+            }
             // locator 在这里确定 —— 早于本 attempt 触发的任何 reporter 回调 / 事件
             // (onEvalComplete、eval:complete),所以每一个观察者看到的都已经是最终值,
             // 和落盘 result.json 完全一致(writer.ts 的 entry.locator ?? 兜底分支因此
-            // 对 niceeval 自己的运行永不触发,只服务第三方直调 SnapshotWriter 的场景)。
+            // 对 niceeval 自己的运行永不触发,只服务第三方直调 RunWriter 的场景)。
             // 没有 experimentId 的裸 run(非 exp 命令)不产出 locator,与
             // writer.writeAttemptFor() 要求 experimentId 的既有约束一致 ——
             // encodeAttemptLocator 本身也会在 experimentId 为空时直接抛错。
@@ -1713,7 +1812,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               const streak = prev?.code === code ? prev.streak + 1 : 1;
               lastErrorCode.set(a.key, { code, streak });
               if (streak >= 2 && !failFastKeys.has(a.key)) {
-                failFastKeys.set(a.key, { code, skipped: 0 });
+                failFastKeys.set(a.key, { code, unreadable: 0 });
               }
             } else {
               lastErrorCode.delete(a.key);
@@ -1849,6 +1948,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   );
   // 调度已经结算:任何被中断路径抛下的挂起轮询到下一个心跳周期自行收束,不无主空转。
   dispatchClosed = true;
+  await Promise.allSettled([...reusePools.values()].map((pool) => pool.stop()));
   await opts.otelPool?.close();
 
   // 实验级 teardown 兜底扫尾:正常路径由 per-attempt ensuring 的计数归零触发(见上),但一次
@@ -1897,9 +1997,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 各发一次 experiment:complete,携带它自己的 completedAt(真实 teardown 完成时刻,没有
   // teardown 或未触发时退回当前时刻)与实验域诊断累积器里attribute 给它的记录。全部
   // Experiment 此刻都已经收尾(sweepExperimentTeardowns 已经等过),严格早于下面的
-  // invocation:summary——供 Artifacts 据此对每个 Snapshot 原子封口,不用等到整个 Invocation
+  // invocation:summary——供 Artifacts 据此对每个 Run 原子封口,不用等到整个 Invocation
   // 结束才一次性全部封口(interrupted、reporter error 等 Invocation 级事实不在这条通道里,
-  // 不会误落进任一 Snapshot)。
+  // 不会误落进任一 Run)。
   const invocationExperimentIds = new Set(
     opts.agentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
   );

@@ -2,11 +2,11 @@
 
 import type { Verdict } from "../../types.ts";
 
-export const VERDICT_SYM: Record<Verdict, string> = {
+export const VERDICT_SYM: globalThis.Record<Verdict, string> = {
   passed: "✓",
   failed: "✗",
   errored: "!",
-  skipped: "○",
+  unreadable: "○",
 };
 
 export function verdictSymbol(verdict: string): string {

@@ -1,15 +1,15 @@
 // show 专属的执行时间轴口径(--history;契约:docs/feature/reports/show.md「--history:一个 eval
-// 的执行时间轴」)。逐 attempt 而非逐快照:对 Scope 中匹配的每个 experimentId + evalId 分节,
+// 的执行时间轴」)。逐 attempt 而非逐快照:对 Sample 中匹配的每个 experimentId + evalId 分节,
 // 节内按 startedAt 升序列出跨快照按 attempt 身份键去重后的历次 attempt——时间、verdict、
 // 单行结果摘要(Scoring display 契约)、耗时、成本与 locator。resume 携带的复印件不占行。
 //
-// 现刻水位 Scope(两个宿主共用)住在 ../results/select.ts;本文件只留 show 独有的时间轴计算。
-// 数据只消费 niceeval/results 的读取面。
+// 现刻水位 Sample(两个宿主共用)住在 ../sample/index.ts;本文件只留 show 独有的时间轴计算。
+// 数据只消费 niceeval/record 的读取面。
 
 import { attemptCostUSD } from "../report/model/metrics.ts";
 import { compactAssertionSummary, primaryAssertionSummary, summaryText } from "../scoring/display.ts";
 import type { EvalResult, Verdict } from "../types.ts";
-import type { AttemptHandle, Experiment } from "../results/index.ts";
+import type { AttemptHandle, Experiment } from "../record/index.ts";
 
 // ───────────────────────── 时间轴(--history)─────────────────────────
 
@@ -33,7 +33,7 @@ function attemptKey(attempt: AttemptHandle): string | undefined {
 
 /**
  * 单行结果摘要:与默认报告 Result 单元格同一条 display 契约(docs/feature/assertions/library/display.md)——
- * 结构化 error 取一层 message 摘要,skipped 取理由,failed 取主失败断言的紧凑单行;passed 无摘要。
+ * 结构化 error 取一层 message 摘要,unreadable 取理由,failed 取主失败断言的紧凑单行;passed 无摘要。
  */
 function rowSummary(result: EvalResult): string | undefined {
   if (result.error !== undefined) return summaryText(result.error.message);
@@ -52,10 +52,10 @@ export function attemptHistoryHandles(exp: Experiment, evalId: string): AttemptH
   const seen = new Set<string>();
   const dated: AttemptHandle[] = [];
   const undated: AttemptHandle[] = [];
-  // 新→旧扫描(exp.snapshots 已按新→旧排序):同一身份键保留最新落盘里的那份
+  // 新→旧扫描(exp.runs 已按新→旧排序):同一身份键保留最新落盘里的那份
   // (locator 在携带条目上原样复制,取哪份行内容相同;取最新与 dedupeAttempts 口径一致)。
-  for (const snapshot of exp.snapshots) {
-    const ev = snapshot.evals.find((e) => e.id === evalId);
+  for (const run of exp.runs) {
+    const ev = run.evals.find((e) => e.id === evalId);
     if (!ev) continue;
     for (const attempt of ev.attempts) {
       const key = attemptKey(attempt);

@@ -204,7 +204,7 @@ export class LocalSandbox implements Sandbox {
     }
   }
 
-  async writeFiles(files: Record<string, string>, targetDir?: string): Promise<void> {
+  async writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
     const sandboxFiles: SandboxFile[] = Object.entries(files).map(([path, content]) => ({
       path,
       content: Buffer.from(content, "utf-8"),

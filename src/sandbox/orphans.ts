@@ -31,7 +31,7 @@ async function dockerOrphanCandidates(
   keptIds: ReadonlySet<string>,
   classify: OrphanClassifier,
 ): Promise<OrphanCandidate[]> {
-  let containers: { Id: string; Labels: Record<string, string> }[];
+  let containers: { Id: string; Labels: globalThis.Record<string, string> }[];
   try {
     const { default: Docker } = await import("dockerode");
     containers = await new Docker().listContainers({ all: true, filters: { label: ["niceeval.host"] } });

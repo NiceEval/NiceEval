@@ -13,22 +13,22 @@ describe("其余页索引与索引命令上下文", () => {
     { id: "exam", title: { en: "Exam", "zh-CN": "成绩单" } },
   ];
 
-  it("只列未渲染的页,索引命令保留当前 --results / --report 与位置参数,复制即可复现下一层视图", () => {
+  it("只列未渲染的页,索引命令保留当前 --record / --report 与位置参数,复制即可复现下一层视图", () => {
     // 渲染的是 overview,其余页索引只含 exam 一行——与「渲染初始页 + 尾部附其余页索引」
     // 的行为一致(docs/feature/reports/show/reports.md Case 2)。
     const text = otherPagesText({
       otherPages: pages.filter((p) => p.id !== "overview"),
-      command: { patterns: [], results: "tmp/published-results", report: "reports/site.tsx" },
+      command: { patterns: [], record: "tmp/published-record", report: "reports/site.tsx" },
       locale: "zh-CN",
     });
     expect(text).toContain("其余页：");
-    expect(text).toContain("niceeval show --results tmp/published-results --report reports/site.tsx --page exam");
+    expect(text).toContain("niceeval show --record tmp/published-record --report reports/site.tsx --page exam");
     expect(text).toContain("成绩单");
     expect(text).not.toContain("总览");
     expect(text).not.toContain("--page overview");
   });
 
-  it("showCommand 按序携带位置参数与 --exp / --results / --report / --page", () => {
+  it("showCommand 按序携带位置参数与 --exp / --record / --report / --page", () => {
     expect(
       showCommand({ patterns: ["memory/swelancer"], experiment: "dev-e2b", report: "reports/site.tsx", page: "exam" }),
     ).toBe("niceeval show memory/swelancer --exp dev-e2b --report reports/site.tsx --page exam");

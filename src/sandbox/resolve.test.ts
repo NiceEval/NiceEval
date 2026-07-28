@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import type { SandboxProvisionErrorKind } from "./errors.ts";
 import { type ResolvedSandbox, withDeterministicProvisionScope } from "./resolve.ts";
 
-function resolvedSandbox(environments?: Record<string, unknown>): ResolvedSandbox {
+function resolvedSandbox(environments?: globalThis.Record<string, unknown>): ResolvedSandbox {
   return {
     provider: "docker",
     exclusive: false,

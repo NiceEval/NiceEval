@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
-// niceeval/report 计算层的单元测试:全部用内存 fake(Snapshot / AttemptHandle 按
-// niceeval/results 的读取契约手工构造)。覆盖登记行:两级聚合 vs 平铺、errored=0 口径、
-// skipped=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
+// niceeval/report 计算层的单元测试:全部用内存 fake(Run / AttemptHandle 按
+// niceeval/record 的读取契约手工构造)。覆盖登记行:两级聚合 vs 平铺、errored=0 口径、
+// unreadable=null、null≠0、Scoreboard 固定分母(notRun/unscorable 分开)、权重最长前缀、
 // 身份键去重、现刻水位、自定义指标 where/aggregate、evalGroup 完整父路径、verdict 权威、
 // MetricCell 诚实、durationMs 超时删失(线值不进均值、samples<total 覆盖率缺口)、缺 artifact 指标、repeatedFailedCommands、实体列表 failureSummary、
 // scopeSummaryData 两级计票、experimentListData/scopeSummaryData 的 selectedEvalIds 投影、conditionsByFlag、
@@ -13,13 +13,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, AttemptError, EvalResult, O11ySummary, Verdict } from "../../types.ts";
-import type { AttemptHandle, Scope, ScopeWarning, Snapshot } from "../../results/index.ts";
+import type { AttemptHandle, Sample, SampleIssue, Run } from "../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "./scope.harness.ts";
-import type { Results } from "../../results/types.ts";
+import type { Record } from "../../record/types.ts";
 import {
   assistantTurns,
   costUSD,
-  defineMetric,
+  defineMeasure,
   durationMs,
   endToEndPassRate,
   examScore,
@@ -115,17 +115,17 @@ interface SnapSpec {
   model?: string;
   runStartedAt?: string;
   knownEvalIds?: string[];
-  experiment?: Snapshot["experiment"];
+  experiment?: Run["experiment"];
 }
 
 let runSeq = 0;
 
 /** 最小构造:一个快照目录装一个快照。runStartedAt 决定去重时谁是「最新快照」。 */
-function snap(spec: SnapSpec): Snapshot {
+function snap(spec: SnapSpec): Run {
   runSeq += 1;
   const startedAt = spec.runStartedAt ?? `2026-06-01T00:00:00.${String(runSeq).padStart(3, "0")}Z`;
   const dir = `/results/exp/snap-${runSeq}`;
-  const snapshot = {
+  const run = {
     experimentId: spec.experimentId,
     startedAt,
     completedAt: startedAt,
@@ -135,12 +135,12 @@ function snap(spec: SnapSpec): Snapshot {
     schemaVersion: 1,
     dir,
     knownEvalIds: spec.knownEvalIds,
-  } as Snapshot;
+  } as Run;
   const attempts: AttemptHandle[] = spec.results.map((r) =>
     attemptHandleOf(
-      snapshot,
+      run,
       r,
-      { snapshot: `exp/snap-${runSeq}`, attempt: `${r.id}/a${r.attempt}` },
+      { run: `exp/snap-${runSeq}`, attempt: `${r.id}/a${r.attempt}` },
       { o11y: async () => r.o11y ?? null },
     ),
   );
@@ -150,9 +150,9 @@ function snap(spec: SnapSpec): Snapshot {
     if (list) list.push(attempt);
     else evals.set(attempt.evalId, [attempt]);
   }
-  snapshot.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
-  snapshot.attempts = attempts;
-  return snapshot;
+  run.evals = [...evals.entries()].map(([id, list]) => ({ id, attempts: list }));
+  run.attempts = attempts;
+  return run;
 }
 
 // ───────────────────────── 指标聚合口径 ─────────────────────────
@@ -207,13 +207,13 @@ describe("两级聚合口径", () => {
     expect(data.endToEndPassRate.value).toBeCloseTo(2 / 7);
   });
 
-  it("skipped 对内置指标返回 null:不进有效样本但保留在 total,value 不受影响", async () => {
+  it("unreadable 对内置指标返回 null:不进有效样本但保留在 total,value 不受影响", async () => {
     const s = snap({
       experimentId: "exp/skip",
-      results: [res("a", "passed"), res("b", "skipped"), res("c", "failed")],
+      results: [res("a", "passed"), res("b", "unreadable"), res("c", "failed")],
     });
     const data = await scopeSummaryData([s]);
-    expect(data.endToEndPassRate.value).toBeCloseTo(0.5); // (1+0)/2,skipped 不稀释
+    expect(data.endToEndPassRate.value).toBeCloseTo(0.5); // (1+0)/2,unreadable 不稀释
     expect(data.endToEndPassRate.samples).toBe(2);
     expect(data.endToEndPassRate.total).toBe(3);
   });
@@ -224,7 +224,7 @@ describe("两级聚合口径", () => {
       ["b", 0],
       ["c", 1],
     ]);
-    const metric = defineMetric({
+    const metric = defineMeasure({
       name: "tri",
       value: (attempt) => values.get(attempt.evalId) ?? null,
     });
@@ -253,11 +253,12 @@ describe("两级聚合口径", () => {
         res("c", "passed", { durationMs: 500 }),
       ],
     });
-    const fastest = defineMetric({
+    const fastest = defineMeasure({
       name: "fastest-pass",
       where: (attempt) => attempt.result.verdict === "passed",
       value: (attempt) => attempt.result.durationMs,
-      aggregate: { perEval: "min", acrossEvals: "mean" },
+      perEval: "min",
+      acrossEvals: "mean",
     });
     const table = await metricTableData([s], { rows: "agent", columns: [fastest] });
     const cell = table.rows[0]!.cells["fastest-pass"]!;
@@ -266,7 +267,7 @@ describe("两级聚合口径", () => {
     expect(cell.samples).toBe(3);
     expect(cell.total).toBe(4);
 
-    const allExcluded = defineMetric({
+    const allExcluded = defineMeasure({
       name: "none",
       where: () => false,
       value: () => 1,
@@ -308,8 +309,8 @@ describe("两级聚合口径", () => {
 describe("MetricCell 诚实契约", () => {
   it("measuredZero / partial / missing 三种格子互不混淆;refs 序列化后不丢", async () => {
     const zero = snap({ experimentId: "exp/zero", results: [res("a", "failed")] });
-    const partial = snap({ experimentId: "exp/partial", results: [res("a", "passed"), res("b", "skipped")] });
-    const missing = snap({ experimentId: "exp/missing", results: [res("a", "skipped")] });
+    const partial = snap({ experimentId: "exp/partial", results: [res("a", "passed"), res("b", "unreadable")] });
+    const missing = snap({ experimentId: "exp/missing", results: [res("a", "unreadable")] });
     const table = await metricTableData([zero, partial, missing], {
       rows: "experiment",
       columns: [endToEndPassRate],
@@ -418,7 +419,7 @@ describe("MetricCell 诚实契约", () => {
     expect(data.endToEndPassRate.value).toBeCloseTo(5 / 6);
     expect(data.endToEndPassRate.display).toBe("83.3%");
 
-    const localized = defineMetric({
+    const localized = defineMeasure({
       name: "loc",
       value: () => 1,
       display: (value, locale) => (locale === "zh-CN" ? `${value} 个` : `${value} item`),
@@ -428,7 +429,7 @@ describe("MetricCell 诚实契约", () => {
   });
 
   it("value() 抛错时整个计算失败,错误带 metric name 与 attempt locator,不伪装成测不了", async () => {
-    const bad = defineMetric({
+    const bad = defineMeasure({
       name: "explode",
       value: () => {
         throw new Error("boom");
@@ -443,7 +444,7 @@ describe("MetricCell 诚实契约", () => {
 
 describe("scoreboardData", () => {
   it("固定题集分母:未跑题按 0 分计入 notRun;跑了但 null 的题计入 unscorable,两个计数不合并", async () => {
-    const nullScore = defineMetric({
+    const nullScore = defineMeasure({
       name: "maybe-score",
       value: (attempt) => (attempt.evalId === "s/unscorable" ? null : attempt.result.verdict === "passed" ? 1 : 0),
     });
@@ -500,7 +501,7 @@ describe("scoreboardData", () => {
     ).rejects.toThrow(/positive finite/);
     await expect(scoreboardData([s], { rows: "agent", questions: ["a"], fullMarks: 0 })).rejects.toThrow(/fullMarks/);
     await expect(
-      scoreboardData([s], { rows: "agent", questions: ["a"], score: defineMetric({ name: "big", value: () => 2 }) }),
+      scoreboardData([s], { rows: "agent", questions: ["a"], score: defineMeasure({ name: "big", value: () => 2 }) }),
     ).rejects.toThrow(/\[0, 1\]/);
     await expect(
       scoreboardData([s], { rows: "agent", questions: ["a"], subject: () => "" }),
@@ -535,10 +536,10 @@ describe("实体列表 data", () => {
     },
   });
   const passed = res("list/passed", "passed");
-  const skipped = res("list/skipped", "skipped");
-  const listSnap = () => snap({ experimentId: "exp/list", results: [failed, errored, passed, skipped] });
+  const unreadable = res("list/unreadable", "unreadable");
+  const listSnap = () => snap({ experimentId: "exp/list", results: [failed, errored, passed, unreadable] });
 
-  it("failureSummary 三态:failed 取主失败断言摘要、errored 取 error 一层摘要(phase · code · message)、passed/skipped 为 null", async () => {
+  it("failureSummary 三态:failed 取主失败断言摘要、errored 取 error 一层摘要(phase · code · message)、passed/unreadable 为 null", async () => {
     const items = await attemptListData([listSnap()]);
     const byEval = new Map(items.map((item) => [item.evalId, item]));
     expect(byEval.get("list/failed")!.failureSummary).toContain("equals(42)");
@@ -548,7 +549,7 @@ describe("实体列表 data", () => {
       "sandbox.create · sandbox-create-failed · docker daemon unreachable",
     );
     expect(byEval.get("list/passed")!.failureSummary).toBeNull();
-    expect(byEval.get("list/skipped")!.failureSummary).toBeNull();
+    expect(byEval.get("list/unreadable")!.failureSummary).toBeNull();
   });
 
   it("failureSummary 计分制口径(规则 6):passed 全部得分点挣满为 null,存在丢分得分点时取记录顺序第一条(含挣分尾缀),其余计入 moreFailures;中止 attempt 仍由既有规则 1 选中前置,不受规则 6 影响", async () => {
@@ -611,16 +612,16 @@ describe("实体列表 data", () => {
     const loser = snap({ experimentId: "exp/lose", results: [res("a", "failed"), res("b", "passed")] });
     const items = await experimentListData([loser, winner]);
     expect(items.map((item) => item.experimentId)).toEqual(["exp/win", "exp/lose"]);
-    expect(items[0]!.evalVerdicts).toEqual({ passed: 2, failed: 0, errored: 0, skipped: 0 });
+    expect(items[0]!.evalVerdicts).toEqual({ passed: 2, failed: 0, errored: 0, unreadable: 0 });
     expect(items[0]!.endToEndPassRate.value).toBe(1);
     expect(items[1]!.evals).toBe(2);
   });
 
-  it("同一 experiment 的输入含不一致可比性配置时按完整用户反馈失败,指引 snapshot 维度 / MetricLine", async () => {
+  it("同一 experiment 的输入含不一致可比性配置时按完整用户反馈失败,指引 run 维度 / MetricLine", async () => {
     const a = snap({ experimentId: "exp/mixed", model: "gpt-a", results: [res("x", "passed")] });
     const b = snap({ experimentId: "exp/mixed", model: "gpt-b", results: [res("y", "passed")] });
-    await expect(experimentListData([a, b])).rejects.toThrow(/snapshot.*MetricLine|MetricLine/s);
-    // current() 口径的 Scope(一实验一配置)照常计算
+    await expect(experimentListData([a, b])).rejects.toThrow(/run.*MetricLine|MetricLine/s);
+    // current() 口径的 Sample(一实验一配置)照常计算
     const clean = scopeOf([a]);
     await expect(experimentListData(clean)).resolves.toHaveLength(1);
   });
@@ -637,8 +638,8 @@ describe("实体列表 data", () => {
     expect(items[0]!.attempts).toBe(2); // historicalAttempts 是子集,不改变 attempts 总数口径
   });
 
-  it("current() 下跨快照拼入的历史执行(非携带)以水位基准比较标 historical;snapshot 维度按真实来源分组、显示真实 startedAt", async () => {
-    // 两个真实贡献 Snapshot:周一(旧,贡献 q2)与周二(新,贡献 q1)——不用 artifactBase/carried,
+  it("current() 下跨快照拼入的历史执行(非携带)以水位基准比较标 historical;run 维度按真实来源分组、显示真实 startedAt", async () => {
+    // 两个真实贡献 Run:周一(旧,贡献 q2)与周二(新,贡献 q1)——不用 artifactBase/carried,
     // 单纯是「所属快照早于该 experiment 的水位基准」这条 historicalOf 的第二个分支。
     const monday = snap({ experimentId: "exp/multi", results: [res("q2", "passed")], runStartedAt: "2026-07-01T08:00:00.000Z" });
     const tuesday = snap({ experimentId: "exp/multi", results: [res("q1", "passed")], runStartedAt: "2026-07-02T08:00:00.000Z" });
@@ -652,8 +653,8 @@ describe("实体列表 data", () => {
     expect(items[0]!.historicalAttempts).toBe(1);
     expect(items[0]!.attempts).toBe(2);
 
-    // snapshot 维度按真实来源分组:两条 attempt 各自的真实 startedAt 不同,不被合并成一个键。
-    const table = await metricTableData(scope, { rows: "snapshot", columns: [endToEndPassRate] });
+    // run 维度按真实来源分组:两条 attempt 各自的真实 startedAt 不同,不被合并成一个键。
+    const table = await metricTableData(scope, { rows: "run", columns: [endToEndPassRate] });
     expect(table.rows.map((r) => r.key).sort()).toEqual([
       "exp/multi @ 2026-07-01T08:00:00.000Z",
       "exp/multi @ 2026-07-02T08:00:00.000Z",
@@ -766,17 +767,17 @@ describe("scopeSummaryData", () => {
           res("q3", "passed"),
           res("q4", "failed"),
           res("q5", "errored", { error: erroredWith("x") }),
-          res("q6", "skipped"),
+          res("q6", "unreadable"),
         ],
       });
     const data = await scopeSummaryData([mk("cmp/a"), mk("cmp/b")]);
     expect(data.experiments).toBe(2);
     expect(data.evals).toBe(12);
-    expect(data.evalVerdicts).toEqual({ passed: 6, failed: 2, errored: 2, skipped: 2 });
+    expect(data.evalVerdicts).toEqual({ passed: 6, failed: 2, errored: 2, unreadable: 2 });
     expect(
-      data.evalVerdicts.passed + data.evalVerdicts.failed + data.evalVerdicts.errored + data.evalVerdicts.skipped,
+      data.evalVerdicts.passed + data.evalVerdicts.failed + data.evalVerdicts.errored + data.evalVerdicts.unreadable,
     ).toBe(data.evals);
-    expect(data.attemptVerdicts).toEqual({ passed: 6, failed: 4, errored: 2, skipped: 2 });
+    expect(data.attemptVerdicts).toEqual({ passed: 6, failed: 4, errored: 2, unreadable: 2 });
     expect(data.attemptVerdicts).not.toEqual(data.evalVerdicts);
     expect(data.range.earliestStartedAt).not.toBeNull();
     expect(data.range.latestStartedAt).not.toBeNull();
@@ -803,13 +804,13 @@ describe("scopeSummaryData", () => {
     expect(data.evals).toBe(0);
   });
 
-  it("scoringComposition 与 totalScore:纯通过制 Scope 省略 totalScore(不摆空列)", async () => {
+  it("scoringComposition 与 totalScore:纯通过制 Sample 省略 totalScore(不摆空列)", async () => {
     const data = await scopeSummaryData([snap({ experimentId: "exp/pass", results: [res("a", "passed")] })]);
     expect(data.scoringComposition).toBe("pass");
     expect(data.totalScore).toBeUndefined();
   });
 
-  it("scoringComposition 与 totalScore:纯计分制 Scope 携带 totalScore", async () => {
+  it("scoringComposition 与 totalScore:纯计分制 Sample 携带 totalScore", async () => {
     const s = snap({
       experimentId: "exp/points",
       results: [res("a", "passed", { scoring: "points", assertions: [pointsAssertion("x", 3)] })],
@@ -819,7 +820,7 @@ describe("scopeSummaryData", () => {
     expect(data.totalScore?.value).toBe(3);
   });
 
-  it("scoringComposition:一个 Scope 里并排通过制与计分制两个 experiment → \"mixed\"", async () => {
+  it("scoringComposition:一个 Sample 里并排通过制与计分制两个 experiment → \"mixed\"", async () => {
     const passExp = snap({ experimentId: "exp/a-pass", results: [res("a", "passed")] });
     const pointsExp = snap({
       experimentId: "exp/b-points",
@@ -880,12 +881,12 @@ describe("experimentListData / scopeSummaryData 的 selectedEvalIds 投影", () 
     const a = snap({
       experimentId: "exp/a",
       results: [res("q1", "passed"), res("q2", "failed")],
-      experiment: { runs: 1, earlyExit: false, selectedEvalIds: ["q1"] },
+      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: ["q1"] },
     });
     const b = snap({
       experimentId: "exp/b",
       results: [res("q2", "passed")],
-      experiment: { runs: 1, earlyExit: false, selectedEvalIds: ["q2"] },
+      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: ["q2"] },
     });
 
     const items = await experimentListData([a, b]);
@@ -896,7 +897,7 @@ describe("experimentListData / scopeSummaryData 的 selectedEvalIds 投影", () 
     expect(rowB.evals).toBe(1);
     expect(rowB.evalRows.map((r) => r.evalId)).toEqual(["q2"]);
 
-    // 汇总口径同样不被污染:全 Scope 只有 2 个 eval(exp/a·q1、exp/b·q2),不是 3 个。
+    // 汇总口径同样不被污染:全 Sample 只有 2 个 eval(exp/a·q1、exp/b·q2),不是 3 个。
     const summary = await scopeSummaryData([a, b]);
     expect(summary.evals).toBe(2);
   });
@@ -946,7 +947,7 @@ describe("metricScatterData / metricMatrixData", () => {
     const withFlag = snap({
       experimentId: "f/on",
       results: [res("a", "passed")],
-      experiment: { runs: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "mempal" } },
+      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "mempal" } },
     });
     const withoutFlag = snap({ experimentId: "f/off", results: [res("a", "failed")] });
     const table = await metricTableData([withFlag, withoutFlag], {
@@ -959,7 +960,7 @@ describe("metricScatterData / metricMatrixData", () => {
   it("metricTableData sort:必须是 columns 中同一实例且声明 better;方向随 better,缺数据沉底", async () => {
     const hi = snap({ experimentId: "s/hi", results: [res("a", "passed")] });
     const lo = snap({ experimentId: "s/lo", results: [res("a", "failed")] });
-    const na = snap({ experimentId: "s/na", results: [res("a", "skipped")] });
+    const na = snap({ experimentId: "s/na", results: [res("a", "unreadable")] });
     const byPass = await metricTableData([lo, hi, na], {
       rows: "experiment",
       columns: [endToEndPassRate],
@@ -979,7 +980,7 @@ describe("metricScatterData / metricMatrixData", () => {
     await expect(
       metricTableData([hi], { rows: "experiment", columns: [endToEndPassRate], sort: durationMs }),
     ).rejects.toThrow(/columns/);
-    const noBetter = defineMetric({ name: "plain", value: () => 1 });
+    const noBetter = defineMeasure({ name: "plain", value: () => 1 });
     await expect(
       metricTableData([hi], { rows: "experiment", columns: [noBetter], sort: noBetter }),
     ).rejects.toThrow(/better/);
@@ -1001,7 +1002,7 @@ describe("metricLineData", () => {
       experimentId,
       results: verdicts.map((v, i) => res(`q${i}`, v)),
       experiment: {
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         selectedEvalIds: [],
         ...(budget !== undefined ? { flags: { budget } } : {}),
@@ -1098,10 +1099,10 @@ describe("totalScore", () => {
     expect(cell.samples).toBe(0);
   });
 
-  it("skipped 记 null", async () => {
+  it("unreadable 记 null", async () => {
     const s = snap({
-      experimentId: "score/skipped",
-      results: [res("skip", "skipped", { scoring: "points", skipReason: "not applicable" })],
+      experimentId: "score/unreadable",
+      results: [res("skip", "unreadable", { scoring: "points", skipReason: "not applicable" })],
     });
     const table = await metricTableData([s], { rows: "eval", columns: [totalScore] });
     expect(table.rows.find((r) => r.key === "skip")!.cells[totalScore.name]!.value).toBeNull();
@@ -1167,7 +1168,7 @@ describe("totalScore", () => {
 describe("labels 维度、series 归类与 connect", () => {
   const labeled = (
     experimentId: string,
-    labels: Record<string, string | number> | undefined,
+    labels: globalThis.Record<string, string | number> | undefined,
     verdicts: Verdict[],
     agent = "agent-x",
   ) =>
@@ -1176,7 +1177,7 @@ describe("labels 维度、series 归类与 connect", () => {
       agent,
       results: verdicts.map((v, i) => res(`q${i}`, v, { agent })),
       experiment: {
-        runs: 1,
+        attempts: 1,
         earlyExit: false,
         selectedEvalIds: verdicts.map((_, i) => `q${i}`),
         ...(labels ? { labels } : {}),
@@ -1245,7 +1246,7 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
   const a = snap({ experimentId: "compare/a", results: [res("q1", "passed"), res("q2", "failed")] });
   const b = snap({ experimentId: "compare/b", results: [res("q1", "failed"), res("q2", "passed")] });
   const scope = scopeOf([a, b]);
-  const noLabelMetric = defineMetric({ name: "custom-no-label", value: (attempt) => (attempt.result.verdict === "passed" ? 1 : 0) });
+  const noLabelMetric = defineMeasure({ name: "custom-no-label", value: (attempt) => (attempt.result.verdict === "passed" ? 1 : 0) });
 
   it("metricTableData:含未声明 label 的自定义指标", async () => {
     const table = await metricTableData(scope, { rows: "agent", columns: [costUSD, noLabelMetric] });
@@ -1276,7 +1277,7 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
     const withFlag = snap({
       experimentId: "compare/withflag",
       results: [res("q1", "passed")],
-      experiment: { runs: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "on" } },
+      experiment: { attempts: 1, earlyExit: false, selectedEvalIds: [], flags: { memory: "on" } },
     });
     const withoutFlag = snap({ experimentId: "compare/noflag", results: [res("q1", "failed")] });
     const deltaScope = scopeOf([withFlag, withoutFlag]);
@@ -1294,7 +1295,7 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
     expect(validateScopeSummaryData(summary)).toBeNull();
   });
 
-  it("experimentListData / evalListData / attemptListData(同一 Scope 三种粒度)", async () => {
+  it("experimentListData / evalListData / attemptListData(同一 Sample 三种粒度)", async () => {
     expect(validateExperimentListData(await experimentListData(scope))).toBeNull();
     expect(validateEvalListData(await evalListData(scope))).toBeNull();
     expect(validateAttemptListData(await attemptListData(scope))).toBeNull();

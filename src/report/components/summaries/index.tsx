@@ -5,11 +5,11 @@
 
 import { defineComponent, type ReportComponent } from "../../definition/tree.ts";
 import { Col } from "../../definition/primitives.tsx";
-import type { ReportInput, ScopeSummaryData, SeriesInput } from "../../model/types.ts";
-import type { Scope, Snapshot } from "../../../results/types.ts";
+import type { ReportInput, SampleSummaryContent, SeriesInput } from "../../model/types.ts";
+import type { Sample, Run } from "../../../record/types.ts";
 import { resolveInput, seriesName } from "../../model/aggregate.ts";
 import { label } from "../../model/flag.ts";
-import { costUSD, endToEndPassRate, totalScore } from "../../model/metrics.ts";
+import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
 import { scoringComposition } from "../../model/scoring.ts";
 import {
   cellProblem,
@@ -20,13 +20,13 @@ import {
   type DataProps,
   type Validator,
 } from "../shared.ts";
-import { scopeSummaryData } from "./compute.ts";
+import { sampleSummary } from "./compute.ts";
 import { scopeSummaryText } from "./faces.ts";
-import { ScopeSummary as ScopeSummaryWeb } from "./ScopeSummary.tsx";
+import { SampleSummary as SampleSummaryWeb } from "./ScopeSummary.tsx";
 import { MetricScatter } from "../metric-views/index.tsx";
 import { ExperimentList } from "../entity-lists/index.tsx";
 
-export const validateScopeSummaryData: Validator = (data) => {
+export const validateSampleSummaryContent: Validator = (data) => {
   if (!isObject(data)) return "expected an object";
   if (!isObject(data.range)) return 'missing "range" ({ earliestStartedAt, latestStartedAt })';
   if (!(data.range.earliestStartedAt === null || typeof data.range.earliestStartedAt === "string")) {
@@ -49,9 +49,9 @@ export const validateScopeSummaryData: Validator = (data) => {
 
 // ───────────────────────── 概览组件 ─────────────────────────
 
-export type ScopeSummaryProps = DataProps<
-  ScopeSummaryData,
-  Record<never, never>,
+export type SampleSummaryProps = DataProps<
+  SampleSummaryContent,
+  globalThis.Record<never, never>,
   ChromeProps & {
     /** 显示哪一级计票;默认 "eval"。data 恒携带两级,votes 只选择呈现。 */
     votes?: "eval" | "attempt";
@@ -59,29 +59,29 @@ export type ScopeSummaryProps = DataProps<
 >;
 
 /** 范围摘要卡:时间窗、数量、两级计票、端到端通过率与总成本。 */
-export const ScopeSummary = makeDataComponent<
-  ScopeSummaryData,
-  Record<never, never>,
+export const SampleSummary = makeDataComponent<
+  SampleSummaryContent,
+  globalThis.Record<never, never>,
   ChromeProps & { votes?: "eval" | "attempt" }
 >({
-  name: "ScopeSummary",
-  dataFnName: "scopeSummaryData",
-  shapeName: "ScopeSummaryData",
-  dataFn: (input) => scopeSummaryData(input),
+  name: "SampleSummary",
+  dataFnName: "sampleSummary",
+  shapeName: "SampleSummaryContent",
+  dataFn: (input) => sampleSummary(input),
   specKeys: [],
-  validate: validateScopeSummaryData,
-  web: (props, ctx) => <ScopeSummaryWeb {...props} locale={props.locale ?? ctx.locale} />,
+  validate: validateSampleSummaryContent,
+  web: (props, ctx) => <SampleSummaryWeb {...props} locale={props.locale ?? ctx.locale} />,
   text: (props, ctx) => scopeSummaryText(props.data, props.votes ?? "eval", ctx),
-}) as unknown as ReportComponent<ScopeSummaryProps>;
+}) as unknown as ReportComponent<SampleSummaryProps>;
 
 type ComparisonChrome = ChromeProps & {
   /** 透传给散点;缺省跟随缺省 series 解析——按 line 归类时连线(声明了线就画线)。 */
   connect?: boolean;
 };
 
-export type ExperimentComparisonProps = ComparisonChrome & {
+export type SampleOverviewProps = ComparisonChrome & {
   input?: ReportInput;
-  /** 散点的 series 维度。缺省解析:Scope 内任一实验声明了 label `line` → `label("line")` 并连线;否则 `"agent"`、不连线。 */
+  /** 散点的 series 维度。缺省解析:Sample 内任一实验声明了 label `line` → `label("line")` 并连线;否则 `"agent"`、不连线。 */
   series?: SeriesInput;
 };
 
@@ -89,14 +89,14 @@ export type ExperimentComparisonProps = ComparisonChrome & {
 const LINE_LABEL_KEY = "line";
 
 /**
- * 缺省 series:Scope 内任一快照声明了 labels.line 用 line 维度,否则 agent;显式传入覆盖。
+ * 缺省 series:Sample 内任一快照声明了 labels.line 用 line 维度,否则 agent;显式传入覆盖。
  * connect 缺省跟随最终 series 是否解析为 line(即便是显式传入的)。
  */
 function resolveComparisonSeries(
   input: ReportInput,
   props: { series?: SeriesInput; connect?: boolean },
 ): { series: SeriesInput; connect: boolean } {
-  const hasLine = resolveInput(input).snapshots.some((s) => s.experiment?.labels?.[LINE_LABEL_KEY] !== undefined);
+  const hasLine = resolveInput(input).runs.some((s) => s.experiment?.labels?.[LINE_LABEL_KEY] !== undefined);
   const series = props.series ?? (hasLine ? label(LINE_LABEL_KEY) : "agent");
   return { series, connect: props.connect ?? seriesName(series) === LINE_LABEL_KEY };
 }
@@ -105,19 +105,19 @@ function resolveComparisonSeries(
  * 单个快照的题型:题型只在单个 experiment 内被强制统一,任一 attempt 就能代表整个快照;
  * 零 attempt 的快照(或没有一个是 "points" 的)记 "pass",与「省略即通过制」的定义期默认一致。
  */
-function snapshotScoring(snapshot: Snapshot): "pass" | "points" {
-  return snapshot.attempts.some((a) => a.result.scoring === "points") ? "points" : "pass";
+function snapshotScoring(run: Run): "pass" | "points" {
+  return run.attempts.some((a) => a.result.scoring === "points") ? "points" : "pass";
 }
 
 /**
- * 按快照谓词筛 input,产出与原 input 同一"形状族"的 ReportInput:Scope 走它自己的
- * filter(snapshots/attempts/coverage/warnings 一并同步收窄),裸 Snapshot[] 走
+ * 按快照谓词筛 input,产出与原 input 同一"形状族"的 ReportInput:Sample 走它自己的
+ * filter(runs/attempts/coverage/issues 一并同步收窄),裸 Run[] 走
  * Array.prototype.filter——两条分支的结果都可以原样喂给 MetricScatter / ExperimentList。
  */
-function filterInputBySnapshot(input: ReportInput, predicate: (snapshot: Snapshot) => boolean): ReportInput {
-  if (Array.isArray(input)) return (input as readonly Snapshot[]).filter(predicate);
-  const scope = input as Scope;
-  return scope.filter(predicate);
+function filterInputBySnapshot(input: ReportInput, predicate: (run: Run) => boolean): ReportInput {
+  if (Array.isArray(input)) return (input as readonly Run[]).filter(predicate);
+  const scope = input as Sample;
+  return scope.filter((attempt) => predicate(attempt.run));
 }
 
 /**
@@ -126,19 +126,19 @@ function filterInputBySnapshot(input: ReportInput, predicate: (snapshot: Snapsho
  * 也不导出自己的 data 形态;每个叶子组件按自己的公开契约取数,共享计算由 resolve 的
  * 「同引用 input + 深相等 spec」记忆化保证。主读数按 scoringComposition(input) 切换:
  * "pass" 用 endToEndPassRate、"points" 用 totalScore;"mixed" 按题型把 input 拆成两个
- * 子 Scope,散点与 ExperimentList 每组各一份、各用各的主读数,ScopeSummary 始终是整个
+ * 子 Sample,散点与 ExperimentList 每组各一份、各用各的主读数,ScopeSummary 始终是整个
  * input 一份(docs/feature/reports/components/summaries/sample-overview.md)。
  */
-export const ExperimentComparison = defineComponent<ExperimentComparisonProps>(async (props, ctx) => {
+export const SampleOverview = defineComponent<SampleOverviewProps>(async (props, ctx) => {
   const input = props.input ?? ctx.scope;
   const { series, connect } = resolveComparisonSeries(input, props);
   const composition = await scoringComposition(input);
 
   if (composition !== "mixed") {
-    const primary = composition === "points" ? totalScore : endToEndPassRate;
+    const primary = composition === "points" ? totalScore : passRate;
     return (
       <Col className={props.className}>
-        <ScopeSummary input={input} locale={props.locale} />
+        <SampleSummary input={input} locale={props.locale} />
         <MetricScatter
           input={input}
           points="experiment"
@@ -153,13 +153,13 @@ export const ExperimentComparison = defineComponent<ExperimentComparisonProps>(a
     );
   }
 
-  // mixed:按题型拆成两个子 Scope,散点 + ExperimentList 各一份、各用各的主读数;
+  // mixed:按题型拆成两个子 Sample,散点 + ExperimentList 各一份、各用各的主读数;
   // series/connect 只从整个 input 解析一次,题型拆分与 series 归类正交,两组共用。
-  const passInput = filterInputBySnapshot(input, (snapshot) => snapshotScoring(snapshot) === "pass");
-  const pointsInput = filterInputBySnapshot(input, (snapshot) => snapshotScoring(snapshot) === "points");
+  const passInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "pass");
+  const pointsInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "points");
   return (
     <Col className={props.className}>
-      <ScopeSummary input={input} locale={props.locale} />
+      <SampleSummary input={input} locale={props.locale} />
       <Col>
         <MetricScatter
           input={passInput}
@@ -167,7 +167,7 @@ export const ExperimentComparison = defineComponent<ExperimentComparisonProps>(a
           series={series}
           connect={connect}
           x={costUSD}
-          y={endToEndPassRate}
+          y={passRate}
           locale={props.locale}
         />
         <ExperimentList input={passInput} filter locale={props.locale} />
@@ -187,4 +187,11 @@ export const ExperimentComparison = defineComponent<ExperimentComparisonProps>(a
     </Col>
   );
 });
-ExperimentComparison.displayName = "ExperimentComparison";
+SampleOverview.displayName = "SampleOverview";
+
+/** @internal 供仓库内尚未迁移的测试过渡；不从 niceeval/report 导出。 */
+export const ScopeSummary = SampleSummary;
+/** @internal */
+export const ExperimentComparison = SampleOverview;
+/** @internal */
+export const validateScopeSummaryData = validateSampleSummaryContent;

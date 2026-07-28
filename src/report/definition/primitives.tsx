@@ -7,7 +7,7 @@
 // 本文件只声明两面适配,不重复那份算术。
 
 import type { CSSProperties, ReactNode } from "react";
-import type { AttemptLocator } from "../../results/locator.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import { COMPONENT_RAW_CHILDREN, COMPONENT_ROLE, defineComponent, type ReportNode } from "./tree.ts";
 import { localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../model/locale.ts";
 import { indentBlock, joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
@@ -116,7 +116,7 @@ function renderGridRow(blocks: string[], contentWidths: number[], gutter: number
 }
 
 /**
- * 自由摘要面板的格子容器:只负责呈现,不读取 Scope、不聚合 Metric。每个直接子节点
+ * 自由摘要面板的格子容器:只负责呈现,不读取 Sample、不聚合 Metric。每个直接子节点
  * (数组 / Fragment 先按 ReportNode 规则展平,空分支不占格)是一格;`Col` 把多个区块
  * 归成一格。展平与 text 面排版的算术在 ./grid-layout.ts,这里只做两面结构适配。
  */
@@ -350,7 +350,7 @@ function tabEntries(children: ReportNode): TabEntry[] {
       return;
     }
     if (typeof node === "object" && node !== null && "props" in node) {
-      const element = node as { type: unknown; props: Record<string, unknown> };
+      const element = node as { type: unknown; props: globalThis.Record<string, unknown> };
       if (element.type === Symbol.for("react.fragment")) {
         visit(element.props.children as ReportNode);
         return;
@@ -441,7 +441,7 @@ export interface TableRow {
   /** 行身份。 */
   key: string;
   /** 已格式化的显示值;`null`(或缺这个键)渲染成 `—`,不补 0。 */
-  cells: Readonly<Record<string, string | null>>;
+  cells: Readonly<globalThis.Record<string, string | null>>;
   /** 带上就多一列 attempt:web 面链到证据室,text 面列出 locator。 */
   locator?: AttemptLocator;
 }

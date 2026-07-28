@@ -3,15 +3,15 @@
 // 定位:各 agent SDK 的流式协议(Claude Agent SDK 的 `SDKMessage`、pi-agent-core 的
 // `AgentEvent`、Codex SDK 的 `ThreadEvent`)是 SDK 定义的通用协议,不是某个应用的私有格式——
 // 这层映射知识属于 niceeval 官方包,adapter 里只该剩传输粘合(应用把流放在哪个端点、
-// 审批走什么端点)。类型全部用结构化的 *Like 声明(同 fromAiSdk 的先例),不依赖任何 SDK 包。
+// 审批走什么端点)。类型全部用结构化的 *Like 声明(同 turnFromAiSdk 的先例),不依赖任何 SDK 包。
 //
 // 用法(以 Claude Agent SDK 为例):
 //
 // ```typescript
-// import { sseJsonFrames, fromClaudeSdkMessages } from "niceeval/adapter";
+// import { sseJsonFrames, createClaudeSdkEventStream } from "niceeval/adapter";
 //
 // const frames = sseJsonFrames<SDKMessage>(res.body);
-// const stream = fromClaudeSdkMessages();
+// const stream = createClaudeSdkEventStream();
 // for (;;) {
 //   const frame = await frames.next();
 //   if (frame === null) break;
@@ -58,7 +58,7 @@ export function sseJsonFrames<T>(body: ReadableStream<Uint8Array>): SseFrameCurs
   return { next };
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+function isRecord(v: unknown): v is globalThis.Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
@@ -101,7 +101,7 @@ export interface ClaudeSdkStream {
  * (逐 token 渲染)整个忽略。HITL 的停轮判定(哪个工具被门控)是应用侧的知识,不在这里——
  * 扫描 add() 返回的 action.called 自行决定。
  */
-export function fromClaudeSdkMessages(): ClaudeSdkStream {
+export function createClaudeSdkEventStream(): ClaudeSdkStream {
   let sessionId: string | undefined;
   let usage: Usage | undefined;
   let failed = false;
@@ -242,7 +242,7 @@ export interface PiAgentStream {
  * stopReason "error" / "aborted" 收尾时记失败(`failed`)并发一条 error 事件。
  * tool_execution_start/end → action.called / action.result。
  */
-export function fromPiAgentEvents(): PiAgentStream {
+export function createPiAgentEventStream(): PiAgentStream {
   let usage: Usage | undefined;
   let failed = false;
   // message_start/update 累加的增量缓冲;message_end 落地后清空,截断流(无 end)不落地。
@@ -253,7 +253,7 @@ export function fromPiAgentEvents(): PiAgentStream {
   const partText = (event: PiAgentEventLike, type: "text" | "thinking"): string => {
     if (event.message?.role !== "assistant" || !Array.isArray(event.message.content)) return "";
     return event.message.content
-      .filter((part): part is Record<string, unknown> => isRecord(part) && part.type === type)
+      .filter((part): part is globalThis.Record<string, unknown> => isRecord(part) && part.type === type)
       .map((part) => {
         const v = type === "text" ? part.text : part.thinking;
         return typeof v === "string" ? v : "";
@@ -367,7 +367,7 @@ export interface CodexThreadStream {
 }
 
 /** Codex SDK 线程事件流(`thread.started` / `item.*` / `turn.completed` / `turn.failed`)→ 标准事件。 */
-export function fromCodexThreadEvents(): CodexThreadStream {
+export function createCodexThreadEventStream(): CodexThreadStream {
   let threadId: string | undefined;
   let usage: Usage | undefined;
   let failed = false;
@@ -375,7 +375,7 @@ export function fromCodexThreadEvents(): CodexThreadStream {
   const startedCallIds = new Set<string>();
   let synth = 0;
 
-  const callIdOf = (item: Record<string, unknown>, prefix: string): string => {
+  const callIdOf = (item: globalThis.Record<string, unknown>, prefix: string): string => {
     const id = item.id;
     return typeof id === "string" || typeof id === "number" ? String(id) : `${prefix}_${++synth}`;
   };
@@ -384,7 +384,7 @@ export function fromCodexThreadEvents(): CodexThreadStream {
   // transcript 映射保持同一套语义(字段名以 codex exec --json 的 ThreadItem 为准),
   // 包括规范工具名 tool:少了它 derive 只能落 name="unknown",calledTool("shell") 这类
   // 跨 agent 规范名断言在 SDK 流路径上会静默失配(2026-07-09 CI 实红)。
-  const handleToolItem = (item: Record<string, unknown>, isCompleted: boolean): StreamEvent[] => {
+  const handleToolItem = (item: globalThis.Record<string, unknown>, isCompleted: boolean): StreamEvent[] => {
     const events: StreamEvent[] = [];
     const emitCall = (callId: string, name: string, input: JsonValue, tool: ToolName): void => {
       if (startedCallIds.has(callId)) return;

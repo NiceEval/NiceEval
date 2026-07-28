@@ -17,7 +17,7 @@ import { GENERIC_VERB_ALIASES, normalizeToolName as normalizeShared } from "../t
  * OpenClaw 特有工具别名(CLI 自己的 transcript 词汇,不会撞用户域名,裸动词可 opt-in)
  * + 通用裸动词基表。
  */
-export const OPENCLAW_TOOL_ALIASES: Record<string, ToolName> = {
+export const OPENCLAW_TOOL_ALIASES: globalThis.Record<string, ToolName> = {
   ...GENERIC_VERB_ALIASES,
   read: "file_read",
   write: "file_write",
@@ -32,7 +32,7 @@ function normalizeToolName(name: string): ToolName {
 }
 
 function get(obj: unknown, key: string): unknown {
-  return obj && typeof obj === "object" ? (obj as Record<string, unknown>)[key] : undefined;
+  return obj && typeof obj === "object" ? (obj as globalThis.Record<string, unknown>)[key] : undefined;
 }
 
 function str(v: unknown): string | undefined {
@@ -310,12 +310,12 @@ export function parseOpenClawRunJson(stdout: string | undefined): OpenClawRunJso
   };
 }
 
-function parseJsonDocument(stdout: string | undefined): Record<string, unknown> | undefined {
+function parseJsonDocument(stdout: string | undefined): globalThis.Record<string, unknown> | undefined {
   if (!stdout || !stdout.trim()) return undefined;
   const trimmed = stdout.trim();
   try {
     const doc = JSON.parse(trimmed) as unknown;
-    if (doc && typeof doc === "object" && !Array.isArray(doc)) return doc as Record<string, unknown>;
+    if (doc && typeof doc === "object" && !Array.isArray(doc)) return doc as globalThis.Record<string, unknown>;
   } catch {
     // 混日志行:逐行找最后一个完整 JSON 对象
   }
@@ -325,7 +325,7 @@ function parseJsonDocument(stdout: string | undefined): Record<string, unknown> 
     if (!l.startsWith("{") || !l.endsWith("}")) continue;
     try {
       const doc = JSON.parse(l) as unknown;
-      if (doc && typeof doc === "object") return doc as Record<string, unknown>;
+      if (doc && typeof doc === "object") return doc as globalThis.Record<string, unknown>;
     } catch {
       // 继续往上找
     }
