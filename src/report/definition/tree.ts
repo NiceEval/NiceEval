@@ -370,16 +370,25 @@ const DEFAULT_WEB_CONTEXT: WebContext = {
     throw noPlanError(handle);
   },
 };
-let activeWebContext: WebContext | null = null;
+/** view 宿主走 dist/report,报告文件经 tsx 走 src/report —— 模块级变量不共享,用 globalThis 传当前 web 上下文。 */
+const ACTIVE_WEB_CONTEXT_KEY = Symbol.for("niceeval.report.activeWebContext");
+type ActiveWebContextHost = typeof globalThis & { [ACTIVE_WEB_CONTEXT_KEY]?: WebContext | null };
+
+function resolveActiveWebContext(): WebContext {
+  const globalCtx = (globalThis as ActiveWebContextHost)[ACTIVE_WEB_CONTEXT_KEY];
+  return globalCtx ?? DEFAULT_WEB_CONTEXT;
+}
 
 /** web 宿主用:在给定 WebContext 下同步渲染(React 静态渲染本身是同步的)。 */
 export function runWithWebContext<T>(ctx: WebContext, fn: () => T): T {
-  const prev = activeWebContext;
-  activeWebContext = ctx;
+  const host = globalThis as ActiveWebContextHost;
+  const prev = host[ACTIVE_WEB_CONTEXT_KEY] ?? null;
+  host[ACTIVE_WEB_CONTEXT_KEY] = ctx;
   try {
     return fn();
   } finally {
-    activeWebContext = prev;
+    if (prev === null) delete host[ACTIVE_WEB_CONTEXT_KEY];
+    else host[ACTIVE_WEB_CONTEXT_KEY] = prev;
   }
 }
 
@@ -427,7 +436,7 @@ export function defineComponent<P, R = P>(
   const component = ((props: P) =>
     faces.web(
       props as unknown as R,
-      bindNodeDimensions(activeWebContext ?? DEFAULT_WEB_CONTEXT, props as unknown as object),
+      bindNodeDimensions(resolveActiveWebContext(), props as unknown as object),
     )) as ReportComponent<P>;
   component[COMPONENT_FACES] = faces as ComponentFaces<P, unknown>;
   return component;
