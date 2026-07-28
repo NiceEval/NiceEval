@@ -259,6 +259,7 @@ Composition **不接受结构子节点**——覆盖的方式是不用它，直�
 | [`RunNotices`](summaries/run-notices.md) | snapshot + persisted Run diagnostics → 产品解释 |
 | [`SampleFixPrompt`](summaries/sample-fix-prompt.md) | 失败事实 → 可复制的批量修复 prompt |
 | [`FailureList`](summaries/failure-list.md) | 取数 → 过滤出失败 → attempt 表 |
+| [`StabilityOverview`](summaries/stability-overview.md) | 稳定性读数格 + 散点 + 判定堆叠柱 + 矩阵 |
 | [`Hero`](site/hero.md) | `ctx.report.title` + Sample 来源 → 站点标题区 |
 | [`AttemptDetail`](attempt-detail/attempt-detail.md) | 一次 attempt 的全部区块，按内建顺序 |
 | [`AttemptAssessment`](attempt-detail/attempt-assessment.md) | `AttemptNotices` + source / assertions fallback |

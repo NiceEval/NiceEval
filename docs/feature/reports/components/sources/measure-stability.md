@@ -30,6 +30,8 @@ interface StabilityRow extends Row {
   cells: Readonly<Record<string, {
     kind: "verdict";
     counts: VerdictCounts;
+    /** 本格覆盖的全部历史执行；与 counts 同一集合，是格与散点点位的下钻证据。 */
+    refs: readonly AttemptLocator[];
   }>>;
 }
 
@@ -53,7 +55,8 @@ function stability(
 计算跨 Run 按[身份键](../../../record/library.md#身份键与去重)去重，不设 Sample 可比性门槛，也不受
 `--fresh` 限制。行按历史最高通过率升序，零通过的题排最前；同值再按 `evalId` 字典序收口。
 格内计数固定分成 passed、failed、errored，避免把环境事故误判成题目难度；`skipped` 不进入执行数。
-矩阵只陈列计数，不替读者下结论。
+矩阵只陈列计数，不替读者下结论。每格随 `counts` 携带同一集合的 `refs`：数字能回到具体的
+历史执行，传 `attemptHref` 时格与[稳定性散点](../summaries/stability-overview.md)的点都能下钻。
 
 `evals` 属于 Source options；`attemptHref`、`locale`、`className` 属于 Table。手工计算写
 `await sources.measure.stability(options).compute(sample)`。
@@ -61,6 +64,7 @@ function stability(
 ## 相关阅读
 
 - [Measure 数据源](measure.md) —— 共用数据形状与两面规则。
+- [`StabilityOverview`](../summaries/stability-overview.md) —— 消费本数据源的读数格、散点与堆叠柱。
 - [`sources.measure.rows`](measure-rows.md) / [`sources.measure.matrix`](measure-matrix.md) /
   [`sources.measure.scoreboard`](measure-scoreboard.md) /
   [`sources.measure.delta`](measure-delta.md) —— 其它表格数据源。

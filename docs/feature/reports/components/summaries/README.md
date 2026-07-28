@@ -10,6 +10,7 @@
 | [`RunNotices`](run-notices.md) | 这批 Run 的执行过程有没有问题 |
 | [`SampleFixPrompt`](sample-fix-prompt.md) | 拿什么去修这批失败 |
 | [`FailureList`](failure-list.md) | 现在有哪些失败要处理 |
+| [`StabilityOverview`](stability-overview.md) | 这套题历史上稳不稳（`stability` 视图的主体） |
 
 它们都是用公开数据源与原语写成的普通组合组件，没有宿主特权；每篇给出等价全文，照抄即可改。
 attempt-input page 的对应区块族在 [Attempt 详情](../attempt-detail/README.md)。

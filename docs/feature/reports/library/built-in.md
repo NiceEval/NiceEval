@@ -2,17 +2,25 @@
 
 `niceeval/report/built-in` 是内建视图的家：每个内建视图是一份普通 `defineReport` 成品，有自己的名字，按名字具名导出、一视图一个源文件；入口的**默认导出**恒等于 `standard`——[取值链](../README.md#项目默认报告)最后一档装载的那份。默认报告不是私有实现，也不是省略字段时被召唤的隐式默认，只是「取值链兜底拿哪个值」的事实。
 
-**具名导出名同时是 CLI 上的视图名。** `--report standard` 与 `--report ./reports/site.tsx` 是同一个 flag 的两种取值形态：裸词查这张名字表，带路径形按文件装载（[判别规则](../architecture.md#外壳与页装载规范化)）。名字表就是这个入口的具名导出集合，当前只有 `standard`；配了 `config.report` 之后想临时看回默认报告，`niceeval show --report standard` 是不用改配置的那条路。
+**具名导出名同时是 CLI 上的视图名。** `--report standard` 与 `--report ./reports/site.tsx` 是同一个 flag 的两种取值形态：裸词查这张名字表，带路径形按文件装载（[判别规则](../architecture.md#外壳与页装载规范化)）。名字表就是这个入口的具名导出集合，当前是 `standard` 与两个任务视图 `failures` / `stability`；配了 `config.report` 之后想临时看回默认报告，`niceeval show --report standard` 是不用改配置的那条路。
 
 ```ts
-import builtIn, { standard, standardAttemptPage } from "niceeval/report/built-in";
+import builtIn, {
+  failures, stability, standard, standardAttemptPage,
+} from "niceeval/report/built-in";
 
 standard; // ReportDefinition：四张 page，其中三张进导航
+failures; // ReportDefinition：失败处理台，一张导航页加详情页
+stability; // ReportDefinition：稳定性，一张导航页加详情页
 standardAttemptPage; // ReportPage：以 locator 为输入、不进导航的详情 page
 builtIn;  // 默认导出 === standard，宿主装载取这个值
 ```
 
-当前视图只有 `standard`。新增内建视图的形态已经由这个入口定死：一份新的 `defineReport` 成品、一个新名字、一个新文件、一条新的具名导出——不需要注册表，也不改变装载管线。
+新增内建视图的形态由这个入口定死：一份新的 `defineReport` 成品、一个新名字、一个新文件、
+一条新的具名导出——不需要注册表，也不改变装载管线。准入判据三条同时成立才开新名字：
+零配置可算（不需要用户声明题集、条件或权重）、任务高频到值得免写报告文件、塞进 `standard`
+会稀释它的首页。成绩单与对照各过不了第一条——分母与条件顺序都要用户声明，它们的家是组件加
+[用例手册](../use-case/README.md)。
 
 `standard` 的全文如下：
 
@@ -82,6 +90,60 @@ Run Notice 和批量修复 prompt 是普通组件。locator 打开第四张 atte
 `AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog
 摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此
 **任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
+
+## 任务视图：failures 与 stability
+
+`standard` 回答「这份 Sample 现在怎样」；两个任务视图各回答一个高频问题，都是单导航页加
+`standardAttemptPage`——处理失败与稽核历史都要下钻 locator。裸跑兜底仍是 `standard`，
+任务视图只走 `--report failures` / `--report stability` 裸词装载。
+
+`failures` 回答「现在有哪些失败要处理、拿什么去修」，全文：
+
+```tsx
+export const failures = defineReport({
+  pages: [
+    {
+      id: "failures",
+      title: { en: "Failures", "zh-CN": "失败" },
+      content: (
+        <Col>
+          <Hero />
+          <SampleNotices />
+          <RunNotices />
+          <FailureList limit={50} />
+          <SampleFixPrompt />
+        </Col>
+      ),
+    },
+    standardAttemptPage,
+  ],
+});
+```
+
+`stability` 回答「哪些题历史上从没稳过、失败是题难还是环境事故」，全文：
+
+```tsx
+export const stability = defineReport({
+  pages: [
+    {
+      id: "stability",
+      title: { en: "Stability", "zh-CN": "稳定性" },
+      content: (
+        <Col>
+          <Hero />
+          <SampleNotices />
+          <RunNotices />
+          <StabilityOverview />
+        </Col>
+      ),
+    },
+    standardAttemptPage,
+  ],
+});
+```
+
+读数格、散点、堆叠柱与矩阵的装配全文在
+[`StabilityOverview`](../components/summaries/stability-overview.md)。
 
 ## 复用有两条路，语义不同、都显式
 

@@ -397,7 +397,7 @@ $ niceeval show weather/brooklyn --history
 
 ✓✗ 交替说明这个评估用例在抖，该修的是稳定性（被测程序或断言），反复重跑碰运气只会烧钱。从时间轴上挑一次失败和一次通过，复制行尾 `@<locator>` 分别 `niceeval show @<locator> --execution`，比对 Agent 两次行为差在哪。红绿分界正好对着一次配置改动（换过 model、flags）时，那不是抖，是配置引入的变化：默认报告只统计与实验当前配置一致的结果，时间轴不做这个筛选，改配置之前的执行也在轴上，正适合看出这条分界线。同一次执行被之后的运行以缓存携带时，时间轴仍只占一行——列的是执行本身，不是它被复制的次数。
 
-两次 run 的精确对比不提供专用 flag。使用 `DeltaTable` 组件编写自定义对比报告，再把文件传给 `--report`；终端和网页会渲染同一份报告。具体写法见[自定义报告](/zh/tutorials/custom-reports)。
+两次 run 的精确对比不提供专用 flag。使用 `sources.measure.delta` 编写自定义对比报告，再把文件传给 `--report`；终端和网页会渲染同一份报告。具体写法见[自定义报告](/zh/tutorials/custom-reports)。
 
 ## 常见诊断任务
 
@@ -684,5 +684,6 @@ Soft 断言的分数记录在 `assertions[].score` 里；非 `--strict` 模式�
 - coding-agent 失败时看 `--diff` 和 `--execution` 里的工具调用；两者结合能看出「改错了文件」还是「压根没调用该调用的工具」。
 - Sandbox 评估用例运行缓慢或超时时，先看 `--timing`。该视图分别列出排队、Sandbox 启动、setup hook 中的 shell、Agent 安装命令、每轮 `send`、可关联的 OTel model/tool 以及收尾阶段耗时。
 - 同批题在多个条件下跑过时，用多个 `--exp` 看逐题对照矩阵，不要只盯着两次单条件的默认报告肉眼对比。
-- 怀疑某道题本身有问题（不是这次条件变化导致）时，先看 `--stats` 里它是不是在所有条件、所有历史执行里都 `never passed`。
+- 怀疑某道题本身有问题（不是这次条件变化导致）时，先看 `--stats` 里它是不是在所有条件、所有历史执行里都 `never passed`；要网页版（散点、堆叠柱和可下钻矩阵）用 `niceeval view --report stability`。
+- 只想处理失败时，`niceeval view --report failures` 打开内建失败视图：待处理清单、批量修复 prompt 和逐条下钻都在一页。
 - 定位被测程序或评估用例缺陷并完成重跑的流程见 [Coding Agent 反馈闭环](/zh/tutorials/agent-feedback-loop)。

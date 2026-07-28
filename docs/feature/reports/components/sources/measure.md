@@ -67,6 +67,15 @@ keyset 上重新聚合，不是把截掉的几行平均，因此它必须住在�
 `dimension` 传数组即[复合维度](../../library/measures.md#维度与数值轴)：
 `["agent", label("memory")]` 的一个取值是一行，不是两行。
 
+## 家族不按任务加名字
+
+`rows` 与 `matrix` 是通用投影：维度 × 读数能表达的问题不开新入口。`scoreboard`、`delta`、
+`stability` 各自存在，是因为它们携带算错了会静默出错数的独立口径——固定题集分母、配对交集、
+跨 Run 身份去重。新问题先按三步问：换个 Sample 范围能不能表达、`rows` / `matrix` 换维度能不能
+表达、Composition 拿算好的 Content 用普通 JavaScript 加工能不能表达。三个都不能、且新口径有
+自己的正确性判据时，才配一个新名字。「历史趋势」就停在第一步：它是历史范围的 Sample 配
+`rows({ dimensions: ["run"] })`，不是一个新数据源。
+
 ## 两面
 
 所有表格数据源都交给 [`Table`](../primitives/table.md) 原语。自定义表和官方表用同一把尺子，

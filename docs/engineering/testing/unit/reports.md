@@ -85,7 +85,9 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   是定义期事实投影（不从 attempt 结果推断），experiment / eval / attempt 三级的 `totalScore`
   cell 在计分制下按读数口径求值（experiment 级 acrossEvals sum、eval 级 perEval
   mean）、通过制下为 null cell 且与 `passRate` 并存不互斥。
-- **站点组件与内建报告**：`standard` 的构成与具名导出同引用、三张 scope-input page 均相邻放置
+- **站点组件与内建报告**：`standard` 的构成与具名导出同引用、`failures` / `stability`
+  的构成与具名导出同引用（各一张导航页，且 pages 里的详情页与 `standardAttemptPage`
+  同引用）、三张 scope-input page 均相邻放置
   `sampleWarnings` 与 `runDiagnostics`、`defineReport({ extends })`
   的外壳叠加与页列表同引用、组合组件与手写组合严格等价；数据派生覆盖 hero、warning 分组聚合与组排序，以及
   `runDiagnostics` 对 Sample / 裸 Run[] 的同值投影、空诊断过滤、experiment →
@@ -95,6 +97,11 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   同一实例（纯通过制引用 `passRate`），`"mixed"`
   按题型拆成两组的展开树构成（每组一份 Chart + Table、`sampleSummary`
   整 Sample 一份）——以展开树与 Content 为断言面。
+- **`StabilityOverview` 的投影**：散点与堆叠柱的 Dataset 从 `StabilityContent` 字面投影。
+  点身份是 `eval · condition`；零执行格的 `passRatio` 为 `null` 不为 0；堆叠三段与 `totals`
+  同值；格 `refs` 原样进两个 measure cell 的 `refs`（`refs.length` 等于该格执行数）。
+  读数格的零通过与闪烁计数各一条区分力 fixture（全过与全挂都不算闪烁）。断言面是展开树与
+  Content，不经浏览器。
 - **resolve 与组合组件**：source/data 严格等价、`input` 缺省与覆盖、同 source + input 只计算一次、
   `ReportNode` 全集与非法节点的完整反馈、`ctx` 的构成、sibling 并行但输出保序。
 - **数据源选项归一**：`measureRows` / `measureMatrix` / `scoreboard` / `deltaRows` / `chart`
@@ -197,8 +204,9 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   引用与错误对象，不经渲染。覆盖：三档取值链按 `--report` → `config.report` → 内建 `standard`
   逐档回落，且每档产出的 definition 与直接 import 该定义同引用（`config.report`
   在场时裸跑不得再取内建）；`--report` 的形态判别——含 `/`、以 `.` 开头、带
-  `.ts`/`.tsx`/`.js`/`.mjs` 后缀的按文件装载，其余裸词查内建视图名表，`standard`
-  命中且与 `niceeval/report/built-in` 默认导出同引用；裸词未命中时报错列出可用名字并给出路径写法，不做文件系统探测（fixture 里存在同名
+  `.ts`/`.tsx`/`.js`/`.mjs` 后缀的按文件装载，其余裸词查内建视图名表，三个名字
+  （`standard` / `failures` / `stability`）各命中且与对应具名导出同引用（`standard`
+  兼默认导出）；裸词未命中时报错列出全部可用名字并给出路径写法，不做文件系统探测（fixture 里存在同名
   `./site.tsx` 时 `--report site` 仍报错，证明判别只看字符串）；`config.report`
   不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；mtime cache-busting 只作用于装载入口本体——`--report
   <文件>` 改报告文件后下一次装载读到新内容，`config.report` 的入口是配置文件，断言面是传给装载器的入口路径，不测进程重启行为。
