@@ -375,6 +375,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- [show-view-host-unit-tests-retired-to-e2e](show-view-host-unit-tests-retired-to-e2e.md) — 裁决(2026-07-28):show.test.ts / view-report.test.ts 整体删除,用法错误矩阵挪 e2e/report 的 verify-usage-errors.ts(预模型失败零 token,对 resultsRoot 只读须排在 verifyReadback 前);dev server 模块重载语义是唯一 e2e 覆盖不了的,搬进 view/data.test.ts;否决「report 组件数据测试也全删只留 e2e」——聚合口径要确定性 verdict 图案 fixture,真实模型造不出,e2e 只证出口一致、算法整体换错时全绿
 - [guard-entries-vitest-only-not-scripts](guard-entries-vitest-only-not-scripts.md) — 裁决(2026-07-26):说红绿的一律 vitest、写产物的才是脚本,删 `docs:lint` 与 `tiers:check`、CI 里的 INIT.md `diff` 搬进 `test/unit/`;推翻自己「台账不能做 file snapshot」的第一版——棘轮断言排在快照前,`-u` 就写不进被放宽的数字;顺带查实 CI 串行 step 前一步红会掩盖后面全部检查(tier 漂移因此从未被执行到)
 - [reset-point-term-over-warm-baseline](reset-point-term-over-warm-baseline.md) — 裁决(2026-07-26):串行复用那笔 commit 定名「复用 Sandbox 的题间重置点」(句内回指写「重置点」)、「温基线」进禁词并扫掉正文 35 处、「热道」立进总表;否决反过来把总表改成短名。同一概念的描述式长名已死过一次(`重置基线` 进过 `deadTerms`),所以立长名必须同批扫正文——`deadTerms` 只查「立了没人用」,查不出「正文在用但总表没立」
 - **待裁决** [undecided-chinese-terms-carry-scope-evalkind](undecided-chinese-terms-carry-scope-evalkind.md) — 三组中文术语待定(2026-07-26):Carry / Scope / Eval kind+Score point 含义已进 `docs/concepts.md`,中文列写 `未定`;现行写法「携带 / 作用域 / 计分制轴」均被用户否决且未给替代,裁决后一次全仓替换。同批已裁决:Dataset = **测试集**(已全仓替换,遗留 ML train/test 词义撞车风险,与 `早停` 被禁同因)

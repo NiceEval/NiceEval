@@ -13,7 +13,7 @@
 // docs/engineering/testing/e2e/report.md 的读面 CLI 行为(§4)与渲染面(§5)验收。
 //
 // fixture 直接写新布局(<expDir>/<snapDir>/run.json + <evalId>/a<n>/result.json),
-// 依据 docs/feature/record/architecture.md 的稳定磁盘契约(与 show.test.ts / view/data.test.ts 同一写法)。
+// 依据 docs/feature/record/architecture.md 的稳定磁盘契约(与 view/data.test.ts 同一写法)。
 
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";

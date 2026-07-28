@@ -18,7 +18,7 @@ import { runShow, type ShowFlags } from "./index.ts";
 import type { ShowJson } from "./json.ts";
 import { setConfiguredLocale } from "../i18n/index.ts";
 
-// ───────────────────────── fixture 工具(同 show.test.ts 的最小子集,自成一份不跨文件耦合) ─────────────────────────
+// ───────────────────────── fixture 工具(自成一份,不跨文件耦合) ─────────────────────────
 
 const roots: string[] = [];
 async function makeRoot(): Promise<string> {

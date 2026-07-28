@@ -23,7 +23,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
-/** 最小结果根:单实验单快照单 attempt(与 view-report.test.ts 的 writeSnapshot 同一姿势)。 */
+/** 最小结果根:单实验单快照单 attempt(与 view/data.test.ts 的 writeSnapshot 同一姿势)。 */
 async function seedRoot(): Promise<string> {
   const root = await makeRoot();
   const dir = join(root, "compare_bub", "2026-07-08T10-00-00-000Z");
@@ -56,7 +56,7 @@ const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></sv
 const GA_SRC = "https://www.googletagmanager.com/gtag/js?id=G-TEST";
 const OG_IMAGE = 'https://x.example/a"b.png';
 
-/** 不经包入口也合法的最小外壳报告(与 view-report.test.ts 的 shellReportSource 同一姿势)。 */
+/** 不经包入口也合法的最小外壳报告(判别锚在 Symbol.for 上,与 view/data.test.ts 的 reportSource 同一姿势)。 */
 function headReportSource(head: string): string {
   return [
     'const FACES = Symbol.for("niceeval.report.faces");',

@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「show 终端宿主的选择、时间轴与文案」行:紧凑索引行的判定原因(verdictReasonLine)对多行
+// 「show 终端宿主的文案纯函数」行:紧凑索引行的判定原因(verdictReasonLine)对多行
 // `error.message` 折首行并剥控制字节收口——diagnose 从第二行起的 output tail 不进单行面,
 // 完整多行 message 归 attempt 详情块展开。
 // bug: memory/diagnose-tail-inline-defeats-one-line-elision.md

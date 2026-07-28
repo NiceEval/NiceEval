@@ -253,13 +253,17 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   `./site.tsx` 时 `--report site` 仍报错，证明判别只看字符串）；`config.report`
   不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；fresh import 让装载入口及其项目内 import 子图失效——`--report
   <文件>` 改报告文件或它 import 的组件后下一次装载读到新内容，`config.report` 的入口是配置文件（每次 scan 重装），断言面是渲染产物里的标记字符串，不测进程重启行为。
-- **view 数据装载（ViewScan）**：`resolveViewInput` 的位置参数 / `--record` / `--run`
-  互斥与存在性校验，位置参数按 eval id 前缀透传、含义不随文件系统状态改变；`loadViewScan`
-  的有效根收窄使证据室（`attemptsByBase` / `artifactDirs` /
-  `attemptPages.locators`）与报告槽 Selection 同步收窄；`viewData`
-  只含证据室元信息（`composedRuns`、`skippedRuns`、`report` 元信息）不携带统计产物；外壳标题取值链与
-  `ReportLink.icon` 原样透传进
-  `viewData.report`；`viewData.report.pages` 是外壳认识的全部 scope-input page（同时是内容块与 `#/page/<id>` 路由的键），声明 `navigation: false` 的页带标记在列而不是被删掉——导航列不列由外壳按这个标记决定；报告文件缺失、非法默认导出、前缀 / 实验匹配不到、零可读结果的完整错误反馈；报告文件或其项目内依赖变更后下一次装载读取新内容（namespaced import，不复用陈旧模块缓存）；经 `config: { cwd }` 装载时改配置所 import 的报告文件同样读到新内容。全部以返回结构、Map/Set 内容与错误对象为断言面，不断言渲染出的 HTML 结构细节或终端文本。
+- **view 数据装载（ViewScan）**：`loadViewScan` 的数据层语义以返回结构、Map/Set
+  内容与错误对象为断言面——unreadable 的三种原因如实进 `viewData`（producer 感知的升级提示）；
+  报告槽 Sample 是现刻水位口径（与 show 同一 `currentSample`，`composedRuns` 反映跨快照合成）；
+  跨快照按 attempt 身份键去重，`--resume` 复印件不给证据室索引灌票；新布局落盘直接可读
+  （写入面 / 读取面同一契约）；零可读结果直说不渲染空页面；`viewData`
+  只含证据室元信息不携带统计产物；`loadLatestResultsPerEval`
+  的续跑携带口径；报告文件或其项目内依赖变更后下一次装载读取新内容（namespaced
+  import，不复用陈旧模块缓存），经 `config: { cwd }`
+  装载时改配置所 import 的报告文件同样读到新内容。`resolveViewInput`
+  的输入校验、收窄对证据室与导出的作用面、外壳导航与标题在真实站点上的呈现，归
+  [E2E 功能域 · 报告与读面](../e2e/report.md)。
 - **持续重建（view 本地模式）**：watch 输入闭集的判定——有效根内的记录变更、报告文件与它的项目内
   import 图（含自定义组件文件）、主题文件、`niceeval.config.ts` 触发重建；有效根之外的记录与依赖目录
   里的包不触发。重建是整条管线重跑，同一输入下与 `--out` 产物逐字节一致（这一格是「增量拼接」错误
@@ -306,16 +310,14 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **外壳与页面装载**：三种声明形态归一到同一规范化产物、`content`/`pages`/`extends`
   恰好其一、标题取值链、资产路径纪律与 head 白名单/转义/scheme 分流、page id 与 attempt-input
   page 的校验规则。全部以装载结果或错误对象为断言面。
-- **show 终端宿主的选择、时间轴与文案**：`show`
-  专属的纯函数与错误路径以返回值或文案为断言面，不依赖终端排版——`attemptHistory` 按 experimentId +
-  evalId 分节、跨 Run 按 attempt 身份键去重（resume 携带的复印件不占行）、startedAt 升序、单行摘要与成本派生；紧凑索引行的判定原因（`verdictReasonLine`）对多行
+- **show 终端宿主的文案纯函数**：`show`
+  专属的纯函数以返回值为断言面，不依赖终端排版——紧凑索引行的判定原因（`verdictReasonLine`）对多行
   `error.message` 折首行并剥控制字节收口，完整多行 message 归 attempt 详情块展开；`showCommand` /
   `otherPagesText` 按 `HostCommandContext`
-  拼出可复现的页/组索引命令，只列未渲染的页且携带完整上下文；eval
-  id 前缀无匹配、`--history`/`--report`/`--page` 的互斥与用法冲突、`@<locator>`
-  语法错误与索引未命中、证据切面撞多个 eval 时的紧凑索引——全部以 CLI 抛出的错误对象/文案为断言面。
-  跨 Run 的当前 Sample 选择与去重语义不在这里重复，归[单元测试 Record / Sample](record.md)的
-  `currentSample()` 类别。
+  拼出可复现的页/组索引命令，只列未渲染的页且携带完整上下文。选择收窄、`--history`
+  时间轴与用法错误矩阵是进程级读面行为，在真实进程的退出码与 stderr 上验收，归
+  [E2E 功能域 · 报告与读面](../e2e/report.md)；跨 Run 的当前 Sample
+  选择与去重语义归[单元测试 Record / Sample](record.md)的 `currentSample()` 类别。
 - **o11y 数据派生**：
   - `estimateCost` 对未知 Model 返回 `null`。缺少 Usage 时不猜零成本。
   - `buildExecutionTree` 合成标准事件流与 OTel
@@ -324,16 +326,17 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
     `pending`。配到 result 后使用 result 状态。只有 result 时保留占位。
   - 同一 callId 在 result 之后再次 called，表示新的调用。Fixture 要跨 Turn 复用 callId，防止实现覆盖前一次调用。
   - `contextInjections` 只计数 `context.injected`，不与其它事实重复。
-- **show 的范围 × 切片正交**：
-  - source、execution、timing、usage 与 diff 接受同一种范围。单 locator 只是单元素范围，不走专用选择路径。
-  - 每个 `--exp` 必须只匹配一个 Experiment。多条件按 Eval id 配对，缺席条件显示 `—`，且不计入分母。
+- **对照口径（`deltaRows` / `stabilityRows`）**：
+  - 多条件按 Eval id 配对，缺席条件显示 `—`，且不计入分母。
   - `flipped` 只表示判定不一致。逐行差值使用原始值；任一侧缺失时，差值也缺失。
   - 每个条件的 totals 描述自身覆盖面。paired
     delta 只聚合基线与候选共同拥有的 Eval。Fixture 必须让两侧覆盖不同，防止实现直接相减两个 totals。
   - 混合题型按通过制与计分制分段，各自使用独立分母。断言面是 `deltaRows`。
   - `--stats` 中 `failed` 与 `errored` 分列，`skipped` 不计。无执行组合是缺失，不是三个零。断言面是
     `stabilityRows`。
-  - 每一种参数冲突都返回完整用法错误。
+  - 切片对范围的接受面（单 locator 只是单元素范围）、`--exp`
+    的范围校验与每一种参数冲突的完整用法错误，是进程级读面行为，归
+    [E2E 功能域 · 报告与读面](../e2e/report.md)。
 
   用户侧全流程见[从终端做跨条件归因](../../../feature/reports/use-case/分析/终端跨条件归因.md)。口径单源见
   [Measure Views](../../../feature/reports/components/charts/README.md)。

@@ -24,7 +24,7 @@ vite-node 按「扩展名 + query」误判文件类型,esbuild 报 `JSX syntax i
 
 **修法**:`src/report/load.ts` 的 `loadReportFile` 里 query import 失败时退化为普通
 import(失去变更重载,不失去功能);仍失败才抛真错误。测试里 tmpdir 的 `.mjs` 报告文件
-走原生 import,query 正常,重载语义仍被 `src/view/view-report.test.ts` 覆盖。
+走原生 import,query 正常,重载语义仍被 `src/view/data.test.ts` 的整页重算 describe 覆盖。
 
 另注:旧实现的 cache-busting 只 bust 报告文件本体(依赖不追踪)。已改为 tsx
 namespaced register 失效整棵项目内 import 图,见

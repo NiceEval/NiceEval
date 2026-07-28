@@ -41,6 +41,17 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
   的 locator 按前缀处理并明确报无匹配、列出候选。
 - **历史与多页**：`show --history` 按 attempt 身份键跨 Run 去重、升序逐轮列出，与 `--report`
   互斥按用法错误退出；多页报告渲染初始页并附带可复现上下文的 `--page` 索引命令。
+- **用法错误矩阵**：读面 flag 的组合语义在真实进程上以非零退出与 `error:` / `fix:`
+  三段式验收。这些错误全部发生在装载与渲染之前，不产生模型调用。逐项覆盖：
+  - `@<locator>` 语法非法、索引未命中、与其它位置参数混用。
+  - `--history` / `--stats` 与 `--page`、`--report`、locator 的互斥矩阵。
+  - 对照语义（`--exp` 出现两次以上）下每个 `--exp` 必须恰好命中一个 experiment：
+    命中多个时列出全部候选；`@<locator>` 与重复 `--exp` 互斥。
+  - `--grep` 必须是合法 JS 正则、只与 `--execution` 组合、与 `--expand` 互斥；
+    `--expand` 要求范围恰好一个 attempt，句柄未命中报实际范围。
+  - `--report` 文件缺失、默认导出不是 `defineReport` 产物、`--page` 未命中列出可用页 id；
+    自定义报告缺 attempt-input page 时指引解决路径，不静默回退内建详情。
+  - view 的 `--record` / `--run` 互斥与不存在路径直说。
 - **证据切面**：`show @<locator>` 与 `--source` / `--execution` / `--timing` / `--diff`
   在真实证据上工作；`--timing` 的有界诊断树与 `--timing=full`
   全量展开按契约取样；落盘无 phases 时如实显示 unavailable，不猜。
@@ -116,8 +127,9 @@ selector 只是找到元素的手段，除非公开文档把它声明成 DOM、�
 
 ## 边界
 
-判定、聚合、计算口径、装载校验与错误反馈这些**数据语义**归[单元测试 Reports](../unit/reports.md)——数据源的
-`compute()` 与 resolve 管线在 fixture 上证明，不需要真实运行。本仓库承接从数据到呈现的一切：渲染出来的结构、排版、样式与交互，以及 CLI 读面的进程级行为。
+判定、聚合、计算口径与报告定义的装载规范化这些**数据语义**归[单元测试 Reports](../unit/reports.md)——数据源的
+`compute()` 与 resolve 管线在 fixture 上证明，不需要真实运行。本仓库承接从数据到呈现的一切：渲染出来的结构、排版、样式与交互，以及
+CLI 读面的进程级行为——选择收窄、用法错误矩阵与装载失败反馈都在真实进程的退出码与 stderr 上验收。
 
 每个仓库验收链尾的
 [CLI 读回](README.md#43-cli-读回)会在真实数据上驱动 show 的读取与渲染路径，但断言停在自有事实的出现与口径一致；逐字段的格式、出口与渲染契约只在本仓库验收一次。
