@@ -78,11 +78,26 @@ export type {
   VerdictTally,
 } from "../model/types.ts";
 export type { Cell, ColumnSpec, TableContent, TableContentRow, VerdictCounts } from "../definition/cell.ts";
+export { formatCellText } from "../definition/cell.ts";
 export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 
-// locale(官方组件 chrome 文案的语言;LocalizedText 的按 locale 解析也用它)
-export { DEFAULT_REPORT_LOCALE, resolveLocalizedText, resolveMetricLabel } from "../model/locale.ts";
-export type { LocalizedText, ReportLocale } from "../model/locale.ts";
+// 格式化与呈现工具箱前四组(docs/feature/reports/library/presentation.md):自有 React 页面与报告面同实现。
+export {
+  formatAxisTick,
+  formatMeasureValue,
+  measureDisplay,
+  missingText,
+} from "../model/format.ts";
+export type { MeasureDisplay } from "../model/format.ts";
+export { presentDimension, shortestUniqueLabels } from "../presentation.ts";
+export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "../presentation.ts";
 
-// 稳定配色(自定义组件想与官方组件同键同色时用;seriesClassForKey 配 CSS 的系列变量)
-export { SERIES_PALETTE, colorClassForKey, colorHexForKey, colorIndexForKey, seriesClassForKey } from "../assets/colors.ts";
+// locale(官方组件 chrome 文案的语言;LocalizedText 的按 locale 解析也用它)
+export {
+  DEFAULT_REPORT_LOCALE,
+  localizedTextEquals,
+  resolveLocalizedText,
+  resolveMeasureLabel,
+  resolveMeasureLabel as resolveMetricLabel,
+} from "../model/locale.ts";
+export type { LocalizedText, ReportLocale } from "../model/locale.ts";

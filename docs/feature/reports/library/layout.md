@@ -34,11 +34,9 @@ type RowProps = LayoutProps;
 type ColProps = LayoutProps;
 
 interface GridProps extends LayoutProps {
-  /** 宽面最多摆几列；必须是正整数。 */
-  columns: number;
   /** plain 无框；boxed 给每个 cell 完整四边框。默认 plain。 */
   variant?: "plain" | "boxed";
-  /** 改变格内留白，并调整内置 Stat 的主值字号；不改变内容和分组。默认 regular。 */
+  /** 格子体量：最小格宽、格内留白与内置 Stat 的主值字号；不改变内容和分组。默认 regular。 */
   density?: "regular" | "compact";
 }
 
@@ -172,7 +170,7 @@ export default defineReport(
 
 `Grid` 是自由摘要面板的格子容器，`Stat` 是其中最常见的 label / 主值 / 辅助信息内容。二者只负责呈现，不读取 Sample、不聚合 Measure，也不定义领域口径；报告作者从结果或自有数据算出终值后，把已格式化内容放进 `Stat`。需要 niceeval 代算读数、保留 `samples` / `total` / `refs` 时继续使用[Measure 数据源](../components/sources/measure.md)或[图表](../components/charts/README.md)，不能为了得到这种外观把 `MeasureCell` 降成几段丢失证据的字符串。
 
-`Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格；`columns` 是每行的宽面上限，不要求子节点数量恰好为其倍数。一个格子里要放多个区块时，用已有 `Col` 把它们归成一个直接子节点：
+`Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格。列数不是作者的输入：Grid 数出自己有几格，再按可用宽度自己排（见下面的[换列规则](#换列规则)）。一个格子里要放多个区块时，用已有 `Col` 把它们归成一个直接子节点：
 
 ```tsx
 // reports/run-overview.tsx
@@ -180,7 +178,7 @@ import { Col, Grid, Section, Stat, defineReport } from "niceeval/report";
 
 export default defineReport(
   <Section title="运行总览" meta="6/6 完成 · 31 笔完整交易">
-    <Grid columns={6} variant="boxed">
+    <Grid variant="boxed">
       <Col>
         <Stat
           label="平均净 R / case"
@@ -222,7 +220,7 @@ export default defineReport(
       </Col>
     </Grid>
 
-    <Grid columns={9} variant="boxed" density="compact">
+    <Grid variant="boxed" density="compact">
       <Stat label="初始 1H" value="0 bars" />
       <Stat label="初始日线" value="250 bars" />
       <Stat label="初始周线" value="104 bars" />
@@ -237,10 +235,31 @@ export default defineReport(
 );
 ```
 
+### 换列规则
+
+列数由格数与可用宽度算出，两面同一条规则：
+
+1. **先装满。** 取可用宽度里每格仍不低于最小格宽时能摆下的最大列数，记作容量列数；
+   它的上限是格数——4 格再宽也不会摆出第 5 条空轨。
+2. **再摊匀。** 行数 = 格数除以容量列数向上取整，列数 = 格数除以行数向上取整。
+3. 一列是无条件 fallback。
+
+第 2 步是这条规则的全部意义：6 格在只装得下 5 列的宽度上排成 3 + 3，而不是 5 + 1；
+7 格排成 4 + 3。摊匀后的列数不会超过容量列数，所以它从不把格子挤到最小格宽以下。
+
+最后一行可以短。短的那一行左对齐，格宽与上面各行一致，不居中也不拉伸；只剩一格时
+那一格铺满整行——一格独占一行还只占左边一小块，读者会先怀疑是不是渲染坏了。
+
+最小格宽由 `density` 给出，这是 Grid 唯一的几何声明：`regular` 摆读数卡，`compact`
+摆一行密集小格。内建组件的皮肤在此之上只收紧留白与边框，不放大最小格宽——换列点按
+density 那一档算出，格子变宽只会在算好的宽度上挤成一团。
+
 行为边界如下：
 
 - `Grid` 的格子可以是任意 `ReportNode`，不限定为 `Stat`；`Stat` 也可以脱离 `Grid` 单独使用。`Grid` 是排版机制，不是新的数据或领域容器。
-- `columns` 必须是有限正整数；TypeScript 的 `number` 不能排除 0、负数、小数、`NaN` 或 `Infinity`，因此组件创建时统一做运行时校验并给完整用户反馈。`variant` 默认 `"plain"`，`density` 默认 `"regular"`。
+- Grid 不收列数、跨列或格序参数：格数与可用宽度已经决定了排布，再给一个上限只会和它打架。
+  真正想控制的是分组时，用 `Col` 把子节点归格，或拆成两个 Grid。`variant` 默认 `"plain"`，
+  `density` 默认 `"regular"`。
 - `density` 只控制当前 Grid 的 cell padding、gutter，以及其中内置 `Stat` 的既定字号档；它不向任意自定义组件注入样式或改写子节点 props。
 - `Stat.label`、字符串形态的 `value` 与 `detail` 都按 `LocalizedText` 回退规则选择语言并转义输出；number 形态按当前 locale 格式化。`null` 与数字 `0` 严格区分，前者显示 `—`，后者正常显示为零。
 - `tone` 是作者给主值的语义判断。`positive` / `negative` / `warning` 分别使用官方 success / danger /
@@ -281,7 +300,13 @@ export default defineReport(
 
 ### `view` 输出
 
-`view` 的 web 面把 `Grid` 渲染为 CSS Grid。宽面采用声明的最大列数；容器变窄时按每格最小 inline size 自动减少列数，不产生页面级横向滚动，也不截断格子。`variant="boxed"` 给**每个 Grid cell 自己的完整四边框**，cell 之间保留 density 对应的 gap；它不是靠相邻项凑出来的一组半边框，所以换行后不会出现缺左边、缺底边或双线。`Col` 本身无框：嵌套在同一 cell 中的两个 `Stat` 仍是一张卡里的两个纵向区块。
+`view` 的 web 面把 `Grid` 渲染为 CSS Grid，列数按[换列规则](#换列规则)随容器的可用 inline size
+变化，不产生页面级横向滚动，也不截断格子。换列点在渲染时就算得出来——那时候格数与 density
+都已知——所以每个 Grid 随身带一段只依赖这两项的 `@container` 规则，外面包一层 inline size
+容器供它查询。页面不读 viewport、不测 DOM、不靠增强脚本重排；容器查询没生效时退成一列，
+节点、顺序与全部文本仍然完整。
+
+`variant="boxed"` 给**每个 Grid cell 自己的完整四边框**，cell 之间保留 density 对应的 gap；它不是靠相邻项凑出来的一组半边框，所以换行后不会出现缺左边、缺底边或双线。`Col` 本身无框：嵌套在同一 cell 中的两个 `Stat` 仍是一张卡里的两个纵向区块。
 
 上例的初始 HTML 结构如下；省略号只省略重复的 cell，不代表运行时省略内容：
 
@@ -292,35 +317,46 @@ export default defineReport(
     <p class="niceeval-section-meta">6/6 完成 · 31 笔完整交易</p>
   </header>
 
-  <div class="niceeval-report niceeval-grid niceeval-grid--boxed niceeval-grid--regular"
-       style="--niceeval-grid-max-columns: 6">
-    <div class="niceeval-grid-cell">
-      <div class="niceeval-report niceeval-col">
-        <div class="niceeval-report niceeval-stat niceeval-stat--positive">
-          <div class="niceeval-stat-label">平均净 R / case</div>
-          <div class="niceeval-stat-value">+0.479 R</div>
-          <div class="niceeval-stat-detail">累计 +2.877 R</div>
+  <div class="niceeval-report niceeval-grid-fit">
+    <style>
+      @container niceeval-grid (min-width: 460px) { .niceeval-grid--regular[data-cells="6"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @container niceeval-grid (min-width: 700px) { … 3 列 … }
+      @container niceeval-grid (min-width: 1420px) { … 6 列 … }
+    </style>
+    <div class="niceeval-report niceeval-grid niceeval-grid--boxed niceeval-grid--regular"
+         data-cells="6">
+      <div class="niceeval-grid-cell">
+        <div class="niceeval-report niceeval-col">
+          <div class="niceeval-report niceeval-stat niceeval-stat--positive">
+            <div class="niceeval-stat-label">平均净 R / case</div>
+            <div class="niceeval-stat-value">+0.479 R</div>
+            <div class="niceeval-stat-detail">累计 +2.877 R</div>
+          </div>
+          <div class="niceeval-report niceeval-stat niceeval-stat--positive">…单笔期望…</div>
         </div>
-        <div class="niceeval-report niceeval-stat niceeval-stat--positive">…单笔期望…</div>
       </div>
+      <div class="niceeval-grid-cell">…Episode 胜率 / MFE / MAE…</div>
+      <div class="niceeval-grid-cell">…交易胜率 / 持有 / 回撤…</div>
+      <div class="niceeval-grid-cell">…方向命中 / 完成率…</div>
+      <div class="niceeval-grid-cell">…Profit Factor / 执行成本…</div>
+      <div class="niceeval-grid-cell">…参与 / 成交 / 耗时 / 首次决策…</div>
     </div>
-    <div class="niceeval-grid-cell">…Episode 胜率 / MFE / MAE…</div>
-    <div class="niceeval-grid-cell">…交易胜率 / 持有 / 回撤…</div>
-    <div class="niceeval-grid-cell">…方向命中 / 完成率…</div>
-    <div class="niceeval-grid-cell">…Profit Factor / 执行成本…</div>
-    <div class="niceeval-grid-cell">…参与 / 成交 / 耗时 / 首次决策…</div>
   </div>
 
-  <div class="niceeval-report niceeval-grid niceeval-grid--boxed niceeval-grid--compact"
-       style="--niceeval-grid-max-columns: 9">…9 个完整 cell…</div>
+  <div class="niceeval-report niceeval-grid-fit">…9 格的 compact Grid，data-cells="9"…</div>
 </section>
 ```
 
-稳定契约是结构、类名、完整文本和最大列数事实，不是上面为说明而出现的省略号或具体空白。label / value / detail 全部按 inline-start 对齐；label 与 detail 使用弱化文本层级，value 使用 tabular numerals。`tone` 只落在 value，`positive` 不会把 label 和 detail 一并染色。`value={null}` 显示 `—`；字符串 `"— sessions"` 是作者明确写下的领域文案，组件不拆解或重格式化。
+`data-cells` 是格数事实，也是那段 `@container` 规则的落点：规则文本只由格数与 density 决定，
+同一组合的两个 Grid 逐字相同，重复出现无副作用。稳定契约是结构、类名、完整文本与格数事实，
+不是上面为说明而出现的省略号、断点像素或具体空白。
+
+label / value / detail 全部按 inline-start 对齐；label 与 detail 使用弱化文本层级，value 使用 tabular numerals。`tone` 只落在 value，`positive` 不会把 label 和 detail 一并染色。`value={null}` 显示 `—`；字符串 `"— sessions"` 是作者明确写下的领域文案，组件不拆解或重格式化。
 
 ### `show` 输出
 
-`show` 的 text 面保留同样的 cell 顺序与分组。renderer 从 `min(columns, cell 数)` 开始向一列尝试，选出满足最小可读内容宽度的最大列数；一列是无条件 fallback。规划先扣掉边框、cell 内左右各一格 padding 与格间 gutter，再把剩余显示列均分，不能用字符串码元数或“看起来差不多”的空格。整除余数从左向右各补一列，因此任意一行都不会超出 `ctx.width`。
+`show` 的 text 面保留同样的 cell 顺序与分组，列数走同一条[换列规则](#换列规则)：renderer 从格数开始向一列尝试，取每格仍满足最小可读内容宽度的最大列数作为容量列数，再按行数摊匀。规划先扣掉边框、cell 内左右各一格 padding 与格间 gutter，再把剩余显示列均分，不能用字符串码元数或“看起来差不多”的空格。整除余数从左向右各补一列，因此任意一行都不会超出 `ctx.width`。
 
 字段统一按 label → value → detail 输出并左对齐。三者都用 `stringWidth` / `wrapText` 按显示宽度折行，CJK / 全角记 2 列；detail 省略时不留占位行。一个物理 Grid row 中的 cell 顶对齐，较短 cell 在底部补空行到同高；`Col` 内的第二个 Stat 只跟同 cell 的第一个 Stat 相邻，不承诺与其它 cell 内第 N 个任意子组件建立跨格 baseline。需要严格的跨格行基线时，应把那些项声明成另一层 Grid row，而不是依赖 Grid 猜子树结构。
 
@@ -495,136 +531,12 @@ interface TableProps {
 `sources.measure.delta` 与 `sources.measure.stability` 的 text 面建在 `Table` 上。
 自定义表和官方表用同一把尺子。
 
-## 文本排版工具箱
+## 文本排版与维度呈现
 
-表格之外的形态要自己写 text 面时，用 `niceeval/report` 导出的这组纯函数。不要用 `String.prototype.padEnd` / `padStart` 对齐：它们数的是 UTF-16 码元，不是终端显示列宽，agent 名或 eval id 一带中文，整张表就撕歪。
-
-| 导出 | 签名 | 用途 |
-|---|---|---|
-| `stringWidth` | `(text: string) => number` | 显示宽度：CJK / 全角记 2 列，其余 1 列 |
-| `padEnd` | `(text: string, width: number) => string` | 按显示宽度在右侧补齐（左对齐） |
-| `padStart` | `(text: string, width: number) => string` | 按显示宽度在左侧补齐（右对齐，数字列用） |
-| `wrapText` | `(text: string, width: number) => string[]` | 按显示宽度折行 |
-| `indent` | `(block: string, prefix: string) => string` | 每行加缩进 |
-| `bar` | `(ratio: number, width: number) => string` | 字符条：`█` 填充、`░` 补齐到 `width` |
-| `columns` | `(blocks: string[], widths: number[], separator?: string) => string` | 多块并排 |
-
-## 维度呈现
-
-名称与视觉编码是一份维度呈现结果，不公开两套让作者自己拼接的 helper。分配规则、两个 keyset 与
-24 个身份的容量上界单点声明在[页级呈现分配](../components/README.md#维度呈现分配单位是页)，
-这里只给类型与用法。
-
-组件先声明，再按句柄取回结果：
-
-```ts
-type DimensionEncoding =
-  | { readonly kind: "label" }
-  | { readonly kind: "color" }
-  | { readonly kind: "series"; readonly mark: "line" | "scatter" | "bar" | "area" };
-
-interface DimensionDeclaration<E extends DimensionEncoding> {
-  readonly dimension: string;
-  readonly encoding: E;
-  /** 顺序与 renderer 使用的数据项顺序一致；允许重复值。 */
-  readonly values: readonly string[];
-}
-
-type DimensionDeclarations = Readonly<Record<string, DimensionDeclaration<DimensionEncoding>>>;
-```
-
-取回的呈现按声明的编码判别，三种状态各是一支，不用可选的 `color` 把它们混在一起：
-
-```ts
-interface PresentationIdentity {
-  /** 完整维度值，作为排序、筛选、React key 与证据身份。 */
-  readonly value: string;
-  /** 当前页完整 label keyset 内生成的显示名。 */
-  readonly label: string;
-}
-
-interface LabelPresentation extends PresentationIdentity {
-  readonly kind: "label";
-}
-
-interface ColorPresentation extends PresentationIdentity {
-  readonly kind: "color";
-  /** `var(--niceeval-color-series-N)`。 */
-  readonly color: string;
-}
-
-interface LineSeriesPresentation extends PresentationIdentity {
-  readonly kind: "series";
-  readonly mark: "line";
-  readonly stroke: string;
-  readonly strokeDasharray: string;
-  readonly marker: {
-    readonly path: string;
-    readonly viewBox: string;
-    readonly fill: string;
-    readonly stroke: string;
-  };
-}
-
-interface ScatterSeriesPresentation extends PresentationIdentity {
-  readonly kind: "series";
-  readonly mark: "scatter";
-  readonly marker: LineSeriesPresentation["marker"];
-}
-
-interface FillSeriesPresentation extends PresentationIdentity {
-  readonly kind: "series";
-  readonly mark: "bar" | "area";
-  /** 颜色，或可直接使用的 `url(#pattern-id)`。 */
-  readonly fill: string;
-  readonly stroke: string;
-  readonly strokeDasharray: string;
-}
-
-type DimensionPresentation =
-  | LabelPresentation
-  | ColorPresentation
-  | LineSeriesPresentation
-  | ScatterSeriesPresentation
-  | FillSeriesPresentation;
-
-type PresentationFor<E extends DimensionEncoding> =
-  E extends { kind: "label" } ? LabelPresentation :
-  E extends { kind: "color" } ? ColorPresentation :
-  LineSeriesPresentation | ScatterSeriesPresentation | FillSeriesPresentation;
-
-interface ResolvedDimension<P> {
-  readonly length: number;
-  at(index: number): P;
-}
-
-interface RenderContext<D extends DimensionDeclarations> {
-  locale: ReportLocale;
-  dimension<K extends keyof D>(handle: K): ResolvedDimension<PresentationFor<D[K]["encoding"]>>;
-}
-
-function presentDimension<E extends DimensionEncoding>(
-  declaration: DimensionDeclaration<E>,
-): ResolvedDimension<PresentationFor<E>>;
-```
-
-**呈现值可以直接用。** `strokeDasharray`、`marker.path`、`fill` 都是能原样交给 SVG / CSS 属性的值；
-pattern definitions 由运行时注入文档。自定义组件不手写 pattern，也不把枚举名翻译成 SVG——
-否则「声明了 series 却没实现 variant」就会让 7–12 号身份看起来和 1–6 号一模一样。
-
-**renderer 按句柄与下标取，不按值查。** 复合键（`` `${agentId}/${model}` ``）只在 `dimensions()`
-里派生一次，renderer 不重新拼，两处派生逻辑因此不可能分叉。`values` 的顺序与 renderer 遍历数据项的
-顺序一致，允许重复值。
-
-`experiment` 的 label 是完整 label keyset 内唯一的最短 `/` 路径后缀；其它内建维度使用自己的稳定
-标签规则，自定义维度缺少专用规则时原样显示完整 value。
-
-未声明的句柄、越界的下标或与声明编码不符的用法按完整用户反馈报错，而不是临时分配。text renderer
-的 `ctx.dimension()` 恒返回 label 面：text 面不上 ANSI 色，拿不到颜色、线型或 pattern。
-
-自有 React 页面没有 page 管线，调用 `presentDimension(declaration)` 传入同一形状的声明。
-两条入口返回同一种结果；不公开 `experimentLabels()`、`seriesColors()`、单键 hash、颜色 class
-或浅色 hex。
+自定义组件的两个面各有一组官方工具：text 面用 `stringWidth` / `padEnd` / `wrapText`
+按显示宽度排版，web 面用 `ctx.dimension()` 取实验的标签与颜色。
+签名、用法与边界见[格式化与呈现工具箱](presentation.md)，
+下面 `ComponentDefinition` 用到的 `RenderContext` 与 `DimensionDeclarations` 也在那里定义。
 
 ## 自定义渲染组件
 
@@ -761,6 +673,7 @@ await 它，再递归展开返回的树。Composition 不需要 renderer，因�
 ## 相关阅读
 
 - [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义数据源、渲染组件与组合组件。
+- [格式化与呈现工具箱](presentation.md) —— 组件内部允许调用的公开函数全集。
 - [主题](theme.md) —— 自定义组件要读的令牌与语义 class。
 - [外壳与多页](shell.md) —— 树之上的导航外壳与页。
 - [组件树](../components/README.md) —— Source、Component 与进阶呈现管线。

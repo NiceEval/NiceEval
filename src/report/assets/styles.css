@@ -253,6 +253,14 @@ table.niceeval-report,
   white-space: nowrap;
 }
 .niceeval-table--hierarchical .niceeval-row-placeholder { color: var(--soft); }
+.niceeval-table--hierarchical .niceeval-row-group > .niceeval-table-hierarchy-summary,
+.niceeval-table--hierarchical .niceeval-row-group.niceeval-table-hierarchy-row {
+  font-weight: 600;
+  color: var(--fg);
+}
+.niceeval-table--hierarchical tr.niceeval-row-group {
+  font-weight: 600;
+}
 .niceeval-report .niceeval-verdict-tally {
   display: inline-flex;
   flex-wrap: wrap;

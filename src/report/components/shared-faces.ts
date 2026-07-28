@@ -8,15 +8,10 @@ import { localeText, resolveLocalizedText, type ReportLocale } from "../model/lo
 
 export const MISSING_MARK = "—";
 
-/** 缺数据文案随 locale(en = "no data")。 */
-export function missingText(locale: ReportLocale): string {
-  return localeText(locale, "cell.missing");
-}
-
-/** 格子的文本形态:缺数据 —,覆盖不全带 samples/total 角标;display 按 locale 解析。 */
+/** 格子的文本形态:缺数据与有效值都读 display;覆盖不全带 samples/total 角标。 */
 export function cellText(cell: MetricCell, locale: ReportLocale): string {
-  if (cell.value === null) return MISSING_MARK;
   const display = resolveLocalizedText(cell.display, locale);
+  if (cell.value === null) return display;
   return cell.samples < cell.total ? `${display} ${cell.samples}/${cell.total}` : display;
 }
 

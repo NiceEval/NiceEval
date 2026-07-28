@@ -6,10 +6,10 @@
 
 import { describe, expect, it } from "vitest";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem, MeasureCell } from "../../model/types.ts";
-import { MISSING_TEXT } from "../../model/format.ts";
 import { attemptListContent, experimentListContent } from "./content.ts";
 import type { Cell } from "../../definition/cell.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
+import { formatCellText } from "../../definition/cell.ts";
 
 const emptyCell: MeasureCell = { value: null, display: "—", samples: 0, total: 0, refs: [] };
 const locator = (s: string): AttemptLocator => s as AttemptLocator;
@@ -197,12 +197,90 @@ describe("experimentListContent Eval 分组层", () => {
 
     const ghost = sub[1]!;
     expect(entityDetail(ghost.cells.entity)).toBe("0/2 evals");
-    expect(ghost.cells.passRate).toEqual({ kind: "missing", code: MISSING_TEXT });
-    expect(ghost.cells.durationMs).toEqual({ kind: "missing", code: MISSING_TEXT });
-    expect(ghost.cells.costUSD).toEqual({ kind: "missing", code: MISSING_TEXT });
-    expect(ghost.cells.record).toEqual({ kind: "missing", code: MISSING_TEXT });
+    expect(ghost.cells.passRate).toEqual({ kind: "missing", code: "noSamples" });
+    expect(ghost.cells.durationMs).toEqual({ kind: "missing", code: "noSamples" });
+    expect(ghost.cells.costUSD).toEqual({ kind: "missing", code: "noSamples" });
+    expect(ghost.cells.record).toEqual({ kind: "missing", code: "noSamples" });
     // Model/Agent 仍是 notApplicable(对分组行没有意义),与 missing 读数格对照
     expect(ghost.cells.model).toEqual({ kind: "notApplicable" });
+    // missing.code 经 locale 映射,中文面与空 measure 格同文「无数据」,不落英文 no data
+    expect(formatCellText(ghost.cells.passRate, "zh-CN")).toBe("无数据");
+    expect(formatCellText(ghost.cells.passRate, "en")).toBe("no data");
+  });
+
+  it("组行 tokens / totalScore 走 measureDisplay,不落裸数字", () => {
+    const content = experimentListContent([
+      experimentItem({
+        scoring: "points",
+        evalRows: [
+          evalRow("downshift/a", "passed", [attempt("downshift/a", "passed")], {
+            tokens: { value: 40_000, display: "40k tokens", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 800, display: "800", samples: 1, total: 1, refs: [] },
+          }),
+          evalRow("downshift/b", "passed", [attempt("downshift/b", "passed")], {
+            tokens: { value: 53_000, display: "53k tokens", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 434, display: "434", samples: 1, total: 1, refs: [] },
+          }),
+          evalRow("weather/tool", "passed", [attempt("weather/tool", "passed")], {
+            tokens: { value: 9_000, display: "9k tokens", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 10, display: "10", samples: 1, total: 1, refs: [] },
+          }),
+          evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")], {
+            tokens: { value: 9_000, display: "9k tokens", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 0, display: "0", samples: 1, total: 1, refs: [] },
+          }),
+        ],
+        missingEvalIds: [],
+      }),
+    ]);
+    const downshift = content.rows[0]!.subRows!.find((row) => row.key === "group:downshift")!;
+    // mean(40000, 53000) = 46500 → "46.5k tokens"; sum(800, 434) = 1234 → "1.2k"
+    expect(downshift.cells.tokens).toMatchObject({
+      kind: "measure",
+      measure: { value: 46_500, display: "46.5k tokens" },
+    });
+    expect(downshift.cells.totalScore).toMatchObject({
+      kind: "measure",
+      measure: { value: 1_234, display: "1.2k" },
+    });
+    expect(JSON.stringify(downshift.cells.tokens)).not.toContain('"display":"46500"');
+    expect(JSON.stringify(downshift.cells.totalScore)).not.toContain('"display":"1234"');
+  });
+
+  it("路径段递归嵌套:a/b/c 在兄弟组有区分力时逐层展开,不是只取首段", () => {
+    const content = experimentListContent([
+      experimentItem({
+        evalRows: [
+          evalRow("pkg/sub/a", "passed", [attempt("pkg/sub/a", "passed")]),
+          evalRow("pkg/sub/b", "failed", [attempt("pkg/sub/b", "failed")]),
+          evalRow("pkg/other/c", "passed", [attempt("pkg/other/c", "passed")]),
+          evalRow("pkg/other/d", "failed", [attempt("pkg/other/d", "failed")]),
+        ],
+        missingEvalIds: [],
+      }),
+    ]);
+    const sub = content.rows[0]!.subRows!;
+    // 顶层只有 pkg → 剥壳;下层 sub/other 各两题 → 插组
+    expect(sub.map((row) => row.key)).toEqual(["group:pkg/other", "group:pkg/sub"]);
+    expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["other", "sub"]);
+    const subGroup = sub.find((row) => row.key === "group:pkg/sub")!;
+    expect(subGroup.subRows!.map((row) => row.key)).toEqual(["pkg/sub/a", "pkg/sub/b"]);
+    expect(subGroup.subRows!.map((row) => entityText(row.cells.entity))).toEqual(["a", "b"]);
+  });
+
+  it("三层同壳无兄弟区分时整链剥掉,叶子标签退回完整 evalId", () => {
+    const content = experimentListContent([
+      experimentItem({
+        evalRows: [
+          evalRow("111/111/aaa", "passed", [attempt("111/111/aaa", "passed")]),
+          evalRow("111/111/bbb", "failed", [attempt("111/111/bbb", "failed")]),
+        ],
+        missingEvalIds: [],
+      }),
+    ]);
+    const sub = content.rows[0]!.subRows!;
+    expect(sub.every((row) => row.variant !== "group")).toBe(true);
+    expect(sub.map((row) => entityText(row.cells.entity))).toEqual(["111/111/aaa", "111/111/bbb"]);
   });
 });
 

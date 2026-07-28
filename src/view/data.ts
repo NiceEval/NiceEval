@@ -87,8 +87,12 @@ export interface ViewScanOptions {
   report?: { path: string; cwd: string };
   /** --theme 的显式模块路径或内建名。 */
   theme?: { value: string; cwd: string };
-  /** niceeval.config.ts 的读面默认值。 */
-  config?: { report?: ReportDefinition; theme?: ThemeDefinition };
+  /**
+   * 项目配置目录:每次 scan 用 namespaced import 重装 niceeval.config.ts,
+   * 取 `report` / `theme`(docs/feature/reports/view.md「持续重建」——config.report
+   * 及其 import 图与 --report 文件同级失效)。不预烘焙成对象。
+   */
+  config?: { cwd: string };
   /** --page:多页报告的初始页 id;未命中任何页按用法错误退出并列出可用页 id。 */
   page?: string;
   /** --fresh:报告槽 Selection 只含新执行的 attempt;不改变有效根的收窄(见 view.md「打开与收窄」)。 */
@@ -430,8 +434,9 @@ function resolveThemeStyles(theme: ThemeDefinition, baseDir: string | undefined)
 }
 
 /**
- * 报告装载与逐页渲染:装载报告文件(--report;dev server 语义 —— 文件变更下次请求整页重算,
- * 经 mtime cache-busting),缺省装载内建报告默认导出 → 规范化成「外壳 + 非空页列表」→
+ * 报告装载与逐页渲染:装载报告文件(--report)或项目配置的 report 字段;dev server 语义
+ * 经 tsx namespaced import 让入口及其整棵项目内 import 图失效(docs/feature/reports/view.md
+ * 「持续重建」),缺省装载内建报告默认导出 → 规范化成「外壳 + 非空页列表」→
  * 注入 Sample → 每页 web 面渲染成静态 HTML,en / zh-CN 各渲染一遍(chrome 文案按 locale)。
  * 本地 server 下单页渲染失败折成该页的完整错误反馈块,其它页照常可读(静态导出的
  * 「任一页失败整体失败」由 buildView 侧的 failFast 保证)。
@@ -442,7 +447,7 @@ function resolveThemeStyles(theme: ThemeDefinition, baseDir: string | undefined)
 async function renderReportSlot(
   report: { path: string; cwd: string } | undefined,
   theme: { value: string; cwd: string } | undefined,
-  config: { report?: ReportDefinition; theme?: ThemeDefinition } | undefined,
+  config: { cwd: string } | undefined,
   page: string | undefined,
   results: Record,
   selection: Sample,
@@ -456,12 +461,26 @@ async function renderReportSlot(
 }> {
   // 报告 runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view
   // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../report/runtime/host.ts(两个宿主共用的中性联系面)。
-  const hostReport: ReportDefinition = await loadHostReport(report?.cwd ?? process.cwd(), report?.path, config?.report, {
+  // config 每次重建 fresh 装载——不能吃启动时那份已求值的 report 对象,否则改 reports/*.tsx
+  // 只会触发 watch/SSE,内容仍是旧定义。
+  let configReport: ReportDefinition | undefined;
+  let configTheme: ThemeDefinition | undefined;
+  if (config !== undefined) {
+    const { loadConfigFile } = await import("../load-config.ts");
+    const loaded = await loadConfigFile(config.cwd, { freshImport: true });
+    configReport = loaded.report as ReportDefinition | undefined;
+    configTheme = loaded.theme as ThemeDefinition | undefined;
+  }
+  const hostReport: ReportDefinition = await loadHostReport(report?.cwd ?? config?.cwd ?? process.cwd(), report?.path, configReport, {
     freshImport: true,
   });
-  const hostTheme = await resolveHostTheme(theme?.cwd ?? report?.cwd ?? process.cwd(), theme?.value, hostReport.theme, config?.theme, {
-    freshImport: true,
-  });
+  const hostTheme = await resolveHostTheme(
+    theme?.cwd ?? report?.cwd ?? config?.cwd ?? process.cwd(),
+    theme?.value,
+    hostReport.theme,
+    configTheme,
+    { freshImport: true },
+  );
 
   // scope-input pages 只有这些参与本函数的「全部烘进 index.html」渲染;attempt-input page(如果
   // 报告声明了)没有 locator 就不能 resolve,它的每-locator 静态文档是独立机制,不在这里渲染

@@ -57,6 +57,10 @@ const en = {
 
   /** 全 null / 无样本的统一文案,绝不画 0。 */
   "cell.missing": "no data",
+  /** missing 格 code=`notRun`:固定题集里这道题没有 attempt。 */
+  "cell.notRun": "not run",
+  /** missing 格 code=`unscorable`:有 attempt,但读数测不出。 */
+  "cell.unscorable": "unscorable",
   "cell.measuredTitle": "{samples}/{total} attempts measured",
   "cell.noneMeasurableTitle": "0/{total} attempts measurable",
   "cell.coverageTitle": "coverage {samples}/{total}: this metric is null for the remaining attempts",
@@ -238,6 +242,8 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "attemptSummary.attempt": "第 {n} 次",
 
   "cell.missing": "无数据",
+  "cell.notRun": "未跑到",
+  "cell.unscorable": "测不出",
   "cell.measuredTitle": "{samples}/{total} 次 attempt 测得",
   "cell.noneMeasurableTitle": "0/{total} 次 attempt 可测",
   "cell.coverageTitle": "覆盖率 {samples}/{total}:其余 attempt 测不了这个指标",
@@ -429,10 +435,9 @@ export function countText(
 }
 
 /**
- * 按 locale 解析指标 / 列 label:字符串原样;字典按 LocalizedText 回退规则取值;
- * undefined 回退 fallback(= metric.name)。渲染面(web / text)共用。
+ * 按 locale 解析读数 / 列 label;undefined 回退 fallback(= metric.name)。渲染面(web / text)共用。
  */
-export function resolveMetricLabel(
+export function resolveMeasureLabel(
   label: LocalizedText | undefined,
   locale: ReportLocale,
   fallback: string,
@@ -444,3 +449,6 @@ export function resolveMetricLabel(
     return fallback;
   }
 }
+
+/** @deprecated 用 {@link resolveMeasureLabel}。 */
+export const resolveMetricLabel = resolveMeasureLabel;

@@ -107,7 +107,7 @@ export const StabilityOverview = defineComposition(async (props: StabilityOvervi
 
   return (
     <Col className={props.className}>
-      <Grid columns={3} locale={props.locale}>
+      <Grid locale={props.locale}>
         <Stat label={{ en: "Executions", "zh-CN": "历史执行" }} value={executions} />
         <Stat label={{ en: "Never passed", "zh-CN": "零通过题" }} value={neverPassed} />
         <Stat label={{ en: "Flaky evals", "zh-CN": "闪烁题" }} value={flaky} />

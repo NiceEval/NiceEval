@@ -25,7 +25,7 @@
   标注不是通用读数表的一组选项。
 
 展开层级由实体从属关系决定，唯一的例外是 `sources.entity.experiments` 的
-[Eval 分组层](entity-experiments.md#eval-分组层)——它的分组键来自 evalId 的目录前缀，
+[Eval 分组层](entity-experiments.md#eval-分组层)——按 evalId 的路径段递归嵌套，
 即 eval 作者已经用文件路径声明过的组织方式，不是新造的分类维度。要别的形态,使用 `Table` 与其它数据源组合。
 
 ## 数据形状
@@ -92,7 +92,7 @@ interface ExperimentEvalRow extends Row {
  */
 interface ExperimentEvalGroupRow extends Row {
   variant: "group";
-  /** evalId 第一个 `/` 之前的段，同时是行标签与展开身份。 */
+  /** 本层路径段；完整路径前缀（含祖先）是展开身份与行 key。 */
   groupKey: string;
   /** 组内 eval 级最终 verdict 计票（Record 列的构成）。 */
   evalVerdicts: { passed: number; failed: number; errored: number; skipped: number };

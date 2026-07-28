@@ -8,7 +8,7 @@
 <SampleSummary />
 
 // 手工形态：作者自己算出终值后摆格
-<Grid columns={3} variant="boxed">
+<Grid variant="boxed">
   <Stat label="平均净 R / case" value="+0.479 R" detail="累计 +2.877 R" tone="positive" />
   <Stat label="Episode 胜率" value="66.7%" detail="4 / 6 cases" />
 </Grid>
@@ -18,11 +18,9 @@
 
 ```ts
 interface GridProps {
-  /** 宽面最多摆几列；必须是正整数。 */
-  columns: number;
   /** plain 无框；boxed 给每个格完整四边框。默认 plain。 */
   variant?: "plain" | "boxed";
-  /** 改变格内留白，并调整主值字号；不改变内容和分组。默认 regular。 */
+  /** 格子体量：最小格宽、格内留白与主值字号；不改变内容和分组。默认 regular。 */
   density?: "regular" | "compact";
   /** 每个直接子节点是一格；数据装配属于 Summary / Composition。 */
   children?: ReportNode;
@@ -46,9 +44,12 @@ interface StatProps {
 `samples` / `total` / `refs`，所以一个读数下方能写明覆盖范围、点开能下钻到具体 attempt。
 作者自己算的终值传标量即可——标量与 `text` 格等价，两者都没有证据可下钻，这是如实的。
 
-`Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格；
-`columns` 是宽面上限，不要求子节点数量恰好为其倍数。一个格里要放多个区块时，
-用 `Col` 把它们归成一个直接子节点。
+`Grid` 的每个直接子节点是一格。数组与 Fragment 先按 `ReportNode` 规则展平，空分支不占格。
+一个格里要放多个区块时，用 `Col` 把它们归成一个直接子节点。
+
+列数不写在 props 里：Grid 数出自己有几格，量出可用宽度里装得下几列，再把格子摊匀到
+整数行——6 格在只装得下 5 列的宽度上排成 3 + 3，而不是 5 + 1。完整规则与两面的落地方式见
+[换列规则](../../library/layout.md#换列规则)。
 
 ## 渲染
 

@@ -28,9 +28,9 @@ Composition 在需要运行期输入、多个来源或动态树时出现，它�
 | 管线 | 这一页全部已解析 Content 与维度声明 | 领域概念、磁盘 |
 | Component | 自己的可序列化 Content、呈现 context | Source、Sample、Record、磁盘、别的组件 |
 
-**Component 零领域取数是硬边界**：`niceeval/report/react` 只导出纯 web renderer 与 Content
-类型，吃可序列化 `data`，不碰磁盘、不认识 `AttemptHandle`。同一个 Component 换一个 Source
-就显示另一类领域内容。
+**Component 零领域取数是硬边界**：`niceeval/report/react` 导出纯 web renderer、Content 类型与
+[呈现工具箱](../library/presentation.md)，吃可序列化 `data`，不碰磁盘、不认识 `AttemptHandle`，
+也不导出 Source 与 Composition。同一个 Component 换一个 Source 就显示另一类领域内容。
 
 **领域逻辑挪不进报告树。** 「让 page 自己算完、原语只剩样式」这条两层方案不成立,三个各自
 独立的原因:
@@ -165,8 +165,8 @@ type DataProps<Input extends SourceInput, Content> =
   并附加呈现，不能再出现取数字段。
 - 同时给出 `data` 与 `source` 时按完整用户反馈报错，不静默取一边。
 
-`niceeval/report` 导出 Source、Composition 与 Component；`niceeval/report/react` 只导出纯 web 渲染面，
-那里的同名原语只有 data 形态。完整模型见
+`niceeval/report` 导出 Source、Composition、Component 与呈现工具箱；`niceeval/report/react` 导出
+纯 web 渲染面与同一份呈现工具箱，那里的同名原语只有 data 形态。完整模型见
 [Architecture · Source、Composition 与 Component](../architecture.md#sourcecomposition-与-component)。
 
 聚合前过滤属于 Source 配置或显式 `input`，不作为 Component 的第三种取数入口。聚合后的普通排序、
@@ -403,7 +403,7 @@ fix: filter the series, or split them into facets/pages
   这由 `Chart` 的 series 呈现覆盖声明——它取的仍是这一页 `(该维度, 该值)` 的槽位，
   因此与页上任何按同一维度取身份的地方一致。
 - **页内全部消费者读同一份映射**：图表 series 与图例、表里的 agent 键、矩阵的行列头，
-  同一个键在这一页恒同身份。渲染面的 [`ctx.dimension(handle)`](../library/layout.md#呈现算法)
+  同一个键在这一页恒同身份。渲染面的 [`ctx.dimension(handle)`](../library/presentation.md#实验颜色与维度呈现)
   是它唯一的入口，自己按键算色会绕开页内消解，与官方原语对不上。
 - **跨页与跨报告让位给页内可辨。** 槽位有限时，无法同时保证「集合内两两不撞」和「集合变化后
   已有值绝对不动」。契约选前者：默认分配只承诺同一页内一致，跨周、跨页稳定要写

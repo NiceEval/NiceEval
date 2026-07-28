@@ -457,13 +457,8 @@ async function applyConfiguredLocale(cwd: string): Promise<void> {
 }
 
 async function loadConfig(cwd: string): Promise<Config> {
-  const path = join(cwd, "niceeval.config.ts");
-  if (!existsSync(path)) {
-    throw new Error(t("cli.config.missing"));
-  }
-  const mod = (await import(pathToFileURL(path).href)) as { default?: Config };
-  if (!mod.default) throw new Error(t("cli.config.noDefault"));
-  return mod.default;
+  const { loadConfigFile } = await import("./load-config.ts");
+  return loadConfigFile(cwd);
 }
 
 // AGENTS.md/CLAUDE.md 托管区块:告诉在这个项目里干活的 coding agent「niceeval 不在你的训练数据里,
@@ -677,18 +672,14 @@ async function main(): Promise<void> {
     } catch (e) {
       exitOnViewUserError(e);
     }
-    let config: Config | undefined;
-    try {
-      config = existsSync(join(cwd, "niceeval.config.ts")) ? await loadConfig(cwd) : undefined;
-    } catch (e) {
-      exitOnViewUserError(e);
-    }
+    // 配置只记 cwd:每次 rebuild 由 loadViewScan 重装 niceeval.config.ts,
+    // 不把启动时那份 config.report 对象塞进 scan(否则改报告文件只刷新页面、定义仍旧)。
     const scan = {
       patterns: viewInput.patterns,
       ...(flags.experiment !== undefined ? { experiment: flags.experiment } : {}),
       ...(flags.report !== undefined ? { report: { path: flags.report, cwd } } : {}),
       ...(flags.theme !== undefined ? { theme: { value: flags.theme, cwd } } : {}),
-      ...(config ? { config: { report: config.report, theme: config.theme } } : {}),
+      ...(existsSync(join(cwd, "niceeval.config.ts")) ? { config: { cwd } } : {}),
       ...(flags.page !== undefined ? { page: flags.page } : {}),
       ...(flags.fresh ? { fresh: true } : {}),
     };

@@ -158,6 +158,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [report-display-single-formatter-decision](report-display-single-formatter-decision.md) — 裁决(2026-07-28):读数显示值定稿为计算侧一次生成(`unit` 驱动 + `measureDisplay()` 唯一入口,渲染面只读 `display`),否决全仓零消费者的 `MeasureFormat`;同场把取实验色收口到 `ctx.dimension()`/`presentDimension()`,色板与取色 helper 退回内部;起因=组行 tokens 显示成裸 46500
 - [official-themes-basalt-chalk-lockup](official-themes-basalt-chalk-lockup.md) — 裁决(2026-07-28):官方主题两套单支锁定,basalt(暗·直角,与 SVG-DESIGN 同色板)与 chalk(浅·圆角);官方样式零写死,兜底=basalt+守护;类名让步 docs 改 `.niceeval-report`/`niceeval-*`;否决 basalt.md 初稿的 system 双分支自立色板;总纲在根 `DESIGN.md`
 - [record-sample-report-three-layer-split](record-sample-report-three-layer-split.md) — 裁决(2026-07-25):`niceeval/results` 拆成 record(事实)/ sample(选择)三层 + 整套改名(Snapshot→Run、Scope→Sample、latest/current→latestRuns/latestPerEval、copySnapshots→publish、runs→attempts);configHash 合掉两张重叠清单、删掉「携带重打 fingerprint」这条改写历史字段的例外、新增 evidenceState 三态与 enhance 具名能力位;否决 Sample 加聚合算子与只改名不分层;附批量改名两次误伤(scope 多义、rglob 扫进 node_modules 改了 392 个已发布包文件)的修法
 - [theme-as-separate-artifact](theme-as-separate-artifact.md) — 裁决(2026-07-25):主题上提为与报告并列的可分发制品(四档链 `--theme`→外壳→config→内建 `basalt`,自带 CSS,令牌扩到中性面/字体/圆角),seriesPins 搬回报告外壳;否决主题 extends、跨档深合并、读者覆盖 accent、社区注册表;实现前必读令牌面对不上那一段
@@ -231,7 +232,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [showcase-subpath-no-trailing-slash-breaks-artifact-fetch](showcase-subpath-no-trailing-slash-breaks-artifact-fetch.md) — 导出站挂在无尾斜杠子路径(反代 rewrite)时前端相对路径 fetch 打到上一级目录全 404,源码/trace 显示"artifact 缺失"但文件其实都在;修为 `artifactUrl` 以页面 pathname 自算目录基底(`src/view/app/lib/artifact-url.ts`)
 - 已修 [oversized-tool-output-blows-up-artifacts](oversized-tool-output-blows-up-artifacts.md) — 一条递归 grep 撞进 minified bundle(`head -100` 只限行数不限字节,单行 4.2MB)让 trace.json 撑到 101MB,同一份 51MB 在盘上存三遍;修法=写入面统一截断(运行时全量、落盘 256 KiB,不影响判决),落在 `src/results/truncate.ts` 的 `ARTIFACT_VALUE_MAX_BYTES` + writer 序列化路径(`5e7549eb`,schema v8)
 - [model-price-table](model-price-table.md) — Total Cost 显示 $0 的根因与模型价格表(成本估算)的数据来源
-- 已修 [report-web-face-loader-gotchas](report-web-face-loader-gotchas.md) — view --report:tsx 的 jsx 配置按 tsconfig 目录为界,包内 .tsx web 面退化 classic JSX 要全局 React shim(修在 `src/report/web.ts`);`.tsx?mtime=` cache-busting query 在 vite-node 下炸,装载入口退化重试(修在 `src/report/load.ts`)
+- 已修 [view-hot-reload-needs-namespace-import](view-hot-reload-needs-namespace-import.md) — view 热重载:watch 闭集对但装载层未失效(config 吃启动对象 + mtime 只 bust 入口);修为 namespaced import + 每次重建重装 config(`src/report/runtime/load.ts` / `src/view/data.ts` / `src/load-config.ts`)
+- 已修 [report-web-face-loader-gotchas](report-web-face-loader-gotchas.md) — view --report:tsx 的 jsx 配置按 tsconfig 目录为界,包内 .tsx web 面退化 classic JSX 要全局 React shim(修在 `src/report/web.ts`);`.tsx?mtime=` cache-busting query 在 vite-node 下炸,装载入口退化重试(修在 `src/report/load.ts`);依赖失效见上一条
 - 已修 [view-empty-export-silent-exit0](view-empty-export-silent-exit0.md) — view 对零可读结果曾静默导出空报告 exit 0,CI 发布会把空站顶上线;修为 loadViewScan 一律抛错并列 skipped 明细(修在 `src/view/data.ts`)
 - 已修 [codeview-perline-hidden-scrollbar-clips-text](codeview-perline-hidden-scrollbar-clips-text.md) — AttemptModal 代码视图长行(尤其 t.send prompt)被裁断且无滚动条提示,根因是横向滚动挂在每行自己身上还把滚动条砍成 0;改为整块 `.code-lines` 统一滚动(修在 `src/view/styles.css`,`d0b6718` 重构带入,记得改完要 `pnpm run view:build`)
 - 已修 [attempt-review-transparent-and-weak-diff](attempt-review-transparent-and-weak-diff.md) — Attempt review 的半透明模糊遮罩保留了报告纹理，暗色下断言行状态色又过淡；遮罩改为高不透明纯色，代码面强制不透底并提高 diff 红绿 gutter/行色对比

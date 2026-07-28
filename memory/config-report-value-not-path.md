@@ -19,4 +19,6 @@
 
 ## 连带确认
 
-`view` 本地 server 的 mtime cache-busting 只击穿**装载入口本体**(既有语义,依赖不追踪)。所以经 `config.report` 装载时入口是 `niceeval.config.ts`,改报告文件不重载——边写边看要用 `--report ./reports/site.tsx` 直接指文件,定型后再填进配置。这条写进了 architecture 契约,不是实现细节。
+~~`view` 本地 server 的 mtime cache-busting 只击穿装载入口本体……边写边看要用 `--report`。~~
+已由 [view-hot-reload-needs-namespace-import](view-hot-reload-needs-namespace-import.md) 翻案：
+本地模式对 config / `--report` 都失效整棵项目内 import 图，不必为边写边看改 flag。

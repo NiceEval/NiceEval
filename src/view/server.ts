@@ -177,23 +177,33 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   // 本地 server 的单页失败折成该页的错误块,其它页照常可读(静态导出仍整体失败)。
   const scanOptions = { ...opts.scan, pageFailure: "embed" as const };
 
-  // 产物重建的单飞通道:首页请求整份重建;并发请求共享同一次构建,不重复扫描。
+  // 产物重建的单飞通道:首页请求与 watch 调度器共享同一次构建,不并行跑两份
+  // planSite(namespaced import 并发会卡住)。进行中的调用方都 await 同一份 Promise。
   let current: Promise<SitePlan>;
+  let inFlight: Promise<SitePlan> | undefined;
   const reloadClients = new Set<import("node:http").ServerResponse>();
   let lastError: string | undefined;
-  const rebuild = async (): Promise<SitePlan> => {
-    try {
-      const next = await planSite(input, scanOptions);
-      current = Promise.resolve(next);
-      lastError = undefined;
-      for (const client of reloadClients) client.write("event: reload\ndata: ok\n\n");
-      return next;
-    } catch (error) {
-      lastError = formatThrown(error);
-      process.stderr.write(`view rebuild failed: ${lastError}\n`);
-      for (const client of reloadClients) client.write(`event: error\ndata: ${JSON.stringify(lastError)}\n\n`);
-      throw error;
+  const rebuild = (): Promise<SitePlan> => {
+    // 同步挂上 inFlight,避免「两个调用都看到 undefined」并行跑两份 namespaced import。
+    if (!inFlight) {
+      inFlight = (async () => {
+        try {
+          const next = await planSite(input, scanOptions);
+          current = Promise.resolve(next);
+          lastError = undefined;
+          for (const client of reloadClients) client.write("event: reload\ndata: ok\n\n");
+          return next;
+        } catch (error) {
+          lastError = formatThrown(error);
+          process.stderr.write(`view rebuild failed: ${lastError}\n`);
+          for (const client of reloadClients) client.write(`event: error\ndata: ${JSON.stringify(lastError)}\n\n`);
+          throw error;
+        } finally {
+          inFlight = undefined;
+        }
+      })();
     }
+    return inFlight;
   };
 
   // 启动前先构建一遍:--run 指向读不了的快照、--report 装载失败、前缀匹配不到,
@@ -242,8 +252,8 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       // (0.2.x 前端烘焙的 HTML 可能还开着)。
       let sitePath: string;
       if (url.pathname === "/") {
-        // 每次打开首页整份重建,永远是盘上最新数据;--report 的报告文件变更同样在
-        // 下次请求整页重算(装载走 mtime cache-busting,见 report/load.ts)。
+        // 每次打开首页整份重建,永远是盘上最新数据;报告 / 配置经 namespaced import
+        // 失效整棵项目内 import 图(见 report/runtime/load.ts 与 load-config.ts)。
         await rebuild().catch(() => current);
         sitePath = "index.html";
       } else if (url.pathname === "/artifact") {

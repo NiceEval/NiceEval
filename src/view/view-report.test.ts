@@ -11,7 +11,8 @@
 // - 外壳标题取值链(def.title → 内置文案兜底)与 ReportLink.icon 原样透传进 viewData;
 // - viewData.report.pages 是外壳认识的全部 scope-input page,`navigation: false` 带标记出场
 //   (导航列不列由外壳按标记决定,内容块与 `#/page/<id>` 深链的键仍是这份列表);
-// - dev server 装载语义:报告文件变更 → 下次装载读取新内容(mtime cache-busting)。
+// - dev server 装载语义:报告文件或其项目内依赖变更 → 下次装载读取新内容
+//   (tsx namespaced import);经 config.cwd 装载时改配置所 import 的报告同样生效。
 //
 // 渲染出的 HTML 结构、终端/web 双面逐字比对、--out 导出产物与本地 server 的进程级行为
 // 归 docs/engineering/testing/e2e/report.md §4/§5 对真实产物验收,不在本层断言。
@@ -19,7 +20,7 @@
 // fixture 直接写新布局(<expDir>/<snapDir>/run.json + <evalId>/a<n>/result.json),
 // 依据是 docs/feature/record/architecture.md 的稳定磁盘契约,不经 writer 运行时 API。
 
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -347,7 +348,7 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
     ].join("\n");
   }
 
-  it("重写报告文件后,下一次装载读取新内容(mtime cache-busting,不复用陈旧模块)", async () => {
+  it("重写报告文件后,下一次装载读取新内容(namespaced import,不复用陈旧模块)", async () => {
     const root = await seedRoot();
     const path = join(root, "report.mjs");
     await writeFile(path, reportSource("FIRST_RENDER"), "utf-8");
@@ -355,11 +356,89 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
     expect(first.reportPages[0]!.html.en).toContain("FIRST_RENDER");
 
     await writeFile(path, reportSource("SECOND_RENDER"), "utf-8");
-    // mtime 精度兜底:显式把 mtime 拨到未来,确保与首次装载可区分。
-    const future = new Date(Date.now() + 5000);
-    await utimes(path, future, future);
     const second = await loadViewScan(root, { report: { path, cwd: root } });
     expect(second.reportPages[0]!.html.en).toContain("SECOND_RENDER");
     expect(second.reportPages[0]!.html.en).not.toContain("FIRST_RENDER");
   });
+
+  it("改报告 import 的组件文件后,下一次装载读取新内容(子图失效)", async () => {
+    const root = await seedRoot();
+    await writeFile(
+      join(root, "marker.mjs"),
+      'export const marker = "DEP_FIRST";\n',
+      "utf-8",
+    );
+    await writeFile(
+      join(root, "report.mjs"),
+      [
+        'import { marker } from "./marker.mjs";',
+        'const FACES = Symbol.for("niceeval.report.faces");',
+        'const DEFINITION = Symbol.for("niceeval.report.definition");',
+        "const Block = (props) => Block[FACES].web(props);",
+        "Block[FACES] = {",
+        "  web: () => marker,",
+        "  text: () => marker,",
+        "};",
+        "const definition = {",
+        '  kind: "report",',
+        "  links: [],",
+        "  head: [],",
+        "  scripts: [],",
+        "  styles: [],",
+        '  pages: [{ id: "report", title: "Report", content: { $$typeof: Symbol.for("react.transitional.element"), type: Block, props: {}, key: null } }],',
+        "};",
+        "Object.defineProperty(definition, DEFINITION, { value: true });",
+        "export default definition;",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const first = await loadViewScan(root, { report: { path: join(root, "report.mjs"), cwd: root } });
+    expect(first.reportPages[0]!.html.en).toContain("DEP_FIRST");
+
+    await writeFile(join(root, "marker.mjs"), 'export const marker = "DEP_SECOND";\n', "utf-8");
+    const second = await loadViewScan(root, { report: { path: join(root, "report.mjs"), cwd: root } });
+    expect(second.reportPages[0]!.html.en).toContain("DEP_SECOND");
+    expect(second.reportPages[0]!.html.en).not.toContain("DEP_FIRST");
+  });
+
+  it("经 config.cwd 装载时,改配置所 import 的报告文件后读到新内容", async () => {
+    // vitest/vite-node 下对 .ts 做 namespaced register 会挂起;这条断言走与 CLI 相同的
+    // `node --import tsx/esm` 子进程(bin 注册的同一套 hook)。
+    const root = await seedRoot();
+    await writeFile(join(root, "package.json"), JSON.stringify({ type: "module" }), "utf-8");
+    await writeFile(join(root, "report.mjs"), reportSource("CFG_FIRST"), "utf-8");
+    await writeFile(
+      join(root, "niceeval.config.ts"),
+      ['import report from "./report.mjs";', "export default { report };", ""].join("\n"),
+      "utf-8",
+    );
+    const script = join(root, "probe.mjs");
+    await writeFile(
+      script,
+      [
+        'import { writeFile } from "node:fs/promises";',
+        'import { join } from "node:path";',
+        `const root = ${JSON.stringify(root)};`,
+        `const { loadViewScan } = await import(${JSON.stringify(resolve(__dirname, "./data.ts"))});`,
+        "const first = await loadViewScan(root, { config: { cwd: root } });",
+        "if (!first.reportPages[0].html.en.includes('CFG_FIRST')) throw new Error('first miss');",
+        "await writeFile(join(root, 'report.mjs'), " + JSON.stringify(reportSource("CFG_SECOND")) + ");",
+        "const second = await loadViewScan(root, { config: { cwd: root } });",
+        "if (!second.reportPages[0].html.en.includes('CFG_SECOND')) throw new Error('second miss: ' + second.reportPages[0].html.en);",
+        "if (second.reportPages[0].html.en.includes('CFG_FIRST')) throw new Error('stale');",
+        "console.log('ok');",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const { spawnSync } = await import("node:child_process");
+    const result = spawnSync(process.execPath, ["--import", "tsx/esm", script], {
+      encoding: "utf-8",
+      cwd: resolve(__dirname, "../.."),
+      timeout: 30_000,
+    });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout).toContain("ok");
+  }, 30_000);
 });

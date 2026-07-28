@@ -26,7 +26,7 @@ const ranking = sources.measure.rows({
 分面属于普通 TSX 组合；每个面板生成自己的 Dataset Source，题集选择不进入 Chart props：
 
 ```tsx
-<Grid columns={2}>
+<Grid>
   {["coding/", "research/"].map((prefix) => (
     <Section key={prefix} title={prefix}>
       <Chart

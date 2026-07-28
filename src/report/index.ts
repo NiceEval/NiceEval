@@ -12,6 +12,7 @@ export {
   costUSD,
   defineMeasure,
   durationMs,
+  endToEndPassRate,
   executionReliability,
   repeatedFailedCommands,
   passRate,
@@ -157,6 +158,15 @@ export type {
 export type { Cell, ColumnSpec, TableContent, TableContentRow, VerdictCounts } from "./definition/cell.ts";
 export { formatCellText } from "./definition/cell.ts";
 
+// 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):计算侧单点入口。
+export {
+  formatAxisTick,
+  formatMeasureValue,
+  measureDisplay,
+  missingText,
+} from "./model/format.ts";
+export type { MeasureDisplay } from "./model/format.ts";
+
 // 文本排版工具箱:自定义组件的 text 面用的就是官方组件那把尺子。
 // 表格有 <Table> 承担,这里只给表以外的形态用 —— 尤其别拿 String.prototype.padEnd 对齐:
 // 它数 UTF-16 码元不数显示列宽,一带中文列就撕歪。renderAlignedRows 刻意不导出。
@@ -172,7 +182,13 @@ export {
 export type { ColumnAlign } from "./model/text-layout.ts";
 
 // locale:官方组件 chrome 文案的语言(内置词典覆盖 en / zh-CN,其它 locale 走回退)
-export { DEFAULT_REPORT_LOCALE, localizedTextEquals, resolveLocalizedText, resolveMetricLabel } from "./model/locale.ts";
+export {
+  DEFAULT_REPORT_LOCALE,
+  localizedTextEquals,
+  resolveLocalizedText,
+  resolveMeasureLabel,
+  resolveMeasureLabel as resolveMetricLabel,
+} from "./model/locale.ts";
 export type { LocalizedText, ReportLocale } from "./model/locale.ts";
 
 // 官方组合组件与站点组件。
@@ -225,7 +241,6 @@ export type {
   MatrixData,
   Measure,
   MeasureAggregate,
-  MeasureFormat,
   NumericAxis,
   NumericAxisOptions,
   NumericRunConfigAxisOptions,

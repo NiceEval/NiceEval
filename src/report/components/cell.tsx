@@ -19,12 +19,12 @@ export function MetricCellView({
   /** 默认用紧凑角标显示覆盖率；已有展开说明的摘要卡可关闭角标。 */
   showCoverage?: boolean;
 }): ReactElement {
-  // 全 null(没有任何有效样本)→ 缺数据文案,绝不画 0;total 仍如实入 title
+  // 全 null(没有任何有效样本)→ 读 display(计算侧 measureDisplay(null) 已折好),绝不画 0
   if (cell.value === null) {
     return (
       <span className="niceeval-cell niceeval-cell-missing">
         <span className="niceeval-missing" title={localeText(locale, "cell.noneMeasurableTitle", { total: cell.total })}>
-          {localeText(locale, "cell.missing")}
+          {resolveLocalizedText(cell.display, locale)}
         </span>
       </span>
     );

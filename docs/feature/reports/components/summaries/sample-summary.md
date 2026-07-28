@@ -52,7 +52,7 @@ export const SampleSummary = defineComposition(async (props, ctx) => {
   const verdicts = snapshot.verdicts[props.votes ?? "eval"];
 
   return (
-    <Grid columns={4} locale={props.locale} className={props.className}>
+    <Grid locale={props.locale} className={props.className}>
       <Stat label={{ en: "Experiments", "zh-CN": "实验" }} value={snapshot.scope.experiments} />
       <Stat label={{ en: "Evals", "zh-CN": "Eval" }} value={snapshot.scope.evals} />
       <Stat label={{ en: "Attempts", "zh-CN": "Attempt" }} value={snapshot.scope.attempts} />
@@ -78,6 +78,16 @@ export const SampleSummary = defineComposition(async (props, ctx) => {
 
 想选择另一组 KPI 时，不给 `SampleSummary` 增加任意字段开关；直接计算 snapshot 与所需 Measure，
 再用 `Grid` / `Stat` 装自己的摘要。外部 React 页面同样先计算 Content，再走组件的 `data` 形态。
+
+## 摘要条的外观
+
+摘要条是 `compact` 档的 `Grid` 加一层自己的边框：宽容器上格间不留缝、共用一圈外框，读成一条；
+窄到装不下一条时散成各自带框的卡片。合并与散开按摘要条自身的容器宽度判，不看视口——
+内容挂载后滚动条出现会让视口宽度掉过断点，窗口停在断点附近时两种形态会来回闪。
+
+它只改边框、背景与留白，不碰几何：一行摆几格、什么宽度换列全部由 Grid 的
+[换列规则](../../library/layout.md#换列规则)决定。主读数是 `"mixed"` 时格数会从 6 变成 7，
+换列点跟着变，这也是摘要条不写死列数的原因。
 
 ## 相关阅读
 

@@ -149,7 +149,7 @@ export const CostliestAttempts = defineComposition(
 报告树内先在 `dimensions()` 里声明维度与编码，renderer 用 `ctx.dimension(handle).at(index)`
 取回身份、页内唯一标签与视觉编码。
 自有 React 页面用 `presentDimension(declaration)` 传入同形状的声明。
-完整规则见[维度呈现](library/layout.md#维度呈现)。
+完整规则见[实验颜色与维度呈现](library/presentation.md#实验颜色与维度呈现)。
 
 ## 嵌入自己的 React 页面
 
@@ -225,6 +225,7 @@ export default defineReport({
 - [组件树](components/README.md) —— 数据源、渲染组件、管线与组合组件。
 - [数据源目录](components/sources/README.md) —— 官方数据源全集。
 - [读数与维度](library/measures.md) —— `Measure`、`Dimension` 与聚合口径。
+- [格式化与呈现工具箱](library/presentation.md) —— 公开函数全集：显示值、缺数据文案、文本排版与取色。
 - [完整示例](library/examples.md) —— 按场景组织的可复制报告。
 - [外壳与多页](library/shell.md) —— page、导航与静态资产。
 - [主题](library/theme.md) —— web 呈现令牌与 CSS 出口。

@@ -64,6 +64,21 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 
   用户怎样读取计分报告，见[固定题集做考试成绩单](../../../feature/reports/use-case/分析/固定题集成绩单.md)。主读数规则见[题型构成与主读数](../../../feature/reports/library/measures.md#题型构成与主读数)。
 
+- **显示值单点**（[格式化只发生一次](../../../feature/reports/library/presentation.md#格式化只发生一次)）：
+  `MeasureCell.display` 一律由 `measureDisplay()` 生成，`value` 与 `display` 各自可断言。逐项覆盖：
+
+  - 五支 unit（`"%"` / `"ms"` / `"$"` / 自定义 unit / 省略）各一条。区分力场景是 `tokens` 单位的
+    46500 折成 `46.5k tokens`——只有走 unit 分派才区别于 `String(value)` 的 `46500`。
+  - 同一份 fixture 里 experiment 行、Eval 分组行与 attempt 行的同名读数格显示同一种格式；
+    分组行与汇总行不另起一条格式化路径。
+  - `Measure.display` 覆盖内建格式，且不改变 `value` 与聚合结果。
+  - `formatAxisTick` 的精度跟随步长：步长 `0.25` 打 `0.25`，同一个值经 `formatMeasureValue` 走缩写。
+- **缺数据词表**（[缺数据、不适用与占位](../../../feature/reports/library/presentation.md#缺数据不适用与占位)）：
+  三个内建 code 在 `en` / `zh-CN` 各有文案，`formatCellText` 与 web 面读同一份；未命中词表的 code
+  原样显示不被吞掉。区分力场景是 `zh-CN` 报告里的 `missing` 格不出现英文文案。
+- **呈现工具箱的导出面**（[公开函数总表](../../../feature/reports/library/presentation.md#公开函数总表)）：
+  总表里的函数从 `niceeval/report` 导出，前四组同时从 `niceeval/report/react` 导出且与内部定义同引用；
+  色板数组、槽位号与取色 helper 不在任一公开面上。只需一个代表场景，不为每个函数复制一条。
 - **MeasureCell 与缺数据**：字段构成与序列化不丢值；`validateContent`
   递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛裸 TypeError；缺 artifact 时返回 null 不猜值。
 - **数据源**：各数据源的选择、配对、排序、缺失与报错语义（selectedEvalIds 口径、
@@ -79,9 +94,9 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   的时效字段（`historical` / `historicalAttempts` 与新执行的判定边界）与占位行数据（`missingEvalIds`
   来自 `sample.coverage`、不参与任何读数聚合）；`experimentRows` 的
   [Eval 分组层](../../../feature/reports/components/sources/entity-experiments.md#eval-分组层)——按 evalId
-  目录前缀分区，两条收起条件（只有一个组、每组只有一道题）各自让层消失且 Eval 行标签退回完整
-  evalId，不含 `/`
-  的题与组行同级且不进假组，组行读数是 subRows 聚合而占位行不进分母（fixture 让某组全部题缺失，
+  路径段递归分区，每一层兄弟各自判定两条收起条件（只有一个组、每组只有一道题），收起时该层
+  消失且标签相对最近仍在的祖先（整链收起则退回完整 evalId），不含 `/`
+  的题与组行同级且不进假组，组行读数是子孙聚合而占位行不进分母（fixture 让某组全部题缺失，
   证明组行读数格是 `missing` 而非 `notApplicable`），子行标签去掉父组前缀但 `evalId`
   仍是排序/过滤/展开身份；`currentSample()`
   下一个 experiment 展示用的水位基准 Run 选择——fixture 让同一 experiment 有多个真实贡献 Run、`startedAt`
@@ -129,6 +144,16 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **`Table` 的 subRows 与 placeholder**（[Table](../../../feature/reports/components/primitives/table.md)）：
   `subRows` 在 text / web 两面逐层渲染；`variant: "placeholder"` 行照常显示但不进入任何列的聚合读数。
   两面各一份区分力场景——断言面是 Content 与两面输出字符串，不经浏览器。
+- **`Grid` 的换列规则**（[换列规则](../../../feature/reports/library/layout.md#换列规则)）：
+  断言面是列数纯函数的产出、text 面输出字符串与 web 面的 HTML，不经浏览器。逐项覆盖：
+
+  - 摊匀这一步：给定格数与容量列数产出实际列数，区分力场景是「6 格、容量 5 列排成 3 + 3」——
+    只有摊匀会让结果区别于容量列数本身；7 格、容量 5 列排成 4 + 3 覆盖不整除。
+  - 摊匀后的列数从不超过容量列数，因此从不把格子挤到最小格宽以下。
+  - 最后一行只剩一格时那一格铺满整行；短于一行但不止一格时按上面各行的格宽左对齐，不拉伸。
+  - text 面从格数向一列尝试，每格达不到最小可读内容宽度就降列，一列是无条件 fallback。
+  - web 面的 `data-cells` 与随身 `@container` 规则只由格数与 density 决定：同格数同 density
+    的两个 Grid 规则文本逐字相同，各断点等于该列数下的最小格宽与格间距合计。
 - **Callouts / Waterfall / SourceView / Conversation / DiffView / CopyBlock 的两面投影与维度封闭性**：
   每个原语各一条类别。断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，
   以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与
@@ -226,15 +251,15 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   （`standard` / `failures` / `stability`）各命中且与对应具名导出同引用（`standard`
   兼默认导出）；裸词未命中时报错列出全部可用名字并给出路径写法，不做文件系统探测（fixture 里存在同名
   `./site.tsx` 时 `--report site` 仍报错，证明判别只看字符串）；`config.report`
-  不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；mtime cache-busting 只作用于装载入口本体——`--report
-  <文件>` 改报告文件后下一次装载读到新内容，`config.report` 的入口是配置文件，断言面是传给装载器的入口路径，不测进程重启行为。
+  不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；fresh import 让装载入口及其项目内 import 子图失效——`--report
+  <文件>` 改报告文件或它 import 的组件后下一次装载读到新内容，`config.report` 的入口是配置文件（每次 scan 重装），断言面是渲染产物里的标记字符串，不测进程重启行为。
 - **view 数据装载（ViewScan）**：`resolveViewInput` 的位置参数 / `--record` / `--run`
   互斥与存在性校验，位置参数按 eval id 前缀透传、含义不随文件系统状态改变；`loadViewScan`
   的有效根收窄使证据室（`attemptsByBase` / `artifactDirs` /
   `attemptPages.locators`）与报告槽 Selection 同步收窄；`viewData`
   只含证据室元信息（`composedRuns`、`skippedRuns`、`report` 元信息）不携带统计产物；外壳标题取值链与
   `ReportLink.icon` 原样透传进
-  `viewData.report`；`viewData.report.pages` 是外壳认识的全部 scope-input page（同时是内容块与 `#/page/<id>` 路由的键），声明 `navigation: false` 的页带标记在列而不是被删掉——导航列不列由外壳按这个标记决定；报告文件缺失、非法默认导出、前缀 / 实验匹配不到、零可读结果的完整错误反馈；报告文件变更后下一次装载读取新内容（不复用陈旧模块缓存）。全部以返回结构、Map/Set 内容与错误对象为断言面，不断言渲染出的 HTML 或终端文本。
+  `viewData.report`；`viewData.report.pages` 是外壳认识的全部 scope-input page（同时是内容块与 `#/page/<id>` 路由的键），声明 `navigation: false` 的页带标记在列而不是被删掉——导航列不列由外壳按这个标记决定；报告文件缺失、非法默认导出、前缀 / 实验匹配不到、零可读结果的完整错误反馈；报告文件或其项目内依赖变更后下一次装载读取新内容（namespaced import，不复用陈旧模块缓存）；经 `config: { cwd }` 装载时改配置所 import 的报告文件同样读到新内容。全部以返回结构、Map/Set 内容与错误对象为断言面，不断言渲染出的 HTML 结构细节或终端文本。
 - **持续重建（view 本地模式）**：watch 输入闭集的判定——有效根内的记录变更、报告文件与它的项目内
   import 图（含自定义组件文件）、主题文件、`niceeval.config.ts` 触发重建；有效根之外的记录与依赖目录
   里的包不触发。重建是整条管线重跑，同一输入下与 `--out` 产物逐字节一致（这一格是「增量拼接」错误

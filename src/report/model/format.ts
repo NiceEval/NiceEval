@@ -1,10 +1,19 @@
-// unit 驱动的内置格式化(docs/feature/reports/library.md「指标」):
+// unit 驱动的内置格式化(docs/feature/reports/library/presentation.md):
 //   "%" → 87%    "ms" → 1.2s    "$" → $0.31    其余 → 1.2k 缩写(带 unit 后缀)
-// metric.display 可整体覆盖;这里只负责默认。
+// Measure.display 可整体覆盖;公开入口是 measureDisplay / formatMeasureValue / formatAxisTick。
 
 import type { Verdict } from "../../types.ts";
 import { gapParts } from "../../sample/index.ts";
-import { DISPLAY_LOCALES, type LocalizedText, type ReportLocale } from "./locale.ts";
+import {
+  DEFAULT_REPORT_LOCALE,
+  DISPLAY_LOCALES,
+  localeText,
+  type LocalizedText,
+  type ReportLocale,
+} from "./locale.ts";
+
+/** `Measure.display` 覆盖回调:只格式化同一个终值,不改变口径。 */
+export type MeasureDisplay = (value: number, locale: ReportLocale) => string;
 
 /**
  * 一组 id 的显示名：每个 id 缩成在这组里唯一的最短路径后缀，重名逐步加长到能区分为止
@@ -73,28 +82,10 @@ function formatDollars(abs: number): string {
 }
 
 /**
- * 轴刻度标签:精度按刻度步长自适应。契约(metric-views.md「图轴值域」)要求「标签始终显示
- * 真实值」——极小量程(如成本 ~0.0001)下固定小数位会把相邻刻度折叠成同一个字符串,
- * 读者据此无法区分刻度。步长已知时取恰好能区分相邻刻度的小数位(整齐刻度是 1/2/5×10^k,
- * toFixed(⌈-log10(step)⌉) 恒精确),再裁掉尾零;步长不可用(单刻度)回退通用格式化。
+ * 按 unit 折一个终值。unit 是量纲声明,也是格式化的唯一开关
+ * (docs/feature/reports/library/presentation.md「unit 决定格式」)。
  */
-export function formatTickValue(value: number, step: number, unit?: string): string {
-  if (!(step > 0) || !Number.isFinite(step)) return formatMetricValue(value, unit);
-  // 精度 = 步长自身的十进制小数位数(nice 步长是 1/2/2.5/5×10^k,如 0.25 需要 2 位,不是 ⌈-log10⌉ 的 1 位)。
-  let decimals = 0;
-  while (decimals < 10 && Math.abs(Math.round(step * 10 ** decimals) - step * 10 ** decimals) > 1e-9 * 10 ** decimals) decimals++;
-  if (decimals === 0) return formatMetricValue(value, unit);
-  // 精确到步长的定点展示,去尾零——整齐刻度是 1/2/5×10^k,toFixed(⌈-log10(step)⌉) 恒无损。
-  const fixed = (n: number, d: number) => n.toFixed(d).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
-  const sign = value < 0 ? "-" : "";
-  const abs = Math.abs(value);
-  if (unit === "%") return `${sign}${fixed(abs * 100, Math.max(0, decimals - 2))}%`;
-  if (unit === "ms") return formatMetricValue(value, unit);
-  if (unit === "$") return `${sign}$${fixed(abs, decimals)}`;
-  return unit ? `${sign}${fixed(abs, decimals)} ${unit}` : `${sign}${fixed(abs, decimals)}`;
-}
-
-export function formatMetricValue(value: number, unit?: string): string {
+export function formatMeasureValue(value: number, unit?: string): string {
   const sign = value < 0 ? "-" : "";
   const abs = Math.abs(value);
   if (unit === "%") return `${sign}${trimmed(Math.round(abs * 1000) / 10)}%`;
@@ -102,6 +93,68 @@ export function formatMetricValue(value: number, unit?: string): string {
   if (unit === "$") return `${sign}$${formatDollars(abs)}`;
   const n = abbreviate(abs);
   return unit ? `${sign}${n} ${unit}` : `${sign}${n}`;
+}
+
+/** @deprecated 用 {@link formatMeasureValue}。内部别名,不进公开面。 */
+export const formatMetricValue = formatMeasureValue;
+
+/**
+ * 轴刻度标签:精度按刻度步长自适应。契约(metric-views.md「图轴值域」)要求「标签始终显示
+ * 真实值」——极小量程(如成本 ~0.0001)下固定小数位会把相邻刻度折叠成同一个字符串,
+ * 读者据此无法区分刻度。步长已知时取恰好能区分相邻刻度的小数位(整齐刻度是 1/2/5×10^k,
+ * toFixed(⌈-log10(step)⌉) 恒精确),再裁掉尾零;步长不可用(单刻度)回退通用格式化。
+ */
+export function formatAxisTick(value: number, step: number, unit?: string): string {
+  if (!(step > 0) || !Number.isFinite(step)) return formatMeasureValue(value, unit);
+  // 精度 = 步长自身的十进制小数位数(nice 步长是 1/2/2.5/5×10^k,如 0.25 需要 2 位,不是 ⌈-log10⌉ 的 1 位)。
+  let decimals = 0;
+  while (decimals < 10 && Math.abs(Math.round(step * 10 ** decimals) - step * 10 ** decimals) > 1e-9 * 10 ** decimals) decimals++;
+  if (decimals === 0) return formatMeasureValue(value, unit);
+  // 精确到步长的定点展示,去尾零——整齐刻度是 1/2/5×10^k,toFixed(⌈-log10(step)⌉) 恒无损。
+  const fixed = (n: number, d: number) => n.toFixed(d).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (unit === "%") return `${sign}${fixed(abs * 100, Math.max(0, decimals - 2))}%`;
+  if (unit === "ms") return formatMeasureValue(value, unit);
+  if (unit === "$") return `${sign}$${fixed(abs, decimals)}`;
+  return unit ? `${sign}${fixed(abs, decimals)} ${unit}` : `${sign}${fixed(abs, decimals)}`;
+}
+
+/** @deprecated 用 {@link formatAxisTick}。内部别名,不进公开面。 */
+export const formatTickValue = formatAxisTick;
+
+/**
+ * 生成 `MeasureCell.display`:计算侧唯一入口。null → 缺数据文案;override 覆盖内建 unit 格式。
+ * (docs/feature/reports/library/presentation.md「格式化只发生一次」)。
+ */
+export function measureDisplay(
+  value: number | null,
+  unit?: string,
+  override?: MeasureDisplay,
+): LocalizedText {
+  if (value === null) {
+    return localizedDisplay((locale) => localeText(locale, "cell.missing"));
+  }
+  if (override) {
+    return localizedDisplay((locale) => override(value, locale));
+  }
+  return formatMeasureValue(value, unit);
+}
+
+/** missing 格内建 code → locale 词典 key。词表未命中时 missingText 原样返回 code。 */
+const MISSING_CODE_KEYS = {
+  noSamples: "cell.missing",
+  notRun: "cell.notRun",
+  unscorable: "cell.unscorable",
+} as const;
+
+/**
+ * `missing` 格的本地化原因。code 是结构化代码,不是显示文本
+ * (docs/feature/reports/library/presentation.md「缺数据、不适用与占位」)。
+ */
+export function missingText(code: string, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
+  const key = MISSING_CODE_KEYS[code as keyof typeof MISSING_CODE_KEYS];
+  return key ? localeText(locale, key) : code;
 }
 
 /**
@@ -143,9 +196,6 @@ export function formatPoints(points: number): string {
 
 // ── 以下是两个渲染面共用的展示格式化:MetricCell 一律自带 display(格式化发生在
 //    计算侧),渲染面不重算;这里只服务 OverviewData 这类携带裸数字的字段。──
-
-/** 全 null / 无样本的统一文案。绝不画 0(docs/feature/reports/architecture.md「指标聚合不变量」)。 */
-export const MISSING_TEXT = "no data";
 
 /** 毫秒 → 人读耗时("850ms" / "1.2s" / "4m 20s" / "1h 4m")。 */
 export function formatDurationMs(ms: number): string {

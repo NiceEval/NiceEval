@@ -163,7 +163,7 @@ interface SeriesProps {
 | --- | --- |
 | `Col` | 纵向堆叠 |
 | `Row` | web 横排；text 空间足够时分栏 |
-| `Grid` | 自适应多列网格 |
+| `Grid` | 多列网格；列数由格数和可用宽度决定，不用声明 |
 | `Section` | 带标题的内容区 |
 | `Stat` | label、value、detail 与 tone |
 | `Text` | 不解析标记的普通文本 |
@@ -264,7 +264,7 @@ const AgentLegend = defineComponent<LegendData, {}>({
     return (
       <ul>
         {data.agentIds.map((id, index) => (
-          <li key={id} className={agents.at(index).className}>
+          <li key={id} style={{ color: agents.at(index).stroke }}>
             {agents.at(index).label}
           </li>
         ))}
@@ -276,6 +276,54 @@ const AgentLegend = defineComponent<LegendData, {}>({
 
 text 面只得到标签与文本身份；web 面还得到颜色、线型、点形或 pattern。
 不要逐个截断 label，也不要按数组下标自行配色。
+
+一个实验在同一页上恒定一个颜色，图例、表格和图上的点用的是同一次分配。
+取颜色只有两个入口：报告树里的组件用 `ctx.dimension(handle)`，
+自有 React 页面用 `presentDimension(declaration)`。库不导出色板、槽位号或取色函数，
+自己按下标配色会和官方组件对不上。
+
+## 显示值与格式化
+
+读数格的显示字符串在计算时生成一次，写进 `MeasureCell.display`，两个渲染面直接输出它。
+终端和网页上的同一个数字因此逐字相同。
+
+`unit` 决定折成什么：
+
+| `unit` | 显示 |
+| --- | --- |
+| `"%"` | `87.3%` |
+| `"ms"` | `850ms` / `1.2s` / `4m 20s` |
+| `"$"` | `$0.31` |
+| 其它，如 `"tokens"` | `46.5k tokens` |
+| 省略 | `1.2k` |
+
+自定义 Source 生成读数格时调用 `measureDisplay(value, unit)`，不要自己拼字符串。
+自己拼会让同一个读数在实验行和分组行显示成两种样子。
+
+| 函数 | 用途 |
+| --- | --- |
+| `measureDisplay(value, unit?)` | 生成 `MeasureCell.display` |
+| `formatMeasureValue(value, unit?)` | 按 unit 折一个数字 |
+| `formatAxisTick(value, step, unit?)` | 图表轴刻度，精度跟随步长 |
+| `formatCellText(cell, locale?)` | 把任意 Cell 折成一行文本 |
+| `missingText(code, locale?)` | 缺数据格的原因文案 |
+
+缺数据格带的是 code，不是文案。内建 code 有 `noSamples`、`notRun` 和 `unscorable`，
+各有中英文案，`missingText()` 按当前语言取。自定义 code 未命中词表时原样显示。
+
+## 文本排版
+
+自定义组件的 text 面用这组函数对齐。不要用 JavaScript 自带的 `padEnd`：
+它数的是码元不是显示列宽，一带中文就把表撕歪。
+
+| 函数 | 用途 |
+| --- | --- |
+| `stringWidth(text)` | 显示宽度，中文与全角记 2 列 |
+| `padEnd(text, width)` / `padStart(text, width)` | 按显示宽度补齐 |
+| `wrapText(text, width)` | 按显示宽度折行 |
+| `indent(block, prefix)` | 每行加缩进 |
+| `bar(ratio, width)` | 字符条 |
+| `columns(blocks, widths, separator?)` | 多块并排 |
 
 ## 共用呈现 props
 
@@ -292,8 +340,8 @@ text 面只得到标签与文本身份；web 面还得到颜色、线型、点�
 
 ## `niceeval/report/react`
 
-这个入口只导出纯 web renderer 和 Content 类型。它不导出 Source、Composition，
-也不读取记录：
+这个入口导出纯 web renderer、Content 类型，以及上面那套呈现工具箱：格式化、缺数据文案、
+`presentDimension` 和 locale 解析。它不导出 Source、Composition，也不读取记录：
 
 ```tsx
 import { sources } from "niceeval/report";

@@ -108,9 +108,9 @@ Chart 在渲染前同步把 Dataset 行映射成内部点集合。这个内部�
 序列化协议：
 
 - dimension cell 保留完整值作为点、series、排序与下钻身份；
-- measure cell 原样保留 `value`、`format`、`samples`、`total` 与 `refs`；
+- measure cell 原样保留 `value`、`display`、`samples`、`total` 与 `refs`；
 - tooltip 和证据链接只读取已有 cell，不在交互时访问 artifact；
-- 显示字符串只由 renderer 按当前 locale 生成，不反向参与数值或身份计算。
+- 点与 tooltip 的显示字符串取自 `display`，轴刻度用 `formatAxisTick`；两者都不反向参与数值或身份计算。
 
 同一 Dataset 可以配不同 Chart 映射。例如相同的 `experiment + agent + costUSD + passRate`，既可以画
 质量成本散点，也可以按 agent 画成本柱状图；两者不需要复制或重算数据。

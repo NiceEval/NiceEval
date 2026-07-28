@@ -54,13 +54,6 @@ export interface MeasureAggregate {
  * 内置指标与自定义指标是同一个类型,没有特权。name 走字面量泛型:列键锚在指标
  * 对象上(`row.cells[taskPassRate.name]`),拼错列名编译不过。
  */
-export interface MeasureFormat {
-  style: "number" | "percent" | "currency" | "duration" | "tokens";
-  currency?: string;
-  minimumFractionDigits?: number;
-  maximumFractionDigits?: number;
-}
-
 export interface Measure<Name extends string = string> {
   /** MeasureColumn.key 与列头的来源;同一次计算里重名是错误。 */
   name: Name;

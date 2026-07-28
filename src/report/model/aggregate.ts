@@ -21,7 +21,7 @@ import type {
   SeriesInput,
 } from "./types.ts";
 import { flagValueOf, labelValueOf, runConfigValueOf } from "./flag.ts";
-import { formatMetricValue, localizedDisplay } from "./format.ts";
+import { measureDisplay } from "./format.ts";
 import { localeText, type LocalizedText } from "./locale.ts";
 import { evalPrefixPredicate } from "../../shared/aggregate.ts";
 
@@ -313,21 +313,20 @@ export async function evaluateMetric(metric: Measure, attempt: AttemptHandle): P
   return value;
 }
 
-/** 单值 → LocalizedText display:metric.display 覆盖内置 unit 格式化;null 的兜底归渲染面。 */
+/** 单值 → LocalizedText display:走 measureDisplay 单点入口;null 的缺数据文案也在那里折。 */
 export function displayValue(metric: Measure, value: number | null): LocalizedText {
-  // null 的纯文本兜底;组件把 null 渲染成「缺数据」,绝不画 0
-  if (value === null) return "—";
+  if (value === null) return measureDisplay(null);
   if (metric.display) {
     const display = metric.display;
-    return localizedDisplay((locale) => {
+    return measureDisplay(value, metric.unit, (v, locale) => {
       try {
-        return display(value, locale);
+        return display(v, locale);
       } catch (e) {
         throw metricError(metric, "display()", e);
       }
     });
   }
-  return formatMetricValue(value, metric.unit);
+  return measureDisplay(value, metric.unit);
 }
 
 function foldAggregator(metric: Measure, step: "perEval" | "acrossEvals", values: readonly number[]): number {

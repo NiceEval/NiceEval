@@ -10,8 +10,11 @@ import type {
   ExperimentListItem,
   MeasureCell,
 } from "../../model/types.ts";
-import { experimentListScoringComposition, formatMetricValue, MISSING_TEXT } from "../../model/format.ts";
+import { experimentListScoringComposition, measureDisplay } from "../../model/format.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
+
+/** 组内零样本读数格的结构化原因码;renderer 经 missingText 映射文案。 */
+const GROUP_NO_SAMPLES = "noSamples";
 
 function measureCell(value: MeasureCell): Cell {
   return { kind: "measure", measure: value };
@@ -33,18 +36,12 @@ function attemptMeasureCell(
   unit: "ms" | "$",
   locator: AttemptLocator,
 ): Cell {
-  if (value === null) {
-    return {
-      kind: "measure",
-      measure: { value: null, display: "—", samples: 0, total: 1, refs: [locator] },
-    };
-  }
   return {
     kind: "measure",
     measure: {
       value,
-      display: formatMetricValue(value, unit),
-      samples: 1,
+      display: measureDisplay(value, unit),
+      samples: value === null ? 0 : 1,
       total: 1,
       refs: [locator],
     },
@@ -69,17 +66,15 @@ function attemptRow(item: AttemptListItem, scoring: "pass" | "points"): TableCon
   };
 }
 
-/** evalId 的目录前缀(第一个 `/` 之前);不含 `/` 时返回 null——不进假组。 */
-function groupKeyOf(evalId: string): string | null {
-  const slash = evalId.indexOf("/");
-  return slash === -1 ? null : evalId.slice(0, slash);
+/** 相对已表达前缀的剩余路径;无前缀时是完整 evalId。 */
+function relativeLabel(evalId: string, labelPrefix: string): string {
+  if (!labelPrefix) return evalId;
+  const prefix = `${labelPrefix}/`;
+  return evalId.startsWith(prefix) ? evalId.slice(prefix.length) : evalId;
 }
 
-/** 有父组时去掉前缀;整层收起时 label 就是完整 evalId。 */
-function evalLabel(evalId: string, groupKey: string | null): string {
-  if (groupKey === null) return evalId;
-  const prefix = `${groupKey}/`;
-  return evalId.startsWith(prefix) ? evalId.slice(prefix.length) : evalId;
+function joinPath(prefix: string, segment: string): string {
+  return prefix ? `${prefix}/${segment}` : segment;
 }
 
 function mean(values: readonly number[]): number {
@@ -97,12 +92,12 @@ function meanCells(cells: readonly MeasureCell[], unit?: string): MeasureCell {
   const values = cells.map((cell) => cell.value).filter((v): v is number => v !== null);
   const refs = mergeRefs(cells);
   if (values.length === 0) {
-    return { value: null, display: "—", samples: 0, total, refs };
+    return { value: null, display: measureDisplay(null), samples: 0, total, refs };
   }
   const value = mean(values);
   return {
     value,
-    display: unit !== undefined ? formatMetricValue(value, unit) : String(value),
+    display: measureDisplay(value, unit),
     samples,
     total,
     refs,
@@ -116,15 +111,20 @@ function sumCells(cells: readonly MeasureCell[]): MeasureCell {
   const values = cells.map((cell) => cell.value).filter((v): v is number => v !== null);
   const refs = mergeRefs(cells);
   if (values.length === 0) {
-    return { value: null, display: "—", samples: 0, total, refs };
+    return { value: null, display: measureDisplay(null), samples: 0, total, refs };
   }
   const value = values.reduce((a, b) => a + b, 0);
-  return { value, display: String(value), samples, total, refs };
+  return { value, display: measureDisplay(value), samples, total, refs };
 }
 
 /**
  * 组内通过率:与 endToEndPassRate 同口径——attempt 级 passed=1 / failed|errored=0 /
  * unreadable=null,先 perEval mean 再 acrossEvals mean;占位行不进分母。
+ *
+ * 注:这里手写聚合而非 computeCell——ExperimentListEvalRow 只有投影后的
+ * AttemptListItem,拿不到按 (eval, snapshot) 分桶的原始 Item。metric 定义或分桶
+ * 规则一改,组行会与 experiment 行静默漂移;更干净的做法是在 compute.ts 用
+ * computeCell 算好组级 cell 再投影。
  */
 function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MeasureCell {
   const evalMeans: number[] = [];
@@ -143,12 +143,12 @@ function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MeasureCell 
     if (scores.length > 0) evalMeans.push(mean(scores));
   }
   if (evalMeans.length === 0) {
-    return { value: null, display: "—", samples: 0, total, refs: [...new Set(refs)].sort() };
+    return { value: null, display: measureDisplay(null), samples: 0, total, refs: [...new Set(refs)].sort() };
   }
   const value = mean(evalMeans);
   return {
     value,
-    display: formatMetricValue(value, "%"),
+    display: measureDisplay(value, "%"),
     samples,
     total,
     refs: [...new Set(refs)].sort(),
@@ -173,7 +173,7 @@ function groupEntityDetail(evals: number, knownEvals: number, attempts: number):
 
 /** 组内零样本读数格是 missing(本该有却没跑到),不是 —(对这一行没有意义)。 */
 function groupMeasureCell(evalRows: readonly ExperimentListEvalRow[], cell: MeasureCell): Cell {
-  if (evalRows.length === 0) return { kind: "missing", code: MISSING_TEXT };
+  if (evalRows.length === 0) return { kind: "missing", code: GROUP_NO_SAMPLES };
   return measureCell(cell);
 }
 
@@ -218,28 +218,46 @@ function memberEvalId(member: LeafMember): string {
   return member.kind === "eval" ? member.row.evalId : member.evalId;
 }
 
+function memberEvalRows(members: readonly LeafMember[]): ExperimentListEvalRow[] {
+  return members
+    .filter((m): m is { kind: "eval"; row: ExperimentListEvalRow } => m.kind === "eval")
+    .map((m) => m.row);
+}
+
 function groupPrimaryValue(
   evalRows: readonly ExperimentListEvalRow[],
   scoring: "pass" | "points",
 ): number | null {
   if (scoring === "points") {
-    const cell = sumCells(evalRows.map((row) => row.totalScore));
-    return cell.value;
+    return sumCells(evalRows.map((row) => row.totalScore)).value;
   }
   return groupPassRate(evalRows).value;
 }
 
-function groupRow(
-  groupKey: string,
+function leafTableRow(
+  member: LeafMember,
+  label: string,
+  item: ExperimentListItem,
+): TableContentRow {
+  return member.kind === "eval"
+    ? evalRow(member.row, item.scoring, label)
+    : placeholderRow(item.experimentId, member.evalId, label);
+}
+
+function groupTableRow(
+  /** 组行显示的这一段(不带祖先前缀)。 */
+  segment: string,
+  /** 完整路径前缀,作行 key 与子孙 labelPrefix。 */
+  pathKey: string,
   members: readonly LeafMember[],
+  childRows: readonly TableContentRow[],
   item: ExperimentListItem,
   composition: "pass" | "points" | "mixed",
 ): TableContentRow {
-  const evalRows = members.filter((m): m is { kind: "eval"; row: ExperimentListEvalRow } => m.kind === "eval").map((m) => m.row);
+  const evalRows = memberEvalRows(members);
   const knownEvals = members.length;
   const evals = evalRows.length;
   const attempts = evalRows.reduce((sum, row) => sum + row.attempts.length, 0);
-  const scoring = item.scoring;
   const passRate = groupPassRate(evalRows);
   const totalScore = sumCells(evalRows.map((row) => row.totalScore));
   const durationMs = meanCells(
@@ -250,25 +268,14 @@ function groupRow(
     evalRows.map((row) => row.costUSD),
     "$",
   );
-  const tokens = meanCells(evalRows.map((row) => row.tokens));
+  const tokens = meanCells(evalRows.map((row) => row.tokens), "tokens");
   const evalVerdicts = tallyEvalVerdicts(evalRows);
 
-  const childRows = members
-    .slice()
-    .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-    .map((member) => {
-      const id = memberEvalId(member);
-      const label = evalLabel(id, groupKey);
-      return member.kind === "eval"
-        ? evalRow(member.row, scoring, label)
-        : placeholderRow(item.experimentId, member.evalId, label);
-    });
-
   return {
-    key: `group:${groupKey}`,
+    key: `group:${pathKey}`,
     variant: "group",
     cells: {
-      entity: textCell(groupKey, groupEntityDetail(evals, knownEvals, attempts)),
+      entity: textCell(segment, groupEntityDetail(evals, knownEvals, attempts)),
       model: { kind: "notApplicable" },
       agent: { kind: "notApplicable" },
       durationMs: groupMeasureCell(evalRows, durationMs),
@@ -276,93 +283,96 @@ function groupRow(
       totalScore: composition !== "pass" ? groupMeasureCell(evalRows, totalScore) : { kind: "notApplicable" },
       tokens: groupMeasureCell(evalRows, tokens),
       costUSD: groupMeasureCell(evalRows, costUSD),
-      record: evalRows.length === 0 ? { kind: "missing", code: MISSING_TEXT } : verdictCell(evalVerdicts),
+      record: evalRows.length === 0 ? { kind: "missing", code: GROUP_NO_SAMPLES } : verdictCell(evalVerdicts),
     },
     subRows: childRows,
   };
 }
 
 /**
- * 把 experiment 的 evalRows + missingEvalIds 投影成 subRows。
- * 两条收起条件任一成立就不插分组层(docs「无信息时整层收起」)。
+ * 按路径段递归嵌套。
+ * - `dirPrefix`:已消费的目录前缀(含剥掉未展示的壳),决定本层 remaining。
+ * - `labelPrefix`:已由祖先组行表达的前缀,决定叶子/组标签相对哪一段。
+ * 两条收起条件在每一层兄弟之间各自判定。
  */
-function experimentSubRows(
+function nestLevel(
+  members: readonly LeafMember[],
+  dirPrefix: string,
+  labelPrefix: string,
   item: ExperimentListItem,
   composition: "pass" | "points" | "mixed",
 ): TableContentRow[] {
-  const groups = new Map<string, LeafMember[]>();
-  const ungrouped: LeafMember[] = [];
+  if (members.length === 0) return [];
 
-  for (const row of item.evalRows) {
-    const key = groupKeyOf(row.evalId);
-    if (key === null) ungrouped.push({ kind: "eval", row });
-    else {
-      const list = groups.get(key);
-      if (list) list.push({ kind: "eval", row });
-      else groups.set(key, [{ kind: "eval", row }]);
+  const leaves: LeafMember[] = [];
+  const groups = new Map<string, LeafMember[]>();
+
+  for (const member of members) {
+    const remaining = relativeLabel(memberEvalId(member), dirPrefix).split("/").filter(Boolean);
+    if (remaining.length <= 1) {
+      leaves.push(member);
+      continue;
     }
-  }
-  for (const evalId of item.missingEvalIds) {
-    const key = groupKeyOf(evalId);
-    if (key === null) ungrouped.push({ kind: "missing", evalId });
-    else {
-      const list = groups.get(key);
-      if (list) list.push({ kind: "missing", evalId });
-      else groups.set(key, [{ kind: "missing", evalId }]);
-    }
+    const head = remaining[0]!;
+    const list = groups.get(head);
+    if (list) list.push(member);
+    else groups.set(head, [member]);
   }
 
   const collapse =
     groups.size === 0 ||
-    (groups.size === 1 && ungrouped.length === 0) ||
-    [...groups.values()].every((members) => members.length === 1);
+    (groups.size === 1 && leaves.length === 0) ||
+    [...groups.values()].every((group) => group.length === 1);
 
   if (collapse) {
-    const leaves: LeafMember[] = [
-      ...item.evalRows.map((row): LeafMember => ({ kind: "eval", row })),
-      ...item.missingEvalIds.map((evalId): LeafMember => ({ kind: "missing", evalId })),
-    ];
-    return leaves
+    if (groups.size === 1 && leaves.length === 0) {
+      const head = [...groups.keys()][0]!;
+      // 剥壳不插组行:dir 前进、label 不动,子孙标签仍带上被剥的段。
+      return nestLevel(members, joinPath(dirPrefix, head), labelPrefix, item, composition);
+    }
+    return members
       .slice()
       .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-      .map((member) => {
-        const id = memberEvalId(member);
-        return member.kind === "eval"
-          ? evalRow(member.row, item.scoring, id)
-          : placeholderRow(item.experimentId, member.evalId, id);
-      });
+      .map((member) => leafTableRow(member, relativeLabel(memberEvalId(member), labelPrefix), item));
   }
 
-  const groupEntries = [...groups.entries()].map(([groupKey, members]) => {
-    const evalRows = members
-      .filter((m): m is { kind: "eval"; row: ExperimentListEvalRow } => m.kind === "eval")
-      .map((m) => m.row);
-    return {
-      groupKey,
-      members,
-      primary: groupPrimaryValue(evalRows, item.scoring),
-    };
-  });
+  const groupEntries = [...groups.entries()].map(([segment, groupMembers]) => ({
+    segment,
+    groupMembers,
+    primary: groupPrimaryValue(memberEvalRows(groupMembers), item.scoring),
+  }));
   groupEntries.sort((a, b) => {
-    if (a.primary === null && b.primary === null) return a.groupKey.localeCompare(b.groupKey);
+    if (a.primary === null && b.primary === null) return a.segment.localeCompare(b.segment);
     if (a.primary === null) return 1;
     if (b.primary === null) return -1;
-    return b.primary - a.primary || a.groupKey.localeCompare(b.groupKey);
+    return b.primary - a.primary || a.segment.localeCompare(b.segment);
   });
 
-  const rows: TableContentRow[] = groupEntries.map((entry) =>
-    groupRow(entry.groupKey, entry.members, item, composition),
-  );
-  const flat = ungrouped
+  const rows: TableContentRow[] = groupEntries.map((entry) => {
+    const pathKey = joinPath(dirPrefix, entry.segment);
+    // 子级的 labelPrefix 跟 dir 走完整路径(含祖先剥掉的壳),组行自己只显示这一段。
+    const childRows = nestLevel(entry.groupMembers, pathKey, pathKey, item, composition);
+    return groupTableRow(entry.segment, pathKey, entry.groupMembers, childRows, item, composition);
+  });
+
+  const flat = leaves
     .slice()
     .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-    .map((member) => {
-      const id = memberEvalId(member);
-      return member.kind === "eval"
-        ? evalRow(member.row, item.scoring, id)
-        : placeholderRow(item.experimentId, member.evalId, id);
-    });
+    .map((member) => leafTableRow(member, relativeLabel(memberEvalId(member), labelPrefix), item));
+
   return [...rows, ...flat];
+}
+
+/** experiment 的 evalRows + missingEvalIds → 递归嵌套的 subRows。 */
+function experimentSubRows(
+  item: ExperimentListItem,
+  composition: "pass" | "points" | "mixed",
+): TableContentRow[] {
+  const members: LeafMember[] = [
+    ...item.evalRows.map((row): LeafMember => ({ kind: "eval", row })),
+    ...item.missingEvalIds.map((evalId): LeafMember => ({ kind: "missing", evalId })),
+  ];
+  return nestLevel(members, "", "", item, composition);
 }
 
 function experimentRow(item: ExperimentListItem, composition: "pass" | "points" | "mixed"): TableContentRow {

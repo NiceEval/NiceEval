@@ -8,7 +8,7 @@ import type { SourceInput } from "../../source.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { countText, localeText, type ReportLocale as RL } from "../../model/locale.ts";
-import { formatTickValue, shortestUniqueLabels } from "../../model/format.ts";
+import { formatAxisTick, shortestUniqueLabels } from "../../model/format.ts";
 import { axisScale, paddedAxisDomain, placePointLabels, tickStepOf } from "../../components/metric-views/chart-math.ts";
 import { renderCharPlot, renderCoordinateTable } from "../../components/metric-views/plot.ts";
 import { dataShapeError, type DataProps } from "../../components/shared.ts";
@@ -196,14 +196,14 @@ function renderScatterWeb(
         <g className="niceeval-chart-axis niceeval-chart-axis-y">
           {yScale.ticks.map((tick) => (
             <text key={`ay${tick}`} className="niceeval-chart-tick" x={MARGIN.left - 8} y={yScale.scale(tick) + 3} textAnchor="end">
-              {formatTickValue(tick, tickStepOf(yScale.ticks), axes.yMeta.unit)}
+              {formatAxisTick(tick, tickStepOf(yScale.ticks), axes.yMeta.unit)}
             </text>
           ))}
         </g>
         <g className="niceeval-chart-axis niceeval-chart-axis-x">
           {xScale.ticks.map((tick) => (
             <text key={`ax${tick}`} className="niceeval-chart-tick" x={xScale.scale(tick)} y={MARGIN.top + PLOT_H + 16} textAnchor="middle">
-              {formatTickValue(tick, tickStepOf(xScale.ticks), axes.xMeta.unit)}
+              {formatAxisTick(tick, tickStepOf(xScale.ticks), axes.xMeta.unit)}
             </text>
           ))}
         </g>
@@ -342,8 +342,8 @@ function chartText(
     lines,
     xLabel: axes.xField,
     yLabel: axes.yField,
-    formatX: (v, step) => formatTickValue(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.xMeta.unit),
-    formatY: (v, step) => formatTickValue(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.yMeta.unit),
+    formatX: (v, step) => formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.xMeta.unit),
+    formatY: (v, step) => formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.yMeta.unit),
     invertX: axes.xMeta.better === "lower",
     invertY: axes.yMeta.better === "lower",
   });

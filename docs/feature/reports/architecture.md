@@ -389,19 +389,24 @@ builder 上就报错或输出空白——「双面 × 用户可编程组件」�
 
 ```text
 resolved ReportNode children
-  → normalizeGrid（校验 props；递归展开数组 / Fragment；去掉空分支）
-  → NormalizedGrid（有序、不可拆的 cell 列表 + columns / variant / density）
+  → normalizeGrid（递归展开数组 / Fragment；去掉空分支）
+  → NormalizedGrid（有序、不可拆的 cell 列表 + variant / density）
+       ├─ 换列阶梯 planGridColumns（格数 × 每档最小格宽 → 各候选列数的起始宽度）
        ├─ text：planTextGrid(available columns) → TextGridPlan → 逐 cell ctx.render(width)
-       └─ web：稳定 root / cell 语义结构 → CSS Grid 按 container width 自动排轨
+       └─ web：稳定 root / cell 语义结构 + 随身 @container 规则 → CSS Grid 按容器宽度换列
 ```
 
 `NormalizedGrid` 不是公开 Content，也不进入 Record 或 artifact；它只是两个渲染面共享的同步排版
 中间值。每个展开后的直接子节点是一格，格内节点对 Grid 是不透明块。Grid 不探测领域字段、
 不读取 Sample，也不根据内容类型改写子节点 props。
 
-text 面的 `TextGridPlan` 是确定的纯值，至少携带实际列数、各 cell 的外框 / 内容显示宽度、row-major 的 cell 索引和 gutter。规划器只依赖 `availableWidth`、cell 数和规范化 Grid props：先预留 `boxed` 的四边框、左右 padding 与格间 gutter，再从 `min(columns, cellCount)` 向一列尝试，选择每格达到契约最小可读内容宽度的最大列数；一列是无条件 fallback。余下的显示列从左向右分配，因整除产生的一列宽差不会累积到行尾。确定计划后才以各格的内容宽度调用 `ctx.render`，随后按显示宽度补齐并顶对齐多行块；renderer 不为试探列数重复 resolve 或执行组件计算。`boxed` 把每个 cell 各自包成完整 `┌─┐ / │ │ / └─┘`，同行 box 只用 gutter 相隔，换排重新起 box；`plain` 复用同一计划，只去掉边框与内边距。
+列数两面同源：[换列规则](library/layout.md#换列规则)的两步——先取可用宽度里的容量列数，
+再按行数摊匀——写成一个只依赖格数与该面几何常量的纯函数。text 面直接调用它定列，web 面调用
+它算出各候选列数的起始宽度；两面因此不会各自演化出一套「差不多的」列数判断。
 
-web 面输出完整有序 cell 和声明的最大列数事实，由官方 stylesheet 用 CSS Grid 的 `auto-fit` / `minmax` 与 container inline size 减列；不读 viewport、不测 DOM、不靠增强脚本重排。最大列数通过一个受控 CSS custom property 传给 stylesheet，用每格最小 inline size 同时保证“最多 columns 列”和窄容器降到一列。无 JavaScript 时节点、顺序与全部文本已经完整。`boxed` 给每个 `.niceeval-grid-cell` 独立的完整四边框并用 gap 分开；`Col` 无框。这样响应式换行不需要判断首列 / 末列，也不用写死 `nth-child(6n)`，不会因实际列数变化产生缺边或双边。
+text 面的 `TextGridPlan` 是确定的纯值，至少携带实际列数、各 cell 的外框 / 内容显示宽度、row-major 的 cell 索引和 gutter。规划器只依赖 `availableWidth`、cell 数和规范化 Grid props：先预留 `boxed` 的四边框、左右 padding 与格间 gutter，再从 cell 数向一列尝试，取每格达到契约最小可读内容宽度的最大列数。这个容量列数最后按行数摊匀；一列是无条件 fallback。余下的显示列从左向右分配，因整除产生的一列宽差不会累积到行尾。确定计划后才以各格的内容宽度调用 `ctx.render`，随后按显示宽度补齐并顶对齐多行块；renderer 不为试探列数重复 resolve 或执行组件计算。`boxed` 把每个 cell 各自包成完整 `┌─┐ / │ │ / └─┘`，同行 box 只用 gutter 相隔，换排重新起 box；`plain` 复用同一计划，只去掉边框与内边距。
+
+web 面输出完整有序 cell 与格数事实，外面包一层 inline size 容器，并随身带一段按格数 × density 算出的 `@container` 换列规则；不读 viewport、不测 DOM、不靠增强脚本重排。规则文本是这两项的纯函数，同一组合的两个 Grid 逐字相同，重复出现幂等；stylesheet 只放与格数无关的几何与视觉，不为某个格数写死断点。默认一列，因此无 JavaScript、容器查询未生效或宽度不足时，节点、顺序与全部文本仍然完整。`boxed` 给每个 `.niceeval-grid-cell` 独立的完整四边框并用 gap 分开；`Col` 无框。这样响应式换行不需要判断首列 / 末列，也不用写死 `nth-child(6n)`，不会因实际列数变化产生缺边或双边。
 
 `Stat` 在进入任一面前用同一 helper 解析为 `StatDisplay`：按 locale 得到 label / value / detail，number 用同一 `Intl.NumberFormat`，`null` 变成 `—`，tone 原样保留。两面只决定结构和折行，不再各自解释字段。label、value、detail 都按 inline-start 对齐；web 只给 value 使用 tabular numerals 和 tone，text 无 ANSI 时仍靠三行语义自足。text Grid 只把 Stat 当成普通多行块：label → value → detail，省略 detail 不占行；字段超过计划宽度时用统一显示宽度工具折行。
 
@@ -428,7 +433,7 @@ web 面输出完整有序 cell 和声明的最大列数事实，由官方 styles
 
 `--report` 的值按形态判别，判别只看字符串本身、不探测文件系统：含 `/`、以 `.` 开头，或带 `.ts` / `.tsx` / `.js` / `.mjs` 后缀的，按报告文件路径装载其默认导出；其余裸词查[内建视图名表](library/built-in.md)（视图的具名导出名，当前只有 `standard`）。裸词未命中名表时按完整用户反馈报错，列出可用名字并提示文件要写成带路径形（`./reports/site.tsx`），不回落到文件探测、也不静默落回默认报告。
 
-`config.report` 与 `--report` 的合法值判定同源：拿到的不是 `defineReport` 产物（普通对象、React 组件、裸报告树）时按完整用户反馈报错，两者只有出处一句不同——一个指向文件的默认导出，一个指向 `niceeval.config.ts` 的 `report` 字段。`view` 本地 server 的 mtime cache-busting 对两档同规则：只击穿装载入口本体，入口 import 的模块仍走缓存。`--report <文件>` 的入口就是报告文件，改它下次请求即生效；`config.report` 的入口是 `niceeval.config.ts`，报告文件是它的依赖，改报告文件要重启 server 才生效。边写边看报告的工作流因此是 `--report ./reports/site.tsx` 直接指文件，定型后再填进配置。
+`config.report` 与 `--report` 的合法值判定同源：拿到的不是 `defineReport` 产物（普通对象、React 组件、裸报告树）时按完整用户反馈报错，两者只有出处一句不同——一个指向文件的默认导出，一个指向 `niceeval.config.ts` 的 `report` 字段。`view` 本地模式对两档同规则失效入口及其**整棵项目内 import 图**：每次重建用 tsx namespaced import 重装装载入口（`--report <文件>` 就是报告文件；`config.report` 的入口是 `niceeval.config.ts`，报告与自定义组件是它的依赖），所以「改一个组件的 web 面 → 存盘 → 浏览器里看到新样子」与改报告文件本身没有区别，不必为边写边看改成 `--report`。
 
 报告定义只属于读面：`config.report` 不参与 `niceeval exp`，报告树不进 Run，换报告不改写任何落盘结果。
 

@@ -693,7 +693,7 @@ function renderCellWeb(
     case "notApplicable":
       return <span className="niceeval-missing">{MISSING_MARK}</span>;
     case "missing":
-      return <span className="niceeval-missing">{cell.code}</span>;
+      return <span className="niceeval-missing">{formatCellText(cell, ctx.locale)}</span>;
     case "text":
       return (
         <span className="niceeval-cell-text">

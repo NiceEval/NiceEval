@@ -5,6 +5,8 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../scoring/types.ts";
 import type { MeasureCell } from "../model/types.ts";
+import { missingText } from "../model/format.ts";
+import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 
 /** 判定计票:passed / failed / errored / skipped。 */
 export interface VerdictCounts {
@@ -61,13 +63,13 @@ export interface TableContent {
 }
 
 /** 把 Cell 折成 text 面可见字符串(缺数据 / 不适用统一不补成 0)。 */
-export function formatCellText(cell: Cell | null | undefined, locale?: string): string {
+export function formatCellText(cell: Cell | null | undefined, locale?: ReportLocale): string {
   if (cell == null) return "—";
   switch (cell.kind) {
     case "notApplicable":
       return "—";
     case "missing":
-      return cell.code;
+      return missingText(cell.code, locale ?? DEFAULT_REPORT_LOCALE);
     case "text":
       return cell.detail ? `${cell.text}\n  ${cell.detail}` : cell.text;
     case "locator": {
@@ -90,7 +92,9 @@ export function formatCellText(cell: Cell | null | undefined, locale?: string): 
       return cell.verdict ?? "—";
     case "measure": {
       const m = cell.measure;
-      return resolveDisplay(m.display, locale) || (m.value === null ? "—" : String(m.value));
+      const text = resolveDisplay(m.display, locale);
+      if (text) return text;
+      return m.value === null ? missingText("noSamples", locale ?? DEFAULT_REPORT_LOCALE) : String(m.value);
     }
     default: {
       const _exhaustive: never = cell;

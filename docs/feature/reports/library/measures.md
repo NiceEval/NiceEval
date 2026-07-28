@@ -27,9 +27,9 @@ interface DatasetField {
   name: string;
   kind: "dimension" | "measure";
   valueType: "string" | "number";
+  /** 量纲声明，也是格式化的唯一开关。 */
   unit?: string;
   better?: "higher" | "lower";
-  format?: MeasureFormat;
 }
 
 type DatasetValue = string | number | MeasureCell;
@@ -61,18 +61,10 @@ type ReportInput = Sample;
 type Aggregator = "mean" | "sum" | "min" | "max" |
   ((values: readonly number[]) => number);
 
-interface MeasureFormat {
-  style: "number" | "percent" | "currency" | "duration" | "tokens";
-  currency?: string;
-  minimumFractionDigits?: number;
-  maximumFractionDigits?: number;
-}
-
 interface Measure<Name extends string = string> {
   name: Name;
+  /** 量纲声明，驱动内建格式化："%" → 87.3%、"ms" → 1.2s、"$" → $0.31、"tokens" → 46.5k tokens。 */
   unit?: string;
-  /** 可序列化格式描述；renderer 用 ctx.locale 执行。 */
-  format?: MeasureFormat;
   better?: "higher" | "lower";
   /** 读数值的自然边界；图轴留白不得越界。 */
   bounds?: { min?: number; max?: number };
@@ -82,6 +74,8 @@ interface Measure<Name extends string = string> {
   perEval?: Aggregator;
   /** 题级值再跨 experiment × eval 折成终值；默认 mean。 */
   acrossEvals?: Aggregator;
+  /** 覆盖 unit 驱动的内建格式化；只格式化同一个终值，不改变口径。 */
+  display?: (value: number, locale: ReportLocale) => string;
 }
 
 function defineMeasure<const Name extends string>(
@@ -91,16 +85,14 @@ function defineMeasure<const Name extends string>(
 interface MeasureColumn {
   key: string;
   unit?: string;
-  format?: MeasureFormat;
   better?: "higher" | "lower";
   bounds?: { min?: number; max?: number };
 }
 
 interface MeasureCell {
   value: number | null;
-  /** 与 value 一起序列化；renderer 按当前 locale 格式化。 */
-  format?: MeasureFormat;
-  unit?: string;
+  /** 已格式化的显示值；由 measureDisplay() 生成，渲染面直接输出。 */
+  display: LocalizedText;
   /** 读数返回非 null 的 attempt 数。 */
   samples: number;
   /** 本格子覆盖的 attempt 总数，包含值为 null 的 attempt。 */
@@ -115,9 +107,10 @@ interface MeasureCell {
 `Table` / `Chart` 对内建字段使用自己的呈现词典，自定义字段默认显示原始 name，作者可用
 `<Column header>` 或自定义 Component 明确覆盖。
 
-`MeasureFormat` 是数值语义，不是预渲染字符串。Source 把它随字段或 cell 序列化，renderer 再用
-`ctx.locale` 格式化 value。协议不接受 `(value, locale) => string` 回调，也不在 compute 阶段生成
-`LocalizedText`；否则开放的 BCP 47 locale 无法穷举，Content 也不能跨 RSC / JSON 边界复用。
+`unit` 是量纲声明，也是格式化的唯一开关；同一个 unit 在图轴、表格与摘要格里折出同一种读法。
+显示字符串在计算侧由 `measureDisplay()` 生成一次写进 `MeasureCell.display`，渲染面不重算——
+`show` 与 `view` 因此逐字相同，导出的 JSON 也自足。完整规则见
+[格式化与呈现工具箱](presentation.md#格式化只发生一次)。
 
 `MeasureCell.refs` 跟随覆盖范围，不只跟随有效样本。用户看到 `samples < total` 时，仍能下钻到
 那些“为什么测不了”的 attempt。
@@ -246,7 +239,7 @@ export const changedLines = defineMeasure({
 - `null` 表示测不了，不进入聚合；`0` 表示测得结果为零，会正常进入聚合。
 - `where` 是进入计算前的显式条件，适合“只比较通过方案的代码量”。
 - 聚合先折叠同一 experiment × eval 的 attempts，再跨题折叠；`perEval` 与 `acrossEvals` 默认都是 `mean`。
-- `format` / `unit` 驱动 renderer 按当前 locale 格式化。多语言只改变显示，不分裂数值。
+- `unit` 驱动显示值的生成，`display` 覆盖它。多语言只改变显示，不分裂数值。
 
 ## 维度与数值轴
 
@@ -382,4 +375,5 @@ const reasoning = numericRunConfig("reasoningEffort", {
 ## 相关阅读
 
 - [图表](../components/charts/README.md) / [Measure 数据源](../components/sources/measure.md) —— 读数的图形与表格投影。
+- [格式化与呈现工具箱](presentation.md) —— `unit` 折成什么字符串、`display` 由谁生成。
 - [Record Format](../../record/architecture.md) —— 读数读取的落盘字段。

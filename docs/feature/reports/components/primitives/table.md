@@ -69,7 +69,7 @@ Source 配自定义 Component 时不必经过它（[全局协议只有 Content](
 
 ```ts
 type Cell =
-  /** 官方读数格：value + format 由 renderer 格式化，samples / total / refs 保住覆盖率与下钻。 */
+  /** 官方读数格：display 是计算侧折好的显示值，samples / total / refs 保住覆盖率与下钻。 */
   | { kind: "measure"; measure: MeasureCell }
   /** 判定：单个 verdict，或计票；refs 是计票覆盖的执行（有证据可下钻的计票格才携带，如稳定性矩阵）。 */
   | { kind: "verdict"; verdict?: Verdict; counts?: VerdictCounts; refs?: readonly AttemptLocator[] }
@@ -83,7 +83,7 @@ type Cell =
   | { kind: "text"; text: string; detail?: string }
   /** 这一格不适用（通过制行的总分格）：与「测不了」严格分开。 */
   | { kind: "notApplicable" }
-  /** 覆盖缺口：结构化原因；renderer 的 Notice policy 决定文案与补跑 action。 */
+  /** 覆盖缺口：结构化 code，经内建词表映射成本地化原因；code 本身不是显示文本。 */
   | { kind: "missing"; code: string; data?: JsonValue };
 ```
 
@@ -104,14 +104,14 @@ Source 只决定一格是哪个 `kind`，不决定它长什么样。
 
 | `kind` | web 面 | text 面 |
 |---|---|---|
-| `measure` | renderer 按 `value + format + ctx.locale` 格式化；`samples < total` 时写明覆盖范围；`refs` 单条时值本身是链接，多条时进 tooltip | 同一格式化结果；覆盖缺口写进列脚注，不省略 |
+| `measure` | 输出 `display`（计算侧按 `unit` 折好，按 `ctx.locale` 取语言）；`samples < total` 时写明覆盖范围；`refs` 单条时值本身是链接，多条时进 tooltip | 同一个 `display`；覆盖缺口写进列脚注，不省略 |
 | `verdict` | 单个 verdict 显示状态图标加词；计票各项以中点分隔，不渲染成类似按钮的胶囊 | `✓ passed` / `1 passed · 1 failed` |
 | `score` | `earned`；有 `possible` 时写 `earned / possible` 并附同尺度百分比 | 同 web，百分比在括号内 |
 | `summary` | 单行，宽度不足按显示宽度截断；`more > 0` 时尾缀 `+N more failures`，计分制为 `+N more lost points` | 同 web |
 | `locator` | 链到 `attemptHref`；`staleSinceMs` 存在时后缀 `↩` 加人话时距，hover 显示完整执行时刻 | locator 加 `↩ 3d`，时距直接打 |
 | `text` | 主文；`detail` 作为 subdued 副行，省略时不留空行 | 主文换行后缩进打副行 |
 | `notApplicable` | `—` | `—` |
-| `missing` | 按 `code + data` 映射本地化原因与可复制 action；未知 code 显示结构化 detail | 同一 policy 的 text 投影 |
+| `missing` | `missingText(code, locale)` 的本地化原因；词表未命中时原样显示 `code` | 同一份文案 |
 
 三条渲染纪律：
 
@@ -119,8 +119,9 @@ Source 只决定一格是哪个 `kind`，不决定它长什么样。
   两者都带得出「为什么没有」。把三种情况都打成 `—`，读者就无法区分不适用、测不了和没跑到。
 - **时效标注是 subdued 的行内事实**，不占框、不用警示色。携带是指纹担保下的正常缓存，
   时效是数字的出身属性，不是警告。
-- **渲染面不重算。** `summary` 的折叠、`measure` 的聚合、`score` 的求和都在数据源完成；
-  渲染面只做宽度截断与格式化。
+- **渲染面不重算，也不重新格式化。** `summary` 的折叠、`measure` 的聚合与显示值、`score` 的求和
+  都在数据源完成；渲染面只做宽度截断，并按 locale 从 `display` 取一种语言。数据源用
+  [`measureDisplay()`](../../library/presentation.md#格式化只发生一次)生成显示值，不写 `String(value)`。
 
 ## 下钻子行
 
@@ -186,3 +187,4 @@ text 面按显示宽度对齐（CJK 与全角记 2 列），身份列有宽度�
 - [数据源目录](../sources/README.md) —— 官方数据源的行形状与默认列。
 - [`Grid` / `Stat`](stat-grid.md) —— 同一套单元格类型的读数网格投影。
 - [读数与维度](../../library/measures.md) —— `MeasureCell` 与聚合口径。
+- [格式化与呈现工具箱](../../library/presentation.md) —— 显示值、缺数据词表与取色的公开入口。

@@ -62,9 +62,13 @@ Agent 颜色来自[页级色分配](../README.md#维度呈现分配单位是页)
 题一多，experiment 行展开后就是一张平铺长列表：读者能看到每道题的结果，却看不出「哪一类题
 拖了后腿」。分组层把这个判断提前到收起状态——一个组一行，带该组的聚合读数，展开才进单题。
 
-**分组键是 eval id 的目录前缀**，即第一个 `/` 之前的段。这不是从 id 字符串猜分类：eval id
-[从文件路径推导](../../../eval/README.md#defineeval-的形状)（`evals/downshift/pr-1484.eval.ts`
-→ `downshift/pr-1484`），目录结构是作者已经声明过的组织方式，读回来是还原声明。
+**分组键是 eval id 的路径段**，按 `/` 切开后逐层嵌套——不是只取第一段、也不是写死
+Experiment → 组 → Eval 三层。`evals/pkg/sub/a.eval.ts` → `pkg/sub/a`，树里是
+`pkg`（若顶层还有其它兄弟组）→ `sub` → `a`。目录结构是作者已经声明过的组织方式，
+读回来是还原声明；有几层目录就有几层组，无信息的壳按下面规则剥掉。
+
+这不是从 id 字符串猜分类：eval id
+[从文件路径推导](../../../eval/README.md#defineeval-的形状)。
 
 不用 [`tags`](../../../eval/library.md#tags-与-environment让-experiment-选择) 分组。一个 eval 可以带多个
 tag，同一道题会同时落进多个组，组行的分母互相重叠，算出来的比值只是重复计数。层级要求分区，
@@ -73,13 +77,19 @@ tags 是标注，两者不能互换。要按 tags 横切，用 [`sources.measure
 
 ### 无信息时整层收起
 
-任一条成立就不插入分组层，展开直接是 Experiment → Eval：
+每一层的兄弟之间各自判定；任一条成立就不插入**这一层**的分组壳，继续看下一层：
 
-- **只有一个组**：套一层壳，不增加任何区分；
+- **只有一个组，且本层没有与组行同级的无前缀题**：套一层壳，不增加任何区分
+  （例如整份 Sample 都在 `pkg/` 下，顶层不插 `pkg`，直接在其下按 `sub` / `other` 分组；
+  若同层还有不含 `/` 的题，组行仍带来分区，不剥）；
 - **每个组都只有一道题**：多一次点击，没有聚合。
 
-eval id 不含 `/` 的题与组行同级挂在 experiment 下。不造「未分组」「其它」这类组名——
-那是把「没有声明」渲染成一个声明。
+整条链都被剥掉时，叶子标签退回完整 evalId。eval id 不含 `/` 的题与组行同级挂在
+experiment 下。不造「未分组」「其它」这类组名——那是把「没有声明」渲染成一个声明。
+
+例：`111/111/aaa` 与 `111/111/bbb` 两道题——两层都是「只有一个组」，整链收起，展开直接是
+两道完整 id；`pkg/sub/a`、`pkg/sub/b`、`pkg/other/c`、`pkg/other/d`——顶层 `pkg` 被剥，
+留下 `sub` / `other` 两组。
 
 ### 组行显示什么
 
@@ -106,8 +116,9 @@ eval id 不含 `/` 的题与组行同级挂在 experiment 下。不造「未分�
 
 ### 排序与过滤在分组下的行为
 
-**排序在兄弟之间进行。** 组行按主读数从高到低预排，与 experiment 行同规则；组内 Eval 保持既有
-顺序。点击表头重排的是每一层的兄弟行，不把 Eval 提到组外跨组重排——跨组重排会让层级失去意义。
+**排序在兄弟之间进行。** 组行按主读数从高到低预排，与 experiment 行同规则；组内子行
+（含占位行）按 evalId 字典序——占位行落在你会按 id 去找它的位置，不另开「缺口区」。
+点击表头重排的是每一层的兄弟行，不把 Eval 提到组外跨组重排——跨组重排会让层级失去意义。
 
 **过滤保留结构，不改口径。** `filter` 命中 Eval 文本时保留其组行并展开到命中行；命中组前缀时
 整组保留。组行显示的始终是全组读数，不是命中子集的读数：过滤是浏览状态，改了口径就成了另一份
@@ -132,9 +143,9 @@ Status       Eval / Attempt              Result                     Duration    
   ✗          │  ├─ @1first01             equals(42) · received 41   16.0s       $0.02
   ✓          │  └─ @1second2             —                          18.2s       $0.02
 1 failed     weather · 1/2 evals · 0%                               42.1s avg   $0.04 avg
-✗ failed     ├─ tool   ↩ 3d                                         42.1s avg   $0.04 avg
-  ✗          │  └─ @1third03   ↩ 3d      calledTool("get_weather") · received 2 tool calls: get_time({}) …   42.1s   $0.04
-—            └─ rerank                   当前配置下无结果 · niceeval exp compare/codex
+—            ├─ rerank                   当前配置下无结果 · niceeval exp compare/codex
+✗ failed     └─ tool   ↩ 3d                                         42.1s avg   $0.04 avg
+  ✗             └─ @1third03   ↩ 3d      calledTool("get_weather") · received 2 tool calls: get_time({}) …   42.1s   $0.04
 ```
 
 text 面的明细树没有主读数列，组行的主读数跟在标签后（`weather · 1/2 evals · 0%`），
