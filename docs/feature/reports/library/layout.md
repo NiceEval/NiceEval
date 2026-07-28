@@ -754,8 +754,8 @@ await 它，再递归展开返回的树。Composition 不需要 renderer，因�
 [Architecture · 外部数据走冻结快照](../architecture.md#外部数据走冻结快照)）。
 名称与视觉编码都由最终 renderer 通过 `ctx.dimension()` 读取。
 
-取 Source 写 `await ctx.resolve(source)`，不写 `source.compute(ctx.input)`——后者绕开 page 级
-缓存，同一份计算会做两遍。完整签名与缓存语义见
+取 Source 写 `await ctx.resolve(source)`；要覆盖 page input 时写 `await ctx.resolve(source, input)`。
+不写 `source.compute(input)`——后者绕开 page 级缓存，同一份计算会做两遍。完整签名与缓存语义见
 [Architecture · Composition](../architecture.md#composition运行期编排)。
 
 ## 相关阅读

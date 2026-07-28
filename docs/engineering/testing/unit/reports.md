@@ -108,12 +108,19 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   是在合并后的 keyset 上重新聚合而不是把截掉的几行平均（fixture 要让「合并重算」与「行均值」得出不同的数），`rest`
   恒排末位且带自己的 `samples` / `total` / `refs`、维度值不超过 `limit`
   时不产生 `rest` 条目、只给 `limit` 不给 `sort` 按完整用户反馈报错。
-- **主题钉色**（[钉色](../../../feature/reports/library/theme.md#钉色)）：`seriesPins`
-  的键原样占位、自动分配只在剩余槽里探测、多个值钉同一下标不触发探测、钉了但页内未出现的键不占槽；非法维度 name / 值键 /
-  下标按完整用户反馈拒绝并指到 `theme.seriesPins.<维度>.<值>`。区分力场景是「同一份数据加钉与不加钉，未钉键的落槽不同」。
+- **主题钉色**（[钉色](../../../feature/reports/library/shell.md#钉色)）：报告外壳
+  `dimensionPins` 的键原样占位、自动分配只在剩余槽里探测、多个值钉同一下标不触发探测、钉了但页内未出现的键不占槽；非法维度 name / 值键 /
+  下标按完整用户反馈拒绝并指到 `dimensionPins.<维度>.<值>`。区分力场景是「同一份数据加钉与不加钉，未钉键的落槽不同」。
 - **Chart 呈现覆盖**：`Chart.series` 只能覆盖已有 series key 的线型、点形、标签与可见性，
   不能改变 mark、绑定或聚合；未知 key 给出完整用户反馈。
 - **`Markdown` 的解析与两面投影**（[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。覆盖：每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）；裸 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出；表格语法按完整用户反馈报错并指引 `Table`；折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）；`LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
+- **`Table` 的 subRows 与 placeholder**（[Table](../../../feature/reports/components/primitives/table.md)）：
+  `subRows` 在 text / web 两面逐层渲染；`variant: "placeholder"` 行照常显示但不进入任何列的聚合读数。
+  两面各一份区分力场景——断言面是 Content 与两面输出字符串，不经浏览器。
+- **Callouts / Waterfall / SourceView / Conversation / DiffView / CopyBlock 的两面投影与维度封闭性**：
+  每个原语各一条类别。断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，
+  以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与
+  「`dimensions` 必填与查询封闭性」同一判据，落在各原语 fixture 上）。
 - **页级呈现分配**（[分配单位是页](../../../feature/reports/components/README.md#维度呈现分配单位是页)）：
   给定一页 `dimensions()` 声明的集合产出映射，断言面是映射本身，不断言渲染出的颜色值。逐项覆盖：
 
@@ -299,7 +306,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - 规范化产物是数据级断言：完整令牌表（单值展开成相同的 light / dark，pair 保留两支）与有序资产清单，路径相对**主题文件**解析。不断言生成的 CSS 文本。
   - `--theme` 裸词只查内建主题名表、不回落文件探测；未命中的报错列出可用名字。与 `--report` 的判别规则同源，只保留一条代表场景。
   - `show --theme` 拒绝：断言错误对象与下一步指引，不断言终端输出。
-- **`seriesPins` 在页级色分配中的作用**：钉住的键原样占位、其余键在剩余槽里探测、多个键钉同一下标不触发探测、钉了但本页未出现的键不保留槽位。分配结果是**下标**，fixture 必须证明换一份 `series` 色板不改变任何键的下标——这是「主题只管颜色、报告只管含义」在数据层的判据。校验错误指到 `seriesPins.<维度>.<值>`。
+- **`dimensionPins` 在页级色分配中的作用**：钉住的键原样占位、其余键在剩余槽里探测、多个键钉同一下标不触发探测、钉了但本页未出现的键不保留槽位。分配结果是**下标**，fixture 必须证明换一份 `series` 色板不改变任何键的下标——这是「主题只管颜色、报告只管含义」在数据层的判据。校验错误指到 `dimensionPins.<维度>.<值>`。
 
   用户怎样换主题与写主题包，见[给报告换主题](../../../feature/reports/use-case/交付报告/主题/)；官方主题取值见 [Basalt](../../../feature/reports/themes/basalt.md)。
 

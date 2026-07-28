@@ -1,7 +1,7 @@
 # `FailureList`
 
 「现在有哪些失败要处理」是常见固定区块,所以工具箱提供 `FailureList` 组合组件。它与手写装配严格
-等价:内部是 `sources.entity.attempts.compute(input)` → 过滤 → `<Table data={content}>`,没有私有能力。
+等价:内部是 `ctx.resolve(sources.entity.attempts)` → 过滤 → `<Table data={content}>`,没有私有能力。
 
 - 收 `verdict` 为 `failed` 或 `errored` 的 attempt；
 - 按 attempt 开始时间降序（最近的失败在前），同刻按 locator 字典序收口；

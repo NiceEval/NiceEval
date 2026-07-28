@@ -218,7 +218,7 @@ interface CompositionContext<Input extends SourceInput> {
   readonly data: Readonly<Record<string, JsonValue>>;
   readonly page: NormalizedPage;
   readonly signal: AbortSignal;
-  resolve<Content>(source: Source<Input, Content>): Promise<Content>;
+  resolve<Content>(source: Source<Input, Content>, input?: Input): Promise<Content>;
 }
 
 function defineComposition<Props, Input extends SourceInput = Sample>(
@@ -229,15 +229,19 @@ function defineComposition<Props, Input extends SourceInput = Sample>(
 `ctx.input` 是当前 page 的输入：sample-input page 上是 `Sample`，attempt-input page 上是
 `AttemptEvidence`。输入只有这一个入口，不按种类分裂成两个平行字段。
 
-Composition 内取 Source 必须写 `await ctx.resolve(source)`，不写 `source.compute(ctx.input)`——
-后者绕开下面的 page 级缓存，同一份计算会做两遍。`source.compute()` 仍供报告管线之外的独立库
-代码使用，那里没有 page 也就没有缓存。
+Composition 内取 Source 必须写 `await ctx.resolve(source)`；需要覆盖 page input 时写
+`await ctx.resolve(source, input)`。不写 `source.compute(input)`——后者绕开下面的 page 级缓存，
+同一份计算会做两遍。`source.compute()` 仍供报告管线之外的独立库代码使用，那里没有 page
+也就没有缓存。
 
 `ctx` 不携带主题、`dimensionPins` 或任何颜色。页级呈现分配必须是纯函数，主题必须能独立分发；
 能读钉色的 Composition 可以按颜色改变返回的树，这两条就都保不住。
 
-`ctx.resolve` 只收与本 page 同类型的 Source。**attempt 级 Source 因此只能出现在 attempt-input
-page**：sample-input page 上没有 `AttemptEvidence` 可传。
+`ctx.resolve` 只收与本 page 同类型的 Source 和 input。省略第二个参数时使用 `ctx.input`。
+显式 input 只覆盖本次 Source 计算，不改变 page 的输入。
+
+**attempt 级 Source 只能出现在 attempt-input page**：sample-input page 上没有
+`AttemptEvidence` 可传。
 另一条路是给 Composition 开一个 `ctx.record` 让它自行装配 evidence，代价是 Composition 能绕过
 Source 任意读盘，「Source 是 `.niceeval` 唯一查询接口」当场失效。
 要在总览页展示某条 attempt 的证据，用 locator 链到 attempt-input page。

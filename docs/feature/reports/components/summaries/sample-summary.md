@@ -33,17 +33,18 @@ interface SampleSummaryProps {
 ```tsx
 export const SampleSummary = defineComposition(async (props, ctx) => {
   const input = props.input ?? ctx.input;
-  const snapshot = await sources.sample.snapshot.compute(input);
+  const snapshot = await ctx.resolve(sources.sample.snapshot, input);
   const composition = await scoringComposition(input);
   const measures = composition === "pass"
     ? [passRate, costUSD]
     : composition === "points"
       ? [totalScore, costUSD]
       : [passRate, totalScore, costUSD];
-  const dataset = await sources.measure.rows({
+  const summaryRows = sources.measure.rows({
     dimensions: [],
     measures,
-  }).compute(input);
+  });
+  const dataset = await ctx.resolve(summaryRows, input);
 
   return (
     <Grid locale={props.locale} className={props.className}>

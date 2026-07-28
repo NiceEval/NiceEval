@@ -250,8 +250,6 @@
 - **Reports 仍有专用组件残留。** `SampleOverview`、`SampleSummary`、`defineMeasure`、`Source` 与
   通用 `Table` 已经形成公开面，但实体列表和指标视图还保留专用组件及其计算函数。通用数据源与
   原语尚未完全替代这些实现。
-- **watch 的导入图仍未精确收窄。** view 已监听记录根和项目根并做重建，但项目侧监听仍是目录级；
-  尚未只跟踪报告、主题及其静态 import 闭包。
 
 ### P2：制品
 - **E2B 公共 baseline 尚未换代。** 配方和构建校验已修，但公开常量与
@@ -265,3 +263,5 @@
 - feedback 的 agent / ci 机器面已合并为 `json.ts`。
 - 宽 `TestContext` + runtime guard 已与目标契约一致。
 - hooks、keep-sandbox、orphans、error-classification 与 Verdict 主折叠没有新的结构性 gap。
+- view 的项目侧监听已收窄到报告 / 主题 / 项目配置及其静态 import 闭包
+  （`src/view/server.ts` 的 `projectWatchTargets` 与 `ProjectFileWatcher`）。
