@@ -10,6 +10,8 @@
 - [从失败清单到可修复任务](调试/整理失败清单.md) —— `FailureList` / `SampleFixPrompt` / `AttemptDetail`。
 - [`@locator`:从默认报告一行下钻到一次失败的全部证据](调试/按定位符下钻.md)。
 - [`--history`:一道题时好时坏,按 attempt 看历次执行](调试/查看不稳定历史.md)。
+- [瀑布里全是短节点:哪些值得看,时间去了哪](调试/从瀑布定位耗时.md) —— Traces 页 /
+  `Waterfall` 显著性折叠 / `--timing` 下钻。
 
 ## [分析](分析/README.md)
 
@@ -52,6 +54,7 @@
 | 能力 | 主用例 |
 |---|---|
 | `FailureList` / `SampleFixPrompt` / `AttemptDetail` | [修失败](调试/整理失败清单.md) |
+| `Waterfall` / `sources.sample.traces` 的显著性折叠 | [瀑布定位耗时](调试/从瀑布定位耗时.md) |
 | `SampleOverview` / `Chart` 的 scatter mark | [质量 × 成本](分析/比较质量与成本.md) |
 | `sources.measure.scoreboard(...)` | [固定题集考试](分析/固定题集成绩单.md) |
 | `sources.measure.rows` | [可靠性诊断](分析/诊断可靠性.md) · [质量 × 成本](分析/比较质量与成本.md) |

@@ -54,8 +54,10 @@ export default defineReport({
 `--json` 的结构化输出都消费这一字段；终端呈现细则见 [`--execution`](../../show/execution.md)。
 没有失败命令时字段省略，不摆空数组。
 
-区块按事实边界拆分，不按某个宿主当前的卡片拆分。`sources.attempt.timeline` 可以把 span 按显式
-correlation 挂回 runner 时间树；`sources.attempt.trace` 保留原始 OTel 视角。二者可以择一，也可以同时放。
+区块按事实边界拆分，不按某个宿主当前的卡片拆分。`sources.attempt.timeline` 把 span 按显式
+correlation 挂回 runner 时间树；`sources.attempt.trace` 保留原始 OTel 视角。默认 `AttemptDetail`
+只放 timeline 一张——trace 的内容已嵌在其中，同页摆两张是同一批 span 平铺两遍。trace
+供作者显式放置，用于核对采集侧原始层级（如调 telemetry 接入时）。
 
 `sources.attempt.source` 与 `sources.attempt.assertions` 会呈现同一批 assertion 的不同视角。
 默认组合通过 `AttemptAssessment` 二选一，避免重复。前者还把标准事件流按 `loc` 投影回 send 行，

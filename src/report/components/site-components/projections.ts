@@ -63,7 +63,9 @@ export async function sampleTracesContent(input: ReportInput): Promise<Waterfall
     }));
     return {
       key: row.locator,
-      label: `${row.evalId} · ${row.experimentId}`,
+      // label 是 experimentId/evalId;locator 由行头单独呈现,label 不重复它
+      // (docs/feature/reports/components/sources/sample-traces.md)。
+      label: `${row.experimentId}/${row.evalId}`,
       durationMs: row.durationMs,
       nodes,
       locator: row.locator,

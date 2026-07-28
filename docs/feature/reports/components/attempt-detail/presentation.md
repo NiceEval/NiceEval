@@ -16,14 +16,19 @@
 | `AttemptAssessment` | 挂在哪条断言 | 有标注源码时是 `sources.attempt.source`，否则是 `sources.attempt.assertions` 的判定表 | 二选一，不并排 |
 | `AttemptNotices` | 有没有基础设施问题 | snapshot error 的 phase / code / message / cause，加已持久化 diagnostics | 按级别分组的 Callouts |
 | `AttemptFixPrompt` | 拿什么去修 | 单条失败的完整 prompt | 可复制块 |
-| `Waterfall`（timeline） | 时间花在哪 | runner phases、hook、command、turn，以及按 `traceId` 挂上的 spans | 可逐层展开的时间树 |
+| `Waterfall`（timeline） | 时间花在哪 | runner phases、hook、command、turn，以及按 `traceId` 挂上的 spans | 标题「执行时间轴」，可逐层展开的时间树。phase 沿主链累计偏移并着色成分段色带；turn 的 spans 挂在该轮之下，关联不上的落 `eval.run` 层。`eval.run` 与 turn 带 `open` 默认展开，第一眼即 agent 活动 |
 | `AttemptUsage` | 花了多少 | turns、tool calls、token 用量、成本 | 数值表 |
 | `Conversation` | agent 说了什么做了什么 | 分轮事件流与失败命令卡 | 分轮卡片；有标注源码时轮次已投影回源码行，这块不出现 |
-| `Waterfall`（trace） | 原始 span 长什么样 | canonical OTel span 树 | 时间树 |
 | `DiffView` | 改了哪些文件 | 文件清单、增删行数、patch | 文件列表 + 可展开 patch |
 
 每块的数据源解析为 `null` 时整块不出现，不留空标题。
 `AttemptSummary` 恒有：它读的 snapshot 对任何 attempt 都存在。
+
+页面只放一张时间树。trace 的全部内容（原始 span 层级）都按 correlation 嵌在时间轴里；
+phases 反向没有别的家——「niceeval 自己占了多少时间、哪个阶段出问题」只有 runner 知道，
+所以保留的是超集。[`sources.attempt.trace`](README.md#公开区块集) 仍是公开数据源：
+调 telemetry 接入、或要看不混 runner 节点的原始视角时，作者显式放一张
+`<Waterfall source={sources.attempt.trace} />`。终端侧 `--timing` 的 `--json` 恒携带完整树。
 
 跨 attempt 的汇总不进这张 page——读数、榜位、稳定性矩阵的输入是 Sample，
 这张 page 的输入是一份 `AttemptEvidence`。要对照另一次执行，用它自己的 locator 打开。

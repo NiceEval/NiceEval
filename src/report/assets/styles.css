@@ -545,6 +545,7 @@ table.niceeval-report,
   border-radius: var(--radius);
   background: var(--line-strong);
 }
+.niceeval-waterfall .niceeval-span-phase { background: color-mix(in oklch, var(--line-strong), var(--text) 45%); }
 .niceeval-waterfall .niceeval-span-agent { background: color-mix(in oklch, var(--good), var(--line-strong) 40%); }
 .niceeval-waterfall .niceeval-span-model { background: color-mix(in oklch, var(--warn), var(--line-strong) 40%); }
 .niceeval-waterfall .niceeval-span-tool { background: color-mix(in oklch, var(--line-strong), var(--text) 25%); }
@@ -579,6 +580,16 @@ table.niceeval-report,
   padding: 0;
   border-left: 1px solid var(--line);
 }
+.niceeval-waterfall .niceeval-waterfall-title {
+  font-weight: 620;
+  margin-bottom: 8px;
+}
+.niceeval-waterfall .niceeval-waterfall-fold-summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.niceeval-waterfall .niceeval-waterfall-fold[open] > .niceeval-waterfall-fold-summary { margin-bottom: 4px; }
 
 /* ---- DiffView 原语(文件清单与可展开 patch) ---- */
 .niceeval-diff-view {

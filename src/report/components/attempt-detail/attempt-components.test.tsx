@@ -31,6 +31,7 @@ import {
   attemptTraceData,
   usageTableData,
 } from "./compute.ts";
+import { attemptTimelineContent, attemptTraceContent } from "./content.tsx";
 import {
   Callouts,
   Conversation,
@@ -527,7 +528,9 @@ describe("AttemptAssessment / AttemptDetail(组合组件)", () => {
     expect(withoutSource).toContain(AttemptSummary);
     expect(withoutSource).toContain(AttemptAssessment);
     expect(withoutSource).toContain(CopyBlock);
-    expect(withoutSource.filter((type) => type === Waterfall)).toHaveLength(2);
+    // 默认组合只放 timeline 一张时间树;trace 数据源仍公开,由作者显式放置
+    // (docs/feature/reports/components/attempt-detail/presentation.md)。
+    expect(withoutSource.filter((type) => type === Waterfall)).toHaveLength(1);
     expect(withoutSource).toContain(Conversation);
     expect(withoutSource).toContain(DiffView);
     expect(withoutSource.indexOf(Conversation)).toBeGreaterThan(withoutSource.indexOf(CopyBlock));
@@ -898,4 +901,67 @@ describe("attemptSourceData:标准事件流按 loc 投影回 send 行", () => {
     expect(scoredPassed.lines.some((l) => l.aborted || l.unreached)).toBe(false);
   });
 
+});
+
+// 「Attempt 证据数据源」——timeline / trace 投影的时间树语义
+// (docs/engineering/testing/unit/reports.md)。
+describe("timeline / trace 投影的时间树语义", () => {
+  const timelineLocator = "@wf1" as import("../../../record/locator.ts").AttemptLocator;
+
+  it("timeline:phase 主链累计偏移,turn 按 traceId 收 spans,关联不上的落 eval.run 层", () => {
+    const rows = attemptTimelineContent({
+      locator: timelineLocator,
+      phases: [
+        { name: "sandbox.create", durationMs: 1_000 },
+        {
+          name: "eval.run",
+          durationMs: 5_000,
+          children: [
+            { id: "turn-1", kind: "turn", label: "s1/t1", startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
+          ],
+        },
+        { name: "sandbox.stop", durationMs: 500, failed: true },
+      ],
+      trace: [
+        { traceId: "t1", spanId: "root", name: "sampling", startMs: 10_000, endMs: 13_000 },
+        { traceId: "t1", spanId: "child", parentSpanId: "root", name: "stream", startMs: 10_500, endMs: 12_000 },
+        { traceId: "orphan", spanId: "solo", name: "flush", startMs: 11_000, endMs: 11_200 },
+      ],
+    })!;
+    const nodes = rows[0]!.nodes;
+    // phase 沿主链累计,不全为 0;行总时长 = 主链之和
+    expect(nodes.map((n) => n.startOffsetMs)).toEqual([0, 1_000, 6_000]);
+    expect(rows[0]!.durationMs).toBe(6_500);
+    expect(nodes[2]!.failed).toBe(true);
+    // eval.run 与 turn 是主干,带 open 展开标记
+    const evalRun = nodes[1]!;
+    expect(evalRun.open).toBe(true);
+    expect(nodes[0]!.open).toBeUndefined();
+    // t1 的 spans 是 turn 的 children,锚在该轮起点;span 父子层级保留
+    const turn = evalRun.children!.find((c) => c.key === "turn-1")!;
+    expect(turn.open).toBe(true);
+    const root = turn.children!.find((c) => c.key === "root")!;
+    expect(root.startOffsetMs).toBe(1_200);
+    expect(root.children!.map((c) => c.key)).toEqual(["child"]);
+    expect(root.children![0]!.startOffsetMs).toBe(1_700);
+    // 关联不上任何 turn 的 span 不丢弃,落在 eval.run 层
+    expect(evalRun.children!.some((c) => c.key === "solo")).toBe(true);
+  });
+
+  it("trace:按 parentSpanId 建树,子 span 是 children 而不是被过滤掉", () => {
+    const rows = attemptTraceContent({
+      locator: timelineLocator,
+      spans: [
+        { traceId: "t1", spanId: "root", name: "sampling", startMs: 0, endMs: 3_000 },
+        { traceId: "t1", spanId: "child", parentSpanId: "root", name: "stream", startMs: 500, endMs: 2_000 },
+        { traceId: "t1", spanId: "solo", name: "flush", startMs: 100, endMs: 200 },
+      ],
+    })!;
+    const countAll = (ns: readonly { children?: readonly unknown[] }[]): number =>
+      ns.reduce((sum, n) => sum + 1 + countAll((n.children ?? []) as never), 0);
+    expect(rows[0]!.nodes).toHaveLength(2); // root 与 solo;child 嵌套在 root 下
+    const root = rows[0]!.nodes.find((n) => n.key === "root")!;
+    expect(root.children!.map((c) => c.key)).toEqual(["child"]);
+    expect(countAll(rows[0]!.nodes)).toBe(3);
+  });
 });

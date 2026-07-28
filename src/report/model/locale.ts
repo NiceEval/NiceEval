@@ -204,6 +204,7 @@ const en = {
   "waterfall.nodes.other": "{n} nodes",
   "waterfall.failedNodes.one": "{n} failed",
   "waterfall.failedNodes.other": "{n} failed",
+  "waterfall.foldTotal": "{t} total",
 
   /** SnapshotDiagnostics 聚合层的 chrome:汇总行三段计数与最高严重度;message/command 本体不经字典。 */
   "snapshotDiagnostics.summary.experiments.one": "{n} experiment",
@@ -367,6 +368,7 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "waterfall.nodes.other": "{n} 个节点",
   "waterfall.failedNodes.one": "{n} 个失败",
   "waterfall.failedNodes.other": "{n} 个失败",
+  "waterfall.foldTotal": "合计 {t}",
 
   "snapshotDiagnostics.summary.experiments.one": "{n} 个实验",
   "snapshotDiagnostics.summary.experiments.other": "{n} 个实验",

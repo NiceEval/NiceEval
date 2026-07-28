@@ -22,7 +22,7 @@ import type {
   AttemptTimelineData,
   AttemptTraceData,
 } from "../../model/types.ts";
-import type { AssertionResult, JsonValue, ScoreEntry, TraceSpan } from "../../../types.ts";
+import type { AssertionResult, JsonValue, ScoreEntry, TimingNode, TraceSpan } from "../../../types.ts";
 import { stripControl } from "../../../scoring/display.ts";
 import { formatPointsSuffix } from "../../model/format.ts";
 
@@ -118,33 +118,106 @@ function spanKind(span: TraceSpan): string {
   return span.kind === "turn" ? "agent" : (span.kind ?? "other");
 }
 
-function traceSpansToNodes(spans: readonly TraceSpan[]): WaterfallNode[] {
+/**
+ * span 列表 → 按 `parentSpanId` 保留采集侧层级的时间树;偏移换算成
+ * `anchorOffsetMs + (startMs - t0)`,即挂载点起点加 span 相对时序
+ * (docs/feature/reports/components/attempt-detail/presentation.md「自上而下有什么」)。
+ */
+function spanTreeNodes(spans: readonly TraceSpan[], anchorOffsetMs: number, t0: number): WaterfallNode[] {
   if (spans.length === 0) return [];
-  const t0 = Math.min(...spans.map((s) => s.startMs));
   const ids = new Set(spans.map((s) => s.spanId));
-  return spans
-    .filter((s) => s.parentSpanId === undefined || !ids.has(s.parentSpanId))
-    .map((s, i) => ({
-      key: s.spanId || String(i),
-      label: s.name,
-      kind: spanKind(s),
-      startOffsetMs: s.startMs - t0,
-      durationMs: Math.max(0, s.endMs - s.startMs),
-      failed: s.status === "error",
-    }))
-    .sort((a, b) => a.startOffsetMs - b.startOffsetMs);
+  const byParent = new Map<string | undefined, TraceSpan[]>();
+  for (const s of spans) {
+    const parent = s.parentSpanId !== undefined && ids.has(s.parentSpanId) ? s.parentSpanId : undefined;
+    const bucket = byParent.get(parent);
+    if (bucket) bucket.push(s);
+    else byParent.set(parent, [s]);
+  }
+  const build = (parent: string | undefined): WaterfallNode[] =>
+    (byParent.get(parent) ?? [])
+      .map((s, i) => {
+        const children = s.spanId ? build(s.spanId) : [];
+        return {
+          key: s.spanId || `span:${i}`,
+          label: s.name,
+          kind: spanKind(s),
+          startOffsetMs: anchorOffsetMs + (s.startMs - t0),
+          durationMs: Math.max(0, s.endMs - s.startMs),
+          ...(s.status === "error" ? { failed: true as const } : {}),
+          ...(children.length > 0 ? { children } : {}),
+        };
+      })
+      .sort((a, b) => a.startOffsetMs - b.startOffsetMs);
+  return build(undefined);
+}
+
+/** `TimingNode` 子树 → 节点;带 `traceId` 的 turn 把同 trace 的 spans 收为 children,锚在该轮起点。 */
+function timingNodeToWaterfall(
+  node: TimingNode,
+  spansByTraceId: Map<string, TraceSpan[]>,
+  usedTraceIds: Set<string>,
+): WaterfallNode {
+  const children = (node.children ?? []).map((child) => timingNodeToWaterfall(child, spansByTraceId, usedTraceIds));
+  const traceSpans = node.traceId !== undefined ? spansByTraceId.get(node.traceId) : undefined;
+  if (node.traceId !== undefined && traceSpans !== undefined) {
+    usedTraceIds.add(node.traceId);
+    const t0 = Math.min(...traceSpans.map((s) => s.startMs));
+    children.push(...spanTreeNodes(traceSpans, node.startOffsetMs, t0));
+    children.sort((a, b) => a.startOffsetMs - b.startOffsetMs);
+  }
+  return {
+    key: node.id,
+    label: node.label,
+    kind: node.kind,
+    startOffsetMs: node.startOffsetMs,
+    durationMs: node.durationMs,
+    ...(node.failed ? { failed: true as const } : {}),
+    // turn 是主干:默认展开,打开页面直接看到轮内 agent 活动(presentation.md「自上而下有什么」)。
+    ...(node.kind === "turn" ? { open: true as const } : {}),
+    ...(children.length > 0 ? { children } : {}),
+  };
 }
 
 export function attemptTimelineContent(data: AttemptTimelineData | null): WaterfallContent | null {
   if (data === null) return null;
-  const nodes: WaterfallNode[] = data.phases.map((p, i) => ({
-    key: `phase:${i}:${p.name}`,
-    label: p.name,
-    kind: "phase",
-    startOffsetMs: 0,
-    durationMs: p.durationMs,
-  }));
-  if (data.trace && data.trace.length > 0) nodes.push(...traceSpansToNodes(data.trace));
+  const spansByTraceId = new Map<string, TraceSpan[]>();
+  for (const s of data.trace ?? []) {
+    const bucket = spansByTraceId.get(s.traceId);
+    if (bucket) bucket.push(s);
+    else spansByTraceId.set(s.traceId, [s]);
+  }
+  const usedTraceIds = new Set<string>();
+  // phase 主链沿累计偏移排布;TimingNode 的偏移本就是 attempt 时钟绝对偏移,原样进节点。
+  let cursor = 0;
+  const nodes: WaterfallNode[] = data.phases.map((p, i) => {
+    const startOffsetMs = cursor;
+    cursor += p.durationMs;
+    const children = (p.children ?? []).map((child) => timingNodeToWaterfall(child, spansByTraceId, usedTraceIds));
+    return {
+      key: `phase:${i}:${p.name}`,
+      label: p.name,
+      kind: "phase",
+      startOffsetMs,
+      durationMs: p.durationMs,
+      ...(p.failed ? { failed: true as const } : {}),
+      ...(p.name === "eval.run" ? { open: true as const } : {}),
+      ...(children.length > 0 ? { children } : {}),
+    };
+  });
+  // 关联不上任何 turn 的 span 不丢弃,落在 eval.run 层;没有 eval.run phase 时接在顶层。
+  const leftovers = (data.trace ?? []).filter((s) => !usedTraceIds.has(s.traceId));
+  if (leftovers.length > 0) {
+    const t0 = Math.min(...leftovers.map((s) => s.startMs));
+    const evalRun = nodes.find((n) => n.label === "eval.run");
+    const extra = spanTreeNodes(leftovers, evalRun?.startOffsetMs ?? 0, t0);
+    if (evalRun !== undefined) {
+      (evalRun as { children?: WaterfallNode[] }).children = [...(evalRun.children ?? []), ...extra].sort(
+        (a, b) => a.startOffsetMs - b.startOffsetMs,
+      );
+    } else {
+      nodes.push(...extra);
+    }
+  }
   return [
     {
       key: data.locator,
@@ -158,7 +231,6 @@ export function attemptTimelineContent(data: AttemptTimelineData | null): Waterf
 
 export function attemptTraceContent(data: AttemptTraceData | null): WaterfallContent | null {
   if (data === null) return null;
-  const nodes = traceSpansToNodes(data.spans);
   const t0 = Math.min(...data.spans.map((s) => s.startMs));
   const t1 = Math.max(...data.spans.map((s) => s.endMs));
   return [
@@ -167,7 +239,7 @@ export function attemptTraceContent(data: AttemptTraceData | null): WaterfallCon
       label: data.locator,
       durationMs: Math.max(0, t1 - t0),
       locator: data.locator,
-      nodes,
+      nodes: spanTreeNodes(data.spans, 0, t0),
     },
   ];
 }

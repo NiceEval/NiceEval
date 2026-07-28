@@ -202,10 +202,12 @@ export const AttemptDetail = defineComposition<globalThis.Record<never, never>, 
       <AttemptSummary source={sources.attempt.snapshot} />
       <AttemptAssessment />
       <CopyBlock source={sources.attempt.fixPrompt} />
-      <Waterfall source={sources.attempt.timeline} />
+      <Waterfall
+        source={sources.attempt.timeline}
+        title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
+      />
       <AttemptUsage source={sources.attempt.usage} />
       {conversationLivesInSource ? null : <Conversation source={sources.attempt.conversation} />}
-      <Waterfall source={sources.attempt.trace} />
       <DiffView source={sources.attempt.diff} />
     </Col>
   );
