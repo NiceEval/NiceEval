@@ -398,7 +398,13 @@ export interface StabilityMatrixData {
   /** 贡献了至少一格的列值,字典序。 */
   columns: readonly string[];
   /** 稀疏格子:该 (eval, column) 组合没有任何历史执行时不生成格子,渲染面显示占位 —,不编三个 0 冒充跑过。 */
-  cells: ReadonlyArray<{ row: string; column: string; cell: StabilityMatrixCell }>;
+  cells: ReadonlyArray<{
+    row: string;
+    column: string;
+    cell: StabilityMatrixCell;
+    /** 本格覆盖的全部历史执行,与 counts 同一集合——格与散点点位的下钻证据,字典序。 */
+    refs: readonly AttemptLocator[];
+  }>;
   /** 各列的合计。 */
   totals: globalThis.Record<string, StabilityMatrixCell>;
 }

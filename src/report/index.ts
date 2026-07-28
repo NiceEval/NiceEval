@@ -176,8 +176,8 @@ export { DEFAULT_REPORT_LOCALE, localizedTextEquals, resolveLocalizedText, resol
 export type { LocalizedText, ReportLocale } from "./model/locale.ts";
 
 // 官方组合组件与站点组件。
-export { SampleOverview, SampleSummary } from "./components/summaries/index.tsx";
-export type { SampleOverviewProps, SampleSummaryProps } from "./components/summaries/index.tsx";
+export { SampleOverview, SampleSummary, StabilityOverview } from "./components/summaries/index.tsx";
+export type { SampleOverviewProps, SampleSummaryProps, StabilityOverviewProps } from "./components/summaries/index.tsx";
 export {
   Hero,
   HeroCard,

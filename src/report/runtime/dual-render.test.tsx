@@ -42,7 +42,10 @@ import { sources } from "../sources.ts";
 import { AttemptDetail } from "../components/attempt-detail/index.tsx";
 import { defineMeasure, costUSD, endToEndPassRate, totalScore } from "../model/metrics.ts";
 import { label } from "../model/flag.ts";
-import builtInReport, { standard, standardAttemptPage } from "../built-in/index.tsx";
+import builtInReport, { failures, stability, standard, standardAttemptPage } from "../built-in/index.tsx";
+import { RunNotices, SampleFixPrompt, SampleNotices } from "../components/site-components/index.tsx";
+import { StabilityOverview } from "../components/summaries/index.tsx";
+import { loadBuiltInReport } from "./load.ts";
 
 // ───────────────────────── fake 数据 ─────────────────────────
 
@@ -743,6 +746,41 @@ describe("内建报告", () => {
     expect(attemptPage!.input).toBe("attempt");
     expect(attemptPage!.navigation).toBe(false);
     expect((attemptPage!.content as { type: unknown }).type).toBe(AttemptDetail);
+  });
+
+  it("任务视图 failures / stability:单导航页构成与 built-in.md 全文一致,详情页复用 standardAttemptPage", () => {
+    const childTypes = (content: unknown) => {
+      const col = content as { type: unknown; props: { children: Array<{ type: unknown; props: globalThis.Record<string, unknown> }> } };
+      expect(col.type).toBe(Col);
+      return col.props.children;
+    };
+    for (const view of [failures, stability]) {
+      expect(view.kind).toBe("report");
+      expect(view.pages).toHaveLength(2);
+      // content 同引用:视图确实复用了 standardAttemptPage,不是另抄一份同形 JSX。
+      expect(view.pages[1]!.content).toBe(standardAttemptPage.content);
+      expect(view.pages[1]).toEqual(standardAttemptPage);
+    }
+    expect(failures.pages[0]!.id).toBe("failures");
+    expect(failures.pages[0]!.title).toEqual({ en: "Failures", "zh-CN": "失败" });
+    const failureChildren = childTypes(failures.pages[0]!.content);
+    expect(failureChildren.map((c) => c.type)).toEqual([Hero, SampleNotices, RunNotices, FailureList, SampleFixPrompt]);
+    expect(failureChildren[3]!.props.limit).toBe(50);
+    expect(stability.pages[0]!.id).toBe("stability");
+    expect(stability.pages[0]!.title).toEqual({ en: "Stability", "zh-CN": "稳定性" });
+    expect(childTypes(stability.pages[0]!.content).map((c) => c.type)).toEqual([
+      Hero,
+      SampleNotices,
+      RunNotices,
+      StabilityOverview,
+    ]);
+  });
+
+  it("视图名表:三个裸词各命中具名导出同引用,未知名报错列出全部可用名字", async () => {
+    await expect(loadBuiltInReport("standard")).resolves.toBe(standard);
+    await expect(loadBuiltInReport("failures")).resolves.toBe(failures);
+    await expect(loadBuiltInReport("stability")).resolves.toBe(stability);
+    await expect(loadBuiltInReport("nope")).rejects.toThrow(/standard, failures, stability/);
   });
 });
 

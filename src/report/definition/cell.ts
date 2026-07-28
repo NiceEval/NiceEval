@@ -22,7 +22,13 @@ export interface VerdictCounts {
  */
 export type Cell =
   | { readonly kind: "measure"; readonly measure: MeasureCell }
-  | { readonly kind: "verdict"; readonly verdict?: Verdict | "skipped"; readonly counts?: VerdictCounts }
+  | {
+      readonly kind: "verdict";
+      readonly verdict?: Verdict | "skipped";
+      readonly counts?: VerdictCounts;
+      /** 计票覆盖的 attempt 引用(有证据可下钻的计票格才携带,如稳定性矩阵)。 */
+      readonly refs?: readonly AttemptLocator[];
+    }
   | { readonly kind: "score"; readonly earned: number; readonly possible?: number }
   | { readonly kind: "summary"; readonly text: string; readonly more?: number }
   | { readonly kind: "locator"; readonly locator: AttemptLocator; readonly staleSinceMs?: number }

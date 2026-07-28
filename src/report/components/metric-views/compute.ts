@@ -909,18 +909,22 @@ export async function stabilityMatrixData(
   const { runs, attempts } = resolveInput(input);
   const items = filterItems(collectItems(runs, attempts), options.evals);
 
-  const cellsByKey = new Map<string, { row: string; column: string; passed: number; failed: number; errored: number }>();
+  const cellsByKey = new Map<
+    string,
+    { row: string; column: string; passed: number; failed: number; errored: number; refs: Set<AttemptLocator> }
+  >();
   for (const item of items) {
     const evalId = evalIdOf(item);
     const column = dimensionKey(options.by, item);
     const key = JSON.stringify([evalId, column]);
     let cell = cellsByKey.get(key);
-    if (!cell) cellsByKey.set(key, (cell = { row: evalId, column, passed: 0, failed: 0, errored: 0 }));
+    if (!cell) cellsByKey.set(key, (cell = { row: evalId, column, passed: 0, failed: 0, errored: 0, refs: new Set() }));
     const verdict = item.attempt.result.verdict;
     if (verdict === "passed") cell.passed += 1;
     else if (verdict === "failed") cell.failed += 1;
     else if (verdict === "errored") cell.errored += 1;
-    // unreadable 不计入任何列
+    else continue; // unreadable 不计入任何列,也不进 refs
+    cell.refs.add(locatorOf(item));
   }
 
   // 稀疏格子:全 unreadable(没有任何历史执行)的组合不生成格子,不编三个 0 冒充跑过。
@@ -957,6 +961,7 @@ export async function stabilityMatrixData(
     row: c.row,
     column: c.column,
     cell: { passed: c.passed, failed: c.failed, errored: c.errored, executions: c.passed + c.failed + c.errored },
+    refs: [...c.refs].sort(),
   }));
 
   const totals: StabilityMatrixData["totals"] = {};

@@ -71,8 +71,8 @@ Source 配自定义 Component 时不必经过它（[全局协议只有 Content](
 type Cell =
   /** 官方读数格：value + format 由 renderer 格式化，samples / total / refs 保住覆盖率与下钻。 */
   | { kind: "measure"; measure: MeasureCell }
-  /** 判定：单个 verdict，或 passed / failed / errored / skipped 的计票。 */
-  | { kind: "verdict"; verdict?: Verdict; counts?: VerdictCounts }
+  /** 判定：单个 verdict，或计票；refs 是计票覆盖的执行（有证据可下钻的计票格才携带，如稳定性矩阵）。 */
+  | { kind: "verdict"; verdict?: Verdict; counts?: VerdictCounts; refs?: readonly AttemptLocator[] }
   /** 挣分：earned 恒有；possible 只有固定题集这类有分母的读数才给。 */
   | { kind: "score"; earned: number; possible?: number }
   /** 单行结果摘要，more 是「还有几条没显示」。 */

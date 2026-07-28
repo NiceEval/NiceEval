@@ -210,6 +210,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [chart-categorical-axis-gap-blocks-stability-bars](chart-categorical-axis-gap-blocks-stability-bars.md) — 发现(未修):chart-map 数值轴 only,分类 x 轴(条件名)全点缺失,stability 视图判定堆叠柱渲染 no data;修法归 chart 线,StabilityOverview 投影侧已就位
 - 已修 [static-export-breaks-on-slashless-index-url](static-export-breaks-on-slashless-index-url.md) — `--out` 站点被托管在无尾斜杠路径(`/showcase/memory`,cleanUrls)上时 attempt 下钻全 404;根因=浏览器按文档 URL 的目录解析相对引用、少一层,本地 server 永远带尾斜杠所以测不出;修为 index.html 落站点根归一的 `<base>` 引导脚本
 - 已修 [axis-tick-labels-collapse-at-tiny-ranges](axis-tick-labels-collapse-at-tiny-ranges.md) — 图轴值域改版后极小量程刻度标签折叠成同一字符串(report e2e 逮住);根因=精度固定不随步长,2.5×10^k 档 ⌈-log10⌉ 还少一位;修为 formatTickValue 按步长十进制位数取精度
 - [non-tty-pipe-narrow-table-width-fallback](non-tty-pipe-narrow-table-width-fallback.md) — 非 TTY 管道下 show 表格窄折行是 stdout.columns 缺失的宽度回退;取样用 script+stty cols 给宽度再比对 docs 示例。2026-07-25 起契约要求 `COLUMNS` 生效,「窄」不再等于「合理」

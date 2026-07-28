@@ -6,6 +6,8 @@
 import { standard, standardAttemptPage } from "./standard.tsx";
 
 export { standard, standardAttemptPage };
+export { failures } from "./failures.tsx";
+export { stability } from "./stability.tsx";
 
 // 内建主题与内建视图同一个入口(docs/feature/reports/themes/README.md):名字即 CLI 取值。
 export { basalt, chalk } from "../theme.ts";

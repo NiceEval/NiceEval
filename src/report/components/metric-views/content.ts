@@ -1,7 +1,8 @@
 // 指标视图 TableContent 投影:compute *Data → Table 原语可直接消费的形状。
 
-import type { Cell, TableContent } from "../../definition/cell.ts";
-import type { DeltaData, MatrixData, ScoreboardData, StabilityMatrixData } from "../../model/types.ts";
+import type { Cell, TableContent, TableContentRow } from "../../definition/cell.ts";
+import type { DeltaData, MatrixData, ScoreboardData, StabilityMatrixCell, StabilityMatrixData } from "../../model/types.ts";
+import type { AttemptLocator } from "../../../record/locator.ts";
 import { resolveLocalizedText } from "../../model/locale.ts";
 
 export interface MatrixTableContent extends TableContent {
@@ -119,29 +120,46 @@ export function deltaTableContent(data: DeltaData): TableContent {
   };
 }
 
-export function stabilityMatrixContent(data: StabilityMatrixData): TableContent {
+export interface StabilityContentRow extends TableContentRow {
+  readonly evalId: string;
+  /** 全部条件历史执行中通过次数为 0 且执行数 > 0。 */
+  readonly neverPassed: boolean;
+}
+
+/** 稳定性矩阵的 Content:通用 TableContent 之上保留行身份、neverPassed 与各列合计。 */
+export interface StabilityContent extends TableContent {
+  readonly rowDimension: string;
+  readonly columnDimension: string;
+  readonly rows: readonly StabilityContentRow[];
+  readonly totals: Readonly<globalThis.Record<string, StabilityMatrixCell>>;
+}
+
+export function stabilityMatrixContent(data: StabilityMatrixData): StabilityContent {
   const columns = [
     { key: "eval" },
     ...data.columns.map((column) => ({ key: column })),
     { key: "total" },
   ];
-  const rows = data.rows.map((row) => {
+  const rows = data.rows.map((row): StabilityContentRow => {
     const cells: globalThis.Record<string, Cell> = {
       eval: { kind: "text", text: row.evalId, ...(row.neverPassed ? { detail: "never passed" } : {}) },
     };
     let passed = 0;
     let failed = 0;
     let errored = 0;
+    const rowRefs: AttemptLocator[] = [];
     for (const column of data.columns) {
-      const cell = data.cells.find((c) => c.row === row.evalId && c.column === column)?.cell;
-      if (cell) {
+      const entry = data.cells.find((c) => c.row === row.evalId && c.column === column);
+      if (entry) {
         cells[column] = {
           kind: "verdict",
-          counts: { passed: cell.passed, failed: cell.failed, errored: cell.errored, skipped: 0 },
+          counts: { passed: entry.cell.passed, failed: entry.cell.failed, errored: entry.cell.errored, skipped: 0 },
+          refs: entry.refs,
         };
-        passed += cell.passed;
-        failed += cell.failed;
-        errored += cell.errored;
+        passed += entry.cell.passed;
+        failed += entry.cell.failed;
+        errored += entry.cell.errored;
+        rowRefs.push(...entry.refs);
       } else {
         cells[column] = { kind: "notApplicable" };
       }
@@ -149,8 +167,15 @@ export function stabilityMatrixContent(data: StabilityMatrixData): TableContent 
     cells.total = {
       kind: "verdict",
       counts: { passed, failed, errored, skipped: 0 },
+      refs: [...rowRefs].sort(),
     };
-    return { key: row.evalId, cells };
+    return { key: row.evalId, cells, evalId: row.evalId, neverPassed: row.neverPassed };
   });
-  return { columns, rows };
+  return {
+    columns,
+    rows,
+    rowDimension: data.rowDimension,
+    columnDimension: data.columnDimension,
+    totals: data.totals,
+  };
 }

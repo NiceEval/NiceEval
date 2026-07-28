@@ -73,11 +73,11 @@ export function isExplicitModulePath(value: string): boolean {
 }
 
 export async function loadBuiltInReport(name: string): Promise<ReportDefinition> {
-  if (name === "standard") {
-    const { standard } = await import("../built-in/index.tsx");
-    return standard;
+  if (name === "standard" || name === "failures" || name === "stability") {
+    const views = await import("../built-in/index.tsx");
+    return views[name];
   }
-  throw new ReportLoadError(`Unknown built-in report "${name}". Available built-in reports: standard. To load a file, pass an explicit path such as ./reports/site.tsx.`);
+  throw new ReportLoadError(`Unknown built-in report "${name}". Available built-in reports: standard, failures, stability. To load a file, pass an explicit path such as ./reports/site.tsx.`);
 }
 
 export async function loadThemeFile(cwd: string, path: string, options?: LoadReportOptions): Promise<ThemeDefinition> {

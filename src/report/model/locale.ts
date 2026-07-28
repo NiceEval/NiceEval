@@ -99,6 +99,11 @@ const en = {
   "table.columnsHidden.one": "({n} more column not shown)",
   "table.columnsHidden.other": "({n} more columns not shown)",
 
+  /** StabilityOverview 的读数格标签。 */
+  "stabilityOverview.executions": "Executions",
+  "stabilityOverview.neverPassed": "Never passed",
+  "stabilityOverview.flaky": "Flaky evals",
+
   /** ScopeSummary 的 KPI 标签。 */
   "scopeSummary.experiments": "Experiments",
   "scopeSummary.evals": "Evals",
@@ -269,6 +274,10 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "entityList.moreLostPoints.other": "+{n} 处其它丢分",
   "table.columnsHidden.one": "(还有 {n} 列未列出)",
   "table.columnsHidden.other": "(还有 {n} 列未列出)",
+
+  "stabilityOverview.executions": "历史执行",
+  "stabilityOverview.neverPassed": "零通过题",
+  "stabilityOverview.flaky": "闪烁题",
 
   "scopeSummary.experiments": "实验",
   "scopeSummary.evals": "Eval",

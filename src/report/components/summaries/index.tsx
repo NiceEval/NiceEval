@@ -14,6 +14,7 @@ import type { ChromeProps } from "../shared.ts";
 import { sources } from "../../sources.ts";
 
 export { validateSampleSummaryContent } from "./validate.ts";
+export { StabilityOverview, type StabilityOverviewProps } from "./stability-overview.tsx";
 
 export type SampleSummaryProps = ChromeProps & {
   input?: Sample;
