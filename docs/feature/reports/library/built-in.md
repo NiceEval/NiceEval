@@ -205,9 +205,10 @@ export default defineTheme({ ...basalt, accent: "#7C3AED" });
 ## 内建报告显示什么
 
 首页用 `SampleOverview` 展示实验整体主读数，行为契约单点定义在
-[概览组件](../components/summaries/sample-overview.md)。`Hero` / `SampleNotices` / `RunNotices` /
-`SampleFixPrompt` / `sources.sample.traces` 的契约在[站点组件](../components/site/README.md)。
-Attempts 页的本体是带过滤的
+[概览组件](../components/summaries/sample-overview.md)。`Hero` 的契约在
+[站点身份件](../components/site/README.md)；`SampleNotices` / `RunNotices` / `SampleFixPrompt`
+在 [Sample 页区块](../components/summaries/README.md)；`sources.sample.traces` 在
+[数据源目录](../components/sources/sample-traces.md)。Attempts 页的本体是带过滤的
 [`sources.entity.attempts`](../components/sources/entity.md#evals-与-attempts)。
 
 ## 相关阅读
@@ -215,7 +216,8 @@ Attempts 页的本体是带过滤的
 - [外壳与多页](shell.md) —— 配置对象的字段穷尽、`extends` 合并语义与行为约束。
 - [主题](theme.md) —— 主题制品、装载链与令牌全集。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
-- [站点组件](../components/site/README.md) —— hero、品牌、Notice、Run 诊断与瀑布的组件契约。
+- [站点身份件](../components/site/README.md) —— hero 与品牌行的组件契约。
+- [Sample 页区块](../components/summaries/README.md) —— Notice、修复 prompt 与概览的组件契约。
 - [Attempt 详情组件](../components/attempt-detail/README.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
 - [概览组件](../components/summaries/README.md) —— `SampleOverview` 的契约。
 - [Architecture](../architecture.md) —— 装载规范化：内建与 `--report` 的同一条管线。
