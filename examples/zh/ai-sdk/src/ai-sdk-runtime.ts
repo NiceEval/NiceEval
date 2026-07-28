@@ -1,5 +1,5 @@
 import { generateText, streamText, stepCountIs, tool, convertToModelMessages, type ModelMessage, type UIMessage, type ToolSet } from "ai";
-import { fromAiSdk } from "niceeval/adapter";
+import { turnFromAiSdk } from "niceeval/adapter";
 import { z } from "zod/v4";
 import type { AgentEvent, AgentRequest, AgentResponse, AgentUsage, RequestFile } from "./protocol.ts";
 import { createFastevalTrace } from "./niceeval-observability.ts";
@@ -17,7 +17,7 @@ const SYSTEM_PROMPT = `
 5. 普通闲聊不要调用任何工具。回复保持中文、友好、简洁。
 `.trim();
 
-// 工具本体不掺任何记录逻辑 —— 事件流由 fromAiSdk 从 generateText 的 steps 里直接取
+// 工具本体不掺任何记录逻辑 —— 事件流由 turnFromAiSdk 从 generateText 的 steps 里直接取
 // (AI SDK 原生带 toolCallId,不必再包一层 recorder 合成 callId)。
 function buildTools(): ToolSet {
   return {
@@ -103,8 +103,8 @@ export async function handleAiSdkTurn(request: AgentRequest, signal?: AbortSigna
   }
 
   // 通道 0 直构:steps 里带 toolCallId 的完整调用记录 + 全 step 聚合 usage,一步转成标准事件流。
-  // fromAiSdk 产出的只有 message / thinking / action.* —— 是 AgentEvent 的子集。
-  const converted = fromAiSdk(result);
+  // turnFromAiSdk 产出的只有 message / thinking / action.* —— 是 AgentEvent 的子集。
+  const converted = turnFromAiSdk(result);
   const events = converted.events as AgentEvent[];
   const usage = converted.usage;
   modelSpan.end(usageAttrs(usage));

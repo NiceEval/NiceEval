@@ -22,7 +22,7 @@ Claude Code CLI 的原生遥测只有 metrics+logs,niceeval 只消费 trace span
 - `agents/claude-sdk.ts`:adapter 本体,只剩**传输粘合**——应用在哪个 URL(`CLAUDE_SDK_URL`,
   默认 `http://127.0.0.1:32001`)、HITL 停轮怎么判、审批打哪个端点。原生 `SDKMessage`
   (`system`/`assistant`/`user`/`result`)→ 标准事件的映射是官方转换器
-  `fromClaudeSdkMessages`(`"niceeval/adapter"` 导出)的事;SSE 读帧用官方 `sseJsonFrames`。
+  `createClaudeSdkEventStream`(`"niceeval/adapter"` 导出)的事;SSE 读帧用官方 `sseJsonFrames`。
   `stream_event`(逐 token 渲染用)转换器整个忽略。
 - `evals/`:基础问答、天气工具调用、跨轮记忆 + `newSession()` 隔离、HITL 批准/拒绝。
 - `experiments/assistant.ts`:单配置基线。没有 `compare-models`——模型是应用**启动时**读一次的

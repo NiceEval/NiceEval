@@ -20,7 +20,7 @@ niceeval 一份**。
 
 ## span 只进瀑布图,不喂断言
 
-事件断言的数据来源始终是 `ThreadEvent` 流(官方转换器 `fromCodexThreadEvents`,见 tier1
+事件断言的数据来源始终是 `ThreadEvent` 流(官方转换器 `createCodexThreadEventStream`,见 tier1
 README),和 span 无关。span 晚到、缺失时也只是瀑布图缺一块,断言判决不受影响。
 
 ## 跑起来

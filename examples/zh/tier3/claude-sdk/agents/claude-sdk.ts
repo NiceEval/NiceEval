@@ -1,7 +1,7 @@
 // claude-sdk 的 adapter:无侵入对接一个**已经在跑**的应用(../src/backend/server.ts,原生
 // `SDKMessage` 流原样透传成 SSE,外加自定义 { type: "server_error" } 传输帧)。
 //
-// `SDKMessage` → 标准事件的映射是官方转换器 `fromClaudeSdkMessages`(`"niceeval/adapter"`
+// `SDKMessage` → 标准事件的映射是官方转换器 `createClaudeSdkEventStream`(`"niceeval/adapter"`
 // 导出)的事;逐帧驱动也是官方件(`driveFrameStream`)。HITL 停轮现场(读了一半的流)和会话
 // id 续接都不需要自己声明状态槽——挂在 `ctx.session` 上,取用即可:`ctx.session.hold` /
 // `ctx.session.take` 存取停轮现场,`ctx.session.id` / `ctx.session.capture` 续接会话。这里
@@ -17,7 +17,7 @@
 // mcp__demo-tools__calculate 一个(应用 agent.ts 里的 GATED_TOOL_NAME,这里必须写死同一个
 // 字符串),`driveFrameStream` 的 onFrame 钩子扫 derived 事件认出它就返回 `{ pause }`;
 // 下一轮先打 /api/chat/approve 再继续读同一条流。
-import { defineAgent, sseJsonFrames, fromClaudeSdkMessages, driveFrameStream } from "niceeval/adapter";
+import { defineAgent, sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, ClaudeSdkStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -112,7 +112,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   if (!res.ok || !res.body) {
     throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
   }
-  return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, fromClaudeSdkMessages());
+  return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, createClaudeSdkEventStream());
 }
 
 export default defineAgent({

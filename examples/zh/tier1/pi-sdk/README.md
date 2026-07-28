@@ -22,7 +22,7 @@ pi-agent-core 没有官方 OTel 集成,没有 span 可接。**Tier 3(侵入改�
 - `agents/pi-sdk.ts`：adapter 本体,只剩**传输粘合**——应用在哪个 URL(`PI_SDK_URL`,默认
   `http://127.0.0.1:33001`)、三种传输层帧(`session` / `approval_request` / `server_error`)
   怎么处理、审批打哪个端点。原生 `AgentEvent` → 标准事件的映射是官方转换器
-  `fromPiAgentEvents`(`"niceeval/adapter"` 导出)的事;SSE 读帧用官方 `sseJsonFrames`。
+  `createPiAgentEventStream`(`"niceeval/adapter"` 导出)的事;SSE 读帧用官方 `sseJsonFrames`。
   (pi 无 OTel,官方 OTel 方言帮不上,见形态矩阵 D 档,事件全部来自转换器。)
 - `evals/`:基础问答、天气工具调用、跨轮记忆 + `newSession()` 隔离、HITL 批准/拒绝。
 - `experiments/assistant.ts`:单配置基线。没有 `compare-models`——pi 的模型是应用**启动时**读

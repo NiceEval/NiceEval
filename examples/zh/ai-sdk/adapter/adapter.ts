@@ -79,7 +79,7 @@ const TOOL_NAMES: ReadonlySet<string> = new Set([
   "glob", "grep", "list_dir", "agent_task", "unknown",
 ]);
 
-/** AgentEvent → niceeval StreamEvent:服务端(fromAiSdk)已归一好 canonical 工具名,这里只收窄类型。 */
+/** AgentEvent → niceeval StreamEvent:服务端(turnFromAiSdk)已归一好 canonical 工具名,这里只收窄类型。 */
 function toStreamEvent(event: AgentEvent): StreamEvent {
   if (event.type === "action.called") {
     const tool: ToolName = event.tool && TOOL_NAMES.has(event.tool) ? (event.tool as ToolName) : "unknown";

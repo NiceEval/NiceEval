@@ -23,7 +23,7 @@ pnpm tiers:sync
 |---|---|---|
 | [`zh/tier1/pi-sdk/`](zh/tier1/pi-sdk/) | 无侵入接 `@earendil-works/pi-agent-core`,手写 `AgentEvent` SSE 映射,`calculate` 工具 HITL 审批 | 目录内 README |
 | [`zh/tier1/claude-sdk/`](zh/tier1/claude-sdk/) | 无侵入接 `@anthropic-ai/claude-agent-sdk`,手写 `SDKMessage` SSE 映射,`canUseTool` HITL 审批 | 目录内 README |
-| [`zh/tier1/codex-sdk/`](zh/tier1/codex-sdk/) | 无侵入接 `@openai/codex-sdk`,官方转换器 `fromCodexThreadEvents` 从 `ThreadEvent` 流映射消息/工具/usage,`spanMapper: mapCodexSpans` 归一瀑布图,真实编码任务 eval(建文件/跑命令) | 目录内 README |
+| [`zh/tier1/codex-sdk/`](zh/tier1/codex-sdk/) | 无侵入接 `@openai/codex-sdk`,官方转换器 `createCodexThreadEventStream` 从 `ThreadEvent` 流映射消息/工具/usage,`spanMapper: mapCodexSpans` 归一瀑布图,真实编码任务 eval(建文件/跑命令) | 目录内 README |
 | [`zh/tier1/langgraph/`](zh/tier1/langgraph/) | 无侵入接纯 Python LangGraph(`create_agent`),事件从应用自己的 SSE 帧映射(tool-input/tool-output/text-delta),HITL 审批 + LangSmith OTel 瀑布图 | 目录内 README |
 | [`zh/tier1/ai-sdk-v7/`](zh/tier1/ai-sdk-v7/) | 内置 `uiMessageStreamAgent` 无侵入接 AI SDK v7 的 UI Message Stream HTTP 端点,adapter 只剩配置(端点/model 透传);OTel span 只进瀑布图 | 目录内 README |
 
@@ -31,7 +31,7 @@ pnpm tiers:sync
 
 | 目录 | 用途 |
 |---|---|
-| [`zh/ai-sdk/`](zh/ai-sdk/) | **自己写 adapter**（`defineAgent` + `fromAiSdk`）接入 AI SDK v6 HTTP web agent，演示 remote adapter、事件流映射、双可观测 |
+| [`zh/ai-sdk/`](zh/ai-sdk/) | **自己写 adapter**（`defineAgent` + `turnFromAiSdk`）接入 AI SDK v6 HTTP web agent，演示 remote adapter、事件流映射、双可观测 |
 
 评测 Claude Code **Skill / Plugin** 对编码任务实际提升的示例（sandbox 工作区、文件断言）在 [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)，一个独立仓库。
 

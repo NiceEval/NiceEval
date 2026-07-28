@@ -2,7 +2,7 @@
 // `ThreadEvent` 流原样透传成 SSE,外加一个和 `ThreadErrorEvent` 同形状的 `{type:"error"}`
 // 传输帧)。没有 HITL(Codex SDK 不支持),永不返回 "waiting"。
 //
-// 断言依据全部来自这条 ThreadEvent 流:官方转换器 `fromCodexThreadEvents` 翻消息文本、
+// 断言依据全部来自这条 ThreadEvent 流:官方转换器 `createCodexThreadEventStream` 翻消息文本、
 // 工具项(command_execution / mcp_tool_call / file_change → action.*)、`turn.completed` 的
 // usage 和终局错误;逐帧驱动是官方件 `driveFrameStream`(没有 HITL,onFrame 只用来处理
 // 传输帧 + 抓 threadId)。
@@ -11,7 +11,7 @@
 // `spanMapper: mapCodexSpans`、config 加 `telemetry: { port }`。OTel 只管 `niceeval view`
 // 的瀑布图:codex CLI 原生 OTLP(config.toml [otel] 块)把 span 发到钉住的接收端口,
 // `mapCodexSpans` 归一语义——span 不喂断言,断言与 Tier 1 完全相同。
-import { defineAgent, mapCodexSpans, sseJsonFrames, fromCodexThreadEvents, driveFrameStream } from "niceeval/adapter";
+import { defineAgent, mapCodexSpans, sseJsonFrames, createCodexThreadEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 import type { ThreadEvent } from "@openai/codex-sdk";
@@ -44,7 +44,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
     throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
   }
 
-  const stream = fromCodexThreadEvents();
+  const stream = createCodexThreadEventStream();
   return driveFrameStream(sseJsonFrames<CodexFrame>(res.body), stream, ctx, (frame) => {
     // 应用自定义传输帧(query() 之外的失败,比如 spawn 失败),不属于 ThreadEvent。
     if (frame.type === "error") return { fail: (frame as TransportFrame).message };
