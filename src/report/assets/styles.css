@@ -165,24 +165,39 @@ table.niceeval-report,
   font-size: 12px;
   font-weight: 400;
 }
+/* 层级表:整表只有一个 grid,表头与每一层行都用 subgrid 挂在它的列上。列宽因此由全表内容
+   一次算出(--table-grid 只声明"身份列吃余量、读数列贴内容"这条规则,不写每列宽度),
+   跨层对齐由 subgrid 保证,不靠各行复读同一份列模板。 */
 .niceeval-table--hierarchical {
-  display: block;
+  display: grid;
+  grid-template-columns: var(--table-grid);
+  column-gap: 14px;
   overflow-x: auto;
 }
 .niceeval-table--hierarchical thead,
 .niceeval-table--hierarchical tbody,
-.niceeval-table--hierarchical thead tr,
-.niceeval-table--hierarchical tbody > tr {
-  display: block;
-}
+.niceeval-table--hierarchical tbody > tr,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-body,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-children,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-group,
 .niceeval-table--hierarchical thead tr,
 .niceeval-table--hierarchical .niceeval-table-hierarchy-summary,
 .niceeval-table--hierarchical .niceeval-table-hierarchy-row:not(details) {
   display: grid;
-  grid-template-columns: var(--table-grid);
-  column-gap: 14px;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}
+/* Chrome 把 <details> 的非 summary 内容包进 ::details-content 匿名盒,subgrid 链要穿过它;
+   没有这个伪元素的浏览器里子行容器本身就是 details 的直接 grid item,两种情形都成立。 */
+.niceeval-table--hierarchical .niceeval-table-hierarchy-group::details-content {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}
+.niceeval-table--hierarchical thead tr,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-row:not(details) {
   align-items: center;
-  min-width: max(100%, 1080px);
 }
 .niceeval-table--hierarchical thead tr { padding: 0 20px; }
 .niceeval-table--hierarchical thead th {
@@ -191,7 +206,6 @@ table.niceeval-report,
   padding: 12px 0;
 }
 .niceeval-table--hierarchical .niceeval-table-hierarchy-body {
-  display: block;
   border: 0;
   padding: 0;
 }
@@ -237,7 +251,6 @@ table.niceeval-report,
   transform: rotate(45deg);
 }
 .niceeval-table--hierarchical .niceeval-table-hierarchy-children {
-  min-width: 1080px;
   border-top: 1px solid var(--line);
   background: color-mix(in oklch, var(--panel-2), var(--panel) 24%);
 }
@@ -247,6 +260,12 @@ table.niceeval-report,
 .niceeval-table--hierarchical .niceeval-table-hierarchy-cell {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+/* 读数列的可读下限:窄到这里就整表横向滚动,不把 "gpt-5.6-luna" 拆成三行。身份列自己的
+   下限写在列轨里(见 hierarchyGrid)。 */
+.niceeval-table--hierarchical thead th:not(:first-child),
+.niceeval-table--hierarchical .niceeval-table-hierarchy-cell:not(:first-child) {
+  min-width: 5rem;
 }
 .niceeval-table--hierarchical .niceeval-table-hierarchy-cell.niceeval-align-right {
   text-align: right;

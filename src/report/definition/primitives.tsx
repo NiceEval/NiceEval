@@ -759,9 +759,14 @@ function cellSortValue(cell: Cell | undefined): string | number {
   return formatCellText(cell);
 }
 
+/**
+ * 层级表的列轨:只声明宽度从哪来,不写每列多宽。身份列吃掉余量并留可读下限;其余列
+ * `fit-content` 贴着自己那一列的内容(封顶一列可读宽度,长文本在列内折行而不是撑爆整表)。
+ * 列数以外不看列身份——表格不认识"这是成本列所以窄一点"。
+ */
 function hierarchyGrid(columns: readonly TableColumn[]): string {
-  if (columns.length === 1) return "minmax(240px, 1fr)";
-  return `minmax(240px, 1.35fr) repeat(${columns.length - 1}, minmax(105px, .68fr))`;
+  if (columns.length === 1) return "minmax(15rem, 1fr)";
+  return `minmax(15rem, 1fr) repeat(${columns.length - 1}, fit-content(20rem))`;
 }
 
 function renderHierarchyRowsWeb(
