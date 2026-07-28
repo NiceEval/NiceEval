@@ -1,7 +1,7 @@
 # OpenAI 兼容（Chat Completions / Responses）
 
 `turnFromChatCompletion(res)` 与 `turnFromResponses(res)` 把 OpenAI 两种响应形状转换成 `Turn`。
-目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；单写 `fromResponses` 无法说明返回什么：
+目标对象进入名字，因为 `niceeval/adapter` 是扁平入口；名称同时表达协议来源与 Turn 返回值：
 
 ```ts
 import { turnFromChatCompletion, turnFromResponses } from "niceeval/adapter";

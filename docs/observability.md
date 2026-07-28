@@ -44,7 +44,29 @@ interface O11ySummary {
 
 ### 注入沙箱:让测试断言「行为」
 
-这份摘要被写进沙箱的 `__niceeval__/results.json`,于是你在沙箱里手工跑的验证测试能断言 agent **干了什么**,而不只是**产出了什么**:
+沙箱型 Agent 在其工作目录写入 `__niceeval__/results.json`。它的穷尽形状是：
+
+```typescript
+interface SandboxResults {
+  o11y: O11ySummary;
+}
+```
+
+`o11y` 只由当前 attempt 已累积的标准事件流经 `buildO11ySummary()` 派生。它不含
+usage、估算成本、耗时或其它字段；这些事实仍分别以 `result.json` 的 `usage`、
+`estimatedCostUSD`、`durationMs` 与 `phases` 为准。Record 的 `o11y.json` 仍是持久化的
+行为事实，沙箱文件不另建派生算法。
+
+每次成功返回的 `t.send()` 累积完事件后刷新该文件。每次用户调用
+`t.sandbox.runCommand()` 或 `t.sandbox.runShell()` 前也刷新一次，因此验证脚本读取到的是本轮
+已知行为，而不是上一轮摘要。direct Agent 不写这个文件；`__niceeval__/agent-setup.json` 是安装
+manifest 的独立路径，两者互不覆盖。
+
+刷新先写临时文件，再 rename 到 `__niceeval__/results.json`，读取者只会看到完整的旧文件或完整的
+新文件。写入是 best-effort：失败不改变 agent 或 eval 的执行结果，但会记录一条 diagnostic，并删除
+目标文件及临时文件。验证脚本随后读不到文件而自然失败，不能把陈旧或半成品摘要当作可信行为证据。
+
+于是你在沙箱里手工跑的验证测试能断言 agent **干了什么**,而不只是**产出了什么**:
 
 ```typescript
 const o11y = JSON.parse(readFileSync("__niceeval__/results.json", "utf-8")).o11y;

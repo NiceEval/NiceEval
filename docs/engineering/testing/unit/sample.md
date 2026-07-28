@@ -70,11 +70,10 @@ interface RunSpec {
   attempt 都属于历史执行。`fresh: true` 在两个口径下都排除历史执行，被排除的 Eval 进覆盖缺口。
   fixture 同时含携带条目与跨 Run 拼入条目，使「只排携带」「只排旧来源」「两者都排」三种实现得到不同
   答案。时效不产生 warning。
-- **转换算子**：`pipe` 返回新 Sample，不改原样本；原样本的四个面逐字段不变。每个算子都移除已无
-  attempt 贡献的 Run，并用**原始 `knownEvalIds`** 重算 `missingEvalIds`，分母不随删减缩水。
-  `warnings` 按真实 Run 来源修剪，非实验作用域的 kind 保留。算子清单是闭集：
-  `filterAttempts` / `onlyExperiments` / `dropExperiments` / `onlyEvals` / `dropEvals` / `onlyFreshAttempts`
-  各有一条；多算子串联的顺序无关性只在可交换的组合上断言，不假设全部可交换。
+- **转换算子**：`scope()` / `filter()` / `freshOnly()` 返回新 Sample，不改原样本；原样本的四个面
+  逐字段不变。它们同步更新 attempts、historyAttempts、runs、coverage 与有来源作用域的 issues。
+  `scope()` 收窄总体分母；`filter()` 与 `freshOnly()` 保持分母，并把无结果的题计入
+  `missingEvalIds`。Runs 只保留仍被两组 attempt 引用的真实来源。
 - **去重**：身份键 `(experimentId, evalId, attempt, startedAt)`，重复取最新 Run 里的那份且 `ref`
   落在最新落盘上；`startedAt` 缺失时宁可不去重也不误删并出 `missing-startedAt` 警告。两个选择器都
   已内置这条——`sample.attempts` 拿到手即去重后。去重是选择器内部不变量，不为内部 helper 单独写

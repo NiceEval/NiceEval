@@ -66,7 +66,7 @@ const trimmed = sample.pipe(dropExperiments("compare/broken"));
 `process`、`handle` 或 `make`。
 
 转换器只有在模块已经明确目标对象时，才可只写 `fromX`。扁平入口同时导出多种产物时，名字要写成
-`targetFromSource`，例如 `turnFromResponses`。孤立的 `fromResponses` 只说了输入协议，看不出返回
+`targetFromSource`，例如 `turnFromResponses`。名称同时表达输入协议与返回对象，调用点不必另查
 `Turn`、事件还是 usage；`responsesToTurn` 虽然方向明确，但把来源放在调用点主位，不如一组
 `turnFromChatCompletion` / `turnFromResponses` 先按共同产物聚类。
 

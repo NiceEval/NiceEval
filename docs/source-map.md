@@ -28,16 +28,16 @@
 | `defineSandboxAgent` / `defineAgent`(`kind: "sandbox" | "remote"`,无能力位字段) | `src/define.ts` |
 | `shared` 工具袋(ensureInstalled / captureLatestJsonl(可按 sessionId 精确定位)/ writeFile / extractJsonlFromStdout / codexThreadId / firstJsonField / shellQuote / diagnoseFailure / parseCodex·parseClaudeCode·parseBub) | `src/agents/shared.ts` |
 | 采集矩阵(collection.md:每 agent 的通道 / 字段来源) | `src/agents/{claude-code,codex,bub}.ts`(采集)+ `src/o11y/parsers/*.ts`(字段提取) |
-| `fromAiSdk`(AI SDK 结果 → 标准事件流,v4/v5/v7 字段漂移兜底;v7 tool approval → `input.requested` + `status: "waiting"`) | `src/agents/ai-sdk.ts`(+ 同目录 `.test.ts`) |
+| `turnFromAiSdk`(AI SDK 结果 → 标准事件流,v4/v5/v7 字段漂移兜底;v7 tool approval → `input.requested` + `status: "waiting"`) | `src/agents/ai-sdk.ts`(+ 同目录 `.test.ts`) |
 | 内置 adapter(claude-code / codex / bub) | **由被测项目自带**(`agents/*.ts`),niceeval 提供 `shared` + 解析器 |
 | `uiMessageStreamAgent`(AI SDK UI Message Stream 协议的内置无侵入 adapter) | `src/agents/ui-message-stream.ts` |
-| SDK 原生事件流转换器；目标 `createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`，当前 `fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents` | `src/agents/sdk-streams.ts`(+ 同目录 `.test.ts`);逐 SDK 契约见 `docs/feature/adapters/sdk/` |
-| LangGraph 官方事件流转换器；目标 `createLangGraphEventStream`，当前 `fromLangGraphEvents` | `src/agents/langgraph.ts`;契约见 `docs/feature/adapters/sdk/langgraph/README.md` |
+| SDK 原生事件流转换器：`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream` | `src/agents/sdk-streams.ts`(+ 同目录 `.test.ts`);逐 SDK 契约见 `docs/feature/adapters/sdk/` |
+| LangGraph 官方事件流转换器：`createLangGraphEventStream` | `src/agents/langgraph.ts`;契约见 `docs/feature/adapters/sdk/langgraph/README.md` |
 | OpenCode sandbox Agent(`openCodeAgent`) | `src/agents/opencode.ts` + `src/o11y/parsers/opencode.ts`;契约见 `docs/feature/adapters/sdk/opencode/README.md` |
 | Hermes Agent sandbox Agent(`hermesAgent`) | `src/agents/hermes.ts` + `src/o11y/parsers/hermes.ts`;契约见 `docs/feature/adapters/sdk/hermes/README.md` |
 | OpenClaw sandbox Agent(`openClawAgent`) | `src/agents/openclaw.ts` + `src/o11y/parsers/openclaw.ts`;契约见 `docs/feature/adapters/sdk/openclaw/README.md` |
-| OpenAI 兼容结果转换器；目标 `turnFromChatCompletion` / `turnFromResponses`，当前 `fromChatCompletion` / `fromResponses` | `src/agents/openai-compat.ts`;契约见 `docs/feature/adapters/sdk/openai-compat/README.md` |
-| AI SDK 结果转换器；目标 `turnFromAiSdk`，当前 `fromAiSdk` | `src/agents/ai-sdk.ts`;契约见 `docs/feature/adapters/sdk/ai-sdk/README.md` |
+| OpenAI 兼容结果转换器：`turnFromChatCompletion` / `turnFromResponses` | `src/agents/openai-compat.ts`;契约见 `docs/feature/adapters/sdk/openai-compat/README.md` |
+| AI SDK 结果转换器：`turnFromAiSdk` | `src/agents/ai-sdk.ts`;契约见 `docs/feature/adapters/sdk/ai-sdk/README.md` |
 | 原生配置文件替换(`settingsFile` / `configFile`:项目根内路径校验、上传替换、保留键冲突检测、SHA-256 进 checkpoint key) | `src/agents/native-config.ts`(共享层)+ `src/agents/{claude-code,codex}.ts`(各自保留键表) |
 | Marketplace 注册名回读校验(`marketplace add` 后回读列表,配置名对不上立刻报错) | `src/agents/marketplace.ts`(claude-code / codex 共用,回读命令由 adapter 传入) |
 
@@ -75,7 +75,7 @@
 | run 级共享 OTLP 接收 + 逐轮归属(traceparent → `ctx.telemetry.headers`;窗口兜底 + 未确认时该 agent 轮次串行) | `src/o11y/otlp/turn-otel.ts`(`AgentOtelChannel` / `OtelReceiverPool`);接线在 `src/runner/attempt.ts`(池取通道)与 `src/context/session.ts`(`sendWithOtel`:归属 / 派生 / 合并) |
 | 固定端口 / 自定义接收 host 模式(`defineConfig({ telemetry: { host, port } })`,niceeval 项目内唯一入口,不读环境变量) | `src/runner/run.ts`(`OtelReceiverPool` 取 `config.telemetry.port`)、`src/runner/attempt.ts`(`config.telemetry.host`)、`src/o11y/otlp/receiver.ts`(`makeTraceReceiver(port)`,端口被占用时报 `otel.portInUse`) |
 | `deriveRunFacts`(toolCalls / subagents / parked / compactions) | `src/o11y/derive.ts` |
-| o11y 摘要(注入 `__niceeval__/results.json` 的字段) | `src/o11y/derive.ts`(`buildO11ySummary`) |
+| o11y 摘要与沙箱注入(`__niceeval__/results.json` 的原子 writer、写失败诊断与清理) | `src/o11y/derive.ts`(`buildO11ySummary`) → `src/o11y/sandbox-results.ts` → `src/context/session.ts`(send 后刷新) / `src/context/context.ts`(用户 Sandbox 命令前刷新) |
 | codex 用量从 `turn.completed.usage` 抠出 | `src/o11y/parsers/codex.ts` |
 | 用量 → 成本(实测优先 → 用户覆盖 → 内置 Run) | `src/o11y/cost.ts` |
 
@@ -152,7 +152,7 @@
 | 终端框线渲染件(区域框契约的唯一物理实现:宽度上限 100、边框嵌字与「先保标题后保 meta」截断次序、嵌套 Section 降横隔、非 TTY/窄终端降级为无框文本;同步纯函数,不做 IO)+ 三处消费方 | `src/report/model/panel.ts`(`renderPanel` + `encodeDividerLine`/`decodeDividerLine`/`rowsFromBodyText` 的嵌套桥接);消费方:`src/report/definition/primitives.tsx`(`Section` text 面,`panelMode` 经 `TextContext`/`HostTextRenderOptions` 从 `niceeval show` 的真实 TTY/`NO_COLOR` 探测注入)、`src/runner/feedback/human.ts`(PLAN/live 面板/`FAILED`·`PASSED`/`FAILURES`/`KEPT SANDBOXES`/`NEXT`,`panelCapabilityOf(io)` 按 `io.stderr.isTTY` + `io.env.NO_COLOR` 判定)、`src/sandbox/cli-commands.ts`(`list`/`history`,启动时探测一次) |
 | 机器 / 平台 reporter(Artifacts / Json / JUnit(同目录 temp→rename 原子写)/ Braintrust) | `src/runner/reporters/{artifacts,json,braintrust,index}.ts` |
 | eval 级折叠 / 计票口径(CLI 退出码与 view 共用) | `src/shared/verdict.ts` |
-| 本地结果保存格式(Run 目录 `.niceeval/<experiment>/<run>/run.json` + attempt 级 `result.json` / JSON artifact;fresh attempt 调度前即生成最终 `locator`,与 Artifacts writer 共用同一个 `snapshotStartedAt`) | `src/runner/reporters/artifacts.ts`(reporter 薄壳,按 experimentId 路由到 Run writer)、`src/results/writer.ts`(`createWriter`;写入面收窄类型 `AttemptEntry = Omit<EvalResult, …>`)、`src/results/types.ts`(`RunMeta`)、`src/runner/types.ts`(`EvalResult`——architecture.md `result.json` 一节里的 `AttemptRecord` 是该持久化形状的文档概念名,对应的运行时类型就是它;同文件的 `RESULTS_SCHEMA_VERSION` / `RESULTS_FORMAT` 常量随 `EvalResult` 同址声明,经 `src/types.ts` facade 转出给 `src/results/` 域 import,不在 `src/results/types.ts` 里重新声明)、`src/runner/run.ts`(locator 生成点) |
+| 本地结果保存格式(Run 目录 `.niceeval/<experiment>/<run>/run.json` + attempt 级 `result.json` / JSON artifact;fresh attempt 调度前即生成最终 `locator`,与 Artifacts writer 共用同一个 `snapshotStartedAt`) | `src/runner/reporters/artifacts.ts`(reporter 薄壳,按 experimentId 路由到 Run writer)、`src/record/writer.ts`(`createWriter`;写入面收窄类型 `AttemptEntry = Omit<EvalResult, …>`)、`src/record/types.ts`(`RunMeta`)、`src/runner/types.ts`(`EvalResult`——architecture.md `result.json` 一节里的 `AttemptRecord` 是该持久化形状的文档概念名,对应的运行时类型就是它;同文件的 `RECORD_SCHEMA_VERSION` / `RECORD_FORMAT` 常量随 `EvalResult` 同址声明,经 `src/types.ts` facade 转出给 `src/record/` 域 import,不在 `src/record/types.ts` 里重新声明)、`src/runner/run.ts`(locator 生成点) |
 | `EvalResult.scoring`(取 `evalDef.scoring` 兜底 `"pass"`)与 `scoreEntries`(仅 `scoring: "points"` 时落,取 `collector.scoreEntries`)的落盘接线 | `src/runner/attempt.ts`(`runAttemptEffect` 组装 `EvalResult` 处) |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态解析;调度项没有环境变量层,见[配置与凭据边界](architecture.md#配置从代码来凭据从环境来)) | `src/cli.ts` |
 | `niceeval show` 终端宿主(Sample 合成「现刻水位」、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--diff) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
@@ -165,24 +165,24 @@
 两个宿主的 Sample 都由中性的 `selectLatestPerEval` 产出：
 
 三层的数据形状与各层操作画在[Reading](feature/reading/README.md)的总图上,这里只给同一条链路的
-文件落点。注意 Record 与 Sample 两层当前同住 `src/results/`,包边界只在契约里存在(见下方已知差异)。
+文件落点。
 
 ```text
 磁盘  .niceeval/<experiment>/<run>/
   │
   │  openRecord()
   ▼
-①  src/results/open.ts      扫描 / 导航 / 版本分流 / 懒加载
-    src/results/format.ts   目录布局与版本知识
-    src/results/types.ts    分层契约(Experiment / Run / AttemptHandle / Sample)
-    src/results/locator.ts  身份键
-    src/results/writer.ts   createWriter        ← 第三方 harness 写进来
-    src/results/copy.ts     publish             → 发布出去
+①  src/record/open.ts      扫描 / 导航 / 版本分流 / 懒加载
+    src/record/format.ts    目录布局与版本知识
+    src/record/types.ts     分层契约(Experiment / Run / AttemptHandle / Sample)
+    src/record/locator.ts   身份键
+    src/record/writer.ts    createWriter        ← 第三方 harness 写进来
+    src/record/copy.ts      publish             → 发布出去
   │
   │  currentSample() / latestRunSample()
   ▼
-②  src/results/select.ts    selectLatest / selectLatestPerEval / freshEvals
-                            filter / dedupeAttempts / unreadableSnapshotWarnings
+②  src/sample/index.ts      latestRunSample / currentSample / Sample.filter
+                            dedupeAttempts / SampleIssue
   │
   │  sample.attempts
   ▼
@@ -199,20 +199,20 @@
 
 | 行为 | 文件 |
 |---|---|
-| `openRecord`:实验/结果 Run/eval 分层、版本分流(skipped 三种原因)、懒加载(attempt 目录→artifactBase 携带条目回退) | `src/results/open.ts` |
-| 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/results/format.ts` |
-| `latestRunSample(record)` / `currentSample(record)`、`freshEvals` / `withFreshEvals`、`Sample.filter`、`dedupeAttempts`；当前实现仍使用 `SampleWarning` / `warnings` / `unreadableSnapshotWarnings` 旧命名，目标契约改为可重算且不落盘的 [`SampleIssue`](feature/sample/library.md#issue-code-全集) / `issues`；`current()` 的 Run 投影差异见[已知差异](#与设计文档的已知差异实现取舍) | `src/results/select.ts` |
-| `createWriter`(Run 目录独占创建、Run 级元数据落盘、attempt 记录与 artifact 增量落盘、`finish()` 补 `completedAt`) | `src/results/writer.ts` |
-| `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记) | `src/results/copy.ts` |
-| 发布预算常量(50 MiB 单文件预检上限) | `src/results/publish.ts` |
-| 落盘截断(单值 256 KiB 上限,events / spans 写入前截断并标记) | `src/results/truncate.ts` |
-| 分层契约(Experiment / Run / Eval / AttemptHandle(含 `carried` 携带条目投影)/ AttemptRef / Sample(含 `coverage: SampleCoverage[]`)/ 警告类型) | `src/results/types.ts` |
-| 目标 `defineMeasure` 与内置读数；当前名 `defineMetric` / `Metric` | `src/report/model/metrics.ts`(定义)、`src/report/index.ts`(公开导出) |
-| 目标 `sampleSummary()` / `SampleSummaryContent`；当前 `scopeSummaryData` / `ScopeSummaryData` | `src/report/components/summaries/compute.ts`、`summaries/{ScopeSummary.tsx,faces.ts}` |
+| `openRecord`:实验/Run/eval 分层、版本分流(三种 unreadable 原因)、懒加载(attempt 目录→artifactBase 携带条目回退) | `src/record/open.ts` |
+| 布局与版本知识(attempt 目录规则、Run 分类、完整 producer) | `src/record/format.ts` |
+| `latestRunSample(record)` / `currentSample(record)`、`Sample.scope` / `.filter` / `.freshOnly`、`dedupeAttempts` 与 `SampleIssue` | `src/sample/index.ts` |
+| `createWriter`(Run 目录独占创建、Run 级元数据落盘、attempt 记录与 artifact 增量落盘、`finish()` 补 `completedAt`) | `src/record/writer.ts` |
+| `publish`(发布原语:计划 → 预检 → 复制,knownEvalIds 补记) | `src/record/copy.ts` |
+| 发布预算常量(50 MiB 单文件预检上限) | `src/record/publish.ts` |
+| 落盘截断(单值 256 KiB 上限,events / spans 写入前截断并标记) | `src/record/truncate.ts` |
+| 分层契约(Experiment / Run / Eval / AttemptHandle(含 `carried` 携带条目投影)/ AttemptRef / Sample(含 `coverage: SampleCoverage[]`)/ issue 类型) | `src/record/types.ts` |
+| `defineMeasure` 与内置读数 | `src/report/model/metrics.ts`(定义)、`src/report/index.ts`(公开导出) |
+| `sampleSummary()` / `SampleSummaryContent` | `src/report/components/summaries/compute.ts`、`summaries/{ScopeSummary.tsx,faces.ts}` |
 | `flag()`(experiment flags 当维度 / 轴) | `src/report/model/flag.ts` |
-| 两级聚合引擎 / 维度 / 当前 `MetricCell` 计算 / 聚合前去重接线 | `src/report/model/aggregate.ts` |
-| 当前数据契约(`Metric`、`TableData` / `MatrixData` / `ScatterData` / `LineData` / `ScoreboardData` / `DeltaData` / `ScopeSummaryData` 等)；目标改成 `Measure` 与按真实形状命名的 `*Content` / `*Row` / `*Cell` | `src/report/model/types.ts` |
-| 报告 chrome 文案的 locale 字典；当前 `MetricCell.display` 生成面 | `src/report/model/locale.ts` |
+| 两级聚合引擎 / 维度 / `MeasureCell` 计算 / 聚合前去重接线 | `src/report/model/aggregate.ts` |
+| 数据契约(`Measure`、`TableData` / `MatrixData` / `ScatterData` / `LineData` / `ScoreboardData` / `DeltaData` / `SampleSummaryContent` 等) | `src/report/model/types.ts` |
+| 报告 chrome 文案的 locale 字典；`MeasureCell.display` 生成面 | `src/report/model/locale.ts` |
 | 元素树 / `defineComponent`(双面)/ 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
 | 组件数据解析 pass(`resolveReportTree`:装载规范化产物之后、render 之前递归遍历树;遇到 spec 形态组件就调它自己的解析面(代调配套 `*Data` 计算函数)并换成 data 形态 props,同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页两种粒度的四个渲染入口都先跑它,报告作者因此不用手写取数) | `src/report/definition/tree.ts`(`resolveReportTree`;被 `src/report/runtime/text.ts` 与 `src/report/runtime/web.ts` 调用) |
 | 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table（十个内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`、官方表状组件共用；`Tab` 只能直接放在 `<Tabs>` 下，不参与路由、没有 id） | `src/report/definition/primitives.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平校验、`planTextGrid` 的 text 面排版算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |
@@ -220,14 +220,14 @@
 | `defineReport` / `ReportShell` / `ReportPage` / `buildReportMeta` / `resolveReportTitle`(报告外壳与页列表的规范化,与宿主装载方式无关) | `src/report/definition/report.ts` |
 | text 宿主装载入口 `pickReportPage` / `ReportHostContext` / `renderReportToText`(选页 → `resolveReportTree` → 校验 → text 渲染;宿主不设树外警告通道——挑选警告的唯一呈现件是页内 `SampleWarnings` 组件,按动作聚合层在 `src/report/components/site-components/scope-warnings.ts`,web/text 两面共用)/ 逐页 text 入口 `renderReportTreeToText`(两宿主共用的联系面调用)/ `ReportPageNotFoundError`(`--page` 未命中)/ `ReportPageNeedsLocatorError`(attempt-input page 缺 locator) | `src/report/runtime/text.ts` |
 | `--report` 装载(两宿主共用:存在性/默认导出判别、dev server 的 mtime cache-busting) | `src/report/runtime/load.ts` |
-| show 宿主接线(无条件调 `selectLatestPerEval` 产出 Sample、裸跑装载 `niceeval/report/built-in` 默认导出的 text 面、`--report`/`--page` 经 `report/runtime/host.ts` 装载自定义 text 报告、attempt locator 下钻;多页时选初始页——`--page` 指定或缺省第一页——的逻辑在 `src/show/index.ts`,渲染完初始页后由 `src/show/render.ts` 的 `otherPagesText` 在尾部追加「其余页」索引与可复制命令) | `src/show/index.ts`(现刻水位选择器在中性的 `src/results/select.ts`;单 Eval、Attempt 详情与证据切面渲染在 `src/show/render.ts`;`src/show/compose.ts` 只留 `--history` 逐 attempt 执行时间轴口径;两宿主共用的报告装载规范化/标题回退在 `src/report/runtime/host.ts`;show 专属的可复制命令拼装 `showCommand` 在 `src/show/command.ts`;测试 `src/show/show.test.ts`、`src/show/command.test.ts`、`src/report/runtime/host.test.ts`) |
+| show 宿主接线(无条件调 `currentSample` 产出 Sample、裸跑装载 `niceeval/report/built-in` 默认导出的 text 面、`--report`/`--page` 经 `report/runtime/host.ts` 装载自定义 text 报告、attempt locator 下钻;多页时选初始页——`--page` 指定或缺省第一页——的逻辑在 `src/show/index.ts`,渲染完初始页后由 `src/show/render.ts` 的 `otherPagesText` 在尾部追加「其余页」索引与可复制命令) | `src/show/index.ts`(现刻水位选择器在中性的 `src/sample/index.ts`;单 Eval、Attempt 详情与证据切面渲染在 `src/show/render.ts`;`src/show/compose.ts` 只留 `--history` 逐 attempt 执行时间轴口径;两宿主共用的报告装载规范化/标题回退在 `src/report/runtime/host.ts`;show 专属的可复制命令拼装 `showCommand` 在 `src/show/command.ts`;测试 `src/show/show.test.ts`、`src/show/command.test.ts`、`src/report/runtime/host.test.ts`) |
 | web 宿主装载入口 `renderReportToStaticHtml`(唯一 import react-dom 的一侧;同样选页 → `resolveReportTree` → 校验 → web 渲染,同样不设树外警告前置块)/ 逐页 web 入口 `renderReportTreeToStaticHtml` | `src/report/runtime/web.ts` |
 | 当前内建报告；目标将专用叶子改成 `Callouts source={sampleWarnings}`、`Table source={attemptRows}` 等原语 + 数据源，并把 `ExperimentComparison` 改为 `SampleOverview` | `src/report/built-in/standard.tsx`、`src/report/built-in/index.tsx` |
-| 当前跨组件共享辅助与 `MetricCellView`；目标原语只消费通用 Cell / Content | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
-| 目标 `sampleSummary()`；当前 `scopeSummaryData` + `ScopeSummary` | `src/report/components/summaries/compute.ts`、`summaries/{index.tsx,ScopeSummary.tsx,faces.ts}` |
-| 目标 `SampleOverview`；当前 `ExperimentComparison` | `src/report/components/summaries/index.tsx` |
-| 目标 `experimentRows` / `evalRows` / `attemptRows` 数据源；当前 `experimentListData` / `evalListData` / `attemptListData` 与专用组件 | `src/report/components/entity-lists/{compute.ts,index.tsx,faces.ts}` |
-| 目标 `measureRows` / `measureMatrix` / `scoreboard` / `deltaRows` / `stabilityRows` 数据源 + `Table` 原语；当前 `metricTableData` / `metricMatrixData` / `scoreboardData` / `deltaTableData` / `stabilityMatrixData` 与专用组件 | `src/report/components/metric-views/{compute.ts,index.tsx,faces.ts}` |
+| 当前跨组件共享辅助与 `MeasureCellView`；目标原语只消费通用 Cell / Content | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
+| `sampleSummary()` / `SampleSummary` | `src/report/components/summaries/compute.ts`、`summaries/{index.tsx,ScopeSummary.tsx,faces.ts}` |
+| `SampleOverview` | `src/report/components/summaries/index.tsx` |
+| `experimentRows` / `evalRows` / `attemptRows` 数据源与仍在迁移中的专用组件 | `src/report/components/entity-lists/{compute.ts,index.tsx,faces.ts}` |
+| `measureRows` / `measureMatrix` / `scoreboard` / `deltaRows` / `stabilityRows` 数据源、`Table` 原语与仍在迁移中的专用组件 | `src/report/components/metric-views/{compute.ts,index.tsx,faces.ts}` |
 | 图表族当前结构树解析、`chartData(input, spec)` 与 `ChartData`、轴值域推定、字符坐标图 text 面 | `src/report/components/metric-views/`(`compute.ts` / `chart-math.ts` / `plot.ts` / `faces.ts`) |
 | Attempt 详情组件族:11 个叶子(`AttemptSummary` / `AttemptError` / `AttemptAssertions` / `AttemptSource` / `AttemptFixPrompt` / `AttemptTimeline` / `AttemptConversation` / `AttemptDiagnostics` / `UsageTable` / `AttemptTrace` / `AttemptDiff`,均以 `AttemptEvidence` 为输入的双面组件)+ 2 个组合(`AttemptAssessment`、`AttemptDetail`,只用公开叶子装配、没有私有 renderer) | `src/report/components/attempt-detail/index.tsx`(计算在 `compute.ts`,每叶子一个 `attempt*Data(evidence)`/`usageTableData(evidence)`;text 面在 `faces.ts`;测试 `attempt-components.test.tsx`) |
 | `AttemptAssertions` 的计分制字段；目标由 `attemptAssertions` 数据源产出 `TableContent` | `src/report/components/attempt-detail/compute.ts`(`attemptAssertionsData`、`groupByPath`)、`AttemptAssertions.tsx`、`faces.ts`、`src/report/model/format.ts` |
@@ -235,9 +235,9 @@
 | 当前官方专用组件 web 面 + 页级色分配；目标收敛为通用原语 renderer | `src/report/components/{summaries,entity-lists,metric-views}/*.tsx` + `src/report/assets/colors.ts` + `styles.css`；公开入口 `src/report/react/index.tsx` |
 | 渐进增强 runtime(表头排序 / 行过滤 / hover tooltip,只作用于 `.nre` 与 `data-nre-*`;宿主内联) | `src/report/assets/enhance.js` |
 | 双面验收(renderToStaticMarkup + text Run,两面同口径) | `src/report/runtime/dual-render.test.tsx` |
-| view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-dialog.ts`(hash ↔ locator 互转、`attempt/<locator>.html` 链接拦截与 dialog 内容抠取)、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/record` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/results/locator.ts`) |
+| view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-dialog.ts`(hash ↔ locator 互转、`attempt/<locator>.html` 链接拦截与 dialog 内容抠取)、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/record` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/record/locator.ts`) |
 | view 数据层(openRecord;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:Run 明细 + skipped + 壳元信息(含报告外壳/页导航的 `ViewReportMeta`),统计住报告页)。`latestRunSample(record)` 结果(命名为 `latestPerExperiment`)只用于给证据室 Run 打「latest」标记,与报告槽 Sample 是两条独立通道,不参与报告计算;`viewData.snapshots` 是完整记录根的全量通道,只服务 attempt 详情路由(`#/attempt/@<locator>`)的解析,不随报告 Sample 收窄 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
-| view 报告槽与导航(裸跑装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `selectLatestPerEval` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 styles/scripts 按声明序注入、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`;渲染出的导航结构与外壳 chrome 归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
+| view 报告槽与导航(裸跑装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `currentSample` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 styles/scripts 按声明序注入、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/view-report.test.ts`;渲染出的导航结构与外壳 chrome 归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
 | **Roadmap(未定落点)** | memory-evals 静态导出流水线(reports.md 场景三) |
 
 ## 与目标契约的已知实现差异
@@ -245,53 +245,15 @@
 本节只记录实现差异。Feature 文档仍是目标契约；这里的当前名称和路径用于定位源码，
 不反向限制目标 API。
 
-### P0：身份、缓存与运行语义
+### P1：报告与宿主
 
-- **Record / Sample 与 Run 格式尚未迁移。** 公开入口仍集中在 `src/results/`，公开命名仍以
-  Results、Scope、Snapshot 为主；落盘仍是 `snapshot.json`、`SnapshotMeta` 与
-  `RESULTS_SCHEMA_VERSION`。CLI 仍以 `--results` / `--snapshot` 为主。目标是
-  `niceeval/record`、`niceeval/sample`、Run、`openRecord`、`createWriter` 与 `publish`。
-- **Sample 目标算子未齐。** `mode`、`fresh`、`runs`、`pipe()`，以及 `filterAttempts`、
-  `onlyEvals`、`dropExperiments` 等闭集算子尚未形成公开面。当前主要入口仍是
-  `src/results/types.ts` 的 `Scope.filter()`。
-- **`configHash` 与嵌套 fingerprint 待补齐。** `SnapshotMeta` 没有 `configHash`；
-  `src/runner/fingerprint.ts` 仍直接哈希配置与单个 `sourcePath`，没有递归项目内 import 图，
-  也没有追踪 `loadJson` / `loadYaml` 数据内容。Sample 可比性仍使用字段深比较，并包含目标契约
-  明确排除的 budget 与 `timeoutMs`。
-- **缓存控制仍是旧模型。** CLI 只有布尔 `--force`，尚不能表达
-  `--rerun[=failed|all]`。`provenanceFlags` 仍允许逐键排除 fingerprint；目标要求 flags 整袋进入
-  身份。一次性迁移出口 `--carry-ignoring-flag`、`carriedIgnoringFlags` 与 Run diagnostic 尚不存在。
-- **Sandbox reuse 待补齐。** `ExperimentDef` 没有 `sandboxReuse`；Provider 能力、题间 reset、
-  寿命轮换、reset 失败替换，以及与 carry、`--keep-sandbox`、`localSandbox()` 的互斥校验均缺失。
-  当前入口仍在 `src/runner/attempt.ts` 中逐 Attempt 创建和释放 Sandbox。
+- **Reports 仍有专用组件残留。** `SampleOverview`、`SampleSummary`、`defineMeasure`、`Source` 与
+  通用 `Table` 已经形成公开面，但实体列表和指标视图还保留专用组件及其计算函数。通用数据源与
+  原语尚未完全替代这些实现。
+- **watch 的导入图仍未精确收窄。** view 已监听记录根和项目根并做重建，但项目侧监听仍是目录级；
+  尚未只跟踪报告、主题及其静态 import 闭包。
 
-### P1：报告、源码与宿主
-
-- **Reports 当前代码仍是 Metric 与专用 renderer。** 公开面以 `defineMetric` / `Metric`、`*Data`
-  函数及 `ExperimentList`、`MetricTable`、`ScopeSummary` 为主。Table 原语是迁移路径的局部基础。
-- **Reports 目标公开面是 Source 与 Component。** 它包含 `defineMeasure` / `Measure`、受限的
-  `Source<Input extends SourceInput, Content>`、通用 Content、Chart / Callouts 与 `SampleOverview`。
-  页级呈现统一为 `dimensions(data)`、`ctx.dimension(...)` 与 `presentDimension(...)`。
-- **Eval source 调用树待补齐。** `SourceLoc` 只有单帧位置，`captureLoc()` 找到第一帧即返回；
-  helper 源码仍在 Attempt 收尾批量读取，读取失败直接跳过。`SourceArtifact` 没有唯一
-  `role: "entry"`，spine / detached / unavailable 树与 `projectSourceView()` 均缺失。
-- **View 宿主仍有四组差异。** 缺文件监听、推送重建与保留旧站点；缺 `--theme`、
-  `defineTheme` 及 config 的 report/theme 取值链；`--report standard` 会被当作文件路径；
-  Attempt 路由会清空范围条件后回扫完整根。静态导出还缺 `commands.json`，源码布局也尚未迁到
-  Run 级 `sources/<sha256>.json`。
-
-### P2：局部语义与制品
-
-- **证据完整性尚未闭合。** 缺 `evidenceState: local | borrowed | dangling`、
-  `dangling-evidence` warning、选择器内置去重与 `missing-startedAt` warning。`publish()` 因而不能完整
-  执行悬空证据整体失败的契约。
-- **Adapter 转换器仍用旧命名。** `fromAiSdk`、`fromChatCompletion`、
-  `fromClaudeSdkMessages` 等仍在公开导出，目标 `turnFrom*` / `create*EventStream` 尚未落地。
-- **Judge unavailable 只迁移了一半。** 缺 model / key 已产生 `unavailable`；HTTP、超时、解析等
-  调用异常仍由通用 collector 折成 `score: 0` 的 failed。`judge-call-failed` reason、evidence 与
-  预检最多两次传输层重试也待补齐。
-- **`__niceeval__/results.json` 沙箱注入缺失。** `buildO11ySummary()` 只写 Record 的
-  `o11y.json`；沙箱内只有 `__niceeval__/agent-setup.json`，行为断言需要的 results 注入没有 writer。
+### P2：制品
 - **E2B 公共 baseline 尚未换代。** 配方和构建校验已修，但公开常量与
   `sandbox/e2b/published.json` 仍指向旧 `v0.6.1`。需要真实构建、以运行用户验证、发布新 tag，
   再同步台账与常量。
@@ -299,7 +261,7 @@
 ### 已从差异清单删除
 
 - `commands.json` 的核心采集、落盘、读取、publish 与 Attempt 展示已经存在；只剩 View 静态导出漏复制。
-- `current()` 已保留真实贡献 Snapshot，并直接使用这些事实实体。
+- `currentSample()` 已保留真实贡献 Run，并直接使用这些事实实体。
 - feedback 的 agent / ci 机器面已合并为 `json.ts`。
 - 宽 `TestContext` + runtime guard 已与目标契约一致。
 - hooks、keep-sandbox、orphans、error-classification 与 Verdict 主折叠没有新的结构性 gap。
