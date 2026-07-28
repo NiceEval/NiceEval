@@ -191,17 +191,17 @@ type StreamEvent =
 
 ```ts
     // ……transport 与会话同第二步，省略
-    return fromChatCompletion(res);            // ← 上面那段映射加第三步的 usage，官方版
+    return turnFromChatCompletion(res);            // ← 上面那段映射加第三步的 usage，官方版
 ```
 
 接口不是这个形状，就换对应的件：
 
 | 接口响应形状 | 内置实现 | 需要编写的代码 |
 |---|---|---|
-| Chat Completions 形返回 | `fromChatCompletion(res)` | 无需手写映射 |
-| Responses 形返回 | `fromResponses(res)` | 无需手写映射 |
-| AI SDK `generateText` 的完整结果 | `fromAiSdk(result)` | 无需手写映射 |
-| 流式：SDK 原生事件透传（一帧一个完整单元） | `fromClaudeSdkMessages()` / `fromPiAgentEvents()` / `fromCodexThreadEvents()` | 无需手写映射 |
+| Chat Completions 形返回 | `turnFromChatCompletion(res)` | 无需手写映射 |
+| Responses 形返回 | `turnFromResponses(res)` | 无需手写映射 |
+| AI SDK `generateText` 的完整结果 | `turnFromAiSdk(result)` | 无需手写映射 |
+| 流式：SDK 原生事件透传（一帧一个完整单元） | `createClaudeSdkEventStream()` / `createPiAgentEventStream()` / `createCodexThreadEventStream()` | 无需手写映射 |
 | 流式：AI SDK 的 UI Message Stream（`useChat` 协议） | `uiMessageStreamAgent()` | 无需手写 `send` 或事件映射 |
 | 流式：逐 token / 逐参数增量 | 协议方官方 reducer；没有才用 `deltaStream({ toOps })` | 一张"帧类型 → 操作"映射表 |
 | 只有最终答案 | 手写几条 events | 一条 `message` 起步（第一步就是这个档） |
@@ -217,7 +217,7 @@ type StreamEvent =
 | `input.requested`（配合 status `"waiting"`） | `t.parked()`、`t.requireInputRequest()`、`t.respond()`（第五步） |
 | `thinking` / `compaction` / `error` | 对应断言与 o11y 计数 |
 
-Chat Completions 响应**不保证包含完整过程记录**。应用可能在服务端完成工具循环，只返回最终答案。因此，`fromChatCompletion` 的返回不带完整性证明：`calledTool` 等正断言可用，`notCalledTool` 等负断言会提示证据不完整。Responses 协议要求 `output` 数组记录完整过程，`fromResponses` 的返回带完整性证明，负断言可信。两者的可信度差异来自接口契约。
+Chat Completions 响应**不保证包含完整过程记录**。应用可能在服务端完成工具循环，只返回最终答案。因此，`turnFromChatCompletion` 的返回不带完整性证明：`calledTool` 等正断言可用，`notCalledTool` 等负断言会提示证据不完整。Responses 协议要求 `output` 数组记录完整过程，`turnFromResponses` 的返回带完整性证明，负断言可信。两者的可信度差异来自接口契约。
 
 **这一步支持**：`t.calledTool()`、`t.toolOrder()`、`t.maxToolCalls()`、`t.noFailedActions()` 等工具断言。
 
@@ -234,7 +234,7 @@ HITL 几乎总是发生在流式接口上（停在流中间），所以这一步
 
 ```ts
 // agents/my-app.ts
-import { defineAgent, sseJsonFrames, fromPiAgentEvents, driveFrameStream } from "niceeval/adapter";
+import { defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -279,7 +279,7 @@ export default defineAgent({
       }),
       signal: ctx.signal,
     });
-    return readStream(sseJsonFrames<Frame>(res.body!), ctx, fromPiAgentEvents());  // ← 第四步：官方转换器零映射
+    return readStream(sseJsonFrames<Frame>(res.body!), ctx, createPiAgentEventStream());  // ← 第四步：官方转换器零映射
   },
 });
 ```

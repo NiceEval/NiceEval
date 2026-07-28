@@ -4,7 +4,7 @@ sidebarTitle: "查看结果"
 description: "用 niceeval show 在终端按 @<locator> 查看 Attempt 的评估用例源码、执行记录与 diff，对照多个条件、看稳定性与用量、跨 Attempt 搜索执行记录，或用 niceeval view 在网页中查看同一份证据。"
 ---
 
-每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入该实验的**结果快照**目录 `.niceeval/<experiment>/<快照>/`。快照记录本次运行实际选择的 `selectedEvalIds`；`show` / `view` 直接比较当前 Scope 中的 experiments。
+每次运行后，[NiceEval](https://niceeval.com/) 都会把结构化结果写入该实验的 **Run** 目录 `.niceeval/<experiment>/<run>/`。Run 记录本次运行实际选择的 `selectedEvalIds`；`show` / `view` 直接比较当前 Sample 中的 experiments。
 
 ## 控制台输出
 
@@ -70,7 +70,7 @@ Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存
 
 同一个 Experiment 多次运行会留下多份结果。不带 `@<locator>` 的默认视图显示每个 Experiment × 评估用例最新的判定，并可能从同一个 Experiment 的多次运行中组合结果。按前缀只重跑部分评估用例时，其余评估用例的判定从更早的运行补齐。每份判定都带有生成时间，因此可以识别组合结果的来源。组合结果可能包含不同版本的被测代码，最终判定应以 `--rerun all` 全量重跑为准。
 
-用 eval id 前缀收窄范围时，同一个评估用例的多次 Attempt 全部按顺序列出，不做默认展开；需要精确查看就复制该行的 `@<locator>`。`--exp agents/codex` 按 experiment id 路径收窄；`--results` 换结果根，`--snapshot` 只看某一次快照。
+用 eval id 前缀收窄范围时，同一个评估用例的多次 Attempt 全部按顺序列出，不做默认展开；需要精确查看就复制该行的 `@<locator>`。`--exp agents/codex` 按 experiment id 路径收窄；`--record` 换记录根，`--run` 只看某一次 Run。
 
 `niceeval view` 的每个视图都有 CLI 对应物：
 
@@ -83,17 +83,17 @@ Sandbox 创建、setup 或 teardown 错误不依赖 trace。`result.json` 保存
 | AI 对话、thinking、Skill 加载与工具调用（有 OTel 时补时间） | `niceeval show @<locator> --execution` |
 | 单次 Attempt 的阶段耗时分解 | `niceeval show @<locator> --timing`；逐节点审计用 `--timing=full` |
 | 文件改动 | `niceeval show @<locator> --diff` |
-| 历史 run 列表 | `niceeval show <eval id> --history`；钉死某一次用 `view --snapshot <snapshot.json>` 或复制该行 `@<locator>` 直接 `show` |
+| 历史 Run 列表 | `niceeval show <eval id> --history`；钉死某一次用 `view --run <run.json>` 或复制该行 `@<locator>` 直接 `show` |
 
 ### 默认分组比较报告
 
-不带 flag 的 `niceeval show` 直接输出当前 Scope 的成本 × 端到端成功率图和实验列表。每个 experiment 的 eval 数与指标分母读取其快照 `selectedEvalIds`；未选择的评估用例不补成失败。
+不带 flag 的 `niceeval show` 直接输出当前 Sample 的成本 × 端到端成功率图和实验列表。每个 experiment 的 eval 数与指标分母读取其 Run `selectedEvalIds`；未选择的评估用例不补成失败。
 
 实验列表先给固定列汇总，再按 experiment → 评估用例 → Attempt 展开。locator 只保留 `@<id>`；完整断言和 evidence 留在 `niceeval show @<locator>`。只有一个 experiment 时散点仍显示单点。
 
 ### 用 eval 前缀收窄默认报告
 
-eval id 前缀不是另一套视图——它只是把当前 Scope 收窄到匹配的评估用例，渲染的仍是和裸 `niceeval show` 同一份默认报告：散点图、固定列汇总，再按 experiment → 评估用例 → Attempt 展开，只是这里的评估用例只剩下匹配前缀的那些。同一个评估用例的多次 Attempt 全部按顺序逐条列出，不做「默认展开某一次」的取舍：
+eval id 前缀不是另一套视图——它只是把当前 Sample 收窄到匹配的评估用例，渲染的仍是和裸 `niceeval show` 同一份默认报告：散点图、固定列汇总，再按 experiment → 评估用例 → Attempt 展开，只是这里的评估用例只剩下匹配前缀的那些。同一个评估用例的多次 Attempt 全部按顺序逐条列出，不做「默认展开某一次」的取舍：
 
 ```text
 $ niceeval show weather/brooklyn
@@ -599,7 +599,7 @@ npx niceeval view
   失败后立刻运行 `npx niceeval view`，可以直接打开刚刚那次运行的 artifacts。
 </Tip>
 
-`view` 的首页直接显示当前 Scope 的摘要、成本 × 端到端成功率散点图与实验表。传 `--report` 就换成自己的报告。Attempt 详情里的 transcript、时间树、trace 与 diff 始终可用。
+`view` 的首页直接显示当前 Sample 的摘要、成本 × 端到端成功率散点图与实验表。传 `--report` 就换成自己的报告。Attempt 详情里的 transcript、时间树、trace 与 diff 始终可用。
 
 网页版可以排序实验表、筛行、展开 experiment、悬停散点看数值；这些操作不改判定口径。
 
@@ -633,7 +633,7 @@ npx niceeval view weather --out site                # 只发布 weather 开头�
 - `o11y.json` 不会被复制——报告数字已经算进页面，查看器不读取它。
 - 用 `file://` 直接打开 `index.html` 时浏览器不允许 fetch artifact，代码视图会提示源码不可用。本地预览用 http 服务打开。
 
-最短流程是在运行评估用例的机器上导出并直接部署产物目录。要让站点随 push 自动更新，先用 `copySnapshots` 生成经过单文件预算检查的发布结果根并提交到仓库，再让 CI 对该目录运行 `view --results <目录> --out`。Workflow 与托管平台配置见[通过 CI 发布报告](/zh/tutorials/publish-report)。
+最短流程是在运行评估用例的机器上导出并直接部署产物目录。要让站点随 push 自动更新，先用 `publish` 生成经过单文件预算检查的发布记录根并提交到仓库，再让 CI 对该目录运行 `view --record <目录> --out`。Workflow 与托管平台配置见[通过 CI 发布报告](/zh/tutorials/publish-report)。
 
 ## Artifact 说明
 

@@ -4,7 +4,7 @@ sidebarTitle: "Built-in Agent Capabilities"
 description: "Which capabilities NiceEval's built-in claude-code, codex, and bub adapters implement, which assertions they map to, and known limits."
 ---
 
-The three built-in sandbox agents (`claude-code`, `codex`, `bub`) do not implement exactly the same capabilities — capabilities have no declaration layer and are proven entirely by construction and actual behavior, see the [capabilities reference](/reference/capabilities). This page inventories what each built-in agent does per capability, plus two built-ins for connecting AI SDK apps: the non-invasive HTTP adapter `uiMessageStreamAgent` (with HITL) and the result converter `fromAiSdk`.
+The three built-in sandbox agents (`claude-code`, `codex`, `bub`) do not implement exactly the same capabilities — capabilities have no declaration layer and are proven entirely by construction and actual behavior, see the [capabilities reference](/reference/capabilities). This page inventories what each built-in agent does per capability, plus two built-ins for connecting AI SDK apps: the non-invasive HTTP adapter `uiMessageStreamAgent` (with HITL) and the result converter `turnFromAiSdk`.
 
 ## Capability overview
 
@@ -394,39 +394,39 @@ The span-normalizing function when the app has OTel (for the waterfall); the eve
 
 {/* GENERATED:END ui-message-stream-options */}
 
-## OpenAI-compatible response converters: `fromChatCompletion` / `fromResponses`
+## OpenAI-compatible response converters: `turnFromChatCompletion` / `turnFromResponses`
 
-`fromChatCompletion(res)` / `fromResponses(res)` (exported from `niceeval/adapter`) map OpenAI's two response shapes — Chat Completions and Responses — from the whole response into a `Turn` with zero manual mapping: this is not limited to the official OpenAI API — any service that claims compatibility with either protocol shape works.
+`turnFromChatCompletion(res)` / `turnFromResponses(res)` (exported from `niceeval/adapter`) map OpenAI's two response shapes — Chat Completions and Responses — from the whole response into a `Turn` with zero manual mapping: this is not limited to the official OpenAI API — any service that claims compatibility with either protocol shape works.
 
 ```ts
-import { fromChatCompletion } from "niceeval/adapter";
+import { turnFromChatCompletion } from "niceeval/adapter";
 
 export default defineAgent({
   name: "my-openai-compat-agent",
   async send(input) {
     const res = await client.chat.completions.create({ messages: [...], tools });
-    return fromChatCompletion(res);
+    return turnFromChatCompletion(res);
   },
 });
 ```
 
 The two shapes differ in how trustworthy negative assertions (`notCalledTool` and friends) are: Chat Completions does not guarantee "response = complete process" (the app may run the whole tool loop server-side and only hand you the final answer), so a negative assertion can only mean "not observed," not "did not happen"; the Responses protocol's contract guarantees the `output` array records everything the model decided to do this turn (including every `function_call`), so negative assertions there are trustworthy. The `Turn` shape the two converters produce is identical — this difference only affects how you interpret negative assertions.
 
-## SDK event stream converters: `fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents`
+## SDK event stream converters: `createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`
 
 Each agent SDK's streaming protocol is a generic protocol defined by the SDK, not some app's private format — the native-frame-to-standard-event mapping knowledge lives in the official package (exported from `niceeval/adapter`), so when writing your own non-invasive adapter only the **transport glue** remains (which endpoint the app puts the stream on, which endpoint approvals go through). Driving the loop frame by frame is itself an official piece (`driveFrameStream`, see the next section), so no hand-written `for` loop:
 
 ```ts
-import { sseJsonFrames, fromClaudeSdkMessages, driveFrameStream } from "niceeval/adapter";
+import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 
 const frames = sseJsonFrames<SDKMessage>(res.body);   // Standard SSE → per-frame JSON
-const stream = fromClaudeSdkMessages();               // SDKMessage → standard events
+const stream = createClaudeSdkEventStream();               // SDKMessage → standard events
 return driveFrameStream(frames, stream, ctx);         // Feed stream.add() frame by frame, summarize into a Turn
 ```
 
-- **`fromClaudeSdkMessages`** (Claude Agent SDK `SDKMessage`): `assistant` text/tool_use blocks, `user` tool_result blocks, `system`/`permission_denied` (→ `rejected`), `result` usage; `markRejected()` registers denied calls.
-- **`fromPiAgentEvents`** (pi-agent-core `AgentEvent`): text/thinking/usage from `message_end`, tool pairs from `tool_execution_start/end`.
-- **`fromCodexThreadEvents`** (Codex SDK `ThreadEvent`): message-class frames from `agent_message`/`reasoning`, tool items (`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → `action.called` + `action.result`), usage from `turn.completed`, error frames. The waterfall needs the codex CLI's native OTLP (the `[otel]` block in config.toml) sending spans to [NiceEval](https://niceeval.com/), normalized with the official `mapCodexSpans`.
+- **`createClaudeSdkEventStream`** (Claude Agent SDK `SDKMessage`): `assistant` text/tool_use blocks, `user` tool_result blocks, `system`/`permission_denied` (→ `rejected`), `result` usage; `markRejected()` registers denied calls.
+- **`createPiAgentEventStream`** (pi-agent-core `AgentEvent`): text/thinking/usage from `message_end`, tool pairs from `tool_execution_start/end`.
+- **`createCodexThreadEventStream`** (Codex SDK `ThreadEvent`): message-class frames from `agent_message`/`reasoning`, tool items (`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → `action.called` + `action.result`), usage from `turn.completed`, error frames. The waterfall needs the codex CLI's native OTLP (the `[otel]` block in config.toml) sending spans to [NiceEval](https://niceeval.com/), normalized with the official `mapCodexSpans`.
 
 Runnable references: the claude-sdk / pi-sdk / codex-sdk adapters under [`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) are exactly these three converters + `driveFrameStream` + transport glue.
 
@@ -460,18 +460,18 @@ return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
 
 The three Tier 1 examples (claude-sdk and pi-sdk use `driveFrameStream` + `ctx.session.hold`/`take`; codex-sdk uses only `driveFrameStream`) have been rewritten on these pieces — the adapters are down to transport plus the "does this frame need extra handling" decision in `onFrame`, with no hand-written loops or module-level Maps.
 
-## `fromAiSdk`: AI SDK result → event stream converter
+## `turnFromAiSdk`: AI SDK result → event stream converter
 
-`fromAiSdk` (exported from `niceeval/adapter`) is used inside adapters you write yourself (e.g. server-side direct construction for an HTTP web agent, see `examples/zh/ai-sdk/`). It maps an AI SDK `generateText` / `streamText` result into `{ events, usage, status }` — exact `toolCallId` pairing, order-faithful, `tool-error` mapped to a failed `action.result`, usage aggregation (v4 / v5 / v7 field drift all covered) — laid straight into the `Turn`:
+`turnFromAiSdk` (exported from `niceeval/adapter`) is used inside adapters you write yourself (e.g. server-side direct construction for an HTTP web agent, see `examples/zh/ai-sdk/`). It maps an AI SDK `generateText` / `streamText` result into `{ events, usage, status }` — exact `toolCallId` pairing, order-faithful, `tool-error` mapped to a failed `action.result`, usage aggregation (v4 / v5 / v7 field drift all covered) — laid straight into the `Turn`:
 
 ```ts
-import { defineAgent, fromAiSdk } from "niceeval/adapter";
+import { defineAgent, turnFromAiSdk } from "niceeval/adapter";
 
 export default defineAgent({
   name: "my-ai-sdk-agent",
   async send(input) {
     const result = await generateText({ model, tools, prompt: input.text });
-    return { ...fromAiSdk(result), data: result.text };
+    return { ...turnFromAiSdk(result), data: result.text };
   },
 });
 ```

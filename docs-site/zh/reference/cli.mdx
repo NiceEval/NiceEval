@@ -80,7 +80,7 @@ npx niceeval exp models weather
 |---|---|---|
 | `--agent` | string | experiment 运行不支持该 flag。要换 agent,请在 `experiments/` 下新增或复制一个配置文件。 |
 | `--model` | string | experiment 运行不支持该 flag。要换模型,请新增或复制一个 experiment 文件并修改 `model`。 |
-| `--runs` | number | 每个 eval 运行多少次,常用于 pass@N。 |
+| `--attempts` | number | 每个 eval 运行多少次,常用于 pass@N。 |
 | `--max-concurrency` | number | 设置同时运行的 eval 数量。 |
 | `--timeout` | number | 单个 attempt 的超时时间,单位毫秒。 |
 | `--budget` | number | 整次运行的预算上限(美元)。 |
@@ -105,14 +105,17 @@ npx niceeval exp models weather
 | `--usage` | boolean | `show` 命令专用:范围内逐 attempt 的用量表(`UsageTable` 装配)——判定、轮数、工具调用数、token 拆分与成本;多个 experiment 时逐 experiment 分节、节尾各自合计,缺失字段显示 `—` 且不计入合计。`@<locator>` 范围下退化成该 attempt 的单行表。 |
 | `--stats` | boolean | `show` 命令专用:eval × experiment 的稳定性矩阵(`StabilityMatrix` 装配)——每格是该组合全部历史执行(跨快照去重、不设可比性门槛)的判定计数,回答「哪些题从来没通过过」;与 `@<locator>`、`--report` 互斥。 |
 | `--exp` | string | `show` / `view` 命令专用:按路径段前缀收窄 experiment(与 `niceeval exp` 位置参数同一套匹配);目录路径会选中其下全部配置。可重复;出现两次以上进入对照语义——每次出现必须恰好解析到一个 experiment,顺序即对照条件顺序、首个是基准,`@<locator>` 与重复 `--exp` 互斥。`view --out` 时同一收窄决定出站内容。 |
-| `--results` | string | `show` / `view` / `sandbox enter\|list\|stop` 共用:结果根目录(`.niceeval` 之外的另一个根,如 `copySnapshots` 产出的发布根)。 |
-| `--snapshot` | string | `view` 命令专用:只打开这一份快照文件(`snapshot.json`);文件不可读时命令失败(扫描模式只跳过)。 |
+| `--record` | string | `show` / `view` / `sandbox enter\|list\|stop` 共用:记录根目录(`.niceeval` 之外的另一个根,如 `publish` 产出的发布根)。 |
+| `--run` | string | `view` 命令专用:只打开这一份快照文件(`run.json`);文件不可读时命令失败(扫描模式只跳过)。 |
 | `--report` | string | `show` / `view` 命令专用:用文件默认导出的 `defineReport(...)` 替换两者共用的默认报告。 |
+| `--theme` | string | `view` 命令专用:内建主题名或显式主题文件路径。 |
 | `--page` | string | `show` / `view` 命令专用:选择报告的初始页;`show` 渲染该页并在尾部附其余页索引,`view` 以它作初始路由。未命中的页 id 按用法错误退出并列出可用页 id。 |
 | `--fresh` | boolean | `show` / `view` 命令专用:只统计新执行的 attempt(排除携带条目与跨快照拼入的历史执行);被排除的题按覆盖事实转为覆盖占位行,不静默消失。 |
 | `--teardown` | boolean | `exp` 命令专用:补齐被强杀打断的实验级 teardown——只对选中的实验各执行一次 teardown(新进程语义),不派发 attempt、不跑 setup;没有遗留登记也照常执行。与 eval 前缀位置参数组合是用法错误。 |
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
 | `--force` | boolean | 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 |
+| `--rerun` | boolean | `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 |
+| `--carry-ignoring-flag` | string | `exp` 命令专用:一次性忽略已从 flags 迁走的键,可重复。 |
 | `--strict` | boolean | CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 |
 | `--early-exit` / `--no-early-exit` | boolean | 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`runs` 默认跑满、测完整通过率)。 |
 | `--open` / `--no-open` | boolean | `view` 命令专用:启动后自动打开浏览器(默认行为)。 |
@@ -163,7 +166,7 @@ npx niceeval exp compare --strict --junit .niceeval/junit.xml
 npx niceeval view
 ```
 
-打开本地结果查看器。它和 `show` 共用同一份默认报告和同一套默认选择——对每个 experiment、每个评估用例，取历次运行里最新的判定；每个 experiment 的集合来自快照 `selectedEvalIds`。默认报告直接比较当前 Scope。评估用例 ID 前缀、`--exp`、`--results` 对两者的收窄一致。
+打开本地记录查看器。它和 `show` 共用同一份默认报告和同一套默认选择——对每个 experiment、每个评估用例，取历次运行里最新的判定；每个 experiment 的集合来自 Run `selectedEvalIds`。默认报告直接比较当前 Sample。评估用例 ID 前缀、`--exp`、`--record` 对两者的收窄一致。
 
 ## `show [id-prefix...]`
 
@@ -180,7 +183,7 @@ npx niceeval show weather/brooklyn --history
 
 `show` 是终端结果入口，适合人直接阅读，也适合 coding agent 在上下文窗口里逐级下钻。位置参数选「看哪些评估用例」（ID 前缀）或直接用 `@<locator>` 精确选一个 attempt；不带位置参数时直接比较当前 Scope，`--exp` 按 experiment id 路径收窄。
 
-`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）；`--source`、`--execution`、`--timing`、`--diff` 是证据切面，各自接受任意范围，不限于单个 `@<locator>`——范围含多个 attempt 时按 experiment id、eval id、attempt 序逐 attempt 分节。`--results <目录>` 指定结果根，`--history` 查看跨 run 趋势。`--exp` 可重复：出现一次收窄范围，两次以上进入对照语义（每个 `--exp` 必须恰好解析到一个 experiment，顺序即对照条件顺序）。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
+`@<locator>` 不带证据 flag 时给出该 attempt 的紧凑全景（断言摘要、执行摘要、可选 OTel 时间、diff 摘要）；`--source`、`--execution`、`--timing`、`--diff` 是证据切面，各自接受任意范围，不限于单个 `@<locator>`——范围含多个 attempt 时按 experiment id、eval id、attempt 序逐 attempt 分节。`--record <目录>` 指定记录根，`--history` 查看跨 Run 趋势。`--exp` 可重复：出现一次收窄范围，两次以上进入对照语义（每个 `--exp` 必须恰好解析到一个 experiment，顺序即对照条件顺序）。完整的阅读顺序、输出示例和 artifact 说明见[查看结果](/zh/tutorials/viewing-results)。
 
 `--execution` 的卡片正文是有界预览：每个内容段（消息正文；工具卡的 input 与 result 各算一段）最多显示前 3 行，每段另有 1 KiB（UTF-8 字节）兜底防单行超长。有折叠的卡片在卡尾报被折的行数与字符数，并自带该卡片的展开句柄，整行就是可复制的完整命令：
 

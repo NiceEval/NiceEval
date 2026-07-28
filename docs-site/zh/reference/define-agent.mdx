@@ -251,7 +251,7 @@ readonly reasoningEffort?: string;
 #### `flags`
 
 ```ts
-readonly flags: Readonly<Record<string, unknown>>;
+readonly flags: Readonly<globalThis.Record<string, unknown>>;
 ```
 
 experiment 的 `flags` 字段原样透传,内容和结构完全由 experiment 作者自定义
@@ -397,7 +397,7 @@ fileExists(path: string): Promise<boolean>;
 #### `writeFiles`
 
 ```ts
-writeFiles(files: Record<string, string>, targetDir?: string): Promise<void>;
+writeFiles(files: globalThis.Record<string, string>, targetDir?: string): Promise<void>;
 ```
 
 写入若干文本文件(内容已在内存里的字符串);是 `uploadFiles` 的文本特化,省略 `targetDir` 落到 workdir。
@@ -488,7 +488,7 @@ downloadDirectory(localDir: string, targetDir?: string, opts?: { ignore?: string
 #### `env`
 
 ```ts
-env?: Record<string, string>;
+env?: globalThis.Record<string, string>;
 ```
 
 追加/覆盖本命令的环境变量(与 Sandbox 默认环境叠加,不清空默认值;各 provider 会保留自己固定的 `PATH` 等变量,不保证能被这里覆盖)。

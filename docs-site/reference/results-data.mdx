@@ -1,10 +1,10 @@
 ---
-title: "Read and write results data directly with niceeval/results"
+title: "Read and write record data directly with niceeval/record"
 sidebarTitle: "Results Data API"
-description: "The data layer underneath the report building blocks: openResults parses the on-disk artifacts under .niceeval/ into a typed experiment → snapshot → eval → attempt hierarchy, createResultsWriter writes other harnesses' results into NiceEval's format, and copySnapshots handles publish-time slimming."
+description: "The data layer underneath report building blocks: openRecord parses on-disk artifacts into a typed experiment → Run → eval → Attempt hierarchy, createWriter writes other harnesses' records into NiceEval's format, and publish prepares a publication root."
 ---
 
-Underneath the building blocks in [Custom Reports](/tutorials/custom-reports) — metrics, compute functions, dual-render components — sits one more layer: `niceeval/results`, the parser for on-disk artifacts. Both official doors and every report building block read from this layer, with no private data channel; when a scoring need cannot even be expressed as a compute function, drop to this layer and grab the data directly.
+Underneath the building blocks in [Custom Reports](/tutorials/custom-reports) — measures, compute functions, dual-render components — sits one more layer: `niceeval/record`, the reader for on-disk artifacts. Both official doors and every report building block read from this layer, with no private data channel; when a scoring need cannot even be expressed as a compute function, drop to this layer and grab the data directly.
 
 When to drop to this layer:
 
@@ -14,14 +14,14 @@ When to drop to this layer:
 
 This layer only handles reading and writing data; it holds no opinion of its own: no merging, no aggregating, no deduplicating — it faithfully reflects the disk. "How to view it" belongs to the report building blocks above it.
 
-## Reading: `openResults`
+## Reading: `openRecord`
 
 The input is a `.niceeval/` directory (or a results root produced by `copySnapshots`, the same layout); the output is four layers of data: **experiment → snapshot (one run of an experiment) → eval → attempt**. From here on you never touch a path, never check file existence, never parse JSON:
 
 ```typescript
-import { openResults } from "niceeval/results";
+import { openRecord } from "niceeval/record";
 
-const results = await openResults(".niceeval");
+const record = await openRecord(".niceeval");
 
 results.experiments;           // Experiment[]: one entry per experiment, carrying its full history
 results.skipped;               // Unreadable data on disk: { dir, reason, schemaVersion?, producer? }[]
@@ -173,9 +173,9 @@ Scope is the common input for both the [report building blocks](/tutorials/custo
 "The distribution of shell-command counts per agent" cannot be drawn as a table — that is a distribution, not a folding. Traverse directly:
 
 ```typescript
-import { openResults } from "niceeval/results";
+import { openRecord } from "niceeval/record";
 
-const results = await openResults(".niceeval");
+const record = await openRecord(".niceeval");
 const points = [];
 for (const exp of results.experiments) {
   for (const attempt of exp.latest.attempts) {
@@ -195,7 +195,7 @@ Even on this deepest path, the disk layout is never touched: path joining, exist
 One obligation when accumulating across snapshots: by default, NiceEval carries results from the previous round that already have a determined verdict (passed / failed) and whose eval code and config are unchanged forward into the new snapshot (`--force` reruns everything), so the same attempt can end up existing in more than one stored result. A carried-over entry is not a hollow shell: it carries the original snapshot's `startedAt` (its identity anchor) and `artifactBase` (a relative path to the original snapshot's attempt directory), and lazy loading falls back through a candidate order — first this snapshot's own attempt directory, then the directory `artifactBase` points at (faithfully returning `null` if that original snapshot was cleaned up); `ref` points at the snapshot the entry was carried into. All four fields of the identity key `(experimentId, evalId, attempt, startedAt)` are present in the data — the first two are direct fields on the attempt, and the sequence number and `startedAt` are on `attempt.result`. The reader faithfully reflects this duplication; before aggregating across snapshots, deduplicate with `dedupeAttempts` by identity key, keeping the copy in the newest snapshot — the report building blocks' compute functions already do this internally, so remember to do the same pass in your own scripts:
 
 ```typescript
-import { dedupeAttempts } from "niceeval/results";
+import { dedupeAttempts } from "niceeval/record";
 
 const all = exp.snapshots.flatMap((s) => s.attempts);   // accumulate across snapshots: the full history
 const { attempts, warnings } = dedupeAttempts(all);      // duplicates merged in by resume are folded away
@@ -206,9 +206,9 @@ const { attempts, warnings } = dedupeAttempts(all);      // duplicates merged in
 The write side and the read side are two halves of the same set of types, and the signature itself proves the roundtrip: the reader's `attempt.result` is assembled from two parts — snapshot-level fields (experimentId / agent / model / startedAt / producer) come from one declaration in `writer.snapshot()`, and everything else is exactly the type of `writeAttempt`'s first argument; the second argument is the type of the handful of artifacts lazy loading can retrieve. "`writeAttempt`'s argument + `snapshot()`'s declaration = everything the reader reads back" is backed by the type merge — snapshot-level fields are not in the attempt argument's type, so there is no question of "whose value wins". Use it to convert results from another platform or a home-grown harness into NiceEval's format:
 
 ```typescript
-import { createResultsWriter } from "niceeval/results";
+import { createWriter } from "niceeval/record";
 
-const writer = createResultsWriter(".niceeval", {
+const writer = createWriter(".niceeval", {
   producer: { name: "my-harness", version: "1.0.0" },
 });
 
@@ -236,21 +236,22 @@ await writer.finish();                 // backfills completedAt on every snapsho
 Copy selected snapshots into a publish directory, format-aware — only the specified artifacts, only the selected attempts:
 
 ```typescript
-import { openResults, copySnapshots } from "niceeval/results";
+import { openRecord, publish } from "niceeval/record";
+import { latestRunSample } from "niceeval/sample";
 
-const results = await openResults(".niceeval");
-await copySnapshots(results.latest(), "site-data/run", {
+const record = await openRecord(".niceeval");
+await publish(latestRunSample(record), "site-data/run", {
   artifacts: ["sources", "events", "trace", "o11y"],   // diff is never truncated, and is not included by default;
 });                                                     // every file to be published also goes through a 50 MiB precheck;
                                                         // o11y is only a few KB — if your report uses metrics that read
                                                         // o11y (turns, for example), bring it along, or they render as "—"
 ```
 
-The first argument accepts a `Scope` or a hand-picked `Snapshot[]` — the same input convention as the report building blocks. The legal values for `artifacts` are `"events" | "trace" | "o11y" | "agentSetup" | "diff" | "sources"`; by default it carries the five kinds other than `diff`. It errors rather than silently overwriting when the target directory already exists and is non-empty — if a publish script needs to be idempotent, clear the target directory first yourself.
+The first argument accepts a `Sample` or hand-picked `Run[]` — the same input convention as the report building blocks. The legal values for `artifacts` are `"events" | "trace" | "o11y" | "agentSetup" | "diff" | "sources"`; by default it carries the five kinds other than `diff`. It errors rather than silently overwriting when the target directory already exists and is non-empty — if a publish script needs to be idempotent, clear the target directory first yourself.
 
 Before copying starts, NiceEval plans every target file and checks its serialized size. If any single file exceeds the fixed 50 MiB limit, the whole copy fails before the target directory is created, and the error lists the path, the actual size, and what to do about it. You can exclude that class of evidence from `artifacts`; if the oversized events / trace were left behind by an older version, rerun with the current version and then publish. This check covers both source code / diffs, which have no per-value truncation, and JSON whose individual values are all fine but whose total is too large — so you don't discover a Git host's single-file limit only at `git push` time.
 
-The size precheck only decides whether the whole copy succeeds or fails; it never deletes content out of the middle of an oversized file. Copying is faithful to the source: artifacts are copied byte-for-byte, never re-serialized or rewritten. The one thing automatically backfilled along the way is the **coverage fact at pick time**: the denominator of a coverage gap is an experiment's historical union, and a publish directory has no history — so every copied snapshot carries `knownEvalIds` (the union of evals known for that experiment at copy time), and the reader folds it into the computation of `exp.evalIds` (taking the union of local history and the value carried by the snapshot). Running `openResults().latest()` again on the publish directory recomputes the coverage gap through the same mechanism, without relying on the publisher's own account. The copied directory is a standard results directory — `niceeval view --results <dir>` views it directly; for wiring up the report site to update automatically on push, see [Publish a Report Through CI](/tutorials/publish-report).
+The size precheck only decides whether the whole copy succeeds or fails; it never deletes content out of the middle of an oversized file. Copying is faithful to the source: artifacts are copied byte-for-byte, never re-serialized or rewritten. Every copied Run carries `knownEvalIds`, so a reader can recompute coverage from the published record. The copied directory is a standard record directory — `niceeval view --record <dir>` views it directly; for wiring up the report site to update automatically on push, see [Publish a Report Through CI](/tutorials/publish-report).
 
 ## Layer overview
 
@@ -258,6 +259,6 @@ The size precheck only decides whether the whole copy succeeds or fails; it neve
 | --- | --- | --- |
 | The two official doors | `niceeval show` / `niceeval view` | View the official layout, zero code |
 | Report building blocks | [Custom Reports](/tutorials/custom-reports), [Report Components](/reference/report-components) | Your own scoring and layout |
-| Results Data API (this page) | `niceeval/results` | Algorithms folding can't express, feeding your own systems, reading and writing the format itself |
+| Record Data API (this page) | `niceeval/record` | Algorithms folding can't express, feeding your own systems, reading and writing the format itself |
 
 Each layer is built on the one beneath it, and the same on-disk artifacts are the single source of truth — derived output at higher layers can be deleted and recomputed at any time.

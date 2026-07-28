@@ -69,7 +69,7 @@ Sandbox creation, setup, and teardown errors don't depend on a trace. `result.js
 
 Running the same experiment more than once leaves multiple results behind. The default view — without an `@<locator>` — shows the latest verdict for each experiment × eval pair, and may compose results across multiple runs of the same experiment. When a prefix rerun only touches part of the evals, the rest of the evals' verdicts are backfilled from earlier runs. Every verdict carries the time it was produced, so you can tell where a composed result came from. A composed result can mix different versions of the system under test, so treat a `--force` full rerun as the final word.
 
-When narrowing by eval id prefix, every attempt of a matching eval is listed in order — there's no default expansion of just one of them. To look at one specific attempt, copy that row's `@<locator>` and `show` it directly. `--exp compare` narrows the selection by path-segment prefix to the whole `compare` group, `--exp compare/bub` keeps just one experiment; `--results <dir>` swaps the results root, `--snapshot <snapshot.json>` looks at one specific stored snapshot, and `--history` shows the cross-run trend. `--report <file>` replaces the default report for both `show` and `view`. Positional prefixes, `--results`, and `--exp` all apply to custom reports too; `--history` and `--report` are mutually exclusive.
+When narrowing by eval id prefix, every attempt of a matching eval is listed in order — there's no default expansion of just one of them. To look at one specific attempt, copy that row's `@<locator>` and `show` it directly. `--exp compare` narrows the sample by path-segment prefix to the whole `compare` group, `--exp compare/bub` keeps just one experiment; `--record <dir>` swaps the record root, `--run <run.json>` opens one specific stored Run, and `--history` shows the cross-run trend. `--report <file>` replaces the default report for both `show` and `view`. Positional prefixes, `--record`, and `--exp` all apply to custom reports too; `--history` and `--report` are mutually exclusive.
 
 Every view in `niceeval view` has a terminal equivalent:
 
@@ -82,7 +82,7 @@ Every view in `niceeval view` has a terminal equivalent:
 | The AI's conversation, thinking, skill loads, and tool calls (with timing when OTel is available) | `niceeval show @<locator> --execution` |
 | One attempt's phase-by-phase timing breakdown | `niceeval show @<locator> --timing`; audit node by node with `--timing=full` |
 | File changes | `niceeval show @<locator> --diff` |
-| Historical run list | `niceeval show <eval id> --history`; pin a specific one with `view --snapshot <snapshot.json>`, or copy that row's `@<locator>` and `show` it directly |
+| Historical Run list | `niceeval show <eval id> --history`; pin a specific one with `view --run <run.json>`, or copy that row's `@<locator>` and `show` it directly |
 
 ### Default grouped comparison report
 
@@ -355,7 +355,7 @@ compare/codex-gpt-5.4 · 5 runs · passed 2/5
   2026-07-07T16-40   ✗ failed   3 attempts   $0.05   calledTool("get_weather") · received 0 tool calls
 ```
 
-Alternating ✓✗ means the eval is flaky, and the fix is stability — the system under test or the assertion — not repeated reruns hoping for luck. A run of green flipping to red marks where a regression landed; use `view --snapshot <snapshot.json>` to pin the runs right before and after that point and inspect them closely. The timeline only lists real executions — a cached result is a copy of a past verdict, not a new data point, and does not get a row, or the trend would be flooded with duplicate data. `niceeval show --history` without an eval ID gives the per-run pass-rate sequence for every experiment, the index's view of the same trend.
+Alternating ✓✗ means the eval is flaky, and the fix is stability — the system under test or the assertion — not repeated reruns hoping for luck. A run of green flipping to red marks where a regression landed; use `view --run <run.json>` to pin the runs right before and after that point and inspect them closely. The timeline only lists real executions — a cached result is a copy of a past verdict, not a new data point, and does not get a row, or the trend would be flooded with duplicate data. `niceeval show --history` without an eval ID gives the per-run pass-rate sequence for every experiment, the index's view of the same trend.
 
 There is no dedicated flag for an exact comparison between two runs. Write a custom comparison report using the `DeltaTable` component, then pass the file to `--report`; the terminal and the web render the same report. For how to write one, see [Custom Reports](/tutorials/custom-reports).
 
@@ -593,7 +593,7 @@ Two limits:
 - `o11y.json` is not copied — the report's numbers are already baked into the page, and the viewer never reads it.
 - Opening `index.html` directly with `file://` prevents the browser from fetching artifacts, so the code view will say the source is unavailable. Use an HTTP server for local preview.
 
-The simplest flow is to export on the machine that ran the evals and deploy the output directory directly. To keep the site updating automatically on every push, first use `copySnapshots` to produce a published-results root that has passed the single-file budget check, commit it to the repo, then have CI run `view --results <dir> --out` against that directory — for the workflow and platform wiring, see [Publishing Reports via CI](/tutorials/publish-report).
+The simplest flow is to export on the machine that ran the evals and deploy the output directory directly. To keep the site updating automatically on every push, first use `publish` to produce a published record root that has passed the single-file budget check, commit it to the repo, then have CI run `view --record <dir> --out` against that directory — for the workflow and platform wiring, see [Publishing Reports via CI](/tutorials/publish-report).
 
 ## Artifact Reference
 

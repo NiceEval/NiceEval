@@ -163,8 +163,8 @@ When the system under test does not need an isolated workspace — an already-de
   });
   ```
 
-- **SDK event stream converters** (`fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents`): when hand-writing an adapter that connects to a service running the Claude Agent SDK / pi-agent-core / Codex SDK, the mapping from native frames to standard events is already done officially — you only need to write the transport glue, paired with `driveFrameStream` to drive it frame by frame.
-- **`fromAiSdk`**: a converter from AI SDK `generateText` / `streamText` results to the standard event stream, used when writing your own HTTP web-agent adapter.
+- **SDK event stream converters** (`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`): when hand-writing an adapter that connects to a service running the Claude Agent SDK / pi-agent-core / Codex SDK, the mapping from native frames to standard events is already done officially — you only need to write the transport glue, paired with `driveFrameStream` to drive it frame by frame.
+- **`turnFromAiSdk`**: a converter from AI SDK `generateText` / `streamText` results to the standard event stream, used when writing your own HTTP web-agent adapter.
 
 For the full parameters, capability tables, and example code for these adapters, see [Built-in agent capabilities reference](/reference/builtin-agents).
 

@@ -191,17 +191,17 @@ But you usually **do not have to write this loop**. When the response is a stand
 
 ```ts
     // …transport and session same as step two, omitted
-    return fromChatCompletion(res);            // ← the mapping above plus step three's usage, official edition
+    return turnFromChatCompletion(res);            // ← the mapping above plus step three's usage, official edition
 ```
 
 If the interface is not this shape, swap in the matching piece:
 
 | Interface response shape | Built-in piece | What you need to write |
 |---|---|---|
-| Chat Completions-shaped response | `fromChatCompletion(res)` | No mapping to hand-write |
-| Responses-shaped response | `fromResponses(res)` | No mapping to hand-write |
-| AI SDK `generateText`'s complete result | `fromAiSdk(result)` | No mapping to hand-write |
-| Streaming: SDK-native events passed through (one complete unit per frame) | `fromClaudeSdkMessages()` / `fromPiAgentEvents()` / `fromCodexThreadEvents()` | No mapping to hand-write |
+| Chat Completions-shaped response | `turnFromChatCompletion(res)` | No mapping to hand-write |
+| Responses-shaped response | `turnFromResponses(res)` | No mapping to hand-write |
+| AI SDK `generateText`'s complete result | `turnFromAiSdk(result)` | No mapping to hand-write |
+| Streaming: SDK-native events passed through (one complete unit per frame) | `createClaudeSdkEventStream()` / `createPiAgentEventStream()` / `createCodexThreadEventStream()` | No mapping to hand-write |
 | Streaming: the AI SDK's UI Message Stream (the `useChat` protocol) | `uiMessageStreamAgent()` | No `send` or event mapping to hand-write |
 | Streaming: token-by-token / argument-by-argument deltas | The protocol's official reducer; if there is none, `deltaStream({ toOps })` | One "frame type → operation" mapping table |
 | Final answer only | A few hand-written events | Start with one `message` (step one is this tier) |
@@ -217,7 +217,7 @@ Once normalized, whichever events you emit determine which family of assertions 
 | `input.requested` (together with status `"waiting"`) | `t.parked()`, `t.requireInputRequest()`, `t.respond()` (step five) |
 | `thinking` / `compaction` / `error` | The matching assertions and o11y counts |
 
-The Chat Completions response **does not guarantee a complete process record**. The app may finish the tool loop server-side and return only the final answer. Because of this, `fromChatCompletion`'s return carries no completeness proof: positive assertions like `calledTool` work, but negative assertions like `notCalledTool` will flag that the evidence is incomplete. The Responses protocol requires the `output` array to record the complete process, so `fromResponses`'s return carries a completeness proof and negative assertions are trustworthy. The difference in trustworthiness between the two comes from the interface contract.
+The Chat Completions response **does not guarantee a complete process record**. The app may finish the tool loop server-side and return only the final answer. Because of this, `turnFromChatCompletion`'s return carries no completeness proof: positive assertions like `calledTool` work, but negative assertions like `notCalledTool` will flag that the evidence is incomplete. The Responses protocol requires the `output` array to record the complete process, so `turnFromResponses`'s return carries a completeness proof and negative assertions are trustworthy. The difference in trustworthiness between the two comes from the interface contract.
 
 **This step unlocks**: the whole family of tool assertions — `t.calledTool()`, `t.toolOrder()`, `t.maxToolCalls()`, `t.noFailedActions()`, and more.
 
@@ -234,7 +234,7 @@ HITL almost always happens on streaming interfaces (pausing mid-stream), so this
 
 ```ts
 // agents/my-app.ts
-import { defineAgent, sseJsonFrames, fromPiAgentEvents, driveFrameStream } from "niceeval/adapter";
+import { defineAgent, sseJsonFrames, createPiAgentEventStream, driveFrameStream } from "niceeval/adapter";
 import type { AgentContext, PiAgentStream, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -279,7 +279,7 @@ export default defineAgent({
       }),
       signal: ctx.signal,
     });
-    return readStream(sseJsonFrames<Frame>(res.body!), ctx, fromPiAgentEvents());  // ← step four: official converter, zero mapping
+    return readStream(sseJsonFrames<Frame>(res.body!), ctx, createPiAgentEventStream());  // ← step four: official converter, zero mapping
   },
 });
 ```

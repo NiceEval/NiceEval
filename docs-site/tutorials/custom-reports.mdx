@@ -6,7 +6,7 @@ description: "Write a custom report — with defineReport, built-in report compo
 
 [Viewing Results](/tutorials/viewing-results) covers the terminal output of `niceeval show` and the web output of `niceeval view`. This tutorial uses that same results data to write custom reports — an exam scorecard, a lines-of-code table, a quality × cost chart.
 
-A report is a report file. `niceeval show` and `niceeval view` open the results and inject the data into the report function. Arrange the layout with the built-in components and `Row` / `Col`, then hand the file path to `--report` to render the same report in the terminal and on the web; once it settles, put it in the `report` field of `niceeval.config.ts` so a bare `show` / `view` renders your report by default (see [Set it as the project default](#set-it-as-the-project-default)). A custom report supports the same attempt evidence links, `--results` to specify a results root, and static export.
+A report is a report file. `niceeval show` and `niceeval view` open the record and inject a sample into the report function. Arrange the layout with the built-in components and `Row` / `Col`, then hand the file path to `--report` to render the same report in the terminal and on the web; once it settles, put it in the `report` field of `niceeval.config.ts` so a bare `show` / `view` renders your report by default (see [Set it as the project default](#set-it-as-the-project-default)). A custom report supports the same attempt evidence links, `--record` to specify a record root, and static export.
 
 ## The default report `show` and `view` render is also a report file
 
@@ -42,14 +42,14 @@ import { ExperimentComparison, Hero, ScopeWarnings } from "niceeval/report";
 Custom reports split into three levels:
 
 1. **Adjust the layout**: rearrange with the built-in components and `Row` / `Col`.
-2. **Change the scoring**: define your own metric with `defineMetric`; define your own grouping with a custom dimension and `flag()`.
+2. **Change the scoring**: define your own measure with `defineMeasure`; define your own grouping with a custom dimension and `flag()`.
 3. **Custom components**: for tables, use `<Table>` with your own columns; for other displays, use `defineComponent` to implement the web and terminal renders separately.
 
 ## Create a report file
 
 First, the one prerequisite: a report file is a `.tsx`, and the project writing it needs `react` installed (writing a custom component for the web face also needs `@types/react`), with `compilerOptions.jsx` set to `"react-jsx"` in tsconfig. Running `niceeval show` / `niceeval view` bare needs none of this — only writing your own report file does.
 
-Use `defineReport` to create a report. The host opens the results directory (including a results root specified with `--results`), picks the snapshots by the default policy, and injects the data into the report function. The report function is responsible for computing the data and composing components:
+Use `defineReport` to create a report. The host opens the record directory (including a record root specified with `--record`), picks a sample by the default policy, and injects it into the report function. The report function is responsible for computing the data and composing components:
 
 ```tsx
 // reports/exam.tsx —— one definition, shared by both the terminal and the web
@@ -75,13 +75,13 @@ niceeval show --report reports/exam.tsx    # Terminal: the same tree goes throug
 niceeval view --report reports/exam.tsx    # Web: renders the web face, attempt links land on the evidence page
 ```
 
-The injected context is just two things, both primitives of the [Results Data API](/reference/results-data) — the host has no private channel: `results` is exactly the return value of `openResults(".niceeval")` (experiments, historical snapshots, and attempt-level `diff()` / `trace()` all live on it); `selection` is the set of results the host already picked for you. The picking rule is: for every experiment and every eval, take the latest verdict from that experiment's run history — if you reran only part of the evals by prefix, the remaining evals' verdicts are filled in from earlier runs, so one partial rerun never drops the whole thing back to a single incomplete snapshot. The default report consumes this same `selection`: the snapshots sit at `selection.snapshots`, and the picking warnings at `selection.warnings`. When the default pick doesn't match what you want, pick your own from `results` — a hand-picked `Snapshot[]` array can be fed to every component the same way.
+The injected context is the record and its selected sample — the host has no private channel. The record is exactly the return value of `openRecord(".niceeval")`; it holds experiments, historical Runs, and attempt-level `diff()` / `trace()`. The default sample takes the latest verdict for every experiment and eval, filling a partial rerun from earlier compatible Runs.
 
 A report file works with two shapes of data. An entity list's `.data(selection)` returns a plain array: `ExperimentListItem[]`, `EvalListItem[]`, `AttemptListItem[]`. The report author uses ordinary JavaScript `.filter()` / `.slice()` to decide which entities to show, then passes the array to the list as `items`; components hide no separate filter DSL of their own. Charts and summary components instead take a precomputed `data`, or bind their data in child tags (`<XAxis>` / `<Scatter>` / `<Column>`) and let the host compute it before rendering. Once a component holds its computed data, it only renders what it was handed — it never touches the results directory.
 
 The selection warnings component (`ScopeWarnings`) shows alerts for incomplete coverage, stale snapshots, unfinished runs, and snapshot read failures. Warnings are grouped by experiment: the group header lists the experiment name, issue tags, and a copyable rerun command; each raw message sits inside an expandable section. Every page of the default report includes this component. A custom report that needs to show warnings adds `<ScopeWarnings />` at the top of the page.
 
-Command-line scope acts on the picking step first, so the report gets a `selection` already narrowed to that scope: the positional eval id prefix narrows which evals the selection covers (the denominator of coverage warnings narrows along with it); `--results` swaps the results root for the directory you specify; `--exp` restricts the selection to just that one experiment. `--history` and `--report` are mutually exclusive — trends belong in a report you build yourself with `exp.snapshots`; evidence views (`--source` / `--execution` / `--diff`) only show evidence and never render a report.
+Command-line filters act on the picking step first: the positional eval id prefix narrows the sample; `--record` swaps the record root; `--exp` restricts the sample to one experiment. `--history` and `--report` are mutually exclusive — trends belong in a report you build yourself with `exp.runs`; evidence views (`--source` / `--execution` / `--diff`) only show evidence and never render a report.
 
 Every component on the page is **dual-render**: the web face is React rendering, the terminal face is character rendering, and both faces consume the same precomputed data. The entity lists show facts by experiment → Eval → Attempt; the metric table, matrix, bar chart, scoreboard, scatter plot, line chart, and delta table show aggregate values. The full list is in [Report Components](/reference/report-components). On the web face, entities, cells, and points deep-link to the attempt detail; on the terminal face they print the matching `niceeval show <eval id>` drill-down command.
 
@@ -191,11 +191,11 @@ The fixed diagnostic fields of an experiment, an Eval, and an Attempt are carrie
 // reports/golf.tsx —— code-golf: whoever writes working code in the fewest lines wins
 import {
   defineReport, Col, MetricTable,
-  defineMetric, endToEndPassRate, costUSD,
+  defineMeasure, passRate, costUSD,
 } from "niceeval/report";
 
 // A project's own scoring: only compares line counts of working code
-const codeLines = defineMetric({
+const codeLines = defineMeasure({
   name: "code-lines",
   label: "Code lines",
   better: "lower",
@@ -227,7 +227,7 @@ bub     87%         312 lines    $0.42
 codex   80%         355 lines    $0.51
 ```
 
-The final value in a cell is folded in **two levels**: multiple attempts of the same question first fold into a per-question value, which then folds across questions into a cell value, and both levels default to averaging. Splitting into two levels is not formalism — failed questions naturally have more attempts than passed ones (retries run to exhaustion, passes stop early), and a flat average would tangle the score together with the retry policy. Both levels can be swapped in `defineMetric`'s `aggregate`: `aggregate: { perEval: "max", across: "mean" }` is pass@k (best-of within a question, then percentage across questions).
+The final value in a cell is folded in **two levels**: multiple attempts of the same question first fold into a per-question value, which then folds across questions into a cell value, and both levels default to averaging. Both levels can be swapped in `defineMeasure`'s `aggregate`: `aggregate: { perEval: "max", acrossEvals: "mean" }` is pass@k.
 
 Both faces inherit the same honesty contract: sort direction follows the metric's `better`, an incompletely-covered cell carries a `12/15` badge (12 of 15 attempts had this metric measured), and missing data renders as `—` rather than `0`. A metric is defined only once and shared by both faces — the number a person sees on the web is exactly the number an agent reads on stdout, so the scoring policy is never ambiguous. The instruction for an agent grows by only one line too: run `niceeval show --report reports/golf.tsx`, read stdout.
 
@@ -343,7 +343,7 @@ Column widths are computed by **terminal display width**: one CJK character take
 
 ### Not a table: `defineComponent` plus the text layout functions
 
-`defineComponent` declares the two render faces, in the same family as `defineExperiment` / `defineMetric` / `defineReport`. The terminal face lays out its own characters, using this set of functions exported from `niceeval/report` — the same rulers the official components lay out with:
+`defineComponent` declares the two render faces, in the same family as `defineExperiment` / `defineMeasure` / `defineReport`. The terminal face lays out its own characters, using this set of functions exported from `niceeval/report` — the same rulers the official components lay out with:
 
 | Function | What it does |
 | --- | --- |

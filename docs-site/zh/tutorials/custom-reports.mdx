@@ -6,7 +6,7 @@ description: "用 defineReport、内置报告组件和双面组件编写一份�
 
 [查看结果](/zh/tutorials/viewing-results)介绍 `niceeval show` 的终端输出和 `niceeval view` 的网页输出。本教程用相同的结果数据编写考试成绩单、代码行数表和质量 × 成本图等自定义报告。
 
-一份报告对应一个报告文件：一棵由内置组件搭起来的树。`niceeval show` 和 `niceeval view` 打开结果、选出当前范围（Scope），交给这棵树渲染。把文件路径传给 `--report`，同一份定义在终端和网页都能渲染；写顺手了再把它填进 `niceeval.config.ts` 的 `report` 字段，裸跑 `show` / `view` 就默认是自己的报告（见[设成项目默认](#设成项目默认)）。自定义报告同样支持 Attempt 证据链接、`--results` 指定结果根和静态导出。
+一份报告对应一个报告文件：一棵由内置组件搭起来的树。`niceeval show` 和 `niceeval view` 打开记录、选出当前 Sample，交给这棵树渲染。把文件路径传给 `--report`，同一份定义在终端和网页都能渲染；写顺手了再把它填进 `niceeval.config.ts` 的 `report` 字段，裸跑 `show` / `view` 就默认是自己的报告（见[设成项目默认](#设成项目默认)）。自定义报告同样支持 Attempt 证据链接、`--record` 指定记录根和静态导出。
 
 ## show / view 的默认报告也是一份报告文件
 
@@ -44,14 +44,14 @@ import { ExperimentComparison } from "niceeval/report";
 自定义报告分为三个层次：
 
 1. **调整布局**：用内置组件和 `Row` / `Col` 重新排列版面，需要自己分组或过滤时写一个组合组件。
-2. **换口径**：`defineMetric` 定义自己的指标，`flag()` / `label()` / `runConfig()` 定义自己的分组和坐标轴。
+2. **换口径**：`defineMeasure` 定义自己的读数，`flag()` / `label()` / `runConfig()` 定义自己的分组和坐标轴。
 3. **自定义组件**：表格用 `<Table>` 自定义列，其它展示用 `defineComponent` 分别实现网页和终端渲染。
 
 ## 创建报告文件
 
 先交代唯一的前置：报告文件是 `.tsx`，写它的项目要装 `react`（写自定义组件的 web 面还要 `@types/react`），tsconfig 里 `compilerOptions.jsx` 设为 `"react-jsx"`。裸跑 `niceeval show` / `niceeval view` 不需要这些——只有自己写报告文件才需要。
 
-用 `defineReport` 声明一棵树。宿主打开结果目录(包括 `--results` 指定的结果根)，按默认规则选出当前 Scope,再把这份 Scope 交给树里每个组件——组件自己知道怎么从 Scope 取数,报告文件不需要手工传参:
+用 `defineReport` 声明一棵树。宿主打开记录目录(包括 `--record` 指定的记录根)，按默认规则选出当前 Sample,再把这份 Sample 交给树里每个组件——组件自己知道怎么从 Sample 取数,报告文件不需要手工传参:
 
 ```tsx
 // reports/exam.tsx —— 终端和网页共用一份定义
@@ -79,7 +79,7 @@ niceeval show --report reports/exam.tsx    # 终端：同一棵树走文本面
 niceeval view --report reports/exam.tsx    # 网页：渲染网页面，Attempt 链接进入证据页
 ```
 
-`ExperimentComparison`、`Scoreboard` 这类组件省略 `input` 时都默认吃宿主选出的当前 Scope——不用在报告文件里手工取数再喂给它们。Scope 的挑选规则是：对每个实验、每道评估用例，取该实验历史运行里最新的那次判定；只按前缀重跑了一部分评估用例时，其余评估用例的判定从更早的运行补齐,不会因为一次局部重跑就整体退回某一份残缺快照。
+`SampleOverview`、`Scoreboard` 这类组件省略 `input` 时都默认吃宿主选出的当前 Sample——不用在报告文件里手工取数再喂给它们。Sample 的挑选规则是：对每个实验、每道评估用例，取该实验历史运行里最新的那次判定；只按前缀重跑了一部分评估用例时，其余评估用例的判定从更早的运行补齐,不会因为一次局部重跑就整体退回某一份残缺 Run。
 
 默认挑法不合口径,或者要按子集分别展示时,不能在报告树里直接写 JavaScript——树只负责声明,取数发生在组合组件里。用 `defineComponent` 写一个组合组件,函数体里能拿到 `ctx.scope`(当前 Scope)和 `ctx.results`(结果根的完整读取面,取历史快照用它),用普通 JavaScript 加工后再传给下游组件:
 
@@ -93,7 +93,7 @@ const ProdSummary = defineComponent((_props: {}, ctx) => (
 ));
 ```
 
-命令行的范围先作用在挑选上,组件拿到的就是收窄到这个范围后的 Scope:位置参数的评估用例 id 前缀收窄 Scope 覆盖的评估用例(覆盖缺口的分母同样收窄到范围内),`--results` 把结果根换成指定目录,`--exp` 让 Scope 只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `ctx.results` 自己组织;证据视图(`--source` / `--execution` / `--diff`)只看证据,不渲染报告。
+命令行的范围先作用在挑选上,组件拿到的就是收窄到这个范围后的 Sample:位置参数的评估用例 id 前缀收窄 Sample 覆盖的评估用例(覆盖缺口的分母同样收窄到范围内),`--record` 把记录根换成指定目录,`--exp` 让 Sample 只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `ctx.results` 自己组织;证据视图(`--source` / `--execution` / `--diff`)只看证据,不渲染报告。
 
 报告树里的组件有两种数据形态。像上面这样省略 `data`、直接传计算选项(`rows`、`columns`、`questions` 这类)是 spec 形态,组件自己在渲染前取数;需要先用 JavaScript 过滤或加工时,改用组件配套的 `xxxData(scope, options)` 函数手工取数,再把结果传给 `data` prop——两种写法产出完全相同,选哪种只看要不要在取数和渲染之间插入自己的逻辑。完整的双形态契约和每个组件的字段见[报告组件](/zh/reference/report-components)。
 
@@ -103,7 +103,7 @@ const ProdSummary = defineComponent((_props: {}, ctx) => (
 
 页面里的每个组件都是**双面**的:网页面是 React 渲染,终端面是字符渲染,两面吃同一份算好的数据。实体列表按 experiment → Eval → Attempt 展示事实;指标表、矩阵、柱状图、成绩单、散点图、趋势图和差异表展示聚合值。完整清单见[报告组件](/zh/reference/report-components)。网页面的实体、格子和点深链到 Attempt 详情,终端面印出对应的 `niceeval show <eval id>` 下钻命令。
 
-默认报告没有特权:它的四个页面全部由公开组件搭成。需要同样的当前 Scope 比较就写 `<ExperimentComparison />`;要子集就在报告里先 `filter`,或从 CLI 用 `--exp` 收窄。
+默认报告没有特权:它的四个页面全部由公开组件搭成。需要同样的当前 Sample 比较就写 `<SampleOverview />`;要子集就在报告里先 `filter`,或从 CLI 用 `--exp` 收窄。
 
 ## 设成项目默认
 
@@ -199,7 +199,7 @@ agents/codex/
 Pass rate 60% · 2 experiments · 6 evals · failed 1 · errored 1 · $1.50
 ```
 
-在分组块后面加散点图或 Experiment 列表时,把同一份收窄后的 Scope 当 `input` 传给它们,或者用 `await experimentListData(scoped)` 拿到可自行过滤的数组。需要按其它维度(不是路径前缀)分组比较,用下文的 `MetricTable` 加自定义维度更直接。
+在分组块后面加散点图或 Experiment 列表时,把同一份收窄后的 Sample 当 `input` 传给它们,或者用对应 Source 拿到可自行过滤的内容。需要按其它维度(不是路径前缀)分组比较,用下文的 `Table` 加自定义维度更直接。
 
 ## 换口径:自定义指标
 
@@ -208,10 +208,10 @@ Pass rate 60% · 2 experiments · 6 evals · failed 1 · errored 1 · $1.50
 ```tsx
 // reports/golf.tsx —— code-golf:只比通过方案的改动行数
 import {
-  MetricTable, costUSD, defineMetric, defineReport, endToEndPassRate,
+  Table, costUSD, defineMeasure, defineReport, passRate,
 } from "niceeval/report";
 
-const changedLines = defineMetric({
+const changedLines = defineMeasure({
   name: "changed-lines",
   label: { en: "Changed lines", "zh-CN": "改动行数" },
   unit: "lines",
@@ -242,7 +242,7 @@ bub     87%         312 lines       $0.42
 codex   80%         355 lines       $0.51
 ```
 
-格子里的终值是**两级折叠**出来的:同一道题的多个 attempt 先折成题级值(`perEval`),再跨题折成格子值(`acrossEvals`),两级默认都是平均。分两级不是形式主义——失败的题天然比通过的题 attempt 多(重试跑满、通过即停),平铺求均值会让分数和重试策略纠缠在一起。两级都能在 `defineMetric` 的 `aggregate` 里换:`aggregate: { perEval: "max", acrossEvals: "mean" }` 就是 pass@k(题内取最好一次,跨题取占比)。
+格子里的终值是**两级折叠**出来的:同一道题的多个 Attempt 先折成题级值(`perEval`),再跨题折成格子值(`acrossEvals`),两级默认都是平均。分两级不是形式主义——失败的题天然比通过的题 Attempt 多(重试跑满、通过即停),平铺求均值会让分数和重试策略纠缠在一起。两级都能在 `defineMeasure` 的 `aggregate` 里换:`aggregate: { perEval: "max", acrossEvals: "mean" }` 就是 pass@k(题内取最好一次,跨题取占比)。
 
 两个面继承同一套诚实契约:排序方向随指标的 `better`,覆盖不全的格子带 `12/15` 角标(15 个 attempt 里 12 个测得了该指标),缺数据渲染成 `—` 而不是 0。指标只定义一次,两个面共用——人在网页上看到的数字,就是 agent 在 stdout 里读到的数字,判断口径永远一致。给 agent 的指引也只多一行:跑 `niceeval show --report reports/golf.tsx`,读 stdout。
 
@@ -402,7 +402,7 @@ export default defineReport(
 
 ### 不是表:`defineComponent` 加文本排版函数
 
-`defineComponent` 声明两个渲染面,和 `defineExperiment` / `defineMetric` / `defineReport` 同一个家族。终端面要自己排字符,用 `niceeval/report` 导出的这组函数——官方组件排的就是这几把尺子:
+`defineComponent` 声明两个渲染面,和 `defineExperiment` / `defineMeasure` / `defineReport` 同一个家族。终端面要自己排字符,用 `niceeval/report` 导出的这组函数——官方组件排的就是这几把尺子:
 
 | 函数 | 用途 |
 | --- | --- |

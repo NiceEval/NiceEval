@@ -4,7 +4,7 @@ sidebarTitle: "内置 Agent 能力"
 description: "NiceEval 内置的 claude-code、codex、bub 适配器分别做到了哪些能力，对应哪些断言，以及已知限制。"
 ---
 
-内置的三个 sandbox agent（`claude-code`、`codex`、`bub`）做到的能力不完全相同——能力没有声明这一层，全由构造方式和实际行为证明，见[能力位参考](/zh/reference/capabilities)。这篇按能力盘点三个内置 agent 各自做到哪，以及两个接 AI SDK 应用的内置件：无侵入 HTTP adapter `uiMessageStreamAgent`（含 HITL）和结果转换器 `fromAiSdk`。
+内置的三个 sandbox agent（`claude-code`、`codex`、`bub`）做到的能力不完全相同——能力没有声明这一层，全由构造方式和实际行为证明，见[能力位参考](/zh/reference/capabilities)。这篇按能力盘点三个内置 agent 各自做到哪，以及两个接 AI SDK 应用的内置件：无侵入 HTTP adapter `uiMessageStreamAgent`（含 HITL）和结果转换器 `turnFromAiSdk`。
 
 ## 能力速览
 
@@ -362,7 +362,7 @@ url: string | ((ctx: AgentContext) => string | Promise<string>);
 #### `headers`
 
 ```ts
-headers?: Record<string, string> | ((ctx: AgentContext) => Record<string, string>);
+headers?: globalThis.Record<string, string> | ((ctx: AgentContext) => globalThis.Record<string, string>);
 ```
 
 附加请求头(鉴权等);`ctx.telemetry.headers`(traceparent)总会自动并入。
@@ -370,7 +370,7 @@ headers?: Record<string, string> | ((ctx: AgentContext) => Record<string, string
 #### `body`
 
 ```ts
-body?: (ctx: AgentContext) => Record<string, JsonValue | undefined>;
+body?: (ctx: AgentContext) => globalThis.Record<string, JsonValue | undefined>;
 ```
 
 除 `messages` 外并入请求体的字段,如 `(ctx) => ({ model: ctx.model })`(undefined 字段序列化时自动丢弃)。
@@ -410,39 +410,39 @@ spanMapper?: SpanMapper;
 
 {/* GENERATED:END ui-message-stream-options */}
 
-## OpenAI 兼容响应转换器：`fromChatCompletion` / `fromResponses`
+## OpenAI 兼容响应转换器：`turnFromChatCompletion` / `turnFromResponses`
 
-`fromChatCompletion(res)` / `fromResponses(res)`（`niceeval/adapter` 导出）把 OpenAI 的两种响应形状——Chat Completions 与 Responses——整段响应零映射转成 `Turn`：不限于 OpenAI 官方，任何声明兼容这两种协议形状的服务都能用。
+`turnFromChatCompletion(res)` / `turnFromResponses(res)`（`niceeval/adapter` 导出）把 OpenAI 的两种响应形状——Chat Completions 与 Responses——整段响应零映射转成 `Turn`：不限于 OpenAI 官方，任何声明兼容这两种协议形状的服务都能用。
 
 ```ts
-import { fromChatCompletion } from "niceeval/adapter";
+import { turnFromChatCompletion } from "niceeval/adapter";
 
 export default defineAgent({
   name: "my-openai-compat-agent",
   async send(input) {
     const res = await client.chat.completions.create({ messages: [...], tools });
-    return fromChatCompletion(res);
+    return turnFromChatCompletion(res);
   },
 });
 ```
 
 两种形状对负断言（`notCalledTool` 等）的可信度不同：Chat Completions 不承诺「响应 = 完整过程」（应用可能在服务端跑完工具循环，只把最终答案给你），负断言只能当「没看到」，不能当「确实没发生」；Responses 的协议契约里 `output` 数组记录了模型这一轮决定做的全部事（包括每个 `function_call`），负断言可信。两个转换器产出的 `Turn` 形状本身相同，这条差异只体现在你对负断言的解读上。
 
-## SDK 事件流转换器：`fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents`
+## SDK 事件流转换器：`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`
 
 各 agent SDK 的流式协议是 SDK 定义的通用协议，不是某个应用的私有格式——原生帧 → 标准事件的映射知识在官方包里（`niceeval/adapter` 导出），自己写无侵入 adapter 时只剩**传输粘合**（应用把流放在哪个端点、审批走什么端点）。逐帧驱动这个循环本身也是官方件（`driveFrameStream`，见下一节），不用手写 `for` 循环：
 
 ```ts
-import { sseJsonFrames, fromClaudeSdkMessages, driveFrameStream } from "niceeval/adapter";
+import { sseJsonFrames, createClaudeSdkEventStream, driveFrameStream } from "niceeval/adapter";
 
 const frames = sseJsonFrames<SDKMessage>(res.body);   // 标准 SSE → 逐帧 JSON
-const stream = fromClaudeSdkMessages();               // SDKMessage → 标准事件
+const stream = createClaudeSdkEventStream();               // SDKMessage → 标准事件
 return driveFrameStream(frames, stream, ctx);         // 逐帧喂 stream.add()，汇总成 Turn
 ```
 
-- **`fromClaudeSdkMessages`**（Claude Agent SDK `SDKMessage`）：`assistant` 的 text/tool_use 块、`user` 的 tool_result 块、`system`/`permission_denied`（→ `rejected`）、`result` 的 usage；`markRejected()` 登记被拒调用。
-- **`fromPiAgentEvents`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。
-- **`fromCodexThreadEvents`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类、工具项（`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → `action.called` + `action.result`）、`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
+- **`createClaudeSdkEventStream`**（Claude Agent SDK `SDKMessage`）：`assistant` 的 text/tool_use 块、`user` 的 tool_result 块、`system`/`permission_denied`（→ `rejected`）、`result` 的 usage；`markRejected()` 登记被拒调用。
+- **`createPiAgentEventStream`**（pi-agent-core `AgentEvent`）：`message_end` 的文本/thinking/usage、`tool_execution_start/end` 的工具对。
+- **`createCodexThreadEventStream`**（Codex SDK `ThreadEvent`）：`agent_message`/`reasoning` 的消息类、工具项（`command_execution` / `mcp_tool_call` / `file_change` / `web_search` → `action.called` + `action.result`）、`turn.completed` 的 usage、错误帧。瀑布图要 codex CLI 原生 OTLP（config.toml 的 `[otel]` 块）把 span 发给 [NiceEval](https://niceeval.com/)，配官方 `mapCodexSpans` 归一。
 
 可跑参考：[`examples/zh/tier1`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1) 下 claude-sdk / pi-sdk / codex-sdk 三个 adapter 就是这三个转换器 + `driveFrameStream` + 传输粘合。
 
@@ -476,18 +476,18 @@ return driveFrameStream(cursor, stream, ctx, (frame, derived) => {
 
 三个 Tier 1 示例（claude-sdk、pi-sdk 用 `driveFrameStream` + `ctx.session.hold`/`take`，codex-sdk 只用 `driveFrameStream`）已经用这套件重写，adapter 只剩 transport 与 `onFrame` 里"这一帧要不要额外处理"的判断，没有手写循环和模块级 Map。
 
-## `fromAiSdk`：AI SDK 结果 → 事件流转换器
+## `turnFromAiSdk`：AI SDK 结果 → 事件流转换器
 
-`fromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`——`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 `action.result`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
+`turnFromAiSdk`（`niceeval/adapter` 导出）在自己写的 adapter 里用（比如 HTTP web agent 的服务端直构，见 `examples/zh/ai-sdk/`）。它把 AI SDK 的 `generateText` / `streamText` 结果映射成 `{ events, usage, status }`——`toolCallId` 精确配对、时序保真、`tool-error` 映射成失败的 `action.result`、usage 聚合（v4 / v5 / v7 字段漂移都兜住）——直接铺进 `Turn`：
 
 ```ts
-import { defineAgent, fromAiSdk } from "niceeval/adapter";
+import { defineAgent, turnFromAiSdk } from "niceeval/adapter";
 
 export default defineAgent({
   name: "my-ai-sdk-agent",
   async send(input) {
     const result = await generateText({ model, tools, prompt: input.text });
-    return { ...fromAiSdk(result), data: result.text };
+    return { ...turnFromAiSdk(result), data: result.text };
   },
 });
 ```

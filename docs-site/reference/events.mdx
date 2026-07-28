@@ -237,7 +237,7 @@ Emit them when you have them; don't fabricate them when you don't. `compaction` 
 
 1. **Order is fact**: events are laid out in the order they actually happened. `toolOrder` / `eventOrder` match by subsequence, so a wrong order makes the assertion misleading.
 2. **Pair `callId`s**: every `called` event needs a `result` with the same id; missing half of the pair makes `calledTool(..., { status })` fail to match.
-3. **Completeness has no declaration layer — it is proven by the source**: with official converters (`fromClaudeSdkMessages`, `fromAiSdk`, etc.), the return value itself guarantees **every** tool call is in the stream; with manual mapping, completeness depends entirely on whether your mapping code covers everything. When only part of the stream is emitted, negative assertions like `notCalledTool` / `maxToolCalls` pass silently — with no error, which is harder to notice than an outright failure. Confirm your mapping code covers every tool call before relying on manual mapping — see the [capabilities reference](/reference/capabilities).
+3. **Completeness has no declaration layer — it is proven by the source**: with official converters (`createClaudeSdkEventStream`, `turnFromAiSdk`, etc.), the return value itself guarantees **every** tool call is in the stream; with manual mapping, completeness depends entirely on whether your mapping code covers everything. When only part of the stream is emitted, negative assertions like `notCalledTool` / `maxToolCalls` pass silently — with no error, which is harder to notice than an outright failure. Confirm your mapping code covers every tool call before relying on manual mapping — see the [capabilities reference](/reference/capabilities).
 
 ## A complete mapping example
 

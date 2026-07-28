@@ -15,9 +15,9 @@ Each of the five examples below keeps both the plain application before integrat
 | Subject under test | Integration path | Example coverage |
 | --- | --- | --- |
 | [AI SDK v7](/examples/integrations/ai-sdk-v7) | Built-in `uiMessageStreamAgent` | UI Message Stream, multi-turn, tools, HITL |
-| [Claude Agent SDK](/examples/integrations/claude-sdk) | `fromClaudeSdkMessages` | Native event stream, multi-turn, tools, HITL |
-| [Codex SDK](/examples/integrations/codex-sdk) | `fromCodexThreadEvents` | Coding tasks, files and commands, usage; the SDK doesn't support HITL |
-| [pi-agent-core](/examples/integrations/pi-sdk) | `fromPiAgentEvents` | Native event stream, multi-turn, tools, HITL; the SDK has no OTel |
+| [Claude Agent SDK](/examples/integrations/claude-sdk) | `createClaudeSdkEventStream` | Native event stream, multi-turn, tools, HITL |
+| [Codex SDK](/examples/integrations/codex-sdk) | `createCodexThreadEventStream` | Coding tasks, files and commands, usage; the SDK doesn't support HITL |
+| [pi-agent-core](/examples/integrations/pi-sdk) | `createPiAgentEventStream` | Native event stream, multi-turn, tools, HITL; the SDK has no OTel |
 | [LangGraph](/examples/integrations/langgraph) | Hand-written custom SSE frame mapping | Python application, multi-turn, tools, HITL |
 
 Every example's source lives under [`examples/zh/origin/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/origin) and [`examples/zh/tier1/`](https://github.com/CorrectRoadH/niceeval/tree/main/examples/zh/tier1). When you need OTel or Experiment Flags, follow the same project into `tier2/` and `tier3/`.

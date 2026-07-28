@@ -68,6 +68,14 @@ judge?: JudgeConfig;
 
 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。
 
+#### `configHash`
+
+```ts
+configHash?: string;
+```
+
+规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。
+
 #### `reporters`
 
 ```ts
@@ -87,7 +95,7 @@ timeoutMs?: number;
 #### `metadata`
 
 ```ts
-metadata?: Record<string, unknown>;
+metadata?: globalThis.Record<string, unknown>;
 ```
 
 任意附加元数据,原样透传进 EvalResult,不参与调度或打分;供自定义 reporter 消费。
@@ -260,7 +268,7 @@ readonly reasoningEffort?: string;
 #### `flags`
 
 ```ts
-readonly flags: Readonly<Record<string, unknown>>;
+readonly flags: Readonly<globalThis.Record<string, unknown>>;
 ```
 
 本次 attempt 生效的实验 flags(experiment.flags 的只读视图;实验条件,非命令行开关)。
@@ -297,7 +305,7 @@ log(msg: string): void;
 skip(reason: string): never;
 ```
 
-立即中止本评估用例并标记为 skipped(verdict / EvalResult.skipReason),reason 不能为空。
+立即中止本评估用例并标记为 unreadable(verdict / EvalResult.skipReason),reason 不能为空。
 
 #### `check`
 

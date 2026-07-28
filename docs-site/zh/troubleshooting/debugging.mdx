@@ -224,8 +224,8 @@ niceeval view
 **打开归档或别人发来的结果。** 结果目录是自包含的——从 CI 下载的、同事拷给你的、发布到静态站前生成的目录，都能直接指过去：
 
 ```bash
-niceeval show --results tmp/ci-artifacts/results
-niceeval view --results site-data/run
+niceeval show --record tmp/ci-artifacts/record
+niceeval view --record site-data/run
 ```
 
 一个注意点：如果本地清理过旧快照目录，之后的运行里「沿用上次结果」的条目会找不到原始证据（显示为缺失）。要长期归档某次运行，先用 [`copySnapshots`](/zh/reference/results-data) 复制出一份再删。

@@ -1,7 +1,7 @@
 ---
 title: "Publish a report through CI"
 sidebarTitle: "Publish via CI"
-description: "Commit a results directory that has passed the copySnapshots size precheck, and CI exports the report site with a single view --results. Oversized files produce an actionable error before you ever commit."
+description: "Commit a record directory that has passed the publish size precheck, and CI exports the report site with a single view --record. Oversized files produce an actionable error before you ever commit."
 ---
 
 `niceeval view --out <dir>` exports the viewer into a plain static directory: reports, snapshot lists, transcripts, and the trace waterfall, exactly like what local `niceeval view` shows (export behavior is covered in [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)). Publishing through CI only requires getting the result data into the build machine's hands — but do not commit the local source of truth `.niceeval/` directly: per-string truncation can stop one runaway output from ballooning, but it cannot guarantee a whole file stays under a Git host's limit. First use `copySnapshots` to produce a publish results root that has passed the 50 MiB per-file precheck, then commit that directory.
@@ -12,13 +12,14 @@ Create `scripts/publish-results.ts` (the project's evals and config are already 
 
 ```javascript
 import { rm } from "node:fs/promises";
-import { copySnapshots, openResults } from "niceeval/results";
+import { openRecord, publish } from "niceeval/record";
+import { latestRunSample } from "niceeval/sample";
 
 const output = "report-data";
-const results = await openResults(".niceeval");
+const record = await openRecord(".niceeval");
 
 await rm(output, { recursive: true, force: true });
-await copySnapshots(results.latest(), output, {
+await publish(latestRunSample(record), output, {
   artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
 });
 ```
@@ -28,13 +29,13 @@ Run `npx tsx scripts/publish-results.ts`, then commit `report-data/`. `copySnaps
 ## The build command is the export command
 
 ```bash
-npx niceeval view --results report-data --out site
+npx niceeval view --record report-data --out site
 ```
 
 To publish only a subset of experiments, hand the narrowing directly to the export command — the page and its evidence then contain only the narrowed scope (see [Viewing Results · Exporting and Static Hosting](/tutorials/viewing-results#exporting-and-static-hosting)):
 
 ```bash
-npx niceeval view --results report-data --exp compare --out site
+npx niceeval view --record report-data --exp compare --out site
 ```
 
 `view` fails outright with a non-zero exit code on zero readable results — it never exports an empty report. If the `report-data/` checkout is broken, or every stored snapshot is incompatible with the current niceeval's `schemaVersion` and gets skipped wholesale, the build fails and Vercel / GitHub Pages keeps the previous deployment. The error lists every skipped snapshot directory with its reason, and for the `schemaVersion` case also gives the `npx niceeval@<version> view` command that can view the old data directly.
@@ -44,7 +45,7 @@ npx niceeval view --results report-data --exp compare --out site
 Without `--report`, the published site is the default report's three pages (Report, Attempts, Traces). To switch to your own pages, pass a [`defineReport` report file](/tutorials/custom-reports) to `--report` — attempt detail (transcript, trace, code view) stays in the same site, and every number in the report drills into its corresponding evidence, exactly like local `view --report`:
 
 ```bash
-npx niceeval view --results report-data --report reports/exam.tsx --out site
+npx niceeval view --record report-data --report reports/exam.tsx --out site
 ```
 
 The report file is committed in the repo just like `report-data/` — edit the layout, push, and the live site updates. With the `vercel.json` / workflow below, just swap the build command for this one line; nothing else needs to change.
@@ -94,7 +95,7 @@ There are only a few rules:
 ```json
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --results report-data --out site",
+  "buildCommand": "npx niceeval view --record report-data --out site",
   "outputDirectory": "site"
 }
 ```
@@ -124,7 +125,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --results report-data --out site
+      - run: npx niceeval view --record report-data --out site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

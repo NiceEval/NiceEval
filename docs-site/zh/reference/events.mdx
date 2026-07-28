@@ -243,7 +243,7 @@ agent 停轮等人时，每个待回答的问题吐一条，同时该 Turn 的 `
 
 1. **时序即事实**：事件按真实发生顺序排。`toolOrder` / `eventOrder` 靠子序匹配，顺序错了断言就失真。
 2. **`callId` 配对**：每个 `called` 都要有同 id 的 `result`，缺一半会让 `calledTool(..., { status })` 匹配不上。
-3. **完整性没有声明层，由来源证明**：用官方转换器（`fromClaudeSdkMessages`、`fromAiSdk` 等）时，返回值本身保证**所有**工具调用都在流里；手工映射时完整与否完全取决于你的映射代码写没写全。只吐一部分时，`notCalledTool` / `maxToolCalls` 这类负断言会静默通过——没有报错，比失败更难发现。手工映射前确认自己的代码覆盖了全部工具调用，见[能力位参考](/zh/reference/capabilities)。
+3. **完整性没有声明层，由来源证明**：用官方转换器（`createClaudeSdkEventStream`、`turnFromAiSdk` 等）时，返回值本身保证**所有**工具调用都在流里；手工映射时完整与否完全取决于你的映射代码写没写全。只吐一部分时，`notCalledTool` / `maxToolCalls` 这类负断言会静默通过——没有报错，比失败更难发现。手工映射前确认自己的代码覆盖了全部工具调用，见[能力位参考](/zh/reference/capabilities)。
 
 ## 一个完整的映射示例
 

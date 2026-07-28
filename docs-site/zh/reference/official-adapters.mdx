@@ -163,8 +163,8 @@ export default defineExperiment({
   });
   ```
 
-- **SDK 事件流转换器**（`fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents`）：手写 adapter 连一个跑着 Claude Agent SDK / pi-agent-core / Codex SDK 的服务时，原生帧到标准事件的映射官方已经做好，只需要补传输粘合，配合 `driveFrameStream` 逐帧驱动。
-- **`fromAiSdk`**：AI SDK `generateText` / `streamText` 结果到标准事件流的转换器，写自己的 HTTP web agent adapter 时用。
+- **SDK 事件流转换器**（`createClaudeSdkEventStream` / `createPiAgentEventStream` / `createCodexThreadEventStream`）：手写 adapter 连一个跑着 Claude Agent SDK / pi-agent-core / Codex SDK 的服务时，原生帧到标准事件的映射官方已经做好，只需要补传输粘合，配合 `driveFrameStream` 逐帧驱动。
+- **`turnFromAiSdk`**：AI SDK `generateText` / `streamText` 结果到标准事件流的转换器，写自己的 HTTP web agent adapter 时用。
 
 这几个适配器的完整参数、能力表和示例代码，见[内置 Agent 能力参考](/zh/reference/builtin-agents)。
 

@@ -1,10 +1,10 @@
 ---
 title: "通过 CI 发布报告"
 sidebarTitle: "CI 发布报告"
-description: "把经过 copySnapshots 大小预检的结果目录提交进仓库,CI 用一行 view --results 导出报告站;超大文件在 commit 前就会得到可执行错误。"
+description: "把经过 publish 大小预检的记录目录提交进仓库,CI 用一行 view --record 导出报告站;超大文件在 commit 前就会得到可执行错误。"
 ---
 
-`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、结果快照列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管))。CI 发布只需要让结果数据到构建机手里，但不要直接提交本地事实根 `.niceeval/`：逐字符串截断能防一条失控输出膨胀，不能保证整个文件小于 Git host 的限制。先用 `copySnapshots` 生成经过 50 MiB 单文件预检的发布结果根，再提交这个目录。
+`niceeval view --out <目录>` 把查看器导出成一个纯静态目录:报告、Run 列表、transcript、trace 瀑布,和本地 `niceeval view` 看到的完全一样(导出行为见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管))。CI 发布只需要让记录数据到构建机手里，但不要直接提交本地事实根 `.niceeval/`：逐字符串截断能防一条失控输出膨胀，不能保证整个文件小于 Git host 的限制。先用 `publish` 生成经过 50 MiB 单文件预检的发布记录根，再提交这个目录。
 
 ## 生成可提交的结果目录
 
@@ -12,29 +12,30 @@ description: "把经过 copySnapshots 大小预检的结果目录提交进仓库
 
 ```javascript
 import { rm } from "node:fs/promises";
-import { copySnapshots, openResults } from "niceeval/results";
+import { openRecord, publish } from "niceeval/record";
+import { latestRunSample } from "niceeval/sample";
 
 const output = "report-data";
-const results = await openResults(".niceeval");
+const record = await openRecord(".niceeval");
 
 await rm(output, { recursive: true, force: true });
-await copySnapshots(results.latest(), output, {
+await publish(latestRunSample(record), output, {
   artifacts: ["sources", "events", "trace", "o11y", "agentSetup"],
 });
 ```
 
-运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`copySnapshots` 在创建目录前检查所有待发布文件；任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 缺省不发布；需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
+运行 `npx tsx scripts/publish-results.ts`，然后提交 `report-data/`。`publish` 在创建目录前检查所有待发布文件；任何文件超过 50 MiB 时整体失败并列出路径、大小和处理建议，不会留下半份目录。`diff` 缺省不发布；需要 diff 时显式加进 `artifacts`，它也受同一个预算约束。历史版本留下的超大 events / trace 不会被悄悄改写，预检会要求你排除这类证据或用当前版本重跑。
 
 ## 构建命令就是导出命令
 
 ```bash
-npx niceeval view --results report-data --out site
+npx niceeval view --record report-data --out site
 ```
 
 只发布一部分实验时,把收窄直接交给导出命令,页面和证据都只含收窄后的范围(见[查看结果 · 导出与静态托管](/zh/tutorials/viewing-results#导出与静态托管)):
 
 ```bash
-npx niceeval view --results report-data --exp compare --out site
+npx niceeval view --record report-data --exp compare --out site
 ```
 
 `view` 对零可读结果直接报错、非零退出,不会导出一张空报告——`report-data/` checkout 坏掉,或所有落盘与当前 niceeval 的 schemaVersion 不兼容被整批跳过时,构建失败,Vercel / GitHub Pages 保留上一次部署。错误逐条列出被跳过的快照目录与原因,schemaVersion 场景还给出能直接查看旧落盘的 `npx niceeval@<版本> view` 命令。
@@ -44,7 +45,7 @@ npx niceeval view --results report-data --exp compare --out site
 不传 `--report` 时,发布出来的站点就是默认报告的三个页面(报告、Attempts、追踪)。想换成自己的页面,把 [`defineReport` 报告文件](/zh/tutorials/custom-reports)传给 `--report` 就行——attempt 详情(transcript、trace、代码视图)仍在同一个站里,报告里的每个数字点进去就是对应证据,和本地 `view --report` 看到的一模一样:
 
 ```bash
-npx niceeval view --results report-data --report reports/exam.tsx --out site
+npx niceeval view --record report-data --report reports/exam.tsx --out site
 ```
 
 报告文件和 `report-data/` 一样提交在仓库里,改完版面 push,线上就跟着更新。用下面的 `vercel.json` / workflow 时,把构建命令换成这一行即可,其余配置不用动。
@@ -94,7 +95,7 @@ export default defineReport({
 ```json
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "npx niceeval view --results report-data --out site",
+  "buildCommand": "npx niceeval view --record report-data --out site",
   "outputDirectory": "site"
 }
 ```
@@ -124,7 +125,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx niceeval view --results report-data --out site
+      - run: npx niceeval view --record report-data --out site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
@@ -139,8 +140,8 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-日常循环是:本地跑评估用例，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新结果快照；要发布其它选择策略，在脚本里替换 `results.latest()`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
+日常循环是:本地跑评估用例，运行 `npx tsx scripts/publish-results.ts`，提交更新后的 `report-data/` 并 push。发布目录只保留每个实验的最新 Run；要发布其它选择策略，在脚本里替换 `latestRunSample(record)`。本地 `.niceeval/` 可以保留完整历史和 diff，不需要为了 Git 限制削掉调试证据。
 
 ## 发布的是选中的证据
 
-整站导出会带上发布结果根里选中的 transcript、源码快照和 trace。新写入的超大 events / trace 字符串可能带结构化截断标记。`copySnapshots` 只做选择和整文件大小预检，不改写任何内容。发布的站点谁都能翻到 prompt 和工具输出，发布到公网前确认结果内容适合公开——NiceEval 在记录时就不把环境变量值和命令输出写进结果文件，transcript 里是 Agent 自己的输入输出和你的评估用例任务本身。
+整站导出会带上发布记录根里选中的 transcript、源码和 trace。新写入的超大 events / trace 字符串可能带结构化截断标记。`publish` 只做选择和整文件大小预检，不改写任何内容。发布的站点谁都能翻到 prompt 和工具输出，发布到公网前确认结果内容适合公开——NiceEval 在记录时就不把环境变量值和命令输出写进记录文件，transcript 里是 Agent 自己的输入输出和你的评估用例任务本身。

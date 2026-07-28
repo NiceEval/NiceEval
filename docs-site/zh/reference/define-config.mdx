@@ -26,6 +26,22 @@ export default defineConfig({
 
 {/* 本区块由 pnpm docs:reference 从源码注释生成,勿手改;要改文案,改对应源码的 TSDoc/JSDoc(映射见 scripts/generate-reference.ts) */}
 
+#### `report`
+
+```ts
+report?: ReportDefinition;
+```
+
+view/show 的项目默认报告。
+
+#### `theme`
+
+```ts
+theme?: ThemeDefinition;
+```
+
+view 的项目默认主题。
+
 #### `name`
 
 ```ts
@@ -110,7 +126,7 @@ OTLP 接收配置,niceeval 项目内唯一入口(不读 NICEEVAL_OTLP_* 环境�
 #### `pricing`
 
 ```ts
-pricing?: Record<string, PriceOverride>;
+pricing?: globalThis.Record<string, PriceOverride>;
 ```
 
 内置价格表(`o11y/prices.json`)之上的用户覆盖 / 补充,按 model 查(见 Observability

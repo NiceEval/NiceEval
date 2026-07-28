@@ -212,8 +212,8 @@ The home page is a cost × pass-rate overview and an experiment comparison table
 **Open an archived result, or one someone sent you.** A results directory is self-contained — one downloaded from CI, copied over by a coworker, or generated before publishing to a static site — you can point straight at it:
 
 ```bash
-niceeval show --results tmp/ci-artifacts/results
-niceeval view --results site-data/run
+niceeval show --record tmp/ci-artifacts/record
+niceeval view --record site-data/run
 ```
 
 One caveat: if you've cleaned up an old snapshot directory locally, any later run's "carried over from a previous result" entries will find no original evidence (shown as missing). To archive a run for the long term, copy it out first with [`copySnapshots`](/reference/results-data), then delete.
