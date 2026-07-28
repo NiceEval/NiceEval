@@ -1301,6 +1301,9 @@ table.niceeval-report,
 .niceeval-stat--warning .niceeval-stat-value { color: var(--warn); }
 
 /* SampleOverview 把通用 Grid / Stat 组合成官方六格摘要条；数据与 Cell 仍走原语。 */
+/* 合并条↔散格的切换按自身容器宽度判,不看视口:视口 media query 会被「内容挂载后滚动条
+   出现、视口宽度掉过断点」来回触发,窗口宽度悬在断点附近时表现为两种形态闪烁。 */
+.niceeval-sample-summary { container-type: inline-size; }
 .niceeval-sample-summary .niceeval-sample-summary-grid {
   --grid-cell-min: 150px;
   --grid-gap: 0px;
@@ -1325,7 +1328,7 @@ table.niceeval-report,
   color: var(--soft);
   font-size: 13px;
 }
-@media (max-width: 960px) {
+@container (max-width: 920px) {
   .niceeval-sample-summary .niceeval-sample-summary-grid { border: 0; gap: 10px; background: transparent; }
   .niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell {
     border: 1px solid var(--line);
