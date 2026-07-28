@@ -278,7 +278,7 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: global
             <div className="flex min-w-0 shrink-0 items-center justify-end border-b border-line px-7 pb-3 pt-4">
               <DialogClose
                 aria-label={t("action.close")}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-transparent text-sm text-muted transition-colors hover:border-line hover:bg-panel-2 hover:text-text"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-(--radius) border border-transparent text-sm text-muted transition-colors hover:border-line hover:bg-panel-2 hover:text-text"
               >
                 x
               </DialogClose>

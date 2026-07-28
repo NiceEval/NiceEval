@@ -37,6 +37,7 @@
   /* send/回复行的强调色:主题的 accent。 */
   --blue: var(--niceeval-color-accent, #cbd6dc);
   --focus: var(--niceeval-color-focus, #cbd6dc);
+  --radius: var(--niceeval-radius, 0);
   font-family: var(--niceeval-font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif);
 }
 
@@ -91,7 +92,7 @@ a { color: inherit; }
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--panel);
   overflow: hidden;
   flex: 0 0 auto;

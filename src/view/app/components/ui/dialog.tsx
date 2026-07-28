@@ -21,7 +21,9 @@ export function DialogContent({
       <DialogPrimitive.Content
         className={cn(
           "fixed left-1/2 top-1/2 z-[200] flex max-h-[min(86vh,820px)] w-[min(1120px,calc(100vw-48px))]",
-          "-translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line-strong",
+          // 圆角走主题令牌(theme.md「宿主 chrome 与页内报告读同一份令牌」),不硬编码:
+          // 默认主题 basalt 是直角(radius 0),modal 壳必须与内部报告片段一致。
+          "-translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-(--radius) border border-line-strong",
           "bg-panel shadow-[0_20px_60px_rgba(0,0,0,0.45)] focus:outline-none",
           className,
         )}
