@@ -1,8 +1,8 @@
-# Experiment 对账 —— 架构
+# Evidence 复用政策 —— 架构
 
 `niceeval exp` 把 Experiment 声明的证据目标与历史 Evidence 对账。
-它先决定哪些槽位已有有效证据，再为缺失、失效或无法证明的槽位派发 Attempt。
-本页定义实体、阶段、默认裁决、落盘事实与跨 Run 可比性的边界。
+它先描述每个槽位的事实状态，再由选定的复用政策决定沿用或派发。
+本页定义两套候选政策共享的实体、阶段、落盘事实与跨 Run 可比性边界。
 
 ## 实体模型
 
@@ -94,7 +94,7 @@ interface EvidenceOrigin {
 interface EvidenceRecord {
   origin: EvidenceOrigin;
   immediateCarryFrom?: { runId: string };
-  attestation?: ReuseAttestation;
+  authorization?: ReuseAuthorization;
 }
 ```
 
@@ -102,19 +102,21 @@ interface EvidenceRecord {
 连续沿用时，`immediateCarryFrom` 只记这次从哪个 Run 取来。
 消费方因此能分别回答「谁真正跑的」和「这次从哪里沿用」。
 
-## 默认裁决
+## 事实状态与政策裁决
 
-对账不是比较两个文件是否改过，而是判断历史 Evidence 能否满足当前 Requirement。
+对账不是比较两个文件是否改过，而是判断历史 Evidence 与当前 Requirement 之间有哪些事实。
+事实状态不随默认政策变化，action 才随政策变化。
 
-| 证明结果 | 默认动作 |
-|---|---|
-| manifest 完全相等，且其它资格门通过 | 沿用 |
-| manifest 不等 | 失效并派发 |
-| manifest 无法构造完整事实 | `opaque`，默认派发 |
-| manifest 只差用户已接受的精确源码转换 | 经 attestation 沿用 |
-| 历史槽位不存在或判定不是终态 | 派发 |
+| 事实状态 | 证明优先 | 复用优先 |
+|---|---|---|
+| manifest 完全相等，且其它资格门通过 | 沿用 | 沿用 |
+| manifest 存在相关 delta | 派发 | 派发 |
+| manifest 无法构造完整事实 | 派发 | 沿用并标 unverified |
+| 原因有匹配当前计划的人工授权 | 沿用并标 authorized | 沿用并标 authorized |
+| 历史槽位不存在或判定不是可信终态 | 派发 | 派发 |
 
-未知默认派发，是因为一次多跑可以自愈；错误沿用会把旧结论伪装成当前证据。
+两套政策的取舍见 [Policy Models](policy-models.md)。
+实现不能在事实收集阶段提前把 `opaque` 折成“相同”或“不同”，否则上层无法切换或审计政策。
 
 ### 三种证明等级
 
@@ -123,8 +125,8 @@ interface EvidenceRecord {
 - **`opaque`**：任意 Hook 闭包、不可解析的 mutable image、未声明的项目外依赖，
   或外部资源没有 observer / 静态 epoch。
 
-`proven` 与 `observed` 都可精确沿用；两者分开只是说明证明来源。
-`opaque` 不是错误，Experiment 仍可运行，只是不自动跨 Run 沿用对应证据。
+`proven` 与 `observed` 都能支持精确判断；两者分开是为了说明证明来源。
+`opaque` 不是错误，也不等于 changed。证明优先默认派发，复用优先默认沿用并标 unverified。
 
 ## 对账阶段
 
@@ -135,21 +137,23 @@ interface EvidenceRecord {
 3. **观测。**并行执行 Experiment 声明的只读 resource observer。
    observer 不创建、不修改资源，失败只使依赖项变成 `opaque`。
 4. **形成要求。**为 `selectedEvalIds × attempts` 生成 Requirement 与完整 manifest。
-5. **对账。**从历史 Evidence 中逐槽选择可证明有效的候选，应用 `--rerun` 与 attestation。
-6. **准备。**计划存在派发项时才执行有副作用的 Experiment setup。
-7. **执行。**只派发缺失、失效或 opaque 的槽位。
-8. **快照。**把沿用与新 Evidence 合成这次 RunSnapshot。
+5. **初始对账。**从历史 Evidence 中逐槽选择候选，形成事实状态并应用政策与 CLI 覆盖。
+6. **取锁重判。**每个 Eval 取得用例锁后窄读最新 Evidence，重新形成权威决策。
+7. **准备。**权威决策仍存在派发项时才执行有副作用的 Experiment setup。
+8. **执行。**只派发权威决策要求执行的槽位。
+9. **快照。**把沿用与新 Evidence 合成这次 RunSnapshot。
 
-观测必须在对账之前，setup 必须在对账之后。
-这条边界让外部状态能参与判断，又不为一个全量沿用的 Run 启动有副作用的资源。
+观测必须在初始对账之前，setup 必须在取锁重判之后。
+这条边界让外部状态参与判断，避免并发 Invocation 已补齐 Evidence 后仍运行 setup 或重复派发。
+人工授权携带初始计划的 `planKey`；重判后的事实不再匹配时，授权失效。
 
 ## 改完 eval 与 Experiment 后怎样判
 
-### eval 变化
+### Eval 变化
 
-eval 文件、静态闭包或 loader 内容 digest 变化，使受影响 Requirement 的 manifest 不同。
-默认重跑这些 eval，不做注释剥离或 AST 归一化。
-用户确认变化不改变题面、执行或判定时，可以接受计划列出的精确 source delta。
+Eval 文件、静态闭包或 loader 内容 digest 变化，使受影响 Requirement 的 manifest 不同。
+两套默认政策都会重跑已观察到 source delta 的 Eval，不做注释剥离或 AST 归一化。
+用户确认变化不改变题面、执行或判定时，可以接受计划列出的精确 source 原因。
 
 ### Experiment 变化
 
@@ -164,32 +168,32 @@ eval 文件、静态闭包或 loader 内容 digest 变化，使受影响 Require
 | timeoutMs | 不改变 manifest | 再过执行耗时资格门 |
 | budget、maxConcurrency、earlyExit | 不改变 manifest | 已有 Evidence 照常对账 |
 | labels、description | 不改变 Requirement | 一条不动 |
-| 无声明式身份的 Hook | 变成 `opaque` | 默认派发 |
+| 无声明式身份的 Hook | 变成 `opaque` | 由证明优先或复用优先政策裁决 |
 
 因此既不是「Experiment 文件改了就全跑」，也不是「解析字段没变就全用」。
 默认行为来自当前要求，而不是文件粒度。
 
-## 一次性认账
+## 精确授权
 
 ```typescript
-interface ReuseAttestation {
+interface ReuseAuthorization {
+  planKey: string;
   fromRequirementKey: string;
   toRequirementKey: string;
-  acceptedSources: Array<{
-    path: string;
-    fromDigest: string;
-    toDigest: string;
-  }>;
+  reason: ReuseReason;
+  affected: Array<{ experimentId: string; evalId: string; slot: number }>;
   createdAt: string;
+  note?: string;
 }
 ```
 
-认账只在除 `acceptedSources` 外的 manifest 完全相等时成立。
+授权只覆盖当前计划中 selector 展开的精确 delta 或 opaque 原因。
 它建立 from → to 的证据等价边，不修改原 Evidence 的 requirementKey。
-下一轮出现同一个 to key 时可以沿用这条边，因此用户只判断一次。
+下一轮仍出现同一个 to key 时可以沿用这条边；任何新 delta 都需要重新判断。
 
-文件重命名或拆分表示 delete + add，可作为同一份计划 delta 一起接受。
-永久 source ignore 不存在：未来新的 digest 变化需要新的认账。
+source delta 使用 `modify`、`delete` 与 `add` 判别联合，能精确表示重命名或拆分。
+授权可覆盖 source、condition、Sandbox、resource 与 opaque 原因，但不能覆盖缺失 Evidence、
+不可信终态、资格门失败或 secret 明文。永久 source ignore 不存在。
 
 ## 外部资源
 
@@ -208,7 +212,8 @@ interface ResourceObserver {
 同一个 URL 指向新实例时，只要 observer 返回的版本不同，历史 Evidence 就失效。
 
 observer 缺失或失败时不能声称资源没变。
-对应 Requirement 变成 `opaque`，默认派发，并在计划里说明原因。
+对应 Requirement 变成 `opaque`，并在计划里说明原因。
+证明优先默认派发；复用优先沿用并给 Evidence 与 Run 增加 unverified 标记。
 
 ## Sandbox 复用
 
@@ -245,7 +250,7 @@ interface ComparisonProfile {
 
 1. **同时发生无语义与语义源码变化。**
    格式化 prompt 文件，同时修改断言 helper。
-   只 `--accept-change` prompt 时仍不得沿用，因为 manifest 还剩一项未接受变化。
+   只 `--accept source:...prompts.ts` 时仍不得沿用，因为 manifest 还剩一项未接受变化。
 2. **Hook 源码不变、闭包值变化。**
    Hook 捕获的 CLI 版本从 2 改成 3，但函数文本相同。
    没有 recipe 或 observer 时 Requirement 必须是 `opaque`，不得自动沿用。
@@ -267,10 +272,10 @@ interface ComparisonProfile {
 
 ## 不变量
 
-- 默认只沿用能证明满足当前 Requirement 的 Evidence；未知不是相同。
+- 事实层保留 proven、observed 与 opaque，不提前把未知折成相同或不同。
 - 完整 manifest 与 `requirementKey` 一起落盘，哈希不是事实的替代品。
 - Evidence 的原始执行身份永不改写；沿用只增加来源边和认账边。
-- observer 只读且早于对账；setup 有副作用且晚于对账。
+- observer 只读且早于初始对账；setup 有副作用且晚于取锁重判。
 - 凭据与连接坐标不进 manifest、不落盘；资源版本进 manifest。
-- `--rerun` 只收紧本次采信；`--accept-change` 只放宽一份精确 delta。
+- `--rerun` 只收紧本次采信；`--accept` 只放宽当前计划中的精确原因。
 - 缓存对账与 Sample 可比性共享落盘事实，但不共享一个哈希结论。

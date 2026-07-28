@@ -7,5 +7,5 @@
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
 - [Adapters](adapters/README.md) —— LangGraph、OpenClaw 与其它候选接入
 - [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 终端/HTML 语义结构断言 DSL、容差 golden 与 vitest 宿主的候选契约
-- [Experiment 对账与证据沿用](fingerprint/README.md) —— `niceeval exp` 把有效证据补到目标状态；
-  默认只沿用能证明有效的历史，未知变化重跑，精确无语义变化可一次性认账
+- [Evidence 复用政策](evidence-reuse/README.md) —— 比较证明优先与复用优先两套默认；
+  用角色声明、精确授权和冲突用例设计历史 Evidence 何时仍算数

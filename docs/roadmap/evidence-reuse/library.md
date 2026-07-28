@@ -1,6 +1,6 @@
-# Experiment 对账 —— 库用法
+# Evidence 复用政策 —— Library
 
-公开 API 让 Experiment 声明证据要求与外部资源。
+公开 API 让 Experiment 声明证据要求、外部资源和环境值的角色。
 用户不写 `requirementKey`，也不决定某个字段是否进哈希；
 系统从声明、解析结果与只读观测生成完整 `ExecutionManifest`。
 
@@ -121,27 +121,56 @@ export default defineExperiment({
 没有 observer 或静态 epoch 的外部资源不能被证明未变化。
 依赖它的 Requirement 是 `opaque`，默认每次派发。
 
-## 连接坐标与凭据绑定
+## 环境值先声明角色
+
+`.env` 只说明值从哪里加载，不说明值改变时 Evidence 是否仍有效。
+每个注入 Sandbox 或 Agent 的环境值必须选择一种角色：
+
+| 角色 | API | 变化时 | 落盘 |
+|---|---|---|---|
+| 行为条件 | `fromEnvCondition(name)` | Requirement 变化 | 只落安全摘要 |
+| 连接坐标 | `fromConnection(name, { resource })` | 不因坐标自身变化；由资源身份判断 | 不落值 |
+| 凭据 | `fromSecret(name)` | 不改变 Requirement | 不落值 |
+
+框架不按 `URL`、`TOKEN` 等变量名猜角色。
+同一个 `NMEM_URL` 在不同 Experiment 中可以是 condition，也可以是 connection，
+但作者必须显式表达理由。
+
+condition 适合“不同 endpoint 就是不同被测实现”的场景。
+connection 适合“隧道地址只是通往同一资源的路”，并必须引用一个 resource observer 或静态 epoch。
+没有 resource identity 的 connection 使依赖它的 Requirement 变成 `opaque`。
 
 Sandbox env 每个键必须声明来源：
 
 ```typescript
-import { e2bSandbox, fromFlag, fromSecret } from "niceeval/sandbox";
+import {
+  e2bSandbox,
+  fromConnection,
+  fromEnvCondition,
+  fromSecret,
+} from "niceeval/sandbox";
 
 sandbox: e2bSandbox({ template: "niceeval-agents" }).env({
-  MEM_BACKEND: fromFlag("memBackend"),
-  NMEM_URL: fromSecret("NMEM_URL"),
+  MEM_BACKEND: fromEnvCondition("MEM_BACKEND"),
+  NMEM_URL: fromConnection("NMEM_URL", { resource: "memory-corpus" }),
   NMEM_API_KEY: fromSecret("NMEM_API_KEY"),
 });
 ```
 
 | 通道 | 值从哪来 | 进入 manifest | 缺失时 |
 |---|---|---|---|
-| `fromFlag(key)` | Experiment flags | 是 | 解析期报错 |
-| `fromSecret(name)` | 宿主进程环境 | 否 | 需要 observer 或执行时才报错 |
+| `fromEnvCondition(name)` | 宿主进程环境 | 安全摘要进入 | 解析期报错 |
+| `fromConnection(name, { resource })` | 宿主进程环境 | 值不进入，resource identity 进入 | observer 或执行前报错 |
+| `fromSecret(name)` | 宿主进程环境 | 否 | 需要认证或执行时才报错 |
 
-`fromSecret` 同时承载坐标与凭据，因为两者都不能落盘。
-「坐标背后是不是同一个资源」不由 env key 判断，而由 `resources` 的身份回答。
+连接坐标和凭据都不能落明文，但不能因此合成同一语义通道。
+connection 必须指向 resource，secret 只提供访问权。
+
+### 不提供持久 ignore
+
+Library 不提供 `ignoreEnv`、`ignoredSources` 或 `provenanceFlags`。
+这类 deny-list 一旦误配，会让未来所有变化静默沿用。
+稳定的非身份值用 connection 或 secret 表达；一次例外用 CLI `--accept` 对当前计划授权。
 
 ## Sandbox 使用声明式 `EnvironmentRecipe`
 
