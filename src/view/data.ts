@@ -513,7 +513,7 @@ async function renderReportSlot(
       if (pageFailure !== "embed") throw e;
       // 本地 server:该页显示完整错误反馈,其它页照常可读(不让一页的树错误拖垮整站)。
       const message = e instanceof Error ? e.message : String(e);
-      const block = `<div class="nre nre-page-error"><pre>${escapeHtml(message)}</pre></div>`;
+      const block = `<div class="niceeval-report niceeval-page-error"><pre>${escapeHtml(message)}</pre></div>`;
       pages.push({ id: hostPage.id, html: { en: block, "zh-CN": block } });
     }
   }
@@ -554,7 +554,7 @@ async function renderReportSlot(
     } catch (e) {
       if (pageFailure !== "embed") throw e;
       const message = e instanceof Error ? e.message : String(e);
-      const block = `<div class="nre nre-page-error"><pre>${escapeHtml(message)}</pre></div>`;
+      const block = `<div class="niceeval-report niceeval-page-error"><pre>${escapeHtml(message)}</pre></div>`;
       return { en: block, "zh-CN": block };
     }
   };

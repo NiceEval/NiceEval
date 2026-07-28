@@ -83,13 +83,13 @@ describe("DiffView", () => {
     expect(text).not.toContain("+added");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-diff-view");
+    expect(html).toContain("niceeval-diff-view");
     expect(html).toContain('data-change="generated"');
     expect(html).toContain('data-change="modified"');
     expect(html).toContain("src/a.ts");
     expect(html).toContain("src/b.ts");
-    expect(html).toContain("nre-diff-patch-line--add");
-    expect(html).toContain("nre-diff-patch-line--remove");
+    expect(html).toContain("niceeval-diff-patch-line--add");
+    expect(html).toContain("niceeval-diff-patch-line--remove");
     expect(html).toContain("Patch unavailable for this file.");
     expect(html).toContain("<details");
   });

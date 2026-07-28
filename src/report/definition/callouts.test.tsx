@@ -84,13 +84,13 @@ describe("Callouts", () => {
     expect(text).toContain("Run skipped");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-callouts");
+    expect(html).toContain("niceeval-callouts");
     expect(html).toContain("2 groups · 3 errors");
     expect(html).toContain("2 experiments with warnings");
     expect(html).toContain("stale");
     expect(html).toContain("niceeval exp a");
     expect(html).toContain("×2");
-    expect(html).toContain('data-nre-copy="niceeval run a"');
+    expect(html).toContain('data-niceeval-copy="niceeval run a"');
     expect(html).toContain("<details");
   });
 
@@ -119,8 +119,8 @@ describe("Callouts", () => {
     expect(text).toContain("→ niceeval b");
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).not.toContain("niceeval group");
-    expect(html).toContain('data-nre-copy="niceeval a"');
-    expect(html).toContain('data-nre-copy="niceeval b"');
+    expect(html).toContain('data-niceeval-copy="niceeval a"');
+    expect(html).toContain('data-niceeval-copy="niceeval b"');
   });
 
   it("嵌套组只有一个孩子时不渲染空壳层级", async () => {

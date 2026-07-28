@@ -136,28 +136,28 @@ function parsePatchLines(patch: string): PatchLine[] {
 
 function PatchBody({ patch }: { patch?: string }): ReactElement {
   if (patch === undefined || patch.trim().length === 0) {
-    return <p className="nre-diff-patch-missing">Patch unavailable for this file.</p>;
+    return <p className="niceeval-diff-patch-missing">Patch unavailable for this file.</p>;
   }
   const lines = parsePatchLines(patch);
   return (
-    <pre className="nre-diff-patch">
+    <pre className="niceeval-diff-patch">
       {lines.map((line, i) => (
         <div
           key={i}
           className={cx(
-            "nre-diff-patch-line",
-            line.kind === "add" && "nre-diff-patch-line--add",
-            line.kind === "remove" && "nre-diff-patch-line--remove",
-            line.kind === "meta" && "nre-diff-patch-line--meta",
+            "niceeval-diff-patch-line",
+            line.kind === "add" && "niceeval-diff-patch-line--add",
+            line.kind === "remove" && "niceeval-diff-patch-line--remove",
+            line.kind === "meta" && "niceeval-diff-patch-line--meta",
           )}
         >
-          <span className="nre-diff-patch-ln nre-diff-patch-ln-old">
+          <span className="niceeval-diff-patch-ln niceeval-diff-patch-ln-old">
             {line.oldNo === null ? "" : line.oldNo}
           </span>
-          <span className="nre-diff-patch-ln nre-diff-patch-ln-new">
+          <span className="niceeval-diff-patch-ln niceeval-diff-patch-ln-new">
             {line.newNo === null ? "" : line.newNo}
           </span>
-          <span className="nre-diff-patch-text">{line.text}</span>
+          <span className="niceeval-diff-patch-text">{line.text}</span>
         </div>
       ))}
     </pre>
@@ -166,12 +166,12 @@ function PatchBody({ patch }: { patch?: string }): ReactElement {
 
 function FileRow({ file }: { file: DiffFile }): ReactElement {
   return (
-    <li className={cx("nre-diff-file", `nre-diff-${file.change}`)}>
+    <li className={cx("niceeval-diff-file", `niceeval-diff-${file.change}`)}>
       <details>
-        <summary className="nre-diff-file-summary">
-          <span className="nre-diff-change">{CHANGE_LABEL[file.change]}</span>
-          <span className="nre-diff-path">{file.path}</span>
-          <span className="nre-diff-lines">
+        <summary className="niceeval-diff-file-summary">
+          <span className="niceeval-diff-change">{CHANGE_LABEL[file.change]}</span>
+          <span className="niceeval-diff-path">{file.path}</span>
+          <span className="niceeval-diff-lines">
             +{file.added} / -{file.removed}
           </span>
         </summary>
@@ -222,11 +222,11 @@ export const DiffView = defineComponent<DiffViewProps, ResolvedDiffViewProps>({
     const files = assertDiffContent(data);
     if (files === null || files.length === 0) return null;
     return (
-      <div className={cx("nre", "nre-diff-view", className)}>
+      <div className={cx("niceeval-report", "niceeval-diff-view", className)}>
         {groupFiles(files).map((group) => (
-          <section key={group.change} className="nre-diff-group" data-change={group.change}>
-            <h3 className="nre-diff-group-title">{CHANGE_LABEL[group.change]}</h3>
-            <ul className="nre-diff-group-list">
+          <section key={group.change} className="niceeval-diff-group" data-change={group.change}>
+            <h3 className="niceeval-diff-group-title">{CHANGE_LABEL[group.change]}</h3>
+            <ul className="niceeval-diff-group-list">
               {group.files.map((file) => (
                 <FileRow key={file.path} file={file} />
               ))}

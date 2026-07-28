@@ -28,8 +28,8 @@ export const sectionScenarios: readonly ReportComponentScenario[] = [
       try {
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         const overview = page.locator("#tab-page-overview");
-        assert.equal(await overview.locator(".nre-section-title", { hasText: "Run overview" }).count(), 1);
-        assert.equal(await overview.locator(".nre-section-title", { hasText: "Eval × agent" }).count(), 1);
+        assert.equal(await overview.locator(".niceeval-section-title", { hasText: "Run overview" }).count(), 1);
+        assert.equal(await overview.locator(".niceeval-section-title", { hasText: "Eval × agent" }).count(), 1);
       } finally {
         await page.close();
       }

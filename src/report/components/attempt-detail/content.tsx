@@ -1,6 +1,7 @@
 // Attempt 详情 Content 投影:compute 领域结果 → 原语 Content 形状。
 
-import { Text } from "../../definition/primitives.tsx";
+import { Conversation, Text } from "../../definition/primitives.tsx";
+import type { ReportNode } from "../../definition/tree.ts";
 import type { CalloutGroup, CalloutItem } from "../../definition/primitives/callouts-logic.ts";
 import type { CopyBlockContent } from "../../definition/primitives/copy-block.tsx";
 import type { ConversationContent, ConversationEntry, ConversationTurn } from "../../definition/primitives/conversation.tsx";
@@ -21,7 +22,7 @@ import type {
   AttemptTimelineData,
   AttemptTraceData,
 } from "../../model/types.ts";
-import type { AssertionResult, TraceSpan } from "../../../types.ts";
+import type { AssertionResult, JsonValue, ScoreEntry, TraceSpan } from "../../../types.ts";
 import { stripControl } from "../../../scoring/display.ts";
 import { formatPointsSuffix } from "../../model/format.ts";
 
@@ -43,31 +44,52 @@ function sourceLineOf(line: AttemptSourceLineData): SourceLine {
     ) + line.scoreEntries.reduce((sum, e) => sum + e.points, 0);
   const hasPoints =
     line.assertions.some((a) => a.outcome !== "unavailable" && a.points !== undefined) || line.scoreEntries.length > 0;
+  // 展开区顺序:该行的轮次回复 → 每条 assertion 的判定与细节 → 该行的给分记录。
+  const turns = lineTurnsNode(line);
+  const details: ReportNode[] = [
+    ...(turns === null ? [] : [turns]),
+    ...line.assertions.flatMap((assertion, i) => assertionNodes(assertion, `a${i}`)),
+    ...line.scoreEntries.map((entry, i) => scoreEntryNode(entry, `s${i}`)),
+  ];
   return {
     number: line.line,
     text: line.text,
     tone: line.sends.length > 0 || line.turns.length > 0 ? "send" : lineTone(line),
     ...(hasPoints ? { pill: formatPointsSuffix(points) } : {}),
     ...(line.aborted ? { aborted: true } : {}),
-    details:
-      line.assertions.length > 0 || line.turns.length > 0
-        ? [
-            <Text key="d">
-              {[
-                ...line.turns.map((t) => `${t.label}: ${t.sentText}`),
-                ...line.assertions.map((a) => `${a.name} ${a.outcome}${a.detail ? ` — ${stripControl(a.detail)}` : ""}`),
-              ].join("\n")}
-            </Text>,
-          ]
-        : undefined,
+    ...(details.length > 0 ? { details } : {}),
   };
 }
 
 export function attemptSourceContent(data: AttemptSourceData | null): SourceContent | null {
   if (data === null) return null;
+  // 兜底区:没有 loc 的 assertion、给分记录与轮次都不丢弃,列在全部源码块之后
+  // (docs/feature/reports/components/attempt-detail/presentation.md「源码行展开区里有什么」)。
+  const unmapped: ReportNode[] = [
+    ...data.unmapped.flatMap((assertion, i) => assertionNodes(assertion, `u${i}`)),
+    ...(data.unmappedScoreEntries ?? []).flatMap((group, gi) =>
+      group.items.map((entry, i) => scoreEntryNode(entry, `us${gi}:${i}`)),
+    ),
+    ...data.unlocatedTurns.map((turn, i) => (
+      <Conversation
+        key={`ut${i}`}
+        data={{
+          turns: [
+            {
+              key: `turn:${i}`,
+              label: turn.label,
+              verdict: turn.status === "failed" ? ("failed" as const) : turn.status === "waiting" ? ("skipped" as const) : ("passed" as const),
+              entries: turn.replies.map(conversationEntryOf),
+            },
+          ],
+        }}
+      />
+    )),
+  ];
   return {
     spine: { path: data.sourcePath, lines: data.lines.map(sourceLineOf) },
     detached: [],
+    ...(unmapped.length > 0 ? { unmapped } : {}),
     locator: data.locator,
   };
 }
@@ -150,6 +172,12 @@ export function attemptTraceContent(data: AttemptTraceData | null): WaterfallCon
   ];
 }
 
+/** 工具出入参:结构化值 JSON 化后交原语收口成单行预览(Conversation 的 preview 契约)。 */
+function jsonPreview(value: JsonValue | undefined): string {
+  if (value === undefined) return "";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
 function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry {
   switch (reply.kind) {
     case "assistant":
@@ -157,11 +185,104 @@ function conversationEntryOf(reply: AttemptConversationReply): ConversationEntry
     case "thinking":
     case "error":
       return { kind: reply.kind, preview: reply.text, failed: reply.kind === "error" };
-    case "tool":
-      return { kind: "tool", preview: `${reply.name}(${JSON.stringify(reply.input)})` };
-    default:
-      return { kind: reply.kind, preview: reply.kind };
+    case "context":
+      return { kind: "context", preview: reply.source ? `${reply.source}: ${reply.text}` : reply.text };
+    case "tool": {
+      const output = jsonPreview(reply.output);
+      return {
+        kind: "tool",
+        preview: `${reply.name}(${jsonPreview(reply.input)})`,
+        ...(reply.status !== undefined && reply.status !== "completed" ? { failed: true } : {}),
+        ...(output ? { detail: <Text>{`${reply.status ?? "completed"}\n${output}`}</Text> } : {}),
+      };
+    }
+    case "subagent": {
+      const output = jsonPreview(reply.output);
+      return {
+        kind: "subagent",
+        preview: reply.remoteUrl ? `${reply.name} → ${reply.remoteUrl}` : reply.name,
+        ...(reply.status === "failed" ? { failed: true } : {}),
+        ...(output ? { detail: <Text>{output}</Text> } : {}),
+      };
+    }
+    case "skill":
+      return { kind: "skill", preview: reply.skill };
+    case "input":
+      return { kind: "input", preview: reply.request.display ?? reply.request.prompt ?? reply.request.action ?? "input requested" };
+    case "compaction":
+      return { kind: "compaction", preview: reply.reason ?? "context compacted" };
+    case "raw":
+      return { kind: "raw", preview: jsonPreview(reply.raw) };
   }
+}
+
+/** 该行 assertion 的判定摘要行 tone:与源码行状态同一套色。 */
+function assertionToneClass(assertion: AssertionResult): string {
+  if (assertion.outcome === "unavailable") return "niceeval-tone-na";
+  if (assertion.outcome === "passed") return "niceeval-tone-good";
+  return assertion.severity === "gate" ? "niceeval-tone-bad" : "niceeval-tone-warn";
+}
+
+/**
+ * 一条 assertion 在展开区里的呈现:一行判定摘要,失败与 soft 项接一段 expected / received 正文
+ * (docs/feature/reports/components/attempt-detail/presentation.md「源码行展开区里有什么」)。
+ */
+function assertionNodes(assertion: AssertionResult, key: string): ReportNode[] {
+  const points =
+    assertion.outcome !== "unavailable" && assertion.points !== undefined
+      ? ` ${formatPointsSuffix(assertion.points)}`
+      : "";
+  const head = `${assertion.name} · ${assertion.severity} ${assertion.outcome}${points}`;
+  const body: string[] = [];
+  if (assertion.detail) body.push(`check: ${stripControl(assertion.detail)}`);
+  if (assertion.outcome === "unavailable") {
+    body.push(`reason: ${assertion.reason}`);
+  } else {
+    if (assertion.expected !== undefined) body.push(`expected: ${stripControl(assertion.expected)}`);
+    if (assertion.received !== undefined) body.push(`received: ${stripControl(assertion.received)}`);
+    if (assertion.threshold !== undefined) body.push(`threshold: ${assertion.threshold} · score: ${assertion.score}`);
+  }
+  if (assertion.evidence !== undefined) body.push(`evidence: ${stripControl(assertion.evidence)}`);
+  const nodes: ReportNode[] = [
+    <Text key={`${key}:head`} className={`niceeval-source-assertion ${assertionToneClass(assertion)}`}>
+      {head}
+    </Text>,
+  ];
+  if (body.length > 0) {
+    nodes.push(
+      <Text key={`${key}:body`} className="niceeval-source-assertion-body">
+        {body.join("\n")}
+      </Text>,
+    );
+  }
+  return nodes;
+}
+
+/** 该行发出的轮次:复用 Conversation 的条目呈现,轮头在展开区里由 stylesheet 收起。 */
+function lineTurnsNode(line: AttemptSourceLineData): ReportNode | null {
+  if (line.turns.length === 0) return null;
+  return (
+    <Conversation
+      key="turns"
+      data={{
+        turns: line.turns.map((turn, i) => ({
+          key: `turn:${i}`,
+          label: turn.label,
+          verdict: turn.status === "failed" ? "failed" : turn.status === "waiting" ? "skipped" : "passed",
+          entries: turn.replies.map(conversationEntryOf),
+        })),
+      }}
+    />
+  );
+}
+
+function scoreEntryNode(entry: ScoreEntry, key: string): ReportNode {
+  const group = entry.groupPath?.length ? `${entry.groupPath.join(" > ")} · ` : "";
+  return (
+    <Text key={key} className="niceeval-source-score-entry">
+      {`${group}${entry.label} ${formatPointsSuffix(entry.points)}`}
+    </Text>
+  );
 }
 
 export function attemptConversationContent(data: AttemptConversationData | null): ConversationContent | null {

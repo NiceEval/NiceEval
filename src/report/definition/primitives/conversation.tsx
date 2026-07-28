@@ -144,28 +144,28 @@ function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportL
   const preview = sanitizeConversationPreview(entry.preview, locale);
   const head = (
     <>
-      <span className="nre-conversation-entry-kind" data-kind={entry.kind}>
+      <span className="niceeval-conversation-entry-kind" data-kind={entry.kind}>
         {entry.kind}
       </span>
-      <span className="nre-conversation-entry-preview">{preview}</span>
+      <span className="niceeval-conversation-entry-preview">{preview}</span>
     </>
   );
   const detail = entry.detail !== undefined ? renderReportNode(entry.detail) : null;
   if (detail === null || detail === undefined || detail === false) {
     return (
-      <div className={cx("nre-conversation-entry", entry.failed && "nre-conversation-entry--failed")}>{head}</div>
+      <div className={cx("niceeval-conversation-entry", entry.failed && "niceeval-conversation-entry--failed")}>{head}</div>
     );
   }
   return (
     <details
       className={cx(
-        "nre-conversation-entry",
-        "nre-conversation-entry--expandable",
-        entry.failed && "nre-conversation-entry--failed",
+        "niceeval-conversation-entry",
+        "niceeval-conversation-entry--expandable",
+        entry.failed && "niceeval-conversation-entry--failed",
       )}
     >
-      <summary className="nre-conversation-entry-summary">{head}</summary>
-      <div className="nre-conversation-entry-detail">{detail}</div>
+      <summary className="niceeval-conversation-entry-summary">{head}</summary>
+      <div className="niceeval-conversation-entry-detail">{detail}</div>
     </details>
   );
 }
@@ -179,7 +179,7 @@ export function ConversationEntries({
   locale: ReportLocale;
 }): ReactElement {
   return (
-    <div className="nre-conversation-entries">
+    <div className="niceeval-conversation-entries">
       {entries.map((entry, i) => (
         <EntryRow key={i} entry={entry} locale={locale} />
       ))}
@@ -189,10 +189,10 @@ export function ConversationEntries({
 
 function TurnCard({ turn, locale }: { turn: ConversationTurn; locale: ReportLocale }): ReactElement {
   return (
-    <article className={cx("nre-conversation-turn", turn.verdict && `nre-conversation-turn--${turn.verdict}`)}>
-      <header className="nre-conversation-turn-head">
-        <span className="nre-conversation-turn-label">{resolveLocalizedText(turn.label, locale)}</span>
-        {turn.verdict ? <span className="nre-conversation-turn-verdict">{turn.verdict}</span> : null}
+    <article className={cx("niceeval-conversation-turn", turn.verdict && `niceeval-conversation-turn--${turn.verdict}`)}>
+      <header className="niceeval-conversation-turn-head">
+        <span className="niceeval-conversation-turn-label">{resolveLocalizedText(turn.label, locale)}</span>
+        {turn.verdict ? <span className="niceeval-conversation-turn-verdict">{turn.verdict}</span> : null}
       </header>
       <ConversationEntries entries={turn.entries} locale={locale} />
     </article>
@@ -201,23 +201,23 @@ function TurnCard({ turn, locale }: { turn: ConversationTurn; locale: ReportLoca
 
 function FailedCommandCard({ command }: { command: FailedCommandContent }): ReactElement {
   return (
-    <article className="nre-conversation-turn nre-conversation-failed-command">
-      <header className="nre-conversation-turn-head">
-        <span className="nre-conversation-turn-label">
+    <article className="niceeval-conversation-turn niceeval-conversation-failed-command">
+      <header className="niceeval-conversation-turn-head">
+        <span className="niceeval-conversation-turn-label">
           FAILED COMMAND · {command.phase} · exit {command.exitCode}
         </span>
       </header>
-      <div className="nre-conversation-failed-display">{command.display}</div>
+      <div className="niceeval-conversation-failed-display">{command.display}</div>
       {command.stdout ? (
-        <details className="nre-conversation-entry nre-conversation-entry--expandable">
-          <summary className="nre-conversation-entry-summary">stdout</summary>
-          <pre className="nre-conversation-io">{command.stdout}</pre>
+        <details className="niceeval-conversation-entry niceeval-conversation-entry--expandable">
+          <summary className="niceeval-conversation-entry-summary">stdout</summary>
+          <pre className="niceeval-conversation-io">{command.stdout}</pre>
         </details>
       ) : null}
       {command.stderr ? (
-        <details className="nre-conversation-entry nre-conversation-entry--expandable" open>
-          <summary className="nre-conversation-entry-summary">stderr</summary>
-          <pre className="nre-conversation-io">{command.stderr}</pre>
+        <details className="niceeval-conversation-entry niceeval-conversation-entry--expandable" open>
+          <summary className="niceeval-conversation-entry-summary">stderr</summary>
+          <pre className="niceeval-conversation-io">{command.stderr}</pre>
         </details>
       ) : null}
     </article>
@@ -264,7 +264,7 @@ export const Conversation = defineComponent<ConversationProps, ResolvedConversat
     if (isEmptyConversation(content)) return null;
     const loc = locale ?? ctx.locale;
     return (
-      <div className={cx("nre", "nre-conversation", className)}>
+      <div className={cx("niceeval-report", "niceeval-conversation", className)}>
         {content!.turns.map((turn) => (
           <TurnCard key={turn.key} turn={turn} locale={loc} />
         ))}

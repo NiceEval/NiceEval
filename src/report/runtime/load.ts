@@ -96,9 +96,9 @@ export async function loadThemeFile(cwd: string, path: string, options?: LoadRep
 }
 
 export async function loadBuiltInTheme(name: string): Promise<ThemeDefinition> {
-  if (name === "basalt") {
-    const { basalt } = await import("../theme.ts");
-    return basalt;
+  if (name === "basalt" || name === "chalk") {
+    const themes = await import("../theme.ts");
+    return themes[name];
   }
-  throw new ReportLoadError(`Unknown built-in theme "${name}". Available built-in themes: basalt. To load a file, pass an explicit path such as ./themes/acme.ts.`);
+  throw new ReportLoadError(`Unknown built-in theme "${name}". Available built-in themes: basalt, chalk. To load a file, pass an explicit path such as ./themes/acme.ts.`);
 }

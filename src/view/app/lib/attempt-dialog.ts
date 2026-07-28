@@ -3,8 +3,8 @@
 // 内容片段与直接打开该文档看到的完全一致,不维护第二份客户端渲染(view.md「静态导出」)。
 // 纯字符串切分,不用 DOMParser:结构由同一个 site.ts 的固定模板产出,不需要通用 HTML 解析。
 
-const EN_MARK = '<div data-nre-locale="en">';
-const ZH_MARK = '<div data-nre-locale="zh-CN"';
+const EN_MARK = '<div data-niceeval-locale="en">';
+const ZH_MARK = '<div data-niceeval-locale="zh-CN"';
 const SCRIPT_MARK = "<script>";
 
 export interface AttemptDocumentContent {

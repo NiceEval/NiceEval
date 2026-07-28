@@ -37,13 +37,13 @@ export const attemptListScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Attempts" }).click();
         const panel = page.locator("#tab-page-attempts");
-        await panel.locator(".nre-attempt").first().waitFor({ state: "visible", timeout: 10_000 });
-        assert.equal(await panel.locator(".nre-attempt").count(), 4);
-        const filter = panel.locator("input[data-nre-attempt-filter]");
+        await panel.locator(".niceeval-attempt").first().waitFor({ state: "visible", timeout: 10_000 });
+        assert.equal(await panel.locator(".niceeval-attempt").count(), 4);
+        const filter = panel.locator("input[data-niceeval-attempt-filter]");
         await filter.fill("deliberate-fail");
         await page.waitForTimeout(100);
-        assert.equal(await panel.locator(".nre-attempt:not(.nre-row-hidden)").count(), 1);
-        assert.equal(await panel.locator(".nre-attempt.nre-row-hidden").count(), 3);
+        assert.equal(await panel.locator(".niceeval-attempt:not(.niceeval-row-hidden)").count(), 1);
+        assert.equal(await panel.locator(".niceeval-attempt.niceeval-row-hidden").count(), 3);
       } finally {
         await page.close();
       }

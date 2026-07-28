@@ -22,17 +22,17 @@ export function MetricCellView({
   // 全 null(没有任何有效样本)→ 缺数据文案,绝不画 0;total 仍如实入 title
   if (cell.value === null) {
     return (
-      <span className="nre-cell nre-cell-missing">
-        <span className="nre-missing" title={localeText(locale, "cell.noneMeasurableTitle", { total: cell.total })}>
+      <span className="niceeval-cell niceeval-cell-missing">
+        <span className="niceeval-missing" title={localeText(locale, "cell.noneMeasurableTitle", { total: cell.total })}>
           {localeText(locale, "cell.missing")}
         </span>
       </span>
     );
   }
   return (
-    <span className="nre-cell">
+    <span className="niceeval-cell">
       <span
-        className="nre-value"
+        className="niceeval-value"
         title={localeText(locale, "cell.measuredTitle", { samples: cell.samples, total: cell.total })}
       >
         {resolveLocalizedText(cell.display, locale)}
@@ -40,7 +40,7 @@ export function MetricCellView({
       {/* samples < total:有 attempt 测不了这个指标,覆盖率角标如实标出 */}
       {showCoverage && cell.samples < cell.total && (
         <sup
-          className="nre-coverage"
+          className="niceeval-coverage"
           title={localeText(locale, "cell.coverageTitle", { samples: cell.samples, total: cell.total })}
         >
           {cell.samples}/{cell.total}
@@ -48,9 +48,9 @@ export function MetricCellView({
       )}
       {/* refs + attemptHref:格子可点,「给我看那次 attempt」就在手边 */}
       {attemptHref && cell.refs && cell.refs.length > 0 && (
-        <span className="nre-refs">
+        <span className="niceeval-refs">
           {cell.refs.map((locator, i) => (
-            <a key={locator} className="nre-ref" href={attemptHref(locator)}>
+            <a key={locator} className="niceeval-ref" href={attemptHref(locator)}>
               #{i + 1}
             </a>
           ))}

@@ -19,22 +19,25 @@
 }
 
 :root {
-  color-scheme: light dark;
-  --bg: light-dark(#fafafa, #050505);
-  --panel: light-dark(#ffffff, #0b0b0b);
-  --panel-2: light-dark(#f4f4f5, #111111);
-  --line: light-dark(#dedee2, #262626);
-  --line-strong: light-dark(#c9c9cf, #343434);
-  --text: light-dark(#111113, #ededed);
-  --muted: light-dark(#62636a, #a1a1aa);
-  --soft: light-dark(#8b8d98, #74747b);
-  --good: light-dark(#087f5b, #3ddc97);
-  --bad: light-dark(#b42318, #ff6b6b);
-  --warn: light-dark(#9a6700, #e8b84a);
-  /* send/回复行的强调色,对齐 landing page setup-card 的 --blue(#6ea8fe)。 */
-  --blue: light-dark(#1d63d8, #6ea8fe);
-  --focus: light-dark(#111113, #ededed);
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  /* 宿主 chrome 与页内报告读同一份主题令牌(docs/feature/reports/library/theme.md
+     「在 view 中怎样生效」):兜底值 = 默认主题 basalt(src/report/theme.ts 单源),
+     生效主题的令牌块注入在本文件之后,覆盖 --niceeval-* 即全站换观感。 */
+  color-scheme: dark;
+  --bg: var(--niceeval-color-page, #050505);
+  --panel: var(--niceeval-color-surface, #0b0b0b);
+  --panel-2: var(--niceeval-color-surface-subtle, #111111);
+  --line: var(--niceeval-color-border, #262626);
+  --line-strong: var(--niceeval-color-border-strong, #343434);
+  --text: var(--niceeval-color-text, #ededed);
+  --muted: var(--niceeval-color-text-secondary, #a1a1aa);
+  --soft: var(--niceeval-color-text-tertiary, #74747b);
+  --good: var(--niceeval-color-positive, #3ddc97);
+  --bad: var(--niceeval-color-negative, #ff6b6b);
+  --warn: var(--niceeval-color-warning, #e8b84a);
+  /* send/回复行的强调色:主题的 accent。 */
+  --blue: var(--niceeval-color-accent, #cbd6dc);
+  --focus: var(--niceeval-color-focus, #cbd6dc);
+  font-family: var(--niceeval-font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif);
 }
 
 * { box-sizing: border-box; }
@@ -66,7 +69,7 @@ a { color: inherit; }
   z-index: 10;
 }
 /* 页头左端的恒定品牌位:NiceEval 字标 + 45° 方块 mark,外链官网(App.tsx 的 .brand)。
-   与 hero 下 nre-powered-by 品牌行同族,由宿主渲染、报告定义不能覆盖或移除。 */
+   与 hero 下 niceeval-powered-by 品牌行同族,由宿主渲染、报告定义不能覆盖或移除。 */
 .brand {
   display: flex;
   align-items: baseline;
@@ -117,9 +120,9 @@ main {
   margin: 0 auto;
   padding: clamp(52px, 7vw, 82px) 0 72px;
 }
-/* 报告槽:server 侧渲染好的静态报告 HTML(nre-* 类的样式随包 styles.css 注入),
+/* 报告槽:server 侧渲染好的静态报告 HTML(niceeval-* 类的样式随包 styles.css 注入),
    这里只给槽位留呼吸空间,不覆盖报告自己的样式。hero、警告区、批量修复 prompt 都是
-   页内组件(nre-hero / nre-warnings / nre-copy-fix-prompt),宿主不再有对应 chrome。 */
+   页内组件(niceeval-hero / niceeval-warnings / niceeval-copy-fix-prompt),宿主不再有对应 chrome。 */
 .report-slot {
   margin: 0 auto 36px;
 }
@@ -149,4 +152,4 @@ main {
   color: var(--soft);
   font-size: 12px;
 }
-.nre-page-error pre { white-space: pre-wrap; }
+.niceeval-page-error pre { white-space: pre-wrap; }

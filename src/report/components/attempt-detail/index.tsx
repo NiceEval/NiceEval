@@ -10,15 +10,15 @@ import {
   Conversation,
   CopyBlock,
   DiffView,
-  Grid,
   SourceView,
-  Stat,
   Table,
   Waterfall,
 } from "../../definition/primitives.tsx";
 import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
+import { formatDurationMs, formatPoints } from "../../model/format.ts";
+import { localeText } from "../../model/locale.ts";
 import type { SourceInput } from "../../source.ts";
-import type { DataProps } from "../shared.ts";
+import { cx, type DataProps } from "../shared.ts";
 import type { AttemptPageContext, ScopePageContext } from "../../definition/tree.ts";
 
 export {
@@ -44,16 +44,60 @@ type SummaryProps<Input extends SourceInput = SourceInput> = DataProps<
 
 export const AttemptSummary = defineComponent<SummaryProps>({
   dimensions: () => ({}),
-  web(props) {
+  web(props, ctx) {
     const d = props.data!;
+    const caps = (Object.keys(d.capabilities) as (keyof AttemptSummaryData["capabilities"])[]).filter(
+      (key) => d.capabilities[key],
+    );
     return (
-      <div className="nre nre-attempt-summary">
-        <h2>{d.locator}</h2>
-        <Grid columns={3} className={props.className}>
-          <Stat label="Verdict" value={d.verdict} />
-          <Stat label="Duration" value={`${d.durationMs}ms`} />
-          {d.costUSD !== null ? <Stat label="Cost" value={`$${d.costUSD}`} /> : null}
-        </Grid>
+      <div className={cx("niceeval-report", "niceeval-attempt-summary", props.className)}>
+        <div className="niceeval-attempt-summary-head">
+          <span className={`niceeval-verdict-pill niceeval-verdict-${d.verdict}`}>
+            {localeText(ctx.locale, `verdict.${d.verdict}`)}
+          </span>
+          <span className="niceeval-attempt-summary-locator">{d.locator}</span>
+        </div>
+        <dl className="niceeval-attempt-summary-kpis">
+          <div>
+            <dt>Experiment</dt>
+            <dd>{d.identity.experimentId}</dd>
+          </div>
+          <div>
+            <dt>Eval</dt>
+            <dd>{d.identity.evalId}</dd>
+          </div>
+          <div>
+            <dt>Attempt</dt>
+            <dd>{d.identity.attempt + 1}</dd>
+          </div>
+          {d.totalScore !== undefined ? (
+            <div>
+              <dt>Score</dt>
+              <dd>{formatPoints(d.totalScore)}</dd>
+            </div>
+          ) : null}
+          {d.startedAt ? (
+            <div>
+              <dt>Started</dt>
+              <dd>{d.startedAt}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Duration</dt>
+            <dd>{formatDurationMs(d.durationMs)}</dd>
+          </div>
+          {d.costUSD !== null ? (
+            <div>
+              <dt>Cost</dt>
+              <dd>${d.costUSD.toFixed(4)}</dd>
+            </div>
+          ) : null}
+        </dl>
+        {caps.length > 0 ? (
+          <p className="niceeval-attempt-summary-caps">
+            {caps.map((key) => ATTEMPT_CAPABILITY_LABEL[key]).join(" · ")}
+          </p>
+        ) : null}
       </div>
     );
   },
@@ -63,6 +107,13 @@ export const AttemptSummary = defineComponent<SummaryProps>({
   },
 });
 AttemptSummary.displayName = "AttemptSummary";
+
+const ATTEMPT_CAPABILITY_LABEL: globalThis.Record<keyof AttemptSummaryData["capabilities"], string> = {
+  source: "source",
+  execution: "execution",
+  timing: "timing",
+  diff: "diff",
+};
 
 type UsageProps<Input extends SourceInput = SourceInput> = DataProps<
   UsageTableData | null,
@@ -76,12 +127,32 @@ const AttemptUsage = defineComponent<UsageProps>({
   web(props) {
     const d = props.data;
     if (d === null || d === undefined) return null;
+    const rows: [string, string][] = [];
+    if (d.turns !== undefined) rows.push(["turns", String(d.turns)]);
+    if (d.toolCalls !== undefined) rows.push(["tool calls", String(d.toolCalls)]);
+    if (d.usage?.inputTokens !== undefined) {
+      rows.push([
+        d.usage.cacheReadTokens !== undefined ? "uncached in" : "in",
+        d.usage.inputTokens.toLocaleString(),
+      ]);
+    }
+    if (d.usage?.cacheReadTokens !== undefined) {
+      rows.push(["cache read", d.usage.cacheReadTokens.toLocaleString()]);
+    }
+    if (d.usage?.outputTokens !== undefined) {
+      rows.push(["out", d.usage.outputTokens.toLocaleString()]);
+    }
+    if (d.usage?.requests !== undefined) rows.push(["requests", String(d.usage.requests)]);
+    if (d.estimatedCostUSD !== undefined) rows.push(["cost", `$${d.estimatedCostUSD.toFixed(4)}`]);
     return (
-      <Grid columns={3} className={props.className}>
-        {d.turns !== undefined ? <Stat label="Turns" value={d.turns} /> : null}
-        {d.toolCalls !== undefined ? <Stat label="Tool calls" value={d.toolCalls} /> : null}
-        {d.estimatedCostUSD !== undefined ? <Stat label="Cost" value={`$${d.estimatedCostUSD}`} /> : null}
-      </Grid>
+      <dl className={cx("niceeval-report", "niceeval-usage-table", props.className)}>
+        {rows.map(([label, value]) => (
+          <div key={label} className="niceeval-usage-table-row">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
     );
   },
   text(props) {

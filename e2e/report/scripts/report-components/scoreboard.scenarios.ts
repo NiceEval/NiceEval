@@ -31,8 +31,8 @@ export const scoreboardScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Scoreboard" }).click();
         const panel = page.locator("#tab-page-scoreboard");
-        await panel.locator(".nre-scoreboard-table").waitFor({ state: "visible", timeout: 10_000 });
-        assert.equal(await panel.locator(".nre-scoreboard-table tbody tr").count(), 3);
+        await panel.locator(".niceeval-scoreboard-table").waitFor({ state: "visible", timeout: 10_000 });
+        assert.equal(await panel.locator(".niceeval-scoreboard-table tbody tr").count(), 3);
       } finally {
         await page.close();
       }

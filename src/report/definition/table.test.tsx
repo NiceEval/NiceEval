@@ -101,7 +101,7 @@ describe("Table Content", () => {
       },
     };
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-row-placeholder");
+    expect(html).toContain("niceeval-row-placeholder");
     expect(html).toContain("not-run");
   });
 

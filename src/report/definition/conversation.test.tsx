@@ -95,13 +95,13 @@ describe("Conversation", () => {
     expect(text).not.toContain("grep pattern");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-conversation");
-    expect(html).toContain("nre-conversation-turn--passed");
-    expect(html).toContain("nre-conversation-turn--failed");
+    expect(html).toContain("niceeval-conversation");
+    expect(html).toContain("niceeval-conversation-turn--passed");
+    expect(html).toContain("niceeval-conversation-turn--failed");
     expect(html).toContain('data-kind="assistant"');
     expect(html).toContain("hello world");
     expect(html).toContain("full assistant body");
-    expect(html).toContain("nre-conversation-entry--failed");
+    expect(html).toContain("niceeval-conversation-entry--failed");
     expect(html).toContain("FAILED COMMAND");
     expect(html).toContain("<details");
   });

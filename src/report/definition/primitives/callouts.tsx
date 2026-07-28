@@ -70,7 +70,7 @@ function assertCalloutsData(data: unknown): readonly CalloutGroup[] {
 
 function CommandBlock({ command }: { command: string }): ReactElement {
   return (
-    <code className="nre-callout-command" data-nre-copy={command}>
+    <code className="niceeval-callout-command" data-niceeval-copy={command}>
       {command}
     </code>
   );
@@ -88,23 +88,23 @@ function CalloutGroupWeb({
   const headCommand = effectiveGroupCommand(group);
   const nested = group.groups;
   return (
-    <li className="nre-callout-group">
-      <div className={cx("nre-callout-head", `nre-callout-head--${maxCalloutLevel([group])}`)}>
-        <span className="nre-callout-title">{resolveLocalizedText(group.title, locale)}</span>
+    <li className="niceeval-callout-group">
+      <div className={cx("niceeval-callout-head", `niceeval-callout-head--${maxCalloutLevel([group])}`)}>
+        <span className="niceeval-callout-title">{resolveLocalizedText(group.title, locale)}</span>
         {group.badges?.map((badge, i) => (
-          <span key={i} className="nre-callout-badge">
+          <span key={i} className="niceeval-callout-badge">
             {resolveLocalizedText(badge, locale)}
           </span>
         ))}
         {headCommand !== null ? <CommandBlock command={headCommand} /> : null}
       </div>
       {group.items.length > 0 ? (
-        <details className="nre-callout-details" open={detailsOpen || undefined}>
+        <details className="niceeval-callout-details" open={detailsOpen || undefined}>
           <summary>{calloutDetailsLabel(locale, group.items.length)}</summary>
-          <ul className="nre-callout-items">
+          <ul className="niceeval-callout-items">
             {group.items.map((item, i) => (
-              <li key={i} className={cx("nre-callout-item", `nre-callout-item--${item.level}`)}>
-                <span className="nre-callout-message">{formatCalloutMessage(item, locale)}</span>
+              <li key={i} className={cx("niceeval-callout-item", `niceeval-callout-item--${item.level}`)}>
+                <span className="niceeval-callout-message">{formatCalloutMessage(item, locale)}</span>
                 {headCommand === null && item.command !== undefined ? <CommandBlock command={item.command} /> : null}
               </li>
             ))}
@@ -112,7 +112,7 @@ function CalloutGroupWeb({
         </details>
       ) : null}
       {nested && nested.length > 0 ? (
-        <ul className="nre-callout-nested">
+        <ul className="niceeval-callout-nested">
           {flattenRenderableGroups(nested).map((child, i) => (
             <CalloutGroupWeb key={i} group={child} locale={locale} detailsOpen={detailsOpen} />
           ))}
@@ -128,12 +128,12 @@ function calloutsWeb(groups: readonly CalloutGroup[], locale: ReportLocale, clas
   const detailsOpen = countCalloutItems(groups) <= 3;
   const level = maxCalloutLevel(groups);
   return (
-    <div className={cx("nre", "nre-callouts", className)}>
-      <details className="nre-callouts-root">
-        <summary className={cx("nre-callouts-summary", `nre-callouts-summary--${level}`)}>
+    <div className={cx("niceeval-report", "niceeval-callouts", className)}>
+      <details className="niceeval-callouts-root">
+        <summary className={cx("niceeval-callouts-summary", `niceeval-callouts-summary--${level}`)}>
           {calloutsSummary(groups, locale)}
         </summary>
-        <ul className="nre-callout-groups">
+        <ul className="niceeval-callout-groups">
           {flat.map((group, i) => (
             <CalloutGroupWeb key={i} group={group} locale={locale} detailsOpen={detailsOpen} />
           ))}

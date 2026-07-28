@@ -33,12 +33,12 @@ export const metricTableScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Scoreboard" }).click();
         const panel = page.locator("#tab-page-scoreboard");
-        const filter = panel.locator("input[data-nre-filter]");
+        const filter = panel.locator("input[data-niceeval-filter]");
         await filter.waitFor({ state: "visible", timeout: 10_000 });
-        assert.equal(await panel.locator(".nre-metric-table tbody tr:not(.nre-row-hidden)").count(), 3);
+        assert.equal(await panel.locator(".niceeval-metric-table tbody tr:not(.niceeval-row-hidden)").count(), 3);
         await filter.fill("main");
         await page.waitForTimeout(100);
-        assert.equal(await panel.locator(".nre-metric-table tbody tr:not(.nre-row-hidden)").count(), 1);
+        assert.equal(await panel.locator(".niceeval-metric-table tbody tr:not(.niceeval-row-hidden)").count(), 1);
       } finally {
         await page.close();
       }

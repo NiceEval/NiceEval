@@ -6,7 +6,7 @@
 
 E2E 验收脚本(约 4,200 行、近 500 条断言)的断言词表停在**字面层**:`includes()` 子串、整句正则、精确 HTML 字符串。三类症状:
 
-- **化妆性变更打红测试。** 断言把措辞、字形、间距当成契约锁死:整句文案正则(`/Cost\(lower is better\) × Pass rate\(higher is better\)/`)、整段 HTML 字面量(`'<summary class="nre-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'`)、80 列精确 padding、`·` 分隔文案、`✓/✗/!` 字形。渲染器改一个注解措辞、换一种框线,契约没变、测试变红——直接违反[变更预算规则](../../engineering/testing/README.md#变更预算无关测试变红是缺陷):「实现重构不改契约时,任何测试都不应变红;变红说明该测试锁定了实现细节而不是契约」。
+- **化妆性变更打红测试。** 断言把措辞、字形、间距当成契约锁死:整句文案正则(`/Cost\(lower is better\) × Pass rate\(higher is better\)/`)、整段 HTML 字面量(`'<summary class="niceeval-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'`)、80 列精确 padding、`·` 分隔文案、`✓/✗/!` 字形。渲染器改一个注解措辞、换一种框线,契约没变、测试变红——直接违反[变更预算规则](../../engineering/testing/README.md#变更预算无关测试变红是缺陷):「实现重构不改契约时,任何测试都不应变红;变红说明该测试锁定了实现细节而不是契约」。
 - **每个脚本手搓解析器。** `historyRows()`、`looseIncludes()`、`displayWidth()`(重造 CJK 宽度表)、`extractTemplate()`、`colorAlpha()`——同类结构提取在各 verify 模块里重复发明,没有统一的查询层。写脚本的人已经在自救(空白折叠、双面事实互提对比、颜色只比 rendered-to-rendered),但每次都是就地手工。
 - **线性 fail-fast 脚本的运行学。** 第一条断言失败即停,看不到失败全貌;单条断言重跑等于整个 verify 重跑(所幸证据可复用,但流程要人肉注释代码);断言无分组命名,失败定位靠逐条手写消息。
 

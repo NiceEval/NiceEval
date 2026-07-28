@@ -8,7 +8,7 @@
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
     </marker>
     <style>
-      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      /* 值来自内建主题 basalt（src/report/theme.ts），改色先改那里 */
       text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
              BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
       .title { fill: #ededed; font-size: 20px; font-weight: 600; }

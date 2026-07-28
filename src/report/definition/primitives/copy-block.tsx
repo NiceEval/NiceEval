@@ -47,12 +47,12 @@ function copyBlockWeb(
   className?: string,
 ): ReactNode {
   return (
-    <details className={cx("nre", "nre-copy-block", className)}>
-      <summary className="nre-copy-block-summary">{resolveLocalizedText(data.title, locale)}</summary>
-      <button type="button" className="nre-copy-block-copy" data-nre-copy={data.text}>
+    <details className={cx("niceeval-report", "niceeval-copy-block", className)}>
+      <summary className="niceeval-copy-block-summary">{resolveLocalizedText(data.title, locale)}</summary>
+      <button type="button" className="niceeval-copy-block-copy" data-niceeval-copy={data.text}>
         Copy
       </button>
-      <pre className="nre-copy-block-text">{data.text}</pre>
+      <pre className="niceeval-copy-block-text">{data.text}</pre>
     </details>
   );
 }

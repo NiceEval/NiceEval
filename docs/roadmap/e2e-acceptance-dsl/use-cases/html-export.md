@@ -10,11 +10,11 @@ report 仓库对 `view --out` 导出站验收[渲染结构契约](../../../engin
 
 ```ts
 // ① 裸 HTML 字符串:class 名、标签结构、文案、实体转义全部入契约
-assert.ok(failHtml.includes('<span class="nre-assertion-badge">failed</span>'), "...");
-assert.ok(failHtml.includes('<span class="nre-assertion-name">equals(3)</span>'), "...");
+assert.ok(failHtml.includes('<span class="niceeval-assertion-badge">failed</span>'), "...");
+assert.ok(failHtml.includes('<span class="niceeval-assertion-name">equals(3)</span>'), "...");
 
 // ② 整段 <summary> 字面量:文案 + `·` 字形 + 计数一锅锁死
-assert.ok(reportTpl.includes('<summary class="nre-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'), "...");
+assert.ok(reportTpl.includes('<summary class="niceeval-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'), "...");
 
 // ③ 品牌链接:含 HTML 实体转义的整段正则
 const brandLinkRe = /<a href="https:\/\/niceeval\.com\/\?utm_source=report&amp;utm_medium=powered-by" target="_blank" rel="noopener">Powered by NiceEval<\/a>/;
@@ -46,7 +46,7 @@ test("Fix prompt 折叠块默认收起,计数可见", async () => {
 });
 ```
 
-- ①② 换成可访问性树匹配:断言「badge 与名称同处一个语义块、文案事实出现」,不再点名 `nre-*` class 与 span 结构。展开折叠状态经 a11y 树的 `[expanded]` 属性断言,与现行 Playwright 的 `<details open>` 检查同源。
+- ①② 换成可访问性树匹配:断言「badge 与名称同处一个语义块、文案事实出现」,不再点名 `niceeval-*` class 与 span 结构。展开折叠状态经 a11y 树的 `[expanded]` 属性断言,与现行 Playwright 的 `<details open>` 检查同源。
 - ③ 品牌链接保留精确断言(可收进 golden 层),因为公开文档把 URL 参数与 rel 声明为契约——判据依旧是「这些字符是不是契约」,不是「断言长得脆不脆」。
 
 ## 边界

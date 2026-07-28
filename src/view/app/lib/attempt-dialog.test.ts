@@ -36,8 +36,8 @@ describe("parseAttemptDocument", () => {
     return [
       "<!doctype html>",
       "<html><head></head><body>",
-      `<div data-nre-locale="en">${en}</div>`,
-      `<div data-nre-locale="zh-CN" hidden>${zh}</div>`,
+      `<div data-niceeval-locale="en">${en}</div>`,
+      `<div data-niceeval-locale="zh-CN" hidden>${zh}</div>`,
       "<script>/* locale swap */</script>",
       "</body></html>",
     ].join("\n");
@@ -50,12 +50,12 @@ describe("parseAttemptDocument", () => {
 
   it("内容里嵌套的 <div> 不会打断切分(现实里的 AttemptDetail 输出全是嵌套 div)", () => {
     const html = fakeDocument(
-      '<div class="nre nre-col"><div class="nre-attempt-summary">stuff</div></div>',
-      '<div class="nre nre-col"><div class="nre-attempt-summary">东西</div></div>',
+      '<div class="niceeval-report niceeval-col"><div class="niceeval-attempt-summary">stuff</div></div>',
+      '<div class="niceeval-report niceeval-col"><div class="niceeval-attempt-summary">东西</div></div>',
     );
     expect(parseAttemptDocument(html)).toEqual({
-      en: '<div class="nre nre-col"><div class="nre-attempt-summary">stuff</div></div>',
-      "zh-CN": '<div class="nre nre-col"><div class="nre-attempt-summary">东西</div></div>',
+      en: '<div class="niceeval-report niceeval-col"><div class="niceeval-attempt-summary">stuff</div></div>',
+      "zh-CN": '<div class="niceeval-report niceeval-col"><div class="niceeval-attempt-summary">东西</div></div>',
     });
   });
 

@@ -4,7 +4,8 @@
 
 | 主题 | 名字 | 一句话 |
 |---|---|---|
-| [Basalt](basalt.md) | `basalt` | NiceEval 官方主题：黑色系、零圆角、发丝分隔线的冷峻数据面 |
+| [Basalt](basalt.md) | `basalt` | 官方暗色主题（默认）：黑色系、零圆角、发丝分隔线的冷峻数据面 |
+| [Chalk](chalk.md) | `chalk` | 官方浅色主题：白面、圆角、蓝 accent，证明观感完整住在主题里 |
 
 内建主题按名字从 `niceeval/report/built-in` 具名导出，名字同时是 CLI 上的取值：`niceeval view --theme basalt`。新增一份内建主题的形态是固定的——一份新的 `defineTheme` 成品、一个新名字、一个新文件、一条新的具名导出，加上这张表里的一行；不需要注册表，也不改装载管线。
 

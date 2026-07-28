@@ -47,13 +47,13 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Attempts" }).click();
         const panel = page.locator("#tab-page-attempts");
-        const filter = panel.locator("input[data-nre-attempt-filter]");
+        const filter = panel.locator("input[data-niceeval-attempt-filter]");
         await filter.waitFor({ state: "visible", timeout: 10_000 });
         await filter.fill("deliberate-fail");
         await page.waitForTimeout(100);
 
         const href = `attempt/${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`;
-        const link = panel.locator(`a.nre-locator[href="${href}"]`);
+        const link = panel.locator(`a.niceeval-locator[href="${href}"]`);
         assert.equal(await link.count(), 1);
         await link.click();
         const dialog = page.getByRole("dialog");
@@ -77,10 +77,10 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${brandedBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Attempts" }).click();
         const panel = page.locator("#tab-page-attempts");
-        await panel.locator(".nre-attempt").first().waitFor({ state: "visible", timeout: 10_000 });
-        assert.equal(await panel.locator(".nre-attempt").count(), 4);
+        await panel.locator(".niceeval-attempt").first().waitFor({ state: "visible", timeout: 10_000 });
+        assert.equal(await panel.locator(".niceeval-attempt").count(), 4);
         const href = `attempt/${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`;
-        await panel.locator(`a.nre-locator[href="${href}"]`).click();
+        await panel.locator(`a.niceeval-locator[href="${href}"]`).click();
         const dialog = page.getByRole("dialog");
         await dialog.waitFor({ state: "visible", timeout: 10_000 });
         const text = await dialog.innerText();

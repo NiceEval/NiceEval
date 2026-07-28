@@ -687,7 +687,7 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
     // 丢失);声明序即身份,给缺 key 的元素补声明位 key,免得 web 面渲染刷 key 警告。
     return resolved.map((child, i) =>
       isReportElement(child) && (child.key === undefined || child.key === null)
-        ? ({ ...child, key: `.nre-${i}` } as ReportElement)
+        ? ({ ...child, key: `.niceeval-${i}` } as ReportElement)
         : child,
     );
   }

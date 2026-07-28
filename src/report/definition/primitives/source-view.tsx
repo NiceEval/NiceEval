@@ -134,22 +134,85 @@ function assertSourceContent(data: unknown): SourceContent | null {
   return data as unknown as SourceContent;
 }
 
+/** 前置中止行按 gate-fail 呈现(attempt-source.md「行状态」),其余行取自身 tone。 */
+function lineTone(line: SourceLine): SourceLineTone | undefined {
+  return line.aborted ? "gate-fail" : line.tone;
+}
+
 function toneClass(tone: SourceLineTone | undefined): string | undefined {
   if (!tone) return undefined;
-  return `nre-source-line--${tone}`;
+  return `niceeval-source-line--${tone}`;
+}
+
+/** 行号位标记:内联 SVG,零图标依赖(attempt-source.md「行状态」)。 */
+const MARK_ICONS: Record<SourceLineTone, ReactElement> = {
+  send: <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />,
+  passed: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  "gate-fail": (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m15 9-6 6" />
+      <path d="m9 9 6 6" />
+    </>
+  ),
+  "soft-fail": (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" x2="12" y1="8" y2="12" />
+      <line x1="12" x2="12.01" y1="16" y2="16" />
+    </>
+  ),
+  unavailable: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+};
+
+const MARK_LABELS: Record<SourceLineTone, string> = {
+  send: "send",
+  passed: "passed",
+  "gate-fail": "failed",
+  "soft-fail": "soft failed",
+  unavailable: "unavailable",
+};
+
+/** 行号位:普通行显示行号,有状态的行用标记图标顶替行号。 */
+function Gutter({ line }: { line: SourceLine }): ReactElement {
+  const tone = lineTone(line);
+  if (tone === undefined) return <span className="niceeval-source-gutter">{line.number}</span>;
+  return (
+    <span
+      className="niceeval-source-gutter niceeval-source-gutter-mark"
+      role="img"
+      aria-label={MARK_LABELS[tone]}
+      title={MARK_LABELS[tone]}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        {MARK_ICONS[tone]}
+      </svg>
+    </span>
+  );
 }
 
 function LineSummary({ line, locale }: { line: SourceLine; locale: ReportLocale }): ReactElement {
   return (
-    <span className="nre-source-line-summary">
-      <span className="nre-source-gutter">{line.tone ? "" : line.number}</span>
-      <span className="nre-source-code">{highlightTs(line.text)}</span>
-      <span className="nre-source-meta">
+    <span className="niceeval-source-line-summary">
+      <Gutter line={line} />
+      <span className="niceeval-source-code">{highlightTs(line.text)}</span>
+      <span className="niceeval-source-meta">
         {line.pill !== undefined ? (
-          <span className="nre-source-pill">{resolveLocalizedText(line.pill, locale)}</span>
+          <span className="niceeval-source-pill">{resolveLocalizedText(line.pill, locale)}</span>
         ) : null}
         {line.aborted ? (
-          <span className="nre-source-abort-mark" aria-hidden="true">
+          <span className="niceeval-source-abort-mark" aria-hidden="true">
             ⤓
           </span>
         ) : null}
@@ -168,13 +231,13 @@ function CallTree({
   renderChild: (node: ReportNode) => ReactNode;
 }): ReactElement {
   return (
-    <div className="nre-source-calls">
+    <div className="niceeval-source-calls">
       {calls.map((call, i) => (
-        <details key={i} className={cx("nre-source-call", call.tone && `nre-source-call--${call.tone}`)} open={call.open}>
+        <details key={i} className={cx("niceeval-source-call", call.tone && `niceeval-source-call--${call.tone}`)} open={call.open}>
           <summary>{resolveLocalizedText(call.summary, locale)}</summary>
           {call.target.kind === "opaque" ? (
-            <div className="nre-source-opaque">
-              <div className="nre-source-opaque-label">{resolveLocalizedText(call.target.label, locale)}</div>
+            <div className="niceeval-source-opaque">
+              <div className="niceeval-source-opaque-label">{resolveLocalizedText(call.target.label, locale)}</div>
               {call.target.calls ? (
                 <CallTree calls={call.target.calls} locale={locale} renderChild={renderChild} />
               ) : null}
@@ -204,9 +267,9 @@ function SourceBlock({
   )?.number;
   let afterAbort = false;
   return (
-    <div className={cx("nre-source-block", nested && "nre-source-block--nested")}>
-      <div className="nre-source-block-path">{block.path}</div>
-      <div className="nre-source-lines">
+    <div className={cx("niceeval-source-block", nested && "niceeval-source-block--nested")}>
+      <div className="niceeval-source-block-path">{block.path}</div>
+      <div className="niceeval-source-lines">
         {block.lines.map((line) => {
           const unreached = afterAbort;
           if (line.aborted) afterAbort = true;
@@ -214,9 +277,9 @@ function SourceBlock({
             (line.details !== undefined && line.details.length > 0) ||
             (line.calls !== undefined && line.calls.length > 0);
           const lineClass = cx(
-            "nre-source-line",
-            toneClass(line.tone),
-            unreached && "nre-source-line-unreached",
+            "niceeval-source-line",
+            toneClass(lineTone(line)),
+            unreached && "niceeval-source-line-unreached",
           );
           if (!interactive) {
             return (
@@ -230,7 +293,7 @@ function SourceBlock({
               <summary>
                 <LineSummary line={line} locale={locale} />
               </summary>
-              <div className="nre-source-line-detail">
+              <div className="niceeval-source-line-detail">
                 {line.details?.map((detail, i) => (
                   <div key={i}>{renderChild(detail)}</div>
                 ))}
@@ -273,13 +336,13 @@ export const SourceView = defineComponent<SourceViewProps>({
     const locale = props.locale ?? ctx.locale;
     const renderChild = renderReportNode;
     return (
-      <div className={cx("nre", "nre-source-view", props.className)}>
+      <div className={cx("niceeval-report", "niceeval-source-view", props.className)}>
         <SourceBlock block={data.spine} locale={locale} renderChild={renderChild} />
         {data.detached.map((block) => (
           <SourceBlock key={block.path} block={block} locale={locale} renderChild={renderChild} />
         ))}
         {data.unmapped && data.unmapped.length > 0 ? (
-          <div className="nre-source-unmapped">
+          <div className="niceeval-source-unmapped">
             {data.unmapped.map((node, i) => (
               <div key={i}>{renderChild(node)}</div>
             ))}

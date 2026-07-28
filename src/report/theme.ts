@@ -84,20 +84,36 @@ export function isThemeDefinition(value: unknown): value is ThemeDefinition {
     (value as Record<symbol, unknown>)[THEME_DEFINITION] === true;
 }
 
-const basaltColors = {
-  accent: { light: "#26323A", dark: "#CBD6DC" }, positive: { light: "#2F6B4F", dark: "#7FBFA0" },
-  negative: { light: "#A33A30", dark: "#E58F86" }, warning: { light: "#7A6428", dark: "#D6BC78" },
-  page: { light: "#FAFAFA", dark: "#0A0B0C" }, surface: { light: "#FFFFFF", dark: "#101214" },
-  surfaceSubtle: { light: "#F2F3F4", dark: "#16191B" }, border: { light: "#E1E3E5", dark: "#22262A" },
-  borderStrong: { light: "#C4C8CC", dark: "#333A40" }, text: { light: "#16191B", dark: "#E6E9EB" },
-  textSecondary: { light: "#5C6469", dark: "#9AA2A8" }, textTertiary: { light: "#8A9298", dark: "#6A7278" },
-} as const;
+/**
+ * basalt —— 官方暗色主题,也是不装任何主题时的默认观感(docs/feature/reports/themes/basalt.md)。
+ * 与 docs/SVG-DESIGN.md 的图示令牌同一份:近黑面、发丝线、零圆角、颜色只在有语义时出现。
+ * 官方 stylesheet 每个 var(--niceeval-*, <兜底>) 用点的兜底值抄的就是这里,
+ * test/unit/report-theme-tokens.test.ts 守护逐项相等,所以 basalt 不需要自带 styles。
+ */
 export const basalt = defineTheme({
-  appearance: "system", ...basaltColors,
-  series: [{ light: "#3F6B87", dark: "#A8C8DC" }, { light: "#587046", dark: "#7E9B6E" }, { light: "#8A6B2E", dark: "#E0C894" }, { light: "#5A4E7C", dark: "#9A8DBA" }, { light: "#9E4E44", dark: "#C4837B" }, { light: "#2E6F6A", dark: "#6FAAA4" }],
+  appearance: "dark",
+  accent: "#cbd6dc", positive: "#3ddc97", negative: "#ff6b6b", warning: "#e8b84a",
+  series: ["#3987e5", "#199e70", "#c98500", "#008300", "#e66767", "#d95926"],
+  page: "#050505", surface: "#0b0b0b", surfaceSubtle: "#111111",
+  border: "#262626", borderStrong: "#343434",
+  text: "#ededed", textSecondary: "#a1a1aa", textTertiary: "#74747b",
   font: { sans: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif', mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" },
   fontSize: "13px", radius: "0",
-  styles: [{ inline: ".niceeval-report,.niceeval-report *{box-shadow:none}.niceeval-report td,.niceeval-report .niceeval-stat-value{font-variant-numeric:tabular-nums}.niceeval-report a{text-decoration:underline;text-underline-offset:2px}.niceeval-report :focus-visible{outline:1px solid var(--niceeval-color-focus);outline-offset:0}" }],
+});
+
+/**
+ * chalk —— 官方浅色主题(docs/feature/reports/themes/chalk.md)。白面、圆角、蓝 accent:
+ * 与 basalt 处处相反,同时证明官方样式没写死任何观感——差异完整住在主题令牌里。
+ */
+export const chalk = defineTheme({
+  appearance: "light",
+  accent: "#2a78d6", positive: "#087f5b", negative: "#b42318", warning: "#9a6700",
+  series: ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#e34948", "#eb6834"],
+  page: "#fafafa", surface: "#ffffff", surfaceSubtle: "#f4f4f5",
+  border: "#dedee2", borderStrong: "#c9c9cf",
+  text: "#111113", textSecondary: "#62636a", textTertiary: "#8b8d98",
+  font: { sans: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif', mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" },
+  fontSize: "14px", radius: "8px",
 });
 
 function pair(value: ThemeColor | undefined, fallback: ThemeColor): { light: string; dark: string } {
@@ -111,8 +127,13 @@ export function themeStylesheet(theme: ThemeDefinition): string {
   const series = (all.series ?? baseSeries).map((color, i) => [`series-${i + 1}`, pair(color, baseSeries[i]!)]);
   const vars = [...entries, ...series].map(([key, color]) => {
     const resolved = color as { light: string; dark: string };
-    return `--niceeval-color-${key}:light-dark(${resolved.light},${resolved.dark});`;
+    return resolved.light === resolved.dark
+      ? `--niceeval-color-${key}:${resolved.light};`
+      : `--niceeval-color-${key}:light-dark(${resolved.light},${resolved.dark});`;
   }).join("");
   const font = all.font ?? basalt.font!;
-  return `:root{color-scheme:${all.appearance === "light" ? "light" : all.appearance === "dark" ? "dark" : "light dark"};${vars}--niceeval-font-sans:${font.sans ?? basalt.font!.sans};--niceeval-font-mono:${font.mono ?? basalt.font!.mono};--niceeval-font-size:${all.fontSize ?? basalt.fontSize};--niceeval-radius:${all.radius ?? basalt.radius};}`;
+  const scheme = all.appearance === "light" ? "light" : all.appearance === "dark" ? "dark" : "light dark";
+  // .niceeval-report 也压一遍 color-scheme:官方 stylesheet 的兜底是 basalt 的 dark,
+  // 令牌块在级联后位,锁定/放开外观都以生效主题为准(tok-* 语法高亮的 light-dark() 靠它选支)。
+  return `:root{color-scheme:${scheme};${vars}--niceeval-font-sans:${font.sans ?? basalt.font!.sans};--niceeval-font-mono:${font.mono ?? basalt.font!.mono};--niceeval-font-size:${all.fontSize ?? basalt.fontSize};--niceeval-radius:${all.radius ?? basalt.radius};}.niceeval-report{color-scheme:${scheme};}`;
 }

@@ -200,7 +200,7 @@ import { basalt } from "niceeval/report/built-in";
 export default defineTheme({ ...basalt, accent: "#7C3AED" });
 ```
 
-**具名导出名同样是 CLI 上的主题名。** `--theme basalt` 查的是[内建主题名表](../themes/README.md)，当前只有 `basalt`；新增一份内建主题的形态与新增内建视图相同——一份新的 `defineTheme` 成品、一个新名字、一个新文件、一条新的具名导出。视图与主题共用这个入口但互不耦合：`standard` 不绑定 `basalt`，换主题不改页，换报告不改色。
+**具名导出名同样是 CLI 上的主题名。** `--theme basalt` 查的是[内建主题名表](../themes/README.md)，当前有 `basalt` 与 `chalk`；新增一份内建主题的形态与新增内建视图相同——一份新的 `defineTheme` 成品、一个新名字、一个新文件、一条新的具名导出。视图与主题共用这个入口但互不耦合：`standard` 不绑定 `basalt`，换主题不改页，换报告不改色。
 
 ## 内建报告显示什么
 

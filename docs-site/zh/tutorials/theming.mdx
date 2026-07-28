@@ -15,10 +15,11 @@ description: "用 --theme 换报告外观，用 defineTheme 写一份自己的�
 ```bash
 niceeval view --theme ./themes/acme.ts
 niceeval view --report reports/site.tsx --theme ./themes/acme.ts
-niceeval view --theme basalt                 # 内置主题名，回到官方外观
+niceeval view --theme basalt                 # 官方暗色主题（默认）：黑面、直角
+niceeval view --theme chalk                  # 官方浅色主题：白面、圆角
 ```
 
-`--theme` 的裸词查内置主题名（当前只有 `basalt`），带路径的值按文件装载。
+`--theme` 的裸词查内置主题名（`basalt` 与 `chalk`），带路径的值按文件装载。两套官方主题一暗一浅、一直角一圆角，对着同一份报告各跑一次，就能看到外观完整住在主题里。
 
 每次运行只有一份主题生效，四档，前面没有才用后面：
 
@@ -137,7 +138,7 @@ export default defineConfig({ theme: acme });
 export default defineTheme({
   ...acme,
   accent: { light: "#0F766E", dark: "#5EEAD4" },
-  styles: [...(acme.styles ?? []), { inline: ".nre .nre-hero { padding-block: 48px; }" }],
+  styles: [...(acme.styles ?? []), { inline: ".niceeval-report .niceeval-hero { padding-block: 48px; }" }],
 });
 ```
 

@@ -1,5 +1,5 @@
 // niceeval 报告的渐进增强 runtime:纯 vanilla JS、零依赖、IIFE、幂等。
-// 只作用于 .nre DOM 与 data-nre-* 属性;五个行为——Tabs 单选切换、表格排序、
+// 只作用于 .niceeval-report DOM 与 data-niceeval-* 属性;五个行为——Tabs 单选切换、表格排序、
 // 行过滤、SVG 点 tooltip、警告命令复制。全部只改浏览状态,不改数据、指标口径或初始 HTML 数值。
 // 静态 HTML 无 JS 时内容完整可读是硬约束:排序有数据侧预排、tooltip 退化为原生 <title>、
 // 过滤输入框静默无功能、Tabs 退化为原生 <details> 手风琴、命令块退化为点击全选。
@@ -11,21 +11,21 @@
   if (typeof window === "undefined" || window.__nreEnhanced) return;
   window.__nreEnhanced = true;
 
-  // 根类 nre-js:styles.css 用它把仅增强态的布局(单选 tab 条、复制指针)限定在 JS 在场时。
+  // 根类 niceeval-js:styles.css 用它把仅增强态的布局(单选 tab 条、复制指针)限定在 JS 在场时。
   // 挂在 documentElement 上与报告块位置无关,块之后被搬进槽位也不需要补标记。
-  document.documentElement.classList.add("nre-js");
+  document.documentElement.classList.add("niceeval-js");
 
   function closest(target, selector) {
     return target && target.closest ? target.closest(selector) : null;
   }
 
-  // ───────────────────────── Tabs:[data-nre-tabs] 单选切换 ─────────────────────────
+  // ───────────────────────── Tabs:[data-niceeval-tabs] 单选切换 ─────────────────────────
   // 静态 HTML 每 tab 一个 <details> 且仅首个 open;点击 summary 时接管原生 toggle:
   // 打开所点 tab、收起同组其余,点已开的 tab 保持打开(单选语义,恒有一个面板可见)。
   // 只切换 open 状态,不触碰 tab 内任何数据;键盘 Enter/Space 走 summary 的原生激活(即 click)。
 
   document.addEventListener("click", function (e) {
-    var title = closest(e.target, "[data-nre-tabs] > details > summary");
+    var title = closest(e.target, "[data-niceeval-tabs] > details > summary");
     if (!title) return;
     e.preventDefault();
     var tab = title.parentNode;
@@ -36,19 +36,19 @@
     }
   });
 
-  // ───────────────────────── 复制:[data-nre-copy](宿主警告块的命令) ─────────────────────────
-  // 点击把 data-nre-copy 携带的完整命令写进剪贴板,成功后短暂打上 data-nre-copied
+  // ───────────────────────── 复制:[data-niceeval-copy](宿主警告块的命令) ─────────────────────────
+  // 点击把 data-niceeval-copy 携带的完整命令写进剪贴板,成功后短暂打上 data-niceeval-copied
   // (styles.css 显示 ✓);剪贴板不可用时退化为全选该块文本,用户手动复制。
   // 块内文本与属性值恒不变,复制的是数据侧已写好的命令原文。
 
   document.addEventListener("click", function (e) {
-    var block = closest(e.target, "[data-nre-copy]");
+    var block = closest(e.target, "[data-niceeval-copy]");
     if (!block) return;
-    var command = block.getAttribute("data-nre-copy") || "";
+    var command = block.getAttribute("data-niceeval-copy") || "";
     function mark() {
-      block.setAttribute("data-nre-copied", "");
+      block.setAttribute("data-niceeval-copied", "");
       setTimeout(function () {
-        block.removeAttribute("data-nre-copied");
+        block.removeAttribute("data-niceeval-copied");
       }, 1500);
     }
     function selectFallback() {
@@ -66,9 +66,9 @@
     }
   });
 
-  // ───────────────────────── 排序:th[data-nre-sort] ─────────────────────────
+  // ───────────────────────── 排序:th[data-niceeval-sort] ─────────────────────────
   // 点击按该列排序 tbody 行(td/th 的 data-sort-value,数值优先、退回字符串;
-  // 空值恒沉底),再点反向;方向指示由 th 上的 nre-sort-asc / nre-sort-desc 类驱动。
+  // 空值恒沉底),再点反向;方向指示由 th 上的 niceeval-sort-asc / niceeval-sort-desc 类驱动。
 
   function sortValue(row, index) {
     var cell = row.cells[index];
@@ -78,16 +78,39 @@
   }
 
   document.addEventListener("click", function (e) {
-    var th = closest(e.target, ".nre table th[data-nre-sort]");
+    var th = closest(e.target, ".niceeval-report table th[data-niceeval-sort]");
     if (!th) return;
     var table = th.closest("table");
     var tbody = table && table.tBodies[0];
     if (!tbody) return;
     var index = Array.prototype.indexOf.call(th.parentNode.children, th);
-    var dir = th.classList.contains("nre-sort-asc") ? "desc" : "asc";
-    var siblings = th.parentNode.querySelectorAll("th[data-nre-sort]");
-    for (var i = 0; i < siblings.length; i++) siblings[i].classList.remove("nre-sort-asc", "nre-sort-desc");
-    th.classList.add(dir === "asc" ? "nre-sort-asc" : "nre-sort-desc");
+    var dir = th.classList.contains("niceeval-sort-asc") ? "desc" : "asc";
+    var siblings = th.parentNode.querySelectorAll("th[data-niceeval-sort]");
+    for (var i = 0; i < siblings.length; i++) siblings[i].classList.remove("niceeval-sort-asc", "niceeval-sort-desc");
+    th.classList.add(dir === "asc" ? "niceeval-sort-asc" : "niceeval-sort-desc");
+
+    if (table.classList.contains("niceeval-table--hierarchical")) {
+      var body = table.querySelector(".niceeval-table-hierarchy-body");
+      var entries = body
+        ? Array.prototype.slice.call(body.querySelectorAll(":scope > .niceeval-table-hierarchy-row"))
+        : [];
+      entries.sort(function (a, b) {
+        var ac = a.querySelector(":scope > .niceeval-table-hierarchy-summary, :scope > .niceeval-table-hierarchy-cell");
+        var bc = b.querySelector(":scope > .niceeval-table-hierarchy-summary, :scope > .niceeval-table-hierarchy-cell");
+        var aCells = ac && ac.classList.contains("niceeval-table-hierarchy-summary") ? ac.children : a.children;
+        var bCells = bc && bc.classList.contains("niceeval-table-hierarchy-summary") ? bc.children : b.children;
+        var av = aCells[index] ? aCells[index].getAttribute("data-sort-value") || aCells[index].textContent.trim() : "";
+        var bv = bCells[index] ? bCells[index].getAttribute("data-sort-value") || bCells[index].textContent.trim() : "";
+        if (av === "" && bv === "") return 0;
+        if (av === "") return 1;
+        if (bv === "") return -1;
+        var an = Number(av), bn = Number(bv);
+        var compared = !isNaN(an) && !isNaN(bn) ? an - bn : String(av).localeCompare(String(bv));
+        return dir === "asc" ? compared : -compared;
+      });
+      for (var h = 0; h < entries.length; h++) body.appendChild(entries[h]);
+      return;
+    }
 
     var rows = Array.prototype.slice.call(tbody.rows);
     rows.sort(function (a, b) {
@@ -107,40 +130,50 @@
     for (var u = 0; u < rows.length; u++) tbody.appendChild(rows[u]);
   });
 
-  // ───────────────────────── 过滤:input[data-nre-filter] ─────────────────────────
+  // ───────────────────────── 过滤:input[data-niceeval-filter] ─────────────────────────
   // 对同容器内的表格行做 textContent 匹配,不匹配者加隐藏类(样式在 styles.css)。
 
   document.addEventListener("input", function (e) {
-    var input = closest(e.target, "input[data-nre-filter]");
+    var input = closest(e.target, "input[data-niceeval-filter]");
     if (!input) return;
     var sample = input.parentElement;
     var table = sample ? sample.querySelector("table") : null;
     if (!table || !table.tBodies[0]) return;
     var query = input.value.trim().toLowerCase();
+    if (table.classList.contains("niceeval-table--hierarchical")) {
+      var entries = table.querySelectorAll(".niceeval-table-hierarchy-body > .niceeval-table-hierarchy-row");
+      for (var h = 0; h < entries.length; h++) {
+        entries[h].classList.toggle(
+          "niceeval-row-hidden",
+          query !== "" && entries[h].textContent.toLowerCase().indexOf(query) === -1,
+        );
+      }
+      return;
+    }
     var rows = table.tBodies[0].rows;
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       var hide = query !== "" && row.textContent.toLowerCase().indexOf(query) === -1;
-      row.classList.toggle("nre-row-hidden", hide);
+      row.classList.toggle("niceeval-row-hidden", hide);
     }
   });
 
   // ExperimentList 的 web 面以原生 details 表达「八列主行 + 展开明细」，不是 table/tbody。
   // 单独按 summary 的列排序、按整条 details 文本过滤；无 JS 时保持数据侧成功率降序。
   document.addEventListener("click", function (e) {
-    var control = closest(e.target, "[data-nre-experiment-sort]");
+    var control = closest(e.target, "[data-niceeval-experiment-sort]");
     if (!control) return;
-    var board = control.closest(".nre-experiment-table");
+    var board = control.closest(".niceeval-experiment-table");
     if (!board) return;
-    var index = Number(control.getAttribute("data-nre-experiment-sort"));
-    var dir = control.classList.contains("nre-sort-asc") ? "desc" : "asc";
-    var controls = board.querySelectorAll("[data-nre-experiment-sort]");
-    for (var i = 0; i < controls.length; i++) controls[i].classList.remove("nre-sort-asc", "nre-sort-desc");
-    control.classList.add(dir === "asc" ? "nre-sort-asc" : "nre-sort-desc");
-    var entries = Array.prototype.slice.call(board.querySelectorAll(":sample > .nre-experiment-entry"));
+    var index = Number(control.getAttribute("data-niceeval-experiment-sort"));
+    var dir = control.classList.contains("niceeval-sort-asc") ? "desc" : "asc";
+    var controls = board.querySelectorAll("[data-niceeval-experiment-sort]");
+    for (var i = 0; i < controls.length; i++) controls[i].classList.remove("niceeval-sort-asc", "niceeval-sort-desc");
+    control.classList.add(dir === "asc" ? "niceeval-sort-asc" : "niceeval-sort-desc");
+    var entries = Array.prototype.slice.call(board.querySelectorAll(":sample > .niceeval-experiment-entry"));
     entries.sort(function (a, b) {
-      var ac = a.querySelector(".nre-experiment-summary").children[index];
-      var bc = b.querySelector(".nre-experiment-summary").children[index];
+      var ac = a.querySelector(".niceeval-experiment-summary").children[index];
+      var bc = b.querySelector(".niceeval-experiment-summary").children[index];
       var av = ac ? ac.getAttribute("data-sort-value") || ac.textContent.trim() : "";
       var bv = bc ? bc.getAttribute("data-sort-value") || bc.textContent.trim() : "";
       if (av === "" && bv === "") return 0;
@@ -154,32 +187,32 @@
   });
 
   document.addEventListener("input", function (e) {
-    var input = closest(e.target, "input[data-nre-experiment-filter]");
+    var input = closest(e.target, "input[data-niceeval-experiment-filter]");
     if (!input) return;
     var sample = input.parentElement;
-    var entries = sample ? sample.querySelectorAll(".nre-experiment-entry") : [];
+    var entries = sample ? sample.querySelectorAll(".niceeval-experiment-entry") : [];
     var query = input.value.trim().toLowerCase();
     for (var i = 0; i < entries.length; i++) {
-      entries[i].classList.toggle("nre-row-hidden", query !== "" && entries[i].textContent.toLowerCase().indexOf(query) === -1);
+      entries[i].classList.toggle("niceeval-row-hidden", query !== "" && entries[i].textContent.toLowerCase().indexOf(query) === -1);
     }
   });
 
-  // AttemptList 的过滤(<AttemptList filter />):按条目全文 + data-nre-verdict(verdict 词
-  // 不在可见文本里,判定符是 ✓/✗)收窄 .nre-attempt 行。只改浏览状态,不改数据与初始 HTML。
+  // AttemptList 的过滤(<AttemptList filter />):按条目全文 + data-niceeval-verdict(verdict 词
+  // 不在可见文本里,判定符是 ✓/✗)收窄 .niceeval-attempt 行。只改浏览状态,不改数据与初始 HTML。
   document.addEventListener("input", function (e) {
-    var input = closest(e.target, "input[data-nre-attempt-filter]");
+    var input = closest(e.target, "input[data-niceeval-attempt-filter]");
     if (!input) return;
     var sample = input.parentElement;
-    var rows = sample ? sample.querySelectorAll(".nre-attempt") : [];
+    var rows = sample ? sample.querySelectorAll(".niceeval-attempt") : [];
     var query = input.value.trim().toLowerCase();
     for (var i = 0; i < rows.length; i++) {
-      var haystack = rows[i].textContent + " " + (rows[i].getAttribute("data-nre-verdict") || "");
-      rows[i].classList.toggle("nre-row-hidden", query !== "" && haystack.toLowerCase().indexOf(query) === -1);
+      var haystack = rows[i].textContent + " " + (rows[i].getAttribute("data-niceeval-verdict") || "");
+      rows[i].classList.toggle("niceeval-row-hidden", query !== "" && haystack.toLowerCase().indexOf(query) === -1);
     }
   });
 
-  // ───────────────────────── tooltip:.nre-scatter-point / .nre-line-point ─────────────────────────
-  // 首次 hover 时把点内 <title> 的内容搬进 data-nre-title(避免与原生 tooltip 重影),
+  // ───────────────────────── tooltip:.niceeval-scatter-point / .niceeval-line-point ─────────────────────────
+  // 首次 hover 时把点内 <title> 的内容搬进 data-niceeval-title(避免与原生 tooltip 重影),
   // 渲染样式化 tooltip div(定位在点上方,挂在所属 figure 里)。无 JS 时 <title> 原样生效。
 
   var tooltip = null;
@@ -190,29 +223,29 @@
   }
 
   function tooltipText(point) {
-    var text = point.getAttribute("data-nre-title");
+    var text = point.getAttribute("data-niceeval-title");
     if (text === null) {
       var title = point.querySelector("title");
       text = title ? title.textContent : "";
       if (title && title.parentNode) title.parentNode.removeChild(title);
-      point.setAttribute("data-nre-title", text);
+      point.setAttribute("data-niceeval-title", text);
     }
     return text;
   }
 
   document.addEventListener("mouseover", function (e) {
-    var point = closest(e.target, ".nre-scatter-point, .nre-line-point");
+    var point = closest(e.target, ".niceeval-scatter-point, .niceeval-line-point");
     if (!point) return;
     var text = tooltipText(point);
     if (!text) return;
     var figure = point.closest("figure") || document.body;
     hideTooltip();
     tooltip = document.createElement("div");
-    tooltip.className = "nre-tooltip";
+    tooltip.className = "niceeval-tooltip";
     var lines = text.split("\n");
     for (var i = 0; i < lines.length; i++) {
       var line = document.createElement(i === 0 ? "b" : "div");
-      if (i > 0) line.className = "nre-tooltip-meta";
+      if (i > 0) line.className = "niceeval-tooltip-meta";
       line.textContent = lines[i];
       tooltip.appendChild(line);
     }
@@ -225,7 +258,7 @@
   });
 
   document.addEventListener("mouseout", function (e) {
-    var point = closest(e.target, ".nre-scatter-point, .nre-line-point");
+    var point = closest(e.target, ".niceeval-scatter-point, .niceeval-line-point");
     if (!point) return;
     // 移入 tooltip 自身不算离开(pointer-events: none 下 relatedTarget 不会是它,防御性判断)
     if (e.relatedTarget && point.contains(e.relatedTarget)) return;

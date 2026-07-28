@@ -3,8 +3,8 @@
 `docs/` 与 `docs-site/` 里所有手绘 SVG 按这一页画。
 色值、间距、字号在这里裁决一次，图里直接写死这些数。
 
-色值取自产品自己的深色令牌（`src/view/styles.css` 的 `:root`，
-`src/report/assets/styles.css` 的 `.nre` 抄同一份）。图和 `niceeval view`、
+色值取自官方暗色主题 [Basalt](feature/reports/themes/basalt.md)
+（单源在 `src/report/theme.ts`）。图和 `niceeval view`、
 默认报告因此是同一个观感：近黑底、1px 细线、灰阶文字，颜色只在有语义时出现。
 
 ## 观感：默认无色
@@ -39,7 +39,7 @@
 
 样式是复制进每份文件的，不是外链的一份 CSS：SVG 经 `<img>` 或 markdown
 图片语法渲染时取不到外部样式表，GitHub 与 Mintlify 也会清掉外链。
-改配色时改 `src/view/styles.css` 的令牌，再把这段同步一遍。
+改配色时改 `src/report/theme.ts` 的 basalt，再把这段同步一遍。
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 480"
@@ -52,7 +52,7 @@
       <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
     </marker>
     <style>
-      /* 值来自 src/view/styles.css 的深色令牌，改色先改那里 */
+      /* 值来自内建主题 basalt（src/report/theme.ts），改色先改那里 */
       text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
              BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
       .title { fill: #ededed; font-size: 20px; font-weight: 600; }
@@ -109,7 +109,7 @@
 `stroke` 不共用一个属性。文字挂填充类，线条挂描边类。
 
 要一个表里没有的颜色时，先确认能不能用 `.c0`–`.c5`。确实需要新色，
-去 `src/view/styles.css` 立一个令牌，再同步到这段样式，不在单张图里发明 hex。
+去 `src/report/theme.ts` 的 basalt 立一个令牌，再同步到这段样式，不在单张图里发明 hex。
 
 ## 色值
 

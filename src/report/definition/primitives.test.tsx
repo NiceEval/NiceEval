@@ -73,7 +73,7 @@ describe("Section text 面 — 接线到 panel.ts", () => {
       </Section>,
       ctx,
     );
-    expect(text).not.toContain("nre-panel-divider");
+    expect(text).not.toContain("niceeval-panel-divider");
     expect(text).not.toContain("\0");
     expect(text).toMatch(/├─ In row ─+┤/);
     expect(text).toMatch(/├─ In grid ─+┤/);

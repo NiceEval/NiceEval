@@ -239,24 +239,24 @@ function themeStylesheet(theme: ThemeDefinition): string;
 
 组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级呈现分配](../components/README.md#维度呈现分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`dimensionPins`](shell.md#钉色) 声明），`sources.measure.delta` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
 
-未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子：
+未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子（Basalt 锁定暗色，每个令牌一个值）：
 
-| 令牌 | light | dark |
-|---|---|---|
-| `accent` | `#26323A` | `#CBD6DC` |
-| `positive` | `#2F6B4F` | `#7FBFA0` |
-| `negative` | `#A33A30` | `#E58F86` |
-| `warning` | `#7A6428` | `#D6BC78` |
-| `series` | `#3F6B87`, `#587046`, `#8A6B2E`, `#5A4E7C`, `#9E4E44`, `#2E6F6A` | `#A8C8DC`, `#7E9B6E`, `#E0C894`, `#9A8DBA`, `#C4837B`, `#6FAAA4` |
-| `page` | `#FAFAFA` | `#0A0B0C` |
-| `surface` | `#FFFFFF` | `#101214` |
-| `surfaceSubtle` | `#F2F3F4` | `#16191B` |
-| `border` | `#E1E3E5` | `#22262A` |
-| `borderStrong` | `#C4C8CC` | `#333A40` |
-| `text` | `#16191B` | `#E6E9EB` |
-| `textSecondary` | `#5C6469` | `#9AA2A8` |
-| `textTertiary` | `#8A9298` | `#6A7278` |
-| `focus` | 同 `accent` | 同 `accent` |
+| 令牌 | 值 |
+|---|---|
+| `accent` | `#cbd6dc` |
+| `positive` | `#3ddc97` |
+| `negative` | `#ff6b6b` |
+| `warning` | `#e8b84a` |
+| `series` | `#3987e5`, `#199e70`, `#c98500`, `#008300`, `#e66767`, `#d95926` |
+| `page` | `#050505` |
+| `surface` | `#0b0b0b` |
+| `surfaceSubtle` | `#111111` |
+| `border` | `#262626` |
+| `borderStrong` | `#343434` |
+| `text` | `#ededed` |
+| `textSecondary` | `#a1a1aa` |
+| `textTertiary` | `#74747b` |
+| `focus` | 同 `accent` |
 
 非颜色令牌：
 
@@ -267,7 +267,8 @@ function themeStylesheet(theme: ThemeDefinition): string;
 | `fontSize` | `13px` |
 | `radius` | `0` |
 
-Basalt 自己的视觉主张、分类色的明度阶梯与验收要求写在[它的设计页](../themes/basalt.md)。
+Basalt 自己的视觉主张、分类色的明度阶梯与验收要求写在[它的设计页](../themes/basalt.md)；
+官方浅色主题 [Chalk](../themes/chalk.md) 与内建主题一览见[主题目录](../themes/README.md)。
 
 NiceEval 固定字标与 `PoweredBy` 仍表示 NiceEval 产品身份，不从主题的 `accent` 取色。主题不是隐藏或伪装宿主品牌的机制。
 

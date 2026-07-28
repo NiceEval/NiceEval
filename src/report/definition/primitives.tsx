@@ -53,7 +53,7 @@ export type ColProps = LayoutProps;
 export const Col = defineComponent<ColProps>({
   dimensions: () => ({}),
   web({ children, className }) {
-    return <div className={cx("nre", "nre-col", className)}>{children as ReactNode}</div>;
+    return <div className={cx("niceeval-report", "niceeval-col", className)}>{children as ReactNode}</div>;
   },
   text({ children }, ctx) {
     return childArray(children)
@@ -78,7 +78,7 @@ function blockWidth(block: string): number {
 export const Row = defineComponent<RowProps>({
   dimensions: () => ({}),
   web({ children, className }) {
-    return <div className={cx("nre", "nre-row", className)}>{children as ReactNode}</div>;
+    return <div className={cx("niceeval-report", "niceeval-row", className)}>{children as ReactNode}</div>;
   },
   text({ children }, ctx) {
     const blocks = childArray(children).filter(
@@ -139,14 +139,14 @@ export const Grid = defineComponent<GridProps>({
   dimensions: () => ({}),
   web({ children, columns, variant, density, className }) {
     const normalized = normalizeGrid({ children, columns, variant, density });
-    const style: CSSProperties = { "--nre-grid-max-columns": normalized.columns } as CSSProperties;
+    const style: CSSProperties = { "--niceeval-grid-max-columns": normalized.columns } as CSSProperties;
     return (
       <div
-        className={cx("nre", "nre-grid", `nre-grid--${normalized.variant}`, `nre-grid--${normalized.density}`, className)}
+        className={cx("niceeval-report", "niceeval-grid", `niceeval-grid--${normalized.variant}`, `niceeval-grid--${normalized.density}`, className)}
         style={style}
       >
         {normalized.cells.map((cell) => (
-          <div className="nre-grid-cell" key={cell.key}>
+          <div className="niceeval-grid-cell" key={cell.key}>
             {cell.node as ReactNode}
           </div>
         ))}
@@ -213,18 +213,14 @@ export const Stat = defineComponent<StatProps>({
   dimensions: () => ({}),
   web({ label, value, detail, tone = "neutral", className }, ctx) {
     return (
-      <div className={cx("nre", "nre-stat", `nre-stat--${tone}`, className)}>
-        <div className="nre-stat-label">{resolveLocalizedText(label, ctx.locale)}</div>
-        <div className="nre-stat-value">
-          {isCellValue(value) && value.kind === "measure" ? (
-            <MetricCellView cell={value.measure} attemptHref={ctx.attemptHref} locale={ctx.locale} />
-          ) : isCellValue(value) ? (
-            formatCellText(value, ctx.locale)
-          ) : (
-            resolveStatDisplay(value, ctx.locale)
-          )}
+      <div className={cx("niceeval-report", "niceeval-stat", `niceeval-stat--${tone}`, className)}>
+        <div className="niceeval-stat-label">{resolveLocalizedText(label, ctx.locale)}</div>
+        <div className="niceeval-stat-value">
+          {isCellValue(value)
+            ? renderCellWeb(value, { attemptHref: ctx.attemptHref, locale: ctx.locale, showMeasureRefs: false })
+            : resolveStatDisplay(value, ctx.locale)}
         </div>
-        {detail !== undefined ? <div className="nre-stat-detail">{resolveLocalizedText(detail, ctx.locale)}</div> : null}
+        {detail !== undefined ? <div className="niceeval-stat-detail">{resolveLocalizedText(detail, ctx.locale)}</div> : null}
       </div>
     );
   },
@@ -252,14 +248,14 @@ export const Section = defineComponent<SectionProps>({
     const titleText = resolveLocalizedText(title, ctx.locale);
     const metaText = meta !== undefined ? resolveLocalizedText(meta, ctx.locale) : undefined;
     return (
-      <section className={cx("nre", "nre-section", className)}>
+      <section className={cx("niceeval-report", "niceeval-section", className)}>
         {metaText !== undefined ? (
-          <header className="nre-section-header">
-            <h2 className="nre-section-title">{titleText}</h2>
-            <p className="nre-section-meta">{metaText}</p>
+          <header className="niceeval-section-header">
+            <h2 className="niceeval-section-title">{titleText}</h2>
+            <p className="niceeval-section-meta">{metaText}</p>
           </header>
         ) : (
-          <h2 className="nre-section-title">{titleText}</h2>
+          <h2 className="niceeval-section-title">{titleText}</h2>
         )}
         {children as ReactNode}
       </section>
@@ -335,7 +331,7 @@ export interface TextProps {
 export const Text = defineComponent<TextProps>({
   dimensions: () => ({}),
   web({ children, className }) {
-    return <p className={cx("nre", "nre-text", className)}>{children}</p>;
+    return <p className={cx("niceeval-report", "niceeval-text", className)}>{children}</p>;
   },
   text({ children }, ctx) {
     return wrapDisplay(String(children), ctx.width).join("\n");
@@ -415,11 +411,11 @@ export const Tabs = defineComponent<TabsProps>({
   web({ children, className }, ctx) {
     const tabs = tabEntries(children);
     return (
-      <div className={cx("nre", "nre-tabs", className)} data-nre-tabs>
+      <div className={cx("niceeval-report", "niceeval-tabs", className)} data-niceeval-tabs>
         {tabs.map((tab, i) => (
-          <details key={i} className={cx("nre-tab", tab.className)} open={i === 0}>
-            <summary className="nre-tab-title">{resolveLocalizedText(tab.title, ctx.locale)}</summary>
-            <div className="nre-tab-body">{tab.children as ReactNode}</div>
+          <details key={i} className={cx("niceeval-tab", tab.className)} open={i === 0}>
+            <summary className="niceeval-tab-title">{resolveLocalizedText(tab.title, ctx.locale)}</summary>
+            <div className="niceeval-tab-body">{tab.children as ReactNode}</div>
           </details>
         ))}
       </div>
@@ -446,7 +442,7 @@ Tabs[COMPONENT_ROLE] = "tabs";
 export const Tab = defineComponent<TabProps>({
   dimensions: () => ({}),
   web({ children, className }) {
-    return <div className={cx("nre", "nre-tab-body", className)}>{children as ReactNode}</div>;
+    return <div className={cx("niceeval-report", "niceeval-tab-body", className)}>{children as ReactNode}</div>;
   },
   text({ children }, ctx) {
     return childArray(children)
@@ -468,6 +464,8 @@ export interface TableColumn {
   header: LocalizedText;
   /** 对齐方向,默认 `"left"`;`"right"` 按显示宽度右对齐,数字列用。 */
   align?: ColumnAlign;
+  /** 排序方向提示；省略时该列不可排序。 */
+  better?: "higher" | "lower";
   /**
    * text 面:单元格折行后的最大物理行数,放不下的部分以 `…` 收口;省略则不限行数。
    * web 面不消费——网页的高度约束是组件自己的 CSS 决定。
@@ -560,6 +558,25 @@ function columnNodesOf(children: ReportNode | undefined): ColumnProps[] {
   return out;
 }
 
+function defaultTableHeader(key: string, locale: ReportLocale): LocalizedText {
+  const dictionary: globalThis.Record<string, Parameters<typeof localeText>[1]> = {
+    entity: "experimentList.experiment",
+    model: "table.model",
+    agent: "table.agent",
+    durationMs: "experimentList.avgDuration",
+    passRate: "experimentList.passRate",
+    totalScore: "experimentList.totalScore",
+    tokens: "experimentList.tokens",
+    costUSD: "experimentList.cost",
+    record: "experimentList.result",
+    verdict: "experimentList.status",
+    result: "experimentList.result",
+    score: "experimentList.totalScore",
+  };
+  const message = dictionary[key];
+  return message ? localeText(locale, message) : key;
+}
+
 function resolveTableContent(props: TableProps, locale: ReportLocale): {
   columns: TableColumn[];
   rows: TableRow[];
@@ -586,8 +603,9 @@ function resolveTableContent(props: TableProps, locale: ReportLocale): {
   );
   const columns: TableColumn[] = specs.map((spec) => ({
     key: spec.key,
-    header: headers.get(spec.key) ?? spec.key,
+    header: headers.get(spec.key) ?? defaultTableHeader(spec.key, locale),
     align: aligns.get(spec.key) ?? (spec.better ? "right" : "left"),
+    better: spec.better,
     maxLines: maxLines.get(spec.key),
   }));
   if (columns.length === 0) return { columns: [], rows: [], content };
@@ -598,7 +616,11 @@ function resolveTableContent(props: TableProps, locale: ReportLocale): {
   };
 }
 
-function validateResolvedTable(columns: TableColumn[], rows: TableRow[]): void {
+function validateResolvedTable(
+  columns: TableColumn[],
+  rows: TableRow[],
+  hierarchyRows?: readonly TableContentRow[],
+): void {
   if (columns.length === 0) {
     throw new Error("Table needs at least one column: pass columns or a TableContent with columns, or <Column dataKey> children.");
   }
@@ -609,12 +631,12 @@ function validateResolvedTable(columns: TableColumn[], rows: TableRow[]): void {
     }
     keys.add(column.key);
   }
-  const rowKeys = new Set<string>();
+  if (hierarchyRows) {
+    validateSiblingRowKeys(hierarchyRows);
+  } else {
+    validateSiblingRowKeys(rows);
+  }
   for (const row of rows) {
-    if (rowKeys.has(row.key)) {
-      throw new Error(`Table row key "${row.key}" is declared twice — row keys are the row identity and must be unique.`);
-    }
-    rowKeys.add(row.key);
     for (const cellKey of Object.keys(row.cells)) {
       if (!keys.has(cellKey)) {
         throw new Error(
@@ -625,37 +647,79 @@ function validateResolvedTable(columns: TableColumn[], rows: TableRow[]): void {
   }
 }
 
+function validateSiblingRowKeys(
+  rows: readonly (TableRow | TableContentRow)[],
+): void {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    if (keys.has(row.key)) {
+      throw new Error(
+        `Table row key "${row.key}" is declared twice at the same level — sibling row keys are the row identity and must be unique.`,
+      );
+    }
+    keys.add(row.key);
+    if ("subRows" in row && row.subRows?.length) validateSiblingRowKeys(row.subRows);
+  }
+}
+
 function renderCellWeb(
   cell: Cell | undefined,
-  ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale },
+  ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale; showMeasureRefs?: boolean },
 ): ReactNode {
-  if (!cell) return <span className="nre-missing">{MISSING_MARK}</span>;
+  if (!cell) return <span className="niceeval-missing">{MISSING_MARK}</span>;
   switch (cell.kind) {
     case "notApplicable":
-      return <span className="nre-missing">{MISSING_MARK}</span>;
+      return <span className="niceeval-missing">{MISSING_MARK}</span>;
     case "missing":
-      return <span className="nre-missing">{cell.code}</span>;
+      return <span className="niceeval-missing">{cell.code}</span>;
     case "text":
       return (
-        <span>
-          {cell.text}
-          {cell.detail ? <span className="nre-muted"> {cell.detail}</span> : null}
+        <span className="niceeval-cell-text">
+          <span>{cell.text}</span>
+          {cell.detail ? <small className="niceeval-cell-detail">{cell.detail}</small> : null}
         </span>
       );
     case "locator":
       return ctx.attemptHref ? (
-        <a className="nre-locator" href={ctx.attemptHref(cell.locator)}>
+        <a className="niceeval-locator" href={ctx.attemptHref(cell.locator)}>
           {cell.locator}
         </a>
       ) : (
-        <span className="nre-locator">{formatCellText(cell, ctx.locale)}</span>
+        <span className="niceeval-locator">{formatCellText(cell, ctx.locale)}</span>
       );
     case "summary":
     case "score":
-    case "verdict":
       return formatCellText(cell, ctx.locale);
+    case "verdict": {
+      if (cell.counts) {
+        const parts = (["passed", "failed", "errored", "skipped"] as const).filter((kind) => cell.counts![kind] > 0);
+        return (
+          <span className="niceeval-verdict-tally">
+            {parts.map((kind) => (
+              <span className={`niceeval-verdict-${kind}`} key={kind}>
+                {cell.counts![kind]} {localeText(ctx.locale, `verdict.${kind === "skipped" ? "unreadable" : kind}`)}
+              </span>
+            ))}
+            {parts.length === 0 ? <span className="niceeval-missing">{MISSING_MARK}</span> : null}
+          </span>
+        );
+      }
+      const verdict = cell.verdict ?? "skipped";
+      const mark = verdict === "passed" ? "✓" : verdict === "failed" || verdict === "errored" ? "✗" : "—";
+      return (
+        <span className={`niceeval-verdict niceeval-verdict-${verdict}`}>
+          {mark} {localeText(ctx.locale, `verdict.${verdict === "skipped" ? "unreadable" : verdict}`)}
+        </span>
+      );
+    }
     case "measure":
-      return <MetricCellView cell={cell.measure} attemptHref={ctx.attemptHref} locale={ctx.locale} />;
+      return (
+        <MetricCellView
+          cell={cell.measure}
+          attemptHref={ctx.showMeasureRefs === false ? undefined : ctx.attemptHref}
+          locale={ctx.locale}
+        />
+      );
     default: {
       const _e: never = cell;
       return _e;
@@ -663,33 +727,78 @@ function renderCellWeb(
   }
 }
 
-function renderContentRowsWeb(
+function cellSortValue(cell: Cell | undefined): string | number {
+  if (!cell) return "";
+  if (cell.kind === "measure") return cell.measure.value ?? "";
+  if (cell.kind === "score") return cell.earned;
+  if (cell.kind === "text") return cell.text;
+  if (cell.kind === "locator") return cell.locator;
+  if (cell.kind === "verdict" && cell.counts) return cell.counts.passed;
+  return formatCellText(cell);
+}
+
+function hierarchyGrid(columns: readonly TableColumn[]): string {
+  if (columns.length === 1) return "minmax(240px, 1fr)";
+  return `minmax(240px, 1.35fr) repeat(${columns.length - 1}, minmax(105px, .68fr))`;
+}
+
+function renderHierarchyRowsWeb(
+  rows: readonly TableContentRow[],
+  columns: readonly TableColumn[],
+  ctx: {
+    attemptHref?: (locator: AttemptLocator) => string;
+    locale: ReportLocale;
+    showMeasureRefs?: boolean;
+  },
+  depth = 0,
+): ReactNode[] {
+  return rows.map((row) => {
+    const cells = columns.map((column, index) => (
+      <span
+        className={cx("niceeval-table-hierarchy-cell", column.align === "right" ? "niceeval-align-right" : undefined)}
+        data-sort-value={cellSortValue(row.cells[column.key])}
+        key={column.key}
+        style={index === 0 && depth > 0 ? { paddingLeft: `${depth * 1.25}rem` } : undefined}
+      >
+        {renderCellWeb(row.cells[column.key], ctx)}
+      </span>
+    ));
+    const className = cx(
+      "niceeval-table-hierarchy-row",
+      row.variant === "placeholder" ? "niceeval-row-placeholder" : undefined,
+    );
+    if (!row.subRows?.length) {
+      return (
+        <div className={className} data-depth={depth || undefined} key={row.key}>
+          {cells}
+        </div>
+      );
+    }
+    return (
+      <details className={cx(className, "niceeval-table-hierarchy-group")} data-depth={depth || undefined} key={row.key}>
+        <summary className="niceeval-table-hierarchy-summary">{cells}</summary>
+        <div className="niceeval-table-hierarchy-children">
+          {renderHierarchyRowsWeb(row.subRows, columns, ctx, depth + 1)}
+        </div>
+      </details>
+    );
+  });
+}
+
+function renderFlatContentRowsWeb(
   rows: readonly TableContentRow[],
   columns: readonly TableColumn[],
   ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale },
-  depth = 0,
 ): ReactNode[] {
-  const out: ReactNode[] = [];
-  for (const row of rows) {
-    out.push(
-      <tr key={row.key} className={row.variant === "placeholder" ? "nre-row-placeholder" : undefined} data-depth={depth || undefined}>
-        {columns.map((column, i) => {
-          const cell = row.cells[column.key];
-          return (
-            <td
-              key={column.key}
-              className={column.align === "right" ? "nre-align-right" : undefined}
-              style={i === 0 && depth > 0 ? { paddingLeft: `${0.75 + depth * 1.25}rem` } : undefined}
-            >
-              {renderCellWeb(cell, ctx)}
-            </td>
-          );
-        })}
-      </tr>,
-    );
-    if (row.subRows?.length) out.push(...renderContentRowsWeb(row.subRows, columns, ctx, depth + 1));
-  }
-  return out;
+  return rows.map((row) => (
+    <tr key={row.key} className={row.variant === "placeholder" ? "niceeval-row-placeholder" : undefined}>
+      {columns.map((column) => (
+        <td key={column.key} className={column.align === "right" ? "niceeval-align-right" : undefined}>
+          {renderCellWeb(row.cells[column.key], ctx)}
+        </td>
+      ))}
+    </tr>
+  ));
 }
 
 /**
@@ -701,29 +810,74 @@ export const Table = defineComponent<TableProps>({
   web(props, ctx) {
     const locale = props.locale ?? ctx.locale;
     const resolved = resolveTableContent(props, locale);
-    validateResolvedTable(resolved.columns, resolved.rows);
-    const alignClass = (align?: ColumnAlign) => (align === "right" ? "nre-align-right" : undefined);
+    validateResolvedTable(resolved.columns, resolved.rows, resolved.content?.rows);
+    const alignClass = (align?: ColumnAlign) => (align === "right" ? "niceeval-align-right" : undefined);
     const attemptHref = !isLegacyTableProps(props) ? props.attemptHref ?? ctx.attemptHref : ctx.attemptHref;
     if (resolved.content) {
-      return (
-        <table className={cx("nre", "nre-table", props.className)} data-filter={!isLegacyTableProps(props) && props.filter ? "true" : undefined}>
+      const hierarchical = resolved.content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
+      const table = (
+        <table
+          className={cx("niceeval-report", "niceeval-table", hierarchical ? "niceeval-table--hierarchical" : undefined, props.className)}
+          style={hierarchical ? ({ "--table-grid": hierarchyGrid(resolved.columns) } as CSSProperties) : undefined}
+        >
           <thead>
             <tr>
               {resolved.columns.map((column) => (
-                <th key={column.key} scope="col" className={alignClass(column.align)}>
+                <th
+                  key={column.key}
+                  scope="col"
+                  className={cx(
+                    alignClass(column.align),
+                    props.sort === column.key
+                      ? column.better === "lower"
+                        ? "niceeval-sort-asc"
+                        : "niceeval-sort-desc"
+                      : undefined,
+                  )}
+                  data-niceeval-sort={column.better ? column.key : undefined}
+                >
                   {resolveLocalizedText(column.header, locale)}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>{renderContentRowsWeb(resolved.content.rows, resolved.columns, { attemptHref, locale })}</tbody>
+          {hierarchical ? (
+            <tbody>
+              <tr>
+                <td colSpan={resolved.columns.length} className="niceeval-table-hierarchy-body">
+                  {renderHierarchyRowsWeb(resolved.content.rows, resolved.columns, {
+                    attemptHref,
+                    locale,
+                    showMeasureRefs: false,
+                  })}
+                </td>
+              </tr>
+            </tbody>
+          ) : (
+            <tbody>{renderFlatContentRowsWeb(resolved.content.rows, resolved.columns, { attemptHref, locale })}</tbody>
+          )}
         </table>
+      );
+      if (!props.filter) return table;
+      return (
+        <div className="niceeval-report niceeval-table-wrap">
+          <input
+            className="niceeval-filter"
+            data-niceeval-filter=""
+            type="search"
+            placeholder={localeText(
+              locale,
+              resolved.columns[0]?.key === "entity" ? "experimentList.filterPlaceholder" : "table.filterPlaceholder",
+            )}
+          />
+          {table}
+        </div>
       );
     }
     const { columns, rows, className } = { columns: resolved.columns, rows: resolved.rows, className: props.className };
     const hasLocator = rows.some((row) => row.locator !== undefined);
     return (
-      <table className={cx("nre", "nre-table", className)}>
+      <table className={cx("niceeval-report", "niceeval-table", className)}>
         <thead>
           <tr>
             {columns.map((column) => (
@@ -742,7 +896,7 @@ export const Table = defineComponent<TableProps>({
                 const missing = value === null || value === undefined;
                 return (
                   <td key={column.key} className={alignClass(column.align)}>
-                    {missing ? <span className="nre-missing">{MISSING_MARK}</span> : value}
+                    {missing ? <span className="niceeval-missing">{MISSING_MARK}</span> : value}
                   </td>
                 );
               })}
@@ -750,14 +904,14 @@ export const Table = defineComponent<TableProps>({
                 <td>
                   {row.locator ? (
                     ctx.attemptHref ? (
-                      <a className="nre-locator" href={ctx.attemptHref(row.locator)}>
+                      <a className="niceeval-locator" href={ctx.attemptHref(row.locator)}>
                         {row.locator}
                       </a>
                     ) : (
-                      <span className="nre-locator">{row.locator}</span>
+                      <span className="niceeval-locator">{row.locator}</span>
                     )
                   ) : (
-                    <span className="nre-missing">{MISSING_MARK}</span>
+                    <span className="niceeval-missing">{MISSING_MARK}</span>
                   )}
                 </td>
               ) : null}

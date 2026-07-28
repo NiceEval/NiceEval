@@ -29,7 +29,7 @@ export const metricMatrixScenarios: readonly ReportComponentScenario[] = [
       const page = await browser.newPage();
       try {
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
-        assert.equal(await page.locator("#tab-page-overview .nre-metric-matrix").count(), 1);
+        assert.equal(await page.locator("#tab-page-overview .niceeval-metric-matrix").count(), 1);
       } finally {
         await page.close();
       }

@@ -295,7 +295,7 @@ function escapeText(value: string): string {
  * 同一套判定规则,故意在这里用一份独立的极小 vanilla 版本——standalone 文档不拉入
  * react/react-dom,不需要为了一次语言判定背上整个 SPA 打包产物)。
  */
-const ATTEMPT_LOCALE_SWAP_SCRIPT = `(function(){try{var s=localStorage.getItem("niceeval:view:locale");var l=s==="zh-CN"||s==="en"?s:((navigator.languages||[navigator.language]).some(function(v){return /^zh/i.test(String(v||"").trim())})?"zh-CN":"en");if(l==="zh-CN"){var en=document.querySelector('[data-nre-locale="en"]');var zh=document.querySelector('[data-nre-locale="zh-CN"]');if(en)en.hidden=true;if(zh){zh.hidden=false;}document.documentElement.lang="zh-CN";}}catch(e){}})();`;
+const ATTEMPT_LOCALE_SWAP_SCRIPT = `(function(){try{var s=localStorage.getItem("niceeval:view:locale");var l=s==="zh-CN"||s==="en"?s:((navigator.languages||[navigator.language]).some(function(v){return /^zh/i.test(String(v||"").trim())})?"zh-CN":"en");if(l==="zh-CN"){var en=document.querySelector('[data-niceeval-locale="en"]');var zh=document.querySelector('[data-niceeval-locale="zh-CN"]');if(en)en.hidden=true;if(zh){zh.hidden=false;}document.documentElement.lang="zh-CN";}}catch(e){}})();`;
 
 /**
  * 一个 locator 的独立 attempt 文档:与 index.html 是「文档」而非「App」——en 内容直接可见
@@ -304,7 +304,7 @@ const ATTEMPT_LOCALE_SWAP_SCRIPT = `(function(){try{var s=localStorage.getItem("
  * (docs/feature/reports/view.md「静态导出」:基线链接直接指向这份文档,保证无 JavaScript 也能
  * 读完整详情)。不复用 renderHtml/template.html 的 SPA 外壳——那条路径的 #root 要等 React
  * 挂载才有内容,不满足这里「无 JS 仍完整可读」的要求。增强脚本(index.html 里的渐进增强,
- * 拦截 locator 链接后 fetch 这份文档、按同一 `[data-nre-locale]` 选择器取出对应语言的内容
+ * 拦截 locator 链接后 fetch 这份文档、按同一 `[data-niceeval-locale]` 选择器取出对应语言的内容
  * 塞进 dialog)与这里的选择器保持同一套约定,不维护第二份提取逻辑。
  */
 async function renderAttemptDocument(
@@ -336,8 +336,8 @@ async function renderAttemptDocument(
     headHtml ? `\n${headHtml}` : "",
     "</head>",
     "<body>",
-    `<div data-nre-locale="en">${content.en}</div>`,
-    `<div data-nre-locale="zh-CN" hidden>${content["zh-CN"]}</div>`,
+    `<div data-niceeval-locale="en">${content.en}</div>`,
+    `<div data-niceeval-locale="zh-CN" hidden>${content["zh-CN"]}</div>`,
     `<script>${ATTEMPT_LOCALE_SWAP_SCRIPT}</script>`,
     shellScripts,
     "</body>",

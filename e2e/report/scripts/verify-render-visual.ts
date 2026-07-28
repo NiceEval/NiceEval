@@ -42,7 +42,7 @@
 //   1. AttemptSource 视觉规范里的"soft-fail / unavailable 黄"这一档状态染色完全没有证据可测:
 //      当前三个 Eval(tool-call/deliberate-fail/deliberate-error)的全部 assertion 结果只落在
 //      passed/gate-fail(bad)两种 tone,从未产生 soft severity 的失败或 unavailable 结果
-//      (`nre-tone-warn`/`nre-tone-na` 两个 class 只出现在内联 <style> 的 CSS 规则文本里,DOM 里
+//      (`niceeval-source-line--soft-fail`/`--unavailable` 两个 class 只出现在内联 <style> 的 CSS 规则文本里,DOM 里
 //      从未真正挂载过)。本模块因此只验证了 send(蓝)/passed(绿)/gate-fail(红)三色可区分,
 //      黄色这一档需要一个新增的、产生 soft assertion 或 unavailable assertion 的 Eval 才能补上,
 //      不是这个模块能在现有证据内解决的。
@@ -63,7 +63,7 @@ import type { Evidence } from "./evidence.ts";
 /** 静态导出文档里,肉眼可见/参与断言的内容恒在这层包裹下(见 verify-render-structure.ts 的
  * englishLocaleSlice 同款约束):zh-CN 副本默认 `hidden`,不 scope 到这层选择器会在 Playwright
  * 严格模式下因为匹配到两份(en + 隐藏的 zh-CN)而报错。 */
-const EN_SCOPE = '[data-nre-locale="en"]';
+const EN_SCOPE = '[data-niceeval-locale="en"]';
 const AGENTS = ["results-mechanism", "results-deliberate-fail", "results-deliberate-error"] as const;
 
 const MIME_TYPES: Record<string, string> = {
@@ -152,29 +152,29 @@ async function verifyStructuredLayoutNotUaDefault(browser: Browser, evidence: Ev
 
     // AttemptSource 整块源码行容器应整体横向滚动并使用等宽字体。具体由 grid、table 还是
     // 其它 CSS 机制实现不属于用户契约。
-    const lines = page.locator(`${EN_SCOPE} .nre-attempt-source-lines`);
+    const lines = page.locator(`${EN_SCOPE} .niceeval-source-lines`);
     const linesStyle = await lines.evaluate((el) => {
       const cs = getComputedStyle(el);
       return { overflowX: cs.overflowX, fontFamily: cs.fontFamily };
     });
-    assert.equal(linesStyle.overflowX, "auto", `.nre-attempt-source-lines 应整体横向滚动(overflow-x:auto),实际 "${linesStyle.overflowX}"`);
-    assert.match(linesStyle.fontFamily.toLowerCase(), /mono/, `.nre-attempt-source-lines 的 font-family 应含等宽字体族,实际 "${linesStyle.fontFamily}"`);
+    assert.equal(linesStyle.overflowX, "auto", `.niceeval-source-lines 应整体横向滚动(overflow-x:auto),实际 "${linesStyle.overflowX}"`);
+    assert.match(linesStyle.fontFamily.toLowerCase(), /mono/, `.niceeval-source-lines 的 font-family 应含等宽字体族,实际 "${linesStyle.fontFamily}"`);
 
     // 单行 summary 的行号位与源码应横向成栏；断言视觉几何，不规定 CSS display 值。
     assertSameVisualRow(
-      await directChildRects(page.locator(`${EN_SCOPE} .nre-attempt-source .nre-source-line-summary`).first()),
+      await directChildRects(page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-line-summary`).first()),
       "AttemptSource 单行的行号与源码",
     );
 
     // AttemptSummary 的前两个 KPI 在桌面视口应横向成栏，不是 UA 默认纵向堆叠。
     assertSameVisualRow(
-      await directChildRects(page.locator(`${EN_SCOPE} .nre-attempt-summary-kpis`)),
+      await directChildRects(page.locator(`${EN_SCOPE} .niceeval-attempt-summary-kpis`)),
       "AttemptSummary KPI",
     );
 
     // deliberateFail 的失败行默认展开，badge 与断言名应处于同一视觉行。
     assertSameVisualRow(
-      await directChildRects(page.locator(`${EN_SCOPE} .nre-attempt-source .nre-source-assertion-head`).first()),
+      await directChildRects(page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-assertion`).first()),
       "失败断言头",
     );
 
@@ -182,12 +182,12 @@ async function verifyStructuredLayoutNotUaDefault(browser: Browser, evidence: Ev
     // 是 flex column、工具调用行是三栏 grid。main 没有 bad/warn/na 行,没有默认展开的 send 行,
     // 这里直接置位 open 属性看结构(不经过点击——点击交互是 item 3 专门测的范围)。
     await page.goto(attemptFileUrl(evidence, evidence.main.attempts[0]!.locator));
-    const sendDetails = page.locator(`${EN_SCOPE} .nre-attempt-source details.nre-source-line-send`).first();
+    const sendDetails = page.locator(`${EN_SCOPE} .niceeval-source-view details.niceeval-source-line--send`).first();
     await sendDetails.evaluate((el) => {
       (el as HTMLDetailsElement).open = true;
     });
     const replyRects = await directChildRects(
-      page.locator(`${EN_SCOPE} .nre-attempt-source .nre-conv-replies`).first(),
+      page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-conversation-entries`).first(),
     );
     assert.ok(replyRects.length >= 2, "send 行展开区应有多个可见回复条目");
     assert.ok(
@@ -195,7 +195,7 @@ async function verifyStructuredLayoutNotUaDefault(browser: Browser, evidence: Ev
       "send 行展开区的回复条目应自上而下排列且不重叠",
     );
     assertSameVisualRow(
-      await directChildRects(page.locator(`${EN_SCOPE} .nre-attempt-source .nre-conv-tool > summary`).first()),
+      await directChildRects(page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-conversation-entry`).first()),
       "工具调用摘要",
     );
   } finally {
@@ -205,7 +205,7 @@ async function verifyStructuredLayoutNotUaDefault(browser: Browser, evidence: Ev
 
 // ---------------------------------------------------------------------------
 // 2/4:AttemptSource 视觉规范——状态染色与行号位标记
-// (docs/feature/reports/components/attempt-detail/attempt-source.md#web-面视觉规范)。
+// (docs/feature/reports/components/sources/attempt-source.md#web-面视觉规范)。
 // ---------------------------------------------------------------------------
 
 async function verifyAttemptSourceVisualMarkers(browser: Browser, evidence: Evidence): Promise<void> {
@@ -214,13 +214,13 @@ async function verifyAttemptSourceVisualMarkers(browser: Browser, evidence: Evid
     // --- send(蓝)与 passed(绿)两色:main 是唯一同时有这两种状态行的真实 attempt。
     await page.goto(attemptFileUrl(evidence, evidence.main.attempts[0]!.locator));
 
-    const sendLine = page.locator(`${EN_SCOPE} .nre-attempt-source details.nre-source-line-send`).first();
-    const goodLine = page.locator(`${EN_SCOPE} .nre-attempt-source details.nre-source-line.nre-tone-good`).first();
-    const plainLine = page.locator(`${EN_SCOPE} .nre-attempt-source .nre-source-line`).first();
+    const sendLine = page.locator(`${EN_SCOPE} .niceeval-source-view details.niceeval-source-line--send`).first();
+    const goodLine = page.locator(`${EN_SCOPE} .niceeval-source-view details.niceeval-source-line--passed`).first();
+    const plainLine = page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-line`).first();
     assert.equal(await plainLine.locator("summary").count(), 0, "普通源码行不应具有可展开的 summary");
 
-    const sendBg = await sendLine.locator("> summary").evaluate((el) => getComputedStyle(el).backgroundColor);
-    const goodBg = await goodLine.locator("> summary").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const sendBg = await sendLine.locator("> summary > .niceeval-source-line-summary").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const goodBg = await goodLine.locator("> summary > .niceeval-source-line-summary").evaluate((el) => getComputedStyle(el).backgroundColor);
     assert.notEqual(sendBg, goodBg, `send 行与 passed 行的整行浅染背景色应可区分,实际都是 "${sendBg}"`);
     // "浅染是 tone 色约 8% 的透明混合,不是饱和色块"——只锁"透明度明显小于 1"这个结构性事实,
     // 不锁具体色值。
@@ -233,39 +233,39 @@ async function verifyAttemptSourceVisualMarkers(browser: Browser, evidence: Evid
     assert.notEqual(plainBg, goodBg, "普通行不应带上 passed 行的浅染背景");
 
     // 行号位图标:有状态的行用内联 SVG 图标顶替行号(role=img + aria-label),普通行只是纯数字。
-    const sendMark = sendLine.locator(".nre-source-ln-mark");
+    const sendMark = sendLine.locator(".niceeval-source-gutter-mark");
     assert.equal(await sendMark.getAttribute("aria-label"), "send", "send 行的行号位标记 aria-label 应为 send");
     assert.equal(await sendMark.locator("svg").count(), 1, "send 行的行号位应包含内联 SVG 图标");
 
-    const goodMark = goodLine.locator(".nre-source-ln-mark");
+    const goodMark = goodLine.locator(".niceeval-source-gutter-mark");
     assert.equal(await goodMark.getAttribute("aria-label"), "passed", "passed 行的行号位标记 aria-label 应为 passed");
     assert.equal(await goodMark.locator("svg").count(), 1, "passed 行的行号位应包含内联 SVG 图标");
 
-    assert.equal(await plainLine.locator(".nre-source-ln-mark").count(), 0, "普通行不应出现行号位状态图标");
-    const plainLnText = (await plainLine.locator(".nre-source-ln").innerText()).trim();
+    assert.equal(await plainLine.locator(".niceeval-source-gutter-mark").count(), 0, "普通行不应出现行号位状态图标");
+    const plainLnText = (await plainLine.locator(".niceeval-source-gutter").innerText()).trim();
     assert.match(plainLnText, /^\d+$/, `普通行的行号位应是纯数字行号,实际 "${plainLnText}"`);
 
-    // 图标颜色随 tone 变化(currentColor 取自 .nre-source-ln 的 color),send 与 passed 应可区分。
-    const sendLnColor = await sendLine.locator(".nre-source-ln").evaluate((el) => getComputedStyle(el).color);
-    const goodLnColor = await goodLine.locator(".nre-source-ln").evaluate((el) => getComputedStyle(el).color);
+    // 图标颜色随 tone 变化(currentColor 取自 .niceeval-source-gutter 的 color),send 与 passed 应可区分。
+    const sendLnColor = await sendLine.locator(".niceeval-source-gutter").evaluate((el) => getComputedStyle(el).color);
+    const goodLnColor = await goodLine.locator(".niceeval-source-gutter").evaluate((el) => getComputedStyle(el).color);
     assert.notEqual(sendLnColor, goodLnColor, "send 与 passed 两种状态的行号位图标颜色应可区分");
 
     // 右缘 meta(阈值分数 pill + chevron)钉在滚动视口右缘:sticky 定位。
-    const metaPosition = await sendLine.locator(".nre-source-line-meta").evaluate((el) => getComputedStyle(el).position);
+    const metaPosition = await sendLine.locator(".niceeval-source-meta").evaluate((el) => getComputedStyle(el).position);
     assert.equal(metaPosition, "sticky", `行右缘 meta 应 sticky 定位,实际 "${metaPosition}"`);
 
     // --- gate-fail(红):deliberate-fail 的失败行。
     await page.goto(attemptFileUrl(evidence, evidence.deliberateFail.attempt.locator));
-    const badLine = page.locator(`${EN_SCOPE} .nre-attempt-source details.nre-source-line.nre-tone-bad`);
-    const badMark = badLine.locator(".nre-source-ln-mark");
+    const badLine = page.locator(`${EN_SCOPE} .niceeval-source-view details.niceeval-source-line--gate-fail`);
+    const badMark = badLine.locator(".niceeval-source-gutter-mark");
     assert.equal(await badMark.getAttribute("aria-label"), "failed", "gate-fail 行的行号位标记 aria-label 应为 failed");
-    const badBg = await badLine.locator("> summary").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const badBg = await badLine.locator("> summary > .niceeval-source-line-summary").evaluate((el) => getComputedStyle(el).backgroundColor);
     assert.ok(colorAlpha(badBg) < 0.5, `gate-fail 行背景应是浅色透明混合而非饱和色块,实际 "${badBg}"`);
     assert.notEqual(badBg, sendBg, "gate-fail(红)与 send(蓝)背景色应可区分");
     assert.notEqual(badBg, goodBg, "gate-fail(红)与 passed(绿)背景色应可区分");
 
     // 展开区:dashed 上边线,tone 色左缘(box-shadow inset),不是重新套一张卡片。
-    const detailStyle = await badLine.locator(".nre-source-line-detail").evaluate((el) => {
+    const detailStyle = await badLine.locator(".niceeval-source-line-detail").evaluate((el) => {
       const cs = getComputedStyle(el);
       return { borderTopStyle: cs.borderTopStyle, boxShadow: cs.boxShadow, position: cs.position };
     });
@@ -286,20 +286,20 @@ async function verifyClickToExpandInteraction(browser: Browser, evidence: Eviden
   try {
     // --- deliberateFail(failed attempt):assertion 行的点击展开/收起。
     await page.goto(attemptFileUrl(evidence, evidence.deliberateFail.attempt.locator));
-    const badLine = page.locator(`${EN_SCOPE} details.nre-source-line.nre-tone-bad`);
+    const badLine = page.locator(`${EN_SCOPE} details.niceeval-source-line--gate-fail`);
     assert.equal(await badLine.count(), 1, "deliberateFail 应恰好有一条 gate-fail 行");
     assert.equal(await badLine.getAttribute("open"), "", "首个失败/警告行应默认展开");
 
     await badLine.locator("> summary").click();
     assert.equal(await badLine.getAttribute("open"), null, "点击已展开的 assertion 行应能收起(原生 <details> 语义)");
-    assert.equal(await badLine.locator(".nre-source-line-detail").isVisible(), false, "收起后展开区不应再可见");
+    assert.equal(await badLine.locator(".niceeval-source-line-detail").isVisible(), false, "收起后展开区不应再可见");
 
     await badLine.locator("> summary").click();
     assert.equal(await badLine.getAttribute("open"), "", "再次点击应能重新展开");
-    assert.equal(await badLine.locator(".nre-source-line-detail").isVisible(), true, "重新展开后展开区应可见");
+    assert.equal(await badLine.locator(".niceeval-source-line-detail").isVisible(), true, "重新展开后展开区应可见");
 
     // --- 普通行(无 assertion/send/turn):不是 <details>,点击不产生任何展开。
-    const plainLine = page.locator(`${EN_SCOPE} .nre-attempt-source .nre-source-line`).first();
+    const plainLine = page.locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-line`).first();
     assert.equal(await plainLine.locator("summary").count(), 0, "普通源码行不应具有可展开语义");
     await plainLine.click();
     const openCountAfterPlainClick = await page.locator(`${EN_SCOPE} details[open]`).count();
@@ -307,21 +307,21 @@ async function verifyClickToExpandInteraction(browser: Browser, evidence: Eviden
 
     // --- main(passed attempt):send 行与 passed assertion 行的点击展开。
     await page.goto(attemptFileUrl(evidence, evidence.main.attempts[0]!.locator));
-    const sendLine = page.locator(`${EN_SCOPE} details.nre-source-line-send`).first();
+    const sendLine = page.locator(`${EN_SCOPE} details.niceeval-source-line--send`).first();
     assert.equal(await sendLine.getAttribute("open"), null, "main 没有 bad/warn/na 行,send 行不应默认展开");
     await sendLine.locator("> summary").click();
     assert.equal(await sendLine.getAttribute("open"), "", "点击 send 行应展开该轮回复");
-    const sendDetailText = await sendLine.locator(".nre-source-line-detail").innerText();
+    const sendDetailText = await sendLine.locator(".niceeval-source-line-detail").innerText();
     assert.match(sendDetailText, /get_stock_price/, "send 行展开区应包含该轮的工具调用回复内容");
     // 再点击收起,验证 send 行同样可逆。
     await sendLine.locator("> summary").click();
     assert.equal(await sendLine.getAttribute("open"), null, "再次点击 send 行应能收起");
 
-    const goodLine = page.locator(`${EN_SCOPE} details.nre-source-line.nre-tone-good`).first();
+    const goodLine = page.locator(`${EN_SCOPE} details.niceeval-source-line--passed`).first();
     assert.equal(await goodLine.getAttribute("open"), null, "main 没有默认展开的 passed 行");
     await goodLine.locator("> summary").click();
     assert.equal(await goodLine.getAttribute("open"), "", "点击 passed assertion 行应展开");
-    const goodDetailText = await goodLine.locator(".nre-source-line-detail").innerText();
+    const goodDetailText = await goodLine.locator(".niceeval-source-line-detail").innerText();
     // 徽标文案在 CSS 里是 text-transform:uppercase(视觉呈现),innerText 读到的是渲染后的
     // "PASSED";用大小写不敏感匹配,不锁具体大小写这层纯样式细节。
     assert.match(goodDetailText, /passed/i, "passed assertion 行展开区应显示 passed 徽标");
@@ -343,17 +343,17 @@ async function verifyZeroJsReadable(browser: Browser, evidence: Evidence): Promi
     // --- deliberateFail:默认展开的失败行,染色 + 图标 + 展开内容禁 JS 后都应原样可见——全部
     // 由服务端渲染好的静态 HTML + CSS 决定(<details open> 是 HTML 属性,不依赖任何脚本)。
     await page.goto(attemptFileUrl(evidence, evidence.deliberateFail.attempt.locator));
-    const badLine = page.locator(`${EN_SCOPE} details.nre-source-line.nre-tone-bad`);
+    const badLine = page.locator(`${EN_SCOPE} details.niceeval-source-line--gate-fail`);
     assert.equal(await badLine.getAttribute("open"), "", "禁 JS 后失败行仍应保持默认展开");
 
     const enScopeText = await page.locator(EN_SCOPE).innerText();
     assert.ok(enScopeText.includes("expected: 3") && enScopeText.includes("received: 2"), "禁 JS 后仍应能读到失败行的 expected/received 细节");
 
-    const badSummaryBg = await badLine.locator("> summary").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const badSummaryBg = await badLine.locator("> summary > .niceeval-source-line-summary").evaluate((el) => getComputedStyle(el).backgroundColor);
     const badAlpha = colorAlpha(badSummaryBg);
     assert.ok(badAlpha > 0 && badAlpha < 0.5, `禁 JS 后状态染色(纯 CSS 效果)应仍然生效(非透明、非饱和色块),实际 alpha=${badAlpha}`);
 
-    const badIcon = badLine.locator(".nre-source-ln-mark svg");
+    const badIcon = badLine.locator(".niceeval-source-gutter-mark svg");
     assert.equal(await badIcon.count(), 1, "禁 JS 后失败行的行号位图标仍应渲染在 DOM 里");
     const iconBox = await badIcon.boundingBox();
     assert.ok(iconBox !== null && iconBox.width > 0 && iconBox.height > 0, "禁 JS 后行号位图标应有实际可见尺寸(纯 CSS/SVG,不需要脚本)");
@@ -361,13 +361,13 @@ async function verifyZeroJsReadable(browser: Browser, evidence: Evidence): Promi
     // --- main:收起态的 send / passed 行——不要求禁 JS 后还能点开,只要求"内容本身还在、可读":
     // 展开区文本仍在 DOM 里(用 textContent 读,不依赖可见性),行号位的着色也仍可区分。
     await page.goto(attemptFileUrl(evidence, evidence.main.attempts[0]!.locator));
-    const sendLine = page.locator(`${EN_SCOPE} details.nre-source-line-send`).first();
-    const sendDetailText = await sendLine.locator(".nre-source-line-detail").textContent();
+    const sendLine = page.locator(`${EN_SCOPE} details.niceeval-source-line--send`).first();
+    const sendDetailText = await sendLine.locator(".niceeval-source-line-detail").textContent();
     assert.ok(sendDetailText?.includes("get_stock_price"), "禁 JS 后 send 行的展开区内容仍应存在于文档中(即便默认收起未可见)");
 
-    const sendLnColor = await sendLine.locator(".nre-source-ln").evaluate((el) => getComputedStyle(el).color);
+    const sendLnColor = await sendLine.locator(".niceeval-source-gutter").evaluate((el) => getComputedStyle(el).color);
     const plainLnColor = await page
-      .locator(`${EN_SCOPE} .nre-attempt-source .nre-source-line:not(details) .nre-source-ln`)
+      .locator(`${EN_SCOPE} .niceeval-source-view .niceeval-source-line:not(details) .niceeval-source-gutter`)
       .first()
       .evaluate((el) => getComputedStyle(el).color);
     assert.notEqual(sendLnColor, plainLnColor, "禁 JS 后 send 行号位的着色仍应与普通行可区分");
@@ -417,7 +417,7 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
 
     // ExperimentList 的前两个字段在桌面视口横向成栏；具体 CSS 布局机制不属于契约。
     assertSameVisualRow(
-      await directChildRects(page.locator(".nre-experiment-summary").first()),
+      await directChildRects(page.locator(".niceeval-experiment-summary").first()),
       "ExperimentList 摘要",
     );
 
@@ -425,11 +425,11 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
     // 只用于定位元素，预期比较的是浏览器实际绘制的颜色，不要求由哪一个散列函数或 class 实现。
     const reportColors = new Map<string, string>();
     for (const agent of AGENTS) {
-      const key = page.locator(".nre-experiment-agent", { hasText: agent }).first();
+      const key = page.locator(".niceeval-experiment-agent", { hasText: agent }).first();
       await key.waitFor({ state: "visible" });
       reportColors.set(agent, await key.evaluate((el) => getComputedStyle(el).color));
     }
-    const scatterMain = page.locator(".nre-legend-key", { hasText: AGENTS[0] }).first();
+    const scatterMain = page.locator(".niceeval-legend-key", { hasText: AGENTS[0] }).first();
     assert.equal(
       await scatterMain.evaluate((el) => getComputedStyle(el).color),
       reportColors.get(AGENTS[0]),
@@ -438,7 +438,7 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
 
     await topbar.getByRole("tab", { name: "Attempts" }).click();
     for (const agent of AGENTS) {
-      const key = page.locator(".nre-attempt-agent", { hasText: agent }).first();
+      const key = page.locator(".niceeval-attempt-agent", { hasText: agent }).first();
       await key.waitFor({ state: "visible" });
       assert.equal(
         await key.evaluate((el) => getComputedStyle(el).color),
@@ -453,11 +453,11 @@ async function verifyIndexPageLive(browser: Browser, baseUrl: string, evidence: 
     // 每个 experiment 自己的 <details> 折叠区里,默认收起——先展开 deliberate-fail 这一条,
     // 链接才可见可点。
     const failLocator = evidence.deliberateFail.attempt.locator;
-    const experimentEntry = page.locator('details.nre-experiment-entry', {
-      has: page.locator('.nre-experiment-name[data-sort-value="deliberate-fail"]'),
+    const experimentEntry = page.locator('details.niceeval-experiment-entry', {
+      has: page.locator('.niceeval-experiment-name[data-sort-value="deliberate-fail"]'),
     });
-    await experimentEntry.locator("summary.nre-experiment-summary").click();
-    const link = experimentEntry.locator(`a.nre-locator[href="attempt/${encodeURIComponent(failLocator)}.html"]`);
+    await experimentEntry.locator("summary.niceeval-experiment-summary").click();
+    const link = experimentEntry.locator(`a.niceeval-locator[href="attempt/${encodeURIComponent(failLocator)}.html"]`);
     await link.click();
     const dialog = page.getByRole("dialog");
     await dialog.waitFor({ state: "visible", timeout: 10_000 });

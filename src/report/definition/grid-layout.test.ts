@@ -65,7 +65,7 @@ describe("normalizeGrid", () => {
   it("单个裸元素(非数组)也能展平为一格并生成稳定 key", () => {
     const normalized = normalizeGrid({ children: el("Stat", { label: "solo" }), columns: 1 });
     expect(normalized.cells).toHaveLength(1);
-    expect(normalized.cells[0].key).toBe("nre-grid-cell-0");
+    expect(normalized.cells[0].key).toBe("niceeval-grid-cell-0");
   });
 });
 

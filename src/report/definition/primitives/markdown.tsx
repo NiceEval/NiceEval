@@ -336,7 +336,7 @@ function blockWeb(node: MarkdownAst, key: number): ReactNode {
 
 export function markdownToWeb(tree: MarkdownAst, className?: string): ReactElement {
   return (
-    <div className={cx("nre", "nre-markdown", "niceeval-md", className)}>
+    <div className={cx("niceeval-report", "niceeval-markdown", "niceeval-md", className)}>
       {childrenOf(tree).map((child, i) => blockWeb(child, i))}
     </div>
   );

@@ -28,13 +28,13 @@ export const gridStatScenarios: readonly ReportComponentScenario[] = [
       const page = await browser.newPage();
       try {
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
-        const stats = page.locator("#tab-page-overview .nre-stat");
+        const stats = page.locator("#tab-page-overview .niceeval-stat");
         await stats.first().waitFor({ state: "visible", timeout: 10_000 });
         assert.equal(await stats.count(), 4);
         const values: Record<string, string> = {};
         for (let i = 0; i < (await stats.count()); i++) {
-          const label = (await stats.nth(i).locator(".nre-stat-label").textContent())?.trim() ?? "";
-          const value = (await stats.nth(i).locator(".nre-stat-value").textContent())?.trim() ?? "";
+          const label = (await stats.nth(i).locator(".niceeval-stat-label").textContent())?.trim() ?? "";
+          const value = (await stats.nth(i).locator(".niceeval-stat-value").textContent())?.trim() ?? "";
           values[label] = value;
         }
         assert.deepEqual(values, {

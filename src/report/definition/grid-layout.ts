@@ -69,7 +69,7 @@ function flattenGridChildren(children: ReportNode): NormalizedGridCell[] {
       visit(node.props.children as ReportNode);
       return;
     }
-    cells.push({ node, key: keyOf(node, `nre-grid-cell-${cells.length}`) });
+    cells.push({ node, key: keyOf(node, `niceeval-grid-cell-${cells.length}`) });
   };
   visit(children);
   return cells;

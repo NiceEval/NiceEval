@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../../record/locator.ts";
 import { defineComponent, type ReportNode, type TextContext, type WebContext } from "../tree.ts";
 import type { DimensionDeclarations } from "../../presentation.ts";
 import type { SourceInput } from "../../source.ts";
-import type { Dataset } from "../../model/types.ts";
+import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { countText, localeText, type ReportLocale as RL } from "../../model/locale.ts";
 import { formatTickValue, shortestUniqueLabels } from "../../model/format.ts";
@@ -110,6 +110,18 @@ function seriesMarkChar(mark: MappedSeries["mark"], index: number): string {
   return "█";
 }
 
+function chartFieldLabel(field: string, meta: DatasetField, locale: RL): string {
+  const dictionary: globalThis.Record<string, Parameters<typeof localeText>[1]> = {
+    costUSD: "experimentList.cost",
+    passRate: "scopeSummary.passRate",
+    totalScore: "scopeSummary.totalScore",
+    durationMs: "experimentList.avgDuration",
+    tokens: "experimentList.tokens",
+  };
+  const base = dictionary[field] ? localeText(locale, dictionary[field]!) : field;
+  return meta.unit ? `${base}(${meta.unit})` : base;
+}
+
 function renderScatterWeb(
   mapped: MappedSeries[],
   axes: ReturnType<typeof resolveChartAxes>,
@@ -121,8 +133,8 @@ function renderScatterWeb(
   const allPoints = visible.flatMap((s) => s.points);
   if (allPoints.length === 0) {
     return (
-      <figure className={cx("nre", "nre-chart", "nre-chart--scatter", options.className)}>
-        <p className="nre-chart-empty nre-missing">{localeText(locale, "cell.missing")}</p>
+      <figure className={cx("niceeval-report", "niceeval-chart", "niceeval-chart--scatter", options.className)}>
+        <p className="niceeval-chart-empty niceeval-missing">{localeText(locale, "cell.missing")}</p>
       </figure>
     );
   }
@@ -144,6 +156,8 @@ function renderScatterWeb(
     axes.yMeta.better === "lower",
   );
   const labelByKey = shortestUniqueLabels(allPoints.map((p) => p.pointLabel));
+  const xLabel = chartFieldLabel(axes.xField, axes.xMeta, locale);
+  const yLabel = chartFieldLabel(axes.yField, axes.yMeta, locale);
 
   const drawable = allPoints.map((p) => {
     const series = visible.find((s) => s.points.some((sp) => sp.key === p.key));
@@ -157,7 +171,7 @@ function renderScatterWeb(
       label: labelByKey.get(p.pointLabel) ?? p.pointLabel,
       px: xScale.scale(p.x),
       py: yScale.scale(p.y),
-      seriesClass: slot !== undefined ? `nre-series-c${slot}` : "nre-series-none",
+      seriesClass: slot !== undefined ? `niceeval-series-c${slot}` : "niceeval-series-none",
     };
   });
 
@@ -167,10 +181,10 @@ function renderScatterWeb(
   );
 
   return (
-    <figure className={cx("nre", "nre-chart", "nre-chart--scatter", options.className)}>
-      <svg className="nre-chart-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${axes.xField} × ${axes.yField}`}>
+    <figure className={cx("niceeval-report", "niceeval-chart", "niceeval-chart--scatter", options.className)}>
+      <svg className="niceeval-chart-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${axes.xField} × ${axes.yField}`}>
         {options.grid !== false ? (
-          <g className="nre-chart-grid">
+          <g className="niceeval-chart-grid">
             {yScale.ticks.map((tick) => (
               <line key={`gy${tick}`} x1={MARGIN.left} x2={MARGIN.left + PLOT_W} y1={yScale.scale(tick)} y2={yScale.scale(tick)} />
             ))}
@@ -179,40 +193,61 @@ function renderScatterWeb(
             ))}
           </g>
         ) : null}
-        <g className="nre-chart-axis nre-chart-axis-y">
+        <g className="niceeval-chart-axis niceeval-chart-axis-y">
           {yScale.ticks.map((tick) => (
-            <text key={`ay${tick}`} className="nre-chart-tick" x={MARGIN.left - 8} y={yScale.scale(tick) + 3} textAnchor="end">
+            <text key={`ay${tick}`} className="niceeval-chart-tick" x={MARGIN.left - 8} y={yScale.scale(tick) + 3} textAnchor="end">
               {formatTickValue(tick, tickStepOf(yScale.ticks), axes.yMeta.unit)}
             </text>
           ))}
         </g>
-        <g className="nre-chart-axis nre-chart-axis-x">
+        <g className="niceeval-chart-axis niceeval-chart-axis-x">
           {xScale.ticks.map((tick) => (
-            <text key={`ax${tick}`} className="nre-chart-tick" x={xScale.scale(tick)} y={MARGIN.top + PLOT_H + 16} textAnchor="middle">
+            <text key={`ax${tick}`} className="niceeval-chart-tick" x={xScale.scale(tick)} y={MARGIN.top + PLOT_H + 16} textAnchor="middle">
               {formatTickValue(tick, tickStepOf(xScale.ticks), axes.xMeta.unit)}
             </text>
           ))}
         </g>
-        <text className="nre-chart-xlabel" x={MARGIN.left + PLOT_W / 2} y={HEIGHT - 8} textAnchor="middle">
-          {axes.xField}
+        {axes.xMeta.better !== undefined && axes.yMeta.better !== undefined ? (
+          <text
+            className="niceeval-chart-better-hint"
+            x={MARGIN.left + PLOT_W - 6}
+            y={MARGIN.top + 14}
+            textAnchor="end"
+          >
+            {localeText(locale, "scatter.betterUpperRight")}
+          </text>
+        ) : null}
+        <text className="niceeval-chart-xlabel" x={MARGIN.left + PLOT_W / 2} y={HEIGHT - 8} textAnchor="middle">
+          {xLabel}
         </text>
         <text
-          className="nre-chart-ylabel"
+          className="niceeval-chart-ylabel"
           x={14}
           y={MARGIN.top + PLOT_H / 2}
           textAnchor="middle"
           transform={`rotate(-90 14 ${MARGIN.top + PLOT_H / 2})`}
         >
-          {axes.yField}
+          {yLabel}
         </text>
-        {visible.map((series) => {
-          const seriesPoints = drawable.filter((p) => series.points.some((sp) => sp.key === p.key));
-          const ordered = series.connect ? [...seriesPoints].sort((a, b) => a.x - b.x) : seriesPoints;
-          return (
-            <g key={series.id} className="nre-chart-series" data-series={series.id}>
+        {visible.flatMap((series) => {
+          const values = series.byField ? seriesDimensionValues(mapped, series.byField) : [series.id];
+          return values.map((value) => {
+            const seriesPoints = drawable.filter(
+              (p) =>
+                series.points.some((sp) => sp.key === p.key) &&
+                (series.byField === undefined || p.seriesValue === value),
+            );
+            const ordered = series.connect ? [...seriesPoints].sort((a, b) => a.x - b.x) : seriesPoints;
+            const seriesClass = ordered[0]?.seriesClass ?? "niceeval-series-none";
+            return (
+              <g
+                key={`${series.id}:${value}`}
+                className={cx("niceeval-chart-series", seriesClass)}
+                data-series={`${series.id}:${value}`}
+              >
               {series.connect && ordered.length > 1 ? (
                 <polyline
-                  className="nre-chart-line"
+                  className="niceeval-chart-line"
                   points={ordered.map((p) => `${p.px},${p.py}`).join(" ")}
                   strokeDasharray={lineDash(series.line)}
                 />
@@ -221,15 +256,15 @@ function renderScatterWeb(
                 const placed = labels[drawable.indexOf(p)];
                 const href = options.attemptHref && p.refs[0] ? options.attemptHref(p.refs[0] as AttemptLocator) : undefined;
                 const dot = (
-                  <circle className={cx("nre-chart-dot", p.seriesClass)} cx={p.px} cy={p.py} r={4.5}>
+                  <circle className={cx("niceeval-chart-dot", p.seriesClass)} cx={p.px} cy={p.py} r={4.5}>
                     <title>{`${p.pointLabel}\n${axes.xField}: ${p.x}\n${axes.yField}: ${p.y}`}</title>
                   </circle>
                 );
                 return (
-                  <g key={p.key} className="nre-chart-point">
+                  <g key={p.key} className="niceeval-chart-point">
                     {href ? <a href={href}>{dot}</a> : dot}
                     {placed ? (
-                      <text className="nre-chart-point-label" x={placed.x} y={placed.y} textAnchor={placed.anchor}>
+                      <text className="niceeval-chart-point-label" x={placed.x} y={placed.y} textAnchor={placed.anchor}>
                         {p.label}
                       </text>
                     ) : null}
@@ -237,18 +272,26 @@ function renderScatterWeb(
                 );
               })}
             </g>
-          );
+            );
+          });
         })}
       </svg>
       {options.legend ? (
-        <ul className="nre-chart-legend">
+        <ul className="niceeval-chart-legend">
           {visible.flatMap((series) => {
             const byValues = series.byField ? seriesDimensionValues(mapped, series.byField) : [series.id];
             return byValues.map((value) => {
               const idx = series.byField ? seriesDimensionValues(mapped, series.byField).indexOf(value) : 0;
-              const label = series.byField ? ctx.dimension(series.byField).at(idx).label : series.id;
+              const presentation = series.byField ? ctx.dimension(series.byField).at(idx) : undefined;
+              const label = presentation?.label ?? series.id;
               return (
-                <li key={`${series.id}:${value}`} className="nre-chart-legend-item">
+                <li
+                  key={`${series.id}:${value}`}
+                  className={cx(
+                    "niceeval-chart-legend-item",
+                    presentation ? `niceeval-series-c${presentation.seriesSlot}` : "niceeval-series-none",
+                  )}
+                >
                   {label}
                 </li>
               );
@@ -357,7 +400,7 @@ export const Chart = defineComponent<ChartProps>({
     });
     const missingNote =
       missing > 0 ? (
-        <p className="nre-chart-missing" title={String(missing)}>
+        <p className="niceeval-chart-missing" title={String(missing)}>
           {countText(locale, "pointsMissing", missing)}
         </p>
       ) : null;

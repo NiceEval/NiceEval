@@ -89,11 +89,11 @@ describe("SourceView", () => {
     expect(text).not.toContain("import { test } from");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-source-view");
+    expect(html).toContain("niceeval-source-view");
     expect(html).toContain("evals/foo.test.ts");
     expect(html).toContain("src/helper.ts");
-    expect(html).toContain("nre-source-line--send");
-    expect(html).toContain("nre-source-line--gate-fail");
+    expect(html).toContain("niceeval-source-line--send");
+    expect(html).toContain("niceeval-source-line--gate-fail");
     expect(html).toContain("+1 pt");
     expect(html).toContain('class="tok-kw"');
     expect(html).toContain("<details");

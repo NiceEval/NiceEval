@@ -53,10 +53,10 @@ describe("CopyBlock", () => {
     expect(renderNodeToText(tree, createTextContext({ width: 80, locale: "en" }))).toBe("");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-copy-block");
+    expect(html).toContain("niceeval-copy-block");
     expect(html).toContain("Fix prompt (3 failures)");
     expect(html).toContain("Please fix the failing evals.");
-    expect(html).toContain('data-nre-copy="Please fix the failing evals.\nStep 1: read logs."');
+    expect(html).toContain('data-niceeval-copy="Please fix the failing evals.\nStep 1: read logs."');
     expect(html).toContain("<details");
   });
 

@@ -1,194 +1,100 @@
 /*
  * niceeval/report/react/styles.css —— 随包发布的默认样式。
- * 契约(docs/feature/reports/architecture.md「静态网页」):
- *   - 所有节点都有稳定的 nre-* 类名;这份 CSS + 类名 = 静态页零依赖成立;
- *   - 要定制,在本文件之后加载自己的覆盖即可,不需要构建工具;
- *   - 令牌体系与 view 同观感:.nre 作用域下自带 light-dark() 令牌(值抄
- *     src/view/styles.css 的 :root),不倚赖宿主壳的变量,深浅色自动跟随;
- *   - 调色板 --nre-c0..c5 是 view 六色 CVD 色板(--series-1..6,顺序按 CVD 校验过,
- *     不要重排),与 src/report/react/colors.ts 的 NRE_PALETTE 逐个对应
- *     (NRE_PALETTE 存浅色值;深色值只住在这里),改色时两边一起改;
- *   - SVG 面零内联 hex:图形挂 nre-series-cN 类,由下面的 --nre-series 上色。
+ * 契约(docs/feature/reports/library/theme.md):
+ *   - 所有节点都有稳定的 niceeval-* 类名;这份 CSS + 类名 = 静态页零依赖成立;
+ *   - 外观全部经公开令牌进来:每个用点读 var(--niceeval-*, <兜底>),本文件不声明
+ *     任何 --niceeval-* 变量,主题/宿主的令牌块因此直接生效;
+ *   - 兜底值 = 内建主题 basalt(src/report/theme.ts 单源),由
+ *     test/unit/report-theme-tokens.test.ts 守护逐项相等:不装主题 = 装 basalt;
+ *   - SVG 图形零内联 hex:挂 niceeval-series-cN 类,由 --series 上色。
  */
 
-.nre {
-  /* ---- 设计令牌:与 view 同一族(src/view/styles.css :root),报告样式零依赖成立 ---- */
-  color-scheme: light dark;
-  --panel: light-dark(#ffffff, #0b0b0b);
-  --panel-2: light-dark(#f4f4f5, #111111);
-  --line: light-dark(#dedee2, #262626);
-  --line-strong: light-dark(#c9c9cf, #343434);
-  --text: light-dark(#111113, #ededed);
-  --muted: light-dark(#62636a, #a1a1aa);
-  --soft: light-dark(#8b8d98, #74747b);
-  --good: light-dark(#087f5b, #3ddc97);
-  --bad: light-dark(#b42318, #ff6b6b);
-  --warn: light-dark(#9a6700, #e8b84a);
+.niceeval-report {
+  /* 公开令牌折成私有短名,用点只读短名。改观感改主题,不改这里的兜底。 */
+  color-scheme: dark; /* basalt 锁暗;主题令牌块在级联后位以同名规则覆盖 */
+  --page: var(--niceeval-color-page, #050505);
+  --panel: var(--niceeval-color-surface, #0b0b0b);
+  --panel-2: var(--niceeval-color-surface-subtle, #111111);
+  --line: var(--niceeval-color-border, #262626);
+  --line-strong: var(--niceeval-color-border-strong, #343434);
+  --text: var(--niceeval-color-text, #ededed);
+  --muted: var(--niceeval-color-text-secondary, #a1a1aa);
+  --soft: var(--niceeval-color-text-tertiary, #74747b);
+  --accent: var(--niceeval-color-accent, #cbd6dc);
+  --focus: var(--niceeval-color-focus, #cbd6dc);
+  --good: var(--niceeval-color-positive, #3ddc97);
+  --bad: var(--niceeval-color-negative, #ff6b6b);
+  --warn: var(--niceeval-color-warning, #e8b84a);
 
-  /* ---- 六色 CVD 分类色板(= view --series-1..6;colors.ts 的散列下标指到这里)---- */
-  --nre-c0: light-dark(#2a78d6, #3987e5);
-  --nre-c1: light-dark(#1baf7a, #199e70);
-  --nre-c2: light-dark(#eda100, #c98500);
-  --nre-c3: light-dark(#008300, #008300);
-  --nre-c4: light-dark(#e34948, #e66767);
-  --nre-c5: light-dark(#eb6834, #d95926);
+  /* 六色 CVD 分类色板;colors.ts 的散列下标指到这里,顺序不重排 */
+  --c0: var(--niceeval-color-series-1, #3987e5);
+  --c1: var(--niceeval-color-series-2, #199e70);
+  --c2: var(--niceeval-color-series-3, #c98500);
+  --c3: var(--niceeval-color-series-4, #008300);
+  --c4: var(--niceeval-color-series-5, #e66767);
+  --c5: var(--niceeval-color-series-6, #d95926);
   /* 系列色的缺省(无系列的点/柱):中性,不冒充身份 */
-  --nre-series: var(--muted);
+  --series: var(--muted);
 
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-  font-size: 14px;
+  --radius: var(--niceeval-radius, 0);
+  --font-sans: var(--niceeval-font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif);
+  --font-mono: var(--niceeval-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+
+  font-family: var(--font-sans);
+  font-size: var(--niceeval-font-size, 13px);
   line-height: 1.5;
   color: var(--text);
   margin: 1rem 0;
 }
+/* 键盘 focus 环:1px 实线,贴边不外扩 */
+.niceeval-report :focus-visible { outline: 1px solid var(--focus); outline-offset: 0; }
 
-/* ---- locator 与判定符:AttemptList / EvalList / ExperimentList 共用的最小单元 ---- */
-.nre .nre-locator { display:inline-flex; align-items:center; gap:4px; color:var(--nre-c0); font-variant-numeric:tabular-nums; text-decoration:none; white-space:nowrap; }
-.nre .nre-locator:hover { text-decoration:underline; }
-.nre .nre-locator-mark { font-weight:700; }
-.nre .nre-locator.nre-verdict-passed .nre-locator-mark { color:var(--good); }
-.nre .nre-locator.nre-verdict-failed .nre-locator-mark,
-.nre .nre-locator.nre-verdict-errored .nre-locator-mark { color:var(--bad); }
-.nre .nre-locator.nre-verdict-unreadable .nre-locator-mark { color:var(--soft); }
-/* 时效标注(↩ + 紧凑时距):subdued 行内事实,不占框、不用警示色——携带是正常缓存,
-   跨快照拼接受可比性前提保护,不是警告(见 entity-lists.md「时效标注」)。 */
-.nre .nre-historical { color:var(--soft); font-size:.92em; white-space:nowrap; }
+/* ---- locator 与判定符:实体行共用的最小单元 ---- */
+.niceeval-report .niceeval-locator { display:inline-flex; align-items:center; gap:4px; color:var(--accent); font-variant-numeric:tabular-nums; text-decoration:none; white-space:nowrap; }
+.niceeval-report .niceeval-locator:hover { text-decoration:underline; }
 
-/* ---- AttemptList:实体列表的叶子层,一条卡片一个 Attempt ---- */
-.nre-attempt-list .nre-attempts { list-style:none; margin:0; padding:0; }
-.nre-attempt-list .nre-attempt { border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:8px; background:var(--panel); }
-/* 只有 failed/errored 留左边语义色条;其余靠 hairline,避免每行都像 callout */
-.nre-attempt-list .nre-attempt-failed,
-.nre-attempt-list .nre-attempt-errored { border-left: 3px solid var(--bad); }
-.nre-attempt-list .nre-attempt-head { display:flex; flex-wrap:wrap; gap:.75em; align-items:baseline; }
-.nre-attempt-list .nre-attempt-eval { font-weight:620; }
-.nre-attempt-list .nre-attempt-experiment,
-.nre-attempt-list .nre-attempt-duration,
-.nre-attempt-list .nre-attempt-cost { color:var(--muted); font-size:.9em; font-variant-numeric:tabular-nums; }
-.nre-attempt-list .nre-attempt-result { display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; margin:.4rem 0 0; color:color-mix(in oklch,var(--muted),var(--text) 12%); overflow-wrap:anywhere; }
-.nre-attempt-list .nre-truncated { color:var(--warn); font-size:.9em; }
-.nre-attempt-list .nre-attempt-list-empty { border:1px dashed var(--line-strong); border-radius:8px; padding:18px; color:var(--muted); text-align:center; background:var(--panel); }
-
-/* ---- EvalList:实体列表的第二级,一条 <details> 一个 experimentId × evalId ---- */
-.nre-eval-list .nre-evals { list-style:none; margin:0; padding:0; }
-.nre-eval-list .nre-eval { border-bottom:1px solid var(--line); }
-.nre-eval-list .nre-eval:last-child { border-bottom:0; }
-.nre-eval-list .nre-eval-summary { display:flex; flex-wrap:wrap; gap:.75em; align-items:baseline; padding:11px 4px; cursor:pointer; list-style:none; }
-.nre-eval-list .nre-eval-summary::-webkit-details-marker { display:none; }
-.nre-eval-list .nre-eval-summary:hover { background:color-mix(in oklch,var(--panel-2),var(--panel) 25%); }
-.nre-eval-list .nre-eval-id { font-weight:560; overflow-wrap:anywhere; }
-.nre-eval-list .nre-eval-experiment,
-.nre-eval-list .nre-eval-score,
-.nre-eval-list .nre-eval-attempts-count,
-.nre-eval-list .nre-eval-duration,
-.nre-eval-list .nre-eval-cost { color:var(--muted); font-size:.9em; font-variant-numeric:tabular-nums; }
-.nre-eval-list .nre-attempts { list-style:none; margin:0 0 12px; padding:0 0 0 20px; border-left:2px solid color-mix(in oklch,var(--nre-c0),transparent 55%); }
-.nre-eval-list .nre-eval-list-empty { border:1px dashed var(--line-strong); border-radius:8px; padding:18px; color:var(--muted); text-align:center; background:var(--panel); }
-
-/* ---- ExperimentList:web 面比较表,一条 <details> 一个 experiment;固定八列,两种题型并存
-   (mixed)时 Pass rate 与 Total score 两列并排变九列,.nre-mixed-scoring 覆盖轨数 ---- */
-.nre-experiment-table { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:var(--panel); }
-.nre-experiment-head,
-.nre-experiment-summary { display:grid; grid-template-columns:minmax(240px,1.35fr) minmax(115px,.72fr) minmax(95px,.58fr) minmax(108px,.62fr) minmax(105px,.58fr) minmax(112px,.66fr) minmax(92px,.52fr) minmax(160px,.86fr); column-gap:14px; align-items:center; }
-.nre-experiment-table.nre-mixed-scoring .nre-experiment-head,
-.nre-experiment-table.nre-mixed-scoring .nre-experiment-summary { grid-template-columns:minmax(240px,1.35fr) minmax(115px,.72fr) minmax(95px,.58fr) minmax(108px,.62fr) minmax(105px,.58fr) minmax(105px,.58fr) minmax(112px,.66fr) minmax(92px,.52fr) minmax(160px,.86fr); }
-.nre-experiment-head { padding:13px 20px; color:var(--muted); font-size:12px; line-height:1.2; font-weight:620; border-bottom:1px solid var(--line); }
-.nre-experiment-head button { appearance:none; display:inline-flex; width:max-content; max-width:100%; align-items:center; gap:5px; border:0; padding:0; background:transparent; color:inherit; font:inherit; line-height:inherit; text-align:left; white-space:nowrap; cursor:pointer; }
-.nre-experiment-head button:hover,
-.nre-experiment-head button:focus-visible { color:var(--text); }
-.nre-experiment-head .nre-num-head { justify-self:end; text-align:right; }
-.nre-experiment-head .nre-sort-icon { display:inline-block; flex:0 0 11px; width:11px; color:var(--soft); font-size:11px; text-align:center; }
-.nre-experiment-head .nre-sort-icon::before { content:"↕"; opacity:0; transition:opacity .12s; }
-.nre-experiment-head button:hover .nre-sort-icon::before,
-.nre-experiment-head button:focus-visible .nre-sort-icon::before { opacity:1; }
-.nre-experiment-head button.nre-sort-asc .nre-sort-icon::before { content:"↑"; opacity:1; color:var(--text); }
-.nre-experiment-head button.nre-sort-desc .nre-sort-icon::before { content:"↓"; opacity:1; color:var(--text); }
-.nre-experiment-table-wrap > .nre-filter { display:block; width:min(100%,280px); height:34px; min-width:0; margin:0 0 12px auto; border:1px solid var(--line); border-radius:7px; padding:0 11px; background:var(--panel); color:var(--text); font:inherit; }
-.nre-experiment-list .nre-experiment-entry { border-bottom:1px solid var(--line); }
-.nre-experiment-list .nre-experiment-entry:last-child { border-bottom:0; }
-.nre-experiment-list .nre-experiment-summary { padding:13px 20px; cursor:pointer; list-style:none; transition:background .12s; }
-.nre-experiment-list .nre-experiment-summary::-webkit-details-marker { display:none; }
-.nre-experiment-list .nre-experiment-summary:hover { background:color-mix(in oklch,var(--panel-2),var(--panel) 25%); }
-.nre-experiment-list .nre-experiment-summary > span { min-width:0; }
-.nre-experiment-list .nre-experiment-name { position:relative; padding-left:30px; }
-.nre-experiment-list .nre-experiment-name::before { content:""; position:absolute; left:5px; top:6px; width:7px; height:7px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform .15s; }
-.nre-experiment-list .nre-experiment-entry[open] .nre-experiment-name::before { transform:rotate(45deg); }
-.nre-experiment-list .nre-experiment-id { display:block; overflow-wrap:anywhere; font-weight:650; }
-.nre-experiment-list .nre-experiment-name small { display:block; margin-top:3px; color:var(--muted); font-size:12px; font-weight:400; }
-.nre-experiment-list .nre-num { text-align:right; font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; white-space:nowrap; }
-.nre-experiment-list .nre-good { color:var(--good); }
-.nre-experiment-list .nre-warn { color:var(--warn); }
-.nre-experiment-list .nre-bad { color:var(--bad); }
-.nre-experiment-list .nre-experiment-pill { display:inline-flex; min-height:22px; align-items:center; color:var(--muted); font-size:12px; white-space:nowrap; }
-.nre-experiment-list .nre-experiment-detail { padding:18px 30px 22px; background:color-mix(in oklch,var(--panel-2),var(--panel) 24%); border-top:1px solid var(--line); }
-.nre-experiment-list .nre-experiment-flags { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; color:var(--soft); font-size:12px; }
-.nre-experiment-list .nre-experiment-flags b { border:1px solid color-mix(in oklch,var(--line),transparent 16%); border-radius:999px; padding:3px 8px; color:var(--text); font-weight:560; }
-.nre-experiment-list .nre-experiment-evals { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
-.nre-experiment-list .nre-experiment-eval,
-.nre-experiment-list .nre-experiment-attempts { list-style:none; margin:0; padding:0; }
-.nre-experiment-list .nre-experiment-eval { padding:4px 0 9px; border-bottom:1px solid color-mix(in oklch,var(--line),transparent 28%); }
-.nre-experiment-list .nre-experiment-eval:last-child { border-bottom:0; }
-.nre-experiment-list .nre-experiment-eval-header,
-.nre-experiment-list .nre-experiment-attempt-row { display:grid; grid-template-columns:20px minmax(220px,1fr) minmax(150px,.7fr) minmax(260px,1fr); column-gap:12px; align-items:baseline; font-size:13px; }
-.nre-experiment-list .nre-experiment-eval-header { padding:7px 0 5px; }
-.nre-experiment-list .nre-experiment-attempt-row { padding:5px 0 5px 20px; color:var(--muted); }
-.nre-experiment-list .nre-eval-id { font-weight:560; overflow-wrap:anywhere; }
-.nre-experiment-list .nre-eval-attempt-count { color:var(--soft); font-size:12px; }
-.nre-experiment-list .nre-eval-rollup { color:var(--muted); font-size:.92em; overflow-wrap:anywhere; }
-/* 覆盖缺口占位行:不冒充有 attempt 的题,视觉上比正常 Eval 行更 subdued。 */
-.nre-experiment-list .nre-experiment-eval-missing { color:var(--soft); }
-.nre-experiment-list .nre-experiment-eval-missing code { font-size:.92em; }
-.nre-experiment-list .nre-attempt-branch { color:var(--line-strong); font-variant-numeric:tabular-nums; }
-.nre-experiment-list .nre-eval-attempt-badges { display:inline-flex; flex-wrap:wrap; gap:.6em; }
-.nre-experiment-list .nre-eval-attempt-metrics,
-.nre-experiment-list .nre-eval-reason { color:var(--muted); font-size:.92em; }
-.nre-experiment-list .nre-experiment-list-empty { border:1px dashed var(--line-strong); border-radius:8px; padding:18px; color:var(--muted); text-align:center; background:var(--panel); }
-@media(max-width:1160px){.nre-experiment-table{overflow-x:auto}.nre-experiment-head,.nre-experiment-summary{min-width:1120px}.nre-experiment-detail{min-width:1120px}.nre-experiment-table.nre-mixed-scoring .nre-experiment-head,.nre-experiment-table.nre-mixed-scoring .nre-experiment-summary{min-width:1240px}}
-
-/* ---- verdict 判定色(EvalList/ExperimentList 的判定符;errored 在这里按 bad 收敛) ---- */
-.nre .nre-eval-verdict.nre-verdict-passed { color:var(--good); }
-.nre .nre-eval-verdict.nre-verdict-failed,
-.nre .nre-eval-verdict.nre-verdict-errored { color:var(--bad); }
-.nre .nre-eval-verdict.nre-verdict-unreadable { color:var(--soft); }
+/* ---- 实验比较表:web 面固定八列 ---- */
+.niceeval-experiment-table { border:1px solid var(--line); border-radius: var(--radius); overflow:hidden; background:var(--panel); }
+.niceeval-experiment-summary { display:grid; grid-template-columns:minmax(240px,1.35fr) minmax(115px,.72fr) minmax(95px,.58fr) minmax(108px,.62fr) minmax(105px,.58fr) minmax(112px,.66fr) minmax(92px,.52fr) minmax(160px,.86fr); column-gap:14px; align-items:center; }
+@media(max-width:1160px){.niceeval-experiment-table{overflow-x:auto}.niceeval-experiment-summary {min-width:1120px}}
 
 /* ---- 维度键上色:同一个 key 在任何块里同色(文字) ---- */
-.nre .nre-c0 { color: var(--nre-c0); }
-.nre .nre-c1 { color: var(--nre-c1); }
-.nre .nre-c2 { color: var(--nre-c2); }
-.nre .nre-c3 { color: var(--nre-c3); }
-.nre .nre-c4 { color: var(--nre-c4); }
-.nre .nre-c5 { color: var(--nre-c5); }
-.nre .nre-key { font-weight: 620; }
+.niceeval-report .niceeval-c0 { color: var(--c0); }
+.niceeval-report .niceeval-c1 { color: var(--c1); }
+.niceeval-report .niceeval-c2 { color: var(--c2); }
+.niceeval-report .niceeval-c3 { color: var(--c3); }
+.niceeval-report .niceeval-c4 { color: var(--c4); }
+.niceeval-report .niceeval-c5 { color: var(--c5); }
 
-/* ---- 系列上色(SVG 图形):nre-series-cN 设 --nre-series,fill/stroke 走 var ---- */
-.nre .nre-series-c0 { --nre-series: var(--nre-c0); }
-.nre .nre-series-c1 { --nre-series: var(--nre-c1); }
-.nre .nre-series-c2 { --nre-series: var(--nre-c2); }
-.nre .nre-series-c3 { --nre-series: var(--nre-c3); }
-.nre .nre-series-c4 { --nre-series: var(--nre-c4); }
-.nre .nre-series-c5 { --nre-series: var(--nre-c5); }
-.nre .nre-series-none { --nre-series: var(--muted); }
+/* ---- 系列上色(SVG 图形):niceeval-series-cN 设 --series,fill/stroke 走 var ---- */
+.niceeval-report .niceeval-series-c0 { --series: var(--c0); }
+.niceeval-report .niceeval-series-c1 { --series: var(--c1); }
+.niceeval-report .niceeval-series-c2 { --series: var(--c2); }
+.niceeval-report .niceeval-series-c3 { --series: var(--c3); }
+.niceeval-report .niceeval-series-c4 { --series: var(--c4); }
+.niceeval-report .niceeval-series-c5 { --series: var(--c5); }
+.niceeval-report .niceeval-series-none { --series: var(--muted); }
 
 /* ---- 表格通用:圆角 panel、细分隔线、tabular-nums 数字、uppercase 小标签 ---- */
-table.nre,
-.nre table {
+table.niceeval-report,
+.niceeval-report table {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--panel);
 }
-.nre th,
-.nre td {
+.niceeval-report th,
+.niceeval-report td {
   border-bottom: 1px solid var(--line);
   padding: 9px 14px;
   text-align: left;
   vertical-align: top;
   font-size: 13.5px;
 }
-.nre thead th {
+.niceeval-report thead th {
   color: var(--muted);
   font-weight: 500;
   font-size: 12px;
@@ -197,458 +103,357 @@ table.nre,
   background: var(--panel);
   white-space: nowrap;
 }
-.nre tbody tr:last-child th,
-.nre tbody tr:last-child td {
+.niceeval-report tbody tr:last-child th,
+.niceeval-report tbody tr:last-child td {
   border-bottom: 0;
 }
-.nre tbody th[sample="row"] {
+.niceeval-report tbody th[sample="row"] {
   font-weight: 610;
 }
-.nre td {
+.niceeval-report td {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
-.nre .nre-dimension {
-  color: var(--muted);
-  font-weight: 500;
-}
-.nre .nre-unit {
-  color: var(--soft);
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  margin-left: 0.25em;
-}
-.nre .nre-better {
-  color: var(--soft);
-  margin-left: 0.25em;
-}
 
 /* ---- <Table> 原语:作者自定义列;右对齐是 class,不是内联样式 ---- */
-.nre th.nre-align-right,
-.nre td.nre-align-right {
+.niceeval-report th.niceeval-align-right,
+.niceeval-report td.niceeval-align-right {
   text-align: right;
 }
 
 /* ---- 渐进增强:排序指示(enhance.js 点表头时切类)与行过滤 ---- */
-.nre th[data-nre-sort] {
+.niceeval-report th[data-niceeval-sort] {
   cursor: pointer;
   user-select: none;
 }
-.nre th[data-nre-sort]:hover { color: var(--text); }
-.nre th[data-nre-sort]::after {
+.niceeval-report th[data-niceeval-sort]:hover { color: var(--text); }
+.niceeval-report th[data-niceeval-sort]::after {
   content: "↕";
   margin-left: 6px;
   color: var(--soft);
   font-size: 11px;
+  opacity: 0;
 }
-.nre th[data-nre-sort].nre-sort-asc::after { content: "↑"; color: var(--text); }
-.nre th[data-nre-sort].nre-sort-desc::after { content: "↓"; color: var(--text); }
-.nre .nre-row-hidden { display: none; }
-.nre-metric-table-wrap .nre-filter {
+.niceeval-report th[data-niceeval-sort]:hover::after,
+.niceeval-report th[data-niceeval-sort]:focus-visible::after { opacity: 1; }
+.niceeval-report th[data-niceeval-sort].niceeval-sort-asc::after { content: "↑"; color: var(--text); opacity: 1; }
+.niceeval-report th[data-niceeval-sort].niceeval-sort-desc::after { content: "↓"; color: var(--text); opacity: 1; }
+.niceeval-report .niceeval-row-hidden { display: none; }
+
+/* ---- 通用 Table 的过滤外壳与层级行 ---- */
+.niceeval-table-wrap > .niceeval-filter {
+  display: block;
+  width: min(100%, 280px);
   height: 34px;
-  min-width: 260px;
+  min-width: 0;
+  margin: 0 0 12px auto;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 0 12px;
-  margin-bottom: 10px;
+  border-radius: var(--radius);
+  padding: 0 11px;
   background: var(--panel);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
   outline: none;
 }
-.nre-metric-table-wrap .nre-filter:focus { border-color: var(--line-strong); }
-.nre-metric-table-wrap .nre-filter::placeholder { color: var(--soft); }
+.niceeval-table-wrap > .niceeval-filter:focus { border-color: var(--line-strong); }
+.niceeval-table-wrap > .niceeval-filter::placeholder { color: var(--soft); }
+.niceeval-report .niceeval-cell-text { display: block; min-width: 0; }
+.niceeval-report .niceeval-cell-detail {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.niceeval-table--hierarchical {
+  display: block;
+  overflow-x: auto;
+}
+.niceeval-table--hierarchical thead,
+.niceeval-table--hierarchical tbody,
+.niceeval-table--hierarchical thead tr,
+.niceeval-table--hierarchical tbody > tr {
+  display: block;
+}
+.niceeval-table--hierarchical thead tr,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-row:not(details) {
+  display: grid;
+  grid-template-columns: var(--table-grid);
+  column-gap: 14px;
+  align-items: center;
+  min-width: max(100%, 1080px);
+}
+.niceeval-table--hierarchical thead tr { padding: 0 20px; }
+.niceeval-table--hierarchical thead th {
+  display: block;
+  border: 0;
+  padding: 12px 0;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-body {
+  display: block;
+  border: 0;
+  padding: 0;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-row {
+  border-bottom: 1px solid var(--line);
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-body > .niceeval-table-hierarchy-row:last-child {
+  border-bottom: 0;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary,
+.niceeval-table--hierarchical .niceeval-table-hierarchy-row:not(details) {
+  box-sizing: border-box;
+  padding: 12px 20px;
+  list-style: none;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary {
+  position: relative;
+  cursor: pointer;
+  transition: background .12s;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary::-webkit-details-marker { display: none; }
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary:hover {
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 25%);
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary .niceeval-table-hierarchy-cell:first-child {
+  position: relative;
+  padding-left: 28px;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-summary .niceeval-table-hierarchy-cell:first-child::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: .45em;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform .15s;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-group[open] > .niceeval-table-hierarchy-summary
+  .niceeval-table-hierarchy-cell:first-child::before {
+  transform: rotate(45deg);
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-children {
+  min-width: 1080px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 24%);
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-children .niceeval-table-hierarchy-row {
+  border-color: color-mix(in oklch, var(--line), transparent 28%);
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.niceeval-table--hierarchical .niceeval-table-hierarchy-cell.niceeval-align-right {
+  text-align: right;
+  white-space: nowrap;
+}
+.niceeval-table--hierarchical .niceeval-row-placeholder { color: var(--soft); }
+.niceeval-report .niceeval-verdict-tally {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
 
 /* ---- MetricCell:缺数据 / 覆盖率角标 / 证据链接 ---- */
-.nre .nre-value { white-space: nowrap; }
-.nre .nre-missing {
+.niceeval-report .niceeval-value { white-space: nowrap; }
+.niceeval-report .niceeval-missing {
   color: var(--soft);
   font-style: italic;
 }
-.nre .nre-coverage {
+.niceeval-report .niceeval-coverage {
   color: var(--warn);
   font-size: 0.72em;
   margin-left: 0.3em;
 }
-.nre .nre-refs {
+.niceeval-report .niceeval-refs {
   margin-left: 0.4em;
 }
-.nre .nre-ref {
-  color: var(--nre-c0);
+.niceeval-report .niceeval-ref {
+  color: var(--c0);
   font-size: 0.85em;
   text-decoration: none;
   margin-right: 0.25em;
 }
-.nre .nre-ref:hover {
+.niceeval-report .niceeval-ref:hover {
   text-decoration: underline;
 }
-.nre .nre-td-empty {
-  background: var(--panel-2);
-}
 /* 数据侧没给的格子:呈现层画软色缺失符,不进 textContent、不参与排序取值 */
-.nre .nre-empty::before {
-  content: "—";
-  color: var(--soft);
-}
 
 /* ---- verdict 语义色与计票 pill ---- */
-.nre .nre-verdict-passed { color: var(--good); }
-.nre .nre-verdict-failed { color: var(--bad); }
-.nre .nre-verdict-errored { color: var(--warn); }
-.nre .nre-verdict-unreadable { color: var(--soft); }
-.nre .nre-verdict-tally {
+.niceeval-report .niceeval-verdict-passed { color: var(--good); }
+.niceeval-report .niceeval-verdict-failed { color: var(--bad); }
+.niceeval-report .niceeval-verdict-errored { color: var(--warn); }
+.niceeval-report .niceeval-verdict-unreadable { color: var(--soft); }
+.niceeval-report .niceeval-verdict-tally {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.nre .nre-verdict-pill {
+.niceeval-report .niceeval-verdict-pill {
   display: inline-flex;
   align-items: center;
   height: 22px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 0 8px;
   font-size: 12px;
   white-space: nowrap;
   background: var(--panel);
 }
-.nre .nre-verdict-pill.nre-verdict-passed { border-color: color-mix(in oklch, var(--good), var(--line) 55%); }
-.nre .nre-verdict-pill.nre-verdict-failed { border-color: color-mix(in oklch, var(--bad), var(--line) 55%); }
-.nre .nre-verdict-pill.nre-verdict-errored { border-color: color-mix(in oklch, var(--warn), var(--line) 55%); }
+.niceeval-report .niceeval-verdict-pill.niceeval-verdict-passed { border-color: color-mix(in oklch, var(--good), var(--line) 55%); }
+.niceeval-report .niceeval-verdict-pill.niceeval-verdict-failed { border-color: color-mix(in oklch, var(--bad), var(--line) 55%); }
+.niceeval-report .niceeval-verdict-pill.niceeval-verdict-errored { border-color: color-mix(in oklch, var(--warn), var(--line) 55%); }
 
-/* ---- ScopeSummary:范围摘要卡,满宽 KPI 条(对齐 view 的 .summary/.metric 密度);
-        嵌进 ExperimentComparison 组卡时降为紧凑行(规则在上面的比较块里) ---- */
-.nre-sample-summary .nre-sample-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  margin: 0 0 10px;
-  background: var(--panel);
-}
-.nre-sample-summary .nre-sample-kpi {
-  padding: 12px 16px 13px;
-  border-right: 1px solid var(--line);
-  min-width: 0;
-}
-.nre-sample-summary .nre-sample-kpi:last-child { border-right: 0; }
-.nre-sample-summary .nre-sample-kpi dt {
-  color: var(--soft);
-  font-size: 12px;
-  font-weight: 550;
-}
-.nre-sample-summary .nre-sample-kpi dd {
-  margin: 6px 0 0;
-  font-size: 20px;
-  line-height: 1;
-  font-weight: 680;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.nre-sample-summary .nre-sample-kpi-note {
-  display:block;
-  margin-top:5px;
-  color:var(--soft);
-  font-size:11px;
-  font-weight:450;
-  line-height:1.25;
-  white-space:nowrap;
-}
-/* 计票格装的是 pill 组:允许换行,行高回到常规 */
-.nre-sample-summary .nre-sample-kpi-verdicts dd {
-  white-space: normal;
-  line-height: 1.4;
-}
-.nre .nre-sample-summary-range {
+/* ---- ScopeSummary:范围摘要卡的范围行 ---- */
+.niceeval-report .niceeval-sample-summary-range {
   color: var(--soft);
   font-size: 0.85em;
   margin: 0.25rem 0 0;
 }
 
-/* ---- 宿主警告块:.nre-issues 是默认折叠的 <details>,<summary> 汇总行恒可见。
-   不占框:无边框、无底色、不缩进,警示色只落在汇总行文字与徽标上。 ---- */
-.nre .nre-issues {
-  margin: 0;
-  color: var(--text);
-  font-size: 13px;
-}
-/* 外层 <details> 的 <summary>:分类计数汇总行,原生无 JS 可展开。 */
-.nre .nre-issues > .nre-issues-summary {
-  font-weight: 650;
-  color: var(--warn);
-  cursor: pointer;
-}
-.nre .nre-warning-groups {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-}
-.nre .nre-warning-group + .nre-warning-group {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.nre .nre-warning-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-}
-.nre .nre-warning-title { font-weight: 650; }
-.nre .nre-warning-badge {
-  padding: 1px 8px;
-  border: 1px solid color-mix(in oklch, var(--warn), var(--line) 35%);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--warn), var(--panel) 84%);
-  font-size: 0.9em;
-  white-space: nowrap;
-}
-.nre .nre-warning-details { margin: 4px 0 0; }
-/* <details> 原生无 JS 可展开,cursor 不经 .nre-js 门控。 */
-.nre .nre-warning-details > summary {
-  color: var(--soft);
-  font-size: 0.9em;
-  cursor: pointer;
-}
-.nre .nre-warning-details > ul {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0 0 0 12px;
-  border-left: 2px solid var(--line);
-}
-.nre .nre-warning + .nre-warning { margin-top: 8px; }
-/* 警告携带的下一步命令:等宽块,无 JS 时点击即全选;enhance.js 在场时点击复制 */
-.nre .nre-warning-command {
-  display: block;
-  margin-top: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-:root.nre-js .nre .nre-warning-command { cursor: copy; }
-:root.nre-js .nre .nre-warning-command:hover { border-color: var(--line-strong); }
-.nre .nre-warning-command[data-nre-copied]::after {
-  content: "✓";
-  margin-left: 0.6em;
-  color: var(--good);
-}
-
-/* ---- 快照诊断区:.nre-snap-diag 是默认折叠的 <details>,<summary> 汇总行恒可见,
-   最高严重度含 error 时汇总行换色区别于纯 warning。来源分组按 experiment → Run 两层,
-   单诊断快照退化成一行(不摆只有一个孩子的空壳层级)。 ---- */
-.nre .nre-snap-diag {
-  margin: 0;
-  color: var(--text);
-  font-size: 13px;
-}
-.nre .nre-snap-diag > .nre-snap-diag-summary {
-  font-weight: 650;
-  color: var(--warn);
-  cursor: pointer;
-}
-.nre .nre-snap-diag > .nre-snap-diag-summary[data-severity="error"] { color: var(--bad); }
-.nre .nre-snap-diag-groups {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-}
-.nre .nre-snap-diag-group + .nre-snap-diag-group {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.nre .nre-snap-diag-exp { font-weight: 650; }
-.nre .nre-snap-diag-runs {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0 0 0 12px;
-  border-left: 2px solid var(--line);
-}
-.nre .nre-snap-diag-run + .nre-snap-diag-run { margin-top: 8px; }
-.nre .nre-snap-diag-time {
-  display: block;
-  color: var(--soft);
-  font-size: 0.9em;
-}
-.nre .nre-snap-diag-records {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-}
-.nre .nre-snap-diag-record + .nre-snap-diag-record { margin-top: 6px; }
-.nre .nre-snap-diag-meta {
-  font-size: 0.85em;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.nre .nre-snap-diag-message { margin-top: 2px; }
-.nre .nre-snap-diag-collapsed .nre-snap-diag-message { display: inline; margin-left: 6px; }
-/* 诊断携带的下一步命令:等宽块,无 JS 时点击即全选;enhance.js 在场时点击复制 */
-.nre .nre-snap-diag-command {
-  display: block;
-  margin-top: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-:root.nre-js .nre .nre-snap-diag-command { cursor: copy; }
-:root.nre-js .nre .nre-snap-diag-command:hover { border-color: var(--line-strong); }
-.nre .nre-snap-diag-command[data-nre-copied]::after {
-  content: "✓";
-  margin-left: 0.6em;
-  color: var(--good);
-}
-
 /* ---- Hero / PoweredBy(站点标题区与品牌行) ---- */
 /* 居中大标题:hero 是页首的门面块,整块占满内容列宽、文本水平居中,标题随视口 clamp 放大,
    meta 与品牌行居中跟随。不设 max-width——窄框居中在宽内容列里会读成左偏,占满列宽才真居中。 */
-.nre-hero {
+.niceeval-hero {
   text-align: center;
   margin: 0 0 clamp(28px, 5vw, 44px);
 }
-.nre-hero .nre-hero-title {
+.niceeval-hero .niceeval-hero-title {
   margin: 0;
   font-size: clamp(38px, 5vw, 60px);
   line-height: 0.98;
   font-weight: 760;
   letter-spacing: -0.01em;
 }
-.nre-hero .nre-hero-meta {
+.niceeval-hero .niceeval-hero-meta {
   margin: 14px 0 0;
   color: var(--muted);
   font-size: 14px;
 }
-.nre-powered-by {
+.niceeval-powered-by {
   margin: 10px 0 0;
   font-size: 12px;
 }
-.nre-powered-by a {
+.niceeval-powered-by a {
   color: var(--soft);
   text-decoration: none;
 }
-.nre-powered-by a:hover { color: var(--text); text-decoration: underline; }
+.niceeval-powered-by a:hover { color: var(--text); text-decoration: underline; }
 
 /* ---- Callouts(分级提示区:双层 details,不占框) ---- */
-.nre-callouts {
+.niceeval-callouts {
   margin: 0;
   font-size: 13px;
 }
-.nre-callouts-root > .nre-callouts-summary {
+.niceeval-callouts-root > .niceeval-callouts-summary {
   font-weight: 650;
   cursor: pointer;
 }
-.nre-callouts-summary--error { color: var(--bad); }
-.nre-callouts-summary--warning { color: var(--warn); }
-.nre-callouts-summary--info { color: var(--soft); }
-.nre-callout-groups {
+.niceeval-callouts-summary--error { color: var(--bad); }
+.niceeval-callouts-summary--warning { color: var(--warn); }
+.niceeval-callouts-summary--info { color: var(--soft); }
+.niceeval-callout-groups {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
 }
-.nre-callout-group + .nre-callout-group {
+.niceeval-callout-group + .niceeval-callout-group {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
 }
-.nre-callout-head {
+.niceeval-callout-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
 }
-.nre-callout-head--error .nre-callout-title { color: var(--bad); }
-.nre-callout-head--warning .nre-callout-title { color: var(--warn); }
-.nre-callout-title { font-weight: 650; }
-.nre-callout-badge {
+.niceeval-callout-head--error .niceeval-callout-title { color: var(--bad); }
+.niceeval-callout-head--warning .niceeval-callout-title { color: var(--warn); }
+.niceeval-callout-title { font-weight: 650; }
+.niceeval-callout-badge {
   padding: 1px 8px;
   border: 1px solid color-mix(in oklch, var(--warn), var(--line) 35%);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--warn), var(--panel) 84%);
   font-size: 0.9em;
   white-space: nowrap;
 }
-.nre-callout-details { margin: 4px 0 0; }
-.nre-callout-details > summary {
+.niceeval-callout-details { margin: 4px 0 0; }
+.niceeval-callout-details > summary {
   color: var(--soft);
   font-size: 0.9em;
   cursor: pointer;
 }
-.nre-callout-items {
+.niceeval-callout-items {
   list-style: none;
   margin: 6px 0 0;
   padding: 0;
 }
-.nre-callout-item {
+.niceeval-callout-item {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
 }
-.nre-callout-item + .nre-callout-item { margin-top: 8px; }
-.nre-callout-item--error .nre-callout-message { color: var(--bad); }
-.nre-callout-item--warning .nre-callout-message { color: var(--warn); }
-.nre-callout-nested {
+.niceeval-callout-item + .niceeval-callout-item { margin-top: 8px; }
+.niceeval-callout-item--error .niceeval-callout-message { color: var(--bad); }
+.niceeval-callout-item--warning .niceeval-callout-message { color: var(--warn); }
+.niceeval-callout-nested {
   list-style: none;
   margin: 6px 0 0;
   padding: 0 0 0 12px;
 }
-.nre-callout-command {
+.niceeval-callout-command {
   display: inline-block;
   padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius);
   background: var(--panel);
   font-size: 0.92em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: all;
 }
-:root.nre-js .nre-callout-command { cursor: copy; }
+:root.niceeval-js .niceeval-callout-command { cursor: copy; }
 
 /* ---- CopyBlock(可折叠复制块:text 面零输出) ---- */
-.nre-copy-block {
+.niceeval-copy-block {
   margin: 0 0 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel);
   padding: 8px 12px;
 }
-.nre-copy-block > summary {
+.niceeval-copy-block > summary {
   cursor: pointer;
   font-weight: 620;
   font-size: 13px;
 }
-.nre-copy-block .nre-copy-block-copy {
+.niceeval-copy-block .niceeval-copy-block-copy {
   margin: 8px 0 0;
   padding: 4px 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--panel);
   color: var(--text);
   font: inherit;
   font-size: 12px;
 }
-:root.nre-js .nre-copy-block .nre-copy-block-copy { cursor: copy; }
-.nre-copy-block .nre-copy-block-text {
+:root.niceeval-js .niceeval-copy-block .niceeval-copy-block-copy { cursor: copy; }
+.niceeval-copy-block .niceeval-copy-block-text {
   margin: 8px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg, transparent);
+  border-radius: var(--radius);
+  background: var(--page);
   font-size: 12px;
   line-height: 1.5;
   overflow-x: auto;
@@ -657,40 +462,40 @@ table.nre,
 }
 
 /* ---- CopyFixPrompt(批量修复 prompt:折叠块 + 增强层复制) ---- */
-.nre-copy-fix-prompt {
+.niceeval-copy-fix-prompt {
   margin: 0 0 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel);
   padding: 8px 12px;
 }
-.nre-copy-fix-prompt > summary {
+.niceeval-copy-fix-prompt > summary {
   cursor: pointer;
   font-weight: 620;
   font-size: 13px;
 }
-.nre-copy-fix-prompt .nre-copy-fix-prompt-copy {
+.niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-copy {
   margin: 8px 0 0;
   padding: 4px 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--panel);
   color: var(--text);
   font: inherit;
   font-size: 12px;
 }
-:root.nre-js .nre-copy-fix-prompt .nre-copy-fix-prompt-copy { cursor: copy; }
-.nre-copy-fix-prompt .nre-copy-fix-prompt-copy[data-nre-copied]::after {
+:root.niceeval-js .niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-copy { cursor: copy; }
+.niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-copy[data-niceeval-copied]::after {
   content: "✓";
   margin-left: 0.6em;
   color: var(--good);
 }
-.nre-copy-fix-prompt .nre-copy-fix-prompt-text {
+.niceeval-copy-fix-prompt .niceeval-copy-fix-prompt-text {
   margin: 8px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg, transparent);
+  border-radius: var(--radius);
+  background: var(--page);
   font-size: 12px;
   line-height: 1.5;
   overflow-x: auto;
@@ -698,116 +503,59 @@ table.nre,
   overflow-wrap: anywhere;
 }
 
-/* ---- TraceWaterfall(每 attempt 一行的静态时间瀑布) ---- */
-.nre-trace-waterfall .nre-waterfall {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.nre-trace-waterfall .nre-waterfall-row {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 8px;
-  background: var(--panel);
-}
-.nre-trace-waterfall .nre-waterfall-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75em;
-  align-items: baseline;
-}
-.nre-trace-waterfall .nre-waterfall-eval { font-weight: 620; }
-.nre-trace-waterfall .nre-waterfall-experiment,
-.nre-trace-waterfall .nre-waterfall-duration,
-.nre-trace-waterfall .nre-waterfall-count {
-  color: var(--muted);
-  font-size: 0.9em;
-  font-variant-numeric: tabular-nums;
-}
-.nre-trace-waterfall .nre-waterfall-failed { color: var(--bad); font-size: 0.9em; }
-/* 分解条:span 按 startOffsetMs / durationMs 百分比静态定位,失败 span 换警示色 */
-.nre-trace-waterfall .nre-waterfall-track {
-  position: relative;
-  height: 14px;
-  margin-top: 8px;
-  border-radius: 4px;
-  background: color-mix(in oklch, var(--line), var(--panel) 60%);
-  overflow: hidden;
-}
-.nre-trace-waterfall .nre-waterfall-span {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  border-radius: 2px;
-  background: var(--line-strong);
-}
-.nre-trace-waterfall .nre-span-agent { background: color-mix(in oklch, var(--good), var(--line-strong) 40%); }
-.nre-trace-waterfall .nre-span-model { background: color-mix(in oklch, var(--warn), var(--line-strong) 40%); }
-.nre-trace-waterfall .nre-span-tool { background: color-mix(in oklch, var(--line-strong), var(--text) 25%); }
-.nre-trace-waterfall .nre-span-failed { background: var(--bad); }
-.nre-trace-waterfall .nre-waterfall-empty {
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  padding: 18px;
-  color: var(--muted);
-  text-align: center;
-  background: var(--panel);
-}
-
 /* ---- Waterfall 原语(时间树与瀑布) ---- */
-.nre-waterfall .nre-waterfall-list {
+.niceeval-waterfall .niceeval-waterfall-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.nre-waterfall .nre-waterfall-row {
+.niceeval-waterfall .niceeval-waterfall-row {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 10px 14px;
   margin-bottom: 8px;
   background: var(--panel);
 }
-.nre-waterfall .nre-waterfall-head {
+.niceeval-waterfall .niceeval-waterfall-head {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75em;
   align-items: baseline;
 }
-.nre-waterfall .nre-waterfall-label { font-weight: 620; }
-.nre-waterfall .nre-waterfall-duration,
-.nre-waterfall .nre-waterfall-count {
+.niceeval-waterfall .niceeval-waterfall-label { font-weight: 620; }
+.niceeval-waterfall .niceeval-waterfall-duration,
+.niceeval-waterfall .niceeval-waterfall-count {
   color: var(--muted);
   font-size: 0.9em;
   font-variant-numeric: tabular-nums;
 }
-.nre-waterfall .nre-waterfall-failed { color: var(--bad); font-size: 0.9em; }
-.nre-waterfall .nre-waterfall-track {
+.niceeval-waterfall .niceeval-waterfall-failed { color: var(--bad); font-size: 0.9em; }
+.niceeval-waterfall .niceeval-waterfall-track {
   position: relative;
   height: 14px;
   margin-top: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--line), var(--panel) 60%);
   overflow: hidden;
 }
-.nre-waterfall .nre-waterfall-bar {
+.niceeval-waterfall .niceeval-waterfall-bar {
   position: absolute;
   top: 2px;
   bottom: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius);
   background: var(--line-strong);
 }
-.nre-waterfall .nre-span-agent { background: color-mix(in oklch, var(--good), var(--line-strong) 40%); }
-.nre-waterfall .nre-span-model { background: color-mix(in oklch, var(--warn), var(--line-strong) 40%); }
-.nre-waterfall .nre-span-tool { background: color-mix(in oklch, var(--line-strong), var(--text) 25%); }
-.nre-waterfall .nre-span-failed { background: var(--bad); }
-.nre-waterfall .nre-waterfall-nodes {
+.niceeval-waterfall .niceeval-span-agent { background: color-mix(in oklch, var(--good), var(--line-strong) 40%); }
+.niceeval-waterfall .niceeval-span-model { background: color-mix(in oklch, var(--warn), var(--line-strong) 40%); }
+.niceeval-waterfall .niceeval-span-tool { background: color-mix(in oklch, var(--line-strong), var(--text) 25%); }
+.niceeval-waterfall .niceeval-span-failed { background: var(--bad); }
+.niceeval-waterfall .niceeval-waterfall-nodes {
   list-style: none;
   margin: 10px 0 0;
   padding: 0;
 }
-.nre-waterfall .nre-waterfall-node,
-.nre-waterfall .nre-waterfall-node > summary {
+.niceeval-waterfall .niceeval-waterfall-node,
+.niceeval-waterfall .niceeval-waterfall-node > summary {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5em;
@@ -815,17 +563,17 @@ table.nre,
   font-size: 0.92em;
   line-height: 1.45;
 }
-.nre-waterfall .nre-waterfall-node--failed { color: var(--bad); }
-.nre-waterfall .nre-waterfall-node-kind {
+.niceeval-waterfall .niceeval-waterfall-node--failed { color: var(--bad); }
+.niceeval-waterfall .niceeval-waterfall-node-kind {
   font-size: 0.85em;
   font-weight: 600;
   text-transform: lowercase;
 }
-.nre-waterfall .nre-waterfall-node-dur {
+.niceeval-waterfall .niceeval-waterfall-node-dur {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.nre-waterfall .nre-waterfall-node-children {
+.niceeval-waterfall .niceeval-waterfall-node-children {
   list-style: none;
   margin: 4px 0 0 1.25em;
   padding: 0;
@@ -833,12 +581,12 @@ table.nre,
 }
 
 /* ---- DiffView 原语(文件清单与可展开 patch) ---- */
-.nre-diff-view {
+.niceeval-diff-view {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.nre-diff-view .nre-diff-group-title {
+.niceeval-diff-view .niceeval-diff-group-title {
   margin: 0 0 8px;
   color: var(--soft);
   font-size: 11px;
@@ -846,21 +594,21 @@ table.nre,
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.nre-diff-view .nre-diff-group-list {
+.niceeval-diff-view .niceeval-diff-group-list {
   list-style: none;
   margin: 0;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
 }
-.nre-diff-view .nre-diff-file {
+.niceeval-diff-view .niceeval-diff-file {
   border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
-.nre-diff-view .nre-diff-file:last-child { border-bottom: 0; }
-.nre-diff-view .nre-diff-file-summary {
+.niceeval-diff-view .niceeval-diff-file:last-child { border-bottom: 0; }
+.niceeval-diff-view .niceeval-diff-file-summary {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr) max-content;
   align-items: baseline;
@@ -869,53 +617,53 @@ table.nre,
   cursor: pointer;
   list-style: none;
 }
-.nre-diff-view .nre-diff-file-summary::-webkit-details-marker { display: none; }
-.nre-diff-view .nre-diff-change {
+.niceeval-diff-view .niceeval-diff-file-summary::-webkit-details-marker { display: none; }
+.niceeval-diff-view .niceeval-diff-change {
   color: var(--soft);
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.nre-diff-view .nre-diff-generated .nre-diff-change { color: var(--good); }
-.nre-diff-view .nre-diff-modified .nre-diff-change { color: var(--warn); }
-.nre-diff-view .nre-diff-deleted .nre-diff-change { color: var(--bad); }
-.nre-diff-view .nre-diff-path {
+.niceeval-diff-view .niceeval-diff-generated .niceeval-diff-change { color: var(--good); }
+.niceeval-diff-view .niceeval-diff-modified .niceeval-diff-change { color: var(--warn); }
+.niceeval-diff-view .niceeval-diff-deleted .niceeval-diff-change { color: var(--bad); }
+.niceeval-diff-view .niceeval-diff-path {
   min-width: 0;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
-.nre-diff-view .nre-diff-lines {
+.niceeval-diff-view .niceeval-diff-lines {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.nre-diff-view .nre-diff-patch {
+.niceeval-diff-view .niceeval-diff-patch {
   margin: 0;
   padding: 8px 0;
   border-top: 1px solid var(--line);
   background: color-mix(in oklch, var(--panel), black 4%);
-  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font: 11px/1.45 var(--font-mono);
   overflow-x: auto;
 }
-.nre-diff-view .nre-diff-patch-line {
+.niceeval-diff-view .niceeval-diff-patch-line {
   display: grid;
   grid-template-columns: 3.5em 3.5em minmax(0, 1fr);
   gap: 0 8px;
   padding: 0 12px;
   white-space: pre;
 }
-.nre-diff-view .nre-diff-patch-ln {
+.niceeval-diff-view .niceeval-diff-patch-ln {
   color: var(--soft);
   text-align: right;
   user-select: none;
 }
-.nre-diff-view .nre-diff-patch-line--add { background: color-mix(in oklch, var(--good), transparent 88%); }
-.nre-diff-view .nre-diff-patch-line--add .nre-diff-patch-text { color: var(--good); }
-.nre-diff-view .nre-diff-patch-line--remove { background: color-mix(in oklch, var(--bad), transparent 88%); }
-.nre-diff-view .nre-diff-patch-line--remove .nre-diff-patch-text { color: var(--bad); }
-.nre-diff-view .nre-diff-patch-line--meta .nre-diff-patch-text { color: var(--muted); }
-.nre-diff-view .nre-diff-patch-missing {
+.niceeval-diff-view .niceeval-diff-patch-line--add { background: color-mix(in oklch, var(--good), transparent 88%); }
+.niceeval-diff-view .niceeval-diff-patch-line--add .niceeval-diff-patch-text { color: var(--good); }
+.niceeval-diff-view .niceeval-diff-patch-line--remove { background: color-mix(in oklch, var(--bad), transparent 88%); }
+.niceeval-diff-view .niceeval-diff-patch-line--remove .niceeval-diff-patch-text { color: var(--bad); }
+.niceeval-diff-view .niceeval-diff-patch-line--meta .niceeval-diff-patch-text { color: var(--muted); }
+.niceeval-diff-view .niceeval-diff-patch-missing {
   margin: 0;
   padding: 10px 12px;
   border-top: 1px solid var(--line);
@@ -924,46 +672,46 @@ table.nre,
 }
 
 /* ---- Conversation 原语(分轮事件流) ---- */
-.nre-conversation {
+.niceeval-conversation {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.nre-conversation .nre-conversation-turn {
+.niceeval-conversation .niceeval-conversation-turn {
   border: 1px solid var(--line);
   border-left-width: 3px;
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
   padding: 10px 12px;
 }
-.nre-conversation .nre-conversation-turn--passed { border-left-color: var(--good); }
-.nre-conversation .nre-conversation-turn--failed { border-left-color: var(--bad); }
-.nre-conversation .nre-conversation-turn--errored { border-left-color: var(--bad); }
-.nre-conversation .nre-conversation-turn--skipped { border-left-color: var(--warn); }
-.nre-conversation .nre-conversation-turn-head {
+.niceeval-conversation .niceeval-conversation-turn--passed { border-left-color: var(--good); }
+.niceeval-conversation .niceeval-conversation-turn--failed { border-left-color: var(--bad); }
+.niceeval-conversation .niceeval-conversation-turn--errored { border-left-color: var(--bad); }
+.niceeval-conversation .niceeval-conversation-turn--skipped { border-left-color: var(--warn); }
+.niceeval-conversation .niceeval-conversation-turn-head {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5em 0.75em;
   align-items: baseline;
   margin-bottom: 8px;
 }
-.nre-conversation .nre-conversation-turn-label {
+.niceeval-conversation .niceeval-conversation-turn-label {
   font-weight: 650;
   font-size: 13px;
 }
-.nre-conversation .nre-conversation-turn-verdict {
+.niceeval-conversation .niceeval-conversation-turn-verdict {
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.nre-conversation .nre-conversation-entries {
+.niceeval-conversation .niceeval-conversation-entries {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.nre-conversation .nre-conversation-entry,
-.nre-conversation .nre-conversation-entry > summary {
+.niceeval-conversation .niceeval-conversation-entry,
+.niceeval-conversation .niceeval-conversation-entry > summary {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5em;
@@ -971,129 +719,63 @@ table.nre,
   font-size: 12px;
   line-height: 1.45;
 }
-.nre-conversation .nre-conversation-entry--expandable > summary {
+.niceeval-conversation .niceeval-conversation-entry--expandable > summary {
   cursor: pointer;
   list-style: none;
 }
-.nre-conversation .nre-conversation-entry--expandable > summary::-webkit-details-marker { display: none; }
-.nre-conversation .nre-conversation-entry-kind {
+.niceeval-conversation .niceeval-conversation-entry--expandable > summary::-webkit-details-marker { display: none; }
+.niceeval-conversation .niceeval-conversation-entry-kind {
   color: var(--soft);
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.nre-conversation .nre-conversation-entry-preview {
+.niceeval-conversation .niceeval-conversation-entry-preview {
   min-width: 0;
   color: var(--text);
   overflow-wrap: anywhere;
 }
-.nre-conversation .nre-conversation-entry--failed .nre-conversation-entry-preview { color: var(--bad); }
-.nre-conversation .nre-conversation-entry-detail {
+.niceeval-conversation .niceeval-conversation-entry--failed .niceeval-conversation-entry-preview { color: var(--bad); }
+.niceeval-conversation .niceeval-conversation-entry-detail {
   width: 100%;
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px dashed var(--line);
 }
-.nre-conversation .nre-conversation-failed-command { border-left-color: var(--bad); }
-.nre-conversation .nre-conversation-failed-display {
+.niceeval-conversation .niceeval-conversation-failed-command { border-left-color: var(--bad); }
+.niceeval-conversation .niceeval-conversation-failed-display {
   margin-bottom: 8px;
   color: var(--muted);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.nre-conversation .nre-conversation-io {
+.niceeval-conversation .niceeval-conversation-io {
   max-height: 220px;
   overflow: auto;
   margin: 6px 0 0;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--panel), black 8%);
   color: var(--muted);
-  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font: 11px/1.45 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-/* ---- AttemptList 的过滤框(<AttemptList filter />,渐进增强) ---- */
-.nre-attempt-list > .nre-filter {
-  height: 34px;
-  min-width: 260px;
-  margin-bottom: 12px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 0 11px;
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-}
-
-/* ---- MetricMatrix ---- */
-.nre-metric-matrix .nre-matrix-caption {
-  caption-side: top;
-  text-align: left;
-  font-weight: 650;
-  padding-bottom: 0.4rem;
-}
-.nre-metric-matrix .nre-matrix-axes {
-  color: var(--soft);
-  font-weight: 400;
-  margin-left: 0.75em;
-}
-
-/* ---- Scoreboard ---- */
-.nre-scoreboard .nre-total {
-  font-weight: 700;
-}
-.nre-scoreboard .nre-full-marks {
-  color: var(--soft);
-  font-weight: 400;
-  margin-left: 0.25em;
-}
-/* 两种 0 分的注脚分开着色:没去考(notRun)偏警示,考了判不了(unscorable)偏软 */
-.nre-scoreboard .nre-total-not-run,
-.nre-scoreboard .nre-total-unscorable,
-.nre-scoreboard .nre-subject-not-run,
-.nre-scoreboard .nre-subject-unscorable {
-  display: block;
-  font-size: 0.8em;
-  font-weight: 400;
-}
-.nre-scoreboard .nre-total-not-run,
-.nre-scoreboard .nre-subject-not-run { color: var(--warn); }
-.nre-scoreboard .nre-total-unscorable,
-.nre-scoreboard .nre-subject-unscorable { color: var(--soft); }
-.nre-scoreboard .nre-scoreboard-ignored {
-  color: var(--muted);
-  font-size: 0.85em;
-  margin: 0.25rem 0 0;
-}
-.nre-scoreboard .nre-weights {
-  color: var(--muted);
-  font-size: 0.85em;
-  margin: 0.4rem 0 0;
-}
-.nre-scoreboard .nre-weight,
-.nre-scoreboard .nre-weight-rest {
-  margin-left: 0.5em;
-}
-
 /* ---- 图表通用:panel 卡片、轴/网格/tooltip ---- */
-.nre-metric-scatter,
-.nre-metric-line,
-.nre-metric-bars,
-.nre-chart {
+.niceeval-chart {
   position: relative; /* tooltip 的定位根 */
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 14px 16px 8px;
   margin: 1rem 0;
   background: var(--panel);
 }
-.nre-chart .nre-chart-svg {
+.niceeval-chart .niceeval-chart-svg {
   max-width: 880px;
   width: 100%;
   height: auto;
@@ -1101,22 +783,23 @@ table.nre,
   display: block;
   overflow: visible;
 }
-.nre .nre-chart-grid line { stroke: var(--line); stroke-width: 1; }
-.nre .nre-chart-tick { fill: var(--muted); font-size: 10px; }
-.nre .nre-chart-xlabel,
-.nre .nre-chart-ylabel { fill: var(--muted); font-size: 12px; }
-.nre .nre-chart-line {
-  stroke: var(--nre-series);
+.niceeval-report .niceeval-chart-grid line { stroke: var(--line); stroke-width: 1; }
+.niceeval-report .niceeval-chart-tick { fill: var(--muted); font-size: 10px; }
+.niceeval-report .niceeval-chart-xlabel,
+.niceeval-report .niceeval-chart-ylabel { fill: var(--muted); font-size: 12px; }
+.niceeval-report .niceeval-chart-better-hint { fill: var(--soft); font-size: 11px; }
+.niceeval-report .niceeval-chart-line {
+  stroke: var(--series);
   stroke-width: 1.5;
   fill: none;
 }
-.nre .nre-chart-dot {
-  fill: var(--nre-series);
+.niceeval-report .niceeval-chart-dot {
+  fill: var(--series);
   stroke: var(--panel);
   stroke-width: 2;
 }
-.nre .nre-chart-point-label { fill: var(--text); font-size: 11px; }
-.nre-chart .nre-chart-legend {
+.niceeval-report .niceeval-chart-point-label { fill: var(--text); font-size: 11px; }
+.niceeval-chart .niceeval-chart-legend {
   display: flex;
   max-width: 880px;
   flex-wrap: wrap;
@@ -1127,186 +810,49 @@ table.nre,
   padding: 0;
   list-style: none;
 }
-.nre-chart .nre-chart-missing {
+.niceeval-chart .niceeval-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.niceeval-chart .niceeval-chart-legend-item::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius);
+  background: var(--series);
+}
+.niceeval-chart .niceeval-chart-missing {
   max-width: 880px;
   color: var(--warn);
   font-size: 0.85em;
   margin: 0.35rem auto 0;
 }
-.nre-chart .nre-chart-empty {
+.niceeval-chart .niceeval-chart-empty {
   color: var(--muted);
   padding: 1.5rem 0.5rem;
   text-align: center;
 }
-.nre-metric-scatter .nre-scatter-svg,
-.nre-metric-line .nre-line-svg,
-.nre-metric-bars .nre-bars-svg {
-  max-width: 880px;
-  width: 100%;
-  height: auto;
-  margin-inline: auto;
-  display: block;
-  overflow: visible;
-}
-.nre .nre-scatter-grid line { stroke: var(--line); stroke-width: 1; }
-.nre .nre-scatter-tick,
-.nre .nre-line-tick { fill: var(--muted); font-size: 10px; }
-.nre .nre-scatter-xlabel,
-.nre .nre-scatter-ylabel,
-.nre .nre-line-xlabel,
-.nre .nre-line-ylabel,
-.nre .nre-bars-group-label { fill: var(--muted); font-size: 12px; }
-.nre .nre-scatter-better-hint { fill: var(--soft); font-size: 11px; }
-.nre .nre-line-plot { stroke: var(--line); }
-.nre .nre-bars-baseline { stroke: var(--line-strong); }
-.nre .nre-leader { stroke: var(--line-strong); stroke-width: 1; }
 
-.nre .nre-scatter-line,
-.nre .nre-line-path {
-  stroke: var(--nre-series);
-  stroke-width: 1.5;
-  fill: none;
-}
-.nre .nre-scatter-point { cursor: default; }
-.nre .nre-scatter-hit { fill: transparent; }
-.nre .nre-scatter-dot {
-  fill: var(--nre-series);
-  stroke: var(--panel);
-  stroke-width: 2;
-}
-.nre .nre-scatter-point:hover .nre-scatter-dot { r: 6.5; }
-.nre .nre-scatter-point-label { fill: var(--text); font-size: 11px; }
-.nre .nre-line-point { fill: var(--nre-series); }
-.nre .nre-line-series-label { fill: var(--nre-series); font-size: 12px; }
-.nre .nre-bar { fill: var(--nre-series); }
-.nre .nre-bar-value { fill: var(--muted); font-size: 10px; }
-.nre .nre-scatter-point-link .nre-scatter-dot:hover,
-.nre .nre-line-point-link circle:hover {
-  stroke: var(--text);
-  stroke-width: 1.5;
-}
-.nre-metric-scatter .nre-scatter-legend,
-.nre-metric-bars .nre-bars-legend {
-  display: flex;
-  max-width: 880px;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.9rem;
-  color: var(--muted);
-  font-size: 0.85em;
-  margin: 0.5rem auto 0;
-}
-.nre .nre-legend-key { display:inline-flex; align-items:center; gap:0.4em; }
-.nre .nre-legend-key::before { content:""; width:0.55em; height:0.55em; border-radius:50%; background:currentColor; }
-.nre-metric-bars .nre-bars-metric {
-  margin-right: 1em;
-  font-weight: 600;
-  color: var(--text);
-}
-.nre-metric-scatter .nre-scatter-missing,
-.nre-metric-line .nre-line-missing {
-  max-width: 880px;
-  color: var(--warn);
-  font-size: 0.85em;
-  margin: 0.35rem auto 0;
-}
-/* 散点空态(0 可画点)/ 不足以成图(1 可画点):明说缺什么,不画空坐标系 */
-.nre-metric-scatter .nre-scatter-empty {
-  color: var(--muted);
-  padding: 1.5rem 0.5rem;
-  text-align: center;
-}
+.niceeval-report .niceeval-scatter-point { cursor: default; }
+.niceeval-report .niceeval-line-point { fill: var(--series); }
 
 /* enhance.js 的样式化 tooltip(无 JS 时退化为 SVG <title>) */
-.nre .nre-tooltip {
+.niceeval-report .niceeval-tooltip {
   position: absolute;
   transform: translate(-50%, -100%);
   margin-top: -12px;
   background: var(--panel);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 8px 10px;
   font-size: 12px;
   white-space: pre;
   pointer-events: none;
-  box-shadow: 0 4px 16px color-mix(in oklch, var(--text), transparent 88%);
   z-index: 5;
 }
-.nre .nre-tooltip b { font-size: 13px; display: block; }
-.nre .nre-tooltip .nre-tooltip-meta { color: var(--muted); margin-top: 2px; }
-
-/* ---- DeltaTable:每格 verdict/挣分 + tokens + 成本三段,Δ 列同structure ---- */
-.nre-delta-table .nre-delta-condition,
-.nre-delta-table .nre-delta-condition-link,
-.nre-delta-table .nre-delta-d {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  white-space: nowrap;
-}
-.nre-delta-table a.nre-delta-condition-link {
-  color: inherit;
-  text-decoration: none;
-}
-.nre-delta-table a.nre-delta-condition-link:hover { text-decoration: underline; }
-.nre-delta-table .nre-delta-verdict { font-weight: 610; }
-.nre-delta-table .nre-delta-tokens,
-.nre-delta-table .nre-delta-cost {
-  color: var(--muted);
-  font-size: 0.85em;
-}
-.nre-delta-table .nre-delta-historical {
-  color: var(--soft);
-  font-size: 0.8em;
-}
-.nre-delta-table .nre-delta-count {
-  margin-left: 0.35em;
-  color: var(--soft);
-  font-size: 0.8em;
-}
-.nre-delta-table tr.nre-delta-flipped .nre-row-key { box-shadow: inset 3px 0 0 var(--warn); }
-.nre-delta-table .nre-delta-flip-mark {
-  margin-left: 0.4em;
-  color: var(--warn);
-}
-.nre-delta-table .nre-delta-totals th,
-.nre-delta-table .nre-delta-totals td { font-weight: 610; border-top: 1px solid var(--line-strong); }
-.nre-delta-table .nre-delta-paired {
-  list-style: none;
-  margin: 0.6rem 0 0;
-  padding: 0;
-  color: var(--muted);
-  font-size: 0.88em;
-}
-.nre-delta-table .nre-delta-paired li + li { margin-top: 0.2rem; }
-/* 0 对不是错误:明确空态,与各列表 empty 同一姿势 */
-.nre-delta-table-empty {
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  padding: 18px;
-  color: var(--muted);
-  text-align: center;
-  background: var(--panel);
-}
-.nre-delta-table-empty .nre-missing { margin: 0; }
-
-/* ---- StabilityMatrix:全部历史执行的三计数(✓ ✗ !);零通过题标 never passed ---- */
-.nre-stability-matrix .nre-stability-counts {
-  display: inline-flex;
-  gap: 0.5em;
-  white-space: nowrap;
-}
-.nre-stability-matrix .nre-stability-passed { color: var(--good); }
-.nre-stability-matrix .nre-stability-failed { color: var(--bad); }
-.nre-stability-matrix .nre-stability-errored { color: var(--warn); }
-.nre-stability-matrix .nre-stability-never-passed {
-  display: inline-block;
-  margin-left: 0.5em;
-  color: var(--bad);
-  font-size: 0.8em;
-  font-weight: 600;
-}
-.nre-stability-matrix .nre-stability-totals th,
-.nre-stability-matrix .nre-stability-totals td { font-weight: 610; border-top: 1px solid var(--line-strong); }
+.niceeval-report .niceeval-tooltip b { font-size: 13px; display: block; }
+.niceeval-report .niceeval-tooltip .niceeval-tooltip-meta { color: var(--muted); margin-top: 2px; }
 
 /* ---- Attempt 详情组件族 ---------------------------------------------------
    这些规则属于 report web face，不属于 view dialog chrome：同一份 AttemptDetail
@@ -1314,13 +860,13 @@ table.nre,
    只靠 niceeval/report/react/styles.css 得到完整可读的结构化布局。 ---- */
 
 /* Summary:判定与 locator 是标题行，身份/时间/成本是自适应 KPI 网格。 */
-.nre-attempt-summary {
+.niceeval-attempt-summary {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
 }
-.nre-attempt-summary .nre-attempt-summary-head {
+.niceeval-attempt-summary .niceeval-attempt-summary-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1328,42 +874,42 @@ table.nre,
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
 }
-.nre-attempt-summary .nre-attempt-summary-locator {
+.niceeval-attempt-summary .niceeval-attempt-summary-locator {
   min-width: 0;
   color: var(--text);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 650;
   overflow-wrap: anywhere;
 }
-.nre-attempt-summary .nre-attempt-summary-kpis {
+.niceeval-attempt-summary .niceeval-attempt-summary-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   margin: 0;
 }
-.nre-attempt-summary .nre-attempt-summary-kpis > div {
+.niceeval-attempt-summary .niceeval-attempt-summary-kpis > div {
   min-width: 0;
   padding: 13px 16px 14px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
-.nre-attempt-summary .nre-attempt-summary-kpis dt,
-.nre-usage-table dt {
+.niceeval-attempt-summary .niceeval-attempt-summary-kpis dt,
+.niceeval-usage-table dt {
   color: var(--soft);
   font-size: 11px;
   font-weight: 560;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.nre-attempt-summary .nre-attempt-summary-kpis dd,
-.nre-usage-table dd {
+.niceeval-attempt-summary .niceeval-attempt-summary-kpis dd,
+.niceeval-usage-table dd {
   margin: 5px 0 0;
   color: var(--text);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.nre-attempt-summary .nre-attempt-summary-caps {
+.niceeval-attempt-summary .niceeval-attempt-summary-caps {
   margin: -1px 0 0;
   padding: 9px 16px 10px;
   border-top: 1px solid var(--line);
@@ -1373,591 +919,59 @@ table.nre,
 }
 
 /* Error 与断言:中性底 + 失败左边条;可展开明细。 */
-.nre-attempt-error {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--bad);
-  border-radius: 9px;
-  background: var(--panel);
-}
-.nre-attempt-error .nre-attempt-error-fields {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 7px 14px;
-  margin: 0;
-  padding: 13px 15px;
-}
-.nre-attempt-error .nre-attempt-error-fields dt {
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-.nre-attempt-error .nre-attempt-error-fields dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-error .nre-attempt-error-stack {
-  max-height: 22rem;
-  overflow: auto;
-  margin: 0;
-  padding: 12px 15px;
-  border-top: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--muted);
-  font: 12px/1.55 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-assertions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.nre-attempt-assertions .nre-assertion-row,
-.nre-attempt-source .nre-source-line-detail .nre-assertion-row {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-}
 /* 只有 gate failed(tone-bad)留左边色条;soft/passed/na 用 hairline */
-.nre-attempt-assertions .nre-assertion-row:has(.nre-tone-bad),
-.nre-attempt-source .nre-source-line-detail .nre-assertion-row.nre-tone-bad {
-  border-left: 3px solid var(--bad);
-}
-.nre-attempt-assertions .nre-assertion-row > summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 10px;
-  padding: 10px 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.nre-attempt-assertions .nre-assertion-row > summary::-webkit-details-marker,
-.nre-attempt-assertions .nre-assertions-passed > summary::-webkit-details-marker,
-.nre-attempt-assertions .nre-assertions-passed-group > summary::-webkit-details-marker {
-  display: none;
-}
-.nre .nre-assertion-badge {
-  flex: 0 0 auto;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  padding: 1px 7px;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.nre .nre-assertion-name { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
-.nre .nre-assertion-detail { flex: 1 1 100%; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.nre .nre-assertion-body {
-  display: grid;
-  gap: 5px;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--muted);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.nre .nre-tone-good { color: var(--good); }
-.nre .nre-tone-warn { color: var(--warn); }
-.nre .nre-tone-bad { color: var(--bad); }
-.nre .nre-tone-na { color: var(--soft); }
-.nre-attempt-assertions .nre-assertions-passed {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-}
-.nre-attempt-assertions .nre-assertions-passed > summary,
-.nre-attempt-assertions .nre-assertions-passed-group > summary {
-  padding: 9px 12px;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.nre-attempt-assertions .nre-assertions-passed-group {
-  margin: 0 12px 9px;
-  border-left: 2px solid var(--line-strong);
-}
+.niceeval-report .niceeval-tone-good { color: var(--good); }
+.niceeval-report .niceeval-tone-warn { color: var(--warn); }
+.niceeval-report .niceeval-tone-bad { color: var(--bad); }
+.niceeval-report .niceeval-tone-na { color: var(--soft); }
 
-/* Source:GitHub diff 式整块横向滚动;与产品站示例卡同一套视觉语言(整行 8% 浅染 + 2px 左缘 +
-   行号位图标,规范见 docs/feature/reports/components/attempt-detail/attempt-source.md)。普通行只是 div,
-   只有有证据的行才是可点击 details。 */
-.nre-attempt-source {
+/* SourceView 原语:GitHub diff 式带标注源码。整行浅染 + 2px 左缘 + 行号位标记,整块统一横向
+   滚动;视觉规范单源见 docs/feature/reports/components/sources/attempt-source.md
+   「web 面视觉规范」,DOM 骨架见同目录 presentation.md「SourceView 的 DOM 骨架」。
+   普通行是 div,带证据的行是可点击 details;展开区钉在可视左缘,不跟代码横滚。 */
+.niceeval-source-view {
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--panel);
-  /* 给 .nre-source-line-detail 提供 cqw:展开区按面板可视宽度换行,不跟代码横滚。 */
+  /* 给 .niceeval-source-line-detail 提供 cqw:展开区按面板可视宽度换行,不跟代码横滚。 */
   container-type: inline-size;
 }
-.nre-attempt-source .nre-attempt-source-head,
-.nre-attempt-source .nre-attempt-source-unmapped-head {
+.niceeval-source-view .niceeval-source-block + .niceeval-source-block,
+.niceeval-source-view .niceeval-source-block + .niceeval-source-unmapped {
+  border-top: 1px solid var(--line);
+}
+.niceeval-source-view .niceeval-source-block-path {
   padding: 7px 12px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
   overflow-wrap: anywhere;
   background: color-mix(in oklch, var(--panel-2), var(--line) 35%);
 }
-.nre-attempt-source .nre-attempt-source-lines {
-  overflow-x: auto;
-  padding: 6px 0;
-  background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
-  font: 12.5px/1.65 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  /* 横滚时行盒要撑到最长行宽度,底色/左缘才能盖满整行,展开区的 sticky 才有位移空间
-     (与示例卡 .eval-code 的 display:grid 同法)。 */
-  display: grid;
-}
-.nre-attempt-source .nre-source-line {
-  color: var(--text);
-}
-.nre-attempt-source .nre-source-line > summary {
-  cursor: pointer;
-  list-style: none;
-}
-.nre-attempt-source .nre-source-line > summary::-webkit-details-marker { display: none; }
-.nre-attempt-source .nre-source-line-summary {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
-  min-width: 100%;
-  width: max-content;
-  padding: 1px 0;
-}
-/* hover 用 background-image 叠加,不覆盖状态行 summary 上的浅染 background-color。 */
-.nre-attempt-source details.nre-source-line > summary:hover {
-  background-image: linear-gradient(
-    color-mix(in oklch, var(--text), transparent 95%),
-    color-mix(in oklch, var(--text), transparent 95%)
-  );
-}
-.nre-attempt-source .nre-source-ln {
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 12px;
-  color: var(--soft);
-  font-size: 11px;
-  user-select: none;
-}
-.nre-attempt-source .nre-source-ln-mark svg {
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-}
-.nre-attempt-source .nre-source-text {
-  color: var(--text);
-  font: inherit;
-  white-space: pre;
-}
-/* 钉在滚动视口右缘:行盒跟随最长行,横滚时分数与 chevron 始终可见(与示例卡 .code-line-actions 同法)。 */
-.nre-attempt-source .nre-source-line-meta {
-  position: sticky;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 16px;
-  font: 11px/1.65 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  white-space: nowrap;
-}
-.nre-attempt-source .nre-source-score-badge {
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: color-mix(in oklch, currentColor, transparent 86%);
-  font-weight: 650;
-}
-.nre-attempt-source .nre-source-chevron {
-  color: var(--soft);
-  font-size: 16px;
-  line-height: 1;
-  transition: transform 0.14s ease;
-}
-.nre-attempt-source details[open] > summary .nre-source-chevron {
-  color: var(--text);
-  transform: rotate(90deg);
-}
-
-/* 状态行 = 8% 浅染 + 2px 左缘(所有状态行都是 details,染在 summary 上,展开区不跟着染)。 */
-.nre-attempt-source .nre-source-line-send > summary {
-  background-color: color-mix(in oklch, var(--nre-c0), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--nre-c0);
-}
-.nre-attempt-source .nre-source-line-send .nre-source-ln { color: var(--nre-c0); }
-.nre-attempt-source .nre-source-line.nre-tone-good > summary {
-  background-color: color-mix(in oklch, var(--good), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--good);
-}
-.nre-attempt-source .nre-source-line.nre-tone-good .nre-source-ln { color: var(--good); }
-.nre-attempt-source .nre-source-line.nre-tone-good .nre-source-score-badge { color: var(--good); }
-.nre-attempt-source .nre-source-line.nre-tone-bad > summary {
-  background-color: color-mix(in oklch, var(--bad), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--bad);
-}
-.nre-attempt-source .nre-source-line.nre-tone-bad .nre-source-ln { color: var(--bad); }
-.nre-attempt-source .nre-source-line.nre-tone-bad .nre-source-score-badge { color: var(--bad); }
-.nre-attempt-source .nre-source-line.nre-tone-warn > summary,
-.nre-attempt-source .nre-source-line.nre-tone-na > summary {
-  background-color: color-mix(in oklch, var(--warn), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--warn);
-}
-.nre-attempt-source .nre-source-line.nre-tone-warn .nre-source-ln,
-.nre-attempt-source .nre-source-line.nre-tone-na .nre-source-ln { color: var(--warn); }
-.nre-attempt-source .nre-source-line.nre-tone-warn .nre-source-score-badge,
-.nre-attempt-source .nre-source-line.nre-tone-na .nre-source-score-badge { color: var(--warn); }
-
-/* 展开区直接接在源码行下:按面板可视宽度(cqw)换行并钉在滚动视口左缘,不跟代码横滚。 */
-.nre-attempt-source .nre-source-line-detail {
-  position: sticky;
-  left: 0;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  width: calc(100cqw - 2px);
-  padding: 8px 14px 12px 44px;
-  border-top: 1px dashed var(--line);
-  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--nre-c0), var(--line) 40%);
-  color: var(--text);
-  font: 12.5px/1.55 ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-  white-space: normal;
-}
-.nre-attempt-source .nre-source-line.nre-tone-good > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--good); }
-.nre-attempt-source .nre-source-line.nre-tone-bad > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--bad); }
-.nre-attempt-source .nre-source-line.nre-tone-warn > .nre-source-line-detail,
-.nre-attempt-source .nre-source-line.nre-tone-na > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--warn); }
-.nre-attempt-source .nre-source-line-detail .nre-assertion-row {
-  display: grid;
-  font-size: 12px;
-}
-.nre-attempt-source .nre-source-assertion-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 10px;
-}
-.nre-attempt-source .nre-source-assertion-score { margin-left: auto; font-variant-numeric: tabular-nums; }
-.nre-attempt-source .nre-source-line-detail .nre-assertion-detail { padding: 0 10px 8px; }
-.nre-attempt-source .nre-source-turn {
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text);
-}
-.nre-attempt-source .nre-source-turn-head {
-  display: flex;
-  gap: 10px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font: 11px/1.4 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-}
-.nre-attempt-source .nre-source-turn-head > :first-child { color: var(--text); font-weight: 650; }
-.nre-attempt-source .nre-source-line-detail .nre-source-turn-head,
-.nre-attempt-source .nre-source-line-detail .nre-source-turn > .nre-conv-sent { display: none; }
-.nre-attempt-source .nre-source-line-detail .nre-conv-replies {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 0;
-  padding: 0;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-assistant,
-.nre-attempt-source .nre-source-line-detail .nre-conv-user,
-.nre-attempt-source .nre-source-line-detail .nre-conv-skill,
-.nre-attempt-source .nre-source-line-detail .nre-conv-error,
-.nre-attempt-source .nre-source-line-detail .nre-conv-input,
-.nre-attempt-source .nre-source-line-detail .nre-conv-compaction,
-.nre-attempt-source .nre-source-line-detail .nre-conv-thinking,
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool,
-.nre-attempt-source .nre-source-line-detail .nre-conv-subagent,
-.nre-attempt-source .nre-source-line-detail .nre-conv-raw {
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-role {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--blue, var(--nre-c0));
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-text {
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-user .nre-conv-text { color: var(--muted); }
-.nre-attempt-source .nre-source-line-detail .nre-conv-thinking > summary,
-.nre-attempt-source .nre-source-line-detail .nre-conv-subagent > summary,
-.nre-attempt-source .nre-source-line-detail .nre-conv-raw > summary {
-  cursor: pointer;
-  list-style: none;
-  color: var(--muted);
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-thinking > summary::-webkit-details-marker,
-.nre-attempt-source .nre-source-line-detail .nre-conv-subagent > summary::-webkit-details-marker,
-.nre-attempt-source .nre-source-line-detail .nre-conv-raw > summary::-webkit-details-marker { display: none; }
-.nre-attempt-source .nre-source-line-detail .nre-conv-subagent > summary::before,
-.nre-attempt-source .nre-source-line-detail .nre-conv-raw > summary::before { content: "▸ "; }
-.nre-attempt-source .nre-source-line-detail .nre-conv-thinking > summary::before { content: "▸ "; }
-.nre-attempt-source .nre-source-line-detail .nre-conv-subagent[open] > summary::before,
-.nre-attempt-source .nre-source-line-detail .nre-conv-raw[open] > summary::before,
-.nre-attempt-source .nre-source-line-detail .nre-conv-thinking[open] > summary::before { content: "▾ "; }
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool > summary {
-  display: grid;
-  grid-template-columns: 8px minmax(110px, max-content) minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  cursor: pointer;
-  list-style: none;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool > summary::-webkit-details-marker { display: none; }
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--good);
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-failed { background: var(--bad); }
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-rejected { background: var(--warn); }
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-pending { background: var(--soft); }
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-name {
-  overflow: hidden;
-  color: var(--text);
-  font: 600 12px/1.5 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-preview {
-  overflow: hidden;
-  color: var(--soft);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nre-attempt-source .nre-source-line-detail .nre-conv-tool-io {
-  max-height: 220px;
-  overflow: auto;
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--panel), black 8%);
-  color: var(--muted);
-  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-source .nre-attempt-source-unmapped,
-.nre-attempt-source .nre-attempt-source-unlocated { border-top: 1px solid var(--line); }
-.nre-attempt-source .nre-attempt-source-unmapped > .nre-assertion-row {
-  display: flex;
-  gap: 10px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn { margin: 10px 14px; }
-.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-2);
-}
-.nre-attempt-source .nre-attempt-source-unlocated > .nre-source-turn-failed { border-left: 3px solid var(--bad); }
-
-/* Other conversation(unlocated turns):TurnDetail 在这里复用 AttemptConversation 同一套回复
-   renderer(showMeta/showSent 都为真,没有可依附的 send 行),但 .nre-conv-* 的规则此前只覆盖了
-   .nre-source-line-detail(行内展开)与 .nre-attempt-conversation(独立分轮视图)两个容器,这
-   第三个容器一条都没有,回复条目退化成浏览器默认排版。密度上贴 AttemptSource
-   自身语言(扁平、无二级卡片——外层轮卡片已经画好边框),sent 提示与 error/input 的强调色借
-   AttemptConversation 那份(这里没有独立 send 行可以显示 sent 文本,需要它可见)。 */
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-sent {
-  padding: 11px 13px;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in oklch, var(--blue, var(--nre-c0)), var(--panel-2) 94%);
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-replies {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 0;
-  padding: 10px 13px;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-assistant,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-user,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-skill,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-error,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-input,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-compaction,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-thinking,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-subagent,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-raw {
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-role {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--blue, var(--nre-c0));
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-text {
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-user .nre-conv-text { color: var(--muted); }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-error { color: var(--bad); }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-input { color: var(--warn); }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-thinking > summary,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-subagent > summary,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-raw > summary {
-  cursor: pointer;
-  list-style: none;
-  color: var(--muted);
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-thinking > summary::-webkit-details-marker,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-subagent > summary::-webkit-details-marker,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-raw > summary::-webkit-details-marker { display: none; }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-subagent > summary::before,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-raw > summary::before,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-thinking > summary::before { content: "▸ "; }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-subagent[open] > summary::before,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-raw[open] > summary::before,
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-thinking[open] > summary::before { content: "▾ "; }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool > summary {
-  display: grid;
-  grid-template-columns: 8px minmax(110px, max-content) minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  cursor: pointer;
-  list-style: none;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool > summary::-webkit-details-marker { display: none; }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--good);
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-failed { background: var(--bad); }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-rejected { background: var(--warn); }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-pending { background: var(--soft); }
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-name {
-  overflow: hidden;
-  color: var(--text);
-  font: 600 12px/1.5 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-preview {
-  overflow: hidden;
-  color: var(--soft);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nre-attempt-source .nre-attempt-source-unlocated .nre-conv-tool-io {
-  max-height: 220px;
-  overflow: auto;
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--panel), black 8%);
-  color: var(--muted);
-  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* 逐行轻量 TypeScript token;暗色取 VS Code Dark+ 系(与产品站示例卡的 prism vsDark 同源),
-   浅色为等价可读色。 */
-.nre-attempt-source .tok-comment { color: light-dark(#6e7781, #6a9955); font-style: italic; }
-.nre-attempt-source .tok-str { color: light-dark(#953800, #ce9178); }
-.nre-attempt-source .tok-kw { color: light-dark(#0b62d6, #569cd6); }
-.nre-attempt-source .tok-num { color: light-dark(#116329, #b5cea8); }
-.nre-attempt-source .tok-fn { color: light-dark(#755f00, #dcdcaa); }
-
-/* SourceView 原语:与 AttemptSource 同视觉语言,独立容器(docs/feature/reports/components/primitives/source-view.md)。 */
-.nre-source-view {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-  container-type: inline-size;
-}
-.nre-source-view .nre-source-view-head,
-.nre-source-view .nre-source-view-unmapped-head {
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  background: color-mix(in oklch, var(--panel-2), var(--line) 35%);
-}
-.nre-source-view .nre-source-view-block + .nre-source-view-block,
-.nre-source-view .nre-source-view-block + .nre-source-view-unmapped {
-  border-top: 1px solid var(--line);
-}
-.nre-source-view .nre-source-view-lines {
-  overflow-x: auto;
-  padding: 6px 0;
-  background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
-  font: 12.5px/1.65 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  display: grid;
-}
-.nre-source-view .nre-source-view-block-nested .nre-source-view-head {
+.niceeval-source-view .niceeval-source-block--nested > .niceeval-source-block-path {
   font-size: 11px;
   font-weight: 550;
 }
-.nre-source-view .nre-source-line { color: var(--text); }
-.nre-source-view .nre-source-line > summary {
+.niceeval-source-view .niceeval-source-lines {
+  overflow-x: auto;
+  padding: 6px 0;
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
+  font: 12.5px/1.65 var(--font-mono);
+  /* 横滚时行盒要撑到最长行宽度,底色/左缘才能盖满整行,展开区的 sticky 才有位移空间。 */
+  display: grid;
+}
+.niceeval-source-view .niceeval-source-line { color: var(--text); }
+.niceeval-source-view .niceeval-source-line > summary {
   cursor: pointer;
   list-style: none;
 }
-.nre-source-view .nre-source-line > summary::-webkit-details-marker { display: none; }
-.nre-source-view .nre-source-line-summary {
+.niceeval-source-view .niceeval-source-line > summary::-webkit-details-marker { display: none; }
+/* 行盒:行号位 / 代码 / 右缘 meta 三列。div 行与 details 行共用同一个内层 span,
+   状态底色与左缘因此对两种行一致生效。 */
+.niceeval-source-view .niceeval-source-line-summary {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
@@ -1965,13 +979,13 @@ table.nre,
   width: max-content;
   padding: 1px 0;
 }
-.nre-source-view details.nre-source-line > summary:hover {
+.niceeval-source-view details.niceeval-source-line > summary:hover .niceeval-source-line-summary {
   background-image: linear-gradient(
     color-mix(in oklch, var(--text), transparent 95%),
     color-mix(in oklch, var(--text), transparent 95%)
   );
 }
-.nre-source-view .nre-source-ln {
+.niceeval-source-view .niceeval-source-gutter {
   align-self: stretch;
   display: flex;
   align-items: center;
@@ -1981,7 +995,7 @@ table.nre,
   font-size: 11px;
   user-select: none;
 }
-.nre-source-view .nre-source-ln-mark svg {
+.niceeval-source-view .niceeval-source-gutter-mark svg {
   width: 13px;
   height: 13px;
   fill: none;
@@ -1990,63 +1004,79 @@ table.nre,
   stroke-linejoin: round;
   stroke-width: 2;
 }
-.nre-source-view .nre-source-text {
+.niceeval-source-view .niceeval-source-code {
   color: var(--text);
   font: inherit;
   white-space: pre;
 }
-.nre-source-view .nre-source-line-meta {
+/* 右缘 meta 钉在滚动视口右缘,横滚时始终可见。它盖在代码上,所以自带与所在行同色的
+   不透明底:基色是源码块底色,叠一层该行的 tone 浅染,视觉上与行底连成一片。 */
+.niceeval-source-view .niceeval-source-meta {
   position: sticky;
   right: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 12px 0 16px;
-  font: 11px/1.65 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font: 11px/1.65 var(--font-mono);
   white-space: nowrap;
+  background-color: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
+  background-image: linear-gradient(
+    color-mix(in oklch, var(--line-tone, transparent), transparent 92%),
+    color-mix(in oklch, var(--line-tone, transparent), transparent 92%)
+  );
 }
-.nre-source-view .nre-source-points-pill {
+.niceeval-source-view .niceeval-source-pill {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--text), transparent 90%);
   font-weight: 650;
 }
-.nre-source-view .nre-source-chevron {
+.niceeval-source-view .niceeval-source-abort-mark {
+  color: var(--bad);
+  font-weight: 700;
+}
+/* 展开 chevron 是可点击行的纯呈现记号,由 CSS 提供,组件不为它发一个节点。 */
+.niceeval-source-view details.niceeval-source-line > summary .niceeval-source-meta::after {
+  content: "›";
   color: var(--soft);
   font-size: 16px;
   line-height: 1;
   transition: transform 0.14s ease;
 }
-.nre-source-view details[open] > summary .nre-source-chevron {
+.niceeval-source-view details.niceeval-source-line[open] > summary .niceeval-source-meta::after {
   color: var(--text);
   transform: rotate(90deg);
 }
-.nre-source-view .nre-source-line-send > summary {
-  background-color: color-mix(in oklch, var(--nre-c0), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--nre-c0);
+/* 行状态:每档只声明一个 tone 色,染色 / 左缘 / 行号位取同一个变量。 */
+.niceeval-source-view .niceeval-source-line--send { --line-tone: var(--c0); }
+.niceeval-source-view .niceeval-source-line--passed { --line-tone: var(--good); }
+.niceeval-source-view .niceeval-source-line--gate-fail { --line-tone: var(--bad); }
+.niceeval-source-view .niceeval-source-line--soft-fail,
+.niceeval-source-view .niceeval-source-line--unavailable { --line-tone: var(--warn); }
+.niceeval-source-view .niceeval-source-line--send > summary > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--passed > summary > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--gate-fail > summary > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--soft-fail > summary > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--unavailable > summary > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--send > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--passed > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--gate-fail > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--soft-fail > .niceeval-source-line-summary,
+.niceeval-source-view .niceeval-source-line--unavailable > .niceeval-source-line-summary {
+  background-color: color-mix(in oklch, var(--line-tone), transparent 92%);
+  box-shadow: inset 2px 0 0 var(--line-tone);
 }
-.nre-source-view .nre-source-line-send .nre-source-ln { color: var(--nre-c0); }
-.nre-source-view .nre-source-line.nre-tone-good > summary {
-  background-color: color-mix(in oklch, var(--good), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--good);
+.niceeval-source-view .niceeval-source-line--send .niceeval-source-gutter,
+.niceeval-source-view .niceeval-source-line--passed .niceeval-source-gutter,
+.niceeval-source-view .niceeval-source-line--gate-fail .niceeval-source-gutter,
+.niceeval-source-view .niceeval-source-line--soft-fail .niceeval-source-gutter,
+.niceeval-source-view .niceeval-source-line--unavailable .niceeval-source-gutter {
+  color: var(--line-tone);
 }
-.nre-source-view .nre-source-line.nre-tone-good .nre-source-ln { color: var(--good); }
-.nre-source-view .nre-source-line.nre-tone-bad > summary {
-  background-color: color-mix(in oklch, var(--bad), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--bad);
-}
-.nre-source-view .nre-source-line.nre-tone-bad .nre-source-ln { color: var(--bad); }
-.nre-source-view .nre-source-line.nre-tone-warn > summary,
-.nre-source-view .nre-source-line.nre-tone-na > summary {
-  background-color: color-mix(in oklch, var(--warn), transparent 92%);
-  box-shadow: inset 2px 0 0 var(--warn);
-}
-.nre-source-view .nre-source-line.nre-tone-warn .nre-source-ln,
-.nre-source-view .nre-source-line.nre-tone-na .nre-source-ln { color: var(--warn); }
-.nre-source-view .nre-source-line-unreached {
-  opacity: 0.45;
-}
-.nre-source-view .nre-source-line-detail {
+/* 中止行之后的源码行没跑到:整体降灰,行号照常。 */
+.niceeval-source-view .niceeval-source-line-unreached { opacity: 0.45; }
+.niceeval-source-view .niceeval-source-line-detail {
   border-top: 1px dashed var(--line);
   padding: 8px 12px 10px 44px;
   background: var(--panel);
@@ -2057,405 +1087,127 @@ table.nre,
   box-sizing: border-box;
   white-space: normal;
   overflow-wrap: anywhere;
+  box-shadow: inset 2px 0 0 var(--line-tone, transparent);
 }
-.nre-source-view .nre-source-line.nre-tone-good > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--good); }
-.nre-source-view .nre-source-line.nre-tone-bad > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--bad); }
-.nre-source-view .nre-source-line.nre-tone-warn > .nre-source-line-detail,
-.nre-source-view .nre-source-line.nre-tone-na > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--warn); }
-.nre-source-view .nre-source-call > summary {
+/* 展开区内容:判定摘要一行、细节正文等宽、给分记录一行。轮次回复复用 Conversation 的条目
+   呈现,轮头在这里收起——源码行本身就是那次 send,标签与 sent prompt 不重复一遍。 */
+.niceeval-source-view .niceeval-source-line-detail .niceeval-conversation-turn-head { display: none; }
+.niceeval-source-view .niceeval-source-line-detail .niceeval-conversation-turn { border-left: 0; padding-left: 0; }
+.niceeval-source-view .niceeval-source-line-detail > * + * { margin-top: 6px; }
+.niceeval-source-view .niceeval-source-assertion {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 650;
+}
+.niceeval-source-view .niceeval-source-assertion-body {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.niceeval-source-view .niceeval-source-score-entry {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.niceeval-source-view .niceeval-source-unmapped .niceeval-source-assertion,
+.niceeval-source-view .niceeval-source-unmapped .niceeval-source-score-entry { margin-bottom: 4px; }
+
+/* 调用片段:每层一条左缘层级线,summary 自己就是计票 / 挣分摘要。展开区已经缩到代码列,
+   这里只加一层缩进,不再叠加行号列宽度。 */
+.niceeval-source-view .niceeval-source-calls {
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+}
+/* opaque 帧下继续挂调用树时,层级线接着往里缩一层。 */
+.niceeval-source-view .niceeval-source-opaque > .niceeval-source-calls { margin-top: 2px; }
+.niceeval-source-view .niceeval-source-call > summary {
   cursor: pointer;
   list-style: none;
-  padding: 4px 12px 4px 44px;
-}
-.nre-source-view .nre-source-call > summary::-webkit-details-marker { display: none; }
-.nre-source-view .nre-source-call-pill {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: color-mix(in oklch, currentColor, transparent 86%);
+  padding: 4px 12px;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 650;
 }
-.nre-source-view .nre-source-call-body {
-  padding: 6px 0 8px;
-  border-left: 2px solid var(--line-strong);
-  margin-left: 44px;
-}
-.nre-source-view .nre-source-opaque-label {
+.niceeval-source-view .niceeval-source-call > summary::-webkit-details-marker { display: none; }
+.niceeval-source-view .niceeval-source-call--passed > summary { color: var(--good); }
+.niceeval-source-view .niceeval-source-call--gate-fail > summary { color: var(--bad); }
+.niceeval-source-view .niceeval-source-call--soft-fail > summary,
+.niceeval-source-view .niceeval-source-call--unavailable > summary { color: var(--warn); }
+.niceeval-source-view .niceeval-source-call .niceeval-source-block { border-top: 1px solid var(--line); }
+/* package 帧与缺正文的帧:不可展开的中间 label,更深的项目源码继续显示。 */
+.niceeval-source-view .niceeval-source-opaque-label {
   padding: 4px 12px;
   color: var(--muted);
   font-size: 11px;
   font-style: italic;
 }
-.nre-source-view .nre-source-view-unmapped {
+/* 兜底区:源码块之后、与源码块同宽。 */
+.niceeval-source-view .niceeval-source-unmapped {
   padding: 8px 12px 10px;
   background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
 }
-.nre-source-view .tok-comment { color: light-dark(#6e7781, #6a9955); font-style: italic; }
-.nre-source-view .tok-str { color: light-dark(#953800, #ce9178); }
-.nre-source-view .tok-kw { color: light-dark(#0b62d6, #569cd6); }
-.nre-source-view .tok-num { color: light-dark(#116329, #b5cea8); }
-.nre-source-view .tok-fn { color: light-dark(#755f00, #dcdcaa); }
-
-/* Fix prompt 与时间树:顶层 details 是完整 panel，嵌套 details 只负责层级。 */
-.nre-attempt-fix-prompt,
-.nre-attempt-timeline {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-}
-.nre-attempt-fix-prompt > summary,
-.nre-attempt-timeline > summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 14px;
-  color: var(--text);
-  font-weight: 650;
-  cursor: pointer;
-  list-style: none;
-}
-.nre-attempt-fix-prompt > summary::-webkit-details-marker,
-.nre-attempt-timeline > summary::-webkit-details-marker,
-.nre-attempt-timeline summary::-webkit-details-marker,
-.nre-attempt-trace summary::-webkit-details-marker,
-.nre-attempt-conversation summary::-webkit-details-marker {
-  display: none;
-}
-.nre-attempt-fix-prompt[open] > summary,
-.nre-attempt-timeline[open] > summary { border-bottom: 1px solid var(--line); }
-.nre-attempt-fix-prompt .nre-attempt-fix-prompt-copy {
-  margin: 12px 14px 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  padding: 5px 9px;
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.nre-attempt-fix-prompt .nre-attempt-fix-prompt-copy:hover { border-color: var(--soft); }
-.nre-attempt-fix-prompt .nre-attempt-fix-prompt-text {
-  max-height: 28rem;
-  overflow: auto;
-  margin: 10px 14px 14px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font: 12px/1.55 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-timeline .nre-timeline-phases,
-.nre-attempt-timeline .nre-timeline-children,
-.nre-attempt-timeline .nre-timeline-spans {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.nre-attempt-timeline > .nre-timeline-phases { padding: 7px 14px 10px; }
-.nre-attempt-timeline .nre-timeline-phase,
-.nre-attempt-timeline .nre-timeline-node,
-.nre-attempt-timeline .nre-timeline-spans > li {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 8px;
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: 12px;
-  list-style: none;
-}
-.nre-attempt-timeline summary.nre-timeline-phase,
-.nre-attempt-timeline summary.nre-timeline-node { cursor: pointer; }
-.nre-attempt-timeline summary.nre-timeline-phase:hover,
-.nre-attempt-timeline summary.nre-timeline-node:hover { background: var(--panel-2); }
-.nre-attempt-timeline .nre-timeline-dur,
-.nre-attempt-trace .nre-span-dur {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--soft);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.nre-attempt-timeline .nre-timeline-children,
-.nre-attempt-timeline .nre-timeline-spans {
-  margin-left: 15px;
-  padding-left: 11px;
-  border-left: 1px solid var(--line);
-}
-.nre-attempt-timeline .nre-timeline-failed { color: var(--bad); }
-.nre-attempt-timeline .nre-timeline-closing {
-  padding: 8px 14px 11px;
-  border-top: 1px solid var(--line);
-  background: var(--panel-2);
-}
-.nre-attempt-timeline .nre-timeline-closing-head {
-  margin-bottom: 3px;
-  color: var(--soft);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
+.niceeval-source-view .tok-comment { color: light-dark(#6e7781, #6a9955); font-style: italic; }
+.niceeval-source-view .tok-str { color: light-dark(#953800, #ce9178); }
+.niceeval-source-view .tok-kw { color: light-dark(#0b62d6, #569cd6); }
+.niceeval-source-view .tok-num { color: light-dark(#116329, #b5cea8); }
+.niceeval-source-view .tok-fn { color: light-dark(#755f00, #dcdcaa); }
 
 /* Diagnostics 与 usage:技术信息保持紧凑，但不再落成裸 ul/dl。 */
-.nre-attempt-diagnostics {
-  display: grid;
-  gap: 9px;
-}
-.nre-attempt-diagnostics .nre-diagnostics-group {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-}
-.nre-attempt-diagnostics .nre-diagnostics-phase {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 650;
-}
-.nre-attempt-diagnostics .nre-diagnostics-group ul { list-style: none; margin: 0; padding: 0; }
-.nre-attempt-diagnostics .nre-diagnostics-item {
-  display: grid;
-  gap: 3px;
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
-}
-.nre-attempt-diagnostics .nre-diagnostics-item:last-child { border-bottom: 0; }
-.nre-attempt-diagnostics .nre-diagnostics-meta {
-  color: currentColor;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.nre-usage-table {
+.niceeval-usage-table {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
   overflow: hidden;
   margin: 0;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius);
   background: var(--panel);
 }
-.nre-usage-table .nre-usage-table-row {
+.niceeval-usage-table .niceeval-usage-table-row {
   min-width: 0;
   padding: 11px 13px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
 
-/* Conversation:每轮一张卡，sent 与 replies 分层；长输出在自己的 pre 内滚动。 */
-.nre-attempt-conversation {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.nre-attempt-conversation .nre-conv-round {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-}
-.nre-attempt-conversation .nre-conv-round-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 12px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-}
-.nre-attempt-conversation .nre-conv-round-loc {
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-weight: 450;
-}
-.nre-attempt-conversation .nre-conv-sent {
-  padding: 11px 13px;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in oklch, var(--blue, var(--nre-c0)), var(--panel) 94%);
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.nre-attempt-conversation .nre-conv-replies {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-}
-.nre-attempt-conversation .nre-conv-assistant,
-.nre-attempt-conversation .nre-conv-user,
-.nre-attempt-conversation .nre-conv-skill,
-.nre-attempt-conversation .nre-conv-error,
-.nre-attempt-conversation .nre-conv-input,
-.nre-attempt-conversation .nre-conv-compaction,
-.nre-attempt-conversation .nre-conv-thinking,
-.nre-attempt-conversation .nre-conv-tool,
-.nre-attempt-conversation .nre-conv-subagent,
-.nre-attempt-conversation .nre-conv-raw {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 8px 10px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 12px;
-}
-.nre-attempt-conversation .nre-conv-role {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--soft);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.nre-attempt-conversation .nre-conv-text { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
-.nre-attempt-conversation .nre-conv-error { border-color: color-mix(in oklch, var(--bad), var(--line) 62%); color: var(--bad); }
-.nre-attempt-conversation .nre-conv-input { border-color: color-mix(in oklch, var(--warn), var(--line) 62%); color: var(--warn); }
-.nre-attempt-conversation .nre-conv-thinking > summary,
-.nre-attempt-conversation .nre-conv-tool > summary,
-.nre-attempt-conversation .nre-conv-subagent > summary,
-.nre-attempt-conversation .nre-conv-raw > summary {
-  cursor: pointer;
-  list-style: none;
-  font-weight: 600;
-}
-.nre-attempt-conversation .nre-conv-thinking > .nre-conv-text { margin-top: 7px; }
-.nre-attempt-conversation .nre-conv-tool-io {
-  max-height: 24rem;
-  overflow: auto;
-  margin: 8px 0 0;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--panel);
-  color: var(--muted);
-  font: 11px/1.5 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-/* 原始 trace 与 diff 摘要。 */
-.nre-attempt-trace,
-.nre-attempt-trace .nre-trace-children,
-.nre-attempt-diff {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.nre-attempt-trace {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-}
-.nre-attempt-trace .nre-trace-span {
-  display: grid;
-  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr) max-content auto;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 11px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
-  list-style: none;
-}
-.nre-attempt-trace summary.nre-trace-span { cursor: pointer; }
-.nre-attempt-trace summary.nre-trace-span:hover { background: var(--panel-2); }
-.nre-attempt-trace .nre-trace-children {
-  margin-left: 15px;
-  border-left: 1px solid var(--line);
-}
-.nre-attempt-trace .nre-span-kind {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 1px 6px;
-  color: var(--soft);
-  font-size: 10px;
-  text-align: center;
-}
-.nre-attempt-diff {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-}
-.nre-attempt-diff .nre-diff-file {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) max-content;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-.nre-attempt-diff .nre-diff-file:last-child { border-bottom: 0; }
-.nre-attempt-diff .nre-diff-net {
-  color: var(--soft);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.nre-attempt-diff .nre-diff-path { min-width: 0; font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; overflow-wrap: anywhere; }
-.nre-attempt-diff .nre-diff-lines { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.nre-attempt-diff .nre-diff-added .nre-diff-net { color: var(--good); }
-.nre-attempt-diff .nre-diff-modified .nre-diff-net { color: var(--warn); }
-.nre-attempt-diff .nre-diff-deleted .nre-diff-net { color: var(--bad); }
-
 @media (max-width: 640px) {
-  .nre-attempt-summary .nre-attempt-summary-kpis { grid-template-columns: 1fr; }
-  .nre-attempt-summary .nre-attempt-summary-kpis > div { border-right: 0; }
-  .nre-attempt-error .nre-attempt-error-fields { grid-template-columns: 1fr; gap: 2px; }
-  .nre-usage-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .nre-attempt-trace .nre-trace-span { grid-template-columns: max-content minmax(0, 1fr) max-content; }
-  .nre-attempt-diff .nre-diff-file { grid-template-columns: 1fr max-content; }
-  .nre-attempt-diff .nre-diff-net { grid-column: 1 / -1; }
+  .niceeval-attempt-summary .niceeval-attempt-summary-kpis { grid-template-columns: 1fr; }
+  .niceeval-attempt-summary .niceeval-attempt-summary-kpis > div { border-right: 0; }
+  .niceeval-usage-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---- 排版原语 Row / Col / Section / Text ---- */
-.nre-col {
+.niceeval-col {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
 }
-.nre-col > .nre { margin: 0; }
-.nre-row {
+.niceeval-col > .niceeval-report { margin: 0; }
+.niceeval-row {
   display: flex;
   flex-wrap: wrap;
   gap: 1.5rem;
   align-items: flex-start;
 }
-.nre-row > * {
+.niceeval-row > * {
   flex: 1 1 20rem;
   min-width: 0;
 }
-.nre-section .nre-section-title {
+.niceeval-section .niceeval-section-title {
   font-size: 17px;
   font-weight: 700;
   line-height: 1.2;
   margin: 0 0 10px;
 }
-.nre-section > .nre { margin: 0 0 1rem; }
-.nre-text {
+.niceeval-section > .niceeval-report { margin: 0 0 1rem; }
+.niceeval-text {
   color: var(--muted);
   margin: 0.25rem 0;
 }
@@ -2463,7 +1215,7 @@ table.nre,
 /* ---- Section header:标题行右侧短元信息(meta),同一行右对齐,空间不足自动换行
         (docs/feature/reports/library/layout.md「Grid 与 Stat」)。省略 meta 时 Section
         渲染的是裸 <h2>(既有结构),不套这层 header——旧行为逐字节不变。 ---- */
-.nre-section-header {
+.niceeval-section-header {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -2471,8 +1223,8 @@ table.nre,
   gap: 4px 16px;
   margin: 0 0 10px;
 }
-.nre-section-header .nre-section-title { margin: 0; }
-.nre-section-header .nre-section-meta {
+.niceeval-section-header .niceeval-section-title { margin: 0; }
+.niceeval-section-header .niceeval-section-meta {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
@@ -2484,90 +1236,123 @@ table.nre,
         摆不出比声明列数更多的列;容器比这个宽度窄时,minmax 的下限让列数按最小 inline size
         自动减少,窄到个位数视口也不会产生页面级横向滚动。响应式换列全靠这几行 CSS,
         不需要测量脚本或 hydration。 ---- */
-.nre-grid {
-  --nre-grid-cell-min: 220px;
-  --nre-grid-gap: 20px;
-  --nre-grid-cell-padding: 16px;
-  --nre-stat-value-size: 20px;
+.niceeval-grid {
+  --grid-cell-min: 220px;
+  --grid-gap: 20px;
+  --grid-cell-padding: 16px;
+  --stat-value-size: 20px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(var(--nre-grid-cell-min), 100%), 1fr));
-  gap: var(--nre-grid-gap);
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-cell-min), 100%), 1fr));
+  gap: var(--grid-gap);
   max-width: calc(
-    var(--nre-grid-max-columns) * var(--nre-grid-cell-min) + (var(--nre-grid-max-columns) - 1) * var(--nre-grid-gap)
+    var(--niceeval-grid-max-columns) * var(--grid-cell-min) + (var(--niceeval-grid-max-columns) - 1) * var(--grid-gap)
   );
   margin: 1rem 0;
 }
-.nre-grid--compact {
-  --nre-grid-cell-min: 160px;
-  --nre-grid-gap: 10px;
-  --nre-grid-cell-padding: 10px;
-  --nre-stat-value-size: 16px;
+.niceeval-grid--compact {
+  --grid-cell-min: 160px;
+  --grid-gap: 10px;
+  --grid-cell-padding: 10px;
+  --stat-value-size: 16px;
 }
-.nre-grid-cell { min-width: 0; }
+.niceeval-grid-cell { min-width: 0; }
 /* boxed:每个 cell 独立完整四边框,靠 grid gap 分开——不是靠相邻项拼半边框,换行后
    不会缺左边、缺底边或出现双线。 */
-.nre-grid--boxed .nre-grid-cell {
+.niceeval-grid--boxed .niceeval-grid-cell {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: var(--nre-grid-cell-padding);
+  border-radius: var(--radius);
+  padding: var(--grid-cell-padding);
   background: var(--panel);
 }
-.nre-grid--plain .nre-grid-cell { padding: 0; }
+.niceeval-grid--plain .niceeval-grid-cell { padding: 0; }
 /* 一个 cell 里嵌套多个 Stat(Col 归拢):只有纵向留白,没有内部分隔线。 */
-.nre-grid-cell > .nre-col { gap: calc(var(--nre-grid-gap) * 0.6); }
+.niceeval-grid-cell > .niceeval-col { gap: calc(var(--grid-gap) * 0.6); }
 
 /* ---- Stat:label / 主值 / detail 三段;label 与 detail 弱化层级,value 用 tabular
         numerals;tone 是主值的语义色,只染 value——positive 不会把 label 和 detail
         一并染色。 ---- */
-.nre-stat {
+.niceeval-stat {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
 }
-.nre-stat .nre-stat-label {
+.niceeval-stat .niceeval-stat-label {
   color: var(--soft);
   font-size: 12px;
   font-weight: 560;
   overflow-wrap: anywhere;
 }
-.nre-stat .nre-stat-value {
-  font-size: var(--nre-stat-value-size);
+.niceeval-stat .niceeval-stat-value {
+  font-size: var(--stat-value-size);
   font-weight: 700;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   overflow-wrap: anywhere;
 }
-.nre-stat .nre-stat-detail {
+.niceeval-stat .niceeval-stat-detail {
   color: var(--muted);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.nre-stat--positive .nre-stat-value { color: var(--good); }
-.nre-stat--negative .nre-stat-value { color: var(--bad); }
-.nre-stat--warning .nre-stat-value { color: var(--warn); }
+.niceeval-stat--positive .niceeval-stat-value { color: var(--good); }
+.niceeval-stat--negative .niceeval-stat-value { color: var(--bad); }
+.niceeval-stat--warning .niceeval-stat-value { color: var(--warn); }
+
+/* SampleOverview 把通用 Grid / Stat 组合成官方六格摘要条；数据与 Cell 仍走原语。 */
+.niceeval-sample-summary .niceeval-sample-summary-grid {
+  --grid-cell-min: 150px;
+  --grid-gap: 0px;
+  --stat-value-size: 20px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel);
+}
+.niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell {
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 12px 16px 13px;
+}
+.niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell:last-child { border-right: 0; }
+.niceeval-sample-summary .niceeval-sample-summary-range {
+  margin: -0.35rem 0 0;
+  color: var(--soft);
+  font-size: 13px;
+}
+@media (max-width: 960px) {
+  .niceeval-sample-summary .niceeval-sample-summary-grid { border: 0; gap: 10px; background: transparent; }
+  .niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+}
 
 /* ---- Tabs:静态 HTML 每 tab 一个 <details> 且仅首个 open(无 JS = 手风琴卡片,内容完整);
-        enhance.js 在 <html> 上打 nre-js 后升级为单选 tab 条:收起的 tab 缩成一枚标题排在首行,
+        enhance.js 在 <html> 上打 niceeval-js 后升级为单选 tab 条:收起的 tab 缩成一枚标题排在首行,
         唯一展开的 tab 以 100% 宽 + order:1 换行到下方,活动标题带高亮下划线、贴着面板顶部。
         不能用 display:contents 把 summary/body 直接投影进 flex 容器——Chrome 里 <details> 的
         UA shadow slot 会成为 flex item,子元素的 order 失效、收起面板还留 0 宽盒 ---- */
-.nre-tabs > .nre-tab {
+.niceeval-tabs > .niceeval-tab {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--panel);
   margin-bottom: 8px;
 }
-.nre-tabs > .nre-tab > .nre-tab-title {
+.niceeval-tabs > .niceeval-tab > .niceeval-tab-title {
   padding: 10px 14px;
   cursor: pointer;
   user-select: none;
   font-weight: 620;
   list-style: none;
 }
-.nre-tabs > .nre-tab > .nre-tab-title::-webkit-details-marker { display: none; }
-.nre-tabs > .nre-tab > .nre-tab-title::before {
+.niceeval-tabs > .niceeval-tab > .niceeval-tab-title::-webkit-details-marker { display: none; }
+.niceeval-tabs > .niceeval-tab > .niceeval-tab-title::before {
   content: "";
   display: inline-block;
   width: 7px;
@@ -2579,18 +1364,18 @@ table.nre,
   transition: transform 0.15s;
   vertical-align: 1px;
 }
-.nre-tabs > .nre-tab[open] > .nre-tab-title::before { transform: rotate(45deg); }
-.nre-tabs > .nre-tab > .nre-tab-body { padding: 2px 14px 12px; }
-.nre-tabs .nre-tab-body > .nre:first-child { margin-top: 0; }
-.nre-tabs .nre-tab-body > .nre:last-child { margin-bottom: 0; }
+.niceeval-tabs > .niceeval-tab[open] > .niceeval-tab-title::before { transform: rotate(45deg); }
+.niceeval-tabs > .niceeval-tab > .niceeval-tab-body { padding: 2px 14px 12px; }
+.niceeval-tabs .niceeval-tab-body > .niceeval-report:first-child { margin-top: 0; }
+.niceeval-tabs .niceeval-tab-body > .niceeval-report:last-child { margin-bottom: 0; }
 
-:root.nre-js .nre-tabs {
+:root.niceeval-js .niceeval-tabs {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
   column-gap: 2px;
 }
-:root.nre-js .nre-tabs > .nre-tab {
+:root.niceeval-js .niceeval-tabs > .niceeval-tab {
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -2598,28 +1383,28 @@ table.nre,
   flex: 0 0 auto;
   min-width: 0;
 }
-:root.nre-js .nre-tabs > .nre-tab[open] {
+:root.niceeval-js .niceeval-tabs > .niceeval-tab[open] {
   flex: 1 1 100%;
   order: 1;
 }
-:root.nre-js .nre-tabs > .nre-tab > .nre-tab-title {
+:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-title {
   padding: 8px 14px 9px;
-  border-radius: 7px 7px 0 0;
+  border-radius: var(--radius) var(--radius) 0 0;
   color: var(--muted);
   font-weight: 560;
   box-shadow: inset 0 -1px 0 var(--line);
 }
-:root.nre-js .nre-tabs > .nre-tab > .nre-tab-title::before { content: none; }
-:root.nre-js .nre-tabs > .nre-tab > .nre-tab-title:hover {
+:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-title::before { content: none; }
+:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-title:hover {
   color: var(--text);
   background: color-mix(in oklch, var(--panel-2), var(--panel) 35%);
 }
-:root.nre-js .nre-tabs > .nre-tab[open] > .nre-tab-title {
+:root.niceeval-js .niceeval-tabs > .niceeval-tab[open] > .niceeval-tab-title {
   width: max-content;
   max-width: 100%;
   color: var(--text);
   font-weight: 650;
-  box-shadow: inset 0 -2px 0 var(--nre-c0);
+  box-shadow: inset 0 -2px 0 var(--c0);
   cursor: default;
 }
-:root.nre-js .nre-tabs > .nre-tab > .nre-tab-body { padding: 14px 0 0; }
+:root.niceeval-js .niceeval-tabs > .niceeval-tab > .niceeval-tab-body { padding: 14px 0 0; }

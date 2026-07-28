@@ -12,6 +12,7 @@ niceeval 是一个 TypeScript evals 库。CLI 入口在 `bin/niceeval.mjs`，运
 - **把设计行为定位到源码**（仅实现与核对阶段用；讨论设计时现状以 docs 声明为准，docs 未声明视为未定稿、先补契约，不从源码反推） → `docs/source-map.md`。
 - **动手前查踩坑** → `memory/INDEX.md` 对应分区，命中一行才读正文（见「记录问题的规范」）。
 - **改 `docs-site/`** → 必须先读 `docs-site/AGENTS.md`（公开站的写作指南、术语表和校验规则）。
+- **改观感 / 主题 / 色板** → 先读根目录 `DESIGN.md`（观感单源 basalt、公开令牌与类名边界、改色动线与守护）。
 - **画图或改任何 SVG** → 必须先读 `docs/SVG-DESIGN.md`（底色、语义色、间距网格与共用样式）。样式整段抄 `docs/assets/_style.css`，不在单张图里发明 hex；盒标题与泳道名只能用正文已有的词，不在图里造简称。两条都由 `pnpm test:docs` 逐张图比对。
 
 ## 开发工作流

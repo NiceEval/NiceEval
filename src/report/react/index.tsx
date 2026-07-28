@@ -4,7 +4,7 @@
 //
 // 契约:
 //   - 组件只认「算好的可序列化数据」:零 hooks、零数据操作;
-//   - 样式随包发布:配套 ./styles.css(nre-* 稳定类名),使用者在其后加载覆盖即可;
+//   - 样式随包发布:配套 ./styles.css(niceeval-* 稳定类名),使用者在其后加载覆盖即可;
 //   - 渐进增强脚本 ./enhance.js 可选加载,初始静态 HTML 无 JS 完整可读;
 //   - 跨块配色一致:维度键 → 稳定散列 → 固定调色板下标(../assets/colors.ts)。
 
@@ -84,5 +84,5 @@ export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/
 export { DEFAULT_REPORT_LOCALE, resolveLocalizedText, resolveMetricLabel } from "../model/locale.ts";
 export type { LocalizedText, ReportLocale } from "../model/locale.ts";
 
-// 稳定配色(自定义组件想与官方组件同键同色时用;seriesClassForKey 配 CSS 的 --nre-series)
-export { NRE_PALETTE, colorClassForKey, colorHexForKey, colorIndexForKey, seriesClassForKey } from "../assets/colors.ts";
+// 稳定配色(自定义组件想与官方组件同键同色时用;seriesClassForKey 配 CSS 的系列变量)
+export { SERIES_PALETTE, colorClassForKey, colorHexForKey, colorIndexForKey, seriesClassForKey } from "../assets/colors.ts";

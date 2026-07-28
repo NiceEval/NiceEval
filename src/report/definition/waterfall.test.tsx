@@ -107,12 +107,12 @@ describe("Waterfall", () => {
     expect(text).toContain("—");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("nre-waterfall");
+    expect(html).toContain("niceeval-waterfall");
     expect(html).toContain("Attempt A");
     expect(html).toContain('href="attempt/exp%2Fa%2F0.html"');
-    expect(html).toContain("nre-waterfall-track");
-    expect(html).toContain("nre-span-agent");
-    expect(html).toContain("nre-waterfall-node--failed");
+    expect(html).toContain("niceeval-waterfall-track");
+    expect(html).toContain("niceeval-span-agent");
+    expect(html).toContain("niceeval-waterfall-node--failed");
     expect(html).toContain("<details");
   });
 
@@ -140,8 +140,8 @@ describe("Waterfall", () => {
     const text = renderNodeToText(tree, createTextContext({ width: 80 }));
     expect(text).toContain("Missing row · —");
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).not.toContain("nre-waterfall-track");
-    expect(html).toContain("nre-waterfall-node-dur");
+    expect(html).not.toContain("niceeval-waterfall-track");
+    expect(html).toContain("niceeval-waterfall-node-dur");
     expect(html).toContain("—");
   });
 

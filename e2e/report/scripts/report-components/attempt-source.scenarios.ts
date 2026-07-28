@@ -16,10 +16,10 @@ export const attemptSourceScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Attempts" }).click();
         const href = `attempt/${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`;
-        await page.locator(`#tab-page-attempts a.nre-locator[href="${href}"]`).click();
+        await page.locator(`#tab-page-attempts a.niceeval-locator[href="${href}"]`).click();
         const dialog = page.getByRole("dialog");
         await dialog.waitFor({ state: "visible", timeout: 10_000 });
-        const badLine = dialog.locator("details.nre-source-line.nre-tone-bad");
+        const badLine = dialog.locator("details.niceeval-source-line.niceeval-tone-bad");
         assert.equal(await badLine.count(), 1);
         assert.equal(await badLine.getAttribute("open"), "");
         await badLine.locator("> summary").click();

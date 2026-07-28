@@ -130,11 +130,11 @@ function attemptHtml(evidence: Evidence, locator: string): string {
   return readSiteFile(evidence, "attempt", `${locator}.html`);
 }
 
-/** attempt/<locator>.html 把两种 locale 作为并列的 `data-nre-locale` 包裹 div 一起携带;
+/** attempt/<locator>.html 把两种 locale 作为并列的 `data-niceeval-locale` 包裹 div 一起携带;
  * 由于区块顺序/是否出现和 locale 无关,这里只切出 "en" 那一份副本。 */
 function englishLocaleSlice(html: string): string {
-  const start = html.indexOf('data-nre-locale="en"');
-  const end = html.indexOf('data-nre-locale="zh-CN"');
+  const start = html.indexOf('data-niceeval-locale="en"');
+  const end = html.indexOf('data-niceeval-locale="zh-CN"');
   assert.ok(start >= 0 && end > start, "attempt HTML is missing the expected en/zh-CN locale wrapper divs");
   return html.slice(start, end);
 }
@@ -142,7 +142,7 @@ function englishLocaleSlice(html: string): string {
 function attemptBlockOrder(evidence: Evidence, locator: string): string[] {
   const en = englishLocaleSlice(attemptHtml(evidence, locator));
   const blocks: string[] = [];
-  const re = /class="nre nre-((?:attempt-[a-z-]+|usage-table))"/g;
+  const re = /class="niceeval-report niceeval-((?:attempt-[a-z-]+|usage-table))"/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(en))) blocks.push(m[1]!);
   return blocks;
@@ -234,12 +234,12 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   //     gate assertion 是确定性的固定事实(equals(1+1, 3) 恒定以同样的方式失败)。
   const failHtml = attemptHtml(evidence, failLocator);
   assert.ok(
-    /<details class="nre-source-line nre-tone-bad" open="">/.test(failHtml),
-    `${failLocator}'s failing source line should default-open (docs/feature/reports/components/attempt-detail/attempt-source.md「web 面视觉规范」: 首个失败或警告行默认展开)`,
+    /<details class="niceeval-source-line niceeval-tone-bad" open="">/.test(failHtml),
+    `${failLocator}'s failing source line should default-open (docs/feature/reports/components/sources/attempt-source.md「web 面视觉规范」: 首个失败或警告行默认展开)`,
   );
   assert.ok(failHtml.includes("expected: 3") && failHtml.includes("received: 2"), `${failLocator} web face is missing the expected/received text for its equals(3) assertion`);
-  assert.ok(failHtml.includes('<span class="nre-assertion-badge">failed</span>'), `${failLocator} web face is missing the failed assertion badge`);
-  assert.ok(failHtml.includes('<span class="nre-assertion-name">equals(3)</span>'), `${failLocator} web face is missing the assertion name`);
+  assert.ok(failHtml.includes('<span class="niceeval-assertion-badge">failed</span>'), `${failLocator} web face is missing the failed assertion badge`);
+  assert.ok(failHtml.includes('<span class="niceeval-assertion-name">equals(3)</span>'), `${failLocator} web face is missing the assertion name`);
 
   // --- errored attempt 的结构化错误字段(deliberate-error.eval.ts 固定抛出的异常)。
   const errorHtml = attemptHtml(evidence, errorLocator);
@@ -289,16 +289,16 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   //     (裁决见 memory/staleness-demoted-from-warning-to-provenance.md)。produceEvidence() 的 3 个
   //     Experiment 都是正常收尾的完整快照,不触发这三种 kind 中的任何一种,所以这份证据里
   //     warnings 恒为空集——ScopeWarnings 两面零输出、不渲染空容器
-  //     (docs/feature/reports/components/site/sample-warnings.md「空警告集两面零输出,不渲染空容器」)。
+  //     (docs/feature/reports/components/summaries/sample-notices.md「空警告集两面零输出,不渲染空容器」)。
   //     断言的是「不存在」,不是某个具体计数;折叠/展开阈值、徽标聚合这些行为需要一份真正触发
   //     警告的 fixture(比如强杀中断产生 unfinished-snapshot)才能验证,不属于本仓库现有证据的
   //     覆盖范围(见文件头覆盖缺口 #7)。
-  assert.ok(!reportTpl.includes("nre-warnings-summary"), "ScopeWarnings should render zero output for this evidence's 3 clean completed snapshots — none of them trigger unfinished-snapshot/missing-startedAt/unreadable-snapshot");
-  assert.ok(!reportTpl.includes('class="nre-warnings"'), "ScopeWarnings' outer <details> should not render at all when the warning set is empty");
+  assert.ok(!reportTpl.includes("niceeval-warnings-summary"), "ScopeWarnings should render zero output for this evidence's 3 clean completed snapshots — none of them trigger unfinished-snapshot/missing-startedAt/unreadable-snapshot");
+  assert.ok(!reportTpl.includes('class="niceeval-warnings"'), "ScopeWarnings' outer <details> should not render at all when the warning set is empty");
 
   // --- CopyFixPrompt:deliberate-fail + deliberate-error 恒定是那 2 个失败(main 的两次真实
   //     网关 attempt 恒定都通过)。
-  assert.ok(reportTpl.includes('<summary class="nre-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'), 'CopyFixPrompt summary should read "Fix prompt · 2 failures"');
+  assert.ok(reportTpl.includes('<summary class="niceeval-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'), 'CopyFixPrompt summary should read "Fix prompt · 2 failures"');
 
   // --- PoweredBy/HeroCard 品牌链接:固定的 href 带 utm 参数,rel="noopener" 但不带
   //     noreferrer,出现在每个 locale 下每个可导航页面上(web 恒含)。
@@ -313,7 +313,7 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
 
   // attempt detail 文档没有 Hero(standardAttemptPage 的内容就是裸的 <AttemptDetail/>)
   // -> 品牌链接实际的 <a> 标签在那里必须不存在,尽管共享样式表里那条没用到的
-  // .nre-powered-by CSS 规则依然会被打包进每份文档。
+  // .niceeval-powered-by CSS 规则依然会被打包进每份文档。
   for (const locator of [evidence.main.attempts[0]!.locator, evidence.deliberateFail.attempt.locator, evidence.deliberateError.attempt.locator]) {
     const html = attemptHtml(evidence, locator);
     assert.ok(!html.includes("utm_medium=powered-by"), `attempt/${locator}.html unexpectedly contains a rendered PoweredBy link — standardAttemptPage has no Hero`);
@@ -350,11 +350,11 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
 // (web),以及字符坐标图表的标记 + 图例 + 提示文本(文本面)。
 // ---------------------------------------------------------------------------
 
-function extractAxisTicks(scatterHtml: string, axisClass: "nre-scatter-axis-x" | "nre-scatter-axis-y"): Array<{ pos: number; value: number }> {
-  const g = scatterHtml.match(new RegExp(`<g class="nre-scatter-axis ${axisClass}">([\\s\\S]*?)</g>`));
+function extractAxisTicks(scatterHtml: string, axisClass: "niceeval-scatter-axis-x" | "niceeval-scatter-axis-y"): Array<{ pos: number; value: number }> {
+  const g = scatterHtml.match(new RegExp(`<g class="niceeval-scatter-axis ${axisClass}">([\\s\\S]*?)</g>`));
   assert.ok(g, `MetricScatter is missing the ${axisClass} tick group`);
-  const posAttrIndex = axisClass === "nre-scatter-axis-x" ? 1 : 2;
-  const tickRe = /<text class="nre-scatter-tick" x="(-?[\d.]+)" y="(-?[\d.]+)"[^>]*>([^<]+)<\/text>/g;
+  const posAttrIndex = axisClass === "niceeval-scatter-axis-x" ? 1 : 2;
+  const tickRe = /<text class="niceeval-scatter-tick" x="(-?[\d.]+)" y="(-?[\d.]+)"[^>]*>([^<]+)<\/text>/g;
   const ticks: Array<{ pos: number; value: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = tickRe.exec(g![1]!))) {
@@ -377,15 +377,15 @@ function assertValueDecreasesAsPositionIncreases(ticks: Array<{ pos: number; val
 async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
   const indexHtml = readSiteFile(evidence, "index.html");
   const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
-  const figureMatch = reportTpl.match(/<figure class="nre nre-metric-scatter">([\s\S]*?)<\/figure>/);
+  const figureMatch = reportTpl.match(/<figure class="niceeval-report niceeval-metric-scatter">([\s\S]*?)<\/figure>/);
   assert.ok(figureMatch, "report page is missing the MetricScatter figure");
   const scatter = figureMatch![1]!;
 
   // --- 坐标轴方向遵循 `better`(docs/feature/reports/library/measures.md:costUSD 的
   //     better=lower,endToEndPassRate 的 better=higher)。刻度上真实的美元/百分比数值每次
   //     运行都会变化——这里断言的是方向规则,不是任何具体数字。
-  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "nre-scatter-axis-x"), "cost axis (better=lower, further right = cheaper)");
-  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "nre-scatter-axis-y"), "pass-rate axis (better=higher, SVG y grows downward, so further down = worse)");
+  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "niceeval-scatter-axis-x"), "cost axis (better=lower, further right = cheaper)");
+  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "niceeval-scatter-axis-y"), "pass-rate axis (better=higher, SVG y grows downward, so further down = worse)");
   assert.ok(scatter.includes("better → upper right"), 'MetricScatter should show the "better -> upper right" hint (both axes declare `better`)');
 
   // --- 缺失数据点计数:deliberate-fail/deliberate-error 从不带成本数据(固定事实,见文件
@@ -493,7 +493,7 @@ function extractMainRowFromText(showText: string): { tokens: string; cost: strin
 }
 
 function extractMainRowFromWeb(reportTpl: string): { tokens: string; cost: string; passRate: string } {
-  const entryRe = /<details class="nre-experiment-entry">([\s\S]*?)<\/details>/g;
+  const entryRe = /<details class="niceeval-experiment-entry">([\s\S]*?)<\/details>/g;
   let m: RegExpExecArray | null;
   while ((m = entryRe.exec(reportTpl))) {
     if (!m[1]!.includes('data-sort-value="main"')) continue;
@@ -504,7 +504,7 @@ function extractMainRowFromWeb(reportTpl: string): { tokens: string; cost: strin
     assert.ok(tokens && cost && passRate, "couldn't parse main's web ExperimentList entry");
     return { tokens: tokens![1]!, cost: cost![1]!, passRate: passRate![1]! };
   }
-  throw new Error('couldn\'t find main\'s <details class="nre-experiment-entry"> block in web output');
+  throw new Error('couldn\'t find main\'s <details class="niceeval-experiment-entry"> block in web output');
 }
 
 async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
@@ -515,7 +515,7 @@ async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
 
   // --- Scope 级别的通过率:两个面提取的都是同一份底层 ScopeSummaryData。
   const textPassRate = /Pass rate (\d+(?:\.\d+)?)%/.exec(showText);
-  const webPassRate = /<dt>Pass rate<\/dt>\s*<dd>[\s\S]*?<span class="nre-value" title="[^"]*attempts measured">(\d+(?:\.\d+)?)%<\/span>/.exec(reportTpl);
+  const webPassRate = /<dt>Pass rate<\/dt>\s*<dd>[\s\S]*?<span class="niceeval-value" title="[^"]*attempts measured">(\d+(?:\.\d+)?)%<\/span>/.exec(reportTpl);
   assert.ok(textPassRate && webPassRate, "couldn't extract the scope-level pass rate from both faces");
   assert.equal(textPassRate![1], webPassRate![1], `text pass rate (${textPassRate![1]}%) should equal web ScopeSummary pass rate (${webPassRate![1]}%)`);
 
@@ -534,7 +534,7 @@ async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
   //     tool-call attempt 会折叠成 1 个 passed 的 eval),两个面上必须一致。
   for (const label of ["passed", "failed", "errored"] as const) {
     assert.ok(looseIncludes(showText, `1 ${label}`), `text is missing "1 ${label}" in the verdict tally`);
-    assert.ok(reportTpl.includes(`nre-verdict-pill nre-verdict-${label}">1 ${label}<`), `web ScopeSummary is missing the "1 ${label}" verdict pill`);
+    assert.ok(reportTpl.includes(`niceeval-verdict-pill niceeval-verdict-${label}">1 ${label}<`), `web ScopeSummary is missing the "1 ${label}" verdict pill`);
   }
 
   // --- "main" 这个 experiment 自己的指标:tokens/cost/pass-rate 是真实的、每次运行都会变化

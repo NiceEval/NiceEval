@@ -96,9 +96,9 @@ describe("Chart", () => {
     expect(text).toMatch(/1 point/i);
 
     const html = renderWeb(tree);
-    expect(html).toContain("nre-chart");
-    expect(html).toContain("nre-chart-svg");
-    expect(html).toContain("nre-chart-legend");
+    expect(html).toContain("niceeval-chart");
+    expect(html).toContain("niceeval-chart-svg");
+    expect(html).toContain("niceeval-chart-legend");
     expect(html).not.toContain("proj/b");
   });
 

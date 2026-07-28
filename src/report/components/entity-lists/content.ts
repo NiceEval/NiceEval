@@ -91,22 +91,24 @@ function experimentRow(item: ExperimentListItem, composition: "pass" | "points" 
   };
 }
 
-const EXPERIMENT_COLUMNS = [
+const EXPERIMENT_BASE_COLUMNS = [
   { key: "entity" },
   { key: "model" },
   { key: "agent" },
   { key: "durationMs", better: "lower" as const },
-  { key: "passRate", better: "higher" as const },
-  { key: "totalScore", better: "higher" as const },
-  { key: "tokens", better: "lower" as const },
-  { key: "costUSD", better: "lower" as const },
-  { key: "record" },
 ];
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
   const composition = experimentListScoringComposition(items);
   return {
-    columns: EXPERIMENT_COLUMNS,
+    columns: [
+      ...EXPERIMENT_BASE_COLUMNS,
+      ...(composition !== "points" ? [{ key: "passRate", better: "higher" as const }] : []),
+      ...(composition !== "pass" ? [{ key: "totalScore", better: "higher" as const }] : []),
+      { key: "tokens", better: "lower" },
+      { key: "costUSD", better: "lower" },
+      { key: "record" },
+    ],
     rows: items.map((item) => experimentRow(item, composition)),
   };
 }

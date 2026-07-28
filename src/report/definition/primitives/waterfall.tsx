@@ -82,22 +82,22 @@ function WaterfallNodeRow({
   const kids = node.children ?? [];
   const body = (
     <>
-      <span className={cx("nre-waterfall-node-kind", `nre-span-${node.kind}`)}>{node.kind}</span>
+      <span className={cx("niceeval-waterfall-node-kind", `niceeval-span-${node.kind}`)}>{node.kind}</span>
       <span title={label}>{label}</span>
-      <span className="nre-waterfall-node-dur">{formatDurationOrMissing(node.durationMs)}</span>
-      {node.failed ? <span className="nre-waterfall-node-failed"> ✗</span> : null}
+      <span className="niceeval-waterfall-node-dur">{formatDurationOrMissing(node.durationMs)}</span>
+      {node.failed ? <span className="niceeval-waterfall-node-failed"> ✗</span> : null}
     </>
   );
   if (kids.length === 0) {
     return (
-      <li className={cx("nre-waterfall-node", node.failed && "nre-waterfall-node--failed")}>{body}</li>
+      <li className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</li>
     );
   }
   return (
     <li>
       <details open={Boolean(node.failed)}>
-        <summary className={cx("nre-waterfall-node", node.failed && "nre-waterfall-node--failed")}>{body}</summary>
-        <ul className="nre-waterfall-node-children">
+        <summary className={cx("niceeval-waterfall-node", node.failed && "niceeval-waterfall-node--failed")}>{body}</summary>
+        <ul className="niceeval-waterfall-node-children">
           {kids.map((child) => (
             <WaterfallNodeRow key={child.key} node={child} locale={locale} />
           ))}
@@ -114,43 +114,43 @@ function renderWaterfallWeb(
   className?: string,
 ): ReactNode {
   return (
-    <section className={cx("nre", "nre-waterfall", className)}>
-      <ul className="nre-waterfall-list">
+    <section className={cx("niceeval-report", "niceeval-waterfall", className)}>
+      <ul className="niceeval-waterfall-list">
         {rows.map((row) => {
           const totalNodes = countNodes(row.nodes);
           const failedNodes = countFailed(row.nodes);
           const label = resolveLocalizedText(row.label, locale);
           return (
-            <li key={row.key} className="nre-waterfall-row">
-              <div className="nre-waterfall-head">
+            <li key={row.key} className="niceeval-waterfall-row">
+              <div className="niceeval-waterfall-head">
                 {row.locator !== undefined ? (
                   attemptHref ? (
-                    <a className="nre-locator" href={attemptHref(row.locator)}>
+                    <a className="niceeval-locator" href={attemptHref(row.locator)}>
                       {row.locator}
                     </a>
                   ) : (
-                    <span className="nre-locator">{row.locator}</span>
+                    <span className="niceeval-locator">{row.locator}</span>
                   )
                 ) : null}
-                <span className="nre-waterfall-label">{label}</span>
-                <span className="nre-waterfall-duration">{formatDurationOrMissing(row.durationMs)}</span>
-                <span className="nre-waterfall-count">{countText(locale, "waterfall.nodes", totalNodes)}</span>
+                <span className="niceeval-waterfall-label">{label}</span>
+                <span className="niceeval-waterfall-duration">{formatDurationOrMissing(row.durationMs)}</span>
+                <span className="niceeval-waterfall-count">{countText(locale, "waterfall.nodes", totalNodes)}</span>
                 {failedNodes > 0 ? (
-                  <span className="nre-waterfall-failed">
+                  <span className="niceeval-waterfall-failed">
                     ✗ {countText(locale, "waterfall.failedNodes", failedNodes)}
                   </span>
                 ) : null}
               </div>
               {row.durationMs !== null && row.nodes.some((node) => node.durationMs !== null) ? (
-                <div className="nre-waterfall-track">
+                <div className="niceeval-waterfall-track">
                   {row.nodes.map((node) =>
                     node.durationMs === null ? null : (
                       <span
                         key={node.key}
                         className={cx(
-                          "nre-waterfall-bar",
-                          `nre-span-${node.kind}`,
-                          node.failed && "nre-span-failed",
+                          "niceeval-waterfall-bar",
+                          `niceeval-span-${node.kind}`,
+                          node.failed && "niceeval-span-failed",
                         )}
                         style={{
                           left: pct(node.startOffsetMs, row.durationMs!),
@@ -163,7 +163,7 @@ function renderWaterfallWeb(
                 </div>
               ) : null}
               {row.nodes.length > 0 ? (
-                <ul className="nre-waterfall-nodes">
+                <ul className="niceeval-waterfall-nodes">
                   {row.nodes.map((node) => (
                     <WaterfallNodeRow key={node.key} node={node} locale={locale} />
                   ))}
