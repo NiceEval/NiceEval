@@ -1,5 +1,5 @@
 // 协议行为:usage——reasoning 与 usage 逐轮进入 Turn(turn.completed 聚合 usage;
-// reasoning item 归一成 thinking 事件,见 src/agents/sdk-streams.ts 的 fromCodexThreadEvents)。
+// reasoning item 归一成 thinking 事件,见 src/agents/sdk-streams.ts 的 createCodexThreadEventStream)。
 //
 // 题目特意选三步算术而不是"9 乘以 7"这类一步心算:真机验证过,一步心算即使
 // modelReasoningEffort=high 也常常不产出可总结的 reasoning item(模型内部

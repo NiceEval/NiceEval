@@ -70,7 +70,7 @@ export function runTurn(message: string, resumeSessionId: string | undefined): Q
       // 上面显式传入的 mcpServers。
       settingSources: [],
       strictMcpConfig: true,
-      // 让 SDK 额外产出 stream_event 消息(原始 API 流事件);fromClaudeSdkMessages() 认不出
+      // 让 SDK 额外产出 stream_event 消息(原始 API 流事件);createClaudeSdkEventStream() 认不出
       // 这类帧,原样忽略,不影响归一。
       includePartialMessages: true,
       // HITL:calculate 调用前先暂停,等 POST /api/chat/approve 决议。

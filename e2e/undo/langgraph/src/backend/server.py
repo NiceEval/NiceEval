@@ -1,5 +1,5 @@
 """自建 HTTP 服务器(标准库 http.server,无框架),把真实 LangGraph `graph.stream(...,
-stream_mode=["updates"], subgraphs=True)` 的输出原样翻译成 niceeval `fromLangGraphEvents()`
+stream_mode=["updates"], subgraphs=True)` 的输出原样翻译成 niceeval `createLangGraphEventStream()`
 认识的协议帧(`{seq, channel, event, namespace, data}`,见
 docs/feature/adapters/sdk/langgraph/README.md 与 src/agents/langgraph.ts 的类型声明),经
 SSE 推给 niceeval 的 adapter(../../agents/langgraph.ts)。LangGraph 本身不提供这个协议的

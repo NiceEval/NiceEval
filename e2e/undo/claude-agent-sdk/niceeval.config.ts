@@ -1,7 +1,7 @@
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  name: { "zh-CN": "e2e: claude-agent-sdk (fromClaudeSdkMessages)", en: "e2e: claude-agent-sdk (fromClaudeSdkMessages)" },
+  name: { "zh-CN": "e2e: claude-agent-sdk (createClaudeSdkEventStream)", en: "e2e: claude-agent-sdk (createClaudeSdkEventStream)" },
   timeoutMs: 120_000,
   // 每个 attempt 都要经一个真实子进程(src/backend/server.ts)+ Claude Code CLI 子进程 +
   // 真实网络调用。钉死串行(不是"偏保守",是必须):两个并发的 HITL 审批打到同一个 server

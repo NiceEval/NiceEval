@@ -2,21 +2,21 @@
 // 原生 `SDKMessage` 流原样透传成 SSE,外加自定义 { type: "server_error" } 传输帧)。scripts/e2e.ts
 // 负责启动这个应用并等它 ready,这里只假设它已经在 APP_URL 上监听。
 //
-// `SDKMessage` → 标准事件的映射是官方转换器 `fromClaudeSdkMessages`(`"niceeval/adapter"`
+// `SDKMessage` → 标准事件的映射是官方转换器 `createClaudeSdkEventStream`(`"niceeval/adapter"`
 // 导出)的事;逐帧驱动也是官方件(`driveFrameStream`)。HITL 停轮现场(读了一半的流)和会话 id
 // 续接都不需要自己声明状态槽——挂在 `ctx.session` 上,取用即可:`ctx.session.hold` /
 // `ctx.session.take` 存取停轮现场,`ctx.session.id` / `ctx.session.capture` 续接会话。这里只剩
 // 传输粘合:端点在哪、审批打哪个端点、HITL 停轮怎么判。
 //
 // coverage: completeCoverage——官方 SDK adapter,事件流、usage、状态都来自
-// fromClaudeSdkMessages() 的完整归一,声明全通道 complete(见
+// createClaudeSdkEventStream() 的完整归一,声明全通道 complete(见
 // docs/feature/adapters/architecture/evidence.md)。这与是否声明 tracing 面是两件事:本
 // adapter 不接 OTel(见下),`tracing` 字段留空,执行树的时间注释因此显示 timing unavailable——
 // 覆盖声明只影响 calledTool/notCalledTool/maxTokens 这类断言的证据完整性判定,不影响 trace。
 import {
   defineAgent,
   sseJsonFrames,
-  fromClaudeSdkMessages,
+  createClaudeSdkEventStream,
   driveFrameStream,
   completeCoverage,
 } from "niceeval/adapter";
@@ -104,7 +104,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   if (!res.ok || !res.body) {
     throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
   }
-  return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, fromClaudeSdkMessages());
+  return readStream(sseJsonFrames<ClaudeFrame>(res.body), ctx, createClaudeSdkEventStream());
 }
 
 export default defineAgent({

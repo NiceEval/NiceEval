@@ -3,7 +3,7 @@
 // server_error,见 server.ts 头注释)。像前端用户一样打 HTTP 接口,不做进程内直调
 // (docs-site/zh/tutorials/connect-your-agent.mdx「为什么不直调」)。
 //
-// `AgentEvent` → 标准事件的映射是官方转换器 `fromPiAgentEvents`(`"niceeval/adapter"` 导出)
+// `AgentEvent` → 标准事件的映射是官方转换器 `createPiAgentEventStream`(`"niceeval/adapter"` 导出)
 // 的事;逐帧驱动 + HITL 挂起用的是官方驱动件 `driveFrameStream`,停轮现场与会话续接的状态槽
 // 都在 `ctx.session` 上——不需要模块级状态、也不需要在 `defineAgent` 上声明什么。这里只剩传输
 // 粘合:端点在哪、三种传输帧怎么处理、审批打哪个端点。
@@ -20,7 +20,7 @@
 import {
   defineAgent,
   sseJsonFrames,
-  fromPiAgentEvents,
+  createPiAgentEventStream,
   driveFrameStream,
   completeCoverage,
 } from "niceeval/adapter";
@@ -105,12 +105,12 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   if (!res.ok || !res.body) {
     throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
   }
-  return readStream(sseJsonFrames<PiFrame>(res.body), ctx, fromPiAgentEvents());
+  return readStream(sseJsonFrames<PiFrame>(res.body), ctx, createPiAgentEventStream());
 }
 
 export default defineAgent({
   name: "pi-agent-core",
-  // fromPiAgentEvents 是官方转换器,喂的是完整的 AgentEvent 流(见 server.ts:pi 的事件原样
+  // createPiAgentEventStream 是官方转换器,喂的是完整的 AgentEvent 流(见 server.ts:pi 的事件原样
   // 透传成 SSE,没有裁剪或采样)——全通道声明 complete。
   coverage: completeCoverage,
   send,

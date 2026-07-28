@@ -5,7 +5,7 @@
 - HITL interrupt 节点:calculate 命中后先 interrupt(),恢复靠 Command(resume=...)。
 - Subgraph:delegate_research 不走 ToolNode,路由到一个编译好的子图节点 "research"——
   LangGraph 用 `stream(..., subgraphs=True)` 真的会给子图内部节点一个非空 checkpoint
-  namespace(形如 "research:<uuid>"),这是 fromLangGraphEvents() 的 namespace 契约
+  namespace(形如 "research:<uuid>"),这是 createLangGraphEventStream() 的 namespace 契约
   (docs/feature/adapters/sdk/langgraph/README.md)在真实协议里的落点,不是模拟结构。
 
 model -> tools/research/approval -> model 是同一个循环:模型看到工具结果后可以继续回答,

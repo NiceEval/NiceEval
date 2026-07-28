@@ -2,7 +2,7 @@
 // SDK 自己已经 spawn 了 codex CLI 子进程,那才是这条协议路径真实的进程边界(不搭 apps/ + 薄
 // projects/ 的隐含拓扑,见 docs/engineering/testing/e2e/README.md §9)。
 //
-// 断言依据全部来自标准事件流:官方转换器 `fromCodexThreadEvents()` 翻消息文本、工具项
+// 断言依据全部来自标准事件流:官方转换器 `createCodexThreadEventStream()` 翻消息文本、工具项
 // (command_execution / mcp_tool_call / file_change → action.*)、`turn.completed` 的 usage;
 // 逐帧驱动用官方件 `driveFrameStream`。Codex SDK 没有与 Claude Agent SDK `canUseTool` 等价的
 // 公开审批回调,因此这条 adapter 从不产生 `input.requested`(反证见 evals/hitl-negative.eval.ts)。
@@ -10,7 +10,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Codex, type CodexOptions, type ModelReasoningEffort, type Thread, type ThreadEvent } from "@openai/codex-sdk";
-import { completeCoverage, defineAgent, driveFrameStream, fromCodexThreadEvents } from "niceeval/adapter";
+import { completeCoverage, defineAgent, driveFrameStream, createCodexThreadEventStream } from "niceeval/adapter";
 import type { AgentContext, SseFrameCursor } from "niceeval/adapter";
 import type { Turn, TurnInput } from "niceeval";
 
@@ -118,7 +118,7 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
 
   const { events } = await thread.runStreamed(input.text, { signal: ctx.signal });
 
-  const stream = fromCodexThreadEvents();
+  const stream = createCodexThreadEventStream();
   return driveFrameStream(asCursor(events), stream, ctx, (frame) => {
     // 会话续接:thread.started 帧回传的 id 写回 ctx.session,只在还没记过时落地
     // (first-writer-wins,ctx.session.capture 内部保证)。

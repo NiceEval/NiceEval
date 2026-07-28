@@ -1,11 +1,11 @@
-// langgraph 仓库的 adapter:官方事件流转换器 fromLangGraphEvents() 接 ../src/backend/server.py
+// langgraph 仓库的 adapter:官方事件流转换器 createLangGraphEventStream() 接 ../src/backend/server.py
 // 的自建 SSE transport(契约见 docs/feature/adapters/sdk/langgraph/README.md)。转换器只认协议
 // 帧本身;会话("thread_id" 写回 ctx.session.id)和 HITL 恢复("input.responses" 翻译成
 // Command(resume=...))都在这个 adapter 里完成,不进转换器。
 //
 // 唯一非 LangGraphEventLike 的帧是 `{type: "session", sessionId}`(会话 id 回传,首轮才发,
 // 语义同其它 origin/* 示例)。
-import { completeCoverage, defineAgent, fromLangGraphEvents, sseJsonFrames } from "niceeval/adapter";
+import { completeCoverage, defineAgent, createLangGraphEventStream, sseJsonFrames } from "niceeval/adapter";
 import type { AgentContext, LangGraphEventLike, LangGraphStream, SseFrameCursor } from "niceeval/adapter";
 import type { StreamEvent, Turn, TurnInput } from "niceeval";
 
@@ -14,7 +14,7 @@ const BASE_URL = process.env.LANGGRAPH_URL ?? "http://127.0.0.1:35100";
 type ProtoFrame = LangGraphEventLike | { type: "session"; sessionId: string };
 type ProtoCursor = SseFrameCursor<ProtoFrame>;
 
-// HITL 停轮现场:还开着的流(与其 fromLangGraphEvents() 转换器状态,seq/命名空间/去重集合
+// HITL 停轮现场:还开着的流(与其 createLangGraphEventStream() 转换器状态,seq/命名空间/去重集合
 // 必须跨暂停延续,见 src/backend/server.py 头注释)、这一轮待答的 interrupt id,以及被审批
 // 工具调用的 callId(resume 时若非 accept,要在喂错误帧之前调用 stream.markRejected(callId),
 // 见下方 send() 的 resume 分支)。
@@ -120,13 +120,13 @@ async function send(input: TurnInput, ctx: AgentContext): Promise<Turn> {
   if (!res.ok || !res.body) {
     throw new Error(`POST /api/chat 失败: ${res.status} ${await res.text().catch(() => "")}`);
   }
-  return drainStream(sseJsonFrames<ProtoFrame>(res.body), fromLangGraphEvents(), ctx);
+  return drainStream(sseJsonFrames<ProtoFrame>(res.body), createLangGraphEventStream(), ctx);
 }
 
 export default defineAgent({
   name: "langgraph",
   send,
-  // 官方 fromLangGraphEvents() 转换器 + 自建 SSE transport 忠实转写 LangGraph 真实的
+  // 官方 createLangGraphEventStream() 转换器 + 自建 SSE transport 忠实转写 LangGraph 真实的
   // messages/tools/input/lifecycle 四通道,不是最终自然语言或半覆盖埋点——声明全通道 complete,
   // 负断言(notCalledTool)与上限断言(maxTokens)才会真的判定,而不是记 unavailable/errored
   // (见 docs/feature/adapters/architecture/evidence.md)。

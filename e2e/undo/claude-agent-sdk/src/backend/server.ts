@@ -3,7 +3,7 @@
 //
 // 通信协议就是 Claude Agent SDK 自己的原生协议:`query()` 产出的 `SDKMessage`
 // (system / assistant / user / result / stream_event)被原样序列化成 SSE 帧透传给客户端,
-// 服务端不做任何协议翻译——agents/claude-agent-sdk.ts 直接用官方 `fromClaudeSdkMessages()`
+// 服务端不做任何协议翻译——agents/claude-agent-sdk.ts 直接用官方 `createClaudeSdkEventStream()`
 // 归一。
 //
 // 会话形态:"每轮一次 query() + resume 找回历史"。请求体只带 {message, sessionId?},

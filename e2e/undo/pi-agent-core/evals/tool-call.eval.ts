@@ -1,4 +1,4 @@
-// 协议行为:pi-agent-core 的 tool_execution_start/end 经 fromPiAgentEvents 归一进标准事件流,
+// 协议行为:pi-agent-core 的 tool_execution_start/end 经 createPiAgentEventStream 归一进标准事件流,
 // call 与 result 按 toolCallId 配对成立;未触发的工具走 notCalledTool 反例断言。
 import { defineEval } from "niceeval";
 import { includes } from "niceeval/expect";

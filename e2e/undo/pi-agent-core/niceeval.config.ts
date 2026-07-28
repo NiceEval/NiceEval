@@ -1,7 +1,7 @@
 import { defineConfig } from "niceeval";
 
 export default defineConfig({
-  name: { "zh-CN": "e2e: pi-agent-core (fromPiAgentEvents)", en: "e2e: pi-agent-core (fromPiAgentEvents)" },
+  name: { "zh-CN": "e2e: pi-agent-core (createPiAgentEventStream)", en: "e2e: pi-agent-core (createPiAgentEventStream)" },
   // judge 走 OpenAI 兼容端点,凭据从 NICEEVAL_JUDGE_KEY / NICEEVAL_JUDGE_BASE(本仓库 .env)解析,
   // 与被测的 DeepSeek 模型鉴权无关。
   // judge 端点是配置,niceeval 不再内置读任何环境变量:这里自己读 NICEEVAL_JUDGE_BASE
