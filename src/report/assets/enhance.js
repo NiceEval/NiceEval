@@ -158,60 +158,7 @@
     }
   });
 
-  // ExperimentList 的 web 面以原生 details 表达「八列主行 + 展开明细」，不是 table/tbody。
-  // 单独按 summary 的列排序、按整条 details 文本过滤；无 JS 时保持数据侧成功率降序。
-  document.addEventListener("click", function (e) {
-    var control = closest(e.target, "[data-niceeval-experiment-sort]");
-    if (!control) return;
-    var board = control.closest(".niceeval-experiment-table");
-    if (!board) return;
-    var index = Number(control.getAttribute("data-niceeval-experiment-sort"));
-    var dir = control.classList.contains("niceeval-sort-asc") ? "desc" : "asc";
-    var controls = board.querySelectorAll("[data-niceeval-experiment-sort]");
-    for (var i = 0; i < controls.length; i++) controls[i].classList.remove("niceeval-sort-asc", "niceeval-sort-desc");
-    control.classList.add(dir === "asc" ? "niceeval-sort-asc" : "niceeval-sort-desc");
-    var entries = Array.prototype.slice.call(board.querySelectorAll(":sample > .niceeval-experiment-entry"));
-    entries.sort(function (a, b) {
-      var ac = a.querySelector(".niceeval-experiment-summary").children[index];
-      var bc = b.querySelector(".niceeval-experiment-summary").children[index];
-      var av = ac ? ac.getAttribute("data-sort-value") || ac.textContent.trim() : "";
-      var bv = bc ? bc.getAttribute("data-sort-value") || bc.textContent.trim() : "";
-      if (av === "" && bv === "") return 0;
-      if (av === "") return 1;
-      if (bv === "") return -1;
-      var an = Number(av), bn = Number(bv);
-      var out = !isNaN(an) && !isNaN(bn) ? an - bn : String(av).localeCompare(String(bv));
-      return dir === "asc" ? out : -out;
-    });
-    for (var j = 0; j < entries.length; j++) board.appendChild(entries[j]);
-  });
-
-  document.addEventListener("input", function (e) {
-    var input = closest(e.target, "input[data-niceeval-experiment-filter]");
-    if (!input) return;
-    var sample = input.parentElement;
-    var entries = sample ? sample.querySelectorAll(".niceeval-experiment-entry") : [];
-    var query = input.value.trim().toLowerCase();
-    for (var i = 0; i < entries.length; i++) {
-      entries[i].classList.toggle("niceeval-row-hidden", query !== "" && entries[i].textContent.toLowerCase().indexOf(query) === -1);
-    }
-  });
-
-  // AttemptList 的过滤(<AttemptList filter />):按条目全文 + data-niceeval-verdict(verdict 词
-  // 不在可见文本里,判定符是 ✓/✗)收窄 .niceeval-attempt 行。只改浏览状态,不改数据与初始 HTML。
-  document.addEventListener("input", function (e) {
-    var input = closest(e.target, "input[data-niceeval-attempt-filter]");
-    if (!input) return;
-    var sample = input.parentElement;
-    var rows = sample ? sample.querySelectorAll(".niceeval-attempt") : [];
-    var query = input.value.trim().toLowerCase();
-    for (var i = 0; i < rows.length; i++) {
-      var haystack = rows[i].textContent + " " + (rows[i].getAttribute("data-niceeval-verdict") || "");
-      rows[i].classList.toggle("niceeval-row-hidden", query !== "" && haystack.toLowerCase().indexOf(query) === -1);
-    }
-  });
-
-  // ───────────────────────── tooltip:.niceeval-scatter-point / .niceeval-line-point ─────────────────────────
+  // ───────────────────────── tooltip:.niceeval-chart-dot ─────────────────────────
   // 首次 hover 时把点内 <title> 的内容搬进 data-niceeval-title(避免与原生 tooltip 重影),
   // 渲染样式化 tooltip div(定位在点上方,挂在所属 figure 里)。无 JS 时 <title> 原样生效。
 
@@ -234,7 +181,7 @@
   }
 
   document.addEventListener("mouseover", function (e) {
-    var point = closest(e.target, ".niceeval-scatter-point, .niceeval-line-point");
+    var point = closest(e.target, ".niceeval-chart-dot");
     if (!point) return;
     var text = tooltipText(point);
     if (!text) return;
@@ -258,7 +205,7 @@
   });
 
   document.addEventListener("mouseout", function (e) {
-    var point = closest(e.target, ".niceeval-scatter-point, .niceeval-line-point");
+    var point = closest(e.target, ".niceeval-chart-dot");
     if (!point) return;
     // 移入 tooltip 自身不算离开(pointer-events: none 下 relatedTarget 不会是它,防御性判断)
     if (e.relatedTarget && point.contains(e.relatedTarget)) return;

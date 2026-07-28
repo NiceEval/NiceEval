@@ -53,11 +53,6 @@
 .niceeval-report .niceeval-locator { display:inline-flex; align-items:center; gap:4px; color:var(--accent); font-variant-numeric:tabular-nums; text-decoration:none; white-space:nowrap; }
 .niceeval-report .niceeval-locator:hover { text-decoration:underline; }
 
-/* ---- 实验比较表:web 面固定八列 ---- */
-.niceeval-experiment-table { border:1px solid var(--line); border-radius: var(--radius); overflow:hidden; background:var(--panel); }
-.niceeval-experiment-summary { display:grid; grid-template-columns:minmax(240px,1.35fr) minmax(115px,.72fr) minmax(95px,.58fr) minmax(108px,.62fr) minmax(105px,.58fr) minmax(112px,.66fr) minmax(92px,.52fr) minmax(160px,.86fr); column-gap:14px; align-items:center; }
-@media(max-width:1160px){.niceeval-experiment-table{overflow-x:auto}.niceeval-experiment-summary {min-width:1120px}}
-
 /* ---- 维度键上色:同一个 key 在任何块里同色(文字) ---- */
 .niceeval-report .niceeval-c0 { color: var(--c0); }
 .niceeval-report .niceeval-c1 { color: var(--c1); }
