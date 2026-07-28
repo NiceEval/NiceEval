@@ -413,12 +413,12 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
     const path = join(root, "report.mjs");
     await writeFile(path, reportSource("FIRST_RENDER"), "utf-8");
     const first = await loadViewScan(root, { report: { path, cwd: root } });
-    expect(first.reportPages[0]!.html.en).toContain("FIRST_RENDER");
+    expect(await first.reportPages.render(first.reportPages.ids[0]!, "en")).toContain("FIRST_RENDER");
 
     await writeFile(path, reportSource("SECOND_RENDER"), "utf-8");
     const second = await loadViewScan(root, { report: { path, cwd: root } });
-    expect(second.reportPages[0]!.html.en).toContain("SECOND_RENDER");
-    expect(second.reportPages[0]!.html.en).not.toContain("FIRST_RENDER");
+    expect(await second.reportPages.render(second.reportPages.ids[0]!, "en")).toContain("SECOND_RENDER");
+    expect(await second.reportPages.render(second.reportPages.ids[0]!, "en")).not.toContain("FIRST_RENDER");
   });
 
   it("改报告 import 的组件文件后,下一次装载读取新内容(子图失效)", async () => {
@@ -450,12 +450,12 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
       "utf-8",
     );
     const first = await loadViewScan(root, { report: { path: join(root, "report.mjs"), cwd: root } });
-    expect(first.reportPages[0]!.html.en).toContain("DEP_FIRST");
+    expect(await first.reportPages.render(first.reportPages.ids[0]!, "en")).toContain("DEP_FIRST");
 
     await writeFile(join(root, "marker.mjs"), 'export const marker = "DEP_SECOND";\n', "utf-8");
     const second = await loadViewScan(root, { report: { path: join(root, "report.mjs"), cwd: root } });
-    expect(second.reportPages[0]!.html.en).toContain("DEP_SECOND");
-    expect(second.reportPages[0]!.html.en).not.toContain("DEP_FIRST");
+    expect(await second.reportPages.render(second.reportPages.ids[0]!, "en")).toContain("DEP_SECOND");
+    expect(await second.reportPages.render(second.reportPages.ids[0]!, "en")).not.toContain("DEP_FIRST");
   });
 
   it("经 config.cwd 装载时,改配置所 import 的报告文件后读到新内容", async () => {
@@ -477,12 +477,13 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
         'import { join } from "node:path";',
         `const root = ${JSON.stringify(root)};`,
         `const { loadViewScan } = await import(${JSON.stringify(resolve(__dirname, "./data.ts"))});`,
-        "const first = await loadViewScan(root, { config: { cwd: root } });",
-        "if (!first.reportPages[0].html.en.includes('CFG_FIRST')) throw new Error('first miss');",
+        "const block = (scan) => scan.reportPages.render(scan.reportPages.ids[0], 'en');",
+        "const first = await block(await loadViewScan(root, { config: { cwd: root } }));",
+        "if (!first.includes('CFG_FIRST')) throw new Error('first miss');",
         "await writeFile(join(root, 'report.mjs'), " + JSON.stringify(reportSource("CFG_SECOND")) + ");",
-        "const second = await loadViewScan(root, { config: { cwd: root } });",
-        "if (!second.reportPages[0].html.en.includes('CFG_SECOND')) throw new Error('second miss: ' + second.reportPages[0].html.en);",
-        "if (second.reportPages[0].html.en.includes('CFG_FIRST')) throw new Error('stale');",
+        "const second = await block(await loadViewScan(root, { config: { cwd: root } }));",
+        "if (!second.includes('CFG_SECOND')) throw new Error('second miss: ' + second);",
+        "if (second.includes('CFG_FIRST')) throw new Error('stale');",
         "console.log('ok');",
         "",
       ].join("\n"),

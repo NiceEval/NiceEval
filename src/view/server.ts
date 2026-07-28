@@ -1,15 +1,22 @@
 // HTTP server:把站点管线(site.ts 的 planSite)产出的同一份产物挂在 127.0.0.1 上按路径服务。
-// 这里不携带任何取数或布局知识——查不到清单条目就是 404,与 `--out` 写盘的文件逐字节一致
-// (docs/feature/reports/view.md 开篇;奇偶由 site-parity 测试守护)。宿主语义只有两条,全部
-// 作用在管线之外:打开首页整份重建(数据永远是盘上最新)、单页渲染失败折成页内错误块
-// (pageFailure: "embed")。位置参数 / --exp 收窄是管线输入,不是宿主语义——两宿主同义。
+// 这里不携带任何取数或布局知识——查不到清单条目就是 404,同一页同一语言的报告块与 `--out`
+// 逐字节一致(docs/feature/reports/view.md 开篇)。宿主语义全部作用在管线之外:
+//
+// - 重建理由只有 watch 闭集。请求不触发重建——打开或刷新页面时盘上没变,产物就是上一次那份。
+// - 变更按理由分流:记录变更沿用上一次装载出的定义,模块文件变更才重装整棵 import 图。
+// - 产物按订阅渲染:清单是 prebake: "on-demand",重建本身一块都不渲染,块在被要到时才算。
+// - 重建结果推给已打开的页面,外壳指纹变了整页重载,否则就地换报告块。
+// - 单页渲染失败折成页内错误块(pageFailure: "embed")。
+//
+// 位置参数 / --exp 收窄是管线输入,不是宿主语义——两宿主同义。
 
 import { createServer, type Server } from "node:http";
 import { watch, type FSWatcher } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve, sep } from "node:path";
-import { type ViewScanOptions } from "./data.ts";
-import { planSite, readSiteFile, type SitePlan } from "./site.ts";
+import { type LoadedDefinitions, type ViewScanOptions } from "./data.ts";
+import { planSite, readSiteFile, reportBlockPath, SITE_LOCALES, type SitePlan } from "./site.ts";
+import type { ReportLocale } from "../report/model/locale.ts";
 import { isHostModulePath } from "../report/runtime/host.ts";
 import { formatThrown } from "../util.ts";
 
@@ -28,26 +35,41 @@ export interface ViewServer {
   close(): Promise<void>;
 }
 
+/**
+ * 重建理由(docs/feature/reports/view.md「变更分两类,失效到不同深度」)。合成一次重建时
+ * `modules` 吸收 `records`：模块图重装本来就带着整条管线重跑,反过来不成立。
+ */
+export type RebuildReason = "records" | "modules";
+
 /** 去抖且单飞：构建期间的任意事件只请求结束后再跑一次。 */
 export class ViewRebuildScheduler {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
-  private pending = false;
-  constructor(private readonly rebuild: () => Promise<void>, private readonly delayMs = 80) {}
-  notify(): void {
-    if (this.running) { this.pending = true; return; }
+  private queued: RebuildReason | undefined;
+  private pending: RebuildReason | undefined;
+  constructor(private readonly rebuild: (reason: RebuildReason) => Promise<void>, private readonly delayMs = 80) {}
+  notify(reason: RebuildReason = "records"): void {
+    if (this.running) { this.pending = merge(this.pending, reason); return; }
+    this.queued = merge(this.queued, reason);
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.run(), this.delayMs);
   }
   private async run(): Promise<void> {
     if (this.running) return;
+    const reason = this.queued ?? "records";
+    this.queued = undefined;
     this.running = true;
-    try { await this.rebuild(); } finally {
+    try { await this.rebuild(reason); } finally {
       this.running = false;
-      if (this.pending) { this.pending = false; this.notify(); }
+      const next = this.pending;
+      if (next !== undefined) { this.pending = undefined; this.notify(next); }
     }
   }
   close(): void { clearTimeout(this.timer); }
+}
+
+function merge(a: RebuildReason | undefined, b: RebuildReason): RebuildReason {
+  return a === "modules" || b === "modules" ? "modules" : "records";
 }
 
 function isWatchedChange(root: string, filename: string | null): boolean {
@@ -132,6 +154,9 @@ async function resolveModuleFile(from: string, specifier: string): Promise<strin
 export class ProjectFileWatcher {
   private readonly dirs = new Map<string, FSWatcher>();
   private files = new Set<string>();
+  /** 闭集里每个文件上一次看到的 mtime + 大小;文件不存在记 null。 */
+  private stamps = new Map<string, string | null>();
+  private checking: Promise<void> | undefined;
   constructor(private readonly onChange: () => void) {}
 
   /** 当前盯着的文件绝对路径全集。 */
@@ -141,6 +166,7 @@ export class ProjectFileWatcher {
 
   async sync(entries: readonly string[]): Promise<void> {
     this.files = await projectWatchTargets(entries);
+    await this.stamp();
     const dirs = new Set([...this.files].map((file) => dirname(file)));
     for (const [dir, watcher] of this.dirs) {
       if (dirs.has(dir)) continue;
@@ -157,13 +183,47 @@ export class ProjectFileWatcher {
     }
   }
 
-  /** 目录事件 → 是不是闭集内文件变了。filename 缺失时无从判断,按会变处理。 */
-  handle(dir: string, filename: string | Buffer | null): void {
-    if (filename === null) {
-      this.onChange();
-      return;
+  /**
+   * 目录事件 → 闭集里真有文件变了才通知。
+   *
+   * 事件名不足以判定:macOS 的 `fs.watch` 会为同一目录下**没被碰过**的兄弟文件也报一次事件
+   * (`.niceeval/` 落一份 result.json,同目录的 report 文件跟着报 rename),`filename` 还可能
+   * 是被监听目录自己的名字或 null。只按名字判定的话,记录一落盘就被当成模块变更,
+   * 「记录变更不重装模块图」这条分流在默认的 `.niceeval` 布局下等于没有。所以事件只当作
+   * 「去核对一下」的信号,变没变由 mtime + 大小说了算。
+   */
+  handle(_dir: string, _filename: string | Buffer | null): void {
+    if (this.checking) return; // 核对本身是异步的,同一批事件合成一次。
+    this.checking = this.stamp()
+      .then((changed) => {
+        if (changed) this.onChange();
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.checking = undefined;
+      });
+  }
+
+  /** 重新采样闭集的 mtime + 大小;返回是否与上一次不同。首次采样(sync)不算变更。 */
+  private async stamp(): Promise<boolean> {
+    const previous = this.stamps;
+    const next = new Map<string, string | null>();
+    await Promise.all(
+      [...this.files].map(async (file) => {
+        try {
+          const info = await stat(file);
+          next.set(file, `${info.mtimeMs}:${info.size}`);
+        } catch {
+          next.set(file, null);
+        }
+      }),
+    );
+    this.stamps = next;
+    if (previous.size === 0) return false;
+    for (const [file, stamp] of next) {
+      if (!previous.has(file) || previous.get(file) !== stamp) return true;
     }
-    if (this.files.has(resolve(dir, filename.toString()))) this.onChange();
+    return [...previous.keys()].some((file) => !next.has(file));
   }
 
   close(): void {
@@ -177,26 +237,70 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   // 本地 server 的单页失败折成该页的错误块,其它页照常可读(静态导出仍整体失败)。
   const scanOptions = { ...opts.scan, pageFailure: "embed" as const };
 
-  // 产物重建的单飞通道:首页请求与 watch 调度器共享同一次构建,不并行跑两份
-  // planSite(namespaced import 并发会卡住)。进行中的调用方都 await 同一份 Promise。
+  // 产物重建的单飞通道:同时到达的重建请求共享同一次构建,不并行跑两份 planSite
+  // (namespaced import 并发会卡住)。进行中的调用方都 await 同一份 Promise。
   let current: Promise<SitePlan>;
   let inFlight: Promise<SitePlan> | undefined;
-  const reloadClients = new Set<import("node:http").ServerResponse>();
+  /**
+   * 一个订阅中的浏览器:它在看哪一页、哪种语言(docs/feature/reports/view.md
+   * 「只渲染看得见的那一块」)。重建后只为这些订阅渲染块,没人看的页不渲染。
+   */
+  const reloadClients = new Set<{ res: import("node:http").ServerResponse; page?: string; locale: ReportLocale }>();
   let lastError: string | undefined;
-  const rebuild = (): Promise<SitePlan> => {
+  // 上一次装载出的报告 / 主题定义:记录变更的重建沿用它,不重走 namespaced import。
+  let definitions: LoadedDefinitions | undefined;
+  let shellFingerprint: string | undefined;
+
+  const push = (client: { res: import("node:http").ServerResponse }, event: string, data: unknown): void => {
+    client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  /**
+   * 重建完成后把结果送到已经打开的页面。外壳指纹变了整页重载(样式表 / 脚本 / head 标签住在
+   * `<head>` 里,就地替换要重放整套加载顺序);否则给每个订阅渲染它那一块就地换掉。
+   */
+  const publish = async (plan: SitePlan): Promise<void> => {
+    const shellChanged = shellFingerprint !== undefined && shellFingerprint !== plan.shellFingerprint;
+    shellFingerprint = plan.shellFingerprint;
+    if (shellChanged) {
+      for (const client of reloadClients) push(client, "reload", "shell");
+      return;
+    }
+    for (const client of reloadClients) {
+      const page = client.page ?? plan.scan.viewData.report?.initialPageId;
+      if (page === undefined || !plan.scan.reportPages.ids.includes(page)) {
+        push(client, "reload", "page-gone");
+        continue;
+      }
+      try {
+        const html = await plan.scan.reportPages.render(page, client.locale);
+        push(client, "patch", { viewData: plan.scan.viewData, page, locale: client.locale, html });
+      } catch (e) {
+        push(client, "error", formatThrown(e));
+      }
+    }
+  };
+
+  const rebuild = (reason: RebuildReason = "modules"): Promise<SitePlan> => {
     // 同步挂上 inFlight,避免「两个调用都看到 undefined」并行跑两份 namespaced import。
     if (!inFlight) {
       inFlight = (async () => {
         try {
-          const next = await planSite(input, scanOptions);
+          const next = await planSite(
+            input,
+            // 记录变更沿用上一次的定义;模块文件变了就不传,让整棵 import 图重新装载。
+            reason === "records" && definitions !== undefined ? { ...scanOptions, definitions } : scanOptions,
+            { prebake: "on-demand" },
+          );
           current = Promise.resolve(next);
+          definitions = next.scan.definitions;
           lastError = undefined;
-          for (const client of reloadClients) client.write("event: reload\ndata: ok\n\n");
+          await publish(next);
           return next;
         } catch (error) {
           lastError = formatThrown(error);
           process.stderr.write(`view rebuild failed: ${lastError}\n`);
-          for (const client of reloadClients) client.write(`event: error\ndata: ${JSON.stringify(lastError)}\n\n`);
+          for (const client of reloadClients) push(client, "error", lastError);
           throw error;
         } finally {
           inFlight = undefined;
@@ -210,15 +314,15 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   // 都要在起 server 前就失败并给出提示。
   try { await rebuild(); } catch (error) { throw error; }
 
-  const scheduler = new ViewRebuildScheduler(async () => {
-    try { await rebuild(); } catch { /* keep serving the preceding SitePlan */ }
+  const scheduler = new ViewRebuildScheduler(async (reason) => {
+    try { await rebuild(reason); } catch { /* keep serving the preceding SitePlan */ }
     // 改动可能新增/删除 import:重算闭集,新引入的组件文件从下一次变更起就被盯着。
     await syncProjectWatch();
   });
   // 记录侧仍是整根递归监听:新 Run 目录、result.json 与证据文件都要接住。
   const recordRoot = resolve(input ?? ".niceeval");
   const onRecordEvent = (_event: string, filename: string | Buffer | null): void => {
-    if (isWatchedChange(recordRoot, filename === null ? null : filename.toString())) scheduler.notify();
+    if (isWatchedChange(recordRoot, filename === null ? null : filename.toString())) scheduler.notify("records");
   };
   let recordWatcher: FSWatcher;
   try {
@@ -228,7 +332,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
   }
   // 项目侧收窄到闭集,不再整根递归:项目根下的记录、依赖目录与无关文件都不是重建理由。
   const projectEntries = await projectWatchEntries(scanOptions, resolve(opts.watchRoot ?? process.cwd()));
-  const projectWatcher = new ProjectFileWatcher(() => scheduler.notify());
+  const projectWatcher = new ProjectFileWatcher(() => scheduler.notify("modules"));
   const syncProjectWatch = (): Promise<void> => projectWatcher.sync(projectEntries).catch(() => {});
   await syncProjectWatch();
 
@@ -241,10 +345,18 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         return;
       }
       if (url.pathname === "/__niceeval_reload") {
+        // 订阅带上「在看哪一页、哪种语言」:重建只为这些订阅渲染块。切页 / 切语言时前端
+        // 重连一次,不需要另一条上行通道。
         res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
-        res.write(lastError ? `event: error\ndata: ${JSON.stringify(lastError)}\n\n` : "event: ready\ndata: ok\n\n");
-        reloadClients.add(res);
-        req.on("close", () => reloadClients.delete(res));
+        const rawLocale = url.searchParams.get("locale");
+        const client = {
+          res,
+          ...(url.searchParams.get("page") ? { page: url.searchParams.get("page")! } : {}),
+          locale: SITE_LOCALES.includes(rawLocale ?? "") ? (rawLocale as ReportLocale) : "en",
+        };
+        res.write(lastError ? `event: error\ndata: ${JSON.stringify(lastError)}\n\n` : "event: ready\ndata: \"ok\"\n\n");
+        reloadClients.add(client);
+        req.on("close", () => reloadClients.delete(client));
         return;
       }
 
@@ -252,9 +364,8 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       // (0.2.x 前端烘焙的 HTML 可能还开着)。
       let sitePath: string;
       if (url.pathname === "/") {
-        // 每次打开首页整份重建,永远是盘上最新数据;报告 / 配置经 namespaced import
-        // 失效整棵项目内 import 图(见 report/runtime/load.ts 与 load-config.ts)。
-        await rebuild().catch(() => current);
+        // 打开或刷新页面不是重建理由(view.md「重建理由是一个闭集」):盘上没变时产物就是
+        // 上一次那份,直接命中。数据永远最新由 watch 保证,不靠每次请求重跑一遍管线。
         sitePath = "index.html";
       } else if (url.pathname === "/artifact") {
         sitePath = `artifact/${url.searchParams.get("p") ?? ""}`;
@@ -267,7 +378,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
       if (!file && sitePath.startsWith("artifact/")) {
         // 未命中最近一次构建的产物清单:管线重建一次再查——server 运行期间
         // 新落盘的证据(新快照、补跑)不需要重启。
-        plan = await rebuild().catch(() => current);
+        plan = await rebuild("records").catch(() => current);
         file = plan.files.get(sitePath);
       }
       if (!file) {
@@ -302,7 +413,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         scheduler.close();
         recordWatcher.close();
         projectWatcher.close();
-        reloadClients.forEach((client) => client.end());
+        reloadClients.forEach((client) => client.res.end());
         server.close((err) => (err ? reject(err) : resolveClose()));
       }),
   };

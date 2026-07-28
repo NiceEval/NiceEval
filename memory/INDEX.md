@@ -212,6 +212,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [macos-fswatch-reports-untouched-siblings](macos-fswatch-reports-untouched-siblings.md) — macOS 的 `fs.watch` 会为同目录里没被碰过的兄弟文件报事件(`.niceeval/` 落 result.json 时 report 文件跟着报 rename),filename 还可能是被监听目录自己的名字;`view` 的项目侧 watch 只按事件名判定,导致默认布局下每次记录落盘都被判成模块变更、失效分流形同虚设;修为事件只当核对信号、变没变由 mtime+size 快照判定
 - [chart-categorical-axis-gap-blocks-stability-bars](chart-categorical-axis-gap-blocks-stability-bars.md) — 发现(未修):chart-map 数值轴 only,分类 x 轴(条件名)全点缺失,stability 视图判定堆叠柱渲染 no data;修法归 chart 线,StabilityOverview 投影侧已就位
 - 已修 [static-export-breaks-on-slashless-index-url](static-export-breaks-on-slashless-index-url.md) — `--out` 站点被托管在无尾斜杠路径(`/showcase/memory`,cleanUrls)上时 attempt 下钻全 404;根因=浏览器按文档 URL 的目录解析相对引用、少一层,本地 server 永远带尾斜杠所以测不出;修为 index.html 落站点根归一的 `<base>` 引导脚本
 - 已修 [axis-tick-labels-collapse-at-tiny-ranges](axis-tick-labels-collapse-at-tiny-ranges.md) — 图轴值域改版后极小量程刻度标签折叠成同一字符串(report e2e 逮住);根因=精度固定不随步长,2.5×10^k 档 ⌈-log10⌉ 还少一位;修为 formatTickValue 按步长十进制位数取精度

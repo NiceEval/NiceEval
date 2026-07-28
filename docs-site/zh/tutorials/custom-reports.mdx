@@ -91,6 +91,10 @@ niceeval view --report reports/quality-cost.tsx
 宿主先按 `--record`、`--exp`、评估用例位置参数与 `--fresh` 选择 Sample，再解析报告。
 同一 page 内，相同 Source 对象与相同 input 引用只计算一次。
 
+`niceeval view` 起的本地服务会一直盯着报告文件和它 import 的组件文件。存盘后浏览器里那一页
+就换成新样子，不用手动刷新，也不用重开命令。当前所在的页、滚动位置和打开的 Attempt 详情
+都留在原处，所以可以一直开着页面改代码。改主题、`styles` 或 `scripts` 时页面整页重载一次。
+
 ## 直接绑定 Source
 
 Source 是计算声明，Content 是计算结果。原语接收互斥的两种数据形态：

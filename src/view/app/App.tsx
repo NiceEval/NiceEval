@@ -74,7 +74,19 @@ function hashForTab(tab: Tab): string {
   return `#/page/${tab.slice("page:".length)}`;
 }
 
-export function App({ data, reportPages }: { data: ViewData; reportPages: globalThis.Record<string, ReportSlotHtml> }) {
+export function App({
+  data,
+  reportPages,
+  onActiveView,
+}: {
+  data: ViewData;
+  reportPages: globalThis.Record<string, ReportSlotHtml>;
+  /**
+   * 当前在看哪一页、哪种语言。本地模式据此按需取块并订阅重建事件
+   * (docs/feature/reports/view.md「只渲染看得见的那一块」);静态产物不传这个回调。
+   */
+  onActiveView?: (view: { page: string; locale: Locale }) => void;
+}) {
   const [locale, setLocale] = useState<Locale>(() => detectLocale());
   const t = useMemo(() => makeTranslator(locale), [locale]);
 
@@ -104,6 +116,11 @@ export function App({ data, reportPages }: { data: ViewData; reportPages: global
     setDocumentLocale(locale);
     persistLocale(locale);
   }, [locale]);
+
+  const activePageId = tab.slice("page:".length);
+  useEffect(() => {
+    onActiveView?.({ page: activePageId, locale });
+  }, [onActiveView, activePageId, locale]);
 
   // 浏览器标题是宿主文档单例:跟随外壳标题(回退链在 server 侧走完:def.title →
   // 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」);缺声明(旧数据)时按内置文案兜底。

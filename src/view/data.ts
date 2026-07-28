@@ -27,10 +27,31 @@ import { currentSample, filterExperiments } from "../sample/index.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import type { EvalResult, JsonValue } from "../types.ts";
 import type { SkippedRunNotice, ViewData, ViewReportMeta, ViewReportPageHtml } from "./shared/types.ts";
+import type { ReportLocale } from "../report/model/locale.ts";
 import { t } from "../i18n/index.ts";
 import { RECORD_SCHEMA_VERSION } from "../types.ts";
 
 export type { ViewReportMeta, ViewReportPageHtml } from "./shared/types.ts";
+
+/**
+ * 一次装载出的报告与主题定义。记录变更的重建沿用上一次装载出的这一份,只有闭集里的模块
+ * 文件变过才重新装载(docs/feature/reports/view.md「变更分两类,失效到不同深度」)——
+ * 模块图没变时重新装载得到的是同一份定义,代价却是把整棵图连同 niceeval 自身重新求值一遍。
+ */
+export interface LoadedDefinitions {
+  report: ReportDefinition;
+  theme: ThemeDefinition;
+}
+
+/**
+ * 报告页的按需渲染面。同一 `(pageId, locale)` 只渲染一次;同一 pageId 的两种语言共用一次
+ * page resolve(architecture.md「一次 page resolve 的缓存」),所以按语言分块不会把取数算两遍。
+ */
+export interface ReportPageRenderer {
+  /** scope-input pages 的 id,声明顺序(= `#/page/<id>` 路由与 <template> 块的键)。 */
+  ids: readonly string[];
+  render(pageId: string, locale: ReportLocale): Promise<string>;
+}
 
 export interface ViewScan {
   viewData: ViewData;
@@ -47,14 +68,17 @@ export interface ViewScan {
    */
   attemptsByBase: Map<string, AttemptHandle>;
   /**
-   * 报告页:每页渲染成静态 HTML(en / zh-CN 各一份),裸跑填充内建报告(单页 id `report`),
-   * --report 整槽替换(树 / 配置对象形态都规范化成页列表)。作为 <template
-   * id="niceeval-report-<pageId>-<locale>"> 静态块烘进页面(与 __NICEEVAL_VIEW_DATA__ 相邻),
-   * HTML 本体不进 viewData —— 前端只负责把当前页 / 当前界面语言对应的块摆进报告槽位置,不解析。
+   * 报告页的按需渲染面:裸跑填充内建报告(单页 id `report`),--report 整槽替换(树 / 配置对象
+   * 形态都规范化成页列表)。渲染出的块作为 <template id="niceeval-report-<pageId>-<locale>">
+   * 烘进页面(与 __NICEEVAL_VIEW_DATA__ 相邻),HTML 本体不进 viewData —— 前端只负责把当前页 /
+   * 当前界面语言对应的块摆进报告槽位置,不解析。渲染哪些块由宿主决定
+   * (docs/feature/reports/view.md「只渲染看得见的那一块」):`--out` 全渲,本地模式只渲订阅中那块。
    */
-  reportPages: ViewReportPageHtml[];
+  reportPages: ReportPageRenderer;
   /** 外壳注入资产(styles / scripts;{src} 已按路径纪律解析成 inline 内容),只进 web 面。 */
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
+  /** 这次扫描用到的报告与主题定义;下一次记录变更的重建原样传回来沿用。 */
+  definitions: LoadedDefinitions;
   /**
    * 报告声明了 attempt-input page 时才存在(architecture.md「Attempt 详情是一张参数化 page」)。
    * `locators` 是收窄后有效根内可达的 locator → AttemptHandle(与 scope-input pages 同一份
@@ -103,6 +127,12 @@ export interface ViewScanOptions {
    * 缺省 "throw"(任一页失败整体失败,不产出半套站点)。
    */
   pageFailure?: "throw" | "embed";
+  /**
+   * 沿用上一次装载出的报告与主题定义,跳过这一次的模块装载。只有记录变更触发的重建传它
+   * (docs/feature/reports/view.md「变更分两类,失效到不同深度」);闭集里的模块文件变过时
+   * 不传,让整棵 import 图重新装载。
+   */
+  definitions?: LoadedDefinitions;
 }
 
 /** 可预期的用户输入错误:CLI 打一句英文直说问题与下一步,退出码 1,不抛堆栈。 */
@@ -277,7 +307,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   // 报告槽:裸跑装载内建报告默认导出,--report 整槽替换——同一条「装载 → 规范化 → 逐页渲染」
   // 管线(docs/feature/reports/library/shell.md)。报告吃同一份注入 Sample,web 面在计算侧
   // 静态渲染成 HTML(en / zh-CN 各一遍,切界面语言不重算数据)。
-  const slot = await renderReportSlot(opts.report, opts.theme, opts.config, opts.page, results, selection, opts.pageFailure ?? "throw");
+  const slot = await renderReportSlot(opts.report, opts.theme, opts.config, opts.page, results, selection, opts.pageFailure ?? "throw", opts.definitions);
 
   // 有效根:命令行收窄把根滤成只含匹配实验与 attempt(docs/feature/reports/view.md 开篇)。
   // 证据室数据与 artifact 清单从这里取数,与页面 Sample 一致收窄——本地与导出无分叉,
@@ -327,6 +357,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     attemptsByBase,
     reportPages: slot.pages,
     shellAssets: slot.shellAssets,
+    definitions: slot.definitions,
     ...(slot.attemptPage && attemptsByLocator
       ? { attemptPages: { page: slot.attemptPage, locators: attemptsByLocator, render: slot.renderAttemptPage } }
       : {}),
@@ -452,10 +483,12 @@ async function renderReportSlot(
   results: Record,
   selection: Sample,
   pageFailure: "throw" | "embed" = "throw",
+  reuse?: LoadedDefinitions,
 ): Promise<{
   meta: ViewReportMeta;
-  pages: ViewReportPageHtml[];
+  pages: ReportPageRenderer;
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
+  definitions: LoadedDefinitions;
   attemptPage: ReportPage | undefined;
   renderAttemptPage: (locator: AttemptLocator, handle: AttemptHandle) => Promise<{ en: string; "zh-CN": string }>;
 }> {
@@ -463,24 +496,30 @@ async function renderReportSlot(
   // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../report/runtime/host.ts(两个宿主共用的中性联系面)。
   // config 每次重建 fresh 装载——不能吃启动时那份已求值的 report 对象,否则改 reports/*.tsx
   // 只会触发 watch/SSE,内容仍是旧定义。
-  let configReport: ReportDefinition | undefined;
-  let configTheme: ThemeDefinition | undefined;
-  if (config !== undefined) {
-    const { loadConfigFile } = await import("../load-config.ts");
-    const loaded = await loadConfigFile(config.cwd, { freshImport: true });
-    configReport = loaded.report as ReportDefinition | undefined;
-    configTheme = loaded.theme as ThemeDefinition | undefined;
-  }
-  const hostReport: ReportDefinition = await loadHostReport(report?.cwd ?? config?.cwd ?? process.cwd(), report?.path, configReport, {
-    freshImport: true,
-  });
-  const hostTheme = await resolveHostTheme(
-    theme?.cwd ?? report?.cwd ?? config?.cwd ?? process.cwd(),
-    theme?.value,
-    hostReport.theme,
-    configTheme,
-    { freshImport: true },
-  );
+  const loadDefinitions = async (): Promise<LoadedDefinitions> => {
+    let configReport: ReportDefinition | undefined;
+    let configTheme: ThemeDefinition | undefined;
+    if (config !== undefined) {
+      const { loadConfigFile } = await import("../load-config.ts");
+      const loaded = await loadConfigFile(config.cwd, { freshImport: true });
+      configReport = loaded.report as ReportDefinition | undefined;
+      configTheme = loaded.theme as ThemeDefinition | undefined;
+    }
+    const loadedReport: ReportDefinition = await loadHostReport(report?.cwd ?? config?.cwd ?? process.cwd(), report?.path, configReport, {
+      freshImport: true,
+    });
+    const loadedTheme = await resolveHostTheme(
+      theme?.cwd ?? report?.cwd ?? config?.cwd ?? process.cwd(),
+      theme?.value,
+      loadedReport.theme,
+      configTheme,
+      { freshImport: true },
+    );
+    return { report: loadedReport, theme: loadedTheme };
+  };
+  const definitions = reuse ?? (await loadDefinitions());
+  const hostReport = definitions.report;
+  const hostTheme = definitions.theme;
 
   // scope-input pages 只有这些参与本函数的「全部烘进 index.html」渲染;attempt-input page(如果
   // 报告声明了)没有 locator 就不能 resolve,它的每-locator 静态文档是独立机制,不在这里渲染
@@ -510,32 +549,47 @@ async function renderReportSlot(
   };
 
   const hostMeta = await buildHostReportMeta(hostReport, selection);
-  const pages: ViewReportPageHtml[] = [];
-  for (const hostPage of scopePages) {
-    const ctx = {
-      scope: selection,
-      results,
-      report: hostMeta,
-      page: { id: hostPage.id, input: "scope" as const },
-      dimensionPins: hostReport.dimensionPins,
-    };
+
+  // 按需渲染:一次 page resolve 记忆化在 pageId 上,两种语言共用它——按语言分块是为了少传
+  // 一半字节,不该把取数算两遍(architecture.md「一次 page resolve 的缓存」)。渲染结果再按
+  // (pageId, locale) 记忆化一层,同一块被 index.html 预烘与 report/ 路径同时要到时只渲染一次。
+  const resolvedPages = new Map<string, Promise<unknown>>();
+  const renderedBlocks = new Map<string, Promise<string>>();
+  const renderBlock = async (pageId: string, locale: ReportLocale): Promise<string> => {
+    const hostPage = scopePages.find((p) => p.id === pageId);
+    if (!hostPage) throw new ViewInputError(`error: page "${pageId}" not found in the loaded report.`);
     try {
-      const resolved = await resolveHostPage(hostPage.content, ctx);
-      pages.push({
-        id: hostPage.id,
-        html: {
-          en: await renderHostPageFromResolved(resolved, { locale: "en" }),
-          "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN" }),
-        },
-      });
+      let resolved = resolvedPages.get(pageId);
+      if (resolved === undefined) {
+        resolved = resolveHostPage(hostPage.content, {
+          scope: selection,
+          results,
+          report: hostMeta,
+          page: { id: hostPage.id, input: "scope" as const },
+          dimensionPins: hostReport.dimensionPins,
+        });
+        resolvedPages.set(pageId, resolved);
+      }
+      return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, { locale });
     } catch (e) {
       if (pageFailure !== "embed") throw e;
       // 本地 server:该页显示完整错误反馈,其它页照常可读(不让一页的树错误拖垮整站)。
       const message = e instanceof Error ? e.message : String(e);
-      const block = `<div class="niceeval-report niceeval-page-error"><pre>${escapeHtml(message)}</pre></div>`;
-      pages.push({ id: hostPage.id, html: { en: block, "zh-CN": block } });
+      return `<div class="niceeval-report niceeval-page-error"><pre>${escapeHtml(message)}</pre></div>`;
     }
-  }
+  };
+  const pages: ReportPageRenderer = {
+    ids: scopePages.map((p) => p.id),
+    render(pageId, locale) {
+      const key = `${pageId} ${locale}`;
+      let block = renderedBlocks.get(key);
+      if (block === undefined) {
+        block = renderBlock(pageId, locale);
+        renderedBlocks.set(key, block);
+      }
+      return block;
+    },
+  };
 
   const meta: ViewReportMeta = {
     title: hostMeta.title,
@@ -578,7 +632,7 @@ async function renderReportSlot(
     }
   };
 
-  return { meta, pages, shellAssets, attemptPage, renderAttemptPage };
+  return { meta, pages, shellAssets, definitions, attemptPage, renderAttemptPage };
 }
 
 /**

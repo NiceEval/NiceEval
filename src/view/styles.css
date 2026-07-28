@@ -154,3 +154,17 @@ main {
   font-size: 12px;
 }
 .niceeval-page-error pre { white-space: pre-wrap; }
+/* 本地模式重建失败的角标:server 继续服务上一份可用站点,这里说明看到的不是最新的。 */
+.view-rebuild-error {
+  position: fixed;
+  z-index: 9999;
+  right: 12px;
+  bottom: 12px;
+  max-width: 50vw;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--fail, #a33a30);
+  background: var(--bg, #fff);
+  color: var(--fail, #a33a30);
+  white-space: pre-wrap;
+}

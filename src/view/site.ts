@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { loadViewScan, type ResolvedHeadTag, type ViewScan, type ViewScanOptions } from "./data.ts";
 import { localizeText } from "../report/runtime/host.ts";
+import type { ReportLocale } from "../report/model/locale.ts";
 import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
 import type { AttemptHandle } from "../record/index.ts";
 import type { AttemptLocator } from "../record/locator.ts";
@@ -32,10 +33,37 @@ export interface SitePlan {
   files: Map<string, SiteFile>;
   /** 构建这份产物用的扫描结果(宿主前置校验与调试用;不进产物)。 */
   scan: ViewScan;
+  /**
+   * 外壳(styles / scripts / head 资产)的内容指纹。本地模式据此决定重建后是就地换报告块还是
+   * 整页重载(docs/feature/reports/view.md「页面就地换内容」)——外壳住在 `<head>` 里,
+   * 就地替换要重放整套加载顺序,比重载一次更难解释。
+   */
+  shellFingerprint: string;
 }
 
 const JSON_TYPE = "application/json; charset=utf-8";
 const HTML_TYPE = "text/html; charset=utf-8";
+
+/** 站点烘焙的界面语言全集(前端的语言切换在这两者之间)。 */
+export const SITE_LOCALES: readonly ReportLocale[] = ["en", "zh-CN"];
+
+/** 一块报告 HTML 在站点里的路径(本地模式的按需渲染入口)。 */
+export function reportBlockPath(pageId: string, locale: ReportLocale): string {
+  return `report/${pageId}.${locale}.html`;
+}
+
+export interface SitePlanOptions {
+  /**
+   * `index.html` 预烘哪些报告块(docs/feature/reports/view.md「本地看到的就是发出去的」)。
+   *
+   * - `"all"`(缺省):全部页 × 全部语言在建清单时就渲染并烘进 `index.html`。导出产物脱离
+   *   server 也能读,`file://` 直接打开同样不缺块。
+   * - `"on-demand"`:本地模式。`index.html` 本身延迟到被请求时才渲染,那时只烘初始页的两种
+   *   语言(首屏因此不必再取一次);其余块登记成 `report/<pageId>.<locale>.html` 的按需入口。
+   *   一次重建于是一块都不渲染,渲染发生在真的有人要看的时候。
+   */
+  prebake?: "all" | "on-demand";
+}
 
 // 前端会 fetch 的原字节证据文件(docs/feature/reports/view.md「静态导出」:有就带,缺时前端
 // 在证据位置如实显示缺失;o11y.json 永不进产物——报告数字已烘进 HTML,浏览器不读它)。
@@ -46,17 +74,47 @@ const RAW_COPY_ARTIFACTS = ["commands.json", "events.json", "trace.json", "diff.
  * (`{path, sha256}[]`),必须经 `AttemptHandle.sources()` 解引用出完整内容(`{path, content}[]`)
  * 才能给浏览器用,解引用只发生在这里这一处。
  */
-export async function planSite(input?: string, opts: ViewScanOptions = {}): Promise<SitePlan> {
+export async function planSite(input?: string, opts: ViewScanOptions = {}, site: SitePlanOptions = {}): Promise<SitePlan> {
   const scan = await loadViewScan(input, opts);
   const files = new Map<string, SiteFile>();
   // head 标签的本地 src/href 资产按内容哈希物化进 assets/(同内容同扩展名去重,
   // 同名文件不冲突;shell.md「行为约束」),回填后的标签渲染进 <head>。
   const headHtml = await materializeHeadAssets(scan.shellAssets.head, files);
-  files.set("index.html", {
-    path: "index.html",
-    contentType: HTML_TYPE,
-    source: { kind: "content", body: await renderHtml(scan, headHtml) },
-  });
+
+  // 预烘哪些块由宿主决定,渲染的是同一个 scan.reportPages.render——两个宿主在同一条
+  // (pageId, locale) 上产出同一份字节(view.md「本地看到的就是发出去的」)。
+  const prebake = site.prebake ?? "all";
+  const blocks: { id: string; locale: ReportLocale }[] = scan.reportPages.ids.flatMap((id) =>
+    SITE_LOCALES.map((locale) => ({ id, locale })),
+  );
+  const renderBlocks = async (
+    wanted: readonly { id: string; locale: ReportLocale }[],
+  ): Promise<{ id: string; locale: ReportLocale; html: string }[]> =>
+    Promise.all(wanted.map(async (b) => ({ ...b, html: await scan.reportPages.render(b.id, b.locale) })));
+
+  if (prebake === "all") {
+    files.set("index.html", {
+      path: "index.html",
+      contentType: HTML_TYPE,
+      source: { kind: "content", body: await renderHtml(scan, headHtml, await renderBlocks(blocks), false) },
+    });
+  } else {
+    // 初始页两种语言随 index.html 一起下发:首屏不必再取一次,切语言也不必。
+    const initial = blocks.filter((b) => b.id === scan.viewData.report?.initialPageId);
+    files.set("index.html", {
+      path: "index.html",
+      contentType: HTML_TYPE,
+      source: { kind: "lazy", produce: async () => renderHtml(scan, headHtml, await renderBlocks(initial), true) },
+    });
+    for (const block of blocks) {
+      const path = reportBlockPath(block.id, block.locale);
+      files.set(path, {
+        path,
+        contentType: HTML_TYPE,
+        source: { kind: "lazy", produce: () => scan.reportPages.render(block.id, block.locale) },
+      });
+    }
+  }
 
   for (const [base, srcDir] of scan.artifactDirs) {
     for (const name of RAW_COPY_ARTIFACTS) {
@@ -107,7 +165,13 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}): Prom
     }
   }
 
-  return { files, scan };
+  return {
+    files,
+    scan,
+    shellFingerprint: createHash("sha256")
+      .update(JSON.stringify([scan.shellAssets.styles, scan.shellAssets.scripts, headHtml]))
+      .digest("hex"),
+  };
 }
 
 /**
@@ -231,9 +295,14 @@ const TEMPLATE_PLACEHOLDERS = {
   styles: "<!-- __NICEEVAL_STYLES__ -->",
   appCode: "__NICEEVAL_APP_CODE__",
   viewData: "__NICEEVAL_VIEW_DATA_JSON__",
+  liveFlag: "__NICEEVAL_VIEW_LIVE_SCRIPT__",
   reportSlot: "<!-- __NICEEVAL_REPORT_SLOT__ -->",
 } as const;
-const VIEW_RELOAD_SCRIPT = `<script>(function(){try{var s=new EventSource("/__niceeval_reload");s.addEventListener("reload",function(){location.reload()});s.addEventListener("error",function(e){if(!e.data)return;var n=document.getElementById("niceeval-view-error");if(!n){n=document.createElement("pre");n.id="niceeval-view-error";n.style.cssText="position:fixed;z-index:9999;right:12px;bottom:12px;max-width:50vw;margin:0;padding:10px;border:1px solid #A33A30;background:#fff;color:#A33A30;white-space:pre-wrap";document.body.appendChild(n)}n.textContent="View rebuild failed; serving the previous site.\\n"+e.data})}catch(e){}})();</script>`;
+/**
+ * 本地模式的活壳开关。订阅、按需取块与就地换块都由前端应用做(app/main.tsx),这里只立一个
+ * 标记——静态产物不带它,同一份前端产物在导出站里就是一个普通 SPA,不去连不存在的 server。
+ */
+const VIEW_LIVE_FLAG_SCRIPT = `<script>window.__NICEEVAL_VIEW_LIVE__=true;</script>`;
 
 /**
  * 把 viewData(只含原始值与相对路径,不含宿主机绝对路径)和前端产物烘焙进单个 HTML。
@@ -247,7 +316,12 @@ const VIEW_RELOAD_SCRIPT = `<script>(function(){try{var s=new EventSource("/__ni
  * </body> 前,均按声明顺序(docs/feature/reports/library/shell.md)。
  * 前端只把当前页 / 当前界面语言对应的块摆进报告槽位置,不解析。
  */
-export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string> {
+export async function renderHtml(
+  scan: ViewScan,
+  headHtml = "",
+  prebaked?: readonly { id: string; locale: ReportLocale; html: string }[],
+  localHost = false,
+): Promise<string> {
   const template = await readViewAsset("template.html");
   const styles = await readViewAsset("client-dist/app.css");
   const app = await readViewAsset("client-dist/app.js");
@@ -259,11 +333,16 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
   const shellStyles = scan.shellAssets.styles.map((css) => `\n<style>\n${css}\n</style>`).join("");
   const shellScripts = scan.shellAssets.scripts.map((js) => `<script>\n${js}\n</script>\n`).join("");
 
-  const pageTemplates = scan.reportPages
-    .flatMap((page) => [
-      `<template id="niceeval-report-${page.id}-en">${page.html.en}</template>`,
-      `<template id="niceeval-report-${page.id}-zh-CN">${page.html["zh-CN"]}</template>`,
-    ])
+  // 调用方没给预烘清单时(直接调 renderHtml 的场景)按全渲处理,与 `--out` 同义。
+  const blocks =
+    prebaked ??
+    (await Promise.all(
+      scan.reportPages.ids.flatMap((id) =>
+        SITE_LOCALES.map(async (locale) => ({ id, locale, html: await scan.reportPages.render(id, locale) })),
+      ),
+    ));
+  const pageTemplates = blocks
+    .map((block) => `<template id="niceeval-report-${block.id}-${block.locale}">${block.html}</template>`)
     .join("\n");
 
   // 初始 <title> 与 hero 同源:走完回退链的报告标题(viewData.report.title;终点是内置文案
@@ -282,8 +361,9 @@ export async function renderHtml(scan: ViewScan, headHtml = ""): Promise<string>
     )
     .replace(TEMPLATE_PLACEHOLDERS.reportSlot, () => pageTemplates)
     .replace(TEMPLATE_PLACEHOLDERS.viewData, () => JSON.stringify(scan.viewData).replace(/</g, "\\u003c"))
+    .replace(TEMPLATE_PLACEHOLDERS.liveFlag, () => (localHost ? VIEW_LIVE_FLAG_SCRIPT : ""))
     .replace(TEMPLATE_PLACEHOLDERS.appCode, () => JSON.stringify(app).replace(/</g, "\\u003c"))
-    .replace("</body>", () => `${shellScripts}${VIEW_RELOAD_SCRIPT}</body>`);
+    .replace("</body>", () => `${shellScripts}</body>`);
 }
 
 function escapeText(value: string): string {

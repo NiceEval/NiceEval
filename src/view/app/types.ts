@@ -9,5 +9,7 @@ export type Tab = `page:${string}`;
 declare global {
   interface Window {
     __NICEEVAL_VIEW_DATA__?: import("../shared/types.ts").ViewData;
+    /** 本地 server 注入(静态产物没有):页面可以订阅重建事件并就地换块。 */
+    __NICEEVAL_VIEW_LIVE__?: boolean;
   }
 }
