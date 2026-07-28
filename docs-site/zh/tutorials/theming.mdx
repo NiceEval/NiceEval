@@ -158,12 +158,13 @@ import acme from "@acme/niceeval-theme";
 <style dangerouslySetInnerHTML={{ __html: themeStylesheet(acme) }} />;
 ```
 
-反过来也行：不注入主题，在包住 `.nre` 的容器上声明自己产品的 `--nre-*` 令牌，报告组件就长成产品的样子。
+反过来也行：不注入主题，在包住 `.niceeval-report` 的容器上声明自己产品的
+`--niceeval-*` 令牌，报告组件就长成产品的样子。
 
 ## 边界
 
 - 主题只影响网页。`niceeval show --theme …` 会报错并告诉你改用 `view`。
 - 换主题不改数字：主题不参与取数和计算，改颜色不需要重跑评估。
-- 哪个实验恒用哪个颜色槽写在报告的 `seriesPins` 里，不写在主题里——换配色不该让基线和候选方案对调身份（见[自定义报告](/zh/tutorials/custom-reports#钉住某个值的颜色)）。
+- 哪个维度值恒用哪个视觉槽写在报告的 `dimensionPins` 里，不写在主题里——换配色不该让基线和候选方案对调身份（见[自定义报告](/zh/tutorials/custom-reports#钉住某个值的颜色)）。
 - 自己写的组件要按取色纪律写才跟得上主题，写死的颜色值在深色分支会失灵（见[让自己的组件跟随任何主题](/zh/tutorials/custom-reports#让自己的组件跟随任何主题)）。
 - 页头的 NiceEval 标识和品牌行不从 `accent` 取色，主题不是隐藏它们的开关。

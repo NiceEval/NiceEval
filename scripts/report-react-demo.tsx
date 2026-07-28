@@ -1,6 +1,6 @@
 // docs/feature/reports/library.md 场景三(零框架静态导出)的最小演示:
 // 读 → 算 → renderToStaticMarkup,一次成型,零前端框架、零 hydration。
-// 用 src/report/components/fixtures.ts 顶替各组件 .data 计算函数的产物,专看渲染面。
+// 用 src/report/components/fixtures.ts 顶替各 Source 计算产物,专看渲染面。
 //
 //   pnpm exec tsx scripts/report-react-demo.tsx [输出路径.html]
 //
@@ -15,55 +15,52 @@ import { fileURLToPath } from "node:url";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import {
-  AttemptList,
-  DeltaTable,
-  ExperimentList,
-  MetricBars,
-  MetricLine,
-  MetricMatrix,
-  MetricScatter,
-  MetricTable,
-  Scoreboard,
-  ScopeSummary,
-} from "../src/report/react/index.tsx";
+import { Chart, Series, Table } from "../src/report/react/index.tsx";
 import {
   attemptListItems,
-  deltaData,
   experimentListItems,
-  lineData,
   matrixData,
   scatterData,
-  scopeSummaryData,
   scoreboardData,
   tableData,
 } from "../src/report/components/fixtures.ts";
+import {
+  attemptListContent,
+  experimentListContent,
+} from "../src/report/components/entity-lists/content.ts";
+import {
+  metricMatrixContent,
+  scoreboardContent,
+} from "../src/report/components/metric-views/content.ts";
+import { datasetToTableContent, scatterDataToDataset, tableDataToDataset } from "../src/report/model/dataset.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const attemptHref = (locator: string) => `view/#/attempt/${locator}`;
 
+const measureTable = datasetToTableContent(tableDataToDataset(tableData));
+const matrixTable = metricMatrixContent(matrixData);
+const scoreboardTable = scoreboardContent(scoreboardData);
+const chartDataset = scatterDataToDataset(scatterData);
+const attemptTable = attemptListContent(attemptListItems);
+const experimentTable = experimentListContent(experimentListItems);
+
 const page = renderToStaticMarkup(
   <main style={{ maxWidth: "960px", margin: "0 auto", padding: "0 1rem" }}>
-    <h1>niceeval/report/react 官方组件静态演示</h1>
-    <ScopeSummary data={scopeSummaryData} />
-    <h2>MetricTable</h2>
-    <MetricTable data={tableData} attemptHref={attemptHref} />
-    <h2>MetricMatrix</h2>
-    <MetricMatrix data={matrixData} attemptHref={attemptHref} />
-    <h2>MetricBars</h2>
-    <MetricBars data={matrixData} />
-    <h2>MetricLine</h2>
-    <MetricLine data={lineData} />
-    <h2>Scoreboard</h2>
-    <Scoreboard data={scoreboardData} />
-    <h2>MetricScatter</h2>
-    <MetricScatter data={scatterData} pointHref={(row) => `view/#/experiment/${row.key}`} />
-    <h2>DeltaTable</h2>
-    <DeltaTable data={deltaData} />
-    <h2>AttemptList</h2>
-    <AttemptList data={attemptListItems} attemptHref={attemptHref} />
-    <h2>ExperimentList</h2>
-    <ExperimentList data={experimentListItems} filter attemptHref={attemptHref} />
+    <h1>niceeval/report/react 官方原语静态演示</h1>
+    <h2>Table · measure.rows</h2>
+    <Table data={measureTable} attemptHref={attemptHref} />
+    <h2>Table · measure.matrix</h2>
+    <Table data={matrixTable} attemptHref={attemptHref} />
+    <h2>Chart · measure.chart</h2>
+    <Chart data={chartDataset} x="costUSD" y="passRate" legend>
+      <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+    </Chart>
+    <h2>Table · measure.scoreboard</h2>
+    <Table data={scoreboardTable} />
+    <h2>Table · entity.attempts</h2>
+    <Table data={attemptTable} attemptHref={attemptHref} />
+    <h2>Table · entity.experiments</h2>
+    <Table data={experimentTable} filter attemptHref={attemptHref} />
   </main>,
 );
 

@@ -22,6 +22,7 @@ import type {
   ReportMeta,
   ReportPage,
 } from "../../../dist/report/definition/report.js";
+import type { DimensionPins } from "../../../dist/report/presentation.js";
 
 export type { PageContext } from "../../../dist/report/definition/tree.js";
 export type {
@@ -57,6 +58,15 @@ export async function loadHostReport(
   if (configuredReport !== undefined) return configuredReport;
   const { standard } = await import("../../../dist/report/built-in/index.js");
   return standard as ReportDefinition;
+}
+
+/**
+ * `--report` / `--theme` 取值的形态判别:含 `/`、以 `.` 开头或带模块后缀的按文件装载,
+ * 其余是内建名。view 的 watch 闭集按同一条判别决定盯不盯文件,不另写一套字符串规则。
+ */
+export async function isHostModulePath(value: string): Promise<boolean> {
+  const { isExplicitModulePath } = await import("../../../dist/report/runtime/load.js");
+  return isExplicitModulePath(value);
 }
 
 /** ctx.report 的构建(不携带当前页——那是 HostRenderContext.page 的事)。 */
@@ -126,6 +136,8 @@ export interface HostRenderContext {
   results: Record;
   report: ReportMeta;
   page: PageContext;
+  /** 外壳钉色;不进 ReportMeta(Composition 的 ctx.report 读不到),见 shell.md「钉色」。 */
+  dimensionPins?: DimensionPins;
 }
 
 export interface HostTextRenderOptions {
@@ -148,6 +160,24 @@ export async function renderHostPageText(
   return renderReportTreeToText(page.content, ctx, options);
 }
 
+/** 解析一页报告树,产出可复用的 ResolvedPage(同一页只 resolve 一次,再投影多 locale)。 */
+export async function resolveHostPage(
+  tree: import("../../../dist/report/definition/tree.js").ReportNode,
+  ctx: HostRenderContext,
+): Promise<import("../../../dist/report/runtime/resolved-page.js").ResolvedPage> {
+  const { resolvePage } = await import("../../../dist/report/runtime/resolved-page.js");
+  return resolvePage(tree, ctx);
+}
+
+/** 从 ResolvedPage 同步渲染 web 面(静态 HTML);动态 import dist 产物,render 本身无 await。 */
+export async function renderHostPageFromResolved(
+  resolved: import("../../../dist/report/runtime/resolved-page.js").ResolvedPage,
+  options: { locale: string; attemptHref?: (locator: AttemptLocator) => string },
+): Promise<string> {
+  const { renderResolvedPageWeb } = await import("../../../dist/report/runtime/resolved-page.js");
+  return renderResolvedPageWeb(resolved, options);
+}
+
 /**
  * 渲染一页的 web 面(静态 HTML)。attemptHref 缺省时报告有 attempt-input page 就用
  * niceeval/report 的根相对默认值(`attempt/<encodeURIComponent(locator)>.html`,index.html
@@ -159,6 +189,6 @@ export async function renderHostPageHtml(
   ctx: HostRenderContext,
   options: { locale: string; attemptHref?: (locator: AttemptLocator) => string },
 ): Promise<string> {
-  const { renderReportTreeToStaticHtml } = await import("../../../dist/report/runtime/web.js");
-  return renderReportTreeToStaticHtml(page.content, ctx, options);
+  const resolved = await resolveHostPage(page.content, ctx);
+  return renderHostPageFromResolved(resolved, options);
 }

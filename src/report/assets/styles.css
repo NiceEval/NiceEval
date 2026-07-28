@@ -542,6 +542,120 @@ table.nre,
 }
 .nre-powered-by a:hover { color: var(--text); text-decoration: underline; }
 
+/* ---- Callouts(分级提示区:双层 details,不占框) ---- */
+.nre-callouts {
+  margin: 0;
+  font-size: 13px;
+}
+.nre-callouts-root > .nre-callouts-summary {
+  font-weight: 650;
+  cursor: pointer;
+}
+.nre-callouts-summary--error { color: var(--bad); }
+.nre-callouts-summary--warning { color: var(--warn); }
+.nre-callouts-summary--info { color: var(--soft); }
+.nre-callout-groups {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.nre-callout-group + .nre-callout-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.nre-callout-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.nre-callout-head--error .nre-callout-title { color: var(--bad); }
+.nre-callout-head--warning .nre-callout-title { color: var(--warn); }
+.nre-callout-title { font-weight: 650; }
+.nre-callout-badge {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in oklch, var(--warn), var(--line) 35%);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--warn), var(--panel) 84%);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+.nre-callout-details { margin: 4px 0 0; }
+.nre-callout-details > summary {
+  color: var(--soft);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.nre-callout-items {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.nre-callout-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.nre-callout-item + .nre-callout-item { margin-top: 8px; }
+.nre-callout-item--error .nre-callout-message { color: var(--bad); }
+.nre-callout-item--warning .nre-callout-message { color: var(--warn); }
+.nre-callout-nested {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0 0 0 12px;
+}
+.nre-callout-command {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  font-size: 0.92em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+:root.nre-js .nre-callout-command { cursor: copy; }
+
+/* ---- CopyBlock(可折叠复制块:text 面零输出) ---- */
+.nre-copy-block {
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 8px 12px;
+}
+.nre-copy-block > summary {
+  cursor: pointer;
+  font-weight: 620;
+  font-size: 13px;
+}
+.nre-copy-block .nre-copy-block-copy {
+  margin: 8px 0 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+:root.nre-js .nre-copy-block .nre-copy-block-copy { cursor: copy; }
+.nre-copy-block .nre-copy-block-text {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---- CopyFixPrompt(批量修复 prompt:折叠块 + 增强层复制) ---- */
 .nre-copy-fix-prompt {
   margin: 0 0 16px;
@@ -641,6 +755,269 @@ table.nre,
   background: var(--panel);
 }
 
+/* ---- Waterfall 原语(时间树与瀑布) ---- */
+.nre-waterfall .nre-waterfall-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nre-waterfall .nre-waterfall-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: var(--panel);
+}
+.nre-waterfall .nre-waterfall-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75em;
+  align-items: baseline;
+}
+.nre-waterfall .nre-waterfall-label { font-weight: 620; }
+.nre-waterfall .nre-waterfall-duration,
+.nre-waterfall .nre-waterfall-count {
+  color: var(--muted);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+.nre-waterfall .nre-waterfall-failed { color: var(--bad); font-size: 0.9em; }
+.nre-waterfall .nre-waterfall-track {
+  position: relative;
+  height: 14px;
+  margin-top: 8px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--line), var(--panel) 60%);
+  overflow: hidden;
+}
+.nre-waterfall .nre-waterfall-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.nre-waterfall .nre-span-agent { background: color-mix(in oklch, var(--good), var(--line-strong) 40%); }
+.nre-waterfall .nre-span-model { background: color-mix(in oklch, var(--warn), var(--line-strong) 40%); }
+.nre-waterfall .nre-span-tool { background: color-mix(in oklch, var(--line-strong), var(--text) 25%); }
+.nre-waterfall .nre-span-failed { background: var(--bad); }
+.nre-waterfall .nre-waterfall-nodes {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.nre-waterfall .nre-waterfall-node,
+.nre-waterfall .nre-waterfall-node > summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: baseline;
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+.nre-waterfall .nre-waterfall-node--failed { color: var(--bad); }
+.nre-waterfall .nre-waterfall-node-kind {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+.nre-waterfall .nre-waterfall-node-dur {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.nre-waterfall .nre-waterfall-node-children {
+  list-style: none;
+  margin: 4px 0 0 1.25em;
+  padding: 0;
+  border-left: 1px solid var(--line);
+}
+
+/* ---- DiffView 原语(文件清单与可展开 patch) ---- */
+.nre-diff-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.nre-diff-view .nre-diff-group-title {
+  margin: 0 0 8px;
+  color: var(--soft);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.nre-diff-view .nre-diff-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+.nre-diff-view .nre-diff-file {
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.nre-diff-view .nre-diff-file:last-child { border-bottom: 0; }
+.nre-diff-view .nre-diff-file-summary {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) max-content;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.nre-diff-view .nre-diff-file-summary::-webkit-details-marker { display: none; }
+.nre-diff-view .nre-diff-change {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nre-diff-view .nre-diff-generated .nre-diff-change { color: var(--good); }
+.nre-diff-view .nre-diff-modified .nre-diff-change { color: var(--warn); }
+.nre-diff-view .nre-diff-deleted .nre-diff-change { color: var(--bad); }
+.nre-diff-view .nre-diff-path {
+  min-width: 0;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.nre-diff-view .nre-diff-lines {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nre-diff-view .nre-diff-patch {
+  margin: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel), black 4%);
+  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  overflow-x: auto;
+}
+.nre-diff-view .nre-diff-patch-line {
+  display: grid;
+  grid-template-columns: 3.5em 3.5em minmax(0, 1fr);
+  gap: 0 8px;
+  padding: 0 12px;
+  white-space: pre;
+}
+.nre-diff-view .nre-diff-patch-ln {
+  color: var(--soft);
+  text-align: right;
+  user-select: none;
+}
+.nre-diff-view .nre-diff-patch-line--add { background: color-mix(in oklch, var(--good), transparent 88%); }
+.nre-diff-view .nre-diff-patch-line--add .nre-diff-patch-text { color: var(--good); }
+.nre-diff-view .nre-diff-patch-line--remove { background: color-mix(in oklch, var(--bad), transparent 88%); }
+.nre-diff-view .nre-diff-patch-line--remove .nre-diff-patch-text { color: var(--bad); }
+.nre-diff-view .nre-diff-patch-line--meta .nre-diff-patch-text { color: var(--muted); }
+.nre-diff-view .nre-diff-patch-missing {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- Conversation 原语(分轮事件流) ---- */
+.nre-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.nre-conversation .nre-conversation-turn {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 9px;
+  background: var(--panel);
+  padding: 10px 12px;
+}
+.nre-conversation .nre-conversation-turn--passed { border-left-color: var(--good); }
+.nre-conversation .nre-conversation-turn--failed { border-left-color: var(--bad); }
+.nre-conversation .nre-conversation-turn--errored { border-left-color: var(--bad); }
+.nre-conversation .nre-conversation-turn--skipped { border-left-color: var(--warn); }
+.nre-conversation .nre-conversation-turn-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 0.75em;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.nre-conversation .nre-conversation-turn-label {
+  font-weight: 650;
+  font-size: 13px;
+}
+.nre-conversation .nre-conversation-turn-verdict {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.nre-conversation .nre-conversation-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nre-conversation .nre-conversation-entry,
+.nre-conversation .nre-conversation-entry > summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.nre-conversation .nre-conversation-entry--expandable > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.nre-conversation .nre-conversation-entry--expandable > summary::-webkit-details-marker { display: none; }
+.nre-conversation .nre-conversation-entry-kind {
+  color: var(--soft);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nre-conversation .nre-conversation-entry-preview {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.nre-conversation .nre-conversation-entry--failed .nre-conversation-entry-preview { color: var(--bad); }
+.nre-conversation .nre-conversation-entry-detail {
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+.nre-conversation .nre-conversation-failed-command { border-left-color: var(--bad); }
+.nre-conversation .nre-conversation-failed-display {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nre-conversation .nre-conversation-io {
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--panel), black 8%);
+  color: var(--muted);
+  font: 11px/1.45 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---- AttemptList 的过滤框(<AttemptList filter />,渐进增强) ---- */
 .nre-attempt-list > .nre-filter {
   height: 34px;
@@ -707,13 +1084,59 @@ table.nre,
 /* ---- 图表通用:panel 卡片、轴/网格/tooltip ---- */
 .nre-metric-scatter,
 .nre-metric-line,
-.nre-metric-bars {
+.nre-metric-bars,
+.nre-chart {
   position: relative; /* tooltip 的定位根 */
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 14px 16px 8px;
   margin: 1rem 0;
   background: var(--panel);
+}
+.nre-chart .nre-chart-svg {
+  max-width: 880px;
+  width: 100%;
+  height: auto;
+  margin-inline: auto;
+  display: block;
+  overflow: visible;
+}
+.nre .nre-chart-grid line { stroke: var(--line); stroke-width: 1; }
+.nre .nre-chart-tick { fill: var(--muted); font-size: 10px; }
+.nre .nre-chart-xlabel,
+.nre .nre-chart-ylabel { fill: var(--muted); font-size: 12px; }
+.nre .nre-chart-line {
+  stroke: var(--nre-series);
+  stroke-width: 1.5;
+  fill: none;
+}
+.nre .nre-chart-dot {
+  fill: var(--nre-series);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+.nre .nre-chart-point-label { fill: var(--text); font-size: 11px; }
+.nre-chart .nre-chart-legend {
+  display: flex;
+  max-width: 880px;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  color: var(--muted);
+  font-size: 0.85em;
+  margin: 0.5rem auto 0;
+  padding: 0;
+  list-style: none;
+}
+.nre-chart .nre-chart-missing {
+  max-width: 880px;
+  color: var(--warn);
+  font-size: 0.85em;
+  margin: 0.35rem auto 0;
+}
+.nre-chart .nre-chart-empty {
+  color: var(--muted);
+  padding: 1.5rem 0.5rem;
+  text-align: center;
 }
 .nre-metric-scatter .nre-scatter-svg,
 .nre-metric-line .nre-line-svg,
@@ -1493,6 +1916,186 @@ table.nre,
 .nre-attempt-source .tok-kw { color: light-dark(#0b62d6, #569cd6); }
 .nre-attempt-source .tok-num { color: light-dark(#116329, #b5cea8); }
 .nre-attempt-source .tok-fn { color: light-dark(#755f00, #dcdcaa); }
+
+/* SourceView 原语:与 AttemptSource 同视觉语言,独立容器(docs/feature/reports/components/primitives/source-view.md)。 */
+.nre-source-view {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  container-type: inline-size;
+}
+.nre-source-view .nre-source-view-head,
+.nre-source-view .nre-source-view-unmapped-head {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  background: color-mix(in oklch, var(--panel-2), var(--line) 35%);
+}
+.nre-source-view .nre-source-view-block + .nre-source-view-block,
+.nre-source-view .nre-source-view-block + .nre-source-view-unmapped {
+  border-top: 1px solid var(--line);
+}
+.nre-source-view .nre-source-view-lines {
+  overflow-x: auto;
+  padding: 6px 0;
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
+  font: 12.5px/1.65 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  display: grid;
+}
+.nre-source-view .nre-source-view-block-nested .nre-source-view-head {
+  font-size: 11px;
+  font-weight: 550;
+}
+.nre-source-view .nre-source-line { color: var(--text); }
+.nre-source-view .nre-source-line > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.nre-source-view .nre-source-line > summary::-webkit-details-marker { display: none; }
+.nre-source-view .nre-source-line-summary {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 100%;
+  width: max-content;
+  padding: 1px 0;
+}
+.nre-source-view details.nre-source-line > summary:hover {
+  background-image: linear-gradient(
+    color-mix(in oklch, var(--text), transparent 95%),
+    color-mix(in oklch, var(--text), transparent 95%)
+  );
+}
+.nre-source-view .nre-source-ln {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 12px;
+  color: var(--soft);
+  font-size: 11px;
+  user-select: none;
+}
+.nre-source-view .nre-source-ln-mark svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.nre-source-view .nre-source-text {
+  color: var(--text);
+  font: inherit;
+  white-space: pre;
+}
+.nre-source-view .nre-source-line-meta {
+  position: sticky;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+  font: 11px/1.65 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: nowrap;
+}
+.nre-source-view .nre-source-points-pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--text), transparent 90%);
+  font-weight: 650;
+}
+.nre-source-view .nre-source-chevron {
+  color: var(--soft);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.14s ease;
+}
+.nre-source-view details[open] > summary .nre-source-chevron {
+  color: var(--text);
+  transform: rotate(90deg);
+}
+.nre-source-view .nre-source-line-send > summary {
+  background-color: color-mix(in oklch, var(--nre-c0), transparent 92%);
+  box-shadow: inset 2px 0 0 var(--nre-c0);
+}
+.nre-source-view .nre-source-line-send .nre-source-ln { color: var(--nre-c0); }
+.nre-source-view .nre-source-line.nre-tone-good > summary {
+  background-color: color-mix(in oklch, var(--good), transparent 92%);
+  box-shadow: inset 2px 0 0 var(--good);
+}
+.nre-source-view .nre-source-line.nre-tone-good .nre-source-ln { color: var(--good); }
+.nre-source-view .nre-source-line.nre-tone-bad > summary {
+  background-color: color-mix(in oklch, var(--bad), transparent 92%);
+  box-shadow: inset 2px 0 0 var(--bad);
+}
+.nre-source-view .nre-source-line.nre-tone-bad .nre-source-ln { color: var(--bad); }
+.nre-source-view .nre-source-line.nre-tone-warn > summary,
+.nre-source-view .nre-source-line.nre-tone-na > summary {
+  background-color: color-mix(in oklch, var(--warn), transparent 92%);
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+.nre-source-view .nre-source-line.nre-tone-warn .nre-source-ln,
+.nre-source-view .nre-source-line.nre-tone-na .nre-source-ln { color: var(--warn); }
+.nre-source-view .nre-source-line-unreached {
+  opacity: 0.45;
+}
+.nre-source-view .nre-source-line-detail {
+  border-top: 1px dashed var(--line);
+  padding: 8px 12px 10px 44px;
+  background: var(--panel);
+  position: sticky;
+  left: 0;
+  width: 100cqw;
+  max-width: 100cqw;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.nre-source-view .nre-source-line.nre-tone-good > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--good); }
+.nre-source-view .nre-source-line.nre-tone-bad > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--bad); }
+.nre-source-view .nre-source-line.nre-tone-warn > .nre-source-line-detail,
+.nre-source-view .nre-source-line.nre-tone-na > .nre-source-line-detail { box-shadow: inset 2px 0 0 var(--warn); }
+.nre-source-view .nre-source-call > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 4px 12px 4px 44px;
+}
+.nre-source-view .nre-source-call > summary::-webkit-details-marker { display: none; }
+.nre-source-view .nre-source-call-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, currentColor, transparent 86%);
+  font-size: 11px;
+  font-weight: 650;
+}
+.nre-source-view .nre-source-call-body {
+  padding: 6px 0 8px;
+  border-left: 2px solid var(--line-strong);
+  margin-left: 44px;
+}
+.nre-source-view .nre-source-opaque-label {
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+.nre-source-view .nre-source-view-unmapped {
+  padding: 8px 12px 10px;
+  background: color-mix(in oklch, var(--panel-2), var(--panel) 48%);
+}
+.nre-source-view .tok-comment { color: light-dark(#6e7781, #6a9955); font-style: italic; }
+.nre-source-view .tok-str { color: light-dark(#953800, #ce9178); }
+.nre-source-view .tok-kw { color: light-dark(#0b62d6, #569cd6); }
+.nre-source-view .tok-num { color: light-dark(#116329, #b5cea8); }
+.nre-source-view .tok-fn { color: light-dark(#755f00, #dcdcaa); }
 
 /* Fix prompt 与时间树:顶层 details 是完整 panel，嵌套 details 只负责层级。 */
 .nre-attempt-fix-prompt,

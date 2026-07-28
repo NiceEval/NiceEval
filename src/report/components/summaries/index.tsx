@@ -1,99 +1,101 @@
-// 官方双面组件的装配点:web 面(./ScopeSummary.tsx 的纯 React 组件)+ text 面(./faces.ts)
-// + resolve 解析面(spec 形态由管线代调配套 ./compute.ts)。ScopeSummary 与 ExperimentComparison
-// 同属汇总族——前者是范围摘要卡,后者是内建报告默认使用的组合件(装配 ScopeSummary +
-// MetricScatter + ExperimentList,不产生自己的 data)。
+// 概览组合件:SampleSummary / SampleOverview 用 defineComposition + 原语 + sources。
 
-import { defineComponent, type ReportComponent } from "../../definition/tree.ts";
-import { Col } from "../../definition/primitives.tsx";
-import type { ReportInput, SampleSummaryContent, SeriesInput } from "../../model/types.ts";
 import type { Sample, Run } from "../../../record/types.ts";
+import { defineComposition } from "../../source.ts";
+import { Chart, Col, Grid, Series, Stat, Table, Text } from "../../definition/primitives.tsx";
+import type { Measure, SeriesInput, VerdictTally } from "../../model/types.ts";
 import { resolveInput, seriesName } from "../../model/aggregate.ts";
 import { label } from "../../model/flag.ts";
 import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
 import { scoringComposition } from "../../model/scoring.ts";
-import {
-  cellProblem,
-  isObject,
-  makeDataComponent,
-  tallyProblem,
-  type ChromeProps,
-  type DataProps,
-  type Validator,
-} from "../shared.ts";
-import { sampleSummary } from "./compute.ts";
-import { scopeSummaryText } from "./faces.ts";
-import { SampleSummary as SampleSummaryWeb } from "./ScopeSummary.tsx";
-import { MetricScatter } from "../metric-views/index.tsx";
-import { ExperimentList } from "../entity-lists/index.tsx";
+import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
+import { formatReportDateTime, formatReportDateTimeRange } from "../../model/format.ts";
+import type { ChromeProps } from "../shared.ts";
+import { sources } from "../../sources.ts";
 
-export const validateSampleSummaryContent: Validator = (data) => {
-  if (!isObject(data)) return "expected an object";
-  if (!isObject(data.range)) return 'missing "range" ({ earliestStartedAt, latestStartedAt })';
-  if (!(data.range.earliestStartedAt === null || typeof data.range.earliestStartedAt === "string")) {
-    return '"range.earliestStartedAt" must be a string or null';
-  }
-  if (!(data.range.latestStartedAt === null || typeof data.range.latestStartedAt === "string")) {
-    return '"range.latestStartedAt" must be a string or null';
-  }
-  if (typeof data.experiments !== "number") return '"experiments" must be a number';
-  if (typeof data.evals !== "number") return '"evals" must be a number';
-  if (typeof data.attempts !== "number") return '"attempts" must be a number';
-  const evalVerdictsProblem = tallyProblem(data.evalVerdicts, "evalVerdicts");
-  if (evalVerdictsProblem !== null) return evalVerdictsProblem;
-  const attemptVerdictsProblem = tallyProblem(data.attemptVerdicts, "attemptVerdicts");
-  if (attemptVerdictsProblem !== null) return attemptVerdictsProblem;
-  const passRateProblem = cellProblem(data.endToEndPassRate, "endToEndPassRate");
-  if (passRateProblem !== null) return passRateProblem;
-  return cellProblem(data.totalCostUSD, "totalCostUSD");
+export { validateSampleSummaryContent } from "./validate.ts";
+
+function formatVerdictTally(tally: VerdictTally, locale: ReportLocale): string {
+  const kinds = (["passed", "failed", "errored", "unreadable"] as const).filter((k) => tally[k] > 0);
+  if (kinds.length === 0) return "—";
+  return kinds.map((k) => `${tally[k]} ${localeText(locale, `verdict.${k}`)}`).join(" · ");
+}
+
+export type SampleSummaryProps = ChromeProps & {
+  input?: Sample;
+  votes?: "eval" | "attempt";
 };
 
-// ───────────────────────── 概览组件 ─────────────────────────
+export const SampleSummary = defineComposition<SampleSummaryProps, Sample>(async (props, ctx) => {
+  const input: Sample = props.input ?? ctx.input;
+  const snapshot = await ctx.resolve(sources.sample.snapshot, input);
+  const locale = props.locale ?? DEFAULT_REPORT_LOCALE;
+  const votes = props.votes ?? "eval";
+  const tally = votes === "attempt" ? snapshot.attemptVerdicts : snapshot.evalVerdicts;
+  const formattedRange =
+    snapshot.range.earliestStartedAt !== null && snapshot.range.latestStartedAt !== null
+      ? formatReportDateTimeRange(snapshot.range.earliestStartedAt, snapshot.range.latestStartedAt, locale)
+      : null;
 
-export type SampleSummaryProps = DataProps<
-  SampleSummaryContent,
-  globalThis.Record<never, never>,
-  ChromeProps & {
-    /** 显示哪一级计票;默认 "eval"。data 恒携带两级,votes 只选择呈现。 */
-    votes?: "eval" | "attempt";
-  }
->;
-
-/** 范围摘要卡:时间窗、数量、两级计票、端到端通过率与总成本。 */
-export const SampleSummary = makeDataComponent<
-  SampleSummaryContent,
-  globalThis.Record<never, never>,
-  ChromeProps & { votes?: "eval" | "attempt" }
->({
-  name: "SampleSummary",
-  dataFnName: "sampleSummary",
-  shapeName: "SampleSummaryContent",
-  dataFn: (input) => sampleSummary(input),
-  specKeys: [],
-  validate: validateSampleSummaryContent,
-  web: (props, ctx) => <SampleSummaryWeb {...props} locale={props.locale ?? ctx.locale} />,
-  text: (props, ctx) => scopeSummaryText(props.data, props.votes ?? "eval", ctx),
-}) as unknown as ReportComponent<SampleSummaryProps>;
+  return (
+    <Col className={props.className}>
+      <Grid columns={3}>
+        {snapshot.scoringComposition !== "points" ? (
+          <Stat label={localeText(locale, "scopeSummary.passRate")} value={{ kind: "measure", measure: snapshot.endToEndPassRate }} />
+        ) : null}
+        {snapshot.totalScore !== undefined ? (
+          <Stat label={localeText(locale, "scopeSummary.totalScore")} value={{ kind: "measure", measure: snapshot.totalScore }} />
+        ) : null}
+        <Stat label={localeText(locale, "scopeSummary.experiments")} value={snapshot.experiments} />
+        <Stat label={localeText(locale, "scopeSummary.evals")} value={snapshot.evals} />
+        <Stat label={localeText(locale, "scopeSummary.attempts")} value={snapshot.attempts} />
+        <Stat
+          label={localeText(locale, votes === "attempt" ? "scopeSummary.votesAttempt" : "scopeSummary.votesEval")}
+          value={formatVerdictTally(tally, locale)}
+        />
+        <Stat
+          label={localeText(locale, "scopeSummary.totalCost")}
+          value={{ kind: "measure", measure: snapshot.totalCostUSD }}
+          detail={
+            snapshot.totalCostUSD.samples < snapshot.totalCostUSD.total
+              ? localeText(locale, "scopeSummary.costCoverage", {
+                  samples: snapshot.totalCostUSD.samples,
+                  total: snapshot.totalCostUSD.total,
+                })
+              : undefined
+          }
+        />
+      </Grid>
+      {snapshot.range.latestStartedAt !== null ? (
+        <Text>
+          {snapshot.range.earliestStartedAt !== null && snapshot.range.earliestStartedAt !== snapshot.range.latestStartedAt
+            ? localeText(locale, "scopeSummary.runRange", {
+                from: formattedRange!.from,
+                to: formattedRange!.to,
+              })
+            : localeText(locale, "scopeSummary.lastRun", {
+                time: formatReportDateTime(snapshot.range.latestStartedAt, locale),
+              })}
+        </Text>
+      ) : null}
+    </Col>
+  );
+});
+SampleSummary.displayName = "SampleSummary";
 
 type ComparisonChrome = ChromeProps & {
-  /** 透传给散点;缺省跟随缺省 series 解析——按 line 归类时连线(声明了线就画线)。 */
   connect?: boolean;
 };
 
 export type SampleOverviewProps = ComparisonChrome & {
-  input?: ReportInput;
-  /** 散点的 series 维度。缺省解析:Sample 内任一实验声明了 label `line` → `label("line")` 并连线;否则 `"agent"`、不连线。 */
+  input?: Sample;
   series?: SeriesInput;
 };
 
-/** 默认报告识别的归类键:声明了它的实验按线归类并连线(docs/feature/experiments/library.md「labels」)。 */
 const LINE_LABEL_KEY = "line";
 
-/**
- * 缺省 series:Sample 内任一快照声明了 labels.line 用 line 维度,否则 agent;显式传入覆盖。
- * connect 缺省跟随最终 series 是否解析为 line(即便是显式传入的)。
- */
 function resolveComparisonSeries(
-  input: ReportInput,
+  input: Sample,
   props: { series?: SeriesInput; connect?: boolean },
 ): { series: SeriesInput; connect: boolean } {
   const hasLine = resolveInput(input).runs.some((s) => s.experiment?.labels?.[LINE_LABEL_KEY] !== undefined);
@@ -101,36 +103,35 @@ function resolveComparisonSeries(
   return { series, connect: props.connect ?? seriesName(series) === LINE_LABEL_KEY };
 }
 
-/**
- * 单个快照的题型:题型只在单个 experiment 内被强制统一,任一 attempt 就能代表整个快照;
- * 零 attempt 的快照(或没有一个是 "points" 的)记 "pass",与「省略即通过制」的定义期默认一致。
- */
 function snapshotScoring(run: Run): "pass" | "points" {
   return run.attempts.some((a) => a.result.scoring === "points") ? "points" : "pass";
 }
 
-/**
- * 按快照谓词筛 input,产出与原 input 同一"形状族"的 ReportInput:Sample 走它自己的
- * filter(runs/attempts/coverage/issues 一并同步收窄),裸 Run[] 走
- * Array.prototype.filter——两条分支的结果都可以原样喂给 MetricScatter / ExperimentList。
- */
-function filterInputBySnapshot(input: ReportInput, predicate: (run: Run) => boolean): ReportInput {
-  if (Array.isArray(input)) return (input as readonly Run[]).filter(predicate);
-  const scope = input as Sample;
-  return scope.filter((attempt) => predicate(attempt.run));
+function filterInputBySnapshot(input: Sample, predicate: (run: Run) => boolean): Sample {
+  return input.filter((attempt) => predicate(attempt.run));
 }
 
-/**
- * 内建报告的默认组合件:把同一个 input(缺省 ctx.scope)原样透传给 ScopeSummary、
- * 成本 × 主读数的 MetricScatter 与 ExperimentList——组合本身不二次计算或过滤,
- * 也不导出自己的 data 形态;每个叶子组件按自己的公开契约取数,共享计算由 resolve 的
- * 「同引用 input + 深相等 spec」记忆化保证。主读数按 scoringComposition(input) 切换:
- * "pass" 用 endToEndPassRate、"points" 用 totalScore;"mixed" 按题型把 input 拆成两个
- * 子 Sample,散点与 ExperimentList 每组各一份、各用各的主读数,ScopeSummary 始终是整个
- * input 一份(docs/feature/reports/components/summaries/sample-overview.md)。
- */
-export const SampleOverview = defineComponent<SampleOverviewProps>(async (props, ctx) => {
-  const input = props.input ?? ctx.scope;
+function comparisonChart(
+  input: Sample,
+  options: { series: SeriesInput; connect: boolean; y: Measure; locale?: ReportLocale; className?: string },
+) {
+  const by = seriesName(options.series);
+  return (
+    <Chart
+      input={input}
+      source={sources.measure.chart({ points: "experiment", series: options.series, x: costUSD, y: options.y })}
+      x={costUSD.name}
+      y={options.y.name}
+      locale={options.locale}
+      className={options.className}
+    >
+      <Series id="comparison" mark="scatter" points="experiment" by={by} connect={options.connect} />
+    </Chart>
+  );
+}
+
+export const SampleOverview = defineComposition<SampleOverviewProps, Sample>(async (props, ctx) => {
+  const input: Sample = props.input ?? ctx.input;
   const { series, connect } = resolveComparisonSeries(input, props);
   const composition = await scoringComposition(input);
 
@@ -139,59 +140,26 @@ export const SampleOverview = defineComponent<SampleOverviewProps>(async (props,
     return (
       <Col className={props.className}>
         <SampleSummary input={input} locale={props.locale} />
-        <MetricScatter
-          input={input}
-          points="experiment"
-          series={series}
-          connect={connect}
-          x={costUSD}
-          y={primary}
-          locale={props.locale}
-        />
-        <ExperimentList input={input} filter locale={props.locale} />
+        {comparisonChart(input, { series, connect, y: primary, locale: props.locale })}
+        <Table input={input} source={sources.entity.experiments} filter locale={props.locale} />
       </Col>
     );
   }
 
-  // mixed:按题型拆成两个子 Sample,散点 + ExperimentList 各一份、各用各的主读数;
-  // series/connect 只从整个 input 解析一次,题型拆分与 series 归类正交,两组共用。
   const passInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "pass");
   const pointsInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "points");
   return (
     <Col className={props.className}>
       <SampleSummary input={input} locale={props.locale} />
       <Col>
-        <MetricScatter
-          input={passInput}
-          points="experiment"
-          series={series}
-          connect={connect}
-          x={costUSD}
-          y={passRate}
-          locale={props.locale}
-        />
-        <ExperimentList input={passInput} filter locale={props.locale} />
+        {comparisonChart(passInput, { series, connect, y: passRate, locale: props.locale })}
+        <Table input={passInput} source={sources.entity.experiments} filter locale={props.locale} />
       </Col>
       <Col>
-        <MetricScatter
-          input={pointsInput}
-          points="experiment"
-          series={series}
-          connect={connect}
-          x={costUSD}
-          y={totalScore}
-          locale={props.locale}
-        />
-        <ExperimentList input={pointsInput} filter locale={props.locale} />
+        {comparisonChart(pointsInput, { series, connect, y: totalScore, locale: props.locale })}
+        <Table input={pointsInput} source={sources.entity.experiments} filter locale={props.locale} />
       </Col>
     </Col>
   );
 });
 SampleOverview.displayName = "SampleOverview";
-
-/** @internal 供仓库内尚未迁移的测试过渡；不从 niceeval/report 导出。 */
-export const ScopeSummary = SampleSummary;
-/** @internal */
-export const ExperimentComparison = SampleOverview;
-/** @internal */
-export const validateScopeSummaryData = validateSampleSummaryContent;

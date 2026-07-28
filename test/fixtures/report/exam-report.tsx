@@ -6,11 +6,12 @@
 // 不读 Scope、不聚合 Metric,证明它们能与数据组件在同一棵树里共存。
 
 import {
-  ExperimentList,
   defineComposition,
   defineReport,
+  sources,
+  Table,
 } from "niceeval/report";
 
-const ExamReport = defineComposition(() => <ExperimentList />);
+const ExamReport = defineComposition(() => <Table source={sources.entity.experiments} />);
 
 export default defineReport(<ExamReport />);

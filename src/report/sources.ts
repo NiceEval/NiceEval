@@ -13,23 +13,47 @@ import {
   attemptTraceData,
   usageTableData,
 } from "./components/attempt-detail/compute.ts";
+import {
+  attemptAssertionsContent,
+  attemptConversationContent,
+  attemptDiagnosticsContent,
+  attemptDiffContent,
+  attemptFixPromptContent,
+  attemptNoticesContent,
+  attemptSourceContent,
+  attemptTimelineContent,
+  attemptTraceContent,
+} from "./components/attempt-detail/content.tsx";
 import { attemptListData, evalListData, experimentListData } from "./components/entity-lists/compute.ts";
 import {
+  attemptListContent,
+  evalListContent,
+  experimentListContent,
+} from "./components/entity-lists/content.ts";
+import {
   deltaTableData,
+  measureRowsData,
   metricMatrixData,
   metricScatterData,
-  metricTableData,
   scoreboardData,
   stabilityMatrixData,
 } from "./components/metric-views/compute.ts";
-import { sampleSummary } from "./components/summaries/compute.ts";
 import {
-  copyFixPromptData,
-  scopeWarningsData,
-  snapshotDiagnosticsData,
-  traceWaterfallData,
-} from "./components/site-components/compute.ts";
+  deltaTableContent,
+  metricMatrixContent,
+  scoreboardContent,
+  stabilityMatrixContent,
+} from "./components/metric-views/content.ts";
+import { sampleSummary } from "./components/summaries/compute.ts";
+import { heroData } from "./components/site-components/compute.ts";
+import {
+  runNoticesContent,
+  sampleFixPromptContent,
+  sampleNoticesContent,
+  sampleTracesContent,
+} from "./components/site-components/projections.ts";
 import { defineSource, type Source } from "./source.ts";
+import { scatterDataToDataset } from "./model/dataset.ts";
 
 function sampleSource<Content>(name: string, compute: (sample: Sample) => Content | Promise<Content>): Source<Sample, Content> {
   return defineSource({ name, compute: async (sample) => compute(sample) });
@@ -45,44 +69,48 @@ function attemptSource<Content>(
 /** 官方查询层。工厂每次调用生成一个独立 Source，因而缓存边界完全由对象身份决定。 */
 export const sources = {
   entity: {
-    experiments: sampleSource("entity.experiments", experimentListData),
-    evals: sampleSource("entity.evals", evalListData),
-    attempts: sampleSource("entity.attempts", attemptListData),
+    experiments: sampleSource("entity.experiments", async (sample) => experimentListContent(await experimentListData(sample))),
+    evals: sampleSource("entity.evals", async (sample) => evalListContent(await evalListData(sample))),
+    attempts: sampleSource("entity.attempts", async (sample) => attemptListContent(await attemptListData(sample))),
   },
   measure: {
-    rows: (options: Parameters<typeof metricTableData>[1]) =>
-      sampleSource("measure.rows", (sample) => metricTableData(sample, options)),
+    rows: (options: Parameters<typeof measureRowsData>[1]) =>
+      sampleSource("measure.rows", (sample) => measureRowsData(sample, options)),
     matrix: (options: Parameters<typeof metricMatrixData>[1]) =>
-      sampleSource("measure.matrix", (sample) => metricMatrixData(sample, options)),
+      sampleSource("measure.matrix", async (sample) => metricMatrixContent(await metricMatrixData(sample, options))),
     scoreboard: (options: Parameters<typeof scoreboardData>[1]) =>
-      sampleSource("measure.scoreboard", (sample) => scoreboardData(sample, options)),
+      sampleSource("measure.scoreboard", async (sample) => scoreboardContent(await scoreboardData(sample, options))),
     delta: (options: Parameters<typeof deltaTableData>[1]) =>
-      sampleSource("measure.delta", (sample) => deltaTableData(sample, options)),
+      sampleSource("measure.delta", async (sample) => deltaTableContent(await deltaTableData(sample, options))),
     stability: (options: Parameters<typeof stabilityMatrixData>[1]) =>
-      sampleSource("measure.stability", (sample) => stabilityMatrixData(sample, options)),
+      sampleSource("measure.stability", async (sample) => stabilityMatrixContent(await stabilityMatrixData(sample, options))),
     chart: (options: Parameters<typeof metricScatterData>[1]) =>
-      sampleSource("measure.chart", (sample) => metricScatterData(sample, options)),
+      sampleSource("measure.chart", async (sample) => scatterDataToDataset(await metricScatterData(sample, options))),
   },
   sample: {
     snapshot: sampleSource("sample.snapshot", sampleSummary),
-    traces: sampleSource("sample.traces", traceWaterfallData),
-    notices: sampleSource("sample.notices", scopeWarningsData),
-    fixPrompt: sampleSource("sample.fixPrompt", copyFixPromptData),
+    traces: sampleSource("sample.traces", sampleTracesContent),
+    notices: sampleSource("sample.notices", sampleNoticesContent),
+    fixPrompt: sampleSource("sample.fixPrompt", sampleFixPromptContent),
+  },
+  site: {
+    hero: sampleSource("site.hero", heroData),
   },
   run: {
-    diagnostics: sampleSource("run.diagnostics", snapshotDiagnosticsData),
+    diagnostics: sampleSource("run.diagnostics", runNoticesContent),
   },
   attempt: {
     snapshot: attemptSource("attempt.snapshot", attemptSummaryData),
-    diagnostics: attemptSource("attempt.diagnostics", attemptDiagnosticsData),
-    assertions: attemptSource("attempt.assertions", attemptAssertionsData),
-    source: attemptSource("attempt.source", attemptSourceData),
-    conversation: attemptSource("attempt.conversation", attemptConversationData),
-    timeline: attemptSource("attempt.timeline", attemptTimelineData),
-    trace: attemptSource("attempt.trace", attemptTraceData),
-    diff: attemptSource("attempt.diff", attemptDiffData),
+    diagnostics: attemptSource("attempt.diagnostics", (e) => attemptDiagnosticsContent(attemptDiagnosticsData(e)) ?? []),
+    assertions: attemptSource("attempt.assertions", (e) => attemptAssertionsContent(attemptAssertionsData(e))),
+    source: attemptSource("attempt.source", (e) => attemptSourceContent(attemptSourceData(e))),
+    conversation: attemptSource("attempt.conversation", (e) => attemptConversationContent(attemptConversationData(e))),
+    timeline: attemptSource("attempt.timeline", (e) => attemptTimelineContent(attemptTimelineData(e))),
+    trace: attemptSource("attempt.trace", (e) => attemptTraceContent(attemptTraceData(e))),
+    diff: attemptSource("attempt.diff", (e) => attemptDiffContent(attemptDiffData(e))),
     error: attemptSource("attempt.error", attemptErrorData),
-    fixPrompt: attemptSource("attempt.fixPrompt", attemptFixPromptData),
+    fixPrompt: attemptSource("attempt.fixPrompt", (e) => attemptFixPromptContent(attemptFixPromptData(e))),
     usage: attemptSource("attempt.usage", usageTableData),
+    notices: attemptSource("attempt.notices", (e) => attemptNoticesContent(attemptErrorData(e), attemptDiagnosticsData(e)) ?? []),
   },
 } as const;

@@ -8,30 +8,28 @@
 //   - 渐进增强脚本 ./enhance.js 可选加载,初始静态 HTML 无 JS 完整可读;
 //   - 跨块配色一致:维度键 → 稳定散列 → 固定调色板下标(../assets/colors.ts)。
 
-export { Col, Grid, Row, Section, Stat, Style, Tab, Table, Tabs, Text } from "../definition/primitives.tsx";
-export { SampleSummary } from "../components/summaries/ScopeSummary.tsx";
-
-// 站点组件的纯 web 面(data 形态;Hero 是组合组件,只住 niceeval/report)
+export {
+  Callouts,
+  Chart,
+  Col,
+  Conversation,
+  CopyBlock,
+  DiffView,
+  Grid,
+  Row,
+  Section,
+  Series,
+  SourceView,
+  Stat,
+  Style,
+  Tab,
+  Table,
+  Tabs,
+  Text,
+  Waterfall,
+} from "../definition/primitives.tsx";
 export { HeroCard } from "../components/site-components/HeroCard.tsx";
 export { PoweredBy } from "../components/site-components/PoweredBy.tsx";
-export { ScopeWarnings } from "../components/site-components/ScopeWarnings.tsx";
-export { SnapshotDiagnostics } from "../components/site-components/SnapshotDiagnostics.tsx";
-export { CopyFixPrompt } from "../components/site-components/CopyFixPrompt.tsx";
-export { TraceWaterfall } from "../components/site-components/TraceWaterfall.tsx";
-
-// Attempt 详情组件族的纯 web 面(data 形态;AttemptAssessment / AttemptDetail 是组合组件,
-// 不产生新渲染面,只住 niceeval/report)
-export { AttemptSummary } from "../components/attempt-detail/AttemptSummary.tsx";
-export { AttemptError } from "../components/attempt-detail/AttemptError.tsx";
-export { AttemptAssertions } from "../components/attempt-detail/AttemptAssertions.tsx";
-export { AttemptSource } from "../components/attempt-detail/AttemptSource.tsx";
-export { AttemptFixPrompt } from "../components/attempt-detail/AttemptFixPrompt.tsx";
-export { AttemptTimeline } from "../components/attempt-detail/AttemptTimeline.tsx";
-export { AttemptConversation } from "../components/attempt-detail/AttemptConversation.tsx";
-export { AttemptDiagnostics } from "../components/attempt-detail/AttemptDiagnostics.tsx";
-export { UsageTable } from "../components/attempt-detail/UsageTable.tsx";
-export { AttemptTrace } from "../components/attempt-detail/AttemptTrace.tsx";
-export { AttemptDiff } from "../components/attempt-detail/AttemptDiff.tsx";
 
 // 数据契约类型(家在 ../model/types.ts,「算」与「画」两侧共用同一份)
 export type {
@@ -53,20 +51,22 @@ export type {
   AttemptTimelineData,
   AttemptTraceData,
   CopyFixPromptData,
-  DeltaData,
+  Dataset,
+  DatasetField,
+  DatasetRow,
   EvalListItem,
   ExperimentListEvalRow,
   ExperimentListItem,
   HeroData,
   LineData,
   MatrixData,
-  ScatterData,
   MeasureCell,
   MeasureColumn,
   MeasureRowsContent,
   SampleSummaryContent,
   SampleIssue,
   ScoreboardData,
+  ScatterData,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
   StabilityMatrixCell,
@@ -77,6 +77,7 @@ export type {
   UsageTableData,
   VerdictTally,
 } from "../model/types.ts";
+export type { Cell, ColumnSpec, TableContent, TableContentRow, VerdictCounts } from "../definition/cell.ts";
 export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 
 // locale(官方组件 chrome 文案的语言;LocalizedText 的按 locale 解析也用它)

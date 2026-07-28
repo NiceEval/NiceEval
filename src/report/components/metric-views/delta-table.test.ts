@@ -10,7 +10,7 @@ import type { EvalResult, ScoreEntry, Usage, Verdict } from "../../../types.ts";
 import type { AttemptHandle, Run } from "../../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "../scope.harness.ts";
 import { conditionsByFlag, deltaTableData } from "./compute.ts";
-import { validateDeltaData } from "./index.tsx";
+import { validateDeltaData } from "./validate.ts";
 
 let seq = 0;
 function res(id: string, verdict: Verdict, extra: Partial<EvalResult> = {}): EvalResult {

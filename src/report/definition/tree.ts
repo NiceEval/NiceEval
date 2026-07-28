@@ -4,8 +4,9 @@
 // 报告函数返回的树不是「React 树」,只是 { type, props } 节点 —— 标准 react
 // jsx-runtime 产的元素恰好就是这个形状。本文件是基础实现:零 react 运行时依赖
 // (只有类型层的 `import type`,编译后擦除);text 宿主遍历渲染不需要 react-dom,
-// web 宿主(web.ts)才真正 import react。管线固定为 装载 → resolve(组合展开 + spec 取数,
-// 同层并行保声明序,按「同引用 input + 深相等 spec」记忆化)→ validate(两面资格)→
+// web 宿主(web.ts)才真正 import react。管线固定为 装载 → resolve(Composition 展开 →
+// source 取数 → spec 取数,同层并行保声明序;Source 按「对象身份 × input 身份」缓存 Promise,
+// spec 按「同引用 input + 深相等 spec」记忆化)→ validate(两面资格)→
 // render(纯同步)。渲染面是纯同步函数:零 IO、零 await —— 可达百 MB 的 artifact
 // 只在 resolve 阶段被懒加载,永远不进渲染路径。
 
@@ -17,6 +18,15 @@ import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 import type { ReportInput } from "../model/types.ts";
 import type { ReportMeta } from "./report.ts";
 import type { PanelMode, PanelRow } from "../model/panel.ts";
+import {
+  allocatePageDimensions,
+  UndeclaredDimensionValueError,
+  type DimensionDeclaration,
+  type DimensionDeclarations,
+  type DimensionPins,
+  type PageDimensionHandle,
+  type PresentedDimension,
+} from "../presentation.ts";
 import {
   COMPOSITION_EXPAND,
   type Composition,
@@ -122,6 +132,12 @@ export interface TextContext {
   sectionBoxedDepth: number;
   /** boxed 嵌套 Section 向最近外层 Section 登记结构化横隔的带外渲染期通道。 */
   collectPanelRow?(row: PanelRow): void;
+  /**
+   * 取本组件 `dimensions()` 声明的某个句柄在这一页的呈现面。text 面恒返回 label 面
+   * (没有颜色 / 线型 / pattern);查别的组件的句柄或没声明的句柄抛
+   * `UndeclaredDimensionValueError`(components/README.md「维度呈现:分配单位是页」)。
+   */
+  dimension(handle: string): PresentedDimension;
 }
 
 export interface WebContext {
@@ -133,6 +149,11 @@ export interface WebContext {
   attemptHref?(locator: AttemptLocator): string;
   /** chrome 文案的 locale;官方组件渲染面经上下文读取,宿主外默认 "en"。 */
   locale: ReportLocale;
+  /**
+   * 取本组件 `dimensions()` 声明的某个句柄在这一页的呈现面(含 `seriesSlot` / 色板下标 /
+   * 形状变体)。查别的组件的句柄或没声明的句柄抛 `UndeclaredDimensionValueError`。
+   */
+  dimension(handle: string): PresentedDimension;
 }
 
 /** 双面组件解析面的上下文:宿主注入的数据来源;props 显式给出 input 时以 props 为准。 */
@@ -161,6 +182,13 @@ export interface ComponentFaces<P, R = P> {
    * 渲染面(web / text)只看已解析的 R,保持同步、零 IO。不实现 resolve 时 R = P。
    */
   resolve?(props: P, context: ResolveContext): R | Promise<R>;
+  /**
+   * 声明这份数据会消费哪些维度值以及用哪种编码,在页级呈现分配之前调用;不是渲染面,
+   * 不返回标签或颜色,也不改变数据。对象形态定义时必填——不消费任何维度的组件显式写
+   * `dimensions: () => ({})`,让「参不参与页级身份分配」由声明回答而不是由省略表达。
+   * 类型上可选只是为了让运行期的完整用户反馈接住无类型 JS 输入。
+   */
+  dimensions?(data: R, options: P): DimensionDeclarations;
   /** 真 React JSX 在这个面里;返回静态可渲染的 ReactNode。只看已解析的 R。 */
   web(props: R, ctx: WebContext): ReactNode;
   text(props: R, ctx: TextContext): string;
@@ -180,11 +208,167 @@ export type ReportComponent<P> = ((props: P) => ReactNode) & {
   displayName?: string;
 };
 
+// ───────────────────────── 页级呈现分配的绑定 ─────────────────────────
+
+/**
+ * 一页的呈现分配结果对渲染面的投影:组件按**自己的 props 身份**取自己声明的句柄。
+ * 键是 props 对象身份而不是句柄名——句柄名只在组件内唯一,页级汇总里必然重名,
+ * 按名查会让 A 组件读到 B 组件的声明,查询封闭性就没了。
+ */
+export interface PageDimensions {
+  dimension(props: object, handle: string): PresentedDimension;
+}
+
+/** 渲染上下文上挂当前页分配结果的内部键;不是契约字段,只在宿主与渲染遍历之间传递。 */
+const PAGE_DIMENSIONS: unique symbol = Symbol.for("niceeval.report.pageDimensions");
+
+/** 宿主渲染前把这一页的分配结果挂到渲染上下文上(text 与 web 同一条通道)。 */
+export function withPageDimensions<C extends object>(ctx: C, plan: PageDimensions | undefined): C {
+  if (plan === undefined) return ctx;
+  Object.defineProperty(ctx, PAGE_DIMENSIONS, { value: plan, enumerable: false, configurable: true });
+  return ctx;
+}
+
+function pageDimensionsOf(ctx: object): PageDimensions | undefined {
+  return (ctx as globalThis.Record<symbol, unknown>)[PAGE_DIMENSIONS] as PageDimensions | undefined;
+}
+
+function noPlanError(handle: string): UndeclaredDimensionValueError {
+  return new UndeclaredDimensionValueError(
+    `ctx.dimension(${JSON.stringify(handle)}) has no page dimension plan: this component is rendering outside the report pipeline. ` +
+      "Render through niceeval show / view (or renderReportToText / renderReportToStaticHtml), " +
+      "or call presentDimension(declaration) from niceeval/report for a standalone React page.",
+    handle,
+  );
+}
+
+/**
+ * 渲染面拿到的 ctx 是「当前节点自己的」:同一份基底加一个绑到本节点 props 的 `dimension`。
+ * 复制属性描述符而不是原型委托,组件对 ctx 做展开时不会丢字段;访问器(text 面的
+ * sectionBoxedDepth / collectPanelRow)按描述符复制后仍指向同一份渲染期状态。
+ */
+function bindNodeDimensions<C extends object>(ctx: C, props: object): C {
+  const plan = pageDimensionsOf(ctx);
+  const bound = Object.create(Object.getPrototypeOf(ctx), Object.getOwnPropertyDescriptors(ctx)) as C;
+  Object.defineProperty(bound, "dimension", {
+    value: (handle: string): PresentedDimension => {
+      if (plan === undefined) throw noPlanError(handle);
+      return plan.dimension(props, handle);
+    },
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+  return withPageDimensions(bound, plan);
+}
+
+function assertDeclarations(label: string, declared: unknown): DimensionDeclarations {
+  if (typeof declared !== "object" || declared === null || Array.isArray(declared)) {
+    throw new Error(
+      `${label} dimensions() must return a { [handle]: { dimension, encoding, values } } record; got ${
+        Array.isArray(declared) ? "an array" : String(declared)
+      }. A component that consumes no dimension returns an empty object: dimensions: () => ({}).`,
+    );
+  }
+  for (const [handle, declaration] of Object.entries(declared as globalThis.Record<string, unknown>)) {
+    const entry = declaration as Partial<DimensionDeclaration> | null;
+    if (typeof entry !== "object" || entry === null) {
+      throw new Error(`${label} dimensions().${handle} must be a { dimension, encoding, values } declaration.`);
+    }
+    if (typeof entry.dimension !== "string" || entry.dimension.length === 0) {
+      throw new Error(
+        `${label} dimensions().${handle}.dimension must be a non-empty dimension name (the page-level keyset key, e.g. "agent").`,
+      );
+    }
+    const kind = (entry.encoding as { kind?: unknown } | undefined)?.kind;
+    if (kind !== "label" && kind !== "color" && kind !== "series") {
+      throw new Error(
+        `${label} dimensions().${handle}.encoding must be { kind: "label" }, { kind: "color" } or { kind: "series", mark }.`,
+      );
+    }
+    if (!Array.isArray(entry.values) || entry.values.some((value) => typeof value !== "string")) {
+      throw new Error(
+        `${label} dimensions().${handle}.values must be an array of display keys, in the same order as the data items the renderer walks.`,
+      );
+    }
+  }
+  return declared as DimensionDeclarations;
+}
+
+/**
+ * 管线的 collect dimensions 阶段(validate 之后、render 之前一次完成):遍历已 resolve 的树,
+ * 对每个声明了 `dimensions` 的节点以 (已解析 props, props) 调用它,汇总整页两个 keyset,
+ * 交给 `allocatePageDimensions` 分配。text 面只算标签,不算视觉槽,也不做容量校验。
+ */
+export function collectPageDimensions(
+  node: ReportNode,
+  pins: DimensionPins = {},
+  face: "text" | "web" = "web",
+): PageDimensions {
+  const handles: PageDimensionHandle[] = [];
+  const byProps = new WeakMap<object, { label: string; keys: Map<string, string> }>();
+  let nodeIndex = 0;
+
+  const visit = (current: ReportNode): void => {
+    if (current === null || current === undefined || typeof current === "boolean") return;
+    if (Array.isArray(current)) {
+      for (const child of current) visit(child);
+      return;
+    }
+    if (!isReportElement(current)) return;
+    const { type, props } = current;
+    if (type === REACT_FRAGMENT) {
+      visit(props.children as ReportNode);
+      return;
+    }
+    const faces = facesOf(type);
+    if (faces) {
+      if (typeof faces.dimensions === "function") {
+        const label = componentLabel(type);
+        const declared = assertDeclarations(label, faces.dimensions(props, props));
+        const keys = new Map<string, string>();
+        for (const [handle, declaration] of Object.entries(declared)) {
+          // 页级键必须唯一:句柄名只在组件内唯一,加上节点序号才是这一页的身份。
+          const key = `${nodeIndex}\u0000${handle}`;
+          handles.push({ handle: key, declaration });
+          keys.set(handle, key);
+        }
+        byProps.set(props, { label, keys });
+        nodeIndex += 1;
+      }
+      if (!hasRawChildren(type)) visit(props.children as ReportNode);
+      return;
+    }
+    visit(props.children as ReportNode);
+  };
+  visit(node);
+
+  const plan = allocatePageDimensions(handles, pins, { face });
+  return {
+    dimension(props: object, handle: string): PresentedDimension {
+      const entry = byProps.get(props);
+      const key = entry?.keys.get(handle);
+      if (key === undefined) {
+        throw new UndeclaredDimensionValueError(
+          `${entry?.label ?? "This component"} queried dimension handle ${JSON.stringify(handle)}, which its dimensions() did not declare` +
+            `${entry && entry.keys.size > 0 ? ` (declared: ${[...entry.keys.keys()].map((h) => JSON.stringify(h)).join(", ")})` : ""}. ` +
+            "Declare it in dimensions(data, options) so the page can allocate its identity, or drop the query.",
+          handle,
+        );
+      }
+      return plan.dimension(key);
+    },
+  };
+}
+
 // web 面的环境上下文:web 宿主渲染前设好;宿主之外(组件直接嵌进用户 React 应用)
 // 用默认值——没有 attemptHref,组件显式传 prop 才产生外部链接(architecture.md
 // 「Attempt 详情是一张参数化 page」:没有 target 时 locator 只是文本,不生成假 href)。
 const DEFAULT_WEB_CONTEXT: WebContext = {
   locale: DEFAULT_REPORT_LOCALE,
+  dimension: (handle: string) => {
+    throw noPlanError(handle);
+  },
 };
 let activeWebContext: WebContext | null = null;
 
@@ -228,12 +412,23 @@ export function defineComponent<P, R = P>(
         "define the missing face, or pass a compose function to assemble existing components instead.",
     );
   }
+  if (typeof input.dimensions !== "function") {
+    throw new Error(
+      "defineComponent requires dimensions(data, options): it declares which dimension values this component consumes, " +
+        "so the page can give the same value one visual identity everywhere it appears. " +
+        "A component that consumes no dimension says so explicitly: dimensions: () => ({}).",
+    );
+  }
   const faces = input;
   // 直接调用路径:把组件当普通 React 组件嵌进用户自己的页面时走这里,web 面只接收数据形态
   // props(R)。带 resolve 的组件若拿 spec 形态 props 走这条裸路径,web 面会缺 data ——
   // 这类组件只有经宿主的 resolveReportTree 解析后才安全渲染;纯数据 props 一直可以裸嵌。
+  // ctx 按节点绑定:`ctx.dimension` 只认这一个 props 身份声明过的句柄。
   const component = ((props: P) =>
-    faces.web(props as unknown as R, activeWebContext ?? DEFAULT_WEB_CONTEXT)) as ReportComponent<P>;
+    faces.web(
+      props as unknown as R,
+      bindNodeDimensions(activeWebContext ?? DEFAULT_WEB_CONTEXT, props as unknown as object),
+    )) as ReportComponent<P>;
   component[COMPONENT_FACES] = faces as ComponentFaces<P, unknown>;
   return component;
 }
@@ -358,7 +553,7 @@ function illegalNodeError(type: unknown, path: string[]): Error {
   return new Error(
     `${label} is not a report component${where}: plain functions and React components cannot join a report tree because the hosts cannot render them in both faces. ` +
       "Wrap it with defineComponent — a compose function defineComponent((props, ctx) => tree) to assemble existing components, " +
-      "or an object form defineComponent({ resolve?, text, web }) to render itself.",
+      "or an object form defineComponent({ resolve?, dimensions, text, web }) to render itself.",
   );
 }
 
@@ -410,15 +605,74 @@ function pageInput(state: ResolveState): SourceInput {
     : state.composeCtx.scope;
 }
 
-function resolveSource<Content>(state: ResolveState, source: Source<SourceInput, Content>): Promise<Content> {
-  const input = pageInput(state);
+function resolveSource<Content>(
+  state: ResolveState,
+  source: Source<SourceInput, Content>,
+  input: SourceInput = pageInput(state),
+): Promise<Content> {
   let byInput = state.sourceMemo.get(source as Source<SourceInput, unknown>);
   if (!byInput) state.sourceMemo.set(source as Source<SourceInput, unknown>, (byInput = new Map()));
   const cached = byInput.get(input as object);
   if (cached) return cached as Promise<Content>;
+  // 缓存 Promise 而非完成值:并发消费者只触发一次 compute,成功与失败都由同一个 Promise 广播。
   const promise = Promise.resolve().then(() => source.compute(input));
   byInput.set(input as object, promise);
   return promise;
+}
+
+/** Source 的结构判别:defineSource 不包装也不注册,所以只能按形状认(name + compute)。 */
+function isSource(value: unknown): value is Source<SourceInput, unknown> {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { name?: unknown; compute?: unknown };
+  return typeof candidate.name === "string" && typeof candidate.compute === "function";
+}
+
+function describeValue(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  if (typeof value === "object") return `an object without ${"name" in (value as object) ? "compute()" : "a name"}`;
+  return `a ${typeof value}`;
+}
+
+/**
+ * source 形态 → data 形态:经 page 级缓存调 `source.compute(input)`,再把结果写回 `data`
+ * 并去掉 `source` / `input`(docs/feature/reports/components/README.md「数据绑定与两种形态」)。
+ * 与「先手工调 compute 再传 data」严格等价,所以下游 renderer 与 makeDataComponent 的 data
+ * 分支都不需要认识 Source。
+ */
+async function bindSourceProps(
+  type: unknown,
+  props: globalThis.Record<string, unknown>,
+  state: ResolveState,
+  path: string[],
+): Promise<globalThis.Record<string, unknown>> {
+  const label = componentLabel(type);
+  const where = path.length > 0 ? ` (in ${path.join(" > ")})` : "";
+  if (props.data !== undefined) {
+    throw new Error(
+      `${label} got both \`source\` and \`data\`${where} — the two data forms are exclusive and niceeval will not silently pick one. ` +
+        "Keep `source` and let the pipeline call its compute(input) during resolve, or keep `data` (already computed content) and drop `source`.",
+    );
+  }
+  const source = props.source;
+  if (!isSource(source)) {
+    throw new Error(
+      `${label} received a \`source\` that is not a Source${where}: expected { name, compute(input) } from defineSource(...) or the official \`sources\` catalog, got ${describeValue(source)}. ` +
+        "Wrap the computation with defineSource({ name, compute }), or pass the already computed content as `data`.",
+    );
+  }
+  const explicitInput = props.input;
+  if (explicitInput !== undefined && (typeof explicitInput !== "object" || explicitInput === null)) {
+    throw new Error(
+      `${label} got \`source\` with an \`input\` that is not a report input${where}: \`input\` must be the Sample or AttemptEvidence to compute from. ` +
+        "Drop `input` to use the input this page was given, or pass the narrowed Sample itself.",
+    );
+  }
+  const content = await resolveSource(state, source, (explicitInput as SourceInput | undefined) ?? pageInput(state));
+  const bound: globalThis.Record<string, unknown> = { ...props, data: content };
+  delete bound.source;
+  delete bound.input;
+  return bound;
 }
 
 async function resolveNode(node: ReportNode | string | number, state: ResolveState, path: string[]): Promise<ReportNode> {
@@ -453,8 +707,12 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
       input,
       data: state.data,
       page: state.composeCtx.page,
+      report: state.composeCtx.report,
       signal: state.signal,
-      resolve: <Content>(source: Source<SourceInput, Content>) => resolveSource(state, source),
+      resolve: <Content, SourceIn extends SourceInput = SourceInput>(
+        source: Source<SourceIn, Content>,
+        explicit?: SourceIn,
+      ) => resolveSource(state, source as Source<SourceInput, Content>, (explicit ?? input) as SourceInput),
     };
     const expanded = await composition(props, ctx);
     return resolveNode(expanded as ReportNode, state, [...path, componentLabel(type)]);
@@ -466,17 +724,19 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
   }
   const faces = facesOf(type);
   if (faces) {
+    // source 形态先落成 data 形态,faces.resolve(如有)因此只面对 data / spec 两路。
+    const bound = props.source !== undefined ? await bindSourceProps(type, props, state, path) : props;
     if (typeof faces.resolve === "function") {
       const resolveFn = faces.resolve;
-      const input = ((props as { input?: unknown }).input as ReportInput | undefined) ?? state.composeCtx.scope;
+      const input = ((bound as { input?: unknown }).input as ReportInput | undefined) ?? state.composeCtx.scope;
       const ctx: InternalResolveContext = {
         input,
         page: state.composeCtx.page,
         memoFetch: <T,>(dataFn: unknown, dataInput: unknown, options: unknown, compute: () => Promise<T>) =>
           state.memo.fetch(dataFn, dataInput, options, compute) as Promise<T>,
       };
-      const resolved = await state.memo.fetch(resolveFn, input, props, async () =>
-        resolveFn(props, ctx),
+      const resolved = await state.memo.fetch(resolveFn, input, bound, async () =>
+        resolveFn(bound, ctx),
       );
       const resolvedProps = { ...(resolved as globalThis.Record<string, unknown>) };
       if (resolvedProps.children !== undefined) {
@@ -488,9 +748,9 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
       return { ...node, props: resolvedProps };
     }
     // 无 resolve 的容器 / 纯数据组件:只解析 children,自身 props 原样保留(title / className 不能动)。
-    if (hasRawChildren(type)) return node; // Text / Style 的 children 是不透明值,不是树
-    const children = await resolveNode(props.children as ReportNode, state, [...path, componentLabel(type)]);
-    return { ...node, props: { ...props, children } };
+    if (hasRawChildren(type)) return bound === props ? node : { ...node, props: bound }; // Text / Style 的 children 是不透明值,不是树
+    const children = await resolveNode(bound.children as ReportNode, state, [...path, componentLabel(type)]);
+    return { ...node, props: { ...bound, children } };
   }
   // 非法节点:HTML intrinsic、React 组件、未经 defineComponent 的普通函数 —— 立即拒绝,不取数。
   throw illegalNodeError(type, path);
@@ -626,6 +886,8 @@ export interface TextRenderOptions {
   locale?: ReportLocale;
   /** `Section` 的框线传输能力;默认 `"plain"`,由宿主按真实 TTY / NO_COLOR 探测结果注入。 */
   panelMode?: PanelMode;
+  /** 这一页的呈现分配(text 面只有标签);省略时 `ctx.dimension` 说明当前不在管线里。 */
+  pageDimensions?: PageDimensions;
 }
 
 function shellQuote(value: string): string {
@@ -664,11 +926,15 @@ export function createTextContext(options?: TextRenderOptions): TextContext {
       set collectPanelRow(value: ((row: PanelRow) => void) | undefined) {
         state.collectPanelRow = value;
       },
+      dimension(handle: string): PresentedDimension {
+        // 未经 renderNodeToText 的按节点绑定时(手工造 ctx 直调 text 面)没有 props 身份可查。
+        throw noPlanError(handle);
+      },
       render(node, childWidth) {
         return renderNodeToText(node, childWidth === undefined ? this : make(Math.max(10, childWidth)));
       },
     };
-    return ctx;
+    return withPageDimensions(ctx, options?.pageDimensions);
   };
   return make(width);
 }
@@ -691,6 +957,6 @@ export function renderNodeToText(node: ReportNode, ctx: TextContext): string {
   if (typeof type === "string") throw illegalNodeError(type, []);
   if (type === REACT_FRAGMENT) return renderNodeToText(props.children as ReportNode, ctx);
   const faces = facesOf(type);
-  if (faces) return faces.text(props, ctx);
+  if (faces) return faces.text(props, bindNodeDimensions(ctx, props));
   throw illegalNodeError(type, []);
 }

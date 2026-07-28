@@ -1,32 +1,15 @@
 // web 宿主(view --report)的装载入口:同一棵树走 web 面,renderToStaticMarkup 吐静态
-// HTML 烘进查看器的报告槽。只有这一侧真正 import react-dom(import 边界即运行时边界),
+// HTML 烘进查看器的报告槽。react-dom 的实际 import 在 ./resolved-page.ts(边界即运行时边界),
 // 所以本文件不从 niceeval/report 的入口 re-export —— 宿主与测试按源路径 import。
 
-import type { ReactNode } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
-import {
-  resolveReportTree,
-  runWithWebContext,
-  validateReportTree,
-  ResolveMemo,
-  type PageContext,
-  type WebContext,
-} from "../definition/tree.ts";
-import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
+import type { PageContext } from "../definition/tree.ts";
+import type { DimensionPins } from "../presentation.ts";
+import { type ReportLocale } from "../model/locale.ts";
 import { buildReportMeta, type ReportDefinition } from "../definition/report.ts";
 import { pickReportPage, type ReportHostContext } from "./text.ts";
-
-/**
- * 默认证据室深链:view 静态站的 attempt 文档路径,根相对(与 index.html 同级 —— scope-input
- * page 恒在文档树的根)。文件名是 URL 编码后的 locator(architecture.md「Attempt 详情是一张
- * 参数化 page」);磁盘/清单键用未编码的原始 locator,两者的对应关系与拆分只住在 view 的站点
- * 管线(site.ts),这里只产出 href 字符串。从 attempt 页面自身内容渲染时(极少见:自定义
- * attempt-input page 里嵌了别的证据引用组件)view 显式传入同级相对版本覆盖这个默认值,
- * 不依赖这里的根相对形态。
- */
-const DEFAULT_ATTEMPT_HREF = (locator: AttemptLocator): string => `attempt/${encodeURIComponent(locator)}.html`;
+import { renderResolvedPageWeb, resolvePage } from "./resolved-page.ts";
 
 export interface StaticHtmlOptions {
   /** 渲染哪一页;缺省第一张可导航页。命中 attempt-input page 抛 ReportPageNeedsLocatorError。 */
@@ -50,24 +33,14 @@ export async function renderReportToStaticHtml(
 ): Promise<string> {
   const page = pickReportPage(definition, options?.pageId);
   const meta = buildReportMeta(definition, ctx.scope);
-  const hasAttemptPage = definition.pages.some((p) => p.input === "attempt");
-  const resolved = await resolveReportTree(page.content, {
+  const resolved = await resolvePage(page.content, {
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
     page: { id: page.id, input: "scope" },
-    memo: new ResolveMemo(),
+    dimensionPins: definition.dimensionPins,
   });
-  validateReportTree(resolved);
-  const webCtx: WebContext = {
-    ...(options?.attemptHref !== undefined
-      ? { attemptHref: options.attemptHref }
-      : hasAttemptPage
-        ? { attemptHref: DEFAULT_ATTEMPT_HREF }
-        : {}),
-    locale: options?.locale ?? DEFAULT_REPORT_LOCALE,
-  };
-  return runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as ReactNode));
+  return renderResolvedPageWeb(resolved, options);
 }
 
 /**
@@ -82,25 +55,11 @@ export async function renderReportTreeToStaticHtml(
     results: import("../../record/types.ts").Record;
     report: import("../definition/report.ts").ReportMeta;
     page: PageContext;
+    /** 外壳钉色;不进 ReportMeta,见 ReportTreeHostContext.dimensionPins。 */
+    dimensionPins?: DimensionPins;
   },
   options?: { attemptHref?: (locator: AttemptLocator) => string; locale?: ReportLocale },
 ): Promise<string> {
-  const resolved = await resolveReportTree(tree, {
-    scope: ctx.scope,
-    results: ctx.results,
-    report: ctx.report,
-    page: ctx.page,
-    memo: new ResolveMemo(),
-  });
-  validateReportTree(resolved);
-  const hasAttemptPage = ctx.report.pages.some((p) => p.input === "attempt");
-  const webCtx: WebContext = {
-    ...(options?.attemptHref !== undefined
-      ? { attemptHref: options.attemptHref }
-      : hasAttemptPage
-        ? { attemptHref: DEFAULT_ATTEMPT_HREF }
-        : {}),
-    locale: options?.locale ?? DEFAULT_REPORT_LOCALE,
-  };
-  return runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as ReactNode));
+  const resolved = await resolvePage(tree, ctx);
+  return renderResolvedPageWeb(resolved, options);
 }

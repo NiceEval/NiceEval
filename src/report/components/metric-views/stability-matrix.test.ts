@@ -9,7 +9,7 @@ import type { EvalResult, Verdict } from "../../../types.ts";
 import type { AttemptHandle, Run } from "../../../record/index.ts";
 import { attemptHandleOf, scopeOf } from "../scope.harness.ts";
 import { stabilityMatrixData } from "./compute.ts";
-import { validateStabilityMatrixData } from "./index.tsx";
+import { validateStabilityMatrixData } from "./validate.ts";
 
 let seq = 0;
 function res(id: string, verdict: Verdict, attempt = 0): EvalResult {

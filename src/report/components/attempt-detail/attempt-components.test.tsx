@@ -14,7 +14,9 @@ import { emptyScopeAndResults } from "../scope.harness.ts";
 import type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../../record/attempt-evidence.ts";
 import { encodeAttemptLocator, type AttemptIdentity } from "../../../record/locator.ts";
 import { buildAnnotatedEvalSource } from "../../../record/annotated-source.ts";
-import { composeOf, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
+import { sources } from "../../sources.ts";
+import { COMPOSITION_EXPAND } from "../../source.ts";
+import { resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
 import {
   attemptAssertionsData,
@@ -30,19 +32,20 @@ import {
   usageTableData,
 } from "./compute.ts";
 import {
-  AttemptAssertions,
+  Callouts,
+  Conversation,
+  CopyBlock,
+  DiffView,
+  SourceView,
+  Table,
+  Waterfall,
+} from "../../definition/primitives.tsx";
+import {
   AttemptAssessment,
-  AttemptConversation,
   AttemptDetail,
-  AttemptDiagnostics,
-  AttemptDiff,
-  AttemptError,
-  AttemptFixPrompt,
-  AttemptSource,
   AttemptSummary,
-  AttemptTimeline,
-  AttemptTrace,
-  UsageTable,
+} from "./index.tsx";
+import {
   validateAssertionsData,
   validateConversationData,
   validateDiagnosticsData,
@@ -54,7 +57,7 @@ import {
   validateTimelineData,
   validateTraceData,
   validateUsageData,
-} from "./index.tsx";
+} from "./validate.tsx";
 
 // ───────────────────────── fixture ─────────────────────────
 
@@ -492,9 +495,9 @@ describe("AttemptAssessment / AttemptDetail(组合组件)", () => {
     ] as const) {
       const resolved = (await resolveOnAttemptPage(<AttemptAssessment />, evidence)) as { props: { children: Array<{ type: unknown }> } };
       const types = resolved.props.children.map((c) => c.type);
-      expect(types).toContain(AttemptError);
-      expect(types.includes(AttemptSource)).toBe(expectSource);
-      expect(types.includes(AttemptAssertions)).toBe(!expectSource);
+      expect(types).toContain(Callouts);
+      expect(types.includes(SourceView)).toBe(expectSource);
+      expect(types.includes(Table)).toBe(!expectSource);
     }
   });
 
@@ -502,32 +505,34 @@ describe("AttemptAssessment / AttemptDetail(组合组件)", () => {
     await expect(resolveOnScopePage(<AttemptAssessment />)).rejects.toThrow(/attempt-input page/);
   });
 
-  it("AttemptDetail:有 source 时不重复 Conversation，无 source 时在 usage 后保留 fallback", () => {
-    // AttemptDetail 自己是组合组件:resolve 会把它(以及嵌套的 AttemptAssessment)递归展开,
-    // 所以这里直接检查它的 compose 函数产出的原始树(与「内建报告」测试检查 standard.tsx
-    // 原始声明同一手法),不走完整 resolve——那样 AttemptAssessment 会被替换成它自己展开出的
-    // <Col> 而不再是 AttemptAssessment 这个类型。
-    const compose = composeOf(AttemptDetail)!;
-    const childTypes = (evidence: AttemptEvidence): unknown[] => {
-      const tree = compose({}, { page: { input: "attempt", evidence } } as never) as unknown as {
-        props: { children: Array<{ type: unknown } | null> };
-      };
+  it("AttemptDetail:有 source 时不重复 Conversation，无 source 时在 usage 后保留 fallback", async () => {
+    const expand = AttemptDetail[COMPOSITION_EXPAND];
+    const childTypes = async (evidence: AttemptEvidence): Promise<unknown[]> => {
+      const tree = (await expand(
+        {},
+        {
+          input: evidence,
+          data: {},
+          page: { id: "attempt", input: "attempt", locator: evidence.locator, evidence },
+          report: buildReportMeta(defineReport(null), emptyScopeAndResults().scope),
+          signal: new AbortController().signal,
+          resolve: async () => {
+            throw new Error("not used");
+          },
+        },
+      )) as { props: { children: Array<{ type: unknown } | null> } };
       return tree.props.children.filter((child): child is { type: unknown } => child !== null).map((child) => child.type);
     };
-    const withoutSource = childTypes(evidenceOf());
-    expect(withoutSource).toEqual([
-      AttemptSummary,
-      AttemptAssessment,
-      AttemptFixPrompt,
-      AttemptTimeline,
-      AttemptDiagnostics,
-      UsageTable,
-      AttemptConversation,
-      AttemptTrace,
-      AttemptDiff,
-    ]);
+    const withoutSource = await childTypes(evidenceOf());
+    expect(withoutSource).toContain(AttemptSummary);
+    expect(withoutSource).toContain(AttemptAssessment);
+    expect(withoutSource).toContain(CopyBlock);
+    expect(withoutSource.filter((type) => type === Waterfall)).toHaveLength(2);
+    expect(withoutSource).toContain(Conversation);
+    expect(withoutSource).toContain(DiffView);
+    expect(withoutSource.indexOf(Conversation)).toBeGreaterThan(withoutSource.indexOf(CopyBlock));
 
-    const withSource = childTypes(
+    const withSource = await childTypes(
       evidenceOf({
         capabilities: { ...NO_CAPS, source: true },
         evalSource: {
@@ -549,21 +554,23 @@ describe("AttemptAssessment / AttemptDetail(组合组件)", () => {
         },
       }),
     );
-    expect(withSource).toEqual(withoutSource.filter((type) => type !== AttemptConversation));
+    expect(withSource).toEqual(withoutSource.filter((type) => type !== Conversation));
   });
 });
 
 // ───────────────────────── spec/data 等价与 scope-input page 报错 ─────────────────────────
 
 describe("叶子组件的 spec/data 形态", () => {
-  it("<AttemptSummary /> 在 attempt page 内的 spec 结果与手工 attemptSummaryData(evidence) 深等", async () => {
+  it("<AttemptSummary source=...> 在 attempt page 内的解析结果与手工 attemptSummaryData(evidence) 深等", async () => {
     const evidence = evidenceOf({ capabilities: FULL_CAPS });
-    const resolved = (await resolveOnAttemptPage(<AttemptSummary />, evidence)) as { props: { data: unknown } };
+    const resolved = (await resolveOnAttemptPage(<AttemptSummary source={sources.attempt.snapshot} />, evidence)) as {
+      props: { data: unknown };
+    };
     expect(resolved.props.data).toEqual(attemptSummaryData(evidence));
   });
 
-  it("<AttemptSummary /> 放进 scope-input page 报错,文案含移到 attempt-input page 或传入 evidence", async () => {
-    await expect(resolveOnScopePage(<AttemptSummary />)).rejects.toThrow(/attempt-input page/);
+  it("attempt source 在 scope-input page 上 resolve 时报错(需要 attempt-input page 或显式 data)", async () => {
+    await expect(resolveOnScopePage(<AttemptSummary source={sources.attempt.snapshot} />)).rejects.toThrow();
   });
 
   it("显式传 data 时不再取当前 page 的 evidence(scope-input page 上也能直接渲染)", async () => {
@@ -572,15 +579,14 @@ describe("叶子组件的 spec/data 形态", () => {
     expect(resolved.props.data).toEqual(data);
   });
 
-  it("同时传 data 与 input 报完整用户反馈,不静默取一边", async () => {
-    const evidence = evidenceOf();
-    const data = attemptSummaryData(evidence);
+  it("同时传 data 与 source 报完整用户反馈,不静默取一边", async () => {
+    const data = attemptSummaryData(evidenceOf());
     await expect(
       resolveOnScopePage(
-        // @ts-expect-error data 与 input 字段互斥,类型层已拒绝;这里模拟无类型 JS 输入
-        <AttemptSummary data={data} input={evidence} />,
+        // @ts-expect-error data 与 source 互斥;模拟无类型 JS 输入
+        <AttemptSummary data={data} source={sources.attempt.snapshot} />,
       ),
-    ).rejects.toThrow(/both `data` and `input`/);
+    ).rejects.toThrow(/both `source` and `data`/);
   });
 });
 

@@ -12,6 +12,7 @@
 import type { Sample } from "../../record/types.ts";
 import type { ReportNode } from "./tree.ts";
 import { localizedTextEquals, type LocalizedText } from "../model/locale.ts";
+import { assertDimensionPins, type DimensionPins } from "../presentation.ts";
 import type { ThemeDefinition } from "../theme.ts";
 
 // ───────────────────────── 公开形状 ─────────────────────────
@@ -43,6 +44,11 @@ export type HeadTag =
 export interface ReportShell {
   /** 报告自带的整站主题；view 的 --theme 与项目配置可覆盖它。 */
   theme?: ThemeDefinition;
+  /**
+   * 「哪个维度值恒占哪个视觉槽」的作者判断,是关于数据含义的声明,跨页一致且不随主题走;
+   * 色板本身归主题的 `series`(shell.md「钉色」)。
+   */
+  dimensionPins?: DimensionPins;
   /** 站点标题:浏览器标题、show 页索引标题行与 `ctx.report.title` 的取值源;`Hero` 组件缺省消费它。回退链 def.title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」。 */
   title?: LocalizedText;
   /** 页头右侧的外部链接,如 GitHub、文档、CI。 */
@@ -123,6 +129,7 @@ export interface ReportDefinition {
   readonly kind: "report";
   readonly title?: LocalizedText;
   readonly theme?: ThemeDefinition;
+  readonly dimensionPins?: DimensionPins;
   readonly links: readonly ReportLink[];
   readonly footer?: LocalizedText;
   readonly head: readonly HeadTag[];
@@ -473,6 +480,7 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
 
   if (def.title !== undefined) assertLocalizedText(def.title, "defineReport title");
   if (def.footer !== undefined) assertLocalizedText(def.footer, "defineReport footer");
+  assertDimensionPins(def.dimensionPins);
   // 外壳合并:声明即整字段覆盖,未声明沿用 base(base 的字段已规范化,不重验)。
   let links: readonly ReportLink[];
   if (def.links !== undefined) {
@@ -503,11 +511,13 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
   const title = def.title !== undefined ? def.title : base?.title;
   const theme = def.theme !== undefined ? def.theme : base?.theme;
   const footer = def.footer !== undefined ? def.footer : base?.footer;
+  const dimensionPins = def.dimensionPins !== undefined ? def.dimensionPins : base?.dimensionPins;
 
   const definition = {
     kind: "report" as const,
     ...(title !== undefined ? { title } : {}),
     ...(theme !== undefined ? { theme } : {}),
+    ...(dimensionPins !== undefined ? { dimensionPins } : {}),
     links: [...links],
     ...(footer !== undefined ? { footer } : {}),
     head: def.head !== undefined ? assertHeadTags(def.head) : [...(base?.head ?? [])],
@@ -549,7 +559,7 @@ export function resolveReportTitle(definition: ReportDefinition, scope: Sample):
   return names.every((name) => localizedTextEquals(name, first)) ? first : FALLBACK_REPORT_TITLE;
 }
 
-/** 规范化声明 → 组合组件可见的 ReportMeta(scripts / styles 是注入资产,不进;不携带当前页)。 */
+/** 规范化声明 → 组合组件可见的 ReportMeta(scripts / styles / dimensionPins 是注入资产与视觉配置,不进;不携带当前页)。 */
 export function buildReportMeta(definition: ReportDefinition, scope: Sample): ReportMeta {
   return {
     title: resolveReportTitle(definition, scope),

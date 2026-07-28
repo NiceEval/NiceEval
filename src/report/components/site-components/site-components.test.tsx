@@ -18,6 +18,8 @@ import type { AssertionResult, EvalResult, TraceSpan, Verdict } from "../../../t
 import type { AttemptHandle, Record, Sample, SampleIssue, Run } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { defineComponent, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
+import { defineComposition } from "../../source.ts";
+import { sources } from "../../sources.ts";
 import { buildReportMeta, defineReport, type ReportDefinition } from "../../definition/report.ts";
 import { pickReportPage, reportTitleText } from "../../runtime/text.ts";
 import type { DiagnosticRecord } from "../../../types.ts";
@@ -148,10 +150,10 @@ describe("Hero 与 HeroCard", () => {
     expect(resolved.props.title).toBe("Custom Hero");
   });
 
-  it("<Hero /> 与手写 <HeroCard title={ctx.report.title} data={await heroData(ctx.scope)} /> resolve 结果结构严格等价", async () => {
+  it("<Hero /> 与手写 <HeroCard title={ctx.report.title} data={await ctx.resolve(sources.site.hero)} /> resolve 结果结构严格等价", async () => {
     const scope = heroScope();
-    const Handwritten = defineComponent(async (_props: globalThis.Record<never, never>, ctx) => (
-      <HeroCard title={ctx.report.title} data={await heroData(ctx.scope)} />
+    const Handwritten = defineComposition(async (_props, ctx) => (
+      <HeroCard title={ctx.report.title} data={await ctx.resolve(sources.site.hero)} />
     ));
     const [heroResolved, handResolved] = (await Promise.all([
       resolveOnScope(<Hero />, scope),

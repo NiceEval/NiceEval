@@ -194,6 +194,12 @@ const en = {
   "traceWaterfall.failedSpans.one": "{n} failed",
   "traceWaterfall.failedSpans.other": "{n} failed",
 
+  /** Waterfall 原语的 chrome。 */
+  "waterfall.nodes.one": "{n} node",
+  "waterfall.nodes.other": "{n} nodes",
+  "waterfall.failedNodes.one": "{n} failed",
+  "waterfall.failedNodes.other": "{n} failed",
+
   /** SnapshotDiagnostics 聚合层的 chrome:汇总行三段计数与最高严重度;message/command 本体不经字典。 */
   "snapshotDiagnostics.summary.experiments.one": "{n} experiment",
   "snapshotDiagnostics.summary.experiments.other": "{n} experiments",
@@ -348,6 +354,11 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "traceWaterfall.failedSpans.one": "{n} 个失败",
   "traceWaterfall.failedSpans.other": "{n} 个失败",
 
+  "waterfall.nodes.one": "{n} 个节点",
+  "waterfall.nodes.other": "{n} 个节点",
+  "waterfall.failedNodes.one": "{n} 个失败",
+  "waterfall.failedNodes.other": "{n} 个失败",
+
   "snapshotDiagnostics.summary.experiments.one": "{n} 个实验",
   "snapshotDiagnostics.summary.experiments.other": "{n} 个实验",
   "snapshotDiagnostics.summary.runs.one": "{n} 个快照",
@@ -398,7 +409,9 @@ export function countText(
     | "table.columnsHidden"
     | "copyFixPrompt.summary"
     | "traceWaterfall.spans"
-    | "traceWaterfall.failedSpans",
+    | "traceWaterfall.failedSpans"
+    | "waterfall.nodes"
+    | "waterfall.failedNodes",
   n: number,
 ): string {
   return localeText(locale, `${base}.${n === 1 ? "one" : "other"}` as ReportMessageKey, { n });

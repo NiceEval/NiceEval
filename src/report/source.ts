@@ -1,5 +1,7 @@
 import type { AttemptEvidence } from "../record/attempt-evidence.ts";
 import type { Sample } from "../record/types.ts";
+import type { PageContext } from "./definition/tree.ts";
+import type { ReportMeta } from "./definition/report.ts";
 
 /**
  * 报告事实的唯一查询协议。Source 只接收 NiceEval 已选择好的输入；
@@ -28,9 +30,18 @@ export function defineSource<Input extends SourceInput, Content>(
 export interface CompositionContext<Input extends SourceInput> {
   readonly input: Input;
   readonly data: Readonly<Record<string, unknown>>;
-  readonly page: unknown;
+  readonly page: PageContext;
+  /** 规范化后的报告声明;Hero 等站点组合件读 title / links / pages。 */
+  readonly report: ReportMeta;
   readonly signal: AbortSignal;
-  resolve<Content>(source: Source<Input, Content>): Promise<Content>;
+  /**
+   * 省略 input 时用 `ctx.input`；显式 input 只影响本次 Source 计算。
+   * 与组件 `<X source={source} input={input}>` 共用 Source×input Promise 缓存。
+   */
+  resolve<Content, SourceIn extends SourceInput = Input>(
+    source: Source<SourceIn, Content>,
+    input?: SourceIn,
+  ): Promise<Content>;
 }
 
 /** resolve 管线识别 Composition 的私有品牌。 */
@@ -43,6 +54,8 @@ export interface Composition<Props, Input extends SourceInput = Sample> {
     ctx: CompositionContext<Input>,
   ) => unknown | Promise<unknown>;
   [COMPOSITION_EXPAND]: Composition<Props, Input>["expand"];
+  /** 调试 / 测试用显示名；不参与 resolve。 */
+  displayName?: string;
 }
 
 /**

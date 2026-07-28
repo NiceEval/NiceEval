@@ -13,7 +13,7 @@ import {
   validateScoreboardData,
   validateStabilityMatrixData,
   validateTableData,
-} from "./index.tsx";
+} from "./validate.ts";
 
 const validCell = { value: 1, display: "1", samples: 1, total: 1, refs: ["@1abcdef2"] };
 const validColumn = { key: "costUSD", label: "Cost" };

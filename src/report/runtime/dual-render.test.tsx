@@ -1,7 +1,7 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 管线测试(resolve/validate/装载规范化):spec/data 双形态严格等价、记忆化、组合组件递归展开、
 // 同层并行保序、非法节点拒绝、defineReport 三种写法与外壳嵌套的装载规范化、标题回退链、
-// 内建报告的结构与具名导出同引用、组合组件(FailureList / ExperimentComparison)与手写组合的
+// 内建报告的结构与具名导出同引用、组合组件(FailureList / SampleOverview)与手写组合的
 // 解析结果严格等价。
 //
 // 观察面全部是 resolve 阶段的解析结果(元素 type / props,尤其是叶子组件的 `data` 字段)与装载
@@ -27,16 +27,20 @@ import {
 } from "../definition/tree.ts";
 import { buildReportMeta, defineReport, FALLBACK_REPORT_TITLE, resolveReportTitle } from "../definition/report.ts";
 import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } from "./text.ts";
-import { AttemptList, ExperimentList, FailureList } from "../components/entity-lists/index.tsx";
-import { CopyFixPrompt, Hero, ScopeWarnings, SnapshotDiagnostics, TraceWaterfall } from "../components/site-components/index.tsx";
-import { ExperimentComparison, SampleOverview, ScopeSummary } from "../components/summaries/index.tsx";
-import { MetricBars, MetricMatrix, MetricScatter, MetricTable } from "../components/metric-views/index.tsx";
-import { AttemptDetail } from "../components/attempt-detail/index.tsx";
-import { Col, Section, Tab, Table, Tabs, Text } from "../definition/primitives.tsx";
+import { FailureList } from "../components/entity-lists/index.tsx";
+import { Hero } from "../components/site-components/index.tsx";
+import { SampleOverview, SampleSummary } from "../components/summaries/index.tsx";
+import { Chart, Col, CopyBlock, Callouts, Grid, Section, Series, Stat, Tab, Table, Tabs, Text, Waterfall } from "../definition/primitives.tsx";
 import { attemptListData, experimentListData } from "../components/entity-lists/compute.ts";
+import { attemptListContent, experimentListContent } from "../components/entity-lists/content.ts";
 import { metricScatterData } from "../components/metric-views/compute.ts";
+import { scatterDataToDataset } from "../model/dataset.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
-import { costUSD, defineMeasure, endToEndPassRate, totalScore } from "../model/metrics.ts";
+import { seriesName } from "../model/aggregate.ts";
+import type { SeriesInput } from "../model/types.ts";
+import { sources } from "../sources.ts";
+import { AttemptDetail } from "../components/attempt-detail/index.tsx";
+import { defineMeasure, costUSD, endToEndPassRate, totalScore } from "../model/metrics.ts";
 import { label } from "../model/flag.ts";
 import builtInReport, { standard, standardAttemptPage } from "../built-in/index.tsx";
 
@@ -112,6 +116,53 @@ async function resolveTree(node: ReportNode, scope: Sample): Promise<ReportNode>
   return resolved;
 }
 
+function collectElementsByType(
+  node: unknown,
+  target: unknown,
+  out: Array<{ props: globalThis.Record<string, unknown> }> = [],
+): Array<{ props: globalThis.Record<string, unknown> }> {
+  if (node === null || node === undefined || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const child of node) collectElementsByType(child, target, out);
+    return out;
+  }
+  const el = node as { type?: unknown; props?: { children?: unknown } };
+  if (el.type === target) out.push(el as { props: globalThis.Record<string, unknown> });
+  if (el.props && "children" in el.props) collectElementsByType(el.props.children, target, out);
+  return out;
+}
+
+async function expectSnapshotStats(resolved: unknown, scope: Sample) {
+  const expected = await scopeSummaryData(scope);
+  const stats = collectElementsByType(resolved, Stat);
+  expect(stats.some((s) => s.props.value === expected.experiments)).toBe(true);
+  expect(stats.some((s) => s.props.value === expected.evals)).toBe(true);
+  expect(stats.some((s) => s.props.value === expected.attempts)).toBe(true);
+}
+
+function scatterChartNode(options: {
+  series?: SeriesInput;
+  y: typeof costUSD | typeof endToEndPassRate | typeof totalScore;
+  connect?: boolean;
+}) {
+  const by = options.series !== undefined ? seriesName(options.series) : undefined;
+  return (
+    <Chart
+      source={sources.measure.chart({ points: "experiment", series: options.series, x: costUSD, y: options.y })}
+      x={costUSD.name}
+      y={options.y.name}
+    >
+      <Series
+        id="test"
+        mark="scatter"
+        points="experiment"
+        {...(by !== undefined ? { by } : {})}
+        connect={options.connect}
+      />
+    </Chart>
+  );
+}
+
 // ───────────────────────── spec / data 双形态 ─────────────────────────
 
 describe("spec 形态与 data 形态", () => {
@@ -132,21 +183,23 @@ describe("spec 形态与 data 形态", () => {
   it("spec 形态与「先手工调 *Data 再传 data」严格等价:两棵树解析出同一份 data", async () => {
     const scope = scatterScope();
     const options = { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate } as const;
-    const specResolved = await resolveTree(<MetricScatter points="experiment" series="agent" x={costUSD} y={endToEndPassRate} />, scope);
-    const data = await metricScatterData(scope, options);
+    const specResolved = await resolveTree(scatterChartNode({ series: "agent", y: endToEndPassRate }), scope);
+    const data = scatterDataToDataset(await metricScatterData(scope, options));
     expect((specResolved as unknown as { props: { data: unknown } }).props.data).toEqual(data);
   });
 
   it("同一组件同时给 data 与 spec 字段报完整用户反馈,不静默取一边", async () => {
     const scope = scatterScope();
-    const data = await metricScatterData(scope, { points: "experiment", x: costUSD, y: endToEndPassRate });
+    const data = scatterDataToDataset(await metricScatterData(scope, { points: "experiment", x: costUSD, y: endToEndPassRate }));
     await expect(
       resolveTree(
-        // @ts-expect-error data 与 spec 字段互斥,类型层已拒绝;这里模拟无类型 JS 输入
-        <MetricScatter data={data} points="experiment" x={costUSD} y={endToEndPassRate} />,
+        // @ts-expect-error data 与 source 互斥;模拟无类型 JS 输入
+        <Chart data={data} source={sources.measure.chart({ points: "experiment", x: costUSD, y: endToEndPassRate })} x={costUSD.name} y={endToEndPassRate.name}>
+          <Series id="test" mark="scatter" points="experiment" />
+        </Chart>,
         scope,
       ),
-    ).rejects.toThrow(/both `data` and spec/);
+    ).rejects.toThrow(/both `source` and `data`/);
   });
 
   it("input 省略时取宿主注入的 Sample;显式 input 覆盖数据来源", async () => {
@@ -154,30 +207,33 @@ describe("spec 形态与 data 形态", () => {
     const b = snap({ experimentId: "in/b", results: [res("q", "failed")] });
     const scope = scopeOf([a, b]);
 
-    const allResolved = await resolveTree(<ScopeSummary />, scope);
-    expect((allResolved as unknown as { props: { data: unknown } }).props.data).toEqual(await scopeSummaryData(scope));
-
+    await expectSnapshotStats(await resolveTree(<SampleSummary />, scope), scope);
     const narrowed = scope.filter((s) => s.experimentId === "in/a");
-    const narrowedResolved = await resolveTree(<ScopeSummary input={narrowed} />, scope);
-    expect((narrowedResolved as unknown as { props: { data: unknown } }).props.data).toEqual(await scopeSummaryData(narrowed));
+    await expectSnapshotStats(await resolveTree(<SampleSummary input={narrowed} />, scope), narrowed);
 
     // input 也可以是手挑的 Run[](按快照出行)
-    const tableResolved = await resolveTree(<MetricTable input={[a]} rows="run" columns={[endToEndPassRate]} />, scope);
+    const tableResolved = await resolveTree(
+      <Table
+        input={scopeOf([a])}
+        source={sources.measure.rows({ rows: "run", columns: [endToEndPassRate] })}
+      />,
+      scope,
+    );
     const rows = (tableResolved as unknown as { props: { data: { rows: Array<{ key: string }> } } }).props.data.rows;
     expect(rows.some((r) => r.key.startsWith("in/a"))).toBe(true);
     expect(rows.some((r) => r.key.startsWith("in/b"))).toBe(false);
   });
 
-  it("data 结构校验:字段改名前的旧 JSON 报错且文案含版本漂移提示;round-trip 的同版本 JSON 解析结果不变", async () => {
+  it("round-trip 的同版本 Dataset JSON 解析结果不变", async () => {
     const scope = scatterScope();
-    const table = { dimension: "agent", columns: [], rows: [] }; // 旧形状:dimension 而非 rowDimension
-    await expect(resolveTree(<MetricTable data={table as never} />, scope)).rejects.toThrow(
-      /does not match the current TableData shape[\s\S]*different niceeval version/,
-    );
-
-    const fresh = await metricScatterData(scope, { points: "experiment", x: costUSD, y: endToEndPassRate });
+    const fresh = scatterDataToDataset(await metricScatterData(scope, { points: "experiment", x: costUSD, y: endToEndPassRate }));
     const roundTrip = JSON.parse(JSON.stringify(fresh));
-    const resolved = await resolveTree(<MetricScatter data={roundTrip} />, scope);
+    const resolved = await resolveTree(
+      <Chart data={roundTrip} x={costUSD.name} y={endToEndPassRate.name}>
+        <Series id="test" mark="scatter" points="experiment" />
+      </Chart>,
+      scope,
+    );
     expect((resolved as unknown as { props: { data: unknown } }).props.data).toEqual(roundTrip);
   });
 });
@@ -195,24 +251,27 @@ describe("resolve 记忆化", () => {
       },
     });
     const scope = scopeOf([snap({ experimentId: "memo/a", results: [res("q", "passed")] })]);
+    const shared = sources.measure.matrix({ rows: "eval", columns: "agent", cell: counted });
     await resolveTree(
       <Col>
-        <MetricMatrix rows="eval" columns="agent" cell={counted} />
-        <MetricBars rows="eval" columns="agent" cell={counted} />
+        <Table source={shared} />
+        <Table source={shared} />
       </Col>,
       scope,
     );
-    expect(calls).toBe(1); // 一个 attempt,矩阵只算一遍
+    expect(calls).toBe(1);
 
     calls = 0;
+    const a = sources.measure.matrix({ rows: "eval", columns: "agent", cell: counted });
+    const b = sources.measure.matrix({ rows: "eval", columns: "model", cell: counted });
     await resolveTree(
       <Col>
-        <MetricMatrix rows="eval" columns="agent" cell={counted} />
-        <MetricMatrix rows="eval" columns="model" cell={counted} />
+        <Table source={a} />
+        <Table source={b} />
       </Col>,
       scope,
     );
-    expect(calls).toBe(2); // spec 不同(columns 维度不同):各自计算
+    expect(calls).toBe(2);
   });
 
   it("不同 input 各自计算;字段相同但实例不同的 Metric 各自计算、不报错", async () => {
@@ -222,19 +281,21 @@ describe("resolve 记忆化", () => {
       return 1;
     };
     const m1 = defineMeasure({ name: "twin", value });
-    const m2 = defineMeasure({ name: "twin", value: (attempt) => value.call(null) }); // 引用不同的等价定义
+    const m2 = defineMeasure({ name: "twin", value: (attempt) => value.call(null) });
     const a = snap({ experimentId: "memo/in-a", results: [res("q", "passed")] });
     const b = snap({ experimentId: "memo/in-b", results: [res("q", "passed")] });
     const scope = scopeOf([a, b]);
+    const src1 = sources.measure.matrix({ rows: "eval", columns: "agent", cell: m1 });
+    const src2 = sources.measure.matrix({ rows: "eval", columns: "agent", cell: m2 });
     await resolveTree(
       <Col>
-        <MetricMatrix input={[a]} rows="eval" columns="agent" cell={m1} />
-        <MetricMatrix input={[b]} rows="eval" columns="agent" cell={m1} />
-        <MetricMatrix input={[a]} rows="eval" columns="agent" cell={m2} />
+        <Table input={scopeOf([a])} source={src1} />
+        <Table input={scopeOf([b])} source={src1} />
+        <Table input={scopeOf([a])} source={src2} />
       </Col>,
       scope,
     );
-    expect(calls).toBe(3); // 两个 input 各一次 + 不同实例的 Metric 再一次
+    expect(calls).toBe(3);
   });
 });
 
@@ -245,13 +306,13 @@ describe("组合组件(函数形态)", () => {
     const scope = scopeOf([snap({ experimentId: "compose/a", results: [res("q", "passed")] })]);
     const Composed = defineComponent(async (_props: globalThis.Record<never, never>, ctx) => (
       <Section title="wrapped">
-        <ScopeSummary input={ctx.scope} />
+        <SampleSummary input={ctx.scope} />
       </Section>
     ));
     const composed = await resolveTree(<Composed />, scope);
     const manual = await resolveTree(
       <Section title="wrapped">
-        <ScopeSummary />
+        <SampleSummary />
       </Section>,
       scope,
     );
@@ -266,7 +327,7 @@ describe("组合组件(函数形态)", () => {
       return (
         <Col>
           <Text>{`title=${typeof ctx.report.title === "string" ? ctx.report.title : "?"} page=${ctx.page.id}`}</Text>
-          <ScopeSummary input={history} />
+          <SampleSummary input={scope} />
         </Col>
       );
     });
@@ -287,6 +348,7 @@ describe("组合组件(函数形态)", () => {
   it("同层 sibling 并行取数且解析结果保持声明顺序:慢 resolve 在前不换位", async () => {
     const order: string[] = [];
     const Slow = defineComponent<{ label: string }, { label: string }>({
+      dimensions: () => ({}),
       resolve: async (props) => {
         await new Promise((r) => setTimeout(r, 25));
         order.push("slow-resolved");
@@ -296,6 +358,7 @@ describe("组合组件(函数形态)", () => {
       text: ({ label }) => label,
     });
     const Fast = defineComponent<{ label: string }, { label: string }>({
+      dimensions: () => ({}),
       resolve: (props) => {
         order.push("fast-resolved");
         return props;
@@ -352,8 +415,9 @@ describe("ReportNode 形状与非法节点", () => {
 describe("渐进增强不改数据的不变量", () => {
   it("filter 只改变浏览状态:有无 filter prop 解析出的 data 相同", async () => {
     const scope = scopeOf([snap({ experimentId: "f/a", results: [res("q", "passed")] })]);
-    const plain = await resolveTree(<MetricTable rows="experiment" columns={[endToEndPassRate]} />, scope);
-    const filtered = await resolveTree(<MetricTable rows="experiment" columns={[endToEndPassRate]} filter />, scope);
+    const rowSource = sources.measure.rows({ rows: "experiment", columns: [endToEndPassRate] });
+    const plain = await resolveTree(<Table source={rowSource} />, scope);
+    const filtered = await resolveTree(<Table source={rowSource} filter />, scope);
     expect((filtered as unknown as { props: { data: unknown } }).props.data).toEqual(
       (plain as unknown as { props: { data: unknown } }).props.data,
     );
@@ -386,16 +450,15 @@ describe("FailureList", () => {
       .filter((x) => x.verdict === "failed" || x.verdict === "errored")
       .sort((a, b) => (startedAt.get(b.evalId) ?? "").localeCompare(startedAt.get(a.evalId) ?? ""));
 
-    const props = (resolved as unknown as { props: { data: unknown; total?: number } }).props;
-    expect(props.data).toEqual(failures.slice(0, 2)); // 截断到 2,且顺序 = q2(最近)在前、q3 在后
-    expect(props.total).toBe(failures.length); // total 报截断前总数(3),不是 data.length
+    const props = (resolved as unknown as { props: { data: unknown } }).props;
+    expect(props.data).toEqual(attemptListContent(failures.slice(0, 2)));
   });
 
-  it("失败数少于 limit 时 total 等于 data 长度,不产生截断信号", async () => {
+  it("失败数少于 limit 时不截断行", async () => {
     const s = snap({ experimentId: "fail/few", results: [res("q1", "failed")] });
     const resolved = await resolveTree(<FailureList />, scopeOf([s]));
-    const props = (resolved as unknown as { props: { data: unknown[]; total?: number } }).props;
-    expect(props.total).toBe(props.data.length);
+    const props = (resolved as unknown as { props: { data: { rows: unknown[] } } }).props;
+    expect(props.data.rows).toHaveLength(1);
   });
 });
 
@@ -455,7 +518,7 @@ describe("Tabs", () => {
 
 describe("defineReport 装载规范化", () => {
   it("三种写法装载出等价的规范化结果:树 ≡ {content} ≡ pages [{id: report}]", () => {
-    const tree = <ScopeSummary />;
+    const tree = <SampleSummary />;
     const fromTree = defineReport(tree);
     const fromContent = defineReport({ content: tree });
     const fromPages = defineReport({
@@ -471,14 +534,14 @@ describe("defineReport 装载规范化", () => {
   });
 
   it("content 与 pages 同时声明或都省略,装载报错且文案给出 extends: standard 下一步", () => {
-    expect(() => defineReport({ content: <ScopeSummary />, pages: [] } as never)).toThrow(
+    expect(() => defineReport({ content: <SampleSummary />, pages: [] } as never)).toThrow(
       /"content" and "pages" — declare exactly one/,
     );
     expect(() => defineReport({ title: "X" } as never)).toThrow(/niceeval\/report\/built-in/);
   });
 
   it("defineReport 产物不是 ReportNode:页里放产物装载报错;树校验同样拒绝", () => {
-    const inner = defineReport(<ScopeSummary />);
+    const inner = defineReport(<SampleSummary />);
     expect(() => defineReport({ pages: [{ id: "a", title: "A", content: inner as never }] })).toThrow(
       /shell cannot nest/,
     );
@@ -575,7 +638,7 @@ describe("defineReport 装载规范化", () => {
       expect((e as ReportPageNotFoundError).available).toEqual(["overview", "exam"]);
     }
     // 树形态文件的唯一页 id 是缩写展开出的 report
-    const single = defineReport(<ScopeSummary />);
+    const single = defineReport(<SampleSummary />);
     expect(pickReportPage(single, "report").id).toBe("report");
   });
 
@@ -609,7 +672,7 @@ describe("defineReport 装载规范化", () => {
 
   it("标题回退链:def.title → 唯一且相同的快照 name → 内置文案「Eval 运行结果 / Eval Record」;en 相同 zh 不同也落内置文案", () => {
     const named = snap({ experimentId: "t/a", name: "Memory Evals", results: [res("q", "passed")] });
-    const definition = defineReport(<ScopeSummary />);
+    const definition = defineReport(<SampleSummary />);
     expect(resolveReportTitle(defineReport({ title: "Custom", content: null }), scopeOf([named]))).toBe("Custom");
     expect(resolveReportTitle(definition, scopeOf([named]))).toBe("Memory Evals");
     expect(resolveReportTitle(definition, scopeOf([snap({ experimentId: "t/b", results: [] })]))).toEqual(
@@ -662,14 +725,14 @@ describe("内建报告", () => {
     const [reportPage, attemptsPage, tracesPage, attemptPage] = builtInReport.pages;
     expect(childTypes(reportPage!.content).map((c) => c.type)).toEqual([
       Hero,
-      ScopeWarnings,
-      SnapshotDiagnostics,
-      CopyFixPrompt,
-      ExperimentComparison,
+      Callouts,
+      Callouts,
+      CopyBlock,
+      SampleOverview,
     ]);
     const attemptsChildren = childTypes(attemptsPage!.content);
-    expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, ScopeWarnings, SnapshotDiagnostics, SampleOverview]);
-    expect(childTypes(tracesPage!.content).map((c) => c.type)).toEqual([Hero, ScopeWarnings, SnapshotDiagnostics, TraceWaterfall]);
+    expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, Callouts, Callouts, SampleOverview]);
+    expect(childTypes(tracesPage!.content).map((c) => c.type)).toEqual([Hero, Callouts, Callouts, Waterfall]);
     // 第四页是参数化详情页:content 就是裸 AttemptDetail(不套 Col),input/navigation 与文档一致。
     // defineReport 规范化会重建页对象(id/title/content 逐字段拷贝),所以整页对象不可能与
     // 具名导出 standardAttemptPage 保持引用相等;但 content 字段是原样透传,同引用证明
@@ -683,10 +746,10 @@ describe("内建报告", () => {
   });
 });
 
-// ───────────────────────── ExperimentComparison(组合组件)─────────────────────────
+// ───────────────────────── SampleOverview(组合组件)─────────────────────────
 
-describe("ExperimentComparison(组合组件)", () => {
-  /** 展开树里 [ScopeSummary, MetricScatter, ExperimentList] 三个已解析元素。 */
+describe("SampleOverview(组合组件)", () => {
+  /** 展开树里 [SampleSummary, Chart, Table] 三个已解析元素。 */
   async function resolveComparisonChildren(
     node: ReportNode,
     runs: Run[],
@@ -729,34 +792,54 @@ describe("ExperimentComparison(组合组件)", () => {
     return out;
   }
 
-  it("不同深度目录的 experiments 一律进同一份 data;展开树里 ScopeSummary / MetricScatter / ExperimentList 的解析结果与直接调用三个函数深等", async () => {
+  it("不同深度目录的 experiments 一律进同一份 data;展开树里 Chart / Table 的解析结果与 compute 深等", async () => {
     const g1a = snap({ experimentId: "compare/a", agent: "bub", results: [res("q", "passed")] });
     const g1b = snap({ experimentId: "compare/b", agent: "codex", results: [res("q", "failed")] });
     const g2 = snap({ experimentId: "bench/long/x", results: [res("q", "passed")] });
     const solo = snap({ experimentId: "standalone", results: [res("q", "failed")] });
     const all = [g1a, g1b, g2, solo];
-    const [summaryEl, scatterEl, listEl] = await resolveComparisonChildren(<ExperimentComparison />, all);
-    expect(listEl.props.data).toEqual(await experimentListData(all));
-    expect(summaryEl.props.data).toEqual(await scopeSummaryData(all));
-    expect(scatterEl.props.data).toEqual(
-      await metricScatterData(all, { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate }),
+    const scope = scopeOf(all);
+    const resolved = await resolveTree(<SampleOverview />, scope);
+    const charts = collectElementsByType(resolved, Chart);
+    const tables = collectElementsByType(resolved, Table);
+    expect(tables).toHaveLength(1);
+    expect(charts).toHaveLength(1);
+    expect(tables[0]!.props.data).toEqual(experimentListContent(await experimentListData(all)));
+    expect(charts[0]!.props.data).toEqual(
+      scatterDataToDataset(
+        await metricScatterData(scope, { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate }),
+      ),
     );
   });
 
-  it("series 缺省解析:Sample 内任一 experiment 声明 labels.line 时全图 line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
+  it("series 缺省解析:Sample 内任一 experiment 声明 labels.line 时 Series.by=line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
     const withCost = { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } };
     const withLine = snap({ experimentId: "series/with-line", results: [res("q", "passed", withCost)] });
     withLine.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
     const withoutLine = snap({ experimentId: "series/plain", results: [res("q", "passed", withCost)] });
 
-    const [, scatterWithLine] = await resolveComparisonChildren(<ExperimentComparison />, [withLine, withoutLine]);
-    expect((scatterWithLine.props.data as { seriesDimension?: string }).seriesDimension).toBe("line");
+    const seriesByOf = (node: unknown): string | undefined => {
+      const charts = collectElementsByType(node, Chart);
+      const visit = (n: unknown): string | undefined => {
+        if (n === null || n === undefined || typeof n !== "object") return undefined;
+        if (Array.isArray(n)) {
+          for (const c of n) {
+            const found = visit(c);
+            if (found !== undefined) return found;
+          }
+          return undefined;
+        }
+        const el = n as { props?: { by?: string; mark?: string; children?: unknown } };
+        if (el.props?.mark === "scatter" && typeof el.props.by === "string") return el.props.by;
+        if (el.props && "children" in el.props) return visit(el.props.children);
+        return undefined;
+      };
+      return visit(charts[0]?.props.children);
+    };
 
-    const [, scatterNoLine] = await resolveComparisonChildren(<ExperimentComparison />, [withoutLine]);
-    expect((scatterNoLine.props.data as { seriesDimension?: string }).seriesDimension).toBe("agent");
-
-    const [, scatterExplicit] = await resolveComparisonChildren(<ExperimentComparison series="agent" />, [withLine]);
-    expect((scatterExplicit.props.data as { seriesDimension?: string }).seriesDimension).toBe("agent");
+    expect(seriesByOf(await resolveTree(<SampleOverview />, scopeOf([withLine, withoutLine])))).toBe("line");
+    expect(seriesByOf(await resolveTree(<SampleOverview />, scopeOf([withoutLine])))).toBe("agent");
+    expect(seriesByOf(await resolveTree(<SampleOverview series="agent" />, scopeOf([withLine])))).toBe("agent");
   });
 
   it("connect 缺省跟随 series 解析:默认 line 时同 series 两点连线,默认 agent 时不连线", async () => {
@@ -765,13 +848,30 @@ describe("ExperimentComparison(组合组件)", () => {
     lineA.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
     const lineB = snap({ experimentId: "connect/b", agent: "codex", results: [res("q", "failed", withCost)] });
     lineB.experiment = { attempts: 1, earlyExit: false, selectedEvalIds: ["q"], labels: { line: "codex" } };
-    const [, connectedScatter] = await resolveComparisonChildren(<ExperimentComparison />, [lineA, lineB]);
-    expect((connectedScatter.props as unknown as { connect?: boolean }).connect).toBe(true);
 
+    const connectOf = async (node: unknown): Promise<boolean | undefined> => {
+      const charts = collectElementsByType(node, Chart);
+      const visit = (n: unknown): boolean | undefined => {
+        if (n === null || n === undefined || typeof n !== "object") return undefined;
+        if (Array.isArray(n)) {
+          for (const c of n) {
+            const found = visit(c);
+            if (found !== undefined) return found;
+          }
+          return undefined;
+        }
+        const el = n as { props?: { connect?: boolean; mark?: string; children?: unknown } };
+        if (el.props?.mark === "scatter" && typeof el.props.connect === "boolean") return el.props.connect;
+        if (el.props && "children" in el.props) return visit(el.props.children);
+        return undefined;
+      };
+      return visit(charts[0]?.props.children);
+    };
+
+    expect(await connectOf(await resolveTree(<SampleOverview />, scopeOf([lineA, lineB])))).toBe(true);
     const plainA = snap({ experimentId: "connect/plain-a", agent: "codex", results: [res("q", "passed", withCost)] });
     const plainB = snap({ experimentId: "connect/plain-b", agent: "codex", results: [res("q", "failed", withCost)] });
-    const [, unconnectedScatter] = await resolveComparisonChildren(<ExperimentComparison />, [plainA, plainB]);
-    expect((unconnectedScatter.props as unknown as { connect?: boolean }).connect).toBe(false);
+    expect(await connectOf(await resolveTree(<SampleOverview />, scopeOf([plainA, plainB])))).toBe(false);
   });
 
   it("line 缺省对整个 Sample 生效:混入一个声明 line 的实验后,没声明的实验落 (missing) 而非回退 agent;显式 series 覆盖全部", async () => {
@@ -782,18 +882,25 @@ describe("ExperimentComparison(组合组件)", () => {
     const plain = snap({ experimentId: "dev/one", agent: "codex", results: [res("q", "passed")] });
     const all = [lineA, lineB, plain];
 
-    const [, scatterEl] = await resolveComparisonChildren(<ExperimentComparison />, all);
-    const scatterData = scatterEl.props.data as { seriesDimension?: string; rows: Array<{ key: string; series?: string }> };
-    expect(scatterData.seriesDimension).toBe("line");
-    const byKey = new Map(scatterData.rows.map((r) => [r.key, r.series]));
+    const charts = collectElementsByType(await resolveTree(<SampleOverview />, scopeOf(all)), Chart);
+    const dataset = charts[0]!.props.data as {
+      fields: Array<{ name: string }>;
+      rows: Array<{ values: globalThis.Record<string, string> }>;
+    };
+    expect(dataset.fields.some((f) => f.name === "line")).toBe(true);
+    const byKey = new Map(dataset.rows.map((r) => [r.values.experiment as string, r.values.line]));
     expect(byKey.get("mem/codex-baseline")).toBe("codex");
     expect(byKey.get("dev/one")).toBe("(missing)");
 
-    const [, explicitScatterEl] = await resolveComparisonChildren(<ExperimentComparison series={label("memory")} />, all);
-    expect((explicitScatterEl.props.data as { seriesDimension?: string }).seriesDimension).toBe("memory");
+    const explicitCharts = collectElementsByType(
+      await resolveTree(<SampleOverview series={label("memory")} />, scopeOf(all)),
+      Chart,
+    );
+    const explicit = explicitCharts[0]!.props.data as { fields: Array<{ name: string }> };
+    expect(explicit.fields.some((f) => f.name === "memory")).toBe(true);
   });
 
-  it("纯计分制 Sample:展开树仍是扁平三元素形状,散点 y 与列表预排序引用 totalScore 同一实例(不是 endToEndPassRate)", async () => {
+  it("纯计分制 Sample:Chart y 用 totalScore,Table 与 experimentListContent 深等", async () => {
     const g1a = snap({
       experimentId: "score/a",
       agent: "bub",
@@ -805,15 +912,18 @@ describe("ExperimentComparison(组合组件)", () => {
       results: [res("q", "passed", { scoring: "points", assertions: [scoreAssertion(2)] })],
     });
     const all = [g1a, g1b];
-    const [summaryEl, scatterEl, listEl] = await resolveComparisonChildren(<ExperimentComparison />, all);
-    expect(summaryEl.props.data).toEqual(await scopeSummaryData(all));
-    expect(listEl.props.data).toEqual(await experimentListData(all));
-    expect(scatterEl.props.data).toEqual(
-      await metricScatterData(all, { points: "experiment", series: "agent", x: costUSD, y: totalScore }),
+    const scope = scopeOf(all);
+    const resolved = await resolveTree(<SampleOverview />, scope);
+    const charts = collectElementsByType(resolved, Chart);
+    const tables = collectElementsByType(resolved, Table);
+    expect(tables[0]!.props.data).toEqual(experimentListContent(await experimentListData(all)));
+    expect(charts[0]!.props.data).toEqual(
+      scatterDataToDataset(await metricScatterData(scope, { points: "experiment", series: "agent", x: costUSD, y: totalScore })),
     );
+    expect((charts[0]!.props as { y?: string }).y).toBe(totalScore.name);
   });
 
-  it("mixed:按题型拆成两组;ScopeSummary 只有一份读整个 input,散点与 ExperimentList 各题型一对、各用各的主读数", async () => {
+  it("mixed:按题型拆成两组;一份摘要展开 + 两对 Chart/Table,各用各的主读数", async () => {
     const passSnap = snap({ experimentId: "mixed/pass", agent: "bub", results: [res("p", "passed")] });
     const pointsSnap = snap({
       experimentId: "mixed/points",
@@ -821,28 +931,30 @@ describe("ExperimentComparison(组合组件)", () => {
       results: [res("q", "passed", { scoring: "points", assertions: [scoreAssertion(4)] })],
     });
     const scope = scopeOf([passSnap, pointsSnap]);
-    const resolved = await resolveTree(<ExperimentComparison />, scope);
+    const resolved = await resolveTree(<SampleOverview />, scope);
 
-    const summaries = collectElementsByType(resolved, ScopeSummary);
-    expect(summaries).toHaveLength(1);
-    expect(summaries[0]!.props.data).toEqual(await scopeSummaryData([passSnap, pointsSnap]));
-
-    const scatters = collectElementsByType(resolved, MetricScatter);
-    const lists = collectElementsByType(resolved, ExperimentList);
-    expect(scatters).toHaveLength(2);
+    const charts = collectElementsByType(resolved, Chart);
+    const lists = collectElementsByType(resolved, Table);
+    expect(charts).toHaveLength(2);
     expect(lists).toHaveLength(2);
 
-    const scatterByY = new Map(scatters.map((el) => [(el.props.data as { y: { key: string } }).y.key, el]));
-    expect(scatterByY.get(endToEndPassRate.name)?.props.data).toEqual(
-      await metricScatterData([passSnap], { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate }),
+    const chartByY = new Map(charts.map((el) => [(el.props as { y?: string }).y, el]));
+    expect(chartByY.get(endToEndPassRate.name)?.props.data).toEqual(
+      scatterDataToDataset(
+        await metricScatterData([passSnap], { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate }),
+      ),
     );
-    expect(scatterByY.get(totalScore.name)?.props.data).toEqual(
-      await metricScatterData([pointsSnap], { points: "experiment", series: "agent", x: costUSD, y: totalScore }),
+    expect(chartByY.get(totalScore.name)?.props.data).toEqual(
+      scatterDataToDataset(
+        await metricScatterData([pointsSnap], { points: "experiment", series: "agent", x: costUSD, y: totalScore }),
+      ),
     );
 
-    const listByScoring = new Map(lists.map((el) => [(el.props.data as Array<{ scoring: string }>)[0]?.scoring, el]));
-    expect(listByScoring.get("pass")?.props.data).toEqual(await experimentListData([passSnap]));
-    expect(listByScoring.get("points")?.props.data).toEqual(await experimentListData([pointsSnap]));
+    const passContent = experimentListContent(await experimentListData([passSnap]));
+    const pointsContent = experimentListContent(await experimentListData([pointsSnap]));
+    const contents = lists.map((list) => list.props.data);
+    expect(contents).toContainEqual(passContent);
+    expect(contents).toContainEqual(pointsContent);
   });
 });
 

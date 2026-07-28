@@ -199,7 +199,7 @@ function evidenceViewOf(flags: Pick<ShowFlags, "source" | "execution" | "timing"
  * 文件级摘要),`--json` 对 `diff` view 恒输出文件级摘要,忽略 `diffPath`。
  */
 async function evidenceJsonDataOf(view: ShowJsonView, evidence: AttemptEvidence): Promise<unknown> {
-  const mod = await import("../../dist/report/index.js");
+  const mod = await import("../../dist/report/components/attempt-detail/compute.js");
   switch (view) {
     case "source":
       return mod.attemptSourceData(evidence);
@@ -335,17 +335,22 @@ async function renderCompareSlice(
   conditions: readonly [string, string, ...string[]],
   io: { width: number; locale: string; panelMode: "boxed" | "plain" },
 ): Promise<string> {
-  const [{ DeltaTable }, { deltaTableData }] = await Promise.all([
-    import("../../dist/report/components/metric-views/index.js"),
+  const [{ Table }, { deltaTableData }, { deltaTableContent }] = await Promise.all([
+    import("../../dist/report/definition/primitives.js"),
     import("../../dist/report/components/metric-views/compute.js"),
+    import("../../dist/report/components/metric-views/content.js"),
   ]);
   const data = await deltaTableData(selection, { by: "experiment", conditions });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, selection);
-  const page: ReportPage = { id: "compare", title: "Compare", content: { type: DeltaTable, props: { data } } };
+  const page: ReportPage = {
+    id: "compare",
+    title: "Compare",
+    content: { type: Table, props: { data: deltaTableContent(data) } },
+  };
   const table = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta, page: { id: "compare", input: "scope" } },
+    { scope: selection, results, report: meta, page: { id: "compare", input: "scope" }, dimensionPins: report.dimensionPins },
     { width: io.width, locale: io.locale, panelMode: io.panelMode },
   );
   const head = `compare · ${data.conditions.length} conditions · paired by eval id · baseline ${data.conditions[0]}`;
@@ -370,23 +375,28 @@ async function renderStatsSlice(
 ): Promise<string> {
   const experiments = filterExperiments(results.experiments, experimentFilter as string[] | undefined);
   const runs = experiments.flatMap((exp) => exp.runs);
-  const [{ StabilityMatrix }, { stabilityMatrixData }] = await Promise.all([
-    import("../../dist/report/components/metric-views/index.js"),
+  const [{ Table }, { stabilityMatrixData }, { stabilityMatrixContent }] = await Promise.all([
+    import("../../dist/report/definition/primitives.js"),
     import("../../dist/report/components/metric-views/compute.js"),
+    import("../../dist/report/components/metric-views/content.js"),
   ]);
   const data = await stabilityMatrixData(runs, {
     by: "experiment",
     ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
   });
-  // 只给渲染管线占位用的 Sample——StabilityMatrix 走 data 形态,不重新消费它;单独调用
+  // 只给渲染管线占位用的 Sample——Table 走 data 形态,不重新消费它;单独调用
   // currentSample 避免借用「现刻水位」口径当稳定性矩阵的真实数据源(上面已用 runs)。
   const scope = currentSample(results, { experiments: experimentFilter as string[] | undefined, evals: [...patterns] });
   const report = await loadHostReport(cwd, undefined);
   const meta = await buildHostReportMeta(report, scope);
-  const page: ReportPage = { id: "stats", title: "Stability", content: { type: StabilityMatrix, props: { data } } };
+  const page: ReportPage = {
+    id: "stats",
+    title: "Stability",
+    content: { type: Table, props: { data: stabilityMatrixContent(data) } },
+  };
   const table = await renderHostPageText(
     page,
-    { scope, results, report: meta, page: { id: "stats", input: "scope" } },
+    { scope, results, report: meta, page: { id: "stats", input: "scope" }, dimensionPins: report.dimensionPins },
     { width: io.width, locale: io.locale, panelMode: io.panelMode },
   );
   const head =
@@ -458,7 +468,7 @@ function usageSectionText(experimentId: string, rows: readonly UsageTableData[])
  * 出现,数值格全部落 `—`,所以 null 时在这里现场兜底出一行只有身份字段的 `UsageTableData`。
  */
 async function usageRowsOf(attempts: readonly AttemptHandle[]): Promise<UsageTableData[]> {
-  const { usageTableData } = await import("../../dist/report/index.js");
+  const { usageTableData } = await import("../../dist/report/components/attempt-detail/compute.js");
   const ordered = sortAttemptsForSections(attempts);
   const rows: UsageTableData[] = [];
   for (const attempt of ordered) {
@@ -843,7 +853,7 @@ async function show(
       // resolve 产物,因此全部 11 个叶子区块都计算,不因 text 面「有 source 时不重复
       // AttemptConversation」这条渲染面去重规则而省略 conversation。`--report` 已经与
       // `--json` 互斥(见 show() 顶层),这里不需要装载报告就能直接算数据。
-      const mod = await import("../../dist/report/index.js");
+      const mod = await import("../../dist/report/components/attempt-detail/compute.js");
       const data = {
         summary: mod.attemptSummaryData(attemptEvidence),
         error: mod.attemptErrorData(attemptEvidence),
@@ -893,6 +903,7 @@ async function show(
         results,
         report: meta,
         page: { id: attemptPage.id, input: "attempt", locator: attempt.locator!, evidence: attemptEvidence },
+        dimensionPins: report.dimensionPins,
       },
       { width: io.width, locale, panelMode: io.panelMode },
     );
@@ -1145,7 +1156,7 @@ async function show(
   const meta = await buildHostReportMeta(report, selection);
   const text = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta, page: { id: page.id, input: "scope" } },
+    { scope: selection, results, report: meta, page: { id: page.id, input: "scope" }, dimensionPins: report.dimensionPins },
     {
       width: io.width,
       locale,

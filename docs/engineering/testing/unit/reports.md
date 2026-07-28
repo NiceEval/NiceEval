@@ -160,9 +160,18 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 
   - `ctx.resolve(source)` 与同页 `<Table source={source}>` 命中同一份缓存只计算一次。
     区分力场景是一个计数 fake Source 被 Composition 与原语同时引用，计数必须是 1。
+  - `ctx.resolve(source, input)` 与同页 `<Table source={source} input={input}>` 命中同一份缓存；
+    省略 input 时与 `ctx.resolve(source)`、组件省略 `input` 共用 page 默认 input 的缓存键。
   - 缓存的是 Promise：两个并发消费者同时请求仍只计算一次，失败由同一个 Promise 广播给两者。
   - 同一个 Composition 用在两处是两个节点、各展开一次，内部的 `ctx.resolve` 仍共享 Source 缓存。
   - Composition 的 `Input` 与 page 的 `input` 声明不匹配时，装载期按完整用户反馈报错。
+- **ResolvedPage 单次 resolve 多面投影**：`resolvePage` 一次产出可序列化组件树后，
+  `renderResolvedPageText` / `renderResolvedPageWeb(en)` / `renderResolvedPageWeb(zh-CN)` 都从同一
+  `ResolvedPage` 同步投影；断言面是 Source `compute` 调用计数仍为 1（含并发渲染）。
+  view 对每个 page / locator 只调用一次 `resolvePage`。
+- **Component 公共协议收紧**：`defineComponent` 只接受 `{ dimensions, text, web, enhance?, styles? }`；
+  携带 `resolve` 或函数形态定义时按完整用户反馈拒绝。renderer 参数是 Content、options 与呈现
+  context，无法触达 Source input。缺 `dimensions` / `text` / `web` 时失败。
 - **纯函数布局算法**：散点点标签布局是 `chart-math`
   纯几何函数，直接对函数断言标签框与点框的几何关系，不经 HTML；轴值域推定（[值域](../../../feature/reports/components/charts/README.md#值域)）同属这一类——直接对推定函数断言扩后的
   `[min, max]`：两端各扩数据跨度 20%、零跨度 fallback（值绝对值的 20%、值为 0 取 1）、有自然

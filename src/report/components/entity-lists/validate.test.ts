@@ -4,7 +4,7 @@
 // 深层嵌套(ExperimentListItem.evalRows[i].attempts[j])的路径定位。
 
 import { describe, expect, it } from "vitest";
-import { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./index.tsx";
+import { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./validate.ts";
 
 const validCell = { value: 1, display: "1", samples: 1, total: 1, refs: [] };
 const validTally = { passed: 1, failed: 0, errored: 0, unreadable: 0 };

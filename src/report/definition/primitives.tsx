@@ -1,4 +1,4 @@
-// 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table:十个内置
+// 排版原语 Row / Col / Grid / Section / Stat / Text / Markdown / Style / Tabs / Tab / Table:十一个内置
 // 双面组件,没有特殊机制(docs/feature/reports/library/layout.md)。web 面是普通 React 渲染;
 // text 面用 ctx.render(child, 子宽) 显式传宽。Style 注入页级全局 CSS(树位置只决定声明
 // 顺序),text 面渲染为空。Table 是自定义表的标准件,官方表状组件的 text 面也建在它上面。
@@ -15,6 +15,19 @@ import type { ColumnAlign } from "../model/text-layout.ts";
 import { panelContentWidth, renderPanel, type PanelRow } from "../model/panel.ts";
 import { renderTableText } from "./table-text.ts";
 import { normalizeGrid, planTextGrid, type GridDensity, type GridVariant } from "./grid-layout.ts";
+import type { Source, SourceInput } from "../source.ts";
+import type { Dataset } from "../model/types.ts";
+import { datasetToTableContent, isDataset } from "../model/dataset.ts";
+import {
+  flattenTableContentForText,
+  formatCellText,
+  type Cell,
+  type ColumnSpec,
+  type TableContent,
+  type TableContentRow,
+} from "./cell.ts";
+import { MetricCellView } from "../components/cell.tsx";
+
 
 function childArray(children: ReportNode): ReportNode[] {
   if (children === null || children === undefined || typeof children === "boolean") return [];
@@ -38,6 +51,7 @@ export type ColProps = LayoutProps;
 
 /** 纵向依次排列:网页是块级堆叠,终端是逐块输出(块间空一行)。两面都按声明序。 */
 export const Col = defineComponent<ColProps>({
+  dimensions: () => ({}),
   web({ children, className }) {
     return <div className={cx("nre", "nre-col", className)}>{children as ReactNode}</div>;
   },
@@ -62,6 +76,7 @@ function blockWidth(block: string): number {
  * 同一把尺),装不下时整块退化为纵向堆叠——不截断、不隐藏任何子块。
  */
 export const Row = defineComponent<RowProps>({
+  dimensions: () => ({}),
   web({ children, className }) {
     return <div className={cx("nre", "nre-row", className)}>{children as ReactNode}</div>;
   },
@@ -121,6 +136,7 @@ function renderGridRow(blocks: string[], contentWidths: number[], gutter: number
  * 归成一格。展平与 text 面排版的算术在 ./grid-layout.ts,这里只做两面结构适配。
  */
 export const Grid = defineComponent<GridProps>({
+  dimensions: () => ({}),
   web({ children, columns, variant, density, className }) {
     const normalized = normalizeGrid({ children, columns, variant, density });
     const style: CSSProperties = { "--nre-grid-max-columns": normalized.columns } as CSSProperties;
@@ -163,8 +179,11 @@ export type StatTone = "neutral" | "positive" | "negative" | "warning";
 
 export interface StatProps {
   label: LocalizedText;
-  /** 已格式化的主值;null 明确渲染为 —,不补成 0。 */
-  value: LocalizedText | number | null;
+  /**
+   * 主值。收 Cell 时保住覆盖率与下钻；收标量 / LocalizedText 时是作者已经算好的展示值
+   * (与 text 格等价，没有证据可下钻)。
+   */
+  value: Cell | LocalizedText | number | null;
   /** 主值下面的短解释;省略时不留空行。 */
   detail?: LocalizedText;
   /** 主值的语义色;不从正负号、单位或 Metric.better 猜。默认 neutral。 */
@@ -173,22 +192,38 @@ export interface StatProps {
 }
 
 /**
- * Grid / Stat 共享的显示值规范化:LocalizedText 走 resolveLocalizedText,number 走当前
- * locale 的 Intl.NumberFormat,null 变 —;两个面调同一份,不各写一套。
+ * Grid / Stat 共享的显示值规范化:Cell 走 formatCellText / MetricCellView;
+ * LocalizedText 走 resolveLocalizedText,number 走当前 locale 的 Intl.NumberFormat,null 变 —。
  */
-function resolveStatDisplay(value: LocalizedText | number | null, locale: ReportLocale): string {
+function resolveStatDisplay(value: StatProps["value"], locale: ReportLocale): string {
   if (value === null) return MISSING_MARK;
   if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
-  return resolveLocalizedText(value, locale);
+  if (typeof value === "object" && value !== null && "kind" in value) {
+    return formatCellText(value as Cell, locale);
+  }
+  return resolveLocalizedText(value as LocalizedText, locale);
+}
+
+function isCellValue(value: StatProps["value"]): value is Cell {
+  return typeof value === "object" && value !== null && "kind" in value;
 }
 
 /** label / 主值 / 辅助信息的最小内容单元;可以脱离 Grid 单独使用。 */
 export const Stat = defineComponent<StatProps>({
+  dimensions: () => ({}),
   web({ label, value, detail, tone = "neutral", className }, ctx) {
     return (
       <div className={cx("nre", "nre-stat", `nre-stat--${tone}`, className)}>
         <div className="nre-stat-label">{resolveLocalizedText(label, ctx.locale)}</div>
-        <div className="nre-stat-value">{resolveStatDisplay(value, ctx.locale)}</div>
+        <div className="nre-stat-value">
+          {isCellValue(value) && value.kind === "measure" ? (
+            <MetricCellView cell={value.measure} attemptHref={ctx.attemptHref} locale={ctx.locale} />
+          ) : isCellValue(value) ? (
+            formatCellText(value, ctx.locale)
+          ) : (
+            resolveStatDisplay(value, ctx.locale)
+          )}
+        </div>
         {detail !== undefined ? <div className="nre-stat-detail">{resolveLocalizedText(detail, ctx.locale)}</div> : null}
       </div>
     );
@@ -212,6 +247,7 @@ export interface SectionProps extends LayoutProps {
 /** 带标题的块:网页是标题层级(可选 meta 同行右对齐);终端面框线体裁全部委托给 panel.ts,
  *  这里只负责按 ctx.panelMode 组装 title/meta/rows 喂给它,不自己拼框字符。 */
 export const Section = defineComponent<SectionProps>({
+  dimensions: () => ({}),
   web({ title, meta, children, className }, ctx) {
     const titleText = resolveLocalizedText(title, ctx.locale);
     const metaText = meta !== undefined ? resolveLocalizedText(meta, ctx.locale) : undefined;
@@ -297,6 +333,7 @@ export interface TextProps {
 
 /** 自由文本的显式载体:web 面负责转义,text 面按显示宽度折行。 */
 export const Text = defineComponent<TextProps>({
+  dimensions: () => ({}),
   web({ children, className }) {
     return <p className={cx("nre", "nre-text", className)}>{children}</p>;
   },
@@ -316,6 +353,7 @@ export interface StyleProps {
  * 配置对象形态的报告要全站样式优先用外壳 styles,两条通道注入同一增强层。
  */
 export const Style = defineComponent<StyleProps>({
+  dimensions: () => ({}),
   web({ children }) {
     return <style>{children}</style>;
   },
@@ -373,6 +411,7 @@ function tabEntries(children: ReportNode): TabEntry[] {
  * 也不省略(tab 没有选择器,索引只能是死路)。
  */
 export const Tabs = defineComponent<TabsProps>({
+  dimensions: () => ({}),
   web({ children, className }, ctx) {
     const tabs = tabEntries(children);
     return (
@@ -405,6 +444,7 @@ Tabs[COMPONENT_ROLE] = "tabs";
 
 /** 只能直接放在 <Tabs> 下;除通用 children / className 外只有 title。不参与路由,没有 id。 */
 export const Tab = defineComponent<TabProps>({
+  dimensions: () => ({}),
   web({ children, className }) {
     return <div className={cx("nre", "nre-tab-body", className)}>{children as ReactNode}</div>;
   },
@@ -420,7 +460,7 @@ Tab[COMPONENT_ROLE] = "tab";
 
 // ───────────────────────── Table ─────────────────────────
 
-/** 一列的定义:取哪个 cells 键、表头写什么、往哪边对齐。 */
+/** 一列的定义:取哪个 cells 键、表头写什么、往哪边对齐(旧形态 / text 排版共用)。 */
 export interface TableColumn {
   /** 取 `row.cells[key]` 的键。 */
   key: string;
@@ -430,47 +470,147 @@ export interface TableColumn {
   align?: ColumnAlign;
   /**
    * text 面:单元格折行后的最大物理行数,放不下的部分以 `…` 收口;省略则不限行数。
-   * 摘要类列(如比较列表的 Result)用它保证「格子是可扫读的预览」;完整值在下钻面。
    * web 面不消费——网页的高度约束是组件自己的 CSS 决定。
    */
   maxLines?: number;
 }
 
-/** 一行的数据:身份键、已格式化的格子、可选的 attempt locator。 */
+/** 一行的旧形态数据:已格式化的字符串格子。新形态见 TableContentRow。 */
 export interface TableRow {
-  /** 行身份。 */
   key: string;
-  /** 已格式化的显示值;`null`(或缺这个键)渲染成 `—`,不补 0。 */
   cells: Readonly<globalThis.Record<string, string | null>>;
-  /** 带上就多一列 attempt:web 面链到证据室,text 面列出 locator。 */
   locator?: AttemptLocator;
 }
 
-export interface TableProps {
-  /** 非空列定义;数组顺序即渲染顺序。 */
-  columns: readonly [TableColumn, ...TableColumn[]];
-  /** 行数据;数组顺序即渲染顺序,组件不重排也不过滤。 */
-  rows: readonly TableRow[];
-  /** 组件自带文案(attempt 表头、丢列提示)的语言;省略时随宿主。 */
+/** `<Column>` 结构节点:只携带 props,由 Table 解释。 */
+export interface ColumnProps {
+  dataKey: string;
+  header?: LocalizedText;
+  align?: "left" | "right";
+  better?: "higher" | "lower";
+  maxLines?: number;
+}
+
+export const Column = defineComponent<ColumnProps>({
+  dimensions: () => ({}),
+  web: () => null,
+  text: () => "",
+});
+Column.displayName = "Column";
+
+export interface TablePresentation {
+  children?: ReportNode;
+  sort?: string;
+  filter?: boolean;
+  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
-  /** web 面挂到 `<table>` 上。 */
   className?: string;
 }
 
-/** 列 key 唯一、行 cells 不携带未声明 key、空列拒绝——无类型 JS 输入在渲染前同样校验。 */
-function validateTableProps(props: TableProps): void {
-  if (!Array.isArray(props.columns) || props.columns.length === 0) {
-    throw new Error("Table needs at least one column: pass columns: [{ key, header }] — an empty column list renders nothing readable.");
+/**
+ * Table props:新形态(source | data)与旧形态(columns + rows 字符串)并存。
+ * 1.7 退场后只留 DataProps 两支。
+ */
+export type TableProps =
+  | ({
+      data: TableContent | Dataset | null;
+      source?: never;
+      input?: never;
+      columns?: never;
+      rows?: never;
+    } & TablePresentation)
+  | ({
+      source: Source<SourceInput, TableContent | Dataset | null>;
+      data?: never;
+      input?: SourceInput;
+      columns?: never;
+      rows?: never;
+    } & TablePresentation)
+  | ({
+      columns: readonly [TableColumn, ...TableColumn[]];
+      rows: readonly TableRow[];
+      data?: never;
+      source?: never;
+      input?: never;
+      children?: never;
+      sort?: never;
+      filter?: never;
+      attemptHref?: never;
+    } & Pick<TablePresentation, "locale" | "className">);
+
+function isLegacyTableProps(props: TableProps): props is Extract<TableProps, { columns: unknown }> {
+  return Array.isArray((props as { columns?: unknown }).columns);
+}
+
+function columnNodesOf(children: ReportNode | undefined): ColumnProps[] {
+  if (children === null || children === undefined || typeof children === "boolean") return [];
+  const out: ColumnProps[] = [];
+  const visit = (node: unknown): void => {
+    if (node === null || node === undefined || typeof node === "boolean") return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (typeof node === "object" && node !== null && "type" in node && "props" in node) {
+      const el = node as { type: unknown; props: ColumnProps };
+      if (el.type === Column) out.push(el.props);
+    }
+  };
+  visit(children);
+  return out;
+}
+
+function resolveTableContent(props: TableProps, locale: ReportLocale): {
+  columns: TableColumn[];
+  rows: TableRow[];
+  content: TableContent | null;
+} {
+  if (isLegacyTableProps(props)) {
+    return { columns: [...props.columns], rows: [...props.rows], content: null };
+  }
+  const raw = props.data ?? null;
+  const content = raw === null ? null : isDataset(raw) ? datasetToTableContent(raw) : raw;
+  if (content === null) return { columns: [], rows: [], content: null };
+  const overrides = columnNodesOf(props.children);
+  const specs: ColumnSpec[] = overrides.length > 0
+    ? overrides.map((c) => ({ key: c.dataKey, better: c.better }))
+    : [...content.columns];
+  const headers = new Map(
+    overrides.map((c) => [c.dataKey, c.header ?? c.dataKey] as const),
+  );
+  const aligns = new Map(overrides.map((c) => [c.dataKey, c.align] as const));
+  const maxLines = new Map(overrides.map((c) => [c.dataKey, c.maxLines] as const));
+  const flat = flattenTableContentForText(
+    { columns: specs, rows: content.rows },
+    locale,
+  );
+  const columns: TableColumn[] = specs.map((spec) => ({
+    key: spec.key,
+    header: headers.get(spec.key) ?? spec.key,
+    align: aligns.get(spec.key) ?? (spec.better ? "right" : "left"),
+    maxLines: maxLines.get(spec.key),
+  }));
+  if (columns.length === 0) return { columns: [], rows: [], content };
+  return {
+    columns: columns as [TableColumn, ...TableColumn[]],
+    rows: flat.rows.map((r) => ({ key: r.key, cells: r.cells })),
+    content,
+  };
+}
+
+function validateResolvedTable(columns: TableColumn[], rows: TableRow[]): void {
+  if (columns.length === 0) {
+    throw new Error("Table needs at least one column: pass columns or a TableContent with columns, or <Column dataKey> children.");
   }
   const keys = new Set<string>();
-  for (const column of props.columns) {
+  for (const column of columns) {
     if (keys.has(column.key)) {
       throw new Error(`Table column key "${column.key}" is declared twice — column keys address row.cells and must be unique. Rename one column.`);
     }
     keys.add(column.key);
   }
   const rowKeys = new Set<string>();
-  for (const row of props.rows) {
+  for (const row of rows) {
     if (rowKeys.has(row.key)) {
       throw new Error(`Table row key "${row.key}" is declared twice — row keys are the row identity and must be unique.`);
     }
@@ -485,34 +625,113 @@ function validateTableProps(props: TableProps): void {
   }
 }
 
+function renderCellWeb(
+  cell: Cell | undefined,
+  ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale },
+): ReactNode {
+  if (!cell) return <span className="nre-missing">{MISSING_MARK}</span>;
+  switch (cell.kind) {
+    case "notApplicable":
+      return <span className="nre-missing">{MISSING_MARK}</span>;
+    case "missing":
+      return <span className="nre-missing">{cell.code}</span>;
+    case "text":
+      return (
+        <span>
+          {cell.text}
+          {cell.detail ? <span className="nre-muted"> {cell.detail}</span> : null}
+        </span>
+      );
+    case "locator":
+      return ctx.attemptHref ? (
+        <a className="nre-locator" href={ctx.attemptHref(cell.locator)}>
+          {cell.locator}
+        </a>
+      ) : (
+        <span className="nre-locator">{formatCellText(cell, ctx.locale)}</span>
+      );
+    case "summary":
+    case "score":
+    case "verdict":
+      return formatCellText(cell, ctx.locale);
+    case "measure":
+      return <MetricCellView cell={cell.measure} attemptHref={ctx.attemptHref} locale={ctx.locale} />;
+    default: {
+      const _e: never = cell;
+      return _e;
+    }
+  }
+}
+
+function renderContentRowsWeb(
+  rows: readonly TableContentRow[],
+  columns: readonly TableColumn[],
+  ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale },
+  depth = 0,
+): ReactNode[] {
+  const out: ReactNode[] = [];
+  for (const row of rows) {
+    out.push(
+      <tr key={row.key} className={row.variant === "placeholder" ? "nre-row-placeholder" : undefined} data-depth={depth || undefined}>
+        {columns.map((column, i) => {
+          const cell = row.cells[column.key];
+          return (
+            <td
+              key={column.key}
+              className={column.align === "right" ? "nre-align-right" : undefined}
+              style={i === 0 && depth > 0 ? { paddingLeft: `${0.75 + depth * 1.25}rem` } : undefined}
+            >
+              {renderCellWeb(cell, ctx)}
+            </td>
+          );
+        })}
+      </tr>,
+    );
+    if (row.subRows?.length) out.push(...renderContentRowsWeb(row.subRows, columns, ctx, depth + 1));
+  }
+  return out;
+}
+
 /**
- * 自定义表的标准件:列由报告作者定,格子是算好的显示值,两个面各自排整齐。
- *
- * text 面列宽按**显示宽度**算(CJK / 全角记 2 列),所以中文列不会撕歪;总宽超过
- * `ctx.width` 时先折最宽的左对齐列(右对齐列是数字,折行读不了),压到下限仍放不下
- * 就从右侧丢列并在表下如实报丢了几列。web 面是 `<table>` + `<thead>` / `<tbody>`,
- * 右对齐落成 `nre-align-right` 类,不用内联样式。
- *
- * 官方的 `MetricTable` / `MetricMatrix` / `Scoreboard` / `DeltaTable` 的 text 面就建在
- * 这个组件上:自定义表和官方表用同一把尺子。
+ * 行 × 列原语:新形态吃 TableContent(source/data + Cell + subRows + placeholder);
+ * 旧形态 columns/rows 字符串格仍可用(faces.ts / 过渡测试)。
  */
 export const Table = defineComponent<TableProps>({
+  dimensions: () => ({}),
   web(props, ctx) {
-    validateTableProps(props);
-    const { columns, rows, locale, className } = props;
-    const chrome = locale ?? ctx.locale;
-    const hasLocator = rows.some((row) => row.locator !== undefined);
+    const locale = props.locale ?? ctx.locale;
+    const resolved = resolveTableContent(props, locale);
+    validateResolvedTable(resolved.columns, resolved.rows);
     const alignClass = (align?: ColumnAlign) => (align === "right" ? "nre-align-right" : undefined);
+    const attemptHref = !isLegacyTableProps(props) ? props.attemptHref ?? ctx.attemptHref : ctx.attemptHref;
+    if (resolved.content) {
+      return (
+        <table className={cx("nre", "nre-table", props.className)} data-filter={!isLegacyTableProps(props) && props.filter ? "true" : undefined}>
+          <thead>
+            <tr>
+              {resolved.columns.map((column) => (
+                <th key={column.key} scope="col" className={alignClass(column.align)}>
+                  {resolveLocalizedText(column.header, locale)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{renderContentRowsWeb(resolved.content.rows, resolved.columns, { attemptHref, locale })}</tbody>
+        </table>
+      );
+    }
+    const { columns, rows, className } = { columns: resolved.columns, rows: resolved.rows, className: props.className };
+    const hasLocator = rows.some((row) => row.locator !== undefined);
     return (
       <table className={cx("nre", "nre-table", className)}>
         <thead>
           <tr>
             {columns.map((column) => (
               <th key={column.key} scope="col" className={alignClass(column.align)}>
-                {resolveLocalizedText(column.header, chrome)}
+                {resolveLocalizedText(column.header, locale)}
               </th>
             ))}
-            {hasLocator ? <th scope="col">{localeText(chrome, "table.attempt")}</th> : null}
+            {hasLocator ? <th scope="col">{localeText(locale, "table.attempt")}</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -549,8 +768,50 @@ export const Table = defineComponent<TableProps>({
     );
   },
   text(props, ctx) {
-    validateTableProps(props);
-    return renderTableText(props, ctx);
+    const locale = props.locale ?? ctx.locale;
+    const resolved = resolveTableContent(props, locale);
+    validateResolvedTable(resolved.columns, resolved.rows);
+    return renderTableText(
+      { columns: resolved.columns as [TableColumn, ...TableColumn[]], rows: resolved.rows, locale },
+      ctx,
+    );
   },
 });
 Table.displayName = "Table";
+
+export { Waterfall, waterfallText } from "./primitives/waterfall.tsx";
+export type { WaterfallContent, WaterfallNode, WaterfallProps, WaterfallRow } from "./primitives/waterfall.tsx";
+
+export { Callouts } from "./primitives/callouts.tsx";
+export type { CalloutGroup, CalloutItem, CalloutLevel, CalloutsProps } from "./primitives/callouts.tsx";
+export { CopyBlock } from "./primitives/copy-block.tsx";
+export type { CopyBlockContent, CopyBlockProps } from "./primitives/copy-block.tsx";
+
+export { DiffView, diffViewText } from "./primitives/diff-view.tsx";
+export type { DiffChange, DiffContent, DiffFile, DiffViewProps } from "./primitives/diff-view.tsx";
+
+export { Conversation, ConversationEntries, conversationText, sanitizeConversationPreview } from "./primitives/conversation.tsx";
+export type {
+  ConversationContent,
+  ConversationEntry,
+  ConversationProps,
+  ConversationTurn,
+  FailedCommandContent,
+} from "./primitives/conversation.tsx";
+
+export { Markdown, parseMarkdown, markdownToText, markdownToWeb } from "./primitives/markdown.tsx";
+export type { MarkdownAst, MarkdownProps } from "./primitives/markdown.tsx";
+
+export { SourceView, sourceViewText } from "./primitives/source-view.tsx";
+export type {
+  SourceBlockContent,
+  SourceCallContent,
+  SourceContent,
+  SourceLine,
+  SourceLineTone,
+  SourceViewProps,
+} from "./primitives/source-view.tsx";
+
+export { Chart, Series } from "./primitives/chart.tsx";
+export type { ChartPresentation, ChartProps } from "./primitives/chart.tsx";
+export type { SeriesProps, ChartAxisBinding, ChartFieldBinding, ChartSeriesOverride } from "./primitives/chart-map.ts";

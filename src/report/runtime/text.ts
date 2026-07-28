@@ -6,15 +6,11 @@
 import type { Record, Sample } from "../../record/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import {
-  createTextContext,
-  renderNodeToText,
-  resolveReportTree,
-  validateReportTree,
-  ResolveMemo,
   type PageContext,
   type ReportNode,
   type TextRenderOptions,
 } from "../definition/tree.ts";
+import { renderResolvedPageText, resolvePage } from "./resolved-page.ts";
 import {
   buildReportMeta,
   resolveReportTitle,
@@ -24,6 +20,7 @@ import {
   type ReportPage,
 } from "../definition/report.ts";
 import { resolveLocalizedText, type ReportLocale } from "../model/locale.ts";
+import type { DimensionPins } from "../presentation.ts";
 
 /** 默认下钻命令:`niceeval show <locator>` 是 show 已实现的真实 CLI 语法,不需要反查 eval id 再拼近似命令。 */
 const DEFAULT_ATTEMPT_COMMAND = (locator: AttemptLocator): string => `niceeval show ${locator}`;
@@ -99,21 +96,17 @@ export async function renderReportToText(
   const page = pickReportPage(definition, options?.pageId);
   const meta = buildReportMeta(definition, ctx.scope);
   const hasAttemptPage = definition.pages.some((p) => p.input === "attempt");
-  const resolved = await resolveReportTree(page.content, {
+  const resolved = await resolvePage(page.content, {
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
     page: { id: page.id, input: "scope" },
-    memo: new ResolveMemo(),
+    dimensionPins: definition.dimensionPins,
   });
-  validateReportTree(resolved);
-  return renderNodeToText(
-    resolved,
-    createTextContext({
-      ...options,
-      attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
-    }),
-  );
+  return renderResolvedPageText(resolved, {
+    ...options,
+    attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
+  });
 }
 
 /** 页索引标题行(show 多页索引 / view 导航共用的解析结果):按 locale 解析的标题字符串。 */
@@ -134,21 +127,6 @@ export interface HostCommandContext {
   page?: string;
 }
 
-function quoteArg(value: string): string {
-  return /^[A-Za-z0-9._/@-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
-/** 按上下文拼组索引的可复制命令:`niceeval show <patterns> --exp <id> [--record/--report/--page]`。 */
-function experimentCommandFor(ctx: HostCommandContext): (experimentIdPrefix: string) => string {
-  return (prefix) => {
-    const parts = ["niceeval show", ...ctx.patterns.map(quoteArg), `--exp ${quoteArg(prefix)}`];
-    if (ctx.record !== undefined) parts.push(`--record ${quoteArg(ctx.record)}`);
-    if (ctx.report !== undefined) parts.push(`--report ${quoteArg(ctx.report)}`);
-    if (ctx.page !== undefined) parts.push(`--page ${quoteArg(ctx.page)}`);
-    return parts.join(" ");
-  };
-}
-
 /** 逐页渲染的宿主上下文:官方口径的 Sample、结果根读取面、规范化声明(ctx.report)与当前页判别。 */
 export interface ReportTreeHostContext {
   scope: Sample;
@@ -156,6 +134,11 @@ export interface ReportTreeHostContext {
   report: ReportMeta;
   /** 当前渲染的页:scope 分支只有 id;attempt 分支带 locator + evidence(宿主已完成寻址与装配)。 */
   page: PageContext;
+  /**
+   * 外壳钉色。住在宿主渲染上下文而非 ReportMeta——Composition 的 ctx.report 读不到钉色,
+   * 页级分配才能保持纯函数(shell.md「钉色」/「行为约束」)。
+   */
+  dimensionPins?: DimensionPins;
 }
 
 export interface RenderTreeTextOptions extends TextRenderOptions {
@@ -174,21 +157,10 @@ export async function renderReportTreeToText(
   ctx: ReportTreeHostContext,
   options?: RenderTreeTextOptions,
 ): Promise<string> {
-  const resolved = await resolveReportTree(tree, {
-    scope: ctx.scope,
-    results: ctx.results,
-    report: ctx.report,
-    page: ctx.page,
-    memo: new ResolveMemo(),
-  });
-  validateReportTree(resolved);
+  const resolved = await resolvePage(tree, ctx);
   const hasAttemptPage = ctx.report.pages.some((p) => p.input === "attempt");
-  const textCtx = createTextContext({
+  return renderResolvedPageText(resolved, {
     ...options,
     attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
-    ...(options?.experimentCommand === undefined && options?.commandContext !== undefined
-      ? { experimentCommand: experimentCommandFor(options.commandContext) }
-      : {}),
   });
-  return renderNodeToText(resolved, textCtx);
 }

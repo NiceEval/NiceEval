@@ -1,21 +1,29 @@
 ---
 title: "编写自定义报告"
 sidebarTitle: "自定义报告"
-description: "用 defineReport、内置报告组件和双面组件编写一份同时用于 niceeval show 与 niceeval view 的自定义报告。"
+description: "用 Source、Composition 和双面 Component 编写一份同时供 niceeval show 与 niceeval view 使用的报告。"
 ---
 
-[查看结果](/zh/tutorials/viewing-results)介绍 `niceeval show` 的终端输出和 `niceeval view` 的网页输出。本教程用相同的结果数据编写考试成绩单、代码行数表和质量 × 成本图等自定义报告。
+`niceeval show` 在终端读取报告的 text 面，`niceeval view` 在浏览器读取同一份报告的 web 面。
+两个入口装载同一个 `defineReport(...)` 产物，也使用同一份 Sample、数据源和证据引用。
 
-一份报告对应一个报告文件：一棵由内置组件搭起来的树。`niceeval show` 和 `niceeval view` 打开记录、选出当前 Sample，交给这棵树渲染。把文件路径传给 `--report`，同一份定义在终端和网页都能渲染；写顺手了再把它填进 `niceeval.config.ts` 的 `report` 字段，裸跑 `show` / `view` 就默认是自己的报告（见[设成项目默认](#设成项目默认)）。自定义报告同样支持 Attempt 证据链接、`--record` 指定记录根和静态导出。
+报告作者只需要区分三个概念：
 
-## show / view 的默认报告也是一份报告文件
+| 概念 | 负责什么 |
+| --- | --- |
+| Source | 从 Sample 或 AttemptEvidence 计算可序列化 Content |
+| Composition | 读取当前 page input，协调多个 Source，再装配组件树 |
+| Component | 把一份 Content 同步显示成 text 与 web |
 
-`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时渲染的默认报告不是私有实现，而是包里自带的一个普通报告文件：报告、Attempts、追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页，每页都由 `niceeval/report` 公开导出的组件搭成。
+数据读取、聚合和排序只在 Source 中发生。Component 的两个 renderer 都消费同一份 Content，
+不会各自读取记录或重新计算指标。
 
-这份默认报告本身以 `standard` 为名从 `niceeval/report/built-in` 导出。只想在默认报告上加站点标题、GitHub 链接或统计脚本时，用 `extends` 在它上面叠自己的外壳，页面内容一行不用写；NiceEval 升级带来的页面改进也会自动跟过来：
+## 从默认报告开始
+
+NiceEval 自带的 `standard` 也是一份普通报告。它包含报告、Attempts、追踪三张导航页，
+以及一张按 Attempt 定位符打开的详情页：
 
 ```tsx
-// reports/branded.tsx —— 默认报告整站 + 自己的标题和链接
 import { defineReport } from "niceeval/report";
 import { standard } from "niceeval/report/built-in";
 
@@ -26,547 +34,325 @@ export default defineReport({
 });
 ```
 
-`niceeval/report/built-in` 是内置报告的集合，每份一个名字；今天只有 `standard`，以后新增的内置报告也从这里按名字导入。想改页面内容本身，用同一批公开组件自己搭——你的报告文件能逐字写出同样的首页，也能只留自己要的部分：
+只改标题、链接、主题或统计脚本时，使用 `extends` 保留默认 pages。需要改变页面内容时，
+直接用公开 Source、Composition 和 Component 重新声明 pages。
+
+默认首页的组合组件是 `SampleOverview`：
 
 ```tsx
-import { ExperimentComparison } from "niceeval/report";
+import { SampleOverview, defineReport } from "niceeval/report";
 
-<ExperimentComparison />
+export default defineReport(<SampleOverview />);
 ```
 
-`ExperimentComparison` 就是默认首页：一行组件直接对当前 Scope 计算范围摘要、成本 × 端到端成功率散点图和实验明细表，不需要额外取数。
+## 创建第一份报告
 
-|  | 网页（人看） | 终端（agent 和你看） |
-| --- | --- | --- |
-| 官方默认 | 分组比较报告（网页面） | 同一分组比较报告（文本面） |
-| 自定义报告 | `niceeval view --report reports/exam.tsx` | `niceeval show --report reports/exam.tsx` |
+报告文件使用 `.tsx`，项目需要安装 `react`，并把 `tsconfig.json` 的
+`compilerOptions.jsx` 设为 `"react-jsx"`。
 
-自定义报告分为三个层次：
-
-1. **调整布局**：用内置组件和 `Row` / `Col` 重新排列版面，需要自己分组或过滤时写一个组合组件。
-2. **换口径**：`defineMeasure` 定义自己的读数，`flag()` / `label()` / `runConfig()` 定义自己的分组和坐标轴。
-3. **自定义组件**：表格用 `<Table>` 自定义列，其它展示用 `defineComponent` 分别实现网页和终端渲染。
-
-## 创建报告文件
-
-先交代唯一的前置：报告文件是 `.tsx`，写它的项目要装 `react`（写自定义组件的 web 面还要 `@types/react`），tsconfig 里 `compilerOptions.jsx` 设为 `"react-jsx"`。裸跑 `niceeval show` / `niceeval view` 不需要这些——只有自己写报告文件才需要。
-
-用 `defineReport` 声明一棵树。宿主打开记录目录(包括 `--record` 指定的记录根)，按默认规则选出当前 Sample,再把这份 Sample 交给树里每个组件——组件自己知道怎么从 Sample 取数,报告文件不需要手工传参:
+下面的报告用一份 Dataset 同时画质量成本图，并把 Experiment 事实列成表：
 
 ```tsx
-// reports/exam.tsx —— 终端和网页共用一份定义
+// reports/quality-cost.tsx
 import {
-  defineReport, Col, Section,
-  ExperimentComparison, Scoreboard, examScore,
+  Chart,
+  Col,
+  Series,
+  Section,
+  Table,
+  costUSD,
+  defineReport,
+  passRate,
+  sources,
 } from "niceeval/report";
+
+const qualityCost = sources.measure.rows({
+  dimensions: ["experiment", "agent"],
+  measures: [costUSD, passRate],
+});
 
 export default defineReport(
   <Col>
-    <ExperimentComparison />
-    <Section title="考试成绩单">
-      <Scoreboard score={examScore}>
-        <Rows dimension="agent" />
-        <Question id="security/sql-injection" />
-        <Question id="correctness/retry" />
-      </Scoreboard>
+    <Section title="质量与成本">
+      <Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
+        <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+      </Chart>
     </Section>
+    <Table source={sources.entity.experiments} filter />
   </Col>,
 );
 ```
 
 ```bash
-niceeval show --report reports/exam.tsx    # 终端：同一棵树走文本面
-niceeval view --report reports/exam.tsx    # 网页：渲染网页面，Attempt 链接进入证据页
+niceeval show --report reports/quality-cost.tsx
+niceeval view --report reports/quality-cost.tsx
 ```
 
-`SampleOverview`、`Scoreboard` 这类组件省略 `input` 时都默认吃宿主选出的当前 Sample——不用在报告文件里手工取数再喂给它们。Sample 的挑选规则是：对每个实验、每道评估用例，取该实验历史运行里最新的那次判定；只按前缀重跑了一部分评估用例时，其余评估用例的判定从更早的运行补齐,不会因为一次局部重跑就整体退回某一份残缺 Run。
+宿主先按 `--record`、`--exp`、评估用例位置参数与 `--fresh` 选择 Sample，再解析报告。
+同一 page 内，相同 Source 对象与相同 input 引用只计算一次。
 
-默认挑法不合口径,或者要按子集分别展示时,不能在报告树里直接写 JavaScript——树只负责声明,取数发生在组合组件里。用 `defineComponent` 写一个组合组件,函数体里能拿到 `ctx.scope`(当前 Scope)和 `ctx.results`(结果根的完整读取面,取历史快照用它),用普通 JavaScript 加工后再传给下游组件:
+## 直接绑定 Source
+
+Source 是计算声明，Content 是计算结果。原语接收互斥的两种数据形态：
 
 ```tsx
-import { ScopeSummary, Section, defineComponent } from "niceeval/report";
+// 让报告管线计算
+<Table source={sources.entity.experiments} />
 
-const ProdSummary = defineComponent((_props: {}, ctx) => (
-  <Section title="生产实验">
-    <ScopeSummary input={ctx.scope.filter((s) => s.experimentId.startsWith("prod/"))} />
-  </Section>
-));
+// 使用已经算好的 Content
+<Table data={content} />
 ```
 
-命令行的范围先作用在挑选上,组件拿到的就是收窄到这个范围后的 Sample:位置参数的评估用例 id 前缀收窄 Sample 覆盖的评估用例(覆盖缺口的分母同样收窄到范围内),`--record` 把记录根换成指定目录,`--exp` 让 Sample 只留该实验。`--history` 与 `--report` 互斥——趋势在报告里用 `ctx.results` 自己组织;证据视图(`--source` / `--execution` / `--diff`)只看证据,不渲染报告。
+`source` 形态省略 `input` 时使用当前 page input。`data` 形态不会再读取或聚合数据。
+同时传入 `source` 和 `data` 会报错。
 
-报告树里的组件有两种数据形态。像上面这样省略 `data`、直接传计算选项(`rows`、`columns`、`questions` 这类)是 spec 形态,组件自己在渲染前取数;需要先用 JavaScript 过滤或加工时,改用组件配套的 `xxxData(scope, options)` 函数手工取数,再把结果传给 `data` prop——两种写法产出完全相同,选哪种只看要不要在取数和渲染之间插入自己的逻辑。完整的双形态契约和每个组件的字段见[报告组件](/zh/reference/report-components)。
-
-选择警告(`ScopeWarnings`)组件显示运行未完成、快照读取失败这类定位不到具体某道题的提醒,按实验分组,组头列出实验名、问题标签和可复制的重跑命令,每条原文位于可展开区域中。默认报告的每一页都包含该组件;自定义报告需要显示提醒时,在页首添加 `<ScopeWarnings />`。能落到行上的事实不走警告:覆盖不全的题在实验列表里渲染成「当前配置下无结果」占位行,缓存携带或跨快照拼入的旧结果在行上带 `↩` 时距标注——这两样跟着 `ExperimentList` 走,不需要单独摆组件。
-
-快照诊断(`SnapshotDiagnostics`)组件挨着选择警告摆,显示的是另一类事情:某一次实验跑的时候出了问题、但落不到具体某道题上,比如实验级 teardown 失败或者预算没法执行。它按实验和结果快照分组,每条保留是哪一次跑出来的、多久以前跑的、严重程度、原文和可复制的下一步命令。网页面整块默认折起,`<summary>` 那行恒定可见,一眼能看到涉及几次运行、共几条、最高严重到什么程度;终端面不折叠,顺序打完。这批数据为空时组件不输出任何东西。默认报告的每一页也都包含它;自定义报告需要显示时,在 `<ScopeWarnings />` 旁边加 `<SnapshotDiagnostics />`。
-
-页面里的每个组件都是**双面**的:网页面是 React 渲染,终端面是字符渲染,两面吃同一份算好的数据。实体列表按 experiment → Eval → Attempt 展示事实;指标表、矩阵、柱状图、成绩单、散点图、趋势图和差异表展示聚合值。完整清单见[报告组件](/zh/reference/report-components)。网页面的实体、格子和点深链到 Attempt 详情,终端面印出对应的 `niceeval show <eval id>` 下钻命令。
-
-默认报告没有特权:它的四个页面全部由公开组件搭成。需要同样的当前 Sample 比较就写 `<SampleOverview />`;要子集就在报告里先 `filter`,或从 CLI 用 `--exp` 收窄。
-
-## 设成项目默认
-
-报告定型以后，不用再要求团队每次都敲 `--report`。把 `defineReport` 的产物 import 进配置，填给 `report` 字段：
-
-```ts
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-import site from "./reports/site";
-
-export default defineConfig({
-  report: site,
-});
-```
-
-字段收报告定义本身，不是路径字符串——配置是 TS 文件，import 就好，写错路径在类型检查时就报出来。之后：
-
-```bash
-niceeval show                     # 自己的报告,不用再写 --report
-niceeval view --page exam         # --page、位置参数收窄、@locator 下钻全部照旧
-niceeval show --report standard   # 本次回到内建默认报告,不改配置
-niceeval view --report ./reports/exam.tsx   # 本次换成另一份文件
-```
-
-`--report` 的值有两种形态：写成带路径的样子（`./reports/exam.tsx`、`reports/exam.tsx`）按文件装载，裸词当内置报告名查（今天只有 `standard`）。裸词查不到就报错并列出可用的名字，不会去猜同名文件。
-
-配置里的 `report` 只影响看结果，不影响跑：`niceeval exp` 不读它，报告也不写进结果快照，所以改报告不用重跑。
-
-## 排版:内置排版原语
-
-排版原语也是双面组件,同一份布局会分别渲染到网页和终端:
-
-- **`<Col>`**:纵向依次排列——网页是块级堆叠,终端是逐块输出。
-- **`<Row>`**:并排——网页是横向排布,终端是字符分栏;终端宽度不够时自动降级为纵向,不硬挤。
-- **`<Grid columns={N}>` / `<Stat>`**:自由摘要格,一格一个 label-value 卡片;`columns` 是网页宽屏下最多摆几列,窄屏和终端都会自动减列,不丢格。见下文「自由摘要格」。
-- **`<Section title="…">`**:带标题的块,网页是标题层级,终端是标题行加缩进;可选 `meta` 是标题行右侧的短元信息,网页同行右对齐,终端放不下时换行。
-- **`<Text>`**:说明文字,网页是段落,终端是折行文本。
-- **`<Table>`**:自定义列的表——网页是 `<table>`,终端是按显示宽度对齐的字符表,中文列不撕歪。
-- **`<Tabs>` / `<Tab title="…">`**:一页里的并列视图,网页是可切换的 tab 条,终端按顺序全部输出——tab 是浏览状态,不是页面,内容多到终端读不动时是升级成单独页面的信号。
+需要配置的数据源先创建一个具名值。多个组件引用同一个值即可共享计算：
 
 ```tsx
-<Row>
-  <Scoreboard score={examScore}>
-    <Rows dimension="agent" />
-    <Question id="security/sql-injection" />
-    <Question id="correctness/retry" />
-  </Scoreboard>
-  <MetricTable>
-    <Rows dimension="agent" />
-    <Column metric={endToEndPassRate} />
-    <Column metric={costUSD} />
-  </MetricTable>
-</Row>
-```
-
-```text
-$ niceeval show --report reports/exam.tsx
-考试成绩单                          │  agent  pass  cost
-agent  总分       security  correctness │  bub    87%   $0.42
-bub    86.5/100   45/50    41.5/50  │  codex  80%   $0.51
-```
-
-页面树里只放双面组件和排版原语,不放裸 HTML 标签——终端面没法渲染一个 `<div>`。要自由内容,说明文字用 `<Text>`,更自由的走下面的自定义组件。
-
-## 按子集分组:组合组件 + filter
-
-需要按目录前缀把 Experiment 分成几组、每组单独摆一块摘要时,不需要专门的分组组件——写一个组合组件,在 `ctx.scope` 上 `filter`,把收窄后的 Scope 交给 `ScopeSummary`:
-
-```tsx
-// reports/groups.tsx —— 按 experiment id 前缀分组,每组一块 ScopeSummary
-import { Col, ScopeSummary, Section, defineComponent, defineReport } from "niceeval/report";
-
-const GroupBlocks = defineComponent((_props: {}, ctx) => {
-  const prefixes = ["agents/codex/", "agents/claude/"];
-
-  return (
-    <Col>
-      {prefixes.map((prefix) => (
-        <Section key={prefix} title={prefix}>
-          <ScopeSummary input={ctx.scope.filter((s) => s.experimentId.startsWith(prefix))} />
-        </Section>
-      ))}
-    </Col>
-  );
+const byAgent = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, costUSD],
 });
 
-export default defineReport(<GroupBlocks />);
+export default defineReport(
+  <Col>
+    <Table source={byAgent} />
+    <Chart source={byAgent} x="costUSD" y="passRate">
+      <Series id="agents" mark="scatter" points="agent" />
+    </Chart>
+  </Col>,
+);
 ```
 
-```text
-$ niceeval show --report reports/groups.tsx
-agents/codex/
-Pass rate 60% · 2 experiments · 6 evals · failed 1 · errored 1 · $1.50
-```
+分别调用两次 `sources.measure.rows(...)` 会创建两个 Source。即使配置相同，它们也会分别计算。
 
-在分组块后面加散点图或 Experiment 列表时,把同一份收窄后的 Sample 当 `input` 传给它们,或者用对应 Source 拿到可自行过滤的内容。需要按其它维度(不是路径前缀)分组比较,用下文的 `Table` 加自定义维度更直接。
+## 用 Composition 加工数据
 
-## 换口径:自定义指标
-
-实验、Eval、Attempt 的固定诊断字段由三个实体列表承接。下面的例子是另一种需求:用通用 `MetricTable` 自由换指标口径——每个指标的计算逻辑都挂在自己身上,换口径只需要换 `columns`:
+需要过滤、截断、连接多个 Source 或动态生成组件树时，使用 `defineComposition`。
+在 Composition 内通过 `ctx.resolve()` 取数，不能直接调用 `source.compute()`：
 
 ```tsx
-// reports/golf.tsx —— code-golf:只比通过方案的改动行数
-import {
-  Table, costUSD, defineMeasure, defineReport, passRate,
-} from "niceeval/report";
+import { Table, defineComposition, sources } from "niceeval/report";
 
-const changedLines = defineMeasure({
-  name: "changed-lines",
-  label: { en: "Changed lines", "zh-CN": "改动行数" },
-  unit: "lines",
-  better: "lower",
-  where: (attempt) => attempt.result.verdict === "passed",
-  async value(attempt) {
-    const diff = await attempt.diff();
-    if (!diff) return null;
-    return Object.keys(diff.files)
-      .reduce((sum, path) => sum + (diff.get(path) ?? "").split("\n").length, 0);
+export const CostliestAttempts = defineComposition(
+  async ({ limit = 10 }: { limit?: number }, ctx) => {
+    const content = await ctx.resolve(sources.entity.attempts);
+    const rows = [...content.rows]
+      .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
+      .slice(0, limit);
+
+    return <Table data={{ ...content, rows }} filter />;
   },
-});
-
-export default defineReport(
-  <MetricTable>
-    <Rows dimension="agent" sort={endToEndPassRate} />
-    <Column metric={endToEndPassRate} />
-    <Column metric={changedLines} />
-    <Column metric={costUSD} />
-  </MetricTable>,
 );
 ```
 
-```text
-$ niceeval show --report reports/golf.tsx
-agent   pass rate   changed lines   cost
-bub     87%         312 lines       $0.42
-codex   80%         355 lines       $0.51
-```
-
-格子里的终值是**两级折叠**出来的:同一道题的多个 Attempt 先折成题级值(`perEval`),再跨题折成格子值(`acrossEvals`),两级默认都是平均。分两级不是形式主义——失败的题天然比通过的题 Attempt 多(重试跑满、通过即停),平铺求均值会让分数和重试策略纠缠在一起。两级都能在 `defineMeasure` 的 `aggregate` 里换:`aggregate: { perEval: "max", acrossEvals: "mean" }` 就是 pass@k(题内取最好一次,跨题取占比)。
-
-两个面继承同一套诚实契约:排序方向随指标的 `better`,覆盖不全的格子带 `12/15` 角标(15 个 attempt 里 12 个测得了该指标),缺数据渲染成 `—` 而不是 0。指标只定义一次,两个面共用——人在网页上看到的数字,就是 agent 在 stdout 里读到的数字,判断口径永远一致。给 agent 的指引也只多一行:跑 `niceeval show --report reports/golf.tsx`,读 stdout。
-
-`label` 可以是一份文案,也可以按语言给:`label: { en: "Changed lines", "zh-CN": "改动行数" }`——查看器界面切语言时,按语言给的 label 跟着切;只给一份就两种语言都用它。指标算出来的数字本身不分语言。
-
-内置指标里 `endToEndPassRate` / `taskPassRate` / `executionReliability` / `costUSD` / `durationMs` / `tokens` 只读 Attempt 自带的判定、用量这些字段,任何一份结果目录都算得出。没有限定词的"成功率"使用 `endToEndPassRate`:passed 记 1,failed 和 errored 都记 0。`taskPassRate` 只在形成可信判定的样本上衡量答题质量,errored 不参与;展示它时应明确写"可判定任务通过率",不能简称成功率。要区分答题质量和执行问题,把 `endToEndPassRate`、`taskPassRate`、`executionReliability` 三列并排。`assistantTurns`(o11y 事件流里的 assistant turn 数)不一样,它读 `attempt.o11y()`——这份数据 `copySnapshots` 缺省会随行,但如果发布脚本显式给了 `artifacts` 列表又没把 `"o11y"` 写进去,它就不在发布根里(见[结果数据 API](/zh/reference/results-data)的"发布"一节),指标渲染成 `—`,不是 0。自己写的指标只要读了 `o11y()` / `diff()` 这类 artifact(就像上面 `changedLines` 读 `attempt.diff()`),发布前都要过一遍同样的检查。
-
-## 换分组:三种来源
-
-维度决定分组——表的行、矩阵的行列、散点的点、趋势图的 x 轴。每个维度槽收三种值:
-
-- **内置维度**:`"agent"`、`"model"`、`"experiment"`、`"eval"`、`"evalGroup"`、`"snapshot"`,结果里现成的身份字段。
-- **自定义维度**:`{ name, of }`,一个纯函数吃 attempt、吐组名。定义只住在报告文件里,不用改任何 experiment 文件。
-- **声明式变量**:`flag()` / `label()` / `runConfig()`,分别引用 experiment 用 `flags`、`labels` 声明的变量和顶层运行配置。
-
-### 自定义维度:从已有数据派生分组
-
-分组能从现有结果数据**计算**出来时用自定义维度,不要求为了展示方式去改任何 experiment 文件。比如把不同模型折成厂商,按厂商比通过率:
+`ctx.resolve(source)` 默认使用 `ctx.input`。组合组件显式接收另一个同类型 input 时，
+使用 `ctx.resolve(source, input)`；第二个参数只影响这次 Source 计算，不改变 page input。
 
 ```tsx
-// reports/vendor.tsx
-import { MetricTable, costUSD, defineReport, endToEndPassRate } from "niceeval/report";
-import type { CustomDimension } from "niceeval/report";
-
-const vendor: CustomDimension = {
-  name: "vendor",
-  of: (a) => (a.snapshot.model?.startsWith("gpt-") ? "OpenAI" : "Anthropic"),
-};
-
-export default defineReport(
-  <MetricTable>
-    <Rows dimension={vendor} />
-    <Column metric={endToEndPassRate} />
-    <Column metric={costUSD} />
-  </MetricTable>,
+const PrefixSummary = defineComposition(
+  async ({ input }: { input?: Sample }, ctx) => {
+    const selected = input ?? ctx.input;
+    const snapshot = await ctx.resolve(sources.sample.snapshot, selected);
+    return <SampleNotices data={snapshot} />;
+  },
 );
 ```
 
-`of` 能读 attempt 的全部已有数据:`evalId`、`experimentId`、快照与判定里的字段。它只能派生、不能补造:如果两组 experiment 的差别只体现在文件命名里(`bub-baseline.ts` / `bub-mempal.ts`),`of` 就只能去解析这个名字——命名约定一改,分组静默散掉。这种时候变量该搬回配置,往下看。
+Composition 自己没有 renderer。它返回的每个可见节点仍必须是有 text/web 两面的 Component。
 
-### 声明式变量:`flag()` / `label()` / `runConfig()`
+## 定义自己的 Source
 
-画"并行 agent 数 × 模拟延迟 × 得分"这类 scaling 趋势时,图上的变量不该编码进 experiment id(`ultra-16agents-300ms`),再在报告里解析字符串抠出来——那是约定不是配置,改个命名整张图就散。变量的家是 experiment 文件里声明的字段,三种来源对应三个构造器,不猜:
-
-- **`flag()` / `numericFlag()`** 读 `ExperimentDef.flags`——agent 和 eval 运行时也能看见的参数,比如并发数、延迟档位。
-- **`label()` / `numericLabel()`** 读 `ExperimentDef.labels`——只用于报告归类的标注,运行时不可见。
-- **`runConfig()` / `numericRunConfig()`** 读顶层运行配置(`model`、`reasoningEffort`、`budget`、`runs` 这类),名字点明读的是这次运行落盘的配置。
-
-```ts
-// experiments/ultra/agents-16.ts
-import { defineExperiment } from "niceeval";
-import { bub } from "../../agents/bub.ts";
-
-export default defineExperiment({
-  agent: bub({ mode: "ultra" }),
-  flags: { agents: 16, latencyMs: 300 },
-});
-```
-
-分组用不加 `numeric` 前缀的版本按声明值分类;当坐标轴用的变量(`<XAxis numeric={...} />`)必须用 `numericFlag()` / `numericLabel()` / `numericRunConfig()`,因为刻度要求真实数值:
+需要复用一段 NiceEval 数据计算时，用 `defineSource`：
 
 ```tsx
 import {
-  Line, LineChart, XAxis, YAxis,
-  defineReport, endToEndPassRate, flag, numericFlag,
+  defineSource,
+  type Row,
+  type Sample,
+  type TableContent,
 } from "niceeval/report";
 
-const agents = flag("agents", { label: "并行 agent 数" });
-const latency = numericFlag("latencyMs", { label: "Simulated latency", unit: "ms" });
+interface BudgetRow extends Row {
+  cells: {
+    agent: { kind: "text"; text: string };
+    spend: { kind: "number"; value: number | null; unit: "USD" };
+  };
+}
 
-export default defineReport(
-  <LineChart>
-    <XAxis numeric={latency} />
-    <YAxis metric={endToEndPassRate} />
-    <Line metric={endToEndPassRate} by={agents} />
-  </LineChart>,
-);
-```
-
-未声明该变量的 Experiment 在分组时归入"未配置",用作坐标轴时不绘制该点并在注脚中计数。Flags 和 labels 随快照落盘,因此历史 run 也能按当时声明的变量重新分组。
-
-## 换形态:表格用 Table,摘要卡片用 Grid/Stat,其余自己画
-
-内置组件未覆盖的展示分三类:表格使用排版原语 `<Table>`;label-value 的自由摘要卡片使用 `<Grid>` / `<Stat>`;通过率柱状图、预算燃尽图和项目徽章这类真正需要自己画的展示,才用 `defineComponent` 编写双面组件。
-
-### 一张表:`<Table>`
-
-列是你定的,格子是你算好的显示值,`<Table>` 负责把网页和终端两个面都排整齐:
-
-```tsx
-// reports/cost-board.tsx
-import {
-  defineReport, defineComponent, Table,
-  costUSD, endToEndPassRate, metricTableData,
-} from "niceeval/report";
-
-const CostBoard = defineComponent(async (_props: {}, ctx) => {
-  const board = await metricTableData(ctx.scope, {
-    rows: "agent",
-    columns: [endToEndPassRate, costUSD],
-  });
-  return (
-    <Table
-      rows={board.rows.map((r) => ({
-        key: r.key,
+export const budgets = defineSource<Sample, TableContent<BudgetRow>>({
+  name: "budgets",
+  async compute(sample) {
+    const totals = await computeBudgetByAgent(sample);
+    return {
+      columns: [{ key: "agent" }, { key: "spend", unit: "USD", better: "lower" }],
+      rows: totals.map(({ agent, spend }) => ({
+        key: agent,
         cells: {
-          agent: r.key,
-          pass: r.cells[endToEndPassRate.name].display,
-          // 缺数据交 null,组件渲染成 —;不要自己填 0
-          cost: r.cells[costUSD.name].value === null ? null : r.cells[costUSD.name].display,
+          agent: { kind: "text", text: agent },
+          spend: { kind: "number", value: spend, unit: "USD" },
         },
-      }))}
-    >
-      <Column key="agent" header="Agent" />
-      <Column key="pass" header="通过率" align="right" />
-      <Column key="cost" header="成本" align="right" />
-    </Table>
-  );
-});
-
-export default defineReport(<CostBoard />);
-```
-
-```text
-$ niceeval show --report reports/cost-board.tsx
-Agent    通过率    成本
-bub         87%   $0.42
-codex       80%   $0.51
-克劳德        —       —
-```
-
-列宽按**终端显示宽度**计算,一个汉字占 2 列。`align: "right"` 让数字列右对齐。单元格值为 `null` 时渲染 `—`,不补 0。行上包含 `locator` 时会增加 Attempt 列;网页链接进入 Attempt 证据页,终端把 locator 交给 `niceeval show`。完整字段见[报告组件](/zh/reference/report-components)的"表格"一节。
-
-### 自由摘要格:`<Grid>` / `<Stat>`
-
-耗时、成本、参与率这类 label-value 速览数字,不用写 `defineComponent`——`<Grid>` 摆格子,`<Stat>` 摆每格的 label / 主值 / 辅助信息,两个面自动排版:
-
-```tsx
-// reports/run-summary.tsx
-import { Grid, Section, Stat, defineReport } from "niceeval/report";
-
-export default defineReport(
-  <Section title="运行速览" meta="4/4 完成">
-    <Grid columns={2} variant="boxed">
-      <Stat label="总耗时" value="12m 30s" />
-      <Stat label="总成本" value="$1.86" />
-      <Stat label="通过率" value="87%" tone="positive" />
-      <Stat label="失败数" value={2} detail="见下方 Attempt 列表" tone="negative" />
-    </Grid>
-  </Section>,
-);
-```
-
-`columns` 是宽屏下最多摆几列,窄屏和终端都会自动减列,不丢任何一格;加 `variant="boxed"` 给每格描边,省略就是默认的 `plain` 无框。`value` 收 `LocalizedText`、`number` 或 `null`——`null` 显示 `—`,数字 `0` 照常显示成 `0`,不当成缺数据;`tone`(`positive` / `negative` / `warning`,默认 `neutral`)是你自己对这个数字的判断,只给主值上色,组件不会替你从正负号猜。
-
-`Grid` 只管排版,不读 Scope、不聚合指标,`Stat.value` 必须是你已经算好的显示值。需要保留 `12/15` 这样的覆盖率角标和证据引用时,继续用[报告组件](/zh/reference/report-components)里的指标表这类数据组件;只有这种自由摘要卡片才用 `Grid` / `Stat`。
-
-### 不是表:`defineComponent` 加文本排版函数
-
-`defineComponent` 声明两个渲染面,和 `defineExperiment` / `defineMeasure` / `defineReport` 同一个家族。终端面要自己排字符,用 `niceeval/report` 导出的这组函数——官方组件排的就是这几把尺子:
-
-| 函数 | 用途 |
-| --- | --- |
-| `stringWidth(text)` | 显示宽度:CJK 和全角字符记 2 列,其余记 1 列 |
-| `padEnd(text, width)` | 按显示宽度在右侧补齐(左对齐) |
-| `padStart(text, width)` | 按显示宽度在左侧补齐(右对齐,数字列用) |
-| `wrapText(text, width)` | 按显示宽度折行,返回若干行 |
-| `indent(block, prefix)` | 每行加缩进 |
-| `bar(ratio, width)` | 字符条:`█` 填充、`░` 补齐到 `width` |
-| `columns(blocks, widths, separator?)` | 多块并排 |
-
-**不要用 `String.prototype.padEnd` / `padStart` 对齐终端输出。** 它们数的是 UTF-16 码元,不是显示列宽:一个汉字占 2 列,却只算 1 个码元。用它们补齐,中文一进来列就错位,而中文 agent 名和中文题目名恰恰是最常见的情形。列宽也要随内容和 `ctx.width` 算,不要硬编码一个数字。
-
-```tsx
-// reports/passbars.tsx
-import {
-  defineReport, defineComponent, Col, Style, metricTableData,
-  bar, padEnd, stringWidth, endToEndPassRate,
-} from "niceeval/report";
-
-interface BarRow { key: string; ratio: number | null; display: string }
-
-const PassBars = defineComponent<{ rows: BarRow[] }>({
-  web({ rows }) {
-    return (
-      <ul className="passbars">
-        {rows.map((r) => (
-          <li key={r.key}>
-            <span>{r.key}</span>
-            <i style={{ width: `${(r.ratio ?? 0) * 100}%` }} />
-            <b>{r.ratio === null ? "—" : r.display}</b>
-          </li>
-        ))}
-      </ul>
-    );
+      })),
+    };
   },
-  text({ rows }, { width }) {
-    const label = Math.max(...rows.map((r) => stringWidth(r.key)));  // 列宽随内容
-    const barWidth = Math.min(20, width - label - 8);                // 也随可用列宽
-    return rows
-      .map((r) => {
-        const chart = r.ratio === null ? padEnd("—", barWidth) : bar(r.ratio, barWidth);
-        return `${padEnd(r.key, label)}  ${chart}  ${r.display}`;
+});
+```
+
+Source 可以读取 Sample、AttemptEvidence 和其中的 artifact 句柄，但返回的 Content 必须可序列化。
+外部 API 数据先在报告运行前冻结成 JSON，再从 Composition 的 `ctx.data` 读取。
+
+## 定义自己的双面 Component
+
+内建原语表达不了新的视觉形状时，使用 `defineComponent`。Component 不提供异步取数面；
+`dimensions`、`text` 和 `web` 都是同步纯函数：
+
+```tsx
+import { defineComponent, padEnd, stringWidth } from "niceeval/report";
+
+interface BarData {
+  rows: readonly { key: string; ratio: number | null; display: string }[];
+}
+
+export const PassBars = defineComponent<BarData, {}>({
+  dimensions: (data) => ({
+    agents: {
+      dimension: "agent",
+      encoding: { kind: "label" },
+      values: data.rows.map((row) => row.key),
+    },
+  }),
+  text(data, _options, ctx) {
+    const agents = ctx.dimension("agents");
+    const width = Math.max(...data.rows.map((_, index) => stringWidth(agents.at(index).label)));
+    return data.rows
+      .map((row, index) => {
+        const label = agents.at(index).label;
+        return `${padEnd(label, width)}  ${row.ratio === null ? "—" : row.display}`;
       })
       .join("\n");
   },
-});
-
-const PassBarsSection = defineComponent(async (_props: {}, ctx) => {
-  const board = await metricTableData(ctx.scope, { rows: "agent", columns: [endToEndPassRate] });
-  const rows = board.rows.map((r) => ({
-    key: r.key,
-    ratio: r.cells[endToEndPassRate.name].value,   // 格子键锚在指标对象上,不裸写字符串
-    display: r.cells[endToEndPassRate.name].display,
-  }));
-  return (
-    <Col>
-      <Style>{`.passbars li { display: flex; gap: 8px; } .passbars i { background: #4a7; height: 12px; }`}</Style>
-      <PassBars rows={rows} />
-    </Col>
-  );
-});
-
-export default defineReport(<PassBarsSection />);
-```
-
-```text
-$ niceeval show --report reports/passbars.tsx
-bub     █████████████████░░░  87%
-codex   ████████████████░░░░  80%
-克劳德  —                     —
-```
-
-组件的契约:
-
-- **计算发生在拿到 `ctx` 的地方,渲染面是纯函数。** 组合组件的函数体里能 `await` 读 attempt 句柄、折数据;双面组件的 `web` 和 `text` 只认已经算好的 props,零 IO、同步——这条边界让同一棵树能被烘进静态导出。
-- **渲染面接收上下文参数。** `text(props, ctx)` 的 `ctx.width` 是可用列宽(`Row` 分栏后会变窄),`ctx.attemptCommand(ref)` 生成查看命令;`web(props, ctx)` 的 `ctx.attemptHref(ref)` 生成 Attempt 证据链接。自定义组件与内置组件使用相同证据页。
-- **网页面静态渲染,不 hydrate。** 宿主在计算侧把 `web` 面渲染成静态 HTML,不打包你的代码进查看器:交互用普通链接和 `<details>`,与官方组件同一条静态契约。
-- **样式随树带走。** 静态导出不打包你的代码,`className` 引用的 CSS 用内置原语 `<Style>{css}</Style>` 放进页面树——web 面吐 `<style>` 标签,text 面渲染为空,上面的例子就是这么给 `.passbars` 上样式的。
-- **诚实契约同样适用。** 缺数据渲染 `—` 不补 0,截断如实标注剩余数量——上面例子里 `克劳德` 没有样本就是 `—`。
-
-### 让自己的组件和官方组件叫同一个名字、上同一个颜色
-
-同一页里,`compare/with-memory` 在官方默认报告上缩成 `with-memory`、配一个蓝色;自己写的组件要显示成同一个样子,用这两个出口,不要自己实现一遍:
-
-```tsx
-import { defineComponent, experimentListData, shortestUniqueLabels } from "niceeval/report";
-
-const MyLegend = defineComponent<{ ids: string[] }>({
-  web({ ids }, ctx) {
-    const labels = shortestUniqueLabels(ids);          // 整组一起传,不逐个调
+  web(data, _options, ctx) {
+    const agents = ctx.dimension("agents");
     return (
-      <ul>
-        {ids.map((id) => (
-          // 取色用完整 id(键),显示用缩写(名字)
-          <li key={id} className={ctx.seriesColor("experiment", id).className}>
-            {labels.get(id)}
+      <ul className="acme-passbars">
+        {data.rows.map((row, index) => (
+          <li key={row.key}>
+            <span>{agents.at(index).label}</span>
+            <b>{row.ratio === null ? "—" : row.display}</b>
           </li>
         ))}
       </ul>
     );
   },
-  text({ ids }) {
-    const labels = shortestUniqueLabels(ids);
-    return ids.map((id) => labels.get(id)).join("  ");  // 终端不上色
-  },
+  styles: [{
+    inline: `
+      .acme-passbars { color: var(--niceeval-color-text); }
+      .acme-passbars b { color: var(--niceeval-color-accent); }
+    `,
+  }],
 });
 ```
 
-`ctx.seriesColor(维度, 维度值)` 读的是这一页已经分好的色:官方图表的图例、实体列表的行、你这个组件,同一个 id 拿到的是同一个色槽。传进去的必须是完整的维度值,不是缩写后的显示名。
+不消费任何维度的组件也必须显式写 `dimensions: () => ({})`。renderer 只能读取传入的 data、
+options 和呈现 context；不能读取 Sample、Record、磁盘或网络。
 
-在自己的 React 页面里嵌 `niceeval/report/react` 组件时没有这一页,自己把要上色的键一次交给 `seriesColors(keys)` 拿映射——一次传全集,逐个键调用得不到同页消解撞色的结果。
+需要计算 `PassBars` 的数据时，把 Source 与 Component 放进 Composition：
 
-### 钉住某个值的颜色
+```tsx
+const PassBarsSection = defineComposition(async (_props: {}, ctx) => {
+  const source = sources.measure.rows({
+    dimensions: ["agent"],
+    measures: [passRate],
+  });
+  const dataset = await ctx.resolve(source);
+  return <PassBars data={toBarData(dataset)} />;
+});
+```
 
-自动分配保证同一页里同一个值恒同色,但它不知道你的语义:发布图上「baseline 恒中性、我们的方案恒蓝」是你的判断。写在报告外壳的 `seriesPins` 里:
+## 设成项目默认
+
+报告定型后，把 `defineReport` 产物填进 `niceeval.config.ts` 的 `report` 字段：
+
+```ts
+import { defineConfig } from "niceeval";
+import report from "./reports/quality-cost.tsx";
+
+export default defineConfig({ report });
+```
+
+裸 `niceeval show` 和 `niceeval view` 会装载这份报告。临时回到内建报告时使用
+`--report standard`。
+
+## 钉住某个值的颜色
+
+页级分配会保证同一页里的同一个维度值使用同一个视觉身份。需要跨页或跨周固定槽位时，
+在报告外壳声明 `dimensionPins`：
 
 ```tsx
 export default defineReport({
   title: "MemoryBench",
-  seriesPins: {
-    memory: { baseline: 3, mempal: 1, nowledge: 5 },   // 维度名 → 值 → 色板下标
+  dimensionPins: {
+    memory: {
+      baseline: 3,
+      mempal: 1,
+      nowledge: 5,
+    },
   },
-  content: <Leaderboard />,
+  pages: [
+    { id: "report", title: "报告", content: <SampleOverview /> },
+  ],
 });
 ```
 
-钉的是六色色板的**下标**,不是颜色——所以深浅外观、对比度和[换主题](/zh/tutorials/theming)全都照常跟随;要改颜色本身,改的是主题的 `series` 六色。被钉住的值原样占位,其余值在剩下的槽里自动分配。
+槽位范围是 1 到 24，钉住的是完整颜色加形状身份，不是某个 hex 颜色。
 
-钉色写在报告里而不是主题里,是因为它说的是数据含义:换一套配色不该让基线和候选方案对调身份。它也是整站字段,所以同一个记忆机制在总览页和分科页必须同色。
+## 让自己的组件跟随任何主题
 
-### 让自己的组件跟随任何主题
-
-自己写的组件要能装上任何一份主题——包括别人分发给你的那一份。颜色只有三个来源,没有第四条路:
-
-| 要表达 | 用什么 |
-|---|---|
-| 好 / 坏 / 警告 | `Stat` 的 `tone`,或 `var(--nre-positive)` / `var(--nre-negative)` / `var(--nre-warning)` |
-| 某个维度值的分类身份 | `ctx.seriesColor(维度, 维度值)` |
-| 其余一切(文字、表面、分隔、圆角、字体) | `var(--nre-*)` 令牌 |
+自定义组件使用 `--niceeval-*` CSS 令牌，不写死颜色：
 
 ```css
-.nre .acme-panel {
-  background: var(--nre-surface);
-  border: 1px solid var(--nre-border);
-  border-radius: var(--nre-radius);   /* 零圆角主题下自动变直角 */
-  color: var(--nre-text);
+.acme-panel {
+  background: var(--niceeval-color-surface);
+  border: 1px solid var(--niceeval-color-border);
+  border-radius: var(--niceeval-radius);
+  color: var(--niceeval-color-text);
 }
 ```
 
-三条纪律:写死的颜色值在深色分支会失灵、换主题不跟随;自己的 class 用自己的前缀,不占 `nre-`(那是主题瞄准的公开语义面);宽度、位置这类由数据算出来的几何量可以写成行内样式,颜色不行。令牌全集与更多写法见[给报告换主题](/zh/tutorials/theming)。
+状态使用 `--niceeval-color-positive`、`--niceeval-color-negative` 与
+`--niceeval-color-warning`。维度身份通过 `ctx.dimension(handle).at(index)` 获取，
+不要按数组下标自行分配颜色。
 
-## 发布:导出即静态站
+## 嵌入自己的 React 页面
 
-发布自定义报告和发布官方查看器是同一个动作——`--out` 加上 `--report`:
+自己的 React 页面没有 report resolve。先在服务端计算 Content，再把它传给
+`niceeval/report/react` 的纯 web 原语：
 
-```bash
-niceeval view --report reports/exam.tsx --out site
+```tsx
+import { openRecord } from "niceeval/record";
+import { currentSample } from "niceeval/sample";
+import { passRate, sources } from "niceeval/report";
+import { Table } from "niceeval/report/react";
+
+export default async function EvalsPage() {
+  const record = await openRecord(".niceeval");
+  const sample = currentSample(record);
+  const source = sources.measure.rows({
+    dimensions: ["experiment"],
+    measures: [passRate],
+  });
+  const data = await source.compute(sample);
+  return <Table data={data} />;
+}
 ```
 
-产物是纯静态文件。报告页是首页,transcript、trace 和代码等 Attempt 证据位于同一站点,报告中的数值可以链接到对应证据。组件不 hydrate;页面内联脚本提供表头排序、行过滤和图表悬停。浏览器禁用 JavaScript 时页面仍完整可读。CI 上没有 `.niceeval/` 时,先用 `copySnapshots` 生成经过大小检查的结果目录,再执行导出,流程见[查看结果](/zh/tutorials/viewing-results#导出与静态托管)。
+这里直接调用 `compute()` 是正确的，因为代码不在 page 管线里，也没有 `ctx.resolve()`。
 
-双面组件的网页面是普通 React 组件,`xxxData` 函数是普通 TypeScript 函数。需要在现有内部面板中复用指标表时,可以 import 组件并传入数据。计算与渲染分开部署时(例如 CI 生成 JSON、另一个应用 fetch),两侧必须使用相同 NiceEval 版本;组件数据不带版本信息,兼容性跟随包版本。
+## 发布静态报告
 
-## 自定义报告的边界
+```bash
+niceeval view --report reports/quality-cost.tsx --out site
+```
 
-一次只渲染一份报告,来源只有两处:`--report` 的显式取值,和配置里的 `report` 字段——没有 `reports/` 目录自动发现,也没有插件注册表。自定义指标和自定义组件都住在你的报告文件里,随文件一起递入,宿主不为它们长任何注册面。两处都没有时渲染的就是内置默认报告,你的报告和它是同级实现。
+导出结果包含报告 pages 和可达的 Attempt 证据。初始 HTML 不依赖 JavaScript；
+排序、过滤、tooltip 和 dialog 只做渐进增强，不改变 Source 计算出的 Content。

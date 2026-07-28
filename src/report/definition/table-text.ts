@@ -6,10 +6,17 @@
 // 列宽按显示宽度算(CJK 记 2 列);null 渲染 —,不补 0;超宽先折最宽的左对齐列,
 // 压到下限仍放不下就从右侧丢列并如实报数(「截断报剩余」是既有契约,不在这里破例)。
 
-import type { TableProps, TableRow } from "./primitives.tsx";
+import type { TableColumn, TableRow } from "./primitives.tsx";
 import type { TextContext } from "./tree.ts";
 import { countText, localeText, resolveLocalizedText } from "../model/locale.ts";
 import { charDisplayWidth, renderAlignedRows, stringWidth, wrapDisplay, type ColumnAlign } from "../model/text-layout.ts";
+
+/** text 排版器入参:faces.ts 与旧 Table 形态共用的预格式化表。 */
+export interface TextTableProps {
+  columns: readonly TableColumn[];
+  rows: readonly TableRow[];
+  locale?: import("../model/locale.ts").ReportLocale;
+}
 
 const MISSING_MARK = "—";
 /** 列间距,与 renderAlignedRows 的 join("   ") 一致。 */
@@ -105,7 +112,7 @@ function toPhysicalRows(
  * 有任一行带 locator 时追加一列 attempt(locator 本身就是 `niceeval show <locator>`
  * 的位置参数;逐行重复整条命令会把表撑宽,与三个实体列表 text 面的既有取舍一致)。
  */
-export function renderTableText(props: TableProps, ctx: TextContext): string {
+export function renderTableText(props: TextTableProps, ctx: TextContext): string {
   const locale = props.locale ?? ctx.locale;
   const hasLocator = props.rows.some((row) => row.locator !== undefined);
   if (props.columns.length === 0 && !hasLocator) return "";

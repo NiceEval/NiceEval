@@ -31,7 +31,7 @@ import {
 import { flag, label, numericFlag, numericLabel } from "../model/flag.ts";
 import { colorIndexForKey, colorIndicesForKeys } from "../assets/colors.ts";
 import { attemptListData, evalListData, experimentListData } from "./entity-lists/compute.ts";
-import { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./entity-lists/index.tsx";
+import { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./entity-lists/validate.ts";
 import {
   conditionsByFlag,
   deltaTableData,
@@ -50,9 +50,9 @@ import {
   validateScoreboardData,
   validateStabilityMatrixData,
   validateTableData,
-} from "./metric-views/index.tsx";
+} from "./metric-views/validate.ts";
 import { scopeSummaryData } from "./summaries/compute.ts";
-import { validateScopeSummaryData } from "./summaries/index.tsx";
+import { validateSampleSummaryContent } from "./summaries/validate.ts";
 import { evalGroupOf } from "../model/aggregate.ts";
 import { scoringComposition } from "../model/scoring.ts";
 
@@ -979,7 +979,7 @@ describe("metricScatterData / metricMatrixData", () => {
 
     await expect(
       metricTableData([hi], { rows: "experiment", columns: [endToEndPassRate], sort: durationMs }),
-    ).rejects.toThrow(/columns/);
+    ).rejects.toThrow(/measures/);
     const noBetter = defineMeasure({ name: "plain", value: () => 1 });
     await expect(
       metricTableData([hi], { rows: "experiment", columns: [noBetter], sort: noBetter }),
@@ -1292,7 +1292,7 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
 
   it("scopeSummaryData", async () => {
     const summary = await scopeSummaryData(scope);
-    expect(validateScopeSummaryData(summary)).toBeNull();
+    expect(validateSampleSummaryContent(summary)).toBeNull();
   });
 
   it("experimentListData / evalListData / attemptListData(同一 Sample 三种粒度)", async () => {

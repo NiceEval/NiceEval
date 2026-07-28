@@ -6,9 +6,11 @@
 
 import { createServer, type Server } from "node:http";
 import { watch, type FSWatcher } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { type ViewScanOptions } from "./data.ts";
 import { planSite, readSiteFile, type SitePlan } from "./site.ts";
+import { isHostModulePath } from "../report/runtime/host.ts";
 import { formatThrown } from "../util.ts";
 
 export interface ViewOptions {
@@ -54,6 +56,122 @@ function isWatchedChange(root: string, filename: string | null): boolean {
   return !path.includes(`${sep}node_modules${sep}`) && !/(?:~$|\.swp$|\.tmp$|\.temp$|^\.#)/.test(path);
 }
 
+/**
+ * 项目侧 watch 的入口(docs/feature/reports/view.md「持续重建」的闭集第 2–4 行):
+ * 项目配置,加 --report / --theme 指到的**文件**。裸词(`standard` / `basalt`)是内建名,
+ * 随包分发没有项目文件可盯,按装载同一条形态判别排除。配置文件此刻不存在也在列——
+ * 它所在目录照样挂 watcher,建出来那一下就是一次重建理由。
+ */
+export async function projectWatchEntries(scan: ViewScanOptions, projectRoot: string): Promise<string[]> {
+  const entries = [join(projectRoot, "niceeval.config.ts")];
+  if (scan.report !== undefined && (await isHostModulePath(scan.report.path))) {
+    entries.push(resolve(scan.report.cwd, scan.report.path));
+  }
+  if (scan.theme !== undefined && (await isHostModulePath(scan.theme.value))) {
+    entries.push(resolve(scan.theme.cwd, scan.theme.value));
+  }
+  return entries;
+}
+
+/**
+ * 入口文件加它们的**项目内静态 import 图**:改一个自定义组件、读数或工具模块与改报告文件
+ * 本身没有区别(view.md「改组件代码同样重建」)。裸 specifier 与 node_modules 下的文件不进闭集
+ * ——依赖目录里的包改了不是这条命令的事;动态 import 也不跟,与指纹的源码闭包同一条口径。
+ */
+export async function projectWatchTargets(entries: readonly string[]): Promise<Set<string>> {
+  const targets = new Set(entries.map((entry) => resolve(entry)));
+  const visited = new Set<string>();
+  const visit = async (path: string): Promise<void> => {
+    const absolute = resolve(path);
+    if (visited.has(absolute)) return;
+    visited.add(absolute);
+    let content: string;
+    try {
+      content = await readFile(absolute, "utf8");
+    } catch {
+      return; // 还没建出来的入口(如 niceeval.config.ts)照样在列,只是没有下游可走。
+    }
+    targets.add(absolute);
+    const specs = [...content.matchAll(/\b(?:import|export)\s+(?:[^"'()]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]!);
+    for (const spec of specs) {
+      if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
+      const resolved = await resolveModuleFile(dirname(absolute), spec);
+      if (resolved !== undefined && !resolved.split(sep).includes("node_modules")) await visit(resolved);
+    }
+  };
+  for (const entry of entries) await visit(entry);
+  return targets;
+}
+
+async function resolveModuleFile(from: string, specifier: string): Promise<string | undefined> {
+  const raw = resolve(from, specifier);
+  const candidates = extname(raw)
+    ? // `./x.js` 形态的 specifier 在 TS 项目里指的是 `./x.ts`(NodeNext 的写法)。
+      [raw, ...(/\.[cm]?jsx?$/i.test(raw) ? [".ts", ".tsx"].map((ext) => raw.replace(/\.[cm]?jsx?$/i, ext)) : [])]
+    : [
+        raw,
+        ...[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx"].map((ext) => `${raw}${ext}`),
+        ...["index.ts", "index.tsx", "index.js"].map((name) => resolve(raw, name)),
+      ];
+  for (const candidate of candidates) {
+    try {
+      if ((await stat(candidate)).isFile()) return candidate;
+    } catch {
+      // 换下一个扩展名。
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 项目侧监听:按闭集里文件**所在的目录**挂 watcher,再按绝对路径过滤事件——目录级监听会把
+ * 记录落盘、依赖目录和临时文件都当成重建理由,而直接 watch 文件本体在编辑器"写临时文件再
+ * rename"的保存方式下第一次保存后就哑了。闭集随每次重建重算,报告新 import 一个组件文件
+ * 由此接上。
+ */
+export class ProjectFileWatcher {
+  private readonly dirs = new Map<string, FSWatcher>();
+  private files = new Set<string>();
+  constructor(private readonly onChange: () => void) {}
+
+  /** 当前盯着的文件绝对路径全集。 */
+  get watched(): ReadonlySet<string> {
+    return this.files;
+  }
+
+  async sync(entries: readonly string[]): Promise<void> {
+    this.files = await projectWatchTargets(entries);
+    const dirs = new Set([...this.files].map((file) => dirname(file)));
+    for (const [dir, watcher] of this.dirs) {
+      if (dirs.has(dir)) continue;
+      watcher.close();
+      this.dirs.delete(dir);
+    }
+    for (const dir of dirs) {
+      if (this.dirs.has(dir)) continue;
+      try {
+        this.dirs.set(dir, watch(dir, (_event, filename) => this.handle(dir, filename)));
+      } catch {
+        // 目录不存在(如报告文件指向还没建出来的目录):下一次 sync 再试。
+      }
+    }
+  }
+
+  /** 目录事件 → 是不是闭集内文件变了。filename 缺失时无从判断,按会变处理。 */
+  handle(dir: string, filename: string | Buffer | null): void {
+    if (filename === null) {
+      this.onChange();
+      return;
+    }
+    if (this.files.has(resolve(dir, filename.toString()))) this.onChange();
+  }
+
+  close(): void {
+    for (const watcher of this.dirs.values()) watcher.close();
+    this.dirs.clear();
+  }
+}
+
 export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServer> {
   const input = opts.input;
   // 本地 server 的单页失败折成该页的错误块,其它页照常可读(静态导出仍整体失败)。
@@ -84,17 +202,25 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
 
   const scheduler = new ViewRebuildScheduler(async () => {
     try { await rebuild(); } catch { /* keep serving the preceding SitePlan */ }
+    // 改动可能新增/删除 import:重算闭集,新引入的组件文件从下一次变更起就被盯着。
+    await syncProjectWatch();
   });
-  const watchRoots = [...new Set([resolve(input ?? ".niceeval"), resolve(opts.watchRoot ?? process.cwd())])];
-  const watchers: FSWatcher[] = watchRoots.map((root) => {
-    try {
-      return watch(root, { recursive: true }, (_event, filename) => {
-        if (isWatchedChange(root, filename)) scheduler.notify();
-      });
-    } catch {
-      return watch(root, (_event, filename) => { if (isWatchedChange(root, filename)) scheduler.notify(); });
-    }
-  });
+  // 记录侧仍是整根递归监听:新 Run 目录、result.json 与证据文件都要接住。
+  const recordRoot = resolve(input ?? ".niceeval");
+  const onRecordEvent = (_event: string, filename: string | Buffer | null): void => {
+    if (isWatchedChange(recordRoot, filename === null ? null : filename.toString())) scheduler.notify();
+  };
+  let recordWatcher: FSWatcher;
+  try {
+    recordWatcher = watch(recordRoot, { recursive: true }, onRecordEvent);
+  } catch {
+    recordWatcher = watch(recordRoot, onRecordEvent);
+  }
+  // 项目侧收窄到闭集,不再整根递归:项目根下的记录、依赖目录与无关文件都不是重建理由。
+  const projectEntries = await projectWatchEntries(scanOptions, resolve(opts.watchRoot ?? process.cwd()));
+  const projectWatcher = new ProjectFileWatcher(() => scheduler.notify());
+  const syncProjectWatch = (): Promise<void> => projectWatcher.sync(projectEntries).catch(() => {});
+  await syncProjectWatch();
 
   const server = createServer(async (req, res) => {
     try {
@@ -164,7 +290,8 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
     close: () =>
       new Promise((resolveClose, reject) => {
         scheduler.close();
-        watchers.forEach((watcher) => watcher.close());
+        recordWatcher.close();
+        projectWatcher.close();
         reloadClients.forEach((client) => client.end());
         server.close((err) => (err ? reject(err) : resolveClose()));
       }),

@@ -1,22 +1,13 @@
-// 官方双面组件的共用装配机制:spec / data 双形态判别(DataProps)、data 结构校验的通用
-// 原语(isObject / isLocalizedText / isCell / isTally / cellProblem / tallyProblem /
-// arrayProblem / dataShapeError)、`makeDataComponent` 装配器与 `hrefOf` 证据室深链解析、
-// `ChromeProps` 呈现选项基类、`cx` classname 拼接——每个组件族在自己的 index.tsx 里用这些
-// 原语递归拼自己的 validate*Data(字段路径要覆盖到嵌套 MetricCell/Tally,不只顶层哨兵),
-// 具体的 validate*Data 与组件导出留在各族。
+// 官方双面组件的共用装配机制:DataProps 双形态判别、data 结构校验的通用原语(isObject /
+// isLocalizedText / isCell / isTally / cellProblem / tallyProblem / arrayProblem /
+// dataShapeError)、`hrefOf` 证据室深链解析、`ChromeProps` 呈现选项基类、`cx` classname
+// 拼接——每个组件族在自己的 index.tsx 里用这些原语递归拼自己的 validate*Data(字段路径要覆盖到
+// 嵌套 MetricCell/Tally,不只顶层哨兵),具体的 validate*Data 与组件导出留在各族。
 
-import type { ReactNode } from "react";
-import {
-  defineComponent,
-  memoFetchOf,
-  type ReportComponent,
-  type ResolveContext,
-  type TextContext,
-  type WebContext,
-} from "../definition/tree.ts";
-import type { ReportInput } from "../model/types.ts";
 import type { ReportLocale } from "../model/locale.ts";
+import type { WebContext } from "../definition/tree.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
+import type { Source, SourceInput } from "../source.ts";
 
 /** 拼 class 名:过滤空值,末尾接使用者透传的 className。 */
 export function cx(...parts: (string | undefined | false)[]): string {
@@ -28,12 +19,12 @@ export function cx(...parts: (string | undefined | false)[]): string {
 type Never<T> = { [K in keyof T]?: never };
 
 /**
- * 官方数据组件的统一 props 组合(docs/feature/reports/components/tables/README.md):
- * data 形态(接收配套 *Data 的产物)或 spec 形态(Options 平铺 + 可选 input)。
+ * 官方数据组件的统一 props 组合(docs/feature/reports/components/README.md「数据绑定」):
+ * source 形态(管线代调 compute)与 data 形态(已算好的 Content)互斥。
  */
-export type DataProps<Data, Options, Presentation> =
-  | ({ data: Data; input?: never } & Never<Options> & Presentation)
-  | ({ data?: never; input?: ReportInput } & Options & Presentation);
+export type DataProps<Data, Options, Presentation, Input extends SourceInput = SourceInput> =
+  | ({ data: Data; source?: never; input?: never } & Never<Options> & Presentation)
+  | ({ source: Source<Input, Data>; data?: never; input?: Input } & Never<Options> & Presentation);
 
 // ───────────────────────── data 结构校验(版本漂移防线)─────────────────────────
 
@@ -103,72 +94,6 @@ export function dataShapeError(component: string, dataFnName: string, shape: str
       `It may have been computed by a different niceeval version (component data carries no schemaVersion; the support window is same-version write and read). ` +
       `Recompute it with ${dataFnName}() from this niceeval version, then re-render.`,
   );
-}
-
-// ───────────────────────── spec / data 双形态的通用装配 ─────────────────────────
-
-export interface DataComponentDef<Data, Options, Presentation> {
-  name: string;
-  dataFnName: string;
-  shapeName: string;
-  dataFn: (input: ReportInput, options: Options) => Promise<Data>;
-  /** spec 形态的计算选项 prop 名(不含 input);未列出的 props 视为呈现选项原样保留。 */
-  specKeys: readonly string[];
-  validate: Validator;
-  web(props: { data: Data } & Presentation, ctx: WebContext): ReactNode;
-  text(props: { data: Data } & Presentation, ctx: TextContext): string;
-}
-
-export function makeDataComponent<Data, Options, Presentation>(
-  def: DataComponentDef<Data, Options, Presentation>,
-): ReportComponent<DataProps<Data, Options, Presentation>> {
-  type Props = globalThis.Record<string, unknown>;
-  type Resolved = { data: Data } & Presentation;
-
-  const assertData = (data: unknown): Data => {
-    const problem = def.validate(data);
-    if (problem !== null) throw dataShapeError(def.name, def.dataFnName, def.shapeName, problem);
-    return data as Data;
-  };
-
-  const resolve = async (props: Props, ctx: ResolveContext): Promise<Resolved> => {
-    const givenSpec = def.specKeys.filter((key) => props[key] !== undefined);
-    if (props.data !== undefined) {
-      if (givenSpec.length > 0 || props.input !== undefined) {
-        const extras = [...givenSpec, ...(props.input !== undefined ? ["input"] : [])];
-        throw new Error(
-          `<${def.name}> got both \`data\` and spec field${extras.length > 1 ? "s" : ""} (${extras.join(", ")}) — the two data sources are exclusive and niceeval will not silently pick one. ` +
-            `Keep \`data\` (precomputed with ${def.dataFnName}()) and drop the spec fields, or drop \`data\` and let the pipeline compute from the spec.`,
-        );
-      }
-      assertData(props.data);
-      return props as unknown as Resolved;
-    }
-    const options: globalThis.Record<string, unknown> = {};
-    for (const key of givenSpec) options[key] = props[key];
-    const input = (props.input as ReportInput | undefined) ?? ctx.input;
-    const data = await memoFetchOf(ctx)(def.dataFn, input, options, () =>
-      def.dataFn(input, options as Options),
-    );
-    const rest: globalThis.Record<string, unknown> = { ...props };
-    delete rest.input;
-    for (const key of def.specKeys) delete rest[key];
-    return { ...rest, data } as unknown as Resolved;
-  };
-
-  const component = defineComponent<Props, Resolved>({
-    resolve,
-    web: (props, ctx) => {
-      assertData((props as { data?: unknown }).data);
-      return def.web(props, ctx);
-    },
-    text: (props, ctx) => {
-      assertData((props as { data?: unknown }).data);
-      return def.text(props, ctx);
-    },
-  }) as unknown as ReportComponent<DataProps<Data, Options, Presentation>>;
-  component.displayName = def.name;
-  return component;
 }
 
 /**

@@ -1,561 +1,306 @@
 ---
 title: "报告组件一览"
 sidebarTitle: "报告组件"
-description: "报告文件里能摆的全部官方双面组件：每个组件回答什么问题、怎么调用、网页面长什么样、终端字符输出长什么样。"
+description: "niceeval/report 的 Source、Composition、Component、原语和数据绑定参考。"
 ---
 
-报告文件里的每个组件都是双面的：网页面是 React 渲染，终端面是字符渲染，两面吃同一份算好的数据，走哪扇门由宿主决定（见[自定义报告](/zh/tutorials/custom-reports)）。每个组件要么直接写省略取数的写法（省略 `input`/`data` 时用当前 Sample 自动取数），要么显式传入自己算好的数据——两种写法产出完全相同，选哪种只看你要不要在取数和渲染之间插入自己的 JavaScript。本页逐个列出官方组件：它展示哪一层数据、在报告里怎么调用、终端输出长什么样。
+`niceeval/report` 把报告能力分成三层：
 
-## 名称与用途
+| 层 | 定义方式 | 职责 |
+| --- | --- | --- |
+| Source | `sources.*` / `defineSource(...)` | 从 Sample 或 AttemptEvidence 计算 Content |
+| Composition | `defineComposition(...)` | 协调多个 Source、加工 Content、装配组件树 |
+| Component | 内建原语 / `defineComponent(...)` | 把 Content 同步显示成 text 与 web |
 
-英文术语描述组件形态，API 名是代码里的导出名。默认组合件比较当前 Scope；范围摘要概括整批结果；实体列表逐项展示 experiment、评估用例或 Attempt；指标图形把指定维度聚合成值。
+Component 不读取 Sample、Record 或 artifact。数据读取、聚合、排序和证据关联属于 Source；
+动态编排和跨来源连接属于 Composition。
 
-| 分类 | 中文名 | English | API | 主展示单位 |
-| --- | --- | --- | --- | --- |
-| 组合 | 实验比较 | Experiment comparison | `ExperimentComparison` | 当前 Scope 的摘要、散点与实验列表 |
-| 汇总 | 范围摘要 | Scope summary | `ScopeSummary` | 一批结果：时间窗、数量、两级判定计票、端到端通过率与总成本 |
-| 实体列表 | 实验列表 | Experiment list | `ExperimentList` | 每项一个 experiment；展开到该 experiment 的评估用例 |
-| 实体列表 | 评估用例列表 | Eval list | `EvalList` | 每项一个 experiment × 评估用例；展开到该评估用例的 Attempt |
-| 实体列表 | Attempt 列表 | Attempt list | `AttemptList` | 每项一个 Attempt；显示断言、错误、Judge 评语和证据 |
-| 实体列表 | 失败列表 | Failure list | `FailureList` | `AttemptList` 的成品过滤：只列 failed / errored，按开始时间倒序 |
-| 指标图形 | 指标表 | Metric table | `MetricTable` | 一个可配置行维度；每格是一个聚合指标值 |
-| 指标图形 | 指标矩阵 | Metric matrix | `MetricMatrix` | 两个可配置维度的交叉格；每格是一个聚合指标值 |
-| 指标图形 | 成绩单 | Scoreboard | `Scoreboard` | 每行一个可配置维度值；按固定题集算总分和分科得分 |
-| 指标图形 | 成对差异表 | Paired delta table | `DeltaTable` | 每行一道评估用例、每组列一个条件；格内是各条件的值与对基准的差 |
-| 指标图形 | 稳定性矩阵 | Stability matrix | `StabilityMatrix` | 每行一道评估用例、每列一个条件；格内是历史全部执行的判定计数 |
-| 图表 | 图表 | Chart | `LineChart` / `BarChart` / `AreaChart` / `ScatterChart` / `ComposedChart` | 一个坐标系；`XAxis` / `YAxis` 定轴，`Line` / `Bar` / `Area` / `Scatter` 各画一组数据 |
+## 数据绑定
 
-`Row`、`Col`、`Grid`、`Section`、`Stat`、`Text`、`Markdown`、`Style`、`Table`、`Tabs` 和 `Tab` 是十一个排版原语，不计算结果，因此不算一种分析图。它们的中文统称依次是行、列、网格、分节、摘要项、文本、正文、样式、表格、标签页和标签；代码里始终使用 API 名。
+数据原语接收互斥的 `source` 与 `data` 两种形态：
 
-所有组件共守同一套契约，下面不再逐个重复：
-
-- **诚实渲染。** 缺数据渲染 `—` 不补 0；覆盖不全的格子带 `12/15` 角标；截断如实标注剩余数量与原始 artifact 路径。
-- **排序与方向随指标的 `better`。** higher 的指标降序、lower 的升序，「好」的一头恒在上、在右上。
-- **深链到 Attempt 详情。** 网页面的格子、点和条目深链到 Attempt 详情页；终端面用同一 Attempt 定位符交给 `niceeval show @<id>`。
-- **终端输出形成反馈闭环。** 每个 Attempt 有一个以 `@` 开头的短定位符，例如 `@1k2m9qrs`。它唯一指向 experiment、结果快照、评估用例和 Attempt。`✓` / `✗` / `!` / `–` 是 passed / failed / errored / skipped。列表不用字母缩写编码证据可用性——定位符本身就是证据入口；打开 attempt（`niceeval show @<定位符>`）后再列出实际可用的证据命令。执行步骤统一包含消息、thinking、tool call/result 和 Skill load；OTel 只给这些步骤补时间，不另开一份输出。
-- **两面同口径，网页面不依赖 JS 也完整。** 排序在计算时由 `sort` 定死，终端和网页看到同一份基准顺序；下钻是普通链接，展开折叠用 `<details>`。网页面另有一层浏览操作：点表头就地重排、列表行过滤、图表点位悬停看数值——只影响眼前的视图，不改数据口径，刷新即回基准顺序；浏览器禁用 JS 时这些操作消失，内容一样不少（悬停信息退化为图内提示）。
-
-## 两种写法，同一份数据
-
-每个组件的 props 分两种写法，选哪种都行：
-
-```tsx
-// 省略 input/data：用宿主注入的当前 Scope 自动取数
-<MetricTable filter>
-  <Rows dimension="agent" sort={endToEndPassRate} />
-  <Column metric={endToEndPassRate} />
-  <Column metric={costUSD} />
-</MetricTable>
-
-// 自己先算好数据再传：中间可以插入任意 JavaScript 加工
-<MetricTable data={await metricTableData(scope, { rows: "agent", columns: [endToEndPassRate, costUSD] })} filter />
+```ts
+type DataProps<Input extends SourceInput, Content> =
+  | { source: Source<Input, Content>; input?: Input; data?: never }
+  | { data: Content; source?: never; input?: never };
 ```
 
-要取哪些数据写在子标签里：一行一个 `<Column>`，行维度一个 `<Rows>`，图表的轴和每组数据也各是一个子标签。要加一列就加一行 JSX，不用去改一个越来越长的选项数组；每个子标签还能带自己的设置（某一列的显示名、某条数据的误差线、某根柱的强调色），不用在外层再摆一张按名字对应的表。
-
-两种写法产出完全相同；同一个组件同时给出 `data` 和取数选项会报错，两者二选一。所有计算函数的第一个参数都是 Scope（或手工挑的结果快照数组）；产出的数据都是普通可序列化 JSON，可以先存下来、传给别的进程，或者原样喂给对应组件的 `data` prop。`niceeval/report/react` 入口的同名组件只收 `data`，不做取数——那一层是纯 React 渲染，见[自定义报告](/zh/tutorials/custom-reports)。
-
-`evals` 是数据获取阶段唯一的过滤选项：评估用例 id 前缀，与 CLI 位置参数同语义，在聚合**之前**收窄题集。实体列表（`ExperimentList` / `EvalList` / `AttemptList`）不设这个选项——它们逐实体成行，取数后用普通数组 `.filter()` 收窄，效果和任何专门选项完全一样。
-
-## 排版原语
-
-`Row` / `Col` / `Section` / `Text` 负责摆版面，一次摆放两个面各自成立：`Col` 纵向堆叠；`Row` 网页横排、终端字符分栏（宽度不够自动降级纵向）；`Section` 是带标题的块；`Text` 是说明文字。另有 `<Style>{css}</Style>` 给自定义组件带样式：网页面吐 `<style>` 标签、终端面渲染为空——静态导出不打包用户代码，`className` 引用的 CSS 靠它随树走。
-
 ```tsx
-<Col>
-  <Section title="考试成绩单">
-    <Row>
-      <Scoreboard data={board} />
-      <Text>algebra 权重 ×2，满分 100。</Text>
-    </Row>
-  </Section>
-</Col>
+<Table source={sources.entity.experiments} />
+<Table data={content} />
 ```
 
-```text
-考试成绩单
-  agent  总分       algebra  geometry │ algebra 权重 ×2，
-  bub    86.5/100   45/50    41.5/50  │ 满分 100。
-  codex  78.0/100   40/50    38/50    │
+- `source`：管线在 resolve 阶段调用 `compute(input)`；省略 `input` 时使用当前 page input。
+- `data`：使用已经计算好的可序列化 Content；组件不会再次取数。
+- 同时传入 `source` 与 `data` 会报错。
+
+同一 page 实例内，相同 Source 对象和相同 input 引用只计算一次。两个配置相同但分别创建的 Source
+是两个值，因此会分别计算。
+
+## 官方 Source
+
+官方 Source 统一从 `sources` 对象发现：
+
+| Source | 产出 |
+| --- | --- |
+| `sources.entity.experiments` | Experiment 行，包含 Eval 与 Attempt 下钻 |
+| `sources.entity.evals` | Eval 行，包含 Attempt 下钻 |
+| `sources.entity.attempts` | Attempt 行 |
+| `sources.measure.rows(options)` | Dimension 与 Measure 组成的 Dataset |
+| `sources.measure.matrix(options)` | 两个维度的交叉格 |
+| `sources.measure.scoreboard(options)` | 固定题集的总分与分科得分 |
+| `sources.measure.delta(options)` | 相同 Eval 在多个条件上的值与差异 |
+| `sources.measure.stability(options)` | Eval 跨 Run 的稳定性 |
+| `sources.sample.snapshot` | Sample 范围、判定、覆盖、来源与读取期 Issue |
+| `sources.sample.traces` | Sample 中各 Attempt 的执行瀑布 |
+| `sources.run.diagnostics` | 已持久化的 Run 诊断 |
+| `sources.attempt.snapshot` | Attempt 身份、判定、耗时、用量、成本与错误 |
+| `sources.attempt.diagnostics` | Attempt lifecycle 诊断 |
+| `sources.attempt.assertions` | 断言与给分记录 |
+| `sources.attempt.source` | 带证据标注的评估源码 |
+| `sources.attempt.conversation` | 分轮事件流与失败命令 |
+| `sources.attempt.timeline` | runner phases 与关联 spans |
+| `sources.attempt.trace` | 原始 OTel span 树 |
+| `sources.attempt.diff` | 文件变化与 patch |
+
+范围级 Source 接收 `Sample`。Attempt Source 接收 `AttemptEvidence`，只能用于 attempt-input page。
+
+## TableContent
+
+表格 Source 返回统一的 `TableContent`：
+
+```ts
+interface TableContent<RowValue extends Row = Row> {
+  columns: readonly ColumnSpec[];
+  rows: readonly RowValue[];
+}
+
+interface ColumnSpec {
+  key: string;
+  unit?: string;
+  better?: "higher" | "lower";
+}
+
+interface Row {
+  key: string;
+  cells: Readonly<Record<string, Cell>>;
+  subRows?: readonly Row[];
+  variant?: "normal" | "placeholder";
+}
 ```
 
-## 正文（`Markdown`）
+`columns` 声明稳定字段身份和默认顺序。`rows[].cells` 通过字段 key 关联列；
+数组位置不是字段身份。
 
-方法学、口径说明、脚注这类要成段写的字，用 `Markdown` 写，不用把每一段拆成一串 `Text`：
+## Table
+
+`Table` 显示任何 `TableContent`：
 
 ```tsx
-<Markdown>{`
-## 方法学
+const byAgent = sources.measure.rows({
+  dimensions: ["agent"],
+  measures: [passRate, costUSD],
+  sort: passRate,
+});
 
-每个配置跑 **3 轮**，取端到端通过率。成本按网关实测优先，估算兜底。
-
-- 题集固定为 \`security/\` 下 12 题，未跑到的题按 0 分留在分母
-- 超时的 Attempt 耗时记 \`null\`，不计入均值
-
-详细口径见[指标说明](https://example.com/metrics)。
-`}</Markdown>
+<Table source={byAgent} filter />
 ```
 
-正文按 CommonMark 解析，另支持删除线、任务列表和自动链接。标题、列表、代码块、引用、强调、链接、图片在网页面是对应的 HTML 标签，在终端面是缩进、前缀和折行——两个面读同一棵解析结果，不是网页渲染一遍、终端再解析一遍。终端里代码块原样输出不折行（折行的代码不能复制执行），图片打成 `alt (链接)`，链接打成 `文字 (链接)`。
-
-三件事它不做：
-
-- **不渲染正文里写的 HTML 标签**，一律转义成看得见的文字。报告是要发出去的静态站，正文里的字符串可能来自结果数据。
-- **不解析 Markdown 表格**，遇到直接报错让你改用 `Table`。表格的列宽要按终端显示宽度算（中文记 2 列、放不下先折行再丢列并标注丢了几列），Markdown 表格绕开这套会在终端撕歪。
-- **不把 `@1k2m9qrs` 变成链接**，正文里的 Attempt 定位符就是普通文字。要能点开的证据链接，用带定位符的组件。
-
-正文和标题一样支持多语言：传 `{ en: "…", "zh-CN": "…" }`，站点切语言时正文跟着切；只写一种语言就所有语言都显示那一种。内容从哪来是普通 JavaScript 的事——写在文件里、`readFile` 读一份 `METHODOLOGY.md`、或按数据拼出来都行。
-
-一个标记都不想解析时用 `Text`：一个负责有格式的散文，一个负责这段字原样打。
-
-## 表格（`Table`）
-
-第六个排版原语：官方组件摆不出的表，用它摆。它不计算任何东西——列由你定，格子是你算好的显示值，它只负责把两个面都排整齐。
+需要覆盖默认列时使用 `Column`：
 
 ```tsx
-<Table
-  rows={[
-    {
-      key: "记忆/写缓存",
-      locator: "@160iuj3h",
-      cells: { eval: "记忆/写缓存", pass: "87%", cost: "$0.09" },
-    },
-    {
-      key: "浏览/表单填写",
-      locator: "@1qrdcfq8",
-      cells: { eval: "浏览/表单填写", pass: null, cost: null },
-    },
-  ]}
->
-  <Column key="eval" header="题目" />
-  <Column key="pass" header="通过率" align="right" />
-  <Column key="cost" header="成本" align="right" />
+<Table source={byAgent}>
+  <Column dataKey="agent" header="Agent" />
+  <Column dataKey="pass-rate" header="通过率" />
+  <Column dataKey="cost-usd" header="成本" />
 </Table>
 ```
 
-```text
-题目            通过率    成本   attempt
-记忆/写缓存        87%   $0.09   @160iuj3h
-浏览/表单填写        —       —   @1qrdcfq8
-```
+`Column` 是结构节点，只选择和呈现已经计算好的字段，不取数、不聚合。
 
-列宽按**终端显示宽度**算，中文和全角字符记 2 列——中文题目名、中文 agent 名都不会把表撕歪。`align: "right"` 让数字列右对齐，小数点自然对齐。格子是 `null` 就渲染 `—`，不补 0。行上带 `locator` 就多出一列 attempt：网页面链到 Attempt 详情，终端面列出定位符，直接喂给 `niceeval show <定位符>`。
+web 面使用真实 `<table>`，排序与过滤属于渐进增强。text 面按终端显示宽度计算列宽；
+中文与全角字符按两列处理。`null` 显示为 `—`，不会被改成 0。
 
-表比终端宽时先压最宽的左对齐列（按显示宽度折行），右对齐列不折行——数字折行读不了；压到下限仍放不下，就从右侧丢列，并在表下如实报丢了几列，不静默截断。
+## Chart
 
-某一列的格子只想显示前几行时，给这一列加 `maxLines`：超出的行丢弃，最后一行按显示宽度收口成 `…`；表头不受这个限制。网页面不消费这个字段——格子的高度由你自己的样式决定。
-
-指标表、指标矩阵、成绩单、成对差异表和稳定性矩阵的终端面就建在 `Table` 上，所以你的表和官方的表用的是同一把尺子。表格之外的形态要自己排字符时，用[自定义报告](/zh/tutorials/custom-reports)「换形态」一节里那套文本排版函数。
-
-## 摘要格（`Grid` / `Stat`）
-
-一批 label-value 的速览数字（耗时、成本、参与率这类）用 `Grid` 摆格子、`Stat` 摆每格的内容，两面都自动排版，不用自己写 CSS 或对齐字符：
+`Chart` 是唯一图表原语。它消费 `sources.measure.rows(...)` 返回的 Dataset，
+再由 `Series` 把字段映射成 line、bar、area 或 scatter：
 
 ```tsx
-<Grid columns={3} variant="boxed">
-  <Stat label="总耗时" value="12m 30s" />
-  <Stat label="总成本" value="$1.86" />
-  <Stat label="通过率" value="87%" detail="26 / 30" tone="positive" />
-</Grid>
+const qualityCost = sources.measure.rows({
+  dimensions: ["experiment", "agent"],
+  measures: [costUSD, passRate],
+});
+
+<Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
+  <Series id="frontier" mark="scatter" points="experiment" by="agent" />
+</Chart>
 ```
 
-```text
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ 总耗时       │ │ 总成本       │ │ 通过率       │
-│ 12m 30s     │ │ $1.86       │ │ 87%         │
-│             │ │             │ │ 26 / 30     │
-└─────────────┘ └─────────────┘ └─────────────┘
+`Series` 是结构节点。它不计算 Dataset，也不能独立出现在报告树中。
+
+```ts
+interface SeriesProps {
+  id: string;
+  mark: "line" | "bar" | "area" | "scatter";
+  x?: string;
+  y?: string;
+  points?: string;
+  by?: string;
+  value?: string;
+  stack?: string;
+  connect?: boolean;
+  hidden?: boolean;
+  label?: LocalizedText;
+}
 ```
 
-`columns` 是网页宽屏下最多摆几列，必须是正整数；容器变窄或终端变窄时两个面各自减列，不丢任何一格。`variant="boxed"` 给每一格描边，默认 `"plain"` 无框；`density="compact"` 收紧格内留白，字号也跟着降一档，不改变内容。
+同一 Dataset 可以同时交给 `Table` 和多个 `Chart`。改变 mark、轴或 series 不会触发第二套聚合。
 
-`Stat.value` 收 `LocalizedText`、`number` 或 `null`：`null` 显示 `—`，数字 `0` 照常显示成 `0`，不会被当成缺数据。`detail` 是主值下面的一行小字，省略就不留空行。`tone`（`neutral` / `positive` / `negative` / `warning`）是你对这个数字的语义判断，只给主值上色，组件不会替你从正负号或阈值猜。
+## 排版原语
 
-`Grid` 只管排版，不读 Scope、不聚合指标——`Stat.value` 必须是你已经算好的显示值。需要保留覆盖率角标（`12/15`）和证据引用时，继续用指标表这类数据组件；只有真正自由的摘要卡片才用 `Grid` / `Stat`。一格里要放两个 `Stat` 时，用 `Col` 把它们包起来，`Grid` 仍然只把这个 `Col` 算作一格。
+| 原语 | 作用 |
+| --- | --- |
+| `Col` | 纵向堆叠 |
+| `Row` | web 横排；text 空间足够时分栏 |
+| `Grid` | 自适应多列网格 |
+| `Section` | 带标题的内容区 |
+| `Stat` | label、value、detail 与 tone |
+| `Text` | 不解析标记的普通文本 |
+| `Markdown` | CommonMark 正文，两面共享同一棵 AST |
+| `Table` | 表格 |
+| `Tabs` / `Tab` | 页内并列内容 |
 
-`Section` 也多一个可选的 `meta`：标题行右侧的短元信息，比如「6/6 完成」。网页面和标题同一行右对齐，终端面空间不够时换到下一行，缩进两格。
+报告树不能直接放 `<div>`、`<table>` 或其它 HTML intrinsic，因为它们没有 text 面。
+HTML 只能出现在自定义 Component 的 web renderer 内。
 
-## 实验比较（`ExperimentComparison`）
+## 官方 Composition
 
-`niceeval show` / `view` 不传 `--report` 时使用的默认组合件。它把同一份 Scope 显式传给 `ScopeSummary`、成本 × 主指标的散点图和 `ExperimentList` 三个组件，自己不产出数据，也不合并三者的结果：
+Composition 只装配公开 Source 和 Component，不实现 renderer：
+
+| Composition | 回答的问题 |
+| --- | --- |
+| `SampleOverview` | 当前 Sample 的摘要、质量成本图与 Experiment 层级行 |
+| `SampleSummary` | Sample 范围、判定构成、主读数与成本 |
+| `SampleNotices` | Sample 选择和读取过程发现的问题 |
+| `RunNotices` | 已持久化的 Run 诊断 |
+| `SampleFixPrompt` | Sample 中失败事实对应的批量修复 prompt |
+| `FailureList` | 最近的 failed / errored Attempt |
+| `AttemptDetail` | 一次 Attempt 的全部证据区块 |
+| `AttemptAssessment` | source 或 assertions 的评估说明 |
+| `AttemptNotices` | Attempt 错误与诊断 |
+| `AttemptFixPrompt` | 单个 Attempt 的修复 prompt |
 
 ```tsx
-<ExperimentComparison />
+<SampleOverview />
+<FailureList limit={20} />
 ```
 
-散点纵轴和列表排序读哪个指标跟着题型走，不需要配置——题型写在评估用例定义里：通过制（`defineEval`）实验读端到端通过率，计分制（`defineScoreEval`）实验读总分；两类实验同时在场时按题型分成两组并排展示，各读各的指标。
+需要改变官方 Composition 的区块顺序或取舍时，直接用 Source 和原语重新装配。
 
-每个 experiment 的评估用例集合来自快照记录的 `selectedEvalIds`。网页面与终端面都显示完整 Scope；需要子集时用 `--exp` 收窄，或在自定义报告里对 Scope 先 `.filter()` 再传给 `input`。
+## 自定义 Composition
 
-实验列表行的显示名不需要额外配置：experiment id 共享公共目录前缀时（比如都在 `compare/` 下），行标签自动缩成各自的最短唯一后缀，不显示重复的前缀；末段撞名的 id 会自动加长到能互相区分为止。完整 id 始终是排序、过滤和折叠展开用的身份键，只是显示文字变短了。
-
-组卡使用 `Pass rate / 通过率`（计分制 Scope 换成 `Total score / 总分`，两类实验同时在场时两个都显示）、`Experiments / 实验`、`Evals / Eval`、`Attempts / Attempt`、`Eval results / Eval 结果`、`Total cost / 总成本` 这套字段标签，不在标签里重复“数”“次”或“计票”。时间显示为本地化到分钟的 `Last run / 最近运行` 或 `Run range / 运行范围`，不直接暴露 ISO 字符串；成本数据覆盖不全时写明“`63/72 次有成本数据`”，不显示没有上下文的 `63/72`。六项 KPI 在宽卡片保持同一行，空间不足时按三项或两项一组换行，避免总成本单独掉到下一行。
-
-散点图、`ScopeSummary` 和 `ExperimentList` 同样忠实消费调用方传入的数据，不推导隐藏范围。`ExperimentComparison` 等价于把三个组件按下面这样手工摆放——想自定义顺序或搭配其它组件时，直接照这个形状写，不用去改 `ExperimentComparison`（示例是通过制 Scope；计分制把纵轴换成 `totalScore`）：
-
-```tsx
-export const MyComparison = defineComponent((_props, ctx) => (
-  <Col>
-    <ScopeSummary input={ctx.scope} />
-    <ScatterChart input={ctx.scope}>
-      <XAxis metric={costUSD} />
-      <YAxis metric={endToEndPassRate} />
-      <Scatter points="experiment" x={costUSD} y={endToEndPassRate} />
-    </ScatterChart>
-    <ExperimentList input={ctx.scope} filter />
-  </Col>
-));
+```ts
+interface CompositionContext<Input extends SourceInput> {
+  readonly input: Input;
+  readonly data: Readonly<Record<string, JsonValue>>;
+  readonly page: NormalizedPage;
+  readonly signal: AbortSignal;
+  resolve<Content>(source: Source<Input, Content>, input?: Input): Promise<Content>;
+}
 ```
 
-## 范围摘要（`ScopeSummary`）
-
-每张报告开头「这批数据是什么」：几个配置、几道题、通过分布、总成本、什么时候跑的。评估用例的身份键是 `experimentId + evalId`：同一个评估用例在不同 experiment 中运行时算两个独立评估用例，数量和判定计票都按这个身份算。
-
 ```tsx
-<ScopeSummary />                    // 当前 Scope 的摘要，Eval 级计票（默认）
-<ScopeSummary votes="attempt" />    // 同一份数据，改看 Attempt 原始计票
-```
-
-数据本身恒携带两级计票，`votes` 只决定显示哪一级：
-
-- `votes="eval"`（默认）：每个 experiment × 评估用例先按「任一轮 passed 即 passed，否则 failed > errored > skipped」折成最终判定后计票，回答「多少道题最终通过」。
-- `votes="attempt"`：Attempt 原始计票，不折叠，回答「实际跑的每一轮各是什么结果」。
-
-两级计票与端到端通过率互不换算：通过率来自官方两级指标口径，不是从计票现场重新加总。选择警告和快照诊断都不在这份数据里——它们的呈现件分别是 `ScopeWarnings` 和 `SnapshotDiagnostics` 组件，同一份事实不在页面上出现两次。
-
-收窄范围时在自定义组件里显式传 `input`：
-
-```tsx
-const CompareSummary = defineComponent((_props, ctx) => (
-  <ScopeSummary input={ctx.scope.filter((s) => s.experimentId.startsWith("compare/"))} />
-));
-```
-
-## 实验列表（`ExperimentList`）
-
-每项固定代表一个 experiment。主行显示 experiment id、agent、model、flags、评估用例判定构成、主指标（通过制实验是通过率，计分制实验是总分；两类同时在场时两列都显示，不适用的格子是 `—`）、Tokens、成本和耗时。默认按主指标从高到低排序；两类实验同时在场时改按 experiment id 字典序，两个指标列仍各自可点击排序。默认 `ExperimentComparison` 把当前 Scope 的全部条目交给它；组件本身不猜边界。
-
-行标签默认缩成 experiment id 在当前列表里的最短唯一后缀——末段唯一就只显示末段，撞名的 id 各自向前多取一段直到能区分为止（与散点图的点标签同一算法）。排序、过滤和折叠展开始终用完整 id，不受显示名影响。agent 名的颜色按完整值取，同一页里图例、散点和这张表的同一个 agent 恒是同一种颜色。中文副行用“`8 个 Eval`”而不是“`8 道题`”。
-
-```tsx
-<ExperimentList filter />
-```
-
-要按前缀、agent 或状态过滤，先取数再用普通数组 `.filter()`：
-
-```tsx
-export const ProdExperiments = defineComponent(async (_props, ctx) => {
-  const items = await experimentListData(ctx.scope);
-  return <ExperimentList data={items.filter((x) => x.experimentId.startsWith("prod/"))} filter />;
+const FailingEvals = defineComposition(async (_props: {}, ctx) => {
+  const content = await ctx.resolve(sources.entity.evals);
+  const rows = content.rows.filter(
+    (row) => row.cells.verdict.verdict !== "passed",
+  );
+  return <Table data={{ ...content, rows }} />;
 });
 ```
 
-`niceeval show` 先输出 experiment 比较表，再按 experiment 展开评估用例 / Attempt 父子表。评估用例父行给题级平均值，Attempt 子行给这一轮的失败摘要和定位符：
+Composition 内必须使用 `ctx.resolve()`，不能调用 `source.compute()`。后者会绕过 page 缓存。
 
-```text
-Experiment      Model     Agent   Avg. time   Pass rate   Results                 Tokens   Cost
-bub-gpt-5.4     gpt-5.4   bub     41.0s       50%         1 passed · 1 failed     42k      $0.08
+## 自定义 Component
 
-bub-gpt-5.4
-Status      Eval / Attempt       Result                                  Duration    Cost
-✓ passed    algebra/quadratic                                             18.0s avg   $0.02 avg
-  ✓         └─ @12f9k3aq         —                                       18.0s       $0.02
-✗ failed    weather/brooklyn                                              42.0s avg   $0.04 avg
-  ✗         ├─ @1k2m9qrs         calledTool("get_weather") · no calls    41.0s       $0.04
-  ✗         └─ @1nx4dpqr         calledTool("get_weather") · no calls    43.0s       $0.04
+```ts
+interface ComponentFaces<Data, Options, D extends DimensionDeclarations> {
+  dimensions(data: Data, options: Readonly<Options>): D;
+  text(data: Data, options: Readonly<Options>, ctx: RenderContext<D>): string;
+  web(data: Data, options: Readonly<Options>, ctx: RenderContext<D>): ReactNode;
+  enhance?: readonly EnhanceCapability[];
+  styles?: readonly ComponentStyle[];
+}
 ```
 
-定位符由 `experimentId + snapshot.startedAt + evalId + attempt 序号` 的不可变身份确定，复制或发布结果后保持不变。宿主在当前结果根解析定位符；不存在或发生冲突时直接报错，不回退到“最新一次”。`@` 前缀让它与评估用例 ID 前缀选择器无歧义。
+三个函数都同步执行：
 
-`experimentListData(scope)` 返回普通的 `ExperimentListItem[]`，顺序按 experiment id 稳定排列。要只看某个 agent、目录前缀或运行状态，直接过滤数组。组件不提供另一套查询语法。网页面的文本搜索只是临时浏览操作，不改变传入的条目；终端面始终输出完整的传入数组。
+- `dimensions()` 声明组件消费的维度值和编码；不消费维度时返回 `{}`。
+- `text()` 生成终端文本。
+- `web()` 生成 ReactNode。
 
-## 评估用例列表（`EvalList`）
+Component 没有 `resolve`，也不能在 renderer 中读取 Source、Sample、Record、磁盘或网络。
 
-每项固定代表一个 `experimentId + evalId`，因为同一个评估用例跑在两个 experiment 上是两条不同结果。主行显示判定、Attempt 数、聚合分数、平均成本和平均耗时；展开后显示这个评估用例的 Attempt 列表，由每个 Attempt 行显示该轮自己的失败原因。评估用例主行不挑某一轮的失败原因冒充题级结论。
+## 页级维度身份
+
+组件先在 `dimensions()` 中声明完整值集合，再通过 `ctx.dimension(handle).at(index)` 读取呈现：
 
 ```tsx
-export const FailingEvals = defineComponent(async (_props, ctx) => {
-  const items = await evalListData(ctx.scope);
-  return <EvalList data={items.filter((item) => item.verdict !== "passed")} />;
+const AgentLegend = defineComponent<LegendData, {}>({
+  dimensions: (data) => ({
+    agents: {
+      dimension: "agent",
+      encoding: { kind: "series", mark: "line" },
+      values: data.agentIds,
+    },
+  }),
+  text(data, _options, ctx) {
+    const agents = ctx.dimension("agents");
+    return data.agentIds.map((_, index) => agents.at(index).label).join("  ");
+  },
+  web(data, _options, ctx) {
+    const agents = ctx.dimension("agents");
+    return (
+      <ul>
+        {data.agentIds.map((id, index) => (
+          <li key={id} className={agents.at(index).className}>
+            {agents.at(index).label}
+          </li>
+        ))}
+      </ul>
+    );
+  },
 });
 ```
 
-`niceeval show` 每个 `experiment × Eval` 输出一项，Attempt 仍用同一套紧凑 ID 和证据位。每项只给一条模板：
+text 面只得到标签与文本身份；web 面还得到颜色、线型、点形或 pattern。
+不要逐个截断 label，也不要按数组下标自行配色。
 
-```text
-weather/brooklyn · compare/bub-gpt-5.4 · failed
-  score 0.20 · 3 attempts · 41s avg · $0.04 avg
-  @1k2m9qrs✗ · calledTool("get_weather") · received 0 tool calls
-  @1nx4dpqr✗ · calledTool("get_weather") · received 0 tool calls
-  @19vq2jex✗ · calledTool("get_weather") · received 0 tool calls
+## 共用呈现 props
 
-fixtures/button · compare/bub-gpt-5.4 · errored
-  score — · 1 attempt · 2m 00s · $0.09
-  @1c3h6twx! · command timed out after 120s
+数据原语按需支持以下呈现 props：
 
-inspect: niceeval show @<id> [--source|--execution|--diff]
-```
+| Prop | 作用 |
+| --- | --- |
+| `attemptHref` | 把 AttemptLocator 映射到证据链接 |
+| `locale` | 组件内建文案的语言 |
+| `className` | web 根元素 class |
+| `filter` | 只为 web 增加过滤输入框，不改变 Content |
 
-`evalListData(scope)` 返回普通的 `EvalListItem[]`。按评估用例 id 前缀、experiment、判定或分数过滤都使用数组 `.filter()`；组件只负责渲染传入的条目。
+排序、轴映射、图例和 tooltip 只能改变呈现，不能触发第二次聚合。
 
-## Attempt 列表（`AttemptList`）
+## `niceeval/report/react`
 
-每项固定代表一个 Attempt，显示 experiment、评估用例、Attempt 序号、判定、耗时、成本、失败断言、结构化 error 的一层摘要、Judge 评语和证据链接。diagnostics、cause 和 stack 留给定位符下钻详情，避免比较列表被基础设施日志撑开。它既能列失败证据，也能列通过样本，不把判定过滤写死在组件名里。
-
-```tsx
-export const RecentFailures = defineComponent(async (_props, ctx) => {
-  const all = await attemptListData(ctx.scope);
-  const failed = all.filter((x) => x.verdict === "failed" || x.verdict === "errored");
-  return <AttemptList data={failed.slice(0, 20)} total={failed.length} />;
-});
-```
-
-`niceeval show` 每项完整输出一个 Attempt，不折叠到评估用例汇总。这里已经是叶子层，只在末尾给一条与该 Attempt 可用证据对应的模板：
-
-```text
-✗ @1k2m9qrs · weather/brooklyn · compare/bub-gpt-5.4 · 41s · $0.04
-  ✗ gate · calledTool("get_weather")
-    received: 0 tool calls
-  ✗ soft · judge("回答基于实时数据")   0.2 / 1
-    reply invents a temperature
-
-! @1c3h6twx · fixtures/button · compare/bub-gpt-5.4 · 2m 00s · $0.09
-  command timed out after 120s
-inspect: niceeval show @<id> [--source|--execution|--diff]
-
-(3 more not shown · showing 20 of 23)
-```
-
-要展示哪些 Attempt，过滤返回的 `AttemptListItem[]`。截断数量也由报告作者在数组上用 `.slice(0, 20)` 表达，截断时把原始数量交给组件的 `total`，组件据此显示“还有 n 项未展示”，不静默截断。
-
-## 失败列表（`FailureList`）
-
-「现在有哪些失败要处理」是每份报告都要的固定区块，工具箱直接提供成品组合件，不用每次都重写同一段取数过滤。它和上面 `AttemptList` 的手工写法完全等价，只是把最常见的一种过滤打包好了：收 `verdict` 为 failed 或 errored 的 Attempt，按开始时间倒序（最近的失败在前），截断到 `limit`（默认 20）。
+这个入口只导出纯 web renderer 和 Content 类型。它不导出 Source、Composition，
+也不读取记录：
 
 ```tsx
-<FailureList limit={30} />
+import { sources } from "niceeval/report";
+import { Table } from "niceeval/report/react";
+
+const data = await sources.entity.experiments.compute(sample);
+return <Table data={data} />;
 ```
 
-要按 agent、成本或其它口径筛选，回到手写 `AttemptList` 的写法自己加工数组；`FailureList` 只覆盖这一种最常见的问题。
-
-## 指标表（`MetricTable`）
-
-一行一个维度值，一列一个读数，回答「谁整体更好」。行维度、读数列、排序全部可换，自定义读数（`defineMeasure`）与内置读数同列。
-
-```tsx
-<MetricTable evals="coding/" filter>
-  <Rows dimension="agent" sort={endToEndPassRate} />
-  <Column metric={endToEndPassRate} />
-  <Column metric={examScore} />
-  <Column metric={costUSD} />
-  <Column metric={durationMs} />
-</MetricTable>
-```
-
-```text
-agent   pass rate   examScore   cost
-bub     87%         0.91        $0.42
-codex   80% 12/15   0.86        $0.51
-```
-
-两面都按 `sort` 预排，基准顺序一致——要固定换一种排序，改一行重跑。`12/15` 角标表示该格 15 个 attempt 里只有 12 个测得了这个指标。`<Rows sort>` 必须是本表某个 `<Column>` 的指标且声明了 `better`，否则报错；省略时按行 key 字典序，避免为方向不明的指标猜顺序。`filter` 只给网页面加行过滤框，不改变数据或终端输出。
-
-`<Rows dimension="experiment" />` 时每行自动带 agent 与 model 列——结果里现成的元信息，不用配置。`MetricTable` 不展开实体层级：要看 experiment、评估用例或 Attempt 的固定诊断字段，用上面三个实体列表；要自由换维度和指标列，用指标表。
-
-## 指标矩阵（`MetricMatrix`）
-
-行 × 列两个维度、格子里一个指标，回答「哪道题谁挂了」。稀疏渲染：没有样本的格子空着，不编数。
-
-```tsx
-<MetricMatrix>
-  <Rows dimension="eval" />
-  <Columns dimension="agent" />
-  <Cells metric={endToEndPassRate} />
-</MetricMatrix>
-```
-
-```text
-eval                bub    codex
-algebra/quadratic   100%   100%
-algebra/matrix      100%   67%
-geometry/area       50%    —
-
-next: niceeval show geometry/area
-```
-
-网页面点格子深链到该格的 attempt；终端面在表下印下钻命令。
-
-## 分组柱状图（`BarChart`）
-
-同一批数据换成柱状：按组并排比大小，回答「每个科目上谁领先、差多少」。横轴一组柱、每条数据一根柱、柱高是指标值——benchmark 发布图（Terminal-Bench、BrowseComp 各一组，每个 agent 一根柱）就是这个形状。
-
-```tsx
-<BarChart>
-  <XAxis dimension="evalGroup" />     {/* 一组条 = 一个科目/benchmark */}
-  <YAxis metric={endToEndPassRate} />
-  <Bar metric={endToEndPassRate} by="agent" />   {/* 一根条 = 一个 agent */}
-</BarChart>
-```
-
-```text
-algebra
-  bub     ██████████████████░░  91.9%
-  codex   █████████████████░░░  88.0%
-geometry
-  bub     ██████████░░░░░░░░░░  50.0%
-  codex   —
-```
-
-网页面是竖向分组柱：柱顶要数值就加一个 `<LabelList position="top" />`，颜色与同页其它组件一致，图例自动生成。终端面横向条形，字符宽度即刻度，同组内按值排序（方向随 `better`）。`better: "lower"` 的指标（成本、耗时）条形反向填充，短条恒为「好」。同一页里矩阵和柱状图用同一组维度时，底层数据只算一次。
-
-### benchmark 站首屏的那张排行柱状图
-
-换成横向、一行一名、按值排序，就是 benchmark 站首屏那块排行柱状图：
-
-```tsx
-<BarChart layout="vertical">
-  <XAxis metric={endToEndPassRate} orientation="top" />
-  <YAxis
-    dimension={["agent", label("memory")]}   {/* 一行 = 一个 agent 线 × 一种记忆机制 */}
-    sort={endToEndPassRate}                  {/* 按值排名，方向随 better */}
-    limit={10}                               {/* 只留前十 */}
-    rest="其余"                               {/* 剩下的合成一行重新聚合 */}
-  />
-  <Bar metric={endToEndPassRate} colorBy={label("memory")}>
-    <LabelList position="right" />           {/* 行尾数值 */}
-    <ErrorBar kind="ci95" />                 {/* 置信区间 */}
-  </Bar>
-</BarChart>
-```
-
-三处值得单独说：
-
-- **行身份可以是复合的。** `["agent", label("memory")]` 的一个取值是一行（`codex · mempal`），不是两行。
-- **`rest` 是重新聚合，不是把截掉的几行平均。** 它回答的是「其余那些 attempt 合起来多少」，所以带自己的样本数和证据引用，也能下钻。
-- **颜色可以说另一件事。** 行是「agent × 记忆机制」，而 `colorBy` 让颜色只表达记忆机制——同一种记忆机制在这张图、图例和页上任何按它取色的地方恒同色。要指定具体哪个值用哪个颜色（例如 baseline 恒中性），在[主题里钉色](/zh/tutorials/custom-reports#钉住某个值的颜色)。
-
-要在行首标 `#1` `#2`，用刻度的呈现定制：`tick` 回调收到的 `index` 就是排序后的名次。
-
-## 成绩单（`Scoreboard`）
-
-总分 + 分科小计，回答「这套题它能得几分」。逐题分值制：题目和分科逐条写在子标签里，权重挂在题目或分科上，分母对所有被打分者恒定，没跑到的题挣 0 分并如实报 `missing`。
-
-```tsx
-<Scoreboard fullMarks={100} score={examScore}>
-  <Rows dimension="agent" />
-  <Subject name="security" weight={3}>
-    <Question id="security/sql-injection" />
-    <Question id="security/path-traversal" />
-  </Subject>
-  <Subject name="correctness" weight={2}>
-    <Question id="correctness/retry" />
-  </Subject>
-</Scoreboard>
-```
-
-```text
-agent   total      algebra        geometry
-bub     86.5/100   45/50          41.5/50
-codex   71.0/100   40/50          31/50 (1 missing)
-```
-
-题集是你写下的 `<Question>` 列表，不从已观测的 Attempt 并集猜——所有配置都没跑到的题仍然留在分母里按 0 分计。分数为 `null`（跑了但测不了）与完全没跑到的题分开计数（分别是 `unscorable` 和 `unrun`），成绩单能回答「这 0 分是没去考还是考了判不了」。`score` 默认是 `examScore`，每道题必须产出 `[0, 1]`；总分是 `fullMarks × earned / possible`。题目多的时候用普通 `map` 展开 `<Question>`，不用手抄一长串。不想给分科起名时，把 `<Question>` 直接放在 `<Scoreboard>` 下，分科按评估用例 id 的父路径自动归。
-
-## 散点图（`ScatterChart`）
-
-每个点一个配置、两个指标各占一轴，回答「又好又便宜的是谁」。`by` 把同 agent 不同档位的点归成一组；`better` 驱动轴向——`lower` 的轴反向画，「好」的角落恒在右上。
-
-```tsx
-<ScatterChart>
-  <XAxis metric={costUSD} />
-  <YAxis metric={endToEndPassRate} />
-  <Scatter points="experiment" by="agent" x={costUSD} y={endToEndPassRate} />
-</ScatterChart>
-
-// 同族变体连线：同 line 值的实验一色成线，line 连出基线 → 变体的位移
-<ScatterChart>
-  <XAxis metric={costUSD} />
-  <YAxis metric={endToEndPassRate} />
-  <Scatter points="experiment" by={label("line")} x={costUSD} y={endToEndPassRate} line />
-</ScatterChart>
-```
-
-散点直接消费传入的 Scope，宿主渲染前替你算好数据；默认 `ExperimentComparison` 也把当前 Scope 原样交给它。要嵌预先算好的数据，改传 `data`。
-
-```text
-pass ↑                                    （好 → 右上）
- 90%│                                  A
-    │                     B
- 75%│                          C
- 60%│      D
-    └──────────────────────────────────────→ cost（轴反向：越右越省）
-     $0.60       $0.45       $0.30      $0.15
-
-A bub-high   B bub-medium   C codex-high   D codex-low
-```
-
-网页面点带悬停提示（值与 `samples/total`，禁用 JS 时退化为图内提示）、同系列连线、点击深链下钻。终端面用字母标点，图例列在图下；x 或 y 缺数据的点两个面都不画，注脚如实报「n 个点缺数据」；点太密排不下时降级为坐标表，不硬挤。画得出来的点是 0 个时，两个面都明说这两个指标没有可用数据，不留一片空白；1 个点也照常出图。`points` 和 `by` 也收自定义维度和 `flag()`（experiment 声明的变量），怎么选见[自定义报告](/zh/tutorials/custom-reports)的「换分组」一节。想在同一张图上再叠一条平均线或一根柱，把 `<Line>` / `<Bar>` 和散点一起放进 `<ComposedChart>`。
-
-## 趋势图（`LineChart`）
-
-x 是有序变量、每组数据一条线，回答「变量拧大，分数怎么走」——并行 agent 数 × 模拟延迟 × 得分这类 scaling 图就是它。与散点图的分工：散点图的两轴都是测出来的指标（找优势前沿），趋势图的 x 是你配置的变量（看趋势）。变量在 experiment 的 flags 里声明，报告用 `flag()` 或数值型 flag 助手直接引用，不从 experiment 命名里解析。
-
-```tsx
-const budget = numericFlag("budget", { label: "Token budget", unit: "tokens" });
-
-<LineChart>
-  <XAxis numeric={budget} />
-  <YAxis metric={endToEndPassRate} />
-  <Line metric={endToEndPassRate} by="agent" />
-</LineChart>
-```
-
-```text
-pass ↑
- 80%│                   C···C
-    │            C···C            B
- 60%│       C         B···B
-    │         B···B                        A
- 40%│       A···A
-    │    A
- 20%│
-    └───────────────────────────────────────────→ Simulated latency
-      1 min       5 min       10 min      20 min
-
-A 1 agents   B 4 agents   C 16 agents
-```
-
-每个点是一个 experiment 的聚合，与其它组件同一套指标引擎；同一条线上的点按 x 排序连起来。网页面每个点可 hover、可深链下钻。终端面同系列共用一个字母、沿 x 排布，趋势肉眼可读；y 缺数据的点不画、注脚报数，点太密降级为坐标表。
-
-## 成对差异表（`DeltaTable`）
-
-每行一道评估用例、每组列一个条件，格子里是该条件的结果与对基准的差，回答「这个开关值不值」「这次修复翻转了什么」。涨跌好坏由 `better` 判定，任一侧缺数据时差值显示为缺，不硬算。
-
-```tsx
-// 逐个写下条件，其中一个是基准
-<DeltaTable>
-  <Columns dimension="experiment">
-    <Condition value="compare/baseline" baseline />
-    <Condition value="compare/with-memory" />
-  </Columns>
-</DeltaTable>
-
-// 按 flag 机械导出条件，加实验不用改报告
-<DeltaTable>
-  <Columns dimension="experiment">
-    <FlagConditions flag="memory" />
-  </Columns>
-</DeltaTable>
-```
-
-```text
-pair    pass rate              cost
-bub     87% → 93%   +6%        $0.42 → $0.45   +$0.03
-codex   80% → 80%   ±0         $0.51 → —       —
-```
-
-「这次 vs 上次」（同一配置的两个结果快照）也是它：把 `<Columns dimension="snapshot">` 配上手挑的快照数组，两次运行各成一列。`<FlagConditions>` 按一个 flag 机械导出全部条件：实验矩阵是「同配置开关某个 flag」时，条件关系本来就是 experiment 配置的推论，手抄 id 字面量等于把配置复写进报告，加实验后报告会静默缺列。
-
-## 官方组件之外
-
-以上摆法都表达不了时，用 `defineComponent` 写自己的双面组件——网页怎么渲染、终端字符怎么排，两个面你都说了算，写法见[自定义报告](/zh/tutorials/custom-reports)的「换形态」一节。
+在 report page 外直接调用 `compute()` 是正确的；那里没有 `ctx.resolve()` 和 page 缓存。

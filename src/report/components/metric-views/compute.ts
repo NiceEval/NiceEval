@@ -11,9 +11,11 @@
 //   按稳定 key 字典序;
 // - core 中立:只认 Metric / Dimension 接口,不出现具体 agent 名的分支。
 
-import type {
+import type { DatasetField,
   DeltaCell,
   DeltaData,
+  Dataset,
+  DatasetRow,
   DimensionInput,
   FlagConditions,
   LineData,
@@ -60,67 +62,122 @@ import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore
 import { formatMetricValue, formatPercent, formatPlainNumber, formatPoints, MISSING_TEXT } from "../../model/format.ts";
 import type { LocalizedText } from "../../model/locale.ts";
 import { selectedAttemptsOnly } from "../shared-compute.ts";
+import { datasetToTableData, measureFieldOf } from "../../model/dataset.ts";
 
 // ───────────────────────── metricTableData ─────────────────────────
 
-export interface MetricTableOptions {
-  /** 行维度(内置 / 自定义 / flag() / runConfig())。 */
-  rows: DimensionInput;
-  /** 每列一个指标;非空元组,元素是静态 import 的 Metric 实例。 */
-  columns: readonly [Measure, ...Measure[]];
-  /**
-   * 初始行序:必须是 columns 中同一个 Metric 实例且声明了 better,方向随 better
-   * (「好」的一头在上),缺数据行沉底;省略时按行 key 字典序。
-   */
+export interface MeasureRowsOptions {
+  /** 空数组表示整个 Sample 只产生一行聚合结果。 */
+  dimensions: readonly DimensionInput[];
+  measures: readonly [Measure, ...Measure[]];
   sort?: Measure;
-  /** eval id 前缀过滤,同 CLI 位置参数语义;在聚合之前收窄题集。 */
   evals?: string | readonly string[];
 }
 
-export async function metricTableData(input: ReportInput, options: MetricTableOptions): Promise<TableData> {
-  assertUniqueMetricNames(options.columns, "metricTableData columns");
-  if (options.sort !== undefined) {
-    if (!options.columns.includes(options.sort)) {
+/** @internal 过渡 spec：rows / columns 映射到 dimensions / measures。 */
+export interface MetricTableOptions {
+  rows: DimensionInput;
+  columns: readonly [Measure, ...Measure[]];
+  sort?: Measure;
+  evals?: string | readonly string[];
+}
+
+function normalizeMeasureRowsOptions(
+  options: MeasureRowsOptions | MetricTableOptions,
+): MeasureRowsOptions {
+  if ("dimensions" in options) return options;
+  return {
+    dimensions: [options.rows],
+    measures: options.columns,
+    sort: options.sort,
+    evals: options.evals,
+  };
+}
+
+function groupByDimensions(items: Item[], dimensions: readonly DimensionInput[]): Map<string, Item[]> {
+  if (dimensions.length === 0) {
+    return new Map(items.length > 0 ? [["_sample", [...items]]] : []);
+  }
+  if (dimensions.length === 1) return groupItems(items, dimensions[0]!);
+  const groups = new Map<string, Item[]>();
+  for (const item of items) {
+    const key = seriesKey(dimensions as SeriesInput, item);
+    const list = groups.get(key);
+    if (list) list.push(item);
+    else groups.set(key, [item]);
+  }
+  return new Map([...groups.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
+
+function dimensionFieldName(dimensions: readonly DimensionInput[]): string | null {
+  if (dimensions.length === 0) return null;
+  if (dimensions.length === 1) return dimensionName(dimensions[0]!);
+  return seriesName(dimensions as SeriesInput);
+}
+
+export async function measureRowsData(
+  input: ReportInput,
+  options: MeasureRowsOptions | MetricTableOptions,
+): Promise<Dataset> {
+  const normalized = normalizeMeasureRowsOptions(options);
+  assertUniqueMetricNames(normalized.measures, "measureRowsData measures");
+  if (normalized.sort !== undefined) {
+    if (!normalized.measures.includes(normalized.sort)) {
       throw new Error(
-        `metricTableData sort must be one of the Metric instances passed in columns (got "${options.sort.name}"). ` +
+        `measureRowsData sort must be one of the Metric instances passed in measures (got "${normalized.sort.name}"). ` +
           "Pass the same imported instance in both places so the sorted column is visible in the table.",
       );
     }
-    if (options.sort.better === undefined) {
+    if (normalized.sort.better === undefined) {
       throw new Error(
-        `metricTableData cannot sort by "${options.sort.name}": the metric declares no "better" direction, so there is no defined order. ` +
+        `measureRowsData cannot sort by "${normalized.sort.name}": the metric declares no "better" direction, so there is no defined order. ` +
           'Declare better: "higher" | "lower" on the metric, or drop sort to keep the lexicographic row order.',
       );
     }
   }
   const { runs, attempts } = resolveInput(input);
-  const items = filterItems(collectItems(runs, attempts), options.evals);
-  const groups = groupItems(items, options.rows);
-  const rows: TableData["rows"] = [];
+  const items = filterItems(collectItems(runs, attempts), normalized.evals);
+  const dimName = dimensionFieldName(normalized.dimensions);
+  const groups = groupByDimensions(items, normalized.dimensions);
+  const rows: DatasetRow[] = [];
   for (const [key, group] of groups) {
-    const cells: globalThis.Record<string, MeasureCell> = {};
-    for (const metric of options.columns) cells[metric.name] = await computeCell(metric, group);
-    rows.push({ key, cells });
+    const values: globalThis.Record<string, string | MeasureCell> = {};
+    if (dimName !== null) values[dimName] = key;
+    for (const metric of normalized.measures) values[metric.name] = await computeCell(metric, group);
+    rows.push({ key, values });
   }
-  if (options.sort) {
-    const better = options.sort.better ?? "higher";
-    const name = options.sort.name;
-    rows.sort((a, b) => {
-      const va = a.cells[name]?.value ?? null;
-      const vb = b.cells[name]?.value ?? null;
+  if (normalized.sort) {
+    const better = normalized.sort.better ?? "higher";
+    const name = normalized.sort.name;
+    rows.sort((a: DatasetRow, b: DatasetRow) => {
+      const aCell = a.values[name];
+      const bCell = b.values[name];
+      const va = isMeasureCell(aCell) ? aCell.value : null;
+      const vb = isMeasureCell(bCell) ? bCell.value : null;
       if (va === null && vb === null) return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
-      if (va === null) return 1; // 缺数据沉底
+      if (va === null) return 1;
       if (vb === null) return -1;
       const diff = better === "lower" ? va - vb : vb - va;
       if (diff !== 0) return diff;
-      return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; // 稳定排序,同值以 key 收口
+      return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
     });
   }
-  return {
-    rowDimension: dimensionName(options.rows),
-    columns: options.columns.map(toColumn),
-    rows,
-  };
+  const fields: DatasetField[] = [];
+  if (dimName !== null) fields.push({ name: dimName, kind: "dimension", valueType: "string" });
+  fields.push(...normalized.measures.map(measureFieldOf));
+  return { fields, rows };
+}
+
+function isMeasureCell(value: unknown): value is MeasureCell {
+  return typeof value === "object" && value !== null && "value" in value && "display" in value;
+}
+
+/** @internal 过渡：Dataset → TableData。 */
+export async function metricTableData(
+  input: ReportInput,
+  options: MeasureRowsOptions | MetricTableOptions,
+): Promise<TableData> {
+  return datasetToTableData(await measureRowsData(input, options));
 }
 
 // ───────────────────────── metricMatrixData(= MetricBars 的数据)─────────────────────────

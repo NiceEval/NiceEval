@@ -1,8 +1,8 @@
-// niceeval/report —— 报告积木:指标 × 计算函数 × 双面组件 × defineReport。
+// niceeval/report —— 报告积木:指标 × 双面组件 × defineReport。
 // 契约见 docs/feature/reports/README.md 与 docs/feature/reports/library/ 分篇。
 //
-// import 边界即运行时边界:计算函数(*Data)会经句柄触碰文件系统(懒加载 artifact),
-// 只能进服务端 / 脚本;组件的渲染面纯同步零 IO。text 宿主遍历渲染不需要 react-dom
+// import 边界即运行时边界:计算函数经 sources 在 resolve 阶段代调,只能进服务端 / 脚本;
+// 组件的渲染面纯同步零 IO。text 宿主遍历渲染不需要 react-dom
 // (renderReportToText);web 宿主的 renderReportToStaticHtml 在 ./runtime/web.ts,只有那一侧
 // import react-dom。写报告文件的项目要装 react(.tsx 编译产物 import react/jsx-runtime)。
 
@@ -84,13 +84,62 @@ export type {
 } from "./definition/tree.ts";
 
 // 排版原语(十个内置双面组件)
-export { Col, Grid, Row, Section, Stat, Style, Tab, Table, Tabs, Text } from "./definition/primitives.tsx";
+export {
+  Callouts,
+  Chart,
+  Col,
+  Column,
+  Conversation,
+  CopyBlock,
+  DiffView,
+  Grid,
+  Markdown,
+  Row,
+  Section,
+  Series,
+  SourceView,
+  Stat,
+  Style,
+  Tab,
+  Table,
+  Tabs,
+  Text,
+  Waterfall,
+} from "./definition/primitives.tsx";
 export type {
+  CalloutGroup,
+  CalloutItem,
+  CalloutLevel,
+  CalloutsProps,
+  ChartPresentation,
+  ChartProps,
+  ChartAxisBinding,
+  ChartFieldBinding,
+  ChartSeriesOverride,
   ColProps,
+  ColumnProps,
+  ConversationContent,
+  ConversationEntry,
+  ConversationProps,
+  ConversationTurn,
+  CopyBlockContent,
+  CopyBlockProps,
+  DiffChange,
+  DiffContent,
+  DiffFile,
+  DiffViewProps,
+  FailedCommandContent,
   GridProps,
   LayoutProps,
+  MarkdownProps,
   RowProps,
   SectionProps,
+  SeriesProps,
+  SourceBlockContent,
+  SourceCallContent,
+  SourceContent,
+  SourceLine,
+  SourceViewProps,
   StatProps,
   StatTone,
   StyleProps,
@@ -100,7 +149,13 @@ export type {
   TableRow,
   TabsProps,
   TextProps,
+  WaterfallContent,
+  WaterfallNode,
+  WaterfallProps,
+  WaterfallRow,
 } from "./definition/primitives.tsx";
+export type { Cell, ColumnSpec, TableContent, TableContentRow, VerdictCounts } from "./definition/cell.ts";
+export { formatCellText } from "./definition/cell.ts";
 
 // 文本排版工具箱:自定义组件的 text 面用的就是官方组件那把尺子。
 // 表格有 <Table> 承担,这里只给表以外的形态用 —— 尤其别拿 String.prototype.padEnd 对齐:
@@ -124,86 +179,27 @@ export type { LocalizedText, ReportLocale } from "./model/locale.ts";
 export { SampleOverview, SampleSummary } from "./components/summaries/index.tsx";
 export type { SampleOverviewProps, SampleSummaryProps } from "./components/summaries/index.tsx";
 export {
-  CopyFixPrompt,
   Hero,
   HeroCard,
   PoweredBy,
-  ScopeWarnings,
-  SnapshotDiagnostics,
-  TraceWaterfall,
+  RunNotices,
+  SampleFixPrompt,
+  SampleNotices,
 } from "./components/site-components/index.tsx";
-export {
-  ScopeWarnings as SampleNotices,
-  SnapshotDiagnostics as RunNotices,
-  CopyFixPrompt as SampleFixPrompt,
-} from "./components/site-components/index.tsx";
-export type {
-  CopyFixPromptProps,
-  HeroCardProps,
-  HeroProps,
-  ScopeWarningsProps,
-  SnapshotDiagnosticsProps,
-  TraceWaterfallProps,
-} from "./components/site-components/index.tsx";
+export type { HeroCardProps, HeroProps } from "./components/site-components/index.tsx";
 
-// 实体列表与指标视图。
-export { AttemptList, EvalList, ExperimentList, FailureList } from "./components/entity-lists/index.tsx";
-export {
-  DeltaTable,
-  MetricBars,
-  MetricLine,
-  MetricMatrix,
-  MetricScatter,
-  MetricTable,
-  Scoreboard,
-  StabilityMatrix,
-} from "./components/metric-views/index.tsx";
+// 实体列表。
+export { FailureList } from "./components/entity-lists/index.tsx";
 
-// Attempt 详情组件族(docs/feature/reports/components/attempt-detail/README.md):11 个叶子 + 2 个
-// 只装配叶子的组合组件(AttemptAssessment / AttemptDetail),都从 niceeval/report 导出。
+// Attempt 详情组合组件(docs/feature/reports/components/attempt-detail/README.md)。
 export {
-  AttemptAssertions,
   AttemptAssessment,
-  AttemptConversation,
   AttemptDetail,
-  AttemptDiagnostics,
-  AttemptDiff,
-  AttemptError,
-  AttemptFixPrompt,
-  AttemptSource,
   AttemptSummary,
-  AttemptTimeline,
-  AttemptTrace,
-  UsageTable,
 } from "./components/attempt-detail/index.tsx";
 export type { AttemptSectionProps } from "./components/attempt-detail/index.tsx";
 
-// 计算函数(组件解析面的具名形式,与组件成对;spec 形态下由管线代调,data 形态与
-// 嵌入场景下由作者手工调)
-export {
-  copyFixPromptData,
-  heroData,
-  scopeWarningsData,
-  snapshotDiagnosticsData,
-  traceWaterfallData,
-} from "./components/site-components/compute.ts";
-
-// Attempt 详情组件族的计算函数:输入恒为单个 AttemptEvidence,同步纯派生(不读文件、不 fetch)。
-export {
-  attemptAssertionsData,
-  attemptConversationData,
-  attemptDiagnosticsData,
-  attemptDiffData,
-  attemptErrorData,
-  attemptFixPromptData,
-  attemptSourceData,
-  attemptSummaryData,
-  attemptTimelineData,
-  attemptTraceData,
-  usageTableData,
-} from "./components/attempt-detail/compute.ts";
-
-// 数据契约(组件的 data)
+// 数据契约(Content / Row / Cell 等;计算经 sources 在 resolve 阶段代调,不从此处导出 *Data 函数)
 export type {
   Aggregator,
   AttemptListItem,
@@ -213,6 +209,10 @@ export type {
   CustomDimension,
   DeltaCell,
   DeltaData,
+  Dataset,
+  DatasetField,
+  DatasetRow,
+  DatasetValue,
   DimensionInput,
   DimensionOptions,
   DimensionRef,
@@ -225,6 +225,7 @@ export type {
   MatrixData,
   Measure,
   MeasureAggregate,
+  MeasureFormat,
   NumericAxis,
   NumericAxisOptions,
   NumericRunConfigAxisOptions,

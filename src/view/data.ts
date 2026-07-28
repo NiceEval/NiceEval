@@ -11,11 +11,11 @@ import { dirname, extname, join, relative, resolve } from "node:path";
 import { dedupeAttempts, loadAttemptEvidence, openRecord, withArtifactBase } from "../record/index.ts";
 import type { AttemptHandle, Record, Sample, Run, UnreadableRun } from "../record/index.ts";
 import type { AttemptLocator } from "../record/locator.ts";
-import {
-  buildHostReportMeta,
+import { buildHostReportMeta,
   hostThemeStylesheet,
   loadHostReport,
-  renderHostPageHtml,
+  renderHostPageFromResolved,
+  resolveHostPage,
   resolveHostTheme,
   type ReportAsset,
   type ReportDefinition,
@@ -493,13 +493,20 @@ async function renderReportSlot(
   const hostMeta = await buildHostReportMeta(hostReport, selection);
   const pages: ViewReportPageHtml[] = [];
   for (const hostPage of scopePages) {
-    const ctx = { scope: selection, results, report: hostMeta, page: { id: hostPage.id, input: "scope" as const } };
+    const ctx = {
+      scope: selection,
+      results,
+      report: hostMeta,
+      page: { id: hostPage.id, input: "scope" as const },
+      dimensionPins: hostReport.dimensionPins,
+    };
     try {
+      const resolved = await resolveHostPage(hostPage.content, ctx);
       pages.push({
         id: hostPage.id,
         html: {
-          en: await renderHostPageHtml(hostPage, ctx, { locale: "en" }),
-          "zh-CN": await renderHostPageHtml(hostPage, ctx, { locale: "zh-CN" }),
+          en: await renderHostPageFromResolved(resolved, { locale: "en" }),
+          "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN" }),
         },
       });
     } catch (e) {
@@ -536,11 +543,13 @@ async function renderReportSlot(
       results,
       report: hostMeta,
       page: { id: attemptPage!.id, input: "attempt" as const, locator, evidence },
+      dimensionPins: hostReport.dimensionPins,
     };
     try {
+      const resolved = await resolveHostPage(attemptPage!.content, ctx);
       return {
-        en: await renderHostPageHtml(attemptPage!, ctx, { locale: "en", attemptHref: SIBLING_ATTEMPT_HREF }),
-        "zh-CN": await renderHostPageHtml(attemptPage!, ctx, { locale: "zh-CN", attemptHref: SIBLING_ATTEMPT_HREF }),
+        en: await renderHostPageFromResolved(resolved, { locale: "en", attemptHref: SIBLING_ATTEMPT_HREF }),
+        "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", attemptHref: SIBLING_ATTEMPT_HREF }),
       };
     } catch (e) {
       if (pageFailure !== "embed") throw e;

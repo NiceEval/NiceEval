@@ -54,6 +54,13 @@ export interface MeasureAggregate {
  * 内置指标与自定义指标是同一个类型,没有特权。name 走字面量泛型:列键锚在指标
  * 对象上(`row.cells[taskPassRate.name]`),拼错列名编译不过。
  */
+export interface MeasureFormat {
+  style: "number" | "percent" | "currency" | "duration" | "tokens";
+  currency?: string;
+  minimumFractionDigits?: number;
+  maximumFractionDigits?: number;
+}
+
 export interface Measure<Name extends string = string> {
   /** MeasureColumn.key 与列头的来源;同一次计算里重名是错误。 */
   name: Name;
@@ -187,7 +194,33 @@ export type MetricColumn = MeasureColumn;
 /** @internal */
 export type MetricCell = MeasureCell;
 
-export type MeasureRowsContent = TableData;
+/**
+ * 通用读数投影(docs/feature/reports/library/measures.md):本次选择的 Dimension + Measure
+ * 组成的按需 Dataset。Chart / Table 只按字段名绑定，不重新读取 Record。
+ */
+export interface DatasetField {
+  name: string;
+  kind: "dimension" | "measure";
+  valueType: "string" | "number";
+  unit?: string;
+  better?: "higher" | "lower";
+  bounds?: { min?: number; max?: number };
+}
+
+export type DatasetValue = string | number | MeasureCell;
+
+export interface DatasetRow {
+  /** 由全部 dimension 原始值组成的稳定身份，不是数组位置或显示 label。 */
+  key: string;
+  values: Readonly<globalThis.Record<string, DatasetValue>>;
+}
+
+export interface Dataset<Row extends DatasetRow = DatasetRow> {
+  fields: readonly DatasetField[];
+  rows: readonly Row[];
+}
+
+export type MeasureRowsContent = Dataset;
 
 /**
  * 数据形状的字段命名规则(docs/feature/reports/components/tables/README.md「共用数据形状」):
