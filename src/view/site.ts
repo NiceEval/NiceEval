@@ -194,8 +194,8 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}, site:
     }
   }
 
-  // attempt/<locator>.html:报告声明了 attempt-input page 时才出现,收窄后有效根内每个可达
-  // locator 各一份(view.md「静态导出」)。头资产的相对路径要从 attempt/ 子目录回退一层,
+  // attempt/<locator>.html:显式报告页优先，否则用 view 的官方详情页；收窄后有效根内每个
+  // 可达 locator 各一份(view.md「静态导出」)。头资产的相对路径要从 attempt/ 子目录回退一层,
   // 因此单独物化一份 `../` 前缀版本(与 index.html 的根相对版本共用同一份 files 内容寻址,
   // 同一份资产只按内容哈希写一次)。每份文档的 IO/resolve 延迟到真正被请求或导出时才发生——
   // 可达 locator 数量可能很大,不能像 index.html 一样在建清单时就全部渲染

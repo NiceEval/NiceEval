@@ -1,6 +1,6 @@
 // 从归一化的 StreamEvent[] 折叠出结构化事实。
 //   - deriveRunFacts:断言层吃的 DerivedFacts(按 callId 把 called+result 折成 ToolCall);
-//   - buildO11ySummary:给人 / EVAL.ts 看的 o11y 摘要(注入 __niceeval__/results.json)。
+//   - buildO11ySummary:给人看的 o11y 摘要,同时是宿主侧 `t.o11y` 与落盘 o11y.json 的同一份算法。
 // 一旦事件流归一好了,这两个折叠对所有 agent 通用。
 
 import type {

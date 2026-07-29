@@ -7,7 +7,6 @@ import {
   installedSkillNames,
   skillDiscoveryInstruction,
 } from "./skills.ts";
-import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { completeCoverage } from "../scoring/coverage.ts";
 import { parseHermesTranscript, sessionIdFromHermesOutput } from "../o11y/parsers/hermes.ts";
@@ -108,7 +107,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
     coverage: completeCoverage,
     spanMapper: mapGenericSpans,
 
-    async setup(sb) {
+    async setup(sb, ctx) {
       // 装到当前沙箱用户 $HOME/.local(Docker 下是 /home/node);显式路径,不靠 PATH。
       await sb.runShell(`test -x ${UV} || (curl -LsSf https://astral.sh/uv/install.sh | sh)`);
       await sb.runShell(
@@ -148,7 +147,7 @@ export function hermesAgent(config?: HermesConfig): Agent {
         );
       }
       if (manifest.skills.length) {
-        await writeAgentSetupManifest(sb, manifest);
+        ctx.reportSetup(manifest);
       }
     },
 

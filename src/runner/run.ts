@@ -11,6 +11,7 @@ import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
   experimentRunInfo,
+  resolveJudge,
   runAttemptEffect,
   type AttemptFailureDeclaration,
 } from "./attempt.ts";
@@ -35,6 +36,7 @@ import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts"
 import { runWho, HALT_DIAGNOSTIC_CODE } from "./types.ts";
 import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
 import { ReusableSandboxPool } from "./sandbox-pool.ts";
+import { detectReuseContamination, reuseContaminationMessage } from "./reuse-diagnostics.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
@@ -81,7 +83,7 @@ function feedbackWho(a: Attempt): string {
 export type { AgentRun, RunOptions } from "./types.ts";
 
 /** 收集本次要探测的 judge 配置:只看「实际要跑、且源码里出现 judge 字样」的 eval 的生效
- *  配置(evalDef.judge ?? config.judge,与 attempt.ts 的 resolveJudge 一致),按
+ *  配置(evalDef.judge 与 config.judge 逐字段合并,与 attempt.ts 的 resolveJudge 同一份),按
  *  model|baseUrl|apiKeyEnv 去重。要跑的 eval 都不用 judge 时返回空 —— 全局配了 judge
  *  也不探测,纯确定性断言的运行不再被 judge key / 端点问题拦下。
  *  源码扫描是启发式:judge 调用藏在 import 的 helper 里时会漏判,漏判只是退回旧行为
@@ -93,7 +95,7 @@ export function judgeProbeTargets(
   const seen = new Set<string>();
   const toProbe: JudgeConfig[] = [];
   for (const e of evals) {
-    const jc = e.judge ?? configJudge;
+    const jc = resolveJudge(e.judge, configJudge);
     if (!jc || !/\bjudge\b/.test(e.source)) continue;
     const key = `${jc.model ?? ""}|${jc.baseUrl ?? ""}|${jc.apiKeyEnv ?? ""}`;
     if (seen.has(key)) continue;
@@ -125,9 +127,8 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     if (resolved.provider === "local") {
       throw new Error("sandboxReuse cannot be combined with localSandbox(): runner never resets the user's working tree");
     }
-    if (resolved.create !== undefined) {
-      throw new Error(`sandboxReuse is not supported with defineSandbox custom provider "${resolved.provider}": it cannot declare the required reset and lifetime capabilities`);
-    }
+    // 其余 provider(含 defineSandbox 自定义)不按名字预筛:能不能复用只由 provider 有没有
+    // 实现 `ensureLifetime` 决定,没实现就在第一条 Attempt 派发前硬失败(见 sandbox-pool.ts)。
   }
 
   // 按 sourcePath 缓存文件内容,fingerprint 与 judge 预检共用:
@@ -1950,6 +1951,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   dispatchClosed = true;
   await Promise.allSettled([...reusePools.values()].map((pool) => pool.stop()));
   await opts.otelPool?.close();
+
+  // 复用污染线索:按实例 × 承接序号聚合本次 Run 真实跑出的结果(携带条目不参与——复用实验
+  // 不消费也不产出结果沿用)。只指路,不改判定(见 reuse-diagnostics.ts)。
+  for (const notice of detectReuseContamination(results)) {
+    reportDiagnostic({
+      key: `sandbox-reuse-contamination:${notice.experimentId ?? ""}:${notice.reuseSandbox}:${notice.phase}`,
+      code: "sandbox-reuse-contamination",
+      severity: "warning",
+      message: reuseContaminationMessage(notice),
+      data: {
+        ...(notice.experimentId !== undefined ? { experimentId: notice.experimentId } : {}),
+        reuseSandbox: notice.reuseSandbox,
+        phase: notice.phase,
+        fromOrdinal: notice.fromOrdinal,
+        toOrdinal: notice.toOrdinal,
+        count: notice.count,
+      },
+    });
+  }
 
   // 实验级 teardown 兜底扫尾:正常路径由 per-attempt ensuring 的计数归零触发(见上),但一次
   // 真实批跑观察到过计数路径未触发的间歇现象(根因未定位,排查记录见 memory 的

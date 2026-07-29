@@ -7,7 +7,6 @@ import {
   installedSkillNames,
   skillDiscoveryInstruction,
 } from "./skills.ts";
-import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { completeCoverage } from "../scoring/coverage.ts";
 import {
@@ -72,7 +71,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       }),
     },
 
-    async setup(sb) {
+    async setup(sb, ctx) {
       await sb.runShell(
         `command -v opencode >/dev/null 2>&1 || npm install -g opencode-ai@${version}`,
       );
@@ -120,7 +119,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         );
       }
       if (manifest.skills.length) {
-        await writeAgentSetupManifest(sb, manifest);
+        ctx.reportSetup(manifest);
       }
     },
 

@@ -64,8 +64,8 @@ Attempt 详情是一张 `input: "attempt"` 的参数化 page：
 ```
 
 要改顺序或删区块，直接写 page render。
-报告没有 attempt page 时，locator 在 text 与 web 两面都只是普通文本；
-宿主不追加官方 fallback。
+报告没有 attempt page 时，`show` 的 locator 仍是普通文本，不生成一条会改变报告语义的命令；
+`view` 则使用官方 `AttemptDetails` 作为隐式详情页，让 web locator 保持可下钻。
 
 ## Usage 单源
 

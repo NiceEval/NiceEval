@@ -62,7 +62,7 @@
 | Claude Code skill / native plugin / MCP setup | `src/agents/claude-code.ts`(`ClaudeCodeConfig.skills` / `plugins` / `mcpServers`、`ClaudeCodePluginSpec`) |
 | Codex skill / native plugin / MCP setup | `src/agents/codex.ts`(`CodexConfig.skills` / `plugins` / `mcpServers`、`CodexPluginSpec`) |
 | bub skill / Python plugin setup | `src/agents/bub.ts`(`BubConfig.skills` / `pythonPlugins`、`PythonPluginSpec`;package 集合进安装 checkpoint key) |
-| 安装 manifest 的写(adapter)与读(运行器) | `src/agents/manifest.ts`、`src/runner/attempt.ts`(抬成 attempt artifact `agent-setup.json`) |
+| 安装 manifest 的构造(adapter 宿主侧内存对象,不落沙箱盘)与读(运行器) | `src/agents/manifest.ts`、`src/runner/attempt.ts`(存成 attempt artifact `agent-setup.json`) |
 | 本地 skill A/B 示例 | [coding-agent-skill](https://github.com/CorrectRoadH/coding-agent-skill)(独立仓库) |
 
 ## 标准事件流与可观测性([observability.md](observability.md))
@@ -75,7 +75,7 @@
 | run 级共享 OTLP 接收 + 逐轮归属(traceparent → `ctx.telemetry.headers`;窗口回退 + 未确认时该 agent 轮次串行) | `src/o11y/otlp/turn-otel.ts`(`AgentOtelChannel` / `OtelReceiverPool`);接线在 `src/runner/attempt.ts`(池取通道)与 `src/context/session.ts`(`sendWithOtel`:归属 / 派生 / 合并) |
 | 固定端口 / 自定义接收 host 模式(`defineConfig({ telemetry: { host, port } })`,niceeval 项目内唯一入口,不读环境变量) | `src/runner/run.ts`(`OtelReceiverPool` 取 `config.telemetry.port`)、`src/runner/attempt.ts`(`config.telemetry.host`)、`src/o11y/otlp/receiver.ts`(`makeTraceReceiver(port)`,端口被占用时报 `otel.portInUse`) |
 | `deriveRunFacts`(toolCalls / subagents / parked / compactions) | `src/o11y/derive.ts` |
-| o11y 摘要与沙箱注入(`__niceeval__/results.json` 的原子 writer、写失败诊断与清理) | `src/o11y/derive.ts`(`buildO11ySummary`) → `src/o11y/sandbox-results.ts` → `src/context/session.ts`(send 后刷新) / `src/context/context.ts`(用户 Sandbox 命令前刷新) |
+| 宿主侧行为断言 `t.o11y`(读取时从当前累积事件现算) | `src/o11y/derive.ts`(`buildO11ySummary`) → `src/context/context.ts`(`t.o11y` getter) |
 | codex 用量从 `turn.completed.usage` 抠出 | `src/o11y/parsers/codex.ts` |
 | 用量 → 成本(实测优先 → 用户覆盖 → 内置 Run) | `src/o11y/cost.ts` |
 
@@ -156,7 +156,7 @@
 | `EvalResult.scoring`(取 `evalDef.scoring` 未声明时取 `"pass"`)与 `scoreEntries`(仅 `scoring: "points"` 时落,取 `collector.scoreEntries`)的落盘接线 | `src/runner/attempt.ts`(`runAttemptEffect` 组装 `EvalResult` 处) |
 | CLI(exp / show / list / view / clean / init,--help,parseArgs 表驱动,.env 加载,输出形态解析;调度项没有环境变量层,见[配置与凭据边界](architecture.md#配置从代码来凭据从环境来)) | `src/cli.ts` |
 | `niceeval show` 终端宿主(Sample 合成「现刻水位」、--history 逐 experimentId+evalId 分节的 attempt 执行时间轴、--report/--page 经 report/runtime/host.ts 装载 + 组合语义矩阵、证据切面 --source/--execution/--diff) | `src/show/{index,compose,render,command}.ts` + `src/report/runtime/host.ts`(两宿主共用) |
-| 测试集加载器(loadJson / loadYaml) | `src/loaders/index.ts` |
+| 测试集与判据文件加载器(loadJson / loadYaml / loadText) | `src/loaders/index.ts` |
 
 ## Record / Sample Lib 与 Reports
 
@@ -219,7 +219,7 @@
 | 报告 chrome 文案的 locale 字典；`formatMetricValue` / `formatAxisTick` 格式化单点 | `src/report/model/locale.ts`、`src/report/model/format.ts` |
 | 元素树 / `defineComponent`(双面) / 内部 `ResolveMemo`(树解析环境记忆化，不从 `niceeval/report` 导出) / 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
 | `defineRenderer` 与扩展资产(`niceeval/report/extension`) | `src/report/extension/{define,types,assets,index}.ts` |
-| `resolveReportTree` + `validateReportTree`(page.render 产出组件树之后递归校验 props 形态、收集维度声明;同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页四种渲染入口都经 `resolved-page.ts` 先 resolve 再投影) | `src/report/definition/tree.ts`、`src/report/runtime/resolved-page.ts`(被 `text.ts` / `web.ts` 调用) |
+| `resolveReportTree` + `validateReportTree`(page.render 产出组件树之后递归校验 props 形态、收集维度声明;同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页四种渲染入口都经 `resolved-page.ts` 先解析再投影) | `src/report/definition/tree.ts`、`src/report/runtime/resolved-page.ts`(被 `text.ts` / `web.ts` 调用) |
 | `executePageRender` / `resolveDefinitionPage`(选页 → 校验 input 分支 → await page.render → 缓存 Promise;同一 page 实例 + 输入身份只执行一次 render) | `src/report/runtime/page-render.ts`(测试 `page-render.test.tsx`) |
 | 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table / Chart / Scatter / Line / Bars / Area（内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`;`Scatter` 等接 `points=`，内部桥到 Dataset；`Chart` 收 Dataset 多 mark 组合) | `src/report/definition/primitives.tsx` + `src/report/definition/primitives/{chart,marks,points-dataset}.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平、`balanceColumns` / `planGridColumns` / `gridContainerRules` / `planTextGrid` 两面同源列数算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |
 | 文本排版工具箱(`stringWidth` / `padEnd` / `padStart` / `wrapText` / `indent` / `bar` / `columns`,从 `niceeval/report` 导出;跨组件族共用,不属于任一组件族) | `src/report/model/text-layout.ts` |

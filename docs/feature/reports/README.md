@@ -216,7 +216,7 @@ return <Table rows={rows} />;
 24. 工厂函数产出带参数的 ReportDefinition，使用方传 opts 后默认导出。
 
 普通场景 1–8 只用公开转换函数与具体 props；
-不出现待 resolve 的查询对象或组件级 `data` 绑定。
+不出现待求值的查询对象或组件级 `data` 绑定。
 
 ## 相关阅读
 

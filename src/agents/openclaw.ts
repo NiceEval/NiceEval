@@ -7,7 +7,6 @@ import {
   installedSkillNames,
   skillDiscoveryInstruction,
 } from "./skills.ts";
-import { writeAgentSetupManifest } from "./manifest.ts";
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
 import { completeCoverage } from "../scoring/coverage.ts";
@@ -91,7 +90,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
       }),
     },
 
-    async setup(sb) {
+    async setup(sb, ctx) {
       // 预制模板已把 openclaw 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
       await sb.runShell(
         `command -v openclaw >/dev/null 2>&1 || npm install -g openclaw@${version}`,
@@ -154,7 +153,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         );
       }
       if (manifest.skills.length) {
-        await writeAgentSetupManifest(sb, manifest);
+        ctx.reportSetup(manifest);
       }
     },
 

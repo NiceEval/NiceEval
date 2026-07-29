@@ -21,13 +21,20 @@ interface ResolvedJudge {
   model: string | undefined;
   baseUrl: string;
   apiKey: string | undefined;
+  /** 单次判分调用的上限(见 JUDGE_TIMEOUT_MS 的理由)。 */
+  timeoutMs: number;
 }
+
+/** 单次判分调用的默认上限:判分材料可以是整段长会话,更短的上限会把慢而能用的网关判成
+ *  评不了;三分钟足以把「慢」与「挂死」分开(见 docs/feature/judge/library.md
+ *  「调用预算与执行顺序」)。eval 与 config 的 judge 逐字段合并后仍没有 timeoutMs 才落到这里。 */
+const JUDGE_TIMEOUT_MS = 180_000;
 
 function resolveJudge(judge: JudgeConfig | undefined): ResolvedJudge {
   const model = judge?.model;
   const baseUrl = judge?.baseUrl ?? "https://api.openai.com/v1";
   const apiKey = (judge?.apiKeyEnv ? getEnv(judge.apiKeyEnv) : undefined) ?? getEnv("NICEEVAL_JUDGE_KEY");
-  return { model, baseUrl, apiKey };
+  return { model, baseUrl, apiKey, timeoutMs: judge?.timeoutMs ?? JUDGE_TIMEOUT_MS };
 }
 
 function clamp01(n: number): number {
@@ -39,6 +46,11 @@ export interface JudgeDeps {
   record(spec: {
     name: string;
     severity: "soft";
+    /** 检查方式摘要(如 `closedQA("…")`);落盘进 AssertionResult.detail,也是 live 面板
+     *  `judge k/n · <检查方式>` 用的那一份文本(见 collector 的 onJudgeProgress)。 */
+    detail: string;
+    /** 这是一条判分断言:collector 据此逐条上报判分推进。 */
+    judge: true;
     evaluate(ctx: ScoringContext): Promise<EvalScore | EvalUnavailable>;
   }): AssertionHandle;
   judge: JudgeConfig | undefined;
@@ -57,6 +69,22 @@ const PROBE_MAX_ATTEMPTS = 2;
 function errorSummary(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.replace(/\s+/g, " ").slice(0, 300);
+}
+
+/** 超时证据里的秒数:整秒不带小数(180_000 → `180s`),非整秒保留一位。 */
+function formatSeconds(ms: number): string {
+  const seconds = ms / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
+}
+
+/** 这条判分断言的检查方式摘要,如 `closedQA("修改是否聚焦问题?")`。判分材料的 rubric 可能很长,
+ *  摘要按显示口径收口。这一份文本同时是落盘的 `detail` 与 live 面板 `judge k/n · …` 的后半段
+ *  ——两处同源,不在别处第二次拼。 */
+const CHECK_SUMMARY_MAX = 80;
+function checkSummary(kind: string, reference: string): string {
+  const flat = reference.replace(/\s+/g, " ").trim();
+  const short = flat.length > CHECK_SUMMARY_MAX ? `${flat.slice(0, CHECK_SUMMARY_MAX)}…` : flat;
+  return `${kind}(${JSON.stringify(short)})`;
 }
 
 /** autoevals/OpenAI 的 HTTP 错误在不同运行时有不同类名，只依赖稳定的 status 字段。 */
@@ -172,6 +200,8 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
       return deps.record({
         name: `judge:autoevals:${kind}`,
         severity: "soft",
+        detail: checkSummary(kind, reference),
+        judge: true,
         evaluate: async (ctx) => {
           if (!model) {
             return unavailable("judge-model-unresolved (no judge model in the eval or project config)");
@@ -181,26 +211,54 @@ export function buildJudge(deps: JudgeDeps): JudgeNamespace {
             return unavailable(`judge-key-unresolved (${envHint} unset)`);
           }
           const output = await materialFor(ctx, opts?.on);
-          let result: { score?: number | null; rationale?: string };
+          let result: { score?: number | null };
+          // 判分调用有界:到点中断这次调用并记 unavailable。超时源自建 setTimeout +
+          // AbortController(不是 AbortSignal.timeout):既要真正取消在飞的请求,也要在网关
+          // 连 abort 都不回应时仍然按时结束等待,所以调用与计时器一起 race。
+          const budget = new AbortController();
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            budget.abort();
+          }, resolved.timeoutMs);
+          const callSignal = deps.signal ? AbortSignal.any([deps.signal, budget.signal]) : budget.signal;
           try {
             // autoevals 覆盖 HTTP、连接、调用超时与响应解析；这些边界上的任何异常都不能
             // 漏到 collector 的「求值异常 = 0 分」回退，必须成为没有可信分数的 unavailable。
-            result = await scorer({
+            const call = scorer({
               input: deps.getInput(),
               output,
               [payloadKey]: reference,
               model,
-              client: judgeClient(resolved.apiKey, resolved.baseUrl, deps.signal),
+              client: judgeClient(resolved.apiKey, resolved.baseUrl, callSignal),
             });
+            // 超时后这次调用的迟到 rejection 不再有人接:先挂一个吸收器,避免未处理拒绝。
+            call.catch(() => {});
+            result = await Promise.race([
+              call,
+              new Promise<never>((_, reject) => {
+                budget.signal.addEventListener("abort", () => reject(new Error("judge call exceeded its budget")), {
+                  once: true,
+                });
+              }),
+            ]);
           } catch (error) {
+            // 判分不重试:超时和其它失败一样只留一条 unavailable,要不要再评由重跑决定。
+            if (timedOut) {
+              return unavailable("judge-call-failed", `timed out after ${formatSeconds(resolved.timeoutMs)}`);
+            }
             return unavailable("judge-call-failed", judgeFailureEvidence(error));
+          } finally {
+            clearTimeout(timer);
           }
           if (typeof result.score !== "number" || !Number.isFinite(result.score)) {
             return unavailable("judge-call-failed", "response did not contain a finite numeric score");
           }
+          // detail 只有「检查方式」一个含义(见 docs/feature/assertions/architecture.md
+          // 「断言记录」),已由 spec.detail 给出;裁判自述的理由没有记录字段,不挤进这里,
+          // 否则判定行标题会变成摘要 + 一整段理由。evidence 仍是判分看的材料。
           return {
             score: clamp01(result.score),
-            detail: result.rationale || undefined,
             evidence: output,
           };
         },

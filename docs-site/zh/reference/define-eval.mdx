@@ -454,6 +454,26 @@ readonly sandbox: SandboxHandle<H>;
 
 受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 SandboxHandle)。
 
+#### `o11y`
+
+```ts
+readonly o11y: O11ySummary;
+```
+
+本 attempt 至今的行为摘要:工具调用计数、读/改的文件、shell 命令、web 请求、思考块数等。
+每次读取都从已累积的标准事件流现算,多轮之间读到的是截至最近一次已返回 `send()` 的行为;
+direct 与 sandbox Agent 同一行为。摘要住在宿主侧——沙箱里没有任何框架文件、也没有任何框架
+环境变量,行为证据因此在被测 agent 够不着的地方。用它把「过程正确性」写进断言:
+
+```ts
+await t.send("用脚手架初始化项目");
+t.check(t.o11y.shellCommands.map((c) => c.command).join("\n"), includes("create-next-app"));
+t.check(t.o11y.filesRead.join("\n"), excludes(".env"));
+```
+
+token 用量、估算成本与耗时不在其中:那三样分别以结果的 `usage`、`estimatedCostUSD`、
+`durationMs` 为准,同一事实不落第二份。
+
 #### `usage`
 
 ```ts

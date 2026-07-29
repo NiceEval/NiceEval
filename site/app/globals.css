@@ -942,7 +942,7 @@ h1 {
 
 /* 当前步骤靠提亮表达:面提到 panel-2、边与字提到 text,不换色相。 */
 .loop-arc {
-  fill: none;
+  fill: transparent;
   stroke: var(--line);
   stroke-width: 1;
   transition: fill 200ms ease, stroke 200ms ease;

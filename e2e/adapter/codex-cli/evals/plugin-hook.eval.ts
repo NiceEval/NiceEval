@@ -1,8 +1,8 @@
 // 协议行为:Plugins 与 hook 信任——marketplace 安装的 Plugin 行为可观察,其 hook 在 bypass
 // 信任姿态下确实生效(见 docs/engineering/testing/e2e/adapter/codex-cli.md)。
 //
-// 安装痕迹:agent-setup.json 的 nativePlugins 记录与 codex 自己的 plugin cache 目录都要对得上
-// (镜像 e2e/projects/codex 里 native-plugin-installed.eval.ts 的既有做法)。
+// 安装痕迹从 codex 自己的 plugin cache 目录读(镜像 e2e/projects/codex 里
+// native-plugin-installed.eval.ts 的既有做法);安装清单是宿主侧 attempt artifact,不进沙箱。
 //
 // hook 证据:CorrectRoadH/niceeval-e2e-codex-hook-fixture 的 hook-demo 插件只有一个
 // SessionStart 钩子,内容是 `echo NICEEVAL_HOOK_SENTINEL_926`。Codex 把 SessionStart 命令钩子
@@ -16,36 +16,21 @@ import { defineEval } from "niceeval";
 import { equals, includes } from "niceeval/expect";
 
 const MARKETPLACE_NAME = "niceeval-e2e-plugins";
-const MARKETPLACE_SOURCE = "CorrectRoadH/niceeval-e2e-codex-hook-fixture";
-const MARKETPLACE_REF = "343b07bc8b204cd7f524d2dd4367f83409c98c29";
 const PLUGIN_NAME = "hook-demo";
 const PLUGIN_VERSION = "0.1.0";
 const HOOK_SENTINEL = "NICEEVAL_HOOK_SENTINEL_926";
 
 export default defineEval({
-  description: "Plugin 安装 + hook 信任 bypass:manifest/磁盘安装痕迹俱全,SessionStart hook 真实执行留下证据",
+  description: "Plugin 安装 + hook 信任 bypass:磁盘安装痕迹俱全,SessionStart hook 真实执行留下证据",
   async test(t) {
-    await t.group("安装痕迹:agent-setup.json manifest 与真实安装文件都对得上", async () => {
-      const manifestRaw = await t.sandbox.readFile("__niceeval__/agent-setup.json");
-      const manifest = JSON.parse(manifestRaw) as {
-        nativePlugins?: {
-          agent?: string;
-          marketplace?: { name?: string; source?: string; ref?: string };
-          name?: string;
-          resolvedVersion?: string;
-        }[];
-      };
-      const plugin = manifest.nativePlugins?.[0];
-      t.check(plugin?.agent, equals("codex"));
-      t.check(plugin?.marketplace?.name, equals(MARKETPLACE_NAME));
-      t.check(plugin?.marketplace?.source, equals(MARKETPLACE_SOURCE));
-      t.check(plugin?.marketplace?.ref, equals(MARKETPLACE_REF));
-      t.check(plugin?.name, equals(PLUGIN_NAME));
-      t.check(plugin?.resolvedVersion, equals(PLUGIN_VERSION));
+    // 安装痕迹从 codex 自己的 plugin cache 目录读:安装清单只在宿主侧(attempt artifact
+    // agent-setup.json),沙箱里没有任何框架文件,eval 也不该从沙箱里去读它。
+    await t.group("安装痕迹:codex 自己的 plugin cache 里装到了指定版本", async () => {
+      const cacheDir = `~/.codex/plugins/cache/${MARKETPLACE_NAME}/${PLUGIN_NAME}`;
+      const versions = await t.sandbox.runShell(`ls ${cacheDir}`);
+      t.check(versions.stdout, includes(PLUGIN_VERSION));
 
-      const check = await t.sandbox.runShell(
-        `test -f ~/.codex/plugins/cache/${MARKETPLACE_NAME}/${PLUGIN_NAME}/${PLUGIN_VERSION}/hooks.json`,
-      );
+      const check = await t.sandbox.runShell(`test -f ${cacheDir}/${PLUGIN_VERSION}/hooks.json`);
       t.check(check.exitCode, equals(0));
     });
 

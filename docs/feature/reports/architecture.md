@@ -378,7 +378,8 @@ interface AttemptPage {
 ```
 
 装载期要求至多一张 Attempt page，且它不能进入导航。
-宿主解析 locator 后选择这张 page 并传入 AttemptEvidence。
+宿主解析 locator 后选择这张 page 并传入 AttemptEvidence；自定义报告没有声明时，
+view 使用内建 `standard` 的 Attempt page 作为隐式默认值，仍不进入报告导航。
 这保留现有“Attempt 详情是一张参数化 page”的寻址、静态导出和无 JS 深链契约，
 不重新增加 `attempt`、modal 或其它旁路内容槽。
 

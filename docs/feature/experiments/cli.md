@@ -119,7 +119,12 @@ Human active 行的最后一栏显示当前生命周期阶段。阶段词表全�
 
 `waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。`passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不放入 phase 闭集。
 
-每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的 setup 会稳定停在 `sandbox setup` 或 `agent setup`,而不是继续显示前一阶段。`running eval` 可以带一个短的可选 detail,例如 `tool: shell` 或 `turn 2`;detail 只更新当前行,不成为永久事件。
+每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的 setup 会稳定停在 `sandbox setup` 或 `agent setup`,而不是继续显示前一阶段。detail 只更新当前行,不成为永久事件;带 detail 的阶段只有两个长等待段。`running eval` 的 detail 是 agent 事件短预览,例如 `tool: shell` 或 `turn 2`。
+
+`scoring` 的 detail 是 judge 推进 `judge k/n · <检查方式>`:n 是这条 attempt 收集到的 judge
+断言数,k 是正在评第几条,检查方式与落盘的 `detail` 字段同源(如 `closedQA("…")`)。没有 judge
+断言时 scoring 不带 detail:本地断言的求值不足一帧,detail 只解释「在等裁判模型」这一种等待,
+不复述阶段词本身。
 
 phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox provider 或用户 hook 能直接设置的公共字段:每一次转换都由 `attempt.ts` 沿它自己固有的执行顺序、在真正跨入该步骤时发出;没有对应 hook/配置的步骤直接跳过,不产生空阶段。各层想表达「我正在做什么」走各自作用域的 `progress()` / `diagnostic()`(sandbox provider、hook、eval、adapter 各拿各的句柄,契约见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈));`AgentContext.log(text)` 是 `progress({ message: text })` 的别名,不是第二条通道。progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与 `--json` 不展示,也不写入 results;任何一层都不能借它改写 phase 本身,或声称进入了另一个生命周期阶段。
 
@@ -794,7 +799,7 @@ eval 级聚合行的 `locator` 指**代表 attempt**——earlyExit 下取 attem
 --json  {"event":"error","locator":"@18c1m2qx","evalId":"memory/agent-029","experimentId":"compare/bub-e2b","phase":"agent.run","reason":"attempt timed out (60000ms, from config)"}
 ```
 
-超时消息带**这个上限是哪一层给的**——`from flag` / `from experiment` / `from eval` / `from config`,对应 [Resolved config](architecture.md#resolved-config一次求值处处同源) 的解析链。撞线时用户要的下一步是「去哪儿把它调大」,光一个毫秒数得自己回去对四个地方;尤其当 eval 声明了 35 分钟却被别处的 20 分钟掐死时,来源标注是一眼看出配置解析走岔了的唯一线索。它写在 `AttemptError.message` 里(两个面同源),不另立结构化字段:这是给人排查用的一层原因,不是要 CI 分支的决策轴。
+超时消息带**这个上限是哪一层给的**——`from flag` / `from experiment` / `from eval` / `from config`,对应[配置解析链](architecture.md#配置解析链一次求值处处同源)的四层顺序。撞线时用户要的下一步是「去哪儿把它调大」,光一个毫秒数得自己回去对四个地方;尤其当 eval 声明了 35 分钟却被别处的 20 分钟掐死时,来源标注是一眼看出配置解析走岔了的唯一线索。它写在 `AttemptError.message` 里(两个面同源),不另立结构化字段:这是给人排查用的一层原因,不是要 CI 分支的决策轴。
 
 已经发起 agent turn 的 attempt 没有成本数据时只提示一次。人读文本把 warning 永久写入 scrollback,`--json` 追加一条 `warning` 事件;不得每个 attempt 重复同一诊断。attempt 在 `sandbox.create`、setup 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
 

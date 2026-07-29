@@ -87,6 +87,10 @@ export const en = {
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",
+  "loaders.outsideDiscovery":
+    "Read of \"{{path}}\" happened outside discovery: loaders may only be called at the module top level of an eval file (while discovery evaluates that module), which is the only point early enough for the file's content to enter this eval's fingerprint. Move the read to the module top level and keep the result in a constant that test(t) uses; loaders cannot be called at run time from test(t) or from lifecycle hooks.",
+  "loaders.nonFileUrl":
+    "A URL passed to a loader must use the file: protocol, but got {{protocol}} ({{url}}). Pass new URL(relativePath, import.meta.url) instead, or use a plain project-root-relative string path.",
   "cli.flag.parseError": "{{message}}\nRun `niceeval --help` for usage.\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
@@ -381,7 +385,6 @@ export const en = {
     "  · [sandbox] the \"{{provider}}\" provider forces attempts to run one at a time (exclusive); concurrency stays at 1 for it regardless of --max-concurrency {{concurrency}}\n",
   "runner.remoteSandboxUnavailable": "remote agents do not have sandbox.{{method}}; use a sandbox agent or remove workspace assertions.",
   "runner.reporterDiagnostic": "  · [diagnostic] {{stage}} failed (ignored): {{message}}\n",
-  "runner.scoreJudge": "scoring / judge...",
   "runner.skip": "skip: {{reason}}",
   "runner.startAgentSetup": "agent setup (install CLI / write config)...",
   "runner.startAgentTracing": "agent tracing (write OTEL export config)...",
@@ -401,7 +404,7 @@ export const en = {
   "sandbox.forceCleanup": "  · [sandbox] force-cleaning {{count}} sandboxes...\n",
   "sandbox.provisionReconcileFailed": "  · [sandbox] provision reconcile failed, aborting retry (a possibly-created instance could not be verified/killed): {{error}}\n",
   "sandbox.provisionRetry": "  · [sandbox] provisioning rate-limited, retrying in {{delayMs}}ms (attempt {{attempt}}/{{maxAttempts}})...\n",
-  "sandbox.stopFailed": "  · [sandbox] failed to stop sandbox {{id}} (ignored; provider TTL should clean it up): {{message}}\n",
+  "sandbox.stopFailed": "  · [sandbox] failed to stop sandbox {{id}} (ignored; it keeps running, and billing, until this provider's own timeout — if it has one — reclaims it): {{message}}\n",
   "sandbox.stopTimeout": "stop timed out ({{timeoutMs}}ms)",
   "scoring.evalError": "evaluation error: {{error}}",
   "scoring.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",

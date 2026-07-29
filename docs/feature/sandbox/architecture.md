@@ -216,7 +216,7 @@ provider 没有按元数据检索实例的通道时:拒绝类直接指数退避�
 - 退避睡眠期间临时归还并发槽位(`retry.ts` 的 `ProvisionSlot`),睡醒后再排队要回来——在退避的 attempt 只是在等,不该攥着 `sandboxSem` 的名额陪跑 `setTimeout`,不然一批 429 会把整批实际并发拖成远低于 `--max-concurrency` 声明值的个位数。
 - 重试全部耗尽后仍按原语义走:`verdict: "errored"`(基建问题,不是 agent 表现);对账中销毁的实例不额外报错,只留 diagnostic。
 
-**对外的空间轴映射**:内部的两维分类不外泄,但确定性配置死因向 attempt 层浮出时附带[执行失败分类](../error-classification/README.md)的 `scope`,由止损闸消费。判据仍是可证明性,按死因的配置解析域定档——凭据缺失、权限不足来自实验级配置,附带 `scope: "experiment"`;模板不存在看 spec 带不带 `environments` 表:不带表时模板全实验共享,附带 `scope: "experiment"`;带表时模板逐 eval 解析(见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)),同因必死只能证明到共享同一模板的范围,词表里可证明的档是 `scope: "eval"`——错杀健康模板的 eval 比多撞几次死模板更贵。瞬时失败重试耗尽后不附带 scope:死因不可证明为兄弟共享。
+**对外的空间轴映射**:内部的两维分类不外泄,但确定性配置死因向 attempt 层浮出时附带[执行失败分类](../error-classification/README.md)的 `scope`,由止损闸消费。判据仍是可证明性,按死因的配置解析域定档——凭据缺失、权限不足来自实验级配置,附带 `scope: "experiment"`;模板不存在看 spec 带不带 `environments` 表:不带表时模板全实验共享,附带 `scope: "experiment"`;带表时模板逐 eval 解析(见 [Experiments · 配置解析链](../experiments/architecture.md#配置解析链一次求值处处同源)),同因必死只能证明到共享同一模板的范围,词表里可证明的档是 `scope: "eval"`——错杀健康模板的 eval 比多撞几次死模板更贵。瞬时失败重试耗尽后不附带 scope:死因不可证明为兄弟共享。
 
 Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后被 provider 终止属于 lifecycle failure,不能当成同一个实例里的普通 IO 失败继续重试;应保留明确终止原因,由 attempt 层决定是否允许重新创建整个环境。
 

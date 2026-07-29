@@ -145,7 +145,7 @@ export default defineExperiment({
 | Tracing | ✅ (beta, structure and timing only) | ✅ | ✅ |
 | Install method | npm global package | npm global package | `uv tool install` (PyPI) |
 
-What got installed is on the record: at the end of `setup` the Adapter writes the install manifest into the Sandbox's `__niceeval__/agent-setup.json`, and the runner stores it as the Attempt Artifact `agent-setup.json` (read it in the library with `attempt.agentSetup()`). The manifest records only sources, refs, Skill/plugin names, resolved versions, and the official config file's project-relative path and SHA-256 — never the config's contents, API keys, or environment variable values. MCP servers are recorded the same way, non-sensitive fields only: for the stdio shape it records `name` / `command` / `args` but not `env`; for the HTTP shape it records `name` / `url` but not `headers`.
+What got installed is on the record: at the end of `setup` the Adapter hands the install manifest to the runner, which stores it as the Attempt Artifact `agent-setup.json` (read it in the library with `attempt.agentSetup()`; the manifest never touches the Sandbox disk, so the agent cannot see it). The manifest records only sources, refs, Skill/plugin names, resolved versions, and the official config file's project-relative path and SHA-256 — never the config's contents, API keys, or environment variable values. MCP servers are recorded the same way, non-sensitive fields only: for the stdio shape it records `name` / `command` / `args` but not `env`; for the HTTP shape it records `name` / `url` but not `headers`.
 
 ## Non-Sandbox adapters
 

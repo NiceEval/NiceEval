@@ -13,6 +13,7 @@ import type { AttemptHandle, Record, Sample, Run, UnreadableRun } from "../recor
 import type { AttemptLocator } from "../record/locator.ts";
 import { buildHostReportMeta,
   hostThemeStylesheet,
+  loadDefaultHostAttemptPage,
   loadHostReport,
   materializeHostPageRendererAssets,
   renderHostPageFromResolved,
@@ -83,7 +84,8 @@ export interface ViewScan {
   /** 这次扫描用到的报告与主题定义;下一次记录变更的重建原样传回来沿用。 */
   definitions: LoadedDefinitions;
   /**
-   * 报告声明了 attempt-input page 时才存在(architecture.md「Attempt 详情是一张参数化 page」)。
+   * view 恒有 attempt-input page：报告显式声明的优先，否则用内建 AttemptDetails
+   * (architecture.md「Attempt 详情是一张参数化 page」)。
    * `locators` 是收窄后有效根内可达的 locator → AttemptHandle(与 scope-input pages 同一份
    * `scopedExperiments ∩ matchEval ∩ survivors` 口径——去重只吞掉 `--resume` 携带的字面重复,
    * 不排除真实历史 attempt,见 view.md「打开与收窄」);站点管线(site.ts)据此为每个可达
@@ -108,6 +110,7 @@ export interface ViewScan {
 /** attempt 页面内容(不是 index.html 的 scope-input page)链去同目录 attempt/ 下的兄弟文档,
  *  不带 `attempt/` 目录前缀(site.ts「站点管线」;两处 href 的对应关系与拆分只住在那)。 */
 const SIBLING_ATTEMPT_HREF = (locator: AttemptLocator): string => `${encodeURIComponent(locator)}.html`;
+const ROOT_ATTEMPT_HREF = (locator: AttemptLocator): string => `attempt/${encodeURIComponent(locator)}.html`;
 
 /** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Sample 是计算入口」)。 */
 export interface ViewScanOptions {
@@ -329,8 +332,8 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   // (与官方计算函数的聚合口径一致,attempt/<locator>.html 的计数因此不被复印件灌票)。
   const artifactDirs = new Map<string, string>();
   const attemptsByBase = new Map<string, AttemptHandle>();
-  // 报告没有 attempt-input page 时不建这份索引:没有 attempt/ 目录,站点管线不需要它
-  // (view.md「静态导出」)。
+  // view 恒有显式或隐式 attempt-input page，因此为有效根建立 locator 索引；
+  // 静态站与本地 server 共用它生成 attempt/ 文档。
   const attemptsByLocator = slot.attemptPage ? new Map<AttemptLocator, AttemptHandle>() : undefined;
   const allAttempts: AttemptHandle[] = [];
   for (const exp of scopedExperiments) {
@@ -591,7 +594,10 @@ async function renderReportSlot(
   const renderBlock = async (pageId: string, locale: ReportLocale): Promise<string> => {
     try {
       const resolved = resolveScopePage(pageId);
-      return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, { locale });
+      return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, {
+        locale,
+        attemptHref: ROOT_ATTEMPT_HREF,
+      });
     } catch (e) {
       if (pageFailure !== "embed") throw e;
       // 本地 server:该页显示完整错误反馈,其它页照常可读(不让一页的树错误拖垮整站)。
@@ -632,7 +638,9 @@ async function renderReportSlot(
     initialPageId,
   };
 
-  const attemptPage = hostReport.pages.find((p) => p.input === "attempt");
+  // 自定义报告替换的是可见页面，不该顺手切断官方组件的 locator 下钻。显式声明仍覆盖；
+  // 没声明时由 view 补标准 AttemptDetails，且不把这张隐式页塞进导航或报告元数据。
+  const attemptPage = hostReport.pages.find((p) => p.input === "attempt") ?? (await loadDefaultHostAttemptPage());
   // 装配一个 locator 的 AttemptEvidence 并渲染该 page 两种语言的内容 HTML(不含外层文档);
   // pageFailure 语义与 scope pages 相同 —— 本地 server 折成该文档的完整错误反馈块,
   // 静态导出直接抛出(writeSite 侧汇总成「整体失败,不留半套目录」)。

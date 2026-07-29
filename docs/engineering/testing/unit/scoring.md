@@ -133,6 +133,20 @@ fixture 必须让三个接收者得到**不同答案**，才能发现 selector �
   Judge 不发请求；缺 model / 缺 key 分别记录 `judge-model-unresolved` / `judge-key-unresolved`，
   鉴权、连接、超时和响应解析失败记录 `judge-call-failed`。每类都覆盖 optional 与非 optional，证明
   前者保留 unavailable 但不改 verdict，后者使 attempt errored。真实网关行为归 E2E。
+- **judge 调用超时预算（`judge.timeoutMs`）**：契约见
+  [Judge · 调用预算与执行顺序](../../../feature/judge/library.md#调用预算与执行顺序)。fake 时钟 +
+  截获 fetch，不真等。
+  - 到点不回的判分调用被中断，记 `outcome: "unavailable"` + `reason: "judge-call-failed"`，
+    `evidence` 写明超时秒数；同一挂起 fixture 在配了更长 `timeoutMs` 时正常拿到分数（区分力一格）。
+  - 默认 180_000 的生效路径要真跑到——不配 `timeoutMs` 的调用同样被中断，不是无限等。
+  - 解析逐字段走 eval → config → 默认，与
+    [experiments-runner 同名类别](experiments-runner.md#覆盖规范)是同一契约。
+    「config 的 `judge` 写了 `timeoutMs`、eval 写了自己的 `judge` 但没写」这一格取 config
+    的值而不是默认——逐字段合并与整体覆盖唯一读数不同的一格，必测。
+- **finalize 的 judge 推进回调**：逐条 judge 求值开始前回调一次进度（第几条 / judge 总数 /
+  检查方式摘要，摘要与落盘 `detail` 同源）。非 judge 断言不回调，无 judge 断言时零次回调；回调
+  不进 `AssertionResult` 也不落盘。runner 侧把回调接到 active 行 detail 的接线归
+  [Experiments Runner](experiments-runner.md#覆盖规范)。
 
 ## 不这样测
 

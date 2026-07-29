@@ -1,8 +1,8 @@
 # `niceeval view` —— 在浏览器读结果
 
-`niceeval view` 把记录根呈现为本地网页：内容全部来自装载报告的 pages。装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](README.md#项目默认报告)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加一张不进导航的 attempt-input page。view 只拥有 page / locator 寻址、导航与 dialog 摆放，不拥有详情区块。它不依赖外部服务。
+`niceeval view` 把记录根呈现为本地网页：可见内容来自装载报告的 pages。装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](README.md#项目默认报告)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加一张不进导航的 attempt-input page。自定义报告没有声明 attempt-input page 时，view 隐式使用官方 `AttemptDetails` page，保证官方组件里的 locator 仍可下钻；显式声明则覆盖它。view 只拥有 page / locator 寻址、导航与 dialog 摆放，不拥有另一套详情区块。它不依赖外部服务。
 
-本地模式与静态导出共用**同一条站点管线**：管线的输入是记录根加可选收窄（位置参数 / `--exp`）。收窄把根滤成只含匹配实验与 attempt 的**有效根**。管线把每张 sample-input page 按界面语言渲染成一块报告 HTML。报告声明了 attempt-input page 时，再为每个可达 locator 把同一张 page 物化为 `attempt/<locator>.html`。`index.html` 是承载报告块的外壳，`artifact/` 携带前端会读取的证据文件。宿主不携带 page 的取数或布局知识。
+本地模式与静态导出共用**同一条站点管线**：管线的输入是记录根加可选收窄（位置参数 / `--exp`）。收窄把根滤成只含匹配实验与 attempt 的**有效根**。管线把每张 sample-input page 按界面语言渲染成一块报告 HTML，再为每个可达 locator 把显式或隐式的 attempt-input page 物化为 `attempt/<locator>.html`。`index.html` 是承载报告块的外壳，`artifact/` 携带前端会读取的证据文件。宿主不携带 page 的取数或布局知识。
 
 照构建工具的心智读这两种模式最省事：**`--out` 是 build，不带选项的 `view` 是同一个 build 挂上 watch，
 再加一个本地 server**。差别只有建完之后停不停——`--out` 建一次、写盘、退出；本地模式建完起
@@ -91,7 +91,7 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 
 ### 重建语义
 
-- **整条管线重跑，没有增量档位。** 重新扫记录根、重新选 Sample、重新 resolve、重新渲染。
+- **整条管线重跑，没有增量档位。** 重新扫记录根、重新选 Sample、重新解析组件树、重新渲染。
   一个 attempt 落盘会改变覆盖分母和全部聚合数字，「只追加一行」算出来的数与全量重建不一致——
   那正是[跨层不变量](../reading/README.md#跨三层的不变量)第一条要挡的东西。
 - **事件去抖后合成一次重建。** 一次运行收尾时多个 artifact 连续落盘，合成一次。
@@ -197,7 +197,7 @@ niceeval view --record site-data/run --out site    # 对 publish 产出的发布
 ```text
 site/
 ├── index.html
-├── attempt/                 # 当前报告声明 attempt-input page 时出现；文件名是 URL 编码后的 locator
+├── attempt/                 # 每个可达 locator 的详情文档；文件名是 URL 编码后的 locator
 │   └── <locator>.html       # 同一张 page 对一份 AttemptEvidence 的完整静态 web 面
 ├── assets/                  # 外壳 scripts / styles 的 {src} 资产与 head 标签的本地 src/href 资产，按内容哈希命名
 └── artifact/
@@ -261,7 +261,7 @@ niceeval view --report reports/site.tsx --page exam   # 指定初始页
 
 报告文件同时可被 `niceeval show --report` 使用。官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；view 注入静态详情链接与 dialog 路由，show 注入带完整 `--report` 上下文的 locator 命令。写法见 [Library](library.md#交给-show-view-渲染)。
 
-报告文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 sample-input page；[配置对象形态](library/shell.md)声明外壳与 pages。写好的定义填进 `niceeval.config.ts` 的 `report` 字段，不带选项的 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](README.md#项目默认报告)）。view 只把 `navigation !== false` 的 pages 列进导航；sample-input page 读取 Sample，attempt-input page 按 locator 读取 `AttemptEvidence`。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
+报告文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 sample-input page；[配置对象形态](library/shell.md)声明外壳与 pages。写好的定义填进 `niceeval.config.ts` 的 `report` 字段，不带选项的 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](README.md#项目默认报告)）。view 只把 `navigation !== false` 的 pages 列进导航；sample-input page 读取 Sample，attempt-input page 按 locator 读取 `AttemptEvidence`。未声明 attempt-input page 时，view 用内建详情页补位，但不把它加入导航或改写报告定义。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
 
 内建首页的两个渲染面共享同一份实体与读数数据：web 面使用可排序的实验表，text 面使用紧凑列表；两面都直接消费完整 Sample，不设实验组选择器。端到端通过率、成本、耗时、Tokens、判定构成和证据引用来自同一份计算结果。
 

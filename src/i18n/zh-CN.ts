@@ -84,6 +84,10 @@ export const zhCN = {
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
+  "loaders.outsideDiscovery":
+    "在发现阶段之外读了 \"{{path}}\":loader 只能在 eval 文件的模块顶层调用(发现阶段求值 eval 模块时),文件内容才来得及进这条 eval 的指纹。请把这次读取挪到模块顶层、把结果存进一个常量再在 test(t) 里用;test(t) 与各生命周期 hook 的运行期不能调 loader。",
+  "loaders.nonFileUrl":
+    "loader 的 URL 入参只支持 file: 协议,收到的是 {{protocol}}({{url}})。请改传 new URL(相对路径, import.meta.url),或直接写项目根相对的字符串路径。",
   "cli.flag.parseError": "{{message}}\n运行 `niceeval --help` 查看用法。\n",
   "cli.help":
     "niceeval — agent-native evals\n\n" +
@@ -371,7 +375,6 @@ export const zhCN = {
     "  · [sandbox] “{{provider}}” provider 强制 attempt 一次只跑一个(独占串行);不论 --max-concurrency 写了 {{concurrency}},它的实际并发恒为 1\n",
   "runner.remoteSandboxUnavailable": "remote agent 没有 sandbox.{{method}};请改用 sandbox agent 或移除 workspace 断言。",
   "runner.reporterDiagnostic": "  · [diagnostic] {{stage}} 失败(已忽略):{{message}}\n",
-  "runner.scoreJudge": "评分 / judge…",
   "runner.skip": "skip:{{reason}}",
   "runner.startAgentSetup": "agent setup(装 CLI / 写配置)…",
   "runner.startAgentTracing": "agent tracing(写 otel 导出配置)…",
@@ -391,7 +394,7 @@ export const zhCN = {
   "sandbox.forceCleanup": "  · [sandbox] 强制清理 {{count}} 个沙箱…\n",
   "sandbox.provisionReconcileFailed": "  · [sandbox] 创建重试前对账失败,放弃重试(可能已创建的实例无法核实/销毁):{{error}}\n",
   "sandbox.provisionRetry": "  · [sandbox] 创建被限流,{{delayMs}}ms 后重试(第 {{attempt}}/{{maxAttempts}} 次)…\n",
-  "sandbox.stopFailed": "  · [sandbox] 停沙箱 {{id}} 失败(已忽略,靠 provider 过期兜底):{{message}}\n",
+  "sandbox.stopFailed": "  · [sandbox] 停沙箱 {{id}} 失败(已忽略;它会继续运行并计费,直到该 provider 自己的超时——如果有——回收它):{{message}}\n",
   "sandbox.stopTimeout": "stop 超时({{timeoutMs}}ms)",
   "scoring.evalError": "评估出错: {{error}}",
   "scoring.pointsInvalid": ".points({{n}}) 非法;给分必须是正有限数(n > 0)。",

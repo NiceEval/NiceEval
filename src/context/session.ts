@@ -6,7 +6,6 @@ import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { downgradeCoverage, resolveAgentCoverage, worstCoverage, type ResolvedCoverage } from "../scoring/coverage.ts";
 import { captureLoc } from "../source-loc.ts";
 import { t } from "../i18n/index.ts";
-import { SANDBOX_O11Y_RESULTS_PATH, writeSandboxO11yResults } from "../o11y/sandbox-results.ts";
 import {
   createAttemptRetryBudget,
   sendWithTurnRetry,
@@ -203,24 +202,6 @@ export class SessionManager {
   }
 
   /**
-   * sandbox Agent 的验证脚本读取这份摘要。失败只记 diagnostic：把旧目标删掉后继续执行，
-   * 让脚本因缺文件失败，而不是让一次辅助写入掩盖 agent/eval 本身的结果。
-   */
-  async refreshSandboxO11y(): Promise<void> {
-    if (this.deps.agent.kind !== "sandbox") return;
-    try {
-      await writeSandboxO11yResults(this.deps.sandbox, this.allEvents);
-    } catch {
-      this.deps.feedback?.diagnostic({
-        code: "sandbox-o11y-results-write-failed",
-        level: "warning",
-        message: `could not refresh ${SANDBOX_O11Y_RESULTS_PATH}; behavior checks must treat it as unavailable`,
-        dedupeKey: "sandbox-o11y-results-write-failed",
-      });
-    }
-  }
-
-  /**
    * 终局失败 Turn 的分类:失败 Turn 本身不是错误(作者不调 `expectOk()` 就不算失败),分类
    * 因此不能挂在 Turn 上,只在 `expectOk()` 铸造 `TurnFailed` 时随错误浮出——这里按 Turn 身份
    * 登记,`makeTurnHandle` 取用。被重试吸收的失败 Turn 从不外泄,也就不会被登记。
@@ -367,7 +348,6 @@ export class SessionManager {
 
     this.allEvents.push(...turn.events);
     session.events.push(...turn.events);
-    await this.refreshSandboxO11y();
     session.pendingInputRequests.push(
       ...turn.events
         .filter((e): e is Extract<StreamEvent, { type: "input.requested" }> => e.type === "input.requested")

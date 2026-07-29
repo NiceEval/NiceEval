@@ -9,3 +9,5 @@
 - [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 终端/HTML 语义结构断言 DSL、容差 golden 与 vitest 宿主的候选契约
 - [Evidence 复用政策](evidence-reuse/README.md) —— 比较证明优先与复用优先两套默认；
   用角色声明、精确授权和冲突用例设计历史 Evidence 何时仍算数
+- [复用与携带的可观察性](reuse-observability/README.md) —— `carried` 改词、复用反馈维度、
+  生效并发显示、配额自查与 `--reuse-verify`

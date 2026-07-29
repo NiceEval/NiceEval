@@ -3,7 +3,6 @@ import { defineSandboxAgent } from "../define.ts";
 import { requireEnv, getEnv } from "../util.ts";
 import { shared } from "./shared.ts";
 import { cloneRepo, installSkills } from "./skills.ts";
-import { writeAgentSetupManifest } from "./manifest.ts";
 import { verifyMarketplaceName } from "./marketplace.ts";
 import {
   assertJsonNativeConfig,
@@ -200,7 +199,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
         manifest.mcpServers?.length ||
         manifest.nativeConfigFile
       ) {
-        await writeAgentSetupManifest(sb, manifest);
+        ctx.reportSetup(manifest);
       }
 
       // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,

@@ -1,7 +1,7 @@
 // context 域类型:eval 作者拿到的 `t`(TestContext)及其子句柄(turn / session / sandbox 视图)。
 // `t` 的形状按 Agent 能力组装(见 docs/architecture.md「能力决定形状」)。
 
-import type { InputRequest, StreamEvent, ToolCall, Usage } from "../o11y/types.ts";
+import type { InputRequest, O11ySummary, StreamEvent, ToolCall, Usage } from "../o11y/types.ts";
 import type { DiagnosticInput, ProgressUpdate } from "../shared/types.ts";
 import type { AssertionHandle, BaseAssertionHandle, ScoreAssertionHandle, ValueAssertion } from "../scoring/types.ts";
 import type { CommandOptions, CommandResult, SandboxFile } from "../sandbox/types.ts";
@@ -368,6 +368,24 @@ export interface BaseTestContext<H extends BaseAssertionHandle = AssertionHandle
   // 工作区 / 沙箱
   /** 受限 Sandbox 视图:能执行命令 / 读写文件 / 看最终 diff,不能 stop Sandbox 本身(见 SandboxHandle)。 */
   readonly sandbox: SandboxHandle<H>;
+
+  // 行为摘要
+  /**
+   * 本 attempt 至今的行为摘要:工具调用计数、读/改的文件、shell 命令、web 请求、思考块数等。
+   * 每次读取都从已累积的标准事件流现算,多轮之间读到的是截至最近一次已返回 `send()` 的行为;
+   * direct 与 sandbox Agent 同一行为。摘要住在宿主侧——沙箱里没有任何框架文件、也没有任何框架
+   * 环境变量,行为证据因此在被测 agent 够不着的地方。用它把「过程正确性」写进断言:
+   *
+   * ```ts
+   * await t.send("用脚手架初始化项目");
+   * t.check(t.o11y.shellCommands.map((c) => c.command).join("\n"), includes("create-next-app"));
+   * t.check(t.o11y.filesRead.join("\n"), excludes(".env"));
+   * ```
+   *
+   * token 用量、估算成本与耗时不在其中:那三样分别以结果的 `usage`、`estimatedCostUSD`、
+   * `durationMs` 为准,同一事实不落第二份。
+   */
+  readonly o11y: O11ySummary;
 
   // 效率 / 成本
   /** 默认会话累计的 token 用量与估算成本。 */

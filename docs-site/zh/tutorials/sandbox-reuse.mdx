@@ -1,0 +1,111 @@
+---
+title: "复用 Sandbox：一批评估共用环境，公共准备只付一次"
+sidebarTitle: "复用 Sandbox"
+description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox：写对四层生命周期、配好 lifetimeMs；准备代码做不到幂等重放时改用并发，不要复用。"
+---
+
+一批评估共用同一套环境准备（同一个工具链、同一个仓库 checkout）时，每条 Attempt
+都新建 Sandbox 意味着这套准备要付 N 次。在 Experiment 里声明 `sandboxReuse: true`，
+多条 Attempt 依次共用同一个 Sandbox：Sandbox 创建和公共准备每个 Sandbox 只付一次，
+每道题之间 NiceEval 自动把工作目录 `git reset` 回公共准备完成时的状态。
+
+先说清代价，再说怎么开：
+
+- **复用运行的结果不进缓存。** 它不沿用历史结果，产出的结果也不会被后续运行沿用——
+  中断后重跑同一条命令是全量重跑。要靠「重跑即续跑」推进的大批次对比实验不要开复用。
+- **工作目录之外的状态会留下。** `$HOME`、`/tmp`、全局安装、后台进程都活过题间重置。
+  评估的准备代码必须能接受这一点（下面「把准备代码写对」）。
+- 与 `--keep-sandbox`、`localSandbox()` 互斥。
+
+适合的场景：本地冒烟一批评估、同一道题重复跑 N 次看稳定性、验证接线——要的是快，
+不需要结果进缓存。
+
+## 开启：Experiment 三件套
+
+```typescript
+import { defineExperiment } from "niceeval";
+import { e2bSandbox } from "niceeval/sandbox";
+import { codexAgent } from "niceeval/adapter";
+
+export default defineExperiment({
+  evals: ["react-datepicker/"],
+  agent: codexAgent(),
+  sandbox: e2bSandbox({
+    template: "acme-evals",
+    lifetimeMs: 60 * 60_000,   // ① Sandbox 的寿命：复用时必填，不填在派发前报错
+  }),
+  sandboxReuse: true,          // ② 声明复用
+  maxConcurrency: 3,           // ③ 几条 Sandbox 泳道并行，每条依次承接多条 Attempt
+  timeoutMs: 20 * 60_000,
+});
+```
+
+`timeoutMs` 和 `lifetimeMs` 是两个时钟，量的是两个对象：前者限一条 Attempt 跑多久，
+后者限一个 Sandbox 活多久。想让 Sandbox 活得久一点，调 `lifetimeMs`，
+不要调大 `timeoutMs`——那会同时放宽对卡死 Agent 的保护。`lifetimeMs` 的上限
+由 Provider 账号档位决定（例如 e2b 免费档是 1 小时），超了会在创建时报 Provider 的原话。
+
+## 生命周期：谁跑几次
+
+| 阶段 | 复用时跑几次 |
+|---|---|
+| Sandbox 创建 / 停止 | 每个 Sandbox 一次 |
+| Sandbox 级 `setup` / `teardown` | 每个 Sandbox 一次，在题间重置点之前 |
+| Agent 级 `setup` / `teardown` | 每条 Attempt 一次 |
+| 评估用例的 `setup` / `teardown`、`test(t)` | 每条 Attempt 一次 |
+
+每条 Attempt 结束后，NiceEval 对工作目录执行 `git reset --hard` + `git clean`
+回到重置点，再开始下一条。重置只管工作目录；`$HOME` 和后台进程要么由评估用例的
+`teardown` 自己收，要么就是刻意留给下一条用的（比如包管理器的缓存）。
+
+## 把准备代码写对：按「随什么变化」分层
+
+- **所有实验都要的重依赖**（Agent CLI、语言运行时）→ 烘进 Provider 的
+  image / template / snapshot，不进任何 `setup`。
+- **整批评估共用的准备**（装工具链、clone 共同仓库、预热构建缓存）→ Sandbox 级
+  `.setup()`。它每个 Sandbox 只跑一次，产物成为题间重置点的一部分，每道题白拿。
+- **只有这道题要的素材**（它自己的仓库、数据、依赖）→ 评估用例自己的 `setup` 或
+  `test(t)`。每题重置后重放，所以必须是重放一遍还对的代码。每题各自 clone 时，
+  临时 clone 目录整个实验统一用一个名字、加进 `diff.ignore`，clone 前先
+  `rm -rf .git <临时目录>` 清掉上一题的残留——`.git` 会活过题间重置。
+- **起了后台进程、占了端口** → 评估用例的 `teardown` 自己收，题间重置不杀进程。
+
+## 幂等是硬要求：一反一正
+
+Sandbox 级和评估用例级的准备代码都可能面对「上一次留下的半截状态」。两种写法：
+
+```bash
+# 反例：探测到就整块跳过。rustup 装了一半（有 cargo、没配默认工具链）时，
+# 探测通过、安装跳过，下一步 cargo build 报错，整条 Attempt errored。
+if ! command -v cargo; then curl https://sh.rustup.rs | sh; fi
+
+# 正例：把目标状态直接声明出来，重放多少次都收敛到同一个结果。
+rustup default 1.79.0
+npm install          # 调和到 package.json/lockfile 声明的状态，本身就是幂等的
+```
+
+判据一句话：**准备代码描述目标状态，不描述「要不要做」**。探测-跳过式的守卫
+把半截状态当成完成态，恰好只在复用时炸，本地单跑永远发现不了。
+
+## 做不到？用并发，别复用
+
+准备代码改不成幂等、或者评估依赖全新的 `$HOME`（记忆类被测对象、有状态服务），
+不要声明 `sandboxReuse`。提速走并发就够了：
+
+```typescript
+export default defineExperiment({
+  // 不声明 sandboxReuse：每条 Attempt 全新 Sandbox，状态零残留
+  maxConcurrency: 8,   // 并行照样有
+  // ...
+});
+```
+
+复用比纯并发多省的只有「每个 Sandbox 一次的创建 + 公共准备」这一段。这段时间
+远小于单条 Attempt 的执行时间时，并发已经拿到几乎全部墙钟收益，还不用背复用的
+状态语义。先并发，量出公共准备确实是大头，再考虑复用。
+
+## 相关阅读
+
+- [Runner 的缓存机制](/zh/explanation/runner)——为什么复用运行的结果不参与沿用。
+- [Sandbox Provider 配置](/zh/tutorials/sandbox-providers)——各 Provider 的
+  template / image / snapshot 怎么做。

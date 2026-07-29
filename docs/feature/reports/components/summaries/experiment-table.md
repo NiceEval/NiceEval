@@ -17,7 +17,8 @@ Experiment
 
 Experiment 行显示 agent、model、耗时、主读数、tokens、成本与判定构成。
 Eval 行显示该题的聚合结果；Attempt 行保留 locator。
-在 `view` 宿主中点击 Attempt 使用报告现有的 Attempt 路由打开详情 modal；
+在 `view` 宿主中点击 Attempt 使用报告显式声明的 Attempt page 打开详情 modal；
+没有声明时由 view 使用官方 `AttemptDetails` 补位。
 `show` 按层级缩进输出同一批行。
 
-`searchable` 缺省为 `true`。`sort`、`locale` 与 `className` 透传给官方 `Table`。
+`searchable` 默认为 `true`。`sort`、`locale` 与 `className` 透传给官方 `Table`。

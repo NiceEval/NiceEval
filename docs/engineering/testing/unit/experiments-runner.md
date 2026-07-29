@@ -102,7 +102,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   下所有非测试源码实际读取的环境变量名，断言它们全部落在「凭据 + 终端环境」白名单内。加一条配置类环境变量回来就会红，不需要预先知道它叫什么名字；白名单本身是那份边界表的机器可读副本，改动它等于改契约。
 - **含 eval 层的字段解析链（`timeoutMs`）**：`--timeout` → experiment → eval → config
   → 无上限，五档逐层可区分。区分力最强的一格必测：**config 有值、experiment 没写、eval 写了自己的值时取 eval 的值**——`??` 链少写一层回落时这一格恰好是唯一会红的，其余四格照常通过。断言面取
-  attempt 实际生效的 deadline 与超时消息里的来源标注（`from eval` / `from config`…），不是解析函数的中间返回值；同一份 resolved 值同时喂给
+  attempt 实际生效的 deadline 与超时消息里的来源标注（`from eval` / `from config`…），不是解析函数的中间返回值；同一份解析结果同时喂给
   carry 的资格判据（`executionMs` ≤ 当前上限），两处不分叉。
 - **`judge` 的解析链（eval → config）**：两档逐层可区分。
   区分力最强的一格必测——**config 写了 `judge`、eval 也写了自己的 `judge` 时取 eval 的值**。
@@ -119,6 +119,16 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   时，前一 Attempt 进入退避窗口，下一 Attempt 不得启动。前一 Attempt 的 `sandbox.teardown`
   生命周期 Hook 未完成时，下一 Attempt 也不得创建沙箱或进入 `sandbox.setup`。用 `TestClock`
   与 barrier 观察在飞峰值或分配顺序。完整的用户侧搭配见[并发怎么配](../../../feature/experiments/use-case/并发/)。
+- **发现顺序与串行下的执行顺序**：
+  - 发现结果按项目根相对路径字典序排列。数字前缀补零与不补零各一格
+    （`10-` 排在 `2-` 前），再加跨目录与 `.eval.ts` / `.eval.tsx` 同名两格。
+  - 数组与 keyed record 的文件内展开顺序；位置参数与 `--tag`
+    过滤后，剩下条目的相对次序不变。
+  - `maxConcurrency: 1` 下 attempt 的实际**开始**顺序等于 `(attempt 序号, eval 发现顺序)`。
+    `attempts > 1` 时按轮次交错：全部 eval 的第 0 次先于任何一条 eval 的第 1 次。
+  - 这一格用 barrier 记录真实开始序列来断言，不读排序函数的返回值。
+  - 并发 > 1 时不断言开始顺序（没有这条契约），只断言结果数组仍按发现顺序。
+    两面合起来才证明排序只承诺到输出层。
 - **反馈协调器的事件队列纪律**：`FeedbackCoordinator`
   对每一类 durable 事件都按 clear→append→redraw 的原子顺序转发给当前活跃 renderer（不止某一种事件；renderer 方法即便是异步的也不交错）；同一去重 key 的诊断在
   `RunFeedbackState.diagnostics`
@@ -172,6 +182,11 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   摘行，`experiment:progress` 只更新对应行。新的 `plan`
   清空残留行。用例见[环境预置与收尾怎么放](../../../feature/experiments/use-case/生命周期/)。字节渲染归
   [E2E · CLI](../e2e/cli.md)。
+- **scoring 阶段的 judge 推进 detail（`runner/attempt.ts` 接线）**：进入 `scoring.evaluate`
+  后，collector 的每次 judge 进度回调把 active 行 detail 更新为 `judge k/n · <检查方式>`。
+  契约见 [CLI · Attempt 阶段](../../../feature/experiments/cli.md#attempt-阶段)。无 judge 断言的
+  attempt 在 scoring 阶段不产生任何 detail 文本——不存在与阶段词重复的静态占位文案。断言面是
+  feedback 事件流里的 progress 文本，不断言渲染字节。
 - **Judge 预检的运行级行**：`precheck` 起止事件归约进 `RunFeedbackState.activePrecheck`。`started`
   建行，`done` 清行。预检发生在派发前，因此 Attempt 始终保持 `queued`，不改变计数恒等式。live 面板把它排在实验生命周期 Hook 与 Attempt 行之前。这里断言 reducer 状态与事件序；字节渲染归
   [E2E · CLI](../e2e/cli.md)。
@@ -181,7 +196,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   按事件携带的 `verdict` 落项，四值都要有区分力场景（同一批事件里换 verdict，落项跟着变，不是恒落同一项）；`attempt:early-exit`
   与 `budget-exhausted` 落 `skipped` 而非 `passed`／`failed`——未跑出 verdict 的了结不冒充结论；携入结果的
   verdict 留在 `reused`、不摊进四项（`plan` 事件带 `reusedFailures`
-  时四项仍全为零）；`lock-wait` resolved 的 `carried` 迁 `reused`、`dispatched` 迁 `queued`，两者都不直接落结局项。恒等式
+  时四项仍全为零）；`lock-wait` 等到锁时把 `carried` 迁 `reused`、`dispatched` 迁 `queued`，两者都不直接落结局项。恒等式
   `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`
   在每一个事件之后逐步断言，不只在末尾断言一次。字面渲染（首行九项的顺序、零值不省略、窄终端下按
   `skipped` → `errored` → `passed` 丢弃零值项）归
@@ -214,7 +229,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   `niceevalRoot`、选择重叠时各自认领不同用例并行推进（两边真实派发的用例集不相交、并集覆盖选择集、总在飞峰值可达两边全局上限之和）；实验闸租约——声明
   `maxConcurrency` 的实验名额域跨 runEvals 共享（同一 `niceevalRoot` 两条并行 runEvals 且
   `maxConcurrency: 1`
-  时该实验总在飞峰值恒为 1；租约条目的心跳/过期/rename 接管复用用例锁纪律；两边 resolved
+  时该实验总在飞峰值恒为 1；租约条目的心跳/过期/rename 接管复用用例锁纪律；两边解析出的
   N 不一致时生效名额为最小值；撞满名额报一条按实验折叠的 `gate-lease-waiting`
   warning，同时给出**生效名额**与**本次运行声明的
   N**——两者不等即 min-N 被别的运行夹低，这是「声明了 3 却只跑 1 条」的唯一解释）；取锁后重查携带——取到锁即重做携带规划，**无条件**、不附加「等过锁 /
@@ -251,15 +266,19 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped`
   总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs`
   不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs`
-  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`--carry-ignoring-flag <key>` 的三道约束各要一条**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、键仍在本次 resolved `flags` 里时报启动期用法错误、键在候选历史条目的 `flags` 里也不存在时同样报错(打错键名不静默放过);留痕两处都要断言——被携入条目的 `carriedIgnoringFlags` 与本次 Run 的 `carry-ignoring-flag` diagnostic,且下一次不带该 flag 的运行照常命中(证明重锚生效,不需要长期挂着)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox`
+  超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`--carry-ignoring-flag <key>` 的三道约束各要一条**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、键仍在本次解析后 `flags` 里时报启动期用法错误、键在候选历史条目的 `flags` 里也不存在时同样报错(打错键名不静默放过);留痕两处都要断言——被携入条目的 `carriedIgnoringFlags` 与本次 Run 的 `carry-ignoring-flag` diagnostic,且下一次不带该 flag 的运行照常命中(证明重锚生效,不需要长期挂着)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox`
   下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed`
   一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、单独使用与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式
   `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - **eval 源码闭包的构成与确定性**：闭包含三样东西——eval 文件字节、项目根内导入图的递归展开、
-  `loadYaml` / `loadJson` 读入的数据文件内容。
+  `loadYaml` / `loadJson` / `loadText` 读入的数据文件内容。
   进 / 不进两侧各要区分力场景：改被引用 helper 的一行使**引用它的那些 eval** 重跑而未引用的照常携带；
   改测试集一行只作废对应那条 eval；`node_modules` 下的包与动态 `import()` 改动不作废。
-  **确定性单独一条**：同一份源码在两种不同的目录遍历顺序下算出同一个哈希。
+  判据文件经 `loadText` 读入时改一字节即重跑，同一文件换 `fs` 直读不触发。
+- **loader 的调用面**：同一份判据文件用项目根相对字符串与 `URL` 两种入参读入，登记与指纹等价——
+  两种写法算出同一个哈希，这一格在只支持 string 的实现下会红。发现期之外（capture 不在场）调用任一
+  loader 立即报错，错误文案含问题与下一步（挪到模块顶层），不得静默跳过登记。
+- **eval 源码闭包的确定性**：同一份源码在两种不同的目录遍历顺序下算出同一个哈希。
   它靠两件事成立——按项目根相对路径排序、循环导入按解析后绝对路径去重。
   任缺一条哈希都会随环境漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
 - **汇总与退出码**：verdict 四值互斥、failed 只统计断言不过；退出码按 `(experiment, eval)`

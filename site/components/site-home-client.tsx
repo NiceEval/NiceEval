@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookOpen, Clipboard, GitFork, Play } from "lucide-react";
+import { BookOpen, Clipboard, GitFork } from "lucide-react";
 import { initAnalytics, track } from "../src/analytics";
 import { githubUrl, docsUrl, withLocale, type Dictionary, type Locale } from "../lib/content";
 import { Header } from "./site-header";
@@ -96,10 +96,6 @@ function Hero({ t, locale }: { t: Dictionary; locale: Locale }) {
         )}
         <p className="lede">{active.caption}</p>
         <div className="actions">
-          <a className="button primary" href="#setup" onClick={() => track("Click Primary CTA", { mode, locale })}>
-            <Play size={15} />
-            {t.primaryAction}
-          </a>
           <a className="button ghost" href={githubUrl} onClick={() => track("Click GitHub Link", { location: "hero" })}>
             <GitFork size={15} />
             {t.github}

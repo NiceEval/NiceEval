@@ -77,7 +77,7 @@ export default defineAgent({
 
 ### HITL:审批流怎么接
 
-先理解应用侧的机制:**应用在等审批时,SSE 流保持打开**——服务端把执行卡在一个 Promise/队列上,审批决定走**另一个** `POST /api/chat/approve` 请求,resolve 之后原来那条 SSE 继续吐帧直到结束。
+先理解应用侧的机制:**应用在等审批时,SSE 流保持打开**——服务端把执行卡在一个 Promise/队列上,审批决定走**另一个** `POST /api/chat/approve` 请求,`resolve()` 之后原来那条 SSE 继续吐帧直到结束。
 
 adapter 要这样做:
 
@@ -122,7 +122,7 @@ adapter 要这样做:
 ### claude-sdk
 
 - 帧是原生 `SDKMessage`,官方转换器 `createClaudeSdkEventStream`(`niceeval/adapter` 导出)直接映射:`system`(带 `session_id`,写回 `ctx.session.capture()`)→ `assistant`(content blocks)→ `user`(`tool_result` 按 `tool_use_id` 配对)→ `result`(usage/cost)。逐帧驱动是官方件 `driveFrameStream`。
-- **HITL 没有显式的"等审批"帧**——`canUseTool` 把流卡住,`driveFrameStream` 的 `onFrame` Hook 扫 derived 事件,认出被门控的工具(`mcp__demo-tools__calculate`,写死在 adapter 里,必须和应用 `agent.ts` 里的 `GATED_TOOL_NAME` 完全一致)就返回 `{ pause }`。approve 端点偶发 404(SDK 内部注册 resolver 有竞态)时短退避重试几次,不是真的没有这次审批。
+- **HITL 没有显式的"等审批"帧**——`canUseTool` 把流卡住,`driveFrameStream` 的 `onFrame` Hook 扫 derived 事件,认出被门控的工具(`mcp__demo-tools__calculate`,写死在 adapter 里,必须和应用 `agent.ts` 里的 `GATED_TOOL_NAME` 完全一致)就返回 `{ pause }`。approve 端点偶发 404(SDK 内部还没登记完这次审批的回调,有竞态)时短退避重试几次,不是真的没有这次审批。
 - 无 trace spans(CLI 原生遥测只有 metrics+logs,niceeval 不消费),不声明 `spanMapper`,瀑布图这个应用没有——写进 eval README,不是失误。
 - 模型:`AGENT_MODEL` 注入子进程(代码默认 `deepseek-v4-flash`,`.env.example` 是 `claude-sonnet-5`,以 `.env.example` 为准)。
 

@@ -19,7 +19,6 @@ import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
 import { createAgentSession } from "../context/session.ts";
-import { readAgentSetupManifest } from "../agents/manifest.ts";
 import { EvalRequirementFailed, EvalSkipped, TurnFailed } from "../context/control-flow.ts";
 import { computeVerdict } from "../scoring/verdict.ts";
 import { deriveRunFacts, buildO11ySummary } from "../o11y/derive.ts";
@@ -138,6 +137,26 @@ export function runAttemptEffect(
     // 读取面（空数组而非缺失），与正常路径一致。
     ...(evalDef.scoring === "points" ? { scoreEntries: [] } : {}),
   };
+
+  /**
+   * 调度事实:Sandbox 租借给这条 Attempt 的那一刻定死(复用池借出的实例在进入本函数时就已经
+   * 借定,一次性沙箱在 create 返回那一刻借定)。Attempt 在任何阶段终结——Eval `setup` 失败、
+   * 超时、资源获取失败——记录里都要带全 provider / sandboxId / reused / 编号与承接序号,
+   * 只有 `kept` 在收尾时点决定(见 docs/feature/record/architecture.md 的 `sandbox` 字段)。
+   * 所以它挂在唯一出口(下方 Effect.map)上,而不是分散在各条返回路径里。
+   */
+  let sandboxFacts: NonNullable<EvalResult["sandbox"]> | undefined;
+  /** 留存提交成功(`--keep-sandbox`)——唯一一个在收尾时点才知道的 sandbox 记录键。 */
+  let kept = false;
+  if (reusedSandbox && run.agent.kind === "sandbox") {
+    sandboxFacts = {
+      provider: resolveSandbox(a.sandboxSpec ?? sandboxForEval(run, evalDef, config.sandbox)).provider,
+      sandboxId: reusedSandbox.sandbox.sandboxId,
+      reused: true,
+      reuseSandbox: reusedSandbox.reuseSandbox,
+      reuseOrdinal: reusedSandbox.reuseOrdinal,
+    };
+  }
 
   const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? config.timeoutMs ?? 600_000;
   // timeoutSignal:给协作式 adapter / docker 命令的「软」截止信号(到点 abort,让能看 signal 的
@@ -366,6 +385,10 @@ export function runAttemptEffect(
               );
             })
           : createRemoteSandbox());
+      // 一次性沙箱的租借时刻:实例到手就定归属,后面无论走到哪一步终结都带着它。
+      if (run.agent.kind === "sandbox" && !sandboxFacts) {
+        sandboxFacts = { provider: resolveSandbox(sandboxSpec).provider, sandboxId: sandbox.sandboxId };
+      }
       if (run.agent.kind !== "sandbox") log(t("runner.useRemoteAgent"));
 
       // ── tracing ──────────────────────────────────────────────────────────────────
@@ -542,10 +565,10 @@ export function runAttemptEffect(
               sandboxId: sandbox.sandboxId,
               ...(enter !== undefined ? { enter } : {}),
             });
-            return {
-              ...bodyResult,
-              sandbox: { provider: providerName, sandboxId: sandbox.sandboxId, kept: true as const },
-            };
+            // 只有 `kept` 在收尾时点决定;provider / sandboxId 等归属键仍由租借时刻的
+            // sandboxFacts 统一挂上(见下方 Effect.map)。
+            kept = true;
+            return bodyResult;
           } catch (e) {
             recordDiagnostic({
               code: "sandbox-keep-failed",
@@ -628,9 +651,14 @@ export function runAttemptEffect(
       // 现有阶段计时尚未把 sandbox.create 起点单独持久化；在它可用前落同口径的保守值，
       // 读取旧记录也按 durationMs 回退，绝不因缺值错误携带。
       const withPhases = { ...(phases ? { ...r, phases } : r), executionMs: r.executionMs ?? r.durationMs };
-      if (!timedOut) return withPhases;
+      // 调度事实统一在这里挂:每条出口(正常、body 抛错、超时、Sample 层失败)都经过本 map,
+      // 归属因此不随「走到了哪一步」丢失(见 sandboxFacts 的声明)。
+      const withSandbox = sandboxFacts
+        ? { ...withPhases, sandbox: { ...sandboxFacts, ...(kept ? { kept: true as const } : {}) } }
+        : withPhases;
+      if (!timedOut) return withSandbox;
       return {
-        ...withPhases,
+        ...withSandbox,
         ...(timeoutDiff !== undefined ? { diff: timeoutDiff } : {}),
         sources: timeoutSources ?? [],
       };
@@ -774,10 +802,11 @@ async function runAttemptBody(
     diagnostic: feedback.diagnostic,
     fact,
   };
-  let agentDidSetup = false;
   /** agent.setup 时点已走到(未声明 setup 也置位)——agent.teardown 的触发条件(成对触发规则)。 */
   let agentSetupReached = false;
-  /** agent.setup 写进沙箱的安装清单(装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。 */
+  /** adapter 在 agent.setup 里经 `ctx.reportSetup()` 交回的安装清单(宿主侧内存对象,不经沙箱磁盘;
+   *  装了 Skill / plugin / MCP 的沙箱型 adapter 才有)。运行器只把它抬成 attempt artifact,
+   *  不解释内容、不按 agent 名字分支;什么都没装的 adapter 不调用 → undefined,不生成空 artifact。 */
   let agentSetup: AgentSetupManifest | undefined;
   /** eval.setup 时点已走到(分类账锚点之后;未声明 setup 也置位)——eval.teardown 的触发条件。 */
   let evalSetupReached = false;
@@ -860,9 +889,8 @@ async function runAttemptBody(
     if (run.agent.setup) {
       enterPhase("agent.setup");
       log(t("runner.startAgentSetup"));
-      agentDidSetup = true;
       const returned = (await (run.agent.kind === "sandbox"
-        ? run.agent.setup(sandbox, sandboxAttemptCtx)
+        ? run.agent.setup(sandbox, { ...sandboxAttemptCtx, reportSetup: (manifest) => (agentSetup = manifest) })
         : run.agent.setup(attemptCtx))) as unknown;
       if (typeof returned === "function") {
         throw new Error(
@@ -873,11 +901,6 @@ async function runAttemptBody(
         );
       }
     }
-
-    // 安装 manifest:adapter 在 setup 收尾写进沙箱的固定路径,核心只把它抬成 attempt artifact
-    // (不解释内容、不按 agent 名字分支)。什么都没装的 adapter 不写这个文件 → undefined,
-    // 不生成空 artifact。读在 setup 之后:test 阶段抛错也留得住这份「这次装了什么」的证据。
-    if (usesSandbox && agentDidSetup) agentSetup = await readAgentSetupManifest(sandbox);
 
     // OTLP 导出配置(file-based,如 codex 的 config.toml [otel] 块):与 setup 分开,
     // 在主配置写完后追加。仅当 tracing 开 + 有 endpoint 时调一次(env-based 的不实现 configure)。
@@ -1039,12 +1062,17 @@ async function runAttemptBody(
         }
       },
     };
-    if (!skipReason) {
-      enterPhase("scoring.evaluate");
-      log(t("runner.scoreJudge"));
-    }
+    if (!skipReason) enterPhase("scoring.evaluate");
     // 类型面挡住通过制 t.points()/t.score()，但 tsx 与 JS 可绕过；持久化边界必须再门控一次。
-    const assertions = skipReason ? [] : await state.collector.finalize(scoringContext, { includePoints: evalDef.scoring === "points" });
+    const assertions = skipReason
+      ? []
+      : await state.collector.finalize(scoringContext, {
+          includePoints: evalDef.scoring === "points",
+          // scoring 阶段唯一值得解释的等待是「在等裁判模型」:有判分断言时逐条推进 detail,
+          // 没有则整段不发 detail(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
+          // 文本是契约字面量,中英一致,不进 i18n。
+          onJudgeProgress: ({ index, total, check }) => log(`judge ${index}/${total} · ${check}`),
+        });
     const verdict = computeVerdict({ error, assertions, skipReason, strict: run.strict, scoring: evalDef.scoring ?? "pass" });
 
     // 收 OTLP trace:给最后一批导出留点落地时间,再 collect(空则不挂)。
@@ -1121,21 +1149,8 @@ async function runAttemptBody(
       agentSetup,
       diff: diffWindows,
       coverage: state.manager.coverage,
-      ...(usesSandbox
-        ? {
-            sandbox: {
-              provider: resolveSandbox(a.sandboxSpec ?? sandboxForEval(run, evalDef, config.sandbox)).provider,
-              sandboxId: sandbox.sandboxId,
-              ...(reusedSandbox
-                ? {
-                    reused: true as const,
-                    reuseSandbox: reusedSandbox.reuseSandbox,
-                    reuseOrdinal: reusedSandbox.reuseOrdinal,
-                  }
-                : {}),
-            },
-          }
-        : {}),
+      // sandbox 归属不在这里拼:它是租借时刻就定死的调度事实,由 runAttemptEffect 统一挂到
+      // 每一条出口结果上(含 setup 失败与超时),见那边的 `sandboxFacts`。
     };
     result = value;
     return value;
@@ -1371,9 +1386,25 @@ export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox
   };
 }
 
-function resolveJudge(
+/** judge 配置逐字段解析:`model` / `baseUrl` / `apiKeyEnv` / `timeoutMs` 各自走 eval 的
+ *  `judge` → 项目 config 的 `judge` → 各自默认(见 docs/feature/judge/library.md
+ *  「调用预算与执行顺序」)。eval 只声明 `model` 时 `baseUrl` 仍从 config 来,所以这里逐字段
+ *  取值而不是展开合并——展开会让 eval 里显式写下的 `undefined` 盖掉 config 的值。 */
+export function resolveJudge(
   evalJudge: JudgeConfig | undefined,
   configJudge: JudgeConfig | undefined,
 ): JudgeConfig | undefined {
-  return evalJudge ?? configJudge;
+  if (!evalJudge) return configJudge;
+  if (!configJudge) return evalJudge;
+  return {
+    model: evalJudge.model ?? configJudge.model,
+    ...pick("baseUrl", evalJudge.baseUrl ?? configJudge.baseUrl),
+    ...pick("apiKeyEnv", evalJudge.apiKeyEnv ?? configJudge.apiKeyEnv),
+    ...pick("timeoutMs", evalJudge.timeoutMs ?? configJudge.timeoutMs),
+  };
+}
+
+/** 两层都没写的可选字段整个不出现,而不是落成显式 undefined(下游按「有没有写」判断)。 */
+function pick<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
 }

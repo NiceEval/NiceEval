@@ -106,8 +106,8 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - 三张 scope-input page 均相邻放置 `sampleWarnings` 与 `runDiagnostics`。
   - `defineReport` 复用别处页的数组展开（页等值、外壳不沿用）。
   - 组合组件与手写组合严格等价。
-  - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图；
-    `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table，
+  - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图。
+  - `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table，
     Attempt locator 保留给 web 宿主下钻。
   - `SampleOverview` 严格等价于 `SampleSummary + ExperimentScatter + ExperimentTable`。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
@@ -155,6 +155,8 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **`Table` 的 subRows 与 placeholder**（[Table](../../../feature/reports/components/primitives/table.md)）：
   `subRows` 在 text / web 两面逐层渲染；`variant: "placeholder"` 行照常显示但不进入任何列的聚合读数。
   两面各一份区分力场景——断言面是 Content 与两面输出字符串，不经浏览器。
+  行 key 判重按层级同层进行：不同父行下的同名子行在两面都合法，同层重复 key 才报错。
+  区分力场景是「两个父行各带一个同名子行」——只有把展平行当同层判重的错误实现会在 text 面误报。
 - **`Grid` 的换列规则与体裁**（[换列规则](../../../feature/reports/library/layout.md#换列规则)、
   [体裁与体量](../../../feature/reports/library/layout.md#体裁与体量)）：
   断言面是列数纯函数的产出、text 面输出字符串与 web 面的 HTML，不经浏览器。逐项覆盖：
@@ -271,7 +273,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   区分力：改冻结快照文件触发 view 重建；
   page render 读时钟 / 网络按完整用户反馈拒绝。
 
-- **ResolvedPage 单次 resolve 多面投影**：`resolveDefinitionPage` 一次产出 `ResolvedPage`。之后
+- **`ResolvedPage` 单次解析多面投影**：`resolveDefinitionPage` 一次产出 `ResolvedPage`。之后
   `renderResolvedPageText` / `renderResolvedPageWeb(en)` / `renderResolvedPageWeb(zh-CN)` 都从同一
   `ResolvedPage` 同步投影。断言面是 `page.render` 调用计数仍为 1（含并发 text/web/locale 投影）。
   view 对每个 page / locator 只调用一次 `resolveDefinitionPage`。
@@ -325,6 +327,8 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - 跨快照按 attempt 身份键去重；`--resume` 复印件不给证据室索引灌票。
   - 新布局落盘直接可读（写入面 / 读取面同一契约）；零可读结果直说不渲染空页面。
   - `viewData` 只含证据室元信息，不携带统计产物。
+  - 自定义报告未声明 attempt-input page 时，ViewScan 补官方详情页与 locator 索引，
+    但不把隐式页混入自定义导航；显式详情页仍优先。
   - 报告文件或其项目内依赖变更后下一次装载读取新内容（namespaced import，不复用陈旧模块缓存）。
   - `resolveViewInput` 的输入校验、外壳导航与标题在真实站点上的呈现，归
     [E2E 功能域 · 报告与读面](../e2e/report.md)。
@@ -344,7 +348,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   与语言经 `report/<pageId>.<locale>.html` 按需渲染，`--out` 全渲并预烘进 `index.html`。fixture 用
   多页报告（至少两页 × 两语言），断言面是每页渲染函数的调用次数——单页 fixture 分不开「渲染一块」与
   「渲染全部」。同一 `(pageId, locale)` 在按需路径与 `--out` 下逐字节一致，这一格接住渲染时机漂移。
-- **renderer 资产进入站点管线**：一张已 resolve 的 page 返回 HTML 与按内容哈希物化的 CSS/JS。
+- **renderer 资产进入站点管线**：一张已解析的 page 返回 HTML 与按内容哈希物化的 CSS/JS。
   站点块带对应的加载标签，资产文件登记进同一份 `SitePlan.files`；同一资产被两种 locale 请求时只登记一次。
   区分力是只在 renderer 单测调用 `materializeRendererAssets()`、但 view 完全不消费结果的错误接线会红。
   浏览器是否执行脚本、切页时是否加载资产归 E2E。

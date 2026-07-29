@@ -126,6 +126,49 @@ Google Go 区分返回值的名词性名字与产生动作的动词性名字。
 2. **直接采用 cli-testing-library。** 没有结构断言故事,解决不了「排版级耦合」这个核心问题;其价值止于工效学参照。
 3. **Gherkin / aruba 式自然语言步骤层。** 间接性没有换来表达力,断言仍要落回底层词表。
 
+## 浏览器交互 DSL 生态(Playwright 原生词表、Screenplay、CodeceptJS)
+
+**来源:** [Playwright · Best Practices](https://playwright.dev/docs/best-practices)、
+[Locators](https://playwright.dev/docs/locators)、
+[Auto-waiting](https://playwright.dev/docs/actionability)、
+[Assertions](https://playwright.dev/docs/test-assertions)。
+高层 DSL 侧:
+[Serenity/JS · Screenplay Pattern](https://serenity-js.org/handbook/design/screenplay-pattern/)、
+[CodeceptJS · Basics](https://codecept.io/basics/)、playwright-bdd 一族。
+
+**是什么:** 对「浏览器交互验收要不要自建 DSL」的一轮横评。结论:**引擎全部现成,不自建**。
+Playwright 原生词表覆盖交互层三件套:
+
+- 寻址:`getByRole` / 可见文本的官方优先序,CSS / XPath 明确列为最后手段;
+- 等待:web-first assertion(`expect(locator).toBeVisible()` / `toHaveCount()`
+  自动重试到收敛),官方明确反对 `waitForTimeout` 硬等;
+- 结构:`toMatchAriaSnapshot`,与终端语义树那节是同一套匹配语义。
+
+Serenity/JS 的 Screenplay 模式(Actor / Task / Question)是「业务领域词 +
+活动轨迹报告」的成熟形态。CodeceptJS 是 `I.click()` 风格高层 DSL,自带 runner
+与启发式寻址。playwright-bdd 把 Gherkin 编译到 Playwright runner。
+
+### 值得抄的
+
+1. **web-first assertion 的决策规则。** 「为验证而等 → 用自动重试断言;
+   为下一步动作而等 → 等具体状态」,固定时长 sleep 一律删除;
+   不带重试的即时读数(`count()`)不做断言对象。
+2. **寻址优先序作为契约。** role → 可见文本 → test id,class / CSS
+   只作最后手段——与 report 域「class selector 只是找到元素的手段」互相印证;
+   领域词内部实现按此排序。
+3. **Screenplay 的两个点子,取形不取栈。** 领域动词让场景语言停在公开概念;
+   活动轨迹让失败自带已执行步骤序列。抄进「领域词 + 步骤日志」的薄封装,
+   不引 @serenity-js 依赖(Actor / Ability 抽象对「单用户读报告」场景无增益)。
+
+### 调研过、判断不值得抄的(及理由)
+
+1. **CodeceptJS。** 自带 runner,与 vitest 宿主互斥;启发式寻址(找不到就按
+   label / name 猜)与「指名寻址、失败列出候选」相反,失败时不可诊断。
+2. **playwright-bdd / Gherkin 层。** 自然语言步骤层维持既有否决——
+   间接性换不来表达力,断言仍要落回底层词表。
+3. **自建 auto-wait 或交互断言引擎。** Playwright 已内置且是行业口径,
+   重造只会制造第二口径;库的自定义面收窄到领域词与步骤日志。
+
 ## 相关阅读
 
 - [View](feature/reports/view.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`sources.measure.delta`](feature/reports/calculations.md))按 run 维度承担。

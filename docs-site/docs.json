@@ -659,7 +659,8 @@
                   "zh/tutorials/write-send",
                   "zh/tutorials/connect-otel",
                   "zh/tutorials/sandbox-agent",
-                  "zh/tutorials/sandbox-providers"
+                  "zh/tutorials/sandbox-providers",
+                  "zh/tutorials/sandbox-reuse"
                 ]
               },
               {
@@ -670,6 +671,7 @@
                   "zh/tutorials/experiments",
                   "zh/tutorials/fixtures",
                   "zh/tutorials/dataset-fanout",
+                  "zh/tutorials/criteria-files",
                   "zh/tutorials/scoring-guide"
                 ]
               },

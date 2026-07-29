@@ -148,7 +148,7 @@ page render 直接接收 Sample 或 AttemptEvidence，
 
 结果是文件树：`result.json` 逐 attempt 一份，`o11y.json`、diff 与 trace 是
 按需读取的 artifact。任何查询面都要先回答「什么时候物化、物化多少」，
-而懒加载正是大 artifact 不拖垮 resolve 的原因。
+而懒加载正是大 artifact 不拖垮树解析的原因。
 
 ## 结果形状不是平表
 
@@ -165,7 +165,7 @@ page render 直接接收 Sample 或 AttemptEvidence，
 
 `niceeval/report/react` 只吃已计算好的可序列化数据，
 不碰磁盘、不认识记录根。查询引擎进不了这个包，
-所以 SQL 只能在 resolve 阶段执行，产物仍是行集。
+所以 SQL 只能在树解析阶段执行，产物仍是行集。
 
 ## 作者已经在写 TypeScript
 

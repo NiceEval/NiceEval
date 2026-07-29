@@ -17,9 +17,11 @@ const relPath = "status.txt";
 export default defineEval({
   description: "Skill 正调:装了 niceeval-status-report 之后确实被读取并落进产出内容",
   async test(t) {
-    await t.group("安装痕迹:agent-setup.json 记录了这个 skill", async () => {
-      const manifest = await t.sandbox.readFile("__niceeval__/agent-setup.json").catch(() => "");
-      t.check(manifest, includes(SKILL_NAME));
+    // 安装痕迹从沙箱里真实存在的文件读:清单本身只在宿主侧(attempt artifact agent-setup.json),
+    // eval 够不着它,也不该够得着——沙箱里没有任何框架文件。
+    await t.group("安装痕迹:skill 文件真的装进了可发现目录", async () => {
+      const installed = await t.sandbox.runShell(`ls ${SKILL_DIR}`);
+      t.check(installed.stdout, includes(SKILL_NAME));
     });
 
     const turn = await t.send(

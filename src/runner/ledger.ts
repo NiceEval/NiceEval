@@ -23,7 +23,9 @@ export const LEDGER_GIT_DIR = DEFAULT_LEDGER_GIT_DIR;
 /** 整相导出文件的落点(与 ledger 同前缀,同样是 runner 私有路径;覆盖规则同上)。 */
 const EXPORT_DIR = "/tmp/.niceeval-ledger-export";
 
-/** 默认归因排除清单(锚点时冻结):依赖、构建产物、包管理器缓存与 niceeval 自己的落位。 */
+/** 默认归因排除清单(锚点时冻结):依赖、构建产物、包管理器缓存与用户项目里的 .niceeval 记录目录。
+ *  框架自己不往 workdir 写任何东西(见 docs/observability.md「宿主侧行为断言:t.o11y」),
+ *  所以这里没有框架路径要排。 */
 const DEFAULT_EXCLUDES = [
   ".git",
   "node_modules",
@@ -32,7 +34,6 @@ const DEFAULT_EXCLUDES = [
   "build",
   ".turbo",
   ".niceeval",
-  "__niceeval__",
   "coverage",
   ".cache",
   ".pnpm-store",

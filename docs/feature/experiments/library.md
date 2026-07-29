@@ -486,7 +486,7 @@ export default defineExperiment({
 - **`niceeval.config.ts`(`defineConfig`)** = 项目级默认:`judge`、`reporters`、并发 / 超时、`pricing`、`sandbox`。`Config.sandbox` 必须是工厂函数产出的显式 `SandboxSpec`（可携带 `environments` 表）；experiment 的 `sandbox` 可以覆盖它。两处都没配置时，沙箱型 Agent 直接报错，不探测环境或选择内置 Provider 默认值。
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
-配置解析以 [Architecture · Resolved config](architecture.md#resolved-config一次求值处处同源) 为单源。
+配置解析以 [Architecture · 配置解析链](architecture.md#配置解析链一次求值处处同源) 为单源。
 `timeoutMs` 与 Judge 支持 Eval 覆盖，按 CLI flag → experiment → eval → config → 内置默认解析；
 其它字段只经过各自声明的层级。环境变量只承担凭据和终端环境事实，不进入配置覆盖链。
 agent、model、flags 属于 experiment，不由 CLI 覆盖。

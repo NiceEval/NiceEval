@@ -17,7 +17,7 @@ type ToolName =
   | "glob" | "grep" | "list_dir" | "agent_task" | "unknown";
 ```
 
-core 再从这条流派生两样:`deriveRunFacts(events)`(toolCalls / subagents / parked,供断言,见 [标准事件模型 · 派生事实](feature/adapters/architecture/events.md#派生事实)),以及下面给人/给沙箱内手工跑的验证测试看的 o11y 摘要。
+core 再从这条流派生两样:`deriveRunFacts(events)`(toolCalls / subagents / parked,供断言,见 [标准事件模型 · 派生事实](feature/adapters/architecture/events.md#派生事实)),以及下面给人与宿主侧行为断言用的 o11y 摘要。
 
 原始 transcript 具体怎么从 agent CLI 弄到手(磁盘旁读 / stdout 捕获 / OTLP 推送)、采集层与转换层的边界怎么分,属于"怎么写 adapter"的范畴,见 [Sandbox Agent · Transcript 采集](feature/adapters/library/sandbox-agent.md#transcript-采集)。
 
@@ -42,41 +42,43 @@ interface O11ySummary {
 
 `O11ySummary` 只承载**从标准事件流可重算的行为计数**([缓存定位](feature/record/architecture.md#o11yjson))。token 用量、估算成本与耗时不在其中:权威分别是 `result.json` 的 `Usage`、`estimatedCostUSD` 与 `durationMs` / `phases`,同一事实不落第二份。
 
-### 注入沙箱:让测试断言「行为」
+### 宿主侧行为断言:t.o11y
 
-沙箱型 Agent 在其工作目录写入 `__niceeval__/results.json`。它的穷尽形状是：
+`t.o11y` 是 `TestContext` 上的只读 getter,每次读取都从当前 attempt 已累积的标准事件流经
+`buildO11ySummary()` 现算,返回一份 `O11ySummary`;多轮之间读取,拿到的是截至最近一次
+已返回 `t.send()` 的行为。direct 与 sandbox Agent 同一行为:只要 adapter 吐标准事件流,摘要就有数据。
+
+行为数据不进沙箱:摘要在宿主侧现算,沙箱里没有它的任何拷贝。workdir 里没有框架文件,
+agent 进程与用户命令的环境里没有框架变量;runner 确需落在沙箱里的运行时数据
+(变更分类账、OTLP 采集缓存)一律在 workdir 外的私有路径,处在 agent 视野之外。
+这与分类账把 git 目录放在 workdir 外是同一条素净原则
+([Sandbox · 变更归因](feature/sandbox/architecture.md#变更归因send-窗口与分类账)),它买到三件事:
+
+- agent 观察不到自己被评测的痕迹，评测意识不污染行为。
+- 行为证据全程在 agent 够不着的宿主侧，篡改摘要骗过验证在物理上不成立。
+- workdir 里只有用户与 agent 写入的内容，`git clone <url> .` 这类要求空目录的
+  fixture 写法不会撞上框架文件。
+
+`O11ySummary` 不含 usage、估算成本、耗时或其它字段；这些事实仍分别以 `result.json` 的
+`usage`、`estimatedCostUSD`、`durationMs` 与 `phases` 为准。落盘的 `o11y.json` 与 `t.o11y`
+共用同一派生算法，同一事实不落第二份权威。
+
+分工因此一刀切：沙箱内的脚本只断言**产物**——文件存在、测试通过、构建成功，这些事实本来就在
+沙箱里，不需要框架送数据进去；**行为**断言写在宿主侧 `test(t)`，与作用域断言、judge 同一个家。
+安装 manifest 同理不落沙箱盘：adapter 在宿主侧把它交给运行器，存成 attempt artifact
+`agent-setup.json`。
+
+于是 `test(t)` 能断言 agent **干了什么**,而不只是**产出了什么**:
 
 ```typescript
-interface SandboxResults {
-  o11y: O11ySummary;
-}
-```
-
-`o11y` 只由当前 attempt 已累积的标准事件流经 `buildO11ySummary()` 派生。它不含
-usage、估算成本、耗时或其它字段；这些事实仍分别以 `result.json` 的 `usage`、
-`estimatedCostUSD`、`durationMs` 与 `phases` 为准。Record 的 `o11y.json` 仍是持久化的
-行为事实，沙箱文件不另建派生算法。
-
-每次成功返回的 `t.send()` 累积完事件后刷新该文件。每次用户调用
-`t.sandbox.runCommand()` 或 `t.sandbox.runShell()` 前也刷新一次，因此验证脚本读取到的是本轮
-已知行为，而不是上一轮摘要。direct Agent 不写这个文件；`__niceeval__/agent-setup.json` 是安装
-manifest 的独立路径，两者互不覆盖。
-
-刷新先写临时文件，再 rename 到 `__niceeval__/results.json`，读取者只会看到完整的旧文件或完整的
-新文件。写入是 best-effort：失败不改变 agent 或 eval 的执行结果，但会记录一条 diagnostic，并删除
-目标文件及临时文件。验证脚本随后读不到文件而自然失败，不能把陈旧或半成品摘要当作可信行为证据。
-
-于是你在沙箱里手工跑的验证测试能断言 agent **干了什么**,而不只是**产出了什么**:
-
-```typescript
-const o11y = JSON.parse(readFileSync("__niceeval__/results.json", "utf-8")).o11y;
+await t.send("用脚手架初始化项目,然后实现 Button 组件。");
 
 // 用了正确的脚手架,而不是手搓
-expect(o11y.shellCommands.some((c) => c.command.includes("create-next-app"))).toBe(true);
+t.check(t.o11y.shellCommands.map((c) => c.command).join("\n"), includes("create-next-app"));
 // 没有读不该读的文件
-expect(o11y.filesRead).not.toContain(".env");
+t.check(t.o11y.filesRead.join("\n"), excludes(".env"));
 // 工具调用没失控
-expect(o11y.totalToolCalls).toBeLessThan(50);
+t.check(t.o11y.totalToolCalls, satisfies((n) => (n as number) < 50, "工具调用少于 50 次"));
 ```
 
 这把"过程正确性"也纳入了评分,而不只是"结果正确性"。

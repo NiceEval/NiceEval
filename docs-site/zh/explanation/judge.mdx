@@ -109,6 +109,18 @@ defineConfig({
 
 接自己的网关或 OpenAI 兼容代理时把地址显式写进 `judge.baseUrl`——NiceEval 不去环境里翻 `OPENAI_BASE_URL` 这类变量猜端点。key 同理只读一个名字：`judge.apiKeyEnv` 指定的那个，或默认的 `NICEEVAL_JUDGE_KEY`；judge 有自己的凭据，不会借用被测应用或某个 agent 的 key。
 
+每次判分调用最多等 3 分钟：网关到点还没回，这条断言按超时记 `unavailable`，不会无限挂住整次运行。网关慢但确实能用时，在同一份配置里给它更长预算：
+
+```ts
+defineConfig({
+  judge: {
+    model: "deepseek-chat",
+    baseUrl: "https://api.deepseek.com/v1",
+    timeoutMs: 300_000,   // 判分调用的等待上限,默认 180_000
+  },
+});
+```
+
 <Warning>
   模型或 key 解析不到时，这条 judge 断言记成 `unavailable`（带原因），不会静默消失：除非显式链了 `.optional()`，评不了就让这次 attempt 记 `errored`——评不出来的结论既不算通过，也不该算 agent 答错。配完 key 先跑一条带 `t.judge` 的 eval，在 `niceeval view` 里确认出现了 judge 分数。
 </Warning>

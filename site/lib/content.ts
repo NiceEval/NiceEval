@@ -70,7 +70,6 @@ export const copy = {
     heroTitle: "AI-Native Eval for Agents.",
     copyCommand: "Copy command",
     copied: "copied",
-    primaryAction: "Start",
     github: "GitHub",
     visualLabel: "NiceEval terminal demo: run an experiment, then compare two models",
     term: {
@@ -152,7 +151,6 @@ export const copy = {
     heroTitle: "更适合 Agent 的评估。",
     copyCommand: "复制命令",
     copied: "已复制",
-    primaryAction: "开始",
     github: "GitHub",
     visualLabel: "NiceEval 终端演示:跑一次实验,再对照两个模型",
     term: {

@@ -81,7 +81,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [sandbox.md](sandbox.md)                       | provider 之上的共同逻辑：路径、IO/provision 重试、生命周期编排、diff 归因 | 内存 provider 实现自有 `Sandbox` 接口                                | [e2e --group sandbox](../e2e/README.md)：真实 provider 跑同一 contract suite |
 | [record.md](record.md)                         | writer / reader、身份、`evidenceState`、publish                           | 不 fake：构造数据 + 每例独立的真实临时目录                           | [e2e/report](../e2e/report.md)：真实运行的落盘与读回                         |
 | [sample.md](sample.md)                         | 两个选择口径、覆盖、时效、pipe 算子、去重                                 | 构造的内存记录图（区分力要求见该篇）                                 | [e2e/report](../e2e/report.md)：真实记录根上的口径与警告                     |
-| [reports.md](reports.md)                       | 数据源 `compute()`、装载、resolve                                          | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染                       |
+| [reports.md](reports.md)                       | 数据源 `compute()`、装载、树解析                                          | 构造的 Sample / evidence fixture                                      | [e2e/report](../e2e/report.md)：真实产物上的出口与渲染                       |
 
 ## Feature 测试文档
 
@@ -100,7 +100,7 @@ Feature 文档是语义的唯一来源。测试可以用表格或 fixture 展开
 | [Assertions](../../../feature/assertions/README.md) | matcher、scope、collector、evidence、severity 和 Verdict 形成一致判定 | [scoring.md](scoring.md) |
 | [Record](../../../feature/record/README.md)                                          | artifact round-trip、身份、`configHash` 与携带资格、发布自包含        | [record.md](record.md)                         |
 | [Sample](../../../feature/sample/README.md)                                          | 两个口径的区分力、覆盖分母、时效、算子的四面同步重算与去重            | [sample.md](sample.md)                         |
-| [Reports](../../../feature/reports/README.md)                                         | 读数与聚合口径正确；装载、resolve 与校验反馈完整                      | [reports.md](reports.md)                       |
+| [Reports](../../../feature/reports/README.md)                                         | 读数与聚合口径正确；装载、树解析与校验反馈完整                      | [reports.md](reports.md)                       |
 
 [Adapters](../../../feature/adapters/README.md)
 不在此表：SDK 事件转换与协议归一没有单元层测试维度——协议的真身只有真实调用，wire

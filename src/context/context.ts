@@ -14,7 +14,7 @@ import { EvalSkipped, EvalRequirementFailed, TurnFailed } from "./control-flow.t
 import { turnErrorText } from "./turn-errors.ts";
 import { attachFailureClass, type FailureClass } from "../shared/failure-class.ts";
 import type { ConcurrencySlot } from "./send-retry.ts";
-import { deriveRunFacts } from "../o11y/derive.ts";
+import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
 import { diffIsEmpty, diffMatches, emptyDiffData } from "../scoring/diff.ts";
 import { t } from "../i18n/index.ts";
 import { resolveLocalPath } from "../sandbox/paths.ts";
@@ -270,14 +270,8 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
       return diffView;
     },
     // 沙箱动作都先结算待决前置:前置没过时后面这些活儿一件都不该干(白跑沙箱时间)。
-    runCommand: guardAsync(async (cmd, args, opts) => {
-      await manager.refreshSandboxO11y();
-      return deps.sandbox.runCommand(cmd, args, opts);
-    }),
-    runShell: guardAsync(async (script, opts) => {
-      await manager.refreshSandboxO11y();
-      return deps.sandbox.runShell(script, opts);
-    }),
+    runCommand: guardAsync((cmd, args, opts) => deps.sandbox.runCommand(cmd, args, opts)),
+    runShell: guardAsync((script, opts) => deps.sandbox.runShell(script, opts)),
     readFile: guardAsync((path) => deps.sandbox.readFile(path)),
     fileExists: guardAsync((path) => deps.sandbox.fileExists(path)),
     writeFiles: guardAsync((files, targetDir) => deps.sandbox.writeFiles(files, targetDir)),
@@ -511,6 +505,13 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     },
 
     sandbox: sandboxHandle,
+
+    // 宿主侧行为摘要:每次读取现算,拿到的是截至最近一次已返回 send() 的行为(见
+    // docs/observability.md「宿主侧行为断言:t.o11y」)。落盘 o11y.json 与它共用
+    // buildO11ySummary,同一事实不落第二份权威;沙箱内一个框架文件都不写。
+    get o11y() {
+      return buildO11ySummary(manager.allEvents);
+    },
 
     // 作用域断言(t 级:聚合全部 session)。这些描述符盖过 primary 的同名方法——
     // t.send/t.reply/t.events 仍是主 session 的即时视图,断言聚合与读取视图是两回事。

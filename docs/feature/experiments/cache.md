@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 终态 | 条目 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不携带,总会重试 |
 | 指纹 | 条目 | 该 eval 的指纹等于本次配置算出的指纹 | 这条 eval 的全部 attempt 重跑 |
-| 资格 | 条目 | `executionMs` ≤ 当前 resolved `timeoutMs` | 这一条重跑 |
+| 资格 | 条目 | `executionMs` ≤ 当前解析后的 `timeoutMs` | 这一条重跑 |
 | 出身 | 条目 | 没有 `reused` 标记 | 这一条重跑 |
 | 口径 | 本次调用 | [`--rerun`](use-case/重新运行/) 档位仍采信这个判定 | 该判定的 attempt 重跑 |
 | 模式 | Experiment 与本次调用 | 没有 `sandboxReuse: true`，且该条不落在 `--keep-sandbox` 当前留存档内 | 这一条真派发 |
@@ -163,12 +163,17 @@ export default defineEval({
 - **静态面**:eval 文件字节,加上它的导入图里解析后落在项目根内的每个模块,递归展开。
   判据是模块解析后的真实路径,不是 import 写法——相对路径、`tsconfig` 的 `paths` 别名都算数。
   按项目根相对路径排序后逐个哈希,顺序固定;循环导入按解析后的绝对路径去重。
-- **数据面**:经 `loadYaml` / `loadJson` 读入的文件,内容哈希进读它的那条 eval。
+- **数据面**:经 `loadYaml` / `loadJson` / `loadText` 读入的文件,内容哈希进读它的那条 eval。
   这些 loader 在发现阶段的模块求值期就把文件读完了,早于解析期算指纹,所以拿得到内容。
+  判据不是结构化数据时用 `loadText` 读原文:隐藏测试脚本、参考实现、shell 模板都是判据文件,
+  读入即宣告「它参与判定」,改一字节就重跑引用它的那条 eval。
+  loader 只能在发现期的模块顶层调用,`test(t)` 运行期调用直接报错,不静默漏登记;
+  路径收项目根相对字符串或 `URL`(完整用例见[判据文件](../eval/use-case/criteria-files.md))。
 
 两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink
 解析过去的那些)、以及动态 `import()`。改了这些要重验用 [`--rerun all`](use-case/重新运行/)。
-用户自己写 `fs.readFileSync` 读进来的文件同样进不来——niceeval 不知道那次读发生过。
+用户自己写 `fs.readFileSync` 读进来的文件同样进不来——niceeval 不知道那次读发生过;
+判据文件一律走 loader 读入,不走 `fs`。
 
 **闭包是 1 对 N 的,依赖越集中作废面越大。** eval 文件的字节只作废它自己,
 而一个被 30 条 eval 引用的 helper 改一行就作废那 30 条,效果接近改一个 `flags` 值。
@@ -213,8 +218,8 @@ eval 的判定逻辑写在 `test(t)` 的函数体里,列不出一组能代表它
 把 `timeoutMs` 掺进哈希会让提高上限作废全部已完成结果,为一个不影响它们的参数付全量重跑。
 
 因此指纹不含 `timeoutMs`,它在指纹匹配之外另立一条判据:
-**终态 attempt 可携带,当且仅当其 `executionMs` ≤ 当前 resolved `timeoutMs`**(未设上限视为无穷)。
-四层来源的解析顺序单源在 [Resolved config](architecture.md#resolved-config一次求值处处同源)。
+**终态 attempt 可携带,当且仅当其 `executionMs` ≤ 当前解析后的 `timeoutMs`**(未设上限视为无穷)。
+四层来源的解析顺序单源在[配置解析链](architecture.md#配置解析链一次求值处处同源)。
 
 判据用 `executionMs` 而不是 `durationMs`,是为了让两侧量的是同一段时间。
 attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队,
@@ -256,7 +261,7 @@ attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队,
 
 三道约束把它锁在搬迁这一种用途上:
 
-- **只接受已经不在本次 resolved `flags` 里的键。** 键还在就是启动期用法错误,
+- **只接受已经不在本次解析后 `flags` 里的键。** 键还在就是启动期用法错误,
   报错指出它仍是本次的实验条件、要先真正搬走。这在结构上堵死「抹掉一个仍然生效的实验条件」,
   也就堵死了「把两批不同条件的结果混进同一个 configHash」这条路。
 - **键必须在候选历史条目的 `flags` 里出现过。** 一个两边都不存在的键是空转,

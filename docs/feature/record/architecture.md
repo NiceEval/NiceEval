@@ -253,6 +253,9 @@ interface AttemptRecord {
    * 且这条 Attempt 跑在共用的 Sandbox 上；
    * `reuseSandbox` 是本次 Run 内从 1 开始的 Sandbox 编号，
    * `reuseOrdinal` 是该 Sandbox 承接的 Attempt 序号。
+   * `provider` / `sandboxId` / `reused` / `reuseSandbox` / `reuseOrdinal` 是调度事实，
+   * 在 Sandbox 租借给该 Attempt 时确定；Attempt 在任何阶段终结（含 setup 失败与超时）
+   * 都必须带上它们，只有 `kept` 在收尾时点决定。
    * [出身门](../experiments/cache.md#携带要过的门)读取 `reused`，让复用产出永不成为后续命中。
    */
   sandbox?: {

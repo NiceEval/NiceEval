@@ -265,3 +265,79 @@ describe("无参 .soft():降级为纯记录,不设线", () => {
     expect(computeVerdict({ assertions: [result], strict: true })).toBe("passed");
   });
 });
+
+// finalize 的判分推进回调(契约见 docs/feature/experiments/cli.md「Attempt 阶段」):
+// 逐条 judge 断言在求值开始前报一次进度,纯反馈通道,不进 AssertionResult、不落盘。
+describe("finalize 的 judge 推进回调", () => {
+  /** 一条判分断言的最小 spec:带 judge 标记与检查方式摘要,求值记录调用顺序。 */
+  function judgeSpec(check: string, order: string[]) {
+    return {
+      name: "judge:autoevals:closedQA",
+      severity: "soft" as const,
+      detail: check,
+      judge: true as const,
+      evaluate: async () => {
+        order.push(`evaluate:${check}`);
+        return 1;
+      },
+    };
+  }
+
+  it("逐条 judge 在求值开始前回调一次,携带第几条 / 总数 / 检查方式;非 judge 断言不回调", async () => {
+    const order: string[] = [];
+    const collector = new AssertionCollector();
+    collector.record(specForAssertion(equals(4), 4));
+    collector.record(judgeSpec('closedQA("是否切题?")', order));
+    collector.record(specForAssertion(includes("Brooklyn"), "Brooklyn"));
+    collector.record(judgeSpec('factuality("布鲁克林今天是晴天")', order));
+
+    const seen: Array<{ index: number; total: number; check: string }> = [];
+    const results = await collector.finalize(ctxWith(), {
+      onJudgeProgress: (p) => {
+        order.push(`progress:${p.index}/${p.total}`);
+        seen.push(p);
+      },
+    });
+
+    expect(seen).toEqual([
+      { index: 1, total: 2, check: 'closedQA("是否切题?")' },
+      { index: 2, total: 2, check: 'factuality("布鲁克林今天是晴天")' },
+    ]);
+    // 「求值开始前」:每条的 progress 都排在自己的 evaluate 之前。
+    expect(order).toEqual([
+      "progress:1/2",
+      'evaluate:closedQA("是否切题?")',
+      "progress:2/2",
+      'evaluate:factuality("布鲁克林今天是晴天")',
+    ]);
+    expect(results).toHaveLength(4);
+  });
+
+  it("没有 judge 断言时一次都不回调", async () => {
+    const collector = new AssertionCollector();
+    collector.record(specForAssertion(equals(4), 4));
+    collector.record(specForAssertion(includes("Brooklyn"), "Brooklyn"));
+
+    const seen: unknown[] = [];
+    await collector.finalize(ctxWith(), { onJudgeProgress: (p) => seen.push(p) });
+
+    expect(seen).toEqual([]);
+  });
+
+  it("推进内容不进 AssertionResult(落盘形状与不带回调时逐字节相同)", async () => {
+    const withCallback = new AssertionCollector();
+    withCallback.record(judgeSpec('closedQA("是否切题?")', []));
+    const [reported] = await withCallback.finalize(ctxWith(), { onJudgeProgress: () => {} });
+
+    const without = new AssertionCollector();
+    without.record(judgeSpec('closedQA("是否切题?")', []));
+    const [plain] = await without.finalize(ctxWith());
+
+    // loc 是各自 record 调用点的栈快照,天然不同;其余字段必须逐一相同。
+    const withoutLoc = ({ loc: _loc, ...rest }: AssertionResult): Omit<AssertionResult, "loc"> => rest;
+    expect(withoutLoc(reported!)).toEqual(withoutLoc(plain!));
+    expect(reported).not.toHaveProperty("judge");
+    expect(reported).not.toHaveProperty("index");
+    expect(reported).not.toHaveProperty("total");
+  });
+});

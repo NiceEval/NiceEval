@@ -23,7 +23,7 @@ PLAN-2 正确识别了两级聚合、覆盖、证据下钻与双面一致这些�
 但把内部运行阶段投影成了三个作者概念。
 
 Source 让作者理解声明何时 compute；
-Composition 让作者理解 page context 与 resolve；
+Composition 让作者理解 page context 与树解析；
 Component 的 source / data 双入口让调用点无法直接说出值的角色。
 
 这些协议没有增加表达力。

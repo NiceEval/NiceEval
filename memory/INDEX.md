@@ -28,9 +28,16 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 部分被后续裁决替代 [sandbox-lifecycle-hooks](sandbox-lifecycle-hooks.md) — 环境预置的家是 SandboxSpec 链式 `.setup()/.teardown()`;「ExperimentDef 保持纯数据/实验级钩子不存在」一条已被下一行推翻,其余(沙箱钩子挂 spec、persistentState 不做)仍有效
 - [sandbox-keep-scene-decision](sandbox-keep-scene-decision.md) — 裁决(2026-07-14):debug 沙箱走 opt-in 留存现场(`--keep-sandbox` + `niceeval sandbox list/stop`,Scope 外包 timeout、逐条目原子登记,「不留孤儿」精化为「不留无主」);自定义 provider 因无法跨进程销毁而不支持 keep;曾选「加大 artifact 采集」「按 artifact 重建环境」「接口加 pause/detach」「只打印清理命令不做命令组」均否决
 - [agent-native-settings-official-surface](agent-native-settings-official-surface.md) — 裁决(2026-07-14):cc/codex factory 新增官方 `settings`(原生配置词汇的结构化对象)并升格为 Adapter 契约义务;透传原文、webSearch 语义字段、钩子写文件、McpServer.tools 白名单四方案否决/搁置;动机=codex web_search 评测答案污染;两条上游 FR 待提
+- [sandbox-injection-deleted-o11y-host-side](sandbox-injection-deleted-o11y-host-side.md) — 裁决(2026-07-29):沙箱零框架文件零框架 env,行为断言收宿主侧 `t.o11y`,manifest 内存转运;起因是下游 `git clone <url> .` 撞上 `__niceeval__` exit 128;中间态 NICEEVAL_RESULTS env 当日翻案
+- [no-official-fixture-loading-api](no-official-fixture-loading-api.md) — 裁决(2026-07-29):fixture 装载留给用户 shell,否决官方 cloneRepo API;「先拆自己造的地雷,不配官方绕行 API」判据成文进 api-design.md「哪些能力进公开 API」
 
 ### 台账
 
+- [reuse-ensure-lifetime-generic-bookkeeping-fake](reuse-ensure-lifetime-generic-bookkeeping-fake.md) — resolve.ts 通用 ensureLifetime 本地时钟记账,e2b/vercel 对 lifetimeMs 零引用,E2B 30 分钟杀实例而 runner 一路 ready:true;修法=删通用包装,未实现 provider 派发前硬失败(reuse.md 契约已在)
+- [reuse-dogfooding-observability-gaps](reuse-dogfooding-observability-gaps.md) — 复用 dogfooding 四连:setup 失败丢 sandbox 归属(已进契约:租借时刻写)、复用污染无线索(已进契约:承接序号聚合诊断)、reused 词义冲突与配额盲区(进 roadmap/reuse-observability)、loadText 缺口实为下游旧版误报
+- 已修 [reuse-pool-retired-entries-deadlock](reuse-pool-retired-entries-deadlock.md) — 复用池淘汰实例不摘除,死实例占满容量后 acquire 永久挂起;修为 splice 移除 + 实例编号单调计数(src/runner/sandbox-pool.ts)
+- 已修 [sandbox-wrapper-drops-non-interface-capabilities](sandbox-wrapper-drops-non-interface-capabilities.md) — normalizeSandboxPaths 丢非接口能力 ensureLifetime,suspend 之后同 bug 第二次复发;修为显式转发+穿透断言,新增 provider 能力必查全部包装层
+- [vercel-lifetimems-create-not-wired](vercel-lifetimems-create-not-wired.md) — 发现(未修):VercelSandbox.create 忽略 lifetimeMs(复用靠逐派发 extendTimeout);接进 create 前需真机复验「>1200s 反而更短」旧实测
 - 已修 [diagnose-tail-inline-defeats-one-line-elision](diagnose-tail-inline-defeats-one-line-elision.md) — `shared.diagnoseFailure` 曾把 output tail 用 " ⏎ " 拼进单行 message,traceback 框线灌满 scrollback 失败行且 `firstLine` 拦不住;修为首行一层摘要 + tail 从第二行起原始换行,单行面各自折首行收口
 - [budget-warning-requires-agent-turn](budget-warning-requires-agent-turn.md) — `sandbox.create` 等 agent 启动前错误没有成本事实，不得触发 budget-unenforceable；只统计真实 turn 后仍无 cost 的 attempt
 - [native-plugin-marketplace-name-not-caller-assignable](native-plugin-marketplace-name-not-caller-assignable.md) — `ClaudeCodePluginSpec`/`CodexPluginSpec` 的 `marketplace.name` 文档暗示调用方自定,真实 CLI 按目标仓库 manifest 自己的 `name` 注册,名字不匹配时 `marketplace add` 静默成功、下一步 `plugin install/add` 才报错;真实仓库复现,此 fixture 已落成两条 Docker 真机 e2e(Claude Code + Codex),bug 本身未修
@@ -226,6 +233,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [table-text-face-flat-rows-sibling-key-collision](table-text-face-flat-rows-sibling-key-collision.md) — show 双 Experiment 稳定抛行 key 重复:text 面漏传可选 hierarchyRows 参数、拿展平行判同层重复;修为 resolver 只产出层级权威形态并单点校验,text 面渲染期自己展平(primitives.tsx)
 - 已修 [enhance-hooks-rot-silently-when-renderer-renames-classes](enhance-hooks-rot-silently-when-renderer-renames-classes.md) — enhance.js 三处钩子指向全仓没人产出的类名:ExperimentList 排序/过滤与 AttemptList 过滤是死代码(还留着 `:sample >` 这种改名误伤的非法选择器),`.niceeval-scatter-point` 则是真 bug——图表点改叫 `.niceeval-chart-dot` 后样式化 tooltip 一直没出现、只剩浏览器原生黄框;已删死码 + 重接选择器,验收缺口(hover 断言、选择器体检)归 e2e
 - 已修 [hierarchy-table-column-widths-were-hardcoded](hierarchy-table-column-widths-were-hardcoded.md) — 层级表除首列外七列逐像素同宽(`.68fr` 写死)、结果列折行而模型/Agent 列大片留白;根因=每层行各自复读一份按列位写死的 grid 模板,修为整表一个 grid + 各层 subgrid,列宽由内容算;附 subgrid 链要穿过 Chrome `::details-content`、折叠态 `getBoundingClientRect()` 读出陈旧尺寸两个坑
 - 已修 [macos-fswatch-reports-untouched-siblings](macos-fswatch-reports-untouched-siblings.md) — macOS 的 `fs.watch` 会为同目录里没被碰过的兄弟文件报事件(`.niceeval/` 落 result.json 时 report 文件跟着报 rename),filename 还可能是被监听目录自己的名字;`view` 的项目侧 watch 只按事件名判定,导致默认布局下每次记录落盘都被判成模块变更、失效分流形同虚设;修为事件只当核对信号、变没变由 mtime+size 快照判定
@@ -323,6 +331,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已被同日裁决替代 [severity-is-single-vs-multi-score-switch](severity-is-single-vs-multi-score-switch.md) — 裁决(2026-07-22 上午):severity 当单分/多分开关;装不下自定分值 rubric 被下条替代,但「gate 不进质量分」「soft 无权均值」「组 gate 读数=失败定位」被继承
 - 第 5 条被下条推翻 [pass-vs-score-eval-two-modes](pass-vs-score-eval-two-modes.md) — 裁决(2026-07-22 定稿):两种题型 defineEval(通过制)/defineScoreEval(计分制,叠加给分无满分,.points/t.score 仅 score eval 的 t),实验内混型=启动期错误;否决满分声明+Σpoints守护、用法推断题型、混型「通过制挣1分」;一天四轮翻案全记录
 - [score-eval-assertion-roles-not-orthogonal](score-eval-assertion-roles-not-orthogonal.md) — 裁决(2026-07-23):推翻「points 与 severity 正交」,计分制一条断言只扮演一个角色(.points 得分点 / .gate 前置中止 / 不链词=观测),.points 后只剩 .gate/.optional,计分制 failed 只由中止产生、没有 t.require;起因是默认 gate 让「五步走三步」被判 failed、.points().soft() 双读质量分
+- [judge-serial-timeout-progress-ruling](judge-serial-timeout-progress-ruling.md) — 裁决(2026-07-29):judge 慢的治理=`judge.timeoutMs` 有界(默认 180_000)+ scoring 行 `judge k/n` 逐条推进,否决 attempt 内 judge 并发(无重试下放大 429 致错);顺带废除与阶段词重复的 `runner.scoreJudge` 静态 detail 文案
+- **待裁决** [judge-rationale-has-no-record-field](judge-rationale-has-no-record-field.md) — judge rationale 曾灌进落盘 `detail` 污染判定行标题,现已不落盘;要留它得给 AssertionResult 增字段并同步 architecture/display 契约,独立迭代做
 
 ## examples · tier-sync · e2e repos
 
@@ -342,6 +352,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [e2e-repo-self-root-workspace](e2e-repo-self-root-workspace.md) — 裁决(2026-07-21):每个 E2E 仓库必带只含 `packages: []` 的 pnpm-workspace.yaml 自成 workspace root,否则就地 install 会并入父级 workspace 绕过候选注入;曾半数仓库缺、run.ts 注释错引 §2.1,已补齐仓库+升进 docs §2.1/§8+加结构守护
 - 已修 [e2e-artifacts-glob-overwrites-repo-manifest](e2e-artifacts-glob-overwrites-repo-manifest.md) — `e2e/report/e2e.json` 曾用 `"*.json"`/`"*.xml"` 通配声明 artifacts,根编排器收尾把隔离副本顶层文件拷回真实仓库时连带命中并覆盖真实 `package.json`(改写成失效的临时 tarball 路径),下次直接 install/typecheck 报 ENOENT;修为显式文件名(`main.json`/`main.xml`/`fail.xml`/`error.xml`),裸 glob 会命中仓库自带顶层文件是通用坑
 - [e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml](e2e-report-dev-loop-pnpm-link-pollutes-workspace-yaml.md) — `pnpm link` 给 e2e 仓库做本地快速迭代会把 override 写进 pnpm-workspace.yaml/pnpm-lock.yaml,`rm -rf node_modules` 不消失,须 `git checkout` 两个文件才能复原;更省事的替代是直接 `node bin/niceeval.js`
+- [e2e-browser-scenario-probe-loop-brittleness](e2e-browser-scenario-probe-loop-brittleness.md) — report 仓库三类浏览器场景（探测循环、`.niceeval-row-hidden` 机制断言、class 存在即可见、固定 sleep）无契约变化却反复跟改;写法五条规则与「引擎现成不自建」裁决沉淀进 roadmap e2e-acceptance-dsl「浏览器交互」,是词表落地后第一批重写对象,新增浏览器场景前先读
 - 已修 [e2e-report-playwright-browser-never-installed](e2e-report-playwright-browser-never-installed.md) — B4/B5 新增的 chromium.launch() 验收在 CI 上炸`Executable doesn't exist`:playwright 系依赖已无 postinstall 生命周期脚本,`pnpm install` 从不下载浏览器二进制;修为 `e2e/report/package.json` 加 `postinstall: playwright install chromium`(项目自身脚本,不受 onlyBuiltDependencies 门禁)
 
 ## docs · docs-site · reference

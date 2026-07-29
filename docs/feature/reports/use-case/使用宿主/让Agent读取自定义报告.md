@@ -20,4 +20,5 @@ text 使用声明过的降级表达相同终值、缺失与证据 refs。
 
 报告声明 attempt page 后，浏览器 locator 与
 `niceeval show @<locator>` 进入同一 PageDefinition。
-要复用官方详情，把 `standardAttemptPage` 放进自己的 pages 数组。
+未声明时浏览器仍使用官方详情页，而 show 保留普通 locator 文本；
+要让两面共用官方定义，把 `standardAttemptPage` 放进自己的 pages 数组。

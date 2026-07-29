@@ -5,14 +5,15 @@
 // docs-site/zh/explanation/judge.mdx 的解析优先级表;用例登记在
 // docs/engineering/testing/unit/scoring.md 的 Judge 分区。
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AssertionCollector } from "./collector.ts";
 import { buildJudge, probeJudge } from "./judge.ts";
 import { computeVerdict } from "./verdict.ts";
 import { resolveAgentCoverage, completeCoverage } from "./coverage.ts";
 import { emptyDiffData } from "./diff.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
-import type { JudgeConfig, ScoringContext } from "../types.ts";
+import { resolveJudge } from "../runner/attempt.ts";
+import type { AssertionResult, JudgeConfig, ScoringContext } from "../types.ts";
 
 function ctx(): ScoringContext {
   return {
@@ -284,5 +285,169 @@ describe("judge 调用失败保留 unavailable", () => {
 
   it("2xx 但响应协议不符或取不出分数不伪装成 0 分", async () => {
     await expectUnavailable(async () => new Response(JSON.stringify({ choices: [] }), { status: 200 }), /Cannot read properties/);
+  });
+});
+
+// 判分调用的时间预算(docs/feature/judge/library.md「调用预算与执行顺序」)。
+// fake 时钟 + 截获 fetch:请求在 fake 时间推进到 respondAfterMs 时才回,一秒也不真等。
+describe("judge 调用超时预算(judge.timeoutMs)", () => {
+  const endpoint = { model: "fixture-model", baseUrl: "http://judge.fixture.internal/v1" };
+
+  /** 延迟应答的判分网关:respondAfterMs 后回一个 ClosedQA 选 "Y"(score 1)的响应;
+   *  期间被 abort 就按传输失败 reject(真实网关取消在飞请求的样子)。 */
+  function stubDelayedFetch(respondAfterMs: number): void {
+    vi.stubGlobal("fetch", (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const payload = {
+            id: "chatcmpl-fixture",
+            object: "chat.completion",
+            created: 0,
+            model: "fixture",
+            choices: [
+              {
+                index: 0,
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: { name: "select_choice", arguments: JSON.stringify({ choice: "Y" }) },
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+          resolve(
+            new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } }),
+          );
+        }, respondAfterMs);
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          },
+          { once: true },
+        );
+      });
+    });
+  }
+
+  /** 起一条 judge 断言并让 fake 时钟推进 advanceMs;返回结果与「推进到一半时是否已收束」。 */
+  async function scoreWithClock(
+    judge: JudgeConfig,
+    advanceMs: number,
+  ): Promise<{ result: AssertionResult | undefined; settledEarly: boolean }> {
+    const { collector, ns } = judgeWith(judge);
+    ns.autoevals.closedQA("是否切题?");
+    const pending = collector.finalize(ctx());
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(Math.max(0, advanceMs - 1_000));
+    const settledEarly = settled;
+    await vi.advanceTimersByTimeAsync(1_000);
+    const [result] = await pending;
+    return { result, settledEarly };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("不配 timeoutMs 时按默认 180_000 中断:记 judge-call-failed,evidence 写明超时秒数", async () => {
+    stubDelayedFetch(10 * 60_000); // 网关十分钟才回,默认预算内拿不到
+    const { result, settledEarly } = await scoreWithClock(endpoint, 180_000);
+
+    expect(settledEarly, "179s 时还不该收束——默认预算是 180s,不是立刻失败").toBe(false);
+    expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
+    expect(result?.outcome === "unavailable" && result.evidence).toBe("timed out after 180s");
+  });
+
+  it("同一挂起 fixture 配了更长的 timeoutMs 就正常拿到分数", async () => {
+    stubDelayedFetch(240_000); // 4 分钟:超过默认 180s,在 300s 预算内
+    const { result } = await scoreWithClock({ ...endpoint, timeoutMs: 300_000 }, 240_000);
+
+    expect(result).toMatchObject({ outcome: "passed", score: 1 });
+  });
+
+  it("同一挂起 fixture 不放宽预算时按默认中断(与上一格只差 timeoutMs)", async () => {
+    stubDelayedFetch(240_000);
+    const { result } = await scoreWithClock(endpoint, 180_000);
+
+    expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
+    expect(result?.outcome === "unavailable" && result.evidence).toBe("timed out after 180s");
+  });
+
+  // 逐字段合并与整体覆盖唯一读数不同的一格:eval 写了自己的 judge 但没写 timeoutMs 时,
+  // 取的是 config 的 300s,不是默认 180s。
+  it("eval 写了自己的 judge 而没写 timeoutMs 时取 config 的 timeoutMs,不落默认值", async () => {
+    const configJudge: JudgeConfig = { ...endpoint, timeoutMs: 300_000 };
+    const evalJudge: JudgeConfig = { model: "eval-model", baseUrl: endpoint.baseUrl };
+    const resolved = resolveJudge(evalJudge, configJudge);
+    expect(resolved?.timeoutMs, "timeoutMs 逐字段回落到 config").toBe(300_000);
+
+    stubDelayedFetch(240_000); // 若错误地落回默认 180s,这次调用会在 180s 被中断
+    const { result } = await scoreWithClock(resolved!, 240_000);
+
+    expect(result).toMatchObject({ outcome: "passed", score: 1 });
+  });
+
+  it("两层都没写 timeoutMs 才落默认 180_000", async () => {
+    const resolved = resolveJudge({ model: "eval-model" }, endpoint);
+    expect(resolved?.timeoutMs).toBeUndefined();
+
+    stubDelayedFetch(240_000);
+    const { result } = await scoreWithClock(resolved!, 180_000);
+
+    expect(result).toMatchObject({ outcome: "unavailable", reason: "judge-call-failed" });
+    expect(result?.outcome === "unavailable" && result.evidence).toBe("timed out after 180s");
+  });
+});
+
+// 落盘 detail 只有「检查方式」一个含义(docs/feature/assertions/architecture.md「断言记录」,
+// 判定行形态见 display.md#judge),而 live 面板的判分推进用的正是同一份文本
+// (docs/feature/experiments/cli.md「Attempt 阶段」)。runner 侧接线归 attempt.test.ts。
+describe("判分断言的检查方式:落盘 detail 与推进回调同源", () => {
+  // fixture 的裁判回复带 reasons(autoevals 会把它读成 rationale):理由不进 detail,
+  // 否则判定行标题会从 `closedQA("…")` 变成摘要 + 一整段理由。
+  it("落盘 detail 恒是干净的检查方式摘要,裁判理由不混进来", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    stubJudgeFetch();
+
+    const { collector, ns } = judgeWith({ model: "fixture-model" });
+    ns.autoevals.closedQA("助手是否描述了这张图片的内容?");
+    const [result] = await collector.finalize(ctx());
+
+    expect(result?.detail).toBe('closedQA("助手是否描述了这张图片的内容?")');
+    expect(result?.detail).not.toContain("拒绝识图");
+    // evidence 仍是判分看的材料(被评的 output),同样不掺理由。
+    const evidence = result?.outcome === "unavailable" ? undefined : result?.evidence;
+    expect(evidence).toContain("不支持图像输入");
+    expect(evidence).not.toContain("拒绝识图");
+  });
+
+  it("回调的 check 与落盘 detail 是同一个字符串", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    stubJudgeFetch();
+
+    const { collector, ns } = judgeWith({ model: "fixture-model" });
+    ns.autoevals.closedQA("助手是否描述了这张图片的内容?");
+    const seen: Array<{ index: number; total: number; check: string }> = [];
+    const [result] = await collector.finalize(ctx(), { onJudgeProgress: (p) => seen.push(p) });
+
+    expect(seen).toEqual([{ index: 1, total: 1, check: 'closedQA("助手是否描述了这张图片的内容?")' }]);
+    expect(result?.detail).toBe(seen[0]!.check);
   });
 });

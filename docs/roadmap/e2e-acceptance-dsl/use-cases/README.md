@@ -8,5 +8,6 @@
 - [readback](readback.md) —— show 读面:history 行、stats 计数、`·` 分隔文案与字形耦合的替换
 - [machine-exports](machine-exports.md) —— `--json` 摘要与 JUnit:容差 golden 的适用面
 - [html-export](html-export.md) —— 导出 HTML:aria Run 替换原始 HTML 字符串刮取;哪些留给 Playwright
+- [browser-interaction](browser-interaction.md) —— 浏览器交互:指名步骤与领域词;探测循环、机制断言与 sleep 的替换
 - [adapter-readback](adapter-readback.md) —— 适配器仓库读回:点查询维持子串级边界,不升级
 - [package-consumer](package-consumer.md) —— 发布包消费边界:触发本设计的案例完整重写,含证据生命周期与 vitest 测试文件形态

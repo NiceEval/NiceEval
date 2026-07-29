@@ -251,4 +251,11 @@ export interface JudgeConfig {
   /** OpenAI 兼容 base url + key 来源;省略则从 env 探测(见 scoring/judge.ts)。 */
   baseUrl?: string;
   apiKeyEnv?: string;
+  /**
+   * 单次判分调用的上限,毫秒;两层都没写即 180_000。到点中断这次调用,该条断言记
+   * `outcome: "unavailable"` + `reason: "judge-call-failed"`,`evidence` 写明超时秒数
+   * (判分调用不重试)。与 `model` / `baseUrl` / `apiKeyEnv` 同链逐字段解析:eval 的 `judge`
+   * → 项目 config 的 `judge` → 默认值。
+   */
+  timeoutMs?: number;
 }

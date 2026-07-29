@@ -61,6 +61,15 @@ export async function loadHostReport(
 }
 
 /**
+ * view 的 locator 证据室缺省页。自定义报告可以声明自己的 attempt-input page 覆盖它；
+ * 没声明时仍保留官方 AttemptDetails，避免组合组件的 locator 因换了首页而退化成不可点击文本。
+ */
+export async function loadDefaultHostAttemptPage(): Promise<ReportPage> {
+  const { standardAttemptPage } = await import("../../../dist/report/built-in/index.js");
+  return standardAttemptPage as ReportPage;
+}
+
+/**
  * `--report` / `--theme` 取值的形态判别:含 `/`、以 `.` 开头或带模块后缀的按文件装载,
  * 其余是内建名。view 的 watch 闭集按同一条判别决定盯不盯文件,不另写一套字符串规则。
  */

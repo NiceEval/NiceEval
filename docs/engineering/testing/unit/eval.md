@@ -80,10 +80,11 @@ guard。
   三值与 usage 可缺失；**多轮 Usage 累计的诚实口径**——adapter 未报告的字段(`requests`、cache 计数)累计后保持省略,不得以 0/每轮 +1 凑数,fixture 要区分「报了 0」与「没报」两态;轮标签铸造规则（主会话
   `turn<N>`、新会话 `session<K>/turn<N>`）；`sendFile` 的 MIME 推断与错误反馈；turn 级断言失败不中断
   `test()`。
-- **沙箱行为摘要注入**：sandbox Agent 的每次成功 `send` 后，`__niceeval__/results.json` 必须含由
-  当前累计事件派生的 `{ o11y }`；用户运行 Sandbox 命令前必须再次刷新。写入失败时目标与临时文件
-  不得留下，必须记录 diagnostic，验证脚本读取缺失文件应自然失败，不能接受陈旧摘要。direct Agent
-  不创建该文件。
+- **宿主侧行为摘要 `t.o11y`**：读取时从当前 attempt 已累积事件经 `buildO11ySummary()` 现算；
+  多轮之间反映截至最近一次已返回 `send` 的行为；direct 与 sandbox Agent 同一行为。沙箱内
+  零框架痕迹要有区分力断言：sandbox 型 attempt 全程 workdir 下不出现框架文件，用户命令与
+  agent 进程的 env 不含框架变量。安装 manifest 由 adapter 在宿主侧交给运行器存成 attempt
+  artifact，不经沙箱磁盘。
 - **Session**：session 与主 session 的读写隔离（各自续接、respond 不串消费），同时新 session 的事件仍汇入
   `t.*` 聚合——隔离与聚合两面都要有区分力场景。
 - **作用域断言的接收者行为**：`t.*` 全量聚合 + final timing、`session.*` 时点 Run、`turn.*`

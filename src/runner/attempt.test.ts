@@ -5,8 +5,8 @@
 // 同 key 后写覆盖先写、非法 key / 非标量 value 是否完整报错(见
 // docs/feature/record/architecture.md#facts运行事实)。
 //
-// 路径提升单测:agent.setup 写进沙箱 `__niceeval__/agent-setup.json` 的安装 manifest,
-// runAttemptEffect 在 setup 之后把它读出来、原样挂到 EvalResult.agentSetup(见
+// 宿主侧转运单测:agent.setup 经 `ctx.reportSetup()` 交回的安装 manifest,runAttemptEffect
+// 原样挂到 EvalResult.agentSetup,且沙箱磁盘上一个字节都不落(见
 // docs/feature/record/architecture.md「agent-setup.json」、src/agents/manifest.ts 的注释)。
 // 沙箱是内存 fake(记文件,不起容器)——这里要验的是运行器自己「何时读、读到什么、读不到
 // 怎么办」这段编排逻辑,不是 adapter 侧的 manifest 构造规则(那部分已在 agents/skills.test.ts
@@ -22,10 +22,9 @@ import { Effect } from "effect";
 import { runAttemptEffect } from "./attempt.ts";
 import { activateFeedbackSink, type DiagnosticInput, type FeedbackSink } from "./feedback/sink.ts";
 import { defineSandboxAgent, defineSandbox } from "../define.ts";
-import { writeAgentSetupManifest, AGENT_SETUP_MANIFEST_PATH } from "../agents/manifest.ts";
 import { equals } from "../expect/index.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
-import type { Attempt, AgentRun, LifecyclePhase, RunOptions } from "./types.ts";
+import type { Attempt, AgentRun, AttemptLifecycleEvent, LifecyclePhase, RunOptions } from "./types.ts";
 import type {
   AgentSetupManifest,
   Agent,
@@ -35,6 +34,7 @@ import type {
   Sandbox,
   SandboxFile,
   ScoreTestContext,
+  TestContext,
 } from "../types.ts";
 
 /** 内存沙箱:writeFiles/readFile 记文件,runShell 恒成功(供 initGitAndCommit / diff 采集用)。 */
@@ -101,6 +101,10 @@ async function runOnce(
     timeoutMs?: number;
     sandbox?: AgentRun["sandbox"];
     experimentId?: string;
+    /** 项目级配置(judge 一类逐字段解析链的上层);省略即空配置。 */
+    config?: Config;
+    /** 复用池借出的实例(调度事实测试用):模拟 run.ts 把 lease 交给 runAttemptEffect。 */
+    reusedSandbox?: { sandbox: Sandbox; reuseSandbox: number; reuseOrdinal: number };
   } = {},
 ): Promise<import("../types.ts").EvalResult> {
   const evalDef: DiscoveredEval = {
@@ -123,7 +127,7 @@ async function runOnce(
     selectedEvalIds: [evalDef.id],
   };
   const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "" };
-  const config: Config = {};
+  const config: Config = opts.config ?? {};
   const runOpts: RunOptions = {
     config,
     evals: [evalDef],
@@ -132,11 +136,16 @@ async function runOnce(
     maxConcurrency: 1,
   };
   const sandboxSem = Effect.runSync(Effect.makeSemaphore(1));
-  return Effect.runPromise(runAttemptEffect(attempt, runOpts, sandboxSem, { onPhase: opts.onPhase }));
+  return Effect.runPromise(
+    runAttemptEffect(attempt, runOpts, sandboxSem, {
+      onPhase: opts.onPhase,
+      ...(opts.reusedSandbox ? { reusedSandbox: opts.reusedSandbox } : {}),
+    }),
+  );
 }
 
-describe("runAttemptEffect · agent-setup 路径提升(沙箱 __niceeval__/agent-setup.json → EvalResult.agentSetup)", () => {
-  it("沙箱内有 manifest 时,原样读出挂到 EvalResult.agentSetup(不做任何转换/裁剪)", async () => {
+describe("runAttemptEffect · agent-setup 宿主侧转运(ctx.reportSetup → EvalResult.agentSetup)", () => {
+  it("adapter 交回 manifest 时,原样挂到 EvalResult.agentSetup,且沙箱里不落任何文件", async () => {
     const manifest: AgentSetupManifest = {
       skills: [
         { kind: "local", name: "effect-ts", path: "skills/effect-ts", sha256: "a".repeat(64) },
@@ -155,8 +164,8 @@ describe("runAttemptEffect · agent-setup 路径提升(沙箱 __niceeval__/agent
 
     const agent = defineSandboxAgent({
       name: "fake-agent",
-      setup: async (sandbox) => {
-        await writeAgentSetupManifest(sandbox, manifest);
+      setup: async (_sandbox, ctx) => {
+        ctx.reportSetup(manifest);
       },
       send: async () => ({ events: [], status: "completed" }),
     });
@@ -165,16 +174,16 @@ describe("runAttemptEffect · agent-setup 路径提升(沙箱 __niceeval__/agent
     const result = await runOnce(agent, box);
 
     expect(result.error).toBeUndefined();
-    // 沙箱内确实落了这个文件(否则下面的断言测不出"提升"这一步真的发生了)。
-    expect(box.files.has(`${box.workdir}/${AGENT_SETUP_MANIFEST_PATH}`)).toBe(true);
     expect(result.agentSetup).toEqual(manifest); // 深相等:内容原样保留,没有裁剪或改形。
+    // 区分力:清单只走宿主侧内存,沙箱磁盘上不出现任何框架文件。
+    expect([...box.files.keys()].filter((p) => /niceeval/i.test(p))).toEqual([]);
   });
 
-  it("沙箱内没有 manifest 时(没装任何 Skill/plugin/MCP 的基线场景),不生成空/伪造的 artifact", async () => {
+  it("adapter 没交回 manifest 时(没装任何 Skill/plugin/MCP 的基线场景),不生成空/伪造的 artifact", async () => {
     const agent = defineSandboxAgent({
       name: "fake-agent-no-install",
-      // agent.setup 跑了(比如只装了 CLI 本体),但没有任何 skill/plugin/mcp 可写,
-      // 所以从不调用 writeAgentSetupManifest —— 这是「基线场景」的真实形状。
+      // agent.setup 跑了(比如只装了 CLI 本体),但没有任何 skill/plugin/mcp 要报,
+      // 所以从不调用 ctx.reportSetup —— 这是「基线场景」的真实形状。
       setup: async () => {},
       send: async () => ({ events: [], status: "completed" }),
     });
@@ -183,7 +192,6 @@ describe("runAttemptEffect · agent-setup 路径提升(沙箱 __niceeval__/agent
     const result = await runOnce(agent, box);
 
     expect(result.error).toBeUndefined();
-    expect(box.files.has(`${box.workdir}/${AGENT_SETUP_MANIFEST_PATH}`)).toBe(false);
     expect(result.agentSetup).toBeUndefined();
   });
 
@@ -1035,5 +1043,286 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
 
     expect(seen).toHaveLength(1);
     expect(seen[0]!.data).toEqual({ phase: "eval.setup", indexAgeDays: 12 });
+  });
+});
+
+// scoring 阶段的 detail 只解释「在等裁判模型」这一种等待:有判分断言时逐条推进,
+// 没有则整段不发 detail(契约见 docs/feature/experiments/cli.md「Attempt 阶段」)。
+// 断言面是 feedback 事件流里的 progress 文本,不断言渲染字节。
+describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
+  const judgeAgent = () =>
+    defineSandboxAgent({
+      name: "fake-agent-judge-progress",
+      send: async () => ({ events: [], status: "completed" }),
+    });
+
+  const judgeConfig = { model: "fixture-model", baseUrl: "http://judge.fixture.internal/v1" };
+
+  /** 截获全局 fetch:判分请求恒回一个 ClosedQA 选 "Y" 的响应,不起 HTTP server、不出网络。 */
+  function stubJudgeGateway(): void {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    vi.stubGlobal("fetch", async (): Promise<Response> => {
+      const payload = {
+        id: "chatcmpl-fixture",
+        object: "chat.completion",
+        created: 0,
+        model: "fixture",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: { name: "select_choice", arguments: JSON.stringify({ choice: "Y" }) },
+                },
+              ],
+            },
+          },
+        ],
+      };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+  }
+
+  function captureLifecycle(): { seen: AttemptLifecycleEvent[]; deactivate: () => void } {
+    const seen: AttemptLifecycleEvent[] = [];
+    const noop = () => {};
+    const sink: FeedbackSink = {
+      activity: noop,
+      diagnostic: noop,
+      interrupted: noop,
+      reporterError: noop,
+      failure: noop,
+      budgetExhausted: noop,
+      kept: noop,
+      experimentHook: noop,
+      precheck: noop,
+      lockWait: noop,
+      experimentProgress: noop,
+      lifecycle: (event) => {
+        seen.push(event);
+      },
+    };
+    return { seen, deactivate: activateFeedbackSink(sink) };
+  }
+
+  /** scoring.evaluate 这一段(到下一个阶段为止)里发出的 detail 文本。 */
+  function scoringDetails(seen: AttemptLifecycleEvent[]): string[] {
+    const start = seen.findIndex((e) => e.type === "attempt:phase" && e.phase === "scoring.evaluate");
+    expect(start, "attempt 应该进入过 scoring.evaluate 阶段").toBeGreaterThanOrEqual(0);
+    const rest = seen.slice(start + 1);
+    const next = rest.findIndex((e) => e.type === "attempt:phase");
+    return (next === -1 ? rest : rest.slice(0, next))
+      .filter((e): e is Extract<AttemptLifecycleEvent, { type: "attempt:progress" }> => e.type === "attempt:progress")
+      .map((e) => e.detail);
+  }
+
+  it("逐条 judge 把 detail 推进为 judge k/n · <检查方式>", async () => {
+    stubJudgeGateway();
+    const { seen, deactivate } = captureLifecycle();
+    try {
+      await runOnce(judgeAgent(), new FakeSandbox(), {
+        evalDefOverrides: {
+          judge: judgeConfig,
+          test: (async (t: TestContext) => {
+            t.judge.autoevals.closedQA("回答是否切题?");
+            t.judge.autoevals.factuality("布鲁克林今天是晴天");
+          }) as unknown as DiscoveredEval["test"],
+        },
+      });
+    } finally {
+      deactivate();
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+
+    expect(scoringDetails(seen)).toEqual([
+      'judge 1/2 · closedQA("回答是否切题?")',
+      'judge 2/2 · factuality("布鲁克林今天是晴天")',
+    ]);
+  });
+
+  it("没有 judge 断言时 scoring 阶段一个 detail 都不发(不存在与阶段词重复的静态占位)", async () => {
+    const { seen, deactivate } = captureLifecycle();
+    try {
+      await runOnce(judgeAgent(), new FakeSandbox(), {
+        evalDefOverrides: {
+          test: (async (t: TestContext) => {
+            t.check("actual", equals("actual"));
+          }) as unknown as DiscoveredEval["test"],
+        },
+      });
+    } finally {
+      deactivate();
+    }
+
+    expect(scoringDetails(seen)).toEqual([]);
+  });
+});
+
+// judge 的解析链(eval → config)逐字段合并:eval 写了哪个字段用哪个,没写的字段仍从项目
+// config 的 judge 取。断言面是判分断言实际请求到的 model 与端点(截获 fetch,不出网络)。
+describe("runAttemptEffect · judge 配置的逐字段解析链", () => {
+  const mergeAgent = () =>
+    defineSandboxAgent({
+      name: "fake-agent-judge-merge",
+      send: async () => ({ events: [], status: "completed" }),
+    });
+
+  const judgeEval = {
+    test: (async (t: TestContext) => {
+      t.judge.autoevals.closedQA("回答是否切题?");
+    }) as unknown as DiscoveredEval["test"],
+  };
+
+  /** 截获全局 fetch,记录判分请求的 URL / Authorization / model。 */
+  function captureJudgeRequests(): Array<{ url: string; authorization: string | null; model?: string }> {
+    const captured: Array<{ url: string; authorization: string | null; model?: string }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const rawBody = init?.body;
+      captured.push({
+        url: input instanceof Request ? input.url : String(input),
+        authorization: new Headers(init?.headers).get("authorization"),
+        model: typeof rawBody === "string" ? (JSON.parse(rawBody) as { model?: string }).model : undefined,
+      });
+      const payload = {
+        id: "chatcmpl-fixture",
+        object: "chat.completion",
+        created: 0,
+        model: "fixture",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: { name: "select_choice", arguments: JSON.stringify({ choice: "Y" }) },
+                },
+              ],
+            },
+          },
+        ],
+      };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    return captured;
+  }
+
+  it("eval 只声明 model 时 baseUrl / apiKeyEnv 仍从 config 来(逐字段合并,不是整体覆盖)", async () => {
+    vi.stubEnv("MY_GATEWAY_KEY", "gateway-key");
+    const captured = captureJudgeRequests();
+    try {
+      await runOnce(mergeAgent(), new FakeSandbox(), {
+        config: {
+          judge: { model: "config-model", baseUrl: "http://config.fixture.internal/v1", apiKeyEnv: "MY_GATEWAY_KEY" },
+        },
+        evalDefOverrides: { judge: { model: "eval-model" }, ...judgeEval },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.model, "eval 写下的字段压过 config").toBe("eval-model");
+    expect(captured[0]!.url, "eval 没写的字段仍从 config 来").toBe("http://config.fixture.internal/v1/chat/completions");
+    expect(captured[0]!.authorization).toBe("Bearer gateway-key");
+  });
+
+  it("eval 与 config 都声明同一字段时取 eval 的值", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    const captured = captureJudgeRequests();
+    try {
+      await runOnce(mergeAgent(), new FakeSandbox(), {
+        config: { judge: { model: "config-model", baseUrl: "http://config.fixture.internal/v1" } },
+        evalDefOverrides: {
+          judge: { model: "eval-model", baseUrl: "http://eval.fixture.internal/v1" },
+          ...judgeEval,
+        },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.model).toBe("eval-model");
+    expect(captured[0]!.url).toBe("http://eval.fixture.internal/v1/chat/completions");
+  });
+});
+
+// cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——调度事实。
+//
+// provider / sandboxId / reused / reuseSandbox / reuseOrdinal 在 Sandbox 租借给这条 Attempt 的
+// 那一刻确定。Attempt 无论在哪个阶段终结(这里造 Eval setup 失败),记录里都必须带全——
+// 复用模式下最需要归属的恰恰是这类没走到收尾的失败(见 docs/feature/record/architecture.md
+// 的 `sandbox` 字段与 memory/reuse-dogfooding-observability-gaps.md)。
+describe("runAttemptEffect · sandbox 调度事实在租借时刻落记录", () => {
+  const quietAgent = () =>
+    defineSandboxAgent({
+      name: "fake-agent-reuse",
+      send: async () => ({ events: [], status: "completed" }),
+    });
+
+  it("复用实例承接的 attempt 正常跑完时,带全归属键", async () => {
+    const box = new FakeSandbox();
+    const result = await runOnce(quietAgent(), box, {
+      reusedSandbox: { sandbox: asSandbox(box), reuseSandbox: 2, reuseOrdinal: 3 },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.sandbox).toEqual({
+      provider: "fake-provider",
+      sandboxId: "fake",
+      reused: true,
+      reuseSandbox: 2,
+      reuseOrdinal: 3,
+    });
+  });
+
+  it("Eval setup 抛错(没走到收尾)的 attempt,同样带全归属键", async () => {
+    const box = new FakeSandbox();
+    const result = await runOnce(quietAgent(), box, {
+      reusedSandbox: { sandbox: asSandbox(box), reuseSandbox: 1, reuseOrdinal: 5 },
+      evalDefOverrides: {
+        setup: async () => {
+          throw new Error("fixture prep failed");
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("errored");
+    expect(result.error?.phase).toBe("eval.setup");
+    expect(result.sandbox).toEqual({
+      provider: "fake-provider",
+      sandboxId: "fake",
+      reused: true,
+      reuseSandbox: 1,
+      reuseOrdinal: 5,
+    });
+  });
+
+  it("一次性沙箱(未复用)的 attempt 记 provider 与实例 id,不谎报复用键", async () => {
+    const box = new FakeSandbox();
+    const result = await runOnce(quietAgent(), box, {
+      evalDefOverrides: {
+        setup: async () => {
+          throw new Error("fixture prep failed");
+        },
+      },
+    });
+
+    expect(result.verdict).toBe("errored");
+    expect(result.sandbox).toEqual({ provider: "fake-provider", sandboxId: "fake" });
   });
 });

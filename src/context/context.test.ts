@@ -4,8 +4,7 @@ import { createEvalContext, type ContextState } from "./context.ts";
 import { commandSucceeded, includes } from "../expect/index.ts";
 import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
 import { SEND_MAX_ATTEMPTS } from "./send-retry.ts";
-import type { Agent, AgentContext, DiagnosticInput, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
-import { SANDBOX_O11Y_RESULTS_PATH } from "../o11y/sandbox-results.ts";
+import type { Agent, AgentContext, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
 // 但 t.check(t.reply, includes("2")) 却失败。
@@ -71,34 +70,31 @@ function makeContext(agent: Agent, sandbox = fakeSandbox(), evalBaseDir?: string
   });
 }
 
-function summarySandbox({ failWrite = false }: { failWrite?: boolean } = {}) {
+/** 记录沙箱侧一切写入与命令 env 的 fake:用来证明「沙箱里零框架痕迹」。 */
+function tracingSandbox() {
   const files = new Map<string, string>();
-  let commandSaw: unknown;
+  const commands: { line: string; env?: globalThis.Record<string, string> }[] = [];
   const sandbox = {
     ...fakeSandbox(),
-    async writeFiles(next: globalThis.Record<string, string>): Promise<void> {
-      if (failWrite) throw new Error("disk full");
-      for (const [path, content] of Object.entries(next)) files.set(path, content);
+    async writeFiles(next: globalThis.Record<string, string>, targetDir?: string): Promise<void> {
+      for (const [path, content] of Object.entries(next)) files.set(targetDir ? `${targetDir}/${path}` : path, content);
     },
-    async runShell(script: string) {
-      if (script.startsWith("mv -f ")) {
-        const [, , temp, target] = script.split(" ");
-        const content = files.get(temp!);
-        if (content === undefined) return { stdout: "", stderr: "missing temp", exitCode: 1 };
-        files.delete(temp!);
-        files.set(target!, content);
-      } else if (script.startsWith("rm -f ")) {
-        for (const path of script.split(" ").slice(2)) files.delete(path);
-      }
+    async uploadFiles(next: { path: string; content: Buffer | string }[], targetDir?: string): Promise<void> {
+      for (const f of next) files.set(targetDir ? `${targetDir}/${f.path}` : f.path, String(f.content));
+    },
+    async uploadFile(path: string, content: Buffer): Promise<void> {
+      files.set(path, content.toString());
+    },
+    async runShell(script: string, opts?: { env?: globalThis.Record<string, string> }) {
+      commands.push({ line: script, ...(opts?.env ? { env: opts.env } : {}) });
       return { stdout: "", stderr: "", exitCode: 0 };
     },
-    async runCommand() {
-      const content = files.get(SANDBOX_O11Y_RESULTS_PATH);
-      commandSaw = content ? JSON.parse(content) : undefined;
-      return { stdout: "", stderr: "", exitCode: content ? 0 : 1 };
+    async runCommand(cmd: string, args: string[] = [], opts?: { env?: globalThis.Record<string, string> }) {
+      commands.push({ line: [cmd, ...args].join(" "), ...(opts?.env ? { env: opts.env } : {}) });
+      return { stdout: "", stderr: "", exitCode: 0 };
     },
   } as FakeSandbox;
-  return { sandbox, files, commandSaw: () => commandSaw };
+  return { sandbox, files, commands };
 }
 
 describe("createEvalContext / TestContext live state", () => {
@@ -184,48 +180,46 @@ describe("createEvalContext / TestContext live state", () => {
     expect(context.events.some((e) => e.type === "message" && e.role === "assistant")).toBe(true);
   });
 
-  it("在 Sandbox 验证命令前重写累计摘要，命令看到的不是被篡改的旧内容", async () => {
-    const fixture = summarySandbox();
-    const { context } = makeContext(calculatorAgent(), fixture.sandbox);
+  it("t.o11y 每次读取现算:send 前是空摘要,两轮之后反映累计到最近一次 send 的行为", async () => {
+    const { context } = makeContext(calculatorAgent());
+
+    expect(context.o11y.totalToolCalls).toBe(0);
     await context.send("1+1=?");
-    fixture.files.set(SANDBOX_O11Y_RESULTS_PATH, JSON.stringify({ o11y: { totalToolCalls: 999 } }));
-
-    const result = await context.sandbox.runCommand("verify");
-
-    expect(result.exitCode).toBe(0);
-    expect(fixture.commandSaw()).toMatchObject({ o11y: { totalToolCalls: 1, toolCalls: { unknown: 1 } } });
+    expect(context.o11y.totalToolCalls).toBe(1);
+    expect(context.o11y.totalTurns).toBe(1);
+    await context.send("再来一次");
+    // 同一个 getter,读取时点不同就是不同的值——它不是 send 时算好的快照。
+    expect(context.o11y.totalToolCalls).toBe(2);
+    expect(context.o11y.totalTurns).toBe(2);
   });
 
-  it("摘要写入失败时记录 diagnostic 并让验证命令以缺文件失败", async () => {
-    const fixture = summarySandbox({ failWrite: true });
-    const diagnostics: DiagnosticInput[] = [];
-    const { context } = createEvalContext({
-      agent: calculatorAgent(),
-      sandbox: fixture.sandbox,
-      flags: {},
-      signal: new AbortController().signal,
-      log: () => {},
-      judge: undefined,
-      feedback: { progress: () => {}, diagnostic: (input) => diagnostics.push(input) },
-    });
-    await context.send("1+1=?");
-
-    const result = await context.sandbox.runCommand("verify");
-
-    expect(result.exitCode).toBe(1);
-    expect(fixture.commandSaw()).toBeUndefined();
-    expect(diagnostics).toContainEqual(expect.objectContaining({ code: "sandbox-o11y-results-write-failed", level: "warning" }));
-  });
-
-  it("direct Agent 即使完成 send 也不创建沙箱行为摘要", async () => {
-    const fixture = summarySandbox();
+  it("direct Agent 的 t.o11y 与 sandbox Agent 同一行为(摘要住宿主侧,与有没有沙箱无关)", async () => {
     const calculator = calculatorAgent();
-    const agent: Agent = { name: calculator.name, kind: "direct", send: calculator.send };
-    const { context } = makeContext(agent, fixture.sandbox);
+    const direct: Agent = { name: calculator.name, kind: "direct", send: calculator.send };
+    const { context: sandboxCtx } = makeContext(calculator);
+    const { context: directCtx } = makeContext(direct);
+
+    await sandboxCtx.send("1+1=?");
+    await directCtx.send("1+1=?");
+
+    expect(directCtx.o11y).toEqual(sandboxCtx.o11y);
+    expect(directCtx.o11y.totalToolCalls).toBe(1);
+  });
+
+  it("跑完一轮 send 与用户命令后,沙箱里没有任何框架文件,命令 env 里也没有任何框架变量", async () => {
+    const fixture = tracingSandbox();
+    const { context } = makeContext(calculatorAgent(), fixture.sandbox);
 
     await context.send("1+1=?");
+    await context.sandbox.runShell("pytest -q");
+    await context.sandbox.runCommand("npm", ["test"], { env: { CI: "1" } });
 
-    expect(fixture.files.has(SANDBOX_O11Y_RESULTS_PATH)).toBe(false);
+    expect([...fixture.files.keys()]).toEqual([]);
+    for (const command of fixture.commands) {
+      expect(Object.keys(command.env ?? {}).filter((k) => /niceeval/i.test(k))).toEqual([]);
+    }
+    // 行为断言的数据只在宿主侧,一份也没送进沙箱。
+    expect(context.o11y.totalToolCalls).toBe(1);
   });
 
   it("t.sessionId reflects the id the agent assigned during send()", async () => {

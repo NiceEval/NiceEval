@@ -17,6 +17,12 @@
 
 为什么 workdir 是唯一正确的默认值:整条流水线都锚定在它上面——变更分类账以它为 work-tree、agent 的 cwd 在那里、send 窗口的改动在那里折叠成 agent diff、`t.sandbox.fileChanged(...)` 的路径也是对着那里解析的。把起始文件传到任何**别的**目录,agent 看不见它,diff 也采不到它,整条 eval 静默失效。所以对上传起始 workspace 这个最高频调用来说,workdir 不是"常见选择",是唯一能让系统其余部分正常工作的选择——一个参数如果 99% 的调用只有一个正确值,而调用者又不掌握这个值(它随 provider 变),强制填写就不是"显式更安全",是逼人抄错答案。
 
+workdir 里只有两类写入者:你(fixture、校验材料、环境层 Hook)和 agent。runner 自己的运行时数据
+一律在 workdir 外:变更分类账在沙箱内的私有路径,行为摘要根本不进沙箱、在宿主侧现算
+([Observability · 宿主侧行为断言](../../observability.md#宿主侧行为断言to11y))。
+因此 fixture 初始化可以假设 workdir 初态为空:只要你自己的环境层 Hook 没先写过文件,
+`git clone <url> .` 这类要求空目录的命令能直接落在 workdir 根。
+
 ### 用户会怎么写:before / after
 
 没有这个坐标系时,用户被迫自己拼两侧的绝对路径:

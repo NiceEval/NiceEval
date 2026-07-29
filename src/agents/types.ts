@@ -73,10 +73,11 @@ export type AgentSetupSkill =
   | { kind: "repo"; source: string; ref?: string; skills: string[] };
 
 /**
- * 一次 Agent setup 实际装了什么 —— 沙箱型 Coding Agent Adapter 在 setup 收尾写出的安装清单。
- * 沙箱内落在 `__niceeval__/agent-setup.json`,运行器把它作为 attempt artifact 存成
- * `agent-setup.json`(见 docs/feature/record/architecture.md)。不参与评分,只回答「这次实际
- * 装了什么」;**环境变量值与 secret 不写进来**(所以 mcpServers 只记 name/command/args)。
+ * 一次 Agent setup 实际装了什么 —— 沙箱型 Coding Agent Adapter 在 setup 收尾经
+ * `ctx.reportSetup()` 交回的安装清单。它是宿主侧内存对象,运行器把它作为 attempt artifact 存成
+ * `agent-setup.json`(见 docs/feature/record/architecture.md);沙箱磁盘上不落它。不参与评分,
+ * 只回答「这次实际装了什么」;**环境变量值与 secret 不写进来**(所以 mcpServers 只记
+ * name/command/args)。
  */
 export interface AgentSetupManifest {
   /** 装进去的 Skill(按配置顺序;同名来自多个来源时逐条保留,不静默合并)。 */
@@ -332,6 +333,20 @@ export interface SandboxAgentContext extends AgentContext {
 }
 
 /**
+ * Agent `setup` 的上下文:沙箱上下文再加一条宿主侧安装清单回执通道。只有 `setup` 收得到它——
+ * 安装事实在这一步产生,`send` / `teardown` 不再补写。
+ */
+export interface SandboxAgentSetupContext extends SandboxAgentContext {
+  /**
+   * 交回这次实际安装了什么(Skill / 原生 Plugin / MCP / 原生配置文件)。清单是宿主侧内存对象,
+   * 运行器直接存成 attempt artifact `agent-setup.json`;沙箱里不落任何框架文件
+   * (见 docs/observability.md「宿主侧行为断言:t.o11y」)。什么都没装就别调——空清单不生成
+   * artifact。同一次 `setup` 内多次调用后写覆盖先写。
+   */
+  reportSetup(manifest: AgentSetupManifest): void;
+}
+
+/**
  * agent 自己的沙箱生命周期(每个沙箱一次,与「每轮 send」分开):
  * `setup` 装 CLI、写配置(model/base/auth 等本轮内不变的东西),`send` 只管把一轮 prompt
  * 跑起来(第一次 fresh / 后续 resume)+ 解析 transcript,`teardown` 清理。
@@ -340,7 +355,7 @@ export interface SandboxAgentContext extends AgentContext {
  * 的现场同样要扫尾),在 finally 里跑。要把 `setup` 里创建的句柄传给 `teardown`,以
  * `sandbox` 实例为键存取(同一个 Agent 实例服务并发 attempt,不要用实例字段或模块变量)。
  */
-export type AgentSetup = (sandbox: Sandbox, ctx: SandboxAgentContext) => Promise<void> | void;
+export type AgentSetup = (sandbox: Sandbox, ctx: SandboxAgentSetupContext) => Promise<void> | void;
 export type AgentTeardown = (sandbox: Sandbox, ctx: SandboxAgentContext) => Promise<void> | void;
 export type DirectAgentSetup = (ctx: AgentContext) => Promise<void> | void;
 export type DirectAgentTeardown = (ctx: AgentContext) => Promise<void> | void;

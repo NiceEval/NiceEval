@@ -64,6 +64,29 @@ Judge 评不出可信分数时，该条断言记录为 `outcome: "unavailable"`�
 `.optional()` 只允许这条运行期判分证据缺席；此时 unavailable 保留在记录里，但不影响 Verdict。
 折叠规则见 [Severity 与 Verdict](../verdict/architecture.md)。
 
+## 调用预算与执行顺序
+
+每次判分调用有界：`judge.timeoutMs` 毫秒内拿不到响应就中断这次调用，按 `judge-call-failed` 记
+unavailable，`evidence` 写明超时秒数。默认 180_000：判分材料可以是整段长会话，更短的上限会把
+慢而能用的网关判成评不了，三分钟足以把「慢」与「挂死」分开。`timeoutMs` 与 `model` /
+`baseUrl` / `apiKeyEnv` 同链逐字段解析：eval 的 `judge` 写了哪个字段用哪个，没写的字段从项目
+config 的 `judge` 取，两层都没写才落到默认值。
+
+```ts
+// niceeval.config.ts —— 网关慢但确实能用,给它更长预算
+export default defineConfig({
+  judge: { model: "gpt-5.4-mini", baseUrl: "https://gateway.example.com/v1", timeoutMs: 300_000 },
+});
+```
+
+判分调用不重试。判分请求不是幂等读取，连接断开或超时后的暗中重放会为同一条 rubric 产生第二笔
+模型费用；偶发失败按 unavailable 契约留记录，要不要再评由重跑决定。
+
+一个 attempt 内的断言按声明顺序逐条求值，judge 也不例外。attempt 之间已经并发，attempt 内再
+并发 judge 只会放大网关限流，而判分不重试，一次 429 就让整条 attempt errored。正在评哪条
+judge，live 面板的 scoring 行以 `judge k/n` 推进显示，契约见
+[CLI · Attempt 阶段](../experiments/cli.md#attempt-阶段)。
+
 Judge 默认 soft、无阈值，只记录分数；`.atLeast(x)` 添加 soft 阈值，`.gate(x?)` 变成硬要求；`.optional()`
 声明允许缺席。severity（影不影响判定）与 optional（证据允许不允许缺席）是两个正交维度：
 

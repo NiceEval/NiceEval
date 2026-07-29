@@ -109,9 +109,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 项目使用 ESM + TypeScript，公共类型优先放在 `src/types.ts`，公共 API 从 `src/index.ts` 或现有子路径导出。沿用现有模块边界，不为单个 case 提前抽象新层。错误信息要直接说明问题和下一步，尤其是 CLI、配置和 eval 发现错误。注释可以用中文，但只解释不显然的设计约束或复杂流程。
 
+**概念命名不用 Resolve 词族。** `Resolve` / `Resolved` / `Resolver` 不进新的类型名、函数名、文件名（docs 正文同规则，理由见 `docs/writing-rules.json`：口袋词，配置、维度、报告树、表格都能叫它，名字不携带具体动作）。按动作起名：解析什么、求值什么、归一成什么，就叫那个具体的名字。外部事实不受限：Promise 的 resolve 回调、Node 的 `path.resolve`、上游 API 的字段名照写。存量 `resolve*` 标识符不专项大改名，触碰该域时顺手改。
+
 **给共享接口加可选字段：数着调用点过。** 跨多个调用点的接口 / 回调签名新增**可选**字段时，类型系统一次都拦不住：生产侧漏填是合法省略，消费侧不读新字段旧字段还在，两侧的回落分支（`x.code ?? x.key.split(":")[0]` 这类）让漏改在大多数 fixture 上恰好正确。加字段的那次改动必须包含一次**调用点普查**——grep 出全部构造点与消费点（消费点要 grep **旧**字段名，不是新字段名），逐个判定「该填 / 有意不填」，并配一条真正跑该字段生效路径的行为测试。`pnpm run typecheck` 绿不构成「所有实现方都接住了」的证据。能做成必选就别做成可选。详见 [memory 条目](memory/optional-field-additions-need-call-site-census.md)。
 
-**一个字段能从两处以上来：先在 docs 定死解析链，再写 `??`。** flag / experiment / eval / config 各有一个同名字段时，`a ?? b ?? c` 少写一层类型系统一次都拦不住，而且只有**同时配了两层**的项目才露馅——单层配置的 fixture 和示例全绿。链里有「兜底层」时特别检查它有没有被提前物化成上游的值：把 `config` 的缺省提前塞进 run 配置，下游那层 `??` 就永远短路，症状是「eval 里写的值不生效」，报错还落在离改动很远的地方。解析顺序单点声明在对应功能文档里（`timeoutMs` 见 [Resolved config](docs/feature/experiments/architecture.md#resolved-config一次求值处处同源)），新增来源的那次改动配一条「上层缺省 + 下层显式」的区分力测试——那一格是唯一会红的。详见 [memory 条目](memory/multi-source-field-resolution-order.md)。
+**一个字段能从两处以上来：先在 docs 定死解析链，再写 `??`。** flag / experiment / eval / config 各有一个同名字段时，`a ?? b ?? c` 少写一层类型系统一次都拦不住，而且只有**同时配了两层**的项目才露馅——单层配置的 fixture 和示例全绿。链里有「兜底层」时特别检查它有没有被提前物化成上游的值：把 `config` 的缺省提前塞进 run 配置，下游那层 `??` 就永远短路，症状是「eval 里写的值不生效」，报错还落在离改动很远的地方。解析顺序单点声明在对应功能文档里（`timeoutMs` 见[配置解析链](docs/feature/experiments/architecture.md#配置解析链一次求值处处同源)），新增来源的那次改动配一条「上层缺省 + 下层显式」的区分力测试——那一格是唯一会红的。详见 [memory 条目](memory/multi-source-field-resolution-order.md)。
 
 ## CLI Model
 

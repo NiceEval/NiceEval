@@ -21,7 +21,7 @@
        ctx.progress({ message: "seeding fixture repo" });
        const fixture = await createFixtureRepo("pr-review/close-stale");  // 沙箱外的临时资源
        fixtures.set(sandbox, fixture);
-       await sandbox.runCommand("git", ["clone", fixture.repoUrl, "workspace"]);
+       await sandbox.runCommand("git", ["clone", fixture.repoUrl, "."]);   // 被测 checkout 直接落 workdir 根
      },
      async teardown(sandbox) {
        await fixtures.get(sandbox)?.destroy();   // setup 抛错也会进来:没建成就跳过

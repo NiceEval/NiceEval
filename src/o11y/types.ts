@@ -185,7 +185,7 @@ export interface TraceSpan {
 }
 
 /**
- * 给人 / 给 EVAL.ts 看的 o11y 摘要(注入沙箱 __niceeval__/results.json)。从 `events.json` 派生的
+ * 给人与宿主侧行为断言(`t.o11y`)看的 o11y 摘要。从 `events.json` 派生的
  * 行为计数缓存,不是权威——同一 niceeval 版本写读,删除后可从 `events.json` 重算。token 用量、
  * 成本与耗时不在这里:权威唯一在 `result.json` 的 `Usage` / `estimatedCostUSD` 与 `durationMs`
  * / `phases`(见 docs/feature/record/architecture.md「o11y.json」)。

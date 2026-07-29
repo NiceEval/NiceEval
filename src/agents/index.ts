@@ -98,9 +98,6 @@ export type { OpenCodeConfig } from "./opencode.ts";
 export type { HermesConfig } from "./hermes.ts";
 export type { OpenClawConfig } from "./openclaw.ts";
 
-// 安装 manifest 的落点:adapter 写(shared.writeAgentSetup),运行器读并抬成 attempt artifact。
-export { AGENT_SETUP_MANIFEST_PATH } from "./manifest.ts";
-
 export type {
   Agent,
   AgentContext,
@@ -119,6 +116,7 @@ export type {
   SandboxAgentDef,
   SandboxAgent,
   SandboxAgentContext,
+  SandboxAgentSetupContext,
   McpServer,
   SkillSpec,
 } from "../types.ts";

@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Table 的 subRows 与 placeholder」「普通 rows props」
+// 「Table 的 subRows 与 placeholder」(含行 key 按层级同层判重)「普通 rows props」
 // 断言面是 Content 与两面输出字符串，不经浏览器。
 
 import { describe, expect, it } from "vitest";
@@ -92,5 +92,48 @@ describe("Table Content", () => {
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
     expect(html).toContain("niceeval-row-placeholder");
     expect(html).toContain("child");
+  });
+
+  it("行 key 按层级同层判重：不同父行下的同名子行合法", async () => {
+    // 复现场景：两个 Experiment 父行各带一个同名 eval 子行(install/gpt-researcher)。
+    const twoParents: TableContent = {
+      columns: [{ key: "name" }],
+      rows: [
+        {
+          key: "install/canary",
+          cells: { name: { kind: "text", text: "canary" } },
+          subRows: [{ key: "install/gpt-researcher", cells: { name: { kind: "text", text: "gpt-researcher" } } }],
+        },
+        {
+          key: "install/v0.11.0",
+          cells: { name: { kind: "text", text: "v0.11.0" } },
+          subRows: [{ key: "install/gpt-researcher", cells: { name: { kind: "text", text: "gpt-researcher" } } }],
+        },
+      ],
+    };
+    const resolved = await resolve(<TableContentView data={twoParents} />);
+    const text = renderNodeToText(resolved, createTextContext({ width: 60 }));
+    expect(text).toContain("gpt-researcher");
+    const webCtx = {
+      locale: "en",
+      dimension: () => {
+        throw new UndeclaredDimensionValueError("unexpected", "x");
+      },
+    } as WebContext;
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
+    expect(html).toContain("gpt-researcher");
+  });
+
+  it("同层重复行 key 在两面都报完整错误", () => {
+    const duplicated: TableContent = {
+      columns: [{ key: "name" }],
+      rows: [
+        { key: "dup", cells: { name: { kind: "text", text: "a" } } },
+        { key: "dup", cells: { name: { kind: "text", text: "b" } } },
+      ],
+    };
+    expect(() =>
+      renderNodeToText(<TableContentView data={duplicated} />, createTextContext({ width: 60 })),
+    ).toThrow(/declared twice at the same level/);
   });
 });

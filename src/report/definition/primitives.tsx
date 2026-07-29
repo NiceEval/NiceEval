@@ -188,7 +188,7 @@ export interface StatProps {
  * Grid / Stat 共享的显示值规范化:Cell 走 formatCellText / MetricCellView;
  * LocalizedText 走 resolveLocalizedText,number 走当前 locale 的 Intl.NumberFormat,null 变 —。
  */
-function resolveStatDisplay(value: StatProps["value"], locale: ReportLocale): string {
+function statDisplayOf(value: StatProps["value"], locale: ReportLocale): string {
   if (value === null) return MISSING_MARK;
   if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
   if (typeof value === "object" && value !== null && "kind" in value) {
@@ -211,14 +211,14 @@ export const Stat = defineComponent<StatProps>({
         <div className="niceeval-stat-value">
           {isCellValue(value)
             ? renderCellWeb(value, { attemptHref: ctx.attemptHref, locale: ctx.locale, showMeasureRefs: false })
-            : resolveStatDisplay(value, ctx.locale)}
+            : statDisplayOf(value, ctx.locale)}
         </div>
         {detail !== undefined ? <div className="niceeval-stat-detail">{resolveLocalizedText(detail, ctx.locale)}</div> : null}
       </div>
     );
   },
   text({ label, value, detail }, ctx) {
-    const lines = [resolveLocalizedText(label, ctx.locale), resolveStatDisplay(value, ctx.locale)];
+    const lines = [resolveLocalizedText(label, ctx.locale), statDisplayOf(value, ctx.locale)];
     if (detail !== undefined) lines.push(resolveLocalizedText(detail, ctx.locale));
     return lines.flatMap((line) => wrapDisplay(line, ctx.width)).join("\n");
   },
@@ -625,10 +625,12 @@ function defaultTableHeader(key: string, locale: ReportLocale): LocalizedText {
   return message ? localeText(locale, message) : key;
 }
 
-function resolveTableContent(props: TableImplementationProps, locale: ReportLocale): {
-  columns: TableColumn[];
-  rows: TableRow[];
-  content: TableContent | null;
+// props → 唯一权威形态:列 + 层级 TableContent。校验只在这里做一次,
+// text / web 两面拿到的是同一棵已校验的行树;text 面的展平是渲染期投影,
+// 不进权威形态,行 key 判重因此永远按层级同层进行。
+function tableContentOf(props: TableImplementationProps, locale: ReportLocale): {
+  columns: [TableColumn, ...TableColumn[]];
+  content: TableContent;
 } {
   if (isPlainRowsTableProps(props)) {
     const specs = resolvePlainColumnSpecs(props.rows as readonly globalThis.Record<string, unknown>[], props.columns as readonly PlainTableColumn[] | undefined);
@@ -643,40 +645,24 @@ function resolveTableContent(props: TableImplementationProps, locale: ReportLoca
       align: content.columns.find((c) => c.key === spec.field)?.better ? "right" : "left",
       better: content.columns.find((c) => c.key === spec.field)?.better,
     }));
-    const flat = flattenTableContentForText(content, locale);
-    return {
-      columns: columns as [TableColumn, ...TableColumn[]],
-      rows: flat.rows.map((r) => ({ key: r.key, cells: r.cells })),
-      content,
-    };
+    return validatedTable(columns, content);
   }
   const raw = props.data;
   const content = raw === null ? null : isDataset(raw) ? datasetToTableContent(raw) : raw;
-  if (content === null) return { columns: [], rows: [], content: null };
-  const specs: ColumnSpec[] = [...content.columns];
-  const flat = flattenTableContentForText(
-    { columns: specs, rows: content.rows },
-    locale,
-  );
-  const columns: TableColumn[] = specs.map((spec) => ({
+  if (content === null) return validatedTable([], { columns: [], rows: [] });
+  const columns: TableColumn[] = content.columns.map((spec) => ({
     key: spec.key,
     header: defaultTableHeader(spec.key, locale),
     align: spec.better ? "right" : "left",
     better: spec.better,
   }));
-  if (columns.length === 0) return { columns: [], rows: [], content };
-  return {
-    columns: columns as [TableColumn, ...TableColumn[]],
-    rows: flat.rows.map((r) => ({ key: r.key, cells: r.cells })),
-    content,
-  };
+  return validatedTable(columns, content);
 }
 
-function validateResolvedTable(
+function validatedTable(
   columns: TableColumn[],
-  rows: TableRow[],
-  hierarchyRows?: readonly TableContentRow[],
-): void {
+  content: TableContent,
+): { columns: [TableColumn, ...TableColumn[]]; content: TableContent } {
   if (columns.length === 0) {
     throw new Error("Table needs at least one column: pass columns, or provide rows whose first item has visible fields.");
   }
@@ -687,25 +673,11 @@ function validateResolvedTable(
     }
     keys.add(column.key);
   }
-  if (hierarchyRows) {
-    validateSiblingRowKeys(hierarchyRows);
-  } else {
-    validateSiblingRowKeys(rows);
-  }
-  for (const row of rows) {
-    for (const cellKey of Object.keys(row.cells)) {
-      if (!keys.has(cellKey)) {
-        throw new Error(
-          `Table row "${row.key}" has a cell "${cellKey}" that no column declares. Declare the column in columns, or drop the stray cell.`,
-        );
-      }
-    }
-  }
+  validateSiblingRowKeys(content.rows);
+  return { columns: columns as [TableColumn, ...TableColumn[]], content };
 }
 
-function validateSiblingRowKeys(
-  rows: readonly (TableRow | TableContentRow)[],
-): void {
+function validateSiblingRowKeys(rows: readonly TableContentRow[]): void {
   const keys = new Set<string>();
   for (const row of rows) {
     if (keys.has(row.key)) {
@@ -714,7 +686,7 @@ function validateSiblingRowKeys(
       );
     }
     keys.add(row.key);
-    if ("subRows" in row && row.subRows?.length) validateSiblingRowKeys(row.subRows);
+    if (row.subRows?.length) validateSiblingRowKeys(row.subRows);
   }
 }
 
@@ -876,125 +848,76 @@ const TableImplementation = defineComponent<TableImplementationProps>({
   dimensions: () => ({}),
   web(props, ctx) {
     const locale = props.locale ?? ctx.locale;
-    const resolved = resolveTableContent(props, locale);
-    validateResolvedTable(resolved.columns, resolved.rows, resolved.content?.rows);
+    const { columns, content } = tableContentOf(props, locale);
     const alignClass = (align?: ColumnAlign) => (align === "right" ? "niceeval-align-right" : undefined);
     const attemptHref = props.attemptHref ?? ctx.attemptHref;
-    if (resolved.content) {
-      const hierarchical = resolved.content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
-      const table = (
-        <table
-          className={cx("niceeval-report", "niceeval-table", hierarchical ? "niceeval-table--hierarchical" : undefined, props.className)}
-          style={hierarchical ? ({ "--table-grid": hierarchyGrid(resolved.columns) } as CSSProperties) : undefined}
-        >
-          <thead>
-            <tr>
-              {resolved.columns.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  className={cx(
-                    alignClass(column.align),
-                    props.sort === column.key
-                      ? column.better === "lower"
-                        ? "niceeval-sort-asc"
-                        : "niceeval-sort-desc"
-                      : undefined,
-                  )}
-                  data-niceeval-sort={column.better ? column.key : undefined}
-                >
-                  {resolveLocalizedText(column.header, locale)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          {hierarchical ? (
-            <tbody>
-              <tr>
-                <td colSpan={resolved.columns.length} className="niceeval-table-hierarchy-body">
-                  {renderHierarchyRowsWeb(resolved.content.rows, resolved.columns, {
-                    attemptHref,
-                    locale,
-                    showMeasureRefs: false,
-                  })}
-                </td>
-              </tr>
-            </tbody>
-          ) : (
-            <tbody>{renderFlatContentRowsWeb(resolved.content.rows, resolved.columns, { attemptHref, locale })}</tbody>
-          )}
-        </table>
-      );
-      const searchable = props.searchable === true;
-      if (!searchable) return table;
-      return (
-        <div className="niceeval-report niceeval-table-wrap">
-          <input
-            className="niceeval-filter"
-            data-niceeval-filter=""
-            type="search"
-            placeholder={localeText(
-              locale,
-              resolved.columns[0]?.key === "entity" ? "experimentList.filterPlaceholder" : "table.filterPlaceholder",
-            )}
-          />
-          {table}
-        </div>
-      );
-    }
-    const { columns, rows, className } = { columns: resolved.columns, rows: resolved.rows, className: props.className };
-    const hasLocator = rows.some((row) => row.locator !== undefined);
-    return (
-      <table className={cx("niceeval-report", "niceeval-table", className)}>
+    const hierarchical = content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
+    const table = (
+      <table
+        className={cx("niceeval-report", "niceeval-table", hierarchical ? "niceeval-table--hierarchical" : undefined, props.className)}
+        style={hierarchical ? ({ "--table-grid": hierarchyGrid(columns) } as CSSProperties) : undefined}
+      >
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} scope="col" className={alignClass(column.align)}>
+              <th
+                key={column.key}
+                scope="col"
+                className={cx(
+                  alignClass(column.align),
+                  props.sort === column.key
+                    ? column.better === "lower"
+                      ? "niceeval-sort-asc"
+                      : "niceeval-sort-desc"
+                    : undefined,
+                )}
+                data-niceeval-sort={column.better ? column.key : undefined}
+              >
                 {resolveLocalizedText(column.header, locale)}
               </th>
             ))}
-            {hasLocator ? <th scope="col">{localeText(locale, "table.attempt")}</th> : null}
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key}>
-              {columns.map((column) => {
-                const value = row.cells[column.key];
-                const missing = value === null || value === undefined;
-                return (
-                  <td key={column.key} className={alignClass(column.align)}>
-                    {missing ? <span className="niceeval-missing">{MISSING_MARK}</span> : value}
-                  </td>
-                );
-              })}
-              {hasLocator ? (
-                <td>
-                  {row.locator ? (
-                    ctx.attemptHref ? (
-                      <a className="niceeval-locator" href={ctx.attemptHref(row.locator)}>
-                        {row.locator}
-                      </a>
-                    ) : (
-                      <span className="niceeval-locator">{row.locator}</span>
-                    )
-                  ) : (
-                    <span className="niceeval-missing">{MISSING_MARK}</span>
-                  )}
-                </td>
-              ) : null}
+        {hierarchical ? (
+          <tbody>
+            <tr>
+              <td colSpan={columns.length} className="niceeval-table-hierarchy-body">
+                {renderHierarchyRowsWeb(content.rows, columns, {
+                  attemptHref,
+                  locale,
+                  showMeasureRefs: false,
+                })}
+              </td>
             </tr>
-          ))}
-        </tbody>
+          </tbody>
+        ) : (
+          <tbody>{renderFlatContentRowsWeb(content.rows, columns, { attemptHref, locale })}</tbody>
+        )}
       </table>
+    );
+    const searchable = props.searchable === true;
+    if (!searchable) return table;
+    return (
+      <div className="niceeval-report niceeval-table-wrap">
+        <input
+          className="niceeval-filter"
+          data-niceeval-filter=""
+          type="search"
+          placeholder={localeText(
+            locale,
+            columns[0].key === "entity" ? "experimentList.filterPlaceholder" : "table.filterPlaceholder",
+          )}
+        />
+        {table}
+      </div>
     );
   },
   text(props, ctx) {
     const locale = props.locale ?? ctx.locale;
-    const resolved = resolveTableContent(props, locale);
-    validateResolvedTable(resolved.columns, resolved.rows);
+    const { columns, content } = tableContentOf(props, locale);
+    const flat = flattenTableContentForText(content, locale);
     return renderTableText(
-      { columns: resolved.columns as [TableColumn, ...TableColumn[]], rows: resolved.rows, locale },
+      { columns, rows: flat.rows.map((row) => ({ key: row.key, cells: row.cells })), locale },
       ctx,
     );
   },

@@ -285,19 +285,35 @@ describe("experimentListContent Eval 分组层", () => {
 });
 
 describe("attempt 行 measure 格式化", () => {
-  it("durationMs / costUSD 走 measure 格与 unit 格式化,不落原始数字字符串", () => {
+  it("独立列表与 Experiment 展开层的 durationMs / costUSD 都保留 unit,不落原始数字字符串", () => {
     const content = attemptListContent([attempt("q", "failed", { durationMs: 385_652, costUSD: 0.007336 })]);
     const row = content.rows[0]!;
     expect(row.cells.durationMs).toMatchObject({
       kind: "metric",
-      metric: { value: 385_652 },
+      metric: { value: 385_652, unit: "ms" },
     });
     expect(row.cells.costUSD).toMatchObject({
       kind: "metric",
-      metric: { value: 0.007336 },
+      metric: { value: 0.007336, unit: "$" },
     });
+
+    const nested = experimentListContent([
+      experimentItem({
+        evalRows: [evalRow("q", "failed", [attempt("q", "failed", { durationMs: 385_652, costUSD: 0.007336 })])],
+        missingEvalIds: [],
+      }),
+    ]).rows[0]!.subRows![0]!.subRows![0]!;
+    expect(nested.cells.durationMs).toMatchObject({
+      kind: "metric",
+      metric: { value: 385_652, unit: "ms" },
+    });
+    expect(nested.cells.costUSD).toMatchObject({
+      kind: "metric",
+      metric: { value: 0.007336, unit: "$" },
+    });
+
     // 区分力:若仍写 String(durationMs)/String(costUSD),会命中这些原文
-    const flat = JSON.stringify(row.cells);
+    const flat = JSON.stringify([row.cells, nested.cells]);
     expect(flat).not.toContain('"text":"385652"');
     expect(flat).not.toContain('"text":"0.007336"');
   });

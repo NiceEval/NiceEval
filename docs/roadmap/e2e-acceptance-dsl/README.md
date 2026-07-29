@@ -41,6 +41,34 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 
 解析器与渲染器的关系:结构解析器读取的排版概念以 [Library · 排版原语](../../feature/reports/library/layout.md)的**文档声明**为规范,是渲染契约的第二实现。渲染器输出解析不出文档声明的结构时,不是测试脆,是渲染器或解析器有一方违反了契约——这类失配是真发现。
 
+### 浏览器交互:现成词表加领域词
+
+视觉与交互断言保留 Playwright 宿主。生态调研结论(见
+[References · 浏览器交互 DSL 生态](../../references.md#浏览器交互-dsl-生态playwright-原生词表screenplaycodeceptjs)):
+引擎全部现成,不自建——寻址用 `getByRole` / 可见文本的官方优先序,
+等待用 web-first assertion 自动重试,结构用 `toMatchAriaSnapshot`。
+库只补两样:按公开组件契约立词的领域寻址与步骤轨迹,词表见
+[Library · 浏览器交互词表](library.md#浏览器交互词表)。
+
+场景写法五条规则:
+
+- **步骤确定,不探测。** 每一步指名要操作的语义元素(role、可见文本、公开
+  locator 文本),交互路径写死;不写「逐层点开任何可展开行、直到目标出现」
+  的探测循环。探测循环把宿主缺页、层级未渲染、链接不可点折叠成同一种失败,
+  回归发生时测试红在离病因最远的那条断言上。
+- **前置条件先行断言。** 交互开始前先验收宿主报告的页面集合与目标详情页
+  存在;宿主报告文件被改坏时,失败落在前置断言,不落在交互深处。
+- **断言可见效果,不断言实现机制。** 行的显隐用可见性查询与几何框证明,
+  不读实现隐藏用的 class;class selector 只作寻址手段,寻址优先 role 与
+  可见文本。
+- **等待只等状态,不等毫秒。** 「为验证而等」用自动重试断言,「为下一步
+  动作而等」等具体状态;不写固定时长 sleep,不带重试的即时读数
+  (`count()`)不做断言对象。
+- **选择器方言收敛进库。** 场景文件不出现 CSS / class 选择器与 `:visible`
+  一类方言;可见性判定由领域词(如 `table.visibleRows()`)单点实现。
+
+逐场景的写法对照见 [browser-interaction](use-cases/browser-interaction.md)。
+
 ### 断言分级与既有边界的对应
 
 三层词表不改变[各域的断言边界](../../engineering/testing/e2e/README.md#43-cli-读回),只是给每层配上合适的工具;逐场景的写法对照见 [Use Cases](use-cases/README.md):
@@ -50,7 +78,7 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 | 适配器仓库读回 | 自有事实的子串级出现,不断言布局 | 第三层点查询 | [adapter-readback](use-cases/adapter-readback.md) |
 | report 仓库渲染结构 | 区块存在、相对顺序、计数、默认展开折叠 | 第一层语义树 Run | [render-structure](use-cases/render-structure.md) |
 | report 仓库读面行为 | history / stats / locator / 收窄 | 第一层 + 第三层 | [readback](use-cases/readback.md) |
-| report 仓库视觉与交互 | 行为与几何,不锁颜色值与 class 列表 | 现有 Playwright 写法保留 | [html-export](use-cases/html-export.md) |
+| report 仓库视觉与交互 | 行为与几何,不锁颜色值与 class 列表 | Playwright 原生词表 + 领域词(见[浏览器交互](#浏览器交互现成词表加领域词)) | [browser-interaction](use-cases/browser-interaction.md) |
 | 导出 HTML 语义结构 | 语义块存在、可访问结构 | 第一层 aria Run | [html-export](use-cases/html-export.md) |
 | 机器出口与错误文案 | 逐字段格式契约 | 第二层容差 golden | [machine-exports](use-cases/machine-exports.md) |
 | 发布包消费边界 | 三种 JSX 配置下装载渲染成功 | 第一层 + 证据生命周期 | [package-consumer](use-cases/package-consumer.md) |
@@ -62,6 +90,9 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 2. **ivya 的离浏览器可用性。** 对 happy-dom 装载的导出 HTML 直接跑 ivya 能否产出正确的 a11y 树需要 spike;不行则 a11y Run 走 vitest browser mode,与现有 Playwright 共存的进程模型要设计。
 3. **双面同源断言。** 同一份语义期望能否同时匹配 text 结构树与 web a11y 树(替代现有的两套手写提取器互比)?词表不同(终端 `section/table` vs aria `region/table`),需要节点类别映射;表达力收益明确,但可能过度设计——留待第一层落地后按实际重复度裁决。
 4. **包的源码落点。** 独立包定了,但源码放 niceeval 仓库内(发布流程要支持第二个包)还是独立仓库,随发版机制一起裁决。
+5. **Playwright `expect` 的 vitest 宿主行为。** `@playwright/test` 的 web-first
+   `expect` 脱离自家 runner 后的重试与超时配置需要 spike;不成立则交互等待
+   退回 `locator.waitFor()` + 领域词内轮询,词表形状不变。
 
 ## 评估过、不采纳的路线
 
@@ -69,7 +100,12 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 - **直接采用 cli-testing-library**:只有点查询、没有结构断言,解决不了排版级耦合;单维护者。每查询归一化选项的工效学并入第三层。
 - **依赖 @microsoft/tui-test 或自建 xterm.js 网格断言层**:项目已转向 shell-use;为三条 PTY smoke 断言引入终端模拟器不成比例。网格模型(断屏幕终态,不断字节流)作为认知参照记录在 References。
 - **全面 golden 文件**:锁化妆细节,每次渲染微调全矩阵变红,与变更预算规则正面冲突;golden 收窄到「每个字符都是契约」的表面。
-- **Gherkin / aruba 式自然语言步骤层**:间接性没有换来表达力,断言仍要落回底层词表。
+- **Gherkin / aruba 式自然语言步骤层**:间接性没有换来表达力,断言仍要落回底层词表。playwright-bdd 一族同此否决。
+- **CodeceptJS / Serenity-JS 整栈**:前者自带 runner 与 vitest 宿主互斥,
+  启发式寻址(找不到就按 label / name 猜)让失败不可诊断;
+  后者的 Actor / Ability 抽象对「单用户读报告」场景无增益。Screenplay
+  只取「领域词 + 活动轨迹」之形,见
+  [References · 浏览器交互 DSL 生态](../../references.md#浏览器交互-dsl-生态playwright-原生词表screenplaycodeceptjs)。
 
 ## 相关阅读
 

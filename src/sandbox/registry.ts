@@ -2,7 +2,7 @@
 //
 // 中断(Ctrl+C)时,正常路径靠 Effect 的 Sample finalizer 跑 sb.stop() 停容器。但 finalizer
 // 这条路不是 100% 可靠:vsb.stop() 这类远端调用可能慢/挂,用户等不及再按一次 Ctrl+C,进程
-// 就被硬退了 —— 沙箱成了孤儿(只能等 provider session/TTL 过期)。
+// 就被硬退了 —— 沙箱成了孤儿(只有本身带超时的 provider 才会自己回收它;local 这类不会)。
 //
 // 这里维护一份独立于 Effect 的登记表,让 cli 在「二次中断 / graceful 清理超时 / 正常返回后」
 // 都能直接、带超时地强停所有还活着的沙箱。stop 不再静默吞异常(原 `.catch(() => {})`),失败打到
@@ -15,7 +15,7 @@ import { reportDiagnostic } from "../runner/feedback/sink.ts";
 const live = new Set<Sandbox>();
 
 // 单个 stop 的默认超时:vsb.stop() 偶发慢/挂,清理不能无限等。到点就放弃、记一笔,
-// 让流程继续走到退出 —— 没停掉的沙箱靠 provider session/TTL 兜底过期。
+// 让流程继续走到退出 —— 没停掉的沙箱会继续运行并计费,直到 provider 自己的超时(如果有)回收它。
 const DEFAULT_STOP_TIMEOUT_MS = 8_000;
 
 export function registerSandbox(sb: Sandbox): void {

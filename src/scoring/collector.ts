@@ -49,6 +49,11 @@ export interface Spec {
   /** 作者用 .optional() 显式允许该断言证据缺席;unavailable 只保留在记录里,不影响判定。 */
   optional?: true;
   detail?: string;
+  /**
+   * 判分断言(t.judge.autoevals.*)。只有它带的求值要发一次裁判模型请求,是 finalize 期间
+   * 唯一可能长时间等待的一类;live 面板的判分推进按它逐条上报(见 finalize 的 onJudgeProgress)。
+   */
+  judge?: true;
   /** 所属分组路径(外层在前的 t.group 标题数组)。纯组织用,不影响打分。 */
   groupPath?: string[];
   /** 断言在 eval 源码里的调用点(record 时栈回溯抠出)。 */
@@ -88,6 +93,25 @@ export interface CollectorOptions {
    * 普通 gate(finalize 时才求值、不中止),仅用于直接构造 collector 的单测。
    */
   liveContext?: () => Promise<ScoringContext>;
+}
+
+/** 一条判分断言开始求值时的推进快照(见 FinalizeOptions.onJudgeProgress)。 */
+export interface JudgeProgress {
+  /** 正在评第几条(从 1 起)。 */
+  index: number;
+  /** 这次 finalize 要评的判分断言总数。 */
+  total: number;
+  /** 检查方式摘要,如 `closedQA("…")`;与落盘的 detail 同一份文本。 */
+  check: string;
+}
+
+export interface FinalizeOptions {
+  includePoints?: boolean;
+  /**
+   * 每条判分断言**求值开始前**回调一次;非判分断言不回调,没有判分断言时一次都不回调。
+   * 纯反馈通道(runner 把它接到 active 行 detail),不进 AssertionResult、不落盘。
+   */
+  onJudgeProgress?: (progress: JudgeProgress) => void;
 }
 
 /** 前置未过时截断到哪里:该前置本身保留,它之后记录的断言与给分记录一律丢弃。 */
@@ -244,9 +268,16 @@ export class AssertionCollector {
     return this.aborted.name;
   }
 
-  async finalize(ctx: ScoringContext, options: { includePoints?: boolean } = {}): Promise<AssertionResult[]> {
+  async finalize(ctx: ScoringContext, options: FinalizeOptions = {}): Promise<AssertionResult[]> {
     const out: AssertionResult[] = [];
+    const judgeTotal = this.specs.filter((s) => s.judge === true).length;
+    let judgeIndex = 0;
     for (const spec of this.specs) {
+      // 判分推进只是给运行反馈看的短命信号:求值开始前报一次,不进 AssertionResult、不落盘。
+      if (spec.judge === true) {
+        judgeIndex++;
+        options.onJudgeProgress?.({ index: judgeIndex, total: judgeTotal, check: spec.detail ?? spec.name });
+      }
       const base = {
         name: spec.name,
         severity: spec.severity,

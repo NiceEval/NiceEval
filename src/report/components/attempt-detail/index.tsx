@@ -178,14 +178,15 @@ export const AttemptAssessment = defineComponent<AttemptDetailsProps>(async (pro
   const hasSource = isAttemptPage(page)
     ? page.evidence.capabilities.source
     : evidence.capabilities.source;
+  const assertions = hasSource ? null : await toAttemptAssertions(evidence);
   return (
     <Col>
       <Callouts items={notices} />
       {hasSource ? (
         <SourceView data={await toAttemptSource(evidence)} />
-      ) : (
-        <TableContentView data={await toAttemptAssertions(evidence)} />
-      )}
+      ) : assertions !== null && assertions.rows.length > 0 ? (
+        <TableContentView data={assertions} />
+      ) : null}
     </Col>
   );
 });

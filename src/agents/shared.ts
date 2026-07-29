@@ -11,10 +11,10 @@ import {
   parseBubTranscript,
 } from "../o11y/parsers/index.ts";
 import type { AgentSetupManifest, AgentSetupSkill, Sandbox, SkillSpec, StreamEvent } from "../types.ts";
+import type { SandboxAgentSetupContext } from "./types.ts";
 import { t } from "../i18n/index.ts";
 import { firstLine } from "../util.ts";
 import { shellQuote } from "../sandbox/shell.ts";
-import { writeAgentSetupManifest } from "./manifest.ts";
 import {
   appendProjectInstruction,
   excludeFromDiff,
@@ -211,11 +211,12 @@ export const shared = {
   /** 把 setup 自己写进 workspace 的路径排除出 agent diff(git 基线早于 agent.setup)。 */
   excludeFromDiff,
   /**
-   * setup 收尾写安装 manifest:落沙箱 `__niceeval__/agent-setup.json`,运行器抬成 attempt
-   * artifact `agent-setup.json`。什么都没装就别写(空 artifact 不落文件)。secret 不进 manifest。
+   * setup 收尾交回安装 manifest:宿主侧内存对象直接给运行器,存成 attempt artifact
+   * `agent-setup.json`;沙箱磁盘上不落它,也不落任何其它框架文件。什么都没装就别调
+   * (空 artifact 不落文件)。secret 不进 manifest。
    */
-  writeAgentSetup(sandbox: Sandbox, manifest: AgentSetupManifest): Promise<void> {
-    return writeAgentSetupManifest(sandbox, manifest);
+  writeAgentSetup(ctx: SandboxAgentSetupContext, manifest: AgentSetupManifest): void {
+    ctx.reportSetup(manifest);
   },
   /** 原始 codex JSONL → 标准事件流 + 用量 + 压缩计数。 */
   parseCodex(raw: string | undefined): ParsedTranscript {

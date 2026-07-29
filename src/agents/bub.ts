@@ -8,7 +8,6 @@ import {
   installedSkillNames,
   skillDiscoveryInstruction,
 } from "./skills.ts";
-import { writeAgentSetupManifest } from "./manifest.ts";
 import { createCheckpoint, restoreCheckpoint } from "../sandbox/checkpoint.ts";
 import { mapBubSpans } from "../o11y/otlp/mappers/bub.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
@@ -313,7 +312,7 @@ export function bubAgent(config?: BubConfig): Agent {
       }
       if (packages.length) manifest.pythonPlugins = packages.map((pkg) => ({ package: pkg }));
       if (manifest.skills.length || manifest.pythonPlugins?.length) {
-        await writeAgentSetupManifest(sb, manifest);
+        ctx.reportSetup(manifest);
       }
 
       // 安装后钩子(postSetup):排在 manifest 之后——manifest 审计 Adapter 自身的安装事实,

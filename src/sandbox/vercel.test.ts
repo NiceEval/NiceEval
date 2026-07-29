@@ -74,3 +74,52 @@ describe("VercelSandbox.downloadDirectory", () => {
     expect(capturedCwd).toBe(sandbox.workdir);
   });
 });
+
+// cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
+// 寿命只从当前 session 的远端元数据读(createdAt + timeout),续期走 SDK 的 extendTimeout;
+// plan 上限拒绝续期时如实报 ready:false,不把请求值当成已生效(见 vercel.ts 的注释)。
+describe("VercelSandbox.ensureLifetime", () => {
+  function sessionFake(opts: { timeout: number; createdAtOffsetMs?: number; extend?: (ms: number) => void }) {
+    const session = { createdAt: new Date(Date.now() - (opts.createdAtOffsetMs ?? 0)), timeout: opts.timeout };
+    return {
+      currentSession: () => session,
+      extendTimeout: async (ms: number) => {
+        if (!opts.extend) throw new Error("Bad Request: sandbox timeout exceeds the maximum for this plan");
+        opts.extend(ms);
+        session.timeout += ms;
+      },
+    };
+  }
+
+  it("当前 session 的远端剩余时间够时直接确认,不调 extendTimeout", async () => {
+    let extended = 0;
+    const sandbox = makeSandbox(sessionFake({ timeout: 1_200_000, extend: () => (extended += 1) }));
+
+    const result = await sandbox.ensureLifetime(600_000);
+
+    expect(result.ready).toBe(true);
+    expect(extended).toBe(0);
+  });
+
+  it("剩余不够时按缺口续期,续到够就确认", async () => {
+    const asked: number[] = [];
+    const sandbox = makeSandbox(
+      sessionFake({ timeout: 600_000, createdAtOffsetMs: 540_000, extend: (ms) => asked.push(ms) }),
+    );
+
+    const result = await sandbox.ensureLifetime(120_000);
+
+    expect(result.ready).toBe(true);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toBeGreaterThan(0);
+  });
+
+  it("plan 拒绝续期(HTTP 400)时报 ready:false 并带上 provider 理由", async () => {
+    const sandbox = makeSandbox(sessionFake({ timeout: 600_000, createdAtOffsetMs: 590_000 }));
+
+    const result = await sandbox.ensureLifetime(1_800_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("maximum");
+  });
+});

@@ -411,6 +411,11 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
     await writeFile(path, reportSource("FIRST_RENDER"), "utf-8");
     const first = await loadViewScan(root, { report: { path, cwd: root } });
     expect(await first.reportPages.render(first.reportPages.ids[0]!, "en")).toContain("FIRST_RENDER");
+    // 自定义报告没有声明 attempt-input page，也不能让 locator 下钻退化成纯文本；
+    // view 补官方详情页，但不把它列进自定义报告的导航 pages。
+    expect(first.reportPages.ids).toEqual(["report"]);
+    expect(first.attemptPages?.page.id).toBe("attempt");
+    expect(first.attemptPages?.locators.size).toBe(1);
 
     await writeFile(path, reportSource("SECOND_RENDER"), "utf-8");
     const second = await loadViewScan(root, { report: { path, cwd: root } });
