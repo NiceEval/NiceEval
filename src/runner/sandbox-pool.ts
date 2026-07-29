@@ -1,6 +1,6 @@
-import { createSandboxInstance, resolveSandbox } from "../sandbox/resolve.ts";
+import { createSandboxInstance, resolveSandbox, sandboxReuseCapability } from "../sandbox/resolve.ts";
 import { stopSandbox } from "../sandbox/registry.ts";
-import type { Sandbox, SandboxHookContext, SandboxOption, ScopedFeedback } from "../types.ts";
+import type { Sandbox, SandboxHookContext, SandboxOption, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
 import { createChangeLedger, type ChangeLedger } from "./ledger.ts";
 
 const CLEANUP_RESERVE_MS = 30_000;
@@ -13,7 +13,9 @@ export interface ReusableSandboxLease {
 }
 
 interface Entry {
-  sandbox: Sandbox & { ensureLifetime?: (minRemainingMs: number) => Promise<{ ready: boolean; reason?: string }> };
+  sandbox: Sandbox;
+  /** provider 自己实现的寿命确认;没有这条能力的实例根本进不来(见 create)。 */
+  lifetime: SandboxReuseCapability;
   ledger: ChangeLedger;
   reuseSandbox: number;
   ordinal: number;
@@ -27,6 +29,8 @@ export class ReusableSandboxPool {
   private readonly waiters: Array<() => void> = [];
   private creating = 0;
   private stopped = false;
+  /** 本次 Run 内的 Sandbox 编号计数器;淘汰的实例不让号,编号在结果里永远指向同一个实例。 */
+  private created = 0;
 
   constructor(
     private readonly spec: SandboxOption,
@@ -40,15 +44,17 @@ export class ReusableSandboxPool {
       if (this.stopped) throw new Error("sandbox reuse pool has been stopped");
       const ready = this.entries.find((entry) => !entry.busy && !entry.dead);
       if (ready) {
-        const lifetime = await ready.sandbox.ensureLifetime?.(timeoutMs + CLEANUP_RESERVE_MS);
-        if (lifetime?.ready) return this.lease(ready);
+        // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
+        // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
+        const lifetime = await ready.lifetime.ensureLifetime(timeoutMs + CLEANUP_RESERVE_MS);
+        if (lifetime.ready) return this.lease(ready);
         await this.retire(ready);
         continue;
       }
       if (this.entries.length + this.creating < this.capacity) {
         this.creating += 1;
         try {
-          const entry = await this.create();
+          const entry = await this.create(timeoutMs + CLEANUP_RESERVE_MS);
           this.entries.push(entry);
           return this.lease(entry);
         } finally {
@@ -63,34 +69,45 @@ export class ReusableSandboxPool {
   async stop(): Promise<void> {
     this.stopped = true;
     this.wake();
-    await Promise.allSettled(this.entries.map((entry) => this.retire(entry)));
+    await Promise.allSettled([...this.entries].map((entry) => this.retire(entry)));
   }
 
-  private async create(): Promise<Entry> {
+  private async create(minRemainingMs: number): Promise<Entry> {
     const resolved = resolveSandbox(this.spec);
-    if (resolved.provider === "local" || resolved.create !== undefined) {
+    const sandbox = await createSandboxInstance({ sandbox: this.spec, feedback: this.feedback });
+    // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
+    // docs/feature/sandbox/reuse.md「派发前确认」)。
+    const lifetime = sandboxReuseCapability(sandbox);
+    if (!lifetime) {
+      await stopSandbox(sandbox);
       throw new Error(
-        `sandboxReuse is not supported with ${resolved.provider === "local" ? "localSandbox()" : `defineSandbox custom provider "${resolved.provider}"`}; use an built-in reusable provider.`,
+        `sandboxReuse needs the "${resolved.provider}" provider to confirm sandbox lifetime, but it does not implement ` +
+          "ensureLifetime(minRemainingMs). Only a provider can prove the lifetime is set on its own backend; the runner " +
+          "will not keep local books for it. Use a provider that implements it (docker / e2b / vercel), or drop sandboxReuse.",
       );
     }
-    const sandbox = await createSandboxInstance({ sandbox: this.spec, feedback: this.feedback });
-    const capability = sandbox.ensureLifetime;
-    if (!capability) {
+    const confirmed = await lifetime.ensureLifetime(minRemainingMs);
+    if (!confirmed.ready) {
       await stopSandbox(sandbox);
-      throw new Error(`sandboxReuse requires ${resolved.provider} to implement ensureLifetime(minRemainingMs)`);
-    }
-    const lifetime = await capability(CLEANUP_RESERVE_MS);
-    if (!lifetime.ready) {
-      await stopSandbox(sandbox);
-      throw new Error(`sandboxReuse cannot prepare ${resolved.provider}: ${lifetime.reason ?? "insufficient lifetime"}`);
+      throw new Error(`sandboxReuse cannot prepare the "${resolved.provider}" sandbox: ${confirmed.reason}`);
     }
     try {
       for (const hook of this.spec.setupHooks ?? []) await hook(sandbox, this.setupContext);
       const ledger = await createChangeLedger(sandbox);
+      // SandboxSpec setup 自己会烧掉寿命:备好之后再确认一次。这次不够就报错收场——
+      // 反复创建同样的替代实例只会反复烧同样的时间(见 reuse.md「派发前确认」)。
+      const afterSetup = await lifetime.ensureLifetime(minRemainingMs);
+      if (!afterSetup.ready) {
+        throw new Error(
+          `sandboxReuse cannot use the "${resolved.provider}" sandbox after its SandboxSpec setup: ${afterSetup.reason}`,
+        );
+      }
+      this.created += 1;
       return {
         sandbox,
+        lifetime,
         ledger,
-        reuseSandbox: this.entries.length + 1,
+        reuseSandbox: this.created,
         ordinal: 0,
         busy: false,
         dead: false,
@@ -124,9 +141,13 @@ export class ReusableSandboxPool {
     };
   }
 
+  /** 淘汰一台实例:跑 SandboxSpec teardown、停实例,并移出池——留在池里会占满容量,
+   *  让后续 acquire 既等不到空闲实例、也创建不出替代实例(等待者永远醒不来)。 */
   private async retire(entry: Entry): Promise<void> {
     if (entry.dead) return;
     entry.dead = true;
+    const at = this.entries.indexOf(entry);
+    if (at >= 0) this.entries.splice(at, 1);
     try {
       for (const hook of [...(this.spec.teardownHooks ?? [])].reverse()) {
         await Promise.resolve(hook(entry.sandbox, this.setupContext)).catch(() => {});

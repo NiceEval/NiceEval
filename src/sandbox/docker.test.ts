@@ -69,3 +69,94 @@ describe("DockerSandbox.downloadDirectory", () => {
     await expect(sandbox.downloadDirectory(await makeLocalDir(), "out")).rejects.toThrow();
   });
 });
+
+/** `expiresAtMs` 是 initialize() 把 TTL 烧进 PID1 那一刻定死的私有字段;测试直接注入,
+ *  不必起真实容器。 */
+function withExpiry(sandbox: DockerSandbox, expiresAtMs: number): DockerSandbox {
+  (sandbox as unknown as { expiresAtMs?: number }).expiresAtMs = expiresAtMs;
+  return sandbox;
+}
+
+describe("DockerSandbox.ensureLifetime", () => {
+  it("refuses to confirm a lifetime nobody declared", async () => {
+    const sandbox = withExpiry(new DockerSandbox(), Date.now() + 4 * 60 * 60_000);
+
+    const result = await sandbox.ensureLifetime(60_000);
+
+    // 容器 TTL 有兜底值(timeout×2 或 20 分钟地板),但那是给用完即弃的实例保命用的,
+    // 不是作者声明的复用寿命——不能拿它冒充一次声明。
+    expect(result.ready).toBe(false);
+    if (!result.ready) expect(result.reason).toContain("lifetimeMs");
+  });
+
+  it("refuses before the container has started, when no TTL has been burned in yet", async () => {
+    const sandbox = new DockerSandbox({ lifetimeMs: 4 * 60 * 60_000 });
+
+    const result = await sandbox.ensureLifetime(60_000);
+
+    expect(result.ready).toBe(false);
+    if (!result.ready) expect(result.reason).toContain("not started");
+  });
+
+  it("confirms while the burned-in TTL still covers the next attempt", async () => {
+    const sandbox = withExpiry(new DockerSandbox({ lifetimeMs: 4 * 60 * 60_000 }), Date.now() + 60 * 60_000);
+
+    const result = await sandbox.ensureLifetime(20 * 60_000);
+
+    expect(result.ready).toBe(true);
+  });
+
+  it("says the TTL cannot be extended instead of pretending it can", async () => {
+    // TTL 写死在 PID1 的 `timeout` 里,没有续期通道:剩 5 分钟就是只剩 5 分钟,
+    // 由 runner 轮换实例,而不是让容器在 attempt 中途消失。
+    const sandbox = withExpiry(new DockerSandbox({ lifetimeMs: 4 * 60 * 60_000 }), Date.now() + 5 * 60_000);
+
+    const result = await sandbox.ensureLifetime(20 * 60_000);
+
+    expect(result.ready).toBe(false);
+    if (!result.ready) {
+      expect(result.reason).toContain("cannot be extended");
+      expect(result.reason).toContain("1200s");
+    }
+  });
+});
+
+// cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
+// 容器的 dead-man TTL 烧在 PID1 的 `timeout` 里:到期真的会被杀,但没有续期通道。
+// 所以这条能力只确认、不续期,剩余不够就如实说不够,由 runner 轮换实例。
+describe("DockerSandbox.ensureLifetime", () => {
+  /** initialize() 才会算 expiresAtMs(要起真实容器);这里直接注入那一刻的结果。 */
+  function makeStarted(lifetimeMs: number | undefined, remainingMs: number): DockerSandbox {
+    const sandbox = new DockerSandbox(lifetimeMs === undefined ? {} : { lifetimeMs });
+    (sandbox as unknown as { expiresAtMs?: number }).expiresAtMs = Date.now() + remainingMs;
+    return sandbox;
+  }
+
+  it("容器 TTL 剩得够时确认,并给出真实到期时刻", async () => {
+    const result = await makeStarted(4 * 3_600_000, 3_600_000).ensureLifetime(600_000);
+
+    expect(result.ready).toBe(true);
+    expect(result.ready === true ? result.expiresAt : undefined).toBeDefined();
+  });
+
+  it("容器 TTL 剩得不够时如实报 ready:false(TTL 没有续期通道)", async () => {
+    const result = await makeStarted(4 * 3_600_000, 60_000).ensureLifetime(600_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("cannot be extended");
+  });
+
+  it("没有声明 lifetimeMs 时不假装能复用", async () => {
+    const result = await makeStarted(undefined, 3_600_000).ensureLifetime(1_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("lifetimeMs");
+  });
+
+  it("容器还没起来时不猜寿命", async () => {
+    const result = await new DockerSandbox({ lifetimeMs: 3_600_000 }).ensureLifetime(1_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("not started");
+  });
+});

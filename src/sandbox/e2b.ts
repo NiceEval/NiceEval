@@ -6,7 +6,7 @@
 //       codex/claude-code/bub 的 "niceeval-agents")见 sandbox/e2b/。
 
 import { Sandbox as E2BSdkSandbox, CommandExitError, NotFoundError, RateLimitError } from "e2b";
-import type { Sandbox, CommandResult, CommandOptions, SandboxFile } from "../types.ts";
+import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseCapability } from "../types.ts";
 import {
   classifyProvisionErrorFallback,
   isRetryableProvisionError,
@@ -91,17 +91,52 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
   return classifyProvisionErrorFallback(e);
 }
 
-export class E2BSandbox implements Sandbox {
+export class E2BSandbox implements Sandbox, SandboxReuseCapability {
   readonly workdir = E2B_WORKDIR;
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
   private commandTimeoutMs: number;
+  /** 作者声明的实例寿命;复用下续期一律续到这个值(滑动窗口)。省略 = 没声明,不支持复用。 */
+  private lifetimeMs?: number;
   readonly sandboxId: string;
 
-  private constructor(sbx: E2BSdkSandbox, id: string, commandTimeoutMs: number) {
+  private constructor(sbx: E2BSdkSandbox, id: string, commandTimeoutMs: number, lifetimeMs?: number) {
     this.sbx = sbx;
     this.sandboxId = id;
     this.commandTimeoutMs = commandTimeoutMs;
+    this.lifetimeMs = lifetimeMs;
+  }
+
+  /**
+   * 寿命确认:先问远端真实到期时刻,不够再续,续完**重新问一次**。
+   *
+   * 两处都读 `getInfo().endAt` 而不是复读我们请求的值,是这条能力的全部要害——e2b 的账号档位
+   * 会把 `setTimeout` 的请求值压到平台上限(免费档尤其明显)。拿请求值记账等于把「平台压短了」
+   * 伪装成「作者声明生效了」,而症状要到 attempt 跑到一半、实例被回收时才出现,那时只剩一句
+   * 无归属的 sandbox 消失。宁可在这里如实报 `ready: false` 让 runner 轮换实例。
+   */
+  async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
+    if (this.lifetimeMs === undefined) {
+      return { ready: false, reason: "the e2b sandbox needs lifetimeMs when sandboxReuse is enabled" };
+    }
+    try {
+      const remainingMs = async () => (await this.sbx.getInfo()).endAt.getTime() - Date.now();
+      const before = await remainingMs();
+      if (before >= minRemainingMs) return { ready: true, expiresAt: new Date(Date.now() + before).toISOString() };
+      // setTimeout 是「从此刻起再活这么久」,不是增量;续到作者声明的完整寿命。
+      await this.sbx.setTimeout(this.lifetimeMs);
+      const after = await remainingMs();
+      return after >= minRemainingMs
+        ? { ready: true, expiresAt: new Date(Date.now() + after).toISOString() }
+        : {
+            ready: false,
+            reason:
+              `e2b capped this sandbox's lifetime at ${Math.round(after / 1000)}s after renewing to the declared ` +
+              `lifetimeMs=${this.lifetimeMs}ms; the next attempt needs ${Math.round(minRemainingMs / 1000)}s`,
+          };
+    } catch (e) {
+      return { ready: false, reason: `e2b could not confirm this sandbox's lifetime: ${String(e)}` };
+    }
   }
 
   static async create(
@@ -110,6 +145,8 @@ export class E2BSandbox implements Sandbox {
       runtime?: "node20" | "node24";
       template?: string;
       provisionToken?: string;
+      /** 实例寿命(复用必需)。省略时退回 SESSION_TIMEOUT_MS,只够单条 attempt 用完即弃。 */
+      lifetimeMs?: number;
       /** 创建期写入的运行标识(host/pid/startedAt),供强杀之后的孤儿核对按 metadata 事后收回
        *  (见 docs/feature/sandbox/architecture.md「孤儿核对」)。 */
       runIdentity?: RunIdentity;
@@ -125,22 +162,42 @@ export class E2BSandbox implements Sandbox {
       ...(opts.provisionToken ? { "niceeval-provision-token": opts.provisionToken } : {}),
       ...(opts.runIdentity ? e2bRunIdentityMetadata(opts.runIdentity) : {}),
     };
+    // 作者声明了 lifetimeMs 就按它建实例;没声明才退回 SESSION_TIMEOUT_MS 这个单 attempt 的兜底。
+    // 之前这里恒用 SESSION_TIMEOUT_MS,是「静默压短」的源头:复用池按声明的寿命记账,实例却按
+    // 30 分钟被回收(见 docs/feature/sandbox/reuse.md「两种时间不能混用」)。
     const sdkOpts = {
       apiKey,
-      timeoutMs: SESSION_TIMEOUT_MS,
+      timeoutMs: opts.lifetimeMs ?? SESSION_TIMEOUT_MS,
       ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     } as const;
     // 有 template 就从模板起,否则用 e2b 默认 "base"。
-    const sbx = opts.template
-      ? await E2BSdkSandbox.create(opts.template, sdkOpts)
-      : await E2BSdkSandbox.create(sdkOpts);
+    const sbx = await (async () => {
+      try {
+        return opts.template ? await E2BSdkSandbox.create(opts.template, sdkOpts) : await E2BSdkSandbox.create(sdkOpts);
+      } catch (e) {
+        // 声明的寿命超出账号档位上限时,e2b 返回 400「Timeout cannot be greater than N hours」。
+        // 这是确定性配置死因(同一个值重试多少次都是同一个 400),而裸 SDK 栈既不说是哪个字段
+        // 惹的祸、也不说上限是多少。把 provider 的理由原样带出来并指到 lifetimeMs 上——
+        // 「不能静默压短」的另一半是「压不下就把原因说清楚」
+        // (见 docs/feature/sandbox/reuse.md「派发前确认」)。
+        if (opts.lifetimeMs !== undefined && /timeout cannot be greater than/i.test(e instanceof Error ? e.message : String(e))) {
+          throw new Error(
+            `e2b rejected the declared lifetimeMs=${opts.lifetimeMs}ms for this account: ` +
+              `${e instanceof Error ? e.message : String(e)}. Lower lifetimeMs to fit the plan's maximum sandbox ` +
+              "lifetime, or raise that maximum on the e2b side; niceeval will not silently shorten it.",
+            { cause: e },
+          );
+        }
+        throw e;
+      }
+    })();
     // kill-on-failure:实例句柄已到手,创建之后的初始化请求(如下面的 mkdir 撞 429)一旦失败,
     // 先尽力销毁实例再抛出原始错误——否则重试层按「拒绝类=远端没有实例」盲重试,就会复制一台
     // 计费实例(见 docs/feature/sandbox/architecture.md「Provisioning 失败与重试」)。
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs);
+      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetimeMs);
     } catch (e) {
       await sbx.kill().catch(() => {});
       throw e;

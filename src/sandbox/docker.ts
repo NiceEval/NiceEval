@@ -5,7 +5,7 @@
 import { basename, dirname, join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import Docker from "dockerode";
-import type { Sandbox, CommandResult, CommandOptions, SandboxFile } from "../types.ts";
+import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseCapability } from "../types.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { shellQuote } from "./shell.ts";
 import {
@@ -117,7 +117,7 @@ export interface DockerSandboxOptions {
  * Docker 沙箱:为每次运行起一个隔离容器。
  * 实现 ../types.ts 的 Sandbox 接口。
  */
-export class DockerSandbox implements Sandbox {
+export class DockerSandbox implements Sandbox, SandboxReuseCapability {
   readonly workdir = CONTAINER_WORKDIR;
   readonly otlpHost = "host.docker.internal";
   private docker: Docker;
@@ -125,6 +125,8 @@ export class DockerSandbox implements Sandbox {
   private _containerId = "";
   private timeout: number;
   private lifetimeMs?: number;
+  /** 容器 PID1 的 dead-man TTL 到期时刻(initialize 里烧进 `timeout` 那一刻定死)。 */
+  private expiresAtMs?: number;
   private runtime: string;
   private image?: string;
   private feedback?: import("../types.ts").ScopedFeedback;
@@ -140,6 +142,28 @@ export class DockerSandbox implements Sandbox {
     this.feedback = options.feedback;
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
+  }
+
+  /**
+   * 寿命确认:容器 TTL 烧在 PID1 的 `timeout` 里,没有续期通道,所以这里只确认、不续期
+   * (`SandboxReuseCapability` 允许二选一)。剩余不够就如实说不够,由 runner 轮换实例。
+   */
+  async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
+    if (this.lifetimeMs === undefined) {
+      return { ready: false, reason: "the docker sandbox needs lifetimeMs when sandboxReuse is enabled" };
+    }
+    if (this.expiresAtMs === undefined) {
+      return { ready: false, reason: "the docker sandbox has not started yet; its lifetime is unknown" };
+    }
+    const remaining = this.expiresAtMs - Date.now();
+    return remaining >= minRemainingMs
+      ? { ready: true, expiresAt: new Date(this.expiresAtMs).toISOString() }
+      : {
+          ready: false,
+          reason:
+            `this docker container's dead-man TTL leaves ${Math.round(remaining / 1000)}s, ` +
+            `but the next attempt needs ${Math.round(minRemainingMs / 1000)}s (a container TTL cannot be extended)`,
+        };
   }
 
   /** 创建并启动一个 Docker 沙箱。 */
@@ -175,6 +199,9 @@ export class DockerSandbox implements Sandbox {
     // 外层 `timeout <TTL>` 是 dead-man switch:宿主异常退出(kill -9 / 崩溃)留下的孤儿容器,
     // 到 TTL 后 PID1 自动退出 → 容器停止 → AutoRemove 清理(见 TTL_* 常量)。
     const ttlSec = Math.ceil(Math.max(this.lifetimeMs ?? this.timeout * TTL_MULTIPLIER, TTL_FLOOR_MS) / 1000);
+    // TTL 一旦烧进 PID1 的 `timeout` 就改不了(容器没有续期通道),所以这里把真实到期时刻记下来,
+    // 供 ensureLifetime 如实回答;不够用时由 runner 轮换实例,而不是让容器在 attempt 中途消失。
+    this.expiresAtMs = Date.now() + ttlSec * 1000;
     this.container = await this.docker.createContainer({
       Image: imageName,
       Cmd: [

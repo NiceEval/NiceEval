@@ -166,41 +166,36 @@ export function createSandbox(opts: {
   );
 }
 
-/** 创建并登记一个可由复用池显式接管的实例；调用方必须用 stopSandbox 收尾。 */
+/**
+ * 创建并登记一个可由复用池显式接管的实例；调用方必须用 stopSandbox 收尾。
+ *
+ * 返回的是裸 `Sandbox`：复用寿命能力只能由 provider 自己实现（见
+ * docs/feature/sandbox/reuse.md「派发前确认」），这里不套任何通用记账层——本地时钟记账没有
+ * 把寿命写进 provider 后端，`ready: true` 就是在把「没实现」伪装成「实现了」，实例照样在远处
+ * 被按默认寿命回收。调用方用 `sandboxReuseCapability()` 探测,探不到就硬失败。
+ */
 export async function createSandboxInstance(opts: {
   sandbox?: SandboxOption;
   timeout?: number;
   runtime?: SandboxRuntime;
   provisionSlot?: ProvisionSlot;
   feedback?: ScopedFeedback;
-}): Promise<Sandbox & Partial<SandboxReuseCapability>> {
+}): Promise<Sandbox> {
   const r = resolveSandbox(opts.sandbox, opts.runtime);
   const feedback = opts.feedback ?? fallbackFeedback();
   const sandbox = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot));
   registerSandbox(sandbox);
-  if (r.create !== undefined) return sandbox;
+  return sandbox;
+}
 
-  // 内置 provider 统一接受 lifetimeMs。当前 provider 无法续期时，如实报告剩余寿命不足，
-  // 由 runner 轮换实例；绝不静默压短作者声明的时间。
-  const lifetimeMs = r.lifetimeMs;
-  if (lifetimeMs === undefined) {
-    return Object.assign(sandbox, {
-      ensureLifetime: async () => ({
-        ready: false as const,
-        reason: `the ${r.provider} sandbox needs lifetimeMs when sandboxReuse is enabled`,
-      }),
-    });
-  }
-  const expiresAt = Date.now() + lifetimeMs;
-  return Object.assign(sandbox, {
-    ensureLifetime: async (minRemainingMs: number) =>
-      Date.now() + minRemainingMs <= expiresAt
-        ? { ready: true as const, expiresAt: new Date(expiresAt).toISOString() }
-        : {
-            ready: false as const,
-            reason: `${r.provider} sandbox expires before the next attempt can finish`,
-          },
-  });
+/**
+ * 探测实例自带的复用寿命能力(`Sandbox` 接口不因复用扩大,与 `suspend()` 同一种「接口之外的
+ * 可选能力」)。provider 没实现就是 undefined —— 调用方据此在第一条 Attempt 派发前硬失败,
+ * 不存在「探不到就兜一个」的分支。
+ */
+export function sandboxReuseCapability(sandbox: Sandbox): SandboxReuseCapability | undefined {
+  const ensureLifetime = (sandbox as Partial<SandboxReuseCapability>).ensureLifetime;
+  return typeof ensureLifetime === "function" ? { ensureLifetime: (ms) => ensureLifetime.call(sandbox, ms) } : undefined;
 }
 
 /**
@@ -309,6 +304,7 @@ async function createProvider(
                 timeout,
                 runtime: r.runtime,
                 template: r.template,
+                lifetimeMs: r.lifetimeMs,
                 provisionToken: token,
                 runIdentity,
               }),

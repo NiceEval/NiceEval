@@ -2,7 +2,7 @@
 // 契约对齐 ../types.ts 的 Sandbox 接口,与 DockerSandbox 可互换。
 
 import { Sandbox as VSandbox, APIError } from "@vercel/sandbox";
-import type { Sandbox, CommandResult, CommandOptions, SandboxFile } from "../types.ts";
+import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseCapability } from "../types.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { resolveSandboxPath } from "./paths.ts";
@@ -47,7 +47,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-export class VercelSandbox implements Sandbox {
+export class VercelSandbox implements Sandbox, SandboxReuseCapability {
   readonly workdir = VERCEL_WORKDIR;
   readonly otlpHost = null;
   private vsb: InstanceType<typeof VSandbox>;
@@ -143,6 +143,40 @@ export class VercelSandbox implements Sandbox {
         }).trimEnd(),
         data: { sandboxId: this.sandboxId, error: String(err) },
       });
+    }
+  }
+
+  /**
+   * 寿命确认:两次都读**当前 session 的远端元数据**(`createdAt + timeout`),不拿本地时钟记账,
+   * 也不复读我们请求的续期值——vercel 的 plan 上限决定实际给多少,`extendTimeout` 在超出计划
+   * 上限时直接抛 HTTP 400(本仓库真实跑分里恒抛,rotateIfNeeded 那条快照轮换路径就是为它写的)。
+   * 请求值当答案会把「平台不给续」伪装成「续上了」,而症状要到实例中途消失才出现。
+   */
+  async ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }> {
+    const remainingMs = (): number => {
+      const session = this.vsb.currentSession();
+      return session.createdAt.getTime() + session.timeout - Date.now();
+    };
+    try {
+      const before = remainingMs();
+      if (before >= minRemainingMs) return { ready: true, expiresAt: new Date(Date.now() + before).toISOString() };
+      await this.vsb.extendTimeout(minRemainingMs - before);
+      const after = remainingMs();
+      return after >= minRemainingMs
+        ? { ready: true, expiresAt: new Date(Date.now() + after).toISOString() }
+        : {
+            ready: false,
+            reason:
+              `vercel granted only ${Math.round(after / 1000)}s after extendTimeout; the next attempt needs ` +
+              `${Math.round(minRemainingMs / 1000)}s (the plan's maximum execution timeout caps it)`,
+          };
+    } catch (e) {
+      return {
+        ready: false,
+        reason:
+          "vercel refused to extend this sandbox's session (extendTimeout is rejected above the plan's maximum " +
+          `execution timeout): ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
   }
 

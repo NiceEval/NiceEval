@@ -123,6 +123,14 @@ suite。
   - 重置：题间 reset 尊重排除清单，重置点仍是归因锚点。
   - 调度：覆盖 `maxConcurrency: 1`、并行复用、按需创建和派发前续期。
   - 寿命：覆盖 `lifetimeMs` 不足时更换、reset 失败淘汰和中途消失不静默重跑。
+  - 能力归属：`SandboxReuseCapability` 只能来自 Provider 实现。要有「provider 没有该能力 +
+    `sandboxReuse: true` → 第一条 Attempt 派发前硬失败」的区分力场景。
+    不允许任何通用记账层让它静默通过。
+  - 调度事实：`sandbox.provider` / `sandboxId` / `reused` / `reuseSandbox` / `reuseOrdinal`
+    在租借时刻确定。Eval `setup` 失败与超时的 attempt 记录同样带全这些键。
+    fixture 要造 setup 阶段失败的场景，断言字段在场。
+  - 复用污染诊断：某实例承接序号 ≥ 2 的 Attempt 集中失败于同一阶段时产出运行级 diagnostic
+    （点名实例、序号区间与阶段）；首承接失败或失败不聚集时不误报。
   - 组合：`--keep-sandbox` 与 `localSandbox()` 的互斥在创建前报错。
   - 结果：复用 Attempt 不作结果沿用来源，复用 Experiment 也不消费结果沿用。
 - **孤儿核对与 prune**：创建期运行标识元数据的写入边界；孤儿三条件与 unverified 的保守判定；prune 的幂等、`--force`

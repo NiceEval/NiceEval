@@ -81,3 +81,110 @@ describe("E2BSandbox.downloadDirectory", () => {
     expect(capturedCwd).toBe(sandbox.workdir);
   });
 });
+
+// cases: docs/engineering/testing/unit/sandbox.md「Sandbox 复用」——能力归属。
+// `ready: true` 的唯一合法依据是远端真实到期时刻:两次都读 `getInfo().endAt`,不复读我们
+// 请求给 `setTimeout` 的值——e2b 的账号档位会把请求值压短(见 e2b.ts 的 ensureLifetime 注释)。
+describe("E2BSandbox.ensureLifetime", () => {
+  /** 带寿命声明的实例:构造函数第四个参数就是作者声明的 lifetimeMs。 */
+  function makeReusable(sbx: unknown, lifetimeMs?: number): E2BSandbox {
+    const Ctor = E2BSandbox as unknown as new (
+      sbx: unknown,
+      id: string,
+      timeoutMs: number,
+      lifetimeMs?: number,
+    ) => E2BSandbox;
+    return new Ctor(sbx, "test-sandbox", 5_000, lifetimeMs);
+  }
+
+  it("远端剩余寿命已经够时直接确认,不动 setTimeout", async () => {
+    let renewals = 0;
+    const sandbox = makeReusable(
+      {
+        getInfo: async () => ({ endAt: new Date(Date.now() + 3_600_000) }),
+        setTimeout: async () => {
+          renewals += 1;
+        },
+      },
+      4 * 3_600_000,
+    );
+
+    const result = await sandbox.ensureLifetime(600_000);
+
+    expect(result.ready).toBe(true);
+    expect(renewals).toBe(0);
+  });
+
+  it("剩余不够时按声明的 lifetimeMs 续期,并以续期后远端报的到期时刻为准", async () => {
+    let endAt = Date.now() + 10_000;
+    const renewals: number[] = [];
+    const sandbox = makeReusable(
+      {
+        getInfo: async () => ({ endAt: new Date(endAt) }),
+        setTimeout: async (ms: number) => {
+          renewals.push(ms);
+          endAt = Date.now() + ms;
+        },
+      },
+      3_600_000,
+    );
+
+    const result = await sandbox.ensureLifetime(600_000);
+
+    expect(result.ready).toBe(true);
+    expect(renewals).toEqual([3_600_000]);
+  });
+
+  it("平台把续期压短时如实报 ready:false(不拿请求值当答案)", async () => {
+    const sandbox = makeReusable(
+      {
+        // 请求 4 小时,平台只给 60s:续期「成功」了,但远端到期时刻才是事实。
+        getInfo: async () => ({ endAt: new Date(Date.now() + 60_000) }),
+        setTimeout: async () => {},
+      },
+      4 * 3_600_000,
+    );
+
+    const result = await sandbox.ensureLifetime(1_800_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("capped");
+  });
+
+  it("没有声明 lifetimeMs 时不假装能复用,也不去碰远端", async () => {
+    let touched = 0;
+    const sandbox = makeReusable({
+      getInfo: async () => {
+        touched += 1;
+        return { endAt: new Date(Date.now() + 3_600_000) };
+      },
+      setTimeout: async () => {
+        touched += 1;
+      },
+    });
+
+    const result = await sandbox.ensureLifetime(1_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("lifetimeMs");
+    // 远端还剩一小时也没用:这条能力的前提是作者声明过寿命,没声明就没有可确认的东西。
+    expect(touched).toBe(0);
+  });
+
+  it("远端问不到寿命时报 ready:false,不静默当成够用", async () => {
+    const sandbox = makeReusable(
+      {
+        getInfo: async () => {
+          throw new Error("e2b api unreachable");
+        },
+        setTimeout: async () => {},
+      },
+      3_600_000,
+    );
+
+    const result = await sandbox.ensureLifetime(1_000);
+
+    expect(result.ready).toBe(false);
+    expect(result.ready === false ? result.reason : "").toContain("e2b api unreachable");
+  });
+});
