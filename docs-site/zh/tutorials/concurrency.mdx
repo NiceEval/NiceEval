@@ -4,53 +4,60 @@ sidebarTitle: "并发与执行顺序"
 description: "全局并发位和实验自己的 maxConcurrency 是两道闸。这一页说明各自管什么、共享状态怎么串行、执行顺序怎么钉死，以及多开一个终端为什么能加速。"
 ---
 
+import { Picker, Schedule } from '/snippets/widgets.jsx';
+
 一次运行里同时跑几条 Attempt，由两道闸共同决定：**全局并发位**管这台机器和 Provider 撑得住多少，**实验自己的 `maxConcurrency`** 管这个实验最多敢并行几条。两道都过才真正开跑。
 
 嫌慢的时候，并发只是其中一个旋钮。先判断时间花在哪：
 
-<div className="ne-w ne-pick">
-  <div className="ne-hd">时间花在哪 <span className="ne-hd-hint">选一格看该动哪个旋钮</span></div>
-  <input className="ne-pick-in" type="radio" name="ne-speed" id="ne-speed-1" defaultChecked />
-  <input className="ne-pick-in" type="radio" name="ne-speed" id="ne-speed-2" />
-  <input className="ne-pick-in" type="radio" name="ne-speed" id="ne-speed-3" />
-  <input className="ne-pick-in" type="radio" name="ne-speed" id="ne-speed-4" />
-  <input className="ne-pick-in" type="radio" name="ne-speed" id="ne-speed-5" />
-  <div className="ne-pick-tabs">
-    <label htmlFor="ne-speed-1">没改的题在重复执行</label>
-    <label htmlFor="ne-speed-2">修完只想复验失败项</label>
-    <label htmlFor="ne-speed-3">机器还有余量没吃满</label>
-    <label htmlFor="ne-speed-4">起沙箱和装环境占大头</label>
-    <label htmlFor="ne-speed-5">只想知道能不能过一次</label>
-  </div>
-  <div className="ne-pick-body">
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead">先看结果沿用有没有生效</div>
-      <div className="ne-pick-why">同一条命令再跑一遍，已判定的评估用例默认不重花钱。每轮都在全量重跑，说明有东西在作废指纹——最常见的是改了被 30 条评估用例共用的 helper，或者把每次都变的隧道地址写进了 <code>flags</code>。</div>
-      <div className="ne-pick-why">对照见 <a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。这条不解决，调并发只是把重复劳动跑得更快。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead">用 <code>--rerun</code> 只重跑失败项</div>
-      <div className="ne-pick-why">裸写的 <code>--rerun</code> 只采信 <code>passed</code>，失败项全部重跑，不必自己去结果树里挖失败的评估用例 ID。</div>
-      <div className="ne-pick-why">用法见 <a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead">调本页说的两道并发闸</div>
-      <div className="ne-pick-why">评估用例之间不共享可变状态时，不要给实验配 <code>maxConcurrency</code>——让调度器按瓶颈优先派发、快慢自然混跑。只在撞上本机资源耗尽或 Provider 限流时收 <code>--max-concurrency</code>。</div>
-      <div className="ne-pick-why">不要为了「看起来更确定」默认串行，那是直接放弃吞吐。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead">让多条 Attempt 共用 Sandbox</div>
-      <div className="ne-pick-why">创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟时，在实验里声明 <code>sandboxReuse: true</code>，这段每个 Sandbox 只付一次。</div>
-      <div className="ne-pick-why">代价是结果不进缓存、工作目录之外的状态会留下，见 <a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>。稳定的重依赖应该先烘进镜像或模板，那比什么都省。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead">打开 <code>--early-exit</code></div>
-      <div className="ne-pick-why">默认跑满 <code>attempts</code> 次给出真实通过率。只想知道「这题能不能做到」、不在乎分布时用它，某次通过后剩余 Attempt 不再派发。</div>
-      <div className="ne-pick-why">要它真省钱还得让 Attempt 一个接一个跑，配法见本页「让首过即停真的省钱」。</div>
-    </div>
-  </div>
-  <div className="ne-ft">结果沿用跳过的是执行本身；Sandbox 复用仍然真实执行，只分摊创建与公共准备。</div>
-</div>
+<Picker
+  name="ne-speed"
+  title="时间花在哪"
+  hint="选一格看该动哪个旋钮"
+  note="结果沿用跳过的是执行本身；Sandbox 复用仍然真实执行，只分摊创建与公共准备。"
+  items={[
+    {
+      tab: "没改的题在重复执行",
+      lead: "先看结果沿用有没有生效",
+      why: [
+        <>同一条命令再跑一遍，已判定的评估用例默认不重花钱。每轮都在全量重跑，说明有东西在作废指纹——最常见的是改了被 30 条评估用例共用的 helper，或者把每次都变的隧道地址写进了 <code>flags</code>。</>,
+        <>对照见<a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。这条不解决，调并发只是把重复劳动跑得更快。</>,
+      ],
+    },
+    {
+      tab: "修完只想复验失败项",
+      lead: <>用 <code>--rerun</code> 只重跑失败项</>,
+      why: [
+        <>裸写的 <code>--rerun</code> 只采信 <code>passed</code>，失败项全部重跑，不必自己去结果树里挖失败的评估用例 ID。</>,
+        <>用法见<a href="/zh/tutorials/rerun-and-cache">重跑与沿用</a>。</>,
+      ],
+    },
+    {
+      tab: "机器还有余量没吃满",
+      lead: "调本页说的两道并发闸",
+      why: [
+        <>评估用例之间不共享可变状态时，不要给实验配 <code>maxConcurrency</code>——让调度器按瓶颈优先派发、快慢自然混跑。只在撞上本机资源耗尽或 Provider 限流时收 <code>--max-concurrency</code>。</>,
+        "不要为了「看起来更确定」默认串行，那是直接放弃吞吐。",
+      ],
+    },
+    {
+      tab: "起沙箱和装环境占大头",
+      lead: "让多条 Attempt 共用 Sandbox",
+      why: [
+        <>创建 Sandbox 与 Sandbox 级 <code>setup</code> 占了大部分墙钟时，在实验里声明 <code>sandboxReuse: true</code>，这段每个 Sandbox 只付一次。</>,
+        <>代价是结果不进缓存、工作目录之外的状态会留下，见<a href="/zh/tutorials/sandbox-reuse">复用 Sandbox</a>。稳定的重依赖应该先烘进镜像或模板，那比什么都省。</>,
+      ],
+    },
+    {
+      tab: "只想知道能不能过一次",
+      lead: <>打开 <code>--early-exit</code></>,
+      why: [
+        <>默认跑满 <code>attempts</code> 次给出真实通过率。只想知道「这题能不能做到」、不在乎分布时用它，某次通过后剩余 Attempt 不再派发。</>,
+        "要它真省钱还得让 Attempt 一个接一个跑，配法见本页「让首过即停真的省钱」。",
+      ],
+    },
+  ]}
+/>
 
 ## 两道闸各管什么
 
@@ -69,46 +76,35 @@ npx niceeval exp compare --max-concurrency 19
 
 下面是一批混跑：全局 3 个并发位，`fast` 是普通实验，`slow` 声明了 `maxConcurrency: 1`。
 
-<div className="ne-w ne-sched">
-  <div className="ne-hd">全局 3 位 · slow 实验自己限 1 <span className="ne-hd-hint">竖线是时间，悬停暂停</span></div>
-  <div className="ne-sched-grid">
-    <div className="ne-sched-lanes">
-      <div className="ne-sched-lane">
-        <div className="ne-sched-label">并发位 1</div>
-        <div className="ne-sched-track"></div>
-        <div className="ne-sched-bar ne-serial" style={{ gridColumn: "2 / 6" }}>slow · a1</div>
-        <div className="ne-sched-bar ne-serial" style={{ gridColumn: "6 / 10" }}>slow · a2</div>
-        <div className="ne-sched-bar ne-serial" style={{ gridColumn: "10 / -1" }}>slow · a3</div>
-      </div>
-      <div className="ne-sched-lane">
-        <div className="ne-sched-label">并发位 2</div>
-        <div className="ne-sched-track"></div>
-        <div className="ne-sched-bar" style={{ gridColumn: "2 / 5" }}>fast · a1</div>
-        <div className="ne-sched-bar" style={{ gridColumn: "5 / 9" }}>fast · a3</div>
-        <div className="ne-sched-bar" style={{ gridColumn: "9 / -1" }}>fast · a5</div>
-      </div>
-      <div className="ne-sched-lane">
-        <div className="ne-sched-label">并发位 3</div>
-        <div className="ne-sched-track"></div>
-        <div className="ne-sched-bar" style={{ gridColumn: "2 / 4" }}>fast · a2</div>
-        <div className="ne-sched-bar" style={{ gridColumn: "4 / 8" }}>fast · a4</div>
-        <div className="ne-sched-bar" style={{ gridColumn: "8 / -1" }}>fast · a6</div>
-      </div>
-      <div className="ne-sched-lane">
-        <div className="ne-sched-label">不占位</div>
-        <div className="ne-sched-track"></div>
-        <div className="ne-sched-bar ne-backoff" style={{ gridColumn: "4 / 7" }}>fast · a2 退避等重试</div>
-      </div>
-      <div className="ne-sched-play"></div>
-    </div>
-    <div className="ne-sched-axis">时间 →</div>
-  </div>
-  <div className="ne-legend">
-    <span><span className="ne-legend-key"></span>普通实验，抢空出来的位</span>
-    <span><span className="ne-legend-key ne-serial"></span>声明了 <code>maxConcurrency: 1</code>，永远只占一条</span>
-    <span><span className="ne-legend-key ne-backoff"></span>退避重试，让出并发位但仍计 <code>running</code></span>
-  </div>
-</div>
+<Schedule
+  title="全局 3 位 · slow 实验自己限 1"
+  hint="竖线是时间，悬停暂停"
+  lanes={[
+    { label: "并发位 1", bars: [
+      { text: "slow · a1", from: 1, to: 5, tone: "serial" },
+      { text: "slow · a2", from: 5, to: 9, tone: "serial" },
+      { text: "slow · a3", from: 9, to: 13, tone: "serial" },
+    ] },
+    { label: "并发位 2", bars: [
+      { text: "fast · a1", from: 1, to: 4 },
+      { text: "fast · a3", from: 4, to: 8 },
+      { text: "fast · a5", from: 8, to: 13 },
+    ] },
+    { label: "并发位 3", bars: [
+      { text: "fast · a2", from: 1, to: 3 },
+      { text: "fast · a4", from: 3, to: 7 },
+      { text: "fast · a6", from: 7, to: 13 },
+    ] },
+    { label: "不占位", bars: [
+      { text: "fast · a2 退避等重试", from: 3, to: 6, tone: "backoff" },
+    ] },
+  ]}
+  legend={[
+    { text: "普通实验，抢空出来的位" },
+    { tone: "serial", text: "声明了 maxConcurrency: 1，永远只占一条" },
+    { tone: "backoff", text: "退避重试，让出并发位但仍计 running" },
+  ]}
+/>
 
 三件事从这张图里读出来：
 

@@ -4,6 +4,8 @@ sidebarTitle: "断言"
 description: "值断言、作用域断言、LLM-as-judge、严重度怎么折成一个判定、计分制怎么给部分分，以及成本上限怎么写。"
 ---
 
+import { Verdict } from '/snippets/widgets.jsx';
+
 好的评估用例把「是否成功」拆成可解释的信号。[NiceEval](https://niceeval.com/) 允许你混合精确断言、语义 Judge、事件流检查和真实测试。
 
 ## 选择断言类型
@@ -54,50 +56,22 @@ Judge 适合语义质量，不适合替代所有确定性断言。能精确检�
 
 链在断言上的词决定它的失败怎么向上传播。不链词就用 matcher 自带的严重度——`includes`、`calledTool` 这些默认是 gate，`t.judge.*` 默认是无线的 soft。
 
-<div className="ne-w ne-vd">
-  <div className="ne-hd">这四条断言折成一个判定 <span className="ne-hd-hint">勾掉一条看判定怎么变</span></div>
-  <div className="ne-vd-rows">
-    <label className="ne-vd-row">
-      <input type="checkbox" className="ne-a ne-a-gate" defaultChecked />
-      <span className="ne-sev">gate</span>
-      <span className="ne-vd-name">t.calledTool("get_weather")</span>
-      <span className="ne-vd-note">作用域断言默认 gate</span>
-    </label>
-    <label className="ne-vd-row">
-      <input type="checkbox" className="ne-a ne-a-gate" defaultChecked />
-      <span className="ne-sev">gate</span>
-      <span className="ne-vd-name">t.check(t.reply, includes("Brooklyn"))</span>
-      <span className="ne-vd-note">includes 自带的严重度就是 gate</span>
-    </label>
-    <label className="ne-vd-row">
-      <input type="checkbox" className="ne-a ne-a-soft" defaultChecked />
-      <span className="ne-sev">soft</span>
-      <span className="ne-vd-name">t.judge.autoevals.closedQA("…").atLeast(0.7)</span>
-      <span className="ne-vd-note">
-        <span className="ne-not-strict">低于 0.7 如实记 failed，判定不动</span>
-        <span className="ne-only-strict">--strict 把这条线翻成 gate</span>
-      </span>
-    </label>
-    <div className="ne-vd-row">
-      <span className="ne-sev">soft</span>
-      <span className="ne-vd-name">t.judge.autoevals.factuality("…")</span>
-      <span className="ne-vd-note">没有线，只记分数，永不 failed</span>
-    </div>
-  </div>
-  <label className="ne-vd-strict">
-    <input type="checkbox" className="ne-strict" />
-    <span>跑的时候加上 <code>--strict</code></span>
-  </label>
-  <div className="ne-vd-out">
-    <span className="ne-vd-badge ne-vd-passed">✓ passed</span>
-    <span className="ne-vd-badge ne-vd-failed">✗ failed</span>
-    <div className="ne-vd-say ne-vd-say-ok">全部 gate 通过，soft 也都达标。</div>
-    <div className="ne-vd-say ne-vd-say-gate">有 gate 没通过。gate 是硬要求，一条不过整条 Attempt 就是 failed。</div>
-    <div className="ne-vd-say ne-vd-say-soft">soft 那条没到线，如实记了一条不达标的断言，但判定不受影响——质量分低不等于任务失败。</div>
-    <div className="ne-vd-say ne-vd-say-strict">带线的 soft 在 <code>--strict</code> 下和 gate 同权，所以判定翻成 failed。分数照记，不因为 strict 改变。</div>
-  </div>
-  <div className="ne-ft">严重度只管判定怎么传播，不改变 <code>test()</code> 的控制流。后面的代码依赖这条断言时，链 <code>.stopOnFailure()</code>，或者用值断言的糖衣 <code>t.require()</code>。</div>
-</div>
+<Verdict
+  title="这四条断言折成一个判定"
+  hint="勾掉一条看判定怎么变"
+  note={<>严重度只管判定怎么传播，不改变 <code>test()</code> 的控制流。后面的代码依赖这条断言时，链 <code>.stopOnFailure()</code>，或者用值断言的糖衣 <code>t.require()</code>。</>}
+  rows={[
+    { sev: "gate", name: 't.calledTool("get_weather")', note: "作用域断言默认 gate" },
+    { sev: "gate", name: 't.check(t.reply, includes("Brooklyn"))', note: "includes 自带的严重度就是 gate" },
+    {
+      sev: "soft",
+      name: 't.judge.autoevals.closedQA("…").atLeast(0.7)',
+      note: "低于 0.7 如实记 failed，判定不动",
+      strictNote: "--strict 把这条线翻成 gate",
+    },
+    { sev: "soft", name: 't.judge.autoevals.factuality("…")', note: "没有线，只记分数，永不 failed", fixed: true },
+  ]}
+/>
 
 三个词的分工：
 

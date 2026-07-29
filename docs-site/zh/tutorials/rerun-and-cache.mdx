@@ -4,6 +4,8 @@ sidebarTitle: "重跑与沿用"
 description: "同一条命令再跑一遍时，NiceEval 沿用已经跑完的结果，只补跑缺的部分。这一页说明哪一处改动作废哪些结果，以及指纹之外的东西变了要怎么用 --rerun 复验。"
 ---
 
+import { Picker } from '/snippets/widgets.jsx';
+
 跑过一轮之后再跑同一条命令，已经判定完的评估用例默认不重花 Agent 与 Sandbox 的钱：NiceEval 沿用上一轮的结果，这次只派发真正缺的那些 Attempt。
 
 ```text
@@ -19,70 +21,86 @@ description: "同一条命令再跑一遍时，NiceEval 沿用已经跑完的结
 
 下面每一格是一次真实改动。设定：这个实验选中 36 条评估用例，上一轮全绿。
 
-<div className="ne-w ne-pick">
-  <div className="ne-hd">改了这一处 <span className="ne-hd-hint">选一格看这次跑什么</span></div>
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-1" defaultChecked />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-2" />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-3" />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-4" />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-5" />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-6" />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-7" />
-  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-8" />
-  <div className="ne-pick-tabs">
-    <label htmlFor="ne-cache-1">一条评估用例里的 prompt</label>
-    <label htmlFor="ne-cache-2">30 条共用的断言 helper</label>
-    <label htmlFor="ne-cache-3">实验的 model 或 flags</label>
-    <label htmlFor="ne-cache-4">labels、描述、注释</label>
-    <label htmlFor="ne-cache-5">attempts 从 3 调到 5</label>
-    <label htmlFor="ne-cache-6">timeoutMs</label>
-    <label htmlFor="ne-cache-7">Sandbox 的 template</label>
-    <label htmlFor="ne-cache-8">Agent CLI 升级</label>
-  </div>
-  <div className="ne-pick-body">
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>重跑 1 条，其余 35 条沿用</div>
-      <div className="ne-pick-why">评估用例文件进指纹的是<strong>整份字节</strong>。改 prompt、改断言、加一行注释、重新格式化，效果一样：这一条重跑。</div>
-      <div className="ne-pick-why">这正是想要的粒度——改一道题只花那一道题的钱。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>重跑 30 条，其余 6 条沿用</div>
-      <div className="ne-pick-why">指纹认的是这条评估用例的<strong>源码闭包</strong>：它自己的字节，加上导入图里落在项目根内的每个模块。一个被 30 条引用的 helper 改一行就作废那 30 条。</div>
-      <div className="ne-pick-why">想缩小作废面就按变更频率拆文件：稳定的断言 helper 和天天调的 prompt 模板不放同一个文件。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>36 条全部重跑</div>
-      <div className="ne-pick-why"><code>model</code>、<code>reasoningEffort</code>、<code>flags</code> 都是运行条件。<code>flags</code> 整袋进指纹，加一个键、删一个键同样全跑。</div>
-      <div className="ne-pick-why">两个取值下跑出来的是两批不同条件的结果，混在一起读通过率没有意义。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-pos"><span className="ne-sym">✓</span>一条不动，36 条全部沿用</div>
-      <div className="ne-pick-why"><code>labels</code> 是报告坐标，Adapter 和评估用例都读不到它，改它不影响跑出来的结果。<code>description</code>、注释、字段顺序、把某个值抽成变量同理。</div>
-      <div className="ne-pick-why">实验文件认的是解析出来的值，不认字节——这一点和评估用例文件正相反。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-warn"><span className="ne-sym">+</span>已有 3 条沿用，补跑缺的 2 条</div>
-      <div className="ne-pick-why">沿用以 Attempt 为单位。<code>attempts</code> 因此不进指纹：调大只补跑缺的序号，调小不删已有结果。</div>
-      <div className="ne-pick-why">通过率的分母由沿用的和新跑的一起凑满。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-warn"><span className="ne-sym">±</span>调大一条不动；调小只重跑当初跑得慢的那几条</div>
-      <div className="ne-pick-why">上限不改变「结果是什么」，只决定「等不等得到」，所以它不进指纹。一条 15 分钟跑完的 <code>passed</code>，在 20 分钟和 40 分钟的上限下是同一个事实。</div>
-      <div className="ne-pick-why">它另立一条判据：执行耗时超过当前上限的旧结果在新配置下复现不出来，如实重跑。执行耗时不含等并发位的排队时间。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>换名字全部重跑；同名重建一条不动</div>
-      <div className="ne-pick-why">换 <code>template</code> / <code>image</code> / <code>snapshotId</code> 就是换了起步环境，结果不可比，36 条全部重跑。只改 <code>environments</code> 表里的一行时，只有声明了那个 profile 的评估用例重跑。</div>
-      <div className="ne-pick-why">名字不变、内容重建（同名镜像重新 build、<code>.setup()</code> 里多装一个二进制）时指纹看不见这个变化，一条不动。要复验用下面的 <code>--rerun all</code>。</div>
-    </div>
-    <div className="ne-pick-panel">
-      <div className="ne-pick-lead ne-warn"><span className="ne-sym">!</span>一条不动，但上一轮的绿可能已经不成立</div>
-      <div className="ne-pick-why">指纹只认你写下的配置和它能读到的源码。Agent CLI 升版本、被测服务改了行为或换了实例、Agent 的 system prompt 改了，NiceEval 都看不见。</div>
-      <div className="ne-pick-why">这时旧的绿掩盖的可能是真实回归。改了被测对象只复验失败项走 <code>--rerun</code>，外部环境整个变了走 <code>--rerun all</code>。</div>
-    </div>
-  </div>
-  <div className="ne-ft">能配置化的差异（服务端版本号这类）显式写进 <code>flags</code>，让指纹自然失效，比每次手动重跑可靠。</div>
-</div>
+<Picker
+  name="ne-cache"
+  title="改了这一处"
+  hint="选一格看这次跑什么"
+  note={<>能配置化的差异（服务端版本号这类）显式写进 <code>flags</code>，让指纹自然失效，比每次手动重跑可靠。</>}
+  items={[
+    {
+      tab: "一条评估用例里的 prompt",
+      tone: "neg",
+      lead: "重跑 1 条，其余 35 条沿用",
+      why: [
+        <>评估用例文件进指纹的是<strong>整份字节</strong>。改 prompt、改断言、加一行注释、重新格式化，效果一样：这一条重跑。</>,
+        "这正是想要的粒度——改一道题只花那一道题的钱。",
+      ],
+    },
+    {
+      tab: "30 条共用的断言 helper",
+      tone: "neg",
+      lead: "重跑 30 条，其余 6 条沿用",
+      why: [
+        <>指纹认的是这条评估用例的<strong>源码闭包</strong>：它自己的字节，加上导入图里落在项目根内的每个模块。一个被 30 条引用的 helper 改一行就作废那 30 条。</>,
+        "想缩小作废面就按变更频率拆文件：稳定的断言 helper 和天天调的 prompt 模板不放同一个文件。",
+      ],
+    },
+    {
+      tab: "实验的 model 或 flags",
+      tone: "neg",
+      lead: "36 条全部重跑",
+      why: [
+        <><code>model</code>、<code>reasoningEffort</code>、<code>flags</code> 都是运行条件。<code>flags</code> 整袋进指纹，加一个键、删一个键同样全跑。</>,
+        "两个取值下跑出来的是两批不同条件的结果，混在一起读通过率没有意义。",
+      ],
+    },
+    {
+      tab: "labels、描述、注释",
+      tone: "pos",
+      lead: "一条不动，36 条全部沿用",
+      why: [
+        <><code>labels</code> 是报告坐标，Adapter 和评估用例都读不到它，改它不影响跑出来的结果。<code>description</code>、注释、字段顺序、把某个值抽成变量同理。</>,
+        "实验文件认的是解析出来的值，不认字节——这一点和评估用例文件正相反。",
+      ],
+    },
+    {
+      tab: "attempts 从 3 调到 5",
+      tone: "warn",
+      lead: "已有 3 条沿用，补跑缺的 2 条",
+      why: [
+        <>沿用以 Attempt 为单位。<code>attempts</code> 因此不进指纹：调大只补跑缺的序号，调小不删已有结果。</>,
+        "通过率的分母由沿用的和新跑的一起凑满。",
+      ],
+    },
+    {
+      tab: "timeoutMs",
+      tone: "warn",
+      lead: "调大一条不动；调小只重跑当初跑得慢的那几条",
+      why: [
+        <>上限不改变「结果是什么」，只决定「等不等得到」，所以它不进指纹。一条 15 分钟跑完的 <code>passed</code>，在 20 分钟和 40 分钟的上限下是同一个事实。</>,
+        "它另立一条判据：执行耗时超过当前上限的旧结果在新配置下复现不出来，如实重跑。执行耗时不含等并发位的排队时间。",
+      ],
+    },
+    {
+      tab: "Sandbox 的 template",
+      tone: "neg",
+      lead: "换名字全部重跑；同名重建一条不动",
+      why: [
+        <>换 <code>template</code> / <code>image</code> / <code>snapshotId</code> 就是换了起步环境，结果不可比，36 条全部重跑。只改 <code>environments</code> 表里的一行时，只有声明了那个 profile 的评估用例重跑。</>,
+        <>名字不变、内容重建（同名镜像重新 build、<code>.setup()</code> 里多装一个二进制）时指纹看不见这个变化，一条不动。要复验用下面的 <code>--rerun all</code>。</>,
+      ],
+    },
+    {
+      tab: "Agent CLI 升级",
+      tone: "warn",
+      lead: "一条不动，但上一轮的绿可能已经不成立",
+      why: [
+        "指纹只认你写下的配置和它能读到的源码。Agent CLI 升版本、被测服务改了行为或换了实例、Agent 的 system prompt 改了，NiceEval 都看不见。",
+        <>这时旧的绿掩盖的可能是真实回归。改了被测对象只复验失败项走 <code>--rerun</code>，外部环境整个变了走 <code>--rerun all</code>。</>,
+      ],
+    },
+  ]}
+/>
 
 ## 沿用要过的门
 
