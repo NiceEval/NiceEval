@@ -3,7 +3,7 @@
 Roadmap 候选设计，见 [Roadmap 约定](../README.md)。
 本主题重新设计 `niceeval/report` 的报告作者面，并明确提议修改
 [Reports 当前定稿契约](../../feature/reports/README.md)中的
-Source / Composition 求值机制。
+Source / Composition 求值机制与外壳字段集。
 在本 Roadmap 被采纳并完成迁移前，feature 文档仍是当前唯一目标契约。
 
 候选模型只有一条主线：
@@ -161,6 +161,10 @@ return <Table rows={rows} />;
 - **普通 JavaScript 是组合语言。** 过滤、排序、截断、join 与并行使用语言已有能力。
 - **组件按形状准入。** 组件目录按渲染形状增长；
   领域名词只能命名函数或内建报告，不能命名组件。
+- **壳只装宿主必需品。** 外壳保留宿主机器在 page render 之外
+  必须消费的字段；跨页内容用普通组合，组件资产随组件声明。
+- **参数没有新协议。** 组件收 props，报告收工厂闭包参数，
+  运行期数据走冻结 External；CLI 不开报告参数。
 - **结果一次生成、双面消费。** 一个 page 实例只执行一次，
   text 与 web renderer 读取同一棵结果树。
 - **高级扩展也是函数。** 自定义转换不注册；自定义显示形状才需要双面 renderer 协议。
@@ -213,7 +217,7 @@ return <Table rows={rows} />;
    （例如 `standardAttemptPage`）。
    作者可以直接选用、放进自己的 pages 数组，或复制公开全文后修改。
 
-## 三项宿主裁决
+## 四项宿主裁决
 
 1. **页粒度。** 多页定义必须用非空有序数组静态列出 page；
    宿主逐页执行 render。
@@ -223,6 +227,10 @@ return <Table rows={rows} />;
 3. **show / JSON。** `ShowJson` 信封继续存在；
    每个内建切片由一个公开任务函数产出普通 Result，
    text 组件和 JSON 序列化消费同一次结果，不从报告树切数据。
+4. **壳收缩到宿主必需品。** 外壳只保留 `title`、`theme`、
+   `dimensionPins` 与 `head`；
+   页脚与页头链接是普通内容，组件脚本样式随组件资产声明，
+   站点级注入走 `head`。
 
 ## 验收场景
 
@@ -251,6 +259,9 @@ return <Table rows={rows} />;
 20. 未声明 `external` 的图表拒绝无 refs 的 points，错误指向组件与字段。
 21. `by` 与 `values` 键冲突或占用保留键 `refs` 时，
     编译期与执行期都拒绝并指出冲突键。
+22. 页脚与页头链接作为普通内容包进每页 render，宿主没有对应槽位。
+23. 自定义显示形状随组件声明 assets，页面只注入实际出现组件的资产。
+24. 工厂函数产出带参数的 ReportDefinition，使用方传 opts 后默认导出。
 
 普通场景 1–8 不得出现 `data`、`Source`、`Content`、`View`、
 `Measure`、`Composition`、`ctx`、`resolve` 或 `compute`。

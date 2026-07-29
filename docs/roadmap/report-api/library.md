@@ -53,13 +53,9 @@ type PageDefinition<External = unknown> =
 
 interface ReportOptions<External> {
   title?: LocalizedText;
-  links?: ReportLink[];
-  footer?: LocalizedText;
   theme?: ThemeDefinition;
   dimensionPins?: DimensionPins;
   head?: HeadTag[];
-  scripts?: ReportAsset[];
-  styles?: ReportAsset[];
   pages: readonly [
     PageDefinition<External>,
     ...PageDefinition<External>[],
@@ -71,11 +67,26 @@ function defineReport<External = unknown>(
 ): ReportDefinition<External>;
 ```
 
-外壳字段的类型、语义与装载校验沿用
-[外壳契约](../../feature/reports/library/shell.md)：
-除 `title` 外都是 web 面属性，装载期规范化，不进 page render。
-本候选只改 page 内容从树变成惰性 `render` 函数，不改外壳。
+外壳只装宿主机器必须在 page render 之外消费的声明。
+四个字段各有一个组件与普通函数够不着的宿主落点，
+因此必须由官方提供：
+
+| 字段 | 宿主落点 |
+|---|---|
+| `title` | 浏览器 `<title>` 与 show 页索引标题——文档单例 |
+| `theme` | 与报告平行的主题装载链，`--theme` 可整份替换 |
+| `dimensionPins` | 页级视觉分配管线，跨页一致性要先看到全集 |
+| `head` | 注入文档 `<head>`——报告树没有 HTML intrinsic |
+
+四个字段的类型、白名单与本地路径纪律沿用
+[外壳契约](../../feature/reports/library/shell.md)。
 单页函数缩写没有外壳；需要外壳字段时使用对象形态。
+
+页脚、页头链接这类跨页内容不是外壳字段，
+写法见[跨页内容是普通组合](#跨页内容是普通组合)。
+组件的脚本与样式随组件声明，
+机制见 [Architecture · 组件自带资产](architecture.md#组件自带资产)；
+站点级第三方注入（埋点、字体、SEO）声明在 `head`。
 
 ```tsx
 export default defineReport({
@@ -120,6 +131,36 @@ attempt page 必须 `navigation: false`。
 宿主只执行被请求的 page render。
 一次 page 实例产生的同一份值树交给 text 与 web renderer，
 两个 renderer 不会分别运行该 page。
+
+## 跨页内容是普通组合
+
+页脚、页头链接、团队署名这类每页都出现的内容不是外壳字段。
+render 是函数，跨页复用就是包一层：
+
+```tsx
+import { footerNote } from "./chrome";
+
+const chrome =
+  (render: PageRender<Sample>): PageRender<Sample> =>
+  async (sample, external) => (
+    <Stack>
+      {await render(sample, external)}
+      {footerNote}
+    </Stack>
+  );
+
+export default defineReport({
+  pages: [
+    { id: "overview", title: "Overview", render: chrome(overview) },
+    { id: "failures", title: "Failures", render: chrome(failures) },
+    standardAttemptPage,
+  ],
+});
+```
+
+`footerNote` 是具名导出的普通 ReportNode。
+宿主没有页脚槽，也不渲染任何保留内容；
+内建 standard 报告的页脚同样是它自己 pages 里的普通内容。
 
 ## 输入就是 Sample
 
@@ -880,6 +921,84 @@ export default defineReport(async (sample) => (
 
 函数可以收 props、Sample 或已计算结果。
 它不需要品牌、注册表、context 或特殊 JSX 展开规则。
+
+## 报告参数是工厂函数
+
+报告级自定义参数同样不需要新协议。
+组件的参数是 props，报告的参数是普通闭包：
+导出一个返回 ReportDefinition 的工厂函数，
+参数类型完备、可测试、可跨文件复用。
+
+```tsx
+interface TeamReportOptions {
+  team: string;
+  repoUrl: string;
+  costBudgetUSD: number;
+}
+
+export function makeTeamReport(
+  options: TeamReportOptions,
+): ReportDefinition {
+  return defineReport({
+    title: `${options.team} evals`,
+    pages: [
+      {
+        id: "overview",
+        title: "Overview",
+        render: async (sample) => {
+          const performance = await aggregate(sample, {
+            by: { agent },
+            values: { passRate, costUSD },
+          });
+          const overBudget = performance.filter(
+            (row) =>
+              (row.costUSD.value ?? 0) > options.costBudgetUSD,
+          );
+          return (
+            <Page title="Overview">
+              <Scatter
+                points={performance}
+                x="costUSD"
+                y="passRate"
+              />
+              <Table rows={overBudget} />
+            </Page>
+          );
+        },
+      },
+      standardAttemptPage,
+    ],
+  });
+}
+```
+
+使用方在自己的报告文件里调用工厂并默认导出：
+
+```tsx
+import { makeTeamReport } from "@acme/eval-reports";
+
+export default makeTeamReport({
+  team: "checkout",
+  repoUrl: "https://github.com/acme/checkout-evals",
+  costBudgetUSD: 40,
+});
+```
+
+宿主始终只装载 ReportDefinition，
+不知道也不需要知道这份定义是不是工厂产出的。
+`defineReport` 不收 options 包：
+闭包已经提供带类型的参数通道，第二个通道只会分裂语义。
+
+三个参数通道各管一段，不互相替代：
+
+| 通道 | 定的时机 | 用途 |
+|---|---|---|
+| 组件 props | 写代码时 | 单个组件的显示选择 |
+| 工厂参数 | 写代码时 | 整份报告的装配选择 |
+| External snapshot | 运行前冻结 | 运行期业务数据，`--data` 注入 |
+
+CLI 不开报告参数：位置参数选 eval，flag 选 agent 与怎么跑，
+报告的参数走上面三个通道。
 
 ## 领域分析留在报告旁
 

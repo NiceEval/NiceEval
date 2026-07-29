@@ -509,6 +509,40 @@ async function computeConfusionMatrix(
 }
 ```
 
+## 组件自带资产
+
+带交互的显示形状把增强脚本与样式随组件声明，
+不要求报告作者替它在外壳登记：
+
+```tsx
+const ConfusionMatrix = defineRenderer({
+  assets: {
+    scripts: ["./confusion-matrix.enhance.ts"],
+    styles: ["./confusion-matrix.css"],
+  },
+  text(value, options, context) {
+    return renderTextMatrix(value, options, context);
+  },
+  web(value, options, context) {
+    return <WebMatrix value={value} options={options} />;
+  },
+});
+```
+
+管线在 render 后收集页面上实际出现组件的资产：
+按内容哈希物化与去重，按稳定顺序注入，
+路径相对组件定义文件解析，
+与 head 本地资产走同一条路径纪律。
+官方原语的增强 runtime 与 stylesheet 走的就是这条机制，
+自定义组件与官方组件平权；
+没出现在页面上的组件，资产也不注入。
+
+资产受增强层不变量约束：
+初始静态 HTML 无 JavaScript 时完整可读，
+脚本只添加浏览行为，不改变数据或初始数值。
+站点级第三方注入（埋点、字体、SEO）不属于组件，
+声明在外壳的 `head`。
+
 ## 错误反馈
 
 错误应指向函数调用或组件属性。
