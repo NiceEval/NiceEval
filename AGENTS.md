@@ -28,10 +28,11 @@
 
 ## Git 与协作安全
 
-- 直接在 `main` 开发，不建 feature branch。commit message 要说明行为与原因。
+- 多 agent 直接在当前工作目录的 `main` 上并行开发；不建 feature branch，也不创建或使用额外的 git worktree。
+- 每个 agent 只修改自己任务范围内的文件；遇到并行改动时继续协作，不通过切分支、换 worktree 或回退他人改动来隔离工作。
 - 未知改动属于用户或其它 agent。不要覆盖、顺手格式化或提交它们；提交前检查 `git status`、未暂存 diff 与暂存 diff。
 - 不使用 `git reset --hard`、`git clean`、`git checkout -- <path>`、`git restore` 丢弃工作，除非用户明确要求。
-- 多 agent 共用工作树时，用 `git commit <paths>` 或等价的显式路径提交，避免把并发暂存内容带入自己的 commit。
+- 完成任务后提交自己的工作，commit message 要说明行为与原因；用 `git commit <paths>` 或等价的显式路径限定本次提交，避免把用户或其它 agent 的并发改动带入 commit。
 
 ## Release 安全
 
