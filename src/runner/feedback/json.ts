@@ -403,7 +403,7 @@ export interface JsonPlanInput {
   evals: number;
   /** (agent, model, flags) 配置组合数。 */
   configs: number;
-  /** 代表性的 `--runs` 值(多个实验取值不同时,展示层不逐配置拆分——见 cli.md 未声明混合 runs
+  /** 代表性的 `--attempts` 值(多个实验取值不同时,展示层不逐配置拆分——见 cli.md 未声明混合 attempts
    *  场景的展示规则,这里与 human/agent 既有的 dry 预览取同一个近似口径:最大值)。 */
   attempts: number;
   matrix: readonly JsonPlanRow[];

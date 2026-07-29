@@ -163,11 +163,92 @@ export default defineEval({
 
 ## 评估的生命周期
 
-`setup(sandbox, ctx)` 准备 Fixture；配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条评估用例的 Fixture，每个 Attempt 各执行一次。执行顺序：`setup` 在 Sandbox 生命周期 Hook 和 git 基线锚点之后、`test(t)` 之前跑；`teardown` 是 Attempt 收尾链的第一段（先评估用例 teardown，再 agent teardown，最后 Sandbox teardown），这时 Sandbox 还活着，收尾代码可以照常读 Sandbox。
+`setup(sandbox, ctx)` 准备 Fixture；配一个 `teardown(sandbox, ctx)` 收尾，两者合起来是这条评估用例的 Fixture，每个 Attempt 各执行一次。它在整条 Attempt 里的位置是固定的：
+
+<div className="ne-w ne-life">
+  <div className="ne-hd">一条 Attempt 从排队到收尾 <span className="ne-hd-hint">悬停暂停</span></div>
+  <div className="ne-life-rows">
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">experiment.setup</span>
+      <span className="ne-life-what">起隧道、起共享服务</span>
+      <span className="ne-life-times">整场一次</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">sandbox.queue</span>
+      <span className="ne-life-what">等一个并发位</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">sandbox.create</span>
+      <span className="ne-life-what">Provider 起 Sandbox</span>
+      <span className="ne-life-times">每个 Sandbox 一次</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">sandbox.setup</span>
+      <span className="ne-life-what">装工具链、clone 公共仓库</span>
+      <span className="ne-life-times">每个 Sandbox 一次</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">workspace.baseline</span>
+      <span className="ne-life-what">记下改动基线</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">eval.setup</span>
+      <span className="ne-life-what">这条评估用例的 Fixture</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">agent.setup</span>
+      <span className="ne-life-what">装 Agent CLI、写主配置</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">eval.run</span>
+      <span className="ne-life-what">整段 test(t)，含所有 send 与手工命令</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">workspace.diff</span>
+      <span className="ne-life-what">折出 Agent 造成的文件改动</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">scoring.evaluate</span>
+      <span className="ne-life-what">断言收口与判定，含 Judge 调用</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">eval.teardown</span>
+      <span className="ne-life-what">收尾链第一段，Sandbox 还活着</span>
+      <span className="ne-life-times">每 Attempt</span>
+    </div>
+    <div className="ne-life-row">
+      <span className="ne-life-bar"></span>
+      <span className="ne-life-name">sandbox.teardown</span>
+      <span className="ne-life-what">Agent 收尾之后，最后销毁 Sandbox</span>
+      <span className="ne-life-times">每个 Sandbox 一次</span>
+    </div>
+  </div>
+  <div className="ne-ft">收尾段不计入这条 Attempt 的耗时口径。<code>niceeval show</code> 加 <code>--timing</code> 打印的就是这棵树的实测版本。</div>
+</div>
+
+右列是「谁的一次」：四层 Hook 共用同一副成对形态，但触发频次不同。不声明 `sandboxReuse` 时每条 Attempt 独占一个 Sandbox，所以「每个 Sandbox 一次」和「每 Attempt」重合；声明复用之后两者分开，见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
 
 大多数 Fixture 不需要 `teardown`——写进 Sandbox 的起始文件、装的依赖随 Sandbox 销毁自动没了。需要 `teardown` 的是**Sandbox 外**的 Fixture：在共享外部服务里为这个 Attempt 建的临时资源（临时 repo、bucket、队列 topic），不收就泄漏。
 
-同一条评估用例的多个 Attempt（`runs` 大于 1、或同批多个实验跑同一条评估用例）并发执行且共享同一个模块，`setup` 的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 `sandbox` 实例作键存取（`WeakMap`）：sandbox 与 Attempt 一一对应，天然是 per-attempt 键：
+同一条评估用例的多个 Attempt（`attempts` 大于 1、或同批多个实验跑同一条评估用例）并发执行且共享同一个模块，`setup` 的句柄不能放进普通模块变量——会被后一个并发 Attempt 覆写。以 `sandbox` 实例作键存取（`WeakMap`）：sandbox 与 Attempt 一一对应，天然是 per-attempt 键：
 
 ```ts
 // evals/pr-review/close-stale.eval.ts

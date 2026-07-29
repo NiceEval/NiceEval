@@ -7,5 +7,5 @@ export default defineExperiment({
   description: "workspace-write: 沙箱可写(默认档)",
   agent,
   params: { sandboxMode: "workspace-write" },
-  runs: 1,
+  attempts: 1,
 });

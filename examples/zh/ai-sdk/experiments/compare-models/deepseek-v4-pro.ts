@@ -11,6 +11,6 @@ export default defineExperiment({
   description: "deepseek-v4-pro: 对比模型",
   agent: webAgent({ baseUrl: "http://127.0.0.1:5188" }),
   model: "deepseek-v4-pro",
-  runs: 2,   // 跑满 2 次,才能比较 model 间的通过率
+  attempts: 2,   // 跑满 2 次,才能比较 model 间的通过率
   budget: 5, // $5 上限
 });

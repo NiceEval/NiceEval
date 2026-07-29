@@ -1,0 +1,423 @@
+/* 文档站交互与动画组件的样式。Mintlify 自动加载站点根目录下的 .css。 */
+/* 观感按仓库根 DESIGN.md：1px 边表达区域、零圆角、无渐变无阴影，颜色只在有语义时出现， */
+/* 判定同时给出符号与文字。浅色取 chalk 令牌值，深色取 basalt 令牌值。 */
+/* 全部行为由 CSS 完成，不加载脚本：关掉 JavaScript 时每个面板照常可读。 */
+
+.ne-w {
+  --ne-surface: #ffffff;
+  --ne-subtle: #f4f4f5;
+  --ne-border: #dedee2;
+  --ne-border-strong: #c9c9cf;
+  --ne-text: #111113;
+  --ne-text-2: #62636a;
+  --ne-text-3: #8b8d98;
+  --ne-positive: #087f5b;
+  --ne-negative: #b42318;
+  --ne-warning: #9a6700;
+  --ne-accent: #2a78d6;
+  --ne-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  position: relative;
+  margin: 1.5rem 0;
+  border: 1px solid var(--ne-border);
+  background: var(--ne-surface);
+  color: var(--ne-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dark .ne-w {
+  --ne-surface: #0b0b0b;
+  --ne-subtle: #111111;
+  --ne-border: #262626;
+  --ne-border-strong: #343434;
+  --ne-text: #ededed;
+  --ne-text-2: #a1a1aa;
+  --ne-text-3: #74747b;
+  --ne-positive: #3ddc97;
+  --ne-negative: #ff6b6b;
+  --ne-warning: #e8b84a;
+  --ne-accent: #cbd6dc;
+}
+
+.ne-w code,
+.ne-w .ne-code {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.ne-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
+  font-weight: 600;
+}
+
+.ne-hd-hint {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ne-text-3);
+}
+
+.ne-ft {
+  padding: 8px 12px;
+  border-top: 1px solid var(--ne-border);
+  color: var(--ne-text-2);
+  font-size: 12px;
+}
+
+.ne-pos { color: var(--ne-positive); }
+.ne-neg { color: var(--ne-negative); }
+.ne-warn { color: var(--ne-warning); }
+.ne-dim { color: var(--ne-text-3); }
+
+/* ── 选择器：选一个条件，看它带来的结果 ────────────────────────────── */
+
+.ne-pick-in {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.ne-pick-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-bottom: 1px solid var(--ne-border);
+}
+
+.ne-pick-tabs > label {
+  padding: 7px 12px;
+  border-right: 1px solid var(--ne-border);
+  border-bottom: 2px solid transparent;
+  color: var(--ne-text-2);
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+}
+
+.ne-pick-tabs > label:hover { color: var(--ne-text); background: var(--ne-subtle); }
+
+.ne-pick-panel { display: none; padding: 12px; }
+
+.ne-pick-lead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.ne-pick-lead .ne-sym { font-family: var(--ne-mono); }
+
+.ne-pick-why { color: var(--ne-text-2); }
+.ne-pick-why + .ne-pick-why { margin-top: 6px; }
+
+.ne-pick-in:nth-of-type(1):checked ~ .ne-pick-tabs > label:nth-child(1),
+.ne-pick-in:nth-of-type(2):checked ~ .ne-pick-tabs > label:nth-child(2),
+.ne-pick-in:nth-of-type(3):checked ~ .ne-pick-tabs > label:nth-child(3),
+.ne-pick-in:nth-of-type(4):checked ~ .ne-pick-tabs > label:nth-child(4),
+.ne-pick-in:nth-of-type(5):checked ~ .ne-pick-tabs > label:nth-child(5),
+.ne-pick-in:nth-of-type(6):checked ~ .ne-pick-tabs > label:nth-child(6),
+.ne-pick-in:nth-of-type(7):checked ~ .ne-pick-tabs > label:nth-child(7),
+.ne-pick-in:nth-of-type(8):checked ~ .ne-pick-tabs > label:nth-child(8) {
+  color: var(--ne-text);
+  background: var(--ne-surface);
+  border-bottom-color: var(--ne-text);
+  font-weight: 600;
+}
+
+.ne-pick-in:nth-of-type(1):focus-visible ~ .ne-pick-tabs > label:nth-child(1),
+.ne-pick-in:nth-of-type(2):focus-visible ~ .ne-pick-tabs > label:nth-child(2),
+.ne-pick-in:nth-of-type(3):focus-visible ~ .ne-pick-tabs > label:nth-child(3),
+.ne-pick-in:nth-of-type(4):focus-visible ~ .ne-pick-tabs > label:nth-child(4),
+.ne-pick-in:nth-of-type(5):focus-visible ~ .ne-pick-tabs > label:nth-child(5),
+.ne-pick-in:nth-of-type(6):focus-visible ~ .ne-pick-tabs > label:nth-child(6),
+.ne-pick-in:nth-of-type(7):focus-visible ~ .ne-pick-tabs > label:nth-child(7),
+.ne-pick-in:nth-of-type(8):focus-visible ~ .ne-pick-tabs > label:nth-child(8) {
+  outline: 2px solid var(--ne-accent);
+  outline-offset: -2px;
+}
+
+.ne-pick-in:nth-of-type(1):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(1),
+.ne-pick-in:nth-of-type(2):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(2),
+.ne-pick-in:nth-of-type(3):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(3),
+.ne-pick-in:nth-of-type(4):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(4),
+.ne-pick-in:nth-of-type(5):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(5),
+.ne-pick-in:nth-of-type(6):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(6),
+.ne-pick-in:nth-of-type(7):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(7),
+.ne-pick-in:nth-of-type(8):checked ~ .ne-pick-body > .ne-pick-panel:nth-child(8) {
+  display: block;
+}
+
+/* ── 判定折叠：勾掉一条断言，看整条 eval 的判定怎么变 ──────────────── */
+
+.ne-vd-rows { padding: 4px 0; }
+
+.ne-vd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.ne-vd-row:hover { background: var(--ne-subtle); }
+
+.ne-vd-row input { margin: 0; accent-color: var(--ne-accent); }
+
+.ne-sev {
+  flex: none;
+  min-width: 44px;
+  padding: 1px 6px;
+  border: 1px solid var(--ne-border-strong);
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--ne-text-2);
+}
+
+.ne-vd-name { font-family: var(--ne-mono); font-size: 12px; }
+
+.ne-vd-note {
+  margin-left: auto;
+  text-align: right;
+  color: var(--ne-text-3);
+  font-size: 12px;
+}
+
+.ne-vd-strict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ne-border);
+  border-bottom: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
+  cursor: pointer;
+}
+
+.ne-vd-strict input { margin: 0; accent-color: var(--ne-accent); }
+
+.ne-vd-out { padding: 11px 12px; }
+
+.ne-vd-badge {
+  display: none;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  font-family: var(--ne-mono);
+}
+
+.ne-vd-passed { display: flex; color: var(--ne-positive); }
+.ne-vd-failed { color: var(--ne-negative); }
+
+.ne-vd-say { display: none; margin-top: 5px; color: var(--ne-text-2); }
+.ne-vd-say-ok { display: block; }
+
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-passed { display: none; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-failed { display: flex; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-say-ok { display: none; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-say-gate { display: block; }
+
+.ne-vd:has(.ne-a-gate:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-ok { display: none; }
+.ne-vd:has(.ne-a-gate:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-soft { display: block; }
+
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-passed { display: none; }
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-failed { display: flex; }
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-soft { display: none; }
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-strict { display: block; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-say-strict { display: none; }
+
+.ne-vd .ne-only-strict { display: none; }
+.ne-vd:has(.ne-strict:checked) .ne-only-strict { display: inline; }
+.ne-vd:has(.ne-strict:checked) .ne-not-strict { display: none; }
+
+/* ── 生命周期：一条 Attempt 从排队到收尾，逐段点亮 ─────────────────── */
+
+.ne-life-rows { padding: 6px 0; }
+
+.ne-life-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+}
+
+.ne-life-bar {
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  min-height: 18px;
+  background: var(--ne-border);
+  animation: ne-life 24s linear infinite;
+}
+
+.ne-life-name {
+  flex: none;
+  width: 168px;
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-life-what { color: var(--ne-text-2); font-size: 12px; }
+
+.ne-life-times {
+  margin-left: auto;
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--ne-border);
+  font-size: 11px;
+  color: var(--ne-text-3);
+  white-space: nowrap;
+}
+
+.ne-life-row:nth-child(1) .ne-life-bar { animation-delay: 0s; }
+.ne-life-row:nth-child(2) .ne-life-bar { animation-delay: 2s; }
+.ne-life-row:nth-child(3) .ne-life-bar { animation-delay: 4s; }
+.ne-life-row:nth-child(4) .ne-life-bar { animation-delay: 6s; }
+.ne-life-row:nth-child(5) .ne-life-bar { animation-delay: 8s; }
+.ne-life-row:nth-child(6) .ne-life-bar { animation-delay: 10s; }
+.ne-life-row:nth-child(7) .ne-life-bar { animation-delay: 12s; }
+.ne-life-row:nth-child(8) .ne-life-bar { animation-delay: 14s; }
+.ne-life-row:nth-child(9) .ne-life-bar { animation-delay: 16s; }
+.ne-life-row:nth-child(10) .ne-life-bar { animation-delay: 18s; }
+.ne-life-row:nth-child(11) .ne-life-bar { animation-delay: 20s; }
+.ne-life-row:nth-child(12) .ne-life-bar { animation-delay: 22s; }
+
+@keyframes ne-life {
+  0%, 7% { background: var(--ne-accent); }
+  8%, 100% { background: var(--ne-border); }
+}
+
+.ne-life:hover .ne-life-bar { animation-play-state: paused; }
+
+.ne-life-sep {
+  padding: 6px 12px 2px;
+  color: var(--ne-text-3);
+  font-size: 12px;
+}
+
+/* ── 调度：全局并发位与实验自己的并发上限怎么一起决定谁在跑 ────────── */
+
+.ne-sched-grid { padding: 12px; overflow-x: auto; }
+
+.ne-sched-lanes { position: relative; min-width: 460px; }
+
+.ne-sched-lane {
+  display: grid;
+  grid-template-columns: 92px repeat(12, minmax(18px, 1fr));
+  align-items: center;
+  gap: 0;
+  min-width: 460px;
+}
+
+.ne-sched-lane + .ne-sched-lane { margin-top: 4px; }
+
+.ne-sched-label {
+  grid-column: 1;
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  color: var(--ne-text-3);
+  padding-right: 8px;
+}
+
+.ne-sched-track {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  height: 22px;
+  border: 1px solid var(--ne-border);
+}
+
+.ne-sched-bar {
+  grid-row: 1;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  font-size: 11px;
+  font-family: var(--ne-mono);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ne-sched-bar.ne-serial { border-color: var(--ne-warning); color: var(--ne-warning); }
+.ne-sched-bar.ne-backoff { border-style: dashed; color: var(--ne-text-3); }
+
+.ne-sched-axis {
+  margin: 6px 0 0 92px;
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-sched-play {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 92px;
+  right: 0;
+  pointer-events: none;
+}
+
+.ne-sched-play::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--ne-accent);
+  animation: ne-sweep 12s linear infinite;
+}
+
+@keyframes ne-sweep {
+  from { left: 0; }
+  to { left: calc(100% - 2px); }
+}
+
+.ne-sched-grid:hover .ne-sched-play::after { animation-play-state: paused; }
+
+.ne-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ne-border);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-legend-key {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--ne-border-strong);
+}
+
+.ne-legend-key.ne-serial { border-top-color: var(--ne-warning); }
+.ne-legend-key.ne-backoff { border-top-style: dashed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ne-life-bar,
+  .ne-sched-play::after {
+    animation: none;
+  }
+  .ne-life-bar { background: var(--ne-border-strong); }
+}

@@ -408,18 +408,17 @@ export default defineSandbox({
 - 控制 `maxConcurrency`（experiment 字段或 `--max-concurrency`），避免本地 Docker 资源耗尽。
 - 把慢测试拆成必要的 gate 和可选的 soft 检查。
 
-Warm pools 和复用属于 runner / scheduler 层面的能力，详见 [Runner](/zh/explanation/runner)。
+### 让公共准备只付一次
 
-### 本地迭代提速：`--reuse-sandbox`
+冷启动（起容器、装依赖、装 Agent CLI）主导反馈时间时，在实验里声明 `sandboxReuse: true`：多条 Attempt 依次共用一个 Sandbox，创建与 Sandbox 级 `setup` 每个 Sandbox 只付一次，题与题之间只把工作目录重置回公共准备完成时的状态。
 
-本地边写评估边试时，每个 Attempt 新建 Sandbox 的冷启动（起容器、装依赖、装 agent CLI）会主导反馈时间。加 `--reuse-sandbox` 让选中的评估共用一个已经装好的 Sandbox 串行跑：与单个评估无关的安装只做一次，题与题之间只把工作目录重置回刚装好的状态，下一题几乎立即开跑。
-
-```bash
-niceeval exp memory/commit0 --reuse-sandbox
+```ts
+export default defineExperiment({
+  agent: codexAgent(),
+  sandbox: e2bSandbox({ template: "acme-evals", lifetimeMs: 60 * 60_000 }),
+  sandboxReuse: true,
+  maxConcurrency: 3,
+});
 ```
 
-三条边界：
-
-- 只重置工作目录。`$HOME`、全局安装的包、后台进程不会被清理，上一题的残留可能影响下一题的判定。所以这个 flag 只用于本地开发提速，不要进 CI；它产出的结果也不会被后续运行当作缓存跳过。
-- 复用意味着串行：同一时刻只有一个 Sandbox 在跑，并发固定为 1。
-- 选中的评估必须解析到同一份 Sandbox 配置，否则在创建前报错并列出分组；与 `--keep-sandbox` 或 `localSandbox()` 组合同样在创建前报错。
+这是可签入的实验语义，不是命令行上的运行模式：同一个实验不能临时打开或关闭复用，需要全新 Sandbox 的对照就另写一个不声明它的实验。代价、四层生命周期的次数和准备代码要满足的幂等要求见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。

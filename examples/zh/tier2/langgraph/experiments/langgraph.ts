@@ -7,5 +7,5 @@ import agent from "../agents/langgraph.ts";
 export default defineExperiment({
   description: "langgraph:真实 LangGraph + DeepSeek 后端",
   agent,
-  runs: 1,
+  attempts: 1,
 });

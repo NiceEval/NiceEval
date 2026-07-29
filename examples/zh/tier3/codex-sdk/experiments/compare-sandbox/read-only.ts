@@ -8,5 +8,5 @@ export default defineExperiment({
   description: "read-only: 只读沙箱(写盘类 eval 预期失败)",
   agent,
   params: { sandboxMode: "read-only" },
-  runs: 1,
+  attempts: 1,
 });

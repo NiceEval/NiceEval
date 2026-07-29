@@ -5,5 +5,5 @@ import agent from "../agents/pi-sdk.ts";
 export default defineExperiment({
   description: "pi-sdk:真实 DeepSeek 后端(默认模型)",
   agent,
-  runs: 1,
+  attempts: 1,
 });

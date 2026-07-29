@@ -13,5 +13,5 @@ export default defineExperiment({
   description: "concise: 极简风格 system prompt",
   agent,
   flags: { systemPrompt: CONCISE_PROMPT },
-  runs: 1,
+  attempts: 1,
 });

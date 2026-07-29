@@ -13,3 +13,15 @@
 ## 落点
 
 新增 `docs/feature/sandbox/serial-reuse.md`;改写 `docs/runner.md` 预热与复用小节、`docs/feature/sandbox/architecture.md` 性能小节、`cli.md` keep/reuse 互斥条目、`local.md` 两处;场景行登记在 `docs/engineering/testing/unit/sandbox.md` 串行复用分区。
+
+## 后续翻案:入口从 CLI flag 改成实验字段
+
+本条的「入口是短暂 CLI flag(`--reuse-sandbox`),不进 experiment 配置」这一半已被推翻。
+定稿形态是实验字段 `sandboxReuse: true`(契约在 `docs/feature/sandbox/reuse.md`,
+`serial-reuse.md` 已并入它):复用是可签入的实验语义,进 `configHash`,同一个 experiment
+不能由 CLI 临时开关;要全新 Sandbox 的对照就另写一个不声明它的 experiment。
+「与结果沿用双向绝缘」「与 keep / local 互斥」「按 environment profile 分组」三条仍然成立,
+只是异构批次不再报错——Runner 分组后各组各复用。
+
+本条按 CLI flag 写的那一版在 `docs-site/zh` 里留了整整一页教程没跟着改,
+见 [docs-site-lagged-behind-two-renames](docs-site-lagged-behind-two-renames.md)。

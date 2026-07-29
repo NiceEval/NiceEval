@@ -1,0 +1,183 @@
+---
+title: "让改动只重跑该重跑的那些评估用例"
+sidebarTitle: "重跑与沿用"
+description: "同一条命令再跑一遍时，NiceEval 沿用已经跑完的结果，只补跑缺的部分。这一页说明哪一处改动作废哪些结果，以及指纹之外的东西变了要怎么用 --rerun 复验。"
+---
+
+跑过一轮之后再跑同一条命令，已经判定完的评估用例默认不重花 Agent 与 Sandbox 的钱：NiceEval 沿用上一轮的结果，这次只派发真正缺的那些 Attempt。
+
+```text
+╭─ PLAN ──────────────────────────────────────────╮
+│ 36 attempts · 36 evals × 1 configs              │
+│ 24 of 36 reused · 12 to run                     │
+╰─────────────────────────────────────────────────╯
+```
+
+这一页回答两个问题：我刚改的这一处会让多少条重跑，以及改的东西 NiceEval 看不见时怎么让它复验。
+
+## 一处改动作废多大范围
+
+下面每一格是一次真实改动。设定：这个实验选中 36 条评估用例，上一轮全绿。
+
+<div className="ne-w ne-pick">
+  <div className="ne-hd">改了这一处 <span className="ne-hd-hint">选一格看这次跑什么</span></div>
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-1" defaultChecked />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-2" />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-3" />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-4" />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-5" />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-6" />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-7" />
+  <input className="ne-pick-in" type="radio" name="ne-cache" id="ne-cache-8" />
+  <div className="ne-pick-tabs">
+    <label htmlFor="ne-cache-1">一条评估用例里的 prompt</label>
+    <label htmlFor="ne-cache-2">30 条共用的断言 helper</label>
+    <label htmlFor="ne-cache-3">实验的 model 或 flags</label>
+    <label htmlFor="ne-cache-4">labels、描述、注释</label>
+    <label htmlFor="ne-cache-5">attempts 从 3 调到 5</label>
+    <label htmlFor="ne-cache-6">timeoutMs</label>
+    <label htmlFor="ne-cache-7">Sandbox 的 template</label>
+    <label htmlFor="ne-cache-8">Agent CLI 升级</label>
+  </div>
+  <div className="ne-pick-body">
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>重跑 1 条，其余 35 条沿用</div>
+      <div className="ne-pick-why">评估用例文件进指纹的是<strong>整份字节</strong>。改 prompt、改断言、加一行注释、重新格式化，效果一样：这一条重跑。</div>
+      <div className="ne-pick-why">这正是想要的粒度——改一道题只花那一道题的钱。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>重跑 30 条，其余 6 条沿用</div>
+      <div className="ne-pick-why">指纹认的是这条评估用例的<strong>源码闭包</strong>：它自己的字节，加上导入图里落在项目根内的每个模块。一个被 30 条引用的 helper 改一行就作废那 30 条。</div>
+      <div className="ne-pick-why">想缩小作废面就按变更频率拆文件：稳定的断言 helper 和天天调的 prompt 模板不放同一个文件。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>36 条全部重跑</div>
+      <div className="ne-pick-why"><code>model</code>、<code>reasoningEffort</code>、<code>flags</code> 都是运行条件。<code>flags</code> 整袋进指纹，加一个键、删一个键同样全跑。</div>
+      <div className="ne-pick-why">两个取值下跑出来的是两批不同条件的结果，混在一起读通过率没有意义。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-pos"><span className="ne-sym">✓</span>一条不动，36 条全部沿用</div>
+      <div className="ne-pick-why"><code>labels</code> 是报告坐标，Adapter 和评估用例都读不到它，改它不影响跑出来的结果。<code>description</code>、注释、字段顺序、把某个值抽成变量同理。</div>
+      <div className="ne-pick-why">实验文件认的是解析出来的值，不认字节——这一点和评估用例文件正相反。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-warn"><span className="ne-sym">+</span>已有 3 条沿用，补跑缺的 2 条</div>
+      <div className="ne-pick-why">沿用以 Attempt 为单位。<code>attempts</code> 因此不进指纹：调大只补跑缺的序号，调小不删已有结果。</div>
+      <div className="ne-pick-why">通过率的分母由沿用的和新跑的一起凑满。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-warn"><span className="ne-sym">±</span>调大一条不动；调小只重跑当初跑得慢的那几条</div>
+      <div className="ne-pick-why">上限不改变「结果是什么」，只决定「等不等得到」，所以它不进指纹。一条 15 分钟跑完的 <code>passed</code>，在 20 分钟和 40 分钟的上限下是同一个事实。</div>
+      <div className="ne-pick-why">它另立一条判据：执行耗时超过当前上限的旧结果在新配置下复现不出来，如实重跑。执行耗时不含等并发位的排队时间。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-neg"><span className="ne-sym">✗</span>换名字全部重跑；同名重建一条不动</div>
+      <div className="ne-pick-why">换 <code>template</code> / <code>image</code> / <code>snapshotId</code> 就是换了起步环境，结果不可比，36 条全部重跑。只改 <code>environments</code> 表里的一行时，只有声明了那个 profile 的评估用例重跑。</div>
+      <div className="ne-pick-why">名字不变、内容重建（同名镜像重新 build、<code>.setup()</code> 里多装一个二进制）时指纹看不见这个变化，一条不动。要复验用下面的 <code>--rerun all</code>。</div>
+    </div>
+    <div className="ne-pick-panel">
+      <div className="ne-pick-lead ne-warn"><span className="ne-sym">!</span>一条不动，但上一轮的绿可能已经不成立</div>
+      <div className="ne-pick-why">指纹只认你写下的配置和它能读到的源码。Agent CLI 升版本、被测服务改了行为或换了实例、Agent 的 system prompt 改了，NiceEval 都看不见。</div>
+      <div className="ne-pick-why">这时旧的绿掩盖的可能是真实回归。改了被测对象只复验失败项走 <code>--rerun</code>，外部环境整个变了走 <code>--rerun all</code>。</div>
+    </div>
+  </div>
+  <div className="ne-ft">能配置化的差异（服务端版本号这类）显式写进 <code>flags</code>，让指纹自然失效，比每次手动重跑可靠。</div>
+</div>
+
+## 沿用要过的门
+
+指纹只是其中一道。一条已经落盘的 Attempt 要被这次运行沿用，下面每一道都要过：
+
+| 门 | 判据 | 不过会怎样 |
+| --- | --- | --- |
+| 终态 | 判定是 `passed` 或 `failed` | `errored` / `skipped` 永不沿用，总会重试 |
+| 指纹 | 这条评估用例的指纹等于本次配置算出的指纹 | 这条评估用例的全部 Attempt 重跑 |
+| 资格 | 执行耗时不超过当前解析后的 `timeoutMs` | 这一条重跑 |
+| 出身 | 它不是复用 Sandbox 跑出来的 | 这一条重跑 |
+| 口径 | `--rerun` 这次仍采信这个判定 | 该判定的 Attempt 重跑 |
+| 模式 | 实验没声明 `sandboxReuse: true`，且这条不落在 `--keep-sandbox` 的留存档内 | 这一条真派发 |
+
+`passed` 与 `failed` 都是「跑完了、判定确定」的终态，没理由重花一次钱去复现同一个已知结果。`errored` 是超时、Sandbox 失败这类环境层面的不确定失败，判定本身不可信，所以从不沿用。
+
+## 指纹读得到哪些文件
+
+判定逻辑常常不住在 `.eval.ts` 里：断言抽进 `share/assert-memory.ts`，数据行从 `evals/data/` 读进来。指纹因此认的不是单个文件：
+
+- **源码**：评估用例文件的字节，加上它的导入图里解析后落在项目根内的每个模块，递归展开。相对路径和 `tsconfig` 的 `paths` 别名都算数。
+- **数据**：经 `loadYaml` / `loadJson` / `loadText` 读入的文件，内容哈希算进读它的那条评估用例。隐藏测试脚本、参考实现、shell 模板都是判据文件，改一字节就重跑引用它的那条，写法见[隐藏测试判分](/zh/tutorials/criteria-files)。
+
+三处读不到，是明确的缺口：`node_modules` 里的包、动态 `import()`，以及你自己用 `fs.readFile` 读进来的文件——NiceEval 不知道那次读发生过。判据文件一律走 loader 读入，loader 只能写在模块顶层，写进 `test(t)` 会直接报错。
+
+## 每轮换一次的地址不要写进 flags
+
+`flags` 写的是实验条件，它整袋参与指纹判定。隧道地址每次重启换一个 URL，写进 `flags` 就等于每次重启都作废全部已完成结果。
+
+这个地址是 `setup` 跑起来才拿到的，用 `ctx.fact()` 把它记进结果：
+
+```ts
+sandboxSetup(): SandboxHook {
+  return async (sandbox, ctx) => {
+    ctx.fact("nowledge.endpoint", env.url);   // 这条 Attempt 实际连的实例
+    await sandbox.writeFiles({ ".nowledge/env": `NMEM_URL=${env.url}\n` });
+  };
+}
+```
+
+记录一样不少：`niceeval show` 的 `facts:` 行会列出这条 Attempt 连的地址，报告也能按它分组。沿用进来的结果带的是它当初那一轮的地址，不会被这一轮的新 URL 顶替。
+
+判据是**谁写下这个值**：你在实验里声明的是条件，写 `flags`；跑起来才知道的是观测，用 `ctx.fact()`；Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
+
+已经误写进 `flags` 的地址要搬走时，搬迁那一次带上 `--carry-ignoring-flag`，这一轮的沿用判定按抹掉这个键之后的 `flags` 认账，搬迁不必赔上一轮重烧：
+
+```bash
+npx niceeval exp compare --carry-ignoring-flag tunnelUrl
+```
+
+它只接受已经不在本次 `flags` 里的键——键还在就是用法错误，报错会指出它仍是本次的实验条件、要先真正搬走。搬完之后的运行不需要再带这个 flag。
+
+## 指纹没得改但就是要重跑
+
+`--rerun` 是一根轴三档，只作用于本次调用，不改变指纹定义：
+
+| 写法 | 哪些算数 | 本次跑什么 |
+| --- | --- | --- |
+| 不带 | `passed` 与 `failed` | `errored`、`skipped` 与缺失的 Attempt 序号 |
+| `--rerun` | 只有 `passed` | 上面那些，加所有 `failed` |
+| `--rerun all` | 都不算数 | 选中矩阵的每一条 |
+
+```bash
+npx niceeval exp compare --rerun        # 改了 Agent 的 prompt，复验失败项
+npx niceeval exp compare --rerun all    # Agent CLI 升级、镜像重建，全量重验
+```
+
+裸写的 `--rerun` 用于改了不在指纹里的东西之后复验失败项，不必自己去结果树里挖失败的评估用例 ID——失败面板的 `Retry:` 行给的就是这条命令。`--rerun all` 用于外部环境整个变了时的全量重验，也是收工前确认没有回归的那一步。
+
+## 中断的运行重跑就是续跑
+
+Attempt 的 `result.json` 在收尾链完成后一次写成，判定可信与否与这次运行有没有正常结束无关。被 Ctrl-C 或 `kill -9` 打断的运行，已经落盘的终态照常沿用。
+
+所以长批次撞上 CI 时限或宿主超时之后，恢复路径就是重跑同一条命令：只花缺失 Attempt 的成本，重跑前不需要任何手工清理。完整的恢复流程见[被强杀之后接着跑](/zh/troubleshooting/recover-after-kill)。
+
+多开一个终端跑同一条命令也是同一套规则：每条评估用例开跑前拿一把带心跳的锁，取到锁之后重新看一眼它当前的结果，别人已经跑完落盘的直接沿用，仍缺的自己跑。两边最后都拿到完整结果，交集部分只花一份钱。
+
+## 两种模式不参与沿用
+
+- **复用 Sandbox 的运行与沿用双向绝缘。** 声明 `sandboxReuse: true` 的实验每次都真实执行计划内的 Attempt，产出的结果也不会成为后续运行的沿用来源。这样一份运行里的结果只有一种出身，不会一半干净沿用、一半带着上一道题的残留。理由与写法见[复用 Sandbox](/zh/tutorials/sandbox-reuse)。
+- **`--keep-sandbox` 要的是一次真实执行的现场。** 判定落在当前留存档内的 Attempt 不沿用、照常派发：沿用来的结果没有 Sandbox 可留。`failed` 档下 `failed` 重跑、`passed` 照常沿用，`all` 档下全部重跑。
+
+## 接着看
+
+<CardGroup cols={2}>
+  <Card title="被强杀之后接着跑" icon="rotate-right" href="/zh/troubleshooting/recover-after-kill">
+    长批次被打断后怎么恢复。
+  </Card>
+  <Card title="并发与执行顺序" icon="layer-group" href="/zh/tutorials/concurrency">
+    名额怎么分、什么时候必须串行。
+  </Card>
+  <Card title="隐藏测试判分" icon="file-lines" href="/zh/tutorials/criteria-files">
+    让判据文件参与指纹。
+  </Card>
+  <Card title="运行器" icon="gear" href="/zh/explanation/runner">
+    发现、调度、沿用与预算的完整机制。
+  </Card>
+</CardGroup>
