@@ -13,11 +13,19 @@ interface HeroContent {
 interface HeroCardProps {
   title: LocalizedText;
   data: HeroContent;
+  logo?: HeroLogo;
+  description?: LocalizedText;
+  links?: readonly HeroLink[];
   className?: string;
 }
 ```
 
-web 面渲染 hero 标题（`<h1>`）、meta 行（最后运行时间按渲染 locale 格式化；`latestStartedAt` 为 null 时显示内置「暂无运行」文案）与品牌行（等同 [`PoweredBy`](powered-by.md)，恒含、无拆除 prop）；text 面输出标题行与 meta 行，不含品牌行。`niceeval/report/react` 导出同名纯组件，web 行为一致——品牌跟着组件走，不区分官方宿主与嵌入页面。
+`HeroLogo` 与 `HeroLink` 的形状见 [`Hero`](hero.md)。
+web 面依次渲染可选 logo、hero 标题（`<h1>`）、可选介绍、可选链接组、meta 行与品牌行。
+最后运行时间按渲染 locale 格式化；`latestStartedAt` 为 null 时显示内置「暂无运行」文案。
+text 面输出标题、可选介绍、可选链接与 meta，不含纯视觉 logo 和品牌行。
+`niceeval/report/react` 导出同名纯组件，web 行为一致——品牌跟着组件走，
+不区分官方宿主与嵌入页面。
 
 ## 相关阅读
 

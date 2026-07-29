@@ -347,12 +347,50 @@ table.niceeval-report,
   text-align: center;
   margin: 0 0 clamp(28px, 5vw, 44px);
 }
+.niceeval-hero .niceeval-hero-logo {
+  display: block;
+  width: clamp(64px, 8vw, 80px);
+  height: clamp(64px, 8vw, 80px);
+  object-fit: contain;
+  margin: 0 auto 22px;
+}
 .niceeval-hero .niceeval-hero-title {
   margin: 0;
   font-size: clamp(38px, 5vw, 60px);
   line-height: 0.98;
   font-weight: 760;
   letter-spacing: -0.01em;
+}
+.niceeval-hero .niceeval-hero-description {
+  max-width: 720px;
+  margin: 18px auto 0;
+  color: var(--muted);
+  font-size: clamp(15px, 1.7vw, 17px);
+  line-height: 1.65;
+}
+.niceeval-hero .niceeval-hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin: 22px 0 0;
+}
+.niceeval-hero .niceeval-hero-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in oklch, var(--accent), var(--line) 55%);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--accent), transparent 90%);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.niceeval-hero .niceeval-hero-link:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent), transparent 84%);
 }
 .niceeval-hero .niceeval-hero-meta {
   margin: 14px 0 0;

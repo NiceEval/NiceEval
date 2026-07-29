@@ -61,6 +61,54 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
     },
   },
   {
+    name: "Hero · 官方品牌内容适配宽屏与窄屏",
+    // 场景：报告作者给 Hero 声明 logo、说明与外链。
+    // Given：branded.tsx 只使用公开组件与官方 stylesheet。
+    // When：浏览器分别以宽屏和窄屏打开导出首页。
+    // Then：品牌内容都可见，外链正确，且各元素没有越出视口。
+    async run({ browser, brandedBaseUrl }) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      try {
+        await page.goto(`${brandedBaseUrl}/index.html`, { waitUntil: "networkidle" });
+        const logo = page.getByRole("img", { name: "Results E2E logo" });
+        const description = page.getByText(
+          "A branded report assembled entirely from official niceeval components.",
+          { exact: true },
+        );
+        const link = page.getByRole("link", { name: "View niceeval on GitHub" });
+        await Promise.all([
+          logo.waitFor({ state: "visible" }),
+          description.waitFor({ state: "visible" }),
+          link.waitFor({ state: "visible" }),
+        ]);
+        assert.equal(await link.getAttribute("href"), "https://github.com/niceeval/niceeval");
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        for (const element of [logo, description, link]) {
+          const box = await element.boundingBox();
+          assert.ok(box, "窄屏下品牌元素应有可见布局框");
+          assert.ok(box.x >= 0 && box.x + box.width <= 390, "窄屏下品牌元素不应越出视口");
+        }
+      } finally {
+        await page.close();
+      }
+    },
+  },
+  {
+    name: "Hero · text 面保留说明与链接但省略 logo",
+    // 场景：同一品牌 Hero 渲染到终端。
+    // Given：branded.tsx 同时声明视觉 logo、说明与外链。
+    // When：用户执行 show。
+    // Then：说明与链接可读可复制，视觉 logo 的 alt 不进入 text 输出。
+    async run({ evidence }) {
+      const output = sh(`pnpm exec niceeval show --report ${BRANDED_REPORT} --record ${evidence.resultsRoot}`);
+      const readableOutput = output.replace(/\s+/g, " ");
+      assert.ok(readableOutput.includes("A branded report assembled entirely from official niceeval components."));
+      assert.ok(readableOutput.includes("View niceeval on GitHub (https://github.com/niceeval/niceeval)"));
+      assert.ok(!readableOutput.includes("Results E2E logo"));
+    },
+  },
+  {
     name: "Report shell · 复用 standard pages 保留浏览器导航",
     // 场景：用户只给 standard 报告叠加品牌 title。
     // Given：branded.tsx 没有重写 pages。

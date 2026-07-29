@@ -7,6 +7,7 @@ import type { LocalizedText } from "../../model/locale.ts";
 import { dataShapeError, type ChromeProps } from "../shared.ts";
 import { heroCardText } from "./faces.ts";
 import { HeroCard as HeroCardWeb } from "./HeroCard.tsx";
+import type { HeroBrandProps, HeroLink, HeroLogo } from "./hero-types.ts";
 import { PoweredBy as PoweredByWeb } from "./PoweredBy.tsx";
 import {
   validateCopyFixPromptData,
@@ -37,14 +38,14 @@ const assertHeroData = (data: unknown): HeroData => {
   return data as HeroData;
 };
 
-export interface HeroProps {
+export interface HeroProps extends HeroBrandProps {
   title?: LocalizedText;
   className?: string;
   /** 显式 Sample；省略时用 ComposeContext.scope。 */
   input?: Sample;
 }
 
-export interface HeroCardProps {
+export interface HeroCardProps extends HeroBrandProps {
   title: LocalizedText;
   data: HeroData;
   className?: string;
@@ -54,20 +55,29 @@ export const HeroCard = defineComponent<HeroCardProps>({
   dimensions: () => ({}),
   web: (props, ctx) => {
     assertHeroData(props.data);
-    return <HeroCardWeb title={props.title} data={props.data} className={props.className} locale={ctx.locale} />;
+    return <HeroCardWeb {...props} locale={ctx.locale} />;
   },
   text: (props, ctx) => {
     assertHeroData(props.data);
-    return heroCardText(props.title, props.data, ctx);
+    return heroCardText(props.title, props.data, props, ctx);
   },
 });
 HeroCard.displayName = "HeroCard";
 
-export const Hero = defineComponent<HeroProps>(async ({ title, className, input }, ctx) => {
+export const Hero = defineComponent<HeroProps>(async ({ title, className, input, ...branding }, ctx) => {
   const data = await toHeroData(input ?? ctx.scope);
-  return <HeroCard title={title ?? ctx.report.title} data={data} className={className} />;
+  return (
+    <HeroCard
+      title={title ?? ctx.report.title}
+      data={data}
+      className={className}
+      {...branding}
+    />
+  );
 });
 Hero.displayName = "Hero";
+
+export type { HeroLink, HeroLogo };
 
 export const PoweredBy = defineComponent<globalThis.Record<never, never>>({
   dimensions: () => ({}),

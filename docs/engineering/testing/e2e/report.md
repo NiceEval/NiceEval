@@ -105,6 +105,8 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
   同视觉语言，工具预览无 JSON 字面转义直出——共享回复 renderer 的每个新渲染容器都要在这里验收一次样式覆盖（先例：[memory/attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)，同类缺陷在单元层 DOM 断言下恒逃逸）；点击 send
   / assertion 行由原生 `<details>`
   展开行内回复与断言细节，普通行不可展开；文档零 JS 依赖（禁 JS 后上述内容仍完整可读）。
+  自定义 `Hero` 的可选 logo、说明与外链由官方 stylesheet 完成排版：宽屏和窄屏都完整可见且不越出视口；
+  text 面保留说明与可复制链接，但不输出视觉 logo。
 - **自定义报告的用户操作回归**：渲染验收不只对内建 `standard`
   报告做。仓库签入一组代表性自定义报告文件（`pages: [...standard.pages]`
   叠外壳、自定义多页、自定义组件与 attempt page），对每份用 `show --report` / `view --report`

@@ -1,7 +1,7 @@
 // @ts-nocheck
 // cases: docs/engineering/testing/unit/reports.md
-// 站点组件的单元测试:Hero 的标题回退链与显式覆盖(resolve 后的 props,不经渲染)、Hero 与手写
-// HeroCard 组合的结构严格等价、heroData(latestStartedAt / runs)、groupScopeWarnings(按动作
+// 站点组件的单元测试:Hero 的标题回退链、品牌内容透传与显式覆盖(resolve 后的 props)、Hero 与手写
+// HeroCard 组合的结构严格等价、品牌内容的 text 投影、heroData(latestStartedAt / runs)、groupScopeWarnings(按动作
 // 聚合的纯函数:组构成、排序、命令去重、summary 与 detailsOpen 阈值,web/text 两面共用同一份计算)、
 // scopeWarningsData(裸 Run[] 输入的空数组语义)、snapshotDiagnosticsData(只投影 diagnostics
 // 非空的真实 Run、Sample 与裸 Run[] 同值投影、experiment→startedAt 排序、来源不合并、开放
@@ -17,12 +17,13 @@ import { describe, expect, it } from "vitest";
 import type { AssertionResult, EvalResult, TraceSpan, Verdict } from "../../../types.ts";
 import type { AttemptHandle, Record, Sample, SampleIssue, Run } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
-import { defineComponent, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
+import { createTextContext, defineComponent, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
 import { buildReportMeta, defineReport, type ReportDefinition } from "../../definition/report.ts";
 import { pickReportPage, reportTitleText } from "../../runtime/text.ts";
 import { renderSamplePage } from "../../runtime/page-render.ts";
 import type { DiagnosticRecord } from "../../../types.ts";
 import { Hero, HeroCard } from "./index.tsx";
+import { heroCardText } from "./faces.ts";
 import { toHeroData } from "../../model/conversions.ts";
 import { copyFixPromptData, heroData, scopeWarningsData, snapshotDiagnosticsData, traceWaterfallData } from "./compute.ts";
 import { groupScopeWarnings } from "./scope-warnings.ts";
@@ -152,6 +153,35 @@ describe("Hero 与 HeroCard", () => {
     const scope = heroScope();
     const resolved = (await resolveOnScope(<Hero title="Custom Hero" />, scope)) as { props: { title: unknown } };
     expect(resolved.props.title).toBe("Custom Hero");
+  });
+
+  it("logo / description / links 从 Hero 原样进入 HeroCard；text 面保留介绍与链接但不输出纯视觉 logo", async () => {
+    const scope = heroScope();
+    const branding = {
+      logo: { src: "data:image/svg+xml,mark", alt: { en: "MemoryBench mark" } },
+      description: {
+        en: "Does memory help coding agents ship better code?",
+        "zh-CN": "记忆能否帮助 coding agent 交付更好的代码？",
+      },
+      links: [{ label: "GitHub", href: "https://github.com/acme/memorybench" }],
+    } as const;
+    const resolved = (await resolveOnScope(<Hero {...branding} />, scope)) as {
+      type: unknown;
+      props: globalThis.Record<string, unknown>;
+    };
+    expect(resolved.type).toBe(HeroCard);
+    expect(resolved.props).toMatchObject(branding);
+
+    const text = heroCardText(
+      "MemoryBench",
+      await toHeroData(scope),
+      branding,
+      createTextContext({ locale: "en", width: 60 }),
+    );
+    expect(text).toContain("Does memory help coding agents ship better code?");
+    expect(text).toContain("GitHub (https://github.com/acme/memorybench)");
+    expect(text).not.toContain("MemoryBench mark");
+    expect(text).not.toContain("data:image");
   });
 
   it("<Hero /> 与手写 <HeroCard title={report.title} data={await toHeroData(sample)} /> resolve 结果结构严格等价", async () => {

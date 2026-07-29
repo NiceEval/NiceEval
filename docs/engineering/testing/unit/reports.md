@@ -107,6 +107,8 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - `defineReport` 复用别处页的数组展开（页等值、外壳不沿用）。
   - 组合组件与手写组合严格等价。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
+  - Hero 的 `logo`、`description` 与 `links` 从组合组件原样进入 `HeroCard`；
+    text 面保留介绍与链接，省略纯视觉 logo，web 面的布局与响应式样式归 E2E 验收。
   - `runDiagnostics` 对 Sample / 直接传入的 Run[] 同值投影、空诊断过滤、
     experiment → startedAt 排序、来源不合并、开放 code 原样保留。
   - React Content 不携带 Run/AttemptHandle；渐进增强不改数据。

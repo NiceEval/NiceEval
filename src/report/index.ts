@@ -259,7 +259,7 @@ export {
   SampleFixPrompt,
   SampleNotices,
 } from "./components/site-components/index.tsx";
-export type { HeroCardProps, HeroProps } from "./components/site-components/index.tsx";
+export type { HeroCardProps, HeroLink, HeroLogo, HeroProps } from "./components/site-components/index.tsx";
 
 // 实体列表。
 export { AttemptList, FailureList } from "./components/entity-lists/index.tsx";

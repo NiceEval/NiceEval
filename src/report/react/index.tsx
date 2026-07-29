@@ -29,6 +29,7 @@ export {
   Waterfall,
 } from "../definition/primitives.tsx";
 export { HeroCard } from "../components/site-components/HeroCard.tsx";
+export type { HeroLink, HeroLogo } from "../components/site-components/hero-types.ts";
 export { PoweredBy } from "../components/site-components/PoweredBy.tsx";
 
 // 数据契约类型(家在 ../model/types.ts,「算」与「画」两侧共用同一份)

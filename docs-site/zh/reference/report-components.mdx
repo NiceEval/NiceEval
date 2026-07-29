@@ -206,9 +206,35 @@ toSampleNotices(sample);
 | `SourceView` | `source` |
 | `DiffView` | `files` |
 | `AttemptDetails` | `attempt` |
+| `Hero` | `logo`、`description`、`links` |
 
 `SourceView` 的 `source` 表示待显示的源码值。
 它不是惰性查询对象。
+
+## 品牌标题区
+
+`Hero` 可以直接显示产品 Logo、介绍和主要外链。
+间距、响应式布局、链接体裁与深浅色适配由 NiceEval 提供：
+
+```tsx
+<Hero
+  logo={{ src: memoryBenchLogo, alt: "MemoryBench" }}
+  description={{
+    en: "Does memory help coding agents ship better code?",
+    "zh-CN": "记忆能否帮助 coding agent 交付更好的代码？",
+  }}
+  links={[
+    {
+      label: "GitHub",
+      href: "https://github.com/acme/memorybench",
+    },
+  ]}
+/>
+```
+
+`logo.src` 使用浏览器可读取的图片 URL。
+`description` 与 `links[].label` 支持 `LocalizedText`。
+`show` 输出介绍与链接文字，但省略纯视觉 Logo；`view` 显示完整品牌标题区。
 
 ## 表格
 
