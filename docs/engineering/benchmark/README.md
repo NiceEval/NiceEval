@@ -129,7 +129,7 @@ export const codexProbe = defineEval({
 探测 **从不调用 `t.send()`**:`agent.setup`(装 CLI、写配置)由 `runAttemptBody` 在 `test(t)` 之前自动执行,耗时落在 `agent.setup` 阶段;`test(t)` 里只做正确性探测,零模型调用意味着零 token 成本,基准的开销只剩沙箱计算本身。正确率因此天然拆成三类,`run.ts` 分别计数:
 
 - `sandbox.create` 阶段抛错 → **provider 起不来**(可靠性)。
-- `agent.setup` 阶段抛错 → **安装脚本挂了**。
+- `agent.setup` 阶段抛错 → **安装脚本失败**。
 - 探测命令跑起来但 exitCode 非 0 → **装完但不可用**。
 
 ### `run.ts`:循环调用、当场打印
@@ -142,7 +142,7 @@ npx tsx bench/run.ts docker --attempts 10  # 默认也是 10(见下)
 
 对给定 provider 下的每个 adapter,`run.ts` 直接 `for` 循环调用 `runAttemptBody`(sandbox 由该 provider 的 `dockerSandbox()` / `e2bSandbox()` / `vercelSandbox()` 构造),串行执行、不并发——串行让排队等待恒近 0、attempt 序号与冷 / 热次序一一对应。每次调用拿到的结果里带逐阶段耗时(对齐上节「契约:`AttemptRecord.phases`」的阶段名与语义);循环跑完,`stats.ts` 里的纯函数当场算出 min/median/max、首个 / 后续 attempt 分列、三类失败计数,`console.table` 直接打到终端——没有「先跑再另开一步 show --report」这一步。
 
-默认 `--attempts 10` 而不是更省事的个位数:装 CLI 零模型调用,10 次相对 5 次的沙箱开销可忽略,但对下节「新一轮中位数是否落在历史波动范围外」这类判读有实质影响——个位数样本的包络基本等于裸的 min/max,统计支撑太薄。
+默认 `--attempts 10` 而不是更省事的个位数:装 CLI 零模型调用,10 次相对 5 次的沙箱开销可忽略,但对下节「新一轮中位数是否落在历史波动范围外」这类判读有实质影响——个位数样本的包络基本等于直接取 min/max,统计支撑太薄。
 
 首个 attempt 与后续 attempt 分列打印,不报单一均值:bub 的 `ensureBub` 有进程内共享安装锁与 checkpoint 缓存回填,同一轮里只有首个 attempt 付冷装成本,`agent.setup` 呈冷 / 热双峰,均值在双峰下没有意义;分列直接读出缓存省了多少。
 
@@ -160,7 +160,7 @@ npx tsx bench/compare.ts bench/.snapshots/docker-codex-<old>.json bench/.snapsho
 
 ### 运行纪律
 
-- **真冷装先清宿主缓存**。bub 的 checkpoint / uv 缓存落在宿主侧,跨进程存活;不清缓存跑出的「首个 attempt」是进程冷、宿主热。清哪些路径写在 `bench/README.md`;`compare.ts` 的缓存卫生检查是这条人工纪律的机器兜底,不是替代品。基准不引入显式 cold / warm 标记；首个 / 后续分列与按需清缓存共同定义冷、热口径。
+- **真冷装先清宿主缓存**。bub 的 checkpoint / uv 缓存落在宿主侧,跨进程存活;不清缓存跑出的「首个 attempt」是进程冷、宿主热。清哪些路径写在 `bench/README.md`;`compare.ts` 的缓存卫生检查是这条人工纪律的机器检查,不是替代品。基准不引入显式 cold / warm 标记；首个 / 后续分列与按需清缓存共同定义冷、热口径。
 - **`sandbox.create` 的读数只测容器起停,不测镜像拉取**。跑 bench 之前统一 `docker pull` 预热用到的基础镜像(或固定 digest,保证跨 Run 镜像层缓存状态一致),不把「这次要不要拉镜像」设计成第二组冷 / 热变量——那会让 `sandbox.create` 失去跨 Run 可比性。真要测镜像拉取速度是另一个问题,不在这份基准范围内。
 - **一个矩阵一个进程**。全矩阵逐 provider 串行跑,绝不并行多个 `run.ts` 进程指向同一批 provider(避免无意义的资源争抢和难以复现的抖动)。
 - **结果不进 git**:`bench/.snapshots/` 是本地测量数据。

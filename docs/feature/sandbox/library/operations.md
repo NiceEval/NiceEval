@@ -68,7 +68,7 @@ const shell = await t.sandbox.runShell("pnpm lint && pnpm test");
 | `onStdout?: (chunk: string) => void \| Promise<void>` | 命令 stdout 每到一块就调用一次，只用于运行中的短命反馈；完整 stdout 仍原样出现在返回的 `CommandResult` 里。provider 不支持真流时，至少在命令结束后按完整 stdout 调用一次，不会静默丢掉 |
 | `onStderr?: (chunk: string) => void \| Promise<void>` | `onStdout` 的 stderr 对应物；完整 stderr 同样保留在 `CommandResult` 里 |
 
-返回 `CommandResult = { stdout: string; stderr: string; exitCode: number; command?: string }`。`command` 是这次执行的命令摘要（有界、脱敏，与时间树 command 节点同一份文案），由运行器在最外层公开调用处附加——`commandSucceeded()` 失败时的 evidence（「命令行本身」）就取自它；直接从 provider 拿到的裸结果可能没有这个字段。两者只执行并返回结果，非零退出码不抛错也不自动评分，判定交给 `commandSucceeded()` 等 matcher。
+返回 `CommandResult = { stdout: string; stderr: string; exitCode: number; command?: string }`。`command` 是这次执行的命令摘要（有界、脱敏，与时间树 command 节点同一份文案），由运行器在最外层公开调用处附加——`commandSucceeded()` 失败时的 evidence（「命令行本身」）就取自它；provider 直接返回的原始结果可能没有这个字段。两者只执行并返回结果，非零退出码不抛错也不自动评分，判定交给 `commandSucceeded()` 等 matcher。
 
 `runCommand` 和 `runShell` 不会自动重试。命令可能已经产生部分副作用，NiceEval 无法安全判断能否重复执行；只有调用者确认命令幂等时，才应在 eval 或 hook 里显式写重试策略。
 

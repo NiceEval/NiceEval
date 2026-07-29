@@ -152,7 +152,7 @@ export default defineExperiment({ agent: codexAgent(), sandbox: e2b });
 - NiceEval 在创建任何沙箱、计算 carry 或选择全局并发前，对每条**选中** eval 完成查表；选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不消耗 provider / Agent 预算。未选中 eval 的 profile 不影响本次运行。
 - 查表只决定这条 attempt 从哪个预制产物起步；spec 上的 `.setup()` / `.teardown()` Hook 链与其余参数对全部 eval 共享，`EvalDef.setup` 继续只负责分类账锚点之后的任务 fixture。Direct Agent 不创建 Sandbox，不参与查表，`environment` 只作为 eval fingerprint 的一部分保留。
 
-翻译表放在 spec 上而不是 experiment 上，是因为它的真实维度是 **profile × provider**，与具体实验无关：表随 spec 被多个实验共享（模块常量或 `Config.sandbox` 兜底），新增环境只改一处，experiment 保持「一行 diff」的形态，一个实验覆盖全集、对比横截面完整。
+翻译表放在 spec 上而不是 experiment 上，是因为它的真实维度是 **profile × provider**，与具体实验无关：表随 spec 被多个实验共享（模块常量或 `Config.sandbox` 回退），新增环境只改一处，experiment 保持「一行 diff」的形态，一个实验覆盖全集、对比横截面完整。
 
 ## 实验级共享服务:setup 与 teardown
 
@@ -233,7 +233,7 @@ export default defineExperiment({
 **共享代码、每实验一份实例(默认)**——启停写成一个**工厂**,返回共享同一闭包的整套件:实验级 Hook 对、给 agent / MCP 工厂读坐标的 getter、把坐标写进沙箱的 sandbox Hook。每个实验文件各自实例化,同一套代码、各自的实例与坐标。两条纪律:
 
 - **工厂在 import 期只创建闭包,不做 I/O、不读配置**——实验文件在 `niceeval exp` 的发现阶段就会被 import,import 抛错会连累同批无关实验;所有硬失败留给 `setup`。
-- **运行时坐标活在工厂闭包里,不放模块级单例**——同批并行的两个实验各持一份,互不覆写;坐标在 `setup` 之后才存在,不需要「模块态 → 进程 env → 落盘文件」的兜底链。
+- **运行时坐标活在工厂闭包里,不放模块级单例**——同批并行的两个实验各持一份,互不覆写;坐标在 `setup` 之后才存在,不需要「模块态 → 进程 env → 落盘文件」的回退链。
 
 ```typescript
 // experiments/shared/nowledge.ts —— 启停一份代码;实例、坐标每实验一份

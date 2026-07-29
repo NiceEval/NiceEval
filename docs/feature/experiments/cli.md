@@ -16,7 +16,10 @@ niceeval exp agents/codex memory/retention # 再按 eval id 前缀收窄
 
 1. **精确 id 优先**:位置参数精确等于某个已发现实验 id 时只选中这一个——即使它同时是同目录下其它文件名的前缀。例如精确输入 `compare/codex-gpt-5.6-luna` 只选中它自己,不牵连 `compare/codex-gpt-5.6-luna--agents-md` 等共享前缀的变体。
 2. **目录前缀次之**:参数精确等于任意深度的已发现目录路径时,选中该目录下全部实验。
-3. **文件名前缀兜底**:以上都不精确命中,且参数形如 `目录/文件名前缀` 时,若目录段精确匹配一个已发现目录,选中该目录下文件名以这个前缀开头的全部实验。目录段永远要求精确匹配,不允许跨目录误配(`dev` 不会误中 `dev-e2b`);文件名段允许裸前缀,与下文 eval id 的前缀过滤同一条规则——把同一 agent 的功能变体(`--agents-md` / `--mempal` / `--nowledge` 等后缀)当一族一起选中。
+3. **文件名前缀回退**:以上都不精确命中,且参数形如 `目录/文件名前缀` 时,若目录段精确匹配一个已发现目录,
+   选中该目录下文件名以这个前缀开头的全部实验。目录段永远要求精确匹配,不允许跨目录误配
+   (`dev` 不会误中 `dev-e2b`)。文件名段允许直接按前缀匹配,与下文 eval id 的前缀过滤同一条规则。
+   这会把同一 agent 的功能变体(`--agents-md` / `--mempal` / `--nowledge` 等后缀)当一族一起选中。
 4. 以上都不命中 → `No experiment matched`(见[用法错误](#用法错误))。
 
 ```sh
@@ -114,7 +117,7 @@ Human active 行的最后一栏显示当前生命周期阶段。阶段词表全�
 短预览，不逐帧追加、不过度保留工具输出；完整消息、工具输入/结果仍由 attempt 完成后写入
 `events.json`，通过 `niceeval show @<locator> --execution` 阅读。
 
-`waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。`passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不塞进 phase 闭集。
+`waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。`passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不放入 phase 闭集。
 
 每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的 setup 会稳定停在 `sandbox setup` 或 `agent setup`,而不是继续显示前一阶段。`running eval` 可以带一个短的可选 detail,例如 `tool: shell` 或 `turn 2`;detail 只更新当前行,不成为永久事件。
 
@@ -166,7 +169,7 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### 输出流和落盘节奏
 
-动态区域与永久事件必须经过同一个 renderer 排序,不能让底层模块绕开它裸写终端。各形态的流边界固定为:
+动态区域与永久事件必须经过同一个 renderer 排序,不能让底层模块绕开它单独使用终端。各形态的流边界固定为:
 
 | 形态 | `stderr` | `stdout` |
 |---|---|---|
@@ -258,7 +261,7 @@ live 面板只展示当前状态,不保存历史帧:
 | `errored` | locator / eval / experiment + `error.phase` / code / message | failures 中给同一层错误摘要；cause / stack / diagnostics 下钻 |
 | `skipped` | 不冒充失败；只有需要用户行动的 skip 才以 diagnostic 留痕 | 只进 skipped / completion 汇总 |
 
-`received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、裸退格等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。剥控制字节与折单行、截断同属摘要投影，规则单源在 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
+`received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、退格符等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。剥控制字节与折单行、截断同属摘要投影，规则单源在 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
 
 ```text
 ✗ @1czntzel memory/agent-029-use-cache-directive [codex-gpt-5.6-luna--mempal]
@@ -295,7 +298,7 @@ live 面板只展示当前状态,不保存历史帧:
 
 `total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt;`passed` / `failed` / `errored` / `skipped` 是本次派发并已了结的 attempt 按 verdict 的划分。任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`,不能出现没有解释的 `Running 39 ... 8/45 done`。
 
-已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止挂了几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#attempts-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
+已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止失败几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#attempts-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
 
 计数口径与成本口径要一致地区分「本次派发」和「缓存携入」。首行的四项结局因此是**本次派发**的口径:携入结果的 verdict 留在 `reused` 里,不摊进 `passed` / `failed`——两个口径混在一行,`reused` 就会同时既是状态又是来源,恒等式失去意义。整套结果集(含携入)的通过 / 失败数是结束反馈的事:结论面板的 `44 passed · 1 failed · 0 errored   (6 reused)` 覆盖全部 45 条,携入的失败照常进 `FAILURES` 面板并给下钻命令。携入的失败不在运行中逐条追加进 scrollback——它们不是本次发生的事,流事件承载的是「刚刚发生了什么」。
 
@@ -711,7 +714,7 @@ niceeval exp ci \
 niceeval show --json > .niceeval/ci-summary.json   # 需要 JSON 汇总时,读结果面而不是运行流
 ```
 
-日志语言要钉死时写进配置(`defineConfig({ locale: "en" })`),不靠 CI 环境变量——语言和其它配置项一样只从代码来。
+日志语言要锁定时写进配置(`defineConfig({ locale: "en" })`),不靠 CI 环境变量——语言和其它配置项一样只从代码来。
 
 PR 快速门禁,每条只跑一次:
 
@@ -751,7 +754,7 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 调度 | `--timeout` | 每个 attempt | 单次尝试的时间上限 |
 | 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是总闸(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
-| 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;裸写 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/重新运行/)) |
+| 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;单独使用 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/重新运行/)) |
 | 缓存 | `--carry-ignoring-flag <key>` | 整次调用(可重复) | 携带判定忽略这些 `flags` 键;把误当条件写进 `flags` 的连接坐标搬进 `ctx.fact()` 的那一次用,记 `carry-ignoring-flag` diagnostic 留痕(见[改什么会作废缓存](use-case/缓存与沿用/)) |
 | 执行模式 | [`--keep-sandbox`](../sandbox/cli.md) | 整次调用；与 Experiment 的 `sandboxReuse: true` 互斥 | 留存单条 Attempt 的现场 |
 | 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |

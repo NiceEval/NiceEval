@@ -8,7 +8,7 @@ attempt `errored` 了,排查的第一个问题是「框架试过自愈没有」�
 
 1. **取证**。`niceeval show` 或 `view` 打开该 attempt,看结构化错误的 message 有没有重试摘要后缀,进对应分支。
 
-2. **有后缀:重试耗尽的失败**。典型是高并发批跑撞限流——`--max-concurrency 12` 时十几个 attempt 同时开 turn,几个撞上入场拒绝(`Concurrency limit exceeded for user, please retry later`)。兜底分类器从文本认出限流关键字 → 可重试(reason `rate_limit`),自动退避重试,批跑时 activity 行如实显示:
+2. **有后缀:重试耗尽的失败**。典型是高并发批跑撞限流——`--max-concurrency 12` 时十几个 attempt 同时开 turn,几个撞上入场拒绝(`Concurrency limit exceeded for user, please retry later`)。回退分类器从文本认出限流关键字 → 可重试(reason `rate_limit`),自动退避重试,批跑时 activity 行如实显示:
 
    ```text
    ⠸ onboarding/greet#2  turn retry 2/4 (rate_limit) — waiting 8s

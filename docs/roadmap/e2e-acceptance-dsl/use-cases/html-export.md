@@ -2,14 +2,14 @@
 
 ## 场景
 
-report 仓库对 `view --out` 导出站验收[渲染结构契约](../../../engineering/testing/e2e/report.md#5-渲染面):语义块存在、断言明细的展开折叠、badge 与名称成对出现。现行写法一半是对 HTML 文件的裸字符串刮取,一半是 Playwright 真浏览器断言——前者要替换,后者保留。
+report 仓库对 `view --out` 导出站验收[渲染结构契约](../../../engineering/testing/e2e/report.md#5-渲染面):语义块存在、断言明细的展开折叠、badge 与名称成对出现。现行写法一半是对 HTML 文件的未包装字符串刮取,一半是 Playwright 真浏览器断言——前者要替换,后者保留。
 
 ## 现行断言
 
 摘自 `e2e/report/scripts/verify-render-structure.ts`:
 
 ```ts
-// ① 裸 HTML 字符串:class 名、标签结构、文案、实体转义全部入契约
+// ① 原始 HTML 字符串:class 名、标签结构、文案、实体转义全部入契约
 assert.ok(failHtml.includes('<span class="niceeval-assertion-badge">failed</span>'), "...");
 assert.ok(failHtml.includes('<span class="niceeval-assertion-name">equals(3)</span>'), "...");
 

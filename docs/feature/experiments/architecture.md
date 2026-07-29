@@ -6,7 +6,7 @@ experiment 是**可签入的运行配置**：一个文件钉一个单一配置�
 
 ```text
 ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一个)
-  → resolved config(调度前一次求值:合并 CLI flag / experiment / eval / config 兜底,evals 过滤器与 sandbox environments 查表求值)
+  → resolved config(调度前一次求值:合并 CLI flag / experiment / eval / config 回退,evals 过滤器与 sandbox environments 查表求值)
   → attempt 矩阵(selectedEvalIds × attempts,每 attempt 一个执行 fiber)
   → Run(.niceeval/<experiment>/<timestamp>-<suffix>/,含 ExperimentRunInfo 投影)
 ```
@@ -17,11 +17,11 @@ ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一�
 
 ## Resolved config：一次求值，处处同源
 
-配置优先级是 CLI flag → experiment 字段 → eval 字段 → `niceeval.config.ts` 兜底 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`），排在 config 之前：**config 是缺省底，不是覆盖层——项目里写了 config 不得使 eval 自己的声明失效**。一条声明 35 分钟上限的安装型 eval，在 config 写了 20 分钟的项目里仍按 35 分钟跑；要一次性把整批掐短，用运行侧的 `--timeout` 或 experiment 字段显式压过它——运行侧只以显式声明取胜，不靠 config 的缺省值遮蔽题目自己的需求。
+配置优先级是 CLI flag → experiment 字段 → eval 字段 → `niceeval.config.ts` 回退 → 默认值（环境变量不在这条链里，[边界](../../architecture.md#配置从代码来凭据从环境来)）。eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`），排在 config 之前：**config 是默认来源，不是覆盖层——项目里写了 config 不得使 eval 自己的声明失效**。一条声明 35 分钟上限的安装型 eval，在 config 写了 20 分钟的项目里仍按 35 分钟跑；要一次性把整批缩短，用运行侧的 `--timeout` 或 experiment 字段显式压过它——运行侧只以显式声明取胜，不靠 config 的默认值遮蔽题目自己的需求。
 
 两个有 eval 层的字段各自的完整解析链写死在这里，下游不再各推一遍：
 
-| 字段 | 解析链 | 缺省 |
+| 字段 | 解析链 | 默认 |
 |---|---|---|
 | `timeoutMs` | `--timeout` → experiment → eval → config | 无上限 |
 | `judge` | eval → config | 无内置裁判模型；解析不到而用到 judge 断言时报清晰错误 |
@@ -111,14 +111,14 @@ export default defineExperiment({
 - **起止可见性由 runner 发布**:setup / teardown 的开始与结束是运行级反馈事件(Human dashboard 的运行级 active 行、`--json` 的起止事件),不依赖 Hook 自己调 `progress`——渲染契约见 [CLI · 实验级 Hook 的显示](cli.md#实验级-hook-的显示)。
 - **ctx**:`experimentId`、`selectedEvalIds`、`signal`(用户中断时 abort),以及作用域反馈 `progress` / `diagnostic` / `fact`(绑定到当前 Hook 对应的 `experiment.setup` / `experiment.teardown`,见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈))。experiment 级 Hook 上报的 fact 落进 `RunMeta.facts`(Run 封口补写),记录整场实验的环境观测;语义与形状见 [Results · facts](../record/architecture.md#facts运行事实)。
 - **`setup` 失败不刷屏**:同一 eval 连续复现同一错误码走既有 run 级 fail-fast 收敛,不会刷出无限重复行。
-- **teardown 的触发时点**:本实验最后一个 attempt 收尾后执行;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表兜底排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内兜底范围,由[强杀后的收尾兜底](#强杀后的收尾兜底收尾登记与启动自愈)在磁盘上接手。失败语义与 `sandbox.teardown` 一致。
+- **teardown 的触发时点**:本实验最后一个 attempt 收尾后执行;运行被中断、attempt 全部失败时同样执行(finalizer 语义),强清退出路径(二次中断 / 看门狗 / 崩溃退出)由宿主机侧注册表回退排空——与正常路径互斥、恰好执行一次(机制见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应));无法拦截的强杀(`SIGKILL` / 断电)不在进程内回退范围,由[强杀后的收尾回退](#强杀后的收尾回退收尾登记与启动自愈)在磁盘上接手。失败语义与 `sandbox.teardown` 一致。
 - **runner 不做运行时值的中介**:`setup` 拿到的 URL / 凭据经模块闭包流给 `teardown` 与同文件里的 agent / sandbox Hook(后两者每 attempt 执行,晚于 `setup`)。它们是运行时基础设施坐标,不是实验条件——实验条件进 `flags`,一并进指纹;坐标进 `facts`,不参与可比性,轮换多少次都不作废已完成结果(三个家的判据见 [Library · 运行时坐标不进配置](library.md#运行时坐标不进配置三个家))。
 - **不进 fingerprint**:Hook 函数体与 `SandboxSpec` Hook 一样不参与 eval fingerprint;改了 `setup` / `teardown` 逻辑要强制重跑用 `--rerun all`。
 - **两个 Hook 都不产出 attempt 阶段计时**:`experiment.setup` / `experiment.teardown` 不属于任何单个 attempt,`phases[]` 里永远不出现;这两个词表成员只用于错误 / 诊断归因(见 [Results · result.json](../record/architecture.md#resultjson))与运行级反馈行的标注。
 
-## 强杀后的收尾兜底:收尾登记与启动自愈
+## 强杀后的收尾回退:收尾登记与启动自愈
 
-进程内的兜底注册表覆盖正常、中断与崩溃退出,覆盖不到 `SIGKILL` / 宿主断电——此时实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)没有任何代码来得及释放,而且强杀往往来自会重复触发的外部看门狗(CI 时限、宿主超时),泄漏会随重跑累积。这条路径的兜底建立在磁盘上:
+进程内的回退注册表覆盖正常、中断与崩溃退出,覆盖不到 `SIGKILL` / 宿主断电——此时实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)没有任何代码来得及释放,而且强杀往往来自会重复触发的外部看门狗(CI 时限、宿主超时),泄漏会随重跑累积。这条路径的回退建立在磁盘上:
 
 - **收尾登记与触发时点同步落盘。** 实验的触发时点(第一个通过派发许可的 attempt)在跑 `setup` 之前,先把收尾登记原子写入 `.niceeval/teardowns/<entry>.json`(与留存注册表同一套逐条目文件纪律):`{ experimentId, selectedEvalIds, pid, host, startedAt }`。条目键包含实验身份与 pid，因此同一实验的并发 run 各自保留一份义务。teardown settle 后——不论由哪条路径触发、成功还是超时——删除**自己的**登记。不变量:磁盘上存在登记,当且仅当某次 run 的实验级收尾义务尚未完成。
 - **启动自愈。** `niceeval exp` 启动时扫描登记目录。`host` 等于当前宿主机名且 `pid` 不存活的登记是**遗留义务**:只要该实验被本次选中且仍声明 `teardown`,就在调度 attempt 前逐条补执行一次(运行级反馈行标注 recovery),再照常走本次的生命周期——即使全部结果被 carry、零 attempt 会派发，也会补上强杀遗留的收尾。不在这类可自愈选择中的遗留登记打一行提醒并给出 `--teardown` 补收尾命令；这包括选中了但定义已删除 `teardown` 的实验。`pid` 仍存活或 `host` 不匹配的登记可能属于并发 run,不触碰。
@@ -132,13 +132,13 @@ export default defineExperiment({
 
 - **粒度是单条评估用例。** 锁键是 `(experimentId, evalId)`;持有者认领该用例本次计划的全部 attempt(含 attempts 补跑的缺失序号),不按 attempt 拆锁——同一用例的 attempt 分属两个进程会把 `attempts` 的通过率分母切成两半各自不完整。
 - **锁文件落在 `.niceeval/locks/`**,平铺目录、一条用例一个文件(与收尾登记同一套逐条目文件纪律)。文件名由身份 slug 加身份哈希构成,只须无碰撞、不承载解析;身份的权威在文件内容:`{ experimentId, evalId, pid, host, startedAt, heartbeatAt }`。
-- **取锁在派发时刻,逐用例、非阻塞进行。** 一条用例的锁在它第一个 attempt 真正要占并发位开跑的那一刻才原子创建(独占创建,已存在即失败),成功才放行执行。排队中的用例不持锁——一条 Invocation 任何时刻只锁自己正在跑的用例,不囤积整个选择集;因此两条选择重叠的 Invocation 会各自认领还没人锁的用例、按各自的并发上限并行推进,多开一条终端就是给同一批选择加吞吐。全部 attempt 都可携带的用例不取锁。等锁的用例不触发实验级 `setup`——选中用例全部在等锁时,本实验没有要派发的 attempt,`setup` 照例不执行。
+- **取锁在派发时刻,逐用例、非阻放入行。** 一条用例的锁在它第一个 attempt 真正要占并发位开跑的那一刻才原子创建(独占创建,已存在即失败),成功才放行执行。排队中的用例不持锁——一条 Invocation 任何时刻只锁自己正在跑的用例,不囤积整个选择集;因此两条选择重叠的 Invocation 会各自认领还没人锁的用例、按各自的并发上限并行推进,多开一条终端就是给同一批选择加吞吐。全部 attempt 都可携带的用例不取锁。等锁的用例不触发实验级 `setup`——选中用例全部在等锁时,本实验没有要派发的 attempt,`setup` 照例不执行。
 - **取到锁之后重做一次携带规划。** 取锁成功的那一刻,该用例重读自己在结果树上已落盘的 attempt,按[携带判据](cache.md#携带要过的门)逐条重判:每一道门都过的直接携入(零新成本),仍缺的序号才由本进程跑。这次重判**无条件进行**——取到锁就做,不附加任何前置判据;闭合性来自 `别人落盘 → 别人释放锁 → 本进程取到锁 → 本进程读盘` 这条 happens-before 链,只有发生在取锁之后才成立。它把[「重跑同一条命令就是续跑」](#carry自动携带)从串行重跑扩展到并发多开:两条选择有交集的 Invocation,不论各自的推进节奏怎样交错,各自结束时都拿到完整结果集,交集部分只花一份成本。重判的读取面收窄到单条 `(experimentId, evalId)`——只翻该实验下跑过这条 eval 的 Run,不扫结果全树,因此这次 I/O 虽然发生在握着并发位与锁的派发路径上,开销仍可忽略;它与派发前的携带规划共用同一份资格判据,两处结论不分叉。
 - **心跳证明持有者活着。** 持有者每 10s 原子重写一次 `heartbeatAt`(写临时文件再 rename)。`heartbeatAt` 落后当前时间超过 30s(三个心跳周期)即视为持有者已死。判活只看心跳时间戳,不看 pid——容器与跨用户场景下 pid 判活不可靠,而心跳对任何死法(`SIGKILL`、断电、宿主蒸发)都收敛到同一个判据。
 - **撞上新鲜锁 = 该用例等待,派发轮继续。** 撞锁只挂起这一条用例:它让出刚拿到的并发位,位子立刻转派给下一条没被锁的用例——选中用例全部撞锁时本进程才真正闲下来整体等待。挂起的用例不占全局并发位,计入独立的 `elsewhere` 计数状态(别人在运行,与 `queued` 互斥——排队等的是本进程的并发位,`elsewhere` 等的是别的进程,混进同一个数字会把「资源不够」和「别人在跑」两种等待混为一谈),每个心跳周期重读一次锁文件;等待没有超时——心跳新鲜就一直等,用户中断照常退出。锁消失(正常释放)或过期(接管)后,该用例重新参与派发:取到锁即按上一条重做携带规划,对方 Invocation 落盘的终态此刻已可读、能携的携入,仍缺的 attempt 序号自己补跑。
 - **锁不含指纹。** 键只有身份,不掺 resolved 配置:两边配置不同(携带必不匹配)时,等待换到的只剩「不同时双跑」——这仍然值得,它保护有共享状态的用例不被并发踩踏,判据也因此保持「读锁文件即可判定」的简单形态,不需要在锁上再算一遍指纹。
 - **过期锁经原子 rename 接管。** 竞争者把过期锁文件 rename 成自己的接管标记,rename 成功者获得执行权、随后写入自己的新锁;输者按撞锁处理,转入等待。与收尾登记的「删登记是互斥点」同构:同一把过期锁不会被两个进程双接管。接管记一条 warning 级运行 diagnostic(code `lock-taken-over`,按 dedupeKey 折叠)——它意味着某次 run 死得没来得及清锁,值得让操作者看见,但不值得中止任何事。
-- **释放与兜底。** 用例的全部 attempt 收尾(含沙箱销毁)后删除自己的锁;中断与强清退出路径由既有的宿主机侧兜底排空;`SIGKILL` / 断电不释放,由心跳过期接管兜底。锁目录不需要手工清理,也没有对应的清理命令。
+- **释放与回退。** 用例的全部 attempt 收尾(含沙箱销毁)后删除自己的锁;中断与强清退出路径由既有的宿主机侧回退排空;`SIGKILL` / 断电不释放,由心跳过期接管回退。锁目录不需要手工清理,也没有对应的清理命令。
 - **执行模式组合。** `--rerun` 不豁免锁：等待照旧，等完按本次口径判携带
   （`all` 档全部自跑）。它关掉的是缓存，不是“别双跑”。
   声明 `sandboxReuse: true` 的 Experiment 不消费结果沿用，等待结束后仍全量执行。
@@ -157,7 +157,7 @@ export default defineExperiment({
 
 当次 Invocation 的结论与逐 attempt 判定分开表达：`complete` / `incomplete` / `interrupted`（budget 耗尽、fail-fast、止损闸或中断造成的未派发计入 `unstarted`，让结论落在 `incomplete`，不伪装成全绿）；退出码按 `(experiment, eval)` 折叠判红。这是当场编排事实，不写入 Results；需要审计时由 `Json(path)` reporter 写 `InvocationSummary`。终端两种输出形态怎么呈现见 [CLI 预期反馈](cli.md)，完成状态的机器形状见 [Runner · 完成状态](../../runner.md#完成状态)。
 
-## 设计参照：从 agent-eval 砍掉了什么（以及为什么）
+## 设计参照：从 agent-eval 删除了什么（以及为什么）
 
 agent-eval 的 `ExperimentConfig` 字段一半是它自己业务的耦合或可下放的。niceeval 的 `defineExperiment` 只留**纯运行矩阵**：
 

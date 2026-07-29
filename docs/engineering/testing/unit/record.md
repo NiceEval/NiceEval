@@ -45,7 +45,7 @@ interface AttemptSpec {
 - **落盘格式**：`run.json` 开始写入、`snap.finish()` 唯一一次补 `completedAt`
   与 Run 级 diagnostics；`result.json` 只含 attempt 级事实（Run 级字段以「不存在」断言）；不落
   `runId` / `invocationId` / Run
-  Manifest 或跨实验成员关系；目录独占创建与撞名重试；artifact 缺省不生成、`null` 与 `[]`
+  Manifest 或跨实验成员关系；目录独占创建与撞名重试；artifact 省略时不生成、`null` 与 `[]`
   语义分离；截断唯一落点与 UTF-8 字符边界；源码两层落盘按内容哈希去重；locator 确定性派生与携带条目原样复制不重算；目录名只是可逆编码投影、权威身份在字段；轮标签在
   `diff.json`/时间树/send 标注三处逐字相等。
 
@@ -79,7 +79,7 @@ interface AttemptSpec {
     它是这条差异的唯一记录，缺了消费方就无从分辨这条是在哪个口径下被采信的。
 - **执行耗时与出身两个新字段**：`executionMs` 落盘且等于 `durationMs` 减去 `sandbox.queue`
   那一段（fixture 要有非零排队，否则两者相等、这条测试没有区分力）；`sandbox.reused` 只在复用运行的
-  attempt 上出现，与 `kept` 互不干扰、可同时缺省。两者都是可选字段，读取面对缺失的历史落盘不报错。
+  attempt 上出现，与 `kept` 互不干扰、可同时省略。两者都是可选字段，读取面对缺失的历史落盘不报错。
 - **`evidenceState` 三态**：`local` / `borrowed` / `dangling` 三态各自可达且不合并——fixture 分别
   构造同目录 artifact、`artifactBase` 指向存活原 Run、原 Run 目录已删除三种落盘树；`dangling` 时
   `artifacts` 列表仍声明写过该文件，懒加载返回 `null`，两者的差值可被消费方判断。

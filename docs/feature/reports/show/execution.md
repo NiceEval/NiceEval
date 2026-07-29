@@ -1,6 +1,6 @@
 # `--execution`：看执行中做了什么
 
-`--execution` 是 attempt-detail 组件族对应区块的 text 面：对话按轮分段、轮内按时间线卡片显示，而不是把长内容塞进表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../assertions/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Assertions · 断言与 Turn 的展示](../../assertions/library/display.md#turntsend的展示)：
+`--execution` 是 attempt-detail 组件族对应区块的 text 面：对话按轮分段、轮内按时间线卡片显示，而不是把长内容放入表格。表格适合短、同构字段；prompt、命令和 stdout 都可能多行且很长，卡片能保留阅读顺序，也便于复制命令和结果。每轮以 turn 头行开始，头行首列就是[轮标签](../../assertions/library/display.md#turntsend的展示)（与 [`--timing`](timing.md) 的 turn 节点、diff 的 `windows` 同一枚 token），随后是 Turn status、该轮墙钟与 usage；逐卡片语法与 waiting / failed / DATA 卡片的示例见 [Assertions · 断言与 Turn 的展示](../../assertions/library/display.md#turntsend的展示)：
 
 ```text
 turn1 · completed · 22.4s · 12.4k tok · $0.02
@@ -47,9 +47,9 @@ Attempt 首页在错误摘要后明确提示
 
 ## 卡片预览预算与 `--expand`
 
-卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整 resolve 产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。卡片正文是**有界预览**，主尺度是行：每个内容段最多显示前 3 行（保留原始换行）。段按卡片结构划分——角色文本、thinking 这类单段卡的正文即一段；TOOL 卡的 input 与 result 各为一段（`input` / `result · <status>` 骨架行不计入）；失败命令卡的命令行、stdout、stderr 各为一段。每段另有 1 KiB（UTF-8 字节，按字符边界回退）兜底，防单行超长的 JSON blob 击穿行预算。选 3 行而不是更宽，是因为这个视图的职责是全景骨架——回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；细读任何一张卡都是一条显式的 `--expand` 命令，不靠预览硬扛。
+卡片预览预算与展开句柄是这个区块 text 渲染面的选项，不是事实过滤器；JSON 面恒为完整 resolve 产物（[切片是组件选择](../architecture.md#show-的切片是组件选择)）。卡片正文是**有界预览**，主尺度是行：每个内容段最多显示前 3 行（保留原始换行）。段按卡片结构划分——角色文本、thinking 这类单段卡的正文即一段；TOOL 卡的 input 与 result 各为一段（`input` / `result · <status>` 骨架行不计入）；失败命令卡的命令行、stdout、stderr 各为一段。每段另有 1 KiB（UTF-8 字节，按字符边界回退）回退，防单行超长的 JSON blob 击穿行预算。选 3 行而不是更宽，是因为这个视图的职责是全景骨架——回答「这一步做了什么、结果开头长什么样」，让整个 attempt 的树落在一两屏内；细读任何一张卡都是一条显式的 `--expand` 命令，不靠预览承载完整内容。
 
-任一段被折叠时，卡尾追加一条截断尾巴。尾巴不是死胡同——它自带出路，报整卡被折的行数与字符数，以及这张卡片的**展开句柄**，沿用 `next:` 提示的习语：
+任一段被折叠时，卡尾追加一条截断尾巴。尾巴不是没有后续入口——它自带出路，报整卡被折的行数与字符数，以及这张卡片的**展开句柄**，沿用 `next:` 提示的习语：
 
 ```text
   TOOL · memory_search  +4.1s

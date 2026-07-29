@@ -53,7 +53,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 
 一条断言在计分制里的**角色由断言句柄上链的词决定**，四种角色的读数落点两两不相交——同一条证据不会被两个读数读到：
 
-| 链的词 | 角色 | 落到哪个读数 | 挂了的后果 |
+| 链的词 | 角色 | 落到哪个读数 | 失败的后果 |
 |---|---|---|---|
 | `.points(n)` | 得分点 | 分数面：挣 `n × score` | 丢这 n 分，继续往下跑 |
 | `.points(n).gate(x?)` | 得分点兼硬要求 | 分数面 + 判定面 | 丢这 n 分，Attempt failed，继续执行 |
@@ -63,7 +63,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
 | `.atLeast(x)` | 观测（带通过线） | 质量分（soft 均值） | 低于 `x` 记 failed，不影响判定 |
 | `.soft()` | 观测（纯记录） | 质量分（soft 均值） | 无（不设线，永不 failed） |
 
-表里「挂了的后果」这一列怎样落到代码的每一行，逐行标注在
+表里「失败的后果」这一列怎样落到代码的每一行，逐行标注在
 [Severity 与 Verdict · 控制流与严重度正交](../../verdict/architecture.md#控制流与严重度正交)。
 分数面这边配套的语义：
 
@@ -74,7 +74,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
   没做到的检查点如实记 `failed` 挣 0 分。
 - **`--strict` 两种题型同义**：带线 soft 升级为 gate；它不添加 `.stopOnFailure()`。
 - **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言糖衣。
-- **中止挣 0，基础设施得 null，严格分开**：前置挂了强制结束，后面的给分代码不执行、
+- **中止挣 0，基础设施得 null，严格分开**：前置失败强制结束，后面的给分代码不执行、
   那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、judge 没 key 是 `errored`，整题分数为
   `null`、不折成 0——评不了不是 agent 差。带 `.points` 的断言 `unavailable`（仅 `.optional()` 情形，
   否则整题已 errored）不挣分、在报告里如实标注。
@@ -92,7 +92,7 @@ export default defineScoreEval({
   description: "安装并启动 DB-GPT",
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
-    // 纯前置:挂了就地结束,后面自然 0 分——存在性检查用 fileExists(布尔) + isTrue
+    // 纯前置:失败就地结束,后面自然 0 分——存在性检查用 fileExists(布尔) + isTrue
     await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue("db-gpt cloned"));
     t.sandbox.fileChanged("db-gpt/.env").points(1);
     // 值 1 分,且没装依赖后面全白跑——得分点兼前置
@@ -122,7 +122,7 @@ export default defineScoreEval({
 ![评分证据的四层折叠树](assets/score-fold-tree.svg)
 
 - **判定面（verdict，两种题型都有）**：通过制里由 severity 决定，severity 是折叠树的**边属性**：gate
-  边一票否决；`atLeast` 边挂了记 failed、默认不传播、`--strict` 下翻成 gate 边；`soft()` 边永不传播。
+  边一票否决；`atLeast` 边失败记 failed、默认不传播、`--strict` 下翻成 gate 边；`soft()` 边永不传播。
   `--strict` 是作用于所有层和两种题型的同一个旋钮，组层、eval 层不另设规则。计分制里的 points
   只进入分数面；只有 gate 进入判定面。
 - **分数面（挣分，计分制才有）**：由给分项构成，逐层求和；组的分数读数 = 组内给分项挣分之和（「正确性挣 45
@@ -151,8 +151,8 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 
 一分/一个总分在模型对比里太粗的三个场景，各有一个树上的读法：
 
-- **同 fail，不同深度**（都挂了，一个死在路由层、一个死在命令调用链）→ **组级判定读数**：哪个组的 gate
-  挂了就是死在哪层。它是失败定位，不是分。
+- **同 fail，不同深度**（都失败，一个死在路由层、一个死在命令调用链）→ **组级判定读数**：哪个组的 gate
+  失败就是死在哪层。它是失败定位，不是分。
 - **部分完成没有部分分**（五步走完三步）→ **计分制**：步骤各 `.points(1)`，挣 3 分。
 - **质量分差异被判定吞掉**（都通过，judge 一个 0.9 一个 0.6）→ **质量分列**：judge 默认 `.soft()`，读
   eval 质量分。

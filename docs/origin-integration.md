@@ -93,7 +93,7 @@ adapter 要这样做:
 
 五个应用里,ai-sdk-v7、codex-sdk、langgraph 发 OTel span,claude-sdk、pi-sdk 不发(claude-sdk 的 CLI 遥测只有 metrics+logs,niceeval 只消费 trace spans;pi-agent-core 没有官方 OTel 集成)。这层接线是 Tier 2 的 delta,落在 `examples/zh/tier2/<name>/`(tier1 不配 telemetry、没有瀑布图);有 span 的应用接法都一样:
 
-1. `niceeval.config.ts` 钉住固定接收端口:`defineConfig({ telemetry: { port: 4318 } })`——写了这个配置就等于给非沙箱 agent 打开了 OTel 接收。
+1. `niceeval.config.ts` 固定固定接收端口:`defineConfig({ telemetry: { port: 4318 } })`——写了这个配置就等于给非沙箱 agent 打开了 OTel 接收。
 2. 启动应用时,把标准 OTel 环境变量指向这个端口(`OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces` 或应用自己的等价配置)。
 3. 应用私有的 span 命名如果不是标准 GenAI semconv(比如 codex 自家 span),给 agent 声明 `spanMapper`(codex 有内置 `mapCodexSpans`)把它归一成 canonical,瀑布图才能正确着色分组。
 4. 没有 span 到齐的问题(`BatchSpanProcessor` 缓冲导致最后一批 span 晚到)属于观测完整性,不是断言问题——ai-sdk-v7、langgraph 的 adapter 都在流结束后主动等一小段(`settleMs` / grace period)把收集窗口拉宽,只影响瀑布图,断言与它无关。

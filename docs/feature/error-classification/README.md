@@ -8,7 +8,7 @@
 
 两类真实浪费,各暴露一条缺失的决策轴:
 
-1. **瞬时故障被放大成 `errored`**(时间轴)。一次 turn 失败若只拍平成不透明的 `AttemptError{code: "turn-failed"}`,限流、连接中断这类「换个时机大概率能过」的失败与同因必复现的确定性错误无法区分:没有 attempt 内重试,唯一自愈手段是重新调度整次实验(`attempts` + `earlyExit`),粒度太粗;高并发批跑里限流连续撞上时,run 级 fail-fast 的 streak 判定还会把最该重试的场景当确定性错误放弃派发。真实样本(批跑时多条 attempt 同报):
+1. **瞬时故障被放大成 `errored`**(时间轴)。一次 turn 失败若只展平成不透明的 `AttemptError{code: "turn-failed"}`,限流、连接中断这类「换个时机大概率能过」的失败与同因必复现的确定性错误无法区分:没有 attempt 内重试,唯一自愈手段是重新调度整次实验(`attempts` + `earlyExit`),粒度太粗;高并发批跑里限流连续撞上时,run 级 fail-fast 的 streak 判定还会把最该重试的场景当确定性错误放弃派发。真实样本(批跑时多条 attempt 同报):
 
    ```
    This send returned failed (turn status = failed): agent run exited with code 1 ·
@@ -31,7 +31,7 @@ export type FailureClass =
   | { readonly retryable: false; readonly reason?: string; readonly scope?: FailureScope };
 ```
 
-框架预设不了所有错误的细分词表,声明方细分自家错误(队列满、模型预热中)时不该被迫塞进内建的 `"rate_limit"` / `"network"` 两个桶;而「要不要重试」「波及多远」是封闭问题,枚举即穷尽——这是决策与诊断拆成两层的理由。
+框架预设不了所有错误的细分词表,声明方细分自家错误(队列满、模型预热中)时不该被迫放入内建的 `"rate_limit"` / `"network"` 两个桶;而「要不要重试」「波及多远」是封闭问题,枚举即穷尽——这是决策与诊断拆成两层的理由。
 
 **时间轴 `retryable`,判据是重试安全性,不是错误文案的相似度**:只有能证明「这次输入未被 agent 受理」的错误才归可重试——
 
@@ -43,11 +43,11 @@ export type FailureClass =
 
 **空间轴 `scope`,判据是死因共享的可证明性**:只有能证明「同 scope 的兄弟 attempt 同因必死」才可声明超出 `"attempt"` 的档——
 
-- `"attempt"`(缺省):死因只属于本次执行。任何未声明、未被分类器认领的失败都落在这档。
+- `"attempt"`(默认):死因只属于本次执行。任何未声明、未被分类器认领的失败都落在这档。
 - `"eval"`:同一 eval 的其余 attempt 同因必死——fixture 损坏、任务前置资源确定性缺失。命中即停止派发同 eval 的剩余 attempt。
 - `"experiment"`:全实验的兄弟 attempt 同因必死——实验共享服务死亡、共享凭据失效、实验级配置错误。命中即停止派发同 experiment 的全部剩余 attempt。
 
-两轴的误判代价不对称方向不同,把关手段也不同:时间轴误重试赔判定正确性,由[受理证据门](architecture.md#分类链)机器兜底;空间轴误扩 scope 赔整批覆盖数据,没有机器门可查,靠判据从严——**唯一有权扩 scope 的是携带作者知识的通道**(抛出点声明、adapter / 实验分类器),保守兜底分类器永不扩 scope,「看起来像基建问题」不构成证明。
+两轴的误判代价不对称方向不同,把关手段也不同:时间轴误重试赔判定正确性,由[受理证据门](architecture.md#分类链)机器检查;空间轴误扩 scope 赔整批覆盖数据,没有机器门可查,靠判据从严——**唯一有权扩 scope 的是携带作者知识的通道**(抛出点声明、adapter / 实验分类器),保守回退分类器永不扩 scope,「看起来像基建问题」不构成证明。
 
 **组合规则:时间轴先走,空间轴只对终局失败生效。** 可重试的失败先被重试执行体吸收,只有重试耗尽或不可重试的失败,才携带 scope 抵达止损闸。限流这类「全实验共享但自愈」的死因因此永远到不了闸——不需要特判。
 
@@ -56,7 +56,7 @@ export type FailureClass =
 分类的附着点跟着知识走,所有通道产出同一份 `FailureClass`:
 
 - **抛出点声明**(作者拥有的错误):包根导出空间轴糖衣类 `ExperimentFatalError` / `EvalFatalError`——作者写下 probe、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。糖衣类只开空间轴,不提供「可重试」糖衣:时间轴的消费点只有 send 与 provisioning 两处(见下节),作者代码不在任何重试执行体的包裹范围内,可重试糖衣是一张永远无法兑现的支票。
-- **分类器**(第三方错误,事后识别):错误由 SDK / CLI / 网络栈抛出,制造者不可能使用我们的类,由最懂其形状的一方在自己的边界识别,按特异性降序决议——实验的 `classifyFailure` 识别自家共享基建的死因(隧道 host 拒连以 turn 层连接错误的形态浮出时,adapter 不认识那个 host,只有实验作者认得);adapter 的 `classifyTurnError` 识别自家协议错误(写法见 [Library](library.md#adapter-作者classifyturnerror));保守兜底正则识别通用形状(限流关键字 → `"rate_limit"`,连接建立层错误 → `"network"`),只产时间轴。
+- **分类器**(第三方错误,事后识别):错误由 SDK / CLI / 网络栈抛出,制造者不可能使用我们的类,由最懂其形状的一方在自己的边界识别,按特异性降序决议——实验的 `classifyFailure` 识别自家共享基建的死因(隧道 host 拒连以 turn 层连接错误的形态浮出时,adapter 不认识那个 host,只有实验作者认得);adapter 的 `classifyTurnError` 识别自家协议错误(写法见 [Library](library.md#adapter-作者classifyturnerror));保守回退正则识别通用形状(限流关键字 → `"rate_limit"`,连接建立层错误 → `"network"`),只产时间轴。
 - **provisioning**:sandbox 层的分类自治(性质 + 后果两维不外泄),向外浮出的确定性配置死因附带按**配置解析域**定档的 scope——凭据缺失 → `"experiment"`;模板不存在按 spec 是否带 `environments` 表(模板逐 eval 解析)落 `"experiment"` 或 `"eval"`。映射单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。
 
 路由纪律沿用 Effect 生态的 tagged error 习语:**糖衣类的契约是它携带的 `_tag` 与 `class` 数据字段,一切识别走结构守卫(`failureClassOf`),不用 `instanceof`**——依赖树里出现第二份 niceeval 实例时类身份静默失效,数据不会。精确类型、分类链的决议顺序与否决权见 [Architecture](architecture.md#数据建模)。
@@ -78,11 +78,11 @@ export type FailureClass =
 2. **turn 级重试**:对受理前的失败整段重发同一段 `TurnInput`。只兜「输入还没进 agent」的窗口——断点续传只有内层做得到,对「已进 agent」的失败重发只会让 agent 重做已做过的操作。
 3. **重跑 eval**(最外层恢复路径):重试耗尽或不可重试的失败落成 `errored`;`errored` 不进指纹缓存,重跑同一条命令即是续跑,只补跑失败的 attempt(见 [Experiments · 缓存与携带](../experiments/cache.md))。
 
-**止损**(空间轴,由小到大,声明精确、推断兜底):
+**止损**(空间轴,由小到大,声明精确、推断回退):
 
 1. **eval 闸**(`scope: "eval"`):一次命中即停止派发同 eval 剩余 attempt。
 2. **experiment 闸**(`scope: "experiment"`):一次命中即停止派发同实验全部剩余 attempt。
-3. **run 级 fail-fast**(推断兜底,见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)):没有任何声明时,同一 eval 内同 code 连续复现的 streak 推断确定性错误、停止派发。声明通道是作者背书下的一次命中,fail-fast 是无声明时的保守推断,二者并存、互不替代;turn 层瞬时故障在进入 streak 判定前已被重试吸收,streak 看到的 `turn-failed` 一定是重试耗尽后的最终结果。
+3. **run 级 fail-fast**(推断回退,见 [Runner · 首过即停](../../runner.md#首过即停earlyexit)):没有任何声明时,同一 eval 内同 code 连续复现的 streak 推断确定性错误、停止派发。声明通道是作者背书下的一次命中,fail-fast 是无声明时的保守推断,二者并存、互不替代;turn 层瞬时故障在进入 streak 判定前已被重试吸收,streak 看到的 `turn-failed` 一定是重试耗尽后的最终结果。
 
 ## 止损语义
 

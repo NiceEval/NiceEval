@@ -80,7 +80,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   总表里的函数从 `niceeval/report` 导出，前四组同时从 `niceeval/report/react` 导出且与内部定义同引用；
   色板数组、槽位号与取色 helper 不在任一公开面上。只需一个代表场景，不为每个函数复制一条。
 - **MeasureCell 与缺数据**：字段构成与序列化不丢值；`validateContent`
-  递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛裸 TypeError；缺 artifact 时返回 null 不猜值。
+  递归到嵌套字段、报错带完整路径、结构错误恒转完整用户反馈不抛TypeError；缺 artifact 时返回 null 不猜值。
 - **数据源**：各数据源的选择、配对、排序、缺失与报错语义（selectedEvalIds 口径、
   `deltaRows({ conditions: { flag } })` 的条件派生边界、FailureList 等价、稀疏矩阵、单行摘要的字段瘦身、
   可比性冲突的完整反馈、`durationMs`
@@ -112,17 +112,17 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   `sampleWarnings` 与 `runDiagnostics`、`defineReport`
   复用别处页的数组展开（页等值、外壳不沿用）、组合组件与手写组合严格等价；
   数据派生覆盖 hero、warning 分组聚合与组排序，以及
-  `runDiagnostics` 对 Sample / 裸 Run[] 的同值投影、空诊断过滤、experiment →
+  `runDiagnostics` 对 Sample / 直接传入的 Run[] 的同值投影、空诊断过滤、experiment →
   startedAt 排序、来源不合并、开放 code 原样保留、React
   Content 不携带 Run/AttemptHandle。渐进增强不改数据；内建首页三行装配的构成
   （`SampleSummary` + frontier 散点 + 实验表）以页声明与展开树为断言面。
-- **`sources.measure.frontier` 与缺省绑定**：产出与取用两侧各有区分力 fixture。
+- **`sources.measure.frontier` 与默认绑定**：产出与取用两侧各有区分力 fixture。
   - 产出侧三态：纯通过制与 mixed 的 `defaults.y` 引用 `passRate`，纯计分制引用 `totalScore`。
     mixed 只聚合通过制题，区分力是计分制题的成本不进散点分母。
   - 产出侧 series：范围内声明过 `line` 标签时 series 维度是 `label("line")` 且
     `connect: true`，否则是 `"agent"` 且不连线。维度字段沿用本名，页级配色身份与实验表同键。
   - 取用侧：`Chart` 省略 x / y / children 时按 `defaults` 展开，显式 props 逐槽位覆盖。
-    给出任何子节点则整组缺省 series 作废。props 与 `defaults` 双缺时完整用户反馈报错。
+    给出任何子节点则整组内建 series 作废。props 与 `defaults` 双缺时完整用户反馈报错。
   - 序列化与边界：`defaults` 经序列化往返保留。同一 Dataset 交给 `Table` 不受影响。
     `rows(...)` 恒不携带 `defaults`。
 - **`StabilityOverview` 的投影**：散点与堆叠柱的 Dataset 从 `StabilityContent` 字面投影。
@@ -130,7 +130,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   同值；格 `refs` 原样进两个 measure cell 的 `refs`（`refs.length` 等于该格执行数）。
   读数格的零通过与闪烁计数各一条区分力 fixture（全过与全挂都不算闪烁）。断言面是展开树与
   Content，不经浏览器。
-- **resolve 与组合组件**：source/data 严格等价、`input` 缺省与覆盖、同 source + input 只计算一次、
+- **resolve 与组合组件**：source/data 严格等价、`input` 省略与覆盖、同 source + input 只计算一次、
   `ReportNode` 全集与非法节点的完整反馈、`ctx` 的构成、sibling 并行但输出保序。
 - **数据源选项归一**：`measureRows` / `measureMatrix` / `scoreboard` / `deltaRows` / `chart`
   的对象参数校验；固定题集权重、条件基准、series key 与轴绑定都以 options 和 Content 为断言面。
@@ -147,7 +147,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   下标按完整用户反馈拒绝并指到 `dimensionPins.<维度>.<值>`。区分力场景是「同一份数据加钉与不加钉，未钉键的落槽不同」。
 - **Chart 呈现覆盖**：`Chart.series` 只能覆盖已有 series key 的线型、点形、标签与可见性，
   不能改变 mark、绑定或聚合；未知 key 给出完整用户反馈。
-- **`Markdown` 的解析与两面投影**（[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。覆盖：每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）；裸 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出；表格语法按完整用户反馈报错并指引 `Table`；折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）；`LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
+- **`Markdown` 的解析与两面投影**（[排版原语 · Markdown](../../../feature/reports/library/layout.md#markdown)）：断言面是解析出的 AST 与两面输出字符串，不经浏览器。覆盖：每类块与行内节点在 text 面的投影（标题空行、列表前缀与缩进、代码块不折行、块引用 `>` 前缀、链接 `文字 (url)`、图片 `alt (url)`、无 ANSI 时脱去强调标记）；原始 HTML 块与行内 HTML 一律转义成可见文本，不进 web 输出；表格语法按完整用户反馈报错并指引 `Table`；折行与宽度量测走 `stringWidth` / `wrapText` 同一张表（中文正文不撕歪）；`LocalizedText` 正文按回退链选语言，缺语言不报错也不留空。
 - **`Table` 的 subRows 与 placeholder**（[Table](../../../feature/reports/components/primitives/table.md)）：
   `subRows` 在 text / web 两面逐层渲染；`variant: "placeholder"` 行照常显示但不进入任何列的聚合读数。
   两面各一份区分力场景——断言面是 Content 与两面输出字符串，不经浏览器。
@@ -242,7 +242,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **外部数据快照与确定性**（[外部数据走冻结快照](../../../feature/reports/architecture.md#外部数据走冻结快照)）：
   `ctx.data` 来自 `--data <file>` 或 `config.reportData`，取值链与报告装载链同形，装载失败同级。
   区分力场景是**同一份输入跑两次产出逐字节相同**——快照进了输入，所以恒等成立。
-  展开回调读时钟、随机数或文件系统时按完整用户反馈拒绝；缺省 `ctx.data` 是空对象而不是
+  展开回调读时钟、随机数或文件系统时按完整用户反馈拒绝；`ctx.data` 省略时 是空对象而不是
   `undefined`。
 
 - **Composition 的展开与缓存**：`expand` 同步与 `async` 两种返回都在 resolve 阶段被 await。
@@ -277,20 +277,20 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   East-Asian-Ambiguous（`·` `●` `…` 等恒记 1 列）的宽度量测与 `text-layout.ts`
   共用同一张表，不各自实现第二份。`Section` 的 text 面按 `ctx.panelMode`
   接线到这个渲染件而非自行拼框字符：`panelMode: "boxed"` 时顶层调用 `renderPanel`、嵌套 Section 改走
-  `encodeDividerLine` 桥接给外层；`panelMode` 缺省或 `"plain"`
+  `encodeDividerLine` 桥接给外层；`panelMode` 省略或 `"plain"`
   时递归自然处理嵌套（不展开横隔）——这一条只需证明「确实调用了 panel.ts 的产物」（如返回文本里出现
   `renderPanel`
   独有的框线字符与几何），不重复 panel.ts 自己的几何断言，也不断言页面级终端排版（那部分归 E2E）。
-- **宿主装载等价**：裸 `show`/`view` 与 `--report`
+- **宿主装载等价**：不带选项的 `show`/`view` 与 `--report`
   在装载边界消费同一份 definition（同引用）与同规则选出的 Sample（深等）；`--fresh`
   在两宿主注入同一个 `fresh` 口径——不比较终端输出与 HTML，渲染面与进程级读面行为归 E2E。
 - **报告取值链与 `--report` 值判别**：两宿主共用的解析函数，断言面是解析出的 definition
   引用与错误对象，不经渲染。覆盖：三档取值链按 `--report` → `config.report` → 内建 `standard`
   逐档回落，且每档产出的 definition 与直接 import 该定义同引用（`config.report`
-  在场时裸跑不得再取内建）；`--report` 的形态判别——含 `/`、以 `.` 开头、带
-  `.ts`/`.tsx`/`.js`/`.mjs` 后缀的按文件装载，其余裸词查内建视图名表，三个名字
+  在场时不带选项运行不得再取内建）；`--report` 的形态判别——含 `/`、以 `.` 开头、带
+  `.ts`/`.tsx`/`.js`/`.mjs` 后缀的按文件装载，其余不含路径的名称查内建视图名表，三个名字
   （`standard` / `failures` / `stability`）各命中且与对应具名导出同引用（`standard`
-  兼默认导出）；裸词未命中时报错列出全部可用名字并给出路径写法，不做文件系统探测（fixture 里存在同名
+  兼默认导出）；不含路径的名称未命中时报错列出全部可用名字并给出路径写法，不做文件系统探测（fixture 里存在同名
   `./site.tsx` 时 `--report site` 仍报错，证明判别只看字符串）；`config.report`
   不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段（与文件默认导出非法的反馈只差出处）；fresh import 让装载入口及其项目内 import 子图失效——`--report
   <文件>` 改报告文件或它 import 的组件后下一次装载读到新内容，`config.report` 的入口是配置文件（每次 scan 重装），断言面是渲染产物里的标记字符串，不测进程重启行为。
@@ -335,8 +335,8 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
     timeline 一张 `Waterfall`，trace 数据源仍公开导出。
   - trace 投影按 `parentSpanId` 建树，子 span 是 children 而不是被过滤掉。
     区分力 fixture 要有「父子两个 span」——只保留根的错误实现会丢节点数。
-- **Attempt 证据数据源**：`attemptSummary.compute(evidence)` 等纯派生零 IO、evidence 装配恰好一次；
-  组合组件的展开树构成与二选一规则；source 缺省取 page 注入 evidence、错位使用的完整反馈；
+- **Attempt 证据数据源**：`attemptSummary.compute(evidence)` 等纯派生零 IO、evidence 装配恰好一次。
+  组合组件的展开树构成与二选一规则；source 省略时取 page 注入 evidence、错位使用的完整反馈；
   对话数据的分轮与容错。渲染出的 DOM、默认展开标记、染色与交互归 E2E；改动这些组件后需要
   `pnpm run build:report`，改动 view 壳 / dialog 摆放后需要 `pnpm run view:build`。
 - **源码调用树的数据语义**：源码证据按 entry 角色确定主干，不按断言命中数猜测。跨文件 `loc`
@@ -344,7 +344,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   不吞掉更深节点；只有没有 `loc` 的记录进入 unmapped。完整树不受展示预算影响。default、full、
   file 与 web 的行选择只在投影函数发生。
 - **`attemptAssertions` 的计分制字段**：`.points` 挣分随所在 `AssertionResult`
-  一起出现（不需要单独投影，字段本就在断言记录上，包括「挂了的检查点挣 0 分」这种如实不隐藏的场景）；**得分点不参与 passed 收纳**——passed 的得分点逐条进平铺列表、不折进
+  一起出现（不需要单独投影，字段本就在断言记录上，包括「失败的检查点挣 0 分」这种如实不隐藏的场景）；**得分点不参与 passed 收纳**——passed 的得分点逐条进平铺列表、不折进
   `passedGroups` 计数，收纳只作用于不带 `.points`
   的观测断言（[收纳豁免](../../../feature/assertions/library/display.md#计分制points-与给分记录)）；得分点挣满计数（`2/5 得分点挣满`，连续打分不足
   `n × 1.0` 不算挣满）是 data 层字段；`t.score(label, n)` 的给分记录与断言分属两个数组，按
@@ -405,7 +405,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   E2E 从公开 CLI 验收，不在 show 单元测试复述文本。
 - **execution 的预算、句柄与 grep**：
   - 预览按段截断。普通卡正文、TOOL 的 input/result、失败命令的命令行/stdout/stderr 分别计段。
-  - 每段最多三行，并有 1 KiB 的 UTF-8 字节兜底。骨架标签不占正文预算。
+  - 每段最多三行，并有 1 KiB 的 UTF-8 字节回退。骨架标签不占正文预算。
   - 卡尾只出现一条截断提示，汇总被折叠的行数和字符数。
   - Agent 卡与失败命令卡的句柄从事件序确定性派生。相同 Fixture 两次派生必须同值。
   - `--expand` 恢复完整落盘值；句柄越界时报告实际范围。
@@ -429,9 +429,9 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - **四档取值链的区分力**：`--theme` / 报告外壳 `theme` / `config.theme` / 内建 `basalt` 四档要用**互不相同**的令牌值构造，断言生效的是预期那一档；至少一条 fixture 同时配两档以上，证明高档整份取代低档而不是合并。
   - **不跨档合并**：生效主题未声明的令牌取 Basalt 的值，不取下一档同名令牌。这一格是唯一能区分「取代」与「合并」两种实现的场景。
   - 规范化产物是数据级断言：完整令牌表（单值展开成相同的 light / dark，pair 保留两支）与有序资产清单，路径相对**主题文件**解析。不断言生成的 CSS 文本。
-  - `--theme` 裸词只查内建主题名表、不回落文件探测；未命中的报错列出可用名字。与 `--report` 的判别规则同源，只保留一条代表场景。
+  - `--theme` 不含路径的名称只查内建主题名表、不回落文件探测；未命中的报错列出可用名字。与 `--report` 的判别规则同源，只保留一条代表场景。
   - `show --theme` 拒绝：断言错误对象与下一步指引，不断言终端输出。
-- **`dimensionPins` 在页级色分配中的作用**：钉住的键原样占位、其余键在剩余槽里探测、多个键钉同一下标不触发探测、钉了但本页未出现的键不保留槽位。分配结果是**下标**，fixture 必须证明换一份 `series` 色板不改变任何键的下标——这是「主题只管颜色、报告只管含义」在数据层的判据。校验错误指到 `dimensionPins.<维度>.<值>`。
+- **`dimensionPins` 在页级色分配中的作用**：固定的键原样占位、其余键在剩余槽里探测、多个键钉同一下标不触发探测、钉了但本页未出现的键不保留槽位。分配结果是**下标**，fixture 必须证明换一份 `series` 色板不改变任何键的下标——这是「主题只管颜色、报告只管含义」在数据层的判据。校验错误指到 `dimensionPins.<维度>.<值>`。
 
   用户怎样换主题与写主题包，见[给报告换主题](../../../feature/reports/use-case/交付报告/主题/)；官方主题取值见 [Basalt](../../../feature/reports/themes/basalt.md)。
 

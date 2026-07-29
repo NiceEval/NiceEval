@@ -12,7 +12,7 @@
 1. **跑对应的 Eval**：Experiment 直接从 `niceeval/adapter` 导入并实例化官方 Agent 工厂，以 `--rerun all`
    运行真实模型 Eval。仓库不拥有 `agents/`，不包装转换器，也不实现
    `send()`；配置能力不够时修官方工厂。
-2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、裸工具名）、调用与结果按 call
+2. **断言调用存在且入参正确**：Eval 内的判分断言只读标准事件流（`Turn.events`）——工具调用以该协议的真实名字出现（MCP 命名、不带命名空间的工具名）、调用与结果按 call
    ID 配对、HITL 产生
    `input.requested`、usage 逐轮到位。工具断言**连名带参**：`t.calledTool("mcp__demo-tools__get_weather", { input: { city: "Brooklyn" } })`——名字对但参数被丢弃或改写，同样是归一 bug，入参保真是协议路径的一部分（`ToolMatch`
    的深度部分匹配见
@@ -48,8 +48,10 @@
 `e2e/undo/`，对应验收说明保留在本目录；工厂落地前不参与发现、CI 或覆盖统计。
 
 官方工厂清单以
-[SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。协议归一（事件转换、session、usage、证据完整性）的唯一验收面就是本域仓库的真实运行——没有单元层 wire
-fixture 兜底。缺少完整官方工厂的 SDK 在其仓库落地前没有协议验收覆盖，这是覆盖表中的显式空白，不用 E2E 仓库内的本地 Adapter 实现或 fixture 测试冒充。
+[SDK 与 Agent 接入](../../../../feature/adapters/sdk/README.md)为准：只有公开完整 Agent 工厂的对象才能进入上表。
+协议归一（事件转换、session、usage、证据完整性）的唯一验收面就是本域仓库的真实运行，
+不以单元层 wire fixture 替代。缺少完整官方工厂的 SDK 在其仓库落地前没有协议验收覆盖，
+这是覆盖表中的显式空白，不用 E2E 仓库内的本地 Adapter 实现或 fixture 测试冒充。
 
 ## 仓库 Eval 预算
 
@@ -63,7 +65,7 @@ fixture 兜底。缺少完整官方工厂的 SDK 在其仓库落地前没有协�
 
 ## 上游 SDK 版本
 
-每个仓库的 SDK 版本由自己的 lockfile 钉死，升级属于该仓库的所有权。升级节奏是响应式的：nightly 变红、对应
+每个仓库的 SDK 版本由自己的 lockfile 锁定，升级属于该仓库的所有权。升级节奏是响应式的：nightly 变红、对应
 [SDK 契约页](../../../../feature/adapters/sdk/README.md)更新、或需要覆盖新协议行为时升级，不为追新而升。一次 SDK 升级是一个完整变更单元：升级 lockfile、按新协议行为核对对应
 [SDK 契约页](../../../../feature/adapters/sdk/README.md)、跑该仓库 `pnpm e2e`
 验收，同批完成——协议事实的保鲜和 lockfile 升级是同一次变更。

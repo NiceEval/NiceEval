@@ -1,6 +1,6 @@
 # 执行失败分类 —— 库用法
 
-重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。作者面的公开 API 有三个,各对应一处知识所在地:空间轴糖衣类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教兜底认不出的自家协议错误)。
+重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。作者面的公开 API 有三个,各对应一处知识所在地:空间轴糖衣类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
 
 ## eval / 实验作者:你会看到什么
 
@@ -22,7 +22,7 @@ import { ExperimentFatalError } from "niceeval";
 // experiments/compare/codex-nowledge.ts —— id 从路径推导,不手写
 export default defineExperiment({
   sandbox: e2bSandbox({ template: CODEX_TEMPLATE }).setup(async (sandbox, ctx) => {
-    // 探活实验共享的服务端隧道:挂了则本实验每条 attempt 同因必死
+    // 探活实验共享的服务端隧道:失败则本实验每条 attempt 同因必死
     const probe = await sandbox.runCommand("curl", ["-sf", `${serverUrl}/health`]);
     if (probe.exitCode !== 0) {
       throw new ExperimentFatalError(
@@ -73,7 +73,7 @@ export default defineExperiment({
 
 ## adapter 作者:`classifyTurnError`
 
-类型形状单源在 [Architecture · 类型](architecture.md#类型)。写分类器主要回答时间轴问题:**这个错误能否证明「这次输入未被 agent 受理」?** 能证明才返回 `{ retryable: true, reason: "..." }`——`reason` 是开放词表,用你协议里最贴切的词;拿不准返回 `undefined` 交给保守兜底——不要返回 `{ retryable: false }` 把兜底短路掉,它认得的通用形状(429、DNS 失败、拒连)你不必重复。实验分类器排在你之前(决议序见 [Architecture · 分类链](architecture.md#分类链)),实验作者认领的失败问不到你,不冲突。
+类型形状单源在 [Architecture · 类型](architecture.md#类型)。写分类器主要回答时间轴问题:**这个错误能否证明「这次输入未被 agent 受理」?** 能证明才返回 `{ retryable: true, reason: "..." }`——`reason` 是开放词表,用你协议里最贴切的词;拿不准返回 `undefined` 交给保守回退——不要返回 `{ retryable: false }` 把回退短路掉,它认得的通用形状(429、DNS 失败、拒连)你不必重复。实验分类器排在你之前(决议序见 [Architecture · 分类链](architecture.md#分类链)),实验作者认领的失败问不到你,不冲突。
 
 ```ts
 import { defineSandboxAgent, turnErrorText } from "niceeval/adapter";
@@ -88,7 +88,7 @@ export function acmeAgent() {
       if (failure.type === "turn-failed" && turnErrorText(failure.turn)?.includes("ACME_QUEUE_FULL")) {
         return { retryable: true, reason: "acme_queue_full" };
       }
-      return undefined; // 其余交给保守兜底
+      return undefined; // 其余交给保守回退
     },
   });
 }

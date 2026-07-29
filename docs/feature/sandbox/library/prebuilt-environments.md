@@ -38,7 +38,7 @@ export const e2b = e2bSandbox({
 构建语法各异,工作流骨架跨 provider 相同:
 
 1. **构建脚本进 eval 项目仓库**,约定放 `scripts/build-<provider>-env.*`;experiment 里永远只出现产物 ID,不出现构建逻辑。
-2. **产物命名带版本,版本位写产物里装的东西**:`<项目>-<agent>-evals:<agent 版本>-r<配方修订>`(如 `acme-codex-evals:0.144.1-r1`)。消费者关心的是"这份环境里的 Agent 是哪一版",不是构建脚本所在仓库发到第几版;`-r` 位留给"Agent 版本没变、配方变了"的重建([官方基线用的是同一套规则](#版本号跟着被装的-agent-走))。CI 与需要可复现结果的场景钉死 tag;不带 tag 的名字跟随最新构建,只适合本地试用。
+2. **产物命名带版本,版本位写产物里装的东西**:`<项目>-<agent>-evals:<agent 版本>-r<配方修订>`(如 `acme-codex-evals:0.144.1-r1`)。消费者关心的是"这份环境里的 Agent 是哪一版",不是构建脚本所在仓库发到第几版;`-r` 位留给"Agent 版本没变、配方变了"的重建([官方基线用的是同一套规则](#版本号跟着被装的-agent-走))。CI 与需要可复现结果的场景锁定 tag;不带 tag 的名字跟随最新构建,只适合本地试用。
 3. **重建只在环境依赖变化时发生**:改了要装的 CLI 版本、系统包或模型 cache 才跑构建脚本;日常 `niceeval exp` 直接消费既有产物。
 4. **升级 agent CLI 版本 = 构建一个新 tag**,experiment 改引用即可、回滚可逆;不要原地覆盖同一个 tag——那会让"同一配置"在不同时间指向不同环境,跑分失去可比性。
 
@@ -164,12 +164,12 @@ import {
   NICEEVAL_OPENCLAW_DOCKER_IMAGE,
 } from "niceeval/sandbox";
 
-e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })      // 跨 Team namespace + 钉死版本
+e2bSandbox({ template: NICEEVAL_CODEX_E2B_TEMPLATE })      // 跨 Team namespace + 锁定版本
 dockerSandbox({ image: NICEEVAL_CODEX_DOCKER_IMAGE })      // repository + 同一个版本
 dockerSandbox({ image: NICEEVAL_OPENCODE_DOCKER_IMAGE })
 ```
 
-每个常量都是完整、版本钉死的引用,值只在 NiceEval 发布新基线时变化。下游不复制这些字符串,也不维护第二份版本常量;派生制品要把 base 身份写进名字或 provenance 时,直接用常量的值。公开基线是 convenience baseline,不是 Adapter 的隐式默认值。
+每个常量都是完整、版本锁定的引用,值只在 NiceEval 发布新基线时变化。下游不复制这些字符串,也不维护第二份版本常量;派生制品要把 base 身份写进名字或 provenance 时,直接用常量的值。公开基线是 convenience baseline,不是 Adapter 的隐式默认值。
 
 常量指向的一定是**已发布并验证过的**制品:E2B 侧由维护者发布后登记进[发布台账](../../../../sandbox/README.md),Docker 侧由配方变更触发的 CI 发布;两侧都以构建内自检为发布门槛(Node 工具契约见[上文](#e2btemplatebuilder-派生)),自检不过的制品不写进 registry。
 

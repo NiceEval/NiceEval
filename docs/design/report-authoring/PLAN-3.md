@@ -116,7 +116,7 @@ count(*)    as total      -- 这一格覆盖的全部 attempt
 
 `assistantTurns` 要读 `o11y.json`，`changedLines` 要读 diff。
 这些 artifact 逐 attempt 懒加载，单个可达数百 MB。
-塞进表只有两条路：resolve 前全量物化，或者提供 UDF。
+放入表只有两条路：resolve 前全量物化，或者提供 UDF。
 
 ```sql
 select agent, avg(changed_lines(locator)) from attempts group by 1

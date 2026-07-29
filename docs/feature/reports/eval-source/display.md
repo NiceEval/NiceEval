@@ -14,7 +14,7 @@
 5. 没有 `loc` 的断言与给分记录进入 `unmapped`。
 
 越界行和缺失正文不能被当作没有 `loc`。它们保留原路径，成为对应节点上的
-`unavailable` 缺口。没有位置的 send 不进入兜底区。
+`unavailable` 缺口。没有位置的 send 不进入 `unmapped` 区。
 
 ## 建树
 

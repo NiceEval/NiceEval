@@ -15,7 +15,7 @@ const agent = openClawAgent({
 省略时读 `OPENCLAW_BASE_URL`。写了 `baseUrl` 时，Adapter 在
 `~/.openclaw/openclaw.json` 里注册 `compat` provider
 （`api: "openai-completions"`）。模型选择归 experiment 的 `model`
-维度：已含 `/` 的原样透传 `--model`；裸模型名在自定义网关下写成
+维度：已含 `/` 的原样透传 `--model`；不带 provider 前缀的模型名在自定义网关下写成
 `compat/<model>`。
 
 `version` 钉 npm 包 `openclaw` 的版本，

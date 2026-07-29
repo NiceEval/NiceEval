@@ -15,7 +15,7 @@ const agent = openCodeAgent({
 省略时读 `OPENCODE_BASE_URL`。写了 `baseUrl` 时，Adapter 在
 `opencode.json` 里注册 `compat` provider（`@ai-sdk/openai-compatible`）。
 模型选择归 experiment 的 `model` 维度：已含 `/` 的原样透传 `--model`；
-裸模型名在自定义网关下写成 `compat/<model>`。
+不带 provider 前缀的模型名在自定义网关下写成 `compat/<model>`。
 
 `version` 钉 npm 包 `opencode-ai` 的版本；省略时用 NiceEval 钉的默认版本，
 不装 latest——被测对象版本必须能从实验配置读出来。

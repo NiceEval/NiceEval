@@ -131,7 +131,7 @@ export default defineReport({
 
 内建维度使用公开分组字段名，例如 `agent`、`experiment`；
 自定义分组使用作者在 `aggregate().by` 对象中声明的键。
-未钉住的值由主题按稳定顺序分配。
+未固定的值由主题按稳定顺序分配。
 
 ## 跨页复用
 

@@ -242,7 +242,7 @@ SVG 的文字按基线定位，盒内第一行的基线这样算：
 | 公开站 | `docs-site/images/<主题>-zh.svg`，英文另存一份 |
 
 用 markdown 图片语法引用，路径填 `assets/<主题>.svg`，占满正文宽度。
-不要用 `<table>` 或 `<img width>` 把两张图并排塞进一行。
+不要用 `<table>` 或 `<img width>` 把两张图并排放入一行。
 
 图是独立文档，class 名与 id 不会和宿主页互撞。只有整份 SVG 内联进 MDX 时
 才需要给 `id` 加文件前缀——那时同一页的 marker 共享一个命名空间。

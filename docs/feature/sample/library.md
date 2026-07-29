@@ -65,7 +65,7 @@ sample.filter(predicate);             // 删观测,不改变总体
 
 `historyAttempts` 是同一 experiment / eval 总体内的全部物理历史,同样先按稳定身份去重。它不受
 `current` 的 configHash 缝合或 `fresh` 约束;趋势、稳定性等历史读数只从这里取数,因而不需要拿
-`Record` 或裸 `Run[]` 建立旁路。`scope()` 同时收窄 `attempts` 与 `historyAttempts`,数据质量
+`Record` 或直接传入的 `Run[]` 建立旁路。`scope()` 同时收窄 `attempts` 与 `historyAttempts`,数据质量
 `filter()` 也同时排除两边的同一类坏数据。
 
 `runs` 保留给需要 Run 级信息(配置、producer、目录、diagnostics)的消费方;其中每个成员都是
@@ -149,7 +149,7 @@ const algebra = currentSample(record)
 `{ fresh: true }` 等价于在基础选择后调用 `freshOnly()`。
 
 这层不提供 `pipe`、`only/drop` 算子族,也不提供 `groupBy` / `reduce`。前者把总体选择和数据删减
-藏进一套近义 DSL,后者会与 Reports 的折叠口径重复。需要替换式重挑时重新调用选择器;不要把裸
+藏进一套近义 DSL,后者会与 Reports 的折叠口径重复。需要替换式重挑时重新调用选择器;不要把普通
 `Run[]` 冒充仍有 coverage 与 issues 的 Sample。
 
 ## 去重:身份键与最新落盘

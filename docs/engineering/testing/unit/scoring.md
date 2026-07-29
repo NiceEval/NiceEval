@@ -128,7 +128,7 @@ fixture 必须让三个接收者得到**不同答案**，才能发现 selector �
   覆盖；入口封闭。真实裁判模型的端到端行为归 E2E。
 - **judge 调用失败不落成 0 分**：判分请求非 2xx、连接中途断开、调用超时，以及 2xx 但响应取不出分数（不合协议、分数字段缺失）——四种形态各一条，断言记的是
   `outcome: "unavailable"` + `reason: "judge-call-failed"` + `evidence` 带状态码/异常摘要，**不是 `outcome: "passed"` + `score: 0`**。区分力场景：同一条 rubric 在「网关回
-  400」与「agent 答得完全跑题」两份 fixture 下，落盘记录必须不同——这正是分数面上分不出「裁判挂了」和「答错了」的那一格。非 optional 时同样使 attempt errored。
+  400」与「agent 答得完全跑题」两份 fixture 下，落盘记录必须不同——这正是分数面上分不出「裁判失败」和「答错了」的那一格。非 optional 时同样使 attempt errored。
 - **Judge 静态配置校验与调用期 unavailable**：非法 `baseUrl` / `apiKeyEnv` 在解析期失败，且仅配置
   Judge 不发请求；缺 model / 缺 key 分别记录 `judge-model-unresolved` / `judge-key-unresolved`，
   鉴权、连接、超时和响应解析失败记录 `judge-call-failed`。每类都覆盖 optional 与非 optional，证明

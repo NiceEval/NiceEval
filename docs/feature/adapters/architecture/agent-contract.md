@@ -16,7 +16,7 @@ interface SandboxAgent {
   tracing?: AgentTracing;
   spanMapper?: SpanMapper;
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
-  /** 可选 turn 失败分类器:归类一次 send 失败(返回 FailureClass——时间轴按重试安全性,空间轴只限协议可证明的死因),undefined 回落后续链路(实验分类器、保守兜底)。形状与分类链见执行失败分类。 */
+  /** 可选 turn 失败分类器:归类一次 send 失败(返回 FailureClass——时间轴按重试安全性,空间轴只限协议可证明的死因),undefined 回落后续链路(实验分类器、保守回退)。形状与分类链见执行失败分类。 */
   classifyTurnError?: TurnErrorClassifier;
   teardown?(sandbox: Sandbox, ctx: SandboxAgentContext): Promise<void> | void;
 }

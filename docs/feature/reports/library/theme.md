@@ -15,9 +15,9 @@
 
 | 档 | 取值 | 用途 |
 |---|---|---|
-| 1 | `--theme <名字\|文件>` | 单次运行指定；裸词是内建主题名（`--theme basalt`），带路径形是主题文件 |
+| 1 | `--theme <名字\|文件>` | 单次运行指定；不含路径的名称是内建主题名（`--theme basalt`），带路径形是主题文件 |
 | 2 | 报告定义的 [`theme` 外壳字段](shell.md#字段穷尽) | 这份报告自带的外观，随报告文件一起分发 |
-| 3 | `niceeval.config.ts` 的 `theme` 字段 | 项目默认外观，团队里每个人裸跑 `view` 都看这一份 |
+| 3 | `niceeval.config.ts` 的 `theme` 字段 | 项目默认外观，团队里每个人不带选项运行 `view` 都看这一份 |
 | 4 | 内建 [`basalt`](../themes/basalt.md) | NiceEval 官方主题 |
 
 四档取的都是 `defineTheme` 产物，走同一条 `装载 → 规范化 → 生成令牌块与资产` 管线。
@@ -125,7 +125,7 @@ export default defineTheme({
 
 主题没有继承：它是一个扁平的令牌对象，对象展开已经把「拿一份再改两项」表达清楚，再加一层合并语义只会让「这个色到底从哪来」多一个要查的地方。报告外壳同理——两处是同一条纪律。
 
-`defineTheme` 只做类型与运行时校验，不注册全局状态、不写文件。三个去处收的都是它的产物，不收裸对象——外壳的 `theme`、配置的 `theme` 与 `--theme` 装载的默认导出同一条规则，与[报告定义](shell.md)那边一致：读一行 `theme: acme` 就知道那是一份校验过的主题，而不是一坨可能拼错字段名的字面量。
+`defineTheme` 只做类型与运行时校验，不注册全局状态、不写文件。三个去处收的都是它的产物，不收未包装对象——外壳的 `theme`、配置的 `theme` 与 `--theme` 装载的默认导出同一条规则，与[报告定义](shell.md)那边一致：读一行 `theme: acme` 就知道那是一份校验过的主题，而不是一份可能拼错字段名的字面量。
 
 ## 公开形状
 
@@ -243,7 +243,7 @@ function themeStylesheet(theme: ThemeDefinition): string;
 成对差异 Result 的 improved / regressed 走 `positive` / `negative`；
 改 `accent` 不会把某条实验线染成品牌色。
 
-未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子（Basalt 锁定暗色，每个令牌一个值）：
+未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的默认值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子（Basalt 锁定暗色，每个令牌一个值）：
 
 | 令牌 | 值 |
 |---|---|

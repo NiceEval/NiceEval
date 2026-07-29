@@ -72,7 +72,7 @@ const security = sample.scope({ evals: "security/" });
 const reliable = security.filter(isReliableAttempt);
 ```
 
-`aggregate()` 收 Sample，因为裸数组已经丢失 coverage、issues
+`aggregate()` 收 Sample，因为普通数组已经丢失 coverage、issues
 与“总体是否改变”的信息。
 需要成对比较总体的报告旁函数也应收 Sample。
 只分析历史观测的局部函数则显式接收 `sample.historyAttempts`，

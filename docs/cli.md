@@ -45,7 +45,7 @@ process.argv
                 config.reporters 标 best-effort(见下「required reporter」)
               → 注册 SIGINT/SIGTERM 三级响应(见下)
               → runEvals({ config, evals, agentRuns, reporters, signal, priorResults, carryPlan, … })  # 进入 Effect 调度核心
-              → 收尾:stopAllSandboxes() 兜底强清(只清运行清理集合;--keep-sandbox 留存的沙箱已在
+              → 收尾:stopAllSandboxes() 异常强清(只清运行清理集合;--keep-sandbox 留存的沙箱已在
                 verdict 定稿时先原子登记注册表、再移出集合,见 feature/sandbox/architecture.md)
                 → coordinator.stopDynamic() → 把 coordinator 累计的诊断
                 折成 InvocationCompletion → coordinator.finish({ summary, completion, paths, json, junit }) 打印
@@ -58,7 +58,7 @@ process.argv
 
 CLI 唯一的运行前提是「装了 niceeval」。宿主项目 `package.json` 的 `type` 写什么(`"module"`、`"commonjs"`、不写)不影响任何命令——`npm init -y` 的默认产物(`"type": "commonjs"`)下,`init` 生成的 config 也必须能被下一条命令装载。用户的 `.ts`(`niceeval.config.ts`、`evals/`、`experiments/`、`--report` 报告文件)都经 `bin/niceeval.js` 注册的 tsx hook 动态 `import()` 进来,tsx 按离文件最近的 `package.json` 的 `type` 决定把它编成 ESM 还是 CJS,所以两条编译面都要走得通,靠两个机制共同保证、缺一不可:
 
-- **bin 同时注册 tsx 的 ESM 与 CJS 两个 hook**(`tsx/esm/api` + `tsx/cjs/api`)。宿主是 CJS 形态时用户文件落进 Node 的 CJS loader,没有 CJS hook 就没人转译,裸 TS 会被当 JS 解析直接语法报错。
+- **bin 同时注册 tsx 的 ESM 与 CJS 两个 hook**(`tsx/esm/api` + `tsx/cjs/api`)。宿主是 CJS 形态时用户文件落进 Node 的 CJS loader,没有 CJS hook 就没人转译,未编译的 TS 会被当 JS 解析直接语法报错。
 - **`package.json` 每个带 `import` 条件的 exports 出口同时带指向同一文件的 `require` 条件**。CJS 编译面下用户文件里的 `import ... from "niceeval/expect"` 会变成 `require(...)`,exports 表缺 `require` 条件时 Node 在解析入口就拒绝(`ERR_PACKAGE_PATH_NOT_EXPORTED`)。`require` 到 `.ts` 没问题——niceeval CLI 场景下 tsx 的 CJS hook 恒已注册,会转译。
 
 ESM 宿主仍是推荐形态:CJS 编译面下 config / eval 文件用不了顶层 `await`。因此 `init` 在最近的 `package.json`(从工作目录向上找,找不到视同 CJS)没有 `"type": "module"` 时,完成行之后追加一行提示建议补上;只提示,不改用户的 `package.json`。
@@ -86,8 +86,8 @@ runner/feedback/
 run 激活后(`coordinator.start(plan)` 之后),全部诊断——sandbox provisioning retry 耗尽、budget 不可执行、
 reporter 失败、Ctrl+C 中断——都经 `sink.ts` 的 `reportActivity` / `reportDiagnostic` /
 `reportAttemptLifecycle` 等函数转发给当前活跃的 coordinator,下层模块(`sandbox/*`、`runner/run.ts`、
-`runner/report.ts`)不允许直接裸写 stdout/stderr。`sink.ts` 按调用栈维护"当前哪个 coordinator 活跃"
-(而不是裸单例,给测试里同进程内多次 `runEvals()` 留出隔离空间),run 未激活或 coordinator 尚未构造时
+`runner/report.ts`)不允许直接单独使用 stdout/stderr。`sink.ts` 按调用栈维护"当前哪个 coordinator 活跃"
+(而不是全局单例,给测试里同进程内多次 `runEvals()` 留出隔离空间),run 未激活或 coordinator 尚未构造时
 回退到 `src/tty-line.ts` 的 bootstrap stderr 出口,保证 argv / config 解析错误仍然可见。
 
 ### required reporter
@@ -137,7 +137,7 @@ src/report/model/panel.ts         面板渲染件:同步纯函数,消费 text-la
 
 `FLAG_OPTIONS`(`src/cli.ts`)是 `node:util` `parseArgs` 的 options 表,每一项的 JSDoc 注释就是它在生成的 CLI 参考页 flag 表里的说明——改 flag 语义只改这条注释,不用碰生成脚本(`scripts/generate-reference.ts`)。`--no-x` 形式的负向 flag 显式声明成独立表项(而不是依赖 `parseArgs` 的 `allowNegative`,后者要求 Node 20.14+,而 `engines` 只保证 >=18)。`strict: true` 让未知 flag 直接报错,不静默吞掉后面的位置参数。
 
-`--diff=<path>` 是表驱动解析之外唯一的例外:`--diff` 本身是布尔 flag(裸 `--diff` = 文件级摘要),`=<path>` 形式必须在喂给 `parseArgs` 之前手工预扫出来(空格分隔的 `--diff <path>` 里 `<path>` 会被当成位置参数 = eval id 前缀,这是刻意的,不是 bug)。
+`--diff=<path>` 是表驱动解析之外唯一的例外:`--diff` 本身是布尔 flag(单独使用 `--diff` = 文件级摘要),`=<path>` 形式必须在喂给 `parseArgs` 之前手工预扫出来(空格分隔的 `--diff <path>` 里 `<path>` 会被当成位置参数 = eval id 前缀,这是刻意的,不是 bug)。
 
 ## Effect-TS 用在哪、为什么
 
@@ -206,11 +206,11 @@ const exit = await Effect.runPromiseExit(
 
 **强清不是绕过收尾,而是加速它。** 中断路径上每一层 teardown 都要跑:attempt 级收尾链(`eval.teardown` → `agent.teardown` → `sandbox.teardown`)与实验级 teardown 在优雅路径本就由 Scope finalizer 与 runner 收尾覆盖;强清路径先强停沙箱——让卡在沙箱 I/O 上的收尾立刻失败返回——随后的退出条件是**事件驱动的 settle,不是时钟**:并发等待在飞收尾链结束与实验级注册表排空,两者都 settle 才 `process.exit`。
 
-实验级 teardown 在宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)从**触发时点**(本实验第一个通过派发许可的 attempt)起登记为可执行入口——setup 挂起、抛错都不影响它可达。执行体是 memoized 的一次性 promise:正常路径(计数归零 / run 收尾扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——不双跑、也不空转;条目在 settle 后注销,所以 drain 的完整语义就是「启动全部未启动 + 等待全部未 settle」。登记进程内注册表的同一时点,收尾意向也持久化到磁盘(`.niceeval/teardowns/` 逐条目文件),settle 后删除——它不参与进程内的任何路径,只服务强杀后的启动自愈(契约见 [Experiments · 强杀后的收尾兜底](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈))。`main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套兜底再退出。attempt 级 Hook 活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户 Hook 会双跑,它们靠「强停沙箱 + 等待在飞链 settle」拿到执行机会。
+实验级 teardown 在宿主机侧注册表(`src/runner/experiment-cleanup-registry.ts`,与沙箱登记表同一模式)从**触发时点**(本实验第一个通过派发许可的 attempt)起登记为可执行入口——setup 挂起、抛错都不影响它可达。执行体是 memoized 的一次性 promise:正常路径(计数归零 / run 收尾扫尾)、强清 drain、崩溃路径谁先到都启动同一个 promise,后到者等到同一个结果——不双跑、也不空转;条目在 settle 后注销,所以 drain 的完整语义就是「启动全部未启动 + 等待全部未 settle」。登记进程内注册表的同一时点,收尾意向也持久化到磁盘(`.niceeval/teardowns/` 逐条目文件),settle 后删除——它不参与进程内的任何路径,只服务强杀后的启动自愈(契约见 [Experiments · 强杀后的收尾回退](feature/experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈))。`main()` 顶层 `.catch()` 的真·崩溃路径同样先走这套回退再退出。attempt 级 Hook 活在各自 fiber 的收尾链里,不进注册表——从 fiber 外重放用户 Hook 会双跑,它们靠「强停沙箱 + 等待在飞链 settle」拿到执行机会。
 
-**有界性是事件驱动收口的前提**:每个收尾可调用体(eval / agent teardown、sandbox Hook 链里的每个 Hook、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。因此「等全部 settle」有确定上界,不会无限拖住退出。四个时间常量之间是声明的不等式链,不是各自孤立的数字:**provider stop 超时(8s)< 看门狗(12s)< `CLEANUP_TIMEOUT_MS`(30s)≤ 强清兜底上限(2 × `CLEANUP_TIMEOUT_MS`,实现里直接从常量推导,防手写漂移)**——看门狗晚于一次 provider stop 超时才升级(否则误伤正常收尾),兜底上限至少容纳一个满额清理超时。兜底上限不是第 2 级的语义(settle 才是),它只拦「收尾可调用体绕过了自己的超时」这种失守病态,到点放弃退出——那时的职责与第 3 级相同。
+**有界性是事件驱动收口的前提**:每个收尾可调用体(eval / agent teardown、sandbox Hook 链里的每个 Hook、实验级 teardown)各自有 `CLEANUP_TIMEOUT_MS`(30s)清理超时,到点记 `teardown-failed` / `experiment-teardown-failed` 诊断后继续走下一段;provider stop 另有自己的超时。因此「等全部 settle」有确定上界,不会无限拖住退出。四个时间常量之间是声明的不等式链,不是各自孤立的数字:**provider stop 超时(8s)< 看门狗(12s)< `CLEANUP_TIMEOUT_MS`(30s)≤ 强清上限(2 × `CLEANUP_TIMEOUT_MS`,实现里直接从常量推导,防手写漂移)**——看门狗晚于一次 provider stop 超时才升级(否则误伤正常收尾),强清上限至少容纳一个满额清理超时。强清上限不是第 2 级的语义(settle 才是),它只拦「收尾可调用体绕过了自己的超时」这种失守病态,到点放弃退出——那时的职责与第 3 级相同。
 
-目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱、不漏任何一层 teardown:每个沙箱要么在本次 run 的清理集合里——退出前必被 stop,第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次走上述强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先走同一个兜底函数再退出;要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从清理集合移出(`niceeval sandbox list` 可见、`stop` 可清)。中断时刻尚无 verdict 的 attempt 拿不到留存授予,照常被清。`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内;这条路径的兜底是事后认领:实例面靠创建期写进 provider 元数据的运行标识与 `niceeval sandbox prune`(见 [Sandbox · 孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面兜底)),实验面靠磁盘上的收尾登记与下次 `niceeval exp` 的启动自愈(见 [Experiments · 强杀后的收尾兜底](feature/experiments/architecture.md#强杀后的收尾兜底收尾登记与启动自愈))。
+目标是在所有受支持的正常返回、异常、超时与 Ctrl+C 路径都不留**无主**沙箱、不漏任何一层 teardown:每个沙箱要么在本次 run 的清理集合里——退出前必被 stop,第 1 次 Ctrl+C 给 Effect 的 Scope finalizer 一个机会走优雅路径,用户等不及时第 2 次走上述强清,`main()` 的顶层 `.catch()` 对真·崩溃路径同样先走同一个回退函数再退出;要么已按 [`--keep-sandbox`](feature/sandbox/cli.md) 先原子登记进留存注册表、再从清理集合移出(`niceeval sandbox list` 可见、`stop` 可清)。中断时刻尚无 verdict 的 attempt 拿不到留存授予,照常被清。`SIGKILL` / 宿主断电无法与外部 provider 做分布式事务,不在这条绝对保证内;这条路径的回退是事后认领:实例面靠创建期写进 provider 元数据的运行标识与 `niceeval sandbox prune`(见 [Sandbox · 孤儿核对](feature/sandbox/architecture.md#孤儿核对强杀路径的实例面回退)),实验面靠磁盘上的收尾登记与下次 `niceeval exp` 的启动自愈(见 [Experiments · 强杀后的收尾回退](feature/experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈))。
 
 ## 相关阅读
 

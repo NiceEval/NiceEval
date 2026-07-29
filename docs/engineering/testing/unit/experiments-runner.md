@@ -79,12 +79,12 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 ## 覆盖规范
 
-- **runs 展开与选择**：attempt 总数公式与 runs 缺省；位置参数前缀 × 实验 `evals`
+- **runs 展开与选择**：attempt 总数公式与 runs 的默认值；位置参数前缀 × 实验 `evals`
   字段两层交集；谓词的白名单投影、只求值一次、非法返回值的完整报错；experiment 选择器三条规则与零命中反馈；environment
   profile 查表的同源消费与缺表项前置报错。选择类契约的每条规则都要有"命中"与"不误配"两面。
 - **`EvalDescriptor.scoring` 投影与实验同型校验**：`evalDescriptorOf` 对 `defineEval` 产物投影
   `scoring: "pass"`、`defineScoreEval` 产物投影
-  `"points"`，未经这两个定义函数处理的裸对象（`scoring` 缺失）兜底按 `"pass"`
+  `"points"`，未经这两个定义函数处理的未包装对象（`scoring` 缺失）回退按 `"pass"`
   投影，三种情形在同一批候选 eval 里都要各有一条区分力场景；`splitByScoring`
   对全通过制、全计分制、混合三种候选集合的分桶结果——只有混合桶两侧都非空。混型启动校验的报错文案（`cli.experiment.mixedScoring`）要能证明关键信息齐全：两侧的 eval
   id 各自列出、各自计数，以及收窄建议（tags / id 前缀 / `scoring` 字段，或拆成两个实验文件）——直接对
@@ -247,13 +247,13 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   `evalConclusionRows` 的职责）。字面渲染（人读结论行与 `--json` 的 `eval` 事件）归
   [E2E · CLI](../e2e/cli.md)「反馈输出格式」在真实进程输出上验收。
 - **budget**：只按已完成实测花费判断（在飞不影响派发是契约不是 bug）、到顶停发在飞跑完、按 experiment 域隔离、未派发导致 incomplete 与退出码 1、成本缺失 warning 的去重与触发前提。
-- **超时、缓存与指纹**：外层超时兜底为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase`
+- **超时、缓存与指纹**：外层超时回退为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase`
   是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped`
   总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs`
   不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs`
   超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`--carry-ignoring-flag <key>` 的三道约束各要一条**——携带判定按抹掉这些键之后的 flags 认账(fixture 要有「只差该键 → 携带」与「另有一键也不同 → 仍重跑」两个方向)、键仍在本次 resolved `flags` 里时报启动期用法错误、键在候选历史条目的 `flags` 里也不存在时同样报错(打错键名不静默放过);留痕两处都要断言——被携入条目的 `carriedIgnoringFlags` 与本次 Run 的 `carry-ignoring-flag` diagnostic,且下一次不带该 flag 的运行照常命中(证明重锚生效,不需要长期挂着)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox`
   下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed`
-  一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、裸写与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式
+  一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、单独使用与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式
   `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - **eval 源码闭包的构成与确定性**：闭包含三样东西——eval 文件字节、项目根内导入图的递归展开、
   `loadYaml` / `loadJson` 读入的数据文件内容。

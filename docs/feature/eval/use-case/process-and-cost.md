@@ -29,7 +29,7 @@
 
 4. 成本与纪律上限：`maxToolCalls(n)` / `maxTokens(n)` / `maxCost(usd)` 封顶，`noFailedActions()` 断没有失败的工具或子 agent 动作，`usedNoTools()` 断纯文本作答。词汇覆盖不到的规则才用 `eventsSatisfy(label, predicate)` 写谓词，`label` 必填、进报告名。
 
-5. 用 `t.group` 组织报告区块，用严重度声明每条的分量。**作用域断言默认就是 gate**——挂了就红，什么都不用链；还没定案的指标链 `.atLeast(1)` 降成软指标——挂了照实记 failed，但默认不拖垮判定，`--strict` 下才计入；只想记分布、连 failed 都不想标的用无参 `.soft()`：
+5. 用 `t.group` 组织报告区块，用严重度声明每条的分量。**作用域断言默认就是 gate**——失败就红，什么都不用链；还没定案的指标链 `.atLeast(1)` 降成软指标——失败照实记 failed，但默认不拖垮判定，`--strict` 下才计入；只想记分布、连 failed 都不想标的用无参 `.soft()`：
 
    ```typescript
    await t.group("命令调用链", async () => {
@@ -39,7 +39,7 @@
    });
 
    await t.group("路由层", async () => {
-     t.calledTool("shell", { input: { command: INDEX_RE } }).atLeast(1);      // 软指标:挂了记录,不 gate
+     t.calledTool("shell", { input: { command: INDEX_RE } }).atLeast(1);      // 软指标:失败记录,不 gate
      t.calledTool("shell", { input: { command: EXPECTED_PAGES } }).atLeast(1);
    });
    ```

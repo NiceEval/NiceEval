@@ -76,7 +76,7 @@ export default defineEval({
 - 跨 agent 对比评分:experiments 矩阵已有(场景 C)。
 - A2A / ACP 等 agent 间协议对接:那是某个 adapter 的活,core 不认协议。
 - agent 间消息内容的自动评分:judge 已覆盖,不需要新机制。
-- 多轮对手戏的循环语法糖(`converse(agent, { maxTurns })` 之类):先用裸循环写三条真实 eval,形状稳定了再提,不提前抽象。
+- 多轮对手戏的循环语法糖(`converse(agent, { maxTurns })` 之类):先直接用循环写三条真实 eval,形状稳定了再提,不提前抽象。
 
 ## 分期
 

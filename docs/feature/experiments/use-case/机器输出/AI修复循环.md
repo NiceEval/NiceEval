@@ -2,7 +2,7 @@
 
 ## 解决什么问题
 
-让 Claude Code / Codex 这类 coding agent 替你修 eval 失败:它自己跑 niceeval、读失败证据、改代码、再跑。human live 面板对它全是噪音——原地重绘、spinner、框线和 ANSI 都要浪费上下文去解析,整份 transcript 塞进去更是灾难。它真正需要三样:退出码、失败的稳定身份(locator)、按需下钻的证据入口。运行流加 `--json` 得到可直接解析的 NDJSON 事件;深读证据一律交给 [`niceeval show`](../../../reports/show.md)(要结构化就同样加 [`--json`](../../../reports/show/json.md))。
+让 Claude Code / Codex 这类 coding agent 替你修 eval 失败:它自己跑 niceeval、读失败证据、改代码、再跑。human live 面板对它全是噪音——原地重绘、spinner、框线和 ANSI 都要浪费上下文去解析,整份 transcript 放入去更是灾难。它真正需要三样:退出码、失败的稳定身份(locator)、按需下钻的证据入口。运行流加 `--json` 得到可直接解析的 NDJSON 事件;深读证据一律交给 [`niceeval show`](../../../reports/show.md)(要结构化就同样加 [`--json`](../../../reports/show/json.md))。
 
 ## 全流程
 

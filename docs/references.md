@@ -1,6 +1,6 @@
 # References —— 从其它项目学到什么
 
-已经落地的借鉴大多分散记在各篇文档自己的"来源"脚注里(比如 [README](README.md) 的整体形状借鉴、[Assertions 来源](./feature/assertions/reference/provenance.md) 里的评分设计来源、[experiments/architecture.md](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`)。这篇文档不重复那些,专门记录**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
+已经落地的借鉴大多分散记在各篇文档自己的"来源"脚注里(比如 [README](README.md) 的整体形状借鉴、[Assertions 来源](./feature/assertions/reference/provenance.md) 里的评分设计来源、[experiments/architecture.md](feature/experiments/architecture.md#设计参照从-agent-eval-删除了什么以及为什么) 里 `defineExperiment` 对照 agent-eval 的 `ExperimentConfig`)。这篇文档不重复那些,专门记录**调研某个外部项目时学到的东西**——抄了什么、还没抄但值得抄什么、调研过判断不值得抄的及理由——方便以后再研究别的项目时按同样的格式续写,也方便回头核对"这个设计当初是照着谁的形状定的"。
 
 每次调研一个外部项目开一个二级标题,格式固定:是什么 → 已经借鉴的 → 这次新学到、值得抄的 → 调研过但不打算抄的(及理由)。
 
@@ -39,7 +39,7 @@ Google Go 区分返回值的名词性名字与产生动作的动词性名字。
 
 **来源路径:** `/Users/ctrdh/Code/agent-eval/packages/playground`(本机另一个项目,不在这个仓库里,记路径方便下次再核对实现有没有变)。
 
-**是什么:** `@vercel/agent-eval-playground`,独立发布的 Next.js 结果查看器。零数据库、零 API 路由——所有页面是 Server Component,`lib/data.ts` 直接 `fs.readdirSync`/`readFileSync` 读 `results/`(实验结果)和 `evals/`(eval fixture)两个目录,`force-dynamic` 保证每次请求都读最新的盘上数据。CLI(`bin.mjs`)把目录路径塞进环境变量后 `spawn` 包内置的 `next start`。
+**是什么:** `@vercel/agent-eval-playground`,独立发布的 Next.js 结果查看器。零数据库、零 API 路由——所有页面是 Server Component,`lib/data.ts` 直接 `fs.readdirSync`/`readFileSync` 读 `results/`(实验结果)和 `evals/`(eval fixture)两个目录,`force-dynamic` 保证每次请求都读最新的盘上数据。CLI(`bin.mjs`)把目录路径放入环境变量后 `spawn` 包内置的 `next start`。
 
 ### 已经借鉴的(更早调研,已经在别处记过来源)
 
@@ -55,7 +55,7 @@ Google Go 区分返回值的名词性名字与产生动作的动词性名字。
 
 1. **Tool 遥测是固定的 10 项 `ToolName` 枚举** (`file_read`/`shell`/`web_fetch`/…) + Badge 计数(`O11ySummary.tsx`)。niceeval 走的是 OTel GenAI 语义约定的 canonical trace/mapper(见 [Observability](observability.md#transcript-标准事件流)),覆盖面和跨 agent 一致性都更好——这块 niceeval 已经比它强,不用倒退抄。
 2. **整个架构是"每次请求都读 fs 的 Next.js 多页面 live server"。** 没有数据库、没有 API 路由,但需要一个常驻的 `next start` 进程。niceeval 的 `view` 是"一次性烘焙 HTML+JSON 静态产物"(`src/view/index.ts` 的 `renderHtml`),导出目录扔给任何静态托管就能看,不需要常驻进程。这是刻意的取舍,不打算改成常驻多页应用——如果要抄 `/compare`,数据仍然要在生成 HTML 时一次性烘焙进去,不能假设前端能随时再查 fs。
-3. **`bin.mjs` 的 `--watch` flag。** 只把 `WATCH=true` 塞进环境变量,代码里没有看到被消费的地方,像是半成品,没必要照抄这个具体实现。
+3. **`bin.mjs` 的 `--watch` flag。** 只把 `WATCH=true` 放入环境变量,代码里没有看到被消费的地方,像是半成品,没必要照抄这个具体实现。
 
 ## Recharts
 

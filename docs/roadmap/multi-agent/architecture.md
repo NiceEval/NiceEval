@@ -6,7 +6,7 @@
 
 ```ts
 // 1. StreamEvent 全部成员追加一个可选归属字段。
-//    缺省(undefined)= 主 agent 自己 —— 单 agent adapter 一行不用改。
+//    省略(undefined)= 主 agent 自己 —— 单 agent adapter 一行不用改。
 { type: "action.called", callId: "c7", name: "web_search", input: {...}, agent: "researcher" }
 { type: "message", role: "assistant", text: "报告如下…", agent: "writer" }
 

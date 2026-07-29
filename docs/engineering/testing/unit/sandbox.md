@@ -59,10 +59,10 @@ suite。
 
 ## 覆盖规范
 
-- **生命周期与资源释放**：attempt 调用链的固定顺序与缺省跳过；setup 抛错时已成功部分的逆序 cleanup、teardown 与 stop 的 finally 语义；setup 抛错计 errored 而 teardown 报错只记日志；逐段清理超时的诊断收束；`.setup()`/`.teardown()`
+- **生命周期与资源释放**：attempt 调用链的固定顺序与省略对应 Hook 时跳过；setup 抛错时已成功部分的逆序 cleanup、teardown 与 stop 的 finally 语义；setup 抛错计 errored 而 teardown 报错只记日志；逐段清理超时的诊断收束；`.setup()`/`.teardown()`
   的追加序/LIFO 与 spec 不可变；创建后被终止属 lifecycle failure 不进 IO 重试；remote
   agent 下 spec 整体忽略；hook 的窄上下文。失败与中断路径的清理和成功路径同等重要。
-- **路径规则**：沙箱侧相对/绝对/缺省三态解析、`../`
+- **路径规则**：沙箱侧相对/绝对/省略三态解析、`../`
   规范化与逃逸拒绝、无 shell 变量展开、本地侧按 eval 定义文件目录解析——适合表驱动，每个 case 指向一条允许或拒绝语义。`normalizeSandboxPaths`
   对接口之外的可选能力（`appendLog`、`suspend`）按「实例有就转发、没有就是 undefined」原样传递，不吞掉——留存路径的
   `sandbox.suspend`（`keep.ts` 的 `suspendSandbox`）经这层包装后仍能找到底层 provider 实例的
@@ -79,7 +79,7 @@ suite。
   遇瞬时错误必须抛出不伪装 false；重试耗尽抛回原始错误链；批量写的重跑等价性；读取 API 的缺失行为与二进制完整性；`downloadDirectory`
   与 `uploadDirectory` 对称的 `ignore`
   语义(按 basename 排除、命中即整支剪除,不区分文件与目录)与落盘行为(自动建目录、原样二进制字节、不做编码转换、不返回带便利方法的包装类型)——docker(单次 tar 取回后按首段路径剥离归位)与 vercel/e2b(共享的 find 列路径 + 逐文件二进制读取模板)两条实现路径都要证明。
-- **Provisioning 失败与重试**：原生限流归类、兜底瞬时分类器复用、可重试 kind 的退避与确定性错误零重试；退避期间归还并发槽位；有对账通道时先对账再重试、对账失败放弃并抛回原始错误、无通道时歧义类零重试；自定义 provider 不套用这层重试。相关裁决与踩坑见 memory 的
+- **Provisioning 失败与重试**：原生限流归类、回退瞬时分类器复用、可重试 kind 的退避与确定性错误零重试；退避期间归还并发槽位；有对账通道时先对账再重试、对账失败放弃并抛回原始错误、无通道时歧义类零重试；自定义 provider 不套用这层重试。相关裁决与踩坑见 memory 的
   [sandbox-provision-ratelimit-retry](../../../../memory/sandbox-provision-ratelimit-retry.md)、[e2b-provision-429-duplicate-sandbox](../../../../memory/e2b-provision-429-duplicate-sandbox.md)。
 - **Provisioning 确定性死因的对外 scope 映射**：三档确定性配置死因（凭据缺失、权限不足、模板不存在）从 provider 原生错误形态（含跨 cause 链走查）的识别，以及识别后按[执行失败分类](../../../feature/error-classification/README.md)的结构化契约（`_tag` +
   `class`）附着到错误对象；按死因的配置解析域定档——凭据缺失、权限不足恒定档
@@ -91,7 +91,8 @@ suite。
   diff）；窗口标签与轮标签同枚 token、按等值匹配；默认排除与 ignore/include 的 glob 语义、nested
   repo 不静默吞改动；`noFailedShellCommands`
   只看 Agent 自己的调用；延迟断言 finalize 时对最终 diff 求值。
-- **provider 选择与作者面**：sandbox 字段无裸字符串/无默认/无探测、两处皆空报错带下一步；自定义 provider 直接调用、核心路径无 provider 名分支；`t.sandbox`
+- **provider 选择与作者面**：sandbox 字段不接受 provider 名字符串、没有默认值、不会自动探测。
+  两处皆空时，报错给出下一步；自定义 provider 直接调用、核心路径无 provider 名分支；`t.sandbox`
   的错误反馈带 API 名与 agent 名；反馈经管线不经 stdout。
 - **官方 E2B coding-agent 模板契约**：Claude Code /
   Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global

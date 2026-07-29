@@ -94,7 +94,7 @@ await sandbox.runCommand("npm", ["install"]);   // 默认非 root,cwd 默认 wor
 
 ## provider 选择:没有默认值,没有按名字选
 
-`sandbox` 字段的类型是 `SandboxOption`(= `SandboxSpec`,一个按 `provider` 区分的数据结构),**不接受裸字符串,也不会自动探测环境替你选一个**。沙箱型 agent 必须显式给 `sandbox` 一个工厂函数产出的 spec,写在 experiment 的 `sandbox` 字段,或写在 `niceeval.config.ts` 的 `sandbox` 字段做全项目兜底(`config.sandbox`,experiment 没设时用它)。两处都没设、又用了沙箱型 agent 时,`resolveSandbox()` 直接抛错,不会替你猜环境、不会静默兜底到某个 provider。这条对 [`localSandbox()`](local.md) 尤其硬:在宿主机上直接跑 agent 生成的命令是有后果的,绝不因缺配置替你悄悄落到本地档。也没有 `--sandbox <name>` 这种 CLI 覆盖——provider 选择是 experiment/config 的书面配置,不是运行时临时参数。
+`sandbox` 字段的类型是 `SandboxOption`(= `SandboxSpec`,一个按 `provider` 区分的数据结构),**不接受未包装字符串,也不会自动探测环境替你选一个**。沙箱型 agent 必须显式给 `sandbox` 一个工厂函数产出的 spec,写在 experiment 的 `sandbox` 字段,或写在 `niceeval.config.ts` 的 `sandbox` 字段作为全项目默认(`config.sandbox`,experiment 没设时用它)。两处都没设、又用了沙箱型 agent 时,`resolveSandbox()` 直接抛错,不会替你猜环境、不会静默回退到某个 provider。这条对 [`localSandbox()`](local.md) 尤其硬:在宿主机上直接跑 agent 生成的命令是有后果的,绝不因缺配置替你悄悄落到本地档。也没有 `--sandbox <name>` 这种 CLI 覆盖——provider 选择是 experiment/config 的书面配置,不是运行时临时参数。
 
 ```typescript
 import { defineExperiment } from "niceeval";

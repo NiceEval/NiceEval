@@ -327,7 +327,7 @@ Sample ──▶ 数据源 compute() ──▶ 可序列化 Content ──┬─
    包括读数为 `null` 的那几条。
 5. **浏览器包干净**：自有 React 页面只 import `niceeval/report/react` 即可渲染。
 
-**反指标**：数据源把 `MeasureCell` 压成字符串塞进文本格。
+**反指标**：数据源把 `MeasureCell` 压成字符串放入文本格。
 表面看数字一样，实际丢掉了有效样本数、覆盖总数与证据引用，
 读者看到一个数却点不开它从哪几条 attempt 来。
 

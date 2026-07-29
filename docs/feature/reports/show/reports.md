@@ -1,6 +1,6 @@
 # `--report`：单页与多页的终端操作
 
-`--report <名字|文件>` 替换默认 pages：带路径形的值按报告文件装载，其默认导出恒为 `defineReport` 产物（[树或配置对象形态](../library/shell.md)）；裸词查[内建视图名](../library/built-in.md)。`--history` 与 `--report` 互斥。locator 详情同样是一张 page。本页按 case 列出操作步骤；page 与外壳的字段契约见 [Library · 外壳与多页](../library/shell.md)。
+`--report <名字|文件>` 替换默认 pages：带路径形的值按报告文件装载，其默认导出恒为 `defineReport` 产物（[树或配置对象形态](../library/shell.md)）；不含路径的名称查[内建视图名](../library/built-in.md)。`--history` 与 `--report` 互斥。locator 详情同样是一张 page。本页按 case 列出操作步骤；page 与外壳的字段契约见 [Library · 外壳与多页](../library/shell.md)。
 
 **索引命令携带完整上下文。** `show` 输出的每一条页索引命令都保留当前的 `--record`、`--report` 与位置参数。
 
@@ -18,7 +18,7 @@ error: page "typo" not found in reports/frontier.tsx. Available pages: report
 
 ## Case 2：多页文件——渲染初始页，尾部附其余页索引
 
-多页时渲染初始页（`--page` 指定的页，缺省第一页），随后附其余页的索引与可复制命令——与 `view` 打开初始页同一语义：一条命令直接给出答案，其余页只列索引、不倾倒内容：
+多页时渲染初始页（`--page` 指定的页，默认第一页），随后附其余页的索引与可复制命令——与 `view` 打开初始页同一语义：一条命令直接给出答案，其余页只列索引、不倾倒内容：
 
 ```sh
 $ niceeval show --report reports/site.tsx                # 渲染第一页（总览）的 text 面
@@ -61,11 +61,14 @@ $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可
 
 ## Case 6：内建等价文件
 
-没配 `config.report` 时，裸 `niceeval show` 与 `--report` 一个内容为[内建报告全文](../library/built-in.md)（三张导航 page 加一张参数化详情 page）的文件完全等价；裸 `show` 渲染报告页并在尾部只列 Attempts、追踪两张可导航页，`show @locator` 选择隐藏的详情 page。
+没配 `config.report` 时，不带选项的 `niceeval show` 与一个内容为
+[内建报告全文](../library/built-in.md)（三张导航 page 加一张参数化详情 page）的 `--report`
+文件完全等价。不带选项的 `show` 渲染报告页，并在尾部只列 Attempts、追踪两张可导航页；
+`show @locator` 选择隐藏的详情 page。
 
 ## Case 7：项目默认报告与临时回到内建
 
-配置里填了 `report` 字段后，裸 `show` 装载的就是它；`--report` 仍然按次覆盖，写内建视图名就回到默认报告，不必改配置：
+配置里填了 `report` 字段后，不带选项的 `show` 装载的就是它；`--report` 仍然按次覆盖，写内建视图名就回到默认报告，不必改配置：
 
 ```sh
 $ niceeval show                             # 装载 config.report
@@ -75,7 +78,7 @@ $ niceeval show --report site
 error: no built-in report view named "site". Available: standard. To load a file, write a path like ./reports/site.tsx
 ```
 
-裸词一律查内建视图名表、不回落到文件探测：`--report site` 不会去找 `./site.tsx`，报错直接给出两条路怎么写。
+不含路径的名称一律查内建视图名表、不回落到文件探测：`--report site` 不会去找 `./site.tsx`，报错直接给出两条路怎么写。
 
 ## 外壳字段在终端
 
@@ -84,6 +87,6 @@ error: no built-in report view named "site". Available: standard. To load a file
 ## 相关阅读
 
 - [Library · 外壳与多页](../library/shell.md) —— 页与外壳的字段穷尽。
-- [Library · 内建报告](../library/built-in.md) —— 裸 `show` 装载的定义本体。
-- [裸 `show` 的默认报告](default-report.md) —— 当前 Sample 的摘要、散点与实验详情。
+- [Library · 内建报告](../library/built-in.md) —— 不带选项的 `show` 装载的定义本体。
+- [不带选项的 `show` 的默认报告](default-report.md) —— 当前 Sample 的摘要、散点与实验详情。
 - [View](../view.md) —— 同一份文件在网页宿主的路由（`#/page/<id>`、`--page` 定初始页）。

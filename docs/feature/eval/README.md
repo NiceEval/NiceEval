@@ -39,7 +39,7 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的缺省底，压不掉 eval 写下的值。`timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../judge/library.md#模型与鉴权)。完整解析链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的默认来源，压不掉 eval 写下的值。`timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../judge/library.md#模型与鉴权)。完整解析链见 [Experiments · Resolved config](../experiments/architecture.md#resolved-config一次求值处处同源)。
 
 `environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；Direct Agent 不创建 Sandbox，此字段只参与指纹。
 
@@ -61,7 +61,7 @@ export default defineScoreEval({
   description: "安装并启动 DB-GPT",
   async test(t) {
     await t.send("把 DB-GPT 装起来并通过健康检查。");
-    // 前置:挂了就地结束,后面的分自然挣不到
+    // 前置:失败就地结束,后面的分自然挣不到
     await t.require(await t.sandbox.fileExists("db-gpt/README.md"), isTrue("cloned"));
     t.sandbox.fileChanged("db-gpt/.env").points(1);   // 检查点通过挣 1 分
     t.score("代码精简", 15);                           // 自己算好条件后直接累加

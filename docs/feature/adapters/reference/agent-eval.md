@@ -71,7 +71,7 @@ function getParserForAgent(agent: string) {
 }
 ```
 
-用 `agent.includes(key)` 而不是精确相等,是为了让 `vercel-ai-gateway/claude-code` 这种网关前缀变体和裸的 `claude-code` 走同一个 parser——两边其实是同一个 CLI,只是鉴权路径不同,不该因为名字里多了个前缀就找不到 parser。认不出的 agent 直接返回 `parseSuccess: false` 加一句报错(列出 `SUPPORTED_AGENTS`),不猜。
+用 `agent.includes(key)` 而不是精确相等,是为了让 `vercel-ai-gateway/claude-code` 这种网关前缀变体和直接 `claude-code` 走同一个 parser——两边其实是同一个 CLI,只是鉴权路径不同,不该因为名字里多了个前缀就找不到 parser。认不出的 agent 直接返回 `parseSuccess: false` 加一句报错(列出 `SUPPORTED_AGENTS`),不猜。
 
 ## Claude Code 怎么转换
 
@@ -118,7 +118,7 @@ function getParserForAgent(agent: string) {
   - `reasoning` → `thinking`。
   - `command_execution` → **`started` 产 `tool_call`(shell,`args.command`),`completed` 产 `tool_result`(`result.output` 取 `aggregated_output`,`result.exitCode` 取 `exit_code`,`success` 判 `status === "completed" && exitCode 是 0 或未定义`)**——shell 命令的开始和结束是两个独立事件,靠"先后顺序"隐式配对,不靠 id。
   - `agent_message` → `assistant` 消息。
-- `default`(没认出的 type):再按数据形状猜——有 `role` 字段就当消息,有 `function`/`tool` 字段且带 `result`/`output` 就当 `tool_result`,否则当 `tool_call`。这是最后一道兜底,处理型号漂移到连 `eventType` 都认不出的情况。
+- `default`(没认出的 type):再按数据形状猜——有 `role` 字段就当消息,有 `function`/`tool` 字段且带 `result`/`output` 就当 `tool_result`,否则当 `tool_call`。这是最后一道回退,处理型号漂移到连 `eventType` 都认不出的情况。
 
 **`normalizeToolName`(Codex 专属映射表,和 Claude Code 的完全不共享,且 Codex 版会先 `toLowerCase()` 再查表)：**
 
@@ -170,7 +170,7 @@ if (event.tool.name === 'shell') {
 }
 ```
 
-`generateSummary` 只认 `_extractedPath` / `_extractedUrl` / `_extractedCommand` 这三个暗号字段,读不到才退回去猜通用字段名兜底。**提取(这个字段在这家 CLI 的私有参数里叫什么)和聚合(这些字段怎么计数 / 去重)被这个命名约定彻底切开**——新增一个 agent,只要在它自己的 parser 后处理里填好这三个暗号字段,`generateSummary` 一行不用改。
+`generateSummary` 只认 `_extractedPath` / `_extractedUrl` / `_extractedCommand` 这三个暗号字段,读不到才退回去猜通用字段名回退。**提取(这个字段在这家 CLI 的私有参数里叫什么)和聚合(这些字段怎么计数 / 去重)被这个命名约定彻底切开**——新增一个 agent,只要在它自己的 parser 后处理里填好这三个暗号字段,`generateSummary` 一行不用改。
 
 **call/result 配对是顺序性的,不是 id 性的。** shell 命令的成功状态是这样接上的:
 
@@ -183,7 +183,7 @@ case 'tool_result':
   }
 ```
 
-"数组里最后一条还没写 exitCode 的记录"就是这次 result 对应的 call——这是可行的,因为 Codex/Claude Code 的工具调用在 transcript 里基本是严格顺序的(等上一个工具跑完才发起下一个),但这个假设没有 id 兜底,一旦上游并发发起多个工具调用,配对就会错。
+"数组里最后一条还没写 exitCode 的记录"就是这次 result 对应的 call——这是可行的,因为 Codex/Claude Code 的工具调用在 transcript 里基本是严格顺序的(等上一个工具跑完才发起下一个),但这个假设没有 id 回退,一旦上游并发发起多个工具调用,配对就会错。
 
 ## 采集层:两份 parser 之前,原始数据从哪来
 
@@ -209,7 +209,7 @@ await sandbox.writeFiles({ '__agent_eval__/results.json': JSON.stringify(context
 - **显式 ID 配对比"数组里最后一条未配对记录"更稳。** niceeval 的
   `operation.started` / `operation.finished` 靠 `operationId` 配对,不依赖工具调用严格顺序发生。
   agent-eval 这份实现在并发或乱序工具调用下会错配,是个真实的设计取舍,不是理论问题。
-- **"暗号字段 + 通用兜底"这个具体写法值得抄**,尤其是"提取"和"聚合"分离这一点;但**提取函数本身在多个 agent parser 间被复制而非共享**,是可以直接避免的重复,新写 parser 时不必照抄这一部分。
+- **"暗号字段 + 通用回退"这个具体写法值得抄**,尤其是"提取"和"聚合"分离这一点;但**提取函数本身在多个 agent parser 间被复制而非共享**,是可以直接避免的重复,新写 parser 时不必照抄这一部分。
 - **一个 agent 的"采集"可以是多条互不相干的通道**(Codex 的 stdout 转写 vs 磁盘读实际模型),不是"一个 agent 一种采集方式"——设计 adapter 的采集逻辑时要按"这份数据要用来干什么"分别决定怎么采,而不是假设一种机制能满足所有需求。
 - **`Agent.run()` 是一个每个 agent 重写一遍的单体函数**(建沙箱、传文件、装 CLI、跑命令、抓 transcript、注入上下文、跑校验、采 diff、关沙箱,claude-code.ts 和 codex.ts 里这一整套流程几乎逐行重复),生命周期没有被收进一个共享的运行器骨架里。niceeval 把这套骨架收进运行器(`setup` 一次 / `send` 每轮一次 / git 基线与 diff 由 runner 统一管),adapter 只写"这几行不同"的部分——这是两边在"core 拥有多少"这条线上最大的架构分歧。
 

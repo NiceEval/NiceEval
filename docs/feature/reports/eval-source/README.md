@@ -44,7 +44,7 @@ SourceContent
 [`AttemptEvidence`](../../record/library.md) 携带完整的 `AnnotatedEvalSource`。预算、上下文半径、
 `--source=full` 和 web 的默认展开态只影响 `AnnotatedSourceResult`，不改变 evidence。
 
-## 三种兜底
+## 三种回退
 
 调用路径无法完整恢复时，事实仍按下面的顺序保留：
 

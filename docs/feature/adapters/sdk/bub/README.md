@@ -39,4 +39,4 @@ Bub 原生 OTLP 可以配置为时间轨，span mapper 只影响瀑布图。
 
 ## 预制环境
 
-Bub 没有 provider 官方 template；NiceEval 用固定版本配方（钉死 Bub 版本与 OTel 插件 commit）构建公共模板 `correctroads-default-team/niceeval-bub` 与公共镜像 `niceeval/bub`，并在环境里写安装规格 marker。Adapter 只信任指纹完全匹配的预装环境，不把 PATH 上任意一个 `bub` 当成兼容版本；`version`、`otelPlugin` 与 `pythonPlugins` 集合都参与指纹 hash（factory 与 Adapter 共用规范化代码，顺序、空白、重复项不制造假差异），任一不同就回退完整安装。构建带自有插件的模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。
+Bub 没有 provider 官方 template；NiceEval 用固定版本配方（锁定 Bub 版本与 OTel 插件 commit）构建公共模板 `correctroads-default-team/niceeval-bub` 与公共镜像 `niceeval/bub`，并在环境里写安装规格 marker。Adapter 只信任指纹完全匹配的预装环境，不把 PATH 上任意一个 `bub` 当成兼容版本；`version`、`otelPlugin` 与 `pythonPlugins` 集合都参与指纹 hash（factory 与 Adapter 共用规范化代码，顺序、空白、重复项不制造假差异），任一不同就回退完整安装。构建带自有插件的模板见 [Sandbox · 预制环境](../../../sandbox/library/prebuilt-environments.md)。

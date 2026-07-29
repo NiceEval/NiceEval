@@ -119,7 +119,7 @@ export default defineEval({
 npx niceeval exp local classify
 ```
 
-## 3. 评一个塞进沙箱的 coding agent
+## 3. 评一个放入沙箱的 coding agent
 
 给一个编码任务,让 Claude Code / bub 在隔离环境里改代码,再用测试验证。起始文件、验证测试都是 `test(t)` 里手工放进沙箱——没有 `PROMPT.md` 目录约定,也没有自动发现:
 
@@ -174,7 +174,7 @@ export default defineEval({
 });
 ```
 
-`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerSandbox()`(从 `niceeval/sandbox` 导入)——沙箱 provider 没有默认值,也没有 `--sandbox` 这种 CLI 覆盖,必须写进 experiment(或 `niceeval.config.ts` 兜底)。
+`experiments/local.ts` 里给这个沙箱型 agent 加一个 `sandbox: dockerSandbox()`(从 `niceeval/sandbox` 导入)——沙箱 provider 没有默认值,也没有 `--sandbox` 这种 CLI 覆盖,必须写进 experiment(或 `niceeval.config.ts` 回退)。
 
 **跑起来:**
 

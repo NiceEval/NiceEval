@@ -107,7 +107,7 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
 
 - **`timeoutMs` 与 `budget` 不进 configHash。** 它们决定「等不等得到、跑不跑得完」,不决定
   「跑出来的那条结果是什么」。一条 15 分钟跑完的 `passed`,在 20 分钟和 40 分钟上限下是同一个
-  事实。把它们塞进配置身份会让提高上限一次性切断全部历史可比性,为一个不影响结果的参数付全量
+  事实。把它们放入配置身份会让提高上限一次性切断全部历史可比性,为一个不影响结果的参数付全量
   重跑。两者各有正交判据:超时上限管[携带资格](../experiments/cache.md#携带资格timeoutms-不进哈希)(`executionMs` ≤
   当前上限),止损闸管覆盖缺口(被掐掉的题没有结果,如实进
   [`coverage`](../sample/library.md#覆盖是逐行的事实))。
@@ -151,7 +151,7 @@ Sample 层据此产出 [`dangling-evidence`](../sample/library.md#issue-code-全
 避免 dangling 的正确动作是清理历史 Run 前先 `publish()` 物化要保留的结果,见下。
 
 **跨 schemaVersion 不携带。** 记录格式版本变化时,上一轮的落盘对本轮 writer 是另一种格式:
-`artifactBase` 会让新 Run 的条目指向旧版本写的 artifact,而 artifact 是裸 JSON、不带版本,
+`artifactBase` 会让新 Run 的条目指向旧版本写的 artifact,而 artifact 是原始 JSON、不带版本,
 版本判定只在 `run.json` 层做——沿着这条路读出来的东西没有任何一层能声明它可信。所以
 `schemaVersion` 不同的历史 Run 一律不参与携带判定,如实重跑。这是「不做兼容机制」在携带路径上
 的同一条纪律,不是例外。
@@ -226,7 +226,7 @@ await run.finish({                       // 封口这个 Run:唯一一次补 com
 ```
 
 `writer.run()` 是读取面「实验 → Run 」层次的镜像:experimentId / agent / model / startedAt /
-configHash 这些 Run 级身份在这里声明一次,不塞进每条 attempt——否则第三方转换器要么漏写要么各条
+configHash 这些 Run 级身份在这里声明一次,不放入每条 attempt——否则第三方转换器要么漏写要么各条
 不一致,reader 侧还得猜以谁为准(类型上由 `writeAttempt` 参数的 `Omit` 保证)。 Run 级可选项还
 包括 `experiment`(实验运行配置 `ExperimentRunInfo`)、`knownEvalIds`(该实验已知的 eval 并集,
 残缺检测的分母)、`completedAt`(转换历史数据时如实交代收尾时刻)与 `name`(项目名,view hero
@@ -262,11 +262,11 @@ import { latestRunSample } from "niceeval/sample";
 
 const record = await openRecord(".niceeval");
 await publish(latestRunSample(record), "site/data/run", {
-  artifacts: ["commands", "sources", "events", "trace", "o11y", "agentSetup"], // diff 缺省不带
+  artifacts: ["commands", "sources", "events", "trace", "o11y", "agentSetup"], // diff 默认不带
 });   // 所有待发布文件还会经过 50 MiB 单文件预检
 ```
 
-`o11y` 在缺省携带之列。「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做
+`o11y` 在默认携带之列。「查看器不读所以不带」是循环论证——因为没消费者所以不带,因为不带所以做
 不了消费它的内置指标;`assistantTurns`(见 [Reports 的内置读数](../reports/library/measures.md#内置读数))
 就是它的消费者,且 `o11y.json` 实测几 KB 一个。
 
@@ -304,9 +304,9 @@ await publish(latestRunSample(record), "site/data/run", {
 - **`dangling` 条目整体失败。** 源里有 artifact 已丢失的携带条目时,`publish()` 报错并列出这些
   attempt 与它们指向的原 Run 目录,不产出一份「看起来完整、实际缺证据」的发布物。要发布只剩
   判定的历史,显式把该类 artifact 从 `artifacts` 里排除。
-- **`artifacts` 的合法词干与缺省携带单源在[证据 registry](architecture.md#证据-registry)**——
-  新增一种证据只需要 registry 加一行。两条缺省理由需要显式交代:失败命令证据是 errored attempt
-  的主要下钻面,`commands` 默认发布拷贝不能静默删掉;`diff` 不在缺省之列,体量取舍留给显式选择。
+- **`artifacts` 的合法词干与默认携带单源在[证据 registry](architecture.md#证据-registry)**——
+  新增一种证据只需要 registry 加一行。两条默认理由需要显式交代:失败命令证据是 errored attempt
+  的主要下钻面,`commands` 默认发布拷贝不能静默删掉;`diff` 不在默认之列,体量取舍留给显式选择。
 
 ## 直接吃读取面:一个真实脚本
 

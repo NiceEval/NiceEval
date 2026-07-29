@@ -129,7 +129,7 @@ interface ScoreEntry {
 判别键是 `outcome`。`unavailable` 是没有分数的独立态，不存在「`passed: false` 但又不许当失败」
 或「`score: 0` 但又不许聚合」的非法组合。普通聚合代码按 `outcome` 分支，不会把证据缺口算成零分。
 
-这份字段全集是穷尽的。show、view 与报告需要的每个展示字段都在表内，不存在「塞进 `name` 再拆」
+这份字段全集是穷尽的。show、view 与报告需要的每个展示字段都在表内，不存在「放入 `name` 再拆」
 的隐式约定。`expected`、`received` 与 `evidence` 是有界预览，而不是原始值。原始证据保存在
 `events.json`、`diff.json` 等 artifact 里。判定只消费 `severity`、`outcome`、`optional`、`score`
 与 `threshold`；`points` 不参与判定。

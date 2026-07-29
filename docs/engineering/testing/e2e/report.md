@@ -59,7 +59,7 @@ show / view 对这份真实结果的可观察行为按 [Show](../../../feature/r
   warnings**：局部补跑、过旧、不可读 Run 形成结构化 warning 且两宿主一致；单个坏 Run 不阻塞其余；零可读结果时
   `show` 非零退出、`view` 不启动 server。
 - **Run diagnostics**：真实 Run 的实验域 diagnostic 在两个宿主都按 experiment →
-  Run 来源呈现；裸 Run[] 的自定义报告同样可见，来源、时效、level、message、command 与 count 不被合并或改写。
+  Run 来源呈现；直接传入的 Run[] 的自定义报告同样可见，来源、时效、level、message、command 与 count 不被合并或改写。
 - **导出与 server**：`view --out` 导出站与本地 server 对同一路径逐字节一致；收窄对页面 Sample 与
   `artifact/` 证据树同步生效；`attempt/<locator>.html` 无 JavaScript 完整可读；`o11y.json`
   永不出站；本地 server 的 attempt 详情路由对完整记录根解析、不受 `--exp` 等收窄限制（与
@@ -99,7 +99,7 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 - **视觉与交互**：对同一次运行执行 `niceeval view --out`
   导出静态站，用真实浏览器打开 index 与失败 attempt 的 `attempt/<locator>.html`
   文档，验收「组件 + 官方 stylesheet」在真实证据上的组合成立：详情各语义块是结构化布局而非 UA 默认排版；源码行按
-  [`attemptSource` 视觉规范](../../../feature/reports/components/sources/attempt-source.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的兜底区（Other
+  [`attemptSource` 视觉规范](../../../feature/reports/components/sources/attempt-source.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的其它内容区（Other
   assertions / Other conversation）同样是结构化条目而非 UA 默认排版，分轮卡片与
   `attemptConversation`
   同视觉语言，工具预览无 JSON 字面转义直出——共享回复 renderer 的每个新渲染容器都要在这里验收一次样式覆盖（先例：[memory/attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)，同类缺陷在单元层 DOM 断言下恒逃逸）；点击 send

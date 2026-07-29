@@ -7,7 +7,7 @@ evals/        # 测什么 —— agent 无关,评分逻辑都在各自的 test()
 experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over 选定 evals
 ```
 
-> 参考:eve **没有**实验概念(运行配置靠 `defineEvalConfig` + CLI flag,"experiment" 只是 Braintrust 上报名);experiment 这层参考的是 Vercel agent-eval 的 `ExperimentConfig`,但砍掉了一半字段,见 [Architecture](architecture.md)。
+> 参考:eve **没有**实验概念(运行配置靠 `defineEvalConfig` + CLI flag,"experiment" 只是 Braintrust 上报名);experiment 这层参考的是 Vercel agent-eval 的 `ExperimentConfig`,但删除了一半字段,见 [Architecture](architecture.md)。
 
 ## 为什么要分开
 
@@ -43,7 +43,7 @@ export default defineExperiment({
   earlyExit?: boolean;                       // 先过一次即停其余(默认 false,attempts 默认跑满测完整通过率)
   evals?: "*" | readonly string[] | ((e: EvalDescriptor) => boolean); // 跑哪些 eval(默认 "*")
   timeoutMs?: number;                        // 单次运行超时
-  sandbox?: SandboxSpec;                     // 沙箱型 Agent 在哪跑；省略时只能由 Config.sandbox 显式兜底
+  sandbox?: SandboxSpec;                     // 沙箱型 Agent 在哪跑；省略时只能由 Config.sandbox 显式回退
   sandboxReuse?: true;                       // 多条 Attempt 可以共用 Sandbox；省略时每 Attempt 全新
   budget?: number;                           // 整个实验估算成本上限($),超了停止派发
   maxConcurrency?: number;                   // 只限流本实验的 attempt,不影响同批其它实验

@@ -4,7 +4,7 @@
 
 ## Transcript → 标准事件流
 
-每个 agent 都吐自己格式的 transcript(Claude Code 一种 JSONL、Codex 另一种、bub 又一种)。直接消费这些就得到处写 `if (agent === ...)`。adapter 的核心活,就是把它**归一化**成那条[标准事件流 `StreamEvent[]`](feature/adapters/architecture/events.md) —— 它既是 trace,也是整套断言的唯一数据源,断言和报告只面对它。
+每个 agent 都吐自己格式的 transcript(Claude Code 一种 JSONL、Codex 另一种、bub 又一种)。直接消费这些就得到处写 `if (agent === ...)`。adapter 的核心职责,就是把它**归一化**成那条[标准事件流 `StreamEvent[]`](feature/adapters/architecture/events.md) —— 它既是 trace,也是整套断言的唯一数据源,断言和报告只面对它。
 
 每个 agent 一个解析器,住在 `o11y/parsers/<agent>.ts`,把原始 JSONL 映射成标准 `StreamEvent[]`。**这是接新 agent 的第二件事**(第一件是 adapter 的 `send`):没有解析器,trace 就退化成不透明字符串。归一化失败不崩:保留原始 JSONL,并在该 eval 的 `result.json` 上标 `parseSuccess: false`。
 
@@ -93,7 +93,7 @@ expect(o11y.totalToolCalls).toBeLessThan(50);
 
 这份事件骨架用于 `show --execution`:它回答「agent 做了什么」,唯一关联上的 span 只作为该事件旁的时间注释。完整的时间分析入口是 `show --timing`:它以 runner 的 lifecycle/turn/command 时间树为骨架,再按 turn 保存的 `traceId` 把 OTel agent/model/tool 子树挂进去。两个视图可以显示同一条 tool span,但只是对同一事实的两种投影,不会把 span 复制进事件或 runner timing。
 
-这条线分两层,两层都得归一,但**含义层(语义约定)才是接新 agent 的真功夫**:
+这条线分两层,两层都得归一,但**含义层(语义约定)才是接新 agent 的关键工作**:
 
 | 层 | 干什么 | 谁做 |
 |---|---|---|
@@ -124,7 +124,7 @@ canonical 的核心是用 `gen_ai.operation.name` 把 span 分成几类语义角
 
 和 transcript 解析器(`o11y/parsers/<agent>.ts`)**完全对称**:每个 agent 再加一个 span mapper,把它的原生 span 归一到 canonical GenAI semconv。mapper 只做一件事 —— 认出「这条 span 是模型调用 / 工具执行 / 回合」,补上 `gen_ai.operation.name` 与相关 `gen_ai.*` 属性,**保留 raw `name` / `attributes` 供下钻**。
 
-> **mapper 越薄越好:能在源头对齐就别在 mapper 里补。** codex 的 `config.toml`、bub 插件的配置尽量让它们直接发 `gen_ai.*`;源头发对了的 agent,mapper 近乎透传。mapper 是「上游不肯按标准发」时的兜底,不是主力。
+> **mapper 越薄越好:能在源头对齐就别在 mapper 里补。** codex 的 `config.toml`、bub 插件的配置尽量让它们直接发 `gen_ai.*`;源头发对了的 agent,mapper 近乎透传。mapper 是「上游不肯按标准发」时的回退,不是主力。
 
 这把 `o11y/otlp/select.ts` 里那串「猜各 agent 命名约定」的正则全删掉 —— agent 特定知识回到 agent 自己手里(和 parser 同一个归属原则),`select` 退化成纯通用逻辑:按 `kind != "other"` 留、按 firehose 频率丢。
 
@@ -138,7 +138,7 @@ canonical 的核心是用 `gen_ai.operation.name` 把 span 分成几类语义角
 
 ### agent 定义里 otel 怎么放(两块责任分开)
 
-otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别都塞进 `setup` / `send`:
+otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别都放入 `setup` / `send`:
 
 1. **导出配置(adapter 侧的 `tracing` 块)** —— 「怎么让这个 CLI 把 OTLP 发到 endpoint」。从 `setup`/`send` 抽出来,做成 agent 定义里一个声明式 `tracing` 块(见 `AgentTracing`)——这个块存在,运行器就为该 agent 开 OTLP 接收,不需要另外声明什么开关。两种投递方式(按 CLI 而定,互不排斥):
 
@@ -160,7 +160,7 @@ otel 在 agent 定义里其实是**两个互不相干的责任,分开放**,别�
 
    为什么要 env / configure 两条路:bub(Python OTel SDK)读标准 `OTEL_*` env,codex(Rust)**不读** env、只认自己 `config.toml` 的 `[otel]` 块 —— 这是上游差异,抹不平,所以两种投递都得支持。
 
-2. **span mapper(core o11y 侧)** —— 「原生 span → canonical」。**纯数据变换,不碰沙箱**,和 transcript parser 一样住 core 的 o11y(`o11y/otlp/mappers/<agent>.ts`),可独立单测。分派靠接口不靠名字:adapter 在 `defineSandboxAgent` / `defineAgent` 里用 `spanMapper` 声明自己的 mapper,运行器只调 `agent.spanMapper`,未声明的走通用 heuristic 兜底 —— core 不出现 agent 名字的行为分支。
+2. **span mapper(core o11y 侧)** —— 「原生 span → canonical」。**纯数据变换,不碰沙箱**,和 transcript parser 一样住 core 的 o11y(`o11y/otlp/mappers/<agent>.ts`),可独立单测。分派靠接口不靠名字:adapter 在 `defineSandboxAgent` / `defineAgent` 里用 `spanMapper` 声明自己的 mapper,运行器只调 `agent.spanMapper`,未声明的走通用 heuristic 回退 —— core 不出现 agent 名字的行为分支。
 
 **为什么要分:** 导出配置是「沙箱里怎么发」,mapper 是「发回来怎么读」—— 一个需要沙箱、一个是纯函数,生命周期和测试方式都不同。混在 `setup`/`send` 里,既难单测 mapper、又让 adapter 把 otel 拼装逻辑揉进主流程。`ctx.telemetry` 则统一带上 `{ endpoint, env? }`:env-based agent 拿 `env` 直接 spread,file-based agent 在 `configure` 里用 `endpoint`。
 
@@ -173,12 +173,12 @@ spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 ![并发 send 的 span 归属](assets/observability-span-ownership.svg)
 
 - **沙箱型 agent**:每沙箱一个接收器。每个沙箱是独立进程,env 注入各自端点,attempt 之间端口天然隔离。
-- **direct agent**:整个 run **共享一个接收器**(`defineConfig({ telemetry })` 钉住的固定端口)。被测应用只有一条全局 OTel 管线、一个导出目标,做不到"给每条并行 eval 发不同端点"——并行 attempts 的 span 混在同一条流里,这是共享被测对象的物理事实,不是实现选择。
+- **direct agent**:整个 run **共享一个接收器**(`defineConfig({ telemetry })` 固定的固定端口)。被测应用只有一条全局 OTel 管线、一个导出目标,做不到"给每条并行 eval 发不同端点"——并行 attempts 的 span 混在同一条流里,这是共享被测对象的物理事实,不是实现选择。
 
 共享流之下的归属阶梯:
 
 - **traceparent(并发正确性的必要条件)**:`ctx.telemetry.headers` 是每轮一个新值的 W3C trace context,`send` 把它 spread 进请求头;支持 context 传播的埋点(标准 OTel HTTP 服务端埋点、Claude Code 的 `TRACEPARENT`、LangSmith 检测 global provider)把本轮 span 挂到这个 trace 下,按 traceId 精确归属,并发随便开。
-- **窗口法(兜底,仅串行可靠)**:runner 在 `send` 前记时间戳,`send` 返回后取窗口内的 span。并发 attempts 的窗口互相重叠,窗口法归属必然混流。
+- **窗口法(回退,仅串行可靠)**:runner 在 `send` 前记时间戳,`send` 返回后取窗口内的 span。并发 attempts 的窗口互相重叠,窗口法归属必然混流。
 - **并发守卫**:共享接收器 + 未确认 traceparent 生效(收到的 span 不带我们发的 traceId)+ 该 agent 并发 > 1 → runner 把该 agent 的 attempts 降为串行并提示。宁可慢,不可静默混流;确认 traceparent 生效后解除。
 
 ## Artifact 落盘
@@ -259,7 +259,7 @@ token 数能可靠拿到;难点是 token→$ 的价格表 —— 价格会随时
 
 `estimatedCostUSD = inputTokens×in价 + outputTokens×out价 + cacheReadTokens×cacheRead价 + cacheCreationTokens×cacheWrite价`,落进每个 attempt 的 `result.json`。逐桶乘单价直接相加成立的前提是 token 桶**恒互斥**——`inputTokens` 是未缓存输入,cache 桶不在其中重复出现;把各协议五花八门的原生口径归一到互斥,是 adapter 的落值义务(契约见 [Results · Usage](feature/record/architecture.md#usage),各协议明细见各 adapter 的 cost 文档)。cache 桶缺专门单价时按 in 价计——宁可高估,不静默低估。字段名带 **estimated** 是有意的:它是估算,真实账单以 provider 发票为准 —— 这也正是「网关实测」和「用户覆盖」两条通道存在的原因。
 
-> 设计取舍:价格是**会过期的数据**,所以内置 Run 只为「零配置能用」,不写死进核心逻辑;准确性靠用户覆盖与网关实测兜底,未知则诚实降级。Run 随版本更新,也可考虑 `pricing: "auto"` 从社区维护的价目拉取(默认仍用离线 Run,保证确定性)。
+> 设计取舍:价格是**会过期的数据**,所以内置 Run 只为「零配置能用」,不写死进核心逻辑;准确性由用户覆盖与网关实测保证,未知则诚实降级。Run 随版本更新,也可考虑 `pricing: "auto"` 从社区维护的价目拉取(默认仍用离线 Run,保证确定性)。
 
 ### 报告里长什么样
 

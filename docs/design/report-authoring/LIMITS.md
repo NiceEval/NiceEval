@@ -107,7 +107,7 @@ agent · model · started_at · scoring · flags(json) · labels(json)
 - **覆盖率要靠作者自觉。** `count(v)` 与 `count(*)` 的差就是
   「测不了」的样本数；SQL 不会因为少写一列而报错。
 - **artifact 摊不平。** diff、事件流与 trace 可达数百 MB，
-  且逐 attempt 懒加载；把它们塞进表要么预先全量物化，要么退化成 UDF。
+  且逐 attempt 懒加载；把它们放入表要么预先全量物化，要么退化成 UDF。
 - **列的元数据没有位置。** 单位、越高越好、双语标签与格式化
   在 SQL 里无处声明，只能在查询旁边再配一张表。
 - **类型不进 TS。** 列名拼错、类型变了都要等到运行时才炸。

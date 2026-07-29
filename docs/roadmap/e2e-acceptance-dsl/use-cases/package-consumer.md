@@ -12,7 +12,7 @@ report 仓库的[候选包外部消费验收](../../../engineering/testing/e2e/r
 assert.doesNotMatch(combined, /ReferenceError|React is not defined/);
 assert.match(stdout, /tool-call/, `built-in report did not render real evidence with ${scenario.name}`);
 // scatterHeading() 恒带 better 方向注解,实际标题是
-// "Cost(lower is better) × Pass rate(higher is better)",不是裸的 "Cost × Pass rate"
+// "Cost(lower is better) × Pass rate(higher is better)",不是直接 "Cost × Pass rate"
 assert.match(
   stdout,
   /Cost\(lower is better\) × Pass rate\(higher is better\)/,

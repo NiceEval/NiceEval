@@ -1,6 +1,6 @@
-# 裸 `show`：默认报告的 text 面
+# 不带选项的 `show`：默认报告的 text 面
 
-没配 `config.report` 时，裸 `niceeval show` 装载[内建报告](../library/built-in.md)，并渲染其首页。
+没配 `config.report` 时，不带选项的 `niceeval show` 装载[内建报告](../library/built-in.md)，并渲染其首页。
 尾部附 Attempts、追踪两页的索引。配了就装载配置里的报告，取值链见
 [Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份。
 

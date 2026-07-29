@@ -20,7 +20,7 @@ niceeval 的位置一句话:**契约形状学 eve(强类型事件、callId、`re
 
 因为运行时是自己的,"怎么拿到数据"退化成传输问题,但传输层有几个值得记的机制设计:
 
-- **显式协议版本。** `EVE_MESSAGE_STREAM_VERSION = "16"`,连同 `x-eve-session-id` / `x-eve-stream-format` 作为 HTTP 头随流下发(content-type `application/x-ndjson`)。协议演进有版本号,消费端能识别拒绝——对比 agent-eval 面对 CLI 格式漂移只能写 `data.type || data.event || data.kind` 这种轮试兜底。
+- **显式协议版本。** `EVE_MESSAGE_STREAM_VERSION = "16"`,连同 `x-eve-session-id` / `x-eve-stream-format` 作为 HTTP 头随流下发(content-type `application/x-ndjson`)。协议演进有版本号,消费端能识别拒绝——对比 agent-eval 面对 CLI 格式漂移只能写 `data.type || data.event || data.kind` 这种轮试回退。
 - **HITL 续接是一等公民。** 请求体是联合类型:首轮 `{ message }`;续轮 `{ continuationToken, message }` **或** `{ continuationToken, inputResponses }`。resume 靠 token 而不是 CLI flag;回答 HITL 是结构化的 `InputResponse[]`——`{ requestId, optionId?, text? }`,**带 requestId 定位到具体哪个请求**,不是"再发一条用户消息"。
 - **事件持久化 + 可回放。** 每个事件可带 `meta: { at }` 时间戳,运行时在写入 workflow-owned stream 前盖章,"so replay preserves the original timing"——事件流同时是持久会话记录,回放不失真。
 
@@ -109,7 +109,7 @@ interface RuntimeIdentity {
    工具私有输出来判断失败,这个理由对 view 和断言同样成立。
 3. **usage 按 step 记。** niceeval 的 `usage` 挂在 `Turn`(整轮聚合);eve 挂在 `step.completed`(每次模型调用一份)。transcript 里常有 per-step 用量,聚合前丢掉了瀑布图想要的粒度。
 4. **agent 自报元数据(`RuntimeIdentity`)。** `Turn` 或 `session.started` 级的可选 `runtime?: { modelId, version, … }`,让"实际用的模型"从抠磁盘变成契约字段——网关场景的成本核算靠它才准。
-5. **逐请求回答的键形状。** eve 的回答是 `{ requestId, optionId?, text? }`,以 id 字符串定位;niceeval 的 `t.respond({ request, optionId | text })` 同样逐请求定位,键是 `requireInputRequest` 返回的请求对象(`respondAll(optionId)` 全选同一 option)。两边能力等价,差异只剩键的形状——要不要额外接受裸 `requestId` 字符串是人体工学取舍,不是功能缺口:
+5. **逐请求回答的键形状。** eve 的回答是 `{ requestId, optionId?, text? }`,以 id 字符串定位;niceeval 的 `t.respond({ request, optionId | text })` 同样逐请求定位,键是 `requireInputRequest` 返回的请求对象(`respondAll(optionId)` 全选同一 option)。两边能力等价,差异只剩键的形状——要不要额外直接接受 `requestId` 字符串是人体工学取舍,不是功能缺口:
 
    ```typescript
    await t.respond({ request, optionId: "approve" });                   // niceeval:请求对象定位
@@ -117,7 +117,7 @@ interface RuntimeIdentity {
    ```
 
 6. **`authorization.*` 与 `input.requested` 分开。** 授权(OAuth / 连接)和 HITL 问答是两种"停",eve 分成两组事件、各带 verdict;niceeval 只有 `input.requested` 一种。评测带三方连接的 agent 时会需要。
-7. **落盘 artifact 带 schema 版本。** `StreamEvent` 是进程内模型可以不带版本,但 `.niceeval/<experiment>/<run>/` 的事件流 JSON 文件是跨版本读的;eve 的 `x-eve-stream-version` 头是先例。niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../record/architecture.md#版本与升级设计):版本号放在 Run 级 `run.json` 顶层,整个 Run(元数据 + 全部 attempt 文件)共用同一个 `schemaVersion`,attempt 文件继续保持裸 JSON array/object。
+7. **落盘 artifact 带 schema 版本。** `StreamEvent` 是进程内模型可以不带版本,但 `.niceeval/<experiment>/<run>/` 的事件流 JSON 文件是跨版本读的;eve 的 `x-eve-stream-version` 头是先例。niceeval 的具体取舍见 [Record Format · 版本与升级设计](../../record/architecture.md#版本与升级设计):版本号放在 Run 级 `run.json` 顶层,整个 Run(元数据 + 全部 attempt 文件)共用同一个 `schemaVersion`,attempt 文件继续保持原始 JSON array/object。
 
 没抄的也记一笔:**流式 delta(`message.appended` 的 `messageDelta / messageSoFar`)不需要**——评测离线跑,整段的 `message` 事件就够;AG-UI 的三段式同理(见 [otel-genai 笔记](otel-genai.md#ag-ui-和-niceeval-streamevent-同形态的扁平事件流))。要做"实时看 agent 跑"的 view 时再回头看。
 

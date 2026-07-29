@@ -2,10 +2,10 @@
 
 ## 解决什么问题
 
-错误是 SDK、CLI、网络栈制造的,制造者用不了 niceeval 的糖衣类;兜底分类器只认通用形状,认不出私有知识。两个真实场景:
+错误是 SDK、CLI、网络栈制造的,制造者用不了 niceeval 的糖衣类;回退分类器只认通用形状,认不出私有知识。两个真实场景:
 
-- **实验作者**:探活只在 setup 阶段跑。实验级 `setup` 时隧道还活着、跑到一半死掉,后续失败不再长成「probe failed」——它以第三方错误的形态浮出:agent 在 turn 里调记忆服务撞 `ECONNREFUSED`,turn 失败、attempt `errored`,一条条重复。兜底看不出这是实验级死因(连接错误千千万),adapter 也不认识(它懂自家 CLI 协议,不懂你的实验拓扑)——知道「这个 host 是全实验共享的隧道」的只有你。挂载点:`ExperimentDef.classifyFailure`。
-- **adapter 作者**:对接的 agent 服务有自己的限流表达——不是 429、文案里也没有 "retry later",比如固定短语 `ACME_QUEUE_FULL` 加退出码 75。兜底只能判不可重试,每次撞上都白白 `errored`,批跑里还可能连续复现触发 fail-fast——协议知识在你手里。挂载点:`Agent.classifyTurnError`。
+- **实验作者**:探活只在 setup 阶段跑。实验级 `setup` 时隧道还活着、跑到一半死掉,后续失败不再长成「probe failed」——它以第三方错误的形态浮出:agent 在 turn 里调记忆服务撞 `ECONNREFUSED`,turn 失败、attempt `errored`,一条条重复。回退看不出这是实验级死因(连接错误千千万),adapter 也不认识(它懂自家 CLI 协议,不懂你的实验拓扑)——知道「这个 host 是全实验共享的隧道」的只有你。挂载点:`ExperimentDef.classifyFailure`。
+- **adapter 作者**:对接的 agent 服务有自己的限流表达——不是 429、文案里也没有 "retry later",比如固定短语 `ACME_QUEUE_FULL` 加退出码 75。回退只能判不可重试,每次撞上都白白 `errored`,批跑里还可能连续复现触发 fail-fast——协议知识在你手里。挂载点:`Agent.classifyTurnError`。
 
 两个挂载点走同一条纪律:**取证 → 裁决可证明性 → 挂分类器 → 验证**。
 
@@ -48,7 +48,7 @@
      if (failure.type === "turn-failed" && turnErrorText(failure.turn)?.includes("ACME_QUEUE_FULL")) {
        return { retryable: true, reason: "acme_queue_full" };
      }
-     return undefined; // 其余交给保守兜底
+     return undefined; // 其余交给保守回退
    },
    ```
 
@@ -65,8 +65,8 @@
 - **快、纯、不抛错。** 分类器抛错按 `undefined` 回落、被吞掉,等于白写;它是旁路,不得用新错误掩盖原始失败。
 - **受理证据门仍在你之上(时间轴)。** 失败 Turn 里已有 agent 产出事件时,可重试判断会被强制降回不可重试——分类器声明判断,执行体持有否决权;这不是 bug,是「证明未受理」的机器化。
 - **空间轴从严(adapter 侧)。** adapter 也可以给 `scope`,但只限协议回执能证明「后续每次调用必死」的场景(凭据失效、账号封禁);说不清波及范围就只给时间轴——误扩 scope 停掉的是用户的整批实验。
-- **时间轴别给要人修的死因(实验侧)。** 中途死亡的隧道 `retryable: true` 只会让 attempt 在退避里泡到预算耗尽再落闸,多烧几分钟没有任何收益;真正的瞬时抖动兜底已经认得。
-- **别复述兜底。** 429、DNS 失败、拒连这些通用形状兜底已认得,分类器只写私有知识,其余一律 `undefined` 回落。
+- **时间轴别给要人修的死因(实验侧)。** 中途死亡的隧道 `retryable: true` 只会让 attempt 在退避里泡到预算耗尽再落闸,多烧几分钟没有任何收益;真正的瞬时抖动回退已经认得。
+- **别复述回退。** 429、DNS 失败、拒连这些通用形状回退已认得,分类器只写私有知识,其余一律 `undefined` 回落。
 - **与抛出点声明互补不是二选一。** probe 兜「起跑就死」,分类器兜「中途死」;共享服务型实验两个都写,才没有窗口。
 
 ## 相关阅读

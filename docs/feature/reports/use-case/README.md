@@ -44,7 +44,7 @@
 
 ## [使用宿主](使用宿主/README.md)
 
-- [裸 `view` 与收窄:在浏览器里复盘,只看关心的那部分](使用宿主/浏览器复盘与收窄.md)
+- [不带选项的 `view` 与收窄:在浏览器里复盘,只看关心的那部分](使用宿主/浏览器复盘与收窄.md)
 - [`--record` / `--run`:换记录根,或只看一份 Run](使用宿主/切换记录根与Run.md)
 - [`--report` / `--page`:show 与 view 共用同一份自定义报告](使用宿主/共用自定义报告.md)
 - [人看 web、Agent 读终端：共用自定义业务口径](使用宿主/让Agent读取自定义报告.md)
@@ -74,18 +74,18 @@
 
 | 输入 | 命令 | 所在篇目 |
 |---|---|---|
-| 位置参数(eval id 前缀) | show / view | [`--history` 用例](调试/查看不稳定历史.md) · [裸 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
+| 位置参数(eval id 前缀) | show / view | [`--history` 用例](调试/查看不稳定历史.md) · [不带选项的 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
 | `@<locator>` 位置参数 | show | [`@locator` 下钻](调试/按定位符下钻.md) |
 | `--source` / `--execution` / `--timing` / `--diff` | show | [`@locator` 下钻](调试/按定位符下钻.md) |
 | `--usage` / `--grep` / `--expand` | show | [跨条件归因](分析/终端跨条件归因.md) |
 | `--json` | show | [跨条件归因](分析/终端跨条件归因.md) |
 | `--history` | show | [`--history` 用例](调试/查看不稳定历史.md) |
 | `--stats` | show | [跨条件归因](分析/终端跨条件归因.md) |
-| `--exp` | show / view | [`--history` 用例](调试/查看不稳定历史.md) · [裸 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
+| `--exp` | show / view | [`--history` 用例](调试/查看不稳定历史.md) · [不带选项的 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
 | `--exp` ×N(对照) | show | [跨条件归因](分析/终端跨条件归因.md) |
 | `--record` | show / view | [换记录根](使用宿主/切换记录根与Run.md) |
 | `--run` | view | [换记录根](使用宿主/切换记录根与Run.md) |
-| `--no-open` / `--port` | view | [裸 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
+| `--no-open` / `--port` | view | [不带选项的 `view` 与收窄](使用宿主/浏览器复盘与收窄.md) |
 | `--out` | view | [静态导出](交付报告/导出静态站.md) |
 | `--report` / `--page` | show / view | [自定义报告](使用宿主/共用自定义报告.md) |
 | 项目默认报告 | show / view | [人和 Agent 共用口径](使用宿主/让Agent读取自定义报告.md) |

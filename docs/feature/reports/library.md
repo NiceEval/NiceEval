@@ -554,7 +554,7 @@ aggregate(performance, options); // 类型错误：AggregateRow[] 不是 Sample
 
 ## 非 rollup 分析也必须携带证据
 
-成对差异和跨 Run 稳定性不能强塞进
+成对差异和跨 Run 稳定性不能强行放入
 “每 Attempt 一个标量，再做两级 reducer”的 `rollup()`。
 它们可以留在报告旁，但不能返回无证据的普通数字。
 
@@ -862,7 +862,7 @@ interface ExternalScatterProps<Row extends ExternalPoint> {
 
 结构无法区分「真外部数据」与「洗掉证据的 Sample 数字」，
 这条边界因此靠两层兑现：
-缺省路径拒绝无证据的行；绕过必须写下 `external`，
+默认路径拒绝无证据的行；绕过必须写下 `external`，
 这个词在源码与 review 里可审计。
 把 Sample 派生数字标成 external 是作者违约，与伪造读数同级。
 
@@ -871,7 +871,7 @@ MetricValue 自动提供数值、格式元数据、自然边界与 refs；
 renderer 按当前 locale 格式化。
 
 混合图才使用嵌套 series。
-`<Chart>` 的 points 是各 series 的缺省；
+`<Chart>` 的 points 是各 series 的默认值；
 一个 series 可以带自己的 points 和 `external` 声明，
 证据校验按该 series 自己的入口判定。
 业务目标线因此能叠在 Sample 派生图上，而不混进证据行：

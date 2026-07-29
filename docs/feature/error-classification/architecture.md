@@ -17,7 +17,7 @@ export type FailureScope = "attempt" | "eval" | "experiment";
 /**
  * 一次执行失败的分类:retryable(时间轴)与 scope(空间轴)是仅有的两条决策轴;
  * reason 是开放词表的细分诊断,只进 activity 与诊断文案,不参与策略。
- * 内建兜底产出 reason "rate_limit" | "network";声明方可自造词。scope 缺省 "attempt"。
+ * 内建回退产出 reason "rate_limit" | "network";声明方可自造词。scope 默认值 "attempt"。
  */
 export type FailureClass =
   | { readonly retryable: true; readonly reason: string; readonly scope?: FailureScope }
@@ -31,7 +31,7 @@ export type TurnFailure =
 /** adapter 可选分类器:返回 undefined 表示「不认识,交给后续链路」。 */
 export type TurnErrorClassifier = (failure: TurnFailure) => FailureClass | undefined;
 
-/** 失败 Turn 的错误摘要:与 turn-failed 报错文案、兜底分类器读的同一段文本。 */
+/** 失败 Turn 的错误摘要:与 turn-failed 报错文案、回退分类器读的同一段文本。 */
 export function turnErrorText(turn: Turn): string | undefined;
 
 /** 实验级分类器的输入:本实验任意 per-attempt 阶段的一次终局失败。 */
@@ -69,7 +69,7 @@ export class EvalFatalError extends Error {
 export function failureClassOf(error: unknown): FailureClass | undefined;
 ```
 
-糖衣类的契约是 `_tag` 与 `class` 两个数据字段,识别一律走 `failureClassOf` 的结构检查,不用 `instanceof`——依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。`failureClassOf` 沿 `cause` 链逐层查找、取最外层携带分类的错误——作者的糖衣类被上层库包装再抛时声明不丢失。糖衣类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。糖衣类只覆盖空间轴的两个非缺省档;缺省档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给缺省行为发明类型是噪音。
+糖衣类的契约是 `_tag` 与 `class` 两个数据字段,识别一律走 `failureClassOf` 的结构检查,不用 `instanceof`——依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。`failureClassOf` 沿 `cause` 链逐层查找、取最外层携带分类的错误——作者的糖衣类被上层库包装再抛时声明不丢失。糖衣类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。糖衣类只覆盖空间轴的两个非默认档;默认档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给默认行为发明类型是噪音。
 
 `Agent` 上的挂载面是可选字段 `classifyTurnError?: TurnErrorClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn));`completed` 与 `waiting` 的 Turn 不是失败(HITL 挂起是成功形态),不进分类。`kind: "direct"` 与 `kind: "sandbox"` 的 agent 走同一条链,契约不分身份。
 
@@ -82,16 +82,16 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 1. **抛出点携带的分类**:`failureClassOf` 命中即定——作者知识优先级最高,不再询问任何分类器。
 2. **实验分类器**(可选):识别以协议错误形态浮出的共享基建死因(对自家隧道 host 的拒连)。排在 adapter 之前:它按自家坐标(host、路径)过滤,特异性高于协议通用形状;两者同时认领的失败恰是 scope 必须赢的场景——adapter 只有时间轴答案,先问它会把实验级死因留在 `"attempt"` 档,止损闸永远落不下。
 3. **adapter 分类器**(可选):最懂自家协议的错误形状,返回 `FailureClass` 或 `undefined` 回落。
-4. **保守兜底分类器**:对失败文本做正则匹配——限流关键字、明示 "retry later" → `{ retryable: true, reason: "rate_limit" }`;连接建立层错误 → `{ retryable: true, reason: "network" }`;其余 → `{ retryable: false }`。兜底永不给出超出 `"attempt"` 的 scope:框架无法从文案证明兄弟必死。失败文本与报错文案同源(`thrown` 取错误链 message 串接,`turn-failed` 取 `turnErrorText(turn)`)——同一段文本既给人读也给分类器看,不出现「报错说 A、分类看 B」。
+4. **保守回退分类器**:对失败文本做正则匹配——限流关键字、明示 "retry later" → `{ retryable: true, reason: "rate_limit" }`;连接建立层错误 → `{ retryable: true, reason: "network" }`;其余 → `{ retryable: false }`。回退永不给出超出 `"attempt"` 的 scope:框架无法从文案证明兄弟必死。失败文本与报错文案同源(`thrown` 取错误链 message 串接,`turn-failed` 取 `turnErrorText(turn)`)——同一段文本既给人读也给分类器看,不出现「报错说 A、分类看 B」。
 5. **受理证据门**(执行体的否决权,只裁时间轴):失败 Turn 的 `events` 里已出现任何 agent 侧产出(message / thinking / `operation.started` / `operation.finished`)即证明 agent 已受理,`retryable` 强制降为 `false`——文本再像限流也不重发。这道门把「只有能证明未受理才重试」从判据文字变成机器不变量,不信任何分类器。它不触碰 `scope`:证据门裁的是重发安全性,不是波及范围。`thrown` 形态没有事件可查,由前四道的判据独自把关。
 
 **生命周期阶段失败**(sandbox Hook、`EvalDef.setup`、`test(t)` 体内、per-attempt teardown),三道:
 
 1. **抛出点携带的分类**(`failureClassOf`)。
 2. **实验分类器**。
-3. **缺省 `{ retryable: false }`**。这些位置没有重试执行体,时间轴即使给出也无人消费(消费点的位置性见 [README](README.md#消费点是位置性的)),链上不挂产时间轴的兜底正则。
+3. **默认 `{ retryable: false }`**。这些位置没有重试执行体,时间轴即使给出也无人消费(消费点的位置性见 [README](README.md#消费点是位置性的)),链上不挂产时间轴的回退正则。
 
-**provisioning 失败**:sandbox 内部的两维分类(性质 + 后果)自治、不外泄;向外浮出的确定性配置死因附带 `FailureClass`,scope 按配置解析域定档(凭据缺失 → `"experiment"`;模板不存在按 spec 是否带 `environments` 表落 `"experiment"` 或 `"eval"`),由止损闸消费——映射与判据单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。内部分类与兜底正则的形状同见该篇;两边正则表各自实现,sandbox 的错误模块不外泄到 context 层,重复是模块边界的价格,刻意付。
+**provisioning 失败**:sandbox 内部的两维分类(性质 + 后果)自治、不外泄;向外浮出的确定性配置死因附带 `FailureClass`,scope 按配置解析域定档(凭据缺失 → `"experiment"`;模板不存在按 spec 是否带 `environments` 表落 `"experiment"` 或 `"eval"`),由止损闸消费——映射与判据单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。内部分类与回退正则的形状同见该篇;两边正则表各自实现,sandbox 的错误模块不外泄到 context 层,重复是模块边界的价格,刻意付。
 
 **分类器纪律**(对 adapter 与实验分类器一致):快、纯、不抛错——分类器抛错按 `undefined` 回落处理、自身错误被吞掉,分类是旁路,不得用新错误掩盖原始失败。
 
@@ -157,7 +157,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 
 - **公开面(Promise 世界)**:糖衣类、`FailureClass`、分类器类型都是纯 TypeScript,零 effect 依赖;用户与 adapter 作者只写 async 函数的公开 API 哲学不变。路由借 Effect 生态的 tagged error 习语——`_tag` 数据字段路由、类只当构造糖——但不 import 它。
 - **attempt 边界(Effect 世界)**:Promise 侧的失败穿过边界时归一化为内部 tagged error(`Data.TaggedError`,携带 `FailureClass` 与 phase);实验闸 / eval 闸用 `Effect.makeLatch`(close 幂等、免费满足落闸幂等不变量);等待集中止走既有 interruption。
-- **结果建模(`E = never`)**:attempt fiber 的类型保持 `Effect<EvalResult>`,错误通道刻意为空——`errored` 是 eval runner 的合法结果,不是调度失败;scope 信号经封口读取触发落闸,不走错误通道向上传播。Effect 的失败三分法与本设计的格子一一对应:typed failure ↔ 被分类的失败,defect ↔ 未分类的意外异常(缺省格,`"unexpected-error"`),interrupt ↔ 超时 / 用户中断 / earlyExit / 闸中止,三者不混流。
+- **结果建模(`E = never`)**:attempt fiber 的类型保持 `Effect<EvalResult>`,错误通道刻意为空——`errored` 是 eval runner 的合法结果,不是调度失败;scope 信号经封口读取触发落闸,不走错误通道向上传播。Effect 的失败三分法与本设计的格子一一对应:typed failure ↔ 被分类的失败,defect ↔ 未分类的意外异常(默认格,`"unexpected-error"`),interrupt ↔ 超时 / 用户中断 / earlyExit / 闸中止,三者不混流。
 
 重试执行体活在 context 层的 Promise 世界:中断响应走 `ctx.signal` 链,槽位释放走 attempt 层注入的 release / reacquire 桥接回调;退避形状(指数 + 全抖动)与 Effect Schedule 同形,不共享实现——`Schedule` 表达不了「睡眠期间释放并发位」的契约。
 
@@ -173,7 +173,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 - 分类链的任何一道都不能制造新失败;浮出的必须是最终一次尝试的原始错误(message 允许追加重试摘要)。
 - `AttemptError.code`、`errored` 判定、结果格式、缓存语义(`errored` 不缓存、下次运行照常重跑)零变化;scope 不改写任何 attempt 级公开形状。
 - 受理证据门只否决时间轴且压过一切分类器;它不触碰空间轴。
-- 兜底分类器永不给出超出 `"attempt"` 的 scope;扩 scope 的声明只能来自携带作者知识的通道(抛出点、adapter / 实验分类器、provisioning 的可证明配置死因)。
+- 回退分类器永不给出超出 `"attempt"` 的 scope;扩 scope 的声明只能来自携带作者知识的通道(抛出点、adapter / 实验分类器、provisioning 的可证明配置死因)。
 - 被重试吸收的失败不抵达止损闸;抵达闸的一定是终局失败。
 - 闸只停派发、不抢占在飞;落闸幂等、invocation 内不可逆、不跨 invocation 持久。
 - 声明方只影响决策轴与 `reason` 词,不影响策略:重试预算、退避参数、槽位行为、落闸机制对所有声明方一致;`reason` 在整条链路里只出现在 activity 与 message / 诊断文案,不进任何分支条件。

@@ -1,6 +1,6 @@
 # `--diff`：核对 agent 实际改动
 
-`--diff` 是 attempt-detail 组件族对应区块的 text 面，显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)：只有 agent 在 send 窗口内改动的文件，起始 fixture 与验证材料不混在里面。裸 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
+`--diff` 是 attempt-detail 组件族对应区块的 text 面，显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)：只有 agent 在 send 窗口内改动的文件，起始 fixture 与验证材料不混在里面。单独使用 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
 
 ```text
 $ niceeval show @1qrdcfq8 --diff
@@ -13,7 +13,7 @@ $ niceeval show @1qrdcfq8 --diff
 single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
 ```
 
-`--diff=<path>` 输出单文件 patch，**按窗口逐段渲染**（`diff.json` 存的就是逐窗口 delta，窗口之间可能夹着 eval 侧写入，不产出跨窗口合成 patch）。窗口分隔是裸横线 `── window <turn>`，不套面板框：patch 正文要保持逐行可复制、可直接喂给 `git apply` 一类工具，框线前缀会把它废掉：
+`--diff=<path>` 输出单文件 patch，**按窗口逐段渲染**（`diff.json` 存的就是逐窗口 delta，窗口之间可能夹着 eval 侧写入，不产出跨窗口合成 patch）。窗口分隔是单独的横线 `── window <turn>`，不套面板框：patch 正文要保持逐行可复制、可直接喂给 `git apply` 一类工具，框线前缀会把它废掉：
 
 ```text
 $ niceeval show @1qrdcfq8 --diff=manager_decisions.json

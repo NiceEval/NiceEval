@@ -32,7 +32,7 @@
 
 - **实验目录名**：把完整 `experimentId` 的 UTF-8 字节做 percent-encoding。安全字符仅为 `A-Z a-z 0-9 . _ @ -`，`%` 与 `/` 一律编码，因此投影可逆且不同 id 不会撞目录名。权威值仍是 `run.json.experimentId`。
 - **run 目录名**:`Date#toISOString()` 把 `:` 与 `.` 换成 `-`,再接 `-<4 位随机后缀>`(如 `2026-07-11T07-29-54-873Z-x1f2`)。
-- **attempt 目录**：`evalId` 的 `/` 保留为层级，每个路径片段使用同一套可逆 percent-encoding；`.` / `..` 整段额外编码，不能取得路径语义。`a<attempt>` 是第几轮运行。agent、model、实验参数都由所属 Run 钉死，attempt 路径里不出现。
+- **attempt 目录**：`evalId` 的 `/` 保留为层级，每个路径片段使用同一套可逆 percent-encoding；`.` / `..` 整段额外编码，不能取得路径语义。`a<attempt>` 是第几轮运行。agent、model、实验参数都由所属 Run 锁定，attempt 路径里不出现。
 
 **唯一性由创建方式保证**:run 目录用独占 `mkdir` 创建(目录已存在即失败),撞名时换随机后缀重试。多个 niceeval 进程同时开跑——哪怕同一毫秒、同一个实验——各自拿到各自的 run 目录,任何文件都不会被另一个进程触碰。
 
@@ -72,7 +72,7 @@ npx niceeval@0.5.4 view .niceeval/2026-07-10T08-00-00-000Z
 - `schemaVersion` 用整数,只在**破坏兼容读取**时递增。新增可选字段、新增 artifact 文件、新增 `StreamEvent` variant 不递增;读取器必须忽略未知字段和未知 artifact 文件。
 - `producer.version` 是写这份结果的 npm package 版本,唯一用途是拼 npx 提示;它不是 schema 判断依据。
 - `format` / `schemaVersion` / `producer` 三个字段永久稳定:任何未来版本都不能移动、重命名或改变类型,否则版本不匹配时连 npx 提示都给不出来。历史版本(≤3)把这三个字段放在 run 级 `summary.json` 顶层,读取器据此识别旧落盘并按下节给出提示——这是版本识别,不是迁移。
-- attempt 文件保持裸 JSON object/array。`result.json` 是裸对象,`events.json` 是 `StreamEvent[]`,不为塞版本号改成 `{ schemaVersion, data }` envelope;`jq`/`node` 直接读的体验不被打破。
+- attempt 文件保持原始 JSON object/array。`result.json` 是未包装对象,`events.json` 是 `StreamEvent[]`,不为塞版本号改成 `{ schemaVersion, data }` envelope;`jq`/`node` 直接读的体验不被打破。
 - 不要用目录名表达 schema。实验目录、run 目录和 attempt 目录只表达身份与定位;版本全部在 `run.json` 里,复制、重命名、归档目录不影响解析。
 
 ### 版本不匹配时的读取行为
@@ -170,7 +170,7 @@ interface ExperimentRunInfo {
   /** 本次是否按 `--strict` 判定 soft 断言;进 configHash,因此必须落盘(省略等价于 false)。 */
   strict?: boolean;
   /**
-   * Run 级缺省的裁判配置,进 configHash 因此必须落盘;eval 自己声明的那份在它的源码闭包里,不在这。
+   * Run 级默认的裁判配置,进 configHash 因此必须落盘;eval 自己声明的那份在它的源码闭包里,不在这。
    * 只落这两个配置值,`apiKeyEnv` 指向的凭据不落。
    */
   judge?: { model?: string; baseUrl?: string };
@@ -437,11 +437,11 @@ Experiment `setup` / `teardown` 属于 Run 级生命周期，diagnostic 归因 p
 Reports 的 Notice policy 再决定给当前读者显示什么、用什么严重度与提供什么动作。`AttemptError.message`
 例外地保留:它是被测对象的失败证据,不是 niceeval 的操作性文案。
 
-`progress` 文本不写入任何 artifact。它是运行时可覆盖状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。事后回顾依靠 `phases`、`error`、`diagnostics` 与可选的 `events.json` / `trace.json`。trace 不是必需兜底:沙箱创建发生在 telemetry 之前,teardown 发生在 trace collect 之后,没有 tracing 的 provider 也必须留下同样完整的错误摘要。
+`progress` 文本不写入任何 artifact。它是运行时可覆盖状态,保存每一帧既无法还原可靠因果,也会让高频 SDK/工具进度无限放大结果。事后回顾依靠 `phases`、`error`、`diagnostics` 与可选的 `events.json` / `trace.json`。trace 不是必需回退:沙箱创建发生在 telemetry 之前,teardown 发生在 trace collect 之后,没有 tracing 的 provider 也必须留下同样完整的错误摘要。
 
 attempt 的结果封口发生在 Effect Scope release 完成之后：teardown 链与 `commitKeepOrStop()` 已结束，销毁路径完成 `sandbox.stop`，留存路径完成 `sandbox.suspend`。随后 `result.json` 与其它 attempt artifacts 原子写入。这样 teardown diagnostic 不会因为主 test 已经返回而丢失。进程在封口前被强杀时,该 attempt 仍属于未完成,不会留下一个伪装完整的 `result.json`。
 
-Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份兜底算一份。
+Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这里重复——reader 把 `run.json` 的声明拼进每条读回的结果(`attempt.result`),拼合规则是「缺才补」:条目自带的值优先,`startedAt` 只在记录缺失时回退 Run 的值;`locator` 同理「缺才补」,niceeval 自己的 writer 恒会写这个字段,只有第三方 harness 没实现它时读取面才按当前身份回退算一份。
 
 两类条目:
 
@@ -506,9 +506,9 @@ interface Usage {
 
 ## 证据 registry
 
-artifact 的横切属性——存储形态、截断策略、`publish` 发布缺省、存在性声明——单源在下面这张 registry 表,不散布在各小节各自维护清单。writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` 的 `artifacts` 词表与缺省携带、[大值截断](#大值截断)的适用范围全部由这张表驱动;新增一种证据 = 加一行并声明类型与懒加载方法,不逐处扩清单。`view --out` 的复制按「前端读什么带什么」判定,该名单跟随查看器的真实消费面、单源在 [View](../reports/view.md#静态导出),不是本表的一列。
+artifact 的横切属性——存储形态、截断策略、`publish` 发布默认、存在性声明——单源在下面这张 registry 表,不散布在各小节各自维护清单。writer(`run.writeAttempt`)的参数面、reader 的懒加载方法、`publish` 的 `artifacts` 词表与默认携带、[大值截断](#大值截断)的适用范围全部由这张表驱动;新增一种证据 = 加一行并声明类型与懒加载方法,不逐处扩清单。`view --out` 的复制按「前端读什么带什么」判定,该名单跟随查看器的真实消费面、单源在 [View](../reports/view.md#静态导出),不是本表的一列。
 
-| artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `publish` 缺省 | 内容职责 |
+| artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `publish` 默认 | 内容职责 |
 |---|---|---|---|---|---|---|
 | `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判定、断言、错误与诊断的权威记录 |
 | `commands.json` | `commands` | attempt 级,按需 | `FailedCommandEvidence[]` | 截 | 带 | 非零 Sandbox 命令的 stdout/stderr |
@@ -704,7 +704,7 @@ Agent 的一次工具调用可以产出任意大的输出——一条递归 grep
 契约:
 
 - **落点唯一**:`run.writeAttempt()`(见 [Library](library.md))。不在 adapter、不在 OTLP 解析、不在事件归一化里做——任何 adapter、任何 sandbox 产出的 artifact 都被同一条规则约束,adapter 作者不需要记得截断。
-- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性与 `commands.json` 的 stdout/stderr 里的**任意字符串值**。不只工具输出——`thinking` 文本、`error` 消息同样可能爆。registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。`sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。`diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算兜底。
+- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性与 `commands.json` 的 stdout/stderr 里的**任意字符串值**。不只工具输出——`thinking` 文本、`error` 消息同样可能爆。registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。`sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。`diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算回退。
 - **上限**:每个字符串值 256 KiB(UTF-8 字节),常量 `ARTIFACT_VALUE_MAX_BYTES`。截断按 UTF-8 字符边界回退,不切断多字节字符。
 - **没有 flag、没有配置项。**「需要完整落盘」的场景不存在:评分看的是运行时全量,诊断一条失控命令 256 KiB 绰绰有余(足够看清它 grep 进了 `node_modules`)。给旋钮只会让某天有人把它调大、再把仓库塞爆。
 

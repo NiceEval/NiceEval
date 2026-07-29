@@ -28,7 +28,7 @@
    verdict 时，取第一条促成判定的 soft。
 2. assertion unavailable 造成 `errored` 且没有结构化执行 error 时，取第一条非 optional unavailable。
 3. 结构化执行 error 优先显示 error 摘要，不拿某条 assertion 冒充根因。
-4. 其余同类失败计数为 `+N more failures`；只能在 Attempt 详情展开，不能继续塞进比较列表。
+4. 其余同类失败计数为 `+N more failures`；只能在 Attempt 详情展开，不能继续放入比较列表。
 
 计分制（`defineScoreEval`）在同一套规则上补两条，摘要回答的问题从「为什么红」扩展到「分丢在哪」：
 
@@ -67,7 +67,7 @@ gate: Catalog reads use use-cache directive and products cache tag
 
 两个例子共享一条规则：`expected` / `received` 先剥控制字节，再把换行、回车、制表折成单空格。
 控制字节包括 ANSI 转义序列与其余不可打印 C0/C1。ANSI 包括 CSI 着色、光标控制、OSC 及其 payload；
-C0/C1 包括裸 ESC、BEL 与退格。
+C0/C1 包括 ESC、BEL 与退格。
 
 被测工具几乎总把代码帧、行号与 `✕` 着色。这些 ESC 字节不是空白；原样进入终端会被重新解释成乱码，
 在单行截断从转义序列中间切开时尤其明显。HTML 报告则会把 `ESC[2m…ESC[22m` 当字面文本渲染。
@@ -359,7 +359,7 @@ diff / 事件视图同源，view 里可点进对应文件 diff：
 不重复这个总数。
 
 **前置中止**：两种题型里链了 `.stopOnFailure()` 的断言挂掉会就地结束 `test()`；若同时是 gate，按 `✗ gate` 展开，
-行尾追加一个中止标注，其后不再有任何断言或给分记录——详情里「后面是空的」和「后面全挂了」因此一眼可分：
+行尾追加一个中止标注，其后不再有任何断言或给分记录——详情里「后面是空的」和「后面全失败」因此一眼可分：
 
 ```text
 ✗ gate · db-gpt cloned

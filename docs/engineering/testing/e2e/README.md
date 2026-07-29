@@ -94,7 +94,8 @@ E2E CI 同时证明以下行为：
 
 例如 `claude-code` 仓库直接在自己的 MCP Eval 里断言真实 Claude Code 工具名，`ai-sdk` 仓库直接断言 UI
 Message
-Stream 的裸工具名。两者即使覆盖相似场景，也各自拥有完整 Eval；重复是协议验收的证据，不是需要消除的代码坏味道。
+Stream 的不带命名空间的工具名。两者即使覆盖相似场景，也各自拥有完整 Eval；重复是协议验收的证据，
+不是需要消除的代码坏味道。
 
 ### 2.3 仓库描述文件
 
@@ -122,7 +123,7 @@ Stream 的裸工具名。两者即使覆盖相似场景，也各自拥有完整 
 | `timeoutMinutes` | 仓库级硬超时；Experiment 自己仍声明 attempt timeout 与 budget                                                                                                                                                 |
 | `secrets`        | 所需环境变量名，用于 fail-fast 检查和最小授权                                                                                                                                                                 |
 | `artifacts`      | 成功或失败后可收集的仓库相对路径                                                                                                                                                                              |
-| `requires`       | 可选；执行环境需求：`runtimes`（如 `["node>=22", "python>=3.11"]`）、`docker`（布尔）、`arch`、`memoryGB`。执行器据此选择 GitHub Actions runner 与 crabbox provider/profile；缺省表示只需要 Node 运行时与出网 |
+| `requires`       | 可选；执行环境需求：`runtimes`（如 `["node>=22", "python>=3.11"]`）、`docker`（布尔）、`arch`、`memoryGB`。执行器据此选择 GitHub Actions runner 与 crabbox provider/profile；省略表示只需要 Node 运行时与出网 |
 
 这里不声明 Eval 数、期望 verdict、端口或 `.niceeval`
 文件名。前两者属于仓库自己的验收语义；端口属于仓库自己的进程生命周期；结果布局属于 niceeval 的 Results 契约。
@@ -316,7 +317,7 @@ GitHub Actions 从仓库描述文件生成 matrix，每个 matrix cell 只运行
 被 ignore 只表示不进入版本控制，不表示失败证据不应上传。
 
 上传前，执行器用本次注入的 secret 值对全部 artifact 做扫描替换（占位符
-`<redacted:VAR_NAME>`），命中记入运行汇总——真实 Agent 与服务日志可能回显环境变量，脱敏由收集面兜底，不指望每个仓库的日志纪律。
+`<redacted:VAR_NAME>`），命中记入运行汇总——真实 Agent 与服务日志可能回显环境变量，收集面负责最终脱敏，不指望每个仓库的日志纪律。
 
 ### 6.2 crabbox
 

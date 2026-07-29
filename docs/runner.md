@@ -194,7 +194,7 @@ fixtures/button   codex         pass@5 = 3/5 (60%)   mean 41s · 72k tok · $0.3
 - **`errored` 不触发。** 因一次 errored 停掉其余样本等于放弃重试机会,
   还会把基建抖动放大成整题无结果。
 - **声明的止损闸与 streak 推断并存、互不替代。** 声明是作者背书下的
-  第一次即停,streak 是无声明时的保守兜底(闸的契约见
+  第一次即停,streak 是无声明时的保守回退(闸的契约见
   [执行失败分类](feature/error-classification/README.md#自愈阶梯与止损阶梯))。
 - **turn 层的瞬时故障不进这条判定。** 限流、连接建立失败在这之前已被
   有界重试吸收,streak 看到的 `turn-failed` 是重试耗尽后的最终结果
@@ -296,7 +296,7 @@ provider 侧提供「创建、重置、销毁」的能力;什么时候预创建�
   [Sandbox 的 Scope / finalizer 模型](feature/sandbox/architecture.md#留存keep与注册表)
   同一套语义:即使 agent 卡死也能强行收尾。
 
-外层是兜底,保证一个卡死的 case 不会挂起整批。
+外层是回退,保证一个卡死的 case 不会挂起整批。
 
 **deadline 从 `sandbox.create` 起算,不含等并发位的排队。** 一条 eval
 拿到的执行预算因此只由 `timeoutMs` 决定,不随本次开了多大并发、队列排
@@ -403,7 +403,7 @@ agent 级见
 
 **下游分析**(二次评分、自定义指标)走 [reporter](observability.md#reporters),
 不另设运行 Hook。这是从 agent-eval 的 `onRunComplete` 收敛过来的(见
-[Experiments 砍字段](feature/experiments/architecture.md#设计参照从-agent-eval-砍掉了什么以及为什么));
+[Experiments 砍字段](feature/experiments/architecture.md#设计参照从-agent-eval-删除了什么以及为什么));
 NiceEval 自己的对应回调名是 `onInvocationComplete`。
 
 ## Reporter 与运行器事件

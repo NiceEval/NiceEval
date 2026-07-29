@@ -17,7 +17,7 @@ niceeval view --exp compare/codex memory/   # 两者组合取交集,view 上同�
 
 | 输入 | 收窄什么 | 匹配方式 |
 |---|---|---|
-| 位置参数 | 哪些题 | eval id 裸前缀 |
+| 位置参数 | 哪些题 | eval id 前缀 |
 | `--exp` | 哪些实验 | experiment id 路径段 |
 | `--fresh` | 哪一轮的数据 | 排除携带条目与跨 Run 拼入的历史执行 |
 | `--record` / `--run` | 从哪读 | 换记录根 / 只开一份 Run |
