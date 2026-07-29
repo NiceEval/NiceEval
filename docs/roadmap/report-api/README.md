@@ -243,11 +243,14 @@ return <Table rows={rows} />;
 13. 切换 locale 只重新格式化 MetricValue，不重新运行 page 计算。
 14. EvidenceRow 经 JSON fixture 和 React props 往返后无需水化即可渲染。
 15. page id 即使是 `"1"` 或 `"2024"`，导航仍严格服从 pages 数组顺序。
-16. 纯外部预算时间序列可作为 ExternalPoint 绘图，且不出现 Attempt 下钻。
+16. 纯外部预算时间序列经显式 `external` 声明绘图，且不出现 Attempt 下钻。
 17. 自定义报告直接复用官方导出的 `standardAttemptPage`。
 18. 按固定题集 rubric 手写成绩单：缺题保持固定分母，
     总分 evidence 复用各题格 MetricValue 的 refs。
-19. 业务目标线作为 series 级 ExternalPoint 叠加在 Sample 派生图上。
+19. 业务目标线作为显式 `external` series 叠加在 Sample 派生图上。
+20. 未声明 `external` 的图表拒绝无 refs 的 points，错误指向组件与字段。
+21. `by` 与 `values` 键冲突或占用保留键 `refs` 时，
+    编译期与执行期都拒绝并指出冲突键。
 
 普通场景 1–8 不得出现 `data`、`Source`、`Content`、`View`、
 `Measure`、`Composition`、`ctx`、`resolve` 或 `compute`。

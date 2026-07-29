@@ -53,6 +53,13 @@ type PageDefinition<External = unknown> =
 
 interface ReportOptions<External> {
   title?: LocalizedText;
+  links?: ReportLink[];
+  footer?: LocalizedText;
+  theme?: ThemeDefinition;
+  dimensionPins?: DimensionPins;
+  head?: HeadTag[];
+  scripts?: ReportAsset[];
+  styles?: ReportAsset[];
   pages: readonly [
     PageDefinition<External>,
     ...PageDefinition<External>[],
@@ -63,6 +70,12 @@ function defineReport<External = unknown>(
   options: ReportOptions<External>,
 ): ReportDefinition<External>;
 ```
+
+外壳字段的类型、语义与装载校验沿用
+[外壳契约](../../feature/reports/library/shell.md)：
+除 `title` 外都是 web 面属性，装载期规范化，不进 page render。
+本候选只改 page 内容从树变成惰性 `render` 函数，不改外壳。
+单页函数缩写没有外壳；需要外壳字段时使用对象形态。
 
 ```tsx
 export default defineReport({
@@ -439,6 +452,12 @@ AggregateRow 同时是 EvidenceRow。
 行级 `refs` 是本行全部 MetricValue refs 的稳定去重并集，
 用于点击一个图形点时下钻；每个 MetricValue 仍保留自己的精确 refs。
 
+`by` 与 `values` 的键落进同一个行命名空间，`refs` 是行级保留键。
+两侧键互斥，且都不得使用 `refs`：
+`AggregateRow<Groups, Values>` 的泛型在编译期拒绝冲突，
+无类型 JavaScript 调用在执行期同样拒绝，
+错误指出冲突键名和它来自 `by` 还是 `values`。
+
 ### 自定义分组
 
 作者可以传普通同步函数：
@@ -771,26 +790,40 @@ interface TableProps<Row extends object> {
 />
 ```
 
-图表还有一条明确的纯外部数据入口：
+图表的纯外部数据入口是显式的 `external` 声明：
 
 ```ts
 type ExternalScalar = string | number | boolean | null;
 type ExternalPoint = Readonly<Record<string, ExternalScalar>>;
-type ChartPoint = EvidenceRow | ExternalPoint;
 
-interface ScatterProps<Row extends ChartPoint> {
+interface ScatterProps<Row extends EvidenceRow> {
   points: readonly Row[];
   x: keyof Row;
   y: keyof Row;
   color?: keyof Row;
   point?: keyof Row;
 }
+
+interface ExternalScatterProps<Row extends ExternalPoint> {
+  external: true;
+  points: readonly Row[];
+  x: keyof Row;
+  y: keyof Row;
+  color?: keyof Row;
+}
 ```
 
-ExternalPoint 只能含 JSON 标量，没有 MetricValue，也没有 Attempt 下钻。
+未声明 `external` 的图表只接受 EvidenceRow points：
+运行时结构校验 refs 与 MetricValue，缺失即报错并指向字段。
+`external` 图表只接受 JSON 标量行，
+没有 MetricValue，也没有 Attempt 下钻。
 预算随时间、业务目标线等完全不从 Sample 推导的序列走这条分支。
-Sample 派生数字不得伪装成 ExternalPoint；
-它必须通过 MetricValue 与 EvidenceRow 暴露分母和 refs。
+
+结构无法区分「真外部数据」与「洗掉证据的 Sample 数字」，
+这条边界因此靠两层兑现：
+缺省路径拒绝无证据的行；绕过必须写下 `external`，
+这个词在源码与 review 里可审计。
+把 Sample 派生数字标成 external 是作者违约，与伪造读数同级。
 
 `x`、`y`、`color` 与 `point` 由 points 的行类型推导。
 MetricValue 自动提供数值、格式元数据、自然边界与 refs；
@@ -798,15 +831,15 @@ renderer 按当前 locale 格式化。
 
 混合图才使用嵌套 series。
 `<Chart>` 的 points 是各 series 的缺省；
-一个 series 可以带自己的 points，
-EvidenceRow / ExternalPoint 分支按该 series 自己的行类型判定。
+一个 series 可以带自己的 points 和 `external` 声明，
+证据校验按该 series 自己的入口判定。
 业务目标线因此能叠在 Sample 派生图上，而不混进证据行：
 
 ```tsx
 <Chart points={performance}>
   <Bars x="agent" y="costUSD" />
   <Line x="agent" y="passRate" axis="right" />
-  <Line points={budgetTargets} x="agent" y="targetUSD" />
+  <Line external points={budgetTargets} x="agent" y="targetUSD" />
 </Chart>
 ```
 

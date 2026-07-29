@@ -42,7 +42,14 @@ async function renderPage(
 ```
 
 本地 view 按请求求值对应 page 实例。
-静态导出枚举全部 sample page 与可达 Attempt page 实例，
+承载它的宿主协议就是现有站点管线的按需块协议
+（[View](../../feature/reports/view.md)）。
+`#/page/<id>` 只是浏览器侧的浏览状态；
+page 内容按 `report/<pageId>.<locale>.html` 路径请求，
+server 因此在请求路径里就知道该求值哪张 page 实例。
+`index.html` 只预烘当前订阅的那一块。
+静态导出没有按需请求，枚举全部 sample page
+与可达 Attempt page 实例，
 分别求值后再决定整体写出。
 一个 page 实例失败时，本地模式只污染自己的槽位；
 静态导出仍保持全有或全无。
@@ -236,7 +243,8 @@ AggregateRow 也不能重新进入 `aggregate()`；
 EvidenceRow 不带 symbol 品牌；组件在运行时结构校验 refs 与 MetricValue，
 所以 JSON 往返后仍然有效。
 Sample 派生图表只接受 EvidenceRow points；
-纯外部 JSON 标量序列可走 ExternalPoint 分支，但没有 Attempt 下钻。
+纯外部 JSON 标量序列经图表的显式 `external` 声明绘图，
+没有 Attempt 下钻。
 因此领域函数离开核心目录不等于离开证据契约。
 
 ## 组件不执行计算
@@ -578,7 +586,8 @@ toExperimentRows(sample)
 
 ## 需要 spike 的风险
 
-1. `aggregate()` 的 const generic 能否从 `{ by, values }` 精确推导行字段。
+1. `aggregate()` 的 const generic 能否从 `{ by, values }` 精确推导行字段，
+   并在类型层拒绝 by / values 同名键与保留键 refs。
 2. `rollup()` 返回的 Calculation 怎样保留函数调用体验，
    同时阻止作者伪造遗漏 refs 的同形值。
 3. metricValue / evidenceRow 能否覆盖 delta、scoreboard 与 stability

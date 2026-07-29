@@ -321,7 +321,7 @@ const highlighted = paretoFrontier(performance, {
 
 组件不知道 Sample 派生 points 来自 `aggregate()` 还是局部函数，
 只要求它们满足 EvidenceRow 契约。
-完全不含 NiceEval 读数的外部标量序列使用 ExternalPoint 分支。
+完全不含 NiceEval 读数的外部标量序列经显式 `external` 声明绘图。
 它们不认识 history、delta、stability、pivot 或 frontier。
 
 这条边界保证新增一个分析问题时，先增加普通计算函数，
