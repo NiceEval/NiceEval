@@ -20,7 +20,9 @@
 />
 ```
 
-MetricValue 显示本地化值、samples / total 与证据入口；
+MetricValue 显示本地化值、samples / total 与证据入口。
+只有一条证据时直接显示链接；多条证据收成一个带数量的原生展开入口，
+读者需要时再展开具体 Attempt，不让链接清单撑宽指标列。
 普通标量按实际类型显示。字段缺失或行形状不一致时，
 错误指出 `rows[index].field`。
 

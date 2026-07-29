@@ -107,6 +107,8 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
   展开行内回复与断言细节，普通行不可展开；文档零 JS 依赖（禁 JS 后上述内容仍完整可读）。
   自定义 `Hero` 的可选 logo、说明与外链由官方 stylesheet 完成排版：宽屏和窄屏都完整可见且不越出视口；
   text 面保留说明与可复制链接，但不输出视觉 logo。
+  `Table` 的单条 MetricValue 证据直接下钻，多条证据默认只占一个带数量的展开入口；
+  展开后每条 Attempt 仍可下钻，收起时证据清单不能撑宽指标列。
 - **自定义报告的用户操作回归**：渲染验收不只对内建 `standard`
   报告做。仓库签入一组代表性自定义报告文件（`pages: [...standard.pages]`
   叠外壳、自定义多页、自定义组件与 attempt page），对每份用 `show --report` / `view --report`

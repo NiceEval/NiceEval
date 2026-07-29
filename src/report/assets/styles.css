@@ -295,7 +295,36 @@ table.niceeval-report,
   margin-left: 0.3em;
 }
 .niceeval-report .niceeval-refs {
+  position: relative;
+  display: inline-block;
   margin-left: 0.4em;
+}
+.niceeval-report .niceeval-refs-summary {
+  color: var(--c0);
+  cursor: pointer;
+  font-size: 0.8em;
+  list-style: none;
+  white-space: nowrap;
+}
+.niceeval-report .niceeval-refs-summary::-webkit-details-marker { display: none; }
+.niceeval-report .niceeval-refs-summary::after { content: " ▸"; }
+.niceeval-report .niceeval-refs[open] > .niceeval-refs-summary::after { content: " ▾"; }
+.niceeval-report .niceeval-refs-summary:hover { text-decoration: underline; }
+.niceeval-report .niceeval-refs-list {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 8px 24px color-mix(in oklch, black, transparent 78%);
 }
 .niceeval-report .niceeval-ref {
   color: var(--c0);

@@ -44,4 +44,30 @@ export const metricTableScenarios: readonly ReportComponentScenario[] = [
       }
     },
   },
+  {
+    name: "MetricTable · 多条指标证据默认紧凑且可展开下钻",
+    // 场景：聚合指标携带多条 Attempt refs。
+    // Given：scoreboard 的指标表由真实 Evidence 聚合而来。
+    // When：用户查看指标格并展开证据入口。
+    // Then：初始只显示一个带数量的入口，展开后每条证据仍是可下钻链接。
+    async run({ browser, siteBaseUrl }) {
+      const page = await browser.newPage();
+      try {
+        await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
+        await page.getByRole("tab", { name: "Scoreboard" }).click();
+        const panel = page.locator("#tab-page-scoreboard");
+        const disclosure = panel.locator("td details").first();
+        await disclosure.waitFor({ state: "visible", timeout: 10_000 });
+        assert.equal(await disclosure.getAttribute("open"), null);
+        assert.match((await disclosure.locator("summary").textContent()) ?? "", /^\d+ attempts?$/);
+        assert.equal(await disclosure.locator("a:visible").count(), 0, "收起时证据链接不应进入可见布局");
+
+        await disclosure.locator("summary").click();
+        assert.notEqual(await disclosure.getAttribute("open"), null);
+        assert.ok((await disclosure.locator("a").count()) > 1, "展开后应保留每条 Attempt 下钻链接");
+      } finally {
+        await page.close();
+      }
+    },
+  },
 ];

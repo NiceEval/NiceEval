@@ -66,6 +66,8 @@ const en = {
   "cell.noneMeasurableTitle": "0/{total} attempts measurable",
   "cell.coverageTitle": "coverage {samples}/{total}: this metric is null for the remaining attempts",
   "cell.missingValue": "(missing)",
+  "cell.evidence.one": "{n} attempt",
+  "cell.evidence.other": "{n} attempts",
 
   "table.higherBetter": "higher is better",
   "table.lowerBetter": "lower is better",
@@ -249,6 +251,8 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "cell.noneMeasurableTitle": "0/{total} 次 attempt 可测",
   "cell.coverageTitle": "覆盖率 {samples}/{total}:其余 attempt 测不了这个指标",
   "cell.missingValue": "(missing)",
+  "cell.evidence.one": "{n} 个 Attempt",
+  "cell.evidence.other": "{n} 个 Attempt",
 
   "table.higherBetter": "越高越好",
   "table.lowerBetter": "越低越好",
@@ -424,6 +428,7 @@ export function countText(
     | "scoreboard.ignored"
     | "entityList.moreFailures"
     | "entityList.moreLostPoints"
+    | "cell.evidence"
     | "table.columnsHidden"
     | "copyFixPrompt.summary"
     | "traceWaterfall.spans"

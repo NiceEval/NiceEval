@@ -6,7 +6,7 @@ import type { ReactElement } from "react";
 import type { MetricValue } from "../model/calculation.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
 import { formatMetricValue } from "../model/format.ts";
-import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../model/locale.ts";
+import { countText, DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../model/locale.ts";
 
 export function MetricCellView({
   cell,
@@ -46,14 +46,24 @@ export function MetricCellView({
           {cell.samples}/{cell.total}
         </sup>
       )}
-      {attemptHref && cell.refs && cell.refs.length > 0 && (
+      {attemptHref && cell.refs && cell.refs.length === 1 && (
         <span className="niceeval-refs">
-          {cell.refs.map((locator, i) => (
-            <a key={locator} className="niceeval-ref" href={attemptHref(locator)}>
-              #{i + 1}
-            </a>
-          ))}
+          <a className="niceeval-ref" href={attemptHref(cell.refs[0]!)}>
+            #1
+          </a>
         </span>
+      )}
+      {attemptHref && cell.refs && cell.refs.length > 1 && (
+        <details className="niceeval-refs">
+          <summary className="niceeval-refs-summary">{countText(locale, "cell.evidence", cell.refs.length)}</summary>
+          <span className="niceeval-refs-list">
+            {cell.refs.map((locator, i) => (
+              <a key={locator} className="niceeval-ref" href={attemptHref(locator)}>
+                #{i + 1}
+              </a>
+            ))}
+          </span>
+        </details>
       )}
     </span>
   );
