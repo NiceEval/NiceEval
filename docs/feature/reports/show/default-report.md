@@ -14,7 +14,7 @@
 - 混型 Sample 摘要与实验列表两个主读数并排，散点画通过制那组。
 
 整页组件树没有 `Section`，所以 text 面无框铺开，散点与宽表占满可用列宽。圆角面板只随
-`Section` 出现（约定见 [Layout](../library/layout.md)），用于 `AttemptDetail` 这类多区域详情页。
+`Section` 出现（约定见 [Layout](../library/layout.md)），用于 `AttemptDetails` 这类多区域详情页。
 每个 experiment 的 eval 数与读数分母来自 Run 记录的 `selectedEvalIds`；未选择的 eval 不补成失败。
 实验列表保持 experiment → Eval → Attempt 层级。
 

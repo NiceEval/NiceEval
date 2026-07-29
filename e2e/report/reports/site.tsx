@@ -8,7 +8,7 @@
 // overview 页用嵌套 Section 包 Grid/Stat(toSummaryItems 现算)与 eval×agent 矩阵 Table;scoreboard
 // 页用 aggregate 成绩单与带过滤框的对比 Table。
 import type { AttemptEvidence, Sample } from "niceeval/record";
-import type { AttemptListItem, Cell, MetricValue, TableContent } from "niceeval/report";
+import type { AttemptListItem, Cell, MetricValue } from "niceeval/report";
 import {
   AttemptAssessment,
   AttemptSummary,
@@ -26,6 +26,7 @@ import {
   durationMs,
   evalId,
   experiment,
+  formatMetricValue,
   mean,
   passRate,
   rollup,
@@ -57,106 +58,100 @@ function metricValueCell(metric: MetricValue): Cell {
   return { kind: "metric", metric };
 }
 
-function matrixTableContent(
+function matrixTableRows(
   rows: ReadonlyArray<{ eval: string; agent: string; passRate: MetricValue }>,
-): TableContent {
+): { columns: string[]; rows: Array<Record<string, unknown> & { key: string }> } {
   const columnKeys = [...new Set(rows.map((row) => row.agent))].sort();
   const rowKeys = [...new Set(rows.map((row) => row.eval))].sort();
   const byPosition = new Map(rows.map((row) => [`${row.eval}\0${row.agent}`, row] as const));
   return {
-    columns: [{ key: "eval" }, ...columnKeys.map((key) => ({ key, better: "higher" as const }))],
+    columns: ["eval", ...columnKeys],
     rows: rowKeys.map((evalKey) => {
-      const cells: Record<string, Cell> = {
+      const tableRow: Record<string, unknown> & { key: string } = {
+        key: evalKey,
         eval: { kind: "text", text: evalKey },
       };
       for (const columnKey of columnKeys) {
         const row = byPosition.get(`${evalKey}\0${columnKey}`);
-        cells[columnKey] = row ? metricValueCell(row.passRate) : { kind: "notApplicable" };
+        tableRow[columnKey] = row ? metricValueCell(row.passRate) : { kind: "notApplicable" };
       }
-      return { key: evalKey, cells };
+      return tableRow;
     }),
   };
 }
 
-function scoreboardTableContent(
+function scoreboardTableRows(
   rows: ReadonlyArray<{ experiment: string; eval: string; score: MetricValue }>,
-): TableContent {
+): Array<{ key: string; entity: Cell; total: Cell }> {
   const experiments = [...new Set(rows.map((row) => row.experiment))].sort();
   const byExpEval = new Map(rows.map((row) => [`${row.experiment}\0${row.eval}`, row] as const));
-  return {
-    columns: [{ key: "entity" }, { key: "total", better: "higher" }],
-    rows: experiments.map((exp) => {
-      let earned = 0;
-      const possible = SCOREBOARD_QUESTIONS.length;
-      for (const question of SCOREBOARD_QUESTIONS) {
-        const row = byExpEval.get(`${exp}\0${question}`);
-        if (!row) continue;
-        const value = row.score.value;
-        if (value !== null) earned += value;
-      }
-      const totalValue = (SCOREBOARD_FULL_MARKS * earned) / possible;
-      return {
-        key: exp,
-        cells: {
-          entity: { kind: "text", text: exp },
-          total: { kind: "score", earned: totalValue, possible: SCOREBOARD_FULL_MARKS },
-        },
-      };
-    }),
-  };
+  return experiments.map((exp) => {
+    let earned = 0;
+    const possible = SCOREBOARD_QUESTIONS.length;
+    for (const question of SCOREBOARD_QUESTIONS) {
+      const row = byExpEval.get(`${exp}\0${question}`);
+      if (!row) continue;
+      const value = row.score.value;
+      if (value !== null) earned += value;
+    }
+    const totalValue = (SCOREBOARD_FULL_MARKS * earned) / possible;
+    return {
+      key: exp,
+      entity: { kind: "text", text: exp },
+      total: { kind: "score", earned: totalValue, possible: SCOREBOARD_FULL_MARKS },
+    };
+  });
 }
 
-function attemptListTableContent(items: readonly AttemptListItem[]): TableContent {
-  return {
-    columns: [
-      { key: "entity" },
-      { key: "verdict" },
-      { key: "result" },
-      { key: "durationMs", better: "lower" },
-      { key: "costUSD", better: "lower" },
-    ],
-    rows: items.map((item) => ({
-      key: item.locator,
-      cells: {
-        entity: {
-          kind: "locator",
-          locator: item.locator,
-          staleSinceMs: item.historical ? 1 : undefined,
-        },
-        verdict: { kind: "verdict", verdict: item.verdict },
-        result:
-          item.failureSummary !== null
-            ? {
-                kind: "summary",
-                text: item.failureSummary,
-                more: item.moreFailures > 0 ? item.moreFailures : undefined,
-              }
-            : { kind: "text", text: "—" },
-        durationMs: {
-          kind: "metric",
-          metric: {
-            value: item.durationMs,
-            unit: "ms",
-            basis: "eval",
-            samples: 1,
-            total: 1,
-            refs: [item.locator],
-          },
-        },
-        costUSD: {
-          kind: "metric",
-          metric: {
-            value: item.costUSD,
-            unit: "$",
-            basis: "eval",
-            samples: item.costUSD === null ? 0 : 1,
-            total: 1,
-            refs: [item.locator],
-          },
-        },
+function attemptListTableRows(
+  items: readonly AttemptListItem[],
+): Array<{
+  key: string;
+  entity: Cell;
+  verdict: Cell;
+  result: Cell;
+  durationMs: Cell;
+  costUSD: Cell;
+}> {
+  return items.map((item) => ({
+    key: item.locator,
+    entity: {
+      kind: "locator",
+      locator: item.locator,
+      staleSinceMs: item.historical ? 1 : undefined,
+    },
+    verdict: { kind: "verdict", verdict: item.verdict },
+    result:
+      item.failureSummary !== null
+        ? {
+            kind: "summary",
+            text: item.failureSummary,
+            more: item.moreFailures > 0 ? item.moreFailures : undefined,
+          }
+        : { kind: "text", text: "—" },
+    durationMs: {
+      kind: "metric",
+      metric: {
+        value: item.durationMs,
+        unit: "ms",
+        basis: "eval",
+        samples: 1,
+        total: 1,
+        refs: [item.locator],
       },
-    })),
-  };
+    },
+    costUSD: {
+      kind: "metric",
+      metric: {
+        value: item.costUSD,
+        unit: "$",
+        basis: "eval",
+        samples: item.costUSD === null ? 0 : 1,
+        total: 1,
+        refs: [item.locator],
+      },
+    },
+  }));
 }
 
 async function overviewRender(sample: Sample) {
@@ -164,6 +159,7 @@ async function overviewRender(sample: Sample) {
     toSummaryItems(sample),
     aggregate(sample, { by: { eval: evalId, agent }, values: { passRate } }),
   ]);
+  const matrix = matrixTableRows(matrixRows);
   const rate = summary.endToEndPassRate.value;
   return (
     <Col>
@@ -175,12 +171,12 @@ async function overviewRender(sample: Sample) {
           <Stat label={{ en: "Attempts", "zh-CN": "Attempt 数" }} value={summary.attempts} />
           <Stat
             label={{ en: "Pass rate", "zh-CN": "通过率" }}
-            value={summary.endToEndPassRate.display}
+            value={formatMetricValue(rate, summary.endToEndPassRate.unit, summary.endToEndPassRate.format)}
             tone={rate === null ? "neutral" : rate >= 0.5 ? "positive" : "negative"}
           />
         </Grid>
         <Section title={{ en: "Eval × agent", "zh-CN": "Eval × Agent" }}>
-          <Table data={matrixTableContent(matrixRows)} className="niceeval-metric-matrix" />
+          <Table rows={matrix.rows} columns={matrix.columns} className="niceeval-metric-matrix" />
         </Section>
       </Section>
     </Col>
@@ -202,14 +198,18 @@ async function scoreboardRender(sample: Sample) {
     <Col>
       <SampleNotices />
       <Section title={{ en: "Exam", "zh-CN": "考试" }}>
-        <Table data={scoreboardTableContent(scoreRows)} className="niceeval-scoreboard-table" />
+        <Table
+          rows={scoreboardTableRows(scoreRows)}
+          columns={["entity", "total"]}
+          className="niceeval-scoreboard-table"
+        />
       </Section>
       <Section title={{ en: "Comparison", "zh-CN": "对比" }}>
         <Table
           rows={comparison as unknown as readonly Record<string, unknown>[]}
           columns={["experiment", "passRate", "costUSD", "durationMs"]}
           sort="passRate"
-          filter
+          searchable
           className="niceeval-metric-table"
         />
       </Section>
@@ -222,7 +222,11 @@ async function attemptsRender(sample: Sample) {
   return (
     <Col>
       <SampleNotices />
-      <Table data={attemptListTableContent(items)} filter />
+      <Table
+        rows={attemptListTableRows(items)}
+        columns={["entity", "verdict", "result", "durationMs", "costUSD"]}
+        searchable
+      />
     </Col>
   );
 }

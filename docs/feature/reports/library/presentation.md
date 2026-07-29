@@ -1,7 +1,7 @@
 # 格式化与呈现工具箱
 
 同一个读数会出现在三个地方：`show` 的 text 面、`view` 的 web 面、导出的 JSON。
-三处必须是同一个字符串，否则读者会以为自己看到了两份数据。
+JSON 保留数值与格式元数据，两个展示面必须从这份数据按各自 locale 得到一致读法。
 视觉身份同理：图例里的 `codex` 与表里的 `codex` 必须同色。
 
 所以格式化、缺数据文案与视觉编码都只有一个官方入口。
@@ -10,13 +10,13 @@
 
 ## 公开函数总表
 
-`niceeval/report` 导出下面这些纯函数。前四组同时从 `niceeval/report/react` 导出，
+`niceeval/report` 导出下面这些纯函数。格式化、缺数据、维度呈现与 locale 组同时从
+`niceeval/report/react` 导出，
 自有 React 页面用的是同一批实现；文本排版只在 `niceeval/report`，web 面不按显示列宽对齐。
 
 | 分组 | 导出 | 签名 | 用途 |
 |---|---|---|---|
-| 格式化 | `measureDisplay` | `(value: number \| null, unit?: string, override?: MeasureDisplay) => LocalizedText` | 把 `MetricValue` 格式化成展示字符串 |
-| 格式化 | `formatMeasureValue` | `(value: number, unit?: string) => string` | 按 unit 折一个终值 |
+| 格式化 | `formatMetricValue` | `(value: number \| null, unit?: string, format?: MetricFormat, locale?: ReportLocale) => string` | renderer 按当前 locale 把终值折成展示字符串 |
 | 格式化 | `formatAxisTick` | `(value: number, step: number, unit?: string) => string` | 轴刻度，精度跟随步长 |
 | 格式化 | `formatCellText` | `(cell: Cell \| null, locale?: ReportLocale) => string` | 把任意 `Cell` 折成一行文本 |
 | 缺数据 | `missingText` | `(code: string, locale?: ReportLocale) => string` | `missing` 格的本地化原因 |
@@ -24,7 +24,7 @@
 | 维度呈现 | `shortestUniqueLabels` | `(ids: readonly string[]) => Map<string, string>` | 一组 id 的最短唯一后缀 |
 | locale | `DEFAULT_REPORT_LOCALE` | `ReportLocale` | 回退语言（`"en"`） |
 | locale | `resolveLocalizedText` | `(text: LocalizedText, locale: ReportLocale) => string` | 按回退链取一种语言 |
-| locale | `resolveMeasureLabel` | `(name: string, locale: ReportLocale) => string` | 内建读数名的显示标签 |
+| locale | `resolveMetricLabel` | `(label: LocalizedText \| undefined, locale: ReportLocale, fallback: string) => string` | 读数或列名的本地化显示标签 |
 | locale | `localizedTextEquals` | `(a: LocalizedText, b: LocalizedText) => boolean` | 两份 `LocalizedText` 逐语言相等 |
 | 文本排版 | `stringWidth` | `(text: string) => number` | 显示宽度：CJK / 全角记 2 列，其余 1 列 |
 | 文本排版 | `padEnd` | `(text: string, width: number) => string` | 按显示宽度在右侧补齐（左对齐） |
@@ -37,10 +37,10 @@
 这张表是完整的：报告面不再公开第二个格式化函数、第二种取色方式或第二把宽度尺。
 [不公开的东西](#不公开的东西)逐条说明缺席的那些为什么缺席。
 
-## 格式化只发生一次
+## 格式化只有一个入口
 
-显示字符串在**渲染前**由 `measureDisplay()` / `formatMeasureValue()` 单点生成；
-`MetricValue` 只携带 `value`、`unit` 与 `format` 元数据：
+计算层不生成显示字符串。`MetricValue` 只携带 `value`、`unit` 与 `format` 元数据，
+renderer 在输出 text 或 web 时调用 `formatMetricValue()`：
 
 ```ts
 interface MetricValue {
@@ -55,18 +55,17 @@ interface MetricValue {
 ```
 
 - **`value` 是计算终值。** `null` 表示这一格没有有效样本；排序、轴与下游计算读它。
-- **展示字符串不预生成。** 两个面在渲染前各调一次 `measureDisplay(value, unit, format)`，
-  因此 `show` 与 `view` 上逐字相同。
-- **生成面覆盖 `en` 与 `zh-CN`。** 两种语言相同时折成单个字符串，
-  其它 locale 按 [`LocalizedText`](shell.md) 的回退链取值。
+- **展示字符串不预生成。** 两个面各自在 renderer 内调用同一个纯函数，并传入当前 locale。
+- **locale 是渲染上下文。** 内建 unit 格式在各语言下读法相同；`custom` format 可以按 locale
+  改文案，但不能改变数值或聚合口径。
 
 ```ts
 const cell = metricValue({ value: mean, unit: "tokens", samples, total, refs });
-const display = measureDisplay(cell.value, cell.unit, cell.format);
+const display = formatMetricValue(cell.value, cell.unit, cell.format, locale);
 // 46500 → "46.5k tokens"
 ```
 
-**`String(value)` 不是格式化。** 绕过 `measureDisplay` 写 `String(value)`、`value.toFixed(1)` 或
+**`String(value)` 不是格式化。** 绕过 `formatMetricValue` 写 `String(value)`、`value.toFixed(1)` 或
 `` `${value} tokens` `` 会让同一个读数在两处显示不一致。
 
 ### unit 决定格式
@@ -107,7 +106,7 @@ export const cacheHitRate = rollup(
 ### 轴刻度是另一支
 
 `formatAxisTick(value, step, unit)` 的精度跟随刻度步长，不跟随值本身：
-步长 `0.25` 的刻度打 `0.25` / `0.5` / `0.75`，而 `formatMeasureValue` 会把它们缩写掉。
+步长 `0.25` 的刻度打 `0.25` / `0.5` / `0.75`，而 `formatMetricValue` 会把它们缩写掉。
 自定义图表组件画轴用它，不自己 `toFixed`。
 
 ## 缺数据、不适用与占位
@@ -116,7 +115,7 @@ export const cacheHitRate = rollup(
 
 | 形态 | 含义 | 文案 |
 |---|---|---|
-| `measure` 且 `value === null` | 覆盖到了 attempt，但没有一条给得出值 | `display` 是缺数据文案 |
+| `metric` 且 `value === null` | 覆盖到了计数单位，但没有一条给得出值 | renderer 经 `formatMetricValue` 取缺数据文案 |
 | `missing` | 本该有却没跑到 | `code` 经词表映射 |
 | `notApplicable` | 这个读数对这一行没有意义 | `—` |
 
@@ -293,7 +292,7 @@ text renderer 的 `ctx.dimension()` 恒返回 label 面：text 面不上 ANSI �
 
 | 想做的事 | 不公开 | 用什么 | 为什么 |
 |---|---|---|---|
-| 按类型挑格式化函数 | 耗时 / 金额 / 百分比各自的 formatter | `measureDisplay` + `unit` | 挑得动就会挑错，同一读数在两处显示不一致 |
+| 按类型挑格式化函数 | 耗时 / 金额 / 百分比各自的 formatter | `formatMetricValue` + `unit` | 挑得动就会挑错，同一读数在两处显示不一致 |
 | 直接取实验色 | 色板数组、槽位号、class 名、hex | `ctx.dimension()` / `presentDimension()` | 绕开页级消解，暗色主题下还会取到错的值 |
 | 自己排一张对齐的表 | 整表对齐渲染件 | [`Table`](layout.md#table) | 身份列下限、超宽丢列与如实标注是表格契约，不是排版细节 |
 | 拿到主题对象 | 主题值 | CSS 令牌与语义 class | 主题只能通过 CSS 改变呈现，不能改变 data 或组件树 |

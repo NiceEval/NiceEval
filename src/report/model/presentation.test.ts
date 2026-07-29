@@ -7,40 +7,38 @@ import * as report from "../index.ts";
 import * as reportReact from "../react/index.tsx";
 import { formatCellText } from "../definition/cell.ts";
 import { isCalculation } from "./calculation.ts";
-import {
-  formatAxisTick,
-  formatMeasureValue,
-  measureDisplay,
-  missingText,
-} from "./format.ts";
+import { formatAxisTick, formatMetricValue, missingText } from "./format.ts";
 
-describe("measureDisplay / formatMeasureValue", () => {
+describe("formatMetricValue", () => {
   it("五支 unit 各折一种读法;tokens 的 46500 不是裸数字", () => {
-    expect(formatMeasureValue(0.873, "%")).toBe("87.3%");
-    expect(formatMeasureValue(850, "ms")).toBe("850ms");
-    expect(formatMeasureValue(0.31, "$")).toBe("$0.31");
-    expect(formatMeasureValue(46_500, "tokens")).toBe("46.5k tokens");
-    expect(formatMeasureValue(1_200)).toBe("1.2k");
-    expect(measureDisplay(46_500, "tokens")).toBe("46.5k tokens");
+    expect(formatMetricValue(0.873, "%")).toBe("87.3%");
+    expect(formatMetricValue(850, "ms")).toBe("850ms");
+    expect(formatMetricValue(0.31, "$")).toBe("$0.31");
+    expect(formatMetricValue(46_500, "tokens")).toBe("46.5k tokens");
+    expect(formatMetricValue(1_200)).toBe("1.2k");
   });
 
-  it("null 写成缺数据 LocalizedText,不写 —", () => {
-    expect(measureDisplay(null)).toEqual({ en: "no data", "zh-CN": "无数据" });
+  it("null 在 renderer 内按当前 locale 写成缺数据文案", () => {
+    expect(formatMetricValue(null, undefined, undefined, "en")).toBe("no data");
+    expect(formatMetricValue(null, undefined, undefined, "zh-CN")).toBe("无数据");
   });
 
-  it("AttemptMetric.display 覆盖内建格式,不改变 value 语义", () => {
-    const display = measureDisplay(0.5, "%", (value, locale) =>
-      locale === "zh-CN" ? `命中 ${Math.round(value * 100)}%` : `hit ${Math.round(value * 100)}%`,
-    );
-    expect(display).toEqual({ en: "hit 50%", "zh-CN": "命中 50%" });
+  it("MetricValue.format 覆盖内建格式,不改变 value 语义", () => {
+    const format = {
+      kind: "custom" as const,
+      format: (value: number, locale: string) =>
+        locale === "zh-CN" ? `命中 ${Math.round(value * 100)}%` : `hit ${Math.round(value * 100)}%`,
+    };
+    expect(formatMetricValue(0.5, "%", format, "en")).toBe("hit 50%");
+    expect(formatMetricValue(0.5, "%", format, "zh-CN")).toBe("命中 50%");
   });
 });
 
 describe("formatAxisTick", () => {
-  it("精度跟随步长;同值走 formatMeasureValue 会缩写", () => {
+  it("精度跟随步长;同值走 formatMetricValue 会缩写", () => {
     expect(formatAxisTick(0.25, 0.25)).toBe("0.25");
     expect(formatAxisTick(0.5, 0.25)).toBe("0.5");
-    expect(formatMeasureValue(0.25)).toBe("0.3");
+    expect(formatMetricValue(0.25)).toBe("0.3");
   });
 });
 
@@ -62,16 +60,14 @@ describe("missingText / formatCellText", () => {
 
 describe("呈现工具箱导出面", () => {
   it("总表函数从 niceeval/report 与 react 导出且同引用;色板 helper 不公开", () => {
-    expect(report.measureDisplay).toBe(measureDisplay);
-    expect(report.formatMeasureValue).toBe(formatMeasureValue);
+    expect(report.formatMetricValue).toBe(formatMetricValue);
     expect(report.formatAxisTick).toBe(formatAxisTick);
     expect(report.formatCellText).toBe(formatCellText);
     expect(report.missingText).toBe(missingText);
     expect(report.presentDimension).toBeTypeOf("function");
     expect(report.shortestUniqueLabels).toBeTypeOf("function");
 
-    expect(reportReact.measureDisplay).toBe(report.measureDisplay);
-    expect(reportReact.formatMeasureValue).toBe(report.formatMeasureValue);
+    expect(reportReact.formatMetricValue).toBe(report.formatMetricValue);
     expect(reportReact.formatAxisTick).toBe(report.formatAxisTick);
     expect(reportReact.formatCellText).toBe(report.formatCellText);
     expect(reportReact.missingText).toBe(report.missingText);

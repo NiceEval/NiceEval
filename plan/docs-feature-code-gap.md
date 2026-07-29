@@ -135,6 +135,8 @@
       - 输入只允许已经计算好的普通值。
       - renderer context 不提供 Sample、Record、Source、IO 或异步取数。
     - [x] renderer assets
+      - 声明本地资产时显式传 `import.meta.url`，只接受浏览器可直接执行的
+        `.js` / `.mjs` 与 `.css`，不把 TypeScript 源码原样发给浏览器。
       - 当前页只收实际出现 renderer 的 assets。
       - CSS / JS 按内容哈希去重，输出顺序确定。
       - text 不加载 web assets；初始 HTML 不依赖增强脚本才可读。
@@ -154,7 +156,8 @@
       - `Page`、`Stack`、`Row`、`Col`、`Grid`、`Section` 只负责结构。
       - `Table rows={...}`、`Stat value={...}`、`Callouts items={...}`。
       - 删除通用 `source` / `data` / `input` 绑定。
-      - 说明：`Table data={TableContent}` 仍供内部实体列表 Content 适配；公开作者面以 `rows=` 为准。
+      - 内部实体列表通过不公开的 `TableContentView` 复用富 Cell 双面实现；
+        公开 `Table` 只有 `rows=` 一条数据轨。
     - [x] `[P]` 图表
       - 提供 `Scatter`、`Line`、`Bars`、`Area`（已从 `niceeval/report` 公开导出）。
       - Sample 派生路径校验 EvidenceRow、MetricValue 和 refs。
@@ -239,6 +242,8 @@
     - [x] 检查 `package.json#exports`、bundled index 和 `dist/report/**`
       不再发布旧入口（仅 `./report`、`./report/react`、`./report/built-in`、
       `./report/extension` 与静态 assets）。
+      `build:report` 先清理专用 `dist` 输出树，避免已删除源码留下的旧 `.js` /
+      `.d.ts` 混入 tarball。
 
     验收：
 

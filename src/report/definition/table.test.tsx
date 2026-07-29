@@ -1,5 +1,5 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Table 的 subRows 与 placeholder」「数据源选项归一」（Column）
+// 「Table 的 subRows 与 placeholder」「普通 rows props」
 // 断言面是 Content 与两面输出字符串，不经浏览器。
 
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,7 @@ import {
   type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
-import { Column, Table } from "./primitives.tsx";
+import { Table, TableContentView } from "./primitives.tsx";
 import type { TableContent } from "./cell.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
@@ -69,14 +69,28 @@ async function resolve(node: React.ReactNode) {
 }
 
 describe("Table Content", () => {
-
-
-  it("旧 columns/rows 字符串形态仍可用", () => {
+  it("公开 Table 直接消费普通 rows", () => {
     const text = renderNodeToText(
-      <Table columns={[{ key: "a", header: "A" }]} rows={[{ key: "r", cells: { a: "x" } }]} />,
+      <Table columns={[{ field: "answer", label: "Answer" }]} rows={[{ answer: "x" }]} />,
       createTextContext({ width: 40 }),
     );
-    expect(text).toContain("A");
+    expect(text).toContain("Answer");
     expect(text).toContain("x");
+  });
+
+  it("内部富 Cell 适配保留 subRows 与 placeholder，两面读取同一 Content", async () => {
+    const resolved = await resolve(<TableContentView data={content} />);
+    const text = renderNodeToText(resolved, createTextContext({ width: 60 }));
+    expect(text).toContain("parent");
+    expect(text).toContain("child");
+    const webCtx = {
+      locale: "en",
+      dimension: () => {
+        throw new UndeclaredDimensionValueError("unexpected", "x");
+      },
+    } as WebContext;
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(resolved as never));
+    expect(html).toContain("niceeval-row-placeholder");
+    expect(html).toContain("child");
   });
 });

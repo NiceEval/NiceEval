@@ -5,18 +5,8 @@
 import type { ReactElement } from "react";
 import type { MetricValue } from "../model/calculation.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
-import { formatMeasureValue, missingText } from "../model/format.ts";
+import { formatMetricValue } from "../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../model/locale.ts";
-
-function formatMetricValue(cell: MetricValue, locale: ReportLocale): string {
-  if (cell.value === null) return missingText("noSamples", locale);
-  if (cell.format && typeof cell.format === "object" && cell.format.kind === "custom") {
-    return cell.format.format(cell.value, locale);
-  }
-  const unit =
-    cell.format === "percent" ? "%" : cell.format === "currency" ? "$" : cell.format === "duration" ? "ms" : cell.unit;
-  return formatMeasureValue(cell.value, unit);
-}
 
 export function MetricCellView({
   cell,
@@ -30,7 +20,7 @@ export function MetricCellView({
   /** 默认用紧凑角标显示覆盖率；已有展开说明的摘要卡可关闭角标。 */
   showCoverage?: boolean;
 }): ReactElement {
-  const text = formatMetricValue(cell, locale);
+  const text = formatMetricValue(cell.value, cell.unit, cell.format, locale);
   if (cell.value === null) {
     return (
       <span className="niceeval-cell niceeval-cell-missing">

@@ -1,6 +1,7 @@
 // 官方组件 chrome 文案的 locale 字典与 LocalizedText 解析。
 // ReportLocale 是开放的 BCP 47 标签(数据协议不封语言上限);官方内置文案与
-// MetricCell.display 生成面当前覆盖 en / zh-CN,其它 locale 走 LocalizedText 回退规则。
+// 内部旧切片的 LocalizedText 生成面覆盖 en / zh-CN；公共 MetricValue 由 renderer
+// 按当前 locale 格式化。
 // 只覆盖组件自带的固定文案(verdict 词、缺数据、覆盖率角标、注脚、占位符等);
 // 维度键、issues 的 message 不经这里。
 // 刻意不 import src/i18n/(CLI 专用字典,locale 来源与 key 面完全不同)。
@@ -14,7 +15,7 @@ export type ReportLocale = string;
 
 export const DEFAULT_REPORT_LOCALE: ReportLocale = "en";
 
-/** MetricCell.display 生成面覆盖的 locale 全集;其它 locale 按 LocalizedText 回退取 en。 */
+/** 内部旧切片 LocalizedText 生成面覆盖的 locale 全集。 */
 export const DISPLAY_LOCALES: readonly ReportLocale[] = ["en", "zh-CN"];
 
 /**
@@ -437,7 +438,7 @@ export function countText(
 /**
  * 按 locale 解析读数 / 列 label;undefined 回退 fallback(= metric.name)。渲染面(web / text)共用。
  */
-export function resolveMeasureLabel(
+export function resolveMetricLabel(
   label: LocalizedText | undefined,
   locale: ReportLocale,
   fallback: string,
@@ -449,6 +450,3 @@ export function resolveMeasureLabel(
     return fallback;
   }
 }
-
-/** @deprecated 用 {@link resolveMeasureLabel}。 */
-export const resolveMetricLabel = resolveMeasureLabel;

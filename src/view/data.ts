@@ -14,6 +14,7 @@ import type { AttemptLocator } from "../record/locator.ts";
 import { buildHostReportMeta,
   hostThemeStylesheet,
   loadHostReport,
+  materializeHostPageRendererAssets,
   renderHostPageFromResolved,
   resolveHostPage,
   resolveHostTheme,
@@ -51,6 +52,8 @@ export interface ReportPageRenderer {
   /** scope-input pages 的 id,声明顺序(= `#/page/<id>` 路由与 <template> 块的键)。 */
   ids: readonly string[];
   render(pageId: string, locale: ReportLocale): Promise<string>;
+  /** 该 page 实际出现的自定义 renderer 资产；与两种 locale 共用同一次 resolve。 */
+  assets(pageId: string): Promise<import("../report/extension/types.ts").PageRendererAssets>;
 }
 
 export interface ViewScan {
@@ -91,7 +94,14 @@ export interface ViewScan {
   attemptPages?: {
     page: ReportPage;
     locators: Map<AttemptLocator, AttemptHandle>;
-    render(locator: AttemptLocator, handle: AttemptHandle): Promise<{ en: string; "zh-CN": string }>;
+    render(
+      locator: AttemptLocator,
+      handle: AttemptHandle,
+    ): Promise<{
+      en: string;
+      "zh-CN": string;
+      assets: import("../report/extension/types.ts").PageRendererAssets;
+    }>;
   };
 }
 
@@ -490,7 +500,14 @@ async function renderReportSlot(
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
   definitions: LoadedDefinitions;
   attemptPage: ReportPage | undefined;
-  renderAttemptPage: (locator: AttemptLocator, handle: AttemptHandle) => Promise<{ en: string; "zh-CN": string }>;
+  renderAttemptPage: (
+    locator: AttemptLocator,
+    handle: AttemptHandle,
+  ) => Promise<{
+    en: string;
+    "zh-CN": string;
+    assets: import("../report/extension/types.ts").PageRendererAssets;
+  }>;
 }> {
   // 报告 runtime 走预编译产物(dist/report/**,`pnpm run build:report` 产出),不受 view
   // 消费方 cwd/tsconfig 影响;装载与渲染统一经 ../report/runtime/host.ts(两个宿主共用的中性联系面)。
@@ -555,21 +572,25 @@ async function renderReportSlot(
   // (pageId, locale) 记忆化一层,同一块被 index.html 预烘与 report/ 路径同时要到时只渲染一次。
   const resolvedPages = new Map<string, Promise<unknown>>();
   const renderedBlocks = new Map<string, Promise<string>>();
-  const renderBlock = async (pageId: string, locale: ReportLocale): Promise<string> => {
+  const resolveScopePage = (pageId: string): Promise<unknown> => {
     const hostPage = scopePages.find((p) => p.id === pageId);
-    if (!hostPage) throw new ViewInputError(`error: page "${pageId}" not found in the loaded report.`);
+    if (!hostPage) return Promise.reject(new ViewInputError(`error: page "${pageId}" not found in the loaded report.`));
+    let resolved = resolvedPages.get(pageId);
+    if (resolved === undefined) {
+      resolved = resolveHostPage(hostPage, {
+        scope: selection,
+        results,
+        report: hostMeta,
+        page: { id: hostPage.id, input: "sample" as const },
+        dimensionPins: hostReport.dimensionPins,
+      });
+      resolvedPages.set(pageId, resolved);
+    }
+    return resolved;
+  };
+  const renderBlock = async (pageId: string, locale: ReportLocale): Promise<string> => {
     try {
-      let resolved = resolvedPages.get(pageId);
-      if (resolved === undefined) {
-        resolved = resolveHostPage(hostPage, {
-          scope: selection,
-          results,
-          report: hostMeta,
-          page: { id: hostPage.id, input: "sample" as const },
-          dimensionPins: hostReport.dimensionPins,
-        });
-        resolvedPages.set(pageId, resolved);
-      }
+      const resolved = resolveScopePage(pageId);
       return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, { locale });
     } catch (e) {
       if (pageFailure !== "embed") throw e;
@@ -589,6 +610,17 @@ async function renderReportSlot(
       }
       return block;
     },
+    async assets(pageId) {
+      try {
+        const resolved = await resolveScopePage(pageId);
+        return materializeHostPageRendererAssets(
+          resolved as Awaited<ReturnType<typeof resolveHostPage>>,
+        );
+      } catch (error) {
+        if (pageFailure !== "embed") throw error;
+        return { styles: [], scripts: [] };
+      }
+    },
   };
 
   const meta: ViewReportMeta = {
@@ -607,7 +639,11 @@ async function renderReportSlot(
   const renderAttemptPage = async (
     locator: AttemptLocator,
     handle: AttemptHandle,
-  ): Promise<{ en: string; "zh-CN": string }> => {
+  ): Promise<{
+    en: string;
+    "zh-CN": string;
+    assets: import("../report/extension/types.ts").PageRendererAssets;
+  }> => {
     const evidence = await loadAttemptEvidence(handle);
     const ctx = {
       scope: selection,
@@ -621,12 +657,13 @@ async function renderReportSlot(
       return {
         en: await renderHostPageFromResolved(resolved, { locale: "en", attemptHref: SIBLING_ATTEMPT_HREF }),
         "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", attemptHref: SIBLING_ATTEMPT_HREF }),
+        assets: await materializeHostPageRendererAssets(resolved),
       };
     } catch (e) {
       if (pageFailure !== "embed") throw e;
       const message = e instanceof Error ? e.message : String(e);
       const block = `<div class="niceeval-report niceeval-page-error"><pre>${escapeHtml(message)}</pre></div>`;
-      return { en: block, "zh-CN": block };
+      return { en: block, "zh-CN": block, assets: { styles: [], scripts: [] } };
     }
   };
 

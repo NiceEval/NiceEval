@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../scoring/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
-import { formatMeasureValue, missingText } from "../model/format.ts";
+import { formatMetricValue, missingText } from "../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 
 /** 判定计票:passed / failed / errored / skipped。 */
@@ -92,12 +92,7 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return cell.verdict ?? "—";
     case "metric": {
       const m = cell.metric;
-      if (m.value === null) return missingText("noSamples", locale ?? DEFAULT_REPORT_LOCALE);
-      if (m.format && typeof m.format === "object" && m.format.kind === "custom") {
-        return m.format.format(m.value, locale ?? DEFAULT_REPORT_LOCALE);
-      }
-      const unit = m.format === "percent" ? "%" : m.format === "currency" ? "$" : m.format === "duration" ? "ms" : m.unit;
-      return formatMeasureValue(m.value, unit);
+      return formatMetricValue(m.value, m.unit, m.format, locale ?? DEFAULT_REPORT_LOCALE);
     }
     default: {
       const _exhaustive: never = cell;

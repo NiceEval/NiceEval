@@ -82,16 +82,16 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 
   用户怎样读取计分报告，见[固定题集做考试成绩单](../../../feature/reports/use-case/分析/固定题集成绩单.md)。主读数规则见[题型构成与主读数](../../../feature/reports/library/measures.md#题型构成与主读数)。
 
-- **显示值单点**（[格式化只发生一次](../../../feature/reports/library/presentation.md#格式化只发生一次)）：
+- **显示值单点**（[格式化只有一个入口](../../../feature/reports/library/presentation.md#格式化只有一个入口)）：
   `MetricValue` 只携带 `value` 与 `format` / `unit` 元数据；展示字符串由
-  `measureDisplay()` / `formatMeasureValue()` 在渲染前单点生成，`value` 与格式化结果各自可断言。逐项覆盖：
+  renderer 调 `formatMetricValue()` 按当前 locale 生成，`value` 与格式化结果各自可断言。逐项覆盖：
 
   - 五支 unit（`"%"` / `"ms"` / `"$"` / 自定义 unit / 省略）各一条。区分力场景是 `tokens` 单位的
     46500 折成 `46.5k tokens`——只有走 unit 分派才区别于 `String(value)` 的 `46500`。
   - 同一份 fixture 里 experiment 行、Eval 分组行与 attempt 行的同名读数格显示同一种格式；
     分组行与汇总行不另起一条格式化路径。
   - `MetricFormat` 的 `custom` 分支覆盖内建格式，且不改变 `value` 与聚合结果。
-  - `formatAxisTick` 的精度跟随步长：步长 `0.25` 打 `0.25`，同一个值经 `formatMeasureValue` 走缩写。
+  - `formatAxisTick` 的精度跟随步长：步长 `0.25` 打 `0.25`，同一个值经 `formatMetricValue` 走缩写。
 - **缺数据词表**（[缺数据、不适用与占位](../../../feature/reports/library/presentation.md#缺数据不适用与占位)）：
   三个内建 code 在 `en` / `zh-CN` 各有文案，`formatCellText` 与 web 面读同一份；未命中词表的 code
   原样显示不被吞掉。区分力场景是 `zh-CN` 报告里的 `missing` 格不出现英文文案。
@@ -338,6 +338,10 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   与语言经 `report/<pageId>.<locale>.html` 按需渲染，`--out` 全渲并预烘进 `index.html`。fixture 用
   多页报告（至少两页 × 两语言），断言面是每页渲染函数的调用次数——单页 fixture 分不开「渲染一块」与
   「渲染全部」。同一 `(pageId, locale)` 在按需路径与 `--out` 下逐字节一致，这一格接住渲染时机漂移。
+- **renderer 资产进入站点管线**：一张已 resolve 的 page 返回 HTML 与按内容哈希物化的 CSS/JS。
+  站点块带对应的加载标签，资产文件登记进同一份 `SitePlan.files`；同一资产被两种 locale 请求时只登记一次。
+  区分力是只在 renderer 单测调用 `materializeRendererAssets()`、但 view 完全不消费结果的错误接线会红。
+  浏览器是否执行脚本、切页时是否加载资产归 E2E。
 - **推送分档（就地换内容与整页重载）**：外壳指纹（`styles` / `scripts` / `head` 资产 / 主题令牌）不变时
   推报告块与视图数据，变了推重载指令。两格用同一份 fixture 分别只改报告内容与只改主题，断言推送的
   事件类别与载荷键；缺「只改报告」那一格，「一律整页重载」的错误算法全绿。
@@ -351,7 +355,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
     子树原样进节点。
   - 带 `traceId` 的 turn 节点把同 trace 的 spans 收为 children，锚在该轮起点，
     轮内相对时序保留；关联不上任何 turn 的 span 落在 `eval.run` 层，不丢弃。
-  - `eval.run` phase 与 turn 节点带 `open` 展开标记；默认 `AttemptDetail` 只放
+  - `eval.run` phase 与 turn 节点带 `open` 展开标记；默认 `AttemptDetails` 只放
     timeline 一张 `Waterfall`，trace 数据源仍公开导出。
   - trace 投影按 `parentSpanId` 建树，子 span 是 children 而不是被过滤掉。
     区分力 fixture 要有「父子两个 span」——只保留根的错误实现会丢节点数。

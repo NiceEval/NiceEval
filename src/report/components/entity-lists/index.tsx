@@ -1,7 +1,7 @@
 // 实体列表组合件:FailureList / AttemptList；列表本体是 Table 原语。
 
 import { defineComponent } from "../../definition/tree.ts";
-import { Table } from "../../definition/primitives.tsx";
+import { TableContentView } from "../../definition/primitives.tsx";
 import type { ReportInput } from "../../model/types.ts";
 import type { AttemptHandle, Sample } from "../../../record/types.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
@@ -40,7 +40,7 @@ export const FailureList = defineComponent<FailureListProps>(async (props, ctx) 
   const limit = props.limit ?? 20;
   const content = attemptListContent(failures.slice(0, limit));
   return (
-    <Table
+    <TableContentView
       data={content}
       attemptHref={props.attemptHref}
       locale={props.locale}
@@ -61,7 +61,7 @@ export interface AttemptListProps {
 export const AttemptList = defineComponent<AttemptListProps>(async (props) => {
   const rows = await toAttemptRows(props.attempts);
   return (
-    <Table
+    <TableContentView
       data={attemptListContent(rows)}
       attemptHref={props.attemptHref}
       locale={props.locale}
@@ -74,7 +74,7 @@ AttemptList.displayName = "AttemptList";
 export interface ExperimentListProps {
   sample: Sample;
   sort?: string;
-  filter?: boolean;
+  searchable?: boolean;
   locale?: ReportLocale;
   className?: string;
 }

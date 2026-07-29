@@ -10,7 +10,7 @@ import {
 
 export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
   {
-    name: "AttemptDetail · extends 继承内建失败详情",
+    name: "AttemptDetails · extends 继承内建失败详情",
     // 场景：用户给 standard 报告加外壳后继续下钻失败 attempt。
     // Given：branded.tsx 没有重写 attempt-input page。
     // When：用户用公开 locator 打开失败详情。
@@ -23,8 +23,8 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
     },
   },
   {
-    name: "AttemptDetail · 自定义叶子组合呈现失败详情",
-    // 场景：报告作者不用 AttemptDetail 成品，自己组合 Summary/Assessment/FixPrompt/Diagnostics。
+    name: "AttemptDetails · 自定义叶子组合呈现失败详情",
+    // 场景：报告作者不用 AttemptDetails 成品，自己组合 Summary/Assessment/FixPrompt/Diagnostics。
     // Given：site.tsx 声明一张 navigation:false 的 review page。
     // When：用户从 CLI 打开失败 locator。
     // Then：组合后的 AttemptAssessment 仍呈现真实失败细节。
@@ -36,7 +36,7 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
     },
   },
   {
-    name: "AttemptDetail · locator 深链打开自定义 review",
+    name: "AttemptDetails · locator 深链打开自定义 review",
     // 场景：用户从过滤后的 AttemptList 点击失败 locator。
     // Given：site.tsx 的 attempt-input page 是自定义叶子组合。
     // When：用户点击唯一可见的 deliberate-fail 深链。
@@ -66,7 +66,7 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
     },
   },
   {
-    name: "AttemptDetail · extends 的浏览器深链仍可达",
+    name: "AttemptDetails · extends 的浏览器深链仍可达",
     // 场景：用户在 branded 报告的 Attempts 页点击失败 locator。
     // Given：branded.tsx 继承 standard AttemptList 与 attempt page。
     // When：用户点击 locator。

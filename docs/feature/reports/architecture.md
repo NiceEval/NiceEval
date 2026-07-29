@@ -518,7 +518,7 @@ async function computeConfusionMatrix(
 ```tsx
 const ConfusionMatrix = defineRenderer({
   assets: {
-    scripts: ["./confusion-matrix.enhance.ts"],
+    scripts: ["./confusion-matrix.enhance.js"],
     styles: ["./confusion-matrix.css"],
   },
   text(value, options, context) {
@@ -527,12 +527,12 @@ const ConfusionMatrix = defineRenderer({
   web(value, options, context) {
     return <WebMatrix value={value} options={options} />;
   },
-});
+}, import.meta.url);
 ```
 
 管线在 render 后收集页面上实际出现组件的资产：
 按内容哈希物化与去重，按稳定顺序注入，
-路径相对组件定义文件解析，
+第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它解析，
 与 head 本地资产走同一条路径纪律。
 官方原语的增强 runtime 与 stylesheet 走的就是这条机制，
 自定义组件与官方组件平权；

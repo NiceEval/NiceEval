@@ -8,7 +8,7 @@ import {
   dataShapeError,
   isLocalizedText,
   isObject,
-  type DataProps,
+  type ValueProps,
 } from "../../components/shared.ts";
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../model/locale.ts";
 import { defineComponent, type ReportNode, type ResolveContext, type TextContext } from "../tree.ts";
@@ -46,9 +46,8 @@ export interface ConversationContent {
   locator?: AttemptLocator;
 }
 
-export type ConversationProps = DataProps<
+export type ConversationProps = ValueProps<
   ConversationContent | null,
-  globalThis.Record<never, never>,
   { locale?: ReportLocale; className?: string }
 >;
 

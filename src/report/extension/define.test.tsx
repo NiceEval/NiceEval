@@ -85,6 +85,31 @@ describe("defineRenderer 双面协议", () => {
     expect(() => faces.text({ value: Promise.resolve({ n: 1 }) }, ctx)).toThrow(/Promise/);
     const withFn = { value: { n: 1 }, fn: () => 0 };
     expect(() => faces.text(withFn, ctx)).toThrow(/non-serializable/);
+    expect(() => faces.text({ value: { n: Number.NaN } }, ctx)).toThrow(/finite/);
+    expect(() => faces.text({ value: { n: Number.POSITIVE_INFINITY } }, ctx)).toThrow(/finite/);
+    const cyclic: { n: number; self?: unknown } = { n: 1 };
+    cyclic.self = cyclic;
+    expect(() => faces.text({ value: cyclic }, ctx)).toThrow(/cyclic/);
+  });
+
+  it("renderer script 必须是浏览器可直接执行的 .js / .mjs，不把 TS 原字节发给浏览器", () => {
+    expect(() =>
+      defineRenderer({
+        text: () => "",
+        web: () => null,
+        assets: { scripts: ["./enhance.ts"] },
+      }),
+    ).toThrow(/\.js or \.mjs/);
+  });
+
+  it("声明 assets 时必须显式给出作者模块 URL，不能错误地相对 niceeval 包解析", () => {
+    expect(() =>
+      defineRenderer({
+        text: () => "",
+        web: () => null,
+        assets: { styles: ["./renderer.css"] },
+      }),
+    ).toThrow(/import\.meta\.url as its second argument/);
   });
 
   it("text 与 web 各消费同一份 value + options,不经 Source 取数", () => {

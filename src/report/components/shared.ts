@@ -21,10 +21,6 @@ export function cx(...parts: (string | undefined | false)[]): string {
  */
 export type ValueProps<Data, Presentation = object> = { data: Data } & Presentation;
 
-/** @deprecated 旧名；与 ValueProps 同义。 */
-export type DataProps<Data, _Options = globalThis.Record<never, never>, Presentation = object, _Input = unknown> =
-  ValueProps<Data, Presentation>;
-
 // ───────────────────────── data 结构校验(版本漂移防线)─────────────────────────
 
 export function isObject(value: unknown): value is globalThis.Record<string, unknown> {

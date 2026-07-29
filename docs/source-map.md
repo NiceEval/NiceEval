@@ -216,14 +216,14 @@
 | `flag()`(experiment flags 当维度 / 轴) | `src/report/model/flag.ts` |
 | show 切片两级聚合与表格 `MetricValue` 形状(内部：`delta` / `stability`) | `src/report/model/aggregate.ts`、`src/report/slices/` |
 | 数据契约(`MetricValue`、`EvidenceRow`、内部 `TableData` / `MatrixData` / `ScatterData` / `LineData` 等) | `src/report/model/types.ts` + `src/report/model/calculation.ts` |
-| 报告 chrome 文案的 locale 字典;`measureDisplay` / `formatMeasureValue` / `formatAxisTick` 格式化单点 | `src/report/model/locale.ts`、`src/report/model/format.ts` |
+| 报告 chrome 文案的 locale 字典；`formatMetricValue` / `formatAxisTick` 格式化单点 | `src/report/model/locale.ts`、`src/report/model/format.ts` |
 | 元素树 / `defineComponent`(双面) / 内部 `ResolveMemo`(树解析环境记忆化，不从 `niceeval/report` 导出) / 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
 | `defineRenderer` 与扩展资产(`niceeval/report/extension`) | `src/report/extension/{define,types,assets,index}.ts` |
 | `resolveReportTree` + `validateReportTree`(page.render 产出组件树之后递归校验 props 形态、收集维度声明;同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页四种渲染入口都经 `resolved-page.ts` 先 resolve 再投影) | `src/report/definition/tree.ts`、`src/report/runtime/resolved-page.ts`(被 `text.ts` / `web.ts` 调用) |
 | `executePageRender` / `resolveDefinitionPage`(选页 → 校验 input 分支 → await page.render → 缓存 Promise;同一 page 实例 + 输入身份只执行一次 render) | `src/report/runtime/page-render.ts`(测试 `page-render.test.tsx`) |
 | 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table / Chart / Scatter / Line / Bars / Area（内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`;`Scatter` 等接 `points=`，内部桥到 Dataset；`Chart` 收 Dataset 多 mark 组合) | `src/report/definition/primitives.tsx` + `src/report/definition/primitives/{chart,marks,points-dataset}.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平、`balanceColumns` / `planGridColumns` / `gridContainerRules` / `planTextGrid` 两面同源列数算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |
 | 文本排版工具箱(`stringWidth` / `padEnd` / `padStart` / `wrapText` / `indent` / `bar` / `columns`,从 `niceeval/report` 导出;跨组件族共用,不属于任一组件族) | `src/report/model/text-layout.ts` |
-| 显示值格式化单点(`measureDisplay` / `formatMeasureValue` / `formatAxisTick`;`unit` 分派与千位缩写住在这里,Content 层不得另写 `String(value)`) | `src/report/model/format.ts` |
+| 显示值格式化单点(`formatMetricValue` / `formatAxisTick`;`unit` 分派与千位缩写住在这里，Content 层不得另写 `String(value)`) | `src/report/model/format.ts` |
 | `missing` 格的 code 词表与 `missingText`(内建 `noSamples` / `notRun` / `unscorable`,两面共用一份文案) | `src/report/model/locale.ts`(词典)+ `src/report/definition/cell.ts`(`formatCellText`) |
 | 维度呈现(`presentDimension` 与页级槽位分配的公开面;色板与取色 helper 是内部实现,不出现在任一公开入口) | `src/report/presentation.ts` + `src/report/assets/colors.ts`(内部) |
 | `defineReport` / `ReportShell` / `ReportPage` / `buildReportMeta` / `resolveReportTitle`(报告外壳与页列表的规范化,与宿主装载方式无关) | `src/report/definition/report.ts` |

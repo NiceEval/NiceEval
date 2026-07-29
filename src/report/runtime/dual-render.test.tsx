@@ -44,7 +44,7 @@ import { pointsToDataset } from "../definition/primitives/points-dataset.ts";
 import { attemptListData } from "../components/entity-lists/compute.ts";
 import { attemptListContent } from "../components/entity-lists/content.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
-import { AttemptDetail } from "../components/attempt-detail/index.tsx";
+import { AttemptDetails } from "../components/attempt-detail/index.tsx";
 import {
   agent,
   aggregate,
@@ -208,28 +208,14 @@ describe("FailureList", () => {
 // ───────────────────────── Table 装载校验 ─────────────────────────
 
 describe("Table 装载校验", () => {
-  it("cells 出现未声明的 key 以完整用户反馈报错;列 key 重复报错", () => {
+  it("普通 rows 缺少已声明字段时给出完整路径", () => {
     const ctx = createTextContext({ width: 100 });
     expect(() =>
       renderNodeToText(
-        <Table columns={[{ key: "a", header: "A" }]} rows={[{ key: "r", cells: { ghost: "x" } }]} />,
+        <Table columns={["answer"]} rows={[{}]} />,
         ctx,
       ),
-    ).toThrow(/no column declares/);
-    expect(() =>
-      renderNodeToText(
-        <Table
-          columns={
-            [
-              { key: "a", header: "A" },
-              { key: "a", header: "A2" },
-            ] as never
-          }
-          rows={[]}
-        />,
-        ctx,
-      ),
-    ).toThrow(/declared twice/);
+    ).toThrow(/rows\[0\]\.answer is missing/);
   });
 });
 
@@ -360,6 +346,14 @@ describe("defineReport 装载规范化", () => {
     expect(() => defineReport({ ...empty, footer: "x" } as never)).toThrow(/no longer accepts LEGACY "footer"/);
   });
 
+  it('旧 page input: "scope" 不再被静默规范化为 sample', () => {
+    expect(() =>
+      defineReport({
+        pages: [{ id: "report", title: "Report", input: "scope", render: () => null } as never],
+      }),
+    ).toThrow(/input is omitted, "sample", or "attempt"/);
+  });
+
   it("--page 语义:pickReportPage 缺省第一页,未命中抛 ReportPageNotFoundError 列出可用页", () => {
     const definition = defineReport({
       pages: [
@@ -467,7 +461,7 @@ describe("内建报告", () => {
       input: "attempt",
       navigation: false,
     });
-    expect(((await attemptPage!.render(null as never)) as { type: unknown }).type).toBe(AttemptDetail);
+    expect(((await attemptPage!.render(null as never)) as { type: unknown }).type).toBe(AttemptDetails);
   });
 
   it("任务视图 failures / stability:单导航页构成与 built-in.md 全文一致,详情页复用 standardAttemptPage", async () => {

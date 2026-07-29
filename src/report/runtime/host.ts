@@ -183,6 +183,21 @@ export async function renderHostPageFromResolved(
 }
 
 /**
+ * 收集并物化一张已经 resolve 的 page 实际用到的自定义 renderer 资产。
+ * 资产跟 page tree 走，不能在报告装载期扫描定义：未请求的惰性 page 不应执行 render，
+ * 条件分支里没有出现的 renderer 也不应进入产物。
+ */
+export async function materializeHostPageRendererAssets(
+  resolved: import("../../../dist/report/runtime/resolved-page.js").ResolvedPage,
+): Promise<import("../../../dist/report/extension/types.js").PageRendererAssets> {
+  const { readFile } = await import("node:fs/promises");
+  const { collectRendererAssetDeclarations, materializeRendererAssets } =
+    await import("../../../dist/report/extension/index.js");
+  const declarations = collectRendererAssetDeclarations(resolved.tree);
+  return materializeRendererAssets(declarations, readFile);
+}
+
+/**
  * 渲染一页的 web 面(静态 HTML)。attemptHref 缺省时报告有 attempt-input page 就用
  * niceeval/report 的根相对默认值(`attempt/<encodeURIComponent(locator)>.html`,index.html
  * 视角);从 attempt 页面自身内容渲染时(该 page 引用了其它 locator)view 显式传入同级

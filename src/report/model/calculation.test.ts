@@ -246,6 +246,31 @@ describe("aggregate · Eval 级分组与 coverage 锚点", () => {
     ).rejects.toThrow(/refs/);
   });
 
+  it("分组值包含 NUL 或等号时仍按 tuple 身份分行，不因字符串拼接碰撞", async () => {
+    const run = snap({
+      experimentId: "e",
+      knownEvalIds: ["q1", "q2"],
+      results: [res("q1", "passed"), res("q2", "failed")],
+    });
+    const sample = scopeOf(
+      [run],
+      [],
+      [{ experimentId: "e", run, knownEvalIds: ["q1", "q2"], missingEvalIds: [] }],
+    );
+    const rows = await aggregate(sample, {
+      by: {
+        a: (subject) => (subject.evalId === "q1" ? "x\0b=y" : "x"),
+        b: (subject) => (subject.evalId === "q1" ? "z" : "y\0b=z"),
+      },
+      values: { passRate },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => [row.a, row.b])).toEqual([
+      ["x", "y\0b=z"],
+      ["x\0b=y", "z"],
+    ]);
+  });
+
   it("自定义 withinEval/acrossEvals：min/max 算例 value=1，samples/total=2/3", async () => {
     const calc = rollup(
       (attempt) => {

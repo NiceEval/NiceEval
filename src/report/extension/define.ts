@@ -26,11 +26,18 @@ function componentLabel(type: unknown): string {
   return String(type);
 }
 
-function assertSerializable(value: unknown, path: string): void {
-  if (value === null || value === undefined) return;
+function assertSerializable(value: unknown, path: string, active = new WeakSet<object>()): void {
+  if (value === null) return;
   const kind = typeof value;
-  if (kind === "string" || kind === "number" || kind === "boolean") return;
-  if (kind === "function" || kind === "symbol" || kind === "bigint") {
+  if (kind === "string" || kind === "boolean") return;
+  if (kind === "number") {
+    if (Number.isFinite(value)) return;
+    throw new Error(
+      `defineRenderer component received non-serializable props at ${path} (${String(value)}). ` +
+        "Renderer numbers must be finite so the same value survives JSON serialization.",
+    );
+  }
+  if (kind === "undefined" || kind === "function" || kind === "symbol" || kind === "bigint") {
     throw new Error(
       `defineRenderer component received non-serializable props at ${path} (${kind}). ` +
         "Renderer input must be plain computed values — await calculations in page render before passing them.",
@@ -43,7 +50,12 @@ function assertSerializable(value: unknown, path: string): void {
     );
   }
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertSerializable(item, `${path}[${index}]`));
+    if (active.has(value)) {
+      throw new Error(`defineRenderer component received a cyclic value at ${path}; renderer props must be serializable.`);
+    }
+    active.add(value);
+    value.forEach((item, index) => assertSerializable(item, `${path}[${index}]`, active));
+    active.delete(value);
     return;
   }
   if (typeof value === "object") {
@@ -51,12 +63,18 @@ function assertSerializable(value: unknown, path: string): void {
     if (proto !== Object.prototype && proto !== null) {
       throw new Error(
         `defineRenderer component received a class instance at ${path}. ` +
-          "Pass plain serializable objects produced by report calculations.",
+        "Pass plain serializable objects produced by report calculations.",
       );
     }
-    for (const [key, child] of Object.entries(value as globalThis.Record<string, unknown>)) {
-      assertSerializable(child, `${path}.${key}`);
+    if (active.has(value)) {
+      throw new Error(`defineRenderer component received a cyclic value at ${path}; renderer props must be serializable.`);
     }
+    active.add(value);
+    for (const [key, child] of Object.entries(value as globalThis.Record<string, unknown>)) {
+      if (child === undefined) continue;
+      assertSerializable(child, `${path}.${key}`, active);
+    }
+    active.delete(value);
   }
 }
 
@@ -72,6 +90,7 @@ function splitRendererProps<TValue, TOptions extends Record<string, unknown>>(
   }
   assertSerializable(value, "value");
   for (const [key, child] of Object.entries(rest)) {
+    if (child === undefined) continue;
     assertSerializable(child, key);
   }
   return { value, options: rest as unknown as TOptions };
@@ -96,12 +115,12 @@ function toRendererWebContext(ctx: WebContext): RendererWebContext {
 /**
  * 定义只接收已计算普通值的双面 renderer。
  *
- * @param faces text 与 web 必填;assets 路径相对第二个参数 `moduleUrl`(作者的
- *   `import.meta.url`)解析。
+ * @param faces text 与 web 必填。
+ * @param moduleUrl 声明 assets 时必填，传作者文件的 `import.meta.url`，作为相对路径基准。
  */
 export function defineRenderer<TValue, TOptions extends Record<string, unknown> = Record<string, never>>(
   faces: RendererFaces<TValue, TOptions>,
-  moduleUrl = import.meta.url,
+  moduleUrl?: string,
 ): ReportComponent<RendererProps<TValue, TOptions>> {
   const label = "defineRenderer";
   if (!faces || typeof faces !== "object") {
@@ -115,12 +134,18 @@ export function defineRenderer<TValue, TOptions extends Record<string, unknown> 
     );
   }
   assertRendererAssets(faces.assets, label);
+  const hasAssets = (faces.assets?.styles?.length ?? 0) > 0 || (faces.assets?.scripts?.length ?? 0) > 0;
+  if (hasAssets && moduleUrl === undefined) {
+    throw new Error(
+      "defineRenderer with assets requires import.meta.url as its second argument, so relative asset paths resolve against the renderer file.",
+    );
+  }
 
   const dimensions: (data: TValue, options: TOptions) => DimensionDeclarations =
     faces.dimensions ?? (() => ({}));
 
   const meta: RendererMeta = {
-    moduleUrl,
+    moduleUrl: moduleUrl ?? import.meta.url,
     styles: faces.assets?.styles ?? [],
     scripts: faces.assets?.scripts ?? [],
   };

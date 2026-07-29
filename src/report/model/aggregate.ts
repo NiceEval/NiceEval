@@ -21,7 +21,7 @@ import type {
   SeriesInput,
 } from "./types.ts";
 import { flagValueOf, labelValueOf, runConfigValueOf } from "./flag.ts";
-import { measureDisplay } from "./format.ts";
+import { metricDisplay } from "./format.ts";
 import { localeText, type LocalizedText } from "./locale.ts";
 import { evalPrefixPredicate } from "../../shared/aggregate.ts";
 
@@ -313,12 +313,12 @@ export async function evaluateMetric(metric: AttemptMetric, attempt: AttemptHand
   return value;
 }
 
-/** 单值 → LocalizedText display:走 measureDisplay 单点入口;null 的缺数据文案也在那里折。 */
+/** 内部旧切片单值 → LocalizedText display；公共 MetricValue 不携带 display。 */
 export function displayValue(metric: AttemptMetric, value: number | null): LocalizedText {
-  if (value === null) return measureDisplay(null);
+  if (value === null) return metricDisplay(null);
   if (metric.display) {
     const display = metric.display;
-    return measureDisplay(value, metric.unit, (v, locale) => {
+    return metricDisplay(value, metric.unit, (v, locale) => {
       try {
         return display(v, locale);
       } catch (e) {
@@ -326,7 +326,7 @@ export function displayValue(metric: AttemptMetric, value: number | null): Local
       }
     });
   }
-  return measureDisplay(value, metric.unit);
+  return metricDisplay(value, metric.unit);
 }
 
 function foldAggregator(metric: AttemptMetric, step: "perEval" | "acrossEvals", values: readonly number[]): number {

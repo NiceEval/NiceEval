@@ -13,7 +13,7 @@ import {
   dataShapeError,
   isLocalizedText,
   isObject,
-  type DataProps,
+  type ValueProps,
 } from "../../components/shared.ts";
 
 export type SourceLineTone = "send" | "passed" | "gate-fail" | "soft-fail" | "unavailable";
@@ -49,9 +49,8 @@ export interface SourceContent {
   locator?: AttemptLocator;
 }
 
-export type SourceViewProps = DataProps<
+export type SourceViewProps = ValueProps<
   SourceContent | null,
-  globalThis.Record<never, never>,
   { locale?: ReportLocale; className?: string }
 >;
 

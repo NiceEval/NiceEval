@@ -1,6 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
 // Attempt 详情组件族的单元测试:11 个叶子的 attempt*Data 非空/空证据矩阵与 validate*Data 校验、
-// AttemptAssessment 的 source/assertions fallback 展开树、AttemptDetail 的内建顺序(组合函数产出的
+// AttemptAssessment 的 source/assertions fallback 展开树、AttemptDetails 的内建顺序(组合函数产出的
 // 树,不经渲染)、spec/data 等价与 scope-input page 报错、AttemptConversation 的 loc 分轮与容错、
 // attemptSourceData 的 loc 投影。观察面全部是 *Data 计算结果、resolve 后的树节点类型与错误对象;
 // 不构造渲染产物——DOM 结构、`<details>` 的 open 折叠标记、text 面下钻命令文本、两面逐字比较均归
@@ -41,7 +41,6 @@ import {
 } from "../../definition/primitives.tsx";
 import {
   AttemptAssessment,
-  AttemptDetail,
   AttemptSummary,
 } from "./index.tsx";
 import {

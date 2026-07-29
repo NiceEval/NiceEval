@@ -208,7 +208,7 @@ describe("experimentListContent Eval 分组层", () => {
     expect(formatCellText(ghost.cells.passRate, "en")).toBe("no data");
   });
 
-  it("组行 tokens / totalScore 走 measureDisplay,不落裸数字", () => {
+  it("组行 tokens / totalScore 走统一格式化入口,不落裸数字", () => {
     const content = experimentListContent([
       experimentItem({
         scoring: "points",

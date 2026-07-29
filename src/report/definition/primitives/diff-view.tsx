@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../../record/locator.ts";
 import {
   dataShapeError,
   isObject,
-  type DataProps,
+  type ValueProps,
 } from "../../components/shared.ts";
 import { type ReportLocale } from "../../model/locale.ts";
 import { defineComponent, type ResolveContext, type TextContext } from "../tree.ts";
@@ -22,9 +22,8 @@ export interface DiffFile {
 
 export type DiffContent = readonly DiffFile[];
 
-export type DiffViewProps = DataProps<
+export type DiffViewProps = ValueProps<
   DiffContent | null,
-  globalThis.Record<never, never>,
   {
     locale?: ReportLocale;
     className?: string;

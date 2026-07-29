@@ -294,8 +294,8 @@ function assertHeadTags(tags: unknown): HeadTag[] {
 }
 
 /**
- * page 的 input / navigation 规范化(shell.md「page 显式声明输入」):省略或 "sample"(及 LEGACY
- * "scope") 时补 `input: "sample"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`。
+ * page 的 input / navigation 规范化(shell.md「page 显式声明输入」):省略或 "sample" 时补
+ * `input: "sample"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`。
  */
 function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPage {
   const input = page.input;
@@ -303,7 +303,7 @@ function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPa
     throw new Error(`Report page "${page.id}" must declare "render": (input) => tree.`);
   }
   const render = page.render as PageRender<Sample | AttemptEvidence>;
-  if (input === undefined || input === "sample" || input === "scope") {
+  if (input === undefined || input === "sample") {
     return {
       id: page.id as string,
       title: page.title as LocalizedText,

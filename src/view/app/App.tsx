@@ -59,7 +59,31 @@ export function localizedText(text: LocalizedText | undefined, locale: Locale): 
  */
 function ReportSlot({ html }: { html: string }) {
   const markup = useMemo(() => ({ __html: html }), [html]);
-  return <div className="report-slot" dangerouslySetInnerHTML={markup} />;
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const assets = root.current?.querySelectorAll<HTMLLinkElement | HTMLScriptElement>(
+      "[data-niceeval-renderer-asset]",
+    );
+    if (!assets) return;
+    for (const asset of assets) {
+      const key = asset.dataset.niceevalRendererAsset;
+      const alreadyLoaded =
+        key !== undefined &&
+        [...document.head.querySelectorAll<HTMLElement>("[data-niceeval-renderer-loaded]")].some(
+          (loaded) => loaded.dataset.niceevalRendererLoaded === key,
+        );
+      if (!key || alreadyLoaded) {
+        asset.remove();
+        continue;
+      }
+      const loaded = asset.cloneNode(true) as HTMLLinkElement | HTMLScriptElement;
+      loaded.removeAttribute("data-niceeval-renderer-asset");
+      loaded.setAttribute("data-niceeval-renderer-loaded", key);
+      document.head.appendChild(loaded);
+      asset.remove();
+    }
+  }, [html]);
+  return <div ref={root} className="report-slot" dangerouslySetInnerHTML={markup} />;
 }
 
 /** `#/page/<id>` → tab 值;认不出返回 null(交给初始页兜底)。 */

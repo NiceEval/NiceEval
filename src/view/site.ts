@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { loadViewScan, type ResolvedHeadTag, type ViewScan, type ViewScanOptions } from "./data.ts";
 import { localizeText } from "../report/runtime/host.ts";
 import type { ReportLocale } from "../report/model/locale.ts";
+import type { PageRendererAssets } from "../report/extension/types.ts";
 import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
 import type { AttemptHandle } from "../record/index.ts";
 import type { AttemptLocator } from "../record/locator.ts";
@@ -69,6 +70,53 @@ export interface SitePlanOptions {
 // 在证据位置如实显示缺失;o11y.json 永不进产物——报告数字已烘进 HTML,浏览器不读它)。
 const RAW_COPY_ARTIFACTS = ["commands.json", "events.json", "trace.json", "diff.json"];
 
+function registerRendererAssets(assets: PageRendererAssets, files: Map<string, SiteFile>): void {
+  const decoder = new TextDecoder();
+  for (const asset of [...assets.styles, ...assets.scripts]) {
+    if (files.has(asset.path)) continue;
+    files.set(asset.path, {
+      path: asset.path,
+      contentType: asset.kind === "style" ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8",
+      source: { kind: "content", body: decoder.decode(asset.content) },
+    });
+  }
+}
+
+function rendererAssetTags(assets: PageRendererAssets, prefix = ""): string {
+  const styles = assets.styles.map(
+    (asset) =>
+      `<link rel="stylesheet" data-niceeval-renderer-asset="style:${asset.hash}" href="${prefix}${asset.path}">`,
+  );
+  const scripts = assets.scripts.map(
+    (asset) =>
+      `<script data-niceeval-renderer-asset="script:${asset.hash}" src="${prefix}${asset.path}"></script>`,
+  );
+  return [...styles, ...scripts].join("");
+}
+
+async function renderReportBlock(
+  scan: ViewScan,
+  files: Map<string, SiteFile>,
+  pageId: string,
+  locale: ReportLocale,
+): Promise<string> {
+  const [html, assets] = await Promise.all([
+    scan.reportPages.render(pageId, locale),
+    scan.reportPages.assets(pageId),
+  ]);
+  registerRendererAssets(assets, files);
+  return `${rendererAssetTags(assets)}${html}`;
+}
+
+/** 本地重建推送与站点文件入口共用：先登记当前 page 的资产，再返回同一份报告块字节。 */
+export async function renderSiteReportBlock(
+  plan: SitePlan,
+  pageId: string,
+  locale: ReportLocale,
+): Promise<string> {
+  return renderReportBlock(plan.scan, plan.files, pageId, locale);
+}
+
 /**
  * 把结果根物化成站点产物清单。sources.json 是唯一的格式例外——盘上是去重后的引用
  * (`{path, sha256}[]`),必须经 `AttemptHandle.sources()` 解引用出完整内容(`{path, content}[]`)
@@ -90,7 +138,7 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}, site:
   const renderBlocks = async (
     wanted: readonly { id: string; locale: ReportLocale }[],
   ): Promise<{ id: string; locale: ReportLocale; html: string }[]> =>
-    Promise.all(wanted.map(async (b) => ({ ...b, html: await scan.reportPages.render(b.id, b.locale) })));
+    Promise.all(wanted.map(async (b) => ({ ...b, html: await renderReportBlock(scan, files, b.id, b.locale) })));
 
   if (prebake === "all") {
     files.set("index.html", {
@@ -111,7 +159,7 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}, site:
       files.set(path, {
         path,
         contentType: HTML_TYPE,
-        source: { kind: "lazy", produce: () => scan.reportPages.render(block.id, block.locale) },
+        source: { kind: "lazy", produce: () => renderReportBlock(scan, files, block.id, block.locale) },
       });
     }
   }
@@ -160,7 +208,10 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}, site:
       files.set(path, {
         path,
         contentType: HTML_TYPE,
-        source: { kind: "lazy", produce: () => renderAttemptDocument(scan, locator, handle, render, nestedHeadHtml) },
+        source: {
+          kind: "lazy",
+          produce: () => renderAttemptDocument(scan, locator, handle, render, nestedHeadHtml, files),
+        },
       });
     }
   }
@@ -391,10 +442,15 @@ async function renderAttemptDocument(
   scan: ViewScan,
   locator: AttemptLocator,
   handle: AttemptHandle,
-  render: (locator: AttemptLocator, handle: AttemptHandle) => Promise<{ en: string; "zh-CN": string }>,
+  render: (
+    locator: AttemptLocator,
+    handle: AttemptHandle,
+  ) => Promise<{ en: string; "zh-CN": string; assets: PageRendererAssets }>,
   headHtml: string,
+  files: Map<string, SiteFile>,
 ): Promise<string> {
   const content = await render(locator, handle);
+  registerRendererAssets(content.assets, files);
   const [reportStyles, reportEnhance] = await Promise.all([
     readFile(new URL("../report/assets/styles.css", import.meta.url), "utf-8"),
     readFile(new URL("../report/assets/enhance.js", import.meta.url), "utf-8"),
@@ -412,6 +468,7 @@ async function renderAttemptDocument(
     `<title>${escapeText(title)}</title>`,
     `<style>\n${reportStyles}\n</style>`,
     `<script>\n${reportEnhance}\n</script>`,
+    rendererAssetTags(content.assets, "../"),
     shellStyles,
     headHtml ? `\n${headHtml}` : "",
     "</head>",
@@ -423,25 +480,6 @@ async function renderAttemptDocument(
     "</body>",
     "</html>",
   ].join("\n");
-}
-
-/**
- * 独立渲染一个 locator 的 attempt 文档,不依赖已建好的站点清单——供本地 server 的「越过收窄」
- * 回退路由使用(docs/engineering/testing/unit/reports.md 第 198/220 行:本地宿主的 attempt
- * 详情路由对完整结果根解析,不受 `--exp`/eval 前缀收窄限制,与 `show @<locator>` 同一套「各自
- * 结果根语义寻址」)。头资产的物化路径由内容哈希确定性算出,这里用一个用后即弃的 Map 重新
- * 算一遍就够——真正的文件已经由主 plan(`planSite` 对 index.html 的物化)写过一次,不需要
- * 在这里重新登记。调用方(server.ts)负责先确认 `scan.attemptPages` 存在且这个 locator
- * 在里面能查到对应的 handle。
- */
-export async function renderStandaloneAttemptDocument(
-  scan: ViewScan,
-  locator: AttemptLocator,
-  handle: AttemptHandle,
-): Promise<string> {
-  const throwaway = new Map<string, SiteFile>();
-  const headHtml = await materializeHeadAssets(scan.shellAssets.head, throwaway, "../");
-  return renderAttemptDocument(scan, locator, handle, scan.attemptPages!.render, headHtml);
 }
 
 async function readViewAsset(name: string): Promise<string> {

@@ -918,7 +918,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-tooltip .niceeval-tooltip-meta { color: var(--muted); margin-top: 2px; }
 
 /* ---- Attempt 详情组件族 ---------------------------------------------------
-   这些规则属于 report web face，不属于 view dialog chrome：同一份 AttemptDetail
+   这些规则属于 report web face，不属于 view dialog chrome：同一份 AttemptDetails
    无论直接打开独立文档、塞进 view dialog，还是嵌入用户自己的 React 页面，都必须
    只靠 niceeval/report/react/styles.css 得到完整可读的结构化布局。 ---- */
 

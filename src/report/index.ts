@@ -132,7 +132,6 @@ export type {
   ResolveContext,
   ResolveEnv,
   SamplePageContext,
-  /** @deprecated */ ScopePageContext,
   TextContext,
   TextRenderOptions,
   WebContext,
@@ -145,7 +144,6 @@ export {
   Callouts,
   Chart,
   Col,
-  Column,
   Conversation,
   CopyBlock,
   DiffView,
@@ -180,7 +178,6 @@ export type {
   ChartFieldBinding,
   ChartSeriesOverride,
   ColProps,
-  ColumnProps,
   ConversationContent,
   ConversationEntry,
   ConversationProps,
@@ -214,9 +211,7 @@ export type {
   StatTone,
   StyleProps,
   TabProps,
-  TableColumn,
   TableProps,
-  TableRow,
   TabsProps,
   TextProps,
   WaterfallContent,
@@ -224,17 +219,11 @@ export type {
   WaterfallProps,
   WaterfallRow,
 } from "./definition/primitives.tsx";
-export type { Cell, ColumnSpec, TableContent, TableContentRow, VerdictCounts } from "./definition/cell.ts";
+export type { Cell, VerdictCounts } from "./definition/cell.ts";
 export { formatCellText } from "./definition/cell.ts";
 
-// 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):计算侧单点入口。
-export {
-  formatAxisTick,
-  formatMeasureValue,
-  measureDisplay,
-  missingText,
-} from "./model/format.ts";
-export type { MeasureDisplay } from "./model/format.ts";
+// 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):渲染侧单点入口。
+export { formatAxisTick, formatMetricValue, missingText } from "./model/format.ts";
 
 // 文本排版工具箱:自定义组件的 text 面用的就是官方组件那把尺子。
 // 表格有 <Table> 承担,这里只给表以外的形态用 —— 尤其别拿 String.prototype.padEnd 对齐:
@@ -255,8 +244,7 @@ export {
   DEFAULT_REPORT_LOCALE,
   localizedTextEquals,
   resolveLocalizedText,
-  resolveMeasureLabel,
-  resolveMeasureLabel as resolveMetricLabel,
+  resolveMetricLabel,
 } from "./model/locale.ts";
 export type { LocalizedText, ReportLocale } from "./model/locale.ts";
 
@@ -279,11 +267,10 @@ export { AttemptList, FailureList } from "./components/entity-lists/index.tsx";
 // Attempt 详情组合组件(docs/feature/reports/components/attempt-detail/README.md)。
 export {
   AttemptAssessment,
-  AttemptDetail,
   AttemptDetails,
   AttemptSummary,
 } from "./components/attempt-detail/index.tsx";
-export type { AttemptDetailsProps, AttemptSectionProps } from "./components/attempt-detail/index.tsx";
+export type { AttemptDetailsProps } from "./components/attempt-detail/index.tsx";
 
 // 数据契约(Content / Row / Cell 等;AttemptMetric/Dataset/Scoreboard 旧协议不从此处导出)
 export type {

@@ -3,24 +3,14 @@
 
 import type { MetricValue } from "../model/calculation.ts";
 import type { VerdictTally } from "../model/types.ts";
-import { formatMeasureValue, missingText } from "../model/format.ts";
+import { formatMetricValue } from "../model/format.ts";
 import { localeText, type ReportLocale } from "../model/locale.ts";
 
 export const MISSING_MARK = "—";
 
-function formatMetricValue(cell: MetricValue, locale: ReportLocale): string {
-  if (cell.value === null) return missingText("noSamples", locale);
-  if (cell.format && typeof cell.format === "object" && cell.format.kind === "custom") {
-    return cell.format.format(cell.value, locale);
-  }
-  const unit =
-    cell.format === "percent" ? "%" : cell.format === "currency" ? "$" : cell.format === "duration" ? "ms" : cell.unit;
-  return formatMeasureValue(cell.value, unit);
-}
-
 /** 格子的文本形态:渲染面按 unit/format 格式化;覆盖不全带 samples/total 角标。 */
 export function cellText(cell: MetricValue, locale: ReportLocale): string {
-  const display = formatMetricValue(cell, locale);
+  const display = formatMetricValue(cell.value, cell.unit, cell.format, locale);
   if (cell.value === null) return display;
   return cell.samples < cell.total ? `${display} ${cell.samples}/${cell.total}` : display;
 }

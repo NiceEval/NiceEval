@@ -48,7 +48,7 @@ describe("parseAttemptDocument", () => {
     expect(parseAttemptDocument(html)).toEqual({ en: "<p>hello</p>", "zh-CN": "<p>你好</p>" });
   });
 
-  it("内容里嵌套的 <div> 不会打断切分(现实里的 AttemptDetail 输出全是嵌套 div)", () => {
+  it("内容里嵌套的 <div> 不会打断切分(现实里的 AttemptDetails 输出全是嵌套 div)", () => {
     const html = fakeDocument(
       '<div class="niceeval-report niceeval-col"><div class="niceeval-attempt-summary">stuff</div></div>',
       '<div class="niceeval-report niceeval-col"><div class="niceeval-attempt-summary">东西</div></div>',

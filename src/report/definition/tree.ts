@@ -35,9 +35,6 @@ export interface SamplePageContext {
   input: "sample";
 }
 
-/** @deprecated 使用 `SamplePageContext` 与 `input: "sample"`。 */
-export type ScopePageContext = SamplePageContext;
-
 /** attempt-input page 的当前页上下文:按 locator 消费一份 AttemptEvidence。 */
 export interface AttemptPageContext {
   id: string;

@@ -10,13 +10,13 @@ import {
   DiffView,
   Grid,
   SourceView,
-  Table,
+  TableContentView,
   Waterfall,
 } from "../../definition/primitives.tsx";
 import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatPoints } from "../../model/format.ts";
 import { localeText } from "../../model/locale.ts";
-import { cx, type DataProps } from "../shared.ts";
+import { cx, type ValueProps } from "../shared.ts";
 import type { AttemptPageContext, SamplePageContext } from "../../definition/tree.ts";
 import {
   toAttemptAssertions,
@@ -58,7 +58,7 @@ function Kpi(props: { label: string; value: string }) {
   );
 }
 
-type SummaryProps = DataProps<AttemptSummaryData, globalThis.Record<never, never>, { className?: string }>;
+type SummaryProps = ValueProps<AttemptSummaryData, { className?: string }>;
 
 export const AttemptSummary = defineComponent<SummaryProps>({
   dimensions: () => ({}),
@@ -106,7 +106,7 @@ const ATTEMPT_CAPABILITY_LABEL: globalThis.Record<keyof AttemptSummaryData["capa
   diff: "diff",
 };
 
-type UsageProps = DataProps<UsageTableData | null, globalThis.Record<never, never>, { className?: string }>;
+type UsageProps = ValueProps<UsageTableData | null, { className?: string }>;
 
 const AttemptUsage = defineComponent<UsageProps>({
   dimensions: () => ({}),
@@ -184,7 +184,7 @@ export const AttemptAssessment = defineComponent<AttemptDetailsProps>(async (pro
       {hasSource ? (
         <SourceView data={await toAttemptSource(evidence)} />
       ) : (
-        <Table data={await toAttemptAssertions(evidence)} />
+        <TableContentView data={await toAttemptAssertions(evidence)} />
       )}
     </Col>
   );
@@ -220,8 +220,3 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
   );
 });
 AttemptDetails.displayName = "AttemptDetails";
-
-/** @deprecated 旧名；与 AttemptDetails 同一引用。 */
-export const AttemptDetail = AttemptDetails;
-
-export type AttemptSectionProps = AttemptDetailsProps;

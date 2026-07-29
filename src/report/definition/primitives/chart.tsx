@@ -10,7 +10,7 @@ import { countText, localeText, type ReportLocale as RL } from "../../model/loca
 import { formatAxisTick, shortestUniqueLabels } from "../../model/format.ts";
 import { axisScale, paddedAxisDomain, placePointLabels, tickStepOf } from "../../model/chart/math.ts";
 import { renderCharPlot, renderCoordinateTable } from "../../model/chart/plot.ts";
-import { dataShapeError, type DataProps } from "../../components/shared.ts";
+import { dataShapeError, type ValueProps } from "../../components/shared.ts";
 import { isDataset } from "../../model/dataset.ts";
 import {
   mapChartSeries,
@@ -49,11 +49,7 @@ export interface ChartPresentation {
   className?: string;
 }
 
-export type ChartProps = DataProps<
-  Dataset,
-  globalThis.Record<never, never>,
-  ChartPresentation & { x: ChartAxisBinding; y: ChartAxisBinding }
->;
+export type ChartProps = ValueProps<Dataset, ChartPresentation & { x: ChartAxisBinding; y: ChartAxisBinding }>;
 
 function assertDataset(data: unknown): Dataset {
   if (!isDataset(data)) {

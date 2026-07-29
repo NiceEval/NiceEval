@@ -3,7 +3,7 @@
 // (docs/feature/reports/components/summaries/stability-overview.md)。
 
 import { defineComponent } from "../../definition/tree.ts";
-import { Chart, Col, Grid, Series, Stat, Table } from "../../definition/primitives.tsx";
+import { Chart, Col, Grid, Series, Stat, TableContentView } from "../../definition/primitives.tsx";
 import type { Dataset, DimensionInput } from "../../model/types.ts";
 import type { Sample } from "../../../record/types.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
@@ -98,7 +98,7 @@ export const StabilityOverview = defineComponent<StabilityOverviewProps>(async (
         <Series id="failed" mark="bar" y="failed" stack="verdicts" />
         <Series id="errored" mark="bar" y="errored" stack="verdicts" />
       </Chart>
-      <Table data={content} locale={props.locale} />
+      <TableContentView data={content} locale={props.locale} />
     </Col>
   );
 });

@@ -1,6 +1,6 @@
 // unit 驱动的内置格式化(docs/feature/reports/library/presentation.md):
 //   "%" → 87%    "ms" → 1.2s    "$" → $0.31    其余 → 1.2k 缩写(带 unit 后缀)
-// AttemptMetric.display 可整体覆盖;公开入口是 measureDisplay / formatMeasureValue / formatAxisTick。
+// MetricValue.format 可覆盖；公开入口是 formatMetricValue / formatAxisTick。
 
 import type { Verdict } from "../../types.ts";
 import { gapParts } from "../../sample/index.ts";
@@ -11,9 +11,10 @@ import {
   type LocalizedText,
   type ReportLocale,
 } from "./locale.ts";
+import type { MetricFormat } from "./calculation.ts";
 
-/** `AttemptMetric.display` 覆盖回调:只格式化同一个终值,不改变口径。 */
-export type MeasureDisplay = (value: number, locale: ReportLocale) => string;
+/** 内部 AttemptMetric 显示覆盖：只格式化同一个终值，不改变口径。 */
+export type MetricDisplay = (value: number, locale: ReportLocale) => string;
 
 /**
  * 一组 id 的显示名：每个 id 缩成在这组里唯一的最短路径后缀，重名逐步加长到能区分为止
@@ -85,7 +86,7 @@ function formatDollars(abs: number): string {
  * 按 unit 折一个终值。unit 是量纲声明,也是格式化的唯一开关
  * (docs/feature/reports/library/presentation.md「unit 决定格式」)。
  */
-export function formatMeasureValue(value: number, unit?: string): string {
+function formatNumberWithUnit(value: number, unit?: string): string {
   const sign = value < 0 ? "-" : "";
   const abs = Math.abs(value);
   if (unit === "%") return `${sign}${trimmed(Math.round(abs * 1000) / 10)}%`;
@@ -95,8 +96,24 @@ export function formatMeasureValue(value: number, unit?: string): string {
   return unit ? `${sign}${n} ${unit}` : `${sign}${n}`;
 }
 
-/** @deprecated 用 {@link formatMeasureValue}。内部别名,不进公开面。 */
-export const formatMetricValue = formatMeasureValue;
+/**
+ * 在 renderer 内按当前 locale 格式化一个 MetricValue 终值。
+ * 结果不写回 MetricValue；text/web 两面各自调用同一函数。
+ */
+export function formatMetricValue(
+  value: number | null,
+  unit?: string,
+  format?: MetricFormat,
+  locale: ReportLocale = DEFAULT_REPORT_LOCALE,
+): string {
+  if (value === null) return missingText("noSamples", locale);
+  if (format && typeof format === "object" && format.kind === "custom") {
+    return format.format(value, locale);
+  }
+  const resolvedUnit =
+    format === "percent" ? "%" : format === "currency" ? "$" : format === "duration" ? "ms" : unit;
+  return formatNumberWithUnit(value, resolvedUnit);
+}
 
 /**
  * 轴刻度标签:精度按刻度步长自适应。契约(metric-views.md「图轴值域」)要求「标签始终显示
@@ -105,32 +122,28 @@ export const formatMetricValue = formatMeasureValue;
  * toFixed(⌈-log10(step)⌉) 恒精确),再裁掉尾零;步长不可用(单刻度)回退通用格式化。
  */
 export function formatAxisTick(value: number, step: number, unit?: string): string {
-  if (!(step > 0) || !Number.isFinite(step)) return formatMeasureValue(value, unit);
+  if (!(step > 0) || !Number.isFinite(step)) return formatNumberWithUnit(value, unit);
   // 精度 = 步长自身的十进制小数位数(nice 步长是 1/2/2.5/5×10^k,如 0.25 需要 2 位,不是 ⌈-log10⌉ 的 1 位)。
   let decimals = 0;
   while (decimals < 10 && Math.abs(Math.round(step * 10 ** decimals) - step * 10 ** decimals) > 1e-9 * 10 ** decimals) decimals++;
-  if (decimals === 0) return formatMeasureValue(value, unit);
+  if (decimals === 0) return formatNumberWithUnit(value, unit);
   // 精确到步长的定点展示,去尾零——整齐刻度是 1/2/5×10^k,toFixed(⌈-log10(step)⌉) 恒无损。
   const fixed = (n: number, d: number) => n.toFixed(d).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   const sign = value < 0 ? "-" : "";
   const abs = Math.abs(value);
   if (unit === "%") return `${sign}${fixed(abs * 100, Math.max(0, decimals - 2))}%`;
-  if (unit === "ms") return formatMeasureValue(value, unit);
+  if (unit === "ms") return formatNumberWithUnit(value, unit);
   if (unit === "$") return `${sign}$${fixed(abs, decimals)}`;
   return unit ? `${sign}${fixed(abs, decimals)} ${unit}` : `${sign}${fixed(abs, decimals)}`;
 }
 
-/** @deprecated 用 {@link formatAxisTick}。内部别名,不进公开面。 */
-export const formatTickValue = formatAxisTick;
-
 /**
- * 生成 `MetricValue.display`:计算侧唯一入口。null → 缺数据文案;override 覆盖内建 unit 格式。
- * (docs/feature/reports/library/presentation.md「格式化只发生一次」)。
+ * 内部旧切片把格式化结果投影进 Content 时使用；公共 MetricValue 不携带 display。
  */
-export function measureDisplay(
+export function metricDisplay(
   value: number | null,
   unit?: string,
-  override?: MeasureDisplay,
+  override?: MetricDisplay,
 ): LocalizedText {
   if (value === null) {
     return localizedDisplay((locale) => localeText(locale, "cell.missing"));
@@ -138,7 +151,7 @@ export function measureDisplay(
   if (override) {
     return localizedDisplay((locale) => override(value, locale));
   }
-  return formatMeasureValue(value, unit);
+  return formatMetricValue(value, unit);
 }
 
 /** missing 格内建 code → locale 词典 key。词表未命中时 missingText 原样返回 code。 */
@@ -157,11 +170,7 @@ export function missingText(code: string, locale: ReportLocale = DEFAULT_REPORT_
   return key ? localeText(locale, key) : code;
 }
 
-/**
- * MetricCell.display 的生成:为官方生成面覆盖的每个 locale(DISPLAY_LOCALES)各生成一份;
- * 全部相同(内置 unit 格式化都是 locale 无关的)时折叠成单个字符串,renderer 按
- * LocalizedText 回退规则选择。`make` 抛错由调用方(computeCell)带 metric 上下文包装。
- */
+/** 内部旧切片生成 LocalizedText；公共 MetricValue 不走这条路径。 */
 export function localizedDisplay(make: (locale: ReportLocale) => string): LocalizedText {
   const entries = DISPLAY_LOCALES.map((locale) => [locale, make(locale)] as const);
   const first = entries[0]![1];
@@ -194,8 +203,8 @@ export function formatPoints(points: number): string {
   return `${formatPlainNumber(points)} ${points === 1 ? "pt" : "pts"}`;
 }
 
-// ── 以下是两个渲染面共用的展示格式化:MetricCell 一律自带 display(格式化发生在
-//    计算侧),渲染面不重算;这里只服务 OverviewData 这类携带裸数字的字段。──
+// ── 以下是旧切片 Content 的内部展示辅助；公共 MetricValue 由 renderer 调
+//    formatMetricValue，不携带预生成 display。──
 
 /** 毫秒 → 人读耗时("850ms" / "1.2s" / "4m 20s" / "1h 4m")。 */
 export function formatDurationMs(ms: number): string {

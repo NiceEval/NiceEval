@@ -81,7 +81,7 @@ import { defineRenderer } from "niceeval/report/extension";
 export const Heatmap = defineRenderer({
   assets: {
     styles: ["./heatmap.css"],
-    scripts: ["./heatmap.enhance.ts"],
+    scripts: ["./heatmap.enhance.js"],
   },
   text(value: HeatmapValue, options, context) {
     return renderTextHeatmap(value, options, context);
@@ -89,14 +89,14 @@ export const Heatmap = defineRenderer({
   web(value: HeatmapValue, options, context) {
     return <WebHeatmap value={value} options={options} />;
   },
-});
+}, import.meta.url);
 ```
 
 renderer 接已计算好的普通值。`text` 与 `web` 都是必填项；
 两面不能重新取数、读取 Sample 或改变终值。
 若 web 交互没有诚实的 text 降级，它属于宿主能力，不是组件。
 
-资产路径相对 renderer 定义文件解析。
+声明资产时第二个参数必须传定义文件的 `import.meta.url`；资产路径相对该文件解析。
 运行时按页面实际使用情况收集、按内容哈希物化，并以稳定顺序注入。
 JavaScript 只能渐进增强，不能让初始 HTML 缺失数据。
 

@@ -8,7 +8,13 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import type { AttemptLocator } from "../../record/locator.ts";
-import { COMPONENT_RAW_CHILDREN, COMPONENT_ROLE, defineComponent, type ReportNode } from "./tree.ts";
+import {
+  COMPONENT_RAW_CHILDREN,
+  COMPONENT_ROLE,
+  defineComponent,
+  type ReportComponent,
+  type ReportNode,
+} from "./tree.ts";
 import { localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../model/locale.ts";
 import { indentBlock, joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
 import type { ColumnAlign } from "../model/text-layout.ts";
@@ -467,27 +473,8 @@ export interface TableRow {
   locator?: AttemptLocator;
 }
 
-/** `<Column>` 结构节点:只携带 props,由 Table 解释。 */
-export interface ColumnProps {
-  dataKey: string;
-  header?: LocalizedText;
-  align?: "left" | "right";
-  better?: "higher" | "lower";
-  maxLines?: number;
-}
-
-export const Column = defineComponent<ColumnProps>({
-  dimensions: () => ({}),
-  web: () => null,
-  text: () => "",
-});
-Column.displayName = "Column";
-
 export interface TablePresentation {
-  children?: ReportNode;
   sort?: string;
-  /** @deprecated 用 searchable；与 docs searchable 同义。 */
-  filter?: boolean;
   searchable?: boolean;
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
@@ -504,50 +491,22 @@ export type PlainTableColumn<Row extends object = globalThis.Record<string, unkn
     };
 
 /**
- * Table props：契约主轨是普通 `rows`（AggregateRow / EvidenceRow / 实体投影）。
- * `data: TableContent | Dataset` 仍供内部实体列表 Content 适配；legacy 字符串格 columns+rows 过渡保留。
+ * Table 的公开 props：普通 `rows`（AggregateRow / EvidenceRow / 实体投影）。
  */
-export type TableProps<Row extends object = globalThis.Record<string, unknown>> =
-  | ({
-      rows: readonly Row[];
-      columns?: readonly PlainTableColumn<Row>[];
-      data?: never;
-    } & TablePresentation)
-  | ({
-      data: TableContent | Dataset | null;
-      columns?: never;
-      rows?: never;
-    } & TablePresentation)
-  | ({
-      columns: readonly [TableColumn, ...TableColumn[]];
-      rows: readonly TableRow[];
-      data?: never;
-      children?: never;
-      sort?: never;
-      filter?: never;
-      searchable?: never;
-      attemptHref?: never;
-    } & Pick<TablePresentation, "locale" | "className">);
+export type TableProps<Row extends object = globalThis.Record<string, unknown>> = {
+  rows: readonly Row[];
+  columns?: readonly PlainTableColumn<Row>[];
+} & TablePresentation;
 
-function isLegacyStringTableProps(
-  props: TableProps,
-): props is Extract<TableProps, { columns: readonly [TableColumn, ...TableColumn[]] }> {
-  const columns = (props as { columns?: unknown }).columns;
-  if (!Array.isArray(columns) || columns.length === 0) return false;
-  const first = columns[0];
-  return (
-    first !== null &&
-    typeof first === "object" &&
-    "key" in first &&
-    "header" in first &&
-    !("field" in first)
-  );
-}
+/** 官方组合组件内部的富 Cell 适配面；不从 niceeval/report 导出。 */
+export type TableContentViewProps = {
+  data: TableContent | Dataset | null;
+} & TablePresentation;
 
-function isPlainRowsTableProps(props: TableProps): props is Extract<TableProps, { rows: readonly object[] }> & {
-  data?: never;
-} {
-  return Array.isArray((props as { rows?: unknown }).rows) && !("data" in props && (props as { data?: unknown }).data !== undefined) && !isLegacyStringTableProps(props);
+type TableImplementationProps = TableProps | TableContentViewProps;
+
+function isPlainRowsTableProps(props: TableImplementationProps): props is TableProps {
+  return "rows" in props;
 }
 
 function isLocalizedTextValue(value: unknown): value is LocalizedText {
@@ -647,24 +606,6 @@ function plainRowsToTableContent(
   return { columns, rows: contentRows };
 }
 
-function columnNodesOf(children: ReportNode | undefined): ColumnProps[] {
-  if (children === null || children === undefined || typeof children === "boolean") return [];
-  const out: ColumnProps[] = [];
-  const visit = (node: unknown): void => {
-    if (node === null || node === undefined || typeof node === "boolean") return;
-    if (Array.isArray(node)) {
-      for (const child of node) visit(child);
-      return;
-    }
-    if (typeof node === "object" && node !== null && "type" in node && "props" in node) {
-      const el = node as { type: unknown; props: ColumnProps };
-      if (el.type === Column) out.push(el.props);
-    }
-  };
-  visit(children);
-  return out;
-}
-
 function defaultTableHeader(key: string, locale: ReportLocale): LocalizedText {
   const dictionary: globalThis.Record<string, Parameters<typeof localeText>[1]> = {
     entity: "experimentList.experiment",
@@ -684,14 +625,11 @@ function defaultTableHeader(key: string, locale: ReportLocale): LocalizedText {
   return message ? localeText(locale, message) : key;
 }
 
-function resolveTableContent(props: TableProps, locale: ReportLocale): {
+function resolveTableContent(props: TableImplementationProps, locale: ReportLocale): {
   columns: TableColumn[];
   rows: TableRow[];
   content: TableContent | null;
 } {
-  if (isLegacyStringTableProps(props)) {
-    return { columns: [...props.columns], rows: [...props.rows], content: null };
-  }
   if (isPlainRowsTableProps(props)) {
     const specs = resolvePlainColumnSpecs(props.rows as readonly globalThis.Record<string, unknown>[], props.columns as readonly PlainTableColumn[] | undefined);
     const content = plainRowsToTableContent(
@@ -712,28 +650,19 @@ function resolveTableContent(props: TableProps, locale: ReportLocale): {
       content,
     };
   }
-  const raw = (props as { data?: TableContent | Dataset | null }).data ?? null;
+  const raw = props.data;
   const content = raw === null ? null : isDataset(raw) ? datasetToTableContent(raw) : raw;
   if (content === null) return { columns: [], rows: [], content: null };
-  const overrides = columnNodesOf((props as TablePresentation).children);
-  const specs: ColumnSpec[] = overrides.length > 0
-    ? overrides.map((c) => ({ key: c.dataKey, better: c.better }))
-    : [...content.columns];
-  const headers = new Map(
-    overrides.map((c) => [c.dataKey, c.header ?? c.dataKey] as const),
-  );
-  const aligns = new Map(overrides.map((c) => [c.dataKey, c.align] as const));
-  const maxLines = new Map(overrides.map((c) => [c.dataKey, c.maxLines] as const));
+  const specs: ColumnSpec[] = [...content.columns];
   const flat = flattenTableContentForText(
     { columns: specs, rows: content.rows },
     locale,
   );
   const columns: TableColumn[] = specs.map((spec) => ({
     key: spec.key,
-    header: headers.get(spec.key) ?? defaultTableHeader(spec.key, locale),
-    align: aligns.get(spec.key) ?? (spec.better ? "right" : "left"),
+    header: defaultTableHeader(spec.key, locale),
+    align: spec.better ? "right" : "left",
     better: spec.better,
-    maxLines: maxLines.get(spec.key),
   }));
   if (columns.length === 0) return { columns: [], rows: [], content };
   return {
@@ -749,7 +678,7 @@ function validateResolvedTable(
   hierarchyRows?: readonly TableContentRow[],
 ): void {
   if (columns.length === 0) {
-    throw new Error("Table needs at least one column: pass columns or a TableContent with columns, or <Column dataKey> children.");
+    throw new Error("Table needs at least one column: pass columns, or provide rows whose first item has visible fields.");
   }
   const keys = new Set<string>();
   for (const column of columns) {
@@ -941,17 +870,16 @@ function renderFlatContentRowsWeb(
 }
 
 /**
- * 行 × 列原语:新形态吃 TableContent(source/data + Cell + subRows + placeholder);
- * 旧形态 columns/rows 字符串格仍可用(faces.ts / 过渡测试)。
+ * 行 × 列原语：公开面吃普通 rows；内部组合组件经 TableContentView 复用同一双面实现。
  */
-export const Table = defineComponent<TableProps>({
+const TableImplementation = defineComponent<TableImplementationProps>({
   dimensions: () => ({}),
   web(props, ctx) {
     const locale = props.locale ?? ctx.locale;
     const resolved = resolveTableContent(props, locale);
     validateResolvedTable(resolved.columns, resolved.rows, resolved.content?.rows);
     const alignClass = (align?: ColumnAlign) => (align === "right" ? "niceeval-align-right" : undefined);
-    const attemptHref = !isLegacyStringTableProps(props) ? props.attemptHref ?? ctx.attemptHref : ctx.attemptHref;
+    const attemptHref = props.attemptHref ?? ctx.attemptHref;
     if (resolved.content) {
       const hierarchical = resolved.content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
       const table = (
@@ -997,7 +925,7 @@ export const Table = defineComponent<TableProps>({
           )}
         </table>
       );
-      const searchable = !isLegacyStringTableProps(props) && (props.searchable === true || props.filter === true);
+      const searchable = props.searchable === true;
       if (!searchable) return table;
       return (
         <div className="niceeval-report niceeval-table-wrap">
@@ -1071,6 +999,12 @@ export const Table = defineComponent<TableProps>({
     );
   },
 });
+type TableComponent = ReportComponent<TableProps> & {
+  <Row extends object>(props: TableProps<Row>): ReactNode;
+};
+
+export const Table = TableImplementation as TableComponent;
+export const TableContentView = TableImplementation as ReportComponent<TableContentViewProps>;
 Table.displayName = "Table";
 
 export { Waterfall, waterfallText } from "./primitives/waterfall.tsx";

@@ -58,36 +58,23 @@ export type {
   ExperimentListEvalRow,
   ExperimentListItem,
   HeroData,
-  LineData,
-  MatrixData,
   MetricColumn,
   MetricValue,
   SampleSummaryContent,
   SampleIssue,
-  ScoreboardData,
-  ScatterData,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
-  StabilityMatrixCell,
-  StabilityMatrixData,
-  TableData,
   TraceSpanSummary,
   TraceWaterfallRow,
   UsageTableData,
   VerdictTally,
 } from "../model/types.ts";
-export type { Cell, ColumnSpec, TableContent, TableContentRow, VerdictCounts } from "../definition/cell.ts";
+export type { Cell, VerdictCounts } from "../definition/cell.ts";
 export { formatCellText } from "../definition/cell.ts";
 export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../../record/attempt-evidence.ts";
 
-// 格式化与呈现工具箱前四组(docs/feature/reports/library/presentation.md):自有 React 页面与报告面同实现。
-export {
-  formatAxisTick,
-  formatMeasureValue,
-  measureDisplay,
-  missingText,
-} from "../model/format.ts";
-export type { MeasureDisplay } from "../model/format.ts";
+// 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):自有 React 页面与报告面同实现。
+export { formatAxisTick, formatMetricValue, missingText } from "../model/format.ts";
 export { presentDimension, shortestUniqueLabels } from "../presentation.ts";
 export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "../presentation.ts";
 
@@ -96,7 +83,6 @@ export {
   DEFAULT_REPORT_LOCALE,
   localizedTextEquals,
   resolveLocalizedText,
-  resolveMeasureLabel,
-  resolveMeasureLabel as resolveMetricLabel,
+  resolveMetricLabel,
 } from "../model/locale.ts";
 export type { LocalizedText, ReportLocale } from "../model/locale.ts";

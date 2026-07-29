@@ -59,7 +59,7 @@ import {
   type Item,
 } from "../model/aggregate.ts";
 import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore as totalScoreMetric } from "../model/metrics.ts";
-import { formatMeasureValue, formatPlainNumber, formatPoints } from "../model/format.ts";
+import { formatMetricValue, formatPlainNumber, formatPoints } from "../model/format.ts";
 import type { LocalizedText } from "../model/locale.ts";
 import { selectedAttemptsOnly } from "../components/shared-compute.ts";
 import { datasetToTableData, metricFieldOf } from "../model/dataset.ts";
@@ -402,7 +402,7 @@ export async function scoreboardData(input: ReportInput, options: ScoreboardOpti
 /** 分科显示:earned / possible 与同尺度百分比。 */
 function subjectDisplay(earned: number, possible: number): LocalizedText {
   const ratio = possible === 0 ? 0 : earned / possible;
-  return `${formatPlainNumber(earned)}/${formatPlainNumber(possible)} (${formatMeasureValue(ratio, "%")})`;
+  return `${formatPlainNumber(earned)}/${formatPlainNumber(possible)} (${formatMetricValue(ratio, "%")})`;
 }
 
 export interface MetricScatterOptions {
@@ -499,7 +499,7 @@ export async function metricLineData(input: ReportInput, options: MetricLineOpti
       key: bucket.x === null ? "null" : String(bucket.x),
       ...(bucket.series !== undefined ? { series: bucket.series } : {}),
       x: bucket.x,
-      xDisplay: bucket.x === null ? "—" : formatMeasureValue(bucket.x, options.x.unit),
+      xDisplay: bucket.x === null ? "—" : formatMetricValue(bucket.x, options.x.unit),
       y: await computeCell(options.y, bucket.items),
     });
   }

@@ -15,7 +15,14 @@ import { watch, type FSWatcher } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { type LoadedDefinitions, type ViewScanOptions } from "./data.ts";
-import { planSite, readSiteFile, reportBlockPath, SITE_LOCALES, type SitePlan } from "./site.ts";
+import {
+  planSite,
+  readSiteFile,
+  renderSiteReportBlock,
+  reportBlockPath,
+  SITE_LOCALES,
+  type SitePlan,
+} from "./site.ts";
 import type { ReportLocale } from "../report/model/locale.ts";
 import { isHostModulePath } from "../report/runtime/host.ts";
 import { formatThrown } from "../util.ts";
@@ -273,7 +280,7 @@ export async function startViewServer(opts: ViewOptions = {}): Promise<ViewServe
         continue;
       }
       try {
-        const html = await plan.scan.reportPages.render(page, client.locale);
+        const html = await renderSiteReportBlock(plan, page, client.locale);
         push(client, "patch", { viewData: plan.scan.viewData, page, locale: client.locale, html });
       } catch (e) {
         push(client, "error", formatThrown(e));

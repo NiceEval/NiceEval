@@ -502,10 +502,13 @@ export async function aggregate<
         );
       }
     }
-    const groupKey = Object.entries(keys)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}=${v}`)
-      .join("\0");
+    // 分组函数允许返回任意字符串，不能用 NUL / "=" 自制分隔协议：合法值本身可含这些字符，
+    // 两组不同坐标会因此静默撞成一行。排序后的 tuple JSON 是无歧义身份。
+    const groupKey = JSON.stringify(
+      Object.keys(keys)
+        .sort()
+        .map((field) => [field, keys[field]]),
+    );
     let group = groups.get(groupKey);
     if (!group) {
       group = { keys, units: [] };

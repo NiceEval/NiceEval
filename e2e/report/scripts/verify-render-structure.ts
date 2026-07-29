@@ -93,7 +93,7 @@ const AGENT = {
   deliberateError: "results-deliberate-error",
 } as const;
 
-/** AttemptDetail 声明的区块顺序(完整出处见 docs/feature/reports/components/attempt-detail/attempt-detail.md):
+/** AttemptDetails 声明的区块顺序(完整出处见 docs/feature/reports/components/attempt-detail/attempt-detail.md):
  * Summary、Assessment(先 Error,再 Source-or-Assertions)、FixPrompt、Timeline、
  * Diagnostics、Usage、Conversation(仅当 source 尚未包含时才出现)、Trace、Diff。 */
 const ATTEMPT_DETAIL_ORDER = [
@@ -152,8 +152,8 @@ function assertSubsequenceOfCanonicalOrder(present: string[], context: string): 
   let lastIdx = -1;
   for (const block of present) {
     const idx = ATTEMPT_DETAIL_ORDER.indexOf(block);
-    assert.ok(idx >= 0, `${context}: rendered block "${block}" isn't in AttemptDetail's canonical block set`);
-    assert.ok(idx > lastIdx, `${context}: block "${block}" rendered out of AttemptDetail's declared order (docs/feature/reports/components/attempt-detail/attempt-detail.md), full order: ${present.join(" -> ")}`);
+    assert.ok(idx >= 0, `${context}: rendered block "${block}" isn't in AttemptDetails's canonical block set`);
+    assert.ok(idx > lastIdx, `${context}: block "${block}" rendered out of AttemptDetails's declared order (docs/feature/reports/components/attempt-detail/attempt-detail.md), full order: ${present.join(" -> ")}`);
     lastIdx = idx;
   }
 }
@@ -165,7 +165,7 @@ function extractTemplate(indexHtml: string, templateId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// 结构 (1/3):AttemptDetail 区块的出现/顺序/零输出、默认展开的 <details>、expected/received
+// 结构 (1/3):AttemptDetails 区块的出现/顺序/零输出、默认展开的 <details>、expected/received
 // 文本、locator 链接 + drill-down 命令。
 // ---------------------------------------------------------------------------
 
@@ -291,7 +291,7 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
     }
   }
 
-  // attempt detail 文档没有 Hero(standardAttemptPage 的内容就是裸的 <AttemptDetail/>)
+  // attempt detail 文档没有 Hero(standardAttemptPage 的内容就是裸的 <AttemptDetails/>)
   // -> 品牌链接实际的 <a> 标签在那里必须不存在,尽管共享样式表里那条没用到的
   // .niceeval-powered-by CSS 规则依然会被打包进每份文档。
   for (const locator of [evidence.main.attempts[0]!.locator, evidence.deliberateFail.attempt.locator, evidence.deliberateError.attempt.locator]) {

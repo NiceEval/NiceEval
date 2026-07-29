@@ -109,7 +109,7 @@
     "docs:reference": "tsx scripts/generate-reference.ts",
     "tiers:sync": "node scripts/sync-tiers.mjs sync",
     "view:build": "vite build --config src/view/app/vite.config.ts",
-    "build:report": "tsc -p tsconfig.report-build.json && node scripts/prune-report-dist.mjs",
+    "build:report": "node scripts/prune-report-dist.mjs --clean && tsc -p tsconfig.report-build.json && node scripts/prune-report-dist.mjs",
     "build:index": "tsx scripts/generate-reference.ts --bundled-index",
     "prepare": "pnpm run view:build && pnpm run build:report && pnpm run build:index",
     "site:dev": "cd site && node scripts/dev.mjs",

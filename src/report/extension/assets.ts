@@ -21,7 +21,7 @@ import type { MaterializedRendererAsset, PageRendererAssets, RendererAssetPaths 
 
 const ASSET_EXT = {
   style: new Set([".css"]),
-  script: new Set([".js", ".mjs", ".ts", ".tsx"]),
+  script: new Set([".js", ".mjs"]),
 } as const;
 
 function assertLocalAssetPath(src: string, where: string): void {
