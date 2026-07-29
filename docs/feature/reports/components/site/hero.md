@@ -1,33 +1,28 @@
 # `Hero`
 
-页首的站点标题区：标题、最后运行时间、Run 合成来源，恒含品牌行。它是官方组合组件（与 [`FailureList`](../summaries/failure-list.md) 同族的成品，没有私有能力）：标题缺省取 `ctx.report.title`——规范化声明里走完回退链（`def.title` → 唯一 Run `name` → 内置文案）的站点标题，与浏览器标题同源；运行 meta 取自宿主注入的 Sample。内部严格等价于手写组合：
+`Hero` 显示站点标题、最后运行时间、Run 合成来源与品牌行。
+它接 page render 已经投影好的 provenance：
 
 ```tsx
-const Hero = defineComposition(async ({ title, className }: HeroProps, ctx) => (
-  <HeroCard
-    title={title ?? ctx.report.title}
-    data={(await ctx.resolve(sources.sample.snapshot)).provenance}
-    className={className}
-  />
-));
+<Hero
+  title={reportTitle}
+  provenance={toSampleProvenance(sample)}
+/>
 ```
 
 ```ts
 interface HeroProps {
-  /** 覆盖标题；省略时取 ctx.report.title（回退链后的站点标题）。 */
-  title?: LocalizedText;
+  title: LocalizedText;
+  provenance: SampleProvenance;
   className?: string;
 }
 ```
 
-```tsx
-<Hero />                          // 标题跟随站点声明
-<Hero title="Memory Evals" />     // 显式标题
-```
-
-读 `ctx.report` 意味着 `Hero` 的输出跟随站点（[契约](../../library/shell.md#行为约束)）；要站点无关的标题区，直接用 [`HeroCard`](hero-card.md) 显式传值。
+标题回退由内建 page 任务函数完成。
+`Hero` 不读取报告外壳、Sample 或运行期 context；
+需要站点无关的标题区可以直接使用 [`HeroCard`](hero-card.md)。
 
 ## 相关阅读
 
-- [站点组件](README.md) —— 这一族为什么不收结构子节点。
-- [`HeroCard`](hero-card.md) —— 本组件的渲染件。
+- [站点组件](README.md)
+- [`HeroCard`](hero-card.md)

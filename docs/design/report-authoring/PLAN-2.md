@@ -1,4 +1,4 @@
-# 方案 2：通用原语 + 类型化数据源（推荐）
+# 方案 2：通用原语 + 类型化数据源
 
 > 后续收敛：最终协议以 [DECISION](DECISION.md) 为准。取数只有 `Source<Input extends SourceInput,
 > Content>` 一个协议，表格默认列进入 `TableContent`；Component 没有 `resolve`，运行期编排归

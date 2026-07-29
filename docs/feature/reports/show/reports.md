@@ -57,7 +57,7 @@ $ niceeval show @1qrdcfq8 --report reports/site.tsx      # 自定义参数化 pa
 $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可用
 ```
 
-报告没声明 attempt-input page 时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。要沿用官方详情，显式 `extends: standard`，或把 `standardAttemptPage` 放进自己的 pages；要自定义就声明同类 page 并重组它的 content。
+报告没声明 attempt-input page 时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。要沿用官方详情，把 `standardAttemptPage` 放进自己的 pages；要自定义就声明同类 page 并重组它的 content。
 
 ## Case 6：内建等价文件
 

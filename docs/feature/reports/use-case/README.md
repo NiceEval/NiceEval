@@ -16,14 +16,14 @@
 ## [分析](分析/README.md)
 
 - [先证明数据范围值得相信](分析/核对样本完整性.md) —— `SampleNotices` / `RunNotices` /
-  `SampleSummary` / `sources.entity.experiments`。
+  `SampleSummary` / `toExperimentRows(sample)`。
 - [从终端做跨条件归因](分析/终端跨条件归因.md) —— 多 `--exp` 对照矩阵 / `--usage` / `--grep` / `--json`。
-- [比较质量、成本与前沿](分析/比较质量与成本.md) —— `SampleOverview` / `Chart` 的 scatter mark /
-  `sources.measure.rows`。
-- [固定题集做考试成绩单](分析/固定题集成绩单.md) —— `sources.measure.scoreboard(...)`。
-- [分数低时区分任务失败与执行失败](分析/诊断可靠性.md) —— `sources.measure.rows` + 三种通过率。
-- [定位「哪道题 × 哪个配置」出问题](分析/定位配置与评测交互.md) —— `sources.measure.matrix` / `Chart` 的 bar mark。
-- [比较基线与候选的成对差异](分析/测量成对差异.md) —— `sources.measure.delta`。
+- [比较质量、成本与前沿](分析/比较质量与成本.md) —— 首页任务函数的质量成本 points / `Chart` 的
+  scatter mark / `aggregate()`。
+- [固定题集做考试成绩单](分析/固定题集成绩单.md) —— 报告旁成绩单函数。
+- [分数低时区分任务失败与执行失败](分析/诊断可靠性.md) —— `aggregate()` + 三种通过率。
+- [定位「哪道题 × 哪个配置」出问题](分析/定位配置与评测交互.md) —— `aggregate()` 后的矩阵与 `Bars`。
+- [比较基线与候选的成对差异](分析/测量成对差异.md) —— `comparisonResult()`。
 - [扫描参数档位的趋势与拐点](分析/扫描参数趋势.md) —— 数值轴 `Chart` 的 line mark。
 - [跟踪一个 Experiment 的历次 Run](分析/跟踪实验历史.md) —— `record.experiments` + run 维度。
 
@@ -32,9 +32,9 @@
 - [用 artifact 定义业务读数](构建报告/定义业务读数.md) —— `defineMeasure` / 自定义维度。
 - [从单页报告升级为多页站点](构建报告/构建多页报告.md) —— `defineReport` / pages / attempt-input page。
 - [把 NiceEval 读数和外部业务数据放进同一张表](构建报告/接入外部业务数据.md) —— `--data` 快照 /
-  `defineComposition` / `ctx.data`。
+  page render 的 External 参数。
 - [自己写报告组件：规范与取主题色](构建报告/自定义组件/) —— `defineComponent` 双面协议 /
-  `defineComposition` / `ctx.dimension`。
+  `defineRenderer()` 与视觉身份 context。
 
 ## [交付报告](交付报告/README.md)
 
@@ -54,18 +54,18 @@
 | 能力 | 主用例 |
 |---|---|
 | `FailureList` / `SampleFixPrompt` / `AttemptDetail` | [修失败](调试/整理失败清单.md) |
-| `Waterfall` / `sources.sample.traces` 的显著性折叠 | [瀑布定位耗时](调试/从瀑布定位耗时.md) |
-| `SampleOverview` / `Chart` 的 scatter mark | [质量 × 成本](分析/比较质量与成本.md) |
-| `sources.measure.scoreboard(...)` | [固定题集考试](分析/固定题集成绩单.md) |
-| `sources.measure.rows` | [可靠性诊断](分析/诊断可靠性.md) · [质量 × 成本](分析/比较质量与成本.md) |
-| `sources.measure.matrix` / `Chart` 的 bar mark | [配置 × Eval 定位](分析/定位配置与评测交互.md) |
-| `sources.measure.delta` | [A/B 成对差异](分析/测量成对差异.md) |
+| `Waterfall` / `toTraceNodes(sample)` 的显著性折叠 | [瀑布定位耗时](调试/从瀑布定位耗时.md) |
+| 首页任务函数的质量成本 points / `Chart` 的 scatter mark | [质量 × 成本](分析/比较质量与成本.md) |
+| 报告旁成绩单函数 | [固定题集考试](分析/固定题集成绩单.md) |
+| `aggregate()` | [可靠性诊断](分析/诊断可靠性.md) · [质量 × 成本](分析/比较质量与成本.md) |
+| `aggregate()` 后的矩阵与 `Bars` | [配置 × Eval 定位](分析/定位配置与评测交互.md) |
+| `comparisonResult()` | [A/B 成对差异](分析/测量成对差异.md) |
 | `Chart` 的 line mark | [参数扫描](分析/扫描参数趋势.md) |
 | run 维度 / `ctx.record.experiments` | [Experiment 历史](分析/跟踪实验历史.md) |
-| `SampleNotices` / `RunNotices` / `SampleSummary` / `sources.entity.experiments` | [范围完整性](分析/核对样本完整性.md) |
+| `SampleNotices` / `RunNotices` / `SampleSummary` / `toExperimentRows(sample)` | [范围完整性](分析/核对样本完整性.md) |
 | `defineMeasure` / `CustomDimension` | [业务读数](构建报告/定义业务读数.md) |
 | `defineReport({ pages })` / shell / `dimensionPins` | [多页报告](构建报告/构建多页报告.md) |
-| `defineComponent` / `defineComposition` / `ctx.present` / `--niceeval-*` | [自己写组件](构建报告/自定义组件/) |
+| 普通转换 / `defineRenderer()` / 主题令牌 | [自己写组件](构建报告/自定义组件/) |
 | `defineTheme` / `--theme` / `themeStylesheet` | [换主题与主题包](交付报告/主题/) |
 | 数据源 / `niceeval/report/react` | [嵌入产品页](交付报告/嵌入产品.md) |
 | `Grid` / `Stat` / `Row` / `Col` / `Section` / `Tabs` | 所有 Library 用例的布局层;内容过多时看[多页报告](构建报告/构建多页报告.md) |

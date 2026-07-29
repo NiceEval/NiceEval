@@ -25,7 +25,13 @@ import {
   ResolveMemo,
   type ReportNode,
 } from "../definition/tree.ts";
-import { buildReportMeta, defineReport, FALLBACK_REPORT_TITLE, resolveReportTitle } from "../definition/report.ts";
+import {
+  buildReportMeta,
+  defineReport,
+  FALLBACK_REPORT_TITLE,
+  resolveReportTitle,
+  type NonEmptyArray,
+} from "../definition/report.ts";
 import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } from "./text.ts";
 import { FailureList } from "../components/entity-lists/index.tsx";
 import { Hero } from "../components/site-components/index.tsx";
@@ -996,41 +1002,61 @@ describe("SampleOverview(组合组件)", () => {
   });
 });
 
-// ───────────────────────── extends 与内建视图集合 ─────────────────────────
+// ───────────────────────── 内建视图集合与页复用 ─────────────────────────
 
-describe("extends 与内建视图集合", () => {
+describe("内建视图集合与页复用", () => {
   it("内建入口是视图集合:默认导出与具名导出 standard 同引用", () => {
     expect(builtInReport).toBe(standard);
   });
 
-  it("extends 叠外壳:页列表与 base 逐项同引用,声明整字段覆盖、未声明沿用 base", () => {
+  it("复用内建页是普通数组展开:取到的页逐项同引用,外壳只认本报告自己声明的字段", () => {
     const branded = defineReport({
-      extends: standard,
+      pages: [...standard.pages] as NonEmptyArray<(typeof standard.pages)[number]>,
       title: "Memory Evals",
       links: [{ label: "GitHub", href: "https://github.com/you/repo" }],
     });
-    branded.pages.forEach((page, i) => expect(page).toBe(standard.pages[i]));
+    // 每份报告各自规范化自己的 pages(所以是等值不是同引用),内容树本身原样带过来
+    branded.pages.forEach((page, i) => expect(page).toEqual(standard.pages[i]));
+    branded.pages.forEach((page, i) => expect(page.content).toBe(standard.pages[i]!.content));
     expect(branded.title).toBe("Memory Evals");
     expect(branded.links).toEqual([{ label: "GitHub", href: "https://github.com/you/repo" }]);
-    expect(branded.head).toEqual([...standard.head]); // 未声明沿用 base
+    // 没有沿用:内建的 head 不会跟着页一起被带过来,本报告没声明就是空
+    expect(branded.head).toEqual([]);
 
-    // 二级 extends 链:上一次折叠的产物就是下一次的 base
-    const chained = defineReport({ extends: branded, links: [] });
-    chained.pages.forEach((page, i) => expect(page).toBe(standard.pages[i]));
-    expect(chained.title).toBe("Memory Evals"); // 未声明沿用最近声明
-    expect(chained.links).toEqual([]); // 声明即整字段覆盖,不拼接
-
-    // ctx.report.title 取 extends 上声明的 title
+    // ctx.report.title 取本报告声明的 title
     const s = snap({ experimentId: "compare/a", results: [res("q", "passed")] });
     expect(buildReportMeta(branded, scopeOf([s])).title).toBe("Memory Evals");
   });
 
-  it("extends 只收 defineReport 产物;与 content/pages 多选或全省略按完整用户反馈报错", () => {
-    // @ts-expect-error 非 defineReport 产物,类型层已拒绝;这里模拟无类型 JS 输入
-    expect(() => defineReport({ extends: {} })).toThrow(/must be a defineReport\(\.\.\.\) product/);
-    // @ts-expect-error extends 与 pages 互斥
-    expect(() => defineReport({ extends: standard, pages: standard.pages })).toThrow(/declare exactly one/);
-    // @ts-expect-error content / pages / extends 至少声明一个
+  it("挑页与换页也是普通数组操作:过滤掉一张再拼上自己的,顺序即声明顺序", () => {
+    const myContent = <Text>我自己的总览</Text>;
+    const mine = { id: "report", title: "报告", content: myContent } as const;
+    const composed = defineReport({
+      pages: [mine, ...standard.pages.filter((page) => page.id !== "report")] as NonEmptyArray<
+        (typeof standard.pages)[number]
+      >,
+      title: "Memory Evals",
+    });
+    expect(composed.pages[0]!.content).toBe(myContent);
+    expect(composed.pages.map((page) => page.id)).toEqual([
+      "report",
+      ...standard.pages.filter((page) => page.id !== "report").map((page) => page.id),
+    ]);
+  });
+
+  it("extends 已移除:命中它按完整用户反馈报错并给出改写指引,不静默忽略", () => {
+    // @ts-expect-error extends 不再是合法字段;这里模拟旧写法与无类型 JS 输入
+    expect(() => defineReport({ extends: standard, title: "x" })).toThrow(/no longer takes "extends"/);
+    // @ts-expect-error 同上:报错要指出改写成 pages 展开
+    expect(() => defineReport({ extends: standard })).toThrow(/pages: \[myPage, \.\.\.standard\.pages\]/);
+  });
+
+  it("content / pages 多选或全省略按完整用户反馈报错", () => {
+    expect(() =>
+      // @ts-expect-error content 与 pages 互斥
+      defineReport({ content: null, pages: standard.pages }),
+    ).toThrow(/declare exactly one/);
+    // @ts-expect-error content / pages 至少声明一个
     expect(() => defineReport({ title: "x" })).toThrow(/niceeval\/report\/built-in/);
   });
 });

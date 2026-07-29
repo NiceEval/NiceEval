@@ -1,129 +1,80 @@
-# 失败诊断首页
+# 单 Attempt 默认详情
 
-不带 `--report` 且无证据 flag 打开 attempt 时，show 选择内建 `standard` 中的
-[attempt-input page](../components/attempt-detail/README.md)。它注入 locator，并渲染 `<AttemptDetail />`
-的 text 面。这张普通 page 就是“诊断首页”，不是 show 宿主另藏的一套 renderer。
+范围恰好命中一个 Attempt 且没有显式切片时，
+`show` 调用 `attemptDetailsResult(attempt)`，再用 Attempt 详情的 text 面显示结果。
+同一 Result 也供 `--json` 使用。
 
-区块按内建顺序堆叠：
+## 默认顺序
 
-- `AttemptSummary`：身份与判定，恒非空；
-- `AttemptAssessment`：`AttemptNotices` 组合 snapshot error 与 persisted diagnostics，再选择
-  `sources.attempt.source` 或 fallback `sources.attempt.assertions`；
-- `AttemptFixPrompt`：文本面零输出；
-- `sources.attempt.timeline`、`AttemptUsage`、`sources.attempt.conversation`、
-  `sources.attempt.trace` 与 `sources.attempt.diff`。
+1. locator、Experiment、Eval、Attempt 与 verdict。
+2. 开始时间、耗时、成本、得分与 usage。
+3. 结构化 error 与 persisted diagnostics。
+4. 标注 Eval 源码；源码不可用时显示断言表。
+5. 生命周期 timing。
+6. 对话、trace 与 diff 的紧凑摘要。
 
-每个区块各自决定是否有内容；没有对应证据时整块不出现，不留空标题。带 `--report <file>` 时，
-选择该定义自己的 attempt-input page，content 与顺序可以不同：
+每类证据各自决定是否有内容。
+缺失时整块省略或显示明确缺失，不留下空标题，也不猜一个零值。
 
-```text
-$ niceeval show @1qrdcfq8
-@1qrdcfq8 · memory/swelancer-manager-proposals · dev-e2b/codex-e2b · attempt 1
-✗ failed · Jul 12, 2026, 10:08 · 50.0s · $0.05
+## Usage
 
-╭─ assertions ──────────────────────────────────────────── 1/42 lines annotated ─╮
-│ evals/memory/swelancer-manager-proposals.eval.ts                               │
-│                                                                                │
-│ ✗ gate · Issue 15193: selected proposal matches the accepted proposal          │
-│          equals(4) · expected 4 · received 3                                   │
-│          source: evals/memory/swelancer-manager-proposals.eval.ts:40:11        │
-╰───────────────────────────────────────────── niceeval show @1qrdcfq8 --source ─╯
+`usageResult(attempt)` 是详情、`--usage` 与 JSON 的共同结果。
+轮数与工具调用数来自标准事件流；
+token 与请求计数来自落盘 Usage；成本来自相同 Attempt 事实。
 
-╭─ timing ─────────────────────────────────────────────────────────────── 49.9s ─╮
-│ · sandbox.queue           0.2s                                                 │
-│ · sandbox.create          5.6s                                                 │
-│ · sandbox.setup           3.5s  (5 children collapsed)                         │
-│ · workspace.baseline      0.1s  (1 children collapsed)                         │
-│ · agent.setup            12.1s  (3 children collapsed)                         │
-│ · telemetry.configure     0.1s  (1 children collapsed)                         │
-│ · eval.run               26.3s  (5 children collapsed)                         │
-│ · workspace.diff          0.3s  (2 children collapsed)                         │
-│ · scoring.evaluate        1.4s                                                 │
-│ · telemetry.collect       0.3s                                                 │
-├─ teardown ─────────────────────────────────────────────────────────────────────┤
-│ · agent.teardown          0.2s                                                 │
-│ · sandbox.teardown        0.1s                                                 │
-│ · sandbox.stop            0.5s                                                 │
-╰───────────────────────────────────────────── niceeval show @1qrdcfq8 --timing ─╯
-
-usage: 2 turns · 3 tool calls · 13.9k uncached in + 38.2k cache read / 6.4k out · 9 requests · $0.05
-facts: memory.notes=73 · memory.restored=true
-
-╭─ conversation ────────────────────────────────────────────────────── 2 rounds ─╮
-│ round 1: You are the engineering manager for this project. Reconcile the…      │
-│   assistant: I'm going to inspect the task layout and the decision form…       │
-│   tool command_execution (completed)                                           │
-│   tool command_execution (completed)                                           │
-│                                                                                │
-│ round 2: Continue: add the missing decision for issue 15201 and log it.        │
-│   tool command_execution (completed)                                           │
-│   assistant: Updated manager_decisions.json and recorded the change in n…      │
-╰────────────────────────────────────────── niceeval show @1qrdcfq8 --execution ─╯
-
-trace: 3 spans · niceeval show @1qrdcfq8 --timing
-
-╭─ changes ─────────────────────────────────────────── 2 files changed by agent ─╮
-│ M manager_decisions.json   (+6/-2)                                             │
-│ A notes/decision-log.md    (+18/-0)                                            │
-╰─────────────────────────────────────────────── niceeval show @1qrdcfq8 --diff ─╯
-```
-
-这页应当足以判断“为什么失败”。每块证据是一个 `Section`，按[区域框](../library/layout.md#区域框text-面的框线体裁)渲染：块名嵌上边框左侧，规模或判定嵌右侧，下钻命令嵌下边框——命令因此总是紧贴它能展开的那块证据，而不是散落在正文行尾。没有捕获某类证据时，那一整块（连同框和命令）一起省略，不留光秃的标题。单个事实的摘要（`usage:`、`facts:`、`trace:`）本来就不是 `Section`，仍是无框单行，不为一个标量套一个框。`usage:` 行是 `AttemptUsage` 的单行装配形态，按[组装口径单源](../components/attempt-detail/attempt-usage.md#组装口径单源)拼装；某段事实缺失时对应片段整段省略（与本页「没有证据的块不出现」同一条规则）。`facts:` 行列出生命周期代码经 `ctx.fact()` 上报的运行观测（[字段契约](../../record/architecture.md#facts运行事实)），例如记忆库实际起步有多少条笔记；它帮助审计条件是否如预期生效，但不参与缓存指纹，没有 facts 时该行不出现。只有在需要理解断言上下文、agent 为什么给出这个结果、或具体改了什么时，才继续打开证据切面：[`--source`](eval-source.md)、[`--execution`](execution.md)、[`--timing`](timing.md)、[`--diff`](diff.md)。
-
-有 eval 源码时，`sources.attempt.source` 把文件路径放在框内首行、被标注的行数放上边框右侧、`--source` 命令放下边框，随后按原始声明顺序平铺列出全部非 passed 断言（`✗ gate`/`✗ soft`/`◌ unavailable` 混排，不分四段；无阈值 judge 的纯打分行不带判定图标，按声明位置列出分数），每行带分组、matcher、期望值、实际值与 `file:line:col` 源码锚（逐条格式的单源在[断言展示契约](../../assertions/library/display.md#通用渲染规则)）；全通过的断言只在没有失败可看时才会出现，且只按 group 折成 `✓ passed · <group> · <count>` 一行，不逐条展开——计分制的得分点例外：它们带着挣分标注，无论 passed 与否都逐条出现（[得分点不参与 passed 收纳](../../assertions/library/display.md#计分制points-与给分记录)）。源码不可用时换成 `sources.attempt.assertions`，规则完全一致，只是没有文件路径与逐行标注。
-
-计分制（`defineScoreEval`）attempt 的同一页：头行 verdict 后跟本轮挣分——这是 `AttemptSummary` 的总分位，也是全页唯一的总分出现处；assertions 框内得分点逐条列出（含 passed，行尾挣分标注右对齐）、`t.score` 给分记录按 group 成块、前置中止行带 `⤓`（逐条格式单源在[计分制展示](../../assertions/library/display.md#计分制points-与给分记录)）；框上边框右侧在行数标注前加得分点挣满计数：
+缓存拆分存在时，输入 token 区分 uncached input 与 cache read。
+协议没有拆分事实时只显示 input tokens。
 
 ```text
-$ niceeval show @1dbgpt001
-@1dbgpt001 · dbgpt/install-and-start · exam/claude · attempt 1
-✗ failed · 1 pt · Jul 18, 2026, 14:02 · 4m 12s · $0.31
-
-╭─ assertions ─────────────────────────── 1/3 得分点挣满 · 3/38 lines annotated ─╮
-│ evals/dbgpt/install-and-start.eval.ts                                          │
-│                                                                                │
-│ ✓ passed · 配置就绪                                                    +1 pt   │
-│ ✗ soft · 健康检查可达                                                 +0 pts   │
-│          commandSucceeded() · received exit 1 · "…connection refused"          │
-│ ✗ gate · 装了依赖                                                     +0 pts   │
-│          calledTool("shell", { input: { command: /pip install/ } })            │
-│          ⤓ 前置未过, test() 就地结束                                           │
-╰──────────────────────────────────────────── niceeval show @1dbgpt001 --source ─╯
+usage: 6 turns · 21 tool calls · 62.3k uncached in
+       + 942.6k cache read / 6.7k out · 24 requests · $1.14
 ```
 
-`AttemptFixPrompt` 的文本面固定为空——终端已经有本页顶部的 locator，直接跑 `niceeval show @<locator>` 就是给 agent 的下一步，不需要在这里再拼一份 prompt 正文；prompt 全文只在 web 面的复制按钮里。
+某段事实缺失时对应片段整段省略；全部缺失时 usage 行不出现。
 
-`timing` 是 `sources.attempt.timeline` 的紧凑摘要：主链每个 `LifecyclePhase` 各占一行，有子节点的阶段在行尾标 `(N children collapsed)`（完整分解见 [`--timing`](timing.md)）；收尾阶段是一个嵌套 `Section`，按只画最外层的规则降为 `├─ teardown ─┤` 隔条，不计入上边框右侧的总耗时。这里不筛选“大头”——只要 phase 存在就列一行，多余的只是折叠子节点，不是丢弃阶段。落盘没有 `phases`（旧结果或第三方 harness 写入）时这一整块省略，不猜一个假总耗时。
+## 断言与源码
 
-`errored` attempt 的首页不用 trace 也必须能解释基础设施错误。`AttemptNotices` 把 snapshot 中结构化 error 的 phase、code、message 与有限 cause，同 `sources.attempt.diagnostics` 的诊断记录一起解释；stack（如果有）放在最后并保持原始换行。error 的 `phase`、diagnostics 的 phase 与 `timing:` 行用的是同一套 `LifecyclePhase` 名字，同一次失败在各处叫同一个名：
+有 Eval 源码时，`toAnnotatedEvalSource(attempt)` 返回标注源码；
+否则 `toAssertionRows(attempt)` 返回断言 rows。
+两条路径使用同一份 AssertionResult 和源码锚。
 
-```text
-$ niceeval show @12h8m4k1
-@12h8m4k1 · memory/agent-029-use-cache · compare/claude-e2b · attempt 1
-! errored · Jul 09, 2026, 03:15 · 2m 8s
+失败断言按原始声明顺序显示，并保留 group、matcher、expected、received 与位置。
+全通过断言可以按 group 折叠；计分制得分点无论 passed 与否都逐条显示。
 
-╭─ error ─────────────────────────────────────────────────── sandbox-rate-limit ─╮
-│ phase:   sandbox.create                                                        │
-│ message: E2B sandbox allocation failed after 5 attempts                        │
-│ cause:   RateLimitError · too many concurrent sandboxes                        │
-╰────────────────────────────────────────────────────────────────────────────────╯
+## 错误与 diagnostics
 
-╭─ diagnostics ───────────────────────────────────────────────── sandbox.create ─╮
-│ warning · fallback-region  (2 occurrences)                                     │
-│           Primary region was unavailable; retried in us-west                   │
-╰────────────────────────────────────────────────────────────────────────────────╯
+`toAttemptNotices(attempt)` 把结构化 error 和 diagnostics 转成 Callout items。
+error phase、diagnostic phase 与 timing 使用同一套 LifecyclePhase 名字。
+未知 diagnostic code 保留原始 detail，不猜 action。
 
-╭─ timing ───────────────────────────────────────────────────────────── 2m 8s ✗ ─╮
-│ · sandbox.queue           1.2s                                                 │
-│ ✗ sandbox.create          2m 6s                                                │
-╰───────────────────────────────────────────── niceeval show @12h8m4k1 --timing ─╯
-```
+diagnostic level 不等于 verdict。
+passed 或 failed Attempt 也可以带 cleanup warning。
 
-execution 与 usage 在这个例子里整块不出现——attempt 死在 `sandbox.create`，事件流和 token 用量都还没产生，不是省略了内容，是那部分证据本来就不存在。
+## Timing
 
-diagnostic 的 level 不等于 verdict：一个 passed/failed attempt 也可以带 cleanup warning，那条诊断照样会出现在 `sources.attempt.diagnostics` 里。
+`toTimelineNodes(attempt)` 返回主链阶段与子节点。
+紧凑首页保留每个存在的 LifecyclePhase，并折叠子节点；
+`--timing` 显示同一结果的完整 text 投影。
+
+没有 phases 时整块省略，不从总耗时猜阶段。
+
+## 显式切片
+
+- [`--source`](eval-source.md) —— 完整标注源码或单文件。
+- [`--execution`](execution.md) —— 对话与工具调用。
+- [`--timing`](timing.md) —— 生命周期阶段与 spans。
+- [`--usage`](usage.md) —— 范围内用量表。
+- [`--diff`](diff.md) —— 文件差异。
+
+这些切片各调用一个公开任务函数，不从 AttemptDetails 组件树切数据。
+
+## 自定义报告
+
+带 `--report <file>` 时，单 Attempt 范围仍进入该报告的 attempt page。
+报告没有 attempt page 时，locator 只是普通文本，宿主不追加官方详情。
 
 ## 相关阅读
 
-- [`--source`](eval-source.md) / [`--execution`](execution.md) / [`--timing`](timing.md) / [`--diff`](diff.md) —— 四个证据切面。
-- [裸 `show` 的默认报告](default-report.md) —— locator 从哪里来。
+- [`AttemptDetails`](../components/attempt-detail/README.md)
+- [show](../show.md)
+- [ShowJson](json.md)

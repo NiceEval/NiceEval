@@ -1,13 +1,11 @@
 // Grid 的语义层与面内布局(docs/feature/reports/architecture.md「排版原语的语义层与面内布局」、
 // docs/feature/reports/library/layout.md「换列规则」)。只放同步纯函数与中间类型:
 // normalizeGrid 把 resolved ReportNode children 展平成有序 cell 列表;balanceColumns /
-// planGridColumns / planTextGrid 是两面同源的列数算术。不 import show / view、Record IO
-// 或 stylesheet;primitives.tsx 消费本文件产出两面适配。
+// planGridColumns / planTextGrid 是两面同源的列数算术,几何常量只在这里出现一次
+// ——Grid 不收列数、边框或体量参数,这些全从格数与可用宽度算。不 import show / view、
+// Record IO 或 stylesheet;primitives.tsx 消费本文件产出两面适配。
 
 import type { ReportNode } from "./tree.ts";
-
-export type GridVariant = "plain" | "boxed";
-export type GridDensity = "regular" | "compact";
 
 // react/jsx-runtime 的 Fragment 注册符号,跨 react 版本稳定(tree.ts 同一常量的独立取用,
 // Symbol.for 全局注册表保证同一符号,不产生耦合)。
@@ -32,13 +30,11 @@ export interface NormalizedGridCell {
 }
 
 /**
- * `normalizeGrid` 的产物:有序、不可拆的 cell 列表 + variant / density。
+ * `normalizeGrid` 的产物:有序、不可拆的 cell 列表。
  * 不是公开 data shape,也不进结果或 artifact——只是两个渲染面共享的同步排版中间值。
  */
 export interface NormalizedGrid {
   readonly cells: readonly NormalizedGridCell[];
-  readonly variant: GridVariant;
-  readonly density: GridDensity;
 }
 
 /**
@@ -64,16 +60,8 @@ function flattenGridChildren(children: ReportNode): NormalizedGridCell[] {
 }
 
 /** `Grid` 组件创建时的一次性规范化:展平 children 成有序 cell 列表。 */
-export function normalizeGrid(input: {
-  children: ReportNode;
-  variant?: GridVariant;
-  density?: GridDensity;
-}): NormalizedGrid {
-  return {
-    cells: flattenGridChildren(input.children),
-    variant: input.variant ?? "plain",
-    density: input.density ?? "regular",
-  };
+export function normalizeGrid(input: { children: ReportNode }): NormalizedGrid {
+  return { cells: flattenGridChildren(input.children) };
 }
 
 /**
@@ -87,11 +75,16 @@ export function balanceColumns(cellCount: number, capacityColumns: number): numb
   return Math.ceil(cells / rows);
 }
 
-/** web 面 density 几何常量:最小格宽与格间距;CSS 变量与 @container 断点共用这一份。 */
+/**
+ * web 面几何常量:最小格宽与格线宽度,@container 断点与 stylesheet 共用这一份。
+ * `comfortableCellWidth` 不参与换列,只是 stylesheet 里体量插值的上端——实际格宽涨到它时
+ * 格内留白与 Stat 主值字号到顶。
+ */
 export const WEB_GRID_GEOMETRY = {
-  regular: { minCellWidth: 220, gap: 20 },
-  compact: { minCellWidth: 160, gap: 10 },
-} as const satisfies Record<GridDensity, { minCellWidth: number; gap: number }>;
+  minCellWidth: 160,
+  separator: 1,
+  comfortableCellWidth: 220,
+} as const;
 
 export interface GridColumnStep {
   readonly columns: number;
@@ -100,13 +93,13 @@ export interface GridColumnStep {
 }
 
 /**
- * 换列阶梯:候选列数是 ⌈格数/行数⌉ 去重,起始宽度 = 列数 × 最小格宽 + (列数-1) × 格间距。
+ * 换列阶梯:候选列数是 ⌈格数/行数⌉ 去重,起始宽度 = 列数 × 最小格宽 + (列数-1) × 格线宽。
  * 按列数升序——web 面据此生成 @container 规则时,较大断点写在后面以覆盖较小断点。
  */
-export function planGridColumns(cellCount: number, density: GridDensity): readonly GridColumnStep[] {
+export function planGridColumns(cellCount: number): readonly GridColumnStep[] {
   const n = Math.max(0, cellCount);
   if (n === 0) return [];
-  const { minCellWidth, gap } = WEB_GRID_GEOMETRY[density];
+  const { minCellWidth, separator } = WEB_GRID_GEOMETRY;
   const seen = new Set<number>();
   const steps: GridColumnStep[] = [];
   for (let rows = 1; rows <= n; rows++) {
@@ -115,75 +108,68 @@ export function planGridColumns(cellCount: number, density: GridDensity): readon
     seen.add(columns);
     steps.push({
       columns,
-      minWidth: columns * minCellWidth + (columns - 1) * gap,
+      minWidth: columns * minCellWidth + (columns - 1) * separator,
     });
   }
   return steps.sort((a, b) => a.columns - b.columns);
 }
 
 /**
- * web 面随身 `@container` 规则文本:(格数, density) 的纯函数——同一组合逐字相同。
- * 基线一列写在 stylesheet;这里只发 ≥2 列的断点。末行恰一格时附带 `grid-column: 1 / -1`。
+ * web 面随身 `@container` 规则文本:格数的纯函数——同格数逐字相同。基线一列写在
+ * stylesheet;这里只发 ≥2 列的断点。规则只声明列数(`--grid-columns` 供体量插值取用),
+ * 不出现留白或字号的具体值。末行恰一格时附带 `grid-column: 1 / -1`。
  */
-export function gridContainerRules(cellCount: number, density: GridDensity): string {
-  const densityClass = `niceeval-grid--${density}`;
+export function gridContainerRules(cellCount: number): string {
   const parts: string[] = [];
-  for (const { columns, minWidth } of planGridColumns(cellCount, density)) {
+  for (const { columns, minWidth } of planGridColumns(cellCount)) {
     if (columns < 2) continue;
-    const selector = `.${densityClass}[data-cells="${cellCount}"]`;
+    const selector = `.niceeval-grid[data-cells="${cellCount}"]`;
     const lone =
       cellCount % columns === 1
         ? ` ${selector} > .niceeval-grid-cell:last-child { grid-column: 1 / -1; }`
         : "";
     parts.push(
-      `@container niceeval-grid (min-width: ${minWidth}px) { ${selector} { grid-template-columns: repeat(${columns}, minmax(0, 1fr)); }${lone} }`,
+      `@container niceeval-grid (min-width: ${minWidth}px) { ${selector} { --grid-columns: ${columns}; grid-template-columns: repeat(${columns}, minmax(0, 1fr)); }${lone} }`,
     );
   }
   return parts.join("\n");
 }
 
-/** text 面规划的输入:只有可用宽度、cell 数与 density。 */
+/** text 面规划的输入:只有可用宽度与 cell 数。 */
 export interface TextGridPlanInput {
   readonly availableWidth: number;
   readonly cellCount: number;
-  readonly density: GridDensity;
 }
 
 /**
- * text 面的一次性排版计划:实际列数、每列内容显示宽度、格间 gutter、孤格铺满用的整行内容宽。
- * `boxed` 与 `plain` 复用同一份计划(规划总是先扣 boxed 的四边框与内 padding),
- * `plain` 渲染时只是不打印这部分字符——两个 variant 因此列数一致,不会各挑各的列数。
+ * text 面的一次性排版计划:实际列数、每列内容显示宽度、孤格铺满用的整行内容宽。
+ * 格线之外不画外框,所以每行的显示宽度恰好是 `availableWidth`。
  */
 export interface TextGridPlan {
   readonly columns: number;
   readonly contentWidths: readonly number[];
-  readonly gutter: number;
-  /** 末行只剩一格时该格的内容显示宽度(= availableWidth − boxed 单格开销)。 */
+  /** 末行只剩一格时该格的内容显示宽度(= availableWidth,整行都归它)。 */
   readonly fullRowContentWidth: number;
 }
 
-/** text 面每 cell 的最小可读内容宽度;density 不以挤坏字段换取更多列。 */
+/** text 面每 cell 的最小可读内容宽度:列数宁可少,也不以挤坏字段换取更多列。 */
 const MIN_CONTENT_WIDTH = 24;
-/** boxed 单 cell 的固定开销:左右各一根边框 + 左右各一格 padding。 */
-const BOXED_OVERHEAD_PER_CELL = 4;
-
-function gridGutter(density: GridDensity): number {
-  return density === "compact" ? 1 : 2;
-}
+/** 相邻两格之间那条格线连同两侧留白占的显示列(` │ `)。 */
+export const TEXT_GRID_SEPARATOR = " │ ";
 
 /**
  * 从格数向一列尝试,选出满足每格最小可读内容宽度的最大列数作为容量,再按行数摊匀;
  * 一列是无条件 fallback(即使内容宽度因此小于 24)。选定列数后,余下的显示列从左向右
- * 逐列多补一列,因此任意一行的显示宽度都不会超过 `availableWidth`(见调用方组装)。
+ * 逐列多补一列,因此任意一行的显示宽度都恰好是 `availableWidth`。
  */
 export function planTextGrid(input: TextGridPlanInput): TextGridPlan {
-  const { availableWidth, cellCount, density } = input;
-  const gutter = gridGutter(density);
+  const { availableWidth, cellCount } = input;
+  const separator = TEXT_GRID_SEPARATOR.length;
   const cells = Math.max(1, cellCount);
 
   let capacity = 1;
   for (let n = cells; n >= 2; n--) {
-    const budget = availableWidth - BOXED_OVERHEAD_PER_CELL * n - gutter * (n - 1);
+    const budget = availableWidth - separator * (n - 1);
     if (budget >= 0 && Math.floor(budget / n) >= MIN_CONTENT_WIDTH) {
       capacity = n;
       break;
@@ -192,11 +178,29 @@ export function planTextGrid(input: TextGridPlanInput): TextGridPlan {
 
   const chosen = balanceColumns(cells, capacity);
 
-  const budget = Math.max(0, availableWidth - BOXED_OVERHEAD_PER_CELL * chosen - gutter * (chosen - 1));
+  const budget = Math.max(0, availableWidth - separator * (chosen - 1));
   const base = Math.floor(budget / chosen);
   const remainder = budget - base * chosen;
   const contentWidths = Array.from({ length: chosen }, (_, i) => Math.max(1, base + (i < remainder ? 1 : 0)));
-  const fullRowContentWidth = Math.max(1, availableWidth - BOXED_OVERHEAD_PER_CELL);
 
-  return { columns: chosen, contentWidths, gutter, fullRowContentWidth };
+  return { columns: chosen, contentWidths, fullRowContentWidth: Math.max(1, availableWidth) };
+}
+
+/**
+ * 两行之间那条行间线:上一行 `above` 格、下一行 `below` 格,列宽取自同一份计划。
+ * 两行都有的列边界画 `┼`,只有上一行有的(末行变短)收成 `┴`——末行左对齐、不拉伸,
+ * 所以它的列边界总是上一行的前缀。
+ */
+export function textGridRowSeparator(
+  contentWidths: readonly number[],
+  above: number,
+  below: number,
+): string {
+  const segments: string[] = [];
+  for (let i = 0; i < above; i++) {
+    segments.push("─".repeat(contentWidths[i] ?? 0));
+  }
+  return segments
+    .map((segment, i) => (i === 0 ? segment : `─${i < below ? "┼" : "┴"}─${segment}`))
+    .join("");
 }

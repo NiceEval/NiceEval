@@ -569,7 +569,7 @@ table.niceeval-report,
   top: 2px;
   bottom: 2px;
   border-radius: var(--radius);
-  background: var(--line-strong);
+  background: color-mix(in oklch, var(--series), var(--panel) 32%);
 }
 .niceeval-waterfall .niceeval-span-kind-0 { --series: var(--c0); }
 .niceeval-waterfall .niceeval-span-kind-1 { --series: var(--c1); }
@@ -585,7 +585,6 @@ table.niceeval-report,
 /* 清单是三列:类别、名字、时长,外加一列展开指示符。定宽列让同层各行的数字对齐。 */
 .niceeval-waterfall .niceeval-waterfall-node {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.5em;
   align-items: baseline;
   font-size: 0.92em;
@@ -605,10 +604,10 @@ table.niceeval-report,
 .niceeval-waterfall summary.niceeval-waterfall-node {
   cursor: pointer;
   list-style: none;
-.niceeval-waterfall summary.niceeval-waterfall-node::-webkit-details-marker { display: none; }
 }
-.niceeval-waterfall .niceeval-waterfall-node-failed { flex: none; }
+.niceeval-waterfall summary.niceeval-waterfall-node::-webkit-details-marker { display: none; }
 .niceeval-waterfall .niceeval-waterfall-node--failed { color: var(--bad); }
+.niceeval-waterfall .niceeval-waterfall-node-failed { flex: none; }
 .niceeval-waterfall .niceeval-waterfall-node-kind {
   flex: none;
   width: 5em;
@@ -623,13 +622,16 @@ table.niceeval-report,
   text-overflow: ellipsis;
 }
 .niceeval-waterfall .niceeval-waterfall-node-dur {
+  flex: none;
+  min-width: 5.5em;
+  text-align: right;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 .niceeval-waterfall .niceeval-waterfall-node-children {
   list-style: none;
-  margin: 4px 0 0 1.25em;
-  padding: 0;
+  margin: 0 0 0 0.45em;
+  padding: 0 0 0 0.6em;
   border-left: 1px solid var(--line);
 }
 .niceeval-waterfall .niceeval-waterfall-title {
@@ -697,10 +699,10 @@ table.niceeval-report,
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.niceeval-diff-view .niceeval-diff-patch {
-  margin: 0;
 .niceeval-diff-view .niceeval-diff-lines-added { color: var(--good); }
 .niceeval-diff-view .niceeval-diff-lines-removed { color: var(--bad); }
+.niceeval-diff-view .niceeval-diff-patch {
+  margin: 0;
   padding: 8px 0;
   border-top: 1px solid var(--line);
   background: color-mix(in oklch, var(--panel), black 4%);
@@ -920,20 +922,17 @@ table.niceeval-report,
    无论直接打开独立文档、塞进 view dialog，还是嵌入用户自己的 React 页面，都必须
    只靠 niceeval/report/react/styles.css 得到完整可读的结构化布局。 ---- */
 
-/* Summary:判定与 locator 是标题行，身份/时间/成本是自适应 KPI 网格。 */
+/* Summary:判定与 locator 是标题行，身份/时间/成本是一片 Grid。标题行与能力行在面板外
+   ——面板那一圈框由 Grid 自己画,这里再套一层就是贴着的双线。 */
 .niceeval-attempt-summary {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
+  display: grid;
+  gap: 10px;
 }
 .niceeval-attempt-summary .niceeval-attempt-summary-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
 }
 .niceeval-attempt-summary .niceeval-attempt-summary-locator {
   min-width: 0;
@@ -943,37 +942,28 @@ table.niceeval-report,
   font-weight: 650;
   overflow-wrap: anywhere;
 }
-.niceeval-attempt-summary .niceeval-attempt-summary-kpis {
+/* 格内容:紧凑身份表,不是读数卡——所以用自己的 label/value 排版,不复用 Stat 的字号。
+   一行几格、什么宽度换列、格内多密仍由 Grid 算,这里一个像素都不写。 */
+.niceeval-kpi {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
-  margin: 0;
-}
-.niceeval-attempt-summary .niceeval-attempt-summary-kpis > div {
+  gap: 5px;
   min-width: 0;
-  padding: 13px 16px 14px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
 }
-.niceeval-attempt-summary .niceeval-attempt-summary-kpis dt,
-.niceeval-usage-table dt {
+.niceeval-kpi-label {
   color: var(--soft);
   font-size: 11px;
   font-weight: 560;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.niceeval-attempt-summary .niceeval-attempt-summary-kpis dd,
-.niceeval-usage-table dd {
-  margin: 5px 0 0;
+.niceeval-kpi-value {
   color: var(--text);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 .niceeval-attempt-summary .niceeval-attempt-summary-caps {
-  margin: -1px 0 0;
-  padding: 9px 16px 10px;
-  border-top: 1px solid var(--line);
+  margin: 0;
   color: var(--soft);
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -1221,28 +1211,10 @@ table.niceeval-report,
 .niceeval-source-view .tok-num { color: light-dark(#116329, #b5cea8); }
 .niceeval-source-view .tok-fn { color: light-dark(#755f00, #dcdcaa); }
 
-/* Diagnostics 与 usage:技术信息保持紧凑，但不再落成裸 ul/dl。 */
-.niceeval-usage-table {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
-  overflow: hidden;
-  margin: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-}
-.niceeval-usage-table .niceeval-usage-table-row {
-  min-width: 0;
-  padding: 11px 13px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-
-@media (max-width: 640px) {
-  .niceeval-attempt-summary .niceeval-attempt-summary-kpis { grid-template-columns: 1fr; }
-  .niceeval-attempt-summary .niceeval-attempt-summary-kpis > div { border-right: 0; }
-  .niceeval-usage-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+/* Diagnostics 与 usage:技术信息保持紧凑。usage 就是一片 Grid,自己不写几何,也不按视口
+   换形态——视口 media query 量的是窗口,不是这块内容实际拿到多宽;attempt 详情塞进 view
+   的 dialog 时,窄面板配宽窗口会照着窗口排版。 */
+.niceeval-usage-table .niceeval-kpi-value { font-family: var(--font-mono); }
 
 /* ---- 排版原语 Row / Col / Section / Text ---- */
 .niceeval-col {
@@ -1293,42 +1265,47 @@ table.niceeval-report,
 }
 
 /* ---- Grid:自由摘要面板的格子容器(docs/feature/reports/architecture.md「排版原语的语义层
-        与面内布局」、library/layout.md「换列规则」)。外层 .niceeval-grid-fit 是具名
-        inline-size 容器——容器查询查的是祖先,Grid 自己声明 container-type 查不到自己。
-        基线一列;≥2 列的断点由每个 Grid 随身的 @container 规则写出(格数 × density 的纯
-        函数,几何常量在 grid-layout.ts)。stylesheet 不为某个格数写死断点。末行恰一格时
-        同行规则附带 grid-column:1/-1 铺满;短于一行但不止一格时按上面各行格宽左对齐,
-        不拉伸。容器查询未生效时仍是一列,节点与文本完整。 ---- */
+        与面内布局」、library/layout.md「换列规则」「体裁与体量」)。外层 .niceeval-grid-fit
+        是具名 inline-size 容器——容器查询查的是祖先,Grid 自己声明 container-type 查不到
+        自己。基线一列;≥2 列的断点由每个 Grid 随身的 @container 规则写出(格数的纯函数,
+        几何常量在 grid-layout.ts)。stylesheet 不为某个格数写死断点,随身规则也不写留白和
+        字号——它只声明 --grid-columns,体量在这里按算出来的实际格宽插值。末行恰一格时同行
+        规则附带 grid-column:1/-1 铺满;短于一行但不止一格时按上面各行格宽左对齐,不拉伸。
+        容器查询未生效时仍是一列,节点与文本完整。 ---- */
 .niceeval-grid-fit {
   container-type: inline-size;
   container-name: niceeval-grid;
 }
 .niceeval-grid {
-  --grid-gap: 20px;
-  --grid-cell-padding: 16px;
-  --stat-value-size: 20px;
+  --grid-columns: 1;
+  /* 实际格宽:容器宽扣掉格线后除以列数。体量是它的函数,不是作者选的档—— 160px(最小
+     格宽)取下限,涨到 220px 到上限,中间线性过渡。 */
+  --grid-cell-width: calc((100cqi - (var(--grid-columns) - 1) * 1px) / var(--grid-columns));
+  --grid-cell-padding: clamp(10px, calc(10px + (var(--grid-cell-width) - 160px) * 0.1), 16px);
+  --stat-value-size: clamp(16px, calc(16px + (var(--grid-cell-width) - 160px) * 0.0667), 20px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--grid-gap);
+  gap: 0;
+  overflow: hidden;
   margin: 1rem 0;
-}
-.niceeval-grid--compact {
-  --grid-gap: 10px;
-  --grid-cell-padding: 10px;
-  --stat-value-size: 16px;
-}
-.niceeval-grid-cell { min-width: 0; }
-/* boxed:每个 cell 独立完整四边框,靠 grid gap 分开——不是靠相邻项拼半边框,换行后
-   不会缺左边、缺底边或出现双线。 */
-.niceeval-grid--boxed .niceeval-grid-cell {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: var(--grid-cell-padding);
   background: var(--panel);
 }
-.niceeval-grid--plain .niceeval-grid-cell { padding: 0; }
+/* 一片格子读成一个面板:每格只向右、向下各投一条线,落到面板边界外的那几条被
+   overflow 裁掉——不靠每格自画四边框,也不靠相邻项拼半边框,所以换行、末行变短、
+   末行只剩一格都不会缺边或双线。末格右边没有邻居,只留下面那条。 */
+.niceeval-grid-cell {
+  min-width: 0;
+  padding: var(--grid-cell-padding);
+  box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line);
+}
+.niceeval-grid > .niceeval-grid-cell:last-child { box-shadow: 0 1px 0 var(--line); }
+/* 格内留白由 Grid 给:直接放进格子的区块不再自带块间距,否则每格都比内容高出一圈,
+   矮格底部那片空白会读成「这张卡没填满」。 */
+.niceeval-grid-cell > .niceeval-report { margin: 0; }
 /* 一个 cell 里嵌套多个 Stat(Col 归拢):只有纵向留白,没有内部分隔线。 */
-.niceeval-grid-cell > .niceeval-col { gap: calc(var(--grid-gap) * 0.6); }
+.niceeval-grid-cell > .niceeval-col { gap: calc(var(--grid-cell-padding) * 0.75); }
 
 /* ---- Stat:label / 主值 / detail 三段;label 与 detail 弱化层级,value 用 tabular
         numerals;tone 是主值的语义色,只染 value——positive 不会把 label 和 detail
@@ -1362,38 +1339,15 @@ table.niceeval-report,
 .niceeval-stat--negative .niceeval-stat-value { color: var(--bad); }
 .niceeval-stat--warning .niceeval-stat-value { color: var(--warn); }
 
-/* SampleOverview 把通用 Grid / Stat 组合成官方六格摘要条；数据与 Cell 仍走原语。 */
-/* 合并条↔散格的切换按自身容器宽度判,不看视口:视口 media query 会被「内容挂载后滚动条
-   出现、视口宽度掉过断点」来回触发,窗口宽度悬在断点附近时表现为两种形态闪烁。 */
-.niceeval-sample-summary { container-type: inline-size; }
-.niceeval-sample-summary .niceeval-sample-summary-grid {
-  --stat-value-size: 20px;
-  width: 100%;
-  margin: 0;
-  gap: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--panel);
-}
-.niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell {
-  border: 0;
-  border-right: 1px solid var(--line);
-  border-radius: 0;
-  padding: 12px 16px 13px;
-}
-.niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell:last-child { border-right: 0; }
+/* SampleOverview 把通用 Grid / Stat 组合成官方摘要条；数据与 Cell 仍走原语。摘要条上没有
+   第二层皮肤:一行摆几格、什么宽度换列、格内多密、边框长什么样全归 Grid 自己算,这里只剩
+   摘要条自己那行时间范围文案(docs/feature/reports/components/summaries/sample-summary.md
+   「摘要条的外观」)。 */
+.niceeval-sample-summary .niceeval-grid { margin: 0; }
 .niceeval-sample-summary .niceeval-sample-summary-range {
   margin: -0.35rem 0 0;
   color: var(--soft);
   font-size: 13px;
-}
-@container (max-width: 920px) {
-  .niceeval-sample-summary .niceeval-sample-summary-grid { border: 0; gap: 10px; background: transparent; }
-  .niceeval-sample-summary .niceeval-sample-summary-grid .niceeval-grid-cell {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-  }
 }
 
 /* ---- Tabs:静态 HTML 每 tab 一个 <details> 且仅首个 open(无 JS = 手风琴卡片,内容完整);

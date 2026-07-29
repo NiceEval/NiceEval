@@ -88,9 +88,10 @@ sample.coverage[0];
 // }
 ```
 
-缺的是具体哪几道题,所以呈现在行的位置上:报告把 `missingEvalIds` 渲染成实验列表里的占位行
+缺的是具体哪几道题,所以呈现在行的位置上。`toExperimentRows(sample)` 把
+`missingEvalIds` 渲染成 Experiment 列表里的占位行
 (「当前配置下无结果」+ 可复制的补跑命令,契约见
-[`sources.entity.experiments` · 占位行](../reports/components/sources/entity-experiments.md)),读者在正在看的
+[Experiment rows](../reports/components/sources/entity-experiments.md)),读者在正在看的
 表里直接看见分母缺口。程序消费同样直接:CI 里「覆盖缩水就 fail」判
 `coverage.some((c) => c.missingEvalIds.length > 0)`。缺口永远被算出来,不静默。
 
@@ -199,7 +200,7 @@ type SampleIssue =
 或 Notice 严重度。
 
 Reports 的 Notice policy 再把 Issue 映射为读者可见的标题、详情、严重度与动作。这些选择属于
-呈现层,不回写 Sample 或 `.niceeval`。读数与摘要 Content 不复制 Issue,同一个问题只由
+呈现层,不回写 Sample 或 `.niceeval`。读数与摘要 Result 不复制 Issue,同一个问题只由
 Notice policy 解释一次。
 范围级消费方不接受手工挑的 `Run[]`;先通过选择器得到 Sample,再用 `scope()` / `filter()` 表达意图。
 

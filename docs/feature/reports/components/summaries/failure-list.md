@@ -1,33 +1,5 @@
-# `FailureList`
+# Failure list
 
-「现在有哪些失败要处理」是常见固定区块,所以工具箱提供 `FailureList` 组合组件。它与手写装配严格
-等价:内部是 `ctx.resolve(sources.entity.attempts)` → 过滤 → `<Table data={content}>`,没有私有能力。
-
-- 收 `verdict` 为 `failed` 或 `errored` 的 attempt；
-- 按 attempt 开始时间降序（最近的失败在前），同刻按 locator 字典序收口；
-- 截断到 `limit`（默认 20），Content 保留截断前总数。
-
-```ts
-type FailureListProps = {
-  /** 显示的最大条数；默认 20。 */
-  limit?: number;
-  /** 默认宿主注入的 Sample。 */
-  input?: ReportInput;
-  attemptHref?: (locator: AttemptLocator) => string;
-  locale?: ReportLocale;
-  className?: string;
-};
-```
-
-```tsx
-<FailureList limit={30} />
-```
-
-其它筛选口径（只看某个 agent、按成本排序）不属于它。写
-[组合组件](../../library/layout.md#自定义组件)加工 `sources.entity.attempts` 的结果；
-`FailureList` 只覆盖这一种最常见的问题。
-
-## 相关阅读
-
-- [实体数据源](../sources/entity.md) —— 数据形状与时效标注。
-- [`sources.entity.experiments`](../sources/entity-experiments.md) —— 呈现语义最重的实体数据源。
+failures page 先用 Sample `filter()` 得到具名范围，
+再排序、截断 `sample.attempts` 并交给 `AttemptList`。
+limit 与排序写在 page 任务函数里，不成为组件的隐藏数值规则。

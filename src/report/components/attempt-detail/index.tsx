@@ -10,6 +10,7 @@ import {
   Conversation,
   CopyBlock,
   DiffView,
+  Grid,
   SourceView,
   Table,
   Waterfall,
@@ -35,6 +36,20 @@ export {
   validateUsageData,
 } from "./validate.tsx";
 
+/**
+ * 身份 / 时间 / 成本与 usage 共用的格内容:一行标签、一行值。几何(一行几格、什么宽度换列、
+ * 格内多密)全归 `Grid` 算,这里只出内容——Grid 的格可以是任意节点,不限定为 `Stat`,
+ * 这两块要的是紧凑身份表而不是读数卡。
+ */
+function Kpi(props: { label: string; value: string }) {
+  return (
+    <div className="niceeval-kpi">
+      <span className="niceeval-kpi-label">{props.label}</span>
+      <span className="niceeval-kpi-value">{props.value}</span>
+    </div>
+  );
+}
+
 type SummaryProps<Input extends SourceInput = SourceInput> = DataProps<
   AttemptSummaryData,
   globalThis.Record<never, never>,
@@ -57,42 +72,15 @@ export const AttemptSummary = defineComponent<SummaryProps>({
           </span>
           <span className="niceeval-attempt-summary-locator">{d.locator}</span>
         </div>
-        <dl className="niceeval-attempt-summary-kpis">
-          <div>
-            <dt>Experiment</dt>
-            <dd>{d.identity.experimentId}</dd>
-          </div>
-          <div>
-            <dt>Eval</dt>
-            <dd>{d.identity.evalId}</dd>
-          </div>
-          <div>
-            <dt>Attempt</dt>
-            <dd>{d.identity.attempt + 1}</dd>
-          </div>
-          {d.totalScore !== undefined ? (
-            <div>
-              <dt>Score</dt>
-              <dd>{formatPoints(d.totalScore)}</dd>
-            </div>
-          ) : null}
-          {d.startedAt ? (
-            <div>
-              <dt>Started</dt>
-              <dd>{d.startedAt}</dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Duration</dt>
-            <dd>{formatDurationMs(d.durationMs)}</dd>
-          </div>
-          {d.costUSD !== null ? (
-            <div>
-              <dt>Cost</dt>
-              <dd>${d.costUSD.toFixed(4)}</dd>
-            </div>
-          ) : null}
-        </dl>
+        <Grid className="niceeval-attempt-summary-kpis">
+          <Kpi label="Experiment" value={d.identity.experimentId} />
+          <Kpi label="Eval" value={d.identity.evalId} />
+          <Kpi label="Attempt" value={String(d.identity.attempt + 1)} />
+          {d.totalScore !== undefined ? <Kpi label="Score" value={formatPoints(d.totalScore)} /> : null}
+          {d.startedAt ? <Kpi label="Started" value={d.startedAt} /> : null}
+          <Kpi label="Duration" value={formatDurationMs(d.durationMs)} />
+          {d.costUSD !== null ? <Kpi label="Cost" value={`$${d.costUSD.toFixed(4)}`} /> : null}
+        </Grid>
         {caps.length > 0 ? (
           <p className="niceeval-attempt-summary-caps">
             {caps.map((key) => ATTEMPT_CAPABILITY_LABEL[key]).join(" · ")}
@@ -145,14 +133,11 @@ const AttemptUsage = defineComponent<UsageProps>({
     if (d.usage?.requests !== undefined) rows.push(["requests", String(d.usage.requests)]);
     if (d.estimatedCostUSD !== undefined) rows.push(["cost", `$${d.estimatedCostUSD.toFixed(4)}`]);
     return (
-      <dl className={cx("niceeval-report", "niceeval-usage-table", props.className)}>
+      <Grid className={cx("niceeval-usage-table", props.className)}>
         {rows.map(([label, value]) => (
-          <div key={label} className="niceeval-usage-table-row">
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
+          <Kpi key={label} label={label} value={value} />
         ))}
-      </dl>
+      </Grid>
     );
   },
   text(props) {

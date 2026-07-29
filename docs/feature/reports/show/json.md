@@ -26,14 +26,15 @@ interface ShowJson {
 ```
 
 - 输出是**一个**顶层 JSON 文档，不是 NDJSON；stdout 只有这个文档，人读的进度与警告走 stderr。
-- **范围含多个 attempt 时**，逐 attempt 视图的 `data` 是对应数据源 Content 的数组，排序与 text 面分节同序（experimentId、evalId、attempt 序）；text 面的节头与合计行是渲染面派生，不进 `data`。
+- **范围含多个 attempt 时**，逐 Attempt 视图的 `data` 是对应任务 Result 的数组，
+  排序与 text 面分节同序；text 面的节头与合计行是渲染面派生，不进 `data`。
 - 错误路径与 text 面一致：无匹配、用法冲突、零可读结果按同样的判定非零退出，错误信息走 stderr，不输出半个 JSON。
 - 字符串值忠实转发落盘内容：终端形态的列宽截断、卡片预览预算**都不适用**；落盘时已被 [256 KiB 上限](../../record/architecture.md#大值截断)截断的值带原样的 `truncated` 标记，`--json` 不追溯还原也不二次截断。
 
 ### 通用 attempt 投影
 
-多个 view 的 `data` 内部仍需要引用具体某次 attempt——不是每个引用点都值得各自重新声明
-`AttemptRecord` 与归属身份的组合，因此这份投影收在信封层，供各数据源 Content 复用或收窄：
+多个 view 的 `data` 内部仍需要引用具体某次 Attempt。
+这份投影收在信封层，供各任务 Result 复用或收窄：
 
 ```typescript
 /** attempt 的通用投影：AttemptRecord 全字段 + 归属身份。 */
@@ -44,27 +45,27 @@ type AttemptJson = AttemptRecord & {
 };
 ```
 
-字段名复用 [Record 落盘类型](../../record/architecture.md)，不为 JSON 输出发明第二套命名；派生量
-由对应 Content 类型声明，本页不重复定义。
+字段名复用 [Record 落盘类型](../../record/architecture.md)，不为 JSON 输出发明第二套命名；
+派生量由对应 Result 类型声明，本页不重复定义。
 
-## `data`：按 view 找组件声明
+## `data`：按 view 找任务结果
 
-`data` 字段不是 show 另起的第二套形状：它只输出 Source 计算后的事实 Content，不序列化
-`SampleSummary` / `AttemptDetail` 这类产品组合树。text 面消费同一批 Content，再由 Component 决定
-摘要、Notice 与排版。本页只维护「view → Content 声明位置」的指针：
+`data` 字段不是 show 另起的第二套形状。
+每个内建切片先执行一个公开任务函数，再把同一 Result 交给 text 组件与 JSON 序列化。
+宿主不序列化任意报告树，也不通过切树猜数据：
 
 | `view` | `data` 单源 |
 |---|---|
-| `leaderboard` | `sources.sample.snapshot` + 默认选择的 Measure Dataset + `sources.entity.experiments`；`SampleSummary` 只消费前两者，不进入 JSON |
-| `compare` | `sources.measure.delta`（[Measure 数据源](../components/sources/measure.md)） |
-| `attempt` | `sources.attempt.snapshot` 与当前详情所需的 evidence Content 集合（[Attempt 详情](../components/attempt-detail/README.md)）；不包含组合树 |
-| `source` | `sources.attempt.source`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `execution` | `sources.attempt.conversation`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `timing` | `sources.attempt.timeline`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
-| `usage` | `sources.attempt.snapshot` 的数组；`AttemptUsage` 只是它的阅读组件 |
-| `diff` | `sources.attempt.diff`（[Library · Attempt 详情](../components/attempt-detail/README.md)） |
+| `leaderboard` | `standardOverviewResult(sample)` |
+| `compare` | `comparisonResult(sample, options)` |
+| `attempt` | `attemptDetailsResult(attempt)`；不包含报告树 |
+| `source` | `annotatedSourceResult(attempt, options)` |
+| `execution` | `conversationResult(attempt)` |
+| `timing` | `timingResult(attempt)` |
+| `usage` | `usageResult(attempt)` 的数组 |
+| `diff` | `diffResult(attempt)` |
 | `history` | [`--history`](history.md)「分节与行内字段」：这个切片不进入组件模型，直接投影 Record evidence（[切片表](../architecture.md#show-的切片是组件选择)未列出它） |
-| `stats` | `sources.measure.stability`（[Measure 数据源](../components/sources/measure.md)） |
+| `stats` | `stabilityResult(sample, options)` |
 
 ## 边界
 

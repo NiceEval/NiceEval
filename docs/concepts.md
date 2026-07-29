@@ -186,13 +186,12 @@
 |---|---|---|---|
 | Attempt 证据 | AttemptEvidence | 每个 Attempt 只装配一次的中性证据聚合,四个消费面共用 | [Reports architecture](feature/reports/architecture.md) |
 | 标注 Eval 源码 | AnnotatedEvalSource | 一个 Attempt 的完整源码调用树；主干、调用片段与未映射记录共用一份面无关证据 | [Eval source](feature/reports/eval-source/README.md) |
-| 读数 | Measure | 一个 Attempt 算出一个值,再按题和组两级聚合;缺数据为 `null` | [Measures](feature/reports/library/measures.md) |
-| 维度 | Dimension | 决定 Attempt 分到哪一组的分组键 | [Measures](feature/reports/library/measures.md) |
+| 计算函数 | Calculation | 从 Attempt 取值，并由 `aggregate()` 按题内与跨题两级折叠成 MetricValue 的函数值 | [Calculations](feature/reports/calculations.md) |
+| 分组函数 | Group function | 从 Attempt 读取稳定字符串键，决定 `aggregate()` 怎样分组 | [Reports library](feature/reports/library.md#分组函数与计算函数) |
+| 读数值 | MetricValue | 带数值、单位、分母口径与 Attempt refs 的可序列化聚合结果 | [Reports library](feature/reports/library.md#分组函数与计算函数) |
 | 报告 | Report | `defineReport` 的产物,也是 `--report` 装载的单位 | [Reports](feature/reports/README.md) |
-| 页 | Page | 报告内带 `id`、`title` 与 `content` 的寻址和导航单位 | [Report shell](feature/reports/library/shell.md) |
-| 原语 | Primitive | 只负责一种稳定 Content 形状、不认识 NiceEval 领域对象，并提供 text / web 两面 | [Report components](feature/reports/components/README.md) |
-| 数据源 | Data source | 把 Sample、Run 或 AttemptEvidence 计算成某个原语可消费的可序列化 Content | [Report components](feature/reports/components/README.md) |
-| 组合组件 | Composition component | 只装配原语与数据源、不自行实现渲染面的组件 | [Report components](feature/reports/components/README.md) |
+| 页 | Page | 报告内静态声明 `id`、`title`、输入种类与惰性 `render` 的寻址和导航单位 | [Reports library](feature/reports/library.md#defineReport-保留静态-page-边界) |
+| 原语 | Primitive | 只负责一种稳定结果形状、不认识 NiceEval 领域对象，并提供 text / web 两面 | [Report components](feature/reports/components/README.md) |
 | 宿主 | Host | 打开结果、选择 Sample 并渲染 Report 的 show 或 view | [Reports architecture](feature/reports/architecture.md) |
 | 有效根 | Effective root | 记录根经位置参数或 `--exp` 收窄后的部分 | [View](feature/reports/view.md) |
 | 持续重建 | Continuous rebuild | `niceeval view` 监听输入变化并重跑整条建站管线 | [View](feature/reports/view.md) |
@@ -201,20 +200,17 @@
 
 ### 报告组件
 
-公开面按角色分成原语、数据源与组合组件。原语名描述稳定形状,数据源名描述算出的 Content,
-组合组件名描述读者得到的完整区块。
+公开面按结果形状分成转换函数与原语。计算先返回普通值，原语再通过具体属性消费同一份值。
 
 | 角色 | API | 回答或呈现什么 | 契约 |
 |---|---|---|---|
 | 原语 | `Table` / `Grid` / `Callouts` / `Waterfall` | 表格、读数网格、提示组与时间树 | [Components](feature/reports/components/README.md) |
-| 图表原语与数据源 | `Chart` + `chart(...)` | 折线、柱、面积、散点或混合 mark 的坐标系 | [Charts](feature/reports/components/charts/README.md) |
-| 实体数据源 | `experimentRows` / `evalRows` / `attemptRows` | 以对应实体为顶层的层级行 | [Sources](feature/reports/components/sources/README.md) |
-| 读数数据源 | `measureRows(...)` / `measureMatrix(...)` | 一个维度的读数行或两个维度的交叉格 | [Sources](feature/reports/components/sources/README.md) |
-| 专用数据源 | `scoreboard(...)` / `deltaRows(...)` / `stabilityRows(...)` | 固定题集成绩、成对差异与历史稳定性 | [Sources](feature/reports/components/sources/README.md) |
-| 摘要数据源 | `sampleSummary(...)` | Sample 的范围、数量、判定构成与主读数 | [Summary](feature/reports/components/summaries/sample-summary.md) |
-| 证据数据源 | `attemptSummary` / `attemptTimeline` / `attemptDiff` 等 | AttemptEvidence 的各类可呈现投影 | [Attempt detail](feature/reports/components/attempt-detail/README.md) |
-| 组合组件 | `SampleOverview` | 当前 Sample 的默认总览 | [Overview](feature/reports/components/summaries/sample-overview.md) |
-| 组合组件 | `AttemptDetail` / `FailureList` | Attempt 完整证据或当前失败集合 | [Components](feature/reports/components/README.md) |
+| 图表原语 | `Scatter` / `Line` / `Bars` / `Area` | 读取 EvidenceRow points 的坐标图 | [Charts](feature/reports/components/charts/README.md) |
+| 实体转换 | `toExperimentRows()` / `toEvalRows()` / `toAttemptRows()` | 把 Sample 或 Attempt 列表立即投影成行 | [Reports library](feature/reports/library.md#实体转换) |
+| 聚合 | `rollup()` / `aggregate()` | 把 Sample 转成带 MetricValue 与 refs 的结果行 | [Calculations](feature/reports/calculations.md) |
+| 证据构造 | `metricValue()` / `evidenceRow()` | 为报告旁复杂算法补齐分母、basis 与 refs | [Reports library](feature/reports/library.md#非-rollup-分析也必须携带证据) |
+| 实体糖组件 | `AttemptList` / `ExperimentList` / `EvalList` | 官方同步投影加一个通用原语 | [Reports library](feature/reports/library.md#实体转换) |
+| Attempt 详情 | `AttemptDetails` | 显示一份宿主已装配的 AttemptEvidence | [Attempt detail](feature/reports/components/attempt-detail/README.md) |
 
 ### 配置与 CLI
 

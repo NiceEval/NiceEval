@@ -1,96 +1,227 @@
 # Reports —— 查看与呈现结果
 
-实验结束后有三种查看方式,它们读取同一份 [`.niceeval/` 运行产物](../record/README.md),
-区别只是交互深度和定制程度。人可以在浏览器复盘,Agent 可以在终端读取同一份自定义业务口径。
-报告的双面契约保证两者共享数字与证据,不要求共享几何布局:
+Reports 把宿主选好的 Sample 或 Attempt Evidence 转成一棵报告组件树，
+再由 `show` 与 `view` 分别渲染成 text 与 web。
+报告作者只选择官方数据、显示形状与页面，不接触内部取数和双面渲染管线。
 
-| 需求 | 入口 | 适合场景 |
-|---|---|---|
-| 在终端定位失败、看源码、对话和 diff | [`niceeval show`](show.md) | AI 自主迭代、CI、快速 debug |
-| 在浏览器浏览历史、图表和完整证据 | [`niceeval view`](view.md) | 人工复盘、分享静态报告 |
-| 定义自己的成绩单、图表或趋势页 | [`niceeval/report`](library.md) | 产品页面、benchmark 站、定制汇报 |
+作者模型只有一条主线：
 
-完整工作流见[让人和 Agent 读取同一份自定义报告](use-case/使用宿主/让Agent读取自定义报告.md)。
+```text
+静态 ReportDefinition / page 清单
+  → 一个 page 的 Sample / Attempt Evidence 输入
+  → 普通 TypeScript 函数
+  → 可序列化结果值
+  → 报告组件
+  → text / web
+```
 
-`show` 和 `view` 都接受 `--report <名字|文件>` 替换同一份 page 声明。报告文件的默认导出恒为 `defineReport` 产物：传一棵报告树会展开为一张 sample-input page；传配置对象还能声明导航外壳并把内容拆成多张 page，其中 `input: "attempt"`、`navigation: false` 的 page 负责 locator 详情；`view` 渲染导航 pages，`show` 渲染初始页并在尾部附其余可导航页索引，写法见 [Library · 外壳与多页](library/shell.md)。
+单页报告是一个接收 Sample、返回报告树的惰性 page 函数；
+多页报告静态声明 pages，每页各有自己的惰性 render。
+官方读数与实体投影是普通转换函数。
+组件接收 `rows`、`points`、`value`、`items`、`attempt` 等具体属性。
 
-两个宿主装载哪份定义只有一条取值链，三档，前档缺席才落下一档：
+公开作者面不出现 `data`、`Source`、`Content`、`View`、`MetricView`、
+`Composition`、`ctx.resolve()` 或惰性查询对象。
 
-| 档 | 取值 | 用途 |
-|---|---|---|
-| 1 | `--report <名字\|文件>` | 单次运行指定；裸词是[内建视图名](library/built-in.md)（`--report standard`），带路径形是报告文件 |
-| 2 | `niceeval.config.ts` 的 [`report` 字段](#项目默认报告) | 项目默认报告，团队里每个人裸跑 `show` / `view` 都看这一份 |
-| 3 | 内建 `standard` | 报告、Attempts、追踪三张导航页，加一张 `AttemptDetail` 参数化页（[全文](library/built-in.md)） |
+完整 API 见 [Library](library.md)，计算准入见 [Calculations](calculations.md)，
+内部边界见 [Architecture](architecture.md)，外部产品对照见
+[References](reference/authoring.md)。
 
-三档产出同一种 `ReportDefinition`，走同一条 `装载 → resolve → validate → render` 管线。所有内容都是 page 内公开组件，没有宿主特权。
+## 基本写法
 
-**看什么和长什么样是两份制品。** 报告说这份结果给谁看什么，[主题](library/theme.md)说它长什么样；一份主题可以套在任何报告上，一份报告也可以换任何主题。主题因此有自己的一条取值链，四档：
+同一个问题改写为普通函数：
 
-| 档 | 取值 | 用途 |
-|---|---|---|
-| 1 | `--theme <名字\|文件>` | 单次运行指定；裸词是[内建主题名](themes/README.md)（`--theme basalt`），带路径形是主题文件 |
-| 2 | 报告定义的 [`theme` 外壳字段](library/shell.md#字段穷尽) | 这份报告自带的外观，随报告文件一起分发 |
-| 3 | `niceeval.config.ts` 的 `theme` 字段 | 项目默认外观 |
-| 4 | 内建 [`basalt`](themes/basalt.md) | NiceEval 官方主题：黑色系、零圆角、发丝分隔线 |
+```tsx
+import {
+  Page,
+  Scatter,
+  Table,
+  agent,
+  aggregate,
+  costUSD,
+  defineReport,
+  passRate,
+} from "niceeval/report";
 
-`--theme` 只作用于 web 面，是 `view` 的 flag；`show --theme` 报错并指向 `view`。
+export default defineReport(async (sample) => {
+  const performance = await aggregate(sample, {
+    by: { agent },
+    values: { passRate, costUSD },
+  });
 
-## 项目默认报告
-
-自定义报告写好后不该要求每个人每次都敲 `--report`。把 `defineReport` 产物填进项目配置的 `report` 字段，裸 `show` / `view` 就装载它：
-
-```ts
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-import site from "./reports/site";
-
-export default defineConfig({
-  report: site,
+  return (
+    <Page title="Quality and cost">
+      <Scatter
+        points={performance}
+        x="costUSD"
+        y="passRate"
+        point="agent"
+      />
+      <Table rows={performance} />
+    </Page>
+  );
 });
 ```
 
-字段收 `defineReport` 产物本身，不是路径字符串：配置文件是 TS，import 自己的报告文件即可，写错在类型检查时就暴露。想在内建报告上加外壳或改页，`defineReport({ extends: standard, … })` 的产物同样直接填进来。填了非 `defineReport` 产物（普通对象、React 组件、报告树）按完整用户反馈报错，出处点名配置文件的 `report` 字段。
+作者只需要理解：
 
-这个字段只影响读面：`niceeval exp` 不装载报告树，报告定义也不进 Run。要临时回到内建报告排查「是报告写错还是数据不对」，用 `niceeval show --report standard`，不必改配置。
+1. `sample` 是宿主选好的普通 Sample。
+2. `aggregate()` 把 Sample 转成结果行。
+3. `Scatter` 显示 points，`Table` 显示 rows。
 
-团队品牌同理，`theme` 字段收 `defineTheme` 产物：
+`passRate`、`costUSD` 与 `agent` 由 NiceEval 官方提供。
+它们与用户函数使用相同的公开组合器和调用路径，没有官方专用计算协议。
 
-```ts
-// niceeval.config.ts
-import { defineConfig } from "niceeval";
-import { acmeTheme } from "./themes/acme";
-import site from "./reports/site";
+## 实体列表也是普通值
 
-export default defineConfig({
-  report: site,
-  theme: acmeTheme,
+Sample 已经公开物化、去重后的 `attempts`。
+筛选、排序和截断使用现有 Sample 方法与普通数组方法：
+
+```tsx
+export default defineReport((sample) => {
+  const security = sample
+    .scope({ evals: "security/" })
+    .filter((attempt) =>
+      attempt.result.verdict === "failed" ||
+      attempt.result.verdict === "errored"
+    );
+
+  const attempts = security.attempts
+    .toSorted((a, b) =>
+      (attemptCostUSD(b.result) ?? 0) -
+      (attemptCostUSD(a.result) ?? 0)
+    )
+    .slice(0, 50);
+
+  return (
+    <Page title="Failures">
+      <AttemptList attempts={attempts} />
+    </Page>
+  );
 });
 ```
 
-报告只表达“怎么看”。原始判定、断言、事件、trace 和 diff 的事实归 [Record](../record/README.md)；运行过程中把事实写出去的回调叫 [Reporter](../../runner.md),不属于这里。
+这里没有一个伪装成数据的查询声明。
+`security` 是 Sample，`attempts` 是 `AttemptHandle[]`，
+组件接收的也是 `attempts`。
 
-## 从哪开始
+如果作者要使用通用表格，先显式转换成行：
 
-- 正在修一个失败的 eval：从 [`show`](show.md) 开始。
-- 想浏览或发布完整结果站：看 [`view`](view.md)。
-- 想写自己的报告：看 [Library](library.md)，先按问题选择数据源与原语，再参考完整示例。
-- 想把结果发布成带品牌、外链和多页导航的站点：看 [Library · 外壳与多页](library/shell.md)。
-- 想改整站强调色、状态色、图表色板、字体或进一步覆盖 CSS：看 [Library · 主题](library/theme.md)。
-- 想自己写数据源或组合组件：看[扩展报告](use-case/构建报告/自定义组件/)。
-- 想知道组件里能调用哪些官方函数（格式化、取实验色、文本对齐）：
-  看 [Library · 格式化与呈现工具箱](library/presentation.md)。
-- 想知道默认报告本身怎么写、怎么逐步改造：看 [Library · 内建报告](library/built-in.md)。
-- 想知道字段从哪个文件来：看 [Record Architecture](../record/architecture.md)。
-- 想理解共享 helper 中的断言怎样回到入口调用行：看[源码调用树](eval-source/README.md)。
+```tsx
+const rows = toAttemptRows(attempts);
+
+return <Table rows={rows} />;
+```
+
+`toAttemptRows()` 是立即执行的普通转换。
+它不注册数据源，不读取 page context，也不等待渲染器调用。
+
+## 设计原则
+
+- **值先于协议。** 能用 Sample、AttemptHandle、数组和对象表达的能力不包装成查询对象。
+- **转换就是函数。** 官方计算只有 `Input → Output | Promise<Output>` 一种形态。
+- **组件属性说出角色。** 表格接 `rows`，散点图接 `points`，摘要格接 `value`，
+  Attempt 详情接 `attempt`。
+- **page render 拥有异步。** 需要读取 artifact 时直接 `await`，不增加 Composition 概念。
+- **page 是必要的声明边界。** page 清单静态可见，内容逐页惰性求值和失败隔离；
+  普通值模型不等于把整份报告变成一个不透明函数。
+- **正确性留在组合器。** 两级聚合、覆盖与 refs 由 `rollup()` 和 `aggregate()` 保证，
+  官方函数与用户函数走同一条路。
+- **复杂读数仍欠证据。** 非 rollup 算法通过 `metricValue()` 和
+  `evidenceRow()` 声明分母、basis 与 refs。
+- **范围必须可见。** 共享过滤先产生一个具名 Sample；
+  内建报告和组件不能藏只对自己生效的过滤。
+- **普通 JavaScript 是组合语言。** 过滤、排序、截断、join 与并行使用语言已有能力。
+- **组件按形状准入。** 组件目录按渲染形状增长；
+  领域名词只能命名函数或内建报告，不能命名组件。
+- **壳只装宿主必需品。** 外壳保留宿主机器在 page render 之外
+  必须消费的字段；跨页内容用普通组合，组件资产随组件声明。
+- **参数没有新协议。** 组件收 props，报告收工厂闭包参数，
+  运行期数据走冻结 External；CLI 不开报告参数。
+- **结果一次生成、双面消费。** 一个 page 实例只执行一次，
+  text 与 web renderer 读取同一棵结果树。
+- **高级扩展也是函数。** 自定义转换不注册；自定义显示形状才需要双面 renderer 协议。
+
+## 公开概念
+
+普通报告作者只需要六类概念；单页报告可以忽略 page 配置：
+
+| 概念 | 例子 |
+|---|---|
+| 静态 page 定义 | `{ id, title, input, navigation, render }` |
+| 输入值 | `Sample`、`AttemptEvidence`、冻结 External snapshot |
+| Reducer、分组与计算函数 | `mean`、`percentile(0.95)`、`agent`、`passRate` |
+| 普通转换 | `aggregate()`、`pairedDelta()`、`toAttemptRows()` |
+| 结果值 | rows、EvidenceRow / ExternalPoint、items、MetricValue |
+| 组件 | `Table`、`Scatter`、`Callouts`、`AttemptDetails` |
+
+“结果值”不是一个需要 import 的总协议名。
+每个函数返回精确的 TypeScript 类型，每个组件声明自己接受什么。
+
+## 边界
+
+- 不建立 `data.*`、`views.*` 或字符串查询目录。
+- 不让同一个组件支持 `source` / `data` / `view` 多种绑定。
+- 不引入 SQL、模板变量或另一门表达式语言。
+- 不把数组的 `filter`、`sort`、`map` 重新包装成框架 DSL。
+- 不让报告作者实现新的查询协议；
+  标量计算使用 `rollup()`，复杂计算使用统一证据结果构造器。
+- 不让 Web renderer 重新取数或聚合。
+- 不要求组件作者以外的人理解 text / web renderer 协议。
+
+## 宿主边界
+
+1. **页粒度。** 多页定义必须用非空有序数组静态列出 page；
+   宿主逐页执行 render。
+   首屏不计算其它 page，失败隔离和缓存以 page 实例为单位。
+2. **非 rollup 证据。** Sample 派生图表只接受 EvidenceRow；
+   复杂算法通过 MetricValue 构造器强制提交 samples、total、basis 与 refs。
+3. **show / JSON。** `ShowJson` 信封继续存在；
+   每个内建切片由一个公开任务函数产出普通 Result，
+   text 组件和 JSON 序列化消费同一次结果，不从报告树切数据。
+4. **壳收缩到宿主必需品。** 外壳只保留 `title`、`theme`、
+   `dimensionPins` 与 `head`；
+   页脚与页头链接是普通内容，组件脚本样式随组件资产声明，
+   站点级注入走 `head`。
+
+## 契约场景
+
+实现与测试至少覆盖这些完整报告：
+
+1. 按 Agent 比较通过率与成本，并同时显示散点和表格。
+2. 收窄 `security/` Eval 后列出失败 Attempt。
+3. 用 `sample.historyAttempts` 计算按 Run 展示的历史趋势。
+4. 用报告旁的普通函数计算成对差异与稳定性。
+5. 组合 Sample Issue、Run diagnostics 与摘要读数。
+6. 从聚合 MetricValue 下钻到 Attempt 详情。
+7. 写一个接收 Sample 的普通异步函数，在两张 page 复用。
+8. 把转换结果传给自有 React 页面。
+9. 组件库作者定义一个新的双面显示形状。
+10. 多页报告只执行被请求 page；其中一页失败时其它 page 仍可用。
+11. Attempt 详情作为 `input: "attempt"` 的参数化 page 静态导出和深链。
+12. 每个内建 show 切片的 text 与 ShowJson 共用同一任务结果。
+13. 切换 locale 只重新格式化 MetricValue，不重新运行 page 计算。
+14. EvidenceRow 经 JSON fixture 和 React props 往返后无需水化即可渲染。
+15. page id 即使是 `"1"` 或 `"2024"`，导航仍严格服从 pages 数组顺序。
+16. 纯外部预算时间序列经显式 `external` 声明绘图，且不出现 Attempt 下钻。
+17. 自定义报告直接复用官方导出的 `standardAttemptPage`。
+18. 按固定题集 rubric 手写成绩单：缺题保持固定分母，
+    总分 evidence 复用各题格 MetricValue 的 refs。
+19. 业务目标线作为显式 `external` series 叠加在 Sample 派生图上。
+20. 未声明 `external` 的图表拒绝无 refs 的 points，错误指向组件与字段。
+21. `by` 与 `values` 键冲突或占用保留键 `refs` 时，
+    编译期与执行期都拒绝并指出冲突键。
+22. 页脚与页头链接作为普通内容包进每页 render，宿主没有对应槽位。
+23. 自定义显示形状随组件声明 assets，页面只注入实际出现组件的资产。
+24. 工厂函数产出带参数的 ReportDefinition，使用方传 opts 后默认导出。
+
+普通场景 1–8 不得出现 `data`、`Source`、`Content`、`View`、
+`Measure`、`Composition`、`ctx`、`resolve` 或 `compute`。
 
 ## 相关阅读
 
-- [Show](show.md) —— 终端中的默认报告、attempt 诊断和证据切面。
-- [View](view.md) —— 本地网页、结果收窄和静态导出。
-- [用例手册](use-case/README.md) —— `show` / `view` 输入与 Library 组件分别在什么真实任务中使用。
-- [Library](library.md) —— 数据源、原语、组合组件与常用示例。
-- [Theme](library/theme.md) —— 主题制品、四档装载链、令牌全集与完整 CSS 出口。
-- [主题目录](themes/README.md) —— 内建主题一览；官方主题 [Basalt](themes/basalt.md) 的取值与主张。
-- [Architecture](architecture.md) —— 两个宿主、报告树和可序列化边界。
-- [Record Lib](../record/library.md) —— 结果读写库:类型的家、writer、`openRecord`、实验/Run 层次、选择器、身份键;第二档吃它的读取面。
-- [Record Format](../record/architecture.md) —— 唯一持久化事实来源。
+- [Library](library.md) —— page render、`aggregate()`、结果值、组件与完整示例。
+- [Calculations](calculations.md) —— 为什么没有 Sample map，以及哪些领域算法不进核心 API。
+- [Architecture](architecture.md) —— 执行时机、缓存、双面边界与 React 嵌入。
+- [References](reference/authoring.md) —— 外部产品中可借与不可借的部分。
+- [Sample](../sample/README.md) —— sample page 接收的物化输入。

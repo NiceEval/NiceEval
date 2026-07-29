@@ -12,7 +12,7 @@ A report is a report file. `niceeval show` and `niceeval view` open the record a
 
 The default report `niceeval show` / `view` render when there is no `--report` and no `report` field in the config is not a private implementation — it is an ordinary report file the package ships: three pages (Report, Attempts, Traces), each built from components publicly exported by `niceeval/report` — the page header (`Hero`), the selection warnings (`ScopeWarnings`), the report page's comparison component `ExperimentComparison`, the Attempts page's attempt list (`AttemptList`), and the Traces page's trace waterfall (`TraceWaterfall`).
 
-This default report is itself exported from `niceeval/report/built-in` under the name `standard`. When all you want is to add a site title, a GitHub link, or an analytics script on top of the default report, stack your own shell on it with `extends` — you don't need to write a single line of page content, and page improvements that come with a NiceEval upgrade carry over automatically too:
+This default report is itself exported from `niceeval/report/built-in` under the name `standard`. When all you want is to add a site title, a GitHub link, or an analytics script on top of the default report, spread its pages into your own `pages` — you don't need to write a single line of page content, and page improvements that come with a NiceEval upgrade carry over automatically too:
 
 ```tsx
 // reports/branded.tsx —— the whole default report, plus your own title and links
@@ -20,7 +20,7 @@ import { defineReport } from "niceeval/report";
 import { standard } from "niceeval/report/built-in";
 
 export default defineReport({
-  extends: standard,
+  pages: [...standard.pages],
   title: "Memory Evals",
   links: [{ label: "GitHub", href: "https://github.com/you/repo" }],
 });

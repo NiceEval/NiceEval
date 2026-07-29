@@ -162,11 +162,18 @@ latest.coverage[0];
 
 `warnings` 收的是定位不到具体某道题的完整性问题：选中的快照没收尾（进程中断）进 `unfinished-snapshot`、落盘读不了进 `unreadable-snapshot`，每种都带 `kind`、可判断的结构化字段和渲染好的英文 `message`（要展示就原样打）。
 
-`run.diagnostics` 和 `issues` 分工不同：`issues` 讲的是「这批数据是怎么挑出来的」，`diagnostics` 讲的是「某一次实验跑的时候出了什么事」——实验级 teardown 失败、预算没法执行这类记录，落不到某道题上，就跟着它真正所属的 Run 一起收尾写盘。它们始终绑定自己的 `experimentId` 和 `startedAt`，不会被合并成整个 Sample 的结论，也不会复制到每条 Attempt 上；报告通过 `sources.run.diagnostics` 读取事实，再由 `RunNotices` 逐条显示是哪一次跑出来的、多久以前跑的。
+`run.diagnostics` 和 `issues` 分工不同：`issues` 讲的是「这批数据是怎么挑出来的」，
+`diagnostics` 讲的是「某一次实验跑的时候出了什么事」。
+实验级 teardown 失败、预算没法执行这类记录跟着所属 Run 写盘。
+报告用 `toRunDiagnostics(sample)` 产生 Notice items，再交给 `Callouts`。
 
 每条结果还带**时效**：携带条目（缓存命中、上一轮的结果合入本快照）`attempt.carried` 为 true，默认报告在这类行后标 `↩` 加时距（如 `↩ 3d`）——旧但有效，fingerprint 担保过没改，所以是行内标注不是警告。只想看最新一次真实跑出来的结果，用 `results.latest({ fresh: true })` 或 CLI 的 `--fresh`，被排除的题会转成占位行，不会静默消失。
 
-Sample 是[报告积木](/zh/tutorials/custom-reports)和下文 `publish` 的通用输入：coverage 与 issues 随行，实体 Source 会生成覆盖缺口占位行，`SampleNotices` 会解释读取期 Issue。`sample.runs` 里的每一项都是盘上那份真实 Run，`diagnostics` 跟着它走。微调官方口径使用 Sample 的过滤器，得到的新 Sample 会同步修剪 Attempt、Run、coverage 与 issues，并保留 provenance。`filter` 只做删减；「换成该实验上一个完整 Run」这类替换式重挑应重新选择 Sample，不能把任意 `Run[]` 冒充 Source input。
+Sample 是[自定义报告](/zh/tutorials/custom-reports)和下文 `publish` 的通用输入。
+coverage 与 issues 随行，`toExperimentRows(sample)` 生成覆盖缺口占位行，
+`toSampleNotices(sample)` 解释读取期 Issue。
+过滤后的 Sample 会同步修剪 Attempt、Run、coverage 与 issues，并保留 provenance。
+`filter` 只做删减；替换式重挑应重新选择 Sample。
 
 ## 一个真实脚本：分布不是折叠
 

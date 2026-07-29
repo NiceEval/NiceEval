@@ -34,7 +34,7 @@ export const SampleSummary = defineComposition<SampleSummaryProps, Sample>(async
 
   return (
     <Col className={["niceeval-sample-summary", props.className].filter(Boolean).join(" ")}>
-      <Grid density="compact" variant="boxed" className="niceeval-sample-summary-grid">
+      <Grid>
         {snapshot.scoringComposition !== "points" ? (
           <Stat label={localeText(locale, "scopeSummary.passRate")} value={{ kind: "measure", measure: snapshot.endToEndPassRate }} />
         ) : null}

@@ -42,7 +42,7 @@ SourceContent
 ```
 
 [`AttemptEvidence`](../../record/library.md) 携带完整的 `AnnotatedEvalSource`。预算、上下文半径、
-`--source=full` 和 web 的默认展开态只影响 `SourceContent`，不改变 evidence。
+`--source=full` 和 web 的默认展开态只影响 `AnnotatedSourceResult`，不改变 evidence。
 
 ## 三种兜底
 
@@ -51,7 +51,7 @@ SourceContent
 1. 有声明位置和源码，但链不经过主干：进入 `detached`，按最外层项目帧所在文件分组。
 2. 有声明位置但源码不可用：保留路径与行号，在相邻可用节点下显示不可展开的缺口。
 3. 没有声明位置：断言与给分记录进入 `unmapped`，按
-   [`sources.attempt.assertions`](../components/attempt-detail/README.md)
+   [`toAssertionRows(attempt)`](../components/attempt-detail/README.md)
    的条目形态平铺。
 
 没有位置的 Turn 不进入 `unmapped`。Turn 的完整诊断面始终是
@@ -70,4 +70,4 @@ SourceContent
 - [Architecture](architecture.md) —— 调用链采集、源码快照与完整树的数据形状。
 - [Display](display.md) —— 归属、建树和面相关投影。
 - [`show --source`](../show/eval-source.md) —— 终端命令、输出和展开入口。
-- [`sources.attempt.source`](../components/sources/attempt-source.md) —— web 面交互与视觉规范。
+- [`toAnnotatedEvalSource(attempt)`](../components/primitives/source-view.md) —— web 面交互与视觉规范。

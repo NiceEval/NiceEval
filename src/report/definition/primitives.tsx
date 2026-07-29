@@ -18,8 +18,8 @@ import {
   gridContainerRules,
   normalizeGrid,
   planTextGrid,
-  type GridDensity,
-  type GridVariant,
+  textGridRowSeparator,
+  TEXT_GRID_SEPARATOR,
 } from "./grid-layout.ts";
 import type { Source, SourceInput } from "../source.ts";
 import type { Dataset } from "../model/types.ts";
@@ -107,57 +107,24 @@ Row.displayName = "Row";
 
 // ───────────────────────── Grid / Stat ─────────────────────────
 
-export interface GridProps extends LayoutProps {
-  /** plain 无框;boxed 给每个 cell 完整四边框。默认 plain。 */
-  variant?: GridVariant;
-  /** 格子体量:最小格宽、格内留白与内置 Stat 的主值字号;不改变内容和分组。默认 regular。 */
-  density?: GridDensity;
-}
-
-/** boxed 单个 cell 的完整边框:同一份 TextGridPlan 决定内容宽度,四边不因换行残缺。 */
-function boxCellBlock(content: string, contentWidth: number): string {
-  const lines = content.length > 0 ? content.split("\n") : [""];
-  const top = `┌${"─".repeat(contentWidth + 2)}┐`;
-  const bottom = `└${"─".repeat(contentWidth + 2)}┘`;
-  const body = lines.map((line) => `│ ${padDisplay(line, contentWidth)} │`);
-  return [top, ...body, bottom].join("\n");
-}
-
-/** 一个物理行内的 cell 并排:顶对齐、短 block 补空行到同高(joinColumns 已有语义)。 */
-function renderGridRow(blocks: string[], contentWidths: number[], gutter: number, variant: GridVariant): string {
-  const separator = " ".repeat(gutter);
-  if (variant === "boxed") {
-    const boxed = blocks.map((block, i) => boxCellBlock(block, contentWidths[i]));
-    const boxWidths = contentWidths.map((w) => w + 4);
-    return joinColumns(boxed, boxWidths, separator);
-  }
-  return joinColumns(blocks, contentWidths, separator);
-}
+export type GridProps = LayoutProps;
 
 /**
  * 自由摘要面板的格子容器:只负责呈现,不读取 Sample、不聚合 Metric。每个直接子节点
  * (数组 / Fragment 先按 ReportNode 规则展平,空分支不占格)是一格;`Col` 把多个区块
- * 归成一格。列数由格数 × 可用宽度算出(./grid-layout.ts),这里只做两面结构适配。
+ * 归成一格。列数、边框与体量全由格数 × 可用宽度算出(./grid-layout.ts),Grid 不收这些
+ * 参数,本文件只做两面结构适配。
  */
 export const Grid = defineComponent<GridProps>({
   dimensions: () => ({}),
-  web({ children, variant, density, className }) {
-    const normalized = normalizeGrid({ children, variant, density });
+  web({ children, className }) {
+    const normalized = normalizeGrid({ children });
     const cellCount = normalized.cells.length;
-    const rules = gridContainerRules(cellCount, normalized.density);
+    const rules = gridContainerRules(cellCount);
     return (
       <div className="niceeval-report niceeval-grid-fit">
         {rules ? <style>{rules}</style> : null}
-        <div
-          className={cx(
-            "niceeval-report",
-            "niceeval-grid",
-            `niceeval-grid--${normalized.variant}`,
-            `niceeval-grid--${normalized.density}`,
-            className,
-          )}
-          data-cells={cellCount}
-        >
+        <div className={cx("niceeval-report", "niceeval-grid", className)} data-cells={cellCount}>
           {normalized.cells.map((cell) => (
             <div className="niceeval-grid-cell" key={cell.key}>
               {cell.node as ReactNode}
@@ -167,14 +134,10 @@ export const Grid = defineComponent<GridProps>({
       </div>
     );
   },
-  text({ children, variant, density }, ctx) {
-    const normalized = normalizeGrid({ children, variant, density });
+  text({ children }, ctx) {
+    const normalized = normalizeGrid({ children });
     if (normalized.cells.length === 0) return "";
-    const plan = planTextGrid({
-      availableWidth: ctx.width,
-      cellCount: normalized.cells.length,
-      density: normalized.density,
-    });
+    const plan = planTextGrid({ availableWidth: ctx.width, cellCount: normalized.cells.length });
     // 确定计划后才对每个 cell 调用一次 ctx.render——不为试探列数重复渲染。
     // 孤格铺满整行:末行只剩一格时用 fullRowContentWidth,其余短末行按各列宽左对齐不拉伸。
     const cellWidths = normalized.cells.map((_, i) => {
@@ -186,13 +149,15 @@ export const Grid = defineComponent<GridProps>({
       return isLastRowLone ? plan.fullRowContentWidth : plan.contentWidths[col];
     });
     const blocks = normalized.cells.map((cell, i) => ctx.render(cell.node, cellWidths[i]));
-    const rows: string[] = [];
+    // 行与行之间是一条行间线,不是空行——格线要连起来才读成一片面板。
+    const out: string[] = [];
     for (let start = 0; start < blocks.length; start += plan.columns) {
       const rowBlocks = blocks.slice(start, start + plan.columns);
       const rowWidths = cellWidths.slice(start, start + rowBlocks.length);
-      rows.push(renderGridRow(rowBlocks, rowWidths, plan.gutter, normalized.variant));
+      if (start > 0) out.push(textGridRowSeparator(plan.contentWidths, plan.columns, rowBlocks.length));
+      out.push(joinColumns(rowBlocks, rowWidths, TEXT_GRID_SEPARATOR));
     }
-    return rows.join("\n\n");
+    return out.join("\n");
   },
 });
 Grid.displayName = "Grid";

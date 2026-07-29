@@ -4,13 +4,14 @@
 尾部附 Attempts、追踪两页的索引。配了就装载配置里的报告，取值链见
 [Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份。
 
-页首是 `Hero`、`SampleNotices` 与 `RunNotices`。随后 `SampleOverview` 输出当前 Sample 的摘要、
-成本 × 主读数散点和 `sources.entity.experiments`。散点 y 轴与实验列表主列跟随 Sample 的
+页首是 `Hero`，随后是默认任务函数产出的 Notice、摘要、
+成本 × 主读数 points 和 Experiment rows。
+散点 y 轴与实验列表主列跟随 Sample 的
 [主读数映射](../library/measures.md#题型构成与主读数)：
 
 - 通过制 Sample 使用通过率；
 - 计分制 Sample 把 y 轴与主列换成总分，预排也按总分；
-- 混型 Sample 按题型并排两组散点与列表。
+- 混型 Sample 摘要与实验列表两个主读数并排，散点画通过制那组。
 
 整页组件树没有 `Section`，所以 text 面无框铺开，散点与宽表占满可用列宽。圆角面板只随
 `Section` 出现（约定见 [Layout](../library/layout.md)），用于 `AttemptDetail` 这类多区域详情页。
@@ -113,8 +114,8 @@ dev-e2b/codex-e2b
 
 携带或跨 Run 拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总
 `↩ n/m attempts`。覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与读数分母。
-两条契约见 [sources.entity.experiments](../components/sources/entity-experiments.md) 与
-[时效标注](../components/sources/entity.md#时效标注)。
+实体 rows 由公开 `toExperimentRows(sample)` 产生；
+时效标注与覆盖占位都在这个立即转换中确定。
 
 locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。Result 单元格使用 [Assertions 定义的主失败断言摘要](../../assertions/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。绝不把该 attempt 的全部 assertion name 拼进表格——即使有几十条 assertions，一条 Attempt 子行也最多占两行。locator 本身就是证据入口；打开 Attempt 后再列完整断言与实际可执行的证据命令。
 

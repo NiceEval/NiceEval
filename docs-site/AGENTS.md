@@ -37,12 +37,12 @@
 - **Flags**：experiment 传入的 feature flags，经 `ctx.flags` 到 Adapter，经 `t.flags` 到 eval。不要写成 CLI flags，除非指命令行参数。
 - **Runner**：运行器。面向用户文档里避免写 “NiceEval core”；需要表达执行主体时写 NiceEval 或 runner。
 - **生命周期 Hook**：四层（实验级 / Sandbox 级 / eval 级 / agent 级）共用同一形态的成对 `setup` / `teardown` 回调。中文写”生命周期”（泛指机制）或”生命周期 Hook”（指具体回调），不写”钩子”。
-- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的 `standard` 报告——报告 / Attempts / 追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页，每页由公开 Source、Composition 与 Component 组成，与用户报告文件完全同构。首页使用 `SampleOverview`，网页与终端消费同一次 page resolve 的 Content。
+- **默认报告（内建报告）**：`niceeval show` / `view` 在没有 `--report`、配置里也没写 `report` 时装载的 `standard` 报告——报告 / Attempts / 追踪三个导航页，加一个不进导航、按 Attempt 定位符打开的详情页。每页用公开转换函数和组件组成，与用户报告文件同构。首页由摘要、质量成本散点与 Experiment 表格组成，网页与终端消费同一次 page render 的结果树。
 - **Snapshot**：结果读取面的单位（experiment × run）。中文写“结果快照”（同页后续可简写“快照”）；与快照测试无关；沙箱 microVM 快照一律写“沙箱快照（`snapshotId`）”。
 - **Sample**：从 Record 选出的可比较读取面。中文正文写 `Sample`，不写 `Scope`；它携带选中的 Attempt、贡献 Run、覆盖、来源与读取期 Issue。
 - **Severity**：断言的 gate / soft 两档。中文写“严重度”，不写“严重级”；能直接写 gate / soft 的句子不要提“严重度”这个上位词。
-- **双面组件（dual-render component）**：`defineComponent({ dimensions, text, web })` 的产物。英文写 dual-render，不写 dual-face。Component 只显示 Content，不取数。
-- **报告模型**：Source 通过 `sources.*` / `defineSource(...)` 计算 Content；Composition 通过 `defineComposition(...)` 协调 Source 并装配组件树；Component 把 Content 投影到 text / web。默认组合件是 `SampleOverview`，汇总组合件是 `SampleSummary`，失败清单是 `FailureList`，Attempt 详情是 `AttemptDetail`。表格统一使用 `Table`，图表统一使用 `Chart` + `Series`；不把旧的专用表格或按 mark 分裂的图表名写进公开正文。
+- **双面组件（dual-render component）**：`defineRenderer({ text, web })` 的产物。英文写 dual-render，不写 dual-face。组件只显示已经计算好的普通值，不取数。
+- **报告模型**：page render 接收 Sample 或 AttemptEvidence，用普通 TypeScript 函数产生可序列化结果，再把结果交给组件。表格使用 `Table rows={...}`；图表按显示形状使用 `Scatter`、`Line`、`Bars` 与 `Area`。Attempt 详情组件是 `AttemptDetails`。
 - **值断言**：`expect` 匹配器经 `t.check` / `t.require` 的即时断言。不写“值级断言”。
 
 ## 写作规则

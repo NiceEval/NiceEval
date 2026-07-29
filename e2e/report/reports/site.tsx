@@ -52,7 +52,7 @@ const RunOverviewGrid = defineComposition(async (_props: Record<string, never>, 
   const summary = await ctx.resolve(sources.sample.snapshot);
   const rate = summary.endToEndPassRate.value;
   return (
-    <Grid variant="boxed">
+    <Grid>
       <Stat label={{ en: "Experiments", "zh-CN": "实验数" }} value={summary.experiments} />
       <Stat label={{ en: "Evals", "zh-CN": "Eval 数" }} value={summary.evals} />
       <Stat label={{ en: "Attempts", "zh-CN": "Attempt 数" }} value={summary.attempts} />

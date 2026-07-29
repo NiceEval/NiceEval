@@ -2,152 +2,53 @@
 
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md)
-
----
+[PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) ·
+[PLAN-4](PLAN-4.md) · [PLAN-5](PLAN-5.md)
 
 ## 结论
 
-采纳 [PLAN-2](PLAN-2.md) 的取数结论，作者面是三个核心概念：
-**Source 计算可复用 Content，Composition 在运行期编排，Component 显示 Content**。
-不引入 SQL，也不引入按视图命名的专用组件。
+采纳 [PLAN-5](PLAN-5.md)。
+作者面是“静态 page + 普通函数 + 普通结果值 + 按形状命名的组件”。
 
-三个概念各得到一个答案：
+- page 清单静态可见，page render 拥有异步、按页失败隔离与缓存。
+- `rollup()` / `aggregate()` 保障两级聚合、coverage 与 refs。
+- 复杂算法通过 `metricValue()` / `evidenceRow()` 交出证据结果。
+- 实体投影是 `to*` 立即转换，复用区块是普通函数。
+- 组件只接 `rows`、`points`、`items`、`nodes`、`value` 或 `attempt`。
+- 只有新增显示形状时才定义 text / web 双面 renderer。
 
-- **Source 只有一种协议。** `Source<Input extends SourceInput, Content>` 与 `defineSource(...)` 是唯一
-  `.niceeval` 查询接口；输入只允许 Sample / AttemptEvidence。表格默认字段
-  与 rows 由同一次 `compute()` 返回，但字段描述不含本地化 label 或布局；只有这一个定义入口。
-- **Composition 是运行期编排概念。** `defineComposition((props, ctx) => MaybePromise<ReportNode>)`
-  拿到当前 page 的 `ctx.input`，用 `ctx.resolve(source)` 取多个 Source，再返回组件树。
-  它是作者模型的第三个概念，不是只能排列已有组件的宏。
-  `await` 在报告树里只有这一个合法产地，降级成装配宏就没有地方写「取两个 Source 再 join」。
-- **Component 只有 source / data 两种用法。** 管线把 source 计算成 Content 后才进入 renderer；
-  renderer 看不到 Source、Sample、Record，也没有自己的 `resolve` 取数面。
-- **数据由类型化声明提供。** 读数、维度与聚合方向写在 TypeScript 里，
-  作者面不出现查询语言。
-- **报告树对双面 Component 开放。** 作者可以用 `defineComponent` 增加新的视觉形状，
-  但必须同时实现 text 与 web renderer。
-- **名称与视觉编码是一份维度呈现。** `dimensions(data)` 让管线提前收集全集并按句柄命名，renderer 通过
-  `ctx.dimension(handle).at(index)` 取得身份、页内唯一标签和视觉编码；自有页面使用 `presentDimension(...)`。
-  编码容量是 6 色 × 4 形状变体共 24 个身份，超出即拒绝该页，不静默复用。
-- **Summary 与 Notice 不属于 Source。** `sample.snapshot` / `attempt.snapshot` 返回中性事实；默认 KPI、
-  本地化解释、严重度与动作由 Component / Composition 决定。读取 / 选择层产生可重算的
-  `SampleIssue`，不把 message / command 写入 `.niceeval`；persisted diagnostics 只保存 observation。
-- **格式化属于 renderer。** Measure 把可序列化 `format` 与数值语义带进 Content，不接受 locale
-  formatter 回调，也不预生成 `LocalizedText`。renderer 用 `ctx.locale` 格式化同一个 value。
-- **Chart 消费通用 Dataset。** `sources.measure.rows(...)` 负责维度、读数与聚合；Chart 的 x / y 与
-  `<Series mark>` 负责显示。没有把 mark、axis、series 塞回 Source 的 `sources.chart(...)`。
+## 为什么替换 PLAN-2
 
-这里封闭的是 NiceEval 承诺维护的**内建原语目录**，不是用户报告树可接受的组件集合。
-新领域名词不能成为增加官方原语的理由，但作者不必为了新的视觉形状离开 `show` / `view`。
+PLAN-2 正确识别了两级聚合、覆盖、证据下钻与双面一致这些硬约束，
+但把内部运行阶段投影成了三个作者概念。
 
----
+Source 让作者理解声明何时 compute；
+Composition 让作者理解 page context 与 resolve；
+Component 的 source / data 双入口让调用点无法直接说出值的角色。
 
-## 依据
+这些协议没有增加表达力。
+普通函数已经能完成异步、组合、并行、join、排序与复用。
+正确性应由 `aggregate()` 和证据结果构造器约束，
+不应由整条查询运行时约束。
 
-### 容易写错的部分必须在库里
+## 为什么仍否决其它方案
 
-[GOALS](GOALS.md) 的需求 1 到 7 有一个共同点：它们描述的都是**默认就该对**的事。
-两级聚合的权重、`null` 与覆盖缺口的区别、每个数字覆盖了哪些 attempt，
-读者不会去检查，作者也不会每次都想起来。
+- PLAN-1 按领域问题增加组件，双面实现和 props 会随问题数增长。
+- PLAN-3 把两级聚合、coverage 与 refs 交还给每条 SQL。
+- PLAN-4 让同一报告出现两套正确性强度，较弱路径会成为事实标准。
 
-PLAN-2 把这几条压进数据形状：`Measure.perEval` / `acrossEvals` 决定聚合层数，
-`MeasureCell` 的必填字段决定证据与覆盖率。
-作者少写什么都不会得到一个错的数字，最多得到一个不好看的表。
-
-[PLAN-3](PLAN-3.md) 把同样几条交给作者的 `group by` 层数和 `array_agg` 写没写。
-它们出错时的表现是「一个看起来完全正常的数」，
-这类错误在报告里的成本最高——报告的用处正建立在数字可复算之上。
-
-### 通用原语的可维护性靠判据，不靠克制
-
-需求 15 要的是「新增形状有判据」。PLAN-2 的三问判据给了这个判据：
-要读磁盘或认识领域概念的进数据源，要看整页数据的进管线，两个都不要的才可能成为内建原语。
-「某个数据源画出来长得不一样」因此不构成加原语的理由。
-
-作者定义的渲染组件不进入内建原语目录，也不把维护义务转给 NiceEval。它通过公开双面协议进入报告树，
-与官方原语走同一条 resolve、dimensions 收集、validate 与 render 管线。
-
-[PLAN-1](PLAN-1.md) 没有这样的判据。组件按提问方式增长，
-而提问方式是维度与读数的乘积，没有收敛点。
-
-### 入口体验不必用专用组件换
-
-PLAN-1 唯一真正的优势是一行出一页。这个优势被组合组件接住了：
-`SampleOverview` 与 `AttemptDetail` 就是具名的默认装配，
-区别是它们只装配公开原语、不接受结构子节点、并给出可照抄的等价全文。
-作者从「一行」走到「逐块改」不换心智模型，
-[PLAN-2 的五级改法](PLAN-2.md#五级改法一级比一级深)每一级都不需要库先加一个 prop。
-
-组合由 `defineComposition` 定义。`defineComponent` 留给真正产生新渲染形状、同时实现两面的组件，
-避免一个叫 component 的 API 实际只能返回其它组件。
-
-**为什么 Composition 是概念而不是装饰能力。** 报告树在 render 阶段是纯同步的，resolve 是唯一的
-异步格位，而 Component 没有 `resolve`。于是「取两个 Source 再 join」「按运行期输入决定画哪几块」
-这类写法在 Source 与 Component 之外没有落点：Source 只看得见自己那一份输入，Component 只看得见
-算好的 Content。把它记成两个概念要求作者先在文档里读到「组合组件」才知道 `await` 写在哪，而那是
-第一个非玩具报告就会撞上的问题。三个概念是如实计数，不是加了一层。
-
-### 灵活提问由普通 JavaScript 承担
-
-需求 8 的长尾部分不需要一门语言。`compute()` 的产物是普通可序列化数据，
-排序、截断、分组、关联都是几行 JavaScript，而且带类型检查与断点。
-SQL 在这条上的优势是语法更短，代价是引擎依赖与第二条口径入口。
-
----
-
-## 否决的候选项
-
-### 否决 PLAN-1（具名专用组件）
-
-- 违反需求 9：改一列要等库加 prop，作者没有绕过组件的路径。
-- 违反需求 11：每个组件自己算聚合，同一个读数在两处是两段代码。
-- 违反需求 15：组件集合没有闭合判据。
-- 撞上 [LIMITS 的两个渲染面](LIMITS.md#两个渲染面)：
-  每个新组件都要写两面并各自实现降级，这是多渲染面系统最常见的失败点。
-
-### 否决 PLAN-3（SQL 取数）
-
-- 违反需求 1：直觉写法是摊平的 `avg`，重试多的题拿到更大权重。
-- 违反需求 5、6：证据引用与覆盖率降级成作者可选的列。
-- 违反需求 12：列的单位、方向等数值语义只能散在查询旁边。字段身份也无法成为 Component
-  呈现词典稳定匹配的类型化值。
-- 撞上 [artifact 摊不平](LIMITS.md#record-不是数据库)：
-  全量物化违反需求 17，UDF 等于给 `Measure.value` 包一层语法还丢掉 `null` 语义。
-
-### 否决 PLAN-4（SQL 逃生舱）
-
-- 违反需求 11：同一页上两个数可能来自两条口径，读者无从判断谁对。
-- 把「数字能回到证据」从必然降级成可选。
-  一条规则在同一份契约里有两种强度时，较弱的那种会成为事实标准。
-- 引擎依赖按是否引入计算，不按使用频率；4a 与 4b 都要引入。
-- 4b 这个受限形态能做的事，[PLAN-2 的普通 JavaScript 加工](PLAN-2.md#取数与加工分开)
-  已经能做，且多两行代码换来类型检查。
-
----
+PLAN-5 保留通用原语与 TypeScript 组合，同时不建立第二门查询语言。
 
 ## 契约落点
 
-决策本身到此为止，产品要满足的契约写在功能文档里：
+- 作者 API、page 与普通转换：[Library](../../feature/reports/library.md)。
+- 聚合与准入边界：[Calculations](../../feature/reports/calculations.md)。
+- 求值、缓存和双面：[Architecture](../../feature/reports/architecture.md)。
+- 组件具体属性：[Components](../../feature/reports/components/README.md)。
 
-- Source / Component 核心模型、进阶组合与单元格类型：[组件树](../../feature/reports/components/README.md)。
-- Source 的唯一公开接口、领域目录与三条纪律：[Source 目录](../../feature/reports/components/sources/README.md)。
-- 读数、维度与两级聚合：[读数与维度](../../feature/reports/library/measures.md)。
-- 作者的五级改法与嵌入自有页面：[Library](../../feature/reports/library.md)。
-- 管线、可序列化边界与两面同源：[Architecture](../../feature/reports/architecture.md)。
+## 风险
 
----
-
-## 遗留风险
-
-- **探索性提问仍然要写代码。** 触发条件是同一段
-  「`compute()` 加 JavaScript 加工」在三份以上报告里重复出现。
-  后续动作是把它收编成一个具名数据源，不是补一门查询语言。
-- **数据源目录会长大。** 触发条件是读者在目录里找不到自己的问题。
-  后续动作是维护 [Library 的「按问题选择」表](../../feature/reports/library.md)
-  作为单点入口，而不是按字母排列的清单。
-- **单元格类型的增长会波及全部原语。** 触发条件是有人提出新的 `Cell` kind。
-  后续动作是先过三问判据，再确认它无法表达成已有 kind 的组合。
-- **作者仍要学一层词汇。** 触发条件是新用户在自定义读数上卡住。
-  后续动作是补组合组件的等价全文与场景示例，
-  不是把 `Measure` 换成字符串参数——那条路会退回 PLAN-1 的反指标。
+- page 是比单查询更粗的增量边界；性能靠 benchmark 与内部透明缓存守护。
+- 双面自定义 renderer 仍有一面能力漂移风险；两面必填和 fixture 验收是门槛。
+- 报告旁算法只能保证证据完整，不能自动证明公式正确；
+  重复出现且满足准入判据后才提升进公共内核。

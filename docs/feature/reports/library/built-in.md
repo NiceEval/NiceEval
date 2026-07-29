@@ -1,285 +1,84 @@
 # 内建报告
 
-`niceeval/report/built-in` 是内建视图的家：每个内建视图是一份普通 `defineReport` 成品，有自己的名字，按名字具名导出、一视图一个源文件；入口的**默认导出**恒等于 `standard`——[取值链](../README.md#项目默认报告)最后一档装载的那份。默认报告不是私有实现，也不是省略字段时被召唤的隐式默认，只是「取值链兜底拿哪个值」的事实。
+内建报告是只使用公开函数、组件与 PageDefinition 装配的普通 ReportDefinition。
+它没有私有计算协议、隐藏过滤或宿主专用组件。
 
-**具名导出名同时是 CLI 上的视图名。** `--report standard` 与 `--report ./reports/site.tsx` 是同一个 flag 的两种取值形态：裸词查这张名字表，带路径形按文件装载（[判别规则](../architecture.md#外壳与页装载规范化)）。名字表就是这个入口的具名导出集合，当前是 `standard` 与两个任务视图 `failures` / `stability`；配了 `config.report` 之后想临时看回默认报告，`niceeval show --report standard` 是不用改配置的那条路。
+## `standard`
 
-```ts
-import builtIn, {
-  failures, stability, standard, standardAttemptPage,
-} from "niceeval/report/built-in";
+`standard` 静态导出以下页面：
 
-standard; // ReportDefinition：四张 page，其中三张进导航
-failures; // ReportDefinition：失败处理台，一张导航页加详情页
-stability; // ReportDefinition：稳定性，一张导航页加详情页
-standardAttemptPage; // ReportPage：以 locator 为输入、不进导航的详情 page
-builtIn;  // 默认导出 === standard，宿主装载取这个值
-```
+1. 报告首页：摘要、质量—成本散点与 Experiment 列表。
+2. Attempts：当前 Sample 的 Attempt 列表。
+3. Traces：当前 Sample 的执行时间树。
+4. Attempt：`input: "attempt"`、`navigation: false` 的参数化详情页。
 
-新增内建视图的形态由这个入口定死：一份新的 `defineReport` 成品、一个新名字、一个新文件、
-一条新的具名导出——不需要注册表，也不改变装载管线。准入判据三条同时成立才开新名字：
-零配置可算（不需要用户声明题集、条件或权重）、任务高频到值得免写报告文件、塞进 `standard`
-会稀释它的首页。成绩单与对照各过不了第一条——分母与条件顺序都要用户声明，它们的家是组件加
-[用例手册](../use-case/README.md)。
+首页先用公开任务函数计算结果，再把同一份值交给图和表。
+质量—成本前沿是首页旁的普通数组算法，不是公共数据源或 Calculation。
+题型与主读数的选择也由首页任务函数显式完成。
 
-`standard` 的全文如下：
+## 公开复用单位
 
-```tsx
-// niceeval/report/built-in 的 standard 视图，没有任何私有 Hook
-import {
-  AttemptDetail, Col, Hero, RunNotices, SampleFixPrompt, SampleNotices,
-  SampleOverview, Table, Waterfall, defineReport, sources,
-} from "niceeval/report";
-
-export const standardAttemptPage = {
-  id: "attempt",
-  title: "Attempt",
-  input: "attempt",
-  navigation: false,
-  content: <AttemptDetail />,
-} as const;
-
-export const standard = defineReport({
-  pages: [
-    {
-      id: "report",
-      title: { en: "Report", "zh-CN": "报告" },
-      content: (
-        <Col>
-          <Hero />
-          <SampleNotices />
-          <RunNotices />
-          <SampleFixPrompt />
-          <SampleOverview />
-        </Col>
-      ),
-    },
-    {
-      id: "attempts",
-      title: "Attempts",
-      content: (
-        <Col>
-          <Hero />
-          <SampleNotices />
-          <RunNotices />
-          <Table source={sources.entity.attempts} filter />
-        </Col>
-      ),
-    },
-    {
-      id: "traces",
-      title: { en: "Traces", "zh-CN": "追踪" },
-      content: (
-        <Col>
-          <Hero />
-          <SampleNotices />
-          <RunNotices />
-          <Waterfall source={sources.sample.traces} />
-        </Col>
-      ),
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-它不住在 `niceeval/report` 里：那是工具箱（`defineReport`、组件、读数、排版原语），内建视图是用这套工具写成的**成品**，与用户的报告文件同层。这是契约，不是实现巧合：裸宿主与 `--report` 一个内容如上的文件完全等价，走同一条 `装载 → resolve → validate → render` 管线。「builtin」不是类型系统或装载逻辑里的类别。
-
-裸 `view` 页面上能看到的一切内容都在这份定义里。前三张 page 形成导航；hero、Sample Notice、
-Run Notice 和批量修复 prompt 是普通组件。locator 打开第四张 attempt-input page，其中
-`AttemptDetail` 也只是普通组合组件。宿主自己渲染的只有机器——page / locator 寻址、导航与 dialog
-摆放、浏览器标题等文档单例、语言切换（[边界清单](../architecture.md#宿主保留的只有机器)）。因此
-**任何用户报告都能达到内建报告的全部能力，也能丢弃它的任何部分**。
-
-## 任务视图：failures 与 stability
-
-`standard` 回答「这份 Sample 现在怎样」；两个任务视图各回答一个高频问题，都是单导航页加
-`standardAttemptPage`——处理失败与稽核历史都要下钻 locator。裸跑兜底仍是 `standard`，
-任务视图只走 `--report failures` / `--report stability` 裸词装载。
-
-`failures` 回答「现在有哪些失败要处理、拿什么去修」，全文：
-
-```tsx
-export const failures = defineReport({
-  pages: [
-    {
-      id: "failures",
-      title: { en: "Failures", "zh-CN": "失败" },
-      content: (
-        <Col>
-          <Hero />
-          <SampleNotices />
-          <RunNotices />
-          <FailureList limit={50} />
-          <SampleFixPrompt />
-        </Col>
-      ),
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-`stability` 回答「哪些题历史上从没稳过、失败是题难还是环境事故」，全文：
-
-```tsx
-export const stability = defineReport({
-  pages: [
-    {
-      id: "stability",
-      title: { en: "Stability", "zh-CN": "稳定性" },
-      content: (
-        <Col>
-          <Hero />
-          <SampleNotices />
-          <RunNotices />
-          <StabilityOverview />
-        </Col>
-      ),
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-读数格、散点、堆叠柱与矩阵的装配全文在
-[`StabilityOverview`](../components/summaries/stability-overview.md)。
-
-## 复用有两条路，语义不同、都显式
-
-- **引用**：`defineReport({ extends: standard, … })` 在整份内建视图上叠自己的外壳（[extends 契约](shell.md#行为约束)）。这是在声明「跟随内建」——页面归 niceeval 所有，升级带来的页面演进随之生效，自己只声明标题、链接、head 这些站点身份。
-- **照抄**：按上面的全文写同名组件。这是在钉死当前形态——内建怎么变都不跟，页面完全归自己所有，可以逐页改造。
-
-两条路读文件的人都能看出会渲染什么：`extends: standard` 是一个显式 import 的具名引用，照抄是逐行写出的声明。`extends` 继承完整 pages，包括 `standardAttemptPage`；要改详情就重新声明 pages，并把这张 page 的 `content` 换成公开组件树。所有内容都只住 page，`ReportDefinition` 不是 `ReportNode`，报告级复用只有 `extends` 这一个位置。
-
-## 从内建出发的升级路径
-
-三档改造不换 API 形状：
-
-```tsx
-// reports/mine.tsx —— ① 换树：只关心自己的图表，不要站点 chrome
-import { Chart, Col, Series, Table, costUSD, defineReport, passRate, sources } from "niceeval/report";
-
-const qualityCost = sources.measure.rows({
-  dimensions: ["experiment", "agent"],
-  measures: [costUSD, passRate],
-});
-
-export default defineReport(
-  <Col>
-    <Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
-      <Series id="frontier" mark="scatter" points="experiment" by="agent" />
-    </Chart>
-    <Table source={sources.entity.experiments} filter />
-  </Col>,
-);
-```
-
-树入参渲染的就是那棵树：没有附赠的 hero、Notice 区或证据页。读文件的人必须能看出会渲染什么，
-宿主不给任何页面加料。
-
-```tsx
-// reports/branded.tsx —— ② 内建整站 + 品牌外壳：extends 引用
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
-
-export default defineReport({
-  extends: standard,
-  title: "Memory Evals",
-  links: [{ label: "GitHub", href: "https://github.com/you/repo" }],
-});
-```
-
-```tsx
-// reports/site.tsx —— ③ 拆页：照抄内建的页，再加自己的页
-import {
-  Col, Hero, RunNotices, SampleNotices, SampleOverview, Table,
-  defineReport, passRate, sources,
-} from "niceeval/report";
-
-const exam = sources.measure.scoreboard({
-  dimensions: ["agent"],
-  fullMarks: 100,
-  score: passRate,
-  questions: [
-    { evalId: "security/sql-injection" },
-    { evalId: "correctness/retry" },
-  ],
-});
-
-export default defineReport({
-  title: "Memory Evals",
-  links: [{ label: "GitHub", href: "https://github.com/you/repo" }],
-  pages: [
-    {
-      id: "overview",
-      title: { en: "Overview", "zh-CN": "总览" },
-      content: (
-        <Col>
-          <Hero />
-          <SampleNotices />
-          <RunNotices />
-          <SampleOverview />
-        </Col>
-      ),
-    },
-    {
-      id: "exam",
-      title: { en: "Exam", "zh-CN": "成绩单" },
-      content: (
-        <Col>
-          <SampleNotices />
-          <RunNotices />
-          <Table source={exam} />
-        </Col>
-      ),
-    },
-    {
-      id: "attempts",
-      title: "Attempts",
-      content: <Col><Table source={sources.entity.attempts} filter /></Col>,
-    },
-  ],
-});
-```
-
-② 是最小品牌化形态：`title` 进浏览器标题与 `ctx.report.title`，内建页自带的 `<Hero />` 跟随同一标题并带品牌行。③ 从引用切换到照抄，pages 归自己所有；因为列表里没有 attempt-input page，locator 不会接到隐藏详情。需要详情时把 `standardAttemptPage` 放进 pages，或声明一张相同输入、content 由[公开详情区块](../components/attempt-detail/README.md)重组的 page。`content` / `pages` / `extends` 必须恰好声明一个（见[外壳与多页](shell.md)）。
-
-## 内建主题
-
-内建视图不声明 `theme`：它靠[主题装载链](theme.md#装载链)最后一档拿到官方主题 [Basalt](../themes/basalt.md)，因此裸 `view` 与任何 `--theme` 都对同一份内建报告成立。要在自己的报告里显式引用官方外观，或在它上面改两项，从同一个入口取：
+官方导出完整 `standard`，也导出它使用的具名任务函数与 page：
 
 ```ts
-import { basalt } from "niceeval/report/built-in";
-
-basalt; // ThemeDefinition：官方令牌全集，--theme basalt 取的就是这个值
+standard;
+standardOverviewPage;
+standardAttemptsPage;
+standardTracesPage;
+standardAttemptPage;
 ```
+
+作者可以把官方 page 放进自己的静态 `pages` 数组：
 
 ```tsx
-import { defineTheme } from "niceeval/report";
-import { basalt } from "niceeval/report/built-in";
-
-export default defineTheme({ ...basalt, accent: "#7C3AED" });
+export default defineReport({
+  title: "Team report",
+  pages: [
+    {
+      id: "team",
+      title: "Team",
+      render: teamOverview,
+    },
+    standardAttemptPage,
+  ],
+});
 ```
 
-**具名导出名同样是 CLI 上的主题名。** `--theme basalt` 查的是[内建主题名表](../themes/README.md)，当前有 `basalt` 与 `chalk`；新增一份内建主题的形态与新增内建视图相同——一份新的 `defineTheme` 成品、一个新名字、一个新文件、一条新的具名导出。视图与主题共用这个入口但互不耦合：`standard` 不绑定 `basalt`，换主题不改页，换报告不改色。
+报告不提供继承或 override 协议。
+要改变一张官方 page，复制其公开全文后修改；
+要原样复用，就直接引用具名 PageDefinition。
 
-## 内建报告显示什么
+## failures 与 stability
 
-首页用 `SampleOverview` 展示实验整体主读数，行为契约单点定义在
-[概览组件](../components/summaries/sample-overview.md)。`Hero` 的契约在
-[站点身份件](../components/site/README.md)；`SampleNotices` / `RunNotices` / `SampleFixPrompt`
-在 [Sample 页区块](../components/summaries/README.md)；`sources.sample.traces` 在
-[数据源目录](../components/sources/sample-traces.md)。Attempts 页的本体是带过滤的
-[`sources.entity.attempts`](../components/sources/entity.md#evals-与-attempts)。
+`failures` 与 `stability` 也是完整内建报告。
+它们的领域算法是与报告同目录的普通函数，并通过
+`metricValue()` / `evidenceRow()` 交出带证据结果。
+
+这些算法可以具名导出并被用户报告调用，但不因此进入公共计算内核。
+只有满足 [计算准入判据](../calculations.md#计算的准入判据)时，
+才提升为 `niceeval/report` 的公共工具。
+
+## show 共用任务结果
+
+内建 show 切片各有一个公开任务函数。
+一次调用只执行一次，然后由 text 组件与 ShowJson 序列化分别消费：
+
+```text
+comparisonResult(sample)
+  ├─ text → ComparisonTable(result)
+  └─ json → ShowJson { view: "compare", data: result }
+```
+
+内建 page 调用同一个任务函数。
+CLI 注册表只负责 flag 分派，不另存一套计算公式。
+
+## 主题
+
+内建 `basalt` 与 `chalk` 主题只改变外观，不改变 page、任务函数或结果值。
+完整装载链见 [主题](theme.md)。
 
 ## 相关阅读
 
-- [外壳与多页](shell.md) —— 配置对象的字段穷尽、`extends` 合并语义与行为约束。
-- [主题](theme.md) —— 主题制品、装载链与令牌全集。
-- [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
-- [站点身份件](../components/site/README.md) —— hero 与品牌行的组件契约。
-- [Sample 页区块](../components/summaries/README.md) —— Notice、修复 prompt 与概览的组件契约。
-- [Attempt 详情组件](../components/attempt-detail/README.md) —— `AttemptDetail` 与 `standardAttemptPage` 的重组方式。
-- [概览组件](../components/summaries/README.md) —— `SampleOverview` 的契约。
-- [Architecture](../architecture.md) —— 装载规范化：内建与 `--report` 的同一条管线。
+- [Library](../library.md) —— 普通值作者 API。
+- [Calculations](../calculations.md) —— 内核与报告旁算法的边界。
+- [默认报告](../show/default-report.md) —— show / view 的默认选择。

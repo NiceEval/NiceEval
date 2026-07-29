@@ -1,363 +1,381 @@
 ---
 title: "编写自定义报告"
-sidebarTitle: "自定义报告"
-description: "用 Source、Composition 和双面 Component 编写一份同时供 niceeval show 与 niceeval view 使用的报告。"
+description: "用普通 TypeScript 函数计算结果，并同时生成终端与网页报告。"
 ---
 
-`niceeval show` 在终端读取报告的 text 面，`niceeval view` 在浏览器读取同一份报告的 web 面。
-两个入口装载同一个 `defineReport(...)` 产物，也使用同一份 Sample、数据源和证据引用。
+自定义报告接收宿主选好的 Sample，返回组件树：
 
-报告作者只需要区分三个概念：
-
-| 概念 | 负责什么 |
-| --- | --- |
-| Source | 从 Sample 或 AttemptEvidence 计算可序列化 Content |
-| Composition | 读取当前 page input，协调多个 Source，再装配组件树 |
-| Component | 把一份 Content 同步显示成 text 与 web |
-
-数据读取、聚合和排序只在 Source 中发生。Component 的两个 renderer 都消费同一份 Content，
-不会各自读取记录或重新计算指标。
-
-## 从默认报告开始
-
-NiceEval 自带的 `standard` 也是一份普通报告。它包含报告、Attempts、追踪三张导航页，
-以及一张按 Attempt 定位符打开的详情页：
-
-```tsx
-import { defineReport } from "niceeval/report";
-import { standard } from "niceeval/report/built-in";
-
-export default defineReport({
-  extends: standard,
-  title: "Memory Evals",
-  links: [{ label: "GitHub", href: "https://github.com/you/repo" }],
-});
+```text
+Sample
+  → 普通 TypeScript 函数
+  → 可序列化结果值
+  → 组件
+  → text / web
 ```
 
-只改标题、链接、主题或统计脚本时，使用 `extends` 保留默认 pages。需要改变页面内容时，
-直接用公开 Source、Composition 和 Component 重新声明 pages。
-
-默认首页的组合组件是 `SampleOverview`：
-
-```tsx
-import { SampleOverview, defineReport } from "niceeval/report";
-
-export default defineReport(<SampleOverview />);
-```
+计算发生在 page render 中。
+组件只显示 `rows`、`points`、`items`、`nodes` 或 `attempt` 等具体值。
 
 ## 创建第一份报告
 
-报告文件使用 `.tsx`，项目需要安装 `react`，并把 `tsconfig.json` 的
-`compilerOptions.jsx` 设为 `"react-jsx"`。
-
-下面的报告用一份 Dataset 同时画质量成本图，并把 Experiment 事实列成表：
+新建 `reports/quality.tsx`：
 
 ```tsx
-// reports/quality-cost.tsx
 import {
-  Chart,
-  Col,
-  Series,
-  Section,
+  Page,
+  Scatter,
   Table,
+  agent,
+  aggregate,
   costUSD,
   defineReport,
   passRate,
-  sources,
 } from "niceeval/report";
 
-const qualityCost = sources.measure.rows({
-  dimensions: ["experiment", "agent"],
-  measures: [costUSD, passRate],
-});
+export default defineReport(async (sample) => {
+  const performance = await aggregate(sample, {
+    by: { agent },
+    values: { passRate, costUSD },
+  });
 
-export default defineReport(
-  <Col>
-    <Section title="质量与成本">
-      <Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
-        <Series id="frontier" mark="scatter" points="experiment" by="agent" />
-      </Chart>
-    </Section>
-    <Table source={sources.entity.experiments} filter />
-  </Col>,
-);
+  return (
+    <Page title="Quality and cost">
+      <Scatter
+        points={performance}
+        x="costUSD"
+        y="passRate"
+        point="agent"
+      />
+      <Table rows={performance} />
+    </Page>
+  );
+});
 ```
+
+运行：
 
 ```bash
-niceeval show --report reports/quality-cost.tsx
-niceeval view --report reports/quality-cost.tsx
+niceeval show --report ./reports/quality.tsx
+niceeval view --report ./reports/quality.tsx
 ```
 
-宿主先按 `--record`、`--exp`、评估用例位置参数与 `--fresh` 选择 Sample，再解析报告。
-同一 page 内，相同 Source 对象与相同 input 引用只计算一次。
-
-`niceeval view` 起的本地服务会一直盯着报告文件和它 import 的组件文件。存盘后浏览器里那一页
-就换成新样子，不用手动刷新，也不用重开命令。当前所在的页、滚动位置和打开的 Attempt 详情
-都留在原处，所以可以一直开着页面改代码。改主题、`styles` 或 `scripts` 时页面整页重载一次。
-
-## 直接绑定 Source
-
-Source 是计算声明，Content 是计算结果。原语接收互斥的两种数据形态：
-
-```tsx
-// 让报告管线计算
-<Table source={sources.entity.experiments} />
-
-// 使用已经算好的 Content
-<Table data={content} />
-```
-
-`source` 形态省略 `input` 时使用当前 page input。`data` 形态不会再读取或聚合数据。
-同时传入 `source` 和 `data` 会报错。
-
-需要配置的数据源先创建一个具名值。多个组件引用同一个值即可共享计算：
-
-```tsx
-const byAgent = sources.measure.rows({
-  dimensions: ["agent"],
-  measures: [passRate, costUSD],
-});
-
-export default defineReport(
-  <Col>
-    <Table source={byAgent} />
-    <Chart source={byAgent} x="costUSD" y="passRate">
-      <Series id="agents" mark="scatter" points="agent" />
-    </Chart>
-  </Col>,
-);
-```
-
-分别调用两次 `sources.measure.rows(...)` 会创建两个 Source。即使配置相同，它们也会分别计算。
-
-## 用 Composition 加工数据
-
-需要过滤、截断、连接多个 Source 或动态生成组件树时，使用 `defineComposition`。
-在 Composition 内通过 `ctx.resolve()` 取数，不能直接调用 `source.compute()`：
-
-```tsx
-import { Table, defineComposition, sources } from "niceeval/report";
-
-export const CostliestAttempts = defineComposition(
-  async ({ limit = 10 }: { limit?: number }, ctx) => {
-    const content = await ctx.resolve(sources.entity.attempts);
-    const rows = [...content.rows]
-      .sort((a, b) => (b.costUSD ?? -Infinity) - (a.costUSD ?? -Infinity))
-      .slice(0, limit);
-
-    return <Table data={{ ...content, rows }} filter />;
-  },
-);
-```
-
-`ctx.resolve(source)` 默认使用 `ctx.input`。组合组件显式接收另一个同类型 input 时，
-使用 `ctx.resolve(source, input)`；第二个参数只影响这次 Source 计算，不改变 page input。
-
-```tsx
-const PrefixSummary = defineComposition(
-  async ({ input }: { input?: Sample }, ctx) => {
-    const selected = input ?? ctx.input;
-    const snapshot = await ctx.resolve(sources.sample.snapshot, selected);
-    return <Callouts data={notices.sample(snapshot)} />;
-  },
-);
-```
-
-Composition 自己没有 renderer。它返回的每个可见节点仍必须是有 text/web 两面的 Component。
-
-## 定义自己的 Source
-
-需要复用一段 NiceEval 数据计算时，用 `defineSource`：
-
-```tsx
-import {
-  defineSource,
-  type Row,
-  type Sample,
-  type TableContent,
-} from "niceeval/report";
-
-interface BudgetRow extends Row {
-  cells: {
-    agent: { kind: "text"; text: string };
-    spend: { kind: "number"; value: number | null; unit: "USD" };
-  };
-}
-
-export const budgets = defineSource<Sample, TableContent<BudgetRow>>({
-  name: "budgets",
-  async compute(sample) {
-    const totals = await computeBudgetByAgent(sample);
-    return {
-      columns: [{ key: "agent" }, { key: "spend", unit: "USD", better: "lower" }],
-      rows: totals.map(({ agent, spend }) => ({
-        key: agent,
-        cells: {
-          agent: { kind: "text", text: agent },
-          spend: { kind: "number", value: spend, unit: "USD" },
-        },
-      })),
-    };
-  },
-});
-```
-
-Source 可以读取 Sample、AttemptEvidence 和其中的 artifact 句柄，但返回的 Content 必须可序列化。
-外部 API 数据先在报告运行前冻结成 JSON，再从 Composition 的 `ctx.data` 读取。
-
-## 定义自己的双面 Component
-
-内建原语表达不了新的视觉形状时，使用 `defineComponent`。Component 不提供异步取数面；
-`dimensions`、`text` 和 `web` 都是同步纯函数：
-
-```tsx
-import { defineComponent, padEnd, stringWidth } from "niceeval/report";
-
-interface BarData {
-  rows: readonly { key: string; ratio: number | null; display: string }[];
-}
-
-export const PassBars = defineComponent<BarData, {}>({
-  dimensions: (data) => ({
-    agents: {
-      dimension: "agent",
-      encoding: { kind: "label" },
-      values: data.rows.map((row) => row.key),
-    },
-  }),
-  text(data, _options, ctx) {
-    const agents = ctx.dimension("agents");
-    const width = Math.max(...data.rows.map((_, index) => stringWidth(agents.at(index).label)));
-    return data.rows
-      .map((row, index) => {
-        const label = agents.at(index).label;
-        return `${padEnd(label, width)}  ${row.ratio === null ? "—" : row.display}`;
-      })
-      .join("\n");
-  },
-  web(data, _options, ctx) {
-    const agents = ctx.dimension("agents");
-    return (
-      <ul className="acme-passbars">
-        {data.rows.map((row, index) => (
-          <li key={row.key}>
-            <span>{agents.at(index).label}</span>
-            <b>{row.ratio === null ? "—" : row.display}</b>
-          </li>
-        ))}
-      </ul>
-    );
-  },
-  styles: [{
-    inline: `
-      .acme-passbars { color: var(--niceeval-color-text); }
-      .acme-passbars b { color: var(--niceeval-color-accent); }
-    `,
-  }],
-});
-```
-
-不消费任何维度的组件也必须显式写 `dimensions: () => ({})`。renderer 只能读取传入的 data、
-options 和呈现 context；不能读取 Sample、Record、磁盘或网络。
-
-需要计算 `PassBars` 的数据时，把 Source 与 Component 放进 Composition：
-
-```tsx
-const PassBarsSection = defineComposition(async (_props: {}, ctx) => {
-  const source = sources.measure.rows({
-    dimensions: ["agent"],
-    measures: [passRate],
-  });
-  const dataset = await ctx.resolve(source);
-  return <PassBars data={toBarData(dataset)} />;
-});
-```
+两个宿主执行同一个 page render。
+同一棵结果树分别交给 text 和 web renderer。
 
 ## 设成项目默认
 
-报告定型后，把 `defineReport` 产物填进 `niceeval.config.ts` 的 `report` 字段：
+在 `niceeval.config.ts` 中直接导入定义：
 
 ```ts
 import { defineConfig } from "niceeval";
-import report from "./reports/quality-cost.tsx";
+import quality from "./reports/quality";
 
-export default defineConfig({ report });
+export default defineConfig({
+  report: quality,
+});
 ```
 
-裸 `niceeval show` 和 `niceeval view` 会装载这份报告。临时回到内建报告时使用
-`--report standard`。内建还有两个不用写报告文件的任务视图：`--report failures`
-（失败清单加批量修复 prompt）与 `--report stability`（历史稳定性的读数、散点与矩阵）。
+以后直接运行 `niceeval show` 或 `niceeval view`。
+临时切回内建报告时使用 `--report standard`。
 
-## 钉住某个值的颜色
+## 收窄 Sample
 
-页级分配会保证同一页里的同一个维度值使用同一个视觉身份。需要跨页或跨周固定槽位时，
-在报告外壳声明 `dimensionPins`：
+宿主先处理 `--record`、`--exp`、评估位置参数和 `--fresh`，
+再把 Sample 交给报告。
+
+报告内继续使用 Sample 方法：
+
+```ts
+const security = sample.scope({ evals: "security/" });
+
+const reliable = security.filter((attempt) =>
+  attempt.result.verdict !== "errored"
+);
+```
+
+`scope()` 改变比较总体和 coverage 分母。
+`filter()` 删除不可信或不适用的观测。
+
+一组图共享范围时，先生成一个具名 Sample：
+
+```ts
+const production = sample
+  .scope({ experiments: "production/" })
+  .filter(isReliableAttempt);
+```
+
+然后把同一个 `production` 传给每次计算。
+
+## 使用 `aggregate()`
+
+`aggregate()` 接收分组函数和 Calculation：
+
+```tsx
+const rows = await aggregate(sample, {
+  by: {
+    experiment,
+    agent,
+  },
+  values: {
+    passRate,
+    costUSD,
+  },
+});
+```
+
+对象键就是结果字段名。
+每个读数字段是 MetricValue，包含 value、unit、samples、total、basis 与 refs。
+
+结果是普通数组，可以继续使用 JavaScript：
+
+```ts
+const ranked = rows
+  .toSorted((a, b) =>
+    (b.passRate.value ?? -Infinity) -
+    (a.passRate.value ?? -Infinity)
+  )
+  .slice(0, 10);
+```
+
+不要把聚合结果再次传给 `aggregate()`。
+需要增加读数时，回到同一份 Sample，把 Calculation 加进原来的 `values`。
+
+## 定义自己的 Calculation
+
+`rollup()` 把单 Attempt 取值函数变成 Calculation：
+
+```ts
+import {
+  mean,
+  min,
+  rollup,
+} from "niceeval/report";
+
+export const changedLines = rollup(
+  async (attempt) => {
+    if (attempt.result.verdict !== "passed") {
+      return null;
+    }
+
+    const diff = await attempt.diff();
+    return diff ? countChangedLines(diff) : null;
+  },
+  {
+    withinEval: min,
+    acrossEvals: mean,
+    unit: "lines",
+    better: "lower",
+  },
+);
+```
+
+官方 Calculation 和用户 Calculation 使用同一个 `rollup()`。
+空集合保持 `null`，不会被伪装成零。
+
+## 显示实体列表
+
+Sample 已经提供物化后的 `attempts`：
+
+```tsx
+export default defineReport((sample) => {
+  const failures = sample
+    .filter((attempt) =>
+      attempt.result.verdict === "failed" ||
+      attempt.result.verdict === "errored"
+    )
+    .attempts
+    .toSorted((a, b) =>
+      (attemptCostUSD(b.result) ?? 0) -
+      (attemptCostUSD(a.result) ?? 0)
+    )
+    .slice(0, 50);
+
+  return <AttemptList attempts={failures} />;
+});
+```
+
+需要通用表格时先立即转换：
+
+```tsx
+const rows = toAttemptRows(failures);
+return <Table rows={rows} />;
+```
+
+## 复用动态区块
+
+复用就是普通函数：
+
+```tsx
+export async function overview(sample: Sample) {
+  const performance = await aggregate(sample, {
+    by: { agent },
+    values: { passRate, costUSD },
+  });
+
+  return (
+    <>
+      <Scatter
+        points={performance}
+        x="costUSD"
+        y="passRate"
+        point="agent"
+      />
+      <Table rows={performance} />
+    </>
+  );
+}
+```
+
+在 page render 中直接调用：
+
+```tsx
+render: async (sample) => (
+  <Page title="Overview">
+    {await overview(sample)}
+  </Page>
+)
+```
+
+多个独立计算使用普通 `Promise.all()`。
+
+## 创建多页报告
 
 ```tsx
 export default defineReport({
-  title: "MemoryBench",
-  dimensionPins: {
-    memory: {
-      baseline: 3,
-      mempal: 1,
-      nowledge: 5,
-    },
-  },
+  title: "Team evals",
   pages: [
-    { id: "report", title: "报告", content: <SampleOverview /> },
+    {
+      id: "overview",
+      title: "Overview",
+      render: async (sample) => (
+        <Page title="Overview">
+          {await overview(sample)}
+        </Page>
+      ),
+    },
+    {
+      id: "failures",
+      title: "Failures",
+      render: failuresPage,
+    },
+    standardAttemptPage,
   ],
 });
 ```
 
-槽位范围是 1 到 24，钉住的是完整颜色加形状身份，不是某个 hex 颜色。
+`pages` 的数组顺序就是导航顺序。
+宿主只执行当前请求的 page。
+`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻。
+
+## 自定义 Attempt 详情
+
+```tsx
+{
+  id: "attempt",
+  title: "Attempt",
+  input: "attempt",
+  navigation: false,
+  render: async (attempt) => {
+    const [turns, files] = await Promise.all([
+      toConversationTurns(attempt),
+      toDiffFiles(attempt),
+    ]);
+
+    return (
+      <Page title={attempt.locator}>
+        <Conversation turns={turns} />
+        <DiffView files={files} />
+      </Page>
+    );
+  },
+}
+```
+
+一份报告最多有一张 Attempt page。
+没有这张 page 时，locator 只显示为文本。
+
+## 接入外部业务快照
+
+先在报告外准备 JSON，再通过 page render 的第二参数接收：
+
+```tsx
+export default defineReport<BudgetSnapshot>(
+  async (sample, budgets) => {
+    const performance = await aggregate(sample, {
+      by: { experiment },
+      values: { passRate, costUSD },
+    });
+
+    return <Table rows={joinBudgets(performance, budgets)} />;
+  },
+);
+```
+
+使用 `--data` 或项目配置冻结快照。
+page render 不请求网络，不读取环境变量、时钟或随机数。
+
+## 编写新的显示形状
+
+现有组件组合不出目标显示时，使用扩展入口：
+
+```tsx
+import { defineRenderer } from "niceeval/report/extension";
+
+const ConfusionMatrix = defineRenderer({
+  text(value, options, context) {
+    return renderTextMatrix(value, options, context);
+  },
+  web(value, options, context) {
+    return <WebMatrix value={value} options={options} />;
+  },
+});
+```
+
+两个 renderer 都只接已经计算好的普通值。
+自定义计算继续写普通函数，不需要注册协议。
+
+## 钉住某个值的颜色
+
+在报告外壳的 `dimensionPins` 中按分组字段和完整值固定视觉身份。
+例如可以让同一个 Agent 在每一页都使用同一组颜色、线型和符号。
+
+显示标签不是身份键。不要截 Experiment 路径末段，也不要按数组下标分配颜色。
+完整主题字段见[报告主题](/zh/tutorials/theming)。
 
 ## 让自己的组件跟随任何主题
 
-自定义组件使用 `--niceeval-*` CSS 令牌，不写死颜色：
-
-```css
-.acme-panel {
-  background: var(--niceeval-color-surface);
-  border: 1px solid var(--niceeval-color-border);
-  border-radius: var(--niceeval-radius);
-  color: var(--niceeval-color-text);
-}
-```
-
-状态使用 `--niceeval-color-positive`、`--niceeval-color-negative` 与
-`--niceeval-color-warning`。维度身份通过 `ctx.dimension(handle).at(index)` 获取，
-不要按数组下标自行分配颜色。
+自定义 renderer 使用 `--niceeval-*` 主题令牌，
+不要把 Basalt 或 Chalk 的 hex 值复制进组件。
+状态使用 positive、negative、warning 等语义令牌，
+名义 series 使用运行时分配的视觉身份。
 
 ## 嵌入自己的 React 页面
 
-自己的 React 页面没有 report resolve。先在服务端计算 Content，再把它传给
-`niceeval/report/react` 的纯 web 原语：
+在服务端或构建进程中计算：
+
+```ts
+const points = await aggregate(sample, {
+  by: { agent },
+  values: { passRate, costUSD },
+});
+```
+
+在浏览器使用 `niceeval/report/react`：
 
 ```tsx
-import { openRecord } from "niceeval/record";
-import { currentSample } from "niceeval/sample";
-import { passRate, sources } from "niceeval/report";
-import { Table } from "niceeval/report/react";
-
-export default async function EvalsPage() {
-  const record = await openRecord(".niceeval");
-  const sample = currentSample(record);
-  const source = sources.measure.rows({
-    dimensions: ["experiment"],
-    measures: [passRate],
-  });
-  const data = await source.compute(sample);
-  return <Table data={data} />;
-}
+<Scatter
+  points={points}
+  x="costUSD"
+  y="passRate"
+  point="agent"
+/>
 ```
 
-这里直接调用 `compute()` 是正确的，因为代码不在 page 管线里，也没有 `ctx.resolve()`。
+React 入口不读取 Record、Sample 或 artifact。
+记录根不在产品运行环境时，把 Result 在构建期写成 JSON。
 
-## 发布静态报告
+## 下一步
 
-```bash
-niceeval view --report reports/quality-cost.tsx --out site
-```
-
-导出结果包含报告 pages 和可达的 Attempt 证据。初始 HTML 不依赖 JavaScript；
-排序、过滤、tooltip 和 dialog 只做渐进增强，不改变 Source 计算出的 Content。
+- 查完整形状：[报告组件 API](/zh/reference/report-components)
+- 发布静态站：[发布报告](/zh/tutorials/publish-report)
+- 自定义外观：[报告主题](/zh/tutorials/theming)

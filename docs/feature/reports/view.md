@@ -62,8 +62,9 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 | 主题文件与它的 import 图 | 改 `--theme` 指向的主题或它 import 的令牌模块 |
 | 项目配置 | `niceeval.config.ts` |
 
-**改组件代码同样重建。** 报告是一棵组件树，`defineComponent` 或 `defineComposition` 写在哪个文件里都算报告的一部分——
-盯的是报告文件的整棵项目内 import 图，不是那一个入口文件。所以「改一个组件的 web 面 → 存盘 →
+**改组件代码同样重建。** 报告是一棵组件树，自定义 renderer 或普通报告函数
+写在哪个文件里都算报告的一部分。监听覆盖报告文件的整棵项目内 import 图，
+不是只看入口文件。所以「改一个组件的 web 面 → 存盘 →
 浏览器里看到新样子」是本地模式的常规写法，与改报告文件本身没有区别。
 
 **闭集之外没有第二条重建理由。** 打开页面、刷新浏览器、切页与切语言都不是重建理由：盘上没变，
@@ -143,17 +144,17 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
   浏览器标题、外壳链接、页脚与资产按
   [外壳契约](library/shell.md#行为约束)消费；hero、Notice 和 Run 诊断都是 page 内的
   [站点组件](components/site/README.md)。
-- **默认报告页（内建首页）：** 页首是 `Hero`、`SampleNotices`、`RunNotices` 与 `SampleFixPrompt`。
-  `SampleOverview` 展示摘要、成本 × 主读数散点和 experiment 比较表。实验表可展开查看 eval 与
+- **默认报告页（内建首页）：** 页首是 `Hero`，随后是首页任务函数产出的 Notice、摘要、
+  成本 × 主读数 points 和 Experiment rows。实验表可展开查看 Eval 与
   attempt 证据。每个 experiment 的 eval 集取 Run 记录的 `selectedEvalIds`，未选择项不进入分母。
   散点有 `line` label 时按线归类并连线，否则按 agent 归类且不连线。`--report` 用自定义报告替换
   整份页面声明，配置的 `report` 字段把同一替换设为项目默认。
-- **Attempts 页（内建）：** 站点组件加带过滤的
-  [`sources.entity.attempts`](components/sources/entity.md#evals-与-attempts)，把范围内所有 attempt 展成列表。
-- **追踪页（内建）：** 站点组件加
-  [`sources.sample.traces`](components/sources/sample-traces.md)，用 canonical OTel 字段显示执行瀑布。
+- **Attempts 页（内建）：** `toAttemptRows(sample.attempts)` 把范围内所有 Attempt
+  投影成 rows，再交给带过滤的 `Table`。
+- **追踪页（内建）：** `toTraceNodes(sample)` 用 canonical OTel 字段产生执行时间树，
+  再交给 `Waterfall`。
 - **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、
-  `navigation: false` 的 [`AttemptDetail`](components/attempt-detail/README.md) page。它用公开组件装配
+  `navigation: false` 的 [`AttemptDetails`](components/attempt-detail/README.md) page。它用公开组件装配
   判定、断言、修复 prompt、时间树、usage、对话、trace 和 diff。`AttemptAssessment` 内的
   `AttemptNotices` 统一解释 snapshot error 与 persisted diagnostics。用户可把 content 换成任意公开组合。
 - **Copy fix prompt：** 批量修复 prompt 由
@@ -210,7 +211,11 @@ site/
             └── diff.json        # 根里有才出现；缺时证据位置如实显示缺失
 ```
 
-站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同 Run 的 `sources/<sha256>.json`，读取这份导出目录的下游消费方（下载后用 `niceeval/record` 重新打开、或另行编写的查看器）按这条引用取源码正文；携带条目（`artifactBase` 指向原 Run）的源码正文由复制管线归拢进本 Run 的 `sources/`，静态站不需要原 Run 在场。这是 `artifact/` 自身的存储去重机制，与页面渲染路径无关——`sources.attempt.source` 消费的标注源码已经在 `AttemptEvidence.evalSource` 里解引用好，构建期直接写进对应 attempt 页面的初始 HTML，不依赖浏览器再去读这份引用。
+站内 `artifact/` 树因此自包含：其中 `sources.json` 按引用指向同 Run 的
+`sources/<sha256>.json`。携带条目的源码正文由复制管线归拢进本 Run 的
+`sources/`，静态站不需要原 Run 在场。这个存储去重机制与页面渲染路径无关：
+`toAnnotatedEvalSource(attempt)` 消费的源码已在 AttemptEvidence 中解引用，
+构建期直接写进对应 Attempt 页面的初始 HTML。
 
 多页报告仍只用一个 `index.html`：页面是 `#/page/<id>` 路由，托管方不需要为每页配置路径。attempt 不同：基线 locator 链接直接指向 `attempt/<locator>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/attempt/@<locator>`。所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。托管方把站点根暴露成无尾斜杠路径（`/showcase/memory` 直接服务 `index.html`，且带斜杠形态被 308 回无斜杠）时，浏览器按文档 URL 的**目录**解析相对引用会少一层——`index.html` 因此在 `<head>` 最前面落一个 `<base>`，把站点根写成目录形态，后续所有相对引用（attempt 链接、证据 fetch、head 资产标签）都按它解析：路径已是目录形态（`/`、`/sub/`）时不插入，末段带扩展名（`/out/index.html`、`file://` 直接打开）时取其目录。`index.html` 按构造恒是站点根，这条判定不需要托管方配置。attempt 文档住在真实的 `attempt/` 目录下，相对引用天然对齐，不参与这套归一。`assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。`head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。attempt 页面的基线内容——判定、断言、时间树、对话、diagnostics、usage、trace、diff 摘要与可展开细节——已经在构建期写进该 locator 的静态 HTML，不依赖浏览器再去 fetch；`artifact/` 是与 HTML 平行的独立证据树，只服务下载、外部程序读取与渐进增强的补充链接，不是页面基线内容的数据来源。因此不提供“单个 HTML”导出：站点仍需要 `assets/`（样式 / 脚本）与 `artifact/`（独立证据文件）等外部文件，这是站点由多个物理文件构成的结构性原因，与页面是否需要联网取数无关。
 
@@ -258,7 +263,7 @@ niceeval view --report reports/site.tsx --page exam   # 指定初始页
 
 报告文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 sample-input page；[配置对象形态](library/shell.md)声明外壳与 pages。写好的定义填进 `niceeval.config.ts` 的 `report` 字段，裸 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](README.md#项目默认报告)）。view 只把 `navigation !== false` 的 pages 列进导航；sample-input page 读取 Sample，attempt-input page 按 locator 读取 `AttemptEvidence`。`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
 
-`SampleOverview` 的两个渲染面共享同一份实体与读数数据：web 面使用可排序的实验表，text 面使用紧凑列表；两面都直接消费完整 Sample，不设实验组选择器。端到端通过率、成本、耗时、Tokens、判定构成和证据引用来自同一份计算结果。
+内建首页的两个渲染面共享同一份实体与读数数据：web 面使用可排序的实验表，text 面使用紧凑列表；两面都直接消费完整 Sample，不设实验组选择器。端到端通过率、成本、耗时、Tokens、判定构成和证据引用来自同一份计算结果。
 
 ## 主题
 

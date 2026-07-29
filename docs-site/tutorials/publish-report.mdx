@@ -52,14 +52,14 @@ The report file is committed in the repo just like `report-data/` — edit the l
 
 ## Connecting site analytics and third-party scripts
 
-To hook the published site up to Google Analytics, tracking pixels, or a comment widget, declare tags in the report file's `head` field. Copy the vendor's snippet field-for-field into an object — for GA4, the two `<script>` blocks the vendor gives you become two entries. Page content doesn't need to be rewritten: the default report is exported as `standard` from `niceeval/report/built-in`, and `extends`-ing it gives you the default site as-is, plus your title and scripts:
+To hook the published site up to Google Analytics, tracking pixels, or a comment widget, declare tags in the report file's `head` field. Copy the vendor's snippet field-for-field into an object — for GA4, the two `<script>` blocks the vendor gives you become two entries. Page content doesn't need to be rewritten: the default report is exported as `standard` from `niceeval/report/built-in`, and spreading its pages into your own gives you the default site as-is, plus your title and scripts:
 
 ```tsx
 import { defineReport } from "niceeval/report";
 import { standard } from "niceeval/report/built-in";
 
 export default defineReport({
-  extends: standard,
+  pages: [...standard.pages],
   title: "Memory Evals",
   head: [
     { tag: "script", attrs: { async: true, src: "https://www.googletagmanager.com/gtag/js?id=G-XXXX" } },

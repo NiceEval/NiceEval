@@ -2,7 +2,10 @@
 
 同批 eval 在多个条件（baseline vs 记忆、不同 agent、不同 flags）下各跑了一遍时，核心问句是「同一道题在两个条件下各自怎样」——哪些题翻转了判定、token 与成本差在哪。`--exp` 出现两次以上时，缺省切片输出这张对照矩阵：逐 eval 一行，逐条件一组列，行尾翻转标记，尾部对基准的汇总差值。
 
-默认报告回答「每个条件整体多好」，对照矩阵回答「每道题在条件间怎么变」；两者消费同一套 Sample 选择，只是投影不同。对照矩阵是报告库 [`sources.measure.delta`](../components/sources/measure-delta.md) 在 show 上的零配置装配——`--exp` 出现顺序即 `conditions`（首个是基准），eval id 前缀即 `evals`；聚合口径、数据形状与展示语义单源在该组件小节，不在此重复声明。
+默认报告回答「每个条件整体多好」，对照矩阵回答「每道题在条件间怎么变」；
+两者消费同一套 Sample 选择，只是任务函数不同。
+对照矩阵由公开 `comparisonResult(sample, options)` 产出普通 Result；
+`--exp` 出现顺序即 `conditions`，首个是基准，eval id 前缀即 `evals`。
 
 ## 条件与配对
 
@@ -34,7 +37,9 @@ memory/flaky-retry ×2               ✗   731.5k   $0.99        ✓   644.0k   
 - 条件超过两个时，每个非基准条件各带自己的 `Δ` 列组，全部对第一个 `--exp` 求差；输出变宽是允许的，宽内容交给终端横向滚动，不为省列宽合并语义。
 - 数值列跟随 Sample 主读数映射（[题型构成与主读数](../library/measures.md#题型构成与主读数)）：通过制显示 verdict，计分制在 verdict 位显示挣分（如 `3 pt`；计分制没有满分声明），混型按题型分段。
 
-聚合口径——翻转标记、占位与时效、每格的折叠规则、`汇总` 与 `共同题对基准` 的计算方式、混型分段——单源在 [`sources.measure.delta`](../components/sources/measure-delta.md)；本页只保留 CLI 呈现的行为与示例。
+聚合口径——翻转标记、占位与时效、每格的折叠规则、`汇总` 与
+`共同题对基准` 的计算方式、混型分段——单源在公开
+`comparisonResult()`；本页只保留 CLI 呈现行为与示例。
 
 ## 与切片、形态组合
 
@@ -50,14 +55,14 @@ niceeval show pr-6058 --exp A --exp B        # 收窄到单题：一行矩阵，
 
 ## 边界
 
-- 与 `--report` 互斥（缺省切片被报告树替换时，对照矩阵不再适用；自定义报告里的对比组件用 `sources.measure.delta`）。
+- 与 `--report` 互斥。自定义报告可直接调用 `comparisonResult()`，
+  或写自己的 paired delta 函数并通过 `metricValue()` / `evidenceRow()` 交结果。
 - `@<locator>` 与重复 `--exp` 互斥（[范围契约](../show.md#选择结果范围)）。
 - 只想看所有条件的整体前沿时用单个 `--exp` 收窄后的[默认报告的散点](default-report.md)；矩阵服务逐题归因，不服务排名。
 
 ## 相关阅读
 
-- [`sources.measure.delta`](../components/sources/measure-delta.md) —— 对照矩阵的组件单源：聚合口径、
-  `sources.measure.delta` 形状与展示语义。
+- [计算边界](../calculations.md#delta-不是内核) —— paired delta 为什么是报告旁任务函数。
 - [默认报告](default-report.md) —— 单条件范围的缺省切片与折叠口径。
 - [`--usage`](usage.md) —— 用量列的组装口径。
 - [`--json`](json.md) —— 信封与逐视图指针。

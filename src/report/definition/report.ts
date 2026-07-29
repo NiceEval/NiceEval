@@ -1,9 +1,9 @@
 // defineReport:唯一可被宿主装载的产物 —— 一层外壳(标题、外链、页脚、head 标签、脚本、样式)加
 // 非空页列表;单页与多页不是两种机制,页数只是列表长度(docs/feature/reports/library/shell.md)。
 // 入参有两级缩写,各有精确展开:树入参 ≡ { content: 树 } ≡ pages: [{ id: "report",
-// title: 内置页名, content: 树 }]。`content` / `pages` / `extends` 恰好声明一个,没有隐式默认;
-// `extends` 在另一份报告上叠外壳——页归 base、外壳逐字段覆盖,合并在调用时折叠完成,
-// 宿主装载看到的永远是已折叠的普通产物。
+// title: 内置页名, content: 树 }]。`content` / `pages` 恰好声明一个,没有隐式默认。
+// 报告之间没有继承:复用内建视图是普通 JavaScript(import 它的 pages 拼进自己的 pages),
+// 外壳字段一律本报告自己声明,没有沿用、没有部分覆盖。
 //
 // text/web 两个宿主的渲染入口(renderReportToText / renderReportToStaticHtml)在 ../runtime/
 // (text.ts / web.ts);这里只有 ReportDefinition 的类型体系、装载规范化与元数据折叠
@@ -90,31 +90,18 @@ export type ReportPage =
   | (ReportPageBase & { input?: "scope"; navigation?: boolean })
   | (ReportPageBase & { input: "attempt"; navigation: false });
 
-/** content / pages / extends 三选一由类型表达,不把非法状态留到运行期。 */
+/** content / pages 二选一由类型表达,不把非法状态留到运行期。 */
 export type ReportDef = ReportShell &
   (
     | {
         /** 单页缩写,等价于只含 id `report` 的页列表。 */
         content: ReportNode;
         pages?: never;
-        extends?: never;
       }
     | {
         /** 非空页列表;`navigation !== false` 的项按数组顺序显示。 */
         pages: NonEmptyArray<ReportPage>;
         content?: never;
-        extends?: never;
-      }
-    | {
-        /**
-         * 在另一份报告上叠外壳:页列表取 base 的页列表;本对象声明的外壳字段整字段覆盖
-         * base 的同名字段,未声明的沿用 base——没有数组拼接、没有深合并。base 是任何
-         * `defineReport` 产物(内建视图或自己别的报告文件的具名导出);合并在
-         * `defineReport` 调用时折叠完成,产物仍是普通 ReportDefinition,可以再被 extends。
-         */
-        extends: ReportDefinition;
-        content?: never;
-        pages?: never;
       }
   );
 
@@ -167,8 +154,11 @@ const DEFAULT_PAGE_TITLE: LocalizedText = { en: "Report", "zh-CN": "报告" };
 
 // ───────────────────────── 装载规范化与静态校验 ─────────────────────────
 
-const EXTENDS_NEXT_STEP =
-  'To render the built-in report, write extends: standard (import { standard } from "niceeval/report/built-in").';
+// 复用内建视图是普通 JavaScript:import 它的 pages,自己拼进 pages 数组。报告之间没有
+// 继承,也没有部分覆盖——读一份报告文件就能看出它会渲染什么。
+const BUILT_IN_NEXT_STEP =
+  'To render the built-in report, write pages: [...standard.pages] (import { standard } from "niceeval/report/built-in") ' +
+  "and declare this report's own shell fields; reports do not inherit from one another.";
 
 function isReportNodeInput(value: unknown): boolean {
   if (value === null || value === undefined || typeof value === "boolean") return true;
@@ -191,8 +181,8 @@ function assertNotDefinition(value: unknown, where: string): void {
   ) {
     throw new Error(
       `${where} received a defineReport(...) product, but a report definition is not a report node — the shell cannot nest. ` +
-        "Pass the page's tree or component here. To layer a shell over another report, write defineReport({ extends: base, … }); " +
-        "otherwise export the defineReport product as the file's default export.",
+        "Pass the page's tree or component here. To reuse another report's pages, spread them into this report's pages array " +
+        "(e.g. pages: [myPage, ...standard.pages]); otherwise export the defineReport product as the file's default export.",
     );
   }
 }
@@ -408,43 +398,38 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     : (input as ReportDef);
   if (typeof def !== "object" || def === null) {
     throw new Error(
-      "defineReport expects a report tree or a config object ({ title?, links?, footer?, head?, scripts?, styles?, content | pages | extends }). " +
-        EXTENDS_NEXT_STEP,
+      "defineReport expects a report tree or a config object ({ title?, links?, footer?, head?, scripts?, styles?, content | pages }). " +
+        BUILT_IN_NEXT_STEP,
     );
   }
 
   const hasContent = "content" in def && def.content !== undefined;
   const hasPages = "pages" in def && def.pages !== undefined;
-  const hasExtends = "extends" in def && (def as { extends?: unknown }).extends !== undefined;
-  const declared = [hasContent && '"content"', hasPages && '"pages"', hasExtends && '"extends"'].filter(
+  // extends 曾是报告级复用的位置,现在没有了:命中它给出改写指引,而不是静默忽略一个
+  // 用户以为生效了的字段——静默忽略的症状是「我继承的页一张都没出现」。
+  if ("extends" in def && (def as { extends?: unknown }).extends !== undefined) {
+    throw new Error(
+      'defineReport no longer takes "extends" — reports do not inherit from one another, and no field is partially overridden. ' +
+        "Spread the pages you want into this report's own pages array (e.g. pages: [myPage, ...standard.pages]) " +
+        "and declare its shell fields here.",
+    );
+  }
+  const declared = [hasContent && '"content"', hasPages && '"pages"'].filter(
     (name): name is string => typeof name === "string",
   );
   if (declared.length > 1) {
     throw new Error(
-      `defineReport got ${declared.join(" and ")} — declare exactly one of "content" (a single tree), "pages" (a multi-page report), or "extends" (another report plus this shell). ${EXTENDS_NEXT_STEP}`,
+      `defineReport got ${declared.join(" and ")} — declare exactly one of "content" (a single tree) or "pages" (a multi-page report). ${BUILT_IN_NEXT_STEP}`,
     );
   }
   if (declared.length === 0) {
     throw new Error(
-      `defineReport got none of "content", "pages" or "extends" — declare exactly one; omission is not a meaningful value, the file must show what renders. ${EXTENDS_NEXT_STEP}`,
+      `defineReport got neither "content" nor "pages" — declare exactly one; omission is not a meaningful value, the file must show what renders. ${BUILT_IN_NEXT_STEP}`,
     );
   }
 
-  // extends:报告级复用的唯一位置。页归 base,本对象只贡献外壳;base 已经过 defineReport
-  // 校验,页不重验。
-  let base: ReportDefinition | undefined;
   let pages: readonly ReportPage[];
-  if (hasExtends) {
-    const candidate = (def as { extends: unknown }).extends;
-    if (!isReportDefinition(candidate)) {
-      throw new Error(
-        'defineReport "extends" must be a defineReport(...) product — the base report whose pages this report inherits. ' +
-          EXTENDS_NEXT_STEP,
-      );
-    }
-    base = candidate;
-    pages = base.pages;
-  } else if (hasContent) {
+  if (hasContent) {
     assertNotDefinition(def.content, 'defineReport "content"');
     pages = [
       { id: DEFAULT_PAGE_ID, title: DEFAULT_PAGE_TITLE, input: "scope", navigation: true, content: def.content as ReportNode },
@@ -453,7 +438,7 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     const raw = def.pages as unknown;
     if (!Array.isArray(raw) || raw.length === 0) {
       throw new Error(
-        `defineReport "pages" must be a non-empty array of { id, title, content }. ${EXTENDS_NEXT_STEP}`,
+        `defineReport "pages" must be a non-empty array of { id, title, content }. ${BUILT_IN_NEXT_STEP}`,
       );
     }
     const seen = new Set<string>();
@@ -481,7 +466,7 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
   if (def.title !== undefined) assertLocalizedText(def.title, "defineReport title");
   if (def.footer !== undefined) assertLocalizedText(def.footer, "defineReport footer");
   assertDimensionPins(def.dimensionPins);
-  // 外壳合并:声明即整字段覆盖,未声明沿用 base(base 的字段已规范化,不重验)。
+  // 外壳:每个字段都由本报告自己声明,没有沿用别处的回落——读这个文件就是全部。
   let links: readonly ReportLink[];
   if (def.links !== undefined) {
     if (!Array.isArray(def.links)) throw new Error("defineReport links must be an array of { label, href }.");
@@ -506,12 +491,12 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     }
     links = def.links;
   } else {
-    links = base?.links ?? [];
+    links = [];
   }
-  const title = def.title !== undefined ? def.title : base?.title;
-  const theme = def.theme !== undefined ? def.theme : base?.theme;
-  const footer = def.footer !== undefined ? def.footer : base?.footer;
-  const dimensionPins = def.dimensionPins !== undefined ? def.dimensionPins : base?.dimensionPins;
+  const title = def.title;
+  const theme = def.theme;
+  const footer = def.footer;
+  const dimensionPins = def.dimensionPins;
 
   const definition = {
     kind: "report" as const,
@@ -520,9 +505,9 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
     ...(dimensionPins !== undefined ? { dimensionPins } : {}),
     links: [...links],
     ...(footer !== undefined ? { footer } : {}),
-    head: def.head !== undefined ? assertHeadTags(def.head) : [...(base?.head ?? [])],
-    scripts: def.scripts !== undefined ? assertAssets(def.scripts, "scripts") : [...(base?.scripts ?? [])],
-    styles: def.styles !== undefined ? assertAssets(def.styles, "styles") : [...(base?.styles ?? [])],
+    head: def.head !== undefined ? assertHeadTags(def.head) : [],
+    scripts: def.scripts !== undefined ? assertAssets(def.scripts, "scripts") : [],
+    styles: def.styles !== undefined ? assertAssets(def.styles, "styles") : [],
     pages: pages as unknown as NonEmptyArray<ReportPage>,
   };
   Object.defineProperty(definition, REPORT_DEFINITION, { value: true });

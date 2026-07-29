@@ -40,7 +40,7 @@ projectSourceView(
 ): SourceContent
 ```
 
-`SourceContent` 保留与完整树相同的节点关系，但节点的 `lines` 只含本次要展示的行，并为每条调用边
+`AnnotatedSourceResult` 保留与完整树相同的节点关系，但节点的 `lines` 只含本次要展示的行，并为每条调用边
 声明默认展开态。省略区段不进入数组，渲染面按行号不连续显示 `... N lines`。
 
 ### 行选择
@@ -88,5 +88,5 @@ web 模式保留全部路径，用原生 `<details>` 表达展开。含未通过
 - text 面只负责缩进层级、汇总行、省略行和终端宽度截断。
 - web 面只负责 `<details>`、汇总 pill、行状态和源码横向滚动。
 
-两个面都消费 `SourceContent`，不重新分桶、汇总或选择上下文行。web 视觉细节见
-[`sources.attempt.source`](../components/sources/attempt-source.md)。
+两个面都消费 `AnnotatedSourceResult`，不重新分桶、汇总或选择上下文行。web 视觉细节见
+[`toAnnotatedEvalSource(attempt)`](../components/primitives/source-view.md)。

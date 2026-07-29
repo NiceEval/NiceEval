@@ -7,7 +7,13 @@
 show 的输入沿三条正交轴组合。三条轴各自独立取值，组合语义由各轴自己的规则决定，不为特定组合发明特例命令：
 
 - **范围**选出一批 attempt。eval id 前缀位置参数、`@<locator>` 位置参数、`--exp`（可重复）、`--fresh` 与 `--record` 都是范围输入；`@<locator>` 是恰好命中一个 attempt 的最小范围，不是某些切片的专属入口。
-- **切片**选择装配哪个报告组件：每个切片解析为一次报告组件的装配（[「show 的切片是组件选择」](architecture.md#show-的切片是组件选择)）。缺省切片按范围形态选择（规则见下）：[默认报告](show/default-report.md) 装配内建报告首页，[对照矩阵](show/compare.md) 装配 `sources.measure.delta`，[失败诊断首页](show/attempt.md) 装配 `AttemptDetail`；显式 flag 里 [`--source`](show/eval-source.md)、[`--execution`](show/execution.md)、[`--timing`](show/timing.md)、[`--diff`](show/diff.md) 各装配 attempt-detail 组件族的一处区块，[`--usage`](show/usage.md) 装配 `AttemptUsage`，[`--stats`](show/stats.md) 装配 `sources.measure.stability`；[`--history`](show/history.md) 直接投影 Record evidence，不经组件模型。**每个切片接受任意范围**：范围含多个 attempt 时，宿主机器把同一组件逐 attempt 分节映射，节头带 locator——分节是宿主机器，节内内容仍由组件拥有；单 attempt 范围只是省掉了分节。
+- **切片**选择一个公开任务函数与 text 组件。缺省切片按范围形态选择：
+  [默认报告](show/default-report.md)调用首页任务函数，
+  [对照矩阵](show/compare.md)调用 `comparisonResult()`，
+  [失败诊断首页](show/attempt.md)调用 Attempt 详情任务函数；
+  [`--stats`](show/stats.md)调用 `stabilityResult()`。
+  其它显式 flag 也各有一个结果函数。范围含多个 Attempt 时，
+  宿主按稳定顺序分节映射同一任务；单 Attempt 范围只省掉分节。
 - **形态**选择输出给谁：缺省 text 面给人和终端里的 agent；[`--json`](show/json.md) 把同一范围、同一切片选出的实体输出成结构化文档给脚本。两个形态消费同一套选择、去重与聚合规则，共有派生字段同值；JSON 可保留 text 注意力预算省略的字段，是数据超集。
 
 ```sh

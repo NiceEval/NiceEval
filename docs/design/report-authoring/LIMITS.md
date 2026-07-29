@@ -2,13 +2,14 @@
 
 **相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
 [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
+[PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) ·
+[PLAN-5](PLAN-5.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 目的
 
-记下三个候选作者面各自能做什么、做不到什么，以及它们共同撞上的那几堵墙。
+记下四类候选作者面各自能做什么、做不到什么，以及它们共同撞上的那几堵墙。
 结论在 [DECISION](DECISION.md)，这里只写现状。
 
 ---
@@ -118,6 +119,28 @@ SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性
 而 SQL 的结果形状由作者当场决定。详见 [PLAN-3](PLAN-3.md) 与 [PLAN-4](PLAN-4.md)。
 
 ---
+
+# 候选项 4：普通值转换 + 静态 page
+
+## 产品特性
+
+page render 直接接收 Sample 或 AttemptEvidence，
+调用普通函数后把具体结果值交给组件。
+两级聚合与证据由少量公共组合器保障。
+
+## 当前支持
+
+- 普通 TypeScript 直接表达异步、并行、join、排序与复用。
+- 组件属性按值的角色命名，调用点可见 `rows`、`points` 与 `attempt`。
+- 静态 page 清单保留导航、逐页惰性求值和失败隔离。
+- 官方与用户 Calculation 走同一个 `rollup()` / `aggregate()`。
+
+## 当前不支持
+
+- 不提供细粒度的公开查询依赖图；跨 page 自动共享不是作者语义。
+- 报告旁复杂算法的公式仍需单独测试，证据构造器只保证结果可追溯。
+
+详见 [PLAN-5](PLAN-5.md)。
 
 # 共通限制
 

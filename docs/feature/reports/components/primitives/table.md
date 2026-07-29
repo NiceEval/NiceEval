@@ -1,203 +1,36 @@
 # `Table`
 
-一切行 × 列形状的唯一渲染面：实验对比、逐题明细、读数榜、成绩单、条件对照与稳定性矩阵
-共用这一个原语，差别全在传进去的[数据源](../sources/README.md)。
+`Table<Row>` 接普通只读 `rows`：
 
 ```tsx
-// 默认字段：Source 声明字段集合与列序，Table 负责表头呈现
-<Table source={sources.entity.experiments} filter />
-
-// 自选列：写 <Column> 就整体替换默认列，列序即声明序
-<Table source={sources.measure.rows({
-  dimensions: ["experiment"],
-  measures: [passRate, costUSD],
-})}>
-  <Column dataKey="passRate" />
-  <Column dataKey="costUSD" align="right" />
-</Table>
-
-// data 形态：接收算好的行，子节点只选择并附加呈现
-<Table data={content}>
-  <Column dataKey="eval" header="题目" />
-</Table>
+<Table rows={performance} />
 ```
 
-## 形状
+省略 columns 时按第一行的稳定字段顺序推导。
+覆盖列时传字段名或列定义：
 
-```ts
-type TableProps<Input extends SourceInput> =
-  DataProps<Input, TableContent | Dataset | null> & TablePresentation;
-
-interface TablePresentation {
-  /** 至少一个 <Column>；省略时用 Content 的默认列。 */
-  children?: ColumnNode | readonly ColumnNode[];
-  /** 初始排序的列 key；方向跟随该列的 better，省略时用数据源声明的默认排序。 */
-  sort?: string;
-  /** web 面加过滤输入框；渐进增强，不改变数据与 text 面。 */
-  filter?: boolean;
-  attemptHref?: (locator: AttemptLocator) => string;
-  locale?: ReportLocale;
-  className?: string;
-}
-
-interface ColumnProps {
-  /** 对应 Row.cells 的键。 */
-  dataKey: string;
-  /** 省略时取内建字段词典；未命中时显示原始 dataKey。 */
-  header?: LocalizedText;
-  align?: "left" | "right";
-  /** 越高/低越好；决定点击排序的方向。省略时该列不可排序。 */
-  better?: "higher" | "lower";
-  /** 单元格最多占几行，超出按显示宽度截断。 */
-  maxLines?: number;
-}
+```tsx
+<Table
+  rows={performance}
+  columns={[
+    "agent",
+    { field: "costUSD", label: "Spend" },
+    "passRate",
+  ]}
+/>
 ```
 
-`<Column>` 的存在与否是二选一：一个都不写时，`TableContent` 使用自己的 `columns`，`Dataset` 使用
-`fields` 的声明顺序；Table 再按「内建字段词典 → 原始 key」生成表头。写了 `<Column>` 就整体替换，
-其中 `header` 只覆盖呈现，不成为 Content 的一部分。
-没有「在默认列上加一列」这种半覆盖——半覆盖要求作者知道默认列序里该插在哪，
-而默认列序会随数据源演进，插入位置无法稳定表达。要在默认基础上增删，
-读取 `TableContent.columns` 自己拼，那是普通 JavaScript。
+MetricValue 显示本地化值、samples / total 与证据入口；
+普通标量按实际类型显示。字段缺失或行形状不一致时，
+错误指出 `rows[index].field`。
 
-## 单元格类型
+排序、过滤与 limit 只改变显示行，不重新聚合。
+需要改变分组或合并长尾时回到 Sample 调用 `aggregate()`。
 
-`Table` 的一格、`Grid` / `Stat` 的一个主值都是同一个判别联合。它是**官方表格数据协议**的标准
-值封装：官方 Source 负责把领域事实折成这几种格子之一，数据型内建原语按 `kind` 渲染。自定义
-Source 配自定义 Component 时不必经过它（[全局协议只有 Content](../README.md#全局协议只有-content)），
-但自定义数据要交给 `Table` / `Chart` / `Stat` 就必须适配成这个形状。
-
-```ts
-type Cell =
-  /** 官方读数格：display 是计算侧折好的显示值，samples / total / refs 保住覆盖率与下钻。 */
-  | { kind: "measure"; measure: MeasureCell }
-  /** 判定：单个 verdict，或计票；refs 是计票覆盖的执行（有证据可下钻的计票格才携带，如稳定性矩阵）。 */
-  | { kind: "verdict"; verdict?: Verdict; counts?: VerdictCounts; refs?: readonly AttemptLocator[] }
-  /** 挣分：earned 恒有；possible 只有固定题集这类有分母的读数才给。 */
-  | { kind: "score"; earned: number; possible?: number }
-  /** 单行结果摘要，more 是「还有几条没显示」。 */
-  | { kind: "summary"; text: string; more?: number }
-  /** attempt 身份；staleSinceMs 存在即历史执行，渲染成时距标注。 */
-  | { kind: "locator"; locator: AttemptLocator; staleSinceMs?: number }
-  /** 身份或自由文本，detail 是副行。 */
-  | { kind: "text"; text: string; detail?: string }
-  /** 这一格不适用（通过制行的总分格）：与「测不了」严格分开。 */
-  | { kind: "notApplicable" }
-  /** 覆盖缺口：结构化 code，经内建词表映射成本地化原因；code 本身不是显示文本。 */
-  | { kind: "missing"; code: string; data?: JsonValue };
-```
-
-三条不变量跨原语成立：
-
-- **`measure` 格永远带证据。** Source 不得把 `MeasureCell` 压成字符串塞进 `text` 格——
-  压了就丢掉 `samples` / `total` / `refs`，读者看到一个数却点不开它是从哪几条 attempt 来的。
-- **`notApplicable` 与 `missing` 不合并。** 前者是「这个读数对这一行没有意义」，
-  后者是「本该有却没跑到」；合成一个空格子，覆盖缺口就从表里消失了。
-- **`summary` 的文本已经折好。** 摘要在 Source 里按
-  [Assertion display 契约](../../../assertions/library/display.md#主失败断言怎样选)
-  算完，渲染面只做宽度截断，不重算。
-
-## 单元格渲染
-
-下面是上一节每个 `kind` 在两个面的渲染契约，全部数据型原语照抄同一份。
-Source 只决定一格是哪个 `kind`，不决定它长什么样。
-
-| `kind` | web 面 | text 面 |
-|---|---|---|
-| `measure` | 输出 `display`（计算侧按 `unit` 折好，按 `ctx.locale` 取语言）；`samples < total` 时写明覆盖范围；`refs` 单条时值本身是链接，多条时进 tooltip | 同一个 `display`；覆盖缺口写进列脚注，不省略 |
-| `verdict` | 单个 verdict 显示状态图标加词；计票各项以中点分隔，不渲染成类似按钮的胶囊 | `✓ passed` / `1 passed · 1 failed` |
-| `score` | `earned`；有 `possible` 时写 `earned / possible` 并附同尺度百分比 | 同 web，百分比在括号内 |
-| `summary` | 单行，宽度不足按显示宽度截断；`more > 0` 时尾缀 `+N more failures`，计分制为 `+N more lost points` | 同 web |
-| `locator` | 链到 `attemptHref`；`staleSinceMs` 存在时后缀 `↩` 加人话时距，hover 显示完整执行时刻 | locator 加 `↩ 3d`，时距直接打 |
-| `text` | 主文；`detail` 作为 subdued 副行，省略时不留空行 | 主文换行后缩进打副行 |
-| `notApplicable` | `—` | `—` |
-| `missing` | `missingText(code, locale)` 的本地化原因；词表未命中时原样显示 `code` | 同一份文案 |
-
-三条渲染纪律：
-
-- **`—` 只属于 `notApplicable`。** 缺数据走 `measure` 格的 `samples` 缺口或 `missing` 格，
-  两者都带得出「为什么没有」。把三种情况都打成 `—`，读者就无法区分不适用、测不了和没跑到。
-- **时效标注是 subdued 的行内事实**，不占框、不用警示色。携带是指纹担保下的正常缓存，
-  时效是数字的出身属性，不是警告。
-- **渲染面不重算，也不重新格式化。** `summary` 的折叠、`measure` 的聚合与显示值、`score` 的求和
-  都在数据源完成；渲染面只做宽度截断，并按 locale 从 `display` 取一种语言。数据源用
-  [`measureDisplay()`](../../library/presentation.md#格式化只发生一次)生成显示值，不写 `String(value)`。
-
-## 下钻子行
-
-`Row.subRows` 递归，层数由数据源决定。web 面每层用原生 `<details>` 展开，
-text 面用 `├─` / `└─` 子行表达一对多关系。
-
-父行不复述某一个子行的内容：单子行时会与唯一子行重复，多子行时挑任一个又会冒充父级事实。
-父行只显示折叠后的父级读数与子行数量。
-
-对偶同样成立：**子行不复述父行已经表达过的身份前缀**。父行标签是 `weather` 时，子行标签是
-`tool` 而非 `weather/tool`；完整 key 仍是排序、过滤与展开的身份。
-
-`variant: "group"` 的行是分组行：读数由自己的 `subRows` 聚合而来，不是一条独立事实。
-数据源自己决定要不要分组、以及分组无信息时是否整层收起（例：
-[Eval 分组层](../sources/entity-experiments.md#eval-分组层)）；原语只按声明渲染，
-不提供分组开关——分组键是领域知识，不是表格的呈现选项。
-
-排序、过滤与分组行的关系见[排序与过滤](#排序与过滤)。
-
-```text
-Status      Eval / Attempt       Result                     Duration   Cost
-✓ passed    algebra/retry                                   17.1s avg  $0.02 avg
-  ✗         ├─ @1first01         equals(42) · received 41   16.0s      $0.02
-  ✓         └─ @1second2         —                          18.2s      $0.02
-```
-
-## 占位行
-
-`variant: "placeholder"` 的行照常渲染，但**不参与任何列的聚合读数**：通过率、耗时、成本的分母
-仍是有 attempt 的行。它的职责是把分母缺口摆进读者正在看的表里，而不是藏进页面级脚注。
-
-占位行的格一律是 `missing` 或 `notApplicable`，没有 `measure` 格——占位行没有样本，
-给它一个 `samples: 0` 的读数格等于宣称「测过、测不了」。
-
-## 排序与过滤
-
-表头支持点击排序；标签和排序箭头作为一个不换行的单元对齐，当前排序方向始终可见，
-其余列的排序提示只在 hover / focus 时显示。只有声明了 `better` 的列可排序，
-不为「更好」方向不明的列猜顺序。同值以行 key 收口，排序是稳定排序。
-
-排序方向跟随列的 `better`；两个主读数列并存时两种读数不能互相排名，
-默认改按行 key 字典序，两列仍各自可点击排序。
-
-`filter` 为 web 面增加过滤输入框，按行内可见文本收窄行。排序和过滤只改变浏览状态，
-不改变数据、聚合口径或 text 面输出。
-
-有子行时两者都在兄弟之间进行：排序重排的是同一父行下的兄弟，不把孙行提到父层跨父重排；
-过滤命中子行时保留其祖先链并展开到命中行，命中父行时整棵子树保留。父行与分组行显示的始终是
-全量子行的读数，不是命中子集的读数：过滤改了口径就成了另一份数据。
-
-## 两面
-
-web 面是带列头的 `<table>`；宽度不足时整表横向滚动，不把标签与箭头拆成两行，
-也不为了适应宽度删除列、把多个无标签数值挤成一串，或退化成无法判断各数字含义的无表头布局。
-
-列宽由内容算出，不按列位写固定宽度：
-
-- **身份列**（首列）吃掉整表余量，末列因此始终贴住表格右缘；它有可读下限，压到下限就不再让步。
-- **其余每列**贴着自己这一列最宽的那格，并封顶在一列可读宽度内；更长的文本在列内折行，
-  不把整张表撑到需要横向滚动。
-- **每列都有可读下限。** 容器装不下所有列的下限之和时整表横向滚动，
-  而不是把 `gpt-5.6-luna` 这样的值压成三行。
-- **表头与各层子行共用同一份列宽**，展开子行不产生第二套对齐，也不让子行自己重新算宽。
-
-列宽不写死是因为列集合本来就由数据源决定：通过制与计分制的读数列不是同一套，
-自选 `<Column>` 又能整体改写列序与列数。按列位写死的宽度只对写它时的那张表成立，
-换一张表就是几列大片留白、另几列把最长的值挤到折行。
-
-text 面按显示宽度对齐（CJK 与全角记 2 列），身份列有宽度下限、压不到不可读。
-窄终端先折行，仍装不下时从右侧隐藏低优先级列并明确报告隐藏列数。自定义表与官方表
-共用这同一把尺子。
+text 面输出对齐表格；web 面输出真实 `<table>`。
+两面消费同一份 rows，并保持同一行序、列序与终值。
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 三概念模型、全局 Content 协议与结构节点规则。
-- [数据源目录](../sources/README.md) —— 官方数据源的行形状与默认列。
-- [`Grid` / `Stat`](stat-grid.md) —— 同一套单元格类型的读数网格投影。
-- [读数与维度](../../library/measures.md) —— `MeasureCell` 与聚合口径。
-- [格式化与呈现工具箱](../../library/presentation.md) —— 显示值、缺数据词表与取色的公开入口。
+- [组件目录](../README.md)
+- [Library · Table](../../library.md#table)

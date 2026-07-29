@@ -52,14 +52,14 @@ npx niceeval view --record report-data --report reports/exam.tsx --out site
 
 ## 接站点分析与第三方脚本
 
-发布出去的站想挂 Google Analytics、埋点或评论组件,在报告文件的 `head` 字段里声明标签。厂商文档里的 snippet 逐字段照抄成对象就行——以 GA4 为例,官方给的两段 `<script>` 写成两个条目。页面内容不用重写:默认报告以 `standard` 为名从 `niceeval/report/built-in` 导出,`extends` 它就是原样的默认站点加上你的标题和脚本:
+发布出去的站想挂 Google Analytics、埋点或评论组件,在报告文件的 `head` 字段里声明标签。厂商文档里的 snippet 逐字段照抄成对象就行——以 GA4 为例,官方给的两段 `<script>` 写成两个条目。页面内容不用重写:默认报告以 `standard` 为名从 `niceeval/report/built-in` 导出,把它的页展开进自己的 `pages` 就是原样的默认站点加上你的标题和脚本:
 
 ```tsx
 import { defineReport } from "niceeval/report";
 import { standard } from "niceeval/report/built-in";
 
 export default defineReport({
-  extends: standard,
+  pages: [...standard.pages],
   title: "Memory Evals",
   head: [
     { tag: "script", attrs: { async: true, src: "https://www.googletagmanager.com/gtag/js?id=G-XXXX" } },

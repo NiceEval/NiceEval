@@ -1,355 +1,318 @@
 ---
-title: "报告组件一览"
-sidebarTitle: "报告组件"
-description: "niceeval/report 的 Source、Composition、Component、原语和数据绑定参考。"
+title: "报告组件 API"
+description: "niceeval/report 的 page、计算函数、结果值与双面组件参考。"
 ---
 
-`niceeval/report` 把报告能力分成三层：
+报告作者使用一条普通 TypeScript 数据流：
 
-| 层 | 定义方式 | 职责 |
-| --- | --- | --- |
-| Source | `sources.*` / `defineSource(...)` | 从 Sample 或 AttemptEvidence 计算 Content |
-| Composition | `defineComposition(...)` | 协调多个 Source、加工 Content、装配组件树 |
-| Component | 内建原语 / `defineComponent(...)` | 把 Content 同步显示成 text 与 web |
-
-Component 不读取 Sample、Record 或 artifact。数据读取、聚合、排序和证据关联属于 Source；
-动态编排和跨来源连接属于 Composition。
-
-## 数据绑定
-
-数据原语接收互斥的 `source` 与 `data` 两种形态：
-
-```ts
-type DataProps<Input extends SourceInput, Content> =
-  | { source: Source<Input, Content>; input?: Input; data?: never }
-  | { data: Content; source?: never; input?: never };
+```text
+Sample 或 AttemptEvidence
+  → 普通函数
+  → 可序列化结果值
+  → 组件
+  → text / web
 ```
+
+公开 API 没有统一的惰性查询对象。
+异步读取和计算在 page render 中完成，组件只显示已经算好的值。
+
+## 定义报告
+
+单页报告直接传 render 函数：
 
 ```tsx
-<Table source={sources.entity.experiments} />
-<Table data={content} />
-```
+export default defineReport(async (sample) => {
+  const rows = toExperimentRows(sample);
 
-- `source`：管线在 resolve 阶段调用 `compute(input)`；省略 `input` 时使用当前 page input。
-- `data`：使用已经计算好的可序列化 Content；组件不会再次取数。
-- 同时传入 `source` 与 `data` 会报错。
-
-同一 page 实例内，相同 Source 对象和相同 input 引用只计算一次。两个配置相同但分别创建的 Source
-是两个值，因此会分别计算。
-
-## 官方 Source
-
-官方 Source 统一从 `sources` 对象发现：
-
-| Source | 产出 |
-| --- | --- |
-| `sources.entity.experiments` | Experiment 行，包含 Eval 与 Attempt 下钻 |
-| `sources.entity.evals` | Eval 行，包含 Attempt 下钻 |
-| `sources.entity.attempts` | Attempt 行 |
-| `sources.measure.rows(options)` | Dimension 与 Measure 组成的 Dataset |
-| `sources.measure.matrix(options)` | 两个维度的交叉格 |
-| `sources.measure.scoreboard(options)` | 固定题集的总分与分科得分 |
-| `sources.measure.delta(options)` | 相同 Eval 在多个条件上的值与差异 |
-| `sources.measure.stability(options)` | Eval 跨 Run 的稳定性 |
-| `sources.sample.snapshot` | Sample 范围、判定、覆盖、来源与读取期 Issue |
-| `sources.sample.traces` | Sample 中各 Attempt 的执行瀑布 |
-| `sources.run.diagnostics` | 已持久化的 Run 诊断 |
-| `sources.attempt.snapshot` | Attempt 身份、判定、耗时、用量、成本与错误 |
-| `sources.attempt.diagnostics` | Attempt lifecycle 诊断 |
-| `sources.attempt.assertions` | 断言与给分记录 |
-| `sources.attempt.source` | 带证据标注的评估源码 |
-| `sources.attempt.conversation` | 分轮事件流与失败命令 |
-| `sources.attempt.timeline` | runner phases 与关联 spans |
-| `sources.attempt.trace` | 原始 OTel span 树 |
-| `sources.attempt.diff` | 文件变化与 patch |
-
-范围级 Source 接收 `Sample`。Attempt Source 接收 `AttemptEvidence`，只能用于 attempt-input page。
-
-## TableContent
-
-表格 Source 返回统一的 `TableContent`：
-
-```ts
-interface TableContent<RowValue extends Row = Row> {
-  columns: readonly ColumnSpec[];
-  rows: readonly RowValue[];
-}
-
-interface ColumnSpec {
-  key: string;
-  unit?: string;
-  better?: "higher" | "lower";
-}
-
-interface Row {
-  key: string;
-  cells: Readonly<Record<string, Cell>>;
-  subRows?: readonly Row[];
-  variant?: "normal" | "placeholder";
-}
-```
-
-`columns` 声明稳定字段身份和默认顺序。`rows[].cells` 通过字段 key 关联列；
-数组位置不是字段身份。
-
-## Table
-
-`Table` 显示任何 `TableContent`：
-
-```tsx
-const byAgent = sources.measure.rows({
-  dimensions: ["agent"],
-  measures: [passRate, costUSD],
-  sort: passRate,
-});
-
-<Table source={byAgent} filter />
-```
-
-需要覆盖默认列时使用 `Column`：
-
-```tsx
-<Table source={byAgent}>
-  <Column dataKey="agent" header="Agent" />
-  <Column dataKey="pass-rate" header="通过率" />
-  <Column dataKey="cost-usd" header="成本" />
-</Table>
-```
-
-`Column` 是结构节点，只选择和呈现已经计算好的字段，不取数、不聚合。
-
-web 面使用真实 `<table>`，排序与过滤属于渐进增强。列宽按内容算：首列吃掉余量、
-其余列贴着自己那一列最宽的内容，窄屏放不下就整表横向滚动。text 面按终端显示宽度计算列宽；
-中文与全角字符按两列处理。`null` 显示为 `—`，不会被改成 0。
-
-## Chart
-
-`Chart` 是唯一图表原语。它消费 `sources.measure.rows(...)` 返回的 Dataset，
-再由 `Series` 把字段映射成 line、bar、area 或 scatter：
-
-```tsx
-const qualityCost = sources.measure.rows({
-  dimensions: ["experiment", "agent"],
-  measures: [costUSD, passRate],
-});
-
-<Chart source={qualityCost} x="costUSD" y="passRate" legend tooltip>
-  <Series id="frontier" mark="scatter" points="experiment" by="agent" />
-</Chart>
-```
-
-`Series` 是结构节点。它不计算 Dataset，也不能独立出现在报告树中。
-
-```ts
-interface SeriesProps {
-  id: string;
-  mark: "line" | "bar" | "area" | "scatter";
-  x?: string;
-  y?: string;
-  points?: string;
-  by?: string;
-  value?: string;
-  stack?: string;
-  connect?: boolean;
-  hidden?: boolean;
-  label?: LocalizedText;
-}
-```
-
-同一 Dataset 可以同时交给 `Table` 和多个 `Chart`。改变 mark、轴或 series 不会触发第二套聚合。
-
-## 排版原语
-
-| 原语 | 作用 |
-| --- | --- |
-| `Col` | 纵向堆叠 |
-| `Row` | web 横排；text 空间足够时分栏 |
-| `Grid` | 多列网格；列数由格数和可用宽度决定，不用声明 |
-| `Section` | 带标题的内容区 |
-| `Stat` | label、value、detail 与 tone |
-| `Text` | 不解析标记的普通文本 |
-| `Markdown` | CommonMark 正文，两面共享同一棵 AST |
-| `Table` | 表格 |
-| `Tabs` / `Tab` | 页内并列内容 |
-
-报告树不能直接放 `<div>`、`<table>` 或其它 HTML intrinsic，因为它们没有 text 面。
-HTML 只能出现在自定义 Component 的 web renderer 内。
-
-## 官方 Composition
-
-Composition 只装配公开 Source 和 Component，不实现 renderer：
-
-| Composition | 回答的问题 |
-| --- | --- |
-| `SampleOverview` | 当前 Sample 的摘要、质量成本图与 Experiment 层级行 |
-| `SampleSummary` | Sample 范围、判定构成、主读数与成本 |
-| `SampleNotices` | Sample 选择和读取过程发现的问题 |
-| `RunNotices` | 已持久化的 Run 诊断 |
-| `SampleFixPrompt` | Sample 中失败事实对应的批量修复 prompt |
-| `FailureList` | 最近的 failed / errored Attempt |
-| `AttemptDetail` | 一次 Attempt 的全部证据区块 |
-| `AttemptAssessment` | source 或 assertions 的评估说明 |
-| `AttemptNotices` | Attempt 错误与诊断 |
-| `AttemptFixPrompt` | 单个 Attempt 的修复 prompt |
-
-```tsx
-<SampleOverview />
-<FailureList limit={20} />
-```
-
-需要改变官方 Composition 的区块顺序或取舍时，直接用 Source 和原语重新装配。
-
-## 自定义 Composition
-
-```ts
-interface CompositionContext<Input extends SourceInput> {
-  readonly input: Input;
-  readonly data: Readonly<Record<string, JsonValue>>;
-  readonly page: NormalizedPage;
-  readonly signal: AbortSignal;
-  resolve<Content>(source: Source<Input, Content>, input?: Input): Promise<Content>;
-}
-```
-
-```tsx
-const FailingEvals = defineComposition(async (_props: {}, ctx) => {
-  const content = await ctx.resolve(sources.entity.evals);
-  const rows = content.rows.filter(
-    (row) => row.cells.verdict.verdict !== "passed",
+  return (
+    <Page title="Experiments">
+      <Table rows={rows} />
+    </Page>
   );
-  return <Table data={{ ...content, rows }} />;
 });
 ```
 
-Composition 内必须使用 `ctx.resolve()`，不能调用 `source.compute()`。后者会绕过 page 缓存。
-
-## 自定义 Component
+多页报告静态声明 `pages`：
 
 ```ts
-interface ComponentFaces<Data, Options, D extends DimensionDeclarations> {
-  dimensions(data: Data, options: Readonly<Options>): D;
-  text(data: Data, options: Readonly<Options>, ctx: RenderContext<D>): string;
-  web(data: Data, options: Readonly<Options>, ctx: RenderContext<D>): ReactNode;
-  enhance?: readonly EnhanceCapability[];
-  styles?: readonly ComponentStyle[];
+interface SamplePage<External> {
+  id: string;
+  title: LocalizedText;
+  input?: "sample";
+  navigation?: boolean;
+  render: PageRender<Sample, External>;
+}
+
+interface AttemptPage<External> {
+  id: string;
+  title: LocalizedText;
+  input: "attempt";
+  navigation: false;
+  render: PageRender<AttemptEvidence, External>;
 }
 ```
 
-三个函数都同步执行：
+`pages` 是非空有序数组。`id` 必须唯一。
+一份报告最多有一张 Attempt page，而且必须写 `navigation: false`。
+宿主只执行当前请求的 page render。
 
-- `dimensions()` 声明组件消费的维度值和编码；不消费维度时返回 `{}`。
-- `text()` 生成终端文本。
-- `web()` 生成 ReactNode。
+外壳字段只有 `title`、`theme`、`dimensionPins`、`head` 与 `pages`。
+页脚和页头链接用普通组件组合；组件脚本样式随自定义 renderer 声明。
 
-Component 没有 `resolve`，也不能在 renderer 中读取 Source、Sample、Record、磁盘或网络。
+## Calculation
 
-## 页级维度身份
+Calculation 由 `rollup()` 产生：
 
-组件先在 `dimensions()` 中声明完整值集合，再通过 `ctx.dimension(handle).at(index)` 读取呈现：
+```ts
+const changedLines = rollup(
+  async (attempt) => {
+    const diff = await attempt.diff();
+    return diff ? countChangedLines(diff) : null;
+  },
+  {
+    withinEval: min,
+    acrossEvals: mean,
+    unit: "lines",
+    better: "lower",
+  },
+);
+```
+
+Reducer 是函数值。内建入口提供：
+
+```ts
+mean;
+sum;
+min;
+max;
+percentile(0.95);
+```
+
+省略题内或跨题 reducer 时使用 `mean`。
+`null` 不参与 reducer；空集合保持 `null`。
+
+官方 Calculation 和用户 Calculation 使用相同的 `rollup()`。
+常用官方值包括 `passRate`、`costUSD` 与 `durationMs`。
+
+## `aggregate()`
+
+`aggregate()` 按分组函数执行多个 Calculation：
 
 ```tsx
-const AgentLegend = defineComponent<LegendData, {}>({
-  dimensions: (data) => ({
-    agents: {
-      dimension: "agent",
-      encoding: { kind: "series", mark: "line" },
-      values: data.agentIds,
-    },
-  }),
-  text(data, _options, ctx) {
-    const agents = ctx.dimension("agents");
-    return data.agentIds.map((_, index) => agents.at(index).label).join("  ");
+const performance = await aggregate(sample, {
+  by: {
+    agent,
+    experiment,
   },
-  web(data, _options, ctx) {
-    const agents = ctx.dimension("agents");
-    return (
-      <ul>
-        {data.agentIds.map((id, index) => (
-          <li key={id} style={{ color: agents.at(index).stroke }}>
-            {agents.at(index).label}
-          </li>
-        ))}
-      </ul>
-    );
+  values: {
+    passRate,
+    costUSD,
   },
 });
 ```
 
-text 面只得到标签与文本身份；web 面还得到颜色、线型、点形或 pattern。
-不要逐个截断 label，也不要按数组下标自行配色。
+结果是普通只读数组：
 
-一个实验在同一页上恒定一个颜色，图例、表格和图上的点用的是同一次分配。
-取颜色只有两个入口：报告树里的组件用 `ctx.dimension(handle)`，
-自有 React 页面用 `presentDimension(declaration)`。库不导出色板、槽位号或取色函数，
-自己按下标配色会和官方组件对不上。
-
-## 显示值与格式化
-
-读数格的显示字符串在计算时生成一次，写进 `MeasureCell.display`，两个渲染面直接输出它。
-终端和网页上的同一个数字因此逐字相同。
-
-`unit` 决定折成什么：
-
-| `unit` | 显示 |
-| --- | --- |
-| `"%"` | `87.3%` |
-| `"ms"` | `850ms` / `1.2s` / `4m 20s` |
-| `"$"` | `$0.31` |
-| 其它，如 `"tokens"` | `46.5k tokens` |
-| 省略 | `1.2k` |
-
-自定义 Source 生成读数格时调用 `measureDisplay(value, unit)`，不要自己拼字符串。
-自己拼会让同一个读数在实验行和分组行显示成两种样子。
-
-| 函数 | 用途 |
-| --- | --- |
-| `measureDisplay(value, unit?)` | 生成 `MeasureCell.display` |
-| `formatMeasureValue(value, unit?)` | 按 unit 折一个数字 |
-| `formatAxisTick(value, step, unit?)` | 图表轴刻度，精度跟随步长 |
-| `formatCellText(cell, locale?)` | 把任意 Cell 折成一行文本 |
-| `missingText(code, locale?)` | 缺数据格的原因文案 |
-
-缺数据格带的是 code，不是文案。内建 code 有 `noSamples`、`notRun` 和 `unscorable`，
-各有中英文案，`missingText()` 按当前语言取。自定义 code 未命中词表时原样显示。
-
-## 文本排版
-
-自定义组件的 text 面用这组函数对齐。不要用 JavaScript 自带的 `padEnd`：
-它数的是码元不是显示列宽，一带中文就把表撕歪。
-
-| 函数 | 用途 |
-| --- | --- |
-| `stringWidth(text)` | 显示宽度，中文与全角记 2 列 |
-| `padEnd(text, width)` / `padStart(text, width)` | 按显示宽度补齐 |
-| `wrapText(text, width)` | 按显示宽度折行 |
-| `indent(block, prefix)` | 每行加缩进 |
-| `bar(ratio, width)` | 字符条 |
-| `columns(blocks, widths, separator?)` | 多块并排 |
-
-## 共用呈现 props
-
-数据原语按需支持以下呈现 props：
-
-| Prop | 作用 |
-| --- | --- |
-| `attemptHref` | 把 AttemptLocator 映射到证据链接 |
-| `locale` | 组件内建文案的语言 |
-| `className` | web 根元素 class |
-| `filter` | 只为 web 增加过滤输入框，不改变 Content |
-
-排序、轴映射、图例和 tooltip 只能改变呈现，不能触发第二次聚合。
-
-## `niceeval/report/react`
-
-这个入口导出纯 web renderer、Content 类型，以及上面那套呈现工具箱：格式化、缺数据文案、
-`presentDimension` 和 locale 解析。它不导出 Source、Composition，也不读取记录：
-
-```tsx
-import { sources } from "niceeval/report";
-import { Table } from "niceeval/report/react";
-
-const data = await sources.entity.experiments.compute(sample);
-return <Table data={data} />;
+```ts
+readonly {
+  agent: string;
+  experiment: string;
+  passRate: MetricValue;
+  costUSD: MetricValue;
+  refs: readonly AttemptLocator[];
+}[];
 ```
 
-在 report page 外直接调用 `compute()` 是正确的；那里没有 `ctx.resolve()` 和 page 缓存。
+`by` 和 `values` 的键不能重名，也不能使用保留键 `refs`。
+自定义分组可以是返回字符串的普通同步函数。
+
+## `MetricValue`
+
+```ts
+interface MetricValue {
+  value: number | null;
+  unit?: string;
+  format?: MetricFormat;
+  better?: "higher" | "lower";
+  bounds?: {
+    min?: number;
+    max?: number;
+  };
+  samples: number;
+  total: number;
+  basis: "attempt" | "eval" | "run" | "pair";
+  refs: readonly AttemptLocator[];
+}
+```
+
+`value: null` 表示缺数据或不适用，不等于零。
+`samples`、`total` 与 `basis` 解释分母。
+`refs` 让表格、图表和 Agent 下钻到原始 Attempt。
+
+复杂算法使用 `metricValue()` 和 `evidenceRow()` 构造带证据结果：
+
+```ts
+const point = evidenceRow({
+  eval: evalId,
+  delta: metricValue({
+    value,
+    samples,
+    total,
+    basis: "pair",
+    evidence,
+    unit: "%",
+  }),
+});
+```
+
+成对差异、稳定性、固定题集成绩单和历史趋势保留在对应报告旁。
+它们不共享一个没有稳定公式的公共函数。
+
+## 实体转换
+
+实体投影立即执行：
+
+```ts
+toAttemptRows(attempts);
+toExperimentRows(sample);
+toEvalRows(sample);
+await toTraceNodes(sample);
+toSampleNotices(sample);
+```
+
+函数返回精确结果形状，不返回统一包装。
+普通数组可以继续 `filter()`、`toSorted()`、`slice()` 或 join。
+
+高频实体提供薄组件：
+
+```tsx
+<AttemptList attempts={attempts} />
+<ExperimentList sample={sample} />
+<EvalList sample={sample} />
+```
+
+## 组件属性
+
+| 组件 | 主要属性 |
+|---|---|
+| `Table` | `rows` |
+| `Scatter` | `points`、`x`、`y`、`point` |
+| `Line`、`Bars`、`Area` | `points`、`x`、`y` |
+| `Stat` | `value` |
+| `Grid` | `items` |
+| `Callouts` | `items` |
+| `Conversation` | `turns` |
+| `Waterfall` | `nodes` |
+| `SourceView` | `source` |
+| `DiffView` | `files` |
+| `AttemptDetails` | `attempt` |
+
+`SourceView` 的 `source` 表示待显示的源码值。
+它不是惰性查询对象。
+
+## 表格
+
+```tsx
+<Table
+  rows={performance}
+  columns={[
+    "agent",
+    { field: "costUSD", label: "Spend" },
+    "passRate",
+  ]}
+/>
+```
+
+省略 `columns` 时按稳定字段顺序推导。
+排序、过滤和 limit 只改变显示行，不重新聚合。
+
+## 图表
+
+```tsx
+<Scatter
+  points={performance}
+  x="costUSD"
+  y="passRate"
+  point="agent"
+/>
+```
+
+从 Sample 派生的 points 必须带行级 `refs`，
+读数字段必须是 MetricValue。
+纯外部数值序列要显式声明 `external`，并且不提供 Attempt 下钻。
+
+`Line` 用于时间或有序数值，`Bars` 用于排行和堆叠，
+`Area` 用于累计量或区间。
+需要混合 mark 时使用 `ComposedChart`，每条 series 显式绑定字段和轴。
+
+## Attempt 详情
+
+Attempt 详情是一张参数化 page：
+
+```tsx
+{
+  id: "attempt",
+  title: "Attempt",
+  input: "attempt",
+  navigation: false,
+  render: (attempt) => (
+    <AttemptDetails attempt={attempt} />
+  ),
+}
+```
+
+自定义详情可以显式调用：
+
+```ts
+toConversationTurns(attempt);
+toDiffFiles(attempt);
+toTimelineNodes(attempt);
+toAnnotatedEvalSource(attempt);
+```
+
+官方导出 `standardAttemptPage`。
+把它放进自己的 `pages` 数组即可复用完整详情。
+
+## 自定义 renderer
+
+只有新增显示形状时才使用扩展入口：
+
+```tsx
+import { defineRenderer } from "niceeval/report/extension";
+
+const ConfusionMatrix = defineRenderer({
+  text(value, options, context) {
+    return renderTextMatrix(value, options, context);
+  },
+  web(value, options, context) {
+    return <WebMatrix value={value} options={options} />;
+  },
+});
+```
+
+`text` 与 `web` 都是必填项。
+renderer 只接已经计算好的普通值，不读取 Sample、Record、artifact 或网络。
+
+脚本和样式放在 `assets`。
+初始 HTML 在没有 JavaScript 时仍必须完整可读。
+
+## React 入口
+
+`niceeval/report/react` 只导出纯 Web 组件与结果类型：
+
+```tsx
+const points = await aggregate(sample, {
+  by: { agent },
+  values: { passRate, costUSD },
+});
+
+<Scatter
+  points={points}
+  x="costUSD"
+  y="passRate"
+  point="agent"
+/>
+```
+
+服务端或构建进程负责打开 Record、选择 Sample 和计算结果。
+浏览器只接收序列化后的值。

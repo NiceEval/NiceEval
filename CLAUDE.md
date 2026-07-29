@@ -68,6 +68,8 @@ niceeval 是 beta 软件，DX 可以随便改。做 API / CLI / 契约设计决�
 
 守护一律搭这三个命令的便车：仓库约定需要机器校验时，写成 `test/` 对应子目录下的 vitest 测试，不新增脚本、package.json 命令或 hook。判据是**说红绿的一律是 vitest，写产物的才是脚本**——一条约束只能有一个入口说它红，同一个检查既能由脚本判又能由测试判时，两边迟早给出不同结论，而人只会记得跑其中一条。`scripts/` 里同时干这两件事的（`sync-tiers.mjs` 的 sync/check、`docs-writing-lint.ts` 的检查/更新台账），检查那一半导出成不打印不退出的纯函数交给测试调用，生成那一半保留命令行。带待清理台账的守护不自建 `--update`：先判回归再对台账做文件快照比对，收紧走 `vitest -u`（顺序不能反，回归断言在前才保证更新模式写不进放宽的数字）。
 
+**渲染面不做 src-grep 守护。** 样式、类名、DOM 结构是否真的生效只有真实产物能证明，不写「grep 源码提取类名 ↔ CSS 规则对齐」这类文本代理守护——它证明的是两段文本对得上，不是样式作用到了元素，且正是单元测试文档自己列的「grep 局部源码文本」反模式。这类缺陷的验收归 e2e 报告域对导出站的计算样式与几何断言（候选断言词表见 `docs/roadmap/e2e-acceptance-dsl/`）；单元层只测数据语义。详见 [memory 条目](memory/css-classname-grep-guard-retired.md)。
+
 已批准的例外只有一个：`scripts/generate-reference.ts`（`pnpm docs:reference`，2026-07 用户明确批准）——参考页区块从源码 TSDoc 生成，包根 `INDEX.md` 的随包文档树从各页 frontmatter 生成（机制见 `docs/engineering/agent-docs/`）；它是生成器且挂在 `prepare` 打包链上，publish 时不能靠跑测试产出产物，两者的守护仍走 vitest（`test/docs-site/reference-consistency.test.ts`、`test/docs-site/bundled-docs-index.test.ts`）。
 
 ## Build, Test, and Development Commands

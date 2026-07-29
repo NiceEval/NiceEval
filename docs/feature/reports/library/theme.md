@@ -22,7 +22,7 @@
 
 四档取的都是 `defineTheme` 产物，走同一条 `装载 → 规范化 → 生成令牌块与资产` 管线。
 
-**档只决定用哪一份主题，不跨档合并。** 生效的那一份里没声明的令牌一律取内建默认值，不从下一档借。这条和外壳 `extends` 的整字段覆盖是同一条纪律：读一份主题文件就能知道站点最终长什么样，不必再去翻另外三档。要在别人的主题上改，见下面的[复用与分发](#复用与分发)。
+**档只决定用哪一份主题，不跨档合并。** 生效的那一份里没声明的令牌一律取内建默认值，不从下一档借。这条和外壳「每个字段各自声明、没有部分覆盖」是同一条纪律：读一份主题文件就能知道站点最终长什么样，不必再去翻另外三档。要在别人的主题上改，见下面的[复用与分发](#复用与分发)。
 
 `--theme` 是 `view` 的 flag。`niceeval show --theme …` 按完整用户反馈报错，说明主题只作用于 web 面，并指出下一步是改用 `view`。
 
@@ -123,7 +123,7 @@ export default defineTheme({
 });
 ```
 
-主题没有 `extends`：它是一个扁平的令牌对象，对象展开已经把「继承一份再改两项」表达清楚，再加一层合并语义只会让「这个色到底从哪来」多一个要查的地方。
+主题没有继承：它是一个扁平的令牌对象，对象展开已经把「拿一份再改两项」表达清楚，再加一层合并语义只会让「这个色到底从哪来」多一个要查的地方。报告外壳同理——两处是同一条纪律。
 
 `defineTheme` 只做类型与运行时校验，不注册全局状态、不写文件。三个去处收的都是它的产物，不收裸对象——外壳的 `theme`、配置的 `theme` 与 `--theme` 装载的默认导出同一条规则，与[报告定义](shell.md)那边一致：读一行 `theme: acme` 就知道那是一份校验过的主题，而不是一坨可能拼错字段名的字面量。
 
@@ -237,7 +237,11 @@ function themeStylesheet(theme: ThemeDefinition): string;
 | `series` | experiment / agent / label 等名义分类身份 | 质量大小或判定好坏 |
 | 中性面令牌 | 页面、卡片、分隔与三级文字层次 | 任何状态含义 |
 
-组件根据领域语义选令牌，不读取 hex 值后反推意义。图表 series 与实体列表的维度键始终走 `series`（同一页内的分配规则见[页级呈现分配](../components/README.md#维度呈现分配单位是页)，「哪个值恒占哪个槽」由报告外壳的 [`dimensionPins`](shell.md#钉色) 声明），`sources.measure.delta` 的 improved / regressed 走 `positive` / `negative`；改 `accent` 不会把某条实验线染成品牌色。
+组件根据领域语义选令牌，不读取 hex 值后反推意义。
+图表 series 与实体列表的分组值始终走 `series`；
+同一报告的稳定分配由外壳 [`dimensionPins`](shell.md#dimensionpins) 声明。
+成对差异 Result 的 improved / regressed 走 `positive` / `negative`；
+改 `accent` 不会把某条实验线染成品牌色。
 
 未声明的令牌取内建主题 [Basalt](../themes/basalt.md) 的值——它同时是官方样式在每个 `var(--niceeval-*, <default>)` 使用点写下的兜底值，因此「不声明任何令牌」与「装 Basalt」看到的是同一个样子（Basalt 锁定暗色，每个令牌一个值）：
 
@@ -343,7 +347,7 @@ import acme from "@acme/niceeval-theme";
 
 ```tsx
 export default defineReport({
-  extends: standard,
+  pages: [...standard.pages],
   styles: [{
     inline: `
       .niceeval-report .niceeval-hero-title { letter-spacing: -0.035em; }
@@ -371,6 +375,6 @@ NiceEval 官方主题 [Basalt](../themes/basalt.md) 保证官方组件的对比�
 - [自己写报告组件](../use-case/构建报告/自定义组件/) —— 自定义组件怎么取色、怎么跟随任何主题。
 - [给报告换主题、做自己的主题包](../use-case/交付报告/主题/) —— 从换一次色到发一个主题包的全流程。
 - [Basalt](../themes/basalt.md) —— 官方主题的令牌取值与视觉主张。
-- [外壳与多页](shell.md) —— `theme` / `dimensionPins` / `styles` 在 `ReportShell` 中的位置与 `extends` 规则。
+- [外壳与多页](shell.md) —— `theme` / `dimensionPins` / `styles` 在 `ReportShell` 中的位置。
 - [排版原语与自定义组件](layout.md) —— 页内 `Style`、`className` 与组合组件。
 - [View](../view.md) —— 本地查看与静态导出怎样消费同一份主题。

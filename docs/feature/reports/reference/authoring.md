@@ -1,9 +1,8 @@
 # 报告作者 API —— References
 
-本篇记录候选 API 从外部产品学习什么，以及哪些部分不适合 NiceEval。
-当前 Reports 已有逐块参考见
-[Reports · 参考方案](../../feature/reports/reference/README.md)；
-这里专门比较普通报告作者的完整开发体验。
+本篇记录报告作者 API 从外部产品学习什么，以及哪些部分不适合 NiceEval。
+双面 renderer 的逐块参考见 [Reports · 参考方案](README.md)；
+本篇专门比较普通报告作者的完整开发体验。
 
 ## Rill：指标层到默认分析页
 
@@ -12,7 +11,7 @@
 [Canvas Dashboard](https://docs.rilldata.com/developers/build/dashboards/canvas)
 允许从多个 Metrics View 组合自定义页面。
 
-候选 API 学三点：
+报告作者 API 学三点：
 
 - 指标和维度由数据层维护，报告作者只选择名字。
 - 一份数据定义应自动得到有用默认页，不要求先声明所有组件。
@@ -27,7 +26,7 @@
 组件统一通过 `data={queryName}` 消费结果。
 页面文字、查询和图表处在同一个阅读上下文。
 
-候选 API 学一条：一次计算得到的结果应能直接复用于图、表与叙事。
+报告作者 API 学一条：一次计算得到的结果应能直接复用于图、表与叙事。
 NiceEval 不照抄 `data` 属性；组件按值的角色分别接收 rows、points、items 或 value。
 
 不跟 SQL。NiceEval 的官方指标必须保住两级聚合、覆盖和 Attempt 引用；
@@ -39,7 +38,7 @@ NiceEval 不照抄 `data` 属性；组件按值的角色分别接收 rows、poin
 在构建阶段生成静态数据快照，按页面引用执行并缓存。
 预览服务器在 loader 变化后重新运行并更新页面。
 
-候选 API 学三点：
+报告作者 API 学三点：
 
 - 作者声明依赖，框架负责发现、执行、缓存与错误传播。
 - 数据在进入浏览器前成为静态快照。
@@ -54,7 +53,7 @@ NiceEval 不照抄 `data` 属性；组件按值的角色分别接收 rows、poin
 把维度、指标、关联和可复用 View 挂在 Source 上；
 查询只选择已有字段并追加局部细化。
 
-候选 API 学一条：聚合结果字段应从分组函数与官方读数函数推导，
+报告作者 API 学一条：聚合结果字段应从分组函数与官方读数函数推导，
 使下游组件获得补全。
 
 不跟新的查询语言，也不跟字符串字段选择。
@@ -68,7 +67,7 @@ NiceEval 已经以 TypeScript 写 Eval、配置与报告，
 [Dashboards as Code](https://docs.lightdash.com/guides/developer/dashboards-as-code)
 把图表和 Dashboard 保存成代码。
 
-候选 API 学两点：
+报告作者 API 学两点：
 
 - 指标重命名或删除时，应列出受影响报告并提供可定位错误。
 - 数据字段的说明、单位、下钻能力和使用位置都应可发现。
@@ -82,7 +81,7 @@ NiceEval 已经以 TypeScript 写 Eval、配置与报告，
 把指标、维度、关联与访问规则定义在消费端之前，
 再通过多种 API 提供给 BI、嵌入应用与 Agent。
 
-候选 API 学一条：官方指标目录不属于某个图表。
+报告作者 API 学一条：官方指标目录不属于某个图表。
 终端、网页、自有 React 页面和 Agent 都应消费同一份指标身份与计算结果。
 
 不把 NiceEval 扩成通用语义层服务。
@@ -108,7 +107,7 @@ measure 可从字段与 `sum`、`avg`、`min`、`max`、`count`、
 页面级过滤和分组影响全部图表；点击任一数据点会带着时间范围和 series
 进入相应 Logs 或 Experiments 页面。
 
-候选 API 学五点：
+报告作者 API 学五点：
 
 1. 图形、计算、选择范围和显示格式是四个正交问题。
    `Scatter` / `Bars` 不应知道 `passRate`，Calculation 也不应知道图形。
@@ -151,7 +150,7 @@ NiceEval 没有通用查询语言，因此矩阵整形留给普通 JavaScript
 然后才产生逐行 delta、improvement 与 regression。
 SDK 也通过带 baseline 的 experiment `summarize()` 返回比较摘要。
 
-这支持候选设计：
+这支持 Reports 设计：
 
 - `history` 是输入集合和时间 / Run 分组，不是计算函数；
 - `delta` 是需要 baseline、配对键与缺失策略的比较算法，
@@ -172,7 +171,7 @@ NiceEval 在 `mean`、`sum`、`min` 与 `max` 之外加入 `percentile(p)`，
 [Metabase Modular Embedding SDK](https://www.metabase.com/docs/latest/embedding/sdk/quickstart)
 用 Provider 和 React 组件把图表或 Dashboard 放进产品页面。
 
-候选 API 学一条：嵌入包应以宿主 React 应用为中心，
+报告作者 API 学一条：嵌入包应以宿主 React 应用为中心，
 提供纯组件、主题和明确事件，不要求宿主加载完整报告运行时。
 
 NiceEval 不需要远端 BI 服务、认证会话或保存查询 id。
@@ -188,7 +187,7 @@ NiceEval 不需要远端 BI 服务、认证会话或保存查询 id。
 - 静态导出和自有 React 嵌入；
 - TypeScript 报告作者面。
 
-因此候选 API 不复制某个产品的表面语法。
+因此报告作者 API 不复制某个产品的表面语法。
 它组合 Rill 的官方指标治理、Evidence 的结果复用、
 Malloy 的字段推导和 Braintrust 的证据下钻。
 Observable Framework 的快照边界保留在交付层，不进入作者 API；

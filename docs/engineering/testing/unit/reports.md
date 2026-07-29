@@ -109,15 +109,22 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
 - **站点组件与内建报告**：`standard` 的构成与具名导出同引用、`failures` / `stability`
   的构成与具名导出同引用（各一张导航页，且 pages 里的详情页与 `standardAttemptPage`
   同引用）、三张 scope-input page 均相邻放置
-  `sampleWarnings` 与 `runDiagnostics`、`defineReport({ extends })`
-  的外壳叠加与页列表同引用、组合组件与手写组合严格等价；数据派生覆盖 hero、warning 分组聚合与组排序，以及
+  `sampleWarnings` 与 `runDiagnostics`、`defineReport`
+  复用别处页的数组展开（页等值、外壳不沿用）、组合组件与手写组合严格等价；
+  数据派生覆盖 hero、warning 分组聚合与组排序，以及
   `runDiagnostics` 对 Sample / 裸 Run[] 的同值投影、空诊断过滤、experiment →
   startedAt 排序、来源不合并、开放 code 原样保留、React
-  Content 不携带 Run/AttemptHandle。渐进增强不改数据；`SampleOverview`
-  的主读数解析——纯计分制 Sample 的展开树中 `chart()` 的 y 与列表预排序引用 `totalScore`
-  同一实例（纯通过制引用 `passRate`），`"mixed"`
-  按题型拆成两组的展开树构成（每组一份 Chart + Table、`sampleSummary`
-  整 Sample 一份）——以展开树与 Content 为断言面。
+  Content 不携带 Run/AttemptHandle。渐进增强不改数据；内建首页三行装配的构成
+  （`SampleSummary` + frontier 散点 + 实验表）以页声明与展开树为断言面。
+- **`sources.measure.frontier` 与缺省绑定**：产出与取用两侧各有区分力 fixture。
+  - 产出侧三态：纯通过制与 mixed 的 `defaults.y` 引用 `passRate`，纯计分制引用 `totalScore`。
+    mixed 只聚合通过制题，区分力是计分制题的成本不进散点分母。
+  - 产出侧 series：范围内声明过 `line` 标签时 series 维度是 `label("line")` 且
+    `connect: true`，否则是 `"agent"` 且不连线。维度字段沿用本名，页级配色身份与实验表同键。
+  - 取用侧：`Chart` 省略 x / y / children 时按 `defaults` 展开，显式 props 逐槽位覆盖。
+    给出任何子节点则整组缺省 series 作废。props 与 `defaults` 双缺时完整用户反馈报错。
+  - 序列化与边界：`defaults` 经序列化往返保留。同一 Dataset 交给 `Table` 不受影响。
+    `rows(...)` 恒不携带 `defaults`。
 - **`StabilityOverview` 的投影**：散点与堆叠柱的 Dataset 从 `StabilityContent` 字面投影。
   点身份是 `eval · condition`；零执行格的 `passRatio` 为 `null` 不为 0；堆叠三段与 `totals`
   同值；格 `refs` 原样进两个 measure cell 的 `refs`（`refs.length` 等于该格执行数）。
@@ -354,7 +361,7 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   `null`，通过制 passed 恒 `null`）。染色、降灰、pill 与右缘 sticky 的呈现归 E2E 报告域。
 - **计分制的跨文件源码投影**：跨文件给分进入调用片段或 detached block。没有 `loc` 的得分点与
   给分记录进入 unmapped，并按 `groupPath` 分组；分组算法与 `attemptAssertions` 相同。
-- **外壳与页面装载**：三种声明形态归一到同一规范化产物、`content`/`pages`/`extends`
+- **外壳与页面装载**：两种声明形态归一到同一规范化产物、`content`/`pages`
   恰好其一、标题取值链、资产路径纪律与 head 白名单/转义/scheme 分流、page id 与 attempt-input
   page 的校验规则。全部以装载结果或错误对象为断言面。
 - **show 终端宿主的文案纯函数**：`show`

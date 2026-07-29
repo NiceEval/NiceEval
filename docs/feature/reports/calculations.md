@@ -342,7 +342,7 @@ const highlighted = paretoFrontier(performance, {
 ## 组件的准入判据
 
 组件目录按渲染形状增长，不按领域问题增长。
-一个候选组件只有三种合法出身，按顺序判定：
+一个组件只有三种合法出身，按顺序判定：
 
 1. **原语。** 它的 text / web renderer 里有
    现有原语组合写不出的渲染逻辑。
