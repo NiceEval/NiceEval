@@ -1,18 +1,45 @@
+/* Tailwind 只提供 utility(给 components/magicui/ 的复制粘贴组件用),不引 preflight:
+   站点版式写在本文件,preflight 会把博客正文的列表符号、标题字重一并重置掉。
+   源码扫描范围钉在 site/,不让它顺着仓库根往外爬。 */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source("../");
+
+/* 站点观感与产品面同源:令牌值抄 DESIGN.md 的单源主题 basalt(src/report/theme.ts),
+   短名与 src/view/styles.css 的宿主 chrome 对齐。站点只有暗色一套,不做浅色切换。 */
 :root {
   color-scheme: dark;
-  --bg: #030303;
+  --bg: #050505;
   --panel: #0b0b0b;
   --panel-2: #111111;
-  --line: rgba(255, 255, 255, 0.12);
-  --line-strong: rgba(255, 255, 255, 0.22);
-  --text: #f5f5f1;
-  --muted: #9b9b96;
-  --soft: #6f6f6a;
-  --green: #b9ff3d;
-  --violet: #4d2a67;
-  --rust: #da6d39;
-  --blue: #6ea8fe;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  --line: #262626;
+  --line-strong: #343434;
+  --text: #ededed;
+  --muted: #a1a1aa;
+  --soft: #74747b;
+  --good: #3ddc97;
+  --bad: #ff6b6b;
+  --warn: #e8b84a;
+  /* accent:basalt 的近无彩强调色,用在助手回复这类需要区分身份、但不做判定的地方。 */
+  --accent: #cbd6dc;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-sans);
+}
+
+/* 把令牌暴露成 Tailwind 颜色,magicui 组件用 bg-panel / border-line 就是站点色板。 */
+@theme {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-soft: var(--soft);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-accent: var(--accent);
 }
 
 * {
@@ -33,13 +60,7 @@ body {
   min-width: 320px;
   /* eval-deck 的倾斜卡片旋转后会超出版心，裁掉溢出避免出现横向滚动条。 */
   overflow-x: clip;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    radial-gradient(circle at 72% 24%, rgba(185, 255, 61, 0.05), transparent 20rem),
-    radial-gradient(circle at 18% 3%, rgba(218, 109, 57, 0.06), transparent 16rem),
-    var(--bg);
-  background-size: 80px 80px, 80px 80px, auto, auto, auto;
+  background: var(--bg);
   color: var(--text);
   letter-spacing: 0;
 }
@@ -61,7 +82,7 @@ button {
 
 code,
 pre {
-  font-family: "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .shell {
@@ -90,7 +111,7 @@ pre {
   gap: 11px;
   color: var(--text);
   font-size: 14px;
-  font-weight: 680;
+  font-weight: 600;
 }
 
 .brand svg {
@@ -101,7 +122,6 @@ pre {
   gap: 24px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 560;
 }
 
 .nav a:hover {
@@ -120,8 +140,6 @@ pre {
   min-height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
   font-size: 13px;
 }
@@ -144,18 +162,13 @@ pre {
   max-width: 650px;
 }
 
-.hero-mark {
-  display: flex;
-  margin-bottom: 30px;
-}
-
 h1 {
   margin: 0;
   max-width: 760px;
   font-size: 84px;
   line-height: 0.98;
-  font-weight: 640;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .mode-switch {
@@ -200,8 +213,6 @@ h1 {
   margin-top: 20px;
   padding: 13px 16px;
   border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.035);
   color: var(--text);
 }
 
@@ -222,7 +233,9 @@ h1 {
   color: var(--muted);
 }
 
+/* 跟另一种模式下的 .copy-row 一样按内容收宽:零圆角下整行铺开会变成一块白板。 */
 .docs-cta {
+  width: fit-content;
   margin-top: 20px;
 }
 
@@ -230,7 +243,7 @@ h1 {
   position: absolute;
   right: 14px;
   bottom: -24px;
-  color: var(--green);
+  color: var(--good);
   font-size: 12px;
   opacity: 0;
   pointer-events: none;
@@ -261,8 +274,7 @@ h1 {
   justify-content: center;
   gap: 10px;
   padding: 0 18px;
-  border-radius: 999px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .button.primary {
@@ -272,52 +284,52 @@ h1 {
 
 .button.ghost {
   border: 1px solid var(--line-strong);
-  background: rgba(255, 255, 255, 0.03);
 }
 
-/* ---- Hero 终端动画:一个终端窗口回放 exp 运行 + show 对照(site-home-terminal.tsx)。
-   固定 min-height:转录逐行追加时窗口不长高,hero 两栏不因动画发生布局抖动。 */
+.button.ghost:hover {
+  border-color: var(--text);
+}
+
+/* ---- Hero 终端动画:一个终端窗口回放 exp 运行 + show 对照(site-home-terminal.tsx),
+   窗口外壳来自 components/magicui/terminal.tsx。固定 min-height:转录逐行追加时窗口
+   不长高,hero 两栏不因动画发生布局抖动。 */
 .term {
-  --term-bg: #0c0c0c;
   position: relative;
   min-height: 580px;
   display: flex;
   align-items: center;
 }
 
-.term-screen {
-  width: 100%;
+.term-window {
   min-height: 560px;
-  padding: 26px 26px 22px;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--term-bg);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 24px -8px rgba(0, 0, 0, 0.4);
-  font-family: "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+  border-color: var(--line-strong);
+}
+
+.term-screen {
+  margin: 0;
+  padding: 22px 26px;
+  font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.75;
   color: var(--muted);
   overflow-x: auto;
 }
 
+.term-code {
+  display: block;
+}
+
 .term-replay {
-  position: absolute;
-  top: 22px;
-  right: 12px;
-  z-index: 1;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
   background: none;
   color: var(--soft);
-  cursor: pointer;
 }
 
 .term-replay:hover {
-  border-color: var(--line-strong);
   color: var(--text);
 }
 
@@ -330,13 +342,13 @@ h1 {
 }
 
 .term .pass {
-  color: var(--green);
-  font-weight: 650;
+  color: var(--good);
+  font-weight: 600;
 }
 
 .term .fail {
-  color: var(--rust);
-  font-weight: 650;
+  color: var(--bad);
+  font-weight: 600;
 }
 
 .term-indent {
@@ -369,13 +381,12 @@ h1 {
   margin: 16px 0 20px;
   padding: 12px 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
 }
 
 .term-tag {
   position: absolute;
   padding: 0 7px;
-  background: var(--term-bg);
+  background: var(--panel);
   color: var(--soft);
   font-size: 11px;
   line-height: 1.5;
@@ -398,7 +409,7 @@ h1 {
 }
 
 .term-tag.fail {
-  color: var(--rust);
+  color: var(--bad);
   letter-spacing: 0.06em;
 }
 
@@ -413,7 +424,7 @@ h1 {
   top: -10px;
   left: 24px;
   padding: 0 7px;
-  background: var(--term-bg);
+  background: var(--panel);
   color: var(--soft);
   font-size: 10px;
   letter-spacing: 0.1em;
@@ -436,13 +447,13 @@ h1 {
 .term-slot-time {
   color: var(--soft);
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .term-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
-  background: var(--green);
+  background: var(--good);
   align-self: center;
   animation: term-pulse 1.4s ease-in-out infinite;
 }
@@ -461,6 +472,7 @@ h1 {
   column-gap: 18px;
   margin: 10px 0 6px;
   white-space: pre;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -493,15 +505,15 @@ h1 {
   width: 30px;
   height: 30px;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
   color: var(--text);
-  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .strip h2 {
   margin: 48px 0 0;
   font-size: 30px;
-  font-weight: 620;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -527,9 +539,9 @@ h1 {
 
 .eyebrow {
   margin: 0 0 16px;
-  color: var(--green);
+  color: var(--soft);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
@@ -540,8 +552,8 @@ h1 {
   max-width: 470px;
   font-size: 56px;
   line-height: 1;
-  font-weight: 620;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .setup-caption {
@@ -564,12 +576,11 @@ h1 {
   gap: 10px;
   padding: 10px 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
   background: transparent;
   color: var(--muted);
   font-size: 14px;
   text-align: left;
-  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+  transition: border-color 140ms ease, color 140ms ease;
 }
 
 .deck-switch button:hover {
@@ -578,18 +589,15 @@ h1 {
 
 .deck-switch button.active {
   border-color: var(--line-strong);
-  background: rgba(255, 255, 255, 0.045);
   color: var(--text);
 }
 
 .deck-tag {
   flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(185, 255, 61, 0.12);
-  color: var(--green);
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  color: var(--muted);
   font-size: 10.5px;
-  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   white-space: nowrap;
@@ -605,22 +613,18 @@ h1 {
   gap: 18px;
   padding: 22px;
   border: 1px solid var(--line-strong);
-  border-radius: 14px;
   /* 卡片会互相叠放，背景必须不透明，否则后排代码会透过前排卡片。 */
-  background: linear-gradient(rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.035)), var(--panel);
+  background: var(--panel);
 }
 
 .deck-card {
-  /* 换卡走一条带轻微回弹的慢曲线，让"抽到最前面"这个动作看得清；阴影和遮罩同节奏淡入淡出。 */
-  transition:
-    transform 720ms cubic-bezier(0.3, 1.12, 0.35, 1),
-    box-shadow 720ms cubic-bezier(0.3, 1.12, 0.35, 1);
+  /* 换卡走一条带轻微回弹的慢曲线，让"抽到最前面"这个动作看得清；遮罩同节奏淡入淡出。 */
+  transition: transform 720ms cubic-bezier(0.3, 1.12, 0.35, 1);
 }
 
 .deck-card.active {
   position: relative;
   z-index: 3;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
 /* 后排卡片盖满整个 deck(高度跟随前排卡)，倾斜露出边角，整卡可点。 */
@@ -636,8 +640,7 @@ h1 {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 14px;
-  background: rgba(3, 3, 3, 0.55);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
   opacity: 0;
   pointer-events: none;
   transition: opacity 720ms ease;
@@ -692,7 +695,7 @@ h1 {
 
 .deck-label {
   font-size: 14px;
-  font-weight: 620;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -700,21 +703,18 @@ h1 {
 
 .pill {
   justify-self: start;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: rgba(185, 255, 61, 0.14);
-  color: var(--green);
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  color: var(--good);
   font-size: 11px;
-  font-weight: 720;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .setup-panel {
   border: 1px solid var(--line);
-  border-radius: 10px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--panel-2);
   /* 作为 container，给 .code-note 提供 cqw：注释块要按面板可视宽度换行，而不是跟着代码一起横向滚动。 */
   container-type: inline-size;
 }
@@ -725,8 +725,8 @@ h1 {
   overflow-x: auto;
   font-size: 12.5px;
   line-height: 1.65;
-  /* 窄屏代码横向滚动时，块级行盒只有可视宽度，断言/回复底色会在滚动后断在半路；
-     grid 让所有行都撑到最长行的宽度，底色和左侧色条盖满整行。 */
+  /* 窄屏代码横向滚动时，块级行盒只有可视宽度，断言/回复标记会在滚动后断在半路；
+     grid 让所有行都撑到最长行的宽度，左侧色条盖满整行。 */
   display: grid;
 }
 
@@ -737,14 +737,13 @@ h1 {
   padding: 1px 14px;
 }
 
+/* 断言行与回复行只用左缘 2px 竖条区分身份,不铺底色:竖条是信息,不是装饰。 */
 .code-line.assertion {
-  background: rgba(185, 255, 61, 0.08);
-  box-shadow: inset 2px 0 0 var(--green);
+  box-shadow: inset 2px 0 0 var(--good);
 }
 
 .code-line.reply {
-  background: rgba(110, 168, 254, 0.08);
-  box-shadow: inset 2px 0 0 var(--blue);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* 整行都是点击区域，跟 view 里 transcript 行(summary.ts-row)一致——不是只有右边那颗按钮。 */
@@ -753,7 +752,7 @@ h1 {
 }
 
 .code-line.interactive:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--panel);
 }
 
 .code-line-no {
@@ -765,12 +764,12 @@ h1 {
 }
 
 .code-line.assertion .code-line-no {
-  color: var(--green);
+  color: var(--good);
   text-align: left;
 }
 
 .code-line.reply .code-line-no {
-  color: var(--blue);
+  color: var(--accent);
   text-align: left;
 }
 
@@ -792,12 +791,11 @@ h1 {
 }
 
 .gate-badge {
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: rgba(185, 255, 61, 0.14);
-  color: var(--green);
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
   font-size: 10px;
-  font-weight: 650;
   white-space: nowrap;
 }
 
@@ -834,7 +832,7 @@ h1 {
 .code-note svg {
   flex-shrink: 0;
   margin-top: 2px;
-  color: var(--green);
+  color: var(--good);
 }
 
 /* 助手回复气泡，呼应 view 里 transcript 的 ts-role + ts-text 样式 */
@@ -847,7 +845,7 @@ h1 {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--blue);
+  color: var(--accent);
 }
 
 .eval-more {
@@ -898,7 +896,7 @@ h1 {
 
 .eval-timing li b {
   color: var(--text);
-  font-weight: 620;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -942,52 +940,52 @@ h1 {
   outline: none;
 }
 
+/* 当前步骤靠提亮表达:面提到 panel-2、边与字提到 text,不换色相。 */
 .loop-arc {
-  fill: rgba(255, 255, 255, 0.05);
-  stroke: var(--line-strong);
+  fill: none;
+  stroke: var(--line);
   stroke-width: 1;
-  transition: fill 200ms ease;
+  transition: fill 200ms ease, stroke 200ms ease;
 }
 
 .loop-arc-group:hover .loop-arc,
 .loop-arc-group:focus-visible .loop-arc {
-  fill: rgba(255, 255, 255, 0.11);
+  fill: var(--panel);
+  stroke: var(--line-strong);
 }
 
 .loop-arc-group.active .loop-arc {
-  fill: var(--green);
-  stroke: var(--green);
-  filter: drop-shadow(0 0 16px rgba(185, 255, 61, 0.22));
+  fill: var(--panel-2);
+  stroke: var(--text);
 }
 
 .loop-arc-label {
-  fill: var(--text);
+  fill: var(--muted);
   font-size: 16px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.02em;
   pointer-events: none;
 }
 
 .loop-arc-cmd {
   fill: var(--soft);
-  font-family: "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   pointer-events: none;
 }
 
 .loop-arc-group.active .loop-arc-label {
-  fill: #0b0b0b;
+  fill: var(--text);
 }
 
 .loop-arc-group.active .loop-arc-cmd {
-  fill: rgba(3, 3, 3, 0.66);
+  fill: var(--muted);
 }
 
 .terminal {
   border: 1px solid var(--line);
-  border-radius: 10px;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--panel);
 }
 
 .terminal-head {
@@ -1025,15 +1023,15 @@ h1 {
 
 .term-cmd {
   color: var(--text);
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .term-pass {
-  color: var(--green);
+  color: var(--good);
 }
 
 .term-fail {
-  color: var(--rust);
+  color: var(--bad);
 }
 
 .term-dim {
@@ -1054,8 +1052,8 @@ h1 {
   margin: 0;
   font-size: clamp(48px, 7vw, 84px);
   line-height: 0.98;
-  font-weight: 640;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .blog-hero p,
@@ -1080,7 +1078,7 @@ h1 {
 .blog-section-head h2 {
   margin: 0;
   font-size: 22px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .blog-empty {
@@ -1096,10 +1094,7 @@ h1 {
   margin-top: 28px;
   padding: clamp(22px, 4vw, 42px);
   border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  background:
-    linear-gradient(135deg, rgba(185, 255, 61, 0.08), transparent 38%),
-    rgba(255, 255, 255, 0.035);
+  background: var(--panel);
 }
 
 .blog-card-art,
@@ -1107,12 +1102,7 @@ h1 {
   position: relative;
   min-height: 280px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    rgba(0, 0, 0, 0.22);
-  background-size: 34px 34px;
+  background: var(--bg);
   overflow: hidden;
 }
 
@@ -1126,7 +1116,7 @@ h1 {
   position: absolute;
   display: block;
   border: 1px solid var(--line-strong);
-  background: rgba(12, 12, 12, 0.82);
+  background: var(--panel-2);
 }
 
 .blog-card-art span:nth-child(1) {
@@ -1141,7 +1131,7 @@ h1 {
   right: 30px;
   width: 54%;
   height: 70px;
-  box-shadow: inset 4px 0 0 var(--green);
+  box-shadow: inset 4px 0 0 var(--good);
 }
 
 .blog-card-art span:nth-child(3) {
@@ -1149,7 +1139,7 @@ h1 {
   bottom: 42px;
   width: 36%;
   height: 42px;
-  box-shadow: inset 4px 0 0 var(--rust);
+  box-shadow: inset 4px 0 0 var(--bad);
 }
 
 .blog-card-copy {
@@ -1157,9 +1147,9 @@ h1 {
 }
 
 .post-kicker {
-  color: var(--green);
+  color: var(--soft);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
@@ -1169,8 +1159,8 @@ h1 {
   max-width: 720px;
   font-size: clamp(34px, 5vw, 58px);
   line-height: 1;
-  font-weight: 620;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .blog-card p {
@@ -1208,7 +1198,7 @@ h1 {
   margin-bottom: 42px;
   color: var(--muted);
   font-size: 14px;
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .back-link:hover {
@@ -1240,7 +1230,7 @@ h1 {
   left: 56px;
   width: 48%;
   height: 86px;
-  box-shadow: inset 4px 0 0 var(--green);
+  box-shadow: inset 4px 0 0 var(--good);
 }
 
 .article-mark span:nth-child(3) {
@@ -1255,7 +1245,7 @@ h1 {
   bottom: 32px;
   width: 34%;
   height: 28px;
-  box-shadow: inset 4px 0 0 var(--blue);
+  box-shadow: inset 4px 0 0 var(--accent);
 }
 
 .article-body {
@@ -1267,7 +1257,7 @@ h1 {
 .article-body h3 {
   margin: 46px 0 14px;
   color: var(--text);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -1300,14 +1290,13 @@ h1 {
 }
 
 .article-body li::marker {
-  color: var(--green);
+  color: var(--soft);
 }
 
 .article-body blockquote {
   margin: 34px 0;
   padding: 18px 22px;
-  border-left: 3px solid var(--green);
-  background: rgba(185, 255, 61, 0.08);
+  border-left: 2px solid var(--line-strong);
   color: var(--text);
 }
 
@@ -1316,8 +1305,7 @@ h1 {
   padding: 18px 20px;
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--panel);
 }
 
 .article-body code {
@@ -1329,15 +1317,13 @@ h1 {
 .article-body li code {
   padding: 2px 5px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--panel-2);
 }
 
 .article-table {
   margin: 28px 0;
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
 }
 
 .article-table table {
@@ -1356,8 +1342,8 @@ h1 {
 
 .article-table th {
   color: var(--text);
-  font-weight: 650;
-  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  background: var(--panel-2);
   white-space: nowrap;
 }
 
@@ -1375,8 +1361,7 @@ h1 {
   display: flex;
   justify-content: center;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--panel);
   overflow-x: auto;
 }
 
@@ -1421,7 +1406,7 @@ h1 {
     min-height: 0;
   }
 
-  .term-screen {
+  .term-window {
     min-height: 500px;
   }
 
@@ -1468,9 +1453,12 @@ h1 {
   }
 
   /* 窄屏:缩小字号与内边距,超宽行(对照矩阵)交给终端自己横向滚动。 */
-  .term-screen {
+  .term-window {
     min-height: 460px;
-    padding: 18px 16px;
+  }
+
+  .term-screen {
+    padding: 16px 16px 18px;
     font-size: 11px;
   }
 

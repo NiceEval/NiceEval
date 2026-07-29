@@ -8,8 +8,8 @@ import type { AttemptLocator } from "../../../record/locator.ts";
 import { collectItems, locatorOf, resolveInput } from "../../model/aggregate.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { attemptListData, attemptRowsOf } from "./compute.ts";
-import { attemptListContent } from "./content.ts";
-import { toAttemptRows } from "../../model/conversions.ts";
+import { attemptListContent, experimentListContent } from "./content.ts";
+import { toAttemptRows, toExperimentRows } from "../../model/conversions.ts";
 
 export { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./validate.ts";
 
@@ -71,13 +71,33 @@ export const AttemptList = defineComponent<AttemptListProps>(async (props) => {
 });
 AttemptList.displayName = "AttemptList";
 
-export interface ExperimentListProps {
-  sample: Sample;
+export interface ExperimentTableProps {
+  input?: Sample;
   sort?: string;
   searchable?: boolean;
+  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
+
+export const ExperimentTable = defineComponent<ExperimentTableProps>(async (props, ctx) => {
+  const items = await toExperimentRows(props.input ?? ctx.scope);
+  const content = experimentListContent(items);
+  const hasPassRate = content.columns.some((column) => column.key === "passRate");
+  const hasTotalScore = content.columns.some((column) => column.key === "totalScore");
+  const defaultSort = hasPassRate === hasTotalScore ? undefined : hasPassRate ? "passRate" : "totalScore";
+  return (
+    <TableContentView
+      data={content}
+      sort={props.sort ?? defaultSort}
+      searchable={props.searchable ?? true}
+      attemptHref={props.attemptHref}
+      locale={props.locale}
+      className={props.className}
+    />
+  );
+});
+ExperimentTable.displayName = "ExperimentTable";
 
 // re-export for callers that still import attemptRowsOf locally
 export { attemptRowsOf };

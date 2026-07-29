@@ -234,7 +234,7 @@
 | 内建报告 `standard` / `failures` / `stability`(每页 `page.render` + 公开 `to*` + 原语 plain props:`Callouts items=`、`Waterfall nodes=`、`CopyBlock content=`、`Table rows=` 等) | `src/report/built-in/{standard,failures,stability}.tsx`、`src/report/built-in/index.tsx` |
 | 跨组件共享辅助与 `Cell` / `MetricValue` 渲染 | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
 | `toSummaryItems` / `SampleSummary` | `src/report/model/conversions.ts` → `src/report/components/summaries/compute.ts`、`summaries/{index.tsx,faces.ts}` |
-| `SampleOverview`(首页摘要 + frontier 散点 + 实验表) | `src/report/components/summaries/index.tsx` |
+| `SampleOverview`(首页摘要 + Experiment 散点 + 实验表) | `src/report/components/summaries/index.tsx` |
 | `toExperimentRows` / `toEvalRows` / `toAttemptRows` 与 `ExperimentList` / `EvalList` / `AttemptList` | `src/report/model/conversions.ts` → `src/report/components/entity-lists/{compute.ts,index.tsx,faces.ts}` |
 | show 对照 / 稳定性切片(`deltaTableData` / `stabilityMatrixData`) | `src/report/slices/{compute,content,validate}.ts` |
 | 图表族 Dataset 解析、轴值域推定、字符坐标图 text 面 | `src/report/model/chart/{math,plot}.ts` + `src/report/definition/primitives/{chart,marks,points-dataset}.tsx` |

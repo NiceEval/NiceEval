@@ -187,9 +187,19 @@ toSampleNotices(sample);
 
 ```tsx
 <AttemptList attempts={attempts} />
-<ExperimentList sample={sample} />
-<EvalList sample={sample} />
+<ExperimentTable input={sample} />
 ```
+
+`ExperimentTable` 按 Experiment → Eval → Attempt 展开；
+网页面点击 Attempt 会打开现有详情 modal。
+
+默认实验比较直接使用：
+
+```tsx
+<ExperimentScatter input={sample} />
+```
+
+它画成本与主读数的散点：通过制使用通过率，计分制使用总分。
 
 ## 组件属性
 
@@ -207,6 +217,8 @@ toSampleNotices(sample);
 | `DiffView` | `files` |
 | `AttemptDetails` | `attempt` |
 | `Hero` | `logo`、`description`、`links` |
+| `ExperimentScatter` | `input`、`series`、`connect` |
+| `ExperimentTable` | `input`、`sort`、`searchable` |
 
 `SourceView` 的 `source` 表示待显示的源码值。
 它不是惰性查询对象。
@@ -270,6 +282,23 @@ toSampleNotices(sample);
 `Line` 用于时间或有序数值，`Bars` 用于排行和堆叠，
 `Area` 用于累计量或区间。
 需要混合 mark 时使用 `ComposedChart`，每条 series 显式绑定字段和轴。
+
+横向排行榜直接使用官方 `Bars`：
+
+```tsx
+<Bars
+  points={ranking}
+  x="agent"
+  y="passRate"
+  sort={{ field: "passRate", direction: "desc" }}
+  limit={10}
+  layout="horizontal"
+/>
+```
+
+`sort` 与 `limit` 只改变显示顺序和可见行，不重新聚合。
+`layout="horizontal"` 在网页面使用横向排行条；
+text 面恒用横向条，保留分类标签、格式化终值与覆盖率。
 
 ## Attempt 详情
 

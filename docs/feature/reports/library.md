@@ -777,8 +777,7 @@ return <Table rows={rows} />;
 
 ```tsx
 <AttemptList attempts={attempts} />
-<ExperimentList sample={sample} />
-<EvalList sample={sample} />
+<ExperimentTable input={sample} />
 ```
 
 这些组件等价于官方转换加通用组件，不建立第二条计算口径：
@@ -788,6 +787,15 @@ function AttemptList({ attempts }: AttemptListProps) {
   return <Table rows={toAttemptRows(attempts)} />;
 }
 ```
+
+默认实验比较由两个独立组合组件承担：
+
+```tsx
+<ExperimentScatter input={sample} />
+<ExperimentTable input={sample} />
+```
+
+前者显示成本 × 主读数散点；后者显示 Experiment → Eval → Attempt 的层级详情。
 
 ## 组件接具体值
 
@@ -875,6 +883,14 @@ interface TableProps<Row extends object> {
   x="run"
   y="passRate"
   color="agent"
+/>
+
+<Bars
+  points={performance}
+  x="agent"
+  y="passRate"
+  sort={{ field: "passRate", direction: "desc" }}
+  layout="horizontal"
 />
 ```
 

@@ -53,11 +53,14 @@ export type BarsProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row
   sort?: BarsSort;
   /** 排序后只保留前 N 行；不生成“其他”桶。 */
   limit?: number;
+  /** web 面柱形方向；text 面始终使用适合终端阅读的横向排行。 */
+  layout?: "horizontal" | "vertical";
 };
 export type ExternalBarsProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
   external: true;
   sort?: BarsSort;
   limit?: number;
+  layout?: "horizontal" | "vertical";
 };
 
 export type AreaProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row>;
@@ -65,7 +68,11 @@ export type ExternalAreaProps<Row extends ExternalPoint = ExternalPoint> = BaseM
   external: true;
 };
 
-type AnyMarkProps = BaseMarkProps<object> & { sort?: BarsSort; limit?: number };
+type AnyMarkProps = BaseMarkProps<object> & {
+  sort?: BarsSort;
+  limit?: number;
+  layout?: "horizontal" | "vertical";
+};
 
 function sortValue(raw: unknown, path: string, external: boolean): number | string | null {
   if (isMetricValue(raw)) {
@@ -151,6 +158,7 @@ function markChart(mark: Mark, props: AnyMarkProps) {
       x={props.x}
       y={props.y}
       legend={props.legend ?? seriesKey !== undefined}
+      layout={props.layout}
       locale={props.locale}
       className={props.className}
       attemptHref={props.attemptHref}

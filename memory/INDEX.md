@@ -230,7 +230,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [hierarchy-table-column-widths-were-hardcoded](hierarchy-table-column-widths-were-hardcoded.md) — 层级表除首列外七列逐像素同宽(`.68fr` 写死)、结果列折行而模型/Agent 列大片留白;根因=每层行各自复读一份按列位写死的 grid 模板,修为整表一个 grid + 各层 subgrid,列宽由内容算;附 subgrid 链要穿过 Chrome `::details-content`、折叠态 `getBoundingClientRect()` 读出陈旧尺寸两个坑
 - 已修 [macos-fswatch-reports-untouched-siblings](macos-fswatch-reports-untouched-siblings.md) — macOS 的 `fs.watch` 会为同目录里没被碰过的兄弟文件报事件(`.niceeval/` 落 result.json 时 report 文件跟着报 rename),filename 还可能是被监听目录自己的名字;`view` 的项目侧 watch 只按事件名判定,导致默认布局下每次记录落盘都被判成模块变更、失效分流形同虚设;修为事件只当核对信号、变没变由 mtime+size 快照判定
 - 已修 [grid-cell-child-block-margin-inflates-row-height](grid-cell-child-block-margin-inflates-row-height.md) — 摘要条每格比内容高出一圈:根因是 `Stat` 以 `.niceeval-report` 打底、带着 `margin: 1rem 0` 进格子,格子有 padding 挡住折叠;修为 `.niceeval-grid-cell > .niceeval-report { margin: 0 }`,格内留白只由 Grid 给;单测量不到高度,真实产物截图才看得见
-- [chart-categorical-axis-gap-blocks-stability-bars](chart-categorical-axis-gap-blocks-stability-bars.md) — 发现(未修):chart-map 数值轴 only,分类 x 轴(条件名)全点缺失,stability 视图判定堆叠柱渲染 no data;修法归 chart 线,StabilityOverview 投影侧已就位
+- 已修 [chart-categorical-axis-gap-blocks-stability-bars](chart-categorical-axis-gap-blocks-stability-bars.md) — Chart 曾只认数值轴且 web 只渲染 scatter，导致 Line/Bars/Area 空图；修为分类轴映射、四 mark 分派、Bars 堆叠/横排与官方主题配色
 - 已修 [static-export-breaks-on-slashless-index-url](static-export-breaks-on-slashless-index-url.md) — `--out` 站点被托管在无尾斜杠路径(`/showcase/memory`,cleanUrls)上时 attempt 下钻全 404;根因=浏览器按文档 URL 的目录解析相对引用、少一层,本地 server 永远带尾斜杠所以测不出;修为 index.html 落站点根归一的 `<base>` 引导脚本
 - 已修 [axis-tick-labels-collapse-at-tiny-ranges](axis-tick-labels-collapse-at-tiny-ranges.md) — 图轴值域改版后极小量程刻度标签折叠成同一字符串(report e2e 逮住);根因=精度固定不随步长,2.5×10^k 档 ⌈-log10⌉ 还少一位;修为 formatTickValue 按步长十进制位数取精度
 - [non-tty-pipe-narrow-table-width-fallback](non-tty-pipe-narrow-table-width-fallback.md) — 非 TTY 管道下 show 表格窄折行是 stdout.columns 缺失的宽度回退;取样用 script+stty cols 给宽度再比对 docs 示例。2026-07-25 起契约要求 `COLUMNS` 生效,「窄」不再等于「合理」
@@ -390,6 +390,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [typescript7-no-api-alias-recipe](typescript7-no-api-alias-recipe.md) — TS7 原生版只有 tsc 没有编程 API,直升会炸 next build;官方 alias 双装配方(`typescript`→typescript6 + `@typescript/native`→ts7),`typescript` 名下是 6.0.x 是有意为之
 - 已修 [site-seo-lcp-and-stale-audit](site-seo-lcp-and-stale-audit.md) — landing 移动端 LCP 慢在渲染阻塞 CSS + 启动 JS(prism 同 chunk),不是字体/图片,`inlineCss`+`next/dynamic` 修(5f1ba01);审计报 `/docs` 死链是 7-03 proxy 修复前的旧数据,先 curl 核实
 - 已修 [e2e-candidate-pack-dist-report-react-notfound](e2e-candidate-pack-dist-report-react-notfound.md) — 编排器候选包里 `niceeval show` 报 `Cannot find package 'react'`;最初疑似多 agent 并行 `pnpm pack` 撞了共享 `dist/report/`,后经字节级比对排除(发布版与候选包产物完全一致);真根因是消费方仓库自己没装可选 peerDependency `react`/`react-dom`,补上即全绿,见 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md)
+- [site-tailwind-magicui-integration-traps](site-tailwind-magicui-integration-traps.md) — 手写 CSS 的站点接 Tailwind v4 要跳过 preflight(否则博客正文列表符号与标题字重被静默重置),Magic UI 组件自带的 `grid`/`text-sm` 会把终端一行拆成三行
 - 已修 [init-md-site-copy-symlink](init-md-site-copy-symlink.md) — `site/public/INIT.md` 曾是根 `INIT.md` 的物理拷贝,靠手动 cp 同步,忘了就 CI diff 红;改成 symlink → `../../INIT.md`,根文件成唯一源、site build 跟随,不再手动 cp,diff 检查保留作 backstop
 
 ## 跨切面裁决

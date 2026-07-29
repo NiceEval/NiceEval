@@ -1,5 +1,5 @@
-// NiceEval 的 mark:"graded transcript"——三根递减的对话横条,右下角一记判定绿对勾。
-// 横条走 currentColor 跟随上下文文本色,对勾固定品牌绿(--green),深浅底都成立。
+// NiceEval 的 mark:"graded transcript"——三根递减的对话横条,右下角一记判定对勾。
+// 横条走 currentColor 跟随上下文文本色,对勾用主题的 positive(--good):它标的是"通过"。
 export function LogoMark({ size = 22, title }: { size?: number; title?: string }) {
   return (
     <svg
@@ -16,7 +16,7 @@ export function LogoMark({ size = 22, title }: { size?: number; title?: string }
       <rect x="6" y="43" width="16" height="9" fill="currentColor" />
       <polyline
         points="33 43, 42 52, 57 29"
-        stroke="var(--green, #b9ff3d)"
+        stroke="var(--good, #3ddc97)"
         strokeWidth="9"
         strokeLinecap="square"
         strokeLinejoin="miter"

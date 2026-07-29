@@ -61,6 +61,30 @@ const dataset: Dataset = {
   ],
 };
 
+const categoricalDataset: Dataset = {
+  fields: [
+    { name: "condition", kind: "dimension", valueType: "string" },
+    { name: "passRate", kind: "metric", valueType: "number", unit: "%", better: "higher", bounds: { min: 0, max: 1 } },
+  ],
+  rows: [
+    { key: "codex", values: { condition: "codex", passRate: cell(0.9) } },
+    { key: "codex+mempal", values: { condition: "codex+mempal", passRate: cell(0.6) } },
+  ],
+};
+
+const stackedDataset: Dataset = {
+  fields: [
+    { name: "condition", kind: "dimension", valueType: "string" },
+    { name: "passed", kind: "metric", valueType: "number" },
+    { name: "failed", kind: "metric", valueType: "number" },
+    { name: "errored", kind: "metric", valueType: "number" },
+  ],
+  rows: [
+    { key: "baseline", values: { condition: "baseline", passed: 8, failed: 1, errored: 1 } },
+    { key: "memory", values: { condition: "memory", passed: 9, failed: 1, errored: 0 } },
+  ],
+};
+
 async function resolve(node: React.ReactNode) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
@@ -105,6 +129,56 @@ describe("Chart", () => {
     expect(html).toContain("niceeval-chart-svg");
     expect(html).toContain("niceeval-chart-legend");
     expect(html).not.toContain("proj/b");
+  });
+
+  // bug: memory/chart-categorical-axis-gap-blocks-stability-bars.md
+  it("分类轴上的 line / bars / area 在 web 可见，Bars 两种布局在两面保留分类、堆叠与终值", async () => {
+    const line = await resolve(
+      <Chart data={categoricalDataset} x="condition" y="passRate">
+        <Series id="trend" mark="line" connect />
+      </Chart>,
+    );
+    expect(renderWeb(line)).toContain("niceeval-chart-line");
+    const lineText = renderNodeToText(line, createTextContext({ width: 80 }));
+    expect(lineText).toContain("codex+mempal");
+    expect(lineText).toContain("90%");
+
+    const area = await resolve(
+      <Chart data={categoricalDataset} x="condition" y="passRate">
+        <Series id="range" mark="area" connect />
+      </Chart>,
+    );
+    expect(renderWeb(area)).toContain("niceeval-chart-area");
+
+    const bars = await resolve(
+      <Chart data={categoricalDataset} x="condition" y="passRate" layout="horizontal">
+        <Series id="ranking" mark="bar" />
+      </Chart>,
+    );
+    const barsHtml = renderWeb(bars);
+    expect(barsHtml).toContain("niceeval-chart--bars-horizontal");
+    expect(barsHtml).toContain("codex+mempal");
+    expect(barsHtml).toContain("90%");
+
+    const barsText = renderNodeToText(bars, createTextContext({ width: 80 }));
+    expect(barsText).toContain("codex+mempal");
+    expect(barsText).toContain("90%");
+    expect(barsText).toContain("█");
+
+    const stacked = await resolve(
+      <Chart data={stackedDataset} x="condition" y="passed" legend>
+        <Series id="passed" mark="bar" y="passed" stack="verdicts" />
+        <Series id="failed" mark="bar" y="failed" stack="verdicts" />
+        <Series id="errored" mark="bar" y="errored" stack="verdicts" />
+      </Chart>,
+    );
+    const stackedHtml = renderWeb(stacked);
+    expect(stackedHtml.match(/niceeval-chart-bar/g)).toHaveLength(6);
+    expect(stackedHtml).toContain("niceeval-series-c");
+
+    const stackedText = renderNodeToText(stacked, createTextContext({ width: 100 }));
+    expect(stackedText).toContain("baseline");
+    expect(stackedText).toContain("passed=8 · failed=1 · errored=1");
   });
 
   it("Chart.series 未知 key 给出完整用户反馈", async () => {

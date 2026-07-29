@@ -2,7 +2,7 @@
 
 import type { Sample, Run } from "../../../record/types.ts";
 import { defineComponent } from "../../definition/tree.ts";
-import { Col, Grid, Scatter, Stat, Table, Text } from "../../definition/primitives.tsx";
+import { Col, Grid, Scatter, Stat, Text } from "../../definition/primitives.tsx";
 import type { SeriesInput } from "../../model/types.ts";
 import { resolveInput, seriesName } from "../../model/aggregate.ts";
 import { label } from "../../model/flag.ts";
@@ -21,6 +21,7 @@ import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../mode
 import { formatReportDateTime, formatReportDateTimeRange } from "../../model/format.ts";
 import type { ChromeProps } from "../shared.ts";
 import { toSummaryItems } from "../../model/conversions.ts";
+import { ExperimentTable } from "../entity-lists/index.tsx";
 
 export { validateSampleSummaryContent } from "./validate.ts";
 export { StabilityOverview, type StabilityOverviewProps } from "./stability-overview.tsx";
@@ -99,10 +100,12 @@ type ComparisonChrome = ChromeProps & {
   connect?: boolean;
 };
 
-export type SampleOverviewProps = ComparisonChrome & {
+export type ExperimentScatterProps = ComparisonChrome & {
   input?: Sample;
   series?: SeriesInput;
 };
+
+export type SampleOverviewProps = ExperimentScatterProps;
 
 const LINE_LABEL_KEY = "line";
 
@@ -156,7 +159,7 @@ function seriesGroup(series: SeriesInput): { key: string; fn: GroupFunction } {
   );
 }
 
-async function comparisonBlock(
+async function scatterBlock(
   input: Sample,
   options: {
     series: SeriesInput;
@@ -179,29 +182,20 @@ async function comparisonBlock(
     },
   });
   return (
-    <Col className={options.className}>
-      <Scatter
-        points={points}
-        x="costUSD"
-        y={options.y}
-        point="experiment"
-        series={group.key}
-        connect={options.connect}
-        locale={options.locale}
-        legend
-      />
-      <Table
-        rows={points}
-        columns={["experiment", group.key, "costUSD", options.y]}
-        sort={options.y}
-        searchable
-        locale={options.locale}
-      />
-    </Col>
+    <Scatter
+      points={points}
+      x="costUSD"
+      y={options.y}
+      point="experiment"
+      series={group.key}
+      connect={options.connect}
+      locale={options.locale}
+      legend
+    />
   );
 }
 
-export const SampleOverview = defineComponent<SampleOverviewProps>(async (props, ctx) => {
+export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (props, ctx) => {
   const input: Sample = props.input ?? ctx.scope;
   const { series, connect } = resolveComparisonSeries(input, props);
   const composition = await scoringComposition(input);
@@ -210,8 +204,7 @@ export const SampleOverview = defineComponent<SampleOverviewProps>(async (props,
     const primary = composition === "points" ? "totalScore" : "passRate";
     return (
       <Col className={props.className}>
-        <SampleSummary input={input} locale={props.locale} />
-        {await comparisonBlock(input, { series, connect, y: primary, locale: props.locale })}
+        {await scatterBlock(input, { series, connect, y: primary, locale: props.locale })}
       </Col>
     );
   }
@@ -220,10 +213,23 @@ export const SampleOverview = defineComponent<SampleOverviewProps>(async (props,
   const pointsInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "points");
   return (
     <Col className={props.className}>
-      <SampleSummary input={input} locale={props.locale} />
-      {await comparisonBlock(passInput, { series, connect, y: "passRate", locale: props.locale })}
-      {await comparisonBlock(pointsInput, { series, connect, y: "totalScore", locale: props.locale })}
+      {await scatterBlock(passInput, { series, connect, y: "passRate", locale: props.locale })}
+      {await scatterBlock(pointsInput, { series, connect, y: "totalScore", locale: props.locale })}
     </Col>
   );
 });
+ExperimentScatter.displayName = "ExperimentScatter";
+
+export const SampleOverview = defineComponent<SampleOverviewProps>((props) => (
+  <Col className={props.className}>
+    <SampleSummary input={props.input} locale={props.locale} />
+    <ExperimentScatter
+      input={props.input}
+      series={props.series}
+      connect={props.connect}
+      locale={props.locale}
+    />
+    <ExperimentTable input={props.input} locale={props.locale} />
+  </Col>
+));
 SampleOverview.displayName = "SampleOverview";

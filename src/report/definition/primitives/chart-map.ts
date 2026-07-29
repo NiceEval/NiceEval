@@ -49,6 +49,9 @@ export interface MappedPoint {
   pointLabel: string;
   x: number;
   y: number;
+  /** 分类轴的原始显示值；数值轴省略。 */
+  xLabel?: string;
+  yLabel?: string;
   xCell?: MetricValue;
   yCell?: MetricValue;
   refs: readonly string[];
@@ -58,6 +61,7 @@ export interface MappedSeries {
   id: string;
   mark: ChartMark;
   points: MappedPoint[];
+  stack?: string;
   connect: boolean;
   hidden: boolean;
   label?: LocalizedText;
@@ -77,15 +81,30 @@ function bindingField(binding: ChartAxisBinding): string {
   return typeof binding === "string" ? binding : binding.field;
 }
 
-function numericFromField(field: DatasetField, raw: unknown): number | null {
+function categoryValues(dataset: Dataset, fieldName: string): string[] {
+  const values = new Set<string>();
+  for (const row of dataset.rows) {
+    const raw = row.values[fieldName];
+    if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+      values.add(String(raw));
+    }
+  }
+  return [...values];
+}
+
+function numericFromField(
+  field: DatasetField,
+  raw: unknown,
+  categories: readonly string[],
+): number | null {
   if (field.kind === "metric") {
-    if (!isMetricValue(raw)) return null;
-    return raw.value;
+    if (isMetricValue(raw)) return raw.value;
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
   }
   if (field.valueType === "number" && typeof raw === "number") return raw;
-  if (typeof raw === "string") {
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+    const index = categories.indexOf(String(raw));
+    return index === -1 ? null : index;
   }
   return null;
 }
@@ -131,6 +150,8 @@ export function mapChartSeries(
     const yField = spec.y ?? axes.yField;
     const xMeta = requireField(dataset, xField);
     const yMeta = requireField(dataset, yField);
+    const xCategories = xMeta.kind === "dimension" ? categoryValues(dataset, xField) : [];
+    const yCategories = yMeta.kind === "dimension" ? categoryValues(dataset, yField) : [];
     const byField = spec.by;
     const pointsField = spec.points;
     const points: MappedPoint[] = [];
@@ -142,8 +163,8 @@ export function mapChartSeries(
       }
       const xRaw = row.values[xField];
       const yRaw = row.values[yField];
-      const x = numericFromField(xMeta, xRaw);
-      const y = numericFromField(yMeta, yRaw);
+      const x = numericFromField(xMeta, xRaw, xCategories);
+      const y = numericFromField(yMeta, yRaw, yCategories);
       if (x === null || y === null) {
         missing += 1;
         continue;
@@ -157,6 +178,8 @@ export function mapChartSeries(
         pointLabel,
         x,
         y,
+        ...(xMeta.kind === "dimension" ? { xLabel: stringFromValue(xRaw) } : {}),
+        ...(yMeta.kind === "dimension" ? { yLabel: stringFromValue(yRaw) } : {}),
         ...(xMeta.kind === "metric" && isMetricValue(xRaw) ? { xCell: xRaw } : {}),
         ...(yMeta.kind === "metric" && isMetricValue(yRaw) ? { yCell: yRaw } : {}),
         refs: (yMeta.kind === "metric" ? metricValueOf(row, yField)?.refs : metricValueOf(row, xField)?.refs) ?? [],
@@ -167,6 +190,7 @@ export function mapChartSeries(
       id: spec.id,
       mark: spec.mark,
       points,
+      ...(spec.stack !== undefined ? { stack: spec.stack } : {}),
       connect: spec.connect ?? false,
       hidden: override?.hidden ?? spec.hidden ?? false,
       ...(override?.label !== undefined ? { label: override.label } : spec.label !== undefined ? { label: spec.label } : {}),

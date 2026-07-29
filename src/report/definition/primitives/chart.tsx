@@ -6,10 +6,11 @@ import { defineComponent, type ReportNode, type TextContext, type WebContext } f
 import type { DimensionDeclarations } from "../../presentation.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
-import { countText, localeText, type ReportLocale as RL } from "../../model/locale.ts";
-import { formatAxisTick, shortestUniqueLabels } from "../../model/format.ts";
+import { countText, localeText, resolveLocalizedText, type ReportLocale as RL } from "../../model/locale.ts";
+import { formatAxisTick, formatMetricValue, shortestUniqueLabels } from "../../model/format.ts";
 import { axisScale, paddedAxisDomain, placePointLabels, tickStepOf } from "../../model/chart/math.ts";
 import { renderCharPlot, renderCoordinateTable } from "../../model/chart/plot.ts";
+import { padDisplay, padStartDisplay, stringWidth, textBar } from "../../model/text-layout.ts";
 import { dataShapeError, type ValueProps } from "../../components/shared.ts";
 import { isDataset } from "../../model/dataset.ts";
 import {
@@ -29,6 +30,7 @@ const HEIGHT = 400;
 const MARGIN = { top: 28, right: 32, bottom: 48, left: 64 };
 const PLOT_W = WIDTH - MARGIN.left - MARGIN.right;
 const PLOT_H = HEIGHT - MARGIN.top - MARGIN.bottom;
+const IMPLICIT_SERIES_HANDLE = "__chartSeries";
 
 function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -116,14 +118,192 @@ function chartFieldLabel(field: string, meta: DatasetField, locale: RL): string 
   return meta.unit ? `${base}(${meta.unit})` : base;
 }
 
-function renderScatterWeb(
+function seriesClass(
+  mapped: MappedSeries[],
+  series: MappedSeries,
+  point: MappedSeries["points"][number],
+  ctx: WebContext,
+): string {
+  let handle: string;
+  let index: number;
+  if (series.byField !== undefined && point.seriesValue !== undefined) {
+    handle = series.byField;
+    index = seriesDimensionValues(mapped, series.byField).indexOf(point.seriesValue);
+  } else {
+    const ids = mapped.filter((item) => !item.hidden && item.byField === undefined).map((item) => item.id);
+    if (ids.length < 2) return "niceeval-series-none";
+    handle = IMPLICIT_SERIES_HANDLE;
+    index = ids.indexOf(series.id);
+  }
+  const colorIndex = ctx.dimension(handle).at(index).colorIndex;
+  return colorIndex === undefined ? "niceeval-series-none" : `niceeval-series-c${colorIndex - 1}`;
+}
+
+function metricDisplay(
+  point: MappedSeries["points"][number],
+  axis: "x" | "y",
+  meta: DatasetField,
+  locale: RL,
+): string {
+  if (meta.kind === "dimension") {
+    return axis === "x" ? (point.xLabel ?? point.pointLabel) : (point.yLabel ?? point.pointLabel);
+  }
+  const value = point[axis];
+  const cell = axis === "x" ? point.xCell : point.yCell;
+  return formatMetricValue(value, meta.unit, cell?.format, locale);
+}
+
+function renderLegend(
+  mapped: MappedSeries[],
+  visible: MappedSeries[],
+  locale: RL,
+  ctx: WebContext,
+): ReactNode {
+  return (
+    <ul className="niceeval-chart-legend">
+      {visible.flatMap((series) => {
+        const byValues = series.byField ? seriesDimensionValues(mapped, series.byField) : [series.id];
+        return byValues.map((value) => {
+          const implicitIds = visible
+            .filter((item) => item.byField === undefined)
+            .map((item) => item.id);
+          const handle = series.byField ?? (implicitIds.length > 1 ? IMPLICIT_SERIES_HANDLE : undefined);
+          const index = series.byField
+            ? seriesDimensionValues(mapped, series.byField).indexOf(value)
+            : implicitIds.indexOf(series.id);
+          const presentation = handle ? ctx.dimension(handle).at(index) : undefined;
+          const label = presentation?.label ?? (series.label ? resolveLocalizedText(series.label, locale) : series.id);
+          const colorClass =
+            presentation?.colorIndex === undefined
+              ? "niceeval-series-none"
+              : `niceeval-series-c${presentation.colorIndex - 1}`;
+          return (
+            <li
+              key={`${series.id}:${value}`}
+              className={cx("niceeval-chart-legend-item", colorClass)}
+            >
+              {label}
+            </li>
+          );
+        });
+      })}
+    </ul>
+  );
+}
+
+function renderHorizontalBarsWeb(
+  mapped: MappedSeries[],
+  visible: MappedSeries[],
+  axes: ReturnType<typeof resolveChartAxes>,
+  locale: RL,
+  ctx: WebContext,
+  options: { legend?: boolean; attemptHref?: (locator: AttemptLocator) => string; className?: string },
+): ReactNode {
+  const entries = visible.flatMap((series) => series.points.map((point) => ({ series, point })));
+  const labels = shortestUniqueLabels(entries.map(({ point }) => point.xLabel ?? point.pointLabel));
+  const values = entries.map(({ point }) => point.y);
+  const boundMax = axes.yMeta.kind === "metric" ? axes.yMeta.bounds?.max : undefined;
+  const max = boundMax !== undefined && boundMax > 0 ? boundMax : Math.max(0, ...values);
+
+  return (
+    <figure
+      className={cx(
+        "niceeval-report",
+        "niceeval-chart",
+        "niceeval-chart--bars-horizontal",
+        options.className,
+      )}
+    >
+      <div className="niceeval-chart-bars-heading">
+        {chartFieldLabel(axes.yField, axes.yMeta, locale)}
+      </div>
+      <ol className="niceeval-chart-bars">
+        {entries.map(({ series, point }) => {
+          const rawLabel = point.xLabel ?? point.pointLabel;
+          const label = labels.get(rawLabel) ?? rawLabel;
+          const display = metricDisplay(point, "y", axes.yMeta, locale);
+          const href = options.attemptHref && point.refs[0]
+            ? options.attemptHref(point.refs[0] as AttemptLocator)
+            : undefined;
+          const colorClass = seriesClass(mapped, series, point, ctx);
+          const ratio = max > 0 ? Math.max(0, Math.min(1, point.y / max)) : 0;
+          const value = (
+            <span className="niceeval-chart-bar-value">
+              {display}
+              {point.yCell && point.yCell.samples < point.yCell.total ? (
+                <sup>
+                  {point.yCell.samples}/{point.yCell.total}
+                </sup>
+              ) : null}
+            </span>
+          );
+          return (
+            <li key={`${series.id}:${point.key}`} className="niceeval-chart-bar-row">
+              <span className="niceeval-chart-bar-label" title={rawLabel}>{label}</span>
+              <span className="niceeval-chart-bar-track">
+                <span
+                  className={cx("niceeval-chart-bar-fill", colorClass)}
+                  style={{ width: `${ratio * 100}%` }}
+                  title={`${rawLabel}\n${axes.yField}: ${display}`}
+                />
+              </span>
+              {href ? <a className="niceeval-locator" href={href}>{value}</a> : value}
+            </li>
+          );
+        })}
+      </ol>
+      {options.legend ? renderLegend(mapped, visible, locale, ctx) : null}
+    </figure>
+  );
+}
+
+function stackedBarBase(
+  visible: readonly MappedSeries[],
+  target: MappedSeries,
+  x: number,
+): number {
+  if (target.stack === undefined) return 0;
+  let total = 0;
+  for (const series of visible) {
+    if (series === target) break;
+    if (series.mark !== "bar" || series.stack !== target.stack) continue;
+    const point = series.points.find((item) => item.x === x);
+    if (point) total += point.y;
+  }
+  return total;
+}
+
+function chartYValues(visible: readonly MappedSeries[]): number[] {
+  const values: number[] = [];
+  const stacks = new Map<string, number>();
+  for (const series of visible) {
+    for (const point of series.points) {
+      if (series.mark === "bar" && series.stack !== undefined) {
+        const key = `${series.stack}\0${point.x}`;
+        stacks.set(key, (stacks.get(key) ?? 0) + point.y);
+      } else {
+        values.push(point.y);
+      }
+    }
+  }
+  values.push(...stacks.values());
+  return values;
+}
+
+function renderChartWeb(
   mapped: MappedSeries[],
   axes: ReturnType<typeof resolveChartAxes>,
   locale: RL,
   ctx: WebContext,
-  options: { legend?: boolean; grid?: boolean; attemptHref?: (locator: AttemptLocator) => string; className?: string },
+  options: {
+    layout?: "horizontal" | "vertical";
+    legend?: boolean;
+    grid?: boolean;
+    attemptHref?: (locator: AttemptLocator) => string;
+    className?: string;
+  },
 ): ReactNode {
-  const visible = mapped.filter((s) => !s.hidden && s.mark === "scatter");
+  const visible = mapped.filter((s) => !s.hidden);
   const allPoints = visible.flatMap((s) => s.points);
   if (allPoints.length === 0) {
     return (
@@ -132,9 +312,14 @@ function renderScatterWeb(
       </figure>
     );
   }
+  if (options.layout === "horizontal" && visible.every((series) => series.mark === "bar")) {
+    return renderHorizontalBarsWeb(mapped, visible, axes, locale, ctx, options);
+  }
 
   const xBounds = axes.xMeta.kind === "metric" ? axes.xMeta.bounds : undefined;
   const yBounds = axes.yMeta.kind === "metric" ? axes.yMeta.bounds : undefined;
+  const hasVerticalFill = visible.some((series) => series.mark === "bar" || series.mark === "area");
+  const yValues = [...chartYValues(visible), ...(hasVerticalFill ? [0] : [])];
   const xScale = axisScale(
     allPoints.map((p) => p.x),
     xBounds,
@@ -143,7 +328,7 @@ function renderScatterWeb(
     axes.xMeta.better === "lower",
   );
   const yScale = axisScale(
-    allPoints.map((p) => p.y),
+    yValues,
     yBounds,
     MARGIN.top + PLOT_H,
     MARGIN.top,
@@ -153,21 +338,16 @@ function renderScatterWeb(
   const xLabel = chartFieldLabel(axes.xField, axes.xMeta, locale);
   const yLabel = chartFieldLabel(axes.yField, axes.yMeta, locale);
 
-  const drawable = allPoints.map((p) => {
-    const series = visible.find((s) => s.points.some((sp) => sp.key === p.key));
-    const seriesValue = p.seriesValue;
-    const slot =
-      series?.byField !== undefined && seriesValue !== undefined
-        ? ctx.dimension(series.byField).at(seriesDimensionValues(mapped, series.byField).indexOf(seriesValue)).seriesSlot
-        : undefined;
-    return {
-      ...p,
-      label: labelByKey.get(p.pointLabel) ?? p.pointLabel,
-      px: xScale.scale(p.x),
-      py: yScale.scale(p.y),
-      seriesClass: slot !== undefined ? `niceeval-series-c${slot}` : "niceeval-series-none",
-    };
-  });
+  const drawable = visible.flatMap((series) =>
+    series.points.map((point) => ({
+      ...point,
+      sourceSeriesId: series.id,
+      label: labelByKey.get(point.pointLabel) ?? point.pointLabel,
+      px: xScale.scale(point.x),
+      py: yScale.scale(point.y),
+      seriesClass: seriesClass(mapped, series, point, ctx),
+    })),
+  );
 
   const labels = placePointLabels(
     drawable.map((p) => ({ cx: p.px, cy: p.py, width: p.label.length * 6.4 + 10 })),
@@ -188,16 +368,26 @@ function renderScatterWeb(
           </g>
         ) : null}
         <g className="niceeval-chart-axis niceeval-chart-axis-y">
-          {yScale.ticks.map((tick) => (
+          {(axes.yMeta.kind === "dimension"
+            ? [...new Set(drawable.map((point) => point.y))]
+            : yScale.ticks
+          ).map((tick) => (
             <text key={`ay${tick}`} className="niceeval-chart-tick" x={MARGIN.left - 8} y={yScale.scale(tick) + 3} textAnchor="end">
-              {formatAxisTick(tick, tickStepOf(yScale.ticks), axes.yMeta.unit)}
+              {axes.yMeta.kind === "dimension"
+                ? drawable.find((point) => point.y === tick)?.yLabel
+                : formatAxisTick(tick, tickStepOf(yScale.ticks), axes.yMeta.unit)}
             </text>
           ))}
         </g>
         <g className="niceeval-chart-axis niceeval-chart-axis-x">
-          {xScale.ticks.map((tick) => (
+          {(axes.xMeta.kind === "dimension"
+            ? [...new Set(drawable.map((point) => point.x))]
+            : xScale.ticks
+          ).map((tick) => (
             <text key={`ax${tick}`} className="niceeval-chart-tick" x={xScale.scale(tick)} y={MARGIN.top + PLOT_H + 16} textAnchor="middle">
-              {formatAxisTick(tick, tickStepOf(xScale.ticks), axes.xMeta.unit)}
+              {axes.xMeta.kind === "dimension"
+                ? drawable.find((point) => point.x === tick)?.xLabel
+                : formatAxisTick(tick, tickStepOf(xScale.ticks), axes.xMeta.unit)}
             </text>
           ))}
         </g>
@@ -228,18 +418,38 @@ function renderScatterWeb(
           return values.map((value) => {
             const seriesPoints = drawable.filter(
               (p) =>
-                series.points.some((sp) => sp.key === p.key) &&
+                p.sourceSeriesId === series.id &&
                 (series.byField === undefined || p.seriesValue === value),
             );
             const ordered = series.connect ? [...seriesPoints].sort((a, b) => a.x - b.x) : seriesPoints;
             const seriesClass = ordered[0]?.seriesClass ?? "niceeval-series-none";
+            const baseline = yScale.scale(0);
+            const barGroups = [...new Set(
+              visible
+                .filter((item) => item.mark === "bar")
+                .map((item) => item.stack ?? `series:${item.id}`),
+            )];
+            const barGroup = series.stack ?? `series:${series.id}`;
+            const groupIndex = Math.max(0, barGroups.indexOf(barGroup));
+            const totalBarWidth = Math.max(8, Math.min(48, PLOT_W / Math.max(1, allPoints.length)));
+            const barWidth = totalBarWidth / Math.max(1, barGroups.length);
             return (
               <g
                 key={`${series.id}:${value}`}
                 className={cx("niceeval-chart-series", seriesClass)}
                 data-series={`${series.id}:${value}`}
               >
-              {series.connect && ordered.length > 1 ? (
+              {series.mark === "area" && ordered.length > 1 ? (
+                <polygon
+                  className="niceeval-chart-area"
+                  points={[
+                    `${ordered[0]!.px},${baseline}`,
+                    ...ordered.map((point) => `${point.px},${point.py}`),
+                    `${ordered[ordered.length - 1]!.px},${baseline}`,
+                  ].join(" ")}
+                />
+              ) : null}
+              {(series.mark === "line" || series.mark === "area" || series.connect) && ordered.length > 1 ? (
                 <polyline
                   className="niceeval-chart-line"
                   points={ordered.map((p) => `${p.px},${p.py}`).join(" ")}
@@ -249,15 +459,33 @@ function renderScatterWeb(
               {ordered.map((p) => {
                 const placed = labels[drawable.indexOf(p)];
                 const href = options.attemptHref && p.refs[0] ? options.attemptHref(p.refs[0] as AttemptLocator) : undefined;
-                const dot = (
+                let shape: ReactNode;
+                if (series.mark === "bar") {
+                  const baseValue = stackedBarBase(visible, series, p.x);
+                  const baseY = yScale.scale(baseValue);
+                  const topY = yScale.scale(baseValue + p.y);
+                  shape = (
+                    <rect
+                      className={cx("niceeval-chart-bar", p.seriesClass)}
+                      x={p.px - totalBarWidth / 2 + groupIndex * barWidth}
+                      y={Math.min(topY, baseY)}
+                      width={barWidth}
+                      height={Math.max(1, Math.abs(baseY - topY))}
+                    >
+                      <title>{`${p.pointLabel}\n${series.id}: ${metricDisplay(p, "y", axes.yMeta, locale)}`}</title>
+                    </rect>
+                  );
+                } else {
+                  shape = (
                   <circle className={cx("niceeval-chart-dot", p.seriesClass)} cx={p.px} cy={p.py} r={4.5}>
-                    <title>{`${p.pointLabel}\n${axes.xField}: ${p.x}\n${axes.yField}: ${p.y}`}</title>
+                    <title>{`${p.pointLabel}\n${axes.xField}: ${metricDisplay(p, "x", axes.xMeta, locale)}\n${axes.yField}: ${metricDisplay(p, "y", axes.yMeta, locale)}`}</title>
                   </circle>
-                );
+                  );
+                }
                 return (
                   <g key={p.key} className="niceeval-chart-point">
-                    {href ? <a href={href}>{dot}</a> : dot}
-                    {placed ? (
+                    {href ? <a href={href}>{shape}</a> : shape}
+                    {series.mark === "scatter" && placed ? (
                       <text className="niceeval-chart-point-label" x={placed.x} y={placed.y} textAnchor={placed.anchor}>
                         {p.label}
                       </text>
@@ -270,31 +498,71 @@ function renderScatterWeb(
           });
         })}
       </svg>
-      {options.legend ? (
-        <ul className="niceeval-chart-legend">
-          {visible.flatMap((series) => {
-            const byValues = series.byField ? seriesDimensionValues(mapped, series.byField) : [series.id];
-            return byValues.map((value) => {
-              const idx = series.byField ? seriesDimensionValues(mapped, series.byField).indexOf(value) : 0;
-              const presentation = series.byField ? ctx.dimension(series.byField).at(idx) : undefined;
-              const label = presentation?.label ?? series.id;
-              return (
-                <li
-                  key={`${series.id}:${value}`}
-                  className={cx(
-                    "niceeval-chart-legend-item",
-                    presentation ? `niceeval-series-c${presentation.seriesSlot}` : "niceeval-series-none",
-                  )}
-                >
-                  {label}
-                </li>
-              );
-            });
-          })}
-        </ul>
-      ) : null}
+      {options.legend ? renderLegend(mapped, visible, locale, ctx) : null}
     </figure>
   );
+}
+
+function renderBarsText(
+  visible: MappedSeries[],
+  axes: ReturnType<typeof resolveChartAxes>,
+  locale: RL,
+  ctx: TextContext,
+): string {
+  const entries: Array<{ rawLabel: string; value: number; display: string }> = [];
+  const stacked = new Map<string, { rawLabel: string; value: number; parts: string[] }>();
+  for (const series of visible) {
+    for (const point of series.points) {
+      const rawLabel = point.xLabel ?? point.pointLabel;
+      const display = metricDisplay(point, "y", axes.yMeta, locale);
+      if (series.stack !== undefined) {
+        const key = `${series.stack}\0${point.x}`;
+        let entry = stacked.get(key);
+        if (!entry) {
+          entry = { rawLabel, value: 0, parts: [] };
+          stacked.set(key, entry);
+        }
+        entry.value += point.y;
+        entry.parts.push(`${series.id}=${display}`);
+      } else {
+        entries.push({
+          rawLabel,
+          value: point.y,
+          display:
+            point.yCell && point.yCell.samples < point.yCell.total
+              ? `${display} ${point.yCell.samples}/${point.yCell.total}`
+              : display,
+        });
+      }
+    }
+  }
+  entries.push(
+    ...[...stacked.values()].map((entry) => ({
+      rawLabel: entry.rawLabel,
+      value: entry.value,
+      display: entry.parts.join(" · "),
+    })),
+  );
+  const rawLabels = entries.map((entry) => entry.rawLabel);
+  const labels = shortestUniqueLabels(rawLabels);
+  const displays = entries.map((entry) => entry.display);
+  const labelWidth = Math.max(0, ...rawLabels.map((label) => stringWidth(labels.get(label) ?? label)));
+  const valueWidth = Math.max(0, ...displays.map(stringWidth));
+  const barWidth = Math.max(8, Math.min(24, ctx.width - labelWidth - valueWidth - 4));
+  const boundMax = axes.yMeta.kind === "metric" ? axes.yMeta.bounds?.max : undefined;
+  const max = boundMax !== undefined && boundMax > 0
+    ? boundMax
+    : Math.max(0, ...entries.map((entry) => entry.value));
+  const heading = chartFieldLabel(axes.yField, axes.yMeta, locale);
+  return [
+    `${padDisplay("", labelWidth)}  ${padDisplay(heading, barWidth)}  ${padStartDisplay("", valueWidth)}`,
+    ...entries.map((entry, index) => {
+      const rawLabel = rawLabels[index]!;
+      const label = labels.get(rawLabel) ?? rawLabel;
+      const ratio = max > 0 ? Math.max(0, Math.min(1, entry.value / max)) : 0;
+      return `${padDisplay(label, labelWidth)}  ${textBar(ratio, barWidth)}  ${padStartDisplay(displays[index]!, valueWidth)}`;
+    }),
+  ].join("\n");
 }
 
 function chartText(
@@ -312,6 +580,11 @@ function chartText(
   if (points.length === 0) {
     return localeText(locale, "cell.missing");
   }
+  if (visible.every((item) => item.mark === "bar")) {
+    const bars = renderBarsText(visible, axes, locale, ctx);
+    const missingNote = missing > 0 ? `\n${countText(locale, "pointsMissing", missing)}` : "";
+    return `${bars}${missingNote}`;
+  }
 
   const xBounds = axes.xMeta.kind === "metric" ? axes.xMeta.bounds : undefined;
   const yBounds = axes.yMeta.kind === "metric" ? axes.yMeta.bounds : undefined;
@@ -324,7 +597,7 @@ function chartText(
   });
 
   const lines = visible
-    .filter((s) => s.connect && (s.mark === "line" || s.mark === "scatter"))
+    .filter((s) => s.connect && (s.mark === "line" || s.mark === "scatter" || s.mark === "area"))
     .map((s) => [...s.points].sort((a, b) => a.x - b.x).map((p) => ({ x: p.x, y: p.y })));
 
   const plot = renderCharPlot({
@@ -336,14 +609,24 @@ function chartText(
     lines,
     xLabel: axes.xField,
     yLabel: axes.yField,
-    formatX: (v, step) => formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.xMeta.unit),
-    formatY: (v, step) => formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.yMeta.unit),
+    formatX: (v, step) =>
+      axes.xMeta.kind === "dimension"
+        ? (points.find((point) => point.x === Math.round(v))?.xLabel ?? "")
+        : formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.xMeta.unit),
+    formatY: (v, step) =>
+      axes.yMeta.kind === "dimension"
+        ? (points.find((point) => point.y === Math.round(v))?.yLabel ?? "")
+        : formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.yMeta.unit),
     invertX: axes.xMeta.better === "lower",
     invertY: axes.yMeta.better === "lower",
   });
 
   const table = renderCoordinateTable(
-    points.map((p) => ({ key: p.pointLabel, x: String(p.x), y: String(p.y) })),
+    points.map((point) => ({
+      key: point.pointLabel,
+      x: metricDisplay(point, "x", axes.xMeta, locale),
+      y: metricDisplay(point, "y", axes.yMeta, locale),
+    })),
     { key: "key", x: axes.xField, y: axes.yField },
   );
 
@@ -377,6 +660,14 @@ export const Chart = defineComponent<ChartProps>({
         values,
       };
     }
+    const implicit = series.filter((item) => item.byField === undefined && !item.hidden);
+    if (implicit.length > 1) {
+      decls[IMPLICIT_SERIES_HANDLE] = {
+        dimension: "series",
+        encoding: { kind: "series", mark: implicit[0]!.mark },
+        values: implicit.map((item) => item.id),
+      };
+    }
     return decls;
   },
   web(props, ctx) {
@@ -386,7 +677,8 @@ export const Chart = defineComponent<ChartProps>({
     const axes = resolveChartAxes(data, props.x, props.y);
     const { series, missing } = mapChartSeries(data, axes, specs, props.series);
     const locale = props.locale ?? ctx.locale;
-    const node = renderScatterWeb(series, axes, locale, ctx, {
+    const node = renderChartWeb(series, axes, locale, ctx, {
+      layout: props.layout,
       legend: props.legend,
       grid: props.grid,
       attemptHref: props.attemptHref ?? ctx.attemptHref,

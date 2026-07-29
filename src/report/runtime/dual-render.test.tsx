@@ -1,7 +1,8 @@
 // cases: docs/engineering/testing/unit/reports.md
 // 管线测试(resolve/validate/装载规范化):spec/data 双形态严格等价、记忆化、组合组件递归展开、
 // 同层并行保序、非法节点拒绝、defineReport 三种写法与外壳嵌套的装载规范化、标题回退链、
-// 内建报告的结构与具名导出同引用、组合组件(FailureList / SampleOverview)与手写组合的
+// 内建报告的结构与具名导出同引用、组合组件(FailureList / ExperimentScatter /
+// ExperimentTable / SampleOverview)与手写组合的
 // 解析结果严格等价。
 //
 // 观察面全部是 resolve 阶段的解析结果(元素 type / props,尤其是叶子组件的 `data` 字段)与装载
@@ -36,13 +37,13 @@ import {
 } from "../definition/report.ts";
 import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } from "./text.ts";
 import { renderSamplePage } from "./page-render.ts";
-import { FailureList } from "../components/entity-lists/index.tsx";
+import { ExperimentTable, FailureList } from "../components/entity-lists/index.tsx";
 import { Hero } from "../components/site-components/index.tsx";
-import { SampleOverview, SampleSummary } from "../components/summaries/index.tsx";
+import { ExperimentScatter, SampleOverview, SampleSummary } from "../components/summaries/index.tsx";
 import { Chart, Col, CopyBlock, Callouts, Grid, Section, Series, Stat, Tab, Table, Tabs, Text, Waterfall } from "../definition/primitives.tsx";
 import { pointsToDataset } from "../definition/primitives/points-dataset.ts";
 import { attemptListData } from "../components/entity-lists/compute.ts";
-import { attemptListContent } from "../components/entity-lists/content.ts";
+import { attemptListContent, experimentListContent } from "../components/entity-lists/content.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
 import { AttemptDetails } from "../components/attempt-detail/index.tsx";
 import {
@@ -55,6 +56,7 @@ import {
   type GroupFunction,
 } from "../model/calculation.ts";
 import { label } from "../model/flag.ts";
+import { toExperimentRows } from "../model/conversions.ts";
 import builtInReport, { failures, stability, standard, standardAttemptPage } from "../built-in/index.tsx";
 import { RunNotices, SampleFixPrompt, SampleNotices } from "../components/site-components/index.tsx";
 import { StabilityOverview } from "../components/summaries/index.tsx";
@@ -563,7 +565,7 @@ describe("SampleOverview(组合组件)", () => {
     });
   }
 
-  it("不同深度目录的 experiments 一律进同一份 points;展开树里 Chart / Table 与 aggregate 深等", async () => {
+  it("不同深度目录的 experiments 一律进同一份散点与层级实验表", async () => {
     const g1a = snap({ experimentId: "compare/a", agent: "bub", results: [res("q", "passed")] });
     const g1b = snap({ experimentId: "compare/b", agent: "codex", results: [res("q", "failed")] });
     const g2 = snap({ experimentId: "bench/long/x", results: [res("q", "passed")] });
@@ -576,7 +578,9 @@ describe("SampleOverview(组合组件)", () => {
     expect(tables).toHaveLength(1);
     expect(charts).toHaveLength(1);
     const points = await overviewPoints(scope, { seriesKey: "agent", seriesFn: agent, y: "passRate" });
-    expect(tables[0]!.props.rows).toEqual(points);
+    const details = experimentListContent(await toExperimentRows(scope));
+    expect(tables[0]!.props.data).toEqual(details);
+    expect(details.rows.every((row) => (row.subRows?.length ?? 0) > 0)).toBe(true);
     expect(charts[0]!.props.data).toEqual(
       pointsToDataset(points as readonly globalThis.Record<string, unknown>[], {
         x: "costUSD",
@@ -675,7 +679,7 @@ describe("SampleOverview(组合组件)", () => {
     expect(explicit.fields.some((f) => f.name === "memory")).toBe(true);
   });
 
-  it("纯计分制 Sample:Chart y 用 totalScore,Table rows 与 aggregate 深等", async () => {
+  it("纯计分制 Sample:散点 y 用 totalScore，实验表显示同一 Sample 的层级详情", async () => {
     const g1a = snap({
       experimentId: "score/a",
       agent: "bub",
@@ -692,7 +696,7 @@ describe("SampleOverview(组合组件)", () => {
     const charts = collectElementsByType(resolved, Chart);
     const tables = collectElementsByType(resolved, Table);
     const points = await overviewPoints(scope, { seriesKey: "agent", seriesFn: agent, y: "totalScore" });
-    expect(tables[0]!.props.rows).toEqual(points);
+    expect(tables[0]!.props.data).toEqual(experimentListContent(await toExperimentRows(scope)));
     expect(charts[0]!.props.data).toEqual(
       pointsToDataset(points as readonly globalThis.Record<string, unknown>[], {
         x: "costUSD",
@@ -704,7 +708,7 @@ describe("SampleOverview(组合组件)", () => {
     expect((charts[0]!.props as { y?: string }).y).toBe("totalScore");
   });
 
-  it("mixed:按题型拆成两组;一份摘要展开 + 两对 Chart/Table,各用各的主读数", async () => {
+  it("mixed:散点按题型拆成两张图，实验详情仍是一张统一层级表", async () => {
     const passSnap = snap({ experimentId: "mixed/pass", agent: "bub", results: [res("p", "passed")] });
     const pointsSnap = snap({
       experimentId: "mixed/points",
@@ -717,7 +721,7 @@ describe("SampleOverview(组合组件)", () => {
     const charts = collectElementsByType(resolved, Chart);
     const lists = collectElementsByType(resolved, Table);
     expect(charts).toHaveLength(2);
-    expect(lists).toHaveLength(2);
+    expect(lists).toHaveLength(1);
 
     const chartByY = new Map(charts.map((el) => [(el.props as { y?: string }).y, el]));
     const passPoints = await overviewPoints(scopeOf([passSnap]), {
@@ -747,9 +751,22 @@ describe("SampleOverview(组合组件)", () => {
       }),
     );
 
-    const rowSets = lists.map((list) => list.props.rows);
-    expect(rowSets).toContainEqual(passPoints);
-    expect(rowSets).toContainEqual(scorePoints);
+    expect(lists[0]!.props.data).toEqual(experimentListContent(await toExperimentRows(scope)));
+  });
+
+  it("SampleOverview 严格等价于摘要、实验散点与实验详情表的手写组合", async () => {
+    const scope = scopeOf([
+      snap({ experimentId: "compare/a", results: [res("q", "passed")] }),
+      snap({ experimentId: "compare/b", results: [res("q", "failed")] }),
+    ]);
+    const Handwritten = defineComponent(() => (
+      <Col>
+        <SampleSummary />
+        <ExperimentScatter />
+        <ExperimentTable />
+      </Col>
+    ));
+    expect(await resolveTree(<SampleOverview />, scope)).toEqual(await resolveTree(<Handwritten />, scope));
   });
 });
 

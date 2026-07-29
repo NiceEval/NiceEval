@@ -1,5 +1,5 @@
 # Sample summary
 
-`toSummaryItems(sample)` 返回摘要 items，
-内建首页把它们交给 `<Grid items={items} />`。
-题型与主读数选择由首页任务函数显式完成，不藏在 Grid 中。
+`SampleSummary` 从显式 `input` 或当前 `ctx.scope` 读取 Sample，
+调用 `toSummaryItems()`，再用 `Grid` 与 `Stat` 显示范围摘要。
+题型与主读数选择不藏在 `Grid` 中。

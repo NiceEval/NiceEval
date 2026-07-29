@@ -106,6 +106,10 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   - 三张 scope-input page 均相邻放置 `sampleWarnings` 与 `runDiagnostics`。
   - `defineReport` 复用别处页的数组展开（页等值、外壳不沿用）。
   - 组合组件与手写组合严格等价。
+  - `ExperimentScatter` 按题型选择 passRate / totalScore，mixed 拆成两张图；
+    `ExperimentTable` 把 `toExperimentRows` 投影为 Experiment → Eval → Attempt 的层级 Table，
+    Attempt locator 保留给 web 宿主下钻。
+  - `SampleOverview` 严格等价于 `SampleSummary + ExperimentScatter + ExperimentTable`。
   - 数据派生覆盖 hero、warning 分组聚合与组排序。
   - Hero 的 `logo`、`description` 与 `links` 从组合组件原样进入 `HeroCard`；
     text 面保留介绍与链接，省略纯视觉 logo，web 面的布局与响应式样式归 E2E 验收。

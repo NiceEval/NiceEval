@@ -1,8 +1,9 @@
 # 报告组件
 
-组件只显示 page render 已经算好的普通值。它们不读取 Sample、Record 或 artifact，
-不执行聚合，也不触发另一条取数管线。同一个组件实例的 text 与 web renderer
-消费同一份值，page render 只执行一次。
+显示原语只接 page render 或组合组件已经算好的普通值，不读取 Sample、Record 或 artifact。
+官方组合组件可以从 `ctx.scope` 读取当前 Sample，完成一个稳定读面的取数与原语装配；
+它们仍只调用公开转换、聚合与显示原语，不建立第二条计算口径。
+同一个组件实例的 text 与 web renderer 消费同一份解析终值。
 
 ## 按显示形状选择
 
@@ -20,12 +21,22 @@
 | Diff | `DiffView` | `files` |
 | Attempt 详情 | `AttemptDetails` | `attempt` |
 
+高频完整读面提供组合组件：
+
+| 读面 | 组件 | 行为 |
+|---|---|---|
+| 实验散点 | `ExperimentScatter` | 成本 × 主读数 |
+| 实验详情 | `ExperimentTable` | Experiment → Eval → Attempt 层级表 |
+| 默认概览 | `SampleOverview` | `SampleSummary` + 上述两件 |
+
 不存在适用于所有组件的 `data` 属性。`source` 在 `SourceView` 中只表示待显示的
 源码值，不表示惰性数据源。
 
 ## 目录
 
 - [Charts](charts/README.md) —— `Scatter`、`Line`、`Bars`、`Area` 与组合坐标图。
+- [Experiment scatter](summaries/experiment-scatter.md) —— 成本 × 主读数的默认散点图。
+- [Experiment table](summaries/experiment-table.md) —— Experiment → Eval → Attempt 的层级详情。
 - [Attempt details](attempt-detail/README.md) —— AttemptEvidence 的完整详情和叶子区块。
 - [Gallery](gallery.md) —— 每个官方形状的最小示例与双面验收入口。
 - [Site components](site/README.md) —— 静态站首页的结构组件。

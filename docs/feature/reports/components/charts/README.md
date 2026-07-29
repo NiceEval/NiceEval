@@ -75,12 +75,15 @@ interface EvidenceRow {
   y="passRate"
   sort={{ field: "passRate", direction: "desc" }}
   limit={10}
+  layout="horizontal"
 />
 ```
 
 `limit` 只隐藏排序后的多余类别，不生成“其他”聚合桶。
 需要合并长尾时，先在 `aggregate().by` 中定义分桶函数，
 让组合器从原始 Attempt 重新聚合。
+`layout` 控制 web 面使用横向排行条或纵向坐标柱；默认值是 `"vertical"`。
+text 面恒用横向排行条，保留分类标签、格式化终值与覆盖率。
 
 ## `Area`
 

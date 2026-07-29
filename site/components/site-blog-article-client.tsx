@@ -207,10 +207,21 @@ function Mermaid({ chart }: { chart: string }) {
   useEffect(() => {
     let cancelled = false;
     import("mermaid").then(async ({ default: mermaid }) => {
+      // 图跟站点同一套令牌(basalt):近黑面、发丝线、灰阶文字,节点不带自己的颜色。
       mermaid.initialize({
         startOnLoad: false,
-        theme: "dark",
-        fontFamily: '"Avenir Next", "Segoe UI", sans-serif',
+        theme: "base",
+        themeVariables: {
+          background: "#0b0b0b",
+          primaryColor: "#111111",
+          primaryTextColor: "#ededed",
+          primaryBorderColor: "#343434",
+          secondaryColor: "#0b0b0b",
+          tertiaryColor: "#050505",
+          lineColor: "#74747b",
+          textColor: "#a1a1aa",
+        },
+        fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", sans-serif',
       });
       const { svg } = await mermaid.render(id, chart);
       if (!cancelled && containerRef.current) containerRef.current.innerHTML = svg;

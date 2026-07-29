@@ -40,6 +40,7 @@ function attemptMetricValue(
     kind: "metric",
     metric: {
       value,
+      unit,
       basis: "eval",
       samples: value === null ? 0 : 1,
       total: 1,

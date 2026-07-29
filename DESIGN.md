@@ -14,8 +14,10 @@ NiceEval 所有可见面共用一套设计语言：**层级靠排版和留白，
 | 报告组件（`niceeval/report`） | 官方 stylesheet 每个用点读 `var(--niceeval-*, <basalt 兜底>)` | [Library · 主题](docs/feature/reports/library/theme.md) |
 | `niceeval view` 宿主 chrome | `src/view/styles.css` 的 `:root` 短名读同一组令牌、同一份兜底 | [View](docs/feature/reports/view.md) |
 | 内部文档与公开站的手绘 SVG | 共用样式段手抄 basalt 值，`pnpm test:docs` 逐张比对 | [SVG 图示的视觉契约](docs/SVG-DESIGN.md) |
+| 产品站点（`site/`） | `app/globals.css` 的 `:root` 短名直接钉死 basalt 值 | [site/README.md](site/README.md) |
 
-产品站点 `site/`（landing page）面向营销叙事，观感自治，不受本纲约束。
+产品站点 `site/`（landing page）的叙事自由，观感不自由：色板、零圆角、无渐变无阴影
+三条按本纲走。站点不装主题机制，令牌值抄 basalt，只有暗色一套。
 
 ## 主题机制：观感不写死在官方样式里
 

@@ -249,8 +249,18 @@ export {
 export type { LocalizedText, ReportLocale } from "./model/locale.ts";
 
 // 官方组合组件与站点组件。
-export { SampleOverview, SampleSummary, StabilityOverview } from "./components/summaries/index.tsx";
-export type { SampleOverviewProps, SampleSummaryProps, StabilityOverviewProps } from "./components/summaries/index.tsx";
+export {
+  ExperimentScatter,
+  SampleOverview,
+  SampleSummary,
+  StabilityOverview,
+} from "./components/summaries/index.tsx";
+export type {
+  ExperimentScatterProps,
+  SampleOverviewProps,
+  SampleSummaryProps,
+  StabilityOverviewProps,
+} from "./components/summaries/index.tsx";
 export {
   Hero,
   HeroCard,
@@ -262,7 +272,8 @@ export {
 export type { HeroCardProps, HeroLink, HeroLogo, HeroProps } from "./components/site-components/index.tsx";
 
 // 实体列表。
-export { AttemptList, FailureList } from "./components/entity-lists/index.tsx";
+export { AttemptList, ExperimentTable, FailureList } from "./components/entity-lists/index.tsx";
+export type { ExperimentTableProps } from "./components/entity-lists/index.tsx";
 
 // Attempt 详情组合组件(docs/feature/reports/components/attempt-detail/README.md)。
 export {

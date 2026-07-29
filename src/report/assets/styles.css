@@ -923,12 +923,86 @@ table.niceeval-report,
   stroke-width: 1.5;
   fill: none;
 }
+.niceeval-report .niceeval-chart-area {
+  fill: color-mix(in srgb, var(--series) 28%, transparent);
+  stroke: none;
+}
+.niceeval-report .niceeval-chart-bar {
+  fill: var(--series);
+}
 .niceeval-report .niceeval-chart-dot {
   fill: var(--series);
   stroke: var(--panel);
   stroke-width: 2;
 }
 .niceeval-report .niceeval-chart-point-label { fill: var(--text); font-size: 11px; }
+.niceeval-chart--bars-horizontal {
+  padding: 14px 16px;
+}
+.niceeval-chart .niceeval-chart-bars-heading {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.niceeval-chart .niceeval-chart-bars {
+  display: grid;
+  grid-template-columns: max-content minmax(80px, 1fr) max-content;
+  align-items: center;
+  gap: 7px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.niceeval-chart .niceeval-chart-bar-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+.niceeval-chart .niceeval-chart-bar-label {
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.niceeval-chart .niceeval-chart-bar-track {
+  height: 24px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+.niceeval-chart .niceeval-chart-bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: color-mix(in srgb, var(--series) 74%, var(--panel));
+}
+.niceeval-chart .niceeval-chart-bar-value {
+  display: inline-flex;
+  gap: 3px;
+  justify-content: flex-end;
+  min-width: 5ch;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  text-align: right;
+}
+.niceeval-chart .niceeval-chart-bar-value sup {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+@media (max-width: 560px) {
+  .niceeval-chart .niceeval-chart-bars {
+    grid-template-columns: minmax(7ch, max-content) minmax(48px, 1fr) max-content;
+    gap: 6px 8px;
+  }
+  .niceeval-chart .niceeval-chart-bar-track { height: 20px; }
+}
 .niceeval-chart .niceeval-chart-legend {
   display: flex;
   max-width: 880px;

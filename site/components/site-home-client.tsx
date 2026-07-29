@@ -5,7 +5,6 @@ import { BookOpen, Clipboard, GitFork, Play } from "lucide-react";
 import { initAnalytics, track } from "../src/analytics";
 import { githubUrl, docsUrl, withLocale, type Dictionary, type Locale } from "../lib/content";
 import { Header } from "./site-header";
-import { LogoMark } from "./logo";
 import TerminalDemo from "./site-home-terminal";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -59,9 +58,6 @@ function Hero({ t, locale }: { t: Dictionary; locale: Locale }) {
   return (
     <section id="top" className="hero shell">
       <div className="hero-copy">
-        <div className="hero-mark" aria-hidden="true">
-          <LogoMark size={68} />
-        </div>
         <h1>{t.heroTitle}</h1>
         <div className="mode-switch" aria-label="Audience">
           {(Object.entries(t.modes) as Array<[AudienceMode, (typeof t.modes)[AudienceMode]]>).map(([key, item]) => (
