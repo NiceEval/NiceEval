@@ -345,7 +345,7 @@ export default defineExperiment({
 });
 ```
 
-两个 experiment 文件各声明一份 `flags`，`npx niceeval exp` 分别跑同一批评估用例，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/explanation/tier)；`flags` 与 `model`、`runs` 等其余 experiment 字段见[写实验](/zh/tutorials/write-experiment)。
+两个 experiment 文件各声明一份 `flags`，`npx niceeval exp` 分别跑同一批评估用例，就是一组 A/B 对比。这是三档接入里的 Tier 3（要求应用配合暴露开关），投入与回报见 [Tier](/zh/explanation/tier)；`flags` 与 `model`、`attempts` 等其余 experiment 字段见[写实验](/zh/tutorials/write-experiment)。
 
 **这一步支持**：同一批评估用例跨变体的成绩对比。
 

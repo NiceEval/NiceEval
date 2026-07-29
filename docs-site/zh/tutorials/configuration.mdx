@@ -18,7 +18,7 @@ description: "跑几次、超时、并发、judge、语言这些值写进代码�
 **只想这一次不一样**——写在命令上：
 
 ```bash
-npx niceeval exp ci --runs 5 --timeout 600000
+npx niceeval exp ci --attempts 5 --timeout 600000
 ```
 
 **这个实验一直这样**——写进 experiment 文件：
@@ -31,7 +31,7 @@ import { codexAgent } from "niceeval/agents";
 export default defineExperiment({
   agent: codexAgent(),
   model: "gpt-5.4",
-  runs: 3,
+  attempts: 3,
   timeoutMs: 600_000,
   budget: 5,
 });
@@ -72,17 +72,20 @@ export default defineConfig({
 
 ## 环境变量：只有密钥和终端两类
 
-下面就是 NiceEval 会读的全部环境变量。每个 agent、sandbox 和 judge 只认自己那一个名字，不会在环境里翻找别的 key。
+下面就是 NiceEval 会读的全部环境变量。每个 agent、Sandbox 和 Judge 只认自己那几个名字，不会在环境里翻找别的 key。
 
 | 变量 | 谁在用 | 备注 |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | `claudeCodeAgent()`、`openClawAgent()` | 工厂参数 `apiKey` 可覆盖 |
+| `ANTHROPIC_API_KEY` | `claudeCodeAgent()` | 工厂参数 `apiKey` 可覆盖 |
 | `ANTHROPIC_BASE_URL` | `claudeCodeAgent()` | 网关地址，工厂参数 `baseUrl` 可覆盖 |
 | `CODEX_API_KEY` | `codexAgent()` | 不是 `OPENAI_API_KEY`；工厂参数 `apiKey` 可覆盖 |
 | `CODEX_BASE_URL` | `codexAgent()` | OpenAI 兼容代理地址，工厂参数 `baseUrl` 可覆盖 |
 | `BUB_API_KEY` | `bubAgent()` | 工厂参数 `apiKey` 可覆盖 |
 | `BUB_API_BASE` | `bubAgent()` | 工厂参数 `apiBase` 可覆盖 |
-| `NICEEVAL_JUDGE_KEY` | judge | judge 的默认 key 变量 |
+| `OPENCLAW_API_KEY` / `OPENCLAW_BASE_URL` | `openClawAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
+| `OPENCODE_API_KEY` / `OPENCODE_BASE_URL` | `openCodeAgent()` | key 省略时回落 `ANTHROPIC_API_KEY` |
+| `HERMES_API_KEY` / `HERMES_API_BASE` | `hermesAgent()` | key 省略时依次回落 `OPENROUTER_API_KEY`、`ANTHROPIC_API_KEY` |
+| `NICEEVAL_JUDGE_KEY` | Judge | Judge 的默认 key 变量，用 `judge.apiKeyEnv` 指到别的名字 |
 | `E2B_API_KEY` | `e2bSandbox()` | |
 | `VERCEL_API_TOKEN` | `vercelSandbox()` | |
 | `VERCEL_TEAM_ID` | `vercelSandbox()` | |
@@ -132,20 +135,21 @@ NICEEVAL_JUDGE_KEY=sk-...
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-## 在旧脚本里见到这些变量，改成配置
+## 想调这些值时写到哪一层
 
-| 旧写法 | 改成 |
+配置项没有环境变量层，所以下面每一项都只有一条来路：
+
+| 要调什么 | 写在哪 |
 | --- | --- |
-| `NICEEVAL_RUNS` | `--runs`，或 experiment 的 `runs` |
-| `NICEEVAL_TIMEOUT` | `--timeout`，或 experiment / config 的 `timeoutMs` |
-| `NICEEVAL_BUDGET` | `--budget`，或 experiment 的 `budget` |
-| `NICEEVAL_MAX_CONCURRENCY` | `--max-concurrency`，或 config 的 `maxConcurrency` |
-| `NICEEVAL_LANG` / `NICEEVAL_LOCALE` | config 的 `locale` |
-| `NICEEVAL_JUDGE_MODEL` | config 或 eval 的 `judge.model` |
-| `NICEEVAL_JUDGE_BASE` | config 或 eval 的 `judge.baseUrl` |
-| `NICEEVAL_OTLP_HOST` / `NICEEVAL_OTLP_PORT` | config 的 `telemetry: { host, port }` |
+| 每条评估用例跑几次 | `--attempts`，或 experiment 的 `attempts` |
+| 单次 Attempt 的超时 | `--timeout`，或 experiment / config 的 `timeoutMs` |
+| 花费上限 | `--budget`，或 experiment 的 `budget` |
+| 并发上限 | `--max-concurrency`，或 config 的 `maxConcurrency` |
+| 界面语言 | config 的 `locale` |
+| Judge 模型与端点 | config 或评估用例的 `judge.model` / `judge.baseUrl` |
+| OTel 接收地址 | config 的 `telemetry: { host, port }` |
 
-judge 也不再从 `CODEX_API_KEY` / `OPENAI_API_KEY` 借 key、从 `OPENAI_BASE_URL` 猜端点。被测应用把标准的 `OPENAI_*` 挪作它用时，judge 不会再跟着串味。
+Judge 的 key 只从 `NICEEVAL_JUDGE_KEY`（或 `judge.apiKeyEnv` 指定的变量）读，端点只从 `judge.baseUrl` 读。被测应用把标准的 `OPENAI_*` 挪作它用时，Judge 不会跟着串味。
 
 ## 接着看
 

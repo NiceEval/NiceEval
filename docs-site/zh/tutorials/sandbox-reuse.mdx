@@ -87,6 +87,33 @@ npm install          # 调和到 package.json/lockfile 声明的状态，本身�
 判据一句话：**准备代码描述目标状态，不描述「要不要做」**。探测-跳过式的守卫
 把半截状态当成完成态，恰好只在复用时炸，本地单跑永远发现不了。
 
+## 一批里混了不同环境
+
+选中的评估用例用 `environment` 解析到不同预制产物时，不需要拆命令。Runner 按解析后的
+环境 profile 分组：同一个 Sandbox 只承接同组 Attempt，每组建立自己的题间重置点，
+组之间不共享 Sandbox 也不共享 Sandbox 级 `setup` 的产物。实验的 `maxConcurrency`
+约束的是所有组加起来的同时执行数。
+
+## 典型节奏
+
+```sh
+# 1. 改完公共配置，先看计划再花钱
+npx niceeval exp smoke memory/commit0 --dry
+
+# 2. 声明了 sandboxReuse 的实验，快速过一遍
+npx niceeval exp smoke memory/commit0
+
+# 3. 某道题挂了，换一个不声明复用的实验单独重跑，拿现场
+npx niceeval exp baseline memory/commit0/tool-first --keep-sandbox
+
+# 4. 修完，用不声明复用的实验验证，出可采信的结果
+npx niceeval exp baseline memory/commit0
+```
+
+第 3 步必须换实验：`--keep-sandbox` 与 `sandboxReuse` 互斥，而且复用的 Sandbox 被整批共享，
+留下来对任何一道题都不忠实。「串起来挂、单独跑过」出现时同样这么办——不要在共用批次里
+排查这种问题。流程见[保留 Sandbox 现场排查问题](/zh/troubleshooting/debug-sandbox)。
+
 ## 做不到？用并发，别复用
 
 准备代码改不成幂等、或者评估依赖全新的 `$HOME`（记忆类被测对象、有状态服务），
@@ -106,6 +133,7 @@ export default defineExperiment({
 
 ## 相关阅读
 
-- [Runner 的缓存机制](/zh/explanation/runner)——为什么复用运行的结果不参与沿用。
+- [重跑与沿用](/zh/tutorials/rerun-and-cache)——为什么复用运行的结果不参与沿用。
+- [并发与执行顺序](/zh/tutorials/concurrency)——不复用时怎么用并发拿到同一份提速。
 - [Sandbox Provider 配置](/zh/tutorials/sandbox-providers)——各 Provider 的
   template / image / snapshot 怎么做。

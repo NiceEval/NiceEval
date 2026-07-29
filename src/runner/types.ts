@@ -562,9 +562,9 @@ export interface ExperimentDef {
    * 见 docs/feature/experiments/library.md「labels」。
    */
   labels?: globalThis.Record<string, string | number>;
-  /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--runs` 覆盖时默认 1。 */
+  /** 同一 eval 重复跑几次(结果各计一条 attempt);省略/CLI `--attempts` 覆盖时默认 1。 */
   attempts?: number;
-  /** 一次重复(attempts > 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`runs` 跑满、测完整通过率),
+  /** 一次重复(attempts > 1)里某次 attempt 通过后是否跳过剩余重复;省略默认 false(`attempts` 跑满、测完整通过率),
    *  显式打开用于「只想知道能不能过」的省钱场景。 */
   earlyExit?: boolean;
   /**
@@ -1254,7 +1254,7 @@ export type DurableFeedbackEvent =
       holderHost?: string;
       attempts?: number;
       /** status 为 "resolved" 时给出:锁释放后重查携带,分别有多少 attempt 从 elsewhere 迁入
-       *  reused(carried)、多少迁入 queued 转为自跑(dispatched)——`runs` 下可能两者都非零
+       *  reused(carried)、多少迁入 queued 转为自跑(dispatched)——`attempts` 下可能两者都非零
        *  (部分携入部分补跑)。`--json` 的 `lock_wait` 事件把两者折成单一 `resolution` 字段:
        *  `dispatched > 0` 记 "dispatched"(这个用例仍需要真实派发,等待没有让它完全免于执行),
        *  否则记 "carried"(全部由携带满足,零新成本)。 */

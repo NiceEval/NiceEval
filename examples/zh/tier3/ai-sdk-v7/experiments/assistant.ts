@@ -5,5 +5,5 @@ import agent from "../agents/ai-sdk-v7.ts";
 export default defineExperiment({
   description: "ai-sdk-v7:真实 AI SDK v7 后端(默认模型)",
   agent,
-  runs: 1,
+  attempts: 1,
 });

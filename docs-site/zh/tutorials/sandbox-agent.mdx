@@ -41,7 +41,7 @@ export default defineExperiment({
 export ANTHROPIC_API_KEY=sk-ant-...
 npx niceeval exp local fixtures/button
 
-npx niceeval exp local fixtures/button --runs 10
+npx niceeval exp local fixtures/button --attempts 10
 ```
 
 <Note>
@@ -184,7 +184,7 @@ export default defineExperiment({
   agent: myAgent,
   model: "claude-sonnet-4-6",
   sandbox: dockerSandbox(),
-  runs: 3,
+  attempts: 3,
 });
 ```
 

@@ -5,5 +5,5 @@ import agent from "../agents/codex-sdk.ts";
 export default defineExperiment({
   description: "codex-sdk:真实 Codex SDK 后端",
   agent,
-  runs: 1,
+  attempts: 1,
 });

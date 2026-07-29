@@ -43,26 +43,28 @@ npx niceeval exp local --max-concurrency 8
 
 把跑得慢的实验和跑得快的实验混在一次命令里跑是安全的：并发名额优先给「要跑最多轮才能跑完」的实验（比如 `maxConcurrency: 1` 又有几十个 Attempt 的那个），快的实验见缝插针补空位。慢实验有一段 `setup`（起隧道、起共享服务）时也一样——它等 `setup` 的这段时间不占名额，别的实验照常跑，`setup` 一好它就拿下一个空出来的名额，不用为它单开一次命令。
 
+两道闸怎么配、共享状态怎么串行、执行顺序怎么钉死，见[并发与执行顺序](/zh/tutorials/concurrency)。
+
 ### 执行顺序
 
 结果永远按发现顺序输出，跟这次开了多大并发无关，所以终端里的行序和报告里的行序是稳定的、可以直接 diff。只希望读起来有序的话到这里就够了，不用动并发。
 
 实际的执行顺序是另一回事：并发大于 1 时，谁先开跑不做承诺。名额优先给要跑最多轮才能跑完的实验，拿到名额之后创建 Sandbox、跑各层 `setup` 的快慢也各不相同。
 
-需要「前一条评估用例跑完再跑下一条」——比如后一条要用到前一条写进记忆库的内容——把该实验的 `maxConcurrency` 设成 1，并且同一个实验只开一个终端跑。这时执行顺序就是发现顺序。`runs` 大于 1 时按轮次跑：这批评估用例各跑一遍算一轮，跑完再开下一轮，同一条评估用例的多次 Attempt 不连在一起。多开终端时同一时刻仍然只跑一条 Attempt，但两个终端各自认领评估用例，合起来的先后就不按命名了。
+需要「前一条评估用例跑完再跑下一条」——比如后一条要用到前一条写进记忆库的内容——把该实验的 `maxConcurrency` 设成 1，并且同一个实验只开一个终端跑。这时执行顺序就是发现顺序。`attempts` 大于 1 时按轮次跑：这批评估用例各跑一遍算一轮，跑完再开下一轮，同一条评估用例的多次 Attempt 不连在一起。多开终端时同一时刻仍然只跑一条 Attempt，但两个终端各自认领评估用例，合起来的先后就不按命名了。
 
 还要注意结果沿用：上一次已经判定的评估用例这次直接复用、不再执行，它写进去的状态也就不会重新产生。顺序依赖这份状态时，用 `--rerun all` 从头跑。
 
-## runs 与 early-exit
+## attempts 与首过即停
 
 ```bash
-npx niceeval exp local fixtures/button --runs 5
-npx niceeval exp local fixtures/button --runs 5 --early-exit
+npx niceeval exp local fixtures/button --attempts 5
+npx niceeval exp local fixtures/button --attempts 5 --early-exit
 ```
 
-`runs` 用于测 pass rate，默认跑满 `runs` 次，给出完整的通过率分布。首过即停默认关闭；只想知道"这题能不能过"、不在乎完整分布时，用 `--early-exit` 打开——某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。
+`attempts` 用于测 pass rate，默认跑满 `attempts` 次，给出完整的通过率分布。首过即停默认关闭；只想知道"这题能不能过"、不在乎完整分布时，用 `--early-exit` 打开——某个 Attempt 通过后，同一 eval 的剩余 Attempt 会被停止。
 
-`runs` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt；已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1 并开启 `earlyExit`：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
+`attempts` 的多次 Attempt 默认并发派发，并发上限由 `--max-concurrency`（或该实验的 `maxConcurrency`）决定——不会等上一次的结果出来再决定要不要派发下一次。首过即停能省下的，只是还没抢到并发名额、原本要排队的那些 Attempt；已经在跑的不受影响。想要"跑一次，过了就停、没过才跑下一次"这种一个接一个的效果，把该实验的 `maxConcurrency` 设成 1 并开启 `earlyExit`：并发名额只有一个时，同一个 eval 的 Attempt 只能排队依次跑，首过即停自然就能在下一次派发前生效。
 
 ## 缓存
 
@@ -74,6 +76,8 @@ fingerprint 由两部分组成：
 - **运行配置**：实验 ID、Agent、model、flags、Sandbox、`Judge` 的模型与端点，以及 `--strict`。超时上限不在里面——它决定等不等得到，不决定跑出来的结果是什么。
 
 被测程序自己的源码、Agent CLI 的版本、Sandbox 镜像的内容都不在 fingerprint 里。改了这些要复验，用 `--rerun`（只重跑失败项）或 `--rerun all`（全部重跑）。调试非确定性行为时同样用 `--rerun all`。
+
+哪一处改动作废哪些结果、`--rerun` 三档各采信什么，逐场景的对照见[重跑与沿用](/zh/tutorials/rerun-and-cache)。
 
 ## 并行开多个终端
 
@@ -101,7 +105,7 @@ npx niceeval exp compare/bub       # 终端 2
 
 ## 声明失败的波及范围
 
-有些失败你第一次看到就知道不止这一次：整个 Experiment 共享的服务死了，每条评估用例都会同样死；某条评估用例的 fixture 文件缺失，`runs: 5` 五次都会同样死。不声明的话，NiceEval 只能一条条撞——每个 Attempt 各自创建 Sandbox、各自失败，同一个死因烧几十遍。把你知道的告诉它，第一次撞上就停：
+有些失败你第一次看到就知道不止这一次：整个 Experiment 共享的服务死了，每条评估用例都会同样死；某条评估用例的 fixture 文件缺失，`attempts: 5` 五次都会同样死。不声明的话，NiceEval 只能一条条撞——每个 Attempt 各自创建 Sandbox、各自失败，同一个死因烧几十遍。把你知道的告诉它，第一次撞上就停：
 
 ```ts
 import { ExperimentFatalError } from "niceeval";

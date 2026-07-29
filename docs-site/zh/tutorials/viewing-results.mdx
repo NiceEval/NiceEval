@@ -605,6 +605,27 @@ npx niceeval view
 
 网页版可以排序实验表、筛行、展开 experiment、悬停散点看数值；这些操作不改判定口径。
 
+### 跟着运行看
+
+一个实验要跑半小时，不必等它结束、也不必每隔两分钟重开一次命令。`view` 建完站点起本地 server 之后会持续盯着输入重建：
+
+```bash
+niceeval exp compare/codex        # 终端 A
+niceeval view --exp compare/codex # 终端 B
+```
+
+每写完一个 Attempt，页面上就多一行；重建完成后页面自己重载，并且停在你正在看的那一页或那个 Attempt 上。
+
+盯着一个正在写的目录看不会读到半份数据：`result.json` 一次原子写成，所以页面要么看不见这个 Attempt，要么看见它的完整判定。运行还没收尾时页面上会有一条结构化警告说明这一点，跑完自行消失。
+
+同一条 watch 也盯着报告文件的整棵项目内 import 图，所以改自定义组件的写法是开着 `view` 直接改文件存盘：
+
+```bash
+niceeval view --report reports/site.tsx
+```
+
+写错了不会把站点弄没：重建失败时 server 继续服务上一份可用站点，错误推到浏览器上显示，终端也打一条。
+
 ## 导出与静态托管
 
 发布结果使用 `--out <目录>` 导出完整静态站。需要自定义页面时，使用报告组件编写报告，见[自定义报告](/zh/tutorials/custom-reports)。

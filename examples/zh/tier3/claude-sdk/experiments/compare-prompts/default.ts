@@ -5,5 +5,5 @@ import agent from "../../agents/claude-sdk.ts";
 export default defineExperiment({
   description: "default: 应用默认 system prompt",
   agent,
-  runs: 1,
+  attempts: 1,
 });

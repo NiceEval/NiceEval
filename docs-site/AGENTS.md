@@ -11,6 +11,7 @@
 - `explanation/`：英文核心概念页，解释心智模型和执行原理，镜像 `zh/explanation/`。
 - `reference/`：英文 API / CLI 参考，列完整字段和选项，镜像 `zh/reference/`。
 - `examples/`：英文可运行示例入口，镜像 `zh/examples/`。
+- `snippets/widgets.jsx`：页面共用的交互与动画组件（`Picker` / `Verdict` / `Lifecycle` / `Schedule`），页面 `import { X } from '/snippets/widgets.jsx'` 后用 props 传数据。样式在站点根 `widgets.css`（Mintlify 自动加载根目录下的 `.css`），观感按仓库根 `DESIGN.md`。改这个文件前先读它开头那段写法约束：只写箭头函数、不写 `import`、模块作用域不放未导出的辅助变量，交互一律走 CSS 的 `:checked` / `:has()`——Mintlify 是把 JSX snippet 的导出内联进 MDX，不是当模块打包，用 hook 不可靠。
 - `zh/`：中文文档，是英文各目录的翻译源头。Tutorial 与 How-to 页面统一放在 `tutorials/`，其余按 Explanation、Reference 和 Troubleshooting 分区，具体边界见 `zh/README.md`。中文定位、概念命名和场景示例是公开叙事的准绳；英文页只在 `zh/` 对应页更新后同步翻译，英文版本由其它 AI 翻译，不在英文侧单独定稿内容或结构。
 
 ## 术语表

@@ -224,7 +224,7 @@ const FLAG_OPTIONS = {
   "carry-ignoring-flag": { type: "string", multiple: true },
   /** CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 */
   strict: { type: "boolean" },
-  /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`runs` 默认跑满、测完整通过率)。 */
+  /** 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 */
   "early-exit": { type: "boolean" },
   /** 强制关闭首过即停,即使实验文件里写了 `earlyExit: true`。 */
   "no-early-exit": { type: "boolean" },

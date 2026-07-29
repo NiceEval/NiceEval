@@ -7,6 +7,6 @@ export default defineExperiment({
   description: "AI 助手:gpt-4o-mini",
   agent: webAgent({ baseUrl: "https://example.com" }),
   model: "gpt-4o-mini",
-  runs: 3,
+  attempts: 3,
   budget: 5,
 });

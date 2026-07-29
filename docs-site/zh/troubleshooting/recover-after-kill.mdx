@@ -15,7 +15,7 @@ description: "进程被 kill -9、CI 超时或断电杀掉后，重跑同一条�
 niceeval exp compare/bub-e2b memory/commit0
 ```
 
-- 只补跑缺的部分：`--runs 5` 已经落盘 3 次，就只再跑 2 次。
+- 只补跑缺的部分：`--attempts 5` 已经落盘 3 次，就只再跑 2 次。
 - 被强杀的实验如果留了没做完的收尾，重跑会先补一次实验级 `teardown` 再开始，泄漏不会越积越多。
 - 判定为 `errored` 的 Attempt 不复用，照常重跑。
 - 想全部重来，加 `--rerun all`。

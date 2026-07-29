@@ -140,7 +140,7 @@ export const en = {
     "  niceeval clean                                      delete .niceeval/ artifacts\n" +
     "  niceeval init                                       scaffold config + evals/\n\n" +
     "Flags:\n" +
-    "  --runs n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
+    "  --attempts n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
     "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --carry-ignoring-flag key  --dry\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +

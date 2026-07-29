@@ -5,5 +5,5 @@ import agent from "../agents/claude-sdk.ts";
 export default defineExperiment({
   description: "claude-sdk:真实 Claude Agent SDK 后端(默认模型)",
   agent,
-  runs: 1,
+  attempts: 1,
 });

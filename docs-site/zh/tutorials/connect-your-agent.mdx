@@ -68,7 +68,7 @@ export default defineExperiment({
   description: "my-agent 基线",
   agent: myAgent,
   model: "gpt-4o",
-  runs: 1,
+  attempts: 1,
 });
 ```
 
@@ -219,7 +219,7 @@ npx niceeval exp local
 npx niceeval exp prod
 ```
 
-不要把 URL 放进 CLI 位置参数——experiment 名之后的位置参数只用于过滤评估用例 ID。experiment 的完整字段（`runs`、`budget`、并发、`sandbox`）见[写实验](/zh/tutorials/write-experiment)。
+不要把 URL 放进 CLI 位置参数——experiment 名之后的位置参数只用于过滤评估用例 ID。experiment 的完整字段（`attempts`、`budget`、并发、`sandbox`）见[写实验](/zh/tutorials/write-experiment)。
 
 ## 添加可选能力
 

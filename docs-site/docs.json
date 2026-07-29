@@ -25,6 +25,10 @@
   },
   "redirects": [
     {
+      "source": "/zh/tutorials/local-iteration",
+      "destination": "/zh/tutorials/sandbox-reuse"
+    },
+    {
       "source": "/guides/sandbox-backends",
       "destination": "/tutorials/sandbox-providers"
     },
@@ -678,7 +682,8 @@
               {
                 "group": "运行、观察与发布",
                 "pages": [
-                  "zh/tutorials/local-iteration",
+                  "zh/tutorials/rerun-and-cache",
+                  "zh/tutorials/concurrency",
                   "zh/tutorials/ci-integration",
                   "zh/tutorials/reporters",
                   "zh/tutorials/viewing-results",

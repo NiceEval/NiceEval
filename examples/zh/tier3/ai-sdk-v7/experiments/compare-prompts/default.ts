@@ -5,5 +5,5 @@ import agent from "../../agents/ai-sdk-v7.ts";
 export default defineExperiment({
   description: "default: 应用默认 system prompt",
   agent,
-  runs: 1,
+  attempts: 1,
 });
