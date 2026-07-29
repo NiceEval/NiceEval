@@ -1,5 +1,5 @@
 // Format & mechanism domain(docs/engineering/testing/e2e/report.md 第 1-4 点):断言磁盘上的
-// Results 格式、openResults() 库读取的一致性、--json 的一致性、--junit 折叠规则,以及在真实
+// Record 格式、openRecord() 库读取的一致性、--json 的一致性、--junit 折叠规则,以及在真实
 // passed attempt 上的 README §4.3 CLI 读回(show / show --execution)。
 // 消费 scripts/evidence.ts 产出的 Evidence 对象——自己不运行任何 Experiment
 // (docs/engineering/testing/e2e/README.md §4.2 明确把本仓库对第 1 点排除在 CLI-black-box 规则
@@ -8,8 +8,8 @@
 // 契约就直接抛出。
 //
 // 针对同一次真实运行,检查以下四件事:
-//   1. 磁盘格式            —— snapshot.json / result.json / events.json / sources.json / o11y.json
-//   2. openResults() 一致性 —— 公开的读取库是对 #1 的忠实投影
+//   1. 磁盘格式            —— run.json / result.json / events.json / sources.json / o11y.json
+//   2. openRecord() 一致性 —— 公开的读取库是对 #1 的忠实投影
 //   3. --json 一致性        —— CLI 的机器可读摘要与 #1/#2 一致
 //   4. --junit 折叠         —— failed → <failure>,errored → <error>
 // 再加上在真实 passed attempt 上的 README §4.3 CLI 读回。
@@ -17,7 +17,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { openResults } from "niceeval/results";
+import { openRecord } from "niceeval/record";
 import { sh } from "./sh.ts";
 import type { Evidence } from "./evidence.ts";
 
@@ -57,18 +57,18 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   // 第 1 点:磁盘格式,直接读取(本仓库对「只能走 CLI」规则免除)。
   // ---------------------------------------------------------------------
   const snapDir = evidence.main.snapshotDir;
-  const snapshot = readJson<Record<string, unknown>>(join(snapDir, "snapshot.json"));
-  assert.equal(snapshot.format, "niceeval.results", 'snapshot.json.format must be the literal string "niceeval.results"');
-  assert.equal(typeof snapshot.schemaVersion, "number", "snapshot.json.schemaVersion must be a number");
-  assert.equal((snapshot.producer as { name?: string } | undefined)?.name, "niceeval", 'snapshot.json.producer.name must be "niceeval" for the official writer');
-  assert.equal(snapshot.experimentId, "main", "snapshot.json.experimentId must be the experiment id");
-  assert.equal(snapshot.agent, "results-mechanism", "snapshot.json.agent must be the Agent's name");
-  assert.equal(snapshot.model, "gpt-5.6-luna", "snapshot.json.model must be the experiment's model");
-  assert.equal(typeof snapshot.startedAt, "string", "snapshot.json.startedAt must be an ISO string");
+  const runMeta = readJson<Record<string, unknown>>(join(snapDir, "run.json"));
+  assert.equal(runMeta.format, "niceeval.results", 'run.json.format must be the literal string "niceeval.results"');
+  assert.equal(typeof runMeta.schemaVersion, "number", "run.json.schemaVersion must be a number");
+  assert.equal((runMeta.producer as { name?: string } | undefined)?.name, "niceeval", 'run.json.producer.name must be "niceeval" for the official writer');
+  assert.equal(runMeta.experimentId, "main", "run.json.experimentId must be the experiment id");
+  assert.equal(runMeta.agent, "results-mechanism", "run.json.agent must be the Agent's name");
+  assert.equal(runMeta.model, "gpt-5.6-luna", "run.json.model must be the experiment's model");
+  assert.equal(typeof runMeta.startedAt, "string", "run.json.startedAt must be an ISO string");
   for (const perAttemptField of ["attempts", "evals", "results"]) {
     assert.ok(
-      !(perAttemptField in snapshot),
-      `snapshot.json must carry no per-attempt data — found "${perAttemptField}" (architecture.md: 快照元数据...不含任何逐 attempt 数据)`,
+      !(perAttemptField in runMeta),
+      `run.json must carry no per-attempt data — found "${perAttemptField}" (architecture.md: 快照元数据...不含任何逐 attempt 数据)`,
     );
   }
 
@@ -139,50 +139,50 @@ export async function verifyFormat(evidence: Evidence): Promise<void> {
   assert.ok(blob.content.includes("get_stock_price"), `sources/${sharedSha}.json content doesn't look like tool-call.eval.ts`);
 
   // ---------------------------------------------------------------------
-  // 第 2 点:openResults() 一致性——是对第 1 点的忠实投影,而不是另一个独立的真相来源。
+  // 第 2 点:openRecord() 一致性——是对第 1 点的忠实投影,而不是另一个独立的真相来源。
   // ---------------------------------------------------------------------
-  const results = await openResults(evidence.resultsRoot);
+  const results = await openRecord(evidence.resultsRoot);
   const exp = results.experiments.find((e) => e.id === "main");
-  assert.ok(exp, 'openResults() has no experiment "main"');
-  const snap = exp!.latest;
-  assert.equal(snap.experimentId, snapshot.experimentId, "openResults() snapshot.experimentId disagrees with disk snapshot.json");
-  assert.equal(snap.agent, snapshot.agent, "openResults() snapshot.agent disagrees with disk snapshot.json");
-  assert.equal(snap.model, snapshot.model, "openResults() snapshot.model disagrees with disk snapshot.json");
-  assert.equal(snap.schemaVersion, snapshot.schemaVersion, "openResults() schemaVersion disagrees with disk snapshot.json");
+  assert.ok(exp, 'openRecord() has no experiment "main"');
+  const snap = exp!.latestRun;
+  assert.equal(snap.experimentId, runMeta.experimentId, "openRecord() runMeta.experimentId disagrees with disk run.json");
+  assert.equal(snap.agent, runMeta.agent, "openRecord() runMeta.agent disagrees with disk run.json");
+  assert.equal(snap.model, runMeta.model, "openRecord() runMeta.model disagrees with disk run.json");
+  assert.equal(snap.schemaVersion, runMeta.schemaVersion, "openRecord() schemaVersion disagrees with disk run.json");
 
   const toolCallEval = snap.evals.find((e) => e.id === "tool-call");
-  assert.ok(toolCallEval, 'openResults() snapshot has no eval "tool-call"');
-  assert.equal(toolCallEval!.attempts.length, 2, `openResults() reports ${toolCallEval!.attempts.length} attempts for tool-call, disk has 2`);
+  assert.ok(toolCallEval, 'openRecord() run has no eval "tool-call"');
+  assert.equal(toolCallEval!.attempts.length, 2, `openRecord() reports ${toolCallEval!.attempts.length} attempts for tool-call, disk has 2`);
 
   const diskByLocator = new Map(attemptRecords.map((r) => [r.locator, r]));
   for (const attempt of toolCallEval!.attempts) {
     const onDisk = diskByLocator.get(attempt.result.locator);
-    assert.ok(onDisk, `openResults() attempt with locator ${attempt.result.locator} has no matching on-disk result.json`);
-    assert.equal(attempt.result.verdict, onDisk!.verdict, "openResults() verdict disagrees with disk result.json");
-    assert.equal(attempt.result.estimatedCostUSD, onDisk!.estimatedCostUSD, "openResults() estimatedCostUSD disagrees with disk result.json");
-    assert.equal(attempt.result.usage?.inputTokens, onDisk!.usage!.inputTokens, "openResults() usage.inputTokens disagrees with disk result.json");
-    assert.equal(attempt.result.usage?.outputTokens, onDisk!.usage!.outputTokens, "openResults() usage.outputTokens disagrees with disk result.json");
+    assert.ok(onDisk, `openRecord() attempt with locator ${attempt.result.locator} has no matching on-disk result.json`);
+    assert.equal(attempt.result.verdict, onDisk!.verdict, "openRecord() verdict disagrees with disk result.json");
+    assert.equal(attempt.result.estimatedCostUSD, onDisk!.estimatedCostUSD, "openRecord() estimatedCostUSD disagrees with disk result.json");
+    assert.equal(attempt.result.usage?.inputTokens, onDisk!.usage!.inputTokens, "openRecord() usage.inputTokens disagrees with disk result.json");
+    assert.equal(attempt.result.usage?.outputTokens, onDisk!.usage!.outputTokens, "openRecord() usage.outputTokens disagrees with disk result.json");
 
     const events = await attempt.events();
-    assert.ok(events, "openResults() attempt.events() returned null for a fresh attempt that has events.json on disk");
+    assert.ok(events, "openRecord() attempt.events() returned null for a fresh attempt that has events.json on disk");
     assert.ok(
       events!.some((e) => e.type === "action.called" && (e as { name?: string }).name === "get_stock_price"),
-      "openResults() events() is missing the action.called seen on disk",
+      "openRecord() events() is missing the action.called seen on disk",
     );
 
     const sourceArtifacts = await attempt.sources();
-    assert.ok(sourceArtifacts, "openResults() attempt.sources() returned null");
+    assert.ok(sourceArtifacts, "openRecord() attempt.sources() returned null");
     assert.ok(
       sourceArtifacts!.some((s) => "content" in s && (s as { path: string }).path.includes("tool-call.eval")),
-      "openResults() sources() should resolve the reference+blob into {path, content}[], not leave it as a raw reference",
+      "openRecord() sources() should resolve the reference+blob into {path, content}[], not leave it as a raw reference",
     );
 
     const o11ySummary = await attempt.o11y();
-    assert.ok(o11ySummary, "openResults() attempt.o11y() returned null despite o11y.json existing on disk");
+    assert.ok(o11ySummary, "openRecord() attempt.o11y() returned null despite o11y.json existing on disk");
   }
 
   // ---------------------------------------------------------------------
-  // 第 3 点:--json 一致性——CLI 的机器可读事件流与磁盘 + openResults() 保持一致。`--json` 是
+  // 第 3 点:--json 一致性——CLI 的机器可读事件流与磁盘 + openRecord() 保持一致。`--json` 是
   // stdout 上的 NDJSON 事件流(docs/feature/experiments/cli.md「机器怎么读:--json」),不是
   // 单个聚合文档——没有 RunSummary 这种形状,也没有把 2 个 attempt 的 locator 逐条摊平进流里
   // (那是 `show` 下钻的职责);这里按事件流真实提供的东西断言:`result` 事件的 attempt 级聚合

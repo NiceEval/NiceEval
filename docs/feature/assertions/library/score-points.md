@@ -178,7 +178,7 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
   `—`。
   判据是[主读数映射](../../reports/library/measures.md#题型构成与主读数)这一条单点规则，
   列集合的完整契约在
-  [`toExperimentRows(sample)`](../../reports/components/sources/entity-experiments.md)。
+  [`toExperimentRows(sample)`](../../reports/library.md)。
 - **组级读数在 attempt 详情下钻**：非 passed 断言按声明顺序平铺、标题即分组路径，passed 断言按组折成计数行，
   `t.score` 给分记录单独成区块并按 `groupPath` 分组（[断言与 Turn 的展示](./display.md)）。
   「哪层死的」「哪个组挣了多少分」的逐条证据在那里读——组是折叠树的层级，不是跨 experiment 聚合的报告行维度。

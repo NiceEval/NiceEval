@@ -224,8 +224,6 @@ export function App({
     }
   }, []);
 
-  const footerText = localizedText(data.report?.footer, locale);
-
   return (
     <Tabs value={tab} onValueChange={(v) => selectTab(v as Tab)}>
       <header className="topbar">
@@ -244,19 +242,6 @@ export function App({
             </TabsTrigger>
           ))}
         </TabsList>
-        {data.report?.links?.length ? (
-          <nav className="shell-links" aria-label="Links">
-            {data.report.links.map((link, i) => (
-              <a key={i} href={link.href} target="_blank" rel="noreferrer">
-                {/* 内联 SVG 字标(可选)渲染在 label 前,原样内联;内容是作者义务,宿主不校验形状之外的东西。 */}
-                {link.icon ? (
-                  <span className="shell-link-icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: link.icon.svg }} />
-                ) : null}
-                {localizedText(link.label, locale) ?? link.href}
-              </a>
-            ))}
-          </nav>
-        ) : null}
         <div className="lang-switch" aria-label="Language">
           {(["en", "zh-CN"] satisfies Locale[]).map((item) => (
             <button
@@ -281,11 +266,6 @@ export function App({
           </TabsContent>
         ))}
       </main>
-      {footerText ? (
-        <footer className="site-footer">
-          <span className="site-footer-text">{footerText}</span>
-        </footer>
-      ) : null}
       {dialogLocator && dialogContent ? (
         <Dialog open onOpenChange={(o) => { if (!o) closeDialog(); }}>
           <DialogContent aria-describedby={undefined}>

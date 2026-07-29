@@ -20,8 +20,8 @@ Reports 把宿主选好的 Sample 或 Attempt Evidence 转成一棵报告组件�
 官方读数与实体投影是普通转换函数。
 组件接收 `rows`、`points`、`value`、`items`、`attempt` 等具体属性。
 
-公开作者面不出现 `data`、`Source`、`Content`、`View`、`MetricView`、
-`Composition`、`ctx.resolve()` 或惰性查询对象。
+公开作者面不出现惰性查询对象或组件级 `data` 绑定；
+组件按角色接收 `rows`、`points`、`value`、`items` 等具体属性。
 
 完整 API 见 [Library](library.md)，计算准入见 [Calculations](calculations.md)，
 内部边界见 [Architecture](architecture.md)，外部产品对照见
@@ -122,7 +122,7 @@ return <Table rows={rows} />;
 - **转换就是函数。** 官方计算只有 `Input → Output | Promise<Output>` 一种形态。
 - **组件属性说出角色。** 表格接 `rows`，散点图接 `points`，摘要格接 `value`，
   Attempt 详情接 `attempt`。
-- **page render 拥有异步。** 需要读取 artifact 时直接 `await`，不增加 Composition 概念。
+- **page render 拥有异步。** 需要读取 artifact 时直接 `await`。
 - **page 是必要的声明边界。** page 清单静态可见，内容逐页惰性求值和失败隔离；
   普通值模型不等于把整份报告变成一个不透明函数。
 - **正确性留在组合器。** 两级聚合、覆盖与 refs 由 `rollup()` 和 `aggregate()` 保证，
@@ -137,7 +137,7 @@ return <Table rows={rows} />;
 - **壳只装宿主必需品。** 外壳保留宿主机器在 page render 之外
   必须消费的字段；跨页内容用普通组合，组件资产随组件声明。
 - **参数没有新协议。** 组件收 props，报告收工厂闭包参数，
-  运行期数据走冻结 External；CLI 不开报告参数。
+  外部业务数据走 import 的冻结快照模块；CLI 不开报告参数。
 - **结果一次生成、双面消费。** 一个 page 实例只执行一次，
   text 与 web renderer 读取同一棵结果树。
 - **高级扩展也是函数。** 自定义转换不注册；自定义显示形状才需要双面 renderer 协议。
@@ -149,7 +149,7 @@ return <Table rows={rows} />;
 | 概念 | 例子 |
 |---|---|
 | 静态 page 定义 | `{ id, title, input, navigation, render }` |
-| 输入值 | `Sample`、`AttemptEvidence`、冻结 External snapshot |
+| 输入值 | `Sample`、`AttemptEvidence` |
 | Reducer、分组与计算函数 | `mean`、`percentile(0.95)`、`agent`、`passRate` |
 | 普通转换 | `aggregate()`、`pairedDelta()`、`toAttemptRows()` |
 | 结果值 | rows、EvidenceRow / ExternalPoint、items、MetricValue |
@@ -215,8 +215,8 @@ return <Table rows={rows} />;
 23. 自定义显示形状随组件声明 assets，页面只注入实际出现组件的资产。
 24. 工厂函数产出带参数的 ReportDefinition，使用方传 opts 后默认导出。
 
-普通场景 1–8 不得出现 `data`、`Source`、`Content`、`View`、
-`Measure`、`Composition`、`ctx`、`resolve` 或 `compute`。
+普通场景 1–8 只用公开转换函数与具体 props；
+不出现待 resolve 的查询对象或组件级 `data` 绑定。
 
 ## 相关阅读
 

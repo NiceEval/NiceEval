@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import * as report from "../index.ts";
 import * as reportReact from "../react/index.tsx";
 import { formatCellText } from "../definition/cell.ts";
+import { isCalculation } from "./calculation.ts";
 import {
   formatAxisTick,
   formatMeasureValue,
@@ -27,7 +28,7 @@ describe("measureDisplay / formatMeasureValue", () => {
     expect(measureDisplay(null)).toEqual({ en: "no data", "zh-CN": "无数据" });
   });
 
-  it("Measure.display 覆盖内建格式,不改变 value 语义", () => {
+  it("AttemptMetric.display 覆盖内建格式,不改变 value 语义", () => {
     const display = measureDisplay(0.5, "%", (value, locale) =>
       locale === "zh-CN" ? `命中 ${Math.round(value * 100)}%` : `hit ${Math.round(value * 100)}%`,
     );
@@ -81,5 +82,22 @@ describe("呈现工具箱导出面", () => {
     expect(reportReact).not.toHaveProperty("SERIES_PALETTE");
     expect(reportReact).not.toHaveProperty("colorHexForKey");
     expect(reportReact).not.toHaveProperty("colorClassForKey");
+  });
+
+  it("旧 AttemptMetric / MeasureCell / ResolveMemo 不在公开面;官方读数是 Calculation", () => {
+    expect(report).not.toHaveProperty("defineMeasure");
+    expect(report).not.toHaveProperty("ResolveMemo");
+    expect(report).not.toHaveProperty("MeasureCell");
+    expect(report).not.toHaveProperty("MeasureColumn");
+    expect(report).not.toHaveProperty("AttemptMetric");
+    expect(report).not.toHaveProperty("taskPassRate");
+    expect(report).not.toHaveProperty("executionReliability");
+    expect(report).not.toHaveProperty("endToEndPassRate");
+    expect(report).not.toHaveProperty("assistantTurns");
+    expect(report).not.toHaveProperty("repeatedFailedCommands");
+    expect(report).not.toHaveProperty("Dataset");
+    expect(report).not.toHaveProperty("ScoreboardData");
+    expect(isCalculation(report.totalScore)).toBe(true);
+    expect(isCalculation(report.passRate)).toBe(true);
   });
 });

@@ -1,13 +1,15 @@
-// 实体列表组合件:FailureList;数据源在 compute.ts / content.ts;列表本体是 Table 原语。
+// 实体列表组合件:FailureList / AttemptList；列表本体是 Table 原语。
 
-import { defineComposition } from "../../source.ts";
+import { defineComponent } from "../../definition/tree.ts";
 import { Table } from "../../definition/primitives.tsx";
 import type { ReportInput } from "../../model/types.ts";
+import type { AttemptHandle, Sample } from "../../../record/types.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { collectItems, locatorOf, resolveInput } from "../../model/aggregate.ts";
 import type { ReportLocale } from "../../model/locale.ts";
-import { attemptListData } from "./compute.ts";
+import { attemptListData, attemptRowsOf } from "./compute.ts";
 import { attemptListContent } from "./content.ts";
+import { toAttemptRows } from "../../model/conversions.ts";
 
 export { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./validate.ts";
 
@@ -19,8 +21,8 @@ export interface FailureListProps {
   className?: string;
 }
 
-export const FailureList = defineComposition<FailureListProps>(async (props, ctx) => {
-  const input = props.input ?? ctx.input;
+export const FailureList = defineComponent<FailureListProps>(async (props, ctx) => {
+  const input = props.input ?? ctx.scope;
   const all = await attemptListData(input);
   const startedAtByLocator = new Map<string, string>();
   const { runs, attempts } = resolveInput(input);
@@ -47,3 +49,35 @@ export const FailureList = defineComposition<FailureListProps>(async (props, ctx
   );
 });
 FailureList.displayName = "FailureList";
+
+export interface AttemptListProps {
+  attempts: readonly AttemptHandle[];
+  attemptHref?: (locator: AttemptLocator) => string;
+  locale?: ReportLocale;
+  className?: string;
+}
+
+/** 薄组合：toAttemptRows + Table。 */
+export const AttemptList = defineComponent<AttemptListProps>(async (props) => {
+  const rows = await toAttemptRows(props.attempts);
+  return (
+    <Table
+      data={attemptListContent(rows)}
+      attemptHref={props.attemptHref}
+      locale={props.locale}
+      className={props.className}
+    />
+  );
+});
+AttemptList.displayName = "AttemptList";
+
+export interface ExperimentListProps {
+  sample: Sample;
+  sort?: string;
+  filter?: boolean;
+  locale?: ReportLocale;
+  className?: string;
+}
+
+// re-export for callers that still import attemptRowsOf locally
+export { attemptRowsOf };

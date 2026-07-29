@@ -6,9 +6,9 @@
 // 派生(单一可比性桶、0 候选空态、by 非 experiment 报错)。show/compare.md 示例数字复算作 fixture。
 
 import { describe, expect, it } from "vitest";
-import type { EvalResult, ScoreEntry, Usage, Verdict } from "../../../types.ts";
-import type { AttemptHandle, Run } from "../../../record/index.ts";
-import { attemptHandleOf, scopeOf } from "../scope.harness.ts";
+import type { EvalResult, ScoreEntry, Usage, Verdict } from "../../types.ts";
+import type { AttemptHandle, Run } from "../../record/index.ts";
+import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
 import { conditionsByFlag, deltaTableData } from "./compute.ts";
 import { validateDeltaData } from "./validate.ts";
 

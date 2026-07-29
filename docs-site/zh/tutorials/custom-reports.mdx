@@ -296,23 +296,33 @@ export default defineReport({
 
 ## 接入外部业务快照
 
-先在报告外准备 JSON，再通过 page render 的第二参数接收：
+先把外部数据写成冻结快照模块：
 
 ```tsx
-export default defineReport<BudgetSnapshot>(
-  async (sample, budgets) => {
-    const performance = await aggregate(sample, {
-      by: { experiment },
-      values: { passRate, costUSD },
-    });
-
-    return <Table rows={joinBudgets(performance, budgets)} />;
-  },
-);
+// budget-snapshot.ts —— 运行前由脚本生成，随报告进版本库
+export const budgets = {
+  checkout: { monthlyUSD: 40 },
+  search: { monthlyUSD: 25 },
+};
 ```
 
-使用 `--data` 或项目配置冻结快照。
-page render 不请求网络，不读取环境变量、时钟或随机数。
+报告文件直接 import：
+
+```tsx
+import { budgets } from "./budget-snapshot";
+
+export default defineReport(async (sample) => {
+  const performance = await aggregate(sample, {
+    by: { experiment },
+    values: { passRate, costUSD },
+  });
+
+  return <Table rows={joinBudgets(performance, budgets)} />;
+});
+```
+
+page render 不请求网络，不读取环境变量、时钟或随机数。要更新数据，就重新生成快照模块。
+快照属于报告的 import 图，开发服务器会在它变化时重新构建报告。
 
 ## 编写新的显示形状
 

@@ -66,6 +66,14 @@ interface RunSpec {
 - **覆盖事实**：`knownEvalIds` 用并集分母（本地历史 ∪ 各 Run 携带的 `knownEvalIds`），不是「优先
   字段」——fixture 要构造「本地并集比 Run 携带的更大」的情形，证明优先字段实现会让分母缩水。
   `missingEvalIds` 与命令行范围求交。
+
+  每个 `SampleCoverage` 还携带该 Experiment 的锚点 `run`：
+
+  - `latestRunSample` 锚最新 Run
+  - `currentSample` 锚确定可比性配置的最新 Run
+  - 全缺口 Experiment（零 attempt、不进 `Sample.runs`）仍有锚点
+
+  fixture 要证明「无锚点」实现会让零 attempt 的 Eval 无法按 agent 归组。
 - **时效与 `fresh`**：`attempt.carried` 是 `artifactBase` 的读取面投影；携带条目与来自更早 Run 的
   attempt 都属于历史执行。`fresh: true` 在两个口径下都排除历史执行，被排除的 Eval 进覆盖缺口。
   fixture 同时含携带条目与跨 Run 拼入条目，使「只排携带」「只排旧来源」「两者都排」三种实现得到不同

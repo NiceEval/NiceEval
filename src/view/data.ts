@@ -543,8 +543,8 @@ async function renderReportSlot(
 
   const reportDir = report ? dirname(resolve(report.cwd, report.path)) : undefined;
   const shellAssets = {
-    styles: [await hostThemeStylesheet(hostTheme), ...resolveThemeStyles(hostTheme, theme ? dirname(resolve(theme.cwd, theme.value)) : undefined), ...resolveShellAssets(hostReport.styles, reportDir, "styles")],
-    scripts: resolveShellAssets(hostReport.scripts, reportDir, "scripts"),
+    styles: [await hostThemeStylesheet(hostTheme), ...resolveThemeStyles(hostTheme, theme ? dirname(resolve(theme.cwd, theme.value)) : undefined)],
+    scripts: [] as string[],
     head: resolveShellHead(hostReport.head, reportDir),
   };
 
@@ -561,11 +561,11 @@ async function renderReportSlot(
     try {
       let resolved = resolvedPages.get(pageId);
       if (resolved === undefined) {
-        resolved = resolveHostPage(hostPage.content, {
+        resolved = resolveHostPage(hostPage, {
           scope: selection,
           results,
           report: hostMeta,
-          page: { id: hostPage.id, input: "scope" as const },
+          page: { id: hostPage.id, input: "sample" as const },
           dimensionPins: hostReport.dimensionPins,
         });
         resolvedPages.set(pageId, resolved);
@@ -593,8 +593,6 @@ async function renderReportSlot(
 
   const meta: ViewReportMeta = {
     title: hostMeta.title,
-    links: [...hostReport.links],
-    ...(hostReport.footer !== undefined ? { footer: hostReport.footer } : {}),
     // 每一张要烘进 index.html 的 scope-input page 都在列(这份列表同时是 <template> 静态块与
     // `#/page/<id>` 路由的键),声明了 `navigation: false` 的带标记出场——导航列不列由外壳按标记
     // 决定,不靠从列表里删页实现(docs/feature/reports/view.md「导航机器与品牌位」)。
@@ -619,7 +617,7 @@ async function renderReportSlot(
       dimensionPins: hostReport.dimensionPins,
     };
     try {
-      const resolved = await resolveHostPage(attemptPage!.content, ctx);
+      const resolved = await resolveHostPage(attemptPage!, ctx);
       return {
         en: await renderHostPageFromResolved(resolved, { locale: "en", attemptHref: SIBLING_ATTEMPT_HREF }),
         "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", attemptHref: SIBLING_ATTEMPT_HREF }),

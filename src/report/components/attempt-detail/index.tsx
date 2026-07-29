@@ -1,9 +1,7 @@
-// Attempt 详情组合件:叶子区块用原语 + sources.attempt.* 装配。
+// Attempt 详情组合件:叶子区块用原语 + 公开 to* 装配。
 
 import type { AttemptEvidence } from "../../../record/attempt-evidence.ts";
 import { defineComponent } from "../../definition/tree.ts";
-import { defineComposition } from "../../source.ts";
-import { sources } from "../../sources.ts";
 import {
   Callouts,
   Col,
@@ -18,9 +16,19 @@ import {
 import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatPoints } from "../../model/format.ts";
 import { localeText } from "../../model/locale.ts";
-import type { SourceInput } from "../../source.ts";
 import { cx, type DataProps } from "../shared.ts";
-import type { AttemptPageContext, ScopePageContext } from "../../definition/tree.ts";
+import type { AttemptPageContext, SamplePageContext } from "../../definition/tree.ts";
+import {
+  toAttemptAssertions,
+  toAttemptFixPrompt,
+  toAttemptNotices,
+  toAttemptSource,
+  toAttemptSummary,
+  toAttemptUsage,
+  toConversationTurns,
+  toDiffFiles,
+  toTimelineNodes,
+} from "../../model/conversions.ts";
 
 export {
   validateAssertionsData,
@@ -50,12 +58,7 @@ function Kpi(props: { label: string; value: string }) {
   );
 }
 
-type SummaryProps<Input extends SourceInput = SourceInput> = DataProps<
-  AttemptSummaryData,
-  globalThis.Record<never, never>,
-  { className?: string },
-  Input
->;
+type SummaryProps = DataProps<AttemptSummaryData, globalThis.Record<never, never>, { className?: string }>;
 
 export const AttemptSummary = defineComponent<SummaryProps>({
   dimensions: () => ({}),
@@ -103,12 +106,7 @@ const ATTEMPT_CAPABILITY_LABEL: globalThis.Record<keyof AttemptSummaryData["capa
   diff: "diff",
 };
 
-type UsageProps<Input extends SourceInput = SourceInput> = DataProps<
-  UsageTableData | null,
-  globalThis.Record<never, never>,
-  { className?: string },
-  Input
->;
+type UsageProps = DataProps<UsageTableData | null, globalThis.Record<never, never>, { className?: string }>;
 
 const AttemptUsage = defineComponent<UsageProps>({
   dimensions: () => ({}),
@@ -152,53 +150,78 @@ const AttemptUsage = defineComponent<UsageProps>({
 });
 AttemptUsage.displayName = "AttemptUsage";
 
-function isAttemptPage(page: ScopePageContext | AttemptPageContext): page is AttemptPageContext {
+function isAttemptPage(page: SamplePageContext | AttemptPageContext): page is AttemptPageContext {
   return page.input === "attempt";
 }
 
-export const AttemptAssessment = defineComposition<globalThis.Record<never, never>, AttemptEvidence>(
-  async (_props, ctx) => {
-    const page = ctx.page as ScopePageContext | AttemptPageContext;
-    if (!isAttemptPage(page)) {
-      throw new Error('AttemptAssessment requires an attempt-input page (input: "attempt").');
-    }
-    return (
-      <Col>
-        <Callouts source={sources.attempt.notices} />
-        {page.evidence.capabilities.source ? (
-          <SourceView source={sources.attempt.source} />
-        ) : (
-          <Table source={sources.attempt.assertions} />
-        )}
-      </Col>
-    );
-  },
-);
-AttemptAssessment.displayName = "AttemptAssessment";
+function evidenceOf(
+  props: { attempt?: AttemptEvidence },
+  ctx: { page: SamplePageContext | AttemptPageContext },
+): AttemptEvidence {
+  if (props.attempt !== undefined) return props.attempt;
+  const page = ctx.page;
+  if (!isAttemptPage(page)) {
+    throw new Error('AttemptDetails requires attempt={evidence} or an attempt-input page (input: "attempt").');
+  }
+  return page.evidence;
+}
 
-export const AttemptDetail = defineComposition<globalThis.Record<never, never>, AttemptEvidence>(async (_props, ctx) => {
-  const page = ctx.page as ScopePageContext | AttemptPageContext;
-  const conversationLivesInSource =
-    isAttemptPage(page) &&
-    page.evidence.capabilities.source &&
-    page.evidence.evalSource !== null;
+export type AttemptDetailsProps = {
+  attempt?: AttemptEvidence;
+  className?: string;
+};
+
+export const AttemptAssessment = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
+  const evidence = evidenceOf(props, ctx as { page: SamplePageContext | AttemptPageContext });
+  const page = ctx.page as SamplePageContext | AttemptPageContext;
+  const notices = await toAttemptNotices(evidence);
+  const hasSource = isAttemptPage(page)
+    ? page.evidence.capabilities.source
+    : evidence.capabilities.source;
   return (
     <Col>
-      <AttemptSummary source={sources.attempt.snapshot} />
-      <AttemptAssessment />
-      <CopyBlock source={sources.attempt.fixPrompt} />
-      <Waterfall
-        source={sources.attempt.timeline}
-        title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
-      />
-      <AttemptUsage source={sources.attempt.usage} />
-      {conversationLivesInSource ? null : <Conversation source={sources.attempt.conversation} />}
-      <DiffView source={sources.attempt.diff} />
+      <Callouts items={notices} />
+      {hasSource ? (
+        <SourceView data={await toAttemptSource(evidence)} />
+      ) : (
+        <Table data={await toAttemptAssertions(evidence)} />
+      )}
     </Col>
   );
 });
-AttemptDetail.displayName = "AttemptDetail";
+AttemptAssessment.displayName = "AttemptAssessment";
 
-export type AttemptSectionProps<Data> =
-  | { input?: AttemptEvidence; data?: never; className?: string }
-  | { data: Data; input?: never; className?: string };
+/** 公开 Attempt 详情组合；文档名 AttemptDetails。 */
+export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
+  const evidence = evidenceOf(props, ctx as { page: SamplePageContext | AttemptPageContext });
+  const conversationLivesInSource =
+    evidence.capabilities.source && evidence.evalSource !== null;
+  const [summary, fixPrompt, timeline, usage, conversation, diff] = await Promise.all([
+    toAttemptSummary(evidence),
+    toAttemptFixPrompt(evidence),
+    toTimelineNodes(evidence),
+    toAttemptUsage(evidence),
+    conversationLivesInSource ? Promise.resolve(null) : toConversationTurns(evidence),
+    toDiffFiles(evidence),
+  ]);
+  return (
+    <Col className={props.className}>
+      <AttemptSummary data={summary} />
+      <AttemptAssessment attempt={evidence} />
+      <CopyBlock content={fixPrompt} />
+      <Waterfall
+        nodes={timeline}
+        title={{ en: "Execution timeline", "zh-CN": "执行时间轴" }}
+      />
+      <AttemptUsage data={usage} />
+      {conversation !== null ? <Conversation data={conversation} /> : null}
+      <DiffView data={diff} />
+    </Col>
+  );
+});
+AttemptDetails.displayName = "AttemptDetails";
+
+/** @deprecated 旧名；与 AttemptDetails 同一引用。 */
+export const AttemptDetail = AttemptDetails;
+
+export type AttemptSectionProps = AttemptDetailsProps;

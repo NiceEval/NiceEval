@@ -1,31 +1,30 @@
 // StabilityOverview:stability 视图的主体——读数格 + 稳定性散点 + 判定构成堆叠柱 + 矩阵。
-// 全部区块来自 sources.measure.stability 的一次 resolve 与字面投影,不新增聚合口径
+// 全部区块来自 stabilityMatrix 一次计算与字面投影,不新增聚合口径
 // (docs/feature/reports/components/summaries/stability-overview.md)。
 
-import { defineComposition } from "../../source.ts";
+import { defineComponent } from "../../definition/tree.ts";
 import { Chart, Col, Grid, Series, Stat, Table } from "../../definition/primitives.tsx";
 import type { Dataset, DimensionInput } from "../../model/types.ts";
 import type { Sample } from "../../../record/types.ts";
-import { formatPercent, formatPlainNumber } from "../../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
-import { sources } from "../../sources.ts";
+import { stabilityMatrixData } from "../../slices/compute.ts";
+import { stabilityMatrixContent } from "../../slices/content.ts";
 
 export interface StabilityOverviewProps {
   input?: Sample;
   /** 条件维度;缺省 "experiment",与 show --stats 相同。 */
   columns?: DimensionInput;
-  /** 聚合前收窄题集;透传给 sources.measure.stability。 */
+  /** 聚合前收窄题集。 */
   evals?: string | readonly string[];
   locale?: ReportLocale;
   className?: string;
 }
 
-export const StabilityOverview = defineComposition<StabilityOverviewProps, Sample>(async (props, ctx) => {
-  const input: Sample = props.input ?? ctx.input;
+export const StabilityOverview = defineComponent<StabilityOverviewProps>(async (props, ctx) => {
+  const input: Sample = props.input ?? ctx.scope;
   const locale = props.locale ?? DEFAULT_REPORT_LOCALE;
-  const content = await ctx.resolve(
-    sources.measure.stability({ by: props.columns ?? "experiment", evals: props.evals }),
-    input,
+  const content = stabilityMatrixContent(
+    await stabilityMatrixData(input, { by: props.columns ?? "experiment", evals: props.evals }),
   );
   const conditions = content.columns
     .map((column) => column.key)
@@ -50,8 +49,8 @@ export const StabilityOverview = defineComposition<StabilityOverviewProps, Sampl
         values: {
           eval: row.evalId,
           condition,
-          executions: { value: n, display: formatPlainNumber(n), samples: n, total: n, refs },
-          passRatio: { value: ratio, display: formatPercent(ratio), samples: n, total: n, refs },
+          executions: { value: n, basis: "eval", samples: n, total: n, refs },
+          passRatio: { value: ratio, unit: "%", better: "higher", bounds: { min: 0, max: 1 }, basis: "eval", samples: n, total: n, refs },
         },
       });
     }
@@ -61,8 +60,8 @@ export const StabilityOverview = defineComposition<StabilityOverviewProps, Sampl
     fields: [
       { name: "eval", kind: "dimension", valueType: "string" },
       { name: "condition", kind: "dimension", valueType: "string" },
-      { name: "executions", kind: "measure", valueType: "number" },
-      { name: "passRatio", kind: "measure", valueType: "number", better: "higher", bounds: { min: 0, max: 1 } },
+      { name: "executions", kind: "metric", valueType: "number" },
+      { name: "passRatio", kind: "metric", valueType: "number", better: "higher", bounds: { min: 0, max: 1 } },
     ],
     rows: points,
   };
@@ -71,9 +70,9 @@ export const StabilityOverview = defineComposition<StabilityOverviewProps, Sampl
   const bars: Dataset = {
     fields: [
       { name: "condition", kind: "dimension", valueType: "string" },
-      { name: "passed", kind: "measure", valueType: "number" },
-      { name: "failed", kind: "measure", valueType: "number" },
-      { name: "errored", kind: "measure", valueType: "number" },
+      { name: "passed", kind: "metric", valueType: "number" },
+      { name: "failed", kind: "metric", valueType: "number" },
+      { name: "errored", kind: "metric", valueType: "number" },
     ],
     rows: Object.entries(content.totals).map(([condition, totals]) => ({
       key: condition,

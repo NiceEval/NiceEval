@@ -3,9 +3,19 @@
 // (docs/feature/reports/library/built-in.md)。新增内建视图 = 新文件 + 新具名导出,
 // 不需要注册表,也不改变装载管线。
 
-import { standard, standardAttemptPage } from "./standard.tsx";
+import { standard, standardAttemptPage, standardAttemptsPage, standardOverviewPage, standardTracesPage } from "./standard.tsx";
 
-export { standard, standardAttemptPage };
+export {
+  standard,
+  standardAttemptPage,
+  standardAttemptsPage,
+  standardOverviewPage,
+  standardTracesPage,
+  standardOverviewRender,
+  standardAttemptsRender,
+  standardTracesRender,
+  standardAttemptRender,
+} from "./standard.tsx";
 export { failures } from "./failures.tsx";
 export { stability } from "./stability.tsx";
 

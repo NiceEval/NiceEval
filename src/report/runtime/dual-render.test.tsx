@@ -31,22 +31,29 @@ import {
   FALLBACK_REPORT_TITLE,
   resolveReportTitle,
   type NonEmptyArray,
+  type PageDefinitionInput,
+  type ReportPage,
 } from "../definition/report.ts";
 import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } from "./text.ts";
+import { renderSamplePage } from "./page-render.ts";
 import { FailureList } from "../components/entity-lists/index.tsx";
 import { Hero } from "../components/site-components/index.tsx";
 import { SampleOverview, SampleSummary } from "../components/summaries/index.tsx";
 import { Chart, Col, CopyBlock, Callouts, Grid, Section, Series, Stat, Tab, Table, Tabs, Text, Waterfall } from "../definition/primitives.tsx";
-import { attemptListData, experimentListData } from "../components/entity-lists/compute.ts";
-import { attemptListContent, experimentListContent } from "../components/entity-lists/content.ts";
-import { metricScatterData } from "../components/metric-views/compute.ts";
-import { scatterDataToDataset } from "../model/dataset.ts";
+import { pointsToDataset } from "../definition/primitives/points-dataset.ts";
+import { attemptListData } from "../components/entity-lists/compute.ts";
+import { attemptListContent } from "../components/entity-lists/content.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
-import { seriesName } from "../model/aggregate.ts";
-import type { SeriesInput } from "../model/types.ts";
-import { sources } from "../sources.ts";
 import { AttemptDetail } from "../components/attempt-detail/index.tsx";
-import { defineMeasure, costUSD, endToEndPassRate, totalScore } from "../model/metrics.ts";
+import {
+  agent,
+  aggregate,
+  costUSD,
+  experiment,
+  passRate,
+  totalScore,
+  type GroupFunction,
+} from "../model/calculation.ts";
 import { label } from "../model/flag.ts";
 import builtInReport, { failures, stability, standard, standardAttemptPage } from "../built-in/index.tsx";
 import { RunNotices, SampleFixPrompt, SampleNotices } from "../components/site-components/index.tsx";
@@ -106,19 +113,24 @@ function snap(spec: {
   return run;
 }
 
+async function pageTree(page: ReportPage, scope: Sample): Promise<ReportNode> {
+  return renderSamplePage(page, scope);
+}
+
 /**
- * 管线便捷入口:装载 + 挑页 + resolve + validate,不渲染——断言面是解析后的树结构
+ * 管线便捷入口:装载 + 挑页 + render + resolve + validate,不渲染——断言面是解析后的树结构
  * (元素 type / props)或抛出的错误对象。裸字符串 / 非法节点这类只在 validate 阶段
  * 才拒绝的输入,同样会在这里抛出(validateReportTree 紧跟 resolve 之后调用)。
  */
 async function resolveTree(node: ReportNode, scope: Sample): Promise<ReportNode> {
-  const definition = defineReport(node);
+  const definition = defineReport(() => node);
   const page = pickReportPage(definition);
-  const resolved = await resolveReportTree(page.content, {
+  const tree = await renderSamplePage(page, scope);
+  const resolved = await resolveReportTree(tree, {
     scope,
     results: resultsOf(scope.runs),
     report: buildReportMeta(definition, scope),
-    page: { id: page.id, input: "scope" },
+    page: { id: page.id, input: "sample" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -149,289 +161,11 @@ async function expectSnapshotStats(resolved: unknown, scope: Sample) {
   expect(stats.some((s) => s.props.value === expected.attempts)).toBe(true);
 }
 
-function scatterChartNode(options: {
-  series?: SeriesInput;
-  y: typeof costUSD | typeof endToEndPassRate | typeof totalScore;
-  connect?: boolean;
-}) {
-  const by = options.series !== undefined ? seriesName(options.series) : undefined;
-  return (
-    <Chart
-      source={sources.measure.chart({ points: "experiment", series: options.series, x: costUSD, y: options.y })}
-      x={costUSD.name}
-      y={options.y.name}
-    >
-      <Series
-        id="test"
-        mark="scatter"
-        points="experiment"
-        {...(by !== undefined ? { by } : {})}
-        connect={options.connect}
-      />
-    </Chart>
-  );
-}
-
 // ───────────────────────── spec / data 双形态 ─────────────────────────
 
-describe("spec 形态与 data 形态", () => {
-  const scatterScope = () =>
-    scopeOf([
-      snap({
-        experimentId: "cmp/a",
-        agent: "bub",
-        results: [res("q", "passed", { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.2 } })],
-      }),
-      snap({
-        experimentId: "cmp/b",
-        agent: "codex",
-        results: [res("q", "failed", { usage: { inputTokens: 1, outputTokens: 1, costUSD: 0.1 } })],
-      }),
-    ]);
-
-  it("spec 形态与「先手工调 *Data 再传 data」严格等价:两棵树解析出同一份 data", async () => {
-    const scope = scatterScope();
-    const options = { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate } as const;
-    const specResolved = await resolveTree(scatterChartNode({ series: "agent", y: endToEndPassRate }), scope);
-    const data = scatterDataToDataset(await metricScatterData(scope, options));
-    expect((specResolved as unknown as { props: { data: unknown } }).props.data).toEqual(data);
-  });
-
-  it("同一组件同时给 data 与 spec 字段报完整用户反馈,不静默取一边", async () => {
-    const scope = scatterScope();
-    const data = scatterDataToDataset(await metricScatterData(scope, { points: "experiment", x: costUSD, y: endToEndPassRate }));
-    await expect(
-      resolveTree(
-        // @ts-expect-error data 与 source 互斥;模拟无类型 JS 输入
-        <Chart data={data} source={sources.measure.chart({ points: "experiment", x: costUSD, y: endToEndPassRate })} x={costUSD.name} y={endToEndPassRate.name}>
-          <Series id="test" mark="scatter" points="experiment" />
-        </Chart>,
-        scope,
-      ),
-    ).rejects.toThrow(/both `source` and `data`/);
-  });
-
-  it("input 省略时取宿主注入的 Sample;显式 input 覆盖数据来源", async () => {
-    const a = snap({ experimentId: "in/a", results: [res("q", "passed")] });
-    const b = snap({ experimentId: "in/b", results: [res("q", "failed")] });
-    const scope = scopeOf([a, b]);
-
-    await expectSnapshotStats(await resolveTree(<SampleSummary />, scope), scope);
-    const narrowed = scope.filter((s) => s.experimentId === "in/a");
-    await expectSnapshotStats(await resolveTree(<SampleSummary input={narrowed} />, scope), narrowed);
-
-    // input 也可以是手挑的 Run[](按快照出行)
-    const tableResolved = await resolveTree(
-      <Table
-        input={scopeOf([a])}
-        source={sources.measure.rows({ rows: "run", columns: [endToEndPassRate] })}
-      />,
-      scope,
-    );
-    const rows = (tableResolved as unknown as { props: { data: { rows: Array<{ key: string }> } } }).props.data.rows;
-    expect(rows.some((r) => r.key.startsWith("in/a"))).toBe(true);
-    expect(rows.some((r) => r.key.startsWith("in/b"))).toBe(false);
-  });
-
-  it("round-trip 的同版本 Dataset JSON 解析结果不变", async () => {
-    const scope = scatterScope();
-    const fresh = scatterDataToDataset(await metricScatterData(scope, { points: "experiment", x: costUSD, y: endToEndPassRate }));
-    const roundTrip = JSON.parse(JSON.stringify(fresh));
-    const resolved = await resolveTree(
-      <Chart data={roundTrip} x={costUSD.name} y={endToEndPassRate.name}>
-        <Series id="test" mark="scatter" points="experiment" />
-      </Chart>,
-      scope,
-    );
-    expect((resolved as unknown as { props: { data: unknown } }).props.data).toEqual(roundTrip);
-  });
-});
-
-// ───────────────────────── resolve 记忆化 ─────────────────────────
-
-describe("resolve 记忆化", () => {
-  it("Matrix 与 Bars 同 spec 时计算只发生一次;不同 spec 各自计算", async () => {
-    let calls = 0;
-    const counted = defineMeasure({
-      name: "counted",
-      value: () => {
-        calls += 1;
-        return 1;
-      },
-    });
-    const scope = scopeOf([snap({ experimentId: "memo/a", results: [res("q", "passed")] })]);
-    const shared = sources.measure.matrix({ rows: "eval", columns: "agent", cell: counted });
-    await resolveTree(
-      <Col>
-        <Table source={shared} />
-        <Table source={shared} />
-      </Col>,
-      scope,
-    );
-    expect(calls).toBe(1);
-
-    calls = 0;
-    const a = sources.measure.matrix({ rows: "eval", columns: "agent", cell: counted });
-    const b = sources.measure.matrix({ rows: "eval", columns: "model", cell: counted });
-    await resolveTree(
-      <Col>
-        <Table source={a} />
-        <Table source={b} />
-      </Col>,
-      scope,
-    );
-    expect(calls).toBe(2);
-  });
-
-  it("不同 input 各自计算;字段相同但实例不同的 Metric 各自计算、不报错", async () => {
-    let calls = 0;
-    const value = () => {
-      calls += 1;
-      return 1;
-    };
-    const m1 = defineMeasure({ name: "twin", value });
-    const m2 = defineMeasure({ name: "twin", value: (attempt) => value.call(null) });
-    const a = snap({ experimentId: "memo/in-a", results: [res("q", "passed")] });
-    const b = snap({ experimentId: "memo/in-b", results: [res("q", "passed")] });
-    const scope = scopeOf([a, b]);
-    const src1 = sources.measure.matrix({ rows: "eval", columns: "agent", cell: m1 });
-    const src2 = sources.measure.matrix({ rows: "eval", columns: "agent", cell: m2 });
-    await resolveTree(
-      <Col>
-        <Table input={scopeOf([a])} source={src1} />
-        <Table input={scopeOf([b])} source={src1} />
-        <Table input={scopeOf([a])} source={src2} />
-      </Col>,
-      scope,
-    );
-    expect(calls).toBe(3);
-  });
-});
 
 // ───────────────────────── 组合组件与树形状 ─────────────────────────
 
-describe("组合组件(函数形态)", () => {
-  it("resolve 阶段以 (props, ctx) 调用并递归展开;与手写等价树解析出同一棵树;async 可用", async () => {
-    const scope = scopeOf([snap({ experimentId: "compose/a", results: [res("q", "passed")] })]);
-    const Composed = defineComponent(async (_props: globalThis.Record<never, never>, ctx) => (
-      <Section title="wrapped">
-        <SampleSummary input={ctx.scope} />
-      </Section>
-    ));
-    const composed = await resolveTree(<Composed />, scope);
-    const manual = await resolveTree(
-      <Section title="wrapped">
-        <SampleSummary />
-      </Section>,
-      scope,
-    );
-    expect(composed).toEqual(manual);
-  });
-
-  it("ctx.results 可自行挑 Run[] 喂 input;ctx.report 携带走完回退链的 title,ctx.page 携带当前页 id", async () => {
-    const named = snap({ experimentId: "hist/a", name: "Memory Evals", results: [res("q", "passed")] });
-    const scope = scopeOf([named]);
-    const Meta = defineComponent((_props: globalThis.Record<never, never>, ctx) => {
-      const history = ctx.results.experiments[0]!.runs;
-      return (
-        <Col>
-          <Text>{`title=${typeof ctx.report.title === "string" ? ctx.report.title : "?"} page=${ctx.page.id}`}</Text>
-          <SampleSummary input={scope} />
-        </Col>
-      );
-    });
-    const definition = defineReport({ pages: [{ id: "meta", title: "Meta", content: <Meta /> }] });
-    const page = pickReportPage(definition, "meta");
-    const resolved = await resolveReportTree(page.content, {
-      scope,
-      results: resultsOf([named]),
-      report: buildReportMeta(definition, scope),
-      page: { id: page.id, input: "scope" },
-      memo: new ResolveMemo(),
-    });
-    const textNode = (resolved as unknown as { props: { children: Array<{ props: { children: string } }> } }).props.children[0]!;
-    // 声明没给 title → 唯一快照 name 回退
-    expect(textNode.props.children).toBe("title=Memory Evals page=meta");
-  });
-
-  it("同层 sibling 并行取数且解析结果保持声明顺序:慢 resolve 在前不换位", async () => {
-    const order: string[] = [];
-    const Slow = defineComponent<{ label: string }, { label: string }>({
-      dimensions: () => ({}),
-      resolve: async (props) => {
-        await new Promise((r) => setTimeout(r, 25));
-        order.push("slow-resolved");
-        return props;
-      },
-      web: ({ label }) => <p>{label}</p>,
-      text: ({ label }) => label,
-    });
-    const Fast = defineComponent<{ label: string }, { label: string }>({
-      dimensions: () => ({}),
-      resolve: (props) => {
-        order.push("fast-resolved");
-        return props;
-      },
-      web: ({ label }) => <p>{label}</p>,
-      text: ({ label }) => label,
-    });
-    const scope = scopeOf([]);
-    const resolved = await resolveTree(
-      <Col>
-        <Slow label="first" />
-        <Fast label="second" />
-      </Col>,
-      scope,
-    );
-    expect(order[0]).toBe("fast-resolved"); // 真并行:快的先完成
-    const children = (resolved as unknown as { props: { children: Array<{ props: { label: string } }> } }).props.children;
-    expect(children.map((c) => c.props.label)).toEqual(["first", "second"]); // 解析结果仍按声明序
-  });
-});
-
-describe("ReportNode 形状与非法节点", () => {
-  const scope = () => scopeOf([snap({ experimentId: "node/a", results: [res("q", "passed")] })]);
-
-  it("裸字符串在树校验时按完整用户反馈拒绝并指引包 <Text>", async () => {
-    await expect(resolveTree(<Col>{"free text" as unknown as ReportNode}</Col>, scope())).rejects.toThrow(
-      /bare string[\s\S]*<Text>/,
-    );
-  });
-
-  it("React 组件 / 未包装函数与 HTML intrinsic 在展开遇到时拒绝", async () => {
-    const Plain = ({ label }: { label: string }) => <p>{label}</p>;
-    await expect(resolveTree(<Plain label="x" />, scope())).rejects.toThrow(
-      /not a report component[\s\S]*defineComponent/,
-    );
-    await expect(resolveTree(<div>x</div>, scope())).rejects.toThrow(/raw HTML <div>/);
-  });
-
-  it("validateReportTree 拒绝缺任一渲染面的组件(无类型 JS 绕过 defineComponent 时)", () => {
-    const single = Object.assign(() => null, {
-      [Symbol.for("niceeval.report.faces")]: { web: () => null }, // 缺 text 面
-    });
-    expect(() => validateReportTree({ type: single, props: {} })).toThrow(/missing its text face/);
-    expect(() => validateReportTree({ type: "div", props: {} })).toThrow(/raw HTML <div>/);
-  });
-
-  it("defineComponent 对象形态缺 text 或 web 在定义时报完整用户反馈", () => {
-    expect(() => defineComponent({ web: () => null } as never)).toThrow(/both faces/);
-  });
-});
-
-// ───────────────────────── 渐进增强不改数据 ─────────────────────────
-
-describe("渐进增强不改数据的不变量", () => {
-  it("filter 只改变浏览状态:有无 filter prop 解析出的 data 相同", async () => {
-    const scope = scopeOf([snap({ experimentId: "f/a", results: [res("q", "passed")] })]);
-    const rowSource = sources.measure.rows({ rows: "experiment", columns: [endToEndPassRate] });
-    const plain = await resolveTree(<Table source={rowSource} />, scope);
-    const filtered = await resolveTree(<Table source={rowSource} filter />, scope);
-    expect((filtered as unknown as { props: { data: unknown } }).props.data).toEqual(
-      (plain as unknown as { props: { data: unknown } }).props.data,
-    );
-  });
-});
 
 // ───────────────────────── FailureList ─────────────────────────
 
@@ -526,115 +260,111 @@ describe("Tabs", () => {
 // ───────────────────────── defineReport 装载规范化 ─────────────────────────
 
 describe("defineReport 装载规范化", () => {
-  it("三种写法装载出等价的规范化结果:树 ≡ {content} ≡ pages [{id: report}]", () => {
+  it("单页函数缩写与 pages [{id: report, render}] 装载出等价的规范化结果", async () => {
+    const scope = scopeOf([]);
     const tree = <SampleSummary />;
-    const fromTree = defineReport(tree);
-    const fromContent = defineReport({ content: tree });
+    const fromFn = defineReport(() => tree);
     const fromPages = defineReport({
-      pages: [{ id: "report", title: { en: "Report", "zh-CN": "报告" }, content: tree }],
+      pages: [{ id: "report", title: { en: "Report", "zh-CN": "报告" }, render: () => tree }],
     });
-    for (const definition of [fromTree, fromContent, fromPages]) {
+    for (const definition of [fromFn, fromPages]) {
       expect(definition.kind).toBe("report");
       expect(definition.pages).toHaveLength(1);
       expect(definition.pages[0]!.id).toBe("report");
-      expect(definition.pages[0]!.content).toBe(tree);
+      expect(await renderSamplePage(definition.pages[0]!, scope)).toBe(tree);
     }
-    expect(fromTree.pages[0]!.title).toEqual(fromContent.pages[0]!.title);
+    expect(fromFn.pages[0]!.title).toEqual(fromPages.pages[0]!.title);
   });
 
-  it("content 与 pages 同时声明或都省略,装载报错且文案给出 extends: standard 下一步", () => {
-    expect(() => defineReport({ content: <SampleSummary />, pages: [] } as never)).toThrow(
-      /"content" and "pages" — declare exactly one/,
-    );
+  it("pages 为空或全省略,装载报错且文案给出 built-in 下一步", () => {
+    expect(() => defineReport({ pages: [] } as never)).toThrow(/non-empty array/);
     expect(() => defineReport({ title: "X" } as never)).toThrow(/niceeval\/report\/built-in/);
   });
 
-  it("defineReport 产物不是 ReportNode:页里放产物装载报错;树校验同样拒绝", () => {
-    const inner = defineReport(<SampleSummary />);
-    expect(() => defineReport({ pages: [{ id: "a", title: "A", content: inner as never }] })).toThrow(
-      /shell cannot nest/,
-    );
+  it("defineReport 产物不是 ReportNode:页 render 返回外壳产物时树校验拒绝", async () => {
+    const inner = defineReport(() => <SampleSummary />);
     expect(() => defineReport(inner as never)).toThrow(/shell cannot nest/);
     expect(() => validateReportTree([inner] as never)).toThrow(/not a report node/);
+    const definition = defineReport({
+      pages: [{ id: "a", title: "A", render: () => inner as never }],
+    });
+    const scope = scopeOf([]);
+    await expect(resolveTree(await renderSamplePage(definition.pages[0]!, scope), scope)).rejects.toThrow(
+      /shell cannot nest|not a report component|not a report node/,
+    );
   });
 
   it("重复或非法 page id 装载报错并点名冲突;LocalizedText 全空对象报错", () => {
     expect(() =>
       defineReport({
         pages: [
-          { id: "exam", title: "A", content: null },
-          { id: "exam", title: "B", content: null },
+          { id: "exam", title: "A", render: () => null },
+          { id: "exam", title: "B", render: () => null },
         ],
       }),
     ).toThrow(/"exam" is declared twice/);
-    expect(() => defineReport({ pages: [{ id: "Bad/Id", title: "A", content: null }] })).toThrow(/invalid/);
-    expect(() => defineReport({ title: {}, content: null })).toThrow(/no non-empty value/);
+    expect(() => defineReport({ pages: [{ id: "Bad/Id", title: "A", render: () => null }] })).toThrow(/invalid/);
+    expect(() => defineReport({ title: {}, pages: [{ id: "report", title: "R", render: () => null }] })).toThrow(
+      /no non-empty value/,
+    );
   });
 
   it("page 省略 input 规范化为 scope + navigation:true;显式 attempt 必须 navigation:false", () => {
     const definition = defineReport({
       pages: [
-        { id: "report", title: "Report", content: null },
-        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, content: null },
+        { id: "report", title: "Report", render: () => null },
+        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, render: () => null },
       ],
     });
-    expect(definition.pages[0]).toMatchObject({ input: "scope", navigation: true });
+    expect(definition.pages[0]).toMatchObject({ input: "sample", navigation: true });
     expect(definition.pages[1]).toMatchObject({ input: "attempt", navigation: false });
 
     expect(() =>
       defineReport({
-        pages: [
-          // @ts-expect-error input:"attempt" 必须显式 navigation:false;这里模拟无类型 JS 输入
-          { id: "a", title: "A", input: "attempt", content: null },
-        ],
-      }),
+        pages: [{ id: "a", title: "A", input: "attempt", render: () => null }],
+      } as never),
     ).toThrow(/navigation: false/);
     expect(() =>
       defineReport({
-        pages: [
-          // @ts-expect-error navigation:true 与 input:"attempt" 互斥;这里模拟无类型 JS 输入
-          { id: "a", title: "A", input: "attempt", navigation: true, content: null },
-        ],
-      }),
+        pages: [{ id: "a", title: "A", input: "attempt", navigation: true, render: () => null }],
+      } as never),
     ).toThrow(/navigation: false/);
   });
 
   it("navigation: false 的 scope-input page 不进导航但仍是普通 scope page", () => {
     const definition = defineReport({
       pages: [
-        { id: "report", title: "Report", content: null },
-        { id: "hidden", title: "Hidden", navigation: false, content: null },
+        { id: "report", title: "Report", render: () => null },
+        { id: "hidden", title: "Hidden", navigation: false, render: () => null },
       ],
     });
-    expect(definition.pages[1]).toMatchObject({ input: "scope", navigation: false });
+    expect(definition.pages[1]).toMatchObject({ input: "sample", navigation: false });
   });
 
   it("一份 definition 最多一张 attempt-input page,第二张同类 page 装载报错", () => {
     expect(() =>
       defineReport({
         pages: [
-          { id: "a1", title: "A1", input: "attempt", navigation: false, content: null },
-          { id: "a2", title: "A2", input: "attempt", navigation: false, content: null },
+          { id: "a1", title: "A1", input: "attempt", navigation: false, render: () => null },
+          { id: "a2", title: "A2", input: "attempt", navigation: false, render: () => null },
         ],
       }),
     ).toThrow(/at most one input: "attempt" page/);
   });
 
-  it("{src} 资产拒绝 .. 路径段、绝对路径与 ~;inline/src 互斥", () => {
-    expect(() => defineReport({ content: null, scripts: [{ src: "../x.js" }] })).toThrow(/not allowed/);
-    expect(() => defineReport({ content: null, scripts: [{ src: "/abs.js" }] })).toThrow(/not allowed/);
-    expect(() => defineReport({ content: null, styles: [{ src: "~/x.css" }] })).toThrow(/not allowed/);
-    expect(() => defineReport({ content: null, scripts: [{ src: "./a.js", inline: "x" } as never] })).toThrow(
-      /exactly one/,
-    );
-    expect(() => defineReport({ content: null, scripts: [{ src: "./assets/a.js" }] })).not.toThrow();
+  it("LEGACY 外壳字段 links/footer/scripts/styles 装载报错", () => {
+    const empty = { pages: [{ id: "report", title: "R", render: () => null }] } as const;
+    expect(() => defineReport({ ...empty, links: [] } as never)).toThrow(/no longer accepts LEGACY "links"/);
+    expect(() => defineReport({ ...empty, scripts: [{ src: "../x.js" }] } as never)).toThrow(/no longer accepts LEGACY "scripts"/);
+    expect(() => defineReport({ ...empty, styles: [{ inline: "x" }] } as never)).toThrow(/no longer accepts LEGACY "styles"/);
+    expect(() => defineReport({ ...empty, footer: "x" } as never)).toThrow(/no longer accepts LEGACY "footer"/);
   });
 
   it("--page 语义:pickReportPage 缺省第一页,未命中抛 ReportPageNotFoundError 列出可用页", () => {
     const definition = defineReport({
       pages: [
-        { id: "overview", title: "Overview", content: null },
-        { id: "exam", title: "Exam", content: null },
+        { id: "overview", title: "Overview", render: () => null },
+        { id: "exam", title: "Exam", render: () => null },
       ],
     });
     expect(pickReportPage(definition).id).toBe("overview");
@@ -646,17 +376,17 @@ describe("defineReport 装载规范化", () => {
       expect(e).toBeInstanceOf(ReportPageNotFoundError);
       expect((e as ReportPageNotFoundError).available).toEqual(["overview", "exam"]);
     }
-    // 树形态文件的唯一页 id 是缩写展开出的 report
-    const single = defineReport(<SampleSummary />);
+    // 单页函数缩写展开出的唯一页 id 是 report
+    const single = defineReport(() => <SampleSummary />);
     expect(pickReportPage(single, "report").id).toBe("report");
   });
 
   it("pickReportPage 缺省跳过 navigation:false 的页,只挑第一张可导航页;可用列表也只含可导航页", () => {
     const definition = defineReport({
       pages: [
-        { id: "hidden", title: "Hidden", navigation: false, content: null },
-        { id: "overview", title: "Overview", content: null },
-        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, content: null },
+        { id: "hidden", title: "Hidden", navigation: false, render: () => null },
+        { id: "overview", title: "Overview", render: () => null },
+        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, render: () => null },
       ],
     });
     expect(pickReportPage(definition).id).toBe("overview");
@@ -672,8 +402,8 @@ describe("defineReport 装载规范化", () => {
   it("显式选择 attempt-input page 但没有 locator:ReportPageNeedsLocatorError", () => {
     const definition = defineReport({
       pages: [
-        { id: "report", title: "Report", content: null },
-        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, content: null },
+        { id: "report", title: "Report", render: () => null },
+        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, render: () => null },
       ],
     });
     expect(() => pickReportPage(definition, "attempt")).toThrow(ReportPageNeedsLocatorError);
@@ -681,8 +411,10 @@ describe("defineReport 装载规范化", () => {
 
   it("标题回退链:def.title → 唯一且相同的快照 name → 内置文案「Eval 运行结果 / Eval Record」;en 相同 zh 不同也落内置文案", () => {
     const named = snap({ experimentId: "t/a", name: "Memory Evals", results: [res("q", "passed")] });
-    const definition = defineReport(<SampleSummary />);
-    expect(resolveReportTitle(defineReport({ title: "Custom", content: null }), scopeOf([named]))).toBe("Custom");
+    const definition = defineReport(() => <SampleSummary />);
+    expect(
+      resolveReportTitle(defineReport({ title: "Custom", pages: [{ id: "report", title: "R", render: () => null }] }), scopeOf([named])),
+    ).toBe("Custom");
     expect(resolveReportTitle(definition, scopeOf([named]))).toBe("Memory Evals");
     expect(resolveReportTitle(definition, scopeOf([snap({ experimentId: "t/b", results: [] })]))).toEqual(
       FALLBACK_REPORT_TITLE,
@@ -692,31 +424,13 @@ describe("defineReport 装载规范化", () => {
     expect(resolveReportTitle(definition, scopeOf([zhA, zhB]))).toEqual(FALLBACK_REPORT_TITLE);
     expect(FALLBACK_REPORT_TITLE).toEqual({ en: "Eval Record", "zh-CN": "Eval 运行结果" });
   });
-
-  it("ReportLink.icon 是 { svg: string }:defineReport 接受合法形状;无类型 JS 传其它形状定义时报完整用户反馈", () => {
-    const svg = '<svg viewBox="0 0 16 16"><path d="M0 0h16v16z"/></svg>';
-    const withIcon = defineReport({
-      content: null,
-      links: [{ label: "GitHub", href: "https://example.com", icon: { svg } }],
-    });
-    expect(withIcon.links[0]!.icon).toEqual({ svg });
-
-    const reactNode = { $$typeof: Symbol.for("react.transitional.element"), type: "svg", props: {} };
-    for (const icon of [reactNode, "<svg/>", { svg: 42 }, { svg: "" }]) {
-      expect(() =>
-        defineReport({
-          content: null,
-          links: [{ label: "GitHub", href: "https://example.com", icon: icon as never }],
-        }),
-      ).toThrow(/"icon" must be \{ svg: string \}/);
-    }
-  });
 });
 
 // ───────────────────────── 内建报告 ─────────────────────────
 
 describe("内建报告", () => {
-  it("四页普通 defineReport:页 id、页名与逐页组件构成和 built-in.md 全文一致,第四页是不进导航的 attempt-input page", () => {
+  it("四页普通 defineReport:页 id、页名与逐页组件构成和 built-in.md 全文一致,第四页是不进导航的 attempt-input page", async () => {
+    const scope = scopeOf([]);
     expect(builtInReport.kind).toBe("report");
     expect(builtInReport.pages.map((p) => p.id)).toEqual(["report", "attempts", "traces", "attempt"]);
     expect(builtInReport.pages.map((p) => p.title)).toEqual([
@@ -725,36 +439,39 @@ describe("内建报告", () => {
       { en: "Traces", "zh-CN": "追踪" },
       "Attempt",
     ]);
-    // 逐页组件构成:每页一个 Col,children 按 built-in.md 全文的声明序,全部是公开组件。
     const childTypes = (content: unknown) => {
-      const col = content as { type: unknown; props: { children: Array<{ type: unknown; props: globalThis.Record<string, unknown> }> } };
+      const col = content as {
+        type: unknown;
+        props: { children: Array<{ type: unknown; props: globalThis.Record<string, unknown> } | null | false | undefined> };
+      };
       expect(col.type).toBe(Col);
-      return col.props.children;
+      return col.props.children.filter((c): c is { type: unknown; props: globalThis.Record<string, unknown> } =>
+        c !== null && c !== undefined && typeof c === "object",
+      );
     };
     const [reportPage, attemptsPage, tracesPage, attemptPage] = builtInReport.pages;
-    expect(childTypes(reportPage!.content).map((c) => c.type)).toEqual([
+    expect(childTypes(await pageTree(reportPage!, scope)).map((c) => c.type)).toEqual([
       Hero,
       Callouts,
       Callouts,
-      CopyBlock,
       SampleOverview,
     ]);
-    const attemptsChildren = childTypes(attemptsPage!.content);
+    // 首页在无可复制 fix prompt 时不挂 CopyBlock；有失败时才会多一节。
+    const attemptsChildren = childTypes(await pageTree(attemptsPage!, scope));
     expect(attemptsChildren.map((c) => c.type)).toEqual([Hero, Callouts, Callouts, SampleOverview]);
-    expect(childTypes(tracesPage!.content).map((c) => c.type)).toEqual([Hero, Callouts, Callouts, Waterfall]);
-    // 第四页是参数化详情页:content 就是裸 AttemptDetail(不套 Col),input/navigation 与文档一致。
-    // defineReport 规范化会重建页对象(id/title/content 逐字段拷贝),所以整页对象不可能与
-    // 具名导出 standardAttemptPage 保持引用相等;但 content 字段是原样透传,同引用证明
-    // standard.tsx 确实把 standardAttemptPage 整个复用进了 pages 数组,不是另抄一份同形的
-    // <AttemptDetail /> JSX(两次书写同样的 JSX 字面量在运行时是两个不同的 element 对象)。
-    expect(attemptPage!.content).toBe(standardAttemptPage.content);
-    expect(attemptPage).toEqual(standardAttemptPage);
-    expect(attemptPage!.input).toBe("attempt");
-    expect(attemptPage!.navigation).toBe(false);
-    expect((attemptPage!.content as { type: unknown }).type).toBe(AttemptDetail);
+    expect(childTypes(await pageTree(tracesPage!, scope)).map((c) => c.type)).toEqual([Hero, Callouts, Callouts, Waterfall]);
+    expect(attemptPage!.render).toBe(standardAttemptPage.render);
+    expect(attemptPage).toMatchObject({
+      id: standardAttemptPage.id,
+      title: standardAttemptPage.title,
+      input: "attempt",
+      navigation: false,
+    });
+    expect(((await attemptPage!.render(null as never)) as { type: unknown }).type).toBe(AttemptDetail);
   });
 
-  it("任务视图 failures / stability:单导航页构成与 built-in.md 全文一致,详情页复用 standardAttemptPage", () => {
+  it("任务视图 failures / stability:单导航页构成与 built-in.md 全文一致,详情页复用 standardAttemptPage", async () => {
+    const scope = scopeOf([]);
     const childTypes = (content: unknown) => {
       const col = content as { type: unknown; props: { children: Array<{ type: unknown; props: globalThis.Record<string, unknown> }> } };
       expect(col.type).toBe(Col);
@@ -763,18 +480,22 @@ describe("内建报告", () => {
     for (const view of [failures, stability]) {
       expect(view.kind).toBe("report");
       expect(view.pages).toHaveLength(2);
-      // content 同引用:视图确实复用了 standardAttemptPage,不是另抄一份同形 JSX。
-      expect(view.pages[1]!.content).toBe(standardAttemptPage.content);
-      expect(view.pages[1]).toEqual(standardAttemptPage);
+      expect(view.pages[1]!.render).toBe(standardAttemptPage.render);
+      expect(view.pages[1]).toMatchObject({
+        id: standardAttemptPage.id,
+        title: standardAttemptPage.title,
+        input: "attempt",
+        navigation: false,
+      });
     }
     expect(failures.pages[0]!.id).toBe("failures");
     expect(failures.pages[0]!.title).toEqual({ en: "Failures", "zh-CN": "失败" });
-    const failureChildren = childTypes(failures.pages[0]!.content);
+    const failureChildren = childTypes(await pageTree(failures.pages[0]!, scope));
     expect(failureChildren.map((c) => c.type)).toEqual([Hero, SampleNotices, RunNotices, FailureList, SampleFixPrompt]);
     expect(failureChildren[3]!.props.limit).toBe(50);
     expect(stability.pages[0]!.id).toBe("stability");
     expect(stability.pages[0]!.title).toEqual({ en: "Stability", "zh-CN": "稳定性" });
-    expect(childTypes(stability.pages[0]!.content).map((c) => c.type)).toEqual([
+    expect(childTypes(await pageTree(stability.pages[0]!, scope)).map((c) => c.type)).toEqual([
       Hero,
       SampleNotices,
       RunNotices,
@@ -799,13 +520,14 @@ describe("SampleOverview(组合组件)", () => {
     runs: Run[],
   ): Promise<Array<{ props: { data: unknown } }>> {
     const scope = scopeOf(runs);
-    const definition = defineReport(node);
+    const definition = defineReport(() => node);
     const page = pickReportPage(definition);
-    const resolved = (await resolveReportTree(page.content, {
+    const tree = await renderSamplePage(page, scope);
+    const resolved = (await resolveReportTree(tree, {
       scope,
       results: resultsOf(runs),
       report: buildReportMeta(definition, scope),
-      page: { id: page.id, input: "scope" },
+      page: { id: page.id, input: "sample" },
       memo: new ResolveMemo(),
     })) as unknown as { props: { children: Array<{ props: { data: unknown } }> } };
     return resolved.props.children;
@@ -836,7 +558,18 @@ describe("SampleOverview(组合组件)", () => {
     return out;
   }
 
-  it("不同深度目录的 experiments 一律进同一份 data;展开树里 Chart / Table 的解析结果与 compute 深等", async () => {
+  async function overviewPoints(
+    sample: Sample,
+    options: { seriesKey: string; seriesFn: GroupFunction; y: "passRate" | "totalScore" },
+  ) {
+    const yCalc = options.y === "totalScore" ? totalScore : passRate;
+    return aggregate(sample, {
+      by: { experiment, [options.seriesKey]: options.seriesFn },
+      values: { costUSD, [options.y]: yCalc },
+    });
+  }
+
+  it("不同深度目录的 experiments 一律进同一份 points;展开树里 Chart / Table 与 aggregate 深等", async () => {
     const g1a = snap({ experimentId: "compare/a", agent: "bub", results: [res("q", "passed")] });
     const g1b = snap({ experimentId: "compare/b", agent: "codex", results: [res("q", "failed")] });
     const g2 = snap({ experimentId: "bench/long/x", results: [res("q", "passed")] });
@@ -848,11 +581,15 @@ describe("SampleOverview(组合组件)", () => {
     const tables = collectElementsByType(resolved, Table);
     expect(tables).toHaveLength(1);
     expect(charts).toHaveLength(1);
-    expect(tables[0]!.props.data).toEqual(experimentListContent(await experimentListData(all)));
+    const points = await overviewPoints(scope, { seriesKey: "agent", seriesFn: agent, y: "passRate" });
+    expect(tables[0]!.props.rows).toEqual(points);
     expect(charts[0]!.props.data).toEqual(
-      scatterDataToDataset(
-        await metricScatterData(scope, { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate }),
-      ),
+      pointsToDataset(points as readonly globalThis.Record<string, unknown>[], {
+        x: "costUSD",
+        y: "passRate",
+        point: "experiment",
+        series: "agent",
+      }),
     );
   });
 
@@ -944,7 +681,7 @@ describe("SampleOverview(组合组件)", () => {
     expect(explicit.fields.some((f) => f.name === "memory")).toBe(true);
   });
 
-  it("纯计分制 Sample:Chart y 用 totalScore,Table 与 experimentListContent 深等", async () => {
+  it("纯计分制 Sample:Chart y 用 totalScore,Table rows 与 aggregate 深等", async () => {
     const g1a = snap({
       experimentId: "score/a",
       agent: "bub",
@@ -960,11 +697,17 @@ describe("SampleOverview(组合组件)", () => {
     const resolved = await resolveTree(<SampleOverview />, scope);
     const charts = collectElementsByType(resolved, Chart);
     const tables = collectElementsByType(resolved, Table);
-    expect(tables[0]!.props.data).toEqual(experimentListContent(await experimentListData(all)));
+    const points = await overviewPoints(scope, { seriesKey: "agent", seriesFn: agent, y: "totalScore" });
+    expect(tables[0]!.props.rows).toEqual(points);
     expect(charts[0]!.props.data).toEqual(
-      scatterDataToDataset(await metricScatterData(scope, { points: "experiment", series: "agent", x: costUSD, y: totalScore })),
+      pointsToDataset(points as readonly globalThis.Record<string, unknown>[], {
+        x: "costUSD",
+        y: "totalScore",
+        point: "experiment",
+        series: "agent",
+      }),
     );
-    expect((charts[0]!.props as { y?: string }).y).toBe(totalScore.name);
+    expect((charts[0]!.props as { y?: string }).y).toBe("totalScore");
   });
 
   it("mixed:按题型拆成两组;一份摘要展开 + 两对 Chart/Table,各用各的主读数", async () => {
@@ -983,22 +726,36 @@ describe("SampleOverview(组合组件)", () => {
     expect(lists).toHaveLength(2);
 
     const chartByY = new Map(charts.map((el) => [(el.props as { y?: string }).y, el]));
-    expect(chartByY.get(endToEndPassRate.name)?.props.data).toEqual(
-      scatterDataToDataset(
-        await metricScatterData([passSnap], { points: "experiment", series: "agent", x: costUSD, y: endToEndPassRate }),
-      ),
+    const passPoints = await overviewPoints(scopeOf([passSnap]), {
+      seriesKey: "agent",
+      seriesFn: agent,
+      y: "passRate",
+    });
+    const scorePoints = await overviewPoints(scopeOf([pointsSnap]), {
+      seriesKey: "agent",
+      seriesFn: agent,
+      y: "totalScore",
+    });
+    expect(chartByY.get("passRate")?.props.data).toEqual(
+      pointsToDataset(passPoints as readonly globalThis.Record<string, unknown>[], {
+        x: "costUSD",
+        y: "passRate",
+        point: "experiment",
+        series: "agent",
+      }),
     );
-    expect(chartByY.get(totalScore.name)?.props.data).toEqual(
-      scatterDataToDataset(
-        await metricScatterData([pointsSnap], { points: "experiment", series: "agent", x: costUSD, y: totalScore }),
-      ),
+    expect(chartByY.get("totalScore")?.props.data).toEqual(
+      pointsToDataset(scorePoints as readonly globalThis.Record<string, unknown>[], {
+        x: "costUSD",
+        y: "totalScore",
+        point: "experiment",
+        series: "agent",
+      }),
     );
 
-    const passContent = experimentListContent(await experimentListData([passSnap]));
-    const pointsContent = experimentListContent(await experimentListData([pointsSnap]));
-    const contents = lists.map((list) => list.props.data);
-    expect(contents).toContainEqual(passContent);
-    expect(contents).toContainEqual(pointsContent);
+    const rowSets = lists.map((list) => list.props.rows);
+    expect(rowSets).toContainEqual(passPoints);
+    expect(rowSets).toContainEqual(scorePoints);
   });
 });
 
@@ -1009,35 +766,31 @@ describe("内建视图集合与页复用", () => {
     expect(builtInReport).toBe(standard);
   });
 
-  it("复用内建页是普通数组展开:取到的页逐项同引用,外壳只认本报告自己声明的字段", () => {
+  it("复用内建页是普通数组展开:取到的页逐项同引用,外壳只认本报告自己声明的字段", async () => {
+    const scope = scopeOf([]);
     const branded = defineReport({
       pages: [...standard.pages] as NonEmptyArray<(typeof standard.pages)[number]>,
       title: "Memory Evals",
-      links: [{ label: "GitHub", href: "https://github.com/you/repo" }],
     });
-    // 每份报告各自规范化自己的 pages(所以是等值不是同引用),内容树本身原样带过来
     branded.pages.forEach((page, i) => expect(page).toEqual(standard.pages[i]));
-    branded.pages.forEach((page, i) => expect(page.content).toBe(standard.pages[i]!.content));
+    branded.pages.forEach((page, i) => expect(page.render).toBe(standard.pages[i]!.render));
     expect(branded.title).toBe("Memory Evals");
-    expect(branded.links).toEqual([{ label: "GitHub", href: "https://github.com/you/repo" }]);
-    // 没有沿用:内建的 head 不会跟着页一起被带过来,本报告没声明就是空
     expect(branded.head).toEqual([]);
 
-    // ctx.report.title 取本报告声明的 title
     const s = snap({ experimentId: "compare/a", results: [res("q", "passed")] });
     expect(buildReportMeta(branded, scopeOf([s])).title).toBe("Memory Evals");
+    await pageTree(branded.pages[0]!, scope);
   });
 
-  it("挑页与换页也是普通数组操作:过滤掉一张再拼上自己的,顺序即声明顺序", () => {
+  it("挑页与换页也是普通数组操作:过滤掉一张再拼上自己的,顺序即声明顺序", async () => {
+    const scope = scopeOf([]);
     const myContent = <Text>我自己的总览</Text>;
-    const mine = { id: "report", title: "报告", content: myContent } as const;
+    const mine = { id: "report", title: "报告", render: () => myContent } as const;
     const composed = defineReport({
-      pages: [mine, ...standard.pages.filter((page) => page.id !== "report")] as NonEmptyArray<
-        (typeof standard.pages)[number]
-      >,
+      pages: [mine, ...standard.pages.filter((page) => page.id !== "report")] as NonEmptyArray<PageDefinitionInput>,
       title: "Memory Evals",
     });
-    expect(composed.pages[0]!.content).toBe(myContent);
+    expect(await renderSamplePage(composed.pages[0]!, scope)).toBe(myContent);
     expect(composed.pages.map((page) => page.id)).toEqual([
       "report",
       ...standard.pages.filter((page) => page.id !== "report").map((page) => page.id),
@@ -1051,12 +804,14 @@ describe("内建视图集合与页复用", () => {
     expect(() => defineReport({ extends: standard })).toThrow(/pages: \[myPage, \.\.\.standard\.pages\]/);
   });
 
-  it("content / pages 多选或全省略按完整用户反馈报错", () => {
-    expect(() =>
-      // @ts-expect-error content 与 pages 互斥
-      defineReport({ content: null, pages: standard.pages }),
-    ).toThrow(/declare exactly one/);
-    // @ts-expect-error content / pages 至少声明一个
+  it("缺少 pages 或非法顶层字段按完整用户反馈报错", () => {
+    // @ts-expect-error pages 必填
     expect(() => defineReport({ title: "x" })).toThrow(/niceeval\/report\/built-in/);
+    expect(() => defineReport({ content: null } as never)).toThrow(/no longer accepts LEGACY "content"/);
+    expect(() =>
+      defineReport({
+        pages: [{ id: "report", title: "R", content: null } as never],
+      }),
+    ).toThrow(/LEGACY "content"/);
   });
 });

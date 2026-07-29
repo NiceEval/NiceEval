@@ -9,21 +9,21 @@
 
 import type { ReportInput, SampleSummaryContent } from "../../model/types.ts";
 import { collectItems, computeCell, resolveInput } from "../../model/aggregate.ts";
-import { costUSD, defineMeasure, passRate, totalScore } from "../../model/metrics.ts";
+import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
 import { scoringComposition } from "../../model/scoring.ts";
 import { selectedAttemptsOnly, summarizeItems, tallyOf } from "../shared-compute.ts";
 
 // ───────────────────────── scopeSummaryData ─────────────────────────
 
-/** costUSD 的求和投影:两级都 sum(题内多轮求和 + 跨题求和 = 全量求和),display 走 $。 */
-const totalCostMeasure = defineMeasure({
+/** costUSD 的求和投影:两级都 sum(题内多轮求和 + 跨题求和 = 全量求和)。 */
+const totalCostMetric = {
   name: "total-cost",
   label: costUSD.label,
   unit: "$",
   value: costUSD.value,
-  perEval: "sum",
-  acrossEvals: "sum",
-});
+  perEval: "sum" as const,
+  acrossEvals: "sum" as const,
+};
 
 /**
  * `scopeSummaryData(input)`:范围摘要——快照时间窗、experiment / eval / attempt 数、
@@ -60,7 +60,7 @@ export async function sampleSummary(input: ReportInput): Promise<SampleSummaryCo
     endToEndPassRate: await computeCell(passRate, items),
     scoringComposition: composition,
     ...(composition !== "pass" ? { totalScore: await computeCell(totalScore, items) } : {}),
-    totalCostUSD: await computeCell(totalCostMeasure, items),
+    totalCostUSD: await computeCell(totalCostMetric, items),
   };
 }
 

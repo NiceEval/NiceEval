@@ -384,7 +384,7 @@ diff / 事件视图同源，view 里可点进对应文件 diff：
 的挣分标注进源码行右缘的分数 pill，`t.score(...)` 调用行原位标注给分，前置中止行带 `⤓` 且其后
 源码行整体降灰。共享 helper 中的给分证据进入源码调用片段；有位置但缺正文时显示 unavailable 缺口。
 只有没有 `loc` 的得分点与给分记录进入 unmapped，给分记录仍按 `groupPath` 分组。视觉细则单点在
-[Attempt 详情组件](../../reports/components/sources/attempt-source.md#web-面视觉规范)
+[Attempt 详情组件](../../reports/components/primitives/source-view.md#web-面视觉规范)
 定义 `AttemptSource` 的视觉规范。
 
 通过制（`scoring` 省略或 `"pass"`）eval 的 attempt 恒没有 `.points` 挣分与给分记录——两者在通过制 attempt

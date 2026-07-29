@@ -312,7 +312,7 @@ Runner 的 turn 包络与 OTel 子树不是两份互斥的计时:前者含 adapt
 
 ## 结果可视化:`niceeval view`
 
-控制台是「当下」的;但你常常想**事后看图**:这次比上次贵了多少?哪个 agent 性价比高?所以 niceeval 提供一个本地查看器(对标 agent-eval 的 playground:一个读结果目录的 web UI),只读 `.niceeval/<experiment>/<run>/` 下的 `run.json` 与逐 attempt `result.json` 这些**结构化 artifact**,不连任何外部服务。结果落盘格式见 [Record Format](feature/record/architecture.md);查看器见 [View](feature/reports/view.md);对比两次运行用报告里的成对差异表([`sources.measure.delta`](feature/reports/components/sources/measure-delta.md))按 run 维度表达。
+控制台是「当下」的;但你常常想**事后看图**:这次比上次贵了多少?哪个 agent 性价比高?所以 niceeval 提供一个本地查看器(对标 agent-eval 的 playground:一个读结果目录的 web UI),只读 `.niceeval/<experiment>/<run>/` 下的 `run.json` 与逐 attempt `result.json` 这些**结构化 artifact**,不连任何外部服务。结果落盘格式见 [Record Format](feature/record/architecture.md);查看器见 [View](feature/reports/view.md);对比两次运行用报告里的成对差异表([`sources.measure.delta`](feature/reports/calculations.md))按 run 维度表达。
 
 可视化能力完全建立在「 artifact 结构化 + 带 usage/cost」之上 —— 换句话说,**只要数据采全了,图是免费的**;不想用内置查看器,同一份 artifact 也能喂给下游 dashboard。
 

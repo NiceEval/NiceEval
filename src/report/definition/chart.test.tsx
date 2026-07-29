@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { Dataset, MeasureCell } from "../model/types.ts";
+import type { Dataset, MetricValue } from "../model/types.ts";
 import {
   collectPageDimensions,
   createTextContext,
@@ -19,20 +19,25 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { Chart, Series } from "./primitives/chart.tsx";
-import { defineSource } from "../source.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
-function cell(value: number | null, display: string): MeasureCell {
-  return { value, display, samples: value === null ? 0 : 2, total: 2, refs: [] };
+function cell(value: number | null): MetricValue {
+  return {
+    value,
+    samples: value === null ? 0 : 1,
+    total: 1,
+    basis: "eval",
+    refs: [],
+  };
 }
 
 const dataset: Dataset = {
   fields: [
     { name: "experiment", kind: "dimension", valueType: "string" },
     { name: "agent", kind: "dimension", valueType: "string" },
-    { name: "costUSD", kind: "measure", valueType: "number", unit: "$", better: "lower" },
-    { name: "passRate", kind: "measure", valueType: "number", unit: "%", better: "higher", bounds: { min: 0, max: 1 } },
+    { name: "costUSD", kind: "metric", valueType: "number", unit: "$", better: "lower" },
+    { name: "passRate", kind: "metric", valueType: "number", unit: "%", better: "higher", bounds: { min: 0, max: 1 } },
   ],
   rows: [
     {
@@ -40,8 +45,8 @@ const dataset: Dataset = {
       values: {
         experiment: "proj/a",
         agent: "codex",
-        costUSD: cell(0.4, "$0.40"),
-        passRate: cell(0.9, "90%"),
+        costUSD: cell(0.4),
+        passRate: cell(0.9),
       },
     },
     {
@@ -49,8 +54,8 @@ const dataset: Dataset = {
       values: {
         experiment: "proj/b",
         agent: "claude",
-        costUSD: cell(null, "—"),
-        passRate: cell(0.5, "50%"),
+        costUSD: cell(null),
+        passRate: cell(0.5),
       },
     },
   ],
@@ -59,12 +64,12 @@ const dataset: Dataset = {
 async function resolve(node: React.ReactNode) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
     report: buildReportMeta(definition, scope),
-    page: { id: "main", input: "scope" },
+    page: { id: "main", input: "sample" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -122,23 +127,9 @@ describe("Chart", () => {
     const tree = await resolve(chartTree());
     const text = renderNodeToText(tree, createTextContext({ width: 80 }));
     expect(text).not.toContain("proj/b");
-    const onlyA = dataset.rows.filter((r) => r.values.costUSD && (r.values.costUSD as MeasureCell).value !== null);
+    const onlyA = dataset.rows.filter((r) => r.values.costUSD && (r.values.costUSD as MetricValue).value !== null);
     expect(onlyA).toHaveLength(1);
   });
 
-  it("source 与 data 等价", async () => {
-    const source = defineSource({
-      name: "test.chart",
-      compute: async () => dataset,
-    });
-    const fromData = await resolve(chartTree());
-    const fromSource = await resolve(
-      <Chart source={source} x="costUSD" y="passRate">
-        <Series id="frontier" mark="scatter" points="experiment" by="agent" />
-      </Chart>,
-    );
-    const textData = renderNodeToText(fromData, createTextContext({ width: 80 }));
-    const textSource = renderNodeToText(fromSource, createTextContext({ width: 80 }));
-    expect(textSource).toBe(textData);
-  });
+
 });

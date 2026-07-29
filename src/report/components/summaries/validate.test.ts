@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { validateSampleSummaryContent } from "./validate.ts";
 
-const validCell = { value: 1, display: "1", samples: 1, total: 1, refs: [] };
+const validCell = { value: 1, basis: "eval", samples: 1, total: 1, refs: [] };
 const validTally = { passed: 1, failed: 0, errored: 0, unreadable: 0 };
 
 const valid = {
@@ -39,7 +39,7 @@ describe("validateSampleSummaryContent", () => {
   });
 
   it("endToEndPassRate 结构错误定位到嵌套 MetricCell", () => {
-    const bad = { ...valid, endToEndPassRate: { value: 1, display: "1", samples: 1, total: 1, refs: "x" } };
+    const bad = { ...valid, endToEndPassRate: { value: 1, basis: "eval", samples: 1, total: 1, refs: "x" } };
     expect(validateSampleSummaryContent(bad)).toMatch(/"endToEndPassRate\.refs"/);
   });
 

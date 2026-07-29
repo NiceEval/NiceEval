@@ -13,9 +13,9 @@ import type {
   Aggregator,
   DimensionInput,
   DimensionRef,
-  Measure,
-  MeasureCell,
-  MeasureColumn,
+  AttemptMetric,
+  MetricValue,
+  MetricColumn,
   NumericAxis,
   ReportInput,
   SeriesInput,
@@ -280,7 +280,7 @@ export function applyAggregator(aggregator: Aggregator, values: readonly number[
   }
 }
 
-function metricError(metric: Measure, step: string, cause: unknown, locator?: AttemptLocator): Error {
+function metricError(metric: AttemptMetric, step: string, cause: unknown, locator?: AttemptLocator): Error {
   const at = locator === undefined ? "" : ` at attempt ${locator}`;
   return new Error(
     `Metric "${metric.name}" ${step} failed${at}: ${cause instanceof Error ? cause.message : String(cause)}. ` +
@@ -290,7 +290,7 @@ function metricError(metric: Measure, step: string, cause: unknown, locator?: At
 }
 
 /** where 不满足 → null,语义等价于 value 开头 return null;抛错与非有限数按完整用户反馈失败。 */
-export async function evaluateMetric(metric: Measure, attempt: AttemptHandle): Promise<number | null> {
+export async function evaluateMetric(metric: AttemptMetric, attempt: AttemptHandle): Promise<number | null> {
   const locator = attempt.locator;
   if (metric.where) {
     let pass: boolean;
@@ -314,7 +314,7 @@ export async function evaluateMetric(metric: Measure, attempt: AttemptHandle): P
 }
 
 /** 单值 → LocalizedText display:走 measureDisplay 单点入口;null 的缺数据文案也在那里折。 */
-export function displayValue(metric: Measure, value: number | null): LocalizedText {
+export function displayValue(metric: AttemptMetric, value: number | null): LocalizedText {
   if (value === null) return measureDisplay(null);
   if (metric.display) {
     const display = metric.display;
@@ -329,7 +329,7 @@ export function displayValue(metric: Measure, value: number | null): LocalizedTe
   return measureDisplay(value, metric.unit);
 }
 
-function foldAggregator(metric: Measure, step: "perEval" | "acrossEvals", values: readonly number[]): number {
+function foldAggregator(metric: AttemptMetric, step: "perEval" | "acrossEvals", values: readonly number[]): number {
   const aggregator = metric[step] ?? "mean";
   let folded: number;
   try {
@@ -348,7 +348,7 @@ function foldAggregator(metric: Measure, step: "perEval" | "acrossEvals", values
  * null 值不进聚合但计入 total(覆盖率经 samples/total 如实暴露);全 null → value null。
  * refs 跟随覆盖范围(含值为 null 的 attempt),去重后按 locator 字典序。
  */
-export async function computeCell(metric: Measure, items: Item[]): Promise<MeasureCell> {
+export async function computeCell(metric: AttemptMetric, items: Item[]): Promise<MetricValue> {
   // 第一级桶:同一 (experiment × eval × 快照) 的 attempt 折成一个题级值
   const buckets = new Map<string, number[]>();
   const refs = new Set<AttemptLocator>();
@@ -367,14 +367,20 @@ export async function computeCell(metric: Measure, items: Item[]): Promise<Measu
   const value = evalValues.length === 0 ? null : foldAggregator(metric, "acrossEvals", evalValues);
   return {
     value,
-    display: displayValue(metric, value),
     samples,
     total: items.length,
+    basis: "eval",
     refs: [...refs].sort(),
+    ...(metric.unit !== undefined ? { unit: metric.unit } : {}),
+    ...(metric.better !== undefined ? { better: metric.better } : {}),
+    ...(metric.bounds !== undefined ? { bounds: metric.bounds } : {}),
+    ...(metric.display !== undefined
+      ? { format: { kind: "custom" as const, format: metric.display } }
+      : {}),
   };
 }
 
-export function toColumn(metric: Measure): MeasureColumn {
+export function toColumn(metric: AttemptMetric): MetricColumn {
   return {
     key: metric.name,
     label: metric.label ?? metric.name,
@@ -385,12 +391,12 @@ export function toColumn(metric: Measure): MeasureColumn {
   };
 }
 
-export function assertUniqueMetricNames(metrics: readonly Measure[], where: string): void {
+export function assertUniqueMetricNames(metrics: readonly AttemptMetric[], where: string): void {
   const seen = new Set<string>();
   for (const metric of metrics) {
     if (seen.has(metric.name)) {
       throw new Error(
-        `Duplicate measure name "${metric.name}" in ${where}. Measure names must be unique within one computation; rename one via defineMeasure.`,
+        `Duplicate measure name "${metric.name}" in ${where}. Metric names must be unique within one computation; rename one.`,
       );
     }
     seen.add(metric.name);

@@ -4,13 +4,12 @@ import type { ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { defineComponent, type ReportNode, type TextContext, type WebContext } from "../tree.ts";
 import type { DimensionDeclarations } from "../../presentation.ts";
-import type { SourceInput } from "../../source.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { countText, localeText, type ReportLocale as RL } from "../../model/locale.ts";
 import { formatAxisTick, shortestUniqueLabels } from "../../model/format.ts";
-import { axisScale, paddedAxisDomain, placePointLabels, tickStepOf } from "../../components/metric-views/chart-math.ts";
-import { renderCharPlot, renderCoordinateTable } from "../../components/metric-views/plot.ts";
+import { axisScale, paddedAxisDomain, placePointLabels, tickStepOf } from "../../model/chart/math.ts";
+import { renderCharPlot, renderCoordinateTable } from "../../model/chart/plot.ts";
 import { dataShapeError, type DataProps } from "../../components/shared.ts";
 import { isDataset } from "../../model/dataset.ts";
 import {
@@ -50,11 +49,10 @@ export interface ChartPresentation {
   className?: string;
 }
 
-export type ChartProps<Input extends SourceInput = SourceInput> = DataProps<
+export type ChartProps = DataProps<
   Dataset,
   globalThis.Record<never, never>,
-  ChartPresentation & { x: ChartAxisBinding; y: ChartAxisBinding },
-  Input
+  ChartPresentation & { x: ChartAxisBinding; y: ChartAxisBinding }
 >;
 
 function assertDataset(data: unknown): Dataset {
@@ -139,8 +137,8 @@ function renderScatterWeb(
     );
   }
 
-  const xBounds = axes.xMeta.kind === "measure" ? axes.xMeta.bounds : undefined;
-  const yBounds = axes.yMeta.kind === "measure" ? axes.yMeta.bounds : undefined;
+  const xBounds = axes.xMeta.kind === "metric" ? axes.xMeta.bounds : undefined;
+  const yBounds = axes.yMeta.kind === "metric" ? axes.yMeta.bounds : undefined;
   const xScale = axisScale(
     allPoints.map((p) => p.x),
     xBounds,
@@ -319,8 +317,8 @@ function chartText(
     return localeText(locale, "cell.missing");
   }
 
-  const xBounds = axes.xMeta.kind === "measure" ? axes.xMeta.bounds : undefined;
-  const yBounds = axes.yMeta.kind === "measure" ? axes.yMeta.bounds : undefined;
+  const xBounds = axes.xMeta.kind === "metric" ? axes.xMeta.bounds : undefined;
+  const yBounds = axes.yMeta.kind === "metric" ? axes.yMeta.bounds : undefined;
   const xDomain = paddedAxisDomain(points.map((p) => p.x), xBounds);
   const yDomain = paddedAxisDomain(points.map((p) => p.y), yBounds);
 

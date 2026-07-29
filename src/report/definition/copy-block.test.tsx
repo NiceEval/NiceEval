@@ -16,7 +16,6 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { CopyBlock } from "./primitives/copy-block.tsx";
-import { defineSource } from "../source.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
@@ -28,12 +27,12 @@ const content = {
 async function resolve(node: React.ReactNode) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
     report: buildReportMeta(definition, scope),
-    page: { id: "main", input: "scope" },
+    page: { id: "main", input: "sample" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -49,7 +48,7 @@ const webCtx: WebContext = {
 
 describe("CopyBlock", () => {
   it("web 面折叠块含标题、全文与复制按钮;text 面零输出", async () => {
-    const tree = await resolve(<CopyBlock data={content} />);
+    const tree = await resolve(<CopyBlock content={content} />);
     expect(renderNodeToText(tree, createTextContext({ width: 80, locale: "en" }))).toBe("");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
@@ -61,24 +60,11 @@ describe("CopyBlock", () => {
   });
 
   it("data null 两面零输出", async () => {
-    const tree = await resolve(<CopyBlock data={null} />);
+    const tree = await resolve(<CopyBlock content={null} />);
     expect(renderNodeToText(tree, createTextContext({ width: 80 }))).toBe("");
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toBe("");
   });
 
-  it("source 与 data 等价", async () => {
-    const source = defineSource({
-      name: "copy-block-fixture",
-      compute: async () => content,
-    });
-    const fromSource = await resolve(<CopyBlock source={source} />);
-    const fromData = await resolve(<CopyBlock data={content} />);
-    const htmlSource = runWithWebContext(webCtx, () => renderToStaticMarkup(fromSource as never));
-    const htmlData = runWithWebContext(webCtx, () => renderToStaticMarkup(fromData as never));
-    expect(htmlSource).toContain("Fix prompt (3 failures)");
-    expect(htmlData).toContain("Fix prompt (3 failures)");
-    expect(renderNodeToText(fromSource, createTextContext({ width: 80 }))).toBe("");
-    expect(renderNodeToText(fromData, createTextContext({ width: 80 }))).toBe("");
-  });
+
 });

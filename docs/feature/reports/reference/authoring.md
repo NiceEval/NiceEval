@@ -115,8 +115,8 @@ measure 可从字段与 `sum`、`avg`、`min`、`max`、`count`、
    Braintrust 分开 trace filter 与 span filter；
    NiceEval 分开 `sample.scope()` 与 `sample.filter()`。
 3. 常用路径应有官方 Calculation，长尾路径使用同一公开组合器。
-   Braintrust 的 SQL 表达式逃生口对应 NiceEval 的 `rollup()`，
-   不是 `defineMeasure()` 或内部 Source。
+   Braintrust 的 SQL 表达式逃生口对应 NiceEval 的 `rollup()`。
+   官方与用户 Calculation 共用同一公开组合器。
 4. 每个聚合点都应该能下钻到构成它的原始证据。
    NiceEval 的 `MetricValue.refs` 比重跑一个过滤查询更严格：
    它还必须保留缺值与 coverage 的解释。

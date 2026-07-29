@@ -1,14 +1,12 @@
-// defineReport:唯一可被宿主装载的产物 —— 一层外壳(标题、外链、页脚、head 标签、脚本、样式)加
+// defineReport:唯一可被宿主装载的产物 —— 外壳(title、theme、dimensionPins、head)加
 // 非空页列表;单页与多页不是两种机制,页数只是列表长度(docs/feature/reports/library/shell.md)。
-// 入参有两级缩写,各有精确展开:树入参 ≡ { content: 树 } ≡ pages: [{ id: "report",
-// title: 内置页名, content: 树 }]。`content` / `pages` 恰好声明一个,没有隐式默认。
-// 报告之间没有继承:复用内建视图是普通 JavaScript(import 它的 pages 拼进自己的 pages),
-// 外壳字段一律本报告自己声明,没有沿用、没有部分覆盖。
+// 单页缩写:传入 `PageRender<Sample>`,规范化为 id `report` 的 sample page。
+// 页函数只放在每页的 `render` 字段,装载期不执行。
 //
-// text/web 两个宿主的渲染入口(renderReportToText / renderReportToStaticHtml)在 ../runtime/
-// (text.ts / web.ts);这里只有 ReportDefinition 的类型体系、装载规范化与元数据折叠
-// (buildReportMeta / resolveReportTitle),不做任何渲染。
+// text/web 两个宿主的渲染入口在 ../runtime/;这里只有 ReportDefinition 的类型体系、
+// 装载规范化与元数据折叠(buildReportMeta / resolveReportTitle),不做任何渲染。
 
+import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
 import type { Sample } from "../../record/types.ts";
 import type { ReportNode } from "./tree.ts";
 import { localizedTextEquals, type LocalizedText } from "../model/locale.ts";
@@ -16,17 +14,6 @@ import { assertDimensionPins, type DimensionPins } from "../presentation.ts";
 import type { ThemeDefinition } from "../theme.ts";
 
 // ───────────────────────── 公开形状 ─────────────────────────
-
-export interface ReportLink {
-  label: LocalizedText;
-  href: string;
-  /**
-   * 可选内联 SVG 字标,web 面渲染在 label 前,静态导出原样内联。
-   * 不收组件:外壳声明经序列化边界进前端,ReactNode 过不去,可序列化是外壳契约的一部分。
-   * 内容是作者义务,宿主不校验——与 scripts 同一约定。
-   */
-  icon?: { svg: string };
-}
 
 /** src 是相对顶层报告文件的路径;两种形态不可同时出现。 */
 export type ReportAsset = { src: string; inline?: never } | { inline: string; src?: never };
@@ -51,21 +38,16 @@ export interface ReportShell {
   dimensionPins?: DimensionPins;
   /** 站点标题:浏览器标题、show 页索引标题行与 `ctx.report.title` 的取值源;`Hero` 组件缺省消费它。回退链 def.title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」。 */
   title?: LocalizedText;
-  /** 页头右侧的外部链接,如 GitHub、文档、CI。 */
-  links?: ReportLink[];
-  /** 每页页脚的一段文字;省略时不渲染页脚(品牌行归 PoweredBy 组件,不占页脚)。 */
-  footer?: LocalizedText;
   /**
    * 注入每页 `<head>` 的结构化标签,在官方与外壳样式之后按声明顺序渲染。
    * 第三方 snippet(分析、埋点、评论)、SEO meta、favicon、字体、JSON-LD 的家:
    * 声明什么标签就渲染什么标签,宿主只做结构校验,新的第三方接入不需要契约变更。
    */
   head?: HeadTag[];
-  /** 注入每个页面的脚本,在官方增强脚本之后、按声明顺序于 </body> 前加载。 */
-  scripts?: ReportAsset[];
-  /** 注入每个页面的样式表,在官方样式之后按声明顺序加载。 */
-  styles?: ReportAsset[];
 }
+
+/** page render 函数:装载期不执行,只在被请求的 page 实例上调用一次并缓存 Promise。 */
+export type PageRender<Input> = (input: Input) => ReportNode | Promise<ReportNode>;
 
 export type NonEmptyArray<T> = readonly [T, ...T[]];
 
@@ -74,54 +56,65 @@ export interface ReportPageBase {
   id: string;
   /** 导航中的页名。 */
   title: LocalizedText;
-  /** 这一页的报告树;ReportDefinition 不是 ReportNode,页装不进外壳。 */
-  content: ReportNode;
 }
 
+export interface SamplePageDefinition extends ReportPageBase {
+  input?: "sample";
+  navigation?: boolean;
+  render: PageRender<Sample>;
+}
+
+export interface AttemptPageDefinition extends ReportPageBase {
+  input: "attempt";
+  navigation: false;
+  render: PageRender<AttemptEvidence>;
+}
+
+export type PageDefinition = SamplePageDefinition | AttemptPageDefinition;
+
 /**
- * 页按输入分两种形态,仍是同一个类型族,走同一条 resolve → validate → render 管线
+ * 页按输入分两种形态,仍是同一个类型族,走同一条 render → resolve → validate → render 管线
  * (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」):
- * - `input` 省略或为 `"scope"`:消费宿主选择的 Sample;省略时规范化为 `navigation: true`。
+ * - `input` 省略或为 `"sample"`:消费宿主选择的 Sample;省略时规范化为 `navigation: true`。
  * - `input: "attempt"`:以 locator 为参数,消费一份 AttemptEvidence;没有 locator 时不能打开,
  *   必须显式 `navigation: false`,不进导航。
  * 一份报告至多声明一张 attempt-input page。
  */
-export type ReportPage =
-  | (ReportPageBase & { input?: "scope"; navigation?: boolean })
-  | (ReportPageBase & { input: "attempt"; navigation: false });
+export type ReportPage = SamplePageDefinition | AttemptPageDefinition;
 
-/** content / pages 二选一由类型表达,不把非法状态留到运行期。 */
-export type ReportDef = ReportShell &
-  (
-    | {
-        /** 单页缩写,等价于只含 id `report` 的页列表。 */
-        content: ReportNode;
-        pages?: never;
-      }
-    | {
-        /** 非空页列表;`navigation !== false` 的项按数组顺序显示。 */
-        pages: NonEmptyArray<ReportPage>;
-        content?: never;
-      }
-  );
+/** 作者向 page 声明;装载期规范化 input / navigation,不执行 render。 */
+export type PageDefinitionInput =
+  | (ReportPageBase & {
+      input?: "sample";
+      navigation?: boolean;
+      render: PageRender<Sample>;
+    })
+  | (ReportPageBase & {
+      input: "attempt";
+      navigation: false;
+      render: PageRender<AttemptEvidence>;
+    });
+
+/** pages 是非空有序数组;单页函数缩写不经此类型。 */
+export type ReportOptions = ReportShell & {
+  pages: NonEmptyArray<PageDefinitionInput>;
+};
+
+export type ReportDef = ReportOptions;
 
 const REPORT_DEFINITION: unique symbol = Symbol.for("niceeval.report.definition");
 
 /**
  * defineReport 的唯一产物:只作 --report 文件的默认导出,交给宿主装载。
  * 它不是 ReportNode——不能放进任何 content 或报告树,外壳因此不可嵌套。
- * 字段是装载规范化后的形态:pages 恒非空,links / head / scripts / styles 恒为数组。
+ * 字段是装载规范化后的形态:pages 恒非空,head 恒为数组。
  */
 export interface ReportDefinition {
   readonly kind: "report";
   readonly title?: LocalizedText;
   readonly theme?: ThemeDefinition;
   readonly dimensionPins?: DimensionPins;
-  readonly links: readonly ReportLink[];
-  readonly footer?: LocalizedText;
   readonly head: readonly HeadTag[];
-  readonly scripts: readonly ReportAsset[];
-  readonly styles: readonly ReportAsset[];
   readonly pages: NonEmptyArray<ReportPage>;
 }
 
@@ -129,21 +122,18 @@ export interface ReportDefinition {
 export interface ReportMetaPage {
   id: string;
   title: LocalizedText;
-  input: "scope" | "attempt";
+  input: "sample" | "attempt";
   navigation: boolean;
 }
 
 /**
- * 规范化后的报告声明,经组合组件 ctx.report 只读可见(scripts / styles 是注入资产,不进)。
+ * 规范化后的报告声明,经组合组件 ctx.report 只读可见(dimensionPins / head 是注入资产与视觉配置,不进)。
  * 不携带"当前是哪一页"——那由 ctx.page(PageContext)表达,两者不是同一份状态
  * (docs/feature/reports/library/shell.md「行为约束」)。
  */
 export interface ReportMeta {
   /** 走完回退链(声明 title → 唯一快照 name → 内置文案「Eval 运行结果 / Eval Record」)后的标题。 */
   title: LocalizedText;
-  /** 页头外链;声明省略时为空数组。 */
-  links: readonly ReportLink[];
-  footer?: LocalizedText;
   /** 规范化后的页列表,恒非空。 */
   pages: NonEmptyArray<ReportMetaPage>;
 }
@@ -159,18 +149,6 @@ const DEFAULT_PAGE_TITLE: LocalizedText = { en: "Report", "zh-CN": "报告" };
 const BUILT_IN_NEXT_STEP =
   'To render the built-in report, write pages: [...standard.pages] (import { standard } from "niceeval/report/built-in") ' +
   "and declare this report's own shell fields; reports do not inherit from one another.";
-
-function isReportNodeInput(value: unknown): boolean {
-  if (value === null || value === undefined || typeof value === "boolean") return true;
-  if (Array.isArray(value)) return true;
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    "props" in value &&
-    (value as { kind?: unknown }).kind !== "report"
-  );
-}
 
 function assertNotDefinition(value: unknown, where: string): void {
   if (
@@ -220,33 +198,6 @@ function assertLocalAssetPath(src: string, where: string): void {
       `defineReport ${where} "${src}" is not allowed: only plain relative paths (optionally with a ./ prefix) resolve against the report file — no ".." segments, absolute paths, or "~". Move the asset next to the report file and reference it relatively.`,
     );
   }
-}
-
-function assertAssets(assets: unknown, field: "scripts" | "styles"): ReportAsset[] {
-  if (assets === undefined) return [];
-  if (!Array.isArray(assets)) {
-    throw new Error(`defineReport ${field} must be an array of { src } or { inline } entries.`);
-  }
-  for (const asset of assets as Array<globalThis.Record<string, unknown>>) {
-    const hasSrc = typeof asset?.src === "string";
-    const hasInline = typeof asset?.inline === "string";
-    if (hasSrc === hasInline) {
-      throw new Error(
-        `Each defineReport ${field} entry must have exactly one of "src" (a path relative to the report file) or "inline" (literal content).`,
-      );
-    }
-    if (hasSrc) {
-      const src = asset.src as string;
-      // 外链不属于增强层资产:第三方外链标签的家是 head 通道。
-      if (/^https?:\/\//i.test(src) || src.startsWith("//")) {
-        throw new Error(
-          `defineReport ${field} src "${src}" is an external URL — ${field} take local files and inline content (the host pipeline vendors them). Declare third-party external tags in "head" instead, e.g. head: [{ tag: "script", attrs: { async: true, src: "…" } }].`,
-        );
-      }
-      assertLocalAssetPath(src, `${field} src`);
-    }
-  }
-  return assets as ReportAsset[];
 }
 
 const HEAD_TAG_NAMES = new Set(["meta", "link", "script", "style"]);
@@ -343,18 +294,21 @@ function assertHeadTags(tags: unknown): HeadTag[] {
 }
 
 /**
- * page 的 input / navigation 规范化(shell.md「page 显式声明输入」):省略或 "scope" 时补
- * `input: "scope"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`——
- * 没有 locator 时不可打开,不能悄悄挤进导航,省略或传 true 都在装载期报错。
+ * page 的 input / navigation 规范化(shell.md「page 显式声明输入」):省略或 "sample"(及 LEGACY
+ * "scope") 时补 `input: "sample"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`。
  */
-function normalizePageInputAndNavigation(page: globalThis.Record<string, unknown>): ReportPage {
+function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPage {
   const input = page.input;
-  if (input === undefined || input === "scope") {
+  if (typeof page.render !== "function") {
+    throw new Error(`Report page "${page.id}" must declare "render": (input) => tree.`);
+  }
+  const render = page.render as PageRender<Sample | AttemptEvidence>;
+  if (input === undefined || input === "sample" || input === "scope") {
     return {
       id: page.id as string,
       title: page.title as LocalizedText,
-      content: page.content as ReportNode,
-      input: "scope",
+      render: render as PageRender<Sample>,
+      input: "sample",
       navigation: page.navigation !== false,
     };
   }
@@ -367,13 +321,13 @@ function normalizePageInputAndNavigation(page: globalThis.Record<string, unknown
     return {
       id: page.id as string,
       title: page.title as LocalizedText,
-      content: page.content as ReportNode,
+      render: render as PageRender<AttemptEvidence>,
       input: "attempt",
       navigation: false,
     };
   }
   throw new Error(
-    `Report page "${page.id}" input ${JSON.stringify(input)} is not valid — input is omitted, "scope", or "attempt".`,
+    `Report page "${page.id}" input ${JSON.stringify(input)} is not valid — input is omitted, "sample", or "attempt".`,
   );
 }
 
@@ -389,24 +343,32 @@ function assertAtMostOneAttemptPage(pages: readonly ReportPage[]): void {
   }
 }
 
-export function defineReport(content: ReportNode): ReportDefinition;
-export function defineReport(def: ReportDef): ReportDefinition;
-export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
+export function defineReport(render: PageRender<Sample>): ReportDefinition;
+export function defineReport(def: ReportOptions): ReportDefinition;
+export function defineReport(input: PageRender<Sample> | ReportOptions): ReportDefinition {
+  if (typeof input === "function") {
+    return defineReportFromDef({
+      pages: [
+        {
+          id: DEFAULT_PAGE_ID,
+          title: DEFAULT_PAGE_TITLE,
+          render: input,
+        },
+      ],
+    });
+  }
   assertNotDefinition(input, "defineReport(...)");
-  const def: ReportDef = isReportNodeInput(input)
-    ? ({ content: input as ReportNode } as ReportDef)
-    : (input as ReportDef);
+  return defineReportFromDef(input);
+}
+
+function defineReportFromDef(def: ReportOptions): ReportDefinition {
   if (typeof def !== "object" || def === null) {
     throw new Error(
-      "defineReport expects a report tree or a config object ({ title?, links?, footer?, head?, scripts?, styles?, content | pages }). " +
+      "defineReport expects a page render function or a config object ({ title?, theme?, dimensionPins?, head?, pages }). " +
         BUILT_IN_NEXT_STEP,
     );
   }
 
-  const hasContent = "content" in def && def.content !== undefined;
-  const hasPages = "pages" in def && def.pages !== undefined;
-  // extends 曾是报告级复用的位置,现在没有了:命中它给出改写指引,而不是静默忽略一个
-  // 用户以为生效了的字段——静默忽略的症状是「我继承的页一张都没出现」。
   if ("extends" in def && (def as { extends?: unknown }).extends !== undefined) {
     throw new Error(
       'defineReport no longer takes "extends" — reports do not inherit from one another, and no field is partially overridden. ' +
@@ -414,100 +376,70 @@ export function defineReport(input: ReportNode | ReportDef): ReportDefinition {
         "and declare its shell fields here.",
     );
   }
-  const declared = [hasContent && '"content"', hasPages && '"pages"'].filter(
-    (name): name is string => typeof name === "string",
-  );
-  if (declared.length > 1) {
+  if ("content" in def && (def as { content?: unknown }).content !== undefined) {
     throw new Error(
-      `defineReport got ${declared.join(" and ")} — declare exactly one of "content" (a single tree) or "pages" (a multi-page report). ${BUILT_IN_NEXT_STEP}`,
+      'defineReport no longer accepts LEGACY "content" — declare pages: [{ id, title, render }] or pass a single page render function. ' +
+        BUILT_IN_NEXT_STEP,
     );
   }
-  if (declared.length === 0) {
+  for (const field of ["links", "footer", "scripts", "styles"] as const) {
+    if ((def as unknown as globalThis.Record<string, unknown>)[field] !== undefined) {
+      const hint =
+        field === "links" || field === "footer"
+          ? "Put header links and footers in page render trees (e.g. wrap each page render with a footer helper)."
+          : field === "scripts" || field === "styles"
+            ? 'Put component CSS/JS on defineRenderer({ assets }) or declare site-wide tags in "head".'
+            : "";
+      throw new Error(`defineReport no longer accepts LEGACY "${field}" — ${hint}`);
+    }
+  }
+  const raw = def.pages as unknown;
+  if (!Array.isArray(raw) || raw.length === 0) {
     throw new Error(
-      `defineReport got neither "content" nor "pages" — declare exactly one; omission is not a meaningful value, the file must show what renders. ${BUILT_IN_NEXT_STEP}`,
+      `defineReport "pages" must be a non-empty array of { id, title, render }. ${BUILT_IN_NEXT_STEP}`,
     );
   }
 
-  let pages: readonly ReportPage[];
-  if (hasContent) {
-    assertNotDefinition(def.content, 'defineReport "content"');
-    pages = [
-      { id: DEFAULT_PAGE_ID, title: DEFAULT_PAGE_TITLE, input: "scope", navigation: true, content: def.content as ReportNode },
-    ];
-  } else {
-    const raw = def.pages as unknown;
-    if (!Array.isArray(raw) || raw.length === 0) {
+  const seen = new Set<string>();
+  const normalized: ReportPage[] = [];
+  for (const page of raw as Array<globalThis.Record<string, unknown>>) {
+    if (typeof page?.id !== "string" || !PAGE_ID_PATTERN.test(page.id)) {
       throw new Error(
-        `defineReport "pages" must be a non-empty array of { id, title, content }. ${BUILT_IN_NEXT_STEP}`,
+        `Report page id ${JSON.stringify(page?.id)} is invalid: ids are lowercase letters, digits and hyphens (they become --page values and #/page/<id> routes). Rename it, e.g. "overview".`,
       );
     }
-    const seen = new Set<string>();
-    const normalized: ReportPage[] = [];
-    for (const page of raw as Array<globalThis.Record<string, unknown>>) {
-      if (typeof page?.id !== "string" || !PAGE_ID_PATTERN.test(page.id)) {
-        throw new Error(
-          `Report page id ${JSON.stringify(page?.id)} is invalid: ids are lowercase letters, digits and hyphens (they become --page values and #/page/<id> routes). Rename it, e.g. "overview".`,
-        );
-      }
-      if (seen.has(page.id)) {
-        throw new Error(
-          `Report page id "${page.id}" is declared twice — ids must be unique within one file (they are the --page selector and the web route). Rename one of the pages.`,
-        );
-      }
-      seen.add(page.id);
-      assertLocalizedText(page.title, `Report page "${page.id}" title`);
-      assertNotDefinition(page.content, `Report page "${page.id}" content`);
-      normalized.push(normalizePageInputAndNavigation(page));
+    if (seen.has(page.id)) {
+      throw new Error(
+        `Report page id "${page.id}" is declared twice — ids must be unique within one file (they are the --page selector and the web route). Rename one of the pages.`,
+      );
     }
-    pages = normalized;
+    seen.add(page.id);
+    assertLocalizedText(page.title, `Report page "${page.id}" title`);
+    if (page.content !== undefined) {
+      throw new Error(
+        `Report page "${page.id}" declares LEGACY "content" — use render: (input) => tree instead.`,
+      );
+    }
+    if (page.render !== undefined) {
+      assertNotDefinition(page.render, `Report page "${page.id}" render`);
+    }
+    normalized.push(normalizePageRender(page));
   }
+  const pages = normalized;
   assertAtMostOneAttemptPage(pages);
 
   if (def.title !== undefined) assertLocalizedText(def.title, "defineReport title");
-  if (def.footer !== undefined) assertLocalizedText(def.footer, "defineReport footer");
   assertDimensionPins(def.dimensionPins);
-  // 外壳:每个字段都由本报告自己声明,没有沿用别处的回落——读这个文件就是全部。
-  let links: readonly ReportLink[];
-  if (def.links !== undefined) {
-    if (!Array.isArray(def.links)) throw new Error("defineReport links must be an array of { label, href }.");
-    for (const link of def.links) {
-      assertLocalizedText((link as ReportLink)?.label, "defineReport link label");
-      if (typeof (link as ReportLink)?.href !== "string" || (link as ReportLink).href.length === 0) {
-        throw new Error("defineReport link href must be a non-empty string URL.");
-      }
-      // icon 唯一合法形状是 { svg: string }(无类型 JS 传组件 / ReactNode / 裸字符串都在装载期拒绝):
-      // 外壳声明经序列化边界进前端,ReactNode 过不去,可序列化是外壳契约的一部分。
-      const icon = (link as { icon?: unknown }).icon;
-      if (icon !== undefined) {
-        const svg = (icon as { svg?: unknown })?.svg;
-        if (typeof icon !== "object" || icon === null || typeof svg !== "string" || svg.length === 0) {
-          throw new Error(
-            'defineReport link "icon" must be { svg: string } — an inline SVG string rendered before the label. ' +
-              "Components and React nodes are not accepted: the shell declaration crosses a serialization boundary. " +
-              'Write e.g. icon: { svg: "<svg …>…</svg>" }.',
-          );
-        }
-      }
-    }
-    links = def.links;
-  } else {
-    links = [];
-  }
+
   const title = def.title;
   const theme = def.theme;
-  const footer = def.footer;
-  const dimensionPins = def.dimensionPins;
 
   const definition = {
     kind: "report" as const,
     ...(title !== undefined ? { title } : {}),
     ...(theme !== undefined ? { theme } : {}),
-    ...(dimensionPins !== undefined ? { dimensionPins } : {}),
-    links: [...links],
-    ...(footer !== undefined ? { footer } : {}),
+    ...(def.dimensionPins !== undefined ? { dimensionPins: def.dimensionPins } : {}),
     head: def.head !== undefined ? assertHeadTags(def.head) : [],
-    scripts: def.scripts !== undefined ? assertAssets(def.scripts, "scripts") : [],
-    styles: def.styles !== undefined ? assertAssets(def.styles, "styles") : [],
     pages: pages as unknown as NonEmptyArray<ReportPage>,
   };
   Object.defineProperty(definition, REPORT_DEFINITION, { value: true });
@@ -544,16 +476,14 @@ export function resolveReportTitle(definition: ReportDefinition, scope: Sample):
   return names.every((name) => localizedTextEquals(name, first)) ? first : FALLBACK_REPORT_TITLE;
 }
 
-/** 规范化声明 → 组合组件可见的 ReportMeta(scripts / styles / dimensionPins 是注入资产与视觉配置,不进;不携带当前页)。 */
+/** 规范化声明 → 组合组件可见的 ReportMeta(dimensionPins / head 是注入资产与视觉配置,不进;不携带当前页)。 */
 export function buildReportMeta(definition: ReportDefinition, scope: Sample): ReportMeta {
   return {
     title: resolveReportTitle(definition, scope),
-    links: definition.links,
-    ...(definition.footer !== undefined ? { footer: definition.footer } : {}),
     pages: definition.pages.map((page) => ({
       id: page.id,
       title: page.title,
-      input: page.input ?? "scope",
+      input: page.input ?? "sample",
       navigation: page.navigation ?? true,
     })) as unknown as NonEmptyArray<ReportMetaPage>,
   };

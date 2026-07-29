@@ -17,7 +17,6 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { Waterfall, type WaterfallContent } from "./primitives/waterfall.tsx";
-import { defineSource } from "../source.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
@@ -68,12 +67,12 @@ const content: WaterfallContent = [
 async function resolve(node: React.ReactNode) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
     report: buildReportMeta(definition, scope),
-    page: { id: "main", input: "scope" },
+    page: { id: "main", input: "sample" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -90,7 +89,7 @@ const webCtx: WebContext = {
 
 describe("Waterfall", () => {
   it("两面投影:身份、总耗时、节点计数、失败标记与 attempt 链接", async () => {
-    const tree = await resolve(<Waterfall data={content} />);
+    const tree = await resolve(<Waterfall nodes={content} />);
     const text = renderNodeToText(
       tree,
       createTextContext({
@@ -119,7 +118,7 @@ describe("Waterfall", () => {
   it("null duration 如实标注缺失,不绘分解条", async () => {
     const tree = await resolve(
       <Waterfall
-        data={[
+        nodes={[
           {
             key: "missing",
             label: "Missing row",
@@ -146,11 +145,11 @@ describe("Waterfall", () => {
   });
 
   it("空数组与 null Content 零输出", async () => {
-    const emptyTree = await resolve(<Waterfall data={[]} />);
+    const emptyTree = await resolve(<Waterfall nodes={[]} />);
     expect(renderNodeToText(emptyTree, createTextContext({ width: 40 }))).toBe("");
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(emptyTree as never))).toBe("");
 
-    const nullTree = await resolve(<Waterfall data={null} />);
+    const nullTree = await resolve(<Waterfall nodes={null} />);
     expect(renderNodeToText(nullTree, createTextContext({ width: 40 }))).toBe("");
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(nullTree as never))).toBe("");
   });
@@ -163,7 +162,7 @@ describe("Waterfall", () => {
   it("连续短节点折成带 kind 计数与合计时长的摘要,留在原时间位置", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "big1", label: "sample", kind: "model", startOffsetMs: 0, durationMs: 22_000 },
           { key: "s1", label: "call-a", kind: "tool", startOffsetMs: 22_000, durationMs: 500 },
           { key: "s2", label: "call-b", kind: "tool", startOffsetMs: 22_500, durationMs: 300 },
@@ -194,10 +193,10 @@ describe("Waterfall", () => {
         { key: "s2", label: "call-b", kind: "tool", startOffsetMs: 23_100, durationMs: 300 },
         { key: "s3", label: "call-c", kind: "tool", startOffsetMs: 23_400, durationMs: 300 },
       ]);
-    const below = await resolve(<Waterfall data={withShort(500)} />);
+    const below = await resolve(<Waterfall nodes={withShort(500)} />);
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(below as never))).toContain("tool ×3");
 
-    const above = await resolve(<Waterfall data={withShort(1_100)} />);
+    const above = await resolve(<Waterfall nodes={withShort(1_100)} />);
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(above as never));
     // 1_100ms ≥ 1% × 100_000ms,call-a 直接列出;call-b / call-c 仍在摘要里
     expect(html).toContain("tool ×2");
@@ -208,7 +207,7 @@ describe("Waterfall", () => {
   it("短节点摘要只收得到一条时不折,直接列出那个节点", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "big1", label: "sample", kind: "model", startOffsetMs: 0, durationMs: 22_000 },
           { key: "lone", label: "corepack", kind: "command", startOffsetMs: 22_000, durationMs: 300 },
           { key: "big2", label: "stream", kind: "model", startOffsetMs: 22_300, durationMs: 10_000 },
@@ -224,7 +223,7 @@ describe("Waterfall", () => {
   it("failed 与 durationMs null 的节点不折;行总时长 null 整行不折", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "f", label: "boom", kind: "tool", startOffsetMs: 0, durationMs: 200, failed: true },
           { key: "m", label: "lost", kind: "tool", startOffsetMs: 200, durationMs: null },
         ])}
@@ -235,7 +234,7 @@ describe("Waterfall", () => {
 
     const noBase = await resolve(
       <Waterfall
-        data={[
+        nodes={[
           {
             key: "r",
             label: "Row",
@@ -267,7 +266,7 @@ describe("Waterfall", () => {
       },
       { key: "s2", label: "call-b", kind: "tool", startOffsetMs: 50_400, durationMs: 400 },
     ]);
-    const tree = await resolve(<Waterfall data={data} />);
+    const tree = await resolve(<Waterfall nodes={data} />);
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toContain("niceeval-waterfall-fold");
     expect(html).toContain("inner");
@@ -278,7 +277,7 @@ describe("Waterfall", () => {
   it("open 标记的节点默认展开且不参与折叠", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "big", label: "sample", kind: "model", startOffsetMs: 0, durationMs: 50_000 },
           {
             key: "trunk",
@@ -300,14 +299,14 @@ describe("Waterfall", () => {
   });
 
   it("title 在两面渲染为区块头;Content 空时整块含标题不出现", async () => {
-    const tree = await resolve(<Waterfall data={content} title={{ en: "Agent trace", "zh-CN": "Agent trace" }} />);
+    const tree = await resolve(<Waterfall nodes={content} title={{ en: "Agent trace", "zh-CN": "Agent trace" }} />);
     const text = renderNodeToText(tree, createTextContext({ width: 100 }));
     expect(text.split("\n")[0]).toBe("Agent trace");
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toContain("niceeval-waterfall-title");
     expect(html).toContain("Agent trace");
 
-    const emptyTree = await resolve(<Waterfall data={[]} title="Agent trace" />);
+    const emptyTree = await resolve(<Waterfall nodes={[]} title="Agent trace" />);
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(emptyTree as never))).toBe("");
     expect(renderNodeToText(emptyTree, createTextContext({ width: 40 }))).toBe("");
   });
@@ -315,7 +314,7 @@ describe("Waterfall", () => {
   it("行头 label 与 locator 同文时只渲染 locator 一次", async () => {
     const same = await resolve(
       <Waterfall
-        data={[{ key: "r", label: "@abc", durationMs: 100, locator: locator("@abc"), nodes: [] }]}
+        nodes={[{ key: "r", label: "@abc", durationMs: 100, locator: locator("@abc"), nodes: [] }]}
       />,
     );
     const sameHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(same as never));
@@ -325,7 +324,7 @@ describe("Waterfall", () => {
 
     const diff = await resolve(
       <Waterfall
-        data={[{ key: "r", label: "exp/eval", durationMs: 100, locator: locator("@abc"), nodes: [] }]}
+        nodes={[{ key: "r", label: "exp/eval", durationMs: 100, locator: locator("@abc"), nodes: [] }]}
       />,
     );
     const diffHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(diff as never));
@@ -347,7 +346,7 @@ describe("Waterfall", () => {
   it("连续同名的显著节点满三条折成一条,展开后逐条还原", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           ...repeated(2, "stream", 0),
           { key: "cut", label: "patch", kind: "tool", startOffsetMs: 10_000, durationMs: 5_000 },
           ...repeated(3, "stream", 3),
@@ -364,11 +363,11 @@ describe("Waterfall", () => {
   });
 
   it("区分力:同一批同名节点从三条减到两条就不折", async () => {
-    const three = await resolve(<Waterfall data={foldRow(repeated(3, "stream", 0))} />);
+    const three = await resolve(<Waterfall nodes={foldRow(repeated(3, "stream", 0))} />);
     const threeHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(three as never));
     expect(threeHtml).toContain("stream ×3");
 
-    const two = await resolve(<Waterfall data={foldRow(repeated(2, "stream", 0))} />);
+    const two = await resolve(<Waterfall nodes={foldRow(repeated(2, "stream", 0))} />);
     const twoHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(two as never));
     expect(twoHtml).not.toContain("niceeval-waterfall-fold");
     expect(twoHtml).not.toContain("stream ×2");
@@ -377,7 +376,7 @@ describe("Waterfall", () => {
   it("failed 与 open 的节点不参与重复折叠,即使与相邻节点同名", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           ...repeated(3, "stream", 0).map((node, i) =>
             i === 1 ? { ...node, failed: true } : i === 2 ? { ...node, open: true } : node,
           ),
@@ -392,7 +391,7 @@ describe("Waterfall", () => {
   it("短节点摘要与重复摘要各自成行,不合并成一条", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "t1", label: "tiny-a", kind: "tool", startOffsetMs: 0, durationMs: 100 },
           { key: "t2", label: "tiny-b", kind: "tool", startOffsetMs: 100, durationMs: 100 },
           ...repeated(3, "stream", 1),
@@ -411,7 +410,7 @@ describe("Waterfall", () => {
   it("条上的段数等于叶子数,父节点不出段", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           {
             key: "parent",
             label: "eval.run",
@@ -442,14 +441,14 @@ describe("Waterfall", () => {
 
   it("区分力:给叶子挂上子节点,段数不变而段换成子节点", async () => {
     const leaf = { key: "l", label: "leaf-a", kind: "model", startOffsetMs: 0, durationMs: 40_000 };
-    const flat = await resolve(<Waterfall data={foldRow([leaf])} />);
+    const flat = await resolve(<Waterfall nodes={foldRow([leaf])} />);
     expect(bars(runWithWebContext(webCtx, () => renderToStaticMarkup(flat as never))).map((t) => t.split(" ·")[0])).toEqual(
       ["leaf-a"],
     );
 
     const nested = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           {
             ...leaf,
             open: true,
@@ -466,7 +465,7 @@ describe("Waterfall", () => {
   it("测不出时长的叶子不出段;全部叶子都缺时长时整条不画", async () => {
     const partial = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "ok", label: "leaf-a", kind: "model", startOffsetMs: 0, durationMs: 40_000 },
           { key: "lost", label: "leaf-b", kind: "model", startOffsetMs: 40_000, durationMs: null },
         ])}
@@ -478,7 +477,7 @@ describe("Waterfall", () => {
 
     const none = await resolve(
       <Waterfall
-        data={foldRow([{ key: "lost", label: "leaf-b", kind: "model", startOffsetMs: 0, durationMs: null }])}
+        nodes={foldRow([{ key: "lost", label: "leaf-b", kind: "model", startOffsetMs: 0, durationMs: null }])}
       />,
     );
     const noneHtml = runWithWebContext(webCtx, () => renderToStaticMarkup(none as never));
@@ -489,7 +488,7 @@ describe("Waterfall", () => {
   it("失败叶子的段带 negative 类,与它落的分类色槽无关", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "f", label: "apply_patch", kind: "tool", startOffsetMs: 0, durationMs: 40_000, failed: true },
         ])}
       />,
@@ -507,7 +506,7 @@ describe("Waterfall", () => {
   it("同一个 kind 恒落同一槽,与顺序、行和层级无关", async () => {
     const tree = await resolve(
       <Waterfall
-        data={[
+        nodes={[
           {
             key: "r1",
             label: "Row 1",
@@ -545,7 +544,7 @@ describe("Waterfall", () => {
   it("区分力:没见过的 kind 照样落到五槽之一", async () => {
     const tree = await resolve(
       <Waterfall
-        data={foldRow([
+        nodes={foldRow([
           { key: "u", label: "unknown-kind", kind: "sandbox.snapshot", startOffsetMs: 0, durationMs: 10_000 },
         ])}
       />,
@@ -557,7 +556,7 @@ describe("Waterfall", () => {
 
   it("清单里的类别列不带着色类", async () => {
     const tree = await resolve(
-      <Waterfall data={foldRow([{ key: "a", label: "top", kind: "model", startOffsetMs: 0, durationMs: 10_000 }])} />,
+      <Waterfall nodes={foldRow([{ key: "a", label: "top", kind: "model", startOffsetMs: 0, durationMs: 10_000 }])} />,
     );
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toContain('<span class="niceeval-waterfall-node-kind">model</span>');
@@ -566,15 +565,5 @@ describe("Waterfall", () => {
     expect(list).not.toContain("niceeval-span-");
   });
 
-  it("source 与 data 等价", async () => {
-    const source = defineSource({
-      name: "wf",
-      compute: async () => content,
-    });
-    const fromData = await resolve(<Waterfall data={content} />);
-    const fromSource = await resolve(<Waterfall source={source} />);
-    const textData = renderNodeToText(fromData, createTextContext({ width: 100 }));
-    const textSource = renderNodeToText(fromSource, createTextContext({ width: 100 }));
-    expect(textSource).toBe(textData);
-  });
+
 });

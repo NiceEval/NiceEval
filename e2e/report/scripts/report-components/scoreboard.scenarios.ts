@@ -13,7 +13,7 @@ export const scoreboardScenarios: readonly ReportComponentScenario[] = [
     // Then：题集标题和满分口径可见。
     async run({ evidence }) {
       const out = sh(
-        `pnpm exec niceeval show --report ${SITE_REPORT} --results ${evidence.resultsRoot} --page scoreboard`,
+        `pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page scoreboard`,
       );
       assert.ok(out.includes("Exam"));
       assert.ok(out.includes("/100"), "Scoreboard 应按声明的 fullMarks=100 显示总分");

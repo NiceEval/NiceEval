@@ -1,6 +1,6 @@
 import { defineConfig } from "niceeval";
 
-// results only asserts mechanism (disk format, openResults() parity, --json
+// results only asserts mechanism (disk format, openRecord() parity, --json
 // parity, --junit folding) — no judge config needed (docs/engineering/testing/e2e/README.md §7).
 //
 // `pricing` pins a stable cost-per-token for the model this repo's agent calls, so the

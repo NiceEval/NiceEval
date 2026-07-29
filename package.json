@@ -81,6 +81,11 @@
       "import": "./dist/report/built-in/index.js",
       "require": "./dist/report/built-in/index.js"
     },
+    "./report/extension": {
+      "types": "./dist/report/extension/index.d.ts",
+      "import": "./dist/report/extension/index.js",
+      "require": "./dist/report/extension/index.js"
+    },
     "./report/react/styles.css": "./src/report/assets/styles.css",
     "./report/react/enhance.js": "./src/report/assets/enhance.js"
   },

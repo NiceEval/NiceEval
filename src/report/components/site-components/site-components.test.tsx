@@ -18,12 +18,12 @@ import type { AssertionResult, EvalResult, TraceSpan, Verdict } from "../../../t
 import type { AttemptHandle, Record, Sample, SampleIssue, Run } from "../../../record/index.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { defineComponent, resolveReportTree, ResolveMemo, type ReportNode } from "../../definition/tree.ts";
-import { defineComposition } from "../../source.ts";
-import { sources } from "../../sources.ts";
 import { buildReportMeta, defineReport, type ReportDefinition } from "../../definition/report.ts";
 import { pickReportPage, reportTitleText } from "../../runtime/text.ts";
+import { renderSamplePage } from "../../runtime/page-render.ts";
 import type { DiagnosticRecord } from "../../../types.ts";
 import { Hero, HeroCard } from "./index.tsx";
+import { toHeroData } from "../../model/conversions.ts";
 import { copyFixPromptData, heroData, scopeWarningsData, snapshotDiagnosticsData, traceWaterfallData } from "./compute.ts";
 import { groupScopeWarnings } from "./scope-warnings.ts";
 import { groupSnapshotDiagnostics } from "./snapshot-diagnostics.ts";
@@ -87,17 +87,18 @@ function snap(spec: {
 /** 管线便捷入口:装载 → resolve,停在树节点(与 show/view 同一条 resolve 管线,不带渲染面)。 */
 async function resolveDefinition(definition: ReportDefinition, scope: Sample): Promise<unknown> {
   const page = pickReportPage(definition);
-  return resolveReportTree(page.content, {
+  const tree = await renderSamplePage(page, scope);
+  return resolveReportTree(tree, {
     scope,
     results: resultsOf(scope.runs),
     report: buildReportMeta(definition, scope),
-    page: { id: page.id, input: "scope" },
+    page: { id: page.id, input: "sample" },
     memo: new ResolveMemo(),
   });
 }
 
 async function resolveOnScope(node: ReportNode, scope: Sample): Promise<unknown> {
-  return resolveDefinition(defineReport(node), scope);
+  return resolveDefinition(defineReport(() => node), scope);
 }
 
 // ───────────────────────── 警告 fixture(按 SampleIssue 联合造,只剩三种 kind)─────────────────────────
@@ -136,7 +137,10 @@ describe("Hero 与 HeroCard", () => {
 
   it("<Hero /> 的 resolve 结果携带走完回退链的站点标题,与浏览器标题(reportTitleText)同源", async () => {
     const scope = heroScope();
-    const definition = defineReport({ title: { en: "Memory Evals" }, content: <Hero /> });
+    const definition = defineReport({
+      title: { en: "Memory Evals" },
+      pages: [{ id: "report", title: "Report", render: () => <Hero /> }],
+    });
     expect(reportTitleText(definition, scope, "en")).toBe("Memory Evals");
     const meta = buildReportMeta(definition, scope);
     const resolved = (await resolveDefinition(definition, scope)) as { type: unknown; props: { title: unknown } };
@@ -150,10 +154,11 @@ describe("Hero 与 HeroCard", () => {
     expect(resolved.props.title).toBe("Custom Hero");
   });
 
-  it("<Hero /> 与手写 <HeroCard title={ctx.report.title} data={await ctx.resolve(sources.site.hero)} /> resolve 结果结构严格等价", async () => {
+  it("<Hero /> 与手写 <HeroCard title={report.title} data={await toHeroData(sample)} /> resolve 结果结构严格等价", async () => {
     const scope = heroScope();
-    const Handwritten = defineComposition(async (_props, ctx) => (
-      <HeroCard title={ctx.report.title} data={await ctx.resolve(sources.site.hero)} />
+    const data = await toHeroData(scope);
+    const Handwritten = defineComponent(async (_props, ctx) => (
+      <HeroCard title={ctx.report.title} data={data} />
     ));
     const [heroResolved, handResolved] = (await Promise.all([
       resolveOnScope(<Hero />, scope),

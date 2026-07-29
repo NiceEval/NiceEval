@@ -10,10 +10,11 @@ const locator = (s: string): AttemptLocator => s as AttemptLocator;
 describe("Stat Cell", () => {
   it("measure Cell 与 notApplicable 两面投影", () => {
     const measure: Cell = {
-      kind: "measure",
-      measure: {
+      kind: "metric",
+      metric: {
         value: 0.5,
-        display: { en: "50%", "zh-CN": "50%" },
+        unit: "%",
+        basis: "eval",
         samples: 2,
         total: 3,
         refs: [locator("exp/a")],

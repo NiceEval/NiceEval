@@ -50,8 +50,9 @@ Invocation 的 `unstarted` 计数中，不创建 `result.json`；两者都不能
 **二、判断物化在数据上,不藏在语义里。** 消费 `sample.attempts` 就自动正确,不需要知道口径怎么
 展开。反例是让消费方自己 `flatMap` 一遍 `runs`,那会把同一道题的历史 attempt 重复计入。
 
-**三、每个数字都能回到证据。** 样本成员是 `AttemptHandle` 而不是行,`AttemptLocator` 让报告里的
-一格能寻址回一个 attempt。这条排除了「把结果压成宽表」这类看着更通用的中间表示。
+**三、每个数字都能回到证据。** 样本成员是 `AttemptHandle` 而不是行；呈现层的
+`MetricValue.refs` 带着 `AttemptLocator`，让报告里的一格能寻址回一个 attempt。
+这条排除了「把结果压成宽表」这类看着更通用的中间表示。
 
 **四、给用户的自由度有清楚的语义边界。** Sample 用 `scope()` 重定义总体、用 `filter()` 删观测；
 报告树是声明式结构,不是能求值的表达式。失败模式不是积木不够,是近义算子长成了半门语言。

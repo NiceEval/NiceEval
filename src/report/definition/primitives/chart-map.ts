@@ -1,8 +1,8 @@
 // Chart 映射:Dataset + Series 声明 → 可绘制点集(docs/feature/reports/components/charts/README.md)。
 
 import type { LocalizedText } from "../../model/locale.ts";
-import type { Dataset, DatasetField, MeasureCell } from "../../model/types.ts";
-import { isMeasureCell, measureCellOf, requireField } from "../../model/dataset.ts";
+import type { Dataset, DatasetField, MetricValue } from "../../model/types.ts";
+import { isMetricValue, metricValueOf, requireField } from "../../model/dataset.ts";
 
 export interface SeriesProps {
   id: string;
@@ -49,8 +49,8 @@ export interface MappedPoint {
   pointLabel: string;
   x: number;
   y: number;
-  xCell?: MeasureCell;
-  yCell?: MeasureCell;
+  xCell?: MetricValue;
+  yCell?: MetricValue;
   refs: readonly string[];
 }
 
@@ -78,8 +78,8 @@ function bindingField(binding: ChartAxisBinding): string {
 }
 
 function numericFromField(field: DatasetField, raw: unknown): number | null {
-  if (field.kind === "measure") {
-    if (!isMeasureCell(raw)) return null;
+  if (field.kind === "metric") {
+    if (!isMetricValue(raw)) return null;
     return raw.value;
   }
   if (field.valueType === "number" && typeof raw === "number") return raw;
@@ -157,9 +157,9 @@ export function mapChartSeries(
         pointLabel,
         x,
         y,
-        ...(xMeta.kind === "measure" && isMeasureCell(xRaw) ? { xCell: xRaw } : {}),
-        ...(yMeta.kind === "measure" && isMeasureCell(yRaw) ? { yCell: yRaw } : {}),
-        refs: (yMeta.kind === "measure" ? measureCellOf(row, yField)?.refs : measureCellOf(row, xField)?.refs) ?? [],
+        ...(xMeta.kind === "metric" && isMetricValue(xRaw) ? { xCell: xRaw } : {}),
+        ...(yMeta.kind === "metric" && isMetricValue(yRaw) ? { yCell: yRaw } : {}),
+        refs: (yMeta.kind === "metric" ? metricValueOf(row, yField)?.refs : metricValueOf(row, xField)?.refs) ?? [],
       });
     }
 

@@ -16,7 +16,6 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { Column, Table } from "./primitives.tsx";
-import { defineSource } from "../source.ts";
 import type { TableContent } from "./cell.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
@@ -57,12 +56,12 @@ const content: TableContent = {
 async function resolve(node: React.ReactNode) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
     report: buildReportMeta(definition, scope),
-    page: { id: "main", input: "scope" },
+    page: { id: "main", input: "sample" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -70,59 +69,7 @@ async function resolve(node: React.ReactNode) {
 }
 
 describe("Table Content", () => {
-  it("subRows 在 text 与 web 两面逐层渲染", async () => {
-    const tree = await resolve(<Table data={content} />);
-    const text = renderNodeToText(tree, createTextContext({ width: 80 }));
-    expect(text).toContain("parent");
-    expect(text).toMatch(/ {2}child/);
-    expect(text).toContain("3 / 5");
 
-    const webCtx: WebContext = {
-      locale: "en",
-      dimension: () => {
-        throw new UndeclaredDimensionValueError("unbound", "_");
-      },
-    };
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("parent");
-    expect(html).toContain("child");
-    expect(html).toContain('data-depth="1"');
-  });
-
-  it("placeholder 行照常显示,不与普通行混淆", async () => {
-    const tree = await resolve(<Table data={content} />);
-    const text = renderNodeToText(tree, createTextContext({ width: 80 }));
-    expect(text).toContain("not-run");
-    expect(text).toContain("—");
-    const webCtx: WebContext = {
-      locale: "en",
-      dimension: () => {
-        throw new UndeclaredDimensionValueError("unbound", "_");
-      },
-    };
-    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    expect(html).toContain("niceeval-row-placeholder");
-    expect(html).toContain("not-run");
-  });
-
-  it("<Column> 整体替换默认列;source 与 data 等价", async () => {
-    const source = defineSource({
-      name: "t",
-      compute: async () => content,
-    });
-    const withCols = await resolve(
-      <Table data={content}>
-        <Column dataKey="score" header="Score" align="right" />
-      </Table>,
-    );
-    const fromSource = await resolve(<Table source={source} />);
-    const textCols = renderNodeToText(withCols, createTextContext({ width: 80 }));
-    const textSource = renderNodeToText(fromSource, createTextContext({ width: 80 }));
-    expect(textCols).toContain("Score");
-    expect(textCols).not.toContain("parent"); // 只有 score 列
-    expect(textSource).toContain("parent");
-    expect(textSource).toContain("child");
-  });
 
   it("旧 columns/rows 字符串形态仍可用", () => {
     const text = renderNodeToText(

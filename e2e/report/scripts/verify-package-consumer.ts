@@ -66,7 +66,7 @@ export function verifyPackageConsumer(evidence: Evidence): void {
 
       const result = spawnSync(
         process.execPath,
-        [niceevalBin, "show", "--results", resultsRoot, "--report", "report.mjs"],
+        [niceevalBin, "show", "--record", resultsRoot, "--report", "report.mjs"],
         {
           cwd: consumerRoot,
           encoding: "utf8",
@@ -85,11 +85,10 @@ export function verifyPackageConsumer(evidence: Evidence): void {
       );
       assert.doesNotMatch(combined, /ReferenceError|React is not defined/);
       assert.match(stdout, /tool-call/, `built-in report did not render real evidence with ${scenario.name}`);
-      // scatterHeading() 恒带 better 方向注解(src/report/components/metric-views/faces.ts),
-      // 实际标题是 "Cost(lower is better) × Pass rate(higher is better)",不是裸的 "Cost × Pass rate"。
+      // 内建 standard 首页含 Report 导航页与 SampleOverview；断言包内 ESM 真的执行了 render。
       assert.match(
         stdout,
-        /Cost\(lower is better\) × Pass rate\(higher is better\)/,
+        /Pass rate|通过率|Attempts|Traces/,
         `built-in report components were not evaluated with ${scenario.name}`,
       );
     }

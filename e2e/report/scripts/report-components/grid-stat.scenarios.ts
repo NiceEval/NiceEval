@@ -12,7 +12,7 @@ export const gridStatScenarios: readonly ReportComponentScenario[] = [
     // When：用户用 show 打开 overview。
     // Then：四个统计标签都可见。
     async run({ evidence }) {
-      const out = sh(`pnpm exec niceeval show --report ${SITE_REPORT} --results ${evidence.resultsRoot}`);
+      const out = sh(`pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot}`);
       for (const label of ["Experiments", "Evals", "Attempts", "Pass rate"]) {
         assert.ok(out.includes(label), `Grid 应包含 Stat 标签 "${label}"`);
       }

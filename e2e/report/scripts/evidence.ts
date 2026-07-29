@@ -18,7 +18,8 @@ import { sh } from "./sh.ts";
 const RESULTS_ROOT = ".niceeval";
 const SITE_EXPORT_DIR = "site-export";
 const LOCATOR_RE = /^@[0-9a-z]{8}$/;
-const PROVIDER_FAULT_RE = /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/i;
+const PROVIDER_FAULT_RE =
+  /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)|Insufficient Balance|402|quota|rate.?limit/i;
 
 /** 只在 main Experiment 的真实网关调用失败时抛出——具体的退出码分类见 scripts/e2e.ts。 */
 export class InfraError extends Error {}
@@ -39,7 +40,7 @@ export interface AttemptEvidence {
 
 /** 本仓库三个 Experiment 中某一个的结构化证据。 */
 export interface Evidence {
-  /** 三个 Experiment 共用的 results 根目录——传给 `openResults()` 或 `--results`。相对于仓库根目录;脚本运行时 cwd 就是仓库根目录。 */
+  /** 三个 Experiment 共用的记录根目录——传给 `openRecord()` 或 `--record`。相对于仓库根目录;脚本运行时 cwd 就是仓库根目录。 */
   resultsRoot: string;
   /** 本次运行对应的 `niceeval view --out` 导出目录——真实的静态站点,由 rendering/CLI-readback 各 domain 共用。相对于仓库根目录。 */
   siteExportDir: string;
@@ -80,7 +81,7 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
-/** 预期恰好存在一个子目录(例如一次 --force 运行后唯一的快照目录)。绝不硬编码 timestamp+suffix 这个名字。 */
+/** 预期恰好存在一个子目录(例如一次 --rerun all 运行后唯一的快照目录)。绝不硬编码 timestamp+suffix 这个名字。 */
 function singleSubdir(dir: string, context: string): string {
   const names = readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
@@ -141,7 +142,7 @@ function shExpectZero(cmd: string): string {
 function readSingleAttempt(experimentId: string, evalId: string): { snapshotDir: string; attempt: AttemptEvidence } {
   const expDir = join(RESULTS_ROOT, experimentId);
   assert.ok(existsSync(expDir), `${expDir} missing — the ${experimentId} Experiment produced no experiment directory`);
-  const snapshotDir = singleSubdir(expDir, `${experimentId} experiment directory after a single --force run`);
+  const snapshotDir = singleSubdir(expDir, `${experimentId} experiment directory after a single --rerun all run`);
   const evalDir = join(snapshotDir, evalId);
   const attemptDirNames = subdirNames(evalDir);
   assert.equal(attemptDirNames.length, 1, `expected exactly 1 attempt directory under ${evalDir}, found ${attemptDirNames.length}: ${attemptDirNames.join(", ")}`);
@@ -162,15 +163,15 @@ export async function produceEvidence(): Promise<Evidence> {
   // deliberate-fail/error Eval 会在这里就直接失败,而不会被之后 main experiment 一个不相关的
   // 失败所掩盖。
   // ---------------------------------------------------------------------
-  sh("pnpm exec niceeval exp deliberate-fail --force --junit fail.xml", "nonzero");
-  sh("pnpm exec niceeval exp deliberate-error --force --junit error.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-fail --rerun all --junit fail.xml", "nonzero");
+  sh("pnpm exec niceeval exp deliberate-error --rerun all --junit error.xml", "nonzero");
 
   // ---------------------------------------------------------------------
   // 真实网关调用,放在最后。`--json` 把 NDJSON 事件流打到 stdout(不是聚合文件——`--json
   // <path>` 那种文件出口已经从 CLI 删除),这里原样落盘供 verify-format.ts 的「第 3 点:--json
   // 一致性」解析;`pnpm --silent exec` 防止 pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
   // ---------------------------------------------------------------------
-  const mainNdjson = shExpectZero("pnpm --silent exec niceeval exp main --force --json --junit main.xml");
+  const mainNdjson = shExpectZero("pnpm --silent exec niceeval exp main --rerun all --json --junit main.xml");
   writeFileSync("main.ndjson", mainNdjson, "utf8");
 
   const deliberateFail = readSingleAttempt("deliberate-fail", "deliberate-fail");
@@ -178,7 +179,7 @@ export async function produceEvidence(): Promise<Evidence> {
 
   const mainExpDir = join(RESULTS_ROOT, "main");
   assert.ok(existsSync(mainExpDir), `${mainExpDir} missing — the main Experiment produced no experiment directory`);
-  const mainSnapshotDir = singleSubdir(mainExpDir, "main experiment directory after a single --force run");
+  const mainSnapshotDir = singleSubdir(mainExpDir, "main experiment directory after a single --rerun all run");
   const mainEvalDir = join(mainSnapshotDir, "tool-call");
   const mainAttemptDirNames = subdirNames(mainEvalDir);
   assert.equal(

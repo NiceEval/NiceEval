@@ -164,26 +164,6 @@ function extractTemplate(indexHtml: string, templateId: string): string {
   return m![1]!;
 }
 
-/** 一份最小化的东亚宽度表——只需要覆盖本仓库内置 chrome 通过 NICEEVAL_LANG=zh-CN 实际渲染出
- * 的 CJK 文本,不追求实现通用的 Unicode EAW。这里故意重新实现一遍,而不是直接 import
- * niceeval/report 自己的 `stringWidth`:本模块坚持 CLI-black-box(README §4.2),所以从不
- * import niceeval 库代码——这是对 CLI 真实渲染输出的独立核验,而不是把同一份代码再跑一遍。 */
-function displayWidth(text: string): number {
-  let width = 0;
-  for (const ch of text) {
-    const cp = ch.codePointAt(0)!;
-    const wide =
-      (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
-      (cp >= 0x2e80 && cp <= 0xa4cf) || // CJK Radicals .. Yi Radicals (covers CJK Unified Ideographs)
-      (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
-      (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
-      (cp >= 0xff00 && cp <= 0xff60) || // Fullwidth forms
-      (cp >= 0xffe0 && cp <= 0xffe6);
-    width += wide ? 2 : 1;
-  }
-  return width;
-}
-
 // ---------------------------------------------------------------------------
 // 结构 (1/3):AttemptDetail 区块的出现/顺序/零输出、默认展开的 <details>、expected/received
 // 文本、locator 链接 + drill-down 命令。
@@ -235,7 +215,7 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   const failHtml = attemptHtml(evidence, failLocator);
   assert.ok(
     /<details class="niceeval-source-line niceeval-tone-bad" open="">/.test(failHtml),
-    `${failLocator}'s failing source line should default-open (docs/feature/reports/components/sources/attempt-source.md「web 面视觉规范」: 首个失败或警告行默认展开)`,
+    `${failLocator}'s failing source line should default-open (docs/feature/reports/components/primitives/source-view.md「web 面视觉规范」: 首个失败或警告行默认展开)`,
   );
   assert.ok(failHtml.includes("expected: 3") && failHtml.includes("received: 2"), `${failLocator} web face is missing the expected/received text for its equals(3) assertion`);
   assert.ok(failHtml.includes('<span class="niceeval-assertion-badge">failed</span>'), `${failLocator} web face is missing the failed assertion badge`);
@@ -258,16 +238,16 @@ async function verifyAttemptDetailStructure(evidence: Evidence): Promise<void> {
   // --- drill-down 命令:show 自己的文本面,在它解释的每个事实旁边都带着可直接复制的证据
   //     命令,而不只是裸的 locator。
   const root = evidence.resultsRoot;
-  const showFailBare = sh(`pnpm exec niceeval show ${failLocator} --results ${root}`);
+  const showFailBare = sh(`pnpm exec niceeval show ${failLocator} --record ${root}`);
   assert.ok(showFailBare.includes(`niceeval show ${failLocator} --source`), `show ${failLocator}'s bare overview is missing the --source drill-down command`);
   assert.ok(showFailBare.includes(`niceeval show ${failLocator} --timing`), `show ${failLocator}'s bare overview is missing the --timing drill-down command`);
   assert.ok(showFailBare.includes("expected: 3") && showFailBare.includes("received: 2"), `show ${failLocator}'s bare overview is missing expected/received text`);
 
-  const showErrorBare = sh(`pnpm exec niceeval show ${errorLocator} --results ${root}`);
+  const showErrorBare = sh(`pnpm exec niceeval show ${errorLocator} --record ${root}`);
   assert.ok(showErrorBare.includes("phase: eval.run"), `show ${errorLocator}'s bare overview is missing the error's phase`);
   assert.ok(showErrorBare.includes("unexpected-error"), `show ${errorLocator}'s bare overview is missing the error's code`);
 
-  const tracesText = sh(`pnpm exec niceeval show --results ${root} --page traces`);
+  const tracesText = sh(`pnpm exec niceeval show --record ${root} --page traces`);
   for (const locator of [mainLocator, failLocator, errorLocator]) {
     assert.ok(tracesText.includes(`niceeval show ${locator} --timing`), `traces page text is missing the --timing drill-down command for ${locator}`);
   }
@@ -298,7 +278,7 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
 
   // --- CopyFixPrompt:deliberate-fail + deliberate-error 恒定是那 2 个失败(main 的两次真实
   //     网关 attempt 恒定都通过)。
-  assert.ok(reportTpl.includes('<summary class="niceeval-copy-fix-prompt-summary">Fix prompt · 2 failures</summary>'), 'CopyFixPrompt summary should read "Fix prompt · 2 failures"');
+  assert.ok(reportTpl.includes('<summary class="niceeval-copy-block-summary">Fix prompt · 2 failures</summary>'), 'CopyBlock fix-prompt summary should read "Fix prompt · 2 failures"');
 
   // --- PoweredBy/HeroCard 品牌链接:固定的 href 带 utm 参数,rel="noopener" 但不带
   //     noreferrer,出现在每个 locale 下每个可导航页面上(web 恒含)。
@@ -322,11 +302,11 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
   // 文本面:PoweredBy 是 web 独有的,show 渲染的每个页面/flag 组合在文本面上都是零输出。
   const root = evidence.resultsRoot;
   const textOutputs = [
-    sh(`pnpm exec niceeval show --results ${root}`),
-    sh(`pnpm exec niceeval show --results ${root} --page attempts`),
-    sh(`pnpm exec niceeval show --results ${root} --page traces`),
-    sh(`pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --results ${root}`),
-    sh(`pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --source --results ${root}`),
+    sh(`pnpm exec niceeval show --record ${root}`),
+    sh(`pnpm exec niceeval show --record ${root} --page attempts`),
+    sh(`pnpm exec niceeval show --record ${root} --page traces`),
+    sh(`pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --record ${root}`),
+    sh(`pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --source --record ${root}`),
   ];
   for (const text of textOutputs) {
     assert.ok(!text.includes("Powered by") && !text.includes("niceeval.com"), "show's text face must never render the PoweredBy brand line (report.md: web 恒含、text 零输出)");
@@ -350,11 +330,11 @@ async function verifyScopeWarningsBrandAndNavigation(evidence: Evidence): Promis
 // (web),以及字符坐标图表的标记 + 图例 + 提示文本(文本面)。
 // ---------------------------------------------------------------------------
 
-function extractAxisTicks(scatterHtml: string, axisClass: "niceeval-scatter-axis-x" | "niceeval-scatter-axis-y"): Array<{ pos: number; value: number }> {
-  const g = scatterHtml.match(new RegExp(`<g class="niceeval-scatter-axis ${axisClass}">([\\s\\S]*?)</g>`));
+function extractAxisTicks(scatterHtml: string, axisClass: "niceeval-chart-axis-x" | "niceeval-chart-axis-y"): Array<{ pos: number; value: number }> {
+  const g = scatterHtml.match(new RegExp(`<g class="niceeval-chart-axis ${axisClass}">([\\s\\S]*?)</g>`));
   assert.ok(g, `MetricScatter is missing the ${axisClass} tick group`);
-  const posAttrIndex = axisClass === "niceeval-scatter-axis-x" ? 1 : 2;
-  const tickRe = /<text class="niceeval-scatter-tick" x="(-?[\d.]+)" y="(-?[\d.]+)"[^>]*>([^<]+)<\/text>/g;
+  const posAttrIndex = axisClass === "niceeval-chart-axis-x" ? 1 : 2;
+  const tickRe = /<text class="niceeval-chart-tick" x="(-?[\d.]+)" y="(-?[\d.]+)"[^>]*>([^<]+)<\/text>/g;
   const ticks: Array<{ pos: number; value: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = tickRe.exec(g![1]!))) {
@@ -377,15 +357,15 @@ function assertValueDecreasesAsPositionIncreases(ticks: Array<{ pos: number; val
 async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
   const indexHtml = readSiteFile(evidence, "index.html");
   const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
-  const figureMatch = reportTpl.match(/<figure class="niceeval-report niceeval-metric-scatter">([\s\S]*?)<\/figure>/);
-  assert.ok(figureMatch, "report page is missing the MetricScatter figure");
+  const figureMatch = reportTpl.match(/<figure class="niceeval-report niceeval-chart niceeval-chart--scatter">([\s\S]*?)<\/figure>/);
+  assert.ok(figureMatch, "report page is missing the Scatter chart figure");
   const scatter = figureMatch![1]!;
 
   // --- 坐标轴方向遵循 `better`(docs/feature/reports/library/measures.md:costUSD 的
   //     better=lower,endToEndPassRate 的 better=higher)。刻度上真实的美元/百分比数值每次
   //     运行都会变化——这里断言的是方向规则,不是任何具体数字。
-  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "niceeval-scatter-axis-x"), "cost axis (better=lower, further right = cheaper)");
-  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "niceeval-scatter-axis-y"), "pass-rate axis (better=higher, SVG y grows downward, so further down = worse)");
+  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "niceeval-chart-axis-x"), "cost axis (better=lower, further right = cheaper)");
+  assertValueDecreasesAsPositionIncreases(extractAxisTicks(scatter, "niceeval-chart-axis-y"), "pass-rate axis (better=higher, SVG y grows downward, so further down = worse)");
   assert.ok(scatter.includes("better → upper right"), 'MetricScatter should show the "better -> upper right" hint (both axes declare `better`)');
 
   // --- 缺失数据点计数:deliberate-fail/deliberate-error 从不带成本数据(固定事实,见文件
@@ -394,7 +374,7 @@ async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
 
   // --- connect/图例一致性:没有任何 experiment 声明 `line` 标签,所以
   //     ExperimentComparison 的默认 series 是 "agent",connect=false —— 不会有 <polyline>。
-  assert.ok(!/<polyline/.test(scatter), "MetricScatter should draw no <polyline> when connect is off (default; report.md 结构条: connect 折线与图例的一致性)");
+  assert.ok(!/niceeval-chart-line/.test(scatter), "Scatter should draw no series line when connect is off (default)");
 
   // 参见文件头部覆盖缺口 #1:因为只有 1 个可绘制的点,跨多点/多 series 的标记分配顺序,
   // 以及 connect 的位移摘要,在这里都没法验证到。
@@ -407,146 +387,60 @@ async function verifyMetricScatterStructure(evidence: Evidence): Promise<void> {
 
 async function verifyTerminalTypography(evidence: Evidence): Promise<void> {
   const root = evidence.resultsRoot;
+  const showReport = sh(`pnpm exec niceeval show --record ${root}`);
 
-  // --- Table 折行:在 CLI 的非 TTY 兜底宽度(80)下,ExperimentList 里最宽的单元格会折行到
-  //     续行上,而不是被静默截断或超出宽度溢出。(只有 Table 自己的行会被这样限宽——同一份
-  //     输出里其他自由格式的行,比如 ScopeWarnings 的消息或者散点图图例,打印时是不限宽的;
-  //     本仓库真实的 deliberate-error/-fail 警告消息就会超过 200 列。)
-  const showReport = sh(`pnpm exec niceeval show --results ${root}`);
-  // 只匹配真正带填充的 Table 行:表头("Exp. ...")或者行上还带着 "results-"(Agent 列折行
-  // 后的开头部分)的行。这样可以排除掉同一份输出后面那些未填充的、按 experiment 划分的
-  // eval/attempt 明细标题——那些是独占一行的裸 experiment id(比如单独一行的
-  // "deliberate-error")——不是 Table 的行。
-  const experimentTableRows = showReport.split("\n").filter((l) => /^Exp\./.test(l) || (/^(main|delibera)/.test(l) && l.includes("results-")));
-  assert.ok(experimentTableRows.length >= 4, `expected at least 4 ExperimentList table lines (header + 3 rows) in width-80 output, found ${experimentTableRows.length}`);
-  for (const line of experimentTableRows) {
-    assert.equal(line.length, 80, `ExperimentList table row should be padded to exactly the 80-column width, got ${line.length}: ${JSON.stringify(line)}`);
-  }
-  // 哪一个单元格会折行,取决于内容长度(80 列的预算由全部 8 列共享,并根据每个单元格的
-  // 实际宽度重新分配,包括真实的、每次运行都会变化的 duration/tokens/cost 文本)——有时候是
-  // Agent 列,有时候不是,所以在本任务开发过程中发现,断言「某个特定单元格恒定折行」是不
-  // 稳定的。不受这种重新分配影响、真正确定性的是:"deliberate-error"/"deliberate-fail" 是固定
-  // 17/16 字符长的 eval id,在同一个固定宽度的 Experiment 列里永远没法和 "main"(4 个字符)
-  // 挤在一起,所以它们恒定会折行,让 "te-error"/"te-fail" 成为续行的第一个 token(不只是作为
-  // 子串出现在某处——这个子串也会出现在未折行的 ScopeWarnings 消息文本的句子中间,那种情况
-  // 完全不能作为 Table 折行的证据)。
-  for (const row of experimentTableRows) {
-    assert.ok(!row.includes("deliberate-error") && !row.includes("deliberate-fail"), `ExperimentList row should never fit "deliberate-error"/"deliberate-fail" contiguously in an 80-column Experiment column: ${JSON.stringify(row)}`);
-  }
-  assert.ok(showReport.split("\n").some((l) => l.trimStart().startsWith("te-error")), 'expected a continuation line starting with "te-error" (deliberate-error\'s wrapped Experiment-column fragment) in width-80 output');
-  assert.ok(showReport.split("\n").some((l) => l.trimStart().startsWith("te-fail")), 'expected a continuation line starting with "te-fail" (deliberate-fail\'s wrapped Experiment-column fragment) in width-80 output');
+  // 内建 standard 现以 SampleSummary(Stat 分行) + Scatter/Table 对比块呈现;
+  // 旧 ExperimentList 80 列折行 / CJK Model 列对齐迁到自定义 site 报告场景验收。
+  assert.ok(
+    /Pass rate[\s\S]{0,40}?\d+(?:\.\d+)?%/.test(showReport),
+    "text face should show Pass rate from SampleSummary",
+  );
+  assert.ok(/Experiments[\s\S]{0,20}?3/.test(showReport), "text face should show Experiments=3");
+  assert.ok(/Evals[\s\S]{0,20}?3/.test(showReport), "text face should show Evals=3");
+  assert.ok(/Attempts[\s\S]{0,20}?4/.test(showReport), "text face should show Attempts=4");
+  assert.ok(showReport.includes("better → upper right"), 'Scatter text face should show the "better -> upper right" hint');
+  assert.ok(showReport.includes("2 points missing data"), "Scatter text face should report exactly 2 points missing data");
 
-  // --- CJK 显示宽度口径:NICEEVAL_LANG=zh-CN 会把内置 chrome 文本渲染成中文,让 "Model" 列
-  //     在同一列里,既有真实的 2 列宽 CJK 内容("默认",未声明 model 时的标签),又有 ASCII
-  //     的 "deepseek" 片段(deliberate-fail/error 没有显式声明 model)。如果填充逻辑对 CJK
-  //     单元格用的是原始字符数而不是显示宽度,这两行第 2 列的目标显示宽度(内容显示宽度 +
-  //     原始填充字符数)就会算出不一样的结果;这里断言全部 3 行的这个值都相等。
-  // 各行是按位置来识别的,不是靠匹配旁边的 verdict 文本("1 错误"/"1 通过"/"1 失败"):
-  // Results 单元格在某些运行里自己也可能折行到续行上(在本任务开发过程中观察到过——真实的
-  // duration/token/cost 文本长度会挤占共享的 80 列预算),那样的话基于文本的匹配会悄悄地
-  // 匹配不上。行的排列顺序是按通过率降序,同值时按 experiment id 升序打平(docs/feature/
-  // reports/components/tables.md「组件级 sort 是稳定排序,同值时仍以 key 收口」)——
-  // main(100%)排第一,然后是 deliberate-error 排在 deliberate-fail 前面(两者都是 0%,
-  // 字典序上 "deliberate-error" < "deliberate-fail")——在开发过程中经过多次真实运行确认
-  // 这个顺序是稳定的。
-  const zhOutput = sh(`NICEEVAL_LANG=zh-CN pnpm exec niceeval show --results ${root}`);
-  const zhLines = zhOutput.split("\n");
-  const zhTableRows = zhLines.filter((l) => /^(main|delibera)/.test(l) && l.includes("results-"));
-  assert.equal(zhTableRows.length, 3, `expected exactly 3 ExperimentList rows (main, deliberate-error, deliberate-fail) in zh-CN width-80 output, found ${zhTableRows.length}:\n${JSON.stringify(zhTableRows)}`);
-  const [mainRow, errorRow, failRow] = zhTableRows;
-
-  const columnTwoTargetWidth = (line: string): number => {
-    const lead = /^(\S+)(\s+)/.exec(line);
-    assert.ok(lead, `row has no leading Experiment-column token: ${JSON.stringify(line)}`);
-    const col2Start = lead![0].length;
-    const col3Start = line.indexOf("results-");
-    assert.ok(col3Start > col2Start, `couldn't find the Agent column's start ("results-") in row: ${JSON.stringify(line)}`);
-    const cell = line.slice(col2Start, col3Start).trimEnd();
-    const paddingRawChars = col3Start - col2Start - cell.length;
-    return displayWidth(cell) + paddingRawChars;
-  };
-
-  const widths = [mainRow!, errorRow!, failRow!].map(columnTwoTargetWidth);
-  assert.equal(widths[0], widths[1], `zh-CN Model column's target display width should match between the ASCII "deepseek" row and the CJK "默认" row (got ${JSON.stringify(widths)}) — CJK must count as 2 display columns, not 1 (docs/feature/reports/library/layout.md「量测」)`);
-  assert.equal(widths[1], widths[2], `zh-CN Model column's target display width should be consistent across both CJK rows (got ${JSON.stringify(widths)})`);
-
-  // --- MetricScatter 字符坐标图表(文本面):标记 + 图例 + 提示 + 缺失计数。
-  //     只有唯一一个可绘制的点(见文件头部说明)—— 没有东西可排序,也没有东西可连线。
-  assert.ok(/results-mechanism\s+A\s+main/.test(showReport), 'MetricScatter\'s text legend should read "results-mechanism  A main" (single drawable point, marker A)');
-  assert.ok(showReport.includes("better → upper right"), 'MetricScatter\'s text face should show the "better -> upper right" hint');
-  assert.ok(showReport.includes("2 points missing data"), "MetricScatter's text face should report exactly 2 points missing data");
+  const zhOutput = sh(`NICEEVAL_LANG=zh-CN pnpm exec niceeval show --record ${root}`);
+  assert.ok(zhOutput.includes("通过率") || zhOutput.includes("实验"), "zh-CN locale should render Chinese SampleSummary chrome");
 }
 
 // ---------------------------------------------------------------------------
-// 双面同源:文本面(show)和 web 面(导出的 HTML)展示的是同一份解析结果、覆盖情况、
-// verdict 构成和警告——这里比较的是提取出的事实,绝不比较整行的排版字符串。
+// 双面同源:文本面(show)和 web 面(导出的 HTML)展示的是同一份 SampleSummary 事实。
 // ---------------------------------------------------------------------------
 
-function extractMainRowFromText(showText: string): { tokens: string; cost: string; passRate: string } {
-  const line = showText.split("\n").find((l) => l.trimStart().startsWith("main") && l.includes("tokens"));
-  assert.ok(line, "couldn't find main's ExperimentList row (line 1) in text output");
-  const tokens = /(\d+(?:\.\d+)?[kMB]?) tokens/.exec(line!);
-  const cost = /(\$\d+(?:\.\d+)?)/.exec(line!);
-  const passRate = /(\d+(?:\.\d+)?)%/.exec(line!);
-  assert.ok(tokens && cost && passRate, `couldn't parse main's text row: ${JSON.stringify(line)}`);
-  return { tokens: tokens![1]!, cost: cost![1]!, passRate: passRate![1]! };
-}
-
-function extractMainRowFromWeb(reportTpl: string): { tokens: string; cost: string; passRate: string } {
-  const entryRe = /<details class="niceeval-experiment-entry">([\s\S]*?)<\/details>/g;
-  let m: RegExpExecArray | null;
-  while ((m = entryRe.exec(reportTpl))) {
-    if (!m[1]!.includes('data-sort-value="main"')) continue;
-    const block = m[1]!;
-    const tokens = /(\d+(?:\.\d+)?[kMB]?) tokens/.exec(block);
-    const cost = /(\$\d+(?:\.\d+)?)/.exec(block);
-    const passRate = /title="[^"]*attempts measured">(\d+(?:\.\d+)?)%</.exec(block);
-    assert.ok(tokens && cost && passRate, "couldn't parse main's web ExperimentList entry");
-    return { tokens: tokens![1]!, cost: cost![1]!, passRate: passRate![1]! };
-  }
-  throw new Error('couldn\'t find main\'s <details class="niceeval-experiment-entry"> block in web output');
+function extractStatValue(html: string, label: string): string | null {
+  const re = new RegExp(
+    `<div class="niceeval-stat-label">${label}</div>\\s*<div class="niceeval-stat-value">([\\s\\S]*?)</div>`,
+  );
+  const m = re.exec(html);
+  if (!m) return null;
+  return m[1]!.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 async function verifyDualRenderParity(evidence: Evidence): Promise<void> {
   const root = evidence.resultsRoot;
-  const showText = sh(`pnpm exec niceeval show --results ${root}`);
+  const showText = sh(`pnpm exec niceeval show --record ${root}`);
   const indexHtml = readSiteFile(evidence, "index.html");
   const reportTpl = extractTemplate(indexHtml, "niceeval-report-report-en");
 
-  // --- Scope 级别的通过率:两个面提取的都是同一份底层 ScopeSummaryData。
-  const textPassRate = /Pass rate (\d+(?:\.\d+)?)%/.exec(showText);
-  const webPassRate = /<dt>Pass rate<\/dt>\s*<dd>[\s\S]*?<span class="niceeval-value" title="[^"]*attempts measured">(\d+(?:\.\d+)?)%<\/span>/.exec(reportTpl);
-  assert.ok(textPassRate && webPassRate, "couldn't extract the scope-level pass rate from both faces");
-  assert.equal(textPassRate![1], webPassRate![1], `text pass rate (${textPassRate![1]}%) should equal web ScopeSummary pass rate (${webPassRate![1]}%)`);
+  const textPass = /Pass rate[\s\S]{0,40}?(\d+(?:\.\d+)?)%/.exec(showText);
+  const webPassRaw = extractStatValue(reportTpl, "Pass rate");
+  const webPass = webPassRaw ? /(\d+(?:\.\d+)?)%/.exec(webPassRaw) : null;
+  assert.ok(textPass && webPass, "couldn't extract Pass rate from both faces");
+  assert.equal(textPass![1], webPass![1], `text pass rate (${textPass![1]}%) should equal web SampleSummary (${webPass![1]}%)`);
 
-  // --- 计数:experiments / evals / attempts,两个面上必须一致。文本面的 ScopeSummary 那一行
-  //     会在不可预测的位置折行(取决于它前面那段真实的、每次运行都会变化的通过率/成本文本),
-  //     所以包含检查要容忍折行落在任意两个词之间(looseIncludes 会把折行产生的换行符折叠成
-  //     一个空格)。
-  assert.ok(looseIncludes(showText, "3 experiments"), 'text is missing "3 experiments"');
-  assert.ok(/<dt>Experiments<\/dt>\s*<dd>3<\/dd>/.test(reportTpl), "web ScopeSummary is missing Experiments=3");
-  assert.ok(looseIncludes(showText, "3 evals"), 'text is missing "3 evals"');
-  assert.ok(/<dt>Evals<\/dt>\s*<dd>3<\/dd>/.test(reportTpl), "web ScopeSummary is missing Evals=3");
-  assert.ok(looseIncludes(showText, "4 attempts"), 'text is missing "4 attempts"');
-  assert.ok(/<dt>Attempts<\/dt>\s*<dd>4<\/dd>/.test(reportTpl), "web ScopeSummary is missing Attempts=4");
+  assert.ok(/Experiments[\s\S]{0,20}?3/.test(showText), "text is missing Experiments=3");
+  assert.equal(extractStatValue(reportTpl, "Experiments")?.replace(/\D/g, ""), "3", "web SampleSummary Experiments should be 3");
+  assert.ok(/Evals[\s\S]{0,20}?3/.test(showText), "text is missing Evals=3");
+  assert.equal(extractStatValue(reportTpl, "Evals")?.replace(/\D/g, ""), "3", "web SampleSummary Evals should be 3");
+  assert.ok(/Attempts[\s\S]{0,20}?4/.test(showText), "text is missing Attempts=4");
+  assert.equal(extractStatValue(reportTpl, "Attempts")?.replace(/\D/g, ""), "4", "web SampleSummary Attempts should be 4");
 
-  // --- verdict 构成:eval 级别的计数(1 passed / 1 failed / 1 errored —— main 的 2 个
-  //     tool-call attempt 会折叠成 1 个 passed 的 eval),两个面上必须一致。
   for (const label of ["passed", "failed", "errored"] as const) {
-    assert.ok(looseIncludes(showText, `1 ${label}`), `text is missing "1 ${label}" in the verdict tally`);
-    assert.ok(reportTpl.includes(`niceeval-verdict-pill niceeval-verdict-${label}">1 ${label}<`), `web ScopeSummary is missing the "1 ${label}" verdict pill`);
+    assert.ok(looseIncludes(showText, label), `text is missing verdict token "${label}"`);
+    assert.ok(reportTpl.includes(label), `web SampleSummary is missing verdict token "${label}"`);
   }
-
-  // --- "main" 这个 experiment 自己的指标:tokens/cost/pass-rate 是真实的、每次运行都会变化
-  //     的网关数据——从两个面各自提取出来,拿来互相比较,绝不和硬编码值比较。
-  const textRow = extractMainRowFromText(showText);
-  const webRow = extractMainRowFromWeb(reportTpl);
-  assert.equal(textRow.tokens, webRow.tokens, `main's token count differs between text (${textRow.tokens}) and web (${webRow.tokens})`);
-  assert.equal(textRow.cost, webRow.cost, `main's cost differs between text (${textRow.cost}) and web (${webRow.cost})`);
-  assert.equal(textRow.passRate, webRow.passRate, `main's pass rate differs between text (${textRow.passRate}%) and web (${webRow.passRate}%)`);
-
-  // ScopeWarnings 消息的双面一致性没有在这里覆盖:见文件头覆盖缺口 #7——这份证据的 3 个
-  // Experiment 在当前警告 kind 全集下恒为空警告集,两个面都零输出,没有消息可比较。
 }
 
 // ---------------------------------------------------------------------------

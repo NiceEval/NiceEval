@@ -134,6 +134,48 @@ describe("latestRunSample(results) · Selection", () => {
     const coverage = latest.coverage.find((c) => c.experimentId === "midterm/bub-gpt-5.4")!;
     expect(coverage.knownEvalIds).toEqual(["algebra/q1", "algebra/q2", "algebra/q3"]);
     expect(coverage.missingEvalIds).toEqual(["algebra/q2", "algebra/q3"]);
+    // 锚点是最新 Run：分组读 agent 时与 friday 对齐，不必出现在 missing 题的 attempt 上。
+    expect(coverage.run.dir).toBe(fridayDir);
+    expect(coverage.run.agent).toBe("bub");
+  });
+
+  it("coverage 锚点 Run:全缺口 Experiment 仍有锚点，且不进 Sample.runs", async () => {
+    const root = await makeRoot();
+    // 周一全量；周二改 configHash 后零 attempt（只声明 knownEvalIds）——
+    // current 以周二为可比性基准，周一不可比，全部题进缺口。
+    const mondayDir = await writeSnapshot(root, "gap_e", "2026-07-01T08-00-00-000Z", meta({
+      experimentId: "gap/e",
+      agent: "bub",
+      model: "gpt-old",
+      startedAt: "2026-07-01T08:00:00.000Z",
+      completedAt: "2026-07-01T08:10:00.000Z",
+      configHash: "v1",
+    }));
+    await writeResultFile(mondayDir, "q1/a1", record({ id: "q1", attempt: 1 }));
+    await writeResultFile(mondayDir, "q2/a1", record({ id: "q2", attempt: 1 }));
+    const tuesdayDir = await writeSnapshot(root, "gap_e", "2026-07-02T08-00-00-000Z", meta({
+      experimentId: "gap/e",
+      agent: "codex",
+      model: "gpt-new",
+      startedAt: "2026-07-02T08:00:00.000Z",
+      completedAt: "2026-07-02T08:10:00.000Z",
+      configHash: "v2",
+      knownEvalIds: ["q1", "q2"],
+    }));
+
+    const current = currentSample(await openRecord(root));
+    expect(current.runs).toHaveLength(0);
+    expect(current.attempts).toHaveLength(0);
+    const coverage = current.coverage.find((c) => c.experimentId === "gap/e")!;
+    expect(coverage.missingEvalIds).toEqual(["q1", "q2"]);
+    // 锚点是确定可比性配置的最新 Run（周二），不是周一。
+    expect(coverage.run.dir).toBe(tuesdayDir);
+    expect(coverage.run.agent).toBe("codex");
+    expect(coverage.run.model).toBe("gpt-new");
+    // latest 口径锚最新 Run，同样有缺口。
+    const latest = latestRunSample(await openRecord(root));
+    expect(latest.coverage[0]!.run.dir).toBe(tuesdayDir);
+    expect(latest.coverage[0]!.missingEvalIds).toEqual(["q1", "q2"]);
   });
 
   it("unfinished-run:选中快照缺 completedAt", async () => {

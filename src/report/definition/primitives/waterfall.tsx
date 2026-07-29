@@ -7,7 +7,6 @@ import type { AttemptLocator } from "../../../record/locator.ts";
 import { defineComponent, type TextContext } from "../tree.ts";
 import { countText, localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../model/locale.ts";
 import { formatDurationMs } from "../../model/format.ts";
-import type { Source, SourceInput } from "../../source.ts";
 
 function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -39,28 +38,15 @@ export interface WaterfallRow {
 
 export type WaterfallContent = readonly WaterfallRow[];
 
-export type WaterfallProps<Input extends SourceInput = SourceInput> =
-  | ({
-      data: WaterfallContent | null;
-      source?: never;
-      input?: never;
-      /** 区块标题;Content 为 null 或空时整块(含标题)不渲染。 */
-      title?: LocalizedText;
-      attemptHref?: (locator: AttemptLocator) => string;
-      locale?: ReportLocale;
-      className?: string;
-    })
-  | ({
-      source: Source<Input, WaterfallContent | null>;
-      data?: never;
-      input?: Input;
-      /** 区块标题;Content 为 null 或空时整块(含标题)不渲染。 */
-      title?: LocalizedText;
-      attemptHref?: (locator: AttemptLocator) => string;
-      locale?: ReportLocale;
-      className?: string;
-    });
-
+export interface WaterfallProps {
+  /** 多 attempt 行为 WaterfallRow[]；单树可包成一行。 */
+  nodes: WaterfallContent | null;
+  /** 区块标题;Content 为 null 或空时整块(含标题)不渲染。 */
+  title?: LocalizedText;
+  attemptHref?: (locator: AttemptLocator) => string;
+  locale?: ReportLocale;
+  className?: string;
+}
 function pct(part: number, total: number): string {
   if (total <= 0) return "0%";
   return `${Math.min(100, Math.max(0, (part / total) * 100)).toFixed(2)}%`;
@@ -383,14 +369,14 @@ export function waterfallText(rows: WaterfallContent, ctx: TextContext, title?: 
 export const Waterfall = defineComponent<WaterfallProps>({
   dimensions: () => ({}),
   web(props, ctx) {
-    const content = props.data ?? null;
+    const content = props.nodes ?? null;
     if (content === null || content.length === 0) return null;
     const locale = props.locale ?? ctx.locale;
     const attemptHref = props.attemptHref ?? ctx.attemptHref;
     return renderWaterfallWeb(content, locale, attemptHref, props.title, props.className);
   },
   text(props, ctx) {
-    const content = props.data ?? null;
+    const content = props.nodes ?? null;
     if (content === null || content.length === 0) return "";
     return waterfallText(content, { ...ctx, locale: props.locale ?? ctx.locale }, props.title);
   },

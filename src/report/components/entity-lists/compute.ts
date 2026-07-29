@@ -1,5 +1,5 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。实体列表族(ExperimentList / EvalList /
-// AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/components/sources/entity.md)。
+// AttemptList / FailureList)的 *Data 都住在这里(docs/feature/reports/library.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
 // - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
@@ -15,7 +15,7 @@ import type {
   ReportInput,
 } from "../../model/types.ts";
 import type { EvalResult } from "../../../types.ts";
-import type { Run } from "../../../record/types.ts";
+import type { AttemptHandle, Run } from "../../../record/types.ts";
 import { comparabilityConfigOf, deepEqualJson } from "../../../sample/index.ts";
 import { foldEvalVerdict } from "../../../shared/verdict.ts";
 import {
@@ -91,6 +91,15 @@ async function attemptListItemOf(item: Item): Promise<AttemptListItem> {
     historical: historicalOf(item),
     locator: locatorOf(item),
   };
+}
+
+/** 已选出的 AttemptHandle[] → 列表行；顺序保持传入顺序（不再次按 Sample 去重）。 */
+export async function attemptRowsOf(attempts: readonly AttemptHandle[]): Promise<AttemptListItem[]> {
+  return Promise.all(
+    attempts.map((attempt) =>
+      attemptListItemOf({ attempt, run: attempt.run, watermark: attempt.run }),
+    ),
+  );
 }
 
 /** `attemptListData(input)`:每个 Attempt 一项,顺序取自 Sample 展平顺序(不重排)。 */
@@ -253,11 +262,14 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
   for (const coverageEntry of coverage) {
     if (groups.has(coverageEntry.experimentId)) continue;
     const emptyItems: Item[] = [];
+    const anchor = coverageEntry.run;
+    const experiment = anchor.experiment;
     out.push({
       experimentId: coverageEntry.experimentId,
-      // SampleCoverage 是结果选择层的覆盖事实，不伪造不存在的运行配置。这里的空值只让
-      // 实体行保持既有 data 形状；渲染面会以 missingEvalIds 的占位行表达真实状态。
-      agent: "",
+      // 锚点 Run 给出 agent / model / flags：零 attempt 的 Experiment 仍能按配置归组。
+      agent: anchor.agent,
+      ...(anchor.model !== undefined ? { model: anchor.model } : {}),
+      ...(experiment?.flags ? { flags: experiment.flags } : {}),
       // SampleCoverage 不携带题型事实(没有 attempt 可读);"pass" 是同一条「占位默认值」
       // 纪律下的默认,不是从任何真实数据推断出来的。
       scoring: "pass",
@@ -271,7 +283,7 @@ export async function experimentListData(input: ReportInput): Promise<Experiment
       attempts: 0,
       historicalAttempts: 0,
       missingEvalIds: coverageEntry.missingEvalIds,
-      lastRunAt: "",
+      lastRunAt: anchor.startedAt,
       evalRows: [],
     });
   }

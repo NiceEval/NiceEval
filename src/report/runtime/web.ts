@@ -10,6 +10,7 @@ import { type ReportLocale } from "../model/locale.ts";
 import { buildReportMeta, type ReportDefinition } from "../definition/report.ts";
 import { pickReportPage, type ReportHostContext } from "./text.ts";
 import { renderResolvedPageWeb, resolvePage } from "./resolved-page.ts";
+import { resolveDefinitionPage } from "./page-render.ts";
 
 export interface StaticHtmlOptions {
   /** 渲染哪一页;缺省第一张可导航页。命中 attempt-input page 抛 ReportPageNeedsLocatorError。 */
@@ -33,11 +34,11 @@ export async function renderReportToStaticHtml(
 ): Promise<string> {
   const page = pickReportPage(definition, options?.pageId);
   const meta = buildReportMeta(definition, ctx.scope);
-  const resolved = await resolvePage(page.content, {
+  const resolved = await resolveDefinitionPage(page, {
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
-    page: { id: page.id, input: "scope" },
+    page: { id: page.id, input: "sample" },
     dimensionPins: definition.dimensionPins,
   });
   return renderResolvedPageWeb(resolved, options);

@@ -35,20 +35,20 @@ export default defineReport(async (sample) => {
 多页报告静态声明 `pages`：
 
 ```ts
-interface SamplePage<External> {
+interface SamplePage {
   id: string;
   title: LocalizedText;
   input?: "sample";
   navigation?: boolean;
-  render: PageRender<Sample, External>;
+  render: PageRender<Sample>;
 }
 
-interface AttemptPage<External> {
+interface AttemptPage {
   id: string;
   title: LocalizedText;
   input: "attempt";
   navigation: false;
-  render: PageRender<AttemptEvidence, External>;
+  render: PageRender<AttemptEvidence>;
 }
 ```
 

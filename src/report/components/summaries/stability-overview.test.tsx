@@ -10,9 +10,10 @@ import { attemptHandleOf, resultsOf, scopeOf } from "../scope.harness.ts";
 import { buildReportMeta, defineReport } from "../../definition/report.ts";
 import { ResolveMemo, resolveReportTree } from "../../definition/tree.ts";
 import { pickReportPage } from "../../runtime/text.ts";
+import { renderSamplePage } from "../../runtime/page-render.ts";
 import { Chart, Grid, Stat, Table } from "../../definition/primitives.tsx";
 import { StabilityOverview } from "./stability-overview.tsx";
-import type { Dataset, MeasureCell } from "../../model/types.ts";
+import type { Dataset, MetricValue } from "../../model/types.ts";
 
 let seq = 0;
 function res(id: string, verdict: Verdict, attempt = 0): EvalResult {
@@ -71,13 +72,14 @@ function collectByType(
 
 async function resolveOverview(runs: Run[]) {
   const scope = scopeOf(runs);
-  const definition = defineReport(<StabilityOverview />);
+  const definition = defineReport(() => <StabilityOverview />);
   const page = pickReportPage(definition);
-  return resolveReportTree(page.content, {
+  const tree = await renderSamplePage(page, scope);
+  return resolveReportTree(tree, {
     scope,
     results: resultsOf(runs),
     report: buildReportMeta(definition, scope),
-    page: { id: page.id, input: "scope" },
+    page: { id: page.id, input: "sample" },
     memo: new ResolveMemo(),
   });
 }
@@ -109,8 +111,8 @@ describe("StabilityOverview(组合组件)", () => {
     const scatter = charts[0]!.props.data as Dataset;
     const q1a = scatter.rows.find((r) => r.key === "q1 · exp-a")!;
     expect(q1a).toBeDefined();
-    const executions = q1a.values.executions as MeasureCell;
-    const passRatio = q1a.values.passRatio as MeasureCell;
+    const executions = q1a.values.executions as MetricValue;
+    const passRatio = q1a.values.passRatio as MetricValue;
     expect(executions.value).toBe(2);
     expect(passRatio.value).toBe(0.5);
     expect(executions.refs).toHaveLength(2);

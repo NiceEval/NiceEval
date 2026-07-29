@@ -1,7 +1,7 @@
 // 计算函数(*Data):ReportInput → 一份组件数据。跑在 Node 侧,产物是算好的、可序列化的
 // 普通 JSON(终值 + 渲染提示,不含公式);渲染面(web/text)只做展示。指标图形族
 // (MetricTable / MetricMatrix / MetricBars / Scoreboard / MetricScatter / MetricLine /
-// DeltaTable)的 *Data 与配套 Options 都住在这里(docs/feature/reports/components/sources/measure.md)。
+// DeltaTable)的 *Data 与配套 Options 都住在这里(docs/feature/reports/calculations.md)。
 //
 // 共同约定(docs/feature/reports/architecture.md「指标聚合不变量」):
 // - 第一参收 ReportInput = Sample | readonly Run[];issues 不进组件数据(宿主统一显示);
@@ -20,8 +20,8 @@ import type { DatasetField,
   FlagConditions,
   LineData,
   MatrixData,
-  Measure,
-  MeasureCell,
+  AttemptMetric,
+  MetricValue,
   NumericAxis,
   ReportInput,
   ScatterData,
@@ -29,12 +29,12 @@ import type { DatasetField,
   SeriesInput,
   StabilityMatrixData,
   TableData,
-} from "../../model/types.ts";
-import type { JsonValue, Verdict } from "../../../types.ts";
-import type { AttemptLocator } from "../../../record/locator.ts";
-import type { Run } from "../../../record/types.ts";
-import { comparabilityConfigOf, deepEqualJson } from "../../../sample/index.ts";
-import { foldEvalVerdict } from "../../../shared/verdict.ts";
+} from "../model/types.ts";
+import type { JsonValue, Verdict } from "../../types.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
+import type { Run } from "../../record/types.ts";
+import { comparabilityConfigOf, deepEqualJson } from "../../sample/index.ts";
+import { foldEvalVerdict } from "../../shared/verdict.ts";
 import {
   assertUniqueMetricNames,
   axisValueOf,
@@ -57,34 +57,34 @@ import {
   seriesName,
   toColumn,
   type Item,
-} from "../../model/aggregate.ts";
-import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore as totalScoreMetric } from "../../model/metrics.ts";
-import { formatMeasureValue, formatPlainNumber, formatPoints } from "../../model/format.ts";
-import type { LocalizedText } from "../../model/locale.ts";
-import { selectedAttemptsOnly } from "../shared-compute.ts";
-import { datasetToTableData, measureFieldOf } from "../../model/dataset.ts";
+} from "../model/aggregate.ts";
+import { costUSD as costUSDMetric, examScore, tokens as tokensMetric, totalScore as totalScoreMetric } from "../model/metrics.ts";
+import { formatMeasureValue, formatPlainNumber, formatPoints } from "../model/format.ts";
+import type { LocalizedText } from "../model/locale.ts";
+import { selectedAttemptsOnly } from "../components/shared-compute.ts";
+import { datasetToTableData, metricFieldOf } from "../model/dataset.ts";
 
 // ───────────────────────── metricTableData ─────────────────────────
 
-export interface MeasureRowsOptions {
+export interface MetricRowsOptions {
   /** 空数组表示整个 Sample 只产生一行聚合结果。 */
   dimensions: readonly DimensionInput[];
-  measures: readonly [Measure, ...Measure[]];
-  sort?: Measure;
+  measures: readonly [AttemptMetric, ...AttemptMetric[]];
+  sort?: AttemptMetric;
   evals?: string | readonly string[];
 }
 
 /** @internal 过渡 spec：rows / columns 映射到 dimensions / measures。 */
 export interface MetricTableOptions {
   rows: DimensionInput;
-  columns: readonly [Measure, ...Measure[]];
-  sort?: Measure;
+  columns: readonly [AttemptMetric, ...AttemptMetric[]];
+  sort?: AttemptMetric;
   evals?: string | readonly string[];
 }
 
-function normalizeMeasureRowsOptions(
-  options: MeasureRowsOptions | MetricTableOptions,
-): MeasureRowsOptions {
+function normalizeMetricRowsOptions(
+  options: MetricRowsOptions | MetricTableOptions,
+): MetricRowsOptions {
   if ("dimensions" in options) return options;
   return {
     dimensions: [options.rows],
@@ -117,9 +117,9 @@ function dimensionFieldName(dimensions: readonly DimensionInput[]): string | nul
 
 export async function measureRowsData(
   input: ReportInput,
-  options: MeasureRowsOptions | MetricTableOptions,
+  options: MetricRowsOptions | MetricTableOptions,
 ): Promise<Dataset> {
-  const normalized = normalizeMeasureRowsOptions(options);
+  const normalized = normalizeMetricRowsOptions(options);
   assertUniqueMetricNames(normalized.measures, "measureRowsData measures");
   if (normalized.sort !== undefined) {
     if (!normalized.measures.includes(normalized.sort)) {
@@ -141,7 +141,7 @@ export async function measureRowsData(
   const groups = groupByDimensions(items, normalized.dimensions);
   const rows: DatasetRow[] = [];
   for (const [key, group] of groups) {
-    const values: globalThis.Record<string, string | MeasureCell> = {};
+    const values: globalThis.Record<string, string | MetricValue> = {};
     if (dimName !== null) values[dimName] = key;
     for (const metric of normalized.measures) values[metric.name] = await computeCell(metric, group);
     rows.push({ key, values });
@@ -152,8 +152,8 @@ export async function measureRowsData(
     rows.sort((a: DatasetRow, b: DatasetRow) => {
       const aCell = a.values[name];
       const bCell = b.values[name];
-      const va = isMeasureCell(aCell) ? aCell.value : null;
-      const vb = isMeasureCell(bCell) ? bCell.value : null;
+      const va = isMetricValueCell(aCell) ? aCell.value : null;
+      const vb = isMetricValueCell(bCell) ? bCell.value : null;
       if (va === null && vb === null) return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
       if (va === null) return 1;
       if (vb === null) return -1;
@@ -164,18 +164,18 @@ export async function measureRowsData(
   }
   const fields: DatasetField[] = [];
   if (dimName !== null) fields.push({ name: dimName, kind: "dimension", valueType: "string" });
-  fields.push(...normalized.measures.map(measureFieldOf));
+  fields.push(...normalized.measures.map(metricFieldOf));
   return { fields, rows };
 }
 
-function isMeasureCell(value: unknown): value is MeasureCell {
-  return typeof value === "object" && value !== null && "value" in value && "display" in value;
+function isMetricValueCell(value: unknown): value is MetricValue {
+  return typeof value === "object" && value !== null && "value" in value && "samples" in value && "total" in value;
 }
 
 /** @internal 过渡：Dataset → TableData。 */
 export async function metricTableData(
   input: ReportInput,
-  options: MeasureRowsOptions | MetricTableOptions,
+  options: MetricRowsOptions | MetricTableOptions,
 ): Promise<TableData> {
   return datasetToTableData(await measureRowsData(input, options));
 }
@@ -185,7 +185,7 @@ export async function metricTableData(
 export interface MetricMatrixOptions {
   rows: DimensionInput;
   columns: DimensionInput;
-  cell: Measure;
+  cell: AttemptMetric;
   /** eval id 前缀过滤,同 CLI 位置参数语义。 */
   evals?: string | readonly string[];
 }
@@ -227,7 +227,7 @@ export interface ScoreboardOptions {
   /** 权重按 eval id 前缀匹配,多个命中时最长前缀生效;默认 1。 */
   weights?: Readonly<globalThis.Record<string, number>>;
   fullMarks?: number;
-  score?: Measure;
+  score?: AttemptMetric;
 }
 
 /**
@@ -410,8 +410,8 @@ export interface MetricScatterOptions {
   points: DimensionInput;
   /** 决定颜色和图例归类,默认不连线(连线是呈现 prop `connect`);数组形态解析为复合维度。 */
   series?: SeriesInput;
-  x: Measure;
-  y: Measure;
+  x: AttemptMetric;
+  y: AttemptMetric;
   /** eval id 前缀过滤,同 CLI 位置参数语义。 */
   evals?: string | readonly string[];
 }
@@ -444,7 +444,7 @@ export interface MetricLineOptions {
   x: NumericAxis;
   /** 数组形态解析为复合维度。 */
   series?: SeriesInput;
-  y: Measure;
+  y: AttemptMetric;
   /** eval id 前缀过滤,同 CLI 位置参数语义。 */
   evals?: string | readonly string[];
 }
@@ -519,7 +519,7 @@ export async function metricLineData(input: ReportInput, options: MetricLineOpti
 // ───────────────────────── deltaTableData 与 conditionsByFlag ─────────────────────────
 
 /**
- * 按 flag 机械导出全部有序条件(docs/feature/reports/components/sources/measure-delta.md):
+ * 按 flag 机械导出全部有序条件(docs/feature/reports/calculations.md):
  * 条件域 = input Sample 内 `by: "experiment"` 的全部取值,删除该 flag 后必须可比性配置深相等
  * (不额外按 experiment id 的目录前缀分组——architecture.md「Sample 是默认报告的比较边界」同一条
  * 契约);基准取 `baseline` 声明的值(缺省 = 未声明该 flag),候选是该 flag 每个其它取值各一个
@@ -896,7 +896,7 @@ export interface StabilityMatrixOptions {
 
 /**
  * 历史全执行的稳定性矩阵:行是 eval,列是 by 维度上的取值,格是该组合全部历史执行(跨快照按
- * 身份键去重、不设可比性门槛)的判定计数(docs/feature/reports/components/sources/measure-stability.md)。消费的是调用方传入的 input 本身——传 current() Sample 只看得到现刻
+ * 身份键去重、不设可比性门槛)的判定计数(docs/feature/reports/calculations.md)。消费的是调用方传入的 input 本身——传 current() Sample 只看得到现刻
  * 水位,要看完整历史需由调用方从 ctx.results 显式选择 Run[] 传入。
  */
 export async function stabilityMatrixData(

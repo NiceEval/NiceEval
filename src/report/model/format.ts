@@ -1,6 +1,6 @@
 // unit 驱动的内置格式化(docs/feature/reports/library/presentation.md):
 //   "%" → 87%    "ms" → 1.2s    "$" → $0.31    其余 → 1.2k 缩写(带 unit 后缀)
-// Measure.display 可整体覆盖;公开入口是 measureDisplay / formatMeasureValue / formatAxisTick。
+// AttemptMetric.display 可整体覆盖;公开入口是 measureDisplay / formatMeasureValue / formatAxisTick。
 
 import type { Verdict } from "../../types.ts";
 import { gapParts } from "../../sample/index.ts";
@@ -12,7 +12,7 @@ import {
   type ReportLocale,
 } from "./locale.ts";
 
-/** `Measure.display` 覆盖回调:只格式化同一个终值,不改变口径。 */
+/** `AttemptMetric.display` 覆盖回调:只格式化同一个终值,不改变口径。 */
 export type MeasureDisplay = (value: number, locale: ReportLocale) => string;
 
 /**
@@ -124,7 +124,7 @@ export function formatAxisTick(value: number, step: number, unit?: string): stri
 export const formatTickValue = formatAxisTick;
 
 /**
- * 生成 `MeasureCell.display`:计算侧唯一入口。null → 缺数据文案;override 覆盖内建 unit 格式。
+ * 生成 `MetricValue.display`:计算侧唯一入口。null → 缺数据文案;override 覆盖内建 unit 格式。
  * (docs/feature/reports/library/presentation.md「格式化只发生一次」)。
  */
 export function measureDisplay(
@@ -281,7 +281,7 @@ export function formatReportDateTimeRange(
  * 历史执行的紧凑时距("3d" / "2h" / "5m" / "10s"):自 `startedAt` 起算,渲染时刻由调用方
  * 传入(`nowIso` 缺省当前时刻)——粒度阈值复用 `gapParts`(与曾经的 stale-run message
  * 同一套单源,见 `results/select.ts`),只是这里的呈现是紧凑单字母,不是完整单词
- * (docs/feature/reports/components/sources/entity.md「时效标注」)。
+ * (docs/feature/reports/library.md「时效标注」)。
  */
 export function formatHistoricalGap(startedAtIso: string, nowIso: string = new Date().toISOString()): string {
   const { n, unit } = gapParts(startedAtIso, nowIso);
@@ -316,7 +316,7 @@ export function fitFailureSummary(summary: string, maxChars: number): string {
 
 /**
  * 一份 `ExperimentList` data 的题型构成:主读数列该显示 Pass rate、Total score,还是两者
- * 并存(docs/feature/reports/components/sources/entity-experiments.md 主读数列)。与
+ * 并存(docs/feature/reports/library.md 主读数列)。与
  * `entity-lists/compute.ts` 里 `experimentListData` 默认排序专用的 `listScoringComposition`
  * 同一套判据——跳过 `attempts === 0` 的行(coverage-only 占位,`scoring` 是占位默认值不是
  * 读到的事实,一屏占位行不该把纯计分制列表误判成 mixed)。web 面与 text 面在这里读同一份

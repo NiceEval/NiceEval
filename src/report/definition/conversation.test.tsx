@@ -18,7 +18,6 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { Conversation, Text, type ConversationContent } from "./primitives.tsx";
-import { defineSource } from "../source.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
@@ -56,10 +55,10 @@ const content: ConversationContent = {
   ],
 };
 
-async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "scope" }) {
+async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "sample" }) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
@@ -116,15 +115,5 @@ describe("Conversation", () => {
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(nullTree as never))).toBe("");
   });
 
-  it("source 与 data 等价", async () => {
-    const source = defineSource({
-      name: "conv",
-      compute: async () => content,
-    });
-    const fromData = await resolve(<Conversation data={content} />);
-    const fromSource = await resolve(<Conversation source={source} />);
-    const textData = renderNodeToText(fromData, createTextContext({ width: 100 }));
-    const textSource = renderNodeToText(fromSource, createTextContext({ width: 100 }));
-    expect(textSource).toBe(textData);
-  });
+
 });

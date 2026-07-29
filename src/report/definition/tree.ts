@@ -4,11 +4,10 @@
 // 报告函数返回的树不是「React 树」,只是 { type, props } 节点 —— 标准 react
 // jsx-runtime 产的元素恰好就是这个形状。本文件是基础实现:零 react 运行时依赖
 // (只有类型层的 `import type`,编译后擦除);text 宿主遍历渲染不需要 react-dom,
-// web 宿主(web.ts)才真正 import react。管线固定为 装载 → resolve(Composition 展开 →
-// source 取数 → spec 取数,同层并行保声明序;Source 按「对象身份 × input 身份」缓存 Promise,
-// spec 按「同引用 input + 深相等 spec」记忆化)→ validate(两面资格)→
-// render(纯同步)。渲染面是纯同步函数:零 IO、零 await —— 可达百 MB 的 artifact
-// 只在 resolve 阶段被懒加载,永远不进渲染路径。
+// web 宿主(web.ts)才真正 import react。管线固定为 装载 → resolve(compose 展开 →
+// faces.resolve 取数,同层并行保声明序;spec 按「同引用 input + 深相等 spec」记忆化)
+// → validate(两面资格)→ render(纯同步)。渲染面是纯同步函数:零 IO、零 await ——
+// 可达百 MB 的 artifact 只在 page.render / faces.resolve 阶段被懒加载,永远不进渲染路径。
 
 import type { ReactNode } from "react";
 import type { AttemptLocator } from "../../record/locator.ts";
@@ -27,21 +26,17 @@ import {
   type PageDimensionHandle,
   type PresentedDimension,
 } from "../presentation.ts";
-import {
-  COMPOSITION_EXPAND,
-  type Composition,
-  type CompositionContext,
-  type Source,
-  type SourceInput,
-} from "../source.ts";
 
 // ───────────────────────── 当前页判别(PageContext) ─────────────────────────
 
-/** scope-input page 的当前页上下文:消费宿主选择的 Sample,没有 locator/evidence。 */
-export interface ScopePageContext {
+/** sample-input page 的当前页上下文:消费宿主选择的 Sample,没有 locator/evidence。 */
+export interface SamplePageContext {
   id: string;
-  input: "scope";
+  input: "sample";
 }
+
+/** @deprecated 使用 `SamplePageContext` 与 `input: "sample"`。 */
+export type ScopePageContext = SamplePageContext;
 
 /** attempt-input page 的当前页上下文:按 locator 消费一份 AttemptEvidence。 */
 export interface AttemptPageContext {
@@ -57,7 +52,7 @@ export interface AttemptPageContext {
  * ResolveContext.page 双双可见:组合组件靠它读当前页 id 与输入分支;attempt 叶子组件靠它
  * 取省略 input 时的缺省 evidence。
  */
-export type PageContext = ScopePageContext | AttemptPageContext;
+export type PageContext = SamplePageContext | AttemptPageContext;
 
 // ───────────────────────── 节点形状 ─────────────────────────
 
@@ -533,9 +528,6 @@ export interface ResolveEnv {
   page: PageContext;
   /** 一次页渲染一份;跨页共享缓存时由宿主显式传同一实例。 */
   memo?: ResolveMemo;
-  /** 报告装载前准备的 JSON 快照；Composition 只能只读这份外部数据。 */
-  data?: Readonly<globalThis.Record<string, unknown>>;
-  signal?: AbortSignal;
 }
 
 /** 官方 spec 组件在 resolve 内取数的记忆化入口;经内部扩展的 ResolveContext 传递。 */
@@ -586,102 +578,13 @@ export async function resolveReportTree(node: ReportNode, env: ResolveEnv): Prom
   const composeCtx: ComposeContext = { scope: env.scope, results: env.results, report: env.report, page: env.page };
   return resolveNode(node, {
     memo,
-    sourceMemo: new Map(),
     composeCtx,
-    data: freezeData(env.data ?? {}),
-    signal: env.signal ?? new AbortController().signal,
   }, []);
 }
 
 interface ResolveState {
   memo: ResolveMemo;
-  /** Source 的 page 级缓存：对象身份 × input 对象身份，值始终是 Promise。 */
-  sourceMemo: Map<Source<SourceInput, unknown>, Map<object, Promise<unknown>>>;
   composeCtx: ComposeContext;
-  data: Readonly<globalThis.Record<string, unknown>>;
-  signal: AbortSignal;
-}
-
-function freezeData<T>(value: T): T {
-  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
-  for (const child of Object.values(value as globalThis.Record<string, unknown>)) freezeData(child);
-  return Object.freeze(value);
-}
-
-function pageInput(state: ResolveState): SourceInput {
-  return state.composeCtx.page.input === "attempt"
-    ? state.composeCtx.page.evidence
-    : state.composeCtx.scope;
-}
-
-function resolveSource<Content>(
-  state: ResolveState,
-  source: Source<SourceInput, Content>,
-  input: SourceInput = pageInput(state),
-): Promise<Content> {
-  let byInput = state.sourceMemo.get(source as Source<SourceInput, unknown>);
-  if (!byInput) state.sourceMemo.set(source as Source<SourceInput, unknown>, (byInput = new Map()));
-  const cached = byInput.get(input as object);
-  if (cached) return cached as Promise<Content>;
-  // 缓存 Promise 而非完成值:并发消费者只触发一次 compute,成功与失败都由同一个 Promise 广播。
-  const promise = Promise.resolve().then(() => source.compute(input));
-  byInput.set(input as object, promise);
-  return promise;
-}
-
-/** Source 的结构判别:defineSource 不包装也不注册,所以只能按形状认(name + compute)。 */
-function isSource(value: unknown): value is Source<SourceInput, unknown> {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { name?: unknown; compute?: unknown };
-  return typeof candidate.name === "string" && typeof candidate.compute === "function";
-}
-
-function describeValue(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "an array";
-  if (typeof value === "object") return `an object without ${"name" in (value as object) ? "compute()" : "a name"}`;
-  return `a ${typeof value}`;
-}
-
-/**
- * source 形态 → data 形态:经 page 级缓存调 `source.compute(input)`,再把结果写回 `data`
- * 并去掉 `source` / `input`(docs/feature/reports/components/README.md「数据绑定与两种形态」)。
- * 与「先手工调 compute 再传 data」严格等价,所以下游 renderer 与 makeDataComponent 的 data
- * 分支都不需要认识 Source。
- */
-async function bindSourceProps(
-  type: unknown,
-  props: globalThis.Record<string, unknown>,
-  state: ResolveState,
-  path: string[],
-): Promise<globalThis.Record<string, unknown>> {
-  const label = componentLabel(type);
-  const where = path.length > 0 ? ` (in ${path.join(" > ")})` : "";
-  if (props.data !== undefined) {
-    throw new Error(
-      `${label} got both \`source\` and \`data\`${where} — the two data forms are exclusive and niceeval will not silently pick one. ` +
-        "Keep `source` and let the pipeline call its compute(input) during resolve, or keep `data` (already computed content) and drop `source`.",
-    );
-  }
-  const source = props.source;
-  if (!isSource(source)) {
-    throw new Error(
-      `${label} received a \`source\` that is not a Source${where}: expected { name, compute(input) } from defineSource(...) or the official \`sources\` catalog, got ${describeValue(source)}. ` +
-        "Wrap the computation with defineSource({ name, compute }), or pass the already computed content as `data`.",
-    );
-  }
-  const explicitInput = props.input;
-  if (explicitInput !== undefined && (typeof explicitInput !== "object" || explicitInput === null)) {
-    throw new Error(
-      `${label} got \`source\` with an \`input\` that is not a report input${where}: \`input\` must be the Sample or AttemptEvidence to compute from. ` +
-        "Drop `input` to use the input this page was given, or pass the narrowed Sample itself.",
-    );
-  }
-  const content = await resolveSource(state, source, (explicitInput as SourceInput | undefined) ?? pageInput(state));
-  const bound: globalThis.Record<string, unknown> = { ...props, data: content };
-  delete bound.source;
-  delete bound.input;
-  return bound;
 }
 
 async function resolveNode(node: ReportNode | string | number, state: ResolveState, path: string[]): Promise<ReportNode> {
@@ -707,34 +610,14 @@ async function resolveNode(node: ReportNode | string | number, state: ResolveSta
     return { ...node, props: { ...props, children } };
   }
   const compose = composeOf(type);
-  const composition = typeof type === "function"
-    ? (type as Partial<Composition<unknown, SourceInput>>)[COMPOSITION_EXPAND]
-    : undefined;
-  if (typeof composition === "function") {
-    const input = pageInput(state);
-    const ctx: CompositionContext<SourceInput> = {
-      input,
-      data: state.data,
-      page: state.composeCtx.page,
-      report: state.composeCtx.report,
-      signal: state.signal,
-      resolve: <Content, SourceIn extends SourceInput = SourceInput>(
-        source: Source<SourceIn, Content>,
-        explicit?: SourceIn,
-      ) => resolveSource(state, source as Source<SourceInput, Content>, (explicit ?? input) as SourceInput),
-    };
-    const expanded = await composition(props, ctx);
-    return resolveNode(expanded as ReportNode, state, [...path, componentLabel(type)]);
-  }
   if (compose) {
-    // 组合组件不记忆化:它只装配、不承担取数;数据层的去重由其内部 *Data 调用经 memoFetch 命中。
+    // 组合组件不记忆化:它只装配、不承担取数;数据层的去重由其内部计算经 memoFetch 命中。
     const expanded = await compose(props, state.composeCtx);
     return resolveNode(expanded, state, [...path, componentLabel(type)]);
   }
   const faces = facesOf(type);
   if (faces) {
-    // source 形态先落成 data 形态,faces.resolve(如有)因此只面对 data / spec 两路。
-    const bound = props.source !== undefined ? await bindSourceProps(type, props, state, path) : props;
+    const bound = props;
     if (typeof faces.resolve === "function") {
       const resolveFn = faces.resolve;
       const input = ((bound as { input?: unknown }).input as ReportInput | undefined) ?? state.composeCtx.scope;

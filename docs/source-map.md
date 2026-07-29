@@ -186,15 +186,18 @@
   │
   │  sample.attempts
   ▼
-③  src/report/model/{metrics,aggregate,flag}.ts  值怎么算、两级怎么折叠
-    src/report/model/types.ts                    当前数据契约(MetricCell / *Data)
-    src/report/components/*/compute.ts           当前组件计算函数
-    src/report/definition/tree.ts                resolveReportTree + 渲染前树校验
-    src/report/definition/report.ts              defineReport / 外壳与页列表
+③  src/report/model/calculation.ts            rollup / aggregate / metricValue / evidenceRow
+    src/report/model/conversions.ts            公开 to* 实体与投影转换
+    src/report/model/{types,format,flag}.ts    数据契约与格式化
+    src/report/components/*/compute.ts         内部计算(经 conversions 公开)
+    src/report/definition/report.ts            defineReport / page.render / 外壳与页列表
+    src/report/runtime/page-render.ts          page render 执行与 Promise 缓存
+    src/report/definition/tree.ts              resolveReportTree + 渲染前树校验 + text/web 遍历
+    src/report/extension/                      defineRenderer 与扩展资产
   │
   ├─ text 面  src/report/runtime/text.ts  →  src/show/*   宿主
   └─ web 面   src/report/runtime/web.ts   →  src/view/*   宿主
-              两宿主共用装载 src/report/runtime/{load,host}.ts
+              两宿主共用装载 src/report/runtime/{load,host,resolved-page}.ts
 ```
 
 | 行为 | 文件 |
@@ -207,40 +210,43 @@
 | 发布预算常量(50 MiB 单文件预检上限) | `src/record/publish.ts` |
 | 落盘截断(单值 256 KiB 上限,events / spans 写入前截断并标记) | `src/record/truncate.ts` |
 | 分层契约(Experiment / Run / Eval / AttemptHandle(含 `carried` 携带条目投影)/ AttemptRef / Sample(含 `coverage: SampleCoverage[]`)/ issue 类型) | `src/record/types.ts` |
-| `defineMeasure` 与内置读数 | `src/report/model/metrics.ts`(定义)、`src/report/index.ts`(公开导出) |
-| `sampleSummary()` / `SampleSummaryContent` | `src/report/components/summaries/compute.ts`、`summaries/{ScopeSummary.tsx,faces.ts}` |
+| `rollup` / `aggregate` / `metricValue` / `evidenceRow` 与分组函数(`agent` / `model` / `experiment` / `evalId`)；官方 Calculation `passRate` / `costUSD` / `totalScore` 等 | `src/report/model/calculation.ts`(公开导出在 `src/report/index.ts`;测试 `calculation.test.ts`) |
+| 公开 `to*` 转换(`toExperimentRows` / `toAttemptRows` / `toSampleNotices` / `toTraceNodes` / `toAnnotatedEvalSource` 等) | `src/report/model/conversions.ts` |
+| 内部 Measure 字面量读数(不公开导出；官方读数以 Calculation 为准) | `src/report/model/metrics.ts` |
 | `flag()`(experiment flags 当维度 / 轴) | `src/report/model/flag.ts` |
-| 两级聚合引擎 / 维度 / `MeasureCell` 计算 / 聚合前去重接线 | `src/report/model/aggregate.ts` |
-| 数据契约(`Measure`、`TableData` / `MatrixData` / `ScatterData` / `LineData` / `ScoreboardData` / `DeltaData` / `SampleSummaryContent` 等) | `src/report/model/types.ts` |
-| 报告 chrome 文案的 locale 字典；`MeasureCell.display` 生成面 | `src/report/model/locale.ts` |
-| 元素树 / `defineComponent`(双面)/ 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
-| 组件数据解析 pass(`resolveReportTree`:装载规范化产物之后、render 之前递归遍历树;遇到 spec 形态组件就调它自己的解析面(代调配套 `*Data` 计算函数)并换成 data 形态 props,同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页两种粒度的四个渲染入口都先跑它,报告作者因此不用手写取数) | `src/report/definition/tree.ts`(`resolveReportTree`;被 `src/report/runtime/text.ts` 与 `src/report/runtime/web.ts` 调用) |
-| 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table（十个内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`、官方表状组件共用；`Tab` 只能直接放在 `<Tabs>` 下，不参与路由、没有 id） | `src/report/definition/primitives.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平、`balanceColumns` / `planGridColumns` / `gridContainerRules` / `planTextGrid` 两面同源列数算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |
+| show 切片两级聚合与表格 `MetricValue` 形状(内部：`delta` / `stability`) | `src/report/model/aggregate.ts`、`src/report/slices/` |
+| 数据契约(`MetricValue`、`EvidenceRow`、内部 `TableData` / `MatrixData` / `ScatterData` / `LineData` 等) | `src/report/model/types.ts` + `src/report/model/calculation.ts` |
+| 报告 chrome 文案的 locale 字典;`measureDisplay` / `formatMeasureValue` / `formatAxisTick` 格式化单点 | `src/report/model/locale.ts`、`src/report/model/format.ts` |
+| 元素树 / `defineComponent`(双面) / 内部 `ResolveMemo`(树解析环境记忆化，不从 `niceeval/report` 导出) / 渲染前树校验 / text 遍历渲染 | `src/report/definition/tree.ts` |
+| `defineRenderer` 与扩展资产(`niceeval/report/extension`) | `src/report/extension/{define,types,assets,index}.ts` |
+| `resolveReportTree` + `validateReportTree`(page.render 产出组件树之后递归校验 props 形态、收集维度声明;同层 sibling 并行、保持节点顺序;text/web 两面 × 整份报告/单页四种渲染入口都经 `resolved-page.ts` 先 resolve 再投影) | `src/report/definition/tree.ts`、`src/report/runtime/resolved-page.ts`(被 `text.ts` / `web.ts` 调用) |
+| `executePageRender` / `resolveDefinitionPage`(选页 → 校验 input 分支 → await page.render → 缓存 Promise;同一 page 实例 + 输入身份只执行一次 render) | `src/report/runtime/page-render.ts`(测试 `page-render.test.tsx`) |
+| 排版原语 Row / Col / Grid / Section / Stat / Text / Style / Tabs / Tab / Table / Chart / Scatter / Line / Bars / Area（内置双面组件；Table 的 text 面在 `src/report/definition/table-text.ts`;`Scatter` 等接 `points=`，内部桥到 Dataset；`Chart` 收 Dataset 多 mark 组合) | `src/report/definition/primitives.tsx` + `src/report/definition/primitives/{chart,marks,points-dataset}.tsx`（Grid / Stat 的两面适配）+ `src/report/definition/grid-layout.ts`（`normalizeGrid` 展平、`balanceColumns` / `planGridColumns` / `gridContainerRules` / `planTextGrid` 两面同源列数算术；同步纯函数，不 import show / view、Results IO 或 stylesheet） |
 | 文本排版工具箱(`stringWidth` / `padEnd` / `padStart` / `wrapText` / `indent` / `bar` / `columns`,从 `niceeval/report` 导出;跨组件族共用,不属于任一组件族) | `src/report/model/text-layout.ts` |
 | 显示值格式化单点(`measureDisplay` / `formatMeasureValue` / `formatAxisTick`;`unit` 分派与千位缩写住在这里,Content 层不得另写 `String(value)`) | `src/report/model/format.ts` |
 | `missing` 格的 code 词表与 `missingText`(内建 `noSamples` / `notRun` / `unscorable`,两面共用一份文案) | `src/report/model/locale.ts`(词典)+ `src/report/definition/cell.ts`(`formatCellText`) |
 | 维度呈现(`presentDimension` 与页级槽位分配的公开面;色板与取色 helper 是内部实现,不出现在任一公开入口) | `src/report/presentation.ts` + `src/report/assets/colors.ts`(内部) |
 | `defineReport` / `ReportShell` / `ReportPage` / `buildReportMeta` / `resolveReportTitle`(报告外壳与页列表的规范化,与宿主装载方式无关) | `src/report/definition/report.ts` |
-| text 宿主装载入口 `pickReportPage` / `ReportHostContext` / `renderReportToText`(选页 → `resolveReportTree` → 校验 → text 渲染;宿主不设树外警告通道——挑选警告的唯一呈现件是页内 `SampleWarnings` 组件,按动作聚合层在 `src/report/components/site-components/scope-warnings.ts`,web/text 两面共用)/ 逐页 text 入口 `renderReportTreeToText`(两宿主共用的联系面调用)/ `ReportPageNotFoundError`(`--page` 未命中)/ `ReportPageNeedsLocatorError`(attempt-input page 缺 locator) | `src/report/runtime/text.ts` |
+| text 宿主装载入口 `pickReportPage` / `ReportHostContext` / `renderReportToText`(选页 → `resolveDefinitionPage` → text 投影;宿主不设树外警告通道——挑选警告的唯一呈现件是页内 `Callouts` + `toSampleNotices` / `toRunNotices`,按动作聚合层在 `src/report/components/site-components/scope-warnings.ts`,web/text 两面共用)/ 逐页 text 入口 `renderReportTreeToText`(两宿主共用的联系面调用)/ `ReportPageNotFoundError`(`--page` 未命中)/ `ReportPageNeedsLocatorError`(attempt-input page 缺 locator) | `src/report/runtime/text.ts` |
 | `--report` 装载(两宿主共用:存在性/默认导出判别、dev server 的 mtime cache-busting) | `src/report/runtime/load.ts` |
 | show 宿主接线(无条件调 `currentSample` 产出 Sample、不带选项运行装载 `niceeval/report/built-in` 默认导出的 text 面、`--report`/`--page` 经 `report/runtime/host.ts` 装载自定义 text 报告、attempt locator 下钻;多页时选初始页——`--page` 指定或默认第一页——的逻辑在 `src/show/index.ts`,渲染完初始页后由 `src/show/render.ts` 的 `otherPagesText` 在尾部追加「其余页」索引与可复制命令) | `src/show/index.ts`(现刻水位选择器在中性的 `src/sample/index.ts`;单 Eval、Attempt 详情与证据切面渲染在 `src/show/render.ts`;`src/show/compose.ts` 只留 `--history` 逐 attempt 执行时间轴口径;两宿主共用的报告装载规范化/标题回退在 `src/report/runtime/host.ts`;show 专属的可复制命令拼装 `showCommand` 在 `src/show/command.ts`;测试 `src/show/render.test.ts`、`src/show/command.test.ts`、`src/report/runtime/host.test.ts`;进程级选择收窄与用法错误矩阵归 `docs/engineering/testing/e2e/report.md` 对真实进程验收) |
-| web 宿主装载入口 `renderReportToStaticHtml`(唯一 import react-dom 的一侧;同样选页 → `resolveReportTree` → 校验 → web 渲染,同样不设树外警告前置块)/ 逐页 web 入口 `renderReportTreeToStaticHtml` | `src/report/runtime/web.ts` |
-| 当前内建报告；目标将专用叶子改成 `Callouts source={sampleWarnings}`、`Table source={attemptRows}` 等原语 + 数据源，并把 `ExperimentComparison` 改为 `SampleOverview` | `src/report/built-in/standard.tsx`、`src/report/built-in/index.tsx` |
-| 当前跨组件共享辅助与 `MeasureCellView`；目标原语只消费通用 Cell / Content | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
-| `sampleSummary()` / `SampleSummary` | `src/report/components/summaries/compute.ts`、`summaries/{index.tsx,ScopeSummary.tsx,faces.ts}` |
-| `SampleOverview` | `src/report/components/summaries/index.tsx` |
-| `experimentRows` / `evalRows` / `attemptRows` 数据源与仍在迁移中的专用组件 | `src/report/components/entity-lists/{compute.ts,index.tsx,faces.ts}` |
-| `measureRows` / `measureMatrix` / `scoreboard` / `deltaRows` / `stabilityRows` 数据源、`Table` 原语与仍在迁移中的专用组件 | `src/report/components/metric-views/{compute.ts,index.tsx,faces.ts}` |
-| 图表族当前结构树解析、`chartData(input, spec)` 与 `ChartData`、轴值域推定、字符坐标图 text 面 | `src/report/components/metric-views/`(`compute.ts` / `chart-math.ts` / `plot.ts` / `faces.ts`) |
-| Attempt 详情组件族:11 个叶子(`AttemptSummary` / `AttemptError` / `AttemptAssertions` / `AttemptSource` / `AttemptFixPrompt` / `AttemptTimeline` / `AttemptConversation` / `AttemptDiagnostics` / `UsageTable` / `AttemptTrace` / `AttemptDiff`,均以 `AttemptEvidence` 为输入的双面组件)+ 2 个组合(`AttemptAssessment`、`AttemptDetail`,只用公开叶子装配、没有私有 renderer) | `src/report/components/attempt-detail/index.tsx`(计算在 `compute.ts`,每叶子一个 `attempt*Data(evidence)`/`usageTableData(evidence)`;text 面在 `faces.ts`;测试 `attempt-components.test.tsx`) |
-| `AttemptAssertions` 的计分制字段；目标由 `attemptAssertions` 数据源产出 `TableContent` | `src/report/components/attempt-detail/compute.ts`(`attemptAssertionsData`、`groupByPath`)、`AttemptAssertions.tsx`、`faces.ts`、`src/report/model/format.ts` |
-| 站点组件(`Hero` / `HeroCard` / `PoweredBy` / `SampleWarnings` / `CopyFixPrompt` / `TraceWaterfall`;品牌、hero、警告区、批量修复 prompt、trace 瀑布都是页内组件,宿主不渲染任何对应 chrome) | `src/report/components/site-components/index.tsx`(定义;计算在 `compute.ts`;text 面在 `faces.ts`;警告按动作聚合在 `scope-warnings.ts`,两面共用;测试 `site-components.test.tsx`) |
-| 当前官方专用组件 web 面 + 页级色分配；目标收敛为通用原语 renderer | `src/report/components/{summaries,entity-lists,metric-views}/*.tsx` + `src/report/assets/colors.ts` + `styles.css`；公开入口 `src/report/react/index.tsx` |
+| web 宿主装载入口 `renderReportToStaticHtml`(唯一 import react-dom 的一侧;选页 → `resolveDefinitionPage` → web 投影,不设树外警告前置块)/ 逐页 web 入口 `renderReportTreeToStaticHtml` | `src/report/runtime/web.ts` |
+| 内建报告 `standard` / `failures` / `stability`(每页 `page.render` + 公开 `to*` + 原语 plain props:`Callouts items=`、`Waterfall nodes=`、`CopyBlock content=`、`Table rows=` 等) | `src/report/built-in/{standard,failures,stability}.tsx`、`src/report/built-in/index.tsx` |
+| 跨组件共享辅助与 `Cell` / `MetricValue` 渲染 | `src/report/components/shared.ts` + `shared-compute.ts` + `shared-faces.ts` + `cell.tsx` |
+| `toSummaryItems` / `SampleSummary` | `src/report/model/conversions.ts` → `src/report/components/summaries/compute.ts`、`summaries/{index.tsx,faces.ts}` |
+| `SampleOverview`(首页摘要 + frontier 散点 + 实验表) | `src/report/components/summaries/index.tsx` |
+| `toExperimentRows` / `toEvalRows` / `toAttemptRows` 与 `ExperimentList` / `EvalList` / `AttemptList` | `src/report/model/conversions.ts` → `src/report/components/entity-lists/{compute.ts,index.tsx,faces.ts}` |
+| show 对照 / 稳定性切片(`deltaTableData` / `stabilityMatrixData`) | `src/report/slices/{compute,content,validate}.ts` |
+| 图表族 Dataset 解析、轴值域推定、字符坐标图 text 面 | `src/report/model/chart/{math,plot}.ts` + `src/report/definition/primitives/{chart,marks,points-dataset}.tsx` |
+| Attempt 详情:`AttemptDetails` 组合件 + 公开 `to*`(`toAttemptSummary` / `toConversationTurns` / `toDiffFiles` / `toAnnotatedEvalSource` 等) | `src/report/components/attempt-detail/index.tsx`(内部计算在 `compute.ts` / `content.tsx`;公开转换在 `conversions.ts`;text 面在 `faces.ts`;测试 `attempt-components.test.tsx`) |
+| `toAttemptAssertions` 计分制字段与分组 | `src/report/model/conversions.ts` → `attempt-detail/compute.ts`(`attemptAssertionsData`、`groupByPath`)、`faces.ts`、`src/report/model/format.ts` |
+| 站点组件(`Hero` / `HeroCard` / `PoweredBy` / `Callouts` + `toSampleNotices` / `toRunNotices` / `CopyBlock` + `toSampleFixPrompt` / `Waterfall` + `toTraceNodes`) | `src/report/components/site-components/index.tsx`(投影在 `projections.ts` / `compute.ts`;text 面在 `faces.ts`;警告聚合在 `scope-warnings.ts`;测试 `site-components.test.tsx`) |
+| 官方专用组件 web 面样式与页级色分配 | `src/report/components/{summaries,entity-lists}/*.tsx` + `src/report/assets/colors.ts` + `styles.css`；React 入口 `src/report/react/index.tsx` |
 | 渐进增强 runtime(表头排序 / 行过滤 / hover tooltip,只作用于 `.niceeval-report` 与 `data-niceeval-*`;宿主内联) | `src/report/assets/enhance.js` |
 | 双面验收(renderToStaticMarkup + text Run,两面同口径) | `src/report/runtime/dual-render.test.tsx` |
 | view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-dialog.ts`(hash ↔ locator 互转、`attempt/<locator>.html` 链接拦截与 dialog 内容抠取)、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/record` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/record/locator.ts`) |
 | view 数据层(openRecord;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:Run 明细 + skipped + 壳元信息(含报告外壳/页导航的 `ViewReportMeta`),统计住报告页)。`latestRunSample(record)` 结果(命名为 `latestPerExperiment`)只用于给证据室 Run 打「latest」标记,与报告槽 Sample 是两条独立通道,不参与报告计算;`viewData.snapshots` 是完整记录根的全量通道,只服务 attempt 详情路由(`#/attempt/@<locator>`)的解析,不随报告 Sample 收窄 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
-| view 报告槽与导航(不带选项运行装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `currentSample` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 styles/scripts 按声明序注入、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/data.test.ts`;渲染出的导航结构与外壳 chrome、`resolveViewInput` 的进程级输入校验归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
+| view 报告槽与导航(不带选项运行装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `currentSample` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅/页脚/页头链接等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 head 与主题 styles 按声明序注入、renderer assets 物化后并入 shellAssets(待接线)、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/data.test.ts`;渲染出的导航结构与外壳 chrome、`resolveViewInput` 的进程级输入校验归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
 | **Roadmap(未定落点)** | memory-evals 静态导出流水线(reports.md 场景三) |
 
 ## 与目标契约的已知实现差异
@@ -248,16 +254,22 @@
 本节只记录实现差异。Feature 文档仍是目标契约；这里的当前名称和路径用于定位源码，
 不反向限制目标 API。
 
-### P1：报告与宿主
-
-- **Reports 仍有专用组件残留。** `SampleOverview`、`SampleSummary`、`defineMeasure`、`Source` 与
-  通用 `Table` 已经形成公开面，但实体列表和指标视图还保留专用组件及其计算函数。通用数据源与
-  原语尚未完全替代这些实现。
-
-### P2：制品
+### P1：制品
 - **E2B 公共 baseline 尚未换代。** 配方和构建校验已修，但公开常量与
   `sandbox/e2b/published.json` 仍指向旧 `v0.6.1`。需要真实构建、以运行用户验证、发布新 tag，
-  再同步台账与常量。
+  再同步台账与常量。本任务标 `[X]`，无凭据不能伪完成。
+
+### P1：report E2E
+
+- **候选包与工作树 CLI 口径不一致。**
+  `e2e/report/package.json` 钉 `niceeval@^0.10.2`，验收脚本使用 `--results`；
+  工作树 CLI 已改 `--record`。
+- **验收前置。** 先发含新 CLI 的候选包，再改写 e2e 脚本与 `evidence.ts`。
+  不能从仓库 `src/` 旁路导入。
+- **证据。** 本地 `.niceeval/` 多为 incomplete，不能替代 `produceEvidence()`。
+- **e2e 报告文件。** `reports/site.tsx` / `branded.tsx` 已对齐公开 API。
+  `[X]` 节点须 `e2e/report/` 自己的 `pnpm e2e` 返回 0 才算完成
+  （见 `plan/docs-feature-code-gap.md`）。
 
 ### 已从差异清单删除
 

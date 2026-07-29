@@ -38,7 +38,7 @@ async function makeProject(): Promise<string> {
       `import { Panel } from "./components/panel.tsx";\n` +
       `import { rows } from "../shared/measures.ts";\n` +
       `import vendor from "../node_modules/pkg/index.js";\n` +
-      `export default defineReport(<Panel rows={rows} vendor={vendor} />);\n`,
+      `export default defineReport(() => <Panel rows={rows} vendor={vendor} />);\n`,
   );
   await write("reports/components/panel.tsx", `import { helper } from "./helper.ts";\nexport const Panel = helper;\n`);
   await write("reports/components/helper.ts", `export const helper = () => null;\n`);

@@ -1,4 +1,4 @@
-import { arrayProblem, cellProblem, isLocalizedText, isObject, type Validator } from "../shared.ts";
+import { arrayProblem, cellProblem, isLocalizedText, isObject, type Validator } from "../components/shared.ts";
 
 /** columns / metric / x / y 共用的 MetricColumn 形状(src/report/model/types.ts)。 */
 function metricColumnProblem(value: unknown, path: string): string | null {

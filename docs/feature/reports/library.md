@@ -9,14 +9,13 @@
 这个函数在装载时不会执行，而是成为 id 为 `report` 的惰性 sample page：
 
 ```ts
-type PageRender<Input, External = unknown> = (
+type PageRender<Input> = (
   input: Input,
-  external: Readonly<External>,
 ) => ReportNode | Promise<ReportNode>;
 
-function defineReport<External = unknown>(
-  render: PageRender<Sample, External>,
-): ReportDefinition<External>;
+function defineReport(
+  render: PageRender<Sample>,
+): ReportDefinition;
 ```
 
 ```tsx
@@ -31,40 +30,38 @@ export default defineReport((sample) => (
 函数只放在每页的 `render` 字段，不用先执行整份报告才能知道页清单：
 
 ```ts
-interface SamplePage<External> {
+interface SamplePage {
   id: string;
   title: LocalizedText;
   input?: "sample";
   navigation?: boolean;
-  render: PageRender<Sample, External>;
+  render: PageRender<Sample>;
 }
 
-interface AttemptPage<External> {
+interface AttemptPage {
   id: string;
   title: LocalizedText;
   input: "attempt";
   navigation: false;
-  render: PageRender<AttemptEvidence, External>;
+  render: PageRender<AttemptEvidence>;
 }
 
-type PageDefinition<External = unknown> =
-  | SamplePage<External>
-  | AttemptPage<External>;
+type PageDefinition = SamplePage | AttemptPage;
 
-interface ReportOptions<External> {
+interface ReportOptions {
   title?: LocalizedText;
   theme?: ThemeDefinition;
   dimensionPins?: DimensionPins;
   head?: HeadTag[];
   pages: readonly [
-    PageDefinition<External>,
-    ...PageDefinition<External>[],
+    PageDefinition,
+    ...PageDefinition[],
   ];
 }
 
-function defineReport<External = unknown>(
-  options: ReportOptions<External>,
-): ReportDefinition<External>;
+function defineReport(
+  options: ReportOptions,
+): ReportDefinition;
 ```
 
 外壳只装宿主机器必须在 page render 之外消费的声明。
@@ -75,7 +72,7 @@ function defineReport<External = unknown>(
 |---|---|
 | `title` | 浏览器 `<title>` 与 show 页索引标题——文档单例 |
 | `theme` | 与报告平行的主题装载链，`--theme` 可整份替换 |
-| `dimensionPins` | 页级视觉分配管线，跨页一致性要先看到全集 |
+| `dimensionPins` | 页级槽位分配在装载期读固定声明，不执行其它 page |
 | `head` | 注入文档 `<head>`——报告树没有 HTML intrinsic |
 
 四个字段的类型、白名单与本地路径纪律见
@@ -142,9 +139,9 @@ import { footerNote } from "./chrome";
 
 const chrome =
   (render: PageRender<Sample>): PageRender<Sample> =>
-  async (sample, external) => (
+  async (sample) => (
     <Stack>
-      {await render(sample, external)}
+      {await render(sample)}
       {footerNote}
     </Stack>
   );
@@ -232,21 +229,42 @@ import {
 } from "niceeval/report";
 ```
 
-分组函数从一条 Attempt 读取稳定键：
+分组以题级单元（Experiment × Eval）为单位。
+`AggregationSubject` 是一个题级单元的事实视图；
+coverage 缺口也有自己的单元，没跑到的题因此照常归组、照常进 total：
 
 ```ts
+interface AggregationSubject {
+  readonly experimentId: string;
+  readonly evalId: string;
+  /** 该 Experiment 的锚点 Run；不暴露 attempts。 */
+  readonly run: Run;
+}
+
 const experiment:
-  (attempt: AttemptHandle) => string;
+  (subject: AggregationSubject) => string;
 
 const agent:
-  (attempt: AttemptHandle) => string;
+  (subject: AggregationSubject) => string;
 
 const attemptCostUSD:
   (result: EvalResult) => number | null;
 ```
 
+官方分组的事实来源固定：
+
+| 分组 | 读取 |
+|---|---|
+| `experiment` | `subject.experimentId` |
+| `agent` / `model` | Run 顶层 `subject.run.agent` / `subject.run.model` |
+| flags / labels / 运行配置 | `subject.run.experiment` |
+
 分组函数是普通同步函数。
 官方函数与用户函数没有不同的类型或执行入口。
+分组函数拿不到 AttemptHandle：
+分组因此不可能把同一道题的 attempts 切进两个组，
+题级折叠的边界由类型保护。
+零 attempt 的 Eval 仍有确定的锚点 Run，因此「按 agent 分到哪一行」有唯一答案。
 
 计算函数由公开的 `rollup()` 产生。
 它描述“一条 Attempt 怎样取值”，并让组合器负责题内与跨题聚合。
@@ -346,6 +364,26 @@ export const changedLines = rollup(
 `rollup()` 先排除该级的 `null`，再调用 Reducer；空集合保持 `null`，
 不会被 `sum` 伪装成零。
 
+### samples / total 的口径
+
+`rollup()` 产物的 samples、total 与 refs 用一组算例锁定。
+范围内有三道 Eval：`a` 有三个 attempt，题内值 `[1, 0, null]`；
+`b` 有一个 attempt，题内值 `[1]`；
+`c` 在题集内但一个 attempt 都没跑。
+
+| withinEval / acrossEvals | 题级值 | value | samples / total |
+|---|---|---|---|
+| `mean` / `mean` | `a: 0.5`、`b: 1` | `0.75` | `2 / 3` |
+| `min` / `max` | `a: 0`、`b: 1` | `1` | `2 / 3` |
+| 题内值全为 `null` | 无 | `null` | `0 / 3` |
+
+三行的 basis 都是 `"eval"`，attempt 从不是 samples 的计数单位。
+refs 三行相同：`a` 的三个 attempt 加 `b` 的一个，共四个 locator。
+`a` 里返回 `null` 的 attempt 不产生题内值，
+但它被检查过，留在 refs 里供下钻解释缺数。
+`c` 没有 attempt，没有 locator，只把 total 从 2 抬到 3——
+coverage 缺口进分母，不进终值。
+
 `percentile(p)` 接受闭区间 `[0, 1]`。
 对升序数组使用 `h = (n - 1) × p`，
 再在 `floor(h)` 与 `ceil(h)` 对应值之间线性插值；
@@ -421,7 +459,15 @@ interface MetricValue {
 
 作者不直接构造聚合组。
 Calculation 只作为 `aggregate()` 的 value 传入。
-`rollup()` 自动生成 `basis: "attempt"`、samples、total 与 refs，
+`basis` 命名 samples / total 的计数单位，
+终值就是在这个粒度上得出的统计量；
+`refs` 与 basis 无关，恒为 Attempt locator——
+它是证据链，不承担分母。
+
+`rollup()` 的产物固定 `basis: "eval"`，计数单位是题级单元：
+samples 数至少有一个非 null 题内值的单元，
+total 数组内全部单元，
+含一个 attempt 都没跑到的 coverage 缺口。
 用户不手工拼 MetricValue。
 MetricValue 不预生成本地化 display；
 text 与 web renderer 使用同一份 `value + format` 按当前 locale 格式化。
@@ -482,10 +528,11 @@ const ranked = performance.toSorted(
 
 `aggregate()` 内部负责：
 
+- 按 `by` 把题级单元归组，coverage 缺口单元照常归组。
 - 同一 Experiment × Eval 的 attempts 先折成题级值。
-- 题级值再跨 Eval 折成终值。
+- 题级值再跨单元折成终值。
 - 预期缺数据返回 `value: null`。
-- coverage 缺口不冒充失败或零。
+- coverage 缺口不进终值、不冒充零，但计入 total。
 - `refs` 覆盖非空与空值 Attempt。
 - 相同输入产生确定顺序与字节稳定结果。
 
@@ -506,8 +553,8 @@ AggregateRow 同时是 EvidenceRow。
 ```tsx
 const byVendor = await aggregate(sample, {
   by: {
-    vendor: (attempt) =>
-      attempt.run.model?.startsWith("gpt-")
+    vendor: (subject) =>
+      subject.run.model?.startsWith("gpt-")
         ? "OpenAI"
         : "Anthropic",
   },
@@ -519,7 +566,7 @@ const byVendor = await aggregate(sample, {
 ```
 
 分组函数必须返回字符串，且不能读取时钟、随机数、网络或文件系统。
-抛错时错误带分组字段名与 Attempt locator。
+抛错时错误带分组字段名与出错单元的 Experiment × Eval 坐标。
 
 `values` 接受任何 `rollup()` 产出的 Calculation。
 官方报告 import 的 `passRate`、`costUSD` 与用户报告使用的是同一份公开导出，
@@ -860,18 +907,23 @@ interface ExternalScatterProps<Row extends ExternalPoint> {
 没有 MetricValue，也没有 Attempt 下钻。
 预算随时间、业务目标线等完全不从 Sample 推导的序列走这条分支。
 
+这条边界承诺四件可执行的事：
+
+- 默认路径在运行时结构校验 refs 与 MetricValue，无证据的行直接报错。
+- `external: true` 是对证据契约的显式退出，不是另一种校验。
+- NiceEval 不验证 external 行的数据真实来源。
+- `external` 这个词在源码与 review 里可搜索。
+
 结构无法区分「真外部数据」与「洗掉证据的 Sample 数字」，
-这条边界因此靠两层兑现：
-默认路径拒绝无证据的行；绕过必须写下 `external`，
-这个词在源码与 review 里可审计。
-把 Sample 派生数字标成 external 是作者违约，与伪造读数同级。
+把 Sample 派生数字标成 external 因此只受审查约束，
+与伪造读数同责。
 
 `x`、`y`、`color` 与 `point` 由 points 的行类型推导。
 MetricValue 自动提供数值、格式元数据、自然边界与 refs；
 renderer 按当前 locale 格式化。
 
 混合图才使用嵌套 series。
-`<Chart>` 的 points 是各 series 的默认值；
+`<Chart>` 的 points 是各 series 的默认；
 一个 series 可以带自己的 points 和 `external` 声明，
 证据校验按该 series 自己的入口判定。
 业务目标线因此能叠在 Sample 派生图上，而不混进证据行：
@@ -995,10 +1047,12 @@ export default makeTeamReport({
 |---|---|---|
 | 组件 props | 写代码时 | 单个组件的显示选择 |
 | 工厂参数 | 写代码时 | 整份报告的装配选择 |
-| External snapshot | 运行前冻结 | 运行期业务数据，`--data` 注入 |
+| 冻结快照模块 | 运行前写盘 | 外部业务数据，报告文件 import |
 
 CLI 不开报告参数：位置参数选 eval，flag 选 agent 与怎么跑，
 报告的参数走上面三个通道。
+外部业务数据的冻结与纯净性规则见
+[Architecture · 外部业务数据经 import 冻结](architecture.md#外部业务数据经-import-冻结)。
 
 ## 领域分析留在报告旁
 
@@ -1189,7 +1243,7 @@ export function EvalsPage({
 }
 ```
 
-React 包不需要 resolve、Source、Sample 或查询引擎。
+React 包只消费已经算好的普通值，不读取 Sample 或查询引擎。
 
 ## 相关阅读
 

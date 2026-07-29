@@ -11,21 +11,21 @@ import {
 
 export const siteShellScenarios: readonly ReportComponentScenario[] = [
   {
-    name: "Report shell · extends 保留页索引",
-    // 场景：用户用 extends: standard 添加外壳。
-    // Given：branded.tsx 只声明品牌字段，不重写 standard pages。
+    name: "Report shell · 复用 standard pages 保留页索引",
+    // 场景：用户用 pages: standard.pages 叠加品牌 title。
+    // Given：branded.tsx 只改 title / head，不重写 standard pages。
     // When：用户从 CLI 打开首页和 Attempts 页。
     // Then：两页都列出其它可导航页，且不把当前页重复列入。
     async run({ evidence }) {
       const root = evidence.resultsRoot;
-      const bare = sh(`pnpm exec niceeval show --report ${BRANDED_REPORT} --results ${root}`);
-      assert.ok(bare.includes(`niceeval show --results ${root} --report ${BRANDED_REPORT} --page attempts`));
-      assert.ok(bare.includes(`niceeval show --results ${root} --report ${BRANDED_REPORT} --page traces`));
+      const bare = sh(`pnpm exec niceeval show --report ${BRANDED_REPORT} --record ${root}`);
+      assert.ok(bare.includes(`niceeval show --record ${root} --report ${BRANDED_REPORT} --page attempts`));
+      assert.ok(bare.includes(`niceeval show --record ${root} --report ${BRANDED_REPORT} --page traces`));
       assert.ok(!/--page report\b/.test(bare), "首页索引不应重复列出当前 report 页");
 
-      const attempts = sh(`pnpm exec niceeval show --report ${BRANDED_REPORT} --results ${root} --page attempts`);
-      assert.ok(attempts.includes(`niceeval show --results ${root} --report ${BRANDED_REPORT} --page report`));
-      assert.ok(attempts.includes(`niceeval show --results ${root} --report ${BRANDED_REPORT} --page traces`));
+      const attempts = sh(`pnpm exec niceeval show --report ${BRANDED_REPORT} --record ${root} --page attempts`);
+      assert.ok(attempts.includes(`niceeval show --record ${root} --report ${BRANDED_REPORT} --page report`));
+      assert.ok(attempts.includes(`niceeval show --record ${root} --report ${BRANDED_REPORT} --page traces`));
     },
   },
   {
@@ -35,7 +35,7 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
     // When：用户执行 --page bogus。
     // Then：命令失败且只列公开导航页，不泄漏隐藏的 review page。
     async run({ evidence }) {
-      const bad = shRaw(`pnpm exec niceeval show --report ${SITE_REPORT} --results ${evidence.resultsRoot} --page bogus`);
+      const bad = shRaw(`pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page bogus`);
       assert.notEqual(bad.status, 0, "--page bogus 应失败");
       assert.ok(
         bad.combined.includes("Available pages: overview, scoreboard, attempts"),
@@ -61,8 +61,8 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
     },
   },
   {
-    name: "Report shell · extends 保留浏览器导航",
-    // 场景：用户只给 standard 报告叠加品牌外壳。
+    name: "Report shell · 复用 standard pages 保留浏览器导航",
+    // 场景：用户只给 standard 报告叠加品牌 title。
     // Given：branded.tsx 没有重写 pages。
     // When：浏览器渲染顶部导航。
     // Then：三张继承页面按原顺序可见。
@@ -79,38 +79,34 @@ export const siteShellScenarios: readonly ReportComponentScenario[] = [
     },
   },
   {
-    name: "Report shell · 外链图标位于标签前",
-    // 场景：报告作者给外链配置内联图标。
-    // Given：branded.tsx 声明一条 GitHub ReportLink。
-    // When：浏览器渲染外链。
-    // Then：链接指向声明地址，图标出现在标签前。
+    name: "Report shell · head 注入站点级外链",
+    // 场景：报告作者用 head 声明站点级外链（不再用 LEGACY links）。
+    // Given：branded.tsx 的 head 含 GitHub href。
+    // When：浏览器打开导出页。
+    // Then：文档 head 含该 link。
     async run({ browser, brandedBaseUrl }) {
       const page = await browser.newPage();
       try {
         await page.goto(`${brandedBaseUrl}/index.html`, { waitUntil: "networkidle" });
-        const link = page.locator(".shell-links a").first();
-        assert.equal(await page.locator(".shell-links a").count(), 1);
-        assert.equal(await link.getAttribute("href"), "https://github.com/niceeval/niceeval");
-        const linkHtml = await link.innerHTML();
-        const iconAt = linkHtml.indexOf("<svg");
-        const labelAt = linkHtml.indexOf("GitHub");
-        assert.ok(iconAt >= 0 && labelAt > iconAt, "图标应位于 GitHub label 前");
+        const href = await page.locator('head link[href="https://github.com/niceeval/niceeval"]').getAttribute("href");
+        assert.equal(href, "https://github.com/niceeval/niceeval");
       } finally {
         await page.close();
       }
     },
   },
   {
-    name: "Report shell · 浏览器呈现 footer",
-    // 场景：报告作者声明 footer 文案。
-    // Given：branded.tsx 配置 extends: standard 文案。
-    // When：浏览器渲染页面底部。
-    // Then：用户能看到该文案。
+    name: "Report shell · 浏览器标题使用报告标题（无 LEGACY footer）",
+    // 场景：外壳只保留 title / theme / dimensionPins / head / pages。
+    // Given：branded.tsx 不声明 footer。
+    // When：浏览器渲染页面。
+    // Then：标题正确，且不再渲染 .site-footer 品牌脚注。
     async run({ browser, brandedBaseUrl }) {
       const page = await browser.newPage();
       try {
         await page.goto(`${brandedBaseUrl}/index.html`, { waitUntil: "networkidle" });
-        assert.match((await page.locator(".site-footer .site-footer-text").textContent()) ?? "", /extends: standard/);
+        assert.equal(await page.title(), "Results E2E · Branded");
+        assert.equal(await page.locator(".site-footer .site-footer-text").count(), 0);
       } finally {
         await page.close();
       }

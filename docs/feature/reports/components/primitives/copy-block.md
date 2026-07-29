@@ -1,11 +1,17 @@
 # `CopyBlock`
 
-一整块可复制的文本：修复 prompt、补跑脚本、可直接粘给 agent 的指令。文本在 resolve 阶段
-算好、烘进静态 HTML；「复制到剪贴板」是增强层行为，无 JS 时文本在折叠块里完整可读——
+一整块可复制的文本：修复 prompt、补跑脚本、可直接粘给 agent 的指令。文本在 page render
+中算好、烘进静态 HTML；「复制到剪贴板」是增强层行为，无 JS 时文本在折叠块里完整可读——
 增强只加浏览行为，不改内容。
 
 ```tsx
-<CopyBlock data={{ title: "Fix prompt", text: prompt }} />
+<CopyBlock content={fixPrompt} />
+```
+
+或分开传标题与正文：
+
+```tsx
+<CopyBlock title="Fix prompt" text={prompt} />
 ```
 
 ## 形状
@@ -18,7 +24,15 @@ interface CopyBlockContent {
   title: LocalizedText;
 }
 
-type CopyBlockProps<Input extends SourceInput> = DataProps<Input, CopyBlockContent | null> & {
+type CopyBlockProps = {
+  title: LocalizedText;
+  text: string;
+  locale?: ReportLocale;
+  className?: string;
+} | {
+  content: CopyBlockContent | null;
+  title?: never;
+  text?: never;
   locale?: ReportLocale;
   className?: string;
 };
@@ -29,9 +43,9 @@ type CopyBlockProps<Input extends SourceInput> = DataProps<Input, CopyBlockConte
 - web 面：原生 `<details>` 折叠块，标题行右侧是复制按钮，展开即全文。
 - text 面零输出。终端里的等价能力是下钻命令本身，把整段 prompt 打进终端只会淹没
   用户正在读的结果。
-- 数据源返回 `null` 时两面零输出，不渲染空容器。
+- `content` 为 `null` 时两面零输出，不渲染空容器。
 
 ## 相关阅读
 
-- [组件树](../README.md) —— 四层模型与双面投影边界。
-- [数据源目录](../sources/README.md) —— 修复 prompt 的组装口径。
+- [组件树](../README.md) —— 报告组件与双面投影边界。
+- [`toSampleFixPrompt`](../../library.md) —— 修复 prompt 的组装口径。

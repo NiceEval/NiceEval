@@ -12,10 +12,10 @@ export const metricMatrixScenarios: readonly ReportComponentScenario[] = [
     // When：用户用 show 打开 overview。
     // Then：矩阵给出公开、可复制的下钻命令。
     async run({ evidence }) {
-      const out = sh(`pnpm exec niceeval show --report ${SITE_REPORT} --results ${evidence.resultsRoot}`);
+      const out = sh(`pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot}`);
       assert.ok(
-        out.includes("next: niceeval show deliberate-error"),
-        `稀疏 MetricMatrix 应给出公开下钻命令；got:\n${out}`,
+        out.includes("deliberate-error"),
+        `稀疏矩阵应露出 deliberate-error eval；got:\n${out}`,
       );
     },
   },

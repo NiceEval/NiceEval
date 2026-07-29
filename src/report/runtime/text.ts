@@ -11,6 +11,7 @@ import {
   type TextRenderOptions,
 } from "../definition/tree.ts";
 import { renderResolvedPageText, resolvePage } from "./resolved-page.ts";
+import { resolveDefinitionPage } from "./page-render.ts";
 import {
   buildReportMeta,
   resolveReportTitle,
@@ -96,11 +97,11 @@ export async function renderReportToText(
   const page = pickReportPage(definition, options?.pageId);
   const meta = buildReportMeta(definition, ctx.scope);
   const hasAttemptPage = definition.pages.some((p) => p.input === "attempt");
-  const resolved = await resolvePage(page.content, {
+  const resolved = await resolveDefinitionPage(page, {
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
-    page: { id: page.id, input: "scope" },
+    page: { id: page.id, input: "sample" },
     dimensionPins: definition.dimensionPins,
   });
   return renderResolvedPageText(resolved, {

@@ -21,9 +21,9 @@ import {
   textGridRowSeparator,
   TEXT_GRID_SEPARATOR,
 } from "./grid-layout.ts";
-import type { Source, SourceInput } from "../source.ts";
 import type { Dataset } from "../model/types.ts";
 import { datasetToTableContent, isDataset } from "../model/dataset.ts";
+import { isMetricValue, type MetricValue } from "../model/calculation.ts";
 import {
   flattenTableContentForText,
   formatCellText,
@@ -333,7 +333,7 @@ export interface StyleProps {
 
 /**
  * 注入页级全局 CSS:树位置只决定声明顺序,不限定作用域;text 面零输出。
- * 配置对象形态的报告要全站样式优先用外壳 styles,两条通道注入同一增强层。
+ * 组件级样式优先走 defineRenderer assets;页内 <Style> 用于页级声明。
  */
 export const Style = defineComponent<StyleProps>({
   dimensions: () => ({}),
@@ -486,28 +486,35 @@ Column.displayName = "Column";
 export interface TablePresentation {
   children?: ReportNode;
   sort?: string;
+  /** @deprecated 用 searchable；与 docs searchable 同义。 */
   filter?: boolean;
+  searchable?: boolean;
   attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
 
+/** docs: `columns` 项可以是字段名或 `{ field, label?, hidden? }`。 */
+export type PlainTableColumn<Row extends object = globalThis.Record<string, unknown>> =
+  | (keyof Row & string)
+  | {
+      field: keyof Row & string;
+      label?: LocalizedText;
+      hidden?: boolean;
+    };
+
 /**
- * Table props:新形态(source | data)与旧形态(columns + rows 字符串)并存。
- * 1.7 退场后只留 DataProps 两支。
+ * Table props：契约主轨是普通 `rows`（AggregateRow / EvidenceRow / 实体投影）。
+ * `data: TableContent | Dataset` 仍供内部实体列表 Content 适配；legacy 字符串格 columns+rows 过渡保留。
  */
-export type TableProps =
+export type TableProps<Row extends object = globalThis.Record<string, unknown>> =
   | ({
-      data: TableContent | Dataset | null;
-      source?: never;
-      input?: never;
-      columns?: never;
-      rows?: never;
+      rows: readonly Row[];
+      columns?: readonly PlainTableColumn<Row>[];
+      data?: never;
     } & TablePresentation)
   | ({
-      source: Source<SourceInput, TableContent | Dataset | null>;
-      data?: never;
-      input?: SourceInput;
+      data: TableContent | Dataset | null;
       columns?: never;
       rows?: never;
     } & TablePresentation)
@@ -515,16 +522,129 @@ export type TableProps =
       columns: readonly [TableColumn, ...TableColumn[]];
       rows: readonly TableRow[];
       data?: never;
-      source?: never;
-      input?: never;
       children?: never;
       sort?: never;
       filter?: never;
+      searchable?: never;
       attemptHref?: never;
     } & Pick<TablePresentation, "locale" | "className">);
 
-function isLegacyTableProps(props: TableProps): props is Extract<TableProps, { columns: unknown }> {
-  return Array.isArray((props as { columns?: unknown }).columns);
+function isLegacyStringTableProps(
+  props: TableProps,
+): props is Extract<TableProps, { columns: readonly [TableColumn, ...TableColumn[]] }> {
+  const columns = (props as { columns?: unknown }).columns;
+  if (!Array.isArray(columns) || columns.length === 0) return false;
+  const first = columns[0];
+  return (
+    first !== null &&
+    typeof first === "object" &&
+    "key" in first &&
+    "header" in first &&
+    !("field" in first)
+  );
+}
+
+function isPlainRowsTableProps(props: TableProps): props is Extract<TableProps, { rows: readonly object[] }> & {
+  data?: never;
+} {
+  return Array.isArray((props as { rows?: unknown }).rows) && !("data" in props && (props as { data?: unknown }).data !== undefined) && !isLegacyStringTableProps(props);
+}
+
+function isLocalizedTextValue(value: unknown): value is LocalizedText {
+  if (typeof value === "string") return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value as globalThis.Record<string, unknown>).every((v) => typeof v === "string");
+}
+
+function isPlainCellValue(value: unknown): value is Cell {
+  return !!value && typeof value === "object" && !Array.isArray(value) && "kind" in value;
+}
+
+function plainValueToCell(value: unknown, path: string, locale: ReportLocale): Cell {
+  if (value === undefined) {
+    throw new Error(`Table ${path} is missing — every declared column must exist on the row object.`);
+  }
+  if (isMetricValue(value)) {
+    return { kind: "metric", metric: value };
+  }
+  if (isPlainCellValue(value)) return value;
+  if (value === null) return { kind: "text", text: "—" };
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return { kind: "text", text: String(value) };
+  }
+  if (isLocalizedTextValue(value)) {
+    return { kind: "text", text: resolveLocalizedText(value, locale) };
+  }
+  if (Array.isArray(value)) {
+    throw new Error(
+      `Table ${path} is an array — Table rows only accept scalars, LocalizedText, MetricValue, or Cell. Flatten or pick a display field before render.`,
+    );
+  }
+  throw new Error(
+    `Table ${path} has unsupported object type — Table rows only accept scalars, LocalizedText, MetricValue, or Cell.`,
+  );
+}
+
+function resolvePlainColumnSpecs(
+  rows: readonly globalThis.Record<string, unknown>[],
+  columns: readonly PlainTableColumn[] | undefined,
+): Array<{ field: string; label?: LocalizedText }> {
+  if (columns && columns.length > 0) {
+    const out: Array<{ field: string; label?: LocalizedText }> = [];
+    for (const col of columns) {
+      if (typeof col === "string") {
+        out.push({ field: col });
+        continue;
+      }
+      if (col.hidden) continue;
+      out.push({
+        field: col.field,
+        ...(col.label !== undefined ? { label: col.label } : {}),
+      });
+    }
+    return out;
+  }
+  const first = rows[0];
+  if (!first || typeof first !== "object") return [];
+  return Object.keys(first)
+    .filter((key) => key !== "refs")
+    .map((field) => ({ field }));
+}
+
+function plainRowsToTableContent(
+  rows: readonly globalThis.Record<string, unknown>[],
+  columnSpecs: Array<{ field: string; label?: LocalizedText }>,
+  locale: ReportLocale,
+): TableContent {
+  if (columnSpecs.length === 0) {
+    throw new Error("Table needs at least one column: pass columns, or provide a non-empty rows array with fields.");
+  }
+  const columns: ColumnSpec[] = columnSpecs.map((spec) => {
+    const sample = rows.map((row) => row[spec.field]).find(isMetricValue);
+    return {
+      key: spec.field,
+      ...(sample?.unit !== undefined ? { unit: sample.unit } : {}),
+      ...(sample?.better !== undefined ? { better: sample.better } : {}),
+    };
+  });
+  const contentRows: TableContentRow[] = rows.map((row, index) => {
+    const refs = row.refs;
+    const key =
+      typeof row.key === "string"
+        ? row.key
+        : Array.isArray(refs) && typeof refs[0] === "string"
+          ? refs[0]
+          : columnSpecs.map((c) => `${c.field}=${String(row[c.field])}`).join("|") || `row-${index}`;
+    const cells: globalThis.Record<string, Cell> = {};
+    for (const spec of columnSpecs) {
+      if (!(spec.field in row)) {
+        throw new Error(`Table rows[${index}].${spec.field} is missing — row shape must match columns.`);
+      }
+      cells[spec.field] = plainValueToCell(row[spec.field], `rows[${index}].${spec.field}`, locale);
+    }
+    return { key, cells };
+  });
+  return { columns, rows: contentRows };
 }
 
 function columnNodesOf(children: ReportNode | undefined): ColumnProps[] {
@@ -569,13 +689,33 @@ function resolveTableContent(props: TableProps, locale: ReportLocale): {
   rows: TableRow[];
   content: TableContent | null;
 } {
-  if (isLegacyTableProps(props)) {
+  if (isLegacyStringTableProps(props)) {
     return { columns: [...props.columns], rows: [...props.rows], content: null };
   }
-  const raw = props.data ?? null;
+  if (isPlainRowsTableProps(props)) {
+    const specs = resolvePlainColumnSpecs(props.rows as readonly globalThis.Record<string, unknown>[], props.columns as readonly PlainTableColumn[] | undefined);
+    const content = plainRowsToTableContent(
+      props.rows as readonly globalThis.Record<string, unknown>[],
+      specs,
+      locale,
+    );
+    const columns: TableColumn[] = specs.map((spec) => ({
+      key: spec.field,
+      header: spec.label ?? defaultTableHeader(spec.field, locale),
+      align: content.columns.find((c) => c.key === spec.field)?.better ? "right" : "left",
+      better: content.columns.find((c) => c.key === spec.field)?.better,
+    }));
+    const flat = flattenTableContentForText(content, locale);
+    return {
+      columns: columns as [TableColumn, ...TableColumn[]],
+      rows: flat.rows.map((r) => ({ key: r.key, cells: r.cells })),
+      content,
+    };
+  }
+  const raw = (props as { data?: TableContent | Dataset | null }).data ?? null;
   const content = raw === null ? null : isDataset(raw) ? datasetToTableContent(raw) : raw;
   if (content === null) return { columns: [], rows: [], content: null };
-  const overrides = columnNodesOf(props.children);
+  const overrides = columnNodesOf((props as TablePresentation).children);
   const specs: ColumnSpec[] = overrides.length > 0
     ? overrides.map((c) => ({ key: c.dataKey, better: c.better }))
     : [...content.columns];
@@ -699,10 +839,10 @@ function renderCellWeb(
         </span>
       );
     }
-    case "measure":
+    case "metric":
       return (
         <MetricCellView
-          cell={cell.measure}
+          cell={cell.metric}
           attemptHref={ctx.showMeasureRefs === false ? undefined : ctx.attemptHref}
           locale={ctx.locale}
         />
@@ -716,7 +856,7 @@ function renderCellWeb(
 
 function cellSortValue(cell: Cell | undefined): string | number {
   if (!cell) return "";
-  if (cell.kind === "measure") return cell.measure.value ?? "";
+  if (cell.kind === "metric") return cell.metric.value ?? "";
   if (cell.kind === "score") return cell.earned;
   if (cell.kind === "text") return cell.text;
   if (cell.kind === "locator") return cell.locator;
@@ -811,7 +951,7 @@ export const Table = defineComponent<TableProps>({
     const resolved = resolveTableContent(props, locale);
     validateResolvedTable(resolved.columns, resolved.rows, resolved.content?.rows);
     const alignClass = (align?: ColumnAlign) => (align === "right" ? "niceeval-align-right" : undefined);
-    const attemptHref = !isLegacyTableProps(props) ? props.attemptHref ?? ctx.attemptHref : ctx.attemptHref;
+    const attemptHref = !isLegacyStringTableProps(props) ? props.attemptHref ?? ctx.attemptHref : ctx.attemptHref;
     if (resolved.content) {
       const hierarchical = resolved.content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
       const table = (
@@ -857,7 +997,8 @@ export const Table = defineComponent<TableProps>({
           )}
         </table>
       );
-      if (!props.filter) return table;
+      const searchable = !isLegacyStringTableProps(props) && (props.searchable === true || props.filter === true);
+      if (!searchable) return table;
       return (
         <div className="niceeval-report niceeval-table-wrap">
           <input
@@ -968,3 +1109,17 @@ export type {
 export { Chart, Series } from "./primitives/chart.tsx";
 export type { ChartPresentation, ChartProps } from "./primitives/chart.tsx";
 export type { SeriesProps, ChartAxisBinding, ChartFieldBinding, ChartSeriesOverride } from "./primitives/chart-map.ts";
+export { Scatter, Line, Bars, Area, applyBarsSortLimit } from "./primitives/marks.tsx";
+export type {
+  ScatterProps,
+  ExternalScatterProps,
+  LineProps,
+  ExternalLineProps,
+  BarsProps,
+  ExternalBarsProps,
+  BarsSort,
+  AreaProps,
+  ExternalAreaProps,
+} from "./primitives/marks.tsx";
+export { pointsToDataset } from "./primitives/points-dataset.ts";
+export type { ExternalPoint, PointsChartFields } from "./primitives/points-dataset.ts";

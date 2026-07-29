@@ -1,16 +1,17 @@
-// 代表性自定义报告 2/2 —— 自定义多页 + 自定义组件与 attempt page(docs/engineering/testing/e2e/
+// 代表性自定义报告 2/2 —— 自定义多页 + page.render + attempt page(docs/engineering/testing/e2e/
 // report.md §5「自定义报告的用户操作回归」)。三张可导航页 + 一张不进导航的自定义 attempt-input
-// page,pages 是字面量(shell.md「content / pages / extends 恰好声明一个」),不 extends 任何内建
+// page,pages 是字面量(shell.md「render / pages / extends 恰好声明一个」),不 extends 任何内建
 // 报告 —— 用来证明"用户改一份报告文件就能踩到的路径"不依赖内建组件组合。
 //
 // 顺手覆盖 verify-render-structure.ts 头注 COVERAGE GAP #2/#3:内建 standard 报告从没用到
-// Section 嵌套边框、Grid 列数规划、measure.matrix / measure.scoreboard / measure.rows ——
-// overview 页用嵌套 Section 包 Grid/Stat(自定义组合组件读 sources.sample.snapshot 现算)与
-// matrix Table;scoreboard 页用 scoreboard Table 与带过滤框的 measure.rows Table。
+// Section 嵌套边框、Grid 列数规划、aggregate 矩阵 / 成绩单 / 对比表 ——
+// overview 页用嵌套 Section 包 Grid/Stat(toSummaryItems 现算)与 eval×agent 矩阵 Table;scoreboard
+// 页用 aggregate 成绩单与带过滤框的对比 Table。
+import type { AttemptEvidence, Sample } from "niceeval/record";
+import type { AttemptListItem, Cell, MetricValue, TableContent } from "niceeval/report";
 import {
   AttemptAssessment,
   AttemptSummary,
-  Callouts,
   Col,
   CopyBlock,
   Grid,
@@ -18,72 +19,224 @@ import {
   Section,
   Stat,
   Table,
+  aggregate,
+  agent,
   costUSD,
-  defineComposition,
   defineReport,
   durationMs,
+  evalId,
+  experiment,
+  mean,
   passRate,
-  sources,
+  rollup,
+  toAttemptFixPrompt,
+  toAttemptListRows,
+  toAttemptSummary,
+  toSummaryItems,
 } from "niceeval/report";
 
-const examMatrix = sources.measure.matrix({
-  rows: "eval",
-  columns: "agent",
-  cell: passRate,
-});
+const SCOREBOARD_QUESTIONS = ["tool-call", "deliberate-fail", "deliberate-error"] as const;
+const SCOREBOARD_FULL_MARKS = 100;
 
-const examScoreboard = sources.measure.scoreboard({
-  rows: "experiment",
-  questions: ["tool-call", "deliberate-fail", "deliberate-error"],
-  fullMarks: 100,
-});
+/** 与内建 examScore 同口径的 rollup Calculation —— 成绩单页固定题集打分用。 */
+const examScore = rollup(
+  async (attempt) => {
+    const { verdict, assertions } = attempt.result;
+    if (verdict === "unreadable") return null;
+    if (verdict !== "passed") return 0;
+    const soft = assertions.filter(
+      (x) => x.severity === "soft" && x.outcome !== "unavailable" && x.points === undefined,
+    );
+    if (soft.length === 0) return 1;
+    return soft.reduce((sum, x) => sum + (x.outcome === "unavailable" ? 0 : x.score), 0) / soft.length;
+  },
+  { withinEval: mean, acrossEvals: mean, unit: "%", better: "higher" },
+);
 
-const comparisonRows = sources.measure.rows({
-  dimensions: ["experiment"],
-  measures: [passRate, costUSD, durationMs],
-  sort: passRate,
-});
+function metricValueCell(metric: MetricValue): Cell {
+  return { kind: "metric", metric };
+}
 
-/**
- * 组合组件:现算的运行总览 Grid —— 不是把 Stat 值写死成字面量,而是每次 resolve 时读
- * `sources.sample.snapshot`,和「本文件消费真实证据」这条约定一致。
- */
-const RunOverviewGrid = defineComposition(async (_props: Record<string, never>, ctx) => {
-  const summary = await ctx.resolve(sources.sample.snapshot);
+function matrixTableContent(
+  rows: ReadonlyArray<{ eval: string; agent: string; passRate: MetricValue }>,
+): TableContent {
+  const columnKeys = [...new Set(rows.map((row) => row.agent))].sort();
+  const rowKeys = [...new Set(rows.map((row) => row.eval))].sort();
+  const byPosition = new Map(rows.map((row) => [`${row.eval}\0${row.agent}`, row] as const));
+  return {
+    columns: [{ key: "eval" }, ...columnKeys.map((key) => ({ key, better: "higher" as const }))],
+    rows: rowKeys.map((evalKey) => {
+      const cells: Record<string, Cell> = {
+        eval: { kind: "text", text: evalKey },
+      };
+      for (const columnKey of columnKeys) {
+        const row = byPosition.get(`${evalKey}\0${columnKey}`);
+        cells[columnKey] = row ? metricValueCell(row.passRate) : { kind: "notApplicable" };
+      }
+      return { key: evalKey, cells };
+    }),
+  };
+}
+
+function scoreboardTableContent(
+  rows: ReadonlyArray<{ experiment: string; eval: string; score: MetricValue }>,
+): TableContent {
+  const experiments = [...new Set(rows.map((row) => row.experiment))].sort();
+  const byExpEval = new Map(rows.map((row) => [`${row.experiment}\0${row.eval}`, row] as const));
+  return {
+    columns: [{ key: "entity" }, { key: "total", better: "higher" }],
+    rows: experiments.map((exp) => {
+      let earned = 0;
+      const possible = SCOREBOARD_QUESTIONS.length;
+      for (const question of SCOREBOARD_QUESTIONS) {
+        const row = byExpEval.get(`${exp}\0${question}`);
+        if (!row) continue;
+        const value = row.score.value;
+        if (value !== null) earned += value;
+      }
+      const totalValue = (SCOREBOARD_FULL_MARKS * earned) / possible;
+      return {
+        key: exp,
+        cells: {
+          entity: { kind: "text", text: exp },
+          total: { kind: "score", earned: totalValue, possible: SCOREBOARD_FULL_MARKS },
+        },
+      };
+    }),
+  };
+}
+
+function attemptListTableContent(items: readonly AttemptListItem[]): TableContent {
+  return {
+    columns: [
+      { key: "entity" },
+      { key: "verdict" },
+      { key: "result" },
+      { key: "durationMs", better: "lower" },
+      { key: "costUSD", better: "lower" },
+    ],
+    rows: items.map((item) => ({
+      key: item.locator,
+      cells: {
+        entity: {
+          kind: "locator",
+          locator: item.locator,
+          staleSinceMs: item.historical ? 1 : undefined,
+        },
+        verdict: { kind: "verdict", verdict: item.verdict },
+        result:
+          item.failureSummary !== null
+            ? {
+                kind: "summary",
+                text: item.failureSummary,
+                more: item.moreFailures > 0 ? item.moreFailures : undefined,
+              }
+            : { kind: "text", text: "—" },
+        durationMs: {
+          kind: "metric",
+          metric: {
+            value: item.durationMs,
+            unit: "ms",
+            basis: "eval",
+            samples: 1,
+            total: 1,
+            refs: [item.locator],
+          },
+        },
+        costUSD: {
+          kind: "metric",
+          metric: {
+            value: item.costUSD,
+            unit: "$",
+            basis: "eval",
+            samples: item.costUSD === null ? 0 : 1,
+            total: 1,
+            refs: [item.locator],
+          },
+        },
+      },
+    })),
+  };
+}
+
+async function overviewRender(sample: Sample) {
+  const [summary, matrixRows] = await Promise.all([
+    toSummaryItems(sample),
+    aggregate(sample, { by: { eval: evalId, agent }, values: { passRate } }),
+  ]);
   const rate = summary.endToEndPassRate.value;
   return (
-    <Grid>
-      <Stat label={{ en: "Experiments", "zh-CN": "实验数" }} value={summary.experiments} />
-      <Stat label={{ en: "Evals", "zh-CN": "Eval 数" }} value={summary.evals} />
-      <Stat label={{ en: "Attempts", "zh-CN": "Attempt 数" }} value={summary.attempts} />
-      <Stat
-        label={{ en: "Pass rate", "zh-CN": "通过率" }}
-        value={summary.endToEndPassRate.display}
-        tone={rate === null ? "neutral" : rate >= 0.5 ? "positive" : "negative"}
-      />
-    </Grid>
-  );
-});
-
-/**
- * 自定义 attempt-input page 的内容组件 —— 参照 src/report/built-in/standard.tsx 的
- * standardAttemptPage 写法(组合已有区块表达内建排列顺序),但不照抄它的全量区块:只保留身份、
- * 断言/源码评估、修复 prompt 与 diagnostics 四块,不带 timeline/usage/conversation/trace/diff——
- * 一张更轻量的"复核卡片",证明作者能用公开叶子原语重排,不依赖 AttemptDetail 成品。
- */
-const AttemptReviewCard = defineComposition((_props: Record<string, never>, ctx) => {
-  if (ctx.page.input !== "attempt") {
-    throw new Error("AttemptReviewCard requires an attempt-input page.");
-  }
-  return (
     <Col>
-      <AttemptSummary source={sources.attempt.snapshot} />
-      <AttemptAssessment />
-      <CopyBlock source={sources.attempt.fixPrompt} />
-      <Callouts source={sources.attempt.diagnostics} />
+      <SampleNotices />
+      <Section title={{ en: "Run overview", "zh-CN": "运行总览" }} meta="niceeval report E2E fixture">
+        <Grid>
+          <Stat label={{ en: "Experiments", "zh-CN": "实验数" }} value={summary.experiments} />
+          <Stat label={{ en: "Evals", "zh-CN": "Eval 数" }} value={summary.evals} />
+          <Stat label={{ en: "Attempts", "zh-CN": "Attempt 数" }} value={summary.attempts} />
+          <Stat
+            label={{ en: "Pass rate", "zh-CN": "通过率" }}
+            value={summary.endToEndPassRate.display}
+            tone={rate === null ? "neutral" : rate >= 0.5 ? "positive" : "negative"}
+          />
+        </Grid>
+        <Section title={{ en: "Eval × agent", "zh-CN": "Eval × Agent" }}>
+          <Table data={matrixTableContent(matrixRows)} className="niceeval-metric-matrix" />
+        </Section>
+      </Section>
     </Col>
   );
-});
+}
+
+async function scoreboardRender(sample: Sample) {
+  const [scoreRows, comparison] = await Promise.all([
+    aggregate(sample, {
+      by: { experiment, eval: evalId },
+      values: { score: examScore },
+    }),
+    aggregate(sample, {
+      by: { experiment },
+      values: { passRate, costUSD, durationMs },
+    }),
+  ]);
+  return (
+    <Col>
+      <SampleNotices />
+      <Section title={{ en: "Exam", "zh-CN": "考试" }}>
+        <Table data={scoreboardTableContent(scoreRows)} className="niceeval-scoreboard-table" />
+      </Section>
+      <Section title={{ en: "Comparison", "zh-CN": "对比" }}>
+        <Table
+          rows={comparison as unknown as readonly Record<string, unknown>[]}
+          columns={["experiment", "passRate", "costUSD", "durationMs"]}
+          sort="passRate"
+          filter
+          className="niceeval-metric-table"
+        />
+      </Section>
+    </Col>
+  );
+}
+
+async function attemptsRender(sample: Sample) {
+  const items = await toAttemptListRows(sample);
+  return (
+    <Col>
+      <SampleNotices />
+      <Table data={attemptListTableContent(items)} filter />
+    </Col>
+  );
+}
+
+async function reviewRender(attempt: AttemptEvidence) {
+  const [summary, fixPrompt] = await Promise.all([toAttemptSummary(attempt), toAttemptFixPrompt(attempt)]);
+  return (
+    <Col>
+      <AttemptSummary data={summary} />
+      <AttemptAssessment attempt={attempt} />
+      {fixPrompt !== null ? <CopyBlock content={fixPrompt} /> : null}
+    </Col>
+  );
+}
 
 export default defineReport({
   title: { en: "Results E2E · Custom site", "zh-CN": "Results E2E · 自定义站点" },
@@ -91,51 +244,24 @@ export default defineReport({
     {
       id: "overview",
       title: { en: "Overview", "zh-CN": "总览" },
-      content: (
-        <Col>
-          <SampleNotices />
-          <Section title={{ en: "Run overview", "zh-CN": "运行总览" }} meta="niceeval report E2E fixture">
-            <RunOverviewGrid />
-            {/* 嵌套 Section:text 面降级成横隔条(library/layout.md「嵌套只画最外层」),
-                web 面仍是独立 <section>——这条嵌套在内建 standard 报告里从未出现过。 */}
-            <Section title={{ en: "Eval × agent", "zh-CN": "Eval × Agent" }}>
-              <Table source={examMatrix} />
-            </Section>
-          </Section>
-        </Col>
-      ),
+      render: overviewRender,
     },
     {
       id: "scoreboard",
       title: { en: "Scoreboard", "zh-CN": "成绩单" },
-      content: (
-        <Col>
-          <SampleNotices />
-          <Section title={{ en: "Exam", "zh-CN": "考试" }}>
-            <Table source={examScoreboard} />
-          </Section>
-          <Section title={{ en: "Comparison", "zh-CN": "对比" }}>
-            <Table source={comparisonRows} filter />
-          </Section>
-        </Col>
-      ),
+      render: scoreboardRender,
     },
     {
       id: "attempts",
       title: { en: "Attempts", "zh-CN": "Attempt" },
-      content: (
-        <Col>
-          <SampleNotices />
-          <Table source={sources.entity.attempts} filter />
-        </Col>
-      ),
+      render: attemptsRender,
     },
     {
       id: "review",
       title: { en: "Attempt review", "zh-CN": "Attempt 复核" },
       input: "attempt",
       navigation: false,
-      content: <AttemptReviewCard />,
+      render: reviewRender,
     },
   ],
 });

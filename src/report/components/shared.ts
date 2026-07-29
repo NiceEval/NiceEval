@@ -1,4 +1,4 @@
-// 官方双面组件的共用装配机制:DataProps 双形态判别、data 结构校验的通用原语(isObject /
+// 官方双面组件的共用装配机制:普通值 props、data 结构校验原语(isObject /
 // isLocalizedText / isCell / isTally / cellProblem / tallyProblem / arrayProblem /
 // dataShapeError)、`hrefOf` 证据室深链解析、`ChromeProps` 呈现选项基类、`cx` classname
 // 拼接——每个组件族在自己的 index.tsx 里用这些原语递归拼自己的 validate*Data(字段路径要覆盖到
@@ -7,24 +7,23 @@
 import type { ReportLocale } from "../model/locale.ts";
 import type { WebContext } from "../definition/tree.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
-import type { Source, SourceInput } from "../source.ts";
 
 /** 拼 class 名:过滤空值,末尾接使用者透传的 className。 */
 export function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
-// ───────────────────────── DataProps 组合规则 ─────────────────────────
-
-type Never<T> = { [K in keyof T]?: never };
+// ───────────────────────── 普通值 props ─────────────────────────
 
 /**
- * 官方数据组件的统一 props 组合(docs/feature/reports/components/README.md「数据绑定」):
- * source 形态(管线代调 compute)与 data 形态(已算好的 Content)互斥。
+ * 官方数据组件的值 props：只接收已经算好的 Content。
+ * 取数在 page.render / 公开 to* 转换里完成，组件不绑定 Source。
  */
-export type DataProps<Data, Options, Presentation, Input extends SourceInput = SourceInput> =
-  | ({ data: Data; source?: never; input?: never } & Never<Options> & Presentation)
-  | ({ source: Source<Input, Data>; data?: never; input?: Input } & Never<Options> & Presentation);
+export type ValueProps<Data, Presentation = object> = { data: Data } & Presentation;
+
+/** @deprecated 旧名；与 ValueProps 同义。 */
+export type DataProps<Data, _Options = globalThis.Record<never, never>, Presentation = object, _Input = unknown> =
+  ValueProps<Data, Presentation>;
 
 // ───────────────────────── data 结构校验(版本漂移防线)─────────────────────────
 
@@ -44,11 +43,11 @@ export function isLocalizedText(value: unknown): boolean {
  * 用这些原语递归拼自己的形状,不重新发明逐字段判断。
  */
 export function cellProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be a MetricCell { value, display, samples, total, refs }`;
+  if (!isObject(value)) return `"${path}" must be a MetricValue { value, samples, total, basis, refs }`;
   if (!(value.value === null || typeof value.value === "number")) return `"${path}.value" must be a number or null`;
-  if (!isLocalizedText(value.display)) return `"${path}.display" must be a LocalizedText`;
   if (typeof value.samples !== "number") return `"${path}.samples" must be a number`;
   if (typeof value.total !== "number") return `"${path}.total" must be a number`;
+  if (typeof value.basis !== "string") return `"${path}.basis" must be a MetricBasis string`;
   if (!Array.isArray(value.refs) || !value.refs.every((ref) => typeof ref === "string")) {
     return `"${path}.refs" must be an array of locator strings`;
   }

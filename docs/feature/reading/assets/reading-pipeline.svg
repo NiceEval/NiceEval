@@ -47,7 +47,7 @@
   <path d="M1052 208 V248" class="arrow" />
   <rect x="816.5" y="256.5" width="391" height="104" class="box" /><text x="836" y="286" class="label">两级折叠</text><rect x="836.5" y="304.5" width="159" height="40" class="box-2" /><text x="856" y="330" class="mono">perEval</text><rect x="1012.5" y="304.5" width="175" height="40" class="box-2" /><text x="1032" y="330" class="mono">acrossEvals</text>
   <path d="M816 312 H744" class="arrow" />
-  <rect x="400.5" y="256.5" width="295" height="104" class="box" /><text x="420" y="286" class="label mono">MeasureCell</text><text x="420" y="318">value · coverage · refs</text><text x="420" y="342" class="note">可序列化数据</text>
+  <rect x="400.5" y="256.5" width="295" height="104" class="box" /><text x="420" y="286" class="label mono">MetricValue</text><text x="420" y="318">value · samples · refs</text><text x="420" y="342" class="note">可序列化数据</text>
   <path d="M400 312 H328" class="arrow" />
   <rect x="32.5" y="256.5" width="247" height="104" class="box" /><text x="52" y="286" class="label">报告树</text><text x="52" y="318" class="mono">Page → components</text><text x="52" y="342" class="note">同一份业务口径</text>
   <path d="M156 360 V416 H344 M156 416 H968" class="arrow" />

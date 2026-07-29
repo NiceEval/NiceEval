@@ -12,7 +12,7 @@ export const sectionScenarios: readonly ReportComponentScenario[] = [
     // When：用户用 show 打开 overview。
     // Then：两层标题都可见。
     async run({ evidence }) {
-      const out = sh(`pnpm exec niceeval show --report ${SITE_REPORT} --results ${evidence.resultsRoot}`);
+      const out = sh(`pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot}`);
       assert.ok(out.includes("Run overview"), "外层 Section 标题应可见");
       assert.ok(out.includes("Eval × agent"), "嵌套 Section 标题应可见");
     },

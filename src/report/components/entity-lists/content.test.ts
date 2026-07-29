@@ -5,17 +5,17 @@
 // 断言面是 Content,不经浏览器。
 
 import { describe, expect, it } from "vitest";
-import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem, MeasureCell } from "../../model/types.ts";
+import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem, MetricValue } from "../../model/types.ts";
 import { attemptListContent, experimentListContent } from "./content.ts";
 import type { Cell } from "../../definition/cell.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { formatCellText } from "../../definition/cell.ts";
 
-const emptyCell: MeasureCell = { value: null, display: "—", samples: 0, total: 0, refs: [] };
+const emptyCell: MetricValue = { value: null, basis: "eval", samples: 0, total: 0, refs: [] };
 const locator = (s: string): AttemptLocator => s as AttemptLocator;
 
-function cell(value: number, display: string, total = 1): MeasureCell {
-  return { value, display, samples: 1, total, refs: [] };
+function cell(value: number, total = 1): MetricValue {
+  return { value, samples: 1, total, basis: "eval", refs: [] };
 }
 
 function attempt(
@@ -53,8 +53,8 @@ function evalRow(
     evalId,
     verdict,
     totalScore: emptyCell,
-    durationMs: cell(attempts[0]?.durationMs ?? 0, "1s"),
-    costUSD: cell(attempts[0]?.costUSD ?? 0, "$0.01"),
+    durationMs: cell(attempts[0]?.durationMs ?? 0),
+    costUSD: cell(attempts[0]?.costUSD ?? 0),
     tokens: emptyCell,
     attempts,
     ...overrides,
@@ -109,7 +109,7 @@ describe("experimentListContent Eval 分组层", () => {
     // 两组通过率都是 50%,按 groupKey 字典序收口
     expect(entityText(sub[0]!.cells.entity)).toBe("downshift");
     expect(entityDetail(sub[0]!.cells.entity)).toBe("2 evals");
-    expect(sub[0]!.cells.passRate).toMatchObject({ kind: "measure", measure: { value: 0.5 } });
+    expect(sub[0]!.cells.passRate).toMatchObject({ kind: "metric", metric: { value: 0.5 } });
     expect(sub[0]!.cells.model).toEqual({ kind: "notApplicable" });
     expect(sub[0]!.cells.agent).toEqual({ kind: "notApplicable" });
 
@@ -189,7 +189,7 @@ describe("experimentListContent Eval 分组层", () => {
     const weather = sub[0]!;
     expect(entityDetail(weather.cells.entity)).toBe("2/3 evals");
     // 占位不进通过率分母:仍是 1 passed / 1 failed = 50%,不是 /3
-    expect(weather.cells.passRate).toMatchObject({ kind: "measure", measure: { value: 0.5, total: 2 } });
+    expect(weather.cells.passRate).toMatchObject({ kind: "metric", metric: { value: 0.5, total: 2 } });
     expect(weather.subRows!.some((row) => row.variant === "placeholder" && row.key.endsWith("weather/gap:missing"))).toBe(
       true,
     );
@@ -214,20 +214,20 @@ describe("experimentListContent Eval 分组层", () => {
         scoring: "points",
         evalRows: [
           evalRow("downshift/a", "passed", [attempt("downshift/a", "passed")], {
-            tokens: { value: 40_000, display: "40k tokens", samples: 1, total: 1, refs: [] },
-            totalScore: { value: 800, display: "800", samples: 1, total: 1, refs: [] },
+            tokens: { value: 40_000, basis: "eval", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 800, basis: "eval", samples: 1, total: 1, refs: [] },
           }),
           evalRow("downshift/b", "passed", [attempt("downshift/b", "passed")], {
-            tokens: { value: 53_000, display: "53k tokens", samples: 1, total: 1, refs: [] },
-            totalScore: { value: 434, display: "434", samples: 1, total: 1, refs: [] },
+            tokens: { value: 53_000, basis: "eval", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 434, basis: "eval", samples: 1, total: 1, refs: [] },
           }),
           evalRow("weather/tool", "passed", [attempt("weather/tool", "passed")], {
-            tokens: { value: 9_000, display: "9k tokens", samples: 1, total: 1, refs: [] },
-            totalScore: { value: 10, display: "10", samples: 1, total: 1, refs: [] },
+            tokens: { value: 9_000, basis: "eval", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 10, basis: "eval", samples: 1, total: 1, refs: [] },
           }),
           evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")], {
-            tokens: { value: 9_000, display: "9k tokens", samples: 1, total: 1, refs: [] },
-            totalScore: { value: 0, display: "0", samples: 1, total: 1, refs: [] },
+            tokens: { value: 9_000, basis: "eval", samples: 1, total: 1, refs: [] },
+            totalScore: { value: 0, basis: "eval", samples: 1, total: 1, refs: [] },
           }),
         ],
         missingEvalIds: [],
@@ -236,12 +236,12 @@ describe("experimentListContent Eval 分组层", () => {
     const downshift = content.rows[0]!.subRows!.find((row) => row.key === "group:downshift")!;
     // mean(40000, 53000) = 46500 → "46.5k tokens"; sum(800, 434) = 1234 → "1.2k"
     expect(downshift.cells.tokens).toMatchObject({
-      kind: "measure",
-      measure: { value: 46_500, display: "46.5k tokens" },
+      kind: "metric",
+      metric: { value: 46_500 },
     });
     expect(downshift.cells.totalScore).toMatchObject({
-      kind: "measure",
-      measure: { value: 1_234, display: "1.2k" },
+      kind: "metric",
+      metric: { value: 1_234 },
     });
     expect(JSON.stringify(downshift.cells.tokens)).not.toContain('"display":"46500"');
     expect(JSON.stringify(downshift.cells.totalScore)).not.toContain('"display":"1234"');
@@ -289,12 +289,12 @@ describe("attempt 行 measure 格式化", () => {
     const content = attemptListContent([attempt("q", "failed", { durationMs: 385_652, costUSD: 0.007336 })]);
     const row = content.rows[0]!;
     expect(row.cells.durationMs).toMatchObject({
-      kind: "measure",
-      measure: { value: 385_652, display: "6m 26s" },
+      kind: "metric",
+      metric: { value: 385_652 },
     });
     expect(row.cells.costUSD).toMatchObject({
-      kind: "measure",
-      measure: { value: 0.007336, display: "$0.0073" },
+      kind: "metric",
+      metric: { value: 0.007336 },
     });
     // 区分力:若仍写 String(durationMs)/String(costUSD),会命中这些原文
     const flat = JSON.stringify(row.cells);

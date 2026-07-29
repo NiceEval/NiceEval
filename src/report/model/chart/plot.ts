@@ -2,7 +2,7 @@
 // 形态照 docs-site/zh/reference/report-components.mdx 的示例块:y 轴刻度 + │ 边框,
 // 点用字母标注、图例列在图下;lower-better 的轴反向,「好」的角落恒在右上。
 
-import { padDisplay, padStartDisplay, stringWidth } from "../../model/text-layout.ts";
+import { padDisplay, padStartDisplay, stringWidth } from "../text-layout.ts";
 
 export interface PlotPoint {
   /** 图上的标记字符(点或系列的字母)。 */

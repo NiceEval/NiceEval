@@ -10,7 +10,7 @@ import {
   type LabelBounds,
   type PlacedPointLabel,
   type PointLabelInput,
-} from "./chart-math.ts";
+} from "./math.ts";
 
 const BOUNDS: LabelBounds = { x0: 2, y0: 2, x1: 638, y1: 358 };
 const WIDTH = 90;

@@ -99,7 +99,7 @@ show 的终端输出与 view 的 HTML 是渲染契约的唯一验收面，对真
 - **视觉与交互**：对同一次运行执行 `niceeval view --out`
   导出静态站，用真实浏览器打开 index 与失败 attempt 的 `attempt/<locator>.html`
   文档，验收「组件 + 官方 stylesheet」在真实证据上的组合成立：详情各语义块是结构化布局而非 UA 默认排版；源码行按
-  [`attemptSource` 视觉规范](../../../feature/reports/components/sources/attempt-source.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的其它内容区（Other
+  [`attemptSource` 视觉规范](../../../feature/reports/components/primitives/source-view.md#web-面视觉规范)呈现状态染色与行号位标记；源码块后的其它内容区（Other
   assertions / Other conversation）同样是结构化条目而非 UA 默认排版，分轮卡片与
   `attemptConversation`
   同视觉语言，工具预览无 JSON 字面转义直出——共享回复 renderer 的每个新渲染容器都要在这里验收一次样式覆盖（先例：[memory/attempt-detail-components-shipped-without-styles](../../../../memory/attempt-detail-components-shipped-without-styles.md)，同类缺陷在单元层 DOM 断言下恒逃逸）；点击 send

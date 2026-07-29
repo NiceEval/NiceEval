@@ -1,28 +1,69 @@
-// niceeval/report —— 报告积木:指标 × 双面组件 × defineReport。
+// niceeval/report —— 报告积木:计算 × 双面组件 × defineReport。
 // 契约见 docs/feature/reports/README.md 与 docs/feature/reports/library/ 分篇。
 //
-// import 边界即运行时边界:计算函数经 sources 在 resolve 阶段代调,只能进服务端 / 脚本;
+// page.render 里用公开 to* / rollup / aggregate 算出普通值，再交给组件。
 // 组件的渲染面纯同步零 IO。text 宿主遍历渲染不需要 react-dom
 // (renderReportToText);web 宿主的 renderReportToStaticHtml 在 ./runtime/web.ts,只有那一侧
 // import react-dom。写报告文件的项目要装 react(.tsx 编译产物 import react/jsx-runtime)。
 
-// 指标与维度读取器
+// 官方 Calculation（普通值作者模型）；内部切片仍可用 AttemptMetric 字面量，不导出 defineMeasure。
+// 普通值计算内核
 export {
-  assistantTurns,
+  aggregate,
+  agent,
   costUSD,
-  defineMeasure,
+  dedupeLocators,
   durationMs,
-  endToEndPassRate,
-  executionReliability,
-  repeatedFailedCommands,
+  evalId,
+  evidenceRow,
+  experiment,
+  isCalculation,
+  isMetricValue,
+  max,
+  mean,
+  metricValue,
+  min,
+  model,
   passRate,
-  taskPassRate,
+  percentile,
+  rollup,
+  sum,
   tokens,
   totalScore,
-} from "./model/metrics.ts";
-export { defineComposition, defineSource } from "./source.ts";
-export { sources } from "./sources.ts";
-export type { Composition, CompositionContext, Source, SourceInput } from "./source.ts";
+} from "./model/calculation.ts";
+export type {
+  AggregateRow,
+  AggregationSubject,
+  Calculation,
+  EvidenceRow,
+  GroupFunction,
+  MetricBasis,
+  MetricFormat,
+  MetricValue,
+  Reducer,
+  RollupOptions,
+} from "./model/calculation.ts";
+export {
+  toAttemptAssertions,
+  toAttemptFixPrompt,
+  toAttemptListRows,
+  toAttemptNotices,
+  toAttemptRows,
+  toAttemptSource,
+  toAttemptSummary,
+  toAttemptUsage,
+  toConversationTurns,
+  toDiffFiles,
+  toEvalRows,
+  toExperimentRows,
+  toHeroData,
+  toRunNotices,
+  toSampleFixPrompt,
+  toSampleNotices,
+  toSummaryItems,
+  toTimelineNodes,
+  toTraceNodes,
+} from "./model/conversions.ts";
 export { presentDimension, shortestUniqueLabels } from "./presentation.ts";
 export type { DimensionDeclaration, DimensionEncoding, PresentedDimension } from "./presentation.ts";
 export { flag, label, numericFlag, numericLabel, numericRunConfig, runConfig } from "./model/flag.ts";
@@ -42,12 +83,17 @@ export type {
   ReportAsset,
   ReportDef,
   ReportDefinition,
-  ReportLink,
   ReportMeta,
   ReportMetaPage,
+  ReportOptions,
   ReportPage,
   ReportPageBase,
   ReportShell,
+  PageDefinition,
+  PageRender,
+  SamplePageDefinition,
+  AttemptPageDefinition,
+  PageDefinitionInput,
 } from "./definition/report.ts";
 export { basalt, chalk, defineTheme, isThemeDefinition, themeStylesheet } from "./theme.ts";
 export type { ReportTheme, ThemeColor, ThemeDefinition, ThemeHex, ThemeSeries } from "./theme.ts";
@@ -66,7 +112,14 @@ export type {
   ReportTreeHostContext,
   ReportHostContext,
 } from "./runtime/text.ts";
-export { defineComponent, createTextContext, renderNodeToText, resolveReportTree, validateReportTree, ResolveMemo } from "./definition/tree.ts";
+export {
+  executePageRender,
+  pageRenderCacheKey,
+  resolveDefinitionPage,
+  ReportPageInputMismatchError,
+} from "./runtime/page-render.ts";
+export type { PageRenderInput } from "./runtime/page-render.ts";
+export { defineComponent, createTextContext, renderNodeToText, resolveReportTree, validateReportTree } from "./definition/tree.ts";
 export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../record/attempt-evidence.ts";
 export type {
   AttemptPageContext,
@@ -78,7 +131,8 @@ export type {
   ReportNode,
   ResolveContext,
   ResolveEnv,
-  ScopePageContext,
+  SamplePageContext,
+  /** @deprecated */ ScopePageContext,
   TextContext,
   TextRenderOptions,
   WebContext,
@@ -86,6 +140,8 @@ export type {
 
 // 排版原语(十个内置双面组件)
 export {
+  Area,
+  Bars,
   Callouts,
   Chart,
   Col,
@@ -94,8 +150,10 @@ export {
   CopyBlock,
   DiffView,
   Grid,
+  Line,
   Markdown,
   Row,
+  Scatter,
   Section,
   Series,
   SourceView,
@@ -106,8 +164,12 @@ export {
   Tabs,
   Text,
   Waterfall,
+  applyBarsSortLimit,
 } from "./definition/primitives.tsx";
 export type {
+  AreaProps,
+  BarsProps,
+  BarsSort,
   CalloutGroup,
   CalloutItem,
   CalloutLevel,
@@ -129,11 +191,18 @@ export type {
   DiffContent,
   DiffFile,
   DiffViewProps,
+  ExternalAreaProps,
+  ExternalBarsProps,
+  ExternalLineProps,
+  ExternalScatterProps,
   FailedCommandContent,
   GridProps,
   LayoutProps,
+  LineProps,
   MarkdownProps,
+  PlainTableColumn,
   RowProps,
+  ScatterProps,
   SectionProps,
   SeriesProps,
   SourceBlockContent,
@@ -205,17 +274,18 @@ export {
 export type { HeroCardProps, HeroProps } from "./components/site-components/index.tsx";
 
 // 实体列表。
-export { FailureList } from "./components/entity-lists/index.tsx";
+export { AttemptList, FailureList } from "./components/entity-lists/index.tsx";
 
 // Attempt 详情组合组件(docs/feature/reports/components/attempt-detail/README.md)。
 export {
   AttemptAssessment,
   AttemptDetail,
+  AttemptDetails,
   AttemptSummary,
 } from "./components/attempt-detail/index.tsx";
-export type { AttemptSectionProps } from "./components/attempt-detail/index.tsx";
+export type { AttemptDetailsProps, AttemptSectionProps } from "./components/attempt-detail/index.tsx";
 
-// 数据契约(Content / Row / Cell 等;计算经 sources 在 resolve 阶段代调,不从此处导出 *Data 函数)
+// 数据契约(Content / Row / Cell 等;AttemptMetric/Dataset/Scoreboard 旧协议不从此处导出)
 export type {
   Aggregator,
   AttemptListItem,
@@ -225,10 +295,6 @@ export type {
   CustomDimension,
   DeltaCell,
   DeltaData,
-  Dataset,
-  DatasetField,
-  DatasetRow,
-  DatasetValue,
   DimensionInput,
   DimensionOptions,
   DimensionRef,
@@ -237,29 +303,17 @@ export type {
   ExperimentListItem,
   FlagConditions,
   HeroData,
-  LineData,
-  MatrixData,
-  Measure,
-  MeasureAggregate,
   NumericAxis,
   NumericAxisOptions,
   NumericRunConfigAxisOptions,
   ReportInput,
   RunConfigKey,
-  ScatterData,
-  MeasureCell,
-  MeasureColumn,
-  MeasureRowsContent,
   SampleSummaryContent,
   SampleIssue,
-  ScoreboardData,
   ScoringComposition,
   SeriesInput,
   SnapshotDiagnosticsData,
   SnapshotDiagnosticsItem,
-  StabilityMatrixCell,
-  StabilityMatrixData,
-  TableData,
   TraceSpanSummary,
   TraceWaterfallRow,
   VerdictTally,

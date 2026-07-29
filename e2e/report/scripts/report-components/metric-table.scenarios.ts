@@ -13,7 +13,7 @@ export const metricTableScenarios: readonly ReportComponentScenario[] = [
     // Then：Comparison 表包含全部实验。
     async run({ evidence }) {
       const out = sh(
-        `pnpm exec niceeval show --report ${SITE_REPORT} --results ${evidence.resultsRoot} --page scoreboard`,
+        `pnpm exec niceeval show --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page scoreboard`,
       );
       assert.ok(out.includes("Comparison"));
       for (const experimentId of ["main", "deliberate-error", "deliberate-fail"]) {

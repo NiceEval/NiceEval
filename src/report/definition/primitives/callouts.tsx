@@ -1,12 +1,10 @@
 // Callouts:分级提示区,按上层给定的分组渲染 Notice(docs/feature/reports/components/primitives/callouts.md)。
 
 import type { ReactElement, ReactNode } from "react";
-import type { SourceInput } from "../../source.ts";
 import {
   dataShapeError,
   isLocalizedText,
   isObject,
-  type DataProps,
 } from "../../components/shared.ts";
 import { defineComponent } from "../tree.ts";
 import {
@@ -30,12 +28,11 @@ function cx(...parts: (string | undefined)[]): string {
 
 export type { CalloutGroup, CalloutItem, CalloutLevel };
 
-export type CalloutsProps<Input extends SourceInput = SourceInput> = DataProps<
-  readonly CalloutGroup[],
-  globalThis.Record<never, never>,
-  { locale?: ReportLocale; className?: string },
-  Input
->;
+export interface CalloutsProps {
+  items: readonly CalloutGroup[];
+  locale?: ReportLocale;
+  className?: string;
+}
 
 function validateCalloutItem(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be an object`;
@@ -57,13 +54,13 @@ function validateCalloutGroup(value: unknown, path: string): string | null {
   return null;
 }
 
-function assertCalloutsData(data: unknown): readonly CalloutGroup[] {
+function assertCalloutsItems(data: unknown): readonly CalloutGroup[] {
   if (!Array.isArray(data)) {
-    throw dataShapeError("Callouts", "sampleNoticesContent", "CalloutGroup[]", '"data" must be an array');
+    throw dataShapeError("Callouts", "toSampleNotices", "CalloutGroup[]", '"items" must be an array');
   }
   for (let i = 0; i < data.length; i++) {
-    const problem = validateCalloutGroup(data[i], `data[${i}]`);
-    if (problem !== null) throw dataShapeError("Callouts", "sampleNoticesContent", "CalloutGroup[]", problem);
+    const problem = validateCalloutGroup(data[i], `items[${i}]`);
+    if (problem !== null) throw dataShapeError("Callouts", "toSampleNotices", "CalloutGroup[]", problem);
   }
   return data as readonly CalloutGroup[];
 }
@@ -175,12 +172,12 @@ function calloutsText(groups: readonly CalloutGroup[], locale: ReportLocale): st
 export const Callouts = defineComponent<CalloutsProps>({
   dimensions: () => ({}),
   web(props, ctx) {
-    const data = assertCalloutsData(props.data ?? []);
+    const data = assertCalloutsItems(props.items ?? []);
     const locale = props.locale ?? ctx.locale;
     return calloutsWeb(data, locale, props.className);
   },
   text(props, ctx) {
-    const data = assertCalloutsData(props.data ?? []);
+    const data = assertCalloutsItems(props.items ?? []);
     const locale = props.locale ?? ctx.locale;
     return calloutsText(data, locale);
   },

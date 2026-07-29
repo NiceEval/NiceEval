@@ -3,7 +3,6 @@
 
 import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
-import type { SourceInput } from "../../source.ts";
 import {
   defineComponent,
   type ReportNode,
@@ -50,11 +49,10 @@ export interface SourceContent {
   locator?: AttemptLocator;
 }
 
-export type SourceViewProps<Input extends SourceInput = SourceInput> = DataProps<
+export type SourceViewProps = DataProps<
   SourceContent | null,
   globalThis.Record<never, never>,
-  { locale?: ReportLocale; className?: string },
-  Input
+  { locale?: ReportLocale; className?: string }
 >;
 
 function cx(...parts: (string | undefined | false)[]): string {

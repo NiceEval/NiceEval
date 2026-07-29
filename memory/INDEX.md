@@ -158,6 +158,15 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [report-plain-value-author-model](report-plain-value-author-model.md) — 裁决(2026-07-29):作者模型翻案为 plain-value page.render + 公开 to* + defineRenderer,删除 Source/Composition/ctx.resolve/组件 data= 双形态;否决保留 Composition 作唯一 await 层(2026-07-27 三概念模型);同日 defineMeasure/metric-views/sources.ts 已删,残留 ResolveMemo/slices/entity-lists Content
+- [report-metric-views-deleted](report-metric-views-deleted.md) — 裁决(2026-07-29):推翻暂留;删除 metric-views/** 与 defineMeasure;chart-math→model/chart;delta/stability→report/slices;同日另条清尽 MeasureCell,统一 MetricValue+kind metric
+- [report-measurecell-protocol-cleared](report-measurecell-protocol-cleared.md) — 裁决(2026-07-29):清尽 MeasureCell/Dataset kind measure/Cell kind measure;统一 MetricValue+kind metric;Measure→内部 AttemptMetric;渲染面按 unit/format 格式化
+- ~~[report-metric-views-internal-retained](report-metric-views-internal-retained.md)~~ — 已翻案，见上条
+- [report-external-snapshot-channel-removed](report-external-snapshot-channel-removed.md) — 裁决(2026-07-29):External snapshot 宿主注入通道整体删除(第二参数/泛型/--data),外部业务数据唯一入口是报告 import 的冻结快照模块;否决理由=幽灵契约+与「CLI 不开报告参数」自相矛盾+import 图白拿缓存/watch/复现;图表层 `external: true` 与此正交,保留
+- [report-rollup-basis-eval](report-rollup-basis-eval.md) — 裁决(2026-07-29):rollup 产物 basis 从 "attempt" 翻案为 "eval",basis 定义为 samples/total 的计数单位(samples=有非 null 题内值的 Eval,total 含 coverage 缺口),refs 恒为 Attempt locator 不承担分母;否决 evidenceBasis/aggregationBasis 双字段;算例在 library.md「samples / total 的口径」
+- [report-dimension-allocation-single-point](report-dimension-allocation-single-point.md) — 裁决(2026-07-29):维度槽位分配单位是页(固定槽位原样生效、未固定稳定哈希探测剩余槽、超 24 拒绝该页),跨页一致只承诺给固定值;否决按全报告出现顺序分配(与惰性 page 冲突);槽位号 1–24 与实现/CSS 令牌一基对齐,装载期只做结构校验不判未知维度名;顺带补上 presentation.md/theme.md 链了却不存在的 components/README.md 两个单点小节
+- [report-aggregation-subject-eval-cell](report-aggregation-subject-eval-cell.md) — 裁决(2026-07-29):`aggregate().by` 分组函数从收 AttemptHandle 改收 Eval 级 `AggregationSubject{experimentId,evalId,run}`——coverage 缺口没有 attempt 无法归组,total 含缺口的契约才闭合;SampleCoverage 保留锚点 Run 供官方 agent/model 分组;连带用类型保证同一道题的 attempts 不会被分组切开
+
 - [report-extends-removed-pages-are-plain-values](report-extends-removed-pages-are-plain-values.md) — 裁决(2026-07-28):移除 `defineReport` 的 `extends`,复用改成 `pages: [...standard.pages]` 的普通数组展开、外壳字段一律本报告自己声明;否决保留 extends(唯一一处部分覆盖,读一份文件定不了站点长什么样)、否决加内容插槽(把部分覆盖从外壳搬进页);展开取到的是等值新页对象不是同引用
 - [sample-overview-retired-dataset-default-bindings](sample-overview-retired-dataset-default-bindings.md) — 裁决(2026-07-29):Dataset 新增缺省绑定(defaults 随 compute 产出,Chart 省略 props 时取用),判断收进新 source `sources.measure.frontier`,SampleOverview 退役、内建首页改三行静态标签;否决固定字段名(破坏页级配色身份)与写死 y="passRate"(计分制画错轴);mixed 默认散点收窄为只画通过制组
 - [grid-has-no-props-geometry-single-source](grid-has-no-props-geometry-single-source.md) — 裁决(2026-07-28):`Grid` 收敛成零 props,列数/边框体裁/留白/字号全从格数×可用宽度算,几何常量只在 grid-layout.ts 出现一次;否决保留 `variant`+`density`(摘要条皮肤的 920px 断点与 Grid 算出的 1010px 从未对齐,中间那段渲染出怪形态)、否决 `variant:"joined"` 第三档(text 面无对应物)、否决 density 按格数判档(两个既有例子就打架)

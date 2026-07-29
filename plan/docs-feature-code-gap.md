@@ -1,246 +1,354 @@
-# `docs/feature` 目标契约落地 TODO
+# Reports 目标契约落地 TODO
 
-本计划基于 2026-07-27 的 `docs/feature/**`、`docs/source-map.md` 与实际源码核对结果。
-`docs/` 是目标契约，任务默认修实现，不把契约降格成当前代码。本文只安排工作，不分阶段；
-树上的依赖标记决定先后关系。
+本计划只负责把 `docs/feature/reports/**` 的目标契约落实到代码、测试、公开文档和内建报告。
+它描述依赖、并行边界与验收条件，不规定提交批次或开发阶段。
+
+`docs/` 是目标契约；`docs/source-map.md` 和测试规范描述当前实现。
+迁移时按目标 API 一次切换，不为 Source / Composition / `ctx.data` / `data=` /
+`content` page 保留公共兼容层。
 
 ## 标记
 
-- `[S]`：与父节点或列出的依赖串行，前置未完成不能开工。
-- `[P]`：依赖满足后可与其它 `[P]` 兄弟并行。
-- `[X]`：需要真实外部服务、凭据或制品发布，代码完成不等于任务完成。
-- 每个叶子任务都要同时交付：实现、目标契约已登记类别内的测试、公开出口/示例同步、Source Map 差异删除。
-- niceeval 仍是 beta；迁移按目标 API 一次完成，不为旧 Results / Scope / Snapshot、Metric 或 `from*`
-  公开名保留兼容壳。仓库内部可在一个提交内使用临时适配层，但合并态不得形成两套公共模型。
+- `[S]`：串行节点。列出的依赖全部完成后才能开始。
+- `[P]`：并行节点。父节点或 `依赖` 满足后，可以与其它 `[P]` 节点同时进行。
+- `[X]`：需要真实浏览器、真实进程、候选包或外部凭据的验收。
+- `验收`：节点完成的可观察证据；只有代码存在不算完成。
 
-## 差异结论
+## 已裁决前提
 
-```text
-docs/feature 目标
-├── Record / Sample：目标包与形状尚未落地
-│   └── 当前仍是 niceeval/results + Results / Snapshot / Scope + snapshot.json
-├── Experiments / Sandbox：身份、重跑与复用尚未闭环
-│   └── 当前仍是浅层 fingerprint、--force、provenanceFlags、逐 Attempt Sandbox
-├── Reports：目标 Source / Composition / Component 作者模型尚未落地
-│   └── 当前仍是 Metric、*Data、专用双面 renderer 与 Scope 命名
-├── Eval Source / View：调用树、持续重建、主题和完整静态制品尚未落地
-├── Judge：调用失败仍可能变成 0 分
-├── Adapters：转换器公开名仍是 from*
-├── O11y：沙箱内 __niceeval__/results.json 尚未写入
-└── E2B：公共 baseline 仍指向旧 v0.6.1 制品
-```
+实现不得重新打开以下问题：
+
+- page render 的宿主输入只有 `Sample` 或 `AttemptEvidence`。
+  外部业务数据由报告 import 冻结快照模块；没有 External 泛型、第二参数、`--data`
+  或 `config.reportData`。
+- `rollup()` 的产物固定 `basis: "eval"`。
+  samples / total 数 Experiment × Eval 单元；refs 恒为 Attempt locator。
+- coverage 缺口计入 total，不进入终值，不伪造 refs。
+- `aggregate().by` 在 Eval 级分组，不能把同一道题的 attempts 分开。
+- 维度视觉分配以页为单位；槽位为 1–24。
+  未固定值只保证页内一致，跨页一致必须使用 `dimensionPins`。
+- `dimensionPins` 装载期只校验结构、非空键和槽位范围，不检查未知维度名。
+- Sample 派生图表默认校验证据；`external: true` 是可搜索的显式退出，
+  NiceEval 不验证外部行的真实来源。
+- Source / Composition / `ctx.data` 公共作者面已删除；`defineMeasure` 与 metric-views
+  内部路径本轮回撤；文档与测试登记随代码目录一并收口。
 
 ## 树形 TODO
 
-- [ ] 完成 `docs/feature` 与实现一致
-  - [ ] `[S]` 建立 Record 事实层，这是 Sample、缓存、源码证据和 View 的共同前置
-    - [ ] `[S]` 把磁盘术语与布局迁到目标形状
-      - `snapshot.json` / `SnapshotMeta` / snapshot 目录知识改为 `run.json` / `RunMeta` / Run。
-      - 将格式、reader、writer、locator、artifact registry 收敛到 `src/record/**` 所有权边界；
-        `src/results/**` 不再作为公共概念边界。
-      - `RunMeta` 落全契约字段，尤其是 `configHash`、producer、selected/known eval 身份与完成时刻。
-      - 保持原子写、版本分流、坏 Run 分类、locator 唯一性和七类 artifact 的懒加载语义。
-    - [ ] `[S]` 落地 `niceeval/record` 公共子路径
-      - 导出 `openRecord`、`createWriter`、`publish`、`resolveLocator` 及 Record / Run /
-        AttemptHandle / AttemptRef 类型；同步 `package.json#exports` 与 bundled index。
-      - 将 runner artifacts reporter、show、view、report harness 全部切到新入口。
-      - 删除 `niceeval/results`、`openResults`、`createResultsWriter`、`copySnapshots` 等旧公共出口和旧命名。
-    - [ ] `[P]` 在 Record reader 闭合证据完整性
-      - 计算 `evidenceState: "local" | "borrowed" | "dangling"`，不再用 `null` 混淆未产生与已丢失。
-      - 让 `publish()` 对 dangling 整体失败；借用证据解引用、重新去重并形成自包含发布根。
-      - 选择器可消费 `dangling-evidence` 与 `missing-startedAt` 的结构化事实。
-    - [ ] `[P]` 在 Record writer 闭合源码存储
-      - `sources.json` 只保存 `{ path, sha256 }[]` 引用，正文写到 Run 级 `sources/<sha256>.json`。
-      - 携带和 publish 时按原 Run 解引用；commands/events/trace/diff 等 registry 行为保持单源。
-    - [ ] `[S]` 迁移 CLI 记录根语法
-      - show/view 使用 `--record` 与 `--run`，删除 `--results` 与 `--snapshot`。
-      - 位置参数始终只表示 eval id 前缀，不按文件系统探测改变含义。
+- [ ] `[S]` 完成 Reports 目标契约
 
-  - [ ] `[S: Record]` 建立 Sample 选择层
-    - [ ] `[S]` 落地 `niceeval/sample` 与目标 `Sample` 形状
-      - 实现 `latestRunSample(record, options)`、`currentSample(record, options)`。
-      - 暴露 `mode`、物化的 `attempts` / `historyAttempts`、真实来源 `runs`、逐实验 `coverage`、
-        `issues`；删除 Scope / ScopeWarning / warnings 旧公共模型。
-      - `currentSample` 只缝合 `configHash` 相同的 Run；缺 hash 的 Run 只与自身可比。
-    - [ ] `[P]` 实现闭集转换算子
-      - `sample.pipe(...)` 及 `filterAttempts`、`onlyEvals`、`dropExperiments`、`freshOnly` 等契约算子。
-      - 每个算子同步重算 attempts、historyAttempts、runs、coverage、issues，且不修改输入 Sample。
-    - [ ] `[P]` 收拢 Sample 身份与 Issue 语义
-      - 选择器内置四元组去重，保留最新落盘条目的真实 ref/locator。
-      - 落地 `unfinished-run`、`dangling-evidence`、`unreadable-run`、`missing-startedAt`
-        Issue 全集；`fresh` 是 attempt 出身口径，不伪装成 Sample 级告警。
+  - [x] `[S]` 关闭唯一剩余的跨层前置：coverage 缺口的分组事实
 
-  - [ ] `[P: Record]` 修正 Experiments 的身份与缓存链
-    - [ ] `[S]` 实现两层嵌套哈希
-      - `configHash = hash(resolved config)`，eval fingerprint 再组合 configHash 与 eval 源码闭包。
-      - 源码闭包递归跟踪项目内 import 图和 `loadJson` / `loadYaml` 数据内容，排序与路径归一确定。
-      - flags 整袋入 hash；移除 `provenanceFlags`。按契约排除 budget、timeoutMs 和运行后 facts。
-    - [ ] `[S]` 把 carry 资格统一到一份判定
-      - 初次规划与取得用例锁后的二次规划调用同一判定；按具体 attempt 序号携带。
-      - 比较 configHash / fingerprint、终态、证据、复用模式和 keep 例外，不再字段深比较。
-    - [ ] `[S]` 用目标重跑模型替换 `--force`
-      - 实现 `--rerun[=failed|all]` 的解析、选择、机器反馈与帮助文案。
-      - 实现一次性 `--carry-ignoring-flag`，在 Run diagnostics 落 `carriedIgnoringFlags`；
-        只豁免指定 flag 的搬迁差异，不改长期 fingerprint 规则。
+    - [x] 在 Sample 契约中为每个 `SampleCoverage` 保留确定的 Experiment 锚点 Run。
+      `latestRunSample()` 使用 latest Run；
+      `currentSample()` 使用确定该 Experiment 可比性配置的 latest Run。
+    - [x] 将分组主体定稿为至少包含
+      `{ experimentId, evalId, run }`，且不向分组函数暴露 attempts。
+    - [x] 明确官方分组的事实来源：
+      `experiment` 读 experimentId，`agent` / `model` 读 Run 顶层，
+      flags / labels / 运行配置读 `run.experiment`。
+    - [x] 同步：
+      `docs/feature/sample/**`、
+      `docs/feature/record/architecture.md`、
+      `docs/feature/reports/{architecture,library}.md`、
+      `memory/report-aggregation-subject-eval-cell.md` 与 `memory/INDEX.md`。
+    - [x] 先在
+      `docs/engineering/testing/unit/{sample,reports}.md`
+      登记锚点选择、全缺口 Experiment 和分组口径的覆盖类别。
 
-  - [ ] `[P: Record + 缓存判定]` 实现 Sandbox 复用
-    - [ ] `[S]` 扩充目标配置与 Provider 能力
-      - `ExperimentDef.sandboxReuse` 进入 resolved config 与 configHash。
-      - 内置 Sandbox spec 接受 `lifetimeMs`；定义可复用所需 reset/续期能力与不支持时的完整反馈。
-    - [ ] `[S]` 将 runner 从逐 Attempt 创建改为复用池调度
-      - SandboxSpec setup/teardown 每个 Sandbox 一次；Agent 与 Eval 生命周期仍逐 Attempt 成对。
-      - 每题前 reset；reset 失败淘汰实例并新建，不把污染实例交给下一题。
-      - 派发前检查剩余寿命，不足则轮换；并发下同一 Sandbox 不被两条 Attempt 同时占用。
-    - [ ] `[S]` 实现组合限制
-      - `sandboxReuse: true` 禁止 carry，取得锁后仍全量执行。
-      - 与 `--keep-sandbox`、`localSandbox()` 及不具备复用能力的自定义 Provider 按契约在创建前报错。
-      - 保持 exclusive Provider、全局/实验并发与 teardown 自愈既有语义。
+    验收：
 
-  - [ ] `[P: Record 源码存储]` 落地 Eval Source 调用树
-    - [ ] `[S]` 让 `captureLoc()` 捕获项目内完整调用帧，而不是第一帧即返回
-      - 为 SourceArtifact 标出唯一 `role: "entry"`；规范化路径、helper 调用链与 package 边界。
-      - 源码在调用发生时进入证据采集，读取失败形成结构化 unavailable，不在 Attempt 收尾静默跳过。
-    - [ ] `[S]` 实现 `projectSourceView()`
-      - 从 entry 建 spine，跨文件 loc 下钻为子 block；未从主干可达的证据进入 detached。
-      - package / 缺源码形成 opaque unavailable block；无 loc 的断言仍进入 unmapped，不丢证据。
-      - AttemptSource 与计分断言共同消费这一份投影，不按命中数猜主文件。
+    - 文档能唯一回答“零 attempt 的 Eval 按 agent 分到哪一行”。
+    - `pnpm test:docs` 通过。
+    - `rg` 不再命中只含 `{ evalId, experiment }` 的旧主体形状。
 
-  - [ ] `[P: Sample]` 迁移 Reports 共享内核与公开作者面
-    - [ ] `[S]` 先建立 Source / Composition / Component 运行模型
-      - 实现 `defineSource`、`defineComposition`、目标 `defineComponent`，保留对象身份与泛型输入。
-      - resolve 顺序固定为 Composition 展开 → Source 解析 → 完整树校验；同层并行、声明顺序不变。
-      - page 级缓存键为 Source 对象身份 + input 对象身份，并缓存 Promise；Composition 节点不缓存。
-      - `ctx.resolve` 只接受当前 page input 同型 Source；冻结外部数据经 `ctx.data` 注入，禁止 Source
-        偷读外部状态。
-    - [ ] `[S]` 将 Metric 词表与数据协议迁到目标形状
-      - `defineMetric` / `Metric` 改为 `defineMeasure` / `Measure`。
-      - `MetricCell` 与各类 `*Data` 改为契约声明的 `MeasureCell`、`*Content`、`*Row`、`*Cell`。
-      - `scopeSummaryData` / `ScopeSummary` 改为 `sampleSummary` / `SampleSummaryContent`。
-      - 删除报告公共面里的 Results / Snapshot / Scope 词汇。
-    - [ ] `[P]` 实现通用 Source 家族
-      - sample summary / overview、experiment/eval/attempt rows。
-      - measure rows/matrix、scoreboard、delta/stability、chart dataset。
-      - attempt summary/assertions/source/conversation/timing/usage/trace/diff。
-      - Sample/Run notices、fix prompt 与 execution/trace 诊断源。
-    - [ ] `[P]` 实现通用 Component 与布局原语
-      - Table / StatGrid / Callouts / Chart、Conversation、SourceView、DiffView、Waterfall、CopyBlock、Markdown。
-      - 官方组件只消费 Content，不自行读 Record/Sample，也不保留专用 `*Data` renderer 分叉。
-      - 保持 text/web 两面事实一致；排序、过滤、tooltip 等仅作为具名 enhance 渐进增强。
-    - [ ] `[P]` 实现页级维度呈现
-      - 每个 component 的 `dimensions()` 必填；label keyset 与 visual keyset 分开收集。
-      - `ctx.dimension(handle).at(index)` 只能查询已声明值；未声明立即报错。
-      - 实现 `presentDimension` / `shortestUniqueLabels`、24 个视觉身份上限、series pins 和 text 降级。
-    - [ ] `[S: Source 家族 + Component 原语]` 重写内建 `standard`
-      - 用 SampleOverview 与通用源/原语替换 ExperimentComparison、ExperimentList、MetricTable 等专用件。
-      - 声明 Overview、Attempts、Traces 三张 sample page 与一张不进导航的 attempt page。
-      - 内建报告的 show/view 两面只共享 resolved tree 与 Content，不各算一份口径。
-    - [ ] `[S]` 收紧公共导出与构建身份
-      - 更新 `niceeval/report`、`niceeval/report/react`、built-in 出口；删除 Metric、Scope 和专用组件旧出口。
-      - 保持 raw src 与 `dist/report` 单一模块身份，所有宿主经同一 runtime facade。
+  - [x] `[P]` 建立普通值计算内核（依赖：coverage 分组事实）
 
-  - [ ] `[S: Record + Sample + Reports + Eval Source]` 让 show/view 宿主满足目标契约
-    - [ ] `[P]` 共用报告与主题装载链
-      - `--report` 按裸内建名/显式路径判别，`standard` 命中内建表，不做文件探测回退。
-      - 实现 config.report 与 CLI 的取值链。
-      - 实现 `defineTheme`、`basalt`、config.theme、report shell theme 与 `--theme` 四档链；show 明确拒绝 theme。
-    - [ ] `[P]` 修正有效根与 locator 寻址
-      - 位置参数、`--exp`、`--fresh` 先构造有效根；locator 只在有效根解析。
-      - 历史 Attempt 在有效根内可达；范围外不可达，不再清空过滤条件后回扫完整记录根。
-    - [ ] `[P]` 修正静态站制品
-      - `artifact/` 复制 commands/events/trace/diff、sources 引用及 Run 级正文；不复制 o11y。
-      - 携带证据归拢进导出 Run，所有 attempt HTML、assets 与 artifact 路径在子路径/无尾斜杠下成立。
-      - 复制与 `publish()` 共用规划、50 MiB 预检和全有全无语义。
-    - [ ] `[S: 上述宿主静态能力]` 实现本地持续重建
-      - watch 有效记录根、报告/主题的项目内 import 图与项目配置；忽略范围外记录、依赖目录和临时文件。
-      - 去抖并合并脏事件；重建期间的新事件只再触发一次，不无限排队。
-      - 成功后推送浏览器重载并保留 page/attempt 路由；失败时继续服务上一份站点，同时向终端和页面报告。
-      - 本地 server 服务的产物与相同输入的 `--out` 逐字节一致。
+    - [x] `[P]` Reducer
+      - 实现带稳定身份的 `mean`、`sum`、`min`、`max`、`percentile(p)`。
+      - 空集合返回 `null`；percentile 参数和插值规则符合契约。
+    - [x] `[P]` 证据结果值
+      - 实现 `MetricValue` / `metricValue()`。
+      - 实现 `EvidenceRow` / `evidenceRow()`。
+      - 守住 `0 <= samples <= total`、refs 稳定去重、JSON 往返无需水化。
+    - [x] `[S]` `rollup()`（依赖：Reducer + 证据结果值）
+      - Attempt 取值后先题内折叠，再跨 Eval 折叠。
+      - `null` Attempt 留在 refs，不进入题级值。
+      - 缺口 Eval 进入 total，不进入 samples、value 或 refs。
+      - 输出固定 `basis: "eval"`，顺序与字节稳定。
+    - [x] `[S]` `aggregate()`（依赖：rollup）
+      - 由 Sample coverage 和 attempts 建立完整 Experiment × Eval 单元。
+      - 在 Eval 级执行 `by`，再执行 Calculation。
+      - `by` / `values` 键互斥，`refs` 为保留键；类型与运行时都拒绝冲突。
+      - 分组函数错误包含字段名与 Experiment × Eval 坐标。
+    - [x] `[P]` 官方函数（依赖：aggregate）
+      - Calculation：`passRate`、`costUSD`、`durationMs`、`tokens`、
+        `totalScore` 等。
+      - GroupFunction：`agent`、`model`、`experiment`、`evalId`、
+        flags / labels / 运行配置投影。
+    - [x] `[P]` 普通转换（依赖：证据结果值）
+      - `toAttemptRows()`、`toExperimentRows()`、`toConversationTurns()`、
+        `toDiffFiles()`、`toTraceNodes()` 等立即执行函数。
+      - 异步 artifact 读取由 page render 显式 `await`，不注册查询对象。
+    - [x] 将新计算 API 从 `niceeval/report` 导出；
+      更新对应 TSDoc 和类型 fixture。
 
-  - [ ] `[P: 无主干依赖]` 修复 Judge 调用失败语义
-    - [ ] 包住 autoevals 的 HTTP、连接、超时与响应解析边界；缺分数不能 `?? 0`。
-    - [ ] 将非 2xx、断连、超时、协议不符/缺分数统一记录为
-      `outcome: "unavailable"`、`reason: "judge-call-failed"`，evidence 保存一层状态/异常摘要。
-    - [ ] 只对预检允许最多两次传输层重试；实际判分不因隐式重试产生重复费用。
-    - [ ] 证明 optional 保留 unavailable 但不改 Verdict，非 optional 使 Attempt errored。
+    验收：
 
-  - [ ] `[P: 无主干依赖]` 迁移 Adapter 转换器公开名
-    - [ ] `fromAiSdk` → `turnFromAiSdk`；`fromChatCompletion` / `fromResponses` → `turnFrom*`。
-    - [ ] `fromClaudeSdkMessages` / `fromPiAgentEvents` / `fromCodexThreadEvents` /
-      `fromLangGraphEvents` → 对应 `create*EventStream`。
-    - [ ] 同步实现、测试、TSDoc、`niceeval/adapter` 导出、docs-site、examples 与停用 E2E fixture；
-      删除旧别名，保持转换语义逐字节不变。
+    - 区分力 fixture 至少覆盖：
+      attempts 数量不等、题内部分 null、题内全 null、零 attempt coverage、
+      多 Experiment 分组、全缺口 Experiment。
+    - 删除 coverage 单元或把 basis 改回 attempt 时，相关测试必须失败。
+    - `pnpm test` 与 `pnpm run typecheck` 通过。
 
-  - [ ] `[P: 无主干依赖]` 注入沙箱内运行摘要
-    - [ ] `[S]` 先在所属 Feature 定稿 `__niceeval__/results.json` 的穷尽形状、写入时点、原子性、
-      写失败语义与可见范围。当前只有 Source Map 和外部参考提到目标，Feature 正文不足以指导实现。
-    - [ ] `[S]` 契约定稿后定义唯一路径常量与 writer，内容与 `buildO11ySummary()` 同源；不得覆盖
-      agent setup manifest，Record 的 `o11y.json` 继续是持久化事实，不复制派生算法。
-    - [ ] `[S]` 在 Feature 选定的真实消费边界验收读取结果，证明缺文件、旧内容或静默写失败不会
-      让行为断言得到伪造的可信结论。
+  - [x] `[P]` 把 ReportDefinition 切到惰性 page render（依赖：coverage 分组事实）
 
-  - [ ] `[P][X: 无主干依赖]` 发布并切换 E2B 公共 baseline
-    - [ ] 用当前 Agent 版本与 recipe revision 生成目标 tag，真实构建 Claude Code、Codex、Bub 三份模板。
-    - [ ] 以运行用户验证 Agent CLI、Node/npm global prefix、PATH、写权限与一条实际 eval。
-    - [ ] 发布成功后才更新 `sandbox/e2b/published.json` 与 `PUBLISHED_E2B_BASELINE_TAG`；
-      不能先让常量指向不存在的制品。
-    - [ ] 从公共 ref 新建沙箱再做一次冷启动验收。此任务不涉及 npm publish；niceeval npm 发布仍只走
-      `.github/workflows/release.yml`。
+    - [x] `[P]` 定义面
+      - `ReportPage.content` 改为 `render`。
+      - 输入判别统一为 `"sample"` / `"attempt"`。
+      - 提供 `defineReport(render)` 单页缩写，规范化为 `report` page。
+      - page 清单静态非空、id 唯一；至多一张不进导航的 attempt page。
+    - [x] `[P]` 外壳
+      - 穷尽为 `title`、`theme`、`dimensionPins`、`head`、`pages`。
+      - links / footer 改为普通组件组合；装载期拒绝 LEGACY
+        `links` / `footer` / `scripts` / `styles` / `content`。
+      - 组件脚本与样式移交 renderer assets；站点级注入才进入 `head`。
+    - [x] `[S]` 唯一 page 执行入口（依赖：定义面 + 外壳）
+      - 选择 page、校验输入分支、执行并 await render、校验完整结果树。
+      - 同一 page 实例缓存 render Promise；text / web / locale 投影不重复执行。
+      - 本地模式只执行被请求或已订阅 page；静态导出执行全部 page。
+      - 单页失败隔离；静态导出失败不留下半套目录。
+    - [x] 删除 runtime 对 Source memo、Composition 展开、`ctx.resolve`
+      和 `ctx.data` 的依赖。
 
-  - [ ] `[S: 所有分支]` 收口公共资料与差异台账
-    - [ ] 更新 `docs/source-map.md` 的实现落点并删除已完成差异，不在 Feature 正文写实现状态。
-    - [ ] 运行 `pnpm docs:reference`，同步 docs-site 中文任务路径、CLI flag、API reference 与 examples。
-    - [ ] 删除仅服务旧公共模型的 dead code、旧 locale key、旧 fixture 和旧构建出口。
+    验收：
 
-## 并行与串行关系
+    - 装载报告不执行 render；打开一页不执行兄弟页。
+    - 同一实例的 text/web 与 en/zh-CN 投影，render 调用计数均为 1。
+    - page 输入错位、未知 page、非法外壳和 render 失败都有完整用户反馈。
+    - `pnpm test` 与 `pnpm run typecheck` 通过。
+
+  - [x] `[P]` 建立普通值双面 renderer 协议（依赖：coverage 分组事实）
+
+    - [x] `defineRenderer({ text, web, assets? })`
+      - text 与 web 必填。
+      - 输入只允许已经计算好的普通值。
+      - renderer context 不提供 Sample、Record、Source、IO 或异步取数。
+    - [x] renderer assets
+      - 当前页只收实际出现 renderer 的 assets。
+      - CSS / JS 按内容哈希去重，输出顺序确定。
+      - text 不加载 web assets；初始 HTML 不依赖增强脚本才可读。
+    - [x] 建立 `niceeval/report/extension` 公共子路径；
+      `niceeval/report/react` 只保留纯 Web 显示面。
+
+    验收：
+
+    - 缺任一 renderer、非法 asset、不可序列化输入按完整用户反馈失败。
+    - 未使用组件的 asset 不进入页面或静态导出。
+    - package export 与消费方编译 fixture 通过。
+    - `pnpm run build:report`、`pnpm test`、`pnpm run typecheck` 通过。
+
+  - [x] `[P]` 把组件迁成角色明确的普通值 props（依赖：计算内核 + renderer 协议）
+
+    - [x] `[P]` 布局与基础原语
+      - `Page`、`Stack`、`Row`、`Col`、`Grid`、`Section` 只负责结构。
+      - `Table rows={...}`、`Stat value={...}`、`Callouts items={...}`。
+      - 删除通用 `source` / `data` / `input` 绑定。
+      - 说明：`Table data={TableContent}` 仍供内部实体列表 Content 适配；公开作者面以 `rows=` 为准。
+    - [x] `[P]` 图表
+      - 提供 `Scatter`、`Line`、`Bars`、`Area`（已从 `niceeval/report` 公开导出）。
+      - Sample 派生路径校验 EvidenceRow、MetricValue 和 refs。
+      - `external: true` 只退出证据校验，不伪造 Attempt 下钻。
+      - `Chart` 只保留多 mark 组合用途。
+      - 说明：Bars 的 `sort` / `limit` 在 `marks.tsx` 显示层实现（不重新聚合）；
+        类别轴经 Dataset 维度字段进入 Chart 内核。
+    - [x] `[P]` Attempt 与证据显示
+      - `AttemptDetails attempt={evidence}` 作为公开组合。
+      - Conversation、Waterfall、SourceView、DiffView、CopyBlock
+        接收已经转换好的具体值。
+      - `AttemptList attempts={...}` 只作为同步转换加 Table 的薄组合。
+    - [x] `[P]` 页级维度呈现
+      - 保留 label keyset / visual keyset 分离。
+      - 固定值原样占 1–24 槽；未固定值稳定哈希并探测剩余槽。
+      - 固定但未出现的值不占槽；visual keyset 超过 24 拒绝该页。
+      - text 面只消费 label，不暴露颜色、线型或 pattern。
+    - [x] `[S]` 删除能由通用原语装配出的领域 renderer（依赖：以上组件族）；
+      只保留提供新显示形状的组件。
+      说明：`metric-views/**` 已删；`src/report/slices`（delta / stability）与
+      entity-lists Content 是 show / 内部投影路径，不是公开领域 renderer。
+
+    验收：
+
+    - 公开组件 props 中不再出现 `SourceInput`、`DataProps`、`source | data`
+      或待 resolve 的查询对象。
+    - 同一结果 fixture 的 text/web 面拥有相同事实值、覆盖和 refs；
+      排版差异不在单元层逐字比较。
+    - 页内声明顺序变化不改变维度槽位；第 25 个视觉身份明确失败。
+    - `pnpm run build:report`、`pnpm test`、`pnpm run typecheck` 通过。
+
+  - [x] `[P]` 重写内建报告（依赖：计算内核 + page render + 普通值组件）
+
+    - [x] 用公开 Calculation、普通转换和公开组件装配 standard 报告。
+    - [x] 保留 Overview、Attempts、Traces 三张 sample page，
+      以及一张不进导航的 attempt page。
+    - [x] 内建报告不 import 私有 compute、私有 renderer 或宿主专用数据通道。
+    - [x] `show` 默认摘要 / JSON 结果与内建 page 复用同一任务 Result，
+      不维护第二套聚合口径。
+
+    验收：
+
+    - 内建报告可以作为普通 `ReportDefinition` 被 show/view 装载。
+    - 代表性自定义报告只用公开入口即可复刻内建页的核心能力。
+    - 内建报告与公共计算函数对同一 Sample 的 value、samples、total、refs 一致。
+    - `pnpm run build:report`、`pnpm test`、`pnpm run typecheck` 通过。
+
+  - [x] `[S]` 迁移 show/view 宿主（依赖：page render + renderer 协议 + 内建报告）
+
+    - [x] show 与 view 共用同一份报告装载、规范化、page 执行和标题回退。
+    - [x] show 渲染初始页并输出其它页索引命令；
+      attempt locator 只在报告声明 attempt page 时可下钻。
+    - [x] view 本地 server 按订阅执行 page；
+      watch 报告及项目内 import 图，包含冻结快照模块。
+    - [x] 静态导出全量执行 page，物化当前页 renderer assets，
+      保持 artifact 与 locator 深链自包含。
+    - [x] 删除宿主对旧 links / footer / scripts / styles 外壳字段、
+      Source resolve 和 External 数据注入的消费。
+
+    验收：
+
+    - show/view 对同一 Sample、报告 import 图和 NiceEval 版本产生同源结果。
+    - 修改冻结快照模块会触发 view 重建；没有 `--data` 或配置旁路。
+    - 本地 server 与 `view --out` 对同一 page 的 HTML 逐字节一致。
+    - `pnpm run view:build`、`pnpm run build:report`、
+      `pnpm test`、`pnpm run typecheck` 通过。
+
+  - [x] `[S]` 删除旧 Reports 模型（依赖：所有代码消费者已迁移）
+
+    - [x] 删除公共与内部的 Source / Composition、`ctx.resolve` / `ctx.data`。
+    - [x] 删除 Source 侧记忆化取数路径；`ResolveMemo` 仅保留为树 resolve 缓存
+      （不从 `niceeval/report` 导出）；`report/slices` 保留为 show 切片计算。
+    - [x] 删除 `defineMeasure` API 与 `metric-views/**` 目录；
+      chart-math / plot 迁至 `src/report/model/chart/`；
+      show 仍用的 delta / stability 迁至 `src/report/slices/`。
+      说明：Cell / Dataset 统一 `kind: "metric"` + `MetricValue`；
+      内部 AttemptMetric 字面量服务 aggregate / Chart；无 `defineMeasure` /
+      `MeasureCell` 公开符号。
+    - [x] 删除 `ReportPage.content`、`input: "scope"`、
+      Table 三轨 props 和旧外壳字段。
+    - [x] 删除过渡导出、死类型、死 fixture 和只证明旧协议的测试。
+    - [x] 检查 `package.json#exports`、bundled index 和 `dist/report/**`
+      不再发布旧入口（仅 `./report`、`./report/react`、`./report/built-in`、
+      `./report/extension` 与静态 assets）。
+
+    验收：
+
+    - `rg` 对旧标识的命中只允许出现在 memory、迁移计划或明确引用历史的文本中。
+    - 从已打包 tarball 的公共入口无法 import 旧 API。
+    - `pnpm run prepare`、`pnpm test`、`pnpm run typecheck` 通过。
+
+  - [x] `[S]` 收口文档、测试登记与实现地图（依赖：旧模型删除）
+
+    - [x] 按目录删除 `docs/feature/reports/components/sources/**`；
+      外链改指 `library.md` / `calculations.md` / primitives。
+    - [x] 将 callouts、copy-block、charts、attempt 与 shell 文档改为最终普通值 props
+      （`docs/feature/reports/**`；`docs-site/zh/**` 与英文入口另 agent 收口）。
+    - [x] 更新 `docs/engineering/testing/unit/reports.md`：
+      删除旧覆盖类别，只保留已经由目标契约声明的新类别。
+    - [x] 更新 `docs/source-map.md` 为最终源码落点，不保留“当前/目标”双写。
+    - [x] 统一 `docs/feature/reports/**` 普通值作者口径：
+      `AggregationSubject` 分组、`basis: "eval"`、无 Source/`defineMeasure`/
+      `components/sources/**` 假路径；`library/measures.md` 恢复
+      `#题型构成与主读数` / `#维度与数值轴` 锚点。
+    - [x] 同步 `docs-site/zh/**`、源码 TSDoc、生成参考和可运行示例。
+      汇合验收：`pnpm test:docs` 与 Node 22 下 `pnpm test:docs-site` 绿。
+    - [x] 新的翻案或反直觉实现约束写入 memory 并挂入 INDEX；
+      普通迁移过程不写 memory。
+
+    验收：
+
+    - `pnpm docs:reference` 后工作树没有生成区块漂移。
+    - `pnpm test:docs` 通过。
+    - `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm test:docs-site` 通过。
+    - 示例按 `examples/README.md` 的对应命令通过。
+
+  - [ ] `[X]` 完成真实用户路径验收（依赖：文档与实现收口）
+
+    **环境阻塞（2026-07-29）**：网关 `Insufficient Balance`（exit 75 / infra）。
+    脚本与夹具已对齐工作树口径；**未**完成真实浏览器 / 候选包端到端绿跑，
+    下列三项保持未勾，不假勾。
+
+    已就绪（不算验收通过）：
+
+    - flag / 夹具：`--record`、`openRecord`、`run.json`、`latestRun`、
+      `--rerun all`；自定义报告 `site.tsx` / `branded.tsx` 用公开 plain-value API
+      （`kind: "metric"` + `MetricValue`）。
+    - 真实验收必须走编排器候选 tarball（`pnpm pack` 工作树），不能仓库根旁路
+      `pnpm exec niceeval`；独立 `cd e2e/report && pnpm e2e`（lock 钉 0.10.2）不算。
+    - 编排器已能注入候选包并跑到 `produceEvidence()`，卡在余额不足。
+
+    一键命令（余额充足后）：
+
+    ```bash
+    # 需要 Node >=22、e2e/report/.env 里可用的 OPENAI_*（余额充足）、
+    # Playwright Chromium（postinstall 会装）
+    pnpm e2e --repo report
+    ```
+
+    - [ ] 在 `e2e/report/` 使用候选包验证：
+      默认报告、自定义单页、多页、attempt page、自定义 renderer、
+      冻结快照 import 和静态导出。
+    - [ ] 用真实浏览器验证：
+      导航、折叠、过滤、locator 深链、零 JS 基线和 renderer assets。
+    - [ ] 验证消费方无 tsconfig、classic JSX、react-jsx 三种配置，
+      均从 package-owned 预编译入口装载。
+
+    验收：
+
+    - `e2e/report/` 经编排器注入候选包后 `pnpm e2e` 返回 0。
+    - 候选包指纹核验通过，验收未从仓库 `src/` 旁路导入。
+    - 失败时保留 `.niceeval/`、导出站、日志和浏览器证据供定位。
+
+## 并行关系摘要
 
 ```text
-Record ──> Sample ──> Reports ──> show/view
-   │          │
-   │          └───────────────> Reports 数据源与组件（内部可并行）
-   ├────> fingerprint/carry ──> sandbox reuse
-   └────> Eval Source ─────────> show/view
-
-独立并行：Judge | Adapter 重命名 | results.json 注入 | E2B baseline 发布
-最终串行：所有分支合流后，更新公开资料并跑全仓门禁
+coverage 分组事实
+├── 计算内核 ───────────────────────┐
+├── page render ───────────────┐     │
+└── renderer 协议 ─────────┐   │     │
+                           └── 普通值组件
+                                │    │
+                                ├────┴── 内建报告
+                                │           │
+page render ────────────────────┴───────────┤
+renderer 协议 ─────────────────────────────┤
+                                            ▼
+                                      show / view
+                                            │
+                                            ▼
+                                      删除旧模型
+                                            │
+                                            ▼
+                                 文档与实现地图收口
+                                            │
+                                            ▼
+                                      真实 E2E 验收
 ```
 
-同一工作树直接在 `main` 协作。可并行节点应按所有权拆文件：Record、Sample、Runner/Sandbox、
-Report kernel、View、Judge、Adapters、E2B 各自显式提交路径；不要让多个任务同时机械重写
-`src/index.ts`、`package.json`、`src/cli.ts` 或生成文件。公共出口变更由对应分支完成后集中串行合并。
+计算内核、page render 与 renderer 协议是第一组并行主干。
+普通值组件在计算内核和 renderer 协议完成后开始；
+内建报告在计算、page 与组件完成后开始。
+show/view 必须等 page、renderer 和内建报告汇合。
+旧模型删除、文档最终收口与 E2E 是三段串行尾链。
 
-## 验收
+## 整体完成定义
 
-### 每个叶子任务
+以下条件必须同时成立：
 
-- 测试只能实现对应 Feature 测试文档“覆盖规范”已声明的类别；若实现暴露新的契约类别，先补覆盖规范。
-- 类型与公共组合：`pnpm run typecheck`。需要同时证明目标子路径可导入、合法组合可推断、禁止组合不编译，
-  并证明旧 beta 公共名已经退出。
-- 领域规则与组件协作：运行受影响的 Vitest 文件，再运行 `pnpm test`。
-- Reports 改动在测试前先 `pnpm run build:report`；View 前端改动运行 `pnpm run view:build`。
-- 文档或生成参考变化运行 `pnpm test:docs`、`pnpm docs:reference`、`pnpm test:docs-site`。
-
-### 分支合流验收
-
-| 合流面 | 必须证明 | 命令/观察面 |
-|---|---|---|
-| Record + Sample + cache | run.json/configHash、两个选择口径、carry/rerun、Issue 与 publish 自包含 | `pnpm test`；`pnpm e2e --repo cli`；`pnpm e2e --repo report` |
-| Sandbox reuse | 生命周期次数、reset/轮换、并发独占、carry/keep/local 冲突 | `pnpm test`；`pnpm e2e --group sandbox` |
-| Reports + Eval Source + View | Source resolve、两面同口径、调用树、主题、持续重建、静态 artifact 完整 | `pnpm run build:report`；`pnpm run view:build`；`pnpm e2e --repo report` |
-| Adapter 名称 | 所有目标导出真实可用，真实协议路径未因改名改变 | `pnpm run typecheck`；对应 `pnpm e2e --repo <id>`，可用仓库按 sdk/sandbox 分组 |
-| Judge | 网关故障与低分可区分，optional/非 optional 折叠正确 | `pnpm test`；带真实 Judge 的 E2E/nightly |
-| E2B baseline | registry、常量与远端已发布事实一致，运行用户真实启动成功 | `pnpm test`；从每个发布 ref 新建 E2B 沙箱实跑 |
-
-E2E 使用真实模型、网络、Docker/E2B 与凭据；缺少这些条件时不能把“未运行”写成通过，交付记录必须明确
-列出未验收的仓库或外部制品。
-
-### 最终完成定义
-
-- `rg` 在公共导出、CLI help、examples 与 docs-site 中不再命中旧 Results / Snapshot / Scope、Metric、
-  `fromAiSdk` 等旧公共词汇；历史说明和 memory 不在此零命中要求内。
-- `docs/source-map.md` 的“与目标契约的已知实现差异”不再包含本计划条目，且每个目标行为有真实源码落点。
-- `pnpm run typecheck`、`pnpm test`、`pnpm test:docs`、`pnpm test:docs-site`、
-  `pnpm run prepare` 全绿。
-- `pnpm e2e --repo cli` 与 `pnpm e2e --repo report` 全绿；受影响 Adapter/Sandbox 仓库全绿，
-  外部基础设施失败必须按 E2E 协议标为 75，不能当产品通过。
-- E2B 三份新 tag 已真实存在并通过冷启动，不只是本地常量与台账一致。
-- `git status` 中没有误带其它协作者改动；提交按显式路径完成。
+- 目标作者路径只有
+  `Sample / AttemptEvidence → 普通函数 → 可序列化结果值 → 组件 → text/web`。
+- coverage 缺口在所有官方与自定义分组下都有确定归属，total 不会因缺 attempt 静默缩水。
+- show、view、内建报告和 JSON 出口不维护重复聚合口径。
+- 公共包、源码、Feature 文档、测试覆盖规范、Source Map、docs-site 与示例使用同一代模型。
+- `pnpm run prepare`、`pnpm run typecheck`、`pnpm test`、`pnpm test:docs` 全部通过。
+- Node 22 下 `pnpm test:docs-site` 通过。
+- `e2e/report/` 对候选包的真实验收通过。

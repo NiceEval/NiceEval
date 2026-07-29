@@ -25,30 +25,30 @@ export default defineReport(async (sample) => {
 ## 多页形状
 
 ```ts
-interface SamplePage<External> {
+interface SamplePage {
   id: string;
   title: LocalizedText;
   input?: "sample";
   navigation?: boolean;
-  render: PageRender<Sample, External>;
+  render: PageRender<Sample>;
 }
 
-interface AttemptPage<External> {
+interface AttemptPage {
   id: string;
   title: LocalizedText;
   input: "attempt";
   navigation: false;
-  render: PageRender<AttemptEvidence, External>;
+  render: PageRender<AttemptEvidence>;
 }
 
-interface ReportOptions<External> {
+interface ReportOptions {
   title?: LocalizedText;
   theme?: ThemeDefinition;
   dimensionPins?: DimensionPins;
   head?: HeadTag[];
   pages: readonly [
-    PageDefinition<External>,
-    ...PageDefinition<External>[],
+    PageDefinition,
+    ...PageDefinition[],
   ];
 }
 ```
@@ -105,7 +105,7 @@ export default defineReport({
 |---|---|
 | `title` | 浏览器 `<title>` 与 show 页索引标题 |
 | `theme` | 主题有独立装载链，`--theme` 可整份替换 |
-| `dimensionPins` | 跨页视觉身份要先看到完整分配 |
+| `dimensionPins` | 页级槽位分配要在装载期读到固定声明 |
 | `head` | 文档 `<head>` 不在报告树中 |
 | `pages` | 路由、导航、按页求值与失败隔离 |
 
@@ -126,12 +126,38 @@ export default defineReport({
 
 ## `dimensionPins`
 
-`dimensionPins` 为同一报告的稳定维度值分配颜色、符号或线型。
-它只影响呈现，不改变分组函数返回值、结果字段或 MetricValue。
+`dimensionPins` 把维度值钉在固定的视觉槽位上：
 
-内建维度使用公开分组字段名，例如 `agent`、`experiment`；
-自定义分组使用作者在 `aggregate().by` 对象中声明的键。
-未固定的值由主题按稳定顺序分配。
+```ts
+type DimensionPins = Readonly<
+  Record<string, Readonly<Record<string, number>>>
+>;
+```
+
+外层键是维度名：内建维度用公开分组字段名，
+例如 `agent`、`experiment`；
+自定义分组用作者在 `aggregate().by` 对象里声明的键。
+内层把完整维度值映射到 1–24 的槽位号，
+与主题令牌 `--niceeval-color-series-1..6` 同为一基：
+
+```ts
+dimensionPins: {
+  agent: { codex: 1, "claude-code": 7 },
+},
+```
+
+固定只影响呈现，不改变分组函数返回值、结果字段或 MetricValue。
+固定的槽位号原样生效：两个值钉同一槽位，就是作者要它们同一身份。
+装载期校验只看结构：槽位号非整数或越界、值键为空，
+按完整用户反馈拒绝，错误指到 `dimensionPins.<维度>.<值>`。
+维度名不判未知——自定义分组键只在 page render 里出现，
+装载期不可能有全集；固定了从未出现的维度就是不生效。
+
+未固定的值按页分配，规则单点声明在
+[页级呈现分配](../components/README.md#维度呈现分配单位是页)：
+固定值全报告同身份，未固定值只保证页内自洽。
+宿主在装载期读取固定声明，
+每一页因此能独立分配槽位，不执行其它 page。
 
 ## 跨页复用
 
@@ -140,9 +166,9 @@ export default defineReport({
 ```tsx
 const withFooter =
   (render: PageRender<Sample>): PageRender<Sample> =>
-  async (sample, external) => (
+  async (sample) => (
     <Stack>
-      {await render(sample, external)}
+      {await render(sample)}
       {footerNote}
     </Stack>
   );

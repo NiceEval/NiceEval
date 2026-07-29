@@ -31,7 +31,7 @@ import {
 import {
   metricMatrixContent,
   scoreboardContent,
-} from "../src/report/components/metric-views/content.ts";
+} from "../src/report/slices/content.ts";
 import { datasetToTableContent, scatterDataToDataset, tableDataToDataset } from "../src/report/model/dataset.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));

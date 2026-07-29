@@ -1,4 +1,4 @@
-// defineMeasure 与内置读数。
+// 内置读数（AttemptMetric 字面量）。
 //
 // null ≠ 0:null = 此 attempt 测不了这个指标(不进聚合);0 = 测了,结果是零(照常进)。
 // 哪个 verdict 落哪边必须显式表态,内置指标按 docs/feature/reports/library.md「内置指标」的表格。
@@ -27,18 +27,15 @@
 // 不算 0——报告作者自己摆时心里要有这根弦,内置报告不用它们。
 
 import type { EvalResult } from "../../types.ts";
-import type { Measure } from "./types.ts";
+import type { AttemptMetric } from "./types.ts";
 
-/**
- * 定义一个读数。内置读数与自定义读数是同一个类型，没有特权；
- * name 是 const 泛型：产物的 name 保持字面量。
- */
-export function defineMeasure<const Name extends string>(def: Measure<Name>): Measure<Name> {
+/** 内部：校验 AttemptMetric 字面量；不对外导出。 */
+function attemptMetric<const Name extends string>(def: AttemptMetric<Name>): AttemptMetric<Name> {
   if (typeof def.name !== "string" || def.name.length === 0) {
-    throw new Error("defineMeasure: measure name must be a non-empty string.");
+    throw new Error(`attemptMetric: name must be a non-empty string.`);
   }
   if (typeof def.value !== "function") {
-    throw new Error(`defineMeasure: measure "${def.name}" must provide a value(attempt) function.`);
+    throw new Error(`attemptMetric "${def.name}" must provide a value(attempt) function.`);
   }
   return def;
 }
@@ -53,7 +50,7 @@ export function attemptCostUSD(result: EvalResult): number | null {
  * 这是「已形成可信判定」条件下的诊断指标,不能简称默认通过率
  * (docs/feature/reports/library.md「内置指标」)。
  */
-export const taskPassRate = defineMeasure({
+export const taskPassRate = attemptMetric({
   name: "task-pass-rate",
   label: { en: "Task pass rate", "zh-CN": "可判定任务通过率" },
   description: "Conditional task quality among attempts that formed a trustworthy verdict: passed = 1, failed = 0; errored is null.",
@@ -74,7 +71,7 @@ export const taskPassRate = defineMeasure({
 });
 
 /** 执行可靠性:跑到可判定(passed / failed)= 1,errored = 0;unreadable → null。 */
-export const executionReliability = defineMeasure({
+export const executionReliability = attemptMetric({
   name: "execution-reliability",
   label: { en: "Execution reliability", "zh-CN": "执行可靠性" },
   description: "Execution reliability: reached a trustworthy verdict (passed / failed) = 1, errored = 0.",
@@ -98,7 +95,7 @@ export const executionReliability = defineMeasure({
  * 端到端合成:passed = 1,failed / errored = 0;哪边拖累用
  * taskPassRate / executionReliability 拆开看。
  */
-export const passRate = defineMeasure({
+export const passRate = attemptMetric({
   name: "passRate",
   label: { en: "Pass rate", "zh-CN": "通过率" },
   description: "End-to-end composite: passed = 1, failed / errored = 0. Split blame with taskPassRate and executionReliability.",
@@ -112,7 +109,7 @@ export const passRate = defineMeasure({
 /** @internal 供仓库内尚未迁移的实现过渡；不从 niceeval/report 导出。 */
 export const endToEndPassRate = passRate;
 
-export const examScore = defineMeasure({
+export const examScore = attemptMetric({
   name: "exam-score",
   label: { en: "Exam score", "zh-CN": "考试得分" },
   description: "Per-eval score: gates decide pass, soft assertions grade quality.",
@@ -147,7 +144,7 @@ export const examScore = defineMeasure({
  * 进这个指标的样本)。`runs > 1` 时同一 eval 的多个 attempt 取均值(perEval mean,与文档「eval
  * 得分取各 attempt 的均值」一致);跨 eval 用 sum(acrossEvals sum,对应「总分 = Σ 各 eval 挣分」)。
  */
-export const totalScore = defineMeasure({
+export const totalScore = attemptMetric({
   name: "total-score",
   label: { en: "Total score", "zh-CN": "总分" },
   description: "Points-scoring eval's earned points: sum of assertions[].points + scoreEntries[].points. Not applicable (null) to pass-scoring evals.",
@@ -167,7 +164,7 @@ export const totalScore = defineMeasure({
   acrossEvals: "sum",
 });
 
-export const durationMs = defineMeasure({
+export const durationMs = attemptMetric({
   name: "duration",
   label: { en: "Duration", "zh-CN": "平均耗时" },
   description: "Wall-clock duration of the attempt. Timeout-truncated attempts (error.code = \"timeout\") return null: the timeout line is a right-censoring point, not an observed completion time.",
@@ -184,7 +181,7 @@ export const durationMs = defineMeasure({
   },
 });
 
-export const tokens = defineMeasure({
+export const tokens = attemptMetric({
   name: "tokens",
   label: { en: "Tokens", "zh-CN": "Tokens" },
   description: "Input + output tokens (cache reads/writes excluded).",
@@ -203,7 +200,7 @@ export const tokens = defineMeasure({
   },
 });
 
-export const costUSD = defineMeasure({
+export const costUSD = attemptMetric({
   name: "cost",
   label: { en: "Cost", "zh-CN": "成本" },
   description: "USD cost per attempt (gateway-measured beats estimated).",
@@ -219,7 +216,7 @@ export const costUSD = defineMeasure({
  * value 如实返回 null,渲染成「—」,不冒充 0。名字带限定词:o11y 事件流中的 assistant
  * turn 数与 `t.send` 的 `s<session>/t<turn>` 轮次是两个计数。
  */
-export const assistantTurns = defineMeasure({
+export const assistantTurns = attemptMetric({
   name: "assistant-turns",
   label: { en: "Assistant turns", "zh-CN": "Assistant 轮次" },
   description: "Assistant turns in the o11y event stream per attempt. Reads o11y — “—” if not published alongside this attempt.",
@@ -238,7 +235,7 @@ export const assistantTurns = defineMeasure({
  * 成功执行与只失败一次的命令不计。回答 agent 是否在反复撞同一个已知失败的命令。
  * 读 o11y.json;unreadable 与缺 o11y 返回 null(docs/feature/reports/library/measures.md「内置指标」)。
  */
-export const repeatedFailedCommands = defineMeasure({
+export const repeatedFailedCommands = attemptMetric({
   name: "repeated-failed-commands",
   label: { en: "Repeated failed commands", "zh-CN": "重复失败命令" },
   description: "Per attempt: for each shell command failing n > 1 times, count n − 1, summed. Reads o11y — “—” if not published alongside this attempt.",

@@ -15,7 +15,7 @@ import {
   validateTableData,
 } from "./validate.ts";
 
-const validCell = { value: 1, display: "1", samples: 1, total: 1, refs: ["@1abcdef2"] };
+const validCell = { value: 1, basis: "eval", samples: 1, total: 1, refs: ["@1abcdef2"] };
 const validColumn = { key: "costUSD", label: "Cost" };
 
 describe("validateTableData", () => {
@@ -41,7 +41,7 @@ describe("validateTableData", () => {
   it("rows[i].cells.<metric> 缺 samples 报错定位到嵌套 MetricCell 字段", () => {
     const bad = {
       ...valid,
-      rows: [{ key: "agent-x", cells: { costUSD: { value: 1, display: "1", total: 1, refs: [] } } }],
+      rows: [{ key: "agent-x", cells: { costUSD: { value: 1, total: 1, refs: [] } } }],
     };
     expect(validateTableData(bad)).toMatch(/"rows\[0\]\.cells\.costUSD\.samples"/);
   });

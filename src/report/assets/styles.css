@@ -977,7 +977,7 @@ table.niceeval-report,
 .niceeval-report .niceeval-tone-na { color: var(--soft); }
 
 /* SourceView 原语:GitHub diff 式带标注源码。整行浅染 + 2px 左缘 + 行号位标记,整块统一横向
-   滚动;视觉规范单源见 docs/feature/reports/components/sources/attempt-source.md
+   滚动;视觉规范单源见 docs/feature/reports/components/primitives/source-view.md
    「web 面视觉规范」,DOM 骨架见同目录 presentation.md「SourceView 的 DOM 骨架」。
    普通行是 div,带证据的行是可点击 details;展开区钉在可视左缘,不跟代码横滚。 */
 .niceeval-source-view {

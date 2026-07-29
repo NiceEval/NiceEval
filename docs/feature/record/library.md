@@ -67,7 +67,7 @@ await attempt.sources();       // SourceArtifact[] | null：{ path, content, rol
 两段(`<实验目录>/<run 目录>`),`attempt` 是 `<evalId 路径>/a<n>`,
 [导出站的 `artifact/` 树](../reports/view.md#静态导出)按这两段拼路径。
 
-**寻址一个 attempt 是另一回事。** 报告的 `MeasureCell.refs`、`show @<locator>` 与 view 深链
+**寻址一个 attempt 是另一回事。** 报告的 `MetricValue.refs`、`show @<locator>` 与 view 深链
 `#/attempt/@<locator>` 用的都是不透明的
 [`AttemptLocator`](#按-locator-寻址一个-attemptresolvelocator),不走磁盘路径。
 

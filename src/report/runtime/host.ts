@@ -157,16 +157,20 @@ export async function renderHostPageText(
   options: HostTextRenderOptions,
 ): Promise<string> {
   const { renderReportTreeToText } = await import("../../../dist/report/runtime/text.js");
-  return renderReportTreeToText(page.content, ctx, options);
+  const { resolveDefinitionPage } = await import("../../../dist/report/runtime/page-render.js");
+  const resolved = await resolveDefinitionPage(page, ctx);
+  const { renderResolvedPageText } = await import("../../../dist/report/runtime/resolved-page.js");
+  return renderResolvedPageText(resolved, options);
 }
 
 /** 解析一页报告树,产出可复用的 ResolvedPage(同一页只 resolve 一次,再投影多 locale)。 */
 export async function resolveHostPage(
-  tree: import("../../../dist/report/definition/tree.js").ReportNode,
+  page: ReportPage,
   ctx: HostRenderContext,
+  options?: { renderCache?: Map<string, Promise<import("../../../dist/report/definition/tree.js").ReportNode>> },
 ): Promise<import("../../../dist/report/runtime/resolved-page.js").ResolvedPage> {
-  const { resolvePage } = await import("../../../dist/report/runtime/resolved-page.js");
-  return resolvePage(tree, ctx);
+  const { resolveDefinitionPage } = await import("../../../dist/report/runtime/page-render.js");
+  return resolveDefinitionPage(page, ctx, options);
 }
 
 /** 从 ResolvedPage 同步渲染 web 面(静态 HTML);动态 import dist 产物,render 本身无 await。 */
@@ -189,6 +193,6 @@ export async function renderHostPageHtml(
   ctx: HostRenderContext,
   options: { locale: string; attemptHref?: (locator: AttemptLocator) => string },
 ): Promise<string> {
-  const resolved = await resolveHostPage(page.content, ctx);
+  const resolved = await resolveHostPage(page, ctx);
   return renderHostPageFromResolved(resolved, options);
 }

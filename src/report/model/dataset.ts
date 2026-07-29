@@ -1,11 +1,11 @@
 // Dataset 形状校验与 TableData / TableContent 互转(docs/feature/reports/library/measures.md)。
 
 import type { Cell } from "../definition/cell.ts";
-import type { Dataset, DatasetField, DatasetRow, MeasureCell, MeasureColumn, TableData } from "./types.ts";
+import type { Dataset, DatasetField, DatasetRow, MetricValue, MetricColumn, TableData } from "./types.ts";
 import { cellProblem, isObject } from "../components/shared.ts";
 import type { TableContent } from "../definition/cell.ts";
 
-export function isMeasureCell(value: unknown): value is MeasureCell {
+export function isMetricValue(value: unknown): value is MetricValue {
   return cellProblem(value, "cell") === null;
 }
 
@@ -14,7 +14,7 @@ export function isDataset(value: unknown): value is Dataset {
   if (!Array.isArray(value.fields) || !Array.isArray(value.rows)) return false;
   for (const field of value.fields) {
     if (!isObject(field) || typeof field.name !== "string") return false;
-    if (field.kind !== "dimension" && field.kind !== "measure") return false;
+    if (field.kind !== "dimension" && field.kind !== "metric") return false;
     if (field.valueType !== "string" && field.valueType !== "number") return false;
   }
   for (const row of value.rows) {
@@ -23,10 +23,10 @@ export function isDataset(value: unknown): value is Dataset {
   return true;
 }
 
-export function datasetFieldOf(column: MeasureColumn): DatasetField {
+export function datasetFieldOf(column: MetricColumn): DatasetField {
   return {
     name: column.key,
-    kind: "measure",
+    kind: "metric",
     valueType: "number",
     ...(column.unit !== undefined ? { unit: column.unit } : {}),
     ...(column.better !== undefined ? { better: column.better } : {}),
@@ -34,10 +34,10 @@ export function datasetFieldOf(column: MeasureColumn): DatasetField {
   };
 }
 
-export function measureFieldOf(metric: { name: string; unit?: string; better?: "higher" | "lower"; bounds?: { min?: number; max?: number } }): DatasetField {
+export function metricFieldOf(metric: { name: string; unit?: string; better?: "higher" | "lower"; bounds?: { min?: number; max?: number } }): DatasetField {
   return {
     name: metric.name,
-    kind: "measure",
+    kind: "metric",
     valueType: "number",
     ...(metric.unit !== undefined ? { unit: metric.unit } : {}),
     ...(metric.better !== undefined ? { better: metric.better } : {}),
@@ -71,8 +71,8 @@ export function datasetToTableData(dataset: Dataset): TableData {
     throw new Error("Dataset must declare at least one dimension field for TableData conversion.");
   }
   const rowDimension = dimensionFields.length === 1 ? dimensionFields[0]!.name : dimensionFields.map((f) => f.name).join(" × ");
-  const columns: MeasureColumn[] = dataset.fields
-    .filter((f) => f.kind === "measure")
+  const columns: MetricColumn[] = dataset.fields
+    .filter((f) => f.kind === "metric")
     .map((f) => ({
       key: f.name,
       label: f.name,
@@ -81,10 +81,10 @@ export function datasetToTableData(dataset: Dataset): TableData {
       ...(f.bounds !== undefined ? { bounds: f.bounds } : {}),
     }));
   const rows = dataset.rows.map((row) => {
-    const cells: globalThis.Record<string, MeasureCell> = {};
+    const cells: globalThis.Record<string, MetricValue> = {};
     for (const col of columns) {
       const value = row.values[col.key];
-      if (!isMeasureCell(value)) {
+      if (!isMetricValue(value)) {
         throw new Error(`Dataset row "${row.key}" is missing measure cell for field "${col.key}".`);
       }
       cells[col.key] = value;
@@ -98,7 +98,7 @@ export function datasetToTableData(dataset: Dataset): TableData {
 export function datasetToTableContent(dataset: Dataset): TableContent {
   const columns = dataset.fields.map((f) => ({
     key: f.name,
-    ...(f.kind === "measure" && f.better !== undefined ? { better: f.better } : {}),
+    ...(f.kind === "metric" && f.better !== undefined ? { better: f.better } : {}),
     ...(f.unit !== undefined ? { unit: f.unit } : {}),
   }));
   const rows = dataset.rows.map((row) => {
@@ -109,10 +109,10 @@ export function datasetToTableContent(dataset: Dataset): TableContent {
         cells[field.name] = { kind: "text", text: String(value ?? row.key) };
         continue;
       }
-      if (!isMeasureCell(value)) {
+      if (!isMetricValue(value)) {
         throw new Error(`Dataset row "${row.key}" is missing measure cell for field "${field.name}".`);
       }
-      cells[field.name] = { kind: "measure", measure: value };
+      cells[field.name] = { kind: "metric", metric: value };
     }
     return { key: row.key, cells };
   });
@@ -133,9 +133,9 @@ export function requireField(dataset: Dataset, name: string): DatasetField {
   return field;
 }
 
-export function measureCellOf(row: DatasetRow, fieldName: string): MeasureCell | null {
+export function metricValueOf(row: DatasetRow, fieldName: string): MetricValue | null {
   const value = row.values[fieldName];
-  if (!isMeasureCell(value)) return null;
+  if (!isMetricValue(value)) return null;
   return value;
 }
 

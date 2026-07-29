@@ -2,7 +2,7 @@ import { defineEval } from "niceeval";
 import { isDefined } from "niceeval/expect";
 
 // The one Eval in this repo that drives a real model call — everything else this repo
-// asserts (disk format, openResults() parity, --json parity, --junit folding) is read off
+// asserts (disk format, openRecord() parity, --json parity, --junit folding) is read off
 // this Eval's real attempts, run twice (see experiments/main.ts) so sources.json dedup
 // across attempts sharing this eval file has something to exercise.
 export default defineEval({

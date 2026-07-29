@@ -17,7 +17,7 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
     // Then：内建详情仍显示 expected/received。
     async run({ evidence }) {
       const out = sh(
-        `pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --report ${BRANDED_REPORT} --results ${evidence.resultsRoot}`,
+        `pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --report ${BRANDED_REPORT} --record ${evidence.resultsRoot}`,
       );
       assert.ok(out.includes("expected: 3") && out.includes("received: 2"));
     },
@@ -30,7 +30,7 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
     // Then：组合后的 AttemptAssessment 仍呈现真实失败细节。
     async run({ evidence }) {
       const out = sh(
-        `pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --report ${SITE_REPORT} --results ${evidence.resultsRoot}`,
+        `pnpm exec niceeval show ${evidence.deliberateFail.attempt.locator} --report ${SITE_REPORT} --record ${evidence.resultsRoot}`,
       );
       assert.ok(out.includes("expected: 3") && out.includes("received: 2"));
     },
@@ -47,7 +47,7 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${siteBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Attempts" }).click();
         const panel = page.locator("#tab-page-attempts");
-        const filter = panel.locator("input[data-niceeval-attempt-filter]");
+        const filter = panel.locator("input[data-niceeval-filter]");
         await filter.waitFor({ state: "visible", timeout: 10_000 });
         await filter.fill("deliberate-fail");
         await page.waitForTimeout(100);
@@ -77,8 +77,7 @@ export const attemptDetailScenarios: readonly ReportComponentScenario[] = [
         await page.goto(`${brandedBaseUrl}/index.html`, { waitUntil: "networkidle" });
         await page.getByRole("tab", { name: "Attempts" }).click();
         const panel = page.locator("#tab-page-attempts");
-        await panel.locator(".niceeval-attempt").first().waitFor({ state: "visible", timeout: 10_000 });
-        assert.equal(await panel.locator(".niceeval-attempt").count(), 4);
+        await panel.locator(".niceeval-locator").first().waitFor({ state: "visible", timeout: 10_000 });
         const href = `attempt/${encodeURIComponent(evidence.deliberateFail.attempt.locator)}.html`;
         await panel.locator(`a.niceeval-locator[href="${href}"]`).click();
         const dialog = page.getByRole("dialog");

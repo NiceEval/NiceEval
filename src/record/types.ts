@@ -206,9 +206,15 @@ export interface Record {
  * 一个实验的覆盖事实:已知 eval 并集(分母)与当前口径下没有任何 attempt 的题。
  * `missingEvalIds` 永远被算出来,不静默——渲染面把它转成覆盖占位行
  * (见 docs/feature/sample/library.md「选择快照」「时效:新执行与历史执行」)。
+ *
+ * `run` 是该 Experiment 的锚点 Run:零 attempt 的 Eval 按 agent / model / flags 归组时
+ * 读它。`latestRunSample` 锚 latest Run;`currentSample` 锚确定该 Experiment 可比性
+ * 配置的 latest Run。锚点不必出现在 `Sample.runs`(全缺口 Experiment 仍有锚点)。
  */
 export interface SampleCoverage {
   experimentId: string;
+  /** 该 Experiment 的分组锚点 Run(agent / model / experiment 配置的事实来源)。 */
+  run: Run;
   /** 分母:本地历史 ∪ 各快照携带的 knownEvalIds,交命令行范围(与 `exp.knownEvalIds` 同源)。 */
   knownEvalIds: string[];
   /** 当前口径下没有任何 attempt 的题(含 `fresh: true` 排除历史执行后新产生的缺口)。 */

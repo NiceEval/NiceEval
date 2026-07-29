@@ -188,11 +188,11 @@ describe("dimensions 必填与查询封闭性", () => {
   });
 
   it("查询未声明的句柄在 text 与 web 两面都抛 UndeclaredDimensionValueError", async () => {
-    const definition = defineReport(
+    const definition = defineReport(() => (
       <Col>
         <Probe dimension="agent" values={["a", "b"]} query="nope" />
-      </Col>,
-    );
+      </Col>
+    ));
     await expect(renderReportToText(definition, host())).rejects.toBeInstanceOf(UndeclaredDimensionValueError);
     await expect(renderReportToStaticHtml(definition, host())).rejects.toBeInstanceOf(
       UndeclaredDimensionValueError,
@@ -219,11 +219,11 @@ describe("dimensions 必填与查询封闭性", () => {
 
 describe("text 面的呈现降级", () => {
   it("text renderer 的 ctx.dimension() 恒返回 label 面,拿不到槽与颜色", async () => {
-    const definition = defineReport(
+    const definition = defineReport(() => (
       <Col>
         <Probe dimension="agent" values={["acme/codex", "acme/claude"]} />
-      </Col>,
-    );
+      </Col>
+    ));
     const text = await renderReportToText(definition, host());
     expect(text).toContain("acme/codex|codex|-|-|-");
     expect(text).toContain("acme/claude|claude|-|-|-");
@@ -231,11 +231,11 @@ describe("text 面的呈现降级", () => {
 
   it("容量拒绝只发生在 web 编码规划:同一份 27 series 的报告 text 面照常输出", async () => {
     const values = Array.from({ length: 27 }, (_, i) => `agent-${i}`);
-    const definition = defineReport(
+    const definition = defineReport(() => (
       <Col>
         <Probe dimension="agent" values={values} />
-      </Col>,
-    );
+      </Col>
+    ));
     await expect(renderReportToText(definition, host())).resolves.toContain("agent-26|agent-26|-|-|-");
     await expect(renderReportToStaticHtml(definition, host())).rejects.toThrow(
       /has 27 series, but the built-in encoding supports 24/,
@@ -274,19 +274,28 @@ describe("dimensionPins", () => {
   it("外壳声明的钉色透传到宿主渲染,非法下标在 defineReport 就按完整用户反馈拒绝", async () => {
     const definition = defineReport({
       dimensionPins: { memory: { baseline: 4 } },
-      content: (
-        <Col>
-          <Probe dimension="memory" values={["baseline", "mempal"]} />
-        </Col>
-      ),
+      pages: [
+        {
+          id: "report",
+          title: "Report",
+          render: () => (
+            <Col>
+              <Probe dimension="memory" values={["baseline", "mempal"]} />
+            </Col>
+          ),
+        },
+      ],
     });
     const html = await renderReportToStaticHtml(definition, host());
     const { colorIndex, variant } = seriesChannelsOf(4);
     expect(html).toContain(`baseline|baseline|4|${colorIndex}|${variant}`);
 
-    expect(() => defineReport({ content: null, dimensionPins: { memory: { baseline: 99 } } })).toThrow(
-      /dimensionPins\.memory\.baseline/,
-    );
+    expect(() =>
+      defineReport({
+        pages: [{ id: "report", title: "R", render: () => null }],
+        dimensionPins: { memory: { baseline: 99 } },
+      }),
+    ).toThrow(/dimensionPins\.memory\.baseline/);
   });
 });
 

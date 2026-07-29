@@ -24,10 +24,10 @@ afterEach(async () => {
 });
 
 /**
- * 两页报告(报告经 `--report` 装载)。`styles` 参与外壳指纹:改它就是外壳变了,推送该走整页
+ * 两页报告(报告经 `--report` 装载)。`head` 参与外壳指纹:改它就是外壳变了,推送该走整页
  * 重载那一档;只改 marker 是报告内容变了,该走就地换块那一档。
  */
-function reportSource(logPath: string, marker: string, styles: { inline: string }[] = []): string {
+function reportSource(logPath: string, marker: string, head: { tag: string; children?: string }[] = []): string {
   return [
     'import { appendFileSync } from "node:fs";',
     `const LOG = ${JSON.stringify(logPath)};`,
@@ -51,13 +51,10 @@ function reportSource(logPath: string, marker: string, styles: { inline: string 
     "};",
     "const definition = {",
     '  kind: "report",',
-    "  links: [],",
-    "  head: [],",
-    "  scripts: [],",
-    `  styles: ${JSON.stringify(styles)},`,
+    `  head: ${JSON.stringify(head)},`,
     "  pages: [",
-    '    { id: "first", title: "First", content: make("first") },',
-    '    { id: "second", title: "Second", content: make("second") },',
+    '    { id: "first", title: "First", render: () => make("first") },',
+    '    { id: "second", title: "Second", render: () => make("second") },',
     "  ],",
     "};",
     'Object.defineProperty(definition, DEFINITION, { value: true });',
@@ -77,7 +74,7 @@ interface Fixture {
   reset(): Promise<void>;
 }
 
-async function makeFixture(marker = "FIRST", styles: { inline: string }[] = []): Promise<Fixture> {
+async function makeFixture(marker = "FIRST", head: { tag: string; children?: string }[] = []): Promise<Fixture> {
   // 布局照真实项目:记录根是项目下的 .niceeval,报告文件与渲染日志在项目根。日志一定要在
   // 记录根之外——它住在记录根里就会被记录侧的递归监听当成新证据,报告一渲染就再触发一次重建。
   const root = await mkdtemp(join(tmpdir(), "niceeval-viewrebuild-"));
@@ -112,7 +109,7 @@ async function makeFixture(marker = "FIRST", styles: { inline: string }[] = []):
   const logPath = join(logDir, "render.log");
   await writeFile(logPath, "", "utf-8");
   const reportPath = join(root, "report.mjs");
-  await writeFile(reportPath, reportSource(logPath, marker, styles), "utf-8");
+  await writeFile(reportPath, reportSource(logPath, marker, head), "utf-8");
   return {
     root,
     record,
@@ -283,8 +280,8 @@ describe("推送分档", () => {
     expect(patch).toMatchObject({ page: "first", locale: "en" });
     expect(patch.html).toContain("SECOND");
 
-    // 外壳(styles)变了:整页重载。缺这一格时「一律 patch」的写法会漏掉样式表没换的场景。
-    await writeFile(fx.reportPath, reportSource(fx.logPath, "SECOND", [{ inline: "/* shell */" }]), "utf-8");
+    // 外壳(head)变了:整页重载。缺这一格时「一律 patch」的写法会漏掉样式表没换的场景。
+    await writeFile(fx.reportPath, reportSource(fx.logPath, "SECOND", [{ tag: "style", children: "/* shell */" }]), "utf-8");
     await until(async () => sub.events.some((e) => e.event === "reload"));
     sub.close();
     expect(sub.events.map((e) => e.event)).toEqual(["ready", "patch", "reload"]);

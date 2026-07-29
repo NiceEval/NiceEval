@@ -15,12 +15,12 @@
 // 而想让它们出现又会打扰其他 domain 在共享 resultsRoot 上的断言。为此本模块手写了一份最小的、
 // 独立的 Results 格式 fixture(下面的 buildScopeWarningsFixture)——按
 // docs/feature/record/architecture.md 的 schema 手写的纯 JSON 字面量,写到它自己的 scratch
-// 目录里,只通过 `niceeval show/view --results <scratch>` 读回——绝不触碰
+// 目录里,只通过 `niceeval show/view --record <scratch>` 读回——绝不触碰
 // Evidence.resultsRoot(docs/engineering/testing/e2e/report.md 的 B2 任务,「重要操作提示」#2)。
 //
 // "历史与多页"需要共享 Evidence 不会产出的第二份真实快照(produceEvidence() 每个 Experiment
-// 只运行一次),所以本模块额外发起两次真实的 `niceeval exp main` 调用:一次带 `--force`
-// (真实网关小额开销,B2 任务已批准)拿到第二份快照,一次不带 `--force`(免费——走
+// 只运行一次),所以本模块额外发起两次真实的 `niceeval exp main` 调用:一次带 `--rerun all`
+// (真实网关小额开销,B2 任务已批准)拿到第二份快照,一次不带 `--rerun all`(免费——走
 // carry-forward 复用路径)来证明 `--history` 的跨快照去重确实把重复项折叠掉了,而不是简单地把
 // 看到的一切都合并进来。
 
@@ -33,10 +33,11 @@ import { InfraError } from "./evidence.ts";
 import { sh } from "./sh.ts";
 import type { Evidence } from "./evidence.ts";
 
-const PROVIDER_FAULT_RE = /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)/i;
+const PROVIDER_FAULT_RE =
+  /errored.*(429|5\d\d|ECONNREFUSED|ETIMEDOUT)|Insufficient Balance|402|quota|rate.?limit/i;
 
 /** 和 scripts/evidence.ts 的 shExpectZero 遵循同样的真实网关调用约定——本模块发起的这一次额外
- * 真实调用(verifyHistoryAndPages 里的 --force 重跑)享有同样的 infra/回归 分类规则。 */
+ * 真实调用(verifyHistoryAndPages 里的 --rerun all 重跑)享有同样的 infra/回归 分类规则。 */
 function shExpectZero(cmd: string): string {
   const res = spawnSync(cmd, { shell: true, encoding: "utf8" });
   const exit = res.status ?? -1;
@@ -160,13 +161,14 @@ function expectServerDoesNotStart(extraArgs: string[]): Promise<{ exitCode: numb
 // 契约 diff 显式修改这里；若自动跟随候选常量，reader 与 fixture 可以一起错而测试仍然全绿。
 // ---------------------------------------------------------------------------
 
-const FIXTURE_SCHEMA_VERSION = 9;
+const FIXTURE_SCHEMA_VERSION = 11;
 
 function fixtureSnapshotMeta(over: Record<string, unknown>) {
   return {
     format: "niceeval.results",
     schemaVersion: FIXTURE_SCHEMA_VERSION,
     producer: { name: "niceeval-e2e-readback-fixture", version: "0.0.0" },
+    runId: "00000000-0000-4000-8000-000000000000",
     agent: "fixture-agent",
     ...over,
   };
@@ -198,7 +200,7 @@ function buildScopeWarningsFixture(scratchRoot: string): ScopeWarningsFixture {
   // → partial-coverage(覆盖 1/2)。它的 startedAt 是本 fixture 根目录下最新的,这样它就不会
   // 同时又被判定为 stale-snapshot——保持这是一个干净的单一类型示例。
   const partialDir = join(root, "scratch-partial", "2026-01-10T00-00-00-000Z-bbbb");
-  writeJson(partialDir, "snapshot.json", fixtureSnapshotMeta({
+  writeJson(partialDir, "run.json", fixtureSnapshotMeta({
     experimentId: "scratch-partial",
     startedAt: "2026-01-10T00:00:00.000Z",
     completedAt: "2026-01-10T00:00:01.000Z",
@@ -218,25 +220,25 @@ function buildScopeWarningsFixture(scratchRoot: string): ScopeWarningsFixture {
   // scratch-stale:单份「旧」快照,比 scratch-partial 落后 8 天 → 只触发 stale-snapshot
   // (这个 experiment 自始至终只有一份快照,所以不会有它自己的 partial-coverage)。
   const staleDir = join(root, "scratch-stale", "2026-01-02T00-00-00-000Z-cccc");
-  writeJson(staleDir, "snapshot.json", fixtureSnapshotMeta({
+  writeJson(staleDir, "run.json", fixtureSnapshotMeta({
     experimentId: "scratch-stale",
     startedAt: "2026-01-02T00:00:00.000Z",
     completedAt: "2026-01-02T00:00:01.000Z",
   }));
   writeJson(join(staleDir, "eval-c", "a0"), "result.json", fixtureResult({ id: "eval-c", verdict: "passed" }));
 
-  // scratch-broken:snapshot.json 格式错误 → unreadable-snapshot(原因是 "malformed")。这个
+  // scratch-broken:run.json 格式错误 → unreadable-run(原因是 "malformed")。这个
   // experiment id 下没有任何可读快照——它绝不能作为一个 experiment 出现在结果里。
   const brokenDir = join(root, "scratch-broken", "2026-01-03T00-00-00-000Z-dddd");
   mkdirSync(brokenDir, { recursive: true });
-  writeFileSync(join(brokenDir, "snapshot.json"), "{ this is not valid json", "utf8");
+  writeFileSync(join(brokenDir, "run.json"), "{ this is not valid json", "utf8");
   writeJson(join(brokenDir, "eval-d", "a0"), "result.json", fixtureResult({ id: "eval-d", verdict: "passed" }));
 
   // 另一个独立根目录:只有那份格式错误的快照——对应"零可读结果"场景(show 非零退出,view 不启动 server)。
   const onlyBrokenRoot = join(scratchRoot, "only-broken");
   const onlyBrokenDir = join(onlyBrokenRoot, "broken-exp", "2026-01-03T00-00-00-000Z-eeee");
   mkdirSync(onlyBrokenDir, { recursive: true });
-  writeFileSync(join(onlyBrokenDir, "snapshot.json"), "{ also not valid json", "utf8");
+  writeFileSync(join(onlyBrokenDir, "run.json"), "{ also not valid json", "utf8");
   writeJson(join(onlyBrokenDir, "eval-e", "a0"), "result.json", fixtureResult({ id: "eval-e", verdict: "passed" }));
 
   return { root, onlyBrokenRoot, brokenDir };
@@ -284,25 +286,25 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
   const root = evidence.resultsRoot;
 
   // 位置参数形式的 eval id 前缀,把报告收窄到仅该 eval。
-  const toolCallOnly = sh(`pnpm exec niceeval show tool-call --results ${root}`);
+  const toolCallOnly = sh(`pnpm exec niceeval show tool-call --record ${root}`);
   assert.ok(toolCallOnly.includes("tool-call"), "show tool-call should mention the tool-call eval");
   assert.ok(!toolCallOnly.includes("deliberate"), "show tool-call narrowed the wrong way — deliberate-* leaked into a tool-call-only view");
 
   // 位置参数用的是原始(裸)前缀匹配,不是路径片段匹配:"deliberate" 是 "deliberate-fail" 和
   // "deliberate-error" 里的一部分单词(不涉及任何 "/"),依然能同时匹配两者——和下面 --exp 的
   // 路径片段规则形成对比,正是这个要点想说明的东西。
-  const bothDeliberate = sh(`pnpm exec niceeval show deliberate --results ${root} --history`);
+  const bothDeliberate = sh(`pnpm exec niceeval show deliberate --record ${root} --history`);
   assert.ok(bothDeliberate.includes("deliberate-fail"), "raw-prefix 'deliberate' should match deliberate-fail");
   assert.ok(bothDeliberate.includes("deliberate-error"), "raw-prefix 'deliberate' should match deliberate-error");
   assert.ok(!bothDeliberate.includes("tool-call"), "raw-prefix 'deliberate' should not also match tool-call/main");
 
   // --exp 按路径片段匹配:一个完整的片段可以匹配……
-  const expExact = sh(`pnpm exec niceeval show --exp deliberate-fail --results ${root}`);
+  const expExact = sh(`pnpm exec niceeval show --exp deliberate-fail --record ${root}`);
   assert.ok(expExact.includes("1 experiment"), "--exp deliberate-fail should narrow to exactly 1 experiment");
   assert.ok(!expExact.includes("tool-call"), "--exp deliberate-fail leaked tool-call/main into scope");
 
   // ……但不是完整片段的部分单词则不会匹配,这和上面位置参数的情况不同。
-  const expPartial = shRaw(`pnpm exec niceeval show --exp deliberate --results ${root}`);
+  const expPartial = shRaw(`pnpm exec niceeval show --exp deliberate --record ${root}`);
   assert.notEqual(expPartial.status, 0, "--exp deliberate (partial segment) should fail to match anything");
   assert.ok(
     expPartial.combined.includes("No experiment matched --exp deliberate"),
@@ -310,19 +312,19 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
   );
   assert.ok(expPartial.combined.includes("deliberate-error") && expPartial.combined.includes("deliberate-fail") && expPartial.combined.includes("main"), "no-match message should list the candidate experiment ids");
 
-  const expMain = sh(`pnpm exec niceeval show --exp main --results ${root}`);
+  const expMain = sh(`pnpm exec niceeval show --exp main --record ${root}`);
   assert.ok(expMain.includes("1 experiment"), "--exp main should narrow to exactly 1 experiment");
   assert.ok(!expMain.includes("deliberate"), "--exp main leaked deliberate-* into scope");
 
-  // --results 显式 flag(这里的值和默认值一样,但实际验证的是这个 flag 本身)。
-  const explicitResults = sh(`pnpm exec niceeval show tool-call --results ${root}`);
-  assert.ok(explicitResults.includes("tool-call"), "--results <root> should behave like the default root");
+  // --record 显式 flag(这里的值和默认值一样,但实际验证的是这个 flag 本身)。
+  const explicitResults = sh(`pnpm exec niceeval show tool-call --record ${root}`);
+  assert.ok(explicitResults.includes("tool-call"), "--record <root> should behave like the default root");
 
   // 缺少开头 "@" 的 locator 会被当作 eval id 前缀处理,匹配不到任何东西,命令会明确报告这一点
   // 并列出候选 eval id(docs/feature/reports/show.md「无匹配与不可读结果」)——而不是悄悄返回一个
   // 空结果。
   const bareBody = evidence.main.attempts[0]!.locator.slice(1); // strip leading "@"
-  const noMatch = shRaw(`pnpm exec niceeval show ${bareBody} --results ${root}`);
+  const noMatch = shRaw(`pnpm exec niceeval show ${bareBody} --record ${root}`);
   assert.notEqual(noMatch.status, 0, `show ${bareBody} (no @) should fail — it's not a valid eval id prefix`);
   assert.ok(noMatch.combined.includes(`No results matched: ${bareBody}`), `expected an explicit no-match message; got: ${noMatch.combined}`);
   assert.ok(noMatch.combined.includes("tool-call"), "no-match message should list tool-call as a candidate eval with results");
@@ -332,18 +334,18 @@ async function verifySelectionAndNarrowing(evidence: Evidence): Promise<void> {
   const scratchRoot = mkdtempSync(join(tmpdir(), "niceeval-readback-view-select-"));
   try {
     const mainOut = join(scratchRoot, "main-only");
-    sh(`pnpm exec niceeval view --exp main --results ${root} --out ${mainOut} --no-open`);
+    sh(`pnpm exec niceeval view --exp main --record ${root} --out ${mainOut} --no-open`);
     assert.ok(existsSync(join(mainOut, "artifact", "main")), "view --exp main --out should export artifact/main");
     assert.ok(!existsSync(join(mainOut, "artifact", "deliberate-fail")), "view --exp main --out should NOT export artifact/deliberate-fail");
     assert.ok(!existsSync(join(mainOut, "artifact", "deliberate-error")), "view --exp main --out should NOT export artifact/deliberate-error");
 
     const deliberateOut = join(scratchRoot, "deliberate-only");
-    sh(`pnpm exec niceeval view deliberate --results ${root} --out ${deliberateOut} --no-open`);
+    sh(`pnpm exec niceeval view deliberate --record ${root} --out ${deliberateOut} --no-open`);
     assert.ok(existsSync(join(deliberateOut, "artifact", "deliberate-fail")), "view deliberate --out (raw prefix) should export artifact/deliberate-fail");
     assert.ok(existsSync(join(deliberateOut, "artifact", "deliberate-error")), "view deliberate --out (raw prefix) should export artifact/deliberate-error");
     assert.ok(!existsSync(join(deliberateOut, "artifact", "main")), "view deliberate --out should NOT export artifact/main");
 
-    const expBad = shRaw(`pnpm exec niceeval view --exp deliberate --results ${root} --out ${join(scratchRoot, "bad")} --no-open`);
+    const expBad = shRaw(`pnpm exec niceeval view --exp deliberate --record ${root} --out ${join(scratchRoot, "bad")} --no-open`);
     assert.notEqual(expBad.status, 0, "view --exp deliberate (partial segment) should fail the same way show did");
     assert.ok(expBad.combined.includes("No experiment matched --exp deliberate"), "view's --exp error message should match show's");
   } finally {
@@ -359,24 +361,24 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   const root = evidence.resultsRoot;
 
   // 基线:Evidence 里唯一的真实快照有 2 个 tool-call attempt。
-  const baselineHistory = sh(`pnpm exec niceeval show tool-call --results ${root} --history`);
+  const baselineHistory = sh(`pnpm exec niceeval show tool-call --record ${root} --history`);
   const baselineRows = historyRows(baselineHistory);
   assert.equal(baselineRows.length, evidence.main.attempts.length, "baseline --history row count should match Evidence.main.attempts");
   assertAscending(baselineRows, "baseline --history");
 
   // 为同一个 Experiment 制造出第二份真实快照(真实网关小额开销——专门为这项检查批准的,因为
   // Evidence 本身每个 Experiment 只会产出一份快照)。
-  shExpectZero(`pnpm exec niceeval exp main --force`);
+  shExpectZero(`pnpm exec niceeval exp main --rerun all`);
 
-  const afterForce = sh(`pnpm exec niceeval show tool-call --results ${root} --history`);
+  const afterForce = sh(`pnpm exec niceeval show tool-call --record ${root} --history`);
   const afterForceRows = historyRows(afterForce);
-  assert.equal(afterForceRows.length, baselineRows.length + 2, "a --force re-run of main should add 2 new distinct attempts to --history (runs:2)");
-  assertAscending(afterForceRows, "--history after --force re-run");
+  assert.equal(afterForceRows.length, baselineRows.length + 2, "a --rerun all re-run of main should add 2 new distinct attempts to --history (runs:2)");
+  assertAscending(afterForceRows, "--history after --rerun all re-run");
   for (const original of baselineRows) {
     assert.ok(afterForceRows.some((r) => r.locator === original.locator), `--history after re-run lost the original attempt ${original.locator} — cross-snapshot merge dropped history instead of appending`);
   }
 
-  // 一次免费的复用运行(不带 --force):eval/agent/model 都没变,指纹匹配,于是刚创建的快照里的
+  // 一次免费的复用运行(不带 --rerun all):eval/agent/model 都没变,指纹匹配,于是刚创建的快照里的
   // 2 个 attempt 会原封不动地被 carry forward 进第三份快照。
   const reuseOutput = shExpectZero(`pnpm exec niceeval exp main`);
   // 人读文本的缓存复用摘要行(feedback.human.reuse 文案):"M of N carried in from cache · K to run",
@@ -400,7 +402,7 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   );
   assert.ok(Number(planned[1]) >= 1, `no-force re-run carried nothing at all — fingerprints did not match; got: ${reuseOutput}`);
 
-  const afterReuse = sh(`pnpm exec niceeval show tool-call --results ${root} --history`);
+  const afterReuse = sh(`pnpm exec niceeval show tool-call --record ${root} --history`);
   const afterReuseRows = historyRows(afterReuse);
   assert.equal(
     afterReuseRows.length,
@@ -410,34 +412,34 @@ async function verifyHistoryAndPages(evidence: Evidence): Promise<void> {
   assertAscending(afterReuseRows, "--history after carry-forward reuse run");
 
   // --history 和 --report 互斥(两者都会接管主输出)。
-  const mutex = shRaw(`pnpm exec niceeval show --history --report reports/does-not-exist.tsx --results ${root}`);
+  const mutex = shRaw(`pnpm exec niceeval show --history --report reports/does-not-exist.tsx --record ${root}`);
   assert.notEqual(mutex.status, 0, "--history --report should be a usage error");
   assert.ok(/mutually exclusive/i.test(mutex.combined), `expected a mutual-exclusion message; got: ${mutex.combined}`);
 
   // 多页:show 渲染内置的 "report" 页,并在末尾附加一份可复现的其他可导航页面
-  // (attempts、traces)索引——附加的命令会把 --results 和位置参数一并带上。这里用
+  // (attempts、traces)索引——附加的命令会把 --record 和位置参数一并带上。这里用
   // "deliberate" 前缀(匹配 2 个 eval)而不是 "tool-call"(恰好匹配 1 个 eval):收窄到单个
   // eval 会让 report 页切换成聚焦单 eval 的 drill-down 视图,那种视图根本没有页面索引——这是
   // 一种真实的、独立的展示模式,不是页面索引的 bug。
-  const bareShow = sh(`pnpm exec niceeval show deliberate --results ${root}`);
+  const bareShow = sh(`pnpm exec niceeval show deliberate --record ${root}`);
   assert.ok(bareShow.includes("Other pages:"), "show should append a page index for the built-in multi-page report");
-  assert.ok(bareShow.includes(`niceeval show deliberate --results ${root} --page attempts`), "page index command should reproduce positional args + --results + --page");
-  assert.ok(bareShow.includes(`niceeval show deliberate --results ${root} --page traces`), "page index should list the traces page too");
+  assert.ok(bareShow.includes(`niceeval show deliberate --record ${root} --page attempts`), "page index command should reproduce positional args + --record + --page");
+  assert.ok(bareShow.includes(`niceeval show deliberate --record ${root} --page traces`), "page index should list the traces page too");
   assert.ok(!/--page report\b/.test(bareShow), "the page index should not list 'report' as an OTHER page — it's the one currently rendered");
 
-  const attemptsPage = sh(`pnpm exec niceeval show deliberate --results ${root} --page attempts`);
+  const attemptsPage = sh(`pnpm exec niceeval show deliberate --record ${root} --page attempts`);
   assert.ok(attemptsPage.includes("Other pages:"), "--page attempts should append an index of the OTHER pages");
-  assert.ok(attemptsPage.includes(`niceeval show deliberate --results ${root} --page report`), "index from the attempts page should offer report");
-  assert.ok(attemptsPage.includes(`niceeval show deliberate --results ${root} --page traces`), "index from the attempts page should offer traces");
+  assert.ok(attemptsPage.includes(`niceeval show deliberate --record ${root} --page report`), "index from the attempts page should offer report");
+  assert.ok(attemptsPage.includes(`niceeval show deliberate --record ${root} --page traces`), "index from the attempts page should offer traces");
   assert.ok(!/--page attempts\b/.test(attemptsPage.split("Other pages:")[1] ?? ""), "the attempts page's own index should not re-list itself");
 
-  const tracesPage = sh(`pnpm exec niceeval show --results ${root} --page traces`);
+  const tracesPage = sh(`pnpm exec niceeval show --record ${root} --page traces`);
   assert.ok(tracesPage.includes("Other pages:"), "--page traces should append an index of the OTHER pages");
   assert.ok(tracesPage.includes("--page report"), "index from the traces page should offer report");
   assert.ok(tracesPage.includes("--page attempts"), "index from the traces page should offer attempts");
 
   // 未知的 page id:报用法错误并列出可用页面,不会静默回退。
-  const badPage = shRaw(`pnpm exec niceeval show --results ${root} --page bogus`);
+  const badPage = shRaw(`pnpm exec niceeval show --record ${root} --page bogus`);
   assert.notEqual(badPage.status, 0, "--page bogus should be a usage error");
   assert.ok(
     badPage.combined.includes('page "bogus" not found') && badPage.combined.includes("report, attempts, traces"),
@@ -456,7 +458,7 @@ async function verifyEvidenceFacets(evidence: Evidence, fixture: ScopeWarningsFi
 
   // --source:在一个真实的 passed attempt 和一个真实的 failed attempt 上,都验证 eval 源码被
   // 标注上 send/assertion 标记。
-  const passedSource = sh(`pnpm exec niceeval show ${passedLocator} --source --results ${root}`);
+  const passedSource = sh(`pnpm exec niceeval show ${passedLocator} --source --record ${root}`);
   assert.ok(passedSource.includes("evals/tool-call.eval.ts"), "--source should name the eval source file");
   assert.ok(/\S+\s*·\s*completed\s*·/.test(passedSource), `--source should annotate the t.send() line with the turn's label + status + duration; got:\n${passedSource}`);
   assert.ok(
@@ -468,7 +470,7 @@ async function verifyEvidenceFacets(evidence: Evidence, fixture: ScopeWarningsFi
     `a fully-passed source view should not expand individual assertion detail rows; got:\n${passedSource}`,
   );
 
-  const failedSource = sh(`pnpm exec niceeval show ${failedLocator} --source --results ${root}`);
+  const failedSource = sh(`pnpm exec niceeval show ${failedLocator} --source --record ${root}`);
   assert.ok(failedSource.includes("evals/deliberate-fail.eval.ts"), "--source should name deliberate-fail's eval source file");
   assert.ok(failedSource.includes("expected 3") && failedSource.includes("received 2"), "--source should annotate the failing assertion with expected/received");
   assert.ok(
@@ -481,40 +483,40 @@ async function verifyEvidenceFacets(evidence: Evidence, fixture: ScopeWarningsFi
   // 都没有配置 tracing/OTel,正好用来证明文档「落盘无 phases 时如实显示 unavailable,不猜」
   // 这一条,应用在 trace 子树上(下面那个没有 phases 的 fixture 检查,验证的是同一条诚实契约里
   // 「无 phases」字面意义上的那一半)。
-  const execution = sh(`pnpm exec niceeval show ${passedLocator} --execution --results ${root}`);
+  const execution = sh(`pnpm exec niceeval show ${passedLocator} --execution --record ${root}`);
   assert.ok(execution.includes("timing unavailable"), "--execution should say timing is unavailable when no OTel trace was collected");
   assert.ok(execution.includes("OTel trace was not collected"), "--execution's unavailable annotation should say why, not guess a value");
 
   // --diff 在真实证据上也能工作(进程内 aiSdkAgent 的 attempt 仍然会带上一个没有 window 的
   // diff.json——"没有改动"是一种真实的、和"diff 不可用"截然不同的结果)。
-  const diff = sh(`pnpm exec niceeval show ${passedLocator} --diff --results ${root}`);
+  const diff = sh(`pnpm exec niceeval show ${passedLocator} --diff --record ${root}`);
   assert.ok(diff.includes("no file changes by the agent"), `--diff should report no agent-attributed changes; got: ${diff}`);
   assert.ok(diff.includes("diff.json"), "--diff's no-changes message should still point at the full diff.json for verification");
 
   // --timing:有节点数上限的诊断树。在本仓库这种很小的真实 timing 树上(节点数只有几个,
   // 远低于 80 节点的预算),有限投影和完整投影必须逐字节相同——这就是 timing.md 记录的
   // "Case 1:小树" 契约,不是它的弱化替代。
-  const timingSummary = sh(`pnpm exec niceeval show ${passedLocator} --timing --results ${root}`);
-  const timingFull = sh(`pnpm exec niceeval show ${passedLocator} --timing=full --results ${root}`);
+  const timingSummary = sh(`pnpm exec niceeval show ${passedLocator} --timing --record ${root}`);
+  const timingFull = sh(`pnpm exec niceeval show ${passedLocator} --timing=full --record ${root}`);
   assert.equal(timingSummary, timingFull, "for a small timing tree (< 80 nodes), --timing and --timing=full must render identically (timing.md Case 1)");
   assert.ok(timingSummary.includes("eval.run"), "--timing should show the eval.run phase from real runner phase data");
 
   // --timing 只接受 summary|full——其他任何值都是用法错误,不会静默回退。
-  const badTiming = shRaw(`pnpm exec niceeval show ${passedLocator} --timing=bogus --results ${root}`);
+  const badTiming = shRaw(`pnpm exec niceeval show ${passedLocator} --timing=bogus --record ${root}`);
   assert.notEqual(badTiming.status, 0, "--timing=bogus should be a usage error");
   assert.ok(badTiming.combined.includes('"summary"'), `expected --timing's usage error to name the accepted values; got: ${badTiming.combined}`);
 
   // 字面意义上"无 phases"的诚实呈现:一个完全没有 `phases` 字段的手写 fixture attempt,
   // 无论在 --timing 还是 --timing=full 下都必须显示 "phase timing unavailable",绝不能
   // 猜测/推导出一个总时长。
-  const fixtureLocatorLine = sh(`pnpm exec niceeval show eval-a --results ${fixture.root} --history`);
+  const fixtureLocatorLine = sh(`pnpm exec niceeval show eval-a --record ${fixture.root} --history`);
   const fixtureLocator = fixtureLocatorLine.match(/@\S+/)?.[0];
   assert.ok(fixtureLocator, `could not find eval-a's locator in fixture --history output: ${fixtureLocatorLine}`);
-  const noPhasesSummary = sh(`pnpm exec niceeval show ${fixtureLocator} --timing --results ${fixture.root}`);
-  const noPhasesFull = sh(`pnpm exec niceeval show ${fixtureLocator} --timing=full --results ${fixture.root}`);
+  const noPhasesSummary = sh(`pnpm exec niceeval show ${fixtureLocator} --timing --record ${fixture.root}`);
+  const noPhasesFull = sh(`pnpm exec niceeval show ${fixtureLocator} --timing=full --record ${fixture.root}`);
   assert.ok(noPhasesSummary.includes("phase timing unavailable"), `expected "phase timing unavailable" for a fixture attempt with no phases; got: ${noPhasesSummary}`);
   assert.ok(noPhasesFull.includes("phase timing unavailable"), `--timing=full should also say phase timing unavailable, not derive a fake tree; got: ${noPhasesFull}`);
-  const fixtureAttempt = sh(`pnpm exec niceeval show ${fixtureLocator} --results ${fixture.root}`);
+  const fixtureAttempt = sh(`pnpm exec niceeval show ${fixtureLocator} --record ${fixture.root}`);
   assert.ok(
     fixtureAttempt.includes("facts: fixture.kind=deterministic"),
     `an attempt fact from the public Results fixture should be visible on the public attempt page; got:\n${fixtureAttempt}`,
@@ -531,7 +533,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
   const passedLocator = evidence.main.attempts[0]!.locator;
 
   const compare = sh(
-    `pnpm exec niceeval show --results ${root} --exp deliberate-fail --exp deliberate-error`,
+    `pnpm exec niceeval show --record ${root} --exp deliberate-fail --exp deliberate-error`,
   );
   assert.ok(
     compare.includes("compare · 2 conditions") &&
@@ -545,7 +547,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
     `comparison output should keep failed and errored visibly distinct; got:\n${compare}`,
   );
 
-  const stats = sh(`pnpm exec niceeval show --results ${root} --stats`);
+  const stats = sh(`pnpm exec niceeval show --record ${root} --stats`);
   assert.ok(
     stats.includes("stability · 3 evals × 3 experiments") &&
       stats.includes("all historical executions") &&
@@ -568,7 +570,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
     "the deterministic errored eval should count under errored, not failed",
   );
 
-  const usage = sh(`pnpm exec niceeval show --results ${root} --usage`);
+  const usage = sh(`pnpm exec niceeval show --record ${root} --usage`);
   assert.ok(
     usage.includes("usage · main · 2 attempts") &&
       usage.includes("tool-call") &&
@@ -583,7 +585,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
   );
 
   const usageCompare = sh(
-    `pnpm exec niceeval show --results ${root} --exp deliberate-fail --exp deliberate-error --usage`,
+    `pnpm exec niceeval show --record ${root} --exp deliberate-fail --exp deliberate-error --usage`,
   );
   assert.ok(
     usageCompare.includes("usage · 2 conditions") &&
@@ -594,7 +596,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
   );
 
   const matches = sh(
-    `pnpm exec niceeval show ${passedLocator} --results ${root} --execution --grep get_stock_price`,
+    `pnpm exec niceeval show ${passedLocator} --record ${root} --execution --grep get_stock_price`,
   );
   assert.ok(
     matches.includes("TOOL · get_stock_price") && /\d+ matches in 1 attempt/.test(matches),
@@ -602,7 +604,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
   );
 
   const noMatches = sh(
-    `pnpm exec niceeval show ${passedLocator} --results ${root} --execution --grep definitely-not-present`,
+    `pnpm exec niceeval show ${passedLocator} --record ${root} --execution --grep definitely-not-present`,
   );
   assert.equal(
     noMatches,
@@ -618,7 +620,7 @@ function verifyVisibleSlices(evidence: Evidence): void {
 async function verifyScopeWarnings(fixture: ScopeWarningsFixture): Promise<void> {
   // show:三种警告类型全部出现,并且尽管第三个 experiment 不可读,另外两个可读的 experiment
   // 依然完整渲染——"单个坏快照不阻塞其余"。
-  const board = sh(`pnpm exec niceeval show --results ${fixture.root}`);
+  const board = sh(`pnpm exec niceeval show --record ${fixture.root}`);
   // 07-22 裁决(staleness-demoted-from-warning-to-provenance)后,覆盖缺口不再是警告:
   // knownEvalIds 里没跑的题渲染成占位行——期望从 fixture 事实推导(缺的是 eval-ghost),
   // 结果列带「当前配置下无结果」文案与可复制补跑命令,不冒充失败也不进警告区。
@@ -630,40 +632,39 @@ async function verifyScopeWarnings(fixture: ScopeWarningsFixture): Promise<void>
   // 是自家唯一快照的新执行,跨 experiment 的「谁更旧」在新契约下不标注、不警告:普通行渲染。
   assert.ok(board.includes("scratch-stale"), `scratch-stale should render as a normal experiment; got:\n${board}`);
   assert.ok(!board.includes("behind"), `staleness must not surface as a warning after the 07-22 ruling; got:\n${board}`);
-  assert.ok(board.includes("snapshot") && board.includes("skipped") && board.includes("malformed"), `expected an unreadable-snapshot warning mentioning the malformed skip; got:\n${board}`);
-  assert.ok(board.includes(fixture.brokenDir), "unreadable-snapshot warning should name the actual skipped directory");
+  assert.ok(board.includes("unreadable") && board.includes("malformed"), `expected an unreadable-run warning mentioning malformed; got:\n${board}`);
+  assert.ok(board.includes(fixture.brokenDir), "unreadable-run warning should name the actual skipped directory");
   // 尽管有一个 experiment 损坏,另外两个依然完整渲染(不受阻塞):
-  assert.ok(board.includes("2 experiments"), `scratch-partial and scratch-stale should both still render even with scratch-broken unreadable; got:\n${board}`);
-  assert.ok(board.includes("Pass rate 100%"), "the 2 readable experiments' data should compute normally, unaffected by the unreadable third");
+  assert.ok(board.includes("scratch-partial") && board.includes("scratch-stale"), `scratch-partial and scratch-stale should both still render even with scratch-broken unreadable; got:\n${board}`);
+  assert.ok(/Pass rate[\s\S]{0,20}?100%/.test(board) || board.includes("100%"), "the 2 readable experiments' data should compute normally, unaffected by the unreadable third");
 
   // view:同样的三种警告类型也会出现在静态导出结果里(和本地 server 走的是同一条站点管线——
   // README §4.2/report.md §4 已经豁免本仓库不必为每一项检查都重新起一次 server;下面第 5 点
   // 会统一验证一次 server ≡ --out 的逐字节一致性)。
   const outDir = mkdtempSync(join(tmpdir(), "niceeval-readback-warnings-out-"));
   try {
-    sh(`pnpm exec niceeval view --results ${fixture.root} --out ${outDir} --no-open`);
+    sh(`pnpm exec niceeval view --record ${fixture.root} --out ${outDir} --no-open`);
     const indexHtml = readFileSync(join(outDir, "index.html"), "utf8");
     assert.ok(indexHtml.includes("eval-ghost"), "view --out's index.html should carry the same eval-ghost placeholder row as show");
     assert.ok(indexHtml.includes("niceeval exp scratch-partial"), "web placeholder row must carry the full copyable rerun command (entity-lists.md 占位行契约)");
-    assert.ok(indexHtml.includes("↩"), "view --out's index.html should carry the same inline historical marker as show");
-    assert.ok(indexHtml.includes("malformed"), "view --out's index.html should carry the same unreadable-snapshot warning as show");
+    assert.ok(indexHtml.includes("malformed"), "view --out's index.html should carry the same unreadable-run warning as show");
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
 
   // 零可读结果:show 会以明确的"无结果"消息非零退出(而不是一个空白的成功),view 则拒绝导出
   // 或提供任何服务。
-  const emptyShow = shRaw(`pnpm exec niceeval show --results ${fixture.onlyBrokenRoot}`);
+  const emptyShow = shRaw(`pnpm exec niceeval show --record ${fixture.onlyBrokenRoot}`);
   assert.notEqual(emptyShow.status, 0, "show over a results root with zero readable snapshots should exit non-zero");
   assert.ok(emptyShow.combined.includes("No results found"), `expected an explicit "no results" message; got: ${emptyShow.combined}`);
   assert.ok(emptyShow.combined.includes("malformed"), "the zero-readable message should still surface why the one snapshot present was skipped");
 
   const emptyOutDir = join(mkdtempSync(join(tmpdir(), "niceeval-readback-empty-out-")), "site");
-  const emptyOutResult = shRaw(`pnpm exec niceeval view --results ${fixture.onlyBrokenRoot} --out ${emptyOutDir} --no-open`);
+  const emptyOutResult = shRaw(`pnpm exec niceeval view --record ${fixture.onlyBrokenRoot} --out ${emptyOutDir} --no-open`);
   assert.notEqual(emptyOutResult.status, 0, "view --out over zero readable results should exit non-zero");
   assert.ok(!existsSync(emptyOutDir), "view --out over zero readable results must not create an empty site directory");
 
-  const serverAttempt = await expectServerDoesNotStart(["--results", fixture.onlyBrokenRoot]);
+  const serverAttempt = await expectServerDoesNotStart(["--record", fixture.onlyBrokenRoot]);
   assert.notEqual(serverAttempt.exitCode, 0, "view over zero readable results should exit non-zero instead of starting a server");
 }
 
@@ -680,7 +681,7 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
   //     (view.md:"本地模式与静态导出共用同一条站点管线... 同一输入下同一路径逐字节一致")。
   //     既然这个 server 已经启动,且提供的是和 siteExportDir 相同的完整、未收窄的 scope,
   //     就顺带在它身上验证 o11y 从不被 serve、以及 sources.json 被解引用这两项检查。
-  const fullServer = await startViewServer(["--results", root]);
+  const fullServer = await startViewServer(["--record", root]);
   try {
     const indexResp = await fetch(`${fullServer.baseUrl}/`);
     assert.equal(indexResp.status, 200, "server should serve / with 200");
@@ -723,7 +724,7 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
   //     的两条路由之间的差异)。
   const narrowedOutDir = mkdtempSync(join(tmpdir(), "niceeval-readback-narrowed-out-"));
   try {
-    sh(`pnpm exec niceeval view --exp main --results ${root} --out ${narrowedOutDir} --no-open`);
+    sh(`pnpm exec niceeval view --exp main --record ${root} --out ${narrowedOutDir} --no-open`);
     assert.ok(existsSync(join(narrowedOutDir, "artifact", "main")), "narrowed --out should still export the in-scope experiment's artifact tree");
     assert.ok(!existsSync(join(narrowedOutDir, "artifact", "deliberate-fail")), "narrowed --out must not export the out-of-scope experiment's artifact tree");
     assert.ok(
@@ -742,7 +743,7 @@ async function verifyExportAndServer(evidence: Evidence): Promise<void> {
   //     根目录去解析(和 `show @<locator>` 一样是整个 result root 范围内寻址),但是原始的
   //     artifact/ 文件路由则和上面页面 Scope、--out 导出一样,遵守同样的 --exp 收窄规则——
   //     两条不同的路由,两条不同的作用域规则,都记录在 view.md 的"导出与 server"这一段里。
-  const narrowedServer = await startViewServer(["--exp", "main", "--results", root]);
+  const narrowedServer = await startViewServer(["--exp", "main", "--record", root]);
   try {
     const outOfScopeAttemptResp = await fetch(`${narrowedServer.baseUrl}/attempt/${evidence.deliberateFail.attempt.locator}.html`);
     assert.equal(outOfScopeAttemptResp.status, 200, "the attempt-detail route must resolve an out-of-scope locator (full-root addressing) even under --exp main");

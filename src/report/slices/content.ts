@@ -1,9 +1,9 @@
 // 指标视图 TableContent 投影:compute *Data → Table 原语可直接消费的形状。
 
-import type { Cell, TableContent, TableContentRow } from "../../definition/cell.ts";
-import type { DeltaData, MatrixData, ScoreboardData, StabilityMatrixCell, StabilityMatrixData } from "../../model/types.ts";
-import type { AttemptLocator } from "../../../record/locator.ts";
-import { resolveLocalizedText } from "../../model/locale.ts";
+import type { Cell, TableContent, TableContentRow } from "../definition/cell.ts";
+import type { DeltaData, MatrixData, ScoreboardData, StabilityMatrixCell, StabilityMatrixData } from "../model/types.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
+import { resolveLocalizedText } from "../model/locale.ts";
 
 export interface MatrixTableContent extends TableContent {
   readonly rowDimension: string;
@@ -30,7 +30,7 @@ export function metricMatrixContent(data: MatrixData): MatrixTableContent {
       };
       for (const columnKey of columnKeys) {
         const cell = byPosition.get(`${rowKey}\0${columnKey}`);
-        cells[columnKey] = cell ? { kind: "measure", measure: cell } : { kind: "notApplicable" };
+        cells[columnKey] = cell ? { kind: "metric", metric: cell } : { kind: "notApplicable" };
       }
       return { key: rowKey, cells };
     }),

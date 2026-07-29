@@ -49,10 +49,10 @@ const content: SourceContent = {
   locator: locator("exp/a/q/0"),
 };
 
-async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "scope" }) {
+async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "sample" }) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,

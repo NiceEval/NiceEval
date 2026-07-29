@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { validateAttemptListData, validateEvalListData, validateExperimentListData } from "./validate.ts";
 
-const validCell = { value: 1, display: "1", samples: 1, total: 1, refs: [] };
+const validCell = { value: 1, basis: "eval", samples: 1, total: 1, refs: [] };
 const validTally = { passed: 1, failed: 0, errored: 0, unreadable: 0 };
 
 const validAttemptItem = {
@@ -37,7 +37,7 @@ describe("validateAttemptListData", () => {
 
   it("[i].examScore 结构错误定位到嵌套 MetricCell 字段", () => {
     const bad = [{ ...validAttemptItem, examScore: { value: 1 } }];
-    expect(validateAttemptListData(bad)).toMatch(/"data\[0\]\.examScore\.display"/);
+    expect(validateAttemptListData(bad)).toMatch(/"data\[0\]\.examScore\.samples"/);
   });
 
   it("[i].verdict 非字符串报错", () => {
@@ -71,8 +71,8 @@ describe("validateEvalListData", () => {
   });
 
   it("[i].durationMs(MetricCell)结构错误报错", () => {
-    const bad = [{ ...valid[0], durationMs: { value: 1, display: "1", samples: 1, total: 1 } }];
-    expect(validateEvalListData(bad)).toMatch(/"data\[0\]\.durationMs\.refs"/);
+    const bad = [{ ...valid[0], durationMs: { value: 1, samples: 1, total: 1 } }];
+    expect(validateEvalListData(bad)).toMatch(/"data\[0\]\.durationMs\.basis"/);
   });
 
   it("[i].attempts[j] 嵌套 AttemptListItem 结构错误定位到深层下标", () => {

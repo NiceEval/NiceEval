@@ -11,13 +11,13 @@ import { HostReportError, loadHostReport, localizeText } from "./host.ts";
 import distBuiltInReport from "../../../dist/report/built-in/index.js";
 
 describe("裸宿主装载内建报告", () => {
-  it("缺省(无 --report)装载 niceeval/report/built-in 的默认导出:同引用,页与其 content 同引用", async () => {
+  it("缺省(无 --report)装载 niceeval/report/built-in 的默认导出:同引用,页 render 同引用", async () => {
     const host = await loadHostReport(process.cwd(), undefined);
-    const builtIn = distBuiltInReport as { pages: readonly { id: string; content: unknown }[] };
+    const builtIn = distBuiltInReport as { pages: readonly { id: string; render: unknown }[] };
     expect(host).toBe(distBuiltInReport);
     expect(host.pages.map((p: { id: string }) => p.id)).toEqual(builtIn.pages.map((p) => p.id));
     for (let i = 0; i < host.pages.length; i++) {
-      expect(host.pages[i]!.content).toBe(builtIn.pages[i]!.content);
+      expect(host.pages[i]!.render).toBe(builtIn.pages[i]!.render);
     }
   });
 

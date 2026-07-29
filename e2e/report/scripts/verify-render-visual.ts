@@ -205,7 +205,7 @@ async function verifyStructuredLayoutNotUaDefault(browser: Browser, evidence: Ev
 
 // ---------------------------------------------------------------------------
 // 2/4:AttemptSource 视觉规范——状态染色与行号位标记
-// (docs/feature/reports/components/sources/attempt-source.md#web-面视觉规范)。
+// (docs/feature/reports/components/primitives/source-view.md#web-面视觉规范)。
 // ---------------------------------------------------------------------------
 
 async function verifyAttemptSourceVisualMarkers(browser: Browser, evidence: Evidence): Promise<void> {

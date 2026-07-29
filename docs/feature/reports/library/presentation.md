@@ -15,7 +15,7 @@
 
 | 分组 | 导出 | 签名 | 用途 |
 |---|---|---|---|
-| 格式化 | `measureDisplay` | `(value: number \| null, unit?: string, override?: MeasureDisplay) => LocalizedText` | 生成 `MeasureCell.display` |
+| 格式化 | `measureDisplay` | `(value: number \| null, unit?: string, override?: MeasureDisplay) => LocalizedText` | 把 `MetricValue` 格式化成展示字符串 |
 | 格式化 | `formatMeasureValue` | `(value: number, unit?: string) => string` | 按 unit 折一个终值 |
 | 格式化 | `formatAxisTick` | `(value: number, step: number, unit?: string) => string` | 轴刻度，精度跟随步长 |
 | 格式化 | `formatCellText` | `(cell: Cell \| null, locale?: ReportLocale) => string` | 把任意 `Cell` 折成一行文本 |
@@ -39,42 +39,39 @@
 
 ## 格式化只发生一次
 
-显示字符串在**计算侧**生成，渲染面照抄：
+显示字符串在**渲染前**由 `measureDisplay()` / `formatMeasureValue()` 单点生成；
+`MetricValue` 只携带 `value`、`unit` 与 `format` 元数据：
 
 ```ts
-interface MeasureCell {
-  /** 聚合后的终值；null = 这一格没有有效样本。排序、轴与下游计算读它。 */
+interface MetricValue {
   value: number | null;
-  /** 已格式化的显示值；渲染面直接输出，不从 value 重算。 */
-  display: LocalizedText;
+  unit?: string;
+  format?: MetricFormat;
   samples: number;
   total: number;
-  refs: AttemptLocator[];
+  basis: "attempt" | "eval" | "run" | "pair";
+  refs: readonly AttemptLocator[];
 }
 ```
 
-- **`display` 必填。** 数据源算完终值就把字符串一起写进格子。
-- **渲染面不重算。** 两个面读同一个 `display`，因此 `show` 与 `view` 上逐字相同。
+- **`value` 是计算终值。** `null` 表示这一格没有有效样本；排序、轴与下游计算读它。
+- **展示字符串不预生成。** 两个面在渲染前各调一次 `measureDisplay(value, unit, format)`，
+  因此 `show` 与 `view` 上逐字相同。
 - **生成面覆盖 `en` 与 `zh-CN`。** 两种语言相同时折成单个字符串，
   其它 locale 按 [`LocalizedText`](shell.md) 的回退链取值。
 
-数据源用 `measureDisplay(value, unit)` 生成它，这是唯一入口：
-
 ```ts
-{
-  value: mean,
-  display: measureDisplay(mean, "tokens"),  // 46500 → "46.5k tokens"
-  samples, total, refs,
-}
+const cell = metricValue({ value: mean, unit: "tokens", samples, total, refs });
+const display = measureDisplay(cell.value, cell.unit, cell.format);
+// 46500 → "46.5k tokens"
 ```
 
-**`String(value)` 不是格式化。** 计算侧写 `String(value)`、`value.toFixed(1)` 或
-`` `${value} tokens` `` 就绕过了 unit 语义：同一个读数在实验行显示 `46.5k tokens`、
-在分组行显示 `46500`，两行还并排放着。组行、汇总行与自定义数据源都走同一个入口。
+**`String(value)` 不是格式化。** 绕过 `measureDisplay` 写 `String(value)`、`value.toFixed(1)` 或
+`` `${value} tokens` `` 会让同一个读数在两处显示不一致。
 
 ### unit 决定格式
 
-`unit` 是读数定义里的量纲声明，也是格式化的唯一开关：
+`unit` 是 Calculation 里的量纲声明，也是格式化的开关：
 
 | `unit` | 折成 | 例子 |
 |---|---|---|
@@ -86,15 +83,22 @@ interface MeasureCell {
 
 千位缩写只在后两支生效。百分比、耗时与金额各有自己的读法，缩写会把它们读坏。
 
-`Measure.display` 覆盖内建格式，签名是 `(value: number, locale: ReportLocale) => string`：
+`MetricFormat` 的 `custom` 分支覆盖内建格式：
 
 ```ts
-export const cacheHitRate = defineMeasure({
-  name: "cacheHitRate",
-  unit: "%",
-  display: (value, locale) => (locale === "zh-CN" ? `命中 ${Math.round(value * 100)}%` : …),
-  value: (attempt) => …,
-});
+export const cacheHitRate = rollup(
+  async (attempt) => …,
+  {
+    unit: "%",
+    format: {
+      kind: "custom",
+      format: (value, locale) =>
+        locale === "zh-CN" ? `命中 ${Math.round(value * 100)}%` : …,
+    },
+    withinEval: mean,
+    acrossEvals: mean,
+  },
+);
 ```
 
 它只格式化同一个终值。覆盖不能改变聚合口径，也不能按 locale 给出不同的数——
@@ -297,7 +301,7 @@ text renderer 的 `ctx.dimension()` 恒返回 label 面：text 面不上 ANSI �
 ## 相关阅读
 
 - [排版原语与自定义组件](layout.md) —— 报告树的节点、原语与 `defineComponent`。
-- [读数与维度](measures.md) —— `Measure`、`unit`、聚合口径与维度声明。
+- [读数与维度](measures.md) —— `Calculation`、`unit`、聚合口径与维度声明。
 - [`Table`](../components/primitives/table.md) —— `Cell` 全集与每种格子的两面渲染契约。
 - [页级呈现分配](../components/README.md#维度呈现分配单位是页) —— 槽位分配规则与容量上界。
 - [主题](theme.md) —— 令牌全集与 CSS 出口。

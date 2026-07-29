@@ -1,6 +1,6 @@
 // 实体列表 Table Content 投影(docs/feature/reports/components/entity-lists/)。
 // Eval 分组层在这里从扁平 evalRows + missingEvalIds 投影成 TableContent.subRows
-// (docs/feature/reports/components/sources/entity-experiments.md「Eval 分组层」)。
+// (docs/feature/reports/library.md「Eval 分组层」)。
 
 import type { Cell, TableContent, TableContentRow } from "../../definition/cell.ts";
 import type {
@@ -8,16 +8,16 @@ import type {
   EvalListItem,
   ExperimentListEvalRow,
   ExperimentListItem,
-  MeasureCell,
 } from "../../model/types.ts";
-import { experimentListScoringComposition, measureDisplay } from "../../model/format.ts";
+import type { MetricValue } from "../../model/calculation.ts";
+import { experimentListScoringComposition } from "../../model/format.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
 
 /** 组内零样本读数格的结构化原因码;renderer 经 missingText 映射文案。 */
 const GROUP_NO_SAMPLES = "noSamples";
 
-function measureCell(value: MeasureCell): Cell {
-  return { kind: "measure", measure: value };
+function measureCell(value: MetricValue): Cell {
+  return { kind: "metric", metric: value };
 }
 
 function verdictCell(counts: ExperimentListItem["evalVerdicts"]): Cell {
@@ -31,16 +31,16 @@ function textCell(text: string, detail?: string): Cell {
   return detail ? { kind: "text", text, detail } : { kind: "text", text };
 }
 
-function attemptMeasureCell(
+function attemptMetricValue(
   value: number | null,
   unit: "ms" | "$",
   locator: AttemptLocator,
 ): Cell {
   return {
-    kind: "measure",
-    measure: {
+    kind: "metric",
+    metric: {
       value,
-      display: measureDisplay(value, unit),
+      basis: "eval",
       samples: value === null ? 0 : 1,
       total: 1,
       refs: [locator],
@@ -59,9 +59,9 @@ function attemptRow(item: AttemptListItem, scoring: "pass" | "points"): TableCon
       entity: { kind: "locator", locator: item.locator, staleSinceMs: item.historical ? 1 : undefined },
       verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
       result: summary,
-      durationMs: attemptMeasureCell(item.durationMs, "ms", item.locator),
-      costUSD: attemptMeasureCell(item.costUSD, "$", item.locator),
-      ...(scoring === "points" ? { score: { kind: "measure", measure: item.totalScore } } : {}),
+      durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
+      costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
+      ...(scoring === "points" ? { score: { kind: "metric", metric: item.totalScore } } : {}),
     },
   };
 }
@@ -81,40 +81,41 @@ function mean(values: readonly number[]): number {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-function mergeRefs(cells: readonly MeasureCell[]): AttemptLocator[] {
+function mergeRefs(cells: readonly MetricValue[]): AttemptLocator[] {
   return [...new Set(cells.flatMap((cell) => cell.refs))].sort();
 }
 
-/** acrossEvals mean:把各题已算好的 MeasureCell 再折一层。 */
-function meanCells(cells: readonly MeasureCell[], unit?: string): MeasureCell {
+/** acrossEvals mean:把各题已算好的 MetricValue 再折一层。 */
+function meanCells(cells: readonly MetricValue[], unit?: string): MetricValue {
   const total = cells.reduce((sum, cell) => sum + cell.total, 0);
   const samples = cells.reduce((sum, cell) => sum + cell.samples, 0);
   const values = cells.map((cell) => cell.value).filter((v): v is number => v !== null);
   const refs = mergeRefs(cells);
   if (values.length === 0) {
-    return { value: null, display: measureDisplay(null), samples: 0, total, refs };
+    return { value: null, basis: "eval", samples: 0, total, refs };
   }
   const value = mean(values);
   return {
     value,
-    display: measureDisplay(value, unit),
+    basis: "eval",
     samples,
     total,
     refs,
+    ...(unit !== undefined ? { unit } : {}),
   };
 }
 
 /** acrossEvals sum(totalScore)。 */
-function sumCells(cells: readonly MeasureCell[]): MeasureCell {
+function sumCells(cells: readonly MetricValue[]): MetricValue {
   const total = cells.reduce((sum, cell) => sum + cell.total, 0);
   const samples = cells.reduce((sum, cell) => sum + cell.samples, 0);
   const values = cells.map((cell) => cell.value).filter((v): v is number => v !== null);
   const refs = mergeRefs(cells);
   if (values.length === 0) {
-    return { value: null, display: measureDisplay(null), samples: 0, total, refs };
+    return { value: null, basis: "eval", samples: 0, total, refs };
   }
   const value = values.reduce((a, b) => a + b, 0);
-  return { value, display: measureDisplay(value), samples, total, refs };
+  return { value, basis: "eval", samples, total, refs };
 }
 
 /**
@@ -126,7 +127,7 @@ function sumCells(cells: readonly MeasureCell[]): MeasureCell {
  * 规则一改,组行会与 experiment 行静默漂移;更干净的做法是在 compute.ts 用
  * computeCell 算好组级 cell 再投影。
  */
-function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MeasureCell {
+function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MetricValue {
   const evalMeans: number[] = [];
   let samples = 0;
   let total = 0;
@@ -143,12 +144,15 @@ function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MeasureCell 
     if (scores.length > 0) evalMeans.push(mean(scores));
   }
   if (evalMeans.length === 0) {
-    return { value: null, display: measureDisplay(null), samples: 0, total, refs: [...new Set(refs)].sort() };
+    return { value: null, unit: "%", better: "higher", bounds: { min: 0, max: 1 }, basis: "eval", samples: 0, total, refs: [...new Set(refs)].sort() };
   }
   const value = mean(evalMeans);
   return {
     value,
-    display: measureDisplay(value, "%"),
+    unit: "%",
+    better: "higher",
+    bounds: { min: 0, max: 1 },
+    basis: "eval",
     samples,
     total,
     refs: [...new Set(refs)].sort(),
@@ -172,7 +176,7 @@ function groupEntityDetail(evals: number, knownEvals: number, attempts: number):
 }
 
 /** 组内零样本读数格是 missing(本该有却没跑到),不是 —(对这一行没有意义)。 */
-function groupMeasureCell(evalRows: readonly ExperimentListEvalRow[], cell: MeasureCell): Cell {
+function groupMetricValue(evalRows: readonly ExperimentListEvalRow[], cell: MetricValue): Cell {
   if (evalRows.length === 0) return { kind: "missing", code: GROUP_NO_SAMPLES };
   return measureCell(cell);
 }
@@ -278,11 +282,11 @@ function groupTableRow(
       entity: textCell(segment, groupEntityDetail(evals, knownEvals, attempts)),
       model: { kind: "notApplicable" },
       agent: { kind: "notApplicable" },
-      durationMs: groupMeasureCell(evalRows, durationMs),
-      passRate: composition !== "points" ? groupMeasureCell(evalRows, passRate) : { kind: "notApplicable" },
-      totalScore: composition !== "pass" ? groupMeasureCell(evalRows, totalScore) : { kind: "notApplicable" },
-      tokens: groupMeasureCell(evalRows, tokens),
-      costUSD: groupMeasureCell(evalRows, costUSD),
+      durationMs: groupMetricValue(evalRows, durationMs),
+      passRate: composition !== "points" ? groupMetricValue(evalRows, passRate) : { kind: "notApplicable" },
+      totalScore: composition !== "pass" ? groupMetricValue(evalRows, totalScore) : { kind: "notApplicable" },
+      tokens: groupMetricValue(evalRows, tokens),
+      costUSD: groupMetricValue(evalRows, costUSD),
       record: evalRows.length === 0 ? { kind: "missing", code: GROUP_NO_SAMPLES } : verdictCell(evalVerdicts),
     },
     subRows: childRows,
@@ -459,9 +463,9 @@ export function attemptListContent(items: readonly AttemptListItem[]): TableCont
           item.failureSummary !== null
             ? { kind: "summary", text: item.failureSummary, more: item.moreFailures }
             : { kind: "text", text: "—" },
-        durationMs: attemptMeasureCell(item.durationMs, "ms", item.locator),
-        costUSD: attemptMeasureCell(item.costUSD, "$", item.locator),
-        score: { kind: "measure", measure: item.totalScore },
+        durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
+        costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
+        score: { kind: "metric", metric: item.totalScore },
       },
     })),
   };

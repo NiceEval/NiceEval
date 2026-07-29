@@ -19,7 +19,6 @@ import type { Record } from "../../record/types.ts";
 import {
   assistantTurns,
   costUSD,
-  defineMeasure,
   durationMs,
   endToEndPassRate,
   examScore,
@@ -41,7 +40,7 @@ import {
   metricTableData,
   scoreboardData,
   stabilityMatrixData,
-} from "./metric-views/compute.ts";
+} from "../slices/compute.ts";
 import {
   validateDeltaData,
   validateLineData,
@@ -50,11 +49,12 @@ import {
   validateScoreboardData,
   validateStabilityMatrixData,
   validateTableData,
-} from "./metric-views/validate.ts";
+} from "../slices/validate.ts";
 import { scopeSummaryData } from "./summaries/compute.ts";
 import { validateSampleSummaryContent } from "./summaries/validate.ts";
 import { evalGroupOf } from "../model/aggregate.ts";
 import { scoringComposition } from "../model/scoring.ts";
+import type { AttemptMetric } from "../model/types.ts";
 
 // ───────────────────────── fake 数据(按 results 读取契约造)─────────────────────────
 
@@ -177,7 +177,8 @@ describe("两级聚合口径", () => {
     expect(data.endToEndPassRate.value).not.toBeCloseTo(3 / 5);
     expect(data.endToEndPassRate.value).not.toBeCloseTo(5 / 6);
     expect(data.endToEndPassRate.value).not.toBeCloseTo(2 / 3);
-    expect(data.endToEndPassRate.display).toBe("55.6%");
+    expect(data.endToEndPassRate.unit).toBe("%");
+    expect(data.endToEndPassRate.value).toBeCloseTo(5 / 9);
     expect(data.endToEndPassRate.samples).toBe(5);
     expect(data.endToEndPassRate.total).toBe(5);
   });
@@ -224,10 +225,10 @@ describe("两级聚合口径", () => {
       ["b", 0],
       ["c", 1],
     ]);
-    const metric = defineMeasure({
+    const metric: AttemptMetric = {
       name: "tri",
       value: (attempt) => values.get(attempt.evalId) ?? null,
-    });
+    };
     const s = snap({ experimentId: "exp/tri", results: [res("a", "passed"), res("b", "passed"), res("c", "passed")] });
     const table = await metricTableData([s], { rows: "agent", columns: [metric] });
     expect(table.rows[0]!.cells.tri!.value).toBeCloseTo(0.5);
@@ -253,13 +254,13 @@ describe("两级聚合口径", () => {
         res("c", "passed", { durationMs: 500 }),
       ],
     });
-    const fastest = defineMeasure({
+    const fastest: AttemptMetric = {
       name: "fastest-pass",
       where: (attempt) => attempt.result.verdict === "passed",
       value: (attempt) => attempt.result.durationMs,
       perEval: "min",
       acrossEvals: "mean",
-    });
+    };
     const table = await metricTableData([s], { rows: "agent", columns: [fastest] });
     const cell = table.rows[0]!.cells["fastest-pass"]!;
     // b 被 where 排除;a 题内 min = 100,c = 500 → mean 300(双 mean 会是 (200+500)/2=350,可区分)
@@ -267,11 +268,11 @@ describe("两级聚合口径", () => {
     expect(cell.samples).toBe(3);
     expect(cell.total).toBe(4);
 
-    const allExcluded = defineMeasure({
+    const allExcluded: AttemptMetric = {
       name: "none",
       where: () => false,
       value: () => 1,
-    });
+    };
     const empty = await metricTableData([s], { rows: "agent", columns: [allExcluded] });
     expect(empty.rows[0]!.cells.none!.value).toBeNull();
   });
@@ -417,24 +418,29 @@ describe("MetricCell 诚实契约", () => {
     });
     const data = await scopeSummaryData([s]);
     expect(data.endToEndPassRate.value).toBeCloseTo(5 / 6);
-    expect(data.endToEndPassRate.display).toBe("83.3%");
+    expect(data.endToEndPassRate.unit).toBe("%");
 
-    const localized = defineMeasure({
+    const localized: AttemptMetric = {
       name: "loc",
       value: () => 1,
       display: (value, locale) => (locale === "zh-CN" ? `${value} 个` : `${value} item`),
-    });
+    };
     const table = await metricTableData([s], { rows: "agent", columns: [localized] });
-    expect(table.rows[0]!.cells.loc!.display).toEqual({ en: "1 item", "zh-CN": "1 个" });
+    const loc = table.rows[0]!.cells.loc!;
+    expect(loc.format && typeof loc.format === "object" && loc.format.kind === "custom").toBe(true);
+    if (loc.format && typeof loc.format === "object" && loc.format.kind === "custom") {
+      expect(loc.format.format(1, "en")).toBe("1 item");
+      expect(loc.format.format(1, "zh-CN")).toBe("1 个");
+    }
   });
 
   it("value() 抛错时整个计算失败,错误带 metric name 与 attempt locator,不伪装成测不了", async () => {
-    const bad = defineMeasure({
+    const bad: AttemptMetric = {
       name: "explode",
       value: () => {
         throw new Error("boom");
       },
-    });
+    };
     const s = snap({ experimentId: "exp/bad", results: [res("a", "passed")] });
     await expect(metricTableData([s], { rows: "agent", columns: [bad] })).rejects.toThrow(/explode.*boom/s);
   });
@@ -444,10 +450,10 @@ describe("MetricCell 诚实契约", () => {
 
 describe("scoreboardData", () => {
   it("固定题集分母:未跑题按 0 分计入 notRun;跑了但 null 的题计入 unscorable,两个计数不合并", async () => {
-    const nullScore = defineMeasure({
+    const nullScore: AttemptMetric = {
       name: "maybe-score",
       value: (attempt) => (attempt.evalId === "s/unscorable" ? null : attempt.result.verdict === "passed" ? 1 : 0),
-    });
+    };
     const s = snap({
       experimentId: "exp/board",
       results: [res("s/ran", "passed"), res("s/unscorable", "passed")],
@@ -501,7 +507,7 @@ describe("scoreboardData", () => {
     ).rejects.toThrow(/positive finite/);
     await expect(scoreboardData([s], { rows: "agent", questions: ["a"], fullMarks: 0 })).rejects.toThrow(/fullMarks/);
     await expect(
-      scoreboardData([s], { rows: "agent", questions: ["a"], score: defineMeasure({ name: "big", value: () => 2 }) }),
+      scoreboardData([s], { rows: "agent", questions: ["a"], score: { name: "big", value: () => 2 } }),
     ).rejects.toThrow(/\[0, 1\]/);
     await expect(
       scoreboardData([s], { rows: "agent", questions: ["a"], subject: () => "" }),
@@ -663,7 +669,7 @@ describe("实体列表 data", () => {
 
   it("占位行数据:missingEvalIds 来自 scope.coverage,不参与 evals/attempts 计数或任何指标聚合", async () => {
     const s = snap({ experimentId: "exp/gap", results: [res("a", "passed"), res("b", "failed")] });
-    const scope = scopeOf([s], [], [{ experimentId: "exp/gap", knownEvalIds: ["a", "b", "c"], missingEvalIds: ["c"] }]);
+    const scope = scopeOf([s], [], [{ experimentId: "exp/gap", run: s, knownEvalIds: ["a", "b", "c"], missingEvalIds: ["c"] }]);
     const items = await experimentListData(scope);
     expect(items[0]!.missingEvalIds).toEqual(["c"]);
     // 占位行(c)不冒充有 attempt 的题:evals/attempts 分母仍是 2 道有 attempt 的题,不是 3。
@@ -673,10 +679,18 @@ describe("实体列表 data", () => {
   });
 
   it("coverage-only 实验也产生覆盖占位行；--fresh 清空全部 attempt 时缺口不再静默消失", async () => {
-    const scope = scopeOf([], [], [{ experimentId: "exp/fresh", knownEvalIds: ["a", "b"], missingEvalIds: ["a", "b"] }]);
+    const anchor = snap({ experimentId: "exp/fresh", results: [] });
+    const scope = scopeOf([], [], [{ experimentId: "exp/fresh", run: anchor, knownEvalIds: ["a", "b"], missingEvalIds: ["a", "b"] }]);
     const items = await experimentListData(scope);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ experimentId: "exp/fresh", missingEvalIds: ["a", "b"], evals: 0, attempts: 0, evalRows: [] });
+    expect(items[0]).toMatchObject({
+      experimentId: "exp/fresh",
+      agent: "agent-x",
+      missingEvalIds: ["a", "b"],
+      evals: 0,
+      attempts: 0,
+      evalRows: [],
+    });
   });
 
   // ─────── 计分制字段:scoring 定义期投影 / totalScore 的两级聚合方向 / 预排 ───────
@@ -980,7 +994,7 @@ describe("metricScatterData / metricMatrixData", () => {
     await expect(
       metricTableData([hi], { rows: "experiment", columns: [endToEndPassRate], sort: durationMs }),
     ).rejects.toThrow(/measures/);
-    const noBetter = defineMeasure({ name: "plain", value: () => 1 });
+    const noBetter: AttemptMetric = { name: "plain", value: () => 1 };
     await expect(
       metricTableData([hi], { rows: "experiment", columns: [noBetter], sort: noBetter }),
     ).rejects.toThrow(/better/);
@@ -1045,7 +1059,7 @@ describe("metricLineData", () => {
 });
 
 // deltaTableData(对照矩阵)与 stabilityMatrixData(稳定性矩阵)的测试住
-// src/report/components/metric-views/delta-table.test.ts 与 stability-matrix.test.ts
+// src/report/slices/delta-table.test.ts 与 stability-matrix.test.ts
 // (专用组件测试文件,不挤共享 compute.test.ts)。
 
 // ───────────────────────── examScore ─────────────────────────
@@ -1151,15 +1165,19 @@ describe("totalScore", () => {
     expect(table.rows[0]!.cells[totalScore.name]!.value).toBe(8);
   });
 
-  it("从公开导出面(niceeval/report 顶层)可以拿到同一个 totalScore 实例,构建自定义报告不需要下钻到 model/metrics.ts", async () => {
-    const { totalScore: totalScoreFromBarrel } = await import("../index.ts");
-    expect(totalScoreFromBarrel).toBe(totalScore); // 同引用:barrel 不复制一份新指标
+  it("从公开导出面(niceeval/report 顶层)可以拿到同一个 totalScore Calculation,构建自定义报告不需要下钻内部模块", async () => {
+    const { totalScore: totalScoreFromBarrel, aggregate, experiment } = await import("../index.ts");
+    const { totalScore: totalScoreCalc } = await import("../model/calculation.ts");
+    expect(totalScoreFromBarrel).toBe(totalScoreCalc); // 同引用:barrel 不复制一份新计算
     const s = snap({
       experimentId: "score/barrel",
       results: [res("checkpoints", "passed", { scoring: "points", assertions: [pointsAssertion("a", 4)] })],
     });
-    const table = await metricTableData([s], { rows: "eval", columns: [totalScoreFromBarrel] });
-    expect(table.rows.find((r) => r.key === "checkpoints")!.cells[totalScoreFromBarrel.name]!.value).toBe(4);
+    const rows = await aggregate(scopeOf([s]), {
+      by: { experiment },
+      values: { totalScore: totalScoreFromBarrel },
+    });
+    expect(rows[0]!.totalScore.value).toBe(4);
   });
 });
 
@@ -1246,7 +1264,7 @@ describe("validate*Data 接受真实计算产物(不是只接受手写 literal)"
   const a = snap({ experimentId: "compare/a", results: [res("q1", "passed"), res("q2", "failed")] });
   const b = snap({ experimentId: "compare/b", results: [res("q1", "failed"), res("q2", "passed")] });
   const scope = scopeOf([a, b]);
-  const noLabelMetric = defineMeasure({ name: "custom-no-label", value: (attempt) => (attempt.result.verdict === "passed" ? 1 : 0) });
+  const noLabelMetric: AttemptMetric = { name: "custom-no-label", value: (attempt) => (attempt.result.verdict === "passed" ? 1 : 0) };
 
   it("metricTableData:含未声明 label 的自定义指标", async () => {
     const table = await metricTableData(scope, { rows: "agent", columns: [costUSD, noLabelMetric] });

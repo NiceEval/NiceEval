@@ -20,7 +20,7 @@ artifact 懒加载与 text / web 双面一致。
 page 清单、id、标题、input、导航资格与 Attempt page 唯一性
 在装载期可见，不执行任何 page render。
 只有被请求的 page 实例会求值；它返回的树中已经没有
-待执行的数据声明、Source 或 Promise。
+待执行的数据声明或 Promise。
 text 与 web renderer 消费该 page 实例的同一棵值树。
 
 ```ts
@@ -28,14 +28,13 @@ async function renderPage(
   definition: ReportDefinition,
   pageId: string,
   input: Sample | AttemptEvidence,
-  external: Readonly<unknown>,
 ): Promise<ReportNode> {
   const page = definition.pages.find((candidate) =>
     candidate.id === pageId
   );
   if (!page) throw new UnknownPageError(pageId);
   assertPageInput(page, input);
-  const tree = await page.render(input, external);
+  const tree = await page.render(input);
   validateRenderedPage(tree);
   return tree;
 }
@@ -55,7 +54,8 @@ server 因此在请求路径里就知道该求值哪张 page 实例。
 静态导出仍保持全有或全无。
 
 `show` 与 `view` 可以分别调用同一 page render。
-相同 Sample、外部快照与 NiceEval 版本必须产生字节稳定结果。
+相同 Sample、报告模块（含其 import 图）与 NiceEval 版本
+必须产生字节稳定结果。
 
 ## Sample 是范围与正确性的输入
 
@@ -102,7 +102,7 @@ const rows = await toTraceNodes(sample);
 ```
 
 作者直接 `await` 结果。
-框架不把函数包装成 Source，不注册名字，也不推迟到组件解析阶段执行。
+框架不注册惰性查询对象，也不推迟到组件解析阶段执行。
 
 每个函数可以独立：
 
@@ -185,9 +185,13 @@ aggregate(sample, {
 Calculation 品牌不区分官方与用户，只阻止手写一个漏掉 coverage 和 refs 的同形函数。
 它存在于不可序列化的函数值上，只在 `aggregate()` 执行前校验，
 不会进入 Result、fixture、ShowJson 或 React props。
+
 `rollup()` 自动建立题级分组、过滤 null、计算 samples / total，
 把覆盖范围内的全部 Attempt locator 写入 refs，
-并把 MetricValue basis 固定为 `"attempt"`。
+并把 MetricValue basis 固定为 `"eval"`。
+终值是跨题级单元（Experiment × Eval）的统计量，
+samples / total 因此数单元；
+口径与算例见 [Library](library.md#samples--total-的口径)。
 
 Reducer 同样是有稳定身份的公开函数值。
 内建 `mean`、`sum`、`min`、`max` 与 `percentile(p)` 是纯函数；
@@ -219,6 +223,8 @@ interface MetricValue {
 ```
 
 `MetricValue` 是一个完成计算的结果，不是计算声明。
+`basis` 命名 samples / total 的计数单位；
+`refs` 恒为 Attempt locator——它是证据链，不承担分母。
 表格、图表与摘要读取同一对象：
 
 ```tsx
@@ -245,7 +251,9 @@ EvidenceRow 不带 symbol 品牌；组件在运行时结构校验 refs 与 Metri
 Sample 派生图表只接受 EvidenceRow points；
 纯外部 JSON 标量序列经图表的显式 `external` 声明绘图，
 没有 Attempt 下钻。
-因此领域函数离开核心目录不等于离开证据契约。
+领域函数离开核心目录仍走同一条运行时校验；
+退出证据契约的唯一出口是显式的 `external`，
+NiceEval 不验证 external 行的来源，只保证这个退出可审计。
 
 ## 组件不执行计算
 
@@ -365,7 +373,6 @@ interface AttemptPage {
   navigation: false;
   render: (
     evidence: AttemptEvidence,
-    external: Readonly<unknown>,
   ) => ReportNode | Promise<ReportNode>;
 }
 ```
@@ -375,36 +382,32 @@ interface AttemptPage {
 这保留现有“Attempt 详情是一张参数化 page”的寻址、静态导出和无 JS 深链契约，
 不重新增加 `attempt`、modal 或其它旁路内容槽。
 
-## 外部冻结值
+## 外部业务数据经 import 冻结
 
-报告要 join 外部业务快照时，快照作为第二个普通参数：
-
-```ts
-function defineReport<External>(
-  render: PageRender<Sample, External>,
-): ReportDefinition;
-```
+报告要 join 外部业务快照时，快照是报告模块 import 的普通冻结值：
 
 ```tsx
-export default defineReport<BudgetSnapshot>(
-  async (sample, budgets) => {
-    const performance = await aggregate(sample, {
-      by: { agent },
-      values: { passRate, costUSD },
-    });
+import { budgets } from "./budget-snapshot";
 
-    const rows = joinBudgets(performance, budgets);
-    return <Table rows={rows} />;
-  },
-);
+export default defineReport(async (sample) => {
+  const performance = await aggregate(sample, {
+    by: { agent },
+    values: { passRate, costUSD },
+  });
+
+  const rows = joinBudgets(performance, budgets);
+  return <Table rows={rows} />;
+});
 ```
 
-外部值仍由 `--data` 或项目配置在运行前冻结。
-page render 不能请求网络、读取环境变量、使用时钟或随机数。
-
-第二参数固定为 External snapshot 入口。
-未配置外部快照时宿主传入冻结空值；
+快照模块在运行前由脚本或人写盘，随报告一起进版本库。
+page render 不能请求网络、读取环境变量、使用时钟或随机数；
+新数据只能通过重新生成快照文件进入报告。
+快照文件在报告的 import 图内，
+缓存身份、watch 重建与导出可复现性因此不需要第二套规则。
 join 仍是普通函数，不建立 external data 查询协议。
+宿主没有外部数据注入通道：
+报告的宿主输入只有 Sample 或 AttemptEvidence。
 
 ## React 边界
 
@@ -424,7 +427,7 @@ const points = await aggregate(sample, {
 ```
 
 `niceeval/report/react` 只导出纯 Web 组件和结果类型。
-它不需要 Source、resolve、Sample、Record 或 page 运行时。
+它不读取 Sample、Record，也不提供 page 运行时。
 
 ## show 切片与 `--json` 的锚点
 
@@ -497,7 +500,7 @@ const ConfusionMatrix = defineRenderer({
 `defineRenderer` 放在 `niceeval/report/extension`。
 它接收已经计算好的普通值，不读取 Sample 或 Record。
 
-自定义计算不需要 `defineSource()`：
+自定义计算写普通 TypeScript 函数：
 
 ```ts
 async function computeConfusionMatrix(
@@ -549,7 +552,7 @@ const ConfusionMatrix = defineRenderer({
 
 ```text
 reports/quality.tsx:12
-aggregate() 的分组 "vendor" 在 Attempt @... 上抛错。
+aggregate() 的分组 "vendor" 在 production/codex × security/idor 上抛错。
 原因：Unknown model vendor
 ```
 

@@ -5,9 +5,9 @@
 // 缺失不是三个 0、行按历史最高通过率升序。
 
 import { describe, expect, it } from "vitest";
-import type { EvalResult, Verdict } from "../../../types.ts";
-import type { AttemptHandle, Run } from "../../../record/index.ts";
-import { attemptHandleOf, scopeOf } from "../scope.harness.ts";
+import type { EvalResult, Verdict } from "../../types.ts";
+import type { AttemptHandle, Run } from "../../record/index.ts";
+import { attemptHandleOf, scopeOf } from "../components/scope.harness.ts";
 import { stabilityMatrixData } from "./compute.ts";
 import { validateStabilityMatrixData } from "./validate.ts";
 

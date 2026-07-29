@@ -52,12 +52,12 @@ const fixture: readonly CalloutGroup[] = [
 async function resolve(node: React.ReactNode) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
     report: buildReportMeta(definition, scope),
-    page: { id: "main", input: "scope" },
+    page: { id: "main", input: "sample" },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
@@ -73,7 +73,7 @@ const webCtx: WebContext = {
 
 describe("Callouts", () => {
   it("两面投影:汇总、组头、徽标、命令与逐条 message", async () => {
-    const tree = await resolve(<Callouts data={fixture} />);
+    const tree = await resolve(<Callouts items={fixture} />);
     const text = renderNodeToText(tree, createTextContext({ width: 80, locale: "en" }));
     expect(text).toContain("2 groups · 3 errors");
     expect(text).toContain("! 2 experiments with warnings — stale");
@@ -95,7 +95,7 @@ describe("Callouts", () => {
   });
 
   it("空集两面零输出", async () => {
-    const tree = await resolve(<Callouts data={[]} />);
+    const tree = await resolve(<Callouts items={[]} />);
     expect(renderNodeToText(tree, createTextContext({ width: 80 }))).toBe("");
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toBe("");
@@ -112,7 +112,7 @@ describe("Callouts", () => {
         ],
       },
     ];
-    const tree = await resolve(<Callouts data={groups} />);
+    const tree = await resolve(<Callouts items={groups} />);
     const text = renderNodeToText(tree, createTextContext({ width: 80, locale: "en" }));
     expect(text).not.toContain("→ niceeval group");
     expect(text).toContain("→ niceeval a");
@@ -136,7 +136,7 @@ describe("Callouts", () => {
         ],
       },
     ];
-    const tree = await resolve(<Callouts data={groups} />);
+    const tree = await resolve(<Callouts items={groups} />);
     const text = renderNodeToText(tree, createTextContext({ width: 80, locale: "en" }));
     expect(text).not.toContain("Shell");
     expect(text).toContain("Inner run");

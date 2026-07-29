@@ -337,8 +337,8 @@ async function renderCompareSlice(
 ): Promise<string> {
   const [{ Table }, { deltaTableData }, { deltaTableContent }] = await Promise.all([
     import("../../dist/report/definition/primitives.js"),
-    import("../../dist/report/components/metric-views/compute.js"),
-    import("../../dist/report/components/metric-views/content.js"),
+    import("../report/slices/compute.ts"),
+    import("../report/slices/content.ts"),
   ]);
   const data = await deltaTableData(selection, { by: "experiment", conditions });
   const report = await loadHostReport(cwd, undefined);
@@ -346,11 +346,11 @@ async function renderCompareSlice(
   const page: ReportPage = {
     id: "compare",
     title: "Compare",
-    content: { type: Table, props: { data: deltaTableContent(data) } },
+    render: () => ({ type: Table, props: { data: deltaTableContent(data) } }),
   };
   const table = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta, page: { id: "compare", input: "scope" }, dimensionPins: report.dimensionPins },
+    { scope: selection, results, report: meta, page: { id: "compare", input: "sample" }, dimensionPins: report.dimensionPins },
     { width: io.width, locale: io.locale, panelMode: io.panelMode },
   );
   const head = `compare · ${data.conditions.length} conditions · paired by eval id · baseline ${data.conditions[0]}`;
@@ -377,8 +377,8 @@ async function renderStatsSlice(
   const runs = experiments.flatMap((exp) => exp.runs);
   const [{ Table }, { stabilityMatrixData }, { stabilityMatrixContent }] = await Promise.all([
     import("../../dist/report/definition/primitives.js"),
-    import("../../dist/report/components/metric-views/compute.js"),
-    import("../../dist/report/components/metric-views/content.js"),
+    import("../report/slices/compute.ts"),
+    import("../report/slices/content.ts"),
   ]);
   const data = await stabilityMatrixData(runs, {
     by: "experiment",
@@ -392,11 +392,11 @@ async function renderStatsSlice(
   const page: ReportPage = {
     id: "stats",
     title: "Stability",
-    content: { type: Table, props: { data: stabilityMatrixContent(data) } },
+    render: () => ({ type: Table, props: { data: stabilityMatrixContent(data) } }),
   };
   const table = await renderHostPageText(
     page,
-    { scope, results, report: meta, page: { id: "stats", input: "scope" }, dimensionPins: report.dimensionPins },
+    { scope, results, report: meta, page: { id: "stats", input: "sample" }, dimensionPins: report.dimensionPins },
     { width: io.width, locale: io.locale, panelMode: io.panelMode },
   );
   const head =
@@ -563,7 +563,7 @@ async function renderUsageCompareSlice(
   selection: Sample,
   conditions: readonly [string, string, ...string[]],
 ): Promise<string> {
-  const { deltaTableData } = await import("../../dist/report/components/metric-views/compute.js");
+  const { deltaTableData } = await import("../report/slices/compute.ts");
   const data: DeltaData = await deltaTableData(selection, { by: "experiment", conditions });
   const head = `usage · ${conditions.length} conditions · paired by eval id · baseline ${conditions[0]}`;
   if (data.rows.length === 0) return `${head} · no attempts matched this range`;
@@ -933,7 +933,7 @@ async function show(
     if (flags.json) {
       const experiments = filterExperiments(results.experiments, experimentFilter);
       const runs = experiments.flatMap((exp) => exp.runs);
-      const { stabilityMatrixData } = await import("../../dist/report/components/metric-views/compute.js");
+      const { stabilityMatrixData } = await import("../report/slices/compute.ts");
       const data = await stabilityMatrixData(runs, {
         by: "experiment",
         ...(patterns.length > 0 ? { evals: [...patterns] } : {}),
@@ -1071,7 +1071,7 @@ async function show(
   if (flags.report === undefined && expSelectors.length >= 2) {
     const conditions = resolveCompareConditions(experimentIds, expSelectors);
     if (flags.json) {
-      const { deltaTableData } = await import("../../dist/report/components/metric-views/compute.js");
+      const { deltaTableData } = await import("../report/slices/compute.ts");
       const data = await deltaTableData(selection, { by: "experiment", conditions });
       io.out(
         renderShowJson({
@@ -1156,7 +1156,7 @@ async function show(
   const meta = await buildHostReportMeta(report, selection);
   const text = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta, page: { id: page.id, input: "scope" }, dimensionPins: report.dimensionPins },
+    { scope: selection, results, report: meta, page: { id: page.id, input: "sample" }, dimensionPins: report.dimensionPins },
     {
       width: io.width,
       locale,

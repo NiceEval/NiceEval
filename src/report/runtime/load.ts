@@ -84,7 +84,7 @@ export async function loadReportFile(
   if (!isReportDefinition(mod.default)) {
     throw new ReportLoadError(
       `${path} does not default-export a report. Export the product of defineReport(...) from "niceeval/report" as the default export — ` +
-        `a tree (defineReport(<ExperimentComparison />)) or a config object (defineReport({ title, content | pages, … })).`,
+        `a page render function (defineReport((sample) => <Page>…</Page>)) or a config object (defineReport({ title?, pages: [{ id, title, render }], … })).`,
     );
   }
   return mod.default;

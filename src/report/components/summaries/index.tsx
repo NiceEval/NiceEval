@@ -1,17 +1,26 @@
-// 概览组合件:SampleSummary / SampleOverview 用 defineComposition + 原语 + sources。
+// 概览组合件:SampleSummary / SampleOverview 用 defineComponent(compose) + 公开计算。
 
 import type { Sample, Run } from "../../../record/types.ts";
-import { defineComposition } from "../../source.ts";
-import { Chart, Col, Grid, Series, Stat, Table, Text } from "../../definition/primitives.tsx";
-import type { Measure, SeriesInput } from "../../model/types.ts";
+import { defineComponent } from "../../definition/tree.ts";
+import { Col, Grid, Scatter, Stat, Table, Text } from "../../definition/primitives.tsx";
+import type { SeriesInput } from "../../model/types.ts";
 import { resolveInput, seriesName } from "../../model/aggregate.ts";
 import { label } from "../../model/flag.ts";
-import { costUSD, passRate, totalScore } from "../../model/metrics.ts";
+import {
+  agent,
+  aggregate,
+  costUSD,
+  experiment,
+  model,
+  passRate,
+  totalScore,
+  type GroupFunction,
+} from "../../model/calculation.ts";
 import { scoringComposition } from "../../model/scoring.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
 import { formatReportDateTime, formatReportDateTimeRange } from "../../model/format.ts";
 import type { ChromeProps } from "../shared.ts";
-import { sources } from "../../sources.ts";
+import { toSummaryItems } from "../../model/conversions.ts";
 
 export { validateSampleSummaryContent } from "./validate.ts";
 export { StabilityOverview, type StabilityOverviewProps } from "./stability-overview.tsx";
@@ -21,9 +30,9 @@ export type SampleSummaryProps = ChromeProps & {
   votes?: "eval" | "attempt";
 };
 
-export const SampleSummary = defineComposition<SampleSummaryProps, Sample>(async (props, ctx) => {
-  const input: Sample = props.input ?? ctx.input;
-  const snapshot = await ctx.resolve(sources.sample.snapshot, input);
+export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, ctx) => {
+  const input: Sample = props.input ?? ctx.scope;
+  const snapshot = await toSummaryItems(input);
   const locale = props.locale ?? DEFAULT_REPORT_LOCALE;
   const votes = props.votes ?? "eval";
   const tally = votes === "attempt" ? snapshot.attemptVerdicts : snapshot.evalVerdicts;
@@ -36,10 +45,10 @@ export const SampleSummary = defineComposition<SampleSummaryProps, Sample>(async
     <Col className={["niceeval-sample-summary", props.className].filter(Boolean).join(" ")}>
       <Grid>
         {snapshot.scoringComposition !== "points" ? (
-          <Stat label={localeText(locale, "scopeSummary.passRate")} value={{ kind: "measure", measure: snapshot.endToEndPassRate }} />
+          <Stat label={localeText(locale, "scopeSummary.passRate")} value={{ kind: "metric", metric: snapshot.endToEndPassRate }} />
         ) : null}
         {snapshot.totalScore !== undefined ? (
-          <Stat label={localeText(locale, "scopeSummary.totalScore")} value={{ kind: "measure", measure: snapshot.totalScore }} />
+          <Stat label={localeText(locale, "scopeSummary.totalScore")} value={{ kind: "metric", metric: snapshot.totalScore }} />
         ) : null}
         <Stat label={localeText(locale, "scopeSummary.experiments")} value={snapshot.experiments} />
         <Stat label={localeText(locale, "scopeSummary.evals")} value={snapshot.evals} />
@@ -58,7 +67,7 @@ export const SampleSummary = defineComposition<SampleSummaryProps, Sample>(async
         />
         <Stat
           label={localeText(locale, "scopeSummary.totalCost")}
-          value={{ kind: "measure", measure: snapshot.totalCostUSD }}
+          value={{ kind: "metric", metric: snapshot.totalCostUSD }}
           detail={
             snapshot.totalCostUSD.samples < snapshot.totalCostUSD.total
               ? localeText(locale, "scopeSummary.costCoverage", {
@@ -114,38 +123,95 @@ function filterInputBySnapshot(input: Sample, predicate: (run: Run) => boolean):
   return input.filter((attempt) => predicate(attempt.run));
 }
 
-function comparisonChart(
-  input: Sample,
-  options: { series: SeriesInput; connect: boolean; y: Measure; locale?: ReportLocale; className?: string },
-) {
-  const by = seriesName(options.series);
-  return (
-    <Chart
-      input={input}
-      source={sources.measure.chart({ points: "experiment", series: options.series, x: costUSD, y: options.y })}
-      x={costUSD.name}
-      y={options.y.name}
-      locale={options.locale}
-      className={options.className}
-      legend
-    >
-      <Series id="comparison" mark="scatter" points="experiment" by={by} connect={options.connect} />
-    </Chart>
+function seriesGroup(series: SeriesInput): { key: string; fn: GroupFunction } {
+  if (typeof series === "string") {
+    if (series === "agent") return { key: "agent", fn: agent };
+    if (series === "model") return { key: "model", fn: model };
+    if (series === "experiment") return { key: "experiment", fn: experiment };
+    throw new Error(
+      `SampleOverview series "${series}" is not a built-in group — use "agent" | "model" | "experiment", or label()/flag().`,
+    );
+  }
+  if (Array.isArray(series)) {
+    throw new Error("SampleOverview does not accept composite series arrays; pass a single dimension.");
+  }
+  if ("kind" in series && (series.kind === "label" || series.kind === "flag")) {
+    const name = series.name;
+    const kind = series.kind;
+    const fn: GroupFunction = (subject) => {
+      const bag = kind === "label" ? subject.run.experiment?.labels : subject.run.experiment?.flags;
+      const value = bag?.[name];
+      return value === undefined || value === null ? "(missing)" : String(value);
+    };
+    Object.defineProperty(fn, "name", { value: `${kind}:${name}` });
+    return { key: name, fn };
+  }
+  if ("of" in series && typeof series.of === "function") {
+    throw new Error(
+      `SampleOverview cannot use CustomDimension "${series.name}" with aggregate() — CustomDimension reads AttemptHandle; write a GroupFunction over AggregationSubject instead.`,
+    );
+  }
+  throw new Error(
+    `SampleOverview series kind "${(series as { kind?: string }).kind ?? "unknown"}" is not supported for aggregate grouping yet.`,
   );
 }
 
-export const SampleOverview = defineComposition<SampleOverviewProps, Sample>(async (props, ctx) => {
-  const input: Sample = props.input ?? ctx.input;
+async function comparisonBlock(
+  input: Sample,
+  options: {
+    series: SeriesInput;
+    connect: boolean;
+    y: "passRate" | "totalScore";
+    locale?: ReportLocale;
+    className?: string;
+  },
+) {
+  const group = seriesGroup(options.series);
+  const yCalc = options.y === "totalScore" ? totalScore : passRate;
+  const points = await aggregate(input, {
+    by: {
+      experiment,
+      [group.key]: group.fn,
+    },
+    values: {
+      costUSD,
+      [options.y]: yCalc,
+    },
+  });
+  return (
+    <Col className={options.className}>
+      <Scatter
+        points={points}
+        x="costUSD"
+        y={options.y}
+        point="experiment"
+        series={group.key}
+        connect={options.connect}
+        locale={options.locale}
+        legend
+      />
+      <Table
+        rows={points}
+        columns={["experiment", group.key, "costUSD", options.y]}
+        sort={options.y}
+        searchable
+        locale={options.locale}
+      />
+    </Col>
+  );
+}
+
+export const SampleOverview = defineComponent<SampleOverviewProps>(async (props, ctx) => {
+  const input: Sample = props.input ?? ctx.scope;
   const { series, connect } = resolveComparisonSeries(input, props);
   const composition = await scoringComposition(input);
 
   if (composition !== "mixed") {
-    const primary = composition === "points" ? totalScore : passRate;
+    const primary = composition === "points" ? "totalScore" : "passRate";
     return (
       <Col className={props.className}>
         <SampleSummary input={input} locale={props.locale} />
-        {comparisonChart(input, { series, connect, y: primary, locale: props.locale })}
-        <Table input={input} source={sources.entity.experiments} sort={primary.name} filter locale={props.locale} />
+        {await comparisonBlock(input, { series, connect, y: primary, locale: props.locale })}
       </Col>
     );
   }
@@ -155,14 +221,8 @@ export const SampleOverview = defineComposition<SampleOverviewProps, Sample>(asy
   return (
     <Col className={props.className}>
       <SampleSummary input={input} locale={props.locale} />
-      <Col>
-        {comparisonChart(passInput, { series, connect, y: passRate, locale: props.locale })}
-        <Table input={passInput} source={sources.entity.experiments} sort={passRate.name} filter locale={props.locale} />
-      </Col>
-      <Col>
-        {comparisonChart(pointsInput, { series, connect, y: totalScore, locale: props.locale })}
-        <Table input={pointsInput} source={sources.entity.experiments} sort={totalScore.name} filter locale={props.locale} />
-      </Col>
+      {await comparisonBlock(passInput, { series, connect, y: "passRate", locale: props.locale })}
+      {await comparisonBlock(pointsInput, { series, connect, y: "totalScore", locale: props.locale })}
     </Col>
   );
 });

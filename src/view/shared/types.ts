@@ -38,17 +38,14 @@ export interface ViewReportPageMeta {
 }
 
 /**
- * 规范化后的报告外壳声明(docs/feature/reports/library/shell.md):壳(导航 / 页脚)由前端
+ * 规范化后的报告外壳声明(docs/feature/reports/library/shell.md):壳(导航)由前端
  * 渲染,页内容消费 <template> 静态块。title 已走完回退链(def.title → 唯一且相同的快照 name →
  * 内置文案「Eval 运行结果 / Eval Record」),宿主落点只有浏览器 <title>(文档单例);
  * 页内 hero 标题由 Hero 组件消费同一取值链,品牌是组件、宿主页头不渲染任何品牌位。
- * scripts / styles 是注入资产,不进 viewData。
- * link 的 icon 是内联 SVG 字符串(原样透传、原样内联),不收组件——viewData 就是序列化边界。
+ * 页脚与页头链接是页内 ReportNode,不进 viewData。
  */
 export interface ViewReportMeta {
   title: LocalizedText;
-  links: { label: LocalizedText; href: string; icon?: { svg: string } }[];
-  footer?: LocalizedText;
   pages: ViewReportPageMeta[];
   /** 初始页(--page 或声明序第一页);`#/page/<id>` 路由覆盖它。 */
   initialPageId: string;

@@ -24,8 +24,6 @@ agent;
 experiment;
 evalId;
 model;
-run;
-verdict;
 
 passRate;
 costUSD;

@@ -8,7 +8,6 @@ import {
   type DataProps,
 } from "../../components/shared.ts";
 import { type ReportLocale } from "../../model/locale.ts";
-import type { SourceInput } from "../../source.ts";
 import { defineComponent, type ResolveContext, type TextContext } from "../tree.ts";
 
 export type DiffChange = "generated" | "modified" | "deleted";
@@ -23,7 +22,7 @@ export interface DiffFile {
 
 export type DiffContent = readonly DiffFile[];
 
-export type DiffViewProps<Input extends SourceInput = SourceInput> = DataProps<
+export type DiffViewProps = DataProps<
   DiffContent | null,
   globalThis.Record<never, never>,
   {
@@ -31,8 +30,7 @@ export type DiffViewProps<Input extends SourceInput = SourceInput> = DataProps<
     className?: string;
     /** text 面 `--diff` 下钻;数据源投影或 attempt page resolve 时填入。 */
     locator?: AttemptLocator;
-  },
-  Input
+  }
 >;
 
 type ResolvedDiffViewProps = {

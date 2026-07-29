@@ -53,6 +53,7 @@ export function latestRunSample(
     const coveredIds = new Set(picked.map((a) => a.evalId));
     coverage.push({
       experimentId: exp.id,
+      run: raw,
       knownEvalIds: [...knownEvalIds],
       missingEvalIds: knownEvalIds.filter((id) => !coveredIds.has(id)),
     });
@@ -187,9 +188,15 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
     }
     if (taken.size === 0) {
       // 即使没有任何可比配置的历史贡献,该实验已知(范围内)的题仍然是覆盖缺口。
+      // 锚点仍是 latest Run——它确定该 Experiment 的可比性配置,供分组读 agent/model。
       const knownEvalIds = exp.knownEvalIds.filter(match);
       if (knownEvalIds.length > 0) {
-        coverage.push({ experimentId: exp.id, knownEvalIds, missingEvalIds: [...knownEvalIds] });
+        coverage.push({
+          experimentId: exp.id,
+          run: exp.latestRun,
+          knownEvalIds,
+          missingEvalIds: [...knownEvalIds],
+        });
       }
       continue;
     }
@@ -227,6 +234,8 @@ export function currentSample(record: Record, scope: SampleOptions = {}): Sample
     const coveredIds = new Set(pickedAttempts.map((a) => a.evalId));
     coverage.push({
       experimentId: exp.id,
+      // 可比性基准即最新 Run:分组读 agent/model/flags 时与「这套配置」对齐。
+      run: exp.latestRun,
       knownEvalIds,
       missingEvalIds: knownEvalIds.filter((id) => !coveredIds.has(id)),
     });
@@ -455,7 +464,7 @@ export function filterExperiments(experiments: Experiment[], filter?: string | s
 /**
  * 时效标注(`↩` + 人话时距)的粒度选择:选粒度最大的单位,四舍五入。结构化形态是单源——
  * entity-lists 渲染面的紧凑时距("3d")与曾经的 stale-run message 用同一套阈值,
- * 阈值不写两份(docs/feature/reports/components/sources/entity.md「时效标注」)。
+ * 阈值不写两份(docs/feature/reports/library.md「时效标注」)。
  */
 export function gapParts(fromIso: string, toIso: string): { n: number; unit: "second" | "minute" | "hour" | "day" } {
   const ms = Math.max(0, Date.parse(toIso) - Date.parse(fromIso));

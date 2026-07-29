@@ -4,8 +4,8 @@
 import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../scoring/types.ts";
-import type { MeasureCell } from "../model/types.ts";
-import { missingText } from "../model/format.ts";
+import type { MetricValue } from "../model/calculation.ts";
+import { formatMeasureValue, missingText } from "../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 
 /** 判定计票:passed / failed / errored / skipped。 */
@@ -18,12 +18,12 @@ export interface VerdictCounts {
 
 /**
  * 官方表格一格。三条不变量:
- * - measure 格永远带证据(不得压成 text);
+ * - metric 格永远带证据(不得压成 text);
  * - notApplicable 与 missing 不合并;
- * - summary 的文本已在 Source 里折好。
+ * - summary 的文本已在上游折好。
  */
 export type Cell =
-  | { readonly kind: "measure"; readonly measure: MeasureCell }
+  | { readonly kind: "metric"; readonly metric: MetricValue }
   | {
       readonly kind: "verdict";
       readonly verdict?: Verdict | "skipped";
@@ -90,11 +90,14 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
         return parts.join(" · ") || "—";
       }
       return cell.verdict ?? "—";
-    case "measure": {
-      const m = cell.measure;
-      const text = resolveDisplay(m.display, locale);
-      if (text) return text;
-      return m.value === null ? missingText("noSamples", locale ?? DEFAULT_REPORT_LOCALE) : String(m.value);
+    case "metric": {
+      const m = cell.metric;
+      if (m.value === null) return missingText("noSamples", locale ?? DEFAULT_REPORT_LOCALE);
+      if (m.format && typeof m.format === "object" && m.format.kind === "custom") {
+        return m.format.format(m.value, locale ?? DEFAULT_REPORT_LOCALE);
+      }
+      const unit = m.format === "percent" ? "%" : m.format === "currency" ? "$" : m.format === "duration" ? "ms" : m.unit;
+      return formatMeasureValue(m.value, unit);
     }
     default: {
       const _exhaustive: never = cell;

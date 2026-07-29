@@ -11,7 +11,6 @@ import {
   type DataProps,
 } from "../../components/shared.ts";
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../model/locale.ts";
-import type { SourceInput } from "../../source.ts";
 import { defineComponent, type ReportNode, type ResolveContext, type TextContext } from "../tree.ts";
 
 const REACT_FRAGMENT = Symbol.for("react.fragment");
@@ -47,11 +46,10 @@ export interface ConversationContent {
   locator?: AttemptLocator;
 }
 
-export type ConversationProps<Input extends SourceInput = SourceInput> = DataProps<
+export type ConversationProps = DataProps<
   ConversationContent | null,
   globalThis.Record<never, never>,
-  { locale?: ReportLocale; className?: string },
-  Input
+  { locale?: ReportLocale; className?: string }
 >;
 
 type ResolvedConversationProps = {

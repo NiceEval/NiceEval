@@ -4,7 +4,7 @@
 严重度与下一步动作；这些由 `SampleNotices` / `RunNotices` / `AttemptNotices` 在上层完成。
 
 ```tsx
-<Callouts data={notices} />
+<Callouts items={notices} />
 ```
 
 ## 形状
@@ -75,5 +75,5 @@ interface CalloutsProps {
 ## 相关阅读
 
 - [组件树](../README.md) —— 四层模型与结构节点规则。
-- [数据源目录](../sources/README.md) —— 官方提示数据源与它们的准入判据。
+- [Library](../../library.md) —— 公开转换与官方 Calculation。
 - [错误反馈](../../../../error-feedback.md#消息三段式) —— `message` 的三段式契约。

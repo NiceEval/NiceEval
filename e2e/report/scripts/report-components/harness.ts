@@ -91,8 +91,8 @@ export async function withReportComponentScenarioContext(
   let siteServer: Awaited<ReturnType<typeof serveStaticDir>> | undefined;
   let browser: Browser | undefined;
   try {
-    sh(`pnpm exec niceeval view --report ${BRANDED_REPORT} --results ${evidence.resultsRoot} --out ${brandedOut} --no-open`);
-    sh(`pnpm exec niceeval view --report ${SITE_REPORT} --results ${evidence.resultsRoot} --page overview --out ${siteOut} --no-open`);
+    sh(`pnpm exec niceeval view --report ${BRANDED_REPORT} --record ${evidence.resultsRoot} --out ${brandedOut} --no-open`);
+    sh(`pnpm exec niceeval view --report ${SITE_REPORT} --record ${evidence.resultsRoot} --page overview --out ${siteOut} --no-open`);
     brandedServer = await serveStaticDir(resolve(brandedOut));
     siteServer = await serveStaticDir(resolve(siteOut));
     browser = await chromium.launch();

@@ -18,7 +18,6 @@ import {
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
 import { DiffView, type DiffContent } from "./primitives/diff-view.tsx";
-import { defineSource } from "../source.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
@@ -45,10 +44,10 @@ const content: DiffContent = [
   },
 ];
 
-async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "scope" }) {
+async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "sample" }) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
-  const definition = defineReport(node as never);
+  const definition = defineReport(() => node as never);
   const resolved = await resolveReportTree(node as never, {
     scope,
     results,
@@ -117,15 +116,5 @@ describe("DiffView", () => {
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(nullTree as never))).toBe("");
   });
 
-  it("source 与 data 等价", async () => {
-    const source = defineSource({
-      name: "diff",
-      compute: async () => content,
-    });
-    const fromData = await resolve(<DiffView data={content} />);
-    const fromSource = await resolve(<DiffView source={source} />);
-    const textData = renderNodeToText(fromData, createTextContext({ width: 100 }));
-    const textSource = renderNodeToText(fromSource, createTextContext({ width: 100 }));
-    expect(textSource).toBe(textData);
-  });
+
 });
