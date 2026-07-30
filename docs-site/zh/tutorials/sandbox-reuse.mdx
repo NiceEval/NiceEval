@@ -4,6 +4,8 @@ sidebarTitle: "复用 Sandbox"
 description: "在 Experiment 里声明 sandboxReuse 让多条 Attempt 共用 Sandbox：写对四层生命周期、配好 lifetimeMs；准备代码做不到幂等重放时改用并发，不要复用。"
 ---
 
+import { SandboxLanes } from '/snippets/diagram-sandbox-lanes.jsx';
+
 一批评估共用同一套环境准备（同一个工具链、同一个仓库 checkout）时，每条 Attempt
 都新建 Sandbox 意味着这套准备要付 N 次。在 Experiment 里声明 `sandboxReuse: true`，
 多条 Attempt 依次共用同一个 Sandbox：Sandbox 创建和公共准备每个 Sandbox 只付一次，
@@ -54,6 +56,8 @@ export default defineExperiment({
 | Agent 级 `setup` / `teardown` | 每条 Attempt 一次 |
 | 评估用例的 `setup` / `teardown`、`test(t)` | 每条 Attempt 一次 |
 
+<SandboxLanes />
+
 每条 Attempt 结束后，NiceEval 对工作目录执行 `git reset --hard` + `git clean`
 回到重置点，再开始下一条。重置只管工作目录；`$HOME` 和后台进程要么由评估用例的
 `teardown` 自己收，要么就是刻意留给下一条用的（比如包管理器的缓存）。
@@ -86,6 +90,25 @@ npm install          # 调和到 package.json/lockfile 声明的状态，本身�
 
 判据一句话：**准备代码描述目标状态，不描述「要不要做」**。探测-跳过式的守卫
 把半截状态当成完成态，恰好只在复用时炸，本地单跑永远发现不了。
+
+## 声明了插件的实验：安装由 NiceEval 收敛
+
+`plugins` 和 `sandboxReuse` 可以同时声明。插件装在 `$HOME` 里，`$HOME` 活过题间重置，
+但这不用你处理：每条 Attempt 开始前，NiceEval 把插件安装收敛到你声明的配置——
+上一条 Attempt 留下的同名 marketplace 注册和插件，被替换成按声明 `source` 和 `ref`
+的全新安装。插件自带脚本改写 marketplace 注册（比如换成托管源）也被同一条规则吸收。
+
+两件事仍归你：
+
+- **`postSetup` 脚本必须幂等**。它每条 Attempt 都在残留的 `$HOME` 上重跑，
+  往全局配置登记 hook 的脚本，重跑一遍要收敛到同一份配置。开复用前先拿两三道题
+  压一条 Sandbox 泳道跑一轮——第二题起才是真正的判据。
+- **插件数据放哪**。插件安装目录每条 Attempt 都被重装覆盖；插件运行时要留到下一题的数据，
+  只能写在安装目录之外。留下的数据会不会污染下一题，是你的实验设计要回答的问题。
+
+收敛不等于省钱：插件安装每条 Attempt 照付，复用省的是 Sandbox 创建和 Sandbox 级
+`setup`。marketplace 拉取太慢时用 `sparse` 只拉插件路径，或把插件烘进 template
+并从 `plugins` 里拿掉声明——代价是安装 manifest 里就没有插件与解析版本的记录了。
 
 ## 一批里混了不同环境
 

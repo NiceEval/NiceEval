@@ -4,6 +4,8 @@ sidebarTitle: "结果数据 API"
 description: "报告脚下的数据层：openRecord 把 .niceeval/ 的落盘 artifact 解析成「实验 → Run → 评估 → Attempt」的类型化层次，createWriter 把别家结果写成 NiceEval 格式，publish 负责发布。"
 ---
 
+import { RecordShape } from '/snippets/diagram-record-shape.jsx';
+
 [自定义报告](/zh/tutorials/custom-reports)用到的转换函数、组件与双面 renderer 脚下还有一层：`niceeval/record`，落盘 artifact 的读取器。官方两扇门和全部报告读的都是这一层，没有私有数据通道；报告表达不了的口径，下到这层直接拿数据算。
 
 什么时候下到这层：
@@ -156,6 +158,8 @@ const current = currentSample(record, {
 | `currentSample` | 每道题当前可用的判定，可能取自可比旧 Run |
 
 `niceeval show` / `view` 的默认首页用 `currentSample`。两者都返回一个 **Sample**：Attempt、贡献 Run、覆盖事实和 Issue 绑在一起走。
+
+<RecordShape />
 
 ```typescript
 current.attempts;              // AttemptHandle[]:按口径挑好的全集

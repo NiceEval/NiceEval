@@ -4,6 +4,8 @@ sidebarTitle: "配置与环境变量"
 description: "跑几次、超时、并发、judge、语言这些值写进代码的哪一层，API key 和 provider token 用哪些环境变量。"
 ---
 
+import { ConfigLayers } from '/snippets/diagram-config-layers.jsx';
+
 [NiceEval](https://niceeval.com/) 里的值只有两个家：
 
 - **配置写进代码**——CLI flag、`experiments/` 下的 experiment 文件、根目录的 `niceeval.config.ts`。跑几次、超时多久、并发多少、judge 用哪个模型、默认看哪份报告、界面什么语言，全都在这里，没有对应的环境变量。
@@ -13,7 +15,9 @@ description: "跑几次、超时、并发、judge、语言这些值写进代码�
 
 ## 配置：想让这个值活多久，就写在哪一层
 
-同一个值出现在多层时，按 **CLI flag → experiment → config → 内置默认** 取，前面有值就不看后面。
+同一个值出现在多层时，按 **CLI flag → experiment → eval → config → 内置默认** 取，前面有值就不看后面。config 是默认来源，不是覆盖层——评估用例自己声明的 `timeoutMs` 不会被项目默认压掉。
+
+<ConfigLayers />
 
 **只想这一次不一样**——写在命令上：
 

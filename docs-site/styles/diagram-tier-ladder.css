@@ -1,0 +1,52 @@
+/* 接入等级：snippets/diagram-tier-ladder.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── 接入等级 ──────────────────────────────────────────────────────── */
+
+.ne-tier { --ne-cycle: 5s; }
+
+.ne-tier-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  padding: 12px;
+}
+
+.ne-tier-item {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 172px;
+  min-width: 0;
+}
+
+.ne-tier-step {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ne-text-3);
+  animation-name: ne-lit-mark;
+}
+
+.ne-tier-card {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ne-border);
+}
+
+.ne-tier-name {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ne-border);
+}
+
+.ne-tier-kind {
+  margin: 9px 0 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ne-text-3);
+}
+
+.ne-tier-line { font-size: 12px; color: var(--ne-text-2); }

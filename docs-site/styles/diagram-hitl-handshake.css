@@ -1,0 +1,112 @@
+/* HITL 一次完整握手：snippets/diagram-hitl-handshake.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── HITL 一次完整握手 ─────────────────────────────────────────────── */
+
+.ne-seq { --ne-cycle: 9s; }
+
+.ne-seq-scroll { overflow-x: auto; padding: 12px; }
+
+.ne-seq-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(200px, 1fr));
+  row-gap: 12px;
+}
+
+.ne-seq-life {
+  justify-self: center;
+  width: 0;
+  border-left: 1px dashed var(--ne-border-strong);
+}
+
+.ne-seq-actor {
+  justify-self: center;
+  padding: 5px 14px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ne-seq-msg,
+.ne-seq-local { min-width: 0; }
+
+.ne-seq-msg.ne-lit,
+.ne-seq-local.ne-lit { animation-name: none; }
+
+/* inherit 取的是父元素的值，msg → wire → line → ::after 这条链每一层都要接上，
+   少接一层下游就全部退回 0s，动画会一起跑而不是排队。 */
+.ne-seq-msg.ne-lit .ne-seq-wire { animation-delay: inherit; }
+
+.ne-seq-msg.ne-lit .ne-seq-line {
+  animation: ne-lit-wire var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
+.ne-seq-msg.ne-lit .ne-seq-tip {
+  animation: ne-lit-mark var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
+.ne-seq-local.ne-lit .ne-pill {
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  animation: ne-lit-edge var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
+.ne-seq-code {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ne-seq-state {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: 8px;
+  font-weight: 600;
+}
+
+.ne-seq-wire {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 4px 0;
+  font-size: 10px;
+  color: var(--ne-text-3);
+}
+
+.ne-seq-line {
+  position: relative;
+  flex: 1;
+  border-top: 1px solid var(--ne-border-strong);
+}
+
+.ne-seq-msg.ne-lit .ne-seq-line::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  width: 3px;
+  height: 3px;
+  background: var(--ne-text);
+  opacity: 0;
+  animation: ne-run-right var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
+.ne-seq-back .ne-seq-line { border-top-style: dashed; }
+
+.ne-seq-back.ne-lit .ne-seq-line::after { animation-name: ne-run-left; }
+
+.ne-seq-tip { line-height: 1; }
+
+.ne-seq-note { font-size: 12px; color: var(--ne-text-3); }
+
+.ne-seq-local {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}

@@ -1,0 +1,96 @@
+/* 一次 t.send 的完整往返：snippets/diagram-turn-roundtrip.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── 一次 t.send 的完整往返 ────────────────────────────────────────── */
+
+.ne-rt { --ne-cycle: 6s; }
+
+.ne-rt-scroll { overflow-x: auto; padding: 12px; }
+
+.ne-rt-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(108px, 1fr) 26px
+    minmax(108px, 1fr) 26px
+    minmax(108px, 1fr) 26px
+    minmax(104px, 132px);
+  row-gap: 12px;
+  align-items: center;
+  min-width: 520px;
+}
+
+.ne-rt-head {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ne-border);
+}
+
+.ne-rt-cell {
+  min-width: 0;
+  padding: 3px 6px;
+  margin-right: 2px;
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-rt-cell.ne-lit { outline-offset: 0; animation-name: ne-lit-cell; }
+
+.ne-rt-arrow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--ne-text-3);
+  animation-name: ne-lit-mark;
+}
+
+.ne-rt-arrow::before {
+  content: "";
+  flex: 1;
+  border-top: 1px solid currentColor;
+}
+
+.ne-rt-arrow::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 1px);
+  width: 3px;
+  height: 3px;
+  background: var(--ne-text);
+  opacity: 0;
+  animation: ne-run-right var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
+.ne-rt-back { flex-direction: row-reverse; }
+
+.ne-rt-back::after { animation-name: ne-run-left; }
+
+.ne-rt-aside {
+  align-self: stretch;
+  margin-left: 4px;
+  padding: 10px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  text-align: center;
+}
+
+.ne-rt-aside-name { font-weight: 600; }
+
+.ne-rt-aside-line {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ne-text-3);
+}
+
+.ne-rt-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.ne-rt-pillnote { font-size: 12px; color: var(--ne-text-3); }

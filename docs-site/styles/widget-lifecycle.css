@@ -1,0 +1,55 @@
+/* Lifecycle：snippets/widgets.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── Lifecycle ─────────────────────────────────────────────────────── */
+
+.ne-life-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+}
+
+.ne-life-bar {
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  min-height: 18px;
+  background: var(--ne-border);
+  animation-name: ne-life;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes ne-life {
+  0%, 7% { background: var(--ne-accent); }
+  8%, 100% { background: var(--ne-border); }
+}
+
+.ne-life:hover .ne-life-bar { animation-play-state: paused; }
+
+.ne-life-name {
+  flex: none;
+  width: 168px;
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-life-what { color: var(--ne-text-2); font-size: 12px; }
+
+.ne-life-times {
+  margin-left: auto;
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--ne-border);
+  font-size: 11px;
+  color: var(--ne-text-3);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ne-life-bar {
+    animation: none;
+    background: var(--ne-border-strong);
+  }
+}

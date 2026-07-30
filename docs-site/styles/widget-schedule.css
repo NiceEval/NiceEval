@@ -1,0 +1,101 @@
+/* Schedule：snippets/widgets.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── Schedule ──────────────────────────────────────────────────────── */
+
+.ne-sched { padding: 12px; overflow-x: auto; }
+
+.ne-sched-lanes { position: relative; min-width: 460px; }
+
+.ne-sched-lane { display: grid; align-items: center; }
+.ne-sched-lane + .ne-sched-lane { margin-top: 4px; }
+
+.ne-sched-label {
+  grid-column: 1;
+  padding-right: 8px;
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-sched-track {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  height: 22px;
+  border: 1px solid var(--ne-border);
+}
+
+.ne-sched-bar {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ne-sched-serial { border-color: var(--ne-warning); color: var(--ne-warning); }
+.ne-sched-backoff { border-style: dashed; color: var(--ne-text-3); }
+
+.ne-sched-play {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 92px;
+  right: 0;
+  pointer-events: none;
+}
+
+.ne-sched-play::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--ne-accent);
+  animation: ne-sweep 12s linear infinite;
+}
+
+@keyframes ne-sweep {
+  from { left: 0; }
+  to { left: calc(100% - 2px); }
+}
+
+.ne-sched:hover .ne-sched-play::after { animation-play-state: paused; }
+
+.ne-sched-axis {
+  margin: 6px 0 0 92px;
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ne-border);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-legend-key {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--ne-border-strong);
+}
+
+.ne-legend-key.ne-sched-serial { border-top-color: var(--ne-warning); }
+.ne-legend-key.ne-sched-backoff { border-top-style: dashed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ne-sched-play::after { animation: none; }
+}

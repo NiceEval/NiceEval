@@ -1,0 +1,62 @@
+/* 一个文件展开成几条评估用例：snippets/diagram-dataset-fanout.jsx 独有的样式。
+   共用底座在 styles/base.css。 */
+
+.ne-fan { --ne-cycle: 4.5s; }
+
+.ne-fan-block { padding: 12px; }
+
+.ne-fan-block + .ne-fan-block { border-top: 1px solid var(--ne-border); }
+
+.ne-fan-kind {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.ne-fan-lead {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ne-text-3);
+}
+
+.ne-fan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px minmax(96px, 132px);
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+}
+
+.ne-fan-data,
+.ne-fan-id {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ne-fan-data { color: var(--ne-text-3); }
+
+.ne-fan-id {
+  padding: 1px 7px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  text-align: center;
+}
+
+.ne-fan-arrow {
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--ne-text-3);
+}
+
+.ne-fan-arrow::before {
+  content: "";
+  flex: 1;
+  border-top: 1px solid currentColor;
+}
+
+.ne-fan-block .ne-why { margin-top: 8px; }

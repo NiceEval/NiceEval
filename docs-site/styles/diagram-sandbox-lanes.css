@@ -1,0 +1,117 @@
+/* 一条泳道上的两条 Attempt：snippets/diagram-sandbox-lanes.jsx 独有的样式。
+   共用底座在 styles/base.css。 */
+
+.ne-sbx { --ne-cycle: 12s; }
+
+.ne-sbx-body {
+  position: relative;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.ne-sbx-lane {
+  display: grid;
+  grid-template-columns: 96px repeat(12, minmax(26px, 1fr));
+  align-items: center;
+  min-width: 560px;
+}
+
+.ne-sbx-lane + .ne-sbx-lane { margin-top: 6px; }
+
+.ne-sbx-label {
+  grid-column: 1;
+  grid-row: 1;
+  padding-right: 8px;
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-sbx-track {
+  grid-column: 2 / -1;
+  grid-row: 1;
+  height: 26px;
+  border: 1px solid var(--ne-border);
+}
+
+.ne-sbx-seg {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 只跑一次的段用双线左边框区分，重置段用虚线框——形状分档，不靠颜色 */
+.ne-sbx-once { border-left-width: 3px; }
+
+.ne-sbx-reset {
+  border-style: dashed;
+  color: var(--ne-text-3);
+}
+
+.ne-sbx-play {
+  position: absolute;
+  top: 12px;
+  bottom: 30px;
+  left: 108px;
+  right: 12px;
+  pointer-events: none;
+}
+
+.ne-sbx-play::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--ne-text);
+  animation: ne-sbx-sweep var(--ne-cycle) linear infinite;
+}
+
+@keyframes ne-sbx-sweep {
+  from { left: 0; }
+  to { left: calc(100% - 2px); }
+}
+
+.ne-sbx-body:hover .ne-sbx-play::after { animation-play-state: paused; }
+
+.ne-sbx-axis {
+  margin: 6px 0 0 96px;
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-sbx-legend {
+  padding: 10px 12px;
+  border-top: 1px solid var(--ne-border);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-sbx-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ne-sbx-item + .ne-sbx-item { margin-top: 5px; }
+
+.ne-sbx-key {
+  flex: none;
+  width: 18px;
+  height: 10px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ne-sbx-play::after { animation: none; }
+}

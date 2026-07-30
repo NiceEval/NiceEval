@@ -1,0 +1,51 @@
+/* timeoutMs 写在哪一层：snippets/diagram-config-layers.jsx 独有的样式。
+   切面板的机制与 Picker 共用，在 styles/tabs.css；共用底座在 styles/base.css。 */
+
+.ne-cfg-panel { padding: 10px 12px 12px; }
+
+.ne-cfg-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 84px 88px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--ne-border);
+  color: var(--ne-text-3);
+}
+
+.ne-cfg-layer {
+  font-weight: 600;
+  color: var(--ne-text-2);
+}
+
+.ne-cfg-src {
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.ne-cfg-val {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  text-align: right;
+}
+
+.ne-cfg-mark {
+  font-size: 11px;
+  text-align: right;
+}
+
+/* 生效的那一层提亮加字重，不借语义色；被盖住的保持灰并划掉数值 */
+.ne-cfg-win {
+  color: var(--ne-text);
+  font-weight: 600;
+}
+
+.ne-cfg-win .ne-cfg-layer { color: var(--ne-text); }
+
+.ne-cfg-under .ne-cfg-val {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.ne-cfg-panel .ne-why { margin-top: 10px; }

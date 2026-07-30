@@ -4,7 +4,11 @@ sidebarTitle: "数据驱动测试"
 description: "从 .eval.ts 文件导出数组或 keyed record，将一套评估逻辑展开为多个 case。用 loadYaml 或 loadJson 读取外部测试集，并获得稳定 ID。"
 ---
 
+import { DatasetFanout } from '/snippets/diagram-dataset-fanout.jsx';
+
 数据驱动测试（dataset fan-out）适合大量结构相同、输入不同的测试。例如 SQL 生成、意图分类、检索问答和工具选择。
+
+<DatasetFanout />
 
 ## 工作原理
 

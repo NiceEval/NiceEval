@@ -1,0 +1,77 @@
+/* OTel 一轮里的两条数据：snippets/diagram-otel-collect.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── OTel：一轮里的两条数据 ────────────────────────────────────────── */
+
+.ne-trk { --ne-cycle: 7s; }
+
+.ne-trk-seed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--ne-subtle);
+  border-bottom: 1px solid var(--ne-border);
+}
+
+.ne-trk-track { padding: 12px; }
+
+.ne-trk-track + .ne-trk-track { border-top: 1px solid var(--ne-border); }
+
+.ne-trk-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.ne-trk-lead {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ne-text-3);
+}
+
+.ne-trk-stages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.ne-trk-stage {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 158px;
+  min-width: 0;
+}
+
+.ne-trk-step {
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  font-size: 10px;
+  color: var(--ne-text-3);
+  animation-name: ne-lit-mark;
+}
+
+.ne-trk-box {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
+}
+
+.ne-trk-text {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+}
+
+.ne-trk-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-trk-seed .ne-trk-sub { margin-top: 0; }

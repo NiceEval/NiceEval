@@ -1,0 +1,90 @@
+/* Sandbox 模式 / 直连模式两张图共用的纵向流程样式：
+   snippets/diagram-sandbox-mode.jsx 与 snippets/diagram-direct-mode.jsx 画的是同一种形状。
+   共用底座在 styles/base.css。 */
+
+/* ── 接入形状（Sandbox 模式 / 直连模式）─────────────────────────────── */
+
+.ne-flow { --ne-cycle: 5s; }
+
+.ne-flow-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 12px;
+}
+
+.ne-flow-plain {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  color: var(--ne-text-2);
+}
+
+.ne-flow-plain.ne-lit { animation-name: ne-lit-text; }
+
+.ne-flow-node {
+  min-width: 236px;
+  max-width: 100%;
+  padding: 9px 16px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  text-align: center;
+}
+
+.ne-flow-name {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ne-flow-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ne-text-3);
+}
+
+.ne-flow-inner {
+  margin: 9px 0 1px;
+  padding: 7px 12px;
+  border: 1px solid var(--ne-border);
+  background: var(--ne-surface);
+}
+
+.ne-flow-edge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ne-flow-line {
+  position: relative;
+  width: 1px;
+  height: 22px;
+  background: var(--ne-border-strong);
+}
+
+.ne-flow-line.ne-lit { animation-name: ne-lit-line; }
+
+.ne-flow-line.ne-lit::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  width: 3px;
+  height: 3px;
+  background: var(--ne-text);
+  opacity: 0;
+  animation: ne-run-down var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
+.ne-flow-edge-text {
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--ne-text-3);
+  text-align: center;
+}
+
+.ne-flow-tip {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--ne-border-strong);
+}

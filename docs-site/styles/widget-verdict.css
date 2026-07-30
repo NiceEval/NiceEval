@@ -1,0 +1,64 @@
+/* Verdict：snippets/widgets.jsx 独有的样式。共用底座在 styles/base.css。 */
+
+/* ── Verdict：判定与理由由勾选状态选，组件把四种可能都渲染出来 ───────── */
+
+.ne-vd .ne-lead { display: none; }
+.ne-vd .ne-vd-passed { display: flex; }
+.ne-vd .ne-vd-say { display: none; }
+.ne-vd .ne-vd-say-ok { display: block; }
+
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-passed { display: none; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-failed { display: flex; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-say-ok { display: none; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-say-gate { display: block; }
+
+.ne-vd:has(.ne-a-gate:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-ok { display: none; }
+.ne-vd:has(.ne-a-gate:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-soft { display: block; }
+
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-passed { display: none; }
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-failed { display: flex; }
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-soft { display: none; }
+.ne-vd:has(.ne-strict:checked):has(.ne-a-soft:not(:checked)) .ne-vd-say-strict { display: block; }
+.ne-vd:has(.ne-a-gate:not(:checked)) .ne-vd-say-strict { display: none; }
+
+.ne-vd .ne-only-strict { display: none; }
+.ne-vd:has(.ne-strict:checked) .ne-only-strict { display: inline; }
+.ne-vd:has(.ne-strict:checked) .ne-not-strict { display: none; }
+
+.ne-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.ne-row-fixed { cursor: default; }
+.ne-row:not(.ne-row-fixed):hover { background: var(--ne-subtle); }
+.ne-row input { margin: 0; flex: none; accent-color: var(--ne-accent); }
+.ne-box-gap { flex: none; width: 13px; }
+
+.ne-sev {
+  flex: none;
+  min-width: 44px;
+  padding: 1px 6px;
+  border: 1px solid var(--ne-border-strong);
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  text-align: center;
+  color: var(--ne-text-2);
+}
+
+.ne-note {
+  margin-left: auto;
+  padding-left: 12px;
+  text-align: right;
+  color: var(--ne-text-3);
+  font-size: 12px;
+}
+
+.ne-row-strict {
+  border-top: 1px solid var(--ne-border);
+  border-bottom: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
+}

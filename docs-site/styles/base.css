@@ -1,0 +1,207 @@
+/* 所有 .ne-* 组件共用的底座：令牌、外框、页眉页脚、语义色、点亮引擎。
+   只放两个以上组件都用的规则；一个组件独有的样式在它自己那份
+   styles/<组件名>.css 里，与 snippets/<组件名>.jsx 一一对应。
+
+   令牌浅色取 chalk、深色取 basalt；观感按仓库根 DESIGN.md：1px 边表达区域、
+   零圆角、无渐变无阴影。颜色只在有语义时出现（positive / negative / warning）；
+   「轮到这一段」用提亮表达（闪到 --ne-text），不借语义色。 */
+
+.ne-w {
+  --ne-surface: #ffffff;
+  --ne-subtle: #f4f4f5;
+  --ne-border: #dedee2;
+  --ne-border-strong: #c9c9cf;
+  --ne-text: #111113;
+  --ne-text-2: #62636a;
+  --ne-text-3: #8b8d98;
+  --ne-positive: #087f5b;
+  --ne-negative: #b42318;
+  --ne-warning: #9a6700;
+  --ne-accent: #2a78d6;
+  --ne-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  position: relative;
+  margin: 1.5rem 0;
+  border: 1px solid var(--ne-border);
+  background: var(--ne-surface);
+  color: var(--ne-text);
+  font-size: 13px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.dark .ne-w {
+  --ne-surface: #0b0b0b;
+  --ne-subtle: #111111;
+  --ne-border: #262626;
+  --ne-border-strong: #343434;
+  --ne-text: #ededed;
+  --ne-text-2: #a1a1aa;
+  --ne-text-3: #74747b;
+  --ne-positive: #3ddc97;
+  --ne-negative: #ff6b6b;
+  --ne-warning: #e8b84a;
+  --ne-accent: #cbd6dc;
+}
+
+/* 零圆角是设计总纲的一条，不依赖宿主主题碰巧没设 */
+.ne-w,
+.ne-w * {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.ne-w code,
+.ne-w .ne-mono {
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.ne-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--ne-border);
+  background: var(--ne-subtle);
+  font-weight: 600;
+}
+
+.ne-hd-hint {
+  margin-left: auto;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ne-text-3);
+}
+
+.ne-ft {
+  padding: 8px 12px;
+  border-top: 1px solid var(--ne-border);
+  color: var(--ne-text-2);
+  font-size: 12px;
+}
+
+.ne-pos { color: var(--ne-positive); }
+.ne-neg { color: var(--ne-negative); }
+.ne-warn { color: var(--ne-warning); }
+.ne-dim { color: var(--ne-text-3); }
+
+/* 不依赖宿主的链接色：明暗两套都要读得出来 */
+.ne-w a {
+  color: var(--ne-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ne-panel { padding: 12px; }
+
+.ne-lead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.ne-lead .ne-sym { font-family: var(--ne-mono); }
+
+.ne-w p.ne-why {
+  margin: 0;
+  color: var(--ne-text-2);
+}
+
+.ne-w p.ne-why + p.ne-why { margin-top: 6px; }
+
+.ne-rows { padding: 4px 0; }
+
+/* ── 逐段点亮：每张图在自己的根上定 --ne-cycle，元素用 inline animationDelay 排队 ── */
+
+.ne-lit {
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  animation-name: ne-lit-edge;
+  animation-duration: var(--ne-cycle, 6s);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes ne-lit-edge {
+  0%, 8% { outline-color: var(--ne-text); }
+  22%, 100% { outline-color: transparent; }
+}
+
+@keyframes ne-lit-mark {
+  0%, 8% { color: var(--ne-text); }
+  22%, 100% { color: var(--ne-text-3); }
+}
+
+@keyframes ne-lit-text {
+  0%, 8% { color: var(--ne-text); }
+  22%, 100% { color: var(--ne-text-2); }
+}
+
+/* 往返图的格子：轮到它时提亮并框一下，一格一格扫过去才看得出这是一趟走完的路 */
+@keyframes ne-lit-cell {
+  0%, 8% { color: var(--ne-text); outline-color: var(--ne-border-strong); }
+  22%, 100% { color: var(--ne-text-2); outline-color: transparent; }
+}
+
+@keyframes ne-lit-line {
+  0%, 8% { background: var(--ne-text); }
+  22%, 100% { background: var(--ne-border-strong); }
+}
+
+@keyframes ne-lit-wire {
+  0%, 8% { border-top-color: var(--ne-text); }
+  22%, 100% { border-top-color: var(--ne-border-strong); }
+}
+
+/* 线上走过去的那个点：轮到这一段时从线的一头跑到另一头，跑完隐掉。
+   ::after 的 animation-delay: inherit 取宿主元素的值，所以排队仍然只在 JSX 里写一次。 */
+
+@keyframes ne-run-down {
+  0% { top: 0; opacity: 1; }
+  9% { top: calc(100% - 3px); opacity: 1; }
+  9.01%, 100% { top: 0; opacity: 0; }
+}
+
+@keyframes ne-run-right {
+  0% { left: 0; opacity: 1; }
+  9% { left: calc(100% - 3px); opacity: 1; }
+  9.01%, 100% { left: 0; opacity: 0; }
+}
+
+@keyframes ne-run-left {
+  0% { right: 0; opacity: 1; }
+  9% { right: calc(100% - 3px); opacity: 1; }
+  9.01%, 100% { right: 0; opacity: 0; }
+}
+
+/* 鼠标停在图上就暂停，方便逐段看清楚 */
+.ne-w:hover .ne-lit,
+.ne-w:hover .ne-lit *,
+.ne-w:hover .ne-lit::after,
+.ne-w:hover .ne-lit *::after { animation-play-state: paused; }
+
+.ne-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--ne-border-strong);
+  background: var(--ne-subtle);
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ne-lit,
+  .ne-lit *,
+  .ne-lit::after,
+  .ne-lit *::after {
+    animation: none;
+  }
+}

@@ -11,7 +11,8 @@
 - `explanation/`：英文核心概念页，解释心智模型和执行原理，镜像 `zh/explanation/`。
 - `reference/`：英文 API / CLI 参考，列完整字段和选项，镜像 `zh/reference/`。
 - `examples/`：英文可运行示例入口，镜像 `zh/examples/`。
-- `snippets/`：页面里的 React 组件，分两类。**交互件**在 `widgets.jsx`（`Picker` / `Verdict` / `Lifecycle` / `Schedule`），页面用 props 传数据——同一个交互形态被多页复用，数据当然归页面。**结构图**一图一个组件、一图一个文件（`diagram-sandbox-mode.jsx`、`diagram-turn-roundtrip.jsx`、`diagram-hitl-handshake.jsx` 这样命名），内容写死在组件里：图讲的是哪件事本身就是这张图的一部分，抽成通用件只会让页面上多出一份看不出画面的数据。样式在站点根 `widgets.css` 与 `diagrams.css`（Mintlify 自动加载根目录下的 `.css`），观感按仓库根 `DESIGN.md`。
+- `snippets/`：页面里的 React 组件，分两类。**交互件**在 `widgets.jsx`（`Picker` / `Verdict` / `Lifecycle` / `Schedule`），页面用 props 传数据——同一个交互形态被多页复用，数据当然归页面。**结构图**一图一个组件、一图一个文件（`diagram-sandbox-mode.jsx`、`diagram-turn-roundtrip.jsx`、`diagram-hitl-handshake.jsx` 这样命名），内容写死在组件里：图讲的是哪件事本身就是这张图的一部分，抽成通用件只会让页面上多出一份看不出画面的数据。观感按仓库根 `DESIGN.md`。
+- `styles/`：组件样式，**一个组件一份，文件名与 `snippets/` 里的组件文件对应**（`diagram-turn-roundtrip.jsx` ↔ `diagram-turn-roundtrip.css`）。只有真正被两个以上组件用到的规则才进共用文件：`base.css`（令牌、外框、页眉页脚、语义色、逐段点亮引擎）与 `tabs.css`（单选组切面板，`Picker` 和 `ConfigLayers` 共用）；两张接入形状图画的是同一种形状，共用 `diagram-access-modes.css`。Mintlify 会加载仓库里的 `.css` 并对全站生效，子目录也算，所以拆文件只是写法组织，不影响加载。
 - 新增或改这两类组件前先读文件开头那段写法约束：只写箭头函数、不写 `import`、模块作用域不放未导出的辅助变量，交互与动画一律走 CSS（`:checked` / `:has()` / `animation-delay`）。Mintlify 把 JSX snippet 的导出内联进 MDX，不当模块打包：**snippet 之间不能互相 import**（共用的小工具函数只能同文件，这也是交互四件挤在一个文件里的原因），也**只认 `.mdx` / `.md` / `.jsx`**——没有 `.tsx`，组件里写不了类型标注。
 - `zh/`：中文文档，是英文各目录的翻译源头。Tutorial 与 How-to 页面统一放在 `tutorials/`，其余按 Explanation、Reference 和 Troubleshooting 分区，具体边界见 `zh/README.md`。中文定位、概念命名和场景示例是公开叙事的准绳；英文页只在 `zh/` 对应页更新后同步翻译，英文版本由其它 AI 翻译，不在英文侧单独定稿内容或结构。
 

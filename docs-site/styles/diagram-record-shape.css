@@ -1,0 +1,52 @@
+/* 同一份 Record，两个口径：snippets/diagram-record-shape.jsx 独有的样式。
+   切面板的机制与 Picker 共用，在 styles/tabs.css；共用底座在 styles/base.css。 */
+
+.ne-rec-panel { padding: 10px 12px 12px; }
+
+.ne-rec-exp {
+  margin: 8px 0 4px;
+  font-family: var(--ne-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ne-rec-panel > .ne-rec-exp:first-child { margin-top: 0; }
+
+.ne-rec-run,
+.ne-rec-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0 3px 10px;
+  border-left: 1px solid var(--ne-border);
+}
+
+.ne-rec-when {
+  flex: none;
+  width: 74px;
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+.ne-rec-cell {
+  padding: 1px 7px;
+  border: 1px dashed var(--ne-border);
+  font-family: var(--ne-mono);
+  font-size: 11px;
+  color: var(--ne-text-3);
+}
+
+/* 被这个口径选中的格子：实线加提亮，符号与文字同场 */
+.ne-rec-on {
+  border-style: solid;
+  border-color: var(--ne-border-strong);
+  background: var(--ne-subtle);
+  color: var(--ne-text);
+}
+
+.ne-rec-gap { font-size: 12px; }
+
+.ne-rec-gap .ne-mono { margin-right: 4px; }
+
+.ne-rec-panel .ne-why { margin-top: 10px; }
