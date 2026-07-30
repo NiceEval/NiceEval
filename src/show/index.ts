@@ -195,8 +195,8 @@ function evidenceViewOf(flags: Pick<ShowFlags, "source" | "execution" | "timing"
 /**
  * 证据切面单个 attempt 的 `--json` `data`:直接调用该 view 对应的组件 `*Data` 函数
  * (docs/feature/reports/show/json.md「data:按 view 找组件声明」),不重算一遍——与 text 面
- * 消费同一份产物。`--diff=<路径>` 的单文件逐窗口 patch 不进 `AttemptDiffData`(该类型只有
- * 文件级摘要),`--json` 对 `diff` view 恒输出文件级摘要,忽略 `diffPath`。
+ * 消费同一份产物。`AttemptDiffData` 带每个文件的逐窗口 patch,`--json` 对 `diff` view 恒输出
+ * 完整投影(不截断是 JSON 面的通则),`diffPath` 只影响 text 面选哪一个文件展开。
  */
 async function evidenceJsonDataOf(view: ShowJsonView, evidence: AttemptEvidence): Promise<unknown> {
   const mod = await import("../../dist/report/components/attempt-detail/compute.js");
@@ -270,7 +270,9 @@ async function renderEvidenceSections(
       );
     }
     if (flags.diff || flags.diffPath !== undefined) {
-      blocks.push(diffText({ header, diff: attemptEvidence.diff, artifactPath, file: flags.diffPath }));
+      // text 面与 --json、web 面读同一份投影(docs/feature/reports/show/diff.md「投影单源」)。
+      const mod = await import("../../dist/report/components/attempt-detail/compute.js");
+      blocks.push(diffText({ header, data: mod.attemptDiffData(attemptEvidence), artifactPath, file: flags.diffPath }));
     }
     sections.push(blocks.join("\n\n"));
   }

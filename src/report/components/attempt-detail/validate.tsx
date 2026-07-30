@@ -408,17 +408,17 @@ export function validateTraceData(data: unknown): string | null {
 
 // ───────────────────────── AttemptDiff ─────────────────────────
 
-const DIFF_FILE_NET = ["added", "modified", "deleted"];
+const DIFF_FILE_CHANGE = ["added", "modified", "deleted"];
 
-/** AttemptDiffFileEntry(src/report/model/types.ts):`net` 恒 !== "none"(净无变化不进这份列表)。 */
+/** DiffFile(src/report/definition/primitives/diff-lines.ts):净无变化的文件不进这份列表。 */
 function diffFileEntryProblem(value: unknown, path: string): string | null {
-  if (!isObject(value)) return `"${path}" must be an AttemptDiffFileEntry { path, net, lines, windows }`;
+  if (!isObject(value)) return `"${path}" must be a DiffFile { path, change, added, removed, windows }`;
   if (typeof value.path !== "string") return `"${path}.path" must be a string`;
-  if (typeof value.net !== "string" || !DIFF_FILE_NET.includes(value.net)) {
-    return `"${path}.net" must be one of ${JSON.stringify(DIFF_FILE_NET)}`;
+  if (typeof value.change !== "string" || !DIFF_FILE_CHANGE.includes(value.change)) {
+    return `"${path}.change" must be one of ${JSON.stringify(DIFF_FILE_CHANGE)}`;
   }
-  if (!isObject(value.lines) || typeof value.lines.added !== "number" || typeof value.lines.deleted !== "number") {
-    return `"${path}.lines" must be an object { added, deleted }`;
+  if (typeof value.added !== "number" || typeof value.removed !== "number") {
+    return `"${path}.added" and "${path}.removed" must be numbers`;
   }
   if (!Array.isArray(value.windows)) return `"${path}.windows" must be an array`;
   return null;

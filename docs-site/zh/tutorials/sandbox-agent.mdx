@@ -119,6 +119,31 @@ createSandbox
 
 `t.sandbox.diff` 与 `t.sandbox.fileChanged()` 只包含 **agent 在 `t.send()` 期间改动的文件**：NiceEval 在每次 `t.send()` 前后记录一次工作区状态，把中间的变化记在 agent 名下。你上传的起始文件、`t.send()` 之后写入的验证材料都不会混进来，所以 `fileChanged("src/app.ts")` 只在 agent 真的动过这个文件时通过。
 
+## 文件改动的采集条件
+
+NiceEval 在 Sandbox 里另开一本私有 Git 仓库，每次 `t.send()` 前后各记一次工作区状态，中间的变化就是 agent 改的。要让这份记录采得到，下面几条要成立：
+
+- **Sandbox 里有 `git` 和 POSIX shell。** 内置 provider 的默认镜像都带，自定义镜像要自己确认。被测项目自己是不是 Git 仓库不影响采集：这本账放在 workdir 之外的私有路径，不碰你的 `.git`，agent 也看不到它。
+- **文件写在 workdir 里。** 采集范围就是 `sandbox.workdir`。写文件时省略 `targetDir` / `cwd`，需要绝对路径就读 `sandbox.workdir`，不要硬编码 `/workspace`——写到 workdir 之外的文件 agent 看不见，也采不到。
+- **workdir 根下没有第二个 Git 仓库。** 被测 checkout 直接放在 workdir 根。workdir 里出现 submodule 或另一个 clone 进来的仓库时，这一步直接报执行错误并列出路径，因为那个仓库里的普通文件改动会从记录里静默消失。确实不参与评分的仓库用 `diff.ignore` 整体排除。
+- **改动发生在 `t.send()` 期间。** 最后一次 `t.send()` 之后写入的文件算你的验证材料，不进这份记录。
+
+`.git`、`node_modules`、`__pycache__`、Python 虚拟环境、常见构建产物和包管理器缓存默认排除——不排除的话，`setup` 里一次 `npm install` 就能让记录涨到几万个文件。要调整就写评估用例的 `diff` 字段：
+
+```typescript
+export default defineEval({
+  diff: {
+    ignore: ["fixtures/**"],               // agent 改这里不算它的改动
+    include: ["node_modules/some-pkg/**"],  // 被 patch 的依赖要算
+  },
+  async test(t) { /* ... */ },
+});
+```
+
+pattern 是 gitignore 风格，以 workdir 根为基准：不带 `/` 的匹配任意深度的同名项，带 `/` 的从 workdir 根匹配，末尾 `/` 表示目录。项目自己的 `.gitignore` 不参与判断，被项目忽略的文件照常记录。清单在第一次记账时冻结，agent 事后改 `.gitignore` 影响不了它。
+
+单个 `t.send()` 窗口最多采 10,000 个路径、64 MiB 内容。超了这一步直接报执行错误，不会伪装成「一个文件都没改」让文件断言假通过。
+
 生命周期（`.setup()` / `.teardown()`）挂在 experiment `sandbox` 字段的 spec 上，用来做"按实验变化的环境准备"——装某个实验专属的二进制、预热、跨 attempt 载入和回存状态。它写下的文件属于环境，不会被算进 agent 产出的 diff。写法和规则见 [Sandbox provider · 生命周期](/zh/tutorials/sandbox-providers#生命周期)。
 
 ## 自定义 sandbox agent

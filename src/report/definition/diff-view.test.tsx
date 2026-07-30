@@ -1,5 +1,6 @@
 // cases: docs/engineering/testing/unit/reports.md
-// 「Conversation / DiffView 的两面投影与维度封闭性」——DiffView 条目。
+// 「DiffView 的两面投影与维度封闭性」「DiffView 的路径树构成」
+// 「DiffView 的逐窗口 patch 与内联预算」——DiffView 条目。
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -23,24 +24,36 @@ import { UndeclaredDimensionValueError } from "../presentation.ts";
 
 const content: DiffContent = [
   {
-    path: "src/b.ts",
+    path: "src/report/model/format.ts",
     change: "modified",
     added: 2,
     removed: 1,
-    patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added\n",
+    windows: [
+      { window: "s1/t1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
+      { window: "s1/t2", patch: "@@ -5,1 +5,2 @@\n+second window" },
+    ],
   },
   {
-    path: "src/a.ts",
-    change: "generated",
+    path: "src/report/model/notes.md",
+    change: "added",
     added: 10,
     removed: 0,
+    windows: [{ window: "s1/t2", patch: "@@ -1,0 +1,1 @@\n+new file" }],
   },
   {
     path: "old.txt",
     change: "deleted",
     added: 0,
     removed: 3,
-    patch: "",
+    windows: [{ window: "s1/t1", patch: "@@ -1,3 +1,0 @@\n-a\n-b\n-c" }],
+  },
+  {
+    path: "assets/logo.png",
+    change: "modified",
+    added: 0,
+    removed: 0,
+    binary: { beforeBytes: 10, afterBytes: 20 },
+    windows: [{ window: "s1/t1" }],
   },
 ];
 
@@ -66,55 +79,88 @@ const webCtx: WebContext = {
   },
 };
 
+const attemptPage: PageContext = {
+  id: "attempt",
+  input: "attempt",
+  locator: "@loc1" as AttemptLocator,
+  evidence: {} as AttemptEvidence,
+};
+
 describe("DiffView", () => {
-  it("两面投影:分组摘要、patch 行号与下钻命令", async () => {
-    const tree = await resolve(
-      <DiffView data={content} />,
-      { id: "attempt", input: "attempt", locator: "@loc1" as AttemptLocator, evidence: {} as AttemptEvidence },
-    );
+  it("两面投影:摘要行、逐窗口 patch 与下钻命令", async () => {
+    const tree = await resolve(<DiffView files={content} />, attemptPage);
     const text = renderNodeToText(tree, createTextContext({ width: 100 }));
-    expect(text).toContain("changes: 3 files changed by agent");
+    expect(text).toContain("4 files changed by agent");
     expect(text).toContain("niceeval show @loc1 --diff");
-    expect(text).toContain("M src/b.ts (+2/-1)");
-    expect(text).toContain("A src/a.ts (+10/-0)");
-    expect(text).toContain("D old.txt (+0/-3)");
-    expect(text).not.toContain("context");
-    expect(text).not.toContain("+added");
+    expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +s1\/t1, s1\/t2/);
+    expect(text).toMatch(/A +src\/report\/model\/notes\.md +\+10 +s1\/t2/);
+    expect(text).toMatch(/D +old\.txt +-3 +s1\/t1/);
+    expect(text).toContain("binary 10 → 20 bytes");
+    // 摘要面不铺 patch 正文
+    expect(text).not.toContain("second window");
 
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toContain("niceeval-diff-view");
-    expect(html).toContain('data-change="generated"');
+    expect(html).toContain('data-change="added"');
     expect(html).toContain('data-change="modified"');
-    expect(html).toContain("src/a.ts");
-    expect(html).toContain("src/b.ts");
+    expect(html).toContain('data-change="deleted"');
+    // 一个文件的两个窗口各成一段,不合成跨窗口 patch
+    expect(html).toContain("window s1/t1");
+    expect(html).toContain("window s1/t2");
+    expect(html.match(/niceeval-diff-window-title/g)?.length).toBe(4);
     expect(html).toContain("niceeval-diff-patch-line--add");
     expect(html).toContain("niceeval-diff-patch-line--remove");
-    expect(html).toContain("Patch unavailable for this file.");
-    expect(html).toContain("<details");
+    // 二进制文件不出 patch,只报字节数
+    expect(html).toContain("niceeval-diff-bytes");
   });
 
-  it("摘要行的增删数各自着色,text 面仍是一段纯文本", async () => {
-    const tree = await resolve(
-      <DiffView data={content} />,
-      { id: "attempt", input: "attempt", locator: "@loc1" as AttemptLocator, evidence: {} as AttemptEvidence },
-    );
+  it("路径树:目录汇总、单子目录链压缩,状态不参与分组", async () => {
+    const tree = await resolve(<DiffView files={content} />, attemptPage);
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
-    // 折叠态的两个数字与展开后的增删行同一套颜色,各自成 span 才染得上
-    expect(html).toContain('<span class="niceeval-diff-lines-added">+2</span>');
+    // src/ 下只有 report/model 这一条链,压成一行
+    expect(html).toContain(">src/report/model/<");
+    expect(html).not.toContain(">src/<");
+    // added 与 modified 的文件进同一棵子树:结构轴是路径而不是状态
+    const subtree = html.slice(html.indexOf("src/report/model/"));
+    expect(subtree).toContain("format.ts");
+    expect(subtree).toContain("notes.md");
+    // 目录行给子树文件数与增删汇总
+    expect(html).toContain("2 files");
+    expect(html).toContain('<span class="niceeval-diff-lines-added">+12</span>');
     expect(html).toContain('<span class="niceeval-diff-lines-removed">-1</span>');
-    // 着色不改数字本身:text 面照旧是 `+N/-M`
-    expect(renderNodeToText(tree, createTextContext({ width: 100 }))).toContain("(+2/-1)");
+    // 摘要行的两个数字各自成元素才染得上与 patch 增删行同一套颜色
+    expect(html).toContain('<span class="niceeval-diff-lines-added">+2</span>');
   });
 
-  it("空数组与 null Content 零输出", async () => {
-    const emptyTree = await resolve(<DiffView data={[]} />);
+  it("单文件 patch 超预算时退化成下钻命令,不留空的展开区", async () => {
+    const huge: DiffContent = [
+      ...content,
+      {
+        path: "src/report/model/bundle.js",
+        change: "modified",
+        added: 1,
+        removed: 1,
+        windows: [{ window: "s1/t1", patch: `@@ -1,1 +1,1 @@\n${"+x".repeat(40_000)}` }],
+      },
+    ];
+    const tree = await resolve(<DiffView files={huge} />, attemptPage);
+    const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+    const row = html.slice(html.indexOf("bundle.js"));
+    expect(row).toContain("patch over inline budget");
+    expect(row).toContain("niceeval show @loc1 --diff=src/report/model/bundle.js");
+    // 同一棵树里没超预算的文件照常内联
+    expect(html).toContain('niceeval-diff-patch-text">second window');
+    // text 面不受预算约束,摘要仍列这个文件
+    expect(renderNodeToText(tree, createTextContext({ width: 100 }))).toContain("bundle.js");
+  });
+
+  it("空数组与 null files 零输出", async () => {
+    const emptyTree = await resolve(<DiffView files={[]} />);
     expect(renderNodeToText(emptyTree, createTextContext({ width: 40 }))).toBe("");
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(emptyTree as never))).toBe("");
 
-    const nullTree = await resolve(<DiffView data={null} />);
+    const nullTree = await resolve(<DiffView files={null} />);
     expect(renderNodeToText(nullTree, createTextContext({ width: 40 }))).toBe("");
     expect(runWithWebContext(webCtx, () => renderToStaticMarkup(nullTree as never))).toBe("");
   });
-
-
 });

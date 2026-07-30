@@ -40,7 +40,6 @@ export type {
   AttemptConversationRound,
   AttemptDiagnosticsData,
   AttemptDiffData,
-  AttemptDiffFileEntry,
   AttemptErrorData,
   AttemptFixPromptData,
   AttemptListItem,

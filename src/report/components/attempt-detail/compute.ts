@@ -14,7 +14,6 @@ import type {
   AttemptConversationRound,
   AttemptDiagnosticsData,
   AttemptDiffData,
-  AttemptDiffFileEntry,
   AttemptErrorData,
   AttemptFixPromptData,
   AttemptSourceData,
@@ -24,7 +23,8 @@ import type {
   AttemptTraceData,
   UsageTableData,
 } from "../../model/types.ts";
-import type { AssertionResult, DiagnosticRecord, EvalResult, FailedCommandEvidence, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingNode } from "../../../types.ts";
+import type { AssertionResult, DiagnosticRecord, EvalResult, FailedCommandEvidence, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingNode, WindowChange } from "../../../types.ts";
+import type { DiffFile } from "../../definition/primitives/diff-lines.ts";
 import { attemptCostUSD } from "../../model/metrics.ts";
 import { failureSummaryOf } from "../entity-lists/compute.ts";
 import { buildO11ySummary } from "../../../o11y/derive.ts";
@@ -523,7 +523,7 @@ export function attemptTraceData(evidence: AttemptEvidence): AttemptTraceData | 
 
 // ───────────────────────── AttemptDiff ─────────────────────────
 
-/** 有界行 diff(公共前后缀修剪):对单区域编辑精确,复杂编辑给出上界近似;与 `niceeval show --diff` 同一算法。 */
+/** 有界行 diff(公共前后缀修剪):对单区域编辑精确,复杂编辑给出上界近似。 */
 function lineDelta(before: string | undefined, after: string | undefined): { added: number; deleted: number } {
   const a = before === undefined ? [] : before.split("\n");
   const b = after === undefined ? [] : after.split("\n");
@@ -534,20 +534,72 @@ function lineDelta(before: string | undefined, after: string | undefined): { add
   return { added: b.length - prefix - suffix, deleted: a.length - prefix - suffix };
 }
 
+const MAX_HUNK_LINES = 200;
+
+/**
+ * 一个窗口内单文件的最小 unified hunk:公共前后缀修剪出的编辑区,一段 `@@` 展示。
+ * 逐窗口生成、不跨窗口合成——窗口之间可能夹着 eval 侧写入,合成会把它算进 agent 的账
+ * (docs/feature/reports/components/primitives/diff-view.md「值形状」)。
+ */
+function windowHunk(change: WindowChange): string {
+  const a = change.before === undefined ? [] : change.before.replace(/\n$/, "").split("\n");
+  const b = change.after === undefined ? [] : change.after.replace(/\n$/, "").split("\n");
+  let prefix = 0;
+  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
+  let suffix = 0;
+  while (suffix < a.length - prefix && suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix++;
+  const removed = a.slice(prefix, a.length - suffix);
+  const added = b.slice(prefix, b.length - suffix);
+  const ctxBefore = a.slice(Math.max(0, prefix - 2), prefix);
+  const start = Math.max(1, prefix - ctxBefore.length + 1);
+  const lines = [`@@ -${start},${removed.length + ctxBefore.length} +${start},${added.length + ctxBefore.length} @@`];
+  for (const line of ctxBefore) lines.push(` ${line}`);
+  const shownRemoved = removed.slice(0, MAX_HUNK_LINES);
+  const shownAdded = added.slice(0, MAX_HUNK_LINES);
+  for (const line of shownRemoved) lines.push(`-${line}`);
+  if (removed.length > shownRemoved.length) lines.push(`… (${removed.length - shownRemoved.length} more removed lines)`);
+  for (const line of shownAdded) lines.push(`+${line}`);
+  if (added.length > shownAdded.length) lines.push(`… (${added.length - shownAdded.length} more added lines)`);
+  return lines.join("\n");
+}
+
+/**
+ * `null` 与空清单是两件事:`null` = 这次 attempt 没有 diff 证据(direct agent、发布未带 diff),
+ * 空清单 = 有证据但 agent 一个文件都没净改动(契约见
+ * docs/feature/reports/components/attempt-detail/attempt-diff.md「可用性」)。
+ */
 export function attemptDiffData(evidence: AttemptEvidence): AttemptDiffData | null {
-  if (!evidence.capabilities.diff || evidence.diff === null) return null;
+  // 只看 artifact 在不在:`capabilities.diff` 额外要求「有文件被改过」,拿它当门会把
+  // 「跑了但一个文件都没改」误报成没有证据。
+  if (evidence.diff === null) return null;
   const diff = evidence.diff;
-  const files: AttemptDiffFileEntry[] = [];
+  const files: DiffFile[] = [];
   for (const [path, summary] of Object.entries(diff.files).sort(([a], [b]) => a.localeCompare(b))) {
     if (summary.net === "none") continue;
-    const windows = diff.windows.filter((w) => w.changes[path] !== undefined).map((w) => w.window);
+    const touched = diff.windows.filter((w) => w.changes[path] !== undefined);
     if (summary.binary) {
-      files.push({ path, net: summary.net, lines: { added: 0, deleted: 0 }, binary: true, windows });
+      const first = touched[0]?.changes[path]?.binary ?? {};
+      const last = touched[touched.length - 1]?.changes[path]?.binary ?? {};
+      files.push({
+        path,
+        change: summary.net,
+        added: 0,
+        removed: 0,
+        binary: { beforeBytes: first.beforeBytes, afterBytes: last.afterBytes },
+        windows: touched.map((w) => ({ window: w.window })),
+      });
       continue;
     }
-    const before = summary.net === "added" ? undefined : diff.windows.find((w) => w.changes[path]?.before !== undefined)?.changes[path]?.before;
+    const before = summary.net === "added" ? undefined : touched.find((w) => w.changes[path]?.before !== undefined)?.changes[path]?.before;
     const after = summary.net === "deleted" ? undefined : diff.get(path);
-    files.push({ path, net: summary.net, lines: lineDelta(before, after), windows });
+    const lines = lineDelta(before, after);
+    files.push({
+      path,
+      change: summary.net,
+      added: lines.added,
+      removed: lines.deleted,
+      windows: touched.map((w) => ({ window: w.window, patch: windowHunk(w.changes[path]!) })),
+    });
   }
-  return files.length > 0 ? { locator: evidence.locator, files } : null;
+  return { locator: evidence.locator, files };
 }

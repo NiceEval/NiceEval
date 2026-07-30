@@ -23,6 +23,7 @@ import type {
   Usage,
   Verdict,
 } from "../../types.ts";
+import type { DiffFile } from "../definition/primitives/diff-lines.ts";
 import type { LocalizedText, ReportLocale } from "./locale.ts";
 import type { MetricValue } from "./calculation.ts";
 export type { MetricValue } from "./calculation.ts";
@@ -823,20 +824,13 @@ export interface AttemptTraceData {
   spans: TraceSpan[];
 }
 
-/** `AttemptDiff` 一个文件的摘要:`net` 恒 !== "none"(净无变化的触碰不进这份列表)。 */
-export interface AttemptDiffFileEntry {
-  path: string;
-  net: "added" | "modified" | "deleted";
-  /** 净行数变化(公共前后缀修剪后的近似上界,与 `niceeval show --diff` 同一算法)。 */
-  lines: { added: number; deleted: number };
-  binary?: true;
-  /** 触碰过该文件的窗口标签,按时序;供 text 面引用 `--diff` 深挖同一批窗口。 */
-  windows: string[];
-}
-
-/** `AttemptDiff` 的 data:generated / modified / deleted 的文件级摘要;没有变更时 null。 */
+/**
+ * `AttemptDiff` 的 data:文件级摘要加逐窗口 patch;`files` 的形状单源在 `DiffView`
+ * (`DiffFile`,src/report/definition/primitives/diff-lines.ts)。
+ * 没有 diff 证据时整段 `null`,有证据但 agent 没有净改动时 `files` 为空数组。
+ */
 export interface AttemptDiffData {
   /** text 面拼 `niceeval show <locator> --diff` 下钻命令用;web 面不需要。 */
   locator: AttemptLocator;
-  files: AttemptDiffFileEntry[];
+  files: readonly DiffFile[];
 }

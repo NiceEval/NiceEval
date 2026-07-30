@@ -304,19 +304,22 @@ describe("validateTraceData", () => {
 });
 
 describe("validateDiffData", () => {
-  const valid = { locator: "@1abcdef2", files: [{ path: "a.ts", net: "modified", lines: { added: 1, deleted: 0 }, windows: ["s1/t1"] }] };
+  const valid = {
+    locator: "@1abcdef2",
+    files: [{ path: "a.ts", change: "modified", added: 1, removed: 0, windows: [{ window: "s1/t1", patch: "@@ -1 +1 @@" }] }],
+  };
 
   it("合规 literal 通过", () => {
     expect(validateDiffData(valid)).toBeNull();
   });
 
-  it("net 不在三态枚举内报错", () => {
-    const bad = { ...valid, files: [{ ...valid.files[0], net: "none" }] };
-    expect(validateDiffData(bad)).toMatch(/"files\[0\]\.net"/);
+  it("change 不在三态枚举内报错", () => {
+    const bad = { ...valid, files: [{ ...valid.files[0], change: "none" }] };
+    expect(validateDiffData(bad)).toMatch(/"files\[0\]\.change"/);
   });
 
-  it("lines 结构错误报错", () => {
-    const bad = { ...valid, files: [{ ...valid.files[0], lines: { added: 1 } }] };
-    expect(validateDiffData(bad)).toMatch(/"files\[0\]\.lines"/);
+  it("增删行数不是数字报错", () => {
+    const bad = { ...valid, files: [{ ...valid.files[0], removed: "0" }] };
+    expect(validateDiffData(bad)).toMatch(/"files\[0\]\.added"/);
   });
 });

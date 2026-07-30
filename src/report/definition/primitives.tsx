@@ -939,7 +939,7 @@ export { CopyBlock } from "./primitives/copy-block.tsx";
 export type { CopyBlockContent, CopyBlockProps } from "./primitives/copy-block.tsx";
 
 export { DiffView, diffViewText } from "./primitives/diff-view.tsx";
-export type { DiffChange, DiffContent, DiffFile, DiffViewProps } from "./primitives/diff-view.tsx";
+export type { DiffChange, DiffContent, DiffFile, DiffFileWindow, DiffViewProps } from "./primitives/diff-view.tsx";
 
 export { Conversation, ConversationEntries, conversationText, sanitizeConversationPreview } from "./primitives/conversation.tsx";
 export type {

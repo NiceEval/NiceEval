@@ -216,7 +216,7 @@ export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props,
       />
       <AttemptUsage data={usage} />
       {conversation !== null ? <Conversation data={conversation} /> : null}
-      <DiffView data={diff} />
+      <DiffView files={diff} />
     </Col>
   );
 });

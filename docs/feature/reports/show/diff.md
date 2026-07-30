@@ -32,7 +32,13 @@ M manager_decisions.json · touched in turn1, turn2
 
 `--diff=<path>` 必须用 `=` 连写，空格后的 token 会按 eval id 位置参数解析。二进制文件在摘要里显示字节数变化，不输出 patch。`diff.json` 缺失（direct agent、或发布时未带 `diff`）时如实输出 `diff unavailable` 并说明原因，不猜。
 
+摘要与单文件 patch 都读 [`diffResult(attempt)`](../components/attempt-detail/attempt-diff.md) 这一份投影。
+web 面把同一批文件排成[路径树](../components/primitives/diff-view.md#web-面路径树)，
+行首字母、增删行数与窗口标签逐字同源。
+
 ## 相关阅读
 
 - [`--execution`](execution.md) —— 改动发生的那一轮说了什么、调了什么工具。
+- [Attempt diff](../components/attempt-detail/attempt-diff.md) —— 差异的来源、派生规则与可用性。
+- [`DiffView`](../components/primitives/diff-view.md) —— 值形状与 web 面的路径树。
 - [Record Library](../../record/library.md) —— `diff.json` 的窗口结构与脚本消费。

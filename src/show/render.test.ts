@@ -12,7 +12,8 @@
 // display/stdout/stderr;命中计数与 0 命中的明确输出。
 
 import { describe, expect, it } from "vitest";
-import { executionText, verdictReasonLine } from "./render.ts";
+import { diffText, executionText, verdictReasonLine } from "./render.ts";
+import { diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { EvalResult, PhaseTiming, StreamEvent, TimingNode, Verdict } from "../types.ts";
 import { buildExecutionTree } from "../o11y/execution-tree.ts";
 import { encodeAttemptLocator, type AttemptEvidence, type AttemptIdentity } from "../record/index.ts";
@@ -440,5 +441,41 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
     expect(matches).toBe(1);
     expect(text).toContain("--expand t1.c2");
     expect((text.match(/y/g) ?? []).length).toBeLessThan(9000);
+  });
+});
+
+describe("--diff:与 DiffView 的 text 面读同一份投影", () => {
+  // cases: docs/engineering/testing/unit/reports.md「DiffView 与 --diff 的投影单源」。
+  const files = [
+    {
+      path: "src/a.ts",
+      change: "modified" as const,
+      added: 2,
+      removed: 1,
+      windows: [
+        { window: "s1/t1", patch: "@@ -1,2 +1,3 @@\n context\n-removed\n+added" },
+        { window: "s1/t2", patch: "@@ -9,1 +9,2 @@\n+later" },
+      ],
+    },
+    { path: "b.md", change: "added" as const, added: 4, removed: 0, windows: [{ window: "s1/t2", patch: "@@ -1,0 +1,1 @@\n+new" }] },
+  ];
+  const data = { locator: encodeAttemptLocator(identityOf()), files };
+
+  it("摘要体与组件 text 面逐字相同,带轮标签", () => {
+    const body = diffText({ header: "H", data }).slice("H\n\n".length);
+    expect(body).toBe(diffSummaryText(files, { singleFileHint: true }));
+    expect(body).toContain("s1/t1, s1/t2");
+  });
+
+  it("--diff=<path> 按窗口分段,不合成跨窗口 patch", () => {
+    const text = diffText({ header: "H", data, file: "src/a.ts" });
+    expect(text).toContain("── window s1/t1");
+    expect(text).toContain("── window s1/t2");
+    expect(text).toContain("M src/a.ts · touched in s1/t1, s1/t2");
+  });
+
+  it("没有 diff 证据与一个文件都没改是两回事", () => {
+    expect(diffText({ header: "H", data: null })).toContain("diff unavailable");
+    expect(diffText({ header: "H", data: { ...data, files: [] } })).toContain("no file changes by the agent");
   });
 });

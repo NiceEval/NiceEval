@@ -409,20 +409,10 @@ export function attemptFixPromptContent(data: AttemptFixPromptData | null): Copy
   return { title: { en: "Fix prompt", "zh-CN": "修复 prompt" }, text: data.prompt };
 }
 
-const NET_TO_CHANGE: Record<string, DiffFile["change"]> = {
-  added: "generated",
-  modified: "modified",
-  deleted: "deleted",
-};
-
+/** 投影已经是 `DiffFile[]`,这里只把「没有证据」与「没有改动」都收成组件的零输出。 */
 export function attemptDiffContent(data: AttemptDiffData | null): DiffContent | null {
-  if (data === null) return null;
-  return data.files.map((file) => ({
-    path: file.path,
-    change: NET_TO_CHANGE[file.net] ?? "modified",
-    added: file.lines.added,
-    removed: file.lines.deleted,
-  }));
+  if (data === null || data.files.length === 0) return null;
+  return data.files;
 }
 
 export function attemptNoticesContent(

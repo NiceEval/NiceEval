@@ -239,6 +239,7 @@
 | show 对照 / 稳定性切片(`deltaTableData` / `stabilityMatrixData`) | `src/report/slices/{compute,content,validate}.ts` |
 | 图表族 Dataset 解析、轴值域推定、字符坐标图 text 面 | `src/report/model/chart/{math,plot}.ts` + `src/report/definition/primitives/{chart,marks,points-dataset}.tsx` |
 | Attempt 详情:`AttemptDetails` 组合件 + 公开 `to*`(`toAttemptSummary` / `toConversationTurns` / `toDiffFiles` / `toAnnotatedEvalSource` 等) | `src/report/components/attempt-detail/index.tsx`(内部计算在 `compute.ts` / `content.tsx`;公开转换在 `conversions.ts`;text 面在 `faces.ts`;测试 `attempt-components.test.tsx`) |
+| 文件差异:`DiffFile` 形状、摘要与逐窗口 patch 文本、内联预算、路径树构成 | `src/report/definition/primitives/diff-lines.ts`(两面共用的纯模块,`src/show/render.ts` 的 `diffText` 与 `DiffView` 都引它);逐窗口 hunk 生成在 `attempt-detail/compute.ts`(`attemptDiffData`) |
 | `toAttemptAssertions` 计分制字段与分组 | `src/report/model/conversions.ts` → `attempt-detail/compute.ts`(`attemptAssertionsData`、`groupByPath`)、`faces.ts`、`src/report/model/format.ts` |
 | 站点组件(`Hero` / `HeroCard` / `PoweredBy` / `Callouts` + `toSampleNotices` / `toRunNotices` / `CopyBlock` + `toSampleFixPrompt` / `Waterfall` + `toTraceNodes`) | `src/report/components/site-components/index.tsx`(投影在 `projections.ts` / `compute.ts`;text 面在 `faces.ts`;警告聚合在 `scope-warnings.ts`;测试 `site-components.test.tsx`) |
 | 官方专用组件 web 面样式与页级色分配 | `src/report/components/{summaries,entity-lists}/*.tsx` + `src/report/assets/colors.ts` + `styles.css`；React 入口 `src/report/react/index.tsx` |

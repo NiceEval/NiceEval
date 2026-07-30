@@ -1,92 +1,79 @@
-// DiffView:文件清单与可展开 patch(docs/feature/reports/components/primitives/diff-view.md)。
+// DiffView:按路径分层的文件清单与逐窗口 patch
+// (docs/feature/reports/components/primitives/diff-view.md)。值形状、摘要文本、内联预算与
+// 树的构成都在 diff-lines.ts,这里只负责两面渲染。
 
 import type { ReactElement, ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
-import {
-  dataShapeError,
-  isObject,
-  type ValueProps,
-} from "../../components/shared.ts";
+import { dataShapeError, isObject } from "../../components/shared.ts";
 import { type ReportLocale } from "../../model/locale.ts";
 import { defineComponent, type ResolveContext, type TextContext } from "../tree.ts";
+import {
+  buildDiffTree,
+  diffChangeLetter,
+  diffSummaryText,
+  planInlinePatches,
+  type DiffContent,
+  type DiffFile,
+  type DiffFileWindow,
+  type DiffTreeNode,
+} from "./diff-lines.ts";
 
-export type DiffChange = "generated" | "modified" | "deleted";
+export type { DiffChange, DiffContent, DiffFile, DiffFileWindow } from "./diff-lines.ts";
 
-export interface DiffFile {
-  path: string;
-  change: DiffChange;
-  added: number;
-  removed: number;
-  patch?: string;
+export interface DiffViewProps {
+  files: DiffContent | null;
+  locale?: ReportLocale;
+  className?: string;
+  /** text 面 `--diff` 下钻;数据源投影或 attempt page resolve 时填入。 */
+  locator?: AttemptLocator;
 }
 
-export type DiffContent = readonly DiffFile[];
-
-export type DiffViewProps = ValueProps<
-  DiffContent | null,
-  {
-    locale?: ReportLocale;
-    className?: string;
-    /** text 面 `--diff` 下钻;数据源投影或 attempt page resolve 时填入。 */
-    locator?: AttemptLocator;
-  }
->;
-
 type ResolvedDiffViewProps = {
-  data: DiffContent | null;
+  files: DiffContent | null;
   drillDown?: string;
   locator?: AttemptLocator;
   locale?: ReportLocale;
   className?: string;
 };
 
-const CHANGE_ORDER: readonly DiffChange[] = ["generated", "modified", "deleted"];
-
-const CHANGE_LABEL: globalThis.Record<DiffChange, string> = {
-  generated: "generated",
-  modified: "modified",
-  deleted: "deleted",
-};
-
 function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
-}
-
-function netLetter(change: DiffChange): string {
-  return change === "generated" ? "A" : change === "deleted" ? "D" : "M";
 }
 
 function validateDiffFile(value: unknown, path: string): string | null {
   if (!isObject(value)) return `"${path}" must be a DiffFile object`;
   if (typeof value.path !== "string") return `"${path}.path" must be a string`;
-  if (value.change !== "generated" && value.change !== "modified" && value.change !== "deleted") {
-    return `"${path}.change" must be generated | modified | deleted`;
+  if (value.change !== "added" && value.change !== "modified" && value.change !== "deleted") {
+    return `"${path}.change" must be added | modified | deleted`;
   }
   if (typeof value.added !== "number") return `"${path}.added" must be a number`;
   if (typeof value.removed !== "number") return `"${path}.removed" must be a number`;
-  if (value.patch !== undefined && typeof value.patch !== "string") return `"${path}.patch" must be a string`;
+  if (!Array.isArray(value.windows)) return `"${path}.windows" must be an array of DiffFileWindow`;
+  for (let i = 0; i < value.windows.length; i++) {
+    const w: unknown = value.windows[i];
+    if (!isObject(w) || typeof w.window !== "string") {
+      return `"${path}.windows[${i}].window" must be a string`;
+    }
+    if (w.patch !== undefined && typeof w.patch !== "string") {
+      return `"${path}.windows[${i}].patch" must be a string`;
+    }
+  }
   return null;
 }
 
-function assertDiffContent(data: unknown): DiffContent | null {
-  if (data === null || data === undefined) return null;
-  if (!Array.isArray(data)) {
-    throw dataShapeError("DiffView", "diffViewData", "DiffContent", '"data" must be an array or null');
+function assertDiffContent(files: unknown): DiffContent | null {
+  if (files === null || files === undefined) return null;
+  if (!Array.isArray(files)) {
+    throw dataShapeError("DiffView", "diffViewFiles", "DiffContent", '"files" must be an array or null');
   }
-  for (let i = 0; i < data.length; i++) {
-    const problem = validateDiffFile(data[i], `data[${i}]`);
-    if (problem !== null) throw dataShapeError("DiffView", "diffViewData", "DiffContent", problem);
+  for (let i = 0; i < files.length; i++) {
+    const problem = validateDiffFile(files[i], `files[${i}]`);
+    if (problem !== null) throw dataShapeError("DiffView", "diffViewFiles", "DiffContent", problem);
   }
-  return data as DiffContent;
+  return files as DiffContent;
 }
 
-function groupFiles(files: DiffContent): Array<{ change: DiffChange; files: DiffFile[] }> {
-  const buckets = new Map<DiffChange, DiffFile[]>();
-  for (const change of CHANGE_ORDER) buckets.set(change, []);
-  for (const file of files) buckets.get(file.change)!.push(file);
-  for (const list of buckets.values()) list.sort((a, b) => a.path.localeCompare(b.path));
-  return CHANGE_ORDER.map((change) => ({ change, files: buckets.get(change)! })).filter((g) => g.files.length > 0);
-}
+// ───────────────────────── patch 正文 ─────────────────────────
 
 interface PatchLine {
   kind: "add" | "remove" | "context" | "meta";
@@ -131,10 +118,7 @@ function parsePatchLines(patch: string): PatchLine[] {
   return out;
 }
 
-function PatchBody({ patch }: { patch?: string }): ReactElement {
-  if (patch === undefined || patch.trim().length === 0) {
-    return <p className="niceeval-diff-patch-missing">Patch unavailable for this file.</p>;
-  }
+function PatchBody({ patch }: { patch: string }): ReactElement {
   const lines = parsePatchLines(patch);
   return (
     <pre className="niceeval-diff-patch">
@@ -161,23 +145,138 @@ function PatchBody({ patch }: { patch?: string }): ReactElement {
   );
 }
 
-function FileRow({ file }: { file: DiffFile }): ReactElement {
+/** 一个文件的展开区:窗口之间独立分段,不合成跨窗口 patch。 */
+function WindowSections({ windows }: { windows: readonly DiffFileWindow[] }): ReactElement {
+  const withPatch = windows.filter((w) => w.patch !== undefined && w.patch.length > 0);
+  if (withPatch.length === 0) {
+    return <p className="niceeval-diff-patch-missing">Patch unavailable for this file.</p>;
+  }
   return (
-    <li className={cx("niceeval-diff-file", `niceeval-diff-${file.change}`)}>
+    <>
+      {withPatch.map((w) => (
+        <section key={w.window} className="niceeval-diff-window">
+          <h4 className="niceeval-diff-window-title">window {w.window}</h4>
+          <PatchBody patch={w.patch!} />
+        </section>
+      ))}
+    </>
+  );
+}
+
+// ───────────────────────── 路径树 ─────────────────────────
+
+function basename(path: string): string {
+  const at = path.lastIndexOf("/");
+  return at === -1 ? path : path.slice(at + 1);
+}
+
+function LineCounts({ added, removed }: { added: number; removed: number }): ReactElement {
+  // 折叠态的增删数与展开后 patch 里的增行、删行同一套颜色(diff-view.md「web 面:路径树」)。
+  return (
+    <span className="niceeval-diff-lines">
+      <span className="niceeval-diff-lines-added">+{added}</span>
+      {" / "}
+      <span className="niceeval-diff-lines-removed">-{removed}</span>
+    </span>
+  );
+}
+
+function FileSummary({ file }: { file: DiffFile }): ReactNode {
+  return (
+    <>
+      <span className="niceeval-diff-change" data-change={file.change}>
+        {diffChangeLetter(file.change)}
+      </span>
+      <span className="niceeval-diff-path">{basename(file.path)}</span>
+      {file.binary ? (
+        <span className="niceeval-diff-bytes">
+          {file.binary.beforeBytes ?? 0} → {file.binary.afterBytes ?? 0} bytes
+        </span>
+      ) : (
+        <LineCounts added={file.added} removed={file.removed} />
+      )}
+    </>
+  );
+}
+
+function FileRow({
+  file,
+  inlined,
+  drillCommand,
+}: {
+  file: DiffFile;
+  inlined: boolean;
+  drillCommand?: string;
+}): ReactElement {
+  const className = cx("niceeval-diff-file", `niceeval-diff-${file.change}`);
+  // 内联不了的文件不给空的展开区:直接把下钻命令摆在行上(diff-view.md「内联预算」)。
+  if (!inlined) {
+    // 二进制文件没有 patch 可看,不给下钻命令;超预算的文件把命令摆在行上。
+    const binary = file.binary !== undefined;
+    return (
+      <li className={className} data-inlined="false">
+        <div className="niceeval-diff-file-summary">
+          <FileSummary file={file} />
+        </div>
+        <p className="niceeval-diff-patch-omitted">
+          {binary ? "binary file" : "patch over inline budget"}
+          {!binary && drillCommand !== undefined ? (
+            <>
+              {" · "}
+              <code>{`${drillCommand}=${file.path}`}</code>
+            </>
+          ) : null}
+        </p>
+      </li>
+    );
+  }
+  return (
+    <li className={className} data-inlined="true">
       <details>
         <summary className="niceeval-diff-file-summary">
-          <span className="niceeval-diff-change">{CHANGE_LABEL[file.change]}</span>
-          <span className="niceeval-diff-path">{file.path}</span>
-          {/* 折叠态的增删数与展开后 patch 里的增行、删行同一套颜色(diff-view.md「渲染」)。 */}
-          <span className="niceeval-diff-lines">
-            <span className="niceeval-diff-lines-added">+{file.added}</span>
-            {" / "}
-            <span className="niceeval-diff-lines-removed">-{file.removed}</span>
-          </span>
+          <FileSummary file={file} />
         </summary>
-        <PatchBody patch={file.patch} />
+        <WindowSections windows={file.windows} />
       </details>
     </li>
+  );
+}
+
+function TreeList({
+  node,
+  inlined,
+  drillCommand,
+}: {
+  node: DiffTreeNode;
+  inlined: Set<string>;
+  drillCommand?: string;
+}): ReactElement {
+  return (
+    <ul className="niceeval-diff-tree">
+      {node.dirs.map((dir) => (
+        <li key={dir.path} className="niceeval-diff-dir">
+          {/* 目录默认展开:文件清单是这个区块的主体,不藏在一次点击后面。 */}
+          <details open>
+            <summary className="niceeval-diff-dir-summary">
+              <span className="niceeval-diff-dir-name">{dir.name}/</span>
+              <span className="niceeval-diff-dir-count">
+                {dir.fileCount} {dir.fileCount === 1 ? "file" : "files"}
+              </span>
+              <LineCounts added={dir.added} removed={dir.removed} />
+            </summary>
+            <TreeList node={dir} inlined={inlined} drillCommand={drillCommand} />
+          </details>
+        </li>
+      ))}
+      {node.files.map((file) => (
+        <FileRow
+          key={file.path}
+          file={file}
+          inlined={inlined.has(file.path)}
+          drillCommand={drillCommand}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -187,22 +286,15 @@ function attemptDrillDown(ctx: ResolveContext, flag: string): string | undefined
 }
 
 export function diffViewText(
-  data: DiffContent,
+  files: DiffContent,
   ctx: TextContext,
   locator?: AttemptLocator,
   drillDown?: string,
 ): string {
-  const head = [`changes: ${data.length} file${data.length === 1 ? "" : "s"} changed by agent`];
   const command =
     drillDown ??
     (locator !== undefined && ctx.attemptCommand ? `${ctx.attemptCommand(locator)} --diff` : undefined);
-  if (command) head.push(command);
-  const lines = [head.join(" · ")];
-  const sorted = [...data].sort((a, b) => a.path.localeCompare(b.path));
-  for (const file of sorted) {
-    lines.push(`  ${netLetter(file.change)} ${file.path} (+${file.added}/-${file.removed})`);
-  }
-  return lines.join("\n");
+  return diffSummaryText(files, { drillDown: command });
 }
 
 export const DiffView = defineComponent<DiffViewProps, ResolvedDiffViewProps>({
@@ -211,35 +303,27 @@ export const DiffView = defineComponent<DiffViewProps, ResolvedDiffViewProps>({
     const locator =
       props.locator ?? (ctx.page.input === "attempt" ? ctx.page.locator : undefined);
     return {
-      data: props.data ?? null,
+      files: props.files ?? null,
       drillDown: attemptDrillDown(ctx, "--diff"),
       locator,
       locale: props.locale,
       className: props.className,
     };
   },
-  web({ data, className }) {
-    const files = assertDiffContent(data);
-    if (files === null || files.length === 0) return null;
+  web({ files, locator, className }) {
+    const list = assertDiffContent(files);
+    if (list === null || list.length === 0) return null;
+    const drillCommand = locator === undefined ? undefined : `niceeval show ${locator} --diff`;
     return (
       <div className={cx("niceeval-report", "niceeval-diff-view", className)}>
-        {groupFiles(files).map((group) => (
-          <section key={group.change} className="niceeval-diff-group" data-change={group.change}>
-            <h3 className="niceeval-diff-group-title">{CHANGE_LABEL[group.change]}</h3>
-            <ul className="niceeval-diff-group-list">
-              {group.files.map((file) => (
-                <FileRow key={file.path} file={file} />
-              ))}
-            </ul>
-          </section>
-        ))}
+        <TreeList node={buildDiffTree(list)} inlined={planInlinePatches(list)} drillCommand={drillCommand} />
       </div>
     );
   },
-  text({ data, drillDown, locator }, ctx) {
-    const files = assertDiffContent(data);
-    if (files === null || files.length === 0) return "";
-    return diffViewText(files, ctx, locator, drillDown);
+  text({ files, drillDown, locator }, ctx) {
+    const list = assertDiffContent(files);
+    if (list === null || list.length === 0) return "";
+    return diffViewText(list, ctx, locator, drillDown);
   },
 });
 DiffView.displayName = "DiffView";

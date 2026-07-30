@@ -233,6 +233,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-conflates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当 attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按 artifact 在不在开门,空清单与无证据分成两态
 - 已修 [table-text-face-flat-rows-sibling-key-collision](table-text-face-flat-rows-sibling-key-collision.md) — show 双 Experiment 稳定抛行 key 重复:text 面漏传可选 hierarchyRows 参数、拿展平行判同层重复;修为 resolver 只产出层级权威形态并单点校验,text 面渲染期自己展平(primitives.tsx)
 - 已修 [enhance-hooks-rot-silently-when-renderer-renames-classes](enhance-hooks-rot-silently-when-renderer-renames-classes.md) — enhance.js 三处钩子指向全仓没人产出的类名:ExperimentList 排序/过滤与 AttemptList 过滤是死代码(还留着 `:sample >` 这种改名误伤的非法选择器),`.niceeval-scatter-point` 则是真 bug——图表点改叫 `.niceeval-chart-dot` 后样式化 tooltip 一直没出现、只剩浏览器原生黄框;已删死码 + 重接选择器,验收缺口(hover 断言、选择器体检)归 e2e
 - 已修 [hierarchy-table-column-widths-were-hardcoded](hierarchy-table-column-widths-were-hardcoded.md) — 层级表除首列外七列逐像素同宽(`.68fr` 写死)、结果列折行而模型/Agent 列大片留白;根因=每层行各自复读一份按列位写死的 grid 模板,修为整表一个 grid + 各层 subgrid,列宽由内容算;附 subgrid 链要穿过 Chrome `::details-content`、折叠态 `getBoundingClientRect()` 读出陈旧尺寸两个坑

@@ -5,7 +5,7 @@
 // 盘上。全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, DiffData, EvalResult, FailedCommandEvidence, LocalizedText, TimingNode, TraceSpan, Verdict } from "../types.ts";
+import type { AssertionResult, EvalResult, FailedCommandEvidence, LocalizedText, TimingNode, TraceSpan, Verdict } from "../types.ts";
 import type { AttemptEvidence, AttemptHandle } from "../record/index.ts";
 import type { AnnotatedSourceLine, SendAnnotation } from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
@@ -14,6 +14,8 @@ import type { ExecutionNode, ExecutionTree } from "../o11y/execution-tree.ts";
 import { summaryText } from "../scoring/display.ts";
 import { firstLine } from "../util.ts";
 import { formatDurationMs, formatMetricValue, formatPlainNumber, formatUSD } from "../report/model/format.ts";
+import { diffFilePatchText, diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
+import type { AttemptDiffData } from "../report/model/types.ts";
 import { indentBlock, padDisplay, renderAlignedRows, wrapDisplay } from "../report/model/text-layout.ts";
 import type { AttemptHistoryRow } from "./compose.ts";
 import { localizeText, type HostCommandContext } from "../report/runtime/host.ts";
@@ -952,121 +954,39 @@ export function executionText(
 }
 
 /** net 效果的单字母标记(A/M/D;none = 动过但净无变化,标 ±)。 */
-function netLetter(net: string): string {
-  switch (net) {
-    case "added":
-      return "A";
-    case "deleted":
-      return "D";
-    case "none":
-      return "±";
-    default:
-      return "M";
-  }
-}
-
-/** 有界行 diff(公共前后缀修剪):对单区域编辑精确,复杂编辑给出上界近似。 */
-function lineDelta(before: string | undefined, after: string | undefined): { adds: number; dels: number } {
-  const a = before === undefined ? [] : before.split("\n");
-  const b = after === undefined ? [] : after.split("\n");
-  let prefix = 0;
-  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
-  let suffix = 0;
-  while (suffix < a.length - prefix && suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix++;
-  return { adds: b.length - prefix - suffix, dels: a.length - prefix - suffix };
-}
-
 // ───────────────────────── 证据切面:diff ─────────────────────────
 
-const MAX_DIFF_LINES = 200;
-
+/**
+ * `--diff` 摘要与 `--diff=<path>` 的逐窗口 patch 都读 attemptDiffData 这一份投影
+ * (docs/feature/reports/show/diff.md),渲染函数与 DiffView 的 text 面同一个,不另算一遍。
+ */
 export function diffText(opts: {
   header: string;
-  diff: DiffData | null;
+  data: AttemptDiffData | null;
   artifactPath?: string;
   /** --diff=<路径>:看单个文件的完整内容。 */
   file?: string;
 }): string {
-  const { header, diff, artifactPath, file } = opts;
+  const { header, data, artifactPath, file } = opts;
   const source = artifactPath ? join(artifactPath, "diff.json") : undefined;
-  if (!diff) {
+  if (data === null) {
     return `${header}\n\ndiff unavailable (no diff recorded for this attempt: remote agent, or diff artifact not published${source ? `; expected: ${source}` : ""})`;
   }
+  const files = data.files;
 
   if (file !== undefined) {
-    const summary = diff.files[file];
-    if (summary === undefined) {
-      const known = Object.keys(diff.files).sort();
+    const entry = files.find((f) => f.path === file);
+    if (entry === undefined) {
+      const known = files.map((f) => f.path);
       return `${header}\n\nFile "${file}" is not in this attempt's agent diff. Files: ${known.join(", ") || "(none)"}`;
     }
-    // 单文件 patch 按窗口逐段渲染(diff.json 存的就是逐窗口 delta,不产出跨窗口合成 patch)。
-    const head = `${netLetter(summary.net)} ${file} · touched in ${summary.windows.join(", ")}`;
-    if (summary.binary) {
-      const sections = diff.windows
-        .filter((w) => w.changes[file] !== undefined)
-        .map((w) => {
-          const c = w.changes[file]!;
-          const b = c.binary ?? {};
-          return `── window ${w.window}\nbinary · ${b.beforeBytes ?? 0} → ${b.afterBytes ?? 0} bytes`;
-        });
-      return `${header}\n\n${head}\n\n${sections.join("\n\n")}`;
-    }
-    const sections: string[] = [];
-    for (const w of diff.windows) {
-      const c = w.changes[file];
-      if (c === undefined) continue;
-      sections.push(`── window ${w.window}\n${windowHunk(c)}`);
-    }
-    return `${header}\n\n${head}\n\n${sections.join("\n\n")}${source ? `\n\n(full diff: ${source})` : ""}`;
+    return `${header}\n\n${diffFilePatchText(entry)}${source ? `\n\n(full diff: ${source})` : ""}`;
   }
 
-  const entries = Object.entries(diff.files).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
+  if (files.length === 0) {
     return `${header}\n\n(no file changes by the agent in any send window${source ? ` · full diff: ${source}` : ""})`;
   }
-  const rows = entries.map(([path, summary]) => {
-    if (summary.binary) {
-      return [netLetter(summary.net), path, "binary", summary.windows.join(", ")];
-    }
-    let adds = 0;
-    let dels = 0;
-    for (const w of diff.windows) {
-      const c = w.changes[path];
-      if (!c) continue;
-      const d = lineDelta(c.before, c.after);
-      adds += Math.max(0, d.adds);
-      dels += Math.max(0, d.dels);
-    }
-    const delta = [adds > 0 ? `+${adds}` : "", dels > 0 ? `-${dels}` : ""].filter(Boolean).join(" ") || "±0";
-    return [netLetter(summary.net), path, delta, summary.windows.join(", ")];
-  });
-  const headLine = `${entries.length} ${entries.length === 1 ? "file" : "files"} changed by agent`;
-  const single = entries[0] ? `\n\nsingle file: niceeval show @… --diff=${entries[0][0]}` : "";
-  return `${header}\n\n${headLine}\n${renderAlignedRows(rows).split("\n").map((l) => `  ${l}`).join("\n")}${single}`;
-}
-
-/** 一个窗口内单文件的最小 unified hunk:公共前后缀修剪出的编辑区,一段 @@ 展示。 */
-function windowHunk(c: { status: string; before?: string; after?: string }): string {
-  const a = c.before === undefined ? [] : c.before.replace(/\n$/, "").split("\n");
-  const b = c.after === undefined ? [] : c.after.replace(/\n$/, "").split("\n");
-  let prefix = 0;
-  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
-  let suffix = 0;
-  while (suffix < a.length - prefix && suffix < b.length - prefix && a[a.length - 1 - suffix] === b[b.length - 1 - suffix]) suffix++;
-  const removed = a.slice(prefix, a.length - suffix);
-  const added = b.slice(prefix, b.length - suffix);
-  const ctxBefore = a.slice(Math.max(0, prefix - 2), prefix);
-  const lines: string[] = [];
-  lines.push(`@@ -${Math.max(1, prefix - ctxBefore.length + 1)},${removed.length + ctxBefore.length} +${Math.max(1, prefix - ctxBefore.length + 1)},${added.length + ctxBefore.length} @@`);
-  for (const l of ctxBefore) lines.push(` ${l}`);
-  const MAX_HUNK_LINES = 200;
-  const shownRemoved = removed.slice(0, MAX_HUNK_LINES);
-  const shownAdded = added.slice(0, MAX_HUNK_LINES);
-  for (const l of shownRemoved) lines.push(`-${l}`);
-  if (removed.length > shownRemoved.length) lines.push(`… (${removed.length - shownRemoved.length} more removed lines)`);
-  for (const l of shownAdded) lines.push(`+${l}`);
-  if (added.length > shownAdded.length) lines.push(`… (${added.length - shownAdded.length} more added lines)`);
-  return lines.join("\n");
+  return `${header}\n\n${diffSummaryText(files, { singleFileHint: true })}`;
 }
 
 // ───────────────────────── 证据切面:--timing(统一时间树) ─────────────────────────

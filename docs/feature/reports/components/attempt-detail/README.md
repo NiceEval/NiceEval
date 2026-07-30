@@ -32,7 +32,7 @@ page render 在构造自定义详情时显式 `await` 所需转换。
 3. 基础设施问题和持久化 diagnostics。
 4. 标注 Eval 源码；没有源码时显示断言表。
 5. 可行动失败的修复 prompt。
-6. 执行时间树、对话、trace 与 diff。
+6. 执行时间树、对话、trace 与 [文件差异](attempt-diff.md)。
 
 某类证据缺失时对应区块零输出或显示明确缺失，不伪造空值。
 全部数值由同一 AttemptEvidence 投影，`show` 切片与详情页不各算一份。
@@ -84,6 +84,7 @@ dialog 只换摆放位置，不建立第二份内容实现。
 
 ## 相关阅读
 
+- [Attempt diff](attempt-diff.md) —— 文件差异的来源、可用性与 `DiffResult` 形状。
 - [Library · Attempt 详情](../../library.md#attempt-详情)
 - [Architecture · Attempt 详情](../../architecture.md#attempt-详情)
 - [show attempt](../../show/attempt.md)

@@ -708,21 +708,13 @@ table.niceeval-report,
 .niceeval-waterfall .niceeval-waterfall-fold-summary { color: var(--muted); }
 .niceeval-waterfall .niceeval-waterfall-fold[open] > .niceeval-waterfall-fold-summary { margin-bottom: 2px; }
 
-/* ---- DiffView 原语(文件清单与可展开 patch) ---- */
+/* ---- DiffView 原语(路径树与逐窗口 patch) ---- */
 .niceeval-diff-view {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.niceeval-diff-view .niceeval-diff-group-title {
-  margin: 0 0 8px;
-  color: var(--soft);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.niceeval-diff-view .niceeval-diff-group-list {
+.niceeval-diff-view .niceeval-diff-tree {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -731,6 +723,39 @@ table.niceeval-report,
   border-radius: var(--radius);
   background: var(--panel);
 }
+/* 子树只留缩进与一条竖线:层级靠位置表达,不给每层再套一个面板。 */
+.niceeval-diff-view .niceeval-diff-tree .niceeval-diff-tree {
+  margin: 0 0 0 0.75em;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.niceeval-diff-view .niceeval-diff-dir { border-bottom: 1px solid var(--line); }
+.niceeval-diff-view .niceeval-diff-dir:last-child { border-bottom: 0; }
+.niceeval-diff-view .niceeval-diff-dir-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+}
+.niceeval-diff-view .niceeval-diff-dir-summary::-webkit-details-marker { display: none; }
+.niceeval-diff-view .niceeval-diff-dir-name {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.niceeval-diff-view .niceeval-diff-dir-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .niceeval-diff-view .niceeval-diff-file {
   border-bottom: 1px solid var(--line);
   font-size: 12px;
@@ -738,7 +763,7 @@ table.niceeval-report,
 .niceeval-diff-view .niceeval-diff-file:last-child { border-bottom: 0; }
 .niceeval-diff-view .niceeval-diff-file-summary {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr) max-content;
+  grid-template-columns: 1.25em minmax(0, 1fr) max-content;
   align-items: baseline;
   gap: 10px;
   padding: 8px 12px;
@@ -753,7 +778,7 @@ table.niceeval-report,
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.niceeval-diff-view .niceeval-diff-generated .niceeval-diff-change { color: var(--good); }
+.niceeval-diff-view .niceeval-diff-added .niceeval-diff-change { color: var(--good); }
 .niceeval-diff-view .niceeval-diff-modified .niceeval-diff-change { color: var(--warn); }
 .niceeval-diff-view .niceeval-diff-deleted .niceeval-diff-change { color: var(--bad); }
 .niceeval-diff-view .niceeval-diff-path {
@@ -793,13 +818,34 @@ table.niceeval-report,
 .niceeval-diff-view .niceeval-diff-patch-line--remove { background: color-mix(in oklch, var(--bad), transparent 88%); }
 .niceeval-diff-view .niceeval-diff-patch-line--remove .niceeval-diff-patch-text { color: var(--bad); }
 .niceeval-diff-view .niceeval-diff-patch-line--meta .niceeval-diff-patch-text { color: var(--muted); }
-.niceeval-diff-view .niceeval-diff-patch-missing {
+.niceeval-diff-view .niceeval-diff-patch-missing,
+.niceeval-diff-view .niceeval-diff-patch-omitted {
   margin: 0;
   padding: 10px 12px;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 12px;
 }
+.niceeval-diff-view .niceeval-diff-patch-omitted code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.niceeval-diff-view .niceeval-diff-bytes {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* 窗口分段:段头点明轮次,patch 正文保持逐行可复制。 */
+.niceeval-diff-view .niceeval-diff-window-title {
+  margin: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.niceeval-diff-view .niceeval-diff-window .niceeval-diff-patch { border-top: 0; }
 
 /* ---- Conversation 原语(分轮事件流) ---- */
 .niceeval-conversation {

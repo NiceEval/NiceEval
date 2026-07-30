@@ -175,9 +175,39 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   每个原语各一条类别。断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，
   以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与
   「`dimensions` 必填与查询封闭性」同一判据，落在各原语 fixture 上）。
-- **`DiffView` 摘要行的增删着色**（[契约](../../../feature/reports/components/primitives/diff-view.md#渲染)）：
+- **`DiffView` 摘要行的增删着色**
+  （[契约](../../../feature/reports/components/primitives/diff-view.md#web-面路径树)）：
   web 面 `+N` 与 `-M` 各自成元素并各带自己的类，才染得上与 patch 增删行同一套颜色；
-  text 面不受影响，仍是 `(+N/-M)` 一段纯文本。
+  text 面不受影响，摘要行的增删数仍是 `+N -M` 一段纯文本。
+- **`DiffView` 的路径树构成**
+  （[契约](../../../feature/reports/components/primitives/diff-view.md#web-面路径树)）：
+  web 面输出字符串为断言面。逐项覆盖：
+
+  - 文件按路径分层进目录，`change` 只出现在文件行的状态字母上，不产生分组区块。
+  - 区分力场景是「同一个目录下 `added` 与 `modified` 各一个文件」——两者进同一棵子树，
+    证明结构轴是路径而不是状态。
+  - 目录行给出子树文件数与 `+N` / `-M` 汇总，汇总等于子树内文件的逐项相加。
+  - 只有一个子目录、自己没有文件的目录链压成一行；那条链上多出一个同级文件时不压。
+  - 二进制文件行显示字节数变化，展开后声明二进制且不出现 patch 元素。
+- **`DiffView` 的逐窗口 patch 与内联预算**
+  （[契约](../../../feature/reports/components/primitives/diff-view.md#内联预算)）：
+  web 面输出字符串为断言面。逐项覆盖：
+
+  - 一个文件的多个窗口各成一段，段头是轮标签，段序即窗口时序；不出现跨窗口合成的单段 patch。
+  - 单文件 patch 超过 64 KiB 时该文件不内联，行上出现 `--diff=<path>` 下钻命令与超预算原因，
+    不出现空的展开区。
+  - 实例内联合计超过 512 KiB 后，按路径序在后的文件退化为下钻命令；
+    区分力场景是「把同一批文件的路径序调换」——退化的是路径序在后的那个，
+    证明累加按路径序而不是按体积挑选。
+  - text 面不受预算约束：同一份投影下 `--diff=<path>` 输出完整的逐窗口 patch。
+- **`DiffView` 与 `--diff` 的投影单源**
+  （[契约](../../../feature/reports/components/attempt-detail/attempt-diff.md)）：
+  断言面是 text 面输出字符串。逐项覆盖：
+
+  - `--diff` 摘要与组件 text 面对同一份 `DiffFile[]` 产出逐字相同的输出。
+  - 摘要行带触碰窗口的轮标签，多窗口按时序列出。
+  - 净无变化的文件不进 `files`；`files` 为空时区块零输出。
+  - `diff.json` 缺失时输出明确缺失与原因，不输出「零个文件改动」。
 - **`Waterfall` 的清单收敛与区块头**（[契约](../../../feature/reports/components/primitives/waterfall.md)）：
   web 面输出字符串为断言面。逐项覆盖：
 
