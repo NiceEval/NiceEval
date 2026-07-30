@@ -1,4 +1,4 @@
-# Evidence 复用政策 —— 架构
+# Evidence 复用政策 ——架构
 
 `niceeval exp` 把 Experiment 声明的证据目标与历史 Evidence 对账。
 它先描述每个槽位的事实状态，再由选定的复用政策决定沿用或派发。
@@ -42,7 +42,8 @@ interface EvidenceRequirement {
 
 ### `ExecutionManifest`
 
-manifest 保存证明一条 Evidence 是否满足当前 Requirement 所需的完整事实：
+manifest 保存证明一条 Evidence 是否满足当前 Requirement 所需的完整事实。
+配置面、源码面与数据面三块由[既有 manifest 契约](../../feature/experiments/cache.md#manifest哈希做索引清单做解释)定稿并落进 `manifests.json`；本候选设计要加的是 `resources` 这一块，以及把环境值按角色投影进配置面：
 
 ```typescript
 interface ExecutionManifest {
@@ -75,8 +76,7 @@ interface ResourceIdentity {
 源码输入必须是完整静态闭包与 loader 依赖的路径、类型和内容 digest。
 只保存最终哈希无法展示差异，也无法安全接受一次 path 变化。
 
-`timeoutMs`、`budget`、`attempts`、`earlyExit` 与 `maxConcurrency` 不进入 manifest：
-它们改变资格、目标数量或编排，不改变一条已完成 Evidence 证明的被测行为。
+`timeoutMs`、`budget`、`attempts`、`earlyExit` 与 `maxConcurrency` 不进入 manifest：它们改变资格、目标数量或编排，不改变一条已完成 Evidence 证明的被测行为。
 这些值仍随 Run 落盘，供资格判断、覆盖注记与审计使用。
 
 ### `Evidence`
@@ -122,26 +122,35 @@ interface EvidenceRecord {
 
 - **`proven`**：输入全部来自声明式配置、内容寻址产物与完整源码 manifest。
 - **`observed`**：还依赖外部资源，但规划前 observer 成功取得稳定版本。
-- **`opaque`**：任意 Hook 闭包、不可解析的 mutable image、未声明的项目外依赖，
-  或外部资源没有 observer / 静态 epoch。
+- **`opaque`**：任意 Hook 闭包、不可解析的 mutable image、未声明的项目外依赖，或外部资源没有 observer / 静态 epoch。
 
 `proven` 与 `observed` 都能支持精确判断；两者分开是为了说明证明来源。
-`opaque` 不是错误，也不等于 changed。证明优先默认派发，复用优先默认沿用并标 unverified。
+`opaque` 不是错误，也不等于 changed。
+证明优先默认派发，复用优先默认沿用并标 unverified。
 
 ## 对账阶段
 
 阶段顺序固定：
 
-1. **发现。**加载 Experiment 与 eval，收集静态导入闭包及 loader 依赖。
-2. **解析。**求值 Experiment 配置、eval 选择、AgentSpec 与 Sandbox 产物引用。
-3. **观测。**并行执行 Experiment 声明的只读 resource observer。
+1. **发现。
+   **加载 Experiment 与 eval，收集静态导入闭包及 loader 依赖。
+2. **解析。
+   **求值 Experiment 配置、eval 选择、AgentSpec 与 Sandbox 产物引用。
+3. **观测。
+   **并行执行 Experiment 声明的只读 resource observer。
    observer 不创建、不修改资源，失败只使依赖项变成 `opaque`。
-4. **形成要求。**为 `selectedEvalIds × attempts` 生成 Requirement 与完整 manifest。
-5. **初始对账。**从历史 Evidence 中逐槽选择候选，形成事实状态并应用政策与 CLI 覆盖。
-6. **取锁重判。**每个 Eval 取得用例锁后窄读最新 Evidence，重新形成权威决策。
-7. **准备。**权威决策仍存在派发项时才执行有副作用的 Experiment setup。
-8. **执行。**只派发权威决策要求执行的槽位。
-9. **快照。**把沿用与新 Evidence 合成这次 RunSnapshot。
+4. **形成要求。
+   **为 `selectedEvalIds × attempts` 生成 Requirement 与完整 manifest。
+5. **初始对账。
+   **从历史 Evidence 中逐槽选择候选，形成事实状态并应用政策与 CLI 覆盖。
+6. **取锁重判。
+   **每个 Eval 取得用例锁后窄读最新 Evidence，重新形成权威决策。
+7. **准备。
+   **权威决策仍存在派发项时才执行有副作用的 Experiment setup。
+8. **执行。
+   **只派发权威决策要求执行的槽位。
+9. **快照。
+   **把沿用与新 Evidence 合成这次 RunSnapshot。
 
 观测必须在初始对账之前，setup 必须在取锁重判之后。
 这条边界让外部状态参与判断，避免并发 Invocation 已补齐 Evidence 后仍运行 setup 或重复派发。
@@ -175,25 +184,11 @@ Eval 文件、静态闭包或 loader 内容 digest 变化，使受影响 Require
 
 ## 精确授权
 
-```typescript
-interface ReuseAuthorization {
-  planKey: string;
-  fromRequirementKey: string;
-  toRequirementKey: string;
-  reason: ReuseReason;
-  affected: Array<{ experimentId: string; evalId: string; slot: number }>;
-  createdAt: string;
-  note?: string;
-}
-```
+授权的语义、作用域、留痕与打不开的门由 [`--accept`](../../feature/experiments/cache.md#--accept授权跨过一条精确差异)定稿：它做的是一次重锚，被携入的条目按本次口径重打指纹，跨过的差异逐条记进条目自己的 `carriedAccepting`。
 
-授权只覆盖当前计划中 selector 展开的精确 delta 或 opaque 原因。
-它建立 from → to 的证据等价边，不修改原 Evidence 的 requirementKey。
-下一轮仍出现同一个 to key 时可以沿用这条边；任何新 delta 都需要重新判断。
-
-source delta 使用 `modify`、`delete` 与 `add` 判别联合，能精确表示重命名或拆分。
-授权可覆盖 source、condition、Sandbox、resource 与 opaque 原因，但不能覆盖缺失 Evidence、
-不可信终态、资格门失败或 secret 明文。永久 source ignore 不存在。
+资源身份接进来之后，这套授权要多担一件事：`condition:` / `sandbox:` / `resource:` 三支差异的旧值新值来自 observer 与角色摘要，不是文件内容哈希。
+它们同样只覆盖当前计划里展开出的那一条差异；资源下一次变成新版本是一条新差异，照样拦下。
+`opaque:` 原因授权的是“系统拿不到事实”这件事本身，风险与前几支不同类，是否要求同时写下理由仍待裁决（见 [README · 待裁决](README.md#待裁决)）。
 
 ## 外部资源
 
@@ -241,33 +236,33 @@ interface ComparisonProfile {
 - ignored：与分析无关。
 
 读取面从落盘 manifest 投影这些维度。
-新增维度时，旧记录缺值只有两种处理：能证明缺失等价于默认值时迁移；否则为 `unknown`，
-不自动拼接。读取期重算能解决算法变化，不能恢复从未落盘的事实。
+新增维度时，旧记录缺值只有两种处理：能证明缺失等价于默认值时迁移；否则为 `unknown`，不自动拼接。
+读取期重算能解决算法变化，不能恢复从未落盘的事实。
 
 ## 契约验收场景
 
 实现必须用下面七个场景证明边界，不用「哈希相等」替代行为结果：
 
-1. **同时发生无语义与语义源码变化。**
-   格式化 prompt 文件，同时修改断言 helper。
+1. **同时发生无语义与语义源码变化。
+   ** 格式化 prompt 文件，同时修改断言 helper。
    只 `--accept source:...prompts.ts` 时仍不得沿用，因为 manifest 还剩一项未接受变化。
-2. **Hook 源码不变、闭包值变化。**
-   Hook 捕获的 CLI 版本从 2 改成 3，但函数文本相同。
+2. **Hook 源码不变、闭包值变化。
+   ** Hook 捕获的 CLI 版本从 2 改成 3，但函数文本相同。
    没有 recipe 或 observer 时 Requirement 必须是 `opaque`，不得自动沿用。
-3. **外部服务变化且历史槽位全满。**
-   清空记忆库后再次运行，历史全是终态。
+3. **外部服务变化且历史槽位全满。
+   ** 清空记忆库后再次运行，历史全是终态。
    observer 版本变化时必须派发；没有 observer 时必须标 `opaque`，不能因零缺口而全量沿用。
-4. **身份模型新增字段。**
-   AgentSpec 增加影响行为的字段，旧 Run 没有该事实。
+4. **身份模型新增字段。
+   ** AgentSpec 增加影响行为的字段，旧 Run 没有该事实。
    ComparisonProfile 只能按已声明默认迁移，否则返回 `unknown`。
-5. **mutable image 解析失败。**
-   provider 只能拿到 image 名，拿不到 immutable digest。
+5. **mutable image 解析失败。
+   ** provider 只能拿到 image 名，拿不到 immutable digest。
    环境必须标 `opaque`，不能退化为名字相等。
-6. **连续沿用三轮。**
-   第三轮必须仍能定位第一轮的 `EvidenceOrigin`，同时记录第二轮是 `immediateCarryFrom`。
+6. **连续沿用三轮。
+   ** 第三轮必须仍能定位第一轮的 `EvidenceOrigin`，同时记录第二轮是 `immediateCarryFrom`。
    认账边不能覆盖真实执行来源。
-7. **切换 Sandbox 复用模式。**
-   `sandboxReuse` 从 false 切到 true 或反向切换时，全部相关 Requirement 变化。
+7. **切换 Sandbox 复用模式。
+   ** `sandboxReuse` 从 false 切到 true 或反向切换时，全部相关 Requirement 变化。
    即使历史 Evidence 是复用 Run 的首个 Attempt，也不得跨模式自动沿用。
 
 ## 不变量

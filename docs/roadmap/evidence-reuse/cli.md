@@ -1,16 +1,9 @@
 # Evidence 复用政策 —— CLI
 
-CLI 先生成当前 Requirement 与历史 Evidence 的对账计划，再执行仍需派发的部分。
-默认命令不要求用户回答“用不用缓存”：
+计划矩阵、逐条作废原因、按差异聚合的分组、`--accept <selector>` 的词表与重锚语义、不带值时 TTY 下的逐原因标记，都已由 [CLI 反馈模型](../../feature/experiments/cli.md#--dry计划矩阵与作废原因)与[缓存与携带](../../feature/experiments/cache.md#--accept授权跨过一条精确差异)定稿。
+本页只写资源身份与角色声明接进来之后，这套 CLI 要多出什么。
 
-```bash
-niceeval exp compare/codex
-```
-
-计划必须同时服务人和机器。
-人读面解释原因；`--dry --json` 输出同一组结构化决策，不能把权威 delta 只写进文本。
-
-## 默认计划
+## 计划要多显示两样
 
 ```text
 compare/codex
@@ -23,92 +16,54 @@ compare/codex
   16 attempts to run
 ```
 
-详细计划按 Evidence 槽位聚合相同原因：
+- **policy 行。**
+  同一条命令在两套默认政策下给出不同的派发集合，计划因此要点名本次按哪套判。
+- **`opaque` 分组。**
+  observer 失败、闭包无法投影成身份这类事实，与已观察到的 delta 分成两组：前者是“系统不知道”，后者是“系统知道变了”。
 
 ```text
-reason source:evals/share/prompts.ts
-  affects 30 eval · 30 evidence slots
-  change modify 80d1… → b91a…
-  default dispatch
-
 reason opaque:resource.memory-corpus
   affects 4 eval · 4 evidence slots
   observer failed: 503 Service Unavailable
   default dispatch
 ```
 
-每个 reason selector 在当前计划内唯一且稳定。
-它既是解释锚点，也是人工覆盖的最小授权单位。
+## selector 要多出三支
 
-## `--dry`
+`--rerun` 与 `--accept` 共用同一批差异名字，方向相反：前者要求重跑依赖该事实的 Eval，后者授权跨过它。
+既有词表的四支（`config:` / `source:` / `data:` / `opaque:no-manifest`）之外，资源身份带来三支：
 
-`--dry` 执行发现、配置解析、声明式 Sandbox 解析与只读 resource observer，以生成真实计划：
+| selector | 指向 | 例子 |
+|---|---|---|
+| `condition:<路径>` | 声明为行为条件的环境值，manifest 里只存安全摘要 | `condition:env.AGENT_ENDPOINT` |
+| `sandbox:<部分>` | Sandbox 身份的某一部分：recipe、解析后的 image ID、产物摘要 | `sandbox:recipe` |
+| `resource:<id>` | observer 或静态 epoch 给出的资源版本 | `resource:memory-corpus` |
+
+`opaque:` 相应扩成 `opaque:<依赖类别>.<id>`，例如 `opaque:resource.memory-corpus`、`opaque:sandbox.setup`。
+
+**选择轴不进 selector。**
+要只对一部分 Eval 收紧或授权，用位置参数收窄本次选择，与 [CLI 的两类输入](../../feature/experiments/cli.md)一致。
+把 `eval:<前缀>` 做成 selector 等于让 flag 也能选题，同一件事两个入口；要重跑一批指定的 Eval，写法是位置参数加 `--rerun all`。
+
+## `--dry` 要跑 observer
+
+`--dry` 除了发现、配置解析与声明式 Sandbox 解析，还要执行 Experiment 声明的只读 resource observer，才能生成真实计划：
 
 ```bash
 niceeval exp compare/codex --dry
 niceeval exp compare/codex --dry --json
 ```
 
-它不运行 Experiment setup、Sandbox create、Attempt 或 teardown，也不创建 Run。
-因为 observer 可能读取 secret 并访问远端服务，`--dry` 不是“完全不联网”的同义词。
-observer 的只读约束、超时与错误仍按 [Library](library.md) 执行。
+它仍不运行 Experiment setup、Sandbox create、Attempt 或 teardown，也不创建 Run。
+observer 会读取凭据并访问远端服务，所以 `--dry` 不等于“完全不联网”；observer 的只读约束、超时与失败处理在 [Library](library.md)。
 
-## 收紧：`--rerun`
+## 三支新差异的形态
 
-`--rerun` 让本次少采信、多派发，可重复：
-
-| selector | 作用 |
-|---|---|
-| `failed` | 不采信历史 failed，passed 仍可沿用 |
-| `all` | 当前目标里的全部槽位都真实执行 |
-| `eval:<prefix>` | 重跑匹配的 Eval |
-| `resource:<id>` | 重跑依赖该资源的 Eval |
-| `source:<path>` | 重跑依赖该源码或 loader 输入的 Eval |
-| `condition:<path>` | 重跑依赖该 manifest 条件的 Eval |
-| `sandbox:<part>` | 重跑依赖该 Sandbox 身份部分的 Eval |
-
-示例：
-
-```bash
-niceeval exp compare/codex \
-  --rerun resource:memory-corpus \
-  --rerun eval:memory/high-risk
-```
-
-selector 取并集。
-`all` 与其它 selector 同时出现是用法错误，因为其它项已没有额外含义。
-`--rerun` 只作用于当前 Invocation，不写永久失效规则。
-
-## 放宽：`--accept`
-
-`--accept` 让本次多采信、少派发，可重复。
-参数必须匹配当前计划列出的 reason：
-
-```bash
-niceeval exp compare/codex \
-  --accept source:evals/share/prompts.ts
-```
-
-系统记录的不是字符串 selector，而是它在当前计划中展开出的精确事实：
+既有的 `config:` / `source:` / `data:` 差异由 manifest 相减得出。
+三支新 selector 各自要能展开成同样精确的旧值与新值：
 
 ```typescript
-interface ReuseAuthorization {
-  planKey: string;
-  fromRequirementKey: string;
-  toRequirementKey: string;
-  reason: ReuseReason;
-  affected: Array<{ experimentId: string; evalId: string; slot: number }>;
-  createdAt: string;
-  note?: string;
-}
-
-type SourceDelta =
-  | { kind: "modify"; path: string; fromDigest: string; toDigest: string }
-  | { kind: "delete"; path: string; fromDigest: string }
-  | { kind: "add"; path: string; toDigest: string };
-
-type ReuseReason =
-  | { kind: "source"; selector: string; deltas: SourceDelta[] }
+type NewReuseReason =
   | {
       kind: "condition";
       selector: string;
@@ -133,88 +88,42 @@ type ReuseReason =
   | {
       kind: "opaque";
       selector: string;
-      dependency: "source" | "condition" | "sandbox" | "resource";
+      dependency: "condition" | "sandbox" | "resource";
       id: string;
       diagnostic: string;
     };
 ```
 
-condition 和 Sandbox 的 digest 来自规范序列化后的对应 manifest 子树，不暴露原始敏感值。
-secret 不形成 delta，也不进入 `ReuseReason`。
+condition 与 Sandbox 的 digest 来自规范序列化后的对应 manifest 子树，不暴露原始敏感值。
+secret 不形成差异，也不出现在任何 selector 里。
 
-### 可以接受什么
+## 机器计划要多两个字段
 
-| 原因 | 示例 | 风险 |
-|---|---|---|
-| source delta | 注释、格式或确认无语义的重构 | 可能误认真实题面或判定变化 |
-| condition delta | 已确认两个配置值对这些 Eval 等价 | 可能混合不同被测条件 |
-| Sandbox delta | 镜像重打包但内容语义等价 | 可能采信不同工具链产物 |
-| resource delta | 服务迁移但数据与行为等价 | 可能采信另一资源的结果 |
-| opaque reason | observer 故障但操作者确认资源未变 | 系统没有独立证据验证判断 |
-
-框架不按类别禁止用户授权。
-权限边界来自精确计划、显式 selector、Eval 作用域和落盘审计，而不是一张硬编码白名单。
-
-### 不可以接受什么
-
-- 缺失 Evidence；
-- `errored`、`skipped` 或资格门不通过的 Evidence；
-- 当前计划里不存在的 selector；
-- secret 的旧值或新值；
-- 一个面向未来变化的路径 glob；
-- 与 `--rerun all` 同时使用。
-
-## 只对部分 Eval 授权
-
-位置参数先收窄当前计划，`--accept` 和 `--rerun` 再作用于该计划：
-
-```bash
-niceeval exp compare/codex memory/recall \
-  --accept source:evals/share/prompts.ts
-```
-
-只有选中的 `memory/recall*` Evidence 获得授权。
-其它 Eval 之后运行时仍会看到未授权 delta，并按默认政策处理。
-
-如果一次命令需要同一 source 对部分 Eval 接受、对另一部分重跑，必须拆成两个 Invocation。
-候选设计暂不引入复杂的 `selector@eval-selector` 内联语法。
-
-## 并发 Invocation
-
-启动时的计划是解释与预测，不是派发权威。
-每个 Eval 取得用例锁后必须重做一次窄范围对账，再决定是否执行。
-
-- 新 Evidence 已由其它 Invocation 补齐时，本次改为沿用。
-- 当前 delta 与授权的 `planKey` 不再匹配时，授权失效并重新按默认政策判断。
-- Experiment setup 只在获锁后的权威计划仍有派发项时运行。
-- 运行反馈必须显示 `dispatch → reuse` 等计划变化；`--dry` 只显示启动时快照。
-
-## 机器计划
-
-`--dry --json` 的每个决策至少包含：
+`--dry --json` 的每条决策在既有字段之外补上证明等级与本次政策：
 
 ```typescript
 interface EvidencePlanDecision {
   experimentId: string;
   evalId: string;
-  slot: number;
+  attempt: number;
   action: "reuse" | "dispatch";
+  /** 事实层的证明等级，不是政策裁决后的结论。 */
   confidence: "proven" | "observed" | "opaque" | "authorized";
-  reasons: ReuseReason[];
-  authorizationSelectors: string[];
+  reasons: NewReuseReason[];
+  acceptedSelectors: string[];
   locked?: boolean;
 }
 ```
 
-顶层同时保存 `policy`、`planKey`、聚合计数和 observer diagnostics。
-具体 schemaVersion 与事件流接入方式留待 CLI 总契约一起裁决。
+顶层同时保存 `policy` 与 observer diagnostics。
+事件流接入方式与既有 `--json` 词表一起裁决。
 
 ## 两套默认政策下的同一组 flag
 
 | 动作 | 证明优先 | 复用优先 |
 |---|---|---|
-| 不带 flag | opaque 派发 | opaque 沿用并标 unverified |
+| 不带 flag | `opaque` 派发 | `opaque` 沿用并标 unverified |
 | `--rerun ...` | 在严格默认上继续收紧 | 为未知世界提供主要复验出口 |
 | `--accept ...` | 为精确例外放宽 | 主要用于已观察到的 delta |
 
-flag 的方向保持一致，避免切换默认政策后同一个 flag 反转含义。
+flag 的方向在两套政策下保持一致，切换默认不会让同一个 flag 反转含义。

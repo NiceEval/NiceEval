@@ -81,13 +81,11 @@ export default defineExperiment({
 });
 ```
 
-`line` 是默认报告识别的归类键：当前 Sample 任一实验声明了它，图表就按线归类并连线——
-codex / claude 各成一色，基线到 mempal 的位移直接可见。变体轴（`memory`）和其它轴名由报告侧
-用 [`label()`](../reports/library/measures.md#维度与数值轴) 显式选轴：
+`line` 是默认报告识别的归类键：当前 Sample 任一实验声明了它，图表就按线归类并连线——codex / claude 各成一色，基线到 mempal 的位移直接可见。
+变体轴（`memory`）和其它轴名由报告侧用 [`label()`](../reports/library/measures.md#维度与数值轴) 显式选轴：
 
 - **成线**：在 `chart(...)` 的 scatter series 中写 `by: label("line"), connect: true`。
-- **横切**：把 `by` 换成 `label("memory")`，跨 agent 比较记忆机制本身；
-  `by: ["agent", label("memory")]` 表示复合归类。
+- **横切**：把 `by` 换成 `label("memory")`，跨 agent 比较记忆机制本身；`by: ["agent", label("memory")]` 表示复合归类。
 - **参数进程**:数值坐标(`labels: { contextK: 32 }`)用 `numericLabel("contextK")` 直接当[数值 `XAxis`](../reports/components/charts/README.md#xaxis) 的绑定。
 
 与 `flags` 的分界一句话:**这个值会改变 attempt 里发生的事吗?** 会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类 → `labels`。两边都落盘、报告都能分组(`flag()` / `label()`),区别只在运行时可见性与可比性——已经用 `flags` 表达且确实影响行为的变量不必迁移到 labels。两者都是**你写下的声明**;跑起来才知道的值两边都不进,见下一节。
@@ -120,7 +118,7 @@ sandboxSetup(): SandboxHook {
 - **报告按 [`fact()`](../reports/library/measures.md#维度与数值轴) 选轴**分组,与 `flag()` / `label()` 并列。
 - **同一个事实是条件还是观测,由谁写下决定。** 实验声明「我要 0.10.39」→ `flags`,换版本作废旧结果正是想要的;跑起来问服务端「你现在是哪个版本」→ `ctx.fact()`,那是审计证据。
 - **别把实验条件写成 fact。** 「启用了哪个特性」只报 fact、不进 `flags`,条件变了旧结果会被错误携带(边界见 [Results · facts](../record/architecture.md#facts运行事实))。
-- 已经把轮换坐标写进 `flags` 的实验,搬进 fact 会让 flags 袋变化、历史结果一次性作废;搬迁那一次用 [`--carry-ignoring-flag`](use-case/缓存与沿用/) 保住它们。
+- 已经把轮换坐标写进 `flags` 的实验,搬进 fact 会让 flags 袋变化、历史结果一次性作废;搬迁那一次用 [`--accept config:flags.<键>`](use-case/缓存与沿用/迁移错误归属的配置.md) 保住它们。
 
 文件名与归类自此脱钩:`codex-gpt-5.4--mempal.ts` 的后缀只是给人看的命名习惯,报告不从 experiment id 字符串里猜任何语义,归类只认 `labels` 声明。
 
@@ -487,8 +485,8 @@ export default defineExperiment({
 - **`experiments/**/*.ts`(默认导出 `defineExperiment`)** = 一次具体运行的配置,覆盖 config 默认；路径形成 id，`evals` 形成落盘的 `selectedEvalIds`(`.experiment.ts` 后缀可选,位于 `experiments/` 下即识别)。
 
 配置解析以 [Architecture · 配置解析链](architecture.md#配置解析链一次求值处处同源) 为单源。
-`timeoutMs` 与 Judge 支持 Eval 覆盖，按 CLI flag → experiment → eval → config → 内置默认解析；
-其它字段只经过各自声明的层级。环境变量只承担凭据和终端环境事实，不进入配置覆盖链。
+`timeoutMs` 与 Judge 支持 Eval 覆盖，按 CLI flag → experiment → eval → config → 内置默认解析；其它字段只经过各自声明的层级。
+环境变量只承担凭据和终端环境事实，不进入配置覆盖链。
 agent、model、flags 属于 experiment，不由 CLI 覆盖。
 
 ## 相关阅读

@@ -24,13 +24,14 @@
 
 ```bash
 niceeval exp compare/codex --accept source:evals/share/prompts.ts
-niceeval exp compare/codex --accept condition:flags.webSearch
+niceeval exp compare/codex --accept config:flags.webSearch
+niceeval exp compare/codex --accept condition:env.AGENT_ENDPOINT
 niceeval exp compare/codex --accept sandbox:recipe
 niceeval exp compare/codex --accept opaque:resource.memory-corpus
 ```
 
-授权只覆盖当前计划中与 selector 匹配的 old → new delta 或 opaque 原因。
-同一路径、字段或资源下一次出现新变化时，不自动通过。
+前两支是[既有词表](../../feature/experiments/cache.md#--accept授权跨过一条精确差异)，后三支随资源身份与角色声明一起裁决（见 [CLI](cli.md#selector-要多出三支)）。
+授权只覆盖当前计划中与 selector 匹配的 old → new delta 或 opaque 原因；同一路径、字段或资源下一次出现新变化时，不自动通过。
 
 ### 优点与风险
 
@@ -55,11 +56,11 @@ niceeval exp compare/codex --accept opaque:resource.memory-corpus
 
 ### 用户怎样收紧
 
-用户可以按 verdict、Eval 或依赖原因要求本次重跑：
+用户可以按 verdict 或依赖原因要求本次重跑；要只重跑一批 Eval，用位置参数收窄本次选择：
 
 ```bash
 niceeval exp compare/codex --rerun failed
-niceeval exp compare/codex --rerun eval:memory/recall
+niceeval exp compare/codex memory/recall --rerun all
 niceeval exp compare/codex --rerun resource:memory-corpus
 niceeval exp compare/codex --rerun sandbox:setup
 niceeval exp compare/codex --rerun all
@@ -101,8 +102,7 @@ niceeval exp compare/codex --rerun all
 ## 暂定推荐
 
 本方案暂时推荐产品默认采用**证明优先**，原因是错误沿用会静默改变报告含义，而多跑会显式增加成本。
-本推荐不是定稿；选择复用优先时，必须保证 CLI、Run 与报告都持续显示 unverified Evidence，
-不能把未知沿用渲染成与 proven Evidence 相同。
+本推荐不是定稿；选择复用优先时，必须保证 CLI、Run 与报告都持续显示 unverified Evidence，不能把未知沿用渲染成与 proven Evidence 相同。
 
 不建议让每个 Experiment 自由选择默认政策。
 同一仓库混用两套默认会让 `niceeval exp` 的含义随文件变化，CI 也无法从命令本身判断风险方向。

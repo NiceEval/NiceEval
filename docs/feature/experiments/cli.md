@@ -8,19 +8,25 @@ niceeval exp agents/codex/gpt           # 按文件名前缀跑一族实验
 niceeval exp agents/codex memory/retention # 再按 eval id 前缀收窄
 ```
 
-不写 experiment 不能运行 eval。experiment 决定 agent、model、flags、attempts、sandbox 与预算;CLI 只负责选择已签入的运行配置和覆盖通用调度参数。
+不写 experiment 不能运行 eval。
+experiment 决定 agent、model、flags、attempts、sandbox 与预算;CLI 只负责选择已签入的运行配置和覆盖通用调度参数。
 
 ### 实验选择器怎样解析
 
 位置参数只选择 experiment id / 路径；experiment 自己的 `evals` 再过滤发现到的 eval，尾随 eval id 前缀只对本次运行继续收窄。
 
-1. **精确 id 优先**:位置参数精确等于某个已发现实验 id 时只选中这一个——即使它同时是同目录下其它文件名的前缀。例如精确输入 `compare/codex-gpt-5.6-luna` 只选中它自己,不牵连 `compare/codex-gpt-5.6-luna--agents-md` 等共享前缀的变体。
+1. **精确 id 优先**:位置参数精确等于某个已发现实验 id 时只选中这一个——即使它同时是同目录下其它文件名的前缀。
+   例如精确输入 `compare/codex-gpt-5.6-luna` 只选中它自己,不牵连 `compare/codex-gpt-5.6-luna--agents-md` 等共享前缀的变体。
 2. **目录前缀次之**:参数精确等于任意深度的已发现目录路径时,选中该目录下全部实验。
-3. **文件名前缀回退**:以上都不精确命中,且参数形如 `目录/文件名前缀` 时,若目录段精确匹配一个已发现目录,
-   选中该目录下文件名以这个前缀开头的全部实验。目录段永远要求精确匹配,不允许跨目录误配
-   (`dev` 不会误中 `dev-e2b`)。文件名段允许直接按前缀匹配,与下文 eval id 的前缀过滤同一条规则。
+3. **文件名前缀回退**:以上都不精确命中,且参数形如 `目录/文件名前缀` 时,若目录段精确匹配一个已发现目录, 选中该目录下文件名以这个前缀开头的全部实验。
+   目录段永远要求精确匹配,不允许跨目录误配 (`dev` 不会误中 `dev-e2b`)。
+   文件名段允许直接按前缀匹配,与下文 eval id 的前缀过滤同一条规则。
    这会把同一 agent 的功能变体(`--agents-md` / `--mempal` / `--nowledge` 等后缀)当一族一起选中。
 4. 以上都不命中 → `No experiment matched`(见[用法错误](#用法错误))。
+5. **尾随 eval 前缀逐个必须命中。**
+    每个尾随前缀都要在选中实验的发现集里匹配至少一条 eval, 匹配 0 条按启动期用法错误报出(见[用法错误](#用法错误)),不静默丢弃—— 静默丢弃会把「写了两个实验名」这类手滑变成一次悄悄膨胀或缩水的计划。
+
+### `--dry`:计划矩阵与作废原因
 
 ```sh
 niceeval exp compare/codex --dry
@@ -28,13 +34,47 @@ niceeval exp compare/codex --dry
 
 ```text
 plan: 4 attempts · 1 eval × 4 configs · attempts 1
-compare/codex-gpt-5.6-luna              memory/commit0-cachetool
-compare/codex-gpt-5.6-luna--agents-md   memory/commit0-cachetool
-compare/codex-gpt-5.6-luna--mempal      memory/commit0-cachetool
-compare/codex-gpt-5.6-luna--nowledge    memory/commit0-cachetool
+1 carried in from cache · 3 to run
+compare/codex-gpt-5.6-luna              memory/commit0-cachetool   stale: config:judge.model
+compare/codex-gpt-5.6-luna--agents-md   memory/commit0-cachetool   new
+compare/codex-gpt-5.6-luna--mempal     memory/commit0-cachetool   carried
+compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
 ```
 
-正被另一条并行 Invocation 持锁运行的用例,计划行尾如实标注 `locked`([用例锁](architecture.md#并发-invocation用例锁));`--dry` 只读锁目录,不取锁、不等待。
+要派发的行**逐条标出为什么没携带**,词表就是[携带的六道门](cache.md#携带要过的门)加上「无历史」:
+
+| 标注 | 对应的门 |
+|---|---|
+| `stale` | 指纹门 |
+| `errored` | 终态门,从不携带 |
+| `exceeds-timeout` | 资格门 |
+| `reused-origin` | 出身门 |
+| `rerun` | 口径门 |
+| `sandbox-reuse` / `keep-sandbox` | 模式门 |
+| `new` | 计划内序号没有任何历史 |
+
+全部携带的行标 `carried`,不标原因。
+正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁));`--dry` 只读锁目录,不取锁、不等待。
+
+`stale` 行在双侧 manifest 都在时进一步给出差异明细,并按差异聚合成可直接行动的分组—— selector 原样可复制进 [`--accept`](cache.md#--accept授权跨过一条精确差异):
+
+```text
+stale  config:judge.model  gpt-5.6 → gpt-5.6-sol
+       affects 5 evals · baseline 01/02/03/05/06
+       accept:  niceeval exp compare/codex --accept config:judge.model
+```
+
+历史条目缺 manifest 时明细给不出,分组如实标 `opaque:no-manifest`,同样可显式 accept。
+
+### `--accept` 不带值:TTY 下逐原因标记
+
+带 selector 的 [`--accept`](cache.md#--accept授权跨过一条精确差异) 是非交互授权,CI 与脚本用它。
+人不想手拼 selector 时,`--accept` 不带值且 stderr 是 TTY,就进入逐原因标记:
+计划打出后,按差异分组逐条问「复用还是重跑」。
+只有可 accept 的分组会被问;`sandbox-reuse` 绝缘、`errored` 这类打不开的门照常展示,
+但不提供「复用」选项。
+选完先打印本次选择的等价命令(带值的 `--accept` 写法,可直接进 CI 或复述给同事),再按选择执行。
+非 TTY 下 `--accept` 不带值是用法错误,报错给出带 selector 的写法与本次计划里可授权的原因。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 
@@ -47,12 +87,18 @@ No experiment matched: dev-e3b. Available paths: agents/, suites/, stress/.
 Run `niceeval exp <path> --dry` to preview a plan.
 ```
 
-`exp` 的输出与 `show` 遵循同一条全 CLI 原则:**每条命令一个人读 text 面,`--json` 是机器面**。没有 `--output` 这类 profile flag,没有第三档:
+`exp` 的输出与 `show` 遵循同一条全 CLI 原则:**每条命令一个人读 text 面,`--json` 是机器面**。
+没有 `--output` 这类 profile flag,没有第三档:
 
-- **不加 flag = 人读文本**。stderr 是 TTY 时渲染动态 live 面板;非 TTY(管道、重定向、CI 日志)自动降级为只追加的无框文本——start 一次、失败与诊断立即一行、空闲 30 秒一条心跳、结束摘要收尾。CI 日志页给人看的就是这个降级流,不需要单独的 CI 档。
-- **`--json` = NDJSON 事件流**。coding agent、CI annotation adapter、任何脚本共用这一套;一行一个 JSON 对象,词法就是 JSON,没有需要另学的自造 envelope 语法。
+- **不加 flag = 人读文本**。
+  stderr 是 TTY 时渲染动态 live 面板;非 TTY(管道、重定向、CI 日志)自动降级为只追加的无框文本——start 一次、失败与诊断立即一行、空闲 30 秒一条心跳、结束摘要收尾。
+  CI 日志页给人看的就是这个降级流,不需要单独的 CI 档。
+- **`--json` = NDJSON 事件流**。
+  coding agent、CI annotation adapter、任何脚本共用这一套;一行一个 JSON 对象,词法就是 JSON,没有需要另学的自造 envelope 语法。
 
-两种形态消费同一套事实,只改变呈现:选择、调度、判定、artifact 与退出码全部不变。TTY 只决定人读文本用哪种版式(live 面板还是追加流),不改变形态归属;机器判断成败第一层永远是退出码。运行结束后的深读一律走 [`niceeval show`](../reports/show.md)(text 或 `--json`),运行期反馈不承担第二份结果 schema。
+两种形态消费同一套事实,只改变呈现:选择、调度、判定、artifact 与退出码全部不变。
+TTY 只决定人读文本用哪种版式(live 面板还是追加流),不改变形态归属;机器判断成败第一层永远是退出码。
+运行结束后的深读一律走 [`niceeval show`](../reports/show.md)(text 或 `--json`),运行期反馈不承担第二份结果 schema。
 
 `--quiet` 不存在:安静与否不是消费者差别,机器消费直接用 `--json`。
 
@@ -83,15 +129,22 @@ Run `niceeval exp <path> --dry` to preview a plan.
 | budget 耗尽、用户中断、reporter 写失败 | 永久追加一次 | 各自事件追加一次 |
 | 最终结论和结果路径 | 永久追加(结论、`FAILURES`、`NEXT` 面板) | `result` 事件 |
 
-“立即追加”也必须有上限,防止失败风暴淹没**人读**输出:人读文本默认展开前 10 条失败,超过后只追加一次 `N more failures suppressed`,持续更新总失败数。`--json` 不做 suppression——每条失败一个有界事件,机器不需要注意力保护;完整证据仍在 Run,由 `show` 读取。上限限制的是终端展开数,不是结果记录数。
+“立即追加”也必须有上限,防止失败风暴淹没**人读**输出:人读文本默认展开前 10 条失败,超过后只追加一次 `N more failures suppressed`,持续更新总失败数。
+`--json` 不做 suppression——每条失败一个有界事件,机器不需要注意力保护;完整证据仍在 Run,由 `show` 读取。
+上限限制的是终端展开数,不是结果记录数。
 
-Human 的动态刷新由真实状态变化驱动并合并写入,最多每秒 4 帧;elapsed 最多每秒更新一次。spinner 动画本身不能触发重画——静态 `●` 已足以表示 running,存活性由持续增长的 elapsed 证明。这样一批长 eval 在没有状态变化时不会每 80ms 重写终端。
+Human 的动态刷新由真实状态变化驱动并合并写入,最多每秒 4 帧;elapsed 最多每秒更新一次。
+spinner 动画本身不能触发重画——静态 `●` 已足以表示 running,存活性由持续增长的 elapsed 证明。
+这样一批长 eval 在没有状态变化时不会每 80ms 重写终端。
 
-形态是消费者模型,TTY 是传输能力。框线、ANSI 和光标控制同属传输能力:人读文本被管道捕获时,CLI 自动退化为只追加的无框文本,绝不能向非 TTY 写框字符、ANSI 或光标序列;它也不偷偷改成 JSON——机器形态只由显式 `--json` 进入。
+形态是消费者模型,TTY 是传输能力。
+框线、ANSI 和光标控制同属传输能力:人读文本被管道捕获时,CLI 自动退化为只追加的无框文本,绝不能向非 TTY 写框字符、ANSI 或光标序列;它也不偷偷改成 JSON——机器形态只由显式 `--json` 进入。
 
 ### Attempt 阶段
 
-Human active 行的最后一栏显示当前生命周期阶段。阶段词表全仓只有一套——[Record Format 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson):live 展示、`--json` 事件的 `phase` 字段、落盘 `phases[].name` 与 `error.phase` 用的是同一组字符串,不存在「展示一套名、落盘另一套名」。Human 展示列只是各阶段的人读投影:
+Human active 行的最后一栏显示当前生命周期阶段。
+阶段词表全仓只有一套——[Record Format 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson):live 展示、`--json` 事件的 `phase` 字段、落盘 `phases[].name` 与 `error.phase` 用的是同一组字符串,不存在「展示一套名、落盘另一套名」。
+Human 展示列只是各阶段的人读投影:
 
 | Phase | Human 展示 | 什么时候出现 |
 |---|---|---|
@@ -108,31 +161,36 @@ Human active 行的最后一栏显示当前生命周期阶段。阶段词表全�
 | `telemetry.collect` | collecting trace | 等待并筛选迟到的 OTel spans;没有 tracing 就跳过 |
 | `eval.teardown` / `agent.teardown` / `sandbox.teardown` / `sandbox.stop` | cleaning up | 收尾段:Human 合并显示为一档,机器面(`phase=` 与落盘)保留精确名 |
 
-阶段推进只换这一栏的文字,**不影响 active 行的时间列**:那一列恒是「这条 attempt 派发至今多久」,一条 attempt 从建容器到收尾全程单调增长,不在阶段边界归零。live 面板不做 spinner 动画,存活性完全靠这一列增长来证明(见[运行中的 live 面板](#运行中的-live-面板)的列序约定);会归零的时间既证明不了存活,也会被读成「这条 eval 重跑了」。**各阶段自己的耗时不进 live 面板**——它由结果的 `timing.phases` 完整落盘,`niceeval show @<locator> --timing` 读。
+阶段推进只换这一栏的文字,**不影响 active 行的时间列**:那一列恒是「这条 attempt 派发至今多久」,一条 attempt 从建容器到收尾全程单调增长,不在阶段边界归零。
+live 面板不做 spinner 动画,存活性完全靠这一列增长来证明(见[运行中的 live 面板](#运行中的-live-面板)的列序约定);会归零的时间既证明不了存活,也会被读成「这条 eval 重跑了」。**
+各阶段自己的耗时不进 live 面板**——它由结果的 `timing.phases` 完整落盘,`niceeval show @<locator> --timing` 读。
 
 `agent.run` 是闭集中唯一的嵌套成员:adapter `send` 期间在 `eval.run` 内打开,只作为错误 / 诊断的归因值(`phase=agent.run`),Human 展示不切换顶层阶段——active 行仍是 running eval,send 细节走 detail。
 
-支持原生流的 adapter 必须把执行中的 agent 事件压成当前 active 行的短 detail；例如 Codex 的
-`codex exec --json` 会显示 `tool: pnpm test`、`thinking: …` 或 `assistant: …`。detail 是最后一条
-短预览，不逐帧追加、不过度保留工具输出；完整消息、工具输入/结果仍由 attempt 完成后写入
-`events.json`，通过 `niceeval show @<locator> --execution` 阅读。
+支持原生流的 adapter 必须把执行中的 agent 事件压成当前 active 行的短 detail；例如 Codex 的 `codex exec --json` 会显示 `tool: pnpm test`、`thinking: …` 或 `assistant: …`。
+detail 是最后一条短预览，不逐帧追加、不过度保留工具输出；完整消息、工具输入/结果仍由 attempt 完成后写入 `events.json`，通过 `niceeval show @<locator> --execution` 阅读。
 
-`waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。`passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不放入 phase 闭集。
+`waiting for a slot` 是 scheduler 状态,发生在 attempt 开始前,不属于生命周期阶段。
+`passed` / `failed` / `errored` / `reused` / `early-exit` / `budget-unstarted` 是 outcome,发生在阶段结束后,也不放入 phase 闭集。
 
-每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的 setup 会稳定停在 `sandbox setup` 或 `agent setup`,而不是继续显示前一阶段。detail 只更新当前行,不成为永久事件;带 detail 的阶段只有两个长等待段。`running eval` 的 detail 是 agent 事件短预览,例如 `tool: shell` 或 `turn 2`。
+每次进入阶段时先发布 phase 再开始对应工作,所以一个长时间卡住的 setup 会稳定停在 `sandbox setup` 或 `agent setup`,而不是继续显示前一阶段。
+detail 只更新当前行,不成为永久事件;带 detail 的阶段只有两个长等待段。
+`running eval` 的 detail 是 agent 事件短预览,例如 `tool: shell` 或 `turn 2`。
 
-`scoring` 的 detail 是 judge 推进 `judge k/n · <检查方式>`:n 是这条 attempt 收集到的 judge
-断言数,k 是正在评第几条,检查方式与落盘的 `detail` 字段同源(如 `closedQA("…")`)。没有 judge
-断言时 scoring 不带 detail:本地断言的求值不足一帧,detail 只解释「在等裁判模型」这一种等待,
-不复述阶段词本身。
+`scoring` 的 detail 是 judge 推进 `judge k/n · <检查方式>`:n 是这条 attempt 收集到的 judge 断言数,k 是正在评第几条,检查方式与落盘的 `detail` 字段同源(如 `closedQA("…")`)。
+没有 judge 断言时 scoring 不带 detail:本地断言的求值不足一帧,detail 只解释「在等裁判模型」这一种等待, 不复述阶段词本身。
 
-phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox provider 或用户 hook 能直接设置的公共字段:每一次转换都由 `attempt.ts` 沿它自己固有的执行顺序、在真正跨入该步骤时发出;没有对应 hook/配置的步骤直接跳过,不产生空阶段。各层想表达「我正在做什么」走各自作用域的 `progress()` / `diagnostic()`(sandbox provider、hook、eval、adapter 各拿各的句柄,契约见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈));`AgentContext.log(text)` 是 `progress({ message: text })` 的别名,不是第二条通道。progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与 `--json` 不展示,也不写入 results;任何一层都不能借它改写 phase 本身,或声称进入了另一个生命周期阶段。
+phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox provider 或用户 hook 能直接设置的公共字段:每一次转换都由 `attempt.ts` 沿它自己固有的执行顺序、在真正跨入该步骤时发出;没有对应 hook/配置的步骤直接跳过,不产生空阶段。
+各层想表达「我正在做什么」走各自作用域的 `progress()` / `diagnostic()`(sandbox provider、hook、eval、adapter 各拿各的句柄,契约见 [Library · 生命周期代码怎样向这次运行反馈](library.md#生命周期代码怎样向这次运行反馈));`AgentContext.log(text)` 是 `progress({ message: text })` 的别名,不是第二条通道。
+progress 只更新 live 面板当前 active 行的次要文本,非 TTY 文本与 `--json` 不展示,也不写入 results;任何一层都不能借它改写 phase 本身,或声称进入了另一个生命周期阶段。
 
 ### 实验级 Hook 的显示
 
-`ExperimentDef.setup` 与它返回的 teardown 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。起止由 runner 自己发布——一个什么都不调的 setup 也必须可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死:
+`ExperimentDef.setup` 与它返回的 teardown 不属于任何单个 attempt(等待 setup 的 attempt 不占并发位,在计数里保持 `queued`),所以它们不是 attempt 阶段,而是**运行级生命周期行**。
+起止由 runner 自己发布——一个什么都不调的 setup 也必须可见,不能让「0 running · N queued 长时间不动」看起来像调度卡死:
 
-- **Human(TTY)**:Hook 在跑期间,ACTIVE 区为每个在飞的实验 Hook 显示一行运行级行,排在 attempt 行前面、参与同一套稳定 slot 规则;Hook 结束行即消失,成功的 Hook 不在 scrollback 留任何永久行。Hook 里的 `ctx.progress(...)` 只更新这一行的次要文本:
+- **Human(TTY)**:Hook 在跑期间,ACTIVE 区为每个在飞的实验 Hook 显示一行运行级行,排在 attempt 行前面、参与同一套稳定 slot 规则;Hook 结束行即消失,成功的 Hook 不在 scrollback 留任何永久行。
+  Hook 里的 `ctx.progress(...)` 只更新这一行的次要文本:
 
   ```text
   ╭─ niceeval exp compare ────────────────────────────────────────────────────────────── 1m 02s ─╮
@@ -143,7 +201,9 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
   ╰────────────────────────────────────────────────────────────────────────────────────── $0.11 ─╯
   ```
 
-- **非 TTY 文本与 `--json`**(只追加的流)没有动态区域,改为起止各追加一行永久事件——长 setup 期间只有心跳的日志无法区分「Hook 在跑」和「挂死」。`status` 三值 `started` / `done` / `failed`,`done` / `failed` 带时长;`failed` 只标记 Hook 本身的结局,每条 attempt 的 `errored`(`experiment-setup-failed`)仍由既有 failure 事件逐条给出。非 TTY 文本用 human 文案(如 `experiment setup · compare/bub-e2b` / `experiment setup done · compare/bub-e2b (42s)`);`--json` 是同一事实的事件:
+- **非 TTY 文本与 `--json`**(只追加的流)没有动态区域,改为起止各追加一行永久事件——长 setup 期间只有心跳的日志无法区分「Hook 在跑」和「挂死」。
+  `status` 三值 `started` / `done` / `failed`,`done` / `failed` 带时长;`failed` 只标记 Hook 本身的结局,每条 attempt 的 `errored`(`experiment-setup-failed`)仍由既有 failure 事件逐条给出。
+  非 TTY 文本用 human 文案(如 `experiment setup · compare/bub-e2b` / `experiment setup done · compare/bub-e2b (42s)`);`--json` 是同一事实的事件:
 
   ```json
   {"event":"experiment_setup","experimentId":"compare/bub-e2b","status":"started"}
@@ -154,17 +214,13 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### 判分预检的显示
 
-[判分预检](../judge/library.md#派发前预检)发生在任何派发之前,与实验级 Hook 同属
-**运行级生命周期行**——期间没有任何 attempt 在跑,不给出一行解释,
-「0 running · N queued 长时间不动」看起来就像调度卡死:
+[判分预检](../judge/library.md#派发前预检)发生在任何派发之前,与实验级 Hook 同属 **运行级生命周期行**——期间没有任何 attempt 在跑,不给出一行解释, 「0 running · N queued 长时间不动」看起来就像调度卡死:
 
-- **Human(TTY)**:预检期间 ACTIVE 区显示一行 `● prechecking judge config  <elapsed>`,
-  排在实验 Hook 行与 attempt 行之前——它发生在最前,是「为什么还没有 attempt 开跑」的解释。
+- **Human(TTY)**:预检期间 ACTIVE 区显示一行 `● prechecking judge config  <elapsed>`, 排在实验 Hook 行与 attempt 行之前——它发生在最前,是「为什么还没有 attempt 开跑」的解释。
   存活性由持续增长的 elapsed 证明,预检结束该行即消失,不进 scrollback。
-- **非 TTY 文本与 `--json`**:起止各追加一行永久事件,`status` 三值 `started` / `done` /
-  `failed`,`done` / `failed` 带时长。`failed` 只标记预检本身的结局。受影响 eval 每条
-  attempt 的 `errored`(`judge-precheck-failed`,`phase: "judge.precheck"`)仍由既有
-  `error` 事件逐条给出,与实验级 setup 失败的呈现同构。
+- **非 TTY 文本与 `--json`**:起止各追加一行永久事件,`status` 三值 `started` / `done` / `failed`,`done` / `failed` 带时长。
+  `failed` 只标记预检本身的结局。
+  受影响 eval 每条 attempt 的 `errored`(`judge-precheck-failed`,`phase: "judge.precheck"`)仍由既有 `error` 事件逐条给出,与实验级 setup 失败的呈现同构。
 
   ```json
   {"event":"judge_precheck","status":"started"}
@@ -174,27 +230,32 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 ### 等待并发 run 的显示
 
-多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook 共用同一套机制:
+多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。
+`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook 共用同一套机制:
 
-- **Human(TTY)**:每个有等待用例的实验一行运行级行,给出等待条数与持有方;存活性由持续增长的 elapsed 证明,排在实验 Hook 行之后、attempt 行之前,参与同一套稳定 slot 规则。等待全部解决(携入或转为自跑)该行即消失,不留 scrollback 永久行:
+- **Human(TTY)**:每个有等待用例的实验一行运行级行,给出等待条数与持有方;存活性由持续增长的 elapsed 证明,排在实验 Hook 行之后、attempt 行之前,参与同一套稳定 slot 规则。
+  等待全部解决(携入或转为自跑)该行即消失,不留 scrollback 永久行:
 
   ```text
   │ ● waiting on another run · compare/codex        1m 02s  3 evals · pid 41267   │
   ```
 
-- **非 TTY 文本与 `--json`**(只追加的流)改为起止各追加永久事件。非 TTY 文本按实验聚合、用 human 文案(如 `waiting on another run · compare/codex (3 evals, pid 41267)` / `lock wait resolved · compare/codex (2 carried · 1 to run, 1m 34s)`);`--json` 逐用例给事件,携入与自跑是两种解决方式:
+- **非 TTY 文本与 `--json`**(只追加的流)改为起止各追加永久事件。
+  非 TTY 文本按实验聚合、用 human 文案(如 `waiting on another run · compare/codex (3 evals, pid 41267)` / `lock wait resolved · compare/codex (2 carried · 1 to run, 1m 34s)`);`--json` 逐用例给事件,携入与自跑是两种解决方式:
 
   ```json
   {"event":"lock_wait","experimentId":"compare/codex","evalId":"memory/retention","status":"started","holderPid":41267,"holderHost":"mba.local"}
   {"event":"lock_wait","experimentId":"compare/codex","evalId":"memory/retention","status":"resolved","resolution":"carried","waitedMs":94000}
   ```
 
-- 锁释放后,携入的用例从 `elsewhere` 迁入 `reused`——`progress` 事件与 live 面板首行的 `reused` 因此可以在运行中增长;转为自跑的从 `elsewhere` 迁入 `queued`,照常经 `running` 落进四项结局之一。任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
+- 锁释放后,携入的用例从 `elsewhere` 迁入 `reused`——`progress` 事件与 live 面板首行的 `reused` 因此可以在运行中增长;转为自跑的从 `elsewhere` 迁入 `queued`,照常经 `running` 落进四项结局之一。
+  任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - 接管过期锁不走这条通道:它是一条去重后的 `warning` 事件(code `lock-taken-over`)。
 
 ### 输出流和落盘节奏
 
-动态区域与永久事件必须经过同一个 renderer 排序,不能让底层模块绕开它单独使用终端。各形态的流边界固定为:
+动态区域与永久事件必须经过同一个 renderer 排序,不能让底层模块绕开它单独使用终端。
+各形态的流边界固定为:
 
 | 形态 | `stderr` | `stdout` |
 |---|---|---|
@@ -202,39 +263,51 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 | 人读文本(非 TTY) | 仅启动期用法/配置错误 | 从 start 行到结束摘要的单一有序追加流 |
 | `--json` | 仅启动期用法/配置错误 | 从 `start` 到 `result` 的单一有序事件流 |
 
-非交互流(非 TTY 人读文本与 `--json`)不把普通 failure 分流到 `stderr`:两个 OS stream 被 CI runner 或 agent 工具层分开缓冲时会打乱顺序,单流才能保证事件序就是发生序——CI 日志页上失败行与结束摘要因此永远按发生序出现。TTY 人读不受此约束:同一终端设备按写入序交错呈现两个流,live 面板留在 `stderr`,`stdout` 被重定向时仍只拿到最终摘要。只有连形态都没能确定的 argv、配置加载错误走 `stderr`(恒为人读的 `error:` + `fix:` 两行,见[错误与警告反馈](../../error-feedback.md);机器此时靠非零退出码)。
+非交互流(非 TTY 人读文本与 `--json`)不把普通 failure 分流到 `stderr`:两个 OS stream 被 CI runner 或 agent 工具层分开缓冲时会打乱顺序,单流才能保证事件序就是发生序——CI 日志页上失败行与结束摘要因此永远按发生序出现。
+TTY 人读不受此约束:同一终端设备按写入序交错呈现两个流,live 面板留在 `stderr`,`stdout` 被重定向时仍只拿到最终摘要。
+只有连形态都没能确定的 argv、配置加载错误走 `stderr`(恒为人读的 `error:` + `fix:` 两行,见[错误与警告反馈](../../error-feedback.md);机器此时靠非零退出码)。
 
-非 TTY 的人读文本使用 human 文案和 human 最终摘要,但运行中退化为“start 一次 + 永久事件 + 空闲 30 秒心跳”的追加流。它不输出 active attempt 的每次阶段变化。
+非 TTY 的人读文本使用 human 文案和 human 最终摘要,但运行中退化为“start 一次 + 永久事件 + 空闲 30 秒心跳”的追加流。
+它不输出 active attempt 的每次阶段变化。
 
-终端反馈不是结果存储。落盘按恢复价值分两类:
+终端反馈不是结果存储。
+落盘按恢复价值分两类:
 
-- 结果 Run 逐步增加:调度前创建 Run 元数据;每个 attempt 完成后原子写入自己的 `result.json` 与已有 artifacts。进程中断时,已经完成的 attempt 仍可读取。
-- `--junit <path>` 是整次运行的最终聚合文件:收尾时写临时文件并原子替换目标,不在每个 attempt 后反复重写一个半成品汇总。JSON 聚合不设专用文件出口——重定向 `--json` 事件流,或运行后 `niceeval show --json`,两者都比一份写死形状的汇总文件信息更全。
+- 结果 Run 逐步增加:调度前创建 Run 元数据;每个 attempt 完成后原子写入自己的 `result.json` 与已有 artifacts。
+  进程中断时,已经完成的 attempt 仍可读取。
+- `--junit <path>` 是整次运行的最终聚合文件:收尾时写临时文件并原子替换目标,不在每个 attempt 后反复重写一个半成品汇总。
+  JSON 聚合不设专用文件出口——重定向 `--json` 事件流,或运行后 `niceeval show --json`,两者都比一份写死形状的汇总文件信息更全。
 
 因此“逐步增加”只发生在 append-only 终端事件和 attempt 级 Run;Live 状态只覆盖,最终聚合文件(JUnit)只在完成时出现。
 
 ## 人在终端里怎么用
 
-人在终端里通常不需要同时阅读 45 条 attempt 日志。运行中最重要的是全局是否推进、并发槽位在做什么、最近出现了什么问题。
+人在终端里通常不需要同时阅读 45 条 attempt 日志。
+运行中最重要的是全局是否推进、并发槽位在做什么、最近出现了什么问题。
 
 ```sh
 niceeval exp compare --max-concurrency 19
 ```
 
-TTY 下 `auto` 选择 `human`。human 的版面只有两种体裁:**面板**是有边界、可整体阅读的区块,画框;**流事件**是一条条追加的过程记录,不画框。
+TTY 下 `auto` 选择 `human`。
+human 的版面只有两种体裁:**面板**是有边界、可整体阅读的区块,画框;**流事件**是一条条追加的过程记录,不画框。
 
 ### 框线体裁
 
 框线的几何、嵌套、降级与量测规则单源在[排版原语 · 区域框](../reports/library/layout.md#区域框text-面的框线体裁),`exp` 与 `show` 用同一套,这里只声明 `exp` 特有的部分。
 
-哪些是面板固定为:计划(`PLAN`)、运行中的 live 面板、结束结论(`PASSED` / `FAILED`)、`FAILURES`、`NEXT`(含 `RESULTS` 小节),以及发生留存时的 [`KEPT SANDBOXES`](../sandbox/cli.md#run-收尾输出)。失败行、错误摘要、诊断和运行级瞬时通知是流事件,以无框行追加进 scrollback——它们逐条到达、条数不可预知,而且每条失败最终都会在 `FAILURES` 面板里被再收拢一次。
+哪些是面板固定为:计划(`PLAN`)、运行中的 live 面板、结束结论(`PASSED` / `FAILED`)、`FAILURES`、`NEXT`(含 `RESULTS` 小节),以及发生留存时的 [`KEPT SANDBOXES`](../sandbox/cli.md#run-收尾输出)。
+失败行、错误摘要、诊断和运行级瞬时通知是流事件,以无框行追加进 scrollback——它们逐条到达、条数不可预知,而且每条失败最终都会在 `FAILURES` 面板里被再收拢一次。
 
-`exp` 另外还有一个 `show` 没有的维度:live 面板是原地重绘的,不是打印一次。因此——
+`exp` 另外还有一个 `show` 没有的维度:live 面板是原地重绘的,不是打印一次。
+因此——
 
 - 边框吃掉 2 行内容高,可见 active 项数按**内高**计算,不按终端高度。
-- live 面板宽度**跟随终端全宽**,不受区域框 100 列上限约束(豁免声明见[排版原语 · 区域框](../reports/library/layout.md#区域框text-面的框线体裁)):它从不进入 scrollback,「阅读宽度」的理由对仪表不成立,宽终端的每一列都该用来显示 attempt 正在做什么。`PLAN`、`FAILURES`、结束面板照旧封顶 100。
+- live 面板宽度**跟随终端全宽**,不受区域框 100 列上限约束(豁免声明见[排版原语 · 区域框](../reports/library/layout.md#区域框text-面的框线体裁)):它从不进入 scrollback,「阅读宽度」的理由对仪表不成立,宽终端的每一列都该用来显示 attempt 正在做什么。
+  `PLAN`、`FAILURES`、结束面板照旧封顶 100。
 - 终端 resize 触发 live 面板整体重绘;这不是状态变化,不放宽[刷新节奏](#什么动态更新什么逐条追加)。
-- 上边框的标题是本次命令。命令过长需要截断时保留 `niceeval exp` 和末尾参数、中间补 `…`。
+- 上边框的标题是本次命令。
+  命令过长需要截断时保留 `niceeval exp` 和末尾参数、中间补 `…`。
 - 色彩只标结论(`PASSED` 绿 / `FAILED` 红),不给边框上色。
 
 ### 运行中的 live 面板
@@ -266,30 +339,28 @@ live 面板只展示当前状态,不保存历史帧:
 
 - 上边框标题是本次命令,右侧嵌已运行时间;下边框右侧嵌本次新派发的累计成本;
 - 框内首行固定使用 `total / reused / running / elsewhere / queued / passed / failed / errored / skipped`;`total` 之后的八项是互斥状态且总和等于 `total`;四项结局(`passed` / `failed` / `errored` / `skipped`)恒显示,零值也不省略——「0 errored」是一句有价值的肯定,而「不知道错了几个」不是;`elsewhere`([别人在运行](#等待并发-run-的显示):正被并行 Invocation 持锁、本次在等待的用例的 attempt)只在非零时出现,没有并发 run 的场景首行少一项;
-- 首行是仪表不是摘要,它跟随终端全宽、不受 100 列上限约束,九项写满也只占一行:长度不构成压缩它的理由,任何一项都不因为「行太长」被折叠进上位计数。终端窄到放不下时按[面板降级规则](#框线体裁)处理——先丢弃值为零的结局项(顺序 `skipped` → `errored` → `passed`),非零结局项与 `failed` 永不丢弃,不换行撑高面板;
+- 首行是仪表不是摘要,它跟随终端全宽、不受 100 列上限约束,九项写满也只占一行:长度不构成压缩它的理由,任何一项都不因为「行太长」被折叠进上位计数。
+  终端窄到放不下时按[面板降级规则](#框线体裁)处理——先丢弃值为零的结局项(顺序 `skipped` → `errored` → `passed`),非零结局项与 `failed` 永不丢弃,不换行撑高面板;
 - `ACTIVE` 小节使用稳定 slot:一项完成前不因为其它项更新而换位置,完成后才由下一项补位;实验级 setup / teardown 的运行级行排在 attempt 行前面(见 [实验级 Hook 的显示](#实验级-hook-的显示)),等待 setup 的 attempt 计入 `queued`;
-- active 行的列序固定为 `● eval id  experiment  elapsed  phase/detail`。身份两列(eval id、experiment)按**实际出现过的最长值**定宽——短 id 不垫空格,列宽只放宽不回缩(帧间不抖动),各自封顶内容宽的 40% / 20%,超宽截尾补 `…`;剩余宽度**全部**给行尾的 phase/detail——它是这一行存在的理由,任何一帧都不允许 detail 被挤到不可见。`elapsed` 从这条 attempt 被派发起算,阶段推进只换 phase/detail、不重置它(见 [Attempt 阶段](#attempt-阶段));
+- active 行的列序固定为 `● eval id  experiment  elapsed  phase/detail`。
+  身份两列(eval id、experiment)按**实际出现过的最长值**定宽——短 id 不垫空格,列宽只放宽不回缩(帧间不抖动),各自封顶内容宽的 40% / 20%,超宽截尾补 `…`;剩余宽度**全部**给行尾的 phase/detail——它是这一行存在的理由,任何一帧都不允许 detail 被挤到不可见。
+  `elapsed` 从这条 attempt 被派发起算,阶段推进只换 phase/detail、不重置它(见 [Attempt 阶段](#attempt-阶段));
 - 行内容按面板实际内容宽排版,与外框用同一个宽度值——不允许出现「行按终端宽排、框按上限截」导致行尾被框吃掉的错位;
 - 中间 retry 只改变 active 行尾;失败、错误或 retry 耗尽先撤下整个面板,在上方追加无框流事件,再重建面板;
 - 终端变窄时先减少可见项,再截断消息,不能换行撑高面板;面板整体高度不超过终端高度;
 - 没有真实状态变化时不重画;历史帧不得进入 scrollback;
 - 独立诊断出现时先撤下面板,打印诊断,再在其下方重建。
 
-`PLAN` 行的 `concurrency` 是全局并发位数,值后带它来自哪一层:`(from flag)` /
-`(from config)` / `(from docker default)`(provider 推荐值按 provider 名点名)。
-[解析链](../../runner.md#调度有界并发)三层都可能给出这个数;不带来源时,
-没传 flag 却只开 1 路(vercel 推荐值)读起来就像调度坏了。
+`PLAN` 行的 `concurrency` 是全局并发位数,值后带它来自哪一层:`(from flag)` / `(from config)` / `(from docker default)`(provider 推荐值按 provider 名点名)。
+ [解析链](../../runner.md#调度有界并发)三层都可能给出这个数;不带来源时, 没传 flag 却只开 1 路(vercel 推荐值)读起来就像调度坏了。
 
-任一选中实验声明了 `maxConcurrency` 时,在全局值后逐个附注实验的上限,
-形如 `concurrency 19 (from flag) · mempal ≤1 · nowledge ≤4`;未声明的实验不列。
-附注存在的理由:实验闸让这些实验的[有效宽度](../../concepts.md)小于全局值,
-只印全局值会被读成「这批要开 19 路」。
+任一选中实验声明了 `maxConcurrency` 时,在全局值后逐个附注实验的上限, 形如 `concurrency 19 (from flag) · mempal ≤1 · nowledge ≤4`;未声明的实验不列。
+附注存在的理由:实验闸让这些实验的[有效宽度](../../concepts.md)小于全局值, 只印全局值会被读成「这批要开 19 路」。
 
-`--json` 的对应字段是 `start` 事件的 `experimentConcurrency`;全局值的来源不进
-`--json`——与超时消息的[来源标注](#timeoutbudget-与基础设施错误)同一条裁决:
-给人排查的一层原因写进人读面,不另立结构化字段。
+`--json` 的对应字段是 `start` 事件的 `experimentConcurrency`;全局值的来源不进 `--json`——与超时消息的[来源标注](#timeoutbudget-与基础设施错误)同一条裁决: 给人排查的一层原因写进人读面,不另立结构化字段。
 
-`PLAN` 面板的复用行只给数量,不把被复用的 eval id 逐条铺进终端——即使全部命中缓存也不展开成 per-config 清单。live 与结束反馈是「回答成败、指向失败」的地方,不是缓存构成的清单;哪些 eval 复用、哪些重跑属于 `--dry`(计划矩阵)与 `niceeval view`(逐结果),不占 human 的 scrollback。
+`PLAN` 面板的复用行只给数量,不把被复用的 eval id 逐条铺进终端——即使全部命中缓存也不展开成 per-config 清单。
+live 与结束反馈是「回答成败、指向失败」的地方,不是缓存构成的清单;哪些 eval 复用、哪些重跑属于 `--dry`(计划矩阵)与 `niceeval view`(逐结果),不占 human 的 scrollback。
 
 `exp` 的结果反馈按 verdict 穷尽处理：
 
@@ -300,7 +371,10 @@ live 面板只展示当前状态,不保存历史帧:
 | `errored` | locator / eval / experiment + `error.phase` / code / message | failures 中给同一层错误摘要；cause / stack / diagnostics 下钻 |
 | `skipped` | 不冒充失败；只有需要用户行动的 skip 才以 diagnostic 留痕 | 只进 skipped / completion 汇总 |
 
-`received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、退格符等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。剥控制字节与折单行、截断同属摘要投影，规则单源在 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
+`received` 常是被测命令的 stdout/stderr，jest / vitest / pytest 几乎总把代码帧、行号、`✕` 用 ANSI 转义着色。
+这些 ESC 字节在放进摘要行前先剥掉（连同 OSC、退格符等不可打印控制字节；`✕ › ↓ │` 这类合法符号保留），否则终端会把它重新解释成乱码——尤其被单行截断从转义序列中间切开时。
+剥控制字节与折单行、截断同属摘要投影，规则单源在 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)；两种形态与 `show` / `view` 的比较列表共用这条，捕获输出的着色码不会泄漏进任何终端事实行或 HTML 报告面。
+`received` 是源码 / 命令输出这类大段原始内容时单独截断一行，不跟 `matcher · expected` 挤在一起，`+N more failures` 也不跟被截断的值粘连：
 
 ```text
 ✗ @1czntzel memory/agent-029-use-cache-directive [codex-gpt-5.6-luna--mempal]
@@ -310,9 +384,12 @@ live 面板只展示当前状态,不保存历史帧:
 +2 more failures
 ```
 
-只展示一条主失败，其余全部折进这条独立尾行；不得把全部 assertion name 逐条拼进 scrollback。源码不在这里内联，结束反馈给 `show @locator --source`。排版细则见 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)。
+只展示一条主失败，其余全部折进这条独立尾行；不得把全部 assertion name 逐条拼进 scrollback。
+源码不在这里内联，结束反馈给 `show @locator --source`。
+排版细则见 [Assertions · 一条摘要怎样排版](../assertions/library/display.md#一条摘要怎样排版)。
 
-执行错误即时输出一层可行动摘要,不把 stack 或 provider SDK response 全部灌进 scrollback。摘要固定包含 locator、eval/experiment、正式 phase、稳定 code 和 message:
+执行错误即时输出一层可行动摘要,不把 stack 或 provider SDK response 全部灌进 scrollback。
+摘要固定包含 locator、eval/experiment、正式 phase、稳定 code 和 message:
 
 ```text
 ✗ @12h8m4k1 memory/agent-029-use-cache [compare/claude-e2b] errored · sandbox.create
@@ -327,25 +404,38 @@ live 面板只展示当前状态,不保存历史帧:
   Memory warmup failed; continuing with a cold index
 ```
 
-止损闸落闸(见[执行失败分类 · 止损执行体](../error-classification/architecture.md#止损执行体))走同一条诊断通道,`code` 是 `dispatch-halted`、level 是 `error`。它的 message 自成完整一句话,所以按诊断体裁只给 error 符号加这一句,不另起标题行、也不带折叠计数——闸落下后每条被拦住的 attempt 都会刷新同一条诊断,逐次打印就会把 scrollback 刷满同一句话;被拦住的数量由结束反馈的 `unstarted` 回答。eval 闸同形,文案是 `✗ eval halted: <message>`:
+止损闸落闸(见[执行失败分类 · 止损执行体](../error-classification/architecture.md#止损执行体))走同一条诊断通道,`code` 是 `dispatch-halted`、level 是 `error`。
+它的 message 自成完整一句话,所以按诊断体裁只给 error 符号加这一句,不另起标题行、也不带折叠计数——闸落下后每条被拦住的 attempt 都会刷新同一条诊断,逐次打印就会把 scrollback 刷满同一句话;被拦住的数量由结束反馈的 `unstarted` 回答。
+eval 闸同形,文案是 `✗ eval halted: <message>`:
 
 ```text
 ✗ experiment halted (dispatch-halted): shared tunnel is down; restart it and rerun
 ```
 
-`niceeval show @12h8m4k1` 展开结构化错误、cause、stack、发生过的阶段与 diagnostics;有 trace 时再用 `--execution` 看执行树。没有 trace 时直接说明 unavailable,不能因此丢失错误详情。
+`niceeval show @12h8m4k1` 展开结构化错误、cause、stack、发生过的阶段与 diagnostics;有 trace 时再用 `--execution` 看执行树。
+没有 trace 时直接说明 unavailable,不能因此丢失错误详情。
 
-`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt;`passed` / `failed` / `errored` / `skipped` 是本次派发并已了结的 attempt 按 verdict 的划分。任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`,不能出现没有解释的 `Running 39 ... 8/45 done`。
+`total` 是选择出的逻辑 attempt 数;`reused` 是缓存携入;`elsewhere` 是正被并行 Invocation 持锁运行、本次在等待的用例的 attempt(见[等待并发 run 的显示](#等待并发-run-的显示));`running`、`queued` 描述本次已派发、尚未了结的 attempt;`passed` / `failed` / `errored` / `skipped` 是本次派发并已了结的 attempt 按 verdict 的划分。
+任何一帧都满足 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`,不能出现没有解释的 `Running 39 ... 8/45 done`。
 
-已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止失败几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#attempts-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
+已了结的 attempt 按 verdict 落项,不折进一个笼统的「完成数」——盯着运行的人问的是「到现在为止失败几个」,`8 completed` 回答不了,得等结束面板或者去翻 scrollback 里已经被顶走的失败行。
+四项与[结果反馈的 verdict 表](#人看的结束反馈)同一套词:`skipped` 收本次不产生 verdict 的了结——eval 自身 skip、[首过即停省略的轮次](#attempts-与首过即停怎样展示)、budget 未派发都进这一项,它们不冒充失败,也不再隐进上位计数。
+这三种未跑原因彼此的区别由结束结论与题目级 `eval` 事件给出,首行只回答「有多少条没跑出 verdict」。
 
-计数口径与成本口径要一致地区分「本次派发」和「缓存携入」。首行的四项结局因此是**本次派发**的口径:携入结果的 verdict 留在 `reused` 里,不摊进 `passed` / `failed`——两个口径混在一行,`reused` 就会同时既是状态又是来源,恒等式失去意义。整套结果集(含携入)的通过 / 失败数是结束反馈的事:结论面板的 `44 passed · 1 failed · 0 errored   (6 reused)` 覆盖全部 45 条,携入的失败照常进 `FAILURES` 面板并给下钻命令。携入的失败不在运行中逐条追加进 scrollback——它们不是本次发生的事,流事件承载的是「刚刚发生了什么」。
+计数口径与成本口径要一致地区分「本次派发」和「缓存携入」。
+首行的四项结局因此是**本次派发**的口径:携入结果的 verdict 留在 `reused` 里,不摊进 `passed` / `failed`——两个口径混在一行,`reused` 就会同时既是状态又是来源,恒等式失去意义。
+整套结果集(含携入)的通过 / 失败数是结束反馈的事:结论面板的 `44 passed · 1 failed · 0 errored   (6 reused)` 覆盖全部 45 条,携入的失败照常进 `FAILURES` 面板并给下钻命令。
+携入的失败不在运行中逐条追加进 scrollback——它们不是本次发生的事,流事件承载的是「刚刚发生了什么」。
 
-结束反馈第二行的时长是本次运行的真实 wall-clock,tok 与 $ 只统计**本次新派发**的 attempt;reused 携入结果的历史成本不加进这一行,否则会出现「`0s` 却 `$7.04`」这类时长记本次、成本记累计的自相矛盾行。因此 `6 reused + 39 run` 的运行,`1.2M tok · $1.37` 指那 39 次的开销;全部命中缓存、零派发的运行这一行是 `0s · 0 new tok · $0.00`。复用结果各自的原始成本保留在它们的 Run 里,要看整套结果集(含 reused)的累计成本用 `niceeval view` / `niceeval show`。
+结束反馈第二行的时长是本次运行的真实 wall-clock,tok 与 $ 只统计**本次新派发**的 attempt;reused 携入结果的历史成本不加进这一行,否则会出现「`0s` 却 `$7.04`」这类时长记本次、成本记累计的自相矛盾行。
+因此 `6 reused + 39 run` 的运行,`1.2M tok · $1.37` 指那 39 次的开销;全部命中缓存、零派发的运行这一行是 `0s · 0 new tok · $0.00`。
+复用结果各自的原始成本保留在它们的 Run 里,要看整套结果集(含 reused)的累计成本用 `niceeval view` / `niceeval show`。
 
 ### 人看的结束反馈
 
-结束后清除 live 面板,依次打印结论、失败、下一步三个面板。终端不再打印整张 experiment × eval 明细表——大矩阵在 scrollback 里不可读,加了框也不会变得可读,完整对比属于 `niceeval show` / `niceeval view`。`FAILURES` 面板装的是失败清单,不是结果矩阵:
+结束后清除 live 面板,依次打印结论、失败、下一步三个面板。
+终端不再打印整张 experiment × eval 明细表——大矩阵在 scrollback 里不可读,加了框也不会变得可读,完整对比属于 `niceeval show` / `niceeval view`。
+`FAILURES` 面板装的是失败清单,不是结果矩阵:
 
 ```text
 ╭─ FAILED ────────────────────────────────────────────────────────────── 3m 48s ─╮
@@ -373,9 +463,12 @@ live 面板只展示当前状态,不保存历史帧:
 ╰────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-**有失败就给复验命令。** `Retry:` 行只在本次存在 `failed` 时出现,原样回放本次调用的位置参数加上 [`--rerun`](use-case/重新运行/)——修完不在指纹里的东西(agent 的 prompt、被测服务)直接复制这一行,只重跑失败项。它不列具体 eval id:按判定收窄本来就不需要 id,操作者也就不必再去结果树里挖清单。
+**有失败就给复验命令。**
+ `Retry:` 行只在本次存在 `failed` 时出现,原样回放本次调用的位置参数加上 [`--rerun`](use-case/重新运行/)——修完不在指纹里的东西(agent 的 prompt、被测服务)直接复制这一行,只重跑失败项。
+它不列具体 eval id:按判定收窄本来就不需要 id,操作者也就不必再去结果树里挖清单。
 
-结论面板的标题就是结论词,时长嵌在右侧。全部通过时不留空的 `FAILURES` 面板:
+结论面板的标题就是结论词,时长嵌在右侧。
+全部通过时不留空的 `FAILURES` 面板:
 
 ```text
 ╭─ PASSED ────────────────────────────────────────────────────────────── 3m 21s ─╮
@@ -392,7 +485,9 @@ live 面板只展示当前状态,不保存历史帧:
 
 #### 全部命中缓存
 
-选择的 attempt 全部可复用时(`reused = total`,其余八项全为零),没有 attempt 派发,不出 live 面板,`PLAN` 面板之后直接打印结束反馈。复用不改变 verdict 折叠:携入的 `failed` 仍然是 `failed`,照常进 `FAILURES` 并给下钻命令与 `Retry:` 行——不能因为「这次没重跑」就把失败藏起来只丢一句计数;这一档下 `Retry:` 尤其是操作者要的那条命令,携入的失败正是靠它重新派发。结论面板明确「全部来自缓存、本次没有新开销」,后续与普通结束反馈同构;失败条数超过终端展开上限时,总数与展开数嵌进 `FAILURES` 的上边框右侧:
+选择的 attempt 全部可复用时(`reused = total`,其余八项全为零),没有 attempt 派发,不出 live 面板,`PLAN` 面板之后直接打印结束反馈。
+复用不改变 verdict 折叠:携入的 `failed` 仍然是 `failed`,照常进 `FAILURES` 并给下钻命令与 `Retry:` 行——不能因为「这次没重跑」就把失败藏起来只丢一句计数;这一档下 `Retry:` 尤其是操作者要的那条命令,携入的失败正是靠它重新派发。
+结论面板明确「全部来自缓存、本次没有新开销」,后续与普通结束反馈同构;失败条数超过终端展开上限时,总数与展开数嵌进 `FAILURES` 的上边框右侧:
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
@@ -464,13 +559,15 @@ niceeval show @17m2k9pq --execution --diff
 
 ## 机器怎么读:`--json`
 
-一切非交互解析者——coding agent、CI annotation adapter、脚本——共用 `--json`:stdout 上单一有序的 NDJSON 事件流,一行一个 JSON 对象。词法就是 JSON,没有自造 envelope 语法要学;权威接口是退出码、事件里的 locator 与 Run,运行结束后的深读一律走 [`niceeval show`](../reports/show.md)(text 或 `--json`)。
+一切非交互解析者——coding agent、CI annotation adapter、脚本——共用 `--json`:stdout 上单一有序的 NDJSON 事件流,一行一个 JSON 对象。
+词法就是 JSON,没有自造 envelope 语法要学;权威接口是退出码、事件里的 locator 与 Run,运行结束后的深读一律走 [`niceeval show`](../reports/show.md)(text 或 `--json`)。
 
 ```sh
 niceeval exp compare --json
 ```
 
-首行是携带流身份的 `start` 事件;之后只有失败、错误或去重后的 warning 立即追加;若连续 30 秒没有这些永久事件,才追加一条 `progress` 心跳。普通状态变化和 attempt 日志不产生事件:
+首行是携带流身份的 `start` 事件;之后只有失败、错误或去重后的 warning 立即追加;若连续 30 秒没有这些永久事件,才追加一条 `progress` 心跳。
+普通状态变化和 attempt 日志不产生事件:
 
 ```json
 {"format":"niceeval.exp","schemaVersion":1,"event":"start","total":24,"configs":3,"concurrency":10,"reused":18}
@@ -482,22 +579,28 @@ niceeval exp compare --json
 {"event":"result","status":"failed","passed":22,"failed":1,"errored":1,"reused":18,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<run>",".niceeval/compare/claude/<run>",".niceeval/compare/claude-e2b/<run>"]}
 ```
 
-事件词表:`start` / `progress` / `failure` / `error` / `eval` / `kept` / `warning` / `budget_exhausted` / `reporter_error` / `interrupted` / `judge_precheck` / `experiment_setup` / `experiment_teardown` / `lock_wait` / `result`。消费方按 `event` 字段分发,忽略未知事件与未知字段;`schemaVersion` 只在破坏性形状变更时递增。
+事件词表:`start` / `progress` / `failure` / `error` / `eval` / `kept` / `warning` / `budget_exhausted` / `reporter_error` / `interrupted` / `judge_precheck` / `experiment_setup` / `experiment_teardown` / `lock_wait` / `result`。
+消费方按 `event` 字段分发,忽略未知事件与未知字段;`schemaVersion` 只在破坏性形状变更时递增。
 
 `--json` 固定满足:
 
 - 字段名复用 Results 词表(`locator` / `evalId` / `experimentId` / `phase` / `verdict`),不为事件流发明第二套命名;locator 是继续调查的主键,不能只给 eval id 或第几个 attempt。
 - Run 与 attempt artifacts 是权威数据,事件流不是另一份结果 schema——`failure` / `error` 事件只带主失败断言或结构化错误的有界字段,完整证据用 `show` 下钻,脚本消费用 [`show --json`](../reports/show/json.md)。
-- 诊断走 `warning` 事件,按 dedupeKey 去重后只在首次出现时追加一行,流里不带折叠次数:次数是会被后续出现改写的值,append-only 流承载的是「这件事发生过」,要终值读 Run 里的诊断(`show --json`)。`code` 是可以按值分支的稳定词法(`dispatch-halted`、`lock-taken-over`、`budget-unenforceable` 等),折叠身份不编进它——同一类诊断在任何一次运行里都是同一个字面量。
-- 诊断的归属由 `experimentId` / `evalId` 两个具名字段给出:attempt 级诊断取所属 attempt 的身份,不绑定单条 attempt 的运行级诊断(止损闸、fail-fast、budget、锁接管)取诊断自己声明的身份。消费方读同一对字段、不区分来源,也不会拿到被伪造出来的 attempt 归属。
-- `result` 是流的最后一个事件:结论、计数、完成态(`complete` / `incomplete` / `interrupted`)、Run 路径与 JUnit 路径(传了 `--junit` 才出现)。逐条失败不在这里重复——流里已经逐事件给过。
+- 诊断走 `warning` 事件,按 dedupeKey 去重后只在首次出现时追加一行,流里不带折叠次数:次数是会被后续出现改写的值,append-only 流承载的是「这件事发生过」,要终值读 Run 里的诊断(`show --json`)。
+  `code` 是可以按值分支的稳定词法(`dispatch-halted`、`lock-taken-over`、`budget-unenforceable` 等),折叠身份不编进它——同一类诊断在任何一次运行里都是同一个字面量。
+- 诊断的归属由 `experimentId` / `evalId` 两个具名字段给出:attempt 级诊断取所属 attempt 的身份,不绑定单条 attempt 的运行级诊断(止损闸、fail-fast、budget、锁接管)取诊断自己声明的身份。
+  消费方读同一对字段、不区分来源,也不会拿到被伪造出来的 attempt 归属。
+- `result` 是流的最后一个事件:结论、计数、完成态(`complete` / `incomplete` / `interrupted`)、Run 路径与 JUnit 路径(传了 `--junit` 才出现)。
+  逐条失败不在这里重复——流里已经逐事件给过。
 - progress 心跳只用于判断进程存活,不是结果数据源;失败或诊断刚写过就重新计时,不紧跟一条冗余心跳。
 - reporter 写失败必须判红,因为消费方要求的结果文件缺失不能降级成普通 warning。
 - 进程退出码仍是第一层红绿信号,消费方不靠自然语言猜成功。
 
 ### 事件与计划文档的 TypeScript 形状
 
-事件流的每一行是下面这个判别联合(判别字段 `event`)之一。只有首事件 `start` 携带 `format` / `schemaVersion` 标识整条流;其余事件不重复这两个字段,`schemaVersion` 只在破坏性形状变更时递增。`phase` 复用 [Results · result.json 的生命周期词表](../record/architecture.md#resultjson)(`LifecyclePhase`),`verdict` 复用同一页的 `AttemptRecord.verdict`,`JsonValue` 复用 [Results · run.json](../record/architecture.md#runjson) 的定义:
+事件流的每一行是下面这个判别联合(判别字段 `event`)之一。
+只有首事件 `start` 携带 `format` / `schemaVersion` 标识整条流;其余事件不重复这两个字段,`schemaVersion` 只在破坏性形状变更时递增。
+`phase` 复用 [Results · result.json 的生命周期词表](../record/architecture.md#resultjson)(`LifecyclePhase`),`verdict` 复用同一页的 `AttemptRecord.verdict`,`JsonValue` 复用 [Results · run.json](../record/architecture.md#runjson) 的定义:
 
 ```typescript
 type LifecyclePhase = /* 见 Results · result.json 的生命周期词表(全仓唯一一套) */ string;
@@ -721,6 +824,31 @@ interface ExpPlanRow {
   reused: boolean;
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(锁语义见 Architecture);省略等于 false。`--dry` 只读锁目录,不取锁、不等待。 */
   locked?: boolean;
+  /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。gate 词表与六道门同名,缺历史序号记 "missing"。 */
+  dispatch?: ExpPlanDispatch[];
+}
+
+interface ExpPlanDispatch {
+  gate:
+    | "fingerprint"
+    | "terminal"
+    | "eligibility"
+    | "origin"
+    | "rerun"
+    | "mode"
+    | "missing";
+  /** 这组原因覆盖的 attempt 序号。 */
+  attempts: number[];
+  /** 指纹门的差异明细,双侧 manifest 都在才有;缺 manifest 时给 [{ selector: "opaque:no-manifest" }]。 */
+  deltas?: ExpPlanDelta[];
+}
+
+interface ExpPlanDelta {
+  /** 与 --accept 同一词表:config:<路径> / source:<路径> / data:<路径> / opaque:no-manifest。 */
+  selector: string;
+  /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
+  from?: string;
+  to?: string;
 }
 ```
 
@@ -742,7 +870,8 @@ niceeval show @17m2k9pq
 niceeval show @17m2k9pq --execution
 ```
 
-修复后只重跑受影响项。改的是 eval 或配置时指纹自己会变,直接重跑同一条命令即可;改的是不在指纹里的东西(agent 的 prompt、被测服务)时加 `--rerun` 复验失败项——已通过的照常携带,不必先去挖失败的 eval id;只在怀疑缓存口径本身时才上 `--rerun all`:
+修复后只重跑受影响项。
+改的是 eval 或配置时指纹自己会变,直接重跑同一条命令即可;改的是不在指纹里的东西(agent 的 prompt、被测服务)时加 `--rerun` 复验失败项——已通过的照常携带,不必先去挖失败的 eval id;只在怀疑缓存口径本身时才上 `--rerun all`:
 
 ```sh
 niceeval exp compare/bub-e2b memory/commit0-cachetool --json
@@ -754,7 +883,8 @@ agent 也可以完全不解析运行流——跑默认人读文本、只看退�
 
 ### CI 门禁
 
-CI 的权威接口是退出码和结构化文件。日志页给人看,用默认人读文本(非 TTY 自动是只追加流);平台注解走 `--junit`,自建看板在运行后用 `show --json` 聚合:
+CI 的权威接口是退出码和结构化文件。
+日志页给人看,用默认人读文本(非 TTY 自动是只追加流);平台注解走 `--junit`,自建看板在运行后用 `show --json` 聚合:
 
 ```sh
 niceeval exp ci \
@@ -792,7 +922,8 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 
 ## 哪些参数改变什么
 
-输出形态、运行选择和结果出口彼此正交。每个数值参数都有自己的作用域——数字套在哪个单位上,是读懂这张表的关键,尤其是四个调度参数各不相同:
+输出形态、运行选择和结果出口彼此正交。
+每个数值参数都有自己的作用域——数字套在哪个单位上,是读懂这张表的关键,尤其是四个调度参数各不相同:
 
 | 类别 | 参数 | 作用域 | 作用 |
 |---|---|---|---|
@@ -804,17 +935,19 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 | 调度 | `--budget` | 每个 budget 域(experimentId)——选中 N 个实验 = N 份各自独立的上限,不是总闸(见 [Runner · 预算护栏](../../runner.md#预算护栏budget)) | 到顶即停止向该域派发的花费上限 |
 | 判定 | `--strict`、`--early-exit` / `--no-early-exit` | 每条 eval 的 verdict | 决定 soft 是否判红、是否跑满 |
 | 缓存 | `--rerun[=failed\|all]` | 整次调用 | 上一轮的结果哪些还算数:不带 = `passed` 与 `failed` 都算数;单独使用 / `failed` = 只有 `passed` 算数,失败项重跑;`all` = 都不算数,全量重烧(用例见[`--rerun`](use-case/重新运行/)) |
-| 缓存 | `--carry-ignoring-flag <key>` | 整次调用(可重复) | 携带判定忽略这些 `flags` 键;把误当条件写进 `flags` 的连接坐标搬进 `ctx.fact()` 的那一次用,记 `carry-ignoring-flag` diagnostic 留痕(见[改什么会作废缓存](use-case/缓存与沿用/)) |
+| 缓存 | `--accept <selector>` | 整次调用(可重复) | 授权跨过一条具名指纹差异照常携带,重锚后下次自然命中;不带值且 stderr 是 TTY 时进入[逐原因标记](#--accept-不带值tty-下逐原因标记);判据、词表与不可 accept 面见[缓存与携带](cache.md#--accept授权跨过一条精确差异) |
 | 执行模式 | [`--keep-sandbox`](../sandbox/cli.md) | 整次调用；与 Experiment 的 `sandboxReuse: true` 互斥 | 留存单条 Attempt 的现场 |
 | 收尾 | `--teardown` | 选中的实验 | 只执行选中实验的实验级 teardown(补救被强杀的运行),不派发 attempt、不跑 setup |
 | 预览 | `--dry` | 整次调用 | 只打印计划(人读文本或 `--json` 单文档),不运行、不落盘 |
 | 机器出口 | `--junit <path>` | 整次调用 | 额外写 JUnit 聚合文件,不改变形态;JSON 聚合归 `show --json` 或事件流重定向 |
 
-`--junit` 不是终端格式开关,与形态正交——人读文本也可以同时写 JUnit 文件。`--dry` 不创建 Run 或 JUnit。
+`--junit` 不是终端格式开关,与形态正交——人读文本也可以同时写 JUnit 文件。
+`--dry` 不创建 Run 或 JUnit。
 
 ### attempts 与首过即停怎样展示
 
-`human` 把未派发原因收进动态计数和最终结论,不能留下永久 running 状态;通过本身不追加到 scrollback。未派发的轮次直接从 `queued` 迁进 `skipped`——它们没跑出 verdict,不冒充 `passed` 也不冒充 `failed`,live 面板的计数行(框内首行)因此始终自洽,而且省了多少轮直接读得出来:
+`human` 把未派发原因收进动态计数和最终结论,不能留下永久 running 状态;通过本身不追加到 scrollback。
+未派发的轮次直接从 `queued` 迁进 `skipped`——它们没跑出 verdict,不冒充 `passed` 也不冒充 `failed`,live 面板的计数行(框内首行)因此始终自洽,而且省了多少轮直接读得出来:
 
 ```text
 │ 45 total · 6 reused · 18 running · 12 queued · 8 passed · 0 failed · 0 errored · 1 skipped   │
@@ -832,7 +965,10 @@ niceeval exp regression --strict --budget 25 --junit .niceeval/regression.xml
 {"event":"eval","locator":"@12p9k4mz","evalId":"memory/commit0-cachetool","experimentId":"compare/bub-e2b","verdict":"passed","attempts":3,"passed":2}
 ```
 
-eval 级聚合行的 `locator` 指**代表 attempt**——earlyExit 下取 attempt 序号最小的命中通过项；跑满时取 attempt 序号最大项。选择只依赖落盘身份，不依赖并发完成顺序，因此同一批结果重读恒指向同一个 locator。`verdict` 是这条代表 attempt 自身的判定；题目级聚合结论看 `attempts` / `passed`（以及由两者得到的通过率），不能把代表项的 verdict 当成整组折叠判定。逐 attempt 的 locator 不在聚合行里重复，失败的在 `failure` / `error` 事件里逐条给出，全量用 `niceeval show <eval-id>` 展开。
+eval 级聚合行的 `locator` 指**代表 attempt**——earlyExit 下取 attempt 序号最小的命中通过项；跑满时取 attempt 序号最大项。
+选择只依赖落盘身份，不依赖并发完成顺序，因此同一批结果重读恒指向同一个 locator。
+`verdict` 是这条代表 attempt 自身的判定；题目级聚合结论看 `attempts` / `passed`（以及由两者得到的通过率），不能把代表项的 verdict 当成整组折叠判定。
+逐 attempt 的 locator 不在聚合行里重复，失败的在 `failure` / `error` 事件里逐条给出，全量用 `niceeval show <eval-id>` 展开。
 
 ### timeout、budget 与基础设施错误
 
@@ -843,9 +979,13 @@ eval 级聚合行的 `locator` 指**代表 attempt**——earlyExit 下取 attem
 --json  {"event":"error","locator":"@18c1m2qx","evalId":"memory/agent-029","experimentId":"compare/bub-e2b","phase":"agent.run","reason":"attempt timed out (60000ms, from config)"}
 ```
 
-超时消息带**这个上限是哪一层给的**——`from flag` / `from experiment` / `from eval` / `from config`,对应[配置解析链](architecture.md#配置解析链一次求值处处同源)的四层顺序。撞线时用户要的下一步是「去哪儿把它调大」,光一个毫秒数得自己回去对四个地方;尤其当 eval 声明了 35 分钟却被别处的 20 分钟掐死时,来源标注是一眼看出配置解析走岔了的唯一线索。它写在 `AttemptError.message` 里(两个面同源),不另立结构化字段:这是给人排查用的一层原因,不是要 CI 分支的决策轴。
+超时消息带**这个上限是哪一层给的**——`from flag` / `from experiment` / `from eval` / `from config`,对应[配置解析链](architecture.md#配置解析链一次求值处处同源)的四层顺序。
+撞线时用户要的下一步是「去哪儿把它调大」,光一个毫秒数得自己回去对四个地方;尤其当 eval 声明了 35 分钟却被别处的 20 分钟掐死时,来源标注是一眼看出配置解析走岔了的唯一线索。
+它写在 `AttemptError.message` 里(两个面同源),不另立结构化字段:这是给人排查用的一层原因,不是要 CI 分支的决策轴。
 
-已经发起 agent turn 的 attempt 没有成本数据时只提示一次。人读文本把 warning 永久写入 scrollback,`--json` 追加一条 `warning` 事件;不得每个 attempt 重复同一诊断。attempt 在 `sandbox.create`、setup 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
+已经发起 agent turn 的 attempt 没有成本数据时只提示一次。
+人读文本把 warning 永久写入 scrollback,`--json` 追加一条 `warning` 事件;不得每个 attempt 重复同一诊断。
+attempt 在 `sandbox.create`、setup 等首个 agent turn 之前失败时不产生这条 warning,结构化执行错误是唯一需要置顶的根因。
 
 ## 用法错误
 
@@ -859,6 +999,18 @@ niceeval exp compare --model gpt-5.4
 experiment 运行不支持 --model。请新增或复制一个 experiment 文件并修改 model。
 ```
 
+尾随 eval 前缀匹配 0 条同样是启动期用法错误——第二个位置参数写错(或误写成另一个实验名)时, 静默丢弃会让计划悄悄变形:
+
+```sh
+niceeval exp compare/codex compare/gpt
+```
+
+```text
+No eval matched prefix: compare/gpt in experiments selected by compare/codex.
+Positional args after the first select eval id prefixes. To run another experiment,
+run it as its own command: niceeval exp compare/gpt
+```
+
 标为 `show` / `view` 专用的 flag 不能被 `exp` 静默忽略:
 
 ```sh
@@ -869,7 +1021,8 @@ niceeval exp compare --history
 --history 只适用于 niceeval show,不能用于 niceeval exp。
 ```
 
-`show` 与 `view` 是顶层命令，不是 `exp` 的子命令。用户误写 `niceeval exp show` 或 `niceeval exp view`，且仓库里没有同名 experiment 时，CLI 保留“不存在的实验”错误，并追加可直接执行的纠错提示：
+`show` 与 `view` 是顶层命令，不是 `exp` 的子命令。
+用户误写 `niceeval exp show` 或 `niceeval exp view`，且仓库里没有同名 experiment 时，CLI 保留“不存在的实验”错误，并追加可直接执行的纠错提示：
 
 ```text
 No experiment matched: show. Available paths: compare/, dev-e2b/, nightly/.
@@ -878,7 +1031,8 @@ Did you mean: niceeval show
 
 如果仓库确实声明了 id 为 `show` 或 `view` 的 experiment，`exp show` / `exp view` 仍按合法 experiment 选择执行，不被命令提示抢占。
 
-用法错误始终写 `stderr` 并非零退出;错误形态不随输出形态改变。`--help` / `--version` 只打印帮助或版本,不加载 experiment、不创建结果。
+用法错误始终写 `stderr` 并非零退出;错误形态不随输出形态改变。
+`--help` / `--version` 只打印帮助或版本,不加载 experiment、不创建结果。
 
 ## 相关阅读
 

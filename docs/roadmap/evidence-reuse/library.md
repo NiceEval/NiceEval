@@ -1,8 +1,7 @@
 # Evidence 复用政策 —— Library
 
 公开 API 让 Experiment 声明证据要求、外部资源和环境值的角色。
-用户不写 `requirementKey`，也不决定某个字段是否进哈希；
-系统从声明、解析结果与只读观测生成完整 `ExecutionManifest`。
+用户不写 `requirementKey`，也不决定某个字段是否进哈希；系统从声明、解析结果与只读观测生成完整 `ExecutionManifest`。
 
 ## Agent 以 `AgentSpec` 声明被测条件
 
@@ -133,8 +132,7 @@ export default defineExperiment({
 | 凭据 | `fromSecret(name)` | 不改变 Requirement | 不落值 |
 
 框架不按 `URL`、`TOKEN` 等变量名猜角色。
-同一个 `NMEM_URL` 在不同 Experiment 中可以是 condition，也可以是 connection，
-但作者必须显式表达理由。
+同一个 `NMEM_URL` 在不同 Experiment 中可以是 condition，也可以是 connection，但作者必须显式表达理由。
 
 condition 适合“不同 endpoint 就是不同被测实现”的场景。
 connection 适合“隧道地址只是通往同一资源的路”，并必须引用一个 resource observer 或静态 epoch。
@@ -170,7 +168,7 @@ connection 必须指向 resource，secret 只提供访问权。
 
 Library 不提供 `ignoreEnv`、`ignoredSources` 或 `provenanceFlags`。
 这类 deny-list 一旦误配，会让未来所有变化静默沿用。
-稳定的非身份值用 connection 或 secret 表达；一次例外用 CLI `--accept` 对当前计划授权。
+稳定的非身份值用 connection 或 secret 表达；一次例外走 [`--accept`](../../feature/experiments/cache.md#--accept授权跨过一条精确差异)，只对当前计划里那一条差异授权。
 
 ## Sandbox 使用声明式 `EnvironmentRecipe`
 
@@ -197,26 +195,7 @@ provider 在解析期把 mutable 名称解析成内容 ID；解析失败时环�
 
 ## loader 家族
 
-数据文件必须经 loader 读取，系统才能把 path 与 digest 放进 source manifest：
+数据文件经 loader 读取才能把路径与内容哈希放进 manifest 的数据面，loader 的函数、调用时机与哈希口径见[源码闭包](../../feature/experiments/cache.md#eval-源码闭包算到哪为止)。
 
-```typescript
-import { loadText, loadBytes, loadYaml, loadJson } from "niceeval/loaders";
-
-const cases = await loadYaml("evals/data/recall-cases.yaml");
-const template = await loadText("evals/data/recall-prompt.md");
-const golden = await loadBytes("evals/data/expected.bin");
-```
-
-| 函数 | 返回 |
-|---|---|
-| `loadYaml(path)` | 解析后的数据 |
-| `loadJson(path)` | 解析后的数据 |
-| `loadText(path)` | 文件文本 |
-| `loadBytes(path)` | 文件字节 |
-
-四个 loader 都在发现阶段读完整文件。
-manifest 按整份内容算 digest；一个文件生成的全部 eval 因此共享同一输入版本。
-要缩小失效面就按变更频率拆文件，见 [读入数据文件](use-case/读入数据文件.md)。
-
-直接使用 `fs.readFileSync`、动态 `import()` 或项目外依赖时，系统无法建立完整 manifest。
-对应 Requirement 默认 `opaque`，而不是假装这些输入不存在。
+本候选设计只在这里多一句：直接用 `fs.readFileSync`、动态 `import()` 或项目外依赖时，系统建不出完整 manifest。
+对应 Requirement 是 `opaque`，而不是假装这些输入不存在——证明优先默认派发，复用优先默认沿用并标 unverified。

@@ -28,8 +28,8 @@
 
 这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威。
 跨层收尾顺序固定为 Eval、Agent、SandboxSpec；同一层注册多个 Hook 时才按 LIFO 执行。
-收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。`result.json` 的物理封口
-则必须等 Scope release 完成；两者不是同一个“定稿”时点。
+收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
+`result.json` 的物理封口则必须等 Scope release 完成；两者不是同一个“定稿”时点。
 
 ### 中断与留存矩阵
 
@@ -40,8 +40,9 @@
 | Ctrl+C | 已进入的收尾与 finalizer 有界执行 | 不新提交 keep | disposition 保持 stop | 仅已走到封口点的 Attempt 存在 | 执行有界 teardown |
 | SIGKILL / 断电 | 无法执行 | 无法提交 | 无法执行 | 在飞 Attempt 不封口 | 无法执行；由 orphan 对账事后回收 |
 
-Ctrl+C 是可处理的中断，SIGKILL 不是。已封口 Attempt 在两种路径下都保持可读；reader 不为在飞
-Attempt 伪造 `errored`。强杀遗留实例只通过创建期标识与 orphan 对账处理。
+Ctrl+C 是可处理的中断，SIGKILL 不是。
+已封口 Attempt 在两种路径下都保持可读；reader 不为在飞 Attempt 伪造 `errored`。
+强杀遗留实例只通过创建期标识与 orphan 对账处理。
 
 ## 变更归因:send 窗口与分类账
 
@@ -96,16 +97,26 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 
 核心固定的是这条调用链本身(创建后先环境层 Hook、再打分类账锚点、再 eval Fixture、再 agent 预置;agent 归因增量在评分前折叠完成,收尾段按 eval → agent → 环境层的顺序在判定之后执行)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
 
-provider 的可写保证不止 `workdir`。runner 要在 workdir 外的私有路径放沙箱侧运行时文件——
-OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
-`/tmp` 不可写是环境缺陷:撞上它的 attempt 按环境错误 `errored`(不携带,修好镜像重跑即续上),
-报错点名不可写的路径与修法,不透传 SDK 的原始错误串。
+provider 的可写保证不止 `workdir`。
+runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
+`/tmp` 不可写是环境缺陷:撞上它的 attempt 按环境错误 `errored`(不携带,修好镜像重跑即续上),报错点名不可写的路径与修法,不透传 SDK 的原始错误串。
+
+## 时限归属:attempt deadline 是唯一默认
+
+attempt 内的一切沙箱时限都从 attempt deadline **派生**,provider 层没有独立默认:实例寿命请求覆盖 deadline 加收尾预留([复用寿命](reuse.md)同一规则),单条命令未显式传 `timeout` 时,上限就是 deadline 的剩余量。
+理由与 [`timeoutMs` 的解析链](../experiments/architecture.md#配置解析链一次求值处处同源)相同:时限多一个链外来源,症状就是「实验声明 20 分钟,命令在整 600 秒被另一层杀掉」——配置的值不生效,报错还落在离配置最远的地方。
+用户代码显式给单条命令传更短的 `timeout` 仍然生效,那是有意声明,不是默认值。
+
+超时把 attempt 转成 `errored` 时,归属必须可见。
+`result.json` 落盘三样:触发的是哪层时限(attempt deadline / 命令显式 `timeout` / provider 会话上限)、值多少、值从四层来源的哪层解析而来。
+报错行与 [`niceeval show --timing`](../reports/show/timing.md) 照实印这三样,不打一个没有归属说明的 ✗。
+provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不能静默充当默认值:deadline 超出它时在派发前就报环境约束,点名 provider 与上限值,不让 attempt 跑到一半被截。
 
 ## 留存(keep)与注册表
 
-[`--keep-sandbox`](cli.md) 的留存决策发生在 attempt 收尾链的最后一步。verdict 定稿后按档位提交：
-`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored`，包括被硬超时打断的 `errored`；
-`all` 档提交全部 verdict。此时其余收尾(agent teardown、环境层 teardown、diff 采集)已经照常完成。
+[`--keep-sandbox`](cli.md) 的留存决策发生在 attempt 收尾链的最后一步。
+verdict 定稿后按档位提交：`failed` 档是不带值的 flag 的默认值，提交 `failed` / `errored`，包括被硬超时打断的 `errored`；`all` 档提交全部 verdict。
+此时其余收尾(agent teardown、环境层 teardown、diff 采集)已经照常完成。
 
 attempt 的最终 `locator` 在调度前已经由 invocation 的 `snapshotStartedAt` 与 attempt 身份算好。
 因此登记项、run 收尾反馈与 `result.json` 从第一次写入起就使用同一个 locator，没有事后补写窗口。
@@ -153,7 +164,7 @@ attempt 的最终 `locator` 在调度前已经由 invocation 的 `snapshotStarte
 - **slim 镜像补全** —— `apt-get install ca-certificates git`(slim 不带)。
 - **文件上传** —— 用 tar 打包 `putArchive` 进容器,随后 `chown` 修正属主(putArchive 以 root 写入)。
 - **多路复用流** —— Docker 的 exec 流把 stdout/stderr 复用在一条流上(8 字节头 + payload),需要按帧解析。
-- **超时** —— 命令级超时,到点销毁流并报错。
+- **超时** —— 命令到点销毁流并报错;上限按[时限归属](#时限归属attempt-deadline-是唯一默认)从 attempt deadline 派生。
 
 ```typescript
 const sandbox = await createSandbox({ provider: "docker", runtime: "node24", timeout });
@@ -260,15 +271,13 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 2. `sandbox.setup` 只做按 experiment 变化的小配置、状态恢复与预检。
 3. 仍有必要时再考虑 Sandbox 预热或 Sandbox 复用。
 
-- **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,
-  把创建移出 Attempt 路径。
+- **Sandbox 预热** —— 按近期派发量提前创建 Sandbox,Attempt 到来时直接领取,把创建移出 Attempt 路径。
 - **Sandbox 复用** —— Experiment 的 `sandboxReuse: true` 让多条 Attempt 共用 Sandbox。
   SandboxSpec 生命周期每个 Sandbox 一次,Agent 与 Eval 生命周期仍逐 Attempt 成对执行。
-  派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。完整契约见
-  [Sandbox 复用](reuse.md)。
+  派发前确认 Sandbox 复用寿命,不足时续期或更换 Sandbox。
+  完整契约见 [Sandbox 复用](reuse.md)。
 
-预制环境的构建与发布归项目和 Provider 原生工具；NiceEval 的 typed spec 负责消费
-（工作流见 [Library · 预制环境](library/prebuilt-environments.md)）。
+预制环境的构建与发布归项目和 Provider 原生工具；NiceEval 的 typed spec 负责消费（工作流见 [Library · 预制环境](library/prebuilt-environments.md)）。
 Sandbox 预热与 Sandbox 复用是 [Runner](../../runner.md) 的调度职责。
 
 ## 相关阅读
