@@ -157,6 +157,27 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   两面各一份区分力场景——断言面是 Content 与两面输出字符串，不经浏览器。
   行 key 判重按层级同层进行：不同父行下的同名子行在两面都合法，同层重复 key 才报错。
   区分力场景是「两个父行各带一个同名子行」——只有把展平行当同层判重的错误实现会在 text 面误报。
+- **表格行形状与列集同源**
+  （[契约](../../../feature/reports/components/primitives/table.md#content-协议)）：
+  断言面是校验错误对象。逐项覆盖：
+
+  - 行 cells key 集合与列集相等，两个方向各一条：多写一个列集外的 key、漏写一个声明列，
+    错误都指到行 key 与列 key；各层 subRows 与 placeholder / group 行同规则。
+  - 区分力场景是「同一个 attempt 行构造函数被层级表与平铺表两种列集消费」——
+    两张表各自通过校验，证明行按消费它的列集填格，不是一份格子四处塞
+    （[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
+  - 不适用的列是显式 notApplicable 格：层级表里 Eval 行的 model / agent / tokens 格存在且渲染成 `—`，
+    与「缺格」在校验层可区分。
+- **表头长在列声明上**
+  （[契约](../../../feature/reports/components/primitives/table.md#content-协议)）：
+  断言面是两面输出字符串。逐项覆盖：
+
+  - 声明了 `header` 的列在 text / web 两面按 locale 解析同一份表头；
+    区分力场景是 zh-CN 下稳定性矩阵首列表头是「题目」、attempt 断言表四列有中文文案——
+    只有表头走列声明解析才区别于原样打出英文 key。
+  - 未声明 `header` 的维度值列（条件名、实验 id）在两面原样显示 key。
+  - 同一个 key 在两份投影里声明不同 `header` 时各显各的，
+    证明表头只来自列声明，原语不携带列名词表。
 - **`Grid` 的换列规则与体裁**（[换列规则](../../../feature/reports/library/layout.md#换列规则)、
   [体裁与体量](../../../feature/reports/library/layout.md#体裁与体量)）：
   断言面是列数纯函数的产出、text 面输出字符串与 web 面的 HTML，不经浏览器。逐项覆盖：
@@ -184,6 +205,19 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
     证明判定没有被折成「非 passed」一档。
   - 判定符与色同场：两面输出里判定符都在，不靠 class 单独表意。
   - 没有判定的 locator 格（`--history` 等场景）不带判定 class，也不凭空补判定符。
+- **判定构成列每层都有值**
+  （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：
+  断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串。逐项覆盖：
+
+  - Eval 行的判定构成格是该题 attempts 的计票，与 experiment 行数题的计票同一 Cell 形态。
+    区分力场景是「先 failed 后 passed 的重试」——计票是 `1 通过 · 1 失败`，
+    只按题目级折叠判定填格的错误实现在这一格丢掉失败那一票。
+  - Attempt 行的判定构成格是该次判定；同题下 failed 与 errored 两行的格不同，
+    证明没有折成「非 passed」一档。
+  - 格子落在层级表列集存在的 key 上：experiment 列集渲染后 Eval 与 Attempt 行的判定构成列不是 `—`
+    （[cell-key-must-match-column-set](../../../../memory/cell-key-must-match-column-set.md)）。
+  - 两面显示同源：计票与单判定的 text 面经 `formatCellText` 按 locale 取判定词，
+    单判定带 `verdictMark` 判定符；web 面同一格带 `niceeval-verdict-*` 语义 class。
 - **`formatInstant` 的读法与回落**
   （[契约](../../../feature/reports/library/presentation.md#时刻不走-unit)）：
   断言面是函数返回值。覆盖 ISO 折到分钟的人读时间（不含原样 ISO 片段）、不可解析输入原样返回，

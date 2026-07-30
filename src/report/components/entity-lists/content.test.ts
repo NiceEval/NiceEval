@@ -6,8 +6,9 @@
 
 import { describe, expect, it } from "vitest";
 import type { AttemptListItem, ExperimentListEvalRow, ExperimentListItem, MetricValue } from "../../model/types.ts";
-import { attemptListContent, experimentListContent } from "./content.ts";
-import type { Cell } from "../../definition/cell.ts";
+import { attemptListContent, evalListContent, experimentListContent } from "./content.ts";
+import type { Cell, TableContentRow } from "../../definition/cell.ts";
+import { resolveLocalizedText } from "../../model/locale.ts";
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { formatCellText } from "../../definition/cell.ts";
 
@@ -116,8 +117,8 @@ describe("experimentListContent Eval 分组层", () => {
     const kids = sub[0]!.subRows!;
     expect(kids.map((row) => row.key)).toEqual(["downshift/pr-1484", "downshift/pr-1500"]);
     expect(kids.map((row) => entityText(row.cells.entity))).toEqual(["pr-1484", "pr-1500"]);
-    // Eval 行没有主读数(单题 0/100 是判定的重复表达)
-    expect(kids[0]!.cells.passRate).toBeUndefined();
+    // Eval 行没有主读数(单题 0/100 是判定的重复表达):格子在场且显式不适用,不是缺格
+    expect(kids[0]!.cells.passRate).toEqual({ kind: "notApplicable" });
   });
 
   it("只有一个组时整层收起,Eval 行标签退回完整 evalId", () => {
@@ -348,5 +349,191 @@ describe("attempt 行的判定长在 locator 上", () => {
     expect(formatCellText({ kind: "locator", locator: locator("@1bbbbb01"), verdict: "errored" })).toBe("! @1bbbbb01");
     // 没有判定的 locator 格不凭空补判定符
     expect(formatCellText({ kind: "locator", locator: locator("@1ccccc01") })).toBe("@1ccccc01");
+  });
+});
+
+describe("行形状与列集同源", () => {
+  // cases: docs/engineering/testing/unit/reports.md「表格行形状与列集同源」。
+  // 区分力场景:同一个 attempt 行构造被层级表与平铺表两种列集消费。
+  const columnKeys = (content: { columns: readonly { key: string }[] }): string[] =>
+    content.columns.map((column) => column.key);
+
+  function assertRowShapes(content: { columns: readonly { key: string }[]; rows: readonly TableContentRow[] }): void {
+    const expected = columnKeys(content).sort();
+    const walk = (row: TableContentRow): void => {
+      expect({ row: row.key, keys: Object.keys(row.cells).sort() }).toEqual({ row: row.key, keys: expected });
+      for (const child of row.subRows ?? []) walk(child);
+    };
+    for (const row of content.rows) walk(row);
+  }
+
+  it("层级表:每一行(含 group / placeholder / 各层子行)的 cells key 集合等于列集", () => {
+    const content = experimentListContent([
+      experimentItem({
+        scoring: "points",
+        evalRows: [
+          evalRow("weather/tool", "passed", [attempt("weather/tool", "passed")]),
+          evalRow("weather/rerank", "failed", [attempt("weather/rerank", "failed")]),
+          evalRow("standalone", "passed", [attempt("standalone", "passed")]),
+        ],
+        missingEvalIds: ["weather/gap"],
+      }),
+    ]);
+    // 组行、占位行与两层子行都在这棵树里
+    const variants = new Set<string | undefined>();
+    const collect = (row: TableContentRow): void => {
+      variants.add(row.variant);
+      for (const child of row.subRows ?? []) collect(child);
+    };
+    for (const row of content.rows) collect(row);
+    expect(variants).toEqual(new Set([undefined, "group", "placeholder"]));
+    assertRowShapes(content);
+  });
+
+  it("平铺表:attempt 行按平铺列集填格,不写层级表才有的 record", () => {
+    const flat = attemptListContent([attempt("q", "failed")]);
+    expect(columnKeys(flat)).toEqual(["entity", "verdict", "result", "durationMs", "costUSD", "score"]);
+    assertRowShapes(flat);
+    expect(flat.rows[0]!.cells.record).toBeUndefined();
+
+    const evals = evalListContent([
+      {
+        experimentId: "exp/x",
+        evalId: "q",
+        verdict: "failed",
+        examScore: emptyCell,
+        totalScore: emptyCell,
+        durationMs: emptyCell,
+        costUSD: emptyCell,
+        attempts: [attempt("q", "failed")],
+      },
+    ]);
+    assertRowShapes(evals);
+    expect(evals.rows[0]!.subRows![0]!.cells.record).toBeUndefined();
+  });
+
+  it("区分力:同一个 attempt 在两种列集下各自成行,不是一份格子四处塞", () => {
+    const item = attempt("q", "failed", { locator: locator("@1aaaaa01") });
+    const nested = experimentListContent([
+      experimentItem({ evalRows: [evalRow("q", "failed", [item])], missingEvalIds: [] }),
+    ]);
+    const flat = attemptListContent([item]);
+    const nestedAttempt = nested.rows[0]!.subRows![0]!.subRows![0]!;
+    const flatAttempt = flat.rows[0]!;
+    expect(nestedAttempt.key).toBe(flatAttempt.key);
+    // 两张表的列集不同,同一次 attempt 的格子集合各自与自己那张表的列集相等
+    expect(Object.keys(nestedAttempt.cells).sort()).toEqual(columnKeys(nested).sort());
+    expect(Object.keys(flatAttempt.cells).sort()).toEqual(columnKeys(flat).sort());
+    expect(Object.keys(nestedAttempt.cells).sort()).not.toEqual(Object.keys(flatAttempt.cells).sort());
+    // 共有的列取同一份原料
+    expect(nestedAttempt.cells.entity).toEqual(flatAttempt.cells.entity);
+    expect(nestedAttempt.cells.durationMs).toEqual(flatAttempt.cells.durationMs);
+  });
+
+  it("不适用的列是显式 notApplicable 格:Eval 行的 model / agent / tokens 在场且渲染成 —", () => {
+    const content = experimentListContent([
+      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+    ]);
+    const evalCells = content.rows[0]!.subRows![0]!.cells;
+    for (const key of ["model", "agent", "tokens"]) {
+      // 与「缺格」在校验层可区分:格子在场,值是 notApplicable
+      expect(evalCells[key]).toEqual({ kind: "notApplicable" });
+      expect(formatCellText(evalCells[key], "zh-CN")).toBe("—");
+    }
+  });
+
+  it("列集随 composition 变时行跟着变:纯计分制没有 passRate 列,行上也没有那一格", () => {
+    const points = experimentListContent([
+      experimentItem({ scoring: "points", evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+    ]);
+    expect(columnKeys(points)).not.toContain("passRate");
+    expect(points.rows[0]!.cells.passRate).toBeUndefined();
+    assertRowShapes(points);
+
+    const pass = experimentListContent([
+      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+    ]);
+    expect(columnKeys(pass)).not.toContain("totalScore");
+    expect(pass.rows[0]!.cells.totalScore).toBeUndefined();
+    assertRowShapes(pass);
+  });
+});
+
+describe("列表头长在列声明上", () => {
+  // cases: docs/engineering/testing/unit/reports.md「表头长在列声明上」。
+  it("层级表各列自带 header,两种语言各解析一份", () => {
+    const content = experimentListContent([
+      experimentItem({ evalRows: [evalRow("q", "passed", [attempt("q", "passed")])], missingEvalIds: [] }),
+    ]);
+    const headerOf = (key: string, locale: string): string =>
+      resolveLocalizedText(content.columns.find((column) => column.key === key)!.header!, locale);
+    expect(headerOf("entity", "en")).toBe("Experiment");
+    expect(headerOf("entity", "zh-CN")).toBe("实验");
+    expect(headerOf("passRate", "zh-CN")).toBe("通过率");
+    expect(headerOf("costUSD", "zh-CN")).toBe("成本");
+    expect(headerOf("record", "zh-CN")).toBe("结果");
+  });
+});
+
+describe("判定构成列每层都有值", () => {
+  // cases: docs/engineering/testing/unit/reports.md「判定构成列每层都有值」。
+  it("Eval 行的 record 格是 attempts 计票:先挂后过的重试两票都在,不被题目级折叠吞掉", () => {
+    const rows = experimentListContent([
+      experimentItem({
+        evalRows: [
+          evalRow("q", "passed", [
+            attempt("q", "failed", { locator: locator("@1aaaaa01") }),
+            attempt("q", "passed", { attempt: 1, locator: locator("@1bbbbb01") }),
+          ]),
+        ],
+        missingEvalIds: [],
+      }),
+    ]).rows;
+    expect(rows[0]!.subRows![0]!.cells.record).toEqual({
+      kind: "verdict",
+      counts: { passed: 1, failed: 1, errored: 0, skipped: 0 },
+    });
+  });
+
+  it("Attempt 行的 record 格是该次判定:failed 与 errored 两行不同,没有折成「非 passed」一档", () => {
+    const nested = experimentListContent([
+      experimentItem({
+        evalRows: [
+          evalRow("q", "failed", [
+            attempt("q", "failed", { locator: locator("@1aaaaa01") }),
+            attempt("q", "errored", { attempt: 1, locator: locator("@1bbbbb01") }),
+          ]),
+        ],
+        missingEvalIds: [],
+      }),
+    ]).rows[0]!.subRows![0]!.subRows!;
+    expect(nested[0]!.cells.record).toEqual({ kind: "verdict", verdict: "failed" });
+    expect(nested[1]!.cells.record).toEqual({ kind: "verdict", verdict: "errored" });
+  });
+
+  it("record 格的 key 在层级表列集里存在:两层的判定构成列都不渲染成 —", () => {
+    const content = experimentListContent([
+      experimentItem({
+        evalRows: [evalRow("q", "passed", [attempt("q", "passed")])],
+        missingEvalIds: [],
+      }),
+    ]);
+    const recordColumn = content.columns.find((column) => column.key === "record");
+    expect(recordColumn).toBeDefined();
+    const evalCells = content.rows[0]!.subRows![0]!.cells;
+    const attemptCells = content.rows[0]!.subRows![0]!.subRows![0]!.cells;
+    expect(formatCellText(evalCells.record, "zh-CN")).toBe("1 通过");
+    expect(formatCellText(attemptCells.record, "zh-CN")).toBe("✓ 通过");
+  });
+
+  it("text 面计票与单判定按 locale 取判定词,单判定带判定符", () => {
+    expect(
+      formatCellText({ kind: "verdict", counts: { passed: 10, failed: 1, errored: 5, skipped: 0 } }, "zh-CN"),
+    ).toBe("10 通过 · 1 失败 · 5 错误");
+    expect(
+      formatCellText({ kind: "verdict", counts: { passed: 2, failed: 0, errored: 0, skipped: 0 } }, "en"),
+    ).toBe("2 passed");
+    expect(formatCellText({ kind: "verdict", verdict: "errored" }, "zh-CN")).toBe("! 错误");
+    expect(formatCellText({ kind: "verdict", verdict: "passed" }, "en")).toBe("✓ passed");
   });
 });

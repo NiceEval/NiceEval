@@ -122,8 +122,9 @@ locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。Result 单
 Result 单元格一律按
 [display 的单行压缩形态](../../assertions/library/display.md#单行压缩形态)拼装：先折成单行，
 再按宽度截断。`received` 携带整段命令输出时也不例外；一条 `commandSucceeded()` 失败塌成
-`received exit 1 · "…尾部"`，不会把几百行 stdout 逐行铺进表。落盘的 256 KiB 上限保护 artifact
-体积，不替代单元格截断。单元格要的是能一眼扫读的预览：
+`received exit 1 · "…尾部"`，不会把几百行 stdout 逐行铺进表。命令输出全量落盘
+（[证据 registry](../../record/architecture.md#证据-registry) 的 `commands` 行），
+单元格截断只是展示预算，不是存储上限。单元格要的是能一眼扫读的预览：
 
 ```text
 ✗ 失败    memory/terminal-pypi-server

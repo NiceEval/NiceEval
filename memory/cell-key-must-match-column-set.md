@@ -31,3 +31,8 @@ web 面输出判定符加 `niceeval-verdict-*` 语义色，text 面在定位符�
 适用场景：给共用的行构造函数加格子、或给某张表加列时，核对 **key 与列集同源**——
 grep 该 key 出现在哪几个列集里，逐个判定「这张表该有这一列吗」。
 共用行构造函数被 N 种列集消费时，写进去的每个 key 都要在这 N 份列集里各有交代。
+
+2026-07-30 结构性收口：`validatedTable` 递归校验每行 cells key 集合与列集双向相等
+（多写 / 漏写都按完整用户反馈报错），entity-lists 改为 CellBag + 按目标列集裁剪投影，
+这类漏从「运气好没暴露」变成「校验必红」。契约在
+[table.md「Content 协议」](../docs/feature/reports/components/primitives/table.md)。

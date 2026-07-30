@@ -6,7 +6,12 @@ import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../scoring/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
 import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
-import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
+import {
+  DEFAULT_REPORT_LOCALE,
+  localeText,
+  resolveLocalizedText,
+  type ReportLocale,
+} from "../model/locale.ts";
 
 /** 判定计票:passed / failed / errored / skipped。 */
 export interface VerdictCounts {
@@ -30,6 +35,8 @@ export type Cell =
       readonly counts?: VerdictCounts;
       /** 计票覆盖的 attempt 引用(有证据可下钻的计票格才携带,如稳定性矩阵)。 */
       readonly refs?: readonly AttemptLocator[];
+      // 两种形态:counts = 判定构成计票(experiment / Eval 行);verdict = 单判定(attempt 行)。
+      // 格子只带值,计票怎么来的(折叠、分桶)在实体投影侧,渲染面不算数。
     }
   | { readonly kind: "score"; readonly earned: number; readonly possible?: number }
   | { readonly kind: "summary"; readonly text: string; readonly more?: number }
@@ -48,6 +55,13 @@ export interface ColumnSpec {
   readonly key: string;
   readonly unit?: string;
   readonly better?: "higher" | "lower";
+  /**
+   * 列表头。text / web 两面按当前 locale 解析同一份;省略时按 key 原样显示
+   * (维度值列——条件名、实验 id 这类列名即数据的列——用这一支)。
+   * Table 原语自己不携带列名词表,表头只来自这里
+   * (docs/feature/reports/components/primitives/table.md「Content 协议」)。
+   */
+  readonly header?: LocalizedText;
 }
 
 /**
@@ -89,14 +103,21 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
     }
     case "score":
       return cell.possible !== undefined ? `${cell.earned} / ${cell.possible}` : String(cell.earned);
-    case "verdict":
+    case "verdict": {
+      const loc = locale ?? DEFAULT_REPORT_LOCALE;
       if (cell.counts) {
         const parts = (["passed", "failed", "errored", "skipped"] as const)
           .filter((k) => cell.counts![k] > 0)
-          .map((k) => `${cell.counts![k]} ${k}`);
+          .map((k) => `${cell.counts![k]} ${localeText(loc, `verdict.${k === "skipped" ? "unreadable" : k}`)}`);
         return parts.join(" · ") || "—";
       }
-      return cell.verdict ?? "—";
+      if (cell.verdict !== undefined) {
+        const v = cell.verdict === "skipped" ? "unreadable" : cell.verdict;
+        // 判定符与判定词同场,与 locator 格、web 面同一条纪律:单色打印下照样读得出。
+        return `${verdictMark(v)} ${localeText(loc, `verdict.${v}`)}`;
+      }
+      return "—";
+    }
     case "metric": {
       const m = cell.metric;
       return formatMetricValue(m.value, m.unit, m.format, locale ?? DEFAULT_REPORT_LOCALE);
@@ -113,9 +134,10 @@ export function flattenTableContentForText(
   content: TableContent,
   locale?: string,
 ): { columns: Array<{ key: string; header: string; align?: "left" | "right" }>; rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string }> } {
+  // 表头与 web 面同源:走列声明的 header,缺省才回落 key。
   const columns = content.columns.map((c) => ({
     key: c.key,
-    header: c.key,
+    header: c.header !== undefined ? resolveLocalizedText(c.header, locale ?? DEFAULT_REPORT_LOCALE) : c.key,
     align: (c.better ? "right" : "left") as "left" | "right",
   }));
   const rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string }> = [];
@@ -134,14 +156,6 @@ export function flattenTableContentForText(
   };
   for (const row of content.rows) walk(row, 0);
   return { columns, rows };
-}
-
-function resolveDisplay(display: LocalizedText, locale?: string): string {
-  if (typeof display === "string") return display;
-  if (locale && typeof display[locale] === "string") return display[locale]!;
-  if (typeof display.en === "string") return display.en;
-  const first = Object.values(display)[0];
-  return typeof first === "string" ? first : "";
 }
 
 function formatStale(ms: number): string {

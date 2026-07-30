@@ -2,7 +2,8 @@
 // Eval 分组层在这里从扁平 evalRows + missingEvalIds 投影成 TableContent.subRows
 // (docs/feature/reports/library.md「Eval 分组层」)。
 
-import type { Cell, TableContent, TableContentRow } from "../../definition/cell.ts";
+import type { Cell, ColumnSpec, TableContent, TableContentRow } from "../../definition/cell.ts";
+import { localizedMessage } from "../../model/locale.ts";
 import type {
   AttemptListItem,
   EvalListItem,
@@ -16,6 +17,45 @@ import type { AttemptLocator } from "../../../record/locator.ts";
 /** 组内零样本读数格的结构化原因码;renderer 经 missingText 映射文案。 */
 const GROUP_NO_SAMPLES = "noSamples";
 
+/** 三张实体表共用的列表头。文案单源在 locale 字典,这里只烤成随列走的 LocalizedText。 */
+const HEADER = {
+  entity: localizedMessage("experimentList.experiment"),
+  model: localizedMessage("table.model"),
+  agent: localizedMessage("table.agent"),
+  durationMs: localizedMessage("experimentList.avgDuration"),
+  passRate: localizedMessage("experimentList.passRate"),
+  totalScore: localizedMessage("experimentList.totalScore"),
+  tokens: localizedMessage("experimentList.tokens"),
+  costUSD: localizedMessage("experimentList.cost"),
+  record: localizedMessage("experimentList.result"),
+  verdict: localizedMessage("experimentList.status"),
+  result: localizedMessage("experimentList.result"),
+  score: localizedMessage("experimentList.totalScore"),
+};
+
+/**
+ * 一行的「格子原料」:这一行自己算得出的全部格子,与任何列集无关。
+ * 同一个行构造被几种列集消费(层级表 / 平铺表),原料裁成行由 `projectCells` 做,
+ * 不是一份格子四处塞——那样 key 与列集只能靠巧合对齐
+ * (memory/cell-key-must-match-column-set.md)。
+ */
+type CellBag = Readonly<globalThis.Record<string, Cell>>;
+
+/** 原料 → 行 cells:列集外的原料丢掉,原料没覆盖的列显式填 notApplicable。 */
+function projectCells(bag: CellBag, columns: readonly ColumnSpec[]): globalThis.Record<string, Cell> {
+  const cells: globalThis.Record<string, Cell> = {};
+  for (const column of columns) {
+    cells[column.key] = bag[column.key] ?? { kind: "notApplicable" };
+  }
+  return cells;
+}
+
+/** 层级表的一次投影:列集随 composition 动态,行按这一份列集裁。 */
+interface HierarchyView {
+  readonly columns: readonly ColumnSpec[];
+  readonly composition: "pass" | "points" | "mixed";
+}
+
 function measureCell(value: MetricValue): Cell {
   return { kind: "metric", metric: value };
 }
@@ -25,6 +65,18 @@ function verdictCell(counts: ExperimentListItem["evalVerdicts"]): Cell {
     kind: "verdict",
     counts: { passed: counts.passed, failed: counts.failed, errored: counts.errored, skipped: counts.unreadable },
   };
+}
+
+/** 一组判定 → 计票。experiment 行数题、Eval 行数 attempt,同一形态同一构造。 */
+function tallyVerdicts(verdicts: readonly AttemptListItem["verdict"][]): ExperimentListItem["evalVerdicts"] {
+  const counts = { passed: 0, failed: 0, errored: 0, unreadable: 0 };
+  for (const verdict of verdicts) {
+    if (verdict === "passed") counts.passed += 1;
+    else if (verdict === "failed") counts.failed += 1;
+    else if (verdict === "errored") counts.errored += 1;
+    else counts.unreadable += 1;
+  }
+  return counts;
 }
 
 function textCell(text: string, detail?: string): Cell {
@@ -49,26 +101,42 @@ function attemptMetricValue(
   };
 }
 
-function attemptRow(item: AttemptListItem, scoring: "pass" | "points"): TableContentRow {
+/**
+ * attempt 行的格子原料。层级表取 entity / record / durationMs / costUSD,
+ * 平铺表取 entity / verdict / result / durationMs / costUSD / score;
+ * 两张表各自裁自这一份,不各写一份构造。
+ */
+function attemptCells(item: AttemptListItem, scoring: "pass" | "points"): CellBag {
+  const verdict = item.verdict as "passed" | "failed" | "errored" | "skipped";
   const summary =
     item.failureSummary !== null
       ? { kind: "summary" as const, text: item.failureSummary, more: item.moreFailures > 0 ? item.moreFailures : undefined }
       : { kind: "text" as const, text: "—" };
   return {
-    key: item.locator,
-    cells: {
-      entity: {
-        kind: "locator",
-        locator: item.locator,
-        staleSinceMs: item.historical ? 1 : undefined,
-        verdict: item.verdict as "passed" | "failed" | "errored" | "skipped",
-      },
-      verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
-      result: summary,
-      durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
-      costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
-      ...(scoring === "points" ? { score: { kind: "metric", metric: item.totalScore } } : {}),
+    entity: {
+      kind: "locator",
+      locator: item.locator,
+      staleSinceMs: item.historical ? 1 : undefined,
+      verdict,
     },
+    verdict: { kind: "verdict", verdict },
+    result: summary,
+    // 层级表(experimentListContent)的判定构成列:该次判定,与 verdict 格同值。
+    record: { kind: "verdict", verdict },
+    durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
+    costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
+    ...(scoring === "points" ? { score: { kind: "metric" as const, metric: item.totalScore } } : {}),
+  };
+}
+
+function attemptRow(
+  item: AttemptListItem,
+  scoring: "pass" | "points",
+  columns: readonly ColumnSpec[],
+): TableContentRow {
+  return {
+    key: item.locator,
+    cells: projectCells(attemptCells(item, scoring), columns),
   };
 }
 
@@ -166,14 +234,7 @@ function groupPassRate(evalRows: readonly ExperimentListEvalRow[]): MetricValue 
 }
 
 function tallyEvalVerdicts(evalRows: readonly ExperimentListEvalRow[]): ExperimentListItem["evalVerdicts"] {
-  const counts = { passed: 0, failed: 0, errored: 0, unreadable: 0 };
-  for (const row of evalRows) {
-    if (row.verdict === "passed") counts.passed += 1;
-    else if (row.verdict === "failed") counts.failed += 1;
-    else if (row.verdict === "errored") counts.errored += 1;
-    else counts.unreadable += 1;
-  }
-  return counts;
+  return tallyVerdicts(evalRows.map((row) => row.verdict));
 }
 
 function groupEntityDetail(evals: number, knownEvals: number, attempts: number): string {
@@ -190,33 +251,38 @@ function groupMetricValue(evalRows: readonly ExperimentListEvalRow[], cell: Metr
 function evalRow(
   row: ExperimentListEvalRow,
   scoring: "pass" | "points",
+  view: HierarchyView,
   label: string,
 ): TableContentRow {
+  const bag: CellBag = {
+    entity: textCell(label),
+    verdict: { kind: "verdict", verdict: row.verdict as "passed" | "failed" | "errored" | "skipped" },
+    // 判定构成列:该题 attempts 的计票,与 experiment 行数题的计票同一形态。
+    record: verdictCell(tallyVerdicts(row.attempts.map((attempt) => attempt.verdict))),
+    durationMs: measureCell(row.durationMs),
+    costUSD: measureCell(row.costUSD),
+  };
   return {
     key: row.evalId,
-    cells: {
-      entity: textCell(label),
-      verdict: { kind: "verdict", verdict: row.verdict as "passed" | "failed" | "errored" | "skipped" },
-      result: { kind: "notApplicable" },
-      durationMs: measureCell(row.durationMs),
-      costUSD: measureCell(row.costUSD),
-      ...(scoring === "points" ? { score: measureCell(row.totalScore) } : {}),
-    },
-    subRows: row.attempts.map((a) => attemptRow(a, scoring)),
+    cells: projectCells(bag, view.columns),
+    subRows: row.attempts.map((a) => attemptRow(a, scoring, view.columns)),
   };
 }
 
-function placeholderRow(experimentId: string, evalId: string, label: string): TableContentRow {
+function placeholderRow(
+  experimentId: string,
+  evalId: string,
+  label: string,
+  columns: readonly ColumnSpec[],
+): TableContentRow {
+  const bag: CellBag = {
+    entity: textCell(label),
+    result: textCell("No result for current config", `niceeval exp ${experimentId}`),
+  };
   return {
     key: `${experimentId}:${evalId}:missing`,
     variant: "placeholder",
-    cells: {
-      entity: textCell(label),
-      verdict: { kind: "notApplicable" },
-      result: textCell("No result for current config", `niceeval exp ${experimentId}`),
-      durationMs: { kind: "notApplicable" },
-      costUSD: { kind: "notApplicable" },
-    },
+    cells: projectCells(bag, columns),
   };
 }
 
@@ -248,10 +314,11 @@ function leafTableRow(
   member: LeafMember,
   label: string,
   item: ExperimentListItem,
+  view: HierarchyView,
 ): TableContentRow {
   return member.kind === "eval"
-    ? evalRow(member.row, item.scoring, label)
-    : placeholderRow(item.experimentId, member.evalId, label);
+    ? evalRow(member.row, item.scoring, view, label)
+    : placeholderRow(item.experimentId, member.evalId, label, view.columns);
 }
 
 function groupTableRow(
@@ -261,8 +328,7 @@ function groupTableRow(
   pathKey: string,
   members: readonly LeafMember[],
   childRows: readonly TableContentRow[],
-  item: ExperimentListItem,
-  composition: "pass" | "points" | "mixed",
+  view: HierarchyView,
 ): TableContentRow {
   const evalRows = memberEvalRows(members);
   const knownEvals = members.length;
@@ -281,20 +347,19 @@ function groupTableRow(
   const tokens = meanCells(evalRows.map((row) => row.tokens), "tokens");
   const evalVerdicts = tallyEvalVerdicts(evalRows);
 
+  const bag: CellBag = {
+    entity: textCell(segment, groupEntityDetail(evals, knownEvals, attempts)),
+    durationMs: groupMetricValue(evalRows, durationMs),
+    passRate: groupMetricValue(evalRows, passRate),
+    totalScore: groupMetricValue(evalRows, totalScore),
+    tokens: groupMetricValue(evalRows, tokens),
+    costUSD: groupMetricValue(evalRows, costUSD),
+    record: evalRows.length === 0 ? { kind: "missing", code: GROUP_NO_SAMPLES } : verdictCell(evalVerdicts),
+  };
   return {
     key: `group:${pathKey}`,
     variant: "group",
-    cells: {
-      entity: textCell(segment, groupEntityDetail(evals, knownEvals, attempts)),
-      model: { kind: "notApplicable" },
-      agent: { kind: "notApplicable" },
-      durationMs: groupMetricValue(evalRows, durationMs),
-      passRate: composition !== "points" ? groupMetricValue(evalRows, passRate) : { kind: "notApplicable" },
-      totalScore: composition !== "pass" ? groupMetricValue(evalRows, totalScore) : { kind: "notApplicable" },
-      tokens: groupMetricValue(evalRows, tokens),
-      costUSD: groupMetricValue(evalRows, costUSD),
-      record: evalRows.length === 0 ? { kind: "missing", code: GROUP_NO_SAMPLES } : verdictCell(evalVerdicts),
-    },
+    cells: projectCells(bag, view.columns),
     subRows: childRows,
   };
 }
@@ -310,7 +375,7 @@ function nestLevel(
   dirPrefix: string,
   labelPrefix: string,
   item: ExperimentListItem,
-  composition: "pass" | "points" | "mixed",
+  view: HierarchyView,
 ): TableContentRow[] {
   if (members.length === 0) return [];
 
@@ -338,12 +403,12 @@ function nestLevel(
     if (groups.size === 1 && leaves.length === 0) {
       const head = [...groups.keys()][0]!;
       // 剥壳不插组行:dir 前进、label 不动,子孙标签仍带上被剥的段。
-      return nestLevel(members, joinPath(dirPrefix, head), labelPrefix, item, composition);
+      return nestLevel(members, joinPath(dirPrefix, head), labelPrefix, item, view);
     }
     return members
       .slice()
       .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-      .map((member) => leafTableRow(member, relativeLabel(memberEvalId(member), labelPrefix), item));
+      .map((member) => leafTableRow(member, relativeLabel(memberEvalId(member), labelPrefix), item, view));
   }
 
   const groupEntries = [...groups.entries()].map(([segment, groupMembers]) => ({
@@ -361,122 +426,104 @@ function nestLevel(
   const rows: TableContentRow[] = groupEntries.map((entry) => {
     const pathKey = joinPath(dirPrefix, entry.segment);
     // 子级的 labelPrefix 跟 dir 走完整路径(含祖先剥掉的壳),组行自己只显示这一段。
-    const childRows = nestLevel(entry.groupMembers, pathKey, pathKey, item, composition);
-    return groupTableRow(entry.segment, pathKey, entry.groupMembers, childRows, item, composition);
+    const childRows = nestLevel(entry.groupMembers, pathKey, pathKey, item, view);
+    return groupTableRow(entry.segment, pathKey, entry.groupMembers, childRows, view);
   });
 
   const flat = leaves
     .slice()
     .sort((a, b) => memberEvalId(a).localeCompare(memberEvalId(b)))
-    .map((member) => leafTableRow(member, relativeLabel(memberEvalId(member), labelPrefix), item));
+    .map((member) => leafTableRow(member, relativeLabel(memberEvalId(member), labelPrefix), item, view));
 
   return [...rows, ...flat];
 }
 
 /** experiment 的 evalRows + missingEvalIds → 递归嵌套的 subRows。 */
-function experimentSubRows(
-  item: ExperimentListItem,
-  composition: "pass" | "points" | "mixed",
-): TableContentRow[] {
+function experimentSubRows(item: ExperimentListItem, view: HierarchyView): TableContentRow[] {
   const members: LeafMember[] = [
     ...item.evalRows.map((row): LeafMember => ({ kind: "eval", row })),
     ...item.missingEvalIds.map((evalId): LeafMember => ({ kind: "missing", evalId })),
   ];
-  return nestLevel(members, "", "", item, composition);
+  return nestLevel(members, "", "", item, view);
 }
 
-function experimentRow(item: ExperimentListItem, composition: "pass" | "points" | "mixed"): TableContentRow {
+function experimentRow(item: ExperimentListItem, view: HierarchyView): TableContentRow {
+  const bag: CellBag = {
+    entity: textCell(item.experimentId, `${item.evals} evals · ${item.attempts} attempts`),
+    model: item.model ? textCell(item.model) : { kind: "notApplicable" },
+    agent: textCell(item.agent),
+    durationMs: measureCell(item.durationMs),
+    passRate: measureCell(item.endToEndPassRate),
+    totalScore: measureCell(item.totalScore),
+    tokens: measureCell(item.tokens),
+    costUSD: measureCell(item.costUSD),
+    record: verdictCell(item.evalVerdicts),
+  };
   return {
     key: item.experimentId,
-    cells: {
-      entity: textCell(item.experimentId, `${item.evals} evals · ${item.attempts} attempts`),
-      model: item.model ? textCell(item.model) : { kind: "notApplicable" },
-      agent: textCell(item.agent),
-      durationMs: measureCell(item.durationMs),
-      passRate: composition !== "points" ? measureCell(item.endToEndPassRate) : { kind: "notApplicable" },
-      totalScore: composition !== "pass" ? measureCell(item.totalScore) : { kind: "notApplicable" },
-      tokens: measureCell(item.tokens),
-      costUSD: measureCell(item.costUSD),
-      record: verdictCell(item.evalVerdicts),
-    },
-    subRows: experimentSubRows(item, composition),
+    cells: projectCells(bag, view.columns),
+    subRows: experimentSubRows(item, view),
   };
 }
 
-const EXPERIMENT_BASE_COLUMNS = [
-  { key: "entity" },
-  { key: "model" },
-  { key: "agent" },
-  { key: "durationMs", better: "lower" as const },
+/** 层级表列集:主读数列随题型构成在场,其余固定。 */
+function experimentColumns(composition: "pass" | "points" | "mixed"): ColumnSpec[] {
+  return [
+    { key: "entity", header: HEADER.entity },
+    { key: "model", header: HEADER.model },
+    { key: "agent", header: HEADER.agent },
+    { key: "durationMs", better: "lower", header: HEADER.durationMs },
+    ...(composition !== "points" ? [{ key: "passRate", better: "higher" as const, header: HEADER.passRate }] : []),
+    ...(composition !== "pass" ? [{ key: "totalScore", better: "higher" as const, header: HEADER.totalScore }] : []),
+    { key: "tokens", better: "lower", header: HEADER.tokens },
+    { key: "costUSD", better: "lower", header: HEADER.costUSD },
+    { key: "record", header: HEADER.record },
+  ];
+}
+
+/** Eval / Attempt 平铺表的列集(两张表同一份)。 */
+const FLAT_ENTITY_COLUMNS: readonly ColumnSpec[] = [
+  { key: "entity", header: HEADER.entity },
+  { key: "verdict", header: HEADER.verdict },
+  { key: "result", header: HEADER.result },
+  { key: "durationMs", better: "lower", header: HEADER.durationMs },
+  { key: "costUSD", better: "lower", header: HEADER.costUSD },
+  { key: "score", better: "higher", header: HEADER.score },
 ];
 
 export function experimentListContent(items: readonly ExperimentListItem[]): TableContent {
   const composition = experimentListScoringComposition(items);
+  const view: HierarchyView = { columns: experimentColumns(composition), composition };
   return {
-    columns: [
-      ...EXPERIMENT_BASE_COLUMNS,
-      ...(composition !== "points" ? [{ key: "passRate", better: "higher" as const }] : []),
-      ...(composition !== "pass" ? [{ key: "totalScore", better: "higher" as const }] : []),
-      { key: "tokens", better: "lower" },
-      { key: "costUSD", better: "lower" },
-      { key: "record" },
-    ],
-    rows: items.map((item) => experimentRow(item, composition)),
+    columns: view.columns,
+    rows: items.map((item) => experimentRow(item, view)),
   };
 }
 
 export function evalListContent(items: readonly EvalListItem[]): TableContent {
   return {
-    columns: [
-      { key: "entity" },
-      { key: "verdict" },
-      { key: "result" },
-      { key: "durationMs", better: "lower" },
-      { key: "costUSD", better: "lower" },
-      { key: "score", better: "higher" },
-    ],
+    columns: FLAT_ENTITY_COLUMNS,
     rows: items.map((item) => ({
       key: `${item.experimentId}:${item.evalId}`,
-      cells: {
-        entity: textCell(`${item.experimentId} / ${item.evalId}`),
-        verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
-        result: { kind: "notApplicable" },
-        durationMs: measureCell(item.durationMs),
-        costUSD: measureCell(item.costUSD),
-        score: measureCell(item.totalScore),
-      },
-      subRows: item.attempts.map((a) => attemptRow(a, "points")),
+      cells: projectCells(
+        {
+          entity: textCell(`${item.experimentId} / ${item.evalId}`),
+          verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
+          durationMs: measureCell(item.durationMs),
+          costUSD: measureCell(item.costUSD),
+          score: measureCell(item.totalScore),
+        },
+        FLAT_ENTITY_COLUMNS,
+      ),
+      subRows: item.attempts.map((a) => attemptRow(a, "points", FLAT_ENTITY_COLUMNS)),
     })),
   };
 }
 
 export function attemptListContent(items: readonly AttemptListItem[]): TableContent {
   return {
-    columns: [
-      { key: "entity" },
-      { key: "verdict" },
-      { key: "result" },
-      { key: "durationMs", better: "lower" },
-      { key: "costUSD", better: "lower" },
-      { key: "score", better: "higher" },
-    ],
-    rows: items.map((item) => ({
-      key: item.locator,
-      cells: {
-        entity: {
-          kind: "locator",
-          locator: item.locator,
-          verdict: item.verdict as "passed" | "failed" | "errored" | "skipped",
-        },
-        verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
-        result:
-          item.failureSummary !== null
-            ? { kind: "summary", text: item.failureSummary, more: item.moreFailures }
-            : { kind: "text", text: "—" },
-        durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
-        costUSD: attemptMetricValue(item.costUSD, "$", item.locator),
-        score: { kind: "metric", metric: item.totalScore },
-      },
-    })),
+    columns: FLAT_ENTITY_COLUMNS,
+    // 与层级表里的 attempt 行同一份格子原料,只是裁到平铺列集。
+    rows: items.map((item) => attemptRow(item, "points", FLAT_ENTITY_COLUMNS)),
   };
 }

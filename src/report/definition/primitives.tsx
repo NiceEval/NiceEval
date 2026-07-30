@@ -607,28 +607,9 @@ function plainRowsToTableContent(
   return { columns, rows: contentRows };
 }
 
-function defaultTableHeader(key: string, locale: ReportLocale): LocalizedText {
-  const dictionary: globalThis.Record<string, Parameters<typeof localeText>[1]> = {
-    entity: "experimentList.experiment",
-    model: "table.model",
-    agent: "table.agent",
-    durationMs: "experimentList.avgDuration",
-    passRate: "experimentList.passRate",
-    totalScore: "experimentList.totalScore",
-    tokens: "experimentList.tokens",
-    costUSD: "experimentList.cost",
-    record: "experimentList.result",
-    verdict: "experimentList.status",
-    result: "experimentList.result",
-    score: "experimentList.totalScore",
-  };
-  const message = dictionary[key];
-  return message ? localeText(locale, message) : key;
-}
-
 // props → 唯一权威形态:列 + 层级 TableContent。校验只在这里做一次,
 // text / web 两面拿到的是同一棵已校验的行树;text 面的展平是渲染期投影,
-// 不进权威形态,行 key 判重因此永远按层级同层进行。
+// 不进权威形态,行 key 判重与行形状校验因此永远按层级同层进行。
 function tableContentOf(props: TableImplementationProps, locale: ReportLocale): {
   columns: [TableColumn, ...TableColumn[]];
   content: TableContent;
@@ -640,9 +621,10 @@ function tableContentOf(props: TableImplementationProps, locale: ReportLocale): 
       specs,
       locale,
     );
+    // 公开 rows 形态:默认原样显示字段名,`label` 覆盖。
     const columns: TableColumn[] = specs.map((spec) => ({
       key: spec.field,
-      header: spec.label ?? defaultTableHeader(spec.field, locale),
+      header: spec.label ?? spec.field,
       align: content.columns.find((c) => c.key === spec.field)?.better ? "right" : "left",
       better: content.columns.find((c) => c.key === spec.field)?.better,
     }));
@@ -651,9 +633,10 @@ function tableContentOf(props: TableImplementationProps, locale: ReportLocale): 
   const raw = props.data;
   const content = raw === null ? null : isDataset(raw) ? datasetToTableContent(raw) : raw;
   if (content === null) return validatedTable([], { columns: [], rows: [] });
+  // 表头长在列声明上;没声明就是 key 原样(维度值列走这一支)。
   const columns: TableColumn[] = content.columns.map((spec) => ({
     key: spec.key,
-    header: defaultTableHeader(spec.key, locale),
+    header: spec.header ?? spec.key,
     align: spec.better ? "right" : "left",
     better: spec.better,
   }));
@@ -675,7 +658,33 @@ function validatedTable(
     keys.add(column.key);
   }
   validateSiblingRowKeys(content.rows);
+  validateRowShapes(content.rows, keys);
   return { columns: columns as [TableColumn, ...TableColumn[]], content };
+}
+
+/**
+ * 行形状与列集同源:每一行(含 group / placeholder 与各层子行)的 cells key 集合
+ * 等于列集。不适用的列显式填 notApplicable,不靠缺格回落成 `—`
+ * (docs/feature/reports/components/primitives/table.md「Content 协议」)。
+ */
+function validateRowShapes(rows: readonly TableContentRow[], columnKeys: ReadonlySet<string>): void {
+  for (const row of rows) {
+    for (const cellKey of Object.keys(row.cells)) {
+      if (!columnKeys.has(cellKey)) {
+        throw new Error(
+          `Table row "${row.key}" has a cell for "${cellKey}", which is not a declared column — row cells and the column set must match exactly, so this cell can never be rendered. Drop the cell, or declare a "${cellKey}" column.`,
+        );
+      }
+    }
+    for (const columnKey of columnKeys) {
+      if (!(columnKey in row.cells)) {
+        throw new Error(
+          `Table row "${row.key}" has no cell for column "${columnKey}" — every declared column needs a cell on every row. Fill it with { kind: "notApplicable" } when the column does not apply to this row.`,
+        );
+      }
+    }
+    if (row.subRows?.length) validateRowShapes(row.subRows, columnKeys);
+  }
 }
 
 function validateSiblingRowKeys(rows: readonly TableContentRow[]): void {
@@ -745,10 +754,11 @@ function renderCellWeb(
         );
       }
       const verdict = cell.verdict ?? "skipped";
-      const mark = verdict === "passed" ? "✓" : verdict === "failed" || verdict === "errored" ? "✗" : "—";
+      // 判定符走 verdictMark 单源,与 locator 格同一张表(errored 是 `!`,不并到 `✗`)。
       return (
         <span className={`niceeval-verdict niceeval-verdict-${verdict}`}>
-          {mark} {localeText(ctx.locale, `verdict.${verdict === "skipped" ? "unreadable" : verdict}`)}
+          {verdictMark(verdict === "skipped" ? "unreadable" : verdict)}{" "}
+          {localeText(ctx.locale, `verdict.${verdict === "skipped" ? "unreadable" : verdict}`)}
         </span>
       );
     }

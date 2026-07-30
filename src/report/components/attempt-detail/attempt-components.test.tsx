@@ -30,6 +30,7 @@ import {
   usageTableData,
 } from "./compute.ts";
 import { attemptTimelineContent, attemptTraceContent } from "./content.tsx";
+import { deriveDiffData } from "../../../scoring/diff.ts";
 import {
   Callouts,
   Conversation,
@@ -493,5 +494,51 @@ describe("timeline / trace 投影的时间树语义", () => {
     const root = rows[0]!.nodes.find((n) => n.key === "root")!;
     expect(root.children!.map((c) => c.key)).toEqual(["child"]);
     expect(countAll(rows[0]!.nodes)).toBe(3);
+  });
+});
+
+describe("attemptDiffData:内容被省略的文件投影成字节数 + 原因,不投 patch", () => {
+  const diff = deriveDiffData([
+    {
+      window: "s1/t1",
+      changes: {
+        "src/app.ts": { status: "modified", before: "old\n", after: "new\n" },
+        "assets/logo.png": { status: "added", elided: { reason: "binary", afterBytes: 3_145_728 } },
+        "data/dump.sql": { status: "modified", elided: { reason: "oversized-text", beforeBytes: 1_048_577, afterBytes: 2_097_153 } },
+      },
+    },
+    {
+      window: "s1/t2",
+      changes: {
+        "data/dump.sql": { status: "modified", elided: { reason: "oversized-text", beforeBytes: 2_097_153, afterBytes: 4_194_304 } },
+      },
+    },
+  ]);
+
+  it("两种省略原因各自带到投影上,字节数取首末省略窗口", () => {
+    const data = attemptDiffData(evidenceOf({ diff, capabilities: FULL_CAPS }))!;
+    const byPath = new Map(data.files.map((f) => [f.path, f]));
+    expect(byPath.get("assets/logo.png")).toMatchObject({
+      change: "added",
+      added: 0,
+      removed: 0,
+      elided: { reason: "binary", afterBytes: 3_145_728 },
+    });
+    // 首个省略窗口的 before 与最后一个省略窗口的 after —— 与 net 同一个口径
+    expect(byPath.get("data/dump.sql")).toMatchObject({
+      change: "modified",
+      elided: { reason: "oversized-text", beforeBytes: 1_048_577, afterBytes: 4_194_304 },
+    });
+    // 省略的文件窗口段一律不带 patch(没有内容可渲染),两个触及窗口仍如实列出
+    expect(byPath.get("data/dump.sql")!.windows).toEqual([{ window: "s1/t1" }, { window: "s1/t2" }]);
+  });
+
+  it("同一份 diff 里内容内联的文件照常出 patch 与行数", () => {
+    const data = attemptDiffData(evidenceOf({ diff, capabilities: FULL_CAPS }))!;
+    const inline = data.files.find((f) => f.path === "src/app.ts")!;
+    expect(inline.elided).toBeUndefined();
+    expect(inline.added).toBe(1);
+    expect(inline.removed).toBe(1);
+    expect(inline.windows[0]!.patch).toContain("+new");
   });
 });

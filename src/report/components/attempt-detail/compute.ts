@@ -577,15 +577,17 @@ export function attemptDiffData(evidence: AttemptEvidence): AttemptDiffData | nu
   for (const [path, summary] of Object.entries(diff.files).sort(([a], [b]) => a.localeCompare(b))) {
     if (summary.net === "none") continue;
     const touched = diff.windows.filter((w) => w.changes[path] !== undefined);
-    if (summary.binary) {
-      const first = touched[0]?.changes[path]?.binary ?? {};
-      const last = touched[touched.length - 1]?.changes[path]?.binary ?? {};
+    // 内容被省略的文件(二进制、超过单文件阈值的文本)只报字节数与原因:没有 patch 可渲染,
+    // 行数增删也无从计算,窗口段一律不带 patch(diff-view.md「web 面:路径树」)。
+    if (summary.elided) {
+      const first = touched.find((w) => w.changes[path]!.elided !== undefined)?.changes[path]?.elided;
+      const last = [...touched].reverse().find((w) => w.changes[path]!.elided !== undefined)?.changes[path]?.elided;
       files.push({
         path,
         change: summary.net,
         added: 0,
         removed: 0,
-        binary: { beforeBytes: first.beforeBytes, afterBytes: last.afterBytes },
+        elided: { reason: summary.elided, beforeBytes: first?.beforeBytes, afterBytes: last?.afterBytes },
         windows: touched.map((w) => ({ window: w.window })),
       });
       continue;

@@ -229,6 +229,11 @@ const en = {
   /** 计分制 attempt 详情的 chrome(docs/feature/assertions/library/display.md「计分制」)。 */
   "attemptAssertions.scorePointsEarned": "{earned}/{total} score points earned in full",
   "attemptAssertions.scoreEntries": "Score entries",
+  /** 断言表的四列表头。 */
+  "attemptAssertions.name": "Assertion",
+  "attemptAssertions.severity": "Severity",
+  "attemptAssertions.outcome": "Outcome",
+  "attemptAssertions.detail": "Detail",
   "attemptSource.abortReason": "prerequisite failed, test() ended here",
 
   "tabs.tab": "Tab",
@@ -394,6 +399,10 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
 
   "attemptAssertions.scorePointsEarned": "{earned}/{total} 得分点挣满",
   "attemptAssertions.scoreEntries": "给分记录",
+  "attemptAssertions.name": "断言",
+  "attemptAssertions.severity": "严重度",
+  "attemptAssertions.outcome": "结果",
+  "attemptAssertions.detail": "详情",
   "attemptSource.abortReason": "前置未过,test() 就地结束",
 
   "tabs.tab": "Tab",
@@ -415,6 +424,17 @@ export function localeText(
   return template.replace(/\{(\w+)\}/g, (m, name: string) =>
     name in vars ? String(vars[name]) : m,
   );
+}
+
+/**
+ * 内置消息键 → 覆盖 `DISPLAY_LOCALES` 的 `LocalizedText`。
+ * 列声明的 `header` 这类「值本身要随身携带两种语言」的字段用它烤一份,
+ * 渲染面再按当前 locale 解析(docs/feature/reports/components/primitives/table.md)。
+ */
+export function localizedMessage(key: ReportMessageKey): LocalizedText {
+  const text: globalThis.Record<string, string> = {};
+  for (const locale of DISPLAY_LOCALES) text[locale] = localeText(locale, key);
+  return text;
 }
 
 /** 带单复数的计数文案:n === 1 用 `<base>.one`,其余 `<base>.other`(zh-CN 两键同值)。 */

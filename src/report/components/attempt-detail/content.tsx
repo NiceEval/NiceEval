@@ -25,6 +25,7 @@ import type {
 import type { AssertionResult, JsonValue, ScoreEntry, TimingNode, TraceSpan } from "../../../types.ts";
 import { stripControl } from "../../../scoring/display.ts";
 import { formatPointsSuffix } from "../../model/format.ts";
+import { localizedMessage } from "../../model/locale.ts";
 
 function lineTone(line: AttemptSourceLineData): SourceLineTone | undefined {
   if (line.assertions.length === 0) return line.sends.length > 0 ? "send" : undefined;
@@ -109,7 +110,12 @@ export function attemptAssertionsContent(data: AttemptAssertionsData | null): Ta
     });
   }
   return {
-    columns: [{ key: "name" }, { key: "severity" }, { key: "outcome" }, { key: "detail" }],
+    columns: [
+      { key: "name", header: localizedMessage("attemptAssertions.name") },
+      { key: "severity", header: localizedMessage("attemptAssertions.severity") },
+      { key: "outcome", header: localizedMessage("attemptAssertions.outcome") },
+      { key: "detail", header: localizedMessage("attemptAssertions.detail") },
+    ],
     rows,
   };
 }
