@@ -23,6 +23,7 @@ import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
 import { createNpmCliProvisioner } from "./npm-staged.ts";
 import { ensureAgent } from "./provisioner.ts";
 import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import type { AgentArtifactPlatform } from "./types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -124,6 +125,31 @@ export interface CodexConfig {
   provisioner?: AgentProvisioner;
 }
 
+/**
+ * `@openai/codex` 的 npm 主包只是个 node shim,真正的 CLI 在平台包里
+ * (`npm:@openai/codex@<ver>-linux-arm64`),是自带运行时的 musl 静态二进制。
+ * 装这一份:沙箱里不需要 node / npm,任务镜像带什么都能装。
+ */
+function codexPlatformPackage(
+  platform: AgentArtifactPlatform,
+): { spec: string; binPath: string } | undefined {
+  const target =
+    platform.os === "linux" && platform.arch === "x64"
+      ? { suffix: "linux-x64", triple: "x86_64-unknown-linux-musl" }
+      : platform.os === "linux" && platform.arch === "arm64"
+        ? { suffix: "linux-arm64", triple: "aarch64-unknown-linux-musl" }
+        : platform.os === "darwin" && platform.arch === "x64"
+          ? { suffix: "darwin-x64", triple: "x86_64-apple-darwin" }
+          : platform.os === "darwin" && platform.arch === "arm64"
+            ? { suffix: "darwin-arm64", triple: "aarch64-apple-darwin" }
+            : undefined;
+  if (target === undefined) return undefined;
+  return {
+    spec: `@openai/codex@${DEFAULT_CODEX_CLI_VERSION}-${target.suffix}`,
+    binPath: `vendor/${target.triple}/bin/codex`,
+  };
+}
+
 export function codexAgent(config?: CodexConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
@@ -137,6 +163,7 @@ export function codexAgent(config?: CodexConfig): Agent {
       },
       packageName: "@openai/codex",
       bin: "codex",
+      platformPackage: codexPlatformPackage,
     });
 
   return defineSandboxAgent({

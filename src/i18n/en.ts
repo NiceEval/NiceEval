@@ -33,6 +33,12 @@ export const en = {
   "agent.ensure.npmPackFailed": "Host npm pack {{packageName}}@{{version}} failed:\n{{tail}}",
   "agent.ensure.npmPackEmpty": "Host npm pack {{packageName}}@{{version}} produced no .tgz (dir {{dest}}).",
   "agent.ensure.npmInstallFailed": "In-sandbox install of {{agent}} from staged tarball failed:\n{{tail}}",
+  "agent.ensure.platformDetectFailed":
+    "Could not detect the target platform from the main Sandbox (uname / ldd): {{tail}}",
+  "agent.ensure.selfContainedInstallFailed":
+    "Unpacking the {{agent}} self-contained package inside the sandbox failed (needs tar + gzip):\n{{tail}}",
+  "agent.ensure.npmMissingInSandbox":
+    "The sandbox has no npm, and {{agent}} only publishes a Node-dependent npm package for this platform. When the task image ships no Node toolchain, publish a self-contained native package for that platform or supply a custom provisioner.",
   "agent.ensure.homeDetectFailed": "Could not detect sandbox $HOME; staged install needs to expand the user prefix.",
   "bub.homeDetectFailed": "Failed to detect sandbox $HOME (empty output from `printf $HOME`). Refusing to fall back to a provider-specific path; check the sandbox provider.",
   "bub.checkpointCaptureFailed": "bub checkpoint cache backfill failed (this sandbox is unaffected; later sandboxes will reinstall): {{error}}",

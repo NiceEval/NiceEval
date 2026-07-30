@@ -150,7 +150,7 @@ Docker image、Vercel 沙箱快照和 E2B template 的凭据、构建上下文�
 
 稳定、体积大、每个 Attempt 都相同的内容——系统包、Agent CLI、编译好的二进制、大模型缓存——应在跑评估用例之前烘焙进 provider 的可发布制品，让每个 Attempt 从预制环境启动、跳过运行时安装。三个内置 provider 都能从官方基线继续派生，不必从空白环境装 Agent；但它们的构建工具、凭据和发布语义不同，NiceEval 只统一**消费**产物 ID（`image` / `snapshotId` / `template`），不伪造跨 provider 的构建 DSL。
 
-Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbox spec 负责选择 provider 和制品。Claude Code 与 Codex 缺少 CLI 时会回退到运行时安装，所以烘焙纯粹是提速；Bub 还会核对版本、OTel 插件和 Python 插件集合的安装指纹，不能仅凭 `command -v bub` 跳过安装，必须用预制环境。三个 provider 的构建都只在环境依赖变化时跑一次，产物换一个版本化名字，不要塞进每个 Attempt 的 `.setup()`。
+Adapter 与 Sandbox 不互相猜配置：Adapter 负责检查所需 CLI，Sandbox spec 负责选择 provider 和制品。Claude Code 与 Codex 缺少 CLI 时会回退到运行时安装（制品在题面网络之外准备，经文件 API 送入），所以烘焙纯粹是提速；Codex 送进去的是该平台自带运行时的原生包，任务镜像不带 Node 也能装，Claude Code 目前仍要求镜像里有 npm；Bub 还会核对版本、OTel 插件和 Python 插件集合的安装指纹，不能仅凭 `command -v bub` 跳过安装，必须用预制环境。三个 provider 的构建都只在环境依赖变化时跑一次，产物换一个版本化名字，不要塞进每个 Attempt 的 `.setup()`。
 
 #### E2B：从官方与公共模板派生
 

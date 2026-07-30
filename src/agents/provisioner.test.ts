@@ -92,6 +92,10 @@ function recordingSandbox(opts?: {
       if (script.includes('printf \'%s\' "$HOME"') || script.includes("printf '%s' \"$HOME\"")) {
         return { stdout: "/home/node", stderr: "", exitCode: 0 };
       }
+      // Ensure 在 prepare 之前探测**沙箱**平台(不是宿主)。
+      if (script.includes("uname -s")) {
+        return { stdout: "Linux\nx86_64\nldd (Ubuntu GLIBC 2.39) 2.39\n", stderr: "", exitCode: 0 };
+      }
       if (script.startsWith("mkdir -p")) return { stdout: "", stderr: "", exitCode: 0 };
       throw new Error(`unexpected call: runShell(${script.slice(0, 80)})`);
     },
@@ -394,5 +398,84 @@ describe("Sandbox 复用命中与 environment 隔离", () => {
     expect(prepareA).toBe(1);
     expect(other.digest).toBe("b");
     expect(activities.every((k) => k === AGENT_ARTIFACT_PREPARE_ACTIVITY)).toBe(true);
+  });
+});
+
+describe("Agent Ensure · 目标平台与自带运行时制品", () => {
+  it("prepare 拿到的是沙箱平台，不是宿主平台", async () => {
+    const seen: AgentArtifactPlatform[] = [];
+    const provisioner = defineAgentProvisioner({
+      identity: { agent: "codex", version: "1.0.0", revision: "1" },
+      mode: "staged",
+      check: (() => {
+        let n = 0;
+        return async () => (n++ === 0 ? { ok: false, detail: "missing" } : { ok: true, actualVersion: "1.0.0" });
+      })(),
+      install: async () => {},
+      prepare: async (platform) => {
+        seen.push(platform);
+        return { digest: "d", platform, localPath: "/dev/null" };
+      },
+    });
+    const sandbox = recordingSandbox({
+      onShell: (script) =>
+        script.includes("uname -s")
+          ? { stdout: "Linux\naarch64\nmusl libc (aarch64)\n", stderr: "", exitCode: 0 }
+          : undefined,
+    });
+
+    await ensureAgent(provisioner, sandbox, { coordinator: new ArtifactPrepareCoordinator() });
+
+    expect(seen).toEqual([{ os: "linux", arch: "arm64", libc: "musl" }]);
+  });
+
+  it("self-contained 制品解压 + 链接安装，沙箱里不需要 npm", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "niceeval-selfcontained-"));
+    const localPath = join(dir, "codex-native.tgz");
+    await writeFile(localPath, "tarball-bytes");
+
+    const scripts: string[] = [];
+    const sandbox = recordingSandbox({
+      onShell: (script) => {
+        scripts.push(script);
+        if (script.includes("uname -s")) {
+          return { stdout: "Linux\nx86_64\nldd (GNU libc) 2.39\n", stderr: "", exitCode: 0 };
+        }
+        if (script.includes("command -v npm")) throw new Error("must not probe npm for self-contained artifacts");
+        if (script.includes("tar -xzf")) return { stdout: "", stderr: "", exitCode: 0 };
+        if (script.includes("SRC=")) return { stdout: "", stderr: "", exitCode: 0 };
+        return undefined;
+      },
+    });
+
+    const { createNpmCliProvisioner } = await import("./npm-staged.ts");
+    let checked = 0;
+    const provisioner = createNpmCliProvisioner({
+      identity: { agent: "codex", version: "1.0.0", revision: "1" },
+      packageName: "@openai/codex",
+      bin: "codex",
+      platformPackage: () => ({ spec: "@openai/codex@1.0.0-linux-x64", binPath: "vendor/x86_64-unknown-linux-musl/bin/codex" }),
+      prepare: async (platform) => ({
+        digest: (await import("./provisioner.ts")).sha256Hex("tarball-bytes"),
+        platform,
+        localPath,
+        install: { kind: "self-contained", binPath: "vendor/x86_64-unknown-linux-musl/bin/codex" },
+      }),
+    });
+    // check：第一次未命中触发安装，第二次命中
+    const original = provisioner.check.bind(provisioner);
+    const patched: AgentProvisioner = {
+      ...provisioner,
+      check: async (sb) => (checked++ === 0 ? { ok: false, detail: "missing" } : { ok: true, actualVersion: "1.0.0" }),
+    };
+    void original;
+
+    await ensureAgent(patched, sandbox, { coordinator: new ArtifactPrepareCoordinator() });
+
+    const extract = scripts.find((s) => s.includes("tar -xzf"));
+    expect(extract).toBeDefined();
+    expect(extract).toContain("--strip-components=1");
+    expect(extract).toContain("vendor/x86_64-unknown-linux-musl/bin/codex");
+    expect(scripts.some((s) => s.includes("npm install -g"))).toBe(false);
   });
 });

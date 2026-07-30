@@ -31,6 +31,12 @@ export const zhCN = {
   "agent.ensure.npmPackFailed": "宿主 npm pack {{packageName}}@{{version}} 失败:\n{{tail}}",
   "agent.ensure.npmPackEmpty": "宿主 npm pack {{packageName}}@{{version}} 未产出 .tgz(目录 {{dest}})。",
   "agent.ensure.npmInstallFailed": "沙箱内从 staged tarball 安装 {{agent}} 失败:\n{{tail}}",
+  "agent.ensure.platformDetectFailed":
+    "无法从主 Sandbox 探测目标平台(uname / ldd):{{tail}}",
+  "agent.ensure.selfContainedInstallFailed":
+    "沙箱内解开 {{agent}} 原生包失败(需要 tar + gzip):\n{{tail}}",
+  "agent.ensure.npmMissingInSandbox":
+    "沙箱里没有 npm,而 {{agent}} 这个平台只有依赖 Node 的 npm 包。任务镜像不带 Node 工具链时,请给该平台提供自带运行时的原生包,或换一个自定义 provisioner。",
   "agent.ensure.homeDetectFailed": "无法探测沙箱 $HOME,staged 安装需要展开用户前缀路径。",
   "bub.homeDetectFailed": "无法探测沙箱 $HOME(printf $HOME 输出为空)。不兜底到 provider 专属固定路径,请检查沙箱 provider。",
   "bub.checkpointCaptureFailed": "bub checkpoint 缓存回填失败(本沙箱不受影响,后续沙箱会重新安装):{{error}}",

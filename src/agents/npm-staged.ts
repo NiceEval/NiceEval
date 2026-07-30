@@ -33,6 +33,14 @@ export interface NpmCliProvisionerOptions {
   packageName: string;
   /** PATH 上的命令名,如 `codex`。 */
   bin: string;
+  /**
+   * 该 Agent 是否为目标平台发布**自带运行时的原生包**(如 `@openai/codex` 的
+   * `@openai/codex@<ver>-linux-arm64`)。返回值给出 npm spec 与包内 CLI 相对路径;
+   * 返回 undefined 表示这个平台只有依赖 node 的 npm 包。
+   *
+   * 有原生包就优先用它:安装只是解压 + 链接,沙箱里不需要 node / npm。
+   */
+  platformPackage?(platform: AgentArtifactPlatform): { spec: string; binPath: string } | undefined;
   /** 从 `--version` 输出解析精确版本;默认取最后一个 `\d+\.\d+\.\d+…` 片段。 */
   parseVersion?(stdout: string): string | undefined;
   /** 宿主制品 cache 根;省略用 ~/.cache/niceeval/agent-artifacts。 */
@@ -70,6 +78,9 @@ async function npmPackToCache(opts: {
   cacheDir: string;
   platform: AgentArtifactPlatform;
   identity: AgentIdentity;
+  /** 覆盖 pack 的 spec(原生平台包);省略时用 `<packageName>@<version>`。 */
+  spec?: string;
+  install?: AgentStagedArtifact["install"];
 }): Promise<AgentStagedArtifact> {
   const dest = join(
     opts.cacheDir,
@@ -78,7 +89,8 @@ async function npmPackToCache(opts: {
     platformKey(opts.platform),
   );
   await mkdir(dest, { recursive: true });
-  const pack = await runHost("npm", ["pack", `${opts.packageName}@${opts.version}`, "--pack-destination", dest], dest);
+  const spec = opts.spec ?? `${opts.packageName}@${opts.version}`;
+  const pack = await runHost("npm", ["pack", spec, "--pack-destination", dest], dest);
   if (pack.exitCode !== 0) {
     throw new Error(
       t("agent.ensure.npmPackFailed", {
@@ -102,6 +114,7 @@ async function npmPackToCache(opts: {
     platform: opts.platform,
     localPath,
     sandboxPath: `${SANDBOX_TARBALL_DIR}/${opts.identity.agent}.tgz`,
+    ...(opts.install !== undefined ? { install: opts.install } : {}),
   };
 }
 
@@ -147,6 +160,34 @@ async function checkNpmCli(
   return { ok: true, actualVersion };
 }
 
+/** 自带运行时的原生包:解压 + 链接,沙箱里不需要 node / npm。 */
+async function installSelfContained(
+  sandbox: Sandbox,
+  opts: { tarball: string; prefix: string; agent: string; bin: string; binPath: string },
+): Promise<void> {
+  const libDir = `${opts.prefix}/lib/${opts.agent}`;
+  const extract = await sandbox.runShell(
+    [
+      "set -eu",
+      `rm -rf ${shellQuote(libDir)}`,
+      `mkdir -p ${shellQuote(libDir)} ${shellQuote(`${opts.prefix}/bin`)}`,
+      // npm 包统一是 `package/` 单层根;--strip-components=1 把它剥掉。
+      `tar -xzf ${shellQuote(opts.tarball)} -C ${shellQuote(libDir)} --strip-components=1`,
+      `chmod +x ${shellQuote(`${libDir}/${opts.binPath}`)}`,
+      `ln -sfn ${shellQuote(`${libDir}/${opts.binPath}`)} ${shellQuote(`${opts.prefix}/bin/${opts.bin}`)}`,
+      `rm -f ${shellQuote(opts.tarball)}`,
+    ].join("\n"),
+  );
+  if (extract.exitCode !== 0) {
+    throw new Error(
+      t("agent.ensure.selfContainedInstallFailed", {
+        agent: opts.agent,
+        tail: (extract.stdout + extract.stderr).trim().split("\n").slice(-12).join("\n"),
+      }),
+    );
+  }
+}
+
 async function installFromStaged(
   sandbox: Sandbox,
   artifact: AgentStagedArtifact,
@@ -170,16 +211,31 @@ async function installFromStaged(
   await sandbox.runShell(`mkdir -p ${shellQuote(dirnameOf(tarball))} ${shellQuote(prefix)}`);
   await sandbox.uploadFile(tarball, bytes);
 
-  const install = await sandbox.runShell(
-    `npm install -g --prefix ${shellQuote(prefix)} ${shellQuote(tarball)}`,
-  );
-  if (install.exitCode !== 0) {
-    throw new Error(
-      t("agent.ensure.npmInstallFailed", {
-        agent: identity.agent,
-        tail: (install.stdout + install.stderr).trim().split("\n").slice(-12).join("\n"),
-      }),
+  if (artifact.install?.kind === "self-contained") {
+    await installSelfContained(sandbox, {
+      tarball,
+      prefix,
+      agent: identity.agent,
+      bin,
+      binPath: artifact.install.binPath,
+    });
+  } else {
+    const hasNpm = await sandbox.runShell("command -v npm >/dev/null 2>&1");
+    if (hasNpm.exitCode !== 0) {
+      // 任务镜像是题给的,不能假设它带 Node 工具链;点名缺什么,不猜一个近似命令继续跑。
+      throw new Error(t("agent.ensure.npmMissingInSandbox", { agent: identity.agent }));
+    }
+    const install = await sandbox.runShell(
+      `npm install -g --prefix ${shellQuote(prefix)} ${shellQuote(tarball)}`,
     );
+    if (install.exitCode !== 0) {
+      throw new Error(
+        t("agent.ensure.npmInstallFailed", {
+          agent: identity.agent,
+          tail: (install.stdout + install.stderr).trim().split("\n").slice(-12).join("\n"),
+        }),
+      );
+    }
   }
 
   // bash -c 不读 profile;把用户前缀 bin 链到常见 PATH 目录,让后续 setup/send 的裸命令名仍可用。
@@ -231,14 +287,20 @@ export function createNpmCliProvisioner(opts: NpmCliProvisionerOptions): AgentPr
       }),
     prepare:
       opts.prepare ??
-      ((platform) =>
-        npmPackToCache({
+      ((platform) => {
+        // 目标平台有自带运行时的原生包就取它:装的时候只要 tar,不要 node / npm。
+        const native = opts.platformPackage?.(platform);
+        return npmPackToCache({
           packageName: opts.packageName,
           version: opts.identity.version,
           cacheDir,
           platform,
           identity: opts.identity,
-        })),
+          ...(native !== undefined
+            ? { spec: native.spec, install: { kind: "self-contained" as const, binPath: native.binPath } }
+            : {}),
+        });
+      }),
     install: async (sandbox, artifact) => {
       if (!artifact) {
         throw new Error(t("agent.ensure.stagedMissingArtifact", { agent: opts.identity.agent }));

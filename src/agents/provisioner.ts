@@ -43,7 +43,7 @@ export interface EnsureAgentOptions {
   fact?(key: string, value: string | number | boolean): void;
   /** Runner 已在 Run 级准备好的制品;省略时 staged 路径经 coordinator 懒准备。 */
   prepared?: AgentStagedArtifact;
-  /** 目标平台;省略时用宿主 `process.platform` / `process.arch`。 */
+  /** 目标平台;省略时从主 Sandbox 探测(不是宿主平台)。 */
   platform?: AgentArtifactPlatform;
   /** Run 级 prepare 协调器;多 attempt 应共享同一实例。 */
   coordinator?: ArtifactPrepareCoordinator;
@@ -135,6 +135,39 @@ export function artifactCacheKey(identity: AgentIdentity, platform: AgentArtifac
 
 export function hostArtifactPlatform(): AgentArtifactPlatform {
   return { os: process.platform, arch: process.arch };
+}
+
+/**
+ * 从主 Sandbox 探测 staged payload 的**目标**平台。
+ *
+ * 制品要装进沙箱,不是装进宿主:cache key 与下载内容都必须按沙箱的 os / arch / libc 取。
+ * 宿主 macOS-arm64 起一个 linux-x64 容器是常态,拿宿主平台去 prepare 会准备出跑不了的二进制。
+ */
+export async function detectSandboxPlatform(sandbox: Sandbox): Promise<AgentArtifactPlatform> {
+  const probe = await sandbox.runShell(
+    [
+      "printf '%s\\n' \"$(uname -s)\"",
+      "printf '%s\\n' \"$(uname -m)\"",
+      // musl 的 ldd 把版本写在 stderr;两条流都看,认不出就留空,由调用方决定要不要 libc。
+      "if command -v ldd >/dev/null 2>&1; then ldd --version 2>&1 | head -1; else printf '\\n'; fi",
+    ].join("\n"),
+  );
+  if (probe.exitCode !== 0) {
+    throw new Error(t("agent.ensure.platformDetectFailed", { tail: (probe.stdout + probe.stderr).trim().slice(0, 200) }));
+  }
+  const [unameS = "", unameM = "", ldd = ""] = probe.stdout.split("\n").map((line) => line.trim());
+  const os = unameS.toLowerCase() === "darwin" ? "darwin" : unameS.toLowerCase() === "linux" ? "linux" : unameS.toLowerCase();
+  const arch =
+    unameM === "x86_64" || unameM === "amd64"
+      ? "x64"
+      : unameM === "aarch64" || unameM === "arm64"
+        ? "arm64"
+        : unameM;
+  if (!os || !arch) {
+    throw new Error(t("agent.ensure.platformDetectFailed", { tail: probe.stdout.trim().slice(0, 200) }));
+  }
+  if (os !== "linux") return { os, arch };
+  return { os, arch, libc: /musl/i.test(ldd) ? "musl" : "gnu" };
 }
 
 /** 默认宿主 cache 根:`~/.cache/niceeval/agent-artifacts`。 */
@@ -256,7 +289,9 @@ export async function ensureAgent(
   if (provisioner.mode === "staged") {
     if (!artifact) {
       const coordinator = opts.coordinator ?? sharedPrepareCoordinator;
-      artifact = await coordinator.prepare(provisioner, opts.platform ?? hostArtifactPlatform());
+      // 目标平台从沙箱探测,不是宿主:见 detectSandboxPlatform。
+      const platform = opts.platform ?? (await detectSandboxPlatform(sandbox));
+      artifact = await coordinator.prepare(provisioner, platform);
     }
   }
 

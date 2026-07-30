@@ -442,7 +442,18 @@ export interface AgentStagedArtifact {
   readonly localPath: string;
   /** 沙箱内落点建议(workdir 外的 Agent 自有目录)。 */
   readonly sandboxPath?: string;
+  /**
+   * 制品怎么装进沙箱。省略 = `npm-tarball`(历史行为,要求沙箱里有 npm)。
+   *
+   * `self-contained`:整包解开即可用,`binPath` 是包内 CLI 的相对路径;
+   * 不需要沙箱里有 node / npm / 任何包管理器——任务镜像是题给的,不能假设它带 Node 工具链。
+   */
+  readonly install?: AgentArtifactInstallShape;
 }
+
+export type AgentArtifactInstallShape =
+  | { readonly kind: "npm-tarball" }
+  | { readonly kind: "self-contained"; readonly binPath: string };
 
 /** attempt facts 里 `agent.ensure` 的取值:区分检查命中与本次安装。 */
 export type AgentEnsureOutcome = "hit" | "installed";

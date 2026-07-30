@@ -52,7 +52,8 @@ export const AGENT_BASELINE_VERSION: globalThis.Record<CodingAgentBaseline, stri
  */
 export const AGENT_BASELINE_RECIPE_REVISION: globalThis.Record<CodingAgentBaseline, number> = {
   "claude-code": 2,
-  codex: 2,
+  // r3: staged 安装改用自带运行时的原生平台包(不再要求沙箱里有 node / npm)
+  codex: 3,
   bub: 1,
   opencode: 1,
   hermes: 1,

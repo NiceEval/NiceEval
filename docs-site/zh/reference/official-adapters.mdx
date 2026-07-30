@@ -143,7 +143,7 @@ export default defineExperiment({
 | Python Plugin | ❌ | ❌ | ✅ `pythonPlugins: PythonPluginSpec[]` |
 | 安装后脚本 | ✅ `postSetup` / `preTeardown` | ✅ `postSetup` / `preTeardown` | ✅ `postSetup` / `preTeardown` |
 | tracing | ✅（beta，仅结构与计时） | ✅ | ✅ |
-| 安装方式 | npm 全局包 | npm 全局包 | `uv tool install`（PyPI） |
+| 安装方式 | npm 全局包（需镜像自带 Node） | 自带运行时的原生包（解压即用，镜像无需 Node） | `uv tool install`（PyPI） |
 
 装了什么有据可查：Adapter 在 `setup` 收尾把安装清单交给运行器，存成 Attempt Artifact `agent-setup.json`（库里读 `attempt.agentSetup()`；清单不落沙箱磁盘，agent 看不到它）。清单只记来源、ref、Skill/Plugin 名、解析出的版本，以及官方配置文件的项目相对路径和 SHA-256；不保存配置正文、API Key 或环境变量值。MCP server 同理只记非敏感字段：stdio 形态记 `name` / `command` / `args` 不记 `env`，HTTP 形态记 `name` / `url` 不记 `headers`。
 
