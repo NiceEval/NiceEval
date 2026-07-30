@@ -14,12 +14,14 @@
 - 只有**同时配了两层**的项目才会露馅,单层配置的 fixture 与示例全绿;
 - 症状出现在离改动很远的地方(超时报错),看不出是配置解析的问题——错误消息只说毫秒数,不说这个值来自哪一层。
 
-## 修法
+## 修法(逐项标注落地状态,2026-07-30 核对)
 
-1. **契约先落地**:解析链单点声明在 `docs/feature/experiments/architecture.md` 的 [Resolved config] 节——`--timeout` → experiment → eval → config → 默认值,并写死「**config 是缺省底不是覆盖层,写了 config 不得使 eval 自己的声明失效**」;`docs/runner.md` 的 carry 资格判据与 `docs/feature/eval/README.md` 引用它,不各自复述。
-2. **代码**:`src/cli.ts` 那行去掉 `?? config.timeoutMs`(`attempt.ts` 本来就兜底到 config)。
-3. **测试**:`docs/engineering/testing/unit/experiments-runner.md` 声明了区分力最强的那一格——「config 有值 + experiment 没写 + eval 写了 → 取 eval 的值」。`??` 链少写一层时**只有这一格会红**,其余四格照常通过。
-4. **诊断**:超时消息带来源标注(`timeout after 60000ms (from config)`),四值 `flag` / `experiment` / `eval` / `config`,写在 `AttemptError.message` 里(见 `docs/feature/experiments/cli.md` 的 timeout 段)。当初有这一句,整个排查一眼就完了。
+1. **契约先落地**(已落,commit 49bb1f33,随 v0.11.3 发布):解析链单点声明在 `docs/feature/experiments/architecture.md` 的「配置解析链」节——`--timeout` → experiment → eval → config → 默认值,并写死「**config 是缺省底不是覆盖层,写了 config 不得使 eval 自己的声明失效**」;`docs/runner.md` 的 carry 资格判据与 `docs/feature/eval/README.md` 引用它,不各自复述。
+2. **代码**(未落地):`src/cli.ts` 组装 run 配置的那行至今仍是 `flags.timeout ?? exp.timeoutMs ?? config.timeoutMs`,兜底层照旧被提前物化;修法是去掉 `?? config.timeoutMs`(`attempt.ts` 本来就兜底到 config)。
+3. **测试**(未落地):`docs/engineering/testing/unit/experiments-runner.md` 已声明区分力最强的那一格——「config 有值 + experiment 没写 + eval 写了 → 取 eval 的值」,`??` 链少写一层时**只有这一格会红**;`test/` 里尚无任何 timeoutMs 用例。
+4. **诊断**(未落地):超时消息带来源标注(`timeout after 60000ms (from config)`),四值 `flag` / `experiment` / `eval` / `config`,写在 `AttemptError.message` 里;契约已进 `docs/feature/experiments/cli.md` 的 timeout 段,`attempt.ts` 的消息仍只有毫秒数。当初有这一句,整个排查一眼就完了。
+
+**这条 memory 曾把修法写得像已完成**——2026-07-30 MemoryBench(niceeval 0.11.3)dogfooding 再次真机撞上同一 bug(声明 31 / 36 分钟的 eval 被 config 的 20 分钟掐死,报错无来源),回查才发现只有契约落了。docs 先于代码定稿是正常流程,但 memory 台账必须区分「契约已定」与「代码已修」。
 
 ## 适用场景
 
