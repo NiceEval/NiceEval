@@ -133,14 +133,18 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
 export function flattenTableContentForText(
   content: TableContent,
   locale?: string,
-): { columns: Array<{ key: string; header: string; align?: "left" | "right" }>; rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string }> } {
+): {
+  columns: Array<{ key: string; header: string; align?: "left" | "right" }>;
+  /** depth 是行树里的层数(顶层 0);text 面按它画组边界横线,不认识具体实体。 */
+  rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string; depth: number }>;
+} {
   // 表头与 web 面同源:走列声明的 header,缺省才回落 key。
   const columns = content.columns.map((c) => ({
     key: c.key,
     header: c.header !== undefined ? resolveLocalizedText(c.header, locale ?? DEFAULT_REPORT_LOCALE) : c.key,
     align: (c.better ? "right" : "left") as "left" | "right",
   }));
-  const rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string }> = [];
+  const rows: Array<{ key: string; cells: Record<string, string | null>; variant?: string; depth: number }> = [];
   const walk = (row: TableContentRow, depth: number): void => {
     const cells: Record<string, string | null> = {};
     for (const col of content.columns) {
@@ -151,7 +155,7 @@ export function flattenTableContentForText(
       }
       cells[col.key] = text;
     }
-    rows.push({ key: row.key, cells, variant: row.variant });
+    rows.push({ key: row.key, cells, variant: row.variant, depth });
     for (const child of row.subRows ?? []) walk(child, depth + 1);
   };
   for (const row of content.rows) walk(row, 0);

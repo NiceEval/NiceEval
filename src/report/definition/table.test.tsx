@@ -491,3 +491,66 @@ describe("Table text 面 — 数据格框", () => {
     expect(text).not.toMatch(/column/i);
   });
 });
+
+// cases: docs/engineering/testing/unit/reports.md 分区「数据格框（Table 与 Grid 的 text 面）」。
+describe("数据格框 — 横线按行树边界、宽度贴合内容", () => {
+  const nested: TableContent = {
+    columns: [
+      { key: "entity", header: "Experiment" },
+      { key: "cost", header: "Cost", better: "lower" },
+    ],
+    rows: [
+      {
+        key: "exp-a",
+        cells: { entity: { kind: "text", text: "compare/a" }, cost: { kind: "text", text: "$0.29" } },
+        subRows: [
+          {
+            key: "eval-a",
+            cells: { entity: { kind: "text", text: "toggl-cli/04" }, cost: { kind: "text", text: "$0.03" } },
+            subRows: [
+              { key: "att-a", cells: { entity: { kind: "text", text: "@1nesor3r" }, cost: { kind: "text", text: "$0.03" } } },
+            ],
+          },
+        ],
+      },
+      {
+        key: "exp-b",
+        cells: { entity: { kind: "text", text: "compare/b" }, cost: { kind: "text", text: "$0.01" } },
+        subRows: [
+          { key: "eval-b", cells: { entity: { kind: "text", text: "toggl-cli/04" }, cost: { kind: "text", text: "$0.01" } } },
+        ],
+      },
+    ],
+  };
+
+  it("有嵌套时每个顶层行前一条横线,组内不切", async () => {
+    const resolved = await resolve(<TableContentView data={nested} />);
+    const text = renderNodeToText(resolved, createTextContext({ width: 100, panelMode: "boxed" }));
+    const lines = text.split("\n");
+    // 表头一条 + 第二个顶层行前一条 = 两条,组内三行不被切开
+    expect(lines.filter((line) => line.startsWith("├")).length).toBe(2);
+    const second = lines.findIndex((line) => line.includes("compare/b"));
+    expect(lines[second - 1]!.startsWith("├")).toBe(true);
+  });
+
+  it("平表只有表头那一条横线,不逐行切割", () => {
+    const text = renderNodeToText(
+      <Table
+        columns={[{ field: "a", label: "A" }]}
+        rows={[{ a: "one" }, { a: "two" }, { a: "three" }]}
+      />,
+      createTextContext({ width: 100, panelMode: "boxed" }),
+    );
+    expect(text.split("\n").filter((line) => line.startsWith("├")).length).toBe(1);
+  });
+
+  it("框宽贴合内容:宽终端下不摊成空白,所有行同宽", () => {
+    const text = renderNodeToText(
+      <Table columns={[{ field: "a", label: "Pass rate" }]} rows={[{ a: "80%" }]} />,
+      createTextContext({ width: 200, panelMode: "boxed" }),
+    );
+    const widths = new Set(text.split("\n").map((line) => stringWidth(line)));
+    expect(widths.size).toBe(1);
+    expect([...widths][0]!).toBeLessThan(20);
+  });
+});

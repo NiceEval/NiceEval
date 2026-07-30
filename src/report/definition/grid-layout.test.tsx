@@ -213,8 +213,10 @@ describe("孤格铺满与短末行", () => {
     expect(rule.endsWith("┤")).toBe(true);
     expect(rule.split("┼")).toHaveLength(3);
     expect(rule.split("┴")).toHaveLength(2);
-    // 每一行的显示宽度都恰好等于终端宽度:右边框对齐成一条直线
-    for (const line of lines) expect(stringWidth(line)).toBe(120);
+    // 所有行同宽:右边框对齐成一条直线。宽度贴合内容,不铺满终端
+    const widths = new Set(lines.map((line) => stringWidth(line)));
+    expect(widths.size).toBe(1);
+    expect([...widths][0]!).toBeLessThan(120);
   });
 
   it("text:末行不足一整行时最后一格吃掉剩余宽度(只剩一格就是铺满整行)", () => {
@@ -226,9 +228,9 @@ describe("孤格铺满与短末行", () => {
     // 短末行不止一格:4+3,末行最后一格补满右侧空出来的宽度,框仍是矩形
     const short = boxedGridText(7, 120).split("\n");
     const shortRow = short.filter((line) => line.includes("L4"))[0]!;
-    // 3 格 → 两条列边界加两条外框竖线
+    // 3 格 → 两条列边界加两条外框竖线;末行与其余行同宽,框仍是矩形
     expect(shortRow.split("│")).toHaveLength(5);
-    expect(stringWidth(shortRow)).toBe(120);
+    expect(stringWidth(shortRow)).toBe(stringWidth(short[0]!));
   });
 
   it("text:plain 体裁下格线整体消失,只按列对齐、行间空一行", () => {

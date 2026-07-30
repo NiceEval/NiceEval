@@ -289,7 +289,9 @@ const scope = reportScopeFixture({
     嵌字截断复用边框那份优先级。
 - **数据格框（`Table` 与 `Grid` 的 text 面）**（[契约](../../../feature/reports/library/layout.md#数据格框table-与-grid)）：断言面是 text 面输出字符串与行宽。
   - `Table`：外框 `╭┬╮` / 表头横线 `├┼┤` / 下边框 `╰┴╯` 各一条，同一张表所有物理行的显示宽度相等。
-  - 框宽跟随表自己的宽度：窄表不硬拉满终端，自然宽超过 100 列的表也不被夹到 100。
+  - 框宽贴合内容：宽终端下窄表不摊成空白、所有行同宽，自然宽超过 100 列的表也不被夹到 100。
+  - 横线按行树边界：有嵌套时每个顶层行之前一条、组内不切；平表只有表头那一条。
+  - `Grid` 的格宽同样贴合内容，末行吃掉剩余宽度的那一格跟着收窄，框仍是矩形。
   - 嵌在画框的 `Section` 里只留列边界与表头横线，输出里只有一层外框。
   - 放不下时按比例压左对齐列并在格内折行：两列各让一部分、都不被压到下限，也不报「丢了几列」。
   - `Grid`：外框加列边界，行间线交点 `┼`；末行不足一整行时最后一格吃掉剩余宽度，下边框跟着它收——每行宽度仍等于终端宽度。
@@ -340,7 +342,7 @@ const scope = reportScopeFixture({
 - **站点根归一（`index.html` 的 `<base>` 引导脚本）**：脚本对 `location.pathname` 的站点根判定——无尾斜杠的索引路径补出目录形态；已是目录形态（`/`、`/sub/`）不插入 `<base>`；末段带扩展名（`/out/index.html`）按其目录取根。
   断言面是把导出产物里那段脚本原样喂给 fake `location` / `document` 后落下的 `base.href`。
 - **timeline / trace 投影的时间树语义**：
-  - phase 沿主链累计 `startOffsetMs`，不全为 0；`PhaseTiming.failed` 与 `TimingNode` 子树原样进节点。
+  - phase 沿主链累计 `startOffsetMs`，不全为 0；`PhaseTiming.failed` 与 `TimingActivity` 子树原样进节点。
   - 带 `traceId` 的 turn 节点把同 trace 的 spans 收为 children，锚在该轮起点，轮内相对时序保留；关联不上任何 turn 的 span 落在 `eval.run` 层，不丢弃。
   - `eval.run` phase 与 turn 节点带 `open` 展开标记；默认 `AttemptDetails` 只放 timeline 一张 `Waterfall`，trace 数据源仍公开导出。
   - trace 投影按 `parentSpanId` 建树，子 span 是 children 而不是被过滤掉。

@@ -183,22 +183,38 @@ export const Grid = defineComponent<GridProps>({
       return rest.reduce((sum, w) => sum + w, 0) + TEXT_GRID_SEPARATOR.length * (rest.length - 1);
     });
     const blocks = normalized.cells.map((cell, i) => ctx.render(cell.node, cellWidths[i]));
+    // 格宽贴合内容:计划宽度是排版上限(子节点按它折行),画框时收到这一列真正用掉的宽度
+    // ——摘要格里是 `80%`、`$0.92` 这种短读数,格子不为占满终端而撑开。
+    const columnWidths = plan.contentWidths.map((planned, col) => {
+      const widest = blocks.reduce((max, block, i) => {
+        if (i % plan.columns !== col || cellWidths[i] !== planned) return max;
+        return Math.max(max, blockWidth(block));
+      }, 1);
+      return Math.min(planned, widest);
+    });
+    // 末行吃掉剩余宽度的那一格跟着收:它补的是右侧空出来的列宽与格线,按收窄后的列重算。
+    const fittedWidths = cellWidths.map((width, i) => {
+      const col = i % plan.columns;
+      if (width === plan.contentWidths[col]) return columnWidths[col]!;
+      const rest = columnWidths.slice(col);
+      return rest.reduce((sum, w) => sum + w, 0) + TEXT_GRID_SEPARATOR.length * (rest.length - 1);
+    });
     // 行与行之间是一条行间线,不是空行——格线要连起来才读成一片格子。
     const out: string[] = [];
     let previousRow = 0;
     let lastRowWidths: readonly number[] = plan.contentWidths;
     for (let start = 0; start < blocks.length; start += plan.columns) {
       const rowBlocks = blocks.slice(start, start + plan.columns);
-      const rowWidths = cellWidths.slice(start, start + rowBlocks.length);
+      const rowWidths = fittedWidths.slice(start, start + rowBlocks.length);
       if (!lines) {
         // 朴素形态:格线整体消失,只按列对齐;行与行之间空一行代替行间线。
         if (start > 0) out.push("");
         out.push(joinColumns(rowBlocks, rowWidths, "   "));
         continue;
       }
-      if (start === 0 && outerFrame) out.push(dataBoxBorder("top", plan.contentWidths, true));
+      if (start === 0 && outerFrame) out.push(dataBoxBorder("top", columnWidths, true));
       if (start > 0) {
-        out.push(dataBoxBorder("rule", plan.contentWidths.slice(0, previousRow), outerFrame, rowBlocks.length));
+        out.push(dataBoxBorder("rule", columnWidths.slice(0, previousRow), outerFrame, rowBlocks.length));
       }
       out.push(...framedGridRows(rowBlocks, rowWidths, outerFrame));
       previousRow = rowBlocks.length;
@@ -521,6 +537,8 @@ export interface TableRow {
   key: string;
   cells: Readonly<globalThis.Record<string, string | null>>;
   locator?: AttemptLocator;
+  /** 行树里的层数(顶层 0,省略等同 0)。text 面据此画组边界横线;普通 rows 形态是平表。 */
+  depth?: number;
 }
 
 export interface TablePresentation {
@@ -988,7 +1006,7 @@ const TableImplementation = defineComponent<TableImplementationProps>({
     const { columns, content } = tableContentOf(props, locale);
     const flat = flattenTableContentForText(content, locale);
     return renderTableText(
-      { columns, rows: flat.rows.map((row) => ({ key: row.key, cells: row.cells })), locale },
+      { columns, rows: flat.rows.map((row) => ({ key: row.key, cells: row.cells, depth: row.depth })), locale },
       ctx,
     );
   },

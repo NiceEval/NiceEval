@@ -158,27 +158,35 @@ export function renderTableText(props: TextTableProps, ctx: TextContext): string
   if (hasLocator) maxLines.push(undefined);
   // 表头不参与 maxLines 收口:表头是自己写的短词,收口只服务数据格。
   const headerPhysical = toPhysicalRows(header.slice(0, widths.length), widths, widths.map(() => undefined));
-  const bodyPhysical = body.flatMap((row) => toPhysicalRows(row.slice(0, widths.length), widths, maxLines));
+  const bodyBlocks = body.map((row, i) => ({
+    depth: props.rows[i]?.depth ?? 0,
+    physical: toPhysicalRows(row.slice(0, widths.length), widths, maxLines),
+  }));
+  const bodyPhysical = bodyBlocks.flatMap((block) => block.physical);
 
   const table = lines
-    ? renderFramedTable(headerPhysical, bodyPhysical, widths, align, outerFrame)
+    ? renderFramedTable(headerPhysical, bodyBlocks, widths, align, outerFrame)
     : renderAlignedRows([...headerPhysical, ...bodyPhysical], align);
   return hidden > 0 ? `${table}\n${countText(locale, "table.columnsHidden", hidden)}` : table;
 }
 
 /**
- * 数据格框形态:表头与正文之间一条横线,列边界贯穿全表。框宽跟随表自己的自然宽度
- * (`fitWidths` 已经把它压进可用列数),不硬拉满终端——窄表拉满只会让读数彼此远离。
+ * 数据格框形态:列边界贯穿全表,横线画在行树自己的边界上——表头与正文之间一条,行树有
+ * 嵌套时每个顶层行之前再一条(一组一格,组内不切)。平表只有表头那一条:逐行切割读起来
+ * 是一堆独立小框,层级与分组反而看不出来。分隔只按 depth 判,`Table` 不认识具体实体。
+ *
+ * 框宽跟随表自己的内容宽度(`fitWidths` 已经把它压进可用列数),不硬拉满终端——
+ * 窄表拉满只会让同一行的读数彼此远离。
  */
 function renderFramedTable(
   header: readonly string[][],
-  body: readonly string[][],
+  body: readonly { depth: number; physical: string[][] }[],
   widths: readonly number[],
   align: readonly ColumnAlign[],
   outerFrame: boolean,
 ): string {
   // 实际列宽取该列所有物理行的最宽者:压缩与折行之后不少列比预算更窄,框跟着收。
-  const physical = [...header, ...body];
+  const physical = [...header, ...body.flatMap((block) => block.physical)];
   const actual = widths.map((w, c) => {
     const widest = Math.max(...physical.map((row) => stringWidth(row[c] ?? "")), 1);
     return Math.min(w, widest);
@@ -188,11 +196,15 @@ function renderFramedTable(
       actual.map((w, c) => (align[c] === "right" ? padStartDisplay(row[c] ?? "", w) : padDisplay(row[c] ?? "", w))),
       outerFrame,
     );
+  const nested = body.some((block) => block.depth > 0);
   const out: string[] = [];
   if (outerFrame) out.push(dataBoxBorder("top", actual, true));
   for (const row of header) out.push(line(row));
   out.push(dataBoxBorder("rule", actual, outerFrame));
-  for (const row of body) out.push(line(row));
+  body.forEach((block, i) => {
+    if (nested && i > 0 && block.depth === 0) out.push(dataBoxBorder("rule", actual, outerFrame));
+    for (const row of block.physical) out.push(line(row));
+  });
   if (outerFrame) out.push(dataBoxBorder("bottom", actual, true));
   return out.join("\n");
 }
