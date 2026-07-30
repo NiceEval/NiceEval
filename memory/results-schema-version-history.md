@@ -24,3 +24,9 @@
   单文件阈值(1 MiB)的文本共用「内容显式省略」字段,导出预算只数真正传输的文本字节
   (见 diff-export-budget-counts-transferred-bytes 条目);读旧落盘的消费方拿不到 `binary`
   会把二进制条目当成空内容的文本改动,故破坏兼容。
+- `13`(2026-07-30)两层时间模型定稿:`TimingNode`(封闭 `kind` 枚举)改为开放 key 的
+  `TimingActivity`;`AttemptError.phase` / `DiagnosticRecord.phase` 改为 `origin: TimingOrigin`
+  (attempt 锚点 / Run timing node 判别联合);`RunMeta` 新增 `timings`(Run 级共享工作时间树)
+  与 `sandboxBuilds`(BuildKey provenance)。旧 reader 读不出 origin 判别形态、也不认识
+  activity key 结构化字段归属,故破坏兼容。契约单源在
+  [Record · 两层时间模型](../docs/feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity)。

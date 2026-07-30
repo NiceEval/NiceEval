@@ -383,9 +383,103 @@ interface AgentBase {
   classifyTurnError?: TurnErrorClassifier;
 }
 
+// ───────────────────────── Agent Ensure / Provisioner ─────────────────────────
+
+/**
+ * Agent 安装身份:纯数据,进 configHash 与 `run.json`。
+ * 与 sandbox case 身份正交——改 Agent 版本不重建任务 BuildKey。
+ * 见 docs/feature/adapters/architecture/agent-ensure.md。
+ */
+export interface AgentIdentity {
+  /** Agent 名(与 adapter 显示名对齐,如 `codex`)。 */
+  readonly agent: string;
+  /** 精确版本;禁止 `latest` 等无钉死取值——无稳定身份不参与可携带结果。 */
+  readonly version: string;
+  /** 配方修订(内置用数字字符串,自定义可用任意稳定串)。 */
+  readonly revision: string;
+}
+
+/**
+ * 一次 check 的结构化事实。boolean 会逼 adapter 再探测一遍同样信息才能写 facts。
+ */
+export interface AgentCheckResult {
+  readonly ok: boolean;
+  /** 实际探测到的版本;探测不到时省略,不编造。 */
+  readonly actualVersion?: string;
+  /** ok 为 false 时的有界原因(缺命令 / 版本不匹配 / 运行条件缺失)。 */
+  readonly detail?: string;
+}
+
+/**
+ * 三种安装模式,全部显式;失败后不允许在模式之间静默降级。
+ * - `staged`:制品在题面网络外准备,经文件 API 送入(内置默认)。
+ * - `sandbox-network`:显式声明用沙箱内网络安装。
+ * - `verifyOnly`:只接受预装命中;检查失败立即 errored。
+ */
+export type AgentInstallMode = "staged" | "sandbox-network" | "verifyOnly";
+
+/** staged payload 的目标平台;与 Agent identity 一起构成 prepare cache key。 */
+export interface AgentArtifactPlatform {
+  readonly os: string;
+  readonly arch: string;
+  /** 如 `gnu` / `musl`;与安装无关时可省略。 */
+  readonly libc?: string;
+}
+
+/**
+ * Run 级准备好的锁定制品。digest + platform 进入 configHash / `run.json`;
+ * 安装时经主 Sandbox 文件 API 上传,不依赖题面网络。
+ */
+export interface AgentStagedArtifact {
+  readonly digest: string;
+  readonly platform: AgentArtifactPlatform;
+  /** 宿主侧本地文件路径(协调器 / prepare 产出)。 */
+  readonly localPath: string;
+  /** 沙箱内落点建议(workdir 外的 Agent 自有目录)。 */
+  readonly sandboxPath?: string;
+}
+
+/** attempt facts 里 `agent.ensure` 的取值:区分检查命中与本次安装。 */
+export type AgentEnsureOutcome = "hit" | "installed";
+
+/**
+ * `defineAgentProvisioner` / 内置工厂产出的 Ensure 协议对象。
+ * identity / check / install 原子替换;prepare 仅 staged 路径需要。
+ */
+export interface AgentProvisioner {
+  readonly identity: AgentIdentity;
+  readonly mode: AgentInstallMode;
+  check(sandbox: Sandbox): Promise<AgentCheckResult>;
+  /**
+   * 缺失或错版本时安装。`staged` 模式收到已准备 artifact;`sandbox-network` 自管网络。
+   * `verifyOnly` 不会调到这里。
+   */
+  install(sandbox: Sandbox, artifact?: AgentStagedArtifact): Promise<void>;
+  /**
+   * 题面外准备锁定制品(Run 级、宿主侧、以 identity+platform 为 key 的 single-flight)。
+   * 仅 `staged` 模式需要;省略时 staged ensure 会在缺 artifact 时点名报错。
+   */
+  prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+}
+
+/** `defineAgentProvisioner` 的入参;`mode` 省略时有 prepare → `staged`,否则 → `sandbox-network`。 */
+export interface AgentProvisionerDef {
+  identity: AgentIdentity;
+  mode?: AgentInstallMode;
+  check(sandbox: Sandbox): Promise<AgentCheckResult>;
+  install(sandbox: Sandbox, artifact?: AgentStagedArtifact): Promise<void>;
+  prepare?(platform: AgentArtifactPlatform): Promise<AgentStagedArtifact>;
+}
+
 /** 在 NiceEval 管理的 Sandbox 内驱动 CLI 的 Agent。 */
 export interface SandboxAgent extends AgentBase {
   readonly kind: "sandbox";
+  /**
+   * Agent Ensure 的安装身份与协议对象(见 docs/feature/adapters/architecture/agent-ensure.md)。
+   * 只挂在 sandbox 分支:Direct Agent 不背 Ensure。Runner 消费 `identity`(进 configHash)
+   * 与 `prepare`(Run 级 single-flight);`ensure` 由 adapter 在 `setup` 内自行调用。
+   */
+  readonly provisioner?: AgentProvisioner;
   setup?: AgentSetup;
   tracing?: AgentTracing;
   send(input: TurnInput, ctx: SandboxAgentContext): Promise<Turn>;
@@ -411,9 +505,14 @@ export interface SandboxAgentDef {
   /** 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。 */
   coverage?: EvidenceCoverage;
   /**
+   * Agent Ensure 协议对象。工厂参数替换口;`ensure` 在 setup 内由 adapter 调用,
+   * Runner 只额外消费 identity 与 prepare(见 agent-ensure.md)。
+   */
+  provisioner?: AgentProvisioner;
+  /**
    * 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
    * 本轮内不变的东西)。运行器在 Sandbox 备好(上传/基线/eval.setup 之后)、第一次 send 前
-   * 调用一次,不返回值。
+   * 调用一次,不返回值。Ensure 在 setup 内由 adapter 自己执行。
    */
   setup?: AgentSetup;
   /** OTLP 导出配置:Sandbox 里怎么让 CLI 把 trace 发到 endpoint(env / 配置文件),从 setup 拆出。 */

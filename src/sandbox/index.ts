@@ -3,6 +3,63 @@
 // 需要自定义 provider 时用 defineSandbox(),不需要绕开 resolve.ts 直接 new 内置类。
 
 export { dockerSandbox, vercelSandbox, e2bSandbox, localSandbox, defineSandbox } from "../define.ts";
+export {
+  composeSandbox,
+  dockerfileSandbox,
+  defineSandboxCase,
+  planSandboxCase,
+  materializePlannedCase,
+  isSandboxSource,
+  validateSpecEnvironmentCases,
+} from "./case.ts";
+export {
+  COMPOSE_MATERIALIZER_REVISION,
+  dockerComposeMaterializer,
+  dockerComposeBuildProvider,
+  collectComposeBuilds,
+  composeBuildWorksFromPlan,
+  attachComposeLeakGateHints,
+  leakGateHintsFromComposeFile,
+  inspectComposeYaml,
+  assertComposeBlacklist,
+  findComposeBlacklistViolations,
+  buildComposeOverlay,
+  materializeDockerComposeCase,
+} from "./compose.ts";
+export {
+  createMaterializedCase,
+  prebuiltProductSlotsOf,
+  specWithPrebuiltProduct,
+  assertKeepAllowedForCase,
+  assertCustomCapabilitiesHonored,
+  hasGroupKeep,
+  caseCapabilitiesOf,
+  isSingleSandboxCaseKind,
+  SINGLE_SANDBOX_CASE_KINDS,
+} from "./resolve.ts";
+export type { CreateMaterializedCaseOpts } from "./resolve.ts";
+export type { PrebuiltProductSlots, SingleSandboxCaseKind } from "./single-case.ts";
+export {
+  registerCustomGroupKeep,
+  lookupCustomGroupKeep,
+  destroyCustomGroupKeep,
+  wakeCustomGroupKeep,
+  clearCustomGroupKeepRegistry,
+} from "./custom-group-keep.ts";
+export {
+  computeBuildKey,
+  computeCaseKey,
+  resolveFloatingImageTag,
+  credentialIdentityContribution,
+  assertPureDataIdentity,
+  caseCarryEligible,
+  looksLikeDigestRef,
+} from "./identity.ts";
+export {
+  SANDBOX_BUILD_ACTIVITY,
+  prepareSandboxBuilds,
+  buildFailureOrigin,
+} from "./build-coordinator.ts";
 export { createCheckpoint, restoreCheckpoint } from "./checkpoint.ts";
 export {
   NICEEVAL_BUB_DOCKER_IMAGE,
@@ -31,3 +88,51 @@ export type {
   CommandResult,
   CommandOptions,
 } from "../types.ts";
+
+export type {
+  SandboxSource,
+  ComposeSandboxSource,
+  DockerfileSandboxSource,
+  SandboxCaseKind,
+  SandboxSourceKind,
+  SandboxCapability,
+  ServiceController,
+  MaterializedSandboxCase,
+  SandboxGroupEntry,
+  SandboxResourceGroup,
+  DockerEnvironmentCase,
+  E2BEnvironmentCase,
+  VercelEnvironmentCase,
+  CustomEnvironmentCase,
+  SandboxMaterializer,
+  SandboxMaterializers,
+  PlannedSandboxCase,
+  CasePlanResult,
+} from "./case.ts";
+
+export type {
+  BuildKey,
+  CaseKey,
+  BuildKeyInput,
+  CaseKeyInput,
+  ImageRefResolution,
+  CredentialRef,
+} from "./identity.ts";
+
+export type {
+  ComposeBuildCollection,
+  ComposeInspection,
+  ComposeServiceInspection,
+  ComposeBlacklistFinding,
+  ComposeOverlay,
+  MaterializeComposeOpts,
+} from "./compose.ts";
+
+export type {
+  SandboxBuildWork,
+  SandboxBuildProvider,
+  SandboxBuildExecutionContext,
+  SandboxBuildPreparation,
+  SandboxBuildFailure,
+  PrepareSandboxBuildsOptions,
+} from "./build-coordinator.ts";

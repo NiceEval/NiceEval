@@ -149,6 +149,15 @@ preTeardown?: SandboxHook[];
 按 teardown-failed 诊断收束。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
 
+#### `provisioner`
+
+```ts
+provisioner?: AgentProvisioner;
+```
+
+整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
+省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
+
 ### `CodexConfig`
 
 #### `apiKey`
@@ -231,6 +240,15 @@ preTeardown?: SandboxHook[];
 之前),当且仅当 `postSetup` 的时点走到过才触发。抛错按基础设施错误计,由 teardown 段
 按 teardown-failed 诊断收束。
 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
+
+#### `provisioner`
+
+```ts
+provisioner?: AgentProvisioner;
+```
+
+整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
+省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
 
 ### `BubConfig`
 

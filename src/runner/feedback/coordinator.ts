@@ -29,6 +29,7 @@ import {
   type ExperimentProgressInput,
   type PrecheckInput,
   type LockWaitInput,
+  type RunActivityInput,
   type FailureInput,
   type FeedbackSink,
   type KeptInput,
@@ -290,6 +291,18 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     });
   }
 
+  function runActivity(input: RunActivityInput): void {
+    emit({
+      type: "run-activity",
+      at: io.clock.now(),
+      id: input.id,
+      key: input.key,
+      label: input.label,
+      status: input.status,
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+    });
+  }
+
   function reporterError(input: { reporter: string; required: boolean; message: string }): void {
     emit({
       type: "reporter-error",
@@ -332,6 +345,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       experimentProgress,
       precheck,
       lockWait,
+      runActivity,
       lifecycle,
     });
     emit({ type: "plan", at: startedAtMs, plan });
@@ -398,6 +412,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
     experimentProgress,
     precheck,
     lockWait,
+    runActivity,
     lifecycle,
     stopDynamic,
     finish,

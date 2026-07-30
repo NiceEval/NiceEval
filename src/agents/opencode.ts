@@ -14,8 +14,10 @@ import {
   sessionIdFromOpenCodeTranscript,
   extractOpenCodeJsonl,
 } from "../o11y/parsers/opencode.ts";
-import { DEFAULT_OPENCODE_CLI_VERSION } from "./coding-cli-versions.ts";
-import type { Agent, AgentSetupManifest, SkillSpec, StreamEvent } from "../types.ts";
+import { DEFAULT_OPENCODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
+import { createNpmCliProvisioner } from "./npm-staged.ts";
+import { ensureAgent } from "./provisioner.ts";
+import type { Agent, AgentProvisioner, AgentSetupManifest, SkillSpec, StreamEvent } from "../types.ts";
 
 // OpenCode sandbox adapter。驱动:`opencode run --format json --auto`;
 // 行为轨优先 stdout JSONL,不足时 `opencode export <sessionID>`。
@@ -34,6 +36,8 @@ export interface OpenCodeConfig {
   version?: string;
   /** 装进沙箱的 Skill,落在 `.agents/skills/<name>/`。 */
   skills?: SkillSpec[];
+  /** 整体替换默认 Ensure provisioner。省略时用内置 staged 路径。 */
+  provisioner?: AgentProvisioner;
 }
 
 function resolveApiKey(config?: OpenCodeConfig): string {
@@ -56,11 +60,23 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 export function openCodeAgent(config?: OpenCodeConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCODE_CLI_VERSION;
+  const provisioner =
+    config?.provisioner ??
+    createNpmCliProvisioner({
+      identity: {
+        agent: "opencode",
+        version,
+        revision: String(AGENT_BASELINE_RECIPE_REVISION.opencode),
+      },
+      packageName: "opencode-ai",
+      bin: "opencode",
+    });
 
   return defineSandboxAgent({
     name: "opencode",
     coverage: completeCoverage,
     spanMapper: mapGenericSpans,
+    provisioner,
 
     tracing: {
       protocol: "http/protobuf",
@@ -72,9 +88,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await sb.runShell(
-        `command -v opencode >/dev/null 2>&1 || npm install -g opencode-ai@${version}`,
-      );
+      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
 
       const baseUrl = resolveBaseUrl(config);
       const provider: globalThis.Record<string, unknown> = {};
@@ -143,7 +157,8 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
         env.OPENAI_BASE_URL = baseUrl;
       }
 
-      const res = await sb.runCommand("opencode", args, { env, stream: true });
+      const opencodeBin = await shared.resolveAgentBin(sb, "opencode");
+      const res = await sb.runCommand(opencodeBin, args, { env, stream: true });
       let raw = extractOpenCodeJsonl(res.stdout) ?? extractOpenCodeJsonl(`${res.stdout}\n${res.stderr}`);
       let sessionId = sessionIdFromOpenCodeTranscript(raw) ?? sessionIdFromOpenCodeTranscript(res.stdout);
       if (sessionId) ctx.session.capture(sessionId);
@@ -155,7 +170,7 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
       const hasMessages = parsed.events.some((e) => e.type === "message");
       if (!hasActions && !hasMessages && (sessionId ?? ctx.session.id)) {
         const sid = sessionId ?? ctx.session.id!;
-        const exported = await sb.runCommand("opencode", ["export", sid], { env });
+        const exported = await sb.runCommand(opencodeBin, ["export", sid], { env });
         if (exported.exitCode === 0 && exported.stdout.trim()) {
           raw = exported.stdout;
           parsed = parseOpenCodeTranscript(raw);

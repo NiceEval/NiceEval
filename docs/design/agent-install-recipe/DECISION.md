@@ -8,6 +8,10 @@
 
 ## 结论
 
+定稿契约的完整正文在 Feature,本篇只保留选型理由:
+[Adapters · Agent Ensure](../../feature/adapters/architecture/agent-ensure.md) ·
+[Record · 两层时间模型](../../feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity)。
+
 采纳 **PLAN-4(Ensure 协议)**:「检查→缺失时安装→复检」
 是 Adapter 在 `agent.setup` 里执行的契约本体,Agent 身份
 (名字、精确版本、配方修订)是纯数据、进指纹。官方

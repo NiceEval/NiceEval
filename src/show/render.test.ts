@@ -12,11 +12,12 @@
 // display/stdout/stderr;命中计数与 0 命中的明确输出。
 
 import { describe, expect, it } from "vitest";
-import { diffText, executionText, verdictReasonLine } from "./render.ts";
+import { diffText, executionText, runTimingText, verdictReasonLine } from "./render.ts";
 import { diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
-import type { EvalResult, PhaseTiming, StreamEvent, TimingNode, Verdict } from "../types.ts";
+import type { EvalResult, PhaseTiming, StreamEvent, TimingActivity, SandboxBuildRecord, Verdict } from "../types.ts";
+import type { Run } from "../record/index.ts";
 import { buildExecutionTree } from "../o11y/execution-tree.ts";
-import { encodeAttemptLocator, type AttemptEvidence, type AttemptIdentity } from "../record/index.ts";
+import { encodeAttemptLocator, type AttemptEvidence, type AttemptHandle, type AttemptIdentity } from "../record/index.ts";
 
 function erroredResult(message: string): EvalResult {
   return {
@@ -26,7 +27,7 @@ function erroredResult(message: string): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
-    error: { code: "turn-failed", message, phase: "eval.run" },
+    error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };
 }
 
@@ -97,8 +98,8 @@ function twoTurnPhases(): PhaseTiming[] {
       name: "eval.run" as PhaseTiming["name"],
       durationMs: 2000,
       children: [
-        { id: "turn-1", kind: "turn", label: "s1/t1", startOffsetMs: 0, durationMs: 1200 },
-        { id: "turn-2", kind: "turn", label: "s1/t2", startOffsetMs: 1200, durationMs: 800 },
+        { id: "turn-1", key: "agent.turn", label: "s1/t1", startOffsetMs: 0, durationMs: 1200 },
+        { id: "turn-2", key: "agent.turn", label: "s1/t2", startOffsetMs: 1200, durationMs: 800 },
       ],
     },
   ];
@@ -142,10 +143,10 @@ describe("--execution:轮内卡片句柄 t<N>.c<M> 从事件序确定性派生",
     expect(text).toContain("s1/t2 · completed · 800ms");
   });
 
-  it("turn 头行有 usage 时带 token/成本(usage 有记录才出现;TimingNode.usage 是该轮 Turn.usage 落盘原样)", () => {
-    const turnWithUsage: TimingNode = {
+  it("turn 头行有 usage 时带 token/成本(usage 有记录才出现;TimingActivity.usage 是该轮 Turn.usage 落盘原样)", () => {
+    const turnWithUsage: TimingActivity = {
       id: "turn-1",
-      kind: "turn",
+      key: "agent.turn",
       label: "s1/t1",
       startOffsetMs: 0,
       durationMs: 1200,
@@ -155,7 +156,7 @@ describe("--execution:轮内卡片句柄 t<N>.c<M> 从事件序确定性派生",
       {
         name: "eval.run" as PhaseTiming["name"],
         durationMs: 2000,
-        children: [turnWithUsage, { id: "turn-2", kind: "turn", label: "s1/t2", startOffsetMs: 1200, durationMs: 800 }],
+        children: [turnWithUsage, { id: "turn-2", key: "agent.turn", label: "s1/t2", startOffsetMs: 1200, durationMs: 800 }],
       },
     ];
     const evidence = evidenceOf({ execution: buildExecutionTree(twoTurnEvents(), []), result: resultOf({ phases }) });
@@ -338,8 +339,8 @@ describe("--execution:失败 Sandbox 命令卡 cmd<N> 按 timing node 时序派�
         name: "eval.setup" as PhaseTiming["name"],
         durationMs: 500,
         children: [
-          { id: "cmd-node-b", kind: "command", label: "npm", startOffsetMs: 300, durationMs: 100, command: { display: "npm ci", exitCode: 1 } },
-          { id: "cmd-node-a", kind: "command", label: "git", startOffsetMs: 10, durationMs: 20, command: { display: "git fetch", exitCode: 128 } },
+          { id: "cmd-node-b", key: "sandbox.command", label: "npm", startOffsetMs: 300, durationMs: 100, command: { display: "npm ci", exitCode: 1 } },
+          { id: "cmd-node-a", key: "sandbox.command", label: "git", startOffsetMs: 10, durationMs: 20, command: { display: "git fetch", exitCode: 128 } },
         ],
       },
     ];
@@ -389,7 +390,7 @@ describe("--grep:匹配面覆盖角色文本、工具名、input、result 与失
       {
         name: "eval.setup" as PhaseTiming["name"],
         durationMs: 100,
-        children: [{ id: "cmd-node", kind: "command", label: "npm", startOffsetMs: 0, durationMs: 50, command: { display: "npm ci", exitCode: 1 } }],
+        children: [{ id: "cmd-node", key: "sandbox.command", label: "npm", startOffsetMs: 0, durationMs: 50, command: { display: "npm ci", exitCode: 1 } }],
       },
     ];
     return evidenceOf({
@@ -477,5 +478,127 @@ describe("--diff:与 DiffView 的 text 面读同一份投影", () => {
   it("没有 diff 证据与一个文件都没改是两回事", () => {
     expect(diffText({ header: "H", data: null })).toContain("diff unavailable");
     expect(diffText({ header: "H", data: { ...data, files: [] } })).toContain("no file changes by the agent");
+  });
+});
+
+describe("--timing:Run 级 activity 与 sandboxBuild 卡", () => {
+  // cases: docs/engineering/testing/unit/reports.md「--timing 的两棵树与 sandboxBuild 卡」
+
+  function runOf(overrides: Partial<Run> & { timings?: TimingActivity[]; sandboxBuilds?: SandboxBuildRecord[] }): Run {
+    return {
+      runId: "11111111-2222-3333-4444-555555555555",
+      experimentId: "compose/docker",
+      startedAt: "2026-07-30T10:00:00.000Z",
+      completedAt: "2026-07-30T10:05:00.000Z",
+      agent: "codex",
+      producer: { name: "niceeval", version: "0.12.0" },
+      schemaVersion: 13,
+      evals: [],
+      attempts: [],
+      dir: "/tmp/fake",
+      ...overrides,
+    };
+  }
+
+  it("未知 activity key 渲染 producer label;sandboxBuild 卡从 provenance 读,不解析 label", () => {
+    const buildId = "timing-build-1";
+    const timings: TimingActivity[] = [
+      {
+        id: buildId,
+        key: "sandbox.build",
+        label: "build docker client · bk-abc",
+        startOffsetMs: 0,
+        durationMs: 12_000,
+      },
+      {
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        startOffsetMs: 100,
+        durationMs: 800,
+      },
+    ];
+    const builds: SandboxBuildRecord[] = [
+      {
+        buildKey: "bk-abcdefghijklmnopqrstuvwxyz",
+        provider: "docker",
+        status: "built",
+        timingNodeId: buildId,
+        locator: { image: "sha256:deadbeef" },
+        inputs: { dockerfile: "Dockerfile", context: "evals/foo" },
+      },
+    ];
+    const text = runTimingText(runOf({ timings, sandboxBuilds: builds }), {
+      header: "H",
+      width: 100,
+      mode: "summary",
+    });
+    expect(text).toContain("warming acme cache shard-3");
+    expect(text).toContain("build docker client · bk-abc");
+    expect(text).toContain("sandboxBuilds:");
+    expect(text).toContain("built · docker · bk-abcdefghijklm…");
+    expect(text).toContain('locator: {"image":"sha256:deadbeef"}');
+    expect(text).toContain('inputs: {"dockerfile":"Dockerfile","context":"evals/foo"}');
+    // 卡不解析 timing label 来重建语义——label 里的 "bk-abc" 短缀不得被当成 provenance 源。
+    expect(text).toContain("bk-abcdefghijklmnopqrstuvwxyz".slice(0, 16));
+  });
+
+  it("失败 origin 指向 timingNodeId 的 attempt 出现在 dependents", () => {
+    const buildId = "timing-build-fail";
+    const attempt = {
+      evalId: "sql-injection",
+      experimentId: "compose/docker",
+      result: {
+        id: "sql-injection",
+        attempt: 0,
+        agent: "codex",
+        verdict: "errored" as const,
+        durationMs: 1,
+        assertions: [],
+        error: {
+          code: "sandbox-build-failed",
+          message: "build failed",
+          origin: { scope: "run" as const, timingNodeId: buildId },
+        },
+      },
+      ref: { run: "compose-docker/snap", attempt: "sql-injection/a0" },
+      run: null as never,
+      locator: "@depfail01" as AttemptHandle["locator"],
+      carried: false,
+      evidenceState: "local" as const,
+      commands: async () => null,
+      events: async () => null,
+      trace: async () => null,
+      o11y: async () => null,
+      agentSetup: async () => null,
+      diff: async () => null,
+      sources: async () => null,
+    };
+    const timings: TimingActivity[] = [
+      {
+        id: buildId,
+        key: "sandbox.build",
+        label: "build failed label should not be parsed",
+        startOffsetMs: 0,
+        durationMs: 50,
+        failed: true,
+      },
+    ];
+    const builds: SandboxBuildRecord[] = [
+      {
+        buildKey: "bk-fail",
+        provider: "docker",
+        status: "failed",
+        timingNodeId: buildId,
+        inputs: { dockerfile: "Dockerfile" },
+        error: { code: "sandbox-build-failed", message: "npm ci exited 1" },
+      },
+    ];
+    const text = runTimingText(runOf({ timings, sandboxBuilds: builds, attempts: [attempt] }), {
+      header: "H",
+      width: 100,
+    });
+    expect(text).toContain("dependents: @depfail01");
+    expect(text).toContain("error: sandbox-build-failed · npm ci exited 1");
   });
 });

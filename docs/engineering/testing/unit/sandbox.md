@@ -4,6 +4,7 @@
 
 - [Sandbox](../../../feature/sandbox/README.md)
 - [Architecture](../../../feature/sandbox/architecture.md)
+- [Sandbox Case](../../../feature/sandbox/case.md)
 - [Library](../../../feature/sandbox/library.md)
 - [操作](../../../feature/sandbox/library/operations.md)
 - [结果断言](../../../feature/sandbox/library/asserting-results.md)
@@ -108,6 +109,33 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   vercel 分支专门证明:唤醒走 `Sandbox.get({ name, resume: true })`(name 而非 sessionId,与官方 CLI/SDK 按 name 索引一致)、查状态与销毁走 `resume:false` 不产生唤醒副作用、销毁调用 `delete()` 而非 `stop()`(`stop()` 是可恢复的 suspend,不是永久销毁)；`detachedCapabilityGap` 对已知三 provider 返回 undefined、对未知 provider 名返回可展示的原因(供 CLI 报「不支持,原因」而不是逐条 `if (provider === …)`)。
 - **`sandbox enter`/`history`/`diff` 的能力路由(`cli-commands.ts`)**：三条命令统一走"能力声明 gap 检查 → 唤醒 → 操作 → 回眠"路径,不含 provider 名分支——docker 与 e2b 各证明一次唤醒成功路径;interactive enter 的原生命令 spawn 失败(未装对应 CLI)现场保持 alive 并提示直连命令,不误判成功;条目旁 `.lease` 以 `wx` 原子占坑，竞争者拒绝并报 holder，TTL 接管后原持有者释放不得删掉后来者。
 - **`list`/`history` 一次性面板接线到 `panel.ts`（`cli-commands.ts`）**：面板几何本身（宽度上限、截断优先级、CJK 量测……）由[Reports 的「面板几何」类别](reports.md#覆盖规范)覆盖，这里只证明两条命令真的把内容交给 `renderPanel` 而不是各自拼框字符——`history` 对着一段固定的 git 日志 fixture（anchor + 交替的 eval/agent 提交，逐提交 mock `git diff --name-status` 的文件改动）核对完整输出与 `docs/feature/sandbox/cli.md` 的框线示例逐字一致（含 `eval` 提交按「首次 = fixture / setup、之后 = post-send validation」分类、`agent` 提交的文件改动列表、下边框嵌最近一个窗口的 `diff --window` 命令）；`list` 核对启动时探测到的传输能力（`io.isTTY`/`columns`）经 `panelCapabilityOf` 正确转成 `renderPanel` 的 `mode`/`width`——非 TTY（未声明 `isTTY` 的既有测试默认场景）不产生任何框字符，`isTTY: true` 时产生可识别的框线字符。
+- **sandbox case 五类**（[Sandbox Case](../../../feature/sandbox/case.md#完整-case-目录)）：
+
+  - 预制单 Sandbox、按需构建单 Sandbox、Docker Compose、云端 Compose、自定义 case 各自给齐主 Sandbox、资源、身份、证据与清理。
+  - 每类 case 只返回一个主 `Sandbox`；Agent、Eval、文件 API、workdir、分类账与 diff 观察同一执行空间。
+  - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 缺稳定纯数据 identity 时禁止携带。
+- **profile / source 双入口与优先级**：
+
+  - `environments` 按 profile 名映射完整 case；`materializers` 按 source kind 注册 folder-local 物化器。
+  - 同一 profile 两处都命中时，显式 `environments` 表项优先。
+  - profile 键查不到且无 folder-local source → 启动期配置错误（一次穷举、零 Sandbox 创建）。
+  - 声明合法但缺表项与 materializer → 计划期 `skipped`，`skipReason` 列 eval id、source kind 与可补位置。
+- **BuildKey single-flight、失败扇出和预算**：
+
+  - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
+  - 确定性构建失败只执行一次；依赖该 key 的 fresh attempt 同得环境 `errored`，origin 指向同一 Run timing node。
+  - 不依赖失败 key 的 attempt 继续执行。
+  - Run 级共享准备有独立并发、逐 key timeout、全局准备上限与 abort，不占 attempt 并发位。
+  - 共享构建时间只在 `RunMeta.timings` 记一次，不进任何 attempt 的 `executionMs`。
+  - 完全携带、无需查询的 BuildKey 不触发构建，也不造假 provenance。
+- **Compose 主空间、服务 ready、证据、整组清理与泄题门**：
+
+  - `mainService`（或云端代理进 main）是唯一主 Sandbox；主容器 ready 后才进入 Agent。
+  - 必需服务提前退出 → attempt `errored` 附服务状态与日志，不折叠成 Agent `failed`。
+  - 成功、部分启动、中断、超时都走整组 finalizer，不留孤儿。
+  - 黑名单只拒脱管网络、覆盖受管 workdir、挂载 Docker socket；其余 Compose 字段原样生效。
+  - 泄题门：verifier / private 与全部 build context、相对 bind mount 交叉检查，命中即启动期报错。
+  - 过滤规则进入 BuildKey；verifier 不得在 Agent 阶段挂入可达服务，private 任何阶段都不能挂入。
 
 ## 不这样测
 

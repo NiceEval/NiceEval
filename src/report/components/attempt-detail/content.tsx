@@ -22,7 +22,7 @@ import type {
   AttemptTimelineData,
   AttemptTraceData,
 } from "../../model/types.ts";
-import type { AssertionResult, JsonValue, ScoreEntry, TimingNode, TraceSpan } from "../../../types.ts";
+import type { AssertionResult, JsonValue, ScoreEntry, TimingActivity, TraceSpan } from "../../../types.ts";
 import { stripControl } from "../../../scoring/display.ts";
 import { formatPointsSuffix } from "../../model/format.ts";
 import { localizedMessage } from "../../model/locale.ts";
@@ -157,9 +157,9 @@ function spanTreeNodes(spans: readonly TraceSpan[], anchorOffsetMs: number, t0: 
   return build(undefined);
 }
 
-/** `TimingNode` 子树 → 节点;带 `traceId` 的 turn 把同 trace 的 spans 收为 children,锚在该轮起点。 */
+/** `TimingActivity` 子树 → 节点;带 `traceId` 的 turn 把同 trace 的 spans 收为 children,锚在该轮起点。 */
 function timingNodeToWaterfall(
-  node: TimingNode,
+  node: TimingActivity,
   spansByTraceId: Map<string, TraceSpan[]>,
   usedTraceIds: Set<string>,
 ): WaterfallNode {
@@ -174,12 +174,12 @@ function timingNodeToWaterfall(
   return {
     key: node.id,
     label: node.label,
-    kind: node.kind,
+    kind: node.key,
     startOffsetMs: node.startOffsetMs,
     durationMs: node.durationMs,
     ...(node.failed ? { failed: true as const } : {}),
     // turn 是主干:默认展开,打开页面直接看到轮内 agent 活动(presentation.md「自上而下有什么」)。
-    ...(node.kind === "turn" ? { open: true as const } : {}),
+    ...(node.key === "agent.turn" ? { open: true as const } : {}),
     ...(children.length > 0 ? { children } : {}),
   };
 }
@@ -193,7 +193,7 @@ export function attemptTimelineContent(data: AttemptTimelineData | null): Waterf
     else spansByTraceId.set(s.traceId, [s]);
   }
   const usedTraceIds = new Set<string>();
-  // phase 主链沿累计偏移排布;TimingNode 的偏移本就是 attempt 时钟绝对偏移,原样进节点。
+  // phase 主链沿累计偏移排布;TimingActivity 的偏移本就是 attempt 时钟绝对偏移,原样进节点。
   let cursor = 0;
   const nodes: WaterfallNode[] = data.phases.map((p, i) => {
     const startOffsetMs = cursor;
@@ -392,8 +392,8 @@ export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | null): 
     items: group.items.map(
       (d): CalloutItem => ({
         level: d.level === "error" ? "error" : "warning",
-        message: d.message,
-        command: d.command,
+        message: d.detail,
+        command: typeof d.context?.command === "string" ? d.context.command : undefined,
         count: d.count,
       }),
     ),
@@ -402,9 +402,10 @@ export function attemptDiagnosticsContent(data: AttemptDiagnosticsData | null): 
 
 export function attemptErrorContent(data: AttemptErrorData | null): readonly CalloutGroup[] | null {
   if (data === null) return null;
+  const phase = data.origin.scope === "attempt" ? data.origin.phase : data.origin.timingNodeId;
   return [
     {
-      title: data.phase,
+      title: phase,
       items: [{ level: "error", message: `${data.code}: ${data.message}` }],
     },
   ];

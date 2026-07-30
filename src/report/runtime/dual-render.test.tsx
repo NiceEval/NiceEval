@@ -179,7 +179,7 @@ describe("FailureList", () => {
         res("q1", "failed", { startedAt: "2026-07-01T01:00:00.000Z" }),
         res("q2", "errored", {
           startedAt: "2026-07-01T03:00:00.000Z",
-          error: { code: "x", message: "boom", phase: "eval.run" },
+          error: { code: "x", message: "boom", origin: { scope: "attempt" as const, phase: "eval.run" } },
         }),
         res("q3", "failed", { startedAt: "2026-07-01T02:00:00.000Z" }),
         res("q4", "passed", { startedAt: "2026-07-01T04:00:00.000Z" }),

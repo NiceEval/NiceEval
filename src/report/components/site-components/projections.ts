@@ -34,7 +34,7 @@ export async function runNoticesContent(input: ReportInput): Promise<readonly Ca
     title: `${row.experimentId} · ${row.startedAt}`,
     items: row.diagnostics.map((d) => ({
       level: d.level === "error" ? ("error" as const) : ("warning" as const),
-      message: d.message,
+      message: d.detail,
     })),
   }));
 }

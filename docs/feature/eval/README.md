@@ -17,8 +17,9 @@ export default defineEval({
   //  ↑ 这两个排在 niceeval.config.ts 之前:题目写了 35 分钟,项目 config 写 20 分钟,仍按 35 分钟跑
   //    timeout 要按次压过时用 --timeout 或 experiment 字段;judge 单条换模型用断言的 { model }
 
-  environment?: string;   // 这道题要哪种环境 profile,例如 "python-3.9-astropy-4.2"
-  //  所用 sandbox spec 的 environments 表里没有这一项 → 启动期配置错误,一个沙箱都不创建
+  environment?: string | SandboxSource;   // 这道题要哪种环境:共享 profile id,或 folder-local sandbox source
+  //  profile 任何表都查不到、又没有 folder-local source → 启动期配置错误,一个沙箱都不创建
+  //  声明合法但当前 provider 缺对应 materializer 或能力位 → 计划期 skipped,写明缺项
   //  省略 → 从 spec 的基础产物起步
 
   diff?: { include?: string[]; ignore?: string[] };
@@ -45,10 +46,15 @@ export default defineEval({
 `timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
 完整解析链见 [Experiments · 配置解析链](../experiments/architecture.md#配置解析链一次求值处处同源)。
 
-`environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。
-profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。
+`environment` 有两种同等的写法：
+
+- **共享 profile**：非空、不透明的稳定 id。
+  eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。
+  profile 到完整 sandbox case 的翻译写在 sandbox spec 工厂的 `environments` 表上，一个 provider 一份、多个实验复用，见 [Sandbox Case](../sandbox/case.md)。
+- **folder-local source**：folder eval 直接声明 sandbox source（如 `composeSandbox`），由当前 spec 按 source kind 注册的 materializer 物化，目录路径就是默认 profile id。
+
 测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。
-此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；Direct Agent 不创建 Sandbox，此字段只参与指纹。
+此字段以解析后的 sandbox case 身份（CaseKey）计入 eval fingerprint——环境定义的任何变化都让该 eval 重跑；Direct Agent 不创建 Sandbox，此字段只参与指纹。
 
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
 两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
@@ -59,6 +65,32 @@ profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spe
 
 **禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。
 改名即改 id,不会腐烂。
+
+## 文件夹入口:一道题一个目录
+
+发现器接受两种入口;同一 id 两种入口并存时启动期报重名,不按扫描顺序覆盖:
+
+```text
+evals/foo.eval.ts       → eval id "foo"
+evals/foo/eval.ts       → eval id "foo"
+```
+
+`eval.ts` 只是文件夹入口约定,仍默认导出 `defineEval` / `defineScoreEval` 结果,不引入第二套评分或 Experiment 模型。
+目录里可以平铺 Dockerfile、Compose、题面数据、起始 fixture 与 verifier,也可以分子目录;没有入口的目录(如 `_lib/`)是普通共享代码,不会被发现成 eval。
+
+共址不等于同一身份域或同一可见时点,三类文件各有归属:
+
+| 文件 | 何时可见 | 身份 |
+|---|---|---|
+| Dockerfile、Compose、build context、相对 bind mount | 环境物化时交给 provider;Agent 只看到最终主 Sandbox 视图 | BuildKey / CaseKey |
+| 题面数据(经 `loadYaml` / `loadText` 读入) | 宿主发现期读取 | eval 数据指纹 |
+| verifier(经 `loadCriteria` 登记)与 private 文件 | verifier 在最后一次 `t.send()` 后才上传;private 永不上传 | eval 判据指纹 |
+
+普通起始 fixture 由 eval `setup` 或 `test` 在 send 前上传,Agent 本来就应看见,进 eval 归因。
+目录共址只解决组织问题,不把环境、fixture、verifier 三种生命周期合并成一个哈希:改 verifier 只作废判据指纹,不触发镜像重建;改 Dockerfile 只改环境身份。
+
+solution、生成器与参考答案默认不进入可运行 eval 目录;必须共址时放声明 private 的路径,它不得进入任何 build context 或最终镜像。
+发现期把已登记 verifier / private 路径与每个 build context 交叉检查,泄漏判定与修法见 [Sandbox Case · 泄题门](../sandbox/case.md#泄题门verifier-与-build-context-的交叉检查)。
 
 ## defineScoreEval：计分制题型
 

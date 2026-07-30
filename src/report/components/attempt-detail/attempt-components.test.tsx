@@ -448,7 +448,7 @@ describe("timeline / trace 投影的时间树语义", () => {
           name: "eval.run",
           durationMs: 5_000,
           children: [
-            { id: "turn-1", kind: "turn", label: "s1/t1", startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
+            { id: "turn-1", key: "agent.turn", label: "s1/t1", startOffsetMs: 1_200, durationMs: 3_000, traceId: "t1" },
           ],
         },
         { name: "sandbox.stop", durationMs: 500, failed: true },

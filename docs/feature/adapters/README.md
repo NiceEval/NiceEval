@@ -33,6 +33,7 @@ niceeval 不要求被测对象实现统一协议；每个 Adapter 负责驱动�
 | 查看 import、调用与组合示例 | [Library](library.md) |
 | 查看数据结构、状态机和不变量 | [Architecture](architecture.md) |
 | 配置 coding-agent Skills / Plugins | [Coding Agent 扩展](library/coding-agent-extensions.md) |
+| 理解 Agent 怎样被检查与安装 | [Agent Ensure](architecture/agent-ensure.md) |
 | 查看外部协议与生态调研 | [Reference](reference/README.md) |
 | 查看尚未定稿的接入目标 | [Roadmap](../../roadmap/adapters/README.md) |
 

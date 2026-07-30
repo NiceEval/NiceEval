@@ -31,12 +31,12 @@ interface PhaseTiming {
   durationMs: number;
   /** 该阶段抛错或超时中断。主链至多一条,其后无主链条目;收尾阶段各自独立标记。 */
   failed?: true;
-  /** Runner 直接观察到的时间树(hook / turn / command / provider operation);不参与聚合。 */
-  children?: TimingNode[];
+  /** Runner 直接观察到的 activity 树(hook / turn / 命令 / provider 步骤);不参与聚合。 */
+  children?: TimingActivity[];
 }
 ```
 
-`LifecyclePhase` 闭集与 `PhaseTiming` / `TimingNode` 的类型定义单归 [Record Format](../../feature/record/architecture.md#resultjson),这里不复写第二份;本篇定义各阶段的边界语义与消费方式。
+`LifecyclePhase` 闭集与 `PhaseTiming` / `TimingActivity` 的类型定义单归 [Record · 两层时间模型](../../feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity),这里不复写第二份;本篇定义各阶段的边界语义与消费方式。
 
 ### 阶段边界
 

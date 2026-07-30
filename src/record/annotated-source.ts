@@ -99,7 +99,7 @@ export function deriveSendAnnotations(
   phases: readonly PhaseTiming[] | undefined,
 ): SendAnnotation[] {
   if (!events || events.length === 0) return [];
-  const turnNodes = (phases ?? []).flatMap((p) => p.children ?? []).filter((n) => n.kind === "turn");
+  const turnNodes = (phases ?? []).flatMap((p) => p.children ?? []).filter((n) => n.key === "agent.turn");
   const out: SendAnnotation[] = [];
   let turnIndex = -1;
   for (const event of events) {

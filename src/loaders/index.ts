@@ -10,28 +10,45 @@ import { fileURLToPath } from "node:url";
 import { t } from "../i18n/index.ts";
 import { compilePatterns, enumerationBases, includedByPatterns, unmatchedIncludes, type CompiledPattern } from "./glob.ts";
 
-/** 一次发现期求值的登记表:读入即登记的数据文件,与只登记不读入的判据树文件,分两格。 */
+/**
+ * 一次发现期求值的登记表:
+ * - data:读入即登记的数据文件(内容已在内存)
+ * - criteria:只登记不读入的判据树(verifier)
+ * - private:只登记不读入、永不上传的隐藏文件
+ * 三格分开是因为指纹与泄题门口径不同。
+ */
 interface LoaderCapture {
   readonly data: Set<string>;
   readonly criteria: Set<string>;
+  readonly private: Set<string>;
 }
 
 let activeCapture: LoaderCapture | undefined;
 
 /**
- * 发现期包住一个 eval 模块的求值，记录它经公开 loader 读取的数据文件（`paths`）
- * 与经 `loadCriteria` 登记的判据树文件（`criteriaPaths`）。两格分开是因为指纹口径不同:
- * 前者哈希已读进内存的内容,后者按内容流式哈希。
+ * 发现期包住一个 eval 模块的求值，记录它经公开 loader 读取的数据文件（`paths`）、
+ * 经 `loadCriteria` 登记的判据树（`criteriaPaths`）、经 `loadPrivate` 登记的永不上传路径
+ * （`privatePaths`）。三格分开是因为指纹与泄题门口径不同:
+ * data 哈希已读进内存的内容;criteria / private 按内容流式哈希,且 private 另进泄题门。
  */
 export async function captureLoadedFiles<T>(
   load: () => Promise<T>,
-): Promise<{ value: T; paths: string[]; criteriaPaths: string[] }> {
+): Promise<{ value: T; paths: string[]; criteriaPaths: string[]; privatePaths: string[] }> {
   const previous = activeCapture;
-  const capture: LoaderCapture = { data: new Set<string>(), criteria: new Set<string>() };
+  const capture: LoaderCapture = {
+    data: new Set<string>(),
+    criteria: new Set<string>(),
+    private: new Set<string>(),
+  };
   activeCapture = capture;
   try {
     const value = await load();
-    return { value, paths: [...capture.data].sort(), criteriaPaths: [...capture.criteria].sort() };
+    return {
+      value,
+      paths: [...capture.data].sort(),
+      criteriaPaths: [...capture.criteria].sort(),
+      privatePaths: [...capture.private].sort(),
+    };
   } finally {
     activeCapture = previous;
   }
@@ -93,6 +110,27 @@ export async function loadText(path: string | URL): Promise<string> {
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
 export async function loadCriteria(...patterns: string[]): Promise<string[]> {
+  return registerGlobPatterns(patterns, "criteria");
+}
+
+/**
+ * 登记永不上传的 private 路径进这条 eval 的判据指纹与泄题门,不把内容读进内存。
+ * solution、生成器、参考答案必须与 eval 共址时用它:发现期与全部 build context /
+ * bind mount 交叉检查,任何阶段都不得进入 Agent 可见面(见 docs/feature/sandbox/case.md「泄题门」)。
+ *
+ * pattern 语法、发现期约束、空匹配与穿出项目根的报错与 `loadCriteria` 同形。
+ *
+ * @param patterns 一个或多个项目根相对 glob,`!` 前缀为排除。
+ * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
+ */
+export async function loadPrivate(...patterns: string[]): Promise<string[]> {
+  return registerGlobPatterns(patterns, "private");
+}
+
+async function registerGlobPatterns(
+  patterns: string[],
+  bucket: "criteria" | "private",
+): Promise<string[]> {
   const capture = activeCapture;
   if (!capture) throw new Error(t("loaders.outsideDiscovery", { path: patterns.join(" ") }));
   const root = process.cwd();
@@ -106,9 +144,11 @@ export async function loadCriteria(...patterns: string[]): Promise<string[]> {
   // 别的两条有命中会让整体放行,判据悄悄变窄——正是「该重跑的没重跑」那个方向。
   const missing = unmatchedIncludes(compiled, relativePaths);
   if (missing.length > 0) {
-    throw new Error(t("loaders.criteriaNoMatch", { patterns: missing.join(" "), root }));
+    const key = bucket === "private" ? "loaders.privateNoMatch" : "loaders.criteriaNoMatch";
+    throw new Error(t(key, { patterns: missing.join(" "), root }));
   }
-  for (const path of relativePaths) capture.criteria.add(resolve(root, path));
+  const target = bucket === "private" ? capture.private : capture.criteria;
+  for (const path of relativePaths) target.add(resolve(root, path));
   return relativePaths;
 }
 

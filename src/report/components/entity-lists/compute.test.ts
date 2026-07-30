@@ -16,7 +16,7 @@ function erroredResult(message: string): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
-    error: { code: "turn-failed", message, phase: "eval.run" },
+    error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };
 }
 

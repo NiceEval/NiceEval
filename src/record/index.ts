@@ -100,3 +100,4 @@ export { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 export type { DiagnosticRecord, EvalResult, ExperimentRunInfo, FailedCommandEvidence, InvocationSummary } from "../types.ts";
 export type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../types.ts";
 export type { AgentSetupManifest, AgentSetupSkill, DiffData, SourceArtifact } from "../types.ts";
+export type { SandboxBuildRecord, TimingActivity, TimingOrigin } from "../types.ts";

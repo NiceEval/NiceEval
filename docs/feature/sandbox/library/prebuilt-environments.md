@@ -24,8 +24,10 @@ export const e2b = e2bSandbox({
 });
 ```
 
-- 表是纯数据：键为 profile id，值的字段由各内置工厂类型声明（docker `{ image }`、e2b `{ template }`、vercel `{ snapshotId }`），写错字段名由类型检查拦下。`defineSandbox` 自定义 spec 没有 `environments` 表——自定义 provider 没有 NiceEval 认识的产物槽位；声明了 `environment` 的 eval 搭配自定义 spec 同样按缺表项报启动期配置错误。
-- 解析发生在调度前：选中 eval 声明的 profile 缺表项是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不创建任何沙箱、不消耗预算。
+- 表是纯数据：键为 profile id，值是该 provider 的 sandbox case，靠判别键区分（docker `{ image }` / `{ build }` / `{ compose }`、e2b `{ template }` / `{ build }`、vercel `{ snapshotId }`），写错字段名由类型检查拦下。预制产物对应 case 目录里的「预制单 Sandbox」一类；完整 case 目录、materializer 与 folder-local source 的双入口见 [Sandbox Case](../case.md)。
+- 解析发生在调度前。profile 任何表都查不到、eval 又没有 folder-local source 时是启动期配置错误，一次穷举列出全部 (eval id, profile) 缺项，不创建任何沙箱、不消耗预算。
+  声明合法但当前 provider 缺对应 materializer 或能力位时计划期 `skipped`——两类缺失的完整判定见 [Sandbox Case · 两类缺失分开判](../case.md#两类缺失分开判)。
+- `defineSandbox` 自定义 provider 经[自定义 case](../case.md#自定义-case) 开放同形的 environment 映射；没有开放映射时按上一条的能力缺失处理。
 - 查表只替换这条 eval 的起点产物；`.setup()` / `.teardown()` Hook 链与其余 spec 参数对全部 eval 共享。
 - 逐 eval 的解析结果经 `publicConfig()` 投影落 Run 的 `sandboxByEval`，见 [Results · run.json](../../record/architecture.md#runjson)。
 

@@ -31,7 +31,7 @@ export default defineSandboxAgent({
 
 ## 生命周期
 
-`setup` 安装 CLI、写 Agent 配置和扩展；失败直接抛出并使 attempt errored。
+`setup` 执行 [Agent Ensure](../architecture/agent-ensure.md)（检查精确身份、缺失时安装、复检），再写 Agent 配置和扩展；失败直接抛出并使 attempt errored。
 `send` 只执行一轮任务，多轮时会重复调用。
 可选 cleanup 和 `teardown` 始终在 finally 阶段执行。
 

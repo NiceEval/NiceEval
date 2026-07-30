@@ -833,3 +833,76 @@ describe("reduceRunFeedback: 用例锁等待(elsewhere)", () => {
     expect(state.lockWaits.get("compare/codex")).toMatchObject({ resolvedCarried: 0, resolvedDispatched: 0 });
   });
 });
+
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// 「共享 Run activity 不占 attempt 位」/「live feedback 的未知 activity 通用投影」
+describe("reduceRunFeedback: Run 级 activity 运行级行", () => {
+  const plan: RunFeedbackEvent = {
+    type: "plan",
+    at: 0,
+    plan: { shape: { evals: 2, configs: 1, totalAttempts: 2, maxConcurrency: 2 }, reused: 0, reusedFailures: [] },
+  };
+
+  it("started 建行、done/failed 清行;全程不改 running/queued(不占 attempt 位)", () => {
+    const afterStart = replay([
+      plan,
+      {
+        type: "run-activity",
+        at: 1,
+        id: "build-1",
+        key: "sandbox.build",
+        label: "build docker client",
+        status: "started",
+      },
+    ]);
+    expect(afterStart).toMatchObject({ total: 2, running: 0, queued: 2, reused: 0 });
+    expect(afterStart.runActivities.get("build-1")).toEqual({
+      id: "build-1",
+      key: "sandbox.build",
+      label: "build docker client",
+      startedAt: 1,
+    });
+    expect(afterStart.active.size).toBe(0);
+
+    const afterDone = replay([
+      plan,
+      {
+        type: "run-activity",
+        at: 1,
+        id: "build-1",
+        key: "sandbox.build",
+        label: "build docker client",
+        status: "started",
+      },
+      {
+        type: "run-activity",
+        at: 10,
+        id: "build-1",
+        key: "sandbox.build",
+        label: "build docker client",
+        status: "done",
+        durationMs: 9,
+      },
+    ]);
+    expect(afterDone.runActivities.size).toBe(0);
+    expect(afterDone).toMatchObject({ total: 2, running: 0, queued: 2 });
+  });
+
+  it("未知 activity key 仍建行,label 原样保留,不进 attempt active", () => {
+    const state = replay([
+      plan,
+      {
+        type: "run-activity",
+        at: 2,
+        id: "custom-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "started",
+      },
+    ]);
+    expect(state.runActivities.get("custom-1")?.label).toBe("warming acme cache shard-3");
+    expect(state.runActivities.get("custom-1")?.key).toBe("acme.cache.warm");
+    expect(state.active.size).toBe(0);
+    expect(state).toMatchObject({ running: 0, queued: 2 });
+  });
+});

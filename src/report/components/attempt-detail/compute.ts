@@ -23,7 +23,7 @@ import type {
   AttemptTraceData,
   UsageTableData,
 } from "../../model/types.ts";
-import type { AssertionResult, DiagnosticRecord, EvalResult, FailedCommandEvidence, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingNode, WindowChange } from "../../../types.ts";
+import type { AssertionResult, DiagnosticRecord, EvalResult, FailedCommandEvidence, JsonValue, PhaseTiming, ScoreEntry, StreamEvent, TimingActivity, WindowChange } from "../../../types.ts";
 import type { DiffFile } from "../../definition/primitives/diff-lines.ts";
 import { attemptCostUSD } from "../../model/metrics.ts";
 import { failureSummaryOf } from "../entity-lists/compute.ts";
@@ -321,10 +321,10 @@ export function attemptTimelineData(evidence: AttemptEvidence): AttemptTimelineD
 
 // ───────────────────────── AttemptConversation ─────────────────────────
 
-/** 在 `phases` 时间树里按 id 查找 `kind === "command"` 节点的 `startOffsetMs`;查不到(timing
+/** 在 `phases` 时间树里按 id 查找 `key === "sandbox.command"` 节点的 `startOffsetMs`;查不到(timing
  *  unavailable,或第三方落盘没有 phases)返回 undefined。 */
 function commandStartOffsetMs(phases: readonly PhaseTiming[] | undefined, timingNodeId: string): number | undefined {
-  const find = (nodes: TimingNode[] | undefined): number | undefined => {
+  const find = (nodes: TimingActivity[] | undefined): number | undefined => {
     for (const n of nodes ?? []) {
       if (n.id === timingNodeId) return n.startOffsetMs;
       const found = find(n.children);
@@ -472,9 +472,9 @@ export function attemptDiagnosticsData(evidence: AttemptEvidence): AttemptDiagno
   if (!diagnostics || diagnostics.length === 0) return null;
   const groups = new Map<string, DiagnosticRecord[]>();
   for (const d of diagnostics) {
-    const list = groups.get(d.phase);
+    const list = groups.get((d.origin?.scope === "attempt" ? d.origin.phase : "unknown"));
     if (list) list.push(d);
-    else groups.set(d.phase, [d]);
+    else groups.set((d.origin?.scope === "attempt" ? d.origin.phase : "unknown"), [d]);
   }
   return { groups: [...groups.entries()].map(([phase, items]) => ({ phase, items })) };
 }

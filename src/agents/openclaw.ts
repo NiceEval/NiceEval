@@ -10,9 +10,11 @@ import {
 import { mapGenericSpans } from "../o11y/otlp/canonical.ts";
 import { parseOpenClawTranscript, parseOpenClawRunJson } from "../o11y/parsers/openclaw.ts";
 import { completeCoverage } from "../scoring/coverage.ts";
-import { DEFAULT_OPENCLAW_CLI_VERSION } from "./coding-cli-versions.ts";
+import { DEFAULT_OPENCLAW_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
+import { createNpmCliProvisioner } from "./npm-staged.ts";
+import { ensureAgent } from "./provisioner.ts";
 import { randomUUID } from "node:crypto";
-import type { Agent, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
+import type { Agent, AgentProvisioner, AgentSetupManifest, EvidenceCoverage, SkillSpec, StreamEvent } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenClaw 的 agent adapter(沙箱型)。
@@ -43,6 +45,8 @@ export interface OpenClawConfig {
    * 落在 `.agents/skills/<name>/`,并写一段发现指引进 AGENTS.md。
    */
   skills?: SkillSpec[];
+  /** 整体替换默认 Ensure provisioner。省略时用内置 staged 路径。 */
+  provisioner?: AgentProvisioner;
 }
 
 function resolveApiKey(config?: OpenClawConfig): string {
@@ -71,6 +75,17 @@ function resolveModelFlag(model: string | undefined, hasCompatBase: boolean): st
  */
 export function openClawAgent(config?: OpenClawConfig): Agent {
   const version = config?.version ?? DEFAULT_OPENCLAW_CLI_VERSION;
+  const provisioner =
+    config?.provisioner ??
+    createNpmCliProvisioner({
+      identity: {
+        agent: "openclaw",
+        version,
+        revision: String(AGENT_BASELINE_RECIPE_REVISION.openclaw),
+      },
+      packageName: "openclaw",
+      bin: "openclaw",
+    });
 
   return defineSandboxAgent({
     name: "openclaw",
@@ -80,6 +95,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     // OpenClaw 没有专属 span 方言 mapper:原生 span 走 canonical 通用 heuristic。
     // OTel 内容采集关闭时只影响 trace 证据面;行为轨(下面的 transcript 解析)不受影响。
     spanMapper: mapGenericSpans,
+    provisioner,
 
     tracing: {
       protocol: "http/protobuf",
@@ -91,10 +107,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      // 预制模板已把 openclaw 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
-      await sb.runShell(
-        `command -v openclaw >/dev/null 2>&1 || npm install -g openclaw@${version}`,
-      );
+      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
 
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {
@@ -180,7 +193,7 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
         env.OPENAI_BASE_URL = baseUrl;
       }
 
-      const res = await sb.runCommand("openclaw", args, { env, stream: true });
+      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "openclaw"), args, { env, stream: true });
 
       const runJson = parseOpenClawRunJson(res.stdout);
       // 封包若带回服务端分配的 session key,后续轮以它为准(capture first-writer-wins,

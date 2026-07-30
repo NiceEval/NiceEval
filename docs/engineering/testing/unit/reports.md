@@ -420,6 +420,12 @@ const scope = reportScopeFixture({
 
   用户怎样从 locator 下钻，见[`@locator` 用例](../../../feature/reports/use-case/调试/按定位符下钻.md)。
 
+- **`--timing` 的两棵树与 sandboxBuild 卡**（[契约](../../../feature/reports/show/timing.md)）：
+  - 带 attempt locator 时投影 `result.json.phases` 生命周期树；不带 locator 时投影 `RunMeta.timings`。
+  - 未知 activity key 渲染 producer 的 `label`，不查 LifecyclePhase 锚点标签表。
+  - sandboxBuild 专用卡从 `sandboxBuilds` provenance 读 locator / inputs / 依赖 attempt，经 `timingNodeId` 取耗时，不解析 timing label。
+  - fixture 要同时有 Run activity 与 attempt phases，证明两棵树分流、互不冒充。
+
 - **`--json` 投影**：
   - envelope 包含 format、schemaVersion、view 与 scope 回显。
   - text 与 JSON 消费同一次 page render 计算出的数据。

@@ -12,10 +12,12 @@ import {
 } from "./native-config.ts";
 import { mapClaudeCodeSpans } from "../o11y/otlp/mappers/claude-code.ts";
 import { t } from "../i18n/index.ts";
-import { DEFAULT_CLAUDE_CODE_CLI_VERSION } from "./coding-cli-versions.ts";
+import { DEFAULT_CLAUDE_CODE_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import { createNpmCliProvisioner } from "./npm-staged.ts";
+import { ensureAgent } from "./provisioner.ts";
+import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Claude Code 的 agent adapter(沙箱型)。
@@ -105,17 +107,34 @@ export interface ClaudeCodeConfig {
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
   preTeardown?: SandboxHook[];
+  /**
+   * 整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
+   * 省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
+   */
+  provisioner?: AgentProvisioner;
 }
 
 export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("ANTHROPIC_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("ANTHROPIC_BASE_URL");
+  const provisioner =
+    config?.provisioner ??
+    createNpmCliProvisioner({
+      identity: {
+        agent: "claude-code",
+        version: DEFAULT_CLAUDE_CODE_CLI_VERSION,
+        revision: String(AGENT_BASELINE_RECIPE_REVISION["claude-code"]),
+      },
+      packageName: "@anthropic-ai/claude-code",
+      bin: "claude",
+    });
 
   return defineSandboxAgent({
     name: "claude-code",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     coverage: completeCoverage,
     spanMapper: mapClaudeCodeSpans,
+    provisioner,
 
     // claude CLI 原生 OTLP trace spans(beta):interaction / llm_request / tool 层级,
     // 需要 CLAUDE_CODE_ENHANCED_TELEMETRY_BETA 开关。
@@ -133,10 +152,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      // 预制模板已把 claude 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
-      await sb.runShell(
-        `command -v claude >/dev/null 2>&1 || npm install -g @anthropic-ai/claude-code@${DEFAULT_CLAUDE_CODE_CLI_VERSION}`,
-      );
+      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
 
       // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
       // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装
@@ -231,7 +247,7 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
       const baseUrl = getBaseUrl();
       if (baseUrl) env["ANTHROPIC_BASE_URL"] = baseUrl;
 
-      const res = await sb.runCommand("claude", args, { env, stream: true });
+      const res = await sb.runCommand(await shared.resolveAgentBin(sb, "claude"), args, { env, stream: true });
 
       // 「最新 jsonl」而非按 session id 精确定位:--resume 会 fork 新 session id 的新文件,
       // 精确匹配旧 id 会读到过期 transcript。send 串行,最新的一定是刚跑完的这次。
@@ -278,7 +294,7 @@ export async function installPlugins(
       const source = marketplace.ref
         ? await cloneRepo(sb, marketplace.source, marketplace.ref)
         : marketplace.source;
-      const add = await sb.runShell(`claude plugin marketplace add ${shared.shellQuote(source)}`);
+      const add = await sb.runShell(`${shared.agentBin("claude")} plugin marketplace add ${shared.shellQuote(source)}`);
       if (add.exitCode !== 0) {
         throw new Error(
           t("plugin.marketplaceFailed", {
@@ -302,7 +318,7 @@ export async function installPlugins(
     }
 
     const id = `${plugin.name}@${marketplace.name}`;
-    const install = await sb.runShell(`claude plugin install ${shared.shellQuote(id)}`);
+    const install = await sb.runShell(`${shared.agentBin("claude")} plugin install ${shared.shellQuote(id)}`);
     if (install.exitCode !== 0) {
       throw new Error(
         t("plugin.installFailed", {
@@ -358,7 +374,7 @@ function claudeInstalledPlugins(stdout: string): ClaudeInstalledPlugin[] | undef
  */
 async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
   const listCommand = "claude plugin list --json";
-  const res = await sb.runShell(listCommand);
+  const res = await sb.runShell(`${shared.agentBin("claude")} plugin list --json`);
   const list = res.exitCode === 0 ? claudeInstalledPlugins(res.stdout) : undefined;
   if (list === undefined) {
     throw new Error(t("plugin.listFailed", { agent: "claude-code", command: listCommand, tail: outputTail(res) }));
@@ -372,7 +388,7 @@ async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
   }
   for (const target of targets.values()) {
     const scopeFlag = target.scope ? ` --scope ${shared.shellQuote(target.scope)}` : "";
-    const remove = await sb.runShell(`claude plugin uninstall ${shared.shellQuote(target.id)}${scopeFlag}`);
+    const remove = await sb.runShell(`${shared.agentBin("claude")} plugin uninstall ${shared.shellQuote(target.id)}${scopeFlag}`);
     if (remove.exitCode !== 0) {
       throw new Error(t("plugin.removeFailed", { agent: "claude-code", name: target.id, tail: outputTail(remove) }));
     }
@@ -388,12 +404,12 @@ async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
  * 摘除不带 `--scope`,按 CLI 默认摘掉所有 scope 里的声明。
  */
 async function dropRegisteredMarketplace(sb: Sandbox, name: string): Promise<void> {
-  await sb.runShell(`claude plugin marketplace remove ${shared.shellQuote(name)}`);
+  await sb.runShell(`${shared.agentBin("claude")} plugin marketplace remove ${shared.shellQuote(name)}`);
 }
 
 /** 装完回读版本;取不到不阻断安装(manifest 里 resolvedVersion 省略)。 */
 async function installedVersion(sb: Sandbox, id: string): Promise<string | undefined> {
-  const res = await sb.runShell("claude plugin list --json");
+  const res = await sb.runShell(`${shared.agentBin("claude")} plugin list --json`);
   if (res.exitCode !== 0) return undefined;
   return claudeInstalledPlugins(res.stdout)?.find((p) => p.id === id)?.version;
 }

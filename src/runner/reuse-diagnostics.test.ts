@@ -26,7 +26,7 @@ function attempt(opts: {
     startedAt: new Date().toISOString(),
     durationMs: 1,
     assertions: [],
-    ...(opts.phase !== undefined ? { error: { code: "unexpected-error", message: "boom", phase: opts.phase } } : {}),
+    ...(opts.phase !== undefined ? { error: { code: "unexpected-error", message: "boom", origin: { scope: "attempt" as const, phase: opts.phase } } } : {}),
     sandbox: {
       provider: "docker",
       sandboxId: `sbx-${opts.reuseSandbox}`,

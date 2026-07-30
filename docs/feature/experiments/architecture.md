@@ -54,8 +54,10 @@ export default defineExperiment({
   //  必须同步返回 boolean;落盘的是求值结果与过滤器指纹,不是函数本身
 
   sandbox: e2bSandbox({ template: "base", environments: { "python-3.9": { template: "py39" } } }),
-  //  本实验唯一的固定 SandboxSpec。带 environments 表时,解析期按每条选中 eval 的 environment 查表
-  //  选中 eval 声明的 profile 缺表项 → 启动期配置错误:一次穷举列出全部缺项,不创建任何沙箱
+  //  本实验唯一的固定 SandboxSpec。解析期按每条选中 eval 的 environment 查 environments 表,
+  //  folder-local source 则查 materializers 表;同一 profile 两处都命中时显式 environments 表项优先
+  //  profile 任何表都查不到、eval 又无 folder-local source → 启动期配置错误:一次穷举,不创建任何沙箱
+  //  声明合法但缺 materializer / 能力位 → 计划期 skipped;选中集合全部 skipped 升级启动期报错(见 Sandbox Case)
   //  逐 eval 的解析结果进该 eval 的 fingerprint、provider 并发推荐值与 ExperimentRunInfo.sandboxByEval
   //  Direct Agent 不创建 Sandbox,不参与查表
 
@@ -88,6 +90,16 @@ export default defineExperiment({
   源码闭包递归展开 eval 文件在项目根内的导入图，并含 `loadYaml` / `loadJson` 读入的数据文件——这两类内容在发现阶段的模块求值期就已读入，早于解析期算指纹。
   解析期求值这一步划定了配置那一层的边界：**进指纹的只可能是解析后的配置**，运行时才产生的值(`setup` 起出来的坐标、`ctx.fact()` 上报的观测)在算指纹的时刻还不存在，结构上进不来。
 - 落盘投影 `ExperimentRunInfo` 的穷尽形状单点定义在 [Results · run.json](../record/architecture.md#runjson)；`model` / `agent` 只在 Run 顶层存在。
+
+## Run 级共享准备:构建协调的预算
+
+eval 声明按需构建环境时,BuildKey 构建、共享拉取与发布属于 Run 级共享准备,不属于任何单个 attempt:
+
+- 共享准备受独立构建并发、逐 key timeout、全局准备上限和 Invocation abort 约束,不占 attempt 并发位。
+- attempt deadline 从拿到产物并开始创建 Sandbox 时起算;创建资源组、服务 ready、Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。
+- 共享构建的时间只在 `RunMeta.timings` 记一次,不进任何 attempt 的 `executionMs`;live 面板把它显示为运行级 active 行,不占 attempt active 位。
+
+调度与失败扇出的完整契约单源在 [Sandbox Case · Run 级构建协调](../sandbox/case.md#run-级构建协调共享准备的预算与调度),落盘形状在 [Record · 两层时间模型](../record/architecture.md#两层时间模型生命周期锚点与开放-activity)。
 
 ## 实验级生命周期：setup 与 teardown
 

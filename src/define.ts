@@ -20,6 +20,9 @@ import type {
 } from "./types.ts";
 import { t } from "./i18n/index.ts";
 
+export { defineAgentProvisioner } from "./agents/provisioner.ts";
+export type { AgentProvisioner, AgentProvisionerDef } from "./agents/types.ts";
+
 // 发现期必须区分 defineScoreEval 的真正产物与运行时手写 `{ scoring: "points" }` 的裸对象。
 // WeakSet 是模块私有来源证明，不污染 EvalDef 的公开结构，也不能被用户对象伪造。
 const definedScoreEvals = new WeakSet<EvalDef>();
@@ -36,6 +39,7 @@ export function defineSandboxAgent(def: SandboxAgentDef): SandboxAgent {
     name: def.name,
     kind: "sandbox",
     coverage: def.coverage,
+    provisioner: def.provisioner,
     setup: def.setup,
     tracing: def.tracing,
     spanMapper: def.spanMapper,
@@ -253,6 +257,10 @@ export function defineSandbox(def: {
    * 都不解除(内置 `local` provider 即声明它)。省略 = 不独占,照常按并发上限调度。
    */
   exclusive?: boolean;
+  /** 与内置 provider 同形的 environment → custom case 映射。 */
+  environments?: CustomSandboxSpec["environments"];
+  /** folder-local source 的物化器表。 */
+  materializers?: CustomSandboxSpec["materializers"];
   /** 可发布参数的投影(进结果快照);未实现时只落 provider 名。 */
   publicConfig?: CustomSandboxSpec["publicConfig"];
 }): CustomSandboxSpec {
@@ -263,6 +271,8 @@ export function defineSandbox(def: {
     create: def.create,
     recommendedConcurrency: def.recommendedConcurrency,
     exclusive: def.exclusive,
+    ...(def.environments !== undefined ? { environments: def.environments } : {}),
+    ...(def.materializers !== undefined ? { materializers: def.materializers } : {}),
     publicConfig: def.publicConfig,
     setupHooks: state.setupHooks,
     teardownHooks: state.teardownHooks,

@@ -170,6 +170,15 @@ coverage?: EvidenceCoverage;
 
 该 Adapter 的常态证据覆盖声明(完整采集的用 `completeCoverage` 常量);省略 = 全通道 unknown。
 
+#### `provisioner`
+
+```ts
+provisioner?: AgentProvisioner;
+```
+
+Agent Ensure 协议对象。工厂参数替换口;`ensure` 在 setup 内由 adapter 调用,
+Runner 只额外消费 identity 与 prepare(见 agent-ensure.md)。
+
 #### `setup`
 
 ```ts
@@ -178,7 +187,7 @@ setup?: AgentSetup;
 
 每个 Sandbox 一次(不是每轮一次):装 CLI、写 config.toml / 鉴权配置(model/base/auth 等
 本轮内不变的东西)。运行器在 Sandbox 备好(上传/基线/eval.setup 之后)、第一次 send 前
-调用一次,不返回值。
+调用一次,不返回值。Ensure 在 setup 内由 adapter 自己执行。
 
 #### `tracing`
 
@@ -545,6 +554,16 @@ root?: boolean;
 (docker:`exec --user root`;E2B:`{ user: "root" }`;Vercel:`{ sudo: true }`;Daytona:`{ user }`)。
 本就全程 root 的 provider(如 Modal)视作 no-op;完全无法提权的 provider 可不支持(抛错)—— 但**默认值与
 语义保持一致**,不因 provider 而变。
+
+#### `timeout`
+
+```ts
+timeout?: number;
+```
+
+这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
+(见 docs/feature/sandbox/architecture.md「时限归属」),provider 层没有独立默认。
+显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
 
 {/* GENERATED:END sandbox-methods */}
 

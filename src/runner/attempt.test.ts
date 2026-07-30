@@ -282,7 +282,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     });
 
     expect(result.error?.message).toContain("boom-from-eval");
-    expect(result.error?.phase).toBe("eval.run");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.run");
     // test() 里的普通异常被 runAttemptBody 内层 try/catch 收作 result.error,不设置
     // skipReason——所以 diff/scoring 的跳过条件(`!skipReason`)不成立,两个阶段仍会进入,
     // 最后落 teardown。这是「running 阶段失败」的真实序列。
@@ -303,7 +303,7 @@ describe("runAttemptEffect · onPhase 回调随 enterPhase 同步触发", () => 
     const result = await runOnce(agent, box, { onPhase: (phase) => phases.push(phase) });
 
     expect(result.error?.message).toContain("boom-from-setup");
-    expect(result.error?.phase).toBe("agent.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("agent.setup");
     // 失败发生在 agent-setup:之后不再出现 running/diff/scoring —— run.ts 的 reportFailure()
     // 靠的正是这个真实的「最后已知阶段」,不是硬编码成 running(见 run.ts 的 lastPhase 注释)。
     expect(phases).toEqual(["sandbox.queue", "sandbox.create", "workspace.baseline", "agent.setup"]);
@@ -333,7 +333,7 @@ describe("runAttemptEffect · eval.teardown 的触发规则", () => {
     });
 
     expect(result.error?.message).toContain("boom-from-eval-setup");
-    expect(result.error?.phase).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
     expect(teardownCalls).toBe(1);
   });
 
@@ -445,7 +445,7 @@ describe("runAttemptEffect · sandbox hook 链的执行与失败收尾", () => {
     const result = await runOnce(agent, box, { sandbox });
 
     expect(result.verdict).toBe("errored");
-    expect(result.error?.phase).toBe("sandbox.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("sandbox.setup");
     expect(result.error?.message).toContain("boom-from-sandbox-setup");
     expect(events).toEqual([
       "sandbox.setup:ok",
@@ -637,7 +637,7 @@ describe("runAttemptEffect · 超时证据保全(超时不丢证据,不是从空
       expect(result.verdict).toBe("errored");
       expect(result.error?.code).toBe("timeout");
       // 中断发生在第二轮 send 在飞时,phase 归因到嵌套的 agent.run(不是顶层 eval.run)。
-      expect(result.error?.phase).toBe("agent.run");
+      expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("agent.run");
 
       // 核心断言:events 非空且确实是第一轮的真实事件,不是空壳重建(base 从不带 events)。
       expect(result.events).toBeDefined();
@@ -840,7 +840,7 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
       },
     });
     expect(result.verdict).toBe("errored");
-    expect(result.error?.phase).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
     expect(result.error?.message).toContain("Not A Valid Key!");
   });
 
@@ -858,7 +858,7 @@ describe("runAttemptEffect · ctx.fact() 的作用域归属落进 EvalResult.fac
       },
     });
     expect(result.verdict).toBe("errored");
-    expect(result.error?.phase).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
     expect(result.error?.message).toContain("object");
   });
 });
@@ -958,6 +958,7 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
       experimentHook: noop,
       precheck: noop,
       lockWait: noop,
+      runActivity: noop,
       experimentProgress: noop,
       lifecycle: noop,
     };
@@ -1039,7 +1040,7 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
               code: "warmup-degraded",
               level: "warning",
               message: "cold index",
-              data: { phase: "scoring.evaluate", indexAgeDays: 12 },
+              data: { origin: { scope: "attempt" as const, phase: "scoring.evaluate" }, indexAgeDays: 12 },
             });
           },
         },
@@ -1049,7 +1050,7 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
     }
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.data).toEqual({ phase: "eval.setup", indexAgeDays: 12 });
+    expect(seen[0]!.data).toEqual({ origin: { scope: "attempt" as const, phase: "eval.setup" }, indexAgeDays: 12 });
   });
 });
 
@@ -1110,6 +1111,7 @@ describe("runAttemptEffect · scoring 阶段的 judge 推进 detail", () => {
       experimentHook: noop,
       precheck: noop,
       lockWait: noop,
+      runActivity: noop,
       experimentProgress: noop,
       lifecycle: (event) => {
         seen.push(event);
@@ -1309,7 +1311,7 @@ describe("runAttemptEffect · sandbox 调度事实在租借时刻落记录", () 
     });
 
     expect(result.verdict).toBe("errored");
-    expect(result.error?.phase).toBe("eval.setup");
+    expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("eval.setup");
     expect(result.sandbox).toEqual({
       provider: "fake-provider",
       sandboxId: "fake",
@@ -1427,6 +1429,17 @@ describe("runAttemptEffect · timeoutMs 的四层解析链(--timeout → experim
     expect(result.error?.message).toContain("from config");
   });
 
+  // cases: docs/engineering/testing/unit/experiments-runner.md「超时归属」
+  // 归属三样一起断言:触发层、生效的上限值、值来自哪一层。fixture 让 deadline(90s,来自 eval)
+  // 与 config 的 120s 不同,来源层才有区分力——落成 config 就红。
+  it("attempt deadline 撞线时 error.timeout 记 attempt-deadline + 上限值 + 解析链的赢家层", async () => {
+    const result = await timeoutAt(90_000, {
+      runTimeout: resolveRunTimeout(undefined, undefined),
+      evalTimeoutMs: 90_000,
+      configTimeoutMs: 120_000,
+    });
+    expect(result.error?.timeout).toEqual({ trigger: "attempt-deadline", limitMs: 90_000, source: "eval" });
+  });
   // 链末端没有内置默认(docs 的解析链表格写死默认「无上限」):四层都没声明就不挂 deadline。
   // 区分力:链末端偷偷兜一个毫秒数(比如 10 分钟)时,这一格会在推进到那个数时被打断。
   it("四层都没写时不挂 deadline:推进几小时也不超时,attempt 跑到自己结束", async () => {

@@ -60,7 +60,7 @@ import type { AttemptMetric } from "../model/types.ts";
 
 /** 结构化 `AttemptError` 的最小构造(测试用)。 */
 function erroredWith(message: string): AttemptError {
-  return { code: "unexpected-error", message, phase: "eval.run" };
+  return { code: "unexpected-error", message, origin: { scope: "attempt" as const, phase: "eval.run" } };
 }
 
 let seq = 0;
@@ -345,7 +345,7 @@ describe("MetricCell 诚实契约", () => {
         res("a", "passed", { durationMs: 100 }),
         res("b", "passed", { durationMs: 300 }),
         // 撞 1200000ms(20m)硬线被砍断:durationMs 是右删失点,不是「跑了这么久」
-        res("c", "errored", { durationMs: 1200000, error: { code: "timeout", message: "timed out", phase: "eval.run" } }),
+        res("c", "errored", { durationMs: 1200000, error: { code: "timeout", message: "timed out", origin: { scope: "attempt" as const, phase: "eval.run" } } }),
       ],
     });
     const table = await metricTableData([s], { rows: "experiment", columns: [durationMs] });
@@ -537,7 +537,7 @@ describe("实体列表 data", () => {
     error: {
       code: "sandbox-create-failed",
       message: "docker daemon unreachable",
-      phase: "sandbox.create",
+      origin: { scope: "attempt" as const, phase: "sandbox.create" },
       stack: "Error: docker daemon unreachable\n    at boot (sandbox.ts:10:3)",
     },
   });

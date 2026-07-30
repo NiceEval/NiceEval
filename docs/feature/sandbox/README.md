@@ -82,6 +82,7 @@ niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["tes
 ## 相关阅读
 
 - [Library](library.md) —— 路径与 workdir、用户与 root、provider 选择、生命周期 Hook、自定义 provider。
+- [Sandbox Case](case.md) —— 环境的完整物化单位:双入口、五类 case、BuildKey / CaseKey、构建协调、Compose、能力矩阵。
 - [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制环境](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从产物起。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。

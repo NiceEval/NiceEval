@@ -46,7 +46,9 @@ import {
   type PrecheckInput,
 } from "./feedback/sink.ts";
 import { drainExperimentTeardowns, pendingExperimentTeardownCount } from "./experiment-cleanup-registry.ts";
-import { computeFingerprint } from "./fingerprint.ts";
+import { computeConfigHash, computeFingerprint, fingerprintWithManifest } from "./fingerprint.ts";
+import type { EvalManifest } from "./manifest.ts";
+import { sandboxRunInfo } from "../sandbox/resolve.ts";
 import { locksDirOf, pendingHeldCaseLockCount, type CaseLockRecord } from "./lock.ts";
 import { pendingHeldGateLeaseCount } from "./gate-lease.ts";
 import { slugHashEntryId } from "../shared/entry-file-store.ts";
@@ -217,6 +219,7 @@ async function run(
     root?: string;
     /** 项目级配置(判分预检要读 `config.judge`);省略则用空配置。 */
     config?: Config;
+    buildPreparation?: RunOptions["buildPreparation"];
   } = {},
 ): Promise<{
   summary: Awaited<ReturnType<typeof runEvals>>;
@@ -254,6 +257,7 @@ async function run(
     niceevalRoot: root,
     ...(opts.carryPlan ? { carryPlan: opts.carryPlan } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.buildPreparation ? { buildPreparation: opts.buildPreparation } : {}),
   };
   const summary = await runEvals(runOpts);
   return { summary, root, onEvalComplete, onEventComplete };
@@ -465,6 +469,9 @@ describe("runEvals · fresh EvalResult.locator 在 reporter 观察到之前已�
       carryPlan: {
         plannedFingerprints: new Map(),
         acceptableFingerprints: new Map(),
+        manifestsByKey: new Map(),
+        dispatchByKey: new Map(),
+        availableDeltas: [],
         carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([0])]]),
         carriedResults: [carried],
       },
@@ -615,7 +622,7 @@ describe("runEvals · failure 永久事件在真实失败/errored attempt 上被
         identity: { experimentId, evalId: "boom", attempt: 0 },
         // evalDef.test() 抛的是普通 Error；即使 attempt 随后仍进入 diff/scoring，永久错误通知
         // 也必须使用结构化 error.phase，报告错误真正发生的 eval.run，而不是最后经过的阶段。
-        phase: "eval.run",
+        origin: { scope: "attempt" as const, phase: "eval.run" },
       });
       expect(erroredNotice?.reason).toContain("boom");
 
@@ -719,7 +726,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
       const { summary } = await run(evals, [agentRun]);
 
       expect(summary.results).toHaveLength(3);
-      expect(summary.results.every((result) => result.error?.phase === "sandbox.create")).toBe(true);
+      expect(summary.results.every((result) => (result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined) === "sandbox.create")).toBe(true);
       expect(summary.results.every((result) => result.error?.message.includes("template") === true)).toBe(true);
       expect(coordinator.state.failures).toHaveLength(3);
       expect(coordinator.state.diagnostics.some((d) => d.key === `budget-unenforceable:${experimentId}`)).toBe(false);
@@ -753,7 +760,7 @@ describe("runEvals · budget-unenforceable 只统计真正发起过 agent turn �
 
       expect(summary.results).toHaveLength(3);
       expect(summary.results.every((result) => result.phases?.some(
-        (phase) => phase.children?.some((child) => child.kind === "turn"),
+        (phase) => phase.children?.some((child) => child.key === "agent.turn"),
       ) === true)).toBe(true);
       const diagnostics = coordinator.state.diagnostics.filter((d) => d.key === `budget-unenforceable:${experimentId}`);
       expect(diagnostics).toHaveLength(1);
@@ -818,6 +825,9 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
         carryPlan: {
           plannedFingerprints: new Map(),
           acceptableFingerprints: new Map(),
+          manifestsByKey: new Map(),
+        dispatchByKey: new Map(),
+        availableDeltas: [],
           carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([0])]]),
           carriedResults: [carried],
         },
@@ -889,6 +899,9 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
         carryPlan: {
           plannedFingerprints: new Map(),
           acceptableFingerprints: new Map(),
+          manifestsByKey: new Map(),
+        dispatchByKey: new Map(),
+        availableDeltas: [],
           carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([0])]]),
           carriedResults: [carried],
         },
@@ -949,6 +962,9 @@ describe("runEvals · 携入数量少于本次请求的 runs 时,差额必须真
       carryPlan: {
         plannedFingerprints: new Map(),
         acceptableFingerprints: new Map(),
+        manifestsByKey: new Map(),
+        dispatchByKey: new Map(),
+        availableDeltas: [],
         carriedAttemptsByKey: new Map([[`${experimentId}|${evalId}`, new Set([1])]]),
         carriedResults: [carried],
       },
@@ -1077,6 +1093,9 @@ describe("runEvals · 实验级 setup/teardown", () => {
       carryPlan: {
         plannedFingerprints: new Map(),
         acceptableFingerprints: new Map(),
+        manifestsByKey: new Map(),
+        dispatchByKey: new Map(),
+        availableDeltas: [],
         carriedAttemptsByKey: new Map([[`${experimentId}|done`, new Set([0])]]),
         carriedResults: [carried],
       },
@@ -1107,7 +1126,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
     expect(brokenResults).toHaveLength(4);
     for (const r of brokenResults) {
       expect(r.verdict).toBe("errored");
-      expect(r.error).toMatchObject({ code: "experiment-setup-failed", phase: "experiment.setup" });
+      expect(r.error).toMatchObject({ code: "experiment-setup-failed", origin: { scope: "attempt" as const, phase: "experiment.setup" } });
       expect(r.error?.message).toContain("tunnel refused to start");
       expect(r.locator).toBeDefined();
     }
@@ -1210,6 +1229,7 @@ describe("runEvals · 实验级 setup/teardown", () => {
       },
       precheck() {},
       lockWait() {},
+      runActivity() {},
       lifecycle() {},
     });
     try {
@@ -1457,6 +1477,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       experimentProgress() {},
       precheck() {},
       lockWait() {},
+      runActivity() {},
       lifecycle() {},
     });
 
@@ -1582,6 +1603,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       experimentProgress() {},
       precheck() {},
       lockWait() {},
+      runActivity() {},
       lifecycle() {},
     });
 
@@ -1644,6 +1666,7 @@ describe("runEvals · 强杀后的启动自愈(收尾登记的补执行)", () =>
       experimentProgress() {},
       precheck() {},
       lockWait() {},
+      runActivity() {},
       lifecycle() {},
     });
 
@@ -2070,7 +2093,8 @@ async function runWithPriorResults(
     root?: string;
     signal?: AbortSignal;
     maxConcurrency?: number;
-    carryIgnoringFlags?: string[];
+    accept?: string[];
+    priorManifests?: ReadonlyMap<string, EvalManifest>;
   } = {},
 ): Promise<{ summary: InvocationSummary; root: string }> {
   const root = opts.root ?? (await makeRoot());
@@ -2083,7 +2107,8 @@ async function runWithPriorResults(
     maxConcurrency: opts.maxConcurrency ?? 3,
     niceevalRoot: root,
     ...(opts.priorResults !== undefined ? { priorResults: opts.priorResults } : {}),
-    ...(opts.carryIgnoringFlags !== undefined ? { carryIgnoringFlags: opts.carryIgnoringFlags } : {}),
+    ...(opts.accept !== undefined ? { accept: opts.accept } : {}),
+    ...(opts.priorManifests !== undefined ? { priorManifests: opts.priorManifests } : {}),
     ...(opts.signal ? { signal: opts.signal } : {}),
   };
   const summary = await runEvals(runOpts);
@@ -2213,26 +2238,29 @@ describe("runEvals · 用例锁: 取锁时机", () => {
     expect(await lockFilesRemaining(root)).toEqual([]);
   });
 
-  it("携带条目合入本次快照时指纹按本次规划重新打戳,不背着产出它那一轮的旧指纹", async () => {
+  it("--accept 授权携入:按本次规划重打指纹、条目留 carriedAccepting、Run 记一条 accept 诊断", async () => {
     const evalId = "carry-restamp-eval";
     const experimentId = "carry-restamp-exp";
     const evalDef = makeEval(evalId, async () => {
       throw new Error("carried attempt must not be dispatched");
     });
+    const sandbox = fakeSandboxSpec();
     const base = {
       agent: makeAgent("agent-carry-restamp"),
       attempts: 1,
       earlyExit: true,
-      sandbox: fakeSandboxSpec(),
+      sandbox,
       timeoutMs: 5_000,
       selectedEvalIds: [evalId],
       experimentId,
     };
-    // 上一轮的 endpoint 已从本轮 flags 移走;调用方显式声明本次携带忽略该旧 flag,
-    // 而它落盘的指纹是**整袋 flags**(含旧 endpoint)算的,与本轮规划的那个不相等。
+    // 上一轮的 endpoint 已从本轮 flags 移走(键从 flags 移除也是一条 config:flags.<key> 差异);
+    // 它落盘的指纹是**整袋 flags**(含旧 endpoint)算的,与本轮规划的那个不相等。
     const oldFlags = { endpoint: "https://old.example" };
     const agentRun: AgentRun = { ...base, flags: {} };
-    const oldFingerprint = await computeFingerprint(evalDef, { ...base, flags: oldFlags });
+    const oldRun: AgentRun = { ...base, flags: oldFlags };
+    const old = await fingerprintWithManifest(evalDef, oldRun);
+    const oldFingerprint = old.fingerprint;
     const plannedFingerprint = await computeFingerprint(evalDef, agentRun);
     expect(oldFingerprint).not.toBe(plannedFingerprint);
 
@@ -2243,20 +2271,41 @@ describe("runEvals · 用例锁: 取锁时机", () => {
       verdict: "passed",
       attempt: 0,
       fingerprint: oldFingerprint,
-      experiment: { flags: oldFlags, attempts: 1, earlyExit: false, selectedEvalIds: [evalId] },
+      configHash: computeConfigHash(oldRun),
+      experiment: {
+        flags: oldFlags,
+        attempts: 1,
+        earlyExit: false,
+        selectedEvalIds: [evalId],
+        sandbox: sandboxRunInfo(sandbox),
+      },
       startedAt: new Date().toISOString(),
       durationMs: 1,
       assertions: [],
+      // 携带条目回指产出它那一轮的 artifact 目录;Artifacts 据此补写、进而封口本次 Run。
+      artifactBase: "carry-restamp-exp/earlier-run/carry-restamp-eval/a1",
     };
 
-    const { summary } = await runWithPriorResults([evalDef], [agentRun], {
+    const { summary, root } = await runWithPriorResults([evalDef], [agentRun], {
       priorResults: [prior],
-      carryIgnoringFlags: ["endpoint"],
+      accept: ["config:flags.endpoint"],
+      // 差异解释读产出那一轮写下的清单(那一份 Run 的 manifests.json)。
+      priorManifests: new Map([[`${experimentId}|${evalId}`, old.manifest]]),
     });
 
     expect(summary.results).toHaveLength(1);
     expect(summary.results[0]!.verdict).toBe("passed");
+    // 重锚:下一次跑同一条命令不带 --accept 也自然命中。
     expect(summary.results[0]!.fingerprint).toBe(plannedFingerprint);
+    // 留痕跟着结果走,写下跨过的那条差异。
+    expect(summary.results[0]!.carriedAccepting).toEqual([
+      { selector: "config:flags.endpoint", from: "https://old.example" },
+    ]);
+    // Run 侧另记一条 diagnostic,code 是可按值分支的稳定词。
+    const record = await openRecord(root);
+    const diagnostics = record.experiments.find((e) => e.id === experimentId)?.latestRun.diagnostics ?? [];
+    expect(diagnostics.map((d) => d.code)).toContain("accept");
+    expect(diagnostics.find((d) => d.code === "accept")?.context?.selectors).toEqual(["config:flags.endpoint"]);
   });
 
   it("等锁用例不触发实验级 setup:等待期间 setup 计数保持 0,接管后才恰好执行一次", async () => {
@@ -3440,7 +3489,7 @@ describe("runEvals · 止损闸: 触发", () => {
       const plainThrow = bystander.find((r) => r.id === "b-plain-throw")!;
       expect(halted[0]!.error?.code).toBe(plainThrow.error?.code);
       expect(halted[0]!.error?.code).toBe("unexpected-error");
-      expect(halted[0]!.error?.phase).toBe(plainThrow.error?.phase);
+      expect(halted[0]!.error?.origin.scope === "attempt" ? halted[0]!.error.origin.phase : undefined).toBe(plainThrow.error?.origin.scope === "attempt" ? plainThrow.error.origin.phase : undefined);
 
       // 记账:两条未派发计 unstarted(cli.ts 的 assembleInvocationCompletion 读的就是这条诊断的
       // data.unstarted,unstarted > 0 即完成状态 incomplete),五项计数恒等式收束时仍成立。
@@ -3509,10 +3558,10 @@ describe("runEvals · 止损闸: 触发", () => {
       expect(persisted[0]).toMatchObject({
         code: "dispatch-halted",
         level: "error",
-        phase: "eval.run",
-        data: { scope: "eval", evalId: "f-fatal" },
+        origin: { scope: "attempt" as const, phase: "eval.run" },
+        context: { scope: "eval", evalId: "f-fatal" },
       });
-      expect(persisted[0]!.message).toContain(message);
+      expect(persisted[0]!.detail).toContain(message);
       expect(await lockFilesRemaining(root)).toEqual([]);
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
@@ -3695,8 +3744,8 @@ describe("runEvals · 止损闸: 幂等与不可逆", () => {
       const persisted = await snapshotHaltDiagnostics(root, experimentId);
       expect(persisted).toHaveLength(1);
       expect(persisted[0]!.count).toBe(3);
-      expect(persisted[0]!.data).toMatchObject({ scope: "experiment" });
-      expect(persisted[0]!.data?.evalId).toBeUndefined(); // 实验闸没有 evalId
+      expect(persisted[0]!.context).toMatchObject({ scope: "experiment" });
+      expect(persisted[0]!.context?.evalId).toBeUndefined(); // 实验闸没有 evalId
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
 
@@ -3883,7 +3932,7 @@ describe("runEvals · 止损闸: teardown 边界", () => {
       expect(started).toEqual(["k-1"]);
       expect(summary.results).toHaveLength(1);
       expect(summary.results[0]!.verdict).toBe("passed"); // 落闸不改 verdict
-      expect(summary.results[0]!.diagnostics?.some((d) => d.phase === "eval.teardown")).toBe(true);
+      expect(summary.results[0]!.diagnostics?.some((d) => d.origin?.scope === "attempt" && d.origin.phase === "eval.teardown")).toBe(true);
 
       const notice = coordinator.state.diagnostics.find((d) => d.key === experimentHaltKey(experimentId));
       expect(notice).toBeDefined();
@@ -3891,7 +3940,7 @@ describe("runEvals · 止损闸: teardown 边界", () => {
       expect(notice!.data?.phase).toBe("eval.teardown"); // 触发失败所在的生命周期阶段
       const persisted = await snapshotHaltDiagnostics(root, experimentId);
       expect(persisted).toHaveLength(1);
-      expect(persisted[0]!.phase).toBe("eval.teardown");
+      expect(persisted[0]!.origin?.scope === "attempt" ? persisted[0]!.origin.phase : undefined).toBe("eval.teardown");
       expectCountIdentity(coordinator.state);
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
@@ -4120,6 +4169,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
         precheck.push(input);
       },
       lockWait() {},
+      runActivity() {},
       lifecycle() {},
     });
     return { precheck, failures, deactivate };
@@ -4182,7 +4232,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     for (const result of judgedResults) {
       expect(result.verdict).toBe("errored");
       expect(result.error?.code).toBe("judge-precheck-failed");
-      expect(result.error?.phase).toBe("judge.precheck");
+      expect((result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined)).toBe("judge.precheck");
       // message 带实际探测端点与失败原因(超时秒数),不是一句无处下手的 "judge failed"。
       expect(result.error?.message).toContain("http://judge.fixture.internal/v1");
       expect(result.error?.message).toContain("20s");
@@ -4221,7 +4271,7 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     for (const attempt of written) {
       expect(attempt.result.verdict).toBe("errored");
       expect(attempt.result.error?.code).toBe("judge-precheck-failed");
-      expect(attempt.result.error?.phase).toBe("judge.precheck");
+      expect(attempt.result.error?.origin.scope === "attempt" ? attempt.result.error.origin.phase : undefined).toBe("judge.precheck");
     }
   });
 
@@ -4309,6 +4359,9 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
         carryPlan: {
           plannedFingerprints: new Map(),
           acceptableFingerprints: new Map(),
+          manifestsByKey: new Map(),
+        dispatchByKey: new Map(),
+        availableDeltas: [],
           carriedAttemptsByKey: new Map([[`${experimentId}|judged`, new Set([0])]]),
           carriedResults: [carried],
         },
@@ -4321,5 +4374,116 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
     expect(sink.precheck).toEqual([]);
     expect(plainRan).toBe(1);
     expect(summary.results.filter((r) => r.id === "judged").map((r) => r.verdict)).toEqual(["passed"]);
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// - 共享 Run activity 不占 attempt 位
+// - build failure 的 Run origin
+describe("runEvals · Run 级共享构建协调", () => {
+  it("共享构建在派发前完成:构建期间 attempt 在飞为 0;timings/sandboxBuilds 落盘", async () => {
+    let attemptStarts = 0;
+    let buildsDuringAttempts = 0;
+    let buildSawAttempts = 0;
+    const evalDep = makeEval("dep", async () => {
+      attemptStarts += 1;
+    });
+    const evalOther = makeEval("other", async () => {
+      attemptStarts += 1;
+    });
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-a"),
+      experimentId: "exp-build",
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      selectedEvalIds: ["dep", "other"],
+    };
+    const { root } = await run([evalDep, evalOther], [agentRun], {
+      maxConcurrency: 2,
+      buildPreparation: {
+        works: [{ buildKey: "bk-shared", provider: "docker", inputs: { tag: "a" }, label: "shared image" }],
+        evalBuildKeys: { dep: ["bk-shared"] },
+        provider: {
+          async lookup() {
+            return undefined;
+          },
+          async build() {
+            buildSawAttempts = attemptStarts;
+            await new Promise((r) => setTimeout(r, 40));
+            if (attemptStarts > 0) buildsDuringAttempts += 1;
+            return "sha256:shared";
+          },
+        },
+        maxConcurrency: 1,
+      },
+    });
+    expect(buildSawAttempts).toBe(0);
+    expect(buildsDuringAttempts).toBe(0);
+
+    const record = await openRecord(root);
+    const runMeta = record.experiments.find((e) => e.id === "exp-build")!.latestRun;
+    expect(runMeta.timings?.some((t) => t.key === "sandbox.build" && t.durationMs >= 40)).toBe(true);
+    expect(runMeta.sandboxBuilds?.[0]).toMatchObject({ buildKey: "bk-shared", status: "built" });
+    expect(runMeta.sandboxBuilds?.[0] && !("durationMs" in runMeta.sandboxBuilds[0])).toBe(true);
+  });
+
+  it("确定性构建失败:依赖 eval 全部 errored 且共用同一 run origin;不伪造 attempt 锚点", async () => {
+    const evalDep = makeEval("needs-build", async () => {
+      throw new Error("should not run");
+    });
+    const evalOk = makeEval("independent", async () => {});
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-a"),
+      experimentId: "exp-fail",
+      flags: {},
+      attempts: 2,
+      earlyExit: false,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      selectedEvalIds: ["needs-build", "independent"],
+    };
+    const { summary, root } = await run([evalDep, evalOk], [agentRun], {
+      buildPreparation: {
+        works: [{ buildKey: "bk-bad", provider: "docker", inputs: { tag: "bad" } }],
+        evalBuildKeys: { "needs-build": ["bk-bad"] },
+        provider: {
+          async lookup() {
+            return undefined;
+          },
+          async build() {
+            throw new Error("compose build failed");
+          },
+        },
+      },
+    });
+
+    const deps = summary.results.filter((r) => r.id === "needs-build");
+    expect(deps).toHaveLength(2);
+    expect(deps.every((r) => r.verdict === "errored")).toBe(true);
+    const timingNodeId = deps[0]!.error?.origin.scope === "run" ? deps[0]!.error.origin.timingNodeId : undefined;
+    expect(timingNodeId).toBeTruthy();
+    expect(
+      deps.every(
+        (r) => r.error?.origin.scope === "run" && r.error.origin.timingNodeId === timingNodeId,
+      ),
+    ).toBe(true);
+    expect(deps.every((r) => r.error?.code === "sandbox-build-failed")).toBe(true);
+    // 不伪造 sandbox.create 或其它 attempt 锚点。
+    expect(deps.every((r) => r.error?.origin.scope === "run")).toBe(true);
+    // 不依赖该 key 的 attempt 不被 build failure 扇出(可能因其它并发 WIP 失败,但不是 build origin)。
+    const independent = summary.results.filter((r) => r.id === "independent");
+    expect(independent).toHaveLength(2);
+    expect(
+      independent.every(
+        (r) => !(r.error?.origin.scope === "run" && r.error.code === "sandbox-build-failed"),
+      ),
+    ).toBe(true);
+
+    const runMeta = (await openRecord(root)).experiments.find((e) => e.id === "exp-fail")!.latestRun;
+    expect(runMeta.sandboxBuilds?.[0]?.timingNodeId).toBe(timingNodeId);
+    expect(runMeta.timings?.some((t) => t.id === timingNodeId && t.key === "sandbox.build" && t.failed)).toBe(true);
   });
 });

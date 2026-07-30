@@ -53,7 +53,7 @@ function erroredResult(message: string): EvalResult {
     durationMs: 1,
     assertions: [],
     locator: "@1abc1234",
-    error: { code: "turn-failed", message, phase: "eval.run" },
+    error: { code: "turn-failed", message, origin: { scope: "attempt" as const, phase: "eval.run" } },
   };
 }
 

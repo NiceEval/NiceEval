@@ -17,10 +17,12 @@ import {
 } from "./native-config.ts";
 import { mapCodexSpans } from "../o11y/otlp/mappers/codex.ts";
 import { t } from "../i18n/index.ts";
-import { DEFAULT_CODEX_CLI_VERSION } from "./coding-cli-versions.ts";
+import { DEFAULT_CODEX_CLI_VERSION, AGENT_BASELINE_RECIPE_REVISION } from "./coding-cli-versions.ts";
 import { assertMcpServers, isHttpMcp, mcpManifestEntries } from "./mcp.ts";
 import { runPostSetupHooks, runPreTeardownHooks } from "./post-setup.ts";
-import type { Agent, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
+import { createNpmCliProvisioner } from "./npm-staged.ts";
+import { ensureAgent } from "./provisioner.ts";
+import type { Agent, AgentProvisioner, AgentSetupManifest, McpServer, Sandbox, SandboxHook, SkillSpec } from "../types.ts";
 
 // ───────────────────────────────────────────────────────────────────────────
 // OpenAI Codex CLI 的 agent adapter(沙箱型)。
@@ -115,23 +117,37 @@ export interface CodexConfig {
    * 见 docs/feature/adapters/library/coding-agent-extensions.md「安装后运行脚本」。
    */
   preTeardown?: SandboxHook[];
+  /**
+   * 整体替换默认 Ensure provisioner(身份 / 检查 / 安装原子替换)。
+   * 省略时用内置 staged 路径(宿主 npm pack → 文件 API 安装)。
+   */
+  provisioner?: AgentProvisioner;
 }
 
 export function codexAgent(config?: CodexConfig): Agent {
   const getApiKey = () => config?.apiKey ?? requireEnv("CODEX_API_KEY");
   const getBaseUrl = () => config?.baseUrl ?? getEnv("CODEX_BASE_URL");
+  const provisioner =
+    config?.provisioner ??
+    createNpmCliProvisioner({
+      identity: {
+        agent: "codex",
+        version: DEFAULT_CODEX_CLI_VERSION,
+        revision: String(AGENT_BASELINE_RECIPE_REVISION.codex),
+      },
+      packageName: "@openai/codex",
+      bin: "codex",
+    });
 
   return defineSandboxAgent({
     name: "codex",
     // 官方 adapter:transcript 经生命周期 fixture 验证,全通道 complete。
     coverage: completeCoverage,
     spanMapper: mapCodexSpans,
+    provisioner,
 
     async setup(sb, ctx) {
-      // 预制模板已把 codex 烘焙进镜像(PATH 上)就跳过安装;否则 npm 全局装。
-      await sb.runShell(
-        `command -v codex >/dev/null 2>&1 || npm install -g @openai/codex@${DEFAULT_CODEX_CLI_VERSION}`,
-      );
+      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
 
       // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
       // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
@@ -271,8 +287,8 @@ export function codexAgent(config?: CodexConfig): Agent {
       const prompt = shared.shellQuote(input.text);
       const resuming = ctx.session.id;
       const cmd = resuming
-        ? `codex exec resume ${ctx.session.id} ${flags} ${prompt}`
-        : `codex exec ${flags} ${prompt}`;
+        ? `${shared.agentBin("codex")} exec resume ${ctx.session.id} ${flags} ${prompt}`
+        : `${shared.agentBin("codex")} exec ${flags} ${prompt}`;
 
       // `codex exec --json` 持续写出 ThreadEvent JSONL。把它压成短 step 送进 runner
       // progress，human dashboard 因而能显示真正的 tool / reasoning / assistant 活动；完整
@@ -386,7 +402,7 @@ export async function installPlugins(
         .map((path) => ` --sparse ${shared.shellQuote(path)}`)
         .join("");
       const add = await sb.runShell(
-        `codex plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}${sparseFlags}`,
+        `${shared.agentBin("codex")} plugin marketplace add ${shared.shellQuote(marketplace.source)}${refFlag}${sparseFlags}`,
       );
       if (add.exitCode !== 0) {
         throw new Error(
@@ -411,7 +427,7 @@ export async function installPlugins(
     }
 
     const install = await sb.runShell(
-      `codex plugin add ${shared.shellQuote(`${plugin.name}@${marketplace.name}`)}`,
+      `${shared.agentBin("codex")} plugin add ${shared.shellQuote(`${plugin.name}@${marketplace.name}`)}`,
     );
     if (install.exitCode !== 0) {
       throw new Error(
@@ -486,7 +502,7 @@ function codexPluginId(entry: CodexInstalledPlugin): string | undefined {
  */
 async function removeInstalledPlugins(sb: Sandbox, name: string): Promise<void> {
   const listCommand = "codex plugin list --json";
-  const res = await sb.runShell(listCommand);
+  const res = await sb.runShell(`${shared.agentBin("codex")} plugin list --json`);
   const list = res.exitCode === 0 ? codexInstalledPlugins(res.stdout) : undefined;
   if (list === undefined) {
     throw new Error(t("plugin.listFailed", { agent: "codex", command: listCommand, tail: outputTail(res) }));
@@ -498,7 +514,7 @@ async function removeInstalledPlugins(sb: Sandbox, name: string): Promise<void> 
     if (id && (entry.name ?? id.split("@")[0]) === name) ids.add(id);
   }
   for (const id of ids) {
-    const remove = await sb.runShell(`codex plugin remove ${shared.shellQuote(id)}`);
+    const remove = await sb.runShell(`${shared.agentBin("codex")} plugin remove ${shared.shellQuote(id)}`);
     if (remove.exitCode !== 0) {
       throw new Error(t("plugin.removeFailed", { agent: "codex", name: id, tail: outputTail(remove) }));
     }
@@ -515,12 +531,12 @@ async function removeInstalledPlugins(sb: Sandbox, name: string): Promise<void> 
  * 这里报错——紧随其后的 add 是权威失败面,摘不干净它会带着 codex 的原话失败。
  */
 async function dropRegisteredMarketplace(sb: Sandbox, name: string): Promise<void> {
-  await sb.runShell(`codex plugin marketplace remove ${shared.shellQuote(name)}`);
+  await sb.runShell(`${shared.agentBin("codex")} plugin marketplace remove ${shared.shellQuote(name)}`);
 }
 
 /** 装完回读版本;取不到不阻断安装(manifest 里 resolvedVersion 省略)。 */
 async function installedVersion(sb: Sandbox, name: string, marketplace: string): Promise<string | undefined> {
-  const res = await sb.runShell(`codex plugin list --json --marketplace ${shared.shellQuote(marketplace)}`);
+  const res = await sb.runShell(`${shared.agentBin("codex")} plugin list --json --marketplace ${shared.shellQuote(marketplace)}`);
   if (res.exitCode !== 0) return undefined;
   const list = codexInstalledPlugins(res.stdout);
   const hit = list?.find(

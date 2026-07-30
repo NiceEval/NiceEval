@@ -6,7 +6,7 @@
 // 命名约定:Experiment / Run / Eval 是纯数据,不带 Handle 后缀;
 // 唯一叫 AttemptHandle 的是 attempt —— 它的方法真的会碰磁盘,后缀标记的就是这件事。
 
-import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText } from "../types.ts";
+import type { DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
 import type { FailedCommandEvidence, O11ySummary, StreamEvent, TraceSpan } from "../types.ts";
 import type { AgentSetupManifest, DiffData, SourceArtifact } from "../types.ts";
 import type { AttemptLocator } from "./locator.ts";
@@ -57,6 +57,16 @@ export interface RunMeta {
    * 封口补写。字段契约见 result.json 的 facts 小节(docs/feature/record/architecture.md#facts运行事实)。
    */
   facts?: globalThis.Record<string, string | number | boolean>;
+  /**
+   * Run 级共享工作的时间树:共享构建、共享制品准备、实验级 Hook。
+   * offset 相对本 Run 的单调时钟起点;与 completedAt 同批在 Run 封口补写。
+   */
+  timings?: TimingActivity[];
+  /**
+   * 共享构建的 provenance,每个实际查询或构建过的 BuildKey 一条。
+   * 时间只保存在 `timings`,本表经 `timingNodeId` 关联,不复制 duration。
+   */
+  sandboxBuilds?: SandboxBuildRecord[];
   /** 写入时刻该实验已知的 eval 并集 —— 残缺检测的分母随数据走(publish 自动补记,writer 可声明)。 */
   knownEvalIds?: string[];
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
@@ -137,6 +147,10 @@ export interface Run {
   diagnostics?: DiagnosticRecord[];
   /** experiment 作用域上报的运行事实;不与 attempt 级 facts(attempt.result.facts)合并(见 RunMeta.facts)。 */
   facts?: globalThis.Record<string, string | number | boolean>;
+  /** Run 级共享工作时间树(见 RunMeta.timings);缺失 = 本 Run 没有共享 activity 或第三方未写。 */
+  timings?: TimingActivity[];
+  /** 共享构建 provenance(见 RunMeta.sandboxBuilds)。 */
+  sandboxBuilds?: SandboxBuildRecord[];
   /** 本快照自己的 agent。 */
   agent: string;
   model?: string;

@@ -42,6 +42,7 @@ export function createInitialRunFeedbackState(): RunFeedbackState {
     active: new Map(),
     experimentHooks: new Map(),
     lockWaits: new Map(),
+    runActivities: new Map(),
     failures: [],
     freshFailureCount: 0,
     diagnostics: [],
@@ -75,6 +76,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         activePrecheck: undefined,
         experimentHooks: new Map(),
         lockWaits: new Map(),
+        runActivities: new Map(),
         failures: (event.plan.reusedFailures ?? []).map((failure) => ({ ...failure, at: event.at })),
         freshFailureCount: 0,
         diagnostics: [],
@@ -235,6 +237,24 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
         queued: state.queued + dispatched,
         lockWaits,
       };
+    }
+
+    case "run-activity": {
+      // Run 级开放 activity 的运行级行增删:started 建行,done / failed 清行。
+      // 不动 running/queued/elsewhere——共享准备不占 attempt 并发位(见 architecture.md
+      // 「Run 级共享准备」)。人读标签走 event.label,不查 LifecyclePhase 锚点表。
+      const runActivities = new Map(state.runActivities);
+      if (event.status === "started") {
+        runActivities.set(event.id, {
+          id: event.id,
+          key: event.key,
+          label: event.label,
+          startedAt: event.at,
+        });
+      } else {
+        runActivities.delete(event.id);
+      }
+      return { ...state, runActivities };
     }
 
     case "attempt:early-exit": {

@@ -8,7 +8,7 @@
 
 | 契约域                                                | 观察面                                | Fixture                                      |
 | ----------------------------------------------------- | ------------------------------------- | -------------------------------------------- |
-| 发现与 id 推导                                        | 发现结果的 id 集合与错误反馈          | 临时目录里的 `.eval.ts` / `.eval.tsx` 文件树 |
+| 发现与 id 推导                                        | 发现结果的 id 集合与错误反馈          | 临时目录里的 `.eval.ts` / `.eval.tsx` / 目录入口 `eval.ts` 文件树 |
 | `send()` 后即时读取 reply、events、usage 和 sessionId | `TestContext` 公共属性                | scripted Agent                               |
 | 多轮续接与多 session 隔离                             | Agent 收到的 `TurnInput`              | 记录输入的 scripted Agent                    |
 | HITL 回答与 pending request 对位                      | 下一次 `send` 输入或明确错误          | waiting Turn 序列                            |
@@ -61,6 +61,11 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
 
 - **发现与 id 推导**：id 只从文件路径推导（配置对象禁止 `id`/`name`）；`.eval.ts`/`.eval.tsx` 两种后缀同规则，其它后缀不被发现；数组与 keyed record 扇出的 id 构成与顺序稳定性；非法 key 的完整报错。
   必须同时覆盖"应发现"与"不应发现"的两面。
+- **目录入口与重名冲突**：`evals/foo/eval.ts`（及 `.tsx`）与 `foo.eval.ts` 同等发现，id 均为目录/文件路径推导的 `foo`；同 id 双入口并存时启动期报重名（点名两条路径），不按扫描顺序覆盖；无 `eval.ts` 的目录（如 `_lib/`）不被发现成 eval。
+  目录入口的默认 profile id 等于该目录相对 `evals/` 的路径（扇出条目共用入口目录的 profile id，不用扇出后缀）。
+- **隐藏输入登记与泄题门**：`loadPrivate` 只在发现期登记永不上传路径；`loadCriteria` 登记的 verifier 与 `loadPrivate` 登记的 private 一并作为隐藏输入。
+  与全部 build context（经 `.dockerignore` 与 filtered-context 规则求值后仍会发送的闭包）以及相对 bind mount 交叉检查——仍会进入 context 或 Agent 可达挂载面的隐藏文件按配置错误报出；private 任何阶段都不能挂入，verifier 不得在 Agent 阶段挂入可达服务。
+  过滤规则本身可序列化进 BuildKey 输入（与「求值后的 context 内容」并列，供 sandbox identity 消费）；改 `.dockerignore` / 额外过滤规则在内容未变时仍改变规则面。
 - **`defineEval` / `defineScoreEval` 的题型标记**：`defineEval` 产物恒 `scoring: "pass"`，`defineScoreEval` 产物恒 `"points"`——两者字段与校验规则完全同形（拒绝显式 `id`、拒绝显式 `scoring`、要求 `test` 为函数、`environment` 非空字符串），各自的报错消息各自指名函数名，不复用对方文案。
   `defineScoreEval` 的 `test(t)` 里 `t` 允许调用 `.points(n)` / `t.score(label, n)`，且 `.points(n)` 之后只剩 `.gate()` / `.optional()`、这套 `t` 上没有 `t.require`（类型层证明，见 typecheck fixture）；跨题型复用的 helper 标注 `BaseTestContext<H>` 时两种 `t` 都能传入。
 - **send 与 turn**：`send` 的输入形态与不可变 Turn；send 后 `reply`/`events`/`sessionId` 反映本轮结果——直接观察用户会读取的值，只断言 `agent.send` 被调用一次发现不了 Context 暴露旧 Run 的 bug；`turn.status` 三值与 usage 可缺失；**多轮 Usage 累计的诚实口径**——adapter 未报告的字段(`requests`、cache 计数)累计后保持省略,不得以 0/每轮 +1 凑数,fixture 要区分「报了 0」与「没报」两态;轮标签铸造规则（主会话 `turn<N>`、新会话 `session<K>/turn<N>`）；`sendFile` 的 MIME 推断与错误反馈；turn 级断言失败不中断 `test()`。

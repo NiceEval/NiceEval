@@ -2,7 +2,8 @@
 
 `--timing` 是 attempt-detail 组件族对应区块的 text 面。
 [首页](attempt.md)的 `timing:` 行给出逐阶段一行的完整摘要（子节点只是折叠成计数，阶段本身不筛选）；`--timing` 是整个 Attempt 的时间分析入口，展开首页折叠掉的子节点。
-它先按 `result.json.phases` 输出 runner 生命周期，再投影 runner 直接观察到的时间树：setup/teardown hook、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、runner 拥有的语义 operation，以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。
+它先按 `result.json.phases` 输出 runner 生命周期，再投影各锚点下的 activity 树：setup/teardown hook、经 `Sandbox.runCommand()` / `runShell()` 发出的命令、producer 自己起 key 的语义 activity（如 `workspace.diff.export`），以及 `eval.run` 中每个 session/turn 的 send 墙钟包络。
+锚点行的本地化标签只覆盖 `LifecyclePhase` 闭集；activity 一律渲染 producer 写下的 `label`，未知 key 不需要 renderer 认识，也不进锚点标签表。
 某个 turn 带 `traceId` 时，消费方再从 `trace.json` 把该轮的 agent/model/tool spans 挂到 turn 下；没有 OTel 时 phase、hook、operation、命令和 turn 时间仍完整，只有轮内 OTel 子树缺席。
 
 时间分析入口有两档密度，都是这个区块 text 渲染面的选项，不是事实过滤器；`--json` 面恒为完整的树解析产物，等价 `--timing=full` 的节点集合，不受 detail node 预算约束（[切片是组件选择](../architecture.md#show-的切片是组件选择)）：
@@ -70,9 +71,9 @@ $ niceeval show @1qrdcfq8 --timing
 runner 节点使用本机单调时钟，OTel 节点使用 span 自带时钟，跨进程只按 `traceId` / parent span 关系归属，不按绝对时间硬对齐。
 主链各阶段之和小于等于 `total`，差值是阶段间的粘合代码，不单独列行。
 
-## operation 提供语义，renderer 只负责通用投影
+## producer 起 key 提供语义，renderer 只负责通用投影
 
-一个由 runner、Sandbox 或 provider 自己拥有的逻辑工作，如果内部会批量处理很多对象或执行多个低层步骤，采集端应记录一个 `kind: "operation"` 的父节点。
+一个由 runner、Sandbox 或 provider 自己拥有的逻辑工作，如果内部会批量处理很多对象或执行多个低层步骤，采集端应在自己的命名空间下起 key 记录一个 activity 父节点（如 `workspace.diff.export`）。
 `label` 在采集时就写成有界的人读摘要，例如 `export workspace diff · 1 window · 3,302 files`；实际经过公开 Sandbox 边界的命令仍作为它的 `command` child 留下。
 批量工作应在 Sandbox 内一次完成一个逻辑批次，不能先制造逐文件远端调用，再指望 renderer 把性能问题藏起来。
 
@@ -83,13 +84,19 @@ artifact 不保存 render callback，renderer 也不解析 `git show ...`、`cat
 `show` 在 TTY、管道、CI 与 coding agent 环境使用同一选择规则，不因是否交互而改变节点集合，也不自动启动 pager。
 需要翻页时由用户显式运行 `niceeval show @loc --timing=full | less -R`；CLI 不能像 `git log` 那样在 TTY 下擅自进入一个会等待输入的进程。
 
+## Run 级 activity 的读取
+
+共享构建（`sandbox.build`）、共享制品准备（`agent.artifact.prepare`）与实验级 Hook 的时间不属于任何 attempt，不出现在 `--timing` 的 attempt 树里。
+它们的家是 `RunMeta.timings`：`niceeval show --timing` 不带 attempt locator 时输出 Run 级 activity 树，与 attempt 树同一套预算、失败与时序投影规则；未知 key 同样用 producer 的 `label` 通用渲染。
+sandboxBuild 的专用卡（locator、输入、依赖它的 attempt）从 [`sandboxBuilds`](../../record/architecture.md#共享构建的-provenancesandboxbuilds) 读取，不解析 timing label。
+
 ## 大时间树的输出 case
 
 **Case 1：小树。**
 detail node 不超过 80 时，单独使用 `--timing` 不插入省略行，内容与 `--timing=full` 相同。
 
-**Case 2：producer 已记录批量 operation。**
-即使 operation 处理 3,302 个文件，也只展示逻辑工作和真实的批量 Sandbox 边界，不按文件制造 3,302 行：
+**Case 2：producer 已记录批量 activity。**
+即使这个 activity 处理 3,302 个文件，也只展示逻辑工作和真实的批量 Sandbox 边界，不按文件制造 3,302 行：
 
 ```text
 workspace.diff      1.8s

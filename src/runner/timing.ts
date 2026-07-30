@@ -1,9 +1,10 @@
-// attempt 级阶段计时:LifecyclePhase 主链/收尾段的耗时 + 阶段内时间树(hook / turn / command)。
-// 契约见 docs/feature/record/architecture.md「result.json」的 PhaseTiming / TimingNode:
-// 数组顺序即执行顺序;没执行的阶段不写 0 值条目;收尾段不计入 durationMs 口径但照常计时;
-// 结果封口发生在 Effect Sample release 完成之后(sandbox.stop 也向这个 recorder 写入)。
+// attempt / Run 双时钟域计时:LifecyclePhase 锚点闭集 + 开放 key 的 TimingActivity 子树。
+// 契约见 docs/feature/record/architecture.md「两层时间模型」:
+// - attempt 侧 phases[] 是锚点序列,children 相对 attempt 单调时钟起点;
+// - Run 侧 RunMeta.timings 相对 Run 单调时钟起点;
+// - 两域 offset 不得混算;未知 activity key 原样保留。
 
-import type { LifecyclePhase, PhaseTiming, TimingNode, TimingNodeKind } from "./types.ts";
+import type { LifecyclePhase, PhaseTiming, TimingActivity, TimingOrigin } from "./types.ts";
 
 /** 主链成员(enterPhase 推进;进入下一个即关闭上一个)。收尾段用 measureClosing 单独计时。 */
 const CLOSING_PHASES: ReadonlySet<LifecyclePhase> = new Set([
@@ -14,6 +15,20 @@ const CLOSING_PHASES: ReadonlySet<LifecyclePhase> = new Set([
   "sandbox.stop",
 ]);
 
+/** 构造 attempt 支 TimingOrigin 的便捷函数(runner / 测试共用)。 */
+export function attemptOrigin(phase: LifecyclePhase, timingNodeId?: string): TimingOrigin {
+  return {
+    scope: "attempt",
+    phase,
+    ...(timingNodeId !== undefined ? { timingNodeId } : {}),
+  };
+}
+
+/** 构造 run 支 TimingOrigin。 */
+export function runOrigin(timingNodeId: string): TimingOrigin {
+  return { scope: "run", timingNodeId };
+}
+
 export interface TimingRecorder {
   /** 进入一个主链阶段:关闭上一个开着的主链条目,开一个新条目。 */
   enter(phase: LifecyclePhase): void;
@@ -21,17 +36,16 @@ export interface TimingRecorder {
   failCurrent(): void;
   /** 关闭当前开着的主链条目(正常走完主链时在收尾前调用)。 */
   closeCurrent(): void;
-  /** 计时一个收尾段(eval/agent/sandbox teardown、suspend、stop):无论成败都记条目,失败标 failed。 */
+  /** 计时一个收尾段:无论成败都记条目,失败标 failed。 */
   measureClosing<T>(phase: LifecyclePhase, fn: () => Promise<T> | T): Promise<T>;
-  /** 往「当前挂载点」挂一个时间树子节点:有 pushParent 的父节点则挂它下面(hook 内的 command),
-   *  否则挂当前开着的阶段;都没有时静默丢弃。 */
-  child(node: Omit<TimingNode, "id">): TimingNode | undefined;
+  /** 往「当前挂载点」挂一个 activity 子节点。 */
+  child(node: Omit<TimingActivity, "id">): TimingActivity | undefined;
   /** 在指定的已有节点下挂子节点。 */
-  childOf(parent: TimingNode, node: Omit<TimingNode, "id">): TimingNode;
-  /** 把后续 child() 的挂载点压到 parent 下(hook 执行期间);与 popParent 成对。 */
-  pushParent(parent: TimingNode): void;
+  childOf(parent: TimingActivity, node: Omit<TimingActivity, "id">): TimingActivity;
+  /** 把后续 child() 的挂载点压到 parent 下;与 popParent 成对。 */
+  pushParent(parent: TimingActivity): void;
   popParent(): void;
-  /** 直接补记一个已测好耗时的阶段条目(sandbox.stop 这类 Sample release 段用)。 */
+  /** 直接补记一个已测好耗时的阶段条目(sandbox.stop 这类 Scope release 段用)。 */
   record(phase: LifecyclePhase, durationMs: number, failed?: boolean): void;
   /** 相对 attempt 单调时钟起点的当前偏移(ms)。 */
   offsetNow(): number;
@@ -39,18 +53,77 @@ export interface TimingRecorder {
   finalize(): PhaseTiming[] | undefined;
 }
 
+/** Run 级共享工作的时间树 recorder(与 attempt 共用 TimingActivity 形状,独立时钟域)。 */
+export interface RunTimingRecorder {
+  child(node: Omit<TimingActivity, "id">): TimingActivity;
+  childOf(parent: TimingActivity, node: Omit<TimingActivity, "id">): TimingActivity;
+  pushParent(parent: TimingActivity): void;
+  popParent(): void;
+  offsetNow(): number;
+  /** 封口:产出 TimingActivity[](一个都没记录时返回 undefined)。 */
+  finalize(): TimingActivity[] | undefined;
+}
+
+interface ActivityTree {
+  child(node: Omit<TimingActivity, "id">, requireOpen?: boolean): TimingActivity | undefined;
+  childOf(parent: TimingActivity, node: Omit<TimingActivity, "id">): TimingActivity;
+  pushParent(parent: TimingActivity): void;
+  popParent(): void;
+  offsetNow(): number;
+  nextId(): string;
+  roots(): TimingActivity[];
+}
+
+function createActivityTree(now: () => number): ActivityTree {
+  const origin = now();
+  const roots: TimingActivity[] = [];
+  let nodeSeq = 0;
+  const parentStack: TimingActivity[] = [];
+
+  const offset = () => Math.max(0, Math.round(now() - origin));
+  const nextId = () => `n${++nodeSeq}`;
+
+  return {
+    nextId,
+    offsetNow: offset,
+    roots: () => roots,
+    child(node, requireOpen = false) {
+      const full: TimingActivity = { id: nextId(), ...node };
+      const top = parentStack[parentStack.length - 1];
+      if (top) {
+        (top.children ??= []).push(full);
+        return full;
+      }
+      if (requireOpen) return undefined;
+      roots.push(full);
+      return full;
+    },
+    childOf(parent, node) {
+      const full: TimingActivity = { id: nextId(), ...node };
+      (parent.children ??= []).push(full);
+      return full;
+    },
+    pushParent(parent) {
+      parentStack.push(parent);
+    },
+    popParent() {
+      parentStack.pop();
+    },
+  };
+}
+
 interface OpenPhase {
   name: LifecyclePhase;
   startedAt: number;
-  children: TimingNode[];
+  children: TimingActivity[];
 }
 
 export function createTimingRecorder(now: () => number = () => performance.now()): TimingRecorder {
   const origin = now();
   const phases: PhaseTiming[] = [];
   let open: OpenPhase | undefined;
+  const parentStack: TimingActivity[] = [];
   let nodeSeq = 0;
-  const parentStack: TimingNode[] = [];
 
   const offset = () => Math.max(0, Math.round(now() - origin));
   const nextId = () => `n${++nodeSeq}`;
@@ -67,14 +140,24 @@ export function createTimingRecorder(now: () => number = () => performance.now()
     open = undefined;
   }
 
+  function attachChild(node: Omit<TimingActivity, "id">): TimingActivity | undefined {
+    const full: TimingActivity = { id: nextId(), ...node };
+    const top = parentStack[parentStack.length - 1];
+    if (top) {
+      (top.children ??= []).push(full);
+      return full;
+    }
+    if (!open) return undefined;
+    open.children.push(full);
+    return full;
+  }
+
   return {
     enter(phase) {
       if (CLOSING_PHASES.has(phase)) {
-        // 收尾段经 measureClosing 计时;enter 只负责主链推进,这里防御性关掉主链残留。
         close();
         return;
       }
-      // agent.run 是唯一的嵌套成员:只作归因值,不在 phases 里单列(不关闭 eval.run)。
       if (phase === "agent.run") return;
       close();
       open = { name: phase, startedAt: now(), children: [] };
@@ -88,7 +171,7 @@ export function createTimingRecorder(now: () => number = () => performance.now()
     async measureClosing(phase, fn) {
       close();
       const startedAt = now();
-      const children: TimingNode[] = [];
+      const children: TimingActivity[] = [];
       open = { name: phase, startedAt, children };
       try {
         const result = await fn();
@@ -99,19 +182,9 @@ export function createTimingRecorder(now: () => number = () => performance.now()
         throw e;
       }
     },
-    child(node) {
-      const full: TimingNode = { id: nextId(), ...node };
-      const top = parentStack[parentStack.length - 1];
-      if (top) {
-        (top.children ??= []).push(full);
-        return full;
-      }
-      if (!open) return undefined;
-      open.children.push(full);
-      return full;
-    },
+    child: attachChild,
     childOf(parent, node) {
-      const full: TimingNode = { id: nextId(), ...node };
+      const full: TimingActivity = { id: nextId(), ...node };
       (parent.children ??= []).push(full);
       return full;
     },
@@ -123,12 +196,33 @@ export function createTimingRecorder(now: () => number = () => performance.now()
     },
     record(phase, durationMs, failed) {
       close();
-      phases.push({ name: phase, durationMs: Math.max(0, Math.round(durationMs)), ...(failed ? { failed: true as const } : {}) });
+      phases.push({
+        name: phase,
+        durationMs: Math.max(0, Math.round(durationMs)),
+        ...(failed ? { failed: true as const } : {}),
+      });
     },
     offsetNow: offset,
     finalize() {
       close();
       return phases.length > 0 ? phases : undefined;
+    },
+  };
+}
+
+export function createRunTimingRecorder(now: () => number = () => performance.now()): RunTimingRecorder {
+  const tree = createActivityTree(now);
+  return {
+    child(node) {
+      return tree.child(node)!;
+    },
+    childOf: tree.childOf,
+    pushParent: tree.pushParent,
+    popParent: tree.popParent,
+    offsetNow: tree.offsetNow,
+    finalize() {
+      const roots = tree.roots();
+      return roots.length > 0 ? roots : undefined;
     },
   };
 }
@@ -139,20 +233,80 @@ export function commandDisplay(cmd: string, args?: readonly string[]): string {
   return s.length > 160 ? `${s.slice(0, 159)}…` : s;
 }
 
-/** kind=command 节点的便捷构造。 */
+/** key=sandbox.command 节点的便捷构造。 */
 export function commandNode(opts: {
   display: string;
   startOffsetMs: number;
   durationMs: number;
   exitCode?: number;
   failed?: boolean;
-}): Omit<TimingNode, "id"> {
+}): Omit<TimingActivity, "id"> {
   return {
-    kind: "command" as TimingNodeKind,
+    key: "sandbox.command",
     label: opts.display.split(" ")[0] ?? opts.display,
     startOffsetMs: opts.startOffsetMs,
     durationMs: opts.durationMs,
     ...(opts.failed ? { failed: true as const } : {}),
     command: { display: opts.display, ...(opts.exitCode !== undefined ? { exitCode: opts.exitCode } : {}) },
+  };
+}
+
+/** key=sandbox.hook 节点的便捷构造。 */
+export function hookActivity(opts: {
+  label: string;
+  startOffsetMs: number;
+  durationMs?: number;
+  failed?: boolean;
+}): Omit<TimingActivity, "id"> {
+  return {
+    key: "sandbox.hook",
+    label: opts.label,
+    startOffsetMs: opts.startOffsetMs,
+    durationMs: opts.durationMs ?? 0,
+    ...(opts.failed ? { failed: true as const } : {}),
+  };
+}
+
+/** key=agent.turn 节点的便捷构造。 */
+export function turnActivity(opts: {
+  label: string;
+  startOffsetMs: number;
+  durationMs: number;
+  sessionIndex: number;
+  turnIndex: number;
+  failed?: boolean;
+  turnId?: string;
+  traceId?: string;
+  traceAttribution?: TimingActivity["traceAttribution"];
+  usage?: TimingActivity["usage"];
+}): Omit<TimingActivity, "id"> {
+  return {
+    key: "agent.turn",
+    label: opts.label,
+    startOffsetMs: opts.startOffsetMs,
+    durationMs: opts.durationMs,
+    ...(opts.failed ? { failed: true as const } : {}),
+    sessionIndex: opts.sessionIndex,
+    turnIndex: opts.turnIndex,
+    ...(opts.turnId !== undefined ? { turnId: opts.turnId } : {}),
+    ...(opts.traceId !== undefined ? { traceId: opts.traceId } : {}),
+    ...(opts.traceAttribution !== undefined ? { traceAttribution: opts.traceAttribution } : {}),
+    ...(opts.usage !== undefined ? { usage: opts.usage } : {}),
+  };
+}
+
+/** key=workspace.diff.export 节点的便捷构造。 */
+export function workspaceDiffExportActivity(opts: {
+  label: string;
+  startOffsetMs: number;
+  durationMs?: number;
+  failed?: boolean;
+}): Omit<TimingActivity, "id"> {
+  return {
+    key: "workspace.diff.export",
+    label: opts.label,
+    startOffsetMs: opts.startOffsetMs,
+    durationMs: opts.durationMs ?? 0,
+    ...(opts.failed ? { failed: true as const } : {}),
   };
 }

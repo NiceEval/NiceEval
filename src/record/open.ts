@@ -280,6 +280,8 @@ function makeSnapshotShell(dir: string, meta: RunMeta): Run {
     ...(meta.completedAt !== undefined ? { completedAt: meta.completedAt } : {}),
     ...(meta.diagnostics?.length ? { diagnostics: meta.diagnostics } : {}),
     ...(meta.facts && Object.keys(meta.facts).length ? { facts: meta.facts } : {}),
+    ...(meta.timings?.length ? { timings: meta.timings } : {}),
+    ...(meta.sandboxBuilds?.length ? { sandboxBuilds: meta.sandboxBuilds } : {}),
     agent: meta.agent,
     ...(meta.model !== undefined ? { model: meta.model } : {}),
     ...(meta.experiment !== undefined ? { experiment: meta.experiment } : {}),

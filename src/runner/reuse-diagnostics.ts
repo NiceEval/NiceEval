@@ -29,7 +29,7 @@ function failing(result: EvalResult): boolean {
 
 /** 失败落在哪个阶段:errored 读 `error.phase`;断言失败没有 error,归 `eval.run`(判定发生地)。 */
 function phaseOf(result: EvalResult): LifecyclePhase {
-  return result.error?.phase ?? "eval.run";
+  return (result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined) ?? "eval.run";
 }
 
 /**

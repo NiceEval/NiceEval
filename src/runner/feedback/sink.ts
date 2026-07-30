@@ -98,6 +98,17 @@ export interface LockWaitInput {
   waitedMs?: number;
 }
 
+/** `sink.runActivity()` 的输入 —— 与 `DurableFeedbackEvent` 的 "run-activity" 变体字段一致,
+ *  省略 `type`/`at`。调用方(run.ts 经构建协调器钩子)在每个 Run 级 activity 真正开始/结束时
+ *  各调一次;`durationMs` 只在 done/failed 上给。`label` 是 producer 人读标签,展示层不查表。 */
+export interface RunActivityInput {
+  id: string;
+  key: string;
+  label: string;
+  status: "started" | "done" | "failed";
+  durationMs?: number;
+}
+
 /** `sink.kept()` 的输入 —— 与 `DurableFeedbackEvent` 的 "kept" 变体字段一致,省略 type/at。 */
 export interface KeptInput {
   locator: AttemptLocator;
@@ -129,6 +140,8 @@ export interface FeedbackSink {
   precheck(input: PrecheckInput): void;
   /** 用例锁等待的起止(见 `LockWaitInput`)。 */
   lockWait(input: LockWaitInput): void;
+  /** Run 级开放 activity 的起止(见 `RunActivityInput`)。不占 attempt 并发位。 */
+  runActivity(input: RunActivityInput): void;
   /** 实验级 `ctx.progress` 的短命投影:只更新运行级行的 detail。与 `lifecycle` 同级别的
    *  「只服务正在画着的 dashboard」信号,没有活跃 coordinator 时静默丢弃是安全的。 */
   experimentProgress(input: ExperimentProgressInput): void;
@@ -258,6 +271,17 @@ export function reportLockWait(input: LockWaitInput): void {
       ? `waiting on another run · ${input.experimentId} ${input.evalId}\n`
       : `lock wait resolved · ${input.experimentId} ${input.evalId}\n`,
   );
+}
+
+export function reportRunActivity(input: RunActivityInput): void {
+  const sink = current();
+  if (sink) {
+    sink.runActivity(input);
+    return;
+  }
+  const duration = input.durationMs !== undefined ? ` (${input.durationMs}ms)` : "";
+  const statusWord = input.status === "started" ? "" : ` ${input.status}`;
+  writeStderrLine(`${input.label}${statusWord}${duration}\n`);
 }
 
 export function reportBudgetExhausted(input: BudgetExhaustedInput): void {

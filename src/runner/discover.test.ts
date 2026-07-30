@@ -1,6 +1,8 @@
+// cases: docs/engineering/testing/unit/eval.md
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // discoverEvals 的 eval 源码捕获:同一文件(数组默认导出)共享一份 CapturedEvalSource,
 // 内容/路径/哈希与 captureEvalSource() 直接调出来的一致(定稿见 docs/concepts.md「标注 Eval 源码」)。
+// 「目录入口与重名冲突」归 eval.md。
 
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -123,5 +125,72 @@ describe("discoverEvals · 源码捕获", () => {
     const [crlf] = await discoverEvals(rootCrlf);
     expect(lf!.source.sha256).toBe(crlf!.source.sha256);
     expect(crlf!.source.content).toBe(body); // 归一化后不含 \r
+  });
+});
+
+describe("discoverEvals · 目录入口与重名冲突", () => {
+  it("发现 evals/foo/eval.ts，id 与 defaultProfileId 均为 foo", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "evals", "foo"), { recursive: true });
+    await writeFile(join(root, "evals", "foo", "eval.ts"), "export default { test() {} };\n", "utf-8");
+
+    const evals = await discoverEvals(root);
+    expect(evals).toHaveLength(1);
+    expect(evals[0]!.id).toBe("foo");
+    expect(evals[0]!.defaultProfileId).toBe("foo");
+    expect(evals[0]!.source.path).toBe("evals/foo/eval.ts");
+  });
+
+  it("目录入口扇出时共用入口目录的 defaultProfileId，不含扇出后缀", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "evals", "suite"), { recursive: true });
+    await writeFile(
+      join(root, "evals", "suite", "eval.ts"),
+      "export default [{ test() {} }, { test() {} }];\n",
+      "utf-8",
+    );
+
+    const evals = await discoverEvals(root);
+    expect(evals.map((e) => e.id)).toEqual(["suite/0000", "suite/0001"]);
+    expect(evals.every((e) => e.defaultProfileId === "suite")).toBe(true);
+  });
+
+  it("无 eval.ts 的目录(_lib)不被发现", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "evals", "_lib"), { recursive: true });
+    await writeFile(join(root, "evals", "_lib", "helper.ts"), "export const x = 1;\n", "utf-8");
+    await mkdir(join(root, "evals", "real"), { recursive: true });
+    await writeFile(join(root, "evals", "real", "eval.ts"), "export default { test() {} };\n", "utf-8");
+
+    const evals = await discoverEvals(root);
+    expect(evals.map((e) => e.id)).toEqual(["real"]);
+  });
+
+  it("foo.eval.ts 与 foo/eval.ts 同 id 时报重名，点名两条路径", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "evals", "foo"), { recursive: true });
+    await writeFile(join(root, "evals", "foo.eval.ts"), "export default { test() {} };\n", "utf-8");
+    await writeFile(join(root, "evals", "foo", "eval.ts"), "export default { test() {} };\n", "utf-8");
+
+    await expect(discoverEvals(root)).rejects.toThrow(/Duplicate eval id "foo"/);
+    await expect(discoverEvals(root)).rejects.toThrow(/foo\.eval\.ts/);
+    await expect(discoverEvals(root)).rejects.toThrow(/foo\/eval\.ts/);
+  });
+
+  it("目录入口可携带 folder-local environment 对象，并保留 defaultProfileId", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "evals", "compose-task"), { recursive: true });
+    // environment 为对象时不经 defineEval.trim;发现器原样保留,供 sandbox 线物化。
+    await writeFile(
+      join(root, "evals", "compose-task", "eval.ts"),
+      "export default { environment: { kind: 'compose', file: 'docker-compose.yaml' }, test() {} };\n",
+      "utf-8",
+    );
+
+    const evals = await discoverEvals(root);
+    expect(evals).toHaveLength(1);
+    expect(evals[0]!.id).toBe("compose-task");
+    expect(evals[0]!.defaultProfileId).toBe("compose-task");
+    expect(evals[0]!.environment).toEqual({ kind: "compose", file: "docker-compose.yaml" });
   });
 });

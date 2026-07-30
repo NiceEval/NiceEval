@@ -35,7 +35,7 @@
 | Fixture | Fixture | `test(t)` 显式写入的起始文件加 `EvalDef.setup` 准备的素材;算 eval 归因,不进 agent diff | [Eval architecture](feature/eval/architecture.md) |
 | send 窗口 | send window | 一次 `t.send()` 从发出到返回的区间;Sandbox diff 只反映各窗口内改动的并集 | [Eval architecture](feature/eval/architecture.md) |
 | 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 扇出,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
-| 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 并按路径推导 id;没有目录层面的隐式发现 | [Eval](feature/eval/README.md) |
+| 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,按路径推导 id;同 id 双入口报重名 | [Eval](feature/eval/README.md) |
 | Attempt | Attempt | 同一个 eval 的第 i 次重复运行,也是范围断言的默认聚合范围 | [Eval context](feature/eval/library/context.md) |
 | Session | Session | 一条会话线;`t.newSession()` 开独立 session | [Eval context](feature/eval/library/context.md) |
 | Turn | Turn | `t.send()` 的一次返回值,带事件流片段和收窄到该 Turn 的范围断言 | [Eval context](feature/eval/library/context.md) |
@@ -71,6 +71,9 @@
 | 接入等级 | Integration tier | Tier 1 只接 `send`,Tier 2 再接 OTel,Tier 3 再暴露实验 flags | [Adapters](feature/adapters/README.md) |
 | 无侵入 | Non-intrusive | Tier 1 / Tier 2 不由 eval spawn 应用进程或另开端口;不写 `黑盒` | [Adapters](feature/adapters/README.md) |
 | 人工介入 | HITL(human-in-the-loop) | agent 等待人工输入;`waiting` + `input.requested` 构成能力证据 | [Sessions 与 HITL](feature/adapters/library/sessions-and-hitl.md) |
+| Agent Ensure | Agent Ensure | Adapter 在 `agent.setup` 执行的「检查、缺失时安装、复检」协议 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
+| Agent 安装组件(`AgentProvisioner`) | AgentProvisioner | 拥有 Agent 安装身份、检查与安装的组件;identity 进指纹 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
+| staged payload | staged payload | 题面网络之外准备、经主 Sandbox 文件 API 送入的锁定安装制品 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md#staged-payload题面网络之外的锁定制品) |
 
 ### Sandbox
 
@@ -81,6 +84,11 @@
 | 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
+| sandbox case | sandbox case | 环境的完整物化单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
+| 主 Sandbox | —(`mainService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox Case](feature/sandbox/case.md#主-sandbox-不变量) |
+| 物化器 | materializer | 把 sandbox source 或 case 声明物化成运行实例的 provider 组件 | [Sandbox Case](feature/sandbox/case.md) |
+| BuildKey | BuildKey | 单个构建产物的身份,负责构建复用 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
+| CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 
 ### Sandbox 复用
 
@@ -169,7 +177,8 @@
 |---|---|---|---|
 | artifact | Artifact | Run 目录里的 `run.json`、Attempt `result.json` 与证据文件 | [Record](feature/record/architecture.md) |
 | 诊断 | Diagnostic | 不改判定的操作性事实,按 Attempt 或 Run 归属落盘 | [Record](feature/record/architecture.md) |
-| 生命周期阶段 | `LifecyclePhase` | 结构化错误与诊断使用的封闭阶段词表 | [Record](feature/record/architecture.md) |
+| 生命周期阶段 | `LifecyclePhase` | Runner 保留的 attempt 生命周期锚点闭集;决定主链、收尾与耗时口径 | [Record](feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity) |
+| timing activity | `TimingActivity` | 开放 key 的工作计时节点,Run 与 attempt 共用同一形状 | [Record](feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity) |
 | 记录根 | Record root | 结果目录树的根,默认 `.niceeval/` | [Record library](feature/record/library.md) |
 | 记录 | Record | `openRecord()` 打开记录根得到的事实层句柄,一点判断都不许有 | [Record library](feature/record/library.md) |
 | 结果 Run | Run | 一个 Experiment 的一次持久化执行水位,可由多次 Invocation 续成 | [Record](feature/record/architecture.md) |

@@ -177,10 +177,10 @@ describe("deriveSendAnnotations", () => {
       name: "eval.run" as PhaseTiming["name"],
       durationMs: 5000,
       children: [
-        { id: "n1", kind: "command", label: "git", startOffsetMs: 0, durationMs: 10 },
-        { id: "n2", kind: "turn", label: "s1/t1", startOffsetMs: 10, durationMs: 1500 },
-        { id: "n3", kind: "turn", label: "s1/t2", startOffsetMs: 1510, durationMs: 900, failed: true },
-        { id: "n4", kind: "turn", label: "s1/t3", startOffsetMs: 2410, durationMs: 300 },
+        { id: "n1", key: "sandbox.command", label: "git", startOffsetMs: 0, durationMs: 10 },
+        { id: "n2", key: "agent.turn", label: "s1/t1", startOffsetMs: 10, durationMs: 1500 },
+        { id: "n3", key: "agent.turn", label: "s1/t2", startOffsetMs: 1510, durationMs: 900, failed: true },
+        { id: "n4", key: "agent.turn", label: "s1/t3", startOffsetMs: 2410, durationMs: 300 },
       ],
     }];
 
