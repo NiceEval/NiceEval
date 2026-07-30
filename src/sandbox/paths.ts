@@ -2,6 +2,7 @@ import { posix } from "node:path";
 import { isAbsolute, resolve } from "node:path";
 import type { CommandOptions, Sandbox } from "../types.ts";
 import { withSandboxIoRetry } from "./io-retry.ts";
+import { totalBytes, withTransferErrors } from "./transfer-errors.ts";
 
 export function resolveSandboxPath(workdir: string, path?: string): string {
   if (!path || path === ".") return workdir;
@@ -36,7 +37,11 @@ interface Reusable {
   ensureLifetime(minRemainingMs: number): Promise<{ ready: true; expiresAt?: string } | { ready: false; reason: string }>;
 }
 
-export function normalizeSandboxPaths(sandbox: Sandbox): Sandbox {
+/**
+ * @param provider provider 名(`resolveSandbox()` 的解析结果),只用于报错点名是谁的 SDK
+ * 在超时(见 transfer-errors.ts);省略时报错说 `sandbox`,行为不变。
+ */
+export function normalizeSandboxPaths(sandbox: Sandbox, provider?: string): Sandbox {
   // 留存路径的 sandbox.suspend(见 keep.ts 的 suspendSandbox)在这层包装之后按同一个实例调用——
   // 必须原样转发,否则 --keep-sandbox 的 Sample release 阶段永远找不到这个能力,报
   // "sandbox provider has no suspend capability" 并把现场错误地留在 alive(不省资源、
@@ -57,28 +62,52 @@ export function normalizeSandboxPaths(sandbox: Sandbox): Sandbox {
     runShell: (script, opts) => sandbox.runShell(script, resolveCommandOptions(sandbox.workdir, opts)),
     readFile: (path) => withSandboxIoRetry(() => sandbox.readFile(resolveSandboxPath(sandbox.workdir, path))),
     fileExists: (path) => withSandboxIoRetry(() => sandbox.fileExists(resolveSandboxPath(sandbox.workdir, path))),
-    writeFiles: (files, targetDir) => withSandboxIoRetry(
-      () => sandbox.writeFiles(files, resolveSandboxPath(sandbox.workdir, targetDir)),
-    ),
-    uploadFiles: (files, targetDir) => withSandboxIoRetry(
-      () => sandbox.uploadFiles(files, resolveSandboxPath(sandbox.workdir, targetDir)),
-    ),
-    uploadDirectory: (localDir, targetDir, opts) =>
-      withSandboxIoRetry(
-        () => sandbox.uploadDirectory(localDir, resolveSandboxPath(sandbox.workdir, targetDir), opts),
-      ),
-    downloadDirectory: (localDir, targetDir, opts) =>
-      withSandboxIoRetry(
-        () => sandbox.downloadDirectory(localDir, resolveSandboxPath(sandbox.workdir, targetDir), opts),
-      ),
+    // 文件传输的超时报错在这一层补齐三要素(操作名 / 对象 / 这是 SDK 往返超时而非 attempt
+    // 预算):provider 各家 SDK 抛的裸超时串没有任何上下文,读到它的人会跑去调 --timeout。
+    // 只有超时形态被改写,其它错误原样上抛(见 transfer-errors.ts)。
+    writeFiles: (files, targetDir) => {
+      const base = resolveSandboxPath(sandbox.workdir, targetDir);
+      return withTransferErrors(
+        { provider, operation: "writeFiles", path: base, bytes: totalBytes(Object.values(files)) },
+        () => withSandboxIoRetry(() => sandbox.writeFiles(files, base)),
+      );
+    },
+    uploadFiles: (files, targetDir) => {
+      const base = resolveSandboxPath(sandbox.workdir, targetDir);
+      return withTransferErrors(
+        { provider, operation: "uploadFiles", path: base, bytes: totalBytes(files.map((f) => f.content)) },
+        () => withSandboxIoRetry(() => sandbox.uploadFiles(files, base)),
+      );
+    },
+    uploadDirectory: (localDir, targetDir, opts) => {
+      const base = resolveSandboxPath(sandbox.workdir, targetDir);
+      return withTransferErrors(
+        { provider, operation: "uploadDirectory", path: base, localPath: localDir },
+        () => withSandboxIoRetry(() => sandbox.uploadDirectory(localDir, base, opts)),
+      );
+    },
+    downloadDirectory: (localDir, targetDir, opts) => {
+      const base = resolveSandboxPath(sandbox.workdir, targetDir);
+      return withTransferErrors(
+        { provider, operation: "downloadDirectory", path: base },
+        () => withSandboxIoRetry(() => sandbox.downloadDirectory(localDir, base, opts)),
+      );
+    },
     stop: () => sandbox.stop(),
     appendLog: sandbox.appendLog ? (line) => sandbox.appendLog!(line) : undefined,
-    downloadFile: (path) => withSandboxIoRetry(
-      () => sandbox.downloadFile(resolveSandboxPath(sandbox.workdir, path)),
-    ),
-    uploadFile: (path, content) => withSandboxIoRetry(
-      () => sandbox.uploadFile(resolveSandboxPath(sandbox.workdir, path), content),
-    ),
+    downloadFile: (path) => {
+      const abs = resolveSandboxPath(sandbox.workdir, path);
+      return withTransferErrors({ provider, operation: "downloadFile", path: abs }, () =>
+        withSandboxIoRetry(() => sandbox.downloadFile(abs)),
+      );
+    },
+    uploadFile: (path, content) => {
+      const abs = resolveSandboxPath(sandbox.workdir, path);
+      return withTransferErrors(
+        { provider, operation: "uploadFile", path: abs, bytes: content.byteLength },
+        () => withSandboxIoRetry(() => sandbox.uploadFile(abs, content)),
+      );
+    },
     ...(typeof suspend === "function" ? { suspend: () => suspend.call(sandbox) } : {}),
     ...(typeof ensureLifetime === "function"
       ? { ensureLifetime: (minRemainingMs: number) => ensureLifetime.call(sandbox, minRemainingMs) }

@@ -199,3 +199,54 @@ describe("沙箱内 OTLP 采集器启动:真实 /bin/sh 执行", () => {
     expect(elapsed).toBeLessThan(5_000);
   });
 });
+
+// cases: docs/engineering/testing/unit/experiments-runner.md
+// 契约: docs/feature/sandbox/architecture.md「provider 的可写保证不止 workdir」——采集器落点是
+// 系统临时目录,`/tmp` 不可写是**环境缺陷**:报错点名不可写的路径与修法,不透传 provider 的
+// 原始错误串(e2b 把 EACCES 包成 500 响应,那串东西给不出任何下一步)。
+describe("沙箱内 OTLP 采集器:系统临时目录不可写按环境缺陷报", () => {
+  /** e2b envd 把沙箱内的 EACCES 包成 500 响应后 SDK 抛出的形状。 */
+  const deniedByProvider = () =>
+    Object.assign(new Error('500: {"code":500,"message":"open /tmp/x: permission denied"}'), { status: 500 });
+
+  it("上传采集器脚本被拒:点名路径 + 说这是镜像环境缺陷 + 给修法,原始 500 串只留在 cause", async () => {
+    const raw = deniedByProvider();
+    const sandbox = baseSandbox({
+      writeFiles: async () => {
+        throw raw;
+      },
+    });
+
+    const exit = await receiverExit(sandbox);
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    const error = Exit.isFailure(exit) ? (Cause.squash(exit.cause) as Error) : new Error("unreachable");
+    expect(error.message).toMatch(/\/tmp\/\.niceeval-otlp-collector-[0-9a-f]{8}\.cjs/); // 哪个路径写不进去
+    expect(error.message).toContain("chmod 1777 /tmp"); // 修法
+    // 不透传原始串:它是「500 + 一串 JSON」,读到它的人无从下手。证据仍在 cause 上。
+    expect(error.message).not.toContain("500");
+    expect(error.cause).toBe(raw);
+  });
+
+  it("脚本上传得进去但采集器自己写不了端口文件(日志为空)时,探一次写权限并按环境缺陷报", async () => {
+    // 采集器的写入被自己的 try/catch 吞掉:端口等不到、日志是空的,只报「等了 20s」等于让人
+    // 对着空日志猜。这一格证明改成了探测写权限后点名路径与修法。
+    const { sandbox, shells } = scriptedSandbox(["4242\n", "4243\n"], "");
+    const denyingProbe = baseSandbox({
+      writeFiles: sandbox.writeFiles.bind(sandbox),
+      runShell: async (script: string): Promise<CommandResult> =>
+        script.includes(".niceeval-write-probe-")
+          ? { stdout: "denied\n", stderr: "", exitCode: 0 }
+          : sandbox.runShell(script),
+    });
+
+    const exit = await receiverExit(denyingProbe, shells);
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    const message = String(Exit.isFailure(exit) ? Cause.squash(exit.cause) : "");
+    expect(message).toMatch(/\/tmp\/\.niceeval-otlp-port-[0-9a-f]{8}/);
+    expect(message).toContain("chmod 1777 /tmp");
+    // 环境缺陷替换掉「等不到端口」那条:两条同时报等于让人排两次错。
+    expect(message).not.toContain("within 20s");
+  });
+});

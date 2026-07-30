@@ -20,6 +20,7 @@ import type { TraceSpan } from "../../types.ts";
 import type { Sandbox } from "../../types.ts";
 import type { TraceReceiver } from "./receiver.ts";
 import { parseOtlpTraces } from "./parse.ts";
+import { t } from "../../i18n/index.ts";
 
 // collector 脚本:纯 Node.js CJS,无外部依赖。
 // 每收一个 OTLP/HTTP 请求就把 { ct, body(base64) } 追加写一行到 spans 文件,
@@ -94,7 +95,18 @@ async function startCollector(sandbox: Sandbox): Promise<StartedCollector> {
     const portPath = `/tmp/.niceeval-otlp-port-${tag}`;
     const logPath = `/tmp/.niceeval-otlp-collector-${tag}.log`;
 
-    await sandbox.writeFiles({ [collectorPath]: collectorScript(spansPath, portPath) });
+    // 采集器脚本落在系统临时目录(workdir 之外的私有路径,契约见
+    // docs/feature/sandbox/architecture.md「provider 的可写保证不止 workdir」)。/tmp 对运行
+    // 用户不可写时,e2b 一类 provider 只抛一个 500 原始串,读到它的人无从下手:这里翻译成
+    // 「点名路径 + 这是镜像环境缺陷 + 怎么修」,原始错误留在 cause 里做证据,不进消息。
+    try {
+      await sandbox.writeFiles({ [collectorPath]: collectorScript(spansPath, portPath) });
+    } catch (error) {
+      if (isWriteDeniedError(error)) {
+        throw new Error(t("o11y.sandboxTempNotWritable", { path: collectorPath }), { cause: error });
+      }
+      throw error;
+    }
 
     // 后台启动 + 等端口文件,折进一次 shell 往返(远程沙箱一次 exec 要 100-500ms,
     // host 侧逐次轮询会把几秒的启动等待放大成 N 个 API round-trip)。循环两条退出边:
@@ -126,12 +138,51 @@ async function startCollector(sandbox: Sandbox): Promise<StartedCollector> {
       await sandbox.runShell(`kill ${pid} 2>/dev/null || true`).catch(() => {});
     }
     if (attempt >= START_ATTEMPTS) {
+      // 等不到端口的两种常见死因分开报:镜像里没有 node(采集器日志会说),或系统临时目录对
+      // 运行用户不可写——后者采集器自己的写入被静默吞掉,日志是空的,只报「等了 20s」等于让人
+      // 对着空日志猜。探一次写权限,是环境缺陷就按环境缺陷报(点名路径 + 修法)。
+      if (await tempDirWriteDenied(sandbox, portPath)) {
+        throw new Error(t("o11y.sandboxTempNotWritable", { path: portPath }));
+      }
       throw new Error(
         `in-sandbox OTLP collector failed to report its port within ${Math.round(PORT_WAIT_MS / 1000)}s ` +
           `(${attempt} attempts). Collector log:\n${lastLog || "(empty)"}`,
       );
     }
   }
+}
+
+/**
+ * provider SDK 的写入被拒判定:沿 cause 链找权限词法。e2b envd 把 EACCES 包成 500 响应,
+ * 所以不能只看状态码——认的是 `permission denied` / `EACCES` / 只读文件系统这类词法。
+ */
+function isWriteDeniedError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current != null; depth += 1) {
+    const record = typeof current === "object" ? (current as globalThis.Record<string, unknown>) : undefined;
+    const code = record && typeof record.code === "string" ? record.code : "";
+    const message = current instanceof Error ? current.message : String(current);
+    if (/^(EACCES|EPERM|EROFS)$/i.test(code)) return true;
+    if (/EACCES|EPERM|EROFS|permission denied|operation not permitted|read-only file system|not writable/i.test(message)) {
+      return true;
+    }
+    current = record?.cause;
+  }
+  return false;
+}
+
+/**
+ * 采集器落点所在目录的写权限探测,只在启动已经失败的路径上跑一次(正常路径不付代价)。
+ * 只有沙箱**明确**回答 `denied` 才算判定成立——探测本身失败 / 回答不了时不改结论,
+ * 让调用方照原样报「等不到端口」,不拿一个猜测替换掉真实证据。
+ */
+async function tempDirWriteDenied(sandbox: Sandbox, probeBasePath: string): Promise<boolean> {
+  const dir = probeBasePath.slice(0, probeBasePath.lastIndexOf("/")) || "/tmp";
+  const probe = `${dir}/.niceeval-write-probe-${randomUUID().slice(0, 8)}`;
+  const result = await sandbox
+    .runShell(`if touch ${probe} 2>/dev/null; then rm -f ${probe}; echo writable; else echo denied; fi`)
+    .catch(() => undefined);
+  return result?.stdout.trim() === "denied";
 }
 
 async function makeInSandboxReceiver(sandbox: Sandbox): Promise<TraceReceiver> {

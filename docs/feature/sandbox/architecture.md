@@ -83,7 +83,7 @@ export default defineEval({
 - **归因排除清单,runner 私有、锚点时冻结。** 默认在任意目录深度排除 `.git`、`node_modules`、`__pycache__`、Python 虚拟环境(`*venv*/`)、常见构建产物与包管理器缓存——不排除的话,`EvalDef.setup` 里一次 `npm install` 或 agent 自建一次 venv 就会让分类账哈希成千上万个依赖文件,后续窗口的二进制与缓存变化持续放大 object 库。`diff.ignore` / `diff.include` 使用 workdir 根的 gitignore 风格 glob：无 `/` 的 pattern 匹配任意深度的同名项，含 `/` 的 pattern 从 workdir 根匹配，尾 `/` 表示目录。项目自己的 ignore 规则**不**参与归因判断——被项目 ignore 的文件照常记录。
 - **nested Git repository 不得变成证据盲区。** 私有 ledger 发现索引 mode `160000`（submodule / nested repo 的 gitlink）立即让当前阶段报执行错误，并列出路径与修法：被测 checkout 应直接位于 `workdir` 根；确实不参与评分的 nested repo 应由 `diff.ignore` 整体排除。只打印 Git warning 后继续会让 repo 内普通文件修改从 agent diff 静默消失，禁止这种降级。
 - **agent 归因增量 = 逐窗口 delta 序列,不做跨窗口压缩。** `workspace.diff` 阶段从分类账导出每个 send 窗口自己的 before/after,按时序落盘为 `diff.json`(形状见 [Results · diff.json](../record/architecture.md#diffjson))。不压成单一 before/after 是硬约束:窗口之间可能夹着 eval 写入,压缩会把 eval 的修改夹带进 agent 的账;「创建又删除」「改完又改回」也会被压没。文件级摘要(`net` / 触及窗口)与 `diff.get(path)`(最后触及窗口的终态)都是读取面从窗口序列派生的视图,agent 窗口内发生过的改动不因 eval 事后覆盖而被抹掉。
-- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB blob 证据(文本按 before/after 实际字节、二进制按尺寸计),尺寸核算先于内容传输;越界或导出命令失败时 `workspace.diff` 明确报执行错误,不得伪造成空窗口让文件断言产生假阴性。
+- **导出往返是常数次。** `workspace.diff` 用一条沙箱内命令完成**全部** agent 窗口的路径枚举、文本 blob 读取与二进制尺寸统计,结果写进沙箱内的导出文件,宿主经文件通道一次下载并在宿主侧解析校验——provider 往返数与窗口数、文件数都无关,不能退化成逐文件或逐窗口的远端调用,也不把大证据灌进命令 stdout 通道。导出对沙箱环境的全部要求是 git 与 POSIX shell 工具(分类账本身已要求 git),不要求 node、python 等运行时。单窗口上限:最多导出 10,000 个路径、64 MiB 文本 blob 证据,预算只数真正要传输的字节(文本 before/after 实际字节)。二进制不内联内容、只记字节数,不占预算;超过单文件阈值(1 MiB)的文本按二进制同款处理——记 `status` 与字节数、内容显式省略(`elided`,形状见 [Results · diff.json](../record/architecture.md#diffjson)),同样不占预算。尺寸核算先于内容传输;仍然越界或导出命令失败时 `workspace.diff` 明确报执行错误,不得伪造成空窗口让文件断言产生假阴性。内容被省略的条目,存在性与 `status` 断言照常成立;内容断言在读取那一刻如实报证据不可用,不静默判过或判败。
 - **作用域就是 workdir,刻意不扩大。** 全文件系统 diff 只有 Docker 有原生通道(容器层 diff),且只有路径没有内容、噪声大、做不了 send 窗口归因,按 provider 分支还破坏[核心中立](../../architecture.md);workdir 之外的世界($HOME、全局安装、PATH)不靠更大的 diff 回答,靠留存现场(见下节)。git 是唯一便携、增量、带内容存储、能支撑逐窗口归因的引擎,这是选它的理由,不是历史惯性。
 
 agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCommand` 看到的就是最终状态;留存现场(`--keep-sandbox`)保有含分类账的完整沙箱。逐窗口回放变更历史有公开入口——[`niceeval sandbox history` / `sandbox diff`](cli.md#回放留存现场的变更历史sandbox-history-diff),不需要摸 ledger 的内部路径。
@@ -95,6 +95,11 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/hook”全局值——并行 hook 或并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value、stdout/stderr 与可能含 secret 的完整长脚本不进入 timing 记录。operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer 写入;展示层不能解析命令文本猜业务分组。这样「沙箱起了多久、setup 哪个 hook/命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端的有界/full 两档入口是 [`niceeval show --timing`](../reports/show/timing.md),网页入口是 `niceeval view` 的 Attempt 详情。
 
 核心固定的是这条调用链本身(创建后先环境层 Hook、再打分类账锚点、再 eval Fixture、再 agent 预置;agent 归因增量在评分前折叠完成,收尾段按 eval → agent → 环境层的顺序在判定之后执行)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
+
+provider 的可写保证不止 `workdir`。runner 要在 workdir 外的私有路径放沙箱侧运行时文件——
+OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。
+`/tmp` 不可写是环境缺陷:撞上它的 attempt 按环境错误 `errored`(不携带,修好镜像重跑即续上),
+报错点名不可写的路径与修法,不透传 SDK 的原始错误串。
 
 ## 留存(keep)与注册表
 

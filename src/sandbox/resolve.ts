@@ -157,7 +157,7 @@ export function createSandbox(opts: {
     Effect.promise<Sandbox>(async () => {
       // 起好就登记:让 cli 的兜底强清(二次 Ctrl+C / 看门狗超时)能直接停到它,不只靠下面的
       // release。即便本 fiber 创建后立刻被中断、release 还没来得及跑,登记表也已认得这个沙箱。
-      const sb = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot));
+      const sb = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot), r.provider);
       registerSandbox(sb);
       return sb;
     }),
@@ -183,7 +183,7 @@ export async function createSandboxInstance(opts: {
 }): Promise<Sandbox> {
   const r = resolveSandbox(opts.sandbox, opts.runtime);
   const feedback = opts.feedback ?? fallbackFeedback();
-  const sandbox = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot));
+  const sandbox = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot), r.provider);
   registerSandbox(sandbox);
   return sandbox;
 }
