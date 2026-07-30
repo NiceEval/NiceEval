@@ -167,6 +167,30 @@ describe("--json envelope 形状", () => {
     expect(doc.view).toBe("attempt");
     expect(doc.scope.experiments).toEqual(["dev-e2b/codex"]);
   });
+
+  // locator 的寻址作用域是整个记录根,不是现刻水位(docs/feature/record/architecture.md
+  // 「locator 的唯一性」):`--history` 印出的历史 Run attempt 必须能被同一个 `@<locator>` 打开。
+  // 区分力靠「同一个 evalId 在新旧两个 Run 里各有一条」——现刻水位只留新的那条,旧的那条
+  // 曾被当成「不在选中范围内」而报 not-found。
+  it("@<locator> 指向历史 Run 的 attempt 时照样打开,不受现刻水位收窄", async () => {
+    const root = await makeRoot();
+    await writeSnapshot(root, "2026-07-07T09-00-00-000Z", { experimentId: "dev-e2b/codex", startedAt: "2026-07-07T09:00:00.000Z" }, [
+      res("weather/brooklyn", "failed"),
+    ]);
+    await writeSnapshot(root, "2026-07-08T10-00-00-000Z", { experimentId: "dev-e2b/codex", startedAt: "2026-07-08T10:00:00.000Z" }, [
+      res("weather/brooklyn", "passed"),
+    ]);
+    const results = await openRecord(root);
+    const experiment = results.experiments.find((e) => e.id === "dev-e2b/codex")!;
+    const olderRun = experiment.runs.find((r) => r.startedAt !== experiment.latestRun.startedAt)!;
+    const historical = olderRun.evals[0]!.attempts[0]!;
+    expect(historical.locator).not.toBe(experiment.latestRun.evals[0]!.attempts[0]!.locator);
+
+    const { doc } = await showJson(root, [historical.locator!]);
+    expect(doc.view).toBe("attempt");
+    expect(doc.scope.experiments).toEqual(["dev-e2b/codex"]);
+    expect((doc.data as { summary: { verdict: string } }).summary.verdict).toBe("failed");
+  });
 });
 
 // ───────────────────────── text 面与 --json 面同一批实体、共有字段同值 ─────────────────────────

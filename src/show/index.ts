@@ -57,10 +57,12 @@ import {
   evalSourceText,
   executionText,
   otherPagesText,
+  runTimingJson,
+  runTimingText,
   timingText,
   skippedRunsText,
 } from "./render.ts";
-import type { AttemptEvidence, AttemptHandle, Record, Sample } from "../record/index.ts";
+import type { AttemptEvidence, AttemptHandle, Record, Run, Sample } from "../record/index.ts";
 import type { ReportDefinition } from "../report/runtime/host.ts";
 import type { DeltaData, StabilityMatrixData, UsageTableData } from "../report/model/types.ts";
 
@@ -297,6 +299,24 @@ async function evidenceJsonOf(view: ShowJsonView, attempts: readonly AttemptHand
     ordered.map(async (attempt) => evidenceJsonDataOf(view, await loadAttemptEvidence(attempt))),
   );
   return perAttempt.length === 1 ? perAttempt[0] : perAttempt;
+}
+
+/** 不带 attempt locator 的 `--timing`:按 Sample.runs 输出 Run 级 activity 树。 */
+function renderRunTimingSections(
+  runs: readonly Run[],
+  opts: { width: number; mode: "summary" | "full" },
+): string {
+  const sections: string[] = [];
+  for (const run of runs) {
+    const header = `${run.experimentId}  run ${run.runId.slice(0, 8)}  ${run.startedAt}`;
+    sections.push(runTimingText(run, { header, width: opts.width, mode: opts.mode, attempts: run.attempts }));
+  }
+  return sections.join("\n\n");
+}
+
+function runTimingJsonOf(runs: readonly Run[]): unknown {
+  const docs = runs.map((run) => runTimingJson(run, run.attempts));
+  return docs.length === 1 ? docs[0] : docs;
 }
 
 /**
@@ -797,15 +817,10 @@ async function show(
       if (e instanceof LocatorNotFoundError) throw new ShowError(t("cli.show.locatorNotFound", { message: e.message }));
       throw e;
     }
-    // locator 只能命中已经由 --exp / --fresh 构造出的有效根；不能因为它是直接寻址
-    // 就绕过收窄回扫完整记录根。历史 attempt 仍在有效根的 attempts 集中，因此可达。
-    const effectiveAttempts = currentSample(results, {
-      experiments: flags.experiment,
-      fresh: flags.fresh,
-    }).attempts;
-    if (!effectiveAttempts.some((candidate) => candidate.locator === attempt.locator)) {
-      throw new ShowError(t("cli.show.locatorNotFound", { message: `Locator ${locatorArg} is outside the selected record scope.` }));
-    }
+    // locator 的寻址作用域就是这个记录根扫到的全部 attempt(docs/feature/record/architecture.md
+    // 「locator 的唯一性」),不是现刻水位、也不是某个 Run:`--history` 印出的历史 attempt
+    // 必须能被同一个 `@<locator>` 打开。因此这里不再拿 currentSample 的范围做二次筛,读取侧
+    // 只有 Malformed / NotFound / Ambiguous 三种失败。
     if (flags.usage) {
       if (flags.json) {
         // `--usage` 的 `data` 恒为数组(与「范围含多个 attempt 才是数组」的一般规则不同——
@@ -1003,22 +1018,76 @@ async function show(
   // 证据切面是宿主本体:出现即走证据室,不渲染报告槽(与默认报告同规则)。每个切片接受任意
   // 范围——范围含多个 attempt 时按 experimentId、evalId、attempt 序逐 attempt 分节
   // (renderEvidenceSections,与上面 `@<locator>` 单元素范围共用同一份实现)。
+  // `--timing` 不带 attempt locator 时改读 Run 级 activity 树(docs/feature/reports/show/timing.md
+  // 「Run 级 activity 的读取」),与 attempt 生命周期树分流。
   if (evidence) {
+    const timingMode =
+      flags.timing !== undefined && flags.timing !== false
+        ? flags.timing === "full"
+          ? ("full" as const)
+          : ("summary" as const)
+        : undefined;
+    const attemptEvidenceFlags = {
+      source: flags.source,
+      execution: flags.execution,
+      // Run 级 timing 已在上面分流;这里不再按 attempt 重复投影。
+      timing: undefined as ShowFlags["timing"],
+      diff: flags.diff,
+      diffPath: flags.diffPath,
+      expand: flags.expand,
+    };
+    const hasAttemptEvidence =
+      flags.source === true ||
+      flags.execution === true ||
+      flags.diff === true ||
+      flags.diffPath !== undefined;
+
     if (flags.json) {
       const view = evidenceViewOf(flags);
+      if (view === "timing" && timingMode) {
+        const data = runTimingJsonOf(selection.runs);
+        io.out(
+          renderShowJson({
+            format: "niceeval.show",
+            schemaVersion: 1,
+            view,
+            scope: buildShowScope({
+              resultsRoot: root,
+              patterns,
+              experiments: resolvedExperimentIds,
+              fresh: flags.fresh === true,
+            }),
+            data,
+          }),
+        );
+        return;
+      }
       const data = await evidenceJsonOf(view, selection.attempts);
       io.out(
         renderShowJson({
           format: "niceeval.show",
           schemaVersion: 1,
           view,
-          scope: buildShowScope({ resultsRoot: root, patterns, experiments: resolvedExperimentIds, fresh: flags.fresh === true }),
+          scope: buildShowScope({
+            resultsRoot: root,
+            patterns,
+            experiments: resolvedExperimentIds,
+            fresh: flags.fresh === true,
+          }),
           data,
         }),
       );
       return;
     }
-    io.out((await renderEvidenceSections(selection.attempts, flags, grep, cwd, io.width)) + "\n");
+
+    const blocks: string[] = [];
+    if (timingMode) {
+      blocks.push(renderRunTimingSections(selection.runs, { width: io.width, mode: timingMode }));
+    }
+    if (hasAttemptEvidence) {
+      blocks.push(await renderEvidenceSections(selection.attempts, attemptEvidenceFlags, grep, cwd, io.width));
+    }
+    io.out(blocks.filter((b) => b.length > 0).join("\n\n") + "\n");
     return;
   }
 
