@@ -1,22 +1,37 @@
 // 数据集与判据文件加载器:结构化数据读成 YAML / JSON,配 .map(row => defineEval(...)) 扇出;
-// 非结构化的判据文件读成原文。经这里读入的文件都登记进读它那条 eval 的指纹。
+// 非结构化的判据文件读成原文;一整棵判据树只登记不读入(loadCriteria,流式哈希)。
+// 经这里读入或登记的文件都进读它那条 eval 的指纹。
 // 路径两种写法等价:项目根相对的字符串,或 eval 文件相对的 `file:` URL(`new URL(p, import.meta.url)`)。
 // 登记只在发现期的模块求值里成立,所以 capture 不在场时直接报错,不静默漏登记。
 
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../i18n/index.ts";
+import { compilePatterns, enumerationBases, includedByPatterns, unmatchedIncludes, type CompiledPattern } from "./glob.ts";
 
-let activeCapture: Set<string> | undefined;
+/** 一次发现期求值的登记表:读入即登记的数据文件,与只登记不读入的判据树文件,分两格。 */
+interface LoaderCapture {
+  readonly data: Set<string>;
+  readonly criteria: Set<string>;
+}
 
-/** 发现期包住一个 eval 模块的求值，记录它经公开 loader 读取的数据文件。 */
-export async function captureLoadedFiles<T>(load: () => Promise<T>): Promise<{ value: T; paths: string[] }> {
+let activeCapture: LoaderCapture | undefined;
+
+/**
+ * 发现期包住一个 eval 模块的求值，记录它经公开 loader 读取的数据文件（`paths`）
+ * 与经 `loadCriteria` 登记的判据树文件（`criteriaPaths`）。两格分开是因为指纹口径不同:
+ * 前者哈希已读进内存的内容,后者按内容流式哈希。
+ */
+export async function captureLoadedFiles<T>(
+  load: () => Promise<T>,
+): Promise<{ value: T; paths: string[]; criteriaPaths: string[] }> {
   const previous = activeCapture;
-  const paths = new Set<string>();
-  activeCapture = paths;
+  const capture: LoaderCapture = { data: new Set<string>(), criteria: new Set<string>() };
+  activeCapture = capture;
   try {
-    return { value: await load(), paths: [...paths].sort() };
+    const value = await load();
+    return { value, paths: [...capture.data].sort(), criteriaPaths: [...capture.criteria].sort() };
   } finally {
     activeCapture = previous;
   }
@@ -28,7 +43,7 @@ export async function captureLoadedFiles<T>(load: () => Promise<T>): Promise<{ v
 function resolvedPath(path: string | URL): string {
   const absolute = typeof path === "string" ? resolve(process.cwd(), path) : fromFileUrl(path);
   if (!activeCapture) throw new Error(t("loaders.outsideDiscovery", { path: String(path) }));
-  activeCapture.add(absolute);
+  activeCapture.data.add(absolute);
   return absolute;
 }
 
@@ -54,6 +69,91 @@ export async function loadJson<T = unknown>(path: string | URL): Promise<T> {
  */
 export async function loadText(path: string | URL): Promise<string> {
   return readFile(resolvedPath(path), "utf-8");
+}
+
+/**
+ * 登记一棵判据树进这条 eval 的指纹,不把内容读进内存。判分标准是一整棵树(隐藏测试目录、
+ * 参考实现、跑测脚本)、内容只经 `t.sandbox.uploadDirectory` 整体送进沙箱时用它:
+ * 发现期展开 glob、把每个匹配文件流式哈希进指纹,返回排序后的项目根相对路径清单。
+ * 树里改一字节、增一个文件、删一个文件,都作废引用这棵树的那条 eval;权限位与修改时间不进哈希,
+ * 重新 clone 一份工作树不作废。单个文件、且内容要写进沙箱时用 `loadText`。
+ *
+ * pattern 是项目根相对的 glob(`**` 跨层、`*` / `?` 段内、`[...]` 字符类、`{a,b}` 分支),
+ * `!` 前缀为排除;按声明顺序求值,后写的覆盖先写的。匹配集按文件系统枚举、不看 git:
+ * 新写的判据没 `git add` 也照样进指纹,代价是本地跑测冒出的生成物同样被盖到,用 `!` 排除。
+ *
+ * 只能在 eval 文件的模块顶层调用(发现期求值那一刻),`test(t)` 运行期调用直接报错——
+ * 携带决策发生在任何 attempt 执行之前,那时才登记已经来不及。
+ *
+ * 两种用法错误直接抛:某个 include pattern 一个文件都没匹配到(或命中的都被 `!` 排除了)——
+ * 多半是写错了或文件搬走了,别的 pattern 有命中也不放过,静默放过等于判据悄悄变窄;
+ * 以及匹配落到项目根外(符号链接穿出根)。`!` 排除 pattern 不受「必须有命中」这条约束。
+ *
+ * @param patterns 一个或多个项目根相对 glob,`!` 前缀为排除。
+ * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
+ */
+export async function loadCriteria(...patterns: string[]): Promise<string[]> {
+  const capture = activeCapture;
+  if (!capture) throw new Error(t("loaders.outsideDiscovery", { path: patterns.join(" ") }));
+  const root = process.cwd();
+  const compiled = compilePatterns(patterns);
+  const matched = new Set<string>();
+  for (const base of enumerationBases(compiled)) {
+    await collectCriteria(root, base, compiled, matched);
+  }
+  const relativePaths = [...matched].sort();
+  // 逐条 include pattern 判空,不是整次调用判空:三条 pattern 里搬走了一条对应的文件时,
+  // 别的两条有命中会让整体放行,判据悄悄变窄——正是「该重跑的没重跑」那个方向。
+  const missing = unmatchedIncludes(compiled, relativePaths);
+  if (missing.length > 0) {
+    throw new Error(t("loaders.criteriaNoMatch", { patterns: missing.join(" "), root }));
+  }
+  for (const path of relativePaths) capture.criteria.add(resolve(root, path));
+  return relativePaths;
+}
+
+/** 从一个枚举起点往下走,把命中 pattern 集的文件按项目根相对路径收进 out。 */
+async function collectCriteria(root: string, base: string, compiled: readonly CompiledPattern[], out: Set<string>): Promise<void> {
+  // pattern 自己就指到根外(`../`、绝对路径)时在起点上先报,不用等枚举。
+  await assertInsideRoot(root, resolve(root, base), base || ".");
+  // 符号链接可以指回树内,realpath 去重防环。
+  const visited = new Set<string>();
+  const walk = async (dir: string): Promise<void> => {
+    const real = await realpath(dir).catch(() => undefined);
+    if (real === undefined || visited.has(real)) return;
+    visited.add(real);
+    // 起点不存在 / 不是目录时不在这里报:交给「匹配集为空」统一给下一步。
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);
+    if (entries === undefined) return;
+    for (const entry of entries) {
+      const absolute = join(dir, entry.name);
+      let isDirectory = entry.isDirectory();
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        const target = await stat(absolute).catch(() => undefined);
+        if (target === undefined) continue; // 断链按不存在处理
+        isDirectory = target.isDirectory();
+        isFile = target.isFile();
+      }
+      if (isDirectory) {
+        await walk(absolute);
+        continue;
+      }
+      if (!isFile) continue;
+      const relativePath = relative(root, absolute).split(sep).join("/");
+      if (!includedByPatterns(relativePath, compiled)) continue;
+      await assertInsideRoot(root, absolute, relativePath);
+      out.add(relativePath);
+    }
+  };
+  await walk(resolve(root, base));
+}
+
+async function assertInsideRoot(root: string, absolute: string, shown: string): Promise<void> {
+  const real = await realpath(absolute).catch(() => absolute);
+  if (real !== root && !real.startsWith(`${root}${sep}`)) {
+    throw new Error(t("loaders.criteriaOutsideRoot", { path: shown, resolved: real, root }));
+  }
 }
 
 /**

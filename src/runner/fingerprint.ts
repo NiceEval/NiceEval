@@ -2,6 +2,7 @@
 // 上次 passed 且指纹未变的 (experimentId, evalId) 组合可以直接携入,不再重跑。
 
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
@@ -40,6 +41,12 @@ export async function computeFingerprint(
   const loaderData = await Promise.all(
     [...(evalDef.loaderDataPaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedRead(path, sourceCache)]),
   );
+  // 判据树(loadCriteria 登记)进的是「项目根相对路径 × 内容流式哈希」对:内容从不进内存,
+  // 权限位与 mtime 不参与,所以重新 clone 一份工作树不作废。增删文件与改一字节同等作废——
+  // 前者改的是这张对表的成员,后者改的是某一项的哈希。
+  const criteria = await Promise.all(
+    [...(evalDef.criteriaPaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)]),
+  );
   const payload = {
     configHash,
     source,
@@ -51,6 +58,9 @@ export async function computeFingerprint(
     },
     sandbox: sandboxRunInfo(sandboxForEval(run, evalDef, configSandbox)),
     loaderData,
+    // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
+    // 一次性作废,而它们的判据面本来什么都没变。
+    ...(criteria.length > 0 ? { criteria } : {}),
   };
   // timeoutMs(evalDef / run 两处来源)刻意不入哈希:超时上限不改变「结果是什么」,只决定
   // 「等不等得到」,把它掺进指纹会让单纯调高上限也作废全部已完成结果。它改用 planCarry 里的
@@ -66,6 +76,27 @@ async function cachedRead(path: string, cache?: Map<string, Promise<string>>): P
     cache?.set(path, pending);
   }
   return pending;
+}
+
+/**
+ * 判据树文件的内容哈希:流式算,几百个文件上百 MB 的判据树不整读进内存。
+ * 与 `cachedRead` 共用同一张表,键加 `criteria:` 前缀——同一个文件可能既被 `loadText` 读入
+ * (缓存的是内容)又被 `loadCriteria` 登记(缓存的是哈希),不分开两种值会互相顶掉。
+ */
+async function cachedContentHash(path: string, cache?: Map<string, Promise<string>>): Promise<string> {
+  const key = `criteria:${path}`;
+  let pending = cache?.get(key);
+  if (!pending) {
+    pending = streamHash(path);
+    cache?.set(key, pending);
+  }
+  return pending;
+}
+
+async function streamHash(path: string): Promise<string> {
+  const hasher = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hasher.update(chunk as Buffer);
+  return hasher.digest("hex");
 }
 
 /** 项目内静态 import 图；外部包和动态 import 有意不进入闭包。 */

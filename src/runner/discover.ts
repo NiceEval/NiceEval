@@ -59,7 +59,7 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
   const files = (await walkFiles(dir, (n) => n.endsWith(".eval.ts") || n.endsWith(".eval.tsx"))).sort();
   const out: DiscoveredEval[] = [];
   for (const file of files) {
-    const { value: mod, paths: loaderDataPaths } = await captureLoadedFiles(() => importDiscovered<{
+    const { value: mod, paths: loaderDataPaths, criteriaPaths } = await captureLoadedFiles(() => importDiscovered<{
       default?: EvalDef | EvalDef[] | globalThis.Record<string, EvalDef>;
     }>(file, root, "eval"));
     const def = mod.default;
@@ -72,7 +72,7 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
     if (Array.isArray(def)) {
       def.forEach((d, i) => {
         assertScoreEvalOrigin(d, file);
-        out.push({ ...d, id: `${baseId}/${pad4(i)}`, baseDir, sourcePath: file, source, loaderDataPaths });
+        out.push({ ...d, id: `${baseId}/${pad4(i)}`, baseDir, sourcePath: file, source, loaderDataPaths, criteriaPaths });
       });
     } else if (!isEvalDef(def)) {
       const dataset = def;
@@ -85,11 +85,11 @@ export async function discoverEvals(root: string): Promise<DiscoveredEval[]> {
           );
         }
         assertScoreEvalOrigin(d, file);
-        out.push({ ...d, id: `${baseId}/${key}`, baseDir, sourcePath: file, source, loaderDataPaths });
+        out.push({ ...d, id: `${baseId}/${key}`, baseDir, sourcePath: file, source, loaderDataPaths, criteriaPaths });
       }
     } else {
       assertScoreEvalOrigin(def, file);
-      out.push({ ...def, id: baseId, baseDir, sourcePath: file, source, loaderDataPaths });
+      out.push({ ...def, id: baseId, baseDir, sourcePath: file, source, loaderDataPaths, criteriaPaths });
     }
   }
   return out;

@@ -38,7 +38,7 @@
 ```text
 configHash  = hash(agent, model, reasoningEffort, flags, sandboxReuse, 顶层 sandbox spec, strict, judge)
 fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / metadata,
-                   该 eval 解析到的 sandbox 产物, loader 读入的数据文件内容)
+                   该 eval 解析到的 sandbox 产物, loader 登记的数据文件内容与判据树哈希)
 ```
 
 `configHash` 是 Run 级的**配置身份**,同时是跨 Run 可比性的唯一判据,
@@ -163,12 +163,16 @@ export default defineEval({
 - **静态面**:eval 文件字节,加上它的导入图里解析后落在项目根内的每个模块,递归展开。
   判据是模块解析后的真实路径,不是 import 写法——相对路径、`tsconfig` 的 `paths` 别名都算数。
   按项目根相对路径排序后逐个哈希,顺序固定;循环导入按解析后的绝对路径去重。
-- **数据面**:经 `loadYaml` / `loadJson` / `loadText` 读入的文件,内容哈希进读它的那条 eval。
-  这些 loader 在发现阶段的模块求值期就把文件读完了,早于解析期算指纹,所以拿得到内容。
-  判据不是结构化数据时用 `loadText` 读原文:隐藏测试脚本、参考实现、shell 模板都是判据文件,
-  读入即宣告「它参与判定」,改一字节就重跑引用它的那条 eval。
-  loader 只能在发现期的模块顶层调用,`test(t)` 运行期调用直接报错,不静默漏登记;
-  路径收项目根相对字符串或 `URL`(完整用例见[判据文件](../eval/use-case/criteria-files.md))。
+- **数据面**:经 loader 登记的文件,内容哈希进引用它的那条 eval——增删文件与改一字节同等作废。
+  哈希口径是排序后的「相对路径 × 内容哈希」对,权限位与修改时间不进哈希。loader 分两类:
+  - `loadYaml` / `loadJson` / `loadText` **读入即登记**:发现阶段的模块求值期把文件读完,
+    内容既交给 eval 使用也哈希进指纹;判据不是结构化数据(隐藏测试脚本、shell 模板)时用
+    `loadText` 读原文。
+  - `loadCriteria` **登记不读入**:收一个或多个项目根相对 glob pattern(`!` 前缀为排除),
+    发现期展开匹配集、逐文件流式哈希,内容不进内存,返回排序后的项目根相对路径清单。
+    判据是一整棵树、内容只经 `uploadDirectory` 整体送进沙箱时用它。
+  - 两类 loader 都只能在发现期的模块顶层调用,`test(t)` 运行期调用直接报错,不静默漏登记;
+    单文件路径收项目根相对字符串或 `URL`,完整用例见[判据文件](../eval/use-case/criteria-files.md)。
 
 两块之外还有两处进不来,是明确的缺口:落在 `node_modules` 里的包(含 workspace 内经 symlink
 解析过去的那些)、以及动态 `import()`。改了这些要重验用 [`--rerun all`](use-case/重新运行/)。
