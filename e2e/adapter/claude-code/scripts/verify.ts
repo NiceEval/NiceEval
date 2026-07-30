@@ -8,7 +8,7 @@
 // 启动/健康检查/关闭属于 scripts/e2e.ts,这里只假设它已经在跑。
 //
 // 验收顺序:
-//   1. 真实跑全部 5 个 experiments(--force),全部通过(退出 0),组合输出写进
+//   1. 真实跑全部 6 个 experiments(--force),全部通过(退出 0),组合输出写进
 //      logs/exp-ci.log 供 e2e.ts 做 infra/regression 分类。
 //   2. show 默认报告——6 条 Eval 都实际运行了,少排用例不能全绿。
 //   3. show --history——逐 attempt 断言 verdict 是 passed,拿到 locator。
@@ -33,10 +33,10 @@ import assert from "node:assert/strict";
 const CI_LOG = "logs/exp-ci.log";
 
 const EXPECTED_EVALS = ["coding-task", "session-resume", "skill-used", "mcp-tools", "plugin-mcp", "websearch-denied"];
-// 本仓库有 5 个 experiment(每个挂不同 agent 配置),bare `niceeval show` 按 experiment group
+// 本仓库有 6 个 experiment(每个挂不同 agent 配置),bare `niceeval show` 按 experiment group
 // 汇总展示(见 experiments/*.ts 的文件名),不是按 eval id 摊平列出——eval id 级别的存在性由
-// 下面 3. show <eval-id> --history 逐条核验,这里只确认 5 个 experiment group 都被发现过。
-const EXPECTED_EXPERIMENTS = ["coding", "skill", "mcp", "plugin", "locked-down"];
+// 下面 3. show <eval-id> --history 逐条核验,这里只确认 6 个 experiment group 都被发现过。
+const EXPECTED_EXPERIMENTS = ["coding", "skill", "mcp", "plugin", "plugin-reuse", "locked-down"];
 
 function ensureDirs(): void {
   mkdirSync("logs", { recursive: true });
@@ -71,7 +71,7 @@ function latestAttemptLine(evalId: string): string {
 }
 
 function runExperiments(): void {
-  console.log("\n=== 1. run all 5 experiments for real (--force) ===");
+  console.log("\n=== 1. run all 6 experiments for real (--force) ===");
   // `--json` 把 NDJSON 事件流打到 stdout(`--output` 已经从 CLI 整个删除),落进 CI_LOG 供
   // e2e.ts 的 isInfraFailure() 解析结构化 error 事件;`pnpm --silent exec` 防止 pnpm 自己的
   // preamble 行混进 stdout 污染 NDJSON。

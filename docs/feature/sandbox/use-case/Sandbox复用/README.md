@@ -12,6 +12,7 @@ Experiment 声明 `sandboxReuse: true` 后，仍会真实执行每条 Attempt，
 | 批次超过一个 Sandbox 的寿命 | [在派发前更换 Sandbox](长批次更换Sandbox.md) |
 | 同一题重复运行并观察稳定性 | [安装只付一次](重复运行看稳定性.md) |
 | 选中的 Eval 使用不同环境配置 | [按环境配置分别复用](异构批次.md) |
+| 实验声明了原生 Plugin | [声明了原生 Plugin 的实验开复用](插件实验开复用.md) |
 | 现有 Eval 还不能使用 Sandbox 复用 | [准备可复用的 Eval](准备可复用评测.md) |
 
 完整契约见 [Sandbox 复用](../../reuse.md)。

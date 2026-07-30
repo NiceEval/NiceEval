@@ -32,6 +32,10 @@ export const en = {
     "{{agent}} marketplace name mismatch: the configured name \"{{expected}}\" (source: {{source}}) is not in the registered list after add; actually registered: {{actual}}. " +
     "marketplace.name must equal the name declared in the target repo's manifest — use the real name.",
   "plugin.installFailed": "Could not install {{agent}} plugin \"{{name}}\" (marketplace: {{marketplace}}):\n{{tail}}",
+  "plugin.listFailed": "Could not read the installed {{agent}} plugin list ({{command}}):\n{{tail}}",
+  "plugin.removeFailed":
+    "Could not remove the same-named installed {{agent}} plugin \"{{name}}\":\n{{tail}}\n" +
+    "Installation converges the sandbox to the declaration: a leftover install under the same name is removed first, then reinstalled from the declared marketplace.",
   "nativeConfig.pathNotProjectRelative":
     "{{agent}} {{field}} only accepts relative paths inside the project root, got \"{{path}}\". Absolute paths, `..` segments and `~` paths are rejected; copy configs from outside the project into it first.",
   "nativeConfig.missing":

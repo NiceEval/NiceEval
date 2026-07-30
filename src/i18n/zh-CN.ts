@@ -30,6 +30,10 @@ export const zhCN = {
     "{{agent}} marketplace 名不匹配:配置的 name \"{{expected}}\"(source: {{source}})不在 add 后回读的注册列表里,本次实际注册为:{{actual}}。" +
     "marketplace.name 必须等于目标仓库 manifest 声明的 name,改成真实名字再跑。",
   "plugin.installFailed": "{{agent}} plugin \"{{name}}\"(marketplace: {{marketplace}})安装失败:\n{{tail}}",
+  "plugin.listFailed": "{{agent}} 读取已安装 plugin 列表失败({{command}}):\n{{tail}}",
+  "plugin.removeFailed":
+    "{{agent}} 移除同名 plugin \"{{name}}\" 失败:\n{{tail}}\n" +
+    "安装前要把沙箱状态收敛到声明,同名的残留安装必须先移除再从声明的 marketplace 重装。",
   "nativeConfig.pathNotProjectRelative":
     "{{agent}} {{field}} 只接受项目根内的相对路径,收到 \"{{path}}\"。绝对路径、包含 `..` 的路径和 `~` 路径都不行;项目根外的配置先复制进项目再引用。",
   "nativeConfig.missing":

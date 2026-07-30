@@ -33,10 +33,14 @@ function shWithLog(cmd: string, logPath: string): string {
   return res.stdout ?? "";
 }
 
-function latestAttemptLine(evalId: string): string {
-  const lines = sh(`pnpm exec niceeval show ${evalId} --history`)
+function attemptLines(evalId: string): string[] {
+  return sh(`pnpm exec niceeval show ${evalId} --history`)
     .split("\n")
     .filter((l) => l.includes("@"));
+}
+
+function latestAttemptLine(evalId: string): string {
+  const lines = attemptLines(evalId);
   assert.ok(
     lines.length > 0,
     `show --history 里 ${evalId} 没有任何 attempt 行——实验没跑到这条 Eval,先跑 pnpm exec niceeval exp --dry 看计划`,
@@ -52,15 +56,15 @@ export default async function runVerify(): Promise<void> {
   rmSync("logs", { recursive: true, force: true });
   mkdirSync("logs", { recursive: true });
 
-  // 用例一:跑本仓库全部 5 个实验(覆盖 7 条 Eval),断言退出码。--force 保证真实新跑,
+  // 用例一:跑本仓库全部 6 个实验(覆盖 7 条 Eval),断言退出码。--force 保证真实新跑,
   // --json 把 NDJSON 事件流打到 stdout 供 e2e.ts 的 infra/regression 分类解析结构化 error
   // 事件(`--output` 已经从 CLI 整个删除),--junit 落 CI 出口。日志无论成败都先落盘
   // (shWithLog);`pnpm --silent exec` 防止 pnpm 自己的 preamble 行混进 stdout 污染 NDJSON。
   shWithLog("pnpm --silent exec niceeval exp --force --json --junit junit.xml", "logs/exp-ci.log");
 
-  // 用例二:show 默认报告——应发现的 Eval 都实际运行了(少排用例不能全绿)。本仓库有 5 个
-  // experiment(baseline/mcp/plugin/skill/configfile),裸 `show` 不带位置参数时按「实验组」
-  // 分区展示比较报告——5 个组时折叠成组级汇总表(每组一行「N passed」,不逐条列 Eval id),
+  // 用例二:show 默认报告——应发现的 Eval 都实际运行了(少排用例不能全绿)。本仓库有 6 个
+  // experiment(baseline/mcp/plugin/plugin-reuse/skill/configfile),裸 `show` 不带位置参数时按
+  // 「实验组」分区展示比较报告——多个组时折叠成组级汇总表(每组一行「N passed」,不逐条列 Eval id),
   // 只有单一实验组时才会退化展开成本仓库这种逐 Eval 视图(真机核对过:只跑 baseline 一个
   // experiment 时裸 `show` 确实逐条列出 coding-task/session/usage)。`--page attempts` 是
   // 不随实验组数收缩的逐 attempt 视图,才是"少排用例不能全绿"这条检查该用的页
@@ -86,6 +90,17 @@ export default async function runVerify(): Promise<void> {
     if (id === "coding-task") codingTaskLocator = line.match(/@\S+/)?.[0];
   }
   assert.ok(codingTaskLocator, "没能从 coding-task 的 --history 行里提取 locator");
+
+  // plugin-hook 由 plugin 与 plugin-reuse 两个实验各跑一遍,复用实验的第二条 attempt 是安装
+  // 收敛的探针:它在同名不同源的 marketplace 残留上重跑 agent setup,不收敛就 errored。所以
+  // 逐条断言,而不是只看最新一条。
+  for (const line of attemptLines("plugin-hook")) {
+    assert.ok(
+      line.includes("passed"),
+      `plugin-hook 有 attempt 不是 passed:${line}\n` +
+        "复用沙箱的第二条 attempt 通常是安装收敛没做:同名 marketplace 注册要先摘除再按声明重加,同名 Plugin 要先移除再重装",
+    );
+  }
 
   // 用例四:show --execution——调用与入参都存在,且本适配器声明 tracing 面(节点带时间注释)。
   // TOOL 卡片头的名字是 ExecutionActionNode.name(原始未归一化名,对齐 codex `--json` 的

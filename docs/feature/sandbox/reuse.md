@@ -66,6 +66,12 @@ Runner 不能把 Agent `setup` 提升成每个 Sandbox 一次。
 稳定 Agent CLI 应进入预制环境；随 Experiment 变化、但不随 Eval 变化的准备可以进入
 SandboxSpec `setup`。
 
+Agent setup 的安装步骤在复用沙箱上按声明收敛，不假设沙箱空白：
+同名的 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见
+[Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
+「setup 幂等」的作者义务只覆盖作者自己写的 Hook：SandboxSpec `setup`、Eval `setup` 与 Agent factory 的
+`postSetup`。
+
 ## environment profile
 
 一个 Experiment 仍只有一个 SandboxSpec。

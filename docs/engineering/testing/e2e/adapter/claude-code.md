@@ -12,7 +12,7 @@ Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务�
 | coding 任务工具轨 | 真实任务下 transcript JSONL 归一出文件与 shell 工具事件，按 `tool_use.id` / `tool_result.tool_use_id` 配对                       |
 | Skills            | 挂载的 Skill 被使用时产生 `skill.loaded` 一等事件                                                                                |
 | MCP               | stdio 与远程 HTTP 两种形态的 server 都能被调用，工具以 `mcp__<server>__<tool>` 命名出现；反例断言未挂载的 server `notCalledTool` |
-| Plugins           | marketplace 安装的 Plugin 行为在事件流中可观察                                                                                   |
+| Plugins           | marketplace 安装的 Plugin 行为在事件流中可观察；声明 `sandboxReuse` 时同一沙箱的第二条 Attempt 安装收敛——同名 marketplace 注册被替换为声明来源、Plugin 按声明重装，不因残留状态报错 |
 | settingsFile      | `permissions.deny` 关闭 WebSearch / WebFetch 后，反例断言 `notCalledTool` 的 `web_search` / `web_fetch`                          |
 | 会话              | 原生 resume ID 续接，第二轮能引用首轮事实                                                                                        |
 | usage             | transcript 抠出的逐轮 usage 非空并聚合进 attempt                                                                                 |

@@ -356,6 +356,11 @@ function codexProgressDetail(line: string): string | undefined {
  * 先按 `marketplace.name` 连 Marketplace(同名只连一次,`--ref` 钉版本,add 后回读注册
  * 列表校验名字真的注册上了),再装指定 Plugin。
  * 只按 codex 自己的 marketplace / plugin 协议走 —— 与 claude-code 的实现不共用命令、不共用类型。
+ *
+ * 注册类命令是追加式的,而 Sandbox 复用下沙箱带着上一条 attempt 的 `$HOME` 进场,所以每一步
+ * 先读沙箱真实状态、把它收敛到声明,再执行 add / install(契约见 docs/feature/adapters/
+ * architecture/coding-agent-extensions.md「安装收敛:不假设沙箱空白」)。空白沙箱读回为空,
+ * 走的是同一条代码路径。
  */
 export async function installPlugins(
   sb: Sandbox,
@@ -364,9 +369,17 @@ export async function installPlugins(
   const connected = new Set<string>();
   const out: NonNullable<AgentSetupManifest["nativePlugins"]> = [];
 
+  // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:marketplace 注册一摘,`codex plugin list`
+  // 就不再列出挂在它名下的安装(真机核对 codex-cli 0.146.0),残留的那份从此定位不到。
+  // 整体先于安装循环执行,多个插件共用一个 marketplace 时第二个插件的残留才摘得到。
+  for (const plugin of plugins) {
+    await removeInstalledPlugins(sb, plugin.name);
+  }
+
   for (const plugin of plugins) {
     const { marketplace } = plugin;
     if (!connected.has(marketplace.name)) {
+      await dropRegisteredMarketplace(sb, marketplace.name);
       const refFlag = marketplace.ref ? ` --ref ${shared.shellQuote(marketplace.ref)}` : "";
       // --sparse 只影响拉取速度,不影响装出来的内容;manifest 不记录它。
       const sparseFlags = (marketplace.sparse ?? [])
@@ -427,30 +440,93 @@ export async function installPlugins(
 }
 
 /**
- * `codex plugin list --json` 的版本回读;取不到不阻断安装(manifest 里 resolvedVersion 省略)。
- * 真实输出(实测 codex-cli 0.144.1)是 `{ installed: [...], available: [...] }`,已安装的这条在
- * `installed` 数组里,字段名是 `pluginId`(不是 `id`)——早前按裸数组 / `{ plugins: [...] }` 猜的
- * 形状全部猜错,`installedVersion` 曾对任何真实安装恒返回 undefined(见
+ * `codex plugin list --json` 的已安装条目。真实输出(实测 codex-cli 0.144.1 / 0.146.0)是
+ * `{ installed: [...], available: [...] }`,已安装的这条在 `installed` 数组里,字段名是
+ * `pluginId`(不是 `id`)——早前按裸数组 / `{ plugins: [...] }` 猜的形状全部猜错,
+ * `installedVersion` 曾对任何真实安装恒返回 undefined(见
  * memory/native-plugin-marketplace-name-not-caller-assignable.md 的姊妹发现,2026-07-13 e2e 复现)。
+ * 形状按 CLI 宽容解析,抠不出(非 JSON / 未知形状)返回 undefined,由调用方决定放行还是抛错。
  */
-async function installedVersion(sb: Sandbox, name: string, marketplace: string): Promise<string | undefined> {
+interface CodexInstalledPlugin {
+  pluginId?: string;
+  id?: string;
+  name?: string;
+  marketplaceName?: string;
+  version?: string;
+}
+
+function codexInstalledPlugins(stdout: string): CodexInstalledPlugin[] | undefined {
+  let raw: unknown;
   try {
-    const res = await sb.runShell(`codex plugin list --json --marketplace ${shared.shellQuote(marketplace)}`);
-    if (res.exitCode !== 0) return undefined;
-    const raw = JSON.parse(res.stdout) as unknown;
-    const list = (
-      Array.isArray(raw) ? raw : ((raw as { installed?: unknown[] })?.installed ?? [])
-    ) as {
-      pluginId?: string;
-      id?: string;
-      name?: string;
-      version?: string;
-    }[];
-    const hit = list.find((p) => p.pluginId === `${name}@${marketplace}` || p.id === `${name}@${marketplace}` || p.name === name);
-    return typeof hit?.version === "string" ? hit.version : undefined;
+    raw = JSON.parse(stdout);
   } catch {
     return undefined;
   }
+  const arr = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+      ? (raw as { installed?: unknown }).installed
+      : undefined;
+  if (!Array.isArray(arr)) return undefined;
+  return arr.filter((item): item is CodexInstalledPlugin => !!item && typeof item === "object");
+}
+
+/** 已安装条目的可寻址 id(`<plugin>@<marketplace>`);codex 的 remove 不接受裸插件名。 */
+function codexPluginId(entry: CodexInstalledPlugin): string | undefined {
+  const id =
+    entry.pluginId ??
+    entry.id ??
+    (entry.name && entry.marketplaceName ? `${entry.name}@${entry.marketplaceName}` : undefined);
+  return id?.includes("@") ? id : undefined;
+}
+
+/**
+ * 与声明同名的 Plugin 已安装就先移除(不论它出自哪个 marketplace),让本条 attempt 的安装与
+ * manifest 里的解析版本同源。已装即跳过会把上一条 attempt 装出的内容记成本条的安装事实。
+ */
+async function removeInstalledPlugins(sb: Sandbox, name: string): Promise<void> {
+  const listCommand = "codex plugin list --json";
+  const res = await sb.runShell(listCommand);
+  const list = res.exitCode === 0 ? codexInstalledPlugins(res.stdout) : undefined;
+  if (list === undefined) {
+    throw new Error(t("plugin.listFailed", { agent: "codex", command: listCommand, tail: outputTail(res) }));
+  }
+
+  const ids = new Set<string>();
+  for (const entry of list) {
+    const id = codexPluginId(entry);
+    if (id && (entry.name ?? id.split("@")[0]) === name) ids.add(id);
+  }
+  for (const id of ids) {
+    const remove = await sb.runShell(`codex plugin remove ${shared.shellQuote(id)}`);
+    if (remove.exitCode !== 0) {
+      throw new Error(t("plugin.removeFailed", { agent: "codex", name: id, tail: outputTail(remove) }));
+    }
+  }
+}
+
+/**
+ * 按声明名字无条件摘除同名 marketplace 注册,再由调用方按声明 source 与 ref 重新 add。
+ * 不以「注册在 `marketplace list --json` 里可见」为前提:注册状态分两半——用户配置里的注册项
+ * 和磁盘上的 marketplace 数据。原生配置整层替换会抹掉前一半,残下的后一半 list 报告不出来,
+ * add 却会撞它报 `marketplace '<name>' is already added from a different source`
+ * (复用沙箱第二条 attempt 真机复现,codex-cli 0.146.0;`remove` 对这种残根照样清得掉)。
+ * 「本就没有可摘的」(`is not configured or installed`,exit 1)按已收敛处理;其它失败也不在
+ * 这里报错——紧随其后的 add 是权威失败面,摘不干净它会带着 codex 的原话失败。
+ */
+async function dropRegisteredMarketplace(sb: Sandbox, name: string): Promise<void> {
+  await sb.runShell(`codex plugin marketplace remove ${shared.shellQuote(name)}`);
+}
+
+/** 装完回读版本;取不到不阻断安装(manifest 里 resolvedVersion 省略)。 */
+async function installedVersion(sb: Sandbox, name: string, marketplace: string): Promise<string | undefined> {
+  const res = await sb.runShell(`codex plugin list --json --marketplace ${shared.shellQuote(marketplace)}`);
+  if (res.exitCode !== 0) return undefined;
+  const list = codexInstalledPlugins(res.stdout);
+  const hit = list?.find(
+    (p) => p.pluginId === `${name}@${marketplace}` || p.id === `${name}@${marketplace}` || p.name === name,
+  );
+  return typeof hit?.version === "string" ? hit.version : undefined;
 }
 
 function outputTail(res: { stdout: string; stderr: string }, n = 12): string {

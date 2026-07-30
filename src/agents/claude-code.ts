@@ -251,6 +251,11 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
  * `claude plugin marketplace add` 没有钉 ref 的入口,所以要钉 ref 时先自己按 ref clone 下来,
  * 再以本地路径连接(CLI 支持 path 形态的 marketplace 源)—— 「来源必须可复现」不因 CLI 少个
  * flag 就打折。
+ *
+ * 注册类命令是追加式的,而 Sandbox 复用下沙箱带着上一条 attempt 的 `$HOME` 进场,所以每一步
+ * 先读沙箱真实状态、把它收敛到声明,再执行 add / install(契约见 docs/feature/adapters/
+ * architecture/coding-agent-extensions.md「安装收敛:不假设沙箱空白」)。空白沙箱读回为空,
+ * 走的是同一条代码路径。
  */
 export async function installPlugins(
   sb: Sandbox,
@@ -259,9 +264,17 @@ export async function installPlugins(
   const connected = new Set<string>();
   const out: NonNullable<AgentSetupManifest["nativePlugins"]> = [];
 
+  // 摘除顺序固定「先卸完全部同名插件、后摘 marketplace」:插件按 `<plugin>@<marketplace>` 定位,
+  // 注册先没了就定位不到残留的那份安装。整体先于安装循环执行,多个插件共用一个 marketplace
+  // 时第二个插件的残留才摘得到。
+  for (const plugin of plugins) {
+    await uninstallPlugins(sb, plugin.name);
+  }
+
   for (const plugin of plugins) {
     const { marketplace } = plugin;
     if (!connected.has(marketplace.name)) {
+      await dropRegisteredMarketplace(sb, marketplace.name);
       const source = marketplace.ref
         ? await cloneRepo(sb, marketplace.source, marketplace.ref)
         : marketplace.source;
@@ -316,16 +329,73 @@ export async function installPlugins(
   return out;
 }
 
-/** `claude plugin list --json` → `[{ id: "<plugin>@<marketplace>", version, … }]`;取不到版本不阻断安装。 */
-async function installedVersion(sb: Sandbox, id: string): Promise<string | undefined> {
+/**
+ * `claude plugin list --json` 的已安装条目:`[{ id: "<plugin>@<marketplace>", version, scope, … }]`
+ * (真机核对 claude 2.1.220)。同一个 plugin 可以在 user / project / local 多个 scope 各有一条,
+ * 卸载要带上条目自己的 scope。抠不出(非 JSON / 未知形状)返回 undefined,由调用方决定放行还是抛错。
+ */
+interface ClaudeInstalledPlugin {
+  id?: string;
+  version?: string;
+  scope?: string;
+}
+
+function claudeInstalledPlugins(stdout: string): ClaudeInstalledPlugin[] | undefined {
+  let raw: unknown;
   try {
-    const res = await sb.runShell("claude plugin list --json");
-    if (res.exitCode !== 0) return undefined;
-    const list = JSON.parse(res.stdout) as { id?: string; version?: string }[];
-    return list.find((p) => p.id === id)?.version;
+    raw = JSON.parse(stdout);
   } catch {
     return undefined;
   }
+  if (!Array.isArray(raw)) return undefined;
+  return raw.filter((item): item is ClaudeInstalledPlugin => !!item && typeof item === "object");
+}
+
+/**
+ * 与声明同名的 Plugin 已安装就先卸载(不论它出自哪个 marketplace),让本条 attempt 的安装与
+ * manifest 里的解析版本同源。claude 对已装的 plugin 重装是空操作(`Plugin "…" is already
+ * installed`,真机 2.1.220),不先卸就等于把上一条 attempt 装出的内容记成本条的安装事实。
+ */
+async function uninstallPlugins(sb: Sandbox, name: string): Promise<void> {
+  const listCommand = "claude plugin list --json";
+  const res = await sb.runShell(listCommand);
+  const list = res.exitCode === 0 ? claudeInstalledPlugins(res.stdout) : undefined;
+  if (list === undefined) {
+    throw new Error(t("plugin.listFailed", { agent: "claude-code", command: listCommand, tail: outputTail(res) }));
+  }
+
+  const targets = new Map<string, { id: string; scope?: string }>();
+  for (const entry of list) {
+    const id = entry.id;
+    if (!id || id.split("@")[0] !== name) continue;
+    targets.set(`${id} ${entry.scope ?? ""}`, { id, ...(entry.scope ? { scope: entry.scope } : {}) });
+  }
+  for (const target of targets.values()) {
+    const scopeFlag = target.scope ? ` --scope ${shared.shellQuote(target.scope)}` : "";
+    const remove = await sb.runShell(`claude plugin uninstall ${shared.shellQuote(target.id)}${scopeFlag}`);
+    if (remove.exitCode !== 0) {
+      throw new Error(t("plugin.removeFailed", { agent: "claude-code", name: target.id, tail: outputTail(remove) }));
+    }
+  }
+}
+
+/**
+ * 按声明名字无条件摘除同名 marketplace 注册,再由调用方按声明的 source(必要时是按 ref clone
+ * 出的本地路径)重新 add。不比对来源等价性、也不以注册在回读列表里可见为前提(与 codex 侧
+ * 同一条收敛规则,机制见 codex.ts 的 dropRegisteredMarketplace 注释):claude 对已注册的名字
+ * 直接复用磁盘上那份(`Marketplace '…' already on disk`,真机 2.1.220),声明的来源根本不生效,
+ * 不先摘干净就是静默陈旧。「本就没有可摘的」(`not found`,exit 1)按已收敛处理;
+ * 摘除不带 `--scope`,按 CLI 默认摘掉所有 scope 里的声明。
+ */
+async function dropRegisteredMarketplace(sb: Sandbox, name: string): Promise<void> {
+  await sb.runShell(`claude plugin marketplace remove ${shared.shellQuote(name)}`);
+}
+
+/** 装完回读版本;取不到不阻断安装(manifest 里 resolvedVersion 省略)。 */
+async function installedVersion(sb: Sandbox, id: string): Promise<string | undefined> {
+  const res = await sb.runShell("claude plugin list --json");
+  if (res.exitCode !== 0) return undefined;
+  return claudeInstalledPlugins(res.stdout)?.find((p) => p.id === id)?.version;
 }
 
 function outputTail(res: { stdout: string; stderr: string }, n = 12): string {

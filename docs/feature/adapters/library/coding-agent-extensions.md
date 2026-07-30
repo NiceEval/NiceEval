@@ -82,6 +82,16 @@ const agent = codexAgent({
 
 Hook 往 codex 全局配置里登记的 hook 不需要交互式信任确认即可生效——Codex Adapter 执行时绕过 codex 的 hook 信任门槛，见 [Codex CLI · 执行信任姿态](../sdk/codex-cli/README.md#执行信任姿态)。
 
+## 与 Sandbox 复用组合
+
+声明 `plugins` 的 Experiment 可以同时声明 `sandboxReuse: true`。Adapter 在每条 attempt 开始前把扩展安装收敛到声明：
+上一条 attempt 留在 `$HOME` 里的同名 marketplace 注册与 Plugin 安装，被替换成按声明来源与 ref 的全新安装
+（规则见[扩展边界](../architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)）。
+
+两件事仍归作者：`postSetup` 脚本每条 attempt 都在残留的 `$HOME` 上重跑，必须幂等；
+Plugin 运行期要跨 attempt 留下的数据必须存在安装目录之外，安装目录每条 attempt 被重装覆盖。
+用例叙事见[插件实验开复用](../../sandbox/use-case/Sandbox复用/插件实验开复用.md)。
+
 它与 `sandbox.setup()` 的分工只看相对 agent 安装的时机：与 agent 配置无关的环境预置进沙箱 Hook（跑在 agent 安装之前）；要读写 agent 安装产物（插件文件、agent 主配置）的脚本进 `postSetup`（跑在 agent 安装之后）。`postSetup` 是过程 Hook，不是配置声明——MCP、Skills、Plugin 仍走 factory 对应字段，Hook 不复制 factory 拥有的配置知识。
 
 ## 使用官方原生配置文件

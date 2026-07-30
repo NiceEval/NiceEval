@@ -43,6 +43,18 @@ export function marketplaceNamesFromList(stdout: string): string[] | undefined {
   return names;
 }
 
+/** 读一次注册列表:解析成功给名字,命令非零退出或输出解析不出给 undefined(附输出末尾供报错)。 */
+async function readMarketplaceNames(
+  sb: Sandbox,
+  listCommand: string,
+): Promise<{ names?: string[]; tail: string }> {
+  const res = await sb.runShell(listCommand);
+  return {
+    names: res.exitCode === 0 ? marketplaceNamesFromList(res.stdout) : undefined,
+    tail: (res.stdout + res.stderr).trim().split("\n").slice(-12).join("\n"),
+  };
+}
+
 export interface VerifyMarketplaceNameOptions {
   /** 报错归属的 agent 名(如 "claude-code")。 */
   agent: string;
@@ -60,15 +72,14 @@ export interface VerifyMarketplaceNameOptions {
  * errored —— 不把失败拖延到 `plugin install`。
  */
 export async function verifyMarketplaceName(sb: Sandbox, opts: VerifyMarketplaceNameOptions): Promise<void> {
-  const res = await sb.runShell(opts.listCommand);
-  const names = res.exitCode === 0 ? marketplaceNamesFromList(res.stdout) : undefined;
+  const { names, tail } = await readMarketplaceNames(sb, opts.listCommand);
   if (names === undefined) {
     throw new Error(
       t("plugin.marketplaceVerifyFailed", {
         agent: opts.agent,
         name: opts.marketplace.name,
         command: opts.listCommand,
-        tail: (res.stdout + res.stderr).trim().split("\n").slice(-12).join("\n"),
+        tail,
       }),
     );
   }
