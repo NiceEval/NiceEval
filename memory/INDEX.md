@@ -17,6 +17,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - **待裁决** [structural-typing-cannot-reject-spec-swap](structural-typing-cannot-reject-spec-swap.md) — 同形的两个具名 Spec,TS 结构类型拦不住互换;文档已止血(只承诺**形状**不承诺**值**),但「要不要加判别字段/品牌化真的拦住」未定,2026-07-13 处理
 - [sandbox-provision-ratelimit-retry](sandbox-provision-ratelimit-retry.md) — 设计裁决:provisioning 瞬时错误退避重试(2026-07-14 两轮 + 2026-07-15 推翻「拒绝类可盲重试」)——防线 = provider create 的 kill-on-failure + 有对账通道时任何重试前按 provision token 对账(对账失败即放弃重试),无检索通道则歧义类第一次抛;vercel 外层封顶收窄防嵌套放大;重试在 resolve.ts 而非 runner
 - [diff-attribution-send-window-ledger](diff-attribution-send-window-ledger.md) — 设计裁决:agent diff 改为 send 窗口归因的私有 git 分类账(2026-07-14),推翻「空基线 + git diff HEAD」;E2B 实跑补齐 `*venv*/` 排除、按窗口批量导出与证据上限(2026-07-15)
+- [diff-export-budget-counts-transferred-bytes](diff-export-budget-counts-transferred-bytes.md) — 裁决(2026-07-30):64 MiB 导出预算只数真正传输的文本字节,二进制不占预算,超 1 MiB 文本逐文件 `elided`(记字节数不内联);起因=编译产物按尺寸计爆预算毙掉可判分 attempt;`binary` 字段并入 `elided`,schemaVersion 递增
 - [keep-dormancy-provider-forms](keep-dormancy-provider-forms.md) — 设计裁决:留存现场转入 provider 休眠形态(docker stop 停驻 / e2b pause 可 resume;2026-07-14),推翻「keep = 保持运行」;docker pause 与 commit 转镜像同场否决
 - 部分被后续裁决替代 [reuse-once-setup-supersedes-idempotent-hooks](reuse-once-setup-supersedes-idempotent-hooks.md) — 裁决(2026-07-21):沙箱复用定稿为温基线一次装好、题间只 reset workdir,推翻 runner.md 旧「每 attempt 重跑幂等钩子」;复用结果不进缓存。入口那一半已翻案:不是 CLI flag `--reuse-sandbox`,是实验字段 `sandboxReuse: true`,异构批次也不报错而是按 profile 分组(见条目末尾)
 - [keep-reuse-carry-insulation-decision](keep-reuse-carry-insulation-decision.md) — 裁决(2026-07-21):keep 留存档内不消费携带(否决「让用户配 --force」)、reuse 与缓存双向绝缘、显式 `--max-concurrency`×reuse 创建前报用法错误(否决静默钉 1);起因是 keep 两篇用例被携带击穿成零派发
@@ -118,7 +119,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
-- 契约已定、代码未修 [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层,已落)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`(后三项未落地,2026-07-30 MemoryBench 0.11.3 真机复撞)
+- 已修 [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层,已落)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`(后三项未落地,2026-07-30 MemoryBench 0.11.3 真机复撞)
 - 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报 `ctx.fact()`(见 [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md))
 - 已修 [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-release-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超 `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user 并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档
 - 已修 [failure-class-carry-on-turn-failed-has-no-error](failure-class-carry-on-turn-failed-has-no-error.md) — 终局失败的 scope 要走出重试执行体:`turn-failed` 形态没有错误对象可挂(错误到 `expectOk()` 才铸造),且耗尽摘要会换出一个新的 Turn 对象——按 Turn 身份登记时登记错对象会让 scope 静默丢失、只在「重试耗尽」这条路径上错;修法=onFinalFailure 回执报浮出的那个 Turn + WeakMap 登记 + expectOk 附着;接线方注意 attempt.ts 转 AttemptError 时原错误即被丢弃
@@ -160,12 +161,13 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [teardown-registry-carry-and-concurrency](teardown-registry-carry-and-concurrency.md) — 全携带零派发曾跳过强杀遗留的启动自愈，单实验槽位又会让并发 run 互相覆盖；修为调度前逐条认领与 experimentId+pid 条目键
 - 已修 [eval-reserved-word-breaks-predicate-example](eval-reserved-word-breaks-predicate-example.md) — `eval` 是 strict mode 保留绑定标识符,不能当参数名;`ExperimentDef.evals` 类型签名与 docs 示例原写成 `(eval) => eval.id...` 会让用户抄示例直接语法报错,统一改参数名为 `e`(`src/runner/types.ts` + `docs/feature/experiments/{library,README}.md`)
 - [experiment-teardown-missed-once-in-batch](experiment-teardown-missed-once-in-batch.md) — 实验级 teardown 在一次 72-attempt 批跑中未触发(间歇,根因未定位,候选已排除清单在正文);兜底修法:run 收尾幂等扫尾 + `experiment-teardown-late` 诊断探针,看到该诊断请回填本条
-- [results-schema-version-history](results-schema-version-history.md) — Results Format schemaVersion 逐版差异台账（1→10），正文只声明当前版本，升版时来这里追加一行
+- [results-schema-version-history](results-schema-version-history.md) — Results Format schemaVersion 逐版差异台账（1→12），正文只声明当前版本，升版时来这里追加一行
 
 ## 报告 · view
 
 ### 裁决
 
+- [hierarchy-record-column-uniform-tally](hierarchy-record-column-uniform-tally.md) — 裁决(2026-07-30):层级表判定构成列每层都有值但不引入 `k/n 通过` 分数形态(当日实现当日否决);Eval 行填 attempt 计票、attempt 行填单判定,显示什么由投影决定、Table/Cell 渲染面不读字段组合判别层级;顺手统一 text 面判定词按 locale、判定符走 verdictMark 单源
 - [report-plain-value-author-model](report-plain-value-author-model.md) — 裁决(2026-07-29):作者模型翻案为 plain-value page.render + 公开 to* + defineRenderer,删除 Source/Composition/ctx.resolve/组件 data= 双形态;否决保留 Composition 作唯一 await 层(2026-07-27 三概念模型);同日 defineMeasure/metric-views/sources.ts 已删,残留 ResolveMemo/slices/entity-lists Content
 - [report-metric-views-deleted](report-metric-views-deleted.md) — 裁决(2026-07-29):推翻暂留;删除 metric-views/** 与 defineMeasure;chart-math→model/chart;delta/stability→report/slices;同日另条清尽 MeasureCell,统一 MetricValue+kind metric
 - [report-measurecell-protocol-cleared](report-measurecell-protocol-cleared.md) — 裁决(2026-07-29):清尽 MeasureCell/Dataset kind measure/Cell kind measure;统一 MetricValue+kind metric;Measure→内部 AttemptMetric;渲染面按 unit/format 格式化
@@ -234,6 +236,9 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- 已修 [commandsucceeded-received-excerpt-not-tail](commandsucceeded-received-excerpt-not-tail.md) — commandSucceeded 失败摘录曾落在输出中段:合并顺序(stdout 前置让 stderr 装包噪声占末尾)+ 摘录窗口宽过终端行预算被从头收口,双因叠加;修为 stderr 在前合并 + 76 字符窗口(src/context/context.ts),合并顺序钉进 display.md;同批裁决 commands.json 落盘不截
+- [show-json-pipe-truncated-at-128k](show-json-pipe-truncated-at-128k.md) — 发现(未修):`show --json` 管进下游只出恰好 128KB,重定向文件完整;疑为 stdout 为 pipe 时异步写未 flush 即 `process.exit`;症状呈现为下游「JSON 语法错误」,极易误怪解析脚本(2026-07-30 MemoryBench 真机)
+- [view-latest-run-displaces-batch-in-leaderboard](view-latest-run-displaces-batch-in-leaderboard.md) — 发现(未定位):48 题整批后单独重跑 1 题,view 榜单该实验只剩 1/48、0% 且无覆盖提示,像结果丢了;与 sample 时效契约(跨 Run 拼入+覆盖占位「不静默消失」)不符,待复现分辨是 configHash 变更未提示还是拼接缺口
 - 已修 [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-conflates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当 attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按 artifact 在不在开门,空清单与无证据分成两态
 - 已修 [cell-key-must-match-column-set](cell-key-must-match-column-set.md) — 共用行构造函数把判定写在 key `verdict` 下,而层级表的状态列叫 `record`,attempt 行判定与失败摘要被静默丢成 `—`(真机导出站复现);修为判定长在 locator 格上,并补 CLAUDE.md「key 与消费侧同源」半条规则
 - 已修 [table-text-face-flat-rows-sibling-key-collision](table-text-face-flat-rows-sibling-key-collision.md) — show 双 Experiment 稳定抛行 key 重复:text 面漏传可选 hierarchyRows 参数、拿展平行判同层重复;修为 resolver 只产出层级权威形态并单点校验,text 面渲染期自己展平(primitives.tsx)
@@ -301,6 +306,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 - 已修 [estimatecost-openai-inclusive-cache-double-billed](estimatecost-openai-inclusive-cache-double-billed.md) — OpenAI 系 adapter 的 cacheReadTokens 曾是 inputTokens 子集,estimateCost 按互斥桶相加把 cache 命中按全价+缓存价计两次,codex 成本虚高 ~5.5x;修为 Usage 桶恒互斥、七个 OpenAI 系生产点落桶前扣减(旧 run 落盘口径断代,对比需换算)
 - 已修 [insandbox-otlp-port-wait-3s-no-retry](insandbox-otlp-port-wait-3s-no-retry.md) — 远程沙箱内 OTLP collector 端口等待固定 3s、全链路零重试,冷启动抖动就把 attempt 打成 errored(还误标 phase=sandbox.create),重跑即过;修为墙钟 20s 预算 + 进程死了早退 + 换路径重试一轮,阶段归 telemetry.configure
+- [telemetry-configure-failure-stays-errored](telemetry-configure-failure-stays-errored.md) — 裁决(2026-07-30):沙箱 `/tmp` 不可写等 telemetry 配置失败保持 errored 不降级,warning 降级与 coverage 兜底两版均否决(环境缺陷要大声修);义务=provider 可写保证扩到 runner 沙箱侧运行时路径 + 报错点名修法
 - [ai-sdk-otel-needsapproval-no-execute-tool-span](ai-sdk-otel-needsapproval-no-execute-tool-span.md) — @ai-sdk/otel 不给 `needsApproval:true` 的工具产 execute_tool span,当年靠 span 派生事件的接法因此断不中;span→事件派生 API 已撤,现在 `uiMessageStreamAgent` 从协议帧直构 approve/deny 工具对(deny 理由内置默认),gap 够不着断言
 - [ai-sdk-agent-otel-timing-subtree-unlinked](ai-sdk-agent-otel-timing-subtree-unlinked.md) — `aiSdkAgent` 的 attempt-scope tracing 下 `show --execution` 的 span↔节点关联正常工作,但 `show --timing` 的 OTel 子树永远挂不出来:turn 从未拿到 `traceId`(shared-pool 才会赋值),就算强制走 shared-pool,window-attribution 生成的合成 traceId 也从不匹配真实 span traceId;未修,e2e/adapter/ai-sdk 的 verify.ts 已写成非 gating 断言;根因与 Agent 工厂无关,迁到 HTTP 传输层后同一缺口原样复现
 - [ai-sdk-official-entry-points-narrowed](ai-sdk-official-entry-points-narrowed.md) — 设计裁决:AI SDK 官方接入面收窄为 `uiMessageStreamAgent`/`fromAiSdk` 两个,`aiSdkAgent` 降级为进程内调用窄例外;e2e/adapter/ai-sdk 删 in-process 覆盖,OTel 证明改挂 HTTP 路径
@@ -387,6 +393,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 环境 · 发布 · CI · 部署
 
+- [worktree-consumption-stale-index-and-version](worktree-consumption-stale-index-and-version.md) — 工作树 link 消费读到旧 INDEX.md(prepare 时点产物)与旧 `--version`(CI 写版本不回写仓库);消费前先 `pnpm install` / `build:index`,dist/report 同形
 - 已修 [e2e-repo-needs-react-dep-for-show](e2e-repo-needs-react-dep-for-show.md) — 没有前端的消费方项目(如 pi-agent-core E2E 仓库)跑裸 `niceeval show` 报 `Cannot find package 'react'`:react/react-dom 只是可选 peerDependency,不装就用不了默认内建报告;修为该仓库自己显式加这两个依赖
 - [optional-peer-deps-raw-ts-consumer-typecheck](optional-peer-deps-raw-ts-consumer-typecheck.md) — 发布裸 .ts 源码时,可选 peer 依赖必须独立子路径导出,绝不从主入口 re-export
 - [npm-published-lags-verdict-rename](npm-published-lags-verdict-rename.md) — 本地 checkout 的 docs 已经在讲 `verdict`,但 npm 上的 `niceeval@0.5.4` 还是改名前的 `outcome`/`outcomes`;写外部消费者项目代码时以 `node_modules/niceeval/src/` 实际字段为准,不要以本仓库 docs 为准
@@ -411,6 +418,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ## 跨切面裁决
 
+- [multi-container-design-review-ledger](multi-container-design-review-ledger.md) — 多容器环境设计正反评审台账(2026-07-30):红队四类 fatal(前置阶段要安置进 deadline/并发/耗时三口径、新资源种类逐一进回收词表、串行启动示例必死改并行+dependsOn、手抄拓扑复活翻译洞改 compose 导入器)与反直觉点(VM 内 agent 与 daemon 同权产跨 provider 假 passed、进程长命契约收窄到正常结束路径、全 skipped 假绿、fromEnv 隔离 secret);正反双向评审两类发现几乎不重叠
+- **待裁决** [memorybench-dx-candidate-feature-requests](memorybench-dx-candidate-feature-requests.md) — 2026-07-30 MemoryBench dogfooding 三批反馈的处置台账:第一批共同形状「上层压过下层不留痕」已升格为契约规则;第二批定稿 loadCriteria/commands.json 不截/telemetry 维持 errored;第三批 diff 预算口径已裁决、预检 skip 不立项结案;待裁决候选只剩发布物带 `.d.ts`(条目内有清单)
 - [show-view-host-unit-tests-retired-to-e2e](show-view-host-unit-tests-retired-to-e2e.md) — 裁决(2026-07-28):show.test.ts / view-report.test.ts 整体删除,用法错误矩阵挪 e2e/report 的 verify-usage-errors.ts(预模型失败零 token,对 resultsRoot 只读须排在 verifyReadback 前);dev server 模块重载语义是唯一 e2e 覆盖不了的,搬进 view/data.test.ts;否决「report 组件数据测试也全删只留 e2e」——聚合口径要确定性 verdict 图案 fixture,真实模型造不出,e2e 只证出口一致、算法整体换错时全绿
 - [guard-entries-vitest-only-not-scripts](guard-entries-vitest-only-not-scripts.md) — 裁决(2026-07-26):说红绿的一律 vitest、写产物的才是脚本,删 `docs:lint` 与 `tiers:check`、CI 里的 INIT.md `diff` 搬进 `test/unit/`;推翻自己「台账不能做 file snapshot」的第一版——棘轮断言排在快照前,`-u` 就写不进被放宽的数字;顺带查实 CI 串行 step 前一步红会掩盖后面全部检查(tier 漂移因此从未被执行到)
 - [reset-point-term-over-warm-baseline](reset-point-term-over-warm-baseline.md) — 裁决(2026-07-26):串行复用那笔 commit 定名「复用 Sandbox 的题间重置点」(句内回指写「重置点」)、「温基线」进禁词并扫掉正文 35 处、「热道」立进总表;否决反过来把总表改成短名。同一概念的描述式长名已死过一次(`重置基线` 进过 `deadTerms`),所以立长名必须同批扫正文——`deadTerms` 只查「立了没人用」,查不出「正文在用但总表没立」
