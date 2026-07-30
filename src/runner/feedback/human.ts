@@ -959,19 +959,28 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
  * 别的门 `--accept` 打不开,给一条抄了也不生效的命令是误导。没有 stale 行时整块不打印。
  */
 function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
-  const bySelector = new Map<string, { delta: { selector: string; from?: string; to?: string }; evalIds: Set<string> }>();
+  const byTransition = new Map<string, { delta: { selector: string; from?: string; to?: string }; evalIds: Set<string> }>();
   for (const row of input.rows) {
     for (const group of row.dispatch ?? []) {
       if (group.reason !== "stale") continue;
       for (const delta of group.deltas ?? []) {
-        const entry = bySelector.get(delta.selector) ?? { delta, evalIds: new Set<string>() };
+        // selector 是授权作用域，不含值；展示分组却必须保留每一种真实转换。否则同一路径从两个
+        // 历史值汇到本次值时，后遇到的那批会被吞进第一块，影响面与旧值摘要都说错。
+        const transition = JSON.stringify([delta.selector, delta.from ?? null, delta.to ?? null]);
+        const entry = byTransition.get(transition) ?? { delta, evalIds: new Set<string>() };
         entry.evalIds.add(row.evalId);
-        bySelector.set(delta.selector, entry);
+        byTransition.set(transition, entry);
       }
     }
   }
   const out: string[] = [];
-  for (const [selector, { delta, evalIds }] of [...bySelector].sort(([a], [b]) => a.localeCompare(b))) {
+  const groups = [...byTransition.values()].sort((a, b) =>
+    a.delta.selector.localeCompare(b.delta.selector) ||
+    (a.delta.from ?? "").localeCompare(b.delta.from ?? "") ||
+    (a.delta.to ?? "").localeCompare(b.delta.to ?? "")
+  );
+  for (const { delta, evalIds } of groups) {
+    const selector = delta.selector;
     const change = delta.from !== undefined || delta.to !== undefined
       ? `  ${delta.from ?? ""} → ${delta.to ?? ""}`.trimEnd()
       : "";

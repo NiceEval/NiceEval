@@ -906,6 +906,47 @@ describe("renderHumanDryPlan: 逐条未携带原因", () => {
     expect(text).not.toContain("--accept sandbox-reuse");
   });
 
+  it("同一 selector 的不同旧值转换各成一组,授权命令仍是同一条", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 3,
+      evals: 3,
+      configs: 1,
+      attempts: 1,
+      command: "niceeval exp compare/codex",
+      rows: [
+        {
+          experimentId: "compare/codex",
+          evalId: "from-old-a",
+          dispatch: [{
+            reason: "stale",
+            deltas: [{ selector: "config:judge.model", from: "old-a", to: "current" }],
+          }],
+        },
+        {
+          experimentId: "compare/codex",
+          evalId: "from-old-b-1",
+          dispatch: [{
+            reason: "stale",
+            deltas: [{ selector: "config:judge.model", from: "old-b", to: "current" }],
+          }],
+        },
+        {
+          experimentId: "compare/codex",
+          evalId: "from-old-b-2",
+          dispatch: [{
+            reason: "stale",
+            deltas: [{ selector: "config:judge.model", from: "old-b", to: "current" }],
+          }],
+        },
+      ],
+    });
+
+    expect(text.match(/^stale  config:judge\.model/gm)).toHaveLength(2);
+    expect(text).toContain("config:judge.model  old-a → current");
+    expect(text).toContain("config:judge.model  old-b → current");
+    expect(text.match(/--accept config:judge\.model/g)).toHaveLength(2);
+  });
+
   it("没有 stale 行时整块不打印", () => {
     const text = renderHumanDryPlan({
       totalAttempts: 1,

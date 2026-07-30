@@ -527,6 +527,7 @@
               {
                 "group": "Run, Observe & Publish",
                 "pages": [
+                  "tutorials/rerun-and-cache",
                   "tutorials/ci-integration",
                   "tutorials/reporters",
                   "tutorials/viewing-results",
