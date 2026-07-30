@@ -954,8 +954,8 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
 
 /**
  * 逐行的原因回答「这一格为什么重跑」,差异分组回答「一条改动赔了多少、怎么把它拿回来」——
- * 矩阵按格排,人要做的决定按**差异**排,所以这里按 selector 重新聚合一次:一条差异一块,
- * 带旧新摘要、影响面与可直接复制的 `accept:` 命令。只有指纹门(`stale`)的行进这个聚合:
+ * 矩阵按格排,人要做的决定按**差异**排,所以这里按「selector × 旧值→新值」这一种转换重新聚合一次:
+ * 一条转换一块,带旧新摘要、影响面与可直接复制的 `accept:` 命令。只有指纹门(`stale`)的行进这个聚合:
  * 别的门 `--accept` 打不开,给一条抄了也不生效的命令是误导。没有 stale 行时整块不打印。
  */
 function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
