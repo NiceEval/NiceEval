@@ -1,4 +1,4 @@
-/* Tailwind 只提供 utility(给 components/magicui/ 的复制粘贴组件用),不引 preflight:
+/* Tailwind 只提供 utility(给 shadcn 那类复制粘贴组件用),不引 preflight:
    站点版式写在本文件,preflight 会把博客正文的列表符号、标题字重一并重置掉。
    源码扫描范围钉在 site/,不让它顺着仓库根往外爬。 */
 @layer theme, utilities;
@@ -22,12 +22,14 @@
   --warn: #e8b84a;
   /* accent:basalt 的近无彩强调色,用在助手回复这类需要区分身份、但不做判定的地方。 */
   --accent: #cbd6dc;
+  /* 终端里画区域框的那套横竖线是字符不是边框,比 --line-strong 亮一档才看得出是画出来的。 */
+  --term-frame: #52525a;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-family: var(--font-sans);
 }
 
-/* 把令牌暴露成 Tailwind 颜色,magicui 组件用 bg-panel / border-line 就是站点色板。 */
+/* 把令牌暴露成 Tailwind 颜色,复制粘贴进来的组件用 bg-panel / border-line 就是站点色板。 */
 @theme {
   --color-bg: var(--bg);
   --color-panel: var(--panel);
@@ -149,12 +151,14 @@ pre {
   color: var(--text);
 }
 
+/* 终端那一栏要装下 96 列输出(live 面板首行的守恒计数就有 88 个字符),版心的多数宽度
+   分给它;文案栏收窄到刚好放下标题与 CTA。 */
 .hero {
   min-height: calc(100vh - 76px);
   display: grid;
-  grid-template-columns: minmax(0, 0.86fr) minmax(420px, 1.14fr);
+  grid-template-columns: minmax(0, 0.78fr) minmax(440px, 1.22fr);
   align-items: center;
-  gap: clamp(44px, 8vw, 120px);
+  gap: clamp(36px, 5vw, 72px);
   padding: 80px 0 140px;
 }
 
@@ -290,47 +294,53 @@ h1 {
   border-color: var(--text);
 }
 
-/* ---- Hero 终端动画:一个终端窗口回放 exp 运行 + show 对照(site-home-terminal.tsx),
-   窗口外壳来自 components/magicui/terminal.tsx。固定 min-height:转录逐行追加时窗口
-   不长高,hero 两栏不因动画发生布局抖动。 */
+/* ---- Hero 终端:两套动画(人读 CLI / Claude Code 会话)共用的窗口外壳,组件在
+   site-terminal-shell.tsx。屏幕定高、转录整体上移,hero 两栏不因逐行追加而抖动。
+   字号由窗口宽度换算成固定列数(--term-cols):CLI 的面板宽度就是终端列数,列数飘忽
+   的话 live 面板首行那条守恒计数会被裁成半句。 */
 .term {
   position: relative;
-  min-height: 580px;
   display: flex;
   align-items: center;
+  /* 屏幕 + 标题栏的高度:切换受众时另一套动画的代码分包还在加载,这一格先占住,hero 不跳。 */
+  min-height: 512px;
+  --term-cols: 96;
+  --term-pad: 20px;
 }
 
 .term-window {
-  min-height: 560px;
-  border-color: var(--line-strong);
+  container-type: inline-size;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
 }
 
 .term-screen {
-  margin: 0;
-  padding: 22px 26px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.75;
+  position: relative;
+  height: 470px;
+  padding: 18px var(--term-pad);
+  overflow: hidden;
   color: var(--muted);
-  overflow-x: auto;
+  font-family: var(--font-mono);
+  /* 字号由「窗口宽度减去左右内边距」换算:0.62 取的是等宽字体步进宽度对字号的比值上界
+     (SF Mono / Menlo / Consolas 都在它以下),宁可整行短一格,也不让面板右边框被挤出屏幕。 */
+  font-size: max(7.5px, calc((100cqi - var(--term-pad) * 2) / (var(--term-cols) * 0.62)));
+  line-height: 1.75;
 }
 
-.term-code {
-  display: block;
+/* 被裁掉的 scrollback 不做硬切口。 */
+.term-screen.scrolled::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0 0 auto;
+  height: 36px;
+  background: linear-gradient(var(--panel), transparent);
+  pointer-events: none;
 }
 
-.term-replay {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-left: auto;
-  background: none;
-  color: var(--soft);
-}
-
-.term-replay:hover {
-  color: var(--text);
+.term-flow {
+  transition: transform 240ms ease-out;
 }
 
 .term-line {
@@ -351,20 +361,39 @@ h1 {
   font-weight: 600;
 }
 
-.term-indent {
+/* 断言摘要的两级缩进,与 CLI 的 assertionSummaryLines 同宽。 */
+.term-indent-4 {
   padding-left: 4ch;
+}
+
+.term-indent-8 {
+  padding-left: 8ch;
 }
 
 .term-prompt {
   color: var(--soft);
 }
 
+.term-replay {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  background: none;
+  color: var(--soft);
+}
+
+.term-replay:hover {
+  color: var(--text);
+}
+
 .term-cursor {
   display: inline-block;
-  width: 7px;
-  height: 14px;
-  margin-left: 2px;
-  vertical-align: -2px;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.13em;
   background: var(--text);
   animation: term-blink 1.1s steps(1) infinite;
 }
@@ -375,86 +404,92 @@ h1 {
   }
 }
 
-/* TUI 面板:边框上嵌 title / elapsed / cost 标签,复刻 CLI 的 boxed 版式。 */
-.term-panel {
-  position: relative;
-  margin: 16px 0 20px;
-  padding: 12px 14px;
-  border: 1px solid var(--line-strong);
+.appear {
+  animation: term-appear 240ms ease-out both;
 }
 
-.term-tag {
-  position: absolute;
-  padding: 0 7px;
-  background: var(--panel);
-  color: var(--soft);
-  font-size: 11px;
-  line-height: 1.5;
+@keyframes term-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 
-.term-tag.tl {
-  top: -9px;
-  left: 10px;
-  color: var(--text);
+/* ---- 区域框:复刻 CLI 的 ╭─ 标题 ── meta ─╮ / │ 正文 │ / ├─ 小节 ─┤(src/report/model/panel.ts)。
+   横线段 flex 撑开后裁切,右侧嵌字因此总落在框的右边缘 —— 浏览器里 ● ✓ ✗ 的步进宽度未必
+   等于等宽字体的一格,按字符数补齐会让右边框错位。 */
+.pnl {
+  margin: 12px 0 16px;
 }
 
-.term-tag.tr {
-  top: -9px;
-  right: 10px;
-}
-
-.term-tag.br {
-  bottom: -9px;
-  right: 10px;
-}
-
-.term-tag.fail {
-  color: var(--bad);
-  letter-spacing: 0.06em;
-}
-
-.term-rule {
-  position: relative;
-  margin: 10px -14px 12px;
-  border-top: 1px solid var(--line);
-}
-
-.term-rule span {
-  position: absolute;
-  top: -10px;
-  left: 24px;
-  padding: 0 7px;
-  background: var(--panel);
-  color: var(--soft);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-}
-
-.term-slot {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1.1fr) minmax(0, 0.85fr) 4ch auto;
-  gap: 12px;
+.pnl-edge,
+.pnl-row {
+  display: flex;
   align-items: baseline;
+  color: var(--term-frame);
   white-space: pre;
 }
 
-.term-slot-eval {
+.pnl-fill {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pnl-title {
+  color: var(--text);
+}
+
+.pnl-meta,
+.pnl-section {
+  color: var(--soft);
+}
+
+.pnl-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  white-space: pre;
+}
+
+/* ACTIVE 行的列序固定为 ● eval id / experiment / elapsed / phase:detail。 */
+.pnl-body.slot {
+  display: grid;
+  grid-template-columns: 1ch minmax(0, 1.15fr) minmax(0, 0.9fr) 6ch minmax(0, 1.8fr);
+  gap: 0 1.2ch;
+  align-items: baseline;
+}
+
+.slot-eval {
   overflow: hidden;
   color: var(--text);
   text-overflow: ellipsis;
 }
 
-.term-slot-time {
+.counts-narrow {
+  display: none;
+}
+
+/* 身份两列都按列宽截尾:窄终端里它们不能溢出去压住 elapsed 列。 */
+.slot-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-time {
   color: var(--soft);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
+.slot-phase {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .term-dot {
-  width: 7px;
-  height: 7px;
-  background: var(--good);
-  align-self: center;
+  color: var(--good);
   animation: term-pulse 1.4s ease-in-out infinite;
 }
 
@@ -464,21 +499,83 @@ h1 {
   }
 }
 
-/* 对照矩阵:列宽交给 grid 对齐(中英文案宽度不同,不做手工空格对齐)。 */
+/* 对照矩阵:列宽交给 grid 对齐(每格里 ✓/✗ 与数字的字形宽度不一,不做手工空格对齐)。 */
 .term-table {
   display: grid;
   grid-template-columns: auto auto auto auto;
   justify-content: start;
-  column-gap: 18px;
-  margin: 10px 0 6px;
+  column-gap: 2.4ch;
+  margin: 8px 0 4px;
   white-space: pre;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Claude Code 会话:banner、`>` 提示、`●` 工具调用、`⎿` 结果(site-home-agent-terminal.tsx)。 */
+.cc-banner {
+  color: var(--soft);
+}
+
+.cc-gap {
+  height: 0.9em;
+}
+
+.cc-block {
+  margin-top: 0.9em;
+}
+
+.cc-user {
+  color: var(--text);
+}
+
+.cc-caret,
+.cc-gutter {
+  color: var(--soft);
+}
+
+.cc-bullet {
+  color: var(--accent);
+}
+
+.cc-tool {
+  color: var(--muted);
+}
+
+.cc-tool-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cc-say {
+  color: var(--text);
+  white-space: pre;
+}
+
+/* 工具结果整行不折:超出终端宽度的部分照终端的样子裁掉,续行的缩进要留住,所以是 pre 不是 nowrap。 */
+.cc-out,
+.cc-spin {
+  overflow: hidden;
+  color: var(--soft);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.cc-spin {
+  margin-top: 0.6em;
+  color: var(--muted);
+}
+
+.cc-more {
+  color: var(--term-frame);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .term-cursor,
   .term-dot {
     animation: none;
+  }
+
+  .term-flow {
+    transition: none;
   }
 }
 
@@ -1401,13 +1498,13 @@ h1 {
     margin-top: 26px;
   }
 
-  /* 单列布局下终端占满整行,高度跟内容走,只保底转录完整时的高度。 */
+  /* 单列布局下终端占满整行,屏幕矮一档,列数不变(版式还是同一个终端)。 */
   .term {
-    min-height: 0;
+    min-height: 472px;
   }
 
-  .term-window {
-    min-height: 500px;
+  .term-screen {
+    height: 430px;
   }
 
   h1 {
@@ -1452,14 +1549,25 @@ h1 {
     width: 100%;
   }
 
-  /* 窄屏:缩小字号与内边距,超宽行(对照矩阵)交给终端自己横向滚动。 */
-  .term-window {
-    min-height: 460px;
+  /* 窄屏就是一台窄终端:列数降到 70,行尾照终端的样子裁掉,不缩成看不清的字号;
+     首行计数换成丢掉零值结局项的降级版。 */
+  .term {
+    min-height: 430px;
+    --term-cols: 70;
+    --term-pad: 14px;
+  }
+
+  .counts-wide {
+    display: none;
+  }
+
+  .counts-narrow {
+    display: inline;
   }
 
   .term-screen {
-    padding: 16px 16px 18px;
-    font-size: 11px;
+    height: 390px;
+    padding: 14px var(--term-pad) 16px;
   }
 
   .strip {

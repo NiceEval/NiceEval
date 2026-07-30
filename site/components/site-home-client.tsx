@@ -14,6 +14,11 @@ import dynamic from "next/dynamic";
 const Setup = dynamic(() => import("./site-home-setup"));
 // AgentLoop 同样在首屏之外,跟着 Setup 的思路拆出关键路径。
 const AgentLoop = dynamic(() => import("./site-home-agent-loop"));
+// Agent 侧的终端只有切到「给 Agent」才会挂,首屏默认那套仍走静态 import;
+// 分包加载期间用等高占位撑住这一格。
+const AgentTerminalDemo = dynamic(() => import("./site-home-agent-terminal"), {
+  loading: () => <div className="term" />,
+});
 
 type AudienceMode = "humans" | "agents";
 
@@ -111,7 +116,12 @@ function Hero({ t, locale }: { t: Dictionary; locale: Locale }) {
         </div>
       </div>
 
-      <TerminalDemo t={t} />
+      {/* 屏幕跟着受众切:给人看的是 CLI 自己的人读面,给 Agent 看的是 Claude Code 驱动同一套命令。 */}
+      {mode === "humans" ? (
+        <TerminalDemo ariaLabel={t.visualLabel} replayLabel={t.replay} />
+      ) : (
+        <AgentTerminalDemo ariaLabel={t.visualLabelAgents} replayLabel={t.replay} />
+      )}
     </section>
   );
 }
