@@ -169,6 +169,33 @@ Serenity/JS 的 Screenplay 模式(Actor / Task / Question)是「业务领域词 
 3. **自建 auto-wait 或交互断言引擎。** Playwright 已内置且是行业口径,
    重造只会制造第二口径;库的自定义面收窄到领域词与步骤日志。
 
+## Harbor(Terminal-Bench 2.0 harness)
+
+**来源:** [laude-institute/harbor](https://github.com/laude-institute/harbor)
+的 `src/harbor/agents/installed/`(`base.py`、`codex.py`、
+`node_install.py`)与 [Harbor docs](https://www.harborframework.com/docs)。
+
+**是什么:** TB 2.0 的官方 harness。组合模型与 niceeval 相反:任务持有环境
+(每道题自带 Dockerfile / compose),agent 是 `BaseInstalledAgent` 子类——
+一份运行时安装配方,容器启动后经 `environment.exec()` 装进去。
+
+### 值得抄的
+
+1. **配方脱离特定底座存在。** 安装配方不假设底座:包管理器按
+   apt-get / dnf / yum / apk 探测分发,Node 缺失时经 nvm 装用户 home。
+   证明「任务给定底座 × agent 配方上叠」可行,是
+   [Design · Agent 安装配方](design/agent-install-recipe/README.md) 的直接参照。
+2. **幂等短路统一两种执行时机。** 安装前先跑 `--version`,版本匹配即跳过——
+   预烘焙镜像自动成为快速路径,同一份配方兼任构建步骤与运行时回退,
+   进了 PLAN-3 的配方形态。
+
+### 调研过、判断不值得抄的(及理由)
+
+1. **运行时安装为主路径。** 探测与安装成本每个 attempt 都付,且没有产物级
+   锁定版本可比性;与预制产物主路径原则冲突,运行时安装只留作回退。
+2. **找不到包管理器时 warning 继续跑。** 静默降级点,失败推迟到 agent 启动、
+   归因困难;niceeval 的对应位置选构建期报错。
+
 ## 相关阅读
 
 - [View](feature/reports/view.md) —— 上面几条学到的东西,具体设计在这篇;两次运行对比由成对差异表([`sources.measure.delta`](feature/reports/calculations.md))按 run 维度承担。

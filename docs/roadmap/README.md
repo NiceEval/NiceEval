@@ -11,3 +11,5 @@
   用角色声明、精确授权和冲突用例设计历史 Evidence 何时仍算数
 - [复用与携带的可观察性](reuse-observability/README.md) —— `carried` 改词、复用反馈维度、
   生效并发显示、配额自查与 `--reuse-verify`
+- [Agent 进程契约](agent-process-contract/README.md) —— 进程寿命唯一边界是沙箱、
+  agent 非零退出记 `errored`;多容器环境决策的先行前提
