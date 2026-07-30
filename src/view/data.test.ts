@@ -21,7 +21,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { IncompatibleResultsError, ViewInputError, loadLatestResultsPerEval, loadViewScan, type ViewScan } from "./data.ts";
+import { IncompatibleResultsError, ViewInputError, incompatibleHistoryKey, loadCarryInputs, loadLatestResultsPerEval, loadViewScan, type ViewScan } from "./data.ts";
 import type { AttemptHandle } from "../record/index.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION, type EvalResult, type Verdict } from "../types.ts";
 import { encodeAttemptLocator } from "../record/locator.ts";
@@ -325,6 +325,30 @@ describe("loadLatestResultsPerEval(续跑携带基线,口径与旧 loader 一致
     // runner 携带条目时依赖 artifactBase(相对结果根)可解析,view 才找得回 artifact。
     const withArtifact = results.find((r) => r.attempt === 0)!;
     expect(withArtifact.artifactBase).toBe("exp_a/2026-01-02T00-00-00-000Z/e1/a0");
+  });
+});
+
+describe("loadCarryInputs · 版本不兼容的历史认得出坐标", () => {
+  it("v11 快照不进 results,但它跑过的 (实验, eval) 进 incompatibleHistory;可读快照不进", async () => {
+    const root = await makeRoot();
+    // 当前版本:正常读进来,不算「不兼容历史」。
+    await writeSnapshot(root, "exp_a", "2026-01-02T00-00-00-000Z", { experimentId: "exp/a", agent: "a", startedAt: "2026-01-02T00:00:00.000Z" }, [
+      res("e1", "passed"),
+    ]);
+    // 上一版写的:整份不解析,但盘上确实有 e2 与 nested/e3 跑过的痕迹。
+    await writeSnapshot(
+      root,
+      "exp_a",
+      "2026-01-01T00-00-00-000Z",
+      { experimentId: "exp/a", agent: "a", startedAt: "2026-01-01T00:00:00.000Z", schemaVersion: 11 },
+      [res("e2", "passed"), res("nested/e3", "failed")],
+    );
+
+    const inputs = await loadCarryInputs(root);
+    expect(inputs.results.map((r) => r.id)).toEqual(["e1"]); // v11 的条目一条都读不进来
+    expect([...inputs.incompatibleHistory].sort()).toEqual(["exp_a|e2", "exp_a|nested/e3"]);
+    expect(inputs.incompatibleHistory.has(incompatibleHistoryKey("exp/a", "e2"))).toBe(true);
+    expect(inputs.incompatibleHistory.has(incompatibleHistoryKey("exp/a", "e1"))).toBe(false);
   });
 });
 

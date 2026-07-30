@@ -13,6 +13,9 @@ import { manifestDeltas, type EvalManifest } from "./manifest.ts";
 import type { AgentRun, DiscoveredEval } from "./types.ts";
 import type { EvalResult } from "../types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
+import { interpolate } from "../i18n/core.ts";
+import { en } from "../i18n/en.ts";
+import { zhCN } from "../i18n/zh-CN.ts";
 
 // 判断指纹需要一个真实可读文件(computeFingerprint 无条件 readFile(evalDef.sourcePath));
 // 内容不重要,指向本测试文件自己,永远存在。
@@ -540,6 +543,18 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
     ]);
   });
 
+  it("有历史但格式读不动的坐标标 incompatible,不与真没跑过的 new 混为一谈", async () => {
+    const evals = [makeEval("e"), makeEval("f")];
+    const run = makeRun("exp", ["e", "f"], 1, 600_000);
+    // e 的历史躺在一份 schemaVersion 不同的快照里(读不进 priorResults,但盘上有);f 从没跑过。
+    const plan = await planCarry(evals, [run], [], undefined, undefined, {
+      incompatibleKeys: new Set(["exp|e"]),
+    });
+
+    expect(plan.dispatchByKey.get("exp|e")).toEqual([{ gate: "missing", reason: "incompatible", attempts: [0] }]);
+    expect(plan.dispatchByKey.get("exp|f")).toEqual([{ gate: "missing", reason: "new", attempts: [0] }]);
+  });
+
   it("指纹门的分组带上可复制进 --accept 的差异明细", async () => {
     const evals = [makeEval("e")];
     const base = makeRun("exp", ["e"], 1);
@@ -599,6 +614,38 @@ describe("planCarry · dispatch:逐条未携带原因按门分组", () => {
 
     expect(plan.carriedAttemptsByKey.get("exp|e")).toEqual(new Set([0]));
     expect(plan.dispatchByKey.get("exp|e")).toEqual([{ gate: "rerun", reason: "rerun", attempts: [1] }]);
+  });
+});
+
+describe("非 TTY 下不带值的 --accept:报错列出本次可授权的原因", () => {
+  it("报错文案带上 availableDeltas 的枚举,两个语言都给得出「这次能填什么」", async () => {
+    const evals = [makeEval("e")];
+    const base = makeRun("exp", ["e"], 1);
+    const oldRun: AgentRun = { ...base, flags: { endpoint: "https://old.example" } };
+    const run: AgentRun = { ...base, flags: {} };
+    const old = await fingerprintWithManifest(evals[0]!, oldRun);
+    const prior = result({
+      id: "e",
+      attempt: 0,
+      verdict: "passed",
+      fingerprint: old.fingerprint,
+      configHash: computeConfigHash(oldRun),
+      agent: base.agent.name,
+      experiment: { flags: oldRun.flags, attempts: 1, earlyExit: false, selectedEvalIds: ["e"] },
+    });
+
+    const plan = await planCarry(evals, [run], [prior], undefined, undefined, {
+      priorManifests: new Map([["exp|e", old.manifest]]),
+    });
+    // cli.ts 拼这条错误用的就是这份枚举(与 selector 空转报错同源)。
+    const available = plan.availableDeltas.map((delta) => delta.selector).join(", ");
+    expect(available).toBe("config:flags.endpoint");
+
+    for (const dict of [en, zhCN]) {
+      const text = interpolate(dict["cli.flag.acceptNeedsSelector"], { available });
+      expect(text).toContain("config:flags.endpoint"); // 光说「必须带 selector」还要人再跑一趟 --dry
+      expect(text).toContain("--accept");
+    }
   });
 });
 

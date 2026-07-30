@@ -34,14 +34,16 @@ niceeval exp compare/codex --dry
 
 ```text
 plan: 4 attempts · 1 eval × 4 configs · attempts 1
-1 carried in from cache · 3 to run
+1 of 4 carried in from cache · 3 to run
 compare/codex-gpt-5.6-luna              memory/commit0-cachetool   stale: config:judge.model
 compare/codex-gpt-5.6-luna--agents-md   memory/commit0-cachetool   new
 compare/codex-gpt-5.6-luna--mempal     memory/commit0-cachetool   carried
 compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
 ```
 
-要派发的行**逐条标出为什么没携带**,词表就是[携带的六道门](cache.md#携带要过的门)加上「无历史」:
+携入摘要那一行只在真有条目携入时打印:一条都没携入时它退化成「0 of 4」这种废话,不如让计划头行直接接矩阵。
+
+要派发的行**逐条标出为什么没携带**,词表就是[携带的六道门](cache.md#携带要过的门)加上缺历史的两个词:
 
 | 标注 | 对应的门 |
 |---|---|
@@ -52,6 +54,10 @@ compare/codex-gpt-5.6-luna--nowledge   memory/commit0-cachetool   locked
 | `rerun` | 口径门 |
 | `sandbox-reuse` / `keep-sandbox` | 模式门 |
 | `new` | 计划内序号没有任何历史 |
+| `incompatible` | 有历史,但那份落盘的 `schemaVersion` 这个 CLI 读不动 |
+
+`incompatible` 与 `new` 分开报,因为它们的下一步完全不同:前者的结果还在盘上,换回写它的那个版本就能看([版本不匹配时的读取行为](../record/architecture.md#版本不匹配时的读取行为)),后者是真的没跑过。
+不兼容的落盘按格式规则整份不解析,所以这一档只按目录认坐标——认得出「这条 eval 跑过」,认不出它当时是过还是败。
 
 全部携带的行标 `carried`,不标原因。
 正被另一条并行 Invocation 持锁运行的用例行尾如实标注 `locked` ([用例锁](architecture.md#并发-invocation用例锁));`--dry` 只读锁目录,不取锁、不等待。
@@ -74,7 +80,8 @@ stale  config:judge.model  gpt-5.6 → gpt-5.6-sol
 只有可 accept 的分组会被问;`sandbox-reuse` 绝缘、`errored` 这类打不开的门照常展示,
 但不提供「复用」选项。
 选完先打印本次选择的等价命令(带值的 `--accept` 写法,可直接进 CI 或复述给同事),再按选择执行。
-非 TTY 下 `--accept` 不带值是用法错误,报错给出带 selector 的写法与本次计划里可授权的原因。
+非 TTY 下 `--accept` 不带值是用法错误。
+报错先给带 selector 的写法,再列出本次计划里真实可授权的那几条原因——与 selector 空转的报错同一份枚举,人不必为了知道能填什么再跑一趟 `--dry`。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 
@@ -824,7 +831,7 @@ interface ExpPlanRow {
   reused: boolean;
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(锁语义见 Architecture);省略等于 false。`--dry` 只读锁目录,不取锁、不等待。 */
   locked?: boolean;
-  /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。gate 词表与六道门同名,缺历史序号记 "missing"。 */
+  /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。gate 词表与六道门同名,缺历史序号记 "missing"(`new` 与 `incompatible` 同属这一档,机器面不因人读词分家)。 */
   dispatch?: ExpPlanDispatch[];
 }
 

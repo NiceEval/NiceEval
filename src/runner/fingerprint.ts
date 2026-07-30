@@ -186,7 +186,11 @@ async function resolveModule(from: string, specifier: string): Promise<string | 
  */
 export type CarryGate = "terminal" | "fingerprint" | "eligibility" | "origin" | "rerun" | "mode" | "missing";
 
-/** 同一道门的人读词(`--dry` 计划行尾);模式门按两个来源分成两个词。 */
+/**
+ * 同一道门的人读词(`--dry` 计划行尾);模式门按两个来源分成两个词,缺历史门按「真没有」与
+ * 「有但格式读不动」分成两个词——后者是 `incompatible`,把「上一版写的结果还躺在盘上」
+ * 与「这条 eval 从没跑过」区分开(判定见 `CarryGateOptions.incompatibleKeys`)。
+ */
 export type DispatchReason =
   | "errored"
   | "stale"
@@ -195,6 +199,7 @@ export type DispatchReason =
   | "rerun"
   | "sandbox-reuse"
   | "keep-sandbox"
+  | "incompatible"
   | "new";
 
 /** 一条 (experiment, eval) 行里,卡在同一道门上的那些 attempt 序号。 */
@@ -284,6 +289,12 @@ export interface CarryGateOptions {
   sandboxReuse?: boolean;
   /** 本次授权的差异 selector(`--accept`);只放松指纹门,其余五道门不受影响。 */
   accept?: readonly string[];
+  /**
+   * 有历史、但那份落盘的 `schemaVersion` 与本读取器不同的 `cacheKey`(见
+   * `loadCarryInputs` 的 `incompatibleHistory`)。这些条目读不进 `priorResults`,不标出来
+   * 就会跟从没跑过的坐标一样落在 `new` 上——那是句事实错误的话。
+   */
+  incompatibleKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -326,6 +337,17 @@ export function carryGateFor(
     return { gate: "mode", reason: "keep-sandbox" };
   }
   return undefined;
+}
+
+/**
+ * 计划内某个序号**根本没有历史条目**时报哪个词:盘上真没有是 `new`,有但那份落盘的
+ * `schemaVersion` 读不动是 `incompatible`。两者都是缺历史门(`missing`),`--dry --json` 的
+ * gate 词不因此增加成员——分的是给人看的原因,不是新的一道门。
+ */
+export function missingReason(key: string, options: CarryGateOptions): { gate: CarryGate; reason: DispatchReason } {
+  return options.incompatibleKeys?.has(key)
+    ? { gate: "missing", reason: "incompatible" }
+    : { gate: "missing", reason: "new" };
 }
 
 export function carriableAttempts(
@@ -377,6 +399,8 @@ export async function planCarry(
      * 差异如实标 `opaque:no-manifest`,不拿别处的数据凑一份。
      */
     priorManifests?: ReadonlyMap<string, EvalManifest>;
+    /** 有历史但格式不兼容的 `cacheKey`;见 `CarryGateOptions.incompatibleKeys`。 */
+    incompatibleKeys?: ReadonlySet<string>;
   } = {},
 ): Promise<CarryPlan> {
   prepareRunSandboxes(evals, agentRuns, configSandbox);
@@ -530,7 +554,7 @@ export async function planCarry(
       if (carriedIndices?.has(i)) continue;
       const prior = byAttempt.get(i);
       const blocked = prior === undefined
-        ? { gate: "missing" as const, reason: "new" as const }
+        ? missingReason(key, options)
         : carryGateFor(
             prior,
             plannedConfigHashes.get(key),

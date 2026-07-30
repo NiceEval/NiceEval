@@ -7,8 +7,9 @@
 // 见 docs/feature/reports/view.md「打开与收窄」。
 
 import { readFileSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { evalDirOf, experimentDirOf } from "../record/format.ts";
 import { MANIFESTS_FILE, parseRunManifests, type EvalManifest, type RunManifests } from "../record/manifest.ts";
 import { dedupeAttempts, loadAttemptEvidence, openRecord, withArtifactBase } from "../record/index.ts";
 import type { AttemptHandle, Record, Sample, Run, UnreadableRun } from "../record/index.ts";
@@ -235,6 +236,9 @@ export async function loadLatestResultsPerEval(root = ".niceeval"): Promise<Eval
  * - `manifestsByEvalKey` —— `${experimentId}|${evalId}` → **产出上面那条结果的那一份 Run**
  *   写下的指纹输入清单。差异解释要的是「那一轮的输入长什么样」,所以它与 `results` 取自同一个
  *   Run,不取最新那份;那一轮没写清单的 key 就是缺席,差异如实标 `opaque:no-manifest`。
+ * - `incompatibleHistory` —— 版本不兼容的快照里出现过哪些坐标(键见 `incompatibleHistoryKey`)。
+ *   这些落盘不解析、不进 `results`,但「这条 eval 跑过、只是那份格式读不动」与「从没跑过」
+ *   是两件事:`--dry` 的原因词据此把它标 `incompatible` 而不是 `new`。
  */
 export async function loadCarryInputs(
   root = ".niceeval",
@@ -242,6 +246,7 @@ export async function loadCarryInputs(
   results: EvalResult[];
   flagBagsByExperiment: Map<string, globalThis.Record<string, JsonValue>[]>;
   manifestsByEvalKey: Map<string, EvalManifest>;
+  incompatibleHistory: Set<string>;
 }> {
   const results = await openRecord(root);
   const out: EvalResult[] = [];
@@ -282,7 +287,64 @@ export async function loadCarryInputs(
       for (const id of takenThisSnapshot) claimed.add(id);
     }
   }
-  return { results: out, flagBagsByExperiment, manifestsByEvalKey };
+  return {
+    results: out,
+    flagBagsByExperiment,
+    manifestsByEvalKey,
+    incompatibleHistory: await scanIncompatibleHistory(root, results.unreadable),
+  };
+}
+
+/**
+ * 「这个坐标有历史,但那份落盘的 schemaVersion 与本读取器不同」的判定键。
+ * 不兼容的快照按格式规则整份不解析(docs/feature/record/architecture.md「版本不匹配时的读取
+ * 行为」),所以坐标只能按目录名认:实验目录与 eval 目录恒由 `experimentDirOf` / `evalDirOf`
+ * 决定,这两个函数就是这里唯一用到的跨版本稳定知识。
+ */
+export function incompatibleHistoryKey(experimentId: string, evalId: string): string {
+  return `${experimentDirOf(experimentId)}|${evalDirOf(evalId)}`;
+}
+
+/** 快照根下的 attempt 目录名:`a<序号>`。 */
+const ATTEMPT_DIR_NAME_RE = /^a\d+$/;
+
+/**
+ * 扫出版本不兼容的快照都跑过哪些坐标。只读目录名、不读任何文件——那些文件正是读不动的那批。
+ * 代价只跟不兼容快照数成正比:没有不兼容落盘时一次 readdir 都不付。
+ */
+async function scanIncompatibleHistory(root: string, unreadable: UnreadableRun[]): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const absRoot = resolve(root);
+  for (const skipped of unreadable) {
+    if (skipped.reason !== "incompatible") continue;
+    const segments = relative(absRoot, resolve(skipped.dir)).split(sep);
+    if (segments[0] === "..") continue; // 单文件模式:目录不在本次的结果根下
+    // 快照目录恒是 `<root>/<实验目录>/<快照目录>`;裸跑(没有 experimentId)少一层,实验目录是空串。
+    const experimentDir = segments.length >= 2 ? segments[0]! : "";
+    for (const evalDir of await evalDirsUnder(skipped.dir, "", 0)) keys.add(`${experimentDir}|${evalDir}`);
+  }
+  return keys;
+}
+
+/**
+ * 快照根下含 attempt 目录的那些相对路径(= eval 目录)。eval id 里的 `/` 落盘时保留成目录
+ * 层级,所以要往下走;深度按 eval id 的段数封顶,不做无界遍历。
+ */
+async function evalDirsUnder(dir: string, prefix: string, depth: number): Promise<string[]> {
+  if (depth > 4) return [];
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return []; // 目录读不动:当作没有历史,与它原本的处理一致
+  }
+  const dirs = entries.filter((e) => e.isDirectory());
+  if (prefix !== "" && dirs.some((e) => ATTEMPT_DIR_NAME_RE.test(e.name))) return [prefix];
+  const out: string[] = [];
+  for (const entry of dirs) {
+    out.push(...await evalDirsUnder(join(dir, entry.name), prefix === "" ? entry.name : `${prefix}/${entry.name}`, depth + 1));
+  }
+  return out;
 }
 
 /** 一份 Run 的 `manifests.json`;文件不在(那一轮早于清单落盘)或读不动都按「没有清单」。 */

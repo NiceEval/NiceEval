@@ -15,6 +15,7 @@ export {
   IncompatibleResultsError,
   ViewInputError,
   incompatibleHint,
+  incompatibleHistoryKey,
   incompatibleViewCommand,
   loadCarryInputs,
   loadLatestResultsPerEval,

@@ -101,7 +101,8 @@ export const en = {
   "cli.error": "niceeval error: {{error}}\n",
   "cli.flag.acceptNeedsSelector":
     "error: --accept needs a selector, for example --accept config:judge.model\n" +
-    "  fix: run `niceeval exp <selection> --dry` first; every `stale` line prints the selectors it can accept, copy one verbatim\n",
+    "  fix: run `niceeval exp <selection> --dry` first; every `stale` line prints the selectors it can accept, copy one verbatim\n" +
+    "  differences you can accept in this plan: {{available}}\n",
   "cli.flag.acceptWithRerunAll":
     "--accept cannot be combined with --rerun all: one says trust nothing from cache, the other says trust this difference anyway.\n" +
     "Drop --rerun all to accept the difference, or drop --accept to rerun everything.\n",

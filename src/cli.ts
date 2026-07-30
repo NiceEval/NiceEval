@@ -14,7 +14,7 @@ import { parseArgs as nodeParseArgs } from "node:util";
 import { discoverEvals, discoverExperiments } from "./runner/discover.ts";
 import { browsableExperimentPaths, evalPrefixPredicate, matchExperimentSelector } from "./shared/aggregate.ts";
 import { runEvals, type AgentRun } from "./runner/run.ts";
-import { cacheKey, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
+import { cacheKey, missingReason, planCarry, type CarryPlan, type DispatchGroup } from "./runner/fingerprint.ts";
 import {
   createStdinPromptReader,
   equivalentAcceptCommand,
@@ -50,6 +50,7 @@ import {
 import {
   buildView,
   startViewServer,
+  incompatibleHistoryKey,
   loadCarryInputs,
   resolveViewInput,
   IncompatibleResultsError,
@@ -280,11 +281,9 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
       // 不带值的 `--accept`:stderr 是 TTY 就进逐原因标记(计划打出后按差异分组逐条问),
       // 非 TTY 是用法错误。这里必须预扫——不预扫的话 node:util 会把后面那个 flag 当成它的值
       // (`--accept --dry` → selector 是 "--dry"),一次手滑变成一次静默生效的授权。
+      // 非 TTY 的报错不在这里发:它要带上「本次计划里可以授权的原因清单」,而那份清单要等
+      // 携带规划算完才有,所以只在这里记下形态,报错落在 exp 里 carryPlan 之后。
       if ((arg === "--accept" && (next === undefined || next.startsWith("-"))) || arg === "--accept=") {
-        if (process.stderr.isTTY !== true) {
-          process.stderr.write(t("cli.flag.acceptNeedsSelector"));
-          process.exit(1);
-        }
         acceptInteractive = true;
         continue; // 这个 token 不进 parseArgs:它没有值,留着只会被当成缺参数的 flag
       }
@@ -427,17 +426,18 @@ function planRowInputs(
   agentRuns: AgentRun[],
   matchedByRun: DiscoveredEval[][],
   carryPlan: CarryPlan | undefined,
+  incompatibleKeys: ReadonlySet<string>,
 ): { experimentId: string; evalId: string; reused: boolean; dispatch: DispatchGroup[] }[] {
   const rows: { experimentId: string; evalId: string; reused: boolean; dispatch: DispatchGroup[] }[] = [];
   for (let i = 0; i < agentRuns.length; i++) {
     const run = agentRuns[i]!;
     for (const e of matchedByRun[i]!) {
       const carriedCount = carryPlan?.carriedAttemptsByKey.get(cacheKey(run, e.id))?.size ?? 0;
-      // 没有任何历史时不必先跑一趟携带规划:计划内每个序号都没有历史,逐条 new。
+      // 没有任何可读历史时不必先跑一趟携带规划:计划内每个序号都缺条目,逐条报缺历史门的原因词。
       const dispatch: DispatchGroup[] = carryPlan?.dispatchByKey.get(cacheKey(run, e.id))
         ?? (carriedCount >= run.attempts
           ? []
-          : [{ gate: "missing", reason: "new", attempts: [...Array(run.attempts).keys()] }]);
+          : [{ ...missingReason(cacheKey(run, e.id), { incompatibleKeys }), attempts: [...Array(run.attempts).keys()] }]);
       rows.push({ experimentId: run.experimentId ?? "", evalId: e.id, reused: carriedCount >= run.attempts, dispatch });
     }
   }
@@ -1122,14 +1122,40 @@ async function main(): Promise<void> {
   }
   const carryInputs = await loadCarryInputs(join(cwd, ".niceeval"));
   const priorResults = carryInputs?.results;
+  // 本次计划里哪些坐标「有历史但那份落盘读不动」:不标出来,它们会跟从没跑过的坐标一样落在
+  // `new` 上(见 docs/feature/experiments/cli.md 的门级词表)。坐标按目录名认,所以在这里从
+  // 目录键换算成 cacheKey。
+  const incompatibleKeys = new Set<string>();
+  for (let i = 0; i < agentRuns.length; i++) {
+    const run = agentRuns[i]!;
+    for (const e of matchedByRun[i]!) {
+      if (carryInputs.incompatibleHistory.has(incompatibleHistoryKey(run.experimentId ?? "", e.id))) {
+        incompatibleKeys.add(cacheKey(run, e.id));
+      }
+    }
+  }
   let carryPlan = priorResults?.length
     ? await planCarry(evals, agentRuns, priorResults, config.sandbox, config.timeoutMs, {
         rerun: flags.rerun,
         keepSandbox: flags.keepSandbox,
         accept: flags.accept,
+        incompatibleKeys,
         priorManifests: carryInputs?.manifestsByEvalKey,
       })
     : undefined;
+
+  // 不带值的 `--accept` 在非 TTY 下是用法错误。报错落在这里而不是解析 argv 时:它要带上
+  // 本次计划里真实可授权的原因清单(与 selector 空转报错同一份枚举),那份清单要等携带规划
+  // 算完才有——只说「必须带 selector」而不说「这次能填什么」,人还是得再跑一趟 `--dry`。
+  if (flags.acceptInteractive && process.stderr.isTTY !== true) {
+    const available = carryPlan?.availableDeltas ?? [];
+    process.stderr.write(t("cli.flag.acceptNeedsSelector", {
+      available: available.length > 0
+        ? available.map((delta) => delta.selector).join(", ")
+        : t("cli.none"),
+    }));
+    process.exit(1);
+  }
 
   // 不带值的 `--accept`:计划打出后按差异分组逐条问「复用还是重跑」,只问可 accept 的分组
   // (打不开的门在矩阵里照常展示,但不给「复用」选项——给了也不生效)。选完先打印等价的
@@ -1148,7 +1174,7 @@ async function main(): Promise<void> {
           configs: agentRuns.length,
           attempts: Math.max(1, ...agentRuns.map((r) => r.attempts)),
           reused: carryPlan?.carriedResults.length ?? 0,
-          rows: planRowInputs(agentRuns, matchedByRun, carryPlan),
+          rows: planRowInputs(agentRuns, matchedByRun, carryPlan, incompatibleKeys),
           command: acceptCommand,
         }),
       );
@@ -1168,6 +1194,7 @@ async function main(): Promise<void> {
           rerun: flags.rerun,
           keepSandbox: flags.keepSandbox,
           accept: chosen,
+          incompatibleKeys,
           priorManifests: carryInputs?.manifestsByEvalKey,
         });
       }
@@ -1197,7 +1224,7 @@ async function main(): Promise<void> {
     // 矩阵——(experimentId, evalId) 逐行,携带同一口径的 reused 预测——不是各自重算一遍。
     const dryRuns = Math.max(1, ...agentRuns.map((r) => r.attempts));
     // 一行一份未携带原因分组:人读面投影出门的人读词,`--json` 投影出 gate 名,同一份数据。
-    const rowInputs = planRowInputs(agentRuns, matchedByRun, carryPlan);
+    const rowInputs = planRowInputs(agentRuns, matchedByRun, carryPlan, incompatibleKeys);
     // 只读锁目录,不取锁、不等待(见 docs/feature/experiments/architecture.md「并发
     // Invocation:用例锁」);过期(无人续心跳)的锁不算"正被持锁运行",不标注。裸 run(没有
     // experimentId)不参与锁,恒不标注。并行读——矩阵行数可能不小,不逐行串行等磁盘。

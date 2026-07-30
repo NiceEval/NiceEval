@@ -99,7 +99,8 @@ export const zhCN = {
   "cli.error": "niceeval 出错:{{error}}\n",
   "cli.flag.acceptNeedsSelector":
     "error: --accept 必须带 selector,例如 --accept config:judge.model\n" +
-    "  fix: 先跑 `niceeval exp <选择> --dry`,每条 `stale` 行都打出了它可授权的 selector,原样复制一条\n",
+    "  fix: 先跑 `niceeval exp <选择> --dry`,每条 `stale` 行都打出了它可授权的 selector,原样复制一条\n" +
+    "  本次计划里可以授权的差异:{{available}}\n",
   "cli.flag.acceptWithRerunAll":
     "--accept 不能与 --rerun all 同用:一边全不采信缓存,一边又要采信这条差异,方向自相矛盾。\n" +
     "要授权这条差异就去掉 --rerun all;要全量重跑就去掉 --accept。\n",
