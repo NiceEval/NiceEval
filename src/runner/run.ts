@@ -7,14 +7,40 @@ import { Effect, Cause, Exit } from "effect";
 import { probeJudge } from "../scoring/judge.ts";
 import { t } from "../i18n/index.ts";
 import { cacheKey, carriableAttempts, planCarry, resolvedTimeoutMsForCarry } from "./fingerprint.ts";
+import { configDeltas, configIdentityForRun, configIdentityFromResult } from "./config-identity.ts";
 import { OtelReceiverPool } from "../o11y/otlp/turn-otel.ts";
 import {
   errorFromThrown,
+  // attemptOrigin re-exported via timing for Run diagnostics
+
   experimentRunInfo,
   resolveJudge,
   runAttemptEffect,
   type AttemptFailureDeclaration,
 } from "./attempt.ts";
+import type {
+  DiagnosticRecord,
+  EvalResult,
+  InvocationShape,
+  InvocationSummary,
+  JsonValue,
+  JudgeConfig,
+  Reporter,
+  ReporterRegistration,
+  SandboxBuildRecord,
+  SandboxOption,
+} from "../types.ts";
+import type {
+  AgentRun,
+  Attempt,
+  AttemptError,
+  ExperimentHookContext,
+  LifecyclePhase,
+  AttemptRef,
+  RunOptions,
+} from "./types.ts";
+import { attemptOrigin, createRunTimingRecorder, runOrigin } from "./timing.ts";
+import { buildFailureOrigin, prepareSandboxBuilds } from "../sandbox/build-coordinator.ts";
 import { firstLine } from "../util.ts";
 import { resolveSandbox } from "../sandbox/resolve.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
@@ -30,6 +56,7 @@ import {
   reportInterrupted,
   reportLockWait,
   reportPrecheck,
+  reportRunActivity,
 } from "./feedback/sink.ts";
 import { failureDetailFromResult } from "./feedback/failure.ts";
 import { encodeAttemptLocator, type AttemptLocator } from "../record/locator.ts";
@@ -59,26 +86,7 @@ import {
 } from "./lock.ts";
 import { acquireGateSlot, type GateLeaseClaim, type GateLeaseRecord } from "./gate-lease.ts";
 import { loadLatestResultsForCase } from "../record/open.ts";
-import type {
-  DiagnosticRecord,
-  EvalResult,
-  InvocationShape,
-  InvocationSummary,
-  JsonValue,
-  JudgeConfig,
-  Reporter,
-  ReporterRegistration,
-  SandboxOption,
-} from "../types.ts";
-import type {
-  AgentRun,
-  Attempt,
-  AttemptError,
-  ExperimentHookContext,
-  LifecyclePhase,
-  AttemptRef,
-  RunOptions,
-} from "./types.ts";
+import type { RunManifests } from "../record/manifest.ts";
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -185,13 +193,15 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     acceptableFingerprints,
     carriedAttemptsByKey,
     carriedResults: planCarriedResults,
-    carriedIgnoringFlagsByResult,
+    carriedAcceptingByResult,
+    manifestsByKey,
   } =
     opts.carryPlan ??
     (await planCarry(opts.evals, opts.agentRuns, opts.priorResults, opts.config.sandbox, opts.config.timeoutMs, {
       rerun: opts.rerun,
+      ...(opts.priorManifests ? { priorManifests: opts.priorManifests } : {}),
       keepSandbox: opts.keepSandbox,
-      carryIgnoringFlags: opts.carryIgnoringFlags,
+      accept: opts.accept,
     }));
 
   /**
@@ -211,7 +221,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           ...r,
           fingerprint: fp,
           configHash,
-          ...(carriedIgnoringFlagsByResult?.has(r) ? { carriedIgnoringFlags: [...carriedIgnoringFlagsByResult.get(r)!] } : {}),
+          ...(carriedAcceptingByResult?.has(r) ? { carriedAccepting: [...carriedAcceptingByResult.get(r)!] } : {}),
         };
   };
   const carriedResults = planCarriedResults.map(restampCarried);
@@ -324,18 +334,81 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   }
 
+  // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
+  // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
+  // Compose / on-demand 自动收集接线前由 buildPreparation 显式注入(完全携带的 key 不进 works)。
+  const runTiming = createRunTimingRecorder();
+  let sandboxBuildRecords: SandboxBuildRecord[] = [];
+  const buildFailureByEval = new Map<string, AttemptError>();
+  if (opts.buildPreparation && opts.buildPreparation.works.length > 0) {
+    const prep = await prepareSandboxBuilds(opts.buildPreparation.works, {
+      timing: runTiming,
+      provider: opts.buildPreparation.provider,
+      ...(opts.buildPreparation.maxConcurrency !== undefined
+        ? { maxConcurrency: opts.buildPreparation.maxConcurrency }
+        : {}),
+      ...(opts.buildPreparation.buildTimeoutMs !== undefined
+        ? { buildTimeoutMs: opts.buildPreparation.buildTimeoutMs }
+        : {}),
+      ...(opts.buildPreparation.prepareBudgetMs !== undefined
+        ? { prepareBudgetMs: opts.buildPreparation.prepareBudgetMs }
+        : {}),
+      signal: opts.signal,
+      // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
+      onActivity: (event) => {
+        reportRunActivity({
+          id: event.id,
+          key: event.key,
+          label: event.label,
+          status: event.status,
+          ...("durationMs" in event ? { durationMs: event.durationMs } : {}),
+        });
+      },
+    });
+    sandboxBuildRecords = [...prep.records];
+    for (const [evalId, keys] of Object.entries(opts.buildPreparation.evalBuildKeys)) {
+      for (const key of keys) {
+        const failure = prep.failures.get(key);
+        if (failure === undefined) continue;
+        const originFields = buildFailureOrigin(failure);
+        buildFailureByEval.set(evalId, {
+          code: originFields.code,
+          message: originFields.message,
+          origin: runOrigin(originFields.timingNodeId),
+          ...(originFields.cause !== undefined ? { cause: originFields.cause } : {}),
+        });
+        break;
+      }
+    }
+  }
+
   // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:
   // 哪些 eval 复用、哪些重跑属于 --dry 与 niceeval view,不占 human 的 scrollback)。
 
   // onInvocationStart 报「本次实际要跑的 eval」(过滤 + 去重),不是发现到的全部 —— 否则计数误导。
   const runningIds = new Set(attempts.map((a) => a.evalDef.id));
   const runningEvals = [...runningIds].map((id) => ({ id }));
+  // 指纹输入清单按 experiment 分组交给落盘面(Artifacts → createWriter),Run 目录建成那一刻
+  // 与 run.json 同批写出。分组不切 `${experimentId}|${evalId}` 这个字符串键,而是按同一份
+  // (run, evalDef) 组合重取一遍——id 里出现分隔符时切字符串会静默错位。
+  const manifestsByExperiment = new Map<string, RunManifests>();
+  for (const run of opts.agentRuns) {
+    if (!run.experimentId) continue;
+    for (const evalDef of selectedEvalsForRun(opts.evals, run)) {
+      const manifest = manifestsByKey?.get(cacheKey(run, evalDef.id));
+      if (manifest === undefined) continue;
+      const bucket = manifestsByExperiment.get(run.experimentId) ?? {};
+      bucket[evalDef.id] = manifest;
+      manifestsByExperiment.set(run.experimentId, bucket);
+    }
+  }
   const shape: InvocationShape = {
     evals: runningEvals.length,
     configs: opts.agentRuns.length,
     totalAttempts: attempts.length,
     maxConcurrency: opts.maxConcurrency,
     snapshotStartedAt,
+    ...(manifestsByExperiment.size > 0 ? { manifests: manifestsByExperiment } : {}),
   };
   // eval 级 reporters:实例只观测引用它的 eval(经 scopeReporter 过滤转发)。
   // 已经挂在全局 reporters 里的同一实例不重复挂;同一实例被多个 eval 引用时合并观测集
@@ -605,26 +678,35 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     const record: DiagnosticRecord = {
       code: input.code,
       level: input.level,
-      message: input.message,
-      phase: input.phase,
-      ...(input.data !== undefined ? { data: input.data } : {}),
-      ...(input.command !== undefined ? { command: input.command } : {}),
+      detail: input.message,
+      origin: attemptOrigin(input.phase),
+      ...(input.data !== undefined || input.command !== undefined
+        ? {
+            context: {
+              ...(input.data ?? {}),
+              ...(input.command !== undefined ? { command: input.command } : {}),
+            },
+          }
+        : {}),
     };
     if (input.dedupeKey !== undefined) dedupeIndex.set(input.dedupeKey, record);
     const list = experimentDiagnostics.get(input.experimentId) ?? [];
     list.push(record);
     experimentDiagnostics.set(input.experimentId, list);
   };
-  if (carriedIgnoringFlagsByResult !== undefined) {
-    for (const [result, flags] of carriedIgnoringFlagsByResult) {
+  // 授权携入在 Run 侧也留一条痕:条目自己带的 `carriedAccepting` 跟着结果走,这一条回答
+  // 「本次调用采信了哪些差异」。同一批 selector 折叠成一条,不逐条目刷屏。
+  if (carriedAcceptingByResult !== undefined) {
+    for (const [result, deltas] of carriedAcceptingByResult) {
+      const selectors = deltas.map((delta) => delta.selector);
       recordExperimentDiagnostic({
         experimentId: result.experimentId,
-        code: "carry-ignoring-flag",
+        code: "accept",
         level: "warning",
-        message: "Carried a prior result while ignoring migrated flags.",
+        message: `Carried prior results across accepted differences: ${selectors.join(", ")}.`,
         phase: "experiment.setup",
-        data: { flags: [...flags] },
-        dedupeKey: `carry-ignoring-flag:${flags.join(",")}`,
+        data: { selectors: [...selectors] },
+        dedupeKey: `accept:${selectors.join(",")}`,
       });
     }
   }
@@ -1212,7 +1294,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
           rerun: opts.rerun,
           keepSandbox: opts.keepSandbox,
           sandboxReuse: a0.run.sandboxReuse,
-          carryIgnoringFlags: opts.carryIgnoringFlags,
+          accept: opts.accept,
         },
       );
       for (const r of carried) {
@@ -1220,6 +1302,28 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         st.pending.delete(r.attempt);
         st.carried.add(r.attempt);
         newlyCarried.push(r.attempt);
+        // 迟到携带同样可能是被授权跨过差异才进来的(它的指纹不是本次规划那个)。留痕在这里
+        // 补齐:静态规划算好的那份映射只认规划时刻见过的条目,别的 Invocation 刚落盘的这条
+        // 不在里面,漏掉就成了「授权携入却没有任何账」。
+        if (opts.accept?.length && r.fingerprint !== plannedFingerprints.get(key)) {
+          const historical = configIdentityFromResult(r);
+          const crossed = historical === undefined
+            ? []
+            : configDeltas(historical, configIdentityForRun(a0.run, opts.config.sandbox))
+                .filter((delta) => opts.accept!.includes(delta.selector));
+          if (crossed.length > 0) {
+            carriedAcceptingByResult?.set(r, crossed);
+            recordExperimentDiagnostic({
+              experimentId,
+              code: "accept",
+              level: "warning",
+              message: `Carried prior results across accepted differences: ${crossed.map((d) => d.selector).join(", ")}.`,
+              phase: "experiment.setup",
+              data: { selectors: crossed.map((d) => d.selector) },
+              dedupeKey: `accept:${crossed.map((d) => d.selector).join(",")}`,
+            });
+          }
+        }
         lateCarriedResults.push(restampCarried(r));
         if (r.verdict === "passed") {
           passedKeys.add(`${experimentId}|${a0.run.agent.name}|${a0.run.model ?? ""}|${evalId}`);
@@ -1737,11 +1841,14 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
             const expLc = expLifecycles.get(a.run);
             const precheckFailure = judgePrecheckFailures.get(a.evalDef.id);
+            const buildFailure = buildFailureByEval.get(a.evalDef.id);
             const blockedError: AttemptError | undefined = expLc?.setupFailed
               ? { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" }
               : precheckFailure !== undefined
-                ? { code: "judge-precheck-failed", message: precheckFailure, phase: "judge.precheck" }
-                : undefined;
+                ? { code: "judge-precheck-failed", message: precheckFailure, origin: attemptOrigin("judge.precheck") }
+                : buildFailure !== undefined
+                  ? buildFailure
+                  : undefined;
             const pool = blockedError ? undefined : reusePoolFor(a);
             const lease = pool
               ? yield* Effect.promise(() =>
@@ -1822,7 +1929,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               const s = budgetState(budgetKey);
               if (result.estimatedCostUSD !== undefined) {
                 s.spent += result.estimatedCostUSD;
-              } else if (result.phases?.some((phase) => phase.children?.some((child) => child.kind === "turn"))) {
+              } else if (result.phases?.some((phase) => phase.children?.some((child) => child.key === "agent.turn"))) {
                 s.completedAgentRunsNoCost += 1;
                 if (s.spent === 0 && s.completedAgentRunsNoCost >= 3 && !s.unenforceableWarned) {
                   // 连续几次真正跑过 agent 的 attempt 都拿不到成本:budget 对这个 agent
@@ -2076,6 +2183,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   const invocationExperimentIds = new Set(
     opts.agentRuns.map((r) => r.experimentId).filter((id): id is string => id !== undefined),
   );
+  const runTimings = runTiming.finalize();
   for (const experimentId of invocationExperimentIds) {
     await emitReporterEvent(reporters, {
       type: "experiment:complete",
@@ -2087,6 +2195,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       carriedResults: [...carriedResults, ...lateCarriedResults].filter((r) => r.experimentId === experimentId),
       diagnostics: experimentDiagnostics.get(experimentId) ?? [],
       ...(experimentFacts.has(experimentId) ? { facts: experimentFacts.get(experimentId) } : {}),
+      // Run 级共享构建时间与 provenance:属于产出它们的 Run;携带条目不继承。
+      ...(runTimings !== undefined ? { timings: runTimings } : {}),
+      ...(sandboxBuildRecords.length > 0 ? { sandboxBuilds: sandboxBuildRecords } : {}),
       name: opts.config.name,
     });
   }

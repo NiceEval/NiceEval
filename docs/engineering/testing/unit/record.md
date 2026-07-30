@@ -81,6 +81,37 @@ interface AttemptSpec {
 - **Usage、facts 与失败命令证据落盘**：`Usage` 每个字段只在协议真实提供时写入——fixture 要区分「省略」与「写 0 / 写 1」（尤其 `requests`：无请求计数的协议不得落 `requests: 1`）；**桶恒互斥归一**是 adapter / 转换器 / transcript 解析器的落值义务：OpenAI 系口径（codex `cached_input_tokens`、Chat Completions / Responses / bub tape 的 `cached_tokens`、AI SDK `cachedInputTokens` 与 `inputTokenDetails`、LangChain `input_token_details`）落 `inputTokens` 前从输入总量扣掉缓存明细且不产生负数，互斥系口径（Anthropic、pi 简写）如实转发不扣减——fixture 的输入总量与缓存子集要选「扣与不扣结果可区分」的数值，缺缓存字段时输入总量原样保留（不虚构扣减）；每个生产点各锁一条自己的字段映射，扣减夹底（cached > input 时归 0）只在一处证明，不逐生产点复述；`fact()` 的作用域归属（sandbox hook / agent 上下文 → `AttemptRecord.facts`，experiment hook → `RunMeta.facts`，runner 自动归属、调用方无法指定层级）、同作用域同 key 后写覆盖、key 词法（`[a-z0-9._-]{1,64}`）与非标量 value 的完整报错、experiment 级 facts 与 `completedAt` 同批封口补写、facts 不参与 verdict / 指纹 / `configHash`；读取面把两级 facts 原样读回不合并。
   `commands.json` 只在有非零 Sandbox 命令时生成，`AttemptRecord.artifacts` 含 `commands` 与文件存在同值;每条 evidence 的 timingNodeId / phase / display / exitCode / stdout / stderr 原样往返，stdout/stderr 不参与逐值截断——一条超过 256 KiB 的失败输出全量原样落盘再读回，这一格在复用 events 截断路径的实现下会红；携带按 artifactBase 懒加载，`publish({ artifacts: ["commands"] })` 物化后不留回退指针。
 - **publish 与 resolveLocator**：目标非空即报错不合并、预检失败不留半成品；文件大小预检的整体失败与错误明细；产物自包含（解引用复制、重新去重、补 `knownEvalIds`，复制出的条目 `evidenceState` 恒为 `local`）；源里含 `dangling` 条目时整体失败并列出这些 attempt；`resolveLocator` 只查内存、两类错误可分辨。
+- **开放 activity key 的往返与未知 key 读取**（[两层时间模型](../../../feature/record/architecture.md#两层时间模型生命周期锚点与开放-activity)）：
+
+  - writer 接受第三方未知 `ActivityKey` 原样落盘；`openRecord` 读回同一棵树，不因 key 不在官方词表而拒绝。
+  - 未知 key 对 `durationMs` / `executionMs` / verdict / deadline 零影响。
+    fixture 要有「官方 key + 未知 key 同树」且口径只跟锚点走的区分力格。
+  - 官方 reader 不依赖任何 registry 才能展示未知节点。
+- **Run / attempt 双时钟域**：
+
+  - `RunMeta.timings` 的 offset 相对该 Run 单调时钟起点；`PhaseTiming.children` 相对该 attempt 起点。
+  - 两域 offset 不得混算，也不得拿远端 OTel 绝对时间硬对齐。
+  - fixture 同刻写入两边 activity，断言读回各自相对本域起点。
+  - 共享构建只出现在 Run 域，不复制进任何 attempt 的 `executionMs`。
+- **`TimingOrigin` 的 attempt / run 两支**：
+
+  - attempt 支必带 Runner 打开的 `LifecyclePhase`，可选 `timingNodeId` 指向该锚点下 activity。
+  - run 支必带指向 `RunMeta.timings` 的 `timingNodeId`，不伪造 attempt 锚点。
+  - 构建失败的依赖 attempt 全部 `errored`，且 origin 指向同一个 Run timing node。
+  - 缺失 timing 时允许只写 attempt 锚点，或写无 `origin` 的 Run diagnostic；三态不合并。
+- **publish / carry 对 timing 引用的忠实保留**：
+
+  - attempt 的 `phases` 与 activity 子树随 `result.json` 原样携带、原样 publish，不得回写或裁剪。
+  - `publish` 恒复制 `run.json`，`timings`、`sandboxBuilds` 与 origin 引用随之完整保留。
+  - 携带条目不继承本 Run 的 `RunMeta.timings` / `sandboxBuilds`（与 `RunMeta.facts` 同规则）。
+  - 携带条目上 run scope 的 `timingNodeId` 经 `artifactBase` 回原 Run 解引用。
+- **`sandboxBuilds` 与 `timingNodeId` 引用完整性**：
+
+  - 每个实际查询或构建过的 BuildKey 一条 provenance，多 attempt 引用同一条。
+  - `timingNodeId` 指向同份 `RunMeta.timings` 里对应的 `sandbox.build`；本表不复制 duration。
+  - `status` 四值（`hit` / `built` / `failed` / `cancelled`）各要区分力格。
+  - cache hit 也留下有界查询 activity；完全携带、无需查询的 BuildKey 不造假记录。
+  - writer 保证 `timingNodeId` 可解引用；reader 对解引用失败按数据缺失回退。
 
 ## 不这样测
 

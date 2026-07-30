@@ -183,6 +183,19 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
           return;
         }
 
+        case "run-activity": {
+          noteCheckpoint(event.at);
+          writeEvent(io, {
+            event: "run_activity",
+            id: event.id,
+            key: event.key,
+            label: event.label,
+            status: event.status,
+            ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+          });
+          return;
+        }
+
         case "interrupted": {
           noteCheckpoint(event.at);
           if (!isFirstOccurrence(state, "interrupted")) return;
@@ -388,11 +401,31 @@ export function computeExitCode(summary: InvocationSummary, completion: Invocati
 
 /** 一个 (experiment, eval) 组合在 `ExpPlanDocument.matrix` 里的一行(cli.md「`--dry --json`
  *  输出单个 `ExpPlanDocument`」)。 */
+/** 一条具名差异的机器面投影(`ExpPlanDelta`);selector 原样可复制进 `--accept`。 */
+export interface JsonPlanDelta {
+  /** 与 --accept 同一词表:`config:<路径>` / `source:<路径>` / `data:<路径>` / `opaque:no-manifest`。 */
+  selector: string;
+  /** 值或内容哈希的有界摘要;opaque 与新增/删除侧按缺省略。 */
+  from?: string;
+  to?: string;
+}
+
+/** 本行要派发的 attempt 按未携带原因分组(`ExpPlanDispatch`);gate 词表与六道门同名。 */
+export interface JsonPlanDispatch {
+  gate: "fingerprint" | "terminal" | "eligibility" | "origin" | "rerun" | "mode" | "missing";
+  /** 这组原因覆盖的 attempt 序号。 */
+  attempts: number[];
+  /** 指纹门的差异明细。 */
+  deltas?: JsonPlanDelta[];
+}
+
 export interface JsonPlanRow {
   experimentId: string;
   evalId: string;
   /** 命中缓存指纹,本次不会派发新 attempt。 */
   reused: boolean;
+  /** 本行要派发的 attempt 按未携带原因分组;全部携带时省略。 */
+  dispatch?: JsonPlanDispatch[];
   /** 该用例正被另一条并行 Invocation 持锁运行,真实运行时将等待后携带或补跑(见
    *  docs/feature/experiments/architecture.md「并发 Invocation:用例锁」)。`--dry` 只读锁
    *  目录,不取锁、不等待;省略等于 `false`(JSON.stringify 丢弃 `undefined` 属性,

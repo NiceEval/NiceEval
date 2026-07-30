@@ -145,13 +145,41 @@ sandboxSetup(): SandboxHook {
 
 判据是**谁写下这个值**：你在实验里声明的是条件，写 `flags`；跑起来才知道的是观测，用 `ctx.fact()`；Adapter 和评估用例都不需要读、只给报告分组用的标注写 `labels`。
 
-已经误写进 `flags` 的地址要搬走时，搬迁那一次带上 `--carry-ignoring-flag`，这一轮的沿用判定按抹掉这个键之后的 `flags` 认账，搬迁不必赔上一轮重烧：
+## 搬走一个键，不赔上一轮重烧
+
+地址已经写进 `flags`、现在要搬去 `ctx.fact()` 时，删掉这个键会让 flags 袋变化、上一轮全废。先跑 `--dry` 看这次为什么全要重跑：
 
 ```bash
-npx niceeval exp compare --carry-ignoring-flag tunnelUrl
+npx niceeval exp compare --dry
 ```
 
-它只接受已经不在本次 `flags` 里的键——键还在就是用法错误，报错会指出它仍是本次的实验条件、要先真正搬走。搬完之后的运行不需要再带这个 flag。
+```text
+plan: 36 attempts · 36 evals × 1 configs · attempts 1
+0 carried in from cache · 36 to run
+
+stale  config:flags.tunnelUrl  https://a1b2.trycloudflare.com → https://c3d4.trycloudflare.com
+       affects 36 evals · baseline 01/02/03/05/06
+       accept:  niceeval exp compare --accept config:flags.tunnelUrl
+```
+
+`accept:` 那一行可以原样复制。带上它再跑，命中这条差异的结果就跨过它照常沿用：
+
+```bash
+npx niceeval exp compare --accept config:flags.tunnelUrl
+```
+
+```text
+╭─ PLAN ──────────────────────────────────────────╮
+│ 36 attempts · 36 evals × 1 configs              │
+│ 36 of 36 reused · 0 to run                      │
+╰─────────────────────────────────────────────────╯
+```
+
+沿用进来的每条结果记下它跨过了哪条差异，`niceeval show` 读得到。这次沿用同时把它们重新锚在本次的口径上，所以下一次跑同一条命令自然命中，不用再带这个 flag。
+
+selector 要指向本次计划里真实存在的一条差异。打错键名时没有任何差异匹配得上，NiceEval 直接报用法错误并列出本次可以 accept 的原因，不会静默放行。
+
+不想手拼 selector 时，在终端里跑 `--accept` 不带值：NiceEval 打出计划后逐条问“沿用还是重跑”，选完先打印等价的带值命令，再按你的选择执行。
 
 ## 指纹没得改但就是要重跑
 

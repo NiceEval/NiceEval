@@ -226,6 +226,41 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(doc.matrix[1]).not.toHaveProperty("locked");
   });
 
+  it("dispatch 逐组给出 gate 与 attempt 序号,指纹门带 deltas;全携带的行不出现该字段", () => {
+    const text = renderJsonPlanDocument({
+      total: 4,
+      evals: 2,
+      configs: 1,
+      attempts: 2,
+      matrix: [
+        {
+          experimentId: "compare/codex",
+          evalId: "memory/a",
+          reused: false,
+          dispatch: [
+            {
+              gate: "fingerprint",
+              attempts: [0],
+              deltas: [{ selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" }],
+            },
+            { gate: "missing", attempts: [1] },
+          ],
+        },
+        { experimentId: "compare/codex", evalId: "memory/b", reused: true },
+      ],
+    });
+    const doc = JSON.parse(text.trim());
+    expect(doc.matrix[0].dispatch).toEqual([
+      {
+        gate: "fingerprint",
+        attempts: [0],
+        deltas: [{ selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" }],
+      },
+      { gate: "missing", attempts: [1] },
+    ]);
+    expect(doc.matrix[1]).not.toHaveProperty("dispatch");
+  });
+
   it("reused 是 matrix 逐行 reused 之和(命中数量,不是 attempt 数)", () => {
     const text = renderJsonPlanDocument({
       total: 3,
@@ -329,6 +364,48 @@ describe("judge_precheck 事件:started / done / failed 三值,结束态带时�
     expect(events).toEqual([
       { event: "judge_precheck", status: "started" },
       { event: "judge_precheck", status: "done", durationMs: 1_500 },
+    ]);
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「live feedback 的未知 activity 通用投影」
+describe("run_activity 事件:未知 key 用 label 通用投影", () => {
+  it("起止/失败各一行;key 与 label 原样透出,不需要登记", () => {
+    const events = emitDurable([
+      {
+        type: "run-activity",
+        at: 1,
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "started",
+      },
+      {
+        type: "run-activity",
+        at: 2,
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "failed",
+        durationMs: 1_200,
+      },
+    ]);
+    expect(events).toEqual([
+      {
+        event: "run_activity",
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "started",
+      },
+      {
+        event: "run_activity",
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "failed",
+        durationMs: 1_200,
+      },
     ]);
   });
 });

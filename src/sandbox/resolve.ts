@@ -15,7 +15,7 @@ import type {
   SandboxRuntime,
   ScopedFeedback,
 } from "../types.ts";
-import { registerSandbox, stopSandbox } from "./registry.ts";
+import { registerSandbox, stopSandbox, unregisterSandbox } from "./registry.ts";
 import { normalizeSandboxPaths } from "./paths.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
@@ -27,6 +27,63 @@ import {
   provisionConfigCauseScope,
   type SandboxProvisionErrorKind,
 } from "./errors.ts";
+import {
+  allSkippedStartupError,
+  materializePlannedCase,
+  missingProfilesError,
+  planSandboxCase,
+  validateSpecEnvironmentCases,
+  type MaterializedSandboxCase,
+  type SandboxSource,
+} from "./case.ts";
+import type { BuildKey } from "./identity.ts";
+import {
+  assertCustomCapabilitiesHonored,
+  assertKeepAllowedForCase,
+  hasGroupKeep,
+  prebuiltProductSlotsOf,
+  specWithPrebuiltProduct,
+} from "./single-case.ts";
+import { registerCustomGroupKeep } from "./custom-group-keep.ts";
+
+export {
+  planSandboxCase,
+  materializePlannedCase,
+  collectMissingProfiles,
+  collectCapabilityGaps,
+  allSelectedCapabilitySkipped,
+  missingProfilesError,
+  allSkippedStartupError,
+  validateSpecEnvironmentCases,
+} from "./case.ts";
+export type { CasePlanResult, PlannedSandboxCase, PlanSandboxCaseInput } from "./case.ts";
+export {
+  computeBuildKey,
+  computeCaseKey,
+  resolveFloatingImageTag,
+  credentialIdentityContribution,
+  assertPureDataIdentity,
+  caseCarryEligible,
+} from "./identity.ts";
+export type { BuildKey, CaseKey, BuildKeyInput, CaseKeyInput, ImageRefResolution, CredentialRef } from "./identity.ts";
+export {
+  prebuiltProductSlotsOf,
+  specWithPrebuiltProduct,
+  assertKeepAllowedForCase,
+  assertCustomCapabilitiesHonored,
+  hasGroupKeep,
+  caseCapabilitiesOf,
+  isSingleSandboxCaseKind,
+  SINGLE_SANDBOX_CASE_KINDS,
+} from "./single-case.ts";
+export type { PrebuiltProductSlots, SingleSandboxCaseKind } from "./single-case.ts";
+export {
+  registerCustomGroupKeep,
+  lookupCustomGroupKeep,
+  destroyCustomGroupKeep,
+  wakeCustomGroupKeep,
+  clearCustomGroupKeepRegistry,
+} from "./custom-group-keep.ts";
 
 /** 归一化后的沙箱描述:确定的 provider + 各 provider 参数(只有对应 provider 用得上的会有值)。 */
 export interface ResolvedSandbox {
@@ -55,6 +112,8 @@ export interface ResolvedSandbox {
 /** 把 spec 数据结构归一化成 ResolvedSandbox;省略(undefined)直接报错——没有默认 provider。 */
 export function resolveSandbox(opt: SandboxOption | undefined, runtimeDefault?: SandboxRuntime): ResolvedSandbox {
   if (!opt) throw new Error(t("sandbox.missingSpec"));
+  // environments 表判别键在归一化时一次穷举;非法组合(如同时 image+compose)启动期失败。
+  validateSpecEnvironmentCases(opt);
   // local 的独占串行是内置事实(同一棵真实工作树,见 docs/feature/sandbox/local.md);自定义
   // provider 走各自声明的 exclusive 字段——两条路径都归一成同一个布尔字段,runner 只读它。
   const exclusive = opt.provider === "local" ? true : (opt as CustomSandboxSpec).exclusive === true;
@@ -140,6 +199,11 @@ function fallbackFeedback(): ScopedFeedback {
 export function createSandbox(opts: {
   sandbox?: SandboxOption;
   timeout?: number;
+  /**
+   * attempt deadline 的截止时刻(epoch ms)。沙箱内一切时限从它派生——单条命令未显式传
+   * `timeout` 时上限就是它的剩余量(见 deadline.ts);省略 = 本 attempt 没有 deadline。
+   */
+  deadlineAt?: number;
   runtime?: SandboxRuntime;
   /** 调用方并发槽位的临时归还/收回,传给 withProvisionRetry 在退避睡眠期间释放(见 retry.ts)。 */
   provisionSlot?: ProvisionSlot;
@@ -157,7 +221,7 @@ export function createSandbox(opts: {
     Effect.promise<Sandbox>(async () => {
       // 起好就登记:让 cli 的兜底强清(二次 Ctrl+C / 看门狗超时)能直接停到它,不只靠下面的
       // release。即便本 fiber 创建后立刻被中断、release 还没来得及跑,登记表也已认得这个沙箱。
-      const sb = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot), r.provider);
+      const sb = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot, opts.deadlineAt), r.provider);
       registerSandbox(sb);
       return sb;
     }),
@@ -177,13 +241,15 @@ export function createSandbox(opts: {
 export async function createSandboxInstance(opts: {
   sandbox?: SandboxOption;
   timeout?: number;
+  /** attempt deadline 的截止时刻(epoch ms),语义同 `createSandbox`。 */
+  deadlineAt?: number;
   runtime?: SandboxRuntime;
   provisionSlot?: ProvisionSlot;
   feedback?: ScopedFeedback;
 }): Promise<Sandbox> {
   const r = resolveSandbox(opts.sandbox, opts.runtime);
   const feedback = opts.feedback ?? fallbackFeedback();
-  const sandbox = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot), r.provider);
+  const sandbox = normalizeSandboxPaths(await createProvider(r, feedback, opts.timeout, opts.provisionSlot, opts.deadlineAt), r.provider);
   registerSandbox(sandbox);
   return sandbox;
 }
@@ -232,11 +298,190 @@ export async function withDeterministicProvisionScope<T>(
   }
 }
 
+export interface CreateMaterializedCaseOpts {
+  readonly evalId: string;
+  readonly environment?: string | SandboxSource;
+  readonly defaultProfileId?: string;
+  readonly sandbox: SandboxOption;
+  readonly timeout?: number;
+  readonly runtime?: SandboxRuntime;
+  readonly provisionSlot?: ProvisionSlot;
+  readonly feedback?: ScopedFeedback;
+  readonly signal?: AbortSignal;
+  readonly buildLocators?: ReadonlyMap<BuildKey, string>;
+  /** 为 true 时在创建前跑 keep 守卫(自定义缺 group-keep / local 等会硬失败)。 */
+  readonly keepRequested?: boolean;
+}
+
+/**
+ * 规划并物化单 Sandbox、自定义或 Docker Compose case。
+ * Docker image / E2B template / Vercel snapshot / Local base 走既有 create 路径,
+ * 再经 materializePlannedCase 包成 primary-only 资源组(现有行为的严格子集)。
+ * Docker Compose 走 compose.ts 原生物化;cloud-compose 无物化器时拒绝降级。
+ */
+export async function createMaterializedCase(
+  opts: CreateMaterializedCaseOpts,
+): Promise<MaterializedSandboxCase> {
+  const planned = planSandboxCase({
+    evalId: opts.evalId,
+    environment: opts.environment,
+    defaultProfileId: opts.defaultProfileId,
+    spec: opts.sandbox,
+  });
+
+  if (planned.status === "missing-profile") {
+    throw missingProfilesError(String(opts.sandbox.provider), [
+      { evalId: planned.evalId, profile: planned.profile },
+    ]);
+  }
+  if (planned.status === "capability-missing") {
+    throw allSkippedStartupError(String(opts.sandbox.provider), [
+      { evalId: planned.evalId, skipReason: planned.skipReason },
+    ]);
+  }
+
+  const plan = planned.plan;
+  assertKeepAllowedForCase({
+    plan,
+    provider: String(opts.sandbox.provider),
+    keepRequested: opts.keepRequested === true,
+  });
+
+  const ctx = {
+    evalId: opts.evalId,
+    profile: plan.profile,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+    ...(opts.buildLocators !== undefined ? { buildLocators: opts.buildLocators } : {}),
+  };
+
+  if (plan.declaration.form === "custom") {
+    const materialized = await materializePlannedCase(plan, { ctx });
+    assertCustomCapabilitiesHonored(plan, materialized);
+    attachCaseLifecycle(materialized);
+    registerGroupKeepIfPresent(plan, materialized, String(opts.sandbox.provider));
+    return materialized;
+  }
+
+  if (plan.caseKind === "compose") {
+    const materialized = await materializePlannedCase(plan, {
+      ctx,
+      timeout: opts.timeout,
+      feedback: opts.feedback,
+    });
+    attachCaseLifecycle(materialized);
+    return materialized;
+  }
+
+  if (plan.caseKind === "cloud-compose") {
+    throw new Error(
+      `sandbox case kind ${JSON.stringify(plan.caseKind)} for ${JSON.stringify(plan.evalId)} ` +
+        `requires a Compose materializer — refusing to degrade to a single Sandbox`,
+    );
+  }
+
+  if (plan.caseKind === "on-demand-build") {
+    const locator = firstBuildLocator(opts.buildLocators);
+    if (locator === undefined) {
+      throw new Error(
+        `sandbox case kind "on-demand-build" for ${JSON.stringify(plan.evalId)} ` +
+          `needs build locators from the run build coordinator before materialization`,
+      );
+    }
+    const createSpec = onDemandCreateSpec(opts.sandbox, plan.evalId, locator);
+    const primary = await createSandboxInstance({
+      sandbox: createSpec,
+      timeout: opts.timeout,
+      runtime: opts.runtime,
+      provisionSlot: opts.provisionSlot,
+      feedback: opts.feedback,
+    });
+    const materialized = await materializePlannedCase(plan, { ctx, primarySandbox: primary });
+    attachCaseLifecycle(materialized);
+    return withCaseFacts(materialized, { buildLocator: locator, sandboxId: primary.sandboxId });
+  }
+
+  // prebuilt / base:既有 Docker/E2B/Vercel/Local create 路径的严格子集。
+  const createSpec = specWithPrebuiltProduct(opts.sandbox, plan);
+  const primary = await createSandboxInstance({
+    sandbox: createSpec,
+    timeout: opts.timeout,
+    runtime: opts.runtime,
+    provisionSlot: opts.provisionSlot,
+    feedback: opts.feedback,
+  });
+  const materialized = await materializePlannedCase(plan, { ctx, primarySandbox: primary });
+  const slots = prebuiltProductSlotsOf(plan) ?? {};
+  attachCaseLifecycle(materialized);
+  return withCaseFacts(materialized, {
+    ...slots,
+    sandboxId: primary.sandboxId,
+  });
+}
+
+function firstBuildLocator(locators: ReadonlyMap<BuildKey, string> | undefined): string | undefined {
+  if (locators === undefined || locators.size === 0) return undefined;
+  return locators.values().next().value;
+}
+
+function onDemandCreateSpec(spec: SandboxOption, evalId: string, locator: string): SandboxOption {
+  if (spec.provider === "docker") return { ...spec, image: locator } as SandboxOption;
+  if (spec.provider === "e2b") return { ...spec, template: locator } as SandboxOption;
+  throw new Error(
+    `on-demand-build locator for ${JSON.stringify(evalId)} is not supported on provider ${JSON.stringify(spec.provider)}`,
+  );
+}
+
+function attachCaseLifecycle(materialized: MaterializedSandboxCase): void {
+  registerSandbox(materialized.sandbox);
+  const innerStop = materialized.group.stop.bind(materialized.group);
+  const sandbox = materialized.sandbox;
+  (materialized.group as { stop: () => Promise<void> }).stop = async () => {
+    try {
+      await innerStop();
+    } finally {
+      unregisterSandbox(sandbox);
+    }
+  };
+}
+
+function registerGroupKeepIfPresent(
+  plan: import("./case.ts").PlannedSandboxCase,
+  materialized: MaterializedSandboxCase,
+  provider: string,
+): void {
+  if (plan.declaration.form !== "custom") return;
+  const custom = plan.declaration.value;
+  if (!hasGroupKeep(custom) || custom.groupKeep === undefined) return;
+  registerCustomGroupKeep({
+    provider,
+    profile: plan.profile,
+    primarySandboxId: materialized.sandbox.sandboxId,
+    handlers: {
+      resources: custom.groupKeep.resources,
+      wake: custom.groupKeep.wake,
+      destroy: custom.groupKeep.destroy,
+    },
+  });
+}
+
+function withCaseFacts(materialized: MaterializedSandboxCase, extra: JsonValue): MaterializedSandboxCase {
+  const base =
+    typeof materialized.facts === "object" && materialized.facts !== null && !Array.isArray(materialized.facts)
+      ? (materialized.facts as globalThis.Record<string, JsonValue>)
+      : {};
+  const merged =
+    typeof extra === "object" && extra !== null && !Array.isArray(extra)
+      ? { ...base, ...(extra as globalThis.Record<string, JsonValue>) }
+      : { ...base, extra };
+  return { ...materialized, facts: merged };
+}
+
 async function createProvider(
   r: ResolvedSandbox,
   feedback: ScopedFeedback,
   timeout?: number,
   provisionSlot?: ProvisionSlot,
+  deadlineAt?: number,
 ): Promise<Sandbox> {
   // 自定义 provider(defineSandbox):不认 provider 名,直接调用用户给的 create();
   // feedback 已绑定到 sandbox.create 阶段(见 docs/feature/sandbox/library.md)。
@@ -257,6 +502,7 @@ async function createProvider(
             () =>
               DockerSandbox.create({
                 timeout,
+                deadlineAt,
                 lifetimeMs: r.lifetimeMs,
                 runtime: r.runtime,
                 image: r.image,
@@ -281,7 +527,7 @@ async function createProvider(
       return withDeterministicProvisionScope(
         () =>
           withProvisionRetry(
-            () => VercelSandbox.create({ timeout, runtime: r.runtime, snapshotId: r.snapshotId, feedback }),
+            () => VercelSandbox.create({ timeout, deadlineAt, runtime: r.runtime, snapshotId: r.snapshotId, feedback }),
             classifyProvisionError,
             provisionSlot,
             feedback,
@@ -302,6 +548,7 @@ async function createProvider(
             () =>
               E2BSandbox.create({
                 timeout,
+                deadlineAt,
                 runtime: r.runtime,
                 template: r.template,
                 lifetimeMs: r.lifetimeMs,
@@ -321,7 +568,7 @@ async function createProvider(
       // 不参与 provisioning 重试(见 docs/feature/sandbox/local.md「非目标」):创建不经网络
       // 控制面,失败(目录不存在/不可写/不在 git 仓库内)都是确定性错误,第一次如实抛出。
       const { LocalSandbox } = await import("./local.ts");
-      return LocalSandbox.create({ timeout, dir: r.dir });
+      return LocalSandbox.create({ timeout, deadlineAt, dir: r.dir });
     }
     default:
       throw new Error(t("sandbox.providerNotImplemented", { provider: r.provider }));

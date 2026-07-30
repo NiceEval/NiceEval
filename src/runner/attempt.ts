@@ -10,7 +10,9 @@ import { createSandbox, resolveSandbox } from "../sandbox/resolve.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { stopSandbox, unregisterSandbox } from "../sandbox/registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
-import { resolveAttemptTimeout } from "./timeout.ts";
+import { resolveAttemptTimeout, type TimeoutSource } from "./timeout.ts";
+import { providerSessionLimitMs, SandboxCommandTimeoutError } from "../sandbox/deadline.ts";
+import { ExperimentFatalError } from "../shared/failure-class.ts";
 import { KEEPABLE_PROVIDERS, computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
@@ -61,12 +63,13 @@ import type {
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
-import { commandDisplay, commandNode, createTimingRecorder, type TimingRecorder } from "./timing.ts";
+import { attemptOrigin, commandDisplay, commandNode, createTimingRecorder, hookActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
 import { sandboxForEval, sandboxProjection } from "./sandbox-selection.ts";
 import type {
   AgentRun,
   Attempt,
   AttemptError,
+  TimeoutAttribution,
   AttemptRef,
   DiagnosticRecord,
   LifecyclePhase,
@@ -162,9 +165,12 @@ export function runAttemptEffect(
   // 四层解析链的最后两层(eval → config)在这里接上,并把赢家那一层带出来:超时消息要说得出
   // 「这个上限是哪一层给的」,否则撞线时得回头逐层对照四个声明点(契约见
   // docs/feature/experiments/cli.md「timeout、budget 与基础设施错误」)。
-  // 四层都没声明 = 无上限:不挂 deadline、不发软截止信号,也不给 provider 递命令超时
-  // (provider 用自己的默认值),链末端不发明一条隐藏的线。
+  // 四层都没声明 = 无上限:不挂 deadline、不发软截止信号,也不给 provider 递命令超时,
+  // 链末端不发明一条隐藏的线。
   const attemptTimeout = resolveAttemptTimeout(run, evalDef, config);
+  // deadline 的截止**时刻**:沙箱内一切时限从它派生(单条命令未显式传 timeout 时上限 =
+  // 剩余量,见 sandbox/deadline.ts)。与下面那条软截止信号同一个锚点,不各取各的 now()。
+  const deadlineAt = attemptTimeout ? Date.now() + attemptTimeout.timeoutMs : undefined;
   // timeoutSignal:给协作式 adapter / docker 命令的「软」截止信号(到点 abort,让能看 signal 的
   // 提前优雅停)。但它【不是】attempt 总超时的硬保证 —— 真正的硬边界是下面的 Effect.timeoutTo:
   // 它中断整段 body,触发 Sample release(停容器),从而即便 adapter 完全无视 signal 也能停掉(P1)。
@@ -254,9 +260,9 @@ export function runAttemptEffect(
     const record: DiagnosticRecord = {
       code: input.code,
       level: input.level,
-      message: input.message,
-      phase,
-      ...(input.data !== undefined ? { data: input.data } : {}),
+      detail: input.message,
+      origin: attemptOrigin(phase),
+      ...(input.data !== undefined ? { context: input.data } : {}),
     };
     if (input.dedupeKey !== undefined) dedupeIndex.set(input.dedupeKey, record);
     diagnostics.push(record);
@@ -330,7 +336,10 @@ export function runAttemptEffect(
           const error: AttemptError = {
             code: "timeout",
             message,
-            phase: (sendActive ? "agent.run" : lastPhase) ?? "eval.run",
+            origin: attemptOrigin((sendActive ? "agent.run" : lastPhase) ?? "eval.run"),
+            // 归属三样一起落盘:撞的是哪层时限、值多少、值从四层解析链的哪层来。
+            // 不打一个没有归属说明的 ✗(见 docs/feature/sandbox/architecture.md「时限归属」)。
+            timeout: { trigger: "attempt-deadline", limitMs: timeoutMs, source: timeoutSource },
             ...(rest.trim() !== "" ? { stack: rest } : {}),
           };
           recorder.failCurrent();
@@ -413,10 +422,14 @@ export function runAttemptEffect(
                 Effect.gen(function* () {
                   enterPhase("sandbox.create");
                   log(t("runner.startSandbox"));
+                  // provider 固有的会话上限不能静默充当默认值:deadline 超出它时,attempt
+                  // 会跑到一半被平台截断。在派发前就报环境约束,点名 provider 与上限值。
+                  assertDeadlineFitsProvider(sandboxSpec, attemptTimeout?.timeoutMs);
                   return yield* createSandbox({
                     sandbox: sandboxSpec,
                     provisionSlot,
                     ...(attemptTimeout ? { timeout: attemptTimeout.timeoutMs } : {}),
+                    ...(deadlineAt !== undefined ? { deadlineAt } : {}),
                     runtime: "node24",
                     feedback: scopedFeedback,
                     // Sample release 按 disposition 收尾:stop = 销毁(默认);keep = provider
@@ -571,6 +584,7 @@ export function runAttemptEffect(
             sendActive = active;
           },
           recorder,
+          ...(attemptTimeout ? { attemptTimeout } : {}),
           attemptEpoch: t0,
           feedback: scopedFeedback,
           diagnostics,
@@ -665,7 +679,7 @@ export function runAttemptEffect(
             return Effect.succeed({
               ...base,
               durationMs: Date.now() - t0,
-              error: errorFromThrown(raw, sendActive ? "agent.run" : lastPhase),
+              error: errorFromThrown(raw, sendActive ? "agent.run" : lastPhase, attemptTimeout),
               ...(commands.length > 0 ? { commands: [...commands] } : {}),
             });
           }),
@@ -700,19 +714,62 @@ export function runAttemptEffect(
  *  生命周期阶段(极早期就挂、还没跨进任何阶段时兜底 `eval.run`——phase 是必填字段,不留空);
  *  code 目前只对确定已知的类别赋稳定码,其余走 `"unexpected-error"`——provider 专属的限流码
  *  分类留在各 provider 的 `classifyProvisionError`,没有中性入口能在这里复算,不猜一个可能错的码。 */
-export function errorFromThrown(e: unknown, phase: LifecyclePhase | undefined): AttemptError {
+export function errorFromThrown(
+  e: unknown,
+  phase: LifecyclePhase | undefined,
+  deadline?: { timeoutMs: number; source: TimeoutSource },
+): AttemptError {
   const { message, stack, cause } = describeError(e);
+  // 沙箱命令撞线抛的是带归属的错(见 sandbox/deadline.ts):显式传 timeout 的那条命令归
+  // `command-timeout`,没显式传的那条上限本来就是 attempt deadline 派生的,归属如实指回
+  // deadline —— 两者都不是「不明原因的 unexpected-error」。
+  const timeout = timeoutAttributionOf(e, deadline);
   return {
-    code: "unexpected-error",
+    code: timeout ? "timeout" : "unexpected-error",
     message,
-    phase: phase ?? "eval.run",
+    origin: attemptOrigin(phase ?? "eval.run"),
+    ...(timeout ? { timeout } : {}),
     ...(stack ? { stack } : {}),
     ...(cause ? { cause } : {}),
   };
 }
 
+/**
+ * 命令撞线错误 → 归属三元组;不是这类错误返回 undefined。
+ *
+ * 命令没显式传 `timeout` 时,它撞的那条线本来就是 attempt deadline 派生出来的剩余量:
+ * 归属如实指回 deadline 那一层(值与来源都取解析链的赢家),而不是编造一个「命令自己的上限」。
+ */
+function timeoutAttributionOf(
+  e: unknown,
+  deadline?: { timeoutMs: number; source: TimeoutSource },
+): TimeoutAttribution | undefined {
+  if (!(e instanceof SandboxCommandTimeoutError)) return undefined;
+  if (e.explicit) return { trigger: "command-timeout", limitMs: e.limitMs, source: "command" };
+  return deadline === undefined
+    ? { trigger: "command-timeout", limitMs: e.limitMs, source: "command" }
+    : { trigger: "attempt-deadline", limitMs: deadline.timeoutMs, source: deadline.source };
+}
+
+/**
+ * provider 固有会话上限的派发前预检:deadline 超出它时 attempt 会跑到一半被平台截断,
+ * 与其让它跑一半赔钱,不如在这里报环境约束——点名 provider 与上限值,并给出两条出路。
+ * 全实验同因必死(同一个 provider、同一条 deadline),因此按 experiment 域止损。
+ */
+function assertDeadlineFitsProvider(spec: Parameters<typeof resolveSandbox>[0], deadlineMs: number | undefined): void {
+  if (deadlineMs === undefined) return;
+  const resolved = resolveSandbox(spec);
+  const limit = providerSessionLimitMs(resolved.provider, resolved.lifetimeMs);
+  if (limit === undefined || deadlineMs <= limit) return;
+  throw new ExperimentFatalError(
+    t("sandbox.deadlineExceedsSession", { provider: resolved.provider, limitMs: limit, timeoutMs: deadlineMs }),
+  );
+}
+
 interface AttemptResources {
   sandbox: Sandbox;
+  /** 本 attempt 解析出的超时上限与它的出处;超时归属(`error.timeout`)照它落盘。 */
+  attemptTimeout?: { timeoutMs: number; source: TimeoutSource };
   /** SandboxSpec.setup() 链式挂的钩子,按追加顺序;非沙箱 agent 传空数组(usesSandbox 挡住不会跑)。 */
   sandboxSetupHooks: readonly SandboxHook[];
   /** SandboxSpec.teardown() 链式挂的钩子,按追加顺序保存,执行时逆序。 */
@@ -856,12 +913,11 @@ async function runAttemptBody(
       for (const [i, hook] of sandboxSetupHooks.entries()) {
         // hook 先建节点,hook 内经 Sandbox.runCommand/runShell 发出的命令挂成它的 command 子节点。
         const hookStart = Date.now();
-        const hookNode = recorder.child({
-          kind: "hook",
+        const hookNode = recorder.child(hookActivity({
           label: `setup#${i}`,
           startOffsetMs: Math.max(0, hookStart - attemptEpoch),
           durationMs: 0,
-        });
+        }));
         if (hookNode) recorder.pushParent(hookNode);
         try {
           // 迁移护栏:tsx 用户没有类型检查,旧式「setup 返回 cleanup」会被静默忽略——命中即报
@@ -980,8 +1036,7 @@ async function runAttemptBody(
       // 才带(show `--execution`/`--timing` 的 turn 头行读 TimingNode.usage,见 docs/feature/
       // results/architecture.md「result.json」TimingNode.usage)。
       onTurn: (info) =>
-        recorder.child({
-          kind: "turn",
+        recorder.child(turnActivity({
           label: `s${info.sessionIndex}/t${info.turnIndex}`,
           startOffsetMs: Math.max(0, info.startedAt - attemptEpoch),
           durationMs: info.durationMs,
@@ -991,7 +1046,7 @@ async function runAttemptBody(
           ...(info.traceId !== undefined ? { traceId: info.traceId } : {}),
           ...(info.traceAttribution !== undefined ? { traceAttribution: info.traceAttribution } : {}),
           ...(info.usage !== undefined ? { usage: info.usage } : {}),
-        }),
+        })),
     });
     // 登记回外层:超时中断后由 onTimeout 直接读这两个句柄组装 events/usage(见
     // registerEvidence 注释、docs/runner.md「超时:双层保护」超时不丢证据)。
@@ -1016,13 +1071,13 @@ async function runAttemptBody(
         // 分类先读:turn 链决议出的 FailureClass 由 expectOk() 铸造 TurnFailed 时挂在错误上,
         // 下一行折成纯数据后就读不到了(见 declareFailure)。
         declareFailure(getPhase() ?? "eval.run", e);
-        error = { code: "turn-failed", message: e.message, phase: getPhase() ?? "eval.run" };
+        error = { code: "turn-failed", message: e.message, origin: attemptOrigin(getPhase() ?? "eval.run") };
       } else {
         // eval 脚本(比如引用了已改名/删掉的 API)抛出的 TypeError:message 是一层原因,完整 stack
         // 单独进 `error.stack`,niceeval show 展开时才看得到 eval 文件的 file:line。
         // 作者从 test(t) 体内抛的 ExperimentFatalError / EvalFatalError 也走这条分支。
         declareFailure(getPhase() ?? "eval.run", e);
-        error = errorFromThrown(e, getPhase());
+        error = errorFromThrown(e, getPhase(), res.attemptTimeout);
       }
     }
 
@@ -1033,12 +1088,11 @@ async function runAttemptBody(
     let diffWindows: DiffArtifact = [];
     if (!skipReason && usesSandbox && ledger) {
       const startedAt = Date.now();
-      const operation = recorder.child({
-        kind: "operation",
+      const operation = recorder.child(workspaceDiffExportActivity({
         label: "export workspace diff",
         startOffsetMs: Math.max(0, startedAt - attemptEpoch),
         durationMs: 0,
-      });
+      }));
       if (operation) recorder.pushParent(operation);
       try {
         diffWindows = await ledger.exportWindows();
@@ -1191,7 +1245,7 @@ async function runAttemptBody(
     const value: EvalResult = {
       ...base,
       durationMs: Date.now() - t0,
-      error: errorFromThrown(e, getPhase()),
+      error: errorFromThrown(e, getPhase(), res.attemptTimeout),
       ...(agentSetup !== undefined ? { agentSetup } : {}),
     };
     result = value;
@@ -1283,8 +1337,8 @@ function teardownDiagnostic(phase: LifecyclePhase, e: unknown): DiagnosticRecord
   return {
     code: "teardown-failed",
     level: "warning",
-    message: firstLine(formatThrown(e)),
-    phase,
+    detail: firstLine(formatThrown(e)),
+    origin: attemptOrigin(phase),
   };
 }
 

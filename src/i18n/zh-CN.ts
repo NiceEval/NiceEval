@@ -6,6 +6,32 @@ export const zhCN = {
   "agent.diagnose.noTranscript": "transcript 未生成",
   "agent.diagnose.outputTail": "输出末尾:\n{{tail}}",
   "agent.diagnose.zeroEvents": "transcript 存在但 0 事件",
+  "agent.ensure.identityMissingAgent": "AgentProvisioner.identity.agent 不能为空。",
+  "agent.ensure.identityMissingRevision": "AgentProvisioner.identity.revision 不能为空(agent={{agent}})。",
+  "agent.ensure.unstableVersion":
+    "AgentProvisioner.identity.version 必须是精确版本,不能是 \"{{version}}\"(agent={{agent}})。无钉死版本的安装不参与可携带结果。",
+  "agent.ensure.stagedNeedsPrepare":
+    "staged 模式的 AgentProvisioner({{agent}})必须提供 prepare(),在题面网络外准备锁定制品。",
+  "agent.ensure.verifyOnlyHasPrepare":
+    "verifyOnly 模式不安装,AgentProvisioner({{agent}})不应同时提供 prepare()。",
+  "agent.ensure.prepareWrongMode":
+    "只有 staged 模式才调用 prepare(agent={{agent}}, mode={{mode}})。",
+  "agent.ensure.artifactMissingDigest": "staged artifact 缺少 digest(agent={{agent}})。",
+  "agent.ensure.stagedMissingArtifact":
+    "staged 安装缺少已准备的 artifact(agent={{agent}})。Runner 应先 Run 级 prepare,或 ensure 经 coordinator 懒准备。",
+  "agent.ensure.failed":
+    "Agent Ensure 失败(agent={{agent}}, phase={{phase}}):期望版本 {{expected}},实际 {{actual}}。{{detail}}\n下一步:{{next}}",
+  "agent.ensure.nextVerifyOnly": "预装匹配的 Agent,或改用 staged / sandbox-network provisioner。",
+  "agent.ensure.nextRecheck": "核对安装目录、PATH 与精确版本后重跑;不要把坏环境交给做题。",
+  "agent.ensure.missingBin": "找不到命令 {{bin}}。{{tail}}",
+  "agent.ensure.versionUnparseable": "无法从 `{{bin}} --version` 解析版本:{{stdout}}",
+  "agent.ensure.versionMismatch": "{{bin}} 版本不匹配:期望 {{expected}},实际 {{actual}}。",
+  "agent.ensure.digestMismatch":
+    "staged artifact digest 不匹配(agent={{agent}}):期望 {{expected}},实际 {{actual}}。",
+  "agent.ensure.npmPackFailed": "宿主 npm pack {{packageName}}@{{version}} 失败:\n{{tail}}",
+  "agent.ensure.npmPackEmpty": "宿主 npm pack {{packageName}}@{{version}} 未产出 .tgz(目录 {{dest}})。",
+  "agent.ensure.npmInstallFailed": "沙箱内从 staged tarball 安装 {{agent}} 失败:\n{{tail}}",
+  "agent.ensure.homeDetectFailed": "无法探测沙箱 $HOME,staged 安装需要展开用户前缀路径。",
   "bub.homeDetectFailed": "无法探测沙箱 $HOME(printf $HOME 输出为空)。不兜底到 provider 专属固定路径,请检查沙箱 provider。",
   "bub.checkpointCaptureFailed": "bub checkpoint 缓存回填失败(本沙箱不受影响,后续沙箱会重新安装):{{error}}",
   "bub.checkpointRestoreFailed": "bub checkpoint 还原失败,回退到全量安装:{{error}}",
@@ -61,7 +87,26 @@ export const zhCN = {
   "cli.dry.unit.evals": "个 eval",
   "cli.dry.unit.config": "个运行配置",
   "cli.dry.unit.configs": "个运行配置",
+  "cli.dry.affects": "影响 {{evals}} · {{ids}}",
+  "cli.dry.acceptHint": "accept:  {{command}}",
+  "cli.accept.choiceHeader": "stale  {{selector}}{{change}}  ({{evals}} 条 eval)\n",
+  "cli.accept.prompt": "  复用这些结果吗? [y/N] ",
+  "cli.accept.nothingToAccept":
+    "本次计划里没有可授权的差异(没有条目卡在指纹门上)。\n" +
+    "按原计划运行。\n",
+  "cli.accept.equivalent": "等价命令:  {{command}}\n",
+  "cli.accept.noneChosen": "没有授权任何差异,按原计划运行。\n",
   "cli.error": "niceeval 出错:{{error}}\n",
+  "cli.flag.acceptNeedsSelector":
+    "error: --accept 必须带 selector,例如 --accept config:judge.model\n" +
+    "  fix: 先跑 `niceeval exp <选择> --dry`,每条 `stale` 行都打出了它可授权的 selector,原样复制一条\n",
+  "cli.flag.acceptWithRerunAll":
+    "--accept 不能与 --rerun all 同用:一边全不采信缓存,一边又要采信这条差异,方向自相矛盾。\n" +
+    "要授权这条差异就去掉 --rerun all;要全量重跑就去掉 --accept。\n",
+  "cli.flag.acceptNoSuchDifference":
+    "本次计划里没有这条差异:{{selectors}}。\n" +
+    "这里可以授权的差异:{{available}}。\n" +
+    "跑 `niceeval exp <选择> --dry` 看每条差异拦下了哪些条目。\n",
   "cli.flag.invalidNumber": "标志 --{{flag}} 需要数字,收到 \"{{value}}\"。\n",
   "cli.flag.outputRemoved": "error: unknown option '--output'\n  fix: 不加 flag 运行得到人读文本;机器面用 --json\n",
   "runner.budgetUnenforceable":
@@ -92,6 +137,8 @@ export const zhCN = {
     "loadCriteria 的这些 pattern 一个文件都没匹配到(或命中的文件全被后写的 `!` 排除了):{{patterns}}。多半是写错了或判据文件搬走了——pattern 按项目根 {{root}} 展开,不是按 eval 文件所在目录。请对着磁盘上的真实路径核对这几条,确认不再需要就把它删掉;别的 pattern 有命中也不放过,放过等于判据悄悄变窄,而改窄了的判据会让本该重跑的 eval 照常携带旧判定。",
   "loaders.criteriaOutsideRoot":
     "loadCriteria 匹配到的 \"{{path}}\" 落在项目根外(实际指向 {{resolved}}):判据文件的项目根相对路径就是它进指纹的键,穿出根之后这个键不再稳定。请把这棵树(或符号链接的目标)搬进项目根 {{root}} 内,或用 `!` 把这条链接从 pattern 里排除。",
+  "loaders.privateNoMatch":
+    "loadPrivate 的这些 pattern 一个文件都没匹配到(或命中的文件全被后写的 `!` 排除了):{{patterns}}。多半是写错了或 private 文件搬走了——pattern 按项目根 {{root}} 展开,不是按 eval 文件所在目录。请对着磁盘上的真实路径核对;静默放过等于泄题门与指纹悄悄丢掉隐藏输入。",
   "loaders.outsideDiscovery":
     "在发现阶段之外读了 \"{{path}}\":loader 只能在 eval 文件的模块顶层调用(发现阶段求值 eval 模块时),文件内容才来得及进这条 eval 的指纹。请把这次读取挪到模块顶层、把结果存进一个常量再在 test(t) 里用;test(t) 与各生命周期 hook 的运行期不能调 loader。",
   "loaders.nonFileUrl":
@@ -141,7 +188,7 @@ export const zhCN = {
     "  niceeval init                            脚手架 config + evals/\n\n" +
     "标志:\n" +
     "  --attempts n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --carry-ignoring-flag key  --dry  --keep-sandbox[=failed|all]\n" +
+    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --accept[=selector]  --dry  --keep-sandbox[=failed|all]\n" +
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
@@ -196,6 +243,10 @@ export const zhCN = {
     "没有匹配的实验:{{arg}}。可用路径:{{experiments}}。\n" +
     "运行 `niceeval exp <路径> --dry` 预览计划。\n",
   "cli.experiment.viewerCommandHint": "你可能想运行:niceeval {{command}}{{args}}\n",
+  "cli.experiment.noEvalPrefixMatch":
+    "没有 eval 匹配前缀:{{pattern}}(在 {{selection}} 选中的实验里)。\n" +
+    "第一个之后的位置参数选的是 eval id 前缀。要跑另一个实验,\n" +
+    "把它作为独立命令跑:niceeval exp {{pattern}}\n",
   "cli.experiment.noEvalsSelected":
     "未选择任何 eval:{{selection}} 匹配到 0 个 eval。可用的 eval 前缀:{{experiments}}。\n" +
     "运行 `niceeval exp {{selection}} --dry` 查看它覆盖了什么,或去掉 eval 过滤跑这些实验选中的全部 eval。\n",
@@ -400,6 +451,9 @@ export const zhCN = {
   "runner.timeout": "attempt 超时({{timeoutMs}}ms, from {{source}})\n最近进度:\n{{recentLogs}}",
   "runner.traceSelected": " → 留 {{count}}(按语义)",
   "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
+  "sandbox.deadlineExceedsSession":
+    "error: 这条 attempt 的超时上限({{timeoutMs}}ms)超过 {{provider}} 单个会话的寿命({{limitMs}}ms),沙箱会在 attempt 跑到一半时被回收。\n" +
+    "  fix: 把 timeoutMs 调到 {{limitMs}}ms 以内,或在 sandbox spec 上声明更长的 lifetimeMs(账号档位允许的话)。\n",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
     "沙箱型 agent 需要一个 sandbox,但没有提供。niceeval 不再自动选默认 provider——请在 defineExperiment()/defineConfig() 里把 sandbox 设成 dockerSandbox() / vercelSandbox() / e2bSandbox()(从 \"niceeval/sandbox\" 导入)。\n" +

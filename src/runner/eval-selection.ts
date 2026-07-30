@@ -32,6 +32,12 @@ export interface ResolveExperimentEvalsInput {
 export interface ResolveExperimentEvalsResult {
   selectedEvals: readonly DiscoveredEval[];
   selectedEvalIds: readonly string[];
+  /**
+   * 只过了实验自身 `evals` 选择器、还没被 CLI 尾随前缀收窄的那一集——即这个实验的**发现集**。
+   * CLI 拿它判定「某个尾随前缀在选中实验里匹配 0 条」:交集为空时两种原因(前缀写错 / 实验本来
+   * 就没选中任何 eval)要报不同的错,只看交集分辨不出来。谓词仍然只求值一次。
+   */
+  selectorEvals: readonly DiscoveredEval[];
 }
 
 /**
@@ -80,13 +86,16 @@ export function resolveExperimentEvals(input: ResolveExperimentEvalsInput): Reso
 
   const seen = new Set<string>();
   const selectedEvals: DiscoveredEval[] = [];
+  const selectorEvals: DiscoveredEval[] = [];
   for (const evalDef of evals) {
     if (seen.has(evalDef.id)) continue;
-    if (!selectorFilter(evalDef) || !patternFilter(evalDef.id)) continue;
+    if (!selectorFilter(evalDef)) continue;
     seen.add(evalDef.id);
+    selectorEvals.push(evalDef);
+    if (!patternFilter(evalDef.id)) continue;
     selectedEvals.push(evalDef);
   }
-  return { selectedEvals, selectedEvalIds: selectedEvals.map((e) => e.id) };
+  return { selectedEvals, selectedEvalIds: selectedEvals.map((e) => e.id), selectorEvals };
 }
 
 /** `resolveExperimentEvals` 选中的 eval 按题型分桶后的 id 列表(见 splitByScoring)。 */

@@ -14,6 +14,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 裁决
 
 - [env-cases-and-ensure-supersede-topology-middleware](env-cases-and-ensure-supersede-topology-middleware.md) — 裁决(2026-07-30):多容器环境与 Agent 安装双双改判为 PLAN-4(provider 完整 environment case + Ensure 协议),推翻拓扑表+导入器与构建中间件;原生能力最大化、不承诺跨 provider 迁移;缺键报错/缺能力 skipped、environments 与 materializers 双入口同批裁定
+- [agent-provisioner-object-not-adapter-methods](agent-provisioner-object-not-adapter-methods.md) — 裁决(2026-07-30):Ensure 公开形态是独立 `AgentProvisioner` 值对象(identity/check/install 原子替换,经工厂参数拔插),否决在 SandboxAgentDef 上散布方法;Runner 只额外消费 identity 与 prepare;check 返回结构化事实不返回 boolean
 - [skill-install-via-git-not-skills-cli](skill-install-via-git-not-skills-cli.md) — 设计裁决:repo skill 改走 git clone(`skills` CLI 没法钉 ref、也枚举不出仓库里有哪些 skill);已真机验证；Claude Code E2E 曾错用 `calledTool("Skill")` 查找已归一成 `skill.loaded` 的事件，现已修并 2/2 真机通过
 - **待裁决** [structural-typing-cannot-reject-spec-swap](structural-typing-cannot-reject-spec-swap.md) — 同形的两个具名 Spec,TS 结构类型拦不住互换;文档已止血(只承诺**形状**不承诺**值**),但「要不要加判别字段/品牌化真的拦住」未定,2026-07-13 处理
 - [sandbox-provision-ratelimit-retry](sandbox-provision-ratelimit-retry.md) — 设计裁决:provisioning 瞬时错误退避重试(2026-07-14 两轮 + 2026-07-15 推翻「拒绝类可盲重试」)——防线 = provider create 的 kill-on-failure + 有对账通道时任何重试前按 provision token 对账(对账失败即放弃重试),无检索通道则歧义类第一次抛;vercel 外层封顶收窄防嵌套放大;重试在 resolve.ts 而非 runner
@@ -88,6 +89,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [manual-carry-accept-decisions](manual-carry-accept-decisions.md) — 裁决(2026-07-30):手动复用标记定稿——放宽是重锚不是持久 tag(TTL 否决)、`--carry-ignoring-flag` 被 `--accept config:flags.<key>` 吸收、roadmap 的 `--rerun eval:` 因 CLI 两类输入模型砍掉、judge/sandbox 组内差异整组回滚才携带;config 差异从 run.json 算,缺 manifest 只降级源码/数据面
 - [carry-eligibility-and-fingerprint-scope-decisions](carry-eligibility-and-fingerprint-scope-decisions.md) — 裁决(2026-07-26):携带资格判据改 `executionMs`(deadline 钉在 sandbox.create,推翻「deadline 与 durationMs 同起点 sandbox.queue」——那会让超时变成并发的函数);loader 读入的数据文件**进**指纹,推翻「算指纹时还没读」(顶层 await loadYaml 在发现阶段的模块求值期就读完了,比解析期早一整个阶段);`--carry-ignoring-flag` 承认是一次重锚而非一次豁免,加两道启动期校验+条目侧 carriedIgnoringFlags;连带立规:进 configHash 的字段必须落进 run.json
 - [rerun-gear-replaces-force](rerun-gear-replaces-force.md) — 裁决(2026-07-25):`--force` 删除,换成一根轴三档的 `--rerun[=failed|all]`(不带=passed+failed 都算数,裸写=只采信 passed 重跑失败项,all=全量重烧),词表与 `--keep-sandbox` 同构;起因=「改了不在指纹里的东西后只复验失败项」没有档位,只能手工挖失败 id;否决再加一个布尔 `--retry-failed`;配套 NEXT 面板加 `Retry:` 行
 - [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md) — 裁决(2026-07-25):指纹构成不开放配置,`flags` 整袋进无逐键豁免;推翻次日前刚落地的 `provenanceFlags` deny-list(多声明=静默跨条件携带、且它给携带条目记了错的出处);轮换坐标(隧道 URL)的家是 attempt 作用域 `ctx.fact()` + 报告 `fact()` 选轴,搬迁只留一次性 CLI 出口 `--carry-ignoring-flag`
@@ -238,6 +240,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 台账
 
 - 已修 [commandsucceeded-received-excerpt-not-tail](commandsucceeded-received-excerpt-not-tail.md) — commandSucceeded 失败摘录曾落在输出中段:合并顺序(stdout 前置让 stderr 装包噪声占末尾)+ 摘录窗口宽过终端行预算被从头收口,双因叠加;修为 stderr 在前合并 + 76 字符窗口(src/context/context.ts),合并顺序钉进 display.md;同批裁决 commands.json 落盘不截
+- 已修 [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sample.md) — `show @<locator>` 曾在 resolveLocator 之后拿 `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史 attempt 一律报「outside the selected record scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围
 - [show-json-pipe-truncated-at-128k](show-json-pipe-truncated-at-128k.md) — 发现(未修):`show --json` 管进下游只出恰好 128KB,重定向文件完整;疑为 stdout 为 pipe 时异步写未 flush 即 `process.exit`;症状呈现为下游「JSON 语法错误」,极易误怪解析脚本(2026-07-30 MemoryBench 真机)
 - [view-latest-run-displaces-batch-in-leaderboard](view-latest-run-displaces-batch-in-leaderboard.md) — 发现(未定位):48 题整批后单独重跑 1 题,view 榜单该实验只剩 1/48、0% 且无覆盖提示,像结果丢了;与 sample 时效契约(跨 Run 拼入+覆盖占位「不静默消失」)不符,待复现分辨是 configHash 变更未提示还是拼接缺口
 - 已修 [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-conflates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当 attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按 artifact 在不在开门,空清单与无证据分成两态
@@ -369,7 +372,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ## docs · docs-site · reference
 
 - [overview-diagram-copies-field-shapes](overview-diagram-copies-field-shapes.md) — 已修:三层总纲图复制字段级形状,五处全漂移(locator/verdict 搬错层、flags 提到 run.json 顶层、目录名违反清洗规则、MetricCell 丢 samples/total);修法=图只留类型名与层间调用
-- 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句,行宽降级为只管排版与 diff 粒度
+- 已修 [line-width-guard-cannot-catch-long-sentences](line-width-guard-cannot-catch-long-sentences.md) — 裁决(2026-07-26):行宽是代理指标,agent 靠句中换行零成本绕过;改为在软换行拼接后量单句 ≤140 字 / 一段 ≤320 字,分号不算断句;行宽先降级、2026-07-30 整条删除
 - 已修 [docs-line-width-cjk-token-exemption](docs-line-width-cjk-token-exemption.md) — 行宽检查的「长 token 豁免」按空格切 token,中文整段就是一个巨长 token,三百多行中文被静默放过;豁免只认不含宽字符的 token
 - 已修 [design-status-from-docs-not-src](design-status-from-docs-not-src.md) — 设计讨论时 agent 两次从源码反推现状被推翻;修法=查询纪律与穷尽形状约定升格为 CLAUDE.md / docs 规则,architecture.md 职责纳入数据建模
 - 已修 [codex-agent-env-var-doc-drift](codex-agent-env-var-doc-drift.md) — codex agent 鉴权是 `CODEX_API_KEY` 不是 `OPENAI_API_KEY`,文档曾照名字直觉写错

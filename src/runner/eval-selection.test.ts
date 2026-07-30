@@ -76,6 +76,18 @@ describe("resolveExperimentEvals", () => {
     expect(selectedEvalIds).toEqual(["coding/fix-button"]);
   });
 
+  it("selectorEvals 是未经 CLI 前缀收窄的发现集:交集为空时仍分得清「前缀写错」与「实验没选中任何 eval」", () => {
+    // 前缀写错:实验本身选中了两条,交集才是空的 —— CLI 据此报「前缀零匹配」。
+    const typo = resolveExperimentEvals({ experimentId: "e", selector: "*", cliPatterns: ["compare/gpt"], evals });
+    expect(typo.selectedEvalIds).toEqual([]);
+    expect(typo.selectorEvals.map((e) => e.id)).toEqual(["coding/fix-button", "research/gpu-literature"]);
+
+    // 实验自己就没选中任何 eval:两个集合都空,不该被报成前缀的错。
+    const empty = resolveExperimentEvals({ experimentId: "e", selector: () => false, cliPatterns: ["coding/"], evals });
+    expect(empty.selectedEvalIds).toEqual([]);
+    expect(empty.selectorEvals).toEqual([]);
+  });
+
   it('"*" 或省略 selector 全选;数组按裸前缀;CLI patterns 与 selector 取交集', () => {
     expect(
       resolveExperimentEvals({ experimentId: "e", selector: "*", cliPatterns: [], evals }).selectedEvalIds,

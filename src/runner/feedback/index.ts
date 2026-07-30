@@ -25,11 +25,13 @@ export {
   reportAttemptLifecycle,
   reportFailure,
   reportBudgetExhausted,
+  reportRunActivity,
   activateFeedbackSink,
   activeFeedbackSinkCount,
   type DiagnosticInput,
   type FailureInput,
   type BudgetExhaustedInput,
+  type RunActivityInput,
   type FeedbackSink,
 } from "./sink.ts";
 export {
@@ -56,4 +58,6 @@ export {
   type JsonRendererOptions,
   type JsonPlanInput,
   type JsonPlanRow,
+  type JsonPlanDispatch,
+  type JsonPlanDelta,
 } from "./json.ts";

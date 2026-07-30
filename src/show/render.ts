@@ -5,8 +5,8 @@
 // 盘上。全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, EvalResult, FailedCommandEvidence, LocalizedText, TimingNode, TraceSpan, Verdict } from "../types.ts";
-import type { AttemptEvidence, AttemptHandle } from "../record/index.ts";
+import type { AssertionResult, EvalResult, FailedCommandEvidence, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
 import type { AnnotatedSourceLine, SendAnnotation } from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
 import type { UnreadableRun } from "../record/index.ts";
@@ -505,7 +505,7 @@ interface AgentCard {
 interface TurnSection {
   turnNumber: number;
   /** 对应的 timing turn 节点;缺失时(如没有阶段计时)只用序号兜底渲染头行。 */
-  turn?: TimingNode;
+  turn?: TimingActivity;
   cards: AgentCard[];
 }
 
@@ -513,7 +513,7 @@ interface TurnSection {
 interface CommandCard {
   handle: string;
   command: FailedCommandEvidence;
-  timingNode?: TimingNode;
+  timingNode?: TimingActivity;
 }
 
 /** `commands.json` 的投影(docs/feature/record/architecture.md「commandsjson」);没有失败命令时 evidence.commands 为 null。 */
@@ -521,18 +521,18 @@ function failedCommandsOf(evidence: AttemptEvidence): readonly FailedCommandEvid
   return evidence.commands ?? [];
 }
 
-function findTimingNodeById(nodes: readonly TimingNode[] | undefined, id: string): TimingNode | undefined {
+function findTimingActivityById(nodes: readonly TimingActivity[] | undefined, id: string): TimingActivity | undefined {
   for (const n of nodes ?? []) {
     if (n.id === id) return n;
-    const found = findTimingNodeById(n.children, id);
+    const found = findTimingActivityById(n.children, id);
     if (found) return found;
   }
   return undefined;
 }
 
-function findCommandTimingNode(phases: NonNullable<EvalResult["phases"]>, id: string): TimingNode | undefined {
+function findCommandTimingActivity(phases: NonNullable<EvalResult["phases"]>, id: string): TimingActivity | undefined {
   for (const p of phases) {
-    const found = findTimingNodeById(p.children, id);
+    const found = findTimingActivityById(p.children, id);
     if (found) return found;
   }
   return undefined;
@@ -544,7 +544,7 @@ function buildCommandCards(evidence: AttemptEvidence): CommandCard[] {
   const commands = failedCommandsOf(evidence);
   if (commands.length === 0) return [];
   const phases = evidence.result.phases ?? [];
-  const withNode = commands.map((command) => ({ command, timingNode: findCommandTimingNode(phases, command.timingNodeId) }));
+  const withNode = commands.map((command) => ({ command, timingNode: findCommandTimingActivity(phases, command.timingNodeId) }));
   withNode.sort((a, b) => (a.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY) - (b.timingNode?.startOffsetMs ?? Number.POSITIVE_INFINITY));
   return withNode.map((entry, i) => ({ handle: `cmd${i + 1}`, command: entry.command, timingNode: entry.timingNode }));
 }
@@ -554,7 +554,7 @@ function buildCommandCards(evidence: AttemptEvidence): CommandCard[] {
  * 开轮)。事件流不以用户消息开头的极端情形(如首个事件是前置注入)仍归入轮 1——句柄两个序号从 1
  * 起是契约,不发明 0 号轮。
  */
-function groupIntoTurnCards(agentNodes: readonly ExecutionNode[], turnNodes: readonly TimingNode[]): TurnSection[] {
+function groupIntoTurnCards(agentNodes: readonly ExecutionNode[], turnNodes: readonly TimingActivity[]): TurnSection[] {
   const turns: TurnSection[] = [];
   for (const node of agentNodes) {
     const isTurnStart = node.kind === "message" && node.role === "user";
@@ -676,7 +676,7 @@ function commandCardHeader(entry: CommandCard): string {
 }
 
 /** turn 头行:`标签 · status · 该轮墙钟 · 该轮 usage`(usage 有记录才出现;docs/feature/reports/
- *  show/execution.md)。usage 读 TimingNode.usage(该轮 `Turn.usage` 落盘原样),字段不存在时
+ *  show/execution.md)。usage 读 TimingActivity.usage(该轮 `Turn.usage` 落盘原样),字段不存在时
  *  这一段照常省略。 */
 function turnHeadLine(section: TurnSection): string {
   const label = section.turn?.label ?? `t${section.turnNumber}`;
@@ -688,7 +688,7 @@ function turnHeadLine(section: TurnSection): string {
   return parts.join(" · ");
 }
 
-function turnUsageText(turn: TimingNode | undefined): string | undefined {
+function turnUsageText(turn: TimingActivity | undefined): string | undefined {
   const usage = turn?.usage;
   if (!usage) return undefined;
   const parts: string[] = [];
@@ -932,7 +932,7 @@ export function executionText(
   // (t.send 恒以用户消息开轮),turn 身份取自 result.json.phases 的 turn 时间树。
   const turnNodes = (evidence.result.phases ?? [])
     .flatMap((p) => p.children ?? [])
-    .filter((n) => n.kind === "turn");
+    .filter((n) => n.key === "agent.turn");
 
   const turns = groupIntoTurnCards(agentNodes, turnNodes);
   const commandCards = buildCommandCards(evidence);
@@ -995,39 +995,40 @@ const CLOSING_PHASE_NAMES = new Set(["eval.teardown", "agent.teardown", "sandbox
 
 const TIMING_DETAIL_NODE_BUDGET = 80;
 
-interface DiagnosticTimingNode {
+interface DiagnosticTimingActivity {
   id: string;
   label: string;
   startOffsetMs: number;
   durationMs: number;
   failed: boolean;
   otel: boolean;
-  children: DiagnosticTimingNode[];
+  children: DiagnosticTimingActivity[];
 }
 
-function timingNodeLabel(node: TimingNode): string {
-  if (node.kind === "command" && node.command) return `shell · ${node.command.display}`;
-  if (node.kind === "turn") return `turn ${node.label}`;
-  if (node.kind === "operation" || node.kind === "provider") return `${node.kind} · ${node.label}`;
+function timingNodeLabel(node: TimingActivity): string {
+  // 结构化字段归 key 所有:sandbox.command / agent.turn 用自己的摘要形态。
+  // 其它 key(含未知)一律渲染 producer 的 label——不查 LifecyclePhase 锚点表,也不对 key 穷尽 switch。
+  if (node.key === "sandbox.command" && node.command) return `shell · ${node.command.display}`;
+  if (node.key === "agent.turn") return `turn ${node.label}`;
   return node.label;
 }
 
-function traceReferenceCounts(nodes: readonly TimingNode[], counts = new Map<string, number>()): Map<string, number> {
+function traceReferenceCounts(nodes: readonly TimingActivity[], counts = new Map<string, number>()): Map<string, number> {
   for (const node of nodes) {
-    if (node.kind === "turn" && node.traceId) counts.set(node.traceId, (counts.get(node.traceId) ?? 0) + 1);
+    if (node.key === "agent.turn" && node.traceId) counts.set(node.traceId, (counts.get(node.traceId) ?? 0) + 1);
     traceReferenceCounts(node.children ?? [], counts);
   }
   return counts;
 }
 
 /** OTel 只按唯一 traceId 归属和 span parent 关系挂接；不按绝对墙钟猜跨进程顺序。 */
-function otelForest(traceId: string, spans: readonly TraceSpan[], turnStartOffsetMs: number): DiagnosticTimingNode[] {
+function otelForest(traceId: string, spans: readonly TraceSpan[], turnStartOffsetMs: number): DiagnosticTimingActivity[] {
   const unique = new Map<string, TraceSpan>();
   for (const span of spans) if (span.traceId === traceId && !unique.has(span.spanId)) unique.set(span.spanId, span);
   const selected = [...unique.values()];
   if (selected.length === 0) return [];
   const traceOrigin = Math.min(...selected.map((span) => span.startMs));
-  const nodes = new Map<string, DiagnosticTimingNode>();
+  const nodes = new Map<string, DiagnosticTimingActivity>();
   for (const span of selected) {
     nodes.set(span.spanId, {
       id: `otel:${span.traceId}:${span.spanId}`,
@@ -1039,14 +1040,14 @@ function otelForest(traceId: string, spans: readonly TraceSpan[], turnStartOffse
       children: [],
     });
   }
-  const roots: DiagnosticTimingNode[] = [];
+  const roots: DiagnosticTimingActivity[] = [];
   for (const span of selected) {
     const node = nodes.get(span.spanId)!;
     const parent = span.parentSpanId && span.parentSpanId !== span.spanId ? nodes.get(span.parentSpanId) : undefined;
     if (parent) parent.children.push(node);
     else roots.push(node);
   }
-  const sort = (items: DiagnosticTimingNode[]) => {
+  const sort = (items: DiagnosticTimingActivity[]) => {
     items.sort((a, b) => a.startOffsetMs - b.startOffsetMs || a.id.localeCompare(b.id));
     for (const item of items) sort(item.children);
   };
@@ -1054,13 +1055,13 @@ function otelForest(traceId: string, spans: readonly TraceSpan[], turnStartOffse
   return roots;
 }
 
-function diagnosticTimingNode(
-  node: TimingNode,
+function diagnosticTimingActivity(
+  node: TimingActivity,
   spans: readonly TraceSpan[],
   uniqueTraceIds: ReadonlySet<string>,
-): DiagnosticTimingNode {
-  const children = (node.children ?? []).map((child) => diagnosticTimingNode(child, spans, uniqueTraceIds));
-  if (node.kind === "turn" && node.traceId && uniqueTraceIds.has(node.traceId)) {
+): DiagnosticTimingActivity {
+  const children = (node.children ?? []).map((child) => diagnosticTimingActivity(child, spans, uniqueTraceIds));
+  if (node.key === "agent.turn" && node.traceId && uniqueTraceIds.has(node.traceId)) {
     children.push(...otelForest(node.traceId, spans, node.startOffsetMs));
   }
   return {
@@ -1074,14 +1075,14 @@ function diagnosticTimingNode(
   };
 }
 
-interface FlatTimingNode {
-  node: DiagnosticTimingNode;
-  path: readonly DiagnosticTimingNode[];
+interface FlatTimingActivity {
+  node: DiagnosticTimingActivity;
+  path: readonly DiagnosticTimingActivity[];
 }
 
-function flattenTimingForest(roots: readonly DiagnosticTimingNode[]): FlatTimingNode[] {
-  const flat: FlatTimingNode[] = [];
-  const visit = (node: DiagnosticTimingNode, ancestors: readonly DiagnosticTimingNode[]) => {
+function flattenTimingForest(roots: readonly DiagnosticTimingActivity[]): FlatTimingActivity[] {
+  const flat: FlatTimingActivity[] = [];
+  const visit = (node: DiagnosticTimingActivity, ancestors: readonly DiagnosticTimingActivity[]) => {
     const path = [...ancestors, node];
     flat.push({ node, path });
     for (const child of node.children) visit(child, path);
@@ -1094,7 +1095,7 @@ function flattenTimingForest(roots: readonly DiagnosticTimingNode[]): FlatTiming
  * 默认 80-node 投影。四个稳定池先各用自己的配额，再把空余额按失败→最慢→首尾重分配。
  * 选中深层节点必须连同祖先整条加入；四池合并后按 id 去重。
  */
-function selectTimingNodes(roots: readonly DiagnosticTimingNode[]): ReadonlySet<string> {
+function selectTimingActivitys(roots: readonly DiagnosticTimingActivity[]): ReadonlySet<string> {
   const flat = flattenTimingForest(roots);
   if (flat.length <= TIMING_DETAIL_NODE_BUDGET) return new Set(flat.map(({ node }) => node.id));
 
@@ -1110,7 +1111,7 @@ function selectTimingNodes(roots: readonly DiagnosticTimingNode[]): ReadonlySet<
     (a, b) => b.node.startOffsetMs - a.node.startOffsetMs || a.node.id.localeCompare(b.node.id),
   );
 
-  const add = (candidate: FlatTimingNode, allowance: number): number => {
+  const add = (candidate: FlatTimingActivity, allowance: number): number => {
     const missing = candidate.path.filter((node) => !selected.has(node.id));
     if (missing.length === 0 || missing.length > allowance || selected.size + missing.length > TIMING_DETAIL_NODE_BUDGET) {
       return 0;
@@ -1118,7 +1119,7 @@ function selectTimingNodes(roots: readonly DiagnosticTimingNode[]): ReadonlySet<
     for (const node of missing) selected.add(node.id);
     return missing.length;
   };
-  const pool = (candidates: readonly FlatTimingNode[], cap: number) => {
+  const pool = (candidates: readonly FlatTimingActivity[], cap: number) => {
     let remaining = cap;
     for (const candidate of candidates) {
       if (remaining === 0) break;
@@ -1140,7 +1141,7 @@ function selectTimingNodes(roots: readonly DiagnosticTimingNode[]): ReadonlySet<
   return selected;
 }
 
-function subtreeStats(node: DiagnosticTimingNode): { nodes: number; failed: number } {
+function subtreeStats(node: DiagnosticTimingActivity): { nodes: number; failed: number } {
   let nodes = 1;
   let failed = node.failed ? 1 : 0;
   for (const child of node.children) {
@@ -1152,11 +1153,11 @@ function subtreeStats(node: DiagnosticTimingNode): { nodes: number; failed: numb
 }
 
 type VisibleTimingEntry =
-  | { kind: "node"; node: DiagnosticTimingNode }
+  | { kind: "node"; node: DiagnosticTimingActivity }
   | { kind: "omitted"; nodes: number; failed: number };
 
 function visibleTimingEntries(
-  nodes: readonly DiagnosticTimingNode[],
+  nodes: readonly DiagnosticTimingActivity[],
   selected: ReadonlySet<string> | undefined,
 ): VisibleTimingEntry[] {
   if (!selected) return nodes.map((node) => ({ kind: "node", node }));
@@ -1182,7 +1183,7 @@ function visibleTimingEntries(
 }
 
 function diagnosticTimingLines(
-  nodes: readonly DiagnosticTimingNode[],
+  nodes: readonly DiagnosticTimingActivity[],
   prefix: string,
   selected: ReadonlySet<string> | undefined,
   locator: string,
@@ -1236,13 +1237,20 @@ export function timingText(
   const phaseForests = new Map(
     r.phases.map((phase) => [
       phase,
-      (phase.children ?? []).map((node) => diagnosticTimingNode(node, spans ?? [], uniqueTraceIds)),
+      (phase.children ?? []).map((node) => diagnosticTimingActivity(node, spans ?? [], uniqueTraceIds)),
     ]),
   );
   const allRoots = [...phaseForests.values()].flat();
-  const selected = opts.mode === "full" ? undefined : selectTimingNodes(allRoots);
+  const selected = opts.mode === "full" ? undefined : selectTimingActivitys(allRoots);
 
   const lines: string[] = [`total ${formatDurationMs(r.durationMs)}`, ""];
+  // 超时归属:撞的是哪层时限、上限多少、值从哪一层来。三样一起印在时间树顶上——
+  // 「跑了 20 分钟然后 ✗」本身说不出是谁把它掐的(见 docs/feature/sandbox/architecture.md
+  // 「时限归属」)。
+  if (r.error?.timeout) {
+    const { trigger, limitMs, source } = r.error.timeout;
+    lines.push(`timeout  ${trigger} · limit ${formatDurationMs(limitMs)} · from ${source}`, "");
+  }
   const renderPhase = (p: NonNullable<EvalResult["phases"]>[number]) => {
     const failedNote = p.failed ? ` ✗ failed here${r.error ? ` (${r.error.code})` : ""}` : "";
     lines.push(`${p.name.padEnd(22)}${formatDurationMs(p.durationMs)}${failedNote}`);
@@ -1254,4 +1262,107 @@ export function timingText(
     for (const p of closing) renderPhase(p);
   }
   return `${opts.header}\n\n${lines.join("\n")}`;
+}
+
+/**
+ * `--timing` 不带 attempt locator 时的 Run 级 activity 树(docs/feature/reports/show/timing.md
+ * 「Run 级 activity 的读取」)。与 attempt 树共用预算 / 失败 / 时序投影;`sandboxBuilds`
+ * 专用卡从 provenance 读 locator/inputs/依赖 attempt,不解析 timing label。
+ */
+export function runTimingText(
+  run: Run,
+  opts: {
+    header: string;
+    width: number;
+    mode?: "summary" | "full";
+    /** 本 Run 内可用来标注「依赖该 BuildKey 的 attempt」的句柄(含 locator)。 */
+    attempts?: readonly AttemptHandle[];
+  },
+): string {
+  const timings = run.timings ?? [];
+  const builds = run.sandboxBuilds ?? [];
+  if (timings.length === 0 && builds.length === 0) {
+    return `${opts.header}\n\nrun timing unavailable (this run has no shared activity)`;
+  }
+
+  const roots = timings.map((node) => diagnosticTimingActivity(node, [], new Set()));
+  const selected = opts.mode === "full" ? undefined : selectTimingActivitys(roots);
+  const totalMs = timings.reduce((sum, node) => Math.max(sum, node.startOffsetMs + node.durationMs), 0);
+  const lines: string[] = [`total ${formatDurationMs(totalMs)}`, ""];
+  lines.push(...diagnosticTimingLines(roots, "", selected, run.runId));
+
+  if (builds.length > 0) {
+    lines.push("", "sandboxBuilds:");
+    for (const build of builds) {
+      lines.push(...sandboxBuildCardLines(build, timings, opts.attempts ?? run.attempts));
+    }
+  }
+  return `${opts.header}\n\n${lines.join("\n")}`;
+}
+
+/** sandboxBuild 专用卡:字段全部来自 provenance + 经 timingNodeId 关联的耗时,不解析 label。 */
+function sandboxBuildCardLines(
+  build: SandboxBuildRecord,
+  timings: readonly TimingActivity[],
+  attempts: readonly AttemptHandle[],
+): string[] {
+  const timing = findTimingActivityById(timings, build.timingNodeId);
+  const duration = timing ? formatDurationMs(timing.durationMs) : "—";
+  const dependents = attempts
+    .filter((a) => {
+      const origin = a.result.error?.origin;
+      return origin?.scope === "run" && origin.timingNodeId === build.timingNodeId;
+    })
+    .map((a) => a.locator ?? `${a.evalId}#${a.result.attempt}`);
+  const lines = [
+    `  ${build.status} · ${build.provider} · ${build.buildKey.slice(0, 16)}…  ${duration}${timing?.failed ? " ✗" : ""}`,
+  ];
+  if (build.locator !== undefined) {
+    lines.push(`    locator: ${JSON.stringify(build.locator)}`);
+  }
+  lines.push(`    inputs: ${JSON.stringify(build.inputs)}`);
+  if (build.error) {
+    lines.push(`    error: ${build.error.code} · ${firstLine(build.error.message)}`);
+  }
+  if (dependents.length > 0) {
+    lines.push(`    dependents: ${dependents.join(", ")}`);
+  }
+  return lines;
+}
+
+/** Run 级 `--timing` 的 `--json` data:timings 完整树 + sandboxBuilds provenance(不经 text 预算)。 */
+export function runTimingJson(run: Run, attempts?: readonly AttemptHandle[]): {
+  experimentId: string;
+  runId: string;
+  startedAt: string;
+  timings: TimingActivity[];
+  sandboxBuilds: Array<
+    SandboxBuildRecord & {
+      durationMs?: number;
+      dependents?: string[];
+    }
+  >;
+} {
+  const timings = run.timings ?? [];
+  const builds = (run.sandboxBuilds ?? []).map((build) => {
+    const timing = findTimingActivityById(timings, build.timingNodeId);
+    const dependents = (attempts ?? run.attempts)
+      .filter((a) => {
+        const origin = a.result.error?.origin;
+        return origin?.scope === "run" && origin.timingNodeId === build.timingNodeId;
+      })
+      .map((a) => a.locator ?? `${a.evalId}#${a.result.attempt}`);
+    return {
+      ...build,
+      ...(timing !== undefined ? { durationMs: timing.durationMs } : {}),
+      ...(dependents.length > 0 ? { dependents } : {}),
+    };
+  });
+  return {
+    experimentId: run.experimentId,
+    runId: run.runId,
+    startedAt: run.startedAt,
+    timings: [...timings],
+    sandboxBuilds: builds,
+  };
 }

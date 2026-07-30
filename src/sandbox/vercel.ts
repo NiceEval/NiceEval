@@ -6,6 +6,7 @@ import type { Sandbox, CommandResult, CommandOptions, SandboxFile, SandboxReuseC
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { resolveSandboxPath } from "./paths.ts";
+import { commandLimit } from "./deadline.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity, reportDiagnostic } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
@@ -24,8 +25,6 @@ export function classifyProvisionError(e: unknown): SandboxProvisionErrorKind {
 // Vercel Sandbox 的默认工作区路径(SDK writeFiles 默认落这里)。
 const VERCEL_WORKDIR = "/vercel/sandbox";
 
-// 单条命令的默认超时:设为沙箱 session 生命周期(10 分钟),防止长时间 build/install 被截断。
-const DEFAULT_COMMAND_TIMEOUT_MS = 600_000;
 // Rotate session when it has been alive >270s to stay under the plan cap (~360-390s).
 const ROTATE_THRESHOLD_MS = 270_000;
 const SESSION_TIMEOUT_MS = 1_200_000;
@@ -51,25 +50,41 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
   readonly workdir = VERCEL_WORKDIR;
   readonly otlpHost = null;
   private vsb: InstanceType<typeof VSandbox>;
-  private commandTimeoutMs: number;
+  private commandTimeoutMs?: number;
+  private deadlineAt?: number;
   private sessionCreatedAt: number;
   private runtime: string;
   readonly sandboxId: string;
 
-  private constructor(vsb: InstanceType<typeof VSandbox>, id: string, commandTimeoutMs: number, runtime: string) {
+  private constructor(
+    vsb: InstanceType<typeof VSandbox>,
+    id: string,
+    commandTimeoutMs: number | undefined,
+    runtime: string,
+    deadlineAt?: number,
+  ) {
     this.vsb = vsb;
     this.sandboxId = id;
     this.commandTimeoutMs = commandTimeoutMs;
+    this.deadlineAt = deadlineAt;
     this.sessionCreatedAt = Date.now();
     this.runtime = runtime;
   }
 
   static async create(
-    opts: { timeout?: number; runtime?: "node20" | "node24"; snapshotId?: string; feedback?: import("../types.ts").ScopedFeedback } = {},
+    opts: {
+      timeout?: number;
+      /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
+      deadlineAt?: number;
+      runtime?: "node20" | "node24";
+      snapshotId?: string;
+      feedback?: import("../types.ts").ScopedFeedback;
+    } = {},
   ): Promise<VercelSandbox> {
     // Vercel 支持 node22/node24/node26/python3.13;node20 回退到 node22。
     const runtime = opts.runtime === "node20" ? "node22" : (opts.runtime ?? "node24");
-    const commandTimeoutMs = opts.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    // 单条命令没有 provider 级默认:上限恒从 attempt deadline 派生(见 deadline.ts)。
+    const commandTimeoutMs = opts.timeout;
 
     // 凭据:优先从 env 显式传入(绕过 OIDC flow,非 TTY 环境也能用)。
     // 需要同时设 VERCEL_API_TOKEN + VERCEL_TEAM_ID + VERCEL_PROJECT_ID 三个。
@@ -89,7 +104,7 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
     // session 在 rotate / stop-resume 之间会变,name 才是 `Sandbox.get({ name })` 能找回的
     // 稳定身份(SDK 与官方文档都按 name 索引,见 vercel.com/docs/sandbox/cli-reference)。
     const id = vsb.name;
-    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime);
+    return new VercelSandbox(vsb, id, commandTimeoutMs, runtime, opts.deadlineAt);
   }
 
   // 当 session 存活超过 ROTATE_THRESHOLD_MS 时，拍快照并换用新 session。
@@ -182,14 +197,16 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
 
   async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     await this.rotateIfNeeded();
+    const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     const finished = await this.vsb.runCommand({
       cmd,
       args,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: opts.env,
       sudo: opts.root ?? false,
-      // 显式设 per-command timeout 防止长跑命令(npm build/install)被流截断。
-      timeoutMs: this.commandTimeoutMs,
+      // per-command 上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值);
+      // 没有 deadline 就不设,provider 层不发明一条自己的线。
+      ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
     });
     const stdout = await finished.stdout();
     const stderr = await finished.stderr();

@@ -25,12 +25,19 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
   // ——多行 message 的后续行(如 diagnose 的 output tail)归 `show @locator` 展开,不进
   // scrollback;再过 summaryText 剥控制字节并按摘要上限收口,adapter 组装的文本里混进
   // ANSI 着色时不泄漏进终端事实行。
+  // 超时的那条 reason 后面直接接归属:哪层时限、上限多少、值从哪来。一行里说清「谁把它掐的」,
+  // 不让人先去 `show --timing` 才知道自己撞的是哪条线(见 docs/feature/sandbox/architecture.md
+  // 「时限归属」)。
+  const timeout = result.error?.timeout;
+  const attribution = timeout
+    ? ` (${timeout.trigger} · limit ${timeout.limitMs}ms · from ${timeout.source})`
+    : "";
   const reason = result.verdict === "errored"
-    ? summaryText(firstLine(result.error?.message ?? result.verdict))
+    ? `${summaryText(firstLine(result.error?.message ?? result.verdict))}${attribution}`
     : assertion
       ? compactAssertionSummary(assertion)
       : summaryText(firstLine(result.error?.message ?? result.verdict));
-  const phase = result.verdict === "errored" ? result.error?.phase : undefined;
+  const phase = result.verdict === "errored" ? (result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined) : undefined;
 
   return {
     locator,

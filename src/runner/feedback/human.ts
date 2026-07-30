@@ -34,6 +34,7 @@ import type {
   ActiveExperimentHook,
   ActiveLockWait,
   ActivePrecheck,
+  ActiveRunActivity,
   AttemptKey,
   ExperimentHookName,
   LifecyclePhase,
@@ -178,6 +179,15 @@ export function renderDurableLines(
           elapsed: formatElapsed(event.waitedMs ?? 0),
         }),
       ];
+    }
+    case "run-activity": {
+      // 只服务非 TTY 退化流(TTY dashboard 由 state.runActivities 驱动运行级行)。
+      // 人读文本用 producer 的 label,不查 LifecyclePhase 锚点表;未知 key 同样通用投影。
+      const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
+      if (event.status === "started") return [event.label];
+      const statusWord =
+        event.status === "done" ? t("feedback.human.hookDone") : t("feedback.human.hookFailed");
+      return [`${event.label} ${statusWord}${duration}`];
     }
     case "summary":
       return buildSummaryLines(event, state, panel);
@@ -572,22 +582,30 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
     // live-dashboard-active-row-width-clamp-mismatch.md 的根因类别。
     const contentWidth = panelContentWidth(capability.width, capability.mode, false);
     const rows: PanelRow[] = [{ kind: "line", text: countsText(state) }];
-    // 运行级行(judge 预检 + 实验钩子 + 用例锁等待)排在 attempt 行前面(见 cli.md「judge 预检
-    // 的显示」/「实验级 Hook 的显示」/「等待并发 run 的显示」):它们解释了为什么后面的 attempt
-    // 还停在 queued。预检排最前(发生在任何 attempt 派发之前),其次实验钩子,再是锁等待
-    // (排在实验钩子行之后、attempt 行之前)。Map 按插入序迭代,天然满足稳定 slot。
+    // 运行级行(judge 预检 + Run activity + 实验钩子 + 用例锁等待)排在 attempt 行前面:
+    // 它们解释了为什么后面的 attempt 还停在 queued。预检排最前(发生在任何 attempt 派发
+    // 之前),其次共享准备(sandbox.build 等),再是实验钩子,再是锁等待。Map 按插入序迭代,
+    // 天然满足稳定 slot。Run activity 不占 attempt active 位。
     const precheck = state.activePrecheck;
+    const runActivityRows = [...state.runActivities.values()];
     const hookRows = [...state.experimentHooks.values()];
     // 只有仍在等待(waiting 非空)的实验才占运行级行;窗口已关闭(全部 resolved)的条目只是
     // 给非 TTY 聚合收尾行留的历史计数,TTY 不展示。
     const lockWaitRows = [...state.lockWaits.values()].filter((w) => w.waiting.size > 0);
-    if (activeOrder.length > 0 || hookRows.length > 0 || lockWaitRows.length > 0 || precheck) {
+    if (
+      activeOrder.length > 0 ||
+      runActivityRows.length > 0 ||
+      hookRows.length > 0 ||
+      lockWaitRows.length > 0 ||
+      precheck
+    ) {
       rows.push({ kind: "divider", title: t("feedback.human.active") });
       // 固定开销:上边框 + counts 行 + ACTIVE 横隔 + 下边框(boxed);plain 时同样按 4 行估算,
       // 差一两行不影响「窄/矮终端先减 active slots」这条大方向。
       const rowBudget = Math.max(0, io.stderr.rows - 4 - DASHBOARD_ROW_RESERVE);
       const precheckCount = precheck ? 1 : 0;
-      const total = precheckCount + hookRows.length + lockWaitRows.length + activeOrder.length;
+      const total =
+        precheckCount + runActivityRows.length + hookRows.length + lockWaitRows.length + activeOrder.length;
       // 窄/矮终端先减 active slots(减少行数),而不是先压缩单行内容 ——
       // 单行内容的截断在 formatActiveRow 里按 contentWidth 单独处理。
       const showCount = total <= rowBudget ? total : Math.max(0, rowBudget - 1);
@@ -596,12 +614,14 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       // 同一帧内所有行必须共用同一套身份列宽度,不能让前面几行按旧宽度格式化、后面
       // 的行又观测到更长的值再推宽,导致同一帧内本该对齐的列错位。
       const shownPrecheck = precheck && showCount > 0 ? precheck : undefined;
-      const shownHooks = hookRows.slice(0, Math.max(0, showCount - (shownPrecheck ? 1 : 0)));
-      const shownLockWaits = lockWaitRows.slice(
-        0,
-        Math.max(0, showCount - (shownPrecheck ? 1 : 0) - shownHooks.length),
-      );
-      const shownRunLevel = (shownPrecheck ? 1 : 0) + shownHooks.length + shownLockWaits.length;
+      let remaining = Math.max(0, showCount - (shownPrecheck ? 1 : 0));
+      const shownRunActivities = runActivityRows.slice(0, remaining);
+      remaining = Math.max(0, remaining - shownRunActivities.length);
+      const shownHooks = hookRows.slice(0, remaining);
+      remaining = Math.max(0, remaining - shownHooks.length);
+      const shownLockWaits = lockWaitRows.slice(0, remaining);
+      const shownRunLevel =
+        (shownPrecheck ? 1 : 0) + shownRunActivities.length + shownHooks.length + shownLockWaits.length;
       const shownActive: ActiveAttempt[] = [];
       for (const key of activeOrder) {
         if (shownRunLevel + shownActive.length >= showCount) break;
@@ -619,6 +639,9 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
 
       const activeLines: string[] = [];
       if (shownPrecheck) activeLines.push(formatPrecheckRow(shownPrecheck, io, contentWidth));
+      for (const activity of shownRunActivities) {
+        activeLines.push(formatRunActivityRow(activity, io, contentWidth));
+      }
       for (const hookRow of shownHooks) {
         activeLines.push(formatExperimentHookRow(hookRow, io, contentWidth, evalWidth, whoWidth));
       }
@@ -678,7 +701,15 @@ function createDashboardRenderer(io: FeedbackIO, command: string): FeedbackRende
       // judge 预检同理:TTY 下只驱动 state.activePrecheck 的运行级 active 行(coordinator 紧接着的
       // redrawDynamic 会画出来),不写 scrollback 永久行(见 cli.md「judge 预检的显示」)。用例锁
       // 等待同理:TTY 下由 state.lockWaits 驱动运行级 active 行(见 cli.md「等待并发 run 的显示」)。
-      if (event.type === "experiment-hook" || event.type === "precheck" || event.type === "lock-wait") return;
+      // Run 级 activity(共享构建等)同理:TTY 下由 state.runActivities 驱动,不占 attempt slot。
+      if (
+        event.type === "experiment-hook" ||
+        event.type === "precheck" ||
+        event.type === "lock-wait" ||
+        event.type === "run-activity"
+      ) {
+        return;
+      }
       writeDurable(io, event, state, false);
     },
     activity(text) {
@@ -757,6 +788,15 @@ function formatPrecheckRow(precheck: ActivePrecheck, io: FeedbackIO, columns: nu
   const elapsed = formatElapsed(io.clock.now() - precheck.startedAt).padStart(6);
   const sym = "● ";
   return padTrunc(`${sym}${t("feedback.human.precheckJudge")}  ${elapsed}`, columns);
+}
+
+/** Run 级 activity 的运行级行:`● <producer label>   <elapsed>`。
+ *  label 原样来自 producer,不查 LifecyclePhase 锚点表,也不对 key 做 switch 穷尽。
+ *  与预检同理:构建阶段常常还没有任何 attempt 行,身份列宽仍是 0,label 直接用整行宽度。 */
+function formatRunActivityRow(activity: ActiveRunActivity, io: FeedbackIO, columns: number): string {
+  const elapsed = formatElapsed(io.clock.now() - activity.startedAt).padStart(6);
+  const sym = "● ";
+  return padTrunc(`${sym}${activity.label}  ${elapsed}`, columns);
 }
 
 function formatExperimentHookRow(
@@ -848,6 +888,9 @@ export interface HumanDryPlanRow {
   /** 该用例正被另一条并行 Invocation 持锁运行(见 docs/feature/experiments/architecture.md
    *  「并发 Invocation:用例锁」);计划行尾如实标注,`--dry` 本身不取锁、不等待。 */
   locked?: boolean;
+  /** 本行要派发的 attempt 卡在哪几道门上(词表见 docs/feature/experiments/cli.md
+   *  「`--dry`:计划矩阵与作废原因」);省略或空数组 = 全部携带,行尾标 `carried`。 */
+  dispatch?: readonly { reason: string; deltas?: readonly { selector: string; from?: string; to?: string }[] }[];
 }
 
 export interface HumanDryPlanInput {
@@ -862,6 +905,11 @@ export interface HumanDryPlanInput {
    *  全新派发场景,没有第二行)。 */
   reused?: number;
   rows: readonly HumanDryPlanRow[];
+  /**
+   * 本次调用的命令前缀(如 `niceeval exp compare/codex`),用来把差异分组的 `accept:` 行拼成
+   * 一条**可直接复制**的命令。省略时不打这一行——拼不出真命令就不给半条,人照抄会跑错选择集。
+   */
+  command?: string;
 }
 
 /** 契约首行(docs/feature/experiments/cli.md 开头的 `--dry` 示例):
@@ -889,11 +937,86 @@ export function renderHumanDryPlan(input: HumanDryPlanInput): string {
     );
   }
   const idWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.experimentId)));
+  const evalWidth = Math.max(0, ...input.rows.map((row) => stringWidth(row.evalId)));
   for (const row of input.rows) {
     const base = `${row.experimentId}${" ".repeat(idWidth - stringWidth(row.experimentId) + 2)}${row.evalId}`;
-    lines.push(row.locked ? `${base}  ${t("feedback.human.lockedRowSuffix")}` : base);
+    // 行尾恒有一个标注:要派发的行逐条给门的原因词,全部携带的行标 carried,
+    // 正被别人持锁的行沿用既有的 locked(它回答的是「本次会不会自己跑」,不是哪道门)。
+    const suffix = row.locked
+      ? t("feedback.human.lockedRowSuffix")
+      : dryPlanReasonSuffix(row.dispatch);
+    lines.push(`${base}${" ".repeat(evalWidth - stringWidth(row.evalId) + 3)}${suffix}`);
   }
+  const staleBlocks = renderStaleDeltaGroups(input);
+  if (staleBlocks.length > 0) lines.push("", ...staleBlocks);
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * 逐行的原因回答「这一格为什么重跑」,差异分组回答「一条改动赔了多少、怎么把它拿回来」——
+ * 矩阵按格排,人要做的决定按**差异**排,所以这里按 selector 重新聚合一次:一条差异一块,
+ * 带旧新摘要、影响面与可直接复制的 `accept:` 命令。只有指纹门(`stale`)的行进这个聚合:
+ * 别的门 `--accept` 打不开,给一条抄了也不生效的命令是误导。没有 stale 行时整块不打印。
+ */
+function renderStaleDeltaGroups(input: HumanDryPlanInput): string[] {
+  const bySelector = new Map<string, { delta: { selector: string; from?: string; to?: string }; evalIds: Set<string> }>();
+  for (const row of input.rows) {
+    for (const group of row.dispatch ?? []) {
+      if (group.reason !== "stale") continue;
+      for (const delta of group.deltas ?? []) {
+        const entry = bySelector.get(delta.selector) ?? { delta, evalIds: new Set<string>() };
+        entry.evalIds.add(row.evalId);
+        bySelector.set(delta.selector, entry);
+      }
+    }
+  }
+  const out: string[] = [];
+  for (const [selector, { delta, evalIds }] of [...bySelector].sort(([a], [b]) => a.localeCompare(b))) {
+    const change = delta.from !== undefined || delta.to !== undefined
+      ? `  ${delta.from ?? ""} → ${delta.to ?? ""}`.trimEnd()
+      : "";
+    out.push(`stale  ${selector}${change}`);
+    out.push(
+      `       ${t("cli.dry.affects", {
+        evals: pluralUnit(evalIds.size, "cli.dry.unit.eval", "cli.dry.unit.evals"),
+        ids: foldIds([...evalIds]),
+      })}`,
+    );
+    if (input.command !== undefined) {
+      out.push(`       ${t("cli.dry.acceptHint", { command: `${input.command} --accept ${selector}` })}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * `baseline01`…`baseline06` → `baseline 01/02/03/05/06`:同一批受影响的 eval 通常只差编号,
+ * 把公共前缀提出来一次,人一眼看得出「缺的是哪几号」。没有公共前缀就逐个列。
+ */
+function foldIds(ids: string[]): string {
+  const sorted = [...ids].sort();
+  if (sorted.length < 2) return sorted.join(", ");
+  let prefix = sorted[0]!;
+  for (const id of sorted) {
+    while (prefix !== "" && !id.startsWith(prefix)) prefix = prefix.slice(0, -1);
+    if (prefix === "") break;
+  }
+  // 公共前缀不许切进一段数字中间:`baseline01`…`baseline06` 的字面公共前缀是 `baseline0`,
+  // 折出来的 `1/3/6` 读起来不是编号。退到数字段边界,给出 `baseline 01/03/06`。
+  while (prefix !== "" && /\d$/.test(prefix)) prefix = prefix.slice(0, -1);
+  if (prefix === "") return sorted.join(", ");
+  return `${prefix} ${sorted.map((id) => id.slice(prefix.length)).join("/")}`;
+}
+
+/** `stale: config:judge.model · new` —— 同一行的多组原因按门的出现序连排,stale 附差异 selector。 */
+function dryPlanReasonSuffix(dispatch: HumanDryPlanRow["dispatch"]): string {
+  if (dispatch === undefined || dispatch.length === 0) return "carried";
+  return dispatch
+    .map((group) => {
+      const selectors = (group.deltas ?? []).map((delta) => delta.selector);
+      return selectors.length > 0 ? `${group.reason}: ${selectors.join(", ")}` : group.reason;
+    })
+    .join(" · ");
 }
 
 /** `${n} ${unit}` 的单复数投影;zh 的 singular/plural key 值相同(中文不做语法数变化),

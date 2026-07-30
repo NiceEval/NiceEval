@@ -16,6 +16,7 @@ import {
   readableToBuffer,
 } from "./docker-stream.ts";
 import { resolveSandboxPath } from "./paths.ts";
+import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { t } from "../i18n/index.ts";
 import { reportActivity } from "../runner/feedback/sink.ts";
 import { classifyProvisionErrorFallback, type SandboxProvisionErrorKind } from "./errors.ts";
@@ -60,8 +61,10 @@ const DOCKER_IMAGES: globalThis.Record<string, string> = {
   node24: "node:24-slim",
 };
 
-// 单条命令默认超时(10 分钟)。
-const DEFAULT_TIMEOUT = 600_000;
+// 容器 dead-man TTL 的兜底基数:四层解析链一个上限都没声明(attempt 没有 deadline)时,
+// TTL 仍需要一个具体秒数烧进 PID1。它只决定「孤儿容器多久自行消失」,不是任何命令的上限——
+// 单条命令的上限恒从 attempt deadline 派生(见 deadline.ts)。
+const TTL_BASE_WITHOUT_DEADLINE = 600_000;
 
 // 容器「存活上限」(dead-man switch):PID1 用 `timeout <TTL> tail -F` 跑,到点自动退出 →
 // 容器停止 → AutoRemove 清理。这样即便宿主进程被 kill -9 / 崩溃 / 断电(SIGINT handler 来不及
@@ -93,8 +96,10 @@ const SANDBOX_PATH = `${NPM_GLOBAL_DIR}/bin:/usr/local/sbin:/usr/local/bin:/usr/
 
 /** 创建 Docker 沙箱的选项。 */
 export interface DockerSandboxOptions {
-  /** 单条命令超时(毫秒)。 */
+  /** attempt 的超时上限(毫秒),单条命令未显式传 `timeout` 时的上限来源;省略 = 没有上限。 */
   timeout?: number;
+  /** attempt deadline 的截止时刻(epoch ms);单条命令按**剩余量**取上限(见 deadline.ts)。 */
+  deadlineAt?: number;
   /** 容器实例寿命；与单条命令 timeout 分离。 */
   lifetimeMs?: number;
   /** Node 运行时。 */
@@ -111,19 +116,28 @@ export interface DockerSandboxOptions {
    * DockerSandbox,不经 resolve.ts 的 createProvider())。
    */
   runIdentity?: RunIdentity;
+  /**
+   * 覆盖默认 workdir。Compose mainService 附着时用容器 inspect 的 WorkingDir;
+   * 省略 = `/home/sandbox/workspace`。
+   */
+  workdir?: string;
 }
+
+/** `stop()` 时是否销毁容器。Compose 主容器由资源组 `compose down` 回收,附着句柄只松绑。 */
+export type DockerSandboxReleaseMode = "destroy" | "detach";
 
 /**
  * Docker 沙箱:为每次运行起一个隔离容器。
  * 实现 ../types.ts 的 Sandbox 接口。
  */
 export class DockerSandbox implements Sandbox, SandboxReuseCapability {
-  readonly workdir = CONTAINER_WORKDIR;
+  readonly workdir: string;
   readonly otlpHost = "host.docker.internal";
   private docker: Docker;
   private container: Docker.Container | null = null;
   private _containerId = "";
-  private timeout: number;
+  private timeout?: number;
+  private deadlineAt?: number;
   private lifetimeMs?: number;
   /** 容器 PID1 的 dead-man TTL 到期时刻(initialize 里烧进 `timeout` 那一刻定死)。 */
   private expiresAtMs?: number;
@@ -132,16 +146,50 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
   private feedback?: import("../types.ts").ScopedFeedback;
   private provisionToken?: string;
   private runIdentity?: RunIdentity;
+  private releaseMode: DockerSandboxReleaseMode = "destroy";
 
   constructor(options: DockerSandboxOptions = {}) {
     this.docker = new Docker();
-    this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.workdir = options.workdir ?? CONTAINER_WORKDIR;
+    this.timeout = options.timeout;
+    this.deadlineAt = options.deadlineAt;
     this.lifetimeMs = options.lifetimeMs;
     this.runtime = options.runtime ?? "node24";
     this.image = options.image;
     this.feedback = options.feedback;
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
+  }
+
+  /**
+   * 附着到已在跑的容器(Compose mainService)。不改 Cmd/WorkingDir/网络——题目语义原样保留;
+   * `stop()` 默认只松绑句柄,整组回收由 Compose 资源组 finalizer 负责。
+   */
+  static async attach(
+    containerId: string,
+    options: DockerSandboxOptions & { releaseMode?: DockerSandboxReleaseMode } = {},
+  ): Promise<DockerSandbox> {
+    const docker = new Docker();
+    const container = docker.getContainer(containerId);
+    const info = await container.inspect();
+    if (!info.State?.Running) {
+      throw new Error(
+        `cannot attach DockerSandbox to container ${containerId.slice(0, 12)}: state is ${info.State?.Status ?? "unknown"}`,
+      );
+    }
+    const inspectedWorkdir =
+      typeof info.Config?.WorkingDir === "string" && info.Config.WorkingDir.length > 0
+        ? info.Config.WorkingDir
+        : CONTAINER_WORKDIR;
+    const sandbox = new DockerSandbox({
+      ...options,
+      workdir: options.workdir ?? inspectedWorkdir,
+    });
+    sandbox.docker = docker;
+    sandbox.container = container;
+    sandbox._containerId = info.Id ?? containerId;
+    sandbox.releaseMode = options.releaseMode ?? "detach";
+    return sandbox;
   }
 
   /**
@@ -198,7 +246,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     // 文件先 touch + chmod 666,好让之后以 1000 用户跑的 exec 也能往里 append。
     // 外层 `timeout <TTL>` 是 dead-man switch:宿主异常退出(kill -9 / 崩溃)留下的孤儿容器,
     // 到 TTL 后 PID1 自动退出 → 容器停止 → AutoRemove 清理(见 TTL_* 常量)。
-    const ttlSec = Math.ceil(Math.max(this.lifetimeMs ?? this.timeout * TTL_MULTIPLIER, TTL_FLOOR_MS) / 1000);
+    const ttlSec = Math.ceil(Math.max(this.lifetimeMs ?? (this.timeout ?? TTL_BASE_WITHOUT_DEADLINE) * TTL_MULTIPLIER, TTL_FLOOR_MS) / 1000);
     // TTL 一旦烧进 PID1 的 `timeout` 就改不了(容器没有续期通道),所以这里把真实到期时刻记下来,
     // 供 ensureLifetime 如实回答;不够用时由 runner 轮换实例,而不是让容器在 attempt 中途消失。
     this.expiresAtMs = Date.now() + ttlSec * 1000;
@@ -209,7 +257,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         "-c",
         `touch ${CONTAINER_LOG}; chmod 666 ${CONTAINER_LOG}; exec timeout ${ttlSec} tail -n +1 -F ${CONTAINER_LOG}`,
       ],
-      WorkingDir: CONTAINER_WORKDIR,
+      WorkingDir: this.workdir,
       // provision token:歧义类失败的对账通道(按 label 查询本地容器);
       // keep-candidate:留存候选标记(异常硬退时核对未完成提交的候选)。
       Labels: {
@@ -240,8 +288,8 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     ]);
 
     // 工作目录交给非 root 用户(node:node)。node 用户(UID 1000)在 slim 镜像里已存在。
-    await this.runCommandAsRoot("mkdir", ["-p", CONTAINER_WORKDIR]);
-    await this.runCommandAsRoot("chown", ["-R", SANDBOX_USER, CONTAINER_WORKDIR]);
+    await this.runCommandAsRoot("mkdir", ["-p", this.workdir]);
+    await this.runCommandAsRoot("chown", ["-R", SANDBOX_USER, this.workdir]);
 
     // 为非 root 全局安装准备 npm 目录。
     await this.runCommandAsRoot("mkdir", ["-p", NPM_GLOBAL_DIR]);
@@ -316,6 +364,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         cwd: opts.cwd,
         stream: true,
         root: opts.root,
+        ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
       });
@@ -339,6 +388,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
       env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       user: isRoot ? ROOT_USER : SANDBOX_USER,
+      ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
     });
@@ -370,6 +420,8 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
       env?: globalThis.Record<string, string>;
       cwd?: string;
       user?: string;
+      /** 这条命令的显式上限;省略 = 按 attempt deadline 的剩余量。 */
+      timeout?: number;
       onStdout?: (chunk: string) => void | Promise<void>;
       onStderr?: (chunk: string) => void | Promise<void>;
     } = {},
@@ -411,14 +463,22 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         if (stderr && opts.onStderr) callbackChain = callbackChain.then(() => opts.onStderr!(stderr));
       });
 
-      // 超时:杀流并 reject。
-      const timeoutId = setTimeout(() => {
-        stream.destroy();
-        reject(new Error(t("docker.commandTimeout", { timeoutMs: this.timeout })));
-      }, this.timeout);
+      // 超时:杀流并 reject。上限从 attempt deadline 的剩余量派生(显式传 timeout 时按显式值),
+      // 没有 deadline 就不挂这条 timer——provider 层不发明一条自己的线。
+      const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
+      const timeoutId = limit.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            stream.destroy();
+            reject(new SandboxCommandTimeoutError(
+              t("docker.commandTimeout", { timeoutMs: limit.timeoutMs! }),
+              limit.timeoutMs!,
+              limit.explicit,
+            ));
+          }, limit.timeoutMs);
 
       stream.on("end", async () => {
-        clearTimeout(timeoutId);
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
         const stdout = demuxer.stdout();
         const stderr = demuxer.stderr();
 
@@ -436,7 +496,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
       });
 
       stream.on("error", (error: Error) => {
-        clearTimeout(timeoutId);
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
         reject(error);
       });
     });
@@ -451,6 +511,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
         env: opts.env,
         cwd: opts.cwd,
         root: opts.root,
+        ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
       });
@@ -579,21 +640,27 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     await this.chownToSandboxUser(absPath);
   }
 
-  /** 销毁容器:显式 stop + remove(创建时不带 AutoRemove,见 createContainer 的注释)。 */
+  /**
+   * 释放句柄。`releaseMode: "destroy"`(默认 create 路径)显式 stop + remove;
+   * `releaseMode: "detach"`(Compose 附着)只松绑——整组由 compose down 回收,避免主容器先被拆掉留下 sidecar 孤儿。
+   */
   async stop(): Promise<void> {
-    if (this.container) {
-      try {
-        await this.container.stop({ t: 0 }); // 立即停止
-      } catch {
-        // 容器可能已停止或被移除,忽略。
-      }
-      try {
-        await this.container.remove({ force: true });
-      } catch {
-        // 已被移除,忽略。
-      }
+    if (!this.container) return;
+    if (this.releaseMode === "detach") {
       this.container = null;
+      return;
     }
+    try {
+      await this.container.stop({ t: 0 }); // 立即停止
+    } catch {
+      // 容器可能已停止或被移除,忽略。
+    }
+    try {
+      await this.container.remove({ force: true });
+    } catch {
+      // 已被移除,忽略。
+    }
+    this.container = null;
   }
 
   /**

@@ -328,6 +328,93 @@ describe("live dashboard — 宽终端下 ACTIVE 行与身份列分配", () => {
     expect(plain).toContain("0 running · 1 queued");
   });
 
+  // cases: docs/engineering/testing/unit/experiments-runner.md
+  // 「共享 Run activity 不占 attempt 位」/「live feedback 的未知 activity 通用投影」
+  it("共享 Run activity 显示为运行级行,用 producer label,不占 attempt active 位", () => {
+    const { io, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 100, rows: 30 } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compose" });
+    const identity = { experimentId: "compose/docker", evalId: "sql-injection", attempt: 0 };
+    const key = encodeAttemptKey(identity);
+    const state: RunFeedbackState = {
+      ...createInitialRunFeedbackState(),
+      total: 2,
+      running: 1,
+      queued: 1,
+      elapsedMs: 45_000,
+      runActivities: new Map([
+        [
+          "build-1",
+          {
+            id: "build-1",
+            key: "sandbox.build",
+            label: "build docker client",
+            startedAt: 0,
+          },
+        ],
+        [
+          "warm-1",
+          {
+            id: "warm-1",
+            key: "acme.cache.warm",
+            label: "warming acme cache shard-3",
+            startedAt: 1_000,
+          },
+        ],
+      ]),
+      active: new Map([[key, { identity, who: "compose/docker", phase: "eval.run", startedAt: 10_000 }]]),
+    };
+    renderer.onLifecycle?.(
+      { type: "attempt:start", at: 10_000, identity, who: "compose/docker", phase: "eval.run" },
+      state,
+    );
+    renderer.redrawDynamic?.(state);
+
+    const plain = stripAnsi(stderr.writes.join(""));
+    expect(plain).toMatch(/├─ ACTIVE ─+┤/);
+    expect(plain).toContain("build docker client");
+    expect(plain).toContain("warming acme cache shard-3");
+    expect(plain).toContain("sql-injection");
+    // 未知 key 不进 LifecyclePhase 锚点标签表(那些词不会冒充成 phase 列)。
+    expect(plain).not.toContain("acme.cache.warm");
+    expect(plain).toContain("1 running · 1 queued");
+  });
+
+  it("非 TTY 对未知 activity 用 label 通用投影起止行", () => {
+    const { io, stdout } = createFakeFeedbackIO({ stderr: { isTTY: false } });
+    const renderer = createHumanRenderer({ io, command: "niceeval exp compose" });
+    const state = createInitialRunFeedbackState();
+    renderer.appendDurable(
+      {
+        type: "run-activity",
+        at: 1,
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "started",
+      },
+      state,
+    );
+    renderer.appendDurable(
+      {
+        type: "run-activity",
+        at: 2,
+        id: "warm-1",
+        key: "acme.cache.warm",
+        label: "warming acme cache shard-3",
+        status: "failed",
+        durationMs: 1_200,
+      },
+      {
+        ...state,
+        runActivities: new Map(),
+      },
+    );
+    const plain = stdout.writes.join("");
+    expect(plain).toContain("warming acme cache shard-3\n");
+    expect(plain).toMatch(/warming acme cache shard-3 failed/);
+    expect(plain).not.toContain("acme.cache.warm");
+  });
+
   it("短 id 不垫空格:身份列贴着实际内容定宽,不按比例预留大段空白", () => {
     const { io, stderr } = createFakeFeedbackIO({ stderr: { isTTY: true, columns: 200, rows: 30 } });
     const renderer = createHumanRenderer({ io, command: "niceeval exp compare" });
@@ -761,5 +848,84 @@ describe("renderHumanDryPlan: locked 标注", () => {
     const lines = text.trim().split("\n");
     expect(lines.find((l) => l.includes("memory/a"))).toContain("locked");
     expect(lines.find((l) => l.includes("memory/b"))).not.toContain("locked");
+  });
+});
+
+describe("renderHumanDryPlan: 逐条未携带原因", () => {
+  const rowOf = (text: string, evalId: string): string => text.trim().split("\n").find((l) => l.includes(evalId))!;
+
+  it("要派发的行标出门的人读词,stale 行附上可复制进 --accept 的 selector,全携带的行标 carried", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 4,
+      evals: 4,
+      configs: 1,
+      attempts: 1,
+      reused: 1,
+      rows: [
+        {
+          experimentId: "compare/codex",
+          evalId: "memory/stale",
+          dispatch: [{ reason: "stale", deltas: [{ selector: "config:judge.model" }] }],
+        },
+        { experimentId: "compare/codex", evalId: "memory/fresh", dispatch: [{ reason: "new" }] },
+        { experimentId: "compare/codex", evalId: "memory/carried", dispatch: [] },
+        {
+          experimentId: "compare/codex",
+          evalId: "memory/mixed",
+          dispatch: [{ reason: "errored" }, { reason: "new" }],
+        },
+      ],
+    });
+
+    expect(rowOf(text, "memory/stale")).toContain("stale: config:judge.model");
+    expect(rowOf(text, "memory/fresh")).toMatch(/\bnew$/);
+    expect(rowOf(text, "memory/carried")).toMatch(/\bcarried$/);
+    // 同一行卡在两道门上时逐组连排,不折成一个笼统的词。
+    expect(rowOf(text, "memory/mixed")).toContain("errored · new");
+  });
+
+  it("stale 行按差异聚合成分组块:旧新摘要、影响面与可直接复制的 accept 命令", () => {
+    const delta = { selector: "config:judge.model", from: "gpt-5.6", to: "gpt-5.6-sol" };
+    const text = renderHumanDryPlan({
+      totalAttempts: 3,
+      evals: 3,
+      configs: 1,
+      attempts: 1,
+      command: "niceeval exp compare/codex",
+      rows: [
+        { experimentId: "compare/codex", evalId: "baseline01", dispatch: [{ reason: "stale", deltas: [delta] }] },
+        { experimentId: "compare/codex", evalId: "baseline03", dispatch: [{ reason: "stale", deltas: [delta] }] },
+        // 别的门不进分组:--accept 打不开它,给一条抄了也不生效的命令是误导。
+        { experimentId: "compare/codex", evalId: "baseline04", dispatch: [{ reason: "sandbox-reuse" }] },
+      ],
+    });
+
+    expect(text).toContain("stale  config:judge.model  gpt-5.6 → gpt-5.6-sol");
+    expect(text).toContain("baseline 01/03");
+    expect(text).toContain("accept:  niceeval exp compare/codex --accept config:judge.model");
+    expect(text).not.toContain("--accept sandbox-reuse");
+  });
+
+  it("没有 stale 行时整块不打印", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      command: "niceeval exp compare/codex",
+      rows: [{ experimentId: "compare/codex", evalId: "memory/a", dispatch: [{ reason: "new" }] }],
+    });
+    expect(text).not.toContain("accept:");
+  });
+
+  it("locked 行沿用 locked 标注,不被门的原因词顶掉", () => {
+    const text = renderHumanDryPlan({
+      totalAttempts: 1,
+      evals: 1,
+      configs: 1,
+      attempts: 1,
+      rows: [{ experimentId: "compare/codex", evalId: "memory/a", locked: true, dispatch: [{ reason: "new" }] }],
+    });
+    expect(rowOf(text, "memory/a")).toMatch(/\blocked$/);
   });
 });

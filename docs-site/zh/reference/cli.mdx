@@ -115,7 +115,7 @@ npx niceeval exp models weather
 | `--dry` | boolean | 只打印本次会匹配到的 eval × 运行配置,不实际执行(人读文本或 `--json` 单文档,见「机器怎么读:--json」)。 |
 | `--force` | boolean | 忽略上次运行结果,不跳过已通过的 (experiment, eval) 组合,强制全部重跑。 |
 | `--rerun` | boolean | `exp` 命令专用:重新运行失败项(裸写/failed)或全部项(all),不改变长期指纹。 |
-| `--carry-ignoring-flag` | string | `exp` 命令专用:一次性忽略已从 flags 迁走的键,可重复。 |
+| `--accept` | string | `exp` 命令专用:授权跨过一条具名指纹差异照常携带,可重复。selector 指向 manifest 相减得出的一条差异(`config:<字段路径>` 如 `config:judge.model`、`source:<路径>`、`data:<路径>`,历史侧缺清单时是 `opaque:no-manifest`),写法与 `--dry` 打出的原因逐字相同。不带值时:stderr 是 TTY 就在计划打出后按差异分组逐条问「复用还是重跑」,选完先打印等价的带值命令再执行;非 TTY 不带值是用法错误。被授权携入的条目按本次口径重打指纹,下一次跑同一条命令自然命中,不需要再带这个 flag;跨过的差异记进条目的 `carriedAccepting`。与 `--rerun all` 同用是用法错误。 |
 | `--strict` | boolean | CI 中推荐使用:让软阈值(`soft`)失败也计入整条 eval 的 verdict。 |
 | `--early-exit` / `--no-early-exit` | boolean | 某个 eval 的一次 attempt 通过后,停止该 eval 剩余的 attempts;省略默认关(`attempts` 默认跑满、测完整通过率)。 |
 | `--open` / `--no-open` | boolean | `view` 命令专用:启动后自动打开浏览器(默认行为)。 |

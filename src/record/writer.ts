@@ -9,11 +9,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { AgentSetupManifest, DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText } from "../types.ts";
+import type { AgentSetupManifest, DiagnosticRecord, EvalResult, ExperimentRunInfo, LocalizedText, SandboxBuildRecord, TimingActivity } from "../types.ts";
 import type { DiffArtifact, FailedCommandEvidence, O11ySummary, SourceArtifact, StreamEvent, TraceSpan } from "../types.ts";
 import { RECORD_FORMAT, RECORD_SCHEMA_VERSION } from "../types.ts";
 import { RESULT_FILE, RUN_FILE, artifactFileOf, attemptDirOf, experimentDirOf } from "./format.ts";
 import { encodeAttemptLocator } from "./locator.ts";
+import { MANIFESTS_FILE, type RunManifests } from "./manifest.ts";
 import { hashEvalSource, normalizeEvalSource } from "./source-hash.ts";
 import { truncateEvents, truncateSpans } from "./truncate.ts";
 import type { Producer, RunMeta } from "./types.ts";
@@ -32,6 +33,14 @@ export interface WriterOptions {
    * 声明快照的调用方不受这个选项影响,必须自己传 `RunDeclaration.startedAt`。
    */
   snapshotStartedAt?: string;
+  /**
+   * 本次 invocation 规划期算出的指纹输入清单,按 experimentId 分组(见
+   * `runner/fingerprint.ts` 的 `CarryPlan.manifestsByKey`)。写在 Run 目录建成的那一刻,
+   * 与 `run.json` 同层同批,**不随 attempt 完成回写**——只跑了一半的 Run 也已经有它。
+   * 隐式 run 声明(`writeAttemptFor`)按 experimentId 取用;显式 `run()` 声明用
+   * `RunDeclaration.manifests`,后者优先。
+   */
+  manifests?: ReadonlyMap<string, RunManifests>;
 }
 
 /** 快照级声明:一个 experiment 声明一次,这些字段不塞进每条 attempt。 */
@@ -50,6 +59,8 @@ export interface RunDeclaration {
   knownEvalIds?: string[];
   /** 项目名(来自 config.name),透传给 `niceeval view` 顶部 hero 显示。 */
   name?: LocalizedText;
+  /** 本 Run 的指纹输入清单(evalId → 清单),与 `run.json` 同批写成;省略则不写该文件。 */
+  manifests?: RunManifests;
 }
 
 /**
@@ -96,8 +107,8 @@ export interface RunWriter {
   writeAttempt(entry: AttemptEntry, artifacts?: AttemptArtifacts): Promise<void>;
   /**
    * 封口这一个 Run:唯一一次补 `completedAt`(省略则取当前时刻)、快照级 `diagnostics`
-   * (省略则不写该字段,不摆空数组)与快照级 `facts`(experiment 作用域 `ctx.fact()` 累计的
-   * 运行事实,同样省略则不写该字段);`name` 未在 `run()` 声明过时可以在这里补。每个
+   * (省略则不写该字段,不摆空数组)、快照级 `facts`、以及 Run 级 `timings` / `sandboxBuilds`
+   * (与 completedAt 同批原子写入 run.json);`name` 未在 `run()` 声明过时可以在这里补。每个
    * Run 只能封一次,重复调用抛错。不做跨 Experiment 聚合——一次 Invocation 里的每个
    * Run 各自独立封口,不必等其它 Run(见 docs/runner.md「Experiment 收尾协议」)。
    */
@@ -105,6 +116,8 @@ export interface RunWriter {
     diagnostics?: DiagnosticRecord[];
     completedAt?: string;
     facts?: globalThis.Record<string, string | number | boolean>;
+    timings?: TimingActivity[];
+    sandboxBuilds?: SandboxBuildRecord[];
     name?: LocalizedText;
   }): Promise<void>;
 }
@@ -162,6 +175,12 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
     };
     const dir = await createSnapshotDir(root, decl.experimentId);
     await writeFile(join(dir, RUN_FILE), JSON.stringify(meta, null, 2), "utf-8");
+    // 清单与 run.json 同批落地:它是规划期的产物,晚一步写就会有「Run 目录已在、清单还没到」
+    // 的窗口,而下一轮的差异解释正好在这种被中断的 Run 上最需要它。
+    const manifests = decl.manifests ?? opts.manifests?.get(decl.experimentId);
+    if (manifests !== undefined && Object.keys(manifests).length > 0) {
+      await writeFile(join(dir, MANIFESTS_FILE), JSON.stringify(manifests, null, 2), "utf-8");
+    }
     created.push({ experimentId: decl.experimentId, dir });
     // 快照级源码去重仓库:sha256 → 落盘 Promise,同一快照内并发/重复的 writeAttempt 共享同一次写入
     // (Map 的 has/set 之间没有 await,JS 单线程语义下不会重复起两次写)。
@@ -201,6 +220,8 @@ export function createWriter(root: string, opts: WriterOptions): Writer {
           completedAt,
           ...(finishOpts?.diagnostics?.length ? { diagnostics: finishOpts.diagnostics } : {}),
           ...(finishOpts?.facts && Object.keys(finishOpts.facts).length ? { facts: finishOpts.facts } : {}),
+          ...(finishOpts?.timings?.length ? { timings: finishOpts.timings } : {}),
+          ...(finishOpts?.sandboxBuilds?.length ? { sandboxBuilds: finishOpts.sandboxBuilds } : {}),
           ...(state.meta.knownEvalIds?.length ? { knownEvalIds: state.meta.knownEvalIds } : {}),
           ...(name !== undefined ? { name } : {}),
         };

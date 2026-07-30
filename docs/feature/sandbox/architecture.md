@@ -26,7 +26,7 @@
   → Scope release                           # 释放或留存完成后才能封口 result.json
 ```
 
-这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md#resultjson)为唯一权威。
+这条链的阶段词表以 [Record 的 `LifecyclePhase` 闭集](../record/architecture.md#两层时间模型生命周期锚点与开放-activity)为唯一权威。
 跨层收尾顺序固定为 Eval、Agent、SandboxSpec；同一层注册多个 Hook 时才按 LIFO 执行。
 收尾发生在 Verdict 语义确定之后，只能追加 diagnostic，不能反改 Verdict。
 `result.json` 的物理封口则必须等 Scope release 完成；两者不是同一个“定稿”时点。
@@ -108,7 +108,7 @@ attempt 内的一切沙箱时限都从 attempt deadline **派生**,provider 层�
 用户代码显式给单条命令传更短的 `timeout` 仍然生效,那是有意声明,不是默认值。
 
 超时把 attempt 转成 `errored` 时,归属必须可见。
-`result.json` 落盘三样:触发的是哪层时限(attempt deadline / 命令显式 `timeout` / provider 会话上限)、值多少、值从四层来源的哪层解析而来。
+`result.json` 落盘三样:触发的是哪层时限(attempt deadline / 命令显式 `timeout`)、值多少、值从四层来源的哪层解析而来。
 报错行与 [`niceeval show --timing`](../reports/show/timing.md) 照实印这三样,不打一个没有归属说明的 ✗。
 provider 自身固有的会话上限(如 Vercel Sandbox 的 session 时长)不能静默充当默认值:deadline 超出它时在派发前就报环境约束,点名 provider 与上限值,不让 attempt 跑到一半被截。
 

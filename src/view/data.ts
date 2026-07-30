@@ -7,7 +7,9 @@
 // 见 docs/feature/reports/view.md「打开与收窄」。
 
 import { readFileSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
+import { MANIFESTS_FILE, parseRunManifests, type EvalManifest, type RunManifests } from "../record/manifest.ts";
 import { dedupeAttempts, loadAttemptEvidence, openRecord, withArtifactBase } from "../record/index.ts";
 import type { AttemptHandle, Record, Sample, Run, UnreadableRun } from "../record/index.ts";
 import type { AttemptLocator } from "../record/locator.ts";
@@ -230,10 +232,17 @@ export async function loadLatestResultsPerEval(root = ".niceeval"): Promise<Eval
  *   必须扫全历史而不是只看结果所在的那一份:携带条目原样带着**产出它那一轮**的指纹合入新快照,
  *   而新快照记的是**本轮**的 flags,两者在坐标轮换后天然对不上;产出那一轮的 flags 只在更早的
  *   快照里留着。
+ * - `manifestsByEvalKey` —— `${experimentId}|${evalId}` → **产出上面那条结果的那一份 Run**
+ *   写下的指纹输入清单。差异解释要的是「那一轮的输入长什么样」,所以它与 `results` 取自同一个
+ *   Run,不取最新那份;那一轮没写清单的 key 就是缺席,差异如实标 `opaque:no-manifest`。
  */
 export async function loadCarryInputs(
   root = ".niceeval",
-): Promise<{ results: EvalResult[]; flagBagsByExperiment: Map<string, globalThis.Record<string, JsonValue>[]> }> {
+): Promise<{
+  results: EvalResult[];
+  flagBagsByExperiment: Map<string, globalThis.Record<string, JsonValue>[]>;
+  manifestsByEvalKey: Map<string, EvalManifest>;
+}> {
   const results = await openRecord(root);
   const out: EvalResult[] = [];
   const flagBagsByExperiment = new Map<string, globalThis.Record<string, JsonValue>[]>();
@@ -250,6 +259,7 @@ export async function loadCarryInputs(
     }
     if (bags.length > 0) flagBagsByExperiment.set(exp.id, bags);
   }
+  const manifestsByEvalKey = new Map<string, EvalManifest>();
   for (const exp of results.experiments) {
     // exp.runs 已按新→旧排序;同一快照内先收本轮的 eval id,收完再整体入 claimed,
     // 保证同 (experiment, eval) 的多 attempt 整批取自同一个快照。
@@ -261,10 +271,27 @@ export async function loadCarryInputs(
         takenThisSnapshot.add(ev.id);
         for (const attempt of ev.attempts) out.push(withArtifactBase(attempt));
       }
+      // 清单只读这一份 Run 的:结果取自它,解释也必须取自它。有条目被取用才读盘。
+      if (takenThisSnapshot.size > 0) {
+        const manifests = await readRunManifests(run.dir);
+        for (const id of takenThisSnapshot) {
+          const manifest = manifests[id];
+          if (manifest !== undefined) manifestsByEvalKey.set(`${run.experimentId}|${id}`, manifest);
+        }
+      }
       for (const id of takenThisSnapshot) claimed.add(id);
     }
   }
-  return { results: out, flagBagsByExperiment };
+  return { results: out, flagBagsByExperiment, manifestsByEvalKey };
+}
+
+/** 一份 Run 的 `manifests.json`;文件不在(那一轮早于清单落盘)或读不动都按「没有清单」。 */
+async function readRunManifests(dir: string): Promise<RunManifests> {
+  try {
+    return parseRunManifests(JSON.parse(await readFile(join(dir, MANIFESTS_FILE), "utf-8")));
+  } catch {
+    return {};
+  }
 }
 
 /**

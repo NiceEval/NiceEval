@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { parseRunManifests } from "./manifest.ts";
 import {
   RECORD_FORMAT,
   RECORD_SCHEMA_VERSION,
@@ -414,6 +415,76 @@ describe("createWriter", () => {
     expect(coverage.missingEvalIds).toHaveLength(1);
   });
 
+  // cases: docs/engineering/testing/unit/record.md「manifests.json 落盘」「超时归属落盘」
+  it("manifests.json 与 run.json 同层、逐 eval 一份;Run 未收尾也已经有它", async () => {
+    const root = await makeRoot();
+    const manifests = {
+      q1: {
+        config: { agent: "codex", model: "opus", "flags.webSearch": true },
+        source: { "evals/q1.eval.ts": "a".repeat(64), "evals/share/assert.ts": "b".repeat(64) },
+        data: { "evals/data/cases.yaml": "c".repeat(64) },
+      },
+      q2: { config: { agent: "codex" }, source: { "evals/q2.eval.ts": "d".repeat(64) }, data: {} },
+    };
+    const writer = createWriter(root, {
+      producer: { name: "niceeval", version: "0.12.0" },
+      manifests: new Map([["compare/a", manifests]]),
+    });
+
+    const snap = await writer.run({ experimentId: "compare/a", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z" });
+    await snap.writeAttempt({ id: "q1", verdict: "passed", attempt: 0, durationMs: 10, assertions: [] });
+
+    // 清单在规划期一次写成,不随 attempt 完成回写:这里**没有** finish(),文件已经在。
+    const raw = JSON.parse(await readFile(join(snap.dir, "manifests.json"), "utf-8"));
+    expect(parseRunManifests(raw)).toEqual(manifests);
+    expect(JSON.parse(await readFile(join(snap.dir, "run.json"), "utf-8")).completedAt).toBeUndefined();
+  });
+
+  it("没有清单的 Run 不生成 manifests.json(读取面如实为缺失,不合成一份空清单)", async () => {
+    const root = await makeRoot();
+    const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
+    const snap = await writer.run({ experimentId: "compare/a", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z" });
+    await expect(readFile(join(snap.dir, "manifests.json"), "utf-8")).rejects.toThrow();
+  });
+
+  it("超时归属三样原样往返;非超时的 errored 不带这个字段", async () => {
+    const root = await makeRoot();
+    const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
+    const snap = await writer.run({ experimentId: "compare/a", agent: "codex", startedAt: "2026-07-01T08:00:00.000Z" });
+    const origin = { scope: "attempt", phase: "agent.run" } as const;
+    await snap.writeAttempt({
+      id: "q1",
+      verdict: "errored",
+      attempt: 0,
+      durationMs: 10,
+      assertions: [],
+      error: { code: "timeout", message: "attempt timed out", origin, timeout: { trigger: "attempt-deadline", limitMs: 90_000, source: "eval" } },
+    });
+    await snap.writeAttempt({
+      id: "q2",
+      verdict: "errored",
+      attempt: 0,
+      durationMs: 10,
+      assertions: [],
+      error: { code: "timeout", message: "command timed out", origin, timeout: { trigger: "command-timeout", limitMs: 5_000, source: "command" } },
+    });
+    await snap.writeAttempt({
+      id: "q3",
+      verdict: "errored",
+      attempt: 0,
+      durationMs: 10,
+      assertions: [],
+      error: { code: "unexpected-error", message: "boom", origin },
+    });
+    await snap.finish();
+
+    const run = (await openRecord(root)).experiments[0]!.latestRun;
+    const errorOf = (id: string) => run.evals.find((e) => e.id === id)!.attempts[0]!.result.error;
+    expect(errorOf("q1")!.timeout).toEqual({ trigger: "attempt-deadline", limitMs: 90_000, source: "eval" });
+    expect(errorOf("q2")!.timeout).toEqual({ trigger: "command-timeout", limitMs: 5_000, source: "command" });
+    expect(errorOf("q3")!.timeout).toBeUndefined();
+  });
+
   it("agentSetup:落成 agent-setup.json(不内联进 result.json),懒加载读回;没装扩展的 attempt 恒 null;publish 能带上", async () => {
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
@@ -546,7 +617,7 @@ describe("createWriter", () => {
     // A 先收尾,带一条 teardown 失败诊断;B 后收尾,不带诊断(空 diagnostics 省略字段,不摆空数组)。
     await snapA.finish({
       completedAt: "2026-07-01T08:10:00.000Z",
-      diagnostics: [{ code: "experiment-teardown-failed", level: "warning", message: "m: tunnel refused to stop; a: leftover process; f: run `niceeval sandbox prune`", phase: "experiment.teardown", command: "niceeval sandbox prune" }],
+      diagnostics: [{ code: "experiment-teardown-failed", level: "warning", detail: "m: tunnel refused to stop; a: leftover process; f: run `niceeval sandbox prune`", origin: { scope: "attempt" as const, phase: "experiment.teardown" }, context: { command: "niceeval sandbox prune" } }],
     });
     await snapB.finish({ completedAt: "2026-07-01T09:20:00.000Z" });
 
@@ -554,7 +625,7 @@ describe("createWriter", () => {
     const finishedB = JSON.parse(await readFile(join(snapB.dir, "run.json"), "utf-8"));
     expect(finishedA.completedAt).toBe("2026-07-01T08:10:00.000Z");
     expect(finishedA.diagnostics).toEqual([
-      { code: "experiment-teardown-failed", level: "warning", message: "m: tunnel refused to stop; a: leftover process; f: run `niceeval sandbox prune`", phase: "experiment.teardown", command: "niceeval sandbox prune" },
+      { code: "experiment-teardown-failed", level: "warning", detail: "m: tunnel refused to stop; a: leftover process; f: run `niceeval sandbox prune`", origin: { scope: "attempt" as const, phase: "experiment.teardown" }, context: { command: "niceeval sandbox prune" } },
     ]);
     expect(finishedB.completedAt).toBe("2026-07-01T09:20:00.000Z");
     expect(finishedB).not.toHaveProperty("diagnostics"); // B 没有诊断,不是 B 意外继承了 A 的
@@ -720,10 +791,10 @@ describe("createWriter", () => {
       estimatedCostUSD: 0.5,
       events: [{ type: "message", role: "assistant", text: "hi" } as never],
       sources: [{ path: "evals/a.ts", content: "x", role: "referenced" }],
-      trace: [{ name: "turn", kind: "turn" } as never],
+      trace: [{ name: "turn", key: "agent.turn" } as never],
       o11y: { toolCalls: 2 } as never,
       diff: [{ window: "s1/t1", changes: { "a.txt": { status: "added", after: "1" } } }],
-      commands: [{ timingNodeId: "n1", phase: "eval.run", display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" }],
+      commands: [{ timingNodeId: "n1", phase: "eval.run" as const, display: "npm ci", exitCode: 1, stdout: "", stderr: "boom" }],
       rawTranscript: "raw",
     };
     const carried: EvalResult = {

@@ -18,6 +18,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CommandOptions, CommandResult, Sandbox, SandboxFile } from "../types.ts";
 import { resolveSandboxPath } from "./paths.ts";
+import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 import { collectLocalFiles } from "./local-files.ts";
 import { downloadDirectoryByList } from "./download-directory.ts";
 import { registerLedgerPaths, unregisterLedgerPaths } from "./ledger-paths.ts";
@@ -25,14 +26,14 @@ import { t } from "../i18n/index.ts";
 
 const execFileAsync = promisify(execFile);
 
-/** 单条命令默认超时(10 分钟),与其它内置 provider 的默认值一致。 */
-const DEFAULT_TIMEOUT = 600_000;
 
 export interface LocalSandboxOptions {
   /** 显式 workdir;省略时从当前目录向上解析 git 仓库根。 */
   dir?: string;
-  /** 单条命令超时(毫秒)。 */
+  /** attempt 的超时上限(毫秒),单条命令未显式传 `timeout` 时的上限来源;省略 = 没有上限。 */
   timeout?: number;
+  /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限(见 deadline.ts)。 */
+  deadlineAt?: number;
   /**
    * 内部测试用:覆盖「当前目录」的解析起点(省略 `dir` 时向上找 git 根、显式 `dir` 时的相对路径
    * 基准都从它算)。生产路径(resolve.ts 的 `createProvider()`)从不传这个字段,恒用
@@ -73,7 +74,9 @@ async function resolveWorkdir(dir: string | undefined, cwd: string): Promise<str
 interface SpawnOpts {
   cwd: string;
   env: NodeJS.ProcessEnv;
-  timeout: number;
+  /** 缺席 = 这条命令没有上限(四层解析链一个都没声明)。 */
+  timeout?: number;
+  explicitTimeout?: boolean;
   onStdout?: CommandOptions["onStdout"];
   onStderr?: CommandOptions["onStderr"];
 }
@@ -91,7 +94,7 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
     let callbackChain = Promise.resolve();
     let settled = false;
 
-    const timer = setTimeout(() => {
+    const timer = opts.timeout === undefined ? undefined : setTimeout(() => {
       if (posix && child.pid !== undefined) {
         try {
           process.kill(-child.pid, "SIGKILL");
@@ -116,17 +119,21 @@ function runSpawned(command: string, args: string[], opts: SpawnOpts): Promise<C
     child.on("error", (err) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       reject(err);
     });
     child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       callbackChain
         .then(() => {
-          if (signal === "SIGKILL" && code === null) {
-            reject(new Error(t("local.commandTimeout", { timeoutMs: opts.timeout })));
+          if (signal === "SIGKILL" && code === null && opts.timeout !== undefined) {
+            reject(new SandboxCommandTimeoutError(
+              t("local.commandTimeout", { timeoutMs: opts.timeout }),
+              opts.timeout,
+              opts.explicitTimeout === true,
+            ));
             return;
           }
           resolvePromise({ stdout, stderr, exitCode: code ?? 0 });
@@ -145,13 +152,15 @@ export class LocalSandbox implements Sandbox {
   readonly workdir: string;
   readonly otlpHost = "localhost";
   readonly sandboxId: string;
-  private readonly timeout: number;
+  private readonly timeout?: number;
+  private readonly deadlineAt?: number;
   private readonly ledgerBase: string;
 
-  private constructor(workdir: string, ledgerBase: string, timeout: number) {
+  private constructor(workdir: string, ledgerBase: string, timeout?: number, deadlineAt?: number) {
     this.workdir = workdir;
     this.ledgerBase = ledgerBase;
     this.timeout = timeout;
+    this.deadlineAt = deadlineAt;
     this.sandboxId = `local-${randomUUID().slice(0, 8)}`;
   }
 
@@ -159,7 +168,7 @@ export class LocalSandbox implements Sandbox {
   static async create(options: LocalSandboxOptions = {}): Promise<LocalSandbox> {
     const workdir = await resolveWorkdir(options.dir, options.cwd ?? process.cwd());
     const ledgerBase = await mkdtemp(join(tmpdir(), "niceeval-local-ledger-"));
-    const sandbox = new LocalSandbox(workdir, ledgerBase, options.timeout ?? DEFAULT_TIMEOUT);
+    const sandbox = new LocalSandbox(workdir, ledgerBase, options.timeout, options.deadlineAt);
     // runner/ledger.ts 按 sandboxId 读取这份登记——本地档的"沙箱"是宿主机本身,固定的宿主路径
     // 会在同机多次运行之间互相踩踏,每实例必须有自己的一份(见文件头注释)。
     registerLedgerPaths(sandbox.sandboxId, {
@@ -171,10 +180,12 @@ export class LocalSandbox implements Sandbox {
 
   async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {
     if (opts.root) throw new Error(t("local.rootUnsupported"));
+    const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
     return runSpawned(cmd, args, {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: { ...process.env, ...opts.env },
-      timeout: this.timeout,
+      ...(limit.timeoutMs !== undefined ? { timeout: limit.timeoutMs } : {}),
+      explicitTimeout: limit.explicit,
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
     });
@@ -182,10 +193,12 @@ export class LocalSandbox implements Sandbox {
 
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
     if (opts.root) throw new Error(t("local.rootUnsupported"));
+    const limit = commandLimit(opts, { commandTimeoutMs: this.timeout, deadlineAt: this.deadlineAt });
     return runSpawned("bash", ["-c", script], {
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
       env: { ...process.env, ...opts.env },
-      timeout: this.timeout,
+      ...(limit.timeoutMs !== undefined ? { timeout: limit.timeoutMs } : {}),
+      explicitTimeout: limit.explicit,
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
     });

@@ -8,6 +8,32 @@ export const en = {
   "agent.diagnose.noTranscript": "transcript was not generated",
   "agent.diagnose.outputTail": "output tail:\n{{tail}}",
   "agent.diagnose.zeroEvents": "transcript exists but contains 0 events",
+  "agent.ensure.identityMissingAgent": "AgentProvisioner.identity.agent must not be empty.",
+  "agent.ensure.identityMissingRevision": "AgentProvisioner.identity.revision must not be empty (agent={{agent}}).",
+  "agent.ensure.unstableVersion":
+    "AgentProvisioner.identity.version must be an exact pin, not \"{{version}}\" (agent={{agent}}). Unpinned installs cannot participate in carry.",
+  "agent.ensure.stagedNeedsPrepare":
+    "A staged AgentProvisioner ({{agent}}) must provide prepare() to materialize a locked artifact outside the task network.",
+  "agent.ensure.verifyOnlyHasPrepare":
+    "verifyOnly mode never installs; AgentProvisioner ({{agent}}) must not also provide prepare().",
+  "agent.ensure.prepareWrongMode":
+    "prepare() is only valid for staged mode (agent={{agent}}, mode={{mode}}).",
+  "agent.ensure.artifactMissingDigest": "staged artifact is missing digest (agent={{agent}}).",
+  "agent.ensure.stagedMissingArtifact":
+    "staged install is missing a prepared artifact (agent={{agent}}). The runner should prepare at Run scope, or ensure via the coordinator.",
+  "agent.ensure.failed":
+    "Agent Ensure failed (agent={{agent}}, phase={{phase}}): expected {{expected}}, actual {{actual}}. {{detail}}\nNext: {{next}}",
+  "agent.ensure.nextVerifyOnly": "Preinstall a matching Agent, or switch to a staged / sandbox-network provisioner.",
+  "agent.ensure.nextRecheck": "Fix the install prefix, PATH, and exact version, then rerun; do not hand a broken environment to the task.",
+  "agent.ensure.missingBin": "Command {{bin}} not found. {{tail}}",
+  "agent.ensure.versionUnparseable": "Could not parse a version from `{{bin}} --version`: {{stdout}}",
+  "agent.ensure.versionMismatch": "{{bin}} version mismatch: expected {{expected}}, actual {{actual}}.",
+  "agent.ensure.digestMismatch":
+    "staged artifact digest mismatch (agent={{agent}}): expected {{expected}}, actual {{actual}}.",
+  "agent.ensure.npmPackFailed": "Host npm pack {{packageName}}@{{version}} failed:\n{{tail}}",
+  "agent.ensure.npmPackEmpty": "Host npm pack {{packageName}}@{{version}} produced no .tgz (dir {{dest}}).",
+  "agent.ensure.npmInstallFailed": "In-sandbox install of {{agent}} from staged tarball failed:\n{{tail}}",
+  "agent.ensure.homeDetectFailed": "Could not detect sandbox $HOME; staged install needs to expand the user prefix.",
   "bub.homeDetectFailed": "Failed to detect sandbox $HOME (empty output from `printf $HOME`). Refusing to fall back to a provider-specific path; check the sandbox provider.",
   "bub.checkpointCaptureFailed": "bub checkpoint cache backfill failed (this sandbox is unaffected; later sandboxes will reinstall): {{error}}",
   "bub.checkpointRestoreFailed": "bub checkpoint restore failed, falling back to a full install: {{error}}",
@@ -63,7 +89,26 @@ export const en = {
   "cli.dry.unit.evals": "evals",
   "cli.dry.unit.config": "config",
   "cli.dry.unit.configs": "configs",
+  "cli.dry.affects": "affects {{evals}} · {{ids}}",
+  "cli.dry.acceptHint": "accept:  {{command}}",
+  "cli.accept.choiceHeader": "stale  {{selector}}{{change}}  ({{evals}} evals)\n",
+  "cli.accept.prompt": "  reuse these results? [y/N] ",
+  "cli.accept.nothingToAccept":
+    "No difference in this plan can be accepted (nothing is blocked by the fingerprint gate).\n" +
+    "Running as planned.\n",
+  "cli.accept.equivalent": "equivalent command:  {{command}}\n",
+  "cli.accept.noneChosen": "Nothing accepted; running as planned.\n",
   "cli.error": "niceeval error: {{error}}\n",
+  "cli.flag.acceptNeedsSelector":
+    "error: --accept needs a selector, for example --accept config:judge.model\n" +
+    "  fix: run `niceeval exp <selection> --dry` first; every `stale` line prints the selectors it can accept, copy one verbatim\n",
+  "cli.flag.acceptWithRerunAll":
+    "--accept cannot be combined with --rerun all: one says trust nothing from cache, the other says trust this difference anyway.\n" +
+    "Drop --rerun all to accept the difference, or drop --accept to rerun everything.\n",
+  "cli.flag.acceptNoSuchDifference":
+    "No such difference in this plan: {{selectors}}.\n" +
+    "Differences you can accept here: {{available}}.\n" +
+    "Run `niceeval exp <selection> --dry` to see which entries each one blocks.\n",
   "cli.flag.invalidNumber": "Flag --{{flag}} expects a number, got \"{{value}}\".\n",
   "cli.flag.outputRemoved":
     "error: unknown option '--output'\n  fix: run without a flag for human text; use --json for the machine feed\n",
@@ -95,6 +140,8 @@ export const en = {
     "These loadCriteria patterns matched no files (or everything they matched was excluded by a later `!` pattern): {{patterns}}. They are most likely misspelled, or the criteria files moved — patterns expand from the project root {{root}}, not from the eval file's directory. Check these against the real paths on disk, and drop the pattern if it is no longer needed; the other patterns having matches is no excuse, because letting this pass silently narrows the criteria, and narrowed criteria let an eval that should re-run keep carrying its old verdict.",
   "loaders.criteriaOutsideRoot":
     "loadCriteria matched \"{{path}}\", which lands outside the project root (it resolves to {{resolved}}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root {{root}}, or exclude that link with a `!` pattern.",
+  "loaders.privateNoMatch":
+    "These loadPrivate patterns matched no files (or everything they matched was excluded by a later `!` pattern): {{patterns}}. They are most likely misspelled, or the private files moved — patterns expand from the project root {{root}}, not from the eval file's directory. Check these against the real paths on disk; letting this pass silently would drop hidden inputs from the leak gate and the fingerprint.",
   "loaders.outsideDiscovery":
     "Read of \"{{path}}\" happened outside discovery: loaders may only be called at the module top level of an eval file (while discovery evaluates that module), which is the only point early enough for the file's content to enter this eval's fingerprint. Move the read to the module top level and keep the result in a constant that test(t) uses; loaders cannot be called at run time from test(t) or from lifecycle hooks.",
   "loaders.nonFileUrl":
@@ -149,7 +196,7 @@ export const en = {
     "  niceeval init                                       scaffold config + evals/\n\n" +
     "Flags:\n" +
     "  --attempts n  --max-concurrency n  --timeout ms  --budget usd  --tag t\n" +
-    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --carry-ignoring-flag key  --dry\n" +
+    "  --early-exit / --no-early-exit  --strict  --rerun[=failed|all]  --accept[=selector]  --dry\n" +
     "  --json  (machine feed: NDJSON on stdout; default is human text)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
@@ -204,6 +251,10 @@ export const en = {
     "No experiment matched: {{arg}}. Available paths: {{experiments}}.\n" +
     "Run `niceeval exp <path> --dry` to preview a plan.\n",
   "cli.experiment.viewerCommandHint": "Did you mean: niceeval {{command}}{{args}}\n",
+  "cli.experiment.noEvalPrefixMatch":
+    "No eval matched prefix: {{pattern}} in experiments selected by {{selection}}.\n" +
+    "Positional args after the first select eval id prefixes. To run another experiment,\n" +
+    "run it as its own command: niceeval exp {{pattern}}\n",
   "cli.experiment.noEvalsSelected":
     "No evals selected: {{selection}} matched 0 evals. Available eval prefixes: {{experiments}}.\n" +
     "Run `niceeval exp {{selection}} --dry` to see what it covers, or drop the eval filter to run every eval selected by those experiments.\n",
@@ -407,6 +458,9 @@ export const en = {
   "runner.timeout": "attempt timed out ({{timeoutMs}}ms, from {{source}})\nRecent progress:\n{{recentLogs}}",
   "runner.traceSelected": " -> kept {{count}} semantic spans",
   "runner.useRemoteAgent": "using remote agent (no sandbox created)...",
+  "sandbox.deadlineExceedsSession":
+    "error: this attempt's timeout ({{timeoutMs}}ms) is longer than what a single {{provider}} session lives ({{limitMs}}ms); the sandbox would be reclaimed mid-attempt.\n" +
+    "  fix: lower timeoutMs below {{limitMs}}ms, or declare a longer lifetimeMs on the sandbox spec if your plan allows it.\n",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, e2b, or local",
   "sandbox.missingSpec":
     "sandbox agent needs a sandbox, but none was given. niceeval no longer picks a default — set `sandbox` in defineExperiment()/defineConfig() to dockerSandbox() / vercelSandbox() / e2bSandbox() (import from \"niceeval/sandbox\").\n" +

@@ -41,6 +41,9 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
       writer = createWriter(root, {
         producer: { name: "niceeval", version: await producerVersion() },
         snapshotStartedAt: shape?.snapshotStartedAt,
+        // 指纹输入清单同样由 runner 显式递来(规划期算出),writer 在建 Run 目录时与
+        // run.json 同批写出;这里只转手,不持有清单怎么算的知识。
+        ...(shape?.manifests ? { manifests: shape.manifests } : {}),
       });
       finishedByEvent.clear();
     },
@@ -69,6 +72,8 @@ export function Artifacts(root = ".niceeval"): ArtifactsReporter {
         completedAt: event.completedAt,
         diagnostics: [...event.diagnostics],
         ...(event.facts ? { facts: { ...event.facts } } : {}),
+        ...(event.timings?.length ? { timings: [...event.timings] } : {}),
+        ...(event.sandboxBuilds?.length ? { sandboxBuilds: [...event.sandboxBuilds] } : {}),
         name: event.name,
       });
     },

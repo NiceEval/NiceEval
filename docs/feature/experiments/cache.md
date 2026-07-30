@@ -32,10 +32,13 @@
 指纹按**每条 eval** 各算一份(`runner/fingerprint.ts`),由两层嵌套构成:
 
 ```text
-configHash  = hash(agent, model, reasoningEffort, flags, sandboxReuse, 顶层 sandbox spec, strict, judge)
+configHash  = hash(agent 与其安装身份, model, reasoningEffort, flags, sandboxReuse, 顶层 sandbox spec, strict, judge)
 fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / metadata,
-                   该 eval 解析到的 sandbox 产物, loader 登记的数据文件内容与判据树哈希)
+                   该 eval 解析到的 sandbox case 身份(CaseKey,内含全部 BuildKey),
+                   loader 登记的数据文件内容与判据树哈希)
 ```
+
+Agent 安装身份是 [`AgentProvisioner.identity`](../adapters/architecture/agent-ensure.md) 加 staged payload 的制品 digest 与平台;它与 sandbox case 身份正交进入指纹——改 Agent 版本不重建任务环境,改环境定义不作废 Agent 制品。
 
 `configHash` 是 Run 级的**配置身份**,同时是跨 Run 可比性的唯一判据, 读取面怎么用它见 [Record · configHash](../record/library.md#confighash配置身份只算一次)。
 两个哈希嵌套而不是并列,于是新增一个公开配置字段只需要裁决一次「进不进 configHash」, 不必分别裁决「进不进指纹」和「算不算可比性配置」。
@@ -66,7 +69,8 @@ fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / 
 
 指纹不等时,新旧两份 manifest 相减得到**带名字的精确差异**: `config:judge.model` 的旧值到新值、`source:evals/share/prompts.ts` 的内容哈希变化、 `data:evals/data/cases.yaml` 的增删改。
 差异有两个消费方: [`--dry` 的逐条作废原因](cli.md#--dry计划矩阵与作废原因)拿它解释, [`--accept`](#--accept授权跨过一条精确差异)拿它作授权单位。
-历史条目缺 manifest 时差异算不出,原因如实标 `opaque:no-manifest`,不猜。
+历史条目缺 manifest 时,算不出的只有源码面与数据面,两者合并成一条 `opaque:no-manifest`,不猜。
+配置面另有出处:它落盘在 `run.json`,从条目重建后照常给具名差异。
 
 下面三块把每一行改动的后果标在原地。
 设定:这个实验选中 36 条 eval,上一轮全绿。
@@ -256,7 +260,7 @@ attempt deadline 从 `sandbox.create` 起算、不含等并发位的排队, `exe
 | `config:<字段路径>` | configHash 字段级差异,键的增删同样是差异 | `config:judge.model`、`config:flags.webSearch` |
 | `source:<路径>` | 源码闭包内单文件的内容差异 | `source:evals/share/prompts.ts` |
 | `data:<路径>` | loader 数据面文件的增删改 | `data:evals/data/cases.yaml` |
-| `opaque:no-manifest` | 历史条目缺 manifest,差异不可算 | 明知旧结果仍然成立时显式采信 |
+| `opaque:no-manifest` | 历史条目缺 manifest,源码面与数据面不可算 | 明知旧结果仍然成立时显式采信 |
 
 **它做的是一次重锚,不是一次豁免。**
 被授权携入的条目照常按[本 Run 的口径](#一份-run-里的条目共享一个指纹口径) 重打指纹,于是下一次跑同一条命令自然命中,不需要再带这个 flag。

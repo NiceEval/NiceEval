@@ -109,6 +109,18 @@ await sandbox.runCommand("npm", ["install"]);   // 默认非 root,cwd 默认 wor
 本就全程 root 的服务把提 root 视作 no-op;完全无法提 root 的服务可不支持(抛错)——但这是"不支持",不是"语义不同"。
 eval 因此不必感知底下是哪个 provider。
 
+## 命令上限:`timeout`
+
+`runCommand` / `runShell` 的 options 收一个 `timeout`(毫秒),给这一条命令自己的上限。
+**省略是常态**:省略时上限就是 attempt deadline 的剩余量,provider 层没有独立默认。
+显式传一个更短的值是有意声明,照常生效;撞线时归属记成命令显式 `timeout`。
+完整规则见 [Architecture · 时限归属](architecture.md#时限归属attempt-deadline-是唯一默认)。
+
+```typescript
+await sandbox.runShell("pnpm build");                  // 上限 = deadline 剩余量
+await sandbox.runCommand("pnpm", ["test"], { timeout: 60_000 });   // 这条最多 60 秒
+```
+
 ## provider 选择:没有默认值,没有按名字选
 
 `sandbox` 字段的类型是 `SandboxOption`(= `SandboxSpec`,一个按 `provider` 区分的数据结构),**不接受未包装字符串,也不会自动探测环境替你选一个**。

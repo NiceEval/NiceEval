@@ -69,7 +69,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `12`。
+当前 `schemaVersion` 是 `13`。
 历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的 results-schema-version-history 条目。
 读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
@@ -568,16 +568,17 @@ interface AttemptError {
 interface TimeoutAttribution {
   /**
    * 触发层:`attempt-deadline` 是 attempt 自己的上限,`command-timeout` 是用户给单条命令
-   * 显式传的 `timeout`,`provider-session` 是 provider 固有的会话上限。
+   * 显式传的 `timeout`。provider 固有的会话上限在派发前按环境约束报出,不落 attempt
+   * ([时限归属](../sandbox/architecture.md#时限归属attempt-deadline-是唯一默认))。
    */
-  trigger: "attempt-deadline" | "command-timeout" | "provider-session";
+  trigger: "attempt-deadline" | "command-timeout";
   /** 该层实际生效的上限,毫秒。 */
   limitMs: number;
   /**
    * 值来自哪一层:`attempt-deadline` 取 [`timeoutMs` 的解析链](../experiments/architecture.md#配置解析链一次求值处处同源)
-   * 四层之一,另两个触发层各自只有一个来源。
+   * 四层之一,`command-timeout` 只有命令显式声明一个来源。
    */
-  source: "flag" | "experiment" | "eval" | "config" | "command" | "provider";
+  source: "flag" | "experiment" | "eval" | "config" | "command";
 }
 
 interface RetryAttemptRecord {
@@ -626,40 +627,33 @@ interface DiagnosticRecord {
 `eval.teardown` / `agent.teardown` / `sandbox.teardown` 与互斥的 `sandbox.suspend` / `sandbox.stop` 是收尾段：主链抛错后它们照常执行、照常计时，各自可独立标 `failed`（对应 teardown diagnostic，不改判定），且不计入 `durationMs` 口径——「结果早已确定、收尾还卡着」的耗时因此可归因。
 结果封口必须发生在 Effect Scope 的 release 完成之后：provider release 与 receiver close 这类 finalizer 也向 attempt 共用的 timing recorder 写入，再由 Scope 外层组装最终 `AttemptRecord`；不能在 body 返回时先封口、事后再尝试修改已写出的结果。
 
-`children` 是 runner 直接观察到的时间树。
-`sandbox.setup` / `sandbox.teardown` 先按 hook 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run` 中 eval 手工命令与 adapter 启动 CLI 的命令、`workspace.diff` 以及各收尾阶段。
+`children` 是 runner 直接观察到的 activity 树。
+`sandbox.setup` / `sandbox.teardown` 先按 `sandbox.hook` 建节点，hook 内所有经 `Sandbox.runCommand()` / `runShell()` 发出的命令继续挂成 `sandbox.command` 子节点；同一套包装覆盖 `workspace.baseline`、`eval.setup`、`agent.setup`、`telemetry.configure`、`eval.run` 中 eval 手工命令与 adapter 启动 CLI 的命令、`workspace.diff` 以及各收尾阶段。
 包装只记录最外层公开调用一次——provider 的 `runCommand` 内部转调 `runShell` 不得形成重复节点。
-命令摘要截断并脱敏，env 只允许保留 key；非零退出命令的 stdout/stderr 由同一包装写进 `commands.json`，按 `timingNodeId` 与这里的 command 节点关联。
+命令摘要截断并脱敏，env 只允许保留 key；非零退出命令的 stdout/stderr 由同一包装写进 `commands.json`，按 `timingNodeId` 与这里的 `sandbox.command` 节点关联。
 成功命令不复制输出，Agent 内部工具命令仍由 `events.json` 承载。
 
-`operation` 是采集端拥有的语义父节点，不是 artifact 携带的自定义 renderer。
-runner、Sandbox 或 provider 知道某段工作是一个逻辑整体时，在执行边界直接写下稳定语义与有界规模摘要，例如 `export workspace diff · 2 windows · 3,302 files`，并把实际公开 Sandbox command 或 provider step 挂在下面。
-批量算法必须先在执行层把 provider 往返约束到逻辑批次，再用 operation 表达；不能记录成逐对象远端调用后只在 Reports 折叠。
-消费方只按 `kind`、树关系、失败、耗时和时序通用渲染，不解析 shell 文本猜测 `git show ×N`，也不执行 artifact 提供的 callback。
-
-`agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为 `error.phase` / `diagnostics[].phase` 的归因值出现，不在 `phases` 里单列。
-每次 send 由 runner 产生一个 `turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。
+`agent.run` 是唯一的嵌套生命周期成员：它在 `eval.run` 内随每次 send 打开，只作为错误 / 诊断 origin 的归因锚点出现，不在 `phases` 里单列。
+每次 send 由 runner 产生一个 `agent.turn` child，保存本地单调时钟测得的端到端包络以及 session/turn 身份；OTel 接入时再保存 `traceId` 与归属方式。
 `trace.json` 中的 agent/model/tool spans 不复制进 `children`，消费方按 `traceId` 把它们临时挂到对应 turn 下。
 这样没有 OTel 时仍有可靠的轮次总耗时，有 OTel 时才展开轮内模型、工具与子 agent 细节。
 
-Experiment `setup` / `teardown` 属于 Run 级生命周期，diagnostic 归因 phase 可以使用 `experiment.setup` / `experiment.teardown`，但它们不进入任何单条 Attempt 的 `phases[]`。
+Experiment `setup` / `teardown` 属于 Run 级生命周期：执行计时落 `RunMeta.timings` 的同名 activity，归因锚点可进入 origin，但它们不进入任何单条 Attempt 的 `phases[]`。
 Run 级 diagnostics 与 facts 在 `run.json` 封口时保存；Attempt timing 不借入整场只执行一次的耗时。
 
 `sandbox.create` 早于 Sandbox 对象存在，不能由 `runCommand` / `runShell` 包装捕获。
-内置 provider 可以把真实的 SDK 请求、宿主命令或创建步骤写成 `provider` children；第三方 provider 没有提供细分时只保留 `sandbox.create` 合计，不能把 API 调用伪装成 shell 命令。
+内置 provider 可以把真实的 SDK 请求、宿主命令或创建步骤写成 `provider.*` children；第三方 provider 没有提供细分时只保留 `sandbox.create` 合计，不能把 API 调用伪装成 shell 命令。
 Agent CLI 内部执行的 shell 工具同样不经过 Sandbox 包装，它们来自 `events.json`，耗时只在 OTel span 能唯一关联时提供。
 
 所有 runner duration 使用单调时钟；`startedAt` 单独保留 ISO 墙钟。
-`startOffsetMs` 只用于同一 attempt 内恢复顺序和重叠，不能拿远端 OTel 的绝对时间与 runner 墙钟硬对齐。
-父子节点允许嵌套与并发，子节点 duration 不可直接求和后与父节点比较。
-`result.json` 永远保存完整 runner 时间树；终端默认视图的节点预算只是读取投影，不得回写、裁剪或聚合 artifact。
-阶段边界、主链 / 收尾两段的 failed 语义、时间树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端的有界/full 两档见 [Show `--timing`](../reports/show/timing.md)，网页入口见 [View](../reports/view.md) 的 Attempt 详情。
+`result.json` 永远保存完整 runner activity 树；终端默认视图的节点预算只是读取投影，不得回写、裁剪或聚合 artifact。
+阶段边界、主链 / 收尾两段的 failed 语义、activity 树以及安装基准消费方式见 [Phase Timings 与安装基准](../../engineering/benchmark/README.md)；终端的有界/full 两档见 [Show `--timing`](../reports/show/timing.md)，网页入口见 [View](../reports/view.md) 的 Attempt 详情。
 
-`error` 与 `diagnostics` 的 `phase` 都由 runner 在错误 / 诊断发生时按已打开的生命周期阶段绑定,调用方不能自行填写。
+`error` 与 `diagnostics` 的 attempt 锚点都由 runner 在错误 / 诊断发生时按已打开的生命周期锚点绑定,调用方不能自行填写。
 两者的区别是结果语义:`error` 是让 attempt 进入 `errored` 的致命原因,至多一个;`diagnostics` 是运行仍可继续或收尾时发现的问题,可以与 passed/failed/errored 任一 verdict 共存。
 `diagnostic.level` 表达写入方观察到的运行影响,不是 verdict 的别名,也不决定报告 Notice 的严重度。
 
-`DiagnosticRecord` 是持久化 observation:只保存 code、phase、level、去重次数与当时观察到的 `detail` / `context`。
+`DiagnosticRecord` 是持久化 observation:只保存 code、origin、level、去重次数与当时观察到的 `detail` / `context`。
 它不存本地化文案、修复建议或命令。
 读取层把 observation 投影成结构化 Issue,Reports 的 Notice policy 再决定给当前读者显示什么、用什么严重度与提供什么动作。
 `AttemptError.message` 例外地保留:它是被测对象的失败证据,不是 niceeval 的操作性文案。
@@ -772,10 +766,10 @@ Runner 对公开 `Sandbox.runCommand()` / `runShell()` 的最外层调用自动�
 
 ```typescript
 interface FailedCommandEvidence {
-  /** 与 PhaseTiming.children 中 kind="command" 的节点 id 相同。 */
+  /** 与 PhaseTiming.children 中 key="sandbox.command" 的节点 id 相同。 */
   timingNodeId: string;
   phase: LifecyclePhase;
-  /** 与 TimingNode.command.display 同一份有界脱敏命令；不含 env value。 */
+  /** 与 TimingActivity.command.display 同一份有界脱敏命令；不含 env value。 */
   display: string;
   exitCode: number;
   stdout: string;

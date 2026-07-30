@@ -18,12 +18,11 @@ import { collectLocalFiles } from "./local-files.ts";
 import { shellQuote } from "./shell.ts";
 import { resolveSandboxPath } from "./paths.ts";
 import { e2bRunIdentityMetadata, type RunIdentity } from "./run-identity.ts";
+import { commandLimit, SandboxCommandTimeoutError } from "./deadline.ts";
 
 // e2b 默认用户 "user",home 在 /home/user;工作区放其下。
 const E2B_WORKDIR = "/home/user/workspace";
 
-// 单条命令默认超时(10 分钟),防止长跑的 build/install 被截断。
-const DEFAULT_COMMAND_TIMEOUT_MS = 600_000;
 // 沙箱存活上限(到点 e2b 自动回收)。给足空间跑完 setup + agent + 测试脚本。
 const SESSION_TIMEOUT_MS = 1_800_000;
 
@@ -95,16 +94,19 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
   readonly workdir = E2B_WORKDIR;
   readonly otlpHost = null;
   private sbx: E2BSdkSandbox;
-  private commandTimeoutMs: number;
+  private commandTimeoutMs?: number;
   /** 作者声明的实例寿命;复用下续期一律续到这个值(滑动窗口)。省略 = 没声明,不支持复用。 */
   private lifetimeMs?: number;
   readonly sandboxId: string;
 
-  private constructor(sbx: E2BSdkSandbox, id: string, commandTimeoutMs: number, lifetimeMs?: number) {
+  private deadlineAt?: number;
+
+  private constructor(sbx: E2BSdkSandbox, id: string, commandTimeoutMs?: number, lifetimeMs?: number, deadlineAt?: number) {
     this.sbx = sbx;
     this.sandboxId = id;
     this.commandTimeoutMs = commandTimeoutMs;
     this.lifetimeMs = lifetimeMs;
+    this.deadlineAt = deadlineAt;
   }
 
   /**
@@ -142,6 +144,8 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
   static async create(
     opts: {
       timeout?: number;
+      /** attempt deadline 的截止时刻(epoch ms);单条命令按剩余量取上限。 */
+      deadlineAt?: number;
       runtime?: "node20" | "node24";
       template?: string;
       provisionToken?: string;
@@ -152,7 +156,8 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
       runIdentity?: RunIdentity;
     } = {},
   ): Promise<E2BSandbox> {
-    const commandTimeoutMs = opts.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    // 单条命令没有 provider 级默认:上限恒从 attempt deadline 派生(见 deadline.ts)。
+    const commandTimeoutMs = opts.timeout;
     // e2b 的 node 版本由模板决定,runtime 仅作记录(不在创建时选)。
     const apiKey = process.env.E2B_API_KEY;
     // provision token 与运行标识都经 metadata 打进实例(同一通道):歧义类失败(fetch failed ·
@@ -197,7 +202,7 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
     try {
       // 备好工作区目录(模板默认 cwd 是 home,workspace 子目录可能不存在)。
       await sbx.commands.run(`mkdir -p ${E2B_WORKDIR}`);
-      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetimeMs);
+      return new E2BSandbox(sbx, sbx.sandboxId, commandTimeoutMs, opts.lifetimeMs, opts.deadlineAt);
     } catch (e) {
       await sbx.kill().catch(() => {});
       throw e;
@@ -212,12 +217,13 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
   async runShell(script: string, opts: CommandOptions = {}): Promise<CommandResult> {
     // e2b commands.run 经 bash 执行 → 支持 && / 管道 / $()。root 用户映射到 { user: "root" },
     // 否则用模板默认(非 root)用户 —— 跨 provider 语义一致(见 types.ts 的 CommandOptions.root)。
+    const limit = commandLimit(opts, { commandTimeoutMs: this.commandTimeoutMs, deadlineAt: this.deadlineAt });
     try {
       const res = await this.sbx.commands.run(script, {
         cwd: resolveSandboxPath(this.workdir, opts.cwd),
         envs: opts.env,
         user: opts.root ? "root" : undefined,
-        timeoutMs: this.commandTimeoutMs,
+        ...(limit.timeoutMs !== undefined ? { timeoutMs: limit.timeoutMs } : {}),
         onStdout: opts.onStdout,
         onStderr: opts.onStderr,
       });
@@ -227,6 +233,14 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
       // (与 docker / vercel 一致)——否则 agent 命令 / build / 测试一旦非 0 退出就会炸,而不是被判分。
       if (e instanceof CommandExitError) {
         return { stdout: e.stdout, stderr: e.stderr, exitCode: e.exitCode };
+      }
+      // 撞的是我们给的那条线时,把归属一起抛出去(runner 据此落 error.timeout)。
+      if (limit.timeoutMs !== undefined && isTimeoutError(e)) {
+        throw new SandboxCommandTimeoutError(
+          `e2b command timed out after ${limit.timeoutMs}ms`,
+          limit.timeoutMs,
+          limit.explicit,
+        );
       }
       throw e;
     }
@@ -324,4 +338,10 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
 /** Buffer → ArrayBuffer(e2b files.write 接受 string | ArrayBuffer | Blob | ReadableStream)。 */
 function toArrayBuffer(buf: Buffer): ArrayBuffer {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+}
+
+/** e2b SDK 的命令超时:SDK 不导出可 instanceof 的类型,按错误名与文案判定(只用于归属标注)。 */
+function isTimeoutError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return e.name === "TimeoutError" || /timed? ?out/i.test(e.message);
 }

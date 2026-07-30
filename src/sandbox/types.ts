@@ -104,8 +104,14 @@ export interface DockerSandboxSpec extends SandboxHooks<DockerSandboxSpec> {
   readonly lifetimeMs?: number;
   /** 覆盖默认镜像;默认按 runtime 选 `node:*-slim`。预制模板:传烘焙好 agent CLI 的镜像名。 */
   readonly image?: string;
-  /** 按 eval 的 `environment` profile 覆盖预制镜像:键为 profile id,值为该 profile 起步的镜像。未声明 environment 的 eval 用 `image`。 */
-  readonly environments?: Readonly<globalThis.Record<string, { readonly image: string }>>;
+  /**
+   * 按 eval 的 `environment` profile 映射完整 sandbox case。
+   * 表值靠判别键区分:`{ image }` 预制、`{ build }` 按需构建、`{ compose }` Compose case。
+   * 与 {@link materializers} 同时命中同一 profile 时本表优先。
+   */
+  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").DockerEnvironmentCase>>;
+  /** folder-local source 的物化器,按 source kind(`compose` / `dockerfile`)注册。 */
+  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
   readonly runtime?: SandboxRuntime;
 }
 export interface VercelSandboxSpec extends SandboxHooks<VercelSandboxSpec> {
@@ -114,8 +120,12 @@ export interface VercelSandboxSpec extends SandboxHooks<VercelSandboxSpec> {
   readonly lifetimeMs?: number;
   /** 从已有快照起 microVM。预制模板:烘焙好 agent CLI 的 snapshotId。 */
   readonly snapshotId?: string;
-  /** 按 eval 的 `environment` profile 覆盖预制快照:键为 profile id,值为该 profile 起步的 snapshotId。未声明 environment 的 eval 用 `snapshotId`。 */
-  readonly environments?: Readonly<globalThis.Record<string, { readonly snapshotId: string }>>;
+  /**
+   * 按 eval 的 `environment` profile 映射完整 sandbox case(第一期仅 `{ snapshotId }` 预制)。
+   * 与 {@link materializers} 同时命中同一 profile 时本表优先。
+   */
+  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").VercelEnvironmentCase>>;
+  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
   readonly runtime?: SandboxRuntime;
 }
 export interface E2BSandboxSpec extends SandboxHooks<E2BSandboxSpec> {
@@ -124,8 +134,12 @@ export interface E2BSandboxSpec extends SandboxHooks<E2BSandboxSpec> {
   readonly lifetimeMs?: number;
   /** e2b 模板名/ID。预制模板:烘焙好 agent CLI 的模板(如 `"niceeval-agents"`)。省略用 e2b 默认 `"base"`。 */
   readonly template?: string;
-  /** 按 eval 的 `environment` profile 覆盖预制模板:键为 profile id,值为该 profile 起步的模板。未声明 environment 的 eval 用 `template`。 */
-  readonly environments?: Readonly<globalThis.Record<string, { readonly template: string }>>;
+  /**
+   * 按 eval 的 `environment` profile 映射完整 sandbox case:`{ template }` 预制或 `{ build }` 按需构建。
+   * 与 {@link materializers} 同时命中同一 profile 时本表优先。
+   */
+  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").E2BEnvironmentCase>>;
+  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
   /** 仅作记录;e2b 的 node 版本由模板决定,不在创建时选。 */
   readonly runtime?: SandboxRuntime;
 }
@@ -155,6 +169,12 @@ export interface CustomSandboxSpec extends SandboxHooks<CustomSandboxSpec> {
    * (见 docs/runner.md「调度:有界并发」)。中性的 provider 声明,省略即不独占。
    */
   readonly exclusive?: boolean;
+  /**
+   * 与内置 provider 同形的 environment 映射:值是 {@link import("./case-types.ts").CustomEnvironmentCase}
+   * (纯数据 identity + materialize)。与 {@link materializers} 同时命中同一 profile 时本表优先。
+   */
+  readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").CustomEnvironmentCase>>;
+  readonly materializers?: import("./case-types.ts").SandboxMaterializers;
   /** `feedback` 绑定到 `sandbox.create` 阶段:分配实例 / 拉镜像 / 恢复 run 的进度与诊断走它。 */
   readonly create: (opts: { timeout?: number; runtime?: SandboxRuntime; feedback: ScopedFeedback }) => Promise<Sandbox>;
   /**
@@ -199,6 +219,12 @@ export interface CommandOptions {
    * 语义保持一致**,不因 provider 而变。
    */
   root?: boolean;
+  /**
+   * 这条命令自己的上限(毫秒)。**省略才是常态**:省略时上限 = attempt deadline 的剩余量
+   * (见 docs/feature/sandbox/architecture.md「时限归属」),provider 层没有独立默认。
+   * 显式传一个更短的值是有意声明,照常生效;撞线时归属记成「命令显式 timeout」。
+   */
+  timeout?: number;
 }
 
 export interface Sandbox {

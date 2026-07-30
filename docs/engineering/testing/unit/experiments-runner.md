@@ -190,7 +190,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   缺失序号与 `errored` / `skipped`、`executionMs` 超过当前上限、带 `sandbox.reused` 的历史条目、落在留存档内的条目,授权都不放行。
 - **manifest 的算出与相减**：每次 Run 按 eval 算一份指纹输入清单,配置面、源码面、数据面与指纹同一份输入。
   新旧相减给出带名字的差异:`config:` 字段的旧值新值、`source:` / `data:` 的内容哈希变化与文件增删。
-  历史条目缺清单时差异算不出,如实给 `opaque:no-manifest`,不按「没差异」放过。
+  历史条目缺清单时算不出的只有源码面与数据面,如实合并成一条 `opaque:no-manifest`,不按「没差异」放过;配置面从 `run.json` 重建,照常给具名差异。
+  这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是六道门加 `new`,全部携带的行标 `carried`。
   八个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言按差异聚合出的分组与可复制的 accept 命令。
 - **尾随 eval 前缀逐个必须命中**：每个尾随前缀在选中实验的发现集里匹配 0 条时,按启动期用法错误报出,不静默丢弃。
@@ -205,6 +206,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **`loadCriteria` 的登记面**：进 / 不进两侧都要区分力场景——改树内一个文件的一字节、往匹配集加一个文件、删一个文件，三种改动各自只作废引用这棵树的 eval，未引用的照常携带；改权限位与修改时间不作废；`!` 排除命中的文件（生成物）增删与改动都不作废。
   失败面：某个 include pattern 匹配不到任何文件（即使其它 pattern 有命中，这一格在按整次调用判空的实现下会红）、匹配落到项目根外，都报含下一步的用法错误。
   确定性一格：同一棵树在两种目录遍历顺序下算出同一个哈希（路径排序保证）；返回值是排序后的项目根相对路径清单，内容不进内存（大文件流式哈希，无整读断言口径，以「返回值只含路径」证明）。
+- **`loadPrivate` 的登记面**：与 `loadCriteria` 同形的 glob / 发现期约束 / 项目根相对返回值；改 private 文件一字节只作废引用它的 eval（进判据指纹格，与 verifier 同口径、分键存放），未登记的同路径改动不作废。
+  不与 `loaderDataPaths` 混格——private 内容不进内存。
 - **eval 源码闭包的确定性**：同一份源码在两种不同的目录遍历顺序下算出同一个哈希。
   它靠两件事成立——按项目根相对路径排序、循环导入按解析后绝对路径去重。
   任缺一条哈希都会随环境漂移，症状是缓存永不命中而不是结果出错，只有这一格会红。
@@ -232,6 +235,31 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 
 相关台账：
 [insandbox-otlp-port-wait-3s-no-retry](../../../../memory/insandbox-otlp-port-wait-3s-no-retry.md)。
+
+- **共享 Run activity 不占 attempt 位**（[Run 级共享准备](../../../feature/experiments/architecture.md#run-级共享准备构建协调的预算)）：
+
+  - BuildKey 构建与 `agent.artifact.prepare` 在独立构建并发下推进时，attempt 在飞计数与 `maxConcurrency` 槽位不变。
+  - live 面板把共享准备显示为运行级 active 行，不占 attempt active 位。
+  - 共享构建 duration 只在 `RunMeta.timings` 出现一次，任一 attempt 的 `executionMs` 不含该段。
+  - fixture 要有非零共享构建 + 至少一个依赖 attempt，证明两者可区分。
+- **build failure 的 Run origin**：
+
+  - 确定性构建失败时，依赖该 BuildKey 的 fresh attempt 全部 `errored`。
+  - 每条 `error.origin` 为 `scope: "run"`，且 `timingNodeId` 指向同一个 `sandbox.build` activity。
+  - 不伪造 `sandbox.create` 或其它 attempt 锚点。
+  - 不依赖该 key 的 attempt 照常派发；carried attempt 不因查看历史结果触发构建。
+- **全 skipped 启动错误**：
+
+  - 选中集合全部因缺 materializer / 能力位落成计划期 `skipped` 时，升级为启动期用法错误。
+  - 此时零 Sandbox 创建，不静默跑完再汇总。
+  - 集合里仍有可派发 eval 时，仅缺能力的那些 skipped、其余照常。
+  - 「全 skipped 才升级」与「部分 skipped 继续」两面都要有区分力。
+- **live feedback 的未知 activity 通用投影**：
+
+  - Run / attempt 的 feedback 与 `--json` 对未登记 activity key 使用 producer 的 `label` 通用投影。
+  - 不需要 switch 穷尽；未知 key 不改变计数恒等式、verdict 折叠或 attempt active 位。
+  - 锚点本地化标签只覆盖 `LifecyclePhase` 闭集。
+  - fixture 塞一个官方未列 key，断言仍可见且不进锚点标签表。
 
 ## 不这样测
 

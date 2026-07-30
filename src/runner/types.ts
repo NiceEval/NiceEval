@@ -17,6 +17,7 @@ import type {
 import type { ScoreTestContext, TestContext } from "../context/types.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
 import type { AttemptLocator } from "../record/locator.ts";
+import type { EvalManifest, RunManifests } from "../record/manifest.ts";
 import type { ReportDefinition } from "../report/definition/report.ts";
 import type { ThemeDefinition } from "../report/theme.ts";
 
@@ -61,27 +62,24 @@ export interface SandboxRunInfo {
 }
 
 /**
- * 一次 attempt 的生命周期词表——**全仓唯一一套**(见 docs/feature/record/architecture.md
- * 「result.json」)。计时(`phases[].name`)、错误归因(`error.phase`)、诊断归属
- * (`diagnostics[].phase`)、live 展示与 agent/ci envelope 的 `phase=` 都使用这同一个闭集,
- * 不存在第二套词表。phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter / sandbox
- * provider / 用户 hook 能直接设置的公共字段。
+ * Runner 保留的 attempt 生命周期锚点——闭集,不是扩展点(见 docs/feature/record/architecture.md
+ * 「两层时间模型」)。计时(`phases[].name`)、错误与诊断的 attempt 锚点(见 TimingOrigin)、
+ * live 当前步骤都由 Runner 绑定这同一个闭集;author、Adapter 与 provider 不能新增成员。
+ * 可扩展的工作计时走开放 activity key,不进本词表。
  */
 export type LifecyclePhase =
-  // 运行级(派发前至多一次,宿主机侧):只用于错误归因,不属于任何单个 attempt,不进 live 面板的
-  // attempt 阶段投影,永不出现在 phases[] 计时里
-  | "judge.precheck" // 判分预检;预检失败时含 judge 断言的 eval 全部 attempt 的 error.phase
-  // 实验级(整场一次,宿主机侧):只用于错误/诊断归因,不属于任何单个 attempt,
-  // 永不出现在 phases[] 计时里(见 docs/feature/experiments/architecture.md「实验级生命周期」)
-  | "experiment.setup" // ExperimentDef.setup;setup 抛错时本实验所有 attempt 的 error.phase
+  // 运行级(派发前至多一次,宿主机侧;仅错误归因)
+  | "judge.precheck" // 判分预检;预检失败时是含 judge 断言的 eval 全部 attempt 的错误锚点
+  // 实验级(整场一次,宿主机侧;仅错误/诊断归因)
+  | "experiment.setup" // ExperimentDef.setup;setup 抛错时是本实验所有 attempt 的错误锚点
   | "experiment.teardown" // ExperimentDef.teardown;失败只产生运行级 diagnostic
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue" // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
-  | "sandbox.create" // provider 起沙箱
-  | "sandbox.setup" // SandboxSpec.setup() 钩子链
+  | "sandbox.create" // provider 物化沙箱实例(共享构建不在这里,它在 Run 级 activity)
+  | "sandbox.setup" // SandboxSpec.setup() 生命周期 Hook 链
   | "workspace.baseline" // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "eval.setup" // EvalDef.setup
-  | "agent.setup" // Agent.setup(装 CLI、写主配置)
+  | "agent.setup" // Agent 的 Ensure:检查、缺失时安装、复检
   | "telemetry.configure" // tracing 出口配置
   | "eval.run" // 整段 test(t),含所有 send 与手工命令
   | "agent.run" // 嵌套在 eval.run 内:adapter send 期间打开;只用于错误/诊断归因,不单列计时条目
@@ -91,43 +89,78 @@ export type LifecyclePhase =
   // 收尾段:无论主链成败都执行,不计入 durationMs 口径,按执行序
   | "eval.teardown" // EvalDef.teardown
   | "agent.teardown"
-  | "sandbox.teardown" // SandboxSpec.teardown() 钩子链
+  | "sandbox.teardown" // SandboxSpec.teardown() 生命周期 Hook 链
   | "sandbox.suspend" // 留存提交后 provider 把现场转入休眠(docker stop / e2b pause)
   | "sandbox.stop"; // provider 销毁沙箱;与 sandbox.suspend 同一 attempt 互斥
 
-/** TimingNode 的种类(见 docs/feature/record/architecture.md「result.json」)。 */
-export type TimingNodeKind = "hook" | "turn" | "command" | "provider" | "operation";
-
 /**
- * Runner 直接观察到的阶段内时间树节点;只供单 attempt 诊断,不做跨实验聚合。
- * `startOffsetMs` 相对 attempt 单调时钟起点——并发 sibling 可据此还原重叠,
- * 不能只靠数组顺序相加。
+ * 开放的工作计时节点,Run 与 attempt 共用同一形状(见 docs/feature/record/architecture.md
+ * 「TimingActivity」)。`key` 是非空、以 `.` 分段的稳定机器 key;未知 key 原样保留并可通用展示。
+ * offset 相对所在时钟域(RunMeta.timings 或单个 attempt)的单调时钟起点。
  */
-export interface TimingNode {
-  /** attempt 内唯一,供 children 与展示层稳定引用;不作为跨 attempt 身份。 */
+export interface TimingActivity {
+  /** 所在时钟域内唯一,供 origin、provenance 与展示层稳定引用;不作为跨 Run 身份。 */
   id: string;
-  kind: TimingNodeKind;
-  /** 人读标签;hook 匿名时用 setup#<i>/teardown#<i>,turn 用 s<session>/t<turn>。 */
+  /** ActivityKey;官方词表见 architecture.md,第三方用自己的命名空间。 */
+  key: string;
+  /** 采集端写入的有界、脱敏人读标签;展示层不解析它重建语义。 */
   label: string;
-  /** 相对 attempt 单调时钟起点的偏移。 */
+  /** 相对所在时钟域单调时钟起点的偏移。 */
   startOffsetMs: number;
   durationMs: number;
   failed?: true;
-  children?: TimingNode[];
+  children?: TimingActivity[];
 
-  /** kind=turn 时存在;把 runner 的 send 墙钟包络与 trace.json 中同一轮的 spans 显式关联。 */
+  /** key = "agent.turn" 时存在;把 runner 的 send 墙钟包络与 trace.json 中同一轮的 spans 显式关联。 */
   sessionIndex?: number;
   turnIndex?: number;
   turnId?: string;
   traceId?: string;
   traceAttribution?: "traceparent" | "window" | "none";
-  /** kind=turn 时存在,该轮 `Turn.usage` 落盘原样(有记录才写);show `--execution`/`--timing` 的 turn 头行 usage 摘要读这里。 */
+  /** key = "agent.turn" 时存在,该轮 `Turn.usage` 落盘原样(有记录才写)。 */
   usage?: Usage;
 
-  /** kind=command 时的有界脱敏摘要;环境变量值与 stdout/stderr 不进入时间树。 */
+  /** key = "sandbox.command" 时的有界脱敏摘要;环境变量值与 stdout/stderr 不进入时间树。 */
   command?: {
     display: string;
     exitCode?: number;
+  };
+}
+
+/**
+ * 错误与诊断的归属(见 docs/feature/record/architecture.md「TimingOrigin」)。
+ * attempt 支绑定 Runner 打开的生命周期锚点;run 支指向 RunMeta.timings 里的 activity。
+ */
+export type TimingOrigin =
+  | {
+      scope: "attempt";
+      /** runner 在错误 / 诊断发生时已打开的生命周期锚点;producer 不能自行指定。 */
+      phase: LifecyclePhase;
+      /** 可选细化:锚点下具体的 activity(如失败的那条 sandbox.command)。 */
+      timingNodeId?: string;
+    }
+  | {
+      scope: "run";
+      /** 指向 RunMeta.timings 里的 activity(如失败的 sandbox.build)。 */
+      timingNodeId: string;
+    };
+
+/**
+ * 共享构建的 provenance,每个实际查询或构建过的 BuildKey 一条。
+ * 时间只保存在 `RunMeta.timings`,本表经 `timingNodeId` 关联,不复制 duration。
+ */
+export interface SandboxBuildRecord {
+  buildKey: string;
+  provider: string;
+  status: "hit" | "built" | "failed" | "cancelled";
+  /** 关联 RunMeta.timings 里对应的 sandbox.build activity。 */
+  timingNodeId: string;
+  locator?: JsonValue;
+  inputs: JsonValue;
+  error?: {
+    code: string;
+    message: string;
+    cause?: { name?: string; code?: string; message: string };
   };
 }
 
@@ -138,8 +171,8 @@ export interface PhaseTiming {
   durationMs: number;
   /** 该阶段抛错或被超时中断。主链至多一条,其后无主链条目;收尾阶段各自独立标记,不改判定。 */
   failed?: true;
-  /** Runner 直接观察到的阶段内时间树;只供单 attempt 诊断,不做跨实验聚合。 */
-  children?: TimingNode[];
+  /** 锚点内的 activity 子树,offset 相对本 attempt 的单调时钟起点。 */
+  children?: TimingActivity[];
 }
 
 /**
@@ -150,11 +183,11 @@ export interface PhaseTiming {
  * 实现步骤与 Agent 自己调用的 shell 不经过这层包装,不伪装成这里的命令。
  */
 export interface FailedCommandEvidence {
-  /** 与 `PhaseTiming.children` 中 `kind === "command"` 的 `TimingNode.id` 相同,唯一关联失败命令卡与 `--timing` 的 command 节点。 */
+  /** 与 `PhaseTiming.children` 中 `key === "sandbox.command"` 的 `TimingActivity.id` 相同,唯一关联失败命令卡与 `--timing` 的 command 节点。 */
   timingNodeId: string;
   /** runner 在命令返回那一刻已经打开的生命周期阶段。 */
   phase: LifecyclePhase;
-  /** 与该 `TimingNode.command.display` 同一份有界脱敏命令摘要;不含 env value。 */
+  /** 与该 `TimingActivity.command.display` 同一份有界脱敏命令摘要;不含 env value。 */
   display: string;
   exitCode: number;
   /** 原样全量落盘:失败输出的起因常在前段、runner 的 summary 惯例在尾部,不做逐值截断。 */
@@ -176,31 +209,71 @@ export interface AttemptError {
   code: string;
   /** 人可读的一层原因,不拼接整份 SDK response。 */
   message: string;
-  /** runner 在错误发生时已经打开的生命周期阶段。 */
-  phase: LifecyclePhase;
+  /**
+   * 错误归属。attempt 内错误由 runner 绑定当时打开的生命周期锚点(attempt 形态);
+   * attempt 开始前的共享构建失败引用 Run timing node(run 形态),不伪造 attempt 锚点。
+   */
+  origin: TimingOrigin;
   /** 原异常有 stack 时保留,供 show 展开;终端即时反馈不整段打印。 */
   stack?: string;
   /** 下层 SDK/OS 错误的有限摘要。 */
   cause?: { name?: string; code?: string; message: string };
+  /**
+   * 超时打断产生的 `errored` 专用:这次撞的是哪层时限、上限值多少、值从哪一层解析而来。
+   * 三样一起落盘,报错行与 `show --timing` 照实印这三样;归属规则单源在
+   * docs/feature/sandbox/architecture.md「时限归属:attempt deadline 是唯一默认」。
+   */
+  timeout?: TimeoutAttribution;
+}
+
+/** 一次超时的归属事实,由 runner 在把 attempt 转成 `errored` 时写下。 */
+export interface TimeoutAttribution {
+  /**
+   * 触发层:`attempt-deadline` 是 attempt 自己的上限(沙箱内一切时限都从它派生),
+   * `command-timeout` 是用户给单条命令显式传的 `timeout`。provider 固有的会话上限在派发前
+   * 就按环境约束报出来(见 `assertDeadlineFitsProvider`),attempt 层不会撞上它。
+   */
+  trigger: "attempt-deadline" | "command-timeout";
+  /** 该层实际生效的上限,毫秒。 */
+  limitMs: number;
+  /**
+   * 值来自哪一层:`attempt-deadline` 取 `timeoutMs` 解析链四层之一,`command-timeout` 只有
+   * 命令显式声明一个来源。
+   */
+  source: "flag" | "experiment" | "eval" | "config" | "command";
 }
 
 /**
  * 不一定改变 verdict、但运行后仍需回顾的有界诊断(见 docs/feature/record/architecture.md 的
- * `DiagnosticRecord`)。`level` 表达消息严重度,不是 verdict 的别名 —— passed / failed / errored
- * 任一 verdict 都可以带 cleanup / teardown 诊断。与运行级的 `DiagnosticNotice` 不同,这条挂在单个
- * attempt 结果上、随 `result.json` 落盘。
+ * `DiagnosticRecord`)。`level` 表达写入方观察到的运行影响,不是 verdict 的别名 ——
+ * passed / failed / errored 任一 verdict 都可以带 cleanup / teardown 诊断。
+ * 与运行级的 `DiagnosticNotice` 不同,这条挂在单个 attempt 结果或 RunMeta 上落盘。
  */
 export interface DiagnosticRecord {
   code: string;
   level: "warning" | "error";
-  /** 现象 + 依据 + 下一步,以下一步收尾;三段式契约见 docs/error-feedback.md。 */
-  message: string;
-  phase: LifecyclePhase;
-  data?: Readonly<globalThis.Record<string, JsonValue>>;
-  /** 有单条能直接推进的命令时给出(已替换真实 id);web 渲染面呈现为可复制动作。 */
-  command?: string;
+  /**
+   * 诊断归属。attempt 诊断由 runner 绑定当时打开的锚点;Run 诊断可引用 Run timing node,
+   * 也可只带 `experiment.teardown` 这类归因锚点;没有 timing 记录的第三方 producer 可省略。
+   */
+  origin?: TimingOrigin;
+  /** 写入时观察到的原始有界描述;不包含修复动作或呈现文案。 */
+  detail: string;
+  /** 支撑 code 的结构化原始上下文。 */
+  context?: Readonly<globalThis.Record<string, JsonValue>>;
   /** 相同 dedupeKey 折叠后的出现次数;省略等于 1。 */
   count?: number;
+}
+
+/**
+ * `--accept` 跨过的一条具名差异(`EvalResult.carriedAccepting` 的成员)。
+ * `selector` 与 CLI 上写下的那个字面量同一个词表,`from` / `to` 是有界值摘要;
+ * 某一侧没有这个键(新增 / 删除)时该侧省略。
+ */
+export interface CarriedAcceptance {
+  selector: string;
+  from?: string;
+  to?: string;
 }
 
 export interface EvalResult {
@@ -291,8 +364,12 @@ export interface EvalResult {
   rawTranscript?: string;
   /** 携带条目(--resume 合入)专用:artifact 目录(相对结果根目录),指向原快照里的落盘。 */
   artifactBase?: string;
-  /** 仅本次通过 --carry-ignoring-flag 迁移携带时留下的审计痕迹。 */
-  carriedIgnoringFlags?: string[];
+  /**
+   * 仅经 `--accept` 授权跨过指纹差异携入时留下的审计痕迹:跨过的每条差异各一项。
+   * 它让「这条是在哪个口径下被采信的」跟着结果走,不随 Run 翻篇丢失——授权是把风险显式交给
+   * 人,报告因此会在新配置身份下混入旧配置跑出的结果,这个字段是事后追认这笔账的唯一线索。
+   */
+  carriedAccepting?: CarriedAcceptance[];
   /**
    * writer 实际写出的按需 artifact 词干列表(词表与全部横切属性单源在
    * docs/feature/record/architecture.md「证据 registry」,如 ["commands", "events", "sources"])。
@@ -320,12 +397,13 @@ export const RECORD_FORMAT = "niceeval.results";
  * 按需 artifact 词干列表,单源在证据 registry);`O11ySummary` 删除 `usage`/`estimatedCostUSD`/
  * `durationMs`,正名为纯行为计数缓存,权威唯一在 `result.json` 的 `Usage`/`estimatedCostUSD`/
  * `durationMs`(见 memory 的 results-evidence-registry-ruling 条目)。
- * `12` = `diff.json` 的 `WindowChange.binary` 并入 `elided`(`{ reason: "binary" | "oversized-text",
- * beforeBytes?, afterBytes? }`):二进制与超过单文件阈值的文本共用同一个「内容显式省略」字段,
- * 读旧落盘的消费方拿不到 `binary` 就会把二进制条目当成空内容的文本改动。
+ * `12` = `diff.json` 的 `WindowChange.binary` 并入 `elided`。
+ * `13` = 两层时间模型:`TimingNode` 封闭 kind 改为开放 key 的 `TimingActivity`;
+ * `AttemptError.phase` / `DiagnosticRecord.phase` 改为 `origin: TimingOrigin`;
+ * `RunMeta` 新增 `timings` 与 `sandboxBuilds`(见 memory 的 results-schema-version-history)。
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  */
-export const RECORD_SCHEMA_VERSION = 12;
+export const RECORD_SCHEMA_VERSION = 13;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
@@ -367,6 +445,13 @@ export interface InvocationShape {
    * result 发布前确定」。
    */
   snapshotStartedAt?: string;
+  /**
+   * 本次规划期算出的指纹输入清单,按 experimentId 分组(evalId → 清单)。落盘面据此在建 Run
+   * 目录时与 `run.json` 同批写出 `manifests.json`(见 record/writer.ts 的 `WriterOptions`)。
+   * 与 `snapshotStartedAt` 同一条路径:runner 显式递给 reporter,不由落盘面自己猜。
+   * 省略只出现在没有携带规划的直调场景。
+   */
+  manifests?: ReadonlyMap<string, RunManifests>;
 }
 
 export interface Reporter {
@@ -424,6 +509,10 @@ export type ReporterEvent =
       diagnostics: readonly DiagnosticRecord[];
       /** 该 Experiment 域经 `ctx.fact()` 累计的运行事实(experiment.setup / .teardown,含收尾自愈路径);省略 = 没有上报过。 */
       facts?: Readonly<globalThis.Record<string, string | number | boolean>>;
+      /** Run 级共享工作时间树;与 completedAt 同批封口。省略 = 本 Run 没有共享 activity。 */
+      timings?: readonly TimingActivity[];
+      /** 共享构建 provenance;与 timings 经 timingNodeId 关联。省略 = 本 Run 没有查询或构建过 BuildKey。 */
+      sandboxBuilds?: readonly SandboxBuildRecord[];
       /** 项目名(来自 config.name),整次 Invocation 内所有 Experiment 共享同一个值。 */
       name?: LocalizedText;
     };
@@ -513,6 +602,16 @@ export interface DiscoveredEval extends EvalDef {
    * 内容流式哈希」进,与 `loaderDataPaths` 分两格是因为这一格的内容从不进内存。
    */
   criteriaPaths?: readonly string[];
+  /**
+   * 发现期经 `loadPrivate` 登记的永不上传路径(只登记不读入)。指纹口径与 `criteriaPaths`
+   * 相同,分键存放——private 与 verifier 同属判据面,但不与 criteria 混成一张表。
+   */
+  privatePaths?: readonly string[];
+  /**
+   * 目录入口 `evals/<dir>/eval.ts` 的默认 profile id(目录相对 `evals/` 的路径)。
+   * 文件入口无此字段;扇出条目共用入口目录的 id,不含扇出后缀。
+   */
+  defaultProfileId?: string;
   /**
    * discovery 时捕获的规范化源码(归一化文本 + 项目相对路径 + SHA-256),见 `eval-source.ts`。
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
@@ -808,8 +907,14 @@ export interface RunOptions {
   keepSandbox?: "failed" | "all";
   /** --rerun 的本次调用携带口径。 */
   rerun?: "failed" | "all";
-  /** --carry-ignoring-flag 的一次性迁移键。 */
-  carryIgnoringFlags?: readonly string[];
+  /** `--accept` 本次授权跨过的差异 selector(`config:<字段路径>` 等)。 */
+  accept?: readonly string[];
+  /**
+   * 历史侧的指纹输入清单(`${experimentId}|${evalId}` → 清单),差异解释与 `--accept` 的授权
+   * 判据读它;缺席的 key 差异算不出,如实是 `opaque:no-manifest`。调用方已经算好 `carryPlan`
+   * 时这个字段不参与——那份计划里的差异已经定了。
+   */
+  priorManifests?: ReadonlyMap<string, EvalManifest>;
   /** 结果根目录(.niceeval;留存注册表 `.niceeval/sandboxes/` 挂在它下面)。省略 = cwd/.niceeval。 */
   niceevalRoot?: string;
   /**
@@ -836,6 +941,20 @@ export interface RunOptions {
    * 每个 agent 一个 receiver,attempt 之间共享 —— 被测应用是长驻进程,端点不能随 attempt 换)。
    */
   otelPool?: import("../o11y/otlp/turn-otel.ts").OtelReceiverPool;
+  /**
+   * Run 级共享构建准备。只含携带规划后仍需 fresh 执行的 BuildKey;
+   * Compose / on-demand case 自动收集接线前可由测试或过渡调用方显式注入。
+   * 共享构建不占 attempt 并发位,不计入 executionMs。
+   */
+  buildPreparation?: {
+    readonly works: readonly import("../sandbox/build-coordinator.ts").SandboxBuildWork[];
+    readonly provider: import("../sandbox/build-coordinator.ts").SandboxBuildProvider;
+    /** evalId → 该 eval 的 fresh attempt 依赖的 BuildKey;失败时扇出到这些 eval 的全部派发 attempt。 */
+    readonly evalBuildKeys: Readonly<globalThis.Record<string, readonly string[]>>;
+    readonly maxConcurrency?: number;
+    readonly buildTimeoutMs?: number;
+    readonly prepareBudgetMs?: number;
+  };
 }
 
 /** 调度器内部的一次尝试:eval × run × 第几轮。 */
@@ -970,6 +1089,22 @@ export interface ActiveLockWait {
 }
 
 /**
+ * dashboard 当前可见的一条 Run 级 activity 行(共享构建、制品准备等)。
+ * 不占 attempt active 位,也不进五项恒等式计数;人读文本用 producer 的 `label`,不查
+ * LifecyclePhase 锚点表(见 docs/feature/experiments/architecture.md「Run 级共享准备」)。
+ */
+export interface ActiveRunActivity {
+  /** 与 TimingActivity.id 对齐,同一 Run 内唯一。 */
+  id: string;
+  /** ActivityKey;机器面分组用,不驱动人读标签切换。 */
+  key: string;
+  /** producer 写下的有界人读标签;展示层原样用。 */
+  label: string;
+  /** 开始的墙钟时间(epoch ms),用于渲染运行级行持续增长的耗时。 */
+  startedAt: number;
+}
+
+/**
  * 一次失败/错误的永久通知:human 撤下 dashboard 后追加一行、agent/ci 立即追加一行,都读它。
  * 字段全部结构化(locator / identity / verdict / phase 都是具名字段),profile renderer 不需要
  * 解析 `reason` 之外的任何文本就能拼出机器可读的输出。
@@ -1097,6 +1232,9 @@ export interface RunFeedbackState {
   /** 在飞的用例锁等待,按 experimentId 聚合(见 `ActiveLockWait`、docs/feature/experiments/cli.md
    *  「等待并发 run 的显示」)。由 "lock-wait" 事件增删/累计;没有等待用例的实验不出现在这个 map 里。 */
   lockWaits: ReadonlyMap<string, ActiveLockWait>;
+  /** 在飞的 Run 级 activity(id → 运行级行状态),由 "run-activity" 事件增删。不占 attempt
+   *  active 位,也不进计数恒等式(见 `ActiveRunActivity`)。 */
+  runActivities: ReadonlyMap<string, ActiveRunActivity>;
   failures: readonly FailureNotice[];
   /** 本次实际派发后产生的去重失败数；复用失败不消耗 profile 的流式输出上限。 */
   freshFailureCount: number;
@@ -1288,6 +1426,22 @@ export type DurableFeedbackEvent =
       carried?: number;
       dispatched?: number;
       waitedMs?: number;
+    }
+  /**
+   * Run 级开放 activity 的起止(共享构建、制品准备等)。`key` / `label` 原样来自 producer:
+   * 人读面与 `--json` 对未登记 key 用 `label` 通用投影,不需要 switch 穷尽,也不进
+   * LifecyclePhase 锚点标签表。human TTY 用它维护运行级 active 行(不占 attempt slot、
+   * 成功不写 scrollback);非 TTY 与 `--json` 起止/失败各追加一行有界永久事件。
+   */
+  | {
+      type: "run-activity";
+      at: number;
+      id: string;
+      key: string;
+      label: string;
+      status: "started" | "done" | "failed";
+      /** 只在 done / failed 上出现。 */
+      durationMs?: number;
     }
   | { type: "interrupted"; at: number }
   | { type: "reporter-error"; at: number; reporter: string; required: boolean; message: string }
