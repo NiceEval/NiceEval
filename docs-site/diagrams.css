@@ -1,7 +1,8 @@
 /* docs-site/snippets/diagram-*.jsx 的样式。Mintlify 自动加载站点根目录下的 .css。 */
 /* 令牌在 widgets.css 的 .ne-w 上声明（浅色取 chalk，深色取 basalt），这里只用不重定义。 */
 /* 观感按仓库根 DESIGN.md：1px 边表达区域、零圆角、无渐变无阴影；方向靠箭头字符和文字， */
-/* 不靠颜色——颜色只留给 waiting / completed 这种真有语义的状态，以及扫过去的那道高亮。 */
+/* 不靠颜色——颜色只留给 waiting / completed 这种真有语义的状态；「轮到这一段」按 DESIGN.md */
+/* 用提亮表达（闪到 --ne-text），不借语义色。 */
 
 /* ── 逐段点亮：每张图在自己的根上定 --ne-cycle，元素用 inline animationDelay 排队 ── */
 
@@ -15,33 +16,62 @@
 }
 
 @keyframes ne-lit-edge {
-  0%, 5% { outline-color: var(--ne-accent); }
-  16%, 100% { outline-color: transparent; }
+  0%, 8% { outline-color: var(--ne-text); }
+  22%, 100% { outline-color: transparent; }
 }
 
 @keyframes ne-lit-mark {
-  0%, 5% { color: var(--ne-accent); }
-  16%, 100% { color: var(--ne-text-3); }
+  0%, 8% { color: var(--ne-text); }
+  22%, 100% { color: var(--ne-text-3); }
 }
 
 @keyframes ne-lit-text {
-  0%, 5% { color: var(--ne-accent); }
-  16%, 100% { color: var(--ne-text-2); }
+  0%, 8% { color: var(--ne-text); }
+  22%, 100% { color: var(--ne-text-2); }
+}
+
+/* 往返图的格子：轮到它时提亮并框一下，一格一格扫过去才看得出这是一趟走完的路 */
+@keyframes ne-lit-cell {
+  0%, 8% { color: var(--ne-text); outline-color: var(--ne-border-strong); }
+  22%, 100% { color: var(--ne-text-2); outline-color: transparent; }
 }
 
 @keyframes ne-lit-line {
-  0%, 5% { background: var(--ne-accent); }
-  16%, 100% { background: var(--ne-border-strong); }
+  0%, 8% { background: var(--ne-text); }
+  22%, 100% { background: var(--ne-border-strong); }
 }
 
 @keyframes ne-lit-wire {
-  0%, 5% { border-top-color: var(--ne-accent); }
-  16%, 100% { border-top-color: var(--ne-border-strong); }
+  0%, 8% { border-top-color: var(--ne-text); }
+  22%, 100% { border-top-color: var(--ne-border-strong); }
+}
+
+/* 线上走过去的那个点：轮到这一段时从线的一头跑到另一头，跑完隐掉。
+   ::after 的 animation-delay: inherit 取宿主元素的值，所以排队仍然只在 JSX 里写一次。 */
+
+@keyframes ne-run-down {
+  0% { top: 0; opacity: 1; }
+  9% { top: calc(100% - 3px); opacity: 1; }
+  9.01%, 100% { top: 0; opacity: 0; }
+}
+
+@keyframes ne-run-right {
+  0% { left: 0; opacity: 1; }
+  9% { left: calc(100% - 3px); opacity: 1; }
+  9.01%, 100% { left: 0; opacity: 0; }
+}
+
+@keyframes ne-run-left {
+  0% { right: 0; opacity: 1; }
+  9% { right: calc(100% - 3px); opacity: 1; }
+  9.01%, 100% { right: 0; opacity: 0; }
 }
 
 /* 鼠标停在图上就暂停，方便逐段看清楚 */
 .ne-w:hover .ne-lit,
-.ne-w:hover .ne-lit * { animation-play-state: paused; }
+.ne-w:hover .ne-lit *,
+.ne-w:hover .ne-lit::after,
+.ne-w:hover .ne-lit *::after { animation-play-state: paused; }
 
 .ne-pill {
   display: inline-block;
@@ -107,12 +137,25 @@
 }
 
 .ne-flow-line {
+  position: relative;
   width: 1px;
-  height: 14px;
+  height: 22px;
   background: var(--ne-border-strong);
 }
 
 .ne-flow-line.ne-lit { animation-name: ne-lit-line; }
+
+.ne-flow-line.ne-lit::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  width: 3px;
+  height: 3px;
+  background: var(--ne-text);
+  opacity: 0;
+  animation: ne-run-down var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
 
 .ne-flow-edge-text {
   padding: 3px 0;
@@ -155,13 +198,17 @@
 
 .ne-rt-cell {
   min-width: 0;
-  padding-right: 8px;
+  padding: 3px 6px;
+  margin-right: 2px;
   font-family: var(--ne-mono);
   font-size: 12px;
   color: var(--ne-text-2);
 }
 
+.ne-rt-cell.ne-lit { outline-offset: 0; animation-name: ne-lit-cell; }
+
 .ne-rt-arrow {
+  position: relative;
   display: flex;
   align-items: center;
   font-size: 10px;
@@ -175,7 +222,21 @@
   border-top: 1px solid currentColor;
 }
 
+.ne-rt-arrow::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 1px);
+  width: 3px;
+  height: 3px;
+  background: var(--ne-text);
+  opacity: 0;
+  animation: ne-run-right var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
 .ne-rt-back { flex-direction: row-reverse; }
+
+.ne-rt-back::after { animation-name: ne-run-left; }
 
 .ne-rt-aside {
   align-self: stretch;
@@ -238,6 +299,10 @@
 .ne-seq-msg.ne-lit,
 .ne-seq-local.ne-lit { animation-name: none; }
 
+/* inherit 取的是父元素的值，msg → wire → line → ::after 这条链每一层都要接上，
+   少接一层下游就全部退回 0s，动画会一起跑而不是排队。 */
+.ne-seq-msg.ne-lit .ne-seq-wire { animation-delay: inherit; }
+
 .ne-seq-msg.ne-lit .ne-seq-line {
   animation: ne-lit-wire var(--ne-cycle) linear infinite;
   animation-delay: inherit;
@@ -279,11 +344,26 @@
 }
 
 .ne-seq-line {
+  position: relative;
   flex: 1;
   border-top: 1px solid var(--ne-border-strong);
 }
 
+.ne-seq-msg.ne-lit .ne-seq-line::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  width: 3px;
+  height: 3px;
+  background: var(--ne-text);
+  opacity: 0;
+  animation: ne-run-right var(--ne-cycle) linear infinite;
+  animation-delay: inherit;
+}
+
 .ne-seq-back .ne-seq-line { border-top-style: dashed; }
+
+.ne-seq-back.ne-lit .ne-seq-line::after { animation-name: ne-run-left; }
 
 .ne-seq-tip { line-height: 1; }
 
@@ -399,6 +479,7 @@
   padding: 0 7px;
   font-size: 10px;
   color: var(--ne-text-3);
+  animation-name: ne-lit-mark;
 }
 
 .ne-trk-box {

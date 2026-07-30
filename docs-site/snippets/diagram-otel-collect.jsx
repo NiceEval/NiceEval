@@ -31,21 +31,21 @@ export const OtelCollect = () => (
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "0.3s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "0.6s" }}>
             <div className="ne-trk-text">adapter 翻译</div>
             <div className="ne-trk-sub">你写的映射</div>
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "0.9s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "1.2s" }}>
             <div className="ne-trk-text">Turn.events + usage</div>
             <div className="ne-trk-sub">标准事件流</div>
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "1.5s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "1.8s" }}>
             <div className="ne-trk-text">t.calledTool / t.maxTokens</div>
             <div className="ne-trk-sub">判定在这里产生</div>
@@ -67,28 +67,28 @@ export const OtelCollect = () => (
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "2.9s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "3.2s" }}>
             <div className="ne-trk-text">本机 OTLP 接收器</div>
             <div className="ne-trk-sub">telemetry.port 固定端口，或注入的 OTEL_* env</div>
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "3.5s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "3.8s" }}>
             <div className="ne-trk-text">归属到本轮</div>
             <div className="ne-trk-sub">按 traceparent 的 traceId，兜底按时间窗</div>
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "4.1s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "4.4s" }}>
             <div className="ne-trk-text">归一成 GenAI 语义</div>
             <div className="ne-trk-sub">chat / execute_tool、耗时与 token</div>
           </div>
         </div>
         <div className="ne-trk-stage">
-          <span className="ne-trk-step">▸</span>
+          <span className="ne-trk-step ne-lit" style={{ animationDelay: "4.7s" }}>▸</span>
           <div className="ne-trk-box ne-lit" style={{ animationDelay: "5s" }}>
             <div className="ne-trk-text">EvalResult.trace</div>
             <div className="ne-trk-sub">niceeval view 的调用瀑布图</div>

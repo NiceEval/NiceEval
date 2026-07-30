@@ -113,6 +113,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 **给共享接口加可选字段：数着调用点过。** 跨多个调用点的接口 / 回调签名新增**可选**字段时，类型系统一次都拦不住：生产侧漏填是合法省略，消费侧不读新字段旧字段还在，两侧的回落分支（`x.code ?? x.key.split(":")[0]` 这类）让漏改在大多数 fixture 上恰好正确。加字段的那次改动必须包含一次**调用点普查**——grep 出全部构造点与消费点（消费点要 grep **旧**字段名，不是新字段名），逐个判定「该填 / 有意不填」，并配一条真正跑该字段生效路径的行为测试。`pnpm run typecheck` 绿不构成「所有实现方都接住了」的证据。能做成必选就别做成可选。详见 [memory 条目](memory/optional-field-additions-need-call-site-census.md)。
 
+**字符串 key 索引的结构还要核对 key 与消费侧同源。** 上一条是构造点漏填；`Record<string, X>` 形态（表格的 `cells` × 列集是典型）还有方向相反的一半：写进去的 key 消费侧没有对应项时，取不到就按缺数据回落，两面都不报错、类型也不报错，症状是「这一格恒为 `—`」。共用的行构造函数被 N 种列集消费时，它写的每个 key 都要在这 N 份列集里各有交代；加列或加格子的那次改动 grep 该 key 出现在哪几个列集里，逐个判定。详见 [memory 条目](memory/cell-key-must-match-column-set.md)。
+
 **一个字段能从两处以上来：先在 docs 定死解析链，再写 `??`。** flag / experiment / eval / config 各有一个同名字段时，`a ?? b ?? c` 少写一层类型系统一次都拦不住，而且只有**同时配了两层**的项目才露馅——单层配置的 fixture 和示例全绿。链里有「兜底层」时特别检查它有没有被提前物化成上游的值：把 `config` 的缺省提前塞进 run 配置，下游那层 `??` 就永远短路，症状是「eval 里写的值不生效」，报错还落在离改动很远的地方。解析顺序单点声明在对应功能文档里（`timeoutMs` 见[配置解析链](docs/feature/experiments/architecture.md#配置解析链一次求值处处同源)），新增来源的那次改动配一条「上层缺省 + 下层显式」的区分力测试——那一格是唯一会红的。详见 [memory 条目](memory/multi-source-field-resolution-order.md)。
 
 ## CLI Model
