@@ -30,8 +30,7 @@ niceeval exp compare/codex local-only \
 授权只作用于当前精确 old → new 值摘要和选中 Eval，不能变成“永远忽略 webSearch”。
 
 API key、token 与凭据路径只经 secret binding 提供，不进入 `AgentSpec`。
-凭据轮换不重跑；如果不同 key 实际连接不同账户、权限或后端，影响行为的不是“凭据字符串”，
-而是账户或服务身份，应另声明 condition 或 resource identity。
+凭据轮换不重跑；如果不同 key 实际连接不同账户、权限或后端，影响行为的不是“凭据字符串”，而是账户或服务身份，应另声明 condition 或 resource identity。
 
 `spec` 不可选。
 空 `options` 区分“确实没有行为参数”和“Adapter 忘了声明身份”。

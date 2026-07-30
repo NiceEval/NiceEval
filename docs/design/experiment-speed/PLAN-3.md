@@ -1,22 +1,20 @@
 # 方案 3：一个或多个 Sandbox 复用
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 方案
 
-Runner 按现有并发限制维护一个或多个 Sandbox。每个 Sandbox 内部串行承接 Attempt，
-不同 Sandbox 之间可以并行。SandboxSpec 生命周期每个 Sandbox 一次；
-Agent 与 Eval 生命周期仍逐 Attempt 成对执行。
+Runner 按现有并发限制维护一个或多个 Sandbox。
+每个 Sandbox 内部串行承接 Attempt，不同 Sandbox 之间可以并行。
+SandboxSpec 生命周期每个 Sandbox 一次；Agent 与 Eval 生命周期仍逐 Attempt 成对执行。
 
 Experiment 用 `sandboxReuse: true` 声明复用。
 现有并发限制决定同时执行数；`maxConcurrency: 1` 表达同时最多运行一个 Sandbox。
 
-派发前检查 Sandbox 复用寿命。不足时先续期；不能续期时停止旧 Sandbox，
-创建并准备替代 Sandbox，再派发 Attempt。
+派发前检查 Sandbox 复用寿命。
+不足时先续期；不能续期时停止旧 Sandbox，创建并准备替代 Sandbox，再派发 Attempt。
 
 ## 优势
 
@@ -47,8 +45,7 @@ Experiment 用 `sandboxReuse: true` 声明复用。
     └─ rejected  → 停止旧 Sandbox → 创建替代 Sandbox → 派发
 ```
 
-每个 Sandbox 的内部状态为
-`starting → ready → busy → resetting → ready → draining → dead`。
+每个 Sandbox 的内部状态为 `starting → ready → busy → resetting → ready → draining → dead`。
 这些是实现状态，不作为用户术语。
 
 Provider 向 Runner 暴露中立能力：
@@ -62,8 +59,9 @@ interface SandboxReuseCapability {
 }
 ```
 
-`ensureLifetime` 可以检查或续期。Runner 不知道 Provider 使用 Docker TTL、
-E2B timeout 还是 Vercel session。缺少该能力的 Provider 在创建前拒绝 Sandbox 复用。
+`ensureLifetime` 可以检查或续期。
+Runner 不知道 Provider 使用 Docker TTL、E2B timeout 还是 Vercel session。
+缺少该能力的 Provider 在创建前拒绝 Sandbox 复用。
 
 ## 落地
 
@@ -84,5 +82,5 @@ E2B timeout 还是 Vercel session。缺少该能力的 Provider 在创建前拒�
 
 ## 与其它方案的关系
 
-需要正式结果时使用[方案 1](PLAN-1.md)。同时最多维护一个 Sandbox 时，
-本方案表现为[方案 2](PLAN-2.md)，两者使用同一套 Feature。
+需要正式结果时使用[方案 1](PLAN-1.md)。
+同时最多维护一个 Sandbox 时，本方案表现为[方案 2](PLAN-2.md)，两者使用同一套 Feature。

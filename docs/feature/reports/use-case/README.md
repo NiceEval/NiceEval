@@ -1,25 +1,22 @@
 # Reports —— 用例手册
 
-本目录把 Reports 的 CLI 与 Library 能力放回真实任务里。先说用户要回答什么问题，再串起 Sample、
-组件、宿主和下钻路径，最后划出何时应换另一种形态。契约单源仍在 [Show](../show.md)、
-[View](../view.md)、[Library](../library.md) 与各组件分篇。可直接复制的代码在
-[完整示例](../library/examples.md)，用例篇不重复字段全集和渲染契约。
+本目录把 Reports 的 CLI 与 Library 能力放回真实任务里。
+先说用户要回答什么问题，再串起 Sample、组件、宿主和下钻路径，最后划出何时应换另一种形态。
+契约单源仍在 [Show](../show.md)、[View](../view.md)、[Library](../library.md) 与各组件分篇。
+可直接复制的代码在[完整示例](../library/examples.md)，用例篇不重复字段全集和渲染契约。
 
 ## [调试](调试/README.md)
 
 - [从失败清单到可修复任务](调试/整理失败清单.md) —— `FailureList` / `SampleFixPrompt` / `AttemptDetails`。
 - [`@locator`:从默认报告一行下钻到一次失败的全部证据](调试/按定位符下钻.md)。
 - [`--history`:一道题时好时坏,按 attempt 看历次执行](调试/查看不稳定历史.md)。
-- [瀑布里全是短节点:哪些值得看,时间去了哪](调试/从瀑布定位耗时.md) —— Traces 页 /
-  `Waterfall` 显著性折叠 / `--timing` 下钻。
+- [瀑布里全是短节点:哪些值得看,时间去了哪](调试/从瀑布定位耗时.md) —— Traces 页 /`Waterfall` 显著性折叠 / `--timing` 下钻。
 
 ## [分析](分析/README.md)
 
-- [先证明数据范围值得相信](分析/核对样本完整性.md) —— `SampleNotices` / `RunNotices` /
-  `SampleSummary` / `toExperimentRows(sample)`。
+- [先证明数据范围值得相信](分析/核对样本完整性.md) —— `SampleNotices` / `RunNotices` /`SampleSummary` / `toExperimentRows(sample)`。
 - [从终端做跨条件归因](分析/终端跨条件归因.md) —— 多 `--exp` 对照矩阵 / `--usage` / `--grep` / `--json`。
-- [比较质量、成本与前沿](分析/比较质量与成本.md) —— 首页任务函数的质量成本 points / `Chart` 的
-  scatter mark / `aggregate()`。
+- [比较质量、成本与前沿](分析/比较质量与成本.md) —— 首页任务函数的质量成本 points / `Chart` 的 scatter mark / `aggregate()`。
 - [固定题集做考试成绩单](分析/固定题集成绩单.md) —— 报告旁成绩单函数。
 - [分数低时区分任务失败与执行失败](分析/诊断可靠性.md) —— `aggregate()` + 三种通过率。
 - [定位「哪道题 × 哪个配置」出问题](分析/定位配置与评测交互.md) —— `aggregate()` 后的矩阵与 `Bars`。
@@ -31,10 +28,8 @@
 
 - [用 artifact 定义业务读数](构建报告/定义业务读数.md) —— `rollup()` / 自定义分组。
 - [从单页报告升级为多页站点](构建报告/构建多页报告.md) —— `defineReport` / pages / attempt-input page。
-- [把 NiceEval 读数和外部业务数据放进同一张表](构建报告/接入外部业务数据.md) —— 冻结快照模块 /
-  report 文件 import。
-- [自己写报告组件：规范与取主题色](构建报告/自定义组件/) —— `defineComponent` 双面协议 /
-  `defineRenderer()` 与视觉身份 context。
+- [把 NiceEval 读数和外部业务数据放进同一张表](构建报告/接入外部业务数据.md) —— 冻结快照模块 / report 文件 import。
+- [自己写报告组件：规范与取主题色](构建报告/自定义组件/) —— `defineComponent` 双面协议 /`defineRenderer()` 与视觉身份 context。
 
 ## [交付报告](交付报告/README.md)
 

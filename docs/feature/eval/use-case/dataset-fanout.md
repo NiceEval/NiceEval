@@ -2,7 +2,8 @@
 
 ## 解决什么问题
 
-一批只有参数不同的 case（SQL 生成对照表、issue 清单、benchmark 行）共享同一套驱动与断言逻辑。为每行复制一个薄 `.eval.ts` wrapper 既难维护又容易漂移——扇出的答案是普通代码：把数据行 map 成 eval **数组**或 **keyed record**，从同一文件默认导出（id 生成契约见 [Library · 测试集扇出](../library.md#测试集扇出)）。
+一批只有参数不同的 case（SQL 生成对照表、issue 清单、benchmark 行）共享同一套驱动与断言逻辑。
+为每行复制一个薄 `.eval.ts` wrapper 既难维护又容易漂移——扇出的答案是普通代码：把数据行 map 成 eval **数组**或 **keyed record**，从同一文件默认导出（id 生成契约见 [Library · 测试集扇出](../library.md#测试集扇出)）。
 
 ## 全流程
 
@@ -76,7 +77,8 @@
 
 ## 边界
 
-- 数组 id 按**位置**生成：在中间插行会移动后续所有 id。测试集会增删时改用 keyed record。
+- 数组 id 按**位置**生成：在中间插行会移动后续所有 id。
+  测试集会增删时改用 keyed record。
 - record 的 key 必须是合法路径片段（非空、不含 `/` 与 `\\`、不是 `.` / `..`）；整组条目共享同一份 `tags` / `environment` 声明。
 - 传统 prompt 评估的统一 input / expected-output 表不是一等概念——逐 case 检查方式各异时，就在 map 里按行写不同断言（[设计依据](../architecture.md#两条设计原则)）。
 

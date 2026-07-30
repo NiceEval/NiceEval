@@ -1,9 +1,6 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) ·
-[PLAN-4](PLAN-4.md) · [PLAN-5](PLAN-5.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [PLAN-5](PLAN-5.md)
 
 ## 结论
 
@@ -19,17 +16,13 @@
 
 ## 为什么替换 PLAN-2
 
-PLAN-2 正确识别了两级聚合、覆盖、证据下钻与双面一致这些硬约束，
-但把内部运行阶段投影成了三个作者概念。
+PLAN-2 正确识别了两级聚合、覆盖、证据下钻与双面一致这些硬约束，但把内部运行阶段投影成了三个作者概念。
 
-Source 让作者理解声明何时 compute；
-Composition 让作者理解 page context 与树解析；
-Component 的 source / data 双入口让调用点无法直接说出值的角色。
+Source 让作者理解声明何时 compute；Composition 让作者理解 page context 与树解析；Component 的 source / data 双入口让调用点无法直接说出值的角色。
 
 这些协议没有增加表达力。
 普通函数已经能完成异步、组合、并行、join、排序与复用。
-正确性应由 `aggregate()` 和证据结果构造器约束，
-不应由整条查询运行时约束。
+正确性应由 `aggregate()` 和证据结果构造器约束，不应由整条查询运行时约束。
 
 ## 为什么仍否决其它方案
 
@@ -50,5 +43,4 @@ PLAN-5 保留通用原语与 TypeScript 组合，同时不建立第二门查询�
 
 - page 是比单查询更粗的增量边界；性能靠 benchmark 与内部透明缓存守护。
 - 双面自定义 renderer 仍有一面能力漂移风险；两面必填和 fixture 验收是门槛。
-- 报告旁算法只能保证证据完整，不能自动证明公式正确；
-  重复出现且满足准入判据后才提升进公共内核。
+- 报告旁算法只能保证证据完整，不能自动证明公式正确；重复出现且满足准入判据后才提升进公共内核。

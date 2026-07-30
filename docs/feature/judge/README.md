@@ -1,7 +1,7 @@
 # Judge
 
-Judge 是由裁判模型执行的 Assertion。它拥有模型、端点、凭据、传输重试、响应解析和
-`unavailable` 原因；Assertion collector 只接收 Judge 产出的 `AssertionResult`，不理解模型协议。
+Judge 是由裁判模型执行的 Assertion。
+它拥有模型、端点、凭据、传输重试、响应解析和 `unavailable` 原因；Assertion collector 只接收 Judge 产出的 `AssertionResult`，不理解模型协议。
 
 ## 从哪里开始
 

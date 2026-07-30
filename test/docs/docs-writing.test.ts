@@ -24,7 +24,7 @@ describe("docs 可读性守护", () => {
     expect(validateRules()).toEqual([]);
   });
 
-  it("超长句、超长段、超宽行与禁用写法不超过 docs/writing-baseline.json 的台账", async () => {
+  it("超长句、超长段与禁用写法不超过 docs/writing-baseline.json 的台账", async () => {
     const report = lintDocsWriting();
 
     // 棘轮在前:有回归就在这一行终止,下面的台账写回够不着,

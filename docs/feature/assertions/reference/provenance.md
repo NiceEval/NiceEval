@@ -9,5 +9,4 @@
 | crabbox | budget、成本上限和 capability 分发纪律 |
 | autoevals（Braintrust） | `closedQA`、`factuality`、`summarizes` 三个 judge |
 
-NiceEval 在这些形状之上定义成本聚合、额外 matcher、按接收者选择 judge 默认材料，以及不向 eval 作者暴露
-Sandbox 生命周期的分层。
+NiceEval 在这些形状之上定义成本聚合、额外 matcher、按接收者选择 judge 默认材料，以及不向 eval 作者暴露 Sandbox 生命周期的分层。

@@ -63,14 +63,10 @@ Runner 按需创建 Sandbox，不因为并发上限较大就提前创建不会�
 - Attempt 的 Agent 与 Eval 收尾完成后，Sandbox 才能 reset、轮换或停止。
 
 Runner 不能把 Agent `setup` 提升成每个 Sandbox 一次。
-稳定 Agent CLI 应进入预制环境；随 Experiment 变化、但不随 Eval 变化的准备可以进入
-SandboxSpec `setup`。
+稳定 Agent CLI 应进入预制环境；随 Experiment 变化、但不随 Eval 变化的准备可以进入 SandboxSpec `setup`。
 
-Agent setup 的安装步骤在复用沙箱上按声明收敛，不假设沙箱空白：
-同名的 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见
-[Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
-「setup 幂等」的作者义务只覆盖作者自己写的 Hook：SandboxSpec `setup`、Eval `setup` 与 Agent factory 的
-`postSetup`。
+Agent setup 的安装步骤在复用沙箱上按声明收敛，不假设沙箱空白：同名的 marketplace 注册与 Plugin 安装被替换成按声明来源与 ref 的全新安装，规则见 [Coding Agent 扩展边界](../adapters/architecture/coding-agent-extensions.md#安装收敛不假设沙箱空白)。
+「setup 幂等」的作者义务只覆盖作者自己写的 Hook：SandboxSpec `setup`、Eval `setup` 与 Agent factory 的 `postSetup`。
 
 ## environment profile
 
@@ -86,16 +82,15 @@ Runner 按解析后的 environment profile 分组：
 
 ## 题间重置
 
-SandboxSpec `setup` 完成后，Runner 在分类账上建立
-**复用 Sandbox 的题间重置点**。每条 Attempt 开始前，workdir 必须处于这个点。
+SandboxSpec `setup` 完成后，Runner 在分类账上建立 **复用 Sandbox 的题间重置点**。
+每条 Attempt 开始前，workdir 必须处于这个点。
 
 上一条 Attempt 的证据折叠完成后，Runner：
 
 1. `git reset --hard` 回到题间重置点；
 2. 按分类账排除清单执行 `git clean`；
 3. 重新建立本 Attempt 的归因窗口；
-4. 重新执行 Eval 与 Agent 的 Attempt 生命周期；`Eval.setup` 和 `test(t)`
-   重新准备本 Attempt 的 Fixture。
+4. 重新执行 Eval 与 Agent 的 Attempt 生命周期；`Eval.setup` 和 `test(t)` 重新准备本 Attempt 的 Fixture。
 
 reset 失败后，该 Sandbox 不再承接 Attempt。
 后续 Attempt 等待其它 Sandbox，或由 Runner 创建替代 Sandbox。
@@ -120,16 +115,13 @@ e2bSandbox({ template: "acme-evals", lifetimeMs: 60 * 60_000 })
 vercelSandbox({ snapshotId: "snap_123", lifetimeMs: 4 * 60 * 60_000 })
 ```
 
-**上限是账号档位的属性，不是这个字段的属性。** 上面 e2b 那行写 1 小时不是笔误：
-实测 e2b 账号档位的硬上限就是 1 小时，超了在创建实例时直接 400
-（`Timeout cannot be greater than 1 hours`）。同一个值在别的档位可能是合法的，
-所以这里给不出一张能长期成立的上限表——按自己账号的档位定，撞上了报错会把 Provider 的原话带出来。
+**上限是账号档位的属性，不是这个字段的属性。**
+上面 e2b 那行写 1 小时不是笔误：实测 e2b 账号档位的硬上限就是 1 小时，超了在创建实例时直接 400（`Timeout cannot be greater than 1 hours`）。
+同一个值在别的档位可能是合法的，所以这里给不出一张能长期成立的上限表——按自己账号的档位定，撞上了报错会把 Provider 的原话带出来。
 
 Provider 可以限制最大值，但不能静默压短。
 不支持指定值时，Experiment 在第一条 Attempt 派发前报错并展示 Provider 理由。
-超出上限时报错点名 `lifetimeMs` 与 Provider 的拒绝理由，不替作者把值改小——
-悄悄压短会让复用池按声明的寿命记账，而实例在远处按更短的寿命被回收，
-症状要到 Attempt 跑到一半才现形。
+超出上限时报错点名 `lifetimeMs` 与 Provider 的拒绝理由，不替作者把值改小——悄悄压短会让复用池按声明的寿命记账，而实例在远处按更短的寿命被回收，症状要到 Attempt 跑到一半才现形。
 
 ## 派发前确认
 
@@ -144,10 +136,8 @@ interface SandboxReuseCapability {
 }
 ```
 
-该能力只能由 Provider 自己实现：`ready: true` 的唯一合法依据，是寿命已经真实设置或续期到了
-Provider 后端。Runner 不提供任何基于本地时钟的通用记账实现——记账没有把寿命写进后端时，
-它把「没实现」伪装成「实现了」，Sandbox 会在远处的运行期被 Provider 按自己的默认寿命回收，
-而 Runner 一路答 `ready: true`。
+该能力只能由 Provider 自己实现：`ready: true` 的唯一合法依据，是寿命已经真实设置或续期到了 Provider 后端。
+Runner 不提供任何基于本地时钟的通用记账实现——记账没有把寿命写进后端时，它把「没实现」伪装成「实现了」，Sandbox 会在远处的运行期被 Provider 按自己的默认寿命回收，而 Runner 一路答 `ready: true`。
 
 Runner 在每次派发前请求足以覆盖 Attempt deadline 与收尾预留时间的 Sandbox 复用寿命。
 Provider 可以在 `ensureLifetime` 内续期，也可以只确认现有时间。
@@ -170,16 +160,15 @@ Runner 不静默重跑，因为 Agent 可能已经产生成本或外部副作用
 - 产出的 Attempt 不供后续 Run 结果沿用；
 - 结果可以进入 CI，因为 Sandbox 生命周期已写入 Experiment 并进入配置哈希；
 - Attempt 记录 `sandbox.reused`、本次 Run 内的 Sandbox 编号和承接序号。
-  这些是调度事实，在 Sandbox 租借给该 Attempt 的那一刻确定；Attempt 无论在哪个阶段终结
-  （含 Eval `setup` 失败与超时），记录里都必须带完整归属，不得因为没走到收尾而缺失。
+  这些是调度事实，在 Sandbox 租借给该 Attempt 的那一刻确定；Attempt 无论在哪个阶段终结（含 Eval `setup` 失败与超时），记录里都必须带完整归属，不得因为没走到收尾而缺失。
 
 ## 复用污染的可观察性
 
-「setup 幂等、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，
-作者靠肉眼比对无从发现。框架必须自己把线索说出来。Run 收尾时，声明 `sandboxReuse` 的
-Experiment 按 Sandbox 实例与承接序号聚合判定。当首承接（序号 1）正常、而某实例序号 ≥ 2 的
-Attempt 集中失败或集中 `errored` 在同一生命周期阶段时，结束反馈追加一条运行级 diagnostic，
-点名实例、序号区间与阶段，提示复用残留的可能性。诊断只指路，不改判定。
+「setup 幂等、不依赖 workdir 外残留」是作者义务，但违约的症状（下游 Eval 莫名失败）不指向复用，作者靠肉眼比对无从发现。
+框架必须自己把线索说出来。
+Run 收尾时，声明 `sandboxReuse` 的 Experiment 按 Sandbox 实例与承接序号聚合判定。
+当首承接（序号 1）正常、而某实例序号 ≥ 2 的 Attempt 集中失败或集中 `errored` 在同一生命周期阶段时，结束反馈追加一条运行级 diagnostic，点名实例、序号区间与阶段，提示复用残留的可能性。
+诊断只指路，不改判定。
 
 禁用结果沿用不是在否定结果，而是避免跳过部分 Attempt 后改变 Sandbox 的完整生命周期。
 

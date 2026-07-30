@@ -6,8 +6,7 @@
 <ExperimentTable />
 ```
 
-它从显式 `input` 或当前 `ctx.scope` 读取 Sample，调用 `toExperimentRows()`，
-再交给官方层级 `Table`：
+它从显式 `input` 或当前 `ctx.scope` 读取 Sample，调用 `toExperimentRows()`，再交给官方层级 `Table`：
 
 ```text
 Experiment
@@ -15,20 +14,16 @@ Experiment
     └── Attempt
 ```
 
-层级里没有特殊行：每一行都用同一份列集填格，值全部由这次投影算好，
-`Table` 只按列集取格并逐层展开，不感知 experiment、题与 attempt 的语义。
+层级里没有特殊行：每一行都用同一份列集填格，值全部由这次投影算好， `Table` 只按列集取格并逐层展开，不感知 experiment、题与 attempt 的语义。
 判定构成列因此每层都有值，形态只有计票与单判定两种：
 
-- Experiment 行与路径段组行显示其下题目的判定计票（`16 通过 · 10 失败 · 2 错误`），
-  每个计数取自己的判定语义色；组行的其余读数按同一批读数聚合它下面的题。
-- Eval 行显示该题 attempts 的判定计票（`1 通过 · 1 失败`）。题目级结论按 attempt 折叠：
-  任一 attempt passed 即通过，重试先挂后过的题照样算通过
-  （text 面的同一语义见[默认报告的重试例](../../show/default-report.md)）。
+- Experiment 行与路径段组行显示其下题目的判定计票（`16 通过 · 10 失败 · 2 错误`），每个计数取自己的判定语义色；组行的其余读数按同一批读数聚合它下面的题。
+- Eval 行显示该题 attempts 的判定计票（`1 通过 · 1 失败`）。
+  题目级结论按 attempt 折叠：任一 attempt passed 即通过，重试先挂后过的题照样算通过（text 面的同一语义见[默认报告的重试例](../../show/default-report.md)）。
 - Attempt 行显示该次判定词，判定符与语义色同下表。
 
 Experiment 行另有 agent、model、耗时、主读数、tokens 与成本。
-模型、agent、主读数与 tokens 只有实验口径，Eval 与 Attempt 行显示 `—`；
-耗时与成本列每层显示自己口径的值：题目行是该题聚合，attempt 行是该次实测。
+模型、agent、主读数与 tokens 只有实验口径，Eval 与 Attempt 行显示 `—`；耗时与成本列每层显示自己口径的值：题目行是该题聚合，attempt 行是该次实测。
 
 Attempt 行的身份格只有 locator，判定长在 locator 上：前面一个判定符，整个 locator 取判定的语义色。
 
@@ -40,8 +35,8 @@ Attempt 行的身份格只有 locator，判定长在 locator 上：前面一个�
 
 判定符与色同场，所以单色打印和色觉障碍下这一列照样读得出。
 失败摘要不进这个表——点开 Attempt 详情看断言、对话与文件改动。
-在 `view` 宿主中点击 Attempt 使用报告显式声明的 Attempt page 打开详情 modal；
-没有声明时由 view 使用官方 `AttemptDetails` 补位。
-`show` 按层级缩进输出同一批行。
+在 `view` 宿主中点击 Attempt 使用报告显式声明的 Attempt page 打开详情 modal；没有声明时由 view 使用官方 `AttemptDetails` 补位。
+ `show` 按层级缩进输出同一批行。
 
-`searchable` 默认为 `true`。`sort`、`locale` 与 `className` 透传给官方 `Table`。
+`searchable` 默认为 `true`。
+`sort`、`locale` 与 `className` 透传给官方 `Table`。

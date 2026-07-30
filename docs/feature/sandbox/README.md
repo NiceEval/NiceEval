@@ -1,17 +1,20 @@
 # Sandbox —— 在哪里跑
 
-沙箱回答"在哪里、如何隔离地运行 agent 命令"。它把隔离环境的全部特殊性关进一个统一接口,让 [Adapter](../adapters/README.md) 和核心都不必知道底下是 Docker 还是某个三方服务。
+沙箱回答"在哪里、如何隔离地运行 agent 命令"。
+它把隔离环境的全部特殊性关进一个统一接口,让 [Adapter](../adapters/README.md) 和核心都不必知道底下是 Docker 还是某个三方服务。
 
 ## 为什么需要沙箱
 
-评一个 coding agent 意味着让一个 LLM 在真实文件系统上**执行任意命令**(装包、改文件、跑构建)。这必须隔离:
+评一个 coding agent 意味着让一个 LLM 在真实文件系统上**执行任意命令**(装包、改文件、跑构建)。
+这必须隔离:
 
 - **安全** —— agent 可能跑出危险命令,不能碰你的机器。
 - **可复现** —— 每个 case 一套干净环境,互不污染。
 - **可并发** —— 几十个 case 同时跑,各自独立。
 - **可采集** —— 跑完用 `git diff` 取改动、读 transcript,环境随后销毁;要进活现场 debug 时用 [`--keep-sandbox`](cli.md) 显式留存,事后 `niceeval sandbox stop` 清理。
 
-这些默认由容器 / 微 VM provider 兑现。[本地执行 `localSandbox()`](local.md) 是刻意的例外——明码放弃隔离,换「就地评你手边的仓库」的零成本入口,它的安全边界在自己那篇里定义。
+这些默认由容器 / 微 VM provider 兑现。
+[本地执行 `localSandbox()`](local.md) 是刻意的例外——明码放弃隔离,换「就地评你手边的仓库」的零成本入口,它的安全边界在自己那篇里定义。
 
 ## provider 统一接口
 
@@ -56,17 +59,25 @@ interface CommandOptions {
 }
 ```
 
-这是 provider 实现和 runner 使用的底层接口,所以包含 `stop()`。eval 作者在 `test(t)` 里拿到的是 author-facing 的 `t.sandbox`:只暴露文件 IO、命令执行和结果断言 / diff,不暴露 `stop()`。沙箱生命周期由 runner 统一管理。
+这是 provider 实现和 runner 使用的底层接口,所以包含 `stop()`。
+eval 作者在 `test(t)` 里拿到的是 author-facing 的 `t.sandbox`:只暴露文件 IO、命令执行和结果断言 / diff,不暴露 `stop()`。
+沙箱生命周期由 runner 统一管理。
 
-文本读取只有一个 API:`readFile(path)` 读一个文件。批量读、按扩展名过滤、拼接全文这类聚合是普通代码——用 `runShell` 一条命令表达(`find`/`cat`),或对着已知路径循环 `readFile`;要评「agent 改了什么」时,正当材料本来就是 `t.sandbox.diff` 的归因增量,不是重读整棵工作区(起始 fixture 会混进来)。不提供带过滤约定的批量读取器:过滤规则(哪些扩展名算源码、哪些目录该剪枝)因项目而异,收进 API 就成了约定式黑箱,违背「自组织优先于约定」。`appendLog` 是可选方法:声明了意图的 adapter 照调,provider 没实现就是 no-op。
+文本读取只有一个 API:`readFile(path)` 读一个文件。
+批量读、按扩展名过滤、拼接全文这类聚合是普通代码——用 `runShell` 一条命令表达(`find`/`cat`),或对着已知路径循环 `readFile`;要评「agent 改了什么」时,正当材料本来就是 `t.sandbox.diff` 的归因增量,不是重读整棵工作区(起始 fixture 会混进来)。
+不提供带过滤约定的批量读取器:过滤规则(哪些扩展名算源码、哪些目录该剪枝)因项目而异,收进 API 就成了约定式黑箱,违背「自组织优先于约定」。
+`appendLog` 是可选方法:声明了意图的 adapter 照调,provider 没实现就是 no-op。
 
 ### 为什么 `runCommand` 和 `runShell` 不合并成一个
 
-`runCommand` 按 argv 数组传参,不经过 shell 解析——参数原样传给进程,天然不怕参数里带引号、`$`、`;`、反引号等特殊字符,也没有 shell 注入风险。`runShell` 接受一整段脚本交给 shell 解释,专门给需要管道、`&&`、通配符这类 shell 语义的场景用。
+`runCommand` 按 argv 数组传参,不经过 shell 解析——参数原样传给进程,天然不怕参数里带引号、`$`、`;`、反引号等特殊字符,也没有 shell 注入风险。
+`runShell` 接受一整段脚本交给 shell 解释,专门给需要管道、`&&`、通配符这类 shell 语义的场景用。
 
-这不是两个方法碰巧长得像,是故意保留的两种不同意图:eval 里的命令参数经常来自测试集字段或 agent 生成的输出,内容不可控——比如 `runCommand("./verify.sh", [row.filename])`,`row.filename` 就算是 `"a; rm -rf /workspace"` 这种字符串,argv 形式下也只是一个普通参数值,不会被解释成两条命令。如果合并成一个走 shell 的 `run(cmd: string)`,调用者就必须自己把每个动态值转义成安全的 shell 字符串才能拼进去,一旦漏转义就是真实的命令注入。
+这不是两个方法碰巧长得像,是故意保留的两种不同意图:eval 里的命令参数经常来自测试集字段或 agent 生成的输出,内容不可控——比如 `runCommand("./verify.sh", [row.filename])`,`row.filename` 就算是 `"a; rm -rf /workspace"` 这种字符串,argv 形式下也只是一个普通参数值,不会被解释成两条命令。
+如果合并成一个走 shell 的 `run(cmd: string)`,调用者就必须自己把每个动态值转义成安全的 shell 字符串才能拼进去,一旦漏转义就是真实的命令注入。
 
-参考过 eve.dev 的 `sandbox.run({ command })`(它下面所有 provider 都固定走 `bash -lc`,靠调用者自己用 `shellQuote()` 转义)——那套设计合理,是因为 eve 的调用方几乎都是 AI agent 自己的 bash 工具或内部工具核心,生成一整段 shell 命令本来就是它们的原生表达方式,shell 语义是刚需。niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["test"])`)根本不需要 shell 语义,不该为了少数需要管道/`&&`的场景让所有调用都背上手动转义的心智负担。
+参考过 eve.dev 的 `sandbox.run({ command })`(它下面所有 provider 都固定走 `bash -lc`,靠调用者自己用 `shellQuote()` 转义)——那套设计合理,是因为 eve 的调用方几乎都是 AI agent 自己的 bash 工具或内部工具核心,生成一整段 shell 命令本来就是它们的原生表达方式,shell 语义是刚需。
+niceeval 的调用方是写 eval 的人,大多数调用(`runCommand("npm", ["test"])`)根本不需要 shell 语义,不该为了少数需要管道/`&&`的场景让所有调用都背上手动转义的心智负担。
 
 ## 相关阅读
 
@@ -74,8 +85,7 @@ interface CommandOptions {
 - [本地执行](local.md) —— `localSandbox()` 在宿主机本地目录直接跑,只观察 diff 不还原仓库,最小的 provider。
 - [预制环境](library/prebuilt-environments.md) —— 把稳定依赖做成 image / template / snapshot,attempt 直接从产物起。
 - [CLI](cli.md) —— `--keep-sandbox` 留存失败现场与 `niceeval sandbox list` / `stop` 的完整生命周期。
-- [Sandbox 复用](reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用
-  Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
+- [Sandbox 复用](reuse.md) —— Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox；Provider 用 `lifetimeMs` 单独声明 Sandbox 存活时间。
 - [CLI 用例](use-case/README.md) —— `--keep-sandbox` 的用户用例全流程。
 - [操作 Sandbox](library/operations.md) —— eval 里怎样读写文件和运行命令。
 - [断言 Sandbox 结果](library/asserting-results.md) —— 怎样判断 diff、文件和 shell 行为。

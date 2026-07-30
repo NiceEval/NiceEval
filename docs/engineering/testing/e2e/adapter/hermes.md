@@ -1,8 +1,7 @@
 # hermes 仓库
 
 仓库 ID `hermes`，group `sandbox`，`e2e.json.requires.docker: true`。
-被测对象是 `hermesAgent()` 在 Docker Sandbox 里的完整生命周期
-（契约见 [Hermes 契约页](../../../../feature/adapters/sdk/hermes/README.md)）。
+被测对象是 `hermesAgent()` 在 Docker Sandbox 里的完整生命周期（契约见 [Hermes 契约页](../../../../feature/adapters/sdk/hermes/README.md)）。
 
 ## Eval 闭环
 
@@ -15,6 +14,5 @@
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的
-  `show --execution` 执行树出现工具调用节点。
+- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现工具调用节点。
 - **OTel**：无原生 OTel 时执行树显示 timing unavailable；事件流断言照常通过。

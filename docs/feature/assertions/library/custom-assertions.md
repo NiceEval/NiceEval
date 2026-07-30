@@ -32,7 +32,8 @@ spec 的字段全集：
 | `threshold?: number` | 及格线：分数 ≥ 阈值通过；省略时 gate 用默认通过线 1（打分制的 `score` 应显式给阈值），soft 只记分不判定 |
 | `score: (value) => number \| Promise<number>` | 返回 `[0,1]` 分数，可以是异步函数 |
 
-`score` 是异步时，评分在 finalize 阶段 await，eval 代码不需要额外等待。典型场景是把值交给外部工具或服务打分：
+`score` 是异步时，评分在 finalize 阶段 await，eval 代码不需要额外等待。
+典型场景是把值交给外部工具或服务打分：
 
 ```ts
 function passesTypecheck(): Assertion {
@@ -46,10 +47,9 @@ function passesTypecheck(): Assertion {
 }
 ```
 
-产出的 matcher 与内置 matcher 一样可以链 `.gate(threshold?)` / `.atLeast(threshold)` / `.soft()` 调级（见
-[值断言 · 改严重度与阈值](value-assertions.md#改严重度与阈值)）。
+产出的 matcher 与内置 matcher 一样可以链 `.gate(threshold?)` / `.atLeast(threshold)` / `.soft()` 调级（见 [值断言 · 改严重度与阈值](value-assertions.md#改严重度与阈值)）。
 
-Assertion 适合评价一个值或一个 scope。跨 attempts 的 pass@k、均值和趋势属于 reporter metric，不应在单
-attempt Assertion 中自行读取历史结果。
+Assertion 适合评价一个值或一个 scope。
+跨 attempts 的 pass@k、均值和趋势属于 reporter metric，不应在单 attempt Assertion 中自行读取历史结果。
 
 优先组合已有 matcher；只有新的评分语义才创建新 Assertion，不为业务字段包装一层只转发参数的别名。

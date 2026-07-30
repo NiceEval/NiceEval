@@ -39,9 +39,8 @@ interface HeroLink {
 
 省略 `title` 时，`Hero` 使用报告标题；省略 `input` 时，使用当前 page 的 `Sample`。
 需要站点无关的标题区可以直接使用 [`HeroCard`](hero-card.md)。
-`logo`、`description` 与 `links` 都是可选的品牌内容。
-布局、响应式间距、链接体裁与深浅色适配由 Hero 的官方样式负责，
-报告作者不需要为标准品牌区写页级 CSS。
+ `logo`、`description` 与 `links` 都是可选的品牌内容。
+布局、响应式间距、链接体裁与深浅色适配由 Hero 的官方样式负责，报告作者不需要为标准品牌区写页级 CSS。
 
 ## 相关阅读
 

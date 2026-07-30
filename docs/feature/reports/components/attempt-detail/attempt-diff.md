@@ -18,8 +18,7 @@ interface DiffResult {
 显示的是 [agent 归因增量](../../../sandbox/architecture.md#变更归因send-窗口与分类账)：
 
 1. runner 在 workdir 上打一本私有 git 分类账，每个 send 窗口前后各取一次锚点。
-2. `workspace.diff` 阶段导出逐窗口 delta，落盘为
-   [`diff.json`](../../../record/architecture.md#diffjson)，形状是 `DiffWindow[]`。
+2. `workspace.diff` 阶段导出逐窗口 delta，落盘为 [`diff.json`](../../../record/architecture.md#diffjson)，形状是 `DiffWindow[]`。
 3. 这份投影在窗口序列之上派生文件级视图：净状态、触碰窗口、逐窗口 patch。
 
 因此清单里只有 agent 在 send 窗口内改动的文件。

@@ -1,8 +1,7 @@
 # codex-cli 仓库
 
-仓库 ID `codex-cli`，group `sandbox`，`e2e.json.requires.docker: true`。被测对象是 `codexAgent()`
-在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、`codex exec --json`
-行为轨与续轮（契约见 [Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
+仓库 ID `codex-cli`，group `sandbox`，`e2e.json.requires.docker: true`。
+被测对象是 `codexAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、`codex exec --json` 行为轨与续轮（契约见 [Codex CLI 契约页](../../../../feature/adapters/sdk/codex-cli/README.md)）。
 
 ## Eval 闭环
 
@@ -19,9 +18,5 @@
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
-  执行树出现命令与文件工具调用节点，节点带 span 时间注释。
-- **OTel**：adapter 的 `tracing.configure` 写入 `config.toml` 的 `[otel]`
-  块，执行树的时间注释就是记录成立的展示证明；`show --timing` 的 OTel 子树以 tool /
-  model 角色挂出 span——专属 mapper 归一到 canonical
-  GenAI 语义约定的展示结果，与事件的对应靠显式 call ID correlation 成立，不靠名字猜。
+- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现命令与文件工具调用节点，节点带 span 时间注释。
+- **OTel**：adapter 的 `tracing.configure` 写入 `config.toml` 的 `[otel]` 块，执行树的时间注释就是记录成立的展示证明；`show --timing` 的 OTel 子树以 tool / model 角色挂出 span——专属 mapper 归一到 canonical GenAI 语义约定的展示结果，与事件的对应靠显式 call ID correlation 成立，不靠名字猜。

@@ -1,20 +1,18 @@
 # 不带选项的 `show`：默认报告的 text 面
 
 没配 `config.report` 时，不带选项的 `niceeval show` 装载[内建报告](../library/built-in.md)，并渲染其首页。
-尾部附 Attempts、追踪两页的索引。配了就装载配置里的报告，取值链见
-[Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份。
+尾部附 Attempts、追踪两页的索引。
+配了就装载配置里的报告，取值链见 [Reports](../README.md#项目默认报告)；`--report standard` 按次回到本页这份。
 
-页首是 `Hero`，随后是默认任务函数产出的 Notice、摘要、
-成本 × 主读数 points 和 Experiment rows。
-散点 y 轴与实验列表主列跟随 Sample 的
-[主读数映射](../library/measures.md#题型构成与主读数)：
+页首是 `Hero`，随后是默认任务函数产出的 Notice、摘要、成本 × 主读数 points 和 Experiment rows。
+散点 y 轴与实验列表主列跟随 Sample 的 [主读数映射](../library/measures.md#题型构成与主读数)：
 
 - 通过制 Sample 使用通过率；
 - 计分制 Sample 把 y 轴与主列换成总分，预排也按总分；
 - 混型 Sample 摘要与实验列表两个主读数并排，散点画通过制那组。
 
-整页组件树没有 `Section`，所以 text 面无框铺开，散点与宽表占满可用列宽。圆角面板只随
-`Section` 出现（约定见 [Layout](../library/layout.md)），用于 `AttemptDetails` 这类多区域详情页。
+整页组件树没有 `Section`，所以 text 面无框铺开，散点与宽表占满可用列宽。
+圆角面板只随 `Section` 出现（约定见 [Layout](../library/layout.md)），用于 `AttemptDetails` 这类多区域详情页。
 每个 experiment 的 eval 数与读数分母来自 Run 记录的 `selectedEvalIds`；未选择的 eval 不补成失败。
 实验列表保持 experiment → Eval → Attempt 层级。
 
@@ -55,10 +53,12 @@ memory/codex-baseline     gpt-5.4   codex    1m 21s    25.0%   2 通过 · 6 失
   traces     追踪       niceeval show --exp memory --page traces
 ```
 
-表下逐实验的 Eval / Attempt 层级与下面 dev-e2b 例一致，不重复。散点 x 轴是**平均每个 eval 成本**：
-表中成本列是实验总成本，除以题数得每题均值。`better: "lower"` 反向渲染，越右越省。
-标记字母按图例顺序分配：series 按显示键字典序，series 内按 x 原始值升序。位移摘要的符号是
-原始差值；`成本 +$0.20` 表示每题贵了 $0.20。方向好坏由读数的 `better` 语义判断，摘要不替读者下结论。
+表下逐实验的 Eval / Attempt 层级与下面 dev-e2b 例一致，不重复。
+散点 x 轴是**平均每个 eval 成本**：表中成本列是实验总成本，除以题数得每题均值。
+`better: "lower"` 反向渲染，越右越省。
+标记字母按图例顺序分配：series 按显示键字典序，series 内按 x 原始值升序。
+位移摘要的符号是原始差值；`成本 +$0.20` 表示每题贵了 $0.20。
+方向好坏由读数的 `better` 语义判断，摘要不替读者下结论。
 
 Sample 内没有任何 `line` 声明时按 agent 归类、不连线，图例行首是 agent 名：
 
@@ -112,26 +112,27 @@ dev-e2b/codex-e2b
   ✓       └─ @1second2                            —                                           21.4s     $0.03
 ```
 
-携带或跨 Run 拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总
-`↩ n/m attempts`。覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与读数分母。
-实体 rows 由公开 `toExperimentRows(sample)` 产生；
-时效标注与覆盖占位都在这个立即转换中确定。
+携带或跨 Run 拼入的历史执行在题目名 / locator 后带 `↩ <时距>` 时效标注，Experiment 副行汇总 `↩ n/m attempts`。
+覆盖缺口渲染成「当前配置下无结果」占位行并附补跑命令，不参与读数分母。
+实体 rows 由公开 `toExperimentRows(sample)` 产生；时效标注与覆盖占位都在这个立即转换中确定。
 
-locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。Result 单元格使用 [Assertions 定义的主失败断言摘要](../../assertions/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。绝不把该 attempt 的全部 assertion name 拼进表格——即使有几十条 assertions，一条 Attempt 子行也最多占两行。locator 本身就是证据入口；打开 Attempt 后再列完整断言与实际可执行的证据命令。
+locator 只打印 `@<id>` 与 verdict，不追加证据能力缩写。
+Result 单元格使用 [Assertions 定义的主失败断言摘要](../../assertions/library/display.md#主失败断言怎样选)：passed attempt 固定为 `—`；failed attempt 只显示一条主失败及可选的 `+N more failures`；errored 显示结构化 error 的一层摘要。
+绝不把该 attempt 的全部 assertion name 拼进表格——即使有几十条 assertions，一条 Attempt 子行也最多占两行。
+locator 本身就是证据入口；打开 Attempt 后再列完整断言与实际可执行的证据命令。
 
-Result 单元格一律按
-[display 的单行压缩形态](../../assertions/library/display.md#单行压缩形态)拼装：先折成单行，
-再按宽度截断。`received` 携带整段命令输出时也不例外；一条 `commandSucceeded()` 失败塌成
-`received exit 1 · "…尾部"`，不会把几百行 stdout 逐行铺进表。命令输出全量落盘
-（[证据 registry](../../record/architecture.md#证据-registry) 的 `commands` 行），
-单元格截断只是展示预算，不是存储上限。单元格要的是能一眼扫读的预览：
+Result 单元格一律按 [display 的单行压缩形态](../../assertions/library/display.md#单行压缩形态)拼装：先折成单行，再按宽度截断。
+`received` 携带整段命令输出时也不例外；一条 `commandSucceeded()` 失败塌成 `received exit 1 · "…尾部"`，不会把几百行 stdout 逐行铺进表。
+命令输出全量落盘（[证据 registry](../../record/architecture.md#证据-registry) 的 `commands` 行），单元格截断只是展示预算，不是存储上限。
+单元格要的是能一眼扫读的预览：
 
 ```text
 ✗ 失败    memory/terminal-pypi-server
   ✗       └─ @1y0e4yh2                            commandSucceeded() · received exit 1 · "…test_api F · 1 failed, 0 passed"   4m 23s   $0.29
 ```
 
-被折掉的完整 stdout 不丢：[`niceeval show @1y0e4yh2 --execution`](execution.md) 里那条命令的 result 卡片保留原始换行,`events.json` 存全量（超 256 KiB 才带 `truncated` 标记）。表格从不为了「保全输出」而无限换行。
+被折掉的完整 stdout 不丢：[`niceeval show @1y0e4yh2 --execution`](execution.md) 里那条命令的 result 卡片保留原始换行,`events.json` 存全量（超 256 KiB 才带 `truncated` 标记）。
+表格从不为了「保全输出」而无限换行。
 
 ## 相关阅读
 

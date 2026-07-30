@@ -1,8 +1,8 @@
 # 站点身份件
 
-`Hero` / `HeroCard` / `PoweredBy` 渲染品牌与站点身份，不是数据投影，形状本身就是契约，
-因此不进[内建原语总表](../README.md#内建原语总表)。它们没有宿主特权；
-[内建报告](../../library/built-in.md)只是在普通 page 中装配这些公开对象。身份件不收结构子节点。
+`Hero` / `HeroCard` / `PoweredBy` 渲染品牌与站点身份，不是数据投影，形状本身就是契约，因此不进[内建原语总表](../README.md#内建原语总表)。
+它们没有宿主特权；[内建报告](../../library/built-in.md)只是在普通 page 中装配这些公开对象。
+身份件不收结构子节点。
 
 专属契约见 [`Hero`](hero.md)、[`HeroCard`](hero-card.md)、[`PoweredBy`](powered-by.md)。
 

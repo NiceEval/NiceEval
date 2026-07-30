@@ -53,11 +53,7 @@ test("Fix prompt 折叠块默认收起,计数可见", async () => {
 
 - **aria Run 负责**:语义结构、可见文本事实、层级与展开状态——纯文档层面,零浏览器交互。
 - **Playwright 保留**:计算样式结构事实(`font-family` 含 mono、sticky 定位)、几何(同行判定)、真点击交互、跨组件颜色一致性(rendered-to-rendered 对比)——这些断在行为层,本来就不脆,aria 树也表达不了。
-- **样式脱对齐类缺陷归 Playwright 这一层**:stylesheet 与组件类名两侧各写一套,
-  CSS 规则打不到任何元素时 typecheck 与数据级单测全绿,症状只在真实产物上露出。
-  症状形态是整块失去密度、横滚与状态染色,先例见
-  [样式缺失先例](../../../../memory/attempt-detail-components-shipped-without-styles.md)。
-  验收断的是「样式确实作用到了元素」的计算样式与几何事实:代表性区块的 overflow
-  横滚可用、状态行相对基线行有染色差异、等宽字体与 sticky 生效。不 grep 源码类名、
-  不锁 class 列表——类名只是找到元素的手段,不是契约本身。
+- **样式脱对齐类缺陷归 Playwright 这一层**:stylesheet 与组件类名两侧各写一套,CSS 规则打不到任何元素时 typecheck 与数据级单测全绿,症状只在真实产物上露出。
+  症状形态是整块失去密度、横滚与状态染色,先例见 [样式缺失先例](../../../../memory/attempt-detail-components-shipped-without-styles.md)。
+  验收断的是「样式确实作用到了元素」的计算样式与几何事实:代表性区块的 overflow 横滚可用、状态行相对基线行有染色差异、等宽字体与 sticky 生效。不 grep 源码类名、不锁 class 列表——类名只是找到元素的手段,不是契约本身。
 - 前提是[待裁决分歧 2](../README.md#待裁决分歧):ivya 对 happy-dom 文档的可用性 spike;不通则本层断言也进 browser mode 执行,写法不变。

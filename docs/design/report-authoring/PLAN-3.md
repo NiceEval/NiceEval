@@ -1,15 +1,13 @@
 # 方案 3：通用原语 + SQL 取数
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 方案
 
-保留通用原语，把数据源换成查询。树解析阶段把 Record 物化成若干张表，
-执行作者写的 SQL，行集交给原语渲染。
+保留通用原语，把数据源换成查询。
+树解析阶段把 Record 物化成若干张表，执行作者写的 SQL，行集交给原语渲染。
 
 ```tsx
 import { Table, defineReport, sql } from "niceeval/report";
@@ -41,16 +39,16 @@ export default defineReport({
 ```
 
 落地要选一个引擎：DuckDB、SQLite，或自己实现一个 SQL 子集。
-前两者给作者完整方言，代价是把原生依赖装进一个当前只发 TypeScript 源码的包；
-自研子集避开依赖，但作者写的是一个受限方言，不是他会的那个 SQL。
+前两者给作者完整方言，代价是把原生依赖装进一个当前只发 TypeScript 源码的包；自研子集避开依赖，但作者写的是一个受限方言，不是他会的那个 SQL。
 
 ---
 
 ## 优势
 
-- **需求 8 的另一种答法。** 提问不必先在库里存在对应能力，
-  想到什么查什么，探索性分析即写即得。
-- **关联与窗口是一等写法。** 「每个 agent 上最差的三道题」一句就能写：
+- **需求 8 的另一种答法。
+  ** 提问不必先在库里存在对应能力，想到什么查什么，探索性分析即写即得。
+- **关联与窗口是一等写法。
+  ** 「每个 agent 上最差的三道题」一句就能写：
 
   ```sql
   select * from (
@@ -60,10 +58,12 @@ export default defineReport({
   ) where rk <= 3
   ```
 
-  同一件事在 [PLAN-2](PLAN-2.md) 里要先 `compute()` 再用普通 JavaScript
-  分组、排序、截断，代码更长。
-- **迁移成本低。** 会 SQL 的人不学新词汇；查询可以直接搬去外部 BI 工具复用。
-- **库的公开面变小。** 不必导出 `Measure`、`Dimension`、`RowSource` 这些类型。
+同一件事在 [PLAN-2](PLAN-2.md) 里要先 `compute()` 再用普通 JavaScript
+分组、排序、截断，代码更长。
+- **迁移成本低。
+  ** 会 SQL 的人不学新词汇；查询可以直接搬去外部 BI 工具复用。
+- **库的公开面变小。
+  ** 不必导出 `Measure`、`Dimension`、`RowSource` 这些类型。
 
 ---
 
@@ -73,8 +73,9 @@ export default defineReport({
 
 ### 两级聚合退回作者手上
 
-上面那段 `avg(passed)` 是错的。它把全部 attempt 摊平，
-重试三次的题在结果里的权重是只跑一次的题的三倍。正确写法要嵌一层：
+上面那段 `avg(passed)` 是错的。
+它把全部 attempt 摊平，重试三次的题在结果里的权重是只跑一次的题的三倍。
+正确写法要嵌一层：
 
 ```sql
 with per_eval as (
@@ -93,7 +94,8 @@ group by agent
 
 ### 证据引用变成可选项
 
-聚合结果是标量。要下钻回 attempt，作者得自己收集定位符：
+聚合结果是标量。
+要下钻回 attempt，作者得自己收集定位符：
 
 ```sql
 select agent,
@@ -110,7 +112,8 @@ count(v)    as samples,   -- 读数非空的样本
 count(*)    as total      -- 这一格覆盖的全部 attempt
 ```
 
-需求 5、6 全靠这三列写不写。而报告最有用的动作恰恰是从一个可疑的数字点进证据。
+需求 5、6 全靠这三列写不写。
+而报告最有用的动作恰恰是从一个可疑的数字点进证据。
 
 ### artifact 摊不平
 
@@ -122,8 +125,7 @@ count(*)    as total      -- 这一格覆盖的全部 attempt
 select agent, avg(changed_lines(locator)) from attempts group by 1
 ```
 
-全量物化违反需求 17；UDF 等于把 [PLAN-2](PLAN-2.md) 的 `Measure.value`
-包了一层 SQL 语法，还失去了 `where`、`aggregate` 与 `null` 语义。
+全量物化违反需求 17；UDF 等于把 [PLAN-2](PLAN-2.md) 的 `Measure.value` 包了一层 SQL 语法，还失去了 `where`、`aggregate` 与 `null` 语义。
 
 ### 列的元数据无处安放
 
@@ -137,17 +139,17 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
 }} />
 ```
 
-于是一个读数的定义散在两处，改列名要同时改两处，
-而需求 12 要的是「只声明一次」。同一个 `cost` 在另一页的另一段 SQL 旁边
-还要再写一遍这张表。
+于是一个读数的定义散在两处，改列名要同时改两处，而需求 12 要的是「只声明一次」。
+同一个 `cost` 在另一页的另一段 SQL 旁边还要再写一遍这张表。
 
 ### 其它代价
 
-- **类型不进 TS。** 列名拼错、`select` 少一列，都要等运行时才炸。
-- **引擎进包。** DuckDB 与 SQLite 都要装原生依赖或 wasm，
-  影响安装耗时；自研子集则要自己实现窗口函数与报错。
-- **口径漂移无从检测。** 官方数字来自 `Measure`，
-  作者页面的数字来自各自的查询，两边对不上时没有单点可查。
+- **类型不进 TS。
+  ** 列名拼错、`select` 少一列，都要等运行时才炸。
+- **引擎进包。
+  ** DuckDB 与 SQLite 都要装原生依赖或 wasm，影响安装耗时；自研子集则要自己实现窗口函数与报错。
+- **口径漂移无从检测。
+  ** 官方数字来自 `Measure`，作者页面的数字来自各自的查询，两边对不上时没有单点可查。
 
 ---
 
@@ -160,8 +162,7 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
                     artifact 只能全量物化或走 UDF
 ```
 
-物化那一步就是这个方案的成本所在：它要在树解析前决定读多少磁盘，
-而 [PLAN-2](PLAN-2.md) 把这个决定留给每个读数自己。
+物化那一步就是这个方案的成本所在：它要在树解析前决定读多少磁盘，而 [PLAN-2](PLAN-2.md) 把这个决定留给每个读数自己。
 
 ---
 
@@ -177,8 +178,7 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
    本方案在 UDF 形态下勉强成立，在全量物化形态下不成立。
 
 **反指标**：拿一份只有单次 attempt 的结果验收。
-这时摊平的 `avg` 与嵌套的 `avg` 得到同一个数，
-两级聚合的缺陷完全不显形——而真实实验几乎都跑多轮。
+这时摊平的 `avg` 与嵌套的 `avg` 得到同一个数，两级聚合的缺陷完全不显形——而真实实验几乎都跑多轮。
 
 ---
 
@@ -186,6 +186,5 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
 
 - **vs [PLAN-2](PLAN-2.md)**：自由度与默认正确的直接交换。
   SQL 赢在能问任何问题，输在容易问出一个看起来对的错问题。
-- **vs [PLAN-4](PLAN-4.md)**：PLAN-4 只把 SQL 当逃生舱，
-  官方数字仍走数据源，因此上面四条缺点只作用于作者显式选择 SQL 的那些格子。
+- **vs [PLAN-4](PLAN-4.md)**：PLAN-4 只把 SQL 当逃生舱，官方数字仍走数据源，因此上面四条缺点只作用于作者显式选择 SQL 的那些格子。
 - **vs [PLAN-1](PLAN-1.md)**：两个极端，见 PLAN-1 的同名小节。

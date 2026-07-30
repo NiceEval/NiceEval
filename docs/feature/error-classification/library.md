@@ -1,6 +1,7 @@
 # 执行失败分类 —— 库用法
 
-重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。作者面的公开 API 有三个,各对应一处知识所在地:空间轴糖衣类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
+重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。
+作者面的公开 API 有三个,各对应一处知识所在地:空间轴糖衣类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
 
 ## eval / 实验作者:你会看到什么
 
@@ -66,14 +67,19 @@ export default defineExperiment({
 要点:
 
 - **message 就是修复提示**:它会走完反馈流与 `run.json` 诊断的全程,写成「现象 + 下一步」,别人(和三天后的你)照着它就能修。
-- **判据是可证明性**:只有能证明「同 scope 兄弟 attempt 同因必死」才声明——共享服务、共享凭据、实验级配置属于能证明;「看起来像基建问题」不构成证明。拿不准就不声明,让它落成单条 attempt 的 `errored`:多烧的是钱,错杀的是整批覆盖数据,代价不对称(判据全文见 [README · 分类](README.md#分类))。
+- **判据是可证明性**:只有能证明「同 scope 兄弟 attempt 同因必死」才声明——共享服务、共享凭据、实验级配置属于能证明;「看起来像基建问题」不构成证明。
+  拿不准就不声明,让它落成单条 attempt 的 `errored`:多烧的是钱,错杀的是整批覆盖数据,代价不对称(判据全文见 [README · 分类](README.md#分类))。
 - **识别不靠类身份**:框架用结构守卫(`failureClassOf`)认这些错误,`instanceof` 在依赖树里有第二份 niceeval 时会静默失效——自己代码里如需识别也用守卫。
-- **没有「可重试」糖衣类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 setup / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。setup 里想容忍抖动,自己 try 一次即可。
+- **没有「可重试」糖衣类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 setup / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。
+  setup 里想容忍抖动,自己 try 一次即可。
 - **闸落下后不可逆、不跨运行**:本次 invocation 内不再派发;下次运行从零判断,没有需要解除的状态。
 
 ## adapter 作者:`classifyTurnError`
 
-类型形状单源在 [Architecture · 类型](architecture.md#类型)。写分类器主要回答时间轴问题:**这个错误能否证明「这次输入未被 agent 受理」?** 能证明才返回 `{ retryable: true, reason: "..." }`——`reason` 是开放词表,用你协议里最贴切的词;拿不准返回 `undefined` 交给保守回退——不要返回 `{ retryable: false }` 把回退短路掉,它认得的通用形状(429、DNS 失败、拒连)你不必重复。实验分类器排在你之前(决议序见 [Architecture · 分类链](architecture.md#分类链)),实验作者认领的失败问不到你,不冲突。
+类型形状单源在 [Architecture · 类型](architecture.md#类型)。
+写分类器主要回答时间轴问题:**这个错误能否证明「这次输入未被 agent 受理」?**
+能证明才返回 `{ retryable: true, reason: "..." }`——`reason` 是开放词表,用你协议里最贴切的词;拿不准返回 `undefined` 交给保守回退——不要返回 `{ retryable: false }` 把回退短路掉,它认得的通用形状(429、DNS 失败、拒连)你不必重复。
+实验分类器排在你之前(决议序见 [Architecture · 分类链](architecture.md#分类链)),实验作者认领的失败问不到你,不冲突。
 
 ```ts
 import { defineSandboxAgent, turnErrorText } from "niceeval/adapter";
@@ -98,7 +104,8 @@ export function acmeAgent() {
 
 - **`undefined` 是常态返回值**,只在协议知识能给出更准答案时给结果;分类器要快、纯、不抛错——抛错按 `undefined` 回落处理并被吞掉,等于白写一路。
 - **不在 `send` 里自己整段重发**:断连重连这类内层自愈是被测 CLI 的原生能力(codex 会,bub 不会),adapter 不代偿;`send` 浮出的失败就是 agent 侧的最终结果,框架层的重发归重试执行体(分层见 [README · 自愈阶梯与止损阶梯](README.md#自愈阶梯与止损阶梯))。
-- **空间轴从严**:adapter 也可以给 `scope`,但只限协议层能证明死因为实验共享的场景(凭据失效、账号封禁这类「后续每次调用必死」的明确回执);误扩 scope 停掉的是用户的整批实验,判据比时间轴更重。协议回执说不清波及范围时,只给时间轴。
+- **空间轴从严**:adapter 也可以给 `scope`,但只限协议层能证明死因为实验共享的场景(凭据失效、账号封禁这类「后续每次调用必死」的明确回执);误扩 scope 停掉的是用户的整批实验,判据比时间轴更重。
+  协议回执说不清波及范围时,只给时间轴。
 - **只声明决策与词,不碰策略**:重试几次、退避多久、闸怎么落都归执行体,对所有 agent 一致;`reason` 只出现在 activity 行与文案里(上例批跑时会看到 `turn retry 2/4 (acme_queue_full)`),不进任何分支;失败 Turn 里已有 agent 产出事件时,[受理证据门](architecture.md#分类链)会否决你的可重试判断。
 - **歧义文案默认不归可重试**:流中断、响应中途重置这类错误,只有当你能证明该文案在自家协议里**只在受理前出现**(如上例的固定入场拒绝短语)才归可重试;「看起来像基建抖动」不构成证明,判据全文见 [README · 分类](README.md#分类)。
 

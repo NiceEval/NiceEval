@@ -277,6 +277,12 @@ export function proseText(text: string): string {
 }
 
 /**
+ * 量长度只数字,不数空格:同一段文字折成几行是排版自由,
+ * 拼接处补的那个空格不该让它变长——不然「一段有多长」会随折行方式浮动。
+ */
+export const proseLength = (text: string): number => text.replace(/\s+/g, "").length;
+
+/**
  * 只有句末标点算断句。分号、破折号、顿号串起来的分句仍算同一句:
  * 长难句正是这么长起来的,把它们算作断句等于让这条规则放过要治的对象。
  */
@@ -346,23 +352,23 @@ export function lintDocsWriting(): LintReport {
 
     for (const block of proseBlocks(lines)) {
       const text = proseText(block.text);
-      if (text.length > rules.paragraphLength.max) {
+      if (proseLength(text) > rules.paragraphLength.max) {
         count("paragraphLength", file);
         hits.push({
           file,
           line: block.line,
           rule: "paragraphLength",
-          message: `一段 ${text.length} 字,超出 ${rules.paragraphLength.max} 字——一段只说一件事,罗列改用列表或表格`,
+          message: `一段 ${proseLength(text)} 字,超出 ${rules.paragraphLength.max} 字——一段只说一件事,罗列改用列表或表格`,
         });
       }
       for (const [order, sentence] of splitSentences(text).entries()) {
-        if (sentence.length <= rules.sentenceLength.max) continue;
+        if (proseLength(sentence) <= rules.sentenceLength.max) continue;
         count("sentenceLength", file);
         hits.push({
           file,
           line: block.line,
           rule: "sentenceLength",
-          message: `第 ${order + 1} 句 ${sentence.length} 字,超出 ${rules.sentenceLength.max} 字——拆成两句,或把并列内容改写成列表 / 表格`,
+          message: `第 ${order + 1} 句 ${proseLength(sentence)} 字,超出 ${rules.sentenceLength.max} 字——拆成两句,或把并列内容改写成列表 / 表格`,
         });
       }
     }

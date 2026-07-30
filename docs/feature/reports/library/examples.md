@@ -1,7 +1,7 @@
 # 完整示例
 
-本页按任务索引完整例子。API 的穷尽形状只在 [Library](../library.md) 定义，
-用例不复制第二份契约。
+本页按任务索引完整例子。
+API 的穷尽形状只在 [Library](../library.md) 定义，用例不复制第二份契约。
 
 ## 质量与成本
 
@@ -71,8 +71,7 @@ export const changedLines = rollup(
 
 ## 报告旁复杂算法
 
-成对差异、稳定性、固定题集成绩单与历史趋势各自声明公式和分母，
-最后通过 `metricValue()` 与 `evidenceRow()` 构造结果。
+成对差异、稳定性、固定题集成绩单与历史趋势各自声明公式和分母，最后通过 `metricValue()` 与 `evidenceRow()` 构造结果。
 它们不注册成查询，不进入图表组件，也不扩张 Sample API。
 
 完整叙事见：

@@ -1,6 +1,7 @@
-# Sandbox —— 库用法
+# Sandbox ——库用法
 
-`t.sandbox`(eval 作者)与 `experiment.sandbox` / `config.sandbox`(选 provider)是这个功能的两个入口。本篇讲怎么调用;内部怎么实现见 [Architecture](architecture.md)。
+`t.sandbox`(eval 作者)与 `experiment.sandbox` / `config.sandbox`(选 provider)是这个功能的两个入口。
+本篇讲怎么调用;内部怎么实现见 [Architecture](architecture.md)。
 
 ## 路径与 workdir:一个坐标系
 
@@ -13,15 +14,17 @@
 | Vercel Sandbox | `/vercel/sandbox` |
 | local | 你指定的目录(默认当前 git 仓库根,见[本地执行](local.md)) |
 
-契约一句话:**API 里任何沙箱侧相对路径,一律解析到 `workdir`;省略的 `targetDir` / `cwd` 默认就是 `workdir`;绝对路径原样使用。** 本地侧(宿主机)的相对路径则解析到 eval 定义文件所在目录。两侧各只有一个锚点,学一次就够。
+契约一句话:**API 里任何沙箱侧相对路径,一律解析到 `workdir`;省略的 `targetDir` / `cwd` 默认就是 `workdir`;绝对路径原样使用。
+** 本地侧(宿主机)的相对路径则解析到 eval 定义文件所在目录。
+两侧各只有一个锚点,学一次就够。
 
-为什么 workdir 是唯一正确的默认值:整条流水线都锚定在它上面——变更分类账以它为 work-tree、agent 的 cwd 在那里、send 窗口的改动在那里折叠成 agent diff、`t.sandbox.fileChanged(...)` 的路径也是对着那里解析的。把起始文件传到任何**别的**目录,agent 看不见它,diff 也采不到它,整条 eval 静默失效。所以对上传起始 workspace 这个最高频调用来说,workdir 不是"常见选择",是唯一能让系统其余部分正常工作的选择——一个参数如果 99% 的调用只有一个正确值,而调用者又不掌握这个值(它随 provider 变),强制填写就不是"显式更安全",是逼人抄错答案。
+为什么 workdir 是唯一正确的默认值:整条流水线都锚定在它上面——变更分类账以它为 work-tree、agent 的 cwd 在那里、send 窗口的改动在那里折叠成 agent diff、`t.sandbox.fileChanged(...)` 的路径也是对着那里解析的。
+把起始文件传到任何**别的**目录,agent 看不见它,diff 也采不到它,整条 eval 静默失效。
+所以对上传起始 workspace 这个最高频调用来说,workdir 不是"常见选择",是唯一能让系统其余部分正常工作的选择——一个参数如果 99% 的调用只有一个正确值,而调用者又不掌握这个值(它随 provider 变),强制填写就不是"显式更安全",是逼人抄错答案。
 
-workdir 里只有两类写入者:你(fixture、校验材料、环境层 Hook)和 agent。runner 自己的运行时数据
-一律在 workdir 外:变更分类账在沙箱内的私有路径,行为摘要根本不进沙箱、在宿主侧现算
-([Observability · 宿主侧行为断言](../../observability.md#宿主侧行为断言to11y))。
-因此 fixture 初始化可以假设 workdir 初态为空:只要你自己的环境层 Hook 没先写过文件,
-`git clone <url> .` 这类要求空目录的命令能直接落在 workdir 根。
+workdir 里只有两类写入者:你(fixture、校验材料、环境层 Hook)和 agent。
+runner 自己的运行时数据一律在 workdir 外:变更分类账在沙箱内的私有路径,行为摘要根本不进沙箱、在宿主侧现算 ([Observability · 宿主侧行为断言](../../observability.md#宿主侧行为断言to11y))。
+因此 fixture 初始化可以假设 workdir 初态为空:只要你自己的环境层 Hook 没先写过文件, `git clone <url> .` 这类要求空目录的命令能直接落在 workdir 根。
 
 ### 用户会怎么写:before / after
 
@@ -59,27 +62,33 @@ export default defineEval({
 });
 ```
 
-消掉的东西:`import.meta.url` 拼路径的咒语、两处 hardcode 的 provider 专属绝对路径,以及"切换 provider 文件落到 agent 视野之外"这个静默 bug 的整个物种。用户对"文件在哪"的心智模型收敛成一句话:**一切相对路径都在 workspace 里**——和 git 的 repo 相对路径同构,不需要关心物理位置。
+消掉的东西:`import.meta.url` 拼路径的咒语、两处 hardcode 的 provider 专属绝对路径,以及"切换 provider 文件落到 agent 视野之外"这个静默 bug 的整个物种。
+用户对"文件在哪"的心智模型收敛成一句话:**一切相对路径都在 workspace 里**——和 git 的 repo 相对路径同构,不需要关心物理位置。
 
 ### 逃生舱:`sandbox.workdir`
 
-绝对路径不会彻底消失,三种场景会穿透坐标系:往 prompt 里告诉 agent 一个路径、对照 agent 日志/工具输出里出现的绝对路径、`docker exec` 进容器手动调试。这时用 `workdir` 属性,不要背表:
+绝对路径不会彻底消失,三种场景会穿透坐标系:往 prompt 里告诉 agent 一个路径、对照 agent 日志/工具输出里出现的绝对路径、`docker exec` 进容器手动调试。
+这时用 `workdir` 属性,不要背表:
 
 ```typescript
 await t.send(`参考 ${t.sandbox.workdir}/docs/CONVENTIONS.md 里的约定实现组件。`);
 ```
 
-注意 `$HOME` 这类环境变量不是替代品:`targetDir` 是宿主侧 JS 里拼的字符串,shell 变量根本不展开——`uploadDirectory(dir, "$HOME/workspace")` 会真的创建一个叫 `$HOME` 的目录。运行时 `runShell("pwd")` 探测也不必要:workdir 是 provider 构造时就确定的静态字符串,声明就能解决的问题不用运行时手段。
+注意 `$HOME` 这类环境变量不是替代品:`targetDir` 是宿主侧 JS 里拼的字符串,shell 变量根本不展开——`uploadDirectory(dir, "$HOME/workspace")` 会真的创建一个叫 `$HOME` 的目录。
+运行时 `runShell("pwd")` 探测也不必要:workdir 是 provider 构造时就确定的静态字符串,声明就能解决的问题不用运行时手段。
 
 ### 为什么不伪造一个统一的 `/workspace`
 
-另一条路是让所有 provider 都真的提供 `/workspace`(mkdir + symlink 到真实 workdir)。不走这条:`/workspace` 不是 agent 实际的 cwd,agent 的日志、工具输出、报错里出现的全是真实路径,伪造的统一路径会让用户在对照时更糊涂;云 provider(vercel/e2b)对用户目录之外的文件系统权限也未必允许。这与「用户与 root」一节是同一处理哲学:**语义跨 provider 一致(相对路径→workdir),物理值诚实暴露差异(`workdir` 属性)**,不假装统一。
+另一条路是让所有 provider 都真的提供 `/workspace`(mkdir + symlink 到真实 workdir)。
+不走这条:`/workspace` 不是 agent 实际的 cwd,agent 的日志、工具输出、报错里出现的全是真实路径,伪造的统一路径会让用户在对照时更糊涂;云 provider(vercel/e2b)对用户目录之外的文件系统权限也未必允许。
+这与「用户与 root」一节是同一处理哲学:**语义跨 provider 一致(相对路径→workdir),物理值诚实暴露差异(`workdir` 属性)**,不假装统一。
 
 实现细节(路径解析规则收敛在哪个文件、一份实现如何跨 provider 共用)见 [Architecture · 实现纪律](architecture.md#实现纪律)。
 
 ## 用户与 root
 
-**默认非 root,按需提 root** —— 命令默认以沙箱的标准**非 root** 用户跑(agent 的自然环境:安全,且 Claude Code 等在 root 下会拒绝 `--dangerously-skip-permissions`)。需要 root 的命令(setup 装系统依赖:`apt-get install …`、`pip install --break-system-packages …`)给 `runCommand` 传 `{ root: true }`。
+**默认非 root,按需提 root** ——命令默认以沙箱的标准**非 root** 用户跑(agent 的自然环境:安全,且 Claude Code 等在 root 下会拒绝 `--dangerously-skip-permissions`)。
+需要 root 的命令(setup 装系统依赖:`apt-get install …`、`pip install --break-system-packages …`)给 `runCommand` 传 `{ root: true }`。
 
 ```typescript
 // eval setup:只有装系统依赖这步提 root;其余(含 agent、验证)默认非 root。
@@ -87,7 +96,7 @@ await sandbox.runCommand("apt-get", ["install", "-y", "openjdk-17-jdk"], { root:
 await sandbox.runCommand("npm", ["install"]);   // 默认非 root,cwd 默认 workdir
 ```
 
-**这套语义跨 provider 一致**,且与主流沙箱服务同构 —— 三个内置 provider 各自把 `{ root: true }` 映射到自己的原生机制:
+**这套语义跨 provider 一致**,且与主流沙箱服务同构 ——三个内置 provider 各自把 `{ root: true }` 映射到自己的原生机制:
 
 | provider | 默认用户 | `{ root: true }` 映射 |
 | --- | --- | --- |
@@ -96,11 +105,17 @@ await sandbox.runCommand("npm", ["install"]);   // 默认非 root,cwd 默认 wor
 | Vercel Sandbox | 非 root(`vercel-sandbox`) | `runCommand(cmd, { sudo: true })` |
 | local | 宿主当前用户 | 不支持,报错(niceeval 不在你的机器上提权,见[本地执行](local.md)) |
 
-约定:**默认值(非 root)与 `root` 的语义在所有 provider 保持一致**,不因 provider 而变——自定义 provider(`defineSandbox()`)接哪个服务都照这条约定映射到该服务的原生机制。本就全程 root 的服务把提 root 视作 no-op;完全无法提 root 的服务可不支持(抛错)—— 但这是"不支持",不是"语义不同"。eval 因此不必感知底下是哪个 provider。
+约定:**默认值(非 root)与 `root` 的语义在所有 provider 保持一致**,不因 provider 而变——自定义 provider(`defineSandbox()`)接哪个服务都照这条约定映射到该服务的原生机制。
+本就全程 root 的服务把提 root 视作 no-op;完全无法提 root 的服务可不支持(抛错)——但这是"不支持",不是"语义不同"。
+eval 因此不必感知底下是哪个 provider。
 
 ## provider 选择:没有默认值,没有按名字选
 
-`sandbox` 字段的类型是 `SandboxOption`(= `SandboxSpec`,一个按 `provider` 区分的数据结构),**不接受未包装字符串,也不会自动探测环境替你选一个**。沙箱型 agent 必须显式给 `sandbox` 一个工厂函数产出的 spec,写在 experiment 的 `sandbox` 字段,或写在 `niceeval.config.ts` 的 `sandbox` 字段作为全项目默认(`config.sandbox`,experiment 没设时用它)。两处都没设、又用了沙箱型 agent 时,`resolveSandbox()` 直接抛错,不会替你猜环境、不会静默回退到某个 provider。这条对 [`localSandbox()`](local.md) 尤其硬:在宿主机上直接跑 agent 生成的命令是有后果的,绝不因缺配置替你悄悄落到本地档。也没有 `--sandbox <name>` 这种 CLI 覆盖——provider 选择是 experiment/config 的书面配置,不是运行时临时参数。
+`sandbox` 字段的类型是 `SandboxOption`(= `SandboxSpec`,一个按 `provider` 区分的数据结构),**不接受未包装字符串,也不会自动探测环境替你选一个**。
+沙箱型 agent 必须显式给 `sandbox` 一个工厂函数产出的 spec,写在 experiment 的 `sandbox` 字段,或写在 `niceeval.config.ts` 的 `sandbox` 字段作为全项目默认(`config.sandbox`,experiment 没设时用它)。
+两处都没设、又用了沙箱型 agent 时,`resolveSandbox()` 直接抛错,不会替你猜环境、不会静默回退到某个 provider。
+这条对 [`localSandbox()`](local.md) 尤其硬:在宿主机上直接跑 agent 生成的命令是有后果的,绝不因缺配置替你悄悄落到本地档。
+也没有 `--sandbox <name>` 这种 CLI 覆盖——provider 选择是 experiment/config 的书面配置,不是运行时临时参数。
 
 ```typescript
 import { defineExperiment } from "niceeval";
@@ -115,7 +130,8 @@ export default defineExperiment({
 
 ## Sandbox 作为数据结构(带参数)
 
-provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱 Run ID"。和 [agent](../adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
+provider 名只是个字符串,带不了参数,也没法表达"哪个是镜像、哪个是沙箱 Run ID"。
+和 [agent](../adapters/README.md) 一样,sandbox 用**数据结构**定义:工厂函数(从 `niceeval/sandbox` 导出)产出 spec,放进 `experiment.sandbox`。
 
 ```typescript
 import { dockerSandbox, vercelSandbox, e2bSandbox, localSandbox } from "niceeval/sandbox";
@@ -136,20 +152,18 @@ e2bSandbox({
 })
 ```
 
-`lifetimeMs` 属于 Sandbox Provider 配置，与 Experiment `timeoutMs` 不同。前者控制一个
-Sandbox 的生命周期，后者限制一条 Attempt；复用时 Runner 还会在派发前确认现有 Sandbox
-能否覆盖下一条 Attempt。完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
+`lifetimeMs` 属于 Sandbox Provider 配置，与 Experiment `timeoutMs` 不同。
+前者控制一个 Sandbox 的生命周期，后者限制一条 Attempt；复用时 Runner 还会在派发前确认现有 Sandbox 能否覆盖下一条 Attempt。
+完整规则见 [Sandbox 复用](reuse.md#两种时间不能混用)。
 
-`sandbox/resolve.ts` 把 spec 归一化成
-`{ provider, image?, snapshotId?, template?, runtime?, lifetimeMs? }`，再按 `provider`
-派发到各 provider 的 `create()` —— **核心仍不按 provider 名分支**，参数只在对应
-provider 的 `create()` 里消费。
+`sandbox/resolve.ts` 把 spec 归一化成 `{ provider, image?, snapshotId?, template?, runtime?, lifetimeMs? }`，再按 `provider` 派发到各 provider 的 `create()` —— **核心仍不按 provider 名分支**，参数只在对应 provider 的 `create()` 里消费。
 
 参数的典型用途是**预制环境**:把 agent CLI 烘焙进镜像/模板,让后续 eval 跳过安装直接开跑。
 
 ### 可发布预制环境
 
-稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布产物,attempt 从产物起实例:Docker 的 image、E2B 的 template、Vercel 的 snapshot。构建归 provider 原生工具,NiceEval 只消费 typed spec 里的产物 ID;`sandbox.setup` 只处理必须按 experiment / attempt 变化的小配置、状态恢复和 fail-fast 预检。
+稳定、体积大、每个 attempt 都相同的内容(系统包、agent CLI、编译好的二进制、模型 cache、固定工具链)应在跑 eval 之前做进 provider 的可发布产物,attempt 从产物起实例:Docker 的 image、E2B 的 template、Vercel 的 snapshot。
+构建归 provider 原生工具,NiceEval 只消费 typed spec 里的产物 ID;`sandbox.setup` 只处理必须按 experiment / attempt 变化的小配置、状态恢复和 fail-fast 预检。
 
 各 provider 的构建工作流、官方 coding agent 起点、自己写预制环境的 DX、新 provider 的义务与运行时 checkpoint,见 [预制环境](library/prebuilt-environments.md)。
 
@@ -169,13 +183,15 @@ type SandboxHook = (
 ) => void | Promise<void>;
 ```
 
-`SandboxHook` 与 `SandboxHookContext` 都从公开入口 `niceeval/sandbox` 导出。需要在共享 helper 上固定签名时直接导入类型，不要从某个 provider spec 的 `.setup` 参数反推：
+`SandboxHook` 与 `SandboxHookContext` 都从公开入口 `niceeval/sandbox` 导出。
+需要在共享 helper 上固定签名时直接导入类型，不要从某个 provider spec 的 `.setup` 参数反推：
 
 ```typescript
 import type { SandboxHook, SandboxHookContext } from "niceeval/sandbox";
 ```
 
-Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic/fact`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。Hook 不返回值;要把 `setup` 里创建的句柄传给 `teardown`,以 `sandbox` 实例作键存取——Hook 每沙箱一次、并发 attempt 共享同一个模块,普通模块变量会互相覆写,而 sandbox 与 attempt 一一对应,是天然的 per-attempt 键(四层统一的成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它)):
+Sandbox hook 有自己的窄上下文,包含 `experimentId`、`signal` 与作用域绑定的 `progress/diagnostic/fact`;它不借用包含 session、model、telemetry 的完整 `AgentContext`。
+Hook 不返回值;要把 `setup` 里创建的句柄传给 `teardown`,以 `sandbox` 实例作键存取——Hook 每沙箱一次、并发 attempt 共享同一个模块,普通模块变量会互相覆写,而 sandbox 与 attempt 一一对应,是天然的 per-attempt 键(四层统一的成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它)):
 
 ```typescript
 import type { Sandbox } from "niceeval/sandbox";
@@ -194,10 +210,12 @@ const spec = e2bSandbox({ template: "niceeval-agents" })
 
 「载入 / 回存」这类收尾不需要 setup→teardown 句柄，状态键是 `ctx.experimentId` 的外部 KV。
 同一 SandboxSpec 内，多次 `.setup()` 按追加顺序执行，多次 `.teardown()` 按追加的逆序执行。
-这个 LIFO 规则只描述同层 Hook 列表，不推导跨层 teardown 顺序。`setup` 链中途抛错时，
-后续 setup 不再执行，teardown 链仍完整走完。
+这个 LIFO 规则只描述同层 Hook 列表，不推导跨层 teardown 顺序。
+`setup` 链中途抛错时，后续 setup 不再执行，teardown 链仍完整走完。
 
-这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。稳定的大依赖先做进 image/template/snapshot;Hook 是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。
+这一层解决的是一类特定问题:**环境内容必须按实验变化,不能在构建期固定。
+** 写一份实验专属 hook、恢复状态、写入按 flags 变化的小配置、做环境预检——这些事静态镜像不知道本次 experiment。
+稳定的大依赖先做进 image/template/snapshot;Hook 是运行时的薄层,不应成为每 attempt 重装工具链和下载大模型的默认位置。
 
 ```typescript
 export default defineExperiment({
@@ -209,11 +227,15 @@ export default defineExperiment({
 });
 ```
 
-这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,Hook 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
+这是一个真实的 downstream 场景:记忆条件测试里,MCP server(构造期配置,决定"有没有这个工具")走 `codexAgent({ mcpServers: [...] })`;环境层(这次实验要不要装某个二进制、预热、维护跨 attempt 的记忆状态)走 `.setup()` / `.teardown()`。
+两条职责线不混:MCP/skills/model 依旧只从 adapter factory 进,Hook 不复制 factory 拥有的配置知识,见 [Adapter · 配置归属不变量](../adapters/architecture/agent-contract.md#配置归属不变量)。
 
-跨 attempt 状态本身没有框架原语——没有 `persistentState` 这类东西。载入 / 回存是用户在 `setup` / `teardown` 里自己写的普通代码(读写一个外部 KV、文件、数据库,用什么都行);要用哪个键隔离不同实验的状态,靠 `ctx.experimentId`——`AgentContext` 新增的只读字段,值是路径推导的实验 id(与结果里 `experimentId` 同源),不经 experiment 跑时是 `undefined`。[载入…回存] 这段读写外部状态的代码是临界区,想让同一实验的 attempt 不并发踩踏,在 experiment 上声明 `maxConcurrency: 1` 即可串行,不需要框架另设锁。
+跨 attempt 状态本身没有框架原语——没有 `persistentState` 这类东西。
+载入 / 回存是用户在 `setup` / `teardown` 里自己写的普通代码(读写一个外部 KV、文件、数据库,用什么都行);要用哪个键隔离不同实验的状态,靠 `ctx.experimentId`——`AgentContext` 新增的只读字段,值是路径推导的实验 id(与结果里 `experimentId` 同源),不经 experiment 跑时是 `undefined`。
+[载入…回存] 这段读写外部状态的代码是临界区,想让同一实验的 attempt 不并发踩踏,在 experiment 上声明 `maxConcurrency: 1` 即可串行,不需要框架另设锁。
 
-失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与 Hook)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
+失败语义与 agent 的 `setup` / `teardown` 完全对称:`sandbox.setup` 抛错按执行错误计(`verdict: "errored"`,基建问题,不是 agent 做题失败);`sandbox.teardown` 报错只记日志、不抛(收尾阶段的错误不应该让一个已经跑完的 attempt 变成失败)。
+收尾链上的每个可调用体(eval / agent / sandbox 各段的 cleanup 与 Hook)各自有 30s 清理超时,到点按 teardown 失败处理(`teardown-failed` 诊断)并继续走下一段——收尾不能无限拖住退出(整体设计见 [CLI 内部架构 · 中断:三级响应](../../cli.md#中断三级响应))。
 
 Direct Agent(`kind: "direct"`)没有真实 Sandbox，`experiment.sandbox` 对它不参与并直接忽略。
 Sandbox Hook 因而不会执行，不需要额外的 fail-fast 分支。
@@ -243,9 +265,14 @@ const sandbox = e2bSandbox({ template: "niceeval-agents" })
   });
 ```
 
-`progress` 只更新当前 sandbox setup 的短期 activity;`diagnostic` 才进入永久输出。它们不能指定 `sandbox-setup` 等 phase——runner 从当前 hook 自动得出阶段。诊断也不会吞掉或制造失败:上例明确选择降级继续;如果环境不可用,应直接抛出原错误,让 attempt 进入 `errored`。
+`progress` 只更新当前 sandbox setup 的短期 activity;`diagnostic` 才进入永久输出。
+它们不能指定 `sandbox-setup` 等 phase——runner 从当前 hook 自动得出阶段。
+诊断也不会吞掉或制造失败:上例明确选择降级继续;如果环境不可用,应直接抛出原错误,让 attempt 进入 `errored`。
 
-第三条通道 `ctx.fact(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。它落进本 attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现；它用于事后审计，不参与 fingerprint。计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`fact` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
+第三条通道 `ctx.fact(key, value)` 上报**运行环境观测**——恢复了哪份记忆状态、库里起步有多少条笔记、远端服务实际返回了哪个版本。
+它落进本 attempt 的 `result.json`(`AttemptRecord.facts`),在 show 的 `facts:` 行、对照矩阵与 `--json` 中作为一等观测量呈现；它用于事后审计，不参与 fingerprint。
+计划内自变量必须同时进入 `flags`、model、agent、sandbox 配置等 fingerprint 输入；无法配置化的外部可变状态变化后用 `--rerun all` 重跑。
+三条通道语义互斥:`progress` 短期不落盘、`diagnostic` 记异常、`fact` 记中性事实;key/value 形状、覆盖与复用边界见 [Results · facts](../record/architecture.md#facts运行事实):
 
 ```typescript
 ctx.fact("memory.notes", noteCount);
@@ -273,7 +300,8 @@ export default defineSandbox({
 });
 ```
 
-provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能直接写 `stdout` / `stderr`;这样 Human dashboard 不会被打散,CI 事件也能保持单一顺序。完整 API 与其它入口的对应关系见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
+provider 的 retry/backoff 与 SDK 原始日志也走这条反馈管线,不能直接写 `stdout` / `stderr`;这样 Human dashboard 不会被打散,CI 事件也能保持单一顺序。
+完整 API 与其它入口的对应关系见 [Experiments · 生命周期代码怎样向这次运行反馈](../experiments/library.md#生命周期代码怎样向这次运行反馈)。
 
 ## 环境预置放哪
 
@@ -308,14 +336,16 @@ export default defineSandbox({
 });
 ```
 
-自定义 provider 不支持 `--keep-sandbox`。留存后的 `niceeval sandbox stop` 是不加载 config / eval 模块的新进程,无法安全找回用户对象上的销毁函数;框架也不会用“删登记项、让用户手工清理”冒充完整生命周期。组合使用会在调用 `create()` 前报错,不会先起一个无法纳管的实例。
+自定义 provider 不支持 `--keep-sandbox`。
+留存后的 `niceeval sandbox stop` 是不加载 config / eval 模块的新进程,无法安全找回用户对象上的销毁函数;框架也不会用“删登记项、让用户手工清理”冒充完整生命周期。
+组合使用会在调用 `create()` 前报错,不会先起一个无法纳管的实例。
 
 要贡献进 niceeval 本体(像 docker/vercel/e2b 那样内置)走另一条路,见 [Architecture · 再接一个 provider](architecture.md#再接一个-provider)。
 
 ## 相关阅读
 
-- [README](README.md) —— 为什么需要沙箱、provider 统一接口。
-- [预制环境](library/prebuilt-environments.md) —— 各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
+- [README](README.md) ——为什么需要沙箱、provider 统一接口。
+- [预制环境](library/prebuilt-environments.md) ——各 provider 的构建工作流、官方 agent 起点与运行时 checkpoint。
 - [CLI](cli.md) —— `--keep-sandbox` 留存现场与 `niceeval sandbox` 清理命令。
 - [操作 Sandbox](library/operations.md) —— `t.sandbox` 的文件与命令 API。
 - [断言 Sandbox 结果](library/asserting-results.md) —— diff、文件和 shell 行为怎么评分。

@@ -116,10 +116,8 @@ Vercel snapshot 只有 Team/Project 共享,没有 E2B `template publish` 对应�
 
 ## 官方 coding agent 起点
 
-"没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。NiceEval 为内置
-coding Agent 维护公共基线制品：Docker image 六家齐全；E2B template 覆盖
-Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进台账，不导出常量）；
-配方同源、版本号共用：
+"没有跨 provider 构建 DSL"不等于每个项目都要从空白环境安装 coding agent。
+NiceEval 为内置 coding Agent 维护公共基线制品：Docker image 六家齐全；E2B template 覆盖 Claude Code / Codex / Bub（其余 Agent 的 E2B 模板未进台账，不导出常量）；配方同源、版本号共用：
 
 | Agent | E2B 公共模板 | Docker 公共镜像 | 起点与校验 |
 |---|---|---|---|

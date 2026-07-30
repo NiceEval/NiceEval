@@ -2,10 +2,9 @@
 
 `@niceeval/verify`(工作名)的完整断言词表。设计定位与形态裁决见 [README](README.md);逐场景写法见 [Use Cases](use-cases/README.md)。
 
-库从主入口导出四组能力:命令执行与证据句柄、语义树 Run matcher、容差 golden
-matcher、点查询。浏览器交互词表单独走 `@niceeval/verify/browser` 子路径,
-把 Playwright 依赖隔离在浏览器场景之外。全部是普通函数与 vitest
-matcher,不带 runner、不带全局状态。
+库从主入口导出四组能力:命令执行与证据句柄、语义树 Run matcher、容差 golden matcher、点查询。
+浏览器交互词表单独走 `@niceeval/verify/browser` 子路径,把 Playwright 依赖隔离在浏览器场景之外。
+全部是普通函数与 vitest matcher,不带 runner、不带全局状态。
 
 ```ts
 import { cli, evidence, term, printTermTree } from "@niceeval/verify";
@@ -165,14 +164,10 @@ t.stats();         // ✓/✗/! 计数行:{ passed, failed, errored } —— 断
 
 ## 浏览器交互词表
 
-浏览器交互不属于三层解析断言:它验收「用户操作可达、状态收敛」,
-断言对象是真实浏览器里的行为。写法规则五条见
-[README · 浏览器交互](README.md#浏览器交互现成词表加领域词);
-调研结论「引擎现成、不自建」见
-[References · 浏览器交互 DSL 生态](../../references.md#浏览器交互-dsl-生态playwright-原生词表screenplaycodeceptjs)。
-词表从 `@niceeval/verify/browser` 导出,只做两件事:按公开组件契约立词的
-领域寻址,和步骤轨迹。等待、断言、结构匹配全部直接用 Playwright 原生面,
-不做第二层包装。
+浏览器交互不属于三层解析断言:它验收「用户操作可达、状态收敛」,断言对象是真实浏览器里的行为。
+写法规则五条见[README · 浏览器交互](README.md#浏览器交互现成词表加领域词);调研结论「引擎现成、不自建」见[References · 浏览器交互 DSL 生态](../../references.md#浏览器交互-dsl-生态playwright-原生词表screenplaycodeceptjs)。
+词表从 `@niceeval/verify/browser` 导出,只做两件事:按公开组件契约立词的领域寻址,和步骤轨迹。
+等待、断言、结构匹配全部直接用 Playwright 原生面,不做第二层包装。
 
 ```ts
 import { openSite } from "@niceeval/verify/browser";
@@ -187,10 +182,7 @@ await ui.filter().fill("main");
 await expect(table.visibleRows()).toHaveCount(1);
 ```
 
-领域词按公开组件契约立词——一个词能存在的前提是对应行为写在
-`docs/feature/reports/` 的组件契约里;内部寻址一律按官方优先序
-(role → 可见文本 → test id),场景文件里不出现 CSS / class
-选择器与 `:visible` 方言:
+领域词按公开组件契约立词——一个词能存在的前提是对应行为写在 `docs/feature/reports/` 的组件契约里;内部寻址一律按官方优先序(role → 可见文本 → test id),场景文件里不出现 CSS / class 选择器与 `:visible` 方言:
 
 | 词 | 契约来源 | 行为 |
 |---|---|---|
@@ -206,14 +198,9 @@ await expect(table.visibleRows()).toHaveCount(1);
 
 三条运行学约定:
 
-- **等待与断言**:直接用 Playwright web-first `expect`(自动重试到收敛),
-  词表不提供固定时长 sleep,不带重试的 `count()` 即时读数不进场景;
-  `expect` 脱离 Playwright runner 的行为是[待裁决分歧](README.md#待裁决分歧)。
-- **结构**:交互后的结构收敛用 `toMatchAriaSnapshot` 表达,与 HTML
-  面同一套语义,词表不发明第二套结构语法。
-- **步骤轨迹**:每个领域词把自己记入步骤日志;失败消息 = 已执行步骤序列 +
-  失败步骤 + 该步骤的定位候选(Screenplay 活动轨迹之形,不引其依赖),
-  前置断言失败与交互深处失败因此天然可分。
+- **等待与断言**:直接用 Playwright web-first `expect`(自动重试到收敛),词表不提供固定时长 sleep,不带重试的 `count()` 即时读数不进场景;`expect` 脱离 Playwright runner 的行为是[待裁决分歧](README.md#待裁决分歧)。
+- **结构**:交互后的结构收敛用 `toMatchAriaSnapshot` 表达,与 HTML 面同一套语义,词表不发明第二套结构语法。
+- **步骤轨迹**:每个领域词把自己记入步骤日志;失败消息 = 已执行步骤序列 + 失败步骤 + 该步骤的定位候选(Screenplay 活动轨迹之形,不引其依赖),前置断言失败与交互深处失败因此天然可分。
 
 ## 失败反馈
 

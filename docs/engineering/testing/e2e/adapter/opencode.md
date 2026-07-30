@@ -1,8 +1,7 @@
 # opencode 仓库
 
 仓库 ID `opencode`，group `sandbox`，`e2e.json.requires.docker: true`。
-被测对象是 `openCodeAgent()` 在 Docker Sandbox 里的完整生命周期
-（契约见 [OpenCode 契约页](../../../../feature/adapters/sdk/opencode/README.md)）。
+被测对象是 `openCodeAgent()` 在 Docker Sandbox 里的完整生命周期（契约见 [OpenCode 契约页](../../../../feature/adapters/sdk/opencode/README.md)）。
 
 ## Eval 闭环
 
@@ -15,7 +14,5 @@
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的
-  `show --execution` 执行树出现工具调用节点。
-- **OTel**：适配器复用 canonical OTel mapper；时间轨缺失只影响 timing 注释，
-  不影响事件流断言。
+- **CLI 读回**：`show` 成绩单列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现工具调用节点。
+- **OTel**：适配器复用 canonical OTel mapper；时间轨缺失只影响 timing 注释，不影响事件流断言。

@@ -1,13 +1,11 @@
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[PLAN-1](PLAN-1.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 目的
 
-记录这个决策场景下，候选工具 / 组件 / 环境的真实限制。只写现状是
-什么、能做什么、带来什么影响，不写目标或选型结论——目标见
-`GOALS.md`，结论见 `DECISION.md`。
+记录这个决策场景下，候选工具 / 组件 / 环境的真实限制。
+只写现状是什么、能做什么、带来什么影响，不写目标或选型结论——目标见 `GOALS.md`，结论见 `DECISION.md`。
 
 ---
 

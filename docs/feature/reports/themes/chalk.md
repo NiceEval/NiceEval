@@ -1,8 +1,7 @@
 # Chalk —— 官方浅色主题
 
 `chalk` 是与 [Basalt](basalt.md) 成对的另一极：白垩对玄武岩，浅面对黑面，圆角对直角。
-它同时是「官方样式没写死任何观感」的活证明——Basalt 与 Chalk 之间的每一处差异
-都住在主题令牌里，官方 stylesheet 一行不改。
+它同时是「官方样式没写死任何观感」的活证明——Basalt 与 Chalk 之间的每一处差异都住在主题令牌里，官方 stylesheet 一行不改。
 
 ```sh
 niceeval view --theme chalk
@@ -11,12 +10,18 @@ niceeval view --theme chalk --out site
 
 ## 视觉主张
 
-- **锁定浅色。** `appearance: "light"`，全站不渲染浅深切换。每个值都为白纸似的底色挑过。
-- **圆角。** `radius: "8px"`。卡片、表格、pill 都是软角——白垩是软的。
-- **有色的 accent。** 链接、locator 与 focus 环用蓝色 `#2a78d6`，在浅底上这一点色相不喧宾夺主，还把「可点」标得更清楚。
-- **同一套结构关系。** 层次仍然靠 1px 边框与两级表面色，判定三色仍然是页面上唯一的
-  饱和色；Chalk 改的是外观，不是信息编码。
-- **正文基准 14px。** 浅底上同字号的视觉密度更高，回一档换阅读舒适。
+- **锁定浅色。**
+  `appearance: "light"`，全站不渲染浅深切换。
+  每个值都为白纸似的底色挑过。
+- **圆角。**
+  `radius: "8px"`。
+  卡片、表格、pill 都是软角——白垩是软的。
+- **有色的 accent。**
+  链接、locator 与 focus 环用蓝色 `#2a78d6`，在浅底上这一点色相不喧宾夺主，还把「可点」标得更清楚。
+- **同一套结构关系。**
+  层次仍然靠 1px 边框与两级表面色，判定三色仍然是页面上唯一的饱和色；Chalk 改的是外观，不是信息编码。
+- **正文基准 14px。**
+  浅底上同字号的视觉密度更高，回一档换阅读舒适。
 
 ## 令牌取值
 
@@ -66,8 +71,7 @@ niceeval view --theme chalk --out site
 
 ## 验收
 
-与 [Basalt 的验收](basalt.md#验收)同一张清单，对象换成浅色背景：对比度 AA、
-四 verdict 互不混淆、六 series 四种条件可分、focus 环可见、无 JavaScript 可读。
+与 [Basalt 的验收](basalt.md#验收)同一张清单，对象换成浅色背景：对比度 AA、四 verdict 互不混淆、六 series 四种条件可分、focus 环可见、无 JavaScript 可读。
 
 ## 相关阅读
 

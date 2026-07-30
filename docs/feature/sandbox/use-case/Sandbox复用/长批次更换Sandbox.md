@@ -1,7 +1,7 @@
 # Sandbox 复用：长批次在派发前更换 Sandbox
 
-一批短 Attempt 的总时长可能超过云 Sandbox 的连续运行上限。等待实例在 Agent 执行中途消失，
-会浪费本条成本，也会留下证据不完整的 `errored`。
+一批短 Attempt 的总时长可能超过云 Sandbox 的连续运行上限。
+等待实例在 Agent 执行中途消失，会浪费本条成本，也会留下证据不完整的 `errored`。
 
 ## 定义实验
 
@@ -44,5 +44,5 @@ Sandbox reuse: replacing sandbox 1 before memory/commit-18
 
 ## 什么时候改用默认模式
 
-需要每条 Attempt 都从全新环境开始或需要保留失败现场时，去掉 `sandboxReuse`。稳定依赖应先进入
-[预制环境](../../library/prebuilt-environments.md)，避免每个全新实例重复安装。
+需要每条 Attempt 都从全新环境开始或需要保留失败现场时，去掉 `sandboxReuse`。
+稳定依赖应先进入 [预制环境](../../library/prebuilt-environments.md)，避免每个全新实例重复安装。

@@ -1,8 +1,7 @@
 # Record —— `.niceeval/` 运行记录
 
-Record 是实验跑过之后留在磁盘上的记录:每条判定,以及支撑这条判定的全部证据。默认记录根是
-项目下的 `.niceeval/`;`niceeval exp` 写入它,`niceeval show`、`niceeval view` 和
-`niceeval/report` 读取它。
+Record 是实验跑过之后留在磁盘上的记录:每条判定,以及支撑这条判定的全部证据。
+默认记录根是项目下的 `.niceeval/`;`niceeval exp` 写入它,`niceeval show`、`niceeval view` 和 `niceeval/report` 读取它。
 
 ```text
 .niceeval/
@@ -18,19 +17,18 @@ Record 是实验跑过之后留在磁盘上的记录:每条判定,以及支撑�
             └── diff.json
 ```
 
-「记录」指持久化事实,不指终端输出或网页报告。判定、结构化执行错误、去重后的 diagnostics 与
-轻量摘要在 JSON 主记录中;瞬时 progress 不落盘;体积较大、按需读取的对话、源码、trace 和 diff
-拆成 attempt artifact。完整字段、可选文件和版本规则见 [Architecture](architecture.md)。
+「记录」指持久化事实,不指终端输出或网页报告。
+判定、结构化执行错误、去重后的 diagnostics 与轻量摘要在 JSON 主记录中;瞬时 progress 不落盘;体积较大、按需读取的对话、源码、trace 和 diff 拆成 attempt artifact。
+完整字段、可选文件和版本规则见 [Architecture](architecture.md)。
 
-用户通常不需要手工拼路径:用 [`niceeval/record`](library.md) 打开记录根、按层次导航、读取
-attempt artifact,或把一组 Run 发布到别的目录。
+用户通常不需要手工拼路径:用 [`niceeval/record`](library.md) 打开记录根、按层次导航、读取 attempt artifact,或把一组 Run 发布到别的目录。
 
 ## 三层里的第一层
 
-从磁盘到一张报告经过[三层](../reading/README.md):事实、选择、呈现。Record 是最下面那层,
-**只回答「盘上有什么」,不回答「该看哪些」**。「每个实验取最新一次」是一种
-看法,「这批数据覆盖了多少题」是一次推断——两者都住在 Sample 层。这条线让 Record 保持一个性质:
-它的每个返回值都能在磁盘上逐字节指出来源,读者不需要判断哪些是事实、哪些是解释。
+从磁盘到一张报告经过[三层](../reading/README.md):事实、选择、呈现。
+Record 是最下面那层,**只回答「盘上有什么」,不回答「该看哪些」**。
+「每个实验取最新一次」是一种看法,「这批数据覆盖了多少题」是一次推断——两者都住在 Sample 层。
+这条线让 Record 保持一个性质:它的每个返回值都能在磁盘上逐字节指出来源,读者不需要判断哪些是事实、哪些是解释。
 
 ## 它负责什么
 

@@ -10,5 +10,4 @@
 - [Sample fix prompt](sample-fix-prompt.md)
 - [Failure list](failure-list.md) / [Stability overview](stability-overview.md)
 
-`SampleOverview` 是 `SampleSummary`、`ExperimentScatter` 与 `ExperimentTable`
-的便捷集合，不隐藏第四种读面。
+`SampleOverview` 是 `SampleSummary`、`ExperimentScatter` 与 `ExperimentTable` 的便捷集合，不隐藏第四种读面。

@@ -1,6 +1,8 @@
 # Experiments —— 怎么跑这批 eval
 
-一个 eval 描述**测什么**(这轮对话该发生什么、怎么算对)。一个 **experiment** 描述**怎么跑这批 eval**:用哪些 agent、跑几次、过滤哪些、预算多少。两者刻意分开。
+一个 eval 描述**测什么**(这轮对话该发生什么、怎么算对)。
+一个 **experiment** 描述**怎么跑这批 eval**:用哪些 agent、跑几次、过滤哪些、预算多少。
+两者刻意分开。
 
 ```
 evals/        # 测什么 —— agent 无关,评分逻辑都在各自的 test() 里
@@ -11,9 +13,14 @@ experiments/  # 怎么跑 —— 运行矩阵:agent × model × attempts over �
 
 ## 为什么要分开
 
-- **eval 不该知道被测的是谁。** 同一条 memory eval,既要测 claude-code 也要测 codex/bub。把 agent 写死进 eval 就废了复用。
-- **experiment 是可签入的运行配置。** 比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
-- **跨 agent / 跨配置对比是一等公民。** 每个实验文件钉一个单一配置；报告直接比较当前 Sample 里的 experiments，并读取各 Run 记录的 `selectedEvalIds`。目录只组织源码、生成 id 和支持 CLI 前缀选择。
+- **eval 不该知道被测的是谁。**
+  同一条 memory eval,既要测 claude-code 也要测 codex/bub。
+  把 agent 写死进 eval 就废了复用。
+- **experiment 是可签入的运行配置。**
+  比一串临时 CLI flag 可复现:`niceeval exp compare` 永远跑同一组对照。
+- **跨 agent / 跨配置对比是一等公民。**
+  每个实验文件钉一个单一配置；报告直接比较当前 Sample 里的 experiments，并读取各 Run 记录的 `selectedEvalIds`。
+  目录只组织源码、生成 id 和支持 CLI 前缀选择。
 
 ## `defineExperiment` 的形状
 
@@ -53,38 +60,50 @@ export default defineExperiment({
 });
 ```
 
-`evals` 可以同时选择通过制与计分制 eval。题型由 `EvalDescriptor.scoring` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。计分语义见[计分粒度](../assertions/library/score-points.md)。
+`evals` 可以同时选择通过制与计分制 eval。
+题型由 `EvalDescriptor.scoring` 给报告：通过制只进入通过率，计分制只进入总分；两者分别聚合、并排展示，不相加。
+计分语义见[计分粒度](../assertions/library/score-points.md)。
 
-`flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
+`flags` 与 `labels` 的分界是**这个值会不会改变 attempt 里发生的事**:会(开关联网、注入 skill)→ `flags`,进 `ctx.flags` / `t.flags`、参与可比性配置;只是给报表归类(「这格用的记忆机制是 mempal」)→ `labels`,agent 和 eval 都看不见,改它不作废任何已有结果。
+两者都是实验作者写下的**声明**;跑起来才存在的值(`setup` 起出来的隧道 URL、服务端报回的版本)两个袋子都不进,用 `ctx.fact()` 上报成运行观测。
+三个家的判据按场景查[用例手册 · flags / labels / facts 放哪个](use-case/实验值归属/);声明与消费见 [Library · labels](library.md#labels声明归类坐标不进运行时)与[运行时坐标不进配置](library.md#运行时坐标不进配置三个家)。
 
-`maxConcurrency` 是**实验自己的并发闸**:只限流本实验的 attempt,同批其它实验照常按全局并发跑。名额从沙箱创建前一直握到 `teardown` 与沙箱销毁完成,中途不松手——所以 `maxConcurrency: 1` 的实验里,上一个 attempt 的回存 Hook 没跑完,下一个 attempt 的载入不会开始,共享状态的正确性只靠这一行声明,Hook 里不需要自己加锁。什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);闸的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
+`maxConcurrency` 是**实验自己的并发闸**:只限流本实验的 attempt,同批其它实验照常按全局并发跑。
+名额从沙箱创建前一直握到 `teardown` 与沙箱销毁完成,中途不松手——所以 `maxConcurrency: 1` 的实验里,上一个 attempt 的回存 Hook 没跑完,下一个 attempt 的载入不会开始,共享状态的正确性只靠这一行声明,Hook 里不需要自己加锁。
+什么场景配什么值(跨 eval 累积记忆、给撞限额的实验降速、`attempts` + `earlyExit` 的严格重试等),逐例见[用例手册 · 并发怎么配](use-case/并发/);闸的持有期语义单点在 [Runner · 调度](../../runner.md#调度有界并发)。
 
-`classifyFailure` 是实验作者识别共享基建死因的纯分类器。它只声明失败是否可重试、以及死因波及
-attempt、eval 还是整个 experiment，不配置重试次数或退避策略，也不参与 fingerprint。输入形状、
-分类链和止损语义见[执行失败分类](../error-classification/architecture.md#类型)，真实写法见其
-[Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
+`classifyFailure` 是实验作者识别共享基建死因的纯分类器。
+它只声明失败是否可重试、以及死因波及 attempt、eval 还是整个 experiment，不配置重试次数或退避策略，也不参与 fingerprint。
+输入形状、分类链和止损语义见[执行失败分类](../error-classification/architecture.md#类型)，真实写法见其[Library](../error-classification/library.md#实验--eval-作者声明死因的波及范围)。
 
-`setup` / `teardown` 是**实验级生命周期 Hook 对**:整场至多一次、跑在宿主机上。`setup` 在本实验第一个真正要派发的 attempt 之前执行;`teardown` 在本实验全部 attempt 收尾后执行(失败、中断也执行),当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免,半路失败的现场同样要扫尾;一个 attempt 都不派发时两者都不跑。它们管「每个实验一份、所有 attempt 共享」的宿主机侧资源:起一条到内网服务的隧道、拉起本实验专用的 mock server、租一个 license。`setup` 的产物写模块级变量,`teardown` 与同文件的 agent / sandbox Hook 从闭包读——runner 不做值的中介。四层生命周期(experiment / sandbox / agent / eval)共用「成对 `setup` / `teardown`、闭包传状态」这一种形态,统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它);用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
+`setup` / `teardown` 是**实验级生命周期 Hook 对**:整场至多一次、跑在宿主机上。
+`setup` 在本实验第一个真正要派发的 attempt 之前执行;`teardown` 在本实验全部 attempt 收尾后执行(失败、中断也执行),当且仅当 `setup` 的时点走到过——`setup` 抛错不豁免,半路失败的现场同样要扫尾;一个 attempt 都不派发时两者都不跑。
+它们管「每个实验一份、所有 attempt 共享」的宿主机侧资源:起一条到内网服务的隧道、拉起本实验专用的 mock server、租一个 license。
+`setup` 的产物写模块级变量,`teardown` 与同文件的 agent / sandbox Hook 从闭包读——runner 不做值的中介。
+四层生命周期(experiment / sandbox / agent / eval)共用「成对 `setup` / `teardown`、闭包传状态」这一种形态,统一语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它);用法与失败语义见 [Library · 实验级共享服务](library.md#实验级共享服务setup-与-teardown)、执行语义见 [Architecture · 实验级生命周期](architecture.md#实验级生命周期setup-与-teardown)。
 
-生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式 Hook(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务 Fixture 放 `EvalDef.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、沙箱 Hook 的链式写法见 [Sandbox · 沙箱生命周期 Hook](../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)。
+生命周期各层各归各位,`setup` 不替代其它层:按实验变化的**沙箱内**环境预置(装二进制、预热、写 hook 文件、载入/回存跨 attempt 状态)挂 `sandbox` 字段的 `SandboxSpec` 链式 Hook(`.setup(fn)` / `.teardown(fn)`,沙箱创建后、变更分类账锚点前最先跑,销毁前最后收尾);这条 eval 自己的任务 Fixture 放 `EvalDef.setup` / `test(t)`;连 agent / 装 CLI 放 `SandboxAgent.setup`;跨实验、这次 run 之前就该存在的资源仍用外部编排。
+哪层放什么按场景查[用例手册 · 环境预置与收尾怎么放](use-case/生命周期/);完整分工表见 [环境预置放哪](../sandbox/library.md#环境预置放哪)、沙箱 Hook 的链式写法见 [Sandbox · 沙箱生命周期 Hook](../sandbox/library.md#沙箱生命周期-hook-setup-与-teardown)。
 
-`sandbox` 是整个 experiment 的单一固定 spec。一批 eval 需要不同预制环境时，eval 用 `environment` 声明需求 profile，spec 的 `environments` 表把 profile 翻译成该 provider 的具体产物——experiment 仍只有一个 spec、覆盖全部选中 eval，Run 与对比横截面不因此拆分。写法见 [Library · 不同 eval 起自不同预制环境](library.md#不同-eval-起自不同预制环境)。
+`sandbox` 是整个 experiment 的单一固定 spec。
+一批 eval 需要不同预制环境时，eval 用 `environment` 声明需求 profile，spec 的 `environments` 表把 profile 翻译成该 provider 的具体产物——experiment 仍只有一个 spec、覆盖全部选中 eval，Run 与对比横截面不因此拆分。
+写法见 [Library · 不同 eval 起自不同预制环境](library.md#不同-eval-起自不同预制环境)。
 
 `sandboxReuse: true` 是实验作者对 Sandbox 生命周期的声明，不是一次运行的提速开关。
 它表示选中的 Eval 可以在题间重置 workdir 后共用 Sandbox。
 SandboxSpec Hook 每个 Sandbox 成对执行一次，Agent 与 Eval Hook 仍逐 Attempt 成对执行。
 省略时，每个 Attempt 使用全新 Sandbox。
 
-同时活跃的 Sandbox 数由现有并发限制决定：
-同一个 Sandbox 一次只执行一条 Attempt；Experiment 的 `maxConcurrency` 与全局并发位共同限制
-同时运行数。需要严格串行时声明 `maxConcurrency: 1`。
+同时活跃的 Sandbox 数由现有并发限制决定：同一个 Sandbox 一次只执行一条 Attempt；Experiment 的 `maxConcurrency` 与全局并发位共同限制同时运行数。
+需要严格串行时声明 `maxConcurrency: 1`。
 完整顺序、Provider 能力与结果沿用边界见 [Sandbox 复用](../sandbox/reuse.md)。
 
 `timeoutMs` 始终是单条 Attempt 的 deadline，不能为了延长 Sandbox 存活而提高。
 需要更长 Sandbox 复用寿命时，在 `sandbox` Provider 上声明 `lifetimeMs`。
 两个时间的关系见 [Sandbox 复用 · 两种时间](../sandbox/reuse.md#两种时间不能混用)。
 
-id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/codex/gpt-5.4`(禁止手写 id)。任意深度目录都只形成 id 前缀，见 [Library · 路径只表达身份](library.md#路径只表达身份与选择)。
+id 只从**路径**推导:`experiments/agents/codex/gpt-5.4.ts` → `agents/codex/gpt-5.4`(禁止手写 id)。
+任意深度目录都只形成 id 前缀，见 [Library · 路径只表达身份](library.md#路径只表达身份与选择)。
 
 ## 相关阅读
 

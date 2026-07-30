@@ -1,6 +1,7 @@
 # `HeroCard`
 
-[`Hero`](hero.md) 使用的站点身份原语。它只收已经算好的 Sample 来源摘要；标题由调用者显式传入。
+[`Hero`](hero.md) 使用的站点身份原语。
+它只收已经算好的 Sample 来源摘要；标题由调用者显式传入。
 
 ```ts
 interface HeroContent {
@@ -24,8 +25,7 @@ interface HeroCardProps {
 web 面依次渲染可选 logo、hero 标题（`<h1>`）、可选介绍、可选链接组、meta 行与品牌行。
 最后运行时间按渲染 locale 格式化；`latestStartedAt` 为 null 时显示内置「暂无运行」文案。
 text 面输出标题、可选介绍、可选链接与 meta，不含纯视觉 logo 和品牌行。
-`niceeval/report/react` 导出同名纯组件，web 行为一致——品牌跟着组件走，
-不区分官方宿主与嵌入页面。
+`niceeval/report/react` 导出同名纯组件，web 行为一致——品牌跟着组件走，不区分官方宿主与嵌入页面。
 
 ## 相关阅读
 

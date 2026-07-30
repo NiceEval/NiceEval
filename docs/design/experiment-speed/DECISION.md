@@ -1,8 +1,6 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·[PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md)
 
 ---
 
@@ -11,15 +9,10 @@
 实验加速采用分层方案：
 
 1. 先用结果沿用、选择与首过即停减少不必派发的 Attempt。
-2. 默认使用[方案 1](PLAN-1.md)：保留有界并发，稳定依赖进入预制环境，
-   每 Attempt 使用全新 Sandbox。
-3. Sandbox 预热可以移动创建时间，但真实记录中 `sandbox.create` 只占约 0.5%–0.6%，
-   因此不作为第一优先级。
-4. Experiment 作者确认题间状态边界后，显式使用[方案 3](PLAN-3.md)：
-   `sandboxReuse: true` 让 Attempt 共用 Sandbox。
-5. [方案 2](PLAN-2.md)不是独立 Feature；
-   对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1`
-   表达一次只运行一个可复用 Sandbox。
+2. 默认使用[方案 1](PLAN-1.md)：保留有界并发，稳定依赖进入预制环境，每 Attempt 使用全新 Sandbox。
+3. Sandbox 预热可以移动创建时间，但真实记录中 `sandbox.create` 只占约 0.5%–0.6%，因此不作为第一优先级。
+4. Experiment 作者确认题间状态边界后，显式使用[方案 3](PLAN-3.md)：`sandboxReuse: true` 让 Attempt 共用 Sandbox。
+5. [方案 2](PLAN-2.md)不是独立 Feature；对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1` 表达一次只运行一个可复用 Sandbox。
 
 这不是一种机制承接所有提速需求。
 默认路径优先保证隔离与并行，Sandbox 复用只分摊准备工作。
@@ -28,19 +21,17 @@
 
 ### 不把所有实验改成串行
 
-MemoryBench 和 NiceEval-Eval 的 Agent 执行占总耗时约 68.8%–87.6%，
-Sandbox 创建只占约 0.5%–0.6%。
+MemoryBench 和 NiceEval-Eval 的 Agent 执行占总耗时约 68.8%–87.6%， Sandbox 创建只占约 0.5%–0.6%。
 对可以并行的 Attempt，强制串行很可能损失更多 Agent 执行的并行收益。
 
 ### 先把安装移动到正确层
 
 MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 fetch 占 4.2%。
-这些工作多数发生在 `eval.run`，只复用 Sandbox 不会自动省掉。跨项目稳定的工具链进入预制环境；
-由当前 checkout、lockfile、实验 flags 或临时凭据决定的安装不能合理烘成每个 commit 一份 template，
-应进入 SandboxSpec `setup`，再由 Sandbox 复用按实际 Sandbox 数分摊。
+这些工作多数发生在 `eval.run`，只复用 Sandbox 不会自动省掉。
+跨项目稳定的工具链进入预制环境；由当前 checkout、lockfile、实验 flags 或临时凭据决定的安装不能合理烘成每个 commit 一份 template，应进入 SandboxSpec `setup`，再由 Sandbox 复用按实际 Sandbox 数分摊。
 
-因此，`sandbox.create` 只占 0.5%–0.6% 只否定“为了创建本身复用”。它不否定动态准备的复用收益；
-是否声明 `sandboxReuse` 要看能移入 SandboxSpec `setup` 的阶段占比，而不是只看创建耗时。
+因此，`sandbox.create` 只占 0.5%–0.6% 只否定“为了创建本身复用”。
+它不否定动态准备的复用收益；是否声明 `sandboxReuse` 要看能移入 SandboxSpec `setup` 的阶段占比，而不是只看创建耗时。
 
 ### 同时保留串行与并行场景
 
@@ -58,8 +49,8 @@ MemoryBench 可直接识别的 Node 包安装占总耗时 8.2%，Rust build 或 
 - `maxConcurrency: 1` 表达本次 Invocation 同时最多运行一个 Sandbox。
 - Runner 按需创建 Sandbox，不预先创建不会使用的数量。
 
-Experiment 仍只有一个 sandbox spec；Runner 按每条 Eval 解析后的 environment profile
-分组。同一个 Sandbox 只承接同组 Attempt，各组共同受 Experiment `maxConcurrency` 限制。
+Experiment 仍只有一个 sandbox spec；Runner 按每条 Eval 解析后的 environment profile 分组。
+同一个 Sandbox 只承接同组 Attempt，各组共同受 Experiment `maxConcurrency` 限制。
 
 ## 生命周期
 
@@ -70,8 +61,7 @@ Experiment 仍只有一个 sandbox spec；Runner 按每条 Eval 解析后的 env
 - 每次派发前确认 Sandbox 能覆盖 Attempt deadline 与收尾；
 - 不能续期时停止旧 Sandbox，创建并准备替代 Sandbox。
 
-Provider 配置用 `lifetimeMs` 声明希望保持 Sandbox 的时间，
-并通过 `SandboxReuseCapability.ensureLifetime(minRemainingMs)` 提供中立能力。
+Provider 配置用 `lifetimeMs` 声明希望保持 Sandbox 的时间，并通过 `SandboxReuseCapability.ensureLifetime(minRemainingMs)` 提供中立能力。
 Runner 不按 Provider 名字或固定分钟数分支。
 
 Sandbox 在 Attempt 中途消失时，该 Attempt 记为 `errored`，不得静默重跑。

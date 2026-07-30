@@ -1,6 +1,7 @@
 # Eval —— Library 用例
 
-本目录是编写 eval 的 Library API 用例文档（体裁约定见[功能文档](../../README.md)）：一篇讲一个真实用例的全流程——作者要评什么、从驱动到断言的完整写法、边界与何时改用别的模式。契约单源在 [Library](../library.md)、[Context](../library/context.md)、[Assertions](../../assertions/library.md) 与 [Sandbox](../../sandbox/library.md)，这里只做叙事串联，不复制契约定义。
+本目录是编写 eval 的 Library API 用例文档（体裁约定见[功能文档](../../README.md)）：一篇讲一个真实用例的全流程——作者要评什么、从驱动到断言的完整写法、边界与何时改用别的模式。
+契约单源在 [Library](../library.md)、[Context](../library/context.md)、[Assertions](../../assertions/library.md) 与 [Sandbox](../../sandbox/library.md)，这里只做叙事串联，不复制契约定义。
 
 从上往下读是一条学习路径：前两篇覆盖所有 eval 都会用的驱动与断言，后面各篇按需进入。
 
@@ -26,7 +27,9 @@
 
 ## 通过制还是计分制
 
-一条 eval 怎么计分由定义函数声明：**`defineEval` = 通过制**，整题折叠成一分；**`defineScoreEval` = 计分制**，题内叠加挣分、不声明满分。同一 experiment 可以混合两种题型，报告分别计算通过率与总分——契约见[计分粒度](../../assertions/library/score-points.md)。各用例的计分形态：
+一条 eval 怎么计分由定义函数声明：**`defineEval` = 通过制**，整题折叠成一分；**`defineScoreEval` = 计分制**，题内叠加挣分、不声明满分。
+同一 experiment 可以混合两种题型，报告分别计算通过率与总分——契约见[计分粒度](../../assertions/library/score-points.md)。
+各用例的计分形态：
 
 | 用例 | 计分形态 |
 |---|---|

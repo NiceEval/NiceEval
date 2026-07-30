@@ -1,7 +1,6 @@
 # 并发 —— 用例
 
-先区分两个控制面：Experiment 的 `maxConcurrency` 约束一个实验并跨 Invocation 生效；
-CLI `--max-concurrency` 约束本次 Invocation 的全局吞吐。
+先区分两个控制面：Experiment 的 `maxConcurrency` 约束一个实验并跨 Invocation 生效；CLI `--max-concurrency` 约束本次 Invocation 的全局吞吐。
 
 | 目标 | 用例 |
 |---|---|

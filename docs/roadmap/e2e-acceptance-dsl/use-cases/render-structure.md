@@ -2,7 +2,8 @@
 
 ## 场景
 
-report 仓库对 `niceeval show` 终端输出验收[渲染面契约](../../../engineering/testing/e2e/report.md):区块存在与相对顺序、表格成形、图表标题与图例。这是脆断言最集中的场景——断言对象本来是结构,现行词表却只有整句文本。
+report 仓库对 `niceeval show` 终端输出验收[渲染面契约](../../../engineering/testing/e2e/report.md):区块存在与相对顺序、表格成形、图表标题与图例。
+这是脆断言最集中的场景——断言对象本来是结构,现行词表却只有整句文本。
 
 ## 现行断言
 
@@ -24,7 +25,8 @@ for (const line of experimentTableRows) {
 assert.ok(showReport.split("\n").some((l) => l.trimStart().startsWith("te-error")), "...");
 ```
 
-①② 在方向注解改措辞、箭头换字形时变红——契约(「散点图存在、标出两个维度、注明方向」)没变。③④ 锁的是排版算法输出,而[单元层已经证明](../../../engineering/testing/README.md#单元层的边界)宽度与折行的确定性语义,E2E 再逐字符锁一遍是重复口径。
+①② 在方向注解改措辞、箭头换字形时变红——契约(「散点图存在、标出两个维度、注明方向」)没变。
+③④ 锁的是排版算法输出,而[单元层已经证明](../../../engineering/testing/README.md#单元层的边界)宽度与折行的确定性语义,E2E 再逐字符锁一遍是重复口径。
 
 ## 候选写法
 
@@ -45,7 +47,8 @@ test("show 渲染散点图与实验表", async () => {
 });
 ```
 
-- ①② 归并为 `- heading /Cost .*× Pass rate/`:锁「有一张 Cost × Pass rate 的图」,注解措辞与箭头是化妆细节。要单独锁「方向有注明」时加一档正则(`/Cost.*lower/`),仍不锁整句。
+- ①② 归并为 `- heading /Cost .*× Pass rate/`:锁「有一张 Cost × Pass rate 的图」,注解措辞与箭头是化妆细节。
+  要单独锁「方向有注明」时加一档正则(`/Cost.*lower/`),仍不锁整句。
 - ③ 换成 `- table:` + 行匹配:表格**成形**(列对齐被解析器识别为 table)本身就是断言;80 列与 CJK 口径归单元层,E2E 不再持有第二份宽度实现。
 - ④ 折行续行在解析层并回原行,`- row /te-error .*/` 直接命中,不再依赖续行前缀的间接证据。
 

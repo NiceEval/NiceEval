@@ -1,9 +1,7 @@
 # 计算函数、分组与读数值
 
-Reports 的公共计算面由 Reducer、Calculation、分组函数、`aggregate()`、
-`metricValue()` 与 `evidenceRow()` 组成。完整形状见
-[Library · 分组函数与计算函数](../library.md#分组函数与计算函数)；
-准入边界见 [Calculations](../calculations.md)。
+Reports 的公共计算面由 Reducer、Calculation、分组函数、`aggregate()`、`metricValue()` 与 `evidenceRow()` 组成。
+完整形状见[Library · 分组函数与计算函数](../library.md#分组函数与计算函数)；准入边界见 [Calculations](../calculations.md)。
 
 ## Calculation
 
@@ -26,8 +24,7 @@ export const changedLines = rollup(
 ```
 
 官方与用户 Calculation 走同一条 `rollup()` 路径。
-公开入口提供 `mean`、`sum`、`min`、`max` 与 `percentile(p)`；
-空集合保持 `null`。
+公开入口提供 `mean`、`sum`、`min`、`max` 与 `percentile(p)`；空集合保持 `null`。
 
 ## 分组函数
 
@@ -47,8 +44,7 @@ evalId(subject);
 model(subject);
 ```
 
-官方函数读固定事实：`experiment` ← `experimentId`，
-`agent` / `model` ← Run 顶层，flags / labels / 运行配置 ← `run.experiment`。
+官方函数读固定事实：`experiment` ← `experimentId`，`agent` / `model` ← Run 顶层，flags / labels / 运行配置 ← `run.experiment`。
 作者也可以在 `by` 里传普通同步函数，例如：
 
 ```ts
@@ -80,8 +76,7 @@ interface MetricValue {
 ```
 
 `value: null` 表示缺数据或不适用，不等于零。
-`rollup()` 产物固定 `basis: "eval"`：samples / total 数题级单元，
-`refs` 恒为 Attempt locator。
+`rollup()` 产物固定 `basis: "eval"`：samples / total 数题级单元，`refs` 恒为 Attempt locator。
 renderer 根据 `value + format + locale` 格式化，计算函数不生成 display 字符串。
 
 ## 官方 Calculation
@@ -95,8 +90,7 @@ delta、stability、scoreboard 与 frontier 不因出现在内建报告里就成
 
 ## 题型构成与主读数
 
-一个范围的对比主读数由其中出现的题型决定，裁决见
-[计分粒度](../../assertions/library/score-points.md#横截面聚合同型实验各读各的)。
+一个范围的对比主读数由其中出现的题型决定，裁决见[计分粒度](../../assertions/library/score-points.md#横截面聚合同型实验各读各的)。
 通过制读通过率，计分制读总分。
 
 题型是定义期事实；同一 experiment 可以同时包含两种题型。
@@ -118,8 +112,8 @@ const composition = await scoringComposition(sample);
 | `"points"` | `totalScore` | 同上位置全部换成总分；通过率不出现（不摆空列） |
 | `"mixed"` | 两者并排、各读各的 | 两个 KPI 都显示；按题型拆组后各用自己的主读数 |
 
-`Table` 与图表不感知题型。分支只发生在首页任务函数、
-`SampleSummary`、`SampleOverview` 等显式读取该字段的组合里。
+`Table` 与图表不感知题型。
+分支只发生在首页任务函数、`SampleSummary`、`SampleOverview` 等显式读取该字段的组合里。
 自定义报告需要同样切换时，调用同一个 `scoringComposition(sample)`。
 
 题型选择属于报告任务函数，不藏在图表或组件的默认绑定里。
@@ -128,8 +122,7 @@ const composition = await scoringComposition(sample);
 ## 维度与数值轴
 
 `aggregate().by` 的官方分组是 `agent`、`model`、`experiment`、`evalId`。
-flags、labels 与顶层运行配置从 `subject.run.experiment` 用普通函数读取，
-不从 experiment id 字符串猜语义。
+flags、labels 与顶层运行配置从 `subject.run.experiment` 用普通函数读取，不从 experiment id 字符串猜语义。
 
 图表与摘要组合仍接受维度构造器，用来声明离散轴、series 或数值轴身份：
 
@@ -149,11 +142,9 @@ function numericRunConfig(
 
 - `flag()` 读 `ExperimentDef.flags`，即 agent / eval 可见的运行参数。
 - `label()` 读 `ExperimentDef.labels`，即运行时不可见的报告归类标注。
-- `runConfig()` 读 Run 的 [`ExperimentRunInfo`](../../record/architecture.md#runjson)
-  投影，外加桥接到顶层的 `model` / `agent`。
+- `runConfig()` 读 Run 的 [`ExperimentRunInfo`](../../record/architecture.md#runjson)投影，外加桥接到顶层的 `model` / `agent`。
 
-labels 的声明语义见
-[Experiments · labels](../../experiments/library.md#labels声明归类坐标不进运行时)。
+labels 的声明语义见[Experiments · labels](../../experiments/library.md#labels声明归类坐标不进运行时)。
 
 ```ts
 const memory = label("memory");
@@ -162,8 +153,7 @@ const reasoning = runConfig("reasoningEffort");
 ```
 
 `flag()`、`label()` 与 `runConfig()` 只声明分组身份，不冒充数值轴。
-数值进程用 `numericFlag` / `numericLabel` / `numericRunConfig`：
-未声明、非数值或未命中 map 的值返回 `null`，图表不绘该点并报告缺失。
+数值进程用 `numericFlag` / `numericLabel` / `numericRunConfig`：未声明、非数值或未命中 map 的值返回 `null`，图表不绘该点并报告缺失。
 
 ```ts
 const budget = numericFlag("budget", { unit: "tokens" });
@@ -172,12 +162,10 @@ const reasoning = numericRunConfig("reasoningEffort", {
 });
 ```
 
-attempt 级 `facts` 不进入 `aggregate().by`：
-分组主体是题级单元，拿不到单条 Attempt。
+attempt 级 `facts` 不进入 `aggregate().by`：分组主体是题级单元，拿不到单条 Attempt。
 要按运行事实筛选或列表，用 `sample.filter`、实体转换或报告旁普通函数。
 
-复合归类把多个维度字段并进 `by` 或图表的 `color` / `point` 键；
-成员显示键冲突时计算报错，不能静默合组。
+复合归类把多个维度字段并进 `by` 或图表的 `color` / `point` 键；成员显示键冲突时计算报错，不能静默合组。
 
 ## 相关阅读
 

@@ -7,7 +7,8 @@ Adapter 从外部对象采集两条独立数据轨：行为轨支撑断言，时
 时间轨  OTLP spans                            ─► canonical mapper ─► trace view
 ```
 
-OTel 内容可能关闭或脱敏，因此 span 不补写行为事件。行为轨缺失会影响结论可信度；时间轨缺失只使报告降级。
+OTel 内容可能关闭或脱敏，因此 span 不补写行为事件。
+行为轨缺失会影响结论可信度；时间轨缺失只使报告降级。
 
 ## 行为轨通道
 
@@ -18,11 +19,13 @@ OTel 内容可能关闭或脱敏，因此 span 不补写行为事件。行为轨
 3. **CLI transcript / tape**：读取 CLI 为 resume 保存的完整侧写。
 4. **无结构化来源**：返回空事件并明确负断言不可信，不从最终文本猜测工具行为。
 
-采集层负责取得 raw string/frame；转换层只处理数据。Parser 不读 Sandbox，`send` 不内联供应商状态机。
+采集层负责取得 raw string/frame；转换层只处理数据。
+Parser 不读 Sandbox，`send` 不内联供应商状态机。
 
 ## 时间轨通道
 
-Agent 通过 env、配置文件或请求 headers 将 OTLP span 发给运行器接收器。每个方言由薄 mapper 标记 canonical GenAI 语义；无法映射的 span仍可作为原始 trace 证据保留。
+Agent 通过 env、配置文件或请求 headers 将 OTLP span 发给运行器接收器。
+每个方言由薄 mapper 标记 canonical GenAI 语义；无法映射的 span仍可作为原始 trace 证据保留。
 
 没有原生 trace 的 CLI 可以从带时间戳的完整 transcript 合成 span，或者跳过时间轨。
 

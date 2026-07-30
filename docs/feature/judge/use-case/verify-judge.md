@@ -8,8 +8,7 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
 
 ## 全流程
 
-1. 端点和模型是配置,写进代码;key 是凭据,只从环境变量来(契约见 [LLM-as-judge ·
-   模型与鉴权](../library.md#模型与鉴权)):
+1. 端点和模型是配置,写进代码;key 是凭据,只从环境变量来(契约见 [LLM-as-judge ·模型与鉴权](../library.md#模型与鉴权)):
 
    ```ts
    // niceeval.config.ts
@@ -18,13 +17,13 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    });
    ```
 
-   **接兼容网关时 `baseUrl` 必须显式写。** 只配 key 不配 `baseUrl`,niceeval 打的是官方端点
-   `https://api.openai.com/v1`。此时网关凭据会被发到 OpenAI，返回「Incorrect API key provided」。
+   **接兼容网关时 `baseUrl` 必须显式写。**
+   只配 key 不配 `baseUrl`,niceeval 打的是官方端点 `https://api.openai.com/v1`。
+   此时网关凭据会被发到 OpenAI，返回「Incorrect API key provided」。
    这看上去像 key 过期，实际是端点选错了。
 
-2. 先跑一个只评固定文本的轻量验证 eval。配置 Judge 本身不会联网；[判分预检](../library.md#派发前预检)
-   在派发前验证端点连通与鉴权，但「响应里真的取得出分数」只有执行一条 judge assertion 才知道，
-   因此验证用例不需要先调用被测 agent：
+2. 先跑一个只评固定文本的轻量验证 eval。
+   配置 Judge 本身不会联网；[判分预检](../library.md#派发前预检)在派发前验证端点连通与鉴权，但「响应里真的取得出分数」只有执行一条 judge assertion 才知道，因此验证用例不需要先调用被测 agent：
 
    ```ts
    export default defineEval({
@@ -53,10 +52,9 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    niceeval show <eval-id>
    ```
 
-   **你会看到**:每条 rubric 后面跟着分数。跑中判分请求失败(网关回 400、连接断、超时)的那条不会伪装成 0
-   分通过——它记 `◌ unavailable · judge-call-failed`,`evidence` 里是状态码或异常摘要,这次 attempt 判
-   `errored`。**「裁判失败」和「agent 答得一塌糊涂」在报告上长得不一样**,
-   这正是这套记录方式存在的理由:前者去修配置,后者去修 agent。
+   **你会看到**:每条 rubric 后面跟着分数。
+   跑中判分请求失败(网关回 400、连接断、超时)的那条不会伪装成 0 分通过——它记 `◌ unavailable · judge-call-failed`,`evidence` 里是状态码或异常摘要,这次 attempt 判 `errored`。
+   **「裁判失败」和「agent 答得一塌糊涂」在报告上长得不一样**,这正是这套记录方式存在的理由:前者去修配置,后者去修 agent。
 
 5. 确实允许某条 rubric 缺席(实验性的、没 key 的开发机上也要能跑)时,在那一条上显式声明:
 
@@ -64,20 +62,15 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    t.judge.autoevals.closedQA("文风是否友好?").optional();
    ```
 
-   **你会看到**:它评不了时只留一条 unavailable 记录,不再把 attempt 拖成 `errored`;其余没写 `.optional()`
-   的 rubric 照旧要求可评估。
+   **你会看到**:它评不了时只留一条 unavailable 记录,不再把 attempt 拖成 `errored`;其余没写 `.optional()` 的 rubric 照旧要求可评估。
 
 ## 边界
 
-- 端点整体不可达(连不上、鉴权被拒、探测超时)在派发前就被判分预检拦下:含 judge 断言的 eval 逐条
-  `errored`(`judge-precheck-failed`),其余 eval 照常派发。本用例补的是预检不覆盖的那段——
-  协议不符、分数取不出来,只有真评一次才暴露。
-- 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable
-  仍使 Attempt `errored`，不会造出「一条都没评却全绿」的报告。
-- `--strict` 不改变这条路径上的任何判定:unavailable 走 `errored`,与 soft 阈值是两回事(见
-  [`--strict`](../../verdict/use-case/strict-quality-gate.md))。
-- 模型解析不到是另一个 reason(`judge-model-unresolved`),判定后果相同——judge 没有内置默认模型,三层(单次
-  `{ model }` → eval → config)都没配就是配置错误。
+- 端点整体不可达(连不上、鉴权被拒、探测超时)在派发前就被判分预检拦下:含 judge 断言的 eval 逐条 `errored`(`judge-precheck-failed`),其余 eval 照常派发。
+  本用例补的是预检不覆盖的那段——协议不符、分数取不出来,只有真评一次才暴露。
+- 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable 仍使 Attempt `errored`，不会造出「一条都没评却全绿」的报告。
+- `--strict` 不改变这条路径上的任何判定:unavailable 走 `errored`,与 soft 阈值是两回事(见[`--strict`](../../verdict/use-case/strict-quality-gate.md))。
+- 模型解析不到是另一个 reason(`judge-model-unresolved`),判定后果相同——judge 没有内置默认模型,三层(单次 `{ model }` → eval → config)都没配就是配置错误。
 
 ## 相关阅读
 

@@ -65,8 +65,7 @@ function defineReport(
 ```
 
 外壳只装宿主机器必须在 page render 之外消费的声明。
-四个字段各有一个组件与普通函数够不着的宿主落点，
-因此必须由官方提供：
+四个字段各有一个组件与普通函数够不着的宿主落点，因此必须由官方提供：
 
 | 字段 | 宿主落点 |
 |---|---|
@@ -75,15 +74,11 @@ function defineReport(
 | `dimensionPins` | 页级槽位分配在装载期读固定声明，不执行其它 page |
 | `head` | 注入文档 `<head>`——报告树没有 HTML intrinsic |
 
-四个字段的类型、白名单与本地路径纪律见
-[外壳契约](library/shell.md)。
+四个字段的类型、白名单与本地路径纪律见 [外壳契约](library/shell.md)。
 单页函数缩写没有外壳；需要外壳字段时使用对象形态。
 
-页脚、页头链接这类跨页内容不是外壳字段，
-写法见[跨页内容是普通组合](#跨页内容是普通组合)。
-组件的脚本与样式随组件声明，
-机制见 [Architecture · 组件自带资产](architecture.md#组件自带资产)；
-站点级第三方注入（埋点、字体、SEO）声明在 `head`。
+页脚、页头链接这类跨页内容不是外壳字段，写法见[跨页内容是普通组合](#跨页内容是普通组合)。
+组件的脚本与样式随组件声明，机制见 [Architecture · 组件自带资产](architecture.md#组件自带资产)；站点级第三方注入（埋点、字体、SEO）声明在 `head`。
 
 ```tsx
 export default defineReport({
@@ -121,13 +116,11 @@ export default defineReport({
 ```
 
 `pages` 是非空有序数组，`id` 是稳定 page id，数组顺序就是导航顺序。
-装载期拒绝重复 id，至多允许一张 `input: "attempt"` page；
-attempt page 必须 `navigation: false`。
+装载期拒绝重复 id，至多允许一张 `input: "attempt"` page；attempt page 必须 `navigation: false`。
 这些条件、外壳字段和 page id 在装载期校验，不运行 `render`。
 
 宿主只执行被请求的 page render。
-一次 page 实例产生的同一份值树交给 text 与 web renderer，
-两个 renderer 不会分别运行该 page。
+一次 page 实例产生的同一份值树交给 text 与 web renderer，两个 renderer 不会分别运行该 page。
 
 ## 跨页内容是普通组合
 
@@ -156,13 +149,11 @@ export default defineReport({
 ```
 
 `footerNote` 是具名导出的普通 ReportNode。
-宿主没有页脚槽，也不渲染任何保留内容；
-内建 standard 报告的页脚同样是它自己 pages 里的普通内容。
+宿主没有页脚槽，也不渲染任何保留内容；内建 standard 报告的页脚同样是它自己 pages 里的普通内容。
 
 ## 输入就是 Sample
 
-宿主先完成 `--record`、`--exp`、Eval 位置参数与 `--fresh` 的选择，
-再把同一份 Sample 传给被请求的 sample page render。
+宿主先完成 `--record`、`--exp`、Eval 位置参数与 `--fresh` 的选择，再把同一份 Sample 传给被请求的 sample page render。
 
 作者继续使用 Sample 已有转换：
 
@@ -175,8 +166,7 @@ const failures = security.filter((attempt) =>
 );
 ```
 
-`scope()` 改变总体，`filter()` 删除不可信或不适用观测；
-两者继续维护 `attempts`、`historyAttempts`、coverage 与 issues。
+`scope()` 改变总体，`filter()` 删除不可信或不适用观测；两者继续维护 `attempts`、`historyAttempts`、coverage 与 issues。
 
 作者只有在不再需要 Sample 语义时才取出数组做普通加工：
 
@@ -211,10 +201,8 @@ const [quality, cost] = await Promise.all([
 ]);
 ```
 
-这里 `scope()` 改变比较总体和 coverage 分母，
-`filter()` 只排除不参与计算的观测。
-组件不再接受另一套 `filter` 属性，内建报告也不能在组件内部隐藏过滤；
-源码中的 `production` 就是两张图共享口径的唯一说明。
+这里 `scope()` 改变比较总体和 coverage 分母，`filter()` 只排除不参与计算的观测。
+组件不再接受另一套 `filter` 属性，内建报告也不能在组件内部隐藏过滤；源码中的 `production` 就是两张图共享口径的唯一说明。
 
 ## 分组函数与计算函数
 
@@ -230,8 +218,7 @@ import {
 ```
 
 分组以题级单元（Experiment × Eval）为单位。
-`AggregationSubject` 是一个题级单元的事实视图；
-coverage 缺口也有自己的单元，没跑到的题因此照常归组、照常进 total：
+`AggregationSubject` 是一个题级单元的事实视图；coverage 缺口也有自己的单元，没跑到的题因此照常归组、照常进 total：
 
 ```ts
 interface AggregationSubject {
@@ -261,9 +248,7 @@ const attemptCostUSD:
 
 分组函数是普通同步函数。
 官方函数与用户函数没有不同的类型或执行入口。
-分组函数拿不到 AttemptHandle：
-分组因此不可能把同一道题的 attempts 切进两个组，
-题级折叠的边界由类型保护。
+分组函数拿不到 AttemptHandle：分组因此不可能把同一道题的 attempts 切进两个组，题级折叠的边界由类型保护。
 零 attempt 的 Eval 仍有确定的锚点 Run，因此「按 agent 分到哪一行」有唯一答案。
 
 计算函数由公开的 `rollup()` 产生。
@@ -361,15 +346,12 @@ export const changedLines = rollup(
 ```
 
 省略任一级时默认使用 `mean`。
-`rollup()` 先排除该级的 `null`，再调用 Reducer；空集合保持 `null`，
-不会被 `sum` 伪装成零。
+`rollup()` 先排除该级的 `null`，再调用 Reducer；空集合保持 `null`，不会被 `sum` 伪装成零。
 
 ### samples / total 的口径
 
 `rollup()` 产物的 samples、total 与 refs 用一组算例锁定。
-范围内有三道 Eval：`a` 有三个 attempt，题内值 `[1, 0, null]`；
-`b` 有一个 attempt，题内值 `[1]`；
-`c` 在题集内但一个 attempt 都没跑。
+范围内有三道 Eval：`a` 有三个 attempt，题内值 `[1, 0, null]`；`b` 有一个 attempt，题内值 `[1]`；`c` 在题集内但一个 attempt 都没跑。
 
 | withinEval / acrossEvals | 题级值 | value | samples / total |
 |---|---|---|---|
@@ -379,15 +361,11 @@ export const changedLines = rollup(
 
 三行的 basis 都是 `"eval"`，attempt 从不是 samples 的计数单位。
 refs 三行相同：`a` 的三个 attempt 加 `b` 的一个，共四个 locator。
-`a` 里返回 `null` 的 attempt 不产生题内值，
-但它被检查过，留在 refs 里供下钻解释缺数。
-`c` 没有 attempt，没有 locator，只把 total 从 2 抬到 3——
-coverage 缺口进分母，不进终值。
+`a` 里返回 `null` 的 attempt 不产生题内值，但它被检查过，留在 refs 里供下钻解释缺数。
+`c` 没有 attempt，没有 locator，只把 total 从 2 抬到 3——coverage 缺口进分母，不进终值。
 
 `percentile(p)` 接受闭区间 `[0, 1]`。
-对升序数组使用 `h = (n - 1) × p`，
-再在 `floor(h)` 与 `ceil(h)` 对应值之间线性插值；
-因此 `percentile(0.5)` 是确定的中位数，且相同输入跨平台产生相同结果：
+对升序数组使用 `h = (n - 1) × p`，再在 `floor(h)` 与 `ceil(h)` 对应值之间线性插值；因此 `percentile(0.5)` 是确定的中位数，且相同输入跨平台产生相同结果：
 
 ```ts
 export const p95DurationMs = rollup(
@@ -401,8 +379,7 @@ export const p95DurationMs = rollup(
 );
 ```
 
-这里明确表示“每题先算 p95，再让每道题等权平均”，
-不等价于把全部 Attempt 混在一起算 p95。
+这里明确表示“每题先算 p95，再让每道题等权平均”，不等价于把全部 Attempt 混在一起算 p95。
 
 公共层不提供无主语的 `count` 或 `countDistinct` reducer。
 计数必须说明数什么，并以具名 Calculation 表达：
@@ -419,13 +396,10 @@ export const observedAttemptCount = rollup(
 ```
 
 它明确数参与计算的有效 Attempt。
-若要数 coverage 中的 Eval、Run 或 Experiment，使用对应事实写具名普通函数；
-不能假装这些实体都是数值数组中的“行”。
-需要 distinct 时，报告旁函数必须声明 identity 与跨 Eval 去重范围；
-不能把各题 distinct count 相加后称作全局 distinct count。
+若要数 coverage 中的 Eval、Run 或 Experiment，使用对应事实写具名普通函数；不能假装这些实体都是数值数组中的“行”。
+需要 distinct 时，报告旁函数必须声明 identity 与跨 Eval 去重范围；不能把各题 distinct count 相加后称作全局 distinct count。
 
-`passRate` 与 `changedLines` 都是 Calculation 函数值，
-可以放进同一个 `aggregate()`：
+`passRate` 与 `changedLines` 都是 Calculation 函数值，可以放进同一个 `aggregate()`：
 
 ```tsx
 const performance = await aggregate(sample, {
@@ -459,18 +433,11 @@ interface MetricValue {
 
 作者不直接构造聚合组。
 Calculation 只作为 `aggregate()` 的 value 传入。
-`basis` 命名 samples / total 的计数单位，
-终值就是在这个粒度上得出的统计量；
-`refs` 与 basis 无关，恒为 Attempt locator——
-它是证据链，不承担分母。
+`basis` 命名 samples / total 的计数单位，终值就是在这个粒度上得出的统计量；`refs` 与 basis 无关，恒为 Attempt locator——它是证据链，不承担分母。
 
-`rollup()` 的产物固定 `basis: "eval"`，计数单位是题级单元：
-samples 数至少有一个非 null 题内值的单元，
-total 数组内全部单元，
-含一个 attempt 都没跑到的 coverage 缺口。
+`rollup()` 的产物固定 `basis: "eval"`，计数单位是题级单元：samples 数至少有一个非 null 题内值的单元，total 数组内全部单元，含一个 attempt 都没跑到的 coverage 缺口。
 用户不手工拼 MetricValue。
-MetricValue 不预生成本地化 display；
-text 与 web renderer 使用同一份 `value + format` 按当前 locale 格式化。
+MetricValue 不预生成本地化 display；text 与 web renderer 使用同一份 `value + format` 按当前 locale 格式化。
 
 ## `aggregate()`：Sample 转结果行
 
@@ -516,7 +483,8 @@ readonly {
 }[];
 ```
 
-这是普通只读数组。作者可以继续使用 JavaScript：
+这是普通只读数组。
+作者可以继续使用 JavaScript：
 
 ```ts
 const ranked = performance.toSorted(
@@ -537,14 +505,10 @@ const ranked = performance.toSorted(
 - 相同输入产生确定顺序与字节稳定结果。
 
 AggregateRow 同时是 EvidenceRow。
-行级 `refs` 是本行全部 MetricValue refs 的稳定去重并集，
-用于点击一个图形点时下钻；每个 MetricValue 仍保留自己的精确 refs。
+行级 `refs` 是本行全部 MetricValue refs 的稳定去重并集，用于点击一个图形点时下钻；每个 MetricValue 仍保留自己的精确 refs。
 
 `by` 与 `values` 的键落进同一个行命名空间，`refs` 是行级保留键。
-两侧键互斥，且都不得使用 `refs`：
-`AggregateRow<Groups, Values>` 的泛型在编译期拒绝冲突，
-无类型 JavaScript 调用在执行期同样拒绝，
-错误指出冲突键名和它来自 `by` 还是 `values`。
+两侧键互斥，且都不得使用 `refs`：`AggregateRow<Groups, Values>` 的泛型在编译期拒绝冲突，无类型 JavaScript 调用在执行期同样拒绝，错误指出冲突键名和它来自 `by` 还是 `values`。
 
 ### 自定义分组
 
@@ -569,16 +533,13 @@ const byVendor = await aggregate(sample, {
 抛错时错误带分组字段名与出错单元的 Experiment × Eval 坐标。
 
 `values` 接受任何 `rollup()` 产出的 Calculation。
-官方报告 import 的 `passRate`、`costUSD` 与用户报告使用的是同一份公开导出，
-没有内部快捷路径。
-内建 preset 也不能偷偷附加只对官方生效的 Attempt 过滤；
-任何排除规则必须在传给 `aggregate()` 的 Sample 上可见。
+官方报告 import 的 `passRate`、`costUSD` 与用户报告使用的是同一份公开导出，没有内部快捷路径。
+内建 preset 也不能偷偷附加只对官方生效的 Attempt 过滤；任何排除规则必须在传给 `aggregate()` 的 Sample 上可见。
 
 ### 结果粒度不能倒流
 
 `aggregate()` 只接受 Sample。
-它返回的 AggregateRow 是完成计算的普通结果，可以排序、截断、join 和显示，
-但不能再次传给 `aggregate()`：
+它返回的 AggregateRow 是完成计算的普通结果，可以排序、截断、join 和显示，但不能再次传给 `aggregate()`：
 
 ```ts
 const performance = await aggregate(sample, {
@@ -601,8 +562,7 @@ aggregate(performance, options); // 类型错误：AggregateRow[] 不是 Sample
 
 ## 非 rollup 分析也必须携带证据
 
-成对差异和跨 Run 稳定性不能强行放入
-“每 Attempt 一个标量，再做两级 reducer”的 `rollup()`。
+成对差异和跨 Run 稳定性不能强行放入“每 Attempt 一个标量，再做两级 reducer”的 `rollup()`。
 它们可以留在报告旁，但不能返回无证据的普通数字。
 
 公共层提供两个低层结果构造器，不开放内部 AggregationGroup：
@@ -632,26 +592,18 @@ interface EvidenceRow {
 }
 ```
 
-`metricValue()` 要求算法明确 samples、total 及其 basis，
-验证 `0 <= samples <= total`，并从 evidence 自动生成稳定去重的 refs。
-evidence 同时接受 AttemptHandle 与 AttemptLocator：
-直接读 Attempt 的算法传 handle；
-从已聚合 MetricValue 派生新读数的算法把上游 refs 作为 evidence 传入。
+`metricValue()` 要求算法明确 samples、total 及其 basis，验证 `0 <= samples <= total`，并从 evidence 自动生成稳定去重的 refs。
+evidence 同时接受 AttemptHandle 与 AttemptLocator：直接读 Attempt 的算法传 handle；从已聚合 MetricValue 派生新读数的算法把上游 refs 作为 evidence 传入。
 成绩单总分合并各题格 refs 就是后一条路径。
 
-缺失的配对一侧没有 locator，但仍能通过 `basis: "pair"`、
-`samples: 0, total: 1` 表达固定分母；
-已有的另一侧 Attempt 仍进入 evidence，供下钻解释缺失。
+缺失的配对一侧没有 locator，但仍能通过 `basis: "pair"`、`samples: 0, total: 1` 表达固定分母；已有的另一侧 Attempt 仍进入 evidence，供下钻解释缺失。
 
-`evidenceRow()` 要求至少有一个 MetricValue 字段，
-并把所有 MetricValue refs 合并成行级 refs。
+`evidenceRow()` 要求至少有一个 MetricValue 字段，并把所有 MetricValue refs 合并成行级 refs。
 
 EvidenceRow 没有 symbol 品牌。
-它经过 JSON fixture 或 React props 往返后仍按
-`refs` 与各 MetricValue 的可序列化结构校验，不需要再水化。
+它经过 JSON fixture 或 React props 往返后仍按 `refs` 与各 MetricValue 的可序列化结构校验，不需要再水化。
 
-例如成对比较函数显式决定 baseline、candidate、配对键和缺失策略，
-最后只能通过这两个构造器交出图表结果：
+例如成对比较函数显式决定 baseline、candidate、配对键和缺失策略，最后只能通过这两个构造器交出图表结果：
 
 ```ts
 async function pairedDelta(
@@ -680,10 +632,8 @@ async function pairedDelta(
 }
 ```
 
-`Scatter`、`Bars`、`Line` 等图表对 Sample 派生读数只接受
-EvidenceRow points。
-普通 Table 仍可显示实体投影 rows；
-一旦某个数字声称是从 Sample 推导的读数，就必须是 MetricValue。
+`Scatter`、`Bars`、`Line` 等图表对 Sample 派生读数只接受 EvidenceRow points。
+普通 Table 仍可显示实体投影 rows；一旦某个数字声称是从 Sample 推导的读数，就必须是 MetricValue。
 因此把领域算法移到报告旁不会把 refs、samples 和 total 降级成作者自觉。
 
 ### 并行计算
@@ -708,8 +658,7 @@ const [byAgent, byExperiment] = await Promise.all([
 
 ### 检查与导出结果
 
-`aggregate()` 返回普通可序列化值，因此不需要 `inspect()`、查询 id
-或“打开数据源”协议：
+`aggregate()` 返回普通可序列化值，因此不需要 `inspect()`、查询 id 或“打开数据源”协议：
 
 ```ts
 const performance = await aggregate(sample, {
@@ -722,8 +671,7 @@ const fixture = JSON.stringify(performance, null, 2);
 ```
 
 同一份值可以成为单元测试 fixture、写入 JSON，或同时交给图和表。
-每个 MetricValue 自带 value、format、samples、total、basis 与 refs；
-排查某个点时不必从图形配置反推一条新查询。
+每个 MetricValue 自带 value、format、samples、total、basis 与 refs；排查某个点时不必从图形配置反推一条新查询。
 
 ## 实体转换
 
@@ -917,10 +865,8 @@ interface ExternalScatterProps<Row extends ExternalPoint> {
 }
 ```
 
-未声明 `external` 的图表只接受 EvidenceRow points：
-运行时结构校验 refs 与 MetricValue，缺失即报错并指向字段。
-`external` 图表只接受 JSON 标量行，
-没有 MetricValue，也没有 Attempt 下钻。
+未声明 `external` 的图表只接受 EvidenceRow points：运行时结构校验 refs 与 MetricValue，缺失即报错并指向字段。
+`external` 图表只接受 JSON 标量行，没有 MetricValue，也没有 Attempt 下钻。
 预算随时间、业务目标线等完全不从 Sample 推导的序列走这条分支。
 
 这条边界承诺四件可执行的事：
@@ -930,18 +876,13 @@ interface ExternalScatterProps<Row extends ExternalPoint> {
 - NiceEval 不验证 external 行的数据真实来源。
 - `external` 这个词在源码与 review 里可搜索。
 
-结构无法区分「真外部数据」与「洗掉证据的 Sample 数字」，
-把 Sample 派生数字标成 external 因此只受审查约束，
-与伪造读数同责。
+结构无法区分「真外部数据」与「洗掉证据的 Sample 数字」，把 Sample 派生数字标成 external 因此只受审查约束，与伪造读数同责。
 
 `x`、`y`、`color` 与 `point` 由 points 的行类型推导。
-MetricValue 自动提供数值、格式元数据、自然边界与 refs；
-renderer 按当前 locale 格式化。
+MetricValue 自动提供数值、格式元数据、自然边界与 refs；renderer 按当前 locale 格式化。
 
 混合图才使用嵌套 series。
-`<Chart>` 的 points 是各 series 的默认；
-一个 series 可以带自己的 points 和 `external` 声明，
-证据校验按该 series 自己的入口判定。
+`<Chart>` 的 points 是各 series 的默认；一个 series 可以带自己的 points 和 `external` 声明，证据校验按该 series 自己的入口判定。
 业务目标线因此能叠在 Sample 派生图上，而不混进证据行：
 
 ```tsx
@@ -993,9 +934,7 @@ export default defineReport(async (sample) => (
 ## 报告参数是工厂函数
 
 报告级自定义参数同样不需要新协议。
-组件的参数是 props，报告的参数是普通闭包：
-导出一个返回 ReportDefinition 的工厂函数，
-参数类型完备、可测试、可跨文件复用。
+组件的参数是 props，报告的参数是普通闭包：导出一个返回 ReportDefinition 的工厂函数，参数类型完备、可测试、可跨文件复用。
 
 ```tsx
 interface TeamReportOptions {
@@ -1052,10 +991,8 @@ export default makeTeamReport({
 });
 ```
 
-宿主始终只装载 ReportDefinition，
-不知道也不需要知道这份定义是不是工厂产出的。
-`defineReport` 不收 options 包：
-闭包已经提供带类型的参数通道，第二个通道只会分裂语义。
+宿主始终只装载 ReportDefinition，不知道也不需要知道这份定义是不是工厂产出的。
+`defineReport` 不收 options 包：闭包已经提供带类型的参数通道，第二个通道只会分裂语义。
 
 三个参数通道各管一段，不互相替代：
 
@@ -1065,23 +1002,19 @@ export default makeTeamReport({
 | 工厂参数 | 写代码时 | 整份报告的装配选择 |
 | 冻结快照模块 | 运行前写盘 | 外部业务数据，报告文件 import |
 
-CLI 不开报告参数：位置参数选 eval，flag 选 agent 与怎么跑，
-报告的参数走上面三个通道。
-外部业务数据的冻结与纯净性规则见
-[Architecture · 外部业务数据经 import 冻结](architecture.md#外部业务数据经-import-冻结)。
+CLI 不开报告参数：位置参数选 eval，flag 选 agent 与怎么跑，报告的参数走上面三个通道。
+外部业务数据的冻结与纯净性规则见 [Architecture · 外部业务数据经 import 冻结](architecture.md#外部业务数据经-import-冻结)。
 
 ## 领域分析留在报告旁
 
-公共包不因为当前有一张报告，就导出 `scoreboard()`、`delta()`、
-`stability()` 或 `history()`。
+公共包不因为当前有一张报告，就导出 `scoreboard()`、`delta()`、`stability()` 或 `history()`。
 
 - history 是 `sample.historyAttempts`，不是计算函数；
 - 成对差异由具体报告的 `pairedDelta()` 明确配对规则；
 - 稳定性由具体报告的 `stabilityPoints()` 明确公式与阈值；
 - 成绩单是产品呈现，不是通用数据原语。
 
-这些函数按需组合公开的 `aggregate()`、AttemptHandle 与 reducer；
-内建报告没有私有框架通道，也不能直接构造 Calculation 的内部聚合组：
+这些函数按需组合公开的 `aggregate()`、AttemptHandle 与 reducer；内建报告没有私有框架通道，也不能直接构造 Calculation 的内部聚合组：
 
 ```tsx
 const deltaPoints = await pairedDelta(sample, comparison);
@@ -1101,8 +1034,7 @@ return (
 ## 内建任务结果
 
 每个内建 show 切片导出一个任务函数。
-函数只产出普通 Result；text 组件、ShowJson 和对应内建 page
-消费同一次调用的结果：
+函数只产出普通 Result；text 组件、ShowJson 和对应内建 page 消费同一次调用的结果：
 
 ```ts
 function standardOverviewResult(
@@ -1200,8 +1132,7 @@ render: async (attempt) => {
 ```
 
 PageDefinition 本身是可具名导出的普通只读值。
-官方内建报告把可复用页单独导出，用户不需要从已经封装的
-ReportDefinition 里反向取 pages：
+官方内建报告把可复用页单独导出，用户不需要从已经封装的 ReportDefinition 里反向取 pages：
 
 ```tsx
 import {
@@ -1220,8 +1151,7 @@ export default defineReport({
 });
 ```
 
-`standardAttemptPage` 的类型是 `PageDefinition`，
-使用的仍是公开 Attempt 转换函数和组件。
+`standardAttemptPage` 的类型是 `PageDefinition`，使用的仍是公开 Attempt 转换函数和组件。
 自定义报告可以直接复用，也可以复制其公开全文后修改。
 
 ## 自有 React 页面

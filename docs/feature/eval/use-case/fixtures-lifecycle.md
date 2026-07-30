@@ -2,7 +2,8 @@
 
 ## 解决什么问题
 
-有些准备工作不属于 `test(t)` 的正文：装依赖、在外部服务里建临时 repo、预热数据。`EvalDef.setup` / `teardown` 是准备这条 eval 任务 Fixture 的成对生命周期 Hook，每 attempt 一次；`t.progress` / `t.diagnostic` 让长步骤和降级情况在运行反馈里可见；`t.skip` 在前置条件不满足时把 attempt 标成跳过而不是失败。
+有些准备工作不属于 `test(t)` 的正文：装依赖、在外部服务里建临时 repo、预热数据。
+`EvalDef.setup` / `teardown` 是准备这条 eval 任务 Fixture 的成对生命周期 Hook，每 attempt 一次；`t.progress` / `t.diagnostic` 让长步骤和降级情况在运行反馈里可见；`t.skip` 在前置条件不满足时把 attempt 标成跳过而不是失败。
 
 ## 全流程
 
@@ -30,7 +31,9 @@
    });
    ```
 
-2. 大多数 Fixture**不需要** `teardown`：写进沙箱的文件、装的依赖随沙箱销毁自动没了。需要收尾的是**沙箱外**的资源（临时 repo、bucket、队列 topic），不收就泄漏。`teardown` 在 `setup` 时点走到过就一定触发——`setup` 抛错、`test` 抛错都不豁免，所以收尾代码要容忍「没建成」。
+2. 大多数 Fixture**不需要** `teardown`：写进沙箱的文件、装的依赖随沙箱销毁自动没了。
+   需要收尾的是**沙箱外**的资源（临时 repo、bucket、队列 topic），不收就泄漏。
+   `teardown` 在 `setup` 时点走到过就一定触发——`setup` 抛错、`test` 抛错都不豁免，所以收尾代码要容忍「没建成」。
 
 3. 并发纪律：同一条 eval 的多个 attempt 并发执行且共享本模块，`setup` 的句柄以 `sandbox` 实例作键（sandbox 与 attempt 一一对应），不放普通模块变量——会互相覆写。
 
@@ -50,7 +53,8 @@
 
 ## 边界
 
-- `progress` / `diagnostic` 只报告、不断言：`diagnostic` 即使 `level: "error"` 也不改 verdict。要影响结论就写断言或抛异常。
+- `progress` / `diagnostic` 只报告、不断言：`diagnostic` 即使 `level: "error"` 也不改 verdict。
+  要影响结论就写断言或抛异常。
 - `teardown` 抛错或超过清理上限只记 `teardown-failed` 诊断，不改已产出的判定；要让收尾动作影响结论，在 `setup` / `test` 里抛。
 - 层次分工：环境预置（不知道跑哪个 eval）在 `sandbox.setup`，agent 安装在 `agent.setup`，**这条任务**的素材才在 `EvalDef.setup`（四层时序见 [Runner · 环境预置](../../../runner.md#环境预置不进运行器但按顺序调它)）。
 

@@ -20,8 +20,7 @@ interface AttemptDetailsProps {
 ```
 
 AttemptEvidence 在每个 Attempt 只装配一次。
-它包含身份、verdict、断言、诊断与可用 artifact 的惰性读取句柄；
-page render 在构造自定义详情时显式 `await` 所需转换。
+它包含身份、verdict、断言、诊断与可用 artifact 的惰性读取句柄； page render 在构造自定义详情时显式 `await` 所需转换。
 
 ## 默认内容
 
@@ -64,22 +63,18 @@ Attempt 详情是一张 `input: "attempt"` 的参数化 page：
 ```
 
 要改顺序或删区块，直接写 page render。
-报告没有 attempt page 时，`show` 的 locator 仍是普通文本，不生成一条会改变报告语义的命令；
-`view` 则使用官方 `AttemptDetails` 作为隐式详情页，让 web locator 保持可下钻。
+报告没有 attempt page 时，`show` 的 locator 仍是普通文本，不生成一条会改变报告语义的命令； `view` 则使用官方 `AttemptDetails` 作为隐式详情页，让 web locator 保持可下钻。
 
 ## Usage 单源
 
-轮数与工具调用数从标准事件流派生；
-token 和请求计数来自落盘 Usage；成本来自相同 Attempt 事实。
+轮数与工具调用数从标准事件流派生； token 和请求计数来自落盘 Usage；成本来自相同 Attempt 事实。
 缺失字段整段省略，不用零或请求数 `1` 填充。
 
-缓存拆分存在时，输入 token 明确区分 uncached input 与 cache read；
-协议没有拆分事实时只显示 input tokens，不贴猜测标签。
+缓存拆分存在时，输入 token 明确区分 uncached input 与 cache read；协议没有拆分事实时只显示 input tokens，不贴猜测标签。
 
 ## 两面
 
-text 面按终端任务顺序输出精确区块；
-web 面使用同一份值树输出语义 DOM，并可把 locator 链接渐进增强为 dialog。
+text 面按终端任务顺序输出精确区块； web 面使用同一份值树输出语义 DOM，并可把 locator 链接渐进增强为 dialog。
 dialog 只换摆放位置，不建立第二份内容实现。
 
 ## 相关阅读

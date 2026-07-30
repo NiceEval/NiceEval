@@ -1,9 +1,6 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) ·
-[PLAN-5](PLAN-5.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [PLAN-5](PLAN-5.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -18,8 +15,7 @@
 
 ## 产品特性
 
-原语只认[单元格类型](../../feature/reports/components/README.md#单元格类型)与结构，
-不认领域概念；Source 把「怎么从 `.niceeval` 取数、聚合并投影事实」打成一个具名 TS 值。
+原语只认[单元格类型](../../feature/reports/components/README.md#单元格类型)与结构，不认领域概念；Source 把「怎么从 `.niceeval` 取数、聚合并投影事实」打成一个具名 TS 值。
 作者要么把数据源交给原语，要么先 `compute()` 再把结果交给原语。
 
 ## 当前支持
@@ -34,14 +30,13 @@
 
 - 探索性提问要先找到对应数据源；官方目录没有的能力要作者自己写一个。
 - 作者要先学会 `Measure`、`Dimension` 与两级聚合这套词汇，才能自定义读数。
-- 跨实体的复杂关联（窗口、自连接、多层子查询）没有一等写法，
-  要在 `compute()` 之后用普通 JavaScript 做。
+- 跨实体的复杂关联（窗口、自连接、多层子查询）没有一等写法，要在 `compute()` 之后用普通 JavaScript 做。
 
 ## 直接影响
 
-它把「容易写错的部分」搬进库：作者少写一层聚合也拿不到错数字，
-因为聚合层数不由作者的代码决定。代价是作者面多一层概念，
-以及库要为每个能力维护一个具名数据源。详见 [PLAN-2](PLAN-2.md)。
+它把「容易写错的部分」搬进库：作者少写一层聚合也拿不到错数字，因为聚合层数不由作者的代码决定。
+代价是作者面多一层概念，以及库要为每个能力维护一个具名数据源。
+详见 [PLAN-2](PLAN-2.md)。
 
 ---
 
@@ -60,12 +55,9 @@
 
 ## 当前不支持
 
-- 组件数随问题数线性增长，而问题本身是乘法：
-  「按 agent 分组」与「按记忆机制分组」要么是两个组件，要么退化成一个 props 开关。
-- 同名 props 会在不同组件里分叉：一个组件的 `sort` 收列 key，
-  另一个收读数对象，作者只能逐页读文档。
-- 每个新组件都要写 text 与 web 两面并各自实现降级；
-  这是 [Sphinx 那类多渲染面系统的固有病](../../feature/reports/reference/README.md)。
+- 组件数随问题数线性增长，而问题本身是乘法：「按 agent 分组」与「按记忆机制分组」要么是两个组件，要么退化成一个 props 开关。
+- 同名 props 会在不同组件里分叉：一个组件的 `sort` 收列 key，另一个收读数对象，作者只能逐页读文档。
+- 每个新组件都要写 text 与 web 两面并各自实现降级；这是 [Sphinx 那类多渲染面系统的固有病](../../feature/reports/reference/README.md)。
 - 作者要改一列必须等库加 prop，没有绕过组件的路径。
 
 ## 直接影响
@@ -99,24 +91,24 @@ agent · model · started_at · scoring · flags(json) · labels(json)
 
 ## 当前不支持
 
-- **两级聚合退回作者手上。** `avg(passed)` 直接摊平 attempt，
-  重试多的题拿到更大权重；正确写法要嵌一层 `group by`。
+- **两级聚合退回作者手上。**
+   `avg(passed)` 直接摊平 attempt，重试多的题拿到更大权重；正确写法要嵌一层 `group by`。
   两个查询都返回一个像通过率的数。
-- **证据引用变成可选项。** 聚合结果是标量，要下钻就得作者自己写
-  `array_agg(locator)`，忘了写就丢掉整条证据链。
-- **覆盖率要靠作者自觉。** `count(v)` 与 `count(*)` 的差就是
-  「测不了」的样本数；SQL 不会因为少写一列而报错。
-- **artifact 摊不平。** diff、事件流与 trace 可达数百 MB，
-  且逐 attempt 懒加载；把它们放入表要么预先全量物化，要么退化成 UDF。
-- **列的元数据没有位置。** 单位、越高越好、双语标签与格式化
-  在 SQL 里无处声明，只能在查询旁边再配一张表。
-- **类型不进 TS。** 列名拼错、类型变了都要等到运行时才炸。
+- **证据引用变成可选项。**
+   聚合结果是标量，要下钻就得作者自己写 `array_agg(locator)`，忘了写就丢掉整条证据链。
+- **覆盖率要靠作者自觉。**
+   `count(v)` 与 `count(*)` 的差就是「测不了」的样本数；SQL 不会因为少写一列而报错。
+- **artifact 摊不平。**
+   diff、事件流与 trace 可达数百 MB，且逐 attempt 懒加载；把它们放入表要么预先全量物化，要么退化成 UDF。
+- **列的元数据没有位置。**
+   单位、越高越好、双语标签与格式化在 SQL 里无处声明，只能在查询旁边再配一张表。
+- **类型不进 TS。**
+   列名拼错、类型变了都要等到运行时才炸。
 
 ## 直接影响
 
-SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性与
-可追溯两组需求上明显输：那几条需求正是靠数据形状强制的，
-而 SQL 的结果形状由作者当场决定。详见 [PLAN-3](PLAN-3.md) 与 [PLAN-4](PLAN-4.md)。
+SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性与可追溯两组需求上明显输：那几条需求正是靠数据形状强制的，而 SQL 的结果形状由作者当场决定。
+详见 [PLAN-3](PLAN-3.md) 与 [PLAN-4](PLAN-4.md)。
 
 ---
 
@@ -124,8 +116,7 @@ SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性
 
 ## 产品特性
 
-page render 直接接收 Sample 或 AttemptEvidence，
-调用普通函数后把具体结果值交给组件。
+page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把具体结果值交给组件。
 两级聚合与证据由少量公共组合器保障。
 
 ## 当前支持
@@ -146,15 +137,13 @@ page render 直接接收 Sample 或 AttemptEvidence，
 
 ## Record 不是数据库
 
-结果是文件树：`result.json` 逐 attempt 一份，`o11y.json`、diff 与 trace 是
-按需读取的 artifact。任何查询面都要先回答「什么时候物化、物化多少」，
-而懒加载正是大 artifact 不拖垮树解析的原因。
+结果是文件树：`result.json` 逐 attempt 一份，`o11y.json`、diff 与 trace 是按需读取的 artifact。
+任何查询面都要先回答「什么时候物化、物化多少」，而懒加载正是大 artifact 不拖垮树解析的原因。
 
 ## 结果形状不是平表
 
 断言列表、事件流、时间树与文件级 diff 都是嵌套结构。
-摊平它们要么丢层次，要么生成一堆需要关联的窄表，
-两条路都会把「一次 attempt 的完整证据」拆散。
+摊平它们要么丢层次，要么生成一堆需要关联的窄表，两条路都会把「一次 attempt 的完整证据」拆散。
 
 ## 两个渲染面
 
@@ -163,17 +152,15 @@ page render 直接接收 Sample 或 AttemptEvidence，
 
 ## 浏览器包边界
 
-`niceeval/report/react` 只吃已计算好的可序列化数据，
-不碰磁盘、不认识记录根。查询引擎进不了这个包，
-所以 SQL 只能在树解析阶段执行，产物仍是行集。
+`niceeval/report/react` 只吃已计算好的可序列化数据，不碰磁盘、不认识记录根。
+查询引擎进不了这个包，所以 SQL 只能在树解析阶段执行，产物仍是行集。
 
 ## 作者已经在写 TypeScript
 
 eval 文件、`niceeval.config.ts` 与报告文件都是 TS。
-类型化数据源的拼写错误在类型检查时暴露；
-新增一种语言意味着新增一套报错、补全与文档。
+类型化数据源的拼写错误在类型检查时暴露；新增一种语言意味着新增一套报错、补全与文档。
 
 ## 双语显示
 
-标签与摘要要按 locale 选择显示，而数值本身不能分裂。Source Content 只带字段身份和数值语义；
-内建字段的本地化文案由 Component 词典承载，自定义字段在 `<Column header>` 或自定义 Component 中声明。
+标签与摘要要按 locale 选择显示，而数值本身不能分裂。
+Source Content 只带字段身份和数值语义；内建字段的本地化文案由 Component 词典承载，自定义字段在 `<Column header>` 或自定义 Component 中声明。

@@ -1,16 +1,13 @@
 # 方案 2：一个 Sandbox 串行执行整批
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·
-[PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·[PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 方案
 
 同一 sandbox spec 与 environment profile 的 Attempt 共用一个 Sandbox。
-Sandbox 创建与 SandboxSpec `setup` 执行一次；
-每条 Attempt 结束后，workdir 重置到复用 Sandbox 的题间重置点。
+Sandbox 创建与 SandboxSpec `setup` 执行一次；每条 Attempt 结束后，workdir 重置到复用 Sandbox 的题间重置点。
 
 ## 适用情况
 
@@ -50,5 +47,4 @@ Sandbox 创建与 SandboxSpec `setup` 执行一次；
 
 ## 结论
 
-本方案是[方案 3](PLAN-3.md)同时最多维护一个 Sandbox 时的行为，
-不单独建立 Feature 或调度规则。
+本方案是[方案 3](PLAN-3.md)同时最多维护一个 Sandbox 时的行为，不单独建立 Feature 或调度规则。

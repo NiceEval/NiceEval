@@ -1,9 +1,7 @@
 # claude-code 仓库
 
-仓库 ID `claude-code`，group `sandbox`，`e2e.json.requires.docker: true`。被测对象是
-`claudeCodeAgent()` 在 Docker
-Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、transcript 采集与会话续接（契约见
-[Claude Code 契约页](../../../../feature/adapters/sdk/claude-code/README.md)）。
+仓库 ID `claude-code`，group `sandbox`，`e2e.json.requires.docker: true`。
+被测对象是`claudeCodeAgent()` 在 Docker Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务、transcript 采集与会话续接（契约见[Claude Code 契约页](../../../../feature/adapters/sdk/claude-code/README.md)）。
 
 ## Eval 闭环
 
@@ -20,9 +18,6 @@ Sandbox 里的完整生命周期：安装、扩展装配、真实 coding 任务�
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
-  执行树出现 `skill.loaded` 与 `mcp__` 调用节点，节点带 span 时间注释。
-- **OTel**：adapter 的 `tracing.env`
-  注入原生 OTLP 遥测，执行树的时间注释就是记录成立的展示证明；`show --timing` 的 OTel 子树呈现
-  `claude_code.interaction → llm_request / tool`
-  层级。原生 span 内容默认脱敏是常态——trace 只证时间与结构，行为断言仍以 transcript 归一的事件流为准。
+- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`执行树出现 `skill.loaded` 与 `mcp__` 调用节点，节点带 span 时间注释。
+- **OTel**：adapter 的 `tracing.env`注入原生 OTLP 遥测，执行树的时间注释就是记录成立的展示证明；`show --timing` 的 OTel 子树呈现`claude_code.interaction → llm_request / tool`层级。
+  原生 span 内容默认脱敏是常态——trace 只证时间与结构，行为断言仍以 transcript 归一的事件流为准。

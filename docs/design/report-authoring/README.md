@@ -1,23 +1,16 @@
 # 报告作者面：组件粒度与取数形态
 
-**相关文档**：
-[GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) ·
-[PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) ·
-[PLAN-4](PLAN-4.md) ·
-[PLAN-5](PLAN-5.md) ·
-[DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) ·[LIMITS](LIMITS.md) ·[PLAN-1](PLAN-1.md) ·[PLAN-2](PLAN-2.md) ·[PLAN-3](PLAN-3.md) ·[PLAN-4](PLAN-4.md) ·[PLAN-5](PLAN-5.md) ·[DECISION](DECISION.md)
 
 写一份自定义报告的人先撞上两个选择，这里把它们摊开比较。
 
-- **组件多通用。** 给作者一个 `Table` 加一批数据源，
-  还是给他 `ExperimentTable`、`Scoreboard` 这样一批具名视图。
-- **数据怎么来。** 作者在 TypeScript 里声明读数与维度，
-  还是直接写 SQL 查一张结果表。
+- **组件多通用。**
+  给作者一个 `Table` 加一批数据源，还是给他 `ExperimentTable`、`Scoreboard` 这样一批具名视图。
+- **数据怎么来。**
+  作者在 TypeScript 里声明读数与维度，还是直接写 SQL 查一张结果表。
 
-两条轴不独立。专用组件把取数封在自己内部，作者看不见取数形态。
+两条轴不独立。
+专用组件把取数封在自己内部，作者看不见取数形态。
 所以「SQL 还是数据源」这个问题只在通用原语那一格里成立。
 
 | | 类型化数据源 | SQL 查询 |
@@ -26,8 +19,7 @@
 | 专用组件 | [PLAN-1](PLAN-1.md) | 与 PLAN-1 同格：取数不进作者视野 |
 
 [PLAN-4](PLAN-4.md) 是双轨：类型化数据源作默认，SQL 作逃生舱。
-[PLAN-5](PLAN-5.md)（推荐）保留通用原语与类型化聚合，
-但把取数和组合收敛成普通函数与普通结果值。
+[PLAN-5](PLAN-5.md)（推荐）保留通用原语与类型化聚合，但把取数和组合收敛成普通函数与普通结果值。
 
 这层选择值得单独比较，因为它一旦定下就写进每一份用户报告文件。
 改读数口径只动库，改作者面要动所有人的报告。
@@ -106,8 +98,8 @@ export default defineReport(async (sample) => {
 | PLAN-3 | 作者的 `group by` 层数 | 作者的 `array_agg` | 查询旁边的第二张表 |
 | PLAN-4 | 两者各一份 | 数据源必然、SQL 可选 | 两者各一份 |
 
-PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过率的数，
-只是重试多的题悄悄拿到了更大权重。这类错误没有类型系统拦得住。
+PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过率的数，只是重试多的题悄悄拿到了更大权重。
+这类错误没有类型系统拦得住。
 
 ## 接着读哪一篇
 

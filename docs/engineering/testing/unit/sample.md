@@ -6,19 +6,17 @@
 - [Library](../../../feature/sample/library.md)
 - [局部补跑之后，两个口径分别给出什么](../../../feature/sample/use-case/partial-rerun.md)
 
-Sample 测试分为两个选择口径、覆盖事实、时效与 `fresh`、转换算子、去重和警告全集。被测对象是**从
-一份 Record 到一批 attempt 的选择逻辑**；落盘格式与 artifact 读取归
-[record.md](record.md)。
+Sample 测试分为两个选择口径、覆盖事实、时效与 `fresh`、转换算子、去重和警告全集。
+被测对象是**从一份 Record 到一批 attempt 的选择逻辑**；落盘格式与 artifact 读取归 [record.md](record.md)。
 
-本篇不 fake：构造内存记录图或真实临时目录，直接调选择器。真实运行的端到端读面由
-[E2E 功能域 · 报告与读面](../e2e/report.md)验收。
+本篇不 fake：构造内存记录图或真实临时目录，直接调选择器。
+真实运行的端到端读面由 [E2E 功能域 · 报告与读面](../e2e/report.md)验收。
 
 ## Fixture 规范
 
-**内存记录图**是本篇的主要输入。Builder 必须要求写出会影响选择与身份的字段——`startedAt` 不由全局
-自增器偷偷生成（它是去重身份的一部分），`configHash` 不由 builder 默认填成同一个值（它是跨 Run
-拼接的唯一判据）。测试读者必须能从 case 看出两个 Run 该不该拼在一起、两条 attempt 该不该合并（规则见
-[Harness](harness.md)）：
+**内存记录图**是本篇的主要输入。
+Builder 必须要求写出会影响选择与身份的字段——`startedAt` 不由全局自增器偷偷生成（它是去重身份的一部分），`configHash` 不由 builder 默认填成同一个值（它是跨 Run 拼接的唯一判据）。
+测试读者必须能从 case 看出两个 Run 该不该拼在一起、两条 attempt 该不该合并（规则见 [Harness](harness.md)）：
 
 ```ts
 interface RunSpec {
@@ -31,9 +29,8 @@ interface RunSpec {
 }
 ```
 
-**区分力要求**：每条覆盖类别的 fixture 必须让被测规则与它的错误实现得到**不同**答案。「按 Run 选择」
-「逐 Eval 拼接」「平铺 attempt 后再选」在同一份 fixture 上必须三个答案互不相同，否则这份 fixture 证明
-不了任何一条。
+**区分力要求**：每条覆盖类别的 fixture 必须让被测规则与它的错误实现得到**不同**答案。
+「按 Run 选择」「逐 Eval 拼接」「平铺 attempt 后再选」在同一份 fixture 上必须三个答案互不相同，否则这份 fixture 证明不了任何一条。
 
 ## 观察面
 
@@ -44,27 +41,23 @@ interface RunSpec {
 
 ## 覆盖规范
 
-- **Notice 解释单源**（[Present: Notice](../../../error-feedback.md#present-notice)）：
-  `NoticeCatalog` 对内建 code 穷尽登记——**缺一条要编译不过**，这一格靠映射类型而不是运行时断言。
+- **Notice 解释单源**（[Present: Notice](../../../error-feedback.md#present-notice)）：`NoticeCatalog` 对内建 code 穷尽登记——**缺一条要编译不过**，这一格靠映射类型而不是运行时断言。
   再覆盖：
 
   - `NiceEvalError.message` 与同一条 catalog 条目**同源**：改 catalog 文案，`message` 跟着变。
     区分力场景是两处不能各写一份——断言 `message` 不是手写常量。
-  - `NoticeAction` 是闭集，每个 kind 在 CLI 与 web 各有一个投影；投影函数按 kind 而不是按 code
-    分支（新增一个 code 不需要动任何宿主投影，这是这条的区分力）。
+  - `NoticeAction` 是闭集，每个 kind 在 CLI 与 web 各有一个投影；投影函数按 kind 而不是按 code 分支（新增一个 code 不需要动任何宿主投影，这是这条的区分力）。
   - 未知第三方 code 走 fallback 时，输出仍带一条保守下一步，不是只有 code 与 detail。
   - Issue 与 observation 都不带 message / severity / action——断言这些字段在数据形状上不存在。
 
-- **`latestRunSample`**：每个 Experiment 只取最新一次 Run。不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
+- **`latestRunSample`**：每个 Experiment 只取最新一次 Run。
+  不跨 Run 拼 Eval，也不把 attempt 平铺后再选。
   该 Run 没跑的 Eval 进 `coverage.missingEvalIds`，不从旧 Run 补。
-- **`currentSample`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。`configHash` 与基准
-  不等的旧 Run 不贡献，该 Eval 留在缺口里；`runs` 保留全部真实来源，同一 Experiment 可以有多个；
-  不合成报告专用 Run。fixture 必须让同一 Experiment 同时有两个存活来源，且其中一个 `configHash`
-  不同——「拼了不该拼的」与「该拼的没拼」是两个方向的失败，都要有 case 抓。
-- **缺 `configHash` 的 Run**：只与自己可比，不参与任何拼接；这条与「configHash 相等」是两个分支，
-  不合并成一个 case。
-- **覆盖事实**：`knownEvalIds` 用并集分母（本地历史 ∪ 各 Run 携带的 `knownEvalIds`），不是「优先
-  字段」——fixture 要构造「本地并集比 Run 携带的更大」的情形，证明优先字段实现会让分母缩水。
+- **`currentSample`**：按 Experiment × Eval 取包含该 Eval 的最新**可比** Run。
+  `configHash` 与基准不等的旧 Run 不贡献，该 Eval 留在缺口里；`runs` 保留全部真实来源，同一 Experiment 可以有多个；不合成报告专用 Run。
+  fixture 必须让同一 Experiment 同时有两个存活来源，且其中一个 `configHash` 不同——「拼了不该拼的」与「该拼的没拼」是两个方向的失败，都要有 case 抓。
+- **缺 `configHash` 的 Run**：只与自己可比，不参与任何拼接；这条与「configHash 相等」是两个分支，不合并成一个 case。
+- **覆盖事实**：`knownEvalIds` 用并集分母（本地历史 ∪ 各 Run 携带的 `knownEvalIds`），不是「优先字段」——fixture 要构造「本地并集比 Run 携带的更大」的情形，证明优先字段实现会让分母缩水。
   `missingEvalIds` 与命令行范围求交。
 
   每个 `SampleCoverage` 还携带该 Experiment 的锚点 `run`：
@@ -74,22 +67,20 @@ interface RunSpec {
   - 全缺口 Experiment（零 attempt、不进 `Sample.runs`）仍有锚点
 
   fixture 要证明「无锚点」实现会让零 attempt 的 Eval 无法按 agent 归组。
-- **时效与 `fresh`**：`attempt.carried` 是 `artifactBase` 的读取面投影；携带条目与来自更早 Run 的
-  attempt 都属于历史执行。`fresh: true` 在两个口径下都排除历史执行，被排除的 Eval 进覆盖缺口。
-  fixture 同时含携带条目与跨 Run 拼入条目，使「只排携带」「只排旧来源」「两者都排」三种实现得到不同
-  答案。时效不产生 warning。
-- **转换算子**：`scope()` / `filter()` / `freshOnly()` 返回新 Sample，不改原样本；原样本的四个面
-  逐字段不变。它们同步更新 attempts、historyAttempts、runs、coverage 与有来源作用域的 issues。
-  `scope()` 收窄总体分母；`filter()` 与 `freshOnly()` 保持分母，并把无结果的题计入
-  `missingEvalIds`。Runs 只保留仍被两组 attempt 引用的真实来源。
-- **去重**：身份键 `(experimentId, evalId, attempt, startedAt)`，重复取最新 Run 里的那份且 `ref`
-  落在最新落盘上；`startedAt` 缺失时宁可不去重也不误删并出 `missing-startedAt` 警告。两个选择器都
-  已内置这条——`sample.attempts` 拿到手即去重后。去重是选择器内部不变量，不为内部 helper 单独写
-  公开 API 测试。
-- **警告全集**：`unfinished-run`、`dangling-evidence`、`unreadable-run`、`missing-startedAt`
-  四个 kind 各有一条，断言 `kind`、结构化字段齐全、`message` 以下一步收尾、该带 `command` 的带且
-  已替换真实 id。`missing-startedAt` 不透出到组件数据。未收尾 Run 不进 `unreadable`——它的 attempt
-  照常被选中，只是同批产生 `unfinished-run`。
+- **时效与 `fresh`**：`attempt.carried` 是 `artifactBase` 的读取面投影；携带条目与来自更早 Run 的 attempt 都属于历史执行。
+  `fresh: true` 在两个口径下都排除历史执行，被排除的 Eval 进覆盖缺口。
+  fixture 同时含携带条目与跨 Run 拼入条目，使「只排携带」「只排旧来源」「两者都排」三种实现得到不同答案。
+  时效不产生 warning。
+- **转换算子**：`scope()` / `filter()` / `freshOnly()` 返回新 Sample，不改原样本；原样本的四个面逐字段不变。
+  它们同步更新 attempts、historyAttempts、runs、coverage 与有来源作用域的 issues。
+  `scope()` 收窄总体分母；`filter()` 与 `freshOnly()` 保持分母，并把无结果的题计入 `missingEvalIds`。
+  Runs 只保留仍被两组 attempt 引用的真实来源。
+- **去重**：身份键 `(experimentId, evalId, attempt, startedAt)`，重复取最新 Run 里的那份且 `ref` 落在最新落盘上；`startedAt` 缺失时宁可不去重也不误删并出 `missing-startedAt` 警告。
+  两个选择器都已内置这条——`sample.attempts` 拿到手即去重后。
+  去重是选择器内部不变量，不为内部 helper 单独写公开 API 测试。
+- **警告全集**：`unfinished-run`、`dangling-evidence`、`unreadable-run`、`missing-startedAt` 四个 kind 各有一条，断言 `kind`、结构化字段齐全、`message` 以下一步收尾、该带 `command` 的带且已替换真实 id。
+  `missing-startedAt` 不透出到组件数据。
+  未收尾 Run 不进 `unreadable`——它的 attempt 照常被选中，只是同批产生 `unfinished-run`。
 
 ## 不这样测
 

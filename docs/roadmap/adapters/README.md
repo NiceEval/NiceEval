@@ -1,7 +1,7 @@
 # Adapter 路线图
 
-这里记录仍需外部稳定性、契约未定的接入候选。已定稿对象的契约页位于
-[`../../feature/adapters/sdk/`](../../feature/adapters/sdk/README.md)。
+这里记录仍需外部稳定性、契约未定的接入候选。
+已定稿对象的契约页位于[`../../feature/adapters/sdk/`](../../feature/adapters/sdk/README.md)。
 
 ## 观察
 
@@ -12,5 +12,5 @@
 
 ## 不接
 
-Alma 没有稳定程序化驱动面。niceeval 不通过 GUI 自动化或私有逆向接口制造 Adapter；
-未来出现受支持的 CLI、SDK 或 API 后再重新评估。
+Alma 没有稳定程序化驱动面。
+niceeval 不通过 GUI 自动化或私有逆向接口制造 Adapter；未来出现受支持的 CLI、SDK 或 API 后再重新评估。

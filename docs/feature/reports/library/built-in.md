@@ -45,18 +45,15 @@ export default defineReport({
 ```
 
 报告不提供继承或 override 协议。
-要改变一张官方 page，复制其公开全文后修改；
-要原样复用，就直接引用具名 PageDefinition。
+要改变一张官方 page，复制其公开全文后修改；要原样复用，就直接引用具名 PageDefinition。
 
 ## failures 与 stability
 
 `failures` 与 `stability` 也是完整内建报告。
-它们的领域算法是与报告同目录的普通函数，并通过
-`metricValue()` / `evidenceRow()` 交出带证据结果。
+它们的领域算法是与报告同目录的普通函数，并通过 `metricValue()` / `evidenceRow()` 交出带证据结果。
 
 这些算法可以具名导出并被用户报告调用，但不因此进入公共计算内核。
-只有满足 [计算准入判据](../calculations.md#计算的准入判据)时，
-才提升为 `niceeval/report` 的公共工具。
+只有满足 [计算准入判据](../calculations.md#计算的准入判据)时，才提升为 `niceeval/report` 的公共工具。
 
 ## show 共用任务结果
 

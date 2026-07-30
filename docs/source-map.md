@@ -1,8 +1,8 @@
 # Source Map —— 文档行为 → 实现文件
 
-文档是设计依据。这一页把每条文档行为映射回具体源码文件(参考 crabbox 的做法),
-方便对照「设计 vs 实现」;如果代码实现与文档设计不一致,应进一步讨论并决定是修代码、修设计,还是记录为明确的阶段性差异。niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
-`tsx/esm/api` 后加载 `src/cli.ts`)。
+文档是设计依据。
+这一页把每条文档行为映射回具体源码文件(参考 crabbox 的做法),方便对照「设计 vs 实现」;如果代码实现与文档设计不一致,应进一步讨论并决定是修代码、修设计,还是记录为明确的阶段性差异。
+niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册 `tsx/esm/api` 后加载 `src/cli.ts`)。
 
 ## 总览:模块 → 文件
 
@@ -107,8 +107,8 @@
 
 ## Assertions / Judge / Verdict
 
-契约分别见 [Assertions](./feature/assertions/README.md)、[Judge](./feature/judge/README.md) 与
-[Verdict](./feature/verdict/README.md)。当前实现仍集中在 `src/scoring/`，源码目录名不定义产品概念边界。
+契约分别见 [Assertions](./feature/assertions/README.md)、[Judge](./feature/judge/README.md) 与[Verdict](./feature/verdict/README.md)。
+当前实现仍集中在 `src/scoring/`，源码目录名不定义产品概念边界。
 
 | 行为 | 文件 |
 |---|---|
@@ -164,8 +164,7 @@
 实现落点中，show 与 view 共用 `--report` 装载；不带选项的宿主命令装载同一份内建报告，并各选对应渲染面。
 两个宿主的 Sample 都由中性的 `selectLatestPerEval` 产出：
 
-三层的数据形状与各层操作画在[Reading](feature/reading/README.md)的总图上,这里只给同一条链路的
-文件落点。
+三层的数据形状与各层操作画在[Reading](feature/reading/README.md)的总图上,这里只给同一条链路的文件落点。
 
 ```text
 磁盘  .niceeval/<experiment>/<run>/
@@ -252,25 +251,27 @@
 
 ## 与目标契约的已知实现差异
 
-本节只记录实现差异。Feature 文档仍是目标契约；这里的当前名称和路径用于定位源码，
-不反向限制目标 API。
+本节只记录实现差异。
+Feature 文档仍是目标契约；这里的当前名称和路径用于定位源码，不反向限制目标 API。
 
 ### P1：制品
-- **E2B 公共 baseline 尚未换代。** 配方和构建校验已修，但公开常量与
-  `sandbox/e2b/published.json` 仍指向旧 `v0.6.1`。需要真实构建、以运行用户验证、发布新 tag，
-  再同步台账与常量。本任务标 `[X]`，无凭据不能伪完成。
+- **E2B 公共 baseline 尚未换代。**
+  配方和构建校验已修，但公开常量与 `sandbox/e2b/published.json` 仍指向旧 `v0.6.1`。
+  需要真实构建、以运行用户验证、发布新 tag，再同步台账与常量。
+  本任务标 `[X]`，无凭据不能伪完成。
 
 ### P1：report E2E
 
 - **候选包与工作树 CLI 口径不一致。**
-  `e2e/report/package.json` 钉 `niceeval@^0.10.2`，验收脚本使用 `--results`；
-  工作树 CLI 已改 `--record`。
-- **验收前置。** 先发含新 CLI 的候选包，再改写 e2e 脚本与 `evidence.ts`。
+  `e2e/report/package.json` 钉 `niceeval@^0.10.2`，验收脚本使用 `--results`；工作树 CLI 已改 `--record`。
+- **验收前置。**
+  先发含新 CLI 的候选包，再改写 e2e 脚本与 `evidence.ts`。
   不能从仓库 `src/` 旁路导入。
-- **证据。** 本地 `.niceeval/` 多为 incomplete，不能替代 `produceEvidence()`。
-- **e2e 报告文件。** `reports/site.tsx` / `branded.tsx` 已对齐公开 API。
-  `[X]` 节点须 `e2e/report/` 自己的 `pnpm e2e` 返回 0 才算完成
-  （见 `plan/docs-feature-code-gap.md`）。
+- **证据。**
+  本地 `.niceeval/` 多为 incomplete，不能替代 `produceEvidence()`。
+- **e2e 报告文件。**
+  `reports/site.tsx` / `branded.tsx` 已对齐公开 API。
+  `[X]` 节点须 `e2e/report/` 自己的 `pnpm e2e` 返回 0 才算完成（见 `plan/docs-feature-code-gap.md`）。
 
 ### 已从差异清单删除
 
@@ -279,5 +280,4 @@
 - feedback 的 agent / ci 机器面已合并为 `json.ts`。
 - 宽 `TestContext` + runtime guard 已与目标契约一致。
 - hooks、keep-sandbox、orphans、error-classification 与 Verdict 主折叠没有新的结构性 gap。
-- view 的项目侧监听已收窄到报告 / 主题 / 项目配置及其静态 import 闭包
-  （`src/view/server.ts` 的 `projectWatchTargets` 与 `ProjectFileWatcher`）。
+- view 的项目侧监听已收窄到报告 / 主题 / 项目配置及其静态 import 闭包（`src/view/server.ts` 的 `projectWatchTargets` 与 `ProjectFileWatcher`）。

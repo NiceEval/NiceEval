@@ -1,6 +1,7 @@
-# `--keep-sandbox` —— 用例
+# `--keep-sandbox` ——用例
 
-`--keep-sandbox` 为某次真实 Attempt 留下可进入的 Sandbox 现场。先按要回答的问题选用例：
+`--keep-sandbox` 为某次真实 Attempt 留下可进入的 Sandbox 现场。
+先按要回答的问题选用例：
 
 | 目标 | 用例 |
 |---|---|

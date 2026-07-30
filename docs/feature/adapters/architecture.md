@@ -1,6 +1,7 @@
 # Adapters —— 架构
 
-Adapter 层隔离供应商协议。core 只依赖 `Agent.send`、`Turn`、标准事件流和可选 tracing 声明，不识别 Claude、Codex、LangGraph 等名字。
+Adapter 层隔离供应商协议。
+core 只依赖 `Agent.send`、`Turn`、标准事件流和可选 tracing 声明，不识别 Claude、Codex、LangGraph 等名字。
 
 ## 数据流
 
@@ -30,7 +31,8 @@ transport ──► raw frames / transcript
 
 ![行为轨与时间轨](assets/behavior-time-tracks.svg)
 
-OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`。行为轨不完整是契约缺失；时间轨缺失只是报告降级。
+OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`。
+行为轨不完整是契约缺失；时间轨缺失只是报告降级。
 
 ## 采集通道
 
@@ -63,7 +65,9 @@ OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`�
 
 ## 小文件边界
 
-每个 SDK 或 coding agent 在 [`sdk/`](sdk/README.md) 下独立成页。新增页面只描述该方言特有的事实：公开入口、原始事件形状、会话、HITL、usage、trace 与已知完整性边界。通用数据结构与不变量只在 `architecture/` 定义；Library 页面只展示如何调用和组合。
+每个 SDK 或 coding agent 在 [`sdk/`](sdk/README.md) 下独立成页。
+新增页面只描述该方言特有的事实：公开入口、原始事件形状、会话、HITL、usage、trace 与已知完整性边界。
+通用数据结构与不变量只在 `architecture/` 定义；Library 页面只展示如何调用和组合。
 
 外部源码阅读和行业调研放在 [`reference/`](reference/README.md)，不会成为用户必须阅读的契约入口。
 
@@ -78,4 +82,5 @@ OTel 内容字段可能被关闭或脱敏，因此 span 不补写 `Turn.events`�
 | Sandbox Agent 安装与驱动 | `src/agents/<agent>.ts` |
 | 运行器调用、会话和 trace 归属 | `src/context/`、`src/runner/` |
 
-新接一个对象时先判断协议知识能否独立于 transport。如果能，先实现纯转换器和 fixture 测试，再编写薄 Adapter；不能，则保留为项目自己的手写映射，不把应用私有协议提升成 niceeval API。
+新接一个对象时先判断协议知识能否独立于 transport。
+如果能，先实现纯转换器和 fixture 测试，再编写薄 Adapter；不能，则保留为项目自己的手写映射，不把应用私有协议提升成 niceeval API。

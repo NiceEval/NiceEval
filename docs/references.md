@@ -6,14 +6,10 @@
 
 ## API 设计准则
 
-**来源：** [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)、
-[Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)、
-[Rust API Guidelines · Naming](https://rust-lang.github.io/api-guidelines/naming.html) 与
-[Google Go Style Best Practices · Naming](https://google.github.io/styleguide/go/best-practices.html)。
+**来源：** [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)、[Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)、[Rust API Guidelines · Naming](https://rust-lang.github.io/api-guidelines/naming.html) 与 [Google Go Style Best Practices · Naming](https://google.github.io/styleguide/go/best-practices.html)。
 
-**是什么：** 四套语言生态的公开 API 命名与调用约定。Swift 以调用点清晰为首要目标；
-Google TypeScript 规定 TypeScript 标识符的 casing、描述性与缩写纪律；Rust 为转换等动作建立稳定词族；
-Google Go 区分返回值的名词性名字与产生动作的动词性名字。
+**是什么：** 四套语言生态的公开 API 命名与调用约定。
+Swift 以调用点清晰为首要目标；Google TypeScript 规定 TypeScript 标识符的 casing、描述性与缩写纪律；Rust 为转换等动作建立稳定词族；Google Go 区分返回值的名词性名字与产生动作的动词性名字。
 
 ### 已经借鉴的
 
@@ -26,14 +22,10 @@ Google Go 区分返回值的名词性名字与产生动作的动词性名字。
 
 ### 调研过但不照搬的
 
-1. **不照搬 Swift 的变形词规则。** `-ed` / `-ing` 与 mutating 对偶依赖 Swift 语法，不适合
-   TypeScript 自由函数。
-2. **不照搬 Rust 的 `as_` / `to_` / `into_` 拼写。** niceeval 学习的是按成本与所有权建立稳定词族，
-   不是把 snake_case 名字搬进 TypeScript。
-3. **不照搬 Go 的无 `get` 规则。** TypeScript 调用点可能没有 receiver 或包名前缀，是否省略领域名
-   由完整调用是否清楚决定。
-4. **不制定“所有函数都是动词 + 名词”。** 查询、组件、定义器、转换和副作用动作承担不同角色，
-   机械统一会牺牲调用点语义。
+1. **不照搬 Swift 的变形词规则。** `-ed` / `-ing` 与 mutating 对偶依赖 Swift 语法，不适合 TypeScript 自由函数。
+2. **不照搬 Rust 的 `as_` / `to_` / `into_` 拼写。** niceeval 学习的是按成本与所有权建立稳定词族，不是把 snake_case 名字搬进 TypeScript。
+3. **不照搬 Go 的无 `get` 规则。** TypeScript 调用点可能没有 receiver 或包名前缀，是否省略领域名由完整调用是否清楚决定。
+4. **不制定“所有函数都是动词 + 名词”。** 查询、组件、定义器、转换和副作用动作承担不同角色，机械统一会牺牲调用点语义。
 
 ## Vercel agent-eval —— `packages/playground`
 
@@ -128,73 +120,49 @@ Google Go 区分返回值的名词性名字与产生动作的动词性名字。
 
 ## 浏览器交互 DSL 生态(Playwright 原生词表、Screenplay、CodeceptJS)
 
-**来源:** [Playwright · Best Practices](https://playwright.dev/docs/best-practices)、
-[Locators](https://playwright.dev/docs/locators)、
-[Auto-waiting](https://playwright.dev/docs/actionability)、
-[Assertions](https://playwright.dev/docs/test-assertions)。
-高层 DSL 侧:
-[Serenity/JS · Screenplay Pattern](https://serenity-js.org/handbook/design/screenplay-pattern/)、
-[CodeceptJS · Basics](https://codecept.io/basics/)、playwright-bdd 一族。
+**来源:** [Playwright · Best Practices](https://playwright.dev/docs/best-practices)、[Locators](https://playwright.dev/docs/locators)、[Auto-waiting](https://playwright.dev/docs/actionability)、[Assertions](https://playwright.dev/docs/test-assertions)。
+高层 DSL 侧:[Serenity/JS · Screenplay Pattern](https://serenity-js.org/handbook/design/screenplay-pattern/)、[CodeceptJS · Basics](https://codecept.io/basics/)、playwright-bdd 一族。
 
 **是什么:** 对「浏览器交互验收要不要自建 DSL」的一轮横评。结论:**引擎全部现成,不自建**。
 Playwright 原生词表覆盖交互层三件套:
 
 - 寻址:`getByRole` / 可见文本的官方优先序,CSS / XPath 明确列为最后手段;
-- 等待:web-first assertion(`expect(locator).toBeVisible()` / `toHaveCount()`
-  自动重试到收敛),官方明确反对 `waitForTimeout` 硬等;
+- 等待:web-first assertion(`expect(locator).toBeVisible()` / `toHaveCount()` 自动重试到收敛),官方明确反对 `waitForTimeout` 硬等;
 - 结构:`toMatchAriaSnapshot`,与终端语义树那节是同一套匹配语义。
 
-Serenity/JS 的 Screenplay 模式(Actor / Task / Question)是「业务领域词 +
-活动轨迹报告」的成熟形态。CodeceptJS 是 `I.click()` 风格高层 DSL,自带 runner
-与启发式寻址。playwright-bdd 把 Gherkin 编译到 Playwright runner。
+Serenity/JS 的 Screenplay 模式(Actor / Task / Question)是「业务领域词 + 活动轨迹报告」的成熟形态。
+CodeceptJS 是 `I.click()` 风格高层 DSL,自带 runner 与启发式寻址。
+playwright-bdd 把 Gherkin 编译到 Playwright runner。
 
 ### 值得抄的
 
-1. **web-first assertion 的决策规则。** 「为验证而等 → 用自动重试断言;
-   为下一步动作而等 → 等具体状态」,固定时长 sleep 一律删除;
-   不带重试的即时读数(`count()`)不做断言对象。
-2. **寻址优先序作为契约。** role → 可见文本 → test id,class / CSS
-   只作最后手段——与 report 域「class selector 只是找到元素的手段」互相印证;
-   领域词内部实现按此排序。
-3. **Screenplay 的两个点子,取形不取栈。** 领域动词让场景语言停在公开概念;
-   活动轨迹让失败自带已执行步骤序列。抄进「领域词 + 步骤日志」的薄封装,
-   不引 @serenity-js 依赖(Actor / Ability 抽象对「单用户读报告」场景无增益)。
+1. **web-first assertion 的决策规则。** 「为验证而等 → 用自动重试断言;为下一步动作而等 → 等具体状态」,固定时长 sleep 一律删除;不带重试的即时读数(`count()`)不做断言对象。
+2. **寻址优先序作为契约。** role → 可见文本 → test id,class / CSS 只作最后手段——与 report 域「class selector 只是找到元素的手段」互相印证;领域词内部实现按此排序。
+3. **Screenplay 的两个点子,取形不取栈。** 领域动词让场景语言停在公开概念;活动轨迹让失败自带已执行步骤序列。
+抄进「领域词 + 步骤日志」的薄封装,不引 @serenity-js 依赖(Actor / Ability 抽象对「单用户读报告」场景无增益)。
 
 ### 调研过、判断不值得抄的(及理由)
 
-1. **CodeceptJS。** 自带 runner,与 vitest 宿主互斥;启发式寻址(找不到就按
-   label / name 猜)与「指名寻址、失败列出候选」相反,失败时不可诊断。
-2. **playwright-bdd / Gherkin 层。** 自然语言步骤层维持既有否决——
-   间接性换不来表达力,断言仍要落回底层词表。
-3. **自建 auto-wait 或交互断言引擎。** Playwright 已内置且是行业口径,
-   重造只会制造第二口径;库的自定义面收窄到领域词与步骤日志。
+1. **CodeceptJS。** 自带 runner,与 vitest 宿主互斥;启发式寻址(找不到就按 label / name 猜)与「指名寻址、失败列出候选」相反,失败时不可诊断。
+2. **playwright-bdd / Gherkin 层。** 自然语言步骤层维持既有否决——间接性换不来表达力,断言仍要落回底层词表。
+3. **自建 auto-wait 或交互断言引擎。** Playwright 已内置且是行业口径,重造只会制造第二口径;库的自定义面收窄到领域词与步骤日志。
 
 ## Harbor(Terminal-Bench 2.0 harness)
 
-**来源:** [laude-institute/harbor](https://github.com/laude-institute/harbor)
-的 `src/harbor/agents/installed/`(`base.py`、`codex.py`、
-`node_install.py`)与 [Harbor docs](https://www.harborframework.com/docs)。
+**来源:** [laude-institute/harbor](https://github.com/laude-institute/harbor) 的 `src/harbor/agents/installed/`(`base.py`、`codex.py`、`node_install.py`)与 [Harbor docs](https://www.harborframework.com/docs)。
 
-**是什么:** TB 2.0 的官方 harness。组合模型与 niceeval 相反:任务持有环境
-(每道题自带 Dockerfile / compose),agent 是 `BaseInstalledAgent` 子类——
-一份运行时安装配方,容器启动后经 `environment.exec()` 装进去。
+**是什么:** TB 2.0 的官方 harness。组合模型与 niceeval 相反:任务持有环境(每道题自带 Dockerfile / compose),agent 是 `BaseInstalledAgent` 子类——一份运行时安装配方,容器启动后经 `environment.exec()` 装进去。
 
 ### 值得抄的
 
-1. **配方脱离特定底座存在。** 安装配方不假设底座:包管理器按
-   apt-get / dnf / yum / apk 探测分发,Node 缺失时经 nvm 装用户 home。
-   证明「任务给定底座 × agent 配方上叠」可行,是
-   [Design · Agent 安装配方](design/agent-install-recipe/README.md) 的直接参照。
-2. **幂等短路统一两种执行时机。** 安装前先跑 `--version`,版本匹配即跳过——
-   预烘焙镜像自动成为快速路径,同一份配方兼任构建步骤与运行时回退,
-   进了 PLAN-3 的配方形态。
+1. **配方脱离特定底座存在。** 安装配方不假设底座:包管理器按 apt-get / dnf / yum / apk 探测分发,Node 缺失时经 nvm 装用户 home。
+证明「任务给定底座 × agent 配方上叠」可行,是 [Design · Agent 安装配方](design/agent-install-recipe/README.md) 的直接参照。
+2. **幂等短路统一两种执行时机。** 安装前先跑 `--version`,版本匹配即跳过——预烘焙镜像自动成为快速路径,同一份配方兼任构建步骤与运行时回退,进了 PLAN-3 的配方形态。
 
 ### 调研过、判断不值得抄的(及理由)
 
-1. **运行时安装为主路径。** 探测与安装成本每个 attempt 都付,且没有产物级
-   锁定版本可比性;与预制产物主路径原则冲突,运行时安装只留作回退。
-2. **找不到包管理器时 warning 继续跑。** 静默降级点,失败推迟到 agent 启动、
-   归因困难;niceeval 的对应位置选构建期报错。
+1. **运行时安装为主路径。** 探测与安装成本每个 attempt 都付,且没有产物级锁定版本可比性;与预制产物主路径原则冲突,运行时安装只留作回退。
+2. **找不到包管理器时 warning 继续跑。** 静默降级点,失败推迟到 agent 启动、归因困难;niceeval 的对应位置选构建期报错。
 
 ## 相关阅读
 

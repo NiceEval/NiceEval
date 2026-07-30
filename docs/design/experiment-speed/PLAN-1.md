@@ -1,15 +1,13 @@
 # 方案 1：全新 Sandbox、预制环境与 Sandbox 预热
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[LIMITS](LIMITS.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 方案
 
-每个 Attempt 使用独立 Sandbox。稳定依赖进入 image、template 或 snapshot；
-Runner 在计划确定后，只为近期可派发的 Attempt 预创建有限数量的 Sandbox。
+每个 Attempt 使用独立 Sandbox。
+稳定依赖进入 image、template 或 snapshot； Runner 在计划确定后，只为近期可派发的 Attempt 预创建有限数量的 Sandbox。
 
 ## 优势
 

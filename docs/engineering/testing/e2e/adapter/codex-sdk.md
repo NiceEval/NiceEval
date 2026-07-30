@@ -1,8 +1,7 @@
 # codex-sdk 仓库
 
-仓库 ID `codex-sdk`，group `sdk`。被测应用是仓库自带的 Codex SDK 服务：`thread.runStreamed()`
-驱动、带工作区与 MCP 工具，adapter 用 `createCodexThreadEventStream()` 接入（契约见
-[Codex SDK 契约页](../../../../feature/adapters/sdk/codex-sdk/README.md)）。
+仓库 ID `codex-sdk`，group `sdk`。
+被测应用是仓库自带的 Codex SDK 服务：`thread.runStreamed()` 驱动、带工作区与 MCP 工具，adapter 用 `createCodexThreadEventStream()` 接入（契约见 [Codex SDK 契约页](../../../../feature/adapters/sdk/codex-sdk/README.md)）。
 
 ## Eval 闭环
 
@@ -17,7 +16,5 @@
 ## 仓库验收
 
 - 验收脚本核对 CLI 退出码与实际运行的 Eval 集合。
-- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution`
-  执行树出现 command execution 与文件变更节点，时间注释显示 timing unavailable。
-- **OTel**：本适配器不声明 tracing 面——`show --execution` 时间注释显示 timing
-  unavailable，`show --timing` 不挂 OTel 子树。
+- **CLI 读回**：`show` 默认报告列出本仓库 Eval 与 verdict；对通过 attempt 的 `show --execution` 执行树出现 command execution 与文件变更节点，时间注释显示 timing unavailable。
+- **OTel**：本适配器不声明 tracing 面——`show --execution` 时间注释显示 timing unavailable，`show --timing` 不挂 OTel 子树。

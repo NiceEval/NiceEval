@@ -1,8 +1,7 @@
 # `sandboxReuse: true` —— 用例
 
-Experiment 声明 `sandboxReuse: true` 后，仍会真实执行每条 Attempt，
-只让它们共用 Sandbox。它分摊 Sandbox 创建与 SandboxSpec `setup`，
-但不会让结果进入后续结果沿用。
+Experiment 声明 `sandboxReuse: true` 后，仍会真实执行每条 Attempt，只让它们共用 Sandbox。
+它分摊 Sandbox 创建与 SandboxSpec `setup`，但不会让结果进入后续结果沿用。
 
 | 目标 | 用例 |
 |---|---|

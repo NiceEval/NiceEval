@@ -24,8 +24,7 @@ niceeval exp local onboarding/tool-first --keep-sandbox=all    # passed 也留,�
 - 被中断的 run 不留存:留存授予发生在 verdict 定稿的收尾点,Ctrl+C 时还没有 verdict 的 attempt 走正常清理;此前已完成并授予留存的沙箱不被中断收回。
 - 留存与[缓存携带](../experiments/cache.md#执行模式划走的两块)不相容:携带条目没有本次沙箱,无从留存。所以 `--keep-sandbox` 运行里,历史终态 verdict 落在**当前留存档内**的 attempt 不参与携带、照常派发重跑拿现场——`failed` 档下上一轮的 `failed` 重跑(`errored` 本就从不缓存)、`passed` 照常携带;`all` 档下全部重跑。要现场就给一次真实执行,不需要为此再配一次 [`--rerun`](../experiments/use-case/重新运行/)——两个 flag 的档位词表同构,`--keep-sandbox` 各档自带对应口径的重跑。
 - `--keep-sandbox` 与 Experiment 的 [`sandboxReuse: true`](reuse.md) 互斥。
-  复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；
-  组合在创建 Sandbox 前报错。
+  复用的 Sandbox 由多条 Attempt 共享，最终现场不只属于其中一条；组合在创建 Sandbox 前报错。
   Sandbox 预热行为不变,未领用的预创建实例照常销毁。
 
 ### run 收尾输出

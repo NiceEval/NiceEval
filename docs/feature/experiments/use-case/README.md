@@ -1,9 +1,8 @@
 # Experiments 用例手册
 
-规则难懂的地方来这里按场景查。一个目录对应一个 flag、API 组或功能主题；
-目录 README 只帮助选择，叶子文档一篇讲一个用户目标的完整路径。
-契约单源始终在 [CLI](../cli.md)、[Library](../library.md) 与
-[Runner](../../../runner.md)，用例只做搭配与叙事，不复制定义。
+规则难懂的地方来这里按场景查。
+一个目录对应一个 flag、API 组或功能主题；目录 README 只帮助选择，叶子文档一篇讲一个用户目标的完整路径。
+契约单源始终在 [CLI](../cli.md)、[Library](../library.md) 与 [Runner](../../../runner.md)，用例只做搭配与叙事，不复制定义。
 
 ## Library 与配置主题
 
@@ -36,4 +35,6 @@
 
 ## 对比怎么计分
 
-一个实验可以同时选择两种题型:通过制 eval(`defineEval`)读通过率,一题一分、`attempts > 1` 按通过率折叠;计分制 eval(`defineScoreEval`)读总分,题内叠加挣分。混型时两种读数分列、不相加。「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../assertions/library/score-points.md)。
+一个实验可以同时选择两种题型:通过制 eval(`defineEval`)读通过率,一题一分、`attempts > 1` 按通过率折叠;计分制 eval(`defineScoreEval`)读总分,题内叠加挣分。
+混型时两种读数分列、不相加。
+「死在哪层」「部分完成」「质量差」各有下钻读法,契约见[计分粒度](../../assertions/library/score-points.md)。

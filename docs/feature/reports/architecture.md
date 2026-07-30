@@ -1,7 +1,6 @@
 # 报告作者 API —— Architecture
 
-本篇说明普通值转换模型怎样保住 Sample 口径、聚合正确性、
-artifact 懒加载与 text / web 双面一致。
+本篇说明普通值转换模型怎样保住 Sample 口径、聚合正确性、artifact 懒加载与 text / web 双面一致。
 公开写法见 [Library](library.md)。
 
 ## 执行模型
@@ -17,10 +16,8 @@ artifact 懒加载与 text / web 双面一致。
   → text / web renderer
 ```
 
-page 清单、id、标题、input、导航资格与 Attempt page 唯一性
-在装载期可见，不执行任何 page render。
-只有被请求的 page 实例会求值；它返回的树中已经没有
-待执行的数据声明或 Promise。
+page 清单、id、标题、input、导航资格与 Attempt page 唯一性在装载期可见，不执行任何 page render。
+只有被请求的 page 实例会求值；它返回的树中已经没有待执行的数据声明或 Promise。
 text 与 web renderer 消费该 page 实例的同一棵值树。
 
 ```ts
@@ -41,21 +38,14 @@ async function renderPage(
 ```
 
 本地 view 按请求求值对应 page 实例。
-承载它的宿主协议就是现有站点管线的按需块协议
-（[View](../../feature/reports/view.md)）。
-`#/page/<id>` 只是浏览器侧的浏览状态；
-page 内容按 `report/<pageId>.<locale>.html` 路径请求，
-server 因此在请求路径里就知道该求值哪张 page 实例。
+承载它的宿主协议就是现有站点管线的按需块协议（[View](../../feature/reports/view.md)）。
+`#/page/<id>` 只是浏览器侧的浏览状态；page 内容按 `report/<pageId>.<locale>.html` 路径请求，server 因此在请求路径里就知道该求值哪张 page 实例。
 `index.html` 只预烘当前订阅的那一块。
-静态导出没有按需请求，枚举全部 sample page
-与可达 Attempt page 实例，
-分别求值后再决定整体写出。
-一个 page 实例失败时，本地模式只污染自己的槽位；
-静态导出仍保持全有或全无。
+静态导出没有按需请求，枚举全部 sample page 与可达 Attempt page 实例，分别求值后再决定整体写出。
+一个 page 实例失败时，本地模式只污染自己的槽位；静态导出仍保持全有或全无。
 
 `show` 与 `view` 可以分别调用同一 page render。
-相同 Sample、报告模块（含其 import 图）与 NiceEval 版本
-必须产生字节稳定结果。
+相同 Sample、报告模块（含其 import 图）与 NiceEval 版本必须产生字节稳定结果。
 
 ## Sample 是范围与正确性的输入
 
@@ -72,11 +62,9 @@ const security = sample.scope({ evals: "security/" });
 const reliable = security.filter(isReliableAttempt);
 ```
 
-`aggregate()` 收 Sample，因为普通数组已经丢失 coverage、issues
-与“总体是否改变”的信息。
+`aggregate()` 收 Sample，因为普通数组已经丢失 coverage、issues 与“总体是否改变”的信息。
 需要成对比较总体的报告旁函数也应收 Sample。
-只分析历史观测的局部函数则显式接收 `sample.historyAttempts`，
-不再虚构一个 `history()` 查询。
+只分析历史观测的局部函数则显式接收 `sample.historyAttempts`，不再虚构一个 `history()` 查询。
 
 实体显示可以接收数组：
 
@@ -183,19 +171,13 @@ aggregate(sample, {
 ```
 
 Calculation 品牌不区分官方与用户，只阻止手写一个漏掉 coverage 和 refs 的同形函数。
-它存在于不可序列化的函数值上，只在 `aggregate()` 执行前校验，
-不会进入 Result、fixture、ShowJson 或 React props。
+它存在于不可序列化的函数值上，只在 `aggregate()` 执行前校验，不会进入 Result、fixture、ShowJson 或 React props。
 
-`rollup()` 自动建立题级分组、过滤 null、计算 samples / total，
-把覆盖范围内的全部 Attempt locator 写入 refs，
-并把 MetricValue basis 固定为 `"eval"`。
-终值是跨题级单元（Experiment × Eval）的统计量，
-samples / total 因此数单元；
-口径与算例见 [Library](library.md#samples--total-的口径)。
+`rollup()` 自动建立题级分组、过滤 null、计算 samples / total，把覆盖范围内的全部 Attempt locator 写入 refs，并把 MetricValue basis 固定为 `"eval"`。
+终值是跨题级单元（Experiment × Eval）的统计量，samples / total 因此数单元；口径与算例见 [Library](library.md#samples--total-的口径)。
 
 Reducer 同样是有稳定身份的公开函数值。
-内建 `mean`、`sum`、`min`、`max` 与 `percentile(p)` 是纯函数；
-空集合统一返回 `null`，`percentile(p)` 的线性插值算法属于公开契约。
+内建 `mean`、`sum`、`min`、`max` 与 `percentile(p)` 是纯函数；空集合统一返回 `null`，`percentile(p)` 的线性插值算法属于公开契约。
 不提供通用 `countDistinct`，因为两级 distinct 不能通过题级结果安全合成。
 
 ## 结果值
@@ -223,8 +205,7 @@ interface MetricValue {
 ```
 
 `MetricValue` 是一个完成计算的结果，不是计算声明。
-`basis` 命名 samples / total 的计数单位；
-`refs` 恒为 Attempt locator——它是证据链，不承担分母。
+`basis` 命名 samples / total 的计数单位；`refs` 恒为 Attempt locator——它是证据链，不承担分母。
 表格、图表与摘要读取同一对象：
 
 ```tsx
@@ -234,26 +215,17 @@ interface MetricValue {
 ```
 
 MetricValue 不保存 LocalizedText display。
-renderer 使用同一份 `value + format` 和自己的 locale 格式化，
-语言切换不要求计算层预烤全部语言。
+renderer 使用同一份 `value + format` 和自己的 locale 格式化，语言切换不要求计算层预烤全部语言。
 组件不能修改 `value` 或重算 refs。
-AggregateRow 也不能重新进入 `aggregate()`；
-类型签名只允许 Sample 作为聚合输入，从而阻止对 summary 再做 summary。
+AggregateRow 也不能重新进入 `aggregate()`；类型签名只允许 Sample 作为聚合输入，从而阻止对 summary 再做 summary。
 
 非 rollup 算法通过公开的 `metricValue()` 与 `evidenceRow()` 结束计算。
-前者强制声明 samples、total、basis 与 Attempt 证据，
-后者把各 MetricValue refs 合成行级 refs。
-证据同时接受 AttemptHandle 与 AttemptLocator，
-所以从已聚合 MetricValue 派生新读数时直接复用上游 refs。
+前者强制声明 samples、total、basis 与 Attempt 证据，后者把各 MetricValue refs 合成行级 refs。
+证据同时接受 AttemptHandle 与 AttemptLocator，所以从已聚合 MetricValue 派生新读数时直接复用上游 refs。
 
-EvidenceRow 不带 symbol 品牌；组件在运行时结构校验 refs 与 MetricValue，
-所以 JSON 往返后仍然有效。
-Sample 派生图表只接受 EvidenceRow points；
-纯外部 JSON 标量序列经图表的显式 `external` 声明绘图，
-没有 Attempt 下钻。
-领域函数离开核心目录仍走同一条运行时校验；
-退出证据契约的唯一出口是显式的 `external`，
-NiceEval 不验证 external 行的来源，只保证这个退出可审计。
+EvidenceRow 不带 symbol 品牌；组件在运行时结构校验 refs 与 MetricValue，所以 JSON 往返后仍然有效。
+Sample 派生图表只接受 EvidenceRow points；纯外部 JSON 标量序列经图表的显式 `external` 声明绘图，没有 Attempt 下钻。
+领域函数离开核心目录仍走同一条运行时校验；退出证据契约的唯一出口是显式的 `external`，NiceEval 不验证 external 行的来源，只保证这个退出可审计。
 
 ## 组件不执行计算
 
@@ -310,12 +282,8 @@ const [performance, other] = await Promise.all([
 
 跨 page 自动共享计算不作为首版承诺。
 两页可以调用同一个普通转换函数，但各自拥有求值与失败边界。
-如果性能测试证明重复聚合是瓶颈，再在 `aggregate()` 内部按
-Sample 身份、Calculation 身份与分组函数身份增加透明缓存；
-这只复用完全相同的稳定函数身份，不猜测两个函数是否等价，
-因此是内部优化而不是作者语义。
-内联分组闭包每次都是新身份，不承诺命中；
-需要命中的热点可以把分组函数提成具名模块值。
+如果性能测试证明重复聚合是瓶颈，再在 `aggregate()` 内部按 Sample 身份、Calculation 身份与分组函数身份增加透明缓存；这只复用完全相同的稳定函数身份，不猜测两个函数是否等价，因此是内部优化而不是作者语义。
+内联分组闭包每次都是新身份，不承诺命中；需要命中的热点可以把分组函数提成具名模块值。
 缓存命中不改变作者 API。
 
 ## 多页逐页惰性求值
@@ -378,10 +346,8 @@ interface AttemptPage {
 ```
 
 装载期要求至多一张 Attempt page，且它不能进入导航。
-宿主解析 locator 后选择这张 page 并传入 AttemptEvidence；自定义报告没有声明时，
-view 使用内建 `standard` 的 Attempt page 作为隐式默认值，仍不进入报告导航。
-这保留现有“Attempt 详情是一张参数化 page”的寻址、静态导出和无 JS 深链契约，
-不重新增加 `attempt`、modal 或其它旁路内容槽。
+宿主解析 locator 后选择这张 page 并传入 AttemptEvidence；自定义报告没有声明时，view 使用内建 `standard` 的 Attempt page 作为隐式默认值，仍不进入报告导航。
+这保留现有“Attempt 详情是一张参数化 page”的寻址、静态导出和无 JS 深链契约，不重新增加 `attempt`、modal 或其它旁路内容槽。
 
 ## 外部业务数据经 import 冻结
 
@@ -402,13 +368,10 @@ export default defineReport(async (sample) => {
 ```
 
 快照模块在运行前由脚本或人写盘，随报告一起进版本库。
-page render 不能请求网络、读取环境变量、使用时钟或随机数；
-新数据只能通过重新生成快照文件进入报告。
-快照文件在报告的 import 图内，
-缓存身份、watch 重建与导出可复现性因此不需要第二套规则。
+page render 不能请求网络、读取环境变量、使用时钟或随机数；新数据只能通过重新生成快照文件进入报告。
+快照文件在报告的 import 图内，缓存身份、watch 重建与导出可复现性因此不需要第二套规则。
 join 仍是普通函数，不建立 external data 查询协议。
-宿主没有外部数据注入通道：
-报告的宿主输入只有 Sample 或 AttemptEvidence。
+宿主没有外部数据注入通道：报告的宿主输入只有 Sample 或 AttemptEvidence。
 
 ## React 边界
 
@@ -433,8 +396,7 @@ const points = await aggregate(sample, {
 ## show 切片与 `--json` 的锚点
 
 普通函数模型不让 show 从组件树反推数据。
-`ShowJson` 信封、view 名和“JSON 是 text 的数据超集”继续保留，
-`data` 的单源是公开普通转换函数的结果类型。
+`ShowJson` 信封、view 名和“JSON 是 text 的数据超集”继续保留，`data` 的单源是公开普通转换函数的结果类型。
 
 每个内建切片只有一个任务函数：
 
@@ -453,16 +415,13 @@ comparisonResult(sample)
 ```
 
 内建比较 page 同样调用公开的 `comparisonResult()`。
-CLI 的切片注册表只负责“flag → 任务函数 + text 组件”的宿主分派，
-不拥有私有计算公式，也不保存一套内建专用结果。
+CLI 的切片注册表只负责“flag → 任务函数 + text 组件”的宿主分派，不拥有私有计算公式，也不保存一套内建专用结果。
 `--stats`、usage、timing、diff 等切片使用同一模式。
 
-自定义 `--report` 与 `--json` 仍互斥：
-任意报告树表达“怎么看”，ShowJson 输出稳定的内建任务结果。
+自定义 `--report` 与 `--json` 仍互斥：任意报告树表达“怎么看”，ShowJson 输出稳定的内建任务结果。
 宿主不序列化任意组件树，也不通过切树猜出作者想公开的数据。
 
-ShowJson 的 schemaVersion 只在实际线格式变化时递增；
-作者 API 的实现变化不能改变信封或 view 语义。
+ShowJson 的 schemaVersion 只在实际线格式变化时递增；作者 API 的实现变化不能改变信封或 view 语义。
 
 ## 本地重建与性能边界
 
@@ -475,13 +434,9 @@ ShowJson 的 schemaVersion 只在实际线格式变化时递增；
 - 已填充的 page 树仍可按块 diff 并就地替换。
 
 这不是函数级依赖图。
-两张 page 调用同一个聚合时，首版允许各算一次；
-实现必须用 view 编辑到可见延迟作为基线做 benchmark，
-分别测轻 page、重 artifact page、双页静态导出与失败 page。
-如果 page 粒度仍不能满足预算，优先给 `aggregate()` 与 artifact 读取增加
-内部透明缓存，而不是把取数管线暴露给作者。
-benchmark 必须分别覆盖官方具名分组和内联自定义分组，
-不能用前者的命中率代表所有作者代码。
+两张 page 调用同一个聚合时，首版允许各算一次；实现必须用 view 编辑到可见延迟作为基线做 benchmark，分别测轻 page、重 artifact page、双页静态导出与失败 page。
+如果 page 粒度仍不能满足预算，优先给 `aggregate()` 与 artifact 读取增加内部透明缓存，而不是把取数管线暴露给作者。
+benchmark 必须分别覆盖官方具名分组和内联自定义分组，不能用前者的命中率代表所有作者代码。
 
 ## 自定义显示形状
 
@@ -513,8 +468,7 @@ async function computeConfusionMatrix(
 
 ## 组件自带资产
 
-带交互的显示形状把增强脚本与样式随组件声明，
-不要求报告作者替它在外壳登记：
+带交互的显示形状把增强脚本与样式随组件声明，不要求报告作者替它在外壳登记：
 
 ```tsx
 const ConfusionMatrix = defineRenderer({
@@ -531,19 +485,11 @@ const ConfusionMatrix = defineRenderer({
 }, import.meta.url);
 ```
 
-管线在 render 后收集页面上实际出现组件的资产：
-按内容哈希物化与去重，按稳定顺序注入，
-第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它解析，
-与 head 本地资产走同一条路径纪律。
-官方原语的增强 runtime 与 stylesheet 走的就是这条机制，
-自定义组件与官方组件平权；
-没出现在页面上的组件，资产也不注入。
+管线在 render 后收集页面上实际出现组件的资产：按内容哈希物化与去重，按稳定顺序注入，第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它解析，与 head 本地资产走同一条路径纪律。
+官方原语的增强 runtime 与 stylesheet 走的就是这条机制，自定义组件与官方组件平权；没出现在页面上的组件，资产也不注入。
 
-资产受增强层不变量约束：
-初始静态 HTML 无 JavaScript 时完整可读，
-脚本只添加浏览行为，不改变数据或初始数值。
-站点级第三方注入（埋点、字体、SEO）不属于组件，
-声明在外壳的 `head`。
+资产受增强层不变量约束：初始静态 HTML 无 JavaScript 时完整可读，脚本只添加浏览行为，不改变数据或初始数值。
+站点级第三方注入（埋点、字体、SEO）不属于组件，声明在外壳的 `head`。
 
 ## 错误反馈
 
@@ -581,10 +527,8 @@ const performance = await aggregate(...)
 MetricValue 保留 `value: null`、samples、total 与 refs。
 
 开发态错误还应携带结果路径。
-例如 `points[3].costUSD` 不是可绘制值时，
-诊断同时给出组件属性、行号、字段名和该 MetricValue 的 refs。
-结果本身是普通可序列化值，作者可直接 `console.dir()`、
-保存 fixture 或写 JSON；不增加只为查看内部 Content 的 `inspect()` API。
+例如 `points[3].costUSD` 不是可绘制值时，诊断同时给出组件属性、行号、字段名和该 MetricValue 的 refs。
+结果本身是普通可序列化值，作者可直接 `console.dir()`、保存 fixture 或写 JSON；不增加只为查看内部 Content 的 `inspect()` API。
 
 ## 相关阅读
 

@@ -1,6 +1,8 @@
 # SDK 与 Agent 接入
 
-这里按 SDK 或 coding agent 名称拆分接入契约。每篇只记录该对象特有的公开入口和协议边界；通用写法见 [`../library.md`](../library.md)，架构纪律见 [`../architecture.md`](../architecture.md)。每个对象目录另有一篇 `cost.md`，声明该协议的 token 桶原生口径、归一到[恒互斥 Usage 契约](../../record/architecture.md#usage)的扣减规则，以及成本是实测带回还是价格表估算。
+这里按 SDK 或 coding agent 名称拆分接入契约。
+每篇只记录该对象特有的公开入口和协议边界；通用写法见 [`../library.md`](../library.md)，架构纪律见 [`../architecture.md`](../architecture.md)。
+每个对象目录另有一篇 `cost.md`，声明该协议的 token 桶原生口径、归一到[恒互斥 Usage 契约](../../record/architecture.md#usage)的扣减规则，以及成本是实测带回还是价格表估算。
 
 ## 索引
 
@@ -19,4 +21,6 @@
 | [Hermes Agent](hermes/README.md) | `hermesAgent` | Sandbox coding-agent Adapter |
 | [OpenClaw](openclaw/README.md) | `openClawAgent` | Sandbox coding-agent Adapter |
 
-通用扩展调用见 [配置 Coding Agent 扩展](../library/coding-agent-extensions.md)。同名 CLI Adapter 与 SDK 转换器是不同接入形态。其它候选及不接判据见 [Adapter Roadmap](../../../roadmap/adapters/README.md)。
+通用扩展调用见 [配置 Coding Agent 扩展](../library/coding-agent-extensions.md)。
+同名 CLI Adapter 与 SDK 转换器是不同接入形态。
+其它候选及不接判据见 [Adapter Roadmap](../../../roadmap/adapters/README.md)。

@@ -2,7 +2,9 @@
 
 ## 解决什么问题
 
-多轮任务里「这一轮做对了吗」和「整段对话表现如何」是两个不同的问题。作用域断言的词汇只有一套，**挂在哪个接收者上决定看哪份数据**（[接收者模型](../architecture.md#接收者模型位置决定作用域)）：turn 只看这一轮，session 看这条会话，`t` 看整个 attempt。分清接收者，就不需要手工拼接每轮回复。
+多轮任务里「这一轮做对了吗」和「整段对话表现如何」是两个不同的问题。
+作用域断言的词汇只有一套，**挂在哪个接收者上决定看哪份数据**（[接收者模型](../architecture.md#接收者模型位置决定作用域)）：turn 只看这一轮，session 看这条会话，`t` 看整个 attempt。
+分清接收者，就不需要手工拼接每轮回复。
 
 ## 全流程
 
@@ -46,11 +48,12 @@
    other.calledTool("get_weather", { input: { city: "San Francisco" } });   // 只看这条 session
    ```
 
-   新 session 有同一套驱动 API（`send` / `sendFile` / `respond` / `events`）和同一套作用域断言；`session.judge` 默认评这条 session 自己的对话。
+新 session 有同一套驱动 API（`send` / `sendFile` / `respond` / `events`）和同一套作用域断言；`session.judge` 默认评这条 session 自己的对话。
 
 ## 边界
 
-- turn 与 session 的断言在**记录时 Run**：session 断言之后再发生的轮次不会改变已记录断言的评估材料。要看「到最后为止的全部」，挂 `t`。
+- turn 与 session 的断言在**记录时 Run**：session 断言之后再发生的轮次不会改变已记录断言的评估材料。
+  要看「到最后为止的全部」，挂 `t`。
 - `t.newSession()` 开的 session 事件**仍会汇入** `t.*` 的 attempt 级聚合断言；但不进入 `t.reply` / `t.events` 这类主 session 即时读取视图。
 - Turn 不能继续驱动会话——下一轮仍从 `t` 或对应 session 调用 `send`。
 - 评 diff、文件内容等非会话材料时，judge 用 `{ on }` 显式传值（见[裁判评质量](judge-quality.md)）。

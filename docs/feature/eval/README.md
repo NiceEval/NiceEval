@@ -1,6 +1,7 @@
 # Eval —— 编写 eval
 
-写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。共享同一套逻辑的测试集可以从同一文件默认导出数组或 keyed record；数组按位置生成 id（插删或重排会改 id），record 按稳定业务 key 生成 id。
+写一个 eval 应该像写一个测试:一个文件、一个 `test(t)` 函数,断言写在你观察结果的地方。
+共享同一套逻辑的测试集可以从同一文件默认导出数组或 keyed record；数组按位置生成 id（插删或重排会改 id），record 按稳定业务 key 生成 id。
 
 ## `defineEval` 的形状
 
@@ -39,19 +40,30 @@ export default defineEval({
 });
 ```
 
-`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。项目级配置是没写时的默认来源，压不掉 eval 写下的值。`timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../judge/library.md#模型与鉴权)。完整解析链见 [Experiments · 配置解析链](../experiments/architecture.md#配置解析链一次求值处处同源)。
+`timeoutMs` 与 `judge` 是这条 eval 自己对运行条件的声明：装一套工具链的题需要 35 分钟、评开放式行文的题需要更强的裁判模型，这是题目本身的属性，不是这次跑法的偏好。
+项目级配置是没写时的默认来源，压不掉 eval 写下的值。
+`timeoutMs` 可由 experiment 或 `--timeout` 覆盖；`judge` 没有 experiment / CLI 覆盖层，只有单条断言的 `{ model }` 出口，见 [LLM-as-judge](../judge/library.md#模型与鉴权)。
+完整解析链见 [Experiments · 配置解析链](../experiments/architecture.md#配置解析链一次求值处处同源)。
 
-`environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；Direct Agent 不创建 Sandbox，此字段只参与指纹。
+`environment` 是非空、不透明的稳定 id：eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。
+profile 到具体预制产物的翻译是一张纯数据表，写在 sandbox spec 工厂的 `environments` 参数上（一个 provider 一份，多个实验复用），见 [Sandbox · 按 environment 选预制产物](../sandbox/library/prebuilt-environments.md#按-environment-选预制产物)。
+测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。
+此字段以解析后的产物参数计入 eval fingerprint——它映射的产物变化会让该 eval 重跑；Direct Agent 不创建 Sandbox，此字段只参与指纹。
 
-`diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
+`diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
+两个数组的 glob 语义、默认清单与合成顺序单源在 [Sandbox · 变更归因](../sandbox/architecture.md#变更归因send-窗口与分类账),那里把每一行写入落到哪本账上逐行标了出来。
 
-`setup` 在环境层 Hook 与变更分类账锚点之后、`agent.setup` 与 `test(t)` 之前跑,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖)。要把它的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
+`setup` 在环境层 Hook 与变更分类账锚点之后、`agent.setup` 与 `test(t)` 之前跑,用来准备这次任务的素材(例如 `npm install` 起始项目的依赖)。
+要把它的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
+它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
 
-**禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。改名即改 id,不会腐烂。
+**禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。
+改名即改 id,不会腐烂。
 
 ## defineScoreEval：计分制题型
 
-`defineScoreEval` 定义**计分制**题型:题内用给分词汇叠加挣分(五步走完三步挣 3 分、rubric 大题按分值给分),对比读总分而不是通过率。字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它是另一套类型,给分词汇 `.points(n)` / `t.score(label, n)` **只**存在于这里(在 `defineEval` 里写给分是类型错误):
+`defineScoreEval` 定义**计分制**题型:题内用给分词汇叠加挣分(五步走完三步挣 3 分、rubric 大题按分值给分),对比读总分而不是通过率。
+字段与 `defineEval` 完全同形,区别只在 `test(t)` 的 `t` ——它是另一套类型,给分词汇 `.points(n)` / `t.score(label, n)` **只**存在于这里(在 `defineEval` 里写给分是类型错误):
 
 ```typescript
 import { defineScoreEval } from "niceeval";
@@ -69,11 +81,16 @@ export default defineScoreEval({
 });
 ```
 
-计分制只多出分数面：`.points(n)` 是得分点，`t.score(label, n)` 直接给分。严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只记录。需要停止依赖失败结果的后续代码时链 `.stopOnFailure()`；值断言可直接用两种题型共用的 `t.require()`。
+计分制只多出分数面：`.points(n)` 是得分点，`t.score(label, n)` 直接给分。
+严重度与通过制完全相同：`.gate()` 是硬判定，`.atLeast(x)` 是带线 soft，`.soft()` 只记录。
+需要停止依赖失败结果的后续代码时链 `.stopOnFailure()`；值断言可直接用两种题型共用的 `t.require()`。
 
-题型是定义期事实，进 `EvalDescriptor.scoring`(`"pass" | "points"`)供报告选择主读数。一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-scoring.md)。
+题型是定义期事实，进 `EvalDescriptor.scoring`(`"pass" | "points"`)供报告选择主读数。
+一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
+计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-scoring.md)。
 
-API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集扇出、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。评分手段(judge、匹配器、gate/soft)单独成篇,见 [Assertions](../assertions/README.md)。
+API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集扇出、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
+评分手段(judge、匹配器、gate/soft)单独成篇,见 [Assertions](../assertions/README.md)。
 
 ## 相关阅读
 

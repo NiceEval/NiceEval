@@ -38,4 +38,5 @@ respond({ request, optionId | text })
   ← Turn { status: completed | waiting, events: [...] }
 ```
 
-waiting、请求事件、结构化 request ID 和同一会话恢复缺一不可。`respond` 是同一 session 的下一轮 send，不是运行器绕过 Adapter 调用供应商 API。
+waiting、请求事件、结构化 request ID 和同一会话恢复缺一不可。
+`respond` 是同一 session 的下一轮 send，不是运行器绕过 Adapter 调用供应商 API。

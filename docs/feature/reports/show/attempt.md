@@ -1,7 +1,6 @@
 # 单 Attempt 默认详情
 
-范围恰好命中一个 Attempt 且没有显式切片时，
-`show` 调用 `attemptDetailsResult(attempt)`，再用 Attempt 详情的 text 面显示结果。
+范围恰好命中一个 Attempt 且没有显式切片时，`show` 调用 `attemptDetailsResult(attempt)`，再用 Attempt 详情的 text 面显示结果。
 同一 Result 也供 `--json` 使用。
 
 ## 默认顺序
@@ -19,8 +18,7 @@
 ## Usage
 
 `usageResult(attempt)` 是详情、`--usage` 与 JSON 的共同结果。
-轮数与工具调用数来自标准事件流；
-token 与请求计数来自落盘 Usage；成本来自相同 Attempt 事实。
+轮数与工具调用数来自标准事件流；token 与请求计数来自落盘 Usage；成本来自相同 Attempt 事实。
 
 缓存拆分存在时，输入 token 区分 uncached input 与 cache read。
 协议没有拆分事实时只显示 input tokens。
@@ -34,8 +32,7 @@ usage: 6 turns · 21 tool calls · 62.3k uncached in
 
 ## 断言与源码
 
-有 Eval 源码时，`toAnnotatedEvalSource(attempt)` 返回标注源码；
-否则 `toAssertionRows(attempt)` 返回断言 rows。
+有 Eval 源码时，`toAnnotatedEvalSource(attempt)` 返回标注源码；否则 `toAssertionRows(attempt)` 返回断言 rows。
 两条路径使用同一份 AssertionResult 和源码锚。
 
 失败断言按原始声明顺序显示，并保留 group、matcher、expected、received 与位置。
@@ -53,8 +50,7 @@ passed 或 failed Attempt 也可以带 cleanup warning。
 ## Timing
 
 `toTimelineNodes(attempt)` 返回主链阶段与子节点。
-紧凑首页保留每个存在的 LifecyclePhase，并折叠子节点；
-`--timing` 显示同一结果的完整 text 投影。
+紧凑首页保留每个存在的 LifecyclePhase，并折叠子节点；`--timing` 显示同一结果的完整 text 投影。
 
 没有 phases 时整块省略，不从总耗时猜阶段。
 

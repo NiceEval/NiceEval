@@ -1,8 +1,6 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·
-[PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -43,15 +41,9 @@ Provider 中立接口无法完整清理这些状态。
 Provider 的运行时限、续期、暂停和 snapshot 能力会随产品与套餐变化。
 Runner 不能写死某个分钟数，只能依赖能力接口。
 
-- E2B 支持续期，也支持 pause / resume。连续运行仍受套餐上限约束；
-  pause 后恢复会重新开始连续运行时限：
-  [Sandbox lifecycle](https://e2b.dev/docs/sandbox)、
-  [Persistence](https://e2b.dev/docs/sandbox/persistence)。
-- Vercel Sandbox 把 session duration 与持久化分开处理：
-  [Duration and persistence](https://vercel.com/kb/guide/vercel-sandbox-duration-and-persistence)。
-  snapshot 会停止创建它的当前 Sandbox，适合制作后续 Sandbox 的起点，
-  不适合作为题间原地 reset：
-  [Snapshots](https://vercel.com/docs/vercel-sandbox/concepts/snapshots)。
+- E2B 支持续期，也支持 pause / resume。连续运行仍受套餐上限约束；pause 后恢复会重新开始连续运行时限：[Sandbox lifecycle](https://e2b.dev/docs/sandbox)、[Persistence](https://e2b.dev/docs/sandbox/persistence)。
+- Vercel Sandbox 把 session duration 与持久化分开处理：[Duration and persistence](https://vercel.com/kb/guide/vercel-sandbox-duration-and-persistence)。
+  snapshot 会停止创建它的当前 Sandbox，适合制作后续 Sandbox 的起点，不适合作为题间原地 reset：[Snapshots](https://vercel.com/docs/vercel-sandbox/concepts/snapshots)。
 - Docker Provider 有孤儿回收 TTL。复用时不能只按一条 Attempt 的 `timeoutMs` 设置 TTL。
 - 自定义 Provider 如果只能 `stop()`，无法证明现有 Sandbox 还能承接下一条 Attempt。
 
@@ -67,6 +59,5 @@ Runner 不能写死某个分钟数，只能依赖能力接口。
 
 - 并发越高不一定越快，Agent Provider、Sandbox Provider 和本机资源都有容量上限。
 - Sandbox 预热太早会消耗 Sandbox 寿命和计费时间，只能按近期派发量创建。
-- 提前检查寿命只能处理可预见的到期。Sandbox 在 Attempt 中途消失时，
-  Attempt 仍记为 `errored`，不能静默重跑。
+- 提前检查寿命只能处理可预见的到期。Sandbox 在 Attempt 中途消失时，Attempt 仍记为 `errored`，不能静默重跑。
 - sandbox spec 或 environment profile 不同的 Attempt 不能共用一个题间重置点。
