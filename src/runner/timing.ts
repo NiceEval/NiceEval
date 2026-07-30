@@ -64,6 +64,40 @@ export interface RunTimingRecorder {
   finalize(): TimingActivity[] | undefined;
 }
 
+/**
+ * 把 RunTimingRecorder 接到 ArtifactPrepareTimingHook:
+ * prepare 记为开放 key `agent.artifact.prepare`,走 Run 时钟域。
+ */
+export function artifactPrepareTimingHook(
+  recorder: RunTimingRecorder,
+): import("../agents/provisioner.ts").ArtifactPrepareTimingHook {
+  return {
+    async activity(key, attrs, run) {
+      const startOffsetMs = recorder.offsetNow();
+      const label = `${attrs.identity.agent}@${attrs.identity.version}`;
+      try {
+        const result = await run();
+        recorder.child({
+          key,
+          label,
+          startOffsetMs,
+          durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
+        });
+        return result;
+      } catch (e) {
+        recorder.child({
+          key,
+          label,
+          startOffsetMs,
+          durationMs: Math.max(0, recorder.offsetNow() - startOffsetMs),
+          failed: true,
+        });
+        throw e;
+      }
+    },
+  };
+}
+
 interface ActivityTree {
   child(node: Omit<TimingActivity, "id">, requireOpen?: boolean): TimingActivity | undefined;
   childOf(parent: TimingActivity, node: Omit<TimingActivity, "id">): TimingActivity;

@@ -152,7 +152,10 @@ export function claudeCodeAgent(config?: ClaudeCodeConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
+      await ensureAgent(provisioner, sb, {
+        fact: ctx.fact.bind(ctx),
+        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
+      });
 
       // 原生配置文件最先落(安装顺序契约的第 1 步):本地读原始字节 → 验 JSON 语法与保留键
       // → 原样替换沙箱里原本为空的用户级 settings.json。字节 SHA-256 进 manifest 与安装

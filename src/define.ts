@@ -76,7 +76,7 @@ export function defineEval(def: EvalDef): EvalDef {
   if (typeof def.test !== "function") {
     throw new Error(t("define.evalTestRequired"));
   }
-  if (def.environment !== undefined && def.environment.trim().length === 0) {
+  if (typeof def.environment === "string" && def.environment.trim().length === 0) {
     throw new Error(t("define.evalEnvironmentEmpty"));
   }
   return { ...def, scoring: "pass" };
@@ -97,7 +97,7 @@ export function defineScoreEval(def: ScoreEvalDef): EvalDef {
   if (typeof def.test !== "function") {
     throw new Error(t("define.scoreEvalTestRequired"));
   }
-  if (def.environment !== undefined && def.environment.trim().length === 0) {
+  if (typeof def.environment === "string" && def.environment.trim().length === 0) {
     throw new Error(t("define.scoreEvalEnvironmentEmpty"));
   }
   // 两种题型的 `t` 是两套类型(计分制多 `.points`/`t.score`、少 `.atLeast`/`require`),

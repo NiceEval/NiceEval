@@ -88,7 +88,10 @@ export function openCodeAgent(config?: OpenCodeConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
+      await ensureAgent(provisioner, sb, {
+        fact: ctx.fact.bind(ctx),
+        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
+      });
 
       const baseUrl = resolveBaseUrl(config);
       const provider: globalThis.Record<string, unknown> = {};

@@ -8,6 +8,7 @@
 // 「进 configHash 的字段必须落进 run.json」那条规则存在的理由。
 
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
+import { agentInstallIdentityInput } from "../agents/provisioner.ts";
 import type { EvalResult, JsonValue, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
 
@@ -15,7 +16,7 @@ import type { AgentRun, SandboxRunInfo } from "./types.ts";
  * 一次运行的**配置身份**:`computeConfigHash` 的哈希输入,字段集合与
  * docs/feature/experiments/cache.md「指纹:两个哈希嵌套」逐字对应。
  *
- * 八个键恒存在(值可以是 `undefined`):稳定序列化把键本身也算进字节,少一个键就是另一个哈希。
+ * 键恒存在(值可以是 `undefined`):稳定序列化把键本身也算进字节,少一个键就是另一个哈希。
  * 新增公开配置字段时只在这里裁决一次「进不进 configHash」。
  */
 export interface ConfigIdentity {
@@ -27,6 +28,14 @@ export interface ConfigIdentity {
   sandbox?: SandboxRunInfo;
   strict: boolean;
   judge?: { model?: string; baseUrl?: string };
+  /** Agent Ensure 安装身份;与 CaseKey 正交。无 provisioner 时 undefined。 */
+  agentInstall?: {
+    agent: string;
+    version: string;
+    revision: string;
+    artifactDigest?: string;
+    artifactPlatform?: string;
+  };
 }
 
 /** manifest 相减得出的一条具名差异;`selector` 原样可复制进 `--accept`。 */
@@ -37,6 +46,11 @@ export interface ConfigFieldDelta {
   from?: string;
   /** 本次侧的值摘要;该侧没有这个键时省略(键被本次删掉了)。 */
   to?: string;
+}
+
+function agentInstallOf(run: AgentRun): ConfigIdentity["agentInstall"] {
+  if (run.agent.kind !== "sandbox" || run.agent.provisioner === undefined) return undefined;
+  return agentInstallIdentityInput(run.agent.provisioner.identity);
 }
 
 /** 本次解析后配置的身份投影。 */
@@ -51,6 +65,7 @@ export function configIdentityForRun(run: AgentRun, configSandbox?: SandboxOptio
     sandbox: sandboxRunInfo(run.sandbox ?? configSandbox),
     strict: run.strict ?? false,
     judge: judge ? { model: judge.model, baseUrl: judge.baseUrl } : undefined,
+    agentInstall: agentInstallOf(run),
   };
 }
 
@@ -70,6 +85,7 @@ export function configIdentityFromResult(result: EvalResult): ConfigIdentity | u
     sandbox: exp.sandbox,
     strict: exp.strict ?? false,
     judge: exp.judge ? { model: exp.judge.model, baseUrl: exp.judge.baseUrl } : undefined,
+    agentInstall: exp.agentInstall,
   };
 }
 
@@ -102,6 +118,13 @@ function flatten(identity: ConfigIdentity): Map<string, JsonValue> {
   if (identity.judge !== undefined) {
     put("judge.model", identity.judge.model);
     put("judge.baseUrl", identity.judge.baseUrl);
+  }
+  if (identity.agentInstall !== undefined) {
+    put("agentInstall.agent", identity.agentInstall.agent);
+    put("agentInstall.version", identity.agentInstall.version);
+    put("agentInstall.revision", identity.agentInstall.revision);
+    put("agentInstall.artifactDigest", identity.agentInstall.artifactDigest);
+    put("agentInstall.artifactPlatform", identity.agentInstall.artifactPlatform);
   }
   return out;
 }
@@ -169,11 +192,12 @@ export function rollBackAccepted(
     if (Object.hasOwn(historical.flags ?? {}, key)) out.flags[key] = historical.flags[key]!;
     else delete out.flags[key];
   }
-  for (const group of ["sandbox", "judge"] as const) {
+  for (const group of ["sandbox", "judge", "agentInstall"] as const) {
     const paths = [...differing].filter((selector) => selector.startsWith(`config:${group}.`));
     if (paths.length === 0 || !paths.every((selector) => accepted.has(selector))) continue;
     if (group === "sandbox") out.sandbox = historical.sandbox;
-    else out.judge = historical.judge;
+    else if (group === "judge") out.judge = historical.judge;
+    else out.agentInstall = historical.agentInstall;
   }
   return out;
 }

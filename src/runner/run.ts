@@ -39,8 +39,10 @@ import type {
   AttemptRef,
   RunOptions,
 } from "./types.ts";
-import { attemptOrigin, createRunTimingRecorder, runOrigin } from "./timing.ts";
+import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runOrigin } from "./timing.ts";
 import { buildFailureOrigin, prepareSandboxBuilds } from "../sandbox/build-coordinator.ts";
+import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
+import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { firstLine } from "../util.ts";
 import { resolveSandbox } from "../sandbox/resolve.ts";
 import { recordFact, type FactValue } from "../shared/facts.ts";
@@ -336,23 +338,34 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
 
   // Run 级共享构建准备:携带规划后只为仍需 fresh 的 BuildKey 工作。独立并发、不占
   // attempt 并发位;失败按依赖 eval 扇出,origin 指向同一个 sandbox.build timing node。
-  // Compose / on-demand 自动收集接线前由 buildPreparation 显式注入(完全携带的 key 不进 works)。
+  // 显式 buildPreparation 优先(测试注入);否则从 PlannedSandboxCase / Compose 自动收集。
   const runTiming = createRunTimingRecorder();
   let sandboxBuildRecords: SandboxBuildRecord[] = [];
   const buildFailureByEval = new Map<string, AttemptError>();
-  if (opts.buildPreparation && opts.buildPreparation.works.length > 0) {
-    const prep = await prepareSandboxBuilds(opts.buildPreparation.works, {
+  const buildLocatorsByEval = new Map<string, Map<string, string>>();
+  const caseKeyByEval = new Map<string, string>();
+
+  const collected =
+    opts.buildPreparation === undefined
+      ? await collectBuildPreparation({
+          evals: opts.evals,
+          agentRuns: opts.agentRuns,
+          configSandbox: opts.config.sandbox,
+          carriedAttemptsByKey,
+        })
+      : undefined;
+  if (collected) {
+    for (const [evalId, caseKey] of collected.caseKeys) caseKeyByEval.set(evalId, caseKey);
+  }
+
+  const buildPrep = opts.buildPreparation ?? (collected ? toBuildPreparation(collected) : undefined);
+  if (buildPrep && buildPrep.works.length > 0) {
+    const prep = await prepareSandboxBuilds(buildPrep.works, {
       timing: runTiming,
-      provider: opts.buildPreparation.provider,
-      ...(opts.buildPreparation.maxConcurrency !== undefined
-        ? { maxConcurrency: opts.buildPreparation.maxConcurrency }
-        : {}),
-      ...(opts.buildPreparation.buildTimeoutMs !== undefined
-        ? { buildTimeoutMs: opts.buildPreparation.buildTimeoutMs }
-        : {}),
-      ...(opts.buildPreparation.prepareBudgetMs !== undefined
-        ? { prepareBudgetMs: opts.buildPreparation.prepareBudgetMs }
-        : {}),
+      provider: buildPrep.provider,
+      ...(buildPrep.maxConcurrency !== undefined ? { maxConcurrency: buildPrep.maxConcurrency } : {}),
+      ...(buildPrep.buildTimeoutMs !== undefined ? { buildTimeoutMs: buildPrep.buildTimeoutMs } : {}),
+      ...(buildPrep.prepareBudgetMs !== undefined ? { prepareBudgetMs: buildPrep.prepareBudgetMs } : {}),
       signal: opts.signal,
       // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
       onActivity: (event) => {
@@ -366,21 +379,57 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
       },
     });
     sandboxBuildRecords = [...prep.records];
-    for (const [evalId, keys] of Object.entries(opts.buildPreparation.evalBuildKeys)) {
+    for (const [evalId, keys] of Object.entries(buildPrep.evalBuildKeys)) {
+      const locators = new Map<string, string>();
       for (const key of keys) {
         const failure = prep.failures.get(key);
-        if (failure === undefined) continue;
-        const originFields = buildFailureOrigin(failure);
-        buildFailureByEval.set(evalId, {
-          code: originFields.code,
-          message: originFields.message,
-          origin: runOrigin(originFields.timingNodeId),
-          ...(originFields.cause !== undefined ? { cause: originFields.cause } : {}),
-        });
-        break;
+        if (failure !== undefined) {
+          const originFields = buildFailureOrigin(failure);
+          buildFailureByEval.set(evalId, {
+            code: originFields.code,
+            message: originFields.message,
+            origin: runOrigin(originFields.timingNodeId),
+            ...(originFields.cause !== undefined ? { cause: originFields.cause } : {}),
+          });
+          break;
+        }
+        const locator = prep.locators.get(key);
+        if (typeof locator === "string") locators.set(key, locator);
+      }
+      if (locators.size > 0) buildLocatorsByEval.set(evalId, locators);
+    }
+  }
+
+  // 把 locators / CaseKey 灌进已展开的 attempts(构建在展开之后、派发之前)。
+  for (const a of attempts) {
+    const locators = buildLocatorsByEval.get(a.evalDef.id);
+    if (locators !== undefined) a.buildLocators = locators;
+    const caseKey = caseKeyByEval.get(a.evalDef.id);
+    if (caseKey !== undefined) a.caseKey = caseKey;
+  }
+
+  // Run 级 Agent artifact prepare:有 staged provisioner 时接真 Run timing;可被测试注入覆盖。
+  const artifactPrepare =
+    opts.artifactPrepare ??
+    new ArtifactPrepareCoordinator(artifactPrepareTimingHook(runTiming));
+  // 可选预 prepare:每个带 staged provisioner 的 sandbox agent 在派发前 single-flight 一次。
+  {
+    const seen = new Set<string>();
+    for (const run of opts.agentRuns) {
+      if (run.agent.kind !== "sandbox" || run.agent.provisioner === undefined) continue;
+      if (run.agent.provisioner.mode !== "staged" || run.agent.provisioner.prepare === undefined) continue;
+      const id = `${run.agent.provisioner.identity.agent}@${run.agent.provisioner.identity.version}+r${run.agent.provisioner.identity.revision}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      try {
+        await artifactPrepare.prepare(run.agent.provisioner);
+      } catch {
+        // 预 prepare 失败不在此扇出:attempt 内 ensureAgent 会再走同一路径并归 agent.setup errored。
       }
     }
   }
+  // 把 coordinator 挂到 opts 上,供 attempt setup 读取(同对象引用)。
+  (opts as { artifactPrepare?: ArtifactPrepareCoordinator }).artifactPrepare = artifactPrepare;
 
   // 缓存携入只在 plan 的 Reuse 行给数量,不逐条铺 eval id 清单(见 cli.md「人在终端里怎么用」:
   // 哪些 eval 复用、哪些重跑属于 --dry 与 niceeval view,不占 human 的 scrollback)。

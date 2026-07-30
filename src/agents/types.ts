@@ -344,6 +344,11 @@ export interface SandboxAgentSetupContext extends SandboxAgentContext {
    * artifact。同一次 `setup` 内多次调用后写覆盖先写。
    */
   reportSetup(manifest: AgentSetupManifest): void;
+  /**
+   * Run 级 staged payload 协调器。adapter 调 `ensureAgent` 时应传入,使同 Run 多 attempt
+   * single-flight `agent.artifact.prepare`;省略时 Ensure 回落进程级默认协调器。
+   */
+  prepareCoordinator?: import("./provisioner.ts").ArtifactPrepareCoordinator;
 }
 
 /**

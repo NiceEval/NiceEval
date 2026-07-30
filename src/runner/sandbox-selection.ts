@@ -4,6 +4,7 @@
 // 解析结果(见 docs/feature/experiments/library.md「不同 eval 起自不同预制环境」)。
 
 import { sandboxRecommendedConcurrency, sandboxRunInfo } from "../sandbox/resolve.ts";
+import { isSandboxSource } from "../sandbox/case.ts";
 import type { DiscoveredEval, SandboxOption, SandboxRunInfo } from "../types.ts";
 import type { AgentRun } from "./types.ts";
 
@@ -31,7 +32,12 @@ function missingEnvironmentsError(run: AgentRun, missing: ReadonlyArray<readonly
   );
 }
 
-/** 该 eval 实际起步的 spec:未声明 environment 用基础 spec;声明了则查表派生并缓存。 */
+/**
+ * 该 eval 实际起步的 spec:
+ * - 未声明 environment → 基础 spec;
+ * - folder-local SandboxSource → 基础 spec(物化走 materializers / createMaterializedCase);
+ * - 共享 profile 字符串 → environments 表派生并缓存。
+ */
 export function sandboxForEval(run: AgentRun, evalDef: DiscoveredEval, fallback?: SandboxOption): SandboxOption | undefined {
   if (run.agent.kind !== "sandbox") return undefined;
   const spec = run.sandbox ?? fallback;
@@ -39,6 +45,13 @@ export function sandboxForEval(run: AgentRun, evalDef: DiscoveredEval, fallback?
 
   const cached = run.resolvedSandboxes?.get(evalDef.id);
   if (cached !== undefined) return cached;
+
+  if (isSandboxSource(evalDef.environment) || (typeof evalDef.environment === "object" && evalDef.environment !== null)) {
+    const cache = run.resolvedSandboxes ?? new Map<string, SandboxOption>();
+    cache.set(evalDef.id, spec);
+    run.resolvedSandboxes = cache;
+    return spec;
+  }
 
   const derived = deriveSpec(spec, evalDef.environment);
   if (derived === undefined) throw missingEnvironmentsError(run, [[evalDef.id, evalDef.environment]]);
@@ -59,6 +72,12 @@ export function prepareRunSandboxes(evals: DiscoveredEval[], runs: AgentRun[], f
     for (const evalDef of evals) {
       if (!selectedIds.has(evalDef.id) || evalDef.environment === undefined) continue;
       if (run.resolvedSandboxes?.has(evalDef.id)) continue;
+      if (isSandboxSource(evalDef.environment) || (typeof evalDef.environment === "object" && evalDef.environment !== null)) {
+        const cache = run.resolvedSandboxes ?? new Map<string, SandboxOption>();
+        cache.set(evalDef.id, spec);
+        run.resolvedSandboxes = cache;
+        continue;
+      }
       const derived = deriveSpec(spec, evalDef.environment);
       if (derived === undefined) {
         missing.push([evalDef.id, evalDef.environment]);

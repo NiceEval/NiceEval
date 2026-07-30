@@ -107,7 +107,10 @@ export function openClawAgent(config?: OpenClawConfig): Agent {
     },
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
+      await ensureAgent(provisioner, sb, {
+        fact: ctx.fact.bind(ctx),
+        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
+      });
 
       const baseUrl = resolveBaseUrl(config);
       if (baseUrl) {

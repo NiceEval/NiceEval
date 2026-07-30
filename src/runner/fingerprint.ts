@@ -6,6 +6,7 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { sandboxRunInfo } from "../sandbox/resolve.ts";
+import { planSandboxCase } from "../sandbox/case.ts";
 import type { DiscoveredEval, EvalResult, JsonValue, SandboxOption } from "../types.ts";
 import type { AgentRun, SandboxRunInfo } from "./types.ts";
 import { prepareRunSandboxes, sandboxForEval } from "./sandbox-selection.ts";
@@ -81,16 +82,19 @@ export async function fingerprintWithManifest(
   const privateFiles = await Promise.all(
     [...(evalDef.privatePaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)]),
   );
+  const sandboxSpec = sandboxForEval(run, evalDef, configSandbox);
+  const caseIdentity = sandboxCaseIdentityForEval(evalDef, sandboxSpec);
   const payload = {
     configHash,
     source,
     eval: {
       id: evalDef.id,
       tags: evalDef.tags ?? [],
-      environment: evalDef.environment,
+      environment: environmentFingerprintInput(evalDef.environment),
       metadata: evalDef.metadata ?? {},
     },
-    sandbox: overrides?.sandbox ?? sandboxRunInfo(sandboxForEval(run, evalDef, configSandbox)),
+    sandbox: overrides?.sandbox ?? sandboxRunInfo(sandboxSpec),
+    ...(caseIdentity !== undefined ? { sandboxCase: caseIdentity } : {}),
     loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
     // 一次性作废,而它们的判据面本来什么都没变。
@@ -593,6 +597,43 @@ export async function planCarry(
 
 function hash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
+}
+
+/** folder-local source 进指纹时只留纯数据面(brand 不参与)。 */
+function environmentFingerprintInput(environment: DiscoveredEval["environment"]): JsonValue | undefined {
+  if (environment === undefined) return undefined;
+  if (typeof environment === "string") return environment;
+  const raw = environment as unknown as globalThis.Record<string, unknown>;
+  const out: globalThis.Record<string, JsonValue> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === "__brand") continue;
+    if (v === undefined) continue;
+    out[k] = v as JsonValue;
+  }
+  return out;
+}
+
+/**
+ * 规划期 CaseKey(+ buildKeys / identity)进指纹。规划失败(缺表项 / 缺能力)时不塞假值——
+ * 那种 eval 本来就不会派发,指纹只服务可派发路径。
+ */
+export function sandboxCaseIdentityForEval(
+  evalDef: DiscoveredEval,
+  sandboxSpec: SandboxOption | undefined,
+): { caseKey: string; buildKeys: readonly string[]; identity: JsonValue } | undefined {
+  if (sandboxSpec === undefined) return undefined;
+  const planned = planSandboxCase({
+    evalId: evalDef.id,
+    environment: evalDef.environment,
+    ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
+    spec: sandboxSpec,
+  });
+  if (planned.status !== "ready") return undefined;
+  return {
+    caseKey: planned.plan.caseKey,
+    buildKeys: planned.plan.buildKeys,
+    identity: planned.plan.identity,
+  };
 }
 
 /** 文本内容哈希:manifest 的源码面/数据面把「内容」换成「内容哈希」时用的唯一口径。 */

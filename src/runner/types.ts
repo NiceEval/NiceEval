@@ -53,6 +53,17 @@ export interface ExperimentRunInfo {
   /** strict 与 judge 是配置身份的一部分，供历史结果重算 configHash。 */
   strict?: boolean;
   judge?: Pick<JudgeConfig, "model" | "baseUrl">;
+  /**
+   * Agent Ensure 安装身份投影(`agentInstallIdentityInput`);与 sandbox case 身份正交。
+   * 有 provisioner 时落盘,供历史侧重算 configHash。
+   */
+  agentInstall?: {
+    agent: string;
+    version: string;
+    revision: string;
+    artifactDigest?: string;
+    artifactPlatform?: string;
+  };
 }
 
 export interface SandboxRunInfo {
@@ -533,8 +544,13 @@ export interface EvalDef {
   description?: string;
   /** 标签,供 CLI `--tag` 过滤和 view 分类;与 id 前缀过滤是两套独立的筛选维度。 */
   tags?: string[];
-  /** 这条评估用例需要的环境 profile id(provider-neutral,如 `"python-3.9-astropy-4.2"`);由 sandbox spec 的 `environments` 表翻译成该 provider 的预制产物。 */
-  environment?: string;
+  /**
+   * 这条评估用例需要的环境:共享 profile id(provider-neutral,如 `"python-3.9-astropy-4.2"`),
+   * 或 folder-local `SandboxSource`(`composeSandbox` / `dockerfileSandbox`)。
+   * 字符串由 sandbox spec 的 `environments` 表翻译成该 provider 的预制产物;
+   * 对象走 `materializers[source.kind]`(显式表项仍优先)。
+   */
+  environment?: string | import("../sandbox/case-types.ts").SandboxSource;
   /** 覆盖项目级 Config.judge,只对这一条评估用例生效(如换个更贵的评审模型)。 */
   judge?: JudgeConfig;
   /** 规划时计算一次，写入每个 attempt 的 ExperimentRunInfo。 */
@@ -758,7 +774,7 @@ export interface EvalDescriptor {
    * docs/feature/experiments/score-points.md「横截面聚合:同型实验,各读各的」)。
    */
   readonly scoring: EvalScoring;
-  readonly environment?: string;
+  readonly environment?: string | import("../sandbox/case-types.ts").SandboxSource;
   readonly metadata?: Readonly<globalThis.Record<string, unknown>>;
 }
 
@@ -943,7 +959,8 @@ export interface RunOptions {
   otelPool?: import("../o11y/otlp/turn-otel.ts").OtelReceiverPool;
   /**
    * Run 级共享构建准备。只含携带规划后仍需 fresh 执行的 BuildKey;
-   * Compose / on-demand case 自动收集接线前可由测试或过渡调用方显式注入。
+   * 省略时 runEvals 从 PlannedSandboxCase / composeBuildWorksFromPlan 自动收集
+   * (Compose works 默认接 dockerComposeBuildProvider)。测试可显式注入假 provider。
    * 共享构建不占 attempt 并发位,不计入 executionMs。
    */
   buildPreparation?: {
@@ -955,6 +972,11 @@ export interface RunOptions {
     readonly buildTimeoutMs?: number;
     readonly prepareBudgetMs?: number;
   };
+  /**
+   * Run 级 Agent artifact prepare 协调器。省略时 runEvals 为有 staged provisioner 的
+   * sandbox agent 新建并接真 Run timing recorder;测试可注入。
+   */
+  artifactPrepare?: import("../agents/provisioner.ts").ArtifactPrepareCoordinator;
 }
 
 /** 调度器内部的一次尝试:eval × run × 第几轮。 */
@@ -968,6 +990,13 @@ export interface Attempt {
   configHash?: string;
   /** 规划期按 eval 的 environment 查表派生的具体 spec；attempt 生命周期不再重新查表。 */
   sandboxSpec?: SandboxOption;
+  /**
+   * Run 级构建协调产出的 BuildKey → locator;on-demand / Compose case 物化前注入。
+   * 完全携带、未查询的 key 不在此表。
+   */
+  buildLocators?: ReadonlyMap<string, string>;
+  /** 规划期 CaseKey(与指纹同源);物化后可与 MaterializedSandboxCase.caseKey 对照。 */
+  caseKey?: string;
   /**
    * 构造 fresh attempt plan 时即算好的 Attempt 定位符(不是完成后写回):由 invocation 的
    * snapshotStartedAt 与 attempt 身份派生,贯穿执行、留存登记与落盘——登记项、run 收尾反馈与

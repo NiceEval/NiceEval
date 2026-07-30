@@ -147,7 +147,10 @@ export function codexAgent(config?: CodexConfig): Agent {
     provisioner,
 
     async setup(sb, ctx) {
-      await ensureAgent(provisioner, sb, { fact: ctx.fact.bind(ctx) });
+      await ensureAgent(provisioner, sb, {
+        fact: ctx.fact.bind(ctx),
+        ...(ctx.prepareCoordinator !== undefined ? { coordinator: ctx.prepareCoordinator } : {}),
+      });
 
       // 用户的原生配置文件:本地读原始字节 → 验 TOML 语法与保留键。字节 SHA-256 进
       // manifest 与安装 checkpoint key(见 native-config.ts 的 nativeConfigCheckpointItem)。
