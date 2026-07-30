@@ -39,14 +39,21 @@ export class ReusableSandboxPool {
     private readonly setupContext: SandboxHookContext,
   ) {}
 
-  async acquire(timeoutMs: number): Promise<ReusableSandboxLease> {
+  /**
+   * @param attemptDeadlineMs 这条 Attempt 实际生效的超时上限(解析链见 runner/timeout.ts)。
+   * `undefined` = 四层都没声明上限:请求的寿命只能覆盖收尾预留——Attempt 本身没有 deadline,
+   * 池无从知道它要跑多久,也不替它编一个数。此后实例被 provider 按自己的 `lifetimeMs` 回收
+   * 就是「不声明上限」的代价(两种时间的分界见 docs/feature/sandbox/reuse.md)。
+   */
+  async acquire(attemptDeadlineMs: number | undefined): Promise<ReusableSandboxLease> {
+    const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_RESERVE_MS;
     for (;;) {
       if (this.stopped) throw new Error("sandbox reuse pool has been stopped");
       const ready = this.entries.find((entry) => !entry.busy && !entry.dead);
       if (ready) {
         // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
         // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
-        const lifetime = await ready.lifetime.ensureLifetime(timeoutMs + CLEANUP_RESERVE_MS);
+        const lifetime = await ready.lifetime.ensureLifetime(minRemainingMs);
         if (lifetime.ready) return this.lease(ready);
         await this.retire(ready);
         continue;
@@ -54,7 +61,7 @@ export class ReusableSandboxPool {
       if (this.entries.length + this.creating < this.capacity) {
         this.creating += 1;
         try {
-          const entry = await this.create(timeoutMs + CLEANUP_RESERVE_MS);
+          const entry = await this.create(minRemainingMs);
           this.entries.push(entry);
           return this.lease(entry);
         } finally {

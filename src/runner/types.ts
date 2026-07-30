@@ -3,7 +3,7 @@
 
 import type { JsonValue, LocalizedText, ScopedFeedback, SourceArtifact } from "../shared/types.ts";
 import type { AttemptFailureClassifier } from "../shared/failure-class.ts";
-import type { O11ySummary, StreamEvent, TraceSpan, Truncation, Usage } from "../o11y/types.ts";
+import type { O11ySummary, StreamEvent, TraceSpan, Usage } from "../o11y/types.ts";
 import type { Agent, AgentSetupManifest } from "../agents/types.ts";
 import type { Sandbox, SandboxHookContext, SandboxOption } from "../sandbox/types.ts";
 import type {
@@ -157,10 +157,10 @@ export interface FailedCommandEvidence {
   /** 与该 `TimingNode.command.display` 同一份有界脱敏命令摘要;不含 env value。 */
   display: string;
   exitCode: number;
+  /** 原样全量落盘:失败输出的起因常在前段、runner 的 summary 惯例在尾部,不做逐值截断。 */
   stdout: string;
+  /** 原样全量落盘,同 `stdout`。 */
   stderr: string;
-  /** stdout / stderr 被 256 KiB 落盘上限截断时逐字段声明(见「大值截断」)。 */
-  truncated?: Truncation[];
 }
 
 /** `commands.json` 的落盘形状。 */
@@ -320,9 +320,12 @@ export const RECORD_FORMAT = "niceeval.results";
  * 按需 artifact 词干列表,单源在证据 registry);`O11ySummary` 删除 `usage`/`estimatedCostUSD`/
  * `durationMs`,正名为纯行为计数缓存,权威唯一在 `result.json` 的 `Usage`/`estimatedCostUSD`/
  * `durationMs`(见 memory 的 results-evidence-registry-ruling 条目)。
+ * `12` = `diff.json` 的 `WindowChange.binary` 并入 `elided`(`{ reason: "binary" | "oversized-text",
+ * beforeBytes?, afterBytes? }`):二进制与超过单文件阈值的文本共用同一个「内容显式省略」字段,
+ * 读旧落盘的消费方拿不到 `binary` 就会把二进制条目当成空内容的文本改动。
  * 旧版快照按格式规则整份判为不兼容并在扫描时列为占位条目,不迁移不降级。
  */
-export const RECORD_SCHEMA_VERSION = 11;
+export const RECORD_SCHEMA_VERSION = 12;
 
 /** 一次 Invocation 的纯运行时内存聚合(reporter 契约用);落盘格式契约在 niceeval/record 的 RunMeta / AttemptRecord,见 docs/feature/record/architecture.md。不携带顶层 `agent`/`model`——一次 Invocation 可能横跨多个 `(agent, model, flags)` 配置,塞一个顶层单值只能代表其中一份配置;需要时从 `results` 里逐条 `EvalResult.agent`/`.model` 去重派生。 */
 export interface InvocationSummary {
@@ -503,8 +506,13 @@ export interface DiscoveredEval extends EvalDef {
   baseDir: string;
   /** 定义文件绝对路径,用于内容指纹缓存。 */
   sourcePath: string;
-  /** 发现期经 loadJson/loadYaml 读取的项目内数据文件。 */
+  /** 发现期经 loadJson/loadYaml/loadText 读入的项目内数据文件(内容已在内存,指纹哈希内容)。 */
   loaderDataPaths?: readonly string[];
+  /**
+   * 发现期经 `loadCriteria` 登记的判据树文件(只登记不读入)。指纹按「项目根相对路径 ×
+   * 内容流式哈希」进,与 `loaderDataPaths` 分两格是因为这一格的内容从不进内存。
+   */
+  criteriaPaths?: readonly string[];
   /**
    * discovery 时捕获的规范化源码(归一化文本 + 项目相对路径 + SHA-256),见 `eval-source.ts`。
    * 同一文件里多个 eval(数组默认导出)共享同一份引用——哈希与内容天然相同,不重复读盘。
@@ -750,7 +758,15 @@ export interface AgentRun {
   configHash?: string;
   /** environments 查表的规划期缓存(只含声明了 environment 的 selected eval);每条只派生一次。 */
   resolvedSandboxes?: Map<string, SandboxOption>;
+  /**
+   * 运行侧已求值的单 attempt 超时上限:只含 `--timeout` 与 experiment 字段两层
+   * (`resolveRunTimeout`)。**不许把 config 的值提前物化进来**——eval 与 config 两层由
+   * `resolveAttemptTimeout` 在派发时接上,提前物化会让 eval 自己声明的上限永久短路
+   * (见 timeout.ts 与 memory/multi-source-field-resolution-order.md)。
+   */
   timeoutMs?: number;
+  /** `timeoutMs` 那个值来自哪一层,供超时消息标注出处;省略按 `experiment` 读。 */
+  timeoutSource?: "flag" | "experiment";
   budget?: number;
   experimentId?: string;
   /** 实验的一句话描述(ExperimentDef.description),进结果快照的 ExperimentRunInfo。 */
