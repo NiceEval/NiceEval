@@ -118,15 +118,27 @@ export function renderCharPlot(opts: CharPlotOptions): string {
   return out.join("\n");
 }
 
-/** 点太密排不下时的降级:坐标表,不硬挤(每行 key、x、y 的 display)。 */
+/**
+ * 图下的读值表:每行是一个点的标记字母、所属系列、点名与两轴终值。字母把图上的记号与这
+ * 一行绑在一起(docs/feature/reports/show/default-report.md「标记字母按图例顺序分配」);
+ * `series` 列只在有两个以上系列时出现,单系列时那一列全是同一个词、占宽度不给信息。
+ */
 export function renderCoordinateTable(
-  rows: { key: string; x: string; y: string }[],
-  header: { key: string; x: string; y: string },
+  rows: { mark?: string; series?: string; key: string; x: string; y: string }[],
+  header: { mark?: string; series?: string; key: string; x: string; y: string },
 ): string {
   const all = [header, ...rows];
-  const w1 = Math.max(...all.map((r) => stringWidth(r.key)));
-  const w2 = Math.max(...all.map((r) => stringWidth(r.x)));
+  const columns: ("mark" | "series" | "key" | "x")[] = ["mark", "series", "key", "x"];
+  const widths = new Map<string, number>();
+  for (const column of columns) {
+    widths.set(column, Math.max(...all.map((row) => stringWidth(row[column] ?? ""))));
+  }
   return all
-    .map((r) => `${padDisplay(r.key, w1)}   ${padDisplay(r.x, w2)}   ${r.y}`.replace(/\s+$/, ""))
+    .map((row) =>
+      [...columns.map((column) => padDisplay(row[column] ?? "", widths.get(column)!)), row.y]
+        .filter((cell) => cell.length > 0)
+        .join("   ")
+        .replace(/\s+$/, ""),
+    )
     .join("\n");
 }

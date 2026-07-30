@@ -6,6 +6,7 @@
 // Record IO 或 stylesheet;primitives.tsx 消费本文件产出两面适配。
 
 import type { ReportNode } from "./tree.ts";
+import { dataBoxBorder } from "../model/panel.ts";
 
 // react/jsx-runtime 的 Fragment 注册符号,跨 react 版本稳定(tree.ts 同一常量的独立取用,
 // Symbol.for 全局注册表保证同一符号,不产生耦合)。
@@ -196,11 +197,7 @@ export function textGridRowSeparator(
   above: number,
   below: number,
 ): string {
-  const segments: string[] = [];
-  for (let i = 0; i < above; i++) {
-    segments.push("─".repeat(contentWidths[i] ?? 0));
-  }
-  return segments
-    .map((segment, i) => (i === 0 ? segment : `─${i < below ? "┼" : "┴"}─${segment}`))
-    .join("");
+  // 物理字符由数据格框的单一渲染件产出(docs/cli.md「终端框线:一个渲染件,全仓消费」);
+  // 这里只决定「上一行有几格、下一行有几格」这份格几何。
+  return dataBoxBorder("rule", contentWidths.slice(0, above), false, below);
 }

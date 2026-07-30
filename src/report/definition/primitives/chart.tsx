@@ -8,7 +8,7 @@ import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { countText, localeText, resolveLocalizedText, type ReportLocale as RL } from "../../model/locale.ts";
 import { formatAxisTick, formatMetricValue, shortestUniqueLabels } from "../../model/format.ts";
-import { axisScale, paddedAxisDomain, placePointLabels, tickStepOf } from "../../model/chart/math.ts";
+import { axisScale, paddedAxisDomain, placePointLabels, ticksInDomain, tickStepOf } from "../../model/chart/math.ts";
 import { renderCharPlot, renderCoordinateTable } from "../../model/chart/plot.ts";
 import { padDisplay, padStartDisplay, stringWidth, textBar } from "../../model/text-layout.ts";
 import { dataShapeError, type ValueProps } from "../../components/shared.ts";
@@ -591,10 +591,18 @@ function chartText(
   const xDomain = paddedAxisDomain(points.map((p) => p.x), xBounds);
   const yDomain = paddedAxisDomain(points.map((p) => p.y), yBounds);
 
+  // 标记字母按图例顺序逐点分配:series 按显示键字典序,series 内按 x 原始值升序
+  // (docs/feature/reports/show/default-report.md)。按 series 下标分配会让一个 series 的
+  // 全部点共用一个字母,图上读不出哪个点是哪一行。
+  const groups = legendGroups(visible);
   const marks = new Map<string, string>();
-  visible.forEach((s, si) => {
-    for (const p of s.points) marks.set(p.key, seriesMarkChar(s.mark, si));
-  });
+  let letter = 0;
+  for (const group of groups) {
+    for (const point of group.points) {
+      marks.set(point.key, group.mark === "bar" ? "█" : String.fromCharCode(65 + (letter % 26)));
+      if (group.mark !== "bar") letter++;
+    }
+  }
 
   const lines = visible
     .filter((s) => s.connect && (s.mark === "line" || s.mark === "scatter" || s.mark === "area"))
@@ -609,29 +617,128 @@ function chartText(
     lines,
     xLabel: axes.xField,
     yLabel: axes.yField,
-    formatX: (v, step) =>
+    // 刻度精度跟随整齐步长,与 web 面同一支:传值域跨度会让 $0.35045992 这种原始值直接
+    // 印到轴上(步长的小数位数才是精度)。
+    formatX: (v) =>
       axes.xMeta.kind === "dimension"
         ? (points.find((point) => point.x === Math.round(v))?.xLabel ?? "")
-        : formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.xMeta.unit),
-    formatY: (v, step) =>
+        : formatAxisTick(v, tickStepOf(ticksInDomain(xDomain[0], xDomain[1], 5)), axes.xMeta.unit),
+    formatY: (v) =>
       axes.yMeta.kind === "dimension"
         ? (points.find((point) => point.y === Math.round(v))?.yLabel ?? "")
-        : formatAxisTick(v, step ?? tickStepOf(paddedAxisDomain([v])), axes.yMeta.unit),
+        : formatAxisTick(v, tickStepOf(ticksInDomain(yDomain[0], yDomain[1], 5)), axes.yMeta.unit),
     invertX: axes.xMeta.better === "lower",
     invertY: axes.yMeta.better === "lower",
   });
 
-  const table = renderCoordinateTable(
-    points.map((point) => ({
+  const values = renderScatterValuesText(groups, marks, axes, locale);
+  const missingNote = missing > 0 ? `\n${countText(locale, "pointsMissing", missing)}` : "";
+  return `${plot}\n\n${values}${missingNote}`;
+}
+
+/** 图例分组:一个显示键一组。series 绑了维度时按维度值分组,否则整个 series 一组。 */
+interface LegendGroup {
+  readonly key: string;
+  readonly mark: MappedSeries["mark"];
+  readonly connect: boolean;
+  readonly points: readonly MappedSeries["points"][number][];
+}
+
+/** 显示键字典序,组内按 x 原始值升序——图例顺序即标记字母顺序,两处不各自排序。 */
+function legendGroups(visible: readonly MappedSeries[]): LegendGroup[] {
+  const byKey = new Map<string, { key: string; mark: MappedSeries["mark"]; connect: boolean; points: MappedSeries["points"][number][] }>();
+  for (const series of visible) {
+    for (const point of series.points) {
+      const key = point.seriesValue ?? series.id;
+      let group = byKey.get(key);
+      if (group === undefined) {
+        group = { key, mark: series.mark, connect: series.connect === true, points: [] };
+        byKey.set(key, group);
+      }
+      group.points.push(point);
+    }
+  }
+  const groups = [...byKey.values()];
+  groups.sort((a, b) => a.key.localeCompare(b.key));
+  for (const group of groups) group.points.sort((a, b) => a.x - b.x);
+  return groups;
+}
+
+/**
+ * 散点 / 折线的 text 面读值块:两轴都声明了 better 时先给一行方向提示,随后一张读值表
+ * (标记字母、系列、点名与两轴终值),最后给连线系列的位移摘要。字母、系列顺序与图上一致。
+ * 位移摘要的符号是原始差值,方向好坏由读数的 better 语义判断,摘要不替读者下结论。
+ */
+function renderScatterValuesText(
+  groups: readonly LegendGroup[],
+  marks: ReadonlyMap<string, string>,
+  axes: ReturnType<typeof resolveChartAxes>,
+  locale: RL,
+): string {
+  const blocks: string[] = [];
+  if (axes.xMeta.better !== undefined && axes.yMeta.better !== undefined) {
+    blocks.push(localeText(locale, "scatter.betterUpperRight"));
+  }
+  const multiSeries = groups.length > 1;
+  const rows = groups.flatMap((group) =>
+    group.points.map((point) => ({
+      mark: marks.get(point.key) ?? "•",
+      ...(multiSeries ? { series: group.key } : {}),
       key: point.pointLabel,
       x: metricDisplay(point, "x", axes.xMeta, locale),
       y: metricDisplay(point, "y", axes.yMeta, locale),
     })),
-    { key: "key", x: axes.xField, y: axes.yField },
   );
+  blocks.push(
+    renderCoordinateTable(rows, {
+      mark: "",
+      ...(multiSeries ? { series: localeText(locale, "chart.series") } : {}),
+      key: "key",
+      x: axes.xField,
+      y: axes.yField,
+    }),
+  );
+  const shifts = groups
+    .filter((group) => group.connect)
+    .map((group) => {
+      const summary = shiftSummary(group, axes, locale);
+      if (summary === undefined) return undefined;
+      const path = group.points.map((point) => marks.get(point.key) ?? "•").join(" → ");
+      return `${group.key}   ${path}   ${summary}`;
+    })
+    .filter((line): line is string => line !== undefined);
+  if (shifts.length > 0) blocks.push(shifts.join("\n"));
+  return blocks.join("\n\n");
+}
 
-  const missingNote = missing > 0 ? `\n${countText(locale, "pointsMissing", missing)}` : "";
-  return `${plot}\n\n${table}${missingNote}`;
+/** 一条线首尾两点的原始差值:`通过率 +25pt · 成本 +$0.20`。百分比读数按百分点报,不按倍数。 */
+function shiftSummary(
+  group: LegendGroup,
+  axes: ReturnType<typeof resolveChartAxes>,
+  locale: RL,
+): string | undefined {
+  if (group.points.length < 2) return undefined;
+  const first = group.points[0]!;
+  const last = group.points[group.points.length - 1]!;
+  const parts: string[] = [];
+  for (const axis of ["y", "x"] as const) {
+    const meta = axis === "y" ? axes.yMeta : axes.xMeta;
+    if (meta.kind !== "metric") continue;
+    const label = chartFieldLabel(axis === "y" ? axes.yField : axes.xField, meta, locale);
+    parts.push(`${label} ${signedDelta(last[axis] - first[axis], meta.unit, locale)}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** 带符号的差值:百分比记百分点(`+25pt`),其余按读数自己的单位格式化。 */
+function signedDelta(delta: number, unit: string | undefined, locale: RL): string {
+  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
+  const abs = Math.abs(delta);
+  if (unit === "%") {
+    const points = abs * 100;
+    return `${sign}${Number.isInteger(points) ? points : points.toFixed(1)}pt`;
+  }
+  return `${sign}${formatMetricValue(abs, unit, undefined, locale)}`;
 }
 
 export const Series = defineComponent<SeriesProps>({

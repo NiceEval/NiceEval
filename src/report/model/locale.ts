@@ -133,6 +133,8 @@ const en = {
 
   /** 方向提示唯一文案:轴向已随 better 反正,「更好」恒指向右上(两轴都声明 better 时才显示)。 */
   "scatter.betterUpperRight": "better → upper right",
+  /** 读值表的系列列表头;多个系列同图时才出现。 */
+  "chart.series": "series",
   /** 0 个可画点:x/y 指标没有可用数据。 */
   "scatter.noData": "No data to plot {x} × {y}",
   /** 标题行尾的归类维度标注(series 维度存在时显示)。 */
@@ -316,6 +318,7 @@ const zhCN: globalThis.Record<ReportMessageKey, string> = {
   "overview.totalCost": "成本",
 
   "scatter.betterUpperRight": "越靠右上越好",
+  "chart.series": "系列",
   "scatter.noData": "{x} × {y} 没有可绘制的数据",
   "scatter.groupedBy": "按 {dim} 归类",
   "pointsMissing.one": "{n} 个点缺数据",

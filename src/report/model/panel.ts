@@ -227,6 +227,64 @@ function renderPlain(input: PanelInput): string[] {
   return lines;
 }
 
+// ───────────────────────── 数据格框 ─────────────────────────
+// 表与 Grid 的格线(docs/feature/reports/library/layout.md「数据格框(Table 与 Grid)」)。
+// 与区域框同一张宽度表、同一条 60 列下限,但语义不同:区域框说「这一块是一份证据」,
+// 数据格框说「这些格子构成一张表」。所以它不嵌标题 / 下钻命令,也不夹紧到 100 列。
+
+/** 列与列之间那条格线连同两侧留白占的显示列。 */
+export const DATA_CELL_SEPARATOR = " │ ";
+/** 画外框时两端边框连同 padding 占的显示列(`│ ` + ` │`)。 */
+export const DATA_BOX_FRAME_OVERHEAD = 4;
+
+/** 数据格框的真实体裁:与面板共用宽度下限——同一份输出里线要么都画,要么都不画。 */
+export function dataBoxMode(mode: PanelMode, width: number): PanelMode {
+  return effectiveMode(mode, width);
+}
+
+/** 一行数据格:格子已由调用方按各自列宽对齐;画外框时两端封上边框与 padding。 */
+export function dataBoxRow(cells: readonly string[], outerFrame: boolean): string {
+  const inner = cells.join(DATA_CELL_SEPARATOR);
+  return outerFrame ? `│ ${inner} │` : inner;
+}
+
+const DATA_BOX_EDGES = {
+  top: { corners: ["╭", "╮"], joint: "┬" },
+  rule: { corners: ["├", "┤"], joint: "┼" },
+  bottom: { corners: ["╰", "╯"], joint: "┴" },
+} as const;
+
+/**
+ * 数据格框的一条横线:上边框 `╭┬╮`、表头与行间线 `├┼┤`、下边框 `╰┴╯`。
+ *
+ * @param edge 哪条线,决定端角与接头字符。
+ * @param widths 这条线上方各列的内容显示宽度。
+ * @param outerFrame 画外框时两端出现端角;不画时只留列边界(嵌在 `Section` 里的表走这一支)。
+ * @param below 下一行的格数,默认与 `widths` 等长;下一行没有的列边界收成 `┴`——`Grid` 末行
+ *  变短时用得上(末行左对齐不拉伸,它的列边界总是上一行的前缀)。
+ */
+export function dataBoxBorder(
+  edge: "top" | "rule" | "bottom",
+  widths: readonly number[],
+  outerFrame: boolean,
+  below = widths.length,
+): string {
+  const { corners, joint } = DATA_BOX_EDGES[edge];
+  if (outerFrame) {
+    const segments = widths.map((w, i) => "─".repeat(Math.max(0, w) + 2) + (i < widths.length - 1 ? jointOf(edge, joint, i, below) : ""));
+    return `${corners[0]}${segments.join("")}${corners[1]}`;
+  }
+  return widths
+    .map((w, i) => (i === 0 ? "─".repeat(Math.max(0, w)) : `─${jointOf(edge, joint, i - 1, below)}─${"─".repeat(Math.max(0, w))}`))
+    .join("");
+}
+
+/** 第 `i` 条列边界的接头:下一行已经没有这一列时收成 `┴`,不画一个通向空处的十字。 */
+function jointOf(edge: "top" | "rule" | "bottom", joint: string, i: number, below: number): string {
+  if (edge === "rule" && i + 1 >= below) return "┴";
+  return joint;
+}
+
 /** 隔条的输入:只有归属标注与传输能力,没有 rows——隔条不声明边界,正文由调用方原样铺开。 */
 export interface RuleInput {
   /** 横线左侧嵌入的名称与位次(如 `概览 1/3`);省略时是一条纯横线。 */

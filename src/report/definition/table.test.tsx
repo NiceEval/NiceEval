@@ -16,7 +16,8 @@ import {
   type WebContext,
 } from "./tree.ts";
 import { buildReportMeta, defineReport } from "./report.ts";
-import { Table, TableContentView } from "./primitives.tsx";
+import { Section, Table, TableContentView } from "./primitives.tsx";
+import { stringWidth } from "../model/text-layout.ts";
 import type { TableContent } from "./cell.ts";
 import { emptyScopeAndResults, scopeOf } from "../components/scope.harness.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
@@ -388,5 +389,105 @@ describe("表头长在列声明上", () => {
     for (const header of ["断言", "严重度", "结果", "详情"]) expect(zhHtml).toContain(header);
     const enHtml = webHtml(<TableContentView data={content} locale="en" />, "en");
     for (const header of ["Assertion", "Severity", "Outcome", "Detail"]) expect(enHtml).toContain(header);
+  });
+});
+
+// cases: docs/engineering/testing/unit/reports.md 分区「数据格框（Table 与 Grid 的 text 面）」。
+describe("Table text 面 — 数据格框", () => {
+  const rows = [
+    { experiment: "compare/codex-gpt-5.6-luna--mempal", pass: "100%", cost: "$0.29" },
+    { experiment: "compare/codex-gpt-5.6-luna", pass: "0%", cost: "$0.01" },
+  ];
+  const columns = [
+    { field: "experiment", label: "Experiment" },
+    { field: "pass", label: "Pass rate" },
+    { field: "cost", label: "Cost" },
+  ];
+
+  it("boxed 时画外框、列边界与表头横线,每行显示宽度相等", () => {
+    const text = renderNodeToText(
+      <Table columns={columns} rows={rows} />,
+      createTextContext({ width: 100, panelMode: "boxed" }),
+    );
+    const lines = text.split("\n");
+    expect(lines[0]!.startsWith("╭")).toBe(true);
+    expect(lines[0]!.split("┬")).toHaveLength(3);
+    expect(lines[1]).toContain("Experiment");
+    expect(lines[2]!.startsWith("├")).toBe(true);
+    expect(lines[2]!.split("┼")).toHaveLength(3);
+    expect(lines.at(-1)!.startsWith("╰")).toBe(true);
+    const widths = new Set(lines.map((line) => stringWidth(line)));
+    expect(widths.size).toBe(1);
+  });
+
+  it("框宽跟随表自己的宽度,不硬拉满终端也不夹到 100 列", () => {
+    const narrow = renderNodeToText(
+      <Table columns={columns} rows={rows} />,
+      createTextContext({ width: 200, panelMode: "boxed" }),
+    );
+    const width = stringWidth(narrow.split("\n")[0]!);
+    expect(width).toBeLessThan(200);
+    // 100 列不是上限:自然宽超过 100 的表照样画到自然宽
+    const wide = renderNodeToText(
+      <Table columns={[{ field: "long", label: "Long" }]} rows={[{ long: "x".repeat(140) }]} />,
+      createTextContext({ width: 200, panelMode: "boxed" }),
+    );
+    expect(stringWidth(wide.split("\n")[0]!)).toBeGreaterThan(100);
+  });
+
+  it("嵌在画框的 Section 里只留列边界与表头横线,不套二层框", () => {
+    const text = renderNodeToText(
+      <Section title="Experiments">
+        <Table columns={columns} rows={rows} />
+      </Section>,
+      createTextContext({ width: 100, panelMode: "boxed" }),
+    );
+    const lines = text.split("\n");
+    expect(lines.filter((line) => line.startsWith("╭")).length).toBe(1);
+    expect(text).toContain("┼");
+    // 表自己的上下边框不出现:┬ / ┴ 只会随外框出现
+    expect(text).not.toMatch(/[┬┴]/);
+  });
+
+  it("plain 体裁下格线整体消失,字段与顺序逐字不变", () => {
+    const boxed = renderNodeToText(
+      <Table columns={columns} rows={rows} />,
+      createTextContext({ width: 100, panelMode: "boxed" }),
+    );
+    const plain = renderNodeToText(
+      <Table columns={columns} rows={rows} />,
+      createTextContext({ width: 100, panelMode: "plain" }),
+    );
+    expect(plain).not.toMatch(/[╭╮╰╯│├┤┬┴┼]/);
+    const words = (text: string): string[] => text.split(/[^\w%$./:@—-]+/).filter(Boolean);
+    expect(words(plain)).toEqual(words(boxed));
+  });
+
+  it("放不下时按比例压左对齐列并在格内折行,不把一列压到下限", () => {
+    const wide = [
+      { field: "a", label: "Experiment" },
+      { field: "b", label: "Eval" },
+    ];
+    const text = renderNodeToText(
+      <Table
+        columns={wide}
+        rows={[{ a: "compare/codex-gpt-5.6-luna--mempal", b: "toggl-cli/06-entry-invoice-monthly" }]}
+      />,
+      createTextContext({ width: 70, panelMode: "boxed" }),
+    );
+    const lines = text.split("\n");
+    // 一行数据折成多个物理行:格内换行,不是丢内容
+    const ruleAt = lines.findIndex((line) => line.startsWith("├"));
+    const body = lines.slice(ruleAt + 1, -1);
+    expect(body.length).toBeGreaterThan(1);
+    // 两列各让一部分:都比自然宽窄,也都没被压到 8 列下限
+    const cellWidths = lines[0]!
+      .slice(1, -1)
+      .split("┬")
+      .map((segment) => stringWidth(segment) - 2);
+    expect(cellWidths).toHaveLength(2);
+    for (const width of cellWidths) expect(width).toBeGreaterThan(8);
+    // 表下没有「丢了几列」的报数:比例压缩之后两列都还在
+    expect(text).not.toMatch(/column/i);
   });
 });

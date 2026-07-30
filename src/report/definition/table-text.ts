@@ -3,13 +3,23 @@
 // 调它 —— 官方与自定义表共用同一个渲染器,是「用户组件与官方组件对等」的构造证明:
 // 官方用不上的能力用户就拿不到,官方绕过它手搓它就一定会长歪。
 //
-// 列宽按显示宽度算(CJK 记 2 列);null 渲染 —,不补 0;超宽先折最宽的左对齐列,
-// 压到下限仍放不下就从右侧丢列并如实报数(「截断报剩余」是既有契约,不在这里破例)。
+// 列宽按显示宽度算(CJK 记 2 列);null 渲染 —,不补 0;超宽按比例压左对齐列并在格内折行,
+// 全压到下限仍放不下才从右侧丢列并如实报数(「截断报剩余」是既有契约,不在这里破例)。
+// 画线与不画线是同一份列宽算术:数据格框的列间 ` │ ` 与朴素形态的 `   ` 都占 3 列。
 
 import type { TableColumn, TableRow } from "./primitives.tsx";
 import type { TextContext } from "./tree.ts";
 import { countText, localeText, resolveLocalizedText } from "../model/locale.ts";
-import { charDisplayWidth, renderAlignedRows, stringWidth, wrapDisplay, type ColumnAlign } from "../model/text-layout.ts";
+import {
+  charDisplayWidth,
+  padDisplay,
+  padStartDisplay,
+  renderAlignedRows,
+  stringWidth,
+  wrapDisplay,
+  type ColumnAlign,
+} from "../model/text-layout.ts";
+import { DATA_BOX_FRAME_OVERHEAD, dataBoxBorder, dataBoxMode, dataBoxRow } from "../model/panel.ts";
 
 /** text 排版器入参:faces.ts 与旧 Table 形态共用的预格式化表。 */
 export interface TextTableProps {
@@ -36,8 +46,10 @@ function totalWidth(widths: readonly number[]): number {
 
 /**
  * 自然列宽 → 放得进 available 的列宽。两步,顺序即优先级:
- * 1. 压最宽的左对齐列(文本列)到下限 —— 右对齐列是数字,折行读不了,不压;
- * 2. 仍放不下就从右侧丢列(至少留一列),丢了几列如实返回。
+ * 1. 按自然宽的比例压所有左对齐列(文本列)到下限 —— 右对齐列是数字,折行读不了,不压;
+ *    按比例分摊而不是逐个压最宽的那列:两个都很长的文本列各让一半,比把其中一个压到
+ *    下限(读出来是「Experime / nt」)可读得多;
+ * 2. 全部压到下限仍放不下,才从右侧丢列(至少留一列),丢了几列如实返回。
  */
 function fitWidths(
   natural: readonly number[],
@@ -45,15 +57,22 @@ function fitWidths(
   available: number,
 ): { widths: number[]; hidden: number } {
   const widths = [...natural];
-  while (totalWidth(widths) > available) {
-    let widest = -1;
-    for (let c = 0; c < widths.length; c++) {
-      if (align[c] === "right" || widths[c] <= MIN_TEXT_COLUMN) continue;
-      if (widest === -1 || widths[c] > widths[widest]) widest = c;
-    }
-    if (widest === -1) break;
+  for (;;) {
     const over = totalWidth(widths) - available;
-    widths[widest] = Math.max(MIN_TEXT_COLUMN, widths[widest] - over);
+    if (over <= 0) break;
+    const flexible = widths
+      .map((w, c) => ({ c, w }))
+      .filter(({ c, w }) => align[c] !== "right" && w > MIN_TEXT_COLUMN);
+    if (flexible.length === 0) break;
+    // 可压缩总量按自然宽加权分摊;取整后的余数留给下一轮,循环终止于「无列可压」。
+    const slack = flexible.reduce((sum, { w }) => sum + (w - MIN_TEXT_COLUMN), 0);
+    let remaining = Math.min(over, slack);
+    for (const { c, w } of flexible) {
+      if (remaining <= 0) break;
+      const share = Math.min(w - MIN_TEXT_COLUMN, Math.max(1, Math.round((over * (w - MIN_TEXT_COLUMN)) / slack)), remaining);
+      widths[c] = w - share;
+      remaining -= share;
+    }
   }
   let hidden = 0;
   while (widths.length > 1 && totalWidth(widths) > available) {
@@ -128,15 +147,52 @@ export function renderTableText(props: TextTableProps, ctx: TextContext): string
 
   const matrix = [header, ...body];
   const natural = header.map((_, c) => Math.max(...matrix.map((row) => stringWidth(row[c] ?? ""))));
-  const { widths, hidden } = fitWidths(natural, align, ctx.width);
+  // 画线时列间距与不画线时相同(` │ ` 与 `   ` 都是 3 列),所以只有外框那 4 列要先让出来。
+  const lines = dataBoxMode(ctx.panelMode, ctx.width) === "boxed";
+  // 嵌在画框的 Section 里:边界已由面板的框给出,自己只留列边界与表头横线,不套二层框。
+  const outerFrame = lines && ctx.sectionBoxedDepth === 0;
+  const available = outerFrame ? ctx.width - DATA_BOX_FRAME_OVERHEAD : ctx.width;
+  const { widths, hidden } = fitWidths(natural, align, available);
 
   const maxLines: (number | undefined)[] = props.columns.map((column) => column.maxLines);
   if (hasLocator) maxLines.push(undefined);
   // 表头不参与 maxLines 收口:表头是自己写的短词,收口只服务数据格。
-  const physical = [
-    ...toPhysicalRows(header.slice(0, widths.length), widths, widths.map(() => undefined)),
-    ...body.flatMap((row) => toPhysicalRows(row.slice(0, widths.length), widths, maxLines)),
-  ];
-  const table = renderAlignedRows(physical, align);
+  const headerPhysical = toPhysicalRows(header.slice(0, widths.length), widths, widths.map(() => undefined));
+  const bodyPhysical = body.flatMap((row) => toPhysicalRows(row.slice(0, widths.length), widths, maxLines));
+
+  const table = lines
+    ? renderFramedTable(headerPhysical, bodyPhysical, widths, align, outerFrame)
+    : renderAlignedRows([...headerPhysical, ...bodyPhysical], align);
   return hidden > 0 ? `${table}\n${countText(locale, "table.columnsHidden", hidden)}` : table;
+}
+
+/**
+ * 数据格框形态:表头与正文之间一条横线,列边界贯穿全表。框宽跟随表自己的自然宽度
+ * (`fitWidths` 已经把它压进可用列数),不硬拉满终端——窄表拉满只会让读数彼此远离。
+ */
+function renderFramedTable(
+  header: readonly string[][],
+  body: readonly string[][],
+  widths: readonly number[],
+  align: readonly ColumnAlign[],
+  outerFrame: boolean,
+): string {
+  // 实际列宽取该列所有物理行的最宽者:压缩与折行之后不少列比预算更窄,框跟着收。
+  const physical = [...header, ...body];
+  const actual = widths.map((w, c) => {
+    const widest = Math.max(...physical.map((row) => stringWidth(row[c] ?? "")), 1);
+    return Math.min(w, widest);
+  });
+  const line = (row: readonly string[]): string =>
+    dataBoxRow(
+      actual.map((w, c) => (align[c] === "right" ? padStartDisplay(row[c] ?? "", w) : padDisplay(row[c] ?? "", w))),
+      outerFrame,
+    );
+  const out: string[] = [];
+  if (outerFrame) out.push(dataBoxBorder("top", actual, true));
+  for (const row of header) out.push(line(row));
+  out.push(dataBoxBorder("rule", actual, outerFrame));
+  for (const row of body) out.push(line(row));
+  if (outerFrame) out.push(dataBoxBorder("bottom", actual, true));
+  return out.join("\n");
 }

@@ -18,15 +18,18 @@ import {
 import { localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../model/locale.ts";
 import { joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
 import type { ColumnAlign } from "../model/text-layout.ts";
-import { panelContentWidth, renderPanel, renderRule, type PanelRow } from "../model/panel.ts";
-import { renderTableText } from "./table-text.ts";
 import {
-  gridContainerRules,
-  normalizeGrid,
-  planTextGrid,
-  textGridRowSeparator,
-  TEXT_GRID_SEPARATOR,
-} from "./grid-layout.ts";
+  DATA_BOX_FRAME_OVERHEAD,
+  dataBoxBorder,
+  dataBoxMode,
+  dataBoxRow,
+  panelContentWidth,
+  renderPanel,
+  renderRule,
+  type PanelRow,
+} from "../model/panel.ts";
+import { renderTableText } from "./table-text.ts";
+import { gridContainerRules, normalizeGrid, planTextGrid, TEXT_GRID_SEPARATOR } from "./grid-layout.ts";
 import type { Dataset } from "../model/types.ts";
 import { datasetToTableContent, isDataset } from "../model/dataset.ts";
 import { isMetricValue, type MetricValue } from "../model/calculation.ts";
@@ -117,6 +120,20 @@ Row.displayName = "Row";
 export type GridProps = LayoutProps;
 
 /**
+ * 一行格子的物理行:每格按自己的列宽补白(不 trim 行尾——右边框要对齐成一条直线),
+ * 行高取该行最高的那一格,矮格补空白格。
+ */
+function framedGridRows(blocks: readonly string[], widths: readonly number[], outerFrame: boolean): string[] {
+  const columns = blocks.map((block) => block.split("\n"));
+  const height = Math.max(...columns.map((lines) => lines.length), 1);
+  const out: string[] = [];
+  for (let i = 0; i < height; i++) {
+    out.push(dataBoxRow(columns.map((lines, c) => padDisplay(lines[i] ?? "", widths[c]!)), outerFrame));
+  }
+  return out;
+}
+
+/**
  * 自由摘要面板的格子容器:只负责呈现,不读取 Sample、不聚合 Metric。每个直接子节点
  * (数组 / Fragment 先按 ReportNode 规则展平,空分支不占格)是一格;`Col` 把多个区块
  * 归成一格。列数、边框与体量全由格数 × 可用宽度算出(./grid-layout.ts),Grid 不收这些
@@ -144,26 +161,51 @@ export const Grid = defineComponent<GridProps>({
   text({ children }, ctx) {
     const normalized = normalizeGrid({ children });
     if (normalized.cells.length === 0) return "";
-    const plan = planTextGrid({ availableWidth: ctx.width, cellCount: normalized.cells.length });
+    const lines = dataBoxMode(ctx.panelMode, ctx.width) === "boxed";
+    // 嵌在画框的 Section 里只留列边界与行间线:边界已由面板的框给出,不套二层框。
+    const outerFrame = lines && ctx.sectionBoxedDepth === 0;
+    const plan = planTextGrid({
+      availableWidth: outerFrame ? ctx.width - DATA_BOX_FRAME_OVERHEAD : ctx.width,
+      cellCount: normalized.cells.length,
+    });
     // 确定计划后才对每个 cell 调用一次 ctx.render——不为试探列数重复渲染。
-    // 孤格铺满整行:末行只剩一格时用 fullRowContentWidth,其余短末行按各列宽左对齐不拉伸。
+    // 末行不足一整行时,最后一格吃掉剩余宽度(只剩一格就是铺满整行)——右边框因此始终
+    // 对齐成一条直线,短末行不把框拉成锯齿。
     const cellWidths = normalized.cells.map((_, i) => {
       const col = i % plan.columns;
-      const isLastRowLone =
-        plan.columns > 1 &&
-        i === normalized.cells.length - 1 &&
-        normalized.cells.length % plan.columns === 1;
-      return isLastRowLone ? plan.fullRowContentWidth : plan.contentWidths[col];
+      const lastRowStart = Math.floor((normalized.cells.length - 1) / plan.columns) * plan.columns;
+      const isLastCell = i === normalized.cells.length - 1;
+      const lastRowCells = normalized.cells.length - lastRowStart;
+      if (!isLastCell || lastRowCells === plan.columns) return plan.contentWidths[col];
+      if (lastRowCells === 1) return plan.fullRowContentWidth;
+      // 吃掉右侧空出来的列宽与它们的格线。
+      const rest = plan.contentWidths.slice(col);
+      return rest.reduce((sum, w) => sum + w, 0) + TEXT_GRID_SEPARATOR.length * (rest.length - 1);
     });
     const blocks = normalized.cells.map((cell, i) => ctx.render(cell.node, cellWidths[i]));
-    // 行与行之间是一条行间线,不是空行——格线要连起来才读成一片面板。
+    // 行与行之间是一条行间线,不是空行——格线要连起来才读成一片格子。
     const out: string[] = [];
+    let previousRow = 0;
+    let lastRowWidths: readonly number[] = plan.contentWidths;
     for (let start = 0; start < blocks.length; start += plan.columns) {
       const rowBlocks = blocks.slice(start, start + plan.columns);
       const rowWidths = cellWidths.slice(start, start + rowBlocks.length);
-      if (start > 0) out.push(textGridRowSeparator(plan.contentWidths, plan.columns, rowBlocks.length));
-      out.push(joinColumns(rowBlocks, rowWidths, TEXT_GRID_SEPARATOR));
+      if (!lines) {
+        // 朴素形态:格线整体消失,只按列对齐;行与行之间空一行代替行间线。
+        if (start > 0) out.push("");
+        out.push(joinColumns(rowBlocks, rowWidths, "   "));
+        continue;
+      }
+      if (start === 0 && outerFrame) out.push(dataBoxBorder("top", plan.contentWidths, true));
+      if (start > 0) {
+        out.push(dataBoxBorder("rule", plan.contentWidths.slice(0, previousRow), outerFrame, rowBlocks.length));
+      }
+      out.push(...framedGridRows(rowBlocks, rowWidths, outerFrame));
+      previousRow = rowBlocks.length;
+      // 下边框跟随末行的实际列宽——末行最后一格吃掉的那段宽度也要被下边框盖住。
+      lastRowWidths = rowWidths;
     }
+    if (lines && outerFrame) out.push(dataBoxBorder("bottom", lastRowWidths, true));
     return out.join("\n");
   },
 });

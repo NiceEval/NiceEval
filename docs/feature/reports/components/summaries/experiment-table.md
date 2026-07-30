@@ -36,7 +36,7 @@ Attempt 行的身份格只有 locator，判定长在 locator 上：前面一个�
 判定符与色同场，所以单色打印和色觉障碍下这一列照样读得出。
 失败摘要不进这个表——点开 Attempt 详情看断言、对话与文件改动。
 在 `view` 宿主中点击 Attempt 使用报告显式声明的 Attempt page 打开详情 modal；没有声明时由 view 使用官方 `AttemptDetails` 补位。
- `show` 按层级缩进输出同一批行。
+ `show` 把同一批行画成[数据格框](../../library/layout.md#数据格框table-与-grid)，层级靠首列缩进与 `└─` 表达。
 
 `searchable` 默认为 `true`。
 `sort`、`locale` 与 `className` 透传给官方 `Table`。

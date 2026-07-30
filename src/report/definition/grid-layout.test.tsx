@@ -16,6 +16,7 @@ import {
 import type { ReportElement } from "./tree.ts";
 import { createTextContext, renderNodeToText, runWithWebContext, type WebContext } from "./tree.ts";
 import { Grid, Stat } from "./primitives.tsx";
+import { stringWidth } from "../model/text-layout.ts";
 import { UndeclaredDimensionValueError } from "../presentation.ts";
 
 const FRAGMENT = Symbol.for("react.fragment");
@@ -186,38 +187,56 @@ describe("孤格铺满与短末行", () => {
     );
   }
 
-  it("text:格线一次按最终列数画出,行间线的交点是 ┼,格线之外不画外框", () => {
-    // 每格 ≥24:4 列要 W ≥ 24*4+3*3 = 105,5 列要 W ≥ 132 → 容量 4 → balance(7,4) 仍是 4 → 4+3
-    const text = gridText(7, 120);
+  function boxedGridText(cells: number, width: number): string {
+    return renderNodeToText(
+      <Grid>
+        {Array.from({ length: cells }, (_, i) => (
+          <Stat key={i} label={`L${i}`} value={String(i)} />
+        ))}
+      </Grid>,
+      createTextContext({ width, panelMode: "boxed" }),
+    );
+  }
+
+  it("text:boxed 时画数据格框——外框 ╭┬╮/╰┴╯,行间线交点 ┼,末行变短的边界收成 ┴", () => {
+    // 每格 ≥24:框占 4 列后 4 列要 W ≥ 109,5 列要 W ≥ 136 → 容量 4 → balance(7,4) 仍是 4 → 4+3
+    const text = boxedGridText(7, 120);
     const lines = text.split("\n");
-    // 外框:首行是内容不是 ┌─┐,末行是内容不是 └─┘
-    expect(lines[0]).not.toContain("┌");
-    expect(lines.at(-1)).not.toContain("└");
-    expect(text).not.toMatch(/[┌┐└┘├┤]/);
+    expect(lines[0]!.startsWith("╭")).toBe(true);
+    expect(lines[0]!.endsWith("╮")).toBe(true);
+    expect(lines[0]!.split("┬")).toHaveLength(4);
+    expect(lines.at(-1)!.startsWith("╰")).toBe(true);
+    expect(lines.at(-1)!.endsWith("╯")).toBe(true);
     // 行间线:上一行 4 格、下一行 3 格 → 前两个边界是 ┼,第三个收成 ┴
-    const rule = lines.find((line) => line.includes("┼"));
-    expect(rule).toBeDefined();
-    expect(rule!.split("┼")).toHaveLength(3);
-    expect(rule!.split("┴")).toHaveLength(2);
-    expect(rule!.replace(/[─┼┴]/g, "")).toBe("");
+    const rule = lines.find((line) => line.includes("┼"))!;
+    expect(rule.startsWith("├")).toBe(true);
+    expect(rule.endsWith("┤")).toBe(true);
+    expect(rule.split("┼")).toHaveLength(3);
+    expect(rule.split("┴")).toHaveLength(2);
+    // 每一行的显示宽度都恰好等于终端宽度:右边框对齐成一条直线
+    for (const line of lines) expect(stringWidth(line)).toBe(120);
   });
 
-  it("text:末行只剩一格时铺满整行;短末行不止一格时按列宽左对齐不拉伸", () => {
-    // 3 列容量(W ≥ 78 且 < 105) → balance(7,3)=3 → 3+3+1,末行是孤格
-    const lone = gridText(7, 100);
-    const loneLines = lone.split("\n");
-    // 孤格那一行没有列分隔,它上面那条行间线的边界全部收成 ┴
-    expect(loneLines.at(-1)).not.toContain("│");
-    const lastRule = loneLines.filter((line) => /[┼┴]/.test(line)).at(-1)!;
-    expect(lastRule).not.toContain("┼");
-    expect(lastRule.split("┴")).toHaveLength(3);
-    expect(lastRule.length).toBe(100);
+  it("text:末行不足一整行时最后一格吃掉剩余宽度(只剩一格就是铺满整行)", () => {
+    // 3 列容量 → balance(7,3)=3 → 3+3+1,末行是孤格
+    const lone = boxedGridText(7, 100).split("\n");
+    // 孤格那一行只有外框那两条竖线,没有列边界
+    const loneRow = lone.filter((line) => line.includes("L6"))[0]!;
+    expect(loneRow.split("│")).toHaveLength(3);
+    // 短末行不止一格:4+3,末行最后一格补满右侧空出来的宽度,框仍是矩形
+    const short = boxedGridText(7, 120).split("\n");
+    const shortRow = short.filter((line) => line.includes("L4"))[0]!;
+    // 3 格 → 两条列边界加两条外框竖线
+    expect(shortRow.split("│")).toHaveLength(5);
+    expect(stringWidth(shortRow)).toBe(120);
+  });
 
-    // 短末行不止一格:4+3,末行三格仍按上面各行的列宽,不拉伸到整行
-    const short = gridText(7, 120);
-    const shortRows = short.split("\n").filter((line) => line.includes("L4"));
-    expect(shortRows).toHaveLength(1);
-    expect(shortRows[0].split("│")).toHaveLength(3);
+  it("text:plain 体裁下格线整体消失,只按列对齐、行间空一行", () => {
+    const text = gridText(7, 120);
+    expect(text).not.toMatch(/[╭╮╰╯│├┤┬┴┼]/);
+    expect(text).toContain("L0");
+    expect(text).toContain("L6");
+    expect(text.split("\n").some((line) => line === "")).toBe(true);
   });
 
   it("web:结构含 grid-fit / data-cells / 随身规则;孤格断点带 grid-column", () => {
