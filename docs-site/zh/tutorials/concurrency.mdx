@@ -116,11 +116,21 @@ npx niceeval exp compare --max-concurrency 19
 
 ## 在 live 面板确认并发落到位
 
+`PLAN` 面板先告诉你本次开几路、这个数来自哪里；声明了 `maxConcurrency` 的实验跟在后面，各自列出自己的上限：
+
+```text
+│ 45 attempts · 9 evals × 5 configs · concurrency 19 (from flag) · slow ≤1 │
+```
+
+`(from flag)` 表示 19 来自 `--max-concurrency`；没传 flag、配置里也没写时会是 `(from vercel default)` 这类 Provider 推荐值——只开 1 路不是调度坏了，`vercel` 的推荐值就是 1。`slow ≤1` 表示这个实验被自己的闸限制，把 `--max-concurrency` 调大也不会让它开更多路。
+
+运行中看首行计数：
+
 ```text
 │ 45 total · 6 reused · 19 running · 12 queued · 6 passed · 2 failed · 0 errored · 0 skipped │
 ```
 
-`running` 稳定顶在上限、`queued` 逐步消化，说明并发位就是瓶颈，还有余量就往上调。`running` 长期不满则瓶颈在别处：实验自己的闸、Provider 的独占串行，或者在等实验级 `setup`。
+`running` 稳定顶在上限、`queued` 逐步消化，说明并发位就是瓶颈，还有余量就往上调。`running` 长期不满则瓶颈在别处：实验自己的闸（`PLAN` 行已列出）、Provider 的独占串行，或者在等实验级 `setup`。
 
 ## 跨 Attempt 共享状态时串行
 
