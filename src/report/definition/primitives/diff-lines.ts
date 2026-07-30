@@ -19,8 +19,8 @@ export interface DiffFile {
   /** 净行数变化:公共前后缀修剪后的上界近似。 */
   added: number;
   removed: number;
-  /** 二进制文件只报字节数,窗口里不带 patch。 */
-  binary?: { beforeBytes?: number; afterBytes?: number };
+  /** 内容被省略的文件只报字节数与原因(二进制 / 超过单文件阈值的文本),`windows` 里不带 patch。 */
+  elided?: { reason: "binary" | "oversized-text"; beforeBytes?: number; afterBytes?: number };
   /** 触碰过该文件的窗口,按时序,至少一条。 */
   windows: readonly DiffFileWindow[];
 }
@@ -36,10 +36,15 @@ export function diffWindowLabels(file: DiffFile): string {
   return file.windows.map((w) => w.window).join(", ");
 }
 
-/** 摘要行的增删格:二进制报字节数,净零报 `±0`。 */
+/** 省略原因在两面共用的一枚词:行上标注它,人才知道为什么没有 patch。 */
+export function diffElidedLabel(reason: NonNullable<DiffFile["elided"]>["reason"]): string {
+  return reason === "binary" ? "binary" : "oversized text";
+}
+
+/** 摘要行的增删格:内容被省略的文件报原因 + 字节数,净零报 `±0`。 */
 export function diffDeltaCell(file: DiffFile): string {
-  if (file.binary) {
-    return `binary ${file.binary.beforeBytes ?? 0} → ${file.binary.afterBytes ?? 0} bytes`;
+  if (file.elided) {
+    return `${diffElidedLabel(file.elided.reason)} ${file.elided.beforeBytes ?? 0} → ${file.elided.afterBytes ?? 0} bytes`;
   }
   const parts = [file.added > 0 ? `+${file.added}` : "", file.removed > 0 ? `-${file.removed}` : ""];
   return parts.filter(Boolean).join(" ") || "±0";
@@ -87,8 +92,8 @@ export function diffFilePatchText(file: DiffFile): string {
 }
 
 function windowBody(file: DiffFile, w: DiffFileWindow): string {
-  if (file.binary) {
-    return `binary · ${file.binary.beforeBytes ?? 0} → ${file.binary.afterBytes ?? 0} bytes`;
+  if (file.elided) {
+    return `${diffElidedLabel(file.elided.reason)} · ${file.elided.beforeBytes ?? 0} → ${file.elided.afterBytes ?? 0} bytes`;
   }
   return w.patch === undefined || w.patch.length === 0 ? "(patch unavailable)" : w.patch;
 }
@@ -113,13 +118,13 @@ export function diffFilePatchBytes(file: DiffFile): number {
 
 /**
  * 决定哪些文件的 patch 内联进 HTML:按路径序累加,所以同一份输入每次产出同一个站点。
- * 二进制文件不参与(它们没有 patch)。
+ * 内容被省略的文件不参与(它们没有 patch)。
  */
 export function planInlinePatches(files: DiffContent): Set<string> {
   const inlined = new Set<string>();
   let spent = 0;
   for (const file of sortDiffFiles(files)) {
-    if (file.binary) continue;
+    if (file.elided) continue;
     const bytes = diffFilePatchBytes(file);
     if (bytes === 0 || bytes > DIFF_FILE_PATCH_BUDGET_BYTES) continue;
     if (spent + bytes > DIFF_VIEW_PATCH_BUDGET_BYTES) continue;

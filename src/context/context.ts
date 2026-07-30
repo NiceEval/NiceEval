@@ -15,7 +15,7 @@ import { turnErrorText } from "./turn-errors.ts";
 import { attachFailureClass, type FailureClass } from "../shared/failure-class.ts";
 import type { ConcurrencySlot } from "./send-retry.ts";
 import { buildO11ySummary, deriveRunFacts } from "../o11y/derive.ts";
-import { diffIsEmpty, diffMatches, emptyDiffData } from "../scoring/diff.ts";
+import { describeElided, diffIsEmpty, diffMatches, elidedContentAt, elidedContentPaths, emptyDiffData } from "../scoring/diff.ts";
 import { t } from "../i18n/index.ts";
 import { resolveLocalPath } from "../sandbox/paths.ts";
 import { brief } from "../util.ts";
@@ -116,6 +116,14 @@ function capabilityGuard(agentName: string, cap: string, method: string): () => 
   };
 }
 
+/**
+ * CommandResult 摘录(`received` 首行引号内那段)的字符预算。取这个数是为了让摘录整段活着走完
+ * 终端摘要行:human 面的 `received: exit <code> · "…<摘录>"` 有 100 字符预算且从**头**收口
+ * (scoring/display.ts),摘录比预算长时被砍掉的正是尾部——也就是 runner 的失败计数。宁可窗口
+ * 小一点,也不能让唯一的新事实死在收口里;更长的原始尾部随后由 `output tail:` 段承载。
+ */
+const COMMAND_SUMMARY_MAX_CHARS = 76;
+
 export function createEvalContext(deps: ContextDeps): { context: TestContext; state: ContextState } {
   const manager = new SessionManager({
     agent: deps.agent,
@@ -201,6 +209,21 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
     return value;
   }
 
+  /**
+   * 两条流合并成一份「命令输出」,stderr 在前、stdout 在后:摘录取合并结果的末尾
+   * (docs/feature/assertions/library/display.md「命令结果」),而末尾必须落在被测命令自己的
+   * 结论上。包装器(uv / npm / pip 的装包与进度)按惯例流到 stderr 且发生在 runner 跑起来之前,
+   * runner 的 `N failed, M passed` 收在 stdout 末尾;stdout 排在后面,合并的末尾才是结论,不是
+   * 装包噪声(回归见 memory/commandsucceeded-received-excerpt-not-tail.md)。只有一条流有内容时
+   * 顺序不产生差别(编译器 / 崩溃栈这类只写 stderr 的命令照样取到它的末尾)。
+   */
+  function mergeCommandOutput(stdout: string, stderr: string): string {
+    return [stderr, stdout]
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .join("\n");
+  }
+
   /** CommandResult 形状的值(duck-type,不 import sandbox 域):received 按「退出码 + 输出尾部」投影。 */
   function asCommandResult(value: unknown): { stdout: string; stderr: string; exitCode: number; command?: string } | undefined {
     if (!value || typeof value !== "object") return undefined;
@@ -212,18 +235,19 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
 
   /** 断言失败时给 view 看的「实际被检查了什么」,而不是重复 matcher 自己的名字。
    *  按值的形状落成人可读事实(而不是留一坨 JSON 给渲染层解析):CommandResult 的第一行是
-   *  `exit N · "…输出尾部摘要"`(stdout+stderr 合并折单行,信号常收在末尾——pytest / vitest
-   *  的 failed 计数都在最后几行;默认报告与 --eval 标注这类单行面只保留这一行),随后附原样保留
-   *  换行的更长尾部——runner 不另存 eval 侧命令的输出,这条记录就是它唯一的家,attempt 首页
-   *  与 result.json 靠它给出「更进一步」;文件引用带 `// path` 头;其余走通用 JSON 预览。 */
+   *  `exit N · "…输出尾部摘要"`(stdout/stderr 合并折单行取末尾,信号常收在末尾——pytest /
+   *  vitest 的 failed 计数都在最后几行;默认报告与 --eval 标注这类单行面只保留这一行),随后附
+   *  原样保留换行的更长尾部——runner 不另存 eval 侧命令的输出,这条记录就是它唯一的家,attempt
+   *  首页与 result.json 靠它给出「更进一步」;文件引用带 `// path` 头;其余走通用 JSON 预览。 */
   function previewCheckedValue(value: unknown): string {
     const cmd = asCommandResult(value);
     if (cmd) {
-      const combined = `${cmd.stdout}\n${cmd.stderr}`.trim();
+      const combined = mergeCommandOutput(cmd.stdout, cmd.stderr);
       const folded = combined.replace(/\s+/g, " ").trim();
-      const summary = folded.length > 160 ? `…${folded.slice(-159)}` : folded;
+      const summary =
+        folded.length > COMMAND_SUMMARY_MAX_CHARS ? `…${folded.slice(-(COMMAND_SUMMARY_MAX_CHARS - 1))}` : folded;
       const headline = summary.length > 0 ? `exit ${cmd.exitCode} · "${summary}"` : `exit ${cmd.exitCode}`;
-      if (combined.length <= 160) return headline;
+      if (folded.length <= COMMAND_SUMMARY_MAX_CHARS) return headline; // 首行已含全部输出
       let tail = combined.slice(-3600);
       if (combined.length > 3600) {
         const firstBreak = tail.indexOf("\n");
@@ -245,10 +269,35 @@ export function createEvalContext(deps: ContextDeps): { context: TestContext; st
   }
 
   // agent 归因 diff 的只读视图:get = 最后触及窗口的终态;matches 扫触及路径与各窗口内容。
+  // 内容被省略的条目(二进制、单文件超限文本)在读的那一刻如实报证据不可用:内容读取抛出
+  // 可行动错误,而不是回落成 undefined / false 让内容断言静默判过或判败
+  // (docs/feature/sandbox/architecture.md「导出往返是常数次」)。存在性与 status 断言
+  // (fileChanged / fileDeleted / files 摘要)不受影响,照常成立。
   const diffView: DiffView = {
-    get: (path) => state.late.diff.get(path),
+    get: (path) => {
+      const elided = elidedContentAt(state.late.diff, path);
+      if (elided) {
+        throw new Error(
+          `t.sandbox.diff.get(${JSON.stringify(path)}): agent diff content is unavailable — ${describeElided(elided)}. ` +
+            `Content is elided from the diff export for binary files and for text over 1 MiB per file. ` +
+            `Assert on the change itself (t.sandbox.fileChanged / fileDeleted), or read the final file with t.sandbox.readFile.`,
+        );
+      }
+      return state.late.diff.get(path);
+    },
     isEmpty: () => diffIsEmpty(state.late.diff),
-    matches: (re) => diffMatches(state.late.diff, re),
+    matches: (re) => {
+      if (diffMatches(state.late.diff, re)) return true;
+      const elided = elidedContentPaths(state.late.diff);
+      if (elided.length > 0) {
+        throw new Error(
+          `t.sandbox.diff.matches(${re}): no match found, but ${elided.length} changed path${elided.length === 1 ? "" : "s"} ` +
+            `${elided.length === 1 ? "has" : "have"} no inline content (${elided.slice(0, 3).join(", ")}${elided.length > 3 ? ", …" : ""}), ` +
+            `so "not present" cannot be established. Narrow the regex to paths, or read the final files with t.sandbox.readFile.`,
+        );
+      }
+      return false;
+    },
   };
 
   const sandboxAssertions = {

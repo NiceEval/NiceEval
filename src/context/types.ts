@@ -86,11 +86,18 @@ export interface JudgeNamespace<H extends BaseAssertionHandle = AssertionHandle>
 
 /** 最终 diff 的只读视图(t.sandbox.diff);内容在 test() 跑完、finalize 前才落定。 */
 export interface DiffView {
-  /** 取某个生成 / 修改文件的最终内容;文件不在 diff 里则 undefined。 */
+  /**
+   * 取某个生成 / 修改文件的最终内容;文件不在 diff 里则 undefined。
+   * 内容被省略的条目(二进制、单文件超过 1 MiB 的文本)抛出可行动错误——读不到内容时
+   * 如实说证据不可用,不回落成 undefined 让内容断言静默判败。
+   */
   get(path: string): string | undefined;
   /** 整个 diff 是否为空(既没有生成/修改的文件,也没有删除的文件)。 */
   isEmpty(): boolean;
-  /** 正则是否命中 diff 里任意文件的路径或内容。 */
+  /**
+   * 正则是否命中 diff 里任意文件的路径或内容。命中即 true;没命中但有条目的内容被省略时抛错
+   * ——扫不全的内容上「没出现」证明不了。
+   */
   matches(re: RegExp): boolean;
 }
 

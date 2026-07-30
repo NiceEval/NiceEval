@@ -202,8 +202,10 @@ Human 文案。
 ```
 
 `t.check(cmd, commandSucceeded())` 的 `evidence` 是命令行本身，`received` 分两层。
-首行是退出码加折成单行的输出尾部摘要。它取 stdout 与 stderr 合并后的末尾，因为测试 runner
-通常把失败计数放在最后几行。随后附上原样保留换行的更长 `output tail:` 段。
+首行是退出码加折成单行的输出尾部摘要，取 stdout 与 stderr 合并后的末尾。
+合并按 stderr 在前、stdout 在后：包装器的装包与进度噪声按惯例流到 stderr 且发生在被测命令之前，
+测试 runner 的失败计数收在 stdout 最后几行——这个顺序让合并后的末尾落在结论上，不落在噪声上。
+只有一条流有内容时顺序不产生差别。随后附上原样保留换行的更长 `output tail:` 段。
 
 摘要面只保留首行，包括比较列表与 `--source` 标注；Attempt 首页按原始换行展开尾部。
 runner 不另存 eval 侧命令输出，这条记录是它唯一的归属。只存单行摘要会丢失「测试到底怎么挂的」证据：

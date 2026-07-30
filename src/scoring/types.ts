@@ -217,12 +217,15 @@ export interface DiffWindow {
 
 export interface WindowChange {
   status: "added" | "modified" | "deleted";
-  /** 窗口开始时的内容;added 无此字段。 */
+  /** 窗口开始时的内容;added 无此字段;内容被省略(elided)时也缺席。 */
   before?: string;
-  /** 窗口结束时的内容;deleted 无此字段。 */
+  /** 窗口结束时的内容;deleted 无此字段;内容被省略(elided)时也缺席。 */
   after?: string;
-  /** 二进制文件不内联内容,只记字节数。 */
-  binary?: { beforeBytes?: number; afterBytes?: number };
+  /**
+   * 内容不内联、只记字节数的条目:二进制文件,或超过单文件阈值(1 MiB)的文本。
+   * 存在时 before / after 缺席,status 与字节数照常记录。
+   */
+  elided?: { reason: "binary" | "oversized-text"; beforeBytes?: number; afterBytes?: number };
 }
 
 /** 读取面在窗口序列之上派生的文件级视图(派生物可随时重算,不落盘)。 */
@@ -231,7 +234,8 @@ export interface DiffFileSummary {
   net: "added" | "modified" | "deleted" | "none";
   /** 触及该文件的窗口标签,按时序。 */
   windows: string[];
-  binary?: true;
+  /** 内容被省略的文件带省略原因;省略语义单源在 WindowChange.elided。 */
+  elided?: "binary" | "oversized-text";
 }
 
 /** agent 归因 diff 的消费视图:窗口序列(落盘事实)+ 派生的文件级摘要与终态读取。 */

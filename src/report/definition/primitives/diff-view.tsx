@@ -10,6 +10,7 @@ import { defineComponent, type ResolveContext, type TextContext } from "../tree.
 import {
   buildDiffTree,
   diffChangeLetter,
+  diffElidedLabel,
   diffSummaryText,
   planInlinePatches,
   type DiffContent,
@@ -188,9 +189,10 @@ function FileSummary({ file }: { file: DiffFile }): ReactNode {
         {diffChangeLetter(file.change)}
       </span>
       <span className="niceeval-diff-path">{basename(file.path)}</span>
-      {file.binary ? (
+      {/* 内容被省略的文件行:字节数变化 + 原因标注,替掉没有意义的 +N / -M(diff-view.md「web 面:路径树」)。 */}
+      {file.elided ? (
         <span className="niceeval-diff-bytes">
-          {file.binary.beforeBytes ?? 0} → {file.binary.afterBytes ?? 0} bytes
+          {diffElidedLabel(file.elided.reason)} {file.elided.beforeBytes ?? 0} → {file.elided.afterBytes ?? 0} bytes
         </span>
       ) : (
         <LineCounts added={file.added} removed={file.removed} />
@@ -211,16 +213,16 @@ function FileRow({
   const className = cx("niceeval-diff-file", `niceeval-diff-${file.change}`);
   // 内联不了的文件不给空的展开区:直接把下钻命令摆在行上(diff-view.md「内联预算」)。
   if (!inlined) {
-    // 二进制文件没有 patch 可看,不给下钻命令;超预算的文件把命令摆在行上。
-    const binary = file.binary !== undefined;
+    // 内容被省略的文件没有 patch 可看,不给下钻命令(下钻也拿不到内容);超预算的文件把命令摆在行上。
+    const elided = file.elided;
     return (
       <li className={className} data-inlined="false">
         <div className="niceeval-diff-file-summary">
           <FileSummary file={file} />
         </div>
         <p className="niceeval-diff-patch-omitted">
-          {binary ? "binary file" : "patch over inline budget"}
-          {!binary && drillCommand !== undefined ? (
+          {elided ? `${diffElidedLabel(elided.reason)} file · content elided from the diff export` : "patch over inline budget"}
+          {elided === undefined && drillCommand !== undefined ? (
             <>
               {" · "}
               <code>{`${drillCommand}=${file.path}`}</code>

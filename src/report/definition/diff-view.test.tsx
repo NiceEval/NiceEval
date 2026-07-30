@@ -52,7 +52,15 @@ const content: DiffContent = [
     change: "modified",
     added: 0,
     removed: 0,
-    binary: { beforeBytes: 10, afterBytes: 20 },
+    elided: { reason: "binary", beforeBytes: 10, afterBytes: 20 },
+    windows: [{ window: "s1/t1" }],
+  },
+  {
+    path: "data/dump.sql",
+    change: "modified",
+    added: 0,
+    removed: 0,
+    elided: { reason: "oversized-text", beforeBytes: 2_097_153, afterBytes: 4_194_304 },
     windows: [{ window: "s1/t1" }],
   },
 ];
@@ -90,12 +98,14 @@ describe("DiffView", () => {
   it("两面投影:摘要行、逐窗口 patch 与下钻命令", async () => {
     const tree = await resolve(<DiffView files={content} />, attemptPage);
     const text = renderNodeToText(tree, createTextContext({ width: 100 }));
-    expect(text).toContain("4 files changed by agent");
+    expect(text).toContain("5 files changed by agent");
     expect(text).toContain("niceeval show @loc1 --diff");
     expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +s1\/t1, s1\/t2/);
     expect(text).toMatch(/A +src\/report\/model\/notes\.md +\+10 +s1\/t2/);
     expect(text).toMatch(/D +old\.txt +-3 +s1\/t1/);
+    // 内容被省略的两种原因各自在行上标注,共用同一格字节数变化
     expect(text).toContain("binary 10 → 20 bytes");
+    expect(text).toContain("oversized text 2097153 → 4194304 bytes");
     // 摘要面不铺 patch 正文
     expect(text).not.toContain("second window");
 
@@ -110,8 +120,14 @@ describe("DiffView", () => {
     expect(html.match(/niceeval-diff-window-title/g)?.length).toBe(4);
     expect(html).toContain("niceeval-diff-patch-line--add");
     expect(html).toContain("niceeval-diff-patch-line--remove");
-    // 二进制文件不出 patch,只报字节数
+    // 内容被省略的文件不出 patch,只报原因 + 字节数,也不给下钻命令(下钻同样拿不到内容)
     expect(html).toContain("niceeval-diff-bytes");
+    const binaryRow = html.slice(html.indexOf("logo.png"));
+    expect(binaryRow).toContain("binary file · content elided from the diff export");
+    const oversizedRow = html.slice(html.indexOf("dump.sql"));
+    expect(oversizedRow).toContain("oversized text 2097153 → 4194304 bytes");
+    expect(oversizedRow).toContain("oversized text file · content elided from the diff export");
+    expect(oversizedRow).not.toContain("--diff=data/dump.sql");
   });
 
   it("路径树:目录汇总、单子目录链压缩,状态不参与分组", async () => {

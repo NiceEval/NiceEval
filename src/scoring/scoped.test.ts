@@ -7,10 +7,10 @@
 import { describe, expect, it } from "vitest";
 import { AssertionCollector } from "./collector.ts";
 import { completeCoverage, downgradeCoverage, resolveAgentCoverage } from "./coverage.ts";
-import { emptyDiffData } from "./diff.ts";
+import { deriveDiffData, emptyDiffData } from "./diff.ts";
 import * as Scoped from "./scoped.ts";
 import { deriveRunFacts } from "../o11y/derive.ts";
-import type { AssertionResult, ScoringContext, StreamEvent, SubagentMatch } from "../types.ts";
+import type { AssertionResult, DiffArtifact, ScoringContext, StreamEvent, SubagentMatch } from "../types.ts";
 
 function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
   const events = (over.events ?? []) as StreamEvent[];
@@ -250,6 +250,50 @@ describe("calledSubagent:remoteUrl 三种形态与 output", () => {
     const pendingEvents: StreamEvent[] = [{ type: "subagent.called", callId: "s2", name: "researcher" }];
     const r = await evaluate(Scoped.calledSubagent("researcher", { status: "pending" }), ctxWith({ events: pendingEvents }));
     expect(r.outcome).toBe("passed");
+  });
+});
+
+describe("notInDiff:内容被省略的条目上「没出现」证明不了", () => {
+  const inlined: DiffArtifact = [
+    { window: "s1/t1", changes: { "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" } } },
+  ];
+  const withElided: DiffArtifact = [
+    {
+      window: "s1/t1",
+      changes: {
+        "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" },
+        "assets/logo.png": { status: "added", elided: { reason: "binary", afterBytes: 2048 } },
+        "data/dump.sql": { status: "added", elided: { reason: "oversized-text", afterBytes: 4 * 1024 * 1024 } },
+      },
+    },
+  ];
+
+  it("内容全部内联:命中窗口终态内容 → failed,扫不到反例 → passed", async () => {
+    const hit = await evaluate(Scoped.notInDiff(/await x/), ctxWith({ diff: deriveDiffData(inlined) }));
+    expect(hit.outcome).toBe("failed");
+    const clean = await evaluate(Scoped.notInDiff(/console\.log/), ctxWith({ diff: deriveDiffData(inlined) }));
+    expect(clean.outcome).toBe("passed");
+  });
+
+  it("确凿反例仍然 failed:内容被省略不把已命中的证据变成不可用", async () => {
+    const r = await evaluate(Scoped.notInDiff(/logo\.png/), ctxWith({ diff: deriveDiffData(withElided) }));
+    expect(r.outcome).toBe("failed");
+    expect(r.outcome === "failed" ? r.received : "").toContain("assets/logo.png");
+  });
+
+  it("扫不到反例但有条目内容被省略 → unavailable,reason 点名缺内容的路径", async () => {
+    const r = await evaluate(Scoped.notInDiff(/console\.log/), ctxWith({ diff: deriveDiffData(withElided) }));
+    expect(r.outcome).toBe("unavailable");
+    if (r.outcome !== "unavailable") return;
+    expect(r.reason).toContain("diff-content-elided");
+    expect(r.reason).toContain("assets/logo.png");
+    expect(r.reason).toContain("data/dump.sql");
+  });
+
+  it("存在性与 status 断言不受内容省略影响", async () => {
+    const diff = deriveDiffData(withElided);
+    expect((await evaluate(Scoped.fileChanged("assets/logo.png"), ctxWith({ diff }))).outcome).toBe("passed");
+    expect((await evaluate(Scoped.fileChanged("data/dump.sql"), ctxWith({ diff }))).outcome).toBe("passed");
   });
 });
 

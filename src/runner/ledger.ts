@@ -44,9 +44,16 @@ const DEFAULT_EXCLUDES = [
   "__pycache__",
 ];
 
-/** 单个 send 窗口的证据安全上限。越界必须让 workspace.diff 失败,不能产出误导性的空窗口。 */
+/**
+ * 单个 send 窗口的证据安全上限。越界必须让 workspace.diff 失败,不能产出误导性的空窗口。
+ * 字节预算只数**真正要传输的文本** before/after:二进制与超过单文件阈值的文本不内联内容、
+ * 只记字节数(WindowChange.elided),因此不占预算——编译产物型窗口(成百上千个 .o 加几个大
+ * 文本)不该因为「按尺寸计」被判越界。
+ */
 const MAX_WINDOW_PATHS = 10_000;
-const MAX_WINDOW_BLOB_BYTES = 64 * 1024 * 1024;
+const MAX_WINDOW_TEXT_BYTES = 64 * 1024 * 1024;
+/** 单个文本 blob 的内联阈值:任一侧超过它,该条目按二进制同款处理(记字节数、内容省略)。 */
+const MAX_FILE_TEXT_BYTES = 1024 * 1024;
 
 /**
  * 整相导出:一条 POSIX shell 命令枚举**全部** agent 窗口并把证据写进沙箱内导出文件,宿主随后
@@ -55,10 +62,12 @@ const MAX_WINDOW_BLOB_BYTES = 64 * 1024 * 1024;
  *
  * 沙箱内不组装 JSON:导出文件直接拼接 git 原生输出——每窗口四段,`diff-tree -z`(状态 + 前后
  * blob sha + 路径,NUL 安全)、`numstat -z`(二进制识别)、`cat-file --batch-check`(全部 blob
- * 尺寸)、`cat-file --batch`(文本 blob 内容,输出自带长度帧)——解析与校验全部在宿主侧完成。
+ * 尺寸)、`cat-file --batch`(要内联的文本 blob 内容,输出自带长度帧)——解析与校验全部在宿主侧完成。
  * 需要在沙箱内做的两个判断都不解析路径列:sha 提取用 awk 取 diff-tree 原始输出的第 3/4 列
  * (路径在其后,含空格也不影响);二进制排除靠 numstat 与 diff-tree 输出的行号对齐。
- * 尺寸核算(--batch-check)先于内容读取(--batch),越界在产出任何内容前失败。
+ * 尺寸核算(--batch-check)先于内容读取(--batch),越界在产出任何内容前失败;预算只累计真正
+ * 要传输的文本 blob(二进制与单文件超限文本只出字节数,不进 --batch 请求、不计预算)。
+ * 宿主侧从 sizes + numstat 两段就能判出哪些条目内容被省略,沙箱不额外输出一份判定清单。
  */
 function buildExportScript(exportDir: string): string {
   return [
@@ -87,9 +96,13 @@ function buildExportScript(exportDir: string): string {
     "  awk '$3 !~ /^0+$/ { print $3 } $4 !~ /^0+$/ { print $4 }' \"$D/dt.txt\" > \"$D/occ.txt\"",
     '  git cat-file --batch-check < "$D/occ.txt" > "$D/sizes.txt"',
     '  if grep -q " missing$" "$D/sizes.txt"; then fail "niceeval ledger export: blob object missing"; fi',
-    `  awk '{ s += $3 } END { exit (s > ${MAX_WINDOW_BLOB_BYTES}) ? 1 : 0 }' "$D/sizes.txt" || fail "niceeval diff window contains more than ${MAX_WINDOW_BLOB_BYTES} blob bytes; narrow defineEval({ diff }) include/ignore rules"`,
-    // 文本 blob 内容请求:numstat 第 1 列为 "-" 的行是二进制,按行号对齐排除;去重后交给 --batch。
-    '  awk \'NR==FNR { bin[FNR] = ($1 == "-"); next } bin[FNR] != 1 { if ($3 !~ /^0+$/) print $3; if ($4 !~ /^0+$/) print $4 }\' "$D/ns.txt" "$D/dt.txt" | sort -u > "$D/text.txt"',
+    // 逐条目分类:numstat 第 1 列为 "-" 的行是二进制,按行号对齐标 B,其余标 T,后跟前后 blob sha。
+    '  awk \'NR==FNR { bin[FNR] = ($1 == "-"); next } { printf "%s %s %s\\n", (bin[FNR] ? "B" : "T"), $3, $4 }\' "$D/ns.txt" "$D/dt.txt" > "$D/entries.txt"',
+    // 要内联的文本 blob(去重):二进制条目与任一侧超过单文件阈值的文本条目都不请求内容,
+    // 也不计入窗口预算——它们只出字节数(宿主据同一份 sizes 判成 elided)。
+    `  awk -v LIMIT=${MAX_FILE_TEXT_BYTES} -v TOTAL="$D/total.txt" 'NR==FNR { sz[$1] = $3; next } $1 == "T" { b = $2; a = $3; if (b !~ /^0+$/ && sz[b] > LIMIT) next; if (a !~ /^0+$/ && sz[a] > LIMIT) next; if (b !~ /^0+$/ && !(b in seen)) { seen[b] = 1; total += sz[b]; print b } if (a !~ /^0+$/ && !(a in seen)) { seen[a] = 1; total += sz[a]; print a } } END { print total+0 > TOTAL }' "$D/sizes.txt" "$D/entries.txt" > "$D/text.txt"`,
+    '  bytes=$(cat "$D/total.txt")',
+    `  [ "$bytes" -le ${MAX_WINDOW_TEXT_BYTES} ] || fail "niceeval diff window transfers $bytes text blob bytes; limit is ${MAX_WINDOW_TEXT_BYTES}; narrow defineEval({ diff }) include/ignore rules"`,
     '  git cat-file --batch < "$D/text.txt" > "$D/blobs.bin"',
     '  git diff-tree -r --no-renames -z "$hash^" "$hash" > "$D/dtz.bin"',
     '  git diff-tree -r --no-renames --numstat -z "$hash^" "$hash" > "$D/nsz.bin"',
@@ -270,11 +283,16 @@ function parseExportPayload(payload: Buffer): DiffArtifact {
     const changes: globalThis.Record<string, WindowChange> = {};
     for (const entry of entries) {
       const change: WindowChange = { status: entry.status };
-      if (binaryPaths.has(entry.path)) {
-        const binary: NonNullable<WindowChange["binary"]> = {};
-        if (entry.status !== "added") binary.beforeBytes = requireSize(sizeBySha, entry.beforeSha, label, entry.path);
-        if (entry.status !== "deleted") binary.afterBytes = requireSize(sizeBySha, entry.afterSha, label, entry.path);
-        change.binary = binary;
+      // 沙箱侧决定「哪些文本 blob 进 --batch」的两条判据在宿主侧同样成立(binary 段 + sizes 段
+      // 都在导出文件里),所以这里独立重算,不需要沙箱再输出一份省略清单。
+      const beforeBytes = entry.status === "added" ? undefined : requireSize(sizeBySha, entry.beforeSha, label, entry.path);
+      const afterBytes = entry.status === "deleted" ? undefined : requireSize(sizeBySha, entry.afterSha, label, entry.path);
+      const binary = binaryPaths.has(entry.path);
+      const oversized = (beforeBytes ?? 0) > MAX_FILE_TEXT_BYTES || (afterBytes ?? 0) > MAX_FILE_TEXT_BYTES;
+      if (binary || oversized) {
+        change.elided = { reason: binary ? "binary" : "oversized-text" };
+        if (beforeBytes !== undefined) change.elided.beforeBytes = beforeBytes;
+        if (afterBytes !== undefined) change.elided.afterBytes = afterBytes;
       } else {
         if (entry.status !== "added") change.before = requireContent(contentBySha, entry.beforeSha, label, entry.path);
         if (entry.status !== "deleted") change.after = requireContent(contentBySha, entry.afterSha, label, entry.path);

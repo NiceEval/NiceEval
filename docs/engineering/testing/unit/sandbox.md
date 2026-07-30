@@ -91,6 +91,11 @@ suite。
   diff）；窗口标签与轮标签同枚 token、按等值匹配；默认排除与 ignore/include 的 glob 语义、nested
   repo 不静默吞改动；`noFailedShellCommands`
   只看 Agent 自己的调用；延迟断言 finalize 时对最终 diff 求值。
+- **导出预算与内容省略**：预算只数真正传输的文本字节。
+  二进制与超 1 MiB 文本按 `elided` 记字节数、不占预算；编译产物型窗口因此整体放行，
+  这一格在「按尺寸计」的旧口径下会红。纯文本传输字节越界仍报执行错误。
+  `elided` 往返与派生视图各一格；被省略内容的读取按证据不可用报错，
+  存在性与 `status` 断言照常成立。
 - **provider 选择与作者面**：sandbox 字段不接受 provider 名字符串、没有默认值、不会自动探测。
   两处皆空时，报错给出下一步；自定义 provider 直接调用、核心路径无 provider 名分支；`t.sandbox`
   的错误反馈带 API 名与 agent 名；反馈经管线不经 stdout。

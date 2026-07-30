@@ -2,9 +2,11 @@
 import { describe, expect, it } from "vitest";
 import { createEvalContext, type ContextState } from "./context.ts";
 import { commandSucceeded, includes } from "../expect/index.ts";
+import { deriveDiffData } from "../scoring/diff.ts";
 import { completeCoverage, resolveAgentCoverage } from "../scoring/coverage.ts";
+import { assertionSummaryLines, primaryAssertionSummary } from "../scoring/display.ts";
 import { SEND_MAX_ATTEMPTS } from "./send-retry.ts";
-import type { Agent, AgentContext, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
+import type { Agent, AgentContext, DiffArtifact, InputRequest, Sandbox, StreamEvent, Turn, TurnInput } from "../types.ts";
 
 // 计算工具 + 最终回复"1 + 1 = **2** 哦!😊"——复现截图里的场景:助手回复明明包含 "2",
 // 但 t.check(t.reply, includes("2")) 却失败。
@@ -171,6 +173,41 @@ describe("createEvalContext / TestContext live state", () => {
     expect(firstLine!.length).toBeLessThan(200);
     expect(result.received).toContain("output tail:"); // 更长尾部保留换行,attempt 首页展开
     expect(result.evidence).toBe("npm run test");
+  });
+
+  // 回归:MemoryBench dogfooding 里摘录落在 uv 装包噪声上(memory/commandsucceeded-received-excerpt-not-tail.md)。
+  it("t.check(CommandResult, …) 的摘录取被测命令输出的末尾:包装器噪声(stderr)不挤掉 runner 尾部 summary", async () => {
+    const { context, state } = makeContext(calculatorAgent());
+    const commandResult = {
+      // uv 这类包装器把装包进度流到 stderr(时间上在前),runner 自己的 summary 收在 stdout 末尾。
+      stdout: `${"collecting tests/test_api.py …\n".repeat(300)}FAILED tests/test_api.py::test_rate_limit - assert 429 == 200\n===== 2 failed, 14 passed in 3.41s =====\n`,
+      stderr: `${"Downloading pygments (1.2MiB)\n".repeat(200)}Prepared 5 packages in 95ms\nInstalled 5 packages in 10ms\n`,
+      exitCode: 1,
+      command: "uv run pytest",
+    };
+    context.check(commandResult, commandSucceeded());
+
+    const [result] = await state.collector.finalize({
+      events: [],
+      facts: { toolCalls: [], subagentCalls: [], inputRequests: [], parked: false, messageCount: 0, compactions: 0, contextInjections: 0 },
+      diff: state.late.diff,
+      scripts: state.late.scripts,
+      usage: { inputTokens: 0, outputTokens: 0 },
+      status: "completed",
+      coverage: resolveAgentCoverage(completeCoverage),
+      readFile: async () => undefined,
+    });
+    if (result.outcome !== "failed") throw new Error("fixture 应判 failed");
+    const [firstLine] = result.received!.split("\n");
+    expect(firstLine).toContain("2 failed, 14 passed in 3.41s");
+    expect(firstLine).not.toContain("Prepared 5 packages"); // 装包噪声不占摘录
+    expect(firstLine).not.toContain("Downloading pygments");
+
+    // 终端摘要行(human 面 100 字符预算,从头收口)必须仍带着 summary——摘录本身要放得进这一行,
+    // 否则收口只留中段,尾部计数丢在看不见的地方。
+    const summary = primaryAssertionSummary([result], "failed", "pass")!;
+    const lines = assertionSummaryLines(summary);
+    expect(lines.join("\n")).toContain("2 failed, 14 passed in 3.41s");
   });
 
   it("t.events reflects the turn's events after send(), not an empty run", async () => {
@@ -595,5 +632,45 @@ describe("t.send(...).expectOk() · turn 级重试耗尽", () => {
     expect(calls).toBe(1); // 没有重试
     expect(() => turn.expectOk()).toThrow(/stream reset mid-response after 3 tool calls/);
     expect(() => turn.expectOk()).not.toThrow(/exhausted|耗尽/);
+  });
+});
+
+describe("t.sandbox.diff 的内容读取:被省略的内容如实报不可用", () => {
+  const windows: DiffArtifact = [
+    {
+      window: "s1/t1",
+      changes: {
+        "src/app.ts": { status: "modified", before: "callback(x)\n", after: "await x\n" },
+        "dist/bundle.wasm": { status: "added", elided: { reason: "binary", afterBytes: 3_145_728 } },
+        "data/dump.sql": { status: "modified", elided: { reason: "oversized-text", beforeBytes: 2_097_153, afterBytes: 4_194_304 } },
+      },
+    },
+  ];
+
+  function contextWithDiff() {
+    const made = makeContext(calculatorAgent());
+    made.state.late.diff = deriveDiffData(windows);
+    return made;
+  }
+
+  it("内联的文件照常读到终态内容", () => {
+    const { context } = contextWithDiff();
+    expect(context.sandbox.diff.get("src/app.ts")).toBe("await x\n");
+    expect(context.sandbox.diff.get("never/touched.ts")).toBeUndefined();
+    expect(context.sandbox.diff.isEmpty()).toBe(false);
+  });
+
+  it("内容被省略的文件不回落成 undefined,而是抛出点名原因、字节数与替代做法的错误", () => {
+    const { context } = contextWithDiff();
+    expect(() => context.sandbox.diff.get("dist/bundle.wasm")).toThrow(/binary \(after 3145728 bytes\)/);
+    expect(() => context.sandbox.diff.get("data/dump.sql")).toThrow(/oversized-text \(before 2097153 bytes, after 4194304 bytes\)/);
+    expect(() => context.sandbox.diff.get("data/dump.sql")).toThrow(/t\.sandbox\.readFile/);
+  });
+
+  it("matches:命中即 true;没命中但有条目内容被省略时抛错,不静默返回 false", () => {
+    const { context } = contextWithDiff();
+    expect(context.sandbox.diff.matches(/await x/)).toBe(true);
+    expect(context.sandbox.diff.matches(/bundle\.wasm/)).toBe(true); // 路径命中不需要内容
+    expect(() => context.sandbox.diff.matches(/console\.log/)).toThrow(/no inline content/);
   });
 });

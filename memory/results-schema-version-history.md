@@ -15,3 +15,12 @@
 - `10`(2026-07-27)多文件源码证据定稿。`SourceLoc.callers` 成为已有 `loc` 的必选调用路径；
   `sources.json` 每项新增必选 `role`，并要求恰好一个 `entry`。旧记录缺少主干角色和调用路径，无法按
   新读取面装配源码调用树，因此与新 reader 不兼容。
+- `11`(2026-07-28,commit d79be370,补记)Record/Sample 落地重构:落盘单位改 Run
+  (快照元数据文件改 `run.json`、`SnapshotMeta` 改 `RunMeta`),常量从 `RESULTS_SCHEMA_VERSION`
+  改名 `RECORD_SCHEMA_VERSION`;9→11 一次跳两位,10 与 11 在源码注释里都没有独立条目,
+  本行按该 commit 的 diff 回溯补记。
+- `12`(2026-07-30)`diff.json` 的 `WindowChange.binary` 并入 `elided`
+  (`{ reason: "binary" | "oversized-text"; beforeBytes?; afterBytes? }`):二进制与超过
+  单文件阈值(1 MiB)的文本共用「内容显式省略」字段,导出预算只数真正传输的文本字节
+  (见 diff-export-budget-counts-transferred-bytes 条目);读旧落盘的消费方拿不到 `binary`
+  会把二进制条目当成空内容的文本改动,故破坏兼容。

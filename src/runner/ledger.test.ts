@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { createChangeLedger } from "./ledger.ts";
-import { deriveDiffData } from "../scoring/diff.ts";
+import { deriveDiffData, elidedContentAt, elidedContentPaths } from "../scoring/diff.ts";
 import type { CommandResult, Sandbox } from "../types.ts";
 
 const execAsync = promisify(exec);
@@ -112,7 +112,7 @@ describe("createChangeLedger", () => {
     expect(windows[0]!.changes["start.txt"]).toMatchObject({ status: "modified", after: "changed by agent\n" });
     expect(windows[0]!.changes["out.txt"]).toMatchObject({ status: "added", after: "hello\n" });
     expect(windows[0]!.changes["with space.txt"]).toMatchObject({ status: "added", after: "space-safe\n" });
-    expect(windows[0]!.changes["binary.bin"]).toEqual({ status: "added", binary: { afterBytes: 4 } });
+    expect(windows[0]!.changes["binary.bin"]).toEqual({ status: "added", elided: { reason: "binary", afterBytes: 4 } });
     expect(windows[0]!.changes["fixture.json"]).toBeUndefined();
     expect(windows[1]!.changes["out.txt"]).toMatchObject({ status: "deleted", before: "hello\n" });
     expect(windows[1]!.changes["hidden-check.txt"]).toBeUndefined();
@@ -255,15 +255,69 @@ describe("createChangeLedger", () => {
     await expect(ledger.exportWindows()).rejects.toThrow("contains 10001 paths; limit is 10000");
   }, 30_000);
 
-  it("单窗口文本证据超过字节上限时明确失败,尺寸核算先于内容传输", async () => {
+  it("单窗口要传输的文本字节超上限时明确失败,尺寸核算先于内容传输", async () => {
     const { workdir, ledgerDir } = await makeDirs();
     const sandbox = hostSandbox(workdir, ledgerDir);
     const ledger = await createChangeLedger(sandbox);
-    await writeFile(join(workdir, "huge.txt"), "x".repeat(65 * 1024 * 1024));
+    // 65 个正好 1 MiB 的文本文件(内容各不相同,不被 git 按 blob 去重):每个都没超单文件阈值
+    // → 全都要传输 → 65 MiB > 64 MiB 预算。
+    await mkdir(join(workdir, "text"), { recursive: true });
+    for (let i = 0; i < 65; i++) {
+      await writeFile(join(workdir, "text", `${i}.txt`), "x".repeat(1024 * 1024 - 8) + String(i).padStart(8, "0"));
+    }
     await ledger.commitAgentWindow("s1/t1");
 
-    await expect(ledger.exportWindows()).rejects.toThrow("blob bytes");
-  }, 30_000);
+    await expect(ledger.exportWindows()).rejects.toThrow(/transfers \d+ text blob bytes; limit is 67108864/);
+  }, 60_000);
+
+  // 预算只数真正要传输的文本字节:二进制与单文件超限文本只出字节数,不占预算
+  // (旧口径「二进制按尺寸计」会把编译产物型窗口误判成越界)。
+  it("二进制与单文件超限文本内容显式省略、不占窗口预算;存在性与 status 照常记录", async () => {
+    const { workdir, ledgerDir } = await makeDirs();
+    const sandbox = hostSandbox(workdir, ledgerDir);
+    const ledger = await createChangeLedger(sandbox);
+    await mkdir(join(workdir, "obj"), { recursive: true });
+    await mkdir(join(workdir, "big"), { recursive: true });
+    // 33 MiB 二进制 + 34 MiB 超限文本 = 67 MiB「尺寸证据」,按旧口径已越界。
+    for (let i = 0; i < 33; i++) {
+      await writeFile(join(workdir, "obj", `${i}.o`), Buffer.alloc(1024 * 1024, i % 251));
+    }
+    for (let i = 0; i < 17; i++) {
+      await writeFile(join(workdir, "big", `${i}.txt`), "y".repeat(2 * 1024 * 1024));
+    }
+    await writeFile(join(workdir, "small.txt"), "inline me\n");
+    await ledger.commitAgentWindow("s1/t1");
+    // 第二个窗口再改一次超限文本:before/after 两侧字节数都要记下来。
+    await writeFile(join(workdir, "big", "0.txt"), "z".repeat(3 * 1024 * 1024));
+    await ledger.commitAgentWindow("s1/t2");
+
+    const windows = await ledger.exportWindows();
+    expect(windows[0]!.changes["obj/0.o"]).toEqual({ status: "added", elided: { reason: "binary", afterBytes: 1024 * 1024 } });
+    expect(windows[0]!.changes["big/0.txt"]).toEqual({
+      status: "added",
+      elided: { reason: "oversized-text", afterBytes: 2 * 1024 * 1024 },
+    });
+    // 同窗口里没超阈值的文本照常内联,省略是逐文件的、不牵连整窗口。
+    expect(windows[0]!.changes["small.txt"]).toEqual({ status: "added", after: "inline me\n" });
+    expect(windows[1]!.changes["big/0.txt"]).toEqual({
+      status: "modified",
+      elided: { reason: "oversized-text", beforeBytes: 2 * 1024 * 1024, afterBytes: 3 * 1024 * 1024 },
+    });
+
+    const diff = deriveDiffData(windows);
+    // 存在性与 net 照常成立(fileChanged 断得到),只有内容读不到。
+    // 派生摘要带省略原因(单源是 WindowChange.elided):二进制与超限文本各自如实标注。
+    expect(diff.files["obj/0.o"]).toEqual({ net: "added", windows: ["s1/t1"], elided: "binary" });
+    expect(diff.files["big/0.txt"]).toEqual({ net: "added", windows: ["s1/t1", "s1/t2"], elided: "oversized-text" });
+    expect(diff.files["small.txt"]).toEqual({ net: "added", windows: ["s1/t1"] });
+    expect(elidedContentAt(diff, "big/0.txt")).toEqual({
+      reason: "oversized-text",
+      beforeBytes: 2 * 1024 * 1024,
+      afterBytes: 3 * 1024 * 1024,
+    });
+    expect(elidedContentPaths(diff)).toContain("obj/0.o");
+    expect(diff.get("small.txt")).toBe("inline me\n");
+  }, 120_000);
 
   it("窗口内没有变化时仍落一条空窗口(changes 为空对象)", async () => {
     const { workdir, ledgerDir } = await makeDirs();

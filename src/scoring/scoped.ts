@@ -10,6 +10,7 @@
 //   记 unavailable——缺证据不能按零聚合。
 
 import { unavailable, type EvalUnavailable, type Spec } from "./collector.ts";
+import { elidedContentPaths } from "./diff.ts";
 import type { CoverageChannel } from "./coverage.ts";
 import type {
   JsonValue,
@@ -540,6 +541,13 @@ export function notInDiff(re: RegExp): Spec {
             return { score: 0, received: `matched in ${path} (window ${window.window})` };
           }
         }
+      }
+      // 负断言 + 内容缺口:内容被省略的条目(二进制、单文件超限文本)扫不到,
+      // 「没出现」在它们身上证明不了,按本文件头的三值折叠记 unavailable。
+      const elided = elidedContentPaths(ctx.diff);
+      if (elided.length > 0) {
+        const shown = elided.slice(0, 3).join(", ");
+        return unavailable(`diff-content-elided (${elided.length} path${elided.length === 1 ? "" : "s"} without inline content: ${shown}${elided.length > 3 ? ", …" : ""})`);
       }
       return 1;
     },

@@ -24,8 +24,8 @@ interface DiffFile {
   /** 净行数变化：公共前后缀修剪后的上界近似。 */
   added: number;
   removed: number;
-  /** 二进制文件只报字节数，`windows` 里不带 patch。 */
-  binary?: { beforeBytes?: number; afterBytes?: number };
+  /** 内容被省略的文件只报字节数与原因（二进制 / 超过单文件阈值的文本），`windows` 里不带 patch。 */
+  elided?: { reason: "binary" | "oversized-text"; beforeBytes?: number; afterBytes?: number };
   /** 触碰过该文件的 send 窗口，按时序，至少一条。 */
   windows: readonly DiffFileWindow[];
 }
@@ -59,7 +59,8 @@ patch 按窗口分段，不合成跨窗口 patch。
 - 只有一个子目录、自己没有文件的目录链压成一行，例如 `src/report/model/`。
 - 目录默认展开：文件清单是这个区块的主体，不该藏在一次点击后面。
 - 文件行默认折叠 patch，展开后按窗口分段，段头是轮标签。
-- 二进制文件行显示字节数变化并在行上标注 binary，不给展开区（没有 patch 可看）。
+- 内容被省略的文件行显示字节数变化并在行上标注原因（binary / oversized text），
+  不给展开区（没有 patch 可看）。
 - 折叠态的 `+N` 与 `-M` 各自成元素，与 patch 里的增行、删行同一套颜色。
 
 ### 内联预算
