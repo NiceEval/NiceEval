@@ -2,7 +2,9 @@
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+[PLAN-3](PLAN-3.md) ·
+[多容器真题落地样例](../multi-container-environments/CASES.md) ·
+[DECISION](DECISION.md)
 
 ---
 
@@ -164,6 +166,37 @@ Node、npm prefix、包管理器与安装目录是具体 provisioner 的
 需要系统包时才提权。这样不会为了装一个 Agent 重写任务
 镜像已有的用户、PATH 与 `/usr/local` 权限模型。
 
+### 与逐题现场构建组合
+
+任务环境按内容寻址现场构建时,先得到不含 Agent 的主
+Sandbox,再在既有 `agent.setup` 时点执行 Ensure:
+
+```text
+逐题 EnvironmentBuildKey → 构建/命中任务环境
+ → 创建主 Sandbox
+ → baseline → eval.setup
+ → Agent check
+    ├─ 已预装 → 使用
+    └─ 缺失   → install → check
+ → test(t)
+```
+
+环境 BuildKey 只认题目 Dockerfile、Compose、build context、
+基座与 materializer 修订;Agent 身份单独进入 attempt 指纹。
+因此数百份逐题环境不会再乘上 Codex / Claude Code 等 Agent
+版本形成制品矩阵。同一份题目构建产物可以被多个 Agent
+experiment 消费,每个 Agent 在主 Sandbox 内自行检查或安装。
+
+Provider 仍可选择把常用 Agent 预装进构建产物,但这是一项
+带 Agent identity 的派生 cache。命中时 Ensure 检查通过;
+未命中时回到任务环境产物后装 Agent。框架不要求维护者为了
+运行一条新题,先发布 `<题目 × Agent>` 的 template alias。
+
+多容器 case 中 Ensure 必须作用于 `mainService` 包装出的主
+Sandbox,不能装到外层 DinD VM。Sidecar 不安装 Agent,也不向
+Agent 暴露文件 API;这条边界保证隔离服务、漏洞靶机和真实
+网络题的隔离语义不被安装流程破坏。
+
 ### Sandbox 复用
 
 Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
@@ -216,6 +249,8 @@ Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
 5. 开放自定义 provisioner 调用点,完成 API 设计评审。
 6. 官方 template 构建发布门改为调用同一检查;再评估是否
    需要 E2B / Docker 的 provider-specific 构建 helper。
+7. 与多环境按需构建 case 联调:任务环境 cache 可跨 Agent
+   共用,Ensure 始终只修改本 attempt 的主 Sandbox。
 
 ---
 
@@ -237,6 +272,9 @@ Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
    未内置 Agent,检查、错误与记录形态和内置实现一致。
 7. **复用。** 同一 profile 的复用 Sandbox 只在第一次安装,
    后续 attempt 检查命中;换 profile 不共享安装产物。
+8. **逐题构建正交。** 改任务 Dockerfile 只重建环境;改
+   Agent 版本只改变 Ensure identity。两根轴都触发结果重跑,
+   但不会强制发布二者笛卡尔积的 template。
 
 **反指标**:
 
