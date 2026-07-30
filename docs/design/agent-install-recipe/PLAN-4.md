@@ -1,4 +1,4 @@
-# PLAN-4 —— Ensure 协议:先检查,缺失时安装
+# PLAN-4 —— Ensure 协议:先检查,缺失时安装(推荐)
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
@@ -8,7 +8,7 @@
 
 ---
 
-## 实现方案 4(复审候选)
+## 实现方案 4(Ensure 协议,推荐)
 
 ### 简述
 
@@ -123,12 +123,12 @@ codexAgent({ provisioner: internalCodex });
 ### 身份、指纹与可比性
 
 `AgentProvisioner.identity` 是纯数据,至少含 Agent、精确版本
-与配方修订,进入 configHash 与 `run.json`。环境起点产物仍按
-对应 provider 的 environment 映射进入指纹;两者正交组合:
+与配方修订,进入 configHash 与 `run.json`。环境起点产物仍以
+对应 provider 的 sandbox case 身份进入指纹;两者正交组合:
 
 ```text
-attempt environment identity
- = provider environment identity
+attempt 环境身份
+ = provider sandbox case 身份
  + AgentProvisioner.identity
  + 其它 resolved config
 ```
@@ -172,7 +172,7 @@ Node、npm prefix、包管理器与安装目录是具体 provisioner 的
 Sandbox,再在既有 `agent.setup` 时点执行 Ensure:
 
 ```text
-逐题 EnvironmentBuildKey → 构建/命中任务环境
+逐题 BuildKey → 构建/命中任务环境
  → 创建主 Sandbox
  → baseline → eval.setup
  → Agent check
@@ -298,6 +298,6 @@ Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
   用中性步骤 DSL 强求命令单源;本案只单源身份与检查,允许
   构建、Dockerfile 与 Sandbox exec 使用原生实现。
 - **与多环境 PLAN-4**:environment profile 在 provider spec
-  中选择完整环境 case;case 产出主 Sandbox 后,本案的 Ensure
+  中选择完整 sandbox case;case 产出主 Sandbox 后,本案的 Ensure
   再决定 Agent 是检查命中还是安装。两层按固定顺序组合,
   不互相复制配置。

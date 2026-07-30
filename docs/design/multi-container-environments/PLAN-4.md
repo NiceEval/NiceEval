@@ -1,4 +1,4 @@
-# PLAN-4 —— 能力分型:公共 Sandbox + provider environment case
+# PLAN-4 —— 能力分型:公共 Sandbox + provider sandbox case(推荐)
 
 **相关文档**:[README](README.md) · [真题落地样例](CASES.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
@@ -6,14 +6,14 @@
 
 ---
 
-## 实现方案 4(复审候选)
+## 实现方案 4(能力分型,推荐)
 
 ### 简述
 
 保留一份足够通用的主 `Sandbox` 契约,不要求所有 provider
 共享同一种环境拓扑或物化方法。Eval 仍只声明不透明
 environment profile;每个 Sandbox provider 的 `environments`
-表把 profile 翻译成该 provider 支持的完整 environment case。
+表把 profile 翻译成该 provider 支持的完整 sandbox case。
 Docker 可以直接消费 Compose,E2B 可以消费 template,支持
 Compose 的云 provider 可以选择 DinD、Pod 或原生多实例组网。
 
@@ -24,7 +24,7 @@ Compose 的云 provider 可以选择 DinD、Pod 或原生多实例组网。
 ```text
 eval.environment(profile)
  → 当前 SandboxSpec 的 environments[profile]
- → provider-specific EnvironmentCase.materialize()
+ → provider-specific SandboxCase.materialize()
  → 主 Sandbox + 可选能力句柄
  → 现有 Agent / Eval / scoring 生命周期
  → case 自己采证、留存或整组销毁
@@ -32,7 +32,7 @@ eval.environment(profile)
 
 ### 公共不变量
 
-所有 environment case 都必须返回唯一一个**主 Sandbox**。
+所有 sandbox case 都必须返回唯一一个**主 Sandbox**。
 Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与
 diff 必须观察同一个执行空间。公共 `Sandbox` 继续只定义
 这些跨 provider 稳定的行为:
@@ -44,7 +44,7 @@ interface Sandbox {
   runShell(...): Promise<CommandResult>;
   readFile(...): Promise<Buffer>;
   writeFiles(...): Promise<void>;
-  uploadFiles(...): Promise<void>;
+  uploadDirectory(...): Promise<void>;
   stop(): Promise<void>;
 }
 ```
@@ -84,12 +84,12 @@ provider 的 SandboxSpec,不再由 `config.environments` 通用
    `environments` 表解析。
 2. **folder-local eval。** 一道 eval 自己拥有 Dockerfile、
    Compose 与 fixture 时,可以在目录入口 `eval.ts` 里直接声明
-   environment source。Eval 目录路径同时生成 eval id 与
+   sandbox source。Eval 目录路径同时生成 eval id 与
    默认 profile id;不要求再去中央 `cases.ts` 手抄一遍。
 
 ```typescript
 // evals/terminal-bench/debug-long-program/eval.ts
-const environment = composeEnvironment({
+const environment = composeSandbox({
   file: new URL("./docker-compose.yaml", import.meta.url),
   mainService: "client",
   build: "on-demand",
@@ -102,27 +102,39 @@ export default defineEval({
 });
 ```
 
-上例是候选 DX。`composeEnvironment` 只声明 Compose source
+上例是候选 DX。`composeSandbox` 只声明 Compose source
 及主执行空间,不承诺所有 provider 都能消费。
 
-Docker SandboxSpec 可以启用原生 Compose materializer。E2B
-只有明确配置并实现 DinD/Pod materializer 后才支持;没有
-materializer 就在创建前报能力缺失。Provider 也可以在自己的
-`environments` 表里为该 profile 提供预建 template 或完全
-不同的原生 case。内部最终都归一成「稳定 profile +
-provider-specific EnvironmentCase」,Runner 不按 inline /
-central 两种写法分支。
+两种写法在 SandboxSpec 上各有一个入口:`environments` 表按
+profile 名映射完整 case;`materializers` 表按 source kind
+(如 `compose`、`dockerfile`)注册 folder-local 声明的
+物化器。同一 profile 两处都命中时,显式 `environments` 表项
+优先——这就是 provider 用预建产物覆盖按需构建的口子。
+内部最终都归一成「稳定 profile + provider-specific
+SandboxCase」,Runner 不按 inline / central 两种写法
+分支。
 
-Docker 对一个 TB 任务直接声明 Compose case:
+Docker SandboxSpec 可以注册原生 Compose materializer。E2B
+只有明确配置并实现 DinD/Pod materializer 后才支持 Compose
+source;没有对应 materializer 时按能力缺失处理(见下)。
+
+内置 case 的表值是 provider 原生纯数据,靠判别键区分,
+类型由 spec 工厂的参数类型给出——表值已经在该 provider 的
+括号里,不再为每种 case 导出一个带 provider 前缀的构造
+函数。判别键组合非法(如同时给 `template` 与 `build`)在
+spec 构造期报错,一次穷举。Docker 对一个 TB 任务直接声明
+Compose case:
 
 ```typescript
 dockerSandbox({
   environments: {
-    "tb-sheets": dockerComposeEnvironment({
-      file: "tasks/simple-sheets-put/docker-compose.yaml",
-      mainService: "client",
-      env: { T_BENCH_TEST_DIR: "/tests" },
-    }),
+    "tb-sheets": {
+      compose: {
+        file: "tasks/simple-sheets-put/docker-compose.yaml",
+        mainService: "client",
+        env: { T_BENCH_TEST_DIR: "/tests" },
+      },
+    },
   },
 });
 ```
@@ -133,9 +145,7 @@ template:
 ```typescript
 e2bSandbox({
   environments: {
-    "tb-sheets": e2bEnvironment({
-      template: "acme/tb-sheets-v5",
-    }),
+    "tb-sheets": { template: "acme/tb-sheets-v5" },
   },
 });
 ```
@@ -146,15 +156,17 @@ e2bSandbox({
 实现;niceeval 负责把各自精确身份纳入指纹并记录实际物化
 事实。
 
-缺少 `environments[profile]` 仍是启动期配置错误,一次穷举,
-零 Sandbox 创建。一个 provider 没有对应 case 时不自动把
-Docker Compose 翻译成近似环境,也不回退到默认单 Sandbox。
-这比运行十分钟后得到假 `failed` 更安全。
+两类缺失分开判。eval 引用的 profile 键任何表都查不到、
+自己也没有 folder-local source,是键名笔误的形状:启动期
+配置错误,一次穷举,零 Sandbox 创建。声明合法、但当前
+provider 既无该 profile 的 `environments` 表项、也无该
+source kind 的 materializer,是能力缺失:该组合零成本
+计划期 `skipped`。skipReason 同时列 eval id、source kind
+与可补的映射位置;选中集合全部 `skipped` 时升级为启动期
+报错,不产出绿色空跑。
 
-Folder-local source 的等价错误是「当前 SandboxSpec 没有该
-source kind 的 materializer」。错误必须同时列 eval id、
-source kind 与可选显式 override 位置,不能让用户误以为
-Dockerfile 没被发现。
+两条路都不自动把 Docker Compose 翻译成近似环境,也不回退到
+默认单 Sandbox。这比运行十分钟后得到假 `failed` 更安全。
 
 ### Eval 文件夹是一等 authoring unit
 
@@ -173,7 +185,7 @@ Dockerfile、Compose、task data、初始 fixture 与 verifier,
 
 共址不等于同一身份域或同一可见时点:
 
-- environment source 闭包进 BuildKey / CaseKey;
+- sandbox source 闭包进 BuildKey / CaseKey;
 - `loadYaml` / `loadText` 读的题面数据进 eval 数据指纹;
 - `loadCriteria` 登记的 verifier 进 eval 判据指纹,最后一次
   `send` 后才上传;
@@ -186,7 +198,7 @@ Dockerfile、Compose、task data、初始 fixture 与 verifier,
 context 的 `.dockerignore` 求值结果做交叉检查。仍会被发送
 进 build context 的隐藏文件默认是配置错误,因为
 `COPY . .` 足以把它泄给 Agent。用户可以把它移出 context,
-写进 `.dockerignore`,或让 environment materializer 生成
+写进 `.dockerignore`,或让 materializer 生成
 等价的 filtered context;过滤规则自身进入 BuildKey。只有
 显式改成普通 fixture 才允许 Agent 可见,不能用一个
 `allowVerifierLeak` 开关绕过。
@@ -201,7 +213,7 @@ Agent 可达服务;private 文件任何阶段都不能挂入。
 `tb-ubuntu-24-04`、`tb-python-3-13` 这类名字只描述可共享
 的基座家族,不能作为题目最终环境身份。逐题 Dockerfile 的
 `RUN` 会写入题面数据、坏配置、权限位与专用工具链;即使
-`FROM` 相同,这些输入不同就必须得到不同 environment
+`FROM` 相同,这些输入不同就必须得到不同 case
 identity。
 
 Terminal-Bench 一类导入器为每道任务生成独立 profile 映射,
@@ -211,7 +223,7 @@ Terminal-Bench 一类导入器为每道任务生成独立 profile 映射,
 
 ```typescript
 e2bSandbox({
-  environments: terminalBenchEnvironmentCases("tasks", {
+  environments: terminalBenchSandboxCases("tasks", {
     build: "on-demand",
     bases: {
       "ubuntu-24.04": "acme/tb-ubuntu-24-04",
@@ -228,23 +240,28 @@ Compose 路径、精确 build context 清单、基座提示与内容哈希。
 
 ### 按需构建 case
 
-Environment case 可以引用预制产物,也可以声明按需构建。
+Sandbox case 可以引用预制产物,也可以声明按需构建。
 按需构建是 provider materializer 的完整 case,不是
 `sandbox.setup` 里的一段无身份 shell:
 
 ```typescript
-e2bBuildEnvironment({
-  context: "tasks/debug-long-program/environment",
-  dockerfile: "Dockerfile",
-  build: "on-demand",
+e2bSandbox({
+  environments: {
+    "tb-debug": {
+      build: {
+        context: "tasks/debug-long-program/environment",
+        dockerfile: "Dockerfile",
+      },
+    },
+  },
 });
 ```
 
 规划期在任何携带决策之前计算每个待构建产物自己的
-`EnvironmentBuildKey`:
+`BuildKey`:
 
 ```text
-EnvironmentBuildKey
+BuildKey
  = builder kind + builder revision + target platform
  + Dockerfile bytes
  + .dockerignore 求值后的 build context 内容
@@ -260,13 +277,13 @@ Docker image digest 或 E2B template id。BuildKey 是「为什么
 应该得到同一构建产物」,locator 是「本次从哪里启动」;两者
 都进运行记录。
 
-完整环境另算 `EnvironmentCaseKey`:
+完整环境另算 `CaseKey`:
 
 ```text
-EnvironmentCaseKey
+CaseKey
  = case kind + materializer revision
  + Compose / overlay bytes
- + 所有 EnvironmentBuildKey
+ + 所有 BuildKey
  + service image digest
  + 相对 bind mount 源文件或目录内容
  + env_file / config / secret 的非敏感内容
@@ -295,7 +312,7 @@ BuildKey 负责制品复用,CaseKey 才是 attempt 环境身份与携带
 构建协调有独立的有界并发与 `buildTimeoutMs`,不占 Agent
 attempt 并发位。等待构建的 attempt 尚未进入执行阶段,
 attempt deadline 从拿到产物并开始创建 Sandbox 时起算。
-构建耗时只在 Run 级 `environmentBuilds` 记录一次,每个相关
+构建耗时只在 Run 级 `sandboxBuilds` 记录一次,每个相关
 attempt 引用该条 provenance。这样冷 cache 的十分钟构建不会
 被复制成十个 attempt 的 `executionMs`,但整次 Run 仍完整
 展示这笔时间与失败。
@@ -404,7 +421,7 @@ DinD 或原生组网的全部义务后才开放。把依赖 DNS、
 映射。每个自定义 case 必须给出纯数据身份与 materializer:
 
 ```typescript
-defineEnvironmentCase({
+defineSandboxCase({
   identity: {
     kind: "kubernetes",
     cluster: "eval-prod",
@@ -435,9 +452,9 @@ defineEnvironmentCase({
 
 - **预制单 Sandbox:**锁定 image digest、template id /
   revision 或 snapshot id。
-- **按需构建单 Sandbox:**使用 EnvironmentBuildKey;构建产物
+- **按需构建单 Sandbox:**使用 BuildKey;构建产物
   locator 与实际 digest 作为运行事实。
-- **Docker Compose:**使用 EnvironmentCaseKey;其中引用各
+- **Docker Compose:**使用 CaseKey;其中引用各
   BuildKey、Compose 与 niceeval overlay、插值变量名、相对
   bind mount、env/config/secret 文件及可解析 image digest。
   第一期允许注释变化触发保守重跑,不为消掉 false rerun
@@ -448,7 +465,7 @@ defineEnvironmentCase({
   作为运行记录供事后核对。
 
 身份解析发生在携带决策之前。浮动 image tag 若 provider
-不能解析成 digest,该 environment 的旧结果不参与携带;
+不能解析成 digest,该环境的旧结果不参与携带;
 可以运行并记录 tag 与实际事实,但不能假装两次环境可比。
 
 凭据值不落盘。凭据轮换若不改变环境语义,只记录引用名;
@@ -458,20 +475,21 @@ defineEnvironmentCase({
 ### 调度、错误与证据
 
 共享构建由前述有界协调层负责。产物就绪后,
-Environment case 的实例物化阶段进入 attempt 并发位与
+Sandbox case 的实例物化阶段进入 attempt 并发位与
 deadline:主 Sandbox 创建、伴随服务 ready、Agent Ensure、
 执行与评分共享同一个 attempt 预算。Provider 可以增加镜像
 拉取或网络配额,但不能在两个调度层之外偷跑无界工作。
 
 错误按阶段归属:
 
-- profile 缺映射、case 配置非法:启动期配置错误;
+- profile 键任何表都查不到、case 配置非法:启动期配置
+  错误;
+- 映射与声明合法、当前 provider 缺 materializer 或能力位:
+  计划期 `skipped`,写明缺项,不进通过率分母;选中集合
+  全部 `skipped` 升级为启动期报错;
 - 环境物化、ready、服务中途退出:attempt `errored`;
 - Agent Ensure 失败:`agent.setup` 的 `errored`;
-- Agent 完成但断言未达标:`failed`;
-- 用户显式运行 provider 矩阵且某个组合没有声明所需能力时,
-  才可以产生 `skipped`;单 provider run 全部不支持仍升级为
-  启动期错误,不产出假绿。
+- Agent 完成但断言未达标:`failed`。
 
 每个 case 至少产出主环境启动日志与物化事实。声明 services
 能力后,还必须产出逐服务状态、失败日志与 ready timing。
@@ -480,11 +498,11 @@ deadline:主 Sandbox 创建、伴随服务 ready、Agent Ensure、
 ### 清理、留存与注册表
 
 运行期仍以主 Sandbox 为 Agent 锚点,但清理和留存针对
-environment case 返回的**资源组**。注册表不硬编码
+sandbox case 返回的**资源组**。注册表不硬编码
 `services[]`、`network` 或 Kubernetes namespace 字段,只存:
 
 ```typescript
-interface EnvironmentRegistryEntry {
+interface SandboxGroupEntry {
   provider: string;
   profile: string;
   primary: SandboxLocator;
@@ -521,7 +539,7 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
 - 同一个 profile 的 provider 映射需要项目分别维护,不会由
   niceeval 自动把一个 Compose 文件变成所有云环境。
 - 跨 provider 可比性不能只看 profile 名;项目必须确认不同
-  case 兑现相同任务语义,记录页也要展示实际 environment
+  case 兑现相同任务语义,记录页也要展示实际 case
   identity。
 - Provider case 数量会增长。每种 case 都有完整义务测试,
   接入成本高于只实现 `Sandbox` 最小接口。
@@ -534,10 +552,10 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
 ### 落地路线
 
 1. 定主 Sandbox 不变量、可选 `ServiceController` 与内部
-   EnvironmentCase 生命周期;先不改公开 Eval 形状。
+   SandboxCase 生命周期;先不改公开 Eval 形状。
 2. 把 profile 映射收回各 SandboxSpec,删除 config/spec 两表
    拼接候选;补缺映射的一次穷举报错。
-3. 实现 EnvironmentBuildKey、目录闭包哈希、构建 registry、
+3. 实现 BuildKey、目录闭包哈希、构建 registry、
    有界并发与跨 attempt single-flight。
 4. 实现 folder-local `eval.ts` 发现、inline source
    归一化及 verifier/private 与 build context 的泄漏门。
@@ -553,7 +571,7 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
    keep;不在第一期承诺所有 provider keep 多服务。
 10. 选择一个真实云 provider 完成 Compose case 契约测试;
    其余 provider 保持单 Sandbox,不因 VM 理论可行提前开位。
-11. 开放自定义 environment case,完成序列化身份与 detached
+11. 开放自定义 sandbox case,完成序列化身份与 detached
    cleanup 的 API 评审。
 
 ---
@@ -574,9 +592,10 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
 5. **主空间一致。** 云端 Compose case 的 `runCommand`、
    upload、Agent cwd、分类账与 diff 全部落在 main 容器,
    外层 VM / Pod 不泄漏成第二套坐标。
-6. **不支持大声失败。** E2B 未提供 `"tb-sheets"` 映射时
-   创建前穷举报错;不尝试把 Docker Compose 静默换成基础
-   template。
+6. **不支持不假绿。** E2B 未提供 `"tb-sheets"` 映射也未
+   注册 compose materializer 时,该题计划期 `skipped` 并
+   点名缺项;选中集合全部 `skipped` 时启动期报错;两条路
+   都不把 Docker Compose 静默换成基础 template。
 7. **指纹分型。** 改 Compose、build context、template id
    或 materializer revision 都触发重跑;无法解析浮动身份时
    不携带旧结果。
@@ -619,7 +638,7 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
 - **vs PLAN-2**:Docker case 同样直接消费 Compose,但不把
   Compose agent service 翻译成跨 provider 起点。每个
   provider 自己给 profile 一份完整映射。
-- **vs PLAN-3**:服务仍由 niceeval 选中的 environment case
+- **vs PLAN-3**:服务仍由 niceeval 选中的 sandbox case
   管理,因此 ready、指纹、证据和回收不外包;只是物化实现
   回到 provider。
 - **与 Agent 安装 PLAN-4**:case 先产出主 Sandbox,Agent

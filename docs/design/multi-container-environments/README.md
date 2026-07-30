@@ -10,7 +10,7 @@ niceeval 之外自己编排服务、自己推导镜像。
 候选项之间的分歧值得摊开比较——拓扑声明是 niceeval 自己的
 typed 表、直接引用任务自带的 compose 文件、根本不接管
 服务,还是让公共 Sandbox 只约束主执行空间并由各 provider
-交付完整 environment case。四条路的迁移成本、契约可控性与
+交付完整 sandbox case。四条路的迁移成本、契约可控性与
 provider 覆盖面差异都很大。
 
 ## 动机:环境不对等产出假结论
@@ -23,9 +23,9 @@ provider 覆盖面差异都很大。
   ConnectionError。
 - **环境翻译有洞。** 环境定义活在 niceeval 之外,下游从
   compose 文件自己推导镜像与服务;漏读一个字段,整题在
-  错误的环境里跑完十分钟,拿到一个假 `failed`。服务侧的
-  翻译由 compose 导入器消灭;agent 沙箱的派生镜像构建仍
-  归下游脚本,残余风险见 [DECISION](DECISION.md)。
+  错误的环境里跑完十分钟,拿到一个假 `failed`。消灭手段
+  是不翻译:支持 Compose 的 provider 原生消费它
+  (见 [DECISION](DECISION.md)),compose 保持单一事实源。
 - **会话残留进程死亡。** agent 前台启动的 server 随 exec
   会话销毁,判分时服务不在。此条与拓扑无关,契约已单独成篇:
   [Roadmap · Agent 进程契约](../../roadmap/agent-process-contract/README.md),

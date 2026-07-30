@@ -36,7 +36,7 @@
 
 ## 直接影响
 
-三个候选方案都要回答:profile 的值升格成什么、缺能力时
+各候选方案都要回答:profile 的值升格成什么、缺能力时
 判什么、新资源怎么纳入清理与留存。
 
 ---
@@ -60,10 +60,10 @@
 
 ## 直接影响
 
-Docker 是三个方案里物化成本最低的一档;差异集中在
-「谁来翻译声明」——niceeval 翻译 typed 表(PLAN-1)、
-niceeval 解析 compose 子集(PLAN-2)、用户自己跑 compose
-(PLAN-3)。
+Docker 是各方案里物化成本最低的一档;差异集中在「谁来
+翻译声明」。PLAN-1 由 niceeval 翻译 typed 表;PLAN-2 由
+niceeval 解析 compose 子集;PLAN-3 用户自己跑 compose;
+PLAN-4 由 Docker provider 原生消费 compose,不翻译。
 
 ---
 
@@ -86,8 +86,9 @@ niceeval 解析 compose 子集(PLAN-2)、用户自己跑 compose
 
 ## 直接影响
 
-云 provider 在三个方案里都是「能力位默认关、验证后打开」;
-方案间差异是声明形态是否给这条路留了中性表达。
+云 provider 在各方案里都是「能力位默认关、验证后打开」;
+方案间差异是这条路以什么形态存在——中性声明的翻译目标,
+还是 provider 自己的完整 case。
 
 ---
 

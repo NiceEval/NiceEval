@@ -1,4 +1,4 @@
-# PLAN-2 —— 中间件拆分:`withCodingAgent`(推荐)
+# PLAN-2 —— 中间件拆分:`withCodingAgent`
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-3](PLAN-3.md) ·
@@ -6,7 +6,7 @@
 
 ---
 
-## 实现方案 2(中间件拆分,推荐)
+## 实现方案 2(中间件拆分,是否推荐见 [DECISION](DECISION.md))
 
 ### 简述
 

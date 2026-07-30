@@ -38,12 +38,12 @@ Node 工具契约(npm prefix 收敛、可写目录、user 级 npmrc)。
 |---|---|---|
 | A. Agent 基线为底 | niceeval [官方基线](../../feature/sandbox/library/prebuilt-environments.md#官方-coding-agent-起点) | 烘在基线里 |
 | B. 任务镜像为底 | 基准测试给定(`fromImage`) | 构建期叠上去 |
-| C. 用户自带预装 | 用户 | 已在镜像里,adapter 指纹检测 |
-| D. 运行时安装 | 任意 | attempt 里装(adapter 回退安装) |
+| C. 用户自带预装 | 用户 | 已在镜像里,检查命中 |
+| D. 运行时安装 | 任意 | attempt 里检查→安装 |
 | E. 多服务拓扑 | 任务给定的一组服务 | 装进其中一个服务 |
 
-本主题只裁 Case B 与 D 的形态,并要求 Case A 不回归。
-Case C 的指纹检测契约在各 agent 接入页,不动。Case E 是
+本主题裁 Case B 与 D 的形态,并要求 Case A 不回归。
+Case C 的「预装是否可用」检测随同一份检查契约走。Case E 是
 同一个组合模型的另一根轴——底座从「一个镜像」扩成「一组
 服务」——在
 [Design · 多容器环境](../multi-container-environments/README.md)

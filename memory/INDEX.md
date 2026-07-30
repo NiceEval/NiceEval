@@ -13,6 +13,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [env-cases-and-ensure-supersede-topology-middleware](env-cases-and-ensure-supersede-topology-middleware.md) — 裁决(2026-07-30):多容器环境与 Agent 安装双双改判为 PLAN-4(provider 完整 environment case + Ensure 协议),推翻拓扑表+导入器与构建中间件;原生能力最大化、不承诺跨 provider 迁移;缺键报错/缺能力 skipped、environments 与 materializers 双入口同批裁定
 - [skill-install-via-git-not-skills-cli](skill-install-via-git-not-skills-cli.md) — 设计裁决:repo skill 改走 git clone(`skills` CLI 没法钉 ref、也枚举不出仓库里有哪些 skill);已真机验证；Claude Code E2E 曾错用 `calledTool("Skill")` 查找已归一成 `skill.loaded` 的事件，现已修并 2/2 真机通过
 - **待裁决** [structural-typing-cannot-reject-spec-swap](structural-typing-cannot-reject-spec-swap.md) — 同形的两个具名 Spec,TS 结构类型拦不住互换;文档已止血(只承诺**形状**不承诺**值**),但「要不要加判别字段/品牌化真的拦住」未定,2026-07-13 处理
 - [sandbox-provision-ratelimit-retry](sandbox-provision-ratelimit-retry.md) — 设计裁决:provisioning 瞬时错误退避重试(2026-07-14 两轮 + 2026-07-15 推翻「拒绝类可盲重试」)——防线 = provider create 的 kill-on-failure + 有对账通道时任何重试前按 provision token 对账(对账失败即放弃重试),无检索通道则歧义类第一次抛;vercel 外层封顶收窄防嵌套放大;重试在 resolve.ts 而非 runner

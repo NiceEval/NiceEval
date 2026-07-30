@@ -6,7 +6,7 @@
 
 ---
 
-## 实现方案 1(拓扑表,推荐,见 [DECISION](DECISION.md))
+## 实现方案 1(拓扑表,是否推荐见 [DECISION](DECISION.md))
 
 ### 简述
 

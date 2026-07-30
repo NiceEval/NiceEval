@@ -6,7 +6,7 @@
 1. 上游题目文件放在哪里，哪些内容进环境身份，哪些内容进
    eval 判据指纹；
 2. Docker 与云端 provider 分别怎样把同一个 profile 物化成
-   完整 environment case；
+   完整 sandbox case；
 3. `eval` 与 `experiment` 最终写成什么样，Agent 的
    检查→必要时安装放在哪一步。
 
@@ -105,11 +105,11 @@ evals/foo/eval.ts       → id "foo"
 普通起始 fixture 也可以同目录放在 `fixture/`，由 eval
 `setup` 或 `test` 在 `send` 前上传，Agent 本来就应看见；
 它进入 eval fixture 归因。目录共址只解决组织问题，不把
-environment、fixture、verifier 三种生命周期揉成一个哈希。
+环境、fixture、verifier 三种生命周期揉成一个哈希。
 
 发现期会将 loader 登记的 verifier/private 路径与 Compose
 每个 build context 交叉检查。若仍在 Docker 发送闭包里，
-必须通过 `.dockerignore` 或 environment 的 filtered-context 声明
+必须通过 `.dockerignore` 或 sandbox source 的 filtered-context 声明
 排除，否则直接报泄题风险。过滤规则进入 BuildKey。不能用
 “Dockerfile 现在看起来没 COPY 它”作为放行条件，因为后续
 一行 `COPY . .` 就会静默改变题目。
@@ -145,7 +145,7 @@ import {
   loadText,
   loadYaml,
 } from "niceeval/loaders";
-import { composeEnvironment } from "niceeval/sandbox";
+import { composeSandbox } from "niceeval/sandbox";
 
 interface TaskYaml {
   instruction: string;
@@ -164,7 +164,7 @@ export async function defineTerminalBenchEval(entry: string | URL) {
   return defineEval({
     description: `Terminal-Bench: ${name}`,
     tags: ["terminal-bench", ...(task.tags ?? [])],
-    environment: composeEnvironment({
+    environment: composeSandbox({
       file: new URL("docker-compose.yaml", root),
       mainService: "client",
       build: "on-demand",
@@ -209,7 +209,7 @@ export async function defineTerminalBenchEval(entry: string | URL) {
 环境泄漏门核对。更理想的实现可以由发现器自动关联，不要求
 作者重复传；这里把数据流写明，留待 API 调用点评审。
 
-`composeEnvironment` 产出 folder-local environment requirement，
+`composeSandbox` 产出 folder-local sandbox 声明，
 默认 profile id 从 `eval.ts` 所在目录推导，即
 `terminal-bench/debug-long-program`。它不是
 provider-specific materializer，也没有声称任意 provider
@@ -241,7 +241,7 @@ Provider 不能悄悄换成 UID 1000；云实现也要兑现等价权限面。
 
 上游四份 `run-tests.sh` 都会安装 `curl`、`uv` 与 pytest，
 所以 verifier 命令显式 `{ root: true }`。这不改变 Agent
-做题时的权限；Agent 权限由 environment source 的
+做题时的权限；Agent 权限由 sandbox source 的
 `executionUser` 决定。
 验证命令产生的 venv 与依赖也发生在 Agent 窗口之后，不进入
 Agent diff。
@@ -265,7 +265,7 @@ export default defineExperiment({
   description: "Terminal-Bench 四道真实 Compose 题：Codex + Docker",
   agent: codexAgent(),
   sandbox: dockerSandbox({
-    environmentCases: {
+    materializers: {
       compose: dockerComposeMaterializer(),
     },
     build: {
@@ -295,7 +295,7 @@ export default defineExperiment({
 宿主、Docker daemon 容器或 sidecar。
 
 环境构建并发 `2` 与 attempt 并发 `4` 是两道闸。冷构建时间
-记入 Run 的 `environmentBuilds`，不占四个 Agent attempt 位；
+记入 Run 的 `sandboxBuilds`，不占四个 Agent attempt 位；
 Compose create、Agent Ensure、做题和验证才进入 attempt
 deadline。
 
@@ -315,7 +315,7 @@ export default defineExperiment({
   agent: codexAgent(),
   sandbox: e2bSandbox({
     template: "niceeval/compose-host-v1",
-    environmentCases: {
+    materializers: {
       compose: e2bDinDComposeMaterializer(),
     },
     build: {
@@ -390,12 +390,12 @@ provider 清单全绿。
 
 ## 由这些样例反推的实现边界
 
-- NiceEval core 需要 environment case 生命周期、CaseKey、
+- NiceEval core 需要 sandbox case 生命周期、CaseKey、
   BuildKey 协调和主 Sandbox，不需要认识 Terminal-Bench
   task schema。
 - Terminal-Bench compatibility helper 负责上游变量和目录
   约定，不负责解释或改写 Compose 网络语义。
-- Eval folder 声明 environment source、题面与判据；不运行
+- Eval folder 声明 sandbox source、题面与判据；不运行
   `docker compose build/up`，也不维护 template alias。
 - Experiment 选择 Agent、provider materializer、构建并发与
   attempt 并发；不复制四道题的拓扑。
