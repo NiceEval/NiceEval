@@ -500,26 +500,29 @@ describe("createWriter", () => {
     expect(JSON.parse(await readFile(copied, "utf-8"))).toEqual(evidence);
   });
 
-  it("commands:stdout/stderr 超 256 KiB 时逐值截断并打结构化 truncated 标记,path 固定为 stdout/stderr", async () => {
+  it("commands:超 256 KiB 的失败输出不参与逐值截断,全量原样往返(起因在前段、summary 在尾部两端都要在)", async () => {
     const { ARTIFACT_VALUE_MAX_BYTES } = await import("./truncate.ts");
     const root = await makeRoot();
     const writer = createWriter(root, { producer: { name: "niceeval", version: "0.12.0" } });
-    const hugeStderr = "e".repeat(ARTIFACT_VALUE_MAX_BYTES + 500);
+    // 真实形状:头部是失败起因,中段是几百 KB 噪声,尾部是 runner 的 summary——截哪一端都毁掉另一半。
+    const hugeStdout = `E   assert 429 == 200\n${"collecting …\n".repeat(Math.ceil(ARTIFACT_VALUE_MAX_BYTES / 13))}2 failed, 14 passed in 3.41s\n`;
+    const hugeStderr = `Prepared 5 packages\n${"e".repeat(ARTIFACT_VALUE_MAX_BYTES + 500)}\nInstalled 5 packages`;
+    expect(Buffer.byteLength(hugeStdout, "utf-8")).toBeGreaterThan(ARTIFACT_VALUE_MAX_BYTES);
 
     const snap = await writer.run({ experimentId: "huge/output", agent: "bub", startedAt: "2026-07-11T08:00:00.000Z" });
-    await snap.writeAttempt(
-      { id: "q1", verdict: "errored", attempt: 1, durationMs: 10, assertions: [] },
-      { commands: [{ timingNodeId: "n1", phase: "eval.run", display: "yes", exitCode: 1, stdout: "short", stderr: hugeStderr }] },
-    );
+    const evidence = [
+      { timingNodeId: "n1", phase: "eval.run" as const, display: "uv run pytest", exitCode: 1, stdout: hugeStdout, stderr: hugeStderr },
+    ];
+    await snap.writeAttempt({ id: "q1", verdict: "errored", attempt: 1, durationMs: 10, assertions: [] }, { commands: evidence });
     await finishAll(writer);
 
     const results = await openRecord(root);
     const q1 = results.experiments[0].latestRun.attempts[0]!;
     const [readBack] = (await q1.commands())!;
-    expect(Buffer.byteLength(readBack.stderr, "utf-8")).toBeLessThanOrEqual(ARTIFACT_VALUE_MAX_BYTES + 100); // 头部 + marker 行
-    expect(readBack.stderr).toContain("[niceeval] truncated");
-    expect(readBack.stdout).toBe("short"); // 未超限的字段原样保留,不被误截
-    expect(readBack.truncated).toEqual([{ path: "stderr", originalBytes: ARTIFACT_VALUE_MAX_BYTES + 500 }]);
+    expect(readBack.stdout).toBe(hugeStdout); // 逐字节相等,没有 marker 行、没有丢尾部 summary
+    expect(readBack.stderr).toBe(hugeStderr);
+    expect(JSON.stringify(readBack)).not.toContain("[niceeval] truncated");
+    expect((readBack as { truncated?: unknown }).truncated).toBeUndefined(); // 不再产出 truncated 字段
   });
 
   it("每个 Run 各自独立封口:两个 Experiment 各自不同的 completedAt 与 diagnostics 不串味,空 diagnostics 省略字段", async () => {

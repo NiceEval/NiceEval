@@ -57,7 +57,7 @@
 }
 ```
 
-当前 `schemaVersion` 是 `11`。历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的
+当前 `schemaVersion` 是 `12`。历史各版本的字段差异与升版原因不在正文维护，记录在 memory 的
 results-schema-version-history 条目。读取器不需要这份历史；版本不同一律按下节的不兼容路径处理。
 
 设计原则是**不做兼容机制**。没有迁移函数,没有多版本 normalize loader,没有 per-artifact 版本号:整个 Run(run.json + 全部 attempt 文件)共用顶层这一个 `schemaVersion`。读取器只认与自己相同的版本;版本不同就是不兼容,唯一的处理是提示用写这份结果的 niceeval 版本查看:
@@ -516,7 +516,7 @@ artifact 的横切属性——存储形态、截断策略、`publish` 发布默�
 | artifact | 词干 | 存储形态 | 类型 | 逐值截断 | `publish` 默认 | 内容职责 |
 |---|---|---|---|---|---|---|
 | `result.json` | —(恒存在) | attempt 级 | `AttemptRecord` | 不适用(摘要文件) | 恒复制 | 判定、断言、错误与诊断的权威记录 |
-| `commands.json` | `commands` | attempt 级,按需 | `FailedCommandEvidence[]` | 截 | 带 | 非零 Sandbox 命令的 stdout/stderr |
+| `commands.json` | `commands` | attempt 级,按需 | `FailedCommandEvidence[]` | 不截(失败诊断的完整语义单位) | 带 | 非零 Sandbox 命令的 stdout/stderr |
 | `events.json` | `events` | attempt 级,按需 | `StreamEvent[]` | 截 | 带 | 归一化标准事件流 |
 | `trace.json` | `trace` | attempt 级,按需 | `TraceSpan[]` | 截 | 带 | OTel span 树 |
 | `o11y.json` | `o11y` | attempt 级,按需 | `O11ySummary` | 不适用(派生缓存) | 带 | 行为计数缓存(见其小节) |
@@ -546,14 +546,15 @@ interface FailedCommandEvidence {
   exitCode: number;
   stdout: string;
   stderr: string;
-  /** stdout / stderr 被落盘上限截断时逐字段声明。 */
-  truncated?: Truncation[];
 }
 
 type CommandsArtifact = FailedCommandEvidence[];
 ```
 
 - 只记录 `exitCode !== 0`；成功输出既可能巨大又通常没有诊断价值，不复制进第二份 artifact。
+- stdout / stderr 原样全量落盘：失败输出的起因常在前段，测试 runner 的 summary 惯例在尾部，
+  截哪一端都毁掉另一半诊断。只记非零退出已让体量天然有界，
+  进入 Git / 静态托管前仍由 [`publish`](library.md#发布publish) 的整文件预检把守。
 - 记录不改变 `runCommand` 的返回 / 抛错语义。调用方可以处理非零退出并继续，证据仍保留——
   「被处理」不等于「没发生」。
 - provider 内部实现步骤、Agent 自己调用的 shell 不经过公开 Sandbox 包装，不伪装成这里的命令；
@@ -672,8 +673,11 @@ interface WindowChange {
   before?: string;
   /** 窗口结束时的内容;deleted 无此字段。 */
   after?: string;
-  /** 二进制文件不内联内容,只记字节数。 */
-  binary?: { beforeBytes?: number; afterBytes?: number };
+  /**
+   * 内容不内联、只记字节数的文件:二进制,或超过单文件阈值(1 MiB)的文本。
+   * 存在时 before / after 缺席;status 与变更事实照常记录。
+   */
+  elided?: { reason: "binary" | "oversized-text"; beforeBytes?: number; afterBytes?: number };
 }
 ```
 
@@ -683,7 +687,11 @@ interface WindowChange {
 interface DiffData {
   windows: DiffWindow[];                       // 落盘事实,原样
   files: Record<string, DiffFileSummary>;      // 派生:每个被 agent 触及的文件一条
-  /** 该文件最后一个触及窗口结束时的内容;净删除或从未触及返回 undefined。t.sandbox.diff.get 同一语义。 */
+  /**
+   * 该文件最后一个触及窗口结束时的内容;净删除、从未触及或内容被省略(elided)返回 undefined,
+   * 三者用 DiffFileSummary 区分。t.sandbox.diff.get 对内容被省略的文件改为报证据不可用错误
+   * (含 reason 与字节数),语义见 Sandbox 契约——断言面要大声,渲染面要不崩。
+   */
   get(path: string): string | undefined;
 }
 
@@ -692,7 +700,8 @@ interface DiffFileSummary {
   net: "added" | "modified" | "deleted" | "none";
   /** 触及该文件的窗口标签,按时序。 */
   windows: string[];
-  binary?: true;
+  /** 内容被省略的文件带省略原因;省略语义单源在 WindowChange.elided。 */
+  elided?: "binary" | "oversized-text";
 }
 ```
 
@@ -709,7 +718,7 @@ Agent 的一次工具调用可以产出任意大的输出——一条递归 grep
 契约:
 
 - **落点唯一**:`run.writeAttempt()`(见 [Library](library.md))。不在 adapter、不在 OTLP 解析、不在事件归一化里做——任何 adapter、任何 sandbox 产出的 artifact 都被同一条规则约束,adapter 作者不需要记得截断。
-- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段、`trace.json` 的 span 属性与 `commands.json` 的 stdout/stderr 里的**任意字符串值**。不只工具输出——`thinking` 文本、`error` 消息同样可能爆。registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。`sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。`diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算回退。
+- **适用范围**:逐 artifact 的截断策略位单源在[证据 registry](#证据-registry),本节维护规则与理由——命中「截」的是 `events.json` 的事件字段与 `trace.json` 的 span 属性里的**任意字符串值**。不只工具输出——`thinking` 文本、`error` 消息同样可能爆。registry 表「逐值截断」列标「不适用」的摘要/缓存类文件(`result.json` / `o11y.json` / `agent-setup.json` / `run.json`)不参与这条逐值截断。`commands.json` 不截断:失败命令的起因常在输出前段、测试 runner 的 summary 惯例在尾部,截哪一端都毁掉另一半诊断,且它只收非零退出命令,体量天然有界。`sources.json` 与 `sources/` 不截断:源码是断言定位的锚,且已按内容去重。`diff.json` 不截断:它的每个文件是完整语义单位,截断后就不是一份能 apply 的证据。未被逐值截断的文件和累计后的 artifact 总量统一由 [`publish`](library.md#发布publish) 的发布预算回退。
 - **上限**:每个字符串值 256 KiB(UTF-8 字节),常量 `ARTIFACT_VALUE_MAX_BYTES`。截断按 UTF-8 字符边界回退,不切断多字节字符。
 - **没有 flag、没有配置项。**「需要完整落盘」的场景不存在:评分看的是运行时全量,诊断一条失控命令 256 KiB 绰绰有余(足够看清它 grep 进了 `node_modules`)。给旋钮只会让某天有人把它调大、再把仓库塞爆。
 
@@ -724,7 +733,7 @@ marker 只服务直接 `cat` / `jq` 的人。程序判断走结构化字段—�
 
 ```typescript
 interface Truncation {
-  /** 被截断的位置:命令证据里是 "stdout"/"stderr"，事件里是字段名，span 里是 attribute key。 */
+  /** 被截断的位置:事件里是字段名，span 里是 attribute key。 */
   path: string;
   /** 截断前的 UTF-8 字节数。 */
   originalBytes: number;

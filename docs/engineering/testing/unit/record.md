@@ -104,8 +104,9 @@ interface AttemptSpec {
   / 指纹 / `configHash`；读取面把两级 facts 原样读回不合并。`commands.json`
   只在有非零 Sandbox 命令时生成，`AttemptRecord.artifacts` 含 `commands`
   与文件存在同值;每条 evidence 的 timingNodeId / phase / display / exitCode / stdout /
-  stderr 原样往返，stdout/stderr 复用 256 KiB 字符串截断与结构化 `truncated`
-  标记；携带按 artifactBase 懒加载，`publish({ artifacts: ["commands"] })`
+  stderr 原样往返，stdout/stderr 不参与逐值截断——一条超过 256 KiB
+  的失败输出全量原样落盘再读回，这一格在复用 events 截断路径的实现下会红；
+  携带按 artifactBase 懒加载，`publish({ artifacts: ["commands"] })`
   物化后不留回退指针。
 - **publish 与 resolveLocator**：目标非空即报错不合并、预检失败不留半成品；文件大小预检的整体失败与错误明细；产物自包含（解引用复制、重新去重、补
   `knownEvalIds`，复制出的条目 `evidenceState` 恒为 `local`）；源里含 `dangling` 条目时整体失败并
