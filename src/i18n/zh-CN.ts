@@ -88,6 +88,10 @@ export const zhCN = {
     "  文档:node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") 需要 YAML 解析器:请先 `pnpm add yaml`(或改用 loadJson + JSON 数据集)。",
+  "loaders.criteriaNoMatch":
+    "loadCriteria 的这些 pattern 一个文件都没匹配到(或命中的文件全被后写的 `!` 排除了):{{patterns}}。多半是写错了或判据文件搬走了——pattern 按项目根 {{root}} 展开,不是按 eval 文件所在目录。请对着磁盘上的真实路径核对这几条,确认不再需要就把它删掉;别的 pattern 有命中也不放过,放过等于判据悄悄变窄,而改窄了的判据会让本该重跑的 eval 照常携带旧判定。",
+  "loaders.criteriaOutsideRoot":
+    "loadCriteria 匹配到的 \"{{path}}\" 落在项目根外(实际指向 {{resolved}}):判据文件的项目根相对路径就是它进指纹的键,穿出根之后这个键不再稳定。请把这棵树(或符号链接的目标)搬进项目根 {{root}} 内,或用 `!` 把这条链接从 pattern 里排除。",
   "loaders.outsideDiscovery":
     "在发现阶段之外读了 \"{{path}}\":loader 只能在 eval 文件的模块顶层调用(发现阶段求值 eval 模块时),文件内容才来得及进这条 eval 的指纹。请把这次读取挪到模块顶层、把结果存进一个常量再在 test(t) 里用;test(t) 与各生命周期 hook 的运行期不能调 loader。",
   "loaders.nonFileUrl":
@@ -141,7 +145,9 @@ export const zhCN = {
     "  --json  (机器面:stdout 上的 NDJSON 事件流;默认是人读文本)\n" +
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "位置参数只选「跑哪些 eval」(id 前缀);对着哪个 agent、怎么跑来自 experiments/ 与\n" +
-    "标志。取值优先级:标志 > experiment > niceeval.config.ts > 内置默认;配置项没有\n" +
+    "标志。取值优先级:标志 > experiment > eval(只有 timeoutMs / judge 有这一层)>\n" +
+    "niceeval.config.ts > 内置默认;config 是缺省底不是覆盖层。--timeout 没有内置默认:\n" +
+    "四层都没写就是无上限,attempt 不设 deadline。配置项没有\n" +
     "环境变量层,环境变量只放 API key 这类凭据。\n",
   // show 的错误文案保持英文(错误文案英文的仓库约定);noResults 是提示,翻译。
   "cli.show.noResults": "{{root}} 下没有结果。先 `niceeval exp` 跑一轮,再 `niceeval show`。\n",
@@ -388,7 +394,10 @@ export const zhCN = {
   "runner.startSandbox": "起沙箱…",
   "runner.startSandboxSetup": "sandbox setup(环境预置钩子)…",
   "runner.startSandboxTeardown": "sandbox teardown(环境预置钩子)…",
-  "runner.timeout": "attempt 超时({{timeoutMs}}ms)\n最近进度:\n{{recentLogs}}",
+  // 超时消息必带「上限是哪一层给的」:from flag / experiment / eval / config 四值,对应
+  // runner/timeout.ts 的解析链(链末端没有内置默认,四层都没声明就不会撞线)。
+  // 撞线时用户要的下一步是「去哪儿把它调大」。
+  "runner.timeout": "attempt 超时({{timeoutMs}}ms, from {{source}})\n最近进度:\n{{recentLogs}}",
   "runner.traceSelected": " → 留 {{count}}(按语义)",
   "runner.useRemoteAgent": "使用 remote agent(不创建沙箱)…",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider not implemented; use docker, vercel, e2b, or local",
@@ -403,6 +412,18 @@ export const zhCN = {
   "sandbox.provisionRetry": "  · [sandbox] 创建被限流,{{delayMs}}ms 后重试(第 {{attempt}}/{{maxAttempts}} 次)…\n",
   "sandbox.stopFailed": "  · [sandbox] 停沙箱 {{id}} 失败(已忽略;它会继续运行并计费,直到该 provider 自己的超时——如果有——回收它):{{message}}\n",
   "sandbox.stopTimeout": "stop 超时({{timeoutMs}}ms)",
+  // 三要素齐备的传输超时(见 docs/error-feedback.md「超时报错的三要素」):哪个操作、
+  // 对什么对象、这条线是谁给的。最后一句是关键——它把人从「去调 --timeout」引开。
+  "sandbox.transferTimeout":
+    "{{provider}} {{operation}} 传输超时:{{object}}。这是 provider SDK / HTTP 往返的超时,不是 attempt 的 timeoutMs 预算——调大 --timeout 不会让它变好。" +
+    "修法:把这一次传输拆成多批小的、把大 fixture 预置进镜像 / 模板,或改成在沙箱内直接下载。",
+  // 沙箱内 OTLP 采集器的落点是系统临时目录(见 docs/feature/sandbox/architecture.md
+  // 「provider 的可写保证不止 workdir」):写不进去是镜像环境缺陷,报错点名路径与修法,
+  // provider 的原始 500 串留在 cause 里,不进这条消息。
+  "o11y.sandboxTempNotWritable":
+    "沙箱内 OTLP 采集器写不进 {{path}}:系统临时目录对沙箱的运行用户不可写。这是镜像环境缺陷,不是 eval 或 niceeval 配置问题——" +
+    "provider 的可写保证不止 workdir,runner 要在 workdir 之外放采集器与变更分类账。" +
+    "修法:让 /tmp 对运行用户可写(镜像里 `chmod 1777 /tmp`,或换一个不把 /tmp 挂成只读的镜像 / 用户),修好后重跑即续上。",
   "scoring.evalError": "评估出错: {{error}}",
   "scoring.pointsInvalid": ".points({{n}}) 非法;给分必须是正有限数(n > 0)。",
   "scoring.scoreInvalid": "t.score({{label}}, {{n}}) 非法;给分必须是非负有限数(n >= 0)。",

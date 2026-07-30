@@ -91,6 +91,10 @@ export const en = {
     "  Docs: node_modules/niceeval/docs-site/zh/tutorials/scoring-guide.mdx",
   "loaders.yamlMissing":
     "loadYaml(\"{{path}}\") needs a YAML parser: run `pnpm add yaml` first (or switch to loadJson with a JSON dataset).",
+  "loaders.criteriaNoMatch":
+    "These loadCriteria patterns matched no files (or everything they matched was excluded by a later `!` pattern): {{patterns}}. They are most likely misspelled, or the criteria files moved — patterns expand from the project root {{root}}, not from the eval file's directory. Check these against the real paths on disk, and drop the pattern if it is no longer needed; the other patterns having matches is no excuse, because letting this pass silently narrows the criteria, and narrowed criteria let an eval that should re-run keep carrying its old verdict.",
+  "loaders.criteriaOutsideRoot":
+    "loadCriteria matched \"{{path}}\", which lands outside the project root (it resolves to {{resolved}}): a criteria file's project-root-relative path is its fingerprint key, and that key stops being stable once it points out of the root. Move the tree (or the symlink's target) inside the project root {{root}}, or exclude that link with a `!` pattern.",
   "loaders.outsideDiscovery":
     "Read of \"{{path}}\" happened outside discovery: loaders may only be called at the module top level of an eval file (while discovery evaluates that module), which is the only point early enough for the file's content to enter this eval's fingerprint. Move the read to the module top level and keep the result in a constant that test(t) uses; loaders cannot be called at run time from test(t) or from lifecycle hooks.",
   "loaders.nonFileUrl":
@@ -150,7 +154,9 @@ export const en = {
     "  --junit path  --out dir  --port n  --open / --no-open  -h, --help  -v, --version\n\n" +
     "Positional args only select which evals to run (id prefixes); which agent and\n" +
     "how to run come from experiments/ + flags. Resolution: flag > experiment >\n" +
-    "niceeval.config.ts > built-in default. Configuration has no environment layer;\n" +
+    "eval (timeoutMs / judge only) > niceeval.config.ts > built-in default, where\n" +
+    "config is the fallback floor, not an override; --timeout has no built-in default —\n" +
+    "with none of the four set, an attempt has no deadline. Configuration has no environment layer;\n" +
     "environment variables hold credentials such as API keys.\n",
   "cli.show.noResults": "No results found under {{root}}. Run `niceeval exp` first, then `niceeval show`.\n",
   "cli.show.runDirMissing": "Record directory not found: {{dir}}\n",
@@ -398,7 +404,7 @@ export const en = {
   "runner.startSandbox": "starting sandbox...",
   "runner.startSandboxSetup": "sandbox setup (environment provisioning hooks)...",
   "runner.startSandboxTeardown": "sandbox teardown (environment provisioning hooks)...",
-  "runner.timeout": "attempt timed out ({{timeoutMs}}ms)\nRecent progress:\n{{recentLogs}}",
+  "runner.timeout": "attempt timed out ({{timeoutMs}}ms, from {{source}})\nRecent progress:\n{{recentLogs}}",
   "runner.traceSelected": " -> kept {{count}} semantic spans",
   "runner.useRemoteAgent": "using remote agent (no sandbox created)...",
   "sandbox.providerNotImplemented": "{{provider}} sandbox provider is not implemented; use docker, vercel, e2b, or local",
@@ -413,6 +419,13 @@ export const en = {
   "sandbox.provisionRetry": "  · [sandbox] provisioning rate-limited, retrying in {{delayMs}}ms (attempt {{attempt}}/{{maxAttempts}})...\n",
   "sandbox.stopFailed": "  · [sandbox] failed to stop sandbox {{id}} (ignored; it keeps running, and billing, until this provider's own timeout — if it has one — reclaims it): {{message}}\n",
   "sandbox.stopTimeout": "stop timed out ({{timeoutMs}}ms)",
+  "sandbox.transferTimeout":
+    "{{provider}} {{operation}} timed out transferring {{object}}. This is the provider SDK / HTTP round trip timing out, not the attempt's timeoutMs budget — raising --timeout will not help. " +
+    "fix: split the transfer into smaller batches, bake large fixtures into the image/template, or download them inside the sandbox instead.",
+  "o11y.sandboxTempNotWritable":
+    "the in-sandbox OTLP collector cannot write {{path}}: the system temp directory is not writable by the sandbox's run user. This is an image environment defect, not an eval or niceeval configuration problem — " +
+    "a provider's writability guarantee must cover more than workdir, since the runner puts the collector and the change ledger outside it. " +
+    "fix: make /tmp writable for the run user (`chmod 1777 /tmp` in the image, or pick an image/user that does not mount /tmp read-only), then rerun — finished attempts carry over.",
   "scoring.evalError": "evaluation error: {{error}}",
   "scoring.pointsInvalid": ".points({{n}}) is invalid; points must be a positive finite number (n > 0).",
   "scoring.scoreInvalid": "t.score({{label}}, {{n}}) is invalid; points must be a non-negative finite number (n >= 0).",
