@@ -175,6 +175,20 @@ helper”复制一条 case；只有引入新的 literal 约束、递归容器或
   每个原语各一条类别。断言面是 Content 与 text / web 两面输出字符串，不经浏览器；覆盖两面投影正确，
   以及 renderer 查询未声明维度时抛 `UndeclaredDimensionValueError`（与
   「`dimensions` 必填与查询封闭性」同一判据，落在各原语 fixture 上）。
+- **Attempt 行的判定长在 locator 上**
+  （[契约](../../../feature/reports/components/summaries/experiment-table.md)）：
+  断言面是 `experimentListContent` 产出的 Cell 树与 text / web 两面输出字符串。逐项覆盖：
+
+  - attempt 行的 locator 格携带该次判定，三态各产出自己的判定符与语义 class。
+  - 区分力场景是「同一道题下 failed 与 errored 各一次 attempt」——两行的 class 与判定符都不同，
+    证明判定没有被折成「非 passed」一档。
+  - 判定符与色同场：两面输出里判定符都在，不靠 class 单独表意。
+  - 没有判定的 locator 格（`--history` 等场景）不带判定 class，也不凭空补判定符。
+- **`formatInstant` 的读法与回落**
+  （[契约](../../../feature/reports/library/presentation.md#时刻不走-unit)）：
+  断言面是函数返回值。覆盖 ISO 折到分钟的人读时间（不含原样 ISO 片段）、不可解析输入原样返回，
+  以及它从 `niceeval/report` 与 `niceeval/report/react` 同引用导出。
+  Attempt 摘要格实际调用了哪个入口是渲染产物，归 [E2E 报告域](../e2e/report.md)。
 - **`DiffView` 摘要行的增删着色**
   （[契约](../../../feature/reports/components/primitives/diff-view.md#web-面路径树)）：
   web 面 `+N` 与 `-M` 各自成元素并各带自己的类，才染得上与 patch 增删行同一套颜色；

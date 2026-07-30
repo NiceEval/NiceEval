@@ -318,3 +318,35 @@ describe("attempt 行 measure 格式化", () => {
     expect(flat).not.toContain('"text":"0.007336"');
   });
 });
+
+describe("attempt 行的判定长在 locator 上", () => {
+  // cases: docs/engineering/testing/unit/reports.md「Attempt 行的判定长在 locator 上」。
+  it("Experiment 展开层里 failed 与 errored 的 locator 格各带自己的判定", () => {
+    const nested = experimentListContent([
+      experimentItem({
+        evalRows: [
+          evalRow("q", "failed", [
+            attempt("q", "failed", { locator: locator("@1aaaaa01") }),
+            attempt("q", "errored", { locator: locator("@1bbbbb01") }),
+          ]),
+        ],
+        missingEvalIds: [],
+      }),
+    ]).rows[0]!.subRows![0]!.subRows!;
+    // 区分力:两行的判定不同,没有被折成「非 passed」一档
+    expect(nested[0]!.cells.entity).toMatchObject({ kind: "locator", verdict: "failed" });
+    expect(nested[1]!.cells.entity).toMatchObject({ kind: "locator", verdict: "errored" });
+  });
+
+  it("独立 attempt 列表同样把判定带在 locator 上", () => {
+    const content = attemptListContent([attempt("q", "passed")]);
+    expect(content.rows[0]!.cells.entity).toMatchObject({ kind: "locator", verdict: "passed" });
+  });
+
+  it("text 面在 locator 前打判定符,不靠 class 单独表意", () => {
+    expect(formatCellText({ kind: "locator", locator: locator("@1aaaaa01"), verdict: "passed" })).toBe("✓ @1aaaaa01");
+    expect(formatCellText({ kind: "locator", locator: locator("@1bbbbb01"), verdict: "errored" })).toBe("! @1bbbbb01");
+    // 没有判定的 locator 格不凭空补判定符
+    expect(formatCellText({ kind: "locator", locator: locator("@1ccccc01") })).toBe("@1ccccc01");
+  });
+});

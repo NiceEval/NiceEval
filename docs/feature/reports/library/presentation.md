@@ -17,6 +17,7 @@ JSON 保留数值与格式元数据，两个展示面必须从这份数据按各
 | 分组 | 导出 | 签名 | 用途 |
 |---|---|---|---|
 | 格式化 | `formatMetricValue` | `(value: number \| null, unit?: string, format?: MetricFormat, locale?: ReportLocale) => string` | renderer 按当前 locale 把终值折成展示字符串 |
+| 格式化 | `formatInstant` | `(iso: string, locale?: ReportLocale) => string` | ISO 时刻按当前 locale 折成人读时间 |
 | 格式化 | `formatAxisTick` | `(value: number, step: number, unit?: string) => string` | 轴刻度，精度跟随步长 |
 | 格式化 | `formatCellText` | `(cell: Cell \| null, locale?: ReportLocale) => string` | 把任意 `Cell` 折成一行文本 |
 | 缺数据 | `missingText` | `(code: string, locale?: ReportLocale) => string` | `missing` 格的本地化原因 |
@@ -102,6 +103,19 @@ export const cacheHitRate = rollup(
 
 它只格式化同一个终值。覆盖不能改变聚合口径，也不能按 locale 给出不同的数——
 两份数字会让同一张报告的中英文版本对不上账。
+
+### 时刻不走 unit
+
+时刻不是 `MetricValue`：它没有量纲、不参与聚合、不上轴，所以 `unit` 那张表里没有它的位置。
+它的入口是 `formatInstant(iso, locale)`——输入是落盘的 ISO 字符串，输出是当前 locale 的人读时间。
+
+```ts
+formatInstant(attempt.result.startedAt, locale);
+// 2026-07-29T12:14:31.831Z → "Jul 29, 2026, 20:14"
+```
+
+**原样打 ISO 不算格式化。** `String(iso)`、`iso.slice(0, 16)`、`new Date(iso).toLocaleString()`
+三种写法各给出一种读法，同一个时刻在报告的两处对不上，也不跟随 locale。
 
 ### 轴刻度是另一支
 

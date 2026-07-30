@@ -14,7 +14,7 @@ import {
   Waterfall,
 } from "../../definition/primitives.tsx";
 import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
-import { formatDurationMs, formatPoints } from "../../model/format.ts";
+import { formatDurationMs, formatInstant, formatPoints, formatUSD } from "../../model/format.ts";
 import { localeText } from "../../model/locale.ts";
 import { cx, type ValueProps } from "../shared.ts";
 import type { AttemptPageContext, SamplePageContext } from "../../definition/tree.ts";
@@ -80,9 +80,9 @@ export const AttemptSummary = defineComponent<SummaryProps>({
           <Kpi label="Eval" value={d.identity.evalId} />
           <Kpi label="Attempt" value={String(d.identity.attempt + 1)} />
           {d.totalScore !== undefined ? <Kpi label="Score" value={formatPoints(d.totalScore)} /> : null}
-          {d.startedAt ? <Kpi label="Started" value={d.startedAt} /> : null}
+          {d.startedAt ? <Kpi label="Started" value={formatInstant(d.startedAt, ctx.locale)} /> : null}
           <Kpi label="Duration" value={formatDurationMs(d.durationMs)} />
-          {d.costUSD !== null ? <Kpi label="Cost" value={`$${d.costUSD.toFixed(4)}`} /> : null}
+          {d.costUSD !== null ? <Kpi label="Cost" value={formatUSD(d.costUSD)} /> : null}
         </Grid>
         {caps.length > 0 ? (
           <p className="niceeval-attempt-summary-caps">

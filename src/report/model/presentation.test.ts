@@ -7,7 +7,7 @@ import * as report from "../index.ts";
 import * as reportReact from "../react/index.tsx";
 import { formatCellText } from "../definition/cell.ts";
 import { isCalculation } from "./calculation.ts";
-import { formatAxisTick, formatMetricValue, missingText } from "./format.ts";
+import { formatAxisTick, formatInstant, formatMetricValue, missingText } from "./format.ts";
 
 describe("formatMetricValue", () => {
   it("五支 unit 各折一种读法;tokens 的 46500 不是裸数字", () => {
@@ -31,6 +31,20 @@ describe("formatMetricValue", () => {
     };
     expect(formatMetricValue(0.5, "%", format, "en")).toBe("hit 50%");
     expect(formatMetricValue(0.5, "%", format, "zh-CN")).toBe("命中 50%");
+  });
+});
+
+describe("formatInstant", () => {
+  // cases: docs/engineering/testing/unit/reports.md「Attempt 摘要格的显示值经呈现工具箱」。
+  it("ISO 时刻折成到分钟的人读时间,不原样打 ISO", () => {
+    const shown = formatInstant("2026-07-29T12:14:31.831Z", "en");
+    expect(shown).not.toContain("T12:14:31");
+    expect(shown).toMatch(/2026/);
+    expect(shown).toMatch(/\d{2}:\d{2}/);
+  });
+
+  it("不可解析的输入原样返回,不打 Invalid Date", () => {
+    expect(formatInstant("not-a-time", "en")).toBe("not-a-time");
   });
 });
 
@@ -62,6 +76,7 @@ describe("呈现工具箱导出面", () => {
   it("总表函数从 niceeval/report 与 react 导出且同引用;色板 helper 不公开", () => {
     expect(report.formatMetricValue).toBe(formatMetricValue);
     expect(report.formatAxisTick).toBe(formatAxisTick);
+    expect(report.formatInstant).toBe(formatInstant);
     expect(report.formatCellText).toBe(formatCellText);
     expect(report.missingText).toBe(missingText);
     expect(report.presentDimension).toBeTypeOf("function");
@@ -69,6 +84,7 @@ describe("呈现工具箱导出面", () => {
 
     expect(reportReact.formatMetricValue).toBe(report.formatMetricValue);
     expect(reportReact.formatAxisTick).toBe(report.formatAxisTick);
+    expect(reportReact.formatInstant).toBe(report.formatInstant);
     expect(reportReact.formatCellText).toBe(report.formatCellText);
     expect(reportReact.missingText).toBe(report.missingText);
     expect(reportReact.presentDimension).toBe(report.presentDimension);

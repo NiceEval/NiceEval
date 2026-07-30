@@ -39,6 +39,7 @@ import {
   type TableContentRow,
 } from "./cell.ts";
 import { MetricCellView } from "../components/cell.tsx";
+import { verdictMark } from "../model/format.ts";
 
 
 function childArray(children: ReportNode): ReportNode[] {
@@ -707,14 +708,25 @@ function renderCellWeb(
           {cell.detail ? <small className="niceeval-cell-detail">{cell.detail}</small> : null}
         </span>
       );
-    case "locator":
+    case "locator": {
+      // 判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意
+      // (docs/feature/reports/components/summaries/experiment-table.md)。
+      const verdict = cell.verdict;
+      const className = verdict === undefined ? "niceeval-locator" : `niceeval-locator niceeval-verdict-${verdict}`;
+      const mark = verdict === undefined ? null : (
+        <span className="niceeval-locator-mark" aria-hidden="true">
+          {verdictMark(verdict === "skipped" ? "unreadable" : verdict)}
+        </span>
+      );
       return ctx.attemptHref ? (
-        <a className="niceeval-locator" href={ctx.attemptHref(cell.locator)}>
+        <a className={className} href={ctx.attemptHref(cell.locator)}>
+          {mark}
           {cell.locator}
         </a>
       ) : (
-        <span className="niceeval-locator">{formatCellText(cell, ctx.locale)}</span>
+        <span className={className}>{formatCellText(cell, ctx.locale)}</span>
       );
+    }
     case "summary":
     case "score":
       return formatCellText(cell, ctx.locale);

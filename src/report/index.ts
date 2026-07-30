@@ -224,7 +224,7 @@ export type { Cell, VerdictCounts } from "./definition/cell.ts";
 export { formatCellText } from "./definition/cell.ts";
 
 // 格式化与呈现工具箱(docs/feature/reports/library/presentation.md):渲染侧单点入口。
-export { formatAxisTick, formatMetricValue, missingText } from "./model/format.ts";
+export { formatAxisTick, formatInstant, formatMetricValue, missingText } from "./model/format.ts";
 
 // 文本排版工具箱:自定义组件的 text 面用的就是官方组件那把尺子。
 // 表格有 <Table> 承担,这里只给表以外的形态用 —— 尤其别拿 String.prototype.padEnd 对齐:

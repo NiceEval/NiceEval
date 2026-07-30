@@ -52,6 +52,14 @@
 /* ---- locator 与判定符:实体行共用的最小单元 ---- */
 .niceeval-report .niceeval-locator { display:inline-flex; align-items:center; gap:4px; color:var(--accent); font-variant-numeric:tabular-nums; text-decoration:none; white-space:nowrap; }
 .niceeval-report .niceeval-locator:hover { text-decoration:underline; }
+/* attempt 行的判定长在 locator 上:判定符与语义色同场,不靠颜色单独表意
+   (docs/feature/reports/components/summaries/experiment-table.md) */
+.niceeval-report .niceeval-locator.niceeval-verdict-passed { color: var(--good); }
+.niceeval-report .niceeval-locator.niceeval-verdict-failed { color: var(--bad); }
+.niceeval-report .niceeval-locator.niceeval-verdict-errored { color: var(--warn); }
+.niceeval-report .niceeval-locator.niceeval-verdict-unreadable,
+.niceeval-report .niceeval-locator.niceeval-verdict-skipped { color: var(--soft); }
+.niceeval-report .niceeval-locator-mark { font-weight: 650; }
 
 /* ---- 维度键上色:同一个 key 在任何块里同色(文字) ---- */
 .niceeval-report .niceeval-c0 { color: var(--c0); }

@@ -57,7 +57,12 @@ function attemptRow(item: AttemptListItem, scoring: "pass" | "points"): TableCon
   return {
     key: item.locator,
     cells: {
-      entity: { kind: "locator", locator: item.locator, staleSinceMs: item.historical ? 1 : undefined },
+      entity: {
+        kind: "locator",
+        locator: item.locator,
+        staleSinceMs: item.historical ? 1 : undefined,
+        verdict: item.verdict as "passed" | "failed" | "errored" | "skipped",
+      },
       verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
       result: summary,
       durationMs: attemptMetricValue(item.durationMs, "ms", item.locator),
@@ -458,7 +463,11 @@ export function attemptListContent(items: readonly AttemptListItem[]): TableCont
     rows: items.map((item) => ({
       key: item.locator,
       cells: {
-        entity: { kind: "locator", locator: item.locator },
+        entity: {
+          kind: "locator",
+          locator: item.locator,
+          verdict: item.verdict as "passed" | "failed" | "errored" | "skipped",
+        },
         verdict: { kind: "verdict", verdict: item.verdict as "passed" | "failed" | "errored" | "skipped" },
         result:
           item.failureSummary !== null

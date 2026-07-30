@@ -248,8 +248,13 @@ const FULL_REPORT_DATE_TIME: ReportDateTimeOptions = {
   hourCycle: "h23",
 };
 
-/** ISO 时间 → 本地化到分钟的短日期时间；不可解析时原样返回。 */
-export function formatReportDateTime(iso: string, locale: ReportLocale): string {
+/**
+ * ISO 时刻 → 当前 locale 的人读时间(到分钟);不可解析时原样返回。
+ *
+ * 时刻不是 `MetricValue`——没有量纲、不参与聚合、不上轴——所以它不走 `unit` 那条开关,
+ * 这里是它唯一的入口(docs/feature/reports/library/presentation.md「时刻不走 unit」)。
+ */
+export function formatInstant(iso: string, locale: ReportLocale = DEFAULT_REPORT_LOCALE): string {
   const date = new Date(iso);
   return Number.isNaN(date.valueOf()) ? iso : formatReportDate(date, locale, FULL_REPORT_DATE_TIME);
 }
@@ -263,7 +268,7 @@ export function formatReportDateTimeRange(
   const fromDate = new Date(fromIso);
   const toDate = new Date(toIso);
   if (Number.isNaN(fromDate.valueOf()) || Number.isNaN(toDate.valueOf())) {
-    return { from: formatReportDateTime(fromIso, locale), to: formatReportDateTime(toIso, locale) };
+    return { from: formatInstant(fromIso, locale), to: formatInstant(toIso, locale) };
   }
   const sameYear = fromDate.getFullYear() === toDate.getFullYear();
   const sameDay =

@@ -18,7 +18,7 @@ import {
 } from "../../model/calculation.ts";
 import { scoringComposition } from "../../model/scoring.ts";
 import { DEFAULT_REPORT_LOCALE, localeText, type ReportLocale } from "../../model/locale.ts";
-import { formatReportDateTime, formatReportDateTimeRange } from "../../model/format.ts";
+import { formatInstant, formatReportDateTimeRange } from "../../model/format.ts";
 import type { ChromeProps } from "../shared.ts";
 import { toSummaryItems } from "../../model/conversions.ts";
 import { ExperimentTable } from "../entity-lists/index.tsx";
@@ -87,7 +87,7 @@ export const SampleSummary = defineComponent<SampleSummaryProps>(async (props, c
                 to: formattedRange!.to,
               })
             : localeText(locale, "scopeSummary.lastRun", {
-                time: formatReportDateTime(snapshot.range.latestStartedAt, locale),
+                time: formatInstant(snapshot.range.latestStartedAt, locale),
               })}
         </Text>
       ) : null}

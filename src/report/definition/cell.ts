@@ -5,7 +5,7 @@ import type { AttemptLocator } from "../../record/locator.ts";
 import type { LocalizedText } from "../../shared/types.ts";
 import type { Verdict } from "../../scoring/types.ts";
 import type { MetricValue } from "../model/calculation.ts";
-import { formatMetricValue, missingText } from "../model/format.ts";
+import { formatMetricValue, missingText, verdictMark } from "../model/format.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 
 /** 判定计票:passed / failed / errored / skipped。 */
@@ -33,7 +33,13 @@ export type Cell =
     }
   | { readonly kind: "score"; readonly earned: number; readonly possible?: number }
   | { readonly kind: "summary"; readonly text: string; readonly more?: number }
-  | { readonly kind: "locator"; readonly locator: AttemptLocator; readonly staleSinceMs?: number }
+  | {
+      readonly kind: "locator";
+      readonly locator: AttemptLocator;
+      readonly staleSinceMs?: number;
+      /** 有判定的 attempt 行:判定长在 locator 上(判定符 + 语义色),没有判定就省略。 */
+      readonly verdict?: Verdict | "skipped";
+    }
   | { readonly kind: "text"; readonly text: string; readonly detail?: string }
   | { readonly kind: "notApplicable" }
   | { readonly kind: "missing"; readonly code: string; readonly data?: unknown };
@@ -74,7 +80,8 @@ export function formatCellText(cell: Cell | null | undefined, locale?: ReportLoc
       return cell.detail ? `${cell.text}\n  ${cell.detail}` : cell.text;
     case "locator": {
       const stale = cell.staleSinceMs !== undefined ? ` ↩ ${formatStale(cell.staleSinceMs)}` : "";
-      return `${cell.locator}${stale}`;
+      const mark = cell.verdict !== undefined ? `${verdictMark(cell.verdict === "skipped" ? "unreadable" : cell.verdict)} ` : "";
+      return `${mark}${cell.locator}${stale}`;
     }
     case "summary": {
       const more = cell.more && cell.more > 0 ? ` +${cell.more} more` : "";
