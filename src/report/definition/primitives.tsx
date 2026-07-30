@@ -16,9 +16,9 @@ import {
   type ReportNode,
 } from "./tree.ts";
 import { localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../model/locale.ts";
-import { indentBlock, joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
+import { joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
 import type { ColumnAlign } from "../model/text-layout.ts";
-import { panelContentWidth, renderPanel, type PanelRow } from "../model/panel.ts";
+import { panelContentWidth, renderPanel, renderRule, type PanelRow } from "../model/panel.ts";
 import { renderTableText } from "./table-text.ts";
 import {
   gridContainerRules,
@@ -418,13 +418,20 @@ export const Tabs = defineComponent<TabsProps>({
   text({ children }, ctx) {
     const tabs = tabEntries(children);
     return tabs
-      .map((tab) => {
+      .map((tab, i) => {
+        // 隔条只标注归属,不声明边界:tab 正文按整个可用宽度排版、不缩进,宽表与图表在 tab 里
+        // 和直接铺在页上占同样的列宽(体裁与理由见 layout.md「区域框」的画框资格段)。
         const heading = resolveLocalizedText(tab.title, ctx.locale);
+        const rule = renderRule({
+          title: `${heading} ${i + 1}/${tabs.length}`,
+          width: ctx.width,
+          mode: ctx.panelMode,
+        });
         const body = childArray(tab.children)
-          .map((child) => ctx.render(child, ctx.width - 2))
+          .map((child) => ctx.render(child, ctx.width))
           .filter((block) => block.length > 0)
           .join("\n\n");
-        return body.length > 0 ? `${heading}\n${indentBlock(body, "  ")}` : heading;
+        return body.length > 0 ? `${rule}\n\n${body}` : rule;
       })
       .join("\n\n");
   },

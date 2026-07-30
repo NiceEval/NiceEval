@@ -1,6 +1,7 @@
 # `--diff`：核对 agent 实际改动
 
-`--diff` 是 attempt-detail 组件族对应区块的 text 面，显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)：只有 agent 在 send 窗口内改动的文件，起始 fixture 与验证材料不混在里面。单独使用 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
+`--diff` 是 attempt-detail 组件族对应区块的 text 面，显示的是 [agent 归因增量](../../sandbox/architecture.md#变更归因send-窗口与分类账)：只有 agent 在 send 窗口内改动的文件，起始 fixture 与验证材料不混在里面。
+单独使用 `--diff` 是文件级摘要——状态、增删行数、哪几轮改的：
 
 ```text
 $ niceeval show @1qrdcfq8 --diff
@@ -13,7 +14,8 @@ $ niceeval show @1qrdcfq8 --diff
 single file: niceeval show @1qrdcfq8 --diff=manager_decisions.json
 ```
 
-`--diff=<path>` 输出单文件 patch，**按窗口逐段渲染**（`diff.json` 存的就是逐窗口 delta，窗口之间可能夹着 eval 侧写入，不产出跨窗口合成 patch）。窗口分隔是单独的横线 `── window <turn>`，不套面板框：patch 正文要保持逐行可复制、可直接喂给 `git apply` 一类工具，框线前缀会把它废掉：
+`--diff=<path>` 输出单文件 patch，**按窗口逐段渲染**（`diff.json` 存的就是逐窗口 delta，窗口之间可能夹着 eval 侧写入，不产出跨窗口合成 patch）。
+窗口分隔按[隔条](../library/layout.md#区域框text-面的框线体裁)渲染成 `── window <turn>`，不套面板框：patch 正文要保持逐行可复制、可直接喂给 `git apply` 一类工具，框线前缀会把它废掉：
 
 ```text
 $ niceeval show @1qrdcfq8 --diff=manager_decisions.json
@@ -30,11 +32,12 @@ M manager_decisions.json · touched in turn1, turn2
 +  "15201": { "selected_proposal_id": 2 },
 ```
 
-`--diff=<path>` 必须用 `=` 连写，空格后的 token 会按 eval id 位置参数解析。二进制文件在摘要里显示字节数变化，不输出 patch。`diff.json` 缺失（direct agent、或发布时未带 `diff`）时如实输出 `diff unavailable` 并说明原因，不猜。
+`--diff=<path>` 必须用 `=` 连写，空格后的 token 会按 eval id 位置参数解析。
+二进制文件在摘要里显示字节数变化，不输出 patch。
+`diff.json` 缺失（direct agent、或发布时未带 `diff`）时如实输出 `diff unavailable` 并说明原因，不猜。
 
 摘要与单文件 patch 都读 [`diffResult(attempt)`](../components/attempt-detail/attempt-diff.md) 这一份投影。
-web 面把同一批文件排成[路径树](../components/primitives/diff-view.md#web-面路径树)，
-行首字母、增删行数与窗口标签逐字同源。
+ web 面把同一批文件排成[路径树](../components/primitives/diff-view.md#web-面路径树)，行首字母、增删行数与窗口标签逐字同源。
 
 ## 相关阅读
 

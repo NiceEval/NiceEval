@@ -3,7 +3,7 @@
 // 断言,不经真实终端或 HTML(与 chart-math/grid-layout 同一类,见 grid-layout.test.ts)。
 
 import { describe, expect, it } from "vitest";
-import { panelContentWidth, renderPanel } from "./panel.ts";
+import { panelContentWidth, renderPanel, renderRule } from "./panel.ts";
 import { stringWidth } from "./text-layout.ts";
 
 describe("renderPanel — 顶层完整框", () => {
@@ -236,5 +236,37 @@ describe("renderPanel — CJK / ambiguous 宽度量测", () => {
     expect(panelContentWidth(200, "boxed", false)).toBe(196);
     // 省略第三个参数时默认仍封顶 100,内容宽固定 96,不随 width 继续增长
     expect(panelContentWidth(200, "boxed")).toBe(96);
+  });
+});
+
+describe("renderRule — 隔条", () => {
+  it("boxed 模式是一条不封口的横线,左侧嵌名称,总显示宽度等于框宽", () => {
+    const rule = renderRule({ title: "概览 1/3", width: 82, mode: "boxed" });
+    expect(rule.startsWith("── 概览 1/3 ─")).toBe(true);
+    expect(rule.endsWith("─")).toBe(true);
+    // 不封口:四角字符一个都不出现,读者不会把它读成一块有边界的面板
+    expect(/[╭╮╰╯│├┤]/.test(rule)).toBe(false);
+    expect(stringWidth(rule)).toBe(82);
+  });
+
+  it("与面板同规则夹紧到 100 显示列,capWidth: false 时跟随传入宽度", () => {
+    expect(stringWidth(renderRule({ title: "概览 1/3", width: 200, mode: "boxed" }))).toBe(100);
+    expect(
+      stringWidth(renderRule({ title: "概览 1/3", width: 200, mode: "boxed", capWidth: false })),
+    ).toBe(200);
+  });
+
+  it("嵌字截断复用边框那份优先级:先截标题中段补 …,最后才放弃 meta", () => {
+    const long = "非常长的视角名".repeat(6);
+    const rule = renderRule({ title: `${long} 1/3`, meta: "88 attempts", width: 60, mode: "boxed" });
+    expect(stringWidth(rule)).toBe(60);
+    expect(rule).toContain("…");
+    expect(rule).toContain("88 attempts");
+  });
+
+  it("plain 或窄于 60 列时降为裸标题行,不出现横线字符", () => {
+    expect(renderRule({ title: "概览 1/3", width: 82, mode: "plain" })).toBe("概览 1/3");
+    expect(renderRule({ title: "概览 1/3", width: 40, mode: "boxed" })).toBe("概览 1/3");
+    expect(renderRule({ width: 82, mode: "plain" })).toBe("");
   });
 });

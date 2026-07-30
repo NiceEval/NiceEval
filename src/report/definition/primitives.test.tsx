@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createTextContext, renderNodeToText } from "./tree.ts";
-import { Col, Grid, Row, Section, Text } from "./primitives.tsx";
+import { Col, Grid, Row, Section, Tab, Tabs, Text } from "./primitives.tsx";
 
 describe("Section text 面 — 接线到 panel.ts", () => {
   it("panelMode: \"boxed\" 时顶层 Section 画完整四边框(panel.ts 的产物,不是手拼字符)", () => {
@@ -128,5 +128,59 @@ describe("Section text 面 — 接线到 panel.ts", () => {
     expect(text).not.toMatch(/[╭╮╰╯├┤]/);
     expect(text).toContain("Outer");
     expect(text).toContain("Inner");
+  });
+});
+
+// cases: docs/engineering/testing/unit/reports.md 分区「`Tabs` 的 text 面体裁」。
+describe("Tabs text 面 — 隔条而非框", () => {
+  it("每个 tab 起一条带位次的隔条,Tabs 自己不画框", () => {
+    const ctx = createTextContext({ width: 82, panelMode: "boxed" });
+    const text = renderNodeToText(
+      <Tabs>
+        <Tab title="概览">
+          <Text>overview</Text>
+        </Tab>
+        <Tab title="成本">
+          <Text>cost</Text>
+        </Tab>
+      </Tabs>,
+      ctx,
+    );
+    const lines = text.split("\n");
+    expect(lines[0]!.startsWith("── 概览 1/2 ─")).toBe(true);
+    expect(lines.some((l) => l.startsWith("── 成本 2/2 ─"))).toBe(true);
+    expect(text).not.toMatch(/[╭╮╰╯│├┤]/);
+  });
+
+  it("tab 正文不缩进:同一段内容在 tab 里与直接放在页上逐字相同", () => {
+    const wide = "实验                       模型      Agent    通过率";
+    const bare = renderNodeToText(<Text>{wide}</Text>, createTextContext({ width: 82, panelMode: "boxed" }));
+    const inTab = renderNodeToText(
+      <Tabs>
+        <Tab title="概览">
+          <Text>{wide}</Text>
+        </Tab>
+      </Tabs>,
+      createTextContext({ width: 82, panelMode: "boxed" }),
+    );
+    expect(inTab.split("\n\n").at(-1)).toBe(bare);
+  });
+
+  it("tab 里放 Section 时框由那个 Section 画,输出里只有一层边框", () => {
+    const ctx = createTextContext({ width: 82, panelMode: "boxed" });
+    const text = renderNodeToText(
+      <Tabs>
+        <Tab title="诊断">
+          <Section title="Assertions">
+            <Text>body</Text>
+          </Section>
+        </Tab>
+      </Tabs>,
+      ctx,
+    );
+    const lines = text.split("\n");
+    expect(lines[0]!.startsWith("── 诊断 1/1 ─")).toBe(true);
+    expect(lines.filter((l) => l.startsWith("╭")).length).toBe(1);
+    expect(lines.filter((l) => l.startsWith("╰")).length).toBe(1);
   });
 });

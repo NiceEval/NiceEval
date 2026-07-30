@@ -227,6 +227,43 @@ function renderPlain(input: PanelInput): string[] {
   return lines;
 }
 
+/** 隔条的输入:只有归属标注与传输能力,没有 rows——隔条不声明边界,正文由调用方原样铺开。 */
+export interface RuleInput {
+  /** 横线左侧嵌入的名称与位次(如 `概览 1/3`);省略时是一条纯横线。 */
+  readonly title?: string;
+  /** 横线右侧嵌入的短 meta;空间不足时最先被舍弃,与边框同一条优先级。 */
+  readonly meta?: string;
+  /** 调用方报告的可用显示列数;与面板同规则夹紧到 100。 */
+  readonly width: number;
+  /** 传输能力;`plain` 或窄于下限时降为不带横线的标题行。 */
+  readonly mode: PanelMode;
+  /** 声明豁免 100 列上限,语义同 {@link PanelInput.capWidth}。 */
+  readonly capWidth?: boolean;
+}
+
+/**
+ * 隔条渲染件:一条贯穿可用宽度、上下不封口的横线,左侧嵌名称与位次。用于若干平行块顺序铺开
+ * 且正文各自要全宽的场合——`Tabs` 的每个 tab、`--diff` 的每个窗口。体裁资格与几何见
+ * docs/feature/reports/library/layout.md「区域框:text 面的框线体裁」的「画框资格」段:
+ * 面板画框、同级重复块用隔条、逐条流事件无标注。
+ *
+ * 与 `renderPanel` 共用同一份嵌字截断优先级、同一张宽度表与同一条降级下限,所以隔条与面板的
+ * 标题在同一份输出里逐列对齐。
+ *
+ * @param input 归属标注与传输能力,见 {@link RuleInput}。
+ * @returns 一个物理行;`plain` 体裁下是不带横线的标题行,无标题时是空字符串。
+ */
+export function renderRule(input: RuleInput): string {
+  const eff = effectiveMode(input.mode, input.width);
+  if (eff === "plain") {
+    if (input.title === undefined) return "";
+    // meta 放不下时 headingLines 让它换到下一行;隔条如实带上,不静默丢读数。
+    return headingLines(input.title, input.meta, Math.max(1, Math.floor(input.width))).join("\n");
+  }
+  // 角位也用横线:得到 `── 标题 ─────`,与边框共用 buildBorderLine 的嵌字与截断规则。
+  return buildBorderLine(["─", "─"], input.title, input.meta, boxWidthOf(input.width, input.capWidth ?? true));
+}
+
 /**
  * 面板渲染件的唯一入口:同步纯函数,收 `PanelInput`,返回物理行数组——调用方直接
  * `join("\n")` 写出,或逐行喂给 live 面板的覆盖重画。

@@ -1,8 +1,12 @@
 # `--report`：单页与多页的终端操作
 
-`--report <名字|文件>` 替换默认 pages：带路径形的值按报告文件装载，其默认导出恒为 `defineReport` 产物（[树或配置对象形态](../library/shell.md)）；不含路径的名称查[内建视图名](../library/built-in.md)。`--history` 与 `--report` 互斥。locator 详情同样是一张 page。本页按 case 列出操作步骤；page 与外壳的字段契约见 [Library · 外壳与多页](../library/shell.md)。
+`--report <名字|文件>` 替换默认 pages：带路径形的值按报告文件装载，其默认导出恒为 `defineReport` 产物（[树或配置对象形态](../library/shell.md)）；不含路径的名称查[内建视图名](../library/built-in.md)。
+`--history` 与 `--report` 互斥。
+locator 详情同样是一张 page。
+本页按 case 列出操作步骤；page 与外壳的字段契约见 [Library · 外壳与多页](../library/shell.md)。
 
-**索引命令携带完整上下文。** `show` 输出的每一条页索引命令都保留当前的 `--record`、`--report` 与位置参数。
+**索引命令携带完整上下文。**
+`show` 输出的每一条页索引命令都保留当前的 `--record`、`--report` 与位置参数。
 
 ## Case 1：单页文件——直接渲染
 
@@ -57,14 +61,13 @@ $ niceeval show @1qrdcfq8 --report reports/site.tsx      # 自定义参数化 pa
 $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可用
 ```
 
-报告没声明 attempt-input page 时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。要沿用官方详情，把 `standardAttemptPage` 放进自己的 pages；要自定义就声明同类 page 并重组它的 content。
+报告没声明 attempt-input page 时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。
+要沿用官方详情，把 `standardAttemptPage` 放进自己的 pages；要自定义就声明同类 page 并重组它的 content。
 
 ## Case 6：内建等价文件
 
-没配 `config.report` 时，不带选项的 `niceeval show` 与一个内容为
-[内建报告全文](../library/built-in.md)（三张导航 page 加一张参数化详情 page）的 `--report`
-文件完全等价。不带选项的 `show` 渲染报告页，并在尾部只列 Attempts、追踪两张可导航页；
-`show @locator` 选择隐藏的详情 page。
+没配 `config.report` 时，不带选项的 `niceeval show` 与一个内容为[内建报告全文](../library/built-in.md)（三张导航 page 加一张参数化详情 page）的 `--report` 文件完全等价。
+不带选项的 `show` 渲染报告页，并在尾部只列 Attempts、追踪两张可导航页；`show @locator` 选择隐藏的详情 page。
 
 ## Case 7：项目默认报告与临时回到内建
 
@@ -82,7 +85,11 @@ error: no built-in report view named "site". Available: standard. To load a file
 
 ## 外壳字段在终端
 
-配置对象形态的外壳里，`show` 只消费 `title`（页索引的标题行）与 `pages`；`links`、`footer`、`theme`、`dimensionPins`、`head`、`scripts`、`styles` 是 web 面属性，`show` 不打印。同理 `--theme` 不是 `show` 的 flag：`niceeval show --theme …` 按完整用户反馈报错，说明主题只作用于 web 面，下一步是把同一份报告交给 `niceeval view --theme`。页内组件按各自 text 面输出：`Hero` 打印标题与运行 meta，[`PoweredBy` 品牌行与 `SampleFixPrompt` 的 text 面零输出](../components/site/README.md)。页内的 `Tabs` 在 text 面按声明序全量输出、不折成索引——tab 没有选择器，索引是死路；内容长到终端读不动，是把 tab 升级成页的信号（见 [Library · Tabs](../library/layout.md#tabs)）。
+配置对象形态的外壳里，`show` 只消费 `title`（页索引的标题行）与 `pages`；`links`、`footer`、`theme`、`dimensionPins`、`head`、`scripts`、`styles` 是 web 面属性，`show` 不打印。
+同理 `--theme` 不是 `show` 的 flag：`niceeval show --theme …` 按完整用户反馈报错，说明主题只作用于 web 面，下一步是把同一份报告交给 `niceeval view --theme`。
+页内组件按各自 text 面输出：`Hero` 打印标题与运行 meta，[`PoweredBy` 品牌行与 `SampleFixPrompt` 的 text 面零输出](../components/site/README.md)。
+页内的 `Tabs` 在 text 面按声明序全量输出、不折成索引——tab 没有选择器，索引是死路。
+每个 tab 起一条带位次的隔条（`── 概览 1/3 ─────`）、不画框，正文全宽不缩进；`5/5` 且每段都翻屏，是把 tab 升级成页的信号（形态与理由见 [Library · Tabs](../library/layout.md#tabs)）。
 
 ## 相关阅读
 
