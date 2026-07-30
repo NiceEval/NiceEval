@@ -121,6 +121,11 @@ export interface DockerSandboxOptions {
    * 省略 = `/home/sandbox/workspace`。
    */
   workdir?: string;
+  /**
+   * 默认执行身份。`"image"` = 容器镜像声明的 USER(空则 root)——Terminal-Bench 等
+   * 需要改系统文件的 Compose main 必须用它;省略 = 内置非 root `SANDBOX_USER`。
+   */
+  executionUser?: "image" | string;
 }
 
 /** `stop()` 时是否销毁容器。Compose 主容器由资源组 `compose down` 回收,附着句柄只松绑。 */
@@ -147,6 +152,10 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
   private provisionToken?: string;
   private runIdentity?: RunIdentity;
   private releaseMode: DockerSandboxReleaseMode = "destroy";
+  /** 默认 docker exec User;`opts.root` 仍可提到 root。 */
+  private defaultUser: string = SANDBOX_USER;
+  private defaultHome: string = "/home/node";
+  private defaultUserName: string = "node";
 
   constructor(options: DockerSandboxOptions = {}) {
     this.docker = new Docker();
@@ -159,6 +168,19 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     this.feedback = options.feedback;
     this.provisionToken = options.provisionToken;
     this.runIdentity = options.runIdentity;
+    if (options.executionUser === "image") {
+      // 镜像未声明 USER 时 Docker 默认 root。
+      this.defaultUser = ROOT_USER;
+      this.defaultHome = "/root";
+      this.defaultUserName = "root";
+    } else if (options.executionUser !== undefined && options.executionUser !== "") {
+      this.defaultUser = options.executionUser;
+      // 非 root 显式身份时仍用 node 家目录约定;调用方可再传 env 覆盖。
+      if (options.executionUser === "0" || options.executionUser === "0:0" || options.executionUser === "root") {
+        this.defaultHome = "/root";
+        this.defaultUserName = "root";
+      }
+    }
   }
 
   /**
@@ -189,6 +211,18 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     sandbox.container = container;
     sandbox._containerId = info.Id ?? containerId;
     sandbox.releaseMode = options.releaseMode ?? "detach";
+    if (options.executionUser === "image") {
+      const imageUser = typeof info.Config?.User === "string" ? info.Config.User.trim() : "";
+      if (imageUser === "" || imageUser === "0" || imageUser === "0:0" || imageUser === "root") {
+        sandbox.defaultUser = ROOT_USER;
+        sandbox.defaultHome = "/root";
+        sandbox.defaultUserName = "root";
+      } else {
+        sandbox.defaultUser = imageUser;
+        sandbox.defaultHome = "/home/node";
+        sandbox.defaultUserName = imageUser.split(":")[0] || imageUser;
+      }
+    }
     return sandbox;
   }
 
@@ -372,11 +406,11 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
 
     // 保证 npm 全局 bin 在 PATH 里;固定 HOME/USER,让 codex(~/.codex)、npm 全局、
     // bash 的 ~ 展开都落在当前身份的家目录,不依赖 docker exec 是否注入 HOME。
-    const isRoot = opts.root === true;
+    const isRoot = opts.root === true || this.defaultUser === ROOT_USER;
     const env = {
-      HOME: isRoot ? "/root" : "/home/node",
-      USER: isRoot ? "root" : "node",
-      LOGNAME: isRoot ? "root" : "node",
+      HOME: isRoot ? "/root" : this.defaultHome,
+      USER: isRoot ? "root" : this.defaultUserName,
+      LOGNAME: isRoot ? "root" : this.defaultUserName,
       ...opts.env,
       PATH: SANDBOX_PATH,
       // root 跑 npm 时让 install 脚本也以 root 跑(否则 npm 会把脚本降权到目录属主,可能写不进)。
@@ -387,7 +421,7 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     return this.execCommand(cmd, args, {
       env,
       cwd: resolveSandboxPath(this.workdir, opts.cwd),
-      user: isRoot ? ROOT_USER : SANDBOX_USER,
+      user: isRoot ? ROOT_USER : this.defaultUser,
       ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
       onStdout: opts.onStdout,
       onStderr: opts.onStderr,
@@ -407,9 +441,9 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     });
   }
 
-  /** 把目录属主收敛回非 root 的沙箱用户(putArchive 以 root 解包后用)。 */
+  /** 把目录属主收敛回默认执行身份(putArchive 以 root 解包后用)。 */
   private async chownToSandboxUser(path: string): Promise<void> {
-    await this.runCommandAsRoot("chown", ["-R", SANDBOX_USER, path]);
+    await this.runCommandAsRoot("chown", ["-R", this.defaultUser, path]);
   }
 
   /** 真正在容器里 exec 一条命令,demux stdout/stderr 并带超时。 */

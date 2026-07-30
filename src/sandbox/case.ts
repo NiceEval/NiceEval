@@ -61,6 +61,7 @@ export function composeSandbox(opts: {
   mainService: string;
   build?: "on-demand" | "prebuilt";
   executionUser?: string;
+  env?: Readonly<globalThis.Record<string, string>>;
 }): ComposeSandboxSource {
   if (!opts.mainService) {
     throw new Error("composeSandbox requires mainService (the sole primary Sandbox)");
@@ -71,6 +72,7 @@ export function composeSandbox(opts: {
     mainService: opts.mainService,
     ...(opts.build !== undefined ? { build: opts.build } : {}),
     ...(opts.executionUser !== undefined ? { executionUser: opts.executionUser } : {}),
+    ...(opts.env !== undefined ? { env: opts.env } : {}),
     __brand: "niceeval.sandboxSource.compose",
   };
 }
@@ -425,6 +427,8 @@ function sourceIdentity(source: SandboxSource): JsonValue {
       mainService: source.mainService,
       ...(source.build !== undefined ? { build: source.build } : {}),
       ...(source.executionUser !== undefined ? { executionUser: source.executionUser } : {}),
+      // 只记键名:值常含 attempt 临时目录,不能进身份。
+      ...(source.env !== undefined ? { envNames: Object.keys(source.env).sort() } : {}),
     };
   }
   return {

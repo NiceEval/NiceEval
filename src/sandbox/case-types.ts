@@ -26,6 +26,11 @@ export interface ComposeSandboxSource {
   readonly mainService: string;
   readonly build?: "on-demand" | "prebuilt";
   readonly executionUser?: string;
+  /**
+   * Compose 插值环境变量(如 Terminal-Bench 的 `T_BENCH_*`)。
+   * 只把键名计入 BuildKey;随机目录/容器名等值是物化事实,不进身份。
+   */
+  readonly env?: Readonly<globalThis.Record<string, string>>;
   /** 品牌标记:防同形误换;不要手写本字段。 */
   readonly __brand: "niceeval.sandboxSource.compose";
 }

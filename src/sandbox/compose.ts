@@ -401,7 +401,10 @@ export async function collectComposeBuilds(opts: {
         context: svc.build.context,
         ...(svc.build.dockerfile !== undefined ? { dockerfile: svc.build.dockerfile } : {}),
         ...(svc.build.args !== undefined ? { args: svc.build.args } : {}),
-        ...(opts.env !== undefined ? { envNames: Object.keys(opts.env).sort() } : {}),
+        // 每条 work 自带插值 env:Run 级 provider 不得共用「最后一个 eval」的 env/baseDir。
+        ...(opts.env !== undefined
+          ? { composeEnv: opts.env, envNames: Object.keys(opts.env).sort() }
+          : {}),
         contextFilterRules,
       },
     });
@@ -439,7 +442,12 @@ export async function composeBuildWorksFromPlan(
 
 function composeDeclFromPlan(
   plan: PlannedSandboxCase,
-): { file: string | URL; mainService: string; env?: Readonly<globalThis.Record<string, string>> } | undefined {
+): {
+  file: string | URL;
+  mainService: string;
+  env?: Readonly<globalThis.Record<string, string>>;
+  executionUser?: string;
+} | undefined {
   if (plan.caseKind !== "compose") return undefined;
   const d = plan.declaration;
   if (d.form === "docker" && d.value.compose !== undefined) {
@@ -450,7 +458,12 @@ function composeDeclFromPlan(
     };
   }
   if (d.form === "source" && d.value.kind === "compose") {
-    return { file: d.value.file, mainService: d.value.mainService };
+    return {
+      file: d.value.file,
+      mainService: d.value.mainService,
+      ...(d.value.env !== undefined ? { env: d.value.env } : {}),
+      ...(d.value.executionUser !== undefined ? { executionUser: d.value.executionUser } : {}),
+    };
   }
   return undefined;
 }
@@ -484,18 +497,27 @@ export function dockerComposeBuildProvider(opts?: {
       if (!composeFile || !service) {
         throw new Error(`compose build work ${work.buildKey.slice(0, 12)}… missing composeFile/service in inputs`);
       }
+      const composeEnv =
+        inputs.composeEnv !== undefined &&
+        typeof inputs.composeEnv === "object" &&
+        inputs.composeEnv !== null &&
+        !Array.isArray(inputs.composeEnv)
+          ? (inputs.composeEnv as Readonly<globalThis.Record<string, string>>)
+          : opts?.env;
+      // cwd 必须跟 compose 文件走,不能用 Run 级「最后一个 eval」的 baseDir。
+      const cwd = dirname(composeFile);
       const tag = composeBuildTag(work.buildKey);
       await runDockerCompose(
         ["-f", composeFile, "build", "--build-arg", `NICEEVAL_BUILD_KEY=${work.buildKey}`, service],
         {
-          cwd: opts?.baseDir ?? dirname(composeFile),
-          env: opts?.env,
+          cwd,
+          env: composeEnv,
           signal: ctx.signal,
           timing: ctx,
         },
       );
       // 构建产物以 service 镜像为准;再打 BuildKey tag 便于 lookup。
-      const imageId = await composeServiceImageId(composeFile, service, opts?.baseDir ?? dirname(composeFile), opts?.env);
+      const imageId = await composeServiceImageId(composeFile, service, cwd, composeEnv);
       if (imageId) await dockerTag(imageId, tag);
       return tag;
     },
@@ -620,20 +642,15 @@ export async function materializeDockerComposeCase(
       throw abortError(opts.ctx.signal);
     }
 
-    // 构建:优先用协调器放行的 locator;否则本地 compose build(物化期兜底)。
+    // 构建:协调器 locator 命中时仍跑一次 compose build——BuildKit cache 很快,
+    // 且把 BuildKey tag 对齐回本 eval 的 image: 插值名(避免多题共用 provider env 时串镜像)。
     const buildServices = collection.inspection.services.filter((s) => s.build !== undefined).map((s) => s.name);
     if (buildServices.length > 0) {
-      const locators = opts.ctx.buildLocators;
-      const allReady =
-        locators !== undefined &&
-        collection.buildKeys.every((k) => locators.has(k));
-      if (!allReady) {
-        await runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
-          cwd,
-          env,
-          signal: opts.ctx.signal,
-        });
-      }
+      await runCompose(["-p", overlay.projectName, ...composeFileArgs(composeFiles), "build", ...buildServices], {
+        cwd,
+        env,
+        signal: opts.ctx.signal,
+      });
     }
 
     await runCompose(
@@ -653,6 +670,7 @@ export async function materializeDockerComposeCase(
           timeout: opts.timeout,
           feedback: opts.feedback,
           releaseMode: "detach",
+          ...(decl.executionUser !== undefined ? { executionUser: decl.executionUser as "image" | string } : {}),
         }));
     const sandbox = await attach(containerId);
 
@@ -734,6 +752,7 @@ export function dockerComposeMaterializer(opts?: {
         mainService: source.mainService,
         baseDir: opts?.baseDir,
         platform: opts?.platform,
+        ...(source.env !== undefined ? { env: source.env } : {}),
       });
       const overlay = buildComposeOverlay({
         mainService: source.mainService,
@@ -749,6 +768,7 @@ export function dockerComposeMaterializer(opts?: {
         mainService: source.mainService,
         ...(source.build !== undefined ? { build: source.build } : {}),
         ...(source.executionUser !== undefined ? { executionUser: source.executionUser } : {}),
+        ...(source.env !== undefined ? { envNames: Object.keys(source.env).sort() } : {}),
       };
       const caseKey = computeCaseKey({
         caseKind: "compose",
@@ -870,7 +890,8 @@ export async function runDockerCompose(
   return new Promise((resolve, reject) => {
     const child = spawn("docker", ["compose", ...args], {
       cwd: opts.cwd,
-      env: opts.env as NodeJS.ProcessEnv | undefined,
+      // 必须叠在 process.env 上:协调器若只传 Compose 插值表,裸 env 会丢掉 PATH → spawn docker ENOENT。
+      env: { ...process.env, ...(opts.env as NodeJS.ProcessEnv | undefined) },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
