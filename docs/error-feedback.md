@@ -115,6 +115,19 @@ error: unknown option '--agnet'
 第一行说现象与依据,第二行是 catalog 里那条 action 的 CLI 投影。瞬时 Issue 同样不带文案,
 它和落盘 Issue 走同一条解释链,不另开一套。
 
+## 超时报错的三要素
+
+「给不出下一步的报错是缺陷」对超时有专门的展开:超时可能发生在 attempt 预算、SDK / HTTP
+往返、文件传输任何一层,消息不点名层次就会把排查引向错误的方向。任何超时报错必带三要素:
+
+- **哪个操作**:phase 与 operation 名,例如 `eval.setup` 里的一次 fixture 上传。
+- **对什么对象**:文件路径与字节数、命令摘要或请求目标。
+- **预算多少、谁定的**:超时毫秒数与它来自哪层——attempt 的 `timeoutMs` 标注
+  [解析链](feature/experiments/architecture.md#配置解析链一次求值处处同源)的来源层
+  (`from config`);SDK / HTTP 层超时点名 provider 与请求类别。
+
+`The operation was aborted due to timeout` 这样的消息三样都缺,按缺陷处理。
+
 ## 新增问题的义务
 
 1. 在事实拥有者处定义稳定 code 和最小结构化证据,并说明它是 persisted observation 还是

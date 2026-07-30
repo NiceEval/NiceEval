@@ -22,6 +22,7 @@ import { drainExperimentTeardowns } from "./runner/experiment-cleanup-registry.t
 import { drainHeldCaseLocks, isCaseLockStale, readCaseLock } from "./runner/lock.ts";
 import { drainHeldGateLeases } from "./runner/gate-lease.ts";
 import { CLEANUP_TIMEOUT_MS, withCleanupTimeout } from "./runner/cleanup-timeout.ts";
+import { resolveRunTimeout } from "./runner/timeout.ts";
 import type { ExperimentHookContext } from "./runner/types.ts";
 import { evalLevelStats } from "./shared/verdict.ts";
 import { recordFact } from "./shared/facts.ts";
@@ -149,7 +150,7 @@ const FLAG_OPTIONS = {
   attempts: { type: "string" },
   /** 设置同时运行的 eval 数量。 */
   "max-concurrency": { type: "string" },
-  /** 单个 attempt 的超时时间,单位毫秒。 */
+  /** 单个 attempt 的超时时间,单位毫秒。解析链:`--timeout` > experiment > eval(`defineEval({ timeoutMs })`)> `niceeval.config.ts`,默认无上限(四层都没声明就不设 deadline);config 是缺省底而不是覆盖层,写了 config 不会让 eval 自己声明的上限失效。 */
   timeout: { type: "string" },
   /** 整次运行的预算上限(美元)。 */
   budget: { type: "string" },
@@ -940,7 +941,11 @@ async function main(): Promise<void> {
         sandbox: exp.sandbox ?? config.sandbox,
         sandboxReuse: exp.sandboxReuse,
         judge: config.judge,
-        timeoutMs: flags.timeout ?? exp.timeoutMs ?? config.timeoutMs,
+        // 解析链只求值到 experiment 这一层:eval 与 config 由 attempt 派发时的
+        // resolveAttemptTimeout 接上。这里 `?? config.timeoutMs` 会把缺省底提前物化成 run 值,
+        // 让 eval 自己声明的上限永久短路(见 runner/timeout.ts 与
+        // memory/multi-source-field-resolution-order.md)。
+        ...resolveRunTimeout(flags.timeout, exp.timeoutMs),
         budget: flags.budget ?? exp.budget,
         selectedEvalIds,
         experimentId: exp.id,

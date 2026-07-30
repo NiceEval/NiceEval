@@ -10,6 +10,7 @@ import { createSandbox, resolveSandbox } from "../sandbox/resolve.ts";
 import type { ConcurrencySlot } from "../context/send-retry.ts";
 import { stopSandbox, unregisterSandbox } from "../sandbox/registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
+import { resolveAttemptTimeout } from "./timeout.ts";
 import { KEEPABLE_PROVIDERS, computeExpiresAt, nativeEnterCommand, suspendSandbox } from "../sandbox/keep.ts";
 import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-registry.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
@@ -122,7 +123,7 @@ export function runAttemptEffect(
     id: evalDef.id,
     description: evalDef.description,
     experimentId: run.experimentId,
-    experiment: experimentRunInfo(run, config.sandbox),
+    experiment: experimentRunInfo(run, config),
     agent: run.agent.name,
     model: run.model,
     verdict: "errored",
@@ -158,12 +159,22 @@ export function runAttemptEffect(
     };
   }
 
-  const timeoutMs = run.timeoutMs ?? evalDef.timeoutMs ?? config.timeoutMs ?? 600_000;
+  // 四层解析链的最后两层(eval → config)在这里接上,并把赢家那一层带出来:超时消息要说得出
+  // 「这个上限是哪一层给的」,否则撞线时得回头逐层对照四个声明点(契约见
+  // docs/feature/experiments/cli.md「timeout、budget 与基础设施错误」)。
+  // 四层都没声明 = 无上限:不挂 deadline、不发软截止信号,也不给 provider 递命令超时
+  // (provider 用自己的默认值),链末端不发明一条隐藏的线。
+  const attemptTimeout = resolveAttemptTimeout(run, evalDef, config);
   // timeoutSignal:给协作式 adapter / docker 命令的「软」截止信号(到点 abort,让能看 signal 的
   // 提前优雅停)。但它【不是】attempt 总超时的硬保证 —— 真正的硬边界是下面的 Effect.timeoutTo:
   // 它中断整段 body,触发 Sample release(停容器),从而即便 adapter 完全无视 signal 也能停掉(P1)。
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const signal = parentSignal ? AbortSignal.any([parentSignal, timeoutSignal]) : timeoutSignal;
+  const timeoutSignal = attemptTimeout ? AbortSignal.timeout(attemptTimeout.timeoutMs) : undefined;
+  // 无上限时 signal 仍必须存在(下游 ctx / adapter 一律读它):用一个永不 abort 的信号,
+  // 不用 timeoutSignal 冒充。
+  const signal =
+    parentSignal && timeoutSignal
+      ? AbortSignal.any([parentSignal, timeoutSignal])
+      : (parentSignal ?? timeoutSignal ?? new AbortController().signal);
 
   // Attempt 阶段的正式生命周期投影(见 docs/feature/experiments/cli.md「Attempt 阶段」)。
   // run.ts 在这个 attempt 的 body Effect 真正开始跑之前,已经先发出过一次 attempt:start(占位
@@ -290,6 +301,61 @@ export function runAttemptEffect(
     reportAttemptLifecycle({ type: "attempt:progress", at: Date.now(), identity, detail: m });
   };
 
+  /**
+   * ── attempt 总超时的硬边界(P1)──
+   * 上限是「整个 attempt(setup+agent+脚本+评分)」的,不是 docker 单条命令的。
+   * 到点 → 中断整段 body → Sample 跑 release(停容器、关接收器)→ 产出一条 errored 结果。
+   * 即便 adapter / test 完全无视 signal 挂死,这一层也能把它停下来并回收资源。
+   *
+   * 四层解析链都没声明上限时**这个算子整个不挂**——不是挂一条无穷大的 timer:没有线就没有
+   * deadline,attempt 跑到自己结束为止(与携带判据的 `Infinity` 同一个语义)。
+   */
+  const applyAttemptDeadline = <E, R>(self: Effect.Effect<EvalResult, E, R>): Effect.Effect<EvalResult, E, R> => {
+    if (attemptTimeout === undefined) return self;
+    const { timeoutMs, source: timeoutSource } = attemptTimeout;
+    return self.pipe(
+      Effect.timeoutTo({
+        duration: Duration.millis(timeoutMs),
+        onSuccess: (r: EvalResult) => r,
+        onTimeout: (): EvalResult => {
+          // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
+          // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
+          const text = t("runner.timeout", {
+            timeoutMs,
+            source: timeoutSource,
+            recentLogs: recentLogs.map((l) => `  · ${l}`).join("\n"),
+          });
+          const message = firstLine(text);
+          const rest = text.length > message.length ? text.slice(message.length + 1).replace(/\n+$/, "") : "";
+          const error: AttemptError = {
+            code: "timeout",
+            message,
+            phase: (sendActive ? "agent.run" : lastPhase) ?? "eval.run",
+            ...(rest.trim() !== "" ? { stack: rest } : {}),
+          };
+          recorder.failCurrent();
+          // 置位给下面的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
+          // 补折叠 workspace.diff / sources——见该 finalizer 的注释)。events/usage 不必等它:
+          // SessionManager 是外层已经登记过的活引用(见 liveEvents/liveUsage),截至这一刻已经
+          // 归一化的事件与已累计的用量此刻就能直接读出,不随放弃的 body fiber 一起消失。
+          timedOut = true;
+          const events = liveEvents?.();
+          const usage = liveUsage?.();
+          return {
+            ...base,
+            durationMs: Date.now() - t0,
+            error,
+            ...(events !== undefined ? { events: [...events], o11y: buildO11ySummary(events) } : {}),
+            ...(usage !== undefined ? { usage: { ...usage } } : {}),
+            // 超时前已经登记的非零命令证据(见 withCommandTiming)不因中断而丢失——它们在
+            // CommandResult 返回调用方那一刻就已经写进了这个共享数组。
+            ...(commands.length > 0 ? { commands: [...commands] } : {}),
+          };
+        },
+      }),
+    );
+  };
+
   return Effect.scoped(
     Effect.gen(function* () {
       // 规划期按当前 eval 解析出的同一个 SandboxSpec，既用来起 provider，也作为
@@ -350,7 +416,7 @@ export function runAttemptEffect(
                   return yield* createSandbox({
                     sandbox: sandboxSpec,
                     provisionSlot,
-                    timeout: timeoutMs,
+                    ...(attemptTimeout ? { timeout: attemptTimeout.timeoutMs } : {}),
                     runtime: "node24",
                     feedback: scopedFeedback,
                     // Sample release 按 disposition 收尾:stop = 销毁(默认);keep = provider
@@ -582,45 +648,8 @@ export function runAttemptEffect(
       return bodyResult;
     }),
   ).pipe(
-    // ── attempt 总超时的硬边界(P1)──
-    // timeoutMs 是「整个 attempt(setup+agent+脚本+评分)」的上限,不是 docker 单条命令的。
-    // 到点 → 中断整段 body → Sample 跑 release(停容器、关接收器)→ 产出一条 errored 结果。
-    // 即便 adapter / test 完全无视 signal 挂死,这一层也能把它停下来并回收资源。
-    Effect.timeoutTo({
-      duration: Duration.millis(timeoutMs),
-      onSuccess: (r: EvalResult) => r,
-      onTimeout: (): EvalResult => {
-        // 超时:message 是一层原因(首行),recentLogs 明细放进 stack 供 show 展开「卡在哪一步」;
-        // operation 取超时那一刻打开的 lifecycle operation。code 稳定为 "timeout"。
-        const text = t("runner.timeout", { timeoutMs, recentLogs: recentLogs.map((l) => `  · ${l}`).join("\n") });
-        const message = firstLine(text);
-        const rest = text.length > message.length ? text.slice(message.length + 1).replace(/\n+$/, "") : "";
-        const error: AttemptError = {
-          code: "timeout",
-          message,
-          phase: (sendActive ? "agent.run" : lastPhase) ?? "eval.run",
-          ...(rest.trim() !== "" ? { stack: rest } : {}),
-        };
-        recorder.failCurrent();
-        // 置位给下面新增的 finalizer 用(它在 Sample release 里跑,LIFO 早于 sandbox stop,
-        // 补折叠 workspace.diff / sources——见该 finalizer 的注释)。events/usage 不必等它:
-        // SessionManager 是外层已经登记过的活引用(见 liveEvents/liveUsage),截至这一刻已经
-        // 归一化的事件与已累计的用量此刻就能直接读出,不随放弃的 body fiber 一起消失。
-        timedOut = true;
-        const events = liveEvents?.();
-        const usage = liveUsage?.();
-        return {
-          ...base,
-          durationMs: Date.now() - t0,
-          error,
-          ...(events !== undefined ? { events: [...events], o11y: buildO11ySummary(events) } : {}),
-          ...(usage !== undefined ? { usage: { ...usage } } : {}),
-          // 超时前已经登记的非零命令证据(见 withCommandTiming)不因中断而丢失——它们在
-          // CommandResult 返回调用方那一刻就已经写进了这个共享数组。
-          ...(commands.length > 0 ? { commands: [...commands] } : {}),
-        };
-      },
-    }),
+    // attempt 总超时的硬边界(无上限时这一层不挂,见 applyAttemptDeadline)。
+    applyAttemptDeadline,
     // body 自己已兜了 agent 执行错;这里兜的是资源获取 / Sample 层的意外(起沙箱失败等)。
     // 中断【不】吞:此时 Sample 已跑完 release(容器已停),把中断继续上抛,让 forEach 整体停掉,
     // 否则会把中断「恢复」成一条 errored 结果、并让后续 attempt 继续起 —— 那就停不下来了。
@@ -1123,7 +1152,7 @@ async function runAttemptBody(
       id: evalDef.id,
       description: evalDef.description,
       experimentId: run.experimentId,
-      experiment: experimentRunInfo(run, config.sandbox),
+      experiment: experimentRunInfo(run, config),
       agent: run.agent.name,
       model: run.model,
       verdict,
@@ -1364,8 +1393,15 @@ async function collectSources(
 }
 
 /** 解析后运行配置的穷尽投影(ExperimentRunInfo,见 docs/feature/record/architecture.md):
- *  agent/model 只在快照顶层,这里不复制;sandbox 只经 provider 的公开参数投影落盘。 */
-export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox"]): EvalResult["experiment"] {
+ *  agent/model 只在快照顶层,这里不复制;sandbox 只经 provider 的公开参数投影落盘。
+ *  第二个参数收整份项目配置(而不是只收 sandbox):`sandbox` 与 `timeoutMs` 都是「run 值缺席
+ *  时落到 config」的字段,记录要落这次运行真正生效的 run 级值。eval 自己声明的那一层不在这
+ *  (与 judge 同理,它在该 eval 的源码闭包里)。 */
+export function experimentRunInfo(
+  run: AgentRun,
+  config?: Pick<Config, "sandbox" | "timeoutMs">,
+): EvalResult["experiment"] {
+  const runLevelTimeoutMs = run.timeoutMs ?? config?.timeoutMs;
   return {
     ...(run.description !== undefined ? { description: run.description } : {}),
     ...(run.reasoningEffort !== undefined ? { reasoningEffort: run.reasoningEffort } : {}),
@@ -1374,12 +1410,12 @@ export function experimentRunInfo(run: AgentRun, configSandbox?: Config["sandbox
     ...(run.labels !== undefined && Object.keys(run.labels).length > 0 ? { labels: run.labels } : {}),
     attempts: run.attempts,
     earlyExit: run.earlyExit,
-    ...(run.timeoutMs !== undefined ? { timeoutMs: run.timeoutMs } : {}),
+    ...(runLevelTimeoutMs !== undefined ? { timeoutMs: runLevelTimeoutMs } : {}),
     ...(run.budget !== undefined ? { budget: run.budget } : {}),
     ...(run.maxConcurrency !== undefined ? { maxConcurrency: run.maxConcurrency } : {}),
     selectedEvalIds: [...run.selectedEvalIds],
     ...(run.evalFilterFingerprint !== undefined ? { evalFilterFingerprint: run.evalFilterFingerprint } : {}),
-    ...sandboxProjection(run, configSandbox),
+    ...sandboxProjection(run, config?.sandbox),
     ...(run.sandboxReuse ? { sandboxReuse: true } : {}),
     ...(run.strict ? { strict: true } : {}),
     ...(run.judge ? { judge: { model: run.judge.model, baseUrl: run.judge.baseUrl } } : {}),

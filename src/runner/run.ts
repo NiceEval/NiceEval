@@ -40,6 +40,7 @@ import { detectReuseContamination, reuseContaminationMessage } from "./reuse-dia
 import { selectedEvalsForRun } from "./eval-selection.ts";
 import { registerExperimentTeardown, unregisterExperimentTeardown } from "./experiment-cleanup-registry.ts";
 import { withCleanupTimeout } from "./cleanup-timeout.ts";
+import { resolveAttemptTimeout } from "./timeout.ts";
 import { hostname } from "node:os";
 import {
   isStaleTeardownRegistration,
@@ -1744,7 +1745,10 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             const pool = blockedError ? undefined : reusePoolFor(a);
             const lease = pool
               ? yield* Effect.promise(() =>
-                  pool.acquire((a.run.timeoutMs ?? a.evalDef.timeoutMs ?? opts.config.timeoutMs ?? 600_000)),
+                  // 复用池要预留的寿命 = 这条 attempt 实际生效的上限,与 attempt.ts 同一个解析链
+                  // (单源见 runner/timeout.ts),不在这里重写一遍 `??`。没有上限时如实传
+                  // undefined:池只能要求覆盖收尾预留,不替 attempt 编一条 deadline。
+                  pool.acquire(resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs),
                 )
               : undefined;
             const result = blockedError
@@ -1752,7 +1756,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   id: a.evalDef.id,
                   description: a.evalDef.description,
                   experimentId: a.run.experimentId,
-                  experiment: experimentRunInfo(a.run, opts.config.sandbox),
+                  experiment: experimentRunInfo(a.run, opts.config),
                   agent: a.run.agent.name,
                   model: a.run.model,
                   verdict: "errored",

@@ -20,6 +20,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
 import { runAttemptEffect } from "./attempt.ts";
+import { resolveRunTimeout, type RunTimeout } from "./timeout.ts";
 import { activateFeedbackSink, type DiagnosticInput, type FeedbackSink } from "./feedback/sink.ts";
 import { defineSandboxAgent, defineSandbox } from "../define.ts";
 import { equals } from "../expect/index.ts";
@@ -99,6 +100,12 @@ async function runOnce(
     evalDefOverrides?: Partial<DiscoveredEval>;
     onPhase?: (phase: LifecyclePhase) => void;
     timeoutMs?: number;
+    /**
+     * run 层(`--timeout` / experiment)的求值结果,原样铺进 AgentRun —— 空对象即「运行侧没写」,
+     * 让解析链落到 eval → config,四层全缺就是无上限。给了它就不再套默认的 5s(解析链测试
+     * 专用,见下方「timeoutMs 的四层解析链」describe)。
+     */
+    runTimeout?: RunTimeout;
     sandbox?: AgentRun["sandbox"];
     experimentId?: string;
     /** 项目级配置(judge 一类逐字段解析链的上层);省略即空配置。 */
@@ -123,7 +130,7 @@ async function runOnce(
     // 自定义 provider:create() 直接返回内存 fake,绕开真实沙箱 provider。
     sandbox: opts.sandbox ?? defineSandbox({ name: "fake-provider", create: async () => asSandbox(box) }),
     experimentId: opts.experimentId,
-    timeoutMs: opts.timeoutMs ?? 5_000,
+    ...(opts.runTimeout ?? { timeoutMs: opts.timeoutMs ?? 5_000 }),
     selectedEvalIds: [evalDef.id],
   };
   const attempt: Attempt = { evalDef, run, attempt: 0, key: "fake/eval", fingerprint: "" };
@@ -1324,5 +1331,140 @@ describe("runAttemptEffect · sandbox 调度事实在租借时刻落记录", () 
 
     expect(result.verdict).toBe("errored");
     expect(result.sandbox).toEqual({ provider: "fake-provider", sandboxId: "fake" });
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「含 eval 层的字段解析链(timeoutMs)」
+// bug: memory/multi-source-field-resolution-order.md
+// 断言面是**实际生效的 deadline**(推进虚拟时钟到线前后各看一次)与超时消息里的来源标注,
+// 不是解析函数的中间返回值。run 层用 CLI 自己那条 `resolveRunTimeout(flag, experiment)` 铺进
+// AgentRun —— 于是「把 config 的缺省提前物化进 run 值」这个真机 bug 在这里会红:第三格
+// (config 有值、experiment 没写、eval 写了)会按 config 的线超时,而不是 eval 自己声明的线。
+describe("runAttemptEffect · timeoutMs 的四层解析链(--timeout → experiment → eval → config,默认无上限)", () => {
+  /** 挂死的 attempt:只能靠外层超时打断,于是「什么时候被打断」就是实际生效的 deadline。 */
+  function hangingAgent() {
+    return defineSandboxAgent({
+      name: "fake-agent-hang",
+      send: async () => await new Promise<never>(() => {}),
+    });
+  }
+
+  /** 推进到线前 1s 应仍在跑,越线后应 errored;返回越线后的结果供断言来源标注。 */
+  async function timeoutAt(
+    expectedMs: number,
+    opts: { runTimeout: RunTimeout; evalTimeoutMs?: number; configTimeoutMs?: number },
+  ) {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const promise = runOnce(hangingAgent(), new FakeSandbox(), {
+        runTimeout: opts.runTimeout,
+        evalDefOverrides: {
+          // 挂在 send 上直到外层超时打断:被打断的时刻就是实际生效的 deadline。
+          test: async (t) => {
+            await t.send("go");
+          },
+          ...(opts.evalTimeoutMs !== undefined ? { timeoutMs: opts.evalTimeoutMs } : {}),
+        },
+        ...(opts.configTimeoutMs !== undefined ? { config: { timeoutMs: opts.configTimeoutMs } } : {}),
+      }).then((r) => {
+        settled = true;
+        return r;
+      });
+
+      // 线前:还在跑。这一步是区分力所在——链少一层时 attempt 已经被更早的那条线打断了。
+      await vi.advanceTimersByTimeAsync(expectedMs - 1_000);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      // 越线即收束:少了这一条,链多算了一层时会挂在下面的 await 上超时,而不是给出一条断言。
+      expect(settled).toBe(true);
+      const result = await promise;
+      expect(result.error?.code).toBe("timeout");
+      return result;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("--timeout 压过 experiment / eval / config 三层,消息标 from flag", async () => {
+    const result = await timeoutAt(30_000, {
+      runTimeout: resolveRunTimeout(30_000, 60_000),
+      evalTimeoutMs: 90_000,
+      configTimeoutMs: 120_000,
+    });
+    expect(result.error?.message).toContain("30000ms");
+    expect(result.error?.message).toContain("from flag");
+  });
+
+  it("没有 --timeout 时 experiment 字段压过 eval / config,消息标 from experiment", async () => {
+    const result = await timeoutAt(60_000, {
+      runTimeout: resolveRunTimeout(undefined, 60_000),
+      evalTimeoutMs: 90_000,
+      configTimeoutMs: 120_000,
+    });
+    expect(result.error?.message).toContain("60000ms");
+    expect(result.error?.message).toContain("from experiment");
+  });
+
+  // 区分力最强的一格:`??` 链少写一层(把 config 提前物化成 run 值)时只有这一格会红。
+  it("config 有值、experiment 没写、eval 写了自己的值时按 eval 的值超时,消息标 from eval", async () => {
+    const result = await timeoutAt(90_000, {
+      runTimeout: resolveRunTimeout(undefined, undefined),
+      evalTimeoutMs: 90_000,
+      configTimeoutMs: 120_000,
+    });
+    expect(result.error?.message).toContain("90000ms");
+    expect(result.error?.message).toContain("from eval");
+  });
+
+  it("只有 config 写了时按 config 的值超时,消息标 from config", async () => {
+    const result = await timeoutAt(120_000, {
+      runTimeout: resolveRunTimeout(undefined, undefined),
+      configTimeoutMs: 120_000,
+    });
+    expect(result.error?.message).toContain("120000ms");
+    expect(result.error?.message).toContain("from config");
+  });
+
+  // 链末端没有内置默认(docs 的解析链表格写死默认「无上限」):四层都没声明就不挂 deadline。
+  // 区分力:链末端偷偷兜一个毫秒数(比如 10 分钟)时,这一格会在推进到那个数时被打断。
+  it("四层都没写时不挂 deadline:推进几小时也不超时,attempt 跑到自己结束", async () => {
+    vi.useFakeTimers();
+    try {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const agent = defineSandboxAgent({
+        name: "fake-agent-gated",
+        send: async () => {
+          await gate;
+          return { events: [], status: "completed" as const };
+        },
+      });
+
+      let settled = false;
+      const promise = runOnce(agent, new FakeSandbox(), {
+        runTimeout: resolveRunTimeout(undefined, undefined),
+        evalDefOverrides: {
+          test: async (t) => {
+            await t.send("go");
+          },
+        },
+      }).then((r) => {
+        settled = true;
+        return r;
+      });
+
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60_000);
+      expect(settled).toBe(false);
+
+      // 闸门放开后照常收束成一条正常结果——证明「没有 deadline」不等于「永远挂着不收尾」。
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      const result = await promise;
+      expect(result.error).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
