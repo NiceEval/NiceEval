@@ -4,9 +4,11 @@ sidebarTitle: "接入等级"
 description: "按「Adapter 接到哪里、额外拿到什么观测数据」接入分三级：Tier 1 只接 send，Tier 2 加 OTel，Tier 3 侵入改造暴露 experiment flags。每档买到什么、什么时候升级。"
 ---
 
+import { TierLadder } from '/snippets/diagram-tier-ladder.jsx';
+
 接入 [NiceEval](https://niceeval.com/) 不是全有或全无的一次性工程。按「Adapter 接到哪里、额外拿到什么观测数据」，接入分三级——每一级在上一级之上加一种投入、换一组新能力，已写的评估用例全程复用，不用改。
 
-![接入分三个 Tier：Tier 1 只接 send 应用零改动；Tier 2 加 OTel 换 niceeval view 的调用瀑布图；Tier 3 侵入改造把变体暴露成 flags 做 A/B。](/images/adapter-tiers-zh.svg)
+<TierLadder />
 
 ## Tier 1：只接 send
 

@@ -4,6 +4,9 @@ sidebarTitle: "首页"
 description: "NiceEval 是框架无关的 Agent-Native 评估框架与 Harness，为你的 AI 应用构建评估提供完整的闭环。"
 ---
 
+import { SandboxMode } from '/snippets/diagram-sandbox-mode.jsx';
+import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
+
 <div align="center">
 
 # NiceEval
@@ -38,45 +41,13 @@ description: "NiceEval 是框架无关的 Agent-Native 评估框架与 Harness�
 
 跑 Codex、Claude Code 等需要 Sandbox 的 coding agent：
 
-```text
-   evals/*.eval.ts
-        │
-        ▼
-   ┌────────────┐
-   │  niceeval  │
-   └────────────┘
-        │
-        │ Agent 适配器（官方）
-        ▼
-   ┌───────────────────────────────┐
-   │        Docker Sandbox         │
-   │    ┌───────────────────────┐  │
-   │    │ Codex / Claude Code / │  │
-   │    │ 需要隔离工作区的应用  │  │
-   │    └───────────────────────┘  │
-   └───────────────────────────────┘
-```
+<SandboxMode />
 
 ### 模式二：直连
 
 直接连接你自己的 AI Agent：
 
-```text
-   evals/*.eval.ts
-        │
-        ▼
-   ┌────────────┐
-   │  niceeval  │
-   └────────────┘
-        │
-        │ Agent 适配器（官方 / 自定义）
-        ▼
-   ┌────────────────────────────┐
-   │     你自己的 AI Agent      │
-   │ (AI SDK · LangGraph · Pi · │
-   │    自研 agent loop 等)     │
-   └────────────────────────────┘
-```
+<DirectMode />
 
 - **[NiceEval](https://niceeval.com/) 核心** 负责发现评估用例、调度运行、打分、生成报告与 artifacts。
 - **Agent 适配器** 是开放边界：你决定如何调用被测系统，以及如何把输出映射成标准事件流。

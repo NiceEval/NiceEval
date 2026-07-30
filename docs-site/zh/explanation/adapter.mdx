@@ -4,6 +4,8 @@ sidebarTitle: "Adapter"
 description: "Adapter 是你写的适配器。本文讲清楚 send 函数传入什么返回什么、被测系统配置怎么传、三个接入等级，以及 t 上的能力从哪来。"
 ---
 
+import { TurnRoundtrip } from '/snippets/diagram-turn-roundtrip.jsx';
+
 在 [NiceEval](https://niceeval.com/) 里，`Adapter` 是连接运行器和被测系统的适配层。Adapter 需要实现 `send` 函数：把 `t.send()` 等评估侧动作发给你的应用，再把应用返回翻译成 [NiceEval](https://niceeval.com/) 的标准 `Turn`。
 
 后续阅读[写 send](/zh/tutorials/write-send)
@@ -13,7 +15,7 @@ description: "Adapter 是你写的适配器。本文讲清楚 send 函数传入�
 
 一次 `t.send()` 的完整往返，穿过这条边界两次：
 
-![一次 t.send 的完整往返：评估用例调用 t.send，运行器组装 TurnInput 与 ctx，adapter 调用你的应用并返回标准事件流 Turn。](/images/agent-turn-roundtrip-zh.svg)
+<TurnRoundtrip />
 
 去程：评估用例里的驱动动词（`t.send` / `t.sendFile` / `t.respond`）组装 `TurnInput` 和本会话线的 `ctx`，调一次 Adapter 的 `send`。
 

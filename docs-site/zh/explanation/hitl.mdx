@@ -4,6 +4,8 @@ sidebarTitle: "HITL"
 description: "什么是 Human-in-the-loop，Claude Code / Codex / AI SDK 应用里它长什么样；NiceEval 如何把它变成可评的路径——waiting 停轮、input.requested 说明在等什么、t.respond 替人回答后同一轮继续。"
 ---
 
+import { HitlHandshake } from '/snippets/diagram-hitl-handshake.jsx';
+
 HITL（human-in-the-loop，人工介入）指 agent 在执行中间停下来，把决定权交回给人：拿到回答之前不继续。它不是异常，而是 agent 产品刻意设计的安全门与信息门——敏感操作前要人批准，信息不够时要人补充，多个方案时要人拍板。
 
 你大概率已经每天在用它：
@@ -24,7 +26,7 @@ HITL（human-in-the-loop，人工介入）指 agent 在执行中间停下来，�
 
 `t.respond` 底层没有专用通道——它只是**又一次普通的 `send`**，人的裁决以结构化形式随输入到达：
 
-![HITL 一次完整握手：t.send 后应用停在审批上，本轮以 waiting 返回并带 input.requested；t.parked 与 t.requireInputRequest 检查停轮；t.respond 作为第二次普通 send 把结构化裁决交回，同一轮继续执行到 completed，断言照常。](/images/hitl-handshake-zh.svg)
+<HitlHandshake />
 
 两个容易想歪的地方：
 

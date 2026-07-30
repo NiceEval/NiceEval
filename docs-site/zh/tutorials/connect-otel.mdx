@@ -4,6 +4,8 @@ sidebarTitle: "OTel 接入"
 description: "把应用已有的 OTel span 发送给 NiceEval，在 niceeval view 中查看每轮调用瀑布图；评估用例断言仍以 Send 返回的事件和用量为准。"
 ---
 
+import { OtelCollect } from '/snippets/diagram-otel-collect.jsx';
+
 OTel 接入**不改变断言的数据来源**。`t.calledTool`、`t.maxTokens` 和耗时判定都读取 Adapter 在 `send` 中返回的 `Turn`（`events` 与 `usage`），见[接入你的 Agent](/zh/tutorials/connect-your-agent)。
 
 OTel span 用于生成 **`niceeval view` 中的调用瀑布图**。瀑布图按轮显示模型调用、工具执行、耗时和 token，帮助定位评估用例失败或轮次变慢的具体步骤。
@@ -13,6 +15,8 @@ OTel span 用于生成 **`niceeval view` 中的调用瀑布图**。瀑布图按�
 ## 原理（一段话）
 
 [NiceEval](https://niceeval.com/) 运行时启动本机 OTLP 接收器。应用发送的 span 会归属到对应 `send` 轮次，归一成 GenAI 语义后写入 `EvalResult.trace`，并由 `npx niceeval view` 显示为瀑布图。**span 只用于瀑布图，不进入事件流，也不参与断言**。埋点缺失、span 迟到或丢批只影响瀑布图完整性，不影响判定。
+
+<OtelCollect />
 
 ## 接法
 

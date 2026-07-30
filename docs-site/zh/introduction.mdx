@@ -4,6 +4,9 @@ sidebarTitle: "介绍"
 description: "NiceEval 帮助团队衡量、评估并改进生产环境中的 AI：比较模型、迭代 Agent、发现回归、用真实数据持续改进。"
 ---
 
+import { SandboxMode } from '/snippets/diagram-sandbox-mode.jsx';
+import { DirectMode } from '/snippets/diagram-direct-mode.jsx';
+
 [NiceEval](https://niceeval.com/) 是一个 Agent 评估工具，帮助团队衡量、评估并改进生产环境中的 AI。借助 NiceEval，团队可以比较模型、迭代 Agent、发现回归问题，并利用真实用户数据持续改进 AI 应用。
 
 NiceEval 以本地优先为核心：你的评估在你自己的环境中运行。当团队需要分享评估结果、做回归跟踪时，可以通过 Report 上报到 BrainTrust 等平台，或者自定义报告导出。
@@ -66,44 +69,12 @@ NiceEval 是一个 Agent-Native 的评估工具。Dataset / golden 那一套「�
   <Tab title="Sandbox mode">
     适合 Codex、Claude Code 这类必须在真实文件系统中改代码、跑命令的 coding agent。
 
-    ```text
-       evals/*.eval.ts
-            │
-            ▼
-       ┌────────────┐
-       │  niceeval  │
-       └────────────┘
-            │
-            │ Agent 适配器(官方)
-            ▼
-       ┌───────────────────────────────┐
-       │        Docker Sandbox         │
-       │    ┌───────────────────────┐  │
-       │    │ Codex / Claude Code / │  │
-       │    │ 需要隔离工作区的应用  │  │
-       │    └───────────────────────┘  │
-       └───────────────────────────────┘
-    ```
+    <SandboxMode />
   </Tab>
   <Tab title="Direct mode">
     适合你自己的 AI Agent，不需要 Docker。
 
-    ```text
-       evals/*.eval.ts
-            │
-            ▼
-       ┌────────────┐
-       │  niceeval  │
-       └────────────┘
-            │
-            │ Agent 适配器(官方，或者自己实现)
-            ▼
-       ┌────────────────────────────┐
-       │     你自己的 AI Agent      │
-       │ (AI SDK · LangGraph · Pi · │
-       │    自研 agent loop 等)     │
-       └────────────────────────────┘
-    ```
+    <DirectMode />
   </Tab>
 </Tabs>
 
