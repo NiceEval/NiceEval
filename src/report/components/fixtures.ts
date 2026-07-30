@@ -8,11 +8,9 @@ import type {
   DeltaData,
   ExperimentListItem,
   LineData,
-  MatrixData,
   MetricColumn,
   ScatterData,
   ScopeSummaryData,
-  ScoreboardData,
   TableData,
 } from "../model/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
@@ -62,67 +60,6 @@ export const tableData: TableData = {
         // samples < total:有 attempt 测不了 → 覆盖率角标 5/6
         "code-lines": { value: 120, basis: "eval", samples: 5, total: 6, refs: [] },
       },
-    },
-  ],
-};
-
-export const matrixData: MatrixData = {
-  rowDimension: "eval",
-  columnDimension: "agent",
-  metric: passRateColumn,
-  // 稀疏:geometry/angles × codex 没有样本,数据里不出现 → 格子空着
-  cells: [
-    {
-      row: "algebra/quadratic",
-      column: "bub",
-      cell: {
-        value: 1,
-        basis: "eval", samples: 2,
-        total: 2,
-        refs: [locator("@1b3b3b3b"), locator("@1b7b7b7b")],
-      },
-    },
-    {
-      row: "algebra/quadratic",
-      column: "codex",
-      cell: { value: 0, basis: "eval", samples: 3, total: 3, refs: [] },
-    },
-    {
-      row: "geometry/angles",
-      column: "bub",
-      cell: { value: 0.5, basis: "eval", samples: 2, total: 2, refs: [] },
-    },
-  ],
-};
-
-export const scoreboardData: ScoreboardData = {
-  rowDimension: "agent",
-  questions: [
-    "algebra/quadratic",
-    "algebra/simple",
-    "geometry/angles",
-    "geometry/area",
-  ],
-  fullMarks: 100,
-  weights: [{ prefix: "algebra/", weight: 2 }],
-  ignoredEvals: 1,
-  rows: [
-    {
-      key: "bub",
-      // notRun 1:一题没跑、按 0 计;unscorable 0 —— 两种 0 分分开计数
-      total: { value: 78.5, display: "78.5", notRun: 1, unscorable: 0, refs: [locator("@1a0a0a0a")] },
-      subjects: [
-        { key: "algebra", earned: 14, possible: 16, questions: 8, notRun: 1, unscorable: 0, display: "14/16 (87.5%)", refs: [] },
-        { key: "geometry", earned: 3, possible: 4, questions: 4, notRun: 0, unscorable: 0, display: "3/4 (75%)", refs: [] },
-      ],
-    },
-    {
-      key: "codex",
-      total: { value: 52, display: "52", notRun: 0, unscorable: 2, refs: [] },
-      subjects: [
-        { key: "algebra", earned: 9, possible: 16, questions: 8, notRun: 0, unscorable: 0, display: "9/16 (56.3%)", refs: [] },
-        { key: "geometry", earned: 1.4, possible: 4, questions: 4, notRun: 0, unscorable: 2, display: "1.4/4 (35%)", refs: [] },
-      ],
     },
   ],
 };

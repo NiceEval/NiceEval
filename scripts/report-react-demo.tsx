@@ -19,27 +19,19 @@ import { Chart, Series, Table } from "../src/report/react/index.tsx";
 import {
   attemptListItems,
   experimentListItems,
-  matrixData,
   scatterData,
-  scoreboardData,
   tableData,
 } from "../src/report/components/fixtures.ts";
 import {
   attemptListContent,
   experimentListContent,
 } from "../src/report/components/entity-lists/content.ts";
-import {
-  metricMatrixContent,
-  scoreboardContent,
-} from "../src/report/slices/content.ts";
 import { datasetToTableContent, scatterDataToDataset, tableDataToDataset } from "../src/report/model/dataset.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const attemptHref = (locator: string) => `view/#/attempt/${locator}`;
 
 const measureTable = datasetToTableContent(tableDataToDataset(tableData));
-const matrixTable = metricMatrixContent(matrixData);
-const scoreboardTable = scoreboardContent(scoreboardData);
 const chartDataset = scatterDataToDataset(scatterData);
 const attemptTable = attemptListContent(attemptListItems);
 const experimentTable = experimentListContent(experimentListItems);
@@ -49,14 +41,10 @@ const page = renderToStaticMarkup(
     <h1>niceeval/report/react 官方原语静态演示</h1>
     <h2>Table · measure.rows</h2>
     <Table data={measureTable} attemptHref={attemptHref} />
-    <h2>Table · measure.matrix</h2>
-    <Table data={matrixTable} attemptHref={attemptHref} />
     <h2>Chart · measure.chart</h2>
     <Chart data={chartDataset} x="costUSD" y="passRate" legend>
       <Series id="frontier" mark="scatter" points="experiment" by="agent" />
     </Chart>
-    <h2>Table · measure.scoreboard</h2>
-    <Table data={scoreboardTable} />
     <h2>Table · entity.attempts</h2>
     <Table data={attemptTable} attemptHref={attemptHref} />
     <h2>Table · entity.experiments</h2>

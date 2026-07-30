@@ -1,74 +1,9 @@
 // 指标视图 TableContent 投影:compute *Data → Table 原语可直接消费的形状。
 
 import type { Cell, TableContent, TableContentRow } from "../definition/cell.ts";
-import type { DeltaData, MatrixData, ScoreboardData, StabilityMatrixCell, StabilityMatrixData } from "../model/types.ts";
+import type { DeltaData, StabilityMatrixCell, StabilityMatrixData } from "../model/types.ts";
 import type { AttemptLocator } from "../../record/locator.ts";
-import { resolveLocalizedText } from "../model/locale.ts";
-
-export interface MatrixTableContent extends TableContent {
-  readonly rowDimension: string;
-  readonly columnDimension: string;
-  readonly measureKey: string;
-}
-
-export function metricMatrixContent(data: MatrixData): MatrixTableContent {
-  const columnKeys = [...new Set(data.cells.map((c) => c.column))].sort();
-  const rowKeys = [...new Set(data.cells.map((c) => c.row))].sort();
-  const byPosition = new Map(data.cells.map((c) => [`${c.row}\0${c.column}`, c.cell] as const));
-  const better = data.metric.better;
-  return {
-    rowDimension: data.rowDimension,
-    columnDimension: data.columnDimension,
-    measureKey: data.metric.key,
-    columns: [
-      { key: data.rowDimension },
-      ...columnKeys.map((key) => ({ key, ...(better !== undefined ? { better } : {}) })),
-    ],
-    rows: rowKeys.map((rowKey) => {
-      const cells: globalThis.Record<string, Cell> = {
-        [data.rowDimension]: { kind: "text", text: rowKey },
-      };
-      for (const columnKey of columnKeys) {
-        const cell = byPosition.get(`${rowKey}\0${columnKey}`);
-        cells[columnKey] = cell ? { kind: "metric", metric: cell } : { kind: "notApplicable" };
-      }
-      return { key: rowKey, cells };
-    }),
-  };
-}
-
-export function scoreboardContent(data: ScoreboardData): TableContent {
-  const subjectKeys: string[] = [];
-  for (const row of data.rows) {
-    for (const subject of row.subjects) {
-      if (!subjectKeys.includes(subject.key)) subjectKeys.push(subject.key);
-    }
-  }
-  return {
-    columns: [
-      { key: "entity" },
-      { key: "total", better: "higher" },
-      ...subjectKeys.map((key) => ({ key, better: "higher" as const })),
-    ],
-    rows: data.rows.map((row) => {
-      const cells: globalThis.Record<string, Cell> = {
-        entity: { kind: "text", text: row.key },
-        total: {
-          kind: "score",
-          earned: row.total.value,
-          possible: data.fullMarks,
-        },
-      };
-      for (const subjectKey of subjectKeys) {
-        const subject = row.subjects.find((s) => s.key === subjectKey);
-        cells[subjectKey] = subject
-          ? { kind: "text", text: resolveLocalizedText(subject.display, "en") }
-          : { kind: "notApplicable" };
-      }
-      return { key: row.key, cells };
-    }),
-  };
-}
+import { localizedMessage } from "../model/locale.ts";
 
 export function deltaTableContent(data: DeltaData): TableContent {
   const conditionColumns = data.conditions.flatMap((condition) => [
@@ -82,7 +17,8 @@ export function deltaTableContent(data: DeltaData): TableContent {
     { key: `${condition}:Δcost` },
   ]);
   return {
-    columns: [{ key: "eval" }, ...conditionColumns, ...deltaColumns],
+    // eval 是语义列,带表头;条件名与 Δ 列的列名即数据,不声明 header。
+    columns: [{ key: "eval", header: localizedMessage("table.eval") }, ...conditionColumns, ...deltaColumns],
     rows: data.rows.map((row) => {
       const cells: globalThis.Record<string, Cell> = {
         eval: { kind: "text", text: row.key, ...(row.flipped ? { detail: "⇄" } : {}) },
@@ -136,7 +72,8 @@ export interface StabilityContent extends TableContent {
 
 export function stabilityMatrixContent(data: StabilityMatrixData): StabilityContent {
   const columns = [
-    { key: "eval" },
+    { key: "eval", header: localizedMessage("table.eval") },
+    // 条件名列的列名即数据,不声明 header。
     ...data.columns.map((column) => ({ key: column })),
     { key: "total" },
   ];
