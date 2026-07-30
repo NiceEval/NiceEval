@@ -2,9 +2,18 @@
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md)
+[PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md)
 
 ---
+
+## 待复审候选
+
+[PLAN-4](PLAN-4.md) 在本结论之后新增。它保留公共主
+Sandbox 与完整生命周期义务,但把环境输入和物化收回各
+provider 的 environment case;现有 PLAN-1 结论尚未据此
+重裁。复审时应重点判断:规范化 OCI 拓扑是否必须是唯一
+契约实体,还是「profile 名中性、provider 映射原生」已经
+足够通用。
 
 ## 结论
 

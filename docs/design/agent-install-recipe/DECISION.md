@@ -2,9 +2,18 @@
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md)
+[PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md)
 
 ---
+
+## 待复审候选
+
+[PLAN-4](PLAN-4.md) 在本结论之后新增。它把运行时
+「检查→必要时安装」定为契约本体,官方 template 与构建
+中间件退回快速路径;现有 PLAN-2 结论尚未据此重裁。
+复审时应重点判断:预制 Agent 是否只是性能优化、任意任务
+template 是否都应通过同一 Ensure 协议运行,以及身份与检查
+单源能否替代安装步骤 DSL。
 
 ## 结论
 

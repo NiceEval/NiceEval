@@ -8,8 +8,9 @@ niceeval 之外自己编排服务、自己推导镜像。
 
 这个决策主题回答:niceeval 用什么形态支持多容器环境。
 候选项之间的分歧值得摊开比较——拓扑声明是 niceeval 自己的
-typed 表、直接引用任务自带的 compose 文件,还是根本不接管
-服务、只做能力协商,三条路的迁移成本、契约可控性与
+typed 表、直接引用任务自带的 compose 文件、根本不接管
+服务,还是让公共 Sandbox 只约束主执行空间并由各 provider
+交付完整 environment case。四条路的迁移成本、契约可控性与
 provider 覆盖面差异都很大。
 
 ## 动机:环境不对等产出假结论
@@ -40,4 +41,5 @@ provider 覆盖面差异都很大。
 [PLAN-1](PLAN-1.md) ·
 [PLAN-2](PLAN-2.md) ·
 [PLAN-3](PLAN-3.md) ·
+[PLAN-4](PLAN-4.md) ·
 [DECISION](DECISION.md)

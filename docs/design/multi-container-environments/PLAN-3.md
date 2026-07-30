@@ -2,7 +2,7 @@
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) ·
-[DECISION](DECISION.md)
+[PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
 
 ---
 
