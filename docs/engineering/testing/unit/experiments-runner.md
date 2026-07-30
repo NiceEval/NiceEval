@@ -188,8 +188,24 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   attempt 在 scoring 阶段不产生任何 detail 文本——不存在与阶段词重复的静态占位文案。断言面是
   feedback 事件流里的 progress 文本，不断言渲染字节。
 - **Judge 预检的运行级行**：`precheck` 起止事件归约进 `RunFeedbackState.activePrecheck`。`started`
-  建行，`done` 清行。预检发生在派发前，因此 Attempt 始终保持 `queued`，不改变计数恒等式。live 面板把它排在实验生命周期 Hook 与 Attempt 行之前。这里断言 reducer 状态与事件序；字节渲染归
+  建行，`done` / `failed` 清行。预检发生在派发前，因此 Attempt 始终保持 `queued`，不改变计数恒等式。live 面板把它排在实验生命周期 Hook 与 Attempt 行之前。这里断言 reducer 状态与事件序；字节渲染归
   [E2E · CLI](../e2e/cli.md)。
+- **Judge 预检失败的降级**（契约见 [Judge · 派发前预检](../../../feature/judge/library.md#派发前预检)）：
+  预检失败时，含 judge 断言的 eval 的全部计划 attempt 不派发、逐条落成 `errored`，并照常落盘。
+  错误形状是 `code: "judge-precheck-failed"` 加 `phase: "judge.precheck"`。不含 judge 断言的
+  eval 照常派发并产出 verdict；同一批里两类 eval 都要有，才有区分力。还要覆盖两个不预检的场景：
+  未配置 judge，以及含 judge 的 eval 全部命中携带。
+- **探测预算逐次独立**：每次探测各自拥有完整的 20 秒超时预算。区分力场景：第一次探测超时耗尽后，
+  第二次探测仍以完整预算发出——不是拿着已 abort 的 signal 立即失败。用 fake fetch 断言两次调用的
+  signal 各自独立、第二次调用真实发生。
+- **PLAN 的实验并发附注**：任一选中实验声明 `maxConcurrency` 时，`start` 事件带
+  `experimentConcurrency`（仅收声明了的实验）；没有任何实验声明时整个字段省略。human PLAN 行的
+  附注文本（`concurrency 19 (from flag) · mempal ≤1`）断言到格式化输出，字节渲染归
+  [E2E · CLI](../e2e/cli.md)。
+- **PLAN 的全局并发来源标注**：human PLAN 行的 `concurrency` 值带取胜层。
+  `from flag` / `from config` / `from <provider> default` 三层来源各一条区分力场景，
+  断言到格式化输出。来源不进 `--json` 的 `start` 事件（契约见
+  [CLI · 运行中的 live 面板](../../../feature/experiments/cli.md#运行中的-live-面板)）。
 - **已了结 attempt 按 verdict 分项**：reducer 不保留笼统的完成数，每一条了结的 attempt 落进
   `passed` / `failed` / `errored` / `skipped` 之一（契约见
   [CLI · 运行中的 live 面板](../../../feature/experiments/cli.md#运行中的-live-面板)）。断言面：`attempt:complete`

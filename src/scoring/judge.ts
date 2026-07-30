@@ -110,8 +110,9 @@ function judgeClient(apiKey: string, baseURL: string, signal?: AbortSignal): Ope
   });
 }
 
-/** 预检显式配置的 judge:验证 model + API key 存在,并发最小请求确认端点可达(有 20s 上限)。
- *  返回错误描述字符串,可达则返回 undefined。*/
+/** 预检显式配置的 judge:验证 model + API key 存在,并发最小请求确认端点可达。传输失败(超时、
+ *  连接失败)后重试一次,**每次探测各自拥有完整的 20 秒预算**;端点已给出 HTTP 回应(非 2xx)
+ *  不重试——回应是确定性答案。返回错误描述字符串,可达则返回 undefined。*/
 export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Promise<string | undefined> {
   const resolved = resolveJudge(judge);
   if (!resolved.model) return t("judge.modelMissing");
@@ -119,18 +120,22 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
     const envHint = judge.apiKeyEnv ?? "NICEEVAL_JUDGE_KEY";
     return t("judge.probeMissingKey", { model: resolved.model, envHint });
   }
-  // 20s 超时与外层 signal(Ctrl+C)合流:任一触发都中断这次探测。超时源的 reason 是
-  // TimeoutError,下面据此把「网关不回」与其它失败分开报,给出可行动的下一步。
-  const timeoutSignal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
-  const probeSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const endpoint = resolved.baseUrl.replace(/\/$/, "");
   // probe 只对尚未收到 HTTP 响应的传输失败重试一次。实际评分绝不走这个重试，
   // 避免一个 rubric 因隐式重放产生第二笔模型费用。
   for (let attempt = 1; attempt <= PROBE_MAX_ATTEMPTS; attempt++) {
+    // 20s 上限**每次尝试各建一份**(见 docs/feature/judge/library.md「派发前预检」:每次探测
+    // 各自拥有完整的 20 秒预算)。建在循环外会让第一次超时耗尽预算后,第二次拿着已 abort 的
+    // signal 0ms 即败——重试形同虚设,而重试存在的理由正是把瞬时抖动与真不可用分开。
+    // 与外层 signal(Ctrl+C)合流:任一触发都中断这次探测。超时源的 reason 是 TimeoutError,
+    // 下面据此把「网关不回」与其它失败分开报,给出可行动的下一步。
+    const timeoutSignal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    const probeSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     try {
       // 只确认可达 + 鉴权通过,不关心回复内容(真实评分走 autoevals)。
       // 不带 max_tokens 等采样参数:新款模型(o 系 / gpt-5.x)会 400 拒掉 max_tokens,
       // probe 的职责只是「端点通、key 对、model 认识」,参数越少越不误伤。
-      const url = `${resolved.baseUrl.replace(/\/$/, "")}/chat/completions`;
+      const url = `${endpoint}/chat/completions`;
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -146,6 +151,7 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         return t("judge.probeFailed", {
+          endpoint,
           model: resolved.model,
           error: t("judge.httpError", { status: res.status, body: body.slice(0, 300) }),
         });
@@ -156,9 +162,14 @@ export async function probeJudge(judge: JudgeConfig, signal?: AbortSignal): Prom
       // 在第二次仍失败时按原有可行动错误反馈。
       if (signal?.aborted || attempt === PROBE_MAX_ATTEMPTS) {
         if (e instanceof Error && e.name === "TimeoutError") {
-          return t("judge.probeTimeout", { model: resolved.model, seconds: PROBE_TIMEOUT_MS / 1000 });
+          return t("judge.probeTimeout", {
+            endpoint,
+            model: resolved.model,
+            attempts: attempt,
+            seconds: PROBE_TIMEOUT_MS / 1000,
+          });
         }
-        return t("judge.probeFailed", { model: resolved.model, error: errorSummary(e) });
+        return t("judge.probeFailed", { endpoint, model: resolved.model, error: errorSummary(e) });
       }
     }
   }

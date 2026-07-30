@@ -81,7 +81,7 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
       switch (event.type) {
         case "plan": {
           noteCheckpoint(event.at);
-          const { shape, reused } = event.plan;
+          const { shape, reused, experimentConcurrency } = event.plan;
           writeEvent(io, {
             format: EXP_STREAM_FORMAT,
             schemaVersion: SCHEMA_VERSION,
@@ -89,6 +89,10 @@ export function createJsonRenderer(options: JsonRendererOptions): FeedbackRender
             total: shape.totalAttempts,
             configs: shape.configs,
             concurrency: shape.maxConcurrency,
+            // 一个实验都没声明 maxConcurrency 时省略整个字段,不输出空对象(cli.md 的 StartEvent)。
+            ...(experimentConcurrency && Object.keys(experimentConcurrency).length > 0
+              ? { experimentConcurrency }
+              : {}),
             reused,
           });
           return;

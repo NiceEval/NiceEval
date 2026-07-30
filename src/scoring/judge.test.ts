@@ -223,6 +223,47 @@ describe("probeJudge 探测的错误分类", () => {
     expect(await probeJudge(judge)).toBeUndefined();
   });
 
+  // cases: docs/engineering/testing/unit/experiments-runner.md「探测预算逐次独立」
+  // 契约见 docs/feature/judge/library.md「派发前预检」:每次探测各自拥有完整的 20 秒预算。
+  // 超时预算若建在重试循环外,第一次超时把它耗尽后第二次拿着已 abort 的 signal 0ms 即败——
+  // 重试形同虚设,而重试存在的理由正是把瞬时抖动与真不可用分开。
+  it("两次探测各拿一份独立的超时预算:第一次超时后第二次仍以完整预算真实发出", async () => {
+    withKey();
+    const signals: (AbortSignal | undefined)[] = [];
+    const abortedWhenCalled: boolean[] = [];
+    const probe = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal }): Promise<Response> => {
+      signals.push(init?.signal);
+      abortedWhenCalled.push(init?.signal?.aborted ?? false);
+      if (signals.length === 1) throw Object.assign(new Error("timed out"), { name: "TimeoutError" });
+      return new Response("{}", { status: 200 });
+    });
+    vi.stubGlobal("fetch", probe);
+
+    // 第二次探测拿到 200 ⇒ 预检通过:第一次超时没有连坐第二次。
+    expect(await probeJudge(judge)).toBeUndefined();
+    expect(probe).toHaveBeenCalledTimes(2);
+    // 区分力所在:预算建在循环外时两次拿到的是同一个 signal 实例。
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(abortedWhenCalled).toEqual([false, false]);
+  });
+
+  it("外层 Ctrl+C signal 仍与每次尝试各自的超时预算合流(两次都不是裸的外层 signal)", async () => {
+    withKey();
+    const outer = new AbortController();
+    const signals: (AbortSignal | undefined)[] = [];
+    const probe = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal }): Promise<Response> => {
+      signals.push(init?.signal);
+      throw new Error("ECONNRESET");
+    });
+    vi.stubGlobal("fetch", probe);
+
+    await probeJudge(judge, outer.signal);
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(signals[0]).not.toBe(outer.signal);
+    expect(signals[1]).not.toBe(outer.signal);
+  });
+
   it("传输失败最多探测两次，HTTP 响应失败不重试", async () => {
     withKey();
     const transport = vi.fn(async (): Promise<Response> => {

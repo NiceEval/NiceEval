@@ -76,9 +76,9 @@ export interface ExperimentProgressInput {
 
 /** `sink.precheck()` 的输入 —— 与 `DurableFeedbackEvent` 的 "precheck" 变体字段一致,省略
  *  `type`/`at`(由 coordinator 补上)。调用方(run.ts)在预检真正开始/结束时各调一次;
- *  `durationMs` 只在 done 上给。 */
+ *  `durationMs` 在 done 与 failed 上给。 */
 export interface PrecheckInput {
-  status: "started" | "done";
+  status: "started" | "done" | "failed";
   durationMs?: number;
 }
 
@@ -238,10 +238,10 @@ export function reportPrecheck(input: PrecheckInput): void {
     return;
   }
   const duration = input.durationMs !== undefined ? ` (${Math.round(input.durationMs / 1000)}s)` : "";
+  const word =
+    input.status === "done" ? t("feedback.human.precheckJudgeDone") : t("feedback.human.precheckJudgeFailed");
   writeStderrLine(
-    input.status === "started"
-      ? `${t("feedback.human.precheckJudge")}\n`
-      : `${t("feedback.human.precheckJudgeDone")}${duration}\n`,
+    input.status === "started" ? `${t("feedback.human.precheckJudge")}\n` : `${word}${duration}\n`,
   );
 }
 

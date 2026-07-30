@@ -300,6 +300,8 @@ interface AttemptRecord {
  * 实验级两员只用于归因(不属于任何单个 attempt,永不出现在 `phases[]` 计时里)。
  */
 type LifecyclePhase =
+  // 运行级(派发前至多一次,宿主机侧;仅错误归因)
+  | "judge.precheck"       // 判分预检;预检失败时含 judge 断言的 eval 全部 attempt 的 error.phase
   // 实验级(整场一次,宿主机侧;仅错误/诊断归因)
   | "experiment.setup"     // ExperimentDef.setup;setup 抛错时本实验所有 attempt 的 error.phase
   | "experiment.teardown"  // ExperimentDef.teardown;失败只产生运行级 diagnostic

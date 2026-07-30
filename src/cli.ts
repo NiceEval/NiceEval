@@ -1092,8 +1092,17 @@ async function main(): Promise<void> {
     config.maxConcurrency ??
     sandboxDefaultConcurrency;
 
+  // 声明了实验闸的实验逐个附注上限(PLAN 行 / `start` 事件的 experimentConcurrency);
+  // 未声明的不收,一个都没声明时整个字段省略(见 docs/feature/experiments/cli.md)。
+  const experimentConcurrency: globalThis.Record<string, number> = {};
+  for (const run of agentRuns) {
+    if (run.experimentId === undefined || run.maxConcurrency === undefined) continue;
+    experimentConcurrency[run.experimentId] = run.maxConcurrency;
+  }
+
   const plan: RunFeedbackPlan = {
     shape: { evals: uniqueEvalIds.size, configs: agentRuns.length, totalAttempts, maxConcurrency },
+    ...(Object.keys(experimentConcurrency).length > 0 ? { experimentConcurrency } : {}),
     reused: carryPlan?.carriedResults.length ?? 0,
     reusedFailures,
   };

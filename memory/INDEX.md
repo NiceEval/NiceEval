@@ -320,6 +320,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [judge-agent-default-material](judge-agent-default-material.md) — `t.judge.agent` 默认材料写死成 diff,对话型 eval 会被误判 0 分
 - [judge-criteria-cannot-see-tool-calls](judge-criteria-cannot-see-tool-calls.md) — judge 默认材料看不到工具调用,criteria 要求「基于工具作答」会恒判 0
 - 已修 [judge-config-precheck-hard-fails-without-key](judge-config-precheck-hard-fails-without-key.md) — 显式设 `judge.model` 后没有对应 API key 曾是跑前直接抛错退出;现预检只对「实际要跑且源码含 judge」的 eval 生效(修在 `src/runner/run.ts` judgeProbeTargets)
+- [judge-precheck-degrades-not-gates](judge-precheck-degrades-not-gates.md) — 裁决(2026-07-30):预检失败从 run 门闸降级为只作废含 judge 的 eval(judge-precheck-failed / phase judge.precheck),probeJudge 循环外共享 timeout signal 的重试死代码改逐次独立 20s 预算,PLAN 行加实验并发附注;预检契约从 docs 黑户立进 judge/library.md#派发前预检
 - [deepseek-judge-thinking-mode-tool-choice](deepseek-judge-thinking-mode-tool-choice.md) — 纯 DeepSeek 网关下 `judge.autoevals.closedQA` 必错:thinking mode 不支持其 tool_choice
 - [coding-agent-skill-judge-model-proxy-503](coding-agent-skill-judge-model-proxy-503.md) — coding-agent-skill 的 judge 模型在代理端点上 503,judge precheck 直接失败
 - [eval-architecture-original-notes](eval-architecture-original-notes.md) — Eval 架构的原始手动笔记与 eve 源码核对记录(2026-07-14 从 docs 原样迁入,正文已重写为正式架构文档)

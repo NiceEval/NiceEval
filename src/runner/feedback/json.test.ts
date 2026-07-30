@@ -253,3 +253,82 @@ describe("renderJsonPlanDocument:单个 ExpPlanDocument,不是事件流", () => 
     expect(JSON.parse(text.trim()).reused).toBe(0);
   });
 });
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「PLAN 的实验并发附注」
+// 契约见 docs/feature/experiments/cli.md 的 StartEvent:实验闸让声明了 maxConcurrency 的实验
+// 有效宽度小于全局值,只报全局值会被读成「这批要开 N 路」;未声明的实验不出现,一个都没声明
+// 时省略整个字段(消费方因此不必区分「空对象」和「没有实验闸」两种含义)。
+describe("start 事件的 experimentConcurrency:只收声明了实验闸的实验", () => {
+  it("有实验声明 maxConcurrency 时逐个给出上限,未声明的实验不出现", () => {
+    const [start] = emitDurable([
+      {
+        type: "plan",
+        at: 0,
+        plan: {
+          shape: { evals: 9, configs: 3, totalAttempts: 45, maxConcurrency: 19 },
+          experimentConcurrency: { mempal: 1, nowledge: 4 },
+          reused: 0,
+          reusedFailures: [],
+        },
+      },
+    ]);
+    expect(start).toMatchObject({ event: "start", concurrency: 19, experimentConcurrency: { mempal: 1, nowledge: 4 } });
+    // 第三个实验(未声明上限)不许被补成全局值——那会把「没有实验闸」写成「闸恰好等于全局」。
+    expect(Object.keys(start!.experimentConcurrency as object)).toEqual(["mempal", "nowledge"]);
+  });
+
+  it("没有任何实验声明 maxConcurrency 时省略整个字段,不输出空对象", () => {
+    const [start] = emitDurable([
+      {
+        type: "plan",
+        at: 0,
+        plan: { shape: { evals: 2, configs: 1, totalAttempts: 2, maxConcurrency: 4 }, reused: 0, reusedFailures: [] },
+      },
+    ]);
+    expect(start).toMatchObject({ event: "start", concurrency: 4 });
+    expect(start).not.toHaveProperty("experimentConcurrency");
+  });
+
+  it("plan 里带了空对象也不输出这个字段(空 map 与「没有实验闸」是同一件事)", () => {
+    const [start] = emitDurable([
+      {
+        type: "plan",
+        at: 0,
+        plan: {
+          shape: { evals: 2, configs: 1, totalAttempts: 2, maxConcurrency: 4 },
+          experimentConcurrency: {},
+          reused: 0,
+          reusedFailures: [],
+        },
+      },
+    ]);
+    expect(start).not.toHaveProperty("experimentConcurrency");
+  });
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「Judge 预检的运行级行」
+// 契约见 docs/feature/experiments/cli.md「判分预检的显示」的 JudgePrecheckEvent:三值 status,
+// done / failed 带时长;failed 只标记预检本身的结局,受影响 attempt 的 errored 另由 error 事件给出。
+describe("judge_precheck 事件:started / done / failed 三值,结束态带时长", () => {
+  it("failed 带 durationMs,起止各一行", () => {
+    const events = emitDurable([
+      { type: "precheck", at: 1, status: "started" },
+      { type: "precheck", at: 40_013, status: "failed", durationMs: 40_012 },
+    ]);
+    expect(events).toEqual([
+      { event: "judge_precheck", status: "started" },
+      { event: "judge_precheck", status: "failed", durationMs: 40_012 },
+    ]);
+  });
+
+  it("done 同样带 durationMs;started 不带", () => {
+    const events = emitDurable([
+      { type: "precheck", at: 1, status: "started" },
+      { type: "precheck", at: 1_501, status: "done", durationMs: 1_500 },
+    ]);
+    expect(events).toEqual([
+      { event: "judge_precheck", status: "started" },
+      { event: "judge_precheck", status: "done", durationMs: 1_500 },
+    ]);
+  });
+});

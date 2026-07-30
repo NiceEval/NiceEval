@@ -32,6 +32,19 @@ ExperimentDef(运行配置 + 实验级 setup Hook,experiments/ 下一文件一�
 `model` 与 `baseUrl` 是配置、进 [configHash](cache.md#指纹两个哈希嵌套)；
 `apiKeyEnv` 指向的 key 是凭据，只从环境来，不进哈希也不落盘。
 
+没有 eval 层的多来源字段不进这张表，链在各自的单源页：全局并发上限
+（`--max-concurrency` → config → provider 推荐值）在
+[Runner · 调度](../../runner.md#调度有界并发)。实验级 `maxConcurrency`
+不是同一个值的另一来源，而是叠加的第二道闸——两道都过才派发，收全局不解除实验闸。
+
+**解析的赢家要在反馈里留痕。**多来源字段的失配症状总落在离配置很远的地方——
+超时报错、并发上不去——值不带出处，就得回头逐层对照每个声明点。
+因此有效值面向用户出现时带上它来自哪一层。超时消息带
+`from flag / experiment / eval / config`；`PLAN` 行的 `concurrency` 带
+`from flag / config / provider default`，并逐个点名收窄有效宽度的实验闸
+（两处契约见 [CLI 反馈模型](cli.md#运行中的-live-面板)）。
+出处只进人读面，不另立结构化字段——它是给人排查的一层原因，不是 CI 分支的决策轴。
+
 解析发生在调度任何 attempt 之前、一次完成，运行中不再重读；
 此后所有消费方——调度器、fingerprint、Run 投影、报告——引用同一份解析结果：
 

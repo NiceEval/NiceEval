@@ -425,8 +425,8 @@ function fallbackTextFor(event: DurableFeedbackEvent): string | undefined {
     case "experiment-hook":
     case "precheck":
     case "lock-wait":
-      // 钩子/预检/锁等待起止都不是失败证据:setup 失败的每条 attempt 另有 "failure" 事件
-      // 兜底,预检失败以既有错误路径中止运行,锁等待解决与否不改变任何 verdict——
+      // 钩子/预检/锁等待起止都不是失败证据:setup 失败与预检失败的每条 attempt 都另有
+      // "failure" 事件兜底,锁等待解决与否不改变任何 verdict——
       // renderer 崩溃丢一行起止不丢数据。
       return undefined;
   }

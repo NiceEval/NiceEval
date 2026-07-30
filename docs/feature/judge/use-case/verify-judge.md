@@ -22,8 +22,9 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
    `https://api.openai.com/v1`。此时网关凭据会被发到 OpenAI，返回「Incorrect API key provided」。
    这看上去像 key 过期，实际是端点选错了。
 
-2. 先跑一个只评固定文本的轻量验证 eval。配置 Judge 本身不会联网；真正执行 judge assertion 才验证
-   模型、key 与端点，因此验证用例不需要先调用被测 agent：
+2. 先跑一个只评固定文本的轻量验证 eval。配置 Judge 本身不会联网；[判分预检](../library.md#派发前预检)
+   在派发前验证端点连通与鉴权，但「响应里真的取得出分数」只有执行一条 judge assertion 才知道，
+   因此验证用例不需要先调用被测 agent：
 
    ```ts
    export default defineEval({
@@ -68,6 +69,9 @@ judge 是唯一一个「配错了也能看起来跑通」的评分机制:被测 
 
 ## 边界
 
+- 端点整体不可达(连不上、鉴权被拒、探测超时)在派发前就被判分预检拦下:含 judge 断言的 eval 逐条
+  `errored`(`judge-precheck-failed`),其余 eval 照常派发。本用例补的是预检不覆盖的那段——
+  协议不符、分数取不出来,只有真评一次才暴露。
 - 允许缺席是**逐条断言的作者决定**,不是框架的全局降级策略；未写 `.optional()` 的 unavailable
   仍使 Attempt `errored`，不会造出「一条都没评却全绿」的报告。
 - `--strict` 不改变这条路径上的任何判定:unavailable 走 `errored`,与 soft 阈值是两回事(见

@@ -69,7 +69,15 @@ import type {
   ReporterRegistration,
   SandboxOption,
 } from "../types.ts";
-import type { AgentRun, Attempt, ExperimentHookContext, LifecyclePhase, AttemptRef, RunOptions } from "./types.ts";
+import type {
+  AgentRun,
+  Attempt,
+  AttemptError,
+  ExperimentHookContext,
+  LifecyclePhase,
+  AttemptRef,
+  RunOptions,
+} from "./types.ts";
 
 /** 反馈层的 attempt 身份 + 展示 label,两个 sink.ts lifecycle 调用点共用,避免各自手写
  *  同一组字段(见 memory 的 live-who-key-mismatch-freezes-rows —— 手写副本漏改是真实事故源)。 */
@@ -92,17 +100,38 @@ export function judgeProbeTargets(
   evals: Array<{ source: string; judge: JudgeConfig | undefined }>,
   configJudge: JudgeConfig | undefined,
 ): JudgeConfig[] {
+  return judgeProbePlan(
+    evals.map((e, i) => ({ id: `#${i}`, source: e.source, judge: e.judge })),
+    configJudge,
+  ).targets.map((target) => target.judge);
+}
+
+/** 一份探测目标的去重键:同一个 (model, baseUrl, apiKeyEnv) 只探一次,也用来把探测结局
+ *  归回「哪些 eval 依赖这个端点」。 */
+function judgeTargetKey(jc: JudgeConfig): string {
+  return `${jc.model ?? ""}|${jc.baseUrl ?? ""}|${jc.apiKeyEnv ?? ""}`;
+}
+
+/** `judgeProbeTargets` 的完整形态:除了去重后的探测目标,还给出「哪条 eval 依赖哪个目标」——
+ *  预检失败只作废需要 judge 的那些 eval(见 docs/feature/judge/library.md「派发前预检」),
+ *  所以必须能把探测结局按 eval 归因,不能只知道有几个端点要探。 */
+export function judgeProbePlan(
+  evals: Array<{ id: string; source: string; judge: JudgeConfig | undefined }>,
+  configJudge: JudgeConfig | undefined,
+): { targets: Array<{ key: string; judge: JudgeConfig }>; evalKeys: Map<string, string> } {
+  const targets: Array<{ key: string; judge: JudgeConfig }> = [];
+  const evalKeys = new Map<string, string>();
   const seen = new Set<string>();
-  const toProbe: JudgeConfig[] = [];
   for (const e of evals) {
     const jc = resolveJudge(e.judge, configJudge);
     if (!jc || !/\bjudge\b/.test(e.source)) continue;
-    const key = `${jc.model ?? ""}|${jc.baseUrl ?? ""}|${jc.apiKeyEnv ?? ""}`;
+    const key = judgeTargetKey(jc);
+    evalKeys.set(e.id, key);
     if (seen.has(key)) continue;
     seen.add(key);
-    toProbe.push(jc);
+    targets.push({ key, judge: jc });
   }
-  return toProbe;
+  return { targets, evalKeys };
 }
 
 export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
@@ -259,25 +288,38 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   // 预检 judge:验证 API key + 端点可达,避免跑完 agent 才发现 judge 不通。
   // 放在 attempts 展开之后,fail fast 只对会真正触发 judge 的运行生效
   // (目标收集逻辑见 judgeProbeTargets;全部结果携入、attempts 为空时也自然跳过)。
+  // 预检失败的受影响 eval:evalId → 失败原因(带实际探测端点)。这些 eval 的全部 attempt
+  // 不派发、不建沙箱,逐条落成 errored(见下方 judgePrecheckFailures 的消费点);其余 eval
+  // 照常派发——一条 judge 配置问题不没收整批与它无关的结果。
+  const judgePrecheckFailures = new Map<string, string>();
   {
     const uniqueEvals = [...new Map(attempts.map((a) => [a.evalDef.id, a.evalDef])).values()];
     const sources = await Promise.all(uniqueEvals.map((e) => readSource(e.sourcePath)));
-    const toProbe = judgeProbeTargets(
-      uniqueEvals.map((e, i) => ({ source: sources[i] ?? "", judge: e.judge })),
+    const { targets, evalKeys } = judgeProbePlan(
+      uniqueEvals.map((e, i) => ({ id: e.id, source: sources[i] ?? "", judge: e.judge })),
       opts.config.judge,
     );
-    if (toProbe.length > 0) {
-      // judge 预检是一次真实网络往返,可能慢甚至长时间不返回:发运行级行(started/done),
+    if (targets.length > 0) {
+      // judge 预检是一次真实网络往返,可能慢甚至长时间不返回:发运行级行(started/done/failed),
       // 让 live 面板在预检期间显示「为什么还停在 0 running · N queued」,而不是看起来卡死
-      // (见 docs/feature/experiments/cli.md「judge 预检的显示」)。失败以既有错误路径中止,
-      // 不发 done——那条运行级行由 coordinator 收尾时随 dashboard 一起清掉。
+      // (见 docs/feature/experiments/cli.md「判分预检的显示」)。
       reportPrecheck({ status: "started" });
       const precheckStartedAt = Date.now();
-      for (const jc of toProbe) {
-        const err = await probeJudge(jc, opts.signal);
-        if (err) throw new Error(err);
+      // 逐个目标各记自己的结局:一个端点不通不该作废依赖另一个(可用)端点的 eval,
+      // 而落进 attempt 的 error.message 也必须是它自己那个端点的失败原因。
+      const failedByKey = new Map<string, string>();
+      for (const target of targets) {
+        const err = await probeJudge(target.judge, opts.signal);
+        if (err) failedByKey.set(target.key, err);
       }
-      reportPrecheck({ status: "done", durationMs: Date.now() - precheckStartedAt });
+      for (const [evalId, key] of evalKeys) {
+        const err = failedByKey.get(key);
+        if (err !== undefined) judgePrecheckFailures.set(evalId, err);
+      }
+      reportPrecheck({
+        status: failedByKey.size > 0 ? "failed" : "done",
+        durationMs: Date.now() - precheckStartedAt,
+      });
     }
   }
 
@@ -1687,19 +1729,25 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               who: feedbackWho(a),
               phase: initialPhase,
             });
-            // 实验级 setup 失败:不派发 agent,为这条 attempt 合成结构化 errored 结果
-            // (code experiment-setup-failed、phase experiment.setup),走与真实结果完全相同的
-            // 下游路径(locator / 反馈事件 / reporter / 落盘)——环境起不来是每条 eval 都没跑成
-            // 的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
-            // architecture.md「实验级生命周期」)。
+            // 派发前的确定性失败(实验级 setup 失败 / 判分预检失败):不派发 agent、不建沙箱,
+            // 为这条 attempt 合成结构化 errored 结果,走与真实结果完全相同的下游路径
+            // (locator / 反馈事件 / reporter / 落盘)——环境起不来、判分端点不通都是每条 eval
+            // 都没跑成的事实,要逐条进报告,不是一条一次性日志(见 docs/feature/experiments/
+            // architecture.md「实验级生命周期」、docs/feature/judge/library.md「派发前预检」)。
             const expLc = expLifecycles.get(a.run);
-            const pool = expLc?.setupFailed ? undefined : reusePoolFor(a);
+            const precheckFailure = judgePrecheckFailures.get(a.evalDef.id);
+            const blockedError: AttemptError | undefined = expLc?.setupFailed
+              ? { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" }
+              : precheckFailure !== undefined
+                ? { code: "judge-precheck-failed", message: precheckFailure, phase: "judge.precheck" }
+                : undefined;
+            const pool = blockedError ? undefined : reusePoolFor(a);
             const lease = pool
               ? yield* Effect.promise(() =>
                   pool.acquire((a.run.timeoutMs ?? a.evalDef.timeoutMs ?? opts.config.timeoutMs ?? 600_000)),
                 )
               : undefined;
-            const result = expLc?.setupFailed
+            const result = blockedError
               ? ({
                   id: a.evalDef.id,
                   description: a.evalDef.description,
@@ -1713,7 +1761,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   startedAt: new Date().toISOString(),
                   durationMs: 0,
                   assertions: [],
-                  error: { ...errorFromThrown(expLc.setupError, "experiment.setup"), code: "experiment-setup-failed" },
+                  error: blockedError,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(a, opts, sandboxSem, {
                   parentSignal: attemptSignal,
@@ -1803,11 +1851,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
               // 并发情况:同 key 另一个 attempt 已通过后本 attempt 才完成(被 abort 后产出
               // errored),不计入结果。
               return;
-            } else if (result.verdict === "errored" && !expLc?.setupFailed) {
+            } else if (result.verdict === "errored" && !blockedError) {
               // errored 不中止其余样本(基建可能自愈);只有同一错误 code 连续复现才判定为
               // 确定性错误,进 run 级 fail-fast 停止派发(不 abort 已在飞的 attempt)。
-              // 实验级 setup 失败的合成结果不进 fail-fast:它不派发 agent、零成本,
-              // 契约是本实验「所有」attempt 逐条记 errored 进报告,不该被止损机制截短。
+              // 派发前确定性失败(实验级 setup 失败、判分预检失败)的合成结果不进 fail-fast:
+              // 它不派发 agent、零成本,契约是受影响的「所有」attempt 逐条记 errored 进报告,
+              // 不该被止损机制截短。
               const code = result.error?.code ?? "unexpected-error";
               const prev = lastErrorCode.get(a.key);
               const streak = prev?.code === code ? prev.streak + 1 : 1;

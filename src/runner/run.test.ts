@@ -42,6 +42,8 @@ import {
   activeFeedbackSinkCount,
   type ExperimentHookInput,
   type ExperimentProgressInput,
+  type FailureInput,
+  type PrecheckInput,
 } from "./feedback/sink.ts";
 import { drainExperimentTeardowns, pendingExperimentTeardownCount } from "./experiment-cleanup-registry.ts";
 import { computeFingerprint } from "./fingerprint.ts";
@@ -213,6 +215,8 @@ async function run(
     signal?: AbortSignal;
     /** 预先建好、需要在调用前写入固定文件(如伪造的收尾登记)的根;省略则自建一个临时目录。 */
     root?: string;
+    /** 项目级配置(判分预检要读 `config.judge`);省略则用空配置。 */
+    config?: Config;
   } = {},
 ): Promise<{
   summary: Awaited<ReturnType<typeof runEvals>>;
@@ -233,7 +237,7 @@ async function run(
       }
     },
   };
-  const config: Config = {};
+  const config: Config = opts.config ?? {};
   const runOpts: RunOptions = {
     config,
     evals,
@@ -4070,4 +4074,252 @@ describe("runEvals · 用例锁: 等待窗口的 elsewhere 收支平账", () => 
       expect(await lockFilesRemaining(root)).toEqual([]);
     });
   }, SCHEDULING_TEST_TIMEOUT_MS);
+});
+
+// cases: docs/engineering/testing/unit/experiments-runner.md「Judge 预检失败的降级」
+// 契约见 docs/feature/judge/library.md「派发前预检」:预检失败只作废需要 judge 的 eval,
+// 不拦整次运行。同一批里含 judge 与不含 judge 的 eval 都要有,才有区分力——只有一条 eval 时
+// 「作废这条」与「中止整次运行」在任何断言下都长得一样。
+describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
+  const judge = { model: "probe-model", baseUrl: "http://judge.fixture.internal/v1" };
+
+  /** 预检的目标集合按 `evalDef.sourcePath` 的真实文件内容判定(`/\bjudge\b/` 启发式,见
+   *  run.ts 的 judgeProbePlan)。这批用例要精确控制「哪条 eval 会执行 judge 断言」,所以逐条
+   *  写一个临时源文件——共用的 `makeEval` 指向本测试文件,而它自己满篇是 judge。 */
+  async function evalWithSource(id: string, sourceText: string, test: DiscoveredEval["test"]): Promise<DiscoveredEval> {
+    const dir = await makeRoot();
+    const path = join(dir, `${id}.eval.ts`);
+    await writeFile(path, sourceText, "utf-8");
+    return { id, baseDir: "/project", sourcePath: path, source, test };
+  }
+
+  const JUDGE_SOURCE = 'test("judged", async (t) => { t.judge.closedQA("是否说清了原因?"); });';
+  const PLAIN_SOURCE = 'test("plain", async (t) => { t.check("ok", equals("ok")); });';
+
+  /** 只收本用例关心的两类输入,其余成员 no-op(与 sink 接口保持编译期同步)。 */
+  function captureSink(): {
+    precheck: PrecheckInput[];
+    failures: FailureInput[];
+    deactivate: () => void;
+  } {
+    const precheck: PrecheckInput[] = [];
+    const failures: FailureInput[] = [];
+    const deactivate = activateFeedbackSink({
+      activity() {},
+      diagnostic() {},
+      interrupted() {},
+      reporterError() {},
+      failure(input) {
+        failures.push(input);
+      },
+      budgetExhausted() {},
+      kept() {},
+      experimentHook() {},
+      experimentProgress() {},
+      precheck(input) {
+        precheck.push(input);
+      },
+      lockWait() {},
+      lifecycle() {},
+    });
+    return { precheck, failures, deactivate };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("含 judge 的 eval 全部 attempt 不派发、不建沙箱、逐条 errored 落盘;不含 judge 的照常跑出 verdict", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    // 探测两次都超时(fake fetch 立即抛,不真等 20s):预检判失败。
+    const probe = vi.fn(async (): Promise<Response> => {
+      throw Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    });
+    vi.stubGlobal("fetch", probe);
+
+    let judgedRan = 0;
+    let plainRan = 0;
+    const judged = await evalWithSource("judged", JUDGE_SOURCE, () => {
+      judgedRan += 1;
+    });
+    const plain = await evalWithSource("plain", PLAIN_SOURCE, () => {
+      plainRan += 1;
+    });
+    // 「不创建沙箱」只有真数一遍 create() 才算证明:被作废的 attempt 连沙箱都不该起。
+    let created = 0;
+    const countingSandbox = defineSandbox({
+      name: "counting-provider",
+      create: async () => {
+        created += 1;
+        return asSandbox(new FakeSandbox());
+      },
+    });
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-a"),
+      flags: {},
+      attempts: 2,
+      earlyExit: false,
+      sandbox: countingSandbox,
+      timeoutMs: 5_000,
+      selectedEvalIds: ["judged", "plain"],
+      experimentId: "precheck-exp",
+    };
+
+    const sink = captureSink();
+    let summary: Awaited<ReturnType<typeof runEvals>>;
+    let root: string;
+    try {
+      ({ summary, root } = await run([judged, plain], [agentRun], { config: { judge }, maxConcurrency: 2 }));
+    } finally {
+      sink.deactivate();
+    }
+
+    // 受影响的 eval:计划里的两条 attempt 逐条 errored,错误形状是派发前确定性失败。
+    const judgedResults = summary.results.filter((r) => r.id === "judged");
+    expect(judgedResults).toHaveLength(2);
+    expect(judgedResults.map((r) => r.attempt).sort()).toEqual([0, 1]);
+    for (const result of judgedResults) {
+      expect(result.verdict).toBe("errored");
+      expect(result.error?.code).toBe("judge-precheck-failed");
+      expect(result.error?.phase).toBe("judge.precheck");
+      // message 带实际探测端点与失败原因(超时秒数),不是一句无处下手的 "judge failed"。
+      expect(result.error?.message).toContain("http://judge.fixture.internal/v1");
+      expect(result.error?.message).toContain("20s");
+    }
+    expect(judgedRan).toBe(0); // 一条 attempt 都没真派发
+
+    // 其余 eval 照常派发:一条 judge 配置问题不没收整批与它无关的结果。
+    const plainResults = summary.results.filter((r) => r.id === "plain");
+    expect(plainResults).toHaveLength(2);
+    expect(plainResults.every((r) => r.verdict === "passed")).toBe(true);
+    expect(plainRan).toBe(2);
+    expect(created).toBe(2); // 只有 plain 的两条 attempt 起了沙箱
+
+    // verdict 计数进 errored,不被折叠成一句运行级错误。
+    expect(summary.errored).toBe(2);
+    expect(summary.passed).toBe(2);
+
+    // 预检本身的结局是一对运行级事件(started + failed 带耗时),不是一条抛出的错误。
+    expect(sink.precheck.map((p) => p.status)).toEqual(["started", "failed"]);
+    expect(sink.precheck[1]?.durationMs).toBeTypeOf("number");
+
+    // 受影响 attempt 的 errored 仍逐条走既有 failure 通道(与实验级 setup 失败同构)。
+    const precheckFailures = sink.failures.filter((f) => f.identity.evalId === "judged");
+    expect(precheckFailures).toHaveLength(2);
+    for (const failure of precheckFailures) {
+      expect(failure.verdict).toBe("errored");
+      expect(failure.phase).toBe("judge.precheck");
+      expect(failure.reason).toContain("http://judge.fixture.internal/v1");
+    }
+
+    // 落盘与真实结果同构:result.json 逐条可读,不是只留在内存摘要里。
+    const record = await openRecord(root);
+    const exp = record.experiments.find((e) => e.id === "precheck-exp");
+    const written = exp?.latestRun.evals.find((e) => e.id === "judged")?.attempts ?? [];
+    expect(written).toHaveLength(2);
+    for (const attempt of written) {
+      expect(attempt.result.verdict).toBe("errored");
+      expect(attempt.result.error?.code).toBe("judge-precheck-failed");
+      expect(attempt.result.error?.phase).toBe("judge.precheck");
+    }
+  });
+
+  it("未配置 judge 时不探测:含 judge 字样的 eval 照常派发(运行期才按 judge-model-unresolved 记录)", async () => {
+    const probe = vi.fn(async (): Promise<Response> => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", probe);
+
+    let ran = 0;
+    const judged = await evalWithSource("judged", JUDGE_SOURCE, () => {
+      ran += 1;
+    });
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-a"),
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      selectedEvalIds: ["judged"],
+      experimentId: "no-judge-exp",
+    };
+
+    const sink = captureSink();
+    let summary: Awaited<ReturnType<typeof runEvals>>;
+    try {
+      ({ summary } = await run([judged], [agentRun], { config: {} }));
+    } finally {
+      sink.deactivate();
+    }
+
+    expect(probe).not.toHaveBeenCalled();
+    expect(sink.precheck).toEqual([]);
+    expect(ran).toBe(1);
+    expect(summary.results[0]?.verdict).toBe("passed");
+  });
+
+  it("含 judge 的 eval 全部命中携带时不探测:没有要派发的 attempt,没有可省的 agent 成本", async () => {
+    vi.stubEnv("NICEEVAL_JUDGE_KEY", "fixture-key");
+    const probe = vi.fn(async (): Promise<Response> => {
+      throw new Error("端点不通:全部携带时根本不该探测");
+    });
+    vi.stubGlobal("fetch", probe);
+
+    const experimentId = "carried-judge-exp";
+    const judged = await evalWithSource("judged", JUDGE_SOURCE, () => {
+      throw new Error("全部携带的 eval 不该被重新派发");
+    });
+    let plainRan = 0;
+    const plain = await evalWithSource("plain", PLAIN_SOURCE, () => {
+      plainRan += 1;
+    });
+    const carried: EvalResult = {
+      id: "judged",
+      experimentId,
+      agent: "agent-a",
+      verdict: "passed",
+      attempt: 0,
+      startedAt: "2020-01-01T00:00:00.000Z",
+      durationMs: 1,
+      assertions: [],
+      locator: encodeAttemptLocator({
+        experimentId,
+        snapshotStartedAt: "2020-01-01T00:00:00.000Z",
+        evalId: "judged",
+        attempt: 0,
+      }),
+      artifactBase: `${experimentId}/old-run/judged/a0`,
+    };
+    const agentRun: AgentRun = {
+      agent: makeAgent("agent-a"),
+      flags: {},
+      attempts: 1,
+      earlyExit: false,
+      sandbox: fakeSandboxSpec(),
+      timeoutMs: 5_000,
+      selectedEvalIds: ["judged", "plain"],
+      experimentId,
+    };
+
+    const sink = captureSink();
+    let summary: Awaited<ReturnType<typeof runEvals>>;
+    try {
+      ({ summary } = await run([judged, plain], [agentRun], {
+        config: { judge },
+        carryPlan: {
+          plannedFingerprints: new Map(),
+          acceptableFingerprints: new Map(),
+          carriedAttemptsByKey: new Map([[`${experimentId}|judged`, new Set([0])]]),
+          carriedResults: [carried],
+        },
+      }));
+    } finally {
+      sink.deactivate();
+    }
+
+    expect(probe).not.toHaveBeenCalled();
+    expect(sink.precheck).toEqual([]);
+    expect(plainRan).toBe(1);
+    expect(summary.results.filter((r) => r.id === "judged").map((r) => r.verdict)).toEqual(["passed"]);
+  });
 });

@@ -78,7 +78,9 @@
 **发现顺序**排序(而非完成顺序),让输出稳定可 diff。
 
 **全局上限的解析链**:`--max-concurrency` → 配置 `maxConcurrency` →
-**该沙箱 provider 的推荐默认值**。
+**该沙箱 provider 的推荐默认值**。取胜的那一层随值一起出现在 `PLAN` 行
+(`concurrency 19 (from flag)`),契约见
+[CLI · live 面板](feature/experiments/cli.md#运行中的-live-面板)。
 
 | provider | 推荐值 | 为什么是这个数 |
 |---|---|---|
@@ -101,6 +103,15 @@ provider 级串行闸,显式 `--max-concurrency` 或实验级 `maxConcurrency`
 
 这是正确性约束,不是调度参数。声明是中性的 provider 元数据,核心不按
 provider 名分支(契约见 [Sandbox · 本地执行](feature/sandbox/local.md))。
+
+### 派发前的判分预检
+
+计划里存在要真派发且会执行 judge 断言的 eval 时,派发开始前先对判分
+端点做一次最小探测。预检失败只作废需要 judge 的那些 eval——它们的
+attempt 不派发、逐条落成 `errored`(`error.phase: "judge.precheck"`),
+其余 eval 照常派发,与实验级 setup 失败的「派发前确定性失败」同一语义
+家族。探测预算、重试与失败反馈的契约单源在
+[Judge · 派发前预检](feature/judge/library.md#派发前预检)。
 
 ## 派发顺序:瓶颈优先,追求最小总耗时
 

@@ -68,6 +68,9 @@ export interface SandboxRunInfo {
  * provider / 用户 hook 能直接设置的公共字段。
  */
 export type LifecyclePhase =
+  // 运行级(派发前至多一次,宿主机侧):只用于错误归因,不属于任何单个 attempt,不进 live 面板的
+  // attempt 阶段投影,永不出现在 phases[] 计时里
+  | "judge.precheck" // 判分预检;预检失败时含 judge 断言的 eval 全部 attempt 的 error.phase
   // 实验级(整场一次,宿主机侧):只用于错误/诊断归因,不属于任何单个 attempt,
   // 永不出现在 phases[] 计时里(见 docs/feature/experiments/architecture.md「实验级生命周期」)
   | "experiment.setup" // ExperimentDef.setup;setup 抛错时本实验所有 attempt 的 error.phase
@@ -1101,6 +1104,13 @@ export interface KeptNotice {
 /** 一次 run 的初始计划。复用只暴露数量；失败明细仅用于静态初始化终局清单。 */
 export interface RunFeedbackPlan {
   shape: InvocationShape;
+  /**
+   * 声明了 `maxConcurrency` 的实验 → 各自的上限。只收声明了的实验(未声明的实验的有效宽度就是
+   * 全局值,列出来只是噪音);一个都没声明时整个字段省略——`--json` 的 `start` 事件因此不会
+   * 出现空对象,human `PLAN` 行也不加附注(见 docs/feature/experiments/cli.md
+   * 「运行中的 live 面板」的 `concurrency` 附注段)。
+   */
+  experimentConcurrency?: Readonly<globalThis.Record<string, number>>;
   /** 携入(carry)结果数,直接计入 `RunFeedbackState.reused`,不需要重新调度。 */
   reused: number;
   /** 复用结果中的失败；plan 时静态注入，不产生“刚发生”的失败事件。 */
@@ -1229,9 +1239,10 @@ export type DurableFeedbackEvent =
    * cli.md「judge 预检的显示」)。预检作用于整次 invocation、发生在任何 attempt 派发之前,不属于
    * 任何单个 attempt,也不触碰五项恒等式计数不变量。human
    * TTY 用它维护一条运行级 active 行(不写 scrollback),append-only profile 起止各追加一行。
-   * 预检失败不走这个事件——它以既有错误路径中止本次运行。
+   * `failed` 只标记预检本身的结局(与 `done` 一样清掉运行级行);受影响 eval 每条 attempt 的
+   * `errored`(`judge-precheck-failed`)仍由 "failure" 事件逐条给出。
    */
-  | { type: "precheck"; at: number; status: "started" | "done"; durationMs?: number }
+  | { type: "precheck"; at: number; status: "started" | "done" | "failed"; durationMs?: number }
   /**
    * 用例锁等待的起止(见 docs/feature/experiments/cli.md「等待并发 run 的显示」)。粒度是单个
    * `(experimentId, evalId)`——同一 eval 的全部 attempt 作为一个整体一起等、一起解决,不按

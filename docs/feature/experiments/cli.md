@@ -152,6 +152,26 @@ phase 是 runner 对真实 lifecycle 的单方面投影,不是 adapter、sandbox
 
 - 实验级 `ctx.progress` 与 attempt 级同规则:非 TTY 文本与 `--json` 不逐条输出,也不写入 results。
 
+### 判分预检的显示
+
+[判分预检](../judge/library.md#派发前预检)发生在任何派发之前,与实验级 Hook 同属
+**运行级生命周期行**——期间没有任何 attempt 在跑,不给出一行解释,
+「0 running · N queued 长时间不动」看起来就像调度卡死:
+
+- **Human(TTY)**:预检期间 ACTIVE 区显示一行 `● prechecking judge config  <elapsed>`,
+  排在实验 Hook 行与 attempt 行之前——它发生在最前,是「为什么还没有 attempt 开跑」的解释。
+  存活性由持续增长的 elapsed 证明,预检结束该行即消失,不进 scrollback。
+- **非 TTY 文本与 `--json`**:起止各追加一行永久事件,`status` 三值 `started` / `done` /
+  `failed`,`done` / `failed` 带时长。`failed` 只标记预检本身的结局。受影响 eval 每条
+  attempt 的 `errored`(`judge-precheck-failed`,`phase: "judge.precheck"`)仍由既有
+  `error` 事件逐条给出,与实验级 setup 失败的呈现同构。
+
+  ```json
+  {"event":"judge_precheck","status":"started"}
+  {"event":"judge_precheck","status":"failed","durationMs":40012}
+  {"event":"error","locator":"@1a2b3c4d","evalId":"toggl-cli/04","experimentId":"nowledge","phase":"judge.precheck","reason":"judge precheck failed: https://gateway.example.com/v1 timed out twice (20s each)"}
+  ```
+
 ### 等待并发 run 的显示
 
 多条 Invocation 并行时,撞上[用例锁](architecture.md#并发-invocation用例锁)的用例在等待期间不派发,计入独立的 `elsewhere` 计数状态——「别人在运行」与「排队等本进程的并发位」(`queued`)是两种等待,不混进同一个数字。`elsewhere` 计数回答「有多少条在等别人」;等待可能很长(对方一条 attempt 就可能跑几十分钟),「等的是谁、等了多久」由运行级生命周期行回答,与实验级 Hook 共用同一套机制:
@@ -223,7 +243,7 @@ TTY 下 `auto` 选择 `human`。human 的版面只有两种体裁:**面板**是�
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
-│ 45 attempts · 9 evals × 5 configs · concurrency 19                             │
+│ 45 attempts · 9 evals × 5 configs · concurrency 19 (from flag)                 │
 │ 6 of 45 carried in from cache · 39 to run                                      │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 ✗ @1bwcxxiy memory/swelancer-manager-15193 [dev-e2b/claude-e2b]
@@ -254,6 +274,20 @@ live 面板只展示当前状态,不保存历史帧:
 - 终端变窄时先减少可见项,再截断消息,不能换行撑高面板;面板整体高度不超过终端高度;
 - 没有真实状态变化时不重画;历史帧不得进入 scrollback;
 - 独立诊断出现时先撤下面板,打印诊断,再在其下方重建。
+
+`PLAN` 行的 `concurrency` 是全局并发位数,值后带它来自哪一层:`(from flag)` /
+`(from config)` / `(from docker default)`(provider 推荐值按 provider 名点名)。
+[解析链](../../runner.md#调度有界并发)三层都可能给出这个数;不带来源时,
+没传 flag 却只开 1 路(vercel 推荐值)读起来就像调度坏了。
+
+任一选中实验声明了 `maxConcurrency` 时,在全局值后逐个附注实验的上限,
+形如 `concurrency 19 (from flag) · mempal ≤1 · nowledge ≤4`;未声明的实验不列。
+附注存在的理由:实验闸让这些实验的[有效宽度](../../concepts.md)小于全局值,
+只印全局值会被读成「这批要开 19 路」。
+
+`--json` 的对应字段是 `start` 事件的 `experimentConcurrency`;全局值的来源不进
+`--json`——与超时消息的[来源标注](#timeoutbudget-与基础设施错误)同一条裁决:
+给人排查的一层原因写进人读面,不另立结构化字段。
 
 `PLAN` 面板的复用行只给数量,不把被复用的 eval id 逐条铺进终端——即使全部命中缓存也不展开成 per-config 清单。live 与结束反馈是「回答成败、指向失败」的地方,不是缓存构成的清单;哪些 eval 复用、哪些重跑属于 `--dry`(计划矩阵)与 `niceeval view`(逐结果),不占 human 的 scrollback。
 
@@ -362,7 +396,7 @@ live 面板只展示当前状态,不保存历史帧:
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
-│ 50 attempts · 10 evals × 5 configs · concurrency 19                            │
+│ 50 attempts · 10 evals × 5 configs · concurrency 19 (from config)              │
 │ 50 of 50 carried in from cache · 0 to run                                      │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 
@@ -398,7 +432,7 @@ live 面板只展示当前状态,不保存历史帧:
 
 ```text
 ╭─ PLAN ─────────────────────────────────────────────────────────────────────────╮
-│ 50 attempts · 10 evals × 5 configs · concurrency 19                            │
+│ 50 attempts · 10 evals × 5 configs · concurrency 19 (from config)              │
 │ 50 of 50 carried in from cache · 0 to run                                      │
 ╰────────────────────────────────────────────────────────────────────────────────╯
 
@@ -448,7 +482,7 @@ niceeval exp compare --json
 {"event":"result","status":"failed","passed":22,"failed":1,"errored":1,"reused":18,"completion":"complete","snapshots":[".niceeval/compare/bub-e2b/<run>",".niceeval/compare/claude/<run>",".niceeval/compare/claude-e2b/<run>"]}
 ```
 
-事件词表:`start` / `progress` / `failure` / `error` / `eval` / `kept` / `warning` / `budget_exhausted` / `reporter_error` / `interrupted` / `experiment_setup` / `experiment_teardown` / `lock_wait` / `result`。消费方按 `event` 字段分发,忽略未知事件与未知字段;`schemaVersion` 只在破坏性形状变更时递增。
+事件词表:`start` / `progress` / `failure` / `error` / `eval` / `kept` / `warning` / `budget_exhausted` / `reporter_error` / `interrupted` / `judge_precheck` / `experiment_setup` / `experiment_teardown` / `lock_wait` / `result`。消费方按 `event` 字段分发,忽略未知事件与未知字段;`schemaVersion` 只在破坏性形状变更时递增。
 
 `--json` 固定满足:
 
@@ -478,6 +512,8 @@ interface StartEvent {
   /** 选中的 experiment(config)数。 */
   configs: number;
   concurrency: number;
+  /** 声明了 maxConcurrency 的实验 → 各自的上限;未声明的实验不出现,没有任何实验声明时省略整个字段。 */
+  experimentConcurrency?: Record<string, number>;
   /** 缓存携入、预计不会重新派发的 attempt 数。 */
   reused: number;
 }
@@ -587,6 +623,13 @@ interface InterruptedEvent {
   event: "interrupted";
 }
 
+interface JudgePrecheckEvent {
+  event: "judge_precheck";
+  status: "started" | "done" | "failed";
+  /** status 为 done 或 failed 时给出。 */
+  durationMs?: number;
+}
+
 interface ExperimentSetupEvent {
   event: "experiment_setup";
   experimentId: string;
@@ -648,6 +691,7 @@ type ExpEvent =
   | BudgetExhaustedEvent
   | ReporterErrorEvent
   | InterruptedEvent
+  | JudgePrecheckEvent
   | ExperimentSetupEvent
   | ExperimentTeardownEvent
   | LockWaitEvent

@@ -96,6 +96,28 @@ describe("renderDurableLines — 面板事件接线到 panel.ts", () => {
     expect(lines.join("\n")).toContain("45 attempts");
   });
 
+  // cases: docs/engineering/testing/unit/experiments-runner.md「PLAN 的实验并发附注」
+  // 契约见 docs/feature/experiments/cli.md「运行中的 live 面板」:实验闸让这些实验的有效宽度
+  // 小于全局值,只印全局值会被读成「这批要开 19 路」。文案断言到格式化输出,字节渲染归 E2E。
+  it("plan 行在全局并发之后逐个附注声明了 maxConcurrency 的实验,未声明的不列", () => {
+    const state = createInitialRunFeedbackState();
+    const event: DurableFeedbackEvent = {
+      type: "plan",
+      at: 0,
+      plan: plan({ experimentConcurrency: { mempal: 1, nowledge: 4 } }),
+    };
+    const text = renderDurableLines(event, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).toContain("· mempal ≤1 · nowledge ≤4");
+    // 全局值仍在,附注是它的补充而不是替代。
+    expect(text).toMatch(/19/);
+  });
+
+  it("没有实验声明 maxConcurrency 时 plan 行不带任何附注", () => {
+    const state = createInitialRunFeedbackState();
+    const text = renderDurableLines({ type: "plan", at: 0, plan: plan() }, state, { mode: "plain", width: 100 }).join("\n");
+    expect(text).not.toContain("≤");
+  });
+
   it("summary 事件产生三个独立的面板(FAILED/FAILURES/KEPT SANDBOXES),各自成框、之间空行分隔", () => {
     const state = stateWithFailureAndKept();
     const event: DurableFeedbackEvent = { type: "summary", at: 0, summary: summary(), completion: completion() };

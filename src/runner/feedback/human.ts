@@ -139,7 +139,11 @@ export function renderDurableLines(
       // 由 state.activePrecheck 驱动,不进 scrollback,见 cli.md「judge 预检的显示」)。
       if (event.status === "started") return [t("feedback.human.precheckJudge")];
       const duration = event.durationMs !== undefined ? ` (${formatElapsed(event.durationMs)})` : "";
-      return [`${t("feedback.human.precheckJudgeDone")}${duration}`];
+      // failed 只说预检本身的结局:受影响 eval 逐条的 errored 由随后的 failure 事件解释,
+      // 这行不重复它们(见 cli.md「判分预检的显示」)。
+      const word =
+        event.status === "done" ? t("feedback.human.precheckJudgeDone") : t("feedback.human.precheckJudgeFailed");
+      return [`${word}${duration}`];
     }
     case "lock-wait": {
       // 只服务非 TTY 退化流(TTY dashboard 的 appendDurable 对这个事件直接返回,运行级行由
@@ -208,15 +212,23 @@ function writeDurable(io: FeedbackIO, event: DurableFeedbackEvent, state: RunFee
 /** `PLAN` 面板(docs/feature/experiments/cli.md「运行中的 live 面板」):规模一行 + 复用一行
  *  (全新派发时省略),经 panel.ts 画框——面板体裁全仓只有一个渲染件,这里不手拼 `╭─`。 */
 function buildPlanLines(plan: RunFeedbackPlan, panel: { mode: PanelMode; width: number }): string[] {
+  // 实验闸让声明了 maxConcurrency 的实验的有效宽度小于全局值:只印全局值会被读成
+  // 「这批要开 19 路」。逐个附注在全局值之后(`concurrency 19 · mempal ≤1 · nowledge ≤4`),
+  // 未声明的实验不列(见 docs/feature/experiments/cli.md「运行中的 live 面板」)。
+  const experimentConcurrency = Object.entries(plan.experimentConcurrency ?? {});
+  const concurrencyNotes = experimentConcurrency
+    .map(([experimentId, limit]) => t("feedback.human.planExperimentConcurrency", { experimentId, limit }))
+    .join(" · ");
   const rows: PanelRow[] = [
     {
       kind: "line",
-      text: t("feedback.human.plan", {
-        total: plan.shape.totalAttempts,
-        evals: plan.shape.evals,
-        configs: plan.shape.configs,
-        concurrency: plan.shape.maxConcurrency,
-      }),
+      text:
+        t("feedback.human.plan", {
+          total: plan.shape.totalAttempts,
+          evals: plan.shape.evals,
+          configs: plan.shape.configs,
+          concurrency: plan.shape.maxConcurrency,
+        }) + (concurrencyNotes ? ` · ${concurrencyNotes}` : ""),
     },
   ];
   if (plan.reused > 0) {
@@ -423,8 +435,11 @@ export function formatTokenCount(n: number): string {
  *  机器面(json 的 `phase=` 与落盘)保留精确的点分名,收尾段在 Human 侧合并显示为一档。 */
 function phaseLabel(phase: LifecyclePhase): string {
   switch (phase) {
-    // 实验级两员不会作为 ActiveAttempt.phase 出现(钩子跑的时候没有活跃 attempt),
-    // 这里只服务 failure 行的 phase 标注(experiment.setup 失败的合成 errored 结果)。
+    // 运行级 / 实验级三员不会作为 ActiveAttempt.phase 出现(它们跑的时候没有活跃 attempt),
+    // 这里只服务 failure 行的 phase 标注(judge 预检失败、experiment.setup 失败这两类派发前
+    // 确定性失败合成的 errored 结果)。
+    case "judge.precheck":
+      return t("feedback.phase.judgePrecheck");
     case "experiment.setup":
       return t("feedback.phase.experimentSetup");
     case "experiment.teardown":

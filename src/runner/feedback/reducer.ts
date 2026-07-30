@@ -154,7 +154,8 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
     }
 
     case "precheck": {
-      // judge 预检运行级行的增删(见 cli.md「judge 预检的显示」):started 建行、done 清行。
+      // judge 预检运行级行的增删(见 cli.md「判分预检的显示」):started 建行,done / failed 清行
+      // ——预检失败后受影响 eval 的逐条 errored 由 failure 事件解释,这行没有留下来的理由。
       // 不动 running/queued 计数——预检发生在派发之前,attempt 全程保持 queued,计数不变量不受影响。
       if (event.status === "started") {
         return { ...state, activePrecheck: { startedAt: event.at } };

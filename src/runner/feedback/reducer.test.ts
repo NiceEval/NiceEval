@@ -503,6 +503,18 @@ describe("reduceRunFeedback: judge 预检运行级行", () => {
     expect(afterDone).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, unreadable: 0 });
   });
 
+  // 预检失败不再中止整次运行(见 docs/feature/judge/library.md「派发前预检」):受影响 eval 的
+  // attempt 逐条落 errored,由 failure 事件解释。运行级行没有留下来的理由,failed 与 done 一样清行。
+  it("failed 同样清行,且不动计数——逐条 errored 由随后的 failure 事件负责解释", () => {
+    const afterFailed = replay([
+      plan,
+      { type: "precheck", at: 1, status: "started" },
+      { type: "precheck", at: 40_013, status: "failed", durationMs: 40_012 },
+    ]);
+    expect(afterFailed.activePrecheck).toBeUndefined();
+    expect(afterFailed).toMatchObject({ total: 1, running: 0, queued: 1, passed: 0, failed: 0, errored: 0, unreadable: 0 });
+  });
+
   it("plan 事件清空残留的预检行(reducer 复用于多次 run 时不带上一次的预检状态)", () => {
     let state = createInitialRunFeedbackState();
     state = reduceRunFeedback(state, plan);

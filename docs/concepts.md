@@ -48,6 +48,7 @@
 | 判定 | Verdict | 一个 Attempt 的四态终态:`passed` / `failed` / `errored` / `skipped` | [Severity 与 Verdict](./feature/verdict/architecture.md) |
 | 严重度 | Severity | gate 不过即 `failed`;soft 默认不改判定,`--strict` 下才计入 | [Severity 与 Verdict](./feature/verdict/architecture.md) |
 | Judge 断言 | LLM-judged assertion | 把材料和 rubric 交给裁判模型求分的 Assertion;默认 soft、无阈值 | [LLM-as-a-judge](./feature/judge/library.md) |
+| 判分预检 | Judge precheck | 派发前对判分端点的最小探测;失败只作废含 Judge 断言的 Eval,不拦整次运行 | [派发前预检](./feature/judge/library.md#派发前预检) |
 | 断言范围 | Assertion scope | `t.*` 看 Attempt、`session.*` 看 Session、`turn.*` 看 Turn 已发生的事件 | [Scopes](./feature/assertions/architecture/scopes.md) |
 
 ### 计分粒度
@@ -129,7 +130,7 @@
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
 | 致命错误熔断 | Fatal-error circuit breaker | 作者声明失败范围;一次命中即停止对应 Eval 或 Experiment 的后续派发 | [Error classification](feature/error-classification/README.md) |
-| fail-fast | fail-fast | 无声明时按预检或同一 error code 连续复现保守停止派发 | [Runner](runner.md) |
+| fail-fast | fail-fast | 无声明时按同一 error code 连续复现的 streak 保守停止派发 | [Runner](runner.md) |
 
 ### 超时与耗时读数
 
