@@ -45,7 +45,7 @@ niceeval 是 beta 软件，DX 可以随便改。做 API / CLI / 契约设计决�
 - 不留待定问题——「要不要 / 再议」在定稿前裁决，落进文档的只有决定和理由。
 - 改设计时**重写受影响小节**，不在旧文上贴「现已改为」补丁。逐句自测：删掉这句丢契约信息就留；只丢历史，搬 memory 或直接删。
 - 文档正文只写「要什么、是什么」，不写实现状态——「已实现」「未实现」「进行中」这类词不进正文，也不进状态行。功能文档先于代码定稿是正常流程，代码后续跟上；这个时间差不需要在文档里加免责声明。状态只用文档在 `docs/feature/`（当前契约）还是 `docs/roadmap/`（未定契约的提案）里的物理位置表达，一篇提案定稿后整篇搬进 `docs/feature/`，不在原地加状态标记。
-- `docs/` 正文也是给人读的：行宽、句长、段落与用词四条排版规矩在 `docs/README.md`「写给人读」，禁词库在 `docs/writing-rules.json`。
+- `docs/` 正文也是给人读的：句长、段落与用词三条排版规矩在 `docs/README.md`「写给人读」，禁词库在 `docs/writing-rules.json`。
 - `docs-site/zh` 额外过「口语测试」与术语裁决，规则在 `docs-site/AGENTS.md`。
 
 `docs/` 内部按内容性质分两类，`docs/README.md` 的「接着读哪一篇」索引按类分组、不混排：
@@ -58,7 +58,7 @@ niceeval 是 beta 软件，DX 可以随便改。做 API / CLI / 契约设计决�
 | 改动 | 验证 | 收尾（同步义务） |
 | --- | --- | --- |
 | `src/` / `bin/` | `pnpm run typecheck`；改 CLI 行为再用 `pnpm run niceeval -- <命令>` 冒烟 | 公开面（导出类型/TSDoc/flag 表）变了：跑 `pnpm docs:reference` 重新生成参考页区块。参考页文案单源在源码紧邻注释——接口/函数看 TSDoc，CLI flag 说明写在 `src/cli.ts` `FLAG_OPTIONS` 各项的 JSDoc（缺注释生成器报错），生成脚本本身不承载文案（`{/* GENERATED */}` 区块内不要手改，`pnpm test:docs-site` 的漂移守护会拦）；新增/改名 flag 顺手核对 `src/i18n/` 两份 `--help` 速查（手工体裁，只点名常用 flag，不逐条生成）；可观察行为变了（flag、断言语义、结果格式、导出面）：grep `docs/` 与 `docs-site/` 同步声明，或记为明确的阶段性差异；修了 bug 补 memory 台账 |
-| `docs/` 或根 README | `pnpm test:docs`（`test/docs/docs-consistency.test.ts` 查索引覆盖与链接真实性，`test/docs/docs-writing.test.ts` 查句长、段长、行宽、禁用写法与图里的用语，逐行该怎么改直接打在断言里；台账收紧跑 `pnpm test:docs -u`） | 新文档在 `docs/README.md` 挂一行索引；用词按 `docs/concepts.md` 立词，新禁用写法加进 `docs/writing-rules.json`（带 `use` / `why`）；`docs/writing-baseline.json` 只许变小 |
+| `docs/` 或根 README | `pnpm test:docs`（`test/docs/docs-consistency.test.ts` 查索引覆盖与链接真实性，`test/docs/docs-writing.test.ts` 查句长、段长、禁用写法与图里的用语，逐行该怎么改直接打在断言里；台账收紧跑 `pnpm test:docs -u`） | 新文档在 `docs/README.md` 挂一行索引；用词按 `docs/concepts.md` 立词，新禁用写法加进 `docs/writing-rules.json`（带 `use` / `why`）；`docs/writing-baseline.json` 只许变小 |
 | `docs-site/` | `pnpm test:docs-site`（Vitest 守护 + `docs:validate` + `docs:links`，mint 那两步需 Node 22，见下） | 中文先定稿；英文入口按中文和当前代码核对后同步；`docs-site/zh` 每页 frontmatter 必须有任务视角的 title/description（包根 `INDEX.md` 由 `prepare` 打包时据此生成，缺了 `pnpm test:docs-site` 与发版都会红灯） |
 | `examples/` 各 tier | `pnpm test`（`test/unit/example-tiers.test.ts` 查落后、冲突标记与 verbatim 铁律）；要同步跑 `pnpm tiers:sync`（动之前先读 memory 的 tier-sync 条目） | 文档 / README 链接示例必须指向真实目录 |
 | `site/` | `pnpm run site:build` | — |
@@ -77,7 +77,7 @@ niceeval 是 beta 软件，DX 可以随便改。做 API / CLI / 契约设计决�
 - `pnpm install`：安装依赖。
 - `pnpm run typecheck`：运行 TypeScript 类型检查。
 - `pnpm test`：跑代码单测与代码级仓库守护（`src/**` 与 `test/unit/**`，含 examples tier 同步、INIT.md 符号链接）。
-- `pnpm test:docs`：跑 `docs/` 与 `memory/` 的守护（索引覆盖、链接真实性、句长段长行宽与禁用写法、用例登记）；加 `-u` 收紧 `docs/writing-baseline.json`。
+- `pnpm test:docs`：跑 `docs/` 与 `memory/` 的守护（索引覆盖、链接真实性、句长段长与禁用写法、用例登记）；加 `-u` 收紧 `docs/writing-baseline.json`。
 - `PATH=/opt/homebrew/opt/node@22/bin:$PATH pnpm test:docs-site`：跑 `docs-site/` 的守护（生成区块漂移、随包索引），再跑 Mintlify 的构建校验与断链检查。mint 那两步需 Node 22。
 - `pnpm run niceeval -- --help`：通过本地入口冒烟 CLI。
 - `pnpm run site:dev` / `pnpm run site:build`：产品站点开发 / 构建。

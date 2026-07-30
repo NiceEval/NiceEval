@@ -23,3 +23,6 @@ token 靠 `split(/\s+/)` 切,而中文正文没有空格:
 先问「没有空格时这个 token 是什么」。`split(/\s+/)` 在中文里退化成整行,
 所有「按最长 token 判断」的规则都会在中文上给出相反的结论,而且是静默的:
 台账/报告只会显示更少的命中,看起来像文档质量更好。
+
+**后续**:行宽这条规则 2026-07-30 整条删除(见 [`line-width-guard-cannot-catch-long-sentences`](line-width-guard-cannot-catch-long-sentences.md)),
+本条留作「按空格切 token 的度量用在中文上会全失效」这一教训的台账。

@@ -1,5 +1,5 @@
 /**
- * docs/ 正文的可读性检查:句长、段长、行宽与禁词库。
+ * docs/ 正文的可读性检查:句长、段长与禁词库。
  *
  * 规矩写在 docs/README.md「写给人读」,数据在 docs/writing-rules.json,
  * 现存命中数的台账在 docs/writing-baseline.json。
@@ -41,15 +41,13 @@ export interface BannedTerm {
 }
 
 interface WritingRules {
-  lineWidth: { max: number; cjkColumns: number };
   sentenceLength: { max: number };
   paragraphLength: { max: number };
   bannedTerms: BannedTerm[];
 }
 
-/** 按文件计数的三条长度规则。禁词另记,因为要按词分开。 */
+/** 按文件计数的两条长度规则。禁词另记,因为要按词分开。 */
 const LENGTH_RULES = [
-  { key: "lineWidth", label: "超宽行" },
   { key: "sentenceLength", label: "超长句" },
   { key: "paragraphLength", label: "超长段" },
 ] as const;
@@ -57,7 +55,7 @@ const LENGTH_RULES = [
 type LengthRule = (typeof LENGTH_RULES)[number]["key"];
 
 /**
- * 台账:文件 → 命中数。三条长度规则各一个数字,禁词按词分开记。
+ * 台账:文件 → 命中数。两条长度规则各一个数字,禁词按词分开记。
  * 死词记成词表而不是数字——换一个词死掉、原来的活过来,数字不变但问题换了一个,
  * 计数拦不住这种等量替换。
  */
@@ -202,17 +200,6 @@ export function deadConceptTerms(terms: ConceptTerm[]): string[] {
     .sort();
 }
 
-// 东亚宽字符占两列:中日韩、全角标点、假名。行宽按列算而不是按字符数算,
-// 否则同样 80 字符的中英文行在编辑器里宽度差一倍。
-const WIDE_CHAR =
-  /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︐-︙︰-﹯＀-｠￠-￦]/;
-
-export function visualWidth(line: string, cjkColumns: number): number {
-  let width = 0;
-  for (const ch of line) width += WIDE_CHAR.test(ch) ? cjkColumns : 1;
-  return width;
-}
-
 function walkDocs(dir: string, extensions: string[] = [".md"]): string[] {
   return readdirSync(join(ROOT, dir)).flatMap((name) => {
     const rel = join(dir, name);
@@ -225,8 +212,6 @@ function walkDocs(dir: string, extensions: string[] = [".md"]): string[] {
 function stripInlineCode(line: string): string {
   return line.replace(/`[^`]*`/g, "");
 }
-
-const isTableRow = (line: string) => line.trimStart().startsWith("|");
 
 /** 列表项的项目符号:`- ` `* ` `+ ` `1. ` `1) `。 */
 const LIST_MARKER = /^([-*+]|\d+[.)])\s+/;
@@ -347,7 +332,6 @@ export function lintDocsWriting(): LintReport {
   const hits: Hit[] = [];
   const deadTerms = deadConceptTerms(concepts);
   const actual: Baseline = {
-    lineWidth: {},
     sentenceLength: {},
     paragraphLength: {},
     bannedTerms: {},
@@ -391,17 +375,6 @@ export function lintDocsWriting(): LintReport {
       }
       if (inFence) continue;
       const lineNumber = index + 1;
-
-      const width = visualWidth(raw, rules.lineWidth.cjkColumns);
-      if (width > rules.lineWidth.max && !isTableRow(raw)) {
-        count("lineWidth", file);
-        hits.push({
-          file,
-          line: lineNumber,
-          rule: "lineWidth",
-          message: `${width} 列,超出 ${rules.lineWidth.max} 列——在句子或分句边界换行`,
-        });
-      }
 
       const prose = stripInlineCode(raw);
       for (const term of matchers) {
@@ -610,7 +583,6 @@ export function serializeBaseline(actual: Baseline): string {
   const sortKeys = <T>(obj: Record<string, T>): Record<string, T> =>
     Object.fromEntries(Object.keys(obj).sort().map((k) => [k, obj[k]]));
   const sorted: Baseline = {
-    lineWidth: sortKeys(actual.lineWidth),
     sentenceLength: sortKeys(actual.sentenceLength),
     paragraphLength: sortKeys(actual.paragraphLength),
     bannedTerms: sortKeys(
