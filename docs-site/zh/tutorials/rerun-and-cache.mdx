@@ -179,7 +179,9 @@ npx niceeval exp compare --accept config:flags.tunnelUrl
 
 selector 要指向本次计划里真实存在的一条差异。打错键名时没有任何差异匹配得上，NiceEval 直接报用法错误并列出本次可以 accept 的原因，不会静默放行。
 
-不想手拼 selector 时，在终端里跑 `--accept` 不带值：NiceEval 打出计划后逐条问“沿用还是重跑”，选完先打印等价的带值命令，再按你的选择执行。
+一条结果身上有两处差异时，两处都 accept 它才沿用；只 accept 一处照常重跑——没被授权的那处差异不会搭便车溜过去。
+
+不想手拼 selector 时，在终端里跑 `--accept` 不带值：NiceEval 打出计划后逐条问“沿用还是重跑”，选“重跑”就是不授权。选完先打印等价的带值命令，再按你的选择执行。
 
 ## 指纹没得改但就是要重跑
 

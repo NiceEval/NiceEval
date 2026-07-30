@@ -70,18 +70,20 @@ stale  config:judge.model  gpt-5.6 → gpt-5.6-sol
        accept:  niceeval exp compare/codex --accept config:judge.model
 ```
 
+同一 selector 在历史里对应多个不同旧值时,按「selector × 旧值→新值」各成一组,`accept:` 命令行是同一条—— 分组精确到转换,授权按路径([值作用域](cache.md#--accept授权跨过一条精确差异))。
 历史条目缺 manifest 时明细给不出,分组如实标 `opaque:no-manifest`,同样可显式 accept。
 
 ### `--accept` 不带值:TTY 下逐原因标记
 
-带 selector 的 [`--accept`](cache.md#--accept授权跨过一条精确差异) 是非交互授权,CI 与脚本用它。
-人不想手拼 selector 时,`--accept` 不带值且 stderr 是 TTY,就进入逐原因标记:
-计划打出后,按差异分组逐条问「复用还是重跑」。
+带 selector 的 [`--accept`](cache.md#--accept授权跨过一条精确差异) 是非交互授权,也是唯一的规范形态,CI 与脚本用它。
+不带值的 `--accept` 是「帮我拼 selector」的显式请求: 计划打出后,按差异分组逐条问是否授权复用, 选完先打印等价的带值命令(可直接进 CI 或复述给同事),再按它执行。
+选「重跑」就是不授权,与跳过提问同效; 提问的价值是多条差异一次选完,并拿到那条等价命令。
 只有可 accept 的分组会被问;`sandbox-reuse` 绝缘、`errored` 这类打不开的门照常展示,
 但不提供「复用」选项。
-选完先打印本次选择的等价命令(带值的 `--accept` 写法,可直接进 CI 或复述给同事),再按选择执行。
+
 非 TTY 下 `--accept` 不带值是用法错误。
 报错先给带 selector 的写法,再列出本次计划里真实可授权的那几条原因——与 selector 空转的报错同一份枚举,人不必为了知道能填什么再跑一趟 `--dry`。
+交互不是 TTY 分叉出的第二形态:形态由「不带值」这个写法选定, TTY 检测只回答这个请求能不能被满足;每条命令一个人读 text 面、`--json` 是机器面的原则不受影响, 执行的永远是打印出的那条带值命令。
 
 第 4 条零命中时,不摊平打印每一个已发现 id,只给可浏览的目录清单和下一步命令:
 

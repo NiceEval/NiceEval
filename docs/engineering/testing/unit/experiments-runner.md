@@ -183,6 +183,8 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **超时、缓存与指纹**：外层超时回退为 errored 且不放弃同 eval 剩余轮次；**超时证据保全**——超时 attempt 的 events/usage 保留截至中断的已收值(fixture 要让中断前确有事件,证明不是空壳重建)、收尾段补折叠 workspace.diff、`error.phase` 是中断时已打开的阶段;`passed` 与 `failed` 都是可复用终态而 `errored`/`skipped` 总是重跑；指纹变化只重跑受影响 eval；**`timeoutMs` 不进指纹哈希、以携带判据参与**——提高上限旧终态全部携带、调低上限使 `executionMs` 超线的旧终态重跑(fixture 两个方向都要有区分力场景)；**资格判据量的是 `executionMs` 不是 `durationMs`**——一条排队远长于执行的历史终态在「排队+执行 > 新上限、执行 < 新上限」这一格必须携带,这一格是拿含排队的量去比时唯一会红的;`executionMs` 缺失的历史条目回落到 `durationMs`(方向是多跑,不误采信)；**指纹输入的进 / 不进两侧都要有区分力场景**——`flags` 整袋进(任一键任一值不同即重跑,无逐键豁免)、`model` / `reasoningEffort` / agent 名 / sandbox 解析参数 / `strict` / `judge` 的 `model` 与 `baseUrl` 进,而 `attempts` / `labels` / 调度字段 / 生命周期 Hook 函数体 / `judge.apiKeyEnv` 改动不作废携带；**`--accept <selector>` 的授权面**(逐条类别见下面几条独立条目)；**携带条目合入新 Run 时按本次规划重打 `fingerprint`**,`facts`/`locator`/`artifactBase`/判定原样携带(fixture 断言携带条目的 facts 仍是产出它那一轮的值)；携带以 attempt 为粒度、未收尾 Run 是合法来源；**出身门**——落盘带 `sandbox.reused` 的历史终态在任何模式下都不携带、照常派发,与本次是不是复用运行无关；执行模式 flag 的携带豁免——`--keep-sandbox` 下留存档内的历史终态不携带、照常派发（failed 档豁免 `failed`、all 档连 `passed` 一起豁免），档外照常携带；**`--rerun` 三档各自的携带口径**——不带(`passed`+`failed` 都携带)、单独使用与 `failed` 档(只携带 `passed`，历史 `failed` 全部重新派发)、`all` 档(一律不携带)，三档在同一份含 `passed`/`failed`/`errored` 的历史 fixture 上产出三种不同的派发集合；`--dry` 语义；计数恒等式 `total = reused + running + elsewhere + queued + passed + failed + errored + skipped`。
 - **`--accept` 的授权判据**：四支 selector(`config:` / `source:` / `data:` / `opaque:no-manifest`)各自命中本类差异时携带。
   同一条 eval 另有一条未授权差异时仍重跑,两个方向都要有区分力场景。
+  selector 按路径命中:同一路径带两个不同旧值的两批历史条目,一条 selector 全部携带,各自的 `carriedAccepting` 记自己的旧值新值。
+  与 `--rerun failed` 同用不冲突:被授权的 `failed` 条目仍被口径门拦下重跑,`passed` 照常携带。
   selector 在本次计划里算不出对应差异是空转,按启动期用法错误报出并列出本次可授权的原因,不静默通过;与 `--rerun all` 同用同样是用法错误。
 - **`--accept` 的重锚与留痕**：被授权携入的条目按本次口径重打指纹,留痕两处都要断言——条目的 `carriedAccepting` 逐条记 selector 与旧值新值摘要,本次 Run 另记一条 `accept` diagnostic。
   下一次不带这个 flag 的运行照常命中,这一格证明它是重锚而不是一次豁免。
@@ -194,6 +196,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   这一格要两个方向:源码面没变时单独授权那条具名配置差异即可携带(反事实指纹相等就是证明),源码面也变时要连 `opaque:no-manifest` 一起授权才携带。
 - **`--dry` 的逐条作废原因**：要派发的行各标一个原因,词表是六道门加缺历史门的 `new` / `incompatible`,全部携带的行标 `carried`。
   九个原因各要一条能把它与相邻原因区分开的 fixture,`stale` 行另要断言按差异聚合出的分组与可复制的 accept 命令。
+  同一 selector 对应多个不同旧值时按「selector × 旧值→新值」各成一组,`accept:` 命令行是同一条。
 - **`incompatible` 与 `new` 的区分**:同一次计划里一条 eval 的历史落在版本不同的快照里、另一条从没跑过,两行的原因词不同。
   把不兼容历史一并算作「没有任何历史」的实现只在这一格会红。
   判定链的另一半在读取面:不兼容的快照只按目录名认坐标(它的文件按格式规则不解析)。

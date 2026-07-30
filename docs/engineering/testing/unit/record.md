@@ -71,7 +71,7 @@ interface AttemptSpec {
   只跑了一半的 Run 也已经有它——它在规划期一次写成，不随 attempt 完成回写，fixture 要有「Run 未收尾但清单已在」这一格。
   历史 Run 没有这个文件时读取面如实为缺失，不合成一份空清单。
 - **超时归属落盘**：超时产生的 `errored` 条目带 `error.timeout` 三个字段——触发层、`limitMs`、来源层，三者原样往返。
-  三个触发层各要一条；非超时的 `errored` 不带这个字段，缺失与写空对象不合并成同一种 fixture。
+  两个触发层各要一条，`attempt-deadline` 的来源层按四层来源各一条区分力格，`command-timeout` 的来源恒为 `command`；非超时的 `errored` 不带这个字段，缺失与写空对象不合并成同一种 fixture。
 - **执行耗时与出身两个新字段**：`executionMs` 落盘且等于 `durationMs` 减去 `sandbox.queue` 那一段（fixture 要有非零排队，否则两者相等、这条测试没有区分力）；`sandbox.reused` 只在复用运行的 attempt 上出现，与 `kept` 互不干扰、可同时省略。
   两者都是可选字段，读取面对缺失的历史落盘不报错。
 - **`evidenceState` 三态**：`local` / `borrowed` / `dangling` 三态各自可达且不合并——fixture 分别构造同目录 artifact、`artifactBase` 指向存活原 Run、原 Run 目录已删除三种落盘树；`dangling` 时 `artifacts` 列表仍声明写过该文件，懒加载返回 `null`，两者的差值可被消费方判断。

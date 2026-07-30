@@ -89,7 +89,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
-- [manual-carry-accept-decisions](manual-carry-accept-decisions.md) — 裁决(2026-07-30):手动复用标记定稿——放宽是重锚不是持久 tag(TTL 否决)、`--carry-ignoring-flag` 被 `--accept config:flags.<key>` 吸收、roadmap 的 `--rerun eval:` 因 CLI 两类输入模型砍掉、judge/sandbox 组内差异整组回滚才携带;config 差异从 run.json 算,缺 manifest 只降级源码/数据面
+- [manual-carry-accept-decisions](manual-carry-accept-decisions.md) — 裁决(2026-07-30):手动复用标记定稿——放宽是重锚不是持久 tag(TTL 否决)、`--carry-ignoring-flag` 被 `--accept config:flags.<key>` 吸收、roadmap 的 `--rerun eval:` 因 CLI 两类输入模型砍掉、judge/sandbox 组内差异整组回滚才携带;config 差异从 run.json 算,缺 manifest 只降级源码/数据面;评审补裁:selector 按路径命中不按值转换、TTY 交互定性「拼 selector 的助手」保留
 - [carry-eligibility-and-fingerprint-scope-decisions](carry-eligibility-and-fingerprint-scope-decisions.md) — 裁决(2026-07-26):携带资格判据改 `executionMs`(deadline 钉在 sandbox.create,推翻「deadline 与 durationMs 同起点 sandbox.queue」——那会让超时变成并发的函数);loader 读入的数据文件**进**指纹,推翻「算指纹时还没读」(顶层 await loadYaml 在发现阶段的模块求值期就读完了,比解析期早一整个阶段);`--carry-ignoring-flag` 承认是一次重锚而非一次豁免,加两道启动期校验+条目侧 carriedIgnoringFlags;连带立规:进 configHash 的字段必须落进 run.json
 - [rerun-gear-replaces-force](rerun-gear-replaces-force.md) — 裁决(2026-07-25):`--force` 删除,换成一根轴三档的 `--rerun[=failed|all]`(不带=passed+failed 都算数,裸写=只采信 passed 重跑失败项,all=全量重烧),词表与 `--keep-sandbox` 同构;起因=「改了不在指纹里的东西后只复验失败项」没有档位,只能手工挖失败 id;否决再加一个布尔 `--retry-failed`;配套 NEXT 面板加 `Retry:` 行
 - [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md) — 裁决(2026-07-25):指纹构成不开放配置,`flags` 整袋进无逐键豁免;推翻次日前刚落地的 `provenanceFlags` deny-list(多声明=静默跨条件携带、且它给携带条目记了错的出处);轮换坐标(隧道 URL)的家是 attempt 作用域 `ctx.fact()` + 报告 `fact()` 选轴,搬迁只留一次性 CLI 出口 `--carry-ignoring-flag`
