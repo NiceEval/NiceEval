@@ -45,7 +45,7 @@ export default defineReport(async (sample) => {
   });
 
   return (
-    <Page title="Quality and cost">
+    <Col>
       <Scatter
         points={performance}
         x="costUSD"
@@ -53,7 +53,7 @@ export default defineReport(async (sample) => {
         point="agent"
       />
       <Table rows={performance} />
-    </Page>
+    </Col>
   );
 });
 ```
@@ -89,9 +89,9 @@ export default defineReport((sample) => {
     .slice(0, 50);
 
   return (
-    <Page title="Failures">
+    <Col>
       <AttemptList attempts={attempts} />
-    </Page>
+    </Col>
   );
 });
 ```

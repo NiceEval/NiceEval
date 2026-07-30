@@ -20,9 +20,9 @@ function defineReport(
 
 ```tsx
 export default defineReport((sample) => (
-  <Page title="Attempts">
+  <Col>
     <AttemptList attempts={sample.attempts} />
-  </Page>
+  </Col>
 ));
 ```
 
@@ -88,18 +88,18 @@ export default defineReport({
       id: "overview",
       title: "Overview",
       render: async (sample) => (
-        <Page title="Overview">
+        <Col>
           {await overview(sample)}
-        </Page>
+        </Col>
       ),
     },
     {
       id: "failures",
       title: "Failures",
       render: (sample) => (
-        <Page title="Failures">
+        <Col>
           {failures(sample)}
-        </Page>
+        </Col>
       ),
     },
     {
@@ -922,9 +922,9 @@ async function qualityCost(sample: Sample): Promise<ReportNode> {
 
 ```tsx
 export default defineReport(async (sample) => (
-  <Page title="Quality and cost">
+  <Col>
     {await qualityCost(sample)}
-  </Page>
+  </Col>
 ));
 ```
 
@@ -962,14 +962,14 @@ export function makeTeamReport(
               (row.costUSD.value ?? 0) > options.costBudgetUSD,
           );
           return (
-            <Page title="Overview">
+            <Col>
               <Scatter
                 points={performance}
                 x="costUSD"
                 y="passRate"
               />
               <Table rows={overBudget} />
-            </Page>
+            </Col>
           );
         },
       },
@@ -1097,7 +1097,7 @@ export default defineReport({
       id: "overview",
       title: "Overview",
       render: (sample) => (
-        <Page title="Overview">...</Page>
+        <Col>...</Col>
       ),
     },
     {
@@ -1123,10 +1123,10 @@ render: async (attempt) => {
   ]);
 
   return (
-    <Page title={attempt.locator}>
+    <Col>
       <Conversation turns={turns} />
       <DiffView files={files} />
-    </Page>
+    </Col>
   );
 },
 ```

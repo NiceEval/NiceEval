@@ -26,9 +26,9 @@ export default defineReport(async (sample) => {
   const rows = toExperimentRows(sample);
 
   return (
-    <Page title="Experiments">
+    <Col>
       <Table rows={rows} />
-    </Page>
+    </Col>
   );
 });
 ```

@@ -5,24 +5,30 @@ page render 返回 `ReportNode`。
 
 ## 结构节点
 
-`Page`、`Stack`、`Row`、`Col`、`Section`、`Grid`、`Tabs` 与 `Markdown` 只组织子节点。
+`Row`、`Col`、`Section`、`Grid`、`Tabs` 与 `Markdown` 只组织子节点。
 它们不接收 Sample，不读取 artifact，也不改变 MetricValue。
 
 ```tsx
 return (
-  <Page title="Quality and cost">
-    <Row>
-      <Scatter
-        points={performance}
-        x="costUSD"
-        y="passRate"
-        point="agent"
-      />
-      <Table rows={performance} />
-    </Row>
-  </Page>
+  <Col>
+    <Section title="Quality and cost">
+      <Row>
+        <Scatter
+          points={performance}
+          x="costUSD"
+          y="passRate"
+          point="agent"
+        />
+        <Table rows={performance} />
+      </Row>
+    </Section>
+  </Col>
 );
 ```
+
+页身份是 PageDefinition，不是某个组件：`render` 返回的是这一页的内容树，
+页在导航与页索引里的名字来自 `PageDefinition.title`（[外壳与多页](shell.md)）。
+页首要一行标题时用 `Section` 或 `Hero`，不另设页级容器组件。
 
 `Row` 和 `Col` 表达阅读关系，不承诺固定像素几何。
 text 面按终端显示列决定换行与上下排列；web 面用容器大小和主题断点排版。
@@ -119,10 +125,17 @@ MetricValue 单元格显示本地化数值，并保留 samples / total 与 refs 
   表宽由列数与读数长度决定，砍宽度就是砍列或砍字。每行的显示宽度恒等于框宽，
   右边框对齐成一条直线。
 - **自动排版**：列宽先取各列内容的自然显示宽度。放不下时按自然宽的比例压缩左对齐的文本列，
-  每列不低于可读下限；数字列不压——右对齐的读数折了行就读不成数。
+  数字列不压——右对齐的读数折了行就读不成数。下限分两档：身份列（首列）取
+  `min(自然宽, 24)`，其余文本列 8。身份列读不出来，这一行就等于没有，
+  所以宁可少几列也不把 `compare/codex-gpt-5.6-luna` 压成 `compare/ / codex-gp`。
 - **换行**：压过的格子在格内按显示宽度折行，行高取该行最高的那一格，矮格补空。
+  折行保住格子开头的缩进——层级就长在那几个空格上，续行跟着对齐到同一个缩进。
   列声明的 `maxLines` 在格内收口，末行补 `…`。
-- **丢列是最后手段**：所有文本列都压到下限仍放不下，才从右侧丢列，并在表下如实报出丢了几列。
+- **丢列是最后手段**：所有文本列都压到各自下限仍放不下，才从右侧丢列，
+  并在表下如实报出丢了几列。窄终端下宁可丢列也不转成「每条记录一块」的竖排：
+  表的价值是跨行比较，块状读不出上下对齐，行数还要翻好几倍，
+  而且 web 面是真 `<table>`、窄屏靠横向滚动——两面会从同一种形状分叉成两种。
+  只有一条记录的场合本来就该用 `Grid` 或 `AttemptDetails`，不是把表转个方向。
 - **层级与横线**：子行的层级靠首列内的缩进表达。横线画在行树自己的边界上：
   表头与正文之间一条，行树有嵌套时每个顶层行之前再一条——一组一格，组内不切。
   平表（没有任何子行）只有表头那一条，不逐行切割。

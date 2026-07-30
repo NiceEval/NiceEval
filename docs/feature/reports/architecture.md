@@ -304,13 +304,13 @@ export default defineReport({
       render: async (sample) => {
         const points = await performance(sample);
         return (
-          <Page title="Chart">
+          <Col>
             <Scatter
               points={points}
               x="costUSD"
               y="passRate"
             />
-          </Page>
+          </Col>
         );
       },
     },
@@ -318,9 +318,9 @@ export default defineReport({
       id: "table",
       title: "Table",
       render: async (sample) => (
-        <Page title="Table">
+        <Col>
           <Table rows={await performance(sample)} />
-        </Page>
+        </Col>
       ),
     },
   ],

@@ -53,10 +53,10 @@ Attempt 详情是一张 `input: "attempt"` 的参数化 page：
     ]);
 
     return (
-      <Page title={attempt.locator}>
+      <Col>
         <Conversation turns={turns} />
         <DiffView files={files} />
-      </Page>
+      </Col>
     );
   },
 }

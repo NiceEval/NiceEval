@@ -554,3 +554,58 @@ describe("数据格框 — 横线按行树边界、宽度贴合内容", () => {
     expect([...widths][0]!).toBeLessThan(20);
   });
 });
+
+// cases: docs/engineering/testing/unit/reports.md 分区「数据格框（Table 与 Grid 的 text 面）」。
+describe("数据格框 — 身份列下限", () => {
+  const columns = [
+    { field: "entity", label: "Experiment" },
+    { field: "model", label: "Model" },
+    { field: "cost", label: "Cost" },
+  ];
+  const rows = [{ entity: "compare/codex-gpt-5.6-luna--mempal", model: "gpt-5.6-luna", cost: "$0.29" }];
+
+  const wide = [
+    ...columns,
+    { field: "tokens", label: "Tokens" },
+    { field: "record", label: "Record" },
+  ];
+  const wideRows = [{ ...rows[0]!, tokens: "119.1k tokens", record: "3 passed" }];
+
+  it("窄终端下身份列停在 24 列,其余文本列先让到 8", () => {
+    const text = renderNodeToText(
+      <Table columns={wide} rows={wideRows} />,
+      createTextContext({ width: 60, panelMode: "boxed" }),
+    );
+    const widths = text
+      .split("\n")[0]!
+      .slice(1, -1)
+      .split("┬")
+      .map((segment) => stringWidth(segment) - 2);
+    expect(widths[0]).toBe(24);
+    expect(widths[1]).toBeLessThan(stringWidth("gpt-5.6-luna"));
+  });
+
+  it("压到各自下限仍放不下就从右侧丢列并报数,不把身份压得更窄", () => {
+    const text = renderNodeToText(
+      <Table columns={wide} rows={wideRows} />,
+      createTextContext({ width: 60, panelMode: "boxed" }),
+    );
+    const widths = text
+      .split("\n")[0]!
+      .slice(1, -1)
+      .split("┬")
+      .map((segment) => stringWidth(segment) - 2);
+    expect(widths[0]).toBe(24);
+    expect(widths.length).toBeLessThan(wide.length);
+    expect(text).toMatch(/column/i);
+  });
+
+  it("身份列自然宽短于下限时以自然宽为准,不补空", () => {
+    const text = renderNodeToText(
+      <Table columns={[{ field: "a", label: "A" }, { field: "b", label: "Long text column here" }]} rows={[{ a: "x", b: "y".repeat(80) }]} />,
+      createTextContext({ width: 62, panelMode: "boxed" }),
+    );
+    const first = text.split("\n")[0]!.slice(1, -1).split("┬")[0]!;
+    expect(stringWidth(first) - 2).toBe(1);
+  });
+});

@@ -40,7 +40,7 @@ export default defineReport(async (sample) => {
   });
 
   return (
-    <Page title="Quality and cost">
+    <Col>
       <Scatter
         points={performance}
         x="costUSD"
@@ -48,7 +48,7 @@ export default defineReport(async (sample) => {
         point="agent"
       />
       <Table rows={performance} />
-    </Page>
+    </Col>
   );
 });
 ```
@@ -231,9 +231,9 @@ Call it directly in the page render:
 
 ```tsx
 render: async (sample) => (
-  <Page title="Overview">
+  <Col>
     {await overview(sample)}
-  </Page>
+  </Col>
 )
 ```
 
@@ -249,9 +249,9 @@ export default defineReport({
       id: "overview",
       title: "Overview",
       render: async (sample) => (
-        <Page title="Overview">
+        <Col>
           {await overview(sample)}
-        </Page>
+        </Col>
       ),
     },
     {
@@ -283,10 +283,10 @@ The host runs only the requested page render.
     ]);
 
     return (
-      <Page title={attempt.locator}>
+      <Col>
         <Conversation turns={turns} />
         <DiffView files={files} />
-      </Page>
+      </Col>
     );
   },
 }

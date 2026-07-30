@@ -33,6 +33,9 @@ const MISSING_MARK = "—";
 const COLUMN_GAP = 3;
 /** 左对齐列的压缩下限:再窄就读不成句,宁可丢列。 */
 const MIN_TEXT_COLUMN = 8;
+/** 身份列(首列)的压缩下限:读不出身份的行等于没有,所以它比其余文本列早停在这个宽度
+ *  ——列自然宽本来就短于它时以自然宽为准,不给短列补空。压到这一步还放不下就丢列。 */
+const MIN_IDENTITY_COLUMN = 24;
 
 /** 格子的文本形态:缺这个键、或值是 null,都渲染 —(与 web 面同源)。 */
 function cellText(row: TableRow, key: string): string {
@@ -57,19 +60,21 @@ function fitWidths(
   available: number,
 ): { widths: number[]; hidden: number } {
   const widths = [...natural];
+  const floorOf = (c: number): number =>
+    c === 0 ? Math.min(natural[0] ?? MIN_IDENTITY_COLUMN, MIN_IDENTITY_COLUMN) : MIN_TEXT_COLUMN;
   for (;;) {
     const over = totalWidth(widths) - available;
     if (over <= 0) break;
     const flexible = widths
-      .map((w, c) => ({ c, w }))
-      .filter(({ c, w }) => align[c] !== "right" && w > MIN_TEXT_COLUMN);
+      .map((w, c) => ({ c, w, floor: floorOf(c) }))
+      .filter(({ c, w, floor }) => align[c] !== "right" && w > floor);
     if (flexible.length === 0) break;
-    // 可压缩总量按自然宽加权分摊;取整后的余数留给下一轮,循环终止于「无列可压」。
-    const slack = flexible.reduce((sum, { w }) => sum + (w - MIN_TEXT_COLUMN), 0);
+    // 可压缩总量按各列自己的余量加权分摊;取整后的余数留给下一轮,循环终止于「无列可压」。
+    const slack = flexible.reduce((sum, { w, floor }) => sum + (w - floor), 0);
     let remaining = Math.min(over, slack);
-    for (const { c, w } of flexible) {
+    for (const { c, w, floor } of flexible) {
       if (remaining <= 0) break;
-      const share = Math.min(w - MIN_TEXT_COLUMN, Math.max(1, Math.round((over * (w - MIN_TEXT_COLUMN)) / slack)), remaining);
+      const share = Math.min(w - floor, Math.max(1, Math.round((over * (w - floor)) / slack)), remaining);
       widths[c] = w - share;
       remaining -= share;
     }
@@ -105,6 +110,19 @@ function clampCellLines(lines: string[], maxLines: number | undefined, width: nu
   return kept;
 }
 
+/**
+ * 折行时保住格子开头的缩进:层级就长在首列的缩进上(docs 的「层级与横线」),而 wrapDisplay
+ * 会把行首空格吃掉——身份被压窄正是最需要看清层级的时候,不能一折行就把层级折没了。
+ * 续行跟着对齐到同一个缩进。
+ */
+function wrapIndented(cell: string, width: number): string[] {
+  const indent = cell.length - cell.trimStart().length;
+  if (indent === 0) return wrapDisplay(cell, width);
+  const pad = " ".repeat(indent);
+  const body = wrapDisplay(cell.slice(indent), Math.max(1, width - indent));
+  return body.map((line) => `${pad}${line}`);
+}
+
 /** 逻辑行 → 物理行:每格折到自己的列宽,列带 maxLines 就收口,行高取最高的那格,矮格补空串。 */
 function toPhysicalRows(
   cells: readonly string[],
@@ -115,7 +133,7 @@ function toPhysicalRows(
     // 放得下就原样保留:wrapDisplay 会把连续空格折成一个,而 DeltaTable 的
     // "50% → 62%   +12pp" 这类格子内含固定间距 —— 不折行时一个字节都不能动。
     clampCellLines(
-      !cell.includes("\n") && stringWidth(cell) <= widths[c] ? [cell] : wrapDisplay(cell, widths[c]),
+      !cell.includes("\n") && stringWidth(cell) <= widths[c] ? [cell] : wrapIndented(cell, widths[c]!),
       maxLines[c],
       widths[c]!,
     ),

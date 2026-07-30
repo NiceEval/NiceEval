@@ -12,9 +12,9 @@ export default defineReport(async (sample) => {
   const rows = toExperimentRows(sample);
 
   return (
-    <Page title="Experiments">
+    <Col>
       <Table rows={rows} />
-    </Page>
+    </Col>
   );
 });
 ```
@@ -73,7 +73,7 @@ export default defineReport({
         });
 
         return (
-          <Page title="Overview">
+          <Col>
             <Scatter
               points={performance}
               x="costUSD"
@@ -81,7 +81,7 @@ export default defineReport({
               point="agent"
             />
             <Table rows={performance} />
-          </Page>
+          </Col>
         );
       },
     },
