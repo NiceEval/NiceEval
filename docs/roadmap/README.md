@@ -17,6 +17,6 @@ Roadmap 与 Feature、Design 候选共用 [Feature Design Package](../_template/
 
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
 - [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它等待上游稳定的候选接入
-- [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 终端/HTML 语义结构断言 DSL、容差 golden 与 vitest 宿主的候选契约
+- [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 等待按测试作者面决策重写的 Report 媒介 adapter 候选
 - [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
 - [Agent 进程契约](agent-process-contract/README.md) —— 进程寿命唯一边界是沙箱、agent 非零退出记 `errored`;多容器环境决策的先行前提

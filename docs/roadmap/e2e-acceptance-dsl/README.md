@@ -1,5 +1,10 @@
 # E2E 验收断言 DSL 与 vitest 验收库
 
+> **裁决状态：需要重定基线。**
+> [测试作者面决策](../../design/user-readable-testing/DECISION.md)否决了把本包直接实现成全仓作者面或共享 `@niceeval/verify`。
+> 本目录只保留 Report 媒介 adapter 的候选材料；`term()`、golden、evidence 生命周期与发布形态必须按该决策重写。
+> 重写完成前，本目录与决策冲突的部分不构成实施契约。
+
 还没定为当前契约的候选设计,见 [Roadmap 约定](../README.md)。
 调研来源见 [References · Playwright ARIA Run](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植)、[References · trycmd / snapbox](../../references.md#trycmd--snapboxrust)、[References · CLI / TUI 测试生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等)。
 库的完整断言词表——语义树 Run 语法、匹配语义、golden scrub 规则、点查询 API 与失败反馈——见 [Library 逐词表说明](library.md);真实验收脚本逐场景的「现行断言 → 候选写法」对照见 [Use Cases](use-case/README.md)。

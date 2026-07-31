@@ -72,7 +72,8 @@ docs/
 │   ├── environment-model/               环境模型:三份 Requirement、唯一 Base Case 与 Ensure
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
 │   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
-│   └── report-authoring/                报告作者面:组件粒度与取数形态
+│   ├── report-authoring/                报告作者面:组件粒度与取数形态
+│   └── user-readable-testing/           测试作者面:用户任务规格与可观察结果
 │
 ├── engineering/                         仓库自身的工程机制
 │   ├── _template/                       新工程主题模板
