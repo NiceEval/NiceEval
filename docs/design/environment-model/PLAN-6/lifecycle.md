@@ -38,7 +38,7 @@ setup 内容不改变这条顺序。
   -> build/locate 并创建完整 case
   -> 等待全部服务与资源 ready
   -> 按声明顺序执行 SandboxSpec setup
-  -> 建立 workspace baseline
+  -> 建立 workspace baseline(变更分类账的锚点 commit)
   -> 执行 EvalDef setup
   -> AgentProvisioner / Agent setup
   -> 独立 Experiment state load
@@ -56,7 +56,11 @@ setup 内容不改变这条顺序。
 失败时 Attempt 在 Agent turn 前 `errored`,并保留所在 owner 的 phase。
 
 Terminal-Bench 的 mempal 安装发生在 Compose ready 后、workspace baseline 前。
-MemoryBench 的仓库 checkout 与依赖安装发生在 baseline 后、Agent setup 前,归 Eval Fixture 而非 Agent 改动。
+MemoryBench 的仓库 checkout 与依赖安装发生在 baseline 后、Agent setup 前。
+
+「baseline 之后却不进 agent diff」不靠这条顺序保证,靠变更分类账的**归因标签**:baseline 只是锚点 commit,归因由 commit 落在哪一类决定,不由它相对锚点的位置决定。首次 `t.send()` 进入前,workdir 里 EvalDef setup(checkout、依赖安装)与 SandboxSpec setup 落下的全部改动记成一笔 **eval 归因**;send 返回后才记 **agent 归因**;`t.sandbox.diff` 只折叠 agent 归因那些窗口。所以 checkout 无论排在锚点前后,都不会漏进 agent 的账。
+
+三类 commit 时点与排除清单的完整契约单源在 [Sandbox · 变更归因](../../../feature/sandbox/architecture.md#变更归因send-窗口与分类账),本 Lifecycle 不复述,只声明 setup 层各自归哪一类。
 
 ## Fresh 与 Reuse
 
