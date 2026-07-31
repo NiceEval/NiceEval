@@ -1,6 +1,6 @@
 # PLAN-3:完整 Sandbox Case 与 Experiment Addon(不推荐)
 
-**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
+**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
 
 ## 方案摘要
 
@@ -17,6 +17,7 @@ Agent 的 staged payload、安装模式、启动条件和逐 Attempt 安装事�
 
 公开调用只见 [Library](library.md)。
 Case 解析、Addon 调度、生命周期、身份和错误只见 [Architecture](architecture.md)。
+从 Base build 到 fresh/reuse Attempt 的完整频次见 [Lifecycle](lifecycle.md)。
 
 ## Base 与收敛规则
 
