@@ -163,7 +163,8 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 2. 查询 provider 原生 cache 或本地 build registry。
 3. 同 key 只允许一个 builder,single-flight 等待者不重复上传 context 或创建 template。
 4. cache miss 才调用 provider 原生构建 API;成功后以 BuildKey 登记 locator,再放行依赖它的 attempt。
-5. 确定性构建失败按共享该 key 的范围止损:失败的 BuildKey 只执行一次,所有依赖它、本应 fresh 执行的 attempt 得到同一环境 `errored`,origin 指向同一个 Run timing node。
+5. 瞬时构建失败(基线镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建产物是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该把整批依赖该 key 的 attempt 打成 `errored`。
+6. 重试耗尽或确定性构建失败(构建定义错误、基线镜像不存在)按共享该 key 的范围止损:失败的 BuildKey 只执行一次,所有依赖它、本应 fresh 执行的 attempt 得到同一环境 `errored`,origin 指向同一个 Run timing node。
 
 预算分两层,口径不混:
 

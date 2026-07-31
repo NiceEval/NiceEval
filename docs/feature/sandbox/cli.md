@@ -165,6 +165,7 @@ Remove orphans with: niceeval sandbox prune
 - `orphan`:属主 run 已被证实死亡(同宿主、pid 不存活),可安全收回。
 - `unverified`:标识来自另一台宿主或无法核对,不自动销毁;确认后用 `prune --force`。
 - 属主 run 还活着的实例不出现在这张表里——它们属于并发运行中的另一次 run,不是孤儿。
+- 核对以资源组为单位:Compose case 的伴随容器与网络跟随主实例整组出现,不逐容器单列;组内任何残留都算孤儿,不因主实例已消失而漏报。
 - 查询通道:docker 问本地 daemon 的 label 索引,e2b 走 SDK 的 metadata 过滤;vercel 无检索通道、不参与,靠 provider 保留期限到期回收。
 - runner 启动期的提醒只做零成本的本地 docker 核对；云 provider 的网络/凭据探测只在用户显式执行 `list --orphans` 时发生。
 - 没有孤儿时输出 `No orphan sandboxes.`,退出码 0;只读,不清理任何东西。
@@ -180,6 +181,7 @@ pruned 2 orphan sandboxes
 ```
 
 - 只销毁判定为 `orphan` 的实例;`--force` 连 `unverified` 一起销毁。留存注册表条目永不被 prune 触碰——已登记现场的销毁是 `stop` 的职责。
+- 销毁以资源组为单位:Compose case 的伴随容器与网络随主实例整组收回,不留只剩网络或 sidecar 的半截残留。
 - 幂等:实例已不存在不算错误;某台销毁失败时如实列出并退出 1,其余照常处理,不能把仍活着的资源从核对面隐藏掉。
 - 与 `list` / `stop` 同一纪律:不读 config、不执行用户代码,按运行标识里的 provider 名路由 detached 销毁。
 

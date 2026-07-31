@@ -138,6 +138,9 @@ summary 模式和 full 模式都输出 `phase timing unavailable`，不会把 ev
 重定向到文件或管道时仍使用 80-node 默认预算；只有显式 `--timing=full` 才解除限制。
 CLI 不读取 stdin，不因 pager 等待而挂住 agent/CI。
 
+命令节点携带它生效的时限与来源层（[时限归属](../../sandbox/architecture.md#时限归属attempt-deadline-是唯一默认)的词汇：attempt deadline、逐命令 timeout、provider 上限）。
+text 面在因超时失败的节点原位标注，如 `✗ deadline 60s · per-command timeout`——读者不该靠「停在整 1m 0s」这种巧合反推是谁掐断了命令；`--json` 与 `--timing=full` 对全部命令节点给出该字段。
+
 errored 或超时的 attempt 里，`--timing` 直接标出死在哪一步——最后一条主链阶段以及已知的最深 child 带 `✗`，其后没有主链条目；沙箱从未创建成功时收尾段整段缺席。
 `sandbox.create` 发生在 Sandbox 对象存在之前，只有 provider 主动提供步骤时才展开 SDK 请求或宿主命令；没有细分时只显示可靠的阶段合计：
 

@@ -84,6 +84,10 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [hard-kill-leaves-orphans-and-experiment-leaks](hard-kill-leaves-orphans-and-experiment-leaks.md) — SIGKILL(外部看门狗 ~1h 强杀)下孤儿容器与实验 teardown 泄漏无事后入口;设计定稿三面兜底(运行标识+prune / 收尾登记+启动自愈 / attempt 级续跑)
 - 已修 [orphans-test-assumes-ps-restricted-environment](orphans-test-assumes-ps-restricted-environment.md) — orphans.test.ts 的 docker 用例把「ps 被禁的降级路径」写成对所有环境的期待,本机 ps 可用时属主判活成功、候选 1≠2 稳定红;修为给 listOrphanCandidates 开 OrphanClassifier 注入缝、用例注入按 pid 裁决三态的窄判据(`328b35bc`)
 - 已修 [keep-sandbox-suspend-wrapper-drops-capability](keep-sandbox-suspend-wrapper-drops-capability.md) — `normalizeSandboxPaths` 包装丢了接口外的 `suspend()` 能力,`--keep-sandbox` 对 docker/e2b/vercel 三家全部假成功真不停(state 永远停 alive,只留一条 warning);真机跑通 docker 全链路才发现,mock 单测互相拼不出这个 bug;修为按 `appendLog` 先例原样转发(`src/sandbox/paths.ts`)
+- [compose-orphan-check-misses-resource-groups](compose-orphan-check-misses-resource-groups.md) — 发现(未修):SIGINT 后 compose 残留 4 容器 5 网络,`list --orphans`/`prune` 全盲报 No orphan;核对只按单实例词表,资源组没进核对面;契约已补(architecture/cli 的「以资源组为单位」),2026-07-30 评审「新资源种类进回收词表」的警告原样命中(2026-07-31 真机)
+- [shared-build-single-barrier-not-per-buildkey](shared-build-single-barrier-not-per-buildkey.md) — 发现(未修):共享构建实现为全局 barrier,10/13 镜像 ready 仍 0 running 等最慢者 7 分钟;case.md 契约本是逐 BuildKey 放行(2026-07-31 真机)
+- [buildkey-platform-declared-not-enforced](buildkey-platform-declared-not-enforced.md) — 发现(未修):BuildKey 按 linux/amd64 计算但 compose build 不传 `--platform`,arm64 宿主实构 arm64;跨架构机器同 CaseKey 互认不可比结果(2026-07-31 真机)
+- [e2b-on-demand-build-capability-hollow](e2b-on-demand-build-capability-hollow.md) — 发现(未修):按需构建单 Dockerfile 的 caseKind/类型/能力矩阵都在但无任何 build provider 实现,单容器题上不了 E2B,3 个 `*-e2b` 实验停用(2026-07-31)
 
 ## Runner · 调度 · CLI · 生命周期
 
@@ -122,6 +126,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
+- [experiment-fatal-presented-as-user-interrupt](experiment-fatal-presented-as-user-interrupt.md) — 发现(未修):多实验并跑时一条泳道的 `ExperimentFatalError` 正文被吞、只剩 interrupted+130 与 Ctrl+C 无法区分,且无关实验一并被拖垮;error-classification 契约(闸只停本实验/message 双通路/退出码 1)三条全不满足,是实现差距(2026-07-31 真机,曾被误诊为用户手滑)
 - 已修 [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层,已落)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`(后三项未落地,2026-07-30 MemoryBench 0.11.3 真机复撞)
 - 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报 `ctx.fact()`(见 [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md))
 - 已修 [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-release-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超 `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user 并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档
@@ -244,6 +249,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [commandsucceeded-received-excerpt-not-tail](commandsucceeded-received-excerpt-not-tail.md) — commandSucceeded 失败摘录曾落在输出中段:合并顺序(stdout 前置让 stderr 装包噪声占末尾)+ 摘录窗口宽过终端行预算被从头收口,双因叠加;修为 stderr 在前合并 + 76 字符窗口(src/context/context.ts),合并顺序钉进 display.md;同批裁决 commands.json 落盘不截
 - 已修 [show-locator-scoped-to-current-sample](show-locator-scoped-to-current-sample.md) — `show @<locator>` 曾在 resolveLocator 之后拿 `currentSample().attempts`(现刻水位,同 evalId 只留最新)二次筛,`--history` 印出的历史 attempt 一律报「outside the selected record scope」这第四种失败,违反「作用域是一个记录根」契约;修为删掉二次筛(src/show/index.ts),身份直达不复核范围
 - [show-json-pipe-truncated-at-128k](show-json-pipe-truncated-at-128k.md) — 发现(未修):`show --json` 管进下游只出恰好 128KB,重定向文件完整;疑为 stdout 为 pipe 时异步写未 flush 即 `process.exit`;症状呈现为下游「JSON 语法错误」,极易误怪解析脚本(2026-07-30 MemoryBench 真机)
+- [show-locator-crashes-under-linked-worktree](show-locator-crashes-under-linked-worktree.md) — 发现(未修):link 工作树消费端 `show @<locator>` 直接崩、`--json` 可用;首要嫌疑是 link 树 dist/report 陈旧,复现先 `pnpm run build:report` 排除(2026-07-31 MemoryBench 真机)
 - [view-latest-run-displaces-batch-in-leaderboard](view-latest-run-displaces-batch-in-leaderboard.md) — 发现(未定位):48 题整批后单独重跑 1 题,view 榜单该实验只剩 1/48、0% 且无覆盖提示,像结果丢了;与 sample 时效契约(跨 Run 拼入+覆盖占位「不静默消失」)不符,待复现分辨是 configHash 变更未提示还是拼接缺口
 - 已修 [capabilities-diff-conflates-artifact-with-changes](capabilities-diff-conflates-artifact-with-changes.md) — `capabilities.diff` 含「有文件被改过」这一层,拿它当 attemptDiffData 的门,「跑了但零改动」被误报成 diff unavailable(真机 MemoryBench 复现);修为投影只按 artifact 在不在开门,空清单与无证据分成两态
 - 已修 [cell-key-must-match-column-set](cell-key-must-match-column-set.md) — 共用行构造函数把判定写在 key `verdict` 下,而层级表的状态列叫 `record`,attempt 行判定与失败摘要被静默丢成 `—`(真机导出站复现);修为判定长在 locator 格上,并补 CLAUDE.md「key 与消费侧同源」半条规则

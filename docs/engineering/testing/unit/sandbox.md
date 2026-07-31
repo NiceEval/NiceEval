@@ -102,7 +102,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 复用污染诊断：某实例承接序号 ≥ 2 的 Attempt 集中失败于同一阶段时产出运行级 diagnostic（点名实例、序号区间与阶段）；首承接失败或失败不聚集时不误报。
   - 组合：`--keep-sandbox` 与 `localSandbox()` 的互斥在创建前报错。
   - 结果：复用 Attempt 不作结果沿用来源，复用 Experiment 也不消费结果沿用。
-- **孤儿核对与 prune**：创建期运行标识元数据的写入边界；孤儿三条件与 unverified 的保守判定；prune 的幂等、`--force` 语义与失败退出码。
+- **孤儿核对与 prune**：创建期运行标识元数据的写入边界；孤儿三条件与 unverified 的保守判定；prune 的幂等、`--force` 语义与失败退出码。核对与销毁以资源组为单位：Compose case 的伴随容器与网络随主实例整组进 `list --orphans` 与 prune，要有「主实例已消失、只剩网络残留」仍被列出并收回的区分力场景。
 - **留存(keep)登记项的 `expiresAt`**：按 provider 声明的保留期限计算——vercel 写 `keptAt` 加默认 Run 保留期(30 天),e2b(pause 官方契约无自然过期)与 docker(本地停驻,非远端保留期概念)都不写；`niceeval sandbox list` 的过期分支据登记项的 `expiresAt` 展示保留截止时刻。
 - **detached 生命周期路由(`keep.ts`)**：`nativeEnterCommand`/`wakeDetached`/`suspendDetached`/`inspectDetached`/`destroyDetached`/`execInDetached` 三 provider 分支各自的正常路径与失败路径——mock 各自 SDK 模块(`dockerode`/`e2b`/`@vercel/sandbox`),不发真实请求。
   探测抛错必须归 `unknown`，只明确未找到才归 `expired`；vercel 销毁只吞明确 404。
@@ -123,6 +123,7 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **BuildKey single-flight、失败扇出和预算**：
 
   - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
+  - 瞬时构建失败（拉取限流、传输层中断）按性质分类退避重试、封顶次数；重试耗尽才落确定性止损，确定性失败零重试。
   - 确定性构建失败只执行一次；依赖该 key 的 fresh attempt 同得环境 `errored`，origin 指向同一 Run timing node。
   - 不依赖失败 key 的 attempt 继续执行。
   - Run 级共享准备有独立并发、逐 key timeout、全局准备上限与 abort，不占 attempt 并发位。

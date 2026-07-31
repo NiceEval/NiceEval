@@ -153,6 +153,7 @@ attempt 的最终 `locator` 在调度前已经由 invocation 的 `snapshotStarte
 - **运行标识在创建期写入。** 每台沙箱实例创建时带运行标识元数据:`host`(宿主机名)、`pid`(runner 进程)、`startedAt`(Run 时刻)。Docker 用容器 label(与 `niceeval.keep-candidate` / provision token 同一机制),E2B 用 SDK `metadata`(与 provision token 同通道)。Vercel Sandbox 没有按元数据检索实例的通道,不参与孤儿核对——它的回退是 provider 自身的保留期限到期回收,这条差异如实写进公开文档,不伪装成全 provider 一致。
 - **孤儿的判定是三条「与」**:带 niceeval 运行标识、不在留存注册表、且属主 run 已被证实死亡(标识里的 `host` 等于当前宿主机名,且 `pid` 探测不存活)。三条缺一不可:注册表里的 kept 沙箱是被管理的现场,不是孤儿;属主 run 还活着的实例属于并发运行中的另一次 run,绝不能收;`host` 不匹配或 pid 无法核对的实例标 `unverified`,列出但不自动销毁——误杀一台活实例的代价高于多留一台待人工确认,判定必须偏保守。
 - **核对与收回分成只读、破坏两个入口**:[`niceeval sandbox list --orphans`](cli.md#sandbox-list---orphans) 只读列出,[`niceeval sandbox prune`](cli.md#sandbox-prune) 销毁已核实孤儿;`unverified` 只有显式 `--force` 才销毁。两个入口与 sandbox 命令组其余成员同一契约:不读 config、不执行用户代码,销毁走各 provider 的 detached 通道。
+- **核对与收回以 case 的资源组为单位**:单 Sandbox case 的资源组只有主实例;Compose case 的运行标识写在 project label 上,伴随容器与网络随主实例整组列出、整组销毁。prune 是强杀与中断后唯一的官方收尾手段,case 新增资源种类(sidecar 容器、网络、volume、云端资源组)时,把它接入孤儿核对词表是该 case 契约的一部分,不允许有 prune 看不见的残留。
 - 实验级 `setup` 起过的外部资源(隧道、共享服务、license 席位)是同一强杀路径的另一半泄漏面,回退在实验面,机制见 [Experiments · 强杀后的收尾回退](../experiments/architecture.md#强杀后的收尾回退收尾登记与启动自愈)。
 
 ## Docker provider(本地,零云依赖)

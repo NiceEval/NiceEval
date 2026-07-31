@@ -425,6 +425,7 @@ const scope = reportScopeFixture({
   - 未知 activity key 渲染 producer 的 `label`，不查 LifecyclePhase 锚点标签表。
   - sandboxBuild 专用卡从 `sandboxBuilds` provenance 读 locator / inputs / 依赖 attempt，经 `timingNodeId` 取耗时，不解析 timing label。
   - fixture 要同时有 Run activity 与 attempt phases，证明两棵树分流、互不冒充。
+  - 命令节点的时限归属：因超时失败的节点在 text 面原位标注生效 deadline 值与来源层；`--json` 与 `--timing=full` 对全部命令节点给出该字段。fixture 要有两个不同来源层的超时命令，证明标注取的是各自生效的那层，不是全树共用一个值。
 
 - **`--json` 投影**：
   - envelope 包含 format、schemaVersion、view 与 scope 回显。
