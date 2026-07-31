@@ -154,7 +154,8 @@ export default defineEval({
   async test(t) {
     // fixture 与依赖在 agent 上场前就位,npm test 不依赖 agent 自己想起来装依赖
     await t.sandbox.writeFiles({ "package.json": PACKAGE_JSON });
-    await t.sandbox.runCommand("npm", ["install"]);
+    const install = await t.sandbox.runCommand("npm", ["install"]);
+    t.require(install, commandSucceeded());
 
     await t.send(
       "在 src/components/Button.tsx 导出一个 Button 组件,接受 label 和 onClick 两个 prop。",

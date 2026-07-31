@@ -18,7 +18,6 @@
 - 第一阶段不公开 Requirement、Base contribution、依赖 DAG、资源图或自动并行。
 - 现场无法组合时复用 `environments[profile]` 提供预制完整 case,或明确 skip/fail。
 - `sandboxReuse` 窗口内 SandboxSpec setup 只跑一次,跨 Attempt 会变化的条件禁止放这层。
-- `environments[profile]` 表项声明兑现的 source identity,与当前 Eval 不一致时该组合 `skipped`。
 - 无 identity 的 plain setup 不参与缓存命中,报告标注 setup 身份不可比。
 
 ## 真实仓库证据
@@ -115,5 +114,6 @@ PLAN-6 不承诺运行时合并两个起点。
 
 ## 遗留风险
 
+- 预制 case 需要携带构建时写入的 Environment source provenance,规划期才能与当前 source 的内容身份核对。不能从当前 source 动态计算声明值给既有产物背书;在产物元数据与 per-eval fingerprint 拥有同源输入前,不公开 `fulfills` 之类的声明字段。
 - benchmark adapter 的 filtered build context 必须默认排除 solution 与 hidden verifier,并检查 Compose bind mount 泄漏。
 - 某些工具同时需要安装与跨 Attempt 状态。PLAN-6 保留现有 setup/teardown 写法;若以后引入独立 state lifecycle,应由对应 Feature 单独迁移。

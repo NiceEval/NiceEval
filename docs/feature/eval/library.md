@@ -37,6 +37,27 @@ export default defineEval({
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
 | `setup` / `teardown` / `t.progress` / `t.diagnostic` / `t.skip` | 任务 Fixture 与运行反馈 | [README](README.md) · [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
+| `loadText` / `loadCriteria` | 登记决定判分口径的文件 | [判据文件](#判据文件加载器) | [隐藏测试与参考实现](use-case/criteria-files.md) |
+
+## 判据文件加载器
+
+`loadText(path: string | URL)` 读取单个文件并登记内容。
+`loadCriteria(...patterns)` 登记一棵判据树,返回排序后的项目根相对路径;include 有两种精确形状:
+
+```typescript
+type CriteriaPattern =
+  | string
+  | { readonly pattern: string; readonly relativeTo: URL };
+
+declare function loadCriteria(
+  ...patterns: CriteriaPattern[]
+): Promise<string[]>;
+```
+
+字符串 include 与 `!` exclude 都按项目根求值。
+靠近 eval 的树写 `{ pattern: "tests/**", relativeTo: import.meta.url }`;glob 保持普通字符串,不交给 URL parser 解释。
+exclude 只收字符串并作用于所有 include 展开的项目根相对路径。
+完整的匹配、指纹与错误语义见[判据文件用例](use-case/criteria-files.md)。
 
 ## tags 与 environment：让 experiment 选择
 

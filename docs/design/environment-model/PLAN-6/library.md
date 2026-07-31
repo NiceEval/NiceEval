@@ -148,31 +148,16 @@ plain setup function 继续允许,但它每次执行且不享受预装命中或�
 ## SandboxSpec 解析入口
 
 ```typescript
-/** Environment source 的内容身份,与 per-eval fingerprint 的 source 输入同源计算 */
-type EnvironmentSourceIdentity = string;
-
-interface PrebuiltEnvironmentEntry<NativeCase> {
-  readonly case: NativeCase;
-  /** 该表项兑现的 source identity;对应 Eval 带 source 时必填 */
-  readonly fulfills?: EnvironmentSourceIdentity;
-}
-
 interface SandboxSpecEnvironmentInputs<NativeCase> {
-  readonly environments?: Readonly<
-    Record<string, NativeCase | PrebuiltEnvironmentEntry<NativeCase>>
-  >;
+  readonly environments?: Readonly<Record<string, NativeCase>>;
   readonly materializers?: Readonly<
     Record<string, SandboxSourceMaterializer<NativeCase>>
   >;
 }
 ```
 
-`environments` 表项声明它兑现的 source identity 的规则:
-
-- Eval 的 Environment 是 plain 字符串 profile 时,没有 source 可比,按 profile 名命中即可,直接写 `NativeCase` 值就是完整声明。
-- Eval 带 folder-local source 时,命中表项必须带 `fulfills`。
-  identity 由 `environmentSourceIdentity(source)` 从 source 内容(Compose 文件与公开 build inputs)计算,与 per-eval fingerprint 用同一份输入。
-- 表项缺 `fulfills` 或与当前 Eval 的 source identity 不一致时,该组合在计划期 `skipped`,诊断给出 profile、表项声明的 identity 与当前 source identity 三个值。
+`environments` 表项必须兑现同一 profile 对应 Environment 的外部行为。
+预制产物怎样携带构建时的 source provenance 尚未定稿;配置不能从当前 source 动态计算一个声明值,再用它证明既有产物没有过期。
 
 固定解析顺序是:
 

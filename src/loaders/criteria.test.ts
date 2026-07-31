@@ -9,13 +9,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { chmod, mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { defineAgent } from "../define.ts";
 import { t } from "../i18n/index.ts";
 import { computeFingerprint, planCarry } from "../runner/fingerprint.ts";
 import type { AgentRun, DiscoveredEval } from "../runner/types.ts";
 import type { EvalResult } from "../types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
-import { captureLoadedFiles, loadCriteria } from "./index.ts";
+import { captureLoadedFiles, loadCriteria, type CriteriaPattern } from "./index.ts";
 
 const source: CapturedEvalSource = { path: "evals/sqlite.eval.ts", content: "", sha256: "0".repeat(64) };
 const PATTERNS = ["evals/fixtures/tests/**", "!**/__pycache__/**"] as const;
@@ -55,7 +56,7 @@ const TREE: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /** 重新展开一次判据树,拿到这一刻的登记表(绝对路径)与返回值(项目根相对路径)。 */
-async function enumerate(...patterns: string[]): Promise<{ registered: string[]; returned: string[] }> {
+async function enumerate(...patterns: CriteriaPattern[]): Promise<{ registered: string[]; returned: string[] }> {
   const { value, criteriaPaths } = await captureLoadedFiles(() => loadCriteria(...(patterns.length > 0 ? patterns : [...PATTERNS])));
   return { registered: criteriaPaths, returned: value };
 }
@@ -192,6 +193,38 @@ describe("loadCriteria · 返回值", () => {
     ]);
     // 内容不进内存:返回值里除了路径没有别的东西(拿文件正文比对能直接证伪)。
     expect(returned.some((path) => path.includes("pytest"))).toBe(false);
+  });
+});
+
+describe("loadCriteria · eval 文件相对 glob", () => {
+  it("pattern 与基准 URL 分开传递,保留 `?` 与 `{a,b}` 语义且等价于项目根写法", async () => {
+    await makeProject([
+      ["evals/local/eval.ts", "export default {};\n"],
+      ["evals/local/tests/file1.ts", "one\n"],
+      ["evals/local/tests/a.ts", "a\n"],
+      ["evals/local/tests/b.ts", "b\n"],
+      ["evals/local/tests/skip.js", "skip\n"],
+    ]);
+    const relativeTo = pathToFileURL(join(process.cwd(), "evals/local/eval.ts"));
+
+    const local = await enumerate({ pattern: "tests/{file?,a,b}.ts", relativeTo });
+    const rooted = await enumerate("evals/local/tests/{file?,a,b}.ts");
+
+    expect(local).toEqual(rooted);
+    expect(local.returned).toEqual([
+      "evals/local/tests/a.ts",
+      "evals/local/tests/b.ts",
+      "evals/local/tests/file1.ts",
+    ]);
+  });
+
+  it("相对对象只表示 include,排除仍要求项目根相对字符串", async () => {
+    await makeProject(TREE);
+    const relativeTo = pathToFileURL(join(process.cwd(), "evals/sqlite.eval.ts"));
+
+    await expect(
+      captureLoadedFiles(() => loadCriteria({ pattern: "!fixtures/tests/**", relativeTo })),
+    ).rejects.toThrow(/exclusions must be project-root-relative strings/);
   });
 });
 

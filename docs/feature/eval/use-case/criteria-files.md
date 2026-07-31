@@ -84,7 +84,7 @@ export default defineEval({
 
 匹配规则:
 
-- pattern 是项目根相对的 glob,或 eval 文件相对的 URL(见[路径的两种写法](#路径的两种写法));`!` 前缀为排除,按声明顺序求值,后写的覆盖先写的。
+- include 是项目根相对的 glob 字符串,或 `{ pattern, relativeTo: import.meta.url }`(见[路径的两种写法](#路径的两种写法));`!` 前缀字符串为排除,按声明顺序求值,后写的覆盖先写的。
 - 匹配集按文件系统枚举,不看 git:新写的判据没 `git add` 也照样进指纹。
   代价是生成物同样被盖到——本地跑一次测试冒出的 `__pycache__`、系统或编辑器文件都会改变指纹、作废引用这棵树的 eval。生成物用 `!` 排除;niceeval 不内置排除表。
 - 增删文件与改内容同等作废;权限位与修改时间不进哈希,重新 `git clone` 一份工作树不作废。
@@ -110,8 +110,16 @@ loader 在发现阶段的模块求值期登记「这条 eval 的判据是哪些�
 - **eval 文件相对的 URL**:`loadText(new URL("../fixtures/pr-6058/tests/run-tests.sh", import.meta.url))`。
   `URL` 是全局构造器,不需要 import `node:url`。
 
-判据文件离 eval 近就用 URL,统一收在一个数据目录就用字符串。
-`loadCriteria` 的 include pattern 同样两种写法都收:项目根相对字符串,或 eval 文件相对的 URL(`loadCriteria(new URL("tests/**", import.meta.url))`)。URL 是绝对定位,glob 相对谁展开没有歧义。`!` 排除只收字符串,统一按项目根相对求值,匹配对象是此前全部 include 展开出的项目根相对路径——它不跟随任何一条 include 的基准,include 有几条、写字符串还是 URL 都不改变排除的含义。要排除任意深度的生成物写 `!**/__pycache__/**` 这类任意深度形式。两种写法登记与指纹等价。
+单个判据文件离 eval 近就用 URL,统一收在一个数据目录就用字符串。
+
+`loadCriteria` 的 include pattern 同样有两种写法:项目根相对字符串,或 `{ pattern: "tests/**", relativeTo: import.meta.url }`。
+后一种把 glob 与基准 URL 分开,所以 `?`、`[...]`、`{a,b}` 保持 glob 字符,不会被 URL parser 当成 query、编码或 fragment。
+两种 include 写法登记与指纹等价。
+
+`!` 排除只收字符串,统一按项目根相对求值。
+匹配对象是此前全部 include 展开出的项目根相对路径;它不跟随任何一条 include 的基准。
+include 有几条、采用哪种写法都不改变排除的含义。
+要排除任意深度的生成物写 `!**/__pycache__/**`。
 
 ## 边界:什么时候改用别的
 

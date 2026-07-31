@@ -96,8 +96,8 @@ Runner 只为 branded setup helper 提供 deadline、staged payload、identity �
 有些 Provider 不能按 Eval source 构建并启动 Sandbox Case,或者实验工具无法在题目启动后安装。
 SandboxSpec 可以在 `environments[profile]` 提供已经组合好的完整 case。
 
-表项必须声明它兑现的 Environment source identity。
-规划期核对该声明与当前 Eval 的 source identity;不一致时该组合 `skipped`,Runner 不用过期表项运行。
+表项必须兑现原 Environment 的外部行为。
+预制产物与 source 的内容身份核对仍是本决策的遗留风险;在产物 provenance 有稳定公开形状前,不让配置用当前 source 动态计算出的声明值替旧产物背书。
 启动后的 SandboxSpec setup 仍执行;可验证 helper 检查命中时不会重复安装。
 
 Runner 不从默认 template 与 Eval source 合成表项。

@@ -1,11 +1,12 @@
 // 数据集与判据文件加载器:结构化数据读成 YAML / JSON,配 .map(row => defineEval(...)) 扇出;
 // 非结构化的判据文件读成原文;一整棵判据树只登记不读入(loadCriteria,流式哈希)。
 // 经这里读入或登记的文件都进读它那条 eval 的指纹。
-// 路径两种写法等价:项目根相对的字符串,或 eval 文件相对的 `file:` URL(`new URL(p, import.meta.url)`)。
+// 单文件路径两种写法等价:项目根相对字符串,或 eval 文件相对的 `file:` URL。
+// glob 不能塞进 URL(`?` 会变 query、`{}` 会编码),所以相对 glob 把 pattern 与基准 URL 分开传。
 // 登记只在发现期的模块求值里成立,所以 capture 不在场时直接报错,不静默漏登记。
 
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../i18n/index.ts";
 import { compilePatterns, enumerationBases, includedByPatterns, unmatchedIncludes, type CompiledPattern } from "./glob.ts";
@@ -88,6 +89,14 @@ export async function loadText(path: string | URL): Promise<string> {
   return readFile(resolvedPath(path), "utf-8");
 }
 
+/** eval 文件相对的 glob；pattern 与 URL 分开，避免 URL parser 改写 glob 字符。 */
+export interface RelativeCriteriaPattern {
+  readonly pattern: string;
+  readonly relativeTo: URL;
+}
+
+export type CriteriaPattern = string | RelativeCriteriaPattern;
+
 /**
  * 登记一棵判据树进这条 eval 的指纹,不把内容读进内存。判分标准是一整棵树(隐藏测试目录、
  * 参考实现、跑测脚本)、内容只经 `t.sandbox.uploadDirectory` 整体送进沙箱时用它:
@@ -106,11 +115,31 @@ export async function loadText(path: string | URL): Promise<string> {
  * 多半是写错了或文件搬走了,别的 pattern 有命中也不放过,静默放过等于判据悄悄变窄;
  * 以及匹配落到项目根外(符号链接穿出根)。`!` 排除 pattern 不受「必须有命中」这条约束。
  *
- * @param patterns 一个或多个项目根相对 glob,`!` 前缀为排除。
+ * @param patterns 项目根相对 glob,或 `{ pattern, relativeTo: import.meta.url }`;`!` 排除只收字符串。
  * @returns 匹配集的项目根相对路径,排序后(正斜杠分隔),不含内容。
  */
-export async function loadCriteria(...patterns: string[]): Promise<string[]> {
-  return registerGlobPatterns(patterns, "criteria");
+export async function loadCriteria(...patterns: CriteriaPattern[]): Promise<string[]> {
+  if (!activeCapture) {
+    const path = patterns
+      .map((pattern) =>
+        typeof pattern === "string" ? pattern : `${pattern.pattern} relative to ${pattern.relativeTo.href}`,
+      )
+      .join(" ");
+    throw new Error(t("loaders.outsideDiscovery", { path }));
+  }
+  return registerGlobPatterns(patterns.map(normalizeCriteriaPattern), "criteria");
+}
+
+function normalizeCriteriaPattern(pattern: CriteriaPattern): string {
+  if (typeof pattern === "string") return pattern;
+  if (pattern.pattern.startsWith("!")) {
+    throw new Error(
+      "loadCriteria exclusions must be project-root-relative strings; " +
+        "put the relative include in { pattern, relativeTo } and pass the exclusion separately",
+    );
+  }
+  const baseDir = dirname(fromFileUrl(pattern.relativeTo));
+  return relative(process.cwd(), resolve(baseDir, pattern.pattern)).split(sep).join("/");
 }
 
 /**
