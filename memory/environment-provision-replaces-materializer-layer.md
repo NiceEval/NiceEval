@@ -1,5 +1,8 @@
 # Environment 与 Provision 取代 materializer 与 Layer
 
+**已被后续裁决替代**:同日先改为单 template + 统一 Layer,复审后最终采用完整 Sandbox Case + Experiment Addon + 独立 AgentProvisioner。
+最终裁决见 [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provisioner.md)。
+
 ## 裁决
 
 2026-07-31,重环境公开模型改为四个正交概念:Eval Environment、实际执行空间 Sandbox、Experiment Provision 与 workdir Fixture。

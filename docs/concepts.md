@@ -92,15 +92,13 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 
-### Environment 与预置项候选术语
+### 环境模型候选术语
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Environment | Environment | Eval 声明的题目条件,例如 Compose、Dockerfile 或具名 profile;不选择 Provider | [Environment 与 Sandbox](roadmap/environment-model/README.md) |
-| 预置项 | Provision | Experiment 希望在 Sandbox 中成立的一项有身份、可检查的安装状态 | [Environment 与 Provision](roadmap/environment-model/library.md#defineprovisionspec) |
-| EnvironmentKey | EnvironmentKey | Provider 解析后的完整题目环境身份,用于 fingerprint 与结果携带门 | [Environment identity](roadmap/environment-model/architecture.md#environmentkey) |
-| Environment Plan | EnvironmentPlan | Provider 根据 Eval Environment 生成的内部执行计划;不进入普通用户 API | [Environment architecture](roadmap/environment-model/architecture.md#两个内部阶段不进入普通-api) |
-| Running Environment | Running Environment | 已启动的主 Sandbox、可选伴随服务与清理句柄组成的内部资源组 | [Environment architecture](roadmap/environment-model/architecture.md#两个内部阶段不进入普通-api) |
+| Environment | Environment | Eval 声明的题目环境来源,例如 Compose 文件或具名 profile;不选择 Provider | [环境模型 PLAN-3](design/environment-model/PLAN-3.md#题目环境继续使用完整-sandbox-case) |
+| Addon | Addon | Experiment 希望在主 Sandbox 中成立的一项有身份、可检查的工具状态 | [环境模型 PLAN-3](design/environment-model/PLAN-3.md#addonexperiment-工具的低成本协议) |
+| 安装资源 | Installation Resource | Addon 安装时需要独占的共享资源,供调度器互斥冲突项 | [环境模型 PLAN-3](design/environment-model/PLAN-3.md#调度默认串行安全部分并行) |
 
 ### Sandbox 复用
 
