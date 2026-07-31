@@ -264,6 +264,12 @@ Provisioning 的分类只覆盖"创建沙箱"这一步。沙箱创建成功后�
 
 不要硬编码 `/workspace`——它不是任何 provider 的真实 workdir,按它写的文件会落在 agent cwd 和变更分类账之外(agent 看不见、diff 采不到)。写法是省略 `targetDir` / `cwd`,需要绝对路径时用 `sandbox.workdir`。
 
+包装或装饰 `Sandbox` 实例(路径归一化、日志代理这类中间层)时,core 声明的接口外能力成员(`suspend` / `resume`、`appendLog` 这类可选内部方法)必须原样保留并转发到被包装实例。
+包装层只认接口方法就会把这些能力静默吃掉:消费方拿到 `undefined` 后按「不支持」降级,假成功没有任何报错。
+每新增一个这类能力成员,包装实现与它的转发测试属于同一次改动。
+
+provider 原生 SDK 的其余未知方法不属于公共契约,不承诺透传——需要新能力时显式建模成接口成员或 case 能力句柄,不开 `sandbox.native` 逃生口(裁决见 [memory 条目](../../../memory/sandbox-native-escape-hatch-rejected.md))。
+
 ## 性能:预制环境、Sandbox 复用与 Sandbox 预热
 
 沙箱冷启动和重复安装是关键路径上的大头。优先级如下:

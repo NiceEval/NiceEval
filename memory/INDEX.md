@@ -87,8 +87,10 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [keep-sandbox-suspend-wrapper-drops-capability](keep-sandbox-suspend-wrapper-drops-capability.md) — `normalizeSandboxPaths` 包装丢了接口外的 `suspend()` 能力,`--keep-sandbox` 对 docker/e2b/vercel 三家全部假成功真不停(state 永远停 alive,只留一条 warning);真机跑通 docker 全链路才发现,mock 单测互相拼不出这个 bug;修为按 `appendLog` 先例原样转发(`src/sandbox/paths.ts`)
 - [compose-orphan-check-misses-resource-groups](compose-orphan-check-misses-resource-groups.md) — 已修:SIGINT 后 compose 残留 4 容器 5 网络,`list --orphans`/`prune` 全盲报 No orphan;核对只按单实例词表,资源组没进核对面;修法是运行标识 overlay 打到服务与网络上 + orphans.ts 按 compose project label 整组核对与销毁,2026-07-30 评审「新资源种类进回收词表」的警告原样命中(2026-07-31 真机)
 - 已修 [shared-build-single-barrier-not-per-buildkey](shared-build-single-barrier-not-per-buildkey.md) — 共享构建曾是全局 barrier,10/13 镜像 ready 仍 0 running 等最慢者 7 分钟;修法=startSandboxBuilds 逐 key 放行 + run.ts 每条 attempt 只等自己的 key,同批补瞬时构建失败退避重试(2026-07-31)
-- 已修 [buildkey-platform-declared-not-enforced](buildkey-platform-declared-not-enforced.md) — BuildKey 曾按写死的 linux/amd64 计算而实构 arm64,跨架构机器同 CaseKey 互认不可比结果;修法=平台从 docker daemon 探测再进 key,同一个值经 DOCKER_DEFAULT_PLATFORM 交给构建执行(否决 qemu 跨架构构建那条路,2026-07-31)
+- 已修 [buildkey-platform-declared-not-enforced](buildkey-platform-declared-not-enforced.md) — BuildKey 平台修了两回:首轮探测 daemon 平台进 key,复查发现 Compose 自己的 platform/build.platforms 声明仍被忽略;二次修法=逐服务求有效平台(声明>指定>探测)进各自 BuildKey,多元素 build.platforms 拒绝;教训=修声明与事实脱钩要穷举事实全部来源(2026-07-31)
 - [e2b-on-demand-build-capability-hollow](e2b-on-demand-build-capability-hollow.md) — 发现(未修):按需构建单 Dockerfile 的 caseKind/类型/能力矩阵都在但无任何 build provider 实现,单容器题上不了 E2B,3 个 `*-e2b` 实验停用(2026-07-31)
+
+- 设计裁决 [sandbox-native-escape-hatch-rejected](sandbox-native-escape-hatch-rejected.md) — 否决 sandbox.native 原生出口与「透明转发未知方法」;窄契约=内部能力显式建模+包装层保留义务;native 绕开 deadline/timing/资源组且鼓励跨 provider cast(2026-07-31)
 
 ## Runner · 调度 · CLI · 生命周期
 

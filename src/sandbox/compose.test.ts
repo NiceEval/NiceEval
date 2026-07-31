@@ -290,6 +290,75 @@ services:
     );
   });
 
+  it("Compose 显式声明的平台压过探测值,逐服务进各自 BuildKey;多平台声明拒绝", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "ctx"), { recursive: true });
+    await writeFile(join(root, "ctx", "Dockerfile"), "FROM alpine\n", "utf-8");
+    await writeFile(
+      join(root, "compose.yaml"),
+      `
+services:
+  client:
+    platform: linux/amd64
+    build: ./ctx
+  sidecar:
+    build:
+      context: ./ctx
+      platforms:
+        - linux/arm64
+  plain:
+    build: ./ctx
+`,
+      "utf-8",
+    );
+    // arm64 宿主上:client 按声明构 amd64,sidecar 按 build.platforms 构 arm64,plain 跟探测值。
+    const collection = await collectComposeBuilds({
+      file: join(root, "compose.yaml"),
+      mainService: "client",
+      platformProbe: async () => "linux/aarch64",
+    });
+    const byService = Object.fromEntries(
+      collection.works.map((w) => [(w.inputs as { service: string }).service, w]),
+    );
+    expect((byService.client!.inputs as { platform: string }).platform).toBe("linux/amd64");
+    expect((byService.sidecar!.inputs as { platform: string }).platform).toBe("linux/arm64");
+    expect((byService.plain!.inputs as { platform: string }).platform).toBe("linux/arm64");
+    // P1 区分力:换一台宿主(探测值变)重收集,声明了平台的服务身份不动,未声明的跟宿主走。
+    // 声明被忽略时 client 的 BuildKey 会随宿主漂移,两台机器互认不可比的产物。
+    const onAmdHost = await collectComposeBuilds({
+      file: join(root, "compose.yaml"),
+      mainService: "client",
+      platformProbe: async () => "linux/x86_64",
+    });
+    const byServiceAmd = Object.fromEntries(
+      onAmdHost.works.map((w) => [(w.inputs as { service: string }).service, w]),
+    );
+    expect(byServiceAmd.client!.buildKey).toBe(byService.client!.buildKey);
+    expect(byServiceAmd.sidecar!.buildKey).toBe(byService.sidecar!.buildKey);
+    expect(byServiceAmd.plain!.buildKey).not.toBe(byService.plain!.buildKey);
+
+    await writeFile(
+      join(root, "compose.yaml"),
+      `
+services:
+  client:
+    build:
+      context: ./ctx
+      platforms:
+        - linux/amd64
+        - linux/arm64
+`,
+      "utf-8",
+    );
+    await expect(
+      collectComposeBuilds({
+        file: join(root, "compose.yaml"),
+        mainService: "client",
+        platformProbe: async () => "linux/aarch64",
+      }),
+    ).rejects.toThrow(/build\.platforms with 2 entries/);
+  });
+
   it("构建执行拿到的平台与进 BuildKey 的值同源", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "ctx"), { recursive: true });

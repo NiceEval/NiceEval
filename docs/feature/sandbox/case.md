@@ -130,10 +130,15 @@ BuildKey
  + FROM 解析后的 digest
 ```
 
-target platform 是构建事实,不是一个写在代码里的默认值。
-构建执行环境自己报出目标平台:Docker 取 daemon 的 os / arch,用户显式指定时以指定值为准。
-进入 BuildKey 的那个值同时传给构建器,构出来的镜像架构与身份里写的架构永远同一个。
-arm64 宿主上物化的题因此拿到与 amd64 宿主不同的 BuildKey,两台机器不会对同一道题算出相同 CaseKey、再让携带门互认不可比的结果。
+target platform 是构建事实,不是一个写在代码里的默认值,并且**逐服务求值**,优先级从声明到探测:
+
+1. 服务的 Compose 声明最优先:service 级 `platform`,或单元素 `build.platforms`;
+2. 没有声明的服务用调用方显式指定值;
+3. 两者都没有才从构建执行环境探测(Docker 取 daemon 的 os / arch)。
+
+逐服务的有效平台进入该服务自己的 BuildKey,并同时传给构建执行,构出来的镜像架构与身份里写的架构永远同一个。
+声明了平台的服务因此在任何宿主上身份稳定;未声明的服务在 arm64 宿主与 amd64 宿主拿到不同 BuildKey,两台机器不会对同一道题互认不可比的结果。
+多元素 `build.platforms` 是发布场景的多平台矩阵,一个 BuildKey 只对应一种架构的产物,这类声明在规划期直接报错拒绝,不挑其中一个平台近似执行。
 
 一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,只记录解析后的 image digest。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。

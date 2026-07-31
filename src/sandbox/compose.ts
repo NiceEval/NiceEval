@@ -116,11 +116,15 @@ export interface ComposeBuildDecl {
   readonly dockerfile?: string;
   readonly args?: Readonly<globalThis.Record<string, string>>;
   readonly target?: string;
+  /** Compose `build.platforms` 原样保留;进 BuildKey 前由收集器裁决(多元素拒绝)。 */
+  readonly platforms?: readonly string[];
 }
 
 export interface ComposeServiceInspection {
   readonly name: string;
   readonly build?: ComposeBuildDecl;
+  /** service 级 `platform`:Compose 用它决定构建与运行平台,压过 DOCKER_DEFAULT_PLATFORM。 */
+  readonly platform?: string;
   readonly image?: string;
   readonly networkMode?: string;
   readonly workingDir?: string;
@@ -152,6 +156,7 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
     services.push({
       name,
       ...(parseBuild(svc.build) !== undefined ? { build: parseBuild(svc.build)! } : {}),
+      ...(typeof svc.platform === "string" ? { platform: svc.platform } : {}),
       ...(typeof svc.image === "string" ? { image: svc.image } : {}),
       ...(typeof svc.network_mode === "string"
         ? { networkMode: svc.network_mode }
@@ -212,6 +217,9 @@ function parseBuild(value: unknown): ComposeBuildDecl | undefined {
   const context = typeof b.context === "string" ? b.context : ".";
   const dockerfile = typeof b.dockerfile === "string" ? b.dockerfile : undefined;
   const target = typeof b.target === "string" ? b.target : undefined;
+  const platforms = Array.isArray(b.platforms)
+    ? b.platforms.filter((p): p is string => typeof p === "string")
+    : undefined;
   const args =
     b.args !== undefined && b.args !== null && typeof b.args === "object" && !Array.isArray(b.args)
       ? Object.fromEntries(
@@ -223,6 +231,7 @@ function parseBuild(value: unknown): ComposeBuildDecl | undefined {
     ...(dockerfile !== undefined ? { dockerfile } : {}),
     ...(args !== undefined ? { args } : {}),
     ...(target !== undefined ? { target } : {}),
+    ...(platforms !== undefined && platforms.length > 0 ? { platforms } : {}),
   };
 }
 
@@ -487,6 +496,19 @@ export async function collectComposeBuilds(opts: {
         `Compose service ${JSON.stringify(svc.name)} build Dockerfile not found at ${dockerfilePath}`,
       );
     });
+    // Compose 声明的平台压过探测默认值:service `platform` 或单元素 `build.platforms` 是
+    // 显式构建目标,必须逐服务进各自 BuildKey,否则声明不同平台的两个 case 会共用同一身份
+    // (台账见 memory/buildkey-platform-declared-not-enforced.md 的第二回合)。
+    const declaredPlatforms = svc.build.platforms;
+    if (declaredPlatforms !== undefined && declaredPlatforms.length > 1) {
+      throw new Error(
+        `Compose service ${JSON.stringify(svc.name)} declares build.platforms with ${declaredPlatforms.length} entries; ` +
+          `NiceEval builds exactly one platform per BuildKey — keep a single entry (or the service-level platform) ` +
+          `and do multi-platform publishing outside the task Compose`,
+      );
+    }
+    const declaredPlatform = declaredPlatforms?.[0] ?? svc.platform;
+    const workPlatform = declaredPlatform !== undefined ? normalizeBuildPlatform(declaredPlatform) : platform;
     const contextSpec: BuildContextSpec = {
       contextDir,
       label: `compose service ${svc.name}`,
@@ -496,7 +518,7 @@ export async function collectComposeBuilds(opts: {
     const buildKey = computeBuildKey({
       builderKind: BUILDER_KIND,
       builderRevision: COMPOSE_MATERIALIZER_REVISION,
-      platform,
+      platform: workPlatform,
       dockerfile,
       contextDigest,
       fromDigest,
@@ -512,7 +534,7 @@ export async function collectComposeBuilds(opts: {
         service: svc.name,
         composeFile: composePath,
         // 进 BuildKey 的那个平台原样交给构建执行,provenance 里也留下这次构出的是哪种架构。
-        platform,
+        platform: workPlatform,
         context: svc.build.context,
         ...(svc.build.dockerfile !== undefined ? { dockerfile: svc.build.dockerfile } : {}),
         ...(svc.build.args !== undefined ? { args: svc.build.args } : {}),
