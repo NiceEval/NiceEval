@@ -117,8 +117,8 @@ Node、npm prefix、包管理器与安装目录是具体 provisioner 的前置�
 
 - 目标 platform / libc 从**主 Sandbox** 探测(`uname -s` / `uname -m` / `ldd`),不是宿主平台:
   制品要装进沙箱,macOS 宿主起 linux 容器是常态,按宿主取会准备出跑不了的二进制。
-  调用方可用 `EnsureAgentOptions.platform` 显式钉死。
-- 以 Agent identity + 目标 platform / libc 为 key,在 Run 级经宿主网络、provider control plane 或随包制品取得一次;single-flight,多个 attempt 共享。
+  调用方可用 `EnsureAgentOptions.platform` 显式锁定。
+- 以 Agent identity + 目标 platform / libc 为 key,在 Run 级经宿主网络、provider control plane 或随 niceeval npm 包分发的制品取得一次;single-flight,多个 attempt 共享。
 - 校验 digest 后进入本地 / 远端共享 cache;解析后的制品 digest 与平台进入 configHash 和 `run.json`。
 - 准备时间记为 Run 级开放 activity `agent.artifact.prepare`(落盘形状见 [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity)),不占 attempt 并发位。
 - 安装时经主 Sandbox 的文件 API 上传已准备 payload;**payload 优先自带 Agent 所需运行时**。

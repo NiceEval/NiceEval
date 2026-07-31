@@ -81,7 +81,12 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
 - **judge 作用域与诊断**：判卷材料随接收者分层、`{ on }` 覆盖；`diagnostic` 不改变 verdict、scope 不可伪装；`progress` 不进最终输出。
   judge 的评分与模型解析归[Assertions、Judge 与 Verdict](scoring.md)。
 - **turn 瞬时错误与重试**：回退分类器按重试安全性给出可重试/不可重试与内建 reason（rate_limit / network），`thrown` 与 `turn-failed` 两种 `TurnFailure` 形态都要有区分力场景；adapter 分类器的覆盖、自定义 reason 原样透出、返回 `undefined` 与抛错同样按 `undefined` 回落（继续问后续通道，不掩盖原始失败）；受理证据门对带 agent 产出事件的失败 Turn 的否决——文本像限流也不重试；重试只包 `agent.send`、会话记账不重放；被吸收尝试不进入逻辑事件流，但按顺序完整写入 `retryAttempts`（失败形态、分类、events、usage、耗时），顶层 usage / cost 包含这些物理尝试；send 级与 attempt 级两层预算各自封顶——多轮 send 里 send 级预算重置而 attempt 级预算持续扣减必须有区分力场景；耗尽后错误码不变与 message 重试摘要注明耗尽层（未重试的失败无后缀）；退避可被中断干净打断。
-- **失败分类链的两轴扩展**：抛出点糖衣类经 `failureClassOf` 结构识别——含 `cause` 链穿透（被包装再抛不丢声明）与不依赖类身份（结构相同的手工对象同样命中）；turn 链的决议序（抛出点 → 实验分类器 → adapter → 回退，先非 `undefined` 定案；实验分类器与 adapter 同时认领同一失败时实验的 scope 声明胜出要有区分力场景）与生命周期阶段链（无回退正则、默认 `{ retryable: false }`）各有区分力场景；实验分类器 `AttemptFailureInfo` 的 `text` 与报错文案同源；分类器抛错按 `undefined` 回落且不掩盖原始失败；受理证据门只降时间轴、不触碰 `scope`；`scope` 默认值 `"attempt"`；`retryable: true` 带 `scope` 的失败被重试吸收后不外泄 scope，耗尽后携带 scope 浮出。
+- **失败分类链的两轴扩展**：
+  - 抛出点 fatal 错误类经 `failureClassOf` 结构识别——含 `cause` 链穿透（被包装再抛不丢声明）与不依赖类身份（结构相同的手工对象同样命中）。
+  - turn 链的决议序：抛出点 → 实验分类器 → adapter → 回退，先非 `undefined` 定案；实验分类器与 adapter 同时认领同一失败时，实验的 scope 声明胜出要有区分力场景。
+  - 生命周期阶段链：无回退正则、默认 `{ retryable: false }`，同样要有区分力场景。
+  - 实验分类器 `AttemptFailureInfo` 的 `text` 与报错文案同源；分类器抛错按 `undefined` 回落且不掩盖原始失败。
+  - 受理证据门只降时间轴、不触碰 `scope`；`scope` 默认值 `"attempt"`；`retryable: true` 带 `scope` 的失败被重试吸收后不外泄 scope，耗尽后携带 scope 浮出。
 
 ## 不这样测
 

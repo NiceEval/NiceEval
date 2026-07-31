@@ -69,7 +69,7 @@
 ## 边界
 
 - **实验起跑前就能探的,写在实验级 `setup` 里更早止损。**
-  `ExperimentDef.setup` 抛错(任何错误,不需要糖衣类)本来就是「全部 attempt 记 `errored`、一个都不派发」的既有语义(见 [Experiments](../../experiments/library.md#实验级共享服务setup-与-teardown));per-attempt 阶段里的声明兜的是「实验级 setup 过了、死因后来才暴露」的窗口。
+  `ExperimentDef.setup` 抛错(任何错误,不需要 fatal 错误类)本来就是「全部 attempt 记 `errored`、一个都不派发」的既有语义(见 [Experiments](../../experiments/library.md#实验级共享服务setup-与-teardown));per-attempt 阶段里的声明兜的是「实验级 setup 过了、死因后来才暴露」的窗口。
 - **只声明确定性死因,拿不准就不声明。**
   判据是可证明性:共享服务、共享凭据、fixture 确定性缺失属于能证明;「看起来像基建问题」「fixture 服务偶尔超时」不构成——抖动声明下去,会把「本可能第二次就好」的机会一并杀掉。
   错放的代价是多烧几个沙箱,错杀的代价是丢整批覆盖数据,代价不对称(判据全文见 [README · 分类](../README.md#分类))。
@@ -85,5 +85,5 @@
 
 - [README · 分类](../README.md#分类) —— 空间轴判据全文与组合规则。
 - [Architecture · 止损执行体](../architecture.md#止损执行体) —— 闸、记账、诊断形状的精确契约。
-- [Library](../library.md#实验--eval-作者声明死因的波及范围) —— 糖衣类要点清单。
+- [Library](../library.md#实验--eval-作者声明死因的波及范围) —— fatal 错误类要点清单。
 - [Runner · 完成状态](../../../runner.md#完成状态) —— `unstarted` / `incomplete` 的记账语义。

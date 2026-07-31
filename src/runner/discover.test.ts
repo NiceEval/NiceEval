@@ -1,4 +1,3 @@
-// cases: docs/engineering/testing/unit/eval.md
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // discoverEvals 的 eval 源码捕获:同一文件(数组默认导出)共享一份 CapturedEvalSource,
 // 内容/路径/哈希与 captureEvalSource() 直接调出来的一致(定稿见 docs/concepts.md「标注 Eval 源码」)。

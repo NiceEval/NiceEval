@@ -48,7 +48,7 @@ severity 只管**判定面**：它声明一条断言的失败怎么向上传播�
 
 `.gate()` 在 `defineEval` 与 `defineScoreEval` 中始终表示同一件事：断言不通过使 Attempt `failed`。
 它不改变 `test()` 控制流。
-后续代码依赖这条断言时，显式链 `.stopOnFailure()`；值断言可用两种题型都有的 `t.require()` 糖衣。
+后续代码依赖这条断言时，显式链 `.stopOnFailure()`；值断言可用两种题型都有的 `t.require()` 简写。
 
 ```typescript
 export default defineScoreEval({

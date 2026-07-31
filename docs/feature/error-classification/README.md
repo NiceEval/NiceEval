@@ -69,13 +69,13 @@ export type FailureClass =
 
 分类的附着点跟着知识走,所有通道产出同一份 `FailureClass`:
 
-- **抛出点声明**(作者拥有的错误):包根导出空间轴糖衣类 `ExperimentFatalError` / `EvalFatalError`——作者写下 probe、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。
-  糖衣类只开空间轴,不提供「可重试」糖衣:时间轴的消费点只有 send 与 provisioning 两处(见下节),作者代码不在任何重试执行体的包裹范围内,可重试糖衣是一张永远无法兑现的支票。
+- **抛出点声明**(作者拥有的错误):包根导出空间轴 fatal 错误类 `ExperimentFatalError` / `EvalFatalError`——作者写下 probe、fixture 校验时就知道失败的波及范围,直接 throw,任何 per-attempt 阶段可抛。
+  fatal 错误类只开空间轴,不提供「可重试」的对应类:时间轴的消费点只有 send 与 provisioning 两处(见下节),作者代码不在任何重试执行体的包裹范围内,可重试声明是一张永远无法兑现的支票。
 - **分类器**(第三方错误,事后识别):错误由 SDK / CLI / 网络栈抛出,制造者不可能使用我们的类,由最懂其形状的一方在自己的边界识别,按特异性降序决议——实验的 `classifyFailure` 识别自家共享基建的死因(隧道 host 拒连以 turn 层连接错误的形态浮出时,adapter 不认识那个 host,只有实验作者认得);adapter 的 `classifyTurnError` 识别自家协议错误(写法见 [Library](library.md#adapter-作者classifyturnerror));保守回退正则识别通用形状(限流关键字 → `"rate_limit"`,连接建立层错误 → `"network"`),只产时间轴。
 - **provisioning**:sandbox 层的分类自治(性质 + 后果两维不外泄),向外浮出的确定性配置死因附带按**配置解析域**定档的 scope——凭据缺失 → `"experiment"`;模板不存在按 spec 是否带 `environments` 表(模板逐 eval 解析)落 `"experiment"` 或 `"eval"`。
   映射单源在 [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试)。
 
-路由纪律沿用 Effect 生态的 tagged error 习语:**糖衣类的契约是它携带的 `_tag` 与 `class` 数据字段,一切识别走结构守卫(`failureClassOf`),不用 `instanceof`**——依赖树里出现第二份 niceeval 实例时类身份静默失效,数据不会。
+路由纪律沿用 Effect 生态的 tagged error 习语:**fatal 错误类的契约是它携带的 `_tag` 与 `class` 数据字段,一切识别走结构守卫(`failureClassOf`),不用 `instanceof`**——依赖树里出现第二份 niceeval 实例时类身份静默失效,数据不会。
 精确类型、分类链的决议顺序与否决权见 [Architecture](architecture.md#数据建模)。
 
 ## 消费点是位置性的
@@ -134,7 +134,7 @@ export type FailureClass =
 ## 相关阅读
 
 - [Architecture](architecture.md) —— 类型形状、分类链、重试执行体、止损执行体与不变量。
-- [Library](library.md) —— 糖衣类与实验分类器的写法、adapter 作者的 `classifyTurnError`、观察面。
+- [Library](library.md) —— fatal 错误类与实验分类器的写法、adapter 作者的 `classifyTurnError`、观察面。
 - [用例](use-case/README.md) —— 三种姿态的全流程叙事:读懂 errored、抛出点声明死因、写分类器。
 - [Runner](../../runner.md) —— earlyExit、run 级 fail-fast、完成状态与外层超时。
 - [Experiments · 实验级共享服务](../experiments/library.md#实验级共享服务setup-与-teardown) —— 实验级 setup 失败的既有语义。

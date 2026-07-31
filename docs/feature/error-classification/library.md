@@ -1,7 +1,7 @@
 # 执行失败分类 —— 库用法
 
 重试对 eval 作者与实验作者**零配置面**:没有 flag,`defineEval` / `defineExperiment` 上也没有重试参数(理由见 [README · 非目标](README.md#非目标))。
-作者面的公开 API 有三个,各对应一处知识所在地:空间轴糖衣类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
+作者面的公开 API 有三个,各对应一处知识所在地:空间轴 fatal 错误类(实验/eval 作者声明自己 probe 出的死因)、`ExperimentDef.classifyFailure`(实验作者识别以第三方错误形态浮出的共享基建死因)、`Agent.classifyTurnError`(adapter 作者教回退认不出的自家协议错误)。
 
 ## eval / 实验作者:你会看到什么
 
@@ -70,7 +70,7 @@ export default defineExperiment({
 - **判据是可证明性**:只有能证明「同 scope 兄弟 attempt 同因必死」才声明——共享服务、共享凭据、实验级配置属于能证明;「看起来像基建问题」不构成证明。
   拿不准就不声明,让它落成单条 attempt 的 `errored`:多烧的是钱,错杀的是整批覆盖数据,代价不对称(判据全文见 [README · 分类](README.md#分类))。
 - **识别不靠类身份**:框架用结构守卫(`failureClassOf`)认这些错误,`instanceof` 在依赖树里有第二份 niceeval 时会静默失效——自己代码里如需识别也用守卫。
-- **没有「可重试」糖衣类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 setup / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。
+- **没有「可重试」错误类**:重试只发生在框架包住 `agent.send` 的那一个位置,你的 setup / test 代码不在任何重试执行体里,声明可重试无人消费([消费点的位置性](README.md#消费点是位置性的))。
   setup 里想容忍抖动,自己 try 一次即可。
 - **闸落下后不可逆、不跨运行**:本次 invocation 内不再派发;下次运行从零判断,没有需要解除的状态。
 

@@ -65,7 +65,7 @@ eval 得分 = Σ 各给分项的挣分        （纯累加,无分母）
   带 points 的断言不进入质量分，避免同一证据重复计入两个连续读数。
 - **观测的通过线只改那一行的显示**：judge 这类默认没有线的打分断言靠 `.atLeast(x)` 把「装好了但质量差」显示成失败行；0/1 断言不需要它——matcher 自带的线在计分制照常生效，没做到的检查点如实记 `failed` 挣 0 分。
 - **`--strict` 两种题型同义**：带线 soft 升级为 gate；它不添加 `.stopOnFailure()`。
-- **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言糖衣。
+- **`t.require` 两种题型都有**：它是 `t.check(...).gate().stopOnFailure()` 的值断言简写。
 - **中止挣 0，基础设施得 null，严格分开**：前置失败强制结束，后面的给分代码不执行、那些分自然没挣到——agent 没走到是它的责任，低分成立；沙箱炸了、judge 没 key 是 `errored`，整题分数为 `null`、不折成 0——评不了不是 agent 差。
   带 `.points` 的断言 `unavailable`（仅 `.optional()` 情形，否则整题已 errored）不挣分、在报告里如实标注。
 - **丢分不是失败**：五步走完三步的 attempt 是 `passed` 且挣 3 分，「做到几成」由分数面回答，不借判定面表达； verdict 回答的是「这次的分数完不完整」（[四态与优先级](../../verdict/architecture.md#verdict)）。

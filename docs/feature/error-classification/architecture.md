@@ -5,7 +5,7 @@
 
 ## 数据建模
 
-实体关系一句话:**分类是数据(`FailureClass`),类是构造糖;各声明通道(糖衣类、三个分类器)产出这份数据,两个执行体在各自的消费点读它。**
+实体关系一句话:**分类是数据(`FailureClass`),类只是它的便利构造;各声明通道(fatal 错误类、三个分类器)产出这份数据,两个执行体在各自的消费点读它。**
 声明方只回答封闭问题(可不可重试、波及多远);重试几次、退避多久、闸怎么落全部归执行体,声明方不感知也不能影响策略——core 不按 agent 或 experiment 名字分支,策略对所有声明方一致。
 
 ### 类型
@@ -50,7 +50,7 @@ export type AttemptFailureClassifier = (failure: AttemptFailureInfo) => FailureC
 
 `retryable: true` 时 `reason` 必填是类型级规则:可重试的失败一定出现在 activity 行与可能的耗尽摘要里,那里需要一个给人读的词;不可重试的失败常常说不清是什么(这正是它不可重试的原因),`reason` 可省略。
 
-**抛出点糖衣类**,包根导出,面向 eval / 实验作者:
+**抛出点 fatal 错误类**,包根导出,面向 eval / 实验作者:
 
 ```ts
 /** 从任意 per-attempt 阶段抛出:全实验剩余 attempt 同因必死,停止派发。 */
@@ -71,10 +71,11 @@ export class EvalFatalError extends Error {
 export function failureClassOf(error: unknown): FailureClass | undefined;
 ```
 
-糖衣类的契约是 `_tag` 与 `class` 两个数据字段,识别一律走 `failureClassOf` 的结构检查,不用 `instanceof`——依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。
-`failureClassOf` 沿 `cause` 链逐层查找、取最外层携带分类的错误——作者的糖衣类被上层库包装再抛时声明不丢失。
-糖衣类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。
-糖衣类只覆盖空间轴的两个非默认档;默认档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给默认行为发明类型是噪音。
+fatal 错误类的契约是 `_tag` 与 `class` 两个数据字段,识别一律走 `failureClassOf` 的结构检查,不用 `instanceof`——依赖树里出现第二份 niceeval 实例(link、版本重复)时类身份静默失效,数据不会。
+`failureClassOf` 沿 `cause` 链逐层查找、取最外层携带分类的错误——作者的 fatal 错误类被上层库包装再抛时声明不丢失。
+
+fatal 错误类不继承任何 effect 类型,公开 `.d.ts` 零 effect 依赖——用户只写 async 函数的公开 API 边界不因此破例。
+fatal 错误类只覆盖空间轴的两个非默认档;默认档(`scope: "attempt"` 的普通失败)不需要类——任何未分类的抛出本来就落成本 attempt `errored`,给默认行为发明类型是噪音。
 
 `Agent` 上的挂载面是可选字段 `classifyTurnError?: TurnErrorClassifier`(完整 interface 见 [agent 契约](../adapters/architecture/agent-contract.md#agent-与-turn));`completed` 与 `waiting` 的 Turn 不是失败(HITL 挂起是成功形态),不进分类。
 `kind: "direct"` 与 `kind: "sandbox"` 的 agent 走同一条链,契约不分身份。
@@ -171,7 +172,7 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 
 **生命周期边界**:
 
-- 实验级 `setup` 里抛糖衣类,与抛任何错误同义——既有语义(全部 attempt 记 `errored(experiment-setup-failed)`、不派发,见 [Experiments](../experiments/library.md#实验级共享服务setup-与-teardown))已是最大止损,不设第二条路径。
+- 实验级 `setup` 里抛 fatal 错误类,与抛任何错误同义——既有语义(全部 attempt 记 `errored(experiment-setup-failed)`、不派发,见 [Experiments](../experiments/library.md#实验级共享服务setup-与-teardown))已是最大止损,不设第二条路径。
 - 实验级 `teardown` 里抛,降级为普通 teardown 诊断——teardown 时点已无可保护的派发余量,且止损状态不跨 invocation,声明无处生效。
 - per-attempt teardown 里抛,verdict 处理沿用既有规则(teardown 失败是诊断、不改 verdict),但 scope 声明照常落闸——知识就是知识,兄弟 attempt 还在派发中。
 
@@ -182,8 +183,8 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 
 分类与止损横跨仓库的 Promise / Effect 分界,三环各守其位:
 
-- **公开面(Promise 世界)**:糖衣类、`FailureClass`、分类器类型都是纯 TypeScript,零 effect 依赖;用户与 adapter 作者只写 async 函数的公开 API 哲学不变。
-  路由借 Effect 生态的 tagged error 习语——`_tag` 数据字段路由、类只当构造糖——但不 import 它。
+- **公开面(Promise 世界)**:fatal 错误类、`FailureClass`、分类器类型都是纯 TypeScript,零 effect 依赖;用户与 adapter 作者只写 async 函数的公开 API 哲学不变。
+  路由借 Effect 生态的 tagged error 习语——`_tag` 数据字段路由、类只负责构造数据——但不 import 它。
 - **attempt 边界(Effect 世界)**:Promise 侧的失败穿过边界时归一化为内部 tagged error(`Data.TaggedError`,携带 `FailureClass` 与 phase);实验闸 / eval 闸用 `Effect.makeLatch`(close 幂等、免费满足落闸幂等不变量);等待集中止走既有 interruption。
 - **结果建模(`E = never`)**:attempt fiber 的类型保持 `Effect<EvalResult>`,错误通道刻意为空——`errored` 是 eval runner 的合法结果,不是调度失败;scope 信号经封口读取触发落闸,不走错误通道向上传播。
   Effect 的失败三分法与本设计的格子一一对应:typed failure ↔ 被分类的失败,defect ↔ 未分类的意外异常(默认格,`"unexpected-error"`),interrupt ↔ 超时 / 用户中断 / earlyExit / 闸中止,三者不混流。
@@ -210,12 +211,12 @@ export function failureClassOf(error: unknown): FailureClass | undefined;
 - 被重试吸收的失败不抵达止损闸;抵达闸的一定是终局失败。
 - 闸只停派发、不抢占在飞;落闸幂等、invocation 内不可逆、不跨 invocation 持久。
 - 声明方只影响决策轴与 `reason` 词,不影响策略:重试预算、退避参数、槽位行为、落闸机制对所有声明方一致;`reason` 在整条链路里只出现在 activity 与 message / 诊断文案,不进任何分支条件。
-- 识别糖衣类只依赖 `_tag` + `class` 结构,不依赖类身份。
+- 识别 fatal 错误类只依赖 `_tag` + `class` 结构,不依赖类身份。
 
 ## 相关阅读
 
 - [README](README.md) —— 动机、两轴判据、组合规则、声明通道、止损语义与非目标。
-- [Library](library.md) —— 糖衣类与实验分类器的写法、`classifyTurnError`、观察面。
+- [Library](library.md) —— fatal 错误类与实验分类器的写法、`classifyTurnError`、观察面。
 - [Runner](../../runner.md) —— fail-fast、完成状态、实验域诊断持久化。
 - [Sandbox · Provisioning 失败与重试](../sandbox/architecture.md#provisioning-失败与重试) —— 词表对齐的另一处分类与退避形状。
 - [Adapter · agent 契约](../adapters/architecture/agent-contract.md) —— `Agent` 完整 interface 与生命周期不变量。
