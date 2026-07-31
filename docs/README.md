@@ -1,7 +1,8 @@
 # ⚡ niceeval 设计文档
 
-`docs/` 描述 niceeval **已经定稿、希望产品最终满足的状态**。
-它是实现工作的输入，不是当前代码的说明书。
+`docs/` 保存 niceeval 的目标功能契约与形成这些契约的设计材料。
+Feature 和未归类的产品页描述**已经定稿、希望产品最终满足的状态**;Roadmap 保存尚未定稿的候选,Design 保存多方案比较与裁决记录。
+它们都是设计工作的输入,不是当前代码的说明书。
 
 因此：
 
@@ -41,6 +42,7 @@
 ```text
 docs/
 ├── README.md                            本入口与写作契约
+├── _template/                           Feature Design Package 与 Design Decision 共用模板
 ├── api-design.md                        公开 API 的调用点、命名与评审契约
 ├── getting-started.md                   新手路径
 ├── source-map.md                        目标契约 → 源码落点
@@ -49,7 +51,6 @@ docs/
 ├── writing-baseline.json                现存命中数台账，只许变小
 │
 ├── feature/                             已定稿的目标功能契约
-│   ├── _template/                       新功能文档模板
 │   ├── adapters/                        连接 AI / Agent；各 SDK 契约见 adapters/sdk/
 │   ├── eval/                            编写 Eval：defineEval
 │   ├── experiments/                     组织运行配置：defineExperiment
@@ -67,7 +68,6 @@ docs/
 │   └── multi-agent/                     多 Agent Eval 场景
 │
 ├── design/                              需要对比候选方案的架构 / 技术决策
-│   ├── _template/                       新决策主题模板
 │   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面
 │   ├── environment-model/               环境模型:三份 Requirement、唯一 Base Case 与 Ensure
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
@@ -109,6 +109,20 @@ docs/
 同一事实只在一个入口完整定义。
 其它页面用链接建立关系，不复制一份容易漂移的规则。
 
+## 共用 Feature Design Package
+
+Feature、Roadmap 与 Design 的每个候选使用同一套 [`_template/feature-design/`](_template/feature-design/README.md):
+
+- `README.md`:问题、核心心智、范围与正文入口。
+- `library.md`:公开 Library 形状。
+- `cli.md`:CLI 输入输出与反馈。
+- `architecture.md`:数据建模、内部边界、时序和不变量。
+- `use-case/`:按用户目标组织的完整路径。
+
+只有 `README.md` 必备,其余页面按功能形态选用。
+三类目录只改变契约成熟度:Feature 是已定稿契约,Roadmap 是未定稿候选,Design 的 `PLAN-N/` 是参与同一裁决的自包含候选。
+Design 主题外层另用 [`_template/design-decision/`](_template/design-decision/README.md) 保存 Goals、Limits、Cases 与 Decision。
+
 ## 写目标状态
 
 每一段都应让从未读过旧稿的人独立理解最终契约。
@@ -125,7 +139,8 @@ docs/
 - 公开配置与结果的数据结构以穷尽形状定稿——TS interface 代码块或字段表，未列出的字段即不存在。
   「有没有某字段」这类问题以形状声明为准，不以源码为准。
 
-Feature 文档具体怎样拆成 `README.md`、`library.md`、`cli.md` 与 `architecture.md`，由 [`feature/README.md`](feature/README.md) 和模板定义。
+Feature、Roadmap 与 Design 候选的正文体裁由共用 Feature Design Package 定义。
+各入口只补充自己的成熟度与迁移规则。
 Engineering 文档的组织方式由 [`engineering/README.md`](engineering/README.md) 定义。
 Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
@@ -155,7 +170,7 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 
 ## 体裁分工:契约页薄,用例页厚
 
-一个功能目录里,每种文件只承担一种体裁,场景叙事不挤进契约页:
+一个 Feature Design Package 里,每种文件只承担一种体裁,场景叙事不挤进契约页:
 
 | 文件 | 体裁 | 代码示例的尺度 |
 |---|---|---|

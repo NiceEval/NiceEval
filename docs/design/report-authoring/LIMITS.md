@@ -1,6 +1,6 @@
 # 约束与候选方案
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [PLAN-5](PLAN-5.md) · [DECISION](DECISION.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -36,7 +36,7 @@
 
 它把「容易写错的部分」搬进库：作者少写一层聚合也拿不到错数字，因为聚合层数不由作者的代码决定。
 代价是作者面多一层概念，以及库要为每个能力维护一个具名数据源。
-详见 [PLAN-2](PLAN-2.md)。
+详见 [PLAN-2](PLAN-2/README.md)。
 
 ---
 
@@ -64,7 +64,7 @@
 
 它把学习成本压到最低，把演进成本堆到最高。
 组件集合会随提问方式增长，而两面渲染的重复实现是这套方案的主要工程量。
-详见 [PLAN-1](PLAN-1.md)。
+详见 [PLAN-1](PLAN-1/README.md)。
 
 ---
 
@@ -108,7 +108,7 @@ agent · model · started_at · scoring · flags(json) · labels(json)
 ## 直接影响
 
 SQL 在「灵活提问」这条上明显赢，在 [GOALS](GOALS.md) 的正确性与可追溯两组需求上明显输：那几条需求正是靠数据形状强制的，而 SQL 的结果形状由作者当场决定。
-详见 [PLAN-3](PLAN-3.md) 与 [PLAN-4](PLAN-4.md)。
+详见 [PLAN-3](PLAN-3/README.md) 与 [PLAN-4](PLAN-4/README.md)。
 
 ---
 
@@ -131,7 +131,7 @@ page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把�
 - 不提供细粒度的公开查询依赖图；跨 page 自动共享不是作者语义。
 - 报告旁复杂算法的公式仍需单独测试，证据构造器只保证结果可追溯。
 
-详见 [PLAN-5](PLAN-5.md)。
+详见 [PLAN-5](PLAN-5/README.md)。
 
 # 共通限制
 

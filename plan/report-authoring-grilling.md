@@ -324,7 +324,7 @@ Notice 分层；③ CSS 公共前缀 `nre-*` → `niceeval-*`；④ Measure 名�
 | 文件 | 改了什么 |
 |---|---|
 | `design/report-authoring/DECISION.md` | 结论改三概念；`Composition` 从"装配宏"升为运行期编排概念，并给出为什么它是概念而不是装饰能力；呈现改 `ctx.dimension(handle)` 与 24 身份容量 |
-| `design/report-authoring/PLAN-2.md` | 收敛注记跟着改口 |
+| `design/report-authoring/PLAN-2/README.md` | 收敛注记跟着改口 |
 | `feature/reports/architecture.md` | 核心模型三概念；`CompositionContext` 与 `MaybePromise` 签名；resolve 格位；Promise 级 page 缓存；H2 单重载与理由；H4 装载期拦截；`ctx.sample` → `ctx.input`；页级分配改 `seriesSlot` |
 | `feature/reports/components/README.md` | 开篇三概念；角色表补 Composition；判据重写成四问加"命中两问必须拆开"；删 `Cell`"全部接口"句改成「全局协议只有 Content」；`dimensions` 必填；两个 keyset、24 身份容量、分配序列、上界照实写、两面差别 |
 | `feature/reports/components/primitives/table.md` | 接收单元格类型联合与三条不变量 |

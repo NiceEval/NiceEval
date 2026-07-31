@@ -3,7 +3,7 @@
 - **裁决**(2026-07-28):删除 `test/unit/report-css-contract.test.ts` 与台账
   `test/unit/report-css-orphans.json`,不再以「grep 源码类名 ↔ CSS 规则」的文本代理
   守护类名对齐。样式是否真的生效,由 e2e 报告域对导出站的计算样式与几何断言验收,
-  候选写法定稿在 `docs/roadmap/e2e-acceptance-dsl/use-cases/html-export.md`
+  候选写法定稿在 `docs/roadmap/e2e-acceptance-dsl/use-case/html-export.md`
   「样式脱对齐类缺陷」一节;DSL 落地前这类缺陷靠真机手测与既有 Playwright 断言接住。
 - **曾选方案**:正则扫 `src/report/**`/`src/view/**` 源码文本提取 `niceeval-*`
   类名,与 styles.css 选择器双向比对,配孤儿台账与「纯挂钩豁免」两本手维护清单。

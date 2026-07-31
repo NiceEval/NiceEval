@@ -1,6 +1,6 @@
 # 设计裁决:层状态挂 spec Hook 链,不做层自带 state: { load, save }
 
-**裁决**(2026-07-31,环境层 roadmap 评审):状态(记忆载入/回存这类每沙箱动作)留在 sandbox spec 的 `.setup()/.teardown()` Hook 链;`defineLayer` 不加 `state: { load, save }` 成对声明。同批判据落 `docs/roadmap/environment-model/README.md`「状态挂 Hook 链,不挂层」。
+**裁决**(2026-07-31,环境层 roadmap 评审):状态(记忆载入/回存这类每沙箱动作)留在 sandbox spec 的 `.setup()/.teardown()` Hook 链;`defineLayer` 不加 `state: { load, save }` 成对声明。同批判据当时落在 `docs/roadmap/environment-model/README.md`;当前候选快照见 `docs/design/environment-model/PLAN-2/architecture.md`。
 
 **曾选方案**:层自带 `state: { load, save }`,让「mempal 的安装」与「mempal 的状态」在同一声明里成对出现(用户当时倾向此方案再评一轮,理由是成对声明更内聚、防漏挂状态 Hook)。
 

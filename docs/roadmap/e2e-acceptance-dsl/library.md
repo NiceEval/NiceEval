@@ -1,6 +1,6 @@
 # Library 逐词表说明
 
-`@niceeval/verify`(工作名)的完整断言词表。设计定位与形态裁决见 [README](README.md);逐场景写法见 [Use Cases](use-cases/README.md)。
+`@niceeval/verify`(工作名)的完整断言词表。设计定位与形态裁决见 [README](README.md);逐场景写法见 [Use Cases](use-case/README.md)。
 
 库从主入口导出四组能力:命令执行与证据句柄、语义树 Run matcher、容差 golden matcher、点查询。
 浏览器交互词表单独走 `@niceeval/verify/browser` 子路径,把 Playwright 依赖隔离在浏览器场景之外。

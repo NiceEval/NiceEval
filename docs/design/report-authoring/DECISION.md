@@ -1,10 +1,10 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [PLAN-5](PLAN-5.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md)
 
 ## 结论
 
-采纳 [PLAN-5](PLAN-5.md)。
+采纳 [PLAN-5](PLAN-5/README.md)。
 作者面是“静态 page + 普通函数 + 普通结果值 + 按形状命名的组件”。
 
 - page 清单静态可见，page render 拥有异步、按页失败隔离与缓存。

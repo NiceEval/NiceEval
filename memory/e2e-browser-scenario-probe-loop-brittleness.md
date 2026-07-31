@@ -32,5 +32,5 @@
 选择器方言收敛进库。生态调研裁决「引擎全部现成，不自建」——寻址用
 getByRole / 可见文本官方优先序、等待用 web-first assertion 自动重试、结构用
 toMatchAriaSnapshot，库只补领域词与步骤轨迹（词表见同目录 library.md，
-逐场景重写对照见 use-cases/browser-interaction.md）。这三类场景是词表落地后
+逐场景重写对照见 use-case/browser-interaction.md）。这三类场景是词表落地后
 第一批重写对象；重写前不要以现行写法为模板新增浏览器场景。

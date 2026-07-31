@@ -1,8 +1,8 @@
 # 多容器环境 —— 现状约束与候选清单
 
 **相关文档**:[README](README.md) · [GOALS](GOALS.md) ·
-[PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) ·
-[PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
+[PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) ·
+[PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
 ---
 

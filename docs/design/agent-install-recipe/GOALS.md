@@ -1,8 +1,8 @@
 # Agent 安装配方 —— 目标
 
 **相关文档**:[README](README.md) · [LIMITS](LIMITS.md) ·
-[PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) ·
-[PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
+[PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) ·
+[PLAN-4](PLAN-4/README.md) · [DECISION](DECISION.md)
 
 ---
 

@@ -2,7 +2,7 @@
 
 还没定为当前契约的候选设计,见 [Roadmap 约定](../README.md)。
 调研来源见 [References · Playwright ARIA Run](../../references.md#playwright-aria-snapshot-与-ivya--vitest-移植)、[References · trycmd / snapbox](../../references.md#trycmd--snapboxrust)、[References · CLI / TUI 测试生态横评](../../references.md#cli--tui-测试生态横评cli-testing-librarytui-testshell-useatago-等)。
-库的完整断言词表——语义树 Run 语法、匹配语义、golden scrub 规则、点查询 API 与失败反馈——见 [Library 逐词表说明](library.md);真实验收脚本逐场景的「现行断言 → 候选写法」对照见 [Use Cases](use-cases/README.md)。
+库的完整断言词表——语义树 Run 语法、匹配语义、golden scrub 规则、点查询 API 与失败反馈——见 [Library 逐词表说明](library.md);真实验收脚本逐场景的「现行断言 → 候选写法」对照见 [Use Cases](use-case/README.md)。
 
 ## 问题
 
@@ -81,21 +81,21 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 - **选择器方言收敛进库。**
   场景文件不出现 CSS / class 选择器与 `:visible` 一类方言;可见性判定由领域词(如 `table.visibleRows()`)单点实现。
 
-逐场景的写法对照见 [browser-interaction](use-cases/browser-interaction.md)。
+逐场景的写法对照见 [browser-interaction](use-case/browser-interaction.md)。
 
 ### 断言分级与既有边界的对应
 
-三层词表不改变[各域的断言边界](../../engineering/testing/e2e/README.md#43-cli-读回),只是给每层配上合适的工具;逐场景的写法对照见 [Use Cases](use-cases/README.md):
+三层词表不改变[各域的断言边界](../../engineering/testing/e2e/README.md#43-cli-读回),只是给每层配上合适的工具;逐场景的写法对照见 [Use Cases](use-case/README.md):
 
 | 场景 | 既有边界 | 用哪层 | 对照 |
 |---|---|---|---|
-| 适配器仓库读回 | 自有事实的子串级出现,不断言布局 | 第三层点查询 | [adapter-readback](use-cases/adapter-readback.md) |
-| report 仓库渲染结构 | 区块存在、相对顺序、计数、默认展开折叠 | 第一层语义树 Run | [render-structure](use-cases/render-structure.md) |
-| report 仓库读面行为 | history / stats / locator / 收窄 | 第一层 + 第三层 | [readback](use-cases/readback.md) |
-| report 仓库视觉与交互 | 行为与几何,不锁颜色值与 class 列表 | Playwright 原生词表 + 领域词(见[浏览器交互](#浏览器交互现成词表加领域词)) | [browser-interaction](use-cases/browser-interaction.md) |
-| 导出 HTML 语义结构 | 语义块存在、可访问结构 | 第一层 aria Run | [html-export](use-cases/html-export.md) |
-| 机器出口与错误文案 | 逐字段格式契约 | 第二层容差 golden | [machine-exports](use-cases/machine-exports.md) |
-| 发布包消费边界 | 三种 JSX 配置下装载渲染成功 | 第一层 + 证据生命周期 | [package-consumer](use-cases/package-consumer.md) |
+| 适配器仓库读回 | 自有事实的子串级出现,不断言布局 | 第三层点查询 | [adapter-readback](use-case/adapter-readback.md) |
+| report 仓库渲染结构 | 区块存在、相对顺序、计数、默认展开折叠 | 第一层语义树 Run | [render-structure](use-case/render-structure.md) |
+| report 仓库读面行为 | history / stats / locator / 收窄 | 第一层 + 第三层 | [readback](use-case/readback.md) |
+| report 仓库视觉与交互 | 行为与几何,不锁颜色值与 class 列表 | Playwright 原生词表 + 领域词(见[浏览器交互](#浏览器交互现成词表加领域词)) | [browser-interaction](use-case/browser-interaction.md) |
+| 导出 HTML 语义结构 | 语义块存在、可访问结构 | 第一层 aria Run | [html-export](use-case/html-export.md) |
+| 机器出口与错误文案 | 逐字段格式契约 | 第二层容差 golden | [machine-exports](use-case/machine-exports.md) |
+| 发布包消费边界 | 三种 JSX 配置下装载渲染成功 | 第一层 + 证据生命周期 | [package-consumer](use-case/package-consumer.md) |
 | CLI 仓库 PTY smoke | 有 ANSI、有面板、到达完成态 | 现状保留,粗粒度点查询 | — |
 
 ## 待裁决分歧
@@ -129,7 +129,7 @@ vitest 是宿主,不是替代入口:库只提供 matcher 与查询函数,不带 
 ## 相关阅读
 
 - [Library 逐词表说明](library.md) —— 三层断言词表的完整语法、匹配语义、API 与失败反馈。
-- [Use Cases](use-cases/README.md) —— 真实验收脚本逐场景的「现行断言 → 候选写法」对照。
+- [Use Cases](use-case/README.md) —— 真实验收脚本逐场景的「现行断言 → 候选写法」对照。
 - [验收脚本写法](../../engineering/testing/e2e/verification.md) —— 现行断言约定与 `sh()` 参考实现;本设计定稿后重写的对象。
 - [E2E 总则](../../engineering/testing/e2e/README.md) —— 仓库自治、候选注入、退出码折叠;本设计在其边界内运作。
 - [功能域 · 报告与读面](../../engineering/testing/e2e/report.md) —— 渲染面断言计划;第一层词表的主要落点。

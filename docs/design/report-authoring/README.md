@@ -1,6 +1,6 @@
 # 报告作者面：组件粒度与取数形态
 
-**相关文档**：[GOALS](GOALS.md) ·[LIMITS](LIMITS.md) ·[PLAN-1](PLAN-1.md) ·[PLAN-2](PLAN-2.md) ·[PLAN-3](PLAN-3.md) ·[PLAN-4](PLAN-4.md) ·[PLAN-5](PLAN-5.md) ·[DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) ·[LIMITS](LIMITS.md) ·[PLAN-1](PLAN-1/README.md) ·[PLAN-2](PLAN-2/README.md) ·[PLAN-3](PLAN-3/README.md) ·[PLAN-4](PLAN-4/README.md) ·[PLAN-5](PLAN-5/README.md) ·[DECISION](DECISION.md)
 
 写一份自定义报告的人先撞上两个选择，这里把它们摊开比较。
 
@@ -15,11 +15,11 @@
 
 | | 类型化数据源 | SQL 查询 |
 |---|---|---|
-| 通用原语 | [PLAN-2](PLAN-2.md) | [PLAN-3](PLAN-3.md) |
-| 专用组件 | [PLAN-1](PLAN-1.md) | 与 PLAN-1 同格：取数不进作者视野 |
+| 通用原语 | [PLAN-2](PLAN-2/README.md) | [PLAN-3](PLAN-3/README.md) |
+| 专用组件 | [PLAN-1](PLAN-1/README.md) | 与 PLAN-1 同格：取数不进作者视野 |
 
-[PLAN-4](PLAN-4.md) 是双轨：类型化数据源作默认，SQL 作逃生舱。
-[PLAN-5](PLAN-5.md)（推荐）保留通用原语与类型化聚合，但把取数和组合收敛成普通函数与普通结果值。
+[PLAN-4](PLAN-4/README.md) 是双轨：类型化数据源作默认，SQL 作逃生舱。
+[PLAN-5](PLAN-5/README.md)（推荐）保留通用原语与类型化聚合，但把取数和组合收敛成普通函数与普通结果值。
 
 这层选择值得单独比较，因为它一旦定下就写进每一份用户报告文件。
 改读数口径只动库，改作者面要动所有人的报告。
@@ -105,6 +105,6 @@ PLAN-3 那段 SQL 少写一层 `with per_eval`，得到的仍是一个像通过�
 
 - 要求与判据：[GOALS](GOALS.md)。
 - 三个候选项各自的现状与硬约束：[LIMITS](LIMITS.md)。
-- 逐个方案的完整写法与代价：[PLAN-1](PLAN-1.md) 到 [PLAN-5](PLAN-5.md)。
+- 逐个方案的完整写法与代价：[PLAN-1](PLAN-1/README.md) 到 [PLAN-5](PLAN-5/README.md)。
 - 结论与否决理由：[DECISION](DECISION.md)。
 - 定稿后的产品契约：[Reports · 组件树](../../feature/reports/components/README.md)。

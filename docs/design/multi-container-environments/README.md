@@ -38,9 +38,9 @@ provider 覆盖面差异都很大。
 **相关文档**:
 [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) ·
-[PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) ·
-[PLAN-4](PLAN-4.md) ·
-[真题落地样例](CASES.md) ·
+[PLAN-1](PLAN-1/README.md) ·
+[PLAN-2](PLAN-2/README.md) ·
+[PLAN-3](PLAN-3/README.md) ·
+[PLAN-4](PLAN-4/README.md) ·
+[真题落地样例](PLAN-4/use-case/README.md) ·
 [DECISION](DECISION.md)

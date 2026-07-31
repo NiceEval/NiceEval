@@ -1,6 +1,6 @@
 # 决策
 
-**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) ·[PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md)
+**相关文档**：[README](README.md) · [GOALS](GOALS.md) ·[LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) ·[PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md)
 
 ---
 
@@ -9,10 +9,10 @@
 实验加速采用分层方案：
 
 1. 先用结果沿用、选择与首过即停减少不必派发的 Attempt。
-2. 默认使用[方案 1](PLAN-1.md)：保留有界并发，稳定依赖进入预制环境，每 Attempt 使用全新 Sandbox。
+2. 默认使用[方案 1](PLAN-1/README.md)：保留有界并发，稳定依赖进入预制环境，每 Attempt 使用全新 Sandbox。
 3. Sandbox 预热可以移动创建时间，但真实记录中 `sandbox.create` 只占约 0.5%–0.6%，因此不作为第一优先级。
-4. Experiment 作者确认题间状态边界后，显式使用[方案 3](PLAN-3.md)：`sandboxReuse: true` 让 Attempt 共用 Sandbox。
-5. [方案 2](PLAN-2.md)不是独立 Feature；对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1` 表达一次只运行一个可复用 Sandbox。
+4. Experiment 作者确认题间状态边界后，显式使用[方案 3](PLAN-3/README.md)：`sandboxReuse: true` 让 Attempt 共用 Sandbox。
+5. [方案 2](PLAN-2/README.md)不是独立 Feature；对同一个 environment profile，`sandboxReuse: true` 与 `maxConcurrency: 1` 表达一次只运行一个可复用 Sandbox。
 
 这不是一种机制承接所有提速需求。
 默认路径优先保证隔离与并行，Sandbox 复用只分摊准备工作。

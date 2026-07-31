@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -22,10 +22,11 @@
 2. Eval 与 Experiment 都可以提供 Base Case,也可以提供在其它 Base Case 上收敛自身 Requirement 的 Ensure。
 3. Eval 与 Experiment 同时提供独立 Base Case 时不隐式决定优先级;配置必须显式提供融合 case,否则启动期报冲突。
 4. Experiment 可以按 Eval environment profile 声明多个融合 case。每条 Attempt 只选择一个,不同 Eval 可以选择不同 case。
-5. 只有一侧提供 Base Case 时,另一侧必须通过 Ensure 收敛;无法 Ensure 的组合在创建 Sandbox 前给出明确的不兼容结果。
+5. 只有一侧提供 Base Case 时,另一侧必须通过 Ensure 收敛;无法收敛的组合有明确的不兼容结果。声明期可判的缺失在创建 Sandbox 前报出,依赖运行事实的验证在进入 Agent 阶段前判明。
 6. 三份 Requirement 都必须由运行事实验证。Sandbox Case 的 ready、能力与身份可以构成验证;安装后复检。预制产物名与受管 manifest 不能单独代替验证。
 7. 用户不维护安装数组顺序。未知安装默认串行;声明资源与依赖后,互不冲突的安装自动并行。
 8. 三份 Requirement、所选 Base Case 与解析后的 Ensure 身份进入正确的 configHash 或逐 Eval fingerprint,且都有可解释的落盘形状。
+9. 起点产物只有与 Experiment Requirement 绑定声明时才构成 Experiment Base;Experiment 单纯选择运行产物不与 Eval Base 冲突。
 
 ## 不是本 doc 的目标
 

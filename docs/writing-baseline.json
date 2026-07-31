@@ -62,8 +62,7 @@
     "docs/observability.md": 9,
     "docs/origin-integration.md": 12,
     "docs/references.md": 6,
-    "docs/roadmap/e2e-acceptance-dsl/README.md": 2,
-    "docs/roadmap/e2e-acceptance-dsl/use-cases/package-consumer.md": 1
+    "docs/roadmap/e2e-acceptance-dsl/README.md": 2
   },
   "paragraphLength": {
     "docs/architecture.md": 1,

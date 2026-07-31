@@ -15,7 +15,8 @@
 - `CaseKey` 改名为 `EnvironmentKey`;Provider 生成的计划与运行资源组只作为内部 Environment Plan / Running Environment。
 - 自定义后端声明改为 `defineSandboxProvider()`,避免 `defineSandbox()` 把 Provider 与运行实例说成同一个对象。
 
-目标设计在 `docs/roadmap/environment-model/`。
+当时的目标设计在 `docs/roadmap/environment-model/`。
+当前候选快照见 `docs/design/environment-model/PLAN-1/`。
 
 ## 推翻了什么
 

@@ -12,11 +12,16 @@
 本主题保留完整 Sandbox Case 与 Agent Ensure 的领域义务,重新比较普通 Addon 与更一般的 Requirement + Base Case + Ensure 模型。
 Requirement 是内部组合语言;普通作者仍使用题目环境、实验工具与 Adapter 各自的领域 helper。
 
+五个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture 与 Use Case。
+[Cases](CASES.md) 固定共同输入和验收结果;候选用例只说明各自怎样覆盖,不能改写 Case 来降低要求。
+
 **相关文档**:
 [GOALS](GOALS.md) ·
 [LIMITS](LIMITS.md) ·
-[PLAN-1](PLAN-1.md) ·
-[PLAN-2](PLAN-2.md) ·
-[PLAN-3](PLAN-3.md) ·
-[PLAN-4](PLAN-4.md) ·
+[CASES](CASES.md) ·
+[PLAN-1](PLAN-1/README.md) ·
+[PLAN-2](PLAN-2/README.md) ·
+[PLAN-3](PLAN-3/README.md) ·
+[PLAN-4](PLAN-4/README.md) ·
+[PLAN-5](PLAN-5/README.md) ·
 [DECISION](DECISION.md)

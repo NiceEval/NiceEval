@@ -46,4 +46,4 @@ MemoryBench 的 467 条 Attempt 中有 237 条 `errored`，177 条停在 `sandbo
 最终选择不是把所有实验改成串行复用，而是分层提速：默认运行先少跑、保留并行并使用预制环境；能接受题间状态边界的 Experiment 用 `sandboxReuse: true` 声明 Attempt 共用 Sandbox。
 完整边界见 [DECISION](DECISION.md)。
 
-**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+**相关文档**：[GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [DECISION](DECISION.md)
