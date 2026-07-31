@@ -8,7 +8,7 @@
 - `docs/design/<decision>/PLAN-N/`:参与同一决策比较的自包含候选。
 
 只有 `README.md` 必备。
-`architecture.md`、`cli.md`、`library.md` 与 `use-case/` 按功能形态选用,不为凑结构留空文档。
+`architecture.md`、`lifecycle.md`、`cli.md`、`library.md` 与 `use-case/` 按功能形态选用,不为凑结构留空文档。
 写完删掉本说明段。
 
 ## 解决的问题
@@ -26,4 +26,4 @@ Roadmap 在这里列待裁决分歧;Design 候选在这里说明相对其它 PLA
 
 ## 入口
 
-链接实际存在的 Library、CLI、Architecture 与 Use Case 页面。
+链接实际存在的 Library、CLI、Architecture、Lifecycle 与 Use Case 页面。

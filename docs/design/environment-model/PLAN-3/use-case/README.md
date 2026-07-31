@@ -13,13 +13,13 @@
 
 | Case | 状态 | 声明入口 | Base | 收敛路径 | 失败或缺口 |
 |---|---|---|---|---|---|
-| [C1 评估环境较重](../../CASES.md#c1评估环境较重) | 支持 | `eval.environment` + SandboxSpec | Eval Sandbox Case | AgentProvisioner 在主 Sandbox Ensure | Case 构建、ready 或能力失败均归环境错误并保留证据 |
-| [C2 实验环境较重](../../CASES.md#c2实验环境较重) | 支持 | 普通 SandboxSpec + `experiment.addons` | Provider 默认 Case | Addon check → install → recheck | prepare/install/复检失败均在 Agent turn 前 `errored` |
-| [C3 两边都较重](../../CASES.md#c3评估与实验环境都较重) | 支持 | `eval.environment` + `experiment.addons` | Eval Sandbox Case | miss 后按平台 prepare，再安装和全组复检 | prepare 失败影响同 origin 等待者；Case 与 Addon 分别归因 |
-| [C4 组合多个条件](../../CASES.md#c4组合多个条件) | 支持 | 多个 Addon 的 `dependsOn` + `resources` | 既有 Case | DAG、资源互斥、立即复检与全组复检 | 失败节点 `errored`，依赖节点 blocked，独立失败分别保留 |
-| [C5 预装稳定条件](../../CASES.md#c5预装稳定条件) | 支持 | 预制 Case + 保留 Addon 与 AgentProvisioner | `environments` 或普通预制 Case | 每 Attempt 真实检查；命中即跳过安装 | 起点 identity 改变 CaseKey；过期状态 check miss 后补装或报错 |
+| [C1 评估环境较重](../../CASES.md#c1评估环境较重) | 部分 | `eval.environment` + SandboxSpec | Eval Sandbox Case | AgentProvisioner 在主 Sandbox Ensure | Agent 后不重验完整 Eval Case |
+| [C2 实验环境较重](../../CASES.md#c2实验环境较重) | 部分 | 普通 SandboxSpec + `experiment.addons` | Provider 默认 Case | Addon check → install → recheck | 最后只重验 Addon,不是三方屏障 |
+| [C3 两边都较重](../../CASES.md#c3评估与实验环境都较重) | 部分 | `eval.environment` + `experiment.addons` | Eval Sandbox Case | miss 后按平台 prepare、安装和全组复检 | Agent 后不重验 Eval Case |
+| [C4 组合多个条件](../../CASES.md#c4组合多个条件) | 部分 | 多个 Addon 的 `dependsOn` + `resources` | 既有 Case | DAG、资源互斥、立即复检与全组复检 | Addon 图完整,但缺三方最终屏障 |
+| [C5 预装稳定条件](../../CASES.md#c5预装稳定条件) | 部分 | 预制 Case + 保留 Addon 与 AgentProvisioner | `environments` 或普通预制 Case | 每 Attempt 真实检查;命中即跳过安装 | Agent 后不重验完整 Eval Case |
 | [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 部分 | Sandbox `.setup()` / `.teardown()` + `maxConcurrency: 1` | 每 Attempt 新 Case | Addon 后载入，销毁前回存 | 状态 Hook 早于 Agent Ensure，不能保证用 Agent CLI 载入状态 |
-| [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 支持 | C6 入口 + `sandboxReuse: true` | 每 CaseKey 复用窗口一个 Case | 每 Attempt 重查 Addon、Agent 与跨 owner 屏障 | 任一漂移在 Agent turn 前 `errored`，不因复用跳过 |
+| [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 部分 | C6 入口 + `sandboxReuse: true` | 每 CaseKey 复用窗口一个 Case | 每 Attempt 重查 Addon、Agent 与 Addon 屏障 | 不因复用跳过检查,但缺三方最终屏障 |
 | [C8 Experiment 提供条件基底](../../CASES.md#c8experiment-提供条件基底) | 不支持 | 没有 Experiment Base 与 Eval Addon 入口 | 只能是默认 Case | 只能安装 Experiment Addon | Eval 条件无法在 Experiment Base 上验证或补齐 |
 | [C9 双方都有不可叠加基底](../../CASES.md#c9双方都有不可叠加基底) | 不支持 | 没有条件基底与融合 `cases` 表 | 只能选择 Eval Case | Experiment 只能贡献 Addon | 无法声明第二份 Base，也无法分别验证双方要求 |
 | [C10 混合批次](../../CASES.md#c10混合批次) | 部分 | 普通默认 Case + Eval environments | 有 environment 用 Eval Case，其余用默认 Case | Experiment Addon 对两类 Case 都收敛 | 普通默认起点正确让位，但条件基底与融合分支不存在 |
@@ -40,7 +40,8 @@ Experiment 的工具只改变 Addon identity；Agent 版本只改变 AgentProvis
 调度器只并行依赖已满足且资源不冲突的节点。
 
 每项安装后立即复检只能证明当时正确。
-全部安装完成后的全组复检负责发现后安装项破坏先安装项；Agent Ensure 后的跨 owner 屏障再覆盖 Agent 安装造成的破坏。
+全部安装完成后的全组复检负责发现后安装项破坏先安装项。
+Agent Ensure 后再次检查 Addon,可以发现 Agent 对实验工具的破坏,但不会重验完整 Eval Case 或 Agent 自身。
 
 ### C10：普通默认 Case 不是 Experiment 条件基底
 

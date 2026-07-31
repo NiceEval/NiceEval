@@ -1,6 +1,6 @@
 # PLAN-1:Environment 与 Provision 二分(不推荐)
 
-**本方案**:[Library](library.md) · [Architecture](architecture.md) · [Use Case](use-case/README.md)
+**本方案**:[Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Case](use-case/README.md)
 
 **决策主题**:[README](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) ·
 [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [PLAN-4](../PLAN-4/README.md) ·
@@ -40,7 +40,8 @@ Environment 不选择 Provider。
 Experiment 选择 Sandbox Provider,但不复制每道 Eval 的环境定义。
 Provision 只表达可检查的安装状态;跨 Attempt 运行状态继续由 Sandbox Hook 管理。
 
-完整公开形状见 [Library](library.md),解析、身份、生命周期与记录见 [Architecture](architecture.md)。
+完整公开形状见 [Library](library.md),解析、身份与记录见 [Architecture](architecture.md)。
+[Lifecycle](lifecycle.md)按 owner 展开 Base 选择、build / start / install / Fixture 以及 fresh / reuse 的执行频次。
 [用例手册](use-case/README.md)使用本方案逐项回答决策主题的十个 [Case](../CASES.md)。
 
 ## 性能与状态语义分开

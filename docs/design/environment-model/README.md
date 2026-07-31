@@ -12,7 +12,7 @@
 本主题保留完整 Sandbox Case 与 Agent Ensure 的领域义务,重新比较普通 Addon 与更一般的 Requirement + Base Case + Ensure 模型。
 Requirement 是内部组合语言;普通作者仍使用题目环境、实验工具与 Adapter 各自的领域 helper。
 
-五个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture 与 Use Case。
+五个 PLAN 都按 Feature Design Package 独立给出 Library、Architecture、Lifecycle 与 Use Case。
 [Cases](CASES.md) 固定共同输入和验收结果;候选用例只说明各自怎样覆盖,不能改写 Case 来降低要求。
 
 **相关文档**:

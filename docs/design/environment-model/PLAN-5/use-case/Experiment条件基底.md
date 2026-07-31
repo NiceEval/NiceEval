@@ -55,8 +55,9 @@ export default defineExperiment({
 2. Sandbox ready 后验证四个 Requirement 成员。
 3. 证书与 mempal 命中预装时不检查安装能力。
 4. Python 或题目数据缺失时,Runner 只为缺失成员执行 Eval Ensure。
-5. Eval 与 Experiment 全组验证通过后,AgentProvisioner 执行自己的 Ensure。
-6. 最终屏障验证三种所有者,然后 Agent 开始做题。
+5. Eval 与 Experiment 全组验证通过后,AgentProvisioner Ensure CLI。
+6. state load 与 Agent runtime setup/verify 完成后,最终屏障验证三种所有者。
+7. Agent 开始做题;turn 后才挂载隐藏 verifier 并评分。
 
 某个 Eval 成员未命中且没有 install 时,该组合记为运行期不兼容。
 结果包含实际检查事实,没有 Agent turn。

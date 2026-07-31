@@ -45,6 +45,7 @@ Eval 与 Experiment Requirement 在 `sandbox.setup` 阶段进入同一依赖与�
 AgentProvisioner 随后在 `agent.setup` 阶段执行自己的检查、准备、安装与复检。
 外部状态载入完成后,Runner 再执行覆盖三份 Requirement 的最终屏障,然后才允许 Agent 开始做题。
 这道屏障负责发现 Agent 安装或状态载入破坏的先前条件。
+不过本候选没有给这段晚期 load/save 独立的公开 API;现有 SandboxSpec setup 属于更早相位。
 
 数组位置不表达顺序。
 `dependsOn` 表达语义依赖,`resources` 表达安装互斥。
@@ -76,8 +77,8 @@ AgentProvisioner 随后在 `agent.setup` 阶段执行自己的检查、准备、
 | [C3](../CASES.md#c3评估与实验环境都较重) | 覆盖 | 选择 Eval Base,Experiment prepare 按身份和目标平台 single-flight 后现场安装 |
 | [C4](../CASES.md#c4组合多个条件) | 部分覆盖 | 复合 Requirement 可以完成检查和安装,但多项条件没有独立 contribution 槽位 |
 | [C5](../CASES.md#c5预装稳定条件) | 覆盖 | 预装只让 verify 命中,更换起点仍改变所选 Sandbox Case 身份 |
-| [C6](../CASES.md#c6新-sandbox-载入外部状态) | 覆盖 | 外部状态继续使用独立 Hook,不并入 Requirement |
-| [C7](../CASES.md#c7复用-sandbox-活状态) | 覆盖 | 复用窗口保留独立身份,每条 Attempt 仍执行三份验证 |
+| [C6](../CASES.md#c6新-sandbox-载入外部状态) | 部分覆盖 | 目标顺序正确,但晚期 state Hook 没有公开声明形状 |
+| [C7](../CASES.md#c7复用-sandbox-活状态) | 部分覆盖 | 窗口 cadence 存在,但 state identity、activity 与失败语义未闭合 |
 | [C8](../CASES.md#c8experiment-提供条件基底) | 覆盖 | SandboxSpec 显式起点作为 Experiment Base,Eval 通过 verify 或 Ensure 收敛 |
 | [C9](../CASES.md#c9双方都有不可叠加基底) | 覆盖 | 双 Base 必须命中精确 profile 的融合 case |
 | [C10](../CASES.md#c10混合批次) | **不覆盖** | 普通显式起点也算 Experiment Base,自带 Base 的 Eval 被迫配置融合 case |

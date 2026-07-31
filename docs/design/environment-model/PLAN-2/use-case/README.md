@@ -18,8 +18,8 @@
 | [C3 两边都较重](../../CASES.md#c3评估与实验环境都较重) | 部分 | `eval.environment` + `experiment.layers` | Eval template | Layer install | 没有宿主侧 `prepare`；离线 payload 只能在 install 中失败 |
 | [C4 组合多个条件](../../CASES.md#c4组合多个条件) | 部分 | 多个 Layer，或手工合成一个 Layer | 既有 template | 全部 miss 并行 install | 无依赖和资源互斥；合并会丢失独立身份与复用 |
 | [C5 预装稳定条件](../../CASES.md#c5预装稳定条件) | 部分 | 预制 template + 保留 Layer | 预制 template | manifest 或自定义 `inspect` 命中 | 过期 manifest 会假命中；起点变化可改身份但不补真实验证 |
-| [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 支持 | Sandbox `.setup()` / `.teardown()` + `maxConcurrency: 1` | 每 Attempt 新 template | Layer 池结束后载入，销毁前回存 | Hook 失败按既有 Sandbox 生命周期记 `errored` |
-| [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 部分 | C6 入口 + `sandboxReuse: true` | 每复用窗口一个 template | 每 Attempt 重读 Layer 检查 | 默认只读 manifest，不能发现前序 Attempt 造成的实际漂移 |
+| [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 部分 | Sandbox `.setup()` / `.teardown()` + `maxConcurrency: 1` | 每 Attempt 新 template | Layer 池结束后载入，销毁前回存 | 状态载入后没有三方真实最终屏障 |
+| [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 部分 | C6 入口 + `sandboxReuse: true` | 每复用窗口一个 template | 每 Attempt 重读 Layer 检查 | manifest 会假命中,且没有 reuse key / window identity 契约 |
 | [C8 Experiment 提供条件基底](../../CASES.md#c8experiment-提供条件基底) | 部分 | Experiment template + `eval.layers` | Experiment template | Eval Layer install | Eval 条件只有 install；无法安装时没有明确不兼容结果 |
 | [C9 双方都有不可叠加基底](../../CASES.md#c9双方都有不可叠加基底) | 部分 | `templates[profile]` | map 指定的替代 template | Layer install | map 不承载完整融合 Case，也不分别验证双方要求 |
 | [C10 混合批次](../../CASES.md#c10混合批次) | 不支持 | 普通 template、Eval environment、可选 `templates` | 按单槽位规则选择 | Layer install | 普通 template 与 Eval environment 双声明即冲突，违反默认起点让位规则 |

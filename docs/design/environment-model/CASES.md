@@ -9,9 +9,11 @@
 
 下面十个 Case 都遵守同一组底线:
 
+- Eval、Experiment 与 Agent 三方声明在 Base 选择前都存在;Agent 不因预装在 template 中而失去独立检查。
+- 每条 Attempt 恰好选择一个完整 Base Case;默认 template、Eval Base、条件基底与融合 case 的取舍必须明确。
 - 题目条件、实验条件与 Agent 运行条件都在 Agent 开始前成立,任一来源不能覆盖另一个来源。
 - image、template、snapshot、产物名与受管 manifest 都不能单独代替实际检查。
-- 任一安装可能破坏已满足条件时,进入 Agent 阶段前必须有覆盖受影响条件的最终验证屏障。
+- 任一安装可能破坏已满足条件时,进入 Agent 阶段前必须有三方最终验证屏障。
 - Agent 安装保留平台探测、宿主侧 payload 准备、安装模式和逐 Attempt 事实,不能被较弱的通用安装接口吞掉。
 - 复用同一个 Sandbox 时,每条 Attempt 仍重新检查目标状态。
 - 声明身份、解析后的目标身份、实际事实、活动与耗时进入各自的 configHash、fingerprint 或运行记录。
@@ -61,7 +63,8 @@ payload 按声明身份与目标平台 single-flight;准备、上传、安装和
 载入到回存形成同一 Experiment 的临界区。
 
 **验收:**安装状态与实验运行状态分开建模。
-状态 Hook 在工具和 Agent 就位后运行;串行边界明确,不需要开启 Sandbox 复用。
+state load 在工具和 Agent CLI 就位后运行,并有独立 identity、activity 与失败语义。
+逐 Attempt 的 Agent runtime 可以在 load 后收敛;串行边界明确,不需要开启 Sandbox 复用。
 
 ## C7:复用 Sandbox 活状态
 
@@ -96,10 +99,10 @@ Sandbox 配置还带一个普通默认起点,Experiment 可以另外声明与实
 
 ## 候选覆盖入口
 
-| 候选 | 覆盖矩阵 |
-|---|---|
-| PLAN-1 | [Environment 与 Provision](PLAN-1/use-case/README.md) |
-| PLAN-2 | [单 template 与统一 Layer](PLAN-2/use-case/README.md) |
-| PLAN-3 | [完整 Sandbox Case 与 Experiment Addon](PLAN-3/use-case/README.md) |
-| PLAN-4 | [Requirement、Base Case 与 Ensure](PLAN-4/use-case/README.md) |
-| PLAN-5 | [默认与条件基底分档](PLAN-5/use-case/README.md) |
+| 候选 | 覆盖矩阵 | Lifecycle 与 Base/template 选择 |
+|---|---|---|
+| PLAN-1 | [Environment 与 Provision](PLAN-1/use-case/README.md) | [Lifecycle](PLAN-1/lifecycle.md) |
+| PLAN-2 | [单 template 与统一 Layer](PLAN-2/use-case/README.md) | [Lifecycle](PLAN-2/lifecycle.md) |
+| PLAN-3 | [完整 Sandbox Case 与 Experiment Addon](PLAN-3/use-case/README.md) | [Lifecycle](PLAN-3/lifecycle.md) |
+| PLAN-4 | [Requirement、Base Case 与 Ensure](PLAN-4/use-case/README.md) | [Lifecycle](PLAN-4/lifecycle.md) |
+| PLAN-5 | [默认与条件基底分档](PLAN-5/use-case/README.md) | [Lifecycle](PLAN-5/lifecycle.md) |

@@ -15,6 +15,7 @@
 - 相似的安装动作可以共享调度设施,但领域身份、生命周期、错误归属和运行事实不能因此合并。
 - 并行是可证明无冲突后的优化。未知安装单元按保守顺序执行,不把竞态风险交给作者发现。
 - 预制产物是检查命中的优化,不是跳过真实状态验证的依据。
+- build、start、install、Fixture 与活 Sandbox 复用是五种不同动作;每个候选必须给出各自完整 Lifecycle。
 
 ## 需求
 
@@ -27,6 +28,8 @@
 7. 用户不维护安装数组顺序。未知安装默认串行;声明资源与依赖后,互不冲突的安装自动并行。
 8. 三份 Requirement、所选 Base Case 与解析后的 Ensure 身份进入正确的 configHash 或逐 Eval fingerprint,且都有可解释的落盘形状。
 9. 起点产物只有与 Experiment Requirement 绑定声明时才构成 Experiment Base;Experiment 单纯选择运行产物不与 Eval Base 冲突。
+10. 外部实验状态有独立的 identity、load/save cadence、后继 checkpoint、失败提交策略和穷尽活动;它不借用早期 SandboxSpec setup,也不伪装成 Requirement 或 Fixture。
+11. Agent CLI 安装与逐 Attempt runtime setup 分段建模;鉴权、配置、Plugin、Skill 与 MCP 必须可验证,turn 后隐藏 verifier 不能提前泄露,复用前必须成对 cleanup。
 
 ## 不是本 doc 的目标
 

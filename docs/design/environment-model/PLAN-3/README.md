@@ -26,7 +26,8 @@ Eval 的 folder-local source、profile 映射或 Provider 默认起点解析成�
 
 Experiment 不提供 Base，只提供 Addon。
 每个 Addon 先检查实际状态，miss 后才准备 payload 和安装，安装后复检。
-全部安装结束后再验证整组，AgentProvisioner Ensure 完成后还有一次跨 owner 验证屏障。
+全部 Addon 安装结束后再验证整组,AgentProvisioner Ensure 完成后还会重验全部 Addon。
+这道屏障不重验完整 Eval Case 或 Agent 自身,因此不满足根 Cases 新增的三方最终屏障。
 
 这个不对称模型覆盖“Eval 提供题目 Base，Experiment 和 Agent 在其上收敛”的主路径。
 它没有 Experiment 条件基底、可移植 Eval Addon 或双基底融合 Case，因此不是完整的双向模型。
@@ -44,7 +45,7 @@ Experiment 不提供 Base，只提供 Addon。
 
 [十个 Case 的逐项矩阵](use-case/README.md)显示：
 
-- C1、C2、C3、C4、C5、C7 有完整表达。
+- C1 到 C5 与 C7 都有运行路径,但缺少三方最终屏障,只能部分覆盖。
 - C6 可以保持新 Sandbox 与状态临界区，但状态 Hook 仍早于 Agent Ensure，不满足根 Case 规定的精确时序。
 - C8、C9 缺少 Experiment Base、Eval 收敛项与融合 Case，无法表达。
 - C10 的普通默认起点与 Eval Base 可以共存，但条件基底分支不存在。
@@ -53,12 +54,12 @@ Experiment 不提供 Base，只提供 Addon。
 
 | 需求 | 结论 | 原因 |
 |---|---|---|
-| 1 三份要求同时满足 | 支持主路径 | Eval Case、Experiment Addon、AgentProvisioner 分别兑现 |
+| 1 三份要求同时满足 | 部分满足 | 三者分别兑现,但最后只重验 Addon |
 | 2 双方可带 Base 或 Ensure | 不满足 | Eval 固定提供 Case，Experiment 固定提供 Addon |
 | 3 双 Base 显式融合 | 不满足 | Experiment 没有 Base，也没有融合 Case |
 | 4 按 profile 提供融合 Case | 不满足 | `environments` 只替换 Eval Case，不表示双方融合 |
 | 5 单 Base 下收敛或判不兼容 | 部分 | Experiment Addon 可收敛；Eval 没有独立收敛入口 |
-| 6 运行事实验证 | 满足 | Addon 与 Agent 都实际检查、安装后复检，并经过最终屏障 |
+| 6 运行事实验证 | 部分满足 | Addon 与 Agent 都实际检查和复检,最终屏障不覆盖 Eval Case 与 Agent |
 | 7 自动安全调度 | 满足 | 显式依赖、资源互斥、未知项保守串行 |
 | 8 身份正确落盘 | 满足 | Case、Addon、Agent 声明身份和逐目标解析身份分层记录 |
 | 9 普通起点不制造冲突 | 满足 | Provider 默认起点在 Eval Case 存在时让位 |

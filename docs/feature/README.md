@@ -28,6 +28,8 @@ Roadmap 与 Design 候选也使用这套正文文件;这里额外要求所有正
   被否决的**自家**历史方案仍归 `memory/`：`reference/` 写别人的做法，`memory/` 写我们自己的弯路。
 - `architecture.md`：实现应满足的模块边界、数据建模、数据流和不变量。
   数据建模先定实体关系，再给每个公开配置与结果类型的穷尽形状；未列出的字段即不存在。
+- `lifecycle.md`：跨 owner 展开运行起点选择、build / start / install、Fixture、复用与收尾。
+  需要描述 fresh / reuse 差异时,给出每 Invocation、每 Sandbox 或窗口、每 Attempt 的次数表。
 
 除 `README.md` 外都按功能形态选用，不为凑固定结构创建空文档。
 

@@ -189,6 +189,10 @@ Requirement 不增加 load、save 或 reset 字段。
 load 完成后运行最终验证屏障,然后才启动 Agent。
 save 在 Attempt 收尾阶段执行,失败产生独立的状态保存诊断。
 
+这只是内部目标相位。
+本候选的 Library 没有定义独立 state lifecycle;把现有 SandboxSpec setup 直接当作 load 会在 AgentProvisioner 前过早执行。
+因此 C6/C7 的状态路径只能算部分覆盖。
+
 同一 Experiment 的 load 到 save 临界区由 Experiment 并发限制保护。
 这条路径不需要开启 Sandbox 复用。
 

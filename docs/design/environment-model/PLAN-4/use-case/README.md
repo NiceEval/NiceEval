@@ -12,8 +12,8 @@
 | [C3 双方环境都较重](../../CASES.md#c3评估与实验环境都较重) | 覆盖 | Eval Base 被选中,Experiment Requirement 在其中 Ensure | 离线 payload 按 owner、name、identity 与平台 single-flight;上传和安装分别记 activity |
 | [C4 组合多个条件](../../CASES.md#c4组合多个条件) | 部分覆盖 | 多项条件压成一个复合 Experiment Requirement | 可以保守串行并最终全组验证,但成员身份、依赖、资源与错误被复合对象合并 |
 | [C5 预装稳定条件](../../CASES.md#c5预装稳定条件) | 覆盖 | Base 预期满足 Requirement,启动后仍执行 verify | 检查命中时零安装;状态漂移时现场补齐或给出不兼容 |
-| [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 覆盖 | 外部状态使用独立 load/save Hook,位于安装条件就位之后 | load 到 save 由实验并发限制保护;安装 identity 与状态 identity 分开记录 |
-| [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 覆盖 | `sandboxReuse` 继续管理窗口,Requirement 不承载状态 | 每条 Attempt 仍有检查与最终屏障;记录 window identity、序号与资源代次 |
+| [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 部分覆盖 | 目标 load/save 位于安装条件之后 | 没有独立晚期 state API,现有 SandboxSpec Hook 相位更早 |
+| [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 部分覆盖 | `sandboxReuse` 管理窗口,Requirement 不承载状态 | state identity、activity、轮换与失败语义未闭合 |
 | [C8 Experiment 提供条件基底](../../CASES.md#c8experiment-提供条件基底) | 覆盖 | SandboxSpec 显式起点或 `environment.base` 成为 Experiment Base | Eval verify 命中即继续;可安装时补齐,否则在 Agent 前判不兼容 |
 | [C9 双方都有不可叠加基底](../../CASES.md#c9双方都有不可叠加基底) | 覆盖 | 精确 profile 的 `cases` 表提供完整融合 case | 缺失 profile 在创建 Sandbox 前一次报全;启动后分别验证双方 Requirement |
 | [C10 混合批次](../../CASES.md#c10混合批次) | **不覆盖** | SandboxSpec 显式起点对所有 Eval 都算 Experiment Base | 自带 Compose 的 Eval 被判双 Base,即使该起点只是普通默认值也必须提供融合 case |

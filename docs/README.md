@@ -118,6 +118,7 @@ Feature、Roadmap 与 Design 的每个候选使用同一套 [`_template/feature-
 - `library.md`:公开 Library 形状。
 - `cli.md`:CLI 输入输出与反馈。
 - `architecture.md`:数据建模、内部边界、时序和不变量。
+- `lifecycle.md`:跨 owner 的起点选择、build/start/install、Fixture、复用与收尾时序。
 - `use-case/`:按用户目标组织的完整路径。
 
 只有 `README.md` 必备,其余页面按功能形态选用。
@@ -177,7 +178,8 @@ Design 文档的组织方式由 [`design/README.md`](design/README.md) 定义。
 |---|---|---|
 | `README.md` | 为什么要这个功能、核心契约总纲 | 只到说明概念所需的最小片段 |
 | `library.md` / `cli.md` | API 面 / CLI 面:导出什么、参数与返回、约束与错误 | 只到最小调用形状,一个 API 一段 |
-| `architecture.md` | 模块边界、数据建模、内部时序 | 类型与数据形状为主 |
+| `architecture.md` | 模块边界、数据建模、内部不变量 | 类型与数据形状为主 |
+| `lifecycle.md` | 跨 owner 的完整运行时序与 fresh/reuse 次数 | 顺序图、次数表与状态转移为主 |
 | `use-case/` | 场景叶子文档:一篇讲一个用户目标的完整路径 | 完整可抄的代码示例住这里 |
 
 两条纪律:

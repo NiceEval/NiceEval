@@ -21,7 +21,8 @@ P[p]    environments[p] 提供的 E[p] 预制实现
 X[]     Experiment Addon 集合
 A       AgentProvisioner
 S       Sandbox setup/teardown 状态 Hook
-W       Eval Fixture 与 workdir 准备
+W       turn 前 Eval Fixture 与 workdir 准备
+V       最后一次 turn 后的隐藏 verifier / criteria
 
 ====>   被选为唯一 Sandbox Case,负责 build/start
 ....>   不负责启动,在已启动主 Sandbox 中检查或安装
@@ -38,7 +39,7 @@ Experiment 只能贡献 `X[]`,不能让一个 template 以 Experiment owner 参�
 
 | Owner | 可以贡献 Base | 安装、状态与运行职责 |
 |---|---|---|
-| Eval | 完整 `E[p]` | Case source、ready 与伴随资源归 Case;`W` 准备本 Attempt 的任务工作区 |
+| Eval | 完整 `E[p]` | Case source、ready 与伴随资源归 Case;`W` 准备任务,`V` 承载隐藏判分材料 |
 | Experiment | 不可以 | `X[]` 描述主 Sandbox 中应成立的实验工具;实验状态通过 `S` 载入和回存 |
 | Agent | 不可以 | `A` 检查、准备并安装 Agent CLI、配置与启动条件 |
 | SandboxSpec | `D` 与 `P[p]` | 选择 Provider、普通默认起点,或替换某个 Eval Case 的预制实现 |
@@ -81,13 +82,14 @@ resolve Eval Case:
 优先级可以压成一行:
 
 ```text
-P[p] > materialized E[p] > D > Provider neutral Case
+Eval has profile p: P[p] > materialized E[p]
+Eval has no environment: D > Provider neutral Case
 ```
 
 `D` 只在 Eval 没有 environment 时使用。
 它不会与 `E[p]` 冲突,也没有融合表。
 
-`X[]`、`A`、`S` 与 `W` 都不参与 Base 选择。
+`X[]`、`A`、`S`、`W` 与 `V` 都不参与 Base 选择。
 它们只能在唯一 Case start 并 ready 后工作。
 
 ## Build、start、install 与 Fixture
@@ -95,12 +97,15 @@ P[p] > materialized E[p] > D > Provider neutral Case
 | 阶段 | Owner | fresh Attempt | reuse window |
 |---|---|---|---|
 | 解析 source、profile 与 CaseKey | Eval + SandboxSpec | 每个 Eval 规划一次 | 每个 Eval 规划一次 |
-| build 或定位起点产物 | 所选 Case | 按 BuildKey 协调和复用 | 窗口打开前一次 |
+| build 或定位起点产物 | 所选 Case | Run 级按 BuildKey 协调 | Run 级共享;窗口只消费 locator |
 | start、services ready | 所选 Case | 每 Attempt 一次 | 每窗口一次 |
 | Addon check/install/recheck | Experiment | 每 Attempt 一次 | 每 Attempt 一次 |
 | `S.load` / `S.save` | Experiment 状态 | 每 Sandbox 一次 | 窗口打开、关闭各一次 |
-| workdir baseline 与 `W` | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
+| 建立或恢复 workdir baseline | Runner / workspace | 每 Attempt 建立一次 | 每窗口建立一次,后续 Attempt reset |
+| `W` Fixture | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
 | AgentProvisioner Ensure | Agent | 每 Attempt 一次 | 每 Attempt 一次 |
+| Agent turn、`V` 与 scoring | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
+| Eval / Agent teardown | Eval + Agent | 每 Attempt 一次 | 每 Attempt 一次 |
 | Case finalizer | 所选 Case | 每 Attempt 一次 | 每窗口一次 |
 
 build 与 start 是两件事。
@@ -117,7 +122,7 @@ Fixture 也不是安装。
 ```text
 声明与规划
   -> 选择 P[p] / E[p] / D / Provider neutral Case
-  -> build or locate selected artifact
+  -> build or locate every artifact referenced by selected Case
   -> start full Sandbox Case
   -> wait services/resources ready
   -> X[] check
@@ -128,7 +133,8 @@ Fixture 也不是安装。
   -> W: Eval setup and Fixture
   -> A: check/prepare/install/recheck
   -> recheck X[] after state and Agent mutations
-  -> Agent turn and scoring
+  -> all Agent turns complete
+  -> V: mount hidden verifier, score, then cleanup
   -> Eval and Agent paired teardown
   -> S.save
   -> Case finalizer and Sandbox stop
@@ -147,14 +153,16 @@ Agent Ensure 后的屏障只重新检查 `X[]`。
 
 ```text
 window open
-  -> select/build/start one Case
+  -> consume Run-level locators and start one Case
   -> first Attempt:
        X[] check/install/full recheck
        -> S.load once
        -> baseline + W
        -> A Ensure
        -> X[] cross-owner barrier
-       -> Agent turn
+       -> all Agent turns complete
+       -> V + scoring + V cleanup
+       -> Eval and Agent teardown
 
 later Attempt
   -> ensureLifetime
@@ -164,10 +172,11 @@ later Attempt
   -> rebuild W
   -> A Ensure again
   -> X[] cross-owner barrier again
-  -> Agent turn
+  -> all Agent turns complete
+  -> V + scoring + V cleanup
+  -> Eval and Agent teardown
 
 window close
-  -> finish paired Eval and Agent teardown
   -> S.save once
   -> Case finalizer and Sandbox stop
 ```
@@ -181,20 +190,25 @@ Addon 和 AgentProvisioner 每 Attempt 都重新检查;前一次安装通常只�
 `$HOME`、系统目录、后台进程与外部状态可以跨 reset 存续。
 依赖单份有序状态时,Experiment 还要把并发限制为一条窗口。
 
+`V` 仍位于 Eval `test(t)` 内,cleanup 由作者自行用 `try/finally` 实现。
+本候选没有受管 cleanup 注册或独立活动,Runner 不能保证 workdir 外路径、mount 与进程已经清除,也不能因 cleanup 失败自动退休窗口。
+
 ## C1-C10 的 Base 选择
 
-| Case | PLAN-3 选中的 Case/template | start 后发生什么 | 结论 |
+`△` 表示路径存在但缺少共同验收,`∅` 表示本方案没有对应声明入口。
+
+| Case | 状态 | PLAN-3 选中的 Case/template | start 后发生什么 |
 |---|---|---|---|
-| C1 评估环境较重 | `P[p]` 或 materialized `E[p]`;`D` 让位 | Case ready;`X[]` 与 `A` 在主 Sandbox 中收敛 | 覆盖 |
-| C2 实验环境较重 | 无 Eval environment 时选 `D` 或中性 Case | 每条 fresh Attempt 检查并安装 `X[]` | 覆盖 |
-| C3 双方都较重 | `E[p]`;Experiment 不能另带 Base | 离线 payload 由 Addon prepare,再上传、安装和复检 | 覆盖可安装实验条件 |
-| C4 组合多个条件 | Base 沿 C1-C3;数量不改变选择 | `X[]` 按依赖与资源图调度 | 覆盖 |
-| C5 预装稳定条件 | Eval 预装用 `P[p]`;普通预装可在 `D` | Addon 与 Agent 仍真实检查,命中时跳过安装 | 覆盖 |
-| C6 新 Sandbox 外部状态 | Base 沿 C1-C5 | `X[] -> S.load -> W -> A`;收尾 `S.save` | 部分覆盖,状态早于 Agent |
-| C7 复用活状态 | 每窗口选择一个 CaseKey | `S` 每窗口 load/save;`X[]` 与 `A` 每 Attempt 检查 | 覆盖 |
-| C8 Experiment 条件基底 | 只能把 template 写成普通 `D` | 无 Eval Base 时可以启动,但没有 Experiment Base 身份 | 不覆盖 |
-| C9 双方不可叠加 Base | 只有 `E[p]`;Experiment Base 为 `×` | 只能尝试 Addon Ensure,不能声明精确融合 Case | 不覆盖 |
-| C10 混合批次 | 有 Eval Case 的选 `E[p]`;其余选 `D` | `X[]` 同样应用于两组 | 只覆盖无条件基底分支 |
+| C1 评估环境较重 | △ | `P[p]` 或 materialized `E[p]`;`D` 让位 | Case ready,但 Agent 后不重验完整 Eval Case |
+| C2 实验环境较重 | △ | 无 Eval environment 时选 `D` 或中性 Case | 安装 `X[]`,最终只有 Addon 屏障 |
+| C3 双方都较重 | △ | `E[p]`;Experiment 不能另带 Base | Addon 离线安装,但 Agent 后不重验 Eval Case |
+| C4 组合多个条件 | △ | Base 沿 C1-C3;数量不改变选择 | `X[]` 有调度图,但缺三方最终屏障 |
+| C5 预装稳定条件 | △ | Eval 预装用 `P[p]`;普通预装可在 `D` | Addon 与 Agent 检查,但不重验完整 Eval Case |
+| C6 新 Sandbox 外部状态 | △ | Base 沿 C1-C5 | `X[] -> S.load -> W -> A`;状态早于 Agent |
+| C7 复用活状态 | △ | 每窗口选择一个 CaseKey | `S` 每窗口 load/save;缺三方最终屏障 |
+| C8 Experiment 条件基底 | ∅ | 只能把 template 写成普通 `D` | 没有 Experiment Base 身份 |
+| C9 双方不可叠加 Base | ∅ | 只有 `E[p]`;Experiment Base 为 `×` | 不能声明精确融合 Case |
+| C10 混合批次 | △ | 有 Eval Case 的选 `E[p]`;其余选 `D` | 只覆盖无条件基底分支 |
 
 ### C8 与 C9 的能力边界
 

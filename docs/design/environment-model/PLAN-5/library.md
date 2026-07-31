@@ -1,6 +1,6 @@
 # PLAN-5 —— Library 候选形状
 
-**相关文档**:[方案](README.md) · [Architecture](architecture.md) · [Use Cases](use-case/README.md) · [CASES](../CASES.md)
+**相关文档**:[方案](README.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [CASES](../CASES.md)
 
 本篇定义推荐方案的候选声明面。
 它不是已定稿 Feature API,但公开形状完整表达默认 case、条件基底、Requirement 集合与两层不兼容结果。
@@ -10,11 +10,11 @@
 | 所有者 | 入口 | 产物 |
 |---|---|---|
 | Eval | `composeSandbox()`、`defineEvalEnvironment()` 与题目 helper | Eval `EnvironmentContribution` |
-| Experiment | `defineExperimentEnvironment()` | Experiment `EnvironmentContribution` 与融合 cases 表 |
-| Agent | Adapter 工厂 | `AgentProvisioner` |
+| Experiment | `defineExperimentEnvironment()` 与可选 `defineExperimentState()` | Experiment `EnvironmentContribution`、融合 cases 表与独立状态生命周期 |
+| Agent | Adapter 工厂 | `AgentEnvironmentContribution` |
 
 Eval 与 Experiment contribution 参与 Base Case 选择。
-AgentProvisioner 不提供 Base,也不实现通用 Requirement 接口。
+Agent contribution 不提供 Base,也不实现通用 Requirement 接口。
 
 ## Requirement
 
@@ -119,17 +119,127 @@ interface EnvironmentContribution {
   readonly requirements: readonly EnvironmentRequirement[];
   readonly base?: SandboxCaseSource;
 }
+
+interface EvalEnvironmentContribution extends EnvironmentContribution {
+  readonly profile?: string;
+}
+
+interface ExperimentEnvironmentContribution extends EnvironmentContribution {
+  readonly cases?: Readonly<Record<string, SandboxCaseSource>>;
+}
 ```
 
-`requirements` 省略或空数组表示该所有者没有额外环境事实。
+`requirements` 为空数组表示该所有者没有额外环境事实。
 集合参与哈希前按成员 `name` 排序。
 数组位置不表达依赖、安装顺序或优先级。
 
-`base` 是与同点 Requirement 集合绑定的条件基底。
-它表示该完整 Sandbox Case 预期满足集合内每个成员,但启动后所有成员仍执行 `verify`。
+Eval 的 `base` 是题目 Base。
+Experiment 的 `base` 是与同点 Requirement 集合绑定的条件基底。
+它们都表示完整 Sandbox Case 预期满足所属成员,但启动后所有成员仍执行 `verify`。
 
 一个 contribution 只能提供一个 Base。
-需要按 Eval profile 提供多个融合 case 时,使用 Experiment 的 `cases` 表。
+需要按 Eval profile 提供多个融合 case 时,使用 Experiment contribution 的 `cases` 表。
+AgentProvisioner 没有这两个字段,不能贡献 Base 或融合表项。
+
+## Experiment 状态保持独立
+
+外部实验状态既不是 Requirement install,也不是早期 `SandboxSpec.setup()`。
+PLAN-5 为需要在 Agent CLI 就位后载入的状态保留独立相位:
+
+```typescript
+interface StateCheckpoint {
+  readonly identity: JsonValue;
+  readonly digest?: string;
+  readonly facts: Readonly<Record<string, JsonValue>>;
+}
+
+interface ExperimentStateContext {
+  readonly phase: "load" | "save";
+  readonly experimentId: string;
+  readonly windowId: string;
+  readonly sandboxCase: RunningSandboxCase;
+  readonly sandbox: Sandbox;
+  readonly deadline: Deadline;
+  readonly signal: AbortSignal;
+}
+
+type StateConsistency =
+  | { readonly mode: "pinned"; readonly revision: string }
+  | { readonly mode: "rolling" };
+
+type StateSavePolicy =
+  | "after-load"
+  | "attempt-succeeded";
+
+interface ExperimentStateLifecycle {
+  readonly identity: JsonValue;
+  readonly consistency: StateConsistency;
+  readonly saveOn: StateSavePolicy;
+
+  load(ctx: ExperimentStateContext): Promise<StateCheckpoint>;
+  save(ctx: ExperimentStateContext): Promise<StateCheckpoint>;
+}
+```
+
+`identity` 必须包含 store、cohort 与 schema。
+`consistency: { mode: "pinned", revision }` 固定输入 checkpoint;revision 进入 configHash,load 不匹配时失败。
+`consistency: { mode: "rolling" }` 明确允许状态沿序列演化,并关闭该 Experiment 的结果携带。
+
+`saveOn` 显式决定 load 成功后的失败 Attempt 是否提交状态:
+
+| 值 | save 条件 |
+|---|---|
+| `after-load` | 只要 load 成功,后续 Fixture、runtime、Agent turn、verifier、scoring 或 teardown 失败也在 outer-finally 尝试 save |
+| `attempt-succeeded` | 仅用于 fresh;本 Attempt 的 Agent turn、verifier、scoring、`V` cleanup 与 `A-R` teardown 全部成功才 save |
+
+两种策略都在 `V` cleanup 失败时跳过 save,避免隐藏材料进入 checkpoint。
+Provider 硬丢实例时 save 记为 `unavailable`,不是假装成功。
+Eval teardown 位于 fresh save 之后,仍沿既有规则只追加诊断,不反改已经提交的 checkpoint。
+`sandboxReuse: true` 必须配 `saveOn: "after-load"`。
+复用窗口没有逐 Attempt 状态回滚,不能承诺丢弃失败 Attempt 已经写入的活状态。
+
+`load()` 返回实际载入的 checkpoint identity、digest 与中性事实;`save()` 返回成功提交的新 checkpoint。
+save 使用独立 cleanup deadline 与 signal,不会复用已经超时或取消的 Attempt signal。
+
+后继 checkpoint 规则固定如下:
+
+| consistency | 首次 load | fresh 下一 Attempt | reuse 窗口轮换 |
+|---|---|---|---|
+| `pinned(revision)` | 读取并核对固定 revision | 仍读取同一固定 revision;本次 save 只作输出,不成为后继 | 新窗口仍从固定 revision 开始;需要连续演化时不能选 pinned |
+| `rolling` | 读取 store 当前已提交 head | 必须读取上一条成功 save 的 checkpoint | 旧窗口 save 成功后,新窗口必须 load 该 checkpoint |
+
+`rolling` 同一 cohort 的 load → save 临界区必须串行,因此要求 `maxConcurrency: 1`。
+save 失败后没有合法后继,Runner 停止继续派发该状态序列。
+fresh 的 `attempt-succeeded` 主动跳过 save 时,head 保持在本次 load 的 predecessor。
+后续 `rolling` Attempt 从该 head 重新 load,不会继承失败 Attempt 的活状态。
+因 load 失败、`V` cleanup 失败、save 失败或 transfer unavailable 形成的缺口不是主动策略,状态序列停止。
+
+```typescript
+export default defineExperiment({
+  environment: defineExperimentEnvironment({
+    requirements: [mempalRequirement(MEMPAL_CONFIG)],
+  }),
+  state: defineExperimentState({
+    identity: {
+      store: "mempal",
+      cohort: MEMPAL_COHORT,
+      schema: 2,
+    },
+    consistency: { mode: "rolling" },
+    saveOn: "after-load",
+    load: (ctx) => mempalLoad(ctx),
+    save: (ctx) => mempalSave(ctx),
+  }),
+  sandbox: e2bSandbox({ template: "base-node-22" }),
+  agent: codexAgent(),
+  sandboxReuse: true,
+  maxConcurrency: 1,
+});
+```
+
+不复用时每条 Attempt 各执行一次 load/save。
+复用时每个 Sandbox window 各执行一次,中间 Attempt 直接观察同一份活状态。
+Nowledge 的 nmem attach、远端能力探测等环境条件仍属于 Experiment Requirement;只有 checkpoint load/save 进入这套状态接口。
 
 ## Eval contribution
 
@@ -137,9 +247,10 @@ interface EnvironmentContribution {
 
 ```typescript
 export default defineEval({
-  environment: composeSandbox({
-    file: new URL("docker-compose.yaml", import.meta.url),
-    mainService: "client",
+  environment: defineEvalEnvironment({
+    base: tbComposeEnvironment("simple-sheets-put", {
+      mainService: "client",
+    }),
     requirements: [
       composeServicesRequirement({
         profile: "terminal-bench/sheets",
@@ -156,7 +267,9 @@ export default defineEval({
 });
 ```
 
-`composeSandbox()` 产生 Eval Base 与 Requirement 集合。
+`tbComposeEnvironment()` 返回完整 Compose Base。
+真实 helper 填入 `T_BENCH_*` image、container、`TEST_DIR` 与日志路径插值,并固定 `build: "on-demand"`、`executionUser: "image"`。
+随机 container name 与宿主日志目录只作为 materialization facts;helper revision 与变量键集合进入 CaseKey,动态值不进入 BuildKey 或 CaseKey。
 Compose 的 services、网络、volume、ready 条件、主 Sandbox 与资源组继续归完整 Sandbox Case。
 
 Eval 也可以只贡献可移植 Ensure:
@@ -177,6 +290,92 @@ export default defineEval({
 
 该 Eval 没有 Base。
 Runner 在条件基底、默认 case 或 Provider 中性 case 上验证并补齐这些成员。
+
+## turn 后隐藏 verifier Fixture
+
+`EvalDef.setup/teardown` 继续承载 turn 前可见的 `W`。
+workdir 外隐藏测试、mount、进程与临时凭据使用单独的受管 `V`,不能只依赖普通 teardown:
+
+```typescript
+interface HiddenVerifierCleanupContext {
+  readonly sandboxCase: RunningSandboxCase;
+  readonly sandbox: Sandbox;
+  readonly deadline: Deadline;
+  readonly signal: AbortSignal;
+}
+
+interface HiddenVerifierMaterializeContext
+  extends HiddenVerifierCleanupContext {
+  onCleanup(
+    name: string,
+    cleanup: (ctx: HiddenVerifierCleanupContext) => Promise<void>,
+  ): void;
+}
+
+interface HiddenVerifierFixture {
+  readonly identity: JsonValue;
+  materialize(ctx: HiddenVerifierMaterializeContext): Promise<void>;
+}
+
+interface HiddenVerifierController {
+  using<T>(
+    fixture: HiddenVerifierFixture,
+    evaluate: (ctx: HiddenVerifierCleanupContext) => Promise<T>,
+  ): Promise<T>;
+}
+```
+
+`t.verifier.using()` 只能在最后一次 Agent turn 返回后进入。
+一旦进入,该 Eval 的 `send/reply` 面永久关闭;Runner 先 materialize,再执行 evaluate,最后在 `finally` 中按 LIFO 运行全部 cleanup。
+每个外部副作用必须在取得资源前先 `onCleanup`;这样 materialize 中途失败也有可执行的收尾栈。
+
+Terminal-Bench 可以把现有搬运与判分改成:
+
+```typescript
+const officialTests = defineHiddenVerifierFixture({
+  identity: {
+    kind: "terminal-bench-official-tests",
+    taskId: "simple-sheets-put",
+    revision: 1,
+  },
+  async materialize(ctx) {
+    ctx.onCleanup("official-tests", async ({ sandbox }) => {
+      await sandbox.runShell(
+        `rm -rf /tests ${JSON.stringify(`${sandbox.workdir}/tests`)}`,
+        { root: true },
+      );
+    });
+    await mountOfficialTests(ctx.sandbox, "simple-sheets-put");
+  },
+});
+
+export default defineEval({
+  environment: defineEvalEnvironment({
+    base: tbComposeEnvironment("simple-sheets-put", {
+      mainService: "client",
+    }),
+    requirements: [
+      composeServicesRequirement({
+        profile: "terminal-bench/sheets",
+        composeDigest: COMPOSE_SHA256,
+      }),
+    ],
+  }),
+  async test(t) {
+    await t.send(TASK);
+    await t.verifier.using(officialTests, async ({ sandbox }) => {
+      t.check(
+        await runOfficialTests(sandbox, { timeoutSec: 600 }),
+        commandSucceeded(),
+      );
+    });
+  },
+});
+```
+
+判据文件仍由 `loadCriteria` 一类 loader 登记内容指纹。
+`HiddenVerifierFixture.identity` 只描述 materialize / cleanup 配方。
+cleanup 失败把 Attempt 改为 `errored`,跳过 state save、退休复用窗口并停止依赖该状态的序列;这条语义不同于只追加诊断的普通 `EvalDef.teardown`。
 
 ## Experiment Requirement 集合
 
@@ -246,11 +445,14 @@ export default defineExperiment({
   environment: defineExperimentEnvironment({
     requirements: [mempalRequirement(MEMPAL_CONFIG)],
   }),
-  sandbox: e2bSandbox({
-    template: "base-node-22",
+  sandbox: dockerSandbox({
+    image: "node:22",
     environments: {
-      "terminal-bench/sheets": {
-        template: "acme/tb-sheets-v5",
+      "service/python-api": {
+        compose: {
+          file: "environments/python-api.compose.yaml",
+          mainService: "client",
+        },
       },
     },
   }),
@@ -265,6 +467,13 @@ export default defineExperiment({
 默认 case 与 `environments` 表可以共存。
 命中表项的 Eval 使用表项,没有题目 Base 的 Eval 使用普通默认 case。
 
+表值必须是完整 Provider-native Case。
+上例是 Docker 原生 `{ compose }` 表值,不是中性的 `ComposeSandboxSource`。
+Terminal-Bench 的真实 `tbComposeEnvironment()` 应留在 Eval contribution,不能直接放进这个表。
+若同一 profile 需要中央覆盖,适配层必须产出当前 Provider 的原生 case。
+这个 case 仍须兑现 `T_BENCH_*` 插值、按需 build、image user 与完整服务组。
+不能用单 Sandbox template 名或只给一个 Compose 路径,冒充可启动的三服务 Case。
+
 ## 融合 cases 表
 
 Eval Base 与条件基底同时存在时,Experiment 必须按 profile 提供已经融合双方条件的完整 case:
@@ -277,19 +486,34 @@ export default defineExperiment({
       mempalRequirement(MEMPAL_CONFIG),
     ],
     base: {
-      template: "acme/mempal-runtime-v5",
+      image: "ghcr.io/acme/mempal-runtime:v5",
     },
     cases: {
       "terminal-bench/sheets": {
-        template: "acme/tb-sheets-mempal-v5",
+        compose: {
+          file: "environments/tb-sheets-mempal.compose.yaml",
+          mainService: "client",
+          build: "on-demand",
+          executionUser: "image",
+          env: harborComposeEnv("simple-sheets-put"),
+        },
       },
       "terminal-bench/postgres": {
-        template: "acme/tb-postgres-mempal-v3",
+        compose: {
+          file: "environments/tb-postgres-mempal.compose.yaml",
+          mainService: "client",
+          build: "on-demand",
+          executionUser: "image",
+          env: harborComposeEnv("postgres"),
+        },
       },
     },
   }),
-  sandbox: e2bSandbox({
-    template: "base-node-22",
+  sandbox: dockerSandbox({
+    image: "node:22",
+    materializers: {
+      compose: dockerComposeMaterializer(),
+    },
   }),
   agent: codexAgent(),
 });
@@ -298,6 +522,7 @@ export default defineExperiment({
 `cases` 第一版只接受精确 profile key。
 表值是完整 Sandbox Case,不是 Runner 要继续拼接的局部配置。
 它替代双方 Base,不删除双方 Requirement 集合。
+Compose 融合表项仍要保留变量插值、按需 build、image user、每项服务、ready、network、资源组与 finalizer;这里只是改用一份已经融合实验条件的 Compose 定义。
 
 `environments` 与融合 `cases` 同时命中一个 profile 时,选择融合表项。
 融合表项预期满足 Eval 与 Experiment 两侧,而 `environments` 表项只预期满足 Eval。
@@ -342,9 +567,14 @@ Provider 不支持合法 Sandbox source kind 属于计划期 `skipped`。
 重复名称、依赖环、profile 缺项与双 Base 缺融合 case 属于启动期配置错误。
 verify 后无法收敛属于运行期不兼容。
 
-## AgentProvisioner 保持独立
+## Agent 的安装与 runtime 保持两段
 
 ```typescript
+interface AgentEnvironmentContribution {
+  readonly provisioner: AgentProvisioner;
+  readonly runtime: AgentRuntimeLifecycle;
+}
+
 interface AgentProvisioner {
   readonly identity: JsonValue;
   readonly resources: readonly string[];
@@ -357,28 +587,152 @@ interface AgentProvisioner {
     payload?: PreparedAgentPayload,
   ): Promise<void>;
 }
+
+interface AgentRuntimeCheck {
+  readonly satisfied: boolean;
+  readonly actualIdentity?: JsonValue;
+  readonly reason?: string;
+  readonly facts: Readonly<Record<string, JsonValue>>;
+}
+
+interface AgentRuntimeLifecycle {
+  readonly identity: JsonValue;
+
+  setup(ctx: AgentRuntimeContext): Promise<void>;
+  verify(ctx: AgentRuntimeContext): Promise<AgentRuntimeCheck>;
+  teardown(ctx: AgentRuntimeContext): Promise<void>;
+}
 ```
 
 AgentProvisioner 继续拥有目标平台探测、staged payload、安装模式、Agent 启动条件和逐 Attempt 安装事实。
 它可以复用 single-flight、deadline 与资源互斥设施,但不会进入 `requirements` 数组或 Base Case 竞争。
 
+Agent runtime identity 包含非敏感的鉴权引用名、配置 digest、Plugin / Skill 来源与 ref、MCP 声明。
+setup 后必须真实 verify;最终屏障再次运行 AgentProvisioner check 与 runtime verify。
+因此 CLI 存在但 Plugin、Skill、MCP 或配置静默失败时,Agent turn 不会开始。
+
 ## 运行事实
 
 ```typescript
-interface RequirementActivity {
-  readonly owner: "eval" | "experiment" | "agent";
+interface EnvironmentRequirementActivity {
+  readonly owner: "eval" | "experiment";
   readonly name: string;
   readonly targetIdentity: JsonValue;
   readonly actualIdentity?: JsonValue;
   readonly targetPlatform: TargetPlatform;
-  readonly initialCheck: RequirementCheck;
+  readonly outcome: "succeeded" | "failed" | "blocked";
+  readonly terminatedAt:
+    | "initial-verify"
+    | "prepare"
+    | "install"
+    | "recheck"
+    | "full-barrier"
+    | "final-barrier"
+    | "completed";
+  readonly initialCheck?: RequirementCheck;
   readonly preparedPayload?: {
     readonly identity: JsonValue;
     readonly digest: string;
   };
-  readonly installed: boolean;
+  readonly installed?: boolean;
   readonly recheck?: RequirementCheck;
-  readonly finalCheck: RequirementCheck;
+  readonly fullBarrierCheck?: RequirementCheck;
+  readonly finalCheck?: RequirementCheck;
+  readonly error?: string;
+  readonly durationMs: number;
+}
+
+interface AgentEnsureActivity {
+  readonly provisionerIdentity: JsonValue;
+  readonly runtimeIdentity: JsonValue;
+  readonly outcome: "succeeded" | "failed";
+  readonly terminatedAt:
+    | "provisioner-check"
+    | "provisioner-prepare"
+    | "provisioner-install"
+    | "provisioner-recheck"
+    | "runtime-setup"
+    | "runtime-verify"
+    | "final-barrier"
+    | "completed";
+  readonly initialProvisionerCheck?: AgentCheck;
+  readonly installed?: boolean;
+  readonly provisionerRecheck?: AgentCheck;
+  readonly runtimeEntered: boolean;
+  readonly runtimeCheck?: AgentRuntimeCheck;
+  readonly finalProvisionerCheck?: AgentCheck;
+  readonly finalRuntimeCheck?: AgentRuntimeCheck;
+  readonly runtimeTeardown?: {
+    readonly outcome: "succeeded" | "failed";
+    readonly error?: string;
+  };
+  readonly error?: string;
+  readonly durationMs: number;
+}
+
+type StateTransferError = {
+  readonly code: string;
+  readonly message: string;
+  readonly data?: Readonly<Record<string, JsonValue>>;
+};
+
+type StateTransferActivity =
+  | {
+      readonly phase: "load" | "save";
+      readonly outcome: "succeeded";
+      readonly checkpoint: StateCheckpoint;
+      readonly durationMs: number;
+    }
+  | {
+      readonly phase: "load" | "save";
+      readonly outcome: "failed";
+      readonly error: StateTransferError;
+      readonly durationMs: number;
+    }
+  | {
+      readonly phase: "save";
+      readonly outcome: "skipped";
+      readonly reason:
+        | "load-failed"
+        | "save-policy"
+        | "verifier-cleanup-failed";
+      readonly durationMs: 0;
+    }
+  | {
+      readonly phase: "load" | "save";
+      readonly outcome: "unavailable";
+      readonly reason: "sandbox-lost" | "provider-unreachable";
+      readonly error?: {
+        readonly code: string;
+        readonly message: string;
+        readonly data?: Readonly<Record<string, JsonValue>>;
+      };
+      readonly durationMs: number;
+    };
+
+interface ExperimentStateActivity {
+  readonly declaredIdentity: JsonValue;
+  readonly consistency: StateConsistency;
+  readonly saveOn: StateSavePolicy;
+  readonly windowId: string;
+  readonly load: StateTransferActivity;
+  readonly save: StateTransferActivity;
+}
+
+interface HiddenVerifierActivity {
+  readonly fixtureIdentity: JsonValue;
+  readonly outcome: "succeeded" | "failed";
+  readonly terminatedAt:
+    | "materialize"
+    | "evaluate"
+    | "cleanup"
+    | "completed";
+  readonly cleanup: readonly {
+    readonly name: string;
+    readonly outcome: "succeeded" | "failed" | "unavailable";
+    readonly error?: string;
+  }[];
+  readonly error?: string;
   readonly durationMs: number;
 }
 ```
@@ -386,3 +740,5 @@ interface RequirementActivity {
 实际事实与活动进入 Attempt 记录。
 它们解释本次检查和安装,不成为下一次运行跳过 verify 的依据。
 复用 Sandbox 时每条 Attempt 仍产生自己的检查与最终屏障活动。
+状态活动按 fresh Attempt 或复用 window 记录,不会伪装成每条复用 Attempt 都重新 load/save。
+隐藏 verifier 活动只保存 identity、阶段与 cleanup 结果,不落盘判分材料正文。

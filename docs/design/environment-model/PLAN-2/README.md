@@ -1,6 +1,6 @@
 # PLAN-2:单 template 与统一 Layer(不推荐)
 
-**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
+**相关文档**：[决策主题](../README.md) · [GOALS](../GOALS.md) · [LIMITS](../LIMITS.md) · [CASES](../CASES.md) · [Library](library.md) · [Architecture](architecture.md) · [Lifecycle](lifecycle.md) · [Use Cases](use-case/README.md) · [DECISION](../DECISION.md)
 
 ## 方案摘要
 
@@ -14,6 +14,7 @@ template 可以是 image、E2B template、snapshot，或候选模型试图从 Co
 
 公开调用只见 [Library](library.md)。
 template 解析、Layer 执行、身份和失败语义只见 [Architecture](architecture.md)。
+[Lifecycle](lifecycle.md)按 owner 展开单 template 选择、build / start / install / Fixture 以及 fresh / reuse 的执行频次。
 
 ## 核心取舍
 
@@ -42,8 +43,8 @@ Eval environment、Experiment 单 template 和按 profile 的 `templates` 表竞
 
 [十个 Case 的逐项矩阵](use-case/README.md)显示：
 
-- C6 可以继续使用既有 Sandbox 状态 Hook，不需要把状态伪装成 Layer。
-- C1、C2、C3、C4、C5、C7、C8、C9 只能覆盖部分路径。
+- C6 可以继续使用既有 Sandbox 状态 Hook,不需要把状态伪装成 Layer,但 Hook 后没有三方真实最终屏障。
+- C1 到 C9 都只能覆盖部分路径。
 - C10 的普通默认起点会与自带 environment 的 Eval 形成双 template 冲突，不能满足验收条件。
 
 ## 对照 GOALS
