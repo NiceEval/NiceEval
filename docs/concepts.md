@@ -96,9 +96,11 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Environment | Environment | Eval 声明的题目环境来源,例如 Compose 文件或具名 profile;不选择 Provider | [环境模型 PLAN-3](design/environment-model/PLAN-3.md#题目环境继续使用完整-sandbox-case) |
-| Addon | Addon | Experiment 希望在主 Sandbox 中成立的一项有身份、可检查的工具状态 | [环境模型 PLAN-3](design/environment-model/PLAN-3.md#addonexperiment-工具的低成本协议) |
-| 安装资源 | Installation Resource | Addon 安装时需要独占的共享资源,供调度器互斥冲突项 | [环境模型 PLAN-3](design/environment-model/PLAN-3.md#调度默认串行安全部分并行) |
+| Environment | Environment | Eval 声明的题目环境来源,例如 Compose 文件或具名 profile;不选择 Provider | [环境模型 PLAN-4](design/environment-model/PLAN-4.md) |
+| Requirement | Requirement | Eval、Experiment 或 Agent 声明的一份必须在最终环境中成立的可验证事实 | [环境模型 PLAN-4](design/environment-model/PLAN-4.md) |
+| Base Case | Base Case | 一条 Attempt 唯一选择的完整 Sandbox Case 启动基底 | [环境模型 PLAN-4](design/environment-model/PLAN-4.md#四种普通组合) |
+| Ensure | Ensure | 在选定 Base Case 上检查 Requirement,未命中时准备、安装并复检的收敛路径 | [环境模型 PLAN-4](design/environment-model/PLAN-4.md#ensure-调度) |
+| 安装资源 | Installation Resource | Ensure 安装时需要独占的共享资源,供调度器互斥冲突项 | [环境模型 PLAN-4](design/environment-model/PLAN-4.md#ensure-调度) |
 
 ### Sandbox 复用
 

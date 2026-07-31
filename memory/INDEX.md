@@ -13,7 +13,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
-- [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provisioner.md) — 翻案裁决(2026-07-31 最终):环境模型采用完整 Sandbox Case + Experiment Addon + 独立 AgentProvisioner;Addon 实际检查并复检,默认串行,按资源互斥与依赖 DAG 安全并行;manifest 只作检查 cache;声明身份进 configHash,目标环境解析身份进逐 Eval fingerprint
+- [requirements-base-case-ensure](requirements-base-case-ensure.md) — 翻案裁决(2026-07-31 最终):环境模型采用 Eval/Experiment/Agent 三份 Requirement + 单 Attempt 唯一 Base Case + Ensure;Eval 与 Experiment 均可提供 Base 或 Ensure,双 Base 必须按 Eval profile 提供融合 case;多 case 按 Eval 选择,Base 不跳过实际 check
+- 被后续裁决替代 [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provisioner.md) — 翻案裁决(2026-07-31 三次):曾采用完整 Sandbox Case + Experiment Addon + 独立 AgentProvisioner;因只表达 Eval Base + Experiment Ensure 的单向组合而被 PLAN-4 包含
 - 被后续裁决替代 [template-layer-supersedes-environment-provision](template-layer-supersedes-environment-provision.md) — 翻案裁决(2026-07-31 二次):曾选择单 template 槽位 + 统一 Layer 并行安装;因无法表达完整 Sandbox Case、manifest 不能证明实际状态、Agent Ensure 义务丢失和跨所有者安装冲突而被推翻
 - 被后续裁决替代 [environment-provision-replaces-materializer-layer](environment-provision-replaces-materializer-layer.md) — 翻案裁决(2026-07-31):公开模型重构为 Eval Environment、Sandbox、Experiment Provision 与 Fixture;Provider 内建 Environment kind 支持,删除普通用户 materializer 注册;Provision inspect 返回实际 identity,框架比较后 install;推翻双入口 materializer 与 Layer 公开模型
 - [env-cases-and-ensure-supersede-topology-middleware](env-cases-and-ensure-supersede-topology-middleware.md) — 裁决(2026-07-30):多容器环境与 Agent 安装双双改判为 PLAN-4(provider 完整 environment case + Ensure 协议),推翻拓扑表+导入器与构建中间件;原生能力最大化、不承诺跨 provider 迁移;缺键报错/缺能力 skipped、environments 与 materializers 双入口同批裁定

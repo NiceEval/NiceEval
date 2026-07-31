@@ -1,7 +1,8 @@
 # 单 template + 统一 Layer 取代 Environment / Provision 二分
 
 **已被后续裁决替代**:同日复审发现统一 Layer 会弱化真实检查、丢失完整 Sandbox Case 与 Agent Ensure 义务。
-最终选择完整 Sandbox Case + Experiment Addon + 独立 AgentProvisioner,见 [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provisioner.md)。
+后续先选择完整 Sandbox Case + Experiment Addon + 独立 AgentProvisioner,最终采用三份 Requirement + 唯一 Base Case + Ensure。
+最终裁决见 [requirements-base-case-ensure](requirements-base-case-ensure.md)。
 
 ## 当时的裁决
 

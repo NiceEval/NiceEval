@@ -1,33 +1,35 @@
-**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
 
 ---
 
 ## 目的
 
-决定 Eval 题目环境、Experiment 工具安装与 Agent 安装怎样组合。
-范围覆盖公开声明模型、身份归属、检查契约与安装调度。
+决定 Eval 题目环境、Experiment 实验条件与 Agent 运行条件怎样组合成最终 Sandbox。
+范围覆盖公开声明模型、基底选择、身份归属、检查契约与安装调度。
 跨 Attempt 状态复用见 [Experiment Speed](../experiment-speed/README.md),多容器运行义务见 [多容器环境](../multi-container-environments/README.md)。
 
 ## 设计原则
 
-- 用户给实验添加一个普通工具时,只承担该工具本身的身份、检查与安装逻辑。
+- Eval、Experiment 与 Agent 各自拥有一份要求;没有一方通过选择起点产物覆盖另一方的要求。
+- 每条 Attempt 只有一个 Base Case。多个可选 case 可以服务不同 Eval,但同一条 Attempt 不合并两个基底。
 - 相似的安装动作可以共享调度设施,但领域身份、生命周期、错误归属和运行事实不能因此合并。
 - 并行是可证明无冲突后的优化。未知安装单元按保守顺序执行,不把竞态风险交给作者发现。
 - 预制产物是检查命中的优化,不是跳过真实状态验证的依据。
 
 ## 需求
 
-1. 自带 Compose 或 Dockerfile 的 Eval 只声明题目环境与主执行空间,不注册普通 Provider 已经内建的转换器。
-2. Provider 可以按 environment profile 提供完整预制 Sandbox Case,替代现场构建而不改变 Eval。
-3. 给 Experiment 加一个工具只需声明一个 Addon;框架承担组合、调度、诊断与结果落盘。
-4. Addon 必须检查实际状态;安装后复检。受管 manifest 只能加速检查,不能代替检查。
-5. 用户不维护数组顺序。未知 Addon 默认串行;声明资源与依赖后,互不冲突的 Addon 自动并行。
-6. Agent 安装继续由 Adapter 的 AgentProvisioner 拥有;它可以复用安装资源调度器,但不伪装成普通 Addon。
-7. Sandbox Case、Addon 与 AgentProvisioner 的身份分别进入正确的逐 Eval fingerprint 或 Run 级 configHash,且都有可解释的落盘形状。
+1. 一次 Attempt 必须同时满足 Eval Requirement、Experiment Requirement 与 Agent Requirement。
+2. Eval 与 Experiment 都可以提供 Base Case,也可以提供在其它 Base Case 上收敛自身 Requirement 的 Ensure。
+3. Eval 与 Experiment 同时提供独立 Base Case 时不隐式决定优先级;配置必须显式提供融合 case,否则启动期报冲突。
+4. Experiment 可以按 Eval environment profile 声明多个融合 case。每条 Attempt 只选择一个,不同 Eval 可以选择不同 case。
+5. 只有一侧提供 Base Case 时,另一侧必须通过 Ensure 收敛;无法 Ensure 的组合在创建 Sandbox 前给出明确的不兼容结果。
+6. 三份 Requirement 都必须由运行事实验证。Sandbox Case 的 ready、能力与身份可以构成验证;安装后复检。预制产物名与受管 manifest 不能单独代替验证。
+7. 用户不维护安装数组顺序。未知安装默认串行;声明资源与依赖后,互不冲突的安装自动并行。
+8. 三份 Requirement、所选 Base Case 与解析后的 Ensure 身份进入正确的 configHash 或逐 Eval fingerprint,且都有可解释的落盘形状。
 
 ## 不是本 doc 的目标
 
 - 不改变 `sandboxReuse` 的语义与默认值。
-- 不统一 Fixture、状态 Hook、外部服务与 Sandbox 内工具安装。
+- 不统一 Fixture、状态 Hook 与外部服务。
 - 不重新定义多容器 case 的启动、就绪、证据、清理与留存义务。
 - 不建立跨 Provider 的安装步骤 DSL。

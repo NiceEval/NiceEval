@@ -1,16 +1,16 @@
-# 环境模型:完整 Sandbox Case 与可组合 Addon
+# 环境模型:三份 Requirement 与唯一 Base Case
 
-Eval 与 Experiment 都会影响 Sandbox 里有什么,但两者表达的不是同一类事实。
-Eval 声明题目环境;Experiment 选择 Provider,并可以补充本次实验需要的工具;Adapter 负责确保 Agent 可用。
+一次 Attempt 要同时满足三份要求:Eval 的题目环境、Experiment 的实验条件、Agent 的运行条件。
+前两份要求既可能自带启动基底,也可能在别人的基底上补齐;Agent 只在最终主 Sandbox 中检查并补齐。
 
 这个决策主题回答三个问题:
 
-- 怎样让自带 Compose 或 Dockerfile 的 Eval 保留完整题意,同时允许 Provider 使用预制产物替代现场构建。
-- 怎样让 Experiment 添加工具时只写一个低成本安装单元,不用手写 manifest 或维护隐式顺序。
-- 怎样复用安装调度能力,但不抹掉 Sandbox Case、实验工具与 Agent 安装各自的生命周期和身份边界。
+- 三份要求怎样归一成一个可验证的最终环境。
+- Eval 与 Experiment 都提供不可叠加的 image、template、snapshot 或 Compose case 时怎样显式解决冲突。
+- 一组 Eval 需要不同基底时,Experiment 怎样按 environment profile 选择已经融合实验条件的完整 case。
 
-候选项从「按来源拆协议」走到「把全部安装统一成 Layer」,最终选择中间路线:保留完整 Sandbox Case 与独立 Agent Ensure,只为 Experiment 工具建立 Addon 协议。
-Addon 默认串行;声明资源与依赖后,调度器在不冲突的部分并行。
+本主题保留完整 Sandbox Case 与 Agent Ensure 的领域义务,重新比较普通 Addon 与更一般的 Requirement + Base Case + Ensure 模型。
+Requirement 是内部组合语言;普通作者仍使用题目环境、实验工具与 Adapter 各自的领域 helper。
 
 **相关文档**:
 [GOALS](GOALS.md) ·
@@ -18,4 +18,5 @@ Addon 默认串行;声明资源与依赖后,调度器在不冲突的部分并行
 [PLAN-1](PLAN-1.md) ·
 [PLAN-2](PLAN-2.md) ·
 [PLAN-3](PLAN-3.md) ·
+[PLAN-4](PLAN-4.md) ·
 [DECISION](DECISION.md)

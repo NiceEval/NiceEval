@@ -1,8 +1,11 @@
 # 完整 Sandbox Case、Experiment Addon 与 AgentProvisioner 分工
 
+**已被后续裁决替代**:PLAN-4 把 Addon 保留为 Experiment Requirement helper,并允许 Eval 与 Experiment 任一侧提供 Base 或 Ensure。
+最终裁决见 [requirements-base-case-ensure](requirements-base-case-ensure.md)。
+
 ## 裁决
 
-2026-07-31,环境模型最终选择三个领域对象,定稿在 `docs/design/environment-model/` 的 PLAN-3 与 DECISION。
+2026-07-31,环境模型一度选择三个领域对象,当时定稿在 `docs/design/environment-model/` 的 PLAN-3。
 
 - Sandbox Case 负责题目环境、完整资源组、CaseKey、证据与清理。
 - Experiment Addon 负责实验工具的目标 identity、实际检查、安装与复检。

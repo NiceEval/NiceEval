@@ -1,7 +1,7 @@
 # Environment 与 Provision 取代 materializer 与 Layer
 
-**已被后续裁决替代**:同日先改为单 template + 统一 Layer,复审后最终采用完整 Sandbox Case + Experiment Addon + 独立 AgentProvisioner。
-最终裁决见 [sandbox-case-addon-agent-provisioner](sandbox-case-addon-agent-provisioner.md)。
+**已被后续裁决替代**:同日先后经过统一 Layer 与 Experiment Addon,最终采用三份 Requirement + 唯一 Base Case + Ensure。
+最终裁决见 [requirements-base-case-ensure](requirements-base-case-ensure.md)。
 
 ## 裁决
 

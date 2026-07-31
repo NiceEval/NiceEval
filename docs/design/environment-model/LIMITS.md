@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [PLAN-1](PLAN-1.md) · [PLAN-2](PLAN-2.md) · [PLAN-3](PLAN-3.md) · [PLAN-4](PLAN-4.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -14,6 +14,22 @@ Compose case 还包含多个 service、网络、volume、ready 条件、主执�
 
 因此统一不变量是「一条 Attempt 解析到一个完整 Sandbox Case」,不是「只有一个 template 槽位」。
 Provider 不能合并两个起点产物,但可以让 environment profile 映射到一个完整预制 case,替代 folder-local source 的现场 materialize。
+
+这条限制允许一次 Experiment 声明多个候选 case。
+候选项按 Eval environment profile 选择,所以一批异构 Eval 可以分别起自不同 template 或 Compose case;限制只要求单条 Attempt 最终选择一个。
+
+## 两个基底不能靠覆盖组合
+
+Eval 的 Compose case 可能携带题意,Experiment 的 template 可能预装昂贵工具。
+二者同时存在时,让任意一侧静默覆盖都会丢失另一侧的要求;Provider 也没有通用原语把两份完整 case 合并。
+
+可行路径只有三类:
+
+- 选择 Eval Base Case,在其中 Ensure Experiment Requirement。
+- 选择 Experiment Base Case,在其中 Ensure Eval Requirement。
+- 显式提供一个融合 case,声明它同时兑现两份 Requirement,并分别验证。
+
+融合 case 可以按 Eval profile 建表,但它是用户或构建系统已经组合好的完整 case,不是 Runner 在运行时合并两个 template。
 
 ## Sandbox Case 与 Agent Ensure 已有完整义务
 
@@ -44,7 +60,7 @@ apt、dpkg、npm global 等包管理器持全局锁或写共享目录。
 ## 身份分属两层
 
 Sandbox Case 与 Eval environment 属于逐 Eval 身份。
-Experiment Addon 的声明身份和 AgentProvisioner 属于整场实验配置,进入 Run 级 configHash。
-Addon 按目标环境选择出的平台与 payload digest 可能逐 Eval 不同,这部分解析身份进入逐 Eval fingerprint。
+Experiment Requirement 的声明身份和 AgentProvisioner 属于整场实验配置,进入 Run 级 configHash。
+Requirement 按目标环境选择出的平台与 payload digest 可能逐 Eval 不同,这部分解析身份进入逐 Eval fingerprint。
 
-同一个 Addon 若未来允许只挂某些 Eval,它的解析后选择必须进入对应逐 Eval fingerprint,不能让 configHash 按 Eval 分叉。
+同一个 Experiment Requirement 若只影响某些 Eval,它的解析后选择必须进入对应逐 Eval fingerprint,不能让 configHash 按 Eval 分叉。
