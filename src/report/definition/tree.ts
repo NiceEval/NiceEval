@@ -10,12 +10,10 @@
 // 可达百 MB 的 artifact 只在 page.render / faces.resolve 阶段被懒加载,永远不进渲染路径。
 
 import type { ReactNode } from "react";
-import type { AttemptLocator } from "../../record/locator.ts";
-import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
 import type { Record, Sample } from "../../record/types.ts";
 import { DEFAULT_REPORT_LOCALE, type ReportLocale } from "../model/locale.ts";
 import type { ReportInput } from "../model/types.ts";
-import type { ReportMeta } from "./report.ts";
+import type { ReportMeta, ReportTarget } from "./report.ts";
 import type { PanelMode, PanelRow } from "../model/panel.ts";
 import {
   allocatePageDimensions,
@@ -29,27 +27,18 @@ import {
 
 // ───────────────────────── 当前页判别(PageContext) ─────────────────────────
 
-/** sample-input page 的当前页上下文:消费宿主选择的 Sample,没有 locator/evidence。 */
-export interface SamplePageContext {
-  id: string;
-  input: "sample";
-}
-
-/** attempt-input page 的当前页上下文:按 locator 消费一份 AttemptEvidence。 */
-export interface AttemptPageContext {
-  id: string;
-  input: "attempt";
-  locator: AttemptLocator;
-  evidence: AttemptEvidence;
-}
-
 /**
- * 当前渲染中的页判别联合(docs/feature/reports/library/shell.md「行为约束」、
- * library/attempt-detail.md「page 输入与 spec / data 形态」)。经 ComposeContext.page 与
- * ResolveContext.page 双双可见:组合组件靠它读当前页 id 与输入分支;attempt 叶子组件靠它
- * 取省略 input 时的缺省 evidence。
+ * 当前渲染中的页上下文(docs/feature/reports/library/shell.md「行为约束」、
+ * docs/feature/reports/library.md「defineReport() 保留静态 page 边界」):结构化,不是按实体
+ * 种类判别的联合——`input` 是该页 `load`(或省略 load 时宿主选择的 Sample)产出的值,类型随
+ * 页而变。经 ComposeContext.page 与 ResolveContext.page 双双可见:组合组件靠它读当前页 id;
+ * 消费 attempt 证据的叶子组件对 `input` 做结构校验(参见 `isAttemptEvidence`),不查一个
+ * 实体名字段。
  */
-export type PageContext = SamplePageContext | AttemptPageContext;
+export interface PageContext {
+  id: string;
+  input: unknown;
+}
 
 // ───────────────────────── 节点形状 ─────────────────────────
 
@@ -103,11 +92,14 @@ export interface TextContext {
   /** 容器组件渲染 children 用,宽度显式传递。 */
   render(node: ReportNode, width?: number): string;
   /**
-   * 下钻命令,通 attempt-input page:`niceeval show @<locator>`。当前报告没有声明
-   * attempt-input page 时不存在——宿主不生成假命令,locator 只是文本(architecture.md
-   * 「Attempt 详情是一张参数化 page」)。
+   * 把一个下钻目标格式化成 text 宿主的下钻命令(library.md「目标与下钻」:「text 宿主没有
+   * 链接，把可服务的目标格式化成下钻命令」)。恒存在(不是可选方法——是否能服务某个目标
+   * 由每次调用的返回值回答);目标页不存在、参数编码失败,或宿主没有为该目标接通命令时
+   * 返回 `undefined`,组件把 target 携带的内容按纯文本呈现,不拼假命令。
+   * 与 `WebContext.href` 是同一条通道在两个渲染面各自的形态,签名同样只认 `ReportTarget`
+   * ——不认 locator,新实体注册新参数化页即可自动获得下钻命令,不需要改这个类型。
    */
-  attemptCommand?(locator: AttemptLocator): string;
+  command(target: ReportTarget): string | undefined;
   /**
    * 组索引一类「按实验收窄」命令的生成;宿主注入以携带完整上下文(--record / --report /
    * --page 与位置参数),默认 `niceeval show --exp <id>`。非契约字段,官方组件内部用。
@@ -134,11 +126,12 @@ export interface TextContext {
 
 export interface WebContext {
   /**
-   * attempt-input page 深链,同 view 的 attempt 路由(`#/attempt/@<locator>`,单段、不透明)。
-   * 当前报告没有声明 attempt-input page 时不存在——宿主不生成空 href 或假链接,locator 只是
-   * 文本(architecture.md「Attempt 详情是一张参数化 page」)。
+   * 下钻目标 → URL 的唯一通道(library.md「目标与下钻」)。恒存在:目标页存在且参数经该页
+   * `params.encode` 可编码就给出链接;页不存在、参数编码失败或宿主服务不了,返回
+   * `undefined`,组件退化成纯文本,不产出空 href 或假链接。组件对宿主能力零知识——
+   * view、静态导出、嵌入产品各自决定能服务哪些目标。
    */
-  attemptHref?(locator: AttemptLocator): string;
+  href(target: ReportTarget): string | undefined;
   /** chrome 文案的 locale;官方组件渲染面经上下文读取,宿主外默认 "en"。 */
   locale: ReportLocale;
   /**
@@ -354,9 +347,10 @@ export function collectPageDimensions(
 }
 
 // web 面的环境上下文:web 宿主渲染前设好;宿主之外(组件直接嵌进用户 React 应用)
-// 用默认值——没有 attemptHref,组件显式传 prop 才产生外部链接(architecture.md
-// 「Attempt 详情是一张参数化 page」:没有 target 时 locator 只是文本,不生成假 href)。
+// 用默认值——href 恒返回 undefined,组件退化成纯文本(library.md「目标与下钻」:
+// 组件对宿主能力零知识,服务不了就是 undefined,不生成假 href)。
 const DEFAULT_WEB_CONTEXT: WebContext = {
+  href: () => undefined,
   locale: DEFAULT_REPORT_LOCALE,
   dimension: (handle: string) => {
     throw noPlanError(handle);
@@ -767,8 +761,8 @@ export function validateReportTree(node: ReportNode, path: string[] = [], inside
 export interface TextRenderOptions {
   /** 终端可用列宽;默认 80。 */
   width?: number;
-  /** 下钻命令的生成;宿主注入,默认 `niceeval show @<locator>`(真实可跑的 CLI 语法)。 */
-  attemptCommand?: (locator: AttemptLocator) => string;
+  /** 下钻目标 → 命令的生成;宿主注入,省略时对任何目标都返回 `undefined`(不生成假命令)。 */
+  command?: (target: ReportTarget) => string | undefined;
   /** 组索引命令的生成;宿主注入以携带 --record / --report / --page 等上下文。 */
   experimentCommand?: (experimentIdPrefix: string) => string;
   /** chrome 文案的 locale;默认 "en"(`niceeval show` 现有输出不变)。 */
@@ -786,10 +780,10 @@ function shellQuote(value: string): string {
 export function createTextContext(options?: TextRenderOptions): TextContext {
   const width = Math.max(20, options?.width ?? 80);
   const locale = options?.locale ?? DEFAULT_REPORT_LOCALE;
-  // 没有默认值:当前报告没有声明 attempt-input page 时不存在下钻命令——宿主(report.ts /
-  // web.ts 的渲染入口)据规范化 definition 是否有 attempt page 决定要不要注入生成器,
-  // 这里只透传调用方给的值(architecture.md「Attempt 详情是一张参数化 page」)。
-  const attemptCommand = options?.attemptCommand;
+  // 没有默认值:command 恒存在,但省略时对任何目标都返回 undefined——宿主(resolved-page.ts /
+  // web.ts 的渲染入口)决定要不要注入一个真正能服务某些目标的生成器,这里只透传调用方给的值
+  // (library.md「目标与下钻」)。
+  const command = options?.command ?? (() => undefined);
   const experimentCommand =
     options?.experimentCommand ?? ((prefix: string) => `niceeval show --exp ${shellQuote(prefix)}`);
   const panelMode = options?.panelMode ?? "plain";
@@ -800,7 +794,7 @@ export function createTextContext(options?: TextRenderOptions): TextContext {
     const ctx: TextContext = {
       width: w,
       locale,
-      attemptCommand,
+      command,
       experimentCommand,
       panelMode,
       get sectionBoxedDepth() {

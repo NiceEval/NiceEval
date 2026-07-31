@@ -10,6 +10,7 @@ import {
 } from "../tree.ts";
 import { resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../model/locale.ts";
 import {
+  ATTEMPT_PAGE_ID,
   dataShapeError,
   isLocalizedText,
   isObject,
@@ -318,9 +319,10 @@ export function sourceViewText(data: SourceContent, ctx: TextContext, locale: Re
   if (data.unmapped && data.unmapped.length > 0) {
     lines.push(`unmapped: ${data.unmapped.length}`);
   }
-  if (data.locator !== undefined && ctx.attemptCommand) {
+  const command = data.locator !== undefined ? ctx.command({ page: ATTEMPT_PAGE_ID, params: { locator: data.locator } }) : undefined;
+  if (command !== undefined) {
     lines.push("");
-    lines.push(ctx.attemptCommand(data.locator));
+    lines.push(command);
   }
   return lines.join("\n");
 }

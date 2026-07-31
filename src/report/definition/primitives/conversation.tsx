@@ -3,6 +3,8 @@
 
 import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
+import { isAttemptEvidence } from "../../../record/attempt-evidence.ts";
+import { ATTEMPT_PAGE_ID } from "../../components/shared.ts";
 import { stripControl, summaryText } from "../../../scoring/display.ts";
 import {
   dataShapeError,
@@ -133,8 +135,9 @@ function isEmptyConversation(data: ConversationContent | null): boolean {
 }
 
 function attemptDrillDown(ctx: ResolveContext, flag: string): string | undefined {
-  if (ctx.page.input !== "attempt") return undefined;
-  return `niceeval show ${ctx.page.locator} ${flag}`;
+  const input = ctx.page.input;
+  if (!isAttemptEvidence(input)) return undefined;
+  return `niceeval show ${input.locator} ${flag}`;
 }
 
 function EntryRow({ entry, locale }: { entry: ConversationEntry; locale: ReportLocale }): ReactElement {
@@ -228,9 +231,9 @@ export function conversationText(
   drillDown?: string,
 ): string {
   const head = [`conversation: ${data.turns.length} round${data.turns.length === 1 ? "" : "s"}`];
-  const command =
-    drillDown ??
-    (data.locator !== undefined && ctx.attemptCommand ? `${ctx.attemptCommand(data.locator)} --execution` : undefined);
+  const baseCommand =
+    data.locator !== undefined ? ctx.command({ page: ATTEMPT_PAGE_ID, params: { locator: data.locator } }) : undefined;
+  const command = drillDown ?? (baseCommand !== undefined ? `${baseCommand} --execution` : undefined);
   if (command) head.push(command);
   const lines = [head.join(" · ")];
   for (const turn of data.turns) {

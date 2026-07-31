@@ -27,6 +27,7 @@ function el(type: string, props: globalThis.Record<string, unknown> = {}): Repor
 
 const webCtx: WebContext = {
   locale: "en",
+  href: () => undefined,
   dimension: () => {
     throw new UndeclaredDimensionValueError("unbound", "_");
   },

@@ -4,7 +4,8 @@
 
 import type { ReactElement, ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
-import { dataShapeError, isObject } from "../../components/shared.ts";
+import { isAttemptEvidence } from "../../../record/attempt-evidence.ts";
+import { ATTEMPT_PAGE_ID, dataShapeError, isObject } from "../../components/shared.ts";
 import { type ReportLocale } from "../../model/locale.ts";
 import { defineComponent, type ResolveContext, type TextContext } from "../tree.ts";
 import {
@@ -283,8 +284,9 @@ function TreeList({
 }
 
 function attemptDrillDown(ctx: ResolveContext, flag: string): string | undefined {
-  if (ctx.page.input !== "attempt") return undefined;
-  return `niceeval show ${ctx.page.locator} ${flag}`;
+  const input = ctx.page.input;
+  if (!isAttemptEvidence(input)) return undefined;
+  return `niceeval show ${input.locator} ${flag}`;
 }
 
 export function diffViewText(
@@ -294,16 +296,14 @@ export function diffViewText(
   drillDown?: string,
 ): string {
   const command =
-    drillDown ??
-    (locator !== undefined && ctx.attemptCommand ? `${ctx.attemptCommand(locator)} --diff` : undefined);
-  return diffSummaryText(files, { drillDown: command });
+    drillDown ?? (locator !== undefined ? ctx.command({ page: ATTEMPT_PAGE_ID, params: { locator } }) : undefined);
+  return diffSummaryText(files, { drillDown: command !== undefined ? `${command} --diff` : undefined });
 }
 
 export const DiffView = defineComponent<DiffViewProps, ResolvedDiffViewProps>({
   dimensions: () => ({}),
   resolve(props, ctx) {
-    const locator =
-      props.locator ?? (ctx.page.input === "attempt" ? ctx.page.locator : undefined);
+    const locator = props.locator ?? (isAttemptEvidence(ctx.page.input) ? ctx.page.input.locator : undefined);
     return {
       files: props.files ?? null,
       drillDown: attemptDrillDown(ctx, "--diff"),

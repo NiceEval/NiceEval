@@ -89,11 +89,13 @@ export type {
   ReportPage,
   ReportPageBase,
   ReportShell,
+  ReportTarget,
   PageDefinition,
-  PageRender,
-  SamplePageDefinition,
-  AttemptPageDefinition,
   PageDefinitionInput,
+  PageLoad,
+  PageLoadContext,
+  PageParams,
+  PageRender,
 } from "./definition/report.ts";
 export { basalt, chalk, defineTheme, isThemeDefinition, themeStylesheet } from "./theme.ts";
 export type { ReportTheme, ThemeColor, ThemeDefinition, ThemeHex, ThemeSeries } from "./theme.ts";
@@ -114,15 +116,18 @@ export type {
 } from "./runtime/text.ts";
 export {
   executePageRender,
-  pageRenderCacheKey,
   resolveDefinitionPage,
-  ReportPageInputMismatchError,
+  renderTarget,
+  createPageLoadContext,
+  encodeTargetKey,
+  targetHref,
+  targetKey,
+  UnknownPageError,
 } from "./runtime/page-render.ts";
-export type { PageRenderInput } from "./runtime/page-render.ts";
+export type { PageRenderInput, RenderTargetHostContext } from "./runtime/page-render.ts";
 export { defineComponent, createTextContext, renderNodeToText, resolveReportTree, validateReportTree } from "./definition/tree.ts";
 export type { AttemptEvidence, AttemptEvidenceCapabilities } from "../record/attempt-evidence.ts";
 export type {
-  AttemptPageContext,
   ComponentFaces,
   ComposeContext,
   PageContext,
@@ -131,7 +136,6 @@ export type {
   ReportNode,
   ResolveContext,
   ResolveEnv,
-  SamplePageContext,
   TextContext,
   TextRenderOptions,
   WebContext,
@@ -275,6 +279,9 @@ export type { HeroCardProps, HeroLink, HeroLogo, HeroProps } from "./components/
 // 实体列表。
 export { AttemptList, ExperimentTable, FailureList } from "./components/entity-lists/index.tsx";
 export type { ExperimentTableProps } from "./components/entity-lists/index.tsx";
+
+// 目标与下钻(docs/feature/reports/library.md「目标与下钻」)。
+export { targetOfRefs, ATTEMPT_PAGE_ID } from "./components/shared.ts";
 
 // Attempt 详情组合组件(docs/feature/reports/components/attempt-detail/README.md)。
 export {

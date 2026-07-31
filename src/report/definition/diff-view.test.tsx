@@ -65,6 +65,12 @@ const content: DiffContent = [
   },
 ];
 
+function attemptTarget(target: { page: string; params?: unknown }): string | undefined {
+  if (target.page !== "attempt") return undefined;
+  const locator = (target.params as { locator?: unknown } | undefined)?.locator;
+  return typeof locator === "string" ? locator : undefined;
+}
+
 async function resolve(node: React.ReactNode, page: PageContext = { id: "main", input: "sample" }) {
   const scope = scopeOf([]);
   const { results } = emptyScopeAndResults();
@@ -82,6 +88,10 @@ async function resolve(node: React.ReactNode, page: PageContext = { id: "main", 
 
 const webCtx: WebContext = {
   locale: "en",
+  href: (target) => {
+    const locator = attemptTarget(target);
+    return locator === undefined ? undefined : `attempt/${encodeURIComponent(locator)}.html`;
+  },
   dimension: () => {
     throw new UndeclaredDimensionValueError("unbound", "_");
   },
@@ -89,15 +99,22 @@ const webCtx: WebContext = {
 
 const attemptPage: PageContext = {
   id: "attempt",
-  input: "attempt",
-  locator: "@loc1" as AttemptLocator,
-  evidence: {} as AttemptEvidence,
+  input: { locator: "@loc1" as AttemptLocator, result: {} } as AttemptEvidence,
 };
 
 describe("DiffView", () => {
   it("两面投影:摘要行、逐窗口 patch 与下钻命令", async () => {
     const tree = await resolve(<DiffView files={content} />, attemptPage);
-    const text = renderNodeToText(tree, createTextContext({ width: 100 }));
+    const text = renderNodeToText(
+      tree,
+      createTextContext({
+        width: 100,
+        command: (target) => {
+          const locator = attemptTarget(target);
+          return locator === undefined ? undefined : `niceeval show ${locator}`;
+        },
+      }),
+    );
     expect(text).toContain("5 files changed by agent");
     expect(text).toContain("niceeval show @loc1 --diff");
     expect(text).toMatch(/M +src\/report\/model\/format\.ts +\+2 -1 +s1\/t1, s1\/t2/);

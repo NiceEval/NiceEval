@@ -98,6 +98,16 @@ export interface AttemptEvidence {
 }
 
 /**
+ * 结构判别:一个不透明的 page 输入(`PageContext.input`)是不是一份 AttemptEvidence。
+ * 报告管线不再按页声明的实体种类("attempt" / "sample")分支,消费方靠这个结构检查取
+ * 缺省 evidence/locator,而不是查一个实体名字段(docs/feature/reports/architecture.md
+ * 「执行模型」)。只判两个必有字段,不做深校验——调用方已经信任它是同类型系统里产出的值。
+ */
+export function isAttemptEvidence(value: unknown): value is AttemptEvidence {
+  return typeof value === "object" && value !== null && "locator" in value && "result" in value;
+}
+
+/**
  * 纯组合:一次性 await 好 attempt 的四类懒加载证据(events / trace / diff / 经
  * loadAnnotatedEvalSource 解引用的 eval 源码),拼成一份 AttemptEvidence。不重新实现
  * Eval 源码标注、ExecutionTree 合并或 diff 语义的任何一条规则——那些规则的家分别在

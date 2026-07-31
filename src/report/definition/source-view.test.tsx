@@ -66,6 +66,7 @@ async function resolve(node: React.ReactNode, page: PageContext = { id: "main", 
 
 const webCtx: WebContext = {
   locale: "en",
+  href: () => undefined,
   dimension: () => {
     throw new UndeclaredDimensionValueError("unbound", "_");
   },
@@ -79,7 +80,8 @@ describe("SourceView", () => {
       createTextContext({
         width: 100,
         locale: "en",
-        attemptCommand: (loc) => `niceeval show @${loc}`,
+        command: (target) =>
+          target.page === "attempt" ? `niceeval show @${(target.params as { locator: string }).locator}` : undefined,
       }),
     );
     expect(text).toContain("evals/foo.test.ts:10 [send]");
@@ -102,7 +104,14 @@ describe("SourceView", () => {
   it("null 两面零输出", async () => {
     const tree = await resolve(<SourceView data={null} />);
     expect(
-      renderNodeToText(tree, createTextContext({ width: 80, attemptCommand: (loc) => `niceeval show @${loc}` })),
+      renderNodeToText(
+        tree,
+        createTextContext({
+          width: 80,
+          command: (target) =>
+            target.page === "attempt" ? `niceeval show @${(target.params as { locator: string }).locator}` : undefined,
+        }),
+      ),
     ).toBe("");
     const html = runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
     expect(html).toBe("");

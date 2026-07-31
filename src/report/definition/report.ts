@@ -2,11 +2,15 @@
 // 非空页列表;单页与多页不是两种机制,页数只是列表长度(docs/feature/reports/library/shell.md)。
 // 单页缩写:传入 `PageRender<Sample>`,规范化为 id `report` 的 sample page。
 // 页函数只放在每页的 `render` 字段,装载期不执行。
+// page 只有一种形状(PageDefinition):`params` 把一页声明成参数化页,`load` 声明输入来源;
+// 核心不区分 attempt / experiment 这些实体种类——attempt 与 experiment 详情只是标准库导出的
+// 两张普通参数化页(docs/feature/reports/library.md「参数化页:attempt 与 experiment 详情」)。
 //
 // text/web 两个宿主的渲染入口在 ../runtime/;这里只有 ReportDefinition 的类型体系、
 // 装载规范化与元数据折叠(buildReportMeta / resolveReportTitle),不做任何渲染。
 
 import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
 import type { ReportNode } from "./tree.ts";
 import { localizedTextEquals, type LocalizedText } from "../model/locale.ts";
@@ -58,42 +62,55 @@ export interface ReportPageBase {
   title: LocalizedText;
 }
 
-export interface SamplePageDefinition extends ReportPageBase {
-  input?: "sample";
-  navigation?: boolean;
-  render: PageRender<Sample>;
+/** 组件下钻交出的目标值(不是 URL):哪张页、哪个参数(docs/feature/reports/library.md「目标与下钻」)。 */
+export interface ReportTarget {
+  page: string;
+  params?: unknown;
 }
-
-export interface AttemptPageDefinition extends ReportPageBase {
-  input: "attempt";
-  navigation: false;
-  render: PageRender<AttemptEvidence>;
-}
-
-export type PageDefinition = SamplePageDefinition | AttemptPageDefinition;
 
 /**
- * 页按输入分两种形态,仍是同一个类型族,走同一条 render → resolve → validate → render 管线
- * (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」):
- * - `input` 省略或为 `"sample"`:消费宿主选择的 Sample;省略时规范化为 `navigation: true`。
- * - `input: "attempt"`:以 locator 为参数,消费一份 AttemptEvidence;没有 locator 时不能打开,
- *   必须显式 `navigation: false`,不进导航。
- * 一份报告至多声明一张 attempt-input page。
+ * 参数化页的寻址声明:`encode`/`decode` 定义参数与 URL key 的互转,`enumerate` 列出有效根内
+ * 全部合法参数(静态导出据此物化每个实例)。
  */
-export type ReportPage = SamplePageDefinition | AttemptPageDefinition;
+export interface PageParams<Params> {
+  encode(params: Params): string;
+  decode(key: string): Params;
+  enumerate(base: Sample): Iterable<Params>;
+}
 
-/** 作者向 page 声明;装载期规范化 input / navigation,不执行 render。 */
-export type PageDefinitionInput =
-  | (ReportPageBase & {
-      input?: "sample";
-      navigation?: boolean;
-      render: PageRender<Sample>;
-    })
-  | (ReportPageBase & {
-      input: "attempt";
-      navigation: false;
-      render: PageRender<AttemptEvidence>;
-    });
+/** page 自己的 `load` 装载证据用的上下文;当前只有 attempt 证据这一种懒加载来源。 */
+export interface PageLoadContext {
+  evidence(locator: AttemptLocator): Promise<AttemptEvidence>;
+}
+
+/** `load` 回答"这页的输入从哪来";省略时输入就是宿主选好的 Sample。 */
+export type PageLoad<Params, Input> = (
+  base: Sample,
+  params: Params,
+  ctx: PageLoadContext,
+) => Input | Promise<Input>;
+
+/**
+ * page 只有一种形状,核心不区分实体种类(docs/feature/reports/library.md
+ * 「defineReport() 保留静态 page 边界」)。`params` 把一页声明成参数化页:同一张页按参数
+ * 产生多个实例,每个实例可被 ReportTarget 寻址;声明 `params` 必须同时声明 `load` 且
+ * `navigation: false`(导航项给不出参数),这条规则在 defineReport 装载期校验。
+ * attempt 详情、experiment 详情都是这样的参数化页,核心、路由与宿主对它们没有专门分支。
+ */
+export interface PageDefinition<Params = void, Input = Sample> extends ReportPageBase {
+  navigation?: boolean;
+  params?: PageParams<Params>;
+  load?: PageLoad<Params, Input>;
+  render: PageRender<Input>;
+}
+
+/** 规范化后的 page 类型;装载期只做形状校验,不为具体 Params/Input 收窄类型。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ReportPage = PageDefinition<any, any>;
+
+/** 作者向 page 声明的输入形态;装载期规范化 navigation,不执行 render / load。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type PageDefinitionInput = PageDefinition<any, any>;
 
 /** pages 是非空有序数组;单页函数缩写不经此类型。 */
 export type ReportOptions = ReportShell & {
@@ -118,11 +135,10 @@ export interface ReportDefinition {
   readonly pages: NonEmptyArray<ReportPage>;
 }
 
-/** 规范化后页列表在 ctx.report 上的元数据形态(id / 导航页名 / 输入声明 / 导航资格)。 */
+/** 规范化后页列表在 ctx.report 上的元数据形态(id / 导航页名 / 导航资格)。 */
 export interface ReportMetaPage {
   id: string;
   title: LocalizedText;
-  input: "sample" | "attempt";
   navigation: boolean;
 }
 
@@ -294,53 +310,44 @@ function assertHeadTags(tags: unknown): HeadTag[] {
 }
 
 /**
- * page 的 input / navigation 规范化(shell.md「page 显式声明输入」):省略或 "sample" 时补
- * `input: "sample"`,`navigation` 缺省为 true;"attempt" 必须显式 `navigation: false`。
+ * page 的 params / navigation 规范化(library.md「defineReport() 保留静态 page 边界」):
+ * 声明 `params` 必须同时声明 `load`,且 `navigation` 必须显式为 `false`(不默认,导航项给不出
+ * 参数);没有 `params` 时 `navigation` 缺省为 `true`。这里只做静态形状校验,不执行 `load` 或
+ * `render`。
  */
 function normalizePageRender(page: globalThis.Record<string, unknown>): ReportPage {
-  const input = page.input;
   if (typeof page.render !== "function") {
     throw new Error(`Report page "${page.id}" must declare "render": (input) => tree.`);
   }
-  const render = page.render as PageRender<Sample | AttemptEvidence>;
-  if (input === undefined || input === "sample") {
-    return {
-      id: page.id as string,
-      title: page.title as LocalizedText,
-      render: render as PageRender<Sample>,
-      input: "sample",
-      navigation: page.navigation !== false,
-    };
-  }
-  if (input === "attempt") {
+  const render = page.render as PageRender<unknown>;
+  const params = page.params;
+  if (params !== undefined) {
+    if (typeof page.load !== "function") {
+      throw new Error(
+        `Report page "${page.id}" declares params but no load — a parametrized page needs load to turn params into its render input. Add load: (base, params, ctx) => ...`,
+      );
+    }
     if (page.navigation !== false) {
       throw new Error(
-        `Report page "${page.id}" declares input: "attempt" but not navigation: false — an attempt-input page has no content without a locator, so it must not appear in navigation. Add navigation: false.`,
+        `Report page "${page.id}" declares params but not navigation: false — a parametrized page has no content without params, so it must not appear in navigation. Add navigation: false.`,
       );
     }
     return {
       id: page.id as string,
       title: page.title as LocalizedText,
-      render: render as PageRender<AttemptEvidence>,
-      input: "attempt",
+      render,
+      params: params as PageParams<unknown>,
+      load: page.load as PageLoad<unknown, unknown>,
       navigation: false,
     };
   }
-  throw new Error(
-    `Report page "${page.id}" input ${JSON.stringify(input)} is not valid — input is omitted, "sample", or "attempt".`,
-  );
-}
-
-/** 一份报告至多一张 attempt-input page,避免 show @<locator> 与 locator 链接出现多个目标。 */
-function assertAtMostOneAttemptPage(pages: readonly ReportPage[]): void {
-  const attemptPages = pages.filter((p) => p.input === "attempt");
-  if (attemptPages.length > 1) {
-    throw new Error(
-      `A report can declare at most one input: "attempt" page — got ${attemptPages.length} (${attemptPages
-        .map((p) => `"${p.id}"`)
-        .join(", ")}). Keep one and remove the others, or fold their content into a single attempt-input page.`,
-    );
-  }
+  return {
+    id: page.id as string,
+    title: page.title as LocalizedText,
+    render,
+    ...(typeof page.load === "function" ? { load: page.load as PageLoad<unknown, unknown> } : {}),
+    navigation: page.navigation !== false,
+  };
 }
 
 export function defineReport(render: PageRender<Sample>): ReportDefinition;
@@ -426,7 +433,6 @@ function defineReportFromDef(def: ReportOptions): ReportDefinition {
     normalized.push(normalizePageRender(page));
   }
   const pages = normalized;
-  assertAtMostOneAttemptPage(pages);
 
   if (def.title !== undefined) assertLocalizedText(def.title, "defineReport title");
   assertDimensionPins(def.dimensionPins);
@@ -483,7 +489,6 @@ export function buildReportMeta(definition: ReportDefinition, scope: Sample): Re
     pages: definition.pages.map((page) => ({
       id: page.id,
       title: page.title,
-      input: page.input ?? "sample",
       navigation: page.navigation ?? true,
     })) as unknown as NonEmptyArray<ReportMetaPage>,
   };

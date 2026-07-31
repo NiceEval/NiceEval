@@ -204,6 +204,82 @@ describe("Chart", () => {
     const onlyA = dataset.rows.filter((r) => r.values.costUSD && (r.values.costUSD as MetricValue).value !== null);
     expect(onlyA).toHaveLength(1);
   });
+});
 
+// 「图表 pointTarget」(docs/engineering/testing/unit/reports.md「参数化页与下钻目标」):
+// 显式函数逐点生效；省略走 targetOfRefs；这是 refs[0] 快捷写法已知 bug(多 attempt 点被压成
+// 第一个 attempt 的链接)的字面回归场景——两个 series sites(bar/horizontal 与 scatter/line/area)
+// 都要覆盖。
+describe("Chart pointTarget", () => {
+  function refCell(value: number, refs: string[]): MetricValue {
+    return { value, samples: refs.length, total: refs.length || 1, basis: "eval", refs: refs as never };
+  }
 
+  const refsDataset: Dataset = {
+    fields: [
+      { name: "experiment", kind: "dimension", valueType: "string" },
+      { name: "passRate", kind: "metric", valueType: "number", unit: "%", better: "higher" },
+    ],
+    rows: [
+      { key: "single", values: { experiment: "single", passRate: refCell(0.9, ["@a"]) } },
+      { key: "double", values: { experiment: "double", passRate: refCell(0.5, ["@a", "@b"]) } },
+    ],
+  };
+
+  function hrefWebCtx(): WebContext {
+    return {
+      locale: "en",
+      href: (target) =>
+        target.page === "attempt" ? `attempt/${(target.params as { locator: string }).locator}.html` : undefined,
+      dimension: () => {
+        throw new UndeclaredDimensionValueError("unbound", "_");
+      },
+    };
+  }
+
+  function renderWebWithHref(tree: ReportElement): string {
+    const plan = collectPageDimensions(tree, {}, "web");
+    const webCtx = withPageDimensions(hrefWebCtx(), plan);
+    return runWithWebContext(webCtx, () => renderToStaticMarkup(tree as never));
+  }
+
+  it("省略 pointTarget 时走 targetOfRefs:单 ref 点成链,双 ref 点不成链(scatter 面)", async () => {
+    const tree = await resolve(
+      <Chart data={refsDataset} x="experiment" y="passRate">
+        <Series id="s" mark="scatter" points="experiment" />
+      </Chart>,
+    );
+    const html = renderWebWithHref(tree);
+    expect(html).toContain('href="attempt/@a.html"');
+    // 双 ref 点不应该出现"压成 refs[0]"的错误链接
+    expect(html).not.toContain('href="attempt/@b.html"');
+  });
+
+  it("省略 pointTarget 时走 targetOfRefs:单 ref 点成链,双 ref 点不成链(horizontal bars 面)", async () => {
+    const tree = await resolve(
+      <Chart data={refsDataset} x="experiment" y="passRate" layout="horizontal">
+        <Series id="s" mark="bar" />
+      </Chart>,
+    );
+    const html = renderWebWithHref(tree);
+    expect(html).toContain('href="attempt/@a.html"');
+    expect(html).not.toContain('href="attempt/@b.html"');
+  });
+
+  it("显式 pointTarget 逐点生效,覆盖默认的 targetOfRefs", async () => {
+    const tree = await resolve(
+      <Chart
+        data={refsDataset}
+        x="experiment"
+        y="passRate"
+        pointTarget={(point: { refs: readonly string[] }) =>
+          point.refs.length > 0 ? { page: "attempt", params: { locator: `custom:${point.refs[0]}` } } : undefined
+        }
+      >
+        <Series id="s" mark="scatter" points="experiment" />
+      </Chart>,
+    );
+    const html = renderWebWithHref(tree);
+    expect(html).toContain('href="attempt/custom:@a.html"');
+  });
 });

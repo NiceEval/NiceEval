@@ -2,21 +2,20 @@
 // HTML 烘进查看器的报告槽。react-dom 的实际 import 在 ./resolved-page.ts(边界即运行时边界),
 // 所以本文件不从 niceeval/report 的入口 re-export —— 宿主与测试按源路径 import。
 
-import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
 import type { PageContext } from "../definition/tree.ts";
 import type { DimensionPins } from "../presentation.ts";
 import { type ReportLocale } from "../model/locale.ts";
-import { buildReportMeta, type ReportDefinition } from "../definition/report.ts";
+import { buildReportMeta, type ReportDefinition, type ReportTarget } from "../definition/report.ts";
 import { pickReportPage, type ReportHostContext } from "./text.ts";
 import { renderResolvedPageWeb, resolvePage } from "./resolved-page.ts";
 import { resolveDefinitionPage } from "./page-render.ts";
 
 export interface StaticHtmlOptions {
-  /** 渲染哪一页;缺省第一张可导航页。命中 attempt-input page 抛 ReportPageNeedsLocatorError。 */
+  /** 渲染哪一页;缺省第一张可导航页。命中参数化 page 抛 ReportPageNeedsLocatorError。 */
   pageId?: string;
-  /** 证据室深链;当前 definition 没有 attempt-input page 时不注入默认值,除非显式传入。 */
-  attemptHref?: (locator: AttemptLocator) => string;
+  /** 下钻目标 → URL;省略时使用运行时默认值(只服务标准库 attempt 目标),除非显式传入。 */
+  href?: (target: ReportTarget) => string | undefined;
   /** 官方组件 chrome 文案的 locale;默认 "en"。 */
   locale?: ReportLocale;
 }
@@ -38,7 +37,7 @@ export async function renderReportToStaticHtml(
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
-    page: { id: page.id, input: "sample" },
+    page: { id: page.id, input: ctx.scope },
     dimensionPins: definition.dimensionPins,
   });
   return renderResolvedPageWeb(resolved, options);
@@ -47,7 +46,7 @@ export async function renderReportToStaticHtml(
 /**
  * 渲染一页报告树的 web 面(宿主逐页调用;页选择归宿主):resolve → validate → 静态渲染。
  * 挑选警告由页内的 `ScopeWarnings` 组件呈现,宿主不前置任何树外块。
- * ctx.report 是宿主规范化后的声明,ctx.page 是当前页判别(scope 或 attempt 分支)。
+ * ctx.report 是宿主规范化后的声明,ctx.page 是当前页判别(id + 该页的 render 输入)。
  */
 export async function renderReportTreeToStaticHtml(
   tree: import("../definition/tree.ts").ReportNode,
@@ -59,7 +58,7 @@ export async function renderReportTreeToStaticHtml(
     /** 外壳钉色;不进 ReportMeta,见 ReportTreeHostContext.dimensionPins。 */
     dimensionPins?: DimensionPins;
   },
-  options?: { attemptHref?: (locator: AttemptLocator) => string; locale?: ReportLocale },
+  options?: { href?: (target: ReportTarget) => string | undefined; locale?: ReportLocale },
 ): Promise<string> {
   const resolved = await resolvePage(tree, ctx);
   return renderResolvedPageWeb(resolved, options);

@@ -4,7 +4,6 @@
 // ../definition/report.ts,这里只做渲染编排与宿主联系面(页选择、索引命令拼装)。
 
 import type { Record, Sample } from "../../record/types.ts";
-import type { AttemptLocator } from "../../record/locator.ts";
 import {
   type PageContext,
   type ReportNode,
@@ -17,14 +16,10 @@ import {
   resolveReportTitle,
   type ReportDefinition,
   type ReportMeta,
-  type ReportMetaPage,
   type ReportPage,
 } from "../definition/report.ts";
 import { resolveLocalizedText, type ReportLocale } from "../model/locale.ts";
 import type { DimensionPins } from "../presentation.ts";
-
-/** 默认下钻命令:`niceeval show <locator>` 是 show 已实现的真实 CLI 语法,不需要反查 eval id 再拼近似命令。 */
-const DEFAULT_ATTEMPT_COMMAND = (locator: AttemptLocator): string => `niceeval show ${locator}`;
 
 // ───────────────────────── 页选择与 text 宿主入口 ─────────────────────────
 
@@ -39,13 +34,13 @@ export class ReportPageNotFoundError extends Error {
   }
 }
 
-/** 显式请求了 attempt-input page,但当前入口没有 locator 可注入 evidence。 */
+/** 显式请求了一张参数化 page,但当前入口没有参数可注入 render 输入。 */
 export class ReportPageNeedsLocatorError extends Error {
   readonly pageId: string;
   constructor(pageId: string) {
     super(
-      `Page "${pageId}" is an attempt-input page and needs a locator — it cannot be opened with --page or #/page/<id> directly. ` +
-        "Use the host's locator addressing instead (niceeval show @<locator>, or the view attempt route), which resolves this page with the matching AttemptEvidence.",
+      `Page "${pageId}" is a parametrized page and needs params — it cannot be opened with --page or #/page/<id> directly. ` +
+        "Use the host's target addressing instead (niceeval show @<locator> for the standard attempt page, or the view detail route), which resolves this page with the matching params.",
     );
     this.pageId = pageId;
   }
@@ -53,8 +48,8 @@ export class ReportPageNeedsLocatorError extends Error {
 
 /**
  * 挑选要渲染的 page:省略 pageId 时挑第一张 `navigation !== false` 的页(跳过参数化详情页,
- * 它没有 locator 就不可打开);显式 pageId 命中 attempt-input page 时报
- * ReportPageNeedsLocatorError——这个入口没有 locator,不能拿 Sample 强行 resolve。
+ * 它没有 params 就不可打开);显式 pageId 命中参数化 page 时报 ReportPageNeedsLocatorError
+ * ——这个入口没有 params,不能拿 Sample 强行 resolve。
  */
 export function pickReportPage(definition: ReportDefinition, pageId?: string): ReportPage {
   if (pageId === undefined) {
@@ -67,7 +62,7 @@ export function pickReportPage(definition: ReportDefinition, pageId?: string): R
       definition.pages.filter((p) => p.navigation !== false).map((p) => p.id),
     );
   }
-  if (page.input === "attempt") throw new ReportPageNeedsLocatorError(page.id);
+  if (page.params !== undefined) throw new ReportPageNeedsLocatorError(page.id);
   return page;
 }
 
@@ -79,12 +74,12 @@ export interface ReportHostContext {
 }
 
 export interface RenderReportTextOptions extends TextRenderOptions {
-  /** 渲染哪一页;缺省第一张可导航页。命中 attempt-input page 抛 ReportPageNeedsLocatorError,未命中抛 ReportPageNotFoundError。 */
+  /** 渲染哪一页;缺省第一张可导航页。命中参数化 page 抛 ReportPageNeedsLocatorError,未命中抛 ReportPageNotFoundError。 */
   pageId?: string;
 }
 
 /**
- * text 宿主的装载语义:选页(只能是 scope-input page,见 pickReportPage)→ resolve(组合展开 +
+ * text 宿主的装载语义:选页(只能是非参数化 page,见 pickReportPage)→ resolve(组合展开 +
  * spec 取数,唯一的 await 边界)→ 树校验 → 遍历渲染 text 面。不需要 react-dom。宿主不在报告树外
  * 另设警告通道——挑选警告的呈现件是 `ScopeWarnings` 组件,内建报告每页都放它,自定义报告放不放
  * 是作者义务(docs/feature/reports/architecture.md「Sample 是计算入口」)。
@@ -96,18 +91,14 @@ export async function renderReportToText(
 ): Promise<string> {
   const page = pickReportPage(definition, options?.pageId);
   const meta = buildReportMeta(definition, ctx.scope);
-  const hasAttemptPage = definition.pages.some((p) => p.input === "attempt");
   const resolved = await resolveDefinitionPage(page, {
     scope: ctx.scope,
     results: ctx.results,
     report: meta,
-    page: { id: page.id, input: "sample" },
+    page: { id: page.id, input: ctx.scope },
     dimensionPins: definition.dimensionPins,
   });
-  return renderResolvedPageText(resolved, {
-    ...options,
-    attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
-  });
+  return renderResolvedPageText(resolved, options);
 }
 
 /** 页索引标题行(show 多页索引 / view 导航共用的解析结果):按 locale 解析的标题字符串。 */
@@ -133,7 +124,7 @@ export interface ReportTreeHostContext {
   scope: Sample;
   results: Record;
   report: ReportMeta;
-  /** 当前渲染的页:scope 分支只有 id;attempt 分支带 locator + evidence(宿主已完成寻址与装配)。 */
+  /** 当前渲染的页:id + 该页的 render 输入(宿主已按该页自己的 load 语义完成寻址与装配)。 */
   page: PageContext;
   /**
    * 外壳钉色。住在宿主渲染上下文而非 ReportMeta——Composition 的 ctx.report 读不到钉色,
@@ -150,8 +141,9 @@ export interface RenderTreeTextOptions extends TextRenderOptions {
 /**
  * 渲染一页报告树的 text 面(宿主逐页调用;页选择归宿主):
  * resolve(组合展开 + spec 取数)→ validate → render。宿主不在报告树外另设警告通道,
- * 挑选警告由页内的 `ScopeWarnings` 组件呈现(内建报告每页都放它)。当前 definition 没有
- * attempt-input page 时不注入默认下钻命令,调用方也没显式给,`ctx.attemptCommand` 就不存在。
+ * 挑选警告由页内的 `ScopeWarnings` 组件呈现(内建报告每页都放它)。`ctx.command` 恒存在,
+ * 默认实现只对标准库 attempt 目标给出真实命令,其它目标返回 `undefined`(resolved-page.ts
+ * 的 DEFAULT_ATTEMPT_COMMAND)。
  */
 export async function renderReportTreeToText(
   tree: ReportNode,
@@ -159,9 +151,5 @@ export async function renderReportTreeToText(
   options?: RenderTreeTextOptions,
 ): Promise<string> {
   const resolved = await resolvePage(tree, ctx);
-  const hasAttemptPage = ctx.report.pages.some((p) => p.input === "attempt");
-  return renderResolvedPageText(resolved, {
-    ...options,
-    attemptCommand: options?.attemptCommand ?? (hasAttemptPage ? DEFAULT_ATTEMPT_COMMAND : undefined),
-  });
+  return renderResolvedPageText(resolved, options);
 }

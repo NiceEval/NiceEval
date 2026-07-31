@@ -89,6 +89,7 @@ describe("Table Content", () => {
     expect(text).toContain("child");
     const webCtx = {
       locale: "en",
+      href: () => undefined,
       dimension: () => {
         throw new UndeclaredDimensionValueError("unexpected", "x");
       },
@@ -120,6 +121,7 @@ describe("Table Content", () => {
     expect(text).toContain("gpt-researcher");
     const webCtx = {
       locale: "en",
+      href: () => undefined,
       dimension: () => {
         throw new UndeclaredDimensionValueError("unexpected", "x");
       },
@@ -151,6 +153,7 @@ describe("Table Content", () => {
     const resolved = await resolve(<TableContentView data={verdicts} />);
     const webCtx = {
       locale: "zh-CN",
+      href: () => undefined,
       dimension: () => {
         throw new UndeclaredDimensionValueError("unexpected", "x");
       },
@@ -182,6 +185,7 @@ describe("Table Content", () => {
 function webHtml(node: React.ReactNode, locale = "en"): string {
   const webCtx = {
     locale,
+    href: () => undefined,
     dimension: () => {
       throw new UndeclaredDimensionValueError("unexpected", "x");
     },

@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AssertionResult, EvalResult, Verdict } from "../../types.ts";
 import type { AttemptHandle, Record, Sample, Run } from "../../record/index.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import { attemptHandleOf, resultsOf, scopeOf } from "../components/scope.harness.ts";
 import {
   createTextContext,
@@ -297,47 +298,92 @@ describe("defineReport 装载规范化", () => {
     );
   });
 
-  it("page 省略 input 规范化为 scope + navigation:true;显式 attempt 必须 navigation:false", () => {
+  const dummyParams = {
+    encode: (p: { locator: string }) => p.locator,
+    decode: (key: string) => ({ locator: key }),
+    enumerate: () => [],
+  };
+
+  it("page 省略 params 规范化为 navigation:true;声明 params 必须同时声明 load 且 navigation:false", () => {
     const definition = defineReport({
       pages: [
         { id: "report", title: "Report", render: () => null },
-        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, render: () => null },
+        {
+          id: "attempt",
+          title: "Attempt",
+          params: dummyParams,
+          load: (_base, p: { locator: string }) => p,
+          navigation: false,
+          render: () => null,
+        },
       ],
     });
-    expect(definition.pages[0]).toMatchObject({ input: "sample", navigation: true });
-    expect(definition.pages[1]).toMatchObject({ input: "attempt", navigation: false });
+    expect(definition.pages[0]).toMatchObject({ navigation: true });
+    expect(definition.pages[0]!.params).toBeUndefined();
+    expect(definition.pages[1]).toMatchObject({ navigation: false });
+    expect(definition.pages[1]!.params).toBe(dummyParams);
 
     expect(() =>
       defineReport({
-        pages: [{ id: "a", title: "A", input: "attempt", render: () => null }],
+        pages: [{ id: "a", title: "A", params: dummyParams, render: () => null }],
       } as never),
-    ).toThrow(/navigation: false/);
+    ).toThrow(/declares params but no load/);
     expect(() =>
       defineReport({
-        pages: [{ id: "a", title: "A", input: "attempt", navigation: true, render: () => null }],
+        pages: [
+          { id: "a", title: "A", params: dummyParams, load: (_b: unknown, p: unknown) => p, render: () => null },
+        ],
       } as never),
-    ).toThrow(/navigation: false/);
+    ).toThrow(/declares params but not navigation: false/);
+    expect(() =>
+      defineReport({
+        pages: [
+          {
+            id: "a",
+            title: "A",
+            params: dummyParams,
+            load: (_b: unknown, p: unknown) => p,
+            navigation: true,
+            render: () => null,
+          },
+        ],
+      } as never),
+    ).toThrow(/declares params but not navigation: false/);
   });
 
-  it("navigation: false 的 scope-input page 不进导航但仍是普通 scope page", () => {
+  it("navigation: false 的普通 page 不进导航但仍是普通 page(没有 params)", () => {
     const definition = defineReport({
       pages: [
         { id: "report", title: "Report", render: () => null },
         { id: "hidden", title: "Hidden", navigation: false, render: () => null },
       ],
     });
-    expect(definition.pages[1]).toMatchObject({ input: "sample", navigation: false });
+    expect(definition.pages[1]).toMatchObject({ navigation: false });
+    expect(definition.pages[1]!.params).toBeUndefined();
   });
 
-  it("一份 definition 最多一张 attempt-input page,第二张同类 page 装载报错", () => {
-    expect(() =>
-      defineReport({
-        pages: [
-          { id: "a1", title: "A1", input: "attempt", navigation: false, render: () => null },
-          { id: "a2", title: "A2", input: "attempt", navigation: false, render: () => null },
-        ],
-      }),
-    ).toThrow(/at most one input: "attempt" page/);
+  it("一份 report 可以声明多张参数化页(不再有「至多一张」限制)", () => {
+    const definition = defineReport({
+      pages: [
+        {
+          id: "a1",
+          title: "A1",
+          params: dummyParams,
+          load: (_b: unknown, p: unknown) => p,
+          navigation: false,
+          render: () => null,
+        },
+        {
+          id: "a2",
+          title: "A2",
+          params: dummyParams,
+          load: (_b: unknown, p: unknown) => p,
+          navigation: false,
+          render: () => null,
+        },
+      ],
+    });
+    expect(definition.pages.map((p) => p.id)).toEqual(["a1", "a2"]);
   });
 
   it("LEGACY 外壳字段 links/footer/scripts/styles 装载报错", () => {
@@ -346,14 +392,6 @@ describe("defineReport 装载规范化", () => {
     expect(() => defineReport({ ...empty, scripts: [{ src: "../x.js" }] } as never)).toThrow(/no longer accepts LEGACY "scripts"/);
     expect(() => defineReport({ ...empty, styles: [{ inline: "x" }] } as never)).toThrow(/no longer accepts LEGACY "styles"/);
     expect(() => defineReport({ ...empty, footer: "x" } as never)).toThrow(/no longer accepts LEGACY "footer"/);
-  });
-
-  it('旧 page input: "scope" 不再被静默规范化为 sample', () => {
-    expect(() =>
-      defineReport({
-        pages: [{ id: "report", title: "Report", input: "scope", render: () => null } as never],
-      }),
-    ).toThrow(/input is omitted, "sample", or "attempt"/);
   });
 
   it("--page 语义:pickReportPage 缺省第一页,未命中抛 ReportPageNotFoundError 列出可用页", () => {
@@ -382,7 +420,14 @@ describe("defineReport 装载规范化", () => {
       pages: [
         { id: "hidden", title: "Hidden", navigation: false, render: () => null },
         { id: "overview", title: "Overview", render: () => null },
-        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, render: () => null },
+        {
+          id: "attempt",
+          title: "Attempt",
+          params: dummyParams,
+          load: (_b: unknown, p: unknown) => p,
+          navigation: false,
+          render: () => null,
+        },
       ],
     });
     expect(pickReportPage(definition).id).toBe("overview");
@@ -395,11 +440,18 @@ describe("defineReport 装载规范化", () => {
     }
   });
 
-  it("显式选择 attempt-input page 但没有 locator:ReportPageNeedsLocatorError", () => {
+  it("显式选择参数化 page 但没有 params:ReportPageNeedsLocatorError", () => {
     const definition = defineReport({
       pages: [
         { id: "report", title: "Report", render: () => null },
-        { id: "attempt", title: "Attempt", input: "attempt", navigation: false, render: () => null },
+        {
+          id: "attempt",
+          title: "Attempt",
+          params: dummyParams,
+          load: (_b: unknown, p: unknown) => p,
+          navigation: false,
+          render: () => null,
+        },
       ],
     });
     expect(() => pickReportPage(definition, "attempt")).toThrow(ReportPageNeedsLocatorError);
@@ -460,9 +512,9 @@ describe("内建报告", () => {
     expect(attemptPage).toMatchObject({
       id: standardAttemptPage.id,
       title: standardAttemptPage.title,
-      input: "attempt",
       navigation: false,
     });
+    expect(attemptPage!.params).toBe(standardAttemptPage.params);
     expect(((await attemptPage!.render(null as never)) as { type: unknown }).type).toBe(AttemptDetails);
   });
 
@@ -480,9 +532,9 @@ describe("内建报告", () => {
       expect(view.pages[1]).toMatchObject({
         id: standardAttemptPage.id,
         title: standardAttemptPage.title,
-        input: "attempt",
         navigation: false,
       });
+      expect(view.pages[1]!.params).toBe(standardAttemptPage.params);
     }
     expect(failures.pages[0]!.id).toBe("failures");
     expect(failures.pages[0]!.title).toEqual({ en: "Failures", "zh-CN": "失败" });
@@ -504,6 +556,19 @@ describe("内建报告", () => {
     await expect(loadBuiltInReport("failures")).resolves.toBe(failures);
     await expect(loadBuiltInReport("stability")).resolves.toBe(stability);
     await expect(loadBuiltInReport("nope")).rejects.toThrow(/standard, failures, stability/);
+  });
+
+  it("standardAttemptPage.params 往返:decode(encode(p)) 与 p 深相等;enumerate 给出全部 locator", () => {
+    const run = snap({ experimentId: "exp/a", results: [res("q", "passed")] });
+    const withLocator = attemptHandleOf(run, run.attempts[0]!.result, run.attempts[0]!.ref, {
+      locator: "@1abcdefg" as AttemptLocator,
+    });
+    run.attempts = [withLocator];
+    const scope = scopeOf([run]);
+    const p = { locator: withLocator.locator! };
+    expect(standardAttemptPage.params!.decode(standardAttemptPage.params!.encode(p))).toEqual(p);
+    const enumerated = [...standardAttemptPage.params!.enumerate(scope)];
+    expect(enumerated).toEqual([{ locator: withLocator.locator }]);
   });
 });
 

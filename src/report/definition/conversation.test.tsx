@@ -70,8 +70,15 @@ async function resolve(node: React.ReactNode, page: PageContext = { id: "main", 
   return resolved;
 }
 
+function attemptTarget(target: { page: string; params?: unknown }): string | undefined {
+  if (target.page !== "attempt") return undefined;
+  const locator = (target.params as { locator?: unknown } | undefined)?.locator;
+  return typeof locator === "string" ? locator : undefined;
+}
+
 const webCtx: WebContext = {
   locale: "en",
+  href: () => undefined,
   dimension: () => {
     throw new UndeclaredDimensionValueError("unbound", "_");
   },
@@ -81,9 +88,18 @@ describe("Conversation", () => {
   it("两面投影:轮次摘要、预览收口与下钻命令", async () => {
     const tree = await resolve(
       <Conversation data={content} />,
-      { id: "attempt", input: "attempt", locator: "@loc1" as AttemptLocator, evidence: {} as AttemptEvidence },
+      { id: "attempt", input: { locator: "@loc1" as AttemptLocator, result: {} } as AttemptEvidence },
     );
-    const text = renderNodeToText(tree, createTextContext({ width: 100 }));
+    const text = renderNodeToText(
+      tree,
+      createTextContext({
+        width: 100,
+        command: (target) => {
+          const locator = attemptTarget(target);
+          return locator === undefined ? undefined : `niceeval show ${locator}`;
+        },
+      }),
+    );
     expect(text).toContain("conversation: 2 rounds");
     expect(text).toContain("niceeval show @loc1 --execution");
     expect(text).toContain("turn 1 (passed)");

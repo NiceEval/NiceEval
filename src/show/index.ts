@@ -373,7 +373,7 @@ async function renderCompareSlice(
   };
   const table = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta, page: { id: "compare", input: "sample" }, dimensionPins: report.dimensionPins },
+    { scope: selection, results, report: meta, page: { id: "compare", input: selection }, dimensionPins: report.dimensionPins },
     { width: io.width, locale: io.locale, panelMode: io.panelMode },
   );
   const head = `compare · ${data.conditions.length} conditions · paired by eval id · baseline ${data.conditions[0]}`;
@@ -419,7 +419,7 @@ async function renderStatsSlice(
   };
   const table = await renderHostPageText(
     page,
-    { scope, results, report: meta, page: { id: "stats", input: "sample" }, dimensionPins: report.dimensionPins },
+    { scope, results, report: meta, page: { id: "stats", input: scope }, dimensionPins: report.dimensionPins },
     { width: io.width, locale: io.locale, panelMode: io.panelMode },
   );
   const head =
@@ -902,15 +902,18 @@ async function show(
     // 时装载内建 standard,其中就带这张 page;--report 指向的自定义报告没有声明 attempt-input page
     // 时报完整用户反馈,不回退到内建详情(三条解决路径都在错误文案里给出)。
     const report = await loadHostReport(cwd, flags.report, flags.configReport);
-    const attemptPage = report.pages.find((p) => p.input === "attempt");
+    // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」);
+    // 这里已经拿到装配好的 evidence,不走 renderTarget/page.load,直接把它当这张 page 的
+    // render 输入注入(与其它 page 完全相同的 resolve → validate → render 管线)。
+    const attemptPage = report.pages.find((p) => p.id === "attempt");
     if (attemptPage === undefined) {
       const sourceLabel = describeReportSource(flags.report, flags.configReport);
       throw new ShowError(
-        `error: ${sourceLabel} has no attempt-input page — "${locatorArg}" cannot be opened without one. ` +
+        `error: ${sourceLabel} has no "attempt" page — "${locatorArg}" cannot be opened without one. ` +
           `Read this attempt right now with \`niceeval show ${locatorArg} --report standard\` (or \`--json\`). ` +
-          `To open it in this report, add an attempt page: use \`extends: standard\` (inherits its attempt page), ` +
+          `To open it in this report, add the standard attempt page: ` +
           `import { standardAttemptPage } from "niceeval/report/built-in" and add it to your pages list, ` +
-          `or declare your own \`input: "attempt"\` page.\n`,
+          `or declare your own page with id "attempt".\n`,
       );
     }
     const locale = detectLocale();
@@ -922,7 +925,7 @@ async function show(
         scope: selection,
         results,
         report: meta,
-        page: { id: attemptPage.id, input: "attempt", locator: attempt.locator!, evidence: attemptEvidence },
+        page: { id: attemptPage.id, input: attemptEvidence },
         dimensionPins: report.dimensionPins,
       },
       { width: io.width, locale, panelMode: io.panelMode },
@@ -1217,20 +1220,20 @@ async function show(
         `error: page "${flags.page}" not found in ${sourceLabel}. Available pages: ${report.pages.filter((p) => p.navigation !== false).map((p) => p.id).join(", ")}\n`,
       );
     }
-    if (hit.input === "attempt") {
+    if (hit.params !== undefined) {
       throw new ShowError(
-        `error: page "${hit.id}" in ${sourceLabel} is an attempt-input page and needs a locator — it cannot be opened with --page directly. Use niceeval show @<locator> instead.\n`,
+        `error: page "${hit.id}" in ${sourceLabel} is a parametrized page and needs params — it cannot be opened with --page directly. Use niceeval show @<locator> instead.\n`,
       );
     }
     page = hit;
   }
 
-  // attemptCommand 留给渲染管线的默认值:AttemptLocator 已经是可直接 `niceeval show @<locator>`
+  // command 留给渲染管线的默认值:AttemptLocator 已经是可直接 `niceeval show @<locator>`
   // 的真实 CLI 语法,不需要再反查 eval id 拼一条近似命令。
   const meta = await buildHostReportMeta(report, selection);
   const text = await renderHostPageText(
     page,
-    { scope: selection, results, report: meta, page: { id: page.id, input: "sample" }, dimensionPins: report.dimensionPins },
+    { scope: selection, results, report: meta, page: { id: page.id, input: selection }, dimensionPins: report.dimensionPins },
     {
       width: io.width,
       locale,

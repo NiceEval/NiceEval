@@ -44,6 +44,7 @@ export {
 } from "./annotated-source.ts";
 export { loadAnnotatedEvalSource, loadAttemptSourceTree } from "./attempt-source.ts";
 export {
+  isAttemptEvidence,
   loadAttemptEvidence,
   type AttemptEvidence,
   type AttemptEvidenceCapabilities,

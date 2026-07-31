@@ -99,7 +99,7 @@ function evidenceOf(overrides: Partial<AttemptEvidence> = {}): AttemptEvidence {
 /** resolve 单个 attempt-input page 节点,注入给定的 evidence。 */
 async function resolveOnAttemptPage(node: ReportNode, evidence: AttemptEvidence): Promise<unknown> {
   const { scope, results } = emptyScopeAndResults();
-  const page = { id: "attempt", input: "attempt" as const, locator: evidence.locator, evidence };
+  const page = { id: "attempt", input: evidence };
   return resolveReportTree(node, {
     scope,
     results,

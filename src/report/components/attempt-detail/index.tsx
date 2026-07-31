@@ -1,6 +1,6 @@
 // Attempt 详情组合件:叶子区块用原语 + 公开 to* 装配。
 
-import type { AttemptEvidence } from "../../../record/attempt-evidence.ts";
+import { isAttemptEvidence, type AttemptEvidence } from "../../../record/attempt-evidence.ts";
 import { defineComponent } from "../../definition/tree.ts";
 import {
   Callouts,
@@ -17,7 +17,7 @@ import type { AttemptSummaryData, UsageTableData } from "../../model/types.ts";
 import { formatDurationMs, formatInstant, formatPoints, formatUSD } from "../../model/format.ts";
 import { localeText } from "../../model/locale.ts";
 import { cx, type ValueProps } from "../shared.ts";
-import type { AttemptPageContext, SamplePageContext } from "../../definition/tree.ts";
+import type { PageContext } from "../../definition/tree.ts";
 import {
   toAttemptAssertions,
   toAttemptFixPrompt,
@@ -150,20 +150,15 @@ const AttemptUsage = defineComponent<UsageProps>({
 });
 AttemptUsage.displayName = "AttemptUsage";
 
-function isAttemptPage(page: SamplePageContext | AttemptPageContext): page is AttemptPageContext {
-  return page.input === "attempt";
-}
-
-function evidenceOf(
-  props: { attempt?: AttemptEvidence },
-  ctx: { page: SamplePageContext | AttemptPageContext },
-): AttemptEvidence {
+function evidenceOf(props: { attempt?: AttemptEvidence }, ctx: { page: PageContext }): AttemptEvidence {
   if (props.attempt !== undefined) return props.attempt;
-  const page = ctx.page;
-  if (!isAttemptPage(page)) {
-    throw new Error('AttemptDetails requires attempt={evidence} or an attempt-input page (input: "attempt").');
+  const input = ctx.page.input;
+  if (!isAttemptEvidence(input)) {
+    throw new Error(
+      "AttemptDetails requires attempt={evidence} or a page whose load produces AttemptEvidence (e.g. the standard attempt page).",
+    );
   }
-  return page.evidence;
+  return input;
 }
 
 export type AttemptDetailsProps = {
@@ -172,12 +167,10 @@ export type AttemptDetailsProps = {
 };
 
 export const AttemptAssessment = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
-  const evidence = evidenceOf(props, ctx as { page: SamplePageContext | AttemptPageContext });
-  const page = ctx.page as SamplePageContext | AttemptPageContext;
+  const evidence = evidenceOf(props, ctx);
   const notices = await toAttemptNotices(evidence);
-  const hasSource = isAttemptPage(page)
-    ? page.evidence.capabilities.source
-    : evidence.capabilities.source;
+  const pageInput = ctx.page.input;
+  const hasSource = isAttemptEvidence(pageInput) ? pageInput.capabilities.source : evidence.capabilities.source;
   const assertions = hasSource ? null : await toAttemptAssertions(evidence);
   return (
     <Col>
@@ -194,7 +187,7 @@ AttemptAssessment.displayName = "AttemptAssessment";
 
 /** 公开 Attempt 详情组合；文档名 AttemptDetails。 */
 export const AttemptDetails = defineComponent<AttemptDetailsProps>(async (props, ctx) => {
-  const evidence = evidenceOf(props, ctx as { page: SamplePageContext | AttemptPageContext });
+  const evidence = evidenceOf(props, ctx);
   const conversationLivesInSource =
     evidence.capabilities.source && evidence.evalSource !== null;
   const [summary, fixPrompt, timeline, usage, conversation, diff] = await Promise.all([

@@ -66,6 +66,7 @@ async function resolve(node: React.ReactNode) {
 
 const webCtx: WebContext = {
   locale: "en",
+  href: () => undefined,
   dimension: () => {
     throw new UndeclaredDimensionValueError("unbound", "_");
   },

@@ -15,12 +15,12 @@
 
 import type { Record, Sample } from "../../record/index.ts";
 import type { LocalizedText } from "../../types.ts";
-import type { AttemptLocator } from "../../record/locator.ts";
 import type { PageContext } from "../../../dist/report/definition/tree.js";
 import type {
   ReportDefinition,
   ReportMeta,
   ReportPage,
+  ReportTarget,
 } from "../../../dist/report/definition/report.js";
 import type { DimensionPins } from "../../../dist/report/presentation.js";
 
@@ -32,6 +32,10 @@ export type {
   ReportMeta,
   ReportMetaPage,
   ReportPage,
+  ReportTarget,
+  PageDefinition,
+  PageParams,
+  PageLoadContext,
 } from "../../../dist/report/definition/report.js";
 export type { ThemeDefinition } from "../../../dist/report/theme.js";
 
@@ -196,7 +200,7 @@ export async function resolveHostPage(
 /** 从 ResolvedPage 同步渲染 web 面(静态 HTML);动态 import dist 产物,render 本身无 await。 */
 export async function renderHostPageFromResolved(
   resolved: import("../../../dist/report/runtime/resolved-page.js").ResolvedPage,
-  options: { locale: string; attemptHref?: (locator: AttemptLocator) => string },
+  options: { locale: string; href?: (target: ReportTarget) => string | undefined },
 ): Promise<string> {
   const { renderResolvedPageWeb } = await import("../../../dist/report/runtime/resolved-page.js");
   return renderResolvedPageWeb(resolved, options);
@@ -218,15 +222,15 @@ export async function materializeHostPageRendererAssets(
 }
 
 /**
- * 渲染一页的 web 面(静态 HTML)。attemptHref 缺省时报告有 attempt-input page 就用
- * niceeval/report 的根相对默认值(`attempt/<encodeURIComponent(locator)>.html`,index.html
- * 视角);从 attempt 页面自身内容渲染时(该 page 引用了其它 locator)view 显式传入同级
- * 相对版本覆盖它——两种情形都不在这里判断,只透传。
+ * 渲染一页的 web 面(静态 HTML)。`href` 缺省时用 niceeval/report 的根相对默认值(只服务
+ * 标准库 attempt 目标,`attempt/<encodeURIComponent(locator)>.html`,index.html 视角);
+ * 从参数化页面自身内容渲染时(该 page 引用了其它目标)view 显式传入同级相对版本覆盖它——
+ * 两种情形都不在这里判断,只透传。
  */
 export async function renderHostPageHtml(
   page: ReportPage,
   ctx: HostRenderContext,
-  options: { locale: string; attemptHref?: (locator: AttemptLocator) => string },
+  options: { locale: string; href?: (target: ReportTarget) => string | undefined },
 ): Promise<string> {
   const resolved = await resolveHostPage(page, ctx);
   return renderHostPageFromResolved(resolved, options);

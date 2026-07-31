@@ -117,13 +117,17 @@ describe("defineRenderer 双面协议", () => {
     const props = { value, title: "Confusion" };
     const faces = facesOf(Matrix) as {
       text: (p: typeof props, ctx: ReturnType<typeof createTextContext>) => string;
-      web: (p: typeof props, ctx: { locale: "en"; dimension: (h: string) => never }) => unknown;
+      web: (
+        p: typeof props,
+        ctx: { locale: "en"; href: () => undefined; dimension: (h: string) => never },
+      ) => unknown;
     };
     const text = faces.text(props, createTextContext());
     expect(text).toBe("Confusion\n1\t0\n0\t1");
 
     const webCtx = {
       locale: "en" as const,
+      href: () => undefined,
       dimension: (handle: string): never => {
         throw new Error(`unexpected dimension query: ${handle}`);
       },

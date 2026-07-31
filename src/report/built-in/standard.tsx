@@ -1,7 +1,9 @@
 // standard —— 内建视图:公开 to* + 原语/组合件；每页 page.render。
 
 import type { AttemptEvidence } from "../../record/attempt-evidence.ts";
+import type { AttemptLocator } from "../../record/locator.ts";
 import type { Sample } from "../../record/types.ts";
+import type { PageDefinition } from "../definition/report.ts";
 import {
   AttemptDetails,
   Callouts,
@@ -86,11 +88,22 @@ export const standardTracesPage = {
   render: standardTracesRender,
 };
 
-export const standardAttemptPage = {
+/**
+ * attempt 详情:标准库导出的参数化页(docs/feature/reports/library.md「参数化页:attempt
+ * 与 experiment 详情」)。`params.encode` 是恒等函数——locator 本身就是 URL-safe 的不透明
+ * 字符串,不需要额外编码;`load` 经 `ctx.evidence()` 装载证据,不重新实现任何一条聚合规则。
+ */
+export const standardAttemptPage: PageDefinition<{ locator: AttemptLocator }, AttemptEvidence> = {
   id: "attempt",
   title: "Attempt",
-  input: "attempt" as const,
-  navigation: false as const,
+  navigation: false,
+  params: {
+    encode: ({ locator }) => locator,
+    decode: (key) => ({ locator: key as AttemptLocator }),
+    enumerate: (base) =>
+      base.attempts.flatMap((attempt) => (attempt.locator === undefined ? [] : [{ locator: attempt.locator }])),
+  },
+  load: (_base, { locator }, ctx) => ctx.evidence(locator),
   render: standardAttemptRender,
 };
 

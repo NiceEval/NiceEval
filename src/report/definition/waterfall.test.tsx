@@ -72,16 +72,25 @@ async function resolve(node: React.ReactNode) {
     scope,
     results,
     report: buildReportMeta(definition, scope),
-    page: { id: "main", input: "sample" },
+    page: { id: "main", input: scope },
     memo: new ResolveMemo(),
   });
   validateReportTree(resolved);
   return resolved;
 }
 
+function attemptLocatorOfTarget(target: { page: string; params?: unknown }): string | undefined {
+  if (target.page !== "attempt") return undefined;
+  const locator = (target.params as { locator?: unknown } | undefined)?.locator;
+  return typeof locator === "string" ? locator : undefined;
+}
+
 const webCtx: WebContext = {
   locale: "en",
-  attemptHref: (loc) => `attempt/${encodeURIComponent(loc)}.html`,
+  href: (target) => {
+    const locator = attemptLocatorOfTarget(target);
+    return locator === undefined ? undefined : `attempt/${encodeURIComponent(locator)}.html`;
+  },
   dimension: () => {
     throw new UndeclaredDimensionValueError("unbound", "_");
   },
@@ -94,7 +103,10 @@ describe("Waterfall", () => {
       tree,
       createTextContext({
         width: 100,
-        attemptCommand: (loc) => `niceeval show attempt ${loc}`,
+        command: (target) => {
+          const locator = attemptLocatorOfTarget(target);
+          return locator === undefined ? undefined : `niceeval show attempt ${locator}`;
+        },
       }),
     );
     expect(text).toContain("Attempt A");

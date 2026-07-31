@@ -4,7 +4,6 @@ import { defineComponent } from "../../definition/tree.ts";
 import { TableContentView } from "../../definition/primitives.tsx";
 import type { ReportInput } from "../../model/types.ts";
 import type { AttemptHandle, Sample } from "../../../record/types.ts";
-import type { AttemptLocator } from "../../../record/locator.ts";
 import { collectItems, locatorOf, resolveInput } from "../../model/aggregate.ts";
 import type { ReportLocale } from "../../model/locale.ts";
 import { attemptListData, attemptRowsOf } from "./compute.ts";
@@ -16,7 +15,6 @@ export { validateAttemptListData, validateEvalListData, validateExperimentListDa
 export interface FailureListProps {
   limit?: number;
   input?: ReportInput;
-  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
@@ -39,20 +37,12 @@ export const FailureList = defineComponent<FailureListProps>(async (props, ctx) 
     });
   const limit = props.limit ?? 20;
   const content = attemptListContent(failures.slice(0, limit));
-  return (
-    <TableContentView
-      data={content}
-      attemptHref={props.attemptHref}
-      locale={props.locale}
-      className={props.className}
-    />
-  );
+  return <TableContentView data={content} locale={props.locale} className={props.className} />;
 });
 FailureList.displayName = "FailureList";
 
 export interface AttemptListProps {
   attempts: readonly AttemptHandle[];
-  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
@@ -60,14 +50,7 @@ export interface AttemptListProps {
 /** 薄组合：toAttemptRows + Table。 */
 export const AttemptList = defineComponent<AttemptListProps>(async (props) => {
   const rows = await toAttemptRows(props.attempts);
-  return (
-    <TableContentView
-      data={attemptListContent(rows)}
-      attemptHref={props.attemptHref}
-      locale={props.locale}
-      className={props.className}
-    />
-  );
+  return <TableContentView data={attemptListContent(rows)} locale={props.locale} className={props.className} />;
 });
 AttemptList.displayName = "AttemptList";
 
@@ -75,7 +58,6 @@ export interface ExperimentTableProps {
   input?: Sample;
   sort?: string;
   searchable?: boolean;
-  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
@@ -91,7 +73,6 @@ export const ExperimentTable = defineComponent<ExperimentTableProps>(async (prop
       data={content}
       sort={props.sort ?? defaultSort}
       searchable={props.searchable ?? true}
-      attemptHref={props.attemptHref}
       locale={props.locale}
       className={props.className}
     />

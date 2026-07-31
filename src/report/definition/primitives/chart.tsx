@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
 import { defineComponent, type ReportNode, type TextContext, type WebContext } from "../tree.ts";
+import type { ReportTarget } from "../report.ts";
 import type { DimensionDeclarations } from "../../presentation.ts";
 import type { Dataset, DatasetField } from "../../model/types.ts";
 import type { ReportLocale } from "../../model/locale.ts";
@@ -11,7 +12,7 @@ import { formatAxisTick, formatMetricValue, shortestUniqueLabels } from "../../m
 import { axisScale, paddedAxisDomain, placePointLabels, ticksInDomain, tickStepOf } from "../../model/chart/math.ts";
 import { renderCharPlot, renderCoordinateTable } from "../../model/chart/plot.ts";
 import { padDisplay, padStartDisplay, stringWidth, textBar } from "../../model/text-layout.ts";
-import { dataShapeError, type ValueProps } from "../../components/shared.ts";
+import { dataShapeError, targetOfRefs, type ValueProps } from "../../components/shared.ts";
 import { isDataset } from "../../model/dataset.ts";
 import {
   mapChartSeries,
@@ -36,6 +37,11 @@ function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
+/** Chart 内部一个可下钻的点(x/y 映射后);pointTarget 只看 `refs`,不看坐标或 label。 */
+export interface ChartTargetPoint {
+  refs: readonly AttemptLocator[];
+}
+
 export interface ChartPresentation {
   children?: ReportNode;
   width?: number | `${number}%`;
@@ -46,9 +52,32 @@ export interface ChartPresentation {
   tooltip?: boolean;
   grid?: boolean;
   series?: Readonly<Record<string, ChartSeriesOverride>>;
-  attemptHref?: (locator: AttemptLocator) => string;
+  /**
+   * 「这个点该指向谁」由放点的上层决定(library.md「目标与下钻」)。省略时落到全库唯一的
+   * 默认规则 `targetOfRefs(point.refs)`——单证据给出 attempt 目标,零或多证据不成链
+   * (这正是 refs[0] 快捷写法的已知 bug:多 attempt 点被压成第一个 attempt 的目标,而不是
+   * 报不出目标)。
+   */
+  pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
   locale?: ReportLocale;
   className?: string;
+}
+
+/** `pointTarget` 缺省时的目标:`targetOfRefs`,把 refs[0] 式的错误收窄成结构化的唯一规则。 */
+function resolvePointTarget(
+  point: ChartTargetPoint,
+  pointTarget: ((point: ChartTargetPoint) => ReportTarget | undefined) | undefined,
+): ReportTarget | undefined {
+  return pointTarget ? pointTarget(point) : targetOfRefs(point.refs);
+}
+
+function pointHref(
+  point: { refs: readonly string[] },
+  ctx: WebContext,
+  pointTarget: ((point: ChartTargetPoint) => ReportTarget | undefined) | undefined,
+): string | undefined {
+  const target = resolvePointTarget({ refs: point.refs as readonly AttemptLocator[] }, pointTarget);
+  return target === undefined ? undefined : ctx.href(target);
 }
 
 export type ChartProps = ValueProps<Dataset, ChartPresentation & { x: ChartAxisBinding; y: ChartAxisBinding }>;
@@ -197,7 +226,7 @@ function renderHorizontalBarsWeb(
   axes: ReturnType<typeof resolveChartAxes>,
   locale: RL,
   ctx: WebContext,
-  options: { legend?: boolean; attemptHref?: (locator: AttemptLocator) => string; className?: string },
+  options: { legend?: boolean; pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined; className?: string },
 ): ReactNode {
   const entries = visible.flatMap((series) => series.points.map((point) => ({ series, point })));
   const labels = shortestUniqueLabels(entries.map(({ point }) => point.xLabel ?? point.pointLabel));
@@ -222,9 +251,7 @@ function renderHorizontalBarsWeb(
           const rawLabel = point.xLabel ?? point.pointLabel;
           const label = labels.get(rawLabel) ?? rawLabel;
           const display = metricDisplay(point, "y", axes.yMeta, locale);
-          const href = options.attemptHref && point.refs[0]
-            ? options.attemptHref(point.refs[0] as AttemptLocator)
-            : undefined;
+          const href = pointHref(point, ctx, options.pointTarget);
           const colorClass = seriesClass(mapped, series, point, ctx);
           const ratio = max > 0 ? Math.max(0, Math.min(1, point.y / max)) : 0;
           const value = (
@@ -299,7 +326,7 @@ function renderChartWeb(
     layout?: "horizontal" | "vertical";
     legend?: boolean;
     grid?: boolean;
-    attemptHref?: (locator: AttemptLocator) => string;
+    pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
     className?: string;
   },
 ): ReactNode {
@@ -458,7 +485,7 @@ function renderChartWeb(
               ) : null}
               {ordered.map((p) => {
                 const placed = labels[drawable.indexOf(p)];
-                const href = options.attemptHref && p.refs[0] ? options.attemptHref(p.refs[0] as AttemptLocator) : undefined;
+                const href = pointHref(p, ctx, options.pointTarget);
                 let shape: ReactNode;
                 if (series.mark === "bar") {
                   const baseValue = stackedBarBase(visible, series, p.x);
@@ -788,7 +815,7 @@ export const Chart = defineComponent<ChartProps>({
       layout: props.layout,
       legend: props.legend,
       grid: props.grid,
-      attemptHref: props.attemptHref ?? ctx.attemptHref,
+      pointTarget: props.pointTarget,
       className: props.className,
     });
     const missingNote =

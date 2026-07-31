@@ -4,7 +4,8 @@
 
 import type { ReactElement, ReactNode } from "react";
 import type { AttemptLocator } from "../../../record/locator.ts";
-import { defineComponent, type TextContext } from "../tree.ts";
+import { defineComponent, type TextContext, type WebContext } from "../tree.ts";
+import { ATTEMPT_PAGE_ID, hrefForLocator } from "../../components/shared.ts";
 import { countText, localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../../model/locale.ts";
 import { formatDurationMs } from "../../model/format.ts";
 
@@ -43,7 +44,6 @@ export interface WaterfallProps {
   nodes: WaterfallContent | null;
   /** 区块标题;Content 为 null 或空时整块(含标题)不渲染。 */
   title?: LocalizedText;
-  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
@@ -274,7 +274,7 @@ function WaterfallNodeRow({
 function renderWaterfallWeb(
   rows: WaterfallContent,
   locale: ReportLocale,
-  attemptHref: ((locator: AttemptLocator) => string) | undefined,
+  ctx: WebContext,
   title?: LocalizedText,
   className?: string,
 ): ReactNode {
@@ -295,13 +295,16 @@ function renderWaterfallWeb(
             <li key={row.key} className="niceeval-waterfall-row">
               <div className="niceeval-waterfall-head">
                 {row.locator !== undefined ? (
-                  attemptHref ? (
-                    <a className="niceeval-locator" href={attemptHref(row.locator)}>
-                      {row.locator}
-                    </a>
-                  ) : (
-                    <span className="niceeval-locator">{row.locator}</span>
-                  )
+                  (() => {
+                    const href = hrefForLocator(ctx, row.locator);
+                    return href !== undefined ? (
+                      <a className="niceeval-locator" href={href}>
+                        {row.locator}
+                      </a>
+                    ) : (
+                      <span className="niceeval-locator">{row.locator}</span>
+                    );
+                  })()
                 ) : null}
                 {labelRepeatsLocator ? null : <span className="niceeval-waterfall-label">{label}</span>}
                 <span className="niceeval-waterfall-duration">{formatDurationOrMissing(row.durationMs)}</span>
@@ -357,9 +360,9 @@ export function waterfallText(rows: WaterfallContent, ctx: TextContext, title?: 
         ...(failedNodes > 0 ? [`✗ ${countText(ctx.locale, "waterfall.failedNodes", failedNodes)}`] : []),
       ];
       const line = parts.join(" · ");
-      return row.locator !== undefined && ctx.attemptCommand
-        ? `${line}   ${ctx.attemptCommand(row.locator)}`
-        : line;
+      const command =
+        row.locator !== undefined ? ctx.command({ page: ATTEMPT_PAGE_ID, params: { locator: row.locator } }) : undefined;
+      return command !== undefined ? `${line}   ${command}` : line;
     })
     .join("\n");
   return title !== undefined ? `${resolveLocalizedText(title, ctx.locale)}\n${lines}` : lines;
@@ -372,8 +375,7 @@ export const Waterfall = defineComponent<WaterfallProps>({
     const content = props.nodes ?? null;
     if (content === null || content.length === 0) return null;
     const locale = props.locale ?? ctx.locale;
-    const attemptHref = props.attemptHref ?? ctx.attemptHref;
-    return renderWaterfallWeb(content, locale, attemptHref, props.title, props.className);
+    return renderWaterfallWeb(content, locale, ctx, props.title, props.className);
   },
   text(props, ctx) {
     const content = props.nodes ?? null;

@@ -14,7 +14,9 @@ import {
   defineComponent,
   type ReportComponent,
   type ReportNode,
+  type WebContext,
 } from "./tree.ts";
+import { hrefForLocator } from "../components/shared.ts";
 import { localeText, resolveLocalizedText, type LocalizedText, type ReportLocale } from "../model/locale.ts";
 import { joinColumns, padDisplay, stringWidth, wrapDisplay } from "../model/text-layout.ts";
 import type { ColumnAlign } from "../model/text-layout.ts";
@@ -269,7 +271,7 @@ export const Stat = defineComponent<StatProps>({
         <div className="niceeval-stat-label">{resolveLocalizedText(label, ctx.locale)}</div>
         <div className="niceeval-stat-value">
           {isCellValue(value)
-            ? renderCellWeb(value, { attemptHref: ctx.attemptHref, locale: ctx.locale, showMeasureRefs: false })
+            ? renderCellWeb(value, { href: (locator) => hrefForLocator(ctx, locator), locale: ctx.locale, showMeasureRefs: false })
             : statDisplayOf(value, ctx.locale)}
         </div>
         {detail !== undefined ? <div className="niceeval-stat-detail">{resolveLocalizedText(detail, ctx.locale)}</div> : null}
@@ -544,7 +546,6 @@ export interface TableRow {
 export interface TablePresentation {
   sort?: string;
   searchable?: boolean;
-  attemptHref?: (locator: AttemptLocator) => string;
   locale?: ReportLocale;
   className?: string;
 }
@@ -769,7 +770,7 @@ function validateSiblingRowKeys(rows: readonly TableContentRow[]): void {
 
 function renderCellWeb(
   cell: Cell | undefined,
-  ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale; showMeasureRefs?: boolean },
+  ctx: { href: (locator: AttemptLocator) => string | undefined; locale: ReportLocale; showMeasureRefs?: boolean },
 ): ReactNode {
   if (!cell) return <span className="niceeval-missing">{MISSING_MARK}</span>;
   switch (cell.kind) {
@@ -794,8 +795,9 @@ function renderCellWeb(
           {verdictMark(verdict === "skipped" ? "unreadable" : verdict)}
         </span>
       );
-      return ctx.attemptHref ? (
-        <a className={className} href={ctx.attemptHref(cell.locator)}>
+      const href = ctx.href(cell.locator);
+      return href !== undefined ? (
+        <a className={className} href={href}>
           {mark}
           {cell.locator}
         </a>
@@ -833,7 +835,7 @@ function renderCellWeb(
       return (
         <MetricCellView
           cell={cell.metric}
-          attemptHref={ctx.showMeasureRefs === false ? undefined : ctx.attemptHref}
+          href={ctx.showMeasureRefs === false ? undefined : ctx.href}
           locale={ctx.locale}
         />
       );
@@ -868,7 +870,7 @@ function renderHierarchyRowsWeb(
   rows: readonly TableContentRow[],
   columns: readonly TableColumn[],
   ctx: {
-    attemptHref?: (locator: AttemptLocator) => string;
+    href: (locator: AttemptLocator) => string | undefined;
     locale: ReportLocale;
     showMeasureRefs?: boolean;
   },
@@ -911,7 +913,7 @@ function renderHierarchyRowsWeb(
 function renderFlatContentRowsWeb(
   rows: readonly TableContentRow[],
   columns: readonly TableColumn[],
-  ctx: { attemptHref?: (locator: AttemptLocator) => string; locale: ReportLocale },
+  ctx: { href: (locator: AttemptLocator) => string | undefined; locale: ReportLocale },
 ): ReactNode[] {
   return rows.map((row) => (
     <tr
@@ -939,7 +941,7 @@ const TableImplementation = defineComponent<TableImplementationProps>({
     const locale = props.locale ?? ctx.locale;
     const { columns, content } = tableContentOf(props, locale);
     const alignClass = (align?: ColumnAlign) => (align === "right" ? "niceeval-align-right" : undefined);
-    const attemptHref = props.attemptHref ?? ctx.attemptHref;
+    const href = (locator: AttemptLocator) => hrefForLocator(ctx, locator);
     const hierarchical = content.rows.some((row) => (row.subRows?.length ?? 0) > 0);
     const table = (
       <table
@@ -972,7 +974,7 @@ const TableImplementation = defineComponent<TableImplementationProps>({
             <tr>
               <td colSpan={columns.length} className="niceeval-table-hierarchy-body">
                 {renderHierarchyRowsWeb(content.rows, columns, {
-                  attemptHref,
+                  href,
                   locale,
                   showMeasureRefs: false,
                 })}
@@ -980,7 +982,7 @@ const TableImplementation = defineComponent<TableImplementationProps>({
             </tr>
           </tbody>
         ) : (
-          <tbody>{renderFlatContentRowsWeb(content.rows, columns, { attemptHref, locale })}</tbody>
+          <tbody>{renderFlatContentRowsWeb(content.rows, columns, { href, locale })}</tbody>
         )}
       </table>
     );

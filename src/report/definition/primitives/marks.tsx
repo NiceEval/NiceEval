@@ -4,9 +4,9 @@
 
 import { defineComponent } from "../tree.ts";
 import type { ReportLocale } from "../../model/locale.ts";
-import type { AttemptLocator } from "../../../record/locator.ts";
+import type { ReportTarget } from "../report.ts";
 import { isMetricValue, type EvidenceRow } from "../../model/calculation.ts";
-import { Chart, Series } from "./chart.tsx";
+import { Chart, Series, type ChartTargetPoint } from "./chart.tsx";
 import { pointsToDataset, type ExternalPoint } from "./points-dataset.ts";
 
 type Mark = "scatter" | "line" | "bar" | "area";
@@ -30,7 +30,6 @@ interface BaseMarkProps<Row extends object> {
   legend?: boolean;
   locale?: ReportLocale;
   className?: string;
-  attemptHref?: (locator: AttemptLocator) => string;
   /**
    * Sample 派生默认校验 EvidenceRow / MetricValue。
    * `true` 只退出证据校验，接受 JSON 标量，不伪造 Attempt 下钻。
@@ -38,24 +37,34 @@ interface BaseMarkProps<Row extends object> {
   external?: boolean;
 }
 
-export type ScatterProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row>;
+/**
+ * Sample 派生图表才有下钻目标可言(外部标量序列的 `refs` 恒为空,`external: true` 图表因此
+ * 没有这个 prop——不是省略,是这个组合天生就没有可下钻的证据)。省略时全库唯一默认规则
+ * `targetOfRefs(point.refs)` 生效(见 chart.tsx `ChartPresentation.pointTarget`)。
+ */
+interface DrillDownMarkProps {
+  pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
+}
+
+export type ScatterProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & DrillDownMarkProps;
 export type ExternalScatterProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
   external: true;
 };
 
-export type LineProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row>;
+export type LineProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & DrillDownMarkProps;
 export type ExternalLineProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
   external: true;
 };
 
-export type BarsProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & {
-  /** 显示排序；在 limit 之前生效，不重新聚合。 */
-  sort?: BarsSort;
-  /** 排序后只保留前 N 行；不生成“其他”桶。 */
-  limit?: number;
-  /** web 面柱形方向；text 面始终使用适合终端阅读的横向排行。 */
-  layout?: "horizontal" | "vertical";
-};
+export type BarsProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> &
+  DrillDownMarkProps & {
+    /** 显示排序；在 limit 之前生效，不重新聚合。 */
+    sort?: BarsSort;
+    /** 排序后只保留前 N 行；不生成“其他”桶。 */
+    limit?: number;
+    /** web 面柱形方向；text 面始终使用适合终端阅读的横向排行。 */
+    layout?: "horizontal" | "vertical";
+  };
 export type ExternalBarsProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
   external: true;
   sort?: BarsSort;
@@ -63,16 +72,17 @@ export type ExternalBarsProps<Row extends ExternalPoint = ExternalPoint> = BaseM
   layout?: "horizontal" | "vertical";
 };
 
-export type AreaProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row>;
+export type AreaProps<Row extends EvidenceRow = EvidenceRow> = BaseMarkProps<Row> & DrillDownMarkProps;
 export type ExternalAreaProps<Row extends ExternalPoint = ExternalPoint> = BaseMarkProps<Row> & {
   external: true;
 };
 
-type AnyMarkProps = BaseMarkProps<object> & {
-  sort?: BarsSort;
-  limit?: number;
-  layout?: "horizontal" | "vertical";
-};
+type AnyMarkProps = BaseMarkProps<object> &
+  DrillDownMarkProps & {
+    sort?: BarsSort;
+    limit?: number;
+    layout?: "horizontal" | "vertical";
+  };
 
 function sortValue(raw: unknown, path: string, external: boolean): number | string | null {
   if (isMetricValue(raw)) {
@@ -161,7 +171,7 @@ function markChart(mark: Mark, props: AnyMarkProps) {
       layout={props.layout}
       locale={props.locale}
       className={props.className}
-      attemptHref={props.attemptHref}
+      pointTarget={props.pointTarget}
     >
       <Series
         id={mark}

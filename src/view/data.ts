@@ -25,6 +25,7 @@ import { buildHostReportMeta,
   type ReportAsset,
   type ReportDefinition,
   type ReportPage,
+  type ReportTarget,
   type HeadTag,
   type ThemeDefinition,
 } from "../report/runtime/host.ts";
@@ -110,10 +111,23 @@ export interface ViewScan {
   };
 }
 
+/** 目标里的 locator(只有标准库 attempt 页的目标才有这个形状,与 targetOfRefs 同一份约定)。 */
+function attemptLocatorOfTarget(target: ReportTarget): string | undefined {
+  if (target.page !== "attempt") return undefined;
+  const locator = (target.params as { locator?: unknown } | undefined)?.locator;
+  return typeof locator === "string" ? locator : undefined;
+}
+
 /** attempt 页面内容(不是 index.html 的 scope-input page)链去同目录 attempt/ 下的兄弟文档,
  *  不带 `attempt/` 目录前缀(site.ts「站点管线」;两处 href 的对应关系与拆分只住在那)。 */
-const SIBLING_ATTEMPT_HREF = (locator: AttemptLocator): string => `${encodeURIComponent(locator)}.html`;
-const ROOT_ATTEMPT_HREF = (locator: AttemptLocator): string => `attempt/${encodeURIComponent(locator)}.html`;
+const SIBLING_ATTEMPT_HREF = (target: ReportTarget): string | undefined => {
+  const locator = attemptLocatorOfTarget(target);
+  return locator === undefined ? undefined : `${encodeURIComponent(locator)}.html`;
+};
+const ROOT_ATTEMPT_HREF = (target: ReportTarget): string | undefined => {
+  const locator = attemptLocatorOfTarget(target);
+  return locator === undefined ? undefined : `attempt/${encodeURIComponent(locator)}.html`;
+};
 
 /** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Sample 是计算入口」)。 */
 export interface ViewScanOptions {
@@ -630,19 +644,19 @@ async function renderReportSlot(
   const hostReport = definitions.report;
   const hostTheme = definitions.theme;
 
-  // scope-input pages 只有这些参与本函数的「全部烘进 index.html」渲染;attempt-input page(如果
-  // 报告声明了)没有 locator 就不能 resolve,它的每-locator 静态文档是独立机制,不在这里渲染
-  // (docs/feature/reports/architecture.md「Attempt 详情是一张参数化 page」)。
-  const scopePages = hostReport.pages.filter((p) => p.input !== "attempt");
+  // 非参数化页(没有 `params` 声明)才参与本函数的「全部烘进 index.html」渲染;参数化页(如果
+  // 报告声明了)没有 params 就不能 resolve,它的每实例静态文档是独立机制,不在这里渲染
+  // (docs/feature/reports/library.md「参数化页」)。
+  const scopePages = hostReport.pages.filter((p) => p.params === undefined);
   const navigablePages = scopePages.filter((p) => p.navigation !== false);
 
   const initialPageId = page ?? navigablePages[0]?.id ?? scopePages[0]?.id;
   const initialPage = initialPageId !== undefined ? scopePages.find((p) => p.id === initialPageId) : undefined;
   if (initialPageId === undefined || !initialPage) {
     const requested = hostReport.pages.find((p) => p.id === page);
-    if (requested?.input === "attempt") {
+    if (requested?.params !== undefined) {
       throw new ViewInputError(
-        `error: page "${page}" in ${report?.path ?? "the built-in report"} is an attempt-input page and needs a locator — it cannot be opened as the initial page directly.`,
+        `error: page "${page}" in ${report?.path ?? "the built-in report"} is a parametrized page and needs params — it cannot be opened as the initial page directly.`,
       );
     }
     throw new ViewInputError(
@@ -685,7 +699,7 @@ async function renderReportSlot(
       const resolved = resolveScopePage(pageId);
       return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, {
         locale,
-        attemptHref: ROOT_ATTEMPT_HREF,
+        href: ROOT_ATTEMPT_HREF,
       });
     } catch (e) {
       if (pageFailure !== "embed") throw e;
@@ -729,7 +743,8 @@ async function renderReportSlot(
 
   // 自定义报告替换的是可见页面，不该顺手切断官方组件的 locator 下钻。显式声明仍覆盖；
   // 没声明时由 view 补标准 AttemptDetails，且不把这张隐式页塞进导航或报告元数据。
-  const attemptPage = hostReport.pages.find((p) => p.input === "attempt") ?? (await loadDefaultHostAttemptPage());
+  // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」)。
+  const attemptPage = hostReport.pages.find((p) => p.id === "attempt") ?? (await loadDefaultHostAttemptPage());
   // 装配一个 locator 的 AttemptEvidence 并渲染该 page 两种语言的内容 HTML(不含外层文档);
   // pageFailure 语义与 scope pages 相同 —— 本地 server 折成该文档的完整错误反馈块,
   // 静态导出直接抛出(writeSite 侧汇总成「整体失败,不留半套目录」)。
@@ -746,14 +761,14 @@ async function renderReportSlot(
       scope: selection,
       results,
       report: hostMeta,
-      page: { id: attemptPage!.id, input: "attempt" as const, locator, evidence },
+      page: { id: attemptPage!.id, input: evidence },
       dimensionPins: hostReport.dimensionPins,
     };
     try {
       const resolved = await resolveHostPage(attemptPage!, ctx);
       return {
-        en: await renderHostPageFromResolved(resolved, { locale: "en", attemptHref: SIBLING_ATTEMPT_HREF }),
-        "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", attemptHref: SIBLING_ATTEMPT_HREF }),
+        en: await renderHostPageFromResolved(resolved, { locale: "en", href: SIBLING_ATTEMPT_HREF }),
+        "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", href: SIBLING_ATTEMPT_HREF }),
         assets: await materializeHostPageRendererAssets(resolved),
       };
     } catch (e) {
