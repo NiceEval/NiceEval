@@ -55,6 +55,7 @@ export {
   toConversationTurns,
   toDiffFiles,
   toEvalRows,
+  toExperimentDetails,
   toExperimentRows,
   toHeroData,
   toRunNotices,
@@ -291,6 +292,10 @@ export {
 } from "./components/attempt-detail/index.tsx";
 export type { AttemptDetailsProps } from "./components/attempt-detail/index.tsx";
 
+// Experiment 详情组合组件(docs/feature/reports/components/experiment-detail/README.md)。
+export { ExperimentDetails } from "./components/experiment-detail/index.tsx";
+export type { ExperimentDetailsProps } from "./components/experiment-detail/index.tsx";
+
 // 数据契约(Content / Row / Cell 等;AttemptMetric/Dataset/Scoreboard 旧协议不从此处导出)
 export type {
   Aggregator,
@@ -305,6 +310,7 @@ export type {
   DimensionOptions,
   DimensionRef,
   EvalListItem,
+  ExperimentDetailsData,
   ExperimentListEvalRow,
   ExperimentListItem,
   FlagConditions,

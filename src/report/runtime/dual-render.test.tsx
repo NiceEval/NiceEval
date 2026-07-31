@@ -37,6 +37,9 @@ import {
   type ReportPage,
 } from "../definition/report.ts";
 import { pickReportPage, ReportPageNeedsLocatorError, ReportPageNotFoundError } from "./text.ts";
+import { targetHref } from "./target.ts";
+import type { ChartTargetPoint } from "../definition/primitives/chart.tsx";
+import type { ReportTarget } from "../definition/report.ts";
 import { renderSamplePage } from "./page-render.ts";
 import { ExperimentTable, FailureList } from "../components/entity-lists/index.tsx";
 import { Hero } from "../components/site-components/index.tsx";
@@ -47,6 +50,7 @@ import { attemptListData } from "../components/entity-lists/compute.ts";
 import { attemptListContent, experimentListContent } from "../components/entity-lists/content.ts";
 import { scopeSummaryData } from "../components/summaries/compute.ts";
 import { AttemptDetails } from "../components/attempt-detail/index.tsx";
+import { ExperimentDetails } from "../components/experiment-detail/index.tsx";
 import {
   agent,
   aggregate,
@@ -58,7 +62,7 @@ import {
 } from "../model/calculation.ts";
 import { label } from "../model/flag.ts";
 import { toExperimentRows } from "../model/conversions.ts";
-import builtInReport, { failures, stability, standard, standardAttemptPage } from "../built-in/index.tsx";
+import builtInReport, { failures, stability, standard, standardAttemptPage, standardExperimentPage } from "../built-in/index.tsx";
 import { RunNotices, SampleFixPrompt, SampleNotices } from "../components/site-components/index.tsx";
 import { StabilityOverview } from "../components/summaries/index.tsx";
 import { loadBuiltInReport } from "./load.ts";
@@ -477,15 +481,16 @@ describe("defineReport 装载规范化", () => {
 // ───────────────────────── 内建报告 ─────────────────────────
 
 describe("内建报告", () => {
-  it("四页普通 defineReport:页 id、页名与逐页组件构成和 built-in.md 全文一致,第四页是不进导航的 attempt-input page", async () => {
+  it("五页普通 defineReport:页 id、页名与逐页组件构成和 built-in.md 全文一致,第四、五页是不进导航的参数化详情页", async () => {
     const scope = scopeOf([]);
     expect(builtInReport.kind).toBe("report");
-    expect(builtInReport.pages.map((p) => p.id)).toEqual(["report", "attempts", "traces", "attempt"]);
+    expect(builtInReport.pages.map((p) => p.id)).toEqual(["report", "attempts", "traces", "attempt", "experiment"]);
     expect(builtInReport.pages.map((p) => p.title)).toEqual([
       { en: "Report", "zh-CN": "报告" },
       "Attempts",
       { en: "Traces", "zh-CN": "追踪" },
       "Attempt",
+      "Experiment",
     ]);
     const childTypes = (content: unknown) => {
       const col = content as {
@@ -497,7 +502,7 @@ describe("内建报告", () => {
         c !== null && c !== undefined && typeof c === "object",
       );
     };
-    const [reportPage, attemptsPage, tracesPage, attemptPage] = builtInReport.pages;
+    const [reportPage, attemptsPage, tracesPage, attemptPage, experimentPage] = builtInReport.pages;
     expect(childTypes(await pageTree(reportPage!, scope)).map((c) => c.type)).toEqual([
       Hero,
       Callouts,
@@ -516,6 +521,18 @@ describe("内建报告", () => {
     });
     expect(attemptPage!.params).toBe(standardAttemptPage.params);
     expect(((await attemptPage!.render(null as never)) as { type: unknown }).type).toBe(AttemptDetails);
+    expect(experimentPage!.render).toBe(standardExperimentPage.render);
+    expect(experimentPage).toMatchObject({
+      id: standardExperimentPage.id,
+      title: standardExperimentPage.title,
+      navigation: false,
+    });
+    expect(experimentPage!.params).toBe(standardExperimentPage.params);
+    const exampleSnap = snap({ experimentId: "agents/codex", results: [res("q", "passed")] });
+    const experimentScope = scopeOf([exampleSnap]);
+    expect(
+      ((await experimentPage!.render(experimentScope as never)) as { type: unknown }).type,
+    ).toBe(ExperimentDetails);
   });
 
   it("任务视图 failures / stability:单导航页构成与 built-in.md 全文一致,详情页复用 standardAttemptPage", async () => {
@@ -569,6 +586,21 @@ describe("内建报告", () => {
     expect(standardAttemptPage.params!.decode(standardAttemptPage.params!.encode(p))).toEqual(p);
     const enumerated = [...standardAttemptPage.params!.enumerate(scope)];
     expect(enumerated).toEqual([{ locator: withLocator.locator }]);
+  });
+
+  it("standardExperimentPage.params 往返:decode(encode(p)) 与 p 深相等;enumerate 给出全部 experiment id,收窄之外不出现", () => {
+    const runA = snap({ experimentId: "agents/codex", results: [res("q", "passed")] });
+    const runB = snap({ experimentId: "agents/claude", results: [res("q", "failed")] });
+    const scope = scopeOf([runA, runB]);
+    const p = { experiment: "agents/codex" };
+    expect(standardExperimentPage.params!.decode(standardExperimentPage.params!.encode(p))).toEqual(p);
+    const enumerated = [...standardExperimentPage.params!.enumerate(scope)];
+    expect(enumerated.sort((a, b) => a.experiment.localeCompare(b.experiment))).toEqual([
+      { experiment: "agents/claude" },
+      { experiment: "agents/codex" },
+    ]);
+    const narrowed = scope.scope({ experiments: ["agents/codex"] });
+    expect([...standardExperimentPage.params!.enumerate(narrowed)]).toEqual([{ experiment: "agents/codex" }]);
   });
 });
 
@@ -654,6 +686,35 @@ describe("SampleOverview(组合组件)", () => {
         series: "agent",
       }),
     );
+  });
+
+  it("ExperimentScatter 点目标:默认指向 experiment 页且参数是该点实验 id;报告无 experiment 页时点无链接", async () => {
+    const runA = snap({ experimentId: "agents/codex", results: [res("q", "passed")] });
+    const scope = scopeOf([runA]);
+    const resolved = await resolveTree(<ExperimentScatter />, scope);
+    const charts = collectElementsByType(resolved, Chart);
+    expect(charts).toHaveLength(1);
+    const pointTarget = charts[0]!.props.pointTarget as (point: ChartTargetPoint) => ReportTarget | undefined;
+    expect(pointTarget({ refs: [], key: "agents/codex" })).toEqual({
+      page: "experiment",
+      params: { experiment: "agents/codex" },
+    });
+    // 报告声明了 experiment 页时,这个目标能换出 URL;不声明该页时 ctx.href 给不出链接,
+    // 点退化成纯图形——ExperimentScatter 自己不判断"页存不存在"。
+    expect(targetHref(standard.pages, pointTarget({ refs: [], key: "agents/codex" })!)).toBe(
+      "experiment/agents%2Fcodex.html",
+    );
+    const pagesWithoutExperiment = standard.pages.filter((p) => p.id !== "experiment");
+    expect(targetHref(pagesWithoutExperiment, pointTarget({ refs: [], key: "agents/codex" })!)).toBeUndefined();
+  });
+
+  it("ExperimentScatter 显式 pointTarget 覆盖默认下钻策略", async () => {
+    const runA = snap({ experimentId: "agents/codex", results: [res("q", "passed")] });
+    const scope = scopeOf([runA]);
+    const custom = (point: ChartTargetPoint): ReportTarget => ({ page: "custom", params: { key: point.key } });
+    const resolved = await resolveTree(<ExperimentScatter pointTarget={custom} />, scope);
+    const charts = collectElementsByType(resolved, Chart);
+    expect(charts[0]!.props.pointTarget).toBe(custom);
   });
 
   it("series 缺省解析:Sample 内任一 experiment 声明 labels.line 时 Series.by=line,完全无 line 时 agent;显式 series 覆盖缺省", async () => {
