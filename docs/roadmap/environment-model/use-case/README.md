@@ -4,13 +4,13 @@
 契约单源始终在 [README](../README.md) 与 [Library](../library.md),用例只做搭配与叙事,不复制定义。
 
 - [记忆对照:mempal 装成 experiment 层](memory-condition-layer.md) —— agent 侧环境重的项目怎样甩掉派生 template 与 flags 背身份。
-- [每题自带环境](per-task-environment.md) —— terminal-bench 形态:eval 声明 Compose 底座,agent 层现场装。
-- [断网题装实验工具](offline-task-staged-layer.md) —— 两头都重的死角:每题底座 × 每实验工具,`prepare` 走 staged 送入。
-- [把热路径烘进产物](bake-hot-layers.md) —— 逐层计时说话之后造缓存产物,声明一行不动。
+- [每题自带环境](per-task-environment.md) —— terminal-bench 形态:eval 声明 Compose sandbox source,agent 层现场装。
+- [断网题装实验工具](offline-task-staged-layer.md) —— 两头都重的死角:每条 eval 的 Compose × 每实验工具,`prepare` 走 staged 送入。
+- [把热路径烘进产物](bake-hot-layers.md) —— 逐层计时说话之后构建新的 image / template / snapshot,声明一行不动。
 
 ## 选择速查
 
-| 你的项目 | 底座 | 层 | 用例 |
+| 你的项目 | sandbox case 来源 | Layer | 用例 |
 | --- | --- | --- | --- |
 | 所有题同一种环境,比 agent / 记忆机制 | spec 默认产物 | agent 层(adapter 自带)+ experiment 层 | [记忆对照](memory-condition-layer.md) |
 | 每题自带环境 | eval folder-local source / profile | agent 层 | [每题自带环境](per-task-environment.md) |

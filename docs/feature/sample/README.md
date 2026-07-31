@@ -28,7 +28,7 @@ sample.issues;      // 读取与选择时发现的结构化问题
 
 ## 一份 Sample 上有什么
 
-**口径是物化的数据,不是隐藏语义。**
+**口径写在返回值里,不是隐藏语义。**
  `mode` 写出基础选择方式,`fresh` 写出是否只含新执行。
  `attempts` 是按完整口径挑好的全集——自定义脚本消费它就自动正确,不需要知道口径怎么展开,也不会因为自己 `flatMap` 一遍 `runs` 而把同一道题的历史 attempt 重复计入。
 
@@ -55,7 +55,7 @@ sample.issues;      // 读取与选择时发现的结构化问题
 ## 相关阅读
 
 - [Library](library.md) —— 选择器、Sample 形状、转换算子与 Issue 全集。
-- [参考方案](reference/README.md) —— 转换算子与口径物化从哪里学。
+- [参考方案](reference/README.md) —— 转换算子与显式口径字段从哪里学。
 - [用例手册](use-case/README.md) —— 按实际读取任务选择 API。
 - [Record](../record/README.md) —— 被选择的那份事实。
 - [Reports](../reports/README.md) —— 建立在样本之上的指标与组件。

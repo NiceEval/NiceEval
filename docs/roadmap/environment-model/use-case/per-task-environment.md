@@ -16,7 +16,7 @@ const environment = composeSandbox({
 });
 
 export default defineEval({
-  environment,                     // 底座:题自己的 Compose,按需构建
+  environment,                     // 题自己的 Compose sandbox source,按需构建
   async test(t) {
     await t.send("修好 /app/solver 里的死循环。");
     await t.sandbox.uploadDirectory("./tests", ".tbench-testing");   // 判分材料收工后再挂

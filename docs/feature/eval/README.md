@@ -51,9 +51,9 @@ export default defineEval({
 - **共享 profile**：非空、不透明的稳定 id。
   eval 不在这里选择 Docker image、E2B template 或 Vercel snapshot，也不因此绑定某个 provider。
   profile 到完整 sandbox case 的翻译写在 sandbox spec 工厂的 `environments` 表上，一个 provider 一份、多个实验复用，见 [Sandbox Case](../sandbox/case.md)。
-- **folder-local source**：folder eval 直接声明 sandbox source（如 `composeSandbox`），由当前 spec 按 source kind 注册的 materializer 物化，目录路径就是默认 profile id。
+- **folder-local source**：folder eval 直接声明 sandbox source（如 `composeSandbox`），由当前 spec 按 source kind 注册的 materializer 转成 SandboxCase，目录路径就是默认 profile id。
 
-测试集扇出（一个文件默认导出数组或 record）时整组条目共享同一声明。
+测试集从输入数组生成多条 eval（一个文件默认导出数组或 record）时整组条目共享同一声明。
 此字段以解析后的 sandbox case 身份（CaseKey）计入 eval fingerprint——环境定义的任何变化都让该 eval 重跑；Direct Agent 不创建 Sandbox，此字段只参与指纹。
 
 `diff` 调整变更归因的排除清单:`ignore` 在默认清单上追加排除,`include` 优先级最高,把匹配路径从默认清单与 `ignore` 中显式加回(要评分 `node_modules` 里被 agent patch 的文件就 include 它)。
@@ -82,7 +82,7 @@ evals/foo/eval.ts       → eval id "foo"
 
 | 文件 | 何时可见 | 身份 |
 |---|---|---|
-| Dockerfile、Compose、build context、相对 bind mount | 环境物化时交给 provider;Agent 只看到最终主 Sandbox 视图 | BuildKey / CaseKey |
+| Dockerfile、Compose、build context、相对 bind mount | provider 构建 image、启动 Compose 时使用;Agent 只看到最终主 Sandbox 视图 | BuildKey / CaseKey |
 | 题面数据(经 `loadYaml` / `loadText` 读入) | 宿主发现期读取 | eval 数据指纹 |
 | verifier(经 `loadCriteria` 登记)与 private 文件 | verifier 在最后一次 `t.send()` 后才上传;private 永不上传 | eval 判据指纹 |
 
@@ -121,12 +121,12 @@ export default defineScoreEval({
 一个 Experiment 可以同时选择两种题型；通过率与总分分别聚合，不互相相加。
 计分语义的单源契约见[计分粒度](../assertions/library/score-points.md#计分制叠加给分没有上限声明)，完整写法见[计分制用例](use-case/rubric-scoring.md)。
 
-API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集扇出、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
+API 全景与组织约定见 [Library](library.md);单轮、多轮、HITL、测试集从输入数组生成多条 eval、沙箱型等真实场景一篇一个用例,见 [use-case/](use-case/README.md);API 取舍背后的设计依据见 [Architecture](architecture.md)。
 评分手段(judge、匹配器、gate/soft)单独成篇,见 [Assertions](../assertions/README.md)。
 
 ## 相关阅读
 
-- [Library](library.md) —— API 全景、测试集扇出契约与命名组织约定。
+- [Library](library.md) —— API 全景、测试集从输入数组生成多条 eval契约与命名组织约定。
 - [用例目录](use-case/README.md) —— 单轮、多轮、HITL、过程断言、judge、测试集、沙箱、 Fixture,一篇一个场景。
 - [Eval Context](library/context.md) —— `t`、`session`、`turn` 怎样驱动会话和读取结果。
 - [Architecture](architecture.md) —— 为什么作用域断言按接收者(`t` / `session` / `turn`)分层,对齐 eve 的设计依据。

@@ -34,7 +34,7 @@ interface RunSpec {
 
 ## 观察面
 
-- **选择面**：`mode`、`fresh`、`attempts`（已物化的口径结果）、`runs`（真实来源集合）。
+- **选择面**：`mode`、`fresh`、`attempts`（按口径筛选后的结果）、`runs`（真实来源集合）。
 - **覆盖面**：`coverage[].knownEvalIds` / `missingEvalIds`。
 - **警告面**：`warnings[].kind` 与各自的结构化字段、`command` 有无。
 - **身份保持**：每条选中 attempt 的 `ref` 与 locator 仍指向原来源，不被选择过程改写。

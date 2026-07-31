@@ -41,7 +41,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 原生配置文件替换(`settingsFile` / `configFile`:项目根内路径校验、上传替换、保留键冲突检测、SHA-256 进 checkpoint key) | `src/agents/native-config.ts`(共享层)+ `src/agents/{claude-code,codex}.ts`(各自保留键表) |
 | Marketplace 注册名回读校验(`marketplace add` 后回读列表,配置名对不上立刻报错) | `src/agents/marketplace.ts`(claude-code / codex 共用,回读命令由 adapter 传入) |
 | `AgentProvisioner` 类型与安装模式(`staged` / `sandbox-network` / `verifyOnly`)、安装事实形状 | `src/agents/types.ts`;经 `src/define.ts` 的 `defineAgentProvisioner` 透传 |
-| Agent Ensure(`AgentProvisioner`:identity / check / install / recheck、staged payload 准备与共享 cache) | `src/agents/provisioner.ts`;内置 Agent 各自的 provisioner 在 `src/agents/{claude-code,codex,bub}.ts`;Run 级制品准备接线在 `src/runner/run.ts` / `src/runner/attempt.ts`(`agent.setup`) |
+| Agent Ensure(`AgentProvisioner`:identity / check / install / recheck、staged payload 准备与共享 cache) | `src/agents/provisioner.ts`;内置 Agent 各自的 provisioner 在 `src/agents/{claude-code,codex,bub}.ts`;Run 级 staged payload 准备接线在 `src/runner/run.ts` / `src/runner/attempt.ts`(`agent.setup`) |
 
 ## 执行失败分类:时间轴重试与空间轴止损([README](feature/error-classification/README.md) / [架构](feature/error-classification/architecture.md) / [库用法](feature/error-classification/library.md))
 
@@ -93,7 +93,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 三 provider 共享工具(shellQuote / find 脚本构造 / 宿主文件遍历) | `src/sandbox/shell.ts`、`src/sandbox/local-files.ts` |
 | `downloadDirectory`(vercel/e2b 共用的 find 列路径 + 逐文件二进制读取两阶段模板;docker 走 `getArchive` 单次 tar 取回,见上一行 docker-stream.ts) | `src/sandbox/download-directory.ts` |
 | NiceEval 公共 E2B baseline 的具名版本锁定 ref、官方起点派生 factory、三模板统一的运行用户 npm global 契约 | `src/sandbox/e2b-agent-template.ts`(`NICEEVAL_*_E2B_TEMPLATE` / `PUBLISHED_E2B_BASELINE_TAG` / `e2bCodingAgentTemplate` / `verifyE2BNodeToolContract`)；发布构建与最终状态自检在 `sandbox/e2b/build-agent-template.mts`，已发布事实的台账在 `sandbox/e2b/published.json` |
-| 官方基线制品的版本号(`<Agent 版本>-r<配方修订>`,niceeval 自身版本不参与) | `src/agents/coding-cli-versions.ts`(`AGENT_BASELINE_VERSION` / `AGENT_BASELINE_RECIPE_REVISION` / `agentBaselineVersionTag`)——同一批常量喂 Adapter 的运行时回退安装；一致性守护在 `src/sandbox/official-baselines.test.ts` |
+| 官方基线 image / template 的版本号(`<Agent 版本>-r<配方修订>`,niceeval 自身版本不参与) | `src/agents/coding-cli-versions.ts`(`AGENT_BASELINE_VERSION` / `AGENT_BASELINE_RECIPE_REVISION` / `agentBaselineVersionTag`)——同一批常量喂 Adapter 的运行时回退安装；一致性守护在 `src/sandbox/official-baselines.test.ts` |
 | NiceEval 公共 Docker 基线镜像的具名 ref | `src/sandbox/docker-agent-image.ts`(`NICEEVAL_*_DOCKER_IMAGE`)；配方在 `sandbox/docker/Dockerfile`，按配方变更发布的 CI 在 `.github/workflows/docker-image.yml`；Agent 集合是完整的 `CodingAgentBaseline`，E2B 侧子集见 `E2BCodingAgent` |
 | 显式 `SandboxSpec` 解析与 provider 实例创建(无默认值、无环境探测) | `src/sandbox/resolve.ts` |
 | Provisioning 瞬时错误分类 + 退避重试(各 provider 的 `classifyProvisionError` 认原生限流,未命中时走与文件 IO 共用的瞬时分类器 → `createProvider()` 统一重试) | `src/sandbox/errors.ts`、`src/sandbox/retry.ts`;各 provider 文件的 `classifyProvisionError` |
@@ -146,7 +146,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 |---|---|
 | 发现(evals/ 的 *.eval.ts / *.eval.tsx 与目录入口 eval.ts,experiments/ 的实验,路径推导 id;同 id 双入口报重名) | `src/runner/discover.ts` |
 | folder-local sandbox source、默认 profile id、verifier/private 与 build context 的泄题门交叉检查(过滤规则进 BuildKey) | `src/runner/eval-source.ts`、`src/loaders/index.ts`;接线在 `src/runner/discover.ts` |
-| 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / 制品准备)不占 attempt 并发位 | `src/runner/run.ts` |
+| 有界并发调度 + 首过即停 + budget 已花费护栏(不做预测性预扣);Run 级共享准备(构建协调 / staged payload 准备)不占 attempt 并发位 | `src/runner/run.ts` |
 | 单 attempt 生命周期(沙箱 / OTLP 接收器 Scope、超时硬边界、沙箱编排固定段、LifecyclePhase 转换、Agent Ensure 调用) | `src/runner/attempt.ts` |
 | 两层时间模型(`PhaseTiming` / `TimingActivity` / `TimingOrigin`:锚点 enter / 失败标记 / 收尾段测量 / hook 与命令子节点;Run 级 `RunMeta.timings` 的双时钟 recorder) | `src/runner/timing.ts`(`TimingRecorder`;attempt 侧接线在 `src/runner/attempt.ts`,Run 侧接线在 `src/runner/run.ts`);类型在 `src/runner/types.ts` / `src/record/types.ts` |
 | 变更分类账(workdir 外私有 git dir、锚点冻结排除清单、eval/agent 归因 commit、整相一条命令导出全部 send 窗口) | `src/runner/ledger.ts`(+ 同目录 `.test.ts`) |
@@ -252,7 +252,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 | 双面验收(renderToStaticMarkup + text Run,两面同口径) | `src/report/runtime/dual-render.test.tsx` |
 | view attempt 深链(`#/attempt/@<locator>`,路由参数是不透明的 `AttemptLocator`,与报告槽 `ctx.attemptHref` 同一格式) | `src/view/app/lib/attempt-dialog.ts`(hash ↔ locator 互转、`attempt/<locator>.html` 链接拦截与 dialog 内容抠取)、`src/view/app/App.tsx`、`src/view/data.ts`(`annotateResult` 注入,locator 直接用 `niceeval/record` 的 `attempt.locator`)、`src/view/shared/types.ts`(`ViewEvalResult.locator` 类型来自 `src/record/locator.ts`) |
 | view 数据层(openRecord;`__NICEEVAL_VIEW_DATA__` 只携带证据室数据:Run 明细 + skipped + 壳元信息(含报告外壳/页导航的 `ViewReportMeta`),统计住报告页)。`latestRunSample(record)` 结果(命名为 `latestPerExperiment`)只用于给证据室 Run 打「latest」标记,与报告槽 Sample 是两条独立通道,不参与报告计算;`viewData.snapshots` 是完整记录根的全量通道,只服务 attempt 详情路由(`#/attempt/@<locator>`)的解析,不随报告 Sample 收窄 | `src/view/data.ts`(数据契约在 `src/view/shared/types.ts`) |
-| view 报告槽与导航(不带选项运行装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `currentSample` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅/页脚/页头链接等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 head 与主题 styles 按声明序注入、renderer assets 物化后并入 shellAssets(待接线)、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/data.test.ts`;渲染出的导航结构与外壳 chrome、`resolveViewInput` 的进程级输入校验归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
+| view 报告槽与导航(不带选项运行装载内建报告默认导出、`--report` 整槽替换、`--page` 定初始页;报告槽 Sample 由 view 直接调 `currentSample` 产出;报告装载/规范化/标题回退经两宿主共用的 `src/report/runtime/host.ts`;`renderReportSlot` 逐页静态渲染、en/zh-CN 两遍烘成 `<template id="niceeval-report-<pageId>-<locale>">` 静态块;导航项 = 报告页列表(声明序),路由只有 `#/page/<id>` 与 attempt 详情 `#/attempt/@<locator>`,宿主不追加导航项、不渲染 hero/警告横幅/页脚/页头链接等任何页面内容 chrome(`App.tsx` 的 `BRAND_HREF` 恒渲染的页头 NiceEval 字标除外——那是宿主保留的机器位,与页面内 `PoweredBy` 品牌行分属两处),浏览器 `<title>` 是宿主保留的文档单例;外壳 head 与主题 styles 按声明序注入、renderer assets 按内容哈希复制后并入 shellAssets(待接线)、增强 runtime 与官方样式内联、输入判定 `resolveViewInput`(`--record`/`--run` 互斥,位置参数只表示 eval id 前缀)) | `src/view/data.ts`、`src/view/server.ts`、`src/view/index.ts`、`src/report/runtime/host.ts`(两宿主共用,不属于 show)、前端摆放 `src/view/app/{main.tsx,App.tsx}`(测试 `src/view/data.test.ts`;渲染出的导航结构与外壳 chrome、`resolveViewInput` 的进程级输入校验归 `docs/engineering/testing/e2e/report.md` 对真实产物验收) |
 | **Roadmap(未定落点)** | memory-evals 静态导出流水线(reports.md 场景三) |
 
 ## 与目标契约的已知实现差异
@@ -260,7 +260,7 @@ niceeval 以 TS 源码经 `tsx` 运行,无编译步骤(`bin/niceeval.mjs` 注册
 本节只记录实现差异。
 Feature 文档仍是目标契约；这里的当前名称和路径用于定位源码，不反向限制目标 API。
 
-### P1：制品
+### P1：E2B 公共 template
 - **E2B 公共 baseline 尚未换代。**
   配方和构建校验已修，但公开常量与 `sandbox/e2b/published.json` 仍指向旧 `v0.6.1`。
   需要真实构建、以运行用户验证、发布新 tag，再同步台账与常量。

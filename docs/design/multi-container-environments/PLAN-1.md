@@ -14,7 +14,7 @@
 agent 沙箱、若干服务、一张网。拓扑归一成 niceeval 自己的
 规范化数据结构,声明入口有两个——手写 `defineEnvironment`,
 或从任务自带的 compose 文件导入(`environmentFromCompose`,
-产出同一份规范化拓扑);provider 负责物化。`Sandbox` 接口
+产出同一份规范化拓扑);provider 负责构建与启动。`Sandbox` 接口
 一个方法不加,服务是环境的附属事实,不是第二个沙箱。
 与 PLAN-2 的根本差异:契约实体是封闭字段集的规范化拓扑,
 compose 只是导入来源;与 PLAN-3 的根本差异:服务的生命
@@ -88,7 +88,7 @@ import { environmentFromCompose } from "niceeval";
 export default defineConfig({
   environments: {
     "tb-sheets": environmentFromCompose("tasks/simple-sheets-put/docker-compose.yaml", {
-      agentService: "client",            // 这个服务是 agent 容器:剔除,不物化为服务
+      agentService: "client",            // 这个服务是 agent 容器:剔除,不启动为伴随服务
       env: { T_BENCH_TEST_DIR: "/tests" }, // ${...} 插值取值表;缺键启动期报错
       ignore: ["services.*.volumes"],     // 显式豁免不参与语义的 key
     }),
@@ -134,7 +134,7 @@ provider spec 的
 ### 优势
 
 - **R1 / R4**:拓扑声明与 provider spec 解耦;服务名即
-  主机名,解析是 provider 的物化义务。
+  主机名,解析是 provider 的构建与启动义务。
 - **R2 / R3**:生命周期由 niceeval 编排,就绪门在 agent
   沙箱创建之前,服务销毁在评分之后。
 - **R5 / R11**:需求从规范化拓扑纯数据推导(`services` →
@@ -160,7 +160,7 @@ provider spec 的
   子集导入器;compose 语义随上游演进,豁免白名单要跟。
 - 工程量三案最大:调度口径、回收契约、留存扩展、
   孤儿核对扩展、证据 registry 都要动(见下节)。
-- 拓扑的物化底座事实上全是 OCI 容器;不以容器为原语的
+- 拓扑的运行载体事实上全是 OCI 容器;不以容器为原语的
   未来 provider 接不上 `services` 能力,只能 `skipped`。
 
 ---
@@ -180,7 +180,7 @@ createEnvironment(provider, profile)
  → 服务日志采集 → 服务销毁 → 拆网
 ```
 
-**调度与计时口径(R10)。** 环境物化发生在取得并发位之后;
+**调度与计时口径(R10)。** 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready发生在取得并发位之后;
 attempt deadline 与携带资格的 `executionMs` 起算点从
 `sandbox.create` 前移到 `createEnvironment`,
 [缓存契约](../../feature/experiments/cache.md)同步改。
@@ -190,12 +190,12 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 [Record 闭集](../../feature/record/architecture.md#resultjson)
 一并定稿。
 
-**回收契约(R9)。** 环境物化整体纳入
+**回收契约(R9)。** 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready整体纳入
 [Provisioning 失败与重试](../../feature/sandbox/architecture.md#provisioning-失败与重试):
 
 - 服务容器**与网络**创建期打同一套 provision token 与
   运行标识(docker 网络支持 label)。
-- kill-on-failure 覆盖部分物化的拓扑:拿到任一句柄后失败,
+- kill-on-failure 覆盖部分启动的拓扑:拿到任一句柄后失败,
   先整组销毁再抛原始错误(db 起了、api ready 超时,
   db 与网络不留)。
 - 拉服务镜像限流沿用拒绝类退避;确定性构建失败按共享该
@@ -204,9 +204,8 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
   给止损闸,不让 30 条同 profile 的 attempt 各烧一遍。
   同 content-hash 的并发构建做进程内 single-flight。
 - 孤儿核对与 `sandbox prune` 的资源词表加「服务容器」
-  「网络」两行;中断与留存矩阵补「环境物化中 Ctrl+C」行
-  (此刻沙箱 Scope 尚不存在,清理由环境物化自己的
-  finalizer 承担)。
+  「网络」两行;中断与留存矩阵覆盖构建 image、创建网络、启动 Sandbox 与服务以及等待 ready 时的 Ctrl+C。
+  此刻沙箱 Scope 尚不存在,清理由各阶段自己的 finalizer 承担。
 
 **能力协商与 skipped(R5 / R11)。** 供给侧是 provider
 中性元数据的能力位(与 `exclusive` 同层),解析期取交集:
@@ -219,7 +218,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
   与 local × keep 等「组合永远跑不了就创建前报错」的
   既有先例同响度,CI 不产出绿色空跑。
 
-**物化。**
+**构建并启动。**
 
 - **Docker**:每 attempt 一张 bridge 网络 + 容器别名。
   daemon 默认地址池只够约 30 张网,并发派发对网络配额做
@@ -232,7 +231,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
   `/etc/hosts`(服务重启换 IP 即陈旧)。能力位默认关,
   真机验证后打开;`imageBuild` 云侧另行验证(逐 VM 零
   构建缓存,成本故事没讲清前不开)。
-- **Local**:不物化服务,一律 `skipped`。
+- **Local**:不启动伴随服务,一律 `skipped`。
 
 服务声明里的 `image` 可以写 tag 或 digest。规划期由 provider
 按目标平台把 tag 解析成不可变 OCI manifest digest。规范化
@@ -287,7 +286,7 @@ attempt deadline 与携带资格的 `executionMs` 起算点从
 
 1. 规范化拓扑类型、`defineEnvironment`、镜像 digest 解析与
    两表对齐,启动期穷举报错(含 unused key、保留字、全 skipped)。
-2. Docker 物化:网络与配额、并行启动 + `dependsOn` 排闸、
+2. Docker 构建并启动:网络与配额、并行启动 + `dependsOn` 排闸、
    ready 门、回收契约接入、phases 扩词、日志证据行。
 3. 能力协商与 `skipped` 落盘形状。
 4. 指纹扩展(含 `fromEnv`)与缓存口径前移、回归测试。

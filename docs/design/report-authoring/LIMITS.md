@@ -72,7 +72,7 @@
 
 ## 产品特性
 
-把 Record 物化成若干张表，作者写 SQL 取行，通用原语渲染行集。
+树解析时把 Record 全量加载成 attempts、evals、runs 等表，作者写 SQL 取行，通用原语渲染行集。
 要落地需要一个引擎：DuckDB、SQLite，或自己实现一个 SQL 子集。
 
 一张能摊平的 `attempts` 表大致是：
@@ -99,7 +99,7 @@ agent · model · started_at · scoring · flags(json) · labels(json)
 - **覆盖率要靠作者自觉。**
    `count(v)` 与 `count(*)` 的差就是「测不了」的样本数；SQL 不会因为少写一列而报错。
 - **artifact 摊不平。**
-   diff、事件流与 trace 可达数百 MB，且逐 attempt 懒加载；把它们放入表要么预先全量物化，要么退化成 UDF。
+   diff、事件流与 trace 可达数百 MB，且逐 attempt 懒加载；把它们放入表要么在树解析前全量读入内存，要么退化成 UDF。
 - **列的元数据没有位置。**
    单位、越高越好、双语标签与格式化在 SQL 里无处声明，只能在查询旁边再配一张表。
 - **类型不进 TS。**
@@ -138,7 +138,7 @@ page render 直接接收 Sample 或 AttemptEvidence，调用普通函数后把�
 ## Record 不是数据库
 
 结果是文件树：`result.json` 逐 attempt 一份，`o11y.json`、diff 与 trace 是按需读取的 artifact。
-任何查询面都要先回答「什么时候物化、物化多少」，而懒加载正是大 artifact 不拖垮树解析的原因。
+任何查询面都要先回答「什么时候从磁盘读取、一次读取多少」，而懒加载正是大 artifact 不拖垮树解析的原因。
 
 ## 结果形状不是平表
 

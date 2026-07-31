@@ -135,7 +135,7 @@ artifact 因此有三种去处,`attempt.evidenceState` 如实说出是哪一种:
 `openRecord()` 扫描时逐条判定这个状态, Sample 层据此产出 [`dangling-evidence`](../sample/library.md#issue-code-全集) Issue。
 这条借用与悬空的形状抄自 Git 的 alternates,连修法都同源,见[参考方案](reference/README.md#git-object-alternates)。
 
-避免 dangling 的正确动作是清理历史 Run 前先 `publish()` 物化要保留的结果,见下。
+避免 dangling 的正确动作是清理历史 Run 前先用 `publish()` 解引用并复制要保留的结果,见下。
 
 **跨 schemaVersion 不携带。**
 记录格式版本变化时,上一轮的落盘对本轮 writer 是另一种格式: `artifactBase` 会让新 Run 的条目指向旧版本写的 artifact,而 artifact 是原始 JSON、不带版本, 版本判定只在 `run.json` 层做——沿着这条路读出来的东西没有任何一层能声明它可信。
@@ -223,7 +223,7 @@ attempt 级 facts 不走 `finish()`——随 `writeAttempt` 第一参数的 `fac
 **这个原语不叫 `copy`,因为它做的事不是 cp。**
 一个 Run 通常**不自包含**:携带条目的 artifact 以 `artifactBase` 指向原 Run 的 attempt 目录。
 手工 cp 一个 run 目录出去,携带条目的 events / trace / 源码在新根里静默变成 `dangling`,没有任何报错。
-整根搬运不受影响(`artifactBase` 相对记录根,整个 `.niceeval/` 搬到哪里引用都完整);取子集离根必须经 `publish()`,它把引用解引用成完整内容物化进目标 Run,产物自包含。
+整根搬运不受影响(`artifactBase` 相对记录根,整个 `.niceeval/` 搬到哪里引用都完整);取子集离根必须经 `publish()`,它解开引用并把完整内容复制进目标 Run,使产物自包含。
 
 ```typescript
 import { openRecord, publish } from "niceeval/record";

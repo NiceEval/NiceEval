@@ -47,7 +47,7 @@ git 的 rebase/cherry-pick 每重放一步,内部就是一次"以共同祖先为
 
 - **示例必须同时存在于 main 的工作树里。**
   文档链接指向真实目录、用户 clone 后并排浏览各层、`gen:diff-code` 直接 diff 两个目录——这些都要求全部代码在同一棵树上共存。
-  分支化之后,还得把每条分支的内容物化回 main 的目录(否则以上全断),于是"分支"与"物化目录"变成双份记账,比现在更糟;
+  分支化之后,还得把每条分支的完整源码导出回 main 的目录(否则以上全断),于是"分支"与"导出目录"变成双份记账,比现在更糟;
 - **分支数量是 示例数 × tier 层数,** 五个示例三四层就是 15+ 条长期分支,rebase 后全部需要 force-push,历史被反复改写,协作成本失控;
 - `git subtree split` 能把目录合成出伪分支再 rebase 回填,但那是三步咒语级的操作,比直接对目录树做三方合并绕远得多。
 
@@ -60,18 +60,18 @@ git 的 rebase/cherry-pick 每重放一步,内部就是一次"以共同祖先为
 patch 的"方便阅读"很诱人,但作为**存储格式**有四个硬伤:
 
 - **双事实源,DX 崩坏。**
-  改接入代码(evals、agents、脚手架几行)时,要么手写 patch 文件——没人受得了;要么改物化目录再重新导出——目录和 patch 变成两份事实源,永远在打架。
+  改接入代码(evals、agents、脚手架几行)时,要么手写 patch 文件——没人受得了;要么改导出目录再重新生成 patch——目录和 patch 变成两份事实源,永远在打架。
   git history 也不可读了:改一行 eval,commit diff 是"diff 的 diff"。
 - **示例必须是可运行、可浏览的真实目录。**
   仓库规则要求文档链接指向真实目录,用户会 clone 后直接 `cd examples/zh/tier1/codex-sdk` 跑起来、在 GitHub 上直接读代码(有语法高亮和跳转,patch 文件没有)。
-  物化产物要么提交(回到原点),要么 gitignore(文档链接与 GitHub 浏览全断)。
+  导出的完整源码要么提交(回到原点),要么 gitignore(文档链接与 GitHub 浏览全断)。
 - **lockfile 无法用 patch 维护。**
   `pnpm-lock.yaml` 的内容随依赖版本剧烈漂移,patch 很快 apply 失败;它只能由 `pnpm install` 重新生成。
 - **堆叠 patch 是出了名的维护地狱。**
   origin 改一行,可能要连修 tier1、tier2、tier3 三层 patch 的 fuzz/reject。
   现在的痛是"复制一遍",换成堆叠 patch 后痛变成"手工解 reject",更糟。
 
-**"方便阅读"这个需求单独满足,不必绑架存储格式**:`gen:diff-code` 已经从两个物化目录生成 before/after 阅读页;本方案再让 `tiers:sync` 顺手导出一份 `<name>.patch` 纯阅读件(见下文)。
+**"方便阅读"这个需求单独满足,不必绑架存储格式**:`gen:diff-code` 已经从两个完整源码目录生成 before/after 阅读页;本方案再让 `tiers:sync` 顺手导出一份 `<name>.patch` 纯阅读件(见下文)。
 patch 当**输出**,不当**输入**。
 
 ### 否决:纯复制 + allowDiff 清单

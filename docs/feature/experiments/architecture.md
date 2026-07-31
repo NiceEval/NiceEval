@@ -50,7 +50,7 @@ eval 层只对 `defineEval` 同名声明的字段存在（`timeoutMs`、`judge`�
 ```typescript
 export default defineExperiment({
   evals: (e) => e.tags.includes("memory"),
-  //  解析期遍历发现后的 EvalDescriptor 全集(测试集已扇出)求值一次,产出 selectedEvalIds
+  //  解析期遍历发现后的 EvalDescriptor 全集(测试集已生成 attempt)求值一次,产出 selectedEvalIds
   //  必须同步返回 boolean;落盘的是求值结果与过滤器指纹,不是函数本身
 
   sandbox: e2bSandbox({ template: "base", environments: { "python-3.9": { template: "py39" } } }),
@@ -99,7 +99,7 @@ eval 声明按需构建环境时,BuildKey 构建、共享拉取与发布属于 R
 - attempt deadline 从拿到产物并开始创建 Sandbox 时起算;创建资源组、服务 ready、Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。
 - 共享构建的时间只在 `RunMeta.timings` 记一次,不进任何 attempt 的 `executionMs`;live 面板把它显示为运行级 active 行,不占 attempt active 位。
 
-调度与失败扇出的完整契约单源在 [Sandbox Case · Run 级构建协调](../sandbox/case.md#run-级构建协调共享准备的预算与调度),落盘形状在 [Record · 两层时间模型](../record/architecture.md#两层时间模型生命周期锚点与开放-activity)。
+调度与失败生成 attempt的完整契约单源在 [Sandbox Case · Run 级构建协调](../sandbox/case.md#run-级构建协调共享准备的预算与调度),落盘形状在 [Record · 两层时间模型](../record/architecture.md#两层时间模型生命周期锚点与开放-activity)。
 
 ## 实验级生命周期：setup 与 teardown
 

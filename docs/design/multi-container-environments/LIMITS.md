@@ -41,7 +41,7 @@
 
 ---
 
-# Docker(本地 provider 的物化底座)
+# Docker(本地 provider 的运行载体)
 
 ## 当前支持
 
@@ -60,14 +60,14 @@
 
 ## 直接影响
 
-Docker 是各方案里物化成本最低的一档;差异集中在「谁来
+Docker 是各方案里构建与启动成本最低的一档;差异集中在「谁来
 翻译声明」。PLAN-1 由 niceeval 翻译 typed 表;PLAN-2 由
 niceeval 解析 compose 子集;PLAN-3 用户自己跑 compose;
 PLAN-4 由 Docker provider 原生消费 compose,不翻译。
 
 ---
 
-# E2B / Vercel Sandbox(云 provider 的物化底座)
+# E2B / Vercel Sandbox(云 provider 的运行载体)
 
 ## 当前支持
 
@@ -112,7 +112,7 @@ niceeval 不接管宿主机的容器编排——在用户机器上起一组
 
 # 共通限制
 
-- **核心中立**:物化差异只能落 provider 侧,任何方案不得
+- **核心中立**:构建与启动差异只能落 provider 侧,任何方案不得
   让 runner / 评分按 provider 名分支。
 - **缓存沿用门表**:`failed` 是可携带终态——凡是可能把
   基建失败记成 `failed` 的路径,都会被缓存永久固化,

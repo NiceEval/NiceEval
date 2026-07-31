@@ -39,12 +39,12 @@ await publish(latestRunSample(record), "site-data/run", {
 niceeval view --record site-data/run --out site
 ```
 
-## 为什么发布必须物化
+## 为什么发布必须复制成自包含结果
 
 [携带条目](../../record/library.md#携带条目与-evidencestate)的证据字节留在原 Run 目录里,靠 `artifactBase` 指过去 ——省的是同一份对话和 trace 不被复制很多遍。
 这在本地是纯赚,跨出这台机器就是个坑:原 Run 一删,借来的证据静默消失。
 
-`publish()` 做的就是物化:解引用、复制、产物自包含,不带回退指针。
+`publish()` 解开 artifact 引用并把内容复制进目标 Run,使产物自包含且不带回退指针。
 所以「离开本地之前先 publish」不是可选优化,是[跨层不变量](../README.md#跨三层的不变量)第六条。
 
 ## 发出去之前看一眼

@@ -110,7 +110,7 @@ const ConfusionMatrix = defineRenderer({
 自定义计算是普通函数，不需要注册扩展。
 
 脚本与样式随 renderer 的 `assets` 声明。
-运行时只收集当前 page 实际出现的组件资产，按内容哈希物化和去重。
+运行时只收集当前 page 实际出现的组件资产，按内容哈希复制到 `assets/` 并去重。
 初始 HTML 在没有 JavaScript 时仍完整可读；增强脚本只增加浏览行为。
 
 ## 准入边界

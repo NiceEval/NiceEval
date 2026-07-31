@@ -8,7 +8,7 @@
 
 ### 简述
 
-环境 profile 的值直接引用任务仓库自带的 `docker-compose.yaml`,niceeval 解析其受支持子集并负责物化与生命周期。
+环境 profile 的值直接引用任务仓库自带的 `docker-compose.yaml`,niceeval 解析其受支持子集并负责构建与启动与生命周期。
 TB 任务全部随仓库携带 compose 定义,这条路把迁移成本压到接近零:
 
 ```typescript
@@ -22,7 +22,7 @@ export default defineConfig({
 });
 ```
 
-`agentService` 指名的服务被抽出来当 agent 沙箱的定义来源,其余服务照 compose 声明物化。
+`agentService` 指名的服务被抽出来当 agent 沙箱的定义来源,其余服务照 compose 声明构建并启动。
 
 ### 优势
 
@@ -37,7 +37,7 @@ export default defineConfig({
 - **R6 变贵**:指纹要解析 YAML、追每个服务的 build context、env_file、插值变量;compose 的求值语义(环境变量插值、override 文件)让「同一份文件」不再等于「同一个环境」。
 - **agent 沙箱定义被 compose 接管**:`agentService` 的 image/build 与 spec 表的「起点产物听 provider 词汇」冲突,等于为 Docker 形态开了后门。
   E2B / Vercel 上这个服务定义翻译不过去——provider 解耦最弱的一案。
-- **物化耦合**:要么运行时依赖 `docker compose` CLI 插件,要么 niceeval 自己实现 compose 子集的编排语义;前者是新的环境依赖,后者是把别人的规范抄进核心。
+- **构建并启动耦合**:要么运行时依赖 `docker compose` CLI 插件,要么 niceeval 自己实现 compose 子集的编排语义;前者是新的环境依赖,后者是把别人的规范抄进核心。
 - eval 的环境需求(能力协商输入)要从 compose 文件推导,推导器本身就是 README 里「镜像推导有洞」问题的形状——只是从下游挪进了 niceeval。
 
 ---
@@ -50,7 +50,7 @@ export default defineConfig({
 composeEnvironment(file, agentService)
  → 解析受支持子集(越界字段启动期报错,不静默忽略)
  → agentService 抽出 → 翻译成 agent 沙箱起点(仅 Docker 可直译)
- → 其余服务 → 与 PLAN-1 同一套物化路径
+ → 其余服务 → 与 PLAN-1 同一套构建与启动路径
 ```
 
 ---
@@ -58,7 +58,7 @@ composeEnvironment(file, agentService)
 ### 落地路线
 
 1. compose 子集解析器与越界字段的穷举报错。
-2. `agentService` 抽取与 Docker 物化。
+2. `agentService` 抽取与 Docker 构建并启动。
 3. 指纹:YAML 规范化 + build context 内容哈希 + 插值封闭。
 4. 其余同 PLAN-1 的 3、5、7 步。
 

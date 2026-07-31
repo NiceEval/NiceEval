@@ -347,7 +347,7 @@ const scope = reportScopeFixture({
 - **按订阅渲染（只渲染看得见的那一块）**：本地模式一次重建只渲染订阅声明的 `(pageId, locale)`；其余页与语言经 `report/<pageId>.<locale>.html` 按需渲染，`--out` 全渲并预烘进 `index.html`。
    fixture 用多页报告（至少两页 × 两语言），断言面是每页渲染函数的调用次数——单页 fixture 分不开「渲染一块」与「渲染全部」。
   同一 `(pageId, locale)` 在按需路径与 `--out` 下逐字节一致，这一格接住渲染时机漂移。
-- **renderer 资产进入站点管线**：一张已解析的 page 返回 HTML 与按内容哈希物化的 CSS/JS。
+- **renderer 资产进入站点管线**：一张已解析的 page 返回 HTML 与按内容哈希复制到 `assets/` 的 CSS/JS。
   站点块带对应的加载标签，资产文件登记进同一份 `SitePlan.files`；同一资产被两种 locale 请求时只登记一次。
   区分力是只在 renderer 单测调用 `materializeRendererAssets()`、但 view 完全不消费结果的错误接线会红。
   浏览器是否执行脚本、切页时是否加载资产归 E2E。

@@ -8,7 +8,7 @@
 - [Sandbox Case](../../../feature/sandbox/case.md)
 - [Experiments · 缓存与携带](../../../feature/experiments/cache.md)
 
-本篇覆盖 Adapter 侧**确定性**契约：Agent Ensure 状态机、身份与制品 digest、断网题面义务、与 Sandbox 复用 / environment 的隔离。
+本篇覆盖 Adapter 侧**确定性**契约：Agent Ensure 状态机、身份与 staged payload digest、断网题面义务、与 Sandbox 复用 / environment 的隔离。
 SDK 事件转换与协议归一没有单元层测试维度——协议的真身只有真实调用，验收面是 [E2E 适配器域](../e2e/adapter/README.md)。
 归一之后与协议无关的派生（成本估算、执行树投影）登记在 [reports.md](reports.md) / [record.md](record.md)。
 
@@ -17,7 +17,7 @@ SDK 事件转换与协议归一没有单元层测试维度——协议的真身�
 | 契约域 | 观察面 | Fixture |
 | --- | --- | --- |
 | Ensure 状态机 | check / install / recheck 调用序、安装事实、失败归属 | recording Sandbox + 脚本化 provisioner |
-| 身份与制品 | fingerprint / configHash 输入、Run 投影字段 | 纯数据 identity + digest fixture |
+| 身份与 staged payload | fingerprint / configHash 输入、Run 投影字段 | 纯数据 identity + digest fixture |
 | 断网题面 | 题面网络配置在 Ensure 前后逐字相等；安装是否走文件 API | 带故障 DNS / 被替换工具的 recording Sandbox |
 | 复用与环境隔离 | 第二次 check 命中、跨 profile 不串装 | 复用同一 Sandbox 的多 attempt；两 profile 并列 |
 
@@ -66,7 +66,7 @@ function scriptedProvisioner(steps: {
   - `verifyOnly` 检查失败立即 `errored`，不联网、不改文件系统。
 - **Agent identity / artifact identity**：
 
-  - `identity`（名、精确版本、配方修订）与制品 digest / 平台正交进入指纹与 `run.json`。
+  - `identity`（名、精确版本、配方修订）与 staged payload digest / 平台正交进入指纹与 `run.json`。
   - 改 Agent 版本改变 Ensure identity 与 `agent.artifact.prepare`，不重建任务 BuildKey。
   - 改任务 Dockerfile 只重建环境，不动 Agent 配置。
   - 无精确版本的 `latest` 安装不参与可携带结果；自定义 provisioner 无稳定身份时启动期报错。

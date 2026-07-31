@@ -79,9 +79,9 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 - **官方 E2B coding-agent 模板契约**：Claude Code / Codex 继续继承各自的 E2B 官方模板，Bub 继续使用固定配方；三条配方都必须把运行用户的 npm global prefix 收敛为 `/usr/local`，并显式准备可写的 `/usr/local/bin` 与 `/usr/local/lib/node_modules`。
   结构测试读取 `Template.toJSON()` 证明这两步都存在；真实 build 对运行用户执行 prefix、PATH 与目录写权限自检。
   不能只测 Agent CLI 可执行——不同官方基线的 Node 安装位置恰好会让 CLI 自检通过而后续 `npm install -g` 整片失败。
-- **官方基线制品的版本与发布台账**：公共 E2B template 与 Docker image 的版本 tag 是 `<Agent 版本>-r<配方修订>`，版本位取自与 Adapter 运行时回退安装同一批的版本常量，niceeval 自身的版本不出现在 tag 里；同一个 Agent 在已发布的 provider 上共用同一个版本号。
+- **官方基线 image / template 的版本与发布台账**：公共 E2B template 与 Docker image 的版本 tag 是 `<Agent 版本>-r<配方修订>`，版本位取自与 Adapter 运行时回退安装同一批的版本常量，niceeval 自身的版本不出现在 tag 里；同一个 Agent 在已发布的 provider 上共用同一个版本号。
   Docker 侧覆盖全部 `CodingAgentBaseline`；E2B 侧是子集（`E2BCodingAgent`），未进台账的 Agent 不导出 E2B 常量。
-  导出的具名常量必须指向**已发布**制品：E2B 侧逐 agent 与 `sandbox/e2b/published.json` 的台账逐字段核对（tag、name、台账记录的 Agent 版本与源码版本常量一致，bub 另核对安装指纹），版本常量走在发布前面时这一格红；唯一的放行方式是台账条目显式写下待发布的 tag（`supersededBy`），默不作声的分叉必须红——那正是「常量指着装了旧 Agent 的制品」而全绿的形态。
+  导出的具名常量必须指向**已发布**的 image / template：E2B 侧逐 agent 与 `sandbox/e2b/published.json` 的台账逐字段核对（tag、name、台账记录的 Agent 版本与源码版本常量一致，bub 另核对安装指纹），版本常量走在发布前面时这一格红；唯一的放行方式是台账条目显式写下待发布的 tag（`supersededBy`），默不作声的分叉必须红——那正是「常量指着装了旧 Agent 的 image / template」而全绿的形态。
   Bub 的安装指纹要证明 `version` 与 `otelPlugin` 都参与：换任一个都换指纹（否则预装环境的 marker 会在配方已变时继续命中，装到上一代）。
   跨语言的同源值（`sandbox/docker/Dockerfile` 的 `ARG` 默认值、`bub-override.txt`、镜像里写死的 marker）不能导入 TypeScript，因此逐个与源码常量比对——漂移只在真实构建时才暴露，类型检查一次都拦不住。
   OpenClaw 的版本位是 calver（如 `2026.7.1-2`），tag 形如 `2026.7.1-2-r1`，守护正则必须覆盖这种形态，不能只认三段 semver。
@@ -116,11 +116,11 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
   - 未声明能力的 Compose 不得静默降级成单 Sandbox；自定义 case 缺稳定纯数据 identity 时禁止携带。
 - **profile / source 双入口与优先级**：
 
-  - `environments` 按 profile 名映射完整 case；`materializers` 按 source kind 注册 folder-local 物化器。
+  - `environments` 按 profile 名映射完整 case；`materializers` 按 source kind 注册把 folder-local 声明转成 SandboxCase 的组件。
   - 同一 profile 两处都命中时，显式 `environments` 表项优先。
   - profile 键查不到且无 folder-local source → 启动期配置错误（一次穷举、零 Sandbox 创建）。
   - 声明合法但缺表项与 materializer → 计划期 `skipped`，`skipReason` 列 eval id、source kind 与可补位置。
-- **BuildKey single-flight、失败扇出和预算**：
+- **BuildKey single-flight、失败向所有依赖项传播失败和预算**：
 
   - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
   - 瞬时构建失败（拉取限流、传输层中断）按性质分类退避重试、封顶次数；重试耗尽才落确定性止损，确定性失败零重试。

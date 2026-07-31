@@ -36,7 +36,7 @@
     </style>
   </defs>
   <rect x="0.5" y="0.5" width="1239" height="599" class="canvas" />
-  <text x="32" y="48" class="title">读取面：事实被包住，选择被物化，聚合留在消费方</text>
+  <text x="32" y="48" class="title">读取面：事实被包住，选择写进返回值，聚合留在消费方</text>
   <rect x="32.5" y="80.5" width="199" height="128" class="box" /><text x="52" y="110" class="label mono">.niceeval/</text><text x="52" y="142">run.json</text><text x="52" y="166">result.json</text><text x="52" y="190" class="note">大证据按需读</text>
   <path d="M232 144 H280" class="arrow" />
   <rect x="288.5" y="80.5" width="247" height="128" class="box" /><text x="308" y="110" class="label mono">Record</text><rect x="308.5" y="128.5" width="207" height="56" class="box-2" /><text x="328" y="158" class="mono">AttemptHandle</text><text x="328" y="178" class="note">来源 + 懒读函数</text>

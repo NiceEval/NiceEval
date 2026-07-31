@@ -94,6 +94,11 @@
       "why": "和 helper 一类的口袋词同病:太通用了。配置、维度、报告树、表格都能叫 Resolve,名字不携带任何具体动作,读者无法从它判断发生了什么;正文立概念不用它,已有代码标识符引用时写进反引号"
     },
     {
+      "term": "resolve",
+      "use": "写具体动作:解析配置、按键查表、求值、选择实现或规范化数据;代码标识符写进反引号",
+      "why": "单词本身没有说明输入经历了哪一步;正文非必要不用,代码标识符引用不受影响"
+    },
+    {
       "term": "Resolved",
       "use": "写结果的具体名字:解析后的配置、已求值的 page——说清被做了什么",
       "why": "同 Resolve:形容词词形照样太通用,「Resolved X」没说 X 经历了哪一步"
@@ -261,14 +266,49 @@
       "why": "与「糖衣」同一比喻;要说的是「类只负责携带数据」,直说,比喻不出力"
     },
     {
-      "term": "随包制品",
-      "use": "随 niceeval npm 包分发的制品",
-      "why": "「随包」省略了随哪个包;取得通道是契约的一部分,主语写全"
-    },
-    {
       "term": "条件工具",
       "use": "点名具体工具并说它随什么变:随 experiment 变的工具(如记忆助手 mempal)",
       "why": "「条件」在 niceeval 里没有立过词,读者要猜指实验变体还是判分条件;抽象类名不携带信息,具体例子才携带"
+    },
+    {
+      "term": "物化",
+      "use": "写具体动作与产物:例如「Docker 按 BuildKey 构建 image」「E2B 构建 template」「从 image / template / snapshot 启动 Sandbox」「publish() 解引用并复制 artifact」「把判断写入 coverage 字段」「按内容哈希复制到 assets/」;materializer 这类 API 名照写英文",
+      "why": "口袋词:构建镜像、启动 Sandbox、复制 artifact、写结果字段与生成静态页面都能叫它,读者拿不到具体动作"
+    },
+    {
+      "term": "底座",
+      "use": "点名具体对象:environment profile、sandbox source、sandbox case、Docker image、E2B template、Vercel snapshot 或主 Sandbox",
+      "why": "同一个词同时指环境声明、可复用构建结果与运行实例,会把构建期和 attempt 启动期混成一步"
+    },
+    {
+      "term": "底座产物",
+      "use": "点名 Provider 原生对象:Docker image、E2B template 或 Vercel snapshot",
+      "why": "把未定义的「底座」与泛称「产物」叠在一起,仍然没有说明要构建、切换或启动的是哪一种对象"
+    },
+    {
+      "term": "缓存产物",
+      "use": "点名缓存内容:例如 Docker image、E2B template、Vercel snapshot 或 staged payload",
+      "why": "没有说明缓存的是 Provider 启动输入还是 Layer 安装文件,两者的身份与失效规则不同"
+    },
+    {
+      "term": "制品",
+      "use": "点名具体文件或对象:例如 npm tarball、Docker image、E2B template、Vercel snapshot、staged payload、Record artifact、`agent-guide.md` 或 `skill.md`",
+      "why": "同一个词被用来指安装包、Provider 启动输入、Record artifact 与随 npm 包分发的文档,无法判断归属、格式与生命周期"
+    },
+    {
+      "term": "扇出",
+      "use": "写具体传播或生成关系:例如「为每个依赖该 BuildKey 的 attempt 写入同一错误」或「从一组输入生成多条 eval」",
+      "why": "这个词只表示一变多,没有说明被复制的是任务、错误、数据还是调用"
+    },
+    {
+      "term": "自组织",
+      "use": "写实际优先级,例如「显式配置优先于约定」",
+      "why": "没有说明由哪些输入、按什么规则得到结果;配置契约需要直接声明优先级"
+    },
+    {
+      "term": "摊薄",
+      "use": "写清成本如何分配,例如「一次 Sandbox 安装由同一实例承接的多个 attempt 共用」",
+      "why": "比喻没有说明被分配的是时间、费用还是固定开销,也没有说明跨哪些执行单位分配"
     }
   ]
 }

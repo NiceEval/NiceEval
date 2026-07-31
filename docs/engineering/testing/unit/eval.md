@@ -59,10 +59,10 @@ session 续接规则由生产 Context 决定，测试通过 `received` 断言 Co
 
 每个域必须证明的行为类别与不允许静默放走的错误；具体场景由测试代码枚举，测试名描述契约和场景：
 
-- **发现与 id 推导**：id 只从文件路径推导（配置对象禁止 `id`/`name`）；`.eval.ts`/`.eval.tsx` 两种后缀同规则，其它后缀不被发现；数组与 keyed record 扇出的 id 构成与顺序稳定性；非法 key 的完整报错。
+- **发现与 id 推导**：id 只从文件路径推导（配置对象禁止 `id`/`name`）；`.eval.ts`/`.eval.tsx` 两种后缀同规则，其它后缀不被发现；数组与 keyed record 从输入数组生成多条 eval的 id 构成与顺序稳定性；非法 key 的完整报错。
   必须同时覆盖"应发现"与"不应发现"的两面。
 - **目录入口与重名冲突**：`evals/foo/eval.ts`（及 `.tsx`）与 `foo.eval.ts` 同等发现，id 均为目录/文件路径推导的 `foo`；同 id 双入口并存时启动期报重名（点名两条路径），不按扫描顺序覆盖；无 `eval.ts` 的目录（如 `_lib/`）不被发现成 eval。
-  目录入口的默认 profile id 等于该目录相对 `evals/` 的路径（扇出条目共用入口目录的 profile id，不用扇出后缀）。
+  目录入口的默认 profile id 等于该目录相对 `evals/` 的路径（从输入数组生成多条 eval条目共用入口目录的 profile id，不用从输入数组生成多条 eval后缀）。
 - **隐藏输入登记与泄题门**：`loadPrivate` 只在发现期登记永不上传路径；`loadCriteria` 登记的 verifier 与 `loadPrivate` 登记的 private 一并作为隐藏输入。
   与全部 build context（经 `.dockerignore` 与 filtered-context 规则求值后仍会发送的闭包）以及相对 bind mount 交叉检查——仍会进入 context 或 Agent 可达挂载面的隐藏文件按配置错误报出；private 任何阶段都不能挂入，verifier 不得在 Agent 阶段挂入可达服务。
   过滤规则本身可序列化进 BuildKey 输入（与「求值后的 context 内容」并列，供 sandbox identity 消费）；改 `.dockerignore` / 额外过滤规则在内容未变时仍改变规则面。

@@ -11,7 +11,7 @@
 ### 简述
 
 保留一份足够通用的主 `Sandbox` 契约,不要求所有 provider
-共享同一种环境拓扑或物化方法。Eval 仍只声明不透明
+共享同一种环境拓扑或构建与启动方法。Eval 仍只声明不透明
 environment profile;每个 Sandbox provider 的 `environments`
 表把 profile 翻译成该 provider 支持的完整 sandbox case。
 Docker 可以直接消费 Compose,E2B 可以消费 template,支持
@@ -19,7 +19,7 @@ Compose 的云 provider 可以选择 DinD、Pod 或原生多实例组网。
 
 每一种公开 case 都必须给齐启动、就绪、Agent 可见面、判分、
 证据、指纹、清理与留存故事。「provider-specific」不是少做
-契约,而是不把不同底座伪装成同一种实现。
+契约,而是不把不同运行载体伪装成同一种实现。
 
 ```text
 eval.environment(profile)
@@ -52,7 +52,7 @@ interface Sandbox {
 单容器时,主 Sandbox 就是该容器或 microVM。Compose case
 中,主 Sandbox 是 `mainService` 对应的容器。云 provider
 若在 VM / Pod 内启动 Compose,返回的 Sandbox 必须把所有
-命令和文件操作代理进 main 容器;外层 VM 只是物化宿主,
+命令和文件操作代理进 main 容器;外层 VM 只是构建并启动宿主,
 不能继续冒充 Agent 的执行空间。
 
 额外能力不作为所有 Sandbox 的必选接口字段,由 case 在创建
@@ -108,7 +108,7 @@ export default defineEval({
 两种写法在 SandboxSpec 上各有一个入口:`environments` 表按
 profile 名映射完整 case;`materializers` 表按 source kind
 (如 `compose`、`dockerfile`)注册 folder-local 声明的
-物化器。同一 profile 两处都命中时,显式 `environments` 表项
+materializer。同一 profile 两处都命中时,显式 `environments` 表项
 优先——这就是 provider 用预建产物覆盖按需构建的口子。
 内部最终都归一成「稳定 profile + provider-specific
 SandboxCase」,Runner 不按 inline / central 两种写法
@@ -153,7 +153,7 @@ e2bSandbox({
 这两项不要求结构同构。它们只需兑现同一条 eval 所依赖的
 外部行为:任务依赖在场、主 Sandbox 可操作、测试所需服务
 可达、判分时环境仍活着。项目负责选择它认可为可比较的两份
-实现;niceeval 负责把各自精确身份纳入指纹并记录实际物化
+实现;niceeval 负责把各自精确身份纳入指纹并记录实际构建并启动
 事实。
 
 两类缺失分开判。eval 引用的 profile 键任何表都查不到、
@@ -293,8 +293,8 @@ CaseKey
 因此 `debug-long-program/debug_server.py` 虽然只是挂进 sidecar、
 不触发 client 镜像重建,改动后仍会得到新的 CaseKey 并重跑。
 逐 attempt 的容器名、临时目录和随机 project name 不进入
-CaseKey;它们作为物化事实记录。凭据值仍按后文规则排除。
-BuildKey 负责制品复用,CaseKey 才是 attempt 环境身份与携带
+CaseKey;它们作为实际 image digest、容器名等运行事实记录。凭据值仍按后文规则排除。
+BuildKey 负责image 或 template复用,CaseKey 才是 attempt 环境身份与携带
 门。这样 Dockerfile、Compose 或挂载源码改动都会自动失效,
 不需要维护者改 alias 通知 niceeval。
 
@@ -459,7 +459,7 @@ defineSandboxCase({
   bind mount、env/config/secret 文件及可解析 image digest。
   第一期允许注释变化触发保守重跑,不为消掉 false rerun
   实现 Compose 语义解释器。
-- **云端 Compose:**任务输入身份 + provider 物化策略版本 +
+- **云端 Compose:**任务输入身份 + provider 构建与启动策略版本 +
   实际镜像/模板身份。
 - **自定义 case:**用户声明的 `identity`,并把实际资源事实
   作为运行记录供事后核对。
@@ -475,7 +475,7 @@ defineSandboxCase({
 ### 调度、错误与证据
 
 共享构建由前述有界协调层负责。产物就绪后,
-Sandbox case 的实例物化阶段进入 attempt 并发位与
+Sandbox case 的实例启动阶段进入 attempt 并发位与
 deadline:主 Sandbox 创建、伴随服务 ready、Agent Ensure、
 执行与评分共享同一个 attempt 预算。Provider 可以增加镜像
 拉取或网络配额,但不能在两个调度层之外偷跑无界工作。
@@ -487,11 +487,11 @@ deadline:主 Sandbox 创建、伴随服务 ready、Agent Ensure、
 - 映射与声明合法、当前 provider 缺 materializer 或能力位:
   计划期 `skipped`,写明缺项,不进通过率分母;选中集合
   全部 `skipped` 升级为启动期报错;
-- 环境物化、ready、服务中途退出:attempt `errored`;
+- 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready、ready、服务中途退出:attempt `errored`;
 - Agent Ensure 失败:`agent.setup` 的 `errored`;
 - Agent 完成但断言未达标:`failed`。
 
-每个 case 至少产出主环境启动日志与物化事实。声明 services
+每个 case 至少产出主环境启动日志与实际 image digest、容器名等运行事实。声明 services
 能力后,还必须产出逐服务状态、失败日志与 ready timing。
 证据字段是中性的,采集手段留在 provider。
 
@@ -565,7 +565,7 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
    case,证明旧行为是新模型的严格子集。
 7. 实现一个 E2B 单 Dockerfile 按需构建 case,证明同一
    BuildKey 命中同一 template cache、改 context 自动重建。
-8. 指纹按 case 分型;记录实际 environment identity 与物化
+8. 指纹按 case 分型;记录实际 environment identity 与构建并启动
    事实,保守关闭无法证明身份的携带。
 9. 注册表改成 provider locator 资源组,再实现 Docker group
    keep;不在第一期承诺所有 provider keep 多服务。
@@ -639,7 +639,7 @@ Group keep 是独立能力。支持者必须能整组 suspend / resume、
   Compose agent service 翻译成跨 provider 起点。每个
   provider 自己给 profile 一份完整映射。
 - **vs PLAN-3**:服务仍由 niceeval 选中的 sandbox case
-  管理,因此 ready、指纹、证据和回收不外包;只是物化实现
+  管理,因此 ready、指纹、证据和回收不外包;只是构建与启动实现
   回到 provider。
 - **与 Agent 安装 PLAN-4**:case 先产出主 Sandbox,Agent
   provisioner 再执行检查→必要时安装。官方 Agent template

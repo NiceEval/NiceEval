@@ -57,7 +57,7 @@ interface PageDefinition<P = void, I = Sample> {
 
 `load` 回答「这页的输入从哪来」：省略时输入就是宿主选好的 Sample。
 `params` 把一页声明成参数化页：同一张页按参数产生多个实例，每个实例可被[目标](#目标与下钻)寻址。
-`encode` / `decode` 定义参数与 URL key 的互转，`enumerate` 列出有效根内全部合法参数，静态导出据此物化。
+`encode` / `decode` 定义参数与 URL key 的互转，`enumerate` 列出有效根内全部合法参数，静态导出据此为每个参数生成 HTML 文件。
 attempt 详情、experiment 详情都是这样的参数化页，见[参数化页](#参数化页attempt-与-experiment-详情)；核心、路由与宿主对它们没有专门分支。
 
 ```ts

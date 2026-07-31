@@ -38,9 +38,9 @@ Git 允许一个仓库通过 `.git/objects/info/alternates` 借用另一个仓�
 - **借用的形状。**
   [携带条目](../library.md#携带条目与-evidencestate)的 `artifactBase` 就是 alternates:条目在新 Run 里,artifact 的字节还在原 Run 目录。
   省的是同一份 events / trace /源码不被复制 N 遍。
-- **物化是唯一的正解。**
-  Git 的答案是 `git repack -a`(把借来的对象打进自己的包),[`publish()`](../library.md#发布publish) 做的是同一件事:解引用、物化、产物自包含。
-  「离开原仓库前先物化」这条纪律两边一字不差。
+- **复制成自包含结果是唯一的正解。**
+  Git 的答案是 `git repack -a`(把借来的对象打进自己的包),[`publish()`](../library.md#发布publish) 做的是同一件事:解开引用,把 artifact 复制进目标 Run,使产物自包含。
+  两边遵守同一条纪律:离开原仓库前先把外部引用指向的内容复制进目标目录。
 - **`git clone --shared` 的文档明确写「除非你知道自己在做什么,否则不要用」。**
   同样的判断落成`.niceeval/` 是本地事实根、跨出可信边界必须经 `publish()`。
 

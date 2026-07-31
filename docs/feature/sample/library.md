@@ -1,7 +1,7 @@
 # Sample —— 库用法
 
 `niceeval/sample` 把一份 [Record](../record/README.md) 选成一批可比较的 attempt,并如实交代这批数据的覆盖与可靠性。
-这一层有判断,而且判断全部物化在返回值上。
+这一层有判断,而且判断全部写在返回值上。
 
 ## 两个选择器
 
@@ -50,7 +50,7 @@ Run 缺 `configHash`(第三方转换器没声明)时只与自己可比,不与任
 ```typescript
 sample.mode;         // "latest-run" | "current":基础选择方式
 sample.fresh;        // boolean:是否只保留相对各 Experiment 锚点的新执行
-sample.attempts;     // AttemptHandle[]:按口径挑好的 attempt 全集,已物化
+sample.attempts;     // AttemptHandle[]:按口径挑好的 attempt 全集
 sample.historyAttempts; // AttemptHandle[]:同一总体内全部去重历史,供历史读数使用
 sample.runs;         // Run[]:贡献了至少一条 attempt 的真实 Run,各自保留 diagnostics
 sample.coverage;     // SampleCoverage[]:逐实验的覆盖事实
@@ -59,7 +59,7 @@ sample.scope({ experiments, evals }); // 重新定义总体
 sample.filter(predicate);             // 删观测,不改变总体
 ```
 
-**口径是物化的数据,不是隐藏语义。**
+**口径写在返回值里,不是隐藏语义。**
 `mode` 与两个选择函数共享词根:`latestRunSample()` 返回 `"latest-run"`,`currentSample()` 返回 `"current"`。
 `fresh` 是正交的来源约束,不扩成四种 mode。
 `attempts` 是按完整口径挑好的全集;消费它不需要重新展开 `runs`,也不会把同一道题的历史 attempt 重复计入。
@@ -75,7 +75,7 @@ sample.filter(predicate);             // 删观测,不改变总体
 ## 覆盖是逐行的事实
 
 「最新」可能残缺,安静吞下的话下游报表就变成按一道题打分。
-所以**选择器同样要诚实**:每个实验把选中口径覆盖的 eval 与该实验已知 eval 并集(`exp.knownEvalIds`,再交命令行范围)对比,结果物化在 `coverage` 上:
+所以**选择器同样要诚实**:每个实验把选中口径覆盖的 eval 与该实验已知 eval 并集(`exp.knownEvalIds`,再交命令行范围)对比,并把差集写入 `coverage`:
 
 ```typescript
 sample.coverage[0];
@@ -112,7 +112,7 @@ sample.coverage[0];
 所以它不进 issues——时效是每行数字的出身属性,跟着数字走,不是 Sample 级 Issue。
 
 **只看新执行:`fresh` 选项。**
-两个选择器都接受 `fresh: true`,物化 attempts 时排除全部历史执行:
+两个选择器都接受 `fresh: true`,生成 `attempts` 数组时排除全部历史执行:
 
 ```typescript
 const fresh = currentSample(record, { experiments: "compare/", fresh: true });
@@ -201,7 +201,7 @@ Reports 的 Notice policy 再把 Issue 映射为读者可见的标题、详情�
 ## 相关阅读
 
 - [README](README.md) —— 为什么选择独立成一层。
-- [参考方案](reference/README.md) —— 转换算子与口径物化从哪里学。
+- [参考方案](reference/README.md) —— 转换算子与显式口径字段从哪里学。
 - [用例手册](use-case/README.md) —— 局部补跑之后两个口径分别给出什么。
 - [Record](../record/library.md) —— 被选择的那份事实与身份键。
 - [Reports](../reports/library.md) —— 消费 Sample 的数据源、读数与原语。

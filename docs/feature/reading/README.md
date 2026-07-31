@@ -23,7 +23,7 @@
 
 Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdict；它把目录列入 `record.unreadable`，Sample 将其呈现为 `unreadable-run` warning。未派发 Attempt 只存在于 Invocation 的 `unstarted` 计数中，不创建 `result.json`；两者都不能冒充 `skipped`。
 
-**Sample 有判断,但判断必须物化。** 「每个实验取最新一次」是一种选法,「这批数据缺了三道题」是一次推断。两者都写在返回值的字面字段上:`mode` 说口径,`coverage` 说覆盖,`warnings` 说哪里不可靠。
+**Sample 有判断,但判断必须写进返回值。** 「每个实验取最新一次」是一种选法,「这批数据缺了三道题」是一次推断。两者都写在返回值的字面字段上:`mode` 说口径,`coverage` 说覆盖,`warnings` 说哪里不可靠。
 
 **Reports 的判断是呈现判断。** 值怎么算归[读数](../reports/library/measures.md),两级折叠归 `perEval` / `acrossEvals`,长什么样归组件与主题。
 
@@ -36,7 +36,7 @@ Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdi
 **一、聚合永远发生在消费方。** 通过率、总成本、p90 耗时都不落盘,由逐条 `result.json` 现算。
 同一个数字有两个地方能算,两边迟早给出不同的值。
 
-**二、判断物化在数据上,不藏在语义里。** 消费 `sample.attempts` 就自动正确,不需要知道口径怎么展开。反例是让消费方自己 `flatMap` 一遍 `runs`,那会把同一道题的历史 attempt 重复计入。
+**二、把判断写进数据,不藏在语义里。** 消费 `sample.attempts` 就自动正确,不需要知道口径怎么展开。反例是让消费方自己 `flatMap` 一遍 `runs`,那会把同一道题的历史 attempt 重复计入。
 
 **三、每个数字都能回到证据。** 样本成员是 `AttemptHandle` 而不是行；呈现层的 `MetricValue.refs` 带着 `AttemptLocator`，让报告里的一格能寻址回一个 attempt。
 这条排除了「把结果压成宽表」这类看着更通用的中间表示。
@@ -45,7 +45,7 @@ Record reader 遇到缺 `run.json` 的残缺目录时不伪造 Attempt 或 Verdi
 
 **五、派生物明确标为缓存。** 落盘的派生物只有 [`o11y.json`](../record/architecture.md#o11yjson) 一份,定位写死为缓存不是权威,删掉能从 `events.json` 重算,不一致时以事实为准。
 
-**六、格式即契约。** `.niceeval/` 的[格式规范](../record/architecture.md)是唯一的接入面:第三方 harness 经 `createWriter` 写进来,渲染器不 link 任何采集代码。跨出可信边界一律经 [`publish()`](../record/library.md#发布publish) 物化,不带指向原 Run 的回退指针。
+**六、格式即契约。** `.niceeval/` 的[格式规范](../record/architecture.md)是唯一的接入面:第三方 harness 经 `createWriter` 写进来,渲染器不 link 任何采集代码。跨出可信边界一律经 [`publish()`](../record/library.md#发布publish) 解引用并复制成自包含结果,不带指向原 Run 的回退指针。
 
 ## 一件事该放哪层
 

@@ -7,7 +7,7 @@
 ## 方案
 
 保留通用原语，把数据源换成查询。
-树解析阶段把 Record 物化成若干张表，执行作者写的 SQL，行集交给原语渲染。
+树解析阶段把 Record 全量加载成 attempts、evals、runs 等表，执行作者写的 SQL，行集交给原语渲染。
 
 ```tsx
 import { Table, defineReport, sql } from "niceeval/report";
@@ -119,13 +119,13 @@ count(*)    as total      -- 这一格覆盖的全部 attempt
 
 `assistantTurns` 要读 `o11y.json`，`changedLines` 要读 diff。
 这些 artifact 逐 attempt 懒加载，单个可达数百 MB。
-放入表只有两条路：树解析前全量物化，或者提供 UDF。
+放入表只有两条路：树解析前从磁盘全量读入内存，或者提供 UDF。
 
 ```sql
 select agent, avg(changed_lines(locator)) from attempts group by 1
 ```
 
-全量物化违反需求 17；UDF 等于把 [PLAN-2](PLAN-2.md) 的 `Measure.value` 包了一层 SQL 语法，还失去了 `where`、`aggregate` 与 `null` 语义。
+全量读取违反需求 17；UDF 等于把 [PLAN-2](PLAN-2.md) 的 `Measure.value` 包了一层 SQL 语法，还失去了 `where`、`aggregate` 与 `null` 语义。
 
 ### 列的元数据无处安放
 
@@ -156,13 +156,13 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
 ## 数据流
 
 ```text
-.niceeval/ ──▶ 物化 attempts / evals / runs 表 ──▶ SQL 引擎 ──▶ 行集 ──┬── text 面
+.niceeval/ ──▶ 全量加载 attempts / evals / runs 表 ──▶ SQL 引擎 ──▶ 行集 ──┬── text 面
                           ▲                                          └── web 面
                           │
-                    artifact 只能全量物化或走 UDF
+                    artifact 只能全量加载或走 UDF
 ```
 
-物化那一步就是这个方案的成本所在：它要在树解析前决定读多少磁盘，而 [PLAN-2](PLAN-2.md) 把这个决定留给每个读数自己。
+全量加载就是这个方案的成本所在：它要在树解析前决定读多少磁盘，而 [PLAN-2](PLAN-2.md) 把这个决定留给每个读数自己。
 
 ---
 
@@ -175,7 +175,7 @@ select agent, avg(changed_lines(locator)) from attempts group by 1
 3. **读数只声明一次**：同一个成本列在两页上单位与方向一致。
    本方案要看两段 SQL 旁边的元数据表是否抄一致。
 4. **大 artifact 不拖垮树解析**：只读实际用到的 diff。
-   本方案在 UDF 形态下勉强成立，在全量物化形态下不成立。
+   本方案在 UDF 形态下勉强成立，在树解析前全量加载的形态下不成立。
 
 **反指标**：拿一份只有单次 attempt 的结果验收。
 这时摊平的 `avg` 与嵌套的 `avg` 得到同一个数，两级聚合的缺陷完全不显形——而真实实验几乎都跑多轮。

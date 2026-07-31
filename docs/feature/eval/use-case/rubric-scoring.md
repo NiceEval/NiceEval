@@ -84,7 +84,7 @@ export default defineScoreEval({
 - **硬判定与中止正交**：`.gate()` 只决定 Verdict，不隐式改变执行顺序；`.stopOnFailure()` 才在该断言失败时停止后续代码。`t.require(x)` 是 `t.check(x).gate().stopOnFailure()` 的值断言快捷方式，两种题型一致。
 - **中止的 0 和基础设施的 `null` 严格分开**：前置失败后面挣 0 分是 agent 的责任；沙箱炸了、judge 没 key 是 `errored`，整题分数 `null`、不折成 0——评不了不是 agent 差。
 - **题型即定义函数**：`defineScoreEval` 的 `t` 才有 `.points` / `t.score`，在 `defineEval` 里写给分是类型错误；`t.require` 与 `.stopOnFailure()` 两种题型都有。同一 experiment 可以混合题型，但通过率与总分始终分列，不相加。
-- 检查点是**独立可跑的题目**时不要用计分制，拆成多个 eval（[测试集扇出](dataset-fanout.md)）——粒度来自更多的题，不是更细的分。
+- 检查点是**独立可跑的题目**时不要用计分制，拆成多个 eval（[测试集从输入数组生成多条 eval](dataset-fanout.md)）——粒度来自更多的题，不是更细的分。
 
 ## 相关阅读
 

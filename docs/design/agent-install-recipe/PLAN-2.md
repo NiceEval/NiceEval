@@ -24,7 +24,7 @@ e2bCodingAgentTemplate("codex")
 //       withNodeToolContract(Template().fromTemplate(官方基线)),
 //       "codex"))
 
-// Case B:同一批中间件叠到任务给定的底座上
+// Case B:同一批中间件叠到任务给定的起点 OCI image 或 E2B template上
 const template = verifyE2BNodeToolContract(
   withCodingAgent(
     withNodeToolContract(
@@ -32,13 +32,13 @@ const template = verifyE2BNodeToolContract(
     "codex"));
 ```
 
-`withNodeToolContract` 同步长出任意底座能力:探测 Node、
+`withNodeToolContract` 同步长出任意 OCI image 或 E2B template能力:探测 Node、
 缺失时安装锁定版本的 Node、声明 apt 支持面、范围外构建期
 报错(这一步与 PLAN-1 共享,是 Case B 的真实成本)。
 
 ### 优势
 
-- **R1 达成**:底座任意换,契约与安装配方都住在 niceeval,
+- **R1 达成**:起点 OCI image 或 E2B template任意换,契约与安装配方都住在 niceeval,
   下游零手抄、自动跟随。
 - **R2 满分**:工厂签名与产出不变,实现改为调用同一批
   中间件——Case A 与 Case B 走同一份代码,不是两条平行
@@ -73,13 +73,13 @@ const template = verifyE2BNodeToolContract(
 
 ```text
 niceeval/sandbox/e2b-template 公开面
- ├─ withNodeToolContract(t)        底座 → 契约化底座(探测 Node/补 Node/apt 支持面)
- ├─ withCodingAgent(t, agent)      契约化底座 → 含 agent 的模板(读共享版本常量)
+ ├─ withNodeToolContract(t)        起点 OCI image 或 E2B template → 契约化起点 OCI image 或 E2B template(探测 Node/补 Node/apt 支持面)
+ ├─ withCodingAgent(t, agent)      契约化起点 OCI image 或 E2B template → 含 agent 的模板(读共享版本常量)
  ├─ verifyE2BNodeToolContract(t)   构建期断言(既有)
  └─ e2bCodingAgentTemplate(agent)  上面三层的组合糖(既有签名)
 ```
 
-`withCodingAgent` 只假设契约、不假设底座:它读的每个路径
+`withCodingAgent` 只假设契约、不假设起点 OCI image 或 E2B template:它读的每个路径
 与权限都由 `withNodeToolContract` 建立、由 verify 断言,
 顺序错放(未过契约层直接装)在构建期报错。
 
@@ -87,12 +87,12 @@ niceeval/sandbox/e2b-template 公开面
 
 ### 落地路线
 
-1. `withNodeToolContract` 任意底座模式(与 PLAN-1 第 1 步
+1. `withNodeToolContract` 任意 OCI image 或 E2B template模式(与 PLAN-1 第 1 步
    相同)。
 2. 从工厂函数体析出 `withCodingAgent`,工厂改为组合调用;
    既有单测与公共基线构建脚本回归。
 3. 导出与 TSDoc,`pnpm docs:reference` 重新生成参考页。
-4. TB 底座冒烟:八道卡住的题跑通。
+4. TB 任务 image冒烟:八道卡住的题跑通。
 5. 重写
    [预制环境](../../feature/sandbox/library/prebuilt-environments.md)
    E2B 节与 docs-site 教程,按三轴模型分 Case 叙述。
@@ -101,11 +101,11 @@ niceeval/sandbox/e2b-template 公开面
 
 ### 验收 / Definition of Done
 
-1. **底座可换(R1)**:简述里的 Case B 代码建出模板,
+1. **起点 OCI image 或 E2B template 可换(R1)**:简述里的 Case B 代码建出模板,
    attempt 里任务依赖与 codex 同时可用。
 2. **Case A 不回归(R2)**:既有构建脚本不改重跑,模板
    行为与拆分前一致。
-3. **支持面显式(R3)**:Alpine 底座构建期报错点名包管理
+3. **支持面显式(R3)**:Alpine 起点 OCI image 或 E2B template构建期报错点名包管理
    器;跳过 `withNodeToolContract` 直接 `withCodingAgent`
    同样构建期报错。
 4. **自定义构建期口子(R5 构建期半边)**:用一个未内置的

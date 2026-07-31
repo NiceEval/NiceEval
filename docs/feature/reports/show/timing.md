@@ -86,7 +86,7 @@ artifact 不保存 render callback，renderer 也不解析 `git show ...`、`cat
 
 ## Run 级 activity 的读取
 
-共享构建（`sandbox.build`）、共享制品准备（`agent.artifact.prepare`）与实验级 Hook 的时间不属于任何 attempt，不出现在 `--timing` 的 attempt 树里。
+共享构建（`sandbox.build`）、共享 staged payload 准备（`agent.artifact.prepare`）与实验级 Hook 的时间不属于任何 attempt，不出现在 `--timing` 的 attempt 树里。
 它们的家是 `RunMeta.timings`：`niceeval show --timing` 不带 attempt locator 时输出 Run 级 activity 树，与 attempt 树同一套预算、失败与时序投影规则；未知 key 同样用 producer 的 `label` 通用渲染。
 sandboxBuild 的专用卡（locator、输入、依赖它的 attempt）从 [`sandboxBuilds`](../../record/architecture.md#共享构建的-provenancesandboxbuilds) 读取，不解析 timing label。
 

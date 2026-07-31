@@ -21,7 +21,7 @@ template、自建 template、任务镜像与空白环境走同一条协议,
 本结论推翻此前「采纳 PLAN-2(中间件拆分)」的裁决。推翻的
 动因来自[多容器环境](../multi-container-environments/DECISION.md)
 的逐题按需构建:数百道题各有自己的环境产物时,「把 agent
-烘进产物」会强制发布「题目 × Agent」笛卡尔积的制品矩阵,
+烘进产物」会强制发布「题目 × Agent」笛卡尔积的image 或 template 组合矩阵,
 构建期组合无论以工厂还是中间件形态存在都解决不了这一点。
 两个主题的 PLAN-4 互为前提,一起采纳。
 
@@ -29,7 +29,8 @@ template、自建 template、任务镜像与空白环境走同一条协议,
 
 对照 [GOALS](GOALS.md) 逐条:
 
-- **R1 底座可换**:任务给定的任意底座上,Ensure 在运行时把
+- **R1 起点 OCI image 或 E2B template 可换**:任务可以给定任意 OCI image 或 E2B template。
+  Ensure 在运行时把
   Agent 补齐到锁定身份;下游不接触 niceeval 内部契约,契约
   内容变化时下游自动跟随——达成方式从「构建期叠中间件」
   换成「运行时补齐」,目标本身达成得更彻底。
@@ -47,19 +48,19 @@ template、自建 template、任务镜像与空白环境走同一条协议,
   构建期半边完整。
 - **R6 任意构建路径零手抄**:Dockerfile 用户按自己的习惯
   预装或干脆不装;装对了检查命中,装错或没装由 Ensure 补齐
-  或点名报错。Node 工具契约从「所有底座必须满足的系统级
+  或点名报错。Node 工具契约从「所有起点 OCI image 或 E2B template必须满足的系统级
   契约」降为内置 Node Agent provisioner 自己的前置要求。
 
 ## 否决的候选项
 
 - **PLAN-1(工厂加选项)**:维持否决,理由在本结论下更强
-  ——构建期组合整体退为优化投影后,给工厂加底座选项连
+  ——构建期组合整体退为优化投影后,给工厂加起点选项连
   原先「台阶」的候选资格都没有了。
 - **PLAN-2(中间件拆分)**:此前的采纳改判为**降级**。
   `withNodeToolContract` / `withCodingAgent` 可以作为 E2B
   构建优化 helper 存在,服务于「想把检查快速路径做进自建
   template」的项目;它是可选投影,其存在与否都不改变任意
-  template 能否运行 Agent。原采纳理由里「任意底座能力是
+  template 能否运行 Agent。原采纳理由里「任意 OCI image 或 E2B template能力是
   Case B 的真实成本」这一判断被推翻:成本挪到了 provisioner
   的安装分支,不需要在构建期预付。
 - **PLAN-3(recipe 数据 + 三渲染器)**:从「保留待启用」
@@ -77,14 +78,14 @@ template、自建 template、任务镜像与空白环境走同一条协议,
 - **冷启动安装成本**:未预装 Agent 且不复用沙箱时,每个
   attempt 都付一次安装(分钟级);高并发下还叠加 npm
   registry 限流面。缓解手段是既有工具:官方 / 自建预装
-  产物命中检查、沙箱复用摊薄、provider 侧带 Agent identity
+  产物命中检查、沙箱复用由多个 attempt 共用一次安装成本、provider 侧带 Agent identity
   的派生 cache。「什么时候烤进 template、什么时候 Ensure
   现场装」的选择指引落 docs-site 教程。
 - **check 的深度取舍**:只比版本字符串会放过 PATH、运行
   用户或依赖损坏;检查太重又抬高每 attempt 固定成本。各
   内置 provisioner 的检查项逐个评审,以「Adapter 启动依赖
   什么就查什么」为界。
-- **任意镜像的用户与权限差异**:底座默认用户、UID 与
+- **任意镜像的用户与权限差异**:起点 OCI image 或 E2B template默认用户、UID 与
   `/usr/local` 权限不受 niceeval 控制。内置 Node Agent
   provisioner 优先用运行用户拥有的安装目录,确需系统包才
   提权;检查必须以运行用户身份断言,不以 root 跑出假绿。
@@ -93,6 +94,6 @@ template、自建 template、任务镜像与空白环境走同一条协议,
   由「同一 identity + 同一 check」的发布门与运行时复检
   发现,但不能像命令 DSL 那样从结构上消灭重复。第二次因
   漂移出事故时重估这条取舍,材料记 memory。
-- **离线与审计环境**:安装期需要网络或内部制品源;离线
+- **离线与审计环境**:安装期需要网络或内部安装包源;离线
   场景必须预装并用 `verifyOnly`,或提供自定义 provisioner。
   框架不凭空解决网络,只保证失败点名、不静默降级。

@@ -18,7 +18,7 @@
 
 接入分三档(定义见 [docs-site · Tier](../docs-site/zh/explanation/tier.mdx)):**Tier 1(只接 send)**、**Tier 2(send + OTel)**、**Tier 3(侵入改造 + experiment flags)**。
 
-三档各有物化目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。
+三档各有完整源码目录,同一个应用逐层叠 delta:`tier1/<name>`(纯无侵入,全套断言)、`tier2/<name>`(有 OTel 输出的三个应用:ai-sdk-v7、codex-sdk、langgraph——加 telemetry 配置与 spanMapper/收尾宽限,换瀑布图)、`tier3/<name>`(五个应用都有——按文末「Tier 3 侵入点」改应用内部代码,暴露 experiment flags)。
 哪个应用有哪几层见 [examples/zh 分层索引](../examples/zh/origin/README.md#接入分层origin-tier1-tier2-tier3);层间用 `pnpm tiers:sync` 保持同步(机制见 [tier-sync](engineering/example-tier-sync/README.md))。
 本文余下部分讲 Tier 1 的接入配方——那是每个应用的地基。
 

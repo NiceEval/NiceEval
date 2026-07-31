@@ -7,6 +7,7 @@
 不要从本文件学习整个项目。先按任务进入对应目录，读取该目录最近的 `README.md`、`AGENTS.md` 或索引，再沿链接只加载相关正文：
 
 - 产品、架构或内部设计：[`docs/README.md`](docs/README.md)
+- 文档用词审查：先把裁决写进 `docs/writing-rules.json`，再运行 `pnpm test:docs`，按守护输出逐项修改；不手工搜索并维护另一份命中清单
 - 设计到源码的定位：[`docs/source-map.md`](docs/source-map.md)
 - 写、改或评审测试：先读 [`docs/engineering/testing/README.md`](docs/engineering/testing/README.md)（两层体系、变更预算、改了什么跑什么）；写单元测试前再读 [`docs/engineering/testing/unit/README.md`](docs/engineering/testing/unit/README.md) 与对应 Feature 的 `docs/engineering/testing/unit/<feature>.md` 测试文档；造或改 fixture 前读 [`docs/engineering/testing/unit/harness.md`](docs/engineering/testing/unit/harness.md) 与该文档的 Fixture 规范
 - 历史踩坑与设计裁决：[`memory/INDEX.md`](memory/INDEX.md)，命中索引项后才读正文

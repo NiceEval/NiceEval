@@ -45,7 +45,7 @@ niceeval 自身、Node 内建模块和 loader 过渡帧不进入路径；连续�
 
 ### 采集约束
 
-一次 `captureLoc()` 物化一份栈并完成下面的同步步骤：
+一次 `captureLoc()` 调用 `Error.captureStackTrace` 取得一份栈并完成下面的同步步骤：
 
 1. 把 `Error.stackTraceLimit` 临时提高到 64，采集结束立即还原。
 2. 解析全部帧，规范化 URL、绝对路径与路径分隔符。

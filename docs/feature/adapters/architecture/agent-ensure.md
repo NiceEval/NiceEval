@@ -5,7 +5,7 @@ Adapter 在每次 `agent.setup` 里执行同一条 **Ensure 协议**:先检查 A
 官方 template、自建 template、任务镜像与空白环境都走这条协议,差别只是第一次检查是否命中——预装 Agent 是检查命中的优化,不是任意任务环境可运行的前提。
 
 ```text
-sandbox case 物化 → 主 Sandbox
+sandbox case 构建所需产物并启动实例 → 主 Sandbox
  → baseline → eval.setup
  → AgentProvisioner.ensure(sandbox)      # agent.setup 内
     ├─ check 通过  → 记录检查命中的安装事实
@@ -24,7 +24,7 @@ provisioner 承担三项义务,不建立跨 provider 安装步骤 DSL:
 1. **锁定身份。**
    `identity` 是纯数据,至少含 Agent 名、精确版本与配方修订,进 configHash 与 `run.json`。
 2. **题面外准备。**
-   默认安装路径必须能在题面网络之外准备锁定制品(staged payload,见下节),再经主 Sandbox 文件通道送入。
+   默认安装路径必须能在题面网络之外准备版本锁定的 staged payload(见下节),再经主 Sandbox 文件通道送入。
 3. **主 Sandbox 内 Ensure。**
    check → 缺失时 install → recheck,全部经主 Sandbox 的命令与文件 API 执行;安装只修改主 Sandbox,外层 DinD VM 与 sidecar 不安装 Agent、不向 Agent 暴露文件 API。
 
@@ -73,7 +73,7 @@ interface AgentCheckResult {
 - **identity / check / install 必须原子替换。**
   只换 install 不换 check 会让指纹与实际环境静默漂移;三样散布成 adapter 上的可覆盖方法时,类型系统拦不住半替换,打包成一个值则替换天然原子——「身份与检查同源」由结构保证,不靠纪律。
 - **`prepare` 的节奏与 adapter 其余方法不同。**
-  `SandboxAgentDef` 的 setup / send / teardown 全是 attempt 级、沙箱内;制品准备是 Run 级、宿主侧、以 identity 为 key 的 single-flight(与 `sandbox.build` 对称)。独立对象给协调器一个稳定的 single-flight 单位。
+  `SandboxAgentDef` 的 setup / send / teardown 全是 attempt 级、沙箱内;staged payload 准备是 Run 级、宿主侧、以 identity 为 key 的 single-flight(与 `sandbox.build` 对称)。独立对象给协调器一个稳定的 single-flight 单位。
 - **工厂参数是最小替换缝。**
   内置 adapter 的 def 由工厂产出、对用户不透明;方法长在 def 上,换安装逻辑就要展开重包整个 adapter,`codexAgent({ provisioner })` 一行替换、协议逻辑不碰。
 - **Direct Agent 不背这些方法。**
@@ -105,21 +105,21 @@ Node、npm prefix、包管理器与安装目录是具体 provisioner 的前置�
 
 | 模式 | 语义 | 谁声明 |
 |---|---|---|
-| `staged` | 内置默认路径:制品在题面网络之外准备,经文件 API 送入安装;题面网络不可用也能装 | 内置 provisioner 的默认值 |
+| `staged` | 内置默认路径:staged payload 在题面网络之外准备,经文件 API 送入安装;题面网络不可用也能装 | 内置 provisioner 的默认值 |
 | `sandbox-network` | 自定义 provisioner 显式声明用沙箱内网络与包管理器安装;网络可用性成为该 provisioner 的支持面 | 自定义 provisioner |
 | `verifyOnly` | 只接受预装且检查命中的环境;检查失败立即 `errored`,不联网、不修改文件系统 | 不可变、离线或审计环境的用户 |
 
 失败后不允许在三种模式之间静默猜测或降级;换模式是配置变更,不是运行时回退。
 
-## staged payload:题面网络之外的锁定制品
+## staged payload:题面网络之外的锁定安装文件
 
-内置 coding Agent 的默认安装路径按以下契约准备制品:
+内置 coding Agent 的默认安装路径按以下契约准备 staged payload:
 
 - 目标 platform / libc 从**主 Sandbox** 探测(`uname -s` / `uname -m` / `ldd`),不是宿主平台:
-  制品要装进沙箱,macOS 宿主起 linux 容器是常态,按宿主取会准备出跑不了的二进制。
+  staged payload 要装进沙箱,macOS 宿主起 linux 容器是常态,按宿主取会准备出跑不了的二进制。
   调用方可用 `EnsureAgentOptions.platform` 显式锁定。
-- 以 Agent identity + 目标 platform / libc 为 key,在 Run 级经宿主网络、provider control plane 或随 niceeval npm 包分发的制品取得一次;single-flight,多个 attempt 共享。
-- 校验 digest 后进入本地 / 远端共享 cache;解析后的制品 digest 与平台进入 configHash 和 `run.json`。
+- 以 Agent identity + 目标 platform / libc 为 key,在 Run 级经宿主网络、provider control plane 或随 niceeval npm 包分发的安装文件取得一次;single-flight,多个 attempt 共享。
+- 校验 digest 后进入本地 / 远端共享 cache;解析后的 staged payload digest 与平台进入 configHash 和 `run.json`。
 - 准备时间记为 Run 级开放 activity `agent.artifact.prepare`(落盘形状见 [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity)),不占 attempt 并发位。
 - 安装时经主 Sandbox 的文件 API 上传已准备 payload;**payload 优先自带 Agent 所需运行时**。
   任务镜像由题目决定,不能假设它带 Node / Python 工具链——内置 Node CLI Agent 因此优先取该平台的
@@ -144,11 +144,11 @@ attempt 环境身份由两根正交的轴组成:
 ```text
 attempt 环境身份
  = provider sandbox case 身份(CaseKey 等,见 Sandbox Case)
- + AgentProvisioner.identity(+ staged payload 的制品 digest 与平台)
+ + AgentProvisioner.identity(+ staged payload digest 与平台)
  + 其它解析后配置
 ```
 
-改任务 Dockerfile 只重建环境、不动 Agent 配置;改 Agent 版本只改变 Ensure identity 与制品 activity,不重建任务 BuildKey。
+改任务 Dockerfile 只重建环境、不动 Agent 配置;改 Agent 版本只改变 Ensure identity 与 staged payload activity,不重建任务 BuildKey。
 两种变化都触发重跑,但不强制发布二者笛卡尔积的预制产物——同一份任务构建产物可以被多个 Agent experiment 消费,每个 Agent 在主 Sandbox 内自行检查或安装。
 
 检查得到的实际版本作为运行事实落盘(attempt `facts` 的 `agent.ensure` / `agent.version.actual` 键),用于核对声明身份是否兑现;它不能反过来替代规划期指纹。
@@ -177,4 +177,4 @@ Runner 按现有契约每 attempt 调 Agent `setup`,Ensure 自身必须可收敛
 - [Sandbox Agent](../library/sandbox-agent.md) —— `setup` / `send` / `teardown` 的编写指南。
 - [Sandbox Case](../../sandbox/case.md) —— 主 Sandbox 从哪里来、BuildKey / CaseKey 是什么。
 - [Record · 两层时间模型](../../record/architecture.md#两层时间模型生命周期锚点与开放-activity) —— `agent.artifact.prepare` 与错误归属的落盘形状。
-- [Experiments · 缓存与携带](../../experiments/cache.md) —— identity 与制品 digest 怎样进入指纹。
+- [Experiments · 缓存与携带](../../experiments/cache.md) —— identity 与 staged payload digest 怎样进入指纹。

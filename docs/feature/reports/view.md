@@ -8,7 +8,7 @@ view 只拥有目标寻址、导航与 dialog 摆放，不拥有另一套详情�
 
 本地模式与静态导出共用**同一条站点管线**：管线的输入是记录根加可选收窄（位置参数 / `--exp`）。
 收窄把根滤成只含匹配实验与 attempt 的**有效根**。
-管线把每张导航页按界面语言渲染成一块报告 HTML，再为每张参数化页按 `params.enumerate(有效根)` 把每个实例物化为 `<pageId>/<key>.html`。
+管线把每张导航页按界面语言渲染成一块报告 HTML，再为每张参数化页按 `params.enumerate(有效根)` 把每个实例写成 `<pageId>/<key>.html`。
 `index.html` 是承载报告块的外壳，`artifact/` 携带前端会读取的证据文件。
 宿主不携带 page 的取数或布局知识。
 
@@ -303,7 +303,7 @@ view 只把 `navigation !== false` 的 pages 列进导航；每张页的输入�
 
 ## 主题
 
-站点长什么样是一份和报告分开的制品。
+站点外观由一份和 Report 分开的 Theme 配置对象决定。
 `--theme` 换一次外观而不动报告文件，报告自己的 `theme` 外壳字段是它自带的外观，两者与项目配置、内建 [`basalt`](themes/basalt.md) 组成[四档取值链](library/theme.md#装载链)：
 
 ```sh
@@ -327,6 +327,6 @@ niceeval view --theme ./themes/acme.ts --out site            # 导出带同一�
 
 - [Show](show.md) —— 同一批结果的终端入口。
 - [Reports Library](library.md) —— 自定义报告槽；外壳与多页见[分篇](library/shell.md)。
-- [Theme](library/theme.md) —— 主题制品、装载链、令牌全集与 CSS 覆盖。
+- [Theme](library/theme.md) —— Theme 配置对象、装载链、令牌全集与 CSS 覆盖。
 - [Record](../record/README.md) —— view 读取与导出的数据。
 - [Architecture](architecture.md) —— 报告宿主与「宿主只剩机器」的边界清单。

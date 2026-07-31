@@ -41,7 +41,7 @@ fingerprint = hash(configHash, eval 源码闭包, evalId / tags / environment / 
                    loader 登记的数据文件内容与判据树哈希)
 ```
 
-Agent 安装身份是 [`AgentProvisioner.identity`](../adapters/architecture/agent-ensure.md) 加 staged payload 的制品 digest 与平台;它与 sandbox case 身份正交进入指纹——改 Agent 版本不重建任务环境,改环境定义不作废 Agent 制品。
+Agent 安装身份是 [`AgentProvisioner.identity`](../adapters/architecture/agent-ensure.md) 加 staged payload digest 与平台;它与 sandbox case 身份正交进入指纹——改 Agent 版本不重建任务环境,改环境定义不作废 Agent staged payload。
 
 `configHash` 是 Run 级的**配置身份**,同时是跨 Run 可比性的唯一判据, 读取面怎么用它见 [Record · configHash](../record/library.md#confighash配置身份只算一次)。
 两个哈希嵌套而不是并列,于是新增一个公开配置字段只需要裁决一次「进不进 configHash」, 不必分别裁决「进不进指纹」和「算不算可比性配置」。

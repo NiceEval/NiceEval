@@ -9,8 +9,8 @@
 同一个断言词汇在任何位置都是同一个语义——不存在「`messageIncludes` 天生看全部、`calledTool` 天生看单轮」这种按名字区分的作用域。
 作用域由**接收者**决定（见下节），词汇本身只有一份定义；同一件事也不提供两个 API。
 
-**自组织优先于约定。**
-起始文件、workspace、测试集全部用基本 API 写成普通代码，没有隐式拷贝、没有约定式黑箱：fixture 是 `test(t)` 里的显式 `writeFiles` / `uploadDirectory` 调用；传统 prompt 评估的 dataset / golden 表不是一等概念——Agent eval 关注多轮对话、逐 case 各异的检查方式，统一的 input / expected-output 表装不下，需要测试集时用普通代码把数据行 map 成 eval 数组，或按外部稳定业务 key 组装成 eval record（[测试集扇出](library.md#测试集扇出)）。
+**显式配置优先于约定。**
+起始文件、workspace、测试集全部用基本 API 写成普通代码，没有隐式拷贝、没有约定式黑箱：fixture 是 `test(t)` 里的显式 `writeFiles` / `uploadDirectory` 调用；传统 prompt 评估的 dataset / golden 表不是一等概念——Agent eval 关注多轮对话、逐 case 各异的检查方式，统一的 input / expected-output 表装不下，需要测试集时用普通代码把数据行 map 成 eval 数组，或按外部稳定业务 key 组装成 eval record（[测试集从输入数组生成多条 eval](library.md#测试集从输入数组生成多条 eval)）。
 
 ## 接收者模型：位置决定作用域
 

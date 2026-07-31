@@ -155,8 +155,8 @@ playwright-bdd 把 Gherkin 编译到 Playwright runner。
 
 ### 值得抄的
 
-1. **配方脱离特定底座存在。** 安装配方不假设底座:包管理器按 apt-get / dnf / yum / apk 探测分发,Node 缺失时经 nvm 装用户 home。
-证明「任务给定底座 × agent 配方上叠」可行,是 [Design · Agent 安装配方](design/agent-install-recipe/README.md) 的直接参照。
+1. **配方脱离特定任务 image 或 template 存在。** 安装配方不假设其中已经安装什么:包管理器按 apt-get / dnf / yum / apk 探测分发,Node 缺失时经 nvm 装用户 home。
+证明「任务 image 或 template × Agent 配方上叠」可行,是 [Design · Agent 安装配方](design/agent-install-recipe/README.md) 的直接参照。
 2. **幂等短路统一两种执行时机。** 安装前先跑 `--version`,版本匹配即跳过——预烘焙镜像自动成为快速路径,同一份配方兼任构建步骤与运行时回退,进了 PLAN-3 的配方形态。
 
 ### 调研过、判断不值得抄的(及理由)

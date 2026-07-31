@@ -37,7 +37,7 @@ export default defineExperiment({
 });
 ```
 
-上例对应 [Eval Library](../eval/library.md#tags-与-environment让-experiment-选择) 里声明的 `coding/fix-button` 与 `research/gpu-literature`：前者返回 `true`，后者返回 `false`。参数是发现并扇出后的只读 `EvalDescriptor`，不能叫 `eval`——`eval` 是 strict mode 下的保留绑定标识符，作为参数名会直接语法报错。`e.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。测试集扇出已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
+上例对应 [Eval Library](../eval/library.md#tags-与-environment让-experiment-选择) 里声明的 `coding/fix-button` 与 `research/gpu-literature`：前者返回 `true`，后者返回 `false`。参数是发现并生成 attempt后的只读 `EvalDescriptor`，不能叫 `eval`——`eval` 是 strict mode 下的保留绑定标识符，作为参数名会直接语法报错。`e.id` 是文件路径推导出的项目内逻辑 id（去掉 `evals/` 与 `.eval.ts`），可直接用 `startsWith` / `includes` 判断；不暴露绝对文件路径。测试集生成 attempt已经完成，所以谓词拿到的是最终 id。简单前缀仍可写 `evals: ["memory/"]`，全部运行可省略或写 `"*"`。
 
 选择结果随 Run 保存，报告不再重跑表达式：
 

@@ -117,7 +117,7 @@ codexAgent({ provisioner: internalCodex });
   `agent.setup`;失败得到 `errored`,附缺失命令、期望版本、
   实际版本与下一步,不记成 Agent 做题 `failed`。
 - **不静默降级。** 安装缺少 root、网络、包管理器或可写目录
-  时点名缺项。自定义 provisioner 可以适配新的底座,内置
+  时点名缺项。自定义 provisioner 可以适配新的起点 OCI image 或 E2B template,内置
   provisioner 不猜一个近似命令继续跑。
 
 ### 身份、指纹与可比性
@@ -184,7 +184,7 @@ Sandbox,再在既有 `agent.setup` 时点执行 Ensure:
 环境 BuildKey 只认题目 Dockerfile、Compose、build context、
 基座与 materializer 修订;Agent 身份单独进入 attempt 指纹。
 因此数百份逐题环境不会再乘上 Codex / Claude Code 等 Agent
-版本形成制品矩阵。同一份题目构建产物可以被多个 Agent
+版本形成image 或 template 组合矩阵。同一份题目构建产物可以被多个 Agent
 experiment 消费,每个 Agent 在主 Sandbox 内自行检查或安装。
 
 Provider 仍可选择把常用 Agent 预装进构建产物,但这是一项
@@ -227,7 +227,7 @@ Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
 - 未预装 Agent 的冷启动会付安装成本;不复用时每个 attempt
   都可能重复安装。官方产物、项目自建产物、Sandbox 复用与
   checkpoint 仍是解决性能问题的工具。
-- 安装期需要网络或内部制品源;离线场景必须预装或提供自定义
+- 安装期需要网络或内部安装包源;离线场景必须预装或提供自定义
   provisioner,不能由框架凭空解决。
 - `check` 是真正的兼容边界。只比版本字符串会放过 PATH、
   运行用户或依赖损坏;检查太重又会增加每 attempt 固定成本。
@@ -268,7 +268,7 @@ Runner 仍按现有契约每 attempt 调 Agent `setup`;Ensure 自身
    把错误版本交给 Agent。
 5. **多 environment。** 同一 experiment 的两条 eval 解析到
    不同 template,各自独立 Ensure;安装事实与指纹不串组。
-6. **自定义入口。** 用户 provisioner 从内部制品源安装一个
+6. **自定义入口。** 用户 provisioner 从内部安装包源安装一个
    未内置 Agent,检查、错误与记录形态和内置实现一致。
 7. **复用。** 同一 profile 的复用 Sandbox 只在第一次安装,
    后续 attempt 检查命中;换 profile 不共享安装产物。

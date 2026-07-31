@@ -165,7 +165,7 @@ gate 不进质量分：10 条全过的 gate 加一个 0.6 的 judge 会把均值
 ## 怎么选题型
 
 1. 这些检查点是**独立可跑的题目**还是**同一次运行内的检查**？
-   独立可跑 → 拆成多个 eval（[测试集扇出](../../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
+   独立可跑 → 拆成多个 eval（[测试集为各计分项生成记录](../../eval/use-case/dataset-fanout.md)），粒度来自更多的题、不是更细的分。
 2. 同一道题内，「做对」是二值的 → `defineEval`：一票否决写 gate，观测指标写 soft。
 3. 同一道题内，「做到几成」有意义（长链条、rubric 大题）→ `defineScoreEval`：检查点 `.points(n)`，自算分数 `t.score`，硬要求 `.gate()`，需要中止时再链 `.stopOnFailure()`。
 

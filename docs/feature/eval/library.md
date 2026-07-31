@@ -44,7 +44,7 @@ export default defineEval({
 `environment` 是 provider-neutral 的环境 profile id，experiment 只读取这个 id，具体 image / template 由 sandbox spec 的 `environments` 映射（完整语义见 [README](README.md#defineeval-的形状)）。
 eval 本身保持 agent-neutral，只描述「测什么」和「怎么算对」；对着哪个 agent 跑、跑几次，由 `experiments/` 里的 `defineExperiment` 决定（见 [Experiments](../experiments/README.md)）。
 
-## 测试集扇出
+## 测试集从输入数组生成多条 eval
 
 共享同一套逻辑的一批 case，从同一文件默认导出**数组**或 **keyed record**，不复制薄 wrapper 文件：
 

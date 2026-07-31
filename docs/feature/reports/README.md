@@ -69,7 +69,7 @@ export default defineReport(async (sample) => {
 
 ## 实体列表也是普通值
 
-Sample 已经公开物化、去重后的 `attempts`。
+Sample 已经公开按口径筛选并去重后的 `attempts`。
 筛选、排序和截断使用现有 Sample 方法与普通数组方法：
 
 ```tsx
@@ -216,4 +216,4 @@ return <Table rows={rows} />;
 - [Calculations](calculations.md) —— 为什么没有 Sample map，以及哪些领域算法不进核心 API。
 - [Architecture](architecture.md) —— 执行时机、缓存、双面边界与 React 嵌入。
 - [References](reference/authoring.md) —— 外部产品中可借与不可借的部分。
-- [Sample](../sample/README.md) —— sample page 接收的物化输入。
+- [Sample](../sample/README.md) —— sample page 接收的已筛选 `attempts` 与口径字段。

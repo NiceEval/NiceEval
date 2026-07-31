@@ -1,9 +1,9 @@
-# 测试集扇出：一套逻辑跑一批 case
+# 测试集从输入数组生成多条 eval：一套逻辑跑一批 case
 
 ## 解决什么问题
 
 一批只有参数不同的 case（SQL 生成对照表、issue 清单、benchmark 行）共享同一套驱动与断言逻辑。
-为每行复制一个薄 `.eval.ts` wrapper 既难维护又容易漂移——扇出的答案是普通代码：把数据行 map 成 eval **数组**或 **keyed record**，从同一文件默认导出（id 生成契约见 [Library · 测试集扇出](../library.md#测试集扇出)）。
+为每行复制一个薄 `.eval.ts` wrapper 既难维护又容易漂移——从输入数组生成多条 eval的答案是普通代码：把数据行 map 成 eval **数组**或 **keyed record**，从同一文件默认导出（id 生成契约见 [Library · 测试集从输入数组生成多条 eval](../library.md#测试集从输入数组生成多条 eval)）。
 
 ## 全流程
 
@@ -84,5 +84,5 @@
 
 ## 相关阅读
 
-- [Library · 测试集扇出](../library.md#测试集扇出) —— 两种形状与 id 生成规则的单源契约。
+- [Library · 测试集从输入数组生成多条 eval](../library.md#测试集从输入数组生成多条 eval) —— 两种形状与 id 生成规则的单源契约。
 - [沙箱 coding 任务](sandbox-coding.md) —— 起始文件写入的完整流程。

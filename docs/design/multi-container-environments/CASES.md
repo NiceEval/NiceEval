@@ -5,7 +5,7 @@
 
 1. 上游题目文件放在哪里，哪些内容进环境身份，哪些内容进
    eval 判据指纹；
-2. Docker 与云端 provider 分别怎样把同一个 profile 物化成
+2. Docker 与云端 provider 分别怎样把同一个 profile 构建并启动成
    完整 sandbox case；
 3. `eval` 与 `experiment` 最终写成什么样，Agent 的
    检查→必要时安装放在哪一步。
@@ -98,7 +98,7 @@ evals/foo/eval.ts       → id "foo"
 
 | 文件 | 何时可见 | 身份 |
 |---|---|---|
-| Dockerfile、Compose、build context、相对 bind mount | 环境物化时交给 provider；Agent 只看到最终主容器视图 | BuildKey / CaseKey |
+| Dockerfile、Compose、build context、相对 bind mount | 构建所需 image、创建网络、启动 Sandbox 与服务并等待 ready时交给 provider；Agent 只看到最终主容器视图 | BuildKey / CaseKey |
 | `task.yaml` | 宿主发现期读 instruction、timeout、tags | eval 数据指纹 |
 | `run-tests.sh`、`tests/**` | 最后一次 `t.send()` 返回后才上传主容器 | eval 判据指纹 |
 
@@ -246,7 +246,7 @@ Provider 不能悄悄换成 UID 1000；云实现也要兑现等价权限面。
 验证命令产生的 venv 与依赖也发生在 Agent 窗口之后，不进入
 Agent diff。
 
-四个 folder eval 不能合并成一个 keyed record：一组扇出
+四个 folder eval 不能合并成一个 keyed record：一组向所有依赖项传播失败
 Eval 共享同一个 `environment` 声明，而四题各有不同 profile。
 独立薄文件让 id 与 profile 都稳定，公共驱动仍只有一份。
 
@@ -333,7 +333,7 @@ export default defineExperiment({
 
 这里 E2B template 只预装 Docker daemon、Compose 与基础
 cache，不预烘四道题，更不预烘 241 道 `<题目 × Agent>`
-组合。任务环境按 CaseKey/BuildKey 现场物化；Codex 仍在
+组合。任务环境按 CaseKey/BuildKey 现场构建并启动；Codex 仍在
 返回的 client Sandbox 内 Ensure。官方 Codex template 只是
 Ensure 更容易命中的优化，不是运行这些任务的前提。
 

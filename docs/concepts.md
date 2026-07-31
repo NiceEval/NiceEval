@@ -13,8 +13,8 @@
 总表里的中文名和英文名都是正文首选写法。
 代码标识与标准术语不同时,英文列把代码标识放在括号里,正文叙事使用标准术语,代码示例仍使用代码标识。
 
-由具体功能产生的词条,契约列必须链接定义它的 Feature 契约。
-没有可链接 Feature 契约的概念不进入总表;功能删除时同批删除对应词条。
+由具体功能产生的正式词条,契约列必须链接定义它的 Feature 契约。
+Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;设计定稿后移入对应功能分组,设计否决时同批删除。
 
 ## 术语总表
 
@@ -34,7 +34,7 @@
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
 | Fixture | Fixture | `test(t)` 显式写入的起始文件加 `EvalDef.setup` 准备的素材;算 eval 归因,不进 agent diff | [Eval architecture](feature/eval/architecture.md) |
 | send 窗口 | send window | 一次 `t.send()` 从发出到返回的区间;Sandbox diff 只反映各窗口内改动的并集 | [Eval architecture](feature/eval/architecture.md) |
-| 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 扇出,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
+| 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 从输入数组生成多条 eval,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
 | 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,按路径推导 id;同 id 双入口报重名 | [Eval](feature/eval/README.md) |
 | Attempt | Attempt | 同一个 eval 的第 i 次重复运行,也是范围断言的默认聚合范围 | [Eval context](feature/eval/library/context.md) |
 | Session | Session | 一条会话线;`t.newSession()` 开独立 session | [Eval context](feature/eval/library/context.md) |
@@ -73,7 +73,7 @@
 | 人工介入 | HITL(human-in-the-loop) | agent 等待人工输入;`waiting` + `input.requested` 构成能力证据 | [Sessions 与 HITL](feature/adapters/library/sessions-and-hitl.md) |
 | Agent Ensure | Agent Ensure | Adapter 在 `agent.setup` 执行的「检查、缺失时安装、复检」协议 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
 | Agent 安装组件(`AgentProvisioner`) | AgentProvisioner | 拥有 Agent 安装身份、检查与安装的组件;identity 进指纹 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md) |
-| staged payload | staged payload | 题面网络之外准备、经主 Sandbox 文件 API 送入的锁定安装制品 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md#staged-payload题面网络之外的锁定制品) |
+| staged payload | staged payload | 题面网络之外准备、经主 Sandbox 文件 API 送入的一组版本锁定安装文件 | [Agent Ensure](feature/adapters/architecture/agent-ensure.md#staged-payload题面网络之外的锁定安装文件) |
 
 ### Sandbox
 
@@ -84,17 +84,28 @@
 | 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
 | 变更分类账 | Change ledger | runner 私有的 git 分类账;只把锚点之后的改动放进 agent 归因视图 | [Sandbox architecture](feature/sandbox/architecture.md) |
-| sandbox case | sandbox case | 环境的完整物化单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
+| environment profile | environment profile | `eval.environment` 引用的不透明稳定 id,由当前 SandboxSpec 映射到 provider-specific sandbox case | [Eval](feature/eval/README.md#environment-归属profile-或-folder-local-source) |
+| sandbox source | sandbox source | folder eval 直接声明的 provider-neutral 环境输入,例如 Compose 文件与 `mainService` | [Eval](feature/eval/README.md#environment-归属profile-或-folder-local-source) |
+| sandbox case | sandbox case | 一份环境声明的完整运行单位:主 Sandbox、可选能力句柄与资源组 | [Sandbox Case](feature/sandbox/case.md) |
 | 主 Sandbox | —(`mainService` 对应实例) | case 返回的唯一执行空间;Agent、Eval、文件 API、workdir 与 diff 都锚定它 | [Sandbox Case](feature/sandbox/case.md#主-sandbox-不变量) |
-| 物化器 | materializer | 把 sandbox source 或 case 声明物化成运行实例的 provider 组件 | [Sandbox Case](feature/sandbox/case.md) |
-| BuildKey | BuildKey | 单个构建产物的身份,负责构建复用 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
+| materializer | materializer | 按 source kind 把 folder-local sandbox source 转成 provider-specific SandboxCase 的 Provider 组件 | [Sandbox Case](feature/sandbox/case.md#配置形态两张表一个优先级) |
+| BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
+
+### 环境 Layer 候选术语
+
+| 中文 | English | 含义 | 契约 |
+|---|---|---|---|
+| Layer | Layer | 装入 Sandbox、具有稳定 identity,并执行 check、缺失时 apply、最终复检协议的环境内容声明 | [环境 Layer](roadmap/environment-model/README.md) |
+| 层栈 | Layer stack | experiment 层按声明序排列、agent 层固定在末尾的有序 Layer 列表 | [生命周期位置](roadmap/environment-model/README.md#生命周期位置) |
+| experiment 层 | Experiment Layer | Experiment 通过 `layers` 显式声明的 Layer,例如安装 mempal 二进制、模型 cache 与 skill 文件 | [环境 Layer](roadmap/environment-model/README.md) |
+| agent 层 | Agent Layer | Adapter 自动提供的 Layer,只负责让 Agent CLI 及其运行依赖就位 | [agent 生命周期拆成两段](roadmap/environment-model/README.md#agent-生命周期拆成两段) |
 
 ### Sandbox 复用
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| 预制环境 | Prebuilt environment | 把稳定依赖做进 image、template 或 snapshot，供全新 Sandbox 直接使用 | [Prebuilt environments](feature/sandbox/library/prebuilt-environments.md) |
+| 预制环境 | Prebuilt environment | 预装稳定依赖的 Docker image、E2B template 或 Vercel snapshot,供全新 Sandbox 直接使用 | [Prebuilt environments](feature/sandbox/library/prebuilt-environments.md) |
 | Sandbox 预热 | Sandbox prewarming | 计划确定后提前创建即将使用的全新 Sandbox，不改变每 Attempt 的生命周期 | [Runner](runner.md) |
 | Sandbox 复用 | Sandbox reuse | Experiment 用 `sandboxReuse: true` 声明多条 Attempt 可以共用 Sandbox | [Sandbox reuse](feature/sandbox/reuse.md) |
 | 复用 Sandbox 的题间重置点 | Between-eval reset point for Sandbox reuse | SandboxSpec `setup` 后落下的 commit；共用同一 Sandbox 的 Attempt 之间重置回这里 | [Sandbox reuse](feature/sandbox/reuse.md) |

@@ -491,7 +491,7 @@ const ConfusionMatrix = defineRenderer({
 }, import.meta.url);
 ```
 
-管线在 render 后收集页面上实际出现组件的资产：按内容哈希物化与去重，按稳定顺序注入，第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它解析，与 head 本地资产走同一条路径纪律。
+管线在 render 后收集页面上实际出现组件的资产：按内容哈希复制到 `assets/` 并去重，按稳定顺序注入，第二个参数必须传组件定义文件的 `import.meta.url`，路径相对它解析，与 head 本地资产走同一条路径纪律。
 官方原语的增强 runtime 与 stylesheet 走的就是这条机制，自定义组件与官方组件平权；没出现在页面上的组件，资产也不注入。
 
 资产受增强层不变量约束：初始静态 HTML 无 JavaScript 时完整可读，脚本只添加浏览行为，不改变数据或初始数值。

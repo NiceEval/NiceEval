@@ -1,4 +1,4 @@
-# Sandbox Case —— 环境的完整物化单位
+# Sandbox Case —— 一份环境声明的完整运行单位
 
 一条 eval 声明它要的任务环境,provider 把这份声明翻译成一个 **sandbox case**:从环境输入到主 Sandbox、伴随资源、身份、证据与清理的完整故事。
 本页是 sandbox case 的单一契约入口;provider 的实现要点见 [Architecture](architecture.md),使用侧 API 见 [Library](library.md)。
@@ -6,7 +6,7 @@
 ```text
 eval.environment(profile 或 folder-local source)
  → 当前 SandboxSpec 的 environments / materializers 两张表
- → provider-specific SandboxCase 物化
+ → provider-specific SandboxCase 构建产物并启动运行实例
  → 主 Sandbox + 可选能力句柄 + 资源组
  → 现有 Agent / Eval / scoring 生命周期
  → case 自己采证、留存或整组销毁
@@ -22,7 +22,7 @@ Agent、`test(t)` 的命令、文件上传、workdir、变更分类账与 diff �
 
 单容器 case 里主 Sandbox 就是那个容器或微 VM。
 Compose case 里主 Sandbox 是 `mainService` 对应的容器。
-云 provider 在 VM / Pod 内启动 Compose 时,返回的 Sandbox 必须把所有命令和文件操作代理进 main 容器;外层 VM 只是物化宿主,不能冒充 Agent 的执行空间。
+云 provider 在 VM / Pod 内启动 Compose 时,返回的 Sandbox 必须把所有命令和文件操作代理进 main 容器;外层 VM 只承载主容器与伴随服务,不能冒充 Agent 的执行空间。
 
 额外能力不进 `Sandbox` 接口,由 case 在创建时附带能力句柄。
 第一期只有服务能力:
@@ -48,7 +48,8 @@ Runner、评分与报告不按 provider 名分支;需要逐服务采证或控制
    一道 eval 自己拥有 Dockerfile、Compose 与 fixture 时,在目录入口 `eval.ts` 里直接声明 sandbox source。
    eval 目录路径同时生成 eval id 与默认 profile id,不要求再去中央表手抄一遍。
 
-两种写法在 SandboxSpec 上各有一个入口:`environments` 表按 profile 名映射完整 case;`materializers` 表按 source kind(如 `compose`、`dockerfile`)注册 folder-local 声明的物化器。
+两种写法在 SandboxSpec 上各有一个入口。
+`environments` 表按 profile 名映射完整 case;`materializers` 表按 source kind(如 `compose`、`dockerfile`)注册把 folder-local 声明转成 SandboxCase 的 materializer。
 同一 profile 两处都命中时,显式 `environments` 表项优先——这就是 provider 用预建产物覆盖按需构建的口子。
 内部都归一成「稳定 profile + provider-specific SandboxCase」,Runner 不按写法分支。
 
@@ -93,7 +94,7 @@ export default defineEval({
 });
 ```
 
-`composeSandbox` 只声明 Compose source 与主执行空间,不选择 provider,也不承诺所有 provider 都能消费;能不能物化由当前 SandboxSpec 有无对应 materializer 决定。
+`composeSandbox` 只声明 Compose source 与主执行空间,不选择 provider,也不承诺所有 provider 都能消费;能不能构建所需 image 并启动 Compose 由当前 SandboxSpec 有无对应 materializer 决定。
 
 ### 两类缺失分开判
 
@@ -115,7 +116,7 @@ export default defineEval({
 | 云端 Compose | Compose + provider 配置 | main 容器 | DinD、Pod 或原生组网 | 声明支持的云 provider |
 | 自定义 case | 用户纯数据身份 + materializer | 用户返回的 Sandbox | 用户句柄 | 自定义 provider |
 
-「provider-specific」不是少做契约:每一种公开 case 都要给齐启动、就绪、Agent 可见面、判分、证据、指纹、清理与留存故事,只是不把不同底座伪装成同一种实现。
+「provider-specific」不是少做契约:每一种公开 case 都要给齐启动、就绪、Agent 可见面、判分、证据、指纹、清理与留存故事,只是不把不同 image、template、snapshot 或 Compose 实现伪装成同一种实现。
 
 ## BuildKey 与 CaseKey:两个身份各管一件事
 
@@ -158,8 +159,8 @@ CaseKey
 ```
 
 **BuildKey 负责构建产物复用,CaseKey 负责完整 attempt 环境身份与携带门。**
-只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果;逐 attempt 的容器名、临时目录和随机 project name 不进 CaseKey,作为物化事实记录。
-Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建产物可以被多个 Agent experiment 共用,不产生「题目 × Agent」的制品矩阵。
+只挂进 sidecar 的脚本改动不触发 client 镜像重建,但改变 CaseKey、作废旧结果;逐 attempt 的容器名、临时目录和随机 project name 不进 CaseKey,只作为本次启动的运行事实记录。
+Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)),因此同一份任务构建结果可以被多个 Agent experiment 共用,不要求为每个「题目 × Agent」组合构建 image 或 template。
 
 身份解析发生在携带决策之前。
 浮动 image tag 若 provider 不能解析成 digest,该环境的旧结果不参与携带;可以运行并记录 tag 与实际事实,但不能假装两次环境可比。
@@ -179,7 +180,7 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 预算分两层,口径不混:
 
 - **Run 级共享准备**:BuildKey 构建、共享拉取或发布受独立构建并发、逐 key timeout、全局准备上限和 Invocation abort 约束,不占 attempt 并发位。
-- **attempt 级实例物化**:创建资源组、服务 ready、Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline;attempt deadline 从拿到产物并开始创建 Sandbox 时起算。
+- **attempt 级启动**:从 image / template / snapshot 启动 Sandbox、创建资源组、等待服务 ready;Agent Ensure、执行与评分共享同一个 attempt 并发位和 deadline。attempt deadline 从拿到产物并开始启动 Sandbox 时起算。
 
 共享构建不属于任一 attempt,不计入任何 attempt 的 `executionMs`;一次十分钟的冷构建在整份记录里只出现一次时间。
 构建计时落 `RunMeta.timings` 的 `sandbox.build` activity,provenance 落 `sandboxBuilds`,两者经 `timingNodeId` 关联。
@@ -265,11 +266,11 @@ defineSandboxCase({
 | profile 键查不到 / case 声明非法 | 启动期配置错误 | 一次穷举报错,零 Sandbox 创建 |
 | 声明合法但 provider 缺 materializer 或能力位 | 计划期 `skipped` | skipReason 写明缺项;全 `skipped` 升级启动期报错 |
 | 共享构建失败 | 依赖它的 attempt `errored` | origin 指向 Run 的 `sandbox.build` timing node |
-| 环境物化、ready、服务中途退出 | attempt `errored` | attempt 环境锚点,附服务状态与日志 |
+| Sandbox 启动、ready、服务中途退出 | attempt `errored` | attempt 环境锚点,附服务状态与日志 |
 | Agent Ensure 失败 | attempt `errored` | `agent.setup` 锚点(见 [Agent Ensure](../adapters/architecture/agent-ensure.md)) |
 
 Agent 完成任务但断言未达标才是 `failed`。
-每个 case 至少产出主环境启动日志与物化事实;声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing。
+每个 case 至少产出主环境启动日志与本次使用的 image / template / snapshot、容器名等运行事实;声明 `services` 能力后还必须产出逐服务状态、失败日志与 ready timing。
 证据字段是中性的,采集手段留在 provider。
 
 ## 清理、留存与注册表

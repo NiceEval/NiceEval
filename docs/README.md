@@ -70,7 +70,7 @@ docs/
 │   ├── _template/                       新决策主题模板
 │   ├── agent-install-recipe/            Agent 安装配方与底座的组合形态:中间件拆分与支持面
 │   ├── experiment-speed/                实验加速:默认路径与 Sandbox 复用
-│   ├── multi-container-environments/    多容器环境:拓扑声明形态与物化归属
+│   ├── multi-container-environments/    多容器环境:拓扑声明形态与 provider 构建、启动职责
 │   └── report-authoring/                报告作者面:组件粒度与取数形态
 │
 ├── engineering/                         仓库自身的工程机制

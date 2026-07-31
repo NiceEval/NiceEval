@@ -16,7 +16,7 @@
 [Eval · 文件夹入口](../../feature/eval/README.md#文件夹入口一道题一个目录)。
 
 采纳 **PLAN-4(能力分型)**:公共契约是唯一的主 `Sandbox`
-加可选能力句柄;环境输入与物化收在各 provider 的
+加可选能力句柄;环境输入与构建并启动收在各 provider 的
 sandbox case 里。每种公开 case 给齐启动、就绪、判分、
 证据、指纹、清理与留存的完整义务。Docker 原生消费 Compose,
 E2B 消费 template,云端 Compose 只在兑现全部义务后开放。
@@ -49,7 +49,7 @@ PLAN-4 正文遗留的含糊处,按下面裁定并已写回
   升级为启动期报错。与 R5 / R11 对齐。
 - **配置面两个入口**:SandboxSpec 的 `environments` 表按
   profile 名映射完整 case;`materializers` 表按 source kind
-  注册 folder-local 声明的物化器。同一 profile 两处都命中
+  注册 folder-local 声明的materializer。同一 profile 两处都命中
   时显式 `environments` 表项优先——这就是 provider 用
   预建产物覆盖按需构建的口子。
 - **命名:Environment 只留给 eval 侧的轴**。
@@ -92,7 +92,7 @@ PLAN-4 正文遗留的含糊处,按下面裁定并已写回
   CaseKey 自动追内容。配合
   [Agent 安装配方](../agent-install-recipe/DECISION.md)的
   Ensure 协议,题目产物不必预烘 Agent,「题目 × Agent」
-  制品矩阵不存在。两个主题的 PLAN-4 互为前提,一起采纳。
+  image 或 template 组合矩阵不存在。两个主题的 PLAN-4 互为前提,一起采纳。
 
 上一轮对 PLAN-1 的正反双向评审
 ([memory 台账](../../../memory/multi-container-design-review-ledger.md))

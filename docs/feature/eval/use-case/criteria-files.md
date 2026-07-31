@@ -115,7 +115,7 @@ loader 在发现阶段的模块求值期登记「这条 eval 的判据是哪些�
 
 ## 边界:什么时候改用别的
 
-- 判据是结构化数据行(对照表、case 清单)→ [`loadYaml` / `loadJson` + 测试集扇出](dataset-fanout.md)。
+- 判据是结构化数据行(对照表、case 清单)→ [`loadYaml` / `loadJson` + 测试集从输入数组生成多条 eval](dataset-fanout.md)。
 - 巨型二进制产物(模型权重、数据集镜像)不是判据,归 Sandbox 环境面(预制模板 / environment profile);`loadCriteria` 服务的是决定判分口径的文本树。
 - 要读的是 agent 跑出来的产物 → `t.sandbox.file` / [`t.sandbox.diff`](sandbox-coding.md)。
   那是证据,只属于产出它的那条 attempt,不进指纹。

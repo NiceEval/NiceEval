@@ -245,7 +245,7 @@ interface ExperimentRunInfo {
 
 两层的连接点有两处。
 attempt 侧,`phases[]` 是锚点序列,每个锚点下挂 activity 子树(`PhaseTiming.children`)。
-Run 侧,共享构建、共享制品准备与实验级 Hook 这类不属于任何单个 attempt 的工作记在 `RunMeta.timings`,一次工作只计时一次,被多少 attempt 依赖都不复制。
+Run 侧,共享构建、共享 staged payload 准备与实验级 Hook 这类不属于任何单个 attempt 的工作记在 `RunMeta.timings`,一次工作只计时一次,被多少 attempt 依赖都不复制。
 
 ### `LifecyclePhase`:Runner 保留的锚点闭集
 
@@ -266,7 +266,7 @@ type LifecyclePhase =
   | "experiment.teardown"  // ExperimentDef.teardown;失败只产生运行级 diagnostic
   // 主链:从排队到 trace collect,覆盖到判定与主证据收集完成,按执行序
   | "sandbox.queue"        // 等待并发信号量(调度等待,唯一不属于某个 owner 的成员)
-  | "sandbox.create"       // provider 物化沙箱实例(共享构建不在这里,它在 Run 级 activity)
+  | "sandbox.create"       // provider 从 image / template / snapshot 启动 Sandbox(共享构建不在这里,它在 Run 级 activity)
   | "sandbox.setup"        // SandboxSpec.setup() 生命周期 Hook 链
   | "workspace.baseline"   // 变更分类账锚点(runner 私有 git ledger 首笔 commit)
   | "eval.setup"           // EvalDef.setup
@@ -349,7 +349,7 @@ interface TimingActivity {
 | `provider.*` | 两者皆可 | provider 内部步骤,如 `provider.image.pull`、`provider.build.execute` |
 | `workspace.diff.export` | attempt | 变更分类账的批量导出;label 带有界规模摘要 |
 | `sandbox.build` | Run | 一个 BuildKey 的查询与构建;经 [`sandboxBuilds`](#共享构建的-provenancesandboxbuilds) 关联 provenance |
-| `agent.artifact.prepare` | Run | 内置 Agent 锁定制品的题面外准备(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)) |
+| `agent.artifact.prepare` | Run | 内置 Agent staged payload 的题面外准备(见 [Adapters · Agent Ensure](../adapters/architecture/agent-ensure.md)) |
 | `experiment.setup` / `experiment.teardown` | Run | 实验级 Hook 整场一次的执行 |
 
 采集端知道某段工作是一个逻辑整体时,在执行边界直接起 key 写下稳定语义与有界规模摘要(如 `workspace.diff.export` 的 `export workspace diff · 2 windows · 3,302 files`),把实际公开命令或 provider 步骤挂在下面。
@@ -681,7 +681,7 @@ Run 级字段(`experimentId` / `agent` / `model` / 实验运行配置)不在这�
   常规携带下重打前后本就相等——相等正是携带判据;[`--accept`](../experiments/cache.md#--accept授权跨过一条精确差异) 授权跨过一条差异时两者不等,被跨过的那几条逐条记进 `carriedAccepting`,它是「这条采信了哪些差异」的唯一记录。
 
   `artifactBase` 是事实上的「携带」标记,读取面把它连同目标目录是否仍在一起投影成 [`evidenceState`](library.md#携带条目与-evidencestate) 三态。
-  清理历史 Run 前先用 `publish` 物化要保留的结果——原 Run 删除后,该条目转为 `dangling`,artifact 懒加载返回 `null`,而 `artifacts` 列表仍声明写过它们;两者的差值就是「证据丢了」,不与「没采集」混为一谈。
+  清理历史 Run 前先用 `publish` 解引用并复制要保留的结果——原 Run 删除后,该条目转为 `dangling`,artifact 懒加载返回 `null`,而 `artifacts` 列表仍声明写过它们;两者的差值就是「证据丢了」,不与「没采集」混为一谈。
   记录格式版本变化时不携带,理由见 [Library · 跨 schemaVersion 不携带](library.md#携带条目与-evidencestate)。
 
 ### Usage
