@@ -9,10 +9,12 @@
   (前例:超时丢弃执行证据,10758545 salvage 修复)。
 - **复用污染不可见(已进契约)**:`if ! command -v` 型作用域 bug 在一次性沙箱下是死代码,
   只有复用才执行到;框架此前不给任何机械线索。契约新增按承接序号聚合的收尾诊断
-  (`reuse.md`「复用污染的可观察性」);主动验证 `--reuse-verify` 进 roadmap。
-- **词义冲突与配额盲区(进 roadmap)**:首行 `reused` 实指携带、复用零显示、`PLAN` 并发数
-  显示全局值、provider 活跃实例无法自查——四条收进
-  `docs/roadmap/reuse-observability/README.md`。
+  (`reuse.md`「复用污染的可观察性」)。主动验证 `--reuse-verify` 后续否决:同一 Eval
+  两次相同不能证明无残留,不同也可能来自 Agent 随机性。
+- **词义冲突与配额盲区(部分进契约)**:首行 `reused` 实指携带、复用零显示、`PLAN` 并发数
+  显示全局值、provider 活跃实例无法自查。生效并发、留存与孤儿核对已经分别进入
+  Experiments CLI 和 Sandbox CLI;剩余的 `carried` 改名与复用运行级汇总收窄到
+  `docs/roadmap/reuse-feedback/README.md`。
 - **误报澄清**:反馈称「指纹只认 loadYaml/loadJson,readFileSync 缺口无解」——当前 HEAD
   已有 `loadText` 且指纹测试在(`src/loaders/index.ts:38`、`index.test.ts`),
   下游用的是旧发布版。不需要动 cache.md。

@@ -6,8 +6,7 @@ Roadmap 表示设计成熟度，不表示代码是否实现；正文讨论希望
 设计定稿后按目标形态重写并移入 [`../feature/`](../feature/)，不在原文追加 `现已定稿` 一类的时间线说明。
 
 - [Multi-Agent](multi-agent/README.md) —— 多 agent eval 的三种场景
-- [Adapters](adapters/README.md) —— LangGraph、OpenClaw 与其它候选接入
+- [Adapters](adapters/README.md) —— Cursor Agent SDK、vm0 与其它等待上游稳定的候选接入
 - [E2E 验收断言 DSL 与 vitest 验收库](e2e-acceptance-dsl/README.md) —— 终端/HTML 语义结构断言 DSL、容差 golden 与 vitest 宿主的候选契约
-- [Evidence 复用政策](evidence-reuse/README.md) —— 比较证明优先与复用优先两套默认；用角色声明、精确授权和冲突用例设计历史 Evidence 何时仍算数
-- [复用与携带的可观察性](reuse-observability/README.md) —— `carried` 改词、复用反馈维度、生效并发显示、配额自查与 `--reuse-verify`
+- [结果携带与 Sandbox 复用反馈](reuse-feedback/README.md) —— 消除 `reused` 一词两义，并补齐 Sandbox 复用的运行级反馈
 - [Agent 进程契约](agent-process-contract/README.md) —— 进程寿命唯一边界是沙箱、agent 非零退出记 `errored`;多容器环境决策的先行前提
