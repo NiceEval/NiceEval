@@ -1,14 +1,13 @@
 # Architecture
 
-niceeval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**报告**落盘与回传。
+NiceEval 把一个评测过程拆成四段职责:**发现**要跑什么、**驱动**被测对象产生结果、**评分**得出判定、**报告**落盘与回传。
 核心拥有这四段里对所有被测对象都一样的部分;被测对象的差异被收进 `Agent`(契约)/ `Adapter`(你写的实现)/ `Sandbox` 三层。
 
 本篇给出这条边界的模块分层、数据流,以及一次运行的端到端时序。
 
 ## 系统总览
 
-!
-[niceeval 产品架构总览](assets/architecture-overview.svg)
+![NiceEval 产品架构总览](assets/architecture-overview.svg)
 
 四段职责是**单向数据流**。
 发现产出一批 `Eval`，运行器逐个对 Agent `send` 得到 `Turn`， Assertion collector 把检查结果收成 `Assertion[]`。
@@ -22,7 +21,7 @@ Assertion 和 Judge 不知道 transport 是 HTTP 还是沙箱 CLI，只消费 `T
 ```
 src/
 ├─ index.ts                 # 公开导出:defineEval / defineConfig / defineExperiment
-├─ define.ts                # 四个 define 的家(eval / config / experiment / agent / sandbox)
+├─ define.ts                # define 一族的家(eval / config / experiment / agent / sandbox)
 ├─ types.ts                 # 核心类型的汇聚出口(各域类型的家在各自目录)
 │
 ├─ context/                 # `t` 上下文的构建(TestContext / SessionHandle / TurnHandle)
@@ -117,7 +116,7 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 
 ## 配置从代码来,凭据从环境来
 
-环境变量在 niceeval 里只有两个合法用途,两个之外的一切都从代码读:
+环境变量在 NiceEval 里只有两个合法用途,两个之外的一切都从代码读:
 
 | 类别 | 从哪来 | 说明 |
 |---|---|---|
@@ -129,10 +128,10 @@ Direct Agent 跳过 Sandbox 创建、变更分类账与 Sandbox diff：
 CLI 启动时仍加载项目根的 `.env`(不覆盖已有环境变量)——那是凭据的投递方式,不是配置层。
 
 **配置是代码,所以"从环境注入某个配置值"这条路一直开着**:私有网关地址这类不便签入的值,在自己的 `niceeval.config.ts` 里写 `process.env.MY_GATEWAY` 即可(`.env` 已经加载完)。
-区别在于变量名由项目自己起、自己读,niceeval 不内置任何配置类变量名、也不去环境里猜——这正是这条边界要保住的东西。
+区别在于变量名由项目自己起、自己读,NiceEval 不内置任何配置类变量名、也不去环境里猜——这正是这条边界要保住的东西。
 
 这条边界的理由:配置有三条来路时,「为什么本地和 CI 跑出不同结果」要靠翻环境才能回答,而环境不进 Run、不进指纹、复现时也不在手边。
-凭据反过来——它不能进签入 git 的代码,所以只能来自环境;niceeval 能做的是不去猜它叫什么名字。
+凭据反过来——它不能进签入 git 的代码,所以只能来自环境;NiceEval 能做的是不去猜它叫什么名字。
 
 ## 错误隔离
 

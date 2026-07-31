@@ -15,7 +15,7 @@
 - image、template、snapshot、产物名与受管 manifest 都不能单独代替实际检查。
 - 可预装条件由领域 helper 检查实际状态,并在安装后复检。
 - Agent 安装保留平台探测、宿主侧 payload 准备、安装模式和逐 Attempt 事实,不能被较弱的通用安装接口吞掉。
-- 复用同一个 Sandbox 时,每条 Attempt 仍重新检查目标状态。
+- 复用同一个 Sandbox 时,检查频率跟 owner 语义走:逐 Attempt 语义的准备(EvalDef setup、Agent setup)每条 Attempt 重新检查目标状态;窗口语义的准备每个窗口检查一次,跨 Attempt 会变化的条件不得放进窗口语义层。
 - Environment、setup helper、所选 case、实际 facts、活动与耗时进入各自的 configHash、fingerprint 或运行记录。
 
 ## C1:评估环境较重

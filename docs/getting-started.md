@@ -2,8 +2,6 @@
 
 这一篇带你从零跑通三种 eval:一个会话型 agent eval(走 HTTP)、一个纯函数的语义级单测、一个沙箱里的 coding-agent eval。读完你就有了能在 CI 里跑的最小骨架。
 
-> 注:本篇描述推荐 DX 和目标用法。若代码实现与这里的设计不一致,应进一步讨论并决定是修代码、修设计,还是记录为明确的阶段性差异。
-
 ## 安装
 
 ```sh
@@ -40,7 +38,7 @@ export default defineConfig({
 
 ## 1. 评一个会话型 agent
 
-驱动一个暴露会话接口的 agent,断言它的回复与工具调用。连你的服务也是写一个 agent —— 它内部按你服务的协议发请求,URL 是它读 env 的私事(niceeval 不定义 agent 协议,所以没有 `--url`)。就算 agent 和 eval 在同一个代码库里,也照样让 adapter 走 HTTP,不要把 `fetch` 换成进程内的函数直调——直调绕过了用户实际走的链路、进程不隔离导致结果不可复现,取舍详见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx):
+驱动一个暴露会话接口的 agent,断言它的回复与工具调用。连你的服务也是写一个 agent —— 它内部按你服务的协议发请求,URL 是它读 env 的私事(NiceEval 不定义 agent 协议,所以没有 `--url`)。就算 agent 和 eval 在同一个代码库里,也照样让 adapter 走 HTTP,不要把 `fetch` 换成进程内的函数直调——直调绕过了用户实际走的链路、进程不隔离导致结果不可复现,取舍详见[接入你的 Agent · 为什么不直调](../docs-site/zh/tutorials/connect-your-agent.mdx):
 
 ```typescript
 // agents/weather-bot.ts —— 远程 agent,URL 是它的私事
@@ -131,7 +129,7 @@ import { commandSucceeded, excludes } from "niceeval/expect";
 const PACKAGE_JSON = JSON.stringify({
   name: "button-fixture",
   type: "module",
-  scripts: { build: "tsc --noEmit", test: "vitest run" },
+  scripts: { test: "vitest run" },
   devDependencies: { vitest: "^2.0.0" },
 });
 
@@ -154,10 +152,12 @@ test("接受 label / onClick", () => {
 export default defineEval({
   description: "实现一个 Button 组件",
   async test(t) {
+    // fixture 与依赖在 agent 上场前就位,npm test 不依赖 agent 自己想起来装依赖
     await t.sandbox.writeFiles({ "package.json": PACKAGE_JSON });
+    await t.sandbox.runCommand("npm", ["install"]);
 
     await t.send(
-      "用项目现有的样式系统,在 src/components/Button.tsx 导出一个 Button 组件,接受 label 和 onClick 两个 prop,并实现 hover 态。",
+      "在 src/components/Button.tsx 导出一个 Button 组件,接受 label 和 onClick 两个 prop。",
     );
 
     // agent 那一轮已经结束,现在才放测试文件、才跑测试

@@ -14,6 +14,18 @@ type EvalEnvironment = string | SandboxSource;
 字符串是 environment profile。
 `SandboxSource` 是 folder-local、provider-neutral 的环境输入,例如 Compose 文件、主 service 与 build context。
 
+folder-local 的完整形态是「task package 就是 eval 文件夹」:环境、判据与 eval 定义同目录,全部路径从 `import.meta.url` 推导:
+
+```text
+evals/terminal-bench/broken-python/
+  eval.ts                  # 文件夹入口:题面、标签与预算内联在这
+  docker-compose.yaml      # 环境:同目录 compose + Dockerfile
+  Dockerfile
+  run-tests.sh             # 判据:agent 收工后才挂载
+  tests/
+  .dockerignore            # 判据与答案不进 build context
+```
+
 ```typescript
 export default defineEval({
   environment: composeSandbox({
@@ -136,13 +148,31 @@ plain setup function 继续允许,但它每次执行且不享受预装命中或�
 ## SandboxSpec 解析入口
 
 ```typescript
+/** Environment source 的内容身份,与 per-eval fingerprint 的 source 输入同源计算 */
+type EnvironmentSourceIdentity = string;
+
+interface PrebuiltEnvironmentEntry<NativeCase> {
+  readonly case: NativeCase;
+  /** 该表项兑现的 source identity;对应 Eval 带 source 时必填 */
+  readonly fulfills?: EnvironmentSourceIdentity;
+}
+
 interface SandboxSpecEnvironmentInputs<NativeCase> {
-  readonly environments?: Readonly<Record<string, NativeCase>>;
+  readonly environments?: Readonly<
+    Record<string, NativeCase | PrebuiltEnvironmentEntry<NativeCase>>
+  >;
   readonly materializers?: Readonly<
     Record<string, SandboxSourceMaterializer<NativeCase>>
   >;
 }
 ```
+
+`environments` 表项声明它兑现的 source identity 的规则:
+
+- Eval 的 Environment 是 plain 字符串 profile 时,没有 source 可比,按 profile 名命中即可,直接写 `NativeCase` 值就是完整声明。
+- Eval 带 folder-local source 时,命中表项必须带 `fulfills`。
+  identity 由 `environmentSourceIdentity(source)` 从 source 内容(Compose 文件与公开 build inputs)计算,与 per-eval fingerprint 用同一份输入。
+- 表项缺 `fulfills` 或与当前 Eval 的 source identity 不一致时,该组合在计划期 `skipped`,诊断给出 profile、表项声明的 identity 与当前 source identity 三个值。
 
 固定解析顺序是:
 

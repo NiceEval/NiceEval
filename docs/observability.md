@@ -197,8 +197,7 @@ span 量级小(每回合个位数),`selectTraceSpans` 的 small-trace 路径整�
 spans 是异步推来的,必须知道「这批 span 属于哪一轮 `send`」。
 接收器的**粒度**跟**被测进程**走,不是跟 attempt 走:
 
-!
-[并发 send 的 span 归属](assets/observability-span-ownership.svg)
+![并发 send 的 span 归属](assets/observability-span-ownership.svg)
 
 - **沙箱型 agent**:每沙箱一个接收器。
   每个沙箱是独立进程,env 注入各自端点,attempt 之间端口天然隔离。

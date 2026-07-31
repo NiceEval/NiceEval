@@ -71,10 +71,8 @@ MemoryBench 的仓库 checkout 与依赖安装发生在 baseline 后、Agent set
 | teardown、finalizer 与 stop | 每 Attempt 一次 | 每窗口一次 |
 
 SandboxSpec setup 在复用窗口中只运行一次。
-因此跨 Attempt 会变化的条件不能放这里;它们属于 EvalDef setup、Agent setup 或独立 state lifecycle。
-
-需要每 Attempt 真实检查的实验工具可以把 check 放进 Agent 前的轻量验证点,但这不改变其 owner。
-若该需求成为普遍事实,应单独扩展 SandboxSpec setup lifecycle,而不是恢复通用 Requirement 图。
+跨 Attempt 会变化的条件禁止放在这里;它们属于 EvalDef setup、Agent setup 或独立 state lifecycle。
+三个 owner 都放不下的每 Attempt 检查需求,由 SandboxSpec setup lifecycle 的独立扩展承接,不恢复通用 Requirement 图。
 
 ## Cases
 

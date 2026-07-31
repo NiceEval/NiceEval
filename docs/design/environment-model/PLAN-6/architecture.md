@@ -96,7 +96,8 @@ Runner 只为 branded setup helper 提供 deadline、staged payload、identity �
 有些 Provider 不能按 Eval source 构建并启动 Sandbox Case,或者实验工具无法在题目启动后安装。
 SandboxSpec 可以在 `environments[profile]` 提供已经组合好的完整 case。
 
-表项必须兑现原 Environment 的外部行为。
+表项必须声明它兑现的 Environment source identity。
+规划期核对该声明与当前 Eval 的 source identity;不一致时该组合 `skipped`,Runner 不用过期表项运行。
 启动后的 SandboxSpec setup 仍执行;可验证 helper 检查命中时不会重复安装。
 
 Runner 不从默认 template 与 Eval source 合成表项。
@@ -117,7 +118,8 @@ Per-Eval fingerprint
 ```
 
 plain function 的函数体不自动参与哈希。
-需要稳定身份的自定义准备必须通过 `defineSandboxSetup()` 或既有显式 revision 字段声明,不能依赖闭包代码字符串。
+无 identity 的 plain setup 不参与缓存命中:它每次执行,所在 Attempt 在报告中标注 setup 身份不可比。
+需要缓存命中或跨 run 对比的自定义准备,通过 `defineSandboxSetup()` 或既有显式 revision 字段声明身份。
 
 Attempt 记录保存所选 case、每层 setup 的 activity、可验证 helper 的实际 facts 与 Agent 安装事实。
 这些事实解释本次执行,不成为以后跳过 check 的依据。
