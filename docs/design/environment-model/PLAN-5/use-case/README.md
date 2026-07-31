@@ -12,7 +12,7 @@
 | [C3 双方环境都较重](../../CASES.md#c3评估与实验环境都较重) | 覆盖 | Eval Base 被选中,Experiment Requirement 集合在其中 Ensure | 离线 payload 按 owner、name、identity 与平台 single-flight;准备、上传、安装与复检分别归因 |
 | [C4 组合多个条件](../../CASES.md#c4组合多个条件) | 覆盖 | 证书、registry、运行时与工具各自是成员,依赖和资源进入统一图 | 未知资源保守串行;安全成员并行;全组屏障发现后装破坏 |
 | [C5 预装稳定条件](../../CASES.md#c5预装稳定条件) | 覆盖 | 默认 case、条件基底或融合 case 都只提供检查命中机会 | 预装命中时零 install;漂移时补齐或在 Agent 前判不兼容 |
-| [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 覆盖 | 独立 state lifecycle 每 Sandbox load/save,不借用 SandboxSpec Hook | 每 Attempt 新建 Case;`R-E/R-X/A-P` 后 load,收尾 save |
+| [C6 新 Sandbox 载入外部状态](../../CASES.md#c6新-sandbox-载入外部状态) | 覆盖 | 独立 state lifecycle 每 Sandbox load/save,不借用 SandboxSpec Hook | 每 Attempt 新建 Case;Eval、Experiment 与 AgentProvisioner 条件收敛后 load,收尾 save |
 | [C7 复用 Sandbox 活状态](../../CASES.md#c7复用-sandbox-活状态) | 覆盖 | `sandboxReuse` 管理窗口,三方检查仍逐 Attempt执行 | BuildKey 按 Run 复用;窗口 locate/start/load/save,Attempt reset/Ensure |
 | [C8 Experiment 提供条件基底](../../CASES.md#c8experiment-提供条件基底) | 覆盖 | `environment.base` 与实验 Requirement 集合同点声明 | 条件基底创建 Sandbox;Eval 成员 verify 命中或现场 Ensure |
 | [C9 双方都有不可叠加基底](../../CASES.md#c9双方都有不可叠加基底) | 覆盖 | 精确 profile 的融合 `cases` 表消解 Eval Base 与条件基底 | 缺项在创建 Sandbox 前一次报全;启动后逐成员验证双方条件 |

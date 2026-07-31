@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 616"
+     role="img" aria-labelledby="figTitle figDesc">
+  <title id="figTitle">PLAN-4 为什么把普通 template 变成融合冲突</title>
+  <desc id="figDesc">PLAN-4 把 SandboxSpec 的普通 template 归入 Experiment Base Case 槽位,使自带 Compose 的 Eval 被迫查询融合 Case;C10 要求它只作为没有 Eval Base Case 时的默认起点。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自内建主题 basalt（src/report/theme.ts），改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1239" height="615" class="canvas" />
+  <text x="32" y="48" class="title">普通 template 为什么制造双 Base 冲突</text>
+
+  <rect x="32.5" y="80.5" width="1175" height="279" class="box" />
+  <text x="52" y="110" class="label"><tspan class="mono">PLAN-4</tspan> 实际解释</text>
+
+  <rect x="56.5" y="136.5" width="216" height="80" class="box-2" />
+  <text x="76" y="166" class="label">普通 template</text>
+  <text x="76" y="190">SandboxSpec 显式起点</text>
+
+  <path d="M280 176 H312" class="arrow" />
+
+  <rect x="320.5" y="136.5" width="232" height="80" class="box-2" />
+  <text x="340" y="166" class="label">Experiment Base Case</text>
+  <text x="340" y="190">被归入同一槽位</text>
+
+  <rect x="320.5" y="248.5" width="232" height="80" class="box-2" />
+  <text x="340" y="278" class="label">Eval Base Case</text>
+  <text x="340" y="302">题目自带 Compose</text>
+
+  <path d="M560 176 H608" class="arrow" />
+  <path d="M560 288 H584 V224 H608" class="arrow" />
+
+  <rect x="616.5" y="176.5" width="232" height="96" class="box-2" />
+  <text x="636" y="206" class="label">融合 Case</text>
+  <text x="636" y="230">双方都有 Base Case</text>
+
+  <path d="M856 224 H888" class="arrow bad-s" />
+
+  <rect x="896.5" y="176.5" width="272" height="96" class="box-2" />
+  <text x="916" y="206" class="label bad">启动期配置错误</text>
+  <text x="916" y="230">普通批次没有融合 Case</text>
+
+  <path d="M436 224 V320 H600" class="arrow" />
+  <text x="616" y="326">无 Eval Base Case 时,普通 template 可以直接启动</text>
+
+  <rect x="32.5" y="384.5" width="1175" height="199" class="box" />
+  <text x="52" y="414" class="label">C10 混合批次</text>
+
+  <rect x="56.5" y="440.5" width="240" height="104" class="box-2" />
+  <text x="76" y="470" class="label">普通默认起点</text>
+  <text x="76" y="494">只作为 fallback</text>
+  <text x="76" y="518" class="note">不代表 Experiment 条件</text>
+
+  <path d="M304 492 H344 V456 H384" class="arrow" />
+  <path d="M344 492 V536 H384" class="arrow" />
+
+  <rect x="392.5" y="416.5" width="280" height="72" class="box-2" />
+  <text x="412" y="446" class="label">Eval Base Case</text>
+  <text x="412" y="470"><tspan class="good">自带 Compose 时选择它</tspan></text>
+
+  <rect x="392.5" y="496.5" width="280" height="72" class="box-2" />
+  <text x="412" y="526" class="label">无 Eval Base Case</text>
+  <text x="412" y="550"><tspan class="good">选择普通 template</tspan></text>
+
+  <path d="M720 416 V568" class="rule-strong" />
+
+  <rect x="760.5" y="440.5" width="408" height="104" class="box-2" />
+  <text x="780" y="470" class="label">Experiment 条件基底</text>
+  <text x="780" y="494">只有明确声明它时,</text>
+  <text x="780" y="518">才与 Eval Base Case 查询融合 Case</text>
+</svg>

@@ -190,9 +190,9 @@ interface ExperimentStateLifecycle {
 | 值 | save 条件 |
 |---|---|
 | `after-load` | 只要 load 成功,后续 Fixture、runtime、Agent turn、verifier、scoring 或 teardown 失败也在 outer-finally 尝试 save |
-| `attempt-succeeded` | 仅用于 fresh;本 Attempt 的 Agent turn、verifier、scoring、`V` cleanup 与 `A-R` teardown 全部成功才 save |
+| `attempt-succeeded` | 仅用于 fresh;本 Attempt 的 Agent turn、verifier、scoring、隐藏判分 cleanup 与 Agent runtime teardown 全部成功才 save |
 
-两种策略都在 `V` cleanup 失败时跳过 save,避免隐藏材料进入 checkpoint。
+两种策略都在隐藏判分 cleanup 失败时跳过 save,避免隐藏材料进入 checkpoint。
 Provider 硬丢实例时 save 记为 `unavailable`,不是假装成功。
 Eval teardown 位于 fresh save 之后,仍沿既有规则只追加诊断,不反改已经提交的 checkpoint。
 `sandboxReuse: true` 必须配 `saveOn: "after-load"`。
@@ -212,7 +212,7 @@ save 使用独立 cleanup deadline 与 signal,不会复用已经超时或取消�
 save 失败后没有合法后继,Runner 停止继续派发该状态序列。
 fresh 的 `attempt-succeeded` 主动跳过 save 时,head 保持在本次 load 的 predecessor。
 后续 `rolling` Attempt 从该 head 重新 load,不会继承失败 Attempt 的活状态。
-因 load 失败、`V` cleanup 失败、save 失败或 transfer unavailable 形成的缺口不是主动策略,状态序列停止。
+因 load 失败、隐藏判分 cleanup 失败、save 失败或 transfer unavailable 形成的缺口不是主动策略,状态序列停止。
 
 ```typescript
 export default defineExperiment({
@@ -293,8 +293,8 @@ Runner 在条件基底、默认 case 或 Provider 中性 case 上验证并补齐
 
 ## turn 后隐藏 verifier Fixture
 
-`EvalDef.setup/teardown` 继续承载 turn 前可见的 `W`。
-workdir 外隐藏测试、mount、进程与临时凭据使用单独的受管 `V`,不能只依赖普通 teardown:
+`EvalDef.setup/teardown` 继续承载 turn 前可见的 Fixture。
+workdir 外隐藏测试、mount、进程与临时凭据使用单独的受管 HiddenVerifierFixture,不能只依赖普通 teardown:
 
 ```typescript
 interface HiddenVerifierCleanupContext {

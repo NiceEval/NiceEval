@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 560"
+     role="img" aria-labelledby="baseTitle baseDesc">
+  <title id="baseTitle">PLAN-5 如何为每条 Eval 选择唯一 Base Case</title>
+  <desc id="baseDesc">Runner 先判断 Eval 是否自带完整环境，再判断 Experiment 是否声明条件基底；四种组合分别选择 SandboxSpec 默认 case、Experiment 条件基底、Eval Base 或精确 profile 的融合 case。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="#74747b" />
+    </marker>
+    <style>
+      /* 值来自内建主题 basalt（src/report/theme.ts），改色先改那里 */
+      text { fill: #a1a1aa; font-family: ui-sans-serif, -apple-system,
+             BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; font-size: 16px; }
+      .title { fill: #ededed; font-size: 20px; font-weight: 600; }
+      .label { fill: #ededed; font-size: 18px; font-weight: 600; }
+      .note  { fill: #74747b; font-size: 14px; }
+      .num   { fill: #ededed; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .mono  { fill: #ededed; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .canvas { fill: #050505; stroke: #262626; stroke-width: 1; }
+      .box    { fill: #0b0b0b; stroke: #262626; stroke-width: 1; }
+      .box-2  { fill: #111111; stroke: #262626; stroke-width: 1; }
+
+      .rule        { stroke: #262626; stroke-width: 1; fill: none; }
+      .rule-strong { stroke: #343434; stroke-width: 1; fill: none; }
+      .dash        { stroke: #262626; stroke-width: 1; stroke-dasharray: 4 6; fill: none; }
+      .arrow       { stroke: #74747b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+
+      .good { fill: #3ddc97; } .bad { fill: #ff6b6b; } .warn { fill: #e8b84a; }
+      .good-s { stroke: #3ddc97; } .bad-s { stroke: #ff6b6b; } .warn-s { stroke: #e8b84a; }
+
+      .c0 { fill: #3987e5; } .c1 { fill: #199e70; } .c2 { fill: #c98500; }
+      .c3 { fill: #008300; } .c4 { fill: #e66767; } .c5 { fill: #d95926; }
+      .c0-s { stroke: #3987e5; } .c1-s { stroke: #199e70; } .c2-s { stroke: #c98500; }
+      .c3-s { stroke: #008300; } .c4-s { stroke: #e66767; } .c5-s { stroke: #d95926; }
+      .soft { fill-opacity: .16; }
+      .dim { fill: #74747b; }
+    </style>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1239" height="559" class="canvas" />
+  <text x="32" y="48" class="title">每条 Eval 只启动一份完整环境</text>
+  <text x="1208" y="48" class="note" text-anchor="end">Agent 与安装条件不参与 Base 竞争</text>
+
+  <rect x="32.5" y="184.5" width="319" height="103" class="box" />
+  <text x="52" y="216" class="label">Eval Base</text>
+  <text x="52" y="248">当前 Eval 自带完整环境吗</text>
+
+  <rect x="464.5" y="88.5" width="319" height="103" class="box" />
+  <text x="484" y="120" class="label">Experiment 条件基底</text>
+  <text x="484" y="152">Eval 没有 Base 时是否声明</text>
+
+  <rect x="464.5" y="280.5" width="319" height="103" class="box" />
+  <text x="484" y="312" class="label">Experiment 条件基底</text>
+  <text x="484" y="344">Eval 已有 Base 时是否声明</text>
+
+  <path d="M352 216 H416 V140 H456" class="arrow" />
+  <text x="376" y="204" class="note">没有</text>
+  <path d="M352 256 H416 V332 H456" class="arrow" />
+  <text x="376" y="276" class="note">有</text>
+
+  <rect x="896.5" y="64.5" width="311" height="95" class="box-2" />
+  <text x="916" y="96" class="label">SandboxSpec 默认 case</text>
+  <text x="916" y="124">
+    <tspan x="916">image、template 或 snapshot</tspan>
+    <tspan x="916" dy="20" class="note">都没有时使用 Provider 中性 case</tspan>
+  </text>
+
+  <rect x="896.5" y="176.5" width="311" height="95" class="box-2" />
+  <text x="916" y="208" class="label">Experiment 条件基底</text>
+  <text x="916" y="240">使用 Experiment contribution 的 base</text>
+
+  <rect x="896.5" y="288.5" width="311" height="95" class="box-2" />
+  <text x="916" y="320" class="label">Eval Base</text>
+  <text x="916" y="352">自带 source 或 environments[profile]</text>
+
+  <rect x="896.5" y="400.5" width="311" height="95" class="box-2" />
+  <text x="916" y="432" class="label">融合 case</text>
+  <text x="916" y="460">
+    <tspan x="916">使用 Experiment cases[profile]</tspan>
+    <tspan x="916" dy="20" class="note">缺项时在启动前</tspan><tspan class="bad">报配置错误</tspan>
+  </text>
+
+  <path d="M784 120 H840 V112 H888" class="arrow" />
+  <text x="808" y="108" class="note">没有</text>
+  <path d="M784 160 H840 V224 H888" class="arrow" />
+  <text x="808" y="180" class="note">有</text>
+  <path d="M784 312 H840 V336 H888" class="arrow" />
+  <text x="808" y="300" class="note">没有</text>
+  <path d="M784 352 H840 V448 H888" class="arrow" />
+  <text x="808" y="372" class="note">有</text>
+
+  <text x="32" y="528" class="note">选择只回答“从哪份完整环境启动”；Eval、Experiment 与 Agent 的检查随后都要执行。</text>
+</svg>

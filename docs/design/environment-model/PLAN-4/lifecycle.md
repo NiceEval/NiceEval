@@ -10,219 +10,194 @@
 4. `sandboxReuse` 打开后,哪些步骤每窗口一次,哪些步骤仍然每 Attempt 执行。
 
 类型与错误语义仍以 [Library](library.md) 和 [Architecture](architecture.md) 为准。
-本篇保留单数 Requirement 槽位,也保留显式 SandboxSpec 起点属于 Experiment Base 的解释。
+本篇保留单数 Requirement 槽位,也保留 PLAN-4 对 SandboxSpec 显式起点的原始解释。
 
-## 图例
+## 四种 Base Case
 
-```text
-N       Provider 中性 Case
-E[p]    environment profile 为 p 的 Eval Base
-X       Experiment Base
-F[p]    已融合 E[p] 与 X 的完整 Case
-R-E     单个 Eval Requirement
-R-X     单个 Experiment Requirement
-A       AgentProvisioner
-W       turn 前 Eval Fixture 与 workdir 准备
-V       最后一次 turn 后的隐藏 verifier / criteria
-H       真实存在的早期 SandboxSpec setup / teardown Hook
-S?      目标中的晚期 state load / save;Library 没有公开入口
+PLAN-4 最终只启动一个完整 Sandbox Case:
 
-====>   被选为唯一 Base Case,负责 build/start
-....>   不负责启动,在已启动 Sandbox Case 中 verify/Ensure
-  ×     本方案拒绝该组合
-```
+| 名称 | 来自哪里 | 什么时候选中 |
+|---|---|---|
+| Provider 中性 Case | Sandbox Provider | Eval 与 Experiment 都没有 Base Case |
+| Eval Base Case | Eval contribution 的 Dockerfile、Compose 或其它完整起点 | 只有 Eval 提供 Base Case |
+| Experiment Base Case | `environment.base`,或者被 PLAN-4 归入同一槽位的 SandboxSpec 显式 image、template、snapshot | 只有 Experiment 一侧提供 Base Case |
+| 融合 Case | `environment.cases[environmentProfile]` | Eval Base Case 与 Experiment Base Case 同时存在 |
 
-template、image 与 snapshot 只要显式写在 SandboxSpec 上,就会被归一成 `X`。
-本方案没有独立的普通默认 Case 符号。
+融合 Case 是作者预先准备好的完整起点。
+Runner 不在运行时拼接 Eval Base Case 与 Experiment Base Case。
 
-Dockerfile、Compose 与 Eval 的预制 profile Case 都属于 `E[p]`。
-融合表项 `F[p]` 是完整 Case,不是 Runner 要运行时拼接的两个片段。
+这里最容易误解的是 SandboxSpec 的普通默认 template。
+PLAN-4 没有“普通默认 Case”这一档,所以任何显式 template 都会被解释成 Experiment Base Case。
+这个解释可以表达真正的 Experiment 条件基底,却会错误处理 C10 的普通 fallback。
 
 ## Owner 模型
 
-| Owner | 可以贡献 Base | 安装、状态与运行职责 |
+| Owner | 可以贡献的 Base Case | 安装、状态与运行职责 |
 |---|---|---|
-| Eval | 一个 `E[p]` | 单个 `R-E` 描述题目事实;`W` 准备任务,`V` 承载隐藏判分材料 |
-| Experiment | 一个 `X` 与 `F[p]` 表 | 单个 `R-X` 描述实验条件;晚期状态目标记作 `S?`,但没有公开入口 |
-| Agent | 不可以 | `A` 检查、准备并安装 Agent CLI、配置与启动条件 |
-| SandboxSpec | 显式起点被算作 `X` | 选择 Provider;提供早期 `H`;无显式起点时才提供不属于任何 owner 的 `N` |
+| Eval | 一个 Eval Base Case | 一个 Eval `EnvironmentRequirement` 描述题目事实;Eval Fixture 准备任务;最后一次 turn 后执行隐藏 verifier 或 criteria |
+| Experiment | 一个 Experiment Base Case 与按 profile 索引的融合 Case 表 | 一个 Experiment `EnvironmentRequirement` 描述实验条件;设计上需要晚期 state load/save,但 Library 没有公开入口 |
+| Agent | 不可以贡献 Base Case | `AgentProvisioner` 检查、准备并安装 Agent CLI、配置与启动条件 |
+| SandboxSpec | 显式 image、template、snapshot 会被算作 Experiment Base Case | 选择 Provider;提供早期 `sandbox.setup` 与 `sandbox.teardown`;没有显式起点时才由 Provider 提供中性 Case |
 
 Eval 与 Experiment 各只有一个 Requirement 槽位。
-多个证书、registry、运行时与工具必须包进同一个复合 Requirement。
+多个证书、registry、运行时与工具必须包进一个复合 Requirement。
 
-Agent CLI 可以预装在 `E[p]`、`X` 或 `F[p]` 中。
-预装只让 AgentProvisioner 检查命中,不会让 Agent 参与 Base 竞争。
+Agent CLI 可以预装在任意 Base Case 中。
+预装只让 AgentProvisioner 的检查命中,不会让 Agent 参与 Base Case 竞争。
 
-SandboxSpec 的显式 template 即使不承诺任何实验条件,仍被记成 `X`。
-这条 owner 解释正是 C10 的冲突来源。
+## Base Case 与 template 选择
 
-## Base 与 template 选择
+规划器逐 Eval 执行以下选择:
 
-```text
-resolve E[p] = Eval contribution base or none
+1. Eval Base Case 与 Experiment Base Case 同时存在时,选择当前 `environmentProfile` 对应的融合 Case。
+2. 只有 Eval Base Case 时,选择 Eval Base Case。
+3. 只有 Experiment Base Case 时,选择 Experiment Base Case。
+4. 两边都没有 Base Case 时,选择 Provider 中性 Case。
 
-resolve X =
-  Experiment contribution base
-  or explicit SandboxSpec image/template/snapshot
-  or none
+Experiment contribution 的 `environment.base` 与 SandboxSpec 显式起点占同一个槽位。
+两者同时声明会在启动期得到重复 Base 配置错误,不是融合关系。
 
-E[p] + X  ───────────────> F[p] ====> selected/start
-E[p] only ───────────────── E[p] ====> selected/start
-X only    ─────────────────── X ====> selected/start
-neither   ─────────────────── N ====> selected/start
-```
-
-Experiment contribution Base 与 SandboxSpec 显式起点占同一个槽位。
-两者同时声明时不是融合关系,而是启动期重复配置错误。
-
-`R-E`、`R-X`、`A`、`H`、`S?`、`W` 与 `V` 都不参与选择。
-Base 只决定从哪份完整 Case 启动,不能删除三份后续检查。
+Eval Requirement、Experiment Requirement、AgentProvisioner、SandboxSpec Hook、Eval Fixture、隐藏 verifier 与目标中的 state load/save 都不参与 Base Case 选择。
+它们在完整 Case 启动后按各自相位执行。
 
 规划器先展开完整 Eval 矩阵。
-任一 `E[p] + X` 缺少精确 `F[p]` 时,它在创建 Sandbox 前一次列出全部缺项。
+任何一条同时具有 Eval Base Case 和 Experiment Base Case 的 Eval 如果缺少精确融合 Case,Runner 会在创建 Sandbox 前一次列出全部缺项。
+
+### C10 为什么失败
+
+![PLAN-4 把普通 template 误归为 Experiment Base,从而制造融合冲突](assets/base-selection.svg)
+
+图的上半部分是 PLAN-4 的实际解释。
+普通 SandboxSpec template 先被归入 Experiment Base 槽位;遇到自带 Compose 的 Eval 后,规划器便认定双方都有 Base Case,转而强制查询融合 Case。
+
+图的下半部分是 C10 要求的语义。
+普通 template 应当只是 fallback:自带 Compose 的 Eval 选择自己的 Eval Base Case,没有 Base Case 的 Eval 才选择普通 template。
+只有 Experiment 明确声明了条件基底时,它才应与 Eval Base Case 形成真正的双 Base 组合。
+
+给普通 template 更低的优先级也不能修复 PLAN-4。
+如果同一 SandboxSpec 还声明真正的 Experiment 条件基底,两者会先竞争同一个槽位;Runner 无法辨认哪一个是 fallback,哪一个代表必须保留的实验条件。
 
 ## Build、start、install 与 Fixture
 
 | 阶段 | Owner | fresh Attempt | reuse window |
 |---|---|---|---|
-| 解析两侧 Base 与融合表 | Eval + Experiment | 每个 Eval 规划一次 | 每个 Eval 规划一次 |
-| build 或定位起点产物 | 所选 `N/E/X/F` | Run 级按 BuildKey 协调 | Run 级共享;窗口只消费 locator |
-| start、services ready | 所选 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |
-| `H.setup` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
-| `R-E + R-X` verify/Ensure | Eval + Experiment | 每 Attempt 一次 | 每 Attempt 一次 |
+| 解析双方 Base Case 与融合表 | Eval + Experiment | 每个 Eval 规划一次 | 每个 Eval 规划一次 |
+| build 或定位起点产物 | 选中的完整 Sandbox Case | Run 级按 BuildKey 协调 | Run 级共享;窗口只消费 locator |
+| start、services ready | 选中的完整 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |
+| `sandbox.setup` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
+| Eval 与 Experiment Requirement 检查和 Ensure | Eval + Experiment | 每 Attempt 一次 | 每 Attempt 一次 |
 | 建立或恢复 workdir baseline | Runner / workspace | 每 Attempt 建立一次 | 每窗口建立一次,后续 Attempt reset |
-| `W` Fixture | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
-| AgentProvisioner Ensure | Agent | 每 Attempt 一次 | 每 Attempt 一次 |
-| `S?.load` / `S?.save` | Experiment 状态 | 无公开可执行相位 | 无公开可执行相位 |
-| Agent turn、`V` 与 scoring | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
-| Eval / Agent teardown | Eval + Agent | 每 Attempt 一次 | 每 Attempt 一次 |
-| `H.teardown` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
-| Case finalizer | 所选 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |
+| Eval setup 与 Fixture | Eval | 每 Attempt 一次 | 每 Attempt 重建 |
+| Agent CLI 检查与 Ensure | AgentProvisioner | 每 Attempt 一次 | 每 Attempt 一次 |
+| Experiment state load/save | Experiment 状态 | Library 没有公开可执行相位 | Library 没有公开可执行相位 |
+| Agent turn、隐藏 verifier 与 scoring | Eval | 每 Attempt 一次 | 每 Attempt 一次 |
+| Eval 与 Agent teardown | Eval + Agent | 每 Attempt 一次 | 每 Attempt 一次 |
+| `sandbox.teardown` | SandboxSpec | 每 Attempt 一次 | 每窗口一次 |
+| Case finalizer | 选中的完整 Sandbox Case | 每 Attempt 一次 | 每窗口一次 |
 
 build 与 start 是两件事。
 相同 BuildKey 可以复用不可变产物,每个 fresh Attempt 仍创建独立运行实例。
 
 Requirement install 不是 Base build。
-它发生在完整 Case ready 之后,并且只有 verify miss 的 Requirement 才检查 prepare、上传与安装能力。
+它发生在完整 Case ready 之后,并且只有初始检查未命中的 Requirement 才检查 prepare、上传与安装能力。
 
 Fixture 也不是 Requirement。
-`W` 服从既有 Eval 生命周期,不参与 Base 选择、Requirement identity 或融合表。
+Eval Fixture 服从既有 Eval 生命周期,不参与 Base Case 选择、Requirement identity 或融合表。
 
 ## 一条 fresh Attempt
 
 ```text
 声明与规划
-  -> resolve E[p] and X
-  -> select E[p] / X / F[p] / N
-  -> build or locate every artifact referenced by selected Case
-  -> start full Sandbox Case
-  -> wait services/resources ready
-  -> H.setup
-  -> verify R-E + R-X
-  -> prepare/install/recheck misses
-  -> full-group verify R-E + R-X
-  -> establish workdir baseline
-  -> W: Eval setup and Fixture
-  -> A: check/prepare/install/recheck
-  -> final verify R-E + R-X + Agent
-  -> all Agent turns complete
-  -> V: mount hidden verifier, score, then author cleanup
-  -> Eval and Agent paired teardown
-  -> H.teardown
-  -> Case finalizer and Sandbox stop
+  -> 解析 Eval Base Case、Experiment Base Case 与 SandboxSpec 显式起点
+  -> 按四种组合选择一个完整 Sandbox Case
+  -> build 或定位所选 Case 引用的全部产物
+  -> 启动完整 Sandbox Case
+  -> 等待 services 与 resources ready
+  -> 执行 sandbox.setup
+  -> 检查 Eval Requirement 与 Experiment Requirement
+  -> 为未命中项 prepare、安装并复检
+  -> 再次检查完整的 Eval 与 Experiment Requirement
+  -> 建立 workdir baseline
+  -> 执行 Eval setup 与 Fixture
+  -> AgentProvisioner 检查、准备、安装并复检 Agent CLI
+  -> 最终检查 Eval、Experiment 与 Agent 三方条件
+  -> 执行全部 Agent turns
+  -> 挂载隐藏 verifier、判分,再由 Eval 作者清理
+  -> 执行 Eval 与 Agent teardown
+  -> 执行 sandbox.teardown
+  -> 执行 Case finalizer 并停止 Sandbox
 ```
 
-真实可执行的 `H.setup` 位于 Requirement 与 AgentProvisioner 之前。
+真实可执行的 `sandbox.setup` 位于 Requirement 与 AgentProvisioner 之前。
 它可以承载早期环境预置,却不能保证使用 Agent CLI 恢复外部状态。
 
-本方案描述过一条理想路径:`A Ensure -> S?.load -> final verify`。
-但 Library 没有 `S?` 的独立 identity、load/save 或 activity,所以这条路径不能从公开 API 调用,C6/C7 只能部分覆盖。
+本方案描述过一条理想路径:`AgentProvisioner Ensure -> state load -> 最终检查`。
+但 Library 没有 state identity、load、save 或 activity 的公开形状,所以这条路径不能由公开 API 调用,C6 与 C7 只能部分覆盖。
 
 单数 Requirement 不会在这条时间线上自动拆开。
-一个复合 `R-X` 内部的成员身份、依赖、资源等待和错误仍然合并在同一个活动中。
+一个复合 Experiment Requirement 内部的成员身份、依赖、资源等待和错误仍然合并在同一个活动中。
 
 ## `sandboxReuse` 生命周期
 
 ```text
-window open
-  -> consume Run-level locators and start one selected Case
-  -> H.setup once
-  -> first Attempt:
-       verify/Ensure R-E + R-X
-       -> establish baseline + W
-       -> A Ensure
-       -> final three-owner verify
-       -> all Agent turns complete
-       -> V + scoring + author cleanup
-       -> Eval and Agent teardown
+复用窗口打开
+  -> 使用 Run 级 locator 启动一个选中的完整 Sandbox Case
+  -> 执行一次 sandbox.setup
+  -> 第一条 Attempt:
+       检查并补齐 Eval Requirement 与 Experiment Requirement
+       -> 建立 workdir baseline,执行 Eval setup 与 Fixture
+       -> AgentProvisioner 检查并补齐 Agent CLI
+       -> 最终检查三方条件
+       -> 执行全部 Agent turns
+       -> 挂载隐藏 verifier、判分,再由 Eval 作者清理
+       -> 执行 Eval 与 Agent teardown
 
-later Attempt
-  -> ensureLifetime
-  -> reset workdir to the window baseline
-  -> verify/Ensure R-E + R-X again
-  -> rebuild W
-  -> A Ensure again
-  -> final three-owner verify again
-  -> all Agent turns complete
-  -> V + scoring + author cleanup
-  -> Eval and Agent teardown
+后续 Attempt
+  -> 检查复用窗口寿命
+  -> 把 workdir 重置到窗口 baseline
+  -> 再次检查并补齐 Eval Requirement 与 Experiment Requirement
+  -> 重建 Eval setup 与 Fixture
+  -> AgentProvisioner 再次检查并补齐 Agent CLI
+  -> 再次最终检查三方条件
+  -> 执行全部 Agent turns
+  -> 挂载隐藏 verifier、判分,再由 Eval 作者清理
+  -> 执行 Eval 与 Agent teardown
 
-window close
-  -> H.teardown once
-  -> Case finalizer and Sandbox stop
+复用窗口关闭
+  -> 执行一次 sandbox.teardown
+  -> 执行 Case finalizer 并停止 Sandbox
 ```
 
-一个窗口只承接相同 Experiment、相同 profile 与相同所选 CaseKey。
-不同 `E[p]`、`X` 或 `F[p]` 不共享运行实例。
+一个窗口只承接相同 Experiment、相同 environment profile 与相同所选 CaseKey。
+不同 Eval Base Case、Experiment Base Case 或融合 Case 不共享运行实例。
 
-复用的是 Case 实例与 workdir 外的活状态,不是上一次 Attempt 的验证结论。
-三份 Requirement 每 Attempt 都重新检查;前一次安装通常只让下一次 verify 命中。
+复用的是 Case 实例与 workdir 外的活状态,不是上一条 Attempt 的验证结论。
+Eval、Experiment 与 Agent 三方条件在每条 Attempt 中都重新检查;前一次安装通常只让下一次检查命中。
 
-若作者把状态写进 `H`,它只能按窗口早期 load、关闭时 save,并且要位于 workdir 外才能跨 reset 存活。
-这仍没有独立 state identity、activity、失败或轮换语义。
+如果作者把状态读写放进 SandboxSpec Hook,它只能在窗口早期载入、关闭时回存,并且要位于 workdir 外才能跨 reset 存活。
+这仍然没有独立 state identity、activity、失败或轮换语义。
 
-`V` 仍位于 Eval `test(t)` 内,cleanup 由作者自行用 `try/finally` 实现。
-本候选没有受管 cleanup 注册或独立活动,Runner 不能保证 workdir 外路径、mount 与进程已经清除,也不能因 cleanup 失败自动退休窗口。
+隐藏 verifier 仍位于 Eval `test(t)` 内,cleanup 由作者自行用 `try/finally` 实现。
+本候选没有受管 cleanup 注册或独立活动。
+Runner 不能保证 workdir 外路径、mount 与进程已经清除,也不能因 cleanup 失败自动退休窗口。
 
-## C1-C10 的 Base 选择
+## C1-C10 的 Base Case 与 template 选择
 
-`✓` 表示覆盖共同验收,`△` 表示路径存在但丢失成员级语义,`✕` 表示规则拒绝合法输入。
-
-| Case | 状态 | PLAN-4 选中的 Base/template | start 后发生什么 |
+| Case | 覆盖结果 | PLAN-4 实际选中的环境或 template | 启动后发生什么 |
 |---|---|---|---|
-| C1 评估环境较重 | ✓ | 无显式 SandboxSpec 起点时选 `E[p]` | `R-E` verify;`R-X` 与 `A` Ensure |
-| C2 实验环境较重 | ✓ | 显式 template 被算作 `X`;否则选 `N` | 每条 fresh Attempt 验证并补齐 `R-X` |
-| C3 双方都较重 | ✓ | Experiment 无 Base 时选 `E[p]` | `R-X` 在 Eval Case 中 prepare、安装和复检 |
-| C4 组合多个条件 | △ | Base 沿 C1-C3 | 多个条件压进一个复合 `R-X` |
-| C5 预装稳定条件 | ✓ | 预装可以位于 `E[p]`、`X` 或 `F[p]` | 三份 Requirement 仍真实 verify |
-| C6 新 Sandbox 外部状态 | △ | Base 沿 C1-C5 | 实际只有早期 `H.setup`;目标 `A -> S?.load -> final` 无公开 API |
-| C7 复用活状态 | △ | 每窗口选择一个 `N/E/X/F` | 描述了 window cadence,但 state identity / activity 没有公开形状 |
-| C8 Experiment 条件基底 | ✓ | `environment.base` 或显式 SandboxSpec 起点成为 `X` | `R-X` verify;`R-E` 与 `A` Ensure |
-| C9 双方不可叠加 Base | ✓ | 精确 `F[p]` | 启动后分别验证 `R-E`、`R-X` 与 `A` |
-| C10 混合批次 | ✕ | 无 Base Eval 选 `X`;带 Base Eval 被要求 `F[p]` | 普通默认 template 也触发融合表 |
+| C1 评估环境较重 | 覆盖 | 选择当前 Eval contribution 自带的 Dockerfile 或 Compose Base Case | 检查 Eval Requirement,再补齐 Experiment Requirement 与 Agent CLI |
+| C2 实验环境较重 | 覆盖 | SandboxSpec 写了普通 image、template 或 snapshot 时选择该显式起点;没有显式起点时选择 Provider 中性 Case | 每条 fresh Attempt 检查并补齐 Experiment Requirement |
+| C3 评估与实验环境都较重 | 覆盖 | SandboxSpec 没有显式起点时选择当前 Eval 自带的 Compose Base Case | 在该 Compose Case 中准备、上传、安装并复检 Experiment Requirement |
+| C4 组合多个条件 | 部分覆盖 | 有 Eval Base Case 时选择它;否则选择 SandboxSpec 显式起点;两者都没有时选择 Provider 中性 Case | 多个实验条件被压进一个复合 Experiment Requirement |
+| C5 预装稳定条件 | 覆盖 | Eval 无 Base Case 时选择预装该条件的 Experiment image、template 或 snapshot;Eval 也有 Base Case 时选择 `environment.cases[environmentProfile]` 中的融合 Case | 预装仍要通过三方实际检查 |
+| C6 新 Sandbox 外部状态 | 部分覆盖 | 逐 Eval 选择其 Eval Base Case;没有 Eval Base Case 时选择 Experiment Base Case 或 Provider 中性 Case;双方都有时选择精确融合 Case | 实际只有早期 `sandbox.setup`;Agent 安装后的 state load 没有公开 API |
+| C7 复用 Sandbox 活状态 | 部分覆盖 | 每个窗口按同一规则选择一个 Eval Base Case、Experiment Base Case、融合 Case 或 Provider 中性 Case | 有窗口 cadence,但没有公开的 state identity、activity 与失败语义 |
+| C8 Experiment 提供条件基底 | 覆盖 | 选择 `environment.base` 声明的 Experiment 条件 template;PLAN-4 也会把 SandboxSpec 显式起点当成同类 Base Case | 检查 Experiment Requirement,再补齐 Eval Requirement 与 Agent CLI |
+| C9 双方都有不可叠加基底 | 覆盖 | 选择 `environment.cases[environmentProfile]` 中已经融合双方条件的完整 Case | 分别检查 Eval Requirement、Experiment Requirement 与 Agent CLI |
+| C10 混合批次 | 不覆盖 | 无 Eval Base Case 的 Eval 选择普通 SandboxSpec template;自带 Compose Base Case 的 Eval 被迫查询融合 Case,缺项即在启动前报错 | 普通默认 template 被误当作 Experiment 条件基底,制造并不存在的双 Base 冲突 |
 
-C3 只有在 Experiment 不贡献 Base,并且 SandboxSpec 没有显式普通起点时保持单 Base。
-一旦配置普通 template,本方案就把它解释成 `X`,转入双 Base 分支。
+C3 只有在 Experiment 没有贡献 Base Case,并且 SandboxSpec 没有显式普通起点时保持单 Base。
+一旦 SandboxSpec 配置普通 template,PLAN-4 就把它解释成 Experiment Base Case,转入双 Base 分支。
 
-### C10 的错误分支
-
-```text
-用户意图:
-
-ordinary template T
-  -> Eval A has E[p]: let E[p] start
-  -> Eval B has no Base: let T start
-
-PLAN-4 interpretation:
-
-T is X
-
-Eval A: E[p] + X -> require F[p] ====> start
-Eval B: no E[p] + X -> X ============> start
-```
-
-本方案没有一个位置把 `T` 标记成“只在没有 Eval Base 时使用的普通默认 Case”。
-让 `E[p]` 静默覆盖 `X` 又会破坏真正的 Experiment Base,所以不能靠优先级修补 C10。
-
-若同一 SandboxSpec 还另外声明真正的 Experiment conditional Base,普通 `T` 与条件基底会先竞争同一个 `X` 槽位并产生重复配置错误。
-因此 PLAN-4 既无法同时保留 `T` 与真正的 `X`,也无法把 `T` 只作为无 Base Eval 的 fallback。
+C10 没有可用的优先级补丁。
+让 Eval Base Case 静默覆盖 SandboxSpec template 会同时覆盖真正的 Experiment 条件基底,从而破坏 C8 与 C9。

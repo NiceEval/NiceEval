@@ -122,21 +122,20 @@ Runner 没有独立的 materialization handle、cleanup 注册或活动,因此�
 每条复用 Attempt 仍重新 inspect Provision 和 Agent。
 不过 PLAN-1 没有在 Agent Ensure 与状态载入之后重验 Environment 和 Provision,所以这项共同验收缺口在复用模式下仍然存在。
 
-## Case 选择图
+## Case 起点选择
 
 场景输入与验收条件以根 [CASES](../CASES.md) 为准。
-下表只说明 PLAN-1 实际选择什么 Environment,以及后续走哪条本方案路径。
-`△` 表示执行路径存在但至少缺一条共同验收,`∅` 表示本方案没有声明入口。
+下表在每行写全 PLAN-1 的输入分支、实际起点和没有被采用的起点,无需回到前文推导。
 
-| Case | 状态 | 选中的 Environment / template | 后续生命周期与缺口 |
-|---|---|---|---|
-| [C1](../CASES.md#c1评估环境较重) | △ | Eval folder-local Environment,或命中的 `environments[profile]` | Provider 兑现完整 Environment;Agent Ensure 后不重验 Environment |
-| [C2](../CASES.md#c2实验环境较重) | △ | SandboxConfig 普通默认起点 | 顺序 Ensure Provision 和 Agent;缺跨 Owner 最终屏障 |
-| [C3](../CASES.md#c3评估与实验环境都较重) | △ | Eval Environment | staged Provision 在题目主 Sandbox 中 Ensure,无需 template 矩阵;Agent 后不重验前置条件 |
-| [C4](../CASES.md#c4组合多个条件) | △ | Eval Environment 或普通默认起点 | Provision 按数组顺序执行;没有依赖 DAG、资源锁或 Agent 跨图屏障 |
-| [C5](../CASES.md#c5预装稳定条件) | △ | 预装默认起点,或 `environments[profile]` 覆盖 | Provision inspect 可命中或补装;仍没有跨 Owner 最终验证 |
-| [C6](../CASES.md#c6新-sandbox-载入外部状态) | △ | 每 Attempt 使用新的默认起点或 Eval Environment | Provision 与 Agent 就位后 load,收尾 save;状态载入后不重验三方条件 |
-| [C7](../CASES.md#c7复用-sandbox-活状态) | △ | 每复用窗口一个同 EnvironmentKey 的 Running Environment | 每 Attempt 重查 Provision / Agent;窗口边界 load / save;缺最终屏障 |
-| [C8](../CASES.md#c8experiment-提供条件基底) | ∅ | 只能选择普通默认起点 | Eval 没有只声明可移植条件的入口 |
-| [C9](../CASES.md#c9双方都有不可叠加基底) | ∅ | `environments[profile]` 最多替换 Eval Environment | 没有两份条件集合或融合 case 的选择与分别验证 |
-| [C10](../CASES.md#c10混合批次) | △ | 有 Environment 的 Eval 选自身;无 Environment 的 Eval 选普通默认起点 | 普通默认起点会让位,但没有 Experiment 条件基底与融合分支 |
+| Case | 输入中的起点 | PLAN-1 实际选择 | 没有被采用或无法表达的部分 | 结论 |
+|---|---|---|---|---|
+| [C1](../CASES.md#c1评估环境较重) | Eval 自带题目 Environment;Experiment 只选择 Provider 与 Agent | profile 有预制替代项时使用 `environments[profile]`;否则由 Provider 解析 Eval Environment | SandboxConfig 普通默认起点不参与;Experiment 没有独立起点 | 可以运行,但 Agent 安装后不会重新验证题目 Environment |
+| [C2](../CASES.md#c2实验环境较重) | Eval 没有 Environment;SandboxConfig 有普通默认起点;Experiment 声明 Provision | 使用 SandboxConfig 普通默认起点 | Provision 只在启动后安装,不会变成 template | 可以运行,但缺少跨 Owner 最终验证屏障 |
+| [C3](../CASES.md#c3评估与实验环境都较重) | Eval 自带 Compose Environment;Experiment 用 Provision 加入共享工具 | profile 有预制替代项时使用该替代项;否则使用 Eval 的 Compose Environment | 共享工具不产生第二个起点,只在题目 Sandbox 中安装 | 可以运行且不需要预制矩阵,但 Agent 安装后不重验前置条件 |
+| [C4](../CASES.md#c4组合多个条件) | Eval 可能自带 Environment;Experiment 声明多个 Provision | Eval 有 Environment 且 profile 命中时选择预制替代项;Eval 有 Environment 且 profile 未命中时选择 Eval Environment;Eval 没有 Environment 时选择普通默认起点 | 多个 Provision 都不参与起点选择 | 可以运行,但安装顺序靠数组位置,也没有依赖、资源锁和最终屏障 |
+| [C5](../CASES.md#c5预装稳定条件) | 稳定条件预装在普通默认起点或某个 profile 的预制 Environment 中 | Eval 有 Environment 且 profile 命中时选预制 Environment;Eval 没有 Environment 时选预装的普通默认起点;其余情况仍选 Eval Environment | 预装只优化起点,不会移除对应 Provision 声明与检查 | 可以运行并由 inspect 命中或补装,但仍没有跨 Owner 最终验证 |
+| [C6](../CASES.md#c6新-sandbox-载入外部状态) | 外部状态不是起点;Eval 可能自带 Environment | Eval 有 Environment 且 profile 命中时选择预制替代项;Eval 有 Environment 且 profile 未命中时选择 Eval Environment;Eval 没有 Environment 时选择普通默认起点;每条 Attempt 从所选起点新建 Sandbox | 外部状态不会变成 Environment,而是在 Provision 与 Agent 就位后载入 | 可以运行,但状态载入后不重验三方条件 |
+| [C7](../CASES.md#c7复用-sandbox-活状态) | 活状态不是起点;Eval 可能自带 Environment | Eval 有 Environment 且 profile 命中时选择预制替代项;Eval 有 Environment 且 profile 未命中时选择 Eval Environment;Eval 没有 Environment 时选择普通默认起点;每个复用窗口只从所选起点创建一次 Running Environment | 活状态不会变成 Environment;复用也不会重新选择起点 | 可以运行,但每条 Attempt 重查后仍缺最终验证屏障 |
+| [C8](../CASES.md#c8experiment-提供条件基底) | Experiment 提供预制起点;Eval 没有不可叠加的题目起点 | 只有把该预制起点配置成 SandboxConfig 普通默认起点,PLAN-1 才能选中它 | Runner 无法把它识别为带实验条件的起点;Eval 也没有声明可移植条件的入口 | 无法表达该 Case 的验收契约 |
+| [C9](../CASES.md#c9双方都有不可叠加基底) | Eval 与 Experiment 各有一个不能直接叠加的完整起点 | profile 有预制替代项时只选该替代项;否则只选 Eval Environment | Experiment 起点没有独立槽位;Runner 不能选择或分别验证双方起点 | 无法表达该 Case |
+| [C10](../CASES.md#c10混合批次) | 一部分 Eval 自带 Environment,另一部分没有;SandboxConfig 还有普通默认起点;Experiment 可能提供条件基底 | Eval 有 Environment 且 profile 命中时选择预制替代项;Eval 有 Environment 且 profile 未命中时选择 Eval Environment;Eval 没有 Environment 时选择普通默认起点 | 普通默认起点会给题目 Environment 让位;Experiment 条件基底和融合分支都无法声明 | 可以运行部分路径,但不满足完整验收 |

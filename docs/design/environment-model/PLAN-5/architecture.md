@@ -189,7 +189,7 @@ Experiment state、Fixture 与 Agent runtime setup 分别保持自己的 cadence
 任一失败都阻止 Agent turn。
 
 Eval Fixture 分成两个可见性窗口。
-turn 前的 setup 和 `W` 可以被 Agent 看到;隐藏 verifier、official tests 与 criteria 只能在最后一次 Agent turn 返回后挂载,再进入 scoring。
+turn 前的 setup 与 Fixture 可以被 Agent 看到;隐藏 verifier、official tests 与 criteria 只能在最后一次 Agent turn 返回后挂载,再进入 scoring。
 Base build content 也不能携带本应隐藏的判分材料。
 
 隐藏 verifier 的 materialization 与 cleanup 必须成对。
@@ -371,11 +371,11 @@ Eval teardown 只能释放对应 Eval setup / Fixture 自己取得的资源,不�
 
 `saveOn: "after-load"` 表示 load 成功后,Fixture、runtime、最终屏障、Agent turn、verifier、scoring 或 teardown 失败都在 outer-finally 尝试 save。
 `saveOn: "attempt-succeeded"` 只用于 fresh。
-本 Attempt 的 Agent turn、verifier、scoring、`V` cleanup 与 Agent runtime teardown 全部成功才 save。
+本 Attempt 的 Agent turn、verifier、scoring、隐藏判分 cleanup 与 Agent runtime teardown 全部成功才 save。
 reuse 没有逐 Attempt 状态回滚,因此只能使用 `after-load`;非法组合在创建 Sandbox 前报配置错误。
 
 Eval teardown 仍沿既有规则只追加诊断;fresh save 位于它之前,所以这类诊断不反改 checkpoint。
-两者遇到 `V` cleanup 失败都跳过 save;Provider 硬丢实例时 save 记为 `unavailable`。
+两者遇到隐藏判分 cleanup 失败都跳过 save;Provider 硬丢实例时 save 记为 `unavailable`。
 
 可处理的取消、Attempt timeout 与 Sandbox lifetime 轮换都遵守同一 `saveOn` 策略。
 save 获得独立 cleanup budget 和 signal,不继承已经过期的 Attempt deadline。
@@ -395,7 +395,7 @@ SIGKILL、断电或 Provider 硬丢实例无法承诺 save;记录保留最后成
 save 失败后不存在合法后继,后续依赖该状态的 Attempt 不再派发。
 fresh 的 `attempt-succeeded` 主动跳过 save 时,head 保持在 load 的 predecessor。
 后续 `rolling` Attempt 从该 head 重新 load。
-load 失败、`V` cleanup 失败、save 失败或 transfer unavailable 都不是主动策略,状态序列立即停止。
+load 失败、隐藏判分 cleanup 失败、save 失败或 transfer unavailable 都不是主动策略,状态序列立即停止。
 
 ### 统一异常收尾
 
@@ -403,28 +403,28 @@ load 失败、`V` cleanup 失败、save 失败或 transfer unavailable 都不是
 
 ```text
 fresh Attempt:
-  V cleanup when entered
-    -> A-R teardown when entered
-    -> S.save or explicit skipped/unavailable activity
+  hidden verifier cleanup when entered
+    -> Agent runtime teardown when entered
+    -> Experiment state save or explicit skipped/unavailable activity
     -> Eval teardown when entered
-    -> H.teardown when entered
+    -> SandboxSpec teardown when entered
     -> Case finalizer
     -> Sandbox stop
 
 reuse Attempt:
-  V cleanup when entered
-    -> A-R teardown when entered
+  hidden verifier cleanup when entered
+    -> Agent runtime teardown when entered
     -> Eval teardown when entered
 
 reuse window close:
-  S.save or explicit skipped/unavailable activity
-    -> H.teardown when entered
+  Experiment state save or explicit skipped/unavailable activity
+    -> SandboxSpec teardown when entered
     -> Case finalizer
     -> Sandbox stop
 ```
 
 前一步失败不会阻止后一步。
-实例仍可访问时,load/save 失败、runtime teardown 失败与 verifier cleanup 失败都必须继续执行 `H.teardown`、Case finalizer 与 stop。
+实例仍可访问时,load/save 失败、runtime teardown 失败与 verifier cleanup 失败都必须继续执行 SandboxSpec teardown、Case finalizer 与 stop。
 实例已经硬丢时,不能执行的步骤记录 `unavailable`,不伪造成功。
 
 ## 身份与哈希
