@@ -43,10 +43,12 @@ import { attemptHistory, attemptHistoryHandles } from "./compose.ts";
 import { attemptJsonOf, buildShowScope, renderShowJson, type ShowJsonView } from "./json.ts";
 import {
   buildHostReportMeta,
+  createHostPageLoadContext,
   describeReportSource,
   HostReportError,
   loadHostReport,
   renderHostPageText,
+  renderHostTarget,
   type HostCommandContext,
   type ReportPage,
 } from "../report/runtime/host.ts";
@@ -896,38 +898,36 @@ async function show(
       );
       return;
     }
-    // 无证据 flag:选中当前 report definition 里唯一的 attempt-input page,注入这份 evidence,
-    // 走与其它 page 完全相同的 resolve → validate → render 管线(docs/feature/reports/show/attempt.md;
-    // docs/feature/reports/components/attempt-detail/README.md「在 show 与 view 怎样渲染」)。不带 --report
-    // 时装载内建 standard,其中就带这张 page;--report 指向的自定义报告没有声明 attempt-input page
-    // 时报完整用户反馈,不回退到内建详情(三条解决路径都在错误文案里给出)。
+    // 无证据 flag:选中当前 report definition 里 id 为 "attempt" 的参数化页,经它自己声明的
+    // `load` 装载这个 locator 对应的证据,走与其它 page 完全相同的 resolve → validate → render
+    // 管线(docs/feature/reports/show.md「无证据 flag 的 `show @<locator> --report <file>`
+    // 选择其中 id 为 attempt 的参数化页」;docs/feature/reports/components/attempt-detail/README.md
+    // 「在 show 与 view 怎样渲染」)。不带 --report 时装载内建 standard,其中就带这张页;--report
+    // 指向的自定义报告没有声明 id 为 "attempt" 的页时报完整用户反馈,不回退到内建详情
+    // (三条解决路径都在错误文案里给出)。
     const report = await loadHostReport(cwd, flags.report, flags.configReport);
-    // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」);
-    // 这里已经拿到装配好的 evidence,不走 renderTarget/page.load,直接把它当这张 page 的
-    // render 输入注入(与其它 page 完全相同的 resolve → validate → render 管线)。
+    // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」)。
     const attemptPage = report.pages.find((p) => p.id === "attempt");
     if (attemptPage === undefined) {
       const sourceLabel = describeReportSource(flags.report, flags.configReport);
       throw new ShowError(
-        `error: ${sourceLabel} has no "attempt" page — "${locatorArg}" cannot be opened without one. ` +
+        `error: ${sourceLabel} has no page with id "attempt" — "${locatorArg}" cannot be opened without one. ` +
           `Read this attempt right now with \`niceeval show ${locatorArg} --report standard\` (or \`--json\`). ` +
           `To open it in this report, add the standard attempt page: ` +
           `import { standardAttemptPage } from "niceeval/report/built-in" and add it to your pages list, ` +
-          `or declare your own page with id "attempt".\n`,
+          `or declare your own parameterized page with id "attempt".\n`,
       );
     }
     const locale = detectLocale();
     const selection = currentSample(results, { fresh: flags.fresh });
     const meta = await buildHostReportMeta(report, selection);
-    const text = await renderHostPageText(
-      attemptPage,
-      {
-        scope: selection,
-        results,
-        report: meta,
-        page: { id: attemptPage.id, input: attemptEvidence },
-        dimensionPins: report.dimensionPins,
-      },
+    const loadCtx = await createHostPageLoadContext(results);
+    const text = await renderHostTarget(
+      report,
+      { page: attemptPage.id, params: { locator: attemptEvidence.locator } },
+      selection,
+      loadCtx,
+      { results, report: meta, dimensionPins: report.dimensionPins },
       { width: io.width, locale, panelMode: io.panelMode },
     );
     io.out(insertFactsLine(text, attemptEvidence.result.facts) + "\n");

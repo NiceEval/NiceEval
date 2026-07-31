@@ -17,6 +17,7 @@ import type { Record, Sample } from "../../record/index.ts";
 import type { LocalizedText } from "../../types.ts";
 import type { PageContext } from "../../../dist/report/definition/tree.js";
 import type {
+  PageLoadContext,
   ReportDefinition,
   ReportMeta,
   ReportPage,
@@ -183,6 +184,44 @@ export async function renderHostPageText(
   const { renderReportTreeToText } = await import("../../../dist/report/runtime/text.js");
   const { resolveDefinitionPage } = await import("../../../dist/report/runtime/page-render.js");
   const resolved = await resolveDefinitionPage(page, ctx);
+  const { renderResolvedPageText } = await import("../../../dist/report/runtime/resolved-page.js");
+  return renderResolvedPageText(resolved, options);
+}
+
+/**
+ * 宿主专属懒加载来源的唯一装配点:按 locator 装配 AttemptEvidence(经 `loadAttemptEvidence`
+ * 管线),供 `renderHostTarget` 的 `page.load` 调用。两个宿主共用同一份 `PageLoadContext`
+ * 构造,不各自重新实现证据聚合。
+ */
+export async function createHostPageLoadContext(results: Record): Promise<PageLoadContext> {
+  const { createPageLoadContext } = await import("../../../dist/report/runtime/page-render.js");
+  return createPageLoadContext(results);
+}
+
+/** `renderTarget` 求 resolve 所需的宿主上下文(scope 由 `base` 参数单独给出)。 */
+export interface HostTargetContext {
+  results: Record;
+  report: ReportMeta;
+  dimensionPins?: DimensionPins;
+}
+
+/**
+ * 按目标(`page` id + `params`)渲染 text 面:唯一的目标寻址路径
+ * (architecture.md「执行模型」)——拿目标找 page、按页自己的 `load` 求输入(省略 `load`
+ * 时输入就是 `base`)、render、resolve。`show @<locator>` 这类"选中一个参数化页并注入它自己
+ * 声明的 load"的调用点走这里,不在宿主里另起一套"已经算好 input 直接注入"的旁路
+ * (那条旁路会让自定义报告自己声明的 `load` 被绕过,产出与页面作者声明不一致的结果)。
+ */
+export async function renderHostTarget(
+  definition: ReportDefinition,
+  target: ReportTarget,
+  base: Sample,
+  ctx: PageLoadContext,
+  host: HostTargetContext,
+  options: HostTextRenderOptions,
+): Promise<string> {
+  const { renderTarget } = await import("../../../dist/report/runtime/page-render.js");
+  const resolved = await renderTarget(definition, target, base, ctx, host);
   const { renderResolvedPageText } = await import("../../../dist/report/runtime/resolved-page.js");
   return renderResolvedPageText(resolved, options);
 }
