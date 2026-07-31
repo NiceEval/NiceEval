@@ -304,6 +304,8 @@ export interface CreateMaterializedCaseOpts {
   readonly defaultProfileId?: string;
   readonly sandbox: SandboxOption;
   readonly timeout?: number;
+  /** attempt 的绝对截止时刻；一次性沙箱也必须与复用池共享同一条命令剩余量。 */
+  readonly deadlineAt?: number;
   readonly runtime?: SandboxRuntime;
   readonly provisionSlot?: ProvisionSlot;
   readonly feedback?: ScopedFeedback;
@@ -380,22 +382,29 @@ export async function createMaterializedCase(
   }
 
   if (plan.caseKind === "on-demand-build") {
-    const locator = firstBuildLocator(opts.buildLocators);
-    if (locator === undefined) {
+    const built = firstBuildLocator(opts.buildLocators, String(opts.sandbox.provider));
+    if (built === undefined) {
       throw new Error(
         `sandbox case kind "on-demand-build" for ${JSON.stringify(plan.evalId)} ` +
           `needs build locators from the run build coordinator before materialization`,
       );
     }
+    const [buildKey, locator] = built;
     const createSpec = onDemandCreateSpec(opts.sandbox, plan.evalId, locator);
+    const effectivePlan = {
+      ...plan,
+      buildKeys: [buildKey],
+      caseKey: (await import("./dockerfile-build.ts")).caseKeyForDockerfileBuild(plan, buildKey),
+    };
     const primary = await createSandboxInstance({
       sandbox: createSpec,
       timeout: opts.timeout,
+      deadlineAt: opts.deadlineAt,
       runtime: opts.runtime,
       provisionSlot: opts.provisionSlot,
       feedback: opts.feedback,
     });
-    const materialized = await materializePlannedCase(plan, { ctx, primarySandbox: primary });
+    const materialized = await materializePlannedCase(effectivePlan, { ctx, primarySandbox: primary });
     attachCaseLifecycle(materialized);
     return withCaseFacts(materialized, { buildLocator: locator, sandboxId: primary.sandboxId });
   }
@@ -405,6 +414,7 @@ export async function createMaterializedCase(
   const primary = await createSandboxInstance({
     sandbox: createSpec,
     timeout: opts.timeout,
+    deadlineAt: opts.deadlineAt,
     runtime: opts.runtime,
     provisionSlot: opts.provisionSlot,
     feedback: opts.feedback,
@@ -418,9 +428,17 @@ export async function createMaterializedCase(
   });
 }
 
-function firstBuildLocator(locators: ReadonlyMap<BuildKey, string> | undefined): string | undefined {
+function firstBuildLocator(
+  locators: ReadonlyMap<BuildKey, string> | undefined,
+  provider: string,
+): readonly [BuildKey, string] | undefined {
   if (locators === undefined || locators.size === 0) return undefined;
-  return locators.values().next().value;
+  for (const entry of locators) {
+    const locator = entry[1];
+    if (provider === "docker" && locator.startsWith("niceeval-build:")) return entry;
+    if (provider === "e2b" && locator.startsWith("niceeval-build-")) return entry;
+  }
+  return locators.entries().next().value;
 }
 
 function onDemandCreateSpec(spec: SandboxOption, evalId: string, locator: string): SandboxOption {
@@ -485,7 +503,7 @@ async function createProvider(
 ): Promise<Sandbox> {
   // 自定义 provider(defineSandbox):不认 provider 名,直接调用用户给的 create();
   // feedback 已绑定到 sandbox.create 阶段(见 docs/feature/sandbox/library.md)。
-  if (r.create) return r.create({ timeout, runtime: r.runtime, feedback });
+  if (r.create) return r.create({ timeout, deadlineAt, runtime: r.runtime, feedback });
   switch (r.provider) {
     case "docker": {
       const { DockerSandbox, classifyProvisionError, reconcileProvision } = await import("./docker.ts").catch(() => {

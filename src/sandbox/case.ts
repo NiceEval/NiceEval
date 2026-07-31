@@ -135,7 +135,7 @@ export interface PlannedSandboxCase {
   readonly caseKind: SandboxCaseKind;
   readonly sourceKind?: SandboxSourceKind;
   /** 显式 environments 表项优先时为 "environments",否则 "materializer"。 */
-  readonly via: "environments" | "materializer" | "base";
+  readonly via: "environments" | "materializer" | "builtin" | "base";
   readonly caseKey: CaseKey;
   readonly buildKeys: readonly BuildKey[];
   readonly identity: JsonValue;
@@ -146,6 +146,11 @@ export interface PlannedSandboxCase {
 export type PlannedCaseDeclaration =
   | { readonly form: "docker"; readonly value: DockerEnvironmentCase }
   | { readonly form: "e2b"; readonly value: E2BEnvironmentCase }
+  | {
+      readonly form: "dockerfile";
+      readonly provider: "docker" | "e2b";
+      readonly value: DockerfileSandboxSource;
+    }
   | { readonly form: "vercel"; readonly value: VercelEnvironmentCase }
   | { readonly form: "custom"; readonly value: CustomEnvironmentCase }
   | { readonly form: "source"; readonly value: SandboxSource; readonly materializer: SandboxMaterializer }
@@ -244,21 +249,24 @@ export function planSandboxCase(input: PlanSandboxCaseInput): CasePlanResult {
       return planFromEnvironmentEntry({ evalId, profile, spec, entry: explicit, via: "environments" });
     }
     const materializer = materializers?.[source.kind];
-    if (materializer === undefined) {
-      return {
-        status: "capability-missing",
+    if (materializer !== undefined) {
+      return planFromSource({ evalId, profile, source, materializer });
+    }
+    if (source.kind === "dockerfile" && (spec.provider === "docker" || spec.provider === "e2b")) {
+      return planFromBuiltinDockerfile({ evalId, profile, source, provider: spec.provider });
+    }
+    return {
+      status: "capability-missing",
+      evalId,
+      profile,
+      sourceKind: source.kind,
+      skipReason: capabilitySkipReason({
         evalId,
         profile,
         sourceKind: source.kind,
-        skipReason: capabilitySkipReason({
-          evalId,
-          profile,
-          sourceKind: source.kind,
-          provider: String(spec.provider),
-        }),
-      };
-    }
-    return planFromSource({ evalId, profile, source, materializer });
+        provider: String(spec.provider),
+      }),
+    };
   }
 
   const profile = input.environment;
@@ -415,6 +423,41 @@ function planFromSource(opts: {
       identity,
       carryEligible: true,
       declaration: { form: "source", value: opts.source, materializer: opts.materializer },
+    },
+  };
+}
+
+function planFromBuiltinDockerfile(opts: {
+  readonly evalId: string;
+  readonly profile: string;
+  readonly source: DockerfileSandboxSource;
+  readonly provider: "docker" | "e2b";
+}): CasePlanResult {
+  const identity = {
+    caseKind: "on-demand-build" as const,
+    sourceKind: "dockerfile" as const,
+    provider: opts.provider,
+    source: sourceIdentity(opts.source),
+  };
+  const caseKey = computeCaseKey({
+    caseKind: "on-demand-build",
+    materializerRevision: `${opts.provider}:dockerfile`,
+    buildKeys: [],
+    caseParams: identity,
+  });
+  return {
+    status: "ready",
+    plan: {
+      evalId: opts.evalId,
+      profile: opts.profile,
+      caseKind: "on-demand-build",
+      sourceKind: "dockerfile",
+      via: "builtin",
+      caseKey,
+      buildKeys: [],
+      identity,
+      carryEligible: true,
+      declaration: { form: "dockerfile", provider: opts.provider, value: opts.source },
     },
   };
 }

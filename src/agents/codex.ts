@@ -57,7 +57,7 @@ const RESERVED_CONFIG_KEYS = [
  */
 export interface CodexPluginSpec {
   marketplace: {
-    /** Marketplace 在 Codex 配置中的连接名(`codex plugin add <plugin>@<name>` 里的那个名字)。 */
+    /** 目标仓库 manifest 声明的真实 name；CLI 不支持由调用方另取连接别名。 */
     name: string;
     /** Marketplace 来源:`owner/repo`、Git URL 或本地路径。 */
     source: string;

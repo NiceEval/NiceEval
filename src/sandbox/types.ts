@@ -176,7 +176,13 @@ export interface CustomSandboxSpec extends SandboxHooks<CustomSandboxSpec> {
   readonly environments?: Readonly<globalThis.Record<string, import("./case-types.ts").CustomEnvironmentCase>>;
   readonly materializers?: import("./case-types.ts").SandboxMaterializers;
   /** `feedback` 绑定到 `sandbox.create` 阶段:分配实例 / 拉镜像 / 恢复 run 的进度与诊断走它。 */
-  readonly create: (opts: { timeout?: number; runtime?: SandboxRuntime; feedback: ScopedFeedback }) => Promise<Sandbox>;
+  readonly create: (opts: {
+    timeout?: number;
+    /** attempt 的绝对截止时刻；自定义 provider 应据此约束未显式给 timeout 的命令。 */
+    deadlineAt?: number;
+    runtime?: SandboxRuntime;
+    feedback: ScopedFeedback;
+  }) => Promise<Sandbox>;
   /**
    * 「哪些参数可发布」的投影,进结果快照的 ExperimentRunInfo.sandbox.params;
    * 未实现时只落 provider 名。token、凭据路径永远不该出现在返回值里。

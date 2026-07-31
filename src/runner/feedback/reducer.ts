@@ -292,6 +292,7 @@ export function reduceRunFeedback(state: RunFeedbackState, event: RunFeedbackEve
           reason: event.reason,
           ...(event.assertion !== undefined ? { assertion: event.assertion } : {}),
           ...(event.phase !== undefined ? { phase: event.phase } : {}),
+          ...(event.origin !== undefined ? { origin: event.origin } : {}),
         }),
         freshFailureCount: state.freshFailureCount + (isFresh ? 1 : 0),
       };

@@ -23,6 +23,7 @@
 import type { JsonValue, StreamEvent, ToolName, Usage } from "../types.ts";
 import { normalizeToolName } from "../o11y/tool-names.ts";
 import { CODEX_TOOL_ALIASES } from "../o11y/parsers/codex.ts";
+import { CLAUDE_TOOL_ALIASES } from "../o11y/parsers/claude-code.ts";
 
 // ───────────────────────── 通用 SSE 读帧器 ─────────────────────────
 
@@ -155,7 +156,13 @@ export function createClaudeSdkEventStream(): ClaudeSdkStream {
             } else if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
               events.push({ type: "thinking", text: block.thinking });
             } else if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
-              events.push({ type: "action.called", callId: block.id, name: block.name, input: block.input as JsonValue });
+              events.push({
+                type: "action.called",
+                callId: block.id,
+                name: block.name,
+                input: block.input as JsonValue,
+                tool: normalizeToolName(block.name, CLAUDE_TOOL_ALIASES),
+              });
             }
           }
           break;

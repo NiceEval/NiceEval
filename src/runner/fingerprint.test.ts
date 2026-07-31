@@ -5,9 +5,12 @@
 // 序号规划为携带,缺失的序号必须留给调度真正派发;errored/unreadable 永不携带,即使同一个 eval
 // 的其它序号是终态——不能因为"这个 (experiment, eval) 组合有过携带"就把它也捎带进去。
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
-import { defineAgent } from "../define.ts";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { defineAgent, defineSandboxAgent, dockerSandbox } from "../define.ts";
 import { computeConfigHash, computeFingerprint, fingerprintWithManifest, planCarry } from "./fingerprint.ts";
 import { manifestDeltas, type EvalManifest } from "./manifest.ts";
 import type { AgentRun, DiscoveredEval } from "./types.ts";
@@ -21,6 +24,8 @@ import { zhCN } from "../i18n/zh-CN.ts";
 // 内容不重要,指向本测试文件自己,永远存在。
 const sourcePath = fileURLToPath(import.meta.url);
 const source: CapturedEvalSource = { path: "fake.eval.ts", content: "", sha256: "0".repeat(64) };
+const tempRoots: string[] = [];
+afterEach(async () => Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true }))));
 
 function makeEval(id: string): DiscoveredEval {
   return { id, baseDir: "/project", sourcePath, source, test: () => {} };
@@ -47,6 +52,25 @@ function result(over: Partial<EvalResult> & Pick<EvalResult, "id" | "attempt" | 
     ...over,
   };
 }
+
+describe("按需构建进入指纹", () => {
+  it("Dockerfile context 内容变化会改变 fingerprint，阻止携带旧环境结果", async () => {
+    const root = await mkdtemp(join(tmpdir(), "niceeval-fingerprint-build-"));
+    tempRoots.push(root);
+    await writeFile(join(root, "Dockerfile"), `FROM node@sha256:${"a".repeat(64)}\nCOPY payload /payload\n`);
+    await writeFile(join(root, "payload"), "first\n");
+    const evalDef: DiscoveredEval = { ...makeEval("e"), baseDir: root, environment: "built" };
+    const run: AgentRun = {
+      ...makeRun("exp", ["e"], 1),
+      agent: defineSandboxAgent({ name: "sandbox", send: async () => ({ events: [], status: "completed" }) }),
+      sandbox: dockerSandbox({ environments: { built: { build: { context: "." } } } }),
+    };
+
+    const first = await computeFingerprint(evalDef, run);
+    await writeFile(join(root, "payload"), "second\n");
+    expect(await computeFingerprint(evalDef, run)).not.toBe(first);
+  });
+});
 
 describe("planCarry · 携带以 attempt 为粒度", () => {
   it("attempts: 5、上一轮只落盘 3 条终态 attempt(序号 1/2/4):只把这 3 个具体序号规划为携带,缺失的 0/3 必须真正派发", async () => {

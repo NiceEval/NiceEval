@@ -223,6 +223,7 @@ export function createFeedbackCoordinator(options: FeedbackCoordinatorOptions): 
       reason: input.reason,
       ...(input.assertion !== undefined ? { assertion: input.assertion } : {}),
       ...(input.phase !== undefined ? { phase: input.phase } : {}),
+      ...(input.origin !== undefined ? { origin: input.origin } : {}),
     });
   }
 

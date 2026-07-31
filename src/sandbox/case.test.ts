@@ -3,7 +3,7 @@
 // - sandbox case 五类
 // - profile / source 双入口与优先级
 import { describe, expect, it } from "vitest";
-import { dockerSandbox, defineSandbox } from "../define.ts";
+import { dockerSandbox, e2bSandbox, defineSandbox } from "../define.ts";
 import {
   allSelectedCapabilitySkipped,
   assertEnvironmentCaseShape,
@@ -427,17 +427,15 @@ describe("BuildKey / CaseKey 与身份规则", () => {
     expect(assertPureDataIdentity({ cluster: "prod", rev: 3 })).toEqual({ cluster: "prod", rev: 3 });
   });
 
-  it("dockerfileSandbox 是合法 folder-local source kind", () => {
+  it("dockerfileSandbox 在 Docker/E2B 走内置按需构建，不要求空壳 materializer", () => {
     const source = dockerfileSandbox({ context: ".", dockerfile: "Dockerfile" });
     expect(source.kind).toBe("dockerfile");
-    const result = planSandboxCase({
-      evalId: "img",
-      environment: source,
-      spec: dockerSpec(),
-    });
-    expect(result.status).toBe("capability-missing");
-    if (result.status !== "capability-missing") return;
-    expect(result.sourceKind).toBe("dockerfile");
+    for (const spec of [dockerSpec(), e2bSandbox()]) {
+      const result = planSandboxCase({ evalId: "img", environment: source, spec });
+      expect(result.status).toBe("ready");
+      if (result.status !== "ready") continue;
+      expect(result.plan).toMatchObject({ caseKind: "on-demand-build", sourceKind: "dockerfile", via: "builtin" });
+    }
   });
 });
 

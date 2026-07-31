@@ -200,7 +200,8 @@ eval 文件的字节只作废它自己, 而一个被 30 条 eval 引用的 helpe
 
 - agent CLI 从 v1.2 升到 v1.3
 - 被测服务改了行为、重启了、换了一个实例
-- 同名镜像重建、`Dockerfile` 改了
+- 同名的外部预建镜像被原地重建
+- 受管的按需构建例外：`Dockerfile`、过滤后的 context、build args 或 target 改动会改变 BuildKey 与指纹
 - agent 的 system prompt 改了(它不在实验文件里)
 
 这时旧的绿掩盖的可能是真实回归。

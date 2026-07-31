@@ -42,6 +42,7 @@ const ALLOWED = new Set([
   "LC_ALL",
   "LC_MESSAGES",
   "LANG",
+  "COLUMNS",
   // 进程自身的环境(整袋透传给子进程 / 沙箱,不是读某个具体配置)
   "HOME",
   "PATH",

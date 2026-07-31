@@ -1050,7 +1050,11 @@ describe("runAttemptEffect · attempt 级诊断进反馈流的 code 与 phase", 
     }
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.data).toEqual({ origin: { scope: "attempt" as const, phase: "eval.setup" }, indexAgeDays: 12 });
+    expect(seen[0]!.data).toEqual({
+      phase: "eval.setup",
+      origin: { scope: "attempt" as const, phase: "eval.setup" },
+      indexAgeDays: 12,
+    });
   });
 });
 

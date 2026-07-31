@@ -31,6 +31,8 @@ export interface BuildKeyInput {
   readonly contextDigest: string;
   /** 非敏感、已解析的 build args。 */
   readonly buildArgs?: Readonly<globalThis.Record<string, string>>;
+  /** 多阶段 Dockerfile 的目标 stage；省略表示最终 stage。 */
+  readonly target?: string;
   /** FROM 解析后的 digest。 */
   readonly fromDigest: string;
   /** materializer 生成的 filtered context 规则自身进 BuildKey。 */
@@ -96,6 +98,7 @@ export function computeBuildKey(input: BuildKeyInput): BuildKey {
     dockerfile: digestBytes(input.dockerfile),
     contextDigest: input.contextDigest,
     buildArgs: input.buildArgs ?? {},
+    ...(input.target !== undefined ? { target: input.target } : {}),
     fromDigest: input.fromDigest,
     ...(input.contextFilterRules !== undefined ? { contextFilterRules: input.contextFilterRules } : {}),
   });

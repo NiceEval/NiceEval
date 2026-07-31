@@ -1169,6 +1169,8 @@ export interface FailureDetail {
   assertion?: PrimaryAssertionSummary;
   /** 仅 errored 使用：结构化执行错误发生时所在的阶段。failed 是断言 outcome，不带 phase。 */
   phase?: LifecyclePhase;
+  /** 完整时间归属；attempt 形态同时投影上面的 phase，run 形态保留共享 timing node。 */
+  origin?: TimingOrigin;
 }
 
 /** 带发生时间的失败通知；复用失败以 FailureDetail 静态进入 plan，不伪装成刚发生的事件。 */
@@ -1382,6 +1384,7 @@ export type DurableFeedbackEvent =
       reason: string;
       assertion?: PrimaryAssertionSummary;
       phase?: LifecyclePhase;
+      origin?: TimingOrigin;
     }
   | {
       type: "diagnostic";

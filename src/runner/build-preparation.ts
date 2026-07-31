@@ -5,6 +5,12 @@ import { dirname } from "node:path";
 import { planSandboxCase, type PlannedSandboxCase } from "../sandbox/case.ts";
 import { composeBuildWorksFromPlan, dockerComposeBuildProvider } from "../sandbox/compose.ts";
 import type { SandboxBuildProvider, SandboxBuildWork } from "../sandbox/build-coordinator.ts";
+import {
+  collectDockerfileBuildFromPlan,
+  dockerfileBuildProvider,
+  routeBuildProviders,
+  type DockerfileBuildCollection,
+} from "../sandbox/dockerfile-build.ts";
 import type { BuildKey } from "../sandbox/identity.ts";
 import type { DiscoveredEval, SandboxOption } from "../types.ts";
 import { selectedEvalsForRun } from "./eval-selection.ts";
@@ -40,6 +46,7 @@ export async function collectBuildPreparation(opts: {
   let composeBaseDir: string | undefined;
   let composeEnv: Readonly<globalThis.Record<string, string>> | undefined;
   let hasComposeWorks = false;
+  const dockerfileCollections: DockerfileBuildCollection[] = [];
 
   for (const run of opts.agentRuns) {
     if (run.agent.kind !== "sandbox") continue;
@@ -60,8 +67,22 @@ export async function collectBuildPreparation(opts: {
       if (planned.status !== "ready") continue;
 
       plans.set(evalDef.id, planned.plan);
-      caseKeys.set(evalDef.id, planned.plan.caseKey);
+      if (planned.plan.caseKind === "on-demand-build") {
+        const collection = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
+        if (collection === undefined) {
+          caseKeys.set(evalDef.id, planned.plan.caseKey);
+          continue;
+        }
+        dockerfileCollections.push(collection);
+        caseKeys.set(evalDef.id, collection.caseKey);
+        if (!worksByKey.has(collection.buildKey)) worksByKey.set(collection.buildKey, collection.work);
+        const keys = evalBuildKeys.get(evalDef.id) ?? [];
+        if (!keys.includes(collection.buildKey)) keys.push(collection.buildKey);
+        evalBuildKeys.set(evalDef.id, keys);
+        continue;
+      }
 
+      caseKeys.set(evalDef.id, planned.plan.caseKey);
       if (planned.plan.caseKind !== "compose" && planned.plan.caseKind !== "cloud-compose") {
         continue;
       }
@@ -101,14 +122,13 @@ export async function collectBuildPreparation(opts: {
     };
   }
 
-  const provider =
-    opts.provider ??
-    (hasComposeWorks
-      ? dockerComposeBuildProvider({
-          baseDir: opts.providerBaseDir ?? composeBaseDir ?? process.cwd(),
-          ...(composeEnv !== undefined ? { env: composeEnv } : {}),
-        })
-      : noopBuildProvider());
+  const provider = opts.provider ?? providerForCollectedBuilds({
+    works: [...worksByKey.values()],
+    dockerfileCollections,
+    hasComposeWorks,
+    composeBaseDir: opts.providerBaseDir ?? composeBaseDir ?? process.cwd(),
+    composeEnv,
+  });
 
   return {
     works: [...worksByKey.values()],
@@ -117,6 +137,30 @@ export async function collectBuildPreparation(opts: {
     caseKeys,
     plans,
   };
+}
+
+function providerForCollectedBuilds(opts: {
+  readonly works: readonly SandboxBuildWork[];
+  readonly dockerfileCollections: readonly DockerfileBuildCollection[];
+  readonly hasComposeWorks: boolean;
+  readonly composeBaseDir: string;
+  readonly composeEnv?: Readonly<globalThis.Record<string, string>>;
+}): SandboxBuildProvider {
+  const routes = new Map<BuildKey, SandboxBuildProvider>();
+  if (opts.dockerfileCollections.length > 0) {
+    const provider = dockerfileBuildProvider(opts.dockerfileCollections);
+    for (const collection of opts.dockerfileCollections) routes.set(collection.buildKey, provider);
+  }
+  if (opts.hasComposeWorks) {
+    const provider = dockerComposeBuildProvider({
+      baseDir: opts.composeBaseDir,
+      ...(opts.composeEnv !== undefined ? { env: opts.composeEnv } : {}),
+    });
+    for (const work of opts.works) {
+      if (!routes.has(work.buildKey)) routes.set(work.buildKey, provider);
+    }
+  }
+  return routes.size > 0 ? routeBuildProviders(routes) : noopBuildProvider();
 }
 
 /** 把收集结果压成 RunOptions.buildPreparation(works 为空时仍可只带 caseKeys 经旁路下发)。 */

@@ -126,7 +126,8 @@ export interface DockerComposeDecl {
 export type E2BEnvironmentCase =
   | { readonly template: string; readonly build?: undefined }
   | {
-      readonly build: DockerBuildDecl;
+      /** E2B Template API 只接收 context + Dockerfile，不虚构 Docker CLI 的 args/target。 */
+      readonly build: Pick<DockerBuildDecl, "context" | "dockerfile">;
       readonly template?: undefined;
     };
 

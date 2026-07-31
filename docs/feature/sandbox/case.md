@@ -49,7 +49,10 @@ Runner、评分与报告不按 provider 名分支;需要逐服务采证或控制
    eval 目录路径同时生成 eval id 与默认 profile id,不要求再去中央表手抄一遍。
 
 两种写法在 SandboxSpec 上各有一个入口。
-`environments` 表按 profile 名映射完整 case;`materializers` 表按 source kind(如 `compose`、`dockerfile`)注册把 folder-local 声明转成 SandboxCase 的 materializer。
+`environments` 表按 profile 名映射完整 case;`materializers` 表按 source kind 注册 provider 需要显式提供的 folder-local 实现。
+单 Dockerfile 的输入与输出已经标准化，Docker 与 E2B 直接支持 `dockerfileSandbox()`，不要求作者再登记一层空壳 materializer；Compose 等完整编排仍由 `materializers.compose` 显式声明。
+
+E2B 的原生 Template API 只接收 build context 与 Dockerfile，因此 E2B 的 build 声明只开放这两个字段；Docker provider 额外开放 build args 与 target stage，不在公共类型里承诺 provider 无法兑现的选项。
 同一 profile 两处都命中时,显式 `environments` 表项优先——这就是 provider 用预建产物覆盖按需构建的口子。
 内部都归一成「稳定 profile + provider-specific SandboxCase」,Runner 不按写法分支。
 
@@ -128,6 +131,7 @@ BuildKey
  + Dockerfile bytes
  + .dockerignore 求值后的 build context 内容
  + build args 的非敏感解析值
+ + 多阶段 Dockerfile 的 target stage
  + FROM 解析后的 digest
 ```
 

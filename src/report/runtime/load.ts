@@ -6,7 +6,8 @@
 // memory/view-hot-reload-needs-namespace-import.md。
 
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, join, parse, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { register } from "tsx/esm/api";
 import { isReportDefinition, type ReportDefinition } from "../definition/report.ts";
@@ -26,15 +27,38 @@ export interface LoadReportOptions {
 let freshGeneration = 0;
 let freshChain: Promise<unknown> = Promise.resolve();
 
+/** 报告按自身所在项目解释 JSX/paths，而不是继承启动 niceeval 的 cwd。 */
+function nearestTsconfig(file: string): string | undefined {
+  let dir = dirname(file);
+  const root = parse(dir).root;
+  for (;;) {
+    const candidate = join(dir, "tsconfig.json");
+    if (existsSync(candidate)) return candidate;
+    if (dir === root) return undefined;
+    dir = dirname(dir);
+  }
+}
+
 /**
  * tsx namespaced register:整棵子图新实例。与 src/fresh-import.ts 同原语;
  * 本文件进 dist/report 编译单元,不能相对 import 那份源码,逻辑并行维护。
  * 并发 register 会死锁,串行化。
  */
-async function freshImport(abs: string): Promise<{ default?: unknown }> {
+async function projectImport(abs: string, fresh: boolean): Promise<{ default?: unknown }> {
   const run = async (): Promise<{ default?: unknown }> => {
-    const ns = register({ namespace: `niceeval-view-${++freshGeneration}` });
+    const tsconfig = nearestTsconfig(abs);
+    const ns = register({
+      namespace: fresh
+        ? `niceeval-report-fresh-${++freshGeneration}`
+        : `niceeval-report-${createHash("sha256").update(abs).digest("hex").slice(0, 16)}`,
+      ...(tsconfig !== undefined ? { tsconfig } : {}),
+    });
     const url = pathToFileURL(abs).href;
+    // 某些宿主（尤其已经装了自己的 TS loader 的进程）会先把外部 TSX 按 classic JSX
+    // 编译。报告契约不要求作者 import React；而 render 回调在 import 结束后才执行，所以
+    // runtime 必须在整个报告宿主进程内可见，不能只在装载窗口临时挂上。
+    const globals = globalThis as typeof globalThis & { React?: unknown };
+    globals.React ??= await import("react");
     try {
       return (await ns.import(url, url)) as { default?: unknown };
     } finally {
@@ -63,7 +87,9 @@ export async function loadReportFile(
   const plain = pathToFileURL(abs);
   let mod: { default?: unknown };
   try {
-    mod = options?.freshImport ? await freshImport(abs) : ((await import(plain.href)) as { default?: unknown });
+    // 普通 show 也走文件所属项目的 tsconfig；freshImport 只表达宿主是否期望重载，
+    // scoped namespace 本身已令入口及项目内子图获得独立身份。
+    mod = await projectImport(abs, options?.freshImport === true);
   } catch (e) {
     // 个别装载环境(如 vitest 的 vite-node)不认 namespaced register;
     // 退化为普通 import(失去变更重载,不失去功能)。仍失败才是真错误。
@@ -108,7 +134,7 @@ export async function loadThemeFile(cwd: string, path: string, options?: LoadRep
   const plain = pathToFileURL(abs);
   let mod: { default?: unknown };
   try {
-    mod = options?.freshImport ? await freshImport(abs) : ((await import(plain.href)) as { default?: unknown });
+    mod = await projectImport(abs, options?.freshImport === true);
   } catch (e) {
     if (options?.freshImport) {
       try {

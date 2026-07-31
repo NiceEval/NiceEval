@@ -151,6 +151,13 @@ function clampWidth(columns: number | undefined): number {
   return Math.max(40, Math.min(columns as number, 160));
 }
 
+/** 显式 COLUMNS 在管道/CI 中仍是作者给出的排版宽度，优先于 TTY 探测。 */
+function outputWidth(injected: number | undefined): number {
+  if (injected !== undefined) return clampWidth(injected);
+  const declared = Number.parseInt(process.env["COLUMNS"] ?? "", 10);
+  return clampWidth(Number.isFinite(declared) && declared > 0 ? declared : process.stdout.columns);
+}
+
 // --report 的装载住在 ../report/runtime/host.ts(两个宿主共用的中性联系面);规范化本身是
 // `defineReport` 自己的职责,不在宿主层重复。
 export { loadHostReport, localizeText } from "../report/runtime/host.ts";
@@ -686,7 +693,7 @@ export async function runShow(
     await show(cwd, patterns, flags, {
       out,
       err,
-      width: clampWidth(io.width ?? process.stdout.columns),
+      width: outputWidth(io.width),
       now: io.now ?? Date.now(),
       panelMode: io.panelMode ?? detectPanelMode(),
     });

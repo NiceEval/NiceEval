@@ -18,7 +18,7 @@ import type { TraceReceiver } from "./receiver.ts";
 import { makeTraceReceiver } from "./receiver.ts";
 
 export interface TurnSpans {
-  /** 本轮生成的 traceId(供 attempt 末尾 sweep 迟到 span)。 */
+  /** traceparent 命中时是本轮生成值；窗口归属时是实际 span 的 traceId，供 timing 直接挂树。 */
   traceId: string;
   /** 归属到本轮的 span。 */
   spans: TraceSpan[];
@@ -67,7 +67,11 @@ export class AgentOtelChannel {
         attribution = "window";
       }
       for (const s of spans) this.consumed.add(s.spanId);
-      return { result, traceId, spans, attribution };
+      // 窗口归属证明的是“这批新 span 属于本轮”，并不证明应用采用了我们生成的
+      // traceparent。把合成 id 写进 turn 会导致 timing 永远匹配不到实际 span；单 trace
+      // 窗口直接记录真实 id，多 trace 的其余部分仍由 eval.run leftovers 如实保留。
+      const attributedTraceId = attribution === "window" && spans[0] !== undefined ? spans[0].traceId : traceId;
+      return { result, traceId: attributedTraceId, spans, attribution };
     };
 
     if (this.confirmed) return exec();

@@ -19,7 +19,7 @@ import { keptEntryId, updateKeptEntry, writeKeptEntry } from "../sandbox/keep-re
 import { agentInstallIdentityInput } from "../agents/provisioner.ts";
 import { createTraceReceiver, type TraceReceiver } from "../o11y/otlp/receiver.ts";
 import { createInSandboxTraceReceiver } from "../o11y/otlp/sandbox-receiver.ts";
-import type { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
+import { AgentOtelChannel } from "../o11y/otlp/turn-otel.ts";
 import { selectTraceSpans, enrichTraceWithIO } from "../o11y/otlp/select.ts";
 import { mapGenericSpans } from "../o11y/otlp/mappers/index.ts";
 import { createEvalContext } from "../context/context.ts";
@@ -292,6 +292,7 @@ export function runAttemptEffect(
     // `key` 只管折叠到多细(作者没给 dedupeKey 时折到「这一条 attempt 的这种诊断」,身份因此
     // 编进去);对外稳定词法始终单独给 `code`,不让消费方从 key 反推(见 sink.ts 的
     // DiagnosticInput.code、docs/feature/experiments/cli.md 的 WarningEvent)。
+    const { origin: _authorOrigin, phase: _authorPhase, ...diagnosticData } = input.data ?? {};
     reportDiagnostic({
       key: input.dedupeKey ?? `${input.code}:${encodeAttemptKey(identity)}`,
       code: input.code,
@@ -303,7 +304,7 @@ export function runAttemptEffect(
       // 作者的 `data` 是开放词表,让它盖住这个字段等于允许从 eval / adapter 代码里冒充一个
       // 别的(甚至不在闭集里的)阶段,消费方按 phase 分支就此失效——与 ScopedFeedback
       // 「两个方法都不接受 phase」是同一条纪律(见 src/shared/types.ts 的接口注释)。
-      data: { ...input.data, phase },
+      data: { ...diagnosticData, phase, origin: attemptOrigin(phase) },
     });
   };
   // 作用域反馈:progress 走 attempt:progress(短命状态,归因由 runner 的当前阶段决定),
@@ -447,6 +448,7 @@ export function runAttemptEffect(
                         sandbox: sandboxSpec,
                         provisionSlot,
                         ...(attemptTimeout ? { timeout: attemptTimeout.timeoutMs } : {}),
+                        ...(deadlineAt !== undefined ? { deadlineAt } : {}),
                         runtime: "node24",
                         feedback: scopedFeedback,
                         keepRequested: opts.keepSandbox !== undefined,
@@ -552,6 +554,13 @@ export function runAttemptEffect(
           const proto = run.agent.tracing?.protocol;
           log(t("runner.otlpInSandbox", { endpoint, proto: proto ? ` (${proto})` : "" }));
         }
+      }
+
+      // attempt-scope 的进程内 adapter（如 aiSdkAgent + aiSdkOtel）虽然拥有独立 receiver，
+      // 仍需要逐轮窗口归属来给 TimingActivity 写入真实 traceId。独立 receiver 不会与其它
+      // attempt 混流，因此直接复用同一个 AgentOtelChannel 算法，不必升级成 run 级共享池。
+      if (run.agent.kind !== "sandbox" && receiver !== undefined && otelChannel === undefined) {
+        otelChannel = new AgentOtelChannel(receiver);
       }
 
       if (run.agent.kind === "sandbox" && !reusedSandbox) {

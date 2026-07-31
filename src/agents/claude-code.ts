@@ -46,7 +46,7 @@ const RESERVED_SETTINGS_KEYS = ["model", "env"] as const;
  */
 export interface ClaudeCodePluginSpec {
   marketplace: {
-    /** Marketplace 在 Claude Code 配置中的连接名(`claude plugin install <plugin>@<name>` 里的那个名字)。 */
+    /** 目标仓库 manifest 声明的真实 name；CLI 不支持由调用方另取连接别名。 */
     name: string;
     /** Marketplace 来源:GitHub `owner/repo`、Git URL 或路径。 */
     source: string;

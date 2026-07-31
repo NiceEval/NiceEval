@@ -840,7 +840,10 @@ async function main(): Promise<void> {
       fresh: flags.fresh,
       json: flags.json,
     });
-    process.exit(code);
+    // show 的 JSON 常被管给 jq/python。直接 process.exit 会丢弃 pipe 中尚未 flush 的
+    // stdout（典型截在 128 KiB）；交给事件循环自然收尾。
+    process.exitCode = code;
+    return;
   }
 
   if (command === "clean") {

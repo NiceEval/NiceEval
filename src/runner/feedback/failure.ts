@@ -37,7 +37,8 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     : assertion
       ? compactAssertionSummary(assertion)
       : summaryText(firstLine(result.error?.message ?? result.verdict));
-  const phase = result.verdict === "errored" ? (result.error?.origin.scope === "attempt" ? result.error.origin.phase : undefined) : undefined;
+  const origin = result.verdict === "errored" ? result.error?.origin : undefined;
+  const phase = origin?.scope === "attempt" ? origin.phase : undefined;
 
   return {
     locator,
@@ -47,5 +48,6 @@ export function failureDetailFromResult(result: EvalResult): FailureDetail | und
     reason,
     ...(assertion !== undefined ? { assertion } : {}),
     ...(phase !== undefined ? { phase } : {}),
+    ...(origin !== undefined ? { origin } : {}),
   };
 }

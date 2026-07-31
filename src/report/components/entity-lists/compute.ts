@@ -45,7 +45,7 @@ export function failureSummaryOf(result: EvalResult): { summary: string | null; 
   if (result.verdict === "errored" && result.error !== undefined) {
     // message 取首行:多行 message 的后续行(diagnose 的 output tail)是下钻证据,折进
     // 单行摘要会把 traceback 碎片挤满 Result 单元格;summaryText 只管折行与截断,分层归这里。
-    const parts = [(result.error.origin.scope === "attempt" ? result.error.origin.phase : undefined), result.error.code, firstLine(result.error.message)].filter(
+    const parts = [(result.error.origin?.scope === "attempt" ? result.error.origin.phase : undefined), result.error.code, firstLine(result.error.message)].filter(
       (part): part is string => typeof part === "string" && part.length > 0,
     );
     return { summary: summaryText(parts.join(" · ")), more: 0 };

@@ -1,7 +1,7 @@
 // 指纹缓存:用 (eval 源码 + 运行配置) 的稳定哈希标识一次 attempt 的输入。
 // 上次 passed 且指纹未变的 (experimentId, evalId) 组合可以直接携入,不再重跑。
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
@@ -45,7 +45,7 @@ export async function computeFingerprint(
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  overrides?: { configHash?: string; sandbox?: SandboxRunInfo },
+  overrides?: { configHash?: string; sandbox?: SandboxRunInfo; carryEpoch?: string },
 ): Promise<string> {
   return (await fingerprintWithManifest(evalDef, run, sourceCache, configSandbox, overrides)).fingerprint;
 }
@@ -63,7 +63,7 @@ export async function fingerprintWithManifest(
   run: AgentRun,
   sourceCache?: Map<string, Promise<string>>,
   configSandbox?: SandboxOption,
-  overrides?: { configHash?: string; sandbox?: SandboxRunInfo },
+  overrides?: { configHash?: string; sandbox?: SandboxRunInfo; carryEpoch?: string },
 ): Promise<{ fingerprint: string; manifest: EvalManifest }> {
   const identity = configIdentityForRun(run, configSandbox);
   const configHash = overrides?.configHash ?? hashConfigIdentity(identity);
@@ -83,7 +83,7 @@ export async function fingerprintWithManifest(
     [...(evalDef.privatePaths ?? [])].sort().map(async (path) => [relative(process.cwd(), path), await cachedContentHash(path, sourceCache)]),
   );
   const sandboxSpec = sandboxForEval(run, evalDef, configSandbox);
-  const caseIdentity = sandboxCaseIdentityForEval(evalDef, sandboxSpec);
+  const caseIdentity = await resolvedSandboxCaseIdentityForEval(evalDef, sandboxSpec);
   const payload = {
     configHash,
     source,
@@ -95,6 +95,9 @@ export async function fingerprintWithManifest(
     },
     sandbox: overrides?.sandbox ?? sandboxRunInfo(sandboxSpec),
     ...(caseIdentity !== undefined ? { sandboxCase: caseIdentity } : {}),
+    ...(caseIdentity?.carryEligible === false
+      ? { sandboxCarryEpoch: overrides?.carryEpoch ?? randomUUID() }
+      : {}),
     loaderData,
     // 没登记判据树的 eval 完全不带这个键:空数组也会改变 payload 的字节,让所有存量结果
     // 一次性作废,而它们的判据面本来什么都没变。
@@ -417,6 +420,9 @@ export async function planCarry(
   // 组合,与 plannedFingerprints 的 key 语义一致。
   const plannedTimeoutMs = new Map<string, number>();
   const acceptable = new Map<string, Set<string>>();
+  // 同一次携带规划内保持稳定；下一次 Invocation 必然变化，使无法解析 FROM digest 的环境
+  // 永不命中历史指纹，同时不妨碍本次 fresh result 使用同一个计划指纹落盘。
+  const carryEpoch = randomUUID();
   // key → 这个组合的 (run, evalDef);下面三趟(反事实重算、携带判定、逐条原因)都按 key 取回
   // 同一对,不再各自 find 一遍。
   const entries = new Map<string, { run: AgentRun; evalDef: DiscoveredEval; identity: ConfigIdentity }>();
@@ -432,7 +438,7 @@ export async function planCarry(
       plannedTimeoutMs.set(key, resolvedTimeoutMsForCarry(run, evalDef, configTimeoutMs));
       jobs.push(
         (async () => {
-          const { fingerprint: fp, manifest } = await fingerprintWithManifest(evalDef, run, sourceCache, configSandbox);
+          const { fingerprint: fp, manifest } = await fingerprintWithManifest(evalDef, run, sourceCache, configSandbox, { carryEpoch });
           plannedFingerprints.set(key, fp);
           manifestsByKey.set(key, manifest);
           acceptable.set(key, new Set([fp]));
@@ -504,6 +510,7 @@ export async function planCarry(
         const sandboxRolledBack = counterfactual.sandbox !== identity.sandbox;
         const fp = await computeFingerprint(evalDef, run, sourceCache, configSandbox, {
           configHash: hashConfigIdentity(counterfactual),
+          carryEpoch,
           ...(sandboxRolledBack ? { sandbox: historicalSandboxForEval(prior, prior.id) } : {}),
         });
         acceptable.get(key)!.add(fp);
@@ -633,6 +640,38 @@ export function sandboxCaseIdentityForEval(
     caseKey: planned.plan.caseKey,
     buildKeys: planned.plan.buildKeys,
     identity: planned.plan.identity,
+  };
+}
+
+/** 指纹路径把按需构建的真实 context/Dockerfile 内容折进 CaseKey；同步 helper 只服务纯规划检查。 */
+async function resolvedSandboxCaseIdentityForEval(
+  evalDef: DiscoveredEval,
+  sandboxSpec: SandboxOption | undefined,
+): Promise<{ caseKey: string; buildKeys: readonly string[]; identity: JsonValue; carryEligible: boolean } | undefined> {
+  if (sandboxSpec === undefined) return undefined;
+  const planned = planSandboxCase({
+    evalId: evalDef.id,
+    environment: evalDef.environment,
+    ...(evalDef.defaultProfileId !== undefined ? { defaultProfileId: evalDef.defaultProfileId } : {}),
+    spec: sandboxSpec,
+  });
+  if (planned.status !== "ready") return undefined;
+  if (planned.plan.caseKind !== "on-demand-build") {
+    return {
+      caseKey: planned.plan.caseKey,
+      buildKeys: planned.plan.buildKeys,
+      identity: planned.plan.identity,
+      carryEligible: planned.plan.carryEligible,
+    };
+  }
+  const { collectDockerfileBuildFromPlan } = await import("../sandbox/dockerfile-build.ts");
+  const collected = await collectDockerfileBuildFromPlan(planned.plan, { baseDir: evalDef.baseDir });
+  if (collected === undefined) return undefined;
+  return {
+    caseKey: collected.caseKey,
+    buildKeys: [collected.buildKey],
+    identity: planned.plan.identity,
+    carryEligible: collected.carryEligible,
   };
 }
 
