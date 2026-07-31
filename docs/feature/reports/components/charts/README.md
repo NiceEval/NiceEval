@@ -96,6 +96,29 @@ text 面恒用横向排行条，保留分类标签、格式化终值与覆盖率
 
 组合图仍只消费同一份 points，不重新聚合。
 
+## 点击目标
+
+图表原语不决定「点开去哪」。
+每种图接受一个目标函数，由放图的上层供给语义：
+
+```tsx
+<Scatter
+  points={performance}
+  x="costUSD"
+  y="passRate"
+  point="experiment"
+  pointTarget={(row) => ({
+    page: "experiment",
+    params: { experiment: row.experiment },
+  })}
+/>
+```
+
+省略 `pointTarget` 时按 [`targetOfRefs()`](../../library.md#目标与下钻) 默认规则：行级 refs 恰好一个才成为 attempt 目标，多 refs 不猜。
+目标经宿主 `ctx.href()` 换 URL；宿主服务不了的目标是纯图形点，不生成假链接。
+`external` 图表没有 refs，也没有 `pointTarget` 属性。
+原语的属性与实现里没有实体词，attempt、experiment 只出现在上层供给的目标值里。
+
 ## 值域与方向
 
 MetricValue 的 `better` 决定“更好”朝右或朝上；未声明时不猜方向。

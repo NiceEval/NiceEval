@@ -10,7 +10,8 @@
 1. 报告首页：摘要、质量—成本散点与 Experiment 列表。
 2. Attempts：当前 Sample 的 Attempt 列表。
 3. Traces：当前 Sample 的执行时间树。
-4. Attempt：`input: "attempt"`、`navigation: false` 的参数化详情页。
+4. Attempt：按 locator 参数化、`navigation: false` 的详情页。
+5. Experiment：按 experiment id 参数化、`navigation: false` 的详情页。
 
 首页先用公开任务函数计算结果，再把同一份值交给图和表。
 质量—成本前沿是首页旁的普通数组算法，不是公共数据源或 Calculation。
@@ -26,6 +27,7 @@ standardOverviewPage;
 standardAttemptsPage;
 standardTracesPage;
 standardAttemptPage;
+standardExperimentPage;
 ```
 
 作者可以把官方 page 放进自己的静态 `pages` 数组：

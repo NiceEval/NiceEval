@@ -1,3 +1,4 @@
+import { applyCommandDeadline } from "../sandbox/deadline.ts";
 import { createSandboxInstance, resolveSandbox, sandboxReuseCapability } from "../sandbox/resolve.ts";
 import { stopSandbox } from "../sandbox/registry.ts";
 import type { Sandbox, SandboxHookContext, SandboxOption, SandboxReuseCapability, ScopedFeedback } from "../types.ts";
@@ -47,6 +48,15 @@ export class ReusableSandboxPool {
    */
   async acquire(attemptDeadlineMs: number | undefined): Promise<ReusableSandboxLease> {
     const minRemainingMs = (attemptDeadlineMs ?? 0) + CLEANUP_RESERVE_MS;
+    /**
+     * 借出期内单条命令的上限从这条线派生(`undefined` = 四层都没声明上限,照旧不发明一条线)。
+     * 实例活得比 attempt 长,所以这条线必须**每次借出重设**——只在 create 时给一次的话,
+     * 第二条 attempt 起就落回 provider SDK 的默认值(e2b 是 60 秒),实验声明的 timeoutMs
+     * 完全不生效(见 sandbox/deadline.ts 的 `SandboxCommandDeadline`)。
+     * 用 minRemainingMs 而不是 attemptDeadlineMs:归还时的分类账复位跑在同一条线下,
+     * 不至于一还回来就撞一条已经过期的线。
+     */
+    const leaseDeadlineAt = attemptDeadlineMs === undefined ? undefined : () => Date.now() + minRemainingMs;
     for (;;) {
       if (this.stopped) throw new Error("sandbox reuse pool has been stopped");
       const ready = this.entries.find((entry) => !entry.busy && !entry.dead);
@@ -54,16 +64,16 @@ export class ReusableSandboxPool {
         // 派发前确认:请求足以覆盖 Attempt deadline 与收尾预留的寿命。不 ready 就停掉这台、
         // 交给下一轮创建替代实例(替代实例在 create 里再确认一次,还不行就报错,不反复重建)。
         const lifetime = await ready.lifetime.ensureLifetime(minRemainingMs);
-        if (lifetime.ready) return this.lease(ready);
+        if (lifetime.ready) return this.lease(ready, leaseDeadlineAt?.());
         await this.retire(ready);
         continue;
       }
       if (this.entries.length + this.creating < this.capacity) {
         this.creating += 1;
         try {
-          const entry = await this.create(minRemainingMs);
+          const entry = await this.create(minRemainingMs, leaseDeadlineAt?.());
           this.entries.push(entry);
-          return this.lease(entry);
+          return this.lease(entry, leaseDeadlineAt?.());
         } finally {
           this.creating -= 1;
           this.wake();
@@ -79,9 +89,11 @@ export class ReusableSandboxPool {
     await Promise.allSettled([...this.entries].map((entry) => this.retire(entry)));
   }
 
-  private async create(minRemainingMs: number): Promise<Entry> {
+  private async create(minRemainingMs: number, deadlineAt: number | undefined): Promise<Entry> {
     const resolved = resolveSandbox(this.spec);
-    const sandbox = await createSandboxInstance({ sandbox: this.spec, feedback: this.feedback });
+    // 创建期跑的也是真命令(SandboxSpec setup 钩子、分类账锚点):不把 deadline 传下去,
+    // 它们就按 provider SDK 的默认上限跑——装依赖那种分钟级的 setup 必挂在 e2b 的 60 秒上。
+    const sandbox = await createSandboxInstance({ sandbox: this.spec, feedback: this.feedback, deadlineAt });
     // 能力只能来自 provider 实现:探不到就硬失败,没有通用记账兜底(见
     // docs/feature/sandbox/reuse.md「派发前确认」)。
     const lifetime = sandboxReuseCapability(sandbox);
@@ -128,9 +140,10 @@ export class ReusableSandboxPool {
     }
   }
 
-  private lease(entry: Entry): ReusableSandboxLease {
+  private lease(entry: Entry, deadlineAt: number | undefined): ReusableSandboxLease {
     entry.busy = true;
     entry.ordinal += 1;
+    applyCommandDeadline(entry.sandbox, deadlineAt);
     return {
       sandbox: entry.sandbox,
       reuseSandbox: entry.reuseSandbox,

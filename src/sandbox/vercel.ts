@@ -71,6 +71,11 @@ export class VercelSandbox implements Sandbox, SandboxReuseCapability {
     this.runtime = runtime;
   }
 
+  /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
+  setCommandDeadline(deadlineAt?: number): void {
+    this.deadlineAt = deadlineAt;
+  }
+
   static async create(
     opts: {
       timeout?: number;

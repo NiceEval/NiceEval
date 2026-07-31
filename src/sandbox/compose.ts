@@ -31,6 +31,7 @@ import type {
 import type { PlannedSandboxCase } from "./case.ts";
 import { DockerSandbox } from "./docker.ts";
 import { computeBuildKey, type BuildKey } from "./identity.ts";
+import { currentRunIdentity, dockerRunIdentityLabels, type RunIdentity } from "./run-identity.ts";
 import type { CommandResult } from "./types.ts";
 import type { ScopedFeedback } from "../types.ts";
 
@@ -38,6 +39,73 @@ import type { ScopedFeedback } from "../types.ts";
 export const COMPOSE_MATERIALIZER_REVISION = "docker-compose-1";
 
 const BUILDER_KIND = "docker-compose";
+
+// ---------------------------------------------------------------------------
+// 目标平台:构建事实(case.md「BuildKey 与 CaseKey」)
+// ---------------------------------------------------------------------------
+
+/** 构建器传平台用的环境变量;探测值与钉死值都经它进入 builder。 */
+const DOCKER_PLATFORM_ENV = "DOCKER_DEFAULT_PLATFORM";
+
+/** 归一成 `os/arch`:daemon 与 Node 各有各的写法(aarch64 / x86_64 / arm64 / x64)。 */
+export function normalizeBuildPlatform(value: string): string {
+  const [rawOs, rawArch] = value.trim().toLowerCase().split("/");
+  const os = rawOs && rawArch ? rawOs : "linux";
+  const arch = rawArch ?? rawOs ?? "";
+  const normalizedArch =
+    arch === "x86_64" || arch === "x64" || arch === "amd64"
+      ? "amd64"
+      : arch === "aarch64" || arch === "arm64"
+        ? "arm64"
+        : arch;
+  return `${os}/${normalizedArch}`;
+}
+
+let dockerPlatformProbe: Promise<string> | undefined;
+
+/**
+ * 目标平台从构建执行环境得出:优先用户钉死的 `DOCKER_DEFAULT_PLATFORM`,
+ * 其次 daemon 自报的 os/arch,都拿不到才回落到宿主架构(容器恒为 linux)。
+ * 探测结果进 BuildKey,同一个值再钉给构建器,身份与事实同源。
+ */
+export async function detectDockerBuildPlatform(opts?: {
+  readonly env?: NodeJS.ProcessEnv;
+  /** 注入探测通道(测试用);默认问本机 docker daemon。 */
+  readonly probe?: () => Promise<string | undefined>;
+}): Promise<string> {
+  const env = opts?.env ?? process.env;
+  const pinned = env[DOCKER_PLATFORM_ENV];
+  if (pinned) return normalizeBuildPlatform(pinned);
+  if (opts?.probe) {
+    const probed = await opts.probe();
+    return normalizeBuildPlatform(probed ?? hostBuildPlatform());
+  }
+  dockerPlatformProbe ??= probeDockerServerPlatform().then((probed) =>
+    normalizeBuildPlatform(probed ?? hostBuildPlatform()),
+  );
+  return dockerPlatformProbe;
+}
+
+function hostBuildPlatform(): string {
+  return `linux/${process.arch}`;
+}
+
+function probeDockerServerPlatform(): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const child = spawn("docker", ["version", "--format", "{{.Server.Os}}/{{.Server.Arch}}"], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    let out = "";
+    child.stdout?.on("data", (c: Buffer) => {
+      out += c.toString();
+    });
+    child.on("error", () => resolve(undefined));
+    child.on("close", (code) => {
+      const value = out.trim();
+      resolve(code === 0 && value.includes("/") ? value : undefined);
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Compose 结构面(只为黑名单 / BuildKey / 泄题门抽取字段;不是白名单运行时)
@@ -62,6 +130,8 @@ export interface ComposeServiceInspection {
 
 export interface ComposeInspection {
   readonly services: readonly ComposeServiceInspection[];
+  /** 受管网络名:服务实际加入的非 external 网络;没有任何服务声明网络时是 Compose 的 `default`。 */
+  readonly networkNames: readonly string[];
   readonly raw: string;
 }
 
@@ -70,7 +140,7 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
   const doc = parseYamlMapping(raw);
   const servicesNode = doc.services;
   if (servicesNode === undefined || servicesNode === null || typeof servicesNode !== "object" || Array.isArray(servicesNode)) {
-    return { services: [], raw };
+    return { services: [], networkNames: [], raw };
   }
   const services: ComposeServiceInspection[] = [];
   for (const [name, value] of Object.entries(servicesNode as globalThis.Record<string, unknown>)) {
@@ -96,7 +166,41 @@ export function inspectComposeYaml(raw: string): ComposeInspection {
       volumes: volumeStrings(svc.volumes),
     });
   }
-  return { services, raw };
+  return { services, networkNames: managedNetworkNames(doc, servicesNode as globalThis.Record<string, unknown>), raw };
+}
+
+/**
+ * 受管网络名。Compose 给容器和网络都打 `com.docker.compose.project`,孤儿核对靠它把资源组拼回来;
+ * 网络那一半要能被单独核对,必须在创建期就带上运行标识 label,而 label 只能加在这些名字上。
+ * `external: true` 的网络是用户自己的资源,不改它的 label、也不进受管清单。
+ */
+function managedNetworkNames(
+  doc: globalThis.Record<string, YamlNode>,
+  servicesNode: globalThis.Record<string, unknown>,
+): string[] {
+  const external = new Set<string>();
+  const top = doc.networks;
+  if (top !== undefined && top !== null && typeof top === "object" && !Array.isArray(top)) {
+    for (const [name, value] of Object.entries(top as globalThis.Record<string, unknown>)) {
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        const net = value as globalThis.Record<string, unknown>;
+        if (net.external === true || net.external === "true") external.add(name);
+      }
+    }
+  }
+  const used = new Set<string>();
+  for (const value of Object.values(servicesNode)) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+    const nets = (value as globalThis.Record<string, unknown>).networks;
+    if (Array.isArray(nets)) {
+      for (const n of nets) if (typeof n === "string") used.add(n);
+    } else if (nets !== null && typeof nets === "object") {
+      for (const n of Object.keys(nets as globalThis.Record<string, unknown>)) used.add(n);
+    }
+  }
+  const managed = [...used].filter((n) => !external.has(n));
+  // 没有服务显式声明网络时,Compose 建的是 project 的 default 网络。
+  return managed.length > 0 ? managed : used.size > 0 ? [] : ["default"];
 }
 
 function parseBuild(value: unknown): ComposeBuildDecl | undefined {
@@ -339,6 +443,8 @@ export interface ComposeBuildCollection {
   readonly inspection: ComposeInspection;
   /** service → 解析中的 image 引用(无 build 的服务);digest 留给协调器/物化期填写。 */
   readonly imageRefs: Readonly<globalThis.Record<string, string>>;
+  /** 本次进 BuildKey 的目标平台;构建执行拿同一个值。 */
+  readonly platform: string;
 }
 
 /** 从 Compose 声明收集 BuildKey 与协调器 works(仅有 `build:` 的服务)。 */
@@ -346,8 +452,11 @@ export async function collectComposeBuilds(opts: {
   readonly file: string | URL;
   readonly mainService: string;
   readonly baseDir?: string;
+  /** 显式钉死目标平台;省略时从构建执行环境探测。 */
   readonly platform?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
+  /** 注入平台探测通道(测试用)。 */
+  readonly platformProbe?: () => Promise<string | undefined>;
 }): Promise<ComposeBuildCollection> {
   const { hints, inspection, composePath } = await leakGateHintsFromComposeFile(opts.file, {
     mainService: opts.mainService,
@@ -355,7 +464,11 @@ export async function collectComposeBuilds(opts: {
   });
   const composeBytes = inspection.raw;
   const composeDir = dirname(composePath);
-  const platform = opts.platform ?? "linux/amd64";
+  // 目标平台是构建事实:硬编码一个默认值会让 arm64 宿主构出 arm64 镜像却按 amd64 记身份
+  // (台账见 memory/buildkey-platform-declared-not-enforced.md)。
+  const platform = opts.platform
+    ? normalizeBuildPlatform(opts.platform)
+    : await detectDockerBuildPlatform(opts.platformProbe ? { probe: opts.platformProbe } : undefined);
   const works: SandboxBuildWork[] = [];
   const buildKeys: BuildKey[] = [];
   const imageRefs: globalThis.Record<string, string> = {};
@@ -398,6 +511,8 @@ export async function collectComposeBuilds(opts: {
       inputs: {
         service: svc.name,
         composeFile: composePath,
+        // 进 BuildKey 的那个平台原样交给构建执行,provenance 里也留下这次构出的是哪种架构。
+        platform,
         context: svc.build.context,
         ...(svc.build.dockerfile !== undefined ? { dockerfile: svc.build.dockerfile } : {}),
         ...(svc.build.args !== undefined ? { args: svc.build.args } : {}),
@@ -418,6 +533,7 @@ export async function collectComposeBuilds(opts: {
     composePath,
     inspection,
     imageRefs,
+    platform,
   };
 }
 
@@ -483,7 +599,10 @@ function extractFromDigestHint(dockerfile: string): string | undefined {
 export function dockerComposeBuildProvider(opts?: {
   readonly baseDir?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
+  /** 注入 compose CLI(测试用)。 */
+  readonly runCompose?: typeof runDockerCompose;
 }): SandboxBuildProvider {
+  const runCompose = opts?.runCompose ?? runDockerCompose;
   return {
     async lookup(work) {
       const tag = composeBuildTag(work.buildKey);
@@ -507,17 +626,21 @@ export function dockerComposeBuildProvider(opts?: {
       // cwd 必须跟 compose 文件走,不能用 Run 级「最后一个 eval」的 baseDir。
       const cwd = dirname(composeFile);
       const tag = composeBuildTag(work.buildKey);
-      await runDockerCompose(
+      // 平台钉给 builder:BuildKey 里写的架构就是这次真正构出来的架构。
+      const platform = typeof inputs.platform === "string" ? inputs.platform : undefined;
+      const buildEnv =
+        platform !== undefined ? { ...composeEnv, [DOCKER_PLATFORM_ENV]: platform } : composeEnv;
+      await runCompose(
         ["-f", composeFile, "build", "--build-arg", `NICEEVAL_BUILD_KEY=${work.buildKey}`, service],
         {
           cwd,
-          env: composeEnv,
+          env: buildEnv,
           signal: ctx.signal,
           timing: ctx,
         },
       );
       // 构建产物以 service 镜像为准;再打 BuildKey tag 便于 lookup。
-      const imageId = await composeServiceImageId(composeFile, service, cwd, composeEnv);
+      const imageId = await composeServiceImageId(composeFile, service, cwd, composeEnv, runCompose);
       if (imageId) await dockerTag(imageId, tag);
       return tag;
     },
@@ -568,6 +691,38 @@ export function buildComposeOverlay(opts: {
   return { yaml: `${lines.join("\n")}\n`, projectName };
 }
 
+/**
+ * 运行标识 overlay:把 `host` / `pid` / `startedAt` 打到本组的每个服务与每个受管网络上,
+ * 让强杀后残留的整组资源(含主容器已消失、只剩网络的情形)能被孤儿核对认领
+ * (契约见 docs/feature/sandbox/architecture.md「孤儿核对」)。
+ *
+ * 与受管 overlay 分成两份文件是因为它逐次运行都不同(pid、时刻),混进受管 overlay 会让
+ * caseKey 每次都变、携带与缓存全部失效——caseKey 只按受管 overlay 的字节算。
+ */
+export function buildComposeIdentityOverlay(opts: {
+  readonly identity: RunIdentity;
+  readonly serviceNames: readonly string[];
+  readonly networkNames: readonly string[];
+}): string {
+  const labels = dockerRunIdentityLabels(opts.identity);
+  const labelLines = (indent: string) =>
+    Object.entries(labels).map(([k, v]) => `${indent}${k}: ${JSON.stringify(v)}`);
+  const lines: string[] = [];
+  if (opts.serviceNames.length > 0) {
+    lines.push("services:");
+    for (const name of opts.serviceNames) {
+      lines.push(`  ${name}:`, `    labels:`, ...labelLines("      "));
+    }
+  }
+  if (opts.networkNames.length > 0) {
+    lines.push("networks:");
+    for (const name of opts.networkNames) {
+      lines.push(`  ${name}:`, `    labels:`, ...labelLines("      "));
+    }
+  }
+  return lines.length > 0 ? `${lines.join("\n")}\n` : "";
+}
+
 export interface MaterializeComposeOpts {
   readonly ctx: SandboxMaterializeContext;
   readonly timeout?: number;
@@ -615,9 +770,24 @@ export async function materializeDockerComposeCase(
   const overlayPath = join(overlayDir, "niceeval.overlay.yaml");
   await writeFile(overlayPath, overlay.yaml, "utf-8");
 
-  const composeFiles = [collection.composePath, overlayPath];
+  const identityYaml = buildComposeIdentityOverlay({
+    identity: currentRunIdentity(),
+    serviceNames: collection.inspection.services.map((s) => s.name),
+    networkNames: collection.inspection.networkNames,
+  });
+  const identityPath = join(overlayDir, "niceeval.identity.yaml");
+  if (identityYaml !== "") await writeFile(identityPath, identityYaml, "utf-8");
+
+  const composeFiles =
+    identityYaml !== "" ? [collection.composePath, overlayPath, identityPath] : [collection.composePath, overlayPath];
   const cwd = dirname(collection.composePath);
-  const env = { ...process.env, ...decl.env, COMPOSE_PROJECT_NAME: overlay.projectName };
+  // 平台与 BuildKey 同源:物化期这次 compose build 构出的架构必须与身份里写的一致。
+  const env = {
+    ...process.env,
+    ...decl.env,
+    COMPOSE_PROJECT_NAME: overlay.projectName,
+    [DOCKER_PLATFORM_ENV]: collection.platform,
+  };
   const runCompose = opts._testHooks?.runCompose ?? runDockerCompose;
 
   let finalized = false;
@@ -951,8 +1121,9 @@ async function composeServiceImageId(
   service: string,
   cwd: string,
   env?: Readonly<globalThis.Record<string, string>>,
+  runCompose: typeof runDockerCompose = runDockerCompose,
 ): Promise<string | undefined> {
-  const result = await runDockerCompose(["-f", composeFile, "images", "-q", service], {
+  const result = await runCompose(["-f", composeFile, "images", "-q", service], {
     cwd,
     env: { ...process.env, ...env },
     allowNonZero: true,

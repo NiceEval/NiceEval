@@ -5,7 +5,7 @@
 // 这里只测 host facade 仍然私有的编排:内建报告分流与 LocalizedText 回退。
 
 import { describe, expect, it } from "vitest";
-import { HostReportError, loadHostReport, localizeText } from "./host.ts";
+import { describeReportSource, HostReportError, loadHostReport, localizeText } from "./host.ts";
 // dist-sourced:裸宿主装载的就是这份预编译产物的默认导出(show 与 view 同一条路),
 // raw-src import 会是另一份模块实例,引用等同断言必须对着 dist。
 import distBuiltInReport from "../../../dist/report/built-in/index.js";
@@ -25,6 +25,24 @@ describe("裸宿主装载内建报告", () => {
     // loadHostReport 对文件路径委托 dist 里的 loadReportFile;这里只验证分流本身发生
     // (文件装载错误的具体文案由 src/report/runtime/load.ts 自己的测试覆盖)。
     await expect(loadHostReport(process.cwd(), "does/not/exist.tsx")).rejects.toThrow();
+  });
+});
+
+describe("报告出处标签与取值链同档", () => {
+  const configured = distBuiltInReport as Parameters<typeof describeReportSource>[1];
+
+  it("--report 在场点名它的取值", () => {
+    expect(describeReportSource("reports/site.tsx", configured)).toContain("--report reports/site.tsx");
+  });
+
+  it("只有 config.report 时点名配置文件的 report 字段,不说内建", () => {
+    const label = describeReportSource(undefined, configured);
+    expect(label).toContain("niceeval.config.ts");
+    expect(label).not.toContain("built-in");
+  });
+
+  it("两档都没有才说内建", () => {
+    expect(describeReportSource(undefined, undefined)).toBe("the built-in report");
   });
 });
 

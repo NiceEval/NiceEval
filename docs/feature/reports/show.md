@@ -22,7 +22,7 @@ niceeval show                              # 默认报告首页：默认报告 +
 niceeval show memory/swelancer             # 按 eval id 前缀收窄
 niceeval show @1qrdcfq8                    # 打开一个 attempt 的诊断首页
 niceeval show @1qrdcfq8 --report reports/site.tsx
-                                             # 渲染自定义 attempt-input page 的 text 面
+                                             # 渲染自定义 attempt 详情页的 text 面
 niceeval show @1qrdcfq8 --source           # 断言标回 eval 源码
 niceeval show @1qrdcfq8 --execution        # 对话与工具调用；可关联时附 OTel 时间
 niceeval show @1qrdcfq8 --execution --expand t2.c3
@@ -96,7 +96,7 @@ niceeval show --report standard        # 内建视图名，回到默认报告
 值按形态判别：含 `/`、以 `.` 开头或带 `.ts` / `.tsx` / `.js` / `.mjs` 后缀的当报告文件路径，其余不含路径的名称查[内建视图名](library/built-in.md)（当前只有 `standard`），不含路径的名称未命中就列出可用名字并提示文件要写成 `./reports/site.tsx`。
 不带 `--report` 时装载项目配置的 `report` 字段，没配则装载内建 `standard`（[三档取值链](README.md#项目默认报告)）。
 
-无证据 flag 的 `show @<locator> --report <file>` 选择其中唯一的 attempt-input page，注入 locator 对应的 evidence 并渲染 text 面；`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。
+无证据 flag 的 `show @<locator> --report <file>` 选择其中 id 为 `attempt` 的参数化页，经它的 `load` 装载 locator 对应的 evidence 并渲染 text 面；`--source`、`--execution`、`--timing`、`--usage`、`--diff` 仍各自装配对应的报告组件区块并渲染其 text 面，不经 `--report` 传入的 page 声明（[组件归属](architecture.md#show-的切片是组件选择)）。
 `--report` 与 `--json` 互斥：报告树表达「怎么看」，`--json` 输出「是什么」；要自定义结构，先 `--json` 拿事实再自己加工，或直接消费 [`niceeval/record` 读取面](../record/library.md)。
 
 ## 无匹配与不可读结果

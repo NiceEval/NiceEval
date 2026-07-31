@@ -43,6 +43,7 @@ import { attemptHistory, attemptHistoryHandles } from "./compose.ts";
 import { attemptJsonOf, buildShowScope, renderShowJson, type ShowJsonView } from "./json.ts";
 import {
   buildHostReportMeta,
+  describeReportSource,
   HostReportError,
   loadHostReport,
   renderHostPageText,
@@ -903,11 +904,13 @@ async function show(
     const report = await loadHostReport(cwd, flags.report, flags.configReport);
     const attemptPage = report.pages.find((p) => p.input === "attempt");
     if (attemptPage === undefined) {
-      const sourceLabel = flags.report ?? "the built-in report";
+      const sourceLabel = describeReportSource(flags.report, flags.configReport);
       throw new ShowError(
         `error: ${sourceLabel} has no attempt-input page — "${locatorArg}" cannot be opened without one. ` +
-          `Add one: use \`extends: standard\` (inherits its attempt page), import { standardAttemptPage } from ` +
-          `"niceeval/report/built-in" and add it to your pages list, or declare your own \`input: "attempt"\` page.\n`,
+          `Read this attempt right now with \`niceeval show ${locatorArg} --report standard\` (or \`--json\`). ` +
+          `To open it in this report, add an attempt page: use \`extends: standard\` (inherits its attempt page), ` +
+          `import { standardAttemptPage } from "niceeval/report/built-in" and add it to your pages list, ` +
+          `or declare your own \`input: "attempt"\` page.\n`,
       );
     }
     const locale = detectLocale();

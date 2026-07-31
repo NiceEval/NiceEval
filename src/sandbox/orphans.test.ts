@@ -5,13 +5,25 @@
 // 失败退出码(单台失败列出继续处理其余,不因一台失败中止整批)。mock dockerode / e2b,不发
 // 真实请求——真实 provider 行为归 E2E(../../docs/engineering/testing/e2e/README.md)。
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hostname } from "node:os";
 
 const dockerListContainersMock = vi.fn();
+const dockerListNetworksMock = vi.fn();
+const dockerRemoveContainerMock = vi.fn();
+const dockerRemoveNetworkMock = vi.fn();
 class FakeDocker {
   listContainers(...args: unknown[]) {
     return dockerListContainersMock(...args);
+  }
+  listNetworks(...args: unknown[]) {
+    return dockerListNetworksMock(...args);
+  }
+  getContainer(id: string) {
+    return { remove: (opts: unknown) => dockerRemoveContainerMock(id, opts) };
+  }
+  getNetwork(id: string) {
+    return { remove: () => dockerRemoveNetworkMock(id) };
   }
 }
 vi.mock("dockerode", () => ({ default: FakeDocker }));
@@ -38,8 +50,18 @@ function fakePaginator(items: unknown[]) {
   };
 }
 
+beforeEach(() => {
+  // 多数用例只关心容器那一半;网络查询默认返回空集合,由 Compose 组的用例显式覆盖。
+  dockerListNetworksMock.mockResolvedValue([]);
+  dockerRemoveContainerMock.mockResolvedValue(undefined);
+  dockerRemoveNetworkMock.mockResolvedValue(undefined);
+});
+
 afterEach(() => {
   dockerListContainersMock.mockReset();
+  dockerListNetworksMock.mockReset();
+  dockerRemoveContainerMock.mockReset();
+  dockerRemoveNetworkMock.mockReset();
   e2bListMock.mockReset();
   destroyDetachedMock.mockReset();
 });
@@ -193,6 +215,175 @@ describe("listOrphanCandidates: 孤儿核对(docker + e2b)", () => {
 
     const { listOrphanCandidates } = await import("./orphans.ts");
     await expect(listOrphanCandidates(new Set())).resolves.toEqual([]);
+  });
+});
+
+describe("资源组:Compose case 的伴随容器与网络整组核对、整组销毁", () => {
+  const PROJECT = "ne-tb-net-a1b2c3";
+  const DEAD = { "niceeval.host": hostname(), "niceeval.pid": String(deadPid()), "niceeval.started-at": "2026-07-31T09:00:00.000Z" };
+
+  it("识别 label:受管 overlay 把运行标识写到组内每个服务与每个受管网络上", async () => {
+    const { buildComposeIdentityOverlay } = await import("./compose.ts");
+    const yaml = buildComposeIdentityOverlay({
+      identity: { host: "mbp", pid: 4242, startedAt: "2026-07-31T09:00:00.000Z" },
+      serviceNames: ["client", "program"],
+      networkNames: ["default"],
+    });
+    expect(yaml).toContain("services:");
+    expect(yaml).toContain("  client:");
+    expect(yaml).toContain("  program:");
+    expect(yaml).toContain("networks:");
+    expect(yaml).toContain("  default:");
+    // 网络那一半必须自带标识,否则主容器消失后没有任何可核对的归属。
+    expect(yaml.slice(yaml.indexOf("networks:"))).toContain('niceeval.pid: "4242"');
+    expect(yaml.match(/niceeval\.host: "mbp"/g)).toHaveLength(3);
+  });
+
+  it("受管网络名:服务未声明网络时是 default;external 网络不进受管清单", async () => {
+    const { inspectComposeYaml } = await import("./compose.ts");
+    expect(inspectComposeYaml("services:\n  a:\n    image: alpine\n").networkNames).toEqual(["default"]);
+    expect(
+      inspectComposeYaml("services:\n  a:\n    image: alpine\n    networks:\n      - lan\nnetworks:\n  lan:\n    external: true\n")
+        .networkNames,
+    ).toEqual([]);
+    expect(
+      inspectComposeYaml("services:\n  a:\n    image: alpine\n    networks:\n      - lan\nnetworks:\n  lan:\n    driver: bridge\n")
+        .networkNames,
+    ).toEqual(["lan"]);
+  });
+
+  it("整组列出:主容器 + sidecar + 网络合成一条候选,不逐容器单列", async () => {
+    dockerListContainersMock.mockResolvedValue([
+      { Id: "main11111111aaaa", Labels: { ...DEAD, "com.docker.compose.project": PROJECT, "niceeval.main-service": "true" } },
+      { Id: "side22222222bbbb", Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    dockerListNetworksMock.mockResolvedValue([
+      { Id: "net1", Name: `${PROJECT}_default`, Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    e2bListMock.mockReturnValue(fakePaginator([]));
+
+    const { listOrphanCandidates } = await import("./orphans.ts");
+    const candidates = await listOrphanCandidates(new Set());
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      provider: "docker",
+      sandboxId: "main11111111", // 主服务容器代表整组
+      state: "orphan",
+      resources: {
+        kind: "docker-compose",
+        projectName: PROJECT,
+        containerIds: ["main11111111", "side22222222"],
+        networkIds: ["net1"],
+        networkNames: [`${PROJECT}_default`],
+      },
+    });
+  });
+
+  it("主实例已消失、只剩网络残留:仍被列出,并被 prune 收回", async () => {
+    dockerListContainersMock.mockResolvedValue([]);
+    dockerListNetworksMock.mockResolvedValue([
+      { Id: "net1", Name: `${PROJECT}_default`, Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+      { Id: "net2", Name: `${PROJECT}_lan`, Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    e2bListMock.mockReturnValue(fakePaginator([]));
+
+    const { listOrphanCandidates, pruneOrphans } = await import("./orphans.ts");
+    const candidates = await listOrphanCandidates(new Set());
+    expect(candidates).toHaveLength(1);
+    // 没有容器可当主键时退回 project 名,组照样有身份、有状态。
+    expect(candidates[0]).toMatchObject({ sandboxId: PROJECT, state: "orphan", resources: { containerIds: [], networkIds: ["net1", "net2"] } });
+
+    const outcome = await pruneOrphans(new Set(), false);
+    expect(outcome.pruned).toHaveLength(1);
+    expect(outcome.failed).toEqual([]);
+    expect(dockerRemoveNetworkMock.mock.calls.map(([id]) => id)).toEqual(["net1", "net2"]);
+    expect(destroyDetachedMock).not.toHaveBeenCalled();
+  });
+
+  it("整组销毁:先删组内容器再删网络,不走单实例 destroyDetached", async () => {
+    dockerListContainersMock.mockResolvedValue([
+      { Id: "main11111111aaaa", Labels: { ...DEAD, "com.docker.compose.project": PROJECT, "niceeval.main-service": "true" } },
+      { Id: "side22222222bbbb", Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    dockerListNetworksMock.mockResolvedValue([
+      { Id: "net1", Name: `${PROJECT}_default`, Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    e2bListMock.mockReturnValue(fakePaginator([]));
+    const order: string[] = [];
+    dockerRemoveContainerMock.mockImplementation(async (id: string) => void order.push(`container:${id}`));
+    dockerRemoveNetworkMock.mockImplementation(async (id: string) => void order.push(`network:${id}`));
+
+    const { pruneOrphans } = await import("./orphans.ts");
+    const outcome = await pruneOrphans(new Set(), false);
+
+    expect(outcome.pruned).toHaveLength(1);
+    // 网络还挂着容器时 daemon 拒绝删除,顺序不能反。
+    expect(order).toEqual(["container:main11111111", "container:side22222222", "network:net1"]);
+    expect(dockerRemoveContainerMock).toHaveBeenCalledWith("main11111111", { force: true, v: true });
+    expect(destroyDetachedMock).not.toHaveBeenCalled();
+  });
+
+  it("组内任一容器已在留存注册表:整组免动", async () => {
+    dockerListContainersMock.mockResolvedValue([
+      { Id: "main11111111aaaa", Labels: { ...DEAD, "com.docker.compose.project": PROJECT, "niceeval.main-service": "true" } },
+      { Id: "side22222222bbbb", Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    dockerListNetworksMock.mockResolvedValue([
+      { Id: "net1", Name: `${PROJECT}_default`, Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    e2bListMock.mockReturnValue(fakePaginator([]));
+
+    const { pruneOrphans } = await import("./orphans.ts");
+    const outcome = await pruneOrphans(new Set(["main11111111"]), true);
+
+    expect(outcome.pruned).toEqual([]);
+    expect(dockerRemoveContainerMock).not.toHaveBeenCalled();
+    expect(dockerRemoveNetworkMock).not.toHaveBeenCalled();
+  });
+
+  it("属主 run 还活着的资源组整组不出现在列表里", async () => {
+    dockerListContainersMock.mockResolvedValue([
+      { Id: "main11111111aaaa", Labels: { "niceeval.host": hostname(), "niceeval.pid": String(process.pid), "niceeval.started-at": "t", "com.docker.compose.project": PROJECT, "niceeval.main-service": "true" } },
+    ]);
+    dockerListNetworksMock.mockResolvedValue([
+      { Id: "net1", Name: `${PROJECT}_default`, Labels: { "niceeval.host": hostname(), "niceeval.pid": String(process.pid), "niceeval.started-at": "t", "com.docker.compose.project": PROJECT } },
+    ]);
+    e2bListMock.mockReturnValue(fakePaginator([]));
+
+    const { listOrphanCandidates } = await import("./orphans.ts");
+    await expect(listOrphanCandidates(new Set(), () => "alive")).resolves.toEqual([]);
+  });
+
+  it("整组销毁幂等:资源已不存在(404)算已完成,不记失败", async () => {
+    dockerListContainersMock.mockResolvedValue([
+      { Id: "main11111111aaaa", Labels: { ...DEAD, "com.docker.compose.project": PROJECT, "niceeval.main-service": "true" } },
+    ]);
+    dockerListNetworksMock.mockResolvedValue([
+      { Id: "net1", Name: `${PROJECT}_default`, Labels: { ...DEAD, "com.docker.compose.project": PROJECT } },
+    ]);
+    e2bListMock.mockReturnValue(fakePaginator([]));
+    dockerRemoveContainerMock.mockRejectedValue(Object.assign(new Error("no such container"), { statusCode: 404 }));
+    dockerRemoveNetworkMock.mockRejectedValue(Object.assign(new Error("network not found"), { statusCode: 404 }));
+
+    const { pruneOrphans } = await import("./orphans.ts");
+    const outcome = await pruneOrphans(new Set(), false);
+
+    expect(outcome.pruned).toHaveLength(1);
+    expect(outcome.failed).toEqual([]);
+  });
+
+  it("网络查询失败(老 daemon)时容器那一半照常核对", async () => {
+    dockerListContainersMock.mockResolvedValue([
+      { Id: "main11111111aaaa", Labels: { ...DEAD, "com.docker.compose.project": PROJECT, "niceeval.main-service": "true" } },
+    ]);
+    dockerListNetworksMock.mockRejectedValue(new Error("filters not supported"));
+    e2bListMock.mockReturnValue(fakePaginator([]));
+
+    const { listOrphanCandidates } = await import("./orphans.ts");
+    const candidates = await listOrphanCandidates(new Set());
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]!.resources).toMatchObject({ containerIds: ["main11111111"], networkIds: [] });
   });
 });
 

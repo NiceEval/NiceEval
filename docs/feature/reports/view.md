@@ -1,14 +1,14 @@
 # `niceeval view` —— 在浏览器读结果
 
 `niceeval view` 把记录根呈现为本地网页：可见内容来自装载报告的 pages。
-装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](README.md#项目默认报告)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加一张不进导航的 attempt-input page。
-自定义报告没有声明 attempt-input page 时，view 隐式使用官方 `AttemptDetails` page，保证官方组件里的 locator 仍可下钻；显式声明则覆盖它。
-view 只拥有 page / locator 寻址、导航与 dialog 摆放，不拥有另一套详情区块。
+装载哪一份按 `--report` → 项目配置的 `report` 字段 → 内建 `standard` 的[三档取值链](README.md#项目默认报告)决定；两处都没有时是[内建报告](library/built-in.md)的报告、Attempts、追踪三张导航页，加 `attempt` 与 `experiment` 两张不进导航的参数化页。
+自定义报告没有声明同 id 页时，view 用内建 `standard` 的参数化页按 id 补位，保证官方组件交出的[目标](library.md#目标与下钻)仍可下钻；显式声明则覆盖它。
+view 只拥有目标寻址、导航与 dialog 摆放，不拥有另一套详情区块。
 它不依赖外部服务。
 
 本地模式与静态导出共用**同一条站点管线**：管线的输入是记录根加可选收窄（位置参数 / `--exp`）。
 收窄把根滤成只含匹配实验与 attempt 的**有效根**。
-管线把每张 sample-input page 按界面语言渲染成一块报告 HTML，再为每个可达 locator 把显式或隐式的 attempt-input page 物化为 `attempt/<locator>.html`。
+管线把每张导航页按界面语言渲染成一块报告 HTML，再为每张参数化页按 `params.enumerate(有效根)` 把每个实例物化为 `<pageId>/<key>.html`。
 `index.html` 是承载报告块的外壳，`artifact/` 携带前端会读取的证据文件。
 宿主不携带 page 的取数或布局知识。
 
@@ -17,7 +17,7 @@ view 只拥有 page / locator 寻址、导航与 dialog 摆放，不拥有另一
 每一次重建都是同一条管线的完整重跑，页面上换掉的那一块是重建后的新产物，不是对旧产物的差分。
 
 **本地看到的就是发出去的，量的是块，不是文件布局。**
-同一输入下，同一页同一语言的那块报告 HTML 在两个宿主下逐字节一致，`attempt/`、`assets/` 与 `artifact/` 同路径逐字节一致。
+同一输入下，同一页同一语言的那块报告 HTML 在两个宿主下逐字节一致，参数化页文档、`assets/` 与 `artifact/` 同路径逐字节一致。
 报告块住在哪个文件里按宿主能力分：
 
 | 宿主 | 报告块的投递 | 为什么 |
@@ -50,10 +50,10 @@ niceeval view --theme ./themes/acme.ts # 换一份主题，不动报告文件
 本地 server 只监听 `127.0.0.1`。
 默认让操作系统随机分配端口；`--port <n>` 指定首选端口，被占用时从 n 起向上顺延最多 20 个，全被占用才报错。
 
-不带选项的 `niceeval view` 默认把记录根中的完整 Sample 交给 sample-input pages。
+不带选项的 `niceeval view` 默认把记录根中的完整 Sample 作为各页 `load` 的 base。
 `--exp` 按 experiment id 路径收窄，位置参数按 eval id 前缀收窄；两者可组合取交集。
 `--fresh` 注入只含新执行 attempt 的 [`fresh` 口径](../sample/library.md#时效新执行与历史执行)，被排除的题按覆盖事实转为占位行。
-locator URL 选择报告中唯一的 attempt-input page，并从有效根把 locator 解析为一份 `AttemptEvidence` 注入它——收窄之内、即使不在现刻水位里的历史 attempt 也能打开；收窄之外的 attempt 不可达。
+目标 URL 按 `#/<pageId>/<key>` 选择对应参数化页，`key` 经该页 `params.decode` 还原参数后交给它的 `load` 求输入——attempt 页因此对收窄之内、即使不在现刻水位里的历史 attempt 也能打开；收窄之外的实例不可达。
 同一份收窄交给 `--out` 时决定出站内容。
 
 ## 持续重建
@@ -64,7 +64,7 @@ locator URL 选择报告中唯一的 attempt-input page，并从有效根把 loc
 - **一边跑一边看。**
   `niceeval exp` 每写完一个 attempt，页面上就多一行，不必反复重开命令。
 - **一边改报告一边看。**
-  改报告或组件文件存盘，浏览器里那一页就换成新样子，当前 tab、滚动位置与打开的 attempt dialog 都留在原处。
+  改报告或组件文件存盘，浏览器里那一页就换成新样子，当前 tab、滚动位置与打开的详情 dialog 都留在原处。
 
 ### 重建理由是一个闭集
 
@@ -141,8 +141,8 @@ locator URL 选择报告中唯一的 attempt-input page，并从有效根把 loc
 就地换内容保住的是**手上的位置**：翻到第 40 个 attempt、开着某条 trace 的 dialog、过滤条里打了字——改一行组件代码不该把这些清零。
 报告块内部的展开状态跟着新 HTML 走，内容本身换了，它的展开状态没有可继承的对应物。
 
-两档都保留当前路由（`#/page/<id>` 与 `#/attempt/@<locator>`）。
-正在看的 attempt 在重建后仍在有效根内就停在原处；被收窄之外的新数据不影响页面。
+两档都保留当前路由（`#/<pageId>` 与 `#/<pageId>/<key>`）。
+正在看的参数化页实例在重建后仍在有效根内就停在原处；被收窄之外的新数据不影响页面。
 
 与正在运行的实验的关系由记录格式担保，不靠 view 自己防抖：`result.json` 一次原子写成，站点只会看到已封口的 attempt，读不到半份记录。
 Run 尚未补写 `completedAt` 是这个场景的常态，按[未收尾 Run](../record/architecture.md#读取规则) 如实读出并产生读取期 Issue，不等收尾才显示。
@@ -162,30 +162,34 @@ Run 尚未补写 `completedAt` 是这个场景的常态，按[未收尾 Run](../
   `--report` 用自定义报告替换整份页面声明，配置的 `report` 字段把同一替换设为项目默认。
 - **Attempts 页（内建）：** `toAttemptRows(sample.attempts)` 把范围内所有 Attempt 投影成 rows，再交给带过滤的 `Table`。
 - **追踪页（内建）：** `toTraceNodes(sample)` 用 canonical OTel 字段产生执行时间树，再交给 `Waterfall`。
-- **Attempt 详情（内建第四张 page）：** `standard` 声明一张 `input: "attempt"`、`navigation: false` 的 [`AttemptDetails`](components/attempt-detail/README.md) page。
+- **Attempt 详情（内建参数化页）：** `standard` 声明 [`standardAttemptPage`](library.md#参数化页attempt-与-experiment-详情)，render 是 [`AttemptDetails`](components/attempt-detail/README.md)。
   它用公开组件装配判定、断言、修复 prompt、时间树、usage、对话、trace 和 diff。
   `AttemptAssessment` 内的`AttemptNotices` 统一解释 snapshot error 与 persisted diagnostics。
   用户可把 content 换成任意公开组合。
+- **Experiment 详情（内建参数化页）：** `standard` 声明 `standardExperimentPage`，render 是 [`ExperimentDetails`](components/experiment-detail/README.md)。
+  默认散点的实验点、层级表的实验行都以它为下钻目标。
 - **Copy fix prompt：** 批量修复 prompt 由[`SampleFixPrompt`](components/summaries/sample-fix-prompt.md) 提供；attempt 详情保留单条失败的复制入口。
 
-## attempt 详情的 dialog 摆放
+## 参数化页的 dialog 摆放
 
-locator 链接在浏览器里打开的是同一张 attempt-input page 的同一份 web 输出：基线链接直达 `attempt/<locator>.html`，增强脚本拦截后把那份内容放进 dialog，并把浏览状态写成 `#/attempt/@<locator>`。
-dialog 是摆放，不是第二套内容（区块与字段见 [详情的呈现](components/attempt-detail/presentation.md)）。
+目标链接在浏览器里打开的是对应参数化页的同一份 web 输出：基线链接直达 `<pageId>/<key>.html`，增强脚本拦截后把那份内容放进 dialog，并把浏览状态写成 `#/<pageId>/<key>`。
+拦截按报告清单里的参数化页 id 判定，宿主不认识具体实体；attempt 深链因此形如 `#/attempt/@<locator>`，experiment 深链形如 `#/experiment/<key>`。
+dialog 是摆放，不是第二套内容（attempt 页的区块与字段见 [详情的呈现](components/attempt-detail/presentation.md)）。
 
 宿主在这层只负责下面这些机器：
 
 | 行为 | 契约 |
 |---|---|
-| 打开 | 点击 locator 链接，或直接落在 `#/attempt/@<locator>` 深链上 |
+| 打开 | 点击目标链接，或直接落在 `#/<pageId>/<key>` 深链上 |
 | 关闭 | 关闭按钮、`Esc`、点击遮罩三条等价 |
 | 关闭后的地址 | 点链接打开的走一次后退，深链落地的原地抹掉 hash，不把读者弹出站外 |
 | 焦点 | 打开时焦点进入 dialog 并留在内部，关闭后回到原处 |
 | 滚动 | 宿主只给纵向滚动，且锁住背景页；横向滚动归组件自己（源码块整块横滚） |
-| 取不到内容 | 不开空 dialog；控制台说明哪个 locator 取不到 |
+| 嵌套下钻 | dialog 内的目标链接照常打开新 dialog（实验详情里点 attempt 即此路径） |
+| 取不到内容 | 不开空 dialog；控制台说明哪个目标取不到 |
 | 修饰键点击 | 放行浏览器原生行为，在新标签页打开那份独立文档 |
 
-内容宽度与最大高度由壳给定，页面内容不为弹窗换一套排版：同一个 locator 在独立文档里与在 dialog 里是同一份字节。
+内容宽度与最大高度由壳给定，页面内容不为弹窗换一套排版：同一个目标在独立文档里与在 dialog 里是同一份字节。
 无 JavaScript 时链接照常导航到独立文档，详情完整可读。
 
 ## 静态导出
@@ -207,8 +211,10 @@ niceeval view --record site-data/run --out site    # 对 publish 产出的发布
 ```text
 site/
 ├── index.html
-├── attempt/                 # 每个可达 locator 的详情文档；文件名是 URL 编码后的 locator
-│   └── <locator>.html       # 同一张 page 对一份 AttemptEvidence 的完整静态 web 面
+├── attempt/                 # 参数化页一页一个目录；文件名是 URL 编码后的 params.encode 产物
+│   └── <key>.html           # 该页对一个参数实例的完整静态 web 面（attempt 页的 key 就是 locator）
+├── experiment/
+│   └── <key>.html
 ├── assets/                  # 外壳 scripts / styles 的 {src} 资产与 head 标签的本地 src/href 资产，按内容哈希命名
 └── artifact/
     └── <run-path>/
@@ -225,12 +231,12 @@ site/
 携带条目的源码正文由复制管线归拢进本 Run 的`sources/`，静态站不需要原 Run 在场。
 这个存储去重机制与页面渲染路径无关：`toAnnotatedEvalSource(attempt)` 消费的源码已在 AttemptEvidence 中解引用，构建期直接写进对应 Attempt 页面的初始 HTML。
 
-多页报告仍只用一个 `index.html`：页面是 `#/page/<id>` 路由，托管方不需要为每页配置路径。
-attempt 不同：基线 locator 链接直接指向 `attempt/<locator>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/attempt/@<locator>`。
+多页报告仍只用一个 `index.html`：导航页是 `#/<pageId>` 路由，托管方不需要为每页配置路径。
+参数化页不同：基线目标链接直接指向 `<pageId>/<key>.html`，保证无 JavaScript 也能读完整详情；增强脚本拦截后才把同一文档内容放进 dialog，并把浏览状态写成 `#/<pageId>/<key>`。
 所有 HTML 都按自身相对位置生成 `assets/` / `artifact/` 引用，所以站点根、子目录、直接打开文件与常见 cleanUrls 托管都不断链。
 托管方把站点根暴露成无尾斜杠路径（`/showcase/memory` 直接服务 `index.html`，且带斜杠形态被 308 回无斜杠）时，浏览器按文档 URL 的**目录**解析相对引用会少一层——`index.html` 因此在 `<head>` 最前面落一个 `<base>`，把站点根写成目录形态，后续所有相对引用（attempt 链接、证据 fetch、head 资产标签）都按它解析：路径已是目录形态（`/`、`/sub/`）时不插入，末段带扩展名（`/out/index.html`、`file://` 直接打开）时取其目录。
 `index.html` 按构造恒是站点根，这条判定不需要托管方配置。
-attempt 文档住在真实的 `attempt/` 目录下，相对引用天然对齐，不参与这套归一。
+参数化页文档住在真实的 `<pageId>/` 目录下，相对引用天然对齐，不参与这套归一。
 `assets/` 只在外壳声明了本地资产（`scripts` / `styles` 的 `{src}`，或 `head` 标签 `attrs` 里的本地 `src` / `href`）时出现；资产按 `assets/<sha256><ext>` 写入并改写 HTML 引用，同内容且同扩展名的资产去重，不受源文件同名影响。
 `head` 里的外链（`http(s)://`）不进 `assets/`，原样落在标签上由读者浏览器加载。
 导出的站点会原样携带并在读者浏览器执行这些脚本，发布防呆不检查脚本内容。
@@ -283,14 +289,14 @@ niceeval view --report reports/site.tsx --page exam   # 指定初始页
 ```
 
 报告文件同时可被 `niceeval show --report` 使用。
-官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；view 注入静态详情链接与 dialog 路由，show 注入带完整 `--report` 上下文的 locator 命令。
+官方组件都有 web 和 text 两个渲染面，所以同一张 page 在浏览器和终端保持相同数据口径；同一个下钻目标，view 换成静态详情链接与 dialog 路由，show 换成带完整 `--report` 上下文的下钻命令。
 写法见 [Library](library.md#交给-show-view-渲染)。
 
-报告文件的默认导出恒为 `defineReport` 产物：树形态展开为单张 sample-input page；[配置对象形态](library/shell.md)声明外壳与 pages。
+报告文件的默认导出恒为 `defineReport` 产物：树形态展开为 id 为 `report` 的单张页；[配置对象形态](library/shell.md)声明外壳与 pages。
 写好的定义填进 `niceeval.config.ts` 的 `report` 字段，不带选项的 `niceeval view` 就默认装载它，团队里不必人人记住 `--report`（[项目默认报告](README.md#项目默认报告)）。
-view 只把 `navigation !== false` 的 pages 列进导航；sample-input page 读取 Sample，attempt-input page 按 locator 读取 `AttemptEvidence`。
-未声明 attempt-input page 时，view 用内建详情页补位，但不把它加入导航或改写报告定义。
-`--page <id>` 未命中或试图在没有 locator 时打开参数化 page，均按完整用户反馈报错。
+view 只把 `navigation !== false` 的 pages 列进导航；每张页的输入由它自己的 `load` 从 Sample 与 `PageLoadContext` 求出。
+未声明标准库同 id 参数化页时，view 按 id 补位内建页，但不把它加入导航或改写报告定义。
+`--page <id>` 未命中或试图在没有参数时打开参数化 page，均按完整用户反馈报错。
 
 内建首页的两个渲染面共享同一份实体与读数数据：web 面使用可排序的实验表，text 面使用紧凑列表；两面都直接消费完整 Sample，不设实验组选择器。
 端到端通过率、成本、耗时、Tokens、判定构成和证据引用来自同一份计算结果。

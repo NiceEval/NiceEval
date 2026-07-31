@@ -135,7 +135,27 @@ export interface TimingActivity {
   command?: {
     display: string;
     exitCode?: number;
+    /** 这条命令这次生效的时限与它来自哪一层;四层解析链一个上限都没声明时缺席。 */
+    limit?: CommandLimitAttribution;
   };
+}
+
+/**
+ * 一条命令生效的时限归属(词表单源在 docs/feature/sandbox/architecture.md
+ * 「时限归属:attempt deadline 是唯一默认」)。命令节点带着它,读者才不用靠「停在整 1m 0s」
+ * 这种巧合反推是谁掐断了命令。
+ */
+export interface CommandLimitAttribution {
+  /**
+   * 生效上限的来源层:`attempt-deadline` 是 attempt 自己的线(未显式传 `timeout` 的命令拿它的
+   * 剩余量),`command-timeout` 是用户给这条命令显式传的 `timeout`,`provider-limit` 是 provider
+   * 固有的会话上限——它在派发前就按环境约束报出来,attempt 层不会撞上,列在词表里是给读面认。
+   */
+  source: "attempt-deadline" | "command-timeout" | "provider-limit";
+  /** 该层对这条命令实际生效的上限,毫秒(attempt deadline 记的是命令开始时的剩余量)。 */
+  limitMs: number;
+  /** 这条命令正是撞上这条线才失败的(非零退出与传输失败都不是)。 */
+  timedOut?: true;
 }
 
 /**

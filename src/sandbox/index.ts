@@ -58,6 +58,7 @@ export {
 export {
   SANDBOX_BUILD_ACTIVITY,
   prepareSandboxBuilds,
+  startSandboxBuilds,
   buildFailureOrigin,
 } from "./build-coordinator.ts";
 export { createCheckpoint, restoreCheckpoint } from "./checkpoint.ts";

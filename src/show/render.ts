@@ -5,7 +5,7 @@
 // 盘上。全部纯函数(时间经 now 显式传入),证据数据由调用方 await 好了递进来。
 
 import { join, relative } from "node:path";
-import type { AssertionResult, EvalResult, FailedCommandEvidence, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
+import type { AssertionResult, CommandLimitAttribution, EvalResult, FailedCommandEvidence, LocalizedText, SandboxBuildRecord, TimingActivity, TraceSpan, Verdict } from "../types.ts";
 import type { AttemptEvidence, AttemptHandle, Run } from "../record/index.ts";
 import type { AnnotatedSourceLine, SendAnnotation } from "../record/index.ts";
 import { groupIncompatibleVersionSkips } from "../record/index.ts";
@@ -1002,7 +1002,21 @@ interface DiagnosticTimingActivity {
   durationMs: number;
   failed: boolean;
   otel: boolean;
+  /** 命令节点的时限归属(采集端写下的事实,renderer 只投影)。 */
+  limit?: CommandLimitAttribution;
   children: DiagnosticTimingActivity[];
+}
+
+/** 时限来源层的人读词(词表单源在 docs/feature/sandbox/architecture.md「时限归属」)。 */
+const TIMING_LIMIT_SOURCE_LABEL: Readonly<globalThis.Record<CommandLimitAttribution["source"], string>> = {
+  "attempt-deadline": "attempt deadline",
+  "command-timeout": "per-command timeout",
+  "provider-limit": "provider limit",
+};
+
+/** `deadline 1m 0s · per-command timeout`:生效的值 + 它来自哪一层,两样一起给。 */
+function timingLimitNote(limit: CommandLimitAttribution): string {
+  return `deadline ${formatDurationMs(limit.limitMs)} · ${TIMING_LIMIT_SOURCE_LABEL[limit.source]}`;
 }
 
 function timingNodeLabel(node: TimingActivity): string {
@@ -1071,6 +1085,7 @@ function diagnosticTimingActivity(
     durationMs: node.durationMs,
     failed: node.failed === true,
     otel: false,
+    ...(node.command?.limit !== undefined ? { limit: node.command.limit } : {}),
     children,
   };
 }
@@ -1182,11 +1197,16 @@ function visibleTimingEntries(
   return entries;
 }
 
+/**
+ * 一棵子树的行。时限归属两档:撞线失败的节点**在哪一档都**原位标注(读者不该靠「停在整
+ * 1m 0s」这种巧合反推是谁掐断了命令);`full` 档对全部带线的命令节点给出该字段。
+ */
 function diagnosticTimingLines(
   nodes: readonly DiagnosticTimingActivity[],
   prefix: string,
   selected: ReadonlySet<string> | undefined,
   locator: string,
+  full: boolean,
 ): string[] {
   const entries = visibleTimingEntries(nodes, selected);
   const lines: string[] = [];
@@ -1200,10 +1220,15 @@ function diagnosticTimingLines(
       return;
     }
     const node = entry.node;
+    const limitNote = node.limit?.timedOut
+      ? ` ${timingLimitNote(node.limit)}`
+      : full && node.limit
+        ? `  ${timingLimitNote(node.limit)}`
+        : "";
     lines.push(
-      `${branch}${node.label}   ${formatDurationMs(node.durationMs)}${node.failed ? " ✗" : ""}${node.otel ? "  OTel" : ""}`,
+      `${branch}${node.label}   ${formatDurationMs(node.durationMs)}${node.failed ? " ✗" : ""}${limitNote}${node.otel ? "  OTel" : ""}`,
     );
-    lines.push(...diagnosticTimingLines(node.children, childPrefix, selected, locator));
+    lines.push(...diagnosticTimingLines(node.children, childPrefix, selected, locator, full));
   });
   return lines;
 }
@@ -1254,7 +1279,7 @@ export function timingText(
   const renderPhase = (p: NonNullable<EvalResult["phases"]>[number]) => {
     const failedNote = p.failed ? ` ✗ failed here${r.error ? ` (${r.error.code})` : ""}` : "";
     lines.push(`${p.name.padEnd(22)}${formatDurationMs(p.durationMs)}${failedNote}`);
-    lines.push(...diagnosticTimingLines(phaseForests.get(p) ?? [], "  ", selected, evidence.locator));
+    lines.push(...diagnosticTimingLines(phaseForests.get(p) ?? [], "  ", selected, evidence.locator, opts.mode === "full"));
   };
   for (const p of main) renderPhase(p);
   if (closing.length > 0) {
@@ -1289,7 +1314,7 @@ export function runTimingText(
   const selected = opts.mode === "full" ? undefined : selectTimingActivitys(roots);
   const totalMs = timings.reduce((sum, node) => Math.max(sum, node.startOffsetMs + node.durationMs), 0);
   const lines: string[] = [`total ${formatDurationMs(totalMs)}`, ""];
-  lines.push(...diagnosticTimingLines(roots, "", selected, run.runId));
+  lines.push(...diagnosticTimingLines(roots, "", selected, run.runId, opts.mode === "full"));
 
   if (builds.length > 0) {
     lines.push("", "sandboxBuilds:");

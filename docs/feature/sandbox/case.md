@@ -130,6 +130,10 @@ BuildKey
  + FROM 解析后的 digest
 ```
 
+target platform 是构建事实,不是一个写在代码里的默认值。
+构建执行环境自己报出目标平台——Docker 取 daemon 的 os / arch,显式钉死时以钉死值为准;进入 BuildKey 的那个值同时钉给构建器,构出来的镜像架构与身份里写的架构永远同一个。
+arm64 宿主上物化的题因此拿到与 amd64 宿主不同的 BuildKey,两台机器不会对同一道题算出相同 CaseKey、再让携带门互认不可比的结果。
+
 一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,只记录解析后的 image digest。
 构建结果另有 provider 原生 locator(Docker image digest、E2B template id)。
 BuildKey 回答「为什么应该得到同一构建产物」,locator 回答「本次从哪里启动」,两者都进运行记录。
@@ -162,7 +166,7 @@ Agent 身份与 sandbox case 身份正交进入指纹(见 [Adapters · Agent Ens
 1. 先做携带规划;全部命中的环境不为查看旧结果而构建。
 2. 查询 provider 原生 cache 或本地 build registry。
 3. 同 key 只允许一个 builder,single-flight 等待者不重复上传 context 或创建 template。
-4. cache miss 才调用 provider 原生构建 API;成功后以 BuildKey 登记 locator,再放行依赖它的 attempt。
+4. cache miss 才调用 provider 原生构建 API;成功后以 BuildKey 登记 locator,再放行依赖它的 attempt。放行逐 key 发生:一条 attempt 只等自己引用的那几个 key,不等同批其它 key 收工,不引用任何 BuildKey 的 attempt 从第一秒就可派发。
 5. 瞬时构建失败(基线镜像拉取限流、传输层中断)由 builder 按 [Provisioning 的性质分类](architecture.md#provisioning-失败与重试)指数退避重试、封顶次数。构建产物是镜像与 template,没有计费实例的泄漏面,歧义类失败同样可重试——一次镜像拉取的 EOF 不该把整批依赖该 key 的 attempt 打成 `errored`。
 6. 重试耗尽或确定性构建失败(构建定义错误、基线镜像不存在)按共享该 key 的范围止损:失败的 BuildKey 只执行一次,所有依赖它、本应 fresh 执行的 attempt 得到同一环境 `errored`,origin 指向同一个 Run timing node。
 

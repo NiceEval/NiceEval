@@ -10,38 +10,46 @@
 ```text
 装载 ReportDefinition
   → 校验静态 page 清单
-  → 选择一个 page 实例及其输入
+  → 按目标选择一个 page 实例
+  → 执行该 page.load(base, params, ctx)
   → 执行该 page.render(input)
   → 校验已填充的 page 树
   → text / web renderer
 ```
 
-page 清单、id、标题、input、导航资格与 Attempt page 唯一性在装载期可见，不执行任何 page render。
+page 清单、id、标题、参数化声明与导航资格在装载期可见，不执行任何 page load 或 render。
 只有被请求的 page 实例会求值；它返回的树中已经没有待执行的数据声明或 Promise。
 text 与 web renderer 消费该 page 实例的同一棵值树。
 
 ```ts
-async function renderPage(
+async function renderTarget(
   definition: ReportDefinition,
-  pageId: string,
-  input: Sample | AttemptEvidence,
+  target: ReportTarget,
+  base: Sample,
+  ctx: PageLoadContext,
 ): Promise<ReportNode> {
   const page = definition.pages.find((candidate) =>
-    candidate.id === pageId
+    candidate.id === target.page
   );
-  if (!page) throw new UnknownPageError(pageId);
-  assertPageInput(page, input);
+  if (!page) throw new UnknownPageError(target.page);
+  const input = page.load
+    ? await page.load(base, target.params, ctx)
+    : base;
   const tree = await page.render(input);
   validateRenderedPage(tree);
   return tree;
 }
 ```
 
+宿主对每张页做的事完全相同：拿目标找页、按页自己的 `load` 求输入、render、校验。
+attempt、experiment 这些词只出现在标准库的页定义与组件里，不出现在宿主分派、路由或目标类型中；新实体视图注册新页即可，核心不加分支。
+这与核心中立对 runner 的要求同构：需要差异行为时放进页定义，不写 `page == attempt` 式判断。
+
 本地 view 按请求求值对应 page 实例。
 承载它的宿主协议就是现有站点管线的按需块协议（[View](../../feature/reports/view.md)）。
-`#/page/<id>` 只是浏览器侧的浏览状态；page 内容按 `report/<pageId>.<locale>.html` 路径请求，server 因此在请求路径里就知道该求值哪张 page 实例。
+`#/<pageId>` 只是浏览器侧的浏览状态；page 内容按 `report/<pageId>.<locale>.html` 路径请求，server 因此在请求路径里就知道该求值哪张 page 实例。
 `index.html` 只预烘当前订阅的那一块。
-静态导出没有按需请求，枚举全部 sample page 与可达 Attempt page 实例，分别求值后再决定整体写出。
+静态导出没有按需请求，枚举全部导航页，再对每张参数化页按其 `params.enumerate(有效根)` 枚举实例，分别求值后再决定整体写出。
 一个 page 实例失败时，本地模式只污染自己的槽位；静态导出仍保持全有或全无。
 
 `show` 与 `view` 可以分别调用同一 page render。
@@ -330,24 +338,22 @@ export default defineReport({
 打开 chart 不执行 table。
 两个 page 分别失败、分别缓存，也不需要字符串数据源注册表。
 
-## Attempt 详情
+## 目标与宿主通道
 
-Sample page 与 Attempt 详情仍属于同一个静态 pages 清单：
+组件下钻交出 `ReportTarget`（页 id + 参数），宿主经唯一通道 `ctx.href(target)` 换成 URL；公开形状与默认规则 `targetOfRefs()` 见 [Library · 目标与下钻](library.md#目标与下钻)。
+架构上这条通道承担三件事：
 
-```ts
-interface AttemptPage {
-  id: string;
-  input: "attempt";
-  navigation: false;
-  render: (
-    evidence: AttemptEvidence,
-  ) => ReportNode | Promise<ReportNode>;
-}
-```
+- **组件对宿主能力零知识。**
+  view、静态导出、嵌入产品各自决定能服务哪些目标；服务不了返回 `undefined`，组件退化成纯文本，没有假链接。
+- **下钻语义归上层。**
+  原语只把上层给的目标换成链接；「这个点指向谁」写在放它的组件或页里，不写在图表原语里。
+- **实体词不进核心。**
+  目标类型没有实体分支；`targetOfRefs` 指向 id 为 `attempt` 的页是标准库约定，报告没有这张页时 href 为 `undefined`。
 
-装载期要求至多一张 Attempt page，且它不能进入导航。
-宿主解析 locator 后选择这张 page 并传入 AttemptEvidence；自定义报告没有声明时，view 使用内建 `standard` 的 Attempt page 作为隐式默认值，仍不进入报告导航。
-这保留现有“Attempt 详情是一张参数化 page”的寻址、静态导出和无 JS 深链契约，不重新增加 `attempt`、modal 或其它旁路内容槽。
+详情页不属于第二种 page 类型。
+attempt 详情与 experiment 详情是标准库导出的参数化页（[Library · 参数化页](library.md#参数化页attempt-与-experiment-详情)）：`params` 声明寻址与枚举，`load` 声明输入来源——前者读证据、后者收窄 Sample，宿主对两者执行同一条 `renderTarget` 路径。
+自定义报告没有声明同 id 页时，view 用内建 `standard` 的同名页补位，仍不进入报告导航。
+参数化页的寻址、静态导出与无 JS 深链契约见 [View](view.md#参数化页的-dialog-摆放)。
 
 ## 外部业务数据经 import 冻结
 
@@ -371,7 +377,7 @@ export default defineReport(async (sample) => {
 page render 不能请求网络、读取环境变量、使用时钟或随机数；新数据只能通过重新生成快照文件进入报告。
 快照文件在报告的 import 图内，缓存身份、watch 重建与导出可复现性因此不需要第二套规则。
 join 仍是普通函数，不建立 external data 查询协议。
-宿主没有外部数据注入通道：报告的宿主输入只有 Sample 或 AttemptEvidence。
+宿主没有外部数据注入通道：报告的宿主输入只有 Sample；证据经页自己的 `load` 从 `PageLoadContext` 装载。
 
 ## React 边界
 

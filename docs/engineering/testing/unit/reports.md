@@ -99,6 +99,16 @@ const scope = reportScopeFixture({
   - `runDiagnostics` 对 Sample / 直接传入的 Run[] 同值投影、空诊断过滤、 experiment → startedAt 排序、来源不合并、开放 code 原样保留。
   - React Content 不携带 Run/AttemptHandle；渐进增强不改数据。
   - 内建首页三行装配（`SampleSummary` + frontier 散点 + 实验表）以页 render 与组件树为断言面。
+- **参数化页与下钻目标**（[Library · 目标与下钻](../../../feature/reports/library.md#目标与下钻)、[参数化页](../../../feature/reports/library.md#参数化页attempt-与-experiment-详情)）：
+  - 装载期规则：重复 id、声明 `params` 但缺 `load` 或 `navigation` 非 false，均按完整用户反馈拒绝；校验不执行任何 `load` / `render`。
+  - `renderTarget` 单路径：attempt 目标与 experiment 目标走同一条分派，宿主分派代码里 grep 不到实体词（断言面是公开分派函数对两类目标的行为等价，不是源码文本）。
+  - `params` 往返：`decode(encode(p))` 与 p 深相等；`enumerate` 对有效根给出全部实例（attempt 页 = 全部 locator，experiment 页 = 全部 experiment id），收窄之外不出现。
+  - `ctx.href`：目标页存在给 URL；页不存在、encode 抛错给 `undefined`，组件输出纯文本节点，不产出空 href。
+  - `targetOfRefs`：恰好一个 ref 给 attempt 目标；零个与多个都给 `undefined`。区分力场景是双 refs 行——旧的「取 refs[0]」实现在这一格是唯一会绿的错误答案。
+  - 图表 `pointTarget`：显式函数逐点生效；省略走 `targetOfRefs`；`external` 图表没有该属性。
+  - `ExperimentScatter` 点目标：默认指向 `experiment` 页且参数是该点实验 id；报告无 `experiment` 页时点无链接。
+  - `ExperimentDetails`：收窄恰好一个实验时六区块投影同一份转换结果；零个或多个实验按完整用户反馈报错；experiment 作用域 facts 进 notices 区块。
+  - 断言面是组件树与公开函数返回值；dialog 打开、hash 路由与导出站几何归 e2e 报告域。
 - **`StabilityOverview` 的投影**：散点与堆叠柱从 page render 算好的 `EvidenceRow[]` 投影。
   点身份是 `eval · condition`；零执行格的 `passRatio` 为 `null` 不为 0；堆叠三段与 `totals` 同值；格 `refs` 原样进两个 MetricValue 的 `refs`（`refs.length` 等于该格执行数）。
   读数格的零通过与闪烁计数各一条区分力 fixture（全过与全挂都不算闪烁）。
@@ -311,6 +321,8 @@ const scope = reportScopeFixture({
     其余不含路径的名称查内建视图名表（`standard` / `failures` / `stability` 各命中且与对应具名导出同引用，`standard` 兼默认导出）。
     未命中时报错列出全部可用名字并给出路径写法，不做文件系统探测。
   - `config.report` 不是 `defineReport` 产物时的完整用户反馈，出处点名配置文件的 `report` 字段。
+  - 报告出处标签与取值链同档：`--report` 在场点名它的取值，只有 `config.report` 时点名配置文件的 `report` 字段，两者都没有才说内建。
+    区分力场景是「没写 `--report` 但配了 `config.report`」——把出处按 `--report` 是否在场二分的实现在这一格说成内建。
   - fresh import 让装载入口及其项目内 import 子图失效；改报告文件或它 import 的组件后下一次装载读到新内容。
 - **view 数据装载（ViewScan）**：`loadViewScan` 的数据层语义以返回结构、Map/Set 内容与错误对象为断言面。
   - unreadable 的三种原因如实进 `viewData`（producer 感知的升级提示）。

@@ -109,6 +109,11 @@ export class E2BSandbox implements Sandbox, SandboxReuseCapability {
     this.deadlineAt = deadlineAt;
   }
 
+  /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
+  setCommandDeadline(deadlineAt?: number): void {
+    this.deadlineAt = deadlineAt;
+  }
+
   /**
    * 寿命确认:先问远端真实到期时刻,不够再续,续完**重新问一次**。
    *

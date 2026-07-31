@@ -21,6 +21,11 @@ export const DOCKER_HOST_LABEL = "niceeval.host";
 export const DOCKER_PID_LABEL = "niceeval.pid";
 export const DOCKER_STARTED_AT_LABEL = "niceeval.started-at";
 
+/** Compose 自己给组内容器与网络打的 project label——孤儿核对靠它把一组资源拼回来。 */
+export const DOCKER_COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
+/** 受管 overlay 打在 mainService 上的标记:资源组里哪一台是主实例。 */
+export const DOCKER_MAIN_SERVICE_LABEL = "niceeval.main-service";
+
 export const E2B_HOST_METADATA = "niceeval-host";
 export const E2B_PID_METADATA = "niceeval-pid";
 export const E2B_STARTED_AT_METADATA = "niceeval-started-at";

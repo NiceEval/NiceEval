@@ -153,7 +153,7 @@ export class LocalSandbox implements Sandbox {
   readonly otlpHost = "localhost";
   readonly sandboxId: string;
   private readonly timeout?: number;
-  private readonly deadlineAt?: number;
+  private deadlineAt?: number;
   private readonly ledgerBase: string;
 
   private constructor(workdir: string, ledgerBase: string, timeout?: number, deadlineAt?: number) {
@@ -176,6 +176,11 @@ export class LocalSandbox implements Sandbox {
       exportDir: join(ledgerBase, "export"),
     });
     return sandbox;
+  }
+
+  /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
+  setCommandDeadline(deadlineAt?: number): void {
+    this.deadlineAt = deadlineAt;
   }
 
   async runCommand(cmd: string, args: string[] = [], opts: CommandOptions = {}): Promise<CommandResult> {

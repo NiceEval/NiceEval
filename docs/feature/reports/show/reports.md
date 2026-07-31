@@ -53,7 +53,7 @@ $ niceeval show --record tmp/published-results --report reports/site.tsx
 
 ## Case 5：attempt 下钻使用同一份报告定义
 
-报告声明了 attempt-input page 时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Record evidence，不经 page content：
+报告声明了 attempt 参数化页时，页里的 locator 命令保留 `--record` 与 `--report`，因而打开同一张 page 的 text 面；专用证据 flag 仍直接投影同一份 Record evidence，不经 page content：
 
 ```sh
 $ niceeval show --report reports/site.tsx --page exam    # 页里出现 @1qrdcfq8
@@ -61,8 +61,8 @@ $ niceeval show @1qrdcfq8 --report reports/site.tsx      # 自定义参数化 pa
 $ niceeval show @1qrdcfq8 --diff                         # 证据切面照常可用
 ```
 
-报告没声明 attempt-input page 时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。
-要沿用官方详情，把 `standardAttemptPage` 放进自己的 pages；要自定义就声明同类 page 并重组它的 content。
+报告没声明 attempt 参数化页时 locator 只是文本，不生成一条会悄悄落回内建详情的命令。
+要沿用官方详情，把 `standardAttemptPage` 放进自己的 pages；要自定义就复用它的 `params` 与 `load` 并重组 `render`。
 
 ## Case 6：内建等价文件
 
@@ -96,4 +96,4 @@ error: no built-in report view named "site". Available: standard. To load a file
 - [Library · 外壳与多页](../library/shell.md) —— 页与外壳的字段穷尽。
 - [Library · 内建报告](../library/built-in.md) —— 不带选项的 `show` 装载的定义本体。
 - [不带选项的 `show` 的默认报告](default-report.md) —— 当前 Sample 的摘要、散点与实验详情。
-- [View](../view.md) —— 同一份文件在网页宿主的路由（`#/page/<id>`、`--page` 定初始页）。
+- [View](../view.md) —— 同一份文件在网页宿主的路由（`#/<pageId>`、`--page` 定初始页）。

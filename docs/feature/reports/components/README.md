@@ -1,7 +1,17 @@
 # 报告组件
 
+组件库分三层，每层的知识边界不同：
+
+| 层 | 成员 | 知道什么 |
+|---|---|---|
+| 显示原语 | `Scatter`、`Table`、`Waterfall` 等 | 只知道传入的普通值与显示形状 |
+| 组合组件 | `ExperimentScatter`、`ExperimentTable`、`ExperimentDetails` 等 | 知道 Sample 与实验、eval 这些实体，替所有 niceeval 报告装配一个稳定读面 |
+| 共用函数 | 维度视觉身份分配、`shortestUniqueLabels`、`targetOfRefs`、MetricValue 格式化 | 让颜色、label、格式与下钻默认规则在整库只有一处定义 |
+
 显示原语只接 page render 或组合组件已经算好的普通值，不读取 Sample、Record 或 artifact。
+原语同样不认识实体：attempt、experiment 这些词不出现在原语的属性与实现里，点击语义经 `pointTarget` 这类属性由上层供给（[目标与下钻](../library.md#目标与下钻)）。
 官方组合组件可以从 `ctx.scope` 读取当前 Sample，完成一个稳定读面的取数与原语装配；它们仍只调用公开转换、聚合与显示原语，不建立第二条计算口径。
+实体知识（选哪些轴、点指向哪张页）全部住在这一层。
 同一个组件实例的 text 与 web renderer 消费同一份解析终值。
 
 ## 按显示形状选择
@@ -19,14 +29,16 @@
 | 源码 | `SourceView` | `source` |
 | Diff | `DiffView` | `files` |
 | Attempt 详情 | `AttemptDetails` | `attempt` |
+| 实验详情 | `ExperimentDetails` | `input` |
 
 高频完整读面提供组合组件：
 
 | 读面 | 组件 | 行为 |
 |---|---|---|
 | 实验散点 | `ExperimentScatter` | 成本 × 主读数 |
-| 实验详情 | `ExperimentTable` | Experiment → Eval → Attempt 层级表 |
-| 默认概览 | `SampleOverview` | `SampleSummary` + 上述两件 |
+| 实验层级表 | `ExperimentTable` | Experiment → Eval → Attempt 层级表 |
+| 实验详情 | `ExperimentDetails` | 单个实验的完整详情读面 |
+| 默认概览 | `SampleOverview` | `SampleSummary` + 散点与层级表 |
 
 不存在适用于所有组件的 `data` 属性。
 `source` 在 `SourceView` 中只表示待显示的源码值，不表示惰性数据源。
@@ -37,6 +49,7 @@
 - [Experiment scatter](summaries/experiment-scatter.md) —— 成本 × 主读数的默认散点图。
 - [Experiment table](summaries/experiment-table.md) —— Experiment → Eval → Attempt 的层级详情。
 - [Attempt details](attempt-detail/README.md) —— AttemptEvidence 的完整详情和叶子区块。
+- [Experiment details](experiment-detail/README.md) —— 单个实验的完整详情读面。
 - [Gallery](gallery.md) —— 每个官方形状的最小示例与双面验收入口。
 - [Site components](site/README.md) —— 静态站首页的结构组件。
 - [排版与自定义 renderer](../library/layout.md) —— 结构节点、排版原语与扩展协议。

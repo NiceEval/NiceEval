@@ -124,6 +124,11 @@ Provider 共同语义用同一组 contract cases 验证：内存 provider 在 un
 
   - 同 BuildKey 只允许一个 builder，等待者不重复上传 context。
   - 瞬时构建失败（拉取限流、传输层中断）按性质分类退避重试、封顶次数；重试耗尽才落确定性止损，确定性失败零重试。
+    退避睡眠按注入的时长参数推进，不做真实等待；重试期间 abort 立即收束成 `cancelled`，不睡满封顶次数。
+  - 逐 BuildKey 放行：某个 key 还在构建时，只依赖已就绪 key 的 attempt 与不引用任何 key 的 attempt 照常派发。
+    要有「一个慢 key + 一条不依赖它的 eval」的区分力场景，断言那条 eval 在慢构建返回之前已经开跑——全局 barrier 的实现在这一格必红。
+  - 目标平台是构建事实：探测到 arm64 的宿主与探测到 amd64 的宿主对同一份 Compose 算出不同 BuildKey，且构建执行拿到的平台与进 key 的值同源。
+    要有「探测值 amd64 / arm64」的区分力场景，硬编码默认值的实现在这一格必红。
   - 确定性构建失败只执行一次；依赖该 key 的 fresh attempt 同得环境 `errored`，origin 指向同一 Run timing node。
   - 不依赖失败 key 的 attempt 继续执行。
   - Run 级共享准备有独立并发、逐 key timeout、全局准备上限与 abort，不占 attempt 并发位。

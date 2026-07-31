@@ -27,27 +27,40 @@ export default defineReport((sample) => (
 ```
 
 多页报告静态声明 pages。
-函数只放在每页的 `render` 字段，不用先执行整份报告才能知道页清单：
+函数只放在每页的 `render` 与 `load` 字段，不用先执行整份报告才能知道页清单。
+page 只有一种形状，核心不区分实体种类：
 
 ```ts
-interface SamplePage {
+interface PageParams<P> {
+  encode(params: P): string;
+  decode(key: string): P;
+  enumerate(base: Sample): Iterable<P>;
+}
+
+interface PageLoadContext {
+  evidence(locator: AttemptLocator): Promise<AttemptEvidence>;
+}
+
+interface PageDefinition<P = void, I = Sample> {
   id: string;
   title: LocalizedText;
-  input?: "sample";
   navigation?: boolean;
-  render: PageRender<Sample>;
+  params?: PageParams<P>;
+  load?: (
+    base: Sample,
+    params: P,
+    ctx: PageLoadContext,
+  ) => I | Promise<I>;
+  render: PageRender<I>;
 }
+```
 
-interface AttemptPage {
-  id: string;
-  title: LocalizedText;
-  input: "attempt";
-  navigation: false;
-  render: PageRender<AttemptEvidence>;
-}
+`load` 回答「这页的输入从哪来」：省略时输入就是宿主选好的 Sample。
+`params` 把一页声明成参数化页：同一张页按参数产生多个实例，每个实例可被[目标](#目标与下钻)寻址。
+`encode` / `decode` 定义参数与 URL key 的互转，`enumerate` 列出有效根内全部合法参数，静态导出据此物化。
+attempt 详情、experiment 详情都是这样的参数化页，见[参数化页](#参数化页attempt-与-experiment-详情)；核心、路由与宿主对它们没有专门分支。
 
-type PageDefinition = SamplePage | AttemptPage;
-
+```ts
 interface ReportOptions {
   title?: LocalizedText;
   theme?: ThemeDefinition;
@@ -102,22 +115,14 @@ export default defineReport({
         </Col>
       ),
     },
-    {
-      id: "attempt",
-      title: "Attempt",
-      input: "attempt",
-      navigation: false,
-      render: async (evidence) => (
-        <AttemptDetails attempt={evidence} />
-      ),
-    },
+    standardAttemptPage,
   ],
 });
 ```
 
 `pages` 是非空有序数组，`id` 是稳定 page id，数组顺序就是导航顺序。
-装载期拒绝重复 id，至多允许一张 `input: "attempt"` page；attempt page 必须 `navigation: false`。
-这些条件、外壳字段和 page id 在装载期校验，不运行 `render`。
+装载期规则逐条可校验：`id` 不得重复；声明 `params` 的页必须同时声明 `load` 且 `navigation: false`——导航项给不出参数。
+这些条件、外壳字段和 page id 在装载期校验，不运行 `render` 或 `load`。
 
 宿主只执行被请求的 page render。
 一次 page 实例产生的同一份值树交给 text 与 web renderer，两个 renderer 不会分别运行该 page。
@@ -762,6 +767,7 @@ function AttemptList({ attempts }: AttemptListProps) {
 | `SourceView` | `source` |
 | `DiffView` | `files` |
 | `AttemptDetails` | `attempt` |
+| `ExperimentDetails` | `input` |
 
 不存在适用于所有组件的 `data` 属性。
 
@@ -854,6 +860,7 @@ interface ScatterProps<Row extends EvidenceRow> {
   y: keyof Row;
   color?: keyof Row;
   point?: keyof Row;
+  pointTarget?: (row: Row) => ReportTarget | undefined;
 }
 
 interface ExternalScatterProps<Row extends ExternalPoint> {
@@ -880,6 +887,10 @@ interface ExternalScatterProps<Row extends ExternalPoint> {
 
 `x`、`y`、`color` 与 `point` 由 points 的行类型推导。
 MetricValue 自动提供数值、格式元数据、自然边界与 refs；renderer 按当前 locale 格式化。
+
+一个图形点点开去哪由 `pointTarget` 决定，图表原语只负责把返回的[目标](#目标与下钻)交给宿主换 href。
+省略时按行级 refs 走 `targetOfRefs()` 默认规则：恰好一个 ref 才成链，多 refs 不猜。
+`pointTarget` 返回 `undefined` 的点是纯图形；`external` 图表没有 refs，也没有 `pointTarget` 属性。
 
 混合图才使用嵌套 series。
 `<Chart>` 的 points 是各 series 的默认；一个 series 可以带自己的 points 和 `external` 声明，证据校验按该 series 自己的入口判定。
@@ -1086,34 +1097,113 @@ function historyResult(
 它们可以被自定义报告直接调用，但不会进入 `rollup()` 或 `aggregate()`。
 Result 类型以对应 show 切片的 JSON 形状为准，并且不包含 ReportNode。
 
-## Attempt 详情
+## 目标与下钻
 
-Attempt 详情仍是一张参数化 page，不是报告旁边的第二内容槽：
+组件想让读者「点过去看证据」时，交出的是一个目标值，不是 URL：
+
+```ts
+interface ReportTarget {
+  page: string;
+  params?: unknown;
+}
+```
+
+目标说「哪张页、哪个参数」；URL 长什么样、能不能服务，由宿主的唯一通道回答：
+
+```ts
+interface WebRenderContext {
+  href(target: ReportTarget): string | undefined;
+}
+```
+
+宿主对照报告的 pages 清单求 href：目标页存在且参数经该页 `params.encode` 可编码，就给出链接；页不存在、参数编码失败或宿主服务不了，返回 `undefined`，组件把内容按纯文本呈现，不生成空 href 或假链接。
+组件因此对宿主能力零知识：view、静态导出、嵌入产品各自决定能服务哪些目标。
+text 宿主没有链接，把可服务的目标格式化成下钻命令。
+
+「一个图形点该指向谁」由放点的上层决定，原语不猜。
+上层不声明时全库只有一条默认规则：
+
+```ts
+function targetOfRefs(
+  refs: readonly AttemptLocator[],
+): ReportTarget | undefined;
+```
+
+`refs` 恰好一个 locator 时返回 attempt 详情目标；零个或多个都返回 `undefined`。
+多证据压成一个链接必然指错，宁可不成链。
+表格格子不受此限：每条 ref 各成一个单 locator 链接，多 refs 逐条列出。
+
+## 参数化页：attempt 与 experiment 详情
+
+attempt 详情与 experiment 详情都是普通参数化页，不是报告旁边的第二内容槽。
+官方内建报告把两页具名导出，用户不需要从已经封装的 ReportDefinition 里反向取 pages：
 
 ```tsx
+import {
+  standardAttemptPage,
+  standardExperimentPage,
+} from "niceeval/report/built-in";
+
 export default defineReport({
   pages: [
     {
       id: "overview",
       title: "Overview",
-      render: (sample) => (
-        <Col>...</Col>
-      ),
+      render: overview,
     },
-    {
-      id: "attempt",
-      title: "Attempt",
-      input: "attempt",
-      navigation: false,
-      render: async (attempt) => (
-        <AttemptDetails attempt={attempt} />
-      ),
-    },
+    standardAttemptPage,
+    standardExperimentPage,
   ],
 });
 ```
 
-需要自定义详情时直接读取 Attempt Evidence：
+两页的公开全文就是新参数化页的范本：
+
+```tsx
+export const standardAttemptPage: PageDefinition<
+  { locator: AttemptLocator },
+  AttemptEvidence
+> = {
+  id: "attempt",
+  title: "Attempt",
+  navigation: false,
+  params: {
+    encode: ({ locator }) => locator,
+    decode: (key) => ({ locator: key as AttemptLocator }),
+    enumerate: (base) =>
+      base.attempts.map((attempt) => ({
+        locator: attempt.locator,
+      })),
+  },
+  load: (_base, { locator }, ctx) => ctx.evidence(locator),
+  render: (attempt) => <AttemptDetails attempt={attempt} />,
+};
+
+export const standardExperimentPage: PageDefinition<
+  { experiment: string },
+  Sample
+> = {
+  id: "experiment",
+  title: "Experiment",
+  navigation: false,
+  params: {
+    encode: ({ experiment }) => experiment,
+    decode: (key) => ({ experiment: key }),
+    enumerate: (base) =>
+      toExperimentRows(base).map((row) => ({
+        experiment: row.id,
+      })),
+  },
+  load: (base, { experiment }) =>
+    base.scope({ experiments: [experiment] }),
+  render: (sample) => <ExperimentDetails input={sample} />,
+};
+```
+
+attempt 页的 `load` 经 `ctx.evidence()` 装载证据；experiment 页的 `load` 只是 Sample 的既有收窄。
+「详情页」不是一种类型，只是「参数化 + 不进导航」这个组合的惯用法。
+
+需要自定义详情时替换 `render`，直接读取该页 `load` 给出的输入：
 
 ```tsx
 render: async (attempt) => {
@@ -1132,27 +1222,7 @@ render: async (attempt) => {
 ```
 
 PageDefinition 本身是可具名导出的普通只读值。
-官方内建报告把可复用页单独导出，用户不需要从已经封装的 ReportDefinition 里反向取 pages：
-
-```tsx
-import {
-  standardAttemptPage,
-} from "niceeval/report/built-in";
-
-export default defineReport({
-  pages: [
-    {
-      id: "overview",
-      title: "Overview",
-      render: overview,
-    },
-    standardAttemptPage,
-  ],
-});
-```
-
-`standardAttemptPage` 的类型是 `PageDefinition`，使用的仍是公开 Attempt 转换函数和组件。
-自定义报告可以直接复用，也可以复制其公开全文后修改。
+自定义报告可以直接复用官方页，也可以复制其公开全文后修改。
 
 ## 自有 React 页面
 

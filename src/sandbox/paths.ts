@@ -38,6 +38,14 @@ interface Reusable {
 }
 
 /**
+ * 换 attempt deadline 也是「接口之外的可选能力」(见 sandbox/deadline.ts 的
+ * `SandboxCommandDeadline`);同样按运行时形状在本模块做最小声明,不跨模块共享类型。
+ */
+interface SandboxCommandDeadline {
+  setCommandDeadline(deadlineAt?: number): void;
+}
+
+/**
  * @param provider provider 名(`resolveSandbox()` 的解析结果),只用于报错点名是谁的 SDK
  * 在超时(见 transfer-errors.ts);省略时报错说 `sandbox`,行为不变。
  */
@@ -48,6 +56,7 @@ export function normalizeSandboxPaths(sandbox: Sandbox, provider?: string): Sand
   // state 也回写不成 dormant)。appendLog 已经是同一种"接口之外的可选能力,原样转发"先例。
   const suspend = (sandbox as unknown as Partial<Suspendable>).suspend;
   const ensureLifetime = (sandbox as unknown as Partial<Reusable>).ensureLifetime;
+  const setCommandDeadline = (sandbox as unknown as Partial<SandboxCommandDeadline>).setCommandDeadline;
   return {
     get workdir() {
       return sandbox.workdir;
@@ -111,6 +120,11 @@ export function normalizeSandboxPaths(sandbox: Sandbox, provider?: string): Sand
     ...(typeof suspend === "function" ? { suspend: () => suspend.call(sandbox) } : {}),
     ...(typeof ensureLifetime === "function"
       ? { ensureLifetime: (minRemainingMs: number) => ensureLifetime.call(sandbox, minRemainingMs) }
+      : {}),
+    // 与 suspend / ensureLifetime 同款「原样转发的可选能力」:不转发的话复用池换不了线,
+    // 每条命令都落回 provider SDK 的默认上限(e2b 60 秒),实验声明的 timeoutMs 形同虚设。
+    ...(typeof setCommandDeadline === "function"
+      ? { setCommandDeadline: (deadlineAt?: number) => setCommandDeadline.call(sandbox, deadlineAt) }
       : {}),
   } as Sandbox;
 }

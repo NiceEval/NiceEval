@@ -148,6 +148,56 @@ describe("ReusableSandboxPool · 复用寿命能力只能来自 Provider", () =>
     expect(stopped).toEqual(["sbx-1", "sbx-2"]);
   });
 
+  it("每次借出都把承接者自己的 attempt deadline 递给实例(不递就落回 provider SDK 的默认上限)", async () => {
+    const commands: string[] = [];
+    const deadlines: Array<number | undefined> = [];
+    const spec = defineSandbox({
+      name: "deadline-aware",
+      create: async () =>
+        Object.assign(fakeSandbox("sbx-deadline", commands), {
+          ensureLifetime: async () => ({ ready: true as const }),
+          setCommandDeadline: (deadlineAt?: number) => {
+            deadlines.push(deadlineAt);
+          },
+        }),
+    });
+
+    const pool = poolFor(spec);
+    const before = Date.now();
+    const first = await pool.acquire(60_000);
+    await first.release(true);
+    const second = await pool.acquire(60_000);
+    await second.release(true);
+    await pool.stop();
+
+    // 两次借出各设一次线;都落在「现在 + attempt deadline + 收尾预留」的窗口里。
+    expect(deadlines).toHaveLength(2);
+    for (const at of deadlines) {
+      expect(at).toBeGreaterThanOrEqual(before + 90_000);
+      expect(at).toBeLessThanOrEqual(Date.now() + 90_000);
+    }
+  });
+
+  it("四层都没声明上限时不发明一条线:借出时递 undefined", async () => {
+    const commands: string[] = [];
+    const deadlines: Array<number | undefined> = [];
+    const spec = defineSandbox({
+      name: "no-deadline",
+      create: async () =>
+        Object.assign(fakeSandbox("sbx-no-deadline", commands), {
+          ensureLifetime: async () => ({ ready: true as const }),
+          setCommandDeadline: (deadlineAt?: number) => {
+            deadlines.push(deadlineAt);
+          },
+        }),
+    });
+
+    const pool = poolFor(spec);
+    await (await pool.acquire(undefined)).release(true);
+    await pool.stop();
+    expect(deadlines).toEqual([undefined]);
+  });
+
   it("新建实例当场就确认不下来寿命时,报错带 provider 给的理由,不反复重建同样的替代实例", async () => {
     const commands: string[] = [];
     let created = 0;

@@ -183,6 +183,11 @@ export class DockerSandbox implements Sandbox, SandboxReuseCapability {
     }
   }
 
+  /** 复用下由池在每次借出时换成承接者自己的 deadline(见 sandbox/deadline.ts)。 */
+  setCommandDeadline(deadlineAt?: number): void {
+    this.deadlineAt = deadlineAt;
+  }
+
   /**
    * 附着到已在跑的容器(Compose mainService)。不改 Cmd/WorkingDir/网络——题目语义原样保留;
    * `stop()` 默认只松绑句柄,整组回收由 Compose 资源组 finalizer 负责。

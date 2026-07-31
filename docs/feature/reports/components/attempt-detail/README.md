@@ -38,14 +38,11 @@ AttemptEvidence 在每个 Attempt 只装配一次。
 
 ## 自定义详情
 
-Attempt 详情是一张 `input: "attempt"` 的参数化 page：
+Attempt 详情是一张按 locator 参数化的 page，自定义时只换 `render`，`params` 与 `load` 沿用 [`standardAttemptPage`](../../library.md#参数化页attempt-与-experiment-详情)：
 
 ```tsx
 {
-  id: "attempt",
-  title: "Attempt",
-  input: "attempt",
-  navigation: false,
+  ...standardAttemptPage,
   render: async (attempt) => {
     const [turns, files] = await Promise.all([
       toConversationTurns(attempt),

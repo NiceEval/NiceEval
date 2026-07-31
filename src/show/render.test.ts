@@ -12,7 +12,7 @@
 // display/stdout/stderr;命中计数与 0 命中的明确输出。
 
 import { describe, expect, it } from "vitest";
-import { diffText, executionText, runTimingText, verdictReasonLine } from "./render.ts";
+import { diffText, executionText, runTimingText, timingText, verdictReasonLine } from "./render.ts";
 import { diffSummaryText } from "../report/definition/primitives/diff-lines.ts";
 import type { EvalResult, PhaseTiming, StreamEvent, TimingActivity, SandboxBuildRecord, Verdict } from "../types.ts";
 import type { Run } from "../record/index.ts";
@@ -600,5 +600,75 @@ describe("--timing:Run 级 activity 与 sandboxBuild 卡", () => {
     });
     expect(text).toContain("dependents: @depfail01");
     expect(text).toContain("error: sandbox-build-failed · npm ci exited 1");
+  });
+});
+
+describe("--timing:命令节点的时限归属", () => {
+  // cases: docs/engineering/testing/unit/reports.md「--timing 的两棵树与 sandboxBuild 卡」
+  // ——因超时失败的节点原位标注生效值与来源层;full 档对全部命令节点给出该字段。
+
+  /** 两条撞线命令来自不同来源层,再加一条没撞线、但有线的正常命令。 */
+  function limitPhases(): PhaseTiming[] {
+    return [
+      {
+        name: "eval.setup" as PhaseTiming["name"],
+        durationMs: 94_000,
+        children: [
+          {
+            id: "cmd-ok",
+            key: "sandbox.command",
+            label: "git",
+            startOffsetMs: 0,
+            durationMs: 4_000,
+            command: { display: "git fetch --all", exitCode: 0, limit: { source: "attempt-deadline", limitMs: 84_000 } },
+          },
+          {
+            id: "cmd-deadline",
+            key: "sandbox.command",
+            label: "npm",
+            startOffsetMs: 4_000,
+            durationMs: 90_000,
+            failed: true,
+            command: { display: "npm ci", limit: { source: "attempt-deadline", limitMs: 90_000, timedOut: true } },
+          },
+        ],
+      },
+      {
+        name: "eval.run" as PhaseTiming["name"],
+        durationMs: 5_000,
+        children: [
+          {
+            id: "cmd-explicit",
+            key: "sandbox.command",
+            label: "codex",
+            startOffsetMs: 94_000,
+            durationMs: 5_000,
+            failed: true,
+            command: { display: "codex exec 'fix it'", limit: { source: "command-timeout", limitMs: 5_000, timedOut: true } },
+          },
+        ],
+      },
+    ];
+  }
+
+  it("两条撞线命令各印自己那层的值与来源,不共用全树一个值", () => {
+    const evidence = evidenceOf({ result: resultOf({ verdict: "errored" as Verdict, durationMs: 99_000, phases: limitPhases() }) });
+
+    const text = timingText(evidence, { ...OPTS, mode: "summary" });
+
+    expect(text).toContain("✗ deadline 1m 30s · attempt deadline");
+    expect(text).toContain("✗ deadline 5.0s · per-command timeout");
+  });
+
+  it("summary 只标撞线的节点;full 对全部命令节点给出该字段", () => {
+    const evidence = evidenceOf({ result: resultOf({ verdict: "errored" as Verdict, durationMs: 99_000, phases: limitPhases() }) });
+
+    const summary = timingText(evidence, { ...OPTS, mode: "summary" });
+    const full = timingText(evidence, { ...OPTS, mode: "full" });
+
+    expect(summary).not.toContain("deadline 1m 24s");
+    expect(full).toContain("deadline 1m 24s · attempt deadline");
+    expect(full).toContain("✗ deadline 1m 30s · attempt deadline");
+    expect(full).toContain("✗ deadline 5.0s · per-command timeout");
   });
 });

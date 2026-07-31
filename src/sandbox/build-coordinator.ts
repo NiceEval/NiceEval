@@ -7,6 +7,7 @@
 import type { JsonValue } from "../shared/types.ts";
 import type { RunTimingRecorder } from "../runner/timing.ts";
 import type { SandboxBuildRecord, TimingActivity } from "../runner/types.ts";
+import { classifyProvisionErrorFallback, isRetryableProvisionError } from "./errors.ts";
 import type { BuildKey } from "./identity.ts";
 
 /** Run 级开放 activity key;与 Record 契约同名。 */
@@ -55,6 +56,10 @@ export interface PrepareSandboxBuildsOptions {
    * 供 live feedback 投影为运行级 active 行 / 非 TTY 永久事件;不改变协调语义。
    */
   readonly onActivity?: (event: SandboxBuildActivityEvent) => void;
+  /** 瞬时构建失败的退避重试上限(含首次尝试);默认 3。 */
+  readonly buildAttempts?: number;
+  /** 退避基数(ms),第 n 次重试睡 base × 2^n × 抖动;默认 1000。 */
+  readonly buildRetryBaseMs?: number;
 }
 
 /** 构建协调器对外的有界 activity 事件(与 Run feedback 的 run-activity 字段对齐)。 */
@@ -91,17 +96,46 @@ export interface SandboxBuildPreparation {
   readonly failures: ReadonlyMap<BuildKey, SandboxBuildFailure>;
 }
 
+/** 进行中的 Run 级共享准备:逐 BuildKey 放行,依赖者只等自己引用的那几个 key。 */
+export interface RunningSandboxBuilds {
+  /** 已结算 key 的实时视图(随构建推进增补,不等整批收工)。 */
+  readonly locators: ReadonlyMap<BuildKey, JsonValue>;
+  /** 已失败 / 已取消 key 的实时视图。 */
+  readonly failures: ReadonlyMap<BuildKey, SandboxBuildFailure>;
+  /** 等某个 BuildKey 结算;不在本次协调范围内的 key 立即返回。 */
+  settled(buildKey: BuildKey): Promise<void>;
+  /** 全部 key 结算后的汇总(provenance 在这里齐全)。 */
+  readonly done: Promise<SandboxBuildPreparation>;
+}
+
 /**
- * 对仍需 fresh 的 BuildKey 做 Run 级共享准备。
+ * 对仍需 fresh 的 BuildKey 做 Run 级共享准备,等全部 key 结算。
  * 调用方负责先做携带规划、只传入未携带 attempt 引用的 key;本函数不为「查看旧结果」造假 provenance。
  */
 export async function prepareSandboxBuilds(
   works: readonly SandboxBuildWork[],
   opts: PrepareSandboxBuildsOptions,
 ): Promise<SandboxBuildPreparation> {
+  return startSandboxBuilds(works, opts).done;
+}
+
+/**
+ * 启动 Run 级共享准备并立刻返回句柄:调用方按 BuildKey 逐个等待,
+ * 只依赖已就绪 key 的 attempt 不被同批最慢的那个构建挡住(见 case.md「Run 级构建协调」第 4 条)。
+ */
+export function startSandboxBuilds(
+  works: readonly SandboxBuildWork[],
+  opts: PrepareSandboxBuildsOptions,
+): RunningSandboxBuilds {
   const unique = dedupeWorks(works);
   if (unique.length === 0) {
-    return { locators: new Map(), records: [], failures: new Map() };
+    const empty: SandboxBuildPreparation = { locators: new Map(), records: [], failures: new Map() };
+    return {
+      locators: empty.locators,
+      failures: empty.failures,
+      async settled() {},
+      done: Promise.resolve(empty),
+    };
   }
 
   const maxConcurrency = Math.max(1, opts.maxConcurrency ?? 2);
@@ -115,7 +149,9 @@ export async function prepareSandboxBuilds(
   ]);
 
   const gate = createConcurrencyGate(maxConcurrency);
-  const inflight = new Map<BuildKey, Promise<void>>();
+  // 逐 key 的结算 promise:key 一结算就 resolve,依赖它的 attempt 当场放行,
+  // 不等同批其它 key(single-flight 仍靠这张表,同 key 的第二个 work 复用同一条)。
+  const perKey = new Map<BuildKey, Promise<void>>();
 
   const runOne = async (work: SandboxBuildWork): Promise<void> => {
     await gate.acquire();
@@ -129,25 +165,30 @@ export async function prepareSandboxBuilds(
         records,
         failures,
         onActivity: opts.onActivity,
+        buildAttempts: Math.max(1, opts.buildAttempts ?? DEFAULT_BUILD_ATTEMPTS),
+        buildRetryBaseMs: Math.max(0, opts.buildRetryBaseMs ?? DEFAULT_BUILD_RETRY_BASE_MS),
       });
     } finally {
       gate.release();
     }
   };
 
-  await Promise.all(
-    unique.map((work) => {
-      const pending = inflight.get(work.buildKey);
-      if (pending) return pending;
-      const promise = runOne(work).finally(() => {
-        inflight.delete(work.buildKey);
-      });
-      inflight.set(work.buildKey, promise);
-      return promise;
-    }),
+  for (const work of unique) {
+    if (!perKey.has(work.buildKey)) perKey.set(work.buildKey, runOne(work));
+  }
+
+  const done = Promise.all([...perKey.values()]).then(
+    (): SandboxBuildPreparation => ({ locators, records, failures }),
   );
 
-  return { locators, records, failures };
+  return {
+    locators,
+    failures,
+    async settled(buildKey) {
+      await perKey.get(buildKey);
+    },
+    done,
+  };
 }
 
 /**
@@ -184,6 +225,8 @@ async function prepareOne(
     records: SandboxBuildRecord[];
     failures: Map<BuildKey, SandboxBuildFailure>;
     onActivity?: (event: SandboxBuildActivityEvent) => void;
+    buildAttempts: number;
+    buildRetryBaseMs: number;
   },
 ): Promise<void> {
   const label = work.label ?? `build ${work.buildKey.slice(0, 12)}`;
@@ -253,11 +296,24 @@ async function prepareOne(
       return;
     }
 
-    const locator = await ctx.provider.build(work, {
-      signal: keySignal,
-      timing: ctx.timing,
-      parent,
-    });
+    // 瞬时构建失败(基线镜像拉取限流、传输层中断)退避重试:构建产物是镜像与 template,
+    // 没有计费实例的泄漏面,歧义类同样可重试(case.md「Run 级构建协调」第 5 条)。
+    let locator: JsonValue | undefined;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        locator = await ctx.provider.build(work, {
+          signal: keySignal,
+          timing: ctx.timing,
+          parent,
+        });
+        break;
+      } catch (e) {
+        const last = attempt >= ctx.buildAttempts - 1;
+        if (last || keySignal.aborted || isAbortError(e) || !isTransientBuildError(e)) throw e;
+        await sleep(backoffDelay(ctx.buildRetryBaseMs, attempt), keySignal);
+        if (keySignal.aborted) throw e;
+      }
+    }
     finish("built", locator);
   } catch (e) {
     if (keySignal.aborted || isAbortError(e)) {
@@ -271,6 +327,44 @@ async function prepareOne(
     }
     finish("failed", undefined, failedError(work.buildKey, e));
   }
+}
+
+/** 首次尝试 + 2 次重试:与 provisioning 同一种「封顶次数」纪律,构建单次耗时更长所以更浅。 */
+const DEFAULT_BUILD_ATTEMPTS = 3;
+const DEFAULT_BUILD_RETRY_BASE_MS = 1000;
+
+/** 指数退避 + 全抖动(0.5x~1.5x),避免同一批被限流的构建同时醒来再次撞限流。 */
+function backoffDelay(baseMs: number, attempt: number): number {
+  return baseMs * 2 ** attempt * (0.5 + Math.random());
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort(): void {
+      clearTimeout(timer);
+      resolve();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * 构建失败的性质分类:瞬时才重试。
+ * 先过与 provisioning 共用的保守瞬时分类器,再补 builder CLI 自己的文案形态——
+ * registry 限流、拉取中途 EOF、TLS / IO 超时都出现在 `docker compose build` 的 stderr 里,
+ * 它们不带 status code,只有文案。
+ */
+function isTransientBuildError(e: unknown): boolean {
+  if (isRetryableProvisionError(classifyProvisionErrorFallback(e))) return true;
+  const message = e instanceof Error ? e.message : String(e);
+  return /toomanyrequests|unexpected EOF|i\/o timeout|TLS handshake timeout|failed to do request|connection reset by peer|temporary failure in name resolution|failed to copy: httpReadSeeker|EOF$/im.test(
+    message,
+  );
 }
 
 function abortError(signal: AbortSignal, buildKey: BuildKey, cause?: unknown): NonNullable<SandboxBuildRecord["error"]> {

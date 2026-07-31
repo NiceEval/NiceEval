@@ -233,6 +233,10 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
 - **生命周期与资源**：成功、失败、中断三条路径下 sandbox 全部 stop、reporter queue 收尾；预热池边界；生命周期阶段闭集与主链耗时封口；diagnostic 去重与不改判定；逐轮进度行的提取规则；分类账导出的常数往返。
   资源泄漏通常出现在失败和中断——三条路径缺一不可。
 - **止损闸（空间轴消费）**：触发——终局失败携带 `scope: "eval"` 只停本 eval 剩余 attempt、`"experiment"` 停全实验且同批其它实验不连坐；组合——可重试失败被重试吸收不落闸、耗尽后的终局失败才读 scope；幂等与不可逆——并发重复声明按 dedupeKey 折叠成一条 `dispatch-halted` 诊断、落闸后在飞 attempt 成功不重开派发；闸只停派发不抢占——在飞 attempt 照常跑完落账、等待集中同闸 attempt 经 interruption 中止；记账——未派发计 `unstarted`、完成状态 `incomplete`、退出码由观察到失败的 `errored` attempt 判红；teardown 边界——实验级 teardown 抛声明降级普通诊断、per-attempt teardown 抛声明照常落闸且不改 verdict；诊断双通路——反馈流通知与 `run.json` 的 `dispatch-halted`（`data.scope` / `data.evalId`）同源互不派生。
+- **派发前资源获取失败的归一化**：`sandboxReuse` 的实例创建、`SandboxSpec` setup 钩子与寿命确认都在复用池内完成，任一步失败只让这条 attempt 落 `errored`（`error.origin` 的 phase 为 `sandbox.create`，message 保留原始正文），同批其它实验照常跑完、整次运行照常收尾出汇总。
+  钩子里抛的 `ExperimentFatalError` 走与 attempt 内抛出同一条空间轴回执链，照常落实验闸。
+  区分力在「失败不冒充中断」：这类失败不得产生 `interrupted` 诊断，完成状态由 `errored` 与 `unstarted` 决定。
+  `// bug: memory/experiment-fatal-presented-as-user-interrupt.md`
 - **沙箱内 OTLP 采集器的启动韧性**：
   - 远程沙箱在沙箱内启动采集器，并等待端口写回。
     这条路径没有外层重试，因此启动逻辑自己重试。
@@ -254,6 +258,7 @@ it.effect("全局同时在飞的 attempt 不超过 maxConcurrency", () =>
   - live 面板把共享准备显示为运行级 active 行，不占 attempt active 位。
   - 共享构建 duration 只在 `RunMeta.timings` 出现一次，任一 attempt 的 `executionMs` 不含该段。
   - fixture 要有非零共享构建 + 至少一个依赖 attempt，证明两者可区分。
+  - 依赖某个 BuildKey 的 attempt 等到该 key 登记 locator 才派发；同批不依赖它的 attempt 在构建仍在进行时就已开跑。
 - **build failure 的 Run origin**：
 
   - 确定性构建失败时，依赖该 BuildKey 的 fresh attempt 全部 `errored`。

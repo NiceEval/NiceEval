@@ -265,16 +265,15 @@ export default defineReport({
 
 `pages` 的数组顺序就是导航顺序。
 宿主只执行当前请求的 page。
-`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻。
+`standardAttemptPage` 提供官方 Attempt 详情与 locator 下钻；`standardExperimentPage` 同样可以放进来，散点上的实验点就能点开实验详情。
 
 ## 自定义 Attempt 详情
 
+复用官方页的参数与装载，只换 `render`：
+
 ```tsx
 {
-  id: "attempt",
-  title: "Attempt",
-  input: "attempt",
-  navigation: false,
+  ...standardAttemptPage,
   render: async (attempt) => {
     const [turns, files] = await Promise.all([
       toConversationTurns(attempt),
@@ -291,8 +290,8 @@ export default defineReport({
 }
 ```
 
-一份报告最多有一张 Attempt page。
-没有这张 page 时，locator 只显示为文本。
+Attempt 详情页的 id 是 `attempt`。
+报告里没有这张 page 时，locator 只显示为文本。
 
 ## 接入外部业务快照
 

@@ -25,20 +25,17 @@ export default defineReport(async (sample) => {
 ## 多页形状
 
 ```ts
-interface SamplePage {
+interface PageDefinition<P = void, I = Sample> {
   id: string;
   title: LocalizedText;
-  input?: "sample";
   navigation?: boolean;
-  render: PageRender<Sample>;
-}
-
-interface AttemptPage {
-  id: string;
-  title: LocalizedText;
-  input: "attempt";
-  navigation: false;
-  render: PageRender<AttemptEvidence>;
+  params?: PageParams<P>;
+  load?: (
+    base: Sample,
+    params: P,
+    ctx: PageLoadContext,
+  ) => I | Promise<I>;
+  render: PageRender<I>;
 }
 
 interface ReportOptions {
@@ -55,7 +52,7 @@ interface ReportOptions {
 
 `pages` 是非空有序数组，数组顺序就是导航顺序。
  page id 必须唯一；数字样式的 id 仍按数组位置导航，不做数值排序。
-一份报告至多有一张 attempt page，且它必须 `navigation: false`。
+声明 `params` 的页必须同时声明 `load` 且 `navigation: false`；page 的完整形状见 [Library](../library.md#defineReport-保留静态-page-边界)。
 
 ## 完整示例
 
@@ -85,13 +82,7 @@ export default defineReport({
         );
       },
     },
-    {
-      id: "attempt",
-      title: "Attempt",
-      input: "attempt",
-      navigation: false,
-      render: (attempt) => <AttemptDetails attempt={attempt} />,
-    },
+    standardAttemptPage,
   ],
 });
 ```

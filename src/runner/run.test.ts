@@ -3946,6 +3946,96 @@ describe("runEvals · 止损闸: teardown 边界", () => {
   }, SCHEDULING_TEST_TIMEOUT_MS);
 });
 
+// ════════════ 派发前资源获取失败的归一化(复用池租借)════════════
+// 覆盖规范:docs/engineering/testing/unit/experiments-runner.md「派发前资源获取失败的归一化」
+// bug: memory/experiment-fatal-presented-as-user-interrupt.md
+
+/** 带寿命确认能力的 fake 沙箱:复用池只接受能自证寿命的 provider(见 sandbox-pool.ts 的 create)。 */
+class ReusableFakeSandbox extends FakeSandbox {
+  async ensureLifetime(): Promise<{ ready: true }> {
+    return { ready: true };
+  }
+}
+
+describe("runEvals · 复用池租借失败", () => {
+  afterEach(() => {
+    expect(activeFeedbackSinkCount()).toBe(0);
+    expect(pendingHeldCaseLockCount()).toBe(0);
+  });
+
+  // 复用池在实例创建时跑 SandboxSpec setup 钩子,失败原样浮出 acquire():它是这条 attempt 的
+  // 终局失败(errored + 空间轴回执),不是调度缺陷。真机上它曾以 defect 穿过调度器,连坐同批
+  // 其它实验、正文被吞、退出码 130(冒充用户中断)。
+  it("SandboxSpec setup 钩子抛 ExperimentFatalError:本条 errored 且正文可见、落实验闸、同批其它实验照跑、不冒充中断", async () => {
+    const haltedExp = "lease-fatal-exp";
+    const bystanderExp = "lease-bystander-exp";
+    const message = "shared tunnel is down; run `make tunnel` and retry";
+    const startedHalted: string[] = [];
+    const startedBystander: string[] = [];
+    const haltedIds = ["r-1", "r-2", "r-3"];
+    const haltedEvals = haltedIds.map((id) =>
+      makeEval(id, () => {
+        startedHalted.push(id);
+      }),
+    );
+    const bystanderEvals = ["b-1", "b-2"].map((id) =>
+      makeEval(id, () => {
+        startedBystander.push(id);
+      }),
+    );
+    const reusableSandbox = defineSandbox({
+      name: "fake-reusable",
+      create: async () => asSandbox(new ReusableFakeSandbox()),
+    }).setup(() => {
+      throw new ExperimentFatalError(message);
+    });
+    const haltedRun = probeRun(makeAgent("agent-lease-fatal"), haltedExp, haltedIds, {
+      sandbox: reusableSandbox,
+      sandboxReuse: true,
+    });
+    const bystanderRun = probeRun(makeAgent("agent-lease-bystander"), bystanderExp, ["b-1", "b-2"]);
+    const plan: RunFeedbackPlan = {
+      shape: { evals: 5, configs: 2, totalAttempts: 5, maxConcurrency: 1 },
+      reused: 0,
+      reusedFailures: [],
+    };
+
+    await withCoordinator(plan, async (coordinator) => {
+      const { summary, root } = await runWithPriorResults([...haltedEvals, ...bystanderEvals], [haltedRun, bystanderRun], {
+        priorResults: [],
+        maxConcurrency: 1,
+      });
+
+      // 租借失败发生在 test() 之前:被撞死的那条一次都没进过 test(),但照常落一条 errored。
+      expect(startedHalted).toEqual([]);
+      const halted = summary.results.filter((r) => r.experimentId === haltedExp);
+      expect(halted).toHaveLength(1);
+      expect(halted[0]!.verdict).toBe("errored");
+      // 正文走完全程:作者的修复提示既在结果里,也在两条诊断通路里。
+      expect(halted[0]!.error?.message).toContain(message);
+      expect(halted[0]!.error?.origin.scope === "attempt" ? halted[0]!.error.origin.phase : undefined).toBe("sandbox.create");
+
+      // 不连坐:同批另一个实验的两条全跑完。
+      expect([...startedBystander].sort()).toEqual(["b-1", "b-2"]);
+      expect(summary.results.filter((r) => r.experimentId === bystanderExp)).toHaveLength(2);
+
+      // 落实验闸:剩下两条计 unstarted;两条通路同源。
+      const notice = coordinator.state.diagnostics.find((d) => d.key === experimentHaltKey(haltedExp));
+      expect(notice).toBeDefined();
+      expect(notice!.message).toContain(message);
+      expect(notice!.data?.unstarted).toBe(2);
+      const persisted = await snapshotHaltDiagnostics(root, haltedExp);
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]!.detail).toContain(message);
+
+      // 不冒充用户中断:整次运行照常收尾,反馈流里没有 interrupted 诊断。
+      expect(coordinator.state.diagnostics.some((d) => d.key === "interrupted")).toBe(false);
+      expectCountIdentity(coordinator.state);
+      expect(await lockFilesRemaining(root)).toEqual([]);
+    });
+  }, SCHEDULING_TEST_TIMEOUT_MS);
+});
+
 // ─────────────── 用例锁:elsewhere 收支平账的两条回归(五项恒等式的守护) ───────────────
 // 覆盖规范:docs/engineering/testing/unit/experiments-runner.md「用例锁与并发 Invocation」的
 // 「挂起用例……计入独立的 `elsewhere` 计数且与 `queued` 互斥、五项计数恒等式成立」与

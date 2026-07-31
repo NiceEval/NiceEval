@@ -13,6 +13,7 @@ import {
   errorFromThrown,
   // attemptOrigin re-exported via timing for Run diagnostics
 
+  attemptFailureDeclaration,
   experimentRunInfo,
   resolveJudge,
   runAttemptEffect,
@@ -40,7 +41,7 @@ import type {
   RunOptions,
 } from "./types.ts";
 import { attemptOrigin, artifactPrepareTimingHook, createRunTimingRecorder, runOrigin } from "./timing.ts";
-import { buildFailureOrigin, prepareSandboxBuilds } from "../sandbox/build-coordinator.ts";
+import { buildFailureOrigin, startSandboxBuilds } from "../sandbox/build-coordinator.ts";
 import { ArtifactPrepareCoordinator } from "../agents/provisioner.ts";
 import { collectBuildPreparation, toBuildPreparation } from "./build-preparation.ts";
 import { firstLine } from "../util.ts";
@@ -359,30 +360,43 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   }
 
   const buildPrep = opts.buildPreparation ?? (collected ? toBuildPreparation(collected) : undefined);
-  if (buildPrep && buildPrep.works.length > 0) {
-    const prep = await prepareSandboxBuilds(buildPrep.works, {
-      timing: runTiming,
-      provider: buildPrep.provider,
-      ...(buildPrep.maxConcurrency !== undefined ? { maxConcurrency: buildPrep.maxConcurrency } : {}),
-      ...(buildPrep.buildTimeoutMs !== undefined ? { buildTimeoutMs: buildPrep.buildTimeoutMs } : {}),
-      ...(buildPrep.prepareBudgetMs !== undefined ? { prepareBudgetMs: buildPrep.prepareBudgetMs } : {}),
-      signal: opts.signal,
-      // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
-      onActivity: (event) => {
-        reportRunActivity({
-          id: event.id,
-          key: event.key,
-          label: event.label,
-          status: event.status,
-          ...("durationMs" in event ? { durationMs: event.durationMs } : {}),
-        });
-      },
-    });
-    sandboxBuildRecords = [...prep.records];
-    for (const [evalId, keys] of Object.entries(buildPrep.evalBuildKeys)) {
+  // 共享构建**不阻塞派发**:整批 key 同时开工,每条 attempt 只等自己引用的那几个 key
+  // (case.md「Run 级构建协调」第 4 条的逐 key 放行)。全局 barrier 会让 10 个已就绪的镜像
+  // 陪着最慢的那个构建干等(台账见 memory/shared-build-single-barrier-not-per-buildkey.md)。
+  const runningBuilds =
+    buildPrep && buildPrep.works.length > 0
+      ? startSandboxBuilds(buildPrep.works, {
+          timing: runTiming,
+          provider: buildPrep.provider,
+          ...(buildPrep.maxConcurrency !== undefined ? { maxConcurrency: buildPrep.maxConcurrency } : {}),
+          ...(buildPrep.buildTimeoutMs !== undefined ? { buildTimeoutMs: buildPrep.buildTimeoutMs } : {}),
+          ...(buildPrep.prepareBudgetMs !== undefined ? { prepareBudgetMs: buildPrep.prepareBudgetMs } : {}),
+          signal: opts.signal,
+          // 最小反馈钩子:共享构建投影为运行级 active 行 / 非 TTY 起止事件,不占 attempt 位。
+          onActivity: (event) => {
+            reportRunActivity({
+              id: event.id,
+              key: event.key,
+              label: event.label,
+              status: event.status,
+              ...("durationMs" in event ? { durationMs: event.durationMs } : {}),
+            });
+          },
+        })
+      : undefined;
+
+  // 逐 eval 的放行闸:第一次问到就记下等待,之后同 eval 的其它 attempt 复用同一条。
+  const buildWaits = new Map<string, Promise<void>>();
+  const awaitBuildsFor = (evalId: string): Promise<void> => {
+    const keys = buildPrep?.evalBuildKeys[evalId];
+    if (runningBuilds === undefined || keys === undefined || keys.length === 0) return Promise.resolve();
+    let pending = buildWaits.get(evalId);
+    if (pending !== undefined) return pending;
+    pending = (async () => {
+      for (const key of keys) await runningBuilds.settled(key);
       const locators = new Map<string, string>();
       for (const key of keys) {
-        const failure = prep.failures.get(key);
+        const failure = runningBuilds.failures.get(key);
         if (failure !== undefined) {
           const originFields = buildFailureOrigin(failure);
           buildFailureByEval.set(evalId, {
@@ -391,19 +405,19 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
             origin: runOrigin(originFields.timingNodeId),
             ...(originFields.cause !== undefined ? { cause: originFields.cause } : {}),
           });
-          break;
+          return;
         }
-        const locator = prep.locators.get(key);
+        const locator = runningBuilds.locators.get(key);
         if (typeof locator === "string") locators.set(key, locator);
       }
       if (locators.size > 0) buildLocatorsByEval.set(evalId, locators);
-    }
-  }
+    })();
+    buildWaits.set(evalId, pending);
+    return pending;
+  };
 
-  // 把 locators / CaseKey 灌进已展开的 attempts(构建在展开之后、派发之前)。
+  // CaseKey 与构建无关,展开后立即灌进 attempts;locators 在各自的 key 结算后补进去。
   for (const a of attempts) {
-    const locators = buildLocatorsByEval.get(a.evalDef.id);
-    if (locators !== undefined) a.buildLocators = locators;
     const caseKey = caseKeyByEval.get(a.evalDef.id);
     if (caseKey !== undefined) a.caseKey = caseKey;
   }
@@ -1899,15 +1913,38 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   ? buildFailure
                   : undefined;
             const pool = blockedError ? undefined : reusePoolFor(a);
-            const lease = pool
+            // 复用池的租借失败(实例创建、SandboxSpec setup 钩子、寿命确认都在池内)是**这条
+            // attempt 的终局失败**,不是调度缺陷:失败原样交回这里,先读空间轴回执(作者在
+            // setup 钩子里抛的 ExperimentFatalError 由此落闸),再折成 errored 结果走与
+            // blockedError 完全相同的下游路径。
+            // 拒绝不能直接穿过 Effect.promise:那会变成 defect 打断 forEach,连坐同批其它实验,
+            // 且混进兄弟 fiber 的 interrupt 后被当成用户中断吞掉正文(见
+            // docs/feature/error-classification/architecture.md「Effect 边界」:attempt fiber 的
+            // E 恒为 never;memory/experiment-fatal-presented-as-user-interrupt.md)。
+            const leased = pool
               ? yield* Effect.promise(() =>
                   // 复用池要预留的寿命 = 这条 attempt 实际生效的上限,与 attempt.ts 同一个解析链
                   // (单源见 runner/timeout.ts),不在这里重写一遍 `??`。没有上限时如实传
                   // undefined:池只能要求覆盖收尾预留,不替 attempt 编一条 deadline。
-                  pool.acquire(resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs),
+                  pool
+                    .acquire(resolveAttemptTimeout(a.run, a.evalDef, opts.config)?.timeoutMs)
+                    .then(
+                      (ok) => ({ ok: true, lease: ok }) as const,
+                      (e: unknown) => ({ ok: false, error: e }) as const,
+                    ),
                 )
               : undefined;
-            const result = blockedError
+            const lease = leased?.ok === true ? leased.lease : undefined;
+            // 租借失败归 `sandbox.create` 阶段:池把「创建实例 + 跑 SandboxSpec setup + 确认寿命」
+            // 打包成一次借出,调度器这一侧只知道这条 attempt 没能拿到可用实例。
+            const leaseError: AttemptError | undefined =
+              leased?.ok === false ? errorFromThrown(leased.error, "sandbox.create") : undefined;
+            if (leased?.ok === false) {
+              const declaration = attemptFailureDeclaration(a.run.classifyFailure, "sandbox.create", leased.error);
+              if (declaration) closeHaltGate(a, declaration);
+            }
+            const failedBeforeDispatch = blockedError ?? leaseError;
+            const result = failedBeforeDispatch
               ? ({
                   id: a.evalDef.id,
                   description: a.evalDef.description,
@@ -1921,7 +1958,7 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
                   startedAt: new Date().toISOString(),
                   durationMs: 0,
                   assertions: [],
-                  error: blockedError,
+                  error: failedBeforeDispatch,
                 } satisfies EvalResult)
               : yield* runAttemptEffect(a, opts, sandboxSem, {
                   parentSignal: attemptSignal,
@@ -2096,6 +2133,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
         // 许可链的循环外壳:撞锁挂起的用例解决后从 ① 重新走一遍(实验闸名额与全局位都要
         // 重新取,不能拿着别人在等的名额干等),携入的直接收工。
         const pipeline = Effect.gen(function* () {
+          // ⓪ 逐 BuildKey 放行:只等本 eval 引用的那几个 key,不引用任何 key 的 attempt
+          // 立刻进入许可链。等在这里不占全局并发位,慢构建因此不挡住同批别的 eval。
+          yield* Effect.promise(() => awaitBuildsFor(a.evalDef.id));
+          const locators = buildLocatorsByEval.get(a.evalDef.id);
+          if (locators !== undefined) a.buildLocators = locators;
           for (;;) {
             // ① 止损闸:落闸 → 本 attempt 不派发,计 unstarted(完成状态因此落 incomplete)。
             const halt = checkDispatchHalt(a);
@@ -2146,8 +2188,12 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     ).pipe(
       // 中断(用户 Ctrl+C):finalizer 已在中断过程中跑完(容器已停),这里只是把它咽下,
       // 好让流程走到 summarize / onInvocationComplete,用已完成的 results 出一份部分汇总,而不是抛栈。
+      // 判据是 `isInterruptedOnly` 而不是 `isInterrupted`:一条 fiber 的缺陷会连带中断兄弟 fiber,
+      // 合成的 cause 里同时有 die 与 interrupt,`isInterrupted` 对它同样为真——按它咽下等于把
+      // 真·缺陷的正文吞掉、冒充成用户中断(退出码 130),正是
+      // memory/experiment-fatal-presented-as-user-interrupt.md 的现象。
       Effect.catchAllCause((cause) => {
-        if (Cause.isInterrupted(cause)) {
+        if (Cause.isInterruptedOnly(cause)) {
           interrupted = true;
           return Effect.void;
         }
@@ -2158,6 +2204,11 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
   );
   // 调度已经结算:任何被中断路径抛下的挂起轮询到下一个心跳周期自行收束,不无主空转。
   dispatchClosed = true;
+  // provenance 在这里齐全:没有任何 attempt 依赖的 key 也照样跑完并留下自己那条记录,
+  // 中断路径下同批构建随 signal 收束成 cancelled,不把 run.json 的 sandboxBuilds 落空。
+  if (runningBuilds !== undefined) {
+    sandboxBuildRecords = [...(await runningBuilds.done).records];
+  }
   await Promise.allSettled([...reusePools.values()].map((pool) => pool.stop()));
   await opts.otelPool?.close();
 
@@ -2211,8 +2262,9 @@ export async function runEvals(opts: RunOptions): Promise<InvocationSummary> {
     }
   };
   if (Exit.isFailure(exit)) {
-    // signal abort 或 cause 含中断 → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出。
-    if (opts.signal?.aborted || Cause.isInterrupted(exit.cause)) {
+    // signal abort 或纯中断的 cause → 当作用户中断,走部分汇总;否则是真·缺陷,照常抛出
+    // (混着 die 的 cause 归缺陷,见上面 catchAllCause 的判据)。
+    if (opts.signal?.aborted || Cause.isInterruptedOnly(exit.cause)) {
       interrupted = true;
     } else {
       await sweepExperimentTeardowns();

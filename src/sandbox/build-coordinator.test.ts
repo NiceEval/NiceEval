@@ -7,6 +7,7 @@ import {
   SANDBOX_BUILD_ACTIVITY,
   buildFailureOrigin,
   prepareSandboxBuilds,
+  startSandboxBuilds,
   type SandboxBuildProvider,
   type SandboxBuildWork,
 } from "./build-coordinator.ts";
@@ -221,6 +222,96 @@ describe("BuildKey single-flight、失败扇出和预算", () => {
     });
     expect(prep.records[0]?.status).toBe("cancelled");
     expect(prep.failures.get("budget")?.error.code).toBe("sandbox-build-timeout");
+  });
+
+  it("瞬时构建失败退避重试后成功;确定性失败零重试", async () => {
+    let attempts = 0;
+    const provider = scriptedProvider({
+      lookup: () => undefined,
+      build: async (key) => {
+        attempts += 1;
+        if (attempts < 3) throw new Error("failed to fetch oauth token: toomanyrequests");
+        return `sha256:${key}`;
+      },
+    });
+    const prep = await prepareSandboxBuilds([work("flaky")], {
+      timing: createRunTimingRecorder(() => 0),
+      provider,
+      buildRetryBaseMs: 1,
+    });
+    expect(attempts).toBe(3);
+    expect(prep.locators.get("flaky")).toBe("sha256:flaky");
+    expect(prep.records[0]?.status).toBe("built");
+
+    let deterministic = 0;
+    const bad = scriptedProvider({
+      lookup: () => undefined,
+      build: async () => {
+        deterministic += 1;
+        throw new Error("failed to solve: dockerfile parse error on line 3");
+      },
+    });
+    const failed = await prepareSandboxBuilds([work("bad-dockerfile")], {
+      timing: createRunTimingRecorder(() => 0),
+      provider: bad,
+      buildRetryBaseMs: 1,
+    });
+    expect(deterministic).toBe(1);
+    expect(failed.failures.get("bad-dockerfile")?.error.code).toBe("sandbox-build-failed");
+  });
+
+  it("重试封顶后如实落 failed;耗尽次数不无限重试", async () => {
+    let attempts = 0;
+    const provider = scriptedProvider({
+      lookup: () => undefined,
+      build: async () => {
+        attempts += 1;
+        throw new Error("unexpected EOF");
+      },
+    });
+    const prep = await prepareSandboxBuilds([work("always-flaky")], {
+      timing: createRunTimingRecorder(() => 0),
+      provider,
+      buildAttempts: 2,
+      buildRetryBaseMs: 1,
+    });
+    expect(attempts).toBe(2);
+    expect(prep.records[0]?.status).toBe("failed");
+    expect(prep.failures.get("always-flaky")?.error.message).toContain("unexpected EOF");
+  });
+
+  it("逐 BuildKey 放行:慢 key 仍在构建时,已就绪 key 的等待者不被挡住", async () => {
+    const releaseSlow: { fn?: () => void } = {};
+    const provider = scriptedProvider({
+      lookup: () => undefined,
+      build: async (key) => {
+        if (key === "slow") await new Promise<void>((r) => (releaseSlow.fn = r));
+        return `sha256:${key}`;
+      },
+    });
+    const running = startSandboxBuilds([work("slow"), work("fast")], {
+      timing: createRunTimingRecorder(() => 0),
+      provider,
+      maxConcurrency: 2,
+    });
+    let fastReleased = false;
+    let slowReleased = false;
+    void running.settled("fast").then(() => {
+      fastReleased = true;
+    });
+    void running.settled("slow").then(() => {
+      slowReleased = true;
+    });
+    // 让 fast 那条走完自己的微任务:慢 key 还没返回,它已经拿到 locator。
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fastReleased).toBe(true);
+    expect(slowReleased).toBe(false);
+    expect(running.locators.get("fast")).toBe("sha256:fast");
+
+    releaseSlow.fn?.();
+    const prep = await running.done;
+    expect(prep.locators.get("slow")).toBe("sha256:slow");
+    expect(prep.records).toHaveLength(2);
   });
 
   it("共享构建时间只在 Run timings 出现;records 不复制 durationMs", async () => {

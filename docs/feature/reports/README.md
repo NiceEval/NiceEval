@@ -193,7 +193,7 @@ return <Table rows={rows} />;
 8. 把转换结果传给自有 React 页面。
 9. 组件库作者定义一个新的双面显示形状。
 10. 多页报告只执行被请求 page；其中一页失败时其它 page 仍可用。
-11. Attempt 详情作为 `input: "attempt"` 的参数化 page 静态导出和深链。
+11. attempt 与 experiment 详情作为标准库参数化 page 静态导出和深链。
 12. 每个内建 show 切片的 text 与 ShowJson 共用同一任务结果。
 13. 切换 locale 只重新格式化 MetricValue，不重新运行 page 计算。
 14. EvidenceRow 经 JSON fixture 和 React props 往返后无需水化即可渲染。

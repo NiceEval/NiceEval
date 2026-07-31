@@ -38,6 +38,7 @@ import { createSourceRegistry, withSourceRegistry, type SourceRegistry } from ".
 import {
   attemptFailureInfo,
   resolveAttemptFailureClass,
+  type AttemptFailureClassifier,
   type FailureClass,
 } from "../shared/failure-class.ts";
 import type { CapturedEvalSource } from "./eval-source.ts";
@@ -65,7 +66,7 @@ import type {
 } from "../types.ts";
 import { reportAttemptLifecycle, reportDiagnostic, reportKept } from "./feedback/sink.ts";
 import { encodeAttemptKey, runWho } from "./types.ts";
-import { attemptOrigin, commandDisplay, commandNode, createTimingRecorder, hookActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
+import { attemptOrigin, commandDisplay, commandLimitAttribution, commandNode, createTimingRecorder, hookActivity, turnActivity, workspaceDiffExportActivity, type TimingRecorder } from "./timing.ts";
 import { sandboxForEval, sandboxProjection } from "./sandbox-selection.ts";
 import type {
   AgentRun,
@@ -88,6 +89,27 @@ export interface AttemptFailureDeclaration {
   readonly class: FailureClass;
   readonly phase: LifecyclePhase;
   readonly text: string;
+}
+
+/**
+ * 一次终局失败的空间轴决议:走三道链(抛出点声明 → 实验分类器 → 缺省不可重试,见
+ * src/shared/failure-class.ts 的 `resolveAttemptFailureClass`),缺省档(`scope` 省略或
+ * `"attempt"`)返回 undefined —— 死因只属于本次执行,没有闸可落。
+ *
+ * **必须在把错误折成纯数据 `AttemptError` 之前调**:折完之后原错误对象(连同它携带的
+ * `_tag`/`class` 与 cause 链)就不再是任何人的引用,空间轴声明再也读不出来。
+ * attempt 内的失败(本文件的 `declareFailure`)与 attempt 开跑前的资源获取失败
+ * (run.ts 的复用池租借)共用这一份决议,两处不各写一遍链。
+ */
+export function attemptFailureDeclaration(
+  classify: AttemptFailureClassifier | undefined,
+  phase: LifecyclePhase,
+  e: unknown,
+): AttemptFailureDeclaration | undefined {
+  const info = attemptFailureInfo(phase, e);
+  const cls = resolveAttemptFailureClass(info, classify);
+  if (cls.scope !== "eval" && cls.scope !== "experiment") return undefined;
+  return { class: cls, phase, text: info.text };
 }
 
 export interface RunAttemptEffectOptions {
@@ -231,10 +253,8 @@ export function runAttemptEffect(
    */
   const declareFailure = (phase: LifecyclePhase, e: unknown): void => {
     if (!onFailureClass) return;
-    const info = attemptFailureInfo(phase, e);
-    const cls = resolveAttemptFailureClass(info, run.classifyFailure);
-    if (cls.scope !== "eval" && cls.scope !== "experiment") return;
-    onFailureClass({ class: cls, phase, text: info.text });
+    const declaration = attemptFailureDeclaration(run.classifyFailure, phase, e);
+    if (declaration) onFailureClass(declaration);
   };
   // 本 attempt 累计的运行事实(与 verdict/diagnostics 独立):sandbox hook / eval.setup·teardown /
   // agent setup·send·teardown 经 ctx.fact() 上报的都落这里(同一 attempt 内后写覆盖先写),
@@ -594,6 +614,7 @@ export function runAttemptEffect(
           },
           recorder,
           ...(attemptTimeout ? { attemptTimeout } : {}),
+          ...(deadlineAt !== undefined ? { deadlineAt } : {}),
           attemptEpoch: t0,
           feedback: scopedFeedback,
           diagnostics,
@@ -780,6 +801,8 @@ interface AttemptResources {
   sandbox: Sandbox;
   /** 本 attempt 解析出的超时上限与它的出处;超时归属(`error.timeout`)照它落盘。 */
   attemptTimeout?: { timeoutMs: number; source: TimeoutSource };
+  /** attempt deadline 的截止**时刻**;命令节点的时限归属按它算剩余量。四层都没声明上限时缺席。 */
+  deadlineAt?: number;
   /** SandboxSpec.setup() 链式挂的钩子,按追加顺序;非沙箱 agent 传空数组(usesSandbox 挡住不会跑)。 */
   sandboxSetupHooks: readonly SandboxHook[];
   /** SandboxSpec.teardown() 链式挂的钩子,按追加顺序保存,执行时逆序。 */
@@ -873,7 +896,7 @@ async function runAttemptBody(
   const usesSandbox = run.agent.kind === "sandbox";
   // 命令时间树:所有经这个包装 sandbox 发出的 runCommand/runShell 都挂成当前阶段(或当前 hook
   // 节点)下的 command 子节点。包装只在最外层公开调用记录一次——provider 内部转调不经过它。
-  const sandbox = usesSandbox ? withCommandTiming(rawSandbox, recorder, getPhase, commands) : rawSandbox;
+  const sandbox = usesSandbox ? withCommandTiming(rawSandbox, recorder, getPhase, commands, res.deadlineAt) : rawSandbox;
   // 在两个 return 前赋值,好让 finally 把 diagnostics 挂到即将返回的同一个对象上(见 finally 末尾)。
   let result: EvalResult | undefined;
   // Direct Agent 只拿基础 ctx；Sandbox Agent 才拿带真实 Sandbox 的扩展 ctx。
@@ -1374,10 +1397,14 @@ function withCommandTiming(
   recorder: TimingRecorder,
   getPhase: () => LifecyclePhase | undefined,
   commands: FailedCommandEvidence[],
+  deadlineAt: number | undefined,
 ): Sandbox {
-  const wrap = async <T>(display: string, fn: () => Promise<T>): Promise<T> => {
+  const wrap = async <T>(display: string, opts: unknown, fn: () => Promise<T>): Promise<T> => {
     const startOffsetMs = recorder.offsetNow();
     const t0 = Date.now();
+    // 这条命令这次生效的线:显式 timeout 归命令自己那层,否则是 attempt deadline 在**命令开始
+    // 这一刻**的剩余量——同一台沙箱上的第二条命令拿到的不是一整份上限。
+    const limit = commandLimitAttribution(opts as { timeout?: number } | undefined, { deadlineAt }, t0);
     try {
       const result = await fn();
       const exitCode = (result as { exitCode?: unknown })?.exitCode;
@@ -1386,6 +1413,7 @@ function withCommandTiming(
           display,
           startOffsetMs,
           durationMs: Date.now() - t0,
+          ...(limit !== undefined ? { limit } : {}),
           ...(typeof exitCode === "number" ? { exitCode, failed: exitCode !== 0 } : {}),
         }),
       );
@@ -1407,7 +1435,25 @@ function withCommandTiming(
       }
       return result;
     } catch (e) {
-      recorder.child(commandNode({ display, startOffsetMs, durationMs: Date.now() - t0, failed: true }));
+      // 撞线失败的节点带 provider 实际执行的那条线(`SandboxCommandTimeoutError` 自带上限与
+      // 「是不是显式声明」),不是这里事前算的那份——两者同源,但 provider 那份是真正掐断它的值。
+      const hit =
+        e instanceof SandboxCommandTimeoutError
+          ? {
+              source: e.explicit ? ("command-timeout" as const) : ("attempt-deadline" as const),
+              limitMs: e.limitMs,
+              timedOut: true as const,
+            }
+          : limit;
+      recorder.child(
+        commandNode({
+          display,
+          startOffsetMs,
+          durationMs: Date.now() - t0,
+          failed: true,
+          ...(hit !== undefined ? { limit: hit } : {}),
+        }),
+      );
       throw e;
     }
   };
@@ -1415,11 +1461,11 @@ function withCommandTiming(
     get(target, prop, receiver) {
       if (prop === "runCommand") {
         return (cmd: string, args?: string[], opts?: unknown) =>
-          wrap(commandDisplay(cmd, args), () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
+          wrap(commandDisplay(cmd, args), opts, () => (target.runCommand as (...a: unknown[]) => Promise<unknown>)(cmd, args, opts));
       }
       if (prop === "runShell") {
         return (script: string, opts?: unknown) =>
-          wrap(commandDisplay(script), () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
+          wrap(commandDisplay(script), opts, () => (target.runShell as (...a: unknown[]) => Promise<unknown>)(script, opts));
       }
       const value = Reflect.get(target, prop, receiver);
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;

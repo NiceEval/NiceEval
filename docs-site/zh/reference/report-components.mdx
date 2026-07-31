@@ -35,25 +35,23 @@ export default defineReport(async (sample) => {
 多页报告静态声明 `pages`：
 
 ```ts
-interface SamplePage {
+interface PageDefinition<P = void, I = Sample> {
   id: string;
   title: LocalizedText;
-  input?: "sample";
   navigation?: boolean;
-  render: PageRender<Sample>;
-}
-
-interface AttemptPage {
-  id: string;
-  title: LocalizedText;
-  input: "attempt";
-  navigation: false;
-  render: PageRender<AttemptEvidence>;
+  params?: PageParams<P>;
+  load?: (
+    base: Sample,
+    params: P,
+    ctx: PageLoadContext,
+  ) => I | Promise<I>;
+  render: PageRender<I>;
 }
 ```
 
 `pages` 是非空有序数组。`id` 必须唯一。
-一份报告最多有一张 Attempt page，而且必须写 `navigation: false`。
+`load` 决定这页的输入从哪来，省略时输入就是当前 Sample。
+声明 `params` 的页按参数产生多个实例（Attempt 详情、Experiment 详情都是这种页），必须同时声明 `load` 并写 `navigation: false`。
 宿主只执行当前请求的 page render。
 
 外壳字段只有 `title`、`theme`、`dimensionPins`、`head` 与 `pages`。
@@ -216,8 +214,9 @@ toSampleNotices(sample);
 | `SourceView` | `source` |
 | `DiffView` | `files` |
 | `AttemptDetails` | `attempt` |
+| `ExperimentDetails` | `input` |
 | `Hero` | `logo`、`description`、`links` |
-| `ExperimentScatter` | `input`、`series`、`connect` |
+| `ExperimentScatter` | `input`、`series`、`connect`、`pointTarget` |
 | `ExperimentTable` | `input`、`sort`、`searchable` |
 
 `SourceView` 的 `source` 表示待显示的源码值。
@@ -279,6 +278,24 @@ toSampleNotices(sample);
 读数字段必须是 MetricValue。
 纯外部数值序列要显式声明 `external`，并且不提供 Attempt 下钻。
 
+一个点点开去哪由 `pointTarget` 决定，返回值是「页 id + 参数」：
+
+```tsx
+<Scatter
+  points={performance}
+  x="costUSD"
+  y="passRate"
+  point="experiment"
+  pointTarget={(row) => ({
+    page: "experiment",
+    params: { experiment: row.experiment },
+  })}
+/>
+```
+
+省略 `pointTarget` 时，行级 `refs` 恰好一个的点链到该 Attempt 详情；多个 `refs` 的点不带链接。
+报告里没有目标页时点也不带链接，不会出现假链接。
+
 `Line` 用于时间或有序数值，`Bars` 用于排行和堆叠，
 `Area` 用于累计量或区间。
 需要混合 mark 时使用 `ComposedChart`，每条 series 显式绑定字段和轴。
@@ -300,23 +317,38 @@ toSampleNotices(sample);
 `layout="horizontal"` 在网页面使用横向排行条；
 text 面恒用横向条，保留分类标签、格式化终值与覆盖率。
 
-## Attempt 详情
+## Attempt 与 Experiment 详情
 
-Attempt 详情是一张参数化 page：
+两种详情都是参数化 page。
+官方导出 `standardAttemptPage` 与 `standardExperimentPage`，放进自己的 `pages` 数组即可复用完整详情：
+
+```tsx
+import {
+  standardAttemptPage,
+  standardExperimentPage,
+} from "niceeval/report/built-in";
+
+export default defineReport({
+  pages: [
+    { id: "overview", title: "Overview", render: overview },
+    standardAttemptPage,
+    standardExperimentPage,
+  ],
+});
+```
+
+自定义 Attempt 详情时复用官方页的 `params` 与 `load`，只换 `render`：
 
 ```tsx
 {
-  id: "attempt",
-  title: "Attempt",
-  input: "attempt",
-  navigation: false,
+  ...standardAttemptPage,
   render: (attempt) => (
     <AttemptDetails attempt={attempt} />
   ),
 }
 ```
 
-自定义详情可以显式调用：
+`render` 里可以显式调用：
 
 ```ts
 toConversationTurns(attempt);
@@ -325,8 +357,8 @@ toTimelineNodes(attempt);
 toAnnotatedEvalSource(attempt);
 ```
 
-官方导出 `standardAttemptPage`。
-把它放进自己的 `pages` 数组即可复用完整详情。
+`ExperimentDetails` 显示单个实验的完整读面：身份、读数摘要、判定构成、题目清单、覆盖缺口与实验级提示。
+默认散点的实验点点开就是这一页。
 
 ## 自定义 renderer
 

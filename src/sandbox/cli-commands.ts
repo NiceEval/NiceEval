@@ -115,6 +115,8 @@ async function listOrphansCommand(root: string, io: Io): Promise<number> {
     io.out(
       `${c.sandboxId.padEnd(10)}${c.provider.padEnd(10)}${ownerLabel(c).padEnd(19)}${formatWhen(c.identity.startedAt).padEnd(19)}${c.state}\n`,
     );
+    const group = groupLabel(c);
+    if (group) io.out(`          ${group}\n`);
   }
   io.out(`Remove orphans with: niceeval sandbox prune\n`);
   return 0;
@@ -128,7 +130,10 @@ async function pruneCommand(root: string, flags: SandboxCommandFlags, io: Io): P
     if (outcome.pruned.length > 0) {
       io.out(`pruned ${outcome.pruned.length} orphan sandbox${outcome.pruned.length === 1 ? "" : "es"}\n`);
       for (const c of outcome.pruned) {
-        io.out(`  ${c.sandboxId}  ${c.provider}  ${ownerLabel(c)} · started ${formatWhen(c.identity.startedAt)}\n`);
+        const group = groupLabel(c);
+        io.out(
+          `  ${c.sandboxId}  ${c.provider}  ${ownerLabel(c)} · started ${formatWhen(c.identity.startedAt)}${group ? ` · ${group}` : ""}\n`,
+        );
       }
     }
     for (const f of outcome.failed) {
@@ -141,6 +146,15 @@ async function pruneCommand(root: string, flags: SandboxCommandFlags, io: Io): P
     );
   }
   return outcome.failed.length > 0 ? 1 : 0;
+}
+
+/** Compose 资源组的组成一行带过:伴随容器与网络跟随主实例整组出现,不逐容器单列。 */
+function groupLabel(c: OrphanCandidate): string | undefined {
+  const g = c.resources;
+  if (!g) return undefined;
+  const containers = `${g.containerIds.length} container${g.containerIds.length === 1 ? "" : "s"}`;
+  const networks = `${g.networkIds.length} network${g.networkIds.length === 1 ? "" : "s"}`;
+  return `compose ${g.projectName} · ${containers} · ${networks}`;
 }
 
 /** `pid <pid>@<host>`,同宿主确认死亡时追加 ` dead`——unverified(异宿主)不冒充已核实。 */

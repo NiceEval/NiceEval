@@ -61,6 +61,17 @@ export async function loadHostReport(
 }
 
 /**
+ * 报告出处的人读标签：与 `loadHostReport` 的三档取值链一一对应（`--report` → `config.report`
+ * → 内建 `standard`）。宿主报错要点名「这份报告是从哪来的」——把出处判断留在调用点，
+ * 消息就会像 `--report` 没给时那样一律说成内建，而实际装载的是配置里的报告。
+ */
+export function describeReportSource(reportPath: string | undefined, configuredReport?: ReportDefinition): string {
+  if (reportPath !== undefined) return `the report loaded by \`--report ${reportPath}\``;
+  if (configuredReport !== undefined) return "the project default report (the `report` field in niceeval.config.ts)";
+  return "the built-in report";
+}
+
+/**
  * view 的 locator 证据室缺省页。自定义报告可以声明自己的 attempt-input page 覆盖它；
  * 没声明时仍保留官方 AttemptDetails，避免组合组件的 locator 因换了首页而退化成不可点击文本。
  */

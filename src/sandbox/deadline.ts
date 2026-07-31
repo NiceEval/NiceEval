@@ -34,6 +34,27 @@ export function commandLimit(
 }
 
 /**
+ * 复用实例的「换一条 attempt deadline」能力(与 `suspend()` / `ensureLifetime()` 同一种
+ * 「接口之外的可选能力」)。
+ *
+ * 一次性沙箱在 create 时就收下 deadlineAt,实例与 attempt 一一对应,所以那条线一辈子不变;
+ * 复用实例活得比 attempt 长,create 时那条线只对创建它的那条 attempt 成立,后续承接的每条
+ * attempt 都要换成自己的。没有这条能力时,复用实例的每条命令都落回「base 里什么都没有」
+ * → provider SDK 自己的默认值(e2b 是 60 秒),于是实验声明的 timeoutMs 完全不生效——
+ * 正是本文件顶部注释点名的那个症状,只不过发生在复用路径上。
+ */
+export interface SandboxCommandDeadline {
+  /** `undefined` = 这台实例接下来没有 deadline(四层都没声明上限时的正路径,不发明一条线)。 */
+  setCommandDeadline(deadlineAt?: number): void;
+}
+
+/** 探到就换线,探不到就什么都不做(provider 没实现 = 它的命令本来就不按 deadline 记账)。 */
+export function applyCommandDeadline(sandbox: unknown, deadlineAt?: number): void {
+  const setter = (sandbox as Partial<SandboxCommandDeadline> | null | undefined)?.setCommandDeadline;
+  if (typeof setter === "function") setter.call(sandbox, deadlineAt);
+}
+
+/**
  * 一条命令撞线时抛的错。带着**归属**一起抛:上限多少、是不是显式声明的——runner 据此把
  * attempt 转成 `errored` 时落 `error.timeout`(见 runner/attempt.ts),不打一个没有归属
  * 说明的 ✗。

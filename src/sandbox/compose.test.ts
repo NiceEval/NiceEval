@@ -13,6 +13,7 @@ import {
   collectComposeBuilds,
   composeBuildWorksFromPlan,
   COMPOSE_MATERIALIZER_REVISION,
+  detectDockerBuildPlatform,
   dockerComposeBuildProvider,
   findComposeBlacklistViolations,
   inspectComposeYaml,
@@ -251,6 +252,77 @@ services:
     expect(collection?.buildKeys).toHaveLength(1);
     expect(dockerComposeBuildProvider()).toMatchObject({ lookup: expect.any(Function), build: expect.any(Function) });
     expect(COMPOSE_MATERIALIZER_REVISION).toMatch(/^docker-compose-/);
+  });
+
+  it("目标平台从构建执行环境探测:arm64 宿主与 amd64 宿主的 BuildKey 不同", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "ctx"), { recursive: true });
+    await writeFile(join(root, "ctx", "Dockerfile"), "FROM alpine\n", "utf-8");
+    await writeFile(
+      join(root, "compose.yaml"),
+      `
+services:
+  client:
+    build: ./ctx
+`,
+      "utf-8",
+    );
+    const collect = (probed: string) =>
+      collectComposeBuilds({
+        file: join(root, "compose.yaml"),
+        mainService: "client",
+        platformProbe: async () => probed,
+      });
+
+    const arm = await collect("linux/aarch64");
+    const amd = await collect("linux/x86_64");
+    expect(arm.platform).toBe("linux/arm64");
+    expect(amd.platform).toBe("linux/amd64");
+    expect(arm.buildKeys[0]).not.toBe(amd.buildKeys[0]);
+    expect((arm.works[0]!.inputs as { platform: string }).platform).toBe("linux/arm64");
+
+    // 钉死值压过探测值;探测不通时回落到宿主架构而不是一个写死的默认值。
+    expect(await detectDockerBuildPlatform({ env: { DOCKER_DEFAULT_PLATFORM: "linux/amd64" }, probe: async () => "linux/arm64" })).toBe(
+      "linux/amd64",
+    );
+    expect(await detectDockerBuildPlatform({ env: {}, probe: async () => undefined })).toBe(
+      `linux/${process.arch === "x64" ? "amd64" : process.arch === "arm64" ? "arm64" : process.arch}`,
+    );
+  });
+
+  it("构建执行拿到的平台与进 BuildKey 的值同源", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "ctx"), { recursive: true });
+    await writeFile(join(root, "ctx", "Dockerfile"), "FROM alpine\n", "utf-8");
+    await writeFile(
+      join(root, "compose.yaml"),
+      `
+services:
+  client:
+    build: ./ctx
+`,
+      "utf-8",
+    );
+    const collection = await collectComposeBuilds({
+      file: join(root, "compose.yaml"),
+      mainService: "client",
+      platformProbe: async () => "linux/arm64",
+    });
+    const calls: Array<{ args: readonly string[]; env: Record<string, string> }> = [];
+    const provider = dockerComposeBuildProvider({
+      runCompose: async (args, opts) => {
+        calls.push({ args, env: (opts.env ?? {}) as Record<string, string> });
+        return { stdout: "", stderr: "", exitCode: 0 };
+      },
+    });
+    await provider.build(collection.works[0]!, {
+      signal: new AbortController().signal,
+      timing: { offsetNow: () => 0, childOf: () => ({ id: "x", key: "k", label: "l", startOffsetMs: 0, durationMs: 0 }) } as never,
+      parent: { id: "p", key: "sandbox.build", label: "build", startOffsetMs: 0, durationMs: 0 },
+    });
+    const build = calls.find((c) => c.args.includes("build"));
+    expect(build?.env.DOCKER_DEFAULT_PLATFORM).toBe("linux/arm64");
+    expect(build?.env.DOCKER_DEFAULT_PLATFORM).toBe(collection.platform);
   });
 });
 
