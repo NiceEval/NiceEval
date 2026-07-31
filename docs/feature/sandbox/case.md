@@ -131,7 +131,8 @@ BuildKey
 ```
 
 target platform 是构建事实,不是一个写在代码里的默认值。
-构建执行环境自己报出目标平台——Docker 取 daemon 的 os / arch,显式钉死时以钉死值为准;进入 BuildKey 的那个值同时钉给构建器,构出来的镜像架构与身份里写的架构永远同一个。
+构建执行环境自己报出目标平台:Docker 取 daemon 的 os / arch,用户显式指定时以指定值为准。
+进入 BuildKey 的那个值同时传给构建器,构出来的镜像架构与身份里写的架构永远同一个。
 arm64 宿主上物化的题因此拿到与 amd64 宿主不同的 BuildKey,两台机器不会对同一道题算出相同 CaseKey、再让携带门互认不可比的结果。
 
 一个 Compose case 可以有零个、一个或多个 BuildKey:现场 build 的服务各一个,仅引用 `postgres:15` 的服务没有 BuildKey,只记录解析后的 image digest。

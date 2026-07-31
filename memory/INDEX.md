@@ -37,6 +37,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 ### 台账
 
 - [reuse-ensure-lifetime-generic-bookkeeping-fake](reuse-ensure-lifetime-generic-bookkeeping-fake.md) — resolve.ts 通用 ensureLifetime 本地时钟记账,e2b/vercel 对 lifetimeMs 零引用,E2B 30 分钟杀实例而 runner 一路 ready:true;修法=删通用包装,未实现 provider 派发前硬失败(reuse.md 契约已在)
+- [one-shot-sandbox-misses-deadline-remaining](one-shot-sandbox-misses-deadline-remaining.md) — 发现(未修):`deadlineAt` 只有复用池传得下去,一次性沙箱每条命令各拿一整份 `timeoutMs` 而不是 deadline 剩余量;症状被 runner 的硬超时盖住,修法=`createMaterializedCase` 透传 deadlineAt
 - [reuse-dogfooding-observability-gaps](reuse-dogfooding-observability-gaps.md) — 复用 dogfooding 四连:setup 失败丢 sandbox 归属(已进契约:租借时刻写)、复用污染无线索(已进契约:承接序号聚合诊断)、reused 词义冲突与配额盲区(进 roadmap/reuse-observability)、loadText 缺口实为下游旧版误报
 - 已修 [reuse-pool-retired-entries-deadlock](reuse-pool-retired-entries-deadlock.md) — 复用池淘汰实例不摘除,死实例占满容量后 acquire 永久挂起;修为 splice 移除 + 实例编号单调计数(src/runner/sandbox-pool.ts)
 - 已修 [sandbox-wrapper-drops-non-interface-capabilities](sandbox-wrapper-drops-non-interface-capabilities.md) — normalizeSandboxPaths 丢非接口能力 ensureLifetime,suspend 之后同 bug 第二次复发;修为显式转发+穿透断言,新增 provider 能力必查全部包装层
@@ -85,8 +86,8 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - 已修 [orphans-test-assumes-ps-restricted-environment](orphans-test-assumes-ps-restricted-environment.md) — orphans.test.ts 的 docker 用例把「ps 被禁的降级路径」写成对所有环境的期待,本机 ps 可用时属主判活成功、候选 1≠2 稳定红;修为给 listOrphanCandidates 开 OrphanClassifier 注入缝、用例注入按 pid 裁决三态的窄判据(`328b35bc`)
 - 已修 [keep-sandbox-suspend-wrapper-drops-capability](keep-sandbox-suspend-wrapper-drops-capability.md) — `normalizeSandboxPaths` 包装丢了接口外的 `suspend()` 能力,`--keep-sandbox` 对 docker/e2b/vercel 三家全部假成功真不停(state 永远停 alive,只留一条 warning);真机跑通 docker 全链路才发现,mock 单测互相拼不出这个 bug;修为按 `appendLog` 先例原样转发(`src/sandbox/paths.ts`)
 - [compose-orphan-check-misses-resource-groups](compose-orphan-check-misses-resource-groups.md) — 已修:SIGINT 后 compose 残留 4 容器 5 网络,`list --orphans`/`prune` 全盲报 No orphan;核对只按单实例词表,资源组没进核对面;修法是运行标识 overlay 打到服务与网络上 + orphans.ts 按 compose project label 整组核对与销毁,2026-07-30 评审「新资源种类进回收词表」的警告原样命中(2026-07-31 真机)
-- [shared-build-single-barrier-not-per-buildkey](shared-build-single-barrier-not-per-buildkey.md) — 发现(未修):共享构建实现为全局 barrier,10/13 镜像 ready 仍 0 running 等最慢者 7 分钟;case.md 契约本是逐 BuildKey 放行(2026-07-31 真机)
-- [buildkey-platform-declared-not-enforced](buildkey-platform-declared-not-enforced.md) — 发现(未修):BuildKey 按 linux/amd64 计算但 compose build 不传 `--platform`,arm64 宿主实构 arm64;跨架构机器同 CaseKey 互认不可比结果(2026-07-31 真机)
+- 已修 [shared-build-single-barrier-not-per-buildkey](shared-build-single-barrier-not-per-buildkey.md) — 共享构建曾是全局 barrier,10/13 镜像 ready 仍 0 running 等最慢者 7 分钟;修法=startSandboxBuilds 逐 key 放行 + run.ts 每条 attempt 只等自己的 key,同批补瞬时构建失败退避重试(2026-07-31)
+- 已修 [buildkey-platform-declared-not-enforced](buildkey-platform-declared-not-enforced.md) — BuildKey 曾按写死的 linux/amd64 计算而实构 arm64,跨架构机器同 CaseKey 互认不可比结果;修法=平台从 docker daemon 探测再进 key,同一个值经 DOCKER_DEFAULT_PLATFORM 交给构建执行(否决 qemu 跨架构构建那条路,2026-07-31)
 - [e2b-on-demand-build-capability-hollow](e2b-on-demand-build-capability-hollow.md) — 发现(未修):按需构建单 Dockerfile 的 caseKind/类型/能力矩阵都在但无任何 build provider 实现,单容器题上不了 E2B,3 个 `*-e2b` 实验停用(2026-07-31)
 
 ## Runner · 调度 · CLI · 生命周期
@@ -126,7 +127,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 台账
 
-- [experiment-fatal-presented-as-user-interrupt](experiment-fatal-presented-as-user-interrupt.md) — 发现(未修):多实验并跑时一条泳道的 `ExperimentFatalError` 正文被吞、只剩 interrupted+130 与 Ctrl+C 无法区分,且无关实验一并被拖垮;error-classification 契约(闸只停本实验/message 双通路/退出码 1)三条全不满足,是实现差距(2026-07-31 真机,曾被误诊为用户手滑)
+- 已修 [experiment-fatal-presented-as-user-interrupt](experiment-fatal-presented-as-user-interrupt.md) — 多实验并跑时一条泳道的 `ExperimentFatalError` 正文被吞、只剩 interrupted+130 与 Ctrl+C 无法区分,且无关实验一并被拖垮(2026-07-31 真机,曾被误诊为用户手滑);根因两处叠加:复用池 `acquire()` 的拒绝经 `Effect.promise` 变成 defect 炸穿 forEach,`Cause.isInterrupted` 又把「die + 兄弟 interrupt」的合成 cause 当成用户中断;修法=租借失败接回本地走空间轴回执 + `errored`,判中断改 `isInterruptedOnly`(`src/runner/run.ts`、`src/runner/attempt.ts` 新导出 `attemptFailureDeclaration`)
 - 已修 [multi-source-field-resolution-order](multi-source-field-resolution-order.md) — eval 级 `timeoutMs` 被 config 静默吃掉(35min 声明按 20min 掐死、两格全灭):`cli.ts` 把 config 兜底提前物化成 run 值,`attempt.ts` 的 `??` 链第一段就短路;根因是四层来源当时 docs 里没有任何一处定义解析顺序,typecheck 与单层配置的 fixture 全绿;修法=docs 单点定链(config 是缺省底不是覆盖层,已落)+ 去掉那层 `??` + 「上层缺省 + 下层显式」区分力测试 + 超时消息带 `from <层>`(后三项未落地,2026-07-30 MemoryBench 0.11.3 真机复撞)
 - 已修 [rotating-flag-value-invalidates-whole-cache](rotating-flag-value-invalidates-whole-cache.md) — 隧道 URL 放进 `flags` 就整袋进指纹,换一次隧道全部已完成结果作废(实测 24/36 携带→0,且看起来像「中断的 run 不能 reuse」其实无关);第一版修法 `provenanceFlags` 已被推翻,定稿修法=坐标改报 `ctx.fact()`(见 [fingerprint-inputs-not-user-configurable](fingerprint-inputs-not-user-configurable.md))
 - 已修 [backoff-slot-release-defeats-agent-user-concurrency-cap](backoff-slot-release-defeats-agent-user-concurrency-cap.md) — 退避让位使 ACTIVE running 行数可超 `--max-concurrency`(睡眠者不持位),且空位立喂新 attempt,agent 侧 per-user 并发限额恒饱和、重试预算白烧;调度机制无 bug,修在 docs(runner.md/error-classification architecture/两篇 use-case 补限额类型路由与面板读法);配置侧用实验级 maxConcurrency 或全局降档

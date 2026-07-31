@@ -4471,15 +4471,21 @@ describe("runEvals · 判分预检失败只作废含 judge 的 eval", () => {
 // - 共享 Run activity 不占 attempt 位
 // - build failure 的 Run origin
 describe("runEvals · Run 级共享构建协调", () => {
-  it("共享构建在派发前完成:构建期间 attempt 在飞为 0;timings/sandboxBuilds 落盘", async () => {
-    let attemptStarts = 0;
-    let buildsDuringAttempts = 0;
-    let buildSawAttempts = 0;
+  it("逐 BuildKey 放行:依赖者等自己的 key,不依赖的同批开跑;timings/sandboxBuilds 落盘", async () => {
+    let buildRunning = false;
+    let depStartedDuringBuild = false;
+    let otherStartedDuringBuild = false;
+    // 不依赖任何 BuildKey 的 eval:构建还在跑它就该开始,全局 barrier 在这一格必红。
+    let markOtherStarted!: () => void;
+    const otherStarted = new Promise<void>((resolve) => {
+      markOtherStarted = resolve;
+    });
     const evalDep = makeEval("dep", async () => {
-      attemptStarts += 1;
+      if (buildRunning) depStartedDuringBuild = true;
     });
     const evalOther = makeEval("other", async () => {
-      attemptStarts += 1;
+      if (buildRunning) otherStartedDuringBuild = true;
+      markOtherStarted();
     });
     const agentRun: AgentRun = {
       agent: makeAgent("agent-a"),
@@ -4501,17 +4507,19 @@ describe("runEvals · Run 级共享构建协调", () => {
             return undefined;
           },
           async build() {
-            buildSawAttempts = attemptStarts;
+            buildRunning = true;
+            // 等到不依赖这个 key 的 eval 真的跑起来,再让构建返回。
+            await otherStarted;
             await new Promise((r) => setTimeout(r, 40));
-            if (attemptStarts > 0) buildsDuringAttempts += 1;
+            buildRunning = false;
             return "sha256:shared";
           },
         },
         maxConcurrency: 1,
       },
     });
-    expect(buildSawAttempts).toBe(0);
-    expect(buildsDuringAttempts).toBe(0);
+    expect(otherStartedDuringBuild).toBe(true);
+    expect(depStartedDuringBuild).toBe(false);
 
     const record = await openRecord(root);
     const runMeta = record.experiments.find((e) => e.id === "exp-build")!.latestRun;

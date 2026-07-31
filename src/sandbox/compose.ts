@@ -44,7 +44,7 @@ const BUILDER_KIND = "docker-compose";
 // 目标平台:构建事实(case.md「BuildKey 与 CaseKey」)
 // ---------------------------------------------------------------------------
 
-/** 构建器传平台用的环境变量;探测值与钉死值都经它进入 builder。 */
+/** 构建器传平台用的环境变量;探测值与用户指定值都经它进入 builder。 */
 const DOCKER_PLATFORM_ENV = "DOCKER_DEFAULT_PLATFORM";
 
 /** 归一成 `os/arch`:daemon 与 Node 各有各的写法(aarch64 / x86_64 / arm64 / x64)。 */
@@ -64,9 +64,9 @@ export function normalizeBuildPlatform(value: string): string {
 let dockerPlatformProbe: Promise<string> | undefined;
 
 /**
- * 目标平台从构建执行环境得出:优先用户钉死的 `DOCKER_DEFAULT_PLATFORM`,
+ * 目标平台从构建执行环境得出:优先用户显式指定的 `DOCKER_DEFAULT_PLATFORM`,
  * 其次 daemon 自报的 os/arch,都拿不到才回落到宿主架构(容器恒为 linux)。
- * 探测结果进 BuildKey,同一个值再钉给构建器,身份与事实同源。
+ * 探测结果进 BuildKey,同一个值再传给构建器,身份与事实同源。
  */
 export async function detectDockerBuildPlatform(opts?: {
   readonly env?: NodeJS.ProcessEnv;
@@ -452,7 +452,7 @@ export async function collectComposeBuilds(opts: {
   readonly file: string | URL;
   readonly mainService: string;
   readonly baseDir?: string;
-  /** 显式钉死目标平台;省略时从构建执行环境探测。 */
+  /** 显式指定目标平台;省略时从构建执行环境探测。 */
   readonly platform?: string;
   readonly env?: Readonly<globalThis.Record<string, string>>;
   /** 注入平台探测通道(测试用)。 */
@@ -626,7 +626,7 @@ export function dockerComposeBuildProvider(opts?: {
       // cwd 必须跟 compose 文件走,不能用 Run 级「最后一个 eval」的 baseDir。
       const cwd = dirname(composeFile);
       const tag = composeBuildTag(work.buildKey);
-      // 平台钉给 builder:BuildKey 里写的架构就是这次真正构出来的架构。
+      // 平台传给 builder:BuildKey 里写的架构就是这次真正构出来的架构。
       const platform = typeof inputs.platform === "string" ? inputs.platform : undefined;
       const buildEnv =
         platform !== undefined ? { ...composeEnv, [DOCKER_PLATFORM_ENV]: platform } : composeEnv;

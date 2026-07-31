@@ -281,7 +281,7 @@ services:
     expect(arm.buildKeys[0]).not.toBe(amd.buildKeys[0]);
     expect((arm.works[0]!.inputs as { platform: string }).platform).toBe("linux/arm64");
 
-    // 钉死值压过探测值;探测不通时回落到宿主架构而不是一个写死的默认值。
+    // 用户指定值压过探测值;探测不通时回落到宿主架构而不是一个写死的默认值。
     expect(await detectDockerBuildPlatform({ env: { DOCKER_DEFAULT_PLATFORM: "linux/amd64" }, probe: async () => "linux/arm64" })).toBe(
       "linux/amd64",
     );
