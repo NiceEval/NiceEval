@@ -13,6 +13,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 
 ### 裁决
 
+- [environment-provision-replaces-materializer-layer](environment-provision-replaces-materializer-layer.md) — 翻案裁决(2026-07-31):公开模型重构为 Eval Environment、Sandbox、Experiment Provision 与 Fixture;Provider 内建 Environment kind 支持,删除普通用户 materializer 注册;Provision inspect 返回实际 identity,框架比较后 install;推翻双入口 materializer 与 Layer 公开模型
 - [env-cases-and-ensure-supersede-topology-middleware](env-cases-and-ensure-supersede-topology-middleware.md) — 裁决(2026-07-30):多容器环境与 Agent 安装双双改判为 PLAN-4(provider 完整 environment case + Ensure 协议),推翻拓扑表+导入器与构建中间件;原生能力最大化、不承诺跨 provider 迁移;缺键报错/缺能力 skipped、environments 与 materializers 双入口同批裁定
 - [agent-provisioner-object-not-adapter-methods](agent-provisioner-object-not-adapter-methods.md) — 裁决(2026-07-30):Ensure 公开形态是独立 `AgentProvisioner` 值对象(identity/check/install 原子替换,经工厂参数拔插),否决在 SandboxAgentDef 上散布方法;Runner 只额外消费 identity 与 prepare;check 返回结构化事实不返回 boolean
 - [skill-install-via-git-not-skills-cli](skill-install-via-git-not-skills-cli.md) — 设计裁决:repo skill 改走 git clone(`skills` CLI 没法钉 ref、也枚举不出仓库里有哪些 skill);已真机验证；Claude Code E2E 曾错用 `calledTool("Skill")` 查找已归一成 `skill.loaded` 的事件，现已修并 2/2 真机通过

@@ -79,7 +79,7 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Sandbox | Sandbox | 封装「在哪里、如何隔离地跑命令」的对象 | [Sandbox](feature/sandbox/README.md) |
+| Sandbox | Sandbox | Agent 与测试实际执行命令、读写文件的隔离运行空间及其操作句柄 | [Sandbox](feature/sandbox/README.md) |
 | Provider | Provider | Sandbox 的具体实现选择,由内置或自定义工厂显式构造 | [Sandbox library](feature/sandbox/library.md) |
 | 工作目录 | workdir | Sandbox 内 agent 的默认工作目录,也是变更分类账与 agent diff 的锚点 | [Sandbox library](feature/sandbox/library.md) |
 | `t.sandbox` | `t.sandbox` | 沙箱型 eval 的文件 IO、命令执行、断言与 diff 接口 | [Sandbox operations](feature/sandbox/library/operations.md) |
@@ -92,14 +92,15 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 | BuildKey | BuildKey | 一次 Provider 构建的输入身份,用于复用 Docker image 或 E2B template 构建结果 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 | CaseKey | CaseKey | 完整 attempt 环境身份,携带门的判据 | [Sandbox Case](feature/sandbox/case.md#buildkey-与-casekey两个身份各管一件事) |
 
-### 环境 Layer 候选术语
+### Environment 与预置项候选术语
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Layer | Layer | 装入 Sandbox、具有稳定 identity,并执行 check、缺失时 apply、最终复检协议的环境内容声明 | [环境 Layer](roadmap/environment-model/README.md) |
-| 层栈 | Layer stack | experiment 层按声明序排列、agent 层固定在末尾的有序 Layer 列表 | [生命周期位置](roadmap/environment-model/README.md#生命周期位置) |
-| experiment 层 | Experiment Layer | Experiment 通过 `layers` 显式声明的 Layer,例如安装 mempal 二进制、模型 cache 与 skill 文件 | [环境 Layer](roadmap/environment-model/README.md) |
-| agent 层 | Agent Layer | Adapter 自动提供的 Layer,只负责让 Agent CLI 及其运行依赖就位 | [agent 生命周期拆成两段](roadmap/environment-model/README.md#agent-生命周期拆成两段) |
+| Environment | Environment | Eval 声明的题目条件,例如 Compose、Dockerfile 或具名 profile;不选择 Provider | [Environment 与 Sandbox](roadmap/environment-model/README.md) |
+| 预置项 | Provision | Experiment 希望在 Sandbox 中成立的一项有身份、可检查的安装状态 | [Environment 与 Provision](roadmap/environment-model/library.md#defineprovisionspec) |
+| EnvironmentKey | EnvironmentKey | Provider 解析后的完整题目环境身份,用于 fingerprint 与结果携带门 | [Environment identity](roadmap/environment-model/architecture.md#environmentkey) |
+| Environment Plan | EnvironmentPlan | Provider 根据 Eval Environment 生成的内部执行计划;不进入普通用户 API | [Environment architecture](roadmap/environment-model/architecture.md#两个内部阶段不进入普通-api) |
+| Running Environment | Running Environment | 已启动的主 Sandbox、可选伴随服务与清理句柄组成的内部资源组 | [Environment architecture](roadmap/environment-model/architecture.md#两个内部阶段不进入普通-api) |
 
 ### Sandbox 复用
 
