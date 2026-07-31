@@ -14,6 +14,7 @@
 // 所以值和类型都从同一批 dist 模块拿,不从本文件的兄弟源码拿。
 
 import type { Record, Sample } from "../../record/index.ts";
+import { resolveLocator, loadAttemptEvidence } from "../../record/index.ts";
 import type { LocalizedText } from "../../types.ts";
 import type { PageContext } from "../../../dist/report/definition/tree.js";
 import type {
@@ -190,12 +191,20 @@ export async function renderHostPageText(
 
 /**
  * 宿主专属懒加载来源的唯一装配点:按 locator 装配 AttemptEvidence(经 `loadAttemptEvidence`
- * 管线),供 `renderHostTarget` 的 `page.load` 调用。两个宿主共用同一份 `PageLoadContext`
- * 构造,不各自重新实现证据聚合。
+ * 管线),供 `renderHostTarget` 的 `page.load` 调用。**不**委托给
+ * `dist/report/runtime/page-render.js` 的同名 helper——那份编译产物按 tsconfig
+ * report-build.json 的编译单元静态 import 了它自己的 `dist/record/open.js`,与本文件(raw
+ * src,经 tsx 直接执行)以及 show/view 用来构造 `results` 的 `../../record/index.ts` 是两个
+ * 完全不同的模块实例:`resolveLocator` 的 locator 索引挂在 `openRecord()` 内部按 `results`
+ * 对象身份建的 WeakMap 上,只有构造 `results` 的那份模块实例的索引里才查得到它,换一份编译产物
+ * 的 `resolveLocator` 一律查不到、报 LocatorNotFoundError(真 bug,由 `standardExperimentPage`
+ * 落地后的真机冒烟——`show @<locator> --report standard` 暴露)。这里直接用与 show/view 同一份
+ * raw src record 模块实现 `PageLoadContext`,保证索引同源。
  */
 export async function createHostPageLoadContext(results: Record): Promise<PageLoadContext> {
-  const { createPageLoadContext } = await import("../../../dist/report/runtime/page-render.js");
-  return createPageLoadContext(results);
+  return {
+    evidence: (locator) => loadAttemptEvidence(resolveLocator(results, locator)),
+  };
 }
 
 /** `renderTarget` 求 resolve 所需的宿主上下文(scope 由 `base` 参数单独给出)。 */

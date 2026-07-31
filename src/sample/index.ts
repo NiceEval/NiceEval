@@ -366,9 +366,20 @@ export function makeSample(
       const experimentPrefixes = options.experiments === undefined
         ? []
         : (Array.isArray(options.experiments) ? options.experiments : [options.experiments]);
-      const experimentMatch = options.experiments === undefined
-        ? () => true
-        : (id: string) => experimentPrefixes.some((prefix) => matchExperimentSelector([id], prefix).length > 0);
+      // matchExperimentSelector 的「精确 id 优先于前缀」规则要看到完整 id 全集才成立:逐 id
+      // 单独喂给它(`matchExperimentSelector([id], prefix)`)会让它对每个 id 各自重新判断,
+      // 永远看不到"另一个 id 精确命中了 selector"这件事,于是 "compare/codex-gpt-5.6-luna"
+      // 会把 "compare/codex-gpt-5.6-luna--mempal" 一起前缀命中,即使前者本身就是一个精确 id
+      // (真实 bug,由 standardExperimentPage.load 单一实验窄化的冒烟测试暴露)。
+      // 一次性对全集求出匹配集合,与 filterExperiments 的既有正确用法同形。
+      const experimentIdUniverse =
+        options.experiments === undefined
+          ? []
+          : [...new Set([...runs, ...attempts, ...historyAttempts].map((entry) => entry.experimentId))];
+      const matchedExperimentIds = new Set(
+        experimentPrefixes.flatMap((prefix) => matchExperimentSelector(experimentIdUniverse, prefix)),
+      );
+      const experimentMatch = options.experiments === undefined ? () => true : (id: string) => matchedExperimentIds.has(id);
       const evalMatch = options.evals === undefined
         ? () => true
         : evalPrefixPredicate(Array.isArray(options.evals) ? options.evals : [options.evals]);

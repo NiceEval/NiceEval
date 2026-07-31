@@ -772,7 +772,7 @@ async function renderReportSlot(
   const pages: ReportPageRenderer = {
     ids: scopePages.map((p) => p.id),
     render(pageId, locale) {
-      const key = `${pageId} ${locale}`;
+      const key = `${pageId}\0${locale}`;
       let block = renderedBlocks.get(key);
       if (block === undefined) {
         block = renderBlock(pageId, locale);
