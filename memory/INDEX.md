@@ -33,6 +33,7 @@ memory 的召回全靠这份索引:漏索引的条目等于不存在。维护规
 - [agent-native-settings-official-surface](agent-native-settings-official-surface.md) — 裁决(2026-07-14):cc/codex factory 新增官方 `settings`(原生配置词汇的结构化对象)并升格为 Adapter 契约义务;透传原文、webSearch 语义字段、钩子写文件、McpServer.tools 白名单四方案否决/搁置;动机=codex web_search 评测答案污染;两条上游 FR 待提
 - [sandbox-injection-deleted-o11y-host-side](sandbox-injection-deleted-o11y-host-side.md) — 裁决(2026-07-29):沙箱零框架文件零框架 env,行为断言收宿主侧 `t.o11y`,manifest 内存转运;起因是下游 `git clone <url> .` 撞上 `__niceeval__` exit 128;中间态 NICEEVAL_RESULTS env 当日翻案
 - [no-official-fixture-loading-api](no-official-fixture-loading-api.md) — 裁决(2026-07-29):fixture 装载留给用户 shell,否决官方 cloneRepo API;「先拆自己造的地雷,不配官方绕行 API」判据成文进 api-design.md「哪些能力进公开 API」
+- [layer-state-on-hooks-not-on-layer](layer-state-on-hooks-not-on-layer.md) — 裁决(2026-07-31):层状态挂 spec Hook 链,否决层自带 `state:{load,save}`(空层测试:纯状态条件不该被迫写空层);同场收敛环境层 roadmap 五条待裁决与复用窗口落档义务
 
 ### 台账
 
