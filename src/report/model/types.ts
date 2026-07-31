@@ -24,6 +24,7 @@ import type {
   Verdict,
 } from "../../types.ts";
 import type { DiffFile } from "../definition/primitives/diff-lines.ts";
+import type { CalloutGroup } from "../definition/primitives/callouts-logic.ts";
 import type { LocalizedText, ReportLocale } from "./locale.ts";
 import type { MetricValue } from "./calculation.ts";
 export type { MetricValue } from "./calculation.ts";
@@ -604,6 +605,26 @@ export interface ExperimentListItem {
   /** 所含快照中最近的 startedAt。 */
   lastRunAt: string;
   evalRows: ExperimentListEvalRow[];
+}
+
+// ───────────────────────── Experiment 详情组件族 ─────────────────────────
+
+/**
+ * `ExperimentDetails` 的 data(docs/feature/reports/components/experiment-detail/README.md):
+ * 六区块共享同一份转换结果。`experiment` 就是收窄到单个 experiment 后的 `experimentListData`
+ * 的那一项——实验身份、读数摘要、结果构成、题目清单与覆盖缺口都是它的字段,不重复搬一份;
+ * `catchUpCommand` / `notices` / `diagnostics` 是这个组件独有的三块:补跑命令、experiment
+ * 收窄之后的 sample notices 与 run notices(与首页同一对 `toSampleNotices` / `toRunNotices`,
+ * 只是输入 Sample 已经窄到一个 experiment)。
+ */
+export interface ExperimentDetailsData {
+  experiment: ExperimentListItem;
+  /** `experiment.missingEvalIds` 非空时的补跑命令(`niceeval exp <experimentId>`);否则 null。 */
+  catchUpCommand: string | null;
+  /** experiment 收窄后的挑选警告(scope warnings)。 */
+  notices: readonly CalloutGroup[];
+  /** experiment 收窄后的 run diagnostics。 */
+  diagnostics: readonly CalloutGroup[];
 }
 
 // ───────────────────────── Attempt 详情组件族 ─────────────────────────

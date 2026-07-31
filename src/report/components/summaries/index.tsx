@@ -3,6 +3,8 @@
 import type { Sample, Run } from "../../../record/types.ts";
 import { defineComponent } from "../../definition/tree.ts";
 import { Col, Grid, Scatter, Stat, Text } from "../../definition/primitives.tsx";
+import type { ChartTargetPoint } from "../../definition/primitives/chart.tsx";
+import type { ReportTarget } from "../../definition/report.ts";
 import type { SeriesInput } from "../../model/types.ts";
 import { resolveInput, seriesName } from "../../model/aggregate.ts";
 import { label } from "../../model/flag.ts";
@@ -103,7 +105,23 @@ type ComparisonChrome = ChromeProps & {
 export type ExperimentScatterProps = ComparisonChrome & {
   input?: Sample;
   series?: SeriesInput;
+  /**
+   * 点该指向谁(components/summaries/experiment-scatter.md「默认点目标」)。省略时落到
+   * `defaultExperimentPointTarget`——点身份恒为 experiment id(`point="experiment"`),
+   * 目标是 experiment 详情页;报告没有声明该 id 的页时 `ctx.href` 自然给不出链接,
+   * 点退化成纯图形,不是这里判断"页存不存在"。
+   */
+  pointTarget?: (point: ChartTargetPoint) => ReportTarget | undefined;
 };
+
+/**
+ * `ExperimentScatter` 的默认点目标:点身份键固定是 experiment id(`scatterBlock` 恒传
+ * `point="experiment"`),`Chart` 内核把它原样落成该点的 Dataset 行 key——不需要反查
+ * 证据即可拿到这个点是哪个 experiment。
+ */
+function defaultExperimentPointTarget(point: ChartTargetPoint): ReportTarget {
+  return { page: "experiment", params: { experiment: point.key } };
+}
 
 export type SampleOverviewProps = ExperimentScatterProps;
 
@@ -165,6 +183,7 @@ async function scatterBlock(
     series: SeriesInput;
     connect: boolean;
     y: "passRate" | "totalScore";
+    pointTarget: (point: ChartTargetPoint) => ReportTarget | undefined;
     locale?: ReportLocale;
     className?: string;
   },
@@ -189,6 +208,7 @@ async function scatterBlock(
       point="experiment"
       series={group.key}
       connect={options.connect}
+      pointTarget={options.pointTarget}
       locale={options.locale}
       legend
     />
@@ -199,12 +219,13 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
   const input: Sample = props.input ?? ctx.scope;
   const { series, connect } = resolveComparisonSeries(input, props);
   const composition = await scoringComposition(input);
+  const pointTarget = props.pointTarget ?? defaultExperimentPointTarget;
 
   if (composition !== "mixed") {
     const primary = composition === "points" ? "totalScore" : "passRate";
     return (
       <Col className={props.className}>
-        {await scatterBlock(input, { series, connect, y: primary, locale: props.locale })}
+        {await scatterBlock(input, { series, connect, y: primary, pointTarget, locale: props.locale })}
       </Col>
     );
   }
@@ -213,8 +234,8 @@ export const ExperimentScatter = defineComponent<ExperimentScatterProps>(async (
   const pointsInput = filterInputBySnapshot(input, (run) => snapshotScoring(run) === "points");
   return (
     <Col className={props.className}>
-      {await scatterBlock(passInput, { series, connect, y: "passRate", locale: props.locale })}
-      {await scatterBlock(pointsInput, { series, connect, y: "totalScore", locale: props.locale })}
+      {await scatterBlock(passInput, { series, connect, y: "passRate", pointTarget, locale: props.locale })}
+      {await scatterBlock(pointsInput, { series, connect, y: "totalScore", pointTarget, locale: props.locale })}
     </Col>
   );
 });
@@ -227,6 +248,7 @@ export const SampleOverview = defineComponent<SampleOverviewProps>((props) => (
       input={props.input}
       series={props.series}
       connect={props.connect}
+      pointTarget={props.pointTarget}
       locale={props.locale}
     />
     <ExperimentTable input={props.input} locale={props.locale} />

@@ -37,9 +37,14 @@ function cx(...parts: (string | undefined | false)[]): string {
   return parts.filter(Boolean).join(" ");
 }
 
-/** Chart 内部一个可下钻的点(x/y 映射后);pointTarget 只看 `refs`,不看坐标或 label。 */
+/**
+ * Chart 内部一个可下钻的点(x/y 映射后);pointTarget 只看 `refs` 与 `key`,不看坐标或 label。
+ * `key` 是该点在 Dataset 里的行 key——`Scatter`/`Bars` 等声明了 `point="<field>"` 时,它就是
+ * 该字段的原始值(如 experiment id),让上层的 pointTarget 不必反查证据即可拿到点的业务身份。
+ */
 export interface ChartTargetPoint {
   refs: readonly AttemptLocator[];
+  key: string;
 }
 
 export interface ChartPresentation {
@@ -72,11 +77,14 @@ function resolvePointTarget(
 }
 
 function pointHref(
-  point: { refs: readonly string[] },
+  point: { refs: readonly string[]; key: string },
   ctx: WebContext,
   pointTarget: ((point: ChartTargetPoint) => ReportTarget | undefined) | undefined,
 ): string | undefined {
-  const target = resolvePointTarget({ refs: point.refs as readonly AttemptLocator[] }, pointTarget);
+  const target = resolvePointTarget(
+    { refs: point.refs as readonly AttemptLocator[], key: point.key },
+    pointTarget,
+  );
   return target === undefined ? undefined : ctx.href(target);
 }
 
