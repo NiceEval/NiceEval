@@ -1,4 +1,4 @@
-# PLAN-5:默认 case、条件基底与 Requirement 集合(推荐)
+# PLAN-5:默认 case、条件基底与 Requirement 集合(不推荐)
 
 **相关文档**:[决策主题](../README.md) · [GOALS](../GOALS.md) · [CASES](../CASES.md) · [LIMITS](../LIMITS.md) · [PLAN-1](../PLAN-1/README.md) · [PLAN-2](../PLAN-2/README.md) · [PLAN-3](../PLAN-3/README.md) · [DECISION](../DECISION.md)
 

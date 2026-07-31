@@ -96,11 +96,10 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 
 | 中文 | English | 含义 | 契约 |
 |---|---|---|---|
-| Environment | Environment | Eval 声明的题目环境来源,例如 Compose 文件或具名 profile;不选择 Provider | [环境模型 PLAN-5](design/environment-model/PLAN-5/library.md#eval-contribution) |
-| Requirement | Requirement | Eval、Experiment 或 Agent 声明的一份必须在最终环境中成立的可验证事实 | [环境模型 PLAN-5](design/environment-model/PLAN-5/library.md#requirement) |
-| Base Case | Base Case | 一条 Attempt 唯一选择的完整 Sandbox Case 启动基底 | [环境模型 PLAN-5](design/environment-model/PLAN-5/library.md#固定的-base-选择次序) |
-| Ensure | Ensure | 在选定 Base Case 上检查 Requirement,未命中时准备、安装并复检的收敛路径 | [环境模型 PLAN-5](design/environment-model/PLAN-5/architecture.md#requirement-调度图) |
-| 安装资源 | Installation Resource | Ensure 安装时需要独占的共享资源,供调度器互斥冲突项 | [环境模型 PLAN-5](design/environment-model/PLAN-5/architecture.md#依赖与资源) |
+| Environment | Environment | EvalDef 携带的题目环境来源,可由作者声明或 adapter 从 task package 派生;由当前 SandboxSpec 解析 | [环境模型 PLAN-6](design/environment-model/PLAN-6/library.md#eval-environment) |
+| setup helper | setup helper | 在既有 SandboxSpec 或 EvalDef setup 层封装准备动作;需要预装命中时可带 identity 与 check/install/recheck | [环境模型 PLAN-6](design/environment-model/PLAN-6/library.md#可验证-setup-helper) |
+| Base Case | Base Case | 旧候选用于描述启动基底的术语;定稿作者面使用 Sandbox Case,不让 Eval 与 Experiment 分别拥有 Base | [环境模型 PLAN-6](design/environment-model/PLAN-6/README.md#唯一的起点解析) |
+| Ensure | Ensure | AgentProvisioner 或可验证 setup helper 内部的检查、必要时安装、复检路径 | [环境模型 PLAN-6](design/environment-model/PLAN-6/library.md#可验证-setup-helper) |
 
 ### Sandbox 复用
 

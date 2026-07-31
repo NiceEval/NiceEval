@@ -1,127 +1,118 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md)
 
 ---
 
 ## 结论
 
-采纳 [PLAN-5](PLAN-5/README.md):Requirement + Base Case + Ensure,基底分默认与条件两档。
+采纳 [PLAN-6](PLAN-6/README.md):唯一 Environment 起点,双方在既有 setup 层准备。
 
-## 依据
+## 关键裁决
 
-环境模型先区分三份要求,再讨论怎样兑现:
+- Environment 只负责选择起点。它是 profile 或 provider-neutral source,不是 RunningSandboxCase。
+- Environment 可以由 Eval 作者声明,也可以由数据集 adapter 从原始 task package 派生。
+- SandboxSpec 是唯一解析者。每条 Attempt 只选择一个完整 Sandbox Case。
+- 随 Experiment 变化的沙箱准备放 SandboxSpec setup。
+- 随 Eval 变化的题目准备放 EvalDef setup。
+- Agent CLI 与 runtime 继续由 Agent/Adapter setup 拥有。
+- 需要预装命中的准备封装成领域 setup helper,在 helper 内 check/install/recheck。
+- 第一阶段不公开 Requirement、Base contribution、依赖 DAG、资源图或自动并行。
+- 现场无法组合时复用 `environments[profile]` 提供预制完整 case,或明确 skip/fail。
 
-- Eval Requirement 保存题意,可以由 Eval Base 或可移植 Ensure 兑现。
-- Experiment Requirement 保存本次比较条件,可以由条件基底或 Ensure 兑现。
-- Agent Requirement 由 AgentProvisioner 与 AgentRuntimeLifecycle 在最终主 Sandbox 中 Ensure,不参与 Base Case 选择。
+## 真实仓库证据
 
-一条 Attempt 只选择一个完整 Base Case。
-SandboxSpec 上单独声明的起点产物是默认 case,不代表 Experiment Requirement,Eval Base 存在时让位。
-只有与 Experiment Requirement 绑定声明的基底参与冲突判定;双基底并存必须选显式融合 case,否则启动期报冲突。
+### Terminal-Bench
 
-对照 [GOALS](GOALS.md) 的十一条需求:
+本次复核对象是 [harbor-framework/terminal-bench](https://github.com/harbor-framework/terminal-bench) 的 `d28711d0da2675d0bb1d56de45ae5df6082438a3`,不是已经迁移过的 NiceEval 版本。
 
-1. 三份 Requirement 在规划期都存在,任何 Base 都不能删除其它 Requirement。
-2. Eval 与 Experiment contribution 都允许携带 Base 和 Ensure,不预设哪一侧永远拥有环境。
-3. 双基底没有隐式优先级。融合 case 是唯一消解方式,且启动后仍分别验证两份 Requirement。
-4. Experiment 可以按 Eval profile 提供多个融合 case;矩阵展开后每条 Attempt 仍只选一个。
-5. 不兼容判定分两层:声明期缺失在创建 Sandbox 前一次穷举报出;verify 未命中且无 install 在进入 Agent 阶段前判明,零 Agent turn。
-6. Base、预制产物名与 manifest 都不受信短路实际验证;Sandbox Case 已有运行事实可以直接作为 verifier 输入。
-7. Eval 与 Experiment Ensure 用依赖和资源调度,数组位置不表达顺序;Agent 在后续阶段复用相同原语。
-8. Requirement 集合、所选 CaseKey 和逐目标解析身份分别进入 configHash 或逐 Eval fingerprint。
-9. spec 起点产物是默认 case,不制造双 Base 冲突;条件基底在 `defineExperimentEnvironment` 里与 Requirement 集合同点声明。
-10. ExperimentStateLifecycle 在 Agent CLI 就位后 load,按 fresh Attempt 或 reuse window save,显式声明后继 checkpoint 与失败提交策略。
-11. AgentProvisioner 与 runtime lifecycle 分段验证;隐藏 verifier 只在 Agent turn 后挂载,并在复用前受管 cleanup。
+上游把每道题组织成 task package。
+`TaskPaths` 固定从同一目录取得 `task.yaml`、`docker-compose.yaml`、`run-tests.sh`、`tests/**` 与 solution;harness 把 Compose build/up 后的 `client` 交给 Agent,并在 Agent 结束后才复制测试材料。
 
-## Case 证据
+这证明 Compose 的 owner 是 task package,不是 Experiment,也不应由迁移者逐题重写。
+迁移边界应是一份 benchmark adapter:它从原始目录派生普通 EvalDef、Environment source 与 hidden verifier,Experiment 只选择 materializer 并追加自己的 sandbox setup。
 
-[CASES](CASES.md) 把历史 roadmap 中删除的场景与新方案增加的能力放进同一组验收:
+### MemoryBench
 
-- C1-C5、C7 来自删除前的六篇完整用例。
-- C6 恢复更早提交里的独立路径:每条 Attempt 使用新 Sandbox,只从外部载入和回存状态。
-- C8-C9 验证 Experiment 条件基底、Eval 可移植条件与双基底融合,是 PLAN-4 相对 PLAN-3 增加抽象的直接依据。
-- C10 验证混合批次,区分普通默认起点与绑定实验条件的基底,是 PLAN-5 相对 PLAN-4 的直接依据。
+MemoryBench 的 Experiment 选择 E2B template;mempal 变体使用预装 template 与 sandbox setup/teardown。
+具体 Eval 没有 Environment source,而是在 Agent 前 checkout 固定仓库 commit 并安装项目依赖。
 
-只看 C1-C5 与 C7 的 Base/Ensure 组合,PLAN-3 的不对称模型更小。
-但当前 PLAN-3 仍缺三方最终屏障,C6 的 state load 也早于 Agent。
-没有 C8-C10 时,应先补齐这两处再采用 PLAN-3;终态同时要求 C8-C10,所以本决策采用 PLAN-5。
+这证明反向路径同样存在:Experiment 默认 case 决定起点,EvalDef setup 再准备题目。
+它不需要 Eval 再贡献一份 Base,也不需要把 checkout 与 `yarn install` 抽象成 Environment Requirement。
 
-真实仓库没有把十项全部同时跑出来。
-Terminal-Bench 直接证明题目 Compose Base 与独立 Agent Ensure;MemoryBench 直接证明实验重条件、新 Sandbox 状态和复用窗口状态。
-C9 的双不可叠加 Base 与 C10 的混合批次是组合验收,不能冒充现有仓库事实。
+## 为什么 PLAN-5 的 DX 过重
 
-## Lifecycle 对照
+PLAN-5 把四类不同问题同时暴露给作者:
 
-每个候选的 Lifecycle 都使用相同问题顺序:三方声明、Base/template 选择、build/start、安装、Fixture、fresh/reuse 与收尾。
+1. 起点所有权:Eval Base、默认 Base、条件 Base 与融合 case。
+2. 条件建模:Eval/Experiment Requirement 与 owner 命名域。
+3. 调度建模:`dependsOn`、`resources`、single-flight 与多道验证屏障。
+4. 正交生命周期:state、Agent runtime、Fixture 与 hidden verifier。
 
-| 候选 | Base/template 规则 | 安装与 Fixture | Reuse 主要缺口 |
+作者为“在最终 Sandbox 装一个工具”付出了理解整个组合系统的成本。
+而两家真实仓库只要求两个稳定动作:Experiment 给 Sandbox 装实验工具,Eval 给 Sandbox 准备题目依赖。
+
+PLAN-5 还把 `e2bSandbox({ template })` 与 Eval source 解释成两个 Base 的潜在冲突。
+但既有 SandboxSpec 语义已经能表达:有 Eval Environment 时走覆盖/materializer,无 Environment 时才走默认 template。
+默认值不是第二份 contribution。
+
+## 候选对照
+
+| 候选 | 作者要理解的公开概念 | 对两个真实方向的处理 | 结论 |
 |---|---|---|---|
-| [PLAN-1](PLAN-1/lifecycle.md) | Eval Environment 或默认起点;Experiment 没有 Base | 有序 Provision 后接 Agent;turn 后 verifier 作者自管 | 无最终屏障和受管 cleanup |
-| [PLAN-2](PLAN-2/lifecycle.md) | 强制归一成单 template | 三方压成 Layer;turn 后 verifier 作者自管 | manifest 假命中,window identity 未定义 |
-| [PLAN-3](PLAN-3/lifecycle.md) | Eval Case 优先,否则默认 Case | Addon 与 AgentProvisioner 分开;turn 后 verifier 作者自管 | 状态早于 Agent,且无三方最终屏障 |
-| [PLAN-4](PLAN-4/lifecycle.md) | Eval Base 与任意显式 Experiment 起点冲突时要求融合 | 两方单 Requirement 加 Agent Ensure;只有早期 Hook | 默认 template 误判;晚期 state 与受管 cleanup 未闭合 |
-| [PLAN-5](PLAN-5/lifecycle.md) | 默认 case、Eval Base、条件基底与融合 case 分档 | Requirement 集合、Agent 两段、独立 state、受管前后 Fixture | 机制最完整,实现与记录面也最大 |
+| PLAN-1 | Environment、Provision | 固定 Eval 环境/Experiment 安装,反向路径别扭 | 否决 |
+| PLAN-2 | 单 template、Layer | Compose 被压扁,领域边界丢失 | 否决 |
+| PLAN-3 | Eval Case、Experiment Addon | Terminal-Bench 自然,MemoryBench 仍偏向 Eval 起点 | 否决 |
+| PLAN-4 | Requirement、Base、Ensure | 两方可贡献,但默认 template 被误判成 Base 冲突 | 否决 |
+| PLAN-5 | 两组 Requirement、四档 Base、融合 case、调度图 | 表达力最大,作者面和实现面也最大 | 否决 |
+| PLAN-6 | Environment、SandboxSpec setup、EvalDef setup、Agent setup | 两个方向都沿既有 owner 直接表达 | 采纳 |
 
-## 采纳 PLAN-5 的代价
+## 两条迁移路径
 
-PLAN-5 不把组合成本藏进 Runner,而是把它显式分摊到四处:
+Terminal-Bench:
 
-- 双方都贡献不可叠加 Base 时,Experiment 作者必须按 profile 维护完整融合 case;Runner 不自动合并 Compose 与 template。
-- Runner 要新增 Environment Requirement 图、两道全组屏障、Agent runtime verify 与独立 state lifecycle。
-- 记录面要保存全部 BuildKey/locator、CaseKey、三方 check、payload、runtime identity、verifier cleanup、checkpoint digest 与 window activity。
-- 现有把 MemoryBench 状态写入早期 `SandboxSpec.setup/teardown` 的写法需要迁到 `defineExperimentState`;普通环境预置 Hook 不迁。
-- 复用窗口没有逐 Attempt 状态回滚,因此只能选择 `saveOn: "after-load"`;需要失败不提交时必须使用 fresh Sandbox。
-- Terminal-Bench 的 turn 后测试要从 `test(t)` 内直接上传迁到受管 verifier Fixture,为 `/tests`、mount 与进程预登记 cleanup。
+```text
+upstream task package
+  -> dataset adapter 派生 EvalDef + Compose source
+  -> Docker materializer 启动完整 case
+  -> Experiment sandbox setup 安装 mempal
+  -> Agent setup
+  -> turn 后 hidden verifier
+```
 
-换来的边界是:只有真正的双条件 Base 才支付融合表成本。
-C1-C5 的可安装条件不生成 Eval × Experiment template 矩阵,C10 的普通默认 template 也不制造假冲突。
+MemoryBench:
 
-## 为什么改判 PLAN-4
+```text
+Eval 无 Environment
+  -> Experiment E2B template 启动默认 case
+  -> Experiment sandbox setup 检查 mempal 预装状态
+  -> EvalDef setup checkout + yarn install
+  -> Agent setup 与 Agent turn
+```
 
-PLAN-4 建立了 Requirement 与兑现方式的分离,定义了融合 case 与 Ensure 调度。
-PLAN-5 独立保留这些机制,并完整重写 Library、Architecture 与 Use Case,不依赖 PLAN-4 提供必需契约。
-改判因为六处缺口:
+## 预制与真实检查
 
-- PLAN-4 把 `e2bSandbox({ template })` 一律判为 Experiment Base。混合批次里每条自带环境的 Eval 都落入双基底冲突,而 [Sandbox Case](../../feature/sandbox/case.md) 的既有契约里 spec 起点产物与 folder-local source 本就共存。
-- contribution 只装一个 Requirement,证书加工具这类多条实验条件没有表达位。
-- 「创建 Sandbox 前给出不兼容结果」与「verify 需要运行事实」在 PLAN-4 内互相矛盾;判定必须按可判时机分声明期与运行期。
-- PLAN-4 只描述“Agent 后 load”,没有独立于早期 SandboxSpec setup 的 state API、identity、activity 与失败语义。
-- PLAN-4 的最终 Agent 检查只闭合到 AgentProvisioner,没有验证逐 Attempt Plugin、Skill、MCP 与配置。
-- PLAN-4 沿用 `test(t)` 内作者自管 verifier,没有为 workdir 外路径、mount 与进程提供受管 cleanup 和硬失败语义。
+PLAN-6 不承诺运行时合并两个起点。
+若 mempal 不能装进某条 Compose 环境,Experiment 必须在 `environments[profile]` 提供预制完整 case,否则该组合明确 skip/fail。
 
-## 否决的候选项
+预制 case 或 template 名不证明工具可用。
+`mempalSetup()` 这类领域 helper 必须检查实际版本与 cache identity,缺失时安装或明确失败;执行安装后必须复检。
+这保留 PLAN-5 最有价值的真实性要求,但不把通用 Requirement 协议暴露给所有作者。
 
-**PLAN-1(Environment 与 Provision 二分)。**
-它把 Eval 固定为 Environment、Experiment 固定为 Provision,无法表达二者任一方提供 Base 或 Ensure;有序数组与全价 Provision 还增加作者负担。
+## 实现边界
 
-**PLAN-2(单 template 与统一 Layer)。**
-template 不能表达完整 Compose case,统一 Layer 也会丢失 Agent staged payload 与运行事实。
-它只数声明来源,没有把 Requirement 与兑现方式分开,所以双 template 冲突只能靠特例表修补。
+第一阶段只需要五项增量:
 
-**PLAN-3(完整 Sandbox Case + Experiment Addon)。**
-它是 PLAN-5 的严格子集:Eval 总提供 Base、Experiment 总提供 Ensure 时,PLAN-5 退化成 PLAN-3。
-它没有表达条件基底、可迁移 Eval Requirement 与双基底的融合 case,因此不作为终态。
+1. 数据集 adapter 可以批量返回带不同 Environment source 的普通 EvalDef record。
+2. SandboxSpec setup 确认作用于最终解析出的主 Sandbox,不只作用于默认 case。
+3. EvalDef setup 确认在 workspace baseline 后、Agent setup 前执行。
+4. `defineSandboxSetup()` 为少数重准备 helper 提供 identity、check/install/recheck 与 staged payload。
+5. 记录所选 Sandbox Case 与三层 setup activity,保留 owner phase。
 
-**PLAN-4(Requirement + Base Case + Ensure,基底不分档)。**
-它是 PLAN-5 的直接前身。
-Base 模型差异在基底分档、Requirement 集合与不兼容判定分层;state 与 Agent runtime 还各缺一个可执行闭环。
-
-## 一并裁决
-
-- Requirement 是必须成立的事实;Base Case 与 Ensure 是两种兑现方式。
-- Base Case 是完整 Sandbox Case,不是跨 Provider template。image、template、snapshot、Dockerfile 与 Compose 都只是具体 case 输入。
-- 每条 Attempt 一个 Base Case;一次 Experiment 可以按 Eval profile 声明多个候选 case。
-- spec `environments` 表项是 Eval Requirement 的预制实现,归 Eval Base,沿既有的表项优先契约;融合 `cases` 表才同时预期兑现两份 Requirement。
-- contribution 可以同时带 `base` 与可安装 Requirement:base 是预期命中的优化,verify 未命中的成员仍走 install 收敛。
-- 融合 case 显式承担 Eval Base × 条件基底的组合成本。Runner 不承诺在运行时合并两个基底。
-- AgentProvisioner 不提供 Base,也不改成通用 Requirement 实现;它只复用 Ensure 原语。
-- Agent runtime setup 有独立 identity、verify 与 teardown;最终屏障同时重查 AgentProvisioner 与 runtime。
-- 外部状态使用独立 ExperimentStateLifecycle;fresh 每 Attempt load/save,reuse 每 window load/save 且必须选 `after-load`。
-- turn 前 Fixture 与 turn 后隐藏 verifier 分开;Base 不携带本应对 Agent 隐藏的评分材料。
-- 普通作者使用 `composeSandbox`、Requirement helper 与 Adapter 工厂,不直接实现底层 Requirement 接口。
+依赖图、资源锁、跨 helper 自动并行、外部 state API 与 managed hidden verifier 不进入本决策的第一阶段。
+出现独立真实样本后再按对应 Feature 扩展,不回填进 Environment contribution。
 
 ## 遗留风险
 
-- Eval Requirement 的 verifier 需要访问完整 Materialized Sandbox Case,尤其是 services、ready 与身份事实;验证结果形状要在 Feature 契约中穷尽定义。
-- contribution helper 怎样隐藏底层组合,需要用真题调用点复核。
-- 融合 case 表第一期只支持精确 profile。profile 重命名、缺项穷举和未选中条目是否校验需要定稿。
-- 同一 Requirement 在 Base、Ensure 与融合 case 三条路径下必须共享 identity 与 check,否则预制优化会形成不可比较的旁路。
+- `sandboxReuse: true` 下 SandboxSpec setup 是每窗口还是每 Attempt 执行,必须与现有 Feature 契约保持一致;会变化的条件不能误放到每窗口层。
+- benchmark adapter 的 filtered build context 必须默认排除 solution 与 hidden verifier,并检查 Compose bind mount 泄漏。
+- plain setup function 的函数体不进入哈希;需要缓存或对比的 custom setup 必须显式声明 revision/identity。
+- 某些工具同时需要安装与跨 Attempt 状态。PLAN-6 保留现有 setup/teardown 写法;若以后引入独立 state lifecycle,应由对应 Feature 单独迁移。

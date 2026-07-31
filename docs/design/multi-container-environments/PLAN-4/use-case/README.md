@@ -10,9 +10,13 @@
 3. `eval` 与 `experiment` 最终写成什么样，Agent 的
    检查→必要时安装放在哪一步。
 
-样例核对自 `laude-institute/terminal-bench` 的
+样例核对自 [harbor-framework/terminal-bench](https://github.com/harbor-framework/terminal-bench) 的
 `d28711d0da2675d0bb1d56de45ae5df6082438a3`。下文 API 是
 PLAN-4 的候选调用面，不代表当前版本已经实现。
+
+Terminal-Bench 的最终迁移布局与作者调用面以
+[环境模型 PLAN-6 的 Terminal-Bench 用例](../../../environment-model/PLAN-6/use-case/Terminal-Bench.md)
+为准。本页保留四道多容器真题对 Provider Case、BuildKey、CaseKey、主 Sandbox 与 ready/cleanup 的证据；推荐迁移入口是 PLAN-6 的单文件 dataset adapter,下面的逐目录 wrapper 只展开单题映射。
 
 ---
 
@@ -32,11 +36,10 @@ PLAN-4 的候选调用面，不代表当前版本已经实现。
 新的 eval 确实要主动进入 sidecar 判分时，才需要设计
 author-facing 能力。
 
-## 文件怎么放：一个 eval 就是一个文件夹
+## 文件怎么放：Provider 证据的逐题展开
 
-推荐把上游任务目录直接变成 eval 目录。新增的
-`eval.ts` 是唯一入口，目录路径就是 eval id 与默认
-environment profile id：
+下面布局用于说明每道题的 Provider 输入怎样共址。
+最终迁移不修改上游 task package,而是保留 dataset mirror,再由一份 benchmark adapter 批量返回 EvalDef record。
 
 ```text
 evals/terminal-bench/
@@ -121,10 +124,10 @@ evals/foo/eval.ts       → id "foo"
 - 改 `api/Dockerfile` 只让 api BuildKey cache miss，同时改变
   整组 CaseKey。
 
-## `eval.ts`：环境来源与 eval 共址
+## `eval.ts` 展开：adapter 内部怎样投影一条 task
 
-四个入口都可以只有一行，公共 helper 用入口 URL 定位同目录
-文件：
+最终迁移只写一个 `terminal-bench.eval.ts` 导入整批任务。
+下面的一行入口用于展开 adapter 对单条 task 的内部投影,不是迁移者逐题维护的文件：
 
 ```typescript
 // evals/terminal-bench/debug-long-program/eval.ts
@@ -246,9 +249,8 @@ Provider 不能悄悄换成 UID 1000；云实现也要兑现等价权限面。
 验证命令产生的 venv 与依赖也发生在 Agent 窗口之后，不进入
 Agent diff。
 
-四个 folder eval 不能合并成一个 keyed record：一组向所有依赖项传播失败
-Eval 共享同一个 `environment` 声明，而四题各有不同 profile。
-独立薄文件让 id 与 profile 都稳定，公共驱动仍只有一份。
+四题可以由 benchmark adapter 合并成一个 keyed record。
+record 的每个值都是独立 `defineEval()` 结果,所以可以携带不同 source 与 profile;record key 保持 task id 稳定。
 
 ## Docker experiment：本地现场 build
 
