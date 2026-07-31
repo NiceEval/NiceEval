@@ -5,9 +5,25 @@
 有些准备工作不属于 `test(t)` 的正文：装依赖、在外部服务里建临时 repo、预热数据。
 `EvalDef.setup` / `teardown` 是准备这条 eval 任务 Fixture 的成对生命周期 Hook，每 attempt 一次；`t.progress` / `t.diagnostic` 让长步骤和降级情况在运行反馈里可见；`t.skip` 在前置条件不满足时把 attempt 标成跳过而不是失败。
 
+静态起始文件直接声明在 `fixture.files`。
+Runner 在 Agent 前上传并计入 Eval 数据指纹，不要求作者在 `test(t)` 里手工搬运:
+
+```typescript
+export default defineEval({
+  fixture: {
+    files: [
+      { from: new URL("starter/", import.meta.url), to: "/app" },
+    ],
+  },
+  async test(t) {
+    await t.send("完成 /app 中的任务。");
+  },
+});
+```
+
 ## 全流程
 
-1. 任务素材的准备放 `setup`——它拿到完整 `Sandbox`，在 `test(t)` 之前跑，写入算 eval 归因、不进 agent diff：
+1. 动态任务素材的准备放 `setup`——它拿到完整 `Sandbox`，在 `test(t)` 之前跑，写入算 eval 归因、不进 agent diff：
 
    ```typescript
    // evals/pr-review/close-stale.eval.ts

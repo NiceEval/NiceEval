@@ -11,13 +11,15 @@
   → sandbox.setup?.(sandbox, ctx)          # 环境层:experiment.sandbox 链上的 .setup() Hook(可能多个,按追加顺序);没挂就跳过
   → workspace baseline                     # 变更分类账的锚点 commit(runner 私有 git ledger,见下节)
   → EvalDef.setup?.(sandbox, ctx)          # 这条 eval 的任务 Fixture(如果定义了);ctx 绑定 eval.setup feedback
+  → upload EvalDef.fixture.files           # 静态可见 Fixture;eval 归因
   → SandboxAgent.setup?.(sandbox, ctx)     # agent 自己的一次性预置(装 CLI / 写主配置)
-  → test(t)                                # ← 交给 eval 作者,顺序由它自己决定:
-  │    t.sandbox.writeFiles(...) / uploadFiles(...) / uploadDirectory(...)  # 默认落到 workdir;eval 归因
+  → test(t)                                # ← 驱动 Agent 与读取结果:
   │    t.send()                              #   驱动 agent(Adapter 在沙箱里跑 CLI,解析成 events);send 窗口内的变化归因给 agent
-  │    t.sandbox.runCommand(...)             #   手工跑校验命令,cwd 默认 workdir(最后一次 send 后运行才对 agent 隐藏)
-  │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量 / t.check(commandSucceeded)
-  → workspace.diff                         # 从分类账折叠 agent 归因增量(见下节)
+  │    断言…                                 #   t.sandbox.fileChanged / t.sandbox.diff 读 agent 归因增量
+  → workspace.diff                         # 冻结并折叠 agent 归因增量(见下节)
+  → upload EvalDef.verifier.files          # Agent 驱动面已关闭;verification 归因
+  → EvalDef.verifier.verify(v)             # 只能判分,不能再驱动 Agent
+  → cleanup EvalDef.verifier.files         # 复用下一条 Attempt 前的硬屏障
   → scoring.evaluate → telemetry.collect   # 断言 finalize + Verdict 语义确定(judge 调用在此)、trace 收口
   → EvalDef.teardown?.(sandbox, ctx)        # finally:eval 级收尾先跑
   → SandboxAgent.teardown?.(sandbox, ctx)   # finally:agent 级收尾
@@ -69,10 +71,6 @@ export default defineEval({
     await t.send("把 src/app.ts 改成 async/await。");
     //  send 窗口:从进入到返回的全部 workspace 变化落一笔 agent 归因
 
-    await t.sandbox.writeFiles({ "expected.json": ANSWER });
-    //  写在最后一次 send 之后,且此后不再 send:agent 看不到,也进不了 agent diff
-    //  多轮之间写入的文件会被下一轮看到,不能当隐藏校验材料
-
     t.check(t.sandbox.diff.get("src/app.ts"), excludes(/callback/));
     //  读的是最后触及该文件那个窗口的终态;窗口之间夹着的 eval 写入不会被算进 agent 的账
   },
@@ -95,7 +93,7 @@ agent 归因之外,最终工作区仍完整可读:`t.sandbox.readFile` / `runCom
 
 时间树的父级归属使用随 async 调用链传播的显式 timing context,不能用一个可变的“当前 phase/hook”全局值——并行 hook 或并行命令会串错父级。runner duration 使用单调时钟,节点同时保存 attempt 内 `startOffsetMs`,从而恢复 sibling 的重叠关系。命令只落有界脱敏摘要:env value、stdout/stderr 与可能含 secret 的完整长脚本不进入 timing 记录。operation 的 label 同样有界、脱敏,由拥有该逻辑工作的 producer 写入;展示层不能解析命令文本猜业务分组。这样「沙箱起了多久、setup 哪个 hook/命令慢、Agent CLI 启动多久、超时死在哪一层、收尾卡没卡」都有数据可查。阶段与时间树口径见 [Phase Timings](../../engineering/benchmark/README.md),终端的有界/full 两档入口是 [`niceeval show --timing`](../reports/show/timing.md),网页入口是 `niceeval view` 的 Attempt 详情。
 
-核心固定的是这条调用链本身(创建后先环境层 Hook、再打分类账锚点、再 eval Fixture、再 agent 预置;agent 归因增量在评分前折叠完成,收尾段按 eval → agent → 环境层的顺序在判定之后执行)。中间"传什么文件、传到哪、什么时候调 agent、什么时候手工跑测试"全部是 `test(t)` 里的普通代码决定,不是核心的固定编排,详见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)——Adapter 也只管 `t.send()` 触发的那一次"在沙箱里把 agent 跑起来"。author-facing 的 `t.sandbox` 同时承载立即 IO / 命令执行和最终 diff / 文件变化视图,但不暴露 `stop()`。provider 保证 `workdir` 存在且对非 root 用户可写;命令工作目录用 `runCommand` / `runShell` 的 `cwd` option 表达,默认 `workdir`,不提供可变的 `setWorkingDirectory`。
+核心固定的是这条调用链本身:创建后先环境层 Hook、再打分类账锚点、准备 Eval Fixture 与 Agent，Agent 结束后冻结 diff，再进入受管 verifier phase。静态文件在 `fixture.files` / `verifier.files` 声明；动态 IO 与判分命令仍是 Eval 普通代码。完整路径见 [Eval 用例 · 沙箱 coding 任务](../eval/use-case/sandbox-coding.md)。
 
 provider 的可写保证不止 `workdir`。
 runner 要在 workdir 外的私有路径放沙箱侧运行时文件——OTLP 采集器、变更分类账——落点是系统临时目录,镜像必须让它对运行用户可写。

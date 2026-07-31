@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -61,10 +61,21 @@ Eval Environment、所选 case 与 Eval setup helper 属于逐 Eval 身份。
 函数体不自动参与哈希。
 需要缓存或比较的 custom setup 必须显式声明 identity/revision,不能依赖闭包源码字符串。
 
-## State、Agent runtime 与 verifier 正交
+## State 与 Agent runtime 正交
 
-MemoryBench 需要外部记忆状态与复用窗口,Terminal-Bench 需要 turn 后 hidden verifier。
+MemoryBench 需要外部记忆状态与复用窗口。
 这些事实约束完整 Attempt 生命周期,但不改变 Environment 怎样解析成 Sandbox Case。
 
-环境模型只为它们保留相位,不复制它们的公开类型。
+环境模型只为 state 与 Agent runtime 保留相位,不复制它们的公开类型。
 多容器 case 的主 Sandbox、ready、证据与清理同样留在 Sandbox Feature。
+
+## Verifier 身份先于运行
+
+Terminal-Bench 的 hidden verifier 只能在 Agent 结束后出现，但它的内容身份必须在 Attempt 开始前进入携带决策。
+API 因此需要同步、可发现的文件声明，不能只在 `test(t)` 运行期上传。
+
+模块顶层 loader 能满足发现期身份，却把环境登记表变成作者可见副作用。
+同一模块定义多条 Eval 时，它还会把不同条目的文件错误合并成整组身份。
+
+受管 verifier 必须逐 Eval 解析，并在 Agent diff 冻结后上传。
+清理是 Sandbox 复用的硬屏障；残留隐藏材料的 Sandbox 不能交给下一条 Agent。

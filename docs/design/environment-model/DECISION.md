@@ -1,10 +1,10 @@
-**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md)
+**相关文档**:[README](README.md) · [GOALS](GOALS.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md)
 
 ---
 
 ## 结论
 
-采纳 [PLAN-6](PLAN-6/README.md):唯一 Environment 起点,双方在既有 setup 层准备。
+采纳 [PLAN-7](PLAN-7/README.md):唯一 Environment 起点、既有 setup owner 与受管 Eval 文件生命周期。
 
 ## 关键裁决
 
@@ -19,6 +19,9 @@
 - 现场无法组合时复用 `environments[profile]` 提供预制完整 case,或明确 skip/fail。
 - `sandboxReuse` 窗口内 SandboxSpec setup 只跑一次,跨 Attempt 会变化的条件禁止放这层。
 - 无 identity 的 plain setup 不参与缓存命中,报告标注 setup 身份不可比。
+- 每道 Eval 保持自包含，不要求数据集 adapter 或共享 Eval 工厂消除重复。
+- 可见 Fixture 写在 `fixture.files`，隐藏判据写在 `verifier.files + verifier.verify(v)`。
+- Runner 负责 verifier 的发现期身份、turn 后上传、归因与清理；正常路径没有模块顶层登记副作用。
 
 ## 真实仓库证据
 
@@ -29,8 +32,12 @@
 上游把每道题组织成 task package。
 `TaskPaths` 固定从同一目录取得 `task.yaml`、`docker-compose.yaml`、`run-tests.sh`、`tests/**` 与 solution;harness 把 Compose build/up 后的 `client` 交给 Agent,并在 Agent 结束后才复制测试材料。
 
-这证明 Compose 的 owner 是 task package,不是 Experiment,也不应由迁移者逐题重写。
-迁移边界应是一份 benchmark adapter:它从原始目录派生普通 EvalDef、Environment source 与 hidden verifier,Experiment 只选择 materializer 并追加自己的 sandbox setup。
+这证明 Compose 的 owner 是 task package,不是 Experiment。
+每题 Eval 可以直接引用自己的 task package，并在同一份 EvalDef 中声明 Environment source、verifier files 与 verify callback。
+
+真实迁移还揭示了 PLAN-6 的遗漏。
+为了让 verifier 进入指纹，作者不得不在 `defineEval()` 外顶层执行 `loadCriteria`；为了控制可见时机，又要在 `test(t)` 中手工上传、运行和清理同一批文件。
+这不是题目差异，而是 Runner 生命周期机械动作。
 
 ### MemoryBench
 
@@ -65,19 +72,21 @@ PLAN-5 还把 `e2bSandbox({ template })` 与 Eval source 解释成两个 Base �
 | PLAN-3 | Eval Case、Experiment Addon | Terminal-Bench 自然,MemoryBench 仍偏向 Eval 起点 | 否决 |
 | PLAN-4 | Requirement、Base、Ensure | 两方可贡献,但默认 template 被误判成 Base 冲突 | 否决 |
 | PLAN-5 | 两组 Requirement、四档 Base、融合 case、调度图 | 表达力最大,作者面和实现面也最大 | 否决 |
-| PLAN-6 | Environment、SandboxSpec setup、EvalDef setup、Agent setup | 两个方向都沿既有 owner 直接表达 | 采纳 |
+| PLAN-6 | Environment、SandboxSpec setup、EvalDef setup、Agent setup | 环境 owner 正确，但 hidden verifier 仍靠顶层登记和手工协调 | 被 PLAN-7 取代 |
+| PLAN-7 | PLAN-6 的 owner 加 Fixture/verifier 文件相位 | 每题自包含，Runner 接管文件身份与相位机械动作 | 采纳 |
 
 ## 两条迁移路径
 
 Terminal-Bench:
 
 ```text
-upstream task package
-  -> dataset adapter 派生 EvalDef + Compose source
+每题 EvalDef 引用自己的 task package
+  -> Compose source 由 SandboxSpec materialize
   -> Docker materializer 启动完整 case
   -> Experiment sandbox setup 安装 mempal
   -> Agent setup
-  -> turn 后 hidden verifier
+  -> Runner 上传 verifier files 并调用 verify(v)
+  -> Runner 清理 verifier files
 ```
 
 MemoryBench:
@@ -92,7 +101,7 @@ Eval 无 Environment
 
 ## 预制与真实检查
 
-PLAN-6 不承诺运行时合并两个起点。
+PLAN-7 不承诺运行时合并两个起点。
 若 mempal 不能装进某条 Compose 环境,Experiment 必须在 `environments[profile]` 提供预制完整 case,否则该组合明确 skip/fail。
 
 预制 case 或 template 名不证明工具可用。
@@ -101,19 +110,21 @@ PLAN-6 不承诺运行时合并两个起点。
 
 ## 实现边界
 
-第一阶段只需要五项增量:
+第一阶段需要七项增量:
 
-1. 数据集 adapter 可以批量返回带不同 Environment source 的普通 EvalDef record。
-2. SandboxSpec setup 确认作用于最终解析出的主 Sandbox,不只作用于默认 case。
-3. EvalDef setup 确认在 workspace baseline 后、Agent setup 前执行。
-4. `defineSandboxSetup()` 为少数重准备 helper 提供 identity、check/install/recheck 与 staged payload。
-5. 记录所选 Sandbox Case 与三层 setup activity,保留 owner phase。
+1. SandboxSpec setup 确认作用于最终解析出的主 Sandbox,不只作用于默认 case。
+2. EvalDef setup 确认在 workspace baseline 后、Agent setup 前执行。
+3. `defineSandboxSetup()` 为少数重准备 helper 提供 identity、check/install/recheck 与 staged payload。
+4. EvalDef 增加 `fixture.files`、`verifier.files`、`verifier.verify(v)` 与 `privateFiles`。
+5. 发现期逐 Eval 解析受管文件身份并执行泄题门，不使用模块级共享登记表代替归属。
+6. Runner 增加 `eval.verify` phase，在冻结 agent diff 后上传、判分并清理 verifier files。
+7. 记录所选 Sandbox Case、三层 setup activity 与受管文件 lifecycle activity。
 
-依赖图、资源锁、跨 helper 自动并行、外部 state API 与 managed hidden verifier 不进入本决策的第一阶段。
+依赖图、资源锁、跨 helper 自动并行与外部 state API 不进入本决策的第一阶段。
 出现独立真实样本后再按对应 Feature 扩展,不回填进 Environment contribution。
 
 ## 遗留风险
 
 - 预制 case 需要携带构建时写入的 Environment source provenance,规划期才能与当前 source 的内容身份核对。不能从当前 source 动态计算声明值给既有产物背书;在产物元数据与 per-eval fingerprint 拥有同源输入前,不公开 `fulfills` 之类的声明字段。
-- benchmark adapter 的 filtered build context 必须默认排除 solution 与 hidden verifier,并检查 Compose bind mount 泄漏。
-- 某些工具同时需要安装与跨 Attempt 状态。PLAN-6 保留现有 setup/teardown 写法;若以后引入独立 state lifecycle,应由对应 Feature 单独迁移。
+- 每题 Environment 的 build context 必须排除 solution 与 hidden verifier,并检查 Compose bind mount 泄漏。
+- 某些工具同时需要安装与跨 Attempt 状态。PLAN-7 保留现有 setup/teardown 写法;若以后引入独立 state lifecycle,应由对应 Feature 单独迁移。

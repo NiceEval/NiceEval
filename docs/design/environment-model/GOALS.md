@@ -1,4 +1,4 @@
-**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [DECISION](DECISION.md)
+**相关文档**:[README](README.md) · [LIMITS](LIMITS.md) · [CASES](CASES.md) · [PLAN-1](PLAN-1/README.md) · [PLAN-2](PLAN-2/README.md) · [PLAN-3](PLAN-3/README.md) · [PLAN-4](PLAN-4/README.md) · [PLAN-5](PLAN-5/README.md) · [PLAN-6](PLAN-6/README.md) · [PLAN-7](PLAN-7/README.md) · [DECISION](DECISION.md)
 
 ---
 
@@ -17,6 +17,7 @@
 - 预装产物是优化。需要判断命中时,领域 helper 必须检查实际状态并在安装后复检。
 - 作者看到的顺序就是执行顺序。没有真实需求时不引入依赖 DAG、资源锁与自动并行。
 - build、start、setup、Fixture、hidden verifier 与活 Sandbox 复用是不同动作。
+- 逐题 Eval 保持自包含；生命周期机械动作由字段归属表达，不靠模块顶层登记副作用。
 
 ## 需求
 
@@ -29,6 +30,8 @@
 7. 现场无法组合时,SandboxSpec 可以按 profile 提供完整预制 case;Runner 不合并两个起点。
 8. setup 的 identity、activity、失败 phase 与可验证 helper 的实际 facts 必须进入正确记录。
 9. 普通作者只需理解 Environment、Experiment sandbox setup、Eval setup 与 Agent setup。
+10. 可见 Fixture 与隐藏 verifier 必须在 EvalDef 内声明，Runner 按相位处理指纹、上传、归因与清理。
+11. 每题可以完整重复自己的定义，不要求用数据集 adapter 或共享 Eval 工厂消除重复。
 
 ## 不是本 doc 的目标
 
@@ -36,6 +39,6 @@
 - 不自动推导 setup 依赖、资源锁或并行调度。
 - 不改变 `sandboxReuse` 的语义与默认值。
 - 不定义外部实验状态的 checkpoint、后继和失败提交策略。
-- 不定义 Agent runtime 与 turn 后 hidden verifier 的公开 API。
+- 不重新定义 Agent runtime。
 - 不重新定义多容器 case 的 ready、证据、清理与 retain/resume 义务。
 - 不建立跨 Provider 的安装步骤 DSL。

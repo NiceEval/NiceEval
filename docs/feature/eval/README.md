@@ -28,6 +28,16 @@ export default defineEval({
   reporters?: Reporter[];               // 这个 eval 专用的报告器
   metadata?: Record<string, unknown>;   // 原样落进记录,给报告和事后分析读
 
+  fixture?: {
+    files: Array<{ from: string | URL | FileTree; to: string }>;
+  };                                    // Agent 前上传的可见起始文件
+
+  verifier?: {
+    files?: Array<{ from: string | URL | FileTree; to: string }>;
+    async verify(v) { /* turn 后判分,不能再驱动 Agent */ },
+  };
+  privateFiles?: Array<string | URL | FileTree>; // 永不上传的参考答案等
+
   async setup(sandbox, ctx) { /* 这道题的任务素材 */ },
   //  拿到完整 Sandbox(不是 test 里那个受限的 t.sandbox 视图);写入算 eval 归因,永不进 agent diff
   //  ctx 是绑定到 eval.setup 的窄上下文:ctx.progress(...) 报短期 activity,ctx.diagnostic(...) 报永久 warning/error
@@ -37,7 +47,7 @@ export default defineEval({
   //  当且仅当 setup 的时点走到过才执行;setup 抛错、test 抛错都不豁免
 
   async test(t) { /* 交互 + 断言 */ },
-  //  最后一次 t.send() 返回后、且不再发起 send 时写校验材料,agent 看不到,也进不了 agent diff
+  //  Agent 交互结束后,Runner 才进入 verifier phase
 });
 ```
 
@@ -63,6 +73,16 @@ export default defineEval({
 要把它的产物传给 `teardown`,以 `sandbox` 实例作键存取——并发 attempt 共享同一模块,普通模块变量会互相覆写(写法见[用例 · Fixture 与反馈](use-case/fixtures-lifecycle.md),四层统一成对语义见 [Runner · 环境预置](../../runner.md#环境预置不进运行器但按顺序调它))。
 它与另外两层 setup 分工不同:环境层的 `sandbox.setup`(不知道跑哪个 eval)、协议层的 `agent.setup`(装 CLI、写鉴权),见 [Sandbox](../sandbox/README.md)。
 
+`fixture.files` 是静态可见 Fixture 的声明面。
+Runner 在 `setup` 后、Agent 前上传并记为 eval 归因；动态 checkout、外部临时资源与运行时生成仍使用 `setup`。
+
+`verifier.files` 是隐藏判据的声明面。
+Runner 在发现期计算判据指纹并执行泄题门，在最后一次 Agent turn 后冻结 agent diff、上传文件、调用 `verify(v)`，再清理受管文件。
+`v` 提供断言、反馈与受限 Sandbox 操作，不提供 `send` 或 session 创建入口。
+
+`privateFiles` 进入判据指纹与泄题门，但在任何相位都不上传。
+文件声明、递归目录、排除规则与错误语义见[判据文件](use-case/criteria-files.md)。
+
 **禁止**提供 `id` / `name` —— 它们从文件路径推导:`evals/weather/brooklyn.eval.ts` → id `weather/brooklyn`。
 改名即改 id,不会腐烂。
 
@@ -84,13 +104,14 @@ evals/foo/eval.ts       → eval id "foo"
 |---|---|---|
 | Dockerfile、Compose、build context、相对 bind mount | provider 构建 image、启动 Compose 时使用;Agent 只看到最终主 Sandbox 视图 | BuildKey / CaseKey |
 | 题面数据(经 `loadYaml` / `loadText` 读入) | 宿主发现期读取 | eval 数据指纹 |
-| verifier(经 `loadCriteria` 登记)与 private 文件 | verifier 在最后一次 `t.send()` 后才上传;private 永不上传 | eval 判据指纹 |
+| `fixture.files` | Eval setup 后、Agent setup 前上传 | eval 数据指纹 |
+| `verifier.files` 与 `privateFiles` | verifier 在最后一次 Agent turn 后上传;private 永不上传 | eval 判据指纹 |
 
 普通起始 fixture 由 eval `setup` 或 `test` 在 send 前上传,Agent 本来就应看见,进 eval 归因。
 目录共址只解决组织问题,不把环境、fixture、verifier 三种生命周期合并成一个哈希:改 verifier 只作废判据指纹,不触发镜像重建;改 Dockerfile 只改环境身份。
 
 solution、生成器与参考答案默认不进入可运行 eval 目录;必须共址时放声明 private 的路径,它不得进入任何 build context 或最终镜像。
-发现期把已登记 verifier / private 路径与每个 build context 交叉检查,泄漏判定与修法见 [Sandbox Case · 泄题门](../sandbox/case.md#泄题门verifier-与-build-context-的交叉检查)。
+发现期把声明的 verifier / private 路径与每个 build context 交叉检查,泄漏判定与修法见 [Sandbox Case · 泄题门](../sandbox/case.md#泄题门verifier-与-build-context-的交叉检查)。
 
 ## defineScoreEval：计分制题型
 

@@ -1,129 +1,119 @@
-# 判据文件：隐藏测试与参考实现
+# 判据文件:隐藏测试与参考实现
 
 ## 解决什么问题
 
-沙箱 coding 题的判分标准常常不是断言代码,而是一份文件或一棵目录树——隐藏测试、参考实现、跑测脚本。它们与 eval 同库签入(如 `evals/fixtures/`),在 `test(t)` 里送进 Sandbox 执行,执行结果决定判定。这些文件是题目的一部分:改了它们,判分口径就变了,历史结果不能再采信。
+沙箱 coding 题常用一份文件或目录树判分，例如隐藏测试、参考输出与跑测脚本。
+它们的内容变化必须作废当前 Eval 的历史结果，但 Agent 开始前不能看到它们。
 
-登记进指纹有两条路,按「内容要不要进内存」选:
+判据文件直接声明在 `verifier.files`。
+Runner 负责发现期指纹、泄题门、Agent 结束后的上传、verification 归因和清理，不要求模块顶层登记或 `test(t)` 手工协调。
 
-| 判据形态 | loader | 行为 |
-|---|---|---|
-| 单个文件,内容要写进沙箱 | `loadText` | 读入原文并登记,返回内容 |
-| 一整棵树,内容整体上传 | `loadCriteria` | 只登记,流式哈希,返回匹配路径清单 |
-
-改一字节、增删一个文件,引用它的那条 eval 自动重跑,其它 eval 照常携带。
-指纹的完整判据见[缓存与携带](../../experiments/cache.md#eval-源码闭包算到哪为止)。
-
-用 `fs` 自行读入拿到的内容一样,但 niceeval 不知道那次读发生过:改了判据,历史结果照常携带,复验看到的是旧判定。判据文件一律走 loader。
-
-## 单个文件:`loadText` 读入即登记
-
-1. 判据文件放在 eval 旁边,与 eval 同库签入:
-
-   ```text
-   evals/
-     react-datepicker/
-       pr-6058.eval.ts
-     fixtures/react-datepicker/pr-6058/
-       tests/datepicker_test.test.tsx   # 隐藏测试:判分标准本体
-       tests/run-tests.sh               # 跑测脚本
-   ```
-
-2. **模块顶层**用 `loadText` 读入:
-
-   ```typescript
-   // evals/react-datepicker/pr-6058.eval.ts
-   import { defineEval } from "niceeval";
-   import { loadText } from "niceeval/loaders";
-   import { commandSucceeded } from "niceeval/expect";
-
-   const fixture = (p: string) =>
-     new URL(`../fixtures/react-datepicker/pr-6058/${p}`, import.meta.url);
-
-   const hiddenTest = await loadText(fixture("tests/datepicker_test.test.tsx"));
-   const runTests = await loadText(fixture("tests/run-tests.sh"));
-   ```
-
-3. `test(t)` 里写进 Sandbox 并执行,判定取执行结果:
-
-   ```typescript
-   export default defineEval({
-     description: "react-datepicker pr-6058: changeMonth 面板错位",
-     async test(t) {
-       await t.send("修复 changeMonth 面板错位问题;不许改测试文件。");
-       await t.sandbox.writeFiles({
-         "src/test/datepicker_test.test.tsx": hiddenTest,
-         "tests/run-tests.sh": runTests,
-       });
-       t.check(await t.sandbox.runCommand("bash", ["tests/run-tests.sh"]), commandSucceeded());
-     },
-   });
-   ```
-
-## 判据树:`loadCriteria` 登记不读入
-
-判分标准是一棵树(每题几百个测试文件加跑测脚本)、断言只消费执行结果时,内容不需要进内存:上传走 `uploadDirectory`,判定看跑测脚本的退出码。`loadCriteria` 只做登记——发现期展开 glob、把每个匹配文件流式哈希进这条 eval 的指纹,返回排序后的项目根相对路径清单。
+## 完整写法
 
 ```typescript
-// evals/sqlite/with-gcov.eval.ts
 import { defineEval } from "niceeval";
-import { loadCriteria } from "niceeval/loaders";
 import { commandSucceeded } from "niceeval/expect";
 
-await loadCriteria("evals/fixtures/sqlite/with-gcov/tests/**", "!**/__pycache__/**");
-
 export default defineEval({
-  description: "sqlite: 把 gcov 行覆盖率补过线",
   async test(t) {
     await t.send("补测试把 gcov 行覆盖率提过线;不许改 tests/ 下的文件。");
-    await t.sandbox.uploadDirectory("../fixtures/sqlite/with-gcov/tests", "tests");
-    t.check(await t.sandbox.runCommand("bash", ["tests/run-tests.sh"]), commandSucceeded());
+  },
+
+  verifier: {
+    files: [
+      {
+        from: {
+          root: new URL("fixtures/sqlite/with-gcov/", import.meta.url),
+          ignore: ["**/__pycache__/**"],
+        },
+        to: "/tests",
+      },
+    ],
+    async verify(v) {
+      const result = await v.sandbox.runShell("bash /tests/run-tests.sh");
+      v.check(result, commandSucceeded());
+    },
   },
 });
 ```
 
-匹配规则:
+`test(t)` 返回后，Runner 关闭 Agent 驱动面并冻结 agent diff。
+随后才上传 `/tests`、调用 `verify(v)`，最后删除受管材料。
 
-- include 是项目根相对的 glob 字符串,或 `{ pattern, relativeTo: import.meta.url }`(见[路径的两种写法](#路径的两种写法));`!` 前缀字符串为排除,按声明顺序求值,后写的覆盖先写的。
-- 匹配集按文件系统枚举,不看 git:新写的判据没 `git add` 也照样进指纹。
-  代价是生成物同样被盖到——本地跑一次测试冒出的 `__pycache__`、系统或编辑器文件都会改变指纹、作废引用这棵树的 eval。生成物用 `!` 排除;niceeval 不内置排除表。
-- 增删文件与改内容同等作废;权限位与修改时间不进哈希,重新 `git clone` 一份工作树不作废。
-- 匹配落到项目根外(符号链接穿出根)按用法错误报出,与源码闭包的静态面同判据。
-- 每个 include pattern 都必须匹配到至少一个文件,匹配不到就按用法错误报出——多半是写错了或文件搬走了;别的 pattern 有命中也不放过,静默放过等于判据悄悄变窄。`!` 排除不受此约束。
+`v` 提供断言、feedback 与受限 Sandbox 操作，不提供 `send`、`newSession` 或恢复 Agent 的入口。
+隐藏性来自不可跨越的 lifecycle phase，不来自作者记住“最后一次 send 后不能再 send”的调用约定。
 
-作废面与源码闭包同理是 1 对 N 的:被多题共享的跑测脚本改一行,共享它的每题都重跑。
-想缩小作废面,按题拆目录、按变更频率拆 pattern。
+## 文件 source
 
-改了判据没有「强制沿用旧结果」的出口,这是有意的:判据变了,旧判定就不能采信,宁可多烧一次。
-判据没变但要重跑走 [`--rerun`](../../experiments/use-case/重新运行/)。
+`from` 接受项目根相对字符串、Eval 模块相对 URL，或带 `ignore` 的目录树:
 
-## 只能在模块顶层调用
+```typescript
+type EvalFileSource =
+  | string
+  | URL
+  | {
+      readonly root: string | URL;
+      readonly ignore?: readonly string[];
+    };
+```
 
-loader 在发现阶段的模块求值期登记「这条 eval 的判据是哪些文件」;携带决策发生在任何 attempt 执行之前。`test(t)` 运行时才读,指纹早已算完——所以发现期之外调用任何 loader 直接报错,错误信息给出下一步:把读取挪到模块顶层。
-宁可大声失败,不静默漏登记。
+source 指向普通文件时，`to` 是目标文件绝对路径。
+source 指向目录时，Runner 递归上传目录内容到 `to`，并按稳定相对路径顺序计算身份。
 
-## 路径的两种写法
+`ignore` 使用项目统一 glob 语义，只过滤该 source 下的相对路径。
+生成物、系统文件和本地缓存都不隐式排除；作者需要明确写出不属于判据的路径。
 
-单文件 loader 的路径两种写法登记与指纹等价,选读起来顺的那种:
+## 指纹
 
-- **项目根相对的字符串**:`loadText("evals/fixtures/react-datepicker/pr-6058/tests/run-tests.sh")`。
-- **eval 文件相对的 URL**:`loadText(new URL("../fixtures/pr-6058/tests/run-tests.sh", import.meta.url))`。
-  `URL` 是全局构造器,不需要 import `node:url`。
+Runner 在发现期解析每条 Eval 自己的文件声明。
+内容、相对路径与文件类型进入 Eval 判据指纹；mtime 与宿主绝对路径不进入。
 
-单个判据文件离 eval 近就用 URL,统一收在一个数据目录就用字符串。
+改一字节、增加文件或删除文件都只作废声明它的 Eval。
+同一模块导出多条 Eval 时也按每个 EvalDef 的字段分别计算，不把模块级登记表共享给整组条目。
 
-`loadCriteria` 的 include pattern 同样有两种写法:项目根相对字符串,或 `{ pattern: "tests/**", relativeTo: import.meta.url }`。
-后一种把 glob 与基准 URL 分开,所以 `?`、`[...]`、`{a,b}` 保持 glob 字符,不会被 URL parser 当成 query、编码或 fragment。
-两种 include 写法登记与指纹等价。
+source 不存在、穿出项目根或符号链接逃出项目根时，发现期直接报配置错误。
+静默得到空目录会让判据悄悄变窄，因此不允许。
 
-`!` 排除只收字符串,统一按项目根相对求值。
-匹配对象是此前全部 include 展开出的项目根相对路径;它不跟随任何一条 include 的基准。
-include 有几条、采用哪种写法都不改变排除的含义。
-要排除任意深度的生成物写 `!**/__pycache__/**`。
+## 泄题门
 
-## 边界:什么时候改用别的
+`verifier.files` 与 `privateFiles` 都是隐藏输入。
+发现期把它们与当前 Eval Environment 的全部 Docker build context 和 Agent 可达 bind mount 交叉检查。
 
-- 判据是结构化数据行(对照表、case 清单)→ [`loadYaml` / `loadJson` + 测试集从输入数组生成多条 eval](dataset-fanout.md)。
-- 巨型二进制产物(模型权重、数据集镜像)不是判据,归 Sandbox 环境面(预制模板 / environment profile);`loadCriteria` 服务的是决定判分口径的文本树。
-- 要读的是 agent 跑出来的产物 → `t.sandbox.file` / [`t.sandbox.diff`](sandbox-coding.md)。
-  那是证据,只属于产出它的那条 attempt,不进指纹。
+仍会进入 image、Agent 阶段 mount 或其它 Agent 可达 service 的 verifier 按配置错误拒绝。
+修法是调整 `.dockerignore`、使用过滤后的 build context，或把隐藏文件移出公开 context。
+
+`privateFiles` 用于 solution、生成器与参考答案:
+
+```typescript
+export default defineEval({
+  privateFiles: [
+    new URL("solution.sh", import.meta.url),
+    new URL("references/", import.meta.url),
+  ],
+  async test(t) { /* ... */ },
+});
+```
+
+private files 进入判据指纹和泄题门，但在任何运行相位都不上传。
+
+## Verification 归因与清理
+
+verifier 上传、`verify(v)` 产生的文件与测试临时产物属于 verification 归因。
+它们不进入 agent diff，也不要求用 `diff.ignore` 防止测试 venv、coverage 或 cache 撑大 agent evidence。
+
+上传一半失败、`verify(v)` 抛错或超时都进入清理链。
+Sandbox 复用时，cleanup 是下一条 Attempt 的硬屏障；清理失败便终止该复用窗口，不能让下一条 Agent 看到残留判据。
+
+## 动态判据
+
+判据身份必须在 Attempt 开始前确定。
+需要从远端或生成器取得判据时，先在发现期得到内容寻址、可复现的本地产物，再把它声明为 `verifier.files`。
+
+运行期临时下载一份未进入指纹的测试会让历史结果无法比较，不提供这种便捷出口。
+
+## 边界
+
+- Agent 本来就应看到的起始文件写进 `fixture.files`，不写进 verifier。
+- checkout、凭据派生或外部临时资源等动态题目准备写进 `EvalDef.setup`。
+- Agent 运行后产生的文件是 evidence，直接通过 `v.sandbox` 或 `t.sandbox` 读取。
+- 巨型模型、系统包和运行时不作为 verifier files 上传，归 Environment 或预制 Sandbox Case。

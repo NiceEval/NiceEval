@@ -2,26 +2,25 @@
 
 ## 解决什么问题
 
-评 coding agent 要回答三件事：起始项目怎么进沙箱、任务完成后怎么验证、以及怎么保证只评 **agent 自己的改动**（而不是 fixture 或校验脚本的写入）。`t.sandbox` 一个命名空间覆盖全程：文件 IO 与命令是立即动作，diff 断言是延迟评估的结果视图。没有自动发现、没有隐式拷贝——起始文件只有显式写入一种来源（[设计原则](../architecture.md#两条设计原则)）。
+评 coding agent 要回答三件事：起始项目怎么进沙箱、任务完成后怎么验证、以及怎么保证只评 **agent 自己的改动**（而不是 Fixture 或 verifier 的写入）。静态起始文件与隐藏判据分别在 `fixture.files`、`verifier.files` 显式声明；动态 IO 继续通过 `t.sandbox` 或 `setup` 执行。
 
 ## 全流程
 
-1. 起始文件显式写进沙箱。少量内联文本用 `writeFiles`，整个 fixture 项目用 `uploadDirectory`（本地路径相对 eval 文件解析，`opts.ignore` 挡住 `node_modules` 这类不该进沙箱的目录）：
+1. 静态起始文件声明进 `fixture.files`；少量运行时文本才在 `test(t)` 中使用 `writeFiles`：
 
    ```typescript
    // evals/refactor.eval.ts
    import { defineEval } from "niceeval";
    import { commandSucceeded, includes } from "niceeval/expect";
-   import { readFileSync } from "node:fs";
 
    export default defineEval({
      description: "把回调改写成 async/await",
+     fixture: {
+       files: [
+         { from: new URL("fixtures/legacy-callbacks/", import.meta.url), to: "/app" },
+       ],
+     },
      async test(t) {
-       await t.sandbox.writeFiles({
-         "src/legacy.js": readFileSync("fixtures/legacy-callbacks/legacy.js", "utf-8"),
-       });
-       // 或整个起始项目: await t.sandbox.uploadDirectory("fixtures/refactor-starter");
-
        await t.send("把 src/legacy.js 里的回调全部改写成 async/await,保持行为不变。");
 
        const test = await t.sandbox.runCommand("npm", ["test"]);
@@ -35,16 +34,23 @@
 
 2. 验证命令用 `runCommand`（argv 形式）或 `runShell`（要管道 / 重定向时），结果配 `commandSucceeded()` 断退出码。
 
-3. diff 断言读的是 **agent 归因增量**：变更分类账只把 `t.send()` 窗口内的 workspace 变化归给 agent。你写入的 fixture、send 之后写入的校验文件都不在 `t.sandbox.diff` 里——`fileChanged` 断的是「agent 改了它」，不是「它相对空目录变了」。除 `fileChanged` / `fileDeleted` 外还有 `notInDiff(re)` 断 agent 没碰某类路径（[断言结果](../../sandbox/library/asserting-results.md)）。
+3. diff 断言读的是 **agent 归因增量**：变更分类账只把 `t.send()` 窗口内的 workspace 变化归给 agent。Fixture 与 verification 写入都不在 `t.sandbox.diff` 里——`fileChanged` 断的是「agent 改了它」，不是「它相对空目录变了」。
 
-4. **防作弊靠调用顺序，不靠框架黑箱**：隐藏校验材料在最后一次 `t.send(...)` 返回后才写入、才运行，而且此后不再发起 `send`。这样 agent 看不到，材料也不进入 agent diff：
+4. 隐藏判分写进受管 verifier phase。Runner 关闭 Agent 驱动面并冻结 diff 后才上传文件，此后 `v` 没有 `send`：
 
    ```typescript
-   await t.send("在 src/components/Button.tsx 导出一个 Button 组件。");
-
-   await t.sandbox.writeFiles({ "button.test.ts": BUTTON_TEST_SOURCE });   // agent 看不到
-   const test = await t.sandbox.runCommand("npm", ["test"]);
-   t.check(test, commandSucceeded());
+   export default defineEval({
+     async test(t) {
+       await t.send("在 src/components/Button.tsx 导出一个 Button 组件。");
+     },
+     verifier: {
+       files: [{ from: new URL("button.test.ts", import.meta.url), to: "/app/button.test.ts" }],
+       async verify(v) {
+         const test = await v.sandbox.runCommand("npm", ["test"]);
+         v.check(test, commandSucceeded());
+       },
+     },
+   });
    ```
 
 5. 评产物质量用 judge 配 `{ on }`：

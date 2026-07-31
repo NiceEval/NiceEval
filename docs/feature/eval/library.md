@@ -36,28 +36,31 @@ export default defineEval({
 | `.gate(x?)` / `.atLeast(x)` / `.soft()` / `.optional()` / `.stopOnFailure()` | 严重度、通过线、缺席策略与控制流；两种题型同义 | [Verdict](../verdict/architecture.md) | [过程与成本](use-case/process-and-cost.md) · [裁判评质量](use-case/judge-quality.md) |
 | `t.judge` / `session.judge` / `turn.judge` | LLM-as-judge 评开放式质量 | [Judge](../judge/library.md) | [裁判评质量](use-case/judge-quality.md) |
 | `t.sandbox.*` | 沙箱文件 IO、命令执行、agent diff 断言 | [Sandbox · 文件与命令](../sandbox/library/operations.md) · [断言结果](../sandbox/library/asserting-results.md) | [沙箱 coding 任务](use-case/sandbox-coding.md) |
-| `setup` / `teardown` / `t.progress` / `t.diagnostic` / `t.skip` | 任务 Fixture 与运行反馈 | [README](README.md) · [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
-| `loadText` / `loadCriteria` | 登记决定判分口径的文件 | [判据文件](#判据文件加载器) | [隐藏测试与参考实现](use-case/criteria-files.md) |
+| `fixture.files` / `setup` / `teardown` | 可见 Fixture 与动态任务准备 | [README](README.md#defineeval-的形状) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
+| `verifier.files` / `verifier.verify(v)` / `privateFiles` | turn 后隐藏判分与永不上传文件 | [判据文件](#受管-eval-文件) | [隐藏测试与参考实现](use-case/criteria-files.md) |
+| `t.progress` / `t.diagnostic` / `t.skip` | 运行反馈与明确跳过 | [Context · 反馈](library/context.md#向运行反馈长步骤) | [Fixture 与反馈](use-case/fixtures-lifecycle.md) |
 
-## 判据文件加载器
+## 受管 Eval 文件
 
-`loadText(path: string | URL)` 读取单个文件并登记内容。
-`loadCriteria(...patterns)` 登记一棵判据树,返回排序后的项目根相对路径;include 有两种精确形状:
+静态文件直接在 EvalDef 内声明，不在模块顶层执行登记函数:
 
 ```typescript
-type CriteriaPattern =
-  | string
-  | { readonly pattern: string; readonly relativeTo: URL };
+type FileTree = {
+  readonly root: string | URL;
+  readonly ignore?: readonly string[];
+};
 
-declare function loadCriteria(
-  ...patterns: CriteriaPattern[]
-): Promise<string[]>;
+type EvalFileMount = {
+  readonly from: string | URL | FileTree;
+  readonly to: string;
+};
 ```
 
-字符串 include 与 `!` exclude 都按项目根求值。
-靠近 eval 的树写 `{ pattern: "tests/**", relativeTo: import.meta.url }`;glob 保持普通字符串,不交给 URL parser 解释。
-exclude 只收字符串并作用于所有 include 展开的项目根相对路径。
-完整的匹配、指纹与错误语义见[判据文件用例](use-case/criteria-files.md)。
+`fixture.files` 在 Agent 前上传，`verifier.files` 在 Agent 后上传，`privateFiles` 永不上传。
+目录递归展开并按稳定路径排序；`ignore` 使用项目统一 glob 语义。
+
+`loadText` / `loadYaml` / `loadJson` 继续服务发现期需要读进定义值的数据。
+静态文件树的完整指纹、泄题门、上传与清理语义见[判据文件用例](use-case/criteria-files.md)。
 
 ## tags 与 environment：让 experiment 选择
 

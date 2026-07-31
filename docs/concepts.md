@@ -32,7 +32,8 @@ Roadmap 提出的候选原语单列在「候选术语」,链接 Roadmap 入口;�
 |---|---|---|---|
 | 评测用例 | Eval | 一个 Task 跑在一个 Agent 上,由若干 Assertion 评判;id 从文件路径推导 | [Eval](feature/eval/README.md) |
 | 任务 | Task | 要让被测对象完成的"那件事",写成一串 `t.send(...)`;只描述意图,不描述判分 | [Eval](feature/eval/README.md) |
-| Fixture | Fixture | `test(t)` 显式写入的起始文件加 `EvalDef.setup` 准备的素材;算 eval 归因,不进 agent diff | [Eval architecture](feature/eval/architecture.md) |
+| Fixture | Fixture | `fixture.files` 上传的可见起始文件加 `EvalDef.setup` 准备的素材;算 eval 归因,不进 agent diff | [Eval](feature/eval/README.md#defineeval-的形状) |
+| verifier | verifier | Agent 驱动面关闭后才上传的隐藏判据文件与 `verify(v)` 判分逻辑;算判据身份,不进 agent diff | [判据文件](feature/eval/use-case/criteria-files.md) |
 | send 窗口 | send window | 一次 `t.send()` 从发出到返回的区间;Sandbox diff 只反映各窗口内改动的并集 | [Eval architecture](feature/eval/architecture.md) |
 | 测试集 | Dataset | 共享同一 `test` 逻辑、只有输入不同的一组 case,`.map` 从输入数组生成多条 eval,id 零填充编号 | [Dataset fan-out](feature/eval/use-case/dataset-fanout.md) |
 | 发现 | Discovery | 扫 `evals/` 找 `*.eval.ts` / `*.eval.tsx` 与目录入口 `eval.ts`,按路径推导 id;同 id 双入口报重名 | [Eval](feature/eval/README.md) |
