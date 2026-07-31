@@ -1,18 +1,29 @@
 # 环境层用例手册
 
-规则难懂的地方来这里按场景查。
+从你要完成的事进入,不必先理解运行器的全部内部顺序。
 契约单源始终在 [README](../README.md) 与 [Library](../library.md),用例只做搭配与叙事,不复制定义。
 
-- [记忆对照:mempal 装成 experiment 层](memory-condition-layer.md) —— agent 侧环境重的项目怎样甩掉派生 template 与 flags 背身份。
-- [每题自带环境](per-task-environment.md) —— terminal-bench 形态:eval 声明 Compose sandbox source,agent 层现场装。
-- [断网题装实验工具](offline-task-staged-layer.md) —— 两头都重的死角:每条 eval 的 Compose × 每实验工具,`prepare` 走 staged 送入。
-- [把热路径烘进产物](bake-hot-layers.md) —— 逐层计时说话之后构建新的 image / template / snapshot,声明一行不动。
+## 先判断哪一侧重
 
-## 选择速查
+| 项目形态 | 怎么声明 | 完整用例 |
+| --- | --- | --- |
+| 实验环境较重:所有题共用基础环境,工具随 Experiment 变化 | `experiment.layers`;需要让多个 Attempt 共用一次 Sandbox 安装时再评估 `sandboxReuse` | [实验环境较重](实验环境较重.md) |
+| 评估环境较重:每道 Eval 自带 Dockerfile 或 Compose | `eval.environment`;BuildKey 负责构建复用 | [评估环境较重](评估环境较重.md) |
+| 两边都较重:每题环境 × 每实验工具 | 同时使用 `eval.environment` 与 `experiment.layers`;断网时用 staged Layer | [实验与评估环境都较重](实验与评估环境都较重.md) |
 
-| 你的项目 | sandbox case 来源 | Layer | 用例 |
-| --- | --- | --- | --- |
-| 所有题同一种环境,比 agent / 记忆机制 | spec 默认产物 | agent 层(adapter 自带)+ experiment 层 | [记忆对照](memory-condition-layer.md) |
-| 每题自带环境 | eval folder-local source / profile | agent 层 | [每题自带环境](per-task-environment.md) |
-| 每题环境 + 每实验的工具 | eval 声明 | agent 层 + experiment 层(`requires` 协商) | [断网题装实验工具](offline-task-staged-layer.md) |
-| 任一形态跑热了 | 烘常用层进新产物,在代际边界切换 | 声明不动,退为漂移防护 | [烘进产物](bake-hot-layers.md) |
+`sandboxReuse` 只复用同一解析后 sandbox case 分组里的 Sandbox,不能跨不同 sandbox case 共享实例。
+它不是 Layer 的必选项:默认隔离下 Layer 仍提供身份、检查与组合能力,但全新 Sandbox 上缺失的工具仍要重新安装。
+
+## 再处理特殊用法
+
+| 你还需要什么 | 放在哪里 | 完整用例 |
+| --- | --- | --- |
+| 多个有先后依赖的实验工具 | 有序的 `experiment.layers` | [组合多个环境层](组合多个环境层.md) |
+| 跨 Attempt 状态的载入与回存 | Sandbox `setup` / `teardown` Hook | [复用 Sandbox 中的状态](复用沙箱中的状态.md) |
+| 已经跑稳、但现场安装太慢的 Layer | provider 原生 image / template / snapshot | [把环境层预装进产物](把环境层预装进产物.md) |
+
+## 最常见的起点
+
+所有题共用一种基础环境时,从[实验环境较重](实验环境较重.md)开始。
+每题自带环境时,从[评估环境较重](评估环境较重.md)开始;Experiment 还要安装工具时,再进入[实验与评估环境都较重](实验与评估环境都较重.md)。
+Adapter 自带的 Agent 安装、全栈复检、逐层计时与 fingerprint 都由框架处理,不需要在实验文件里重复编排。

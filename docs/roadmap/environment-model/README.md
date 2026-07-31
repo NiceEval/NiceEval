@@ -262,7 +262,7 @@ niceeval 是 beta,这是刻意的破坏性收窄:定稿后重写 [Sandbox Librar
 状态不做层自带的 `state: { load, save }`,判据是**纯状态条件不该被迫写空层**。
 CLAUDE.md 记忆文件、git checkpoint、DB 种子这类条件没有任何要安装的东西:状态长在层上,它们要么写 check / apply 皆空、identity 无物可填的退化层,要么让状态在 Hook 链保留第二个家——后者与「题目环境不开第二个家」是同一条判据。
 
-层与状态的内聚用约定买:同一模块成对导出层与状态 Hook(`mempal.ts` 导出 `mempal` 与 `mempalLoadState` / `mempalSaveState`),示例见[记忆对照用例](use-case/memory-condition-layer.md)。
+层与状态的内聚用约定买:同一模块成对导出层与状态 Hook(`mempal.ts` 导出 `mempal` 与 `mempalLoadState` / `mempalSaveState`),示例见[复用 Sandbox 中的状态](use-case/复用沙箱中的状态.md)。
 
 ## 已否决:`sandbox.native` 原生出口
 

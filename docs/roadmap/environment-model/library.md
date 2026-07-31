@@ -54,7 +54,7 @@ requires: {
 ```
 
 协商只做静态可判的一侧:sandbox case 声明了无网而 Layer 要 `direct`,规划期 `skipped`;运行期断网按 apply 失败归属。
-断网 sandbox case 上要装东西,用 `prepare` 变体——完整走法见[用例:断网题装实验工具](use-case/offline-task-staged-layer.md)。
+断网 sandbox case 上要装东西,用 `prepare` 变体——完整走法见[实验与评估环境都较重](use-case/实验与评估环境都较重.md)。
 
 ## `experiment.layers`
 
