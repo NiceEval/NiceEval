@@ -6,8 +6,15 @@ import type { AttemptHandle, Sample } from "../../record/types.ts";
 import type { CalloutGroup } from "../definition/primitives/callouts-logic.ts";
 import type { CopyBlockContent } from "../definition/primitives/copy-block.tsx";
 import type { WaterfallContent } from "../definition/primitives/waterfall.tsx";
-import type { AttemptListItem, EvalListItem, ExperimentListItem, SampleSummaryContent } from "./types.ts";
+import type {
+  AttemptListItem,
+  EvalListItem,
+  ExperimentDetailsData,
+  ExperimentListItem,
+  SampleSummaryContent,
+} from "./types.ts";
 import { attemptListData, attemptRowsOf, evalListData, experimentListData } from "../components/entity-lists/compute.ts";
+import { experimentDetailsData } from "../components/experiment-detail/compute.ts";
 import { sampleSummary } from "../components/summaries/compute.ts";
 import {
   runNoticesContent,
@@ -80,6 +87,14 @@ export function toAttemptListRows(sample: Sample): Promise<readonly AttemptListI
 
 export function toExperimentRows(sample: Sample): Promise<readonly ExperimentListItem[]> {
   return experimentListData(sample);
+}
+
+/**
+ * `ExperimentDetails` 的六区块共享转换:`sample` 必须收窄到恰好一个 experiment,否则按
+ * 完整用户反馈报错(docs/feature/reports/components/experiment-detail/README.md)。
+ */
+export function toExperimentDetails(sample: Sample): Promise<ExperimentDetailsData> {
+  return experimentDetailsData(sample);
 }
 
 export function toEvalRows(sample: Sample): Promise<readonly EvalListItem[]> {
