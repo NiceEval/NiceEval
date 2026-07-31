@@ -8,12 +8,10 @@ import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { loadViewScan, type ResolvedHeadTag, type ViewScan, type ViewScanOptions } from "./data.ts";
-import { localizeText } from "../report/runtime/host.ts";
+import { localizeText, type ReportPage } from "../report/runtime/host.ts";
 import type { ReportLocale } from "../report/model/locale.ts";
 import type { PageRendererAssets } from "../report/extension/types.ts";
 import { hashEvalSource, normalizeEvalSource } from "../record/source-hash.ts";
-import type { AttemptHandle } from "../record/index.ts";
-import type { AttemptLocator } from "../record/locator.ts";
 
 /**
  * 站点产物清单里的一个文件:现算内容(content)、指向结果根内的原文件(file),或延迟到
@@ -194,25 +192,26 @@ export async function planSite(input?: string, opts: ViewScanOptions = {}, site:
     }
   }
 
-  // attempt/<locator>.html:显式报告页优先，否则用 view 的官方详情页；收窄后有效根内每个
-  // 可达 locator 各一份(view.md「静态导出」)。头资产的相对路径要从 attempt/ 子目录回退一层,
-  // 因此单独物化一份 `../` 前缀版本(与 index.html 的根相对版本共用同一份 files 内容寻址,
-  // 同一份资产只按内容哈希写一次)。每份文档的 IO/resolve 延迟到真正被请求或导出时才发生——
-  // 可达 locator 数量可能很大,不能像 index.html 一样在建清单时就全部渲染
-  // (architecture.md「管线以 page 实例为单位执行」)。
-  if (scan.attemptPages) {
-    const { locators, render } = scan.attemptPages;
+  // `<pageId>/<key>.html`:每一张参数化页(显式声明或标准库补位,attempt、experiment……
+  // 核心不区分)按 `params.enumerate()` 给出的实例各一份(view.md「静态导出」)。头资产的
+  // 相对路径要从 `<pageId>/` 子目录回退一层,因此单独物化一份 `../` 前缀版本(与 index.html
+  // 的根相对版本共用同一份 files 内容寻址,同一份资产只按内容哈希写一次)。每份文档的
+  // IO/resolve 延迟到真正被请求或导出时才发生——实例数量可能很大,不能像 index.html 一样
+  // 在建清单时就全部渲染(architecture.md「管线以 page 实例为单位执行」)。
+  if (scan.paramPages.size > 0) {
     const nestedHeadHtml = await materializeHeadAssets(scan.shellAssets.head, files, "../");
-    for (const [locator, handle] of locators) {
-      const path = `attempt/${locator}.html`;
-      files.set(path, {
-        path,
-        contentType: HTML_TYPE,
-        source: {
-          kind: "lazy",
-          produce: () => renderAttemptDocument(scan, locator, handle, render, nestedHeadHtml, files),
-        },
-      });
+    for (const [pageId, entry] of scan.paramPages) {
+      for (const key of entry.instances.keys()) {
+        const path = `${pageId}/${encodeURIComponent(key)}.html`;
+        files.set(path, {
+          path,
+          contentType: HTML_TYPE,
+          source: {
+            kind: "lazy",
+            produce: () => renderParamDocument(scan, entry.page, key, () => entry.render(key), nestedHeadHtml, files),
+          },
+        });
+      }
     }
   }
 
@@ -429,27 +428,25 @@ function escapeText(value: string): string {
 const ATTEMPT_LOCALE_SWAP_SCRIPT = `(function(){try{var s=localStorage.getItem("niceeval:view:locale");var l=s==="zh-CN"||s==="en"?s:((navigator.languages||[navigator.language]).some(function(v){return /^zh/i.test(String(v||"").trim())})?"zh-CN":"en");if(l==="zh-CN"){var en=document.querySelector('[data-niceeval-locale="en"]');var zh=document.querySelector('[data-niceeval-locale="zh-CN"]');if(en)en.hidden=true;if(zh){zh.hidden=false;}document.documentElement.lang="zh-CN";}}catch(e){}})();`;
 
 /**
- * 一个 locator 的独立 attempt 文档:与 index.html 是「文档」而非「App」——en 内容直接可见
- * (无 JavaScript 时浏览器正常渲染这个 div),zh-CN 变体带 `hidden` 属性(同样不需要 JS 就能
- * 被浏览器正确隐藏,只是不显示,不是不存在),一段极小内联脚本按检测到的界面语言在两者间切换
- * (docs/feature/reports/view.md「静态导出」:基线链接直接指向这份文档,保证无 JavaScript 也能
- * 读完整详情)。不复用 renderHtml/template.html 的 SPA 外壳——那条路径的 #root 要等 React
- * 挂载才有内容,不满足这里「无 JS 仍完整可读」的要求。增强脚本(index.html 里的渐进增强,
- * 拦截 locator 链接后 fetch 这份文档、按同一 `[data-niceeval-locale]` 选择器取出对应语言的内容
- * 塞进 dialog)与这里的选择器保持同一套约定,不维护第二份提取逻辑。
+ * 一个参数化页实例(attempt、experiment……核心不区分)的独立文档:与 index.html 是「文档」
+ * 而非「App」——en 内容直接可见(无 JavaScript 时浏览器正常渲染这个 div),zh-CN 变体带
+ * `hidden` 属性(同样不需要 JS 就能被浏览器正确隐藏,只是不显示,不是不存在),一段极小内联
+ * 脚本按检测到的界面语言在两者间切换(docs/feature/reports/view.md「静态导出」:基线链接
+ * 直接指向这份文档,保证无 JavaScript 也能读完整详情)。不复用 renderHtml/template.html 的
+ * SPA 外壳——那条路径的 #root 要等 React 挂载才有内容,不满足这里「无 JS 仍完整可读」的要求。
+ * 增强脚本(index.html 里的渐进增强,拦截目标链接后 fetch 这份文档、按同一
+ * `[data-niceeval-locale]` 选择器取出对应语言的内容塞进 dialog)与这里的选择器保持同一套
+ * 约定,不维护第二份提取逻辑。
  */
-async function renderAttemptDocument(
+async function renderParamDocument(
   scan: ViewScan,
-  locator: AttemptLocator,
-  handle: AttemptHandle,
-  render: (
-    locator: AttemptLocator,
-    handle: AttemptHandle,
-  ) => Promise<{ en: string; "zh-CN": string; assets: PageRendererAssets }>,
+  page: Pick<ReportPage, "id" | "title">,
+  key: string,
+  render: () => Promise<{ en: string; "zh-CN": string; assets: PageRendererAssets }>,
   headHtml: string,
   files: Map<string, SiteFile>,
 ): Promise<string> {
-  const content = await render(locator, handle);
+  const content = await render();
   registerRendererAssets(content.assets, files);
   const [reportStyles, reportEnhance] = await Promise.all([
     readFile(new URL("../report/assets/styles.css", import.meta.url), "utf-8"),
@@ -457,7 +454,7 @@ async function renderAttemptDocument(
   ]);
   const shellStyles = scan.shellAssets.styles.map((css) => `\n<style>\n${css}\n</style>`).join("");
   const shellScripts = scan.shellAssets.scripts.map((js) => `<script>\n${js}\n</script>\n`).join("");
-  const title = `${handle.evalId} · ${handle.experimentId}`;
+  const title = `${localizeText(page.title, "en") ?? page.id} · ${key}`;
 
   return [
     "<!doctype html>",

@@ -49,6 +49,13 @@ export interface ViewReportMeta {
   pages: ViewReportPageMeta[];
   /** 初始页(--page 或声明序第一页);`#/page/<id>` 路由覆盖它。 */
   initialPageId: string;
+  /**
+   * 参数化页(声明了 `params` 的页,如 `attempt`、`experiment`)的 id 全集,声明或补位后的
+   * 最终形态——外壳按这份清单判定同源链接 `<pageId>/<key>.html` 与 hash 路由 `#/<pageId>/<key>`
+   * 该不该被 dialog 拦截(view.md「参数化页的 dialog 摆放」:「拦截按报告清单里的参数化页 id
+   * 判定,宿主不认识具体实体」)。不进 `pages`——参数化页不出现在导航,也不是 `#/page/<id>` 路由。
+   */
+  paramPageIds: string[];
 }
 
 /**

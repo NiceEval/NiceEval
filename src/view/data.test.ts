@@ -208,9 +208,10 @@ describe("loadViewScan · 报告槽是现刻水位口径,裸跑与局部收窄�
       evalId: "q1",
       attempt: 0,
     });
-    expect(scan.attemptPages!.locators.has(q1TuesdayLocator)).toBe(true);
-    expect(scan.attemptPages!.locators.has(q2Locator)).toBe(true);
-    expect(scan.attemptPages!.locators.has(q1MondayLocator)).toBe(true);
+    const attemptInstances = scan.paramPages.get("attempt")!.instances;
+    expect(attemptInstances.has(q1TuesdayLocator)).toBe(true);
+    expect(attemptInstances.has(q2Locator)).toBe(true);
+    expect(attemptInstances.has(q1MondayLocator)).toBe(true);
   });
 });
 
@@ -438,8 +439,8 @@ describe("loadViewScan · 报告文件变更整页重算", () => {
     // 自定义报告没有声明 attempt-input page，也不能让 locator 下钻退化成纯文本；
     // view 补官方详情页，但不把它列进自定义报告的导航 pages。
     expect(first.reportPages.ids).toEqual(["report"]);
-    expect(first.attemptPages?.page.id).toBe("attempt");
-    expect(first.attemptPages?.locators.size).toBe(1);
+    expect(first.paramPages.get("attempt")?.page.id).toBe("attempt");
+    expect(first.paramPages.get("attempt")?.instances.size).toBe(1);
 
     await writeFile(path, reportSource("SECOND_RENDER"), "utf-8");
     const second = await loadViewScan(root, { report: { path, cwd: root } });

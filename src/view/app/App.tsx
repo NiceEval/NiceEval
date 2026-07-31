@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { detectLocale, makeTranslator, persistLocale, setDocumentLocale } from "./i18n.ts";
 import type { Locale, LocalizedText, ReportSlotHtml, Tab, ViewData, ViewReportPageMeta } from "./types.ts";
 import {
-  attemptHrefFor,
-  attemptLocatorFromHref,
-  hashForAttempt,
-  locatorFromHash,
-  parseAttemptDocument,
-  type AttemptDocumentContent,
-} from "./lib/attempt-dialog.ts";
+  hashForTarget,
+  hrefForTarget,
+  parseTargetDocument,
+  targetFromHash,
+  targetFromHref,
+  type PageTarget,
+  type TargetDocumentContent,
+} from "./lib/target-dialog.ts";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "./components/ui/dialog.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 
@@ -126,11 +127,16 @@ export function App({
 
   const [tab, setTab] = useState<Tab>(() => tabFromHash(location.hash, pages) ?? `page:${initialPageId}`);
 
-  // attempt 详情弹窗:内容是独立文档(attempt/<locator>.html)fetch 回来的同一份 server-rendered
-  // 片段,不维护第二份客户端渲染(docs/feature/reports/view.md「静态导出」)。dialogLocator 为
-  // null 即关闭。
-  const [dialogLocator, setDialogLocator] = useState<string | null>(null);
-  const [dialogContent, setDialogContent] = useState<AttemptDocumentContent | null>(null);
+  // 报告清单里的参数化页 id 全集(attempt、experiment……声明或补位后的最终形态);拦截只认
+  // 这份清单,不认识任何具体实体(view.md「参数化页的 dialog 摆放」)。
+  const paramPageIds = data.report?.paramPageIds ?? [];
+
+  // 参数化页详情弹窗:内容是独立文档(`<pageId>/<key>.html`)fetch 回来的同一份 server-rendered
+  // 片段,不维护第二份客户端渲染(docs/feature/reports/view.md「静态导出」)。dialogTarget 为
+  // null 即关闭;同一套状态服务任意参数化页,dialog 内的目标链接命中同一个点击拦截器,
+  // 状态替换即完成「嵌套下钻」(实验详情里点 attempt 即此路径)。
+  const [dialogTarget, setDialogTarget] = useState<PageTarget | null>(null);
+  const [dialogContent, setDialogContent] = useState<TargetDocumentContent | null>(null);
   // 当前 dialog 的 hash 历史条目前面是否还有本页条目(点击链接 push 的 / 前进键回到的):
   // true → UI 关闭走 history.back(),前进键还能重新打开;false(深链直接落地)→ 原地抹 hash,
   // 免得 back 把用户弹出站外。
@@ -154,25 +160,29 @@ export function App({
     document.title = shellTitle;
   }, [shellTitle]);
 
-  /** fetch 一个 locator 的独立文档、抠出两种语言内容并打开 dialog;定位不到就直说,不开空 dialog。 */
-  const openAttempt = useCallback(async (locator: string, ownsHistory: boolean) => {
+  /**
+   * fetch 一个参数化页实例的独立文档、抠出两种语言内容并打开 dialog;定位不到就直说,
+   * 不开空 dialog。对任意 pageId 通用——attempt、experiment 走同一条路径,dialog 内的目标
+   * 链接命中同一个点击拦截器,状态替换即完成「嵌套下钻」(view.md「参数化页的 dialog 摆放」)。
+   */
+  const openTarget = useCallback(async (target: PageTarget, ownsHistory: boolean) => {
     try {
-      const res = await fetch(attemptHrefFor(locator));
+      const res = await fetch(hrefForTarget(target.pageId, target.key));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const content = parseAttemptDocument(await res.text());
-      if (!content) throw new Error("response is not a recognized attempt document");
+      const content = parseTargetDocument(await res.text());
+      if (!content) throw new Error("response is not a recognized target document");
       dialogOwnsHistory.current = ownsHistory;
-      setDialogLocator(locator);
+      setDialogTarget(target);
       setDialogContent(content);
     } catch (e) {
       console.warn(
-        `[niceeval view] failed to open attempt "${locator}": ${e instanceof Error ? e.message : String(e)}`,
+        `[niceeval view] failed to open ${target.pageId}/${target.key}: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   }, []);
 
   const closeDialog = useCallback(() => {
-    setDialogLocator(null);
+    setDialogTarget(null);
     setDialogContent(null);
     if (dialogOwnsHistory.current) {
       dialogOwnsHistory.current = false;
@@ -187,55 +197,56 @@ export function App({
     }
   }, []);
 
-  // 初始 URL 已经是 #/attempt/@<locator> 深链:直接打开(不经 hashchange——那只在后续变化时触发)。
+  // 初始 URL 已经是 #/<pageId>/<key> 深链:直接打开(不经 hashchange——那只在后续变化时触发)。
   // 有效根即收窄后的结果(view.md「打开与收窄」):这份路由对完整结果根解析,不受当前统计口径
-  // (现刻水位)限制,深链因此对历史 attempt 同样可达;收窄之外的 locator 由这份文档自身
+  // (现刻水位)限制,深链因此对历史 attempt 同样可达;收窄之外的实例由这份文档自身
   // 的宿主寻址语义处理(本地越过收窄解析,导出站按证据缺失呈现,不是这里的关注点)。
-  // 空依赖数组是有意的:只在挂载时检查一次初始 hash,openAttempt 本身是 useCallback(deps: [])
+  // 空依赖数组是有意的:只在挂载时检查一次初始 hash,openTarget 本身是 useCallback(deps: [])
   // 的稳定引用,不会随后续渲染变化。
   useEffect(() => {
-    const locator = locatorFromHash(location.hash);
-    if (locator) void openAttempt(locator, false);
-  }, [openAttempt]);
+    const target = targetFromHash(location.hash, paramPageIds);
+    if (target) void openTarget(target, false);
+  }, [openTarget, paramPageIds]);
 
   // 浏览器前进/后退、手改 hash、页内链接点击(经下面的点击拦截转成 hash 变化)统一从
-  // hashchange 分发:attempt hash 开证据室 dialog,页 hash 切当前 tab。
+  // hashchange 分发:参数化页 hash 开详情 dialog,页 hash 切当前 tab。
   useEffect(() => {
     const onHashChange = () => {
-      const locator = locatorFromHash(location.hash);
-      if (locator) {
+      const target = targetFromHash(location.hash, paramPageIds);
+      if (target) {
         // 经浏览器导航打开:前一条历史仍是本页,dialog 关闭可以安全 back()。
-        void openAttempt(locator, true);
+        void openTarget(target, true);
         return;
       }
-      setDialogLocator(null);
+      setDialogTarget(null);
       setDialogContent(null);
       const routed = tabFromHash(location.hash, pages);
       if (routed) setTab(routed);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, [pages, openAttempt]);
+  }, [pages, paramPageIds, openTarget]);
 
-  // 拦截 attempt 文档链接(报告页里的 locator 引用,attemptHref 缺省产出的
-  // `attempt/<encodeURIComponent(locator)>.html`):点击时改写成 hash 路由,交给上面的
+  // 拦截参数化页文档链接(报告页里的目标引用,`targetHref` 缺省产出的
+  // `<pageId>/<encodeURIComponent(key)>.html`):点击时改写成 hash 路由,交给上面的
   // hashchange 统一打开——无 JavaScript 时这些链接原样导航到独立文档,同样完整可读。
-  // 修饰键 / 非左键点击放行,让「新标签页打开」这类浏览器原生行为不受影响。
+  // 拦截按报告清单里的参数化页 id 判定(paramPageIds),不认识任何具体实体;修饰键 / 非左键
+  // 点击放行,让「新标签页打开」这类浏览器原生行为不受影响。
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      const anchor = target.closest("a[href]");
+      const clicked = e.target;
+      if (!(clicked instanceof Element)) return;
+      const anchor = clicked.closest("a[href]");
       if (!anchor) return;
-      const locator = attemptLocatorFromHref(anchor.getAttribute("href") ?? "");
-      if (!locator) return;
+      const target = targetFromHref(anchor.getAttribute("href") ?? "", paramPageIds);
+      if (!target) return;
       e.preventDefault();
-      location.hash = hashForAttempt(locator);
+      location.hash = hashForTarget(target.pageId, target.key);
     };
     document.addEventListener("click", onClick);
     return () => document.removeEventListener("click", onClick);
-  }, []);
+  }, [paramPageIds]);
 
   const selectTab = useCallback((value: Tab) => {
     setTab(value);
@@ -285,17 +296,17 @@ export function App({
           <TabsContent key={`page:${page.id}`} value={`page:${page.id}`} id={`tab-page-${page.id}`}>
             {/* 报告槽:server 侧逐页渲染好的静态 HTML(含 <Style> 产物),按当前页与界面语言
                 摆放对应块;hero、品牌行、Sample 警告、批量修复 prompt 都是页内组件,壳不再渲染。
-                attempt 深链是普通 <a href="attempt/…html">,经上面的点击拦截打开 dialog。 */}
+                参数化页深链是普通 <a href="<pageId>/…html">,经上面的点击拦截打开 dialog。 */}
             <ReportSlot html={reportPages[page.id]?.[locale] || reportPages[page.id]?.en || ""} />
           </TabsContent>
         ))}
       </main>
-      {dialogLocator && dialogContent ? (
+      {dialogTarget && dialogContent ? (
         <Dialog open onOpenChange={(o) => { if (!o) closeDialog(); }}>
           <DialogContent aria-describedby={undefined}>
             {/* 屏幕阅读器用的可访问标题:视觉上隐藏,身份 / verdict 等实际内容已经在下面
                 fetch 回来的片段里可见,这里不重复渲染。 */}
-            <DialogTitle style={VISUALLY_HIDDEN}>{t("dialog.attemptTitle")}</DialogTitle>
+            <DialogTitle style={VISUALLY_HIDDEN}>{t("dialog.detailTitle")}</DialogTitle>
             <div className="flex min-w-0 shrink-0 items-center justify-end border-b border-line px-7 pb-3 pt-4">
               <DialogClose
                 aria-label={t("action.close")}
@@ -304,7 +315,7 @@ export function App({
                 x
               </DialogClose>
             </div>
-            {/* 与直接打开 attempt/<locator>.html 看到的是同一份 server-rendered 片段
+            {/* 与直接打开 <pageId>/<key>.html 看到的是同一份 server-rendered 片段
                 (docs/engineering/testing/unit/reports.md 第 207 行),不是客户端重新渲染。 */}
             <div className="flex-1 overflow-y-auto px-7 pb-7 pt-2">
               <ReportSlot html={dialogContent[locale] || dialogContent.en} />

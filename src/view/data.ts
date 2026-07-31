@@ -13,10 +13,9 @@ import { evalDirOf, experimentDirOf } from "../record/format.ts";
 import { MANIFESTS_FILE, parseRunManifests, type EvalManifest, type RunManifests } from "../record/manifest.ts";
 import { dedupeAttempts, loadAttemptEvidence, openRecord, withArtifactBase } from "../record/index.ts";
 import type { AttemptHandle, Record, Sample, Run, UnreadableRun } from "../record/index.ts";
-import type { AttemptLocator } from "../record/locator.ts";
+import { resolveLocator } from "../record/open.ts";
 import { buildHostReportMeta,
   hostThemeStylesheet,
-  loadDefaultHostAttemptPage,
   loadHostReport,
   materializeHostPageRendererAssets,
   renderHostPageFromResolved,
@@ -26,10 +25,11 @@ import { buildHostReportMeta,
   type ReportDefinition,
   type ReportPage,
   type ReportTarget,
+  type PageLoadContext,
   type HeadTag,
   type ThemeDefinition,
 } from "../report/runtime/host.ts";
-import { currentSample, filterExperiments } from "../sample/index.ts";
+import { currentSample, filterExperiments, makeSample } from "../sample/index.ts";
 import { evalPrefixPredicate } from "../shared/aggregate.ts";
 import type { EvalResult, JsonValue } from "../types.ts";
 import type { SkippedRunNotice, ViewData, ViewReportMeta, ViewReportPageHtml } from "./shared/types.ts";
@@ -88,46 +88,48 @@ export interface ViewScan {
   /** 这次扫描用到的报告与主题定义;下一次记录变更的重建原样传回来沿用。 */
   definitions: LoadedDefinitions;
   /**
-   * view 恒有 attempt-input page：报告显式声明的优先，否则用内建 AttemptDetails
-   * (architecture.md「Attempt 详情是一张参数化 page」)。
-   * `locators` 是收窄后有效根内可达的 locator → AttemptHandle(与 scope-input pages 同一份
-   * `scopedExperiments ∩ matchEval ∩ survivors` 口径——去重只吞掉 `--resume` 携带的字面重复,
-   * 不排除真实历史 attempt,见 view.md「打开与收窄」);站点管线(site.ts)据此为每个可达
-   * locator 生成一份 `attempt/<locator>.html`,不在这份索引里的 locator 不出站。
-   * `render` 装配一个 locator 的 `AttemptEvidence` 并渲染该 page 两种语言的内容 HTML(不含外层
-   * 文档 —— 独立 HTML 文档的组装是 site.ts 的事);pageFailure 语义与 scope pages 一致。
+   * view 恒有全部参数化页（`attempt`、`experiment`……）：报告显式声明的优先，否则用内建
+   * `standard` 同 id 的参数化页补位(architecture.md「参数化页是一张普通 page」);核心
+   * 不区分实体种类,这份索引按 page id 通用,不为某一种实体单独开字段。
+   * 每个条目的 `instances` 是收窄后有效根内 `page.params.enumerate()` 给出的全部实例
+   * (encoded key,未经 URL 编码 → 该实例的 params;与 scope-input pages 同一份
+   * `scopedExperiments ∩ matchEval ∩ 去重` 口径——去重只吞掉 `--resume` 携带的字面重复,
+   * 不排除真实历史 attempt,见 view.md「打开与收窄」);站点管线(site.ts)据此为每个实例
+   * 生成一份 `<pageId>/<key>.html`,不在这份索引里的 key 不出站。
+   * `render(key)` 装配该实例的输入(`page.load` 或宿主 Sample)并渲染该 page 两种语言的内容
+   * HTML(不含外层文档 —— 独立 HTML 文档的组装是 site.ts 的事);pageFailure 语义与 scope
+   * pages 一致。
    */
-  attemptPages?: {
-    page: ReportPage;
-    locators: Map<AttemptLocator, AttemptHandle>;
-    render(
-      locator: AttemptLocator,
-      handle: AttemptHandle,
-    ): Promise<{
-      en: string;
-      "zh-CN": string;
-      assets: import("../report/extension/types.ts").PageRendererAssets;
-    }>;
+  paramPages: Map<
+    string,
+    {
+      page: ReportPage;
+      instances: Map<string, unknown>;
+      render(key: string): Promise<{
+        en: string;
+        "zh-CN": string;
+        assets: import("../report/extension/types.ts").PageRendererAssets;
+      }>;
+    }
+  >;
+}
+
+/**
+ * 参数化页文档内容(不是 index.html 的 scope page)引用其它目标时的相对 href:同一张页的其它
+ * 实例是同目录兄弟文档(`<key>.html`),不同页是兄弟目录(`../<pageId>/<key>.html`)——两种参数化页
+ * 文档都住在站点根下的 `<pageId>/` 目录,互为兄弟(site.ts「静态导出」)。
+ */
+function nestedTargetHref(
+  targetHref: (pages: readonly Pick<ReportPage, "id" | "params">[], target: ReportTarget) => string | undefined,
+  pages: readonly Pick<ReportPage, "id" | "params">[],
+  currentPageId: string,
+): (target: ReportTarget) => string | undefined {
+  return (target) => {
+    const rootRelative = targetHref(pages, target);
+    if (rootRelative === undefined) return undefined;
+    return target.page === currentPageId ? rootRelative.slice(currentPageId.length + 1) : `../${rootRelative}`;
   };
 }
-
-/** 目标里的 locator(只有标准库 attempt 页的目标才有这个形状,与 targetOfRefs 同一份约定)。 */
-function attemptLocatorOfTarget(target: ReportTarget): string | undefined {
-  if (target.page !== "attempt") return undefined;
-  const locator = (target.params as { locator?: unknown } | undefined)?.locator;
-  return typeof locator === "string" ? locator : undefined;
-}
-
-/** attempt 页面内容(不是 index.html 的 scope-input page)链去同目录 attempt/ 下的兄弟文档,
- *  不带 `attempt/` 目录前缀(site.ts「站点管线」;两处 href 的对应关系与拆分只住在那)。 */
-const SIBLING_ATTEMPT_HREF = (target: ReportTarget): string | undefined => {
-  const locator = attemptLocatorOfTarget(target);
-  return locator === undefined ? undefined : `${encodeURIComponent(locator)}.html`;
-};
-const ROOT_ATTEMPT_HREF = (target: ReportTarget): string | undefined => {
-  const locator = attemptLocatorOfTarget(target);
-  return locator === undefined ? undefined : `attempt/${encodeURIComponent(locator)}.html`;
-};
 
 /** view 宿主输入的组合语义(与 show 对齐,docs/feature/reports/architecture.md「Sample 是计算入口」)。 */
 export interface ViewScanOptions {
@@ -432,21 +434,59 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
   const matchEval = patterns.length > 0 ? evalPrefixPredicate(patterns) : () => true;
 
   // 跨快照按身份键去重:--resume 携带的条目在多份落盘里重复,只保留最新快照里的那份
-  // (与官方计算函数的聚合口径一致,attempt/<locator>.html 的计数因此不被复印件灌票)。
+  // (与官方计算函数的聚合口径一致,<pageId>/<key>.html 的计数因此不被复印件灌票)。
   const artifactDirs = new Map<string, string>();
   const attemptsByBase = new Map<string, AttemptHandle>();
-  // view 恒有显式或隐式 attempt-input page，因此为有效根建立 locator 索引；
-  // 静态站与本地 server 共用它生成 attempt/ 文档。
-  const attemptsByLocator = slot.attemptPage ? new Map<AttemptLocator, AttemptHandle>() : undefined;
   const allAttempts: AttemptHandle[] = [];
   for (const exp of scopedExperiments) {
     for (const snap of exp.runs) allAttempts.push(...snap.attempts.filter((a) => matchEval(a.evalId)));
   }
-  for (const attempt of dedupeAttempts(allAttempts).attempts) {
+  const dedupedAttempts = dedupeAttempts(allAttempts).attempts;
+  for (const attempt of dedupedAttempts) {
     const { base, abs } = artifactLocation(attempt, root);
     artifactDirs.set(base, abs);
     attemptsByBase.set(base, attempt);
-    if (attemptsByLocator && attempt.locator !== undefined) attemptsByLocator.set(attempt.locator, attempt);
+  }
+
+  // 有效根 Sample:参数化页 `params.enumerate()` 的 base(见 view.md「打开与收窄」——深链对
+  // 收窄之内、即使不在现刻水位里的历史 attempt 也能打开)。`attempts` 用上面刚去重的有效根
+  // 全集(不是 selection.attempts 的现刻水位),`runs` 用有效根内全部历史快照(不narrowed 到
+  // 「现刻贡献」),`coverage` 沿用 selection 的覆盖事实(同一份 scopedExperiments ∩ matchEval
+  // 口径算出,已经覆盖零 attempt 的实验)。只用于 `enumerate()`,不参与页面渲染的
+  // Selection(那仍是 `selection`)。
+  const effectiveRoot: Sample = makeSample(
+    "current",
+    scopedExperiments.flatMap((exp) => exp.runs),
+    dedupedAttempts,
+    [],
+    selection.coverage,
+    false,
+    dedupedAttempts,
+  );
+
+  // 每张参数化页(声明或补位后的最终形态)按 `params.enumerate(effectiveRoot)` 枚举有效根内
+  // 全部实例;encode 失败的实例跳过(与 `encodeTargetKey` 的安全求值同一原则,组件侧已经把它
+  // 退化成纯文本,这里不该另外抛错打断整个 scan)。
+  const paramPages = new Map<
+    string,
+    { page: ReportPage; instances: Map<string, unknown>; render(key: string): ReturnType<typeof slot.renderParamPage> }
+  >();
+  for (const [id, page] of slot.paramPageDefs) {
+    const instances = new Map<string, unknown>();
+    if (page.params) {
+      for (const params of page.params.enumerate(effectiveRoot)) {
+        try {
+          instances.set(page.params.encode(params), params);
+        } catch {
+          continue;
+        }
+      }
+    }
+    paramPages.set(id, {
+      page,
+      instances,
+      render: (key) => slot.renderParamPage(page, instances.get(key)),
+    });
   }
 
   // 全局最新快照(跨有效根内全部实验):viewData.lastRunAt 从这里取。页内 hero 的「最后运行」
@@ -474,9 +514,7 @@ export async function loadViewScan(input?: string, opts: ViewScanOptions = {}): 
     reportPages: slot.pages,
     shellAssets: slot.shellAssets,
     definitions: slot.definitions,
-    ...(slot.attemptPage && attemptsByLocator
-      ? { attemptPages: { page: slot.attemptPage, locators: attemptsByLocator, render: slot.renderAttemptPage } }
-      : {}),
+    paramPages,
   };
 }
 
@@ -588,8 +626,9 @@ function resolveThemeStyles(theme: ThemeDefinition, baseDir: string | undefined)
  * 本地 server 下单页渲染失败折成该页的完整错误反馈块,其它页照常可读(静态导出的
  * 「任一页失败整体失败」由 buildView 侧的 failFast 保证)。
  * react / react-dom 动态加载:data.ts 还被 runner 的续跑携带(loadLatestResultsPerEval)
- * 消费,渲染依赖不进那条路径。attemptHref 缺省即 `#/attempt/@<locator>` 深链路由,
- * 报告页深链与证据室深链是同一条路由的两个来源。
+ * 消费,渲染依赖不进那条路径。`targetHref` 缺省即 `#/<pageId>/<key>` 深链路由(attempt 形如
+ * `#/attempt/@<locator>`,experiment 形如 `#/experiment/<key>`),报告页深链与证据室深链是
+ * 同一条路由的两个来源。
  */
 async function renderReportSlot(
   report: { path: string; cwd: string } | undefined,
@@ -605,10 +644,11 @@ async function renderReportSlot(
   pages: ReportPageRenderer;
   shellAssets: { styles: string[]; scripts: string[]; head: ResolvedHeadTag[] };
   definitions: LoadedDefinitions;
-  attemptPage: ReportPage | undefined;
-  renderAttemptPage: (
-    locator: AttemptLocator,
-    handle: AttemptHandle,
+  /** id → 参数化页(声明或补位后的最终形态);见下方「参数化页补位」。 */
+  paramPageDefs: Map<string, ReportPage>;
+  renderParamPage: (
+    page: ReportPage,
+    params: unknown,
   ) => Promise<{
     en: string;
     "zh-CN": string;
@@ -644,11 +684,30 @@ async function renderReportSlot(
   const hostReport = definitions.report;
   const hostTheme = definitions.theme;
 
+  // 参数化页的唯一 href 派生(target.ts 的 `targetHref`),两个宿主(scope pages 与参数化页
+  // 自己的内容)共用同一份纯函数,不各自重新拼字符串。
+  const { targetHref } = await import("../../dist/report/runtime/target.js");
+
+  // 自定义报告替换的是可见页面，不该顺手切断官方组件的下钻目标。核心不区分实体种类
+  // (docs/feature/reports/library.md「参数化页:attempt 与 experiment 详情」)：内建 `standard`
+  // 的每一张参数化页(attempt、experiment……)按 id 补位，报告显式声明同 id 页时覆盖它，
+  // 且不把补位页塞进导航或报告元数据。
+  const { standard } = await import("../../dist/report/built-in/index.js");
+  const paramPageDefs = new Map<string, ReportPage>();
+  for (const p of (standard as ReportDefinition).pages) {
+    if (p.params !== undefined) paramPageDefs.set(p.id, p as ReportPage);
+  }
+  for (const p of hostReport.pages) {
+    if (p.params !== undefined) paramPageDefs.set(p.id, p);
+  }
+
   // 非参数化页(没有 `params` 声明)才参与本函数的「全部烘进 index.html」渲染;参数化页(如果
   // 报告声明了)没有 params 就不能 resolve,它的每实例静态文档是独立机制,不在这里渲染
   // (docs/feature/reports/library.md「参数化页」)。
   const scopePages = hostReport.pages.filter((p) => p.params === undefined);
   const navigablePages = scopePages.filter((p) => p.navigation !== false);
+  // 目标可能指向导航页也可能指向参数化页(声明或补位后的最终形态);href 解析要认得两者。
+  const hrefPages: Pick<ReportPage, "id" | "params">[] = [...scopePages, ...paramPageDefs.values()];
 
   const initialPageId = page ?? navigablePages[0]?.id ?? scopePages[0]?.id;
   const initialPage = initialPageId !== undefined ? scopePages.find((p) => p.id === initialPageId) : undefined;
@@ -683,11 +742,13 @@ async function renderReportSlot(
     if (!hostPage) return Promise.reject(new ViewInputError(`error: page "${pageId}" not found in the loaded report.`));
     let resolved = resolvedPages.get(pageId);
     if (resolved === undefined) {
+      // 非参数化页当前不声明 `load`(内建 report/attempts/traces 页都没有);输入就是宿主选好
+      // 的 Sample(`PageContext.input` 的定义:「省略 load 时宿主选择的 Sample」)。
       resolved = resolveHostPage(hostPage, {
         scope: selection,
         results,
         report: hostMeta,
-        page: { id: hostPage.id, input: "sample" as const },
+        page: { id: hostPage.id, input: selection },
         dimensionPins: hostReport.dimensionPins,
       });
       resolvedPages.set(pageId, resolved);
@@ -699,7 +760,7 @@ async function renderReportSlot(
       const resolved = resolveScopePage(pageId);
       return await renderHostPageFromResolved((await resolved) as Awaited<ReturnType<typeof resolveHostPage>>, {
         locale,
-        href: ROOT_ATTEMPT_HREF,
+        href: (target) => targetHref(hrefPages, target),
       });
     } catch (e) {
       if (pageFailure !== "embed") throw e;
@@ -739,36 +800,43 @@ async function renderReportSlot(
     // 决定,不靠从列表里删页实现(docs/feature/reports/view.md「导航机器与品牌位」)。
     pages: scopePages.map((p) => ({ id: p.id, title: p.title, ...(p.navigation === false ? { navigation: false as const } : {}) })),
     initialPageId,
+    // 外壳按这份清单判定 `<pageId>/<key>.html` 链接与 `#/<pageId>/<key>` hash 是不是参数化页
+    // 目标(view.md「参数化页的 dialog 摆放」),不出现在 `pages`(参数化页不是导航路由)。
+    paramPageIds: [...paramPageDefs.keys()],
   };
 
-  // 自定义报告替换的是可见页面，不该顺手切断官方组件的 locator 下钻。显式声明仍覆盖；
-  // 没声明时由 view 补标准 AttemptDetails，且不把这张隐式页塞进导航或报告元数据。
-  // "attempt" 是标准库参数化页的 id 约定(docs/feature/reports/library.md「参数化页」)。
-  const attemptPage = hostReport.pages.find((p) => p.id === "attempt") ?? (await loadDefaultHostAttemptPage());
-  // 装配一个 locator 的 AttemptEvidence 并渲染该 page 两种语言的内容 HTML(不含外层文档);
-  // pageFailure 语义与 scope pages 相同 —— 本地 server 折成该文档的完整错误反馈块,
-  // 静态导出直接抛出(writeSite 侧汇总成「整体失败,不留半套目录」)。
-  const renderAttemptPage = async (
-    locator: AttemptLocator,
-    handle: AttemptHandle,
+  // 参数化页的唯一装配来源:按 locator 装配 AttemptEvidence(当前唯一的懒加载来源;
+  // library.md「参数化页」)。核心不区分实体种类——`page.load` 缺省时输入就是宿主 Sample。
+  const loadCtx: PageLoadContext = {
+    evidence: (locator) => loadAttemptEvidence(resolveLocator(results, locator)),
+  };
+
+  // 渲染一张参数化页某个实例两种语言的内容 HTML(不含外层文档 —— 独立 HTML 文档的组装是
+  // site.ts 的事);pageFailure 语义与 scope pages 相同 —— 本地 server 折成该文档的完整
+  // 错误反馈块,静态导出直接抛出(writeSite 侧汇总成「整体失败,不留半套目录」)。attempt、
+  // experiment 这些词不出现在这个函数里,新实体注册新标准库参数化页即可,不需要改这里的分支。
+  const renderParamPage = async (
+    paramPage: ReportPage,
+    params: unknown,
   ): Promise<{
     en: string;
     "zh-CN": string;
     assets: import("../report/extension/types.ts").PageRendererAssets;
   }> => {
-    const evidence = await loadAttemptEvidence(handle);
+    const input = paramPage.load ? await paramPage.load(selection, params, loadCtx) : selection;
     const ctx = {
       scope: selection,
       results,
       report: hostMeta,
-      page: { id: attemptPage!.id, input: evidence },
+      page: { id: paramPage.id, input },
       dimensionPins: hostReport.dimensionPins,
     };
     try {
-      const resolved = await resolveHostPage(attemptPage!, ctx);
+      const resolved = await resolveHostPage(paramPage, ctx);
+      const href = nestedTargetHref(targetHref, hrefPages, paramPage.id);
       return {
-        en: await renderHostPageFromResolved(resolved, { locale: "en", href: SIBLING_ATTEMPT_HREF }),
-        "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", href: SIBLING_ATTEMPT_HREF }),
+        en: await renderHostPageFromResolved(resolved, { locale: "en", href }),
+        "zh-CN": await renderHostPageFromResolved(resolved, { locale: "zh-CN", href }),
         assets: await materializeHostPageRendererAssets(resolved),
       };
     } catch (e) {
@@ -779,7 +847,7 @@ async function renderReportSlot(
     }
   };
 
-  return { meta, pages, shellAssets, definitions, attemptPage, renderAttemptPage };
+  return { meta, pages, shellAssets, definitions, paramPageDefs, renderParamPage };
 }
 
 /**

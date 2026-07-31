@@ -1,11 +1,11 @@
 // view 前端 i18n:内核(插值/归一)在 src/i18n/core.ts;这里只注入
 // localStorage + navigator 的 locale 来源与 en 默认值。字典与 CLI 侧分开维护。
-// 词条只覆盖宿主机器(导航标签、attempt dialog 的关闭按钮):页面内容(hero、警告、列表、瀑布、
-// attempt 详情)是报告组件,文案在 niceeval/report 的组件词典里(src/report/locale.ts)。
+// 词条只覆盖宿主机器(导航标签、参数化页 dialog 的关闭按钮):页面内容(hero、警告、列表、瀑布、
+// attempt / experiment 详情)是报告组件,文案在 niceeval/report 的组件词典里(src/report/locale.ts)。
 
 import { interpolate, normalizeLocale, type Locale, type Vars } from "../../i18n/core.ts";
 
-export type MessageKey = "nav.label" | "hero.title" | "action.close" | "dialog.attemptTitle";
+export type MessageKey = "nav.label" | "hero.title" | "action.close" | "dialog.detailTitle";
 
 type Dictionary = globalThis.Record<MessageKey, string>;
 
@@ -17,14 +17,14 @@ const dictionaries: globalThis.Record<Locale, Dictionary> = {
     "hero.title": "Eval Record",
     "action.close": "Close",
     // 屏幕阅读器专用(Radix Dialog 的可访问标题),视觉上不出现——内容本身的身份 / verdict
-    // 已经在 dialog 里可见。
-    "dialog.attemptTitle": "Attempt details",
+    // 已经在 dialog 里可见;标题不点名具体页 id(attempt / experiment 都用同一段落地机器)。
+    "dialog.detailTitle": "Details",
   },
   "zh-CN": {
     "nav.label": "报告",
     "hero.title": "Eval 运行结果",
     "action.close": "关闭",
-    "dialog.attemptTitle": "Attempt 详情",
+    "dialog.detailTitle": "详情",
   },
 };
 
