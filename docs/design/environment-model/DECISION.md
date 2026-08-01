@@ -10,18 +10,23 @@
 
 - Eval 与 Experiment 都通过 `sandbox` 字段贡献 SandboxRecipe，不再公开 Environment 与 SandboxConfig 两套作者概念。
 - SandboxRecipe 是声明；Sandbox 是启动后执行命令与文件操作的句柄，两种类型不能互换。
-- 共享 SandboxRecipe 协议只暴露 `.setup()` / `.teardown()` command stack；template 由具体 factory 的 options 声明，再由 Runner 归一成内部 SandboxTemplate，不公开同形 `recipe.template` 字段。
+- 共享 SandboxRecipe 协议用同一种 SandboxCommand 暴露两种显式 scope：`.setup()` / `.teardown()` 属于 Case 或复用窗口，`.beforeEach()` / `.afterEach()` 属于逐 Attempt。
+- template 由具体 factory 的 options 声明，再由 Runner 归一成内部 SandboxTemplate，不公开同形 `recipe.template` 字段。
 - 每条 Attempt 恰好激活一个 SandboxTemplate。Eval recipe 有 template 时优先，否则使用 Experiment 或 Provider fallback。
 - SandboxTemplate 是完整 Case 起点的穷尽联合，不把 Compose 资源组压成单实例产物。
 - Experiment Provider recipe 选择 Provider。Provider 是 template 的唯一 planner，并拥有 build、start、ready、证据与资源组 finalizer。
 - `templates[profile]` 可以替换 Eval template 的物理实现，但不改变 template owner。
-- template owner 决定 setup 顺序：Eval template 走 Eval、Experiment、Agent；Experiment template 走 Experiment、Eval、Agent。
+- template owner 分别决定两种 scope 的 owner 顺序：Eval template 走 Eval、Experiment、Agent；Experiment template 走 Experiment、Eval、Agent；afterEach 与 teardown 各自逆序。
 - template owner 仍可拥有 setup。预装产物不能代替实际 identity、版本、PATH、权限与健康检查。
-- Eval 与 Experiment recipe setup 都是逐 Attempt 层；复用窗口 reset 后仍按相同 ownerOrder 重跑。
+- Eval 与 Experiment recipe setup/teardown 都是窗口层；beforeEach/afterEach 是逐 Attempt 层。fresh 因一条 Attempt 恰好一个窗口，两种 scope 都各运行一次。
+- SandboxCommandContext 显式记录 `scope: "window" | "attempt"`。窗口 command 的 activity、facts 与 diagnostic 归 Case / 复用窗口记录并由 Attempt 引用；逐 Attempt command 直接归当前 Attempt。
+- 复用窗口在两方 setup 后建立 reset anchor；每条 Attempt reset 后按 ownerOrder 执行 beforeEach，并在全部 beforeEach 后建立 Agent diff workspace baseline。
+- 复用 pool key 固定 `(CaseKey, templateOwner, ownerOrder, caseScopeRecipeIdentity)`。
+- Attempt scope identity 进入 Attempt fingerprint，但不进入 pool key，允许当前 Eval 的 command 变化。
 - 绑定 Sandbox 窗口寿命的 service、ready、日志与 finalizer 归 Provider Case，不放普通 recipe setup。
 - Eval 与 Experiment layer 共用同一 SandboxCommand 协议；owner 只决定顺序、归因与收尾位置。
 - Agent CLI 与 runtime 继续由 AgentProvisioner 与 Agent setup 拥有；其 Sandbox 内副作用虽然也是 command / IO，完整协议不投影成较弱的 SandboxCommand。
-- 外部 state load/save 保持独立 lifecycle：state load 位于 recipe setup 与 Agent CLI Ensure 之后，state save 位于 Agent teardown 之后。
+- 外部 state load/save 保持独立 lifecycle：state load 位于本条 Attempt 的 beforeEach 与 Agent CLI Ensure 之后，state save 位于 Agent teardown 与 afterEach 之间。
 - 框架不理解 layer 想满足什么 Requirement；需要利用预装时，作者在同一 command 里手写 check、必要时 install 与 recheck。
 - 第一阶段不公开 Requirement、Base contribution、依赖 DAG、资源图或自动并行。
 - 现场无法按 ownerOrder 组合时复用 `templates[profile]` 提供预制完整 Case,或明确 skip/fail。
@@ -54,9 +59,9 @@
 ### MemoryBench
 
 MemoryBench 的 Experiment 选择 E2B template;mempal 变体使用预装 template 与 sandbox setup/teardown。
-具体 Eval 没有 Environment source,而是在 Agent 前 checkout 固定仓库 commit 并安装项目依赖。
+具体 Eval 没有 Environment source,而是在 Agent 前按 Attempt checkout 固定仓库 commit 并安装项目依赖。
 
-这证明反向路径同样存在:Experiment 默认 case 决定起点,EvalDef setup 再准备题目。
+这证明反向路径同样存在:Experiment 默认 case 决定起点,EvalDef beforeEach 再准备题目。
 它不需要 Eval 再贡献一份 Base,也不需要把 checkout 与 `yarn install` 抽象成 Environment Requirement。
 
 ## 为什么 PLAN-5 的 DX 过重
@@ -105,18 +110,19 @@ Eval 写 `environment`，Experiment 写 `sandbox`；两者最终却都只是在�
 
 ```text
 Eval 有 template
-  -> Eval recipe setup
-  -> Experiment recipe setup
+  -> Eval / Experiment window setup
+  -> Eval / Experiment beforeEach
   -> Agent
 
 Eval 无 template
-  -> Experiment template and recipe setup
-  -> Eval recipe setup
+  -> Experiment template
+  -> Experiment / Eval window setup
+  -> Experiment / Eval beforeEach
   -> Agent
 ```
 
 PLAN-9 因此保留 PLAN-8 的完整 Case、Provider 内建 planner 与运行时检查，只统一作者声明为 SandboxRecipe。
-为了让这条顺序在 Sandbox 复用中不漂移，两条普通 recipe setup 都改成逐 Attempt 语义。
+为了让这条顺序在 Sandbox 复用中不漂移，PLAN-9 在两个显式 scope 内分别使用同一 ownerOrder：窗口 setup 只执行一次，逐 Attempt 准备由 beforeEach 表达。
 
 ## 候选对照
 
@@ -130,7 +136,7 @@ PLAN-9 因此保留 PLAN-8 的完整 Case、Provider 内建 planner 与运行时
 | PLAN-6 | Environment、SandboxSpec setup、EvalDef setup、Agent setup | 环境 owner 正确，但 hidden verifier 仍靠顶层登记和手工协调 | 被 PLAN-7 取代 |
 | PLAN-7 | PLAN-6 的 owner 加普通上传动态依赖 | 运行时内核成立，公开命名与 materializer 装配仍泄漏 | 被 PLAN-8 取代 |
 | PLAN-8 | EnvironmentSource、SandboxConfig、Sandbox 与三层 setup | 边界准确，但作者仍需在 Environment 与 Sandbox 配置之间分类 | 被 PLAN-9 取代 |
-| PLAN-9 | SandboxRecipe、SandboxTemplate、Sandbox 与 owner stack | 一个字段表达起点和叠加，template owner 决定顺序 | 采纳 |
+| PLAN-9 | SandboxRecipe、SandboxTemplate、Sandbox 与双 scope owner stack | 一个字段表达起点和叠加，template owner 决定两种 scope 的顺序 | 采纳 |
 
 ## 两条迁移路径
 
@@ -141,8 +147,10 @@ Terminal-Bench:
   -> composeSandbox() 通过 factory 参数声明 Eval template 起点
   -> Docker Provider 内建规划并启动完整 Case
   -> Eval recipe setup
-  -> Experiment recipe setup 安装 mempal
-  -> Agent Ensure and setup
+  -> Experiment recipe setup 确保 Git
+  -> 建立 reset anchor
+  -> Eval / Experiment recipe beforeEach
+  -> 建立 Agent diff baseline，再执行 Agent Ensure and setup
   -> send 返回后 Eval 用普通 API 上传本地测试、跑测与断言
   -> Runner 记录 transfer manifest，并折叠 send-window diff
 ```
@@ -153,8 +161,10 @@ MemoryBench:
 Eval recipe 无 template
   -> Experiment E2B template 启动完整 Case
   -> Experiment recipe setup 检查 mempal 预装状态
-  -> Eval recipe setup checkout + yarn install
-  -> Agent Ensure、state load 与 Agent turn
+  -> 建立包含 mempal 的 reset anchor
+  -> Eval recipe beforeEach checkout + yarn install
+  -> 建立 Agent diff baseline，再执行 Agent Ensure、state load 与 Agent turn
+  -> 窗口结束时 Experiment recipe teardown 清理 mempal
 ```
 
 ## 预制与真实检查
@@ -171,18 +181,18 @@ PLAN-9 不承诺运行时合并两个 template。
 第一阶段需要十三项增量:
 
 1. `EvalDef.environment` 改成 `EvalDef.sandbox`，类型为不选择 Provider 的 EvalSandboxRecipe。
-2. `EvalDef.setup` / `teardown` 迁入 Eval SandboxRecipe，不保留双入口。
+2. 旧 `EvalDef.setup` / `teardown` 若是逐 Attempt hook，迁入 Eval SandboxRecipe 的 `.beforeEach()` / `.afterEach()`；确属窗口条件时才迁入 `.setup()` / `.teardown()`，不保留双入口。
 3. `dockerSandbox()` 等工厂返回选择 Provider 的 ExperimentSandboxRecipe，用各自的 `image` / `template` / `snapshotId` option 声明 fallback，并用 `templates[profile]` 提供完整覆盖。
 4. `composeSandbox()`、`dockerfileSandbox()` 与 `profileSandbox()` 用各自 options 声明 Eval 起点；factory 产物在 Runner 内部归一成 SandboxTemplate，不给共享 SandboxRecipe 增加 `template` 属性。
-5. 增加只声明 command stack、不声明起点的 `defineSandboxRecipe()`。
+5. 增加只声明 command stack、不声明起点的 `defineSandboxRecipe()`；共享协议提供 setup/teardown 与 beforeEach/afterEach 两种 scope。
 6. `SandboxSource` 内部重命名为 SandboxTemplate 联合；运行中的 Sandbox 类型保持不变。
 7. `mainService` 政名为 `workspaceService`。
 8. Docker Provider 内建 Compose 与 Dockerfile template planner，普通 recipe 删除 `materializers` 注册表。
-9. 解析 active template、templateOwner 与 ownerOrder，并让 dry plan 和记录显示同一形状。
-10. Eval 与 Experiment recipe setup 改成逐 Attempt 执行；Provider Case 保留每 Sandbox / 窗口 lifecycle。
+9. 解析 active template、templateOwner 与 ownerOrder，并让 dry plan 和记录按 Window/Attempt scope 显示同一形状与频次。
+10. Eval 与 Experiment recipe setup/teardown 按 Sandbox Case / 复用窗口执行，beforeEach/afterEach 按 Attempt 执行。两方 setup 后建立 reset anchor，两方 beforeEach 后建立 Agent diff baseline。pool key 固定 Case scope identity，不固定当前 Attempt command。
 11. State load/save 与 AgentProvisioner 保持独立 phase，不并入通用 SandboxCommand。
 12. 普通上传增加 URL source；carry planner 重算历史 manifest，Provider 记录 Agent 可见 closure并执行泄漏比对。
-13. 记录所选 Case、owner stack、逐 owner command activity 与 transfer manifest；删除文件专用登记面。
+13. 记录所选 Case、双 scope owner stack、逐 owner command scope/activity 与 transfer manifest；删除文件专用登记面。
 
 依赖图、资源锁与跨 command 自动并行不进入本决策的第一阶段。
 外部 state API 由对应 Feature 定义；PLAN-9 只固定它在 Agent CLI Ensure 与 Agent runtime setup 之间的相位，不把它回填成 Sandbox recipe。
@@ -191,6 +201,7 @@ PLAN-9 不承诺运行时合并两个 template。
 
 - 预制 Case 需要携带构建时写入的 Eval SandboxTemplate provenance，规划期才能与当前 template 的内容身份核对。不能从当前 template 动态计算声明值给既有产物背书；在产物元数据与 per-eval fingerprint 拥有同源输入前，不公开 `fulfills` 之类的声明字段。
 - 每题 SandboxTemplate 的 build context 必须排除 solution 与本地测试，并检查 Compose bind mount 泄漏。
-- setup 顺序随 templateOwner 改变。任何 command 若依赖另一个 owner 先执行，都必须服从 stack 依赖方向，或改用完整预制 Case。
-- 普通 recipe setup 改成逐 Attempt 后，现有按 Sandbox 窗口运行的 Hook 必须迁到 Provider Case lifecycle；仍留在 recipe 里的 command 必须可重复执行，不能静默改变频次。
+- 两种 scope 的顺序都随 templateOwner 改变。任何 command 若依赖同 scope 的另一个 owner 先执行，都必须服从 stack 依赖方向，或改用完整预制 Case。
+- 旧 hook 迁移时必须显式判断频次：窗口安装/清理使用 setup/teardown，checkout、Fixture 与逐题清理使用 beforeEach/afterEach。仅保持调用链形状不能证明生命周期未变。
+- pool key 必须包含完整 Case scope recipe identity；否则相同 CaseKey 下不同 setup 会错误共享 reset anchor。Attempt scope 不得反向污染 pool key，否则不同 Eval 无法复用兼容窗口。
 - 某些工具同时需要安装与跨 Attempt 状态。PLAN-9 把 state 保留为独立 lifecycle；对应 Feature 必须定义 load/save、临界区与失败提交策略。

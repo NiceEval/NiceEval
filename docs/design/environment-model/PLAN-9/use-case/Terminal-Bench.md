@@ -59,10 +59,15 @@ Docker Provider 内建 Compose planner；Experiment 不注册 materializer，也
 
 ```text
 Eval Compose template
-  -> Eval recipe setup（本题可为空）
-  -> Experiment ensureGitForLedger
+  -> window scope: Eval setup（本题可为空）
+  -> window scope: Experiment ensureGitForLedger
+  -> reset anchor（包含 Git）
+  -> attempt scope: Eval beforeEach（本题可为空）
+  -> attempt scope: Experiment beforeEach（本实验可为空）
   -> AgentProvisioner and Agent setup
 ```
+
+`ensureGitForLedger` 保持 `.setup()`，因为它建立供整个复用窗口使用的能力。复用时只执行一次，并被 reset anchor 保留；它不是每题 checkout。
 
 ## Profile 完整 Case
 
@@ -79,9 +84,9 @@ dockerSandbox({
 ```
 
 表项替换 Compose template 的物理实现，Eval 仍是 templateOwner。
-因此 ownerOrder 不变，`ensureGitForLedger` 仍在 Eval recipe setup 后检查实际状态。
+因此 ownerOrder 不变，`ensureGitForLedger` 仍在 Eval recipe setup 后检查实际状态；两方 setup 完成后才建立 reset anchor。
 
 ## Runner 证据
 
-dry plan 与运行记录都展示 Eval templateOwner、Docker Provider、CaseKey 与 `eval → experiment → agent`。
+dry plan 与运行记录都展示 Eval templateOwner、Docker Provider、CaseKey、Case/Attempt scope 与 `eval → experiment → agent`。
 transfer manifest 和 Agent 可见 closure 在判定封口前比对，发现测试泄漏时拒绝 verdict。
