@@ -1,15 +1,19 @@
 // cases: docs/engineering/testing/unit/experiments-runner.md
 // 覆盖「loadPrivate 的登记面」:进判据指纹格、与 criteria 分键、发现期约束。
 
+import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineDirectAgent } from "../define.ts";
+import { defineDirectAgent, defineEval } from "../define.ts";
 import { computeFingerprint } from "../runner/fingerprint.ts";
-import type { AgentRun, DiscoveredEval } from "../runner/types.ts";
+import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-selection.ts";
+import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadPrivate } from "./index.ts";
 
 const sourcePath = fileURLToPath(import.meta.url);
@@ -35,24 +39,38 @@ async function chdirProject(): Promise<string> {
 }
 
 function makeEval(privatePaths?: readonly string[]): DiscoveredEval {
-  return {
+  return discoverEval(defineEval({ test() {} }), {
     id: "task",
     baseDir: join(process.cwd(), "evals/task"),
     sourcePath: join(process.cwd(), "evals/task/eval.ts"),
     source,
-    test: () => {},
-    ...(privatePaths ? { privatePaths } : {}),
-  };
+    loaderDataPaths: [],
+    criteriaPaths: [],
+    privatePaths: privatePaths ?? [],
+  });
 }
 
 const run: AgentRun = {
-  agent: defineDirectAgent({ name: "agent-exp", send: async () => ({ events: [], status: "completed" }) }),
+  agent: defineDirectAgent({
+    name: "agent-exp",
+    evidenceCoverage: completeEvidenceCoverage,
+    send: async () => ({ events: [], status: "completed" }),
+  }),
   flags: {},
   attempts: 1,
   earlyExit: false,
   selectedEvalIds: ["task"],
   experimentId: "exp",
+  experimentBaseDir: "/project/experiments",
+  experimentSourcePath: "/project/experiments/exp.ts",
+  state: STATELESS,
 };
+
+async function preparedPair(evalDef: DiscoveredEval): Promise<PreparedRunPair> {
+  const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
+  if (pair === undefined) throw new Error("expected one prepared run pair");
+  return pair;
+}
 
 describe("loadPrivate · 登记面", () => {
   it("改 private 文件一字节,引用它的 eval 指纹变;未登记的同路径改动不变", async () => {
@@ -63,13 +81,13 @@ describe("loadPrivate · 登记面", () => {
       const { privatePaths } = await captureLoadedFiles(() => loadPrivate(pattern));
       expect(privatePaths).toHaveLength(1);
 
-      const before = await computeFingerprint(makeEval(privatePaths), run);
+      const before = await computeFingerprint(await preparedPair(makeEval(privatePaths)));
       await writeFile(join(process.cwd(), "evals/task/reference/solution.sh"), "#!/bin/sh\nexit 1\n", "utf-8");
-      const after = await computeFingerprint(makeEval(privatePaths), run);
+      const after = await computeFingerprint(await preparedPair(makeEval(privatePaths)));
       expect(after).not.toBe(before);
 
-      const untouched = await computeFingerprint(makeEval(), run);
-      const untouched2 = await computeFingerprint(makeEval(), run);
+      const untouched = await computeFingerprint(await preparedPair(makeEval()));
+      const untouched2 = await computeFingerprint(await preparedPair(makeEval()));
       expect(untouched2).toBe(untouched);
     } finally {
       process.chdir(prev);

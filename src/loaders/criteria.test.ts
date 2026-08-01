@@ -5,17 +5,21 @@
 // 每个改动之后都重新调一次 loadCriteria:发现期在每次运行开头重跑,删文件那一格只有
 // 重新枚举才有意义(旧清单里还挂着已删的路径)。
 
+import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { chmod, mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { defineDirectAgent } from "../define.ts";
+import { defineDirectAgent, defineEval } from "../define.ts";
 import { t } from "../i18n/index.ts";
 import { computeFingerprint, planCarry } from "../runner/fingerprint.ts";
-import type { AgentRun, DiscoveredEval } from "../runner/types.ts";
+import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-selection.ts";
+import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { EvalResult } from "../types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadCriteria, type CriteriaPattern } from "./index.ts";
 
 const source: CapturedEvalSource = { path: "evals/sqlite.eval.ts", content: "", sha256: "0".repeat(64) };
@@ -72,27 +76,55 @@ async function loadCriteriaError(...patterns: string[]): Promise<string> {
 }
 
 function makeEval(id: string, criteriaPaths?: readonly string[]): DiscoveredEval {
-  return {
+  return discoverEval(defineEval({ test() {} }), {
     id,
     baseDir: join(process.cwd(), "evals"),
     sourcePath: join(process.cwd(), "evals/sqlite.eval.ts"),
     source,
-    test: () => {},
-    ...(criteriaPaths ? { criteriaPaths } : {}),
-  };
+    loaderDataPaths: [],
+    criteriaPaths: criteriaPaths ?? [],
+    privatePaths: [],
+  });
 }
 
 const run: AgentRun = {
-  agent: defineDirectAgent({ name: "agent-exp", send: async () => ({ events: [], status: "completed" }) }),
+  agent: defineDirectAgent({
+    name: "agent-exp",
+    evidenceCoverage: completeEvidenceCoverage,
+    send: async () => ({ events: [], status: "completed" }),
+  }),
   flags: {},
   attempts: 1,
   earlyExit: false,
   selectedEvalIds: ["with-criteria", "plain"],
   experimentId: "exp",
+  experimentBaseDir: "/project/experiments",
+  experimentSourcePath: "/project/experiments/exp.ts",
+  state: STATELESS,
 };
 
 function passed(id: string, fingerprint: string): EvalResult {
-  return { experimentId: "exp", agent: "agent-exp", id, attempt: 0, verdict: "passed", fingerprint, durationMs: 1, assertions: [] };
+  return {
+    experimentId: "exp",
+    agent: "agent-exp",
+    id,
+    attempt: 0,
+    verdict: "passed",
+    fingerprint,
+    durationMs: 1,
+    assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
+  };
+}
+
+async function preparedPairs(evals: readonly DiscoveredEval[], agentRun: AgentRun = run): Promise<readonly PreparedRunPair[]> {
+  return Effect.runPromise(prepareRunSandboxes(evals, [agentRun]));
+}
+
+async function fingerprint(evalDef: DiscoveredEval): Promise<string> {
+  const [pair] = await preparedPairs([evalDef]);
+  if (pair === undefined) throw new Error("expected one prepared run pair");
+  return computeFingerprint(pair);
 }
 
 /**
@@ -102,8 +134,8 @@ function passed(id: string, fingerprint: string): EvalResult {
 async function carriedKeysAfter(mutate: () => Promise<void>): Promise<string[]> {
   const before = await enumerate();
   const priorResults = [
-    passed("with-criteria", await computeFingerprint(makeEval("with-criteria", before.registered), run)),
-    passed("plain", await computeFingerprint(makeEval("plain"), run)),
+    passed("with-criteria", await fingerprint(makeEval("with-criteria", before.registered))),
+    passed("plain", await fingerprint(makeEval("plain"))),
   ];
 
   await mutate();
@@ -162,19 +194,19 @@ describe("loadCriteria · 遍历序不影响指纹", () => {
     const { registered } = await enumerate();
     expect(registered.length).toBeGreaterThan(1);
 
-    const ordered = await computeFingerprint(makeEval("with-criteria", registered), run);
-    const reversed = await computeFingerprint(makeEval("with-criteria", [...registered].reverse()), run);
+    const ordered = await fingerprint(makeEval("with-criteria", registered));
+    const reversed = await fingerprint(makeEval("with-criteria", [...registered].reverse()));
 
     expect(reversed).toBe(ordered);
   });
 
   it("同一棵树按相反的建立顺序落盘,算出同一个指纹", async () => {
     await makeProject(TREE);
-    const forward = await computeFingerprint(makeEval("with-criteria", (await enumerate()).registered), run);
+    const forward = await fingerprint(makeEval("with-criteria", (await enumerate()).registered));
 
     process.chdir(repoCwd);
     await makeProject([...TREE].reverse());
-    const backward = await computeFingerprint(makeEval("with-criteria", (await enumerate()).registered), run);
+    const backward = await fingerprint(makeEval("with-criteria", (await enumerate()).registered));
 
     expect(backward).toBe(forward);
   });

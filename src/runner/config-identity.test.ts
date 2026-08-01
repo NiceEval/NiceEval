@@ -3,12 +3,17 @@
 // 授权跨过一条差异时的反事实身份怎样只动被点名的那些字段。
 // 判据面是「哪些路径算差异 / 换回历史值之后的身份长什么样」,不是某个中间函数的返回值形状。
 
-import { describe, expect, it } from "vitest";
-import { defineDirectAgent } from "../define.ts";
+import { Effect } from "effect";
+import { fileURLToPath } from "node:url";
+import { beforeAll, describe, expect, it } from "vitest";
+import { defineDirectAgent, defineEval } from "../define.ts";
 import { configDeltas, configIdentityForRun, configIdentityFromResult, rollBackAccepted } from "./config-identity.ts";
 import { computeConfigHash } from "./fingerprint.ts";
-import type { AgentRun } from "./types.ts";
+import { prepareRunSandboxes, type PreparedRunPair } from "./sandbox-selection.ts";
+import { discoverEval, type AgentRun } from "./types.ts";
 import type { EvalResult } from "../types.ts";
+import type { ConfigIdentity } from "./config-identity.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
 import { STATELESS } from "../state/plan.ts";
 
 const DIRECT_RUN_INFO = {
@@ -19,7 +24,11 @@ const DIRECT_RUN_INFO = {
 
 function makeRun(over: Partial<AgentRun> = {}): AgentRun {
   return {
-    agent: defineDirectAgent({ name: "codex", send: async () => ({ events: [], status: "completed" }) }),
+    agent: defineDirectAgent({
+      name: "codex",
+      evidenceCoverage: completeEvidenceCoverage,
+      send: async () => ({ events: [], status: "completed" }),
+    }),
     flags: {},
     attempts: 1,
     earlyExit: false,
@@ -41,35 +50,61 @@ function makeResult(over: Partial<EvalResult> = {}): EvalResult {
     attempt: 0,
     durationMs: 1,
     assertions: [],
+    evidenceCoverage: completeEvidenceCoverage,
     experiment: { ...DIRECT_RUN_INFO, attempts: 1, earlyExit: false, selectedEvalIds: ["e"], flags: {} },
     ...over,
   };
 }
 
+const evalDef = discoverEval(defineEval({ test() {} }), {
+  id: "e",
+  baseDir: "/project/evals/e",
+  sourcePath: fileURLToPath(import.meta.url),
+  loaderDataPaths: [],
+  criteriaPaths: [],
+  privatePaths: [],
+  source: { path: "src/runner/config-identity.test.ts", content: "", sha256: "0".repeat(64) },
+});
+
+async function prepared(run: AgentRun): Promise<PreparedRunPair> {
+  const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
+  if (pair === undefined) throw new Error("expected one prepared run pair");
+  return pair;
+}
+
+async function identityFor(run: AgentRun, judge = run.judge): Promise<ConfigIdentity> {
+  const pair = await prepared(run);
+  return configIdentityForRun(run, pair.plan, judge);
+}
+
+async function configHashFor(run: AgentRun): Promise<string> {
+  return computeConfigHash(await prepared(run));
+}
+
 describe("configIdentityForRun:就是 configHash 的哈希输入", () => {
-  it("身份相同则 configHash 相同,任一进哈希的字段变了就换一个哈希", () => {
+  it("身份相同则 configHash 相同,任一进哈希的字段变了就换一个哈希", async () => {
     const base = makeRun({ flags: { webSearch: true }, model: "opus" });
-    expect(computeConfigHash(makeRun({ flags: { webSearch: true }, model: "opus" }))).toBe(computeConfigHash(base));
-    expect(computeConfigHash(makeRun({ flags: { webSearch: false }, model: "opus" }))).not.toBe(computeConfigHash(base));
+    expect(await configHashFor(makeRun({ flags: { webSearch: true }, model: "opus" }))).toBe(await configHashFor(base));
+    expect(await configHashFor(makeRun({ flags: { webSearch: false }, model: "opus" }))).not.toBe(await configHashFor(base));
     // labels / attempts 一类不进身份的字段不出现在投影里,自然也改不动哈希。
-    expect(computeConfigHash(makeRun({ flags: { webSearch: true }, model: "opus", attempts: 5 }))).toBe(
-      computeConfigHash(base),
+    expect(await configHashFor(makeRun({ flags: { webSearch: true }, model: "opus", attempts: 5 }))).toBe(
+      await configHashFor(base),
     );
   });
 
-  it("省略的可选字段有确定缺省:sandboxReuse / strict 省略等价于 false", () => {
-    expect(configIdentityForRun(makeRun())).toMatchObject({ sandboxReuse: false, strict: false });
-    expect(computeConfigHash(makeRun())).toBe(computeConfigHash(makeRun({ sandboxReuse: false, strict: false })));
+  it("省略的可选字段有确定缺省:sandboxReuse / strict 省略等价于 false", async () => {
+    expect(await identityFor(makeRun())).toMatchObject({ sandboxReuse: false, strict: false });
+    expect(await configHashFor(makeRun())).toBe(await configHashFor(makeRun({ sandboxReuse: false, strict: false })));
   });
 
-  it("Judge identity 包含解析后的 model/baseUrl/timeoutMs，但不包含凭据选择器", () => {
-    const first = configIdentityForRun(makeRun(), undefined, {
+  it("Judge identity 包含解析后的 model/baseUrl/timeoutMs，但不包含凭据选择器", async () => {
+    const first = await identityFor(makeRun(), {
       model: "judge-a",
       baseUrl: "https://judge.example/v1",
       apiKeyEnv: "KEY_A",
       timeoutMs: 90_000,
     });
-    const second = configIdentityForRun(makeRun(), undefined, {
+    const second = await identityFor(makeRun(), {
       model: "judge-a",
       baseUrl: "https://judge.example/v1",
       apiKeyEnv: "KEY_B",
@@ -82,7 +117,7 @@ describe("configIdentityForRun:就是 configHash 的哈希输入", () => {
       timeoutMs: { _tag: "Configured", value: 90_000 },
     });
     expect(first).toEqual(second);
-    expect(configDeltas(first, configIdentityForRun(makeRun(), undefined, {
+    expect(configDeltas(first, await identityFor(makeRun(), {
       model: "judge-a",
       baseUrl: "https://judge.example/v1",
       timeoutMs: 120_000,
@@ -91,7 +126,7 @@ describe("configIdentityForRun:就是 configHash 的哈希输入", () => {
 });
 
 describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答", () => {
-  it("嵌套字段用点路径,flags 逐键比对,键的增删同样是一条差异", () => {
+  it("嵌套字段用点路径,flags 逐键比对,键的增删同样是一条差异", async () => {
     const historical = configIdentityFromResult(
       makeResult({
         model: "opus",
@@ -105,7 +140,7 @@ describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答",
         },
       }),
     )!;
-    const current = configIdentityForRun(
+    const current = await identityFor(
       makeRun({ model: "sonnet", flags: { webSearch: true, region: "eu" }, judge: { model: "gpt-5.6-sol" } }),
     );
 
@@ -123,22 +158,27 @@ describe("configDeltas:哈希回答不了「哪里变了」,字段路径回答",
 });
 
 describe("rollBackAccepted:只动被点名的字段", () => {
-  const historical = configIdentityFromResult(
-    makeResult({
-      model: "opus",
-      experiment: {
-        ...DIRECT_RUN_INFO,
-        attempts: 1,
-        earlyExit: false,
-        selectedEvalIds: ["e"],
-        flags: { endpoint: "https://old" },
-        judge: { model: "gpt-5.6", baseUrl: "https://old-gw" },
-      },
-    }),
-  )!;
-  const current = configIdentityForRun(
-    makeRun({ model: "sonnet", flags: {}, judge: { model: "gpt-5.6-sol", baseUrl: "https://new-gw" } }),
-  );
+  let historical: ConfigIdentity;
+  let current: ConfigIdentity;
+
+  beforeAll(async () => {
+    historical = configIdentityFromResult(
+      makeResult({
+        model: "opus",
+        experiment: {
+          ...DIRECT_RUN_INFO,
+          attempts: 1,
+          earlyExit: false,
+          selectedEvalIds: ["e"],
+          flags: { endpoint: "https://old" },
+          judge: { model: "gpt-5.6", baseUrl: "https://old-gw" },
+        },
+      }),
+    )!;
+    current = await identityFor(
+      makeRun({ model: "sonnet", flags: {}, judge: { model: "gpt-5.6-sol", baseUrl: "https://new-gw" } }),
+    );
+  });
 
   it("授权 config:flags.<key> 把该键换回历史值,没点名的字段保持本次值", () => {
     const rolled = rollBackAccepted(current, historical, new Set(["config:flags.endpoint"]));

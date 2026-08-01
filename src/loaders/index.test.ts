@@ -4,17 +4,21 @@
 // 出来的路径原样当作 DiscoveredEval.loaderDataPaths(discover.ts 的接法),再交给
 // computeFingerprint 算,因此断言的是「读入方式决定进不进指纹」,不是登记表本身。
 
+import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { relative } from "node:path";
-import { defineDirectAgent } from "../define.ts";
+import { defineDirectAgent, defineEval } from "../define.ts";
 import { t } from "../i18n/index.ts";
 import { computeFingerprint } from "../runner/fingerprint.ts";
-import type { AgentRun, DiscoveredEval } from "../runner/types.ts";
+import { prepareRunSandboxes, type PreparedRunPair } from "../runner/sandbox-selection.ts";
+import { discoverEval, type AgentRun, type DiscoveredEval } from "../runner/types.ts";
 import type { CapturedEvalSource } from "../runner/eval-source.ts";
+import { completeEvidenceCoverage } from "../scoring/coverage.ts";
+import { STATELESS } from "../state/plan.ts";
 import { captureLoadedFiles, loadJson, loadText, loadYaml } from "./index.ts";
 
 // computeFingerprint 无条件读 evalDef.sourcePath;内容不重要,指向本测试文件自己,永远存在。
@@ -34,17 +38,38 @@ afterEach(async () => {
 });
 
 function makeEval(loaderDataPaths: readonly string[]): DiscoveredEval {
-  return { id: "e", baseDir: "/project", sourcePath, source, test: () => {}, loaderDataPaths };
+  return discoverEval(defineEval({ test() {} }), {
+    id: "e",
+    baseDir: "/project",
+    sourcePath,
+    source,
+    loaderDataPaths,
+    criteriaPaths: [],
+    privatePaths: [],
+  });
 }
 
 const run: AgentRun = {
-  agent: defineDirectAgent({ name: "agent-exp", send: async () => ({ events: [], status: "completed" }) }),
+  agent: defineDirectAgent({
+    name: "agent-exp",
+    evidenceCoverage: completeEvidenceCoverage,
+    send: async () => ({ events: [], status: "completed" }),
+  }),
   flags: {},
   attempts: 1,
   earlyExit: false,
   selectedEvalIds: ["e"],
   experimentId: "exp",
+  experimentBaseDir: "/project/experiments",
+  experimentSourcePath: "/project/experiments/exp.ts",
+  state: STATELESS,
 };
+
+async function preparedPair(evalDef: DiscoveredEval): Promise<PreparedRunPair> {
+  const [pair] = await Effect.runPromise(prepareRunSandboxes([evalDef], [run]));
+  if (pair === undefined) throw new Error("expected one prepared run pair");
+  return pair;
+}
 
 describe("loadText · 判据文件进 eval 源码闭包", () => {
   it("loadText 读入的判据文件改一字节,引用它的那条 eval 指纹就变", async () => {
@@ -54,9 +79,9 @@ describe("loadText · 判据文件进 eval 源码闭包", () => {
     expect(value).toBe("exit 0\n");
     expect(paths).toEqual([path]);
 
-    const before = await computeFingerprint(makeEval(paths), run);
+    const before = await computeFingerprint(await preparedPair(makeEval(paths)));
     await writeFile(path, "exit 1\n", "utf-8");
-    const after = await computeFingerprint(makeEval(paths), run);
+    const after = await computeFingerprint(await preparedPair(makeEval(paths)));
 
     expect(after).not.toBe(before);
   });
@@ -67,9 +92,9 @@ describe("loadText · 判据文件进 eval 源码闭包", () => {
     const { paths } = await captureLoadedFiles(() => readFile(path, "utf-8"));
     expect(paths).toEqual([]);
 
-    const before = await computeFingerprint(makeEval(paths), run);
+    const before = await computeFingerprint(await preparedPair(makeEval(paths)));
     await writeFile(path, "exit 1\n", "utf-8");
-    const after = await computeFingerprint(makeEval(paths), run);
+    const after = await computeFingerprint(await preparedPair(makeEval(paths)));
 
     expect(after).toBe(before);
   });
@@ -86,8 +111,8 @@ describe("loader 的调用面", () => {
     expect(viaUrl.value).toBe(viaString.value);
     expect(viaUrl.paths).toEqual(viaString.paths);
 
-    const stringFingerprint = await computeFingerprint(makeEval(viaString.paths), run);
-    const urlFingerprint = await computeFingerprint(makeEval(viaUrl.paths), run);
+    const stringFingerprint = await computeFingerprint(await preparedPair(makeEval(viaString.paths)));
+    const urlFingerprint = await computeFingerprint(await preparedPair(makeEval(viaUrl.paths)));
     expect(urlFingerprint).toBe(stringFingerprint);
   });
 
