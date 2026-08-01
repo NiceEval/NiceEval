@@ -209,11 +209,11 @@ export function succeeded(): Spec {
     name: "succeeded",
     severity: "gate",
     evaluate: (ctx) => {
-      // status 通道非 complete(恒 completed 的映射)时,末态不可信,通过与失败都评不了。
-      const gap = coverageGap(ctx, "status");
-      if (gap) return gap;
       const ok = ctx.status !== "failed" && !ctx.facts.parked;
       if (ok) return 1;
+      // 正断言已经命中时不需要完整通道来反证；只有没命中才因不完整证据拒绝猜测失败。
+      const gap = coverageGap(ctx, "status");
+      if (gap) return gap;
       return {
         score: 0,
         received: ctx.facts.parked
@@ -229,9 +229,11 @@ export function parked(): Spec {
     name: "parked",
     severity: "gate",
     evaluate: (ctx) => {
+      // input.requested 是已观察到的正证据；覆盖缺口只影响「没看到」时的否定结论。
+      if (ctx.facts.parked) return 1;
       const gap = coverageGap(ctx, "status");
       if (gap) return gap;
-      return ctx.facts.parked ? 1 : { score: 0, received: `status: ${ctx.status} (no pending input request)` };
+      return { score: 0, received: `status: ${ctx.status} (no pending input request)` };
     },
   };
 }

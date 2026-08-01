@@ -30,6 +30,9 @@ function ctxWith(over: Partial<ScoringContext> = {}): ScoringContext {
 const INCOMPLETE_ACTIONS = downgradeEvidenceCoverage(completeEvidenceCoverage, {
   actions: { status: "partial", reason: "stream reconnected" },
 });
+const INCOMPLETE_STATUS = downgradeEvidenceCoverage(completeEvidenceCoverage, {
+  status: { status: "partial", reason: "adapter omitted terminal status" },
+});
 
 async function evaluate(spec: ReturnType<typeof Scoped.calledTool>, ctx: ScoringContext): Promise<AssertionResult> {
   const collector = new AssertionCollector();
@@ -37,6 +40,27 @@ async function evaluate(spec: ReturnType<typeof Scoped.calledTool>, ctx: Scoring
   const [result] = await collector.finalize(ctx);
   return result!;
 }
+
+describe("状态正断言的覆盖折叠", () => {
+  it("已观察到 succeeded / parked 时，即使 status 通道不完整也通过；缺口只阻止未命中被判失败", async () => {
+    const succeeded = await evaluate(Scoped.succeeded(), ctxWith({ evidenceCoverage: INCOMPLETE_STATUS }));
+    const parked = await evaluate(
+      Scoped.parked(),
+      ctxWith({
+        events: [{ type: "input.requested", request: { prompt: "approve deployment?" } }],
+        status: "waiting",
+        evidenceCoverage: INCOMPLETE_STATUS,
+      }),
+    );
+    const notSucceeded = await evaluate(Scoped.succeeded(), ctxWith({ status: "failed", evidenceCoverage: INCOMPLETE_STATUS }));
+    const notParked = await evaluate(Scoped.parked(), ctxWith({ evidenceCoverage: INCOMPLETE_STATUS }));
+
+    expect(succeeded.outcome).toBe("passed");
+    expect(parked.outcome).toBe("passed");
+    expect(notSucceeded.outcome).toBe("unavailable");
+    expect(notParked.outcome).toBe("unavailable");
+  });
+});
 
 describe("calledTool:input 顶层三种形态", () => {
   const events: StreamEvent[] = [
